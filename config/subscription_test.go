@@ -502,6 +502,137 @@ func TestSubscription_EndToEnd(t *testing.T) {
 	}
 }
 
+// --- ScoreSource integration ---
+
+type mockScoreSource struct{ scores map[string]float64 }
+
+func (m mockScoreSource) Score(url string) (float64, bool) {
+	s, ok := m.scores[url]
+	return s, ok
+}
+
+// newSubWithTunnels builds a Subscription with canned tunnels. Relies on the
+// exported SetTunnelsForTest helper added in this task.
+func newSubWithTunnels(t *testing.T, tunnels []Tunnel) *Subscription {
+	t.Helper()
+	s, err := NewSubscription("k2subs://u:p@host.com/sub", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetTunnelsForTest(tunnels)
+	return s
+}
+
+func TestPick_NoScoreSource_BehavesAsBefore(t *testing.T) {
+	s := newSubWithTunnels(t, []Tunnel{
+		{URL: "k2v5://a", RecommendScore: 0.9},
+		{URL: "k2v5://b", RecommendScore: 0.1},
+	})
+	counts := map[string]int{}
+	for i := 0; i < 2000; i++ {
+		p, err := s.Pick(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		counts[p.URL]++
+	}
+	if counts["k2v5://a"] <= counts["k2v5://b"] {
+		t.Errorf("expected a-wins bias (base weight), got %+v", counts)
+	}
+}
+
+func TestPick_ScoreSource_AppliesAdjustment(t *testing.T) {
+	// Under linear `base * score`:
+	//   a: 0.9 * 0.1 = 0.09  (high base, low probe)
+	//   b: 0.5 * 1.0 = 0.50  (moderate base, perfect probe)
+	// Probe signal flips the expected ranking: b should dominate ~5.5×.
+	s := newSubWithTunnels(t, []Tunnel{
+		{URL: "k2v5://a", RecommendScore: 0.9},
+		{URL: "k2v5://b", RecommendScore: 0.5},
+	})
+	s.SetScoreSource(mockScoreSource{scores: map[string]float64{
+		"k2v5://a": 0.1,
+		"k2v5://b": 1.0,
+	}})
+	counts := map[string]int{}
+	for i := 0; i < 2000; i++ {
+		p, _ := s.Pick(nil)
+		counts[p.URL]++
+	}
+	if counts["k2v5://b"] <= counts["k2v5://a"] {
+		t.Errorf("b should dominate after probe adjustment (linear), got %+v", counts)
+	}
+}
+
+func TestPick_ScoreSource_UnreachableExcluded(t *testing.T) {
+	s := newSubWithTunnels(t, []Tunnel{
+		{URL: "k2v5://a", RecommendScore: 0.9},
+		{URL: "k2v5://b", RecommendScore: 0.5},
+	})
+	s.SetScoreSource(mockScoreSource{scores: map[string]float64{
+		"k2v5://a": 0,
+		"k2v5://b": 0.5,
+	}})
+	for i := 0; i < 50; i++ {
+		p, err := s.Pick(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.URL == "k2v5://a" {
+			t.Fatalf("picked unreachable: %s", p.URL)
+		}
+	}
+}
+
+func TestPick_ScoreSource_SentinelNoOp(t *testing.T) {
+	s := newSubWithTunnels(t, []Tunnel{
+		{URL: "k2v5://a", RecommendScore: 0.9},
+		{URL: "k2v5://b", RecommendScore: 0.1},
+	})
+	s.SetScoreSource(mockScoreSource{scores: map[string]float64{
+		"k2v5://a": -1,
+		"k2v5://b": -1,
+	}})
+	counts := map[string]int{}
+	for i := 0; i < 2000; i++ {
+		p, _ := s.Pick(nil)
+		counts[p.URL]++
+	}
+	if counts["k2v5://a"] <= counts["k2v5://b"] {
+		t.Errorf("sentinel should not penalize; got %+v", counts)
+	}
+}
+
+func TestPick_ScoreSource_TopKLimit(t *testing.T) {
+	tunnels := []Tunnel{}
+	for _, c := range "abcdefg" {
+		tunnels = append(tunnels, Tunnel{URL: "k2v5://" + string(c), RecommendScore: 1})
+	}
+	s := newSubWithTunnels(t, tunnels)
+	s.SetScoreSource(mockScoreSource{scores: map[string]float64{
+		"k2v5://a": 0.9,
+		"k2v5://b": 0.8,
+		"k2v5://c": 0.7,
+		"k2v5://d": 0.6,
+		"k2v5://e": 0.5,
+		"k2v5://f": 0.4,
+		"k2v5://g": 0.3,
+	}})
+	seen := map[string]bool{}
+	for i := 0; i < 3000; i++ {
+		p, _ := s.Pick(nil)
+		seen[p.URL] = true
+	}
+	if seen["k2v5://f"] || seen["k2v5://g"] {
+		t.Errorf("top-K=5 violated; seen = %+v", seen)
+	}
+	for _, u := range []string{"k2v5://a", "k2v5://b", "k2v5://c", "k2v5://d", "k2v5://e"} {
+		if !seen[u] {
+			t.Errorf("top-5 candidate %s never selected; seen = %+v", u, seen)
+		}
+	}
+}
+
 // --- Helpers ---
 
 func contains(s, substr string) bool {

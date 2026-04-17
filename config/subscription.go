@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -31,10 +32,11 @@ type Subscription struct {
 	cacheFile string        // disk cache path ("" = no disk cache)
 
 	// State (mu-protected).
-	mu        deadlock.Mutex
-	tunnels   []Tunnel
-	fetchedAt time.Time
-	interval  time.Duration // effective refresh interval
+	mu          deadlock.Mutex
+	tunnels     []Tunnel
+	fetchedAt   time.Time
+	interval    time.Duration // effective refresh interval
+	scoreSource ScoreSource   // optional, consulted by Pick when non-nil
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -42,14 +44,56 @@ type Subscription struct {
 
 // Tunnel represents a single server endpoint in a subscription.
 type Tunnel struct {
-	URL    string `json:"url"`
-	Weight int    `json:"weight"`
+	URL string `json:"url"`
+	// Weight is the legacy integer weight (derived by Center from
+	// round(RecommendScore * 100)). Preferred path: RecommendScore. Retained
+	// for pre-recommendScore Center deployments.
+	Weight int `json:"weight"`
+	// RecommendScore is the canonical [0.0, 1.0] recommendation signal from
+	// Center (api.ComputeRecommendScore). Higher = better. Non-cloud nodes
+	// default to 0.5 (neutral). Zero here has no special meaning; when both
+	// Weight and RecommendScore are zero, effectiveWeight falls back to a
+	// pool-level "all zero" fallback in Pick.
+	RecommendScore float64 `json:"recommendScore"`
 }
 
 // subsResponse is the JSON response from the subscription endpoint.
 type subsResponse struct {
 	Tunnels []Tunnel `json:"tunnels"`
 	Refresh *int     `json:"refresh,omitempty"`
+}
+
+// ScoreSource is an optional per-URL adjustment consulted by Pick.
+// Supplied by probe.Registry in production.
+//
+// Score convention (mirrors wire.ProbeStats.Score):
+//
+//	ok=false   no data — Pick treats as "no adjustment" (factor 1.0)
+//	-1         sentinel (reachable but unmeasured, e.g. old k2s) — factor 1.0
+//	 0         unreachable — tunnel excluded from the pool
+//	(0,1]      normal — adjustment = score
+type ScoreSource interface {
+	Score(url string) (float64, bool)
+}
+
+// topKPoolSize caps how many adjusted candidates Pick samples from when a
+// ScoreSource is installed. Prevents low-quality tunnels from diluting the
+// selection while keeping diversity (survives one bad candidate).
+const topKPoolSize = 5
+
+// effectiveWeight returns the base selection weight for a tunnel. Prefers
+// RecommendScore when non-zero (canonical [0,1] signal); falls back to the
+// legacy integer Weight scaled by 0.01 for backward compatibility with
+// pre-recommendScore Center responses. Returns 0 when both are 0 — Pick
+// treats an all-zero pool via the zeroWeight fallback.
+func effectiveWeight(t Tunnel) float64 {
+	if t.RecommendScore > 0 {
+		return t.RecommendScore
+	}
+	if t.Weight > 0 {
+		return float64(t.Weight) * 0.01
+	}
+	return 0
 }
 
 // NewSubscription parses a k2subs:// URL and returns a Subscription.
@@ -110,6 +154,22 @@ func NewSubscription(raw string, cacheDir string) (*Subscription, error) {
 	}
 
 	return s, nil
+}
+
+// SetScoreSource installs an optional per-URL adjustment used by Pick.
+// Pass nil to revert to pure recommendScore/weight behavior.
+func (s *Subscription) SetScoreSource(src ScoreSource) {
+	s.mu.Lock()
+	s.scoreSource = src
+	s.mu.Unlock()
+}
+
+// SetTunnelsForTest replaces the current tunnel list. Tests only.
+func (s *Subscription) SetTunnelsForTest(tunnels []Tunnel) {
+	s.mu.Lock()
+	s.tunnels = tunnels
+	s.fetchedAt = time.Now()
+	s.mu.Unlock()
 }
 
 // Fetch fetches the subscription endpoint and updates tunnels.
@@ -201,12 +261,21 @@ func (s *Subscription) Tunnels() []Tunnel {
 	return out
 }
 
-// Pick selects a tunnel using weighted random selection, excluding URLs in exclude.
-// Falls back to weight=0 tunnels if no weighted candidates remain.
+// Pick selects a tunnel via weighted random. exclude are URLs to skip.
+//
+// Weight = effectiveWeight(t) * adjust(scoreSource, t.URL).
+//
+//	adjust(no data / sentinel -1) = 1.0   (no probe influence)
+//	adjust(score > 0)             = score (linear, no squaring)
+//	adjust(score == 0)            → tunnel excluded (unreachable)
+//
+// When a ScoreSource is active and more than topKPoolSize candidates remain,
+// only the top K by weight are eligible (diversity without dilution).
 func (s *Subscription) Pick(exclude []string) (Tunnel, error) {
 	s.mu.Lock()
 	tunnels := make([]Tunnel, len(s.tunnels))
 	copy(tunnels, s.tunnels)
+	src := s.scoreSource
 	s.mu.Unlock()
 
 	if len(tunnels) == 0 {
@@ -218,53 +287,74 @@ func (s *Subscription) Pick(exclude []string) (Tunnel, error) {
 		excSet[e] = struct{}{}
 	}
 
-	// Build weighted candidates (weight > 0, not excluded).
-	var candidates []Tunnel
+	type scored struct {
+		t      Tunnel
+		weight float64
+	}
+
+	var candidates []scored
 	var zeroWeight []Tunnel
 	for _, t := range tunnels {
-		if _, excluded := excSet[t.URL]; excluded {
+		if _, ex := excSet[t.URL]; ex {
 			continue
 		}
-		if t.Weight > 0 {
-			candidates = append(candidates, t)
+		base := effectiveWeight(t)
+		adj := 1.0
+		probeExcluded := false
+		if src != nil {
+			if sc, ok := src.Score(t.URL); ok {
+				switch {
+				case sc < 0:
+					adj = 1.0 // sentinel — no measurement, don't penalize
+				case sc == 0:
+					probeExcluded = true // unreachable — hard exclude
+				default:
+					adj = sc
+				}
+			}
+		}
+		if probeExcluded {
+			continue // do not fall through to zeroWeight — probe says unreachable
+		}
+		eff := base * adj
+		if eff > 0 {
+			candidates = append(candidates, scored{t, eff})
 		} else {
 			zeroWeight = append(zeroWeight, t)
 		}
 	}
 
-	// Fall back to weight=0 if no weighted candidates.
+	allZero := false
 	if len(candidates) == 0 {
-		candidates = zeroWeight
+		for _, t := range zeroWeight {
+			candidates = append(candidates, scored{t, 1})
+		}
+		allZero = true
 	}
 
 	if len(candidates) == 0 {
 		return Tunnel{}, fmt.Errorf("subscription pick: all tunnels excluded")
 	}
 
-	// Weighted random selection.
-	totalWeight := 0
-	for _, c := range candidates {
-		w := c.Weight
-		if w <= 0 {
-			w = 1 // fallback weight=0 candidates treated as 1
-		}
-		totalWeight += w
+	if src != nil && !allZero && len(candidates) > topKPoolSize {
+		sort.Slice(candidates, func(i, j int) bool {
+			return candidates[i].weight > candidates[j].weight
+		})
+		candidates = candidates[:topKPoolSize]
 	}
 
-	r := rand.IntN(totalWeight)
+	totalWeight := 0.0
 	for _, c := range candidates {
-		w := c.Weight
-		if w <= 0 {
-			w = 1
-		}
-		r -= w
+		totalWeight += c.weight
+	}
+	r := rand.Float64() * totalWeight
+	for _, c := range candidates {
+		r -= c.weight
 		if r < 0 {
-			return c, nil
+			return c.t, nil
 		}
 	}
-
-	// Should not reach here, but return last candidate.
-	return candidates[len(candidates)-1], nil
+	return candidates[len(candidates)-1].t, nil
 }
 
 // StartRefresh starts a background goroutine that periodically fetches the subscription.
