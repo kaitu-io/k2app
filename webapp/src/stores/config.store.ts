@@ -57,6 +57,12 @@ interface ConfigState {
   country: string | null;
   /** Whether Center auto-fills country from IP detection. */
   autoDetect: boolean;
+  /**
+   * iOS-only: if true, VPN auto-reactivates after system releases the app
+   * (jetsam, background kill) via NEOnDemandRuleConnect. Default false.
+   * The bridge forwards this to K2Plugin.connect; other platforms ignore it.
+   */
+  alwaysOn: boolean;
   /** Center-detected country (cached, not persisted). */
   detectedCountry: string | null;
   /** Center-suggested profile name (cached, not persisted). */
@@ -73,6 +79,8 @@ interface ConfigActions {
   setCountry: (cc: string) => Promise<void>;
   /** Toggle auto-detect. When turning on, syncs country from detectedCountry. */
   setAutoDetect: (on: boolean) => Promise<void>;
+  /** iOS-only: toggle Always On (NEOnDemandRuleConnect) opt-in. */
+  setAlwaysOn: (on: boolean) => Promise<void>;
   /**
    * Cache the country + suggestedProfile from Center user-info endpoint.
    * When autoDetect is on, also syncs country.
@@ -170,6 +178,7 @@ interface StoredConfig {
   countryVia?: 'direct' | 'k2p' | null;
   country?: string | null;
   autoDetect?: boolean;
+  alwaysOn?: boolean;
   // v2 fields (legacy)
   routingMode?: 'split' | 'global';
   selectedCountry?: string | null;
@@ -186,13 +195,14 @@ interface ParsedConfig {
   countryVia: 'direct' | 'k2p' | null;
   country: string | null;
   autoDetect: boolean;
+  alwaysOn: boolean;
   needsMigration: boolean;
 }
 
 function parseStored(stored: StoredConfig | null | undefined): ParsedConfig {
   if (!stored) {
     // Fresh install — default to CN, geo detection will override if user is elsewhere
-    return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: true, needsMigration: false };
+    return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: true, alwaysOn: false, needsMigration: false };
   }
 
   // v3 shape: has defaultVia field
@@ -202,6 +212,7 @@ function parseStored(stored: StoredConfig | null | undefined): ParsedConfig {
       countryVia: stored.countryVia === 'direct' ? 'direct' : stored.countryVia === 'k2p' ? 'k2p' : null,
       country: stored.country ?? null,
       autoDetect: stored.autoDetect !== false,
+      alwaysOn: stored.alwaysOn === true,
       needsMigration: false,
     };
   }
@@ -209,7 +220,7 @@ function parseStored(stored: StoredConfig | null | undefined): ParsedConfig {
   // v2 shape: has routingMode field
   if (stored.routingMode === 'split' || stored.routingMode === 'global') {
     if (stored.routingMode === 'global') {
-      return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, needsMigration: true };
+      return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, alwaysOn: false, needsMigration: true };
     }
     // split mode
     const autoDetect = stored.autoDetect !== false;
@@ -218,6 +229,7 @@ function parseStored(stored: StoredConfig | null | undefined): ParsedConfig {
       countryVia: 'direct',
       country: autoDetect ? null : (stored.selectedCountry ?? null),
       autoDetect,
+      alwaysOn: false,
       needsMigration: true,
     };
   }
@@ -225,30 +237,30 @@ function parseStored(stored: StoredConfig | null | undefined): ParsedConfig {
   // v1 shape: has modeOverride field
   if (stored.modeOverride !== undefined) {
     if (stored.modeOverride === 'global') {
-      return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, needsMigration: true };
+      return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, alwaysOn: false, needsMigration: true };
     }
     if (stored.modeOverride === 'manual') {
       const ruleMode = stored.ruleMode ?? 'chnroute';
       if (ruleMode === 'global') {
-        return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, needsMigration: true };
+        return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, alwaysOn: false, needsMigration: true };
       }
       // manual + chnroute
-      return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false, needsMigration: true };
+      return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false, alwaysOn: false, needsMigration: true };
     }
     // modeOverride === 'auto'
-    return { defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, needsMigration: true };
+    return { defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, alwaysOn: false, needsMigration: true };
   }
 
   // v0 shape: has rule.global field
   if (stored.rule !== undefined) {
     if (stored.rule?.global === true) {
-      return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, needsMigration: true };
+      return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, alwaysOn: false, needsMigration: true };
     }
-    return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false, needsMigration: true };
+    return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false, alwaysOn: false, needsMigration: true };
   }
 
   // Unknown shape, fresh defaults
-  return { defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, needsMigration: false };
+  return { defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, alwaysOn: false, needsMigration: false };
 }
 
 async function persist(
@@ -256,9 +268,10 @@ async function persist(
   countryVia: 'direct' | 'k2p' | null,
   country: string | null,
   autoDetect: boolean,
+  alwaysOn: boolean,
 ): Promise<void> {
   try {
-    const payload: Record<string, unknown> = { defaultVia, countryVia, autoDetect };
+    const payload: Record<string, unknown> = { defaultVia, countryVia, autoDetect, alwaysOn };
     if (country) payload.country = country;
     await window._platform.storage.set(STORAGE_KEY, payload);
   } catch (error) {
@@ -274,6 +287,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
   countryVia: 'direct',
   country: null,
   autoDetect: true,
+  alwaysOn: false,
   detectedCountry: null,
   suggestedProfile: null,
   telemetry: { ruleMissEnabled: false },
@@ -283,20 +297,21 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
   loadConfig: async () => {
     try {
       const stored = await window._platform.storage.get<StoredConfig>(STORAGE_KEY);
-      const { defaultVia, countryVia, country, autoDetect, needsMigration } = parseStored(stored);
+      const { defaultVia, countryVia, country, autoDetect, alwaysOn, needsMigration } = parseStored(stored);
       const preset = derivePreset(defaultVia, countryVia);
       console.info(
         '[ConfigStore] Config loaded: preset=' + preset
           + ', defaultVia=' + defaultVia
           + ', countryVia=' + (countryVia ?? 'null')
           + ', country=' + (country ?? 'null')
-          + ', autoDetect=' + autoDetect,
+          + ', autoDetect=' + autoDetect
+          + ', alwaysOn=' + alwaysOn,
       );
-      set({ defaultVia, countryVia, country, autoDetect, loaded: true });
+      set({ defaultVia, countryVia, country, autoDetect, alwaysOn, loaded: true });
 
       if (needsMigration) {
         try {
-          await persist(defaultVia, countryVia, country, autoDetect);
+          await persist(defaultVia, countryVia, country, autoDetect, alwaysOn);
           console.info('[ConfigStore] Migrated legacy config to v3 shape');
         } catch (err) {
           console.warn('[ConfigStore] Migration write failed:', err);
@@ -304,22 +319,22 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       }
     } catch (error) {
       console.warn('[ConfigStore] Failed to load config from storage:', error);
-      set({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: true, loaded: true });
+      set({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: true, alwaysOn: false, loaded: true });
     }
   },
 
   setPreset: async (preset) => {
     const { defaultVia, countryVia } = presetToConfig(preset);
     set({ defaultVia, countryVia });
-    const { country, autoDetect } = get();
-    await persist(defaultVia, countryVia, country, autoDetect);
+    const { country, autoDetect, alwaysOn } = get();
+    await persist(defaultVia, countryVia, country, autoDetect, alwaysOn);
   },
 
   setCountry: async (cc) => {
     const lower = cc.toLowerCase();
     set({ country: lower, autoDetect: false });
-    const { defaultVia, countryVia } = get();
-    await persist(defaultVia, countryVia, lower, false);
+    const { defaultVia, countryVia, alwaysOn } = get();
+    await persist(defaultVia, countryVia, lower, false, alwaysOn);
   },
 
   setAutoDetect: async (on) => {
@@ -331,8 +346,15 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       }
     }
     set(next);
-    const { defaultVia, countryVia, country } = get();
-    await persist(defaultVia, countryVia, country, on);
+    const { defaultVia, countryVia, country, alwaysOn } = get();
+    await persist(defaultVia, countryVia, country, on, alwaysOn);
+  },
+
+  setAlwaysOn: async (on) => {
+    console.info('[ConfigStore] setAlwaysOn: on=' + on);
+    set({ alwaysOn: on });
+    const { defaultVia, countryVia, country, autoDetect } = get();
+    await persist(defaultVia, countryVia, country, autoDetect, on);
   },
 
   setDetectedProfile: ({ country, profile }) => {
@@ -375,8 +397,8 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       // When autoDetect is off and no country yet, use first detection
       if (!autoDetect && !get().country && !detectedCountry) {
         next.country = cc;
-        const { defaultVia, countryVia } = get();
-        await persist(defaultVia, countryVia, cc, false);
+        const { defaultVia, countryVia, alwaysOn } = get();
+        await persist(defaultVia, countryVia, cc, false, alwaysOn);
       }
 
       console.info('[ConfigStore] fetchGeoDetection: country=' + cc + ', profile=' + profile + ', autoDetect=' + autoDetect);
