@@ -3,9 +3,11 @@
 **两个独立消费者，一个共享测量原语**：
 
 1. **App（desktop + mobile + 独立 Web）**：后台静默探测候选节点，UI 展示实测质量（RTT、丢包），让用户看着选。**App 不再做"智能选择"**——server selection 只剩"指定服务器"与"自部署"两种模式。
-2. **路由器（k2r / OpenWrt）**：daemon 用探测结果自动选更好的节点，无人值守场景下替换现在纯预算驱动的 `recommendScore`。
+2. **Headless Linux / 路由器场景（cmd/k2 daemon）**：daemon 用探测结果在 `Subscription.Pick` 里自动选更好的节点，无人值守场景下替换现在纯预算驱动的 `recommendScore`。
 
-**核心转变**：`k2subs://` 从此**只出现在路由器路径**，app 永远不接触订阅协议。
+**核心转变**：`k2subs://` 从此**只出现在 daemon 路径**（cmd/k2 Linux headless / 未来 gateway），app 永远不接触订阅协议。
+
+**范围说明**：当前 `k2r` gateway（cmd/k2r，TPROXY 软路由）**暂不在本期集成范围**——gateway 今天没有 `k2subs://` 订阅支持（`OutboundProvider` 未接入，见 `k2/gateway/gateway.go` `OnOutboundFatal` 的注释）。本期的"路由器自动选节点"指 cmd/k2 on Linux headless / 家用服务器场景。给 k2r 加 k2subs 支持是独立后续工作，完成后本期的 `probe.Registry` + `Subscription.ScoreSource` 原样复用即可。
 
 ---
 
@@ -319,11 +321,11 @@ svc.Start(ctx)
 
 `daemonURLSource` 返回当前所有 `subSession` 的订阅内 tunnel URL 合集。
 
-### 3.4 k2r 网关
+### 3.4 k2r 网关（非本期）
 
-与 desktop daemon 完全相同——k2r 也用 `Subscription` + `OutboundProvider`，接同一个 `Registry` + `Service`。唯一区别是 `DirectDialer` 实现不同（k2r 走物理出口网卡），但 `wire.ProbeURL` 对此透明。
+k2r gateway（`k2/gateway/gateway.go`）目前不走 Subscription 路径——配置直接收单个 k2v5:// URL，`engine.Config.OutboundProvider` 未注入（见 `gateway.OnOutboundFatal` 的 comment："Gateway does not use k2subs:// subscriptions"）。给它加 k2subs 支持是独立工作：需要镜像 `daemon.resolveSubscriptions` 逻辑、实现 `OutboundProvider.NextURL`、在 `doUp` / `closeTunnel` 里管理 subSession 生命周期。
 
-无独立改动。
+完成那个独立工作后，本期的 `probe.Registry` + `Subscription.ScoreSource` 接线方式与 daemon 完全相同——同一个 Registry 可被 gateway 复用，无新增协议或原语。
 
 ---
 
@@ -561,7 +563,7 @@ engine 请求替换节点（NextURL）
 | `k2/config/subscription_test.go` | 改动 | 补 ScoreSource + Top-K 测试 |
 | `k2/daemon/daemon.go` | 改动 | 装配 Registry/Service；新增 `probe` action |
 | `k2/daemon/outbound_provider.go` | 无改动 | `Pick` 自动受益 |
-| `k2/gateway/` | 改动 | 装配 Registry/Service（与 daemon 对齐） |
+| `k2/gateway/` | **非本期** | gateway 未支持 k2subs，需先做 subscription 支持（独立工作），完成后复用本期的 Registry |
 | `desktop/src-tauri/src/` | 无改动 | `handle_k2_run` 已泛型转发 |
 | `mobile/plugins/K2Plugin.*` | 无改动 | `run()` 已泛型转发 |
 | `webapp/src/services/subs-resolver.ts` | **删除** | -284 |
