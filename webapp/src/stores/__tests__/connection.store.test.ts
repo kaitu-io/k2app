@@ -60,10 +60,9 @@ async function getStores() {
     detectedCountry: null,
   });
   // Mark lastServerUrl as loaded so cold-start recovery doesn't wait.
-  // Use smart mode — tests that need a specific tunnel call selectCloudTunnel() first.
-  connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true, serverMode: 'smart' as const, serverModeLoaded: true });
-  // Default to authenticated so smart-mode connect() reaches the connect path
-  // (tests that exercise the unauth short-circuit flip this off explicitly).
+  // Default mode is 'manual' — tests that need a tunnel call selectCloudTunnel() first.
+  connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true, serverMode: 'manual' as const, serverModeLoaded: true });
+  // Default to authenticated so connect() reaches the connect path.
   const authMod = await import('../auth.store');
   authMod.useAuthStore.setState({ isAuthenticated: true });
   return { ...connMod, vpn: vpnMod, config: configMod };
@@ -72,11 +71,11 @@ async function getStores() {
 // ==================== Selection Tests ====================
 
 describe('Connection Store - Selection', () => {
-  it('defaults to smart mode with no tunnel selected', async () => {
+  it('defaults to manual mode with no tunnel selected', async () => {
     const { useConnectionStore } = await getStores();
     const state = useConnectionStore.getState();
 
-    expect(state.serverMode).toBe('smart');
+    expect(state.serverMode).toBe('manual');
     expect(state.selectedCloudTunnel).toBeNull();
     expect(state.activeTunnel).toBeNull();
     expect(state.connectedTunnel).toBeNull();
@@ -148,27 +147,31 @@ describe('Connection Store - Selection', () => {
 // ==================== Connect Tests ====================
 
 describe('Connection Store - Connect', () => {
-  it('connect (smart mode) snapshots synthetic connectedTunnel and calls _k2.run(up)', async () => {
+  it('connect (manual mode) snapshots connectedTunnel and calls _k2.run(up)', async () => {
     const { useConnectionStore, vpn } = await getStores();
     mockRun.mockResolvedValue({ code: 0 });
 
-    // Smart mode (default) — mock buildSubsUrl
     const { authService } = await import('../../services/auth-service');
-    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://udid:token@k2.52j.me/api/subs');
+    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@tokyo.example.com:443');
+
+    const tunnel = {
+      id: 1, domain: 'tokyo.example.com', name: 'Tokyo', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' },
+    } as any;
+    useConnectionStore.getState().selectCloudTunnel(tunnel);
 
     await useConnectionStore.getState().connect();
 
-    // connectedTunnel is a synthetic subs snapshot
+    // connectedTunnel is the selected cloud tunnel snapshot
     const ct = useConnectionStore.getState().connectedTunnel;
     expect(ct?.source).toBe('cloud');
-    expect(ct?.domain).toBe('subs');
-    expect(ct?.serverUrl).toBe('k2subs://udid:token@k2.52j.me/api/subs');
+    expect(ct?.domain).toBe('tokyo.example.com');
 
-    // _k2.run('up') called with subs URL in routes
+    // _k2.run('up') called with resolved URL in routes
     expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({ mode: 'tun' }));
     const upCall = mockRun.mock.calls.find(c => c[0] === 'up');
     const routes = upCall?.[1]?.routes as Array<{ via: string }>;
-    expect(routes.some(r => r.via === 'k2subs://udid:token@k2.52j.me/api/subs')).toBe(true);
+    expect(routes.some(r => r.via === 'k2v5://u:t@tokyo.example.com:443')).toBe(true);
     expect(upCall?.[1]?.server).toBeUndefined();
 
     // USER_CONNECT dispatched
@@ -213,17 +216,33 @@ describe('Connection Store - Connect', () => {
     expect(mockRun).not.toHaveBeenCalled();
   });
 
+  it('connect does nothing when manual mode has no tunnel selected', async () => {
+    const { useConnectionStore } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    // Default manual mode with no selection
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
   it('connectEpoch guards against stale connect', async () => {
     const { useConnectionStore, vpn } = await getStores();
+
+    // Select a cloud tunnel for manual mode
+    useConnectionStore.getState().selectCloudTunnel({
+      id: 1, domain: 'tokyo.example.com', name: 'Tokyo', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' },
+    } as any);
 
     // Mock auth service to be slow
     const { authService } = await import('../../services/auth-service');
     let resolveAuth: (v: string) => void;
-    vi.mocked(authService.buildSubsUrl).mockImplementation(
+    vi.mocked(authService.buildTunnelUrl).mockImplementation(
       () => new Promise(resolve => { resolveAuth = resolve; }),
     );
 
-    // Start connect (smart mode — default)
+    // Start connect
     const connectPromise = useConnectionStore.getState().connect();
 
     // connect() dispatches USER_CONNECT after auth resolves, so VPN state is
@@ -234,7 +253,7 @@ describe('Connection Store - Connect', () => {
     await useConnectionStore.getState().disconnect();
 
     // Now resolve auth — connect should bail due to epoch mismatch
-    resolveAuth!('k2subs://udid:token@k2.52j.me/api/subs');
+    resolveAuth!('k2v5://u:t@tokyo.example.com:443');
     await connectPromise;
 
     // _k2.run('up') should NOT have been called
@@ -290,12 +309,17 @@ describe('Connection Store - Config Persistence', () => {
     });
 
     const { authService } = await import('../../services/auth-service');
-    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://udid:token@k2.52j.me/api/subs');
+    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@tokyo.example.com:443');
+
+    useConnectionStore.getState().selectCloudTunnel({
+      id: 1, domain: 'tokyo.example.com', name: 'Tokyo', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' },
+    } as any);
 
     await useConnectionStore.getState().connect();
 
     expect(order).toEqual(['persist', 'run_up']);
-    expect(useConnectionStore.getState().lastServerUrl).toBe('k2subs://udid:token@k2.52j.me/api/subs');
+    expect(useConnectionStore.getState().lastServerUrl).toBe('k2v5://u:t@tokyo.example.com:443');
   });
 });
 
@@ -404,7 +428,7 @@ describe('Connection Store - State Guards', () => {
 // ==================== Selection → Mode symmetry Tests ====================
 
 describe('Connection Store - Selection mode symmetry', () => {
-  it('selectCloudTunnel flips serverMode to manual and persists', async () => {
+  it('selectCloudTunnel sets serverMode to manual and persists', async () => {
     const { useConnectionStore } = await getStores();
 
     const tunnel = {
@@ -412,9 +436,8 @@ describe('Connection Store - Selection mode symmetry', () => {
       port: 443, serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' },
     } as any;
 
-    // Start from smart mode (default)
-    expect(useConnectionStore.getState().serverMode).toBe('smart');
-
+    // Flip to self_hosted first, then select cloud — should revert to manual.
+    useConnectionStore.setState({ serverMode: 'self_hosted' });
     useConnectionStore.getState().selectCloudTunnel(tunnel);
 
     expect(useConnectionStore.getState().serverMode).toBe('manual');
@@ -471,37 +494,6 @@ describe('Connection Store - connect() hard guards', () => {
     mockRun.mockResolvedValue({ code: 0 });
 
     useConnectionStore.setState({ serverMode: 'self_hosted' });
-
-    await useConnectionStore.getState().connect();
-
-    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
-    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
-  });
-
-  it('smart mode where buildSubsUrl resolved to empty string aborts and does NOT call _k2.run', async () => {
-    const { useConnectionStore, vpn } = await getStores();
-    mockRun.mockResolvedValue({ code: 0 });
-
-    const { authService } = await import('../../services/auth-service');
-    vi.mocked(authService.buildSubsUrl).mockResolvedValue('');
-
-    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
-
-    await useConnectionStore.getState().connect();
-
-    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
-    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
-  });
-
-  it('smart mode where buildSubsUrl resolved to non-k2subs scheme aborts', async () => {
-    const { useConnectionStore, vpn } = await getStores();
-    mockRun.mockResolvedValue({ code: 0 });
-
-    const { authService } = await import('../../services/auth-service');
-    // Pretend antiblock lost the scheme prefix (regression guard)
-    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2v5://u:t@bogus/api/subs');
-
-    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
 
     await useConnectionStore.getState().connect();
 
@@ -810,5 +802,45 @@ describe('Connection Store - VPN State Lifecycle', () => {
     expect(displayTunnel?.domain).toBe('www.jiangxi.people.cn');
 
     cleanup();
+  });
+});
+
+// ==================== Smart → Manual migration Tests ====================
+
+describe('smart → manual migration', () => {
+  it('coerces persisted serverMode="smart" to "manual"', async () => {
+    mockStorage.get.mockImplementation(async (key: string) => {
+      if (key === 'k2.vpn.server_mode') return 'smart';
+      return undefined;
+    });
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().loadServerMode();
+    expect(connMod.useConnectionStore.getState().serverMode).toBe('manual');
+  });
+
+  it('preserves persisted "self_hosted"', async () => {
+    mockStorage.get.mockImplementation(async (key: string) => {
+      if (key === 'k2.vpn.server_mode') return 'self_hosted';
+      return undefined;
+    });
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().loadServerMode();
+    expect(connMod.useConnectionStore.getState().serverMode).toBe('self_hosted');
+  });
+
+  it('defaults missing value to "manual"', async () => {
+    mockStorage.get.mockResolvedValue(undefined);
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().loadServerMode();
+    expect(connMod.useConnectionStore.getState().serverMode).toBe('manual');
+  });
+
+  it('stops reading smart_country (key no longer used)', async () => {
+    mockStorage.get.mockResolvedValue(undefined);
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().loadServerMode();
+    const keys = mockStorage.get.mock.calls.map((c) => c[0]);
+    expect(keys).toContain('k2.vpn.server_mode');
+    expect(keys).not.toContain('k2.vpn.smart_country');
   });
 });
