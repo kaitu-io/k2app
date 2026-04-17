@@ -258,10 +258,18 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             manager.isEnabled = true
             manager.localizedDescription = "kaitu.io"
 
-            // On-demand: auto-restart NE after iOS kills it (jetsam, network loss).
-            // System calls startVPNTunnel() when network becomes available.
-            manager.isOnDemandEnabled = true
-            manager.onDemandRules = [NEOnDemandRuleConnect()]
+            // alwaysOn is the user's Dashboard toggle. When true, iOS auto-restarts
+            // NE after system release (jetsam, network loss) via NEOnDemandRuleConnect.
+            // When false (default), user-initiated disconnect is final. See ANC-13.
+            let alwaysOn = call.getBool("alwaysOn") ?? false
+            logger.info("connect: alwaysOn=\(alwaysOn)")
+            if alwaysOn {
+                manager.isOnDemandEnabled = true
+                manager.onDemandRules = [NEOnDemandRuleConnect()]
+            } else {
+                manager.isOnDemandEnabled = false
+                manager.onDemandRules = []
+            }
 
             logger.info("connect: saving preferences...")
             manager.saveToPreferences { error in
