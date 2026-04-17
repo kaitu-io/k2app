@@ -43,6 +43,10 @@ type Subscription struct {
 }
 
 // Tunnel represents a single server endpoint in a subscription.
+//
+// Weight is retained for backward compatibility with pre-recommendScore Center
+// responses. New code should prefer RecommendScore, which Pick consults first.
+// One release after RecommendScore ships Center-side we can drop Weight.
 type Tunnel struct {
 	URL string `json:"url"`
 	// Weight is the legacy integer weight (derived by Center from
@@ -119,23 +123,28 @@ func NewSubscription(raw string, cacheDir string) (*Subscription, error) {
 	}
 	creds := u.User.Username() + ":" + pass
 
-	// Build endpoint: https scheme, no userinfo, no query.
-	ep := &url.URL{
-		Scheme: "https",
-		Host:   u.Host,
-		Path:   u.Path,
-	}
-	endpoint := ep.String()
-
 	// Parse refresh query param (seconds), default 1800.
+	// `refresh` is a client-side directive — consumed here, NOT forwarded upstream.
+	q := u.Query()
 	refreshSec := 1800
-	if v := u.Query().Get("refresh"); v != "" {
+	if v := q.Get("refresh"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
 			return nil, fmt.Errorf("subscription: parse refresh=%q: %w", v, err)
 		}
 		refreshSec = n
 	}
+	q.Del("refresh")
+
+	// Build endpoint: https scheme, no userinfo. Forward all non-refresh query
+	// params (e.g. `country=jp` selects region at Center side).
+	ep := &url.URL{
+		Scheme:   "https",
+		Host:     u.Host,
+		Path:     u.Path,
+		RawQuery: q.Encode(),
+	}
+	endpoint := ep.String()
 	refreshDur := time.Duration(refreshSec) * time.Second
 
 	s := &Subscription{

@@ -23,22 +23,13 @@ import (
 	"github.com/kaitu-io/k2/engine"
 	"github.com/kaitu-io/k2/probe"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 )
 
 // DefaultAddr is the daemon HTTP listen address.
 const DefaultAddr = "127.0.0.1:1777"
-
-// subSession wraps an active k2subs:// Subscription. The wrapper gives
-// daemon a stable place to hang per-session bookkeeping (e.g. probe
-// ScoreSource wiring) without touching the config package.
-type subSession struct {
-	sub *config.Subscription
-}
-
-// Close tears down the underlying subscription's refresh loop.
-func (s *subSession) Close() { s.sub.Close() }
 
 // Daemon is the k2 background service.
 // It manages the VPN tunnel lifecycle and exposes an HTTP API.
@@ -71,8 +62,9 @@ type Daemon struct {
 	engineCnl context.CancelFunc
 
 	// Active subscription sessions (k2subs:// routes, background refresh).
-	// Each session wraps a *config.Subscription so daemon can attach
-	// per-session bookkeeping without modifying the config package.
+	// Each wraps a *config.Subscription with session-local state for server
+	// rotation (the "excluded" URL set the engine has asked us to skip via
+	// OutboundProvider.NextURL).
 	subs []*subSession
 
 	// dd is the current session's physical-interface-bound dialer.
@@ -187,6 +179,14 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	mux.HandleFunc("/stats", d.handleStatsPage)
 	d.registerHelperRoutes(mux)
 
+	// Opt-in pprof for leak / goroutine diagnostics. Gated because it
+	// exposes profile, cmdline, symbol, and goroutine dumps that can leak
+	// heap addresses and internal state.
+	if os.Getenv("K2_PPROF") == "1" {
+		registerPProf(mux)
+		slog.Warn("daemon: pprof handlers mounted at /debug/pprof/ (K2_PPROF=1)")
+	}
+
 	// Linux-only webapp + /api/storage + /api/platform + /api/upgrade.
 	// No-op on macOS/Windows (Tauri provides the UI on those platforms).
 	d.registerWebUI(mux)
@@ -195,6 +195,10 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 		Addr:    listenAddr,
 		Handler: recoveryMiddleware(corsMiddleware(mux)),
 	}
+
+	// Pre-warm rule bundle cache in the background so engine.Start()
+	// can load rules from disk instantly.
+	d.startRulePrefetch(ctx)
 
 	// Load persisted state and auto-reconnect if applicable.
 	d.tryAutoReconnect(ctx)
@@ -287,7 +291,12 @@ func (d *Daemon) closeTunnel() {
 		}
 	}
 
-	saveState(persistedState{State: engine.StateDisconnected, Timestamp: time.Now()})
+	// Persist disconnected state, but keep the config so rule prefetch can
+	// use it on next daemon start to pre-warm the bundle cache.
+	d.mu.RLock()
+	cfg := d.lastConfig
+	d.mu.RUnlock()
+	saveState(persistedState{Config: cfg, State: engine.StateDisconnected, Timestamp: time.Now()})
 }
 
 // doUp connects the tunnel with the given ClientConfig.
@@ -318,6 +327,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	// Resolve k2subs:// subscriptions to k2v5:// URLs.
 	subs, resolved, subsErr := d.resolveSubscriptions(cfg)
 	if subsErr != nil {
+		slog.Error("daemon: doUp aborted — subscription resolve failed", "err", subsErr)
 		d.mu.Lock()
 		d.lastStatus = engine.Status{
 			State: engine.StateDisconnected,
@@ -399,7 +409,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	if d.abortUp.Load() {
 		slog.Info("daemon: doUp aborted after start")
 		eng.Stop()
-		saveState(persistedState{State: engine.StateDisconnected, Timestamp: time.Now()})
+		saveState(persistedState{Config: cfg, State: engine.StateDisconnected, Timestamp: time.Now()})
 		return fmt.Errorf("aborted by pending down")
 	}
 
@@ -427,16 +437,13 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	// Disarm cleanup — subs are now owned by d.subs (closed in closeTunnel).
 	subsCleanup = false
 
-	// Start background subscription refresh.
+	// Start background subscription refresh — reuse the per-session HTTP
+	// client built in resolveSubscriptions so refresh fetches go through
+	// the same Transport (connection pool) that subSession.Close will
+	// later release via CloseIdleConnections.
 	for _, sess := range subs {
-		sess.sub.StartRefresh(ctx, func() *http.Client {
-			return &http.Client{
-				Timeout: 15 * time.Second,
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-				},
-			}
-		})
+		client := sess.httpClient
+		sess.sub.StartRefresh(ctx, func() *http.Client { return client })
 	}
 
 	d.mu.Lock()
@@ -474,10 +481,11 @@ func (d *Daemon) engineConfigFromClientConfig(
 	}
 
 	ecfg := engine.Config{
-		Client:         cfg,
-		FileDescriptor: -1, // Desktop: engine creates its own TUN.
-		DirectDialer:   dd,
-		HealthCallback: d.broadcastSnapshot,
+		Client:           cfg,
+		FileDescriptor:   -1, // Desktop: engine creates its own TUN.
+		DirectDialer:     dd,
+		HealthCallback:   d.broadcastSnapshot,
+		OutboundProvider: d, // Daemon implements engine.OutboundProvider (k2subs rotation).
 	}
 
 	// Apply network monitor if available.
@@ -500,6 +508,49 @@ func (d *Daemon) doDown() {
 	d.abortUp.Store(false)
 	slog.Info("daemon: doDown")
 	d.closeTunnel()
+}
+
+// startRulePrefetch kicks off a background rule bundle download at daemon startup.
+// Uses the persisted config to determine which bundles are needed. Skips the
+// download entirely if cached bundles are less than 24h old (no HTTP at all).
+// Does not block — runs in a safego goroutine.
+func (d *Daemon) startRulePrefetch(ctx context.Context) {
+	st, err := loadState()
+	if err != nil || st.Config == nil {
+		return
+	}
+
+	cfg := st.Config
+	config.SetDefaults(cfg)
+
+	dir := cfg.CacheDir
+	if dir == "" {
+		dir = filepath.Join(cacheDir(), "rules")
+	}
+
+	matches := make([]rule.MatchConfig, len(cfg.Routes))
+	for i, r := range cfg.Routes {
+		matches[i] = r.Match
+	}
+	bundleNames := rule.BundlesForConfig(matches)
+	if len(bundleNames) == 0 {
+		return
+	}
+
+	sources := cfg.RuleSources
+	if len(sources) == 0 {
+		sources = rule.DefaultSources
+	}
+
+	safego.Go(func() {
+		dlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := rule.DownloadAndReload(dlCtx, nil, dir, bundleNames, sources, nil, 24*time.Hour); err != nil {
+			slog.Warn("rule prefetch failed", "err", err)
+		} else {
+			slog.Info("rule prefetch complete", "bundles", len(bundleNames))
+		}
+	})
 }
 
 // tryAutoReconnect checks persisted state and reconnects if applicable.
@@ -580,6 +631,15 @@ func (d *Daemon) OnStatus(status engine.Status) {
 // OnStats implements engine.EventHandler — currently a no-op for daemon.
 func (d *Daemon) OnStats(txBytes, rxBytes int64) {}
 
+// OnOutboundFatal implements engine.EventHandler. The engine has already
+// fired e.fail() with the underlying error before this callback fires, so
+// d.lastStatus is already updated via OnStatus. This hook is informational:
+// we log which outbound finally exhausted replacements so operators can
+// distinguish "all subscribed tunnels failed" from other transport errors.
+func (d *Daemon) OnOutboundFatal(outbound string, err error) {
+	slog.Warn("daemon: outbound exhausted replacements", "outbound", outbound, "err", err)
+}
+
 // resolveSubscriptions scans routes for k2subs:// URLs, fetches each subscription,
 // picks a server, and returns the subscription sessions + a map of route index → resolved k2v5:// URL.
 // On error, all already-created sessions are closed before returning.
@@ -591,6 +651,12 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 	resolved = make(map[int]string)
 	subsCache := filepath.Join(cacheDir(), "subs")
 
+	closeAll := func(ss []*subSession) {
+		for _, s := range ss {
+			s.Close()
+		}
+	}
+
 	for i, route := range cfg.Routes {
 		if !strings.HasPrefix(route.Via, "k2subs://") {
 			continue
@@ -598,9 +664,10 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 
 		sub, parseErr := config.NewSubscription(route.Via, subsCache)
 		if parseErr != nil {
-			for _, s := range subs {
-				s.Close()
-			}
+			slog.Error("subscription parse failed",
+				"via", config.TruncateVia(route.Via),
+				"err", parseErr)
+			closeAll(subs)
 			return nil, nil, fmt.Errorf("subscription parse: %w", parseErr)
 		}
 
@@ -611,27 +678,36 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 			sub.SetScoreSource(d.probeRegistry)
 		}
 
+		// Per-session HTTP client. Same Transport is reused for the
+		// initial Fetch and for StartRefresh's fetches; subSession.Close
+		// calls Transport.CloseIdleConnections to release pooled
+		// persistConns (otherwise the net/http readLoop goroutines leak
+		// one per up/down cycle). Tests can override via d.subsHTTPClient
+		// to supply a client with a custom TLS trust root.
 		sess := &subSession{sub: sub}
-
-		fetchClient := d.subsHTTPClient
-		if fetchClient == nil {
-			fetchClient = &http.Client{
-				Timeout: 15 * time.Second,
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-				},
+		if d.subsHTTPClient != nil {
+			sess.httpClient = d.subsHTTPClient
+		} else {
+			sess.httpTransport = &http.Transport{
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+			}
+			sess.httpClient = &http.Client{
+				Timeout:   15 * time.Second,
+				Transport: sess.httpTransport,
 			}
 		}
+
 		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 15*time.Second)
-		fetchErr := sub.Fetch(fetchCtx, fetchClient)
+		fetchErr := sub.Fetch(fetchCtx, sess.httpClient)
 		fetchCancel()
 
 		if fetchErr != nil {
 			if len(sub.Tunnels()) == 0 {
+				slog.Error("subscription fetch failed with no cached data",
+					"via", config.TruncateVia(route.Via),
+					"err", fetchErr)
 				sess.Close()
-				for _, s := range subs {
-					s.Close()
-				}
+				closeAll(subs)
 				return nil, nil, fmt.Errorf("subscription fetch failed (no cache): %w", fetchErr)
 			}
 			slog.Warn("subscription fetch failed, using cached data", "err", fetchErr)
@@ -639,10 +715,12 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 
 		tunnel, pickErr := sub.Pick(nil)
 		if pickErr != nil {
+			slog.Error("subscription pick failed",
+				"via", config.TruncateVia(route.Via),
+				"servers", len(sub.Tunnels()),
+				"err", pickErr)
 			sess.Close()
-			for _, s := range subs {
-				s.Close()
-			}
+			closeAll(subs)
 			return nil, nil, fmt.Errorf("subscription pick: %w", pickErr)
 		}
 

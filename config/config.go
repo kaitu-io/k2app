@@ -26,16 +26,96 @@ type ClientConfig struct {
 	BlockQUIC bool          `yaml:"block_quic" json:"block_quic"` // block browser QUIC via ICMP reject (default: false = allow through DATAGRAM)
 	CacheDir  string        `yaml:"cache_dir"  json:"cache_dir"`  // cache directory for rule bundles ("" = platform default)
 	RuleSources []string `yaml:"rule_sources,omitempty" json:"rule_sources,omitempty"` // override default k2b download sources
+	Telemetry TelemetryConfig `yaml:"telemetry,omitempty" json:"telemetry,omitempty"` // anonymous usage telemetry (Phase 1: rule miss)
 
 	// Derived fields (not serialized to YAML/JSON).
 	Server string `yaml:"-" json:"-"` // first k2v5:// URL from routes
 
 }
 
+// TelemetryConfig groups anonymous telemetry sub-features. Zero value means
+// "all telemetry off" — the Phase 1 default.
+type TelemetryConfig struct {
+	RuleMiss RuleMissConfig `yaml:"rule_miss,omitempty" json:"rule_miss,omitempty"`
+}
+
+// RuleMissConfig controls rule-miss (domain-fallback) telemetry.
+//
+// Phase 1 is "dark instrumentation": when Enabled is false (the default),
+// the engine does not construct a reporter, the rule engine holds a nil
+// MissReporter pointer, and the match hot path short-circuits with zero
+// allocations. Flipping Enabled=true wires the full ring buffer → hash →
+// batcher → HTTP POST pipeline described in k2/engine/miss_reporter.go.
+type RuleMissConfig struct {
+	Enabled       bool   `yaml:"enabled" json:"enabled"`               // default false — MUST stay off by default
+	Endpoint      string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`             // e.g. "https://center.kaitu.io/api/telemetry/rule_miss"
+	Country       string `yaml:"country,omitempty" json:"country,omitempty"`               // ISO 3166-1 alpha-2, or "XX" when unknown
+	ClientVersion string `yaml:"client_version,omitempty" json:"client_version,omitempty"` // e.g. "0.4.3"
+}
+
 // RouteConfig defines a single routing rule: traffic matching Match is sent via Via.
+//
+// Via is one of:
+//   - ""           — direct (same as "direct")
+//   - "direct"     — bypass the tunnel, dial target from the local interface
+//   - "reject"     — drop the connection
+//   - "k2v5://..." — k2v5 wire outbound URL
+//   - "k2p://..."  — k2p peer-to-peer outbound URL
+//   - "k2subs://..." — subscription URL (resolves to k2v5)
+//
+// Reserved (not yet implemented, validation rejects these):
+//   - "device://<deviceId>"           — route via another device on the same user account
+//                                       (reserved for k2p home / bring-your-own-relay feature)
+//   - "auto://<pool>[/<country>]"     — route via a Center-selected node from a named pool
+//                                       (reserved for server-driven exit selection)
+//
+// When implementing reserved schemes, add them to ViaSchemeReserved in the scheme
+// constants below and wire up the outbound in engine.setupOutboundTransport.
 type RouteConfig struct {
 	Via   string           `yaml:"via"   json:"via"`
 	Match rule.MatchConfig `yaml:"match" json:"match"`
+}
+
+// Via scheme constants. Use with ViaScheme() to classify a route's Via field.
+const (
+	// Sentinel values (no scheme).
+	ViaDirect = "direct"
+	ViaReject = "reject"
+
+	// Implemented URL schemes (wire outbounds).
+	ViaSchemeK2v5  = "k2v5"
+	ViaSchemeK2p   = "k2p"
+	ViaSchemeK2subs = "k2subs"
+
+	// Reserved URL schemes — defined for forward-compat but not yet implemented.
+	// ValidateClient rejects routes using these schemes; buildRouteEntries skips them
+	// defensively (treats as direct + WARN log) in case validation is bypassed.
+	ViaSchemeDevice = "device" // route via another device on the same user account (k2p home)
+	ViaSchemeAuto   = "auto"   // route via a Center-selected node from a named pool
+)
+
+// ViaScheme returns the URL scheme portion of a Via string, or an empty string
+// for sentinel values ("direct", "reject", "") and malformed inputs.
+//
+// Examples:
+//
+//	ViaScheme("k2v5://host:443")       → "k2v5"
+//	ViaScheme("device://abc123")       → "device"
+//	ViaScheme("direct")                → ""
+//	ViaScheme("")                      → ""
+func ViaScheme(via string) string {
+	if i := strings.Index(via, "://"); i > 0 {
+		return via[:i]
+	}
+	return ""
+}
+
+// IsReservedVia reports whether via uses a scheme that is reserved for a
+// future feature and not yet implemented. Reserved schemes are rejected by
+// ValidateClient so they never reach the engine assembly path.
+func IsReservedVia(via string) bool {
+	scheme := ViaScheme(via)
+	return scheme == ViaSchemeDevice || scheme == ViaSchemeAuto
 }
 
 // IsAllProxy returns true if any route proxies all traffic through a wire outbound (k2v5, k2p, or k2subs).
@@ -49,8 +129,10 @@ func (c *ClientConfig) IsAllProxy() bool {
 }
 
 // IsOutboundURL returns true if via is a wire outbound URL (k2v5, k2p, or k2subs), not "direct" or "reject".
+// Reserved schemes (device://, auto://) return false — they are not wire outbounds.
 func IsOutboundURL(via string) bool {
-	return strings.HasPrefix(via, "k2v5://") || strings.HasPrefix(via, "k2p://") || strings.HasPrefix(via, "k2subs://")
+	scheme := ViaScheme(via)
+	return scheme == ViaSchemeK2v5 || scheme == ViaSchemeK2p || scheme == ViaSchemeK2subs
 }
 
 // TunConfig contains TUN device configuration.

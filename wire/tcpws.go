@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
+	"golang.org/x/sync/singleflight"
 
 	utls "github.com/metacubex/utls"
 	smux "github.com/xtaci/smux/v2"
@@ -104,8 +105,8 @@ type TCPWSClient struct {
 	directDialer DirectDialer
 
 	mu        deadlock.Mutex
-	connectMu deadlock.Mutex // serializes expensive connect path; ordering: connectMu → mu
-	initUDPMu deadlock.Mutex // serializes UDP mux lazy init; ordering: initUDPMu → mu
+	connectSF singleflight.Group // dedupes concurrent connect attempts without held lock
+	initUDPMu deadlock.Mutex     // serializes UDP mux lazy init; ordering: initUDPMu → mu
 	sess      *smux.Session
 	udpMux *smuxUDPMux
 	alloc  *SessionIDAllocator
@@ -149,94 +150,117 @@ func (c *TCPWSClient) SetDirectDialer(d DirectDialer) {
 }
 
 // connect establishes a smux session if not already connected.
-// Uses check-release-connect-reacquire pattern to avoid holding mu
-// during blocking I/O (TCP dial, TLS handshake, WebSocket upgrade).
+//
+// Concurrency model: multiple concurrent callers are de-duplicated via
+// singleflight — only one actually runs the dial, the rest block on the
+// shared result channel. This replaces the previous connectMu-based
+// serialization, which held a mutex across the full dial I/O. Under pf
+// blackhole + multiple in-flight dials, N queued callers each waited
+// tcpwsConnectTimeout (10s) serially; the 4th+ waiter exceeded go-deadlock's
+// 30s threshold and fired POTENTIAL DEADLOCK → FATAL (v0.4.3 production,
+// Phase-A fallback on blocked tunnel IP). singleflight.Group's internal
+// mutex is held only for the map lookup, never across I/O, so no waiter
+// ever blocks for more than one dial's duration regardless of fan-in.
+//
+// Caveat (intentional): waiters cannot cancel via their own ctx — only the
+// leader's ctx governs the in-flight dial. A waiter with a shorter deadline
+// than the leader will still block until the leader's dial settles
+// (bounded by tcpwsConnectTimeout), then receive the leader's result.
+// This is acceptable because (a) TM/Router callers use comparable ctx
+// deadlines, (b) channel waits are invisible to go-deadlock, so no FATAL.
 func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
-	// Fast path: return cached live session under mu.
+	// Fast path: return cached live session or fail fast on closed.
+	if sess, closed := c.checkCachedSession(); closed {
+		return nil, ErrNotConnected
+	} else if sess != nil {
+		return sess, nil
+	}
+
+	// Slow path: single-flight the actual dial. All concurrent callers
+	// join one attempt; the callback runs at most once per collapsed batch.
+	v, err, _ := c.connectSF.Do("dial", func() (any, error) {
+		// Re-check: Close() may have been called while we were entering the
+		// group, OR an earlier batch winner may have populated c.sess. Both
+		// must short-circuit *before* the 10s blocking dial.
+		if sess, closed := c.checkCachedSession(); closed {
+			return nil, ErrNotConnected
+		} else if sess != nil {
+			return sess, nil
+		}
+
+		c.mu.Lock()
+		testConn := c.testConn
+		c.mu.Unlock()
+
+		// --- All blocking I/O below — NO lock held ---
+		var conn net.Conn
+		if testConn != nil {
+			conn = testConn
+		} else {
+			var dialErr error
+			conn, dialErr = c.connectTLSWebSocket(ctx)
+			if dialErr != nil {
+				return nil, dialErr
+			}
+		}
+
+		sess, smuxErr := smux.Client(conn, DefaultSmuxConfig())
+		if smuxErr != nil {
+			conn.Close()
+			return nil, fmt.Errorf("wire: smux client: %w", smuxErr)
+		}
+
+		// --- Store result under lock ---
+		// concurrency:allow — closing locally-owned sess not yet stored in struct
+		c.mu.Lock()
+		if c.closed {
+			c.mu.Unlock()
+			sess.Close()
+			return nil, ErrNotConnected
+		}
+		c.sess = sess
+		c.alloc = NewSessionIDAllocator()
+		c.mu.Unlock()
+		return sess, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*smux.Session), nil
+}
+
+// checkCachedSession inspects the cached smux session under mu and evicts
+// dead sessions (closing resources OUTSIDE the lock per Rule #4).
+//
+// Returns (sess, closed):
+//   - (liveSess, false) → caller returns sess directly
+//   - (nil, true)       → client is Close()d; caller returns ErrNotConnected
+//   - (nil, false)      → no usable session; caller proceeds to dial
+func (c *TCPWSClient) checkCachedSession() (*smux.Session, bool) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return nil, ErrNotConnected
+		return nil, true
 	}
-	var mux *smuxUDPMux
-	var deadSess *smux.Session
 	if c.sess != nil {
 		if !c.sess.IsClosed() {
 			sess := c.sess
 			c.mu.Unlock()
-			return sess, nil
+			return sess, false
 		}
 		slog.Debug("TCPWSClient: clearing dead smux session")
-		mux, deadSess = c.extractSessionLocked()
-	}
-	testConn := c.testConn // read under lock (set during construction only)
-	c.mu.Unlock()
-	// Close dead session resources outside lock (Rule #4).
-	if mux != nil {
-		mux.close()
-	}
-	if deadSess != nil {
-		closeSmuxSessionSafe(deadSess)
-	}
-
-	// Serialize expensive connect attempts.
-	c.connectMu.Lock()
-	defer c.connectMu.Unlock()
-
-	// Re-check: another goroutine may have connected while we waited.
-	c.mu.Lock()
-	if c.closed {
+		mux, deadSess := c.extractSessionLocked()
 		c.mu.Unlock()
-		return nil, ErrNotConnected
-	}
-	var mux2 *smuxUDPMux
-	var deadSess2 *smux.Session
-	if c.sess != nil {
-		if !c.sess.IsClosed() {
-			sess := c.sess
-			c.mu.Unlock()
-			return sess, nil
+		if mux != nil {
+			mux.close()
 		}
-		mux2, deadSess2 = c.extractSessionLocked()
+		if deadSess != nil {
+			closeSmuxSessionSafe(deadSess)
+		}
+		return nil, false
 	}
 	c.mu.Unlock()
-	// Close dead session resources outside lock (Rule #4).
-	if mux2 != nil {
-		mux2.close()
-	}
-	if deadSess2 != nil {
-		closeSmuxSessionSafe(deadSess2)
-	}
-
-	// --- All blocking I/O below — NO lock held ---
-	var conn net.Conn
-	if testConn != nil {
-		conn = testConn
-	} else {
-		var err error
-		conn, err = c.connectTLSWebSocket(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	sess, err := smux.Client(conn, DefaultSmuxConfig())
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("wire: smux client: %w", err)
-	}
-
-	// --- Store result under lock ---
-	// concurrency:allow — closing locally-owned sess not yet stored in struct
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.closed {
-		sess.Close()
-		return nil, ErrNotConnected
-	}
-	c.sess = sess
-	c.alloc = NewSessionIDAllocator()
-	return sess, nil
+	return nil, false
 }
 
 // smuxCloseTimeout bounds smux.Session.Close. TLS connections in IO wait

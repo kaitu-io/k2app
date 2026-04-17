@@ -179,8 +179,8 @@ engine.mu (state)
 Serialization locks (never nested inside any state lock above):
   QUICClient.connectMu → QUICClient.mu
   QUICClient.initUDPMu → QUICClient.mu
-  TCPWSClient.connectMu → TCPWSClient.mu
   TCPWSClient.initUDPMu → TCPWSClient.mu
+  (TCPWSClient dedupes concurrent dials via singleflight.Group — no held mutex)
   smuxUDPMux.writeMu (standalone)
   quicStreamUDPMux.writeMu (standalone)
   udpOverflowStream.initMu → udpOverflowStream.writeMu

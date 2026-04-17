@@ -8,6 +8,24 @@ macOS system extension, iOS, Android.
 gomobile can only export concrete types with simple parameter types (string, int, int64, bool).
 Cannot export interfaces from dependency packages — must re-declare `EventHandler` locally.
 
+## No subscription resolver here
+
+Unlike `daemon/` (`resolveSubscriptions` in daemon.go), `appext/` does **not**
+rewrite `k2subs://` routes to `k2v5://` before calling `engine.Start`. Reason:
+NE / Android service processes have tight memory budgets (iOS NE is 50MB) and
+adding a Go HTTPS client + JSON cache + background refresher inflates binary
+size and complexity. It also keeps the platform shell stateless — engine
+receives an already-resolved configuration.
+
+Subscription URL resolution on mobile happens **in the main App webapp**
+(`webapp/src/services/subs-resolver.ts`) before `_k2.run('up', config)`.
+Engine receives `routes:[{via:'k2v5://...'}]` like any other connection.
+
+If a `k2subs://` route reaches engine here, `engine.buildOutboundMap`
+(engine.go:1052) treats it as reserved → drops the route → 0 wire outbounds →
+fail with code 570 "no k2v5 outbound configured". This is the symptom of a
+webapp bug (smart mode missing the resolver), not an engine bug.
+
 ## API Surface
 
 ```go

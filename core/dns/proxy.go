@@ -19,6 +19,11 @@ import (
 // connections with message-ID-based multiplexing (sing-box pattern).
 // A single UDP connection per server handles all queries, avoiding per-query
 // DialUDP overhead (expensive: QUIC stream or smux session creation).
+//
+// When FallbackDialer is configured, Query() races two transports with stagger
+// (Happy Eyeballs for DNS transports): primary starts immediately, fallback
+// starts after stagger. First success wins. This eliminates TCP HOL blocking
+// on the TCP-WS path by preferring QUIC stream (no HOL) when available.
 type ProxyDNSClient struct {
 	resolver *racingResolver
 	dialer   wire.Dialer
@@ -27,6 +32,12 @@ type ProxyDNSClient struct {
 	// Connection pool: server → persistent connection.
 	mu    deadlock.Mutex
 	conns map[string]*proxyConn
+
+	// Transport racing: primary (QUIC preferred) vs fallback (TCP-WS direct).
+	// fallback is nil when FallbackDialer not configured (single transport mode).
+	fallback          *ProxyDNSClient
+	stagger           time.Duration
+	primaryConsecFail atomic.Int32
 }
 
 // proxyConn is a persistent UDP connection to a single DNS server.
@@ -52,7 +63,15 @@ type dnsCallback struct {
 
 // ProxyDNSClientConfig contains configuration for proxy DNS client.
 type ProxyDNSClientConfig struct {
-	Dialer  wire.Dialer
+	// Dialer is the primary transport for DNS queries.
+	// Typically TransportManager (QUIC stream preferred, TCP-WS fallback within TM).
+	Dialer wire.Dialer
+
+	// FallbackDialer is the fallback transport, raced against Dialer with stagger.
+	// Typically the TCP-WS dialer directly.
+	// nil = single transport mode (backward compatible, no racing).
+	FallbackDialer wire.Dialer
+
 	Servers []string
 }
 
@@ -73,15 +92,113 @@ func NewProxyDNSClient(cfg ProxyDNSClientConfig) *ProxyDNSClient {
 		dialer:  cfg.Dialer,
 		timeout: 5 * time.Second,
 		conns:   make(map[string]*proxyConn),
+		stagger: 300 * time.Millisecond,
 	}
 	c.resolver = newRacingResolver(servers, c.queryServer, defaultRaceN, c.timeout, "proxy")
+
+	if cfg.FallbackDialer != nil {
+		c.fallback = NewProxyDNSClient(ProxyDNSClientConfig{
+			Dialer:  cfg.FallbackDialer,
+			Servers: servers,
+			// FallbackDialer deliberately nil — prevents recursive nesting.
+		})
+	}
+
 	return c
 }
 
 // Query sends a DNS query through the tunnel via persistent connections.
-// Races the healthiest servers in parallel and returns the first success.
+// When fallback is configured, races primary and fallback transports with stagger.
+// Otherwise races the healthiest servers on a single transport.
 func (c *ProxyDNSClient) Query(ctx context.Context, query *dns.Msg) (*dns.Msg, error) {
+	if c.fallback != nil {
+		return c.queryWithRace(ctx, query)
+	}
 	return c.resolver.Query(ctx, query)
+}
+
+// consecFailThreshold is the number of consecutive primary failures before
+// the stagger is bypassed and both transports race immediately.
+const consecFailThreshold = 3
+
+// queryWithRace races primary and fallback transports with stagger.
+// Primary (QUIC preferred) starts immediately. Fallback (TCP-WS direct) starts
+// after stagger delay, or immediately if primary has consecutive failures.
+// First success cancels the other via shared context.
+func (c *ProxyDNSClient) queryWithRace(ctx context.Context, query *dns.Msg) (*dns.Msg, error) {
+	type raceResult struct {
+		resp      *dns.Msg
+		err       error
+		transport string
+	}
+
+	raceCtx, raceCancel := context.WithCancel(ctx)
+	defer raceCancel()
+	ch := make(chan raceResult, 2)
+
+	// Primary (TransportManager: QUIC stream preferred) starts immediately.
+	go func() {
+		resp, err := c.resolver.Query(raceCtx, query)
+		ch <- raceResult{resp, err, "primary"}
+	}()
+
+	// Fallback (TCP-WS direct) starts after stagger.
+	stagger := c.stagger
+	staggerBypassed := false
+	if c.primaryConsecFail.Load() >= consecFailThreshold {
+		stagger = 0 // primary broken, race immediately
+		staggerBypassed = true
+	}
+	if staggerBypassed {
+		slog.Debug("dns transport race: stagger bypassed",
+			"domain", extractDomain(query),
+			"primaryConsecFail", c.primaryConsecFail.Load(),
+		)
+	}
+	go func() {
+		if stagger > 0 {
+			timer := time.NewTimer(stagger)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+			case <-raceCtx.Done():
+				ch <- raceResult{nil, raceCtx.Err(), "fallback"}
+				return
+			}
+		}
+		resp, err := c.fallback.resolver.Query(raceCtx, query)
+		ch <- raceResult{resp, err, "fallback"}
+	}()
+
+	// First success wins.
+	var lastErr error
+	for i := 0; i < 2; i++ {
+		select {
+		case res := <-ch:
+			if res.err == nil {
+				raceCancel()
+				if res.transport == "primary" {
+					c.primaryConsecFail.Store(0)
+				}
+				slog.Debug("dns transport race: winner",
+					"winner", res.transport,
+					"domain", extractDomain(query),
+					"staggerBypassed", staggerBypassed,
+				)
+				return res.resp, nil
+			}
+			if res.transport == "primary" {
+				c.primaryConsecFail.Add(1)
+			}
+			lastErr = res.err
+		case <-ctx.Done():
+			if lastErr != nil {
+				return nil, lastErr
+			}
+			return nil, ctx.Err()
+		}
+	}
+	return nil, fmt.Errorf("all DNS transports failed: %w", lastErr)
 }
 
 // queryServer sends a query to a single server using a persistent connection.
@@ -310,6 +427,13 @@ func (c *ProxyDNSClient) ResetConnections() {
 	for _, pc := range conns {
 		pc.closeWithErr(fmt.Errorf("connections reset"))
 	}
+
+	// Reset health tracking — fresh transport after reconnect.
+	c.primaryConsecFail.Store(0)
+
+	if c.fallback != nil {
+		c.fallback.ResetConnections()
+	}
 }
 
 // Close closes all persistent connections. Called when the wire dialer is torn down.
@@ -321,5 +445,9 @@ func (c *ProxyDNSClient) Close() {
 
 	for _, pc := range conns {
 		pc.closeWithErr(fmt.Errorf("client closed"))
+	}
+
+	if c.fallback != nil {
+		c.fallback.Close()
 	}
 }

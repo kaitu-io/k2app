@@ -308,6 +308,12 @@ func (g *Gateway) OnStatus(status engine.Status) {
 // OnStats implements engine.EventHandler.
 func (g *Gateway) OnStats(tx, rx int64) {}
 
+// OnOutboundFatal implements engine.EventHandler. Gateway does not use
+// k2subs:// subscriptions (no OutboundProvider wired), so this path only
+// fires when the engine's replace logic decides a static k2v5:// URL is
+// terminally dead — same user-visible outcome as today's e.fail().
+func (g *Gateway) OnOutboundFatal(outbound string, err error) {}
+
 func (g *Gateway) broadcastSnapshot(snap engine.HealthSnapshot) {
 	data, _ := json.Marshal(snap)
 	g.broadcastSSE("stats", data)

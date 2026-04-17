@@ -35,7 +35,8 @@ func (m *mockEventHandler) OnStatus(status Status) {
 	m.statuses = append(m.statuses, status)
 }
 
-func (m *mockEventHandler) OnStats(txBytes, rxBytes int64) {}
+func (m *mockEventHandler) OnStats(txBytes, rxBytes int64)             {}
+func (m *mockEventHandler) OnOutboundFatal(outbound string, err error) {}
 
 func (m *mockEventHandler) getStatuses() []Status {
 	m.mu.Lock()

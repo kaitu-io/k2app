@@ -41,6 +41,7 @@ func (n *nftNetlinkInterceptor) Name() string { return "nftables-netlink" }
 
 func (n *nftNetlinkInterceptor) Install(cfg InterceptConfig) error {
 	n.mu.Lock()
+	// concurrency:allow linear nft table setup — only operates on n.conn/n.table/n.chain fields
 	defer n.mu.Unlock()
 
 	// Delete stale table if exists (idempotent cleanup)
@@ -305,6 +306,7 @@ func (n *nftNetlinkInterceptor) addTPROXYRules(cfg InterceptConfig) {
 
 func (n *nftNetlinkInterceptor) AddMAC(macStr string) error {
 	n.mu.Lock()
+	// concurrency:allow single nft SetAddElements call on n.macSet — no I/O beyond netlink RPC
 	defer n.mu.Unlock()
 
 	if n.macSet == nil {
@@ -322,6 +324,7 @@ func (n *nftNetlinkInterceptor) AddMAC(macStr string) error {
 
 func (n *nftNetlinkInterceptor) RemoveMAC(macStr string) error {
 	n.mu.Lock()
+	// concurrency:allow single nft SetDeleteElements call on n.macSet — no I/O beyond netlink RPC
 	defer n.mu.Unlock()
 
 	if n.macSet == nil {

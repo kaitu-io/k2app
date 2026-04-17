@@ -43,6 +43,20 @@ func TestSubscription_DefaultRefresh(t *testing.T) {
 	}
 }
 
+func TestSubscription_ForwardsNonRefreshQuery(t *testing.T) {
+	// `refresh` is client-side (stripped); all other params forwarded to endpoint.
+	s, err := NewSubscription("k2subs://u:p@host.com/api/subs?country=jp&refresh=120", "")
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	if s.endpoint != "https://host.com/api/subs?country=jp" {
+		t.Errorf("endpoint = %q, want https://host.com/api/subs?country=jp", s.endpoint)
+	}
+	if s.refresh != 120*time.Second {
+		t.Errorf("refresh = %v, want 120s", s.refresh)
+	}
+}
+
 func TestSubscription_RefreshZero(t *testing.T) {
 	s, err := NewSubscription("k2subs://u:p@host.com/path?refresh=0", "")
 	if err != nil {
@@ -255,6 +269,76 @@ func TestSubscription_DiskCacheRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSubscription_CacheCorruptIgnored locks in the UAT T15 contract:
+// a corrupt cache file must NOT prevent NewSubscription from succeeding —
+// it is logged and ignored, and a subsequent Fetch overwrites it.
+func TestSubscription_CacheCorruptIgnored(t *testing.T) {
+	dir := t.TempDir()
+	raw := "k2subs://u:p@host.example.com/api"
+
+	// Pre-create a corrupt cache file at the expected path.
+	s0, err := NewSubscription(raw, dir)
+	if err != nil {
+		t.Fatalf("NewSubscription (probe): %v", err)
+	}
+	cachePath := s0.cacheFile
+	if err := os.MkdirAll(dirOf(cachePath), 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(cachePath, []byte("{not-json"), 0600); err != nil {
+		t.Fatalf("write corrupt cache: %v", err)
+	}
+
+	// NewSubscription must not fail; tunnels should be empty (corrupt ignored).
+	s, err := NewSubscription(raw, dir)
+	if err != nil {
+		t.Fatalf("NewSubscription with corrupt cache: %v", err)
+	}
+	if got := len(s.Tunnels()); got != 0 {
+		t.Errorf("tunnels after corrupt cache load = %d, want 0", got)
+	}
+}
+
+func dirOf(p string) string {
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i] == '/' || p[i] == '\\' {
+			return p[:i]
+		}
+	}
+	return "."
+}
+
+// TestSubscription_FetchErrorHintPassthrough locks in the UAT T07/T09 contract:
+// when Center returns an HTTP 4xx with a plain-text body, the returned error
+// must include BOTH the status code AND the body text so the daemon can
+// surface a human-readable hint to the user.
+func TestSubscription_FetchErrorHintPassthrough(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("invalid credentials"))
+	}))
+	defer srv.Close()
+
+	raw := "k2subs://u:p@" + srv.Listener.Addr().String() + "/api"
+	s, err := NewSubscription(raw, "")
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	s.endpoint = srv.URL + "/api"
+
+	err = s.Fetch(context.Background(), srv.Client())
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "401") {
+		t.Errorf("error missing status code: %q", msg)
+	}
+	if !strings.Contains(msg, "invalid credentials") {
+		t.Errorf("error missing body hint: %q", msg)
+	}
+}
+
 // --- Task 3: Weighted Pick ---
 
 func TestSubscription_PickWeightedDistribution(t *testing.T) {
@@ -336,6 +420,61 @@ func TestSubscription_PickEmptyList(t *testing.T) {
 	_, err := s.Pick(nil)
 	if err == nil {
 		t.Fatal("expected error on empty tunnel list")
+	}
+}
+
+// TestSubscription_PickRecommendScorePreferred verifies that when both
+// RecommendScore and Weight are set, RecommendScore drives the distribution
+// and Weight is ignored. This is the canonical-field invariant.
+func TestSubscription_PickRecommendScorePreferred(t *testing.T) {
+	s := &Subscription{}
+	// Weight says "B dominates 10:1", RecommendScore says "A dominates 9:1".
+	// The canonical field wins: ~90% A.
+	s.tunnels = []Tunnel{
+		{URL: "k2v5://a.example.com:443", Weight: 1, RecommendScore: 0.9},
+		{URL: "k2v5://b.example.com:443", Weight: 10, RecommendScore: 0.1},
+	}
+
+	counts := make(map[string]int)
+	n := 10000
+	for i := 0; i < n; i++ {
+		tun, err := s.Pick(nil)
+		if err != nil {
+			t.Fatalf("Pick: %v", err)
+		}
+		counts[tun.URL]++
+	}
+
+	aPct := float64(counts["k2v5://a.example.com:443"]) / float64(n) * 100
+	if aPct < 80 || aPct > 95 {
+		t.Errorf("A = %.1f%%, want 80-95%% (recommendScore 0.9 vs 0.1)", aPct)
+	}
+}
+
+// TestSubscription_PickLegacyWeightFallback verifies that when RecommendScore
+// is absent (pre-rollout Center responses), Pick falls back to Weight. This is
+// the backward-compat contract for one release cycle.
+func TestSubscription_PickLegacyWeightFallback(t *testing.T) {
+	s := &Subscription{}
+	s.tunnels = []Tunnel{
+		{URL: "k2v5://a.example.com:443", Weight: 3}, // no RecommendScore set (zero value)
+		{URL: "k2v5://b.example.com:443", Weight: 1},
+	}
+
+	counts := make(map[string]int)
+	n := 10000
+	for i := 0; i < n; i++ {
+		tun, err := s.Pick(nil)
+		if err != nil {
+			t.Fatalf("Pick: %v", err)
+		}
+		counts[tun.URL]++
+	}
+
+	// Expected 3:1 — A ≈ 75%, tolerate 65-85%.
+	aPct := float64(counts["k2v5://a.example.com:443"]) / float64(n) * 100
+	if aPct < 65 || aPct > 85 {
+		t.Errorf("A = %.1f%%, want 65-85%% (legacy weight 3:1)", aPct)
 	}
 }
 
