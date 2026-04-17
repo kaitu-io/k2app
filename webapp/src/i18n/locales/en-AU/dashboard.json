@@ -55,6 +55,11 @@
     "minutesAgo": "minutes ago",
     "hoursAgo": "hours ago",
     "longTimeAgo": "Long ago",
+    "probe": {
+      "unreachable": "Unreachable (QUIC handshake failed)",
+      "qualityUnknown": "Server doesn't report quality",
+      "tooltip": "RTT {{rtt}} ms · jitter {{jitter}} ms · loss {{loss}}%"
+    },
     "selectServerHint": "Please select from below",
     "selectServerHintShort": "↓ Select a server",
     "connectedBannerHint": "Connected — disconnect first to switch servers",

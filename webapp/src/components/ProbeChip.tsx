@@ -1,4 +1,5 @@
 import { Box, Skeleton, Tooltip, Typography } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import type { ProbeResult } from '../services/api-types';
 
 const LOSS_WARN_THRESHOLD = 0.05;
@@ -19,6 +20,7 @@ interface ProbeChipProps {
  *  5. result=null, !loading    → nothing (tunnel hasn't been probed)
  */
 export function ProbeChip({ result, loading }: ProbeChipProps) {
+  const { t } = useTranslation('dashboard');
   if (loading) {
     return <Skeleton variant="rounded" width={40} height={18} />;
   }
@@ -26,7 +28,7 @@ export function ProbeChip({ result, loading }: ProbeChipProps) {
 
   if (!result.reachable) {
     return (
-      <Tooltip title="Unreachable (QUIC handshake failed)">
+      <Tooltip title={t('dashboard.probe.unreachable')}>
         <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.72rem' }}>
           —
         </Typography>
@@ -36,7 +38,7 @@ export function ProbeChip({ result, loading }: ProbeChipProps) {
 
   if (!result.echoSupported) {
     return (
-      <Tooltip title="Server doesn't report quality">
+      <Tooltip title={t('dashboard.probe.qualityUnknown')}>
         <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.72rem' }}>
           ?
         </Typography>
@@ -45,11 +47,12 @@ export function ProbeChip({ result, loading }: ProbeChipProps) {
   }
 
   const rtt = Math.round(result.avgRttMs);
+  const jitter = Math.round(result.jitterMs);
   const lossPct = Math.round(result.lossRate * 100);
   const showLoss = result.lossRate >= LOSS_WARN_THRESHOLD;
 
   return (
-    <Tooltip title={`RTT ${rtt} ms · jitter ${Math.round(result.jitterMs)} ms · loss ${lossPct}%`}>
+    <Tooltip title={t('dashboard.probe.tooltip', { rtt, jitter, loss: lossPct })}>
       <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
         <Typography variant="caption" sx={{ fontSize: '0.72rem', fontVariantNumeric: 'tabular-nums' }}>
           {rtt} ms
