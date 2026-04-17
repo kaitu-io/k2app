@@ -10,10 +10,18 @@ import (
 	"github.com/kaitu-io/k2/wire"
 )
 
-// URLSource yields the URLs to probe each cycle. Daemon supplies active
-// subscription tunnels; tests supply a static list.
+// URLSource yields the URLs to probe each cycle and the DirectDialer that
+// should be used to reach them. Daemon supplies active subscription tunnels
+// plus the active session's direct dialer (bound to the physical interface);
+// tests supply a static list + nil dialer.
+//
+// DirectDialer() MUST be non-nil-returning when the VPN is up; otherwise the
+// probe's UDP socket routes through the TUN itself and the measurements
+// reflect tunnel-over-tunnel latency. When the VPN is down, nil is correct
+// (OS default routing uses the physical interface).
 type URLSource interface {
 	CandidateURLs() []string
+	DirectDialer() wire.DirectDialer
 }
 
 // Prober is the probe function injected into Service. Production:
@@ -23,7 +31,6 @@ type Prober func(ctx context.Context, rawURL string, dd wire.DirectDialer, round
 type Config struct {
 	Registry      *Registry
 	Source        URLSource
-	DirectDialer  wire.DirectDialer
 	Cadence       time.Duration // default 5m
 	MaxConcurrent int           // default 4
 	Rounds        int           // default 8
@@ -99,6 +106,10 @@ func (s *Service) cycle(ctx context.Context) {
 	if len(urls) == 0 {
 		return
 	}
+	// Snapshot the dialer once per cycle so all probes in this fan-out see
+	// the same physical-interface binding (avoids inconsistency if the VPN
+	// session tears down mid-cycle).
+	dd := s.cfg.Source.DirectDialer()
 	sem := make(chan struct{}, s.cfg.MaxConcurrent)
 	var wg sync.WaitGroup
 	for _, u := range urls {
@@ -115,7 +126,7 @@ func (s *Service) cycle(ctx context.Context) {
 			defer func() { <-sem }()
 			probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
-			stats, err := s.cfg.Prober(probeCtx, url, s.cfg.DirectDialer, s.cfg.Rounds, s.cfg.RoundInterval)
+			stats, err := s.cfg.Prober(probeCtx, url, dd, s.cfg.Rounds, s.cfg.RoundInterval)
 			if err != nil {
 				stats.MeasuredAt = time.Now()
 			}

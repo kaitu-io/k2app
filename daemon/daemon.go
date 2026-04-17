@@ -75,6 +75,12 @@ type Daemon struct {
 	// per-session bookkeeping without modifying the config package.
 	subs []*subSession
 
+	// dd is the current session's physical-interface-bound dialer.
+	// Set in doUp alongside d.subs, cleared in closeTunnel. Probe reads it
+	// via daemonURLSource.DirectDialer() so background probes bypass the
+	// active TUN (otherwise probe UDP sockets loop through our own tunnel).
+	dd *directDialer
+
 	// Version and Commit are set by main via ldflags.
 	// Used by handleVersion to report the running binary's identity.
 	Version string
@@ -250,10 +256,12 @@ func (d *Daemon) closeTunnel() {
 	d.monitorPID = 0
 	d.mu.Unlock()
 
-	// Stop subscription refresh goroutines.
+	// Stop subscription refresh goroutines and release the direct dialer
+	// snapshot (probe must fall back to OS routing when we're not connected).
 	d.mu.Lock()
 	subs := d.subs
 	d.subs = nil
+	d.dd = nil
 	d.mu.Unlock()
 	for _, sess := range subs {
 		sess.Close()
@@ -433,6 +441,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 
 	d.mu.Lock()
 	d.subs = subs
+	d.dd = dd
 	d.mu.Unlock()
 
 	return nil
@@ -695,6 +704,16 @@ func (d *Daemon) handleProbe(w http.ResponseWriter, params map[string]any) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 
+	// Reuse the active session's direct dialer so probe UDP bypasses the
+	// TUN when the VPN is up; nil is correct when disconnected.
+	d.mu.RLock()
+	dd := d.dd
+	d.mu.RUnlock()
+	var probeDD wire.DirectDialer
+	if dd != nil {
+		probeDD = dd
+	}
+
 	results := make([]map[string]any, len(urls))
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
@@ -705,7 +724,7 @@ func (d *Daemon) handleProbe(w http.ResponseWriter, params map[string]any) {
 		safego.Go(func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			stats, err := d.probeFn(ctx, url, nil, 8, 50*time.Millisecond)
+			stats, err := d.probeFn(ctx, url, probeDD, 8, 50*time.Millisecond)
 			if err != nil {
 				stats.MeasuredAt = time.Now()
 			}
@@ -757,4 +776,18 @@ func (s daemonURLSource) CandidateURLs() []string {
 		}
 	}
 	return urls
+}
+
+// DirectDialer returns the active session's physical-interface-bound dialer,
+// or nil when no session is active (OS routing is correct while disconnected).
+// Explicit nil-interface return when the concrete pointer is nil — otherwise
+// a typed-nil slips through any `if dd != nil` check in wire.ProbeURL.
+func (s daemonURLSource) DirectDialer() wire.DirectDialer {
+	s.d.mu.RLock()
+	dd := s.d.dd
+	s.d.mu.RUnlock()
+	if dd == nil {
+		return nil
+	}
+	return dd
 }

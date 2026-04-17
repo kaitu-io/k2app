@@ -2,6 +2,7 @@ package probe
 
 import (
 	"context"
+	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -10,9 +11,24 @@ import (
 	"github.com/kaitu-io/k2/wire"
 )
 
-type staticSource struct{ urls []string }
+type staticSource struct {
+	urls []string
+	dd   wire.DirectDialer
+}
 
-func (s staticSource) CandidateURLs() []string { return s.urls }
+func (s staticSource) CandidateURLs() []string       { return s.urls }
+func (s staticSource) DirectDialer() wire.DirectDialer { return s.dd }
+
+// fakeDirectDialer is a sentinel used only to prove the Source's dialer
+// threads through cycle → prober. It never actually dials.
+type fakeDirectDialer struct{ id string }
+
+func (f *fakeDirectDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	return nil, nil
+}
+func (f *fakeDirectDialer) ListenPacket(string, string) (net.PacketConn, error) {
+	return nil, nil
+}
 
 // fakeProber counts invocations and observes peak concurrency.
 type fakeProber struct {
@@ -22,9 +38,10 @@ type fakeProber struct {
 	delay       time.Duration
 	mu          sync.Mutex
 	seen        []string
+	seenDD      []wire.DirectDialer
 }
 
-func (f *fakeProber) ProbeURL(ctx context.Context, url string, _ wire.DirectDialer, _ int, _ time.Duration) (wire.ProbeStats, error) {
+func (f *fakeProber) ProbeURL(ctx context.Context, url string, dd wire.DirectDialer, _ int, _ time.Duration) (wire.ProbeStats, error) {
 	cur := f.inflight.Add(1)
 	defer f.inflight.Add(-1)
 	for {
@@ -36,6 +53,7 @@ func (f *fakeProber) ProbeURL(ctx context.Context, url string, _ wire.DirectDial
 	time.Sleep(f.delay)
 	f.mu.Lock()
 	f.seen = append(f.seen, url)
+	f.seenDD = append(f.seenDD, dd)
 	f.mu.Unlock()
 	f.total.Add(1)
 	return wire.ProbeStats{
@@ -115,6 +133,39 @@ func TestService_EmptySourceNoOp(t *testing.T) {
 	svc.Close()
 	if fp.total.Load() != 0 {
 		t.Errorf("expected 0 probes for empty source, got %d", fp.total.Load())
+	}
+}
+
+func TestService_PassesSourceDirectDialerToProber(t *testing.T) {
+	reg := NewRegistry(time.Minute)
+	dd := &fakeDirectDialer{id: "source-owned"}
+	src := staticSource{urls: []string{"k2v5://a", "k2v5://b"}, dd: dd}
+	fp := &fakeProber{delay: 5 * time.Millisecond}
+
+	svc := NewService(Config{
+		Registry:      reg,
+		Source:        src,
+		Cadence:       time.Hour, // never tick — only first cycle runs
+		MaxConcurrent: 2,
+		Rounds:        1,
+		RoundInterval: 1 * time.Millisecond,
+		Prober:        fp.ProbeURL,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	svc.Start(ctx)
+	time.Sleep(60 * time.Millisecond)
+	cancel()
+	svc.Close()
+
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+	if len(fp.seenDD) != 2 {
+		t.Fatalf("prober called %d times, want 2", len(fp.seenDD))
+	}
+	for i, got := range fp.seenDD {
+		if got != dd {
+			t.Errorf("call[%d] dialer = %v, want source-owned %v", i, got, dd)
+		}
 	}
 }
 
