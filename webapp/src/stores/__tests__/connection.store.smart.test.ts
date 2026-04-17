@@ -177,11 +177,13 @@ describe('connect() — smart mode', () => {
     expect(connectedTunnel?.country).toBe('');
     expect(connectedTunnel?.source).toBe('cloud');
 
-    // Verify _k2.run('up') was called with the subs URL in routes
+    // Verify _k2.run('up') was called with the envelope carrying the subs URL in routes
     expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({
-      routes: expect.arrayContaining([
-        expect.objectContaining({ via: 'k2subs://udid:tok@k2.52j.me/api/subs' }),
-      ]),
+      config: expect.objectContaining({
+        routes: expect.arrayContaining([
+          expect.objectContaining({ via: 'k2subs://udid:tok@k2.52j.me/api/subs' }),
+        ]),
+      }),
     }));
   });
 
@@ -363,9 +365,11 @@ describe('connect() — mobile smart mode', () => {
 
     expect(resolveTunnel).toHaveBeenCalledWith('k2subs://udid:tok@k2.52j.me/api/subs');
     expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({
-      routes: expect.arrayContaining([
-        expect.objectContaining({ via: 'k2v5://udid:tok@node-A.example.com:443?ech=x' }),
-      ]),
+      config: expect.objectContaining({
+        routes: expect.arrayContaining([
+          expect.objectContaining({ via: 'k2v5://udid:tok@node-A.example.com:443?ech=x' }),
+        ]),
+      }),
     }));
   });
 
