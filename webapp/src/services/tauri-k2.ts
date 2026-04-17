@@ -40,11 +40,14 @@ export async function injectTauriGlobals(): Promise<void> {
     run: async <T = any>(action: string, params?: any): Promise<SResponse<T>> => {
       console.debug('[K2:Tauri] run: action=' + action);
       try {
-        // Daemon handleUp expects params.config + pid for lifecycle monitoring
+        // Daemon handleUp expects params.config + pid for lifecycle monitoring.
+        // params is the envelope { config, alwaysOn } assembled in the webapp
+        // (see connection.store). Flatten into wrappedParams + pid — daemon
+        // ignores unknown fields so alwaysOn passes through harmlessly.
         let wrappedParams: any = params ?? null;
         if (action === 'up' && params) {
           const pid = await window._platform?.getPid?.();
-          wrappedParams = { config: params, ...(pid != null && { pid }) };
+          wrappedParams = { ...params, ...(pid != null && { pid }) };
         }
         // Route adb-* actions to the helper daemon endpoint
         const command = action.startsWith('adb-') ? 'daemon_helper_exec' : 'daemon_exec';
