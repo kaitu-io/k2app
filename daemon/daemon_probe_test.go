@@ -125,10 +125,15 @@ func (r *responseRecorder) decode(t *testing.T) Response {
 }
 
 func TestResolveSubscriptions_InstallsScoreSource(t *testing.T) {
-	// Preload registry with steering data.
+	// Preload registry with steering data. Two consecutive unreachable
+	// records are required to confirm exclusion (see Registry flake-tolerance
+	// threshold — a single zero is treated as no-data).
 	d := New()
 	d.probeRegistry.Record("k2v5://u:t@good:443", wire.ProbeStats{
 		Reachable: true, EchoSupported: true, AvgRttMs: 20, JitterMs: 5, MeasuredAt: time.Now(),
+	})
+	d.probeRegistry.Record("k2v5://u:t@bad:443", wire.ProbeStats{
+		Reachable: false, MeasuredAt: time.Now(),
 	})
 	d.probeRegistry.Record("k2v5://u:t@bad:443", wire.ProbeStats{
 		Reachable: false, MeasuredAt: time.Now(),

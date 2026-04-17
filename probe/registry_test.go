@@ -61,16 +61,44 @@ func TestRegistry_EchoUnsupportedSentinel(t *testing.T) {
 	}
 }
 
-func TestRegistry_UnreachableReturnsZero(t *testing.T) {
+func TestRegistry_SingleUnreachable_TreatedAsNoData(t *testing.T) {
+	// One zero-scoring probe is treated as "not yet confirmed unreachable".
+	// Score returns ok=false so Pick falls back to neutral weighting.
+	// This prevents a single network blip from black-holing a healthy server.
 	r := NewRegistry(15 * time.Minute)
 	url := "k2v5://u:t@host:443"
 	r.Record(url, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
+	if _, ok := r.Score(url); ok {
+		t.Error("single zero should return ok=false (treat as no-data)")
+	}
+}
+
+func TestRegistry_TwoConsecutiveZeros_HardExcluded(t *testing.T) {
+	// Two consecutive zero probes confirm unreachability. Score now returns
+	// (0, true) so Pick hard-excludes.
+	r := NewRegistry(15 * time.Minute)
+	url := "k2v5://u:t@host:443"
+	r.Record(url, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
+	r.Record(url, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
 	score, ok := r.Score(url)
 	if !ok {
-		t.Fatal("ok=false for unreachable — record exists")
+		t.Fatal("two consecutive zeros should be confirmed (ok=true)")
 	}
 	if score != 0 {
 		t.Errorf("score = %v, want 0", score)
+	}
+}
+
+func TestRegistry_NonZeroResetsConsecutiveCount(t *testing.T) {
+	// A healthy probe between zeros resets the counter. The next zero is
+	// again treated as a single-flake (ok=false), not hard exclusion.
+	r := NewRegistry(15 * time.Minute)
+	url := "k2v5://u:t@host:443"
+	r.Record(url, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
+	r.Record(url, mkStats(40, 0, true))
+	r.Record(url, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
+	if _, ok := r.Score(url); ok {
+		t.Error("counter not reset after healthy probe: got ok=true, want ok=false")
 	}
 }
 
