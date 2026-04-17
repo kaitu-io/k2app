@@ -4,6 +4,7 @@ import { CloudTunnelList } from '../CloudTunnelList';
 import type { TunnelListResponse } from '../../services/api-types';
 import { useProbeStore } from '../../stores/probe.store';
 import { sortTunnelsByRecommendation } from '../../utils/tunnel-sort';
+import { runProbe } from '../../services/probe-service';
 
 // --- Mock state objects ---
 
@@ -273,5 +274,41 @@ describe('CloudTunnelList with probe data', () => {
     const items = screen.getAllByRole('listitem');
     expect(items[0]).toHaveTextContent('B-fast');
     expect(items[1]).toHaveTextContent('A-slow');
+  });
+});
+
+describe('CloudTunnelList periodic probe', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    mockAuthState.isAuthenticated = true;
+    mockVPNState.state = 'idle';
+    mockCacheGet.mockReturnValue(null);
+    useProbeStore.setState({ results: new Map(), inFlight: new Set(), lastUpdated: 0 });
+    vi.mocked(sortTunnelsByRecommendation).mockImplementation((ts: any) => ts);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('re-runs probe every 5 minutes while mounted', async () => {
+    const tunnels: TunnelListResponse = {
+      items: [makeTunnel(1, 'Tokyo-01', 'JP')] as any,
+      echConfigList: 'ech',
+    };
+    mockCloudApiGet.mockResolvedValue({ code: 0, data: tunnels });
+
+    render(<CloudTunnelList {...defaultProps} />);
+    // Flush the cloudApi fetch + initial runProbe on mount.
+    await vi.waitFor(() => expect(vi.mocked(runProbe)).toHaveBeenCalledTimes(1));
+
+    // Advance 5 min — one more probe.
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    expect(vi.mocked(runProbe)).toHaveBeenCalledTimes(2);
+
+    // Another 5 min — third probe.
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    expect(vi.mocked(runProbe)).toHaveBeenCalledTimes(3);
   });
 });

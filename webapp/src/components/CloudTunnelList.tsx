@@ -201,12 +201,17 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
     }
   }, [serviceConnected, refresh]);
 
-  // Trigger a daemon probe after tunnels load (non-blocking). runProbe
-  // self-skips on web platform / non-idle VPN state, so it's safe to always call.
+  // Trigger a daemon probe after tunnels load, then re-probe every 5 minutes
+  // while mounted so an idle Dashboard stays fresh (matches daemon-side
+  // background cadence). runProbe self-skips on web platform / non-idle VPN
+  // state, so it's safe to always call.
   useEffect(() => {
-    if (tunnels.length > 0) {
+    if (tunnels.length === 0) return;
+    void runProbe(tunnels);
+    const id = window.setInterval(() => {
       void runProbe(tunnels);
-    }
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(id);
   }, [tunnels]);
 
   if (loading && tunnels.length === 0) {
