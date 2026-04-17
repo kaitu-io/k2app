@@ -47,6 +47,11 @@
     "favorites": "收藏的服务器",
     "allLocations": "所有位置",
     "advancedSettings": "高级设置",
+    "alwaysOn": {
+      "title": "保持 VPN 常开 (Always On)",
+      "description": "App 被系统释放后自动恢复连接。",
+      "warning": "开启后，VPN 关闭需在 iOS 系统设置中操作。"
+    },
     "searchLocations": "搜索位置...",
     "manualRefresh": "立即刷新",
     "refreshing": "刷新中...",
