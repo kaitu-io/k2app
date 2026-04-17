@@ -56,11 +56,14 @@ export async function injectCapacitorGlobals(): Promise<void> {
           }
 
           case 'up': {
-            if (!params) {
+            if (!params || !params.config) {
               return { code: -1, message: 'Config is required for connect' };
             }
             try {
-              await K2Plugin.connect({ config: JSON.stringify(params) });
+              await K2Plugin.connect({
+                config: JSON.stringify(params.config),
+                alwaysOn: params.alwaysOn === true,
+              });
               return { code: 0, message: 'ok' };
             } catch (connectErr) {
               const msg = connectErr instanceof Error ? connectErr.message : String(connectErr);

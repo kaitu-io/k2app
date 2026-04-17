@@ -276,7 +276,7 @@ describe('capacitor-k2', () => {
       expect(result.data.error.message).toBe('Connection timed out');
     });
 
-    it('test_k2_run_up_calls_connect_with_config', async () => {
+    it('test_k2_run_up_envelope_alwaysOn_true', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();
 
@@ -286,15 +286,45 @@ describe('capacitor-k2', () => {
         mode: 'tun' as const,
         routes: [{ via: 'k2v5://example.com:443', match: { all: true } }],
       };
-      const result = await window._k2.run('up', config);
+      const result = await window._k2.run('up', { config, alwaysOn: true });
 
       expect(mockK2Plugin.connect).toHaveBeenCalledWith({
         config: JSON.stringify(config),
+        alwaysOn: true,
       });
       expect(result.code).toBe(0);
     });
 
-    it('test_k2_run_up_without_config_returns_error', async () => {
+    it('test_k2_run_up_envelope_alwaysOn_omitted_defaults_false', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      mockK2Plugin.connect.mockResolvedValue(undefined);
+
+      const config = {
+        mode: 'tun' as const,
+        routes: [{ via: 'k2v5://example.com:443', match: { all: true } }],
+      };
+      const result = await window._k2.run('up', { config });
+
+      expect(mockK2Plugin.connect).toHaveBeenCalledWith({
+        config: JSON.stringify(config),
+        alwaysOn: false,
+      });
+      expect(result.code).toBe(0);
+    });
+
+    it('test_k2_run_up_missing_config_returns_error', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const result = await window._k2.run('up', { alwaysOn: true });
+
+      expect(result.code).toBe(-1);
+      expect(result.message).toMatch(/config/i);
+    });
+
+    it('test_k2_run_up_without_params_returns_error', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();
 
