@@ -2,9 +2,6 @@ import { screen, waitFor } from '@testing-library/react';
 import { render } from '../../test/utils/render';
 import { CloudTunnelList } from '../CloudTunnelList';
 import type { TunnelListResponse } from '../../services/api-types';
-import { useProbeStore } from '../../stores/probe.store';
-import { sortTunnelsByRecommendation } from '../../utils/tunnel-sort';
-import { runProbe } from '../../services/probe-service';
 
 // --- Mock state objects ---
 
@@ -37,23 +34,13 @@ vi.mock('../../services/cloud-api', () => ({
   },
 }));
 
-vi.mock('../../utils/tunnel-sort', () => ({
-  sortTunnelsByRecommendation: vi.fn((ts: unknown[]) => ts),
-}));
-
-// probe-service.runProbe is a no-op under test — we drive probe.store directly
-// so sort/render behaviour is deterministic without needing a daemon bridge.
-vi.mock('../../services/probe-service', () => ({
-  runProbe: vi.fn(() => Promise.resolve()),
-}));
-
 vi.mock('../../utils/country', () => ({
   getCountryName: (code: string) => code,
   getFlagIcon: (code: string) => code,
 }));
 
-vi.mock('../RecommendDot', () => ({
-  RecommendDot: () => <div data-testid="recommend-dot" />,
+vi.mock('../RecommendBar', () => ({
+  RecommendBar: () => <div data-testid="recommend-bar" />,
 }));
 
 // --- Helpers ---
@@ -104,15 +91,12 @@ describe('CloudTunnelList', () => {
   describe('SWR: cache hit → immediate render', () => {
     it('should render tunnel list immediately from cache without showing skeleton', async () => {
       mockCacheGet.mockReturnValue(cachedResponse);
-      // Background revalidate resolves later
       mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Tunnels from cache should be visible immediately (no skeleton)
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
       expect(screen.getByText('Singapore-01')).toBeInTheDocument();
-      // No skeleton should be present
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     });
 
@@ -122,10 +106,8 @@ describe('CloudTunnelList', () => {
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Initially 2 tunnels from cache
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
 
-      // After background refresh, new tunnel appears
       await waitFor(() => {
         expect(screen.getByText('Los Angeles-01')).toBeInTheDocument();
       });
@@ -140,7 +122,6 @@ describe('CloudTunnelList', () => {
       await waitFor(() => {
         expect(mockCacheSet).toHaveBeenCalledWith('api:tunnels', freshResponse);
       });
-      // Verify no TTL option was passed
       expect(mockCacheSet).not.toHaveBeenCalledWith('api:tunnels', freshResponse, expect.anything());
     });
   });
@@ -152,11 +133,9 @@ describe('CloudTunnelList', () => {
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Cached tunnels should remain
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
       expect(screen.getByText('Singapore-01')).toBeInTheDocument();
 
-      // Header should show refresh failed indicator
       await waitFor(() => {
         expect(screen.getByText('刷新失败')).toBeInTheDocument();
       });
@@ -168,10 +147,8 @@ describe('CloudTunnelList', () => {
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Cached tunnels should remain
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
 
-      // Header should show refresh failed indicator
       await waitFor(() => {
         expect(screen.getByText('刷新失败')).toBeInTheDocument();
       });
@@ -181,16 +158,13 @@ describe('CloudTunnelList', () => {
   describe('No cache + loading → skeleton UI', () => {
     it('should render skeleton items while loading with no cache', () => {
       mockCacheGet.mockReturnValue(null);
-      // Never resolves — keeps loading state
       mockCloudApiGet.mockReturnValue(new Promise(() => {}));
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Should have 3 skeleton list items
       const skeletons = screen.getAllByRole('listitem');
       expect(skeletons).toHaveLength(3);
 
-      // Should NOT show any real tunnel names
       expect(screen.queryByText('Tokyo-01')).not.toBeInTheDocument();
     });
   });
@@ -208,107 +182,26 @@ describe('CloudTunnelList', () => {
       });
     });
   });
-});
 
-describe('CloudTunnelList with probe data', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockAuthState.isAuthenticated = true;
-    mockVPNState.state = 'idle';
-    mockCacheGet.mockReturnValue(null);
-    useProbeStore.setState({ results: new Map(), inFlight: new Set(), lastUpdated: 0 });
-    // Restore identity behavior by default (vi.clearAllMocks clears implementations).
-    vi.mocked(sortTunnelsByRecommendation).mockImplementation((ts: any) => ts);
-  });
+  describe('Tunnel ordering', () => {
+    it('sorts tunnels alphabetically by country code', async () => {
+      const tunnels: TunnelListResponse = {
+        items: [
+          makeTunnel(1, 'Singapore-01', 'SG'),
+          makeTunnel(2, 'Japan-01', 'JP'),
+          makeTunnel(3, 'USA-01', 'US'),
+        ] as any,
+        echConfigList: 'ech',
+      };
+      mockCloudApiGet.mockResolvedValue({ code: 0, data: tunnels });
 
-  it('renders ProbeChip with RTT when store has fresh result', async () => {
-    const tunnels: TunnelListResponse = {
-      items: [makeTunnel(1, 'Tokyo-01', 'JP')] as any,
-      echConfigList: 'ech',
-    };
-    mockCloudApiGet.mockResolvedValue({ code: 0, data: tunnels });
-    useProbeStore.getState().record([{
-      url: 'k2v5://u:t@tokyo-01.example.com:443',
-      avgRttMs: 42, minRttMs: 40, maxRttMs: 50, jitterMs: 10, lossRate: 0,
-      reachable: true, echoSupported: true, probeScore: 0.7,
-      measuredAt: new Date().toISOString(),
-    }]);
+      render(<CloudTunnelList {...defaultProps} />);
+      await waitFor(() => expect(screen.getByText('Japan-01')).toBeInTheDocument());
 
-    render(<CloudTunnelList {...defaultProps} />);
-    await waitFor(() => {
-      expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
-      expect(screen.getByText(/42\s*ms/)).toBeInTheDocument();
+      const items = screen.getAllByRole('listitem');
+      expect(items[0]).toHaveTextContent('Japan-01');
+      expect(items[1]).toHaveTextContent('Singapore-01');
+      expect(items[2]).toHaveTextContent('USA-01');
     });
-  });
-
-  it('sorts tunnels so higher-probeScore comes first', async () => {
-    const tunnels: TunnelListResponse = {
-      items: [
-        makeTunnel(1, 'A-slow', 'JP'),
-        makeTunnel(2, 'B-fast', 'SG'),
-      ] as any,
-      echConfigList: 'ech',
-    };
-    mockCloudApiGet.mockResolvedValue({ code: 0, data: tunnels });
-
-    const now = new Date().toISOString();
-    useProbeStore.getState().record([
-      { url: 'k2v5://u:t@a-slow.example.com:443',
-        avgRttMs: 300, minRttMs: 290, maxRttMs: 330, jitterMs: 40, lossRate: 0,
-        reachable: true, echoSupported: true, probeScore: 0.2, measuredAt: now },
-      { url: 'k2v5://u:t@b-fast.example.com:443',
-        avgRttMs: 20, minRttMs: 18, maxRttMs: 25, jitterMs: 7, lossRate: 0,
-        reachable: true, echoSupported: true, probeScore: 0.9, measuredAt: now },
-    ]);
-
-    vi.mocked(sortTunnelsByRecommendation).mockImplementation((ts: any, provider: any) =>
-      [...ts].sort((a, b) =>
-        provider.getRouteQuality(b.domain.toLowerCase()) -
-        provider.getRouteQuality(a.domain.toLowerCase())
-      )
-    );
-
-    render(<CloudTunnelList {...defaultProps} />);
-    await waitFor(() => expect(screen.getByText('A-slow')).toBeInTheDocument());
-
-    const items = screen.getAllByRole('listitem');
-    expect(items[0]).toHaveTextContent('B-fast');
-    expect(items[1]).toHaveTextContent('A-slow');
-  });
-});
-
-describe('CloudTunnelList periodic probe', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
-    mockAuthState.isAuthenticated = true;
-    mockVPNState.state = 'idle';
-    mockCacheGet.mockReturnValue(null);
-    useProbeStore.setState({ results: new Map(), inFlight: new Set(), lastUpdated: 0 });
-    vi.mocked(sortTunnelsByRecommendation).mockImplementation((ts: any) => ts);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('re-runs probe every 5 minutes while mounted', async () => {
-    const tunnels: TunnelListResponse = {
-      items: [makeTunnel(1, 'Tokyo-01', 'JP')] as any,
-      echConfigList: 'ech',
-    };
-    mockCloudApiGet.mockResolvedValue({ code: 0, data: tunnels });
-
-    render(<CloudTunnelList {...defaultProps} />);
-    // Flush the cloudApi fetch + initial runProbe on mount.
-    await vi.waitFor(() => expect(vi.mocked(runProbe)).toHaveBeenCalledTimes(1));
-
-    // Advance 5 min — one more probe.
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-    expect(vi.mocked(runProbe)).toHaveBeenCalledTimes(2);
-
-    // Another 5 min — third probe.
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-    expect(vi.mocked(runProbe)).toHaveBeenCalledTimes(3);
   });
 });
