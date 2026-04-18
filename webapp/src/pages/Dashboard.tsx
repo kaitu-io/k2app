@@ -13,6 +13,8 @@ import {
   Radio,
   useTheme,
   alpha,
+  Alert,
+  Snackbar,
 } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
@@ -32,7 +34,7 @@ import { CollapsibleConnectionSection } from '../components/CollapsibleConnectio
 import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
 import { AlwaysOnToggle } from '../components/AlwaysOnToggle';
 import { useDashboard } from '../stores/dashboard.store';
-import { CloudTunnelList } from '../components/CloudTunnelList';
+import { CloudTunnelList, type CloudTunnelListHandle } from '../components/CloudTunnelList';
 import { getFlagIcon } from '../utils/country';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { cacheStore } from '../services/cache-store';
@@ -221,9 +223,33 @@ export default function Dashboard() {
   // CloudTunnelList selectedDomain — derived from activeTunnel
   const manualSelectedDomain = activeTunnel?.source === 'cloud' ? activeTunnel.domain : null;
 
+  // Manual refresh wiring: the refresh button lives in SmartServerSelector's
+  // tab row, but CloudTunnelList owns the fetch. We pipe the click through
+  // a ref + force-fresh so the button's spinner reflects a real network
+  // round-trip, and surface failures via a transient Snackbar rather than
+  // letting them bubble up as alarming inline errors.
+  const cloudTunnelListRef = useRef<CloudTunnelListHandle>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [refreshFailSnack, setRefreshFailSnack] = useState(false);
+
+  const handleManualRefresh = useCallback(async () => {
+    if (manualRefreshing) return;
+    setManualRefreshing(true);
+    setRefreshFailSnack(false);
+    try {
+      await cloudTunnelListRef.current?.refresh({ force: true });
+    } catch (err) {
+      console.warn('[Dashboard] manual refresh failed:', err);
+      setRefreshFailSnack(true);
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [manualRefreshing]);
+
   // Manual (指定服务器) tab content — always mounted via SmartServerSelector display toggle
   const manualTabContent = (
     <CloudTunnelList
+      ref={cloudTunnelListRef}
       selectedDomain={manualSelectedDomain}
       onSelect={handleCloudTunnelSelect}
       disabled={isInteractive}
@@ -427,6 +453,8 @@ export default function Dashboard() {
             isInteractive={!isInteractive}
             manualContent={manualTabContent}
             selfHostedContent={selfHostedTabContent}
+            onManualRefresh={() => { void handleManualRefresh(); }}
+            manualRefreshing={manualRefreshing}
           />
         )}
 
@@ -601,6 +629,24 @@ export default function Dashboard() {
       </Box>
 
       <DisconnectFeedbackDialog />
+
+      {/* Manual-refresh failure toast — warning (not error) tone, auto-dismiss,
+          so a transient network blip doesn't read as an app-wide outage. */}
+      <Snackbar
+        open={refreshFailSnack}
+        autoHideDuration={4000}
+        onClose={() => setRefreshFailSnack(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert
+          severity="warning"
+          variant="filled"
+          onClose={() => setRefreshFailSnack(false)}
+          sx={{ width: '100%' }}
+        >
+          {t('dashboard:dashboard.refreshRetryHint')}
+        </Alert>
+      </Snackbar>
     </DashboardContainer>
   );
 }
