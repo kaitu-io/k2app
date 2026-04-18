@@ -186,6 +186,78 @@ No `probe` action fires from the webapp under any Dashboard interaction.
    thresholds above.
 4. Type check: `cd webapp && npx tsc --noEmit` clean.
 
+## Amendment 2026-04-18: Manual Refresh + Error Display
+
+Follow-up addition — the silent dashboard (no probe, no visible header)
+made two pre-existing problems obvious:
+
+1. Users have no way to **manually refresh** the cloud node list on the
+   `指定服务器` tab.
+2. The full-screen "加载节点列表失败" error looks catastrophic and leads
+   users to believe the whole feature is broken, even though
+   self-hosted tunnels and cached cloud nodes remain usable.
+
+### Manual refresh button
+
+- Lives on the right edge of `SmartServerSelector`'s tab row, only
+  rendered when the active tab is `manual`.
+- `CloudTunnelList` becomes `forwardRef<CloudTunnelListHandle, Props>`
+  exposing `{ refresh: (opts?: { force?: boolean }) => Promise<void> }`.
+- `refresh({ force: true })` bypasses the SWR cache-hit short-circuit
+  and does a blocking fetch, so the button's spinner reflects a real
+  network round-trip. Cache write behaviour unchanged.
+- Mount, 5-minute interval, login-recovery and service-recovery paths
+  keep calling `refresh()` (no force) — SWR identical to v0.4.1.
+
+### Error display
+
+Three distinct scenarios, three distinct treatments:
+
+1. **First-ever load, no cache, fetch fails** — replace the red
+   "加载节点列表失败" full-screen error with an `EmptyState`:
+   `CloudOffIcon` in muted grey, title
+   `dashboard.cloudNodesUnavailable` ("暂时无法获取云端节点"), body
+   `dashboard.cloudNodesUnavailableHint` ("请检查网络后点击重试，或切换到
+   【自部署】继续使用"), action = Retry button that calls
+   `refresh({ force: true })`. Tone is "temporary hiccup", not
+   "catastrophic failure".
+2. **Background refresh fails, tunnels already rendered** — completely
+   silent. Keep the existing tunnels on screen; log a warn to console.
+   Remove the dead "刷新失败" header caption (currently hidden by
+   `hideHeader`; stale code).
+3. **Manual refresh click fails** — Dashboard wraps the ref call in
+   try/catch. On failure, show an MUI `Snackbar` + `Alert severity="warning"`
+   anchored top-center, `dashboard.refreshRetryHint` ("节点列表未能更新，
+   稍后会自动重试"), 4-second auto-dismiss. On success, stop the spinner
+   silently (no success toast, to avoid churn).
+
+`refresh({ force: true })` rethrows on fetch failure so Dashboard's
+try/catch can distinguish success from failure. Default (SWR) path
+remains non-throwing for backwards compatibility with mount-effect
+callers.
+
+### i18n additions (7 locales, `dashboard` namespace)
+
+- `cloudNodesUnavailable`
+- `cloudNodesUnavailableHint`
+- `refreshRetryHint`
+
+The existing key `errorLoadingNodes` becomes unreferenced by this file
+but is preserved (other components may still use it; grep to confirm).
+
+### Files Touched (Amendment)
+
+**Modified**
+- `webapp/src/components/CloudTunnelList.tsx` — forwardRef, refresh-force,
+  error UI swap, delete dead header caption
+- `webapp/src/components/SmartServerSelector.tsx` — new props + tab-row
+  refresh IconButton
+- `webapp/src/pages/Dashboard.tsx` — ref, handler, Snackbar
+- `webapp/src/i18n/locales/*/dashboard.json` — 3 new keys × 7 locales
+
+**Added**
+- `webapp/src/components/__tests__/SmartServerSelector.test.tsx`
+
 ## Out of Scope / Future Work
 
 - How and where a future UI will surface the probe capability (e.g. a
