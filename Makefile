@@ -185,7 +185,9 @@ publish-docker:
 deploy-api:
 	mkdir -p release
 	cd api && go mod tidy
-	cd api/cmd && go mod tidy && GOOS=linux GOARCH=amd64 go build -o ../../release/kaitu-center .
+	cd api/cmd && go mod tidy && GOOS=linux GOARCH=amd64 go build \
+		-ldflags "-s -w -X main.Version=$(VERSION) -X main.GitCommit=$(K2_COMMIT) -X main.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		-o ../../release/kaitu-center .
 	bash scripts/deploy-center.sh
 
 publish-desktop:
