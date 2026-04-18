@@ -27,8 +27,6 @@ import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useConnectionStore } from '../stores/connection.store';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
-import { useProbeStore } from '../stores/probe.store';
-import { sortTunnelsByRecommendation } from '../utils/tunnel-sort';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
@@ -193,10 +191,11 @@ export default function Dashboard() {
 
   // Migration aid: users whose persisted serverMode was 'smart' land on
   // 'manual' without a selectedCloudTunnel — auto-select the first sorted
-  // tunnel so they can connect immediately without re-picking.
+  // tunnel so they can connect immediately without re-picking. Ordering
+  // matches CloudTunnelList (country-alphabetical) so the chosen tunnel is
+  // visually the top row of the list.
   const serverModeLoaded = useConnectionStore((s) => s.serverModeLoaded);
   const selectedCloudTunnel = useConnectionStore((s) => s.selectedCloudTunnel);
-  const probeResults = useProbeStore((s) => s.results);
 
   useEffect(() => {
     if (!serverModeLoaded) return;
@@ -204,20 +203,15 @@ export default function Dashboard() {
     if (selectedCloudTunnel) return;
     if (cloudTunnels.length === 0) return;
 
-    const qualityProvider = {
-      getRouteQuality: (domain: string) => {
-        const r = probeResults.get(domain);
-        if (!r) return 0;
-        return r.probeScore > 0 ? r.probeScore : 0;
-      },
-    };
-    const sorted = sortTunnelsByRecommendation(cloudTunnels, qualityProvider);
+    const sorted = [...cloudTunnels].sort((a, b) =>
+      a.node.country.localeCompare(b.node.country)
+    );
     const first = sorted[0];
     if (first) {
       console.info('[Dashboard] auto-select first tunnel for migrating user:', first.domain);
       selectCloudTunnel(first);
     }
-  }, [serverModeLoaded, serverMode, selectedCloudTunnel, cloudTunnels, probeResults, selectCloudTunnel]);
+  }, [serverModeLoaded, serverMode, selectedCloudTunnel, cloudTunnels, selectCloudTunnel]);
 
   // Stable onSelect for CloudTunnelList — reads activeTunnel at call time, no dep churn
   const handleCloudTunnelSelect = useCallback((tunnel: Tunnel) => {
