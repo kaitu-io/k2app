@@ -111,7 +111,9 @@ func processAbandonedOrders(ctx context.Context, batchID, slug string, windowSta
 		PayAmount uint64
 	}
 
-	// 查询时间窗口内未支付订单，排除已有后续付款的用户
+	// 查询时间窗口内未支付订单，排除：
+	// 1) windowStart 之后已有付款订单的用户
+	// 2) 已完成首单的老客户（他们走 renewal-*/winback-* 独立邮件链路，不受 abandoned-* 新客激进折扣打扰）
 	// 不使用 GROUP BY（MySQL ONLY_FULL_GROUP_BY 兼容），在 Go 侧按 user_id 去重
 	var allOrders []abandonedOrderInfo
 	err := db.Get().Model(&Order{}).
@@ -121,6 +123,11 @@ func processAbandonedOrders(ctx context.Context, batchID, slug string, windowSta
 			db.Get().Model(&Order{}).
 				Select("DISTINCT user_id").
 				Where("is_paid = ? AND created_at >= ?", true, windowStart),
+		).
+		Where("user_id NOT IN (?)",
+			db.Get().Model(&User{}).
+				Select("id").
+				Where("is_first_order_done = ?", true),
 		).
 		Order("created_at DESC").
 		Find(&allOrders).Error
