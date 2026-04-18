@@ -1,6 +1,7 @@
+import { useRef, useEffect } from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import { render } from '../../test/utils/render';
-import { CloudTunnelList } from '../CloudTunnelList';
+import { CloudTunnelList, type CloudTunnelListHandle } from '../CloudTunnelList';
 import type { TunnelListResponse } from '../../services/api-types';
 
 // --- Mock state objects ---
@@ -126,8 +127,8 @@ describe('CloudTunnelList', () => {
     });
   });
 
-  describe('SWR: cache hit + background failure → list stays with error indicator', () => {
-    it('should keep cached tunnels visible when background refresh returns error code', async () => {
+  describe('SWR: cache hit + background failure → list stays, no user-visible error', () => {
+    it('should keep cached tunnels visible when background refresh returns error code (silent)', async () => {
       mockCacheGet.mockReturnValue(cachedResponse);
       mockCloudApiGet.mockResolvedValue({ code: -1, message: 'Network error' });
 
@@ -136,12 +137,16 @@ describe('CloudTunnelList', () => {
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
       expect(screen.getByText('Singapore-01')).toBeInTheDocument();
 
+      // No red "刷新失败" caption — background failures stay silent so
+      // users aren't alarmed by transient network blips when their list
+      // is still usable from cache.
       await waitFor(() => {
-        expect(screen.getByText('刷新失败')).toBeInTheDocument();
+        expect(mockCloudApiGet).toHaveBeenCalled();
       });
+      expect(screen.queryByText('刷新失败')).not.toBeInTheDocument();
     });
 
-    it('should keep cached tunnels visible when background refresh throws network error', async () => {
+    it('should keep cached tunnels visible when background refresh throws (silent)', async () => {
       mockCacheGet.mockReturnValue(cachedResponse);
       mockCloudApiGet.mockRejectedValue(new Error('fetch failed'));
 
@@ -150,8 +155,9 @@ describe('CloudTunnelList', () => {
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
 
       await waitFor(() => {
-        expect(screen.getByText('刷新失败')).toBeInTheDocument();
+        expect(mockCloudApiGet).toHaveBeenCalled();
       });
+      expect(screen.queryByText('刷新失败')).not.toBeInTheDocument();
     });
   });
 
@@ -169,17 +175,20 @@ describe('CloudTunnelList', () => {
     });
   });
 
-  describe('No cache + API failure → error UI with retry', () => {
-    it('should show error UI when API fails and no cache exists', async () => {
+  describe('No cache + API failure → friendly empty state', () => {
+    it('shows friendly "cloud nodes unavailable" copy, not alarming "failed" wording', async () => {
       mockCacheGet.mockReturnValue(null);
       mockCloudApiGet.mockResolvedValue({ code: -1, message: 'Network error' });
 
       render(<CloudTunnelList {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('加载节点列表失败')).toBeInTheDocument();
-        expect(screen.getByText('重试加载')).toBeInTheDocument();
+        expect(screen.getByText('暂时无法获取云端节点')).toBeInTheDocument();
       });
+      expect(screen.getByText('重试加载')).toBeInTheDocument();
+
+      // Old alarming copy should be gone.
+      expect(screen.queryByText('加载节点列表失败')).not.toBeInTheDocument();
     });
   });
 
@@ -202,6 +211,68 @@ describe('CloudTunnelList', () => {
       expect(items[0]).toHaveTextContent('Japan-01');
       expect(items[1]).toHaveTextContent('Singapore-01');
       expect(items[2]).toHaveTextContent('USA-01');
+    });
+  });
+
+  describe('Imperative handle: refresh({force})', () => {
+    function HarnessRefresh({ onReady }: { onReady: (h: CloudTunnelListHandle) => void }) {
+      const ref = useRef<CloudTunnelListHandle>(null);
+      useEffect(() => {
+        if (ref.current) onReady(ref.current);
+      }, [onReady]);
+      return <CloudTunnelList ref={ref} {...defaultProps} />;
+    }
+
+    it('force=true bypasses cache-hit fast-path and issues a network fetch', async () => {
+      mockCacheGet.mockReturnValue(cachedResponse);
+      mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
+
+      let handle: CloudTunnelListHandle | null = null;
+      render(<HarnessRefresh onReady={(h) => { handle = h; }} />);
+
+      // Initial mount hits cache — no blocking fetch required for render.
+      expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
+      await waitFor(() => expect(handle).not.toBeNull());
+
+      mockCloudApiGet.mockClear();
+      await handle!.refresh({ force: true });
+
+      // Forced call goes through cloudApi even though cache is available.
+      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/tunnels/k2v4');
+    });
+
+    it('force=true rethrows on non-zero response code', async () => {
+      mockCacheGet.mockReturnValue(cachedResponse);
+      mockCloudApiGet.mockResolvedValue({ code: -1, message: 'oops' });
+
+      let handle: CloudTunnelListHandle | null = null;
+      render(<HarnessRefresh onReady={(h) => { handle = h; }} />);
+      await waitFor(() => expect(handle).not.toBeNull());
+
+      await expect(handle!.refresh({ force: true })).rejects.toThrow(/code=-1/);
+    });
+
+    it('force=true rethrows on thrown fetch error', async () => {
+      mockCacheGet.mockReturnValue(cachedResponse);
+      mockCloudApiGet.mockRejectedValue(new Error('network down'));
+
+      let handle: CloudTunnelListHandle | null = null;
+      render(<HarnessRefresh onReady={(h) => { handle = h; }} />);
+      await waitFor(() => expect(handle).not.toBeNull());
+
+      await expect(handle!.refresh({ force: true })).rejects.toThrow('network down');
+    });
+
+    it('default (non-forced) refresh is silent on cache-hit background failure', async () => {
+      mockCacheGet.mockReturnValue(cachedResponse);
+      mockCloudApiGet.mockResolvedValue({ code: -1, message: 'bg fail' });
+
+      let handle: CloudTunnelListHandle | null = null;
+      render(<HarnessRefresh onReady={(h) => { handle = h; }} />);
+      await waitFor(() => expect(handle).not.toBeNull());
+
+      // Must not throw — SWR path swallows background errors.
+      await expect(handle!.refresh()).resolves.toBeUndefined();
     });
   });
 });

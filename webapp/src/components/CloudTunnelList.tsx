@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState, useMemo, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -35,7 +35,25 @@ interface CloudTunnelListProps {
   hideHeader?: boolean;
 }
 
-export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, hideHeader }: CloudTunnelListProps) {
+/**
+ * Imperative handle exposed via ref. Used by Dashboard to wire a manual
+ * refresh button that lives outside the list (in SmartServerSelector's
+ * tab row).
+ */
+export interface CloudTunnelListHandle {
+  /**
+   * Refresh the cloud tunnel list.
+   * - `{ force: true }` bypasses the SWR cache-hit fast-path and performs
+   *   a blocking fetch, rethrowing on failure so the caller can observe
+   *   the outcome.
+   * - Default (no opts) uses SWR semantics (cache hit = immediate + background
+   *   revalidate), never throws.
+   */
+  refresh: (opts?: { force?: boolean }) => Promise<void>;
+}
+
+export const CloudTunnelList = forwardRef<CloudTunnelListHandle, CloudTunnelListProps>(
+function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, hideHeader }, ref) {
   const { t } = useTranslation();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -71,17 +89,22 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refresh = useCallback(async () => {
-    // Clear any pending retry timeout
+  const refresh = useCallback(async (opts?: { force?: boolean }): Promise<void> => {
+    const force = opts?.force === true;
+
+    // Clear any pending retry timeout — a fresh request supersedes backoff.
     if (retryTimeoutRef.current) {
       clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
 
-    try {
-      setRefreshing(true);
-      setError(null);
-      // Check cache first (SWR: return immediately, refresh in background)
+    setRefreshing(true);
+    setError(null);
+
+    // SWR fast-path: return cached immediately, revalidate in background.
+    // Skipped when caller explicitly requests a fresh fetch (force=true)
+    // so a manual refresh button reflects real network progress.
+    if (!force) {
       const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
       if (cached) {
         const loadedTunnels = cached.items || [];
@@ -89,7 +112,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
         setEchConfigList(cached.echConfigList);
         retryCountRef.current = 0;
         onTunnelsLoadedRef.current?.(loadedTunnels);
-        // Background revalidate
+        // Background revalidate — fire and forget, no state throw.
         cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
           if (res.code === 0 && res.data) {
             cacheStore.set('api:tunnels', res.data);
@@ -97,54 +120,61 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
             setEchConfigList(res.data.echConfigList);
             onTunnelsLoadedRef.current?.(res.data.items || []);
           } else {
-            console.warn('[CloudTunnelList] Background refresh failed (code=%d), using cached tunnels (%d items)', res.code, cached.items?.length ?? 0);
-            setError(new Error('Background refresh failed'));
+            console.warn('[CloudTunnelList] Background refresh failed (code=%d), keeping cached tunnels (%d items)', res.code, cached.items?.length ?? 0);
           }
         }).catch(err => {
-          console.warn('[CloudTunnelList] Background refresh network error, using cached tunnels', err);
-          setError(new Error('Background refresh failed'));
+          console.warn('[CloudTunnelList] Background refresh network error, keeping cached tunnels', err);
         });
+        setRefreshing(false);
+        setLoading(false);
         return;
       }
+    }
 
+    // Blocking fetch — either no cache or force=true.
+    try {
       const response = await cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4');
 
       if (response.code === 0 && response.data) {
         const loadedTunnels = response.data.items || [];
         setTunnels(loadedTunnels);
-        // Store ECH config list for K2v4 connections
         setEchConfigList(response.data.echConfigList);
         cacheStore.set('api:tunnels', response.data);
         console.debug('[CloudTunnelList] ECH config from API:', response.data.echConfigList ? `present (len=${response.data.echConfigList.length})` : 'empty');
-        // Reset retry count on success
         retryCountRef.current = 0;
-        // Notify parent about loaded tunnels for state sync
         onTunnelsLoadedRef.current?.(loadedTunnels);
-      } else if (response.code !== 0) {
-        // Handle non-success response codes (e.g., 401, -1 for network error)
-        // Skip logging for 401 since user is just not logged in
+      } else {
+        // Skip noisy log for 401 (user not logged in yet).
         if (response.code !== 401) {
           console.error('[CloudTunnelList] Failed to fetch cloud tunnels, code:', response.code, response.message);
         }
         setError(new Error('Failed to load cloud tunnels'));
-        // Schedule auto-retry with exponential backoff (max 5 retries, 3s/6s/12s/24s/48s)
-        if (retryCountRef.current < 5) {
+        // Auto-retry with exponential backoff only on non-forced calls;
+        // force=true is user-initiated and will surface the failure
+        // directly via rethrow, user decides when to retry.
+        if (!force && retryCountRef.current < 5) {
           const delay = Math.min(3000 * Math.pow(2, retryCountRef.current), 48000);
           retryCountRef.current += 1;
           console.debug(`[CloudTunnelList] Scheduling retry #${retryCountRef.current} in ${delay}ms`);
           retryTimeoutRef.current = setTimeout(() => {
-            refresh();
+            void refresh();
           }, delay);
+        }
+        if (force) {
+          throw new Error(`cloud tunnels fetch failed (code=${response.code})`);
         }
       }
     } catch (err) {
       console.error('[CloudTunnelList] Failed to fetch cloud tunnels:', err);
       setError(err instanceof Error ? err : new Error('Unknown error'));
+      if (force) throw err;
     } finally {
       setRefreshing(false);
       setLoading(false);
     }
   }, []);
+
+  useImperativeHandle(ref, () => ({ refresh }), [refresh]);
 
   // Initial load and cleanup
   useEffect(() => {
@@ -217,37 +247,40 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
     );
   }
 
-  // Show error state with retry button when load failed and no tunnels
+  // Show friendly empty state when load failed and no tunnels are
+  // cached — a network hiccup shouldn't read as "App is broken",
+  // since self-hosted tunnels and future retries remain available.
   if (error && tunnels.length === 0) {
     return (
       <Box sx={{ px: 2, py: 2 }}>
-        <Stack spacing={1.5} alignItems="center">
-          <Typography variant="body2" color="error.main" textAlign="center">
-            {t('dashboard:dashboard.errorLoadingNodes')}
-          </Typography>
-          <IconButton
-            onClick={refresh}
-            disabled={refreshing}
-            sx={{
-              bgcolor: 'action.hover',
-              '&:hover': { bgcolor: 'action.selected' },
-            }}
-          >
-            <RefreshIcon
-              sx={{
-                fontSize: 24,
-                animation: refreshing ? 'spin 1s linear infinite' : 'none',
-                '@keyframes spin': {
-                  '0%': { transform: 'rotate(0deg)' },
-                  '100%': { transform: 'rotate(360deg)' }
-                }
-              }}
-            />
-          </IconButton>
-          <Typography variant="caption" color="text.secondary">
-            {t('dashboard:dashboard.retryLoading')}
-          </Typography>
-        </Stack>
+        <EmptyState
+          icon={<CloudOffIcon sx={{ fontSize: 48, color: 'text.disabled' }} />}
+          title={t('dashboard:dashboard.cloudNodesUnavailable')}
+          description={t('dashboard:dashboard.cloudNodesUnavailableHint')}
+          action={
+            <Button
+              onClick={() => { void refresh({ force: true }).catch(() => {}); }}
+              disabled={refreshing}
+              variant="outlined"
+              size="small"
+              startIcon={
+                <RefreshIcon
+                  sx={{
+                    fontSize: 18,
+                    animation: refreshing ? 'spin 1s linear infinite' : 'none',
+                    '@keyframes spin': {
+                      '0%': { transform: 'rotate(0deg)' },
+                      '100%': { transform: 'rotate(360deg)' }
+                    }
+                  }}
+                />
+              }
+            >
+              {t('dashboard:dashboard.retryLoading')}
+            </Button>
+          }
+          minHeight={150}
+        />
       </Box>
     );
   }
@@ -262,7 +295,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
           description={t('dashboard:dashboard.noNodesDescription')}
           action={
             <Button
-              onClick={refresh}
+              onClick={() => { void refresh(); }}
               disabled={refreshing}
               variant="outlined"
               size="small"
@@ -312,13 +345,8 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
           </Typography>
         </Stack>
         <Stack direction="row" spacing={0.5} alignItems="center">
-          {error && (
-            <Typography variant="caption" sx={{ color: 'error.main', fontSize: '0.65rem' }}>
-              {t('dashboard:dashboard.refreshFailed')}
-            </Typography>
-          )}
           <Tooltip title={t('dashboard:dashboard.manualRefresh') || 'Refresh'}>
-            <IconButton size="small" onClick={refresh} disabled={refreshing} sx={{ p: 0.5 }}>
+            <IconButton size="small" onClick={() => void refresh()} disabled={refreshing} sx={{ p: 0.5 }}>
               <RefreshIcon
                 sx={{
                   fontSize: 18,
@@ -392,3 +420,4 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
     </Box>
   );
 }
+);
