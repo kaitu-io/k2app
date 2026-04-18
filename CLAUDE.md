@@ -2,73 +2,25 @@
 
 Tauri v2 desktop + Capacitor 6 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management.
 
+This file is an **index**. Per-layer details live in each directory's `CLAUDE.md`.
+
 ## Quick Commands
 
 ```bash
-cd web && yarn dev               # Next.js website (Turbopack)
-cd web && yarn test              # vitest + playwright
-make dev-standalone               # Standalone browser dev (macOS, no Tauri)
-make dev-macos                   # Tauri desktop dev (macOS)
-make dev-windows                 # Tauri desktop dev (Windows)
-make build-macos                 # Signed macOS PKG (universal binary)
-make build-windows               # Signed Windows NSIS installer (cross-compiled on macOS via cargo-xwin)
-make build-linux                  # Embedded-webapp Go binary + install.sh tarball (cross-compiles from macOS)
-make build-android               # gomobile bind + cap sync + assembleRelease
-make build-ios                   # gomobile bind + cap sync + xcodebuild archive
-make upload-macos                # Upload macOS artifacts to S3 + CDN invalidation
-make upload-windows              # Upload Windows artifacts to S3 + CDN invalidation
-make upload-linux                # Upload Linux artifacts to S3 + CDN invalidation
-make upload-android              # Upload Android APK to S3 + CDN invalidation
-make upload-web                  # Upload webapp.zip to S3 + CDN invalidation
-make publish-mobile VERSION=x.y.z  # Generate + upload mobile latest.json (phase 2 release)
-make dev-android                 # gomobile bind + cap sync + cap run android
-make dev-ios                     # cap sync + cap run ios
-cd webapp && yarn test           # vitest
-cd desktop/src-tauri && cargo test  # Rust tests
-cd api && go test ./...          # Center API tests
-cd tools/kaitu-center && npm run build  # Build MCP server (NodeNext ESM)
-cd tools/kaitu-center && npm test       # vitest for MCP server
-cd mcp && go test ./...          # Go MCP server tests
-scripts/test_build.sh            # Full build verification (14 checks)
-yarn install                     # Always run from root (workspace)
+cd web && yarn dev                          # Next.js website (Turbopack)
+make dev-standalone                         # Standalone browser dev (macOS, no Tauri)
+make dev-macos / make dev-windows           # Tauri desktop dev
+make dev-android / make dev-ios             # Mobile dev (gomobile bind + cap sync + cap run)
+make build-macos / build-windows / build-linux / build-android / build-ios
+make upload-macos / upload-windows / upload-linux / upload-android / upload-web
+make publish-mobile VERSION=x.y.z           # Mobile latest.json (phase 2 release)
+cd webapp && yarn test                      # vitest
+cd desktop/src-tauri && cargo test          # Rust tests
+cd api && go test ./...                     # Center API tests
+cd mcp && go test ./...                     # Go MCP server tests
+scripts/test_build.sh                       # Full build verification (14 checks)
+yarn install                                # Always from root (workspace)
 ```
-
-## Windows k2 Test Scripts
-
-Test the k2 Go tunnel against the HK k2v5 test server. Configs and scripts are in the repo root / `scripts/`.
-
-**1. Build k2 binary** (from Git Bash, no admin):
-```bash
-cd k2 && GOOS=windows GOARCH=amd64 go build -tags nowebapp -o ../desktop/src-tauri/binaries/k2-x86_64-pc-windows-msvc.exe ./cmd/k2
-```
-
-**2. Start daemon** (requires admin — TUN mode creates virtual NIC):
-```powershell
-# From PowerShell (auto-elevates via UAC):
-.\scripts\start-k2-admin.ps1
-```
-This starts the daemon in foreground using `k2-test-config.yml` (TUN mode, global routing, debug logs to `C:\Users\david\k2-debug.log`). Press Ctrl+C to stop.
-
-**3. Control from Git Bash** (no admin needed, daemon must be running):
-```bash
-./scripts/test-k2-ctl.sh up       # Connect tunnel (sends UP to daemon API)
-./scripts/test-k2-ctl.sh status   # Connection status JSON
-./scripts/test-k2-ctl.sh down     # Disconnect
-./scripts/test-k2-ctl.sh logs     # Tail debug log
-./scripts/test-k2-ctl.sh test     # Connectivity tests (IP, Google, YouTube, speed)
-./scripts/test-k2-ctl.sh debug    # Set log level to debug
-./scripts/test-k2-ctl.sh info     # Set log level to info
-```
-
-**4. Daemon API** (port 1778 for test, 1777 for app):
-```bash
-curl -s http://127.0.0.1:1778/ping                                          # Health check
-curl -s -X POST http://127.0.0.1:1778/api/core -d '{"action":"status"}'     # Status
-```
-
-**Config files:**
-- `k2-test-config.yml` — TUN mode (admin required, full VPN, tests HandleUDP/QUIC)
-- `k2-test-proxy-config.yml` — Proxy mode (no admin, SOCKS5 on :1080, TCP only)
 
 ## Project Structure
 
@@ -77,76 +29,23 @@ k2/                  Go core (submodule, read-only — has its own CLAUDE.md)
   engine/            Unified tunnel lifecycle manager (desktop + mobile)
   daemon/            HTTP API shell over engine (desktop only)
   appext/            gomobile type adapter over engine (mobile + macOS sysext)
-webapp/              React + MUI frontend (see webapp/CLAUDE.md)
-  src/services/      Cloud API (cloudApi, k2api), auth, caching, platform fallbacks
-  src/core/          K2 VPN bridge (getK2, waitForK2, polling)
-  src/types/         Core interfaces (IK2Vpn, IPlatform, ISecureStorage)
-  src/stores/        Zustand state (vpn-machine, vpn, connection, config, auth, alert, layout, dashboard, login-dialog, self-hosted, onboarding)
-  src/pages/         Route pages (Dashboard, Purchase, Invite, Account, 15+ sub-pages)
-  src/components/    Shared UI (LoginDialog, AuthGate, guards, global components)
-  src/utils/         Error handling, version compare, tunnel sorting
-  src/i18n/          Localization (7 locales, 15+ namespaces)
-web/                 Next.js website + admin dashboard (see web/CLAUDE.md)
-  src/app/[locale]/  Public pages (install, purchase, account, wallet, releases)
-  src/app/(manager)/ Admin dashboard (users, orders, nodes, tunnels, EDM, cloud, approvals, license-keys, license-key-batches, tickets, usages)
-api/                 Center API service — Go + Gin + GORM (see api/CLAUDE.md)
+webapp/              React + MUI frontend — shared across Web/Desktop/Mobile
+web/                 Next.js website + admin dashboard
+api/                 Center API service — Go + Gin + GORM
   cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
-  cmd/               CLI entry point (start, stop, migrate, health-check)
-desktop/             Tauri v2 Rust shell (see desktop/CLAUDE.md)
+desktop/             Tauri v2 Rust shell (macOS + Windows)
 mobile/              Capacitor 6 mobile app
 mobile/plugins/      K2Plugin (Swift + Kotlin) — native VPN bridge
-mobile/ios/          Xcode project (App + PacketTunnelExtension)
-mobile/android/      Gradle project (app module, flatDir AAR)
-tools/kaitu-center/ Center API tools — MCP server (Claude Code) + OpenClaw plugin (DevOps/Support/Marketing)
-  src/                 index.ts (MCP entry), openclaw.ts (OpenClaw entry), roles.ts, config.ts, ssh.ts, center-api.ts, tools/
+tools/kaitu-center/  MCP server (Claude Code) + OpenClaw plugin
 tools/kaitu-mail/    OpenClaw email plugin (himalaya CLI, per-account IMAP)
-mcp/                 Go MCP server for Claude Code (k2 user-facing tools: auth, servers, connect, plans, subscribe)
-scripts/             dev.sh, build-macos.sh, build-mobile-*.sh, test_build.sh
+mcp/                 Go MCP server for Claude Code (k2 user-facing tools)
+scripts/             Build, deploy, test helpers (see scripts/CLAUDE.md)
 docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
-.claude/settings.json  Project-level Claude Code config (MCP server registration)
-.claude/skills/      Skill files for Claude Code (kaitu-node-ops.md — node ops safety guardrails)
-.github/workflows/   CI (push/PR) + Release Desktop (v* tags) + Release OpenWrt
-Makefile             Build orchestration — version from package.json, k2 from submodule
-docs/plans/          Architecture design docs (43+ files, use `ls` to browse)
+.claude/             Claude Code project settings + skills
+.github/workflows/   CI + Release Desktop + Release OpenWrt
+Makefile             Build orchestration — version from package.json
+docs/plans/          Architecture design docs
 ```
-
-## Key Conventions
-
-- **Split globals architecture**: Frontend uses `window._k2` (VPN control) and `window._platform` (platform capabilities). Cloud API via `cloudApi.request()` in `src/services/`.
-- **VPN control boundary**: All VPN operations go through `window._k2.run(action, params)`. Never direct HTTP to `:1777` from webapp.
-- **Cloud API boundary**: All cloud API calls go through `cloudApi` / `k2api` in `src/services/`. Auth headers and token refresh handled automatically.
-- **Error display**: `response.message` is debug-only. Users see i18n text mapped from `response.code`. Never show raw backend messages.
-- **Version source of truth**: Root `package.json` `version` field. Tauri reads via `../../package.json` reference. k2 binary gets it via ldflags.
-- **k2 submodule**: Read-only. Built with `-tags nowebapp` (headless mode). Binary output to `desktop/src-tauri/binaries/`.
-- **i18n**: zh-CN primary, en-US secondary, plus ja, zh-TW, zh-HK, en-AU, en-GB. 15+ namespaces. New text goes to zh-CN first.
-- **MUI dark theme**: Material-UI 5 with custom theme tokens. No light mode.
-- **Webapp subagent tasks**: Use frontend-specialized agents for webapp UI decisions.
-- **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case. JS/TS expects camelCase. Native bridge layers (K2Plugin.swift/kt) must remap at boundary.
-- **Bridge transformStatus() mandatory**: Every bridge (`tauri-k2.ts`, `capacitor-k2.ts`) must implement `transformStatus()`. No pass-through of raw backend state. Daemon outputs `"stopped"` but webapp expects `"disconnected"`. Bridge synthesizes `state='error'` from `disconnected + lastError`; VPN machine then routes to `idle`/`reconnecting` based on `isRetrying`.
-- **VPN state machine**: `vpn-machine.store.ts` defines 6 explicit states (`idle`, `connecting`, `connected`, `reconnecting`, `disconnecting`, `serviceDown`) with a transition table. All state changes go through `dispatch(event, payload)`. Error is NOT a state — it's a field overlay (`error: ControlError | null`) on `idle` (terminal) or `reconnecting` (retrying). `BACKEND_ERROR` routes to `idle` or `reconnecting` based on `isRetrying` payload. `serviceDown` is an explicit state with immediate recovery via `SERVICE_REACHABLE`.
-- **VPN state contract**: `reconnecting` is a transient engine signal (engine state stays `connected`). Bridge `transformStatus()` synthesizes `state='error'` from `disconnected + lastError`, but the VPN machine maps it to `idle` (non-retrying) or `reconnecting` (retrying) — `error` is not a machine state, only a display field.
-- **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
-- **NodeNext imports**: `tools/kaitu-center/` uses `"module": "NodeNext"`. All relative imports must use `.js` extension in `.ts` source.
-- **Storage encryption**: Desktop `storage.json` values encrypted with AES-256-GCM. Key derived via HKDF-SHA256 from the `machine-uid` crate's firmware-level ID — macOS: `ioreg IOPlatformUUID`, Windows: registry `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`, Linux: `/var/lib/dbus/machine-id` → `/etc/machine-id`. **Not** `sysctl kern.uuid` — that is a UUIDv3 derived from hostname and collided in v0.4.0 (see commit `d4ebdd6`). `ENC1:` prefix marks encrypted values; plaintext read transparently for backward compat. MCP Go reimplements the same crypto with shared test vectors for read-only session sharing. Design scope is 落盘混淆 + 硬件绑定, **not** anti-local-attacker — see `desktop/src-tauri/src/storage_crypto.rs` module doc for the full threat model.
-- **MCP tools save-to-file**: `download_device_log` saves to `/tmp/kaitu-device-logs/` and returns file path + metadata (no content). `exec_on_node` saves stdout > 4k chars to `/tmp/kaitu-exec-output/`. Use Read tool to inspect files.
-- **Wire handshake probe**: `engine.Start()` step 4.5 completes QUIC/TCP-WS handshake (client↔server) before creating TUN. "connected" means handshake + TUN + routes are all ready. The cached wire connection is reused by first app dial (fast path).
-- **Go json.Marshal escapes `&` as `\u0026`**: Tests asserting raw JSON strings with URLs will fail. Unmarshal to `map[string]any` and assert on deserialized values.
-- **Docker on Apple Silicon**: Always `--platform linux/amd64` for server images. Go binary needs `GOARCH=amd64`.
-- **macOS PKG install order**: Preinstall runs OLD binary, postinstall runs NEW. Always `launchctl unload` before overwriting plist.
-- **RegExp `/g` flag state persists**: Module-level global regex retains `lastIndex` between calls. Reset before each `.replace()`.
-- **k2 engine internals**: See `k2/CLAUDE.md` and `k2/engine/CLAUDE.md` for netCoordinator, DNS handling, error categories, and debug logging.
-- **K2Plugin local sync**: `file:` plugins are copied (not symlinked) to `node_modules/`. Makefile `dev-ios`/`dev-android`/`build-mobile-*` targets auto-run `rm -rf node_modules/k2-plugin && yarn install --force` before `cap sync`.
-- **iOS App Group**: `group.io.kaitu` — shared container for App process + NE process logs. Both `K2Plugin.swift` and `PacketTunnelProvider.swift` use `kAppGroup = "group.io.kaitu"`.
-- **Log rotation (unified)**: All platforms: 20MB/3 backups/7 days/gzip. Go lumberjack (`config.SetupLogging`), Tauri plugin-log (20MB/KeepOne), iOS/Android NativeLogger (20MB truncate-to-0). Upload modules are read-only — never truncate source files.
-- **stderr → k2.log**: `config.SetupLogging()` redirects `os.Stderr` into lumberjack via pipe. go-deadlock reports and runtime panics appear inline in k2.log. No separate `k2-stderr.log` file. Platform: `dup2` (unix), `SetStdHandle` (windows), no-op (mobile).
-- **Build-time log level**: Single env var `K2_BUILD_LOG_LEVEL` (default `debug`) controls all platforms at build time. Go: ldflags `-X config.buildLogLevel`. Rust: `option_env!("K2_BUILD_LOG_LEVEL")`. Vite: `__K2_BUILD_LOG_LEVEL__` define. Production: `make build-macos K2_BUILD_LOG_LEVEL=info` or set in CI env. Runtime `SetLogLevel()` always overrides.
-- **S3 log upload**: Feedback uploads use bundle tar.gz/zip with unique feedbackId key: `desktop/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz`, mobile uses `mobile/.../.zip`. Beta auto-upload (desktop only) uses per-file PUT: `auto/{udid}/{filename}` — active `.log` files overwrite (latest snapshot), rotated `.log.gz` files use HEAD check to skip if already uploaded. Legacy `service-logs/`/`feedback-logs/` prefixes still supported by Lambda.
-- **Android APK signing**: Keystore at `mobile/android/app/kaitu-release.jks.enc` (AES-256-CBC encrypted). Decrypt via `make decrypt-keystore` with `KAITU_ANDROID_STORE_PASSWORD` env var (also GH secret). Alias: `kaitu`, RSA 2048. Gradle `signingConfigs.release` reads password from same env var.
-- **Android S3 CDN structure**: `d13jc1jqzlg4yt.cloudfront.net/kaitu/android/` — `latest.json` (stable APK manifest), `beta/latest.json`, `tools/tools.json` (adb binaries). `scripts/publish-mobile.sh` always updates stable `android/latest.json` since Android install reads stable channel.
-- **Daemon helper API routing**: `adb-*` actions use `/api/helper` endpoint (not `/api/core`). Tauri bridge routes via `daemon_helper_exec` IPC. Standalone bridge routes by URL prefix check. Vite dev proxy must include `/api/helper`.
-- **Root daemon adb discovery**: Daemon runs as root → different `$PATH` and `$HOME`. `findAdbCandidates()` scans all `/Users/*/Library/Android/sdk/`, Homebrew paths, before CDN fallback. Uses `gadb` (pure Go ADB TCP client) for device ops.
-- **Desktop artifact naming**: `Kaitu_{VERSION}_{ARCH}.{EXT}` — underscore-separated. macOS: `_universal.pkg` / `_universal.app.tar.gz` / `.sig`. Windows: `_x64.exe` / `.sig`. S3 path: `kaitu/desktop/{VERSION}/`. Never use hyphen separator (`Kaitu-`) or `-setup` suffix.
-- **Linux desktop = embedded-webapp Go binary, no Tauri**: `cmd/k2` on Linux ships a single Go binary with the React webapp embedded via `//go:embed` in the `k2/webui` package. Users install via `curl -fsSL https://kaitu.io/i/k2 | sudo bash` — the `web/public/i/k2` shim fetches the latest version from `cloudfront.latest.json`, downloads `Kaitu_${VERSION}_linux_amd64.tar.gz` **plus its `.sha256` sidecar**, and **verifies SHA-256 before extract** (POSIX `verify_sha256` helper, supports `sha256sum` / `shasum` / `openssl`, case-insensitive hex, hard-fails on mismatch or malformed sha file). After verification it runs `packaging/linux/install.sh` from the tarball which writes `/usr/local/bin/k2` + `/etc/systemd/system/kaitu.service`, starts the daemon, polls `/ping` for up to 10s, then opens `http://127.0.0.1:1777` in the browser. No Tauri shell, no webkit2gtk, no AppImage, no pkexec. Upgrades via `webui.Upgrader` calling `systemctl restart kaitu` after downloading the new binary. macOS and Windows continue to ship the Tauri shell as before.
 
 ## Tech Stack
 
@@ -156,44 +55,52 @@ docs/plans/          Architecture design docs (43+ files, use `ls` to browse)
 - Core: Go (k2 submodule)
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
 - Mobile: Capacitor 6, gomobile bind (K2Plugin Swift/Kotlin)
-- Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock; `tools/kaitu-center` has independent npm
+- Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock; `tools/kaitu-center` uses npm
 - CI: GitHub Actions (`ci.yml`, `release-desktop.yml`, `build-mobile.yml`, `release-openwrt.yml`, `publish-antiblock.yml`, `release-k2s.yml`)
-- Ops MCP: Node.js 22+, TypeScript (NodeNext), `@modelcontextprotocol/sdk`, `ssh2`, `smol-toml`
 
-## Domain Vocabulary
+## Cross-Layer Conventions
 
-- **IK2Vpn** — VPN control interface (`window._k2`): single `run(action, params)` method
-- **IPlatform** — Platform capabilities interface (`window._platform`): storage, UDID, clipboard, openExternal, updater, uploadLogs
-- **cloudApi** — Cloud API HTTP module with auth injection and token refresh
-- **Engine** — Unified tunnel lifecycle manager (k2/engine/) used by both desktop daemon and mobile wrapper
-- **ClientConfig** — Universal config contract: Go `config.ClientConfig` = TS `ClientConfig`. Webapp assembles from Cloud API + user preferences, passes to `_k2.run('up', config)`. **Outbounds are expressed as `routes: [{via, match}]`** — there is no top-level `server` field. Global = `[{via: url, match: {all: true}}]`; chnroute = `[{via: 'direct', match: {preset: 'cn-access'}}, {via: url, match: {}}]`. See `k2/engine/engine.go buildRouteEntries`.
-- **Rule mode** — Webapp-only UI toggle (`ruleMode: 'global' | 'chnroute'`) persisted in `config.store`. Translated to different `routes[]` shapes at connect time. Not a Go-side field — the old `rule.global` was removed in the per-outbound refactor.
-- **Antiblock** — Multi-CDN entry URL resolution for Cloud API in blocked regions
-- **AuthGate** — Startup gate: checks service readiness + version match before showing main UI
-- **LoginDialog** — Global modal for all auth flows (no `/login` route)
-- **Center** — Backend API service (`api/`): auth, user management, orders, tunnels, cloud management
-- **k2subs** — Subscription URL scheme (`k2subs://udid:token@host/api/subs`). Resolves to a list of `k2v5://` tunnels via `/api/subs`. **Desktop daemon only** — persistent `Subscription` object with refresh loop + Phase-B outbound hot-swap + probe-driven `ScoreSource` (`k2/config/subscription.go Pick()`). **Mobile is manual-only** — webapp passes a single `k2v5://` URL to `_k2.run('up')`; appext never sees `k2subs`. Rationale: iOS NE has a 50MB jetsam limit and webapp-side resolution during VPN-up causes double-encapsulation (fetches go through the tunnel we're establishing). Users get data-driven manual picks via `probe.store` + `ProbeChip` on the tunnel list. If raw `k2subs://` reaches mobile engine → code 570 "no k2v5 outbound configured"; that's always a webapp bug.
-- **probe.Registry** — In-memory per-URL measurement cache (`k2/probe/`). Records `wire.ProbeStats` from `wire.ProbeURL` (QUIC handshake + 8 echo rounds × 50ms). Used by: (a) daemon's background `probe.Service` loop (5 min cadence, uses active session's `DirectDialer` to bypass TUN); (b) `/api/core probe` action for ad-hoc measurements; (c) `Subscription.Pick` via `ScoreSource` interface to steer server selection. Flake tolerance: first `score==0` probe returns `ok=false` (no-data, neutral weight); two consecutive zeros confirm hard-exclude. TTL 15 min.
-- **recommendScore** — Canonical `[0.0, 1.0]` tunnel recommendation signal (higher = better). Computed by the single-authority helper `api.ComputeRecommendScore(instance)` (commit `9e12d0b`). Emitted on both `/api/tunnels` (Dashboard `RecommendDot` UI) and `/api/subs` (daemon `Subscription.Pick` + webapp `pickWeighted`). Non-cloud nodes default to `0.5` neutral (not 0 — zero would blacklist). Legacy `weight` field still dual-emitted as `round(score*100)` for backward compat, remove one release after full rollout.
-- **LicenseKeyBatch** — 授权码批次：独立于活动码的分发单位。Batch 存渠道标签（sourceTag）、兑换条件（recipientMatcher）、过期时间。统计维度包含兑换率和兑换→付费转化率。创建需审批。
-- **transformStatus()** — Bridge normalization: `"stopped"`→`"disconnected"`, synthesizes `"error"` from `disconnected + lastError`. Handles both structured `{code, message}` and legacy string errors.
-- **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Category string, Message string}`. HTTP-aligned codes: 101 (NetworkUnavailable), 400 (BadConfig), 401 (AuthRejected), 402 (PaymentRequired), 403 (Forbidden), 408 (Timeout), 502 (ProtocolError), 503 (ServerUnreachable), 570 (ConnectionFatal). Categories: `client` (user action needed), `network` (transient, auto-retry), `server` (k2s issue), `target` (destination-specific, wire healthy).
-- **OnNetworkChanged()** — gomobile-exported method that routes through `netCoordinator` as `SignalChanged`. Legacy path — new code should use `NotifyNetEvent(*NetEvent)`.
-- **netCoordinator** — Engine 内部网络状态协调器，融合 sing-tun + 平台 API 信号，区分"网络断了"/"网络恢复"/"接口变了"三种场景。网络断时停止无效 reconnect，网络恢复时全面重连。
-- **NetEvent** — 网络状态变化事件结构体（Signal + 7 个平台信息字段），由平台层构造，gomobile 导出为 `EngineNetEvent`（iOS）/ `engine.NetEvent`（Android）
+Rules that span multiple directories. Layer-specific rules live in the layer docs below.
 
-## Layer Docs (read on demand)
+- **Version source of truth**: Root `package.json` `version` field. Tauri reads via `../../package.json`; k2 binary gets it via ldflags. Bump here first.
+- **k2 submodule read-only rule**: Do not edit `k2/` from the parent worktree unless the task explicitly targets the k2 repo. Built with `-tags nowebapp` (headless). Binary output → `desktop/src-tauri/binaries/`.
+- **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case; JS/TS expects camelCase. Native bridges (`K2Plugin.swift`/`kt`, Tauri bridges) must remap at the boundary.
+- **Go `json.Marshal` escapes `&` as `\u0026`**: Tests that assert raw JSON strings with URLs will fail. Unmarshal to `map[string]any` and assert on deserialized values.
+- **Docker on Apple Silicon**: Always `--platform linux/amd64` for server images. Go binary needs `GOARCH=amd64`.
+- **Log rotation (unified)**: All platforms — 20 MB / 3 backups / 7 days / gzip. Go via `config.SetupLogging` (lumberjack), Tauri via plugin-log (20 MB / KeepOne), iOS/Android via `NativeLogger` (20 MB truncate-to-0). Upload modules are read-only — never truncate source files.
+- **Build-time log level**: Single env var `K2_BUILD_LOG_LEVEL` (default `debug`) controls all platforms at build time. Go: ldflags `-X config.buildLogLevel`. Rust: `option_env!("K2_BUILD_LOG_LEVEL")`. Vite: `__K2_BUILD_LOG_LEVEL__` define. Production: `make build-macos K2_BUILD_LOG_LEVEL=info` or set via CI env. Runtime `SetLogLevel()` always overrides.
+- **Artifact naming**: Desktop uses `Kaitu_{VERSION}_{ARCH}.{EXT}` (underscore-separated). Mobile uses `kaitu/android/` CDN layout. See `desktop/CLAUDE.md` / `mobile/CLAUDE.md` for full details.
+- **Linux desktop = embedded Go binary, no Tauri**: `cmd/k2` ships a single Go binary with the React webapp embedded via `//go:embed` in `k2/webui`. Users install via `curl -fsSL https://kaitu.io/i/k2 | sudo bash` — downloads tarball + `.sha256`, verifies, runs `packaging/linux/install.sh`. macOS and Windows continue to use the Tauri shell. See `k2/webui/CLAUDE.md` for install flow details.
+- **Workspace layout**: Root `yarn install` provisions `webapp`, `desktop`, `mobile`. `web/` and `tools/kaitu-center/` have independent lockfiles — install there separately when touching them.
 
-```
-webapp/CLAUDE.md                    Frontend: split globals, services, stores, i18n, components
-web/CLAUDE.md                       Website: Next.js pages, admin dashboard, API proxy
-desktop/CLAUDE.md                   Tauri shell, Rust modules, config
-mobile/CLAUDE.md                    Capacitor mobile, K2Plugin, iOS/Android VPN architecture
-api/CLAUDE.md                       Center API: routes, middleware, models, workers, cloudprovider
-mcp/CLAUDE.md                       Go MCP server: tools, auth flow, Center/daemon clients
-k2/CLAUDE.md                        Go core architecture, wire protocol, daemon API
-```
+## Cross-Layer Domain Vocabulary
+
+Terms you'll encounter in multiple layers. Per-layer extensions live in the layer docs.
+
+- **ClientConfig** — Universal config contract: Go `config.ClientConfig` ≡ TS `ClientConfig`. Webapp assembles it and passes to `_k2.run('up', config)`. Outbounds live in `routes: [{via, match}]` — no top-level `server` field. See `k2/engine/engine.go buildRouteEntries`.
+- **Engine** — Unified tunnel lifecycle manager (`k2/engine/`) used by both desktop daemon and mobile wrapper.
+- **k2subs** — Subscription URL scheme (`k2subs://udid:token@host/api/subs`). Resolves to a list of `k2v5://` tunnels via `/api/subs`. **Desktop daemon only** (persistent `Subscription` with refresh loop + Phase-B hot-swap + probe-driven scoring). **Mobile is manual-only** — webapp passes a single `k2v5://` URL to `_k2.run('up')`. See `mobile/CLAUDE.md` "Server Selection" and `k2/config/subscription.go`.
+- **probe.Registry** — In-memory per-URL QUIC-probe measurement cache (`k2/probe/`). Consumed by daemon's background probe loop, the `/api/core probe` action, and `Subscription.Pick` via `ScoreSource`. Flake tolerance: first `score==0` returns `ok=false` (neutral), two consecutive zeros confirm hard-exclude. TTL 15 min.
+- **recommendScore** — Canonical `[0.0, 1.0]` tunnel recommendation signal (higher = better). Computed by `api.ComputeRecommendScore` (commit `9e12d0b`). Emitted on `/api/tunnels` (Dashboard `RecommendDot`) and `/api/subs` (daemon + webapp weighted picks). Non-cloud nodes default to `0.5` neutral. Legacy `weight` field still dual-emitted as `round(score*100)`.
+- **LicenseKeyBatch** — 授权码批次：独立于活动码的分发单位。Batch 存渠道标签 (`sourceTag`)、兑换条件 (`recipientMatcher`)、过期时间。统计维度包含兑换率和兑换→付费转化率。创建需审批。
+- **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Category string, Message string}`. HTTP-aligned codes (101 NetworkUnavailable, 400 BadConfig, 401 AuthRejected, 402 PaymentRequired, 403 Forbidden, 408 Timeout, 502 ProtocolError, 503 ServerUnreachable, 570 ConnectionFatal). Categories: `client` / `network` / `server` / `target`.
+- **NetEvent** — Network state change event (Signal + 7 platform fields). Platforms construct it, gomobile exports as `EngineNetEvent` (iOS) / `engine.NetEvent` (Android). Routes through `netCoordinator` which distinguishes 网络断了 / 恢复 / 接口变了. Legacy `OnNetworkChanged()` maps to `SignalChanged`.
+- **transformStatus()** — Bridge-layer webapp boundary: normalizes `"stopped"`→`"disconnected"` and synthesizes `"error"` state. Details in `webapp/CLAUDE.md`.
+
+## Layer Docs
+
+| Doc | Scope |
+|-----|-------|
+| [`webapp/CLAUDE.md`](webapp/CLAUDE.md) | React frontend: split globals, bridge contract, VPN state machine, services, stores, i18n, components |
+| [`web/CLAUDE.md`](web/CLAUDE.md) | Next.js website + admin dashboard, API proxy, Velite content |
+| [`desktop/CLAUDE.md`](desktop/CLAUDE.md) | Tauri shell, Rust modules, storage encryption, PKG install, artifact naming, S3 log upload |
+| [`mobile/CLAUDE.md`](mobile/CLAUDE.md) | Capacitor + gomobile, K2Plugin, iOS/Android VPN architecture, APK signing, ASO rules |
+| [`api/CLAUDE.md`](api/CLAUDE.md) | Center API: routes, middleware, models, workers, cloudprovider |
+| [`mcp/CLAUDE.md`](mcp/CLAUDE.md) | Go MCP server: tools, auth flow, Center/daemon clients, Tauri session sharing |
+| [`tools/kaitu-center/CLAUDE.md`](tools/kaitu-center/CLAUDE.md) | TypeScript MCP/OpenClaw tools, NodeNext conventions |
+| [`scripts/CLAUDE.md`](scripts/CLAUDE.md) | Build/deploy/test helpers, Windows k2 test workflow |
+| [`k2/CLAUDE.md`](k2/CLAUDE.md) | Go core: wire protocol, daemon API, engine internals (submodule) |
 
 ### k2 Submodule Docs (read-only)
 
-See `k2/CLAUDE.md` for architecture, `k2/docs/` for feature specs, knowledge base, API contracts, and backlog.
+See `k2/CLAUDE.md` for architecture and `k2/docs/` for feature specs, knowledge base, API contracts, and backlog.

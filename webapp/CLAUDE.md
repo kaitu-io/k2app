@@ -215,6 +215,15 @@ Namespaces: account, auth, common, dashboard, feedback, invite, nav, onboarding,
 
 ---
 
+## Bridge & VPN State Contract
+
+**Bridge `transformStatus()` is mandatory.** Every bridge (`tauri-k2.ts`, `capacitor-k2.ts`, `standalone-k2.ts`) must implement `transformStatus()` and normalize backend state before returning to the webapp. Raw backend state MUST NOT pass through.
+
+- Daemon emits `"stopped"`; webapp expects `"disconnected"` → bridge rewrites.
+- Bridge synthesizes `state: 'error'` from `disconnected + lastError`. Handles both structured `{code, message}` and legacy string errors.
+- VPN machine then maps `error` to `idle` (non-retrying, terminal) or `reconnecting` (retrying) based on the `isRetrying` payload — error is a display field overlay, never a machine state.
+- `reconnecting` is a transient engine signal (engine state stays `connected`). Do not treat it as a terminal disconnect.
+
 ## Key Patterns
 
 - **Store init**: `initializeAllStores()` calls layout → config.loadConfig → selfHosted.loadTunnel → auth → vpn-machine init in order. Returns cleanup function.
@@ -264,6 +273,24 @@ cd webapp && npx tsc --noEmit            # Type check
 | White flash on app start | `index.html` must use `background: #0f0f13` directly on `html, body` WITHOUT `@media (prefers-color-scheme: dark)`. Media query causes 100-300ms white flash on light-mode OS before MUI loads. |
 | Vitest mock state leaks between tests | `vi.clearAllMocks()` clears implementations, not just call counts. Re-call `mockFn.mockResolvedValue()` in each `describe`'s `beforeEach` — not just once at module level. |
 | Login fails with 422 | All login paths must include `udid` from `getDeviceUdid()` (in `services/device-udid.ts`) in POST body. Backend requires UDID for device association. |
+| RegExp `.replace()` skips some matches | Module-level global regexes (`/g` flag) retain `lastIndex` between calls. Reset with `re.lastIndex = 0` before each `.replace()`, or inline the literal. |
+
+## Domain Vocabulary
+
+- **IK2Vpn** — VPN control interface (`window._k2`), single `run(action, params)` method
+- **IPlatform** — Platform capabilities interface (`window._platform`): storage, UDID, clipboard, openExternal, updater, uploadLogs
+- **cloudApi** — Cloud API HTTP module with auth injection and token refresh
+- **ClientConfig** — Universal config contract: Go `config.ClientConfig` = TS `ClientConfig`. Assembled from Cloud API + user preferences, passed to `_k2.run('up', config)`. Outbounds are expressed as `routes: [{via, match}]` — there is no top-level `server` field. Global = `[{via: url, match: {all: true}}]`; chnroute = `[{via: 'direct', match: {preset: 'cn-access'}}, {via: url, match: {}}]`. See `k2/engine/engine.go buildRouteEntries`.
+- **Rule mode** — Webapp-only UI toggle (`ruleMode: 'global' | 'chnroute'`) persisted in `config.store`. Translated to different `routes[]` shapes at connect time. Not a Go-side field.
+- **Antiblock** — Multi-CDN entry URL resolution for Cloud API in blocked regions.
+- **AuthGate** — Startup gate: checks service readiness + version match before showing main UI.
+- **LoginDialog** — Global modal for all auth flows (no `/login` route).
+- **transformStatus()** — Bridge normalization (see "Bridge & VPN State Contract" above).
+
+## Style
+
+- **MUI dark theme only**: Material-UI 5 with custom theme tokens. No light mode — do not add `@media (prefers-color-scheme)` branches or light palette variants.
+- **Webapp subagent tasks**: For webapp UI decisions, prefer frontend-specialized agents (see root agent registry).
 
 ## Related Docs
 

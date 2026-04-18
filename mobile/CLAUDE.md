@@ -232,6 +232,36 @@ Optimizing for App Store discoverability. These rules apply to all App Store Con
 - **Privacy nutrition labels**: Keep privacy declarations current with actual data collection. Discrepancies trigger review rejection.
 - **Custom Product Pages**: Create locale-specific pages for different traffic sources (organic search vs social vs ads) when budget allows.
 
+## Cross-Layer Conventions
+
+- **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case. JS/TS expects camelCase. Native bridge layers (`K2Plugin.swift` / `K2Plugin.kt`) must remap at the boundary before forwarding to the webapp.
+- **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
+
+## Android APK Signing
+
+Keystore at `mobile/android/app/kaitu-release.jks.enc` (AES-256-CBC encrypted).
+
+```bash
+make decrypt-keystore    # Requires KAITU_ANDROID_STORE_PASSWORD env var (also GH secret)
+```
+
+- Alias: `kaitu`, RSA 2048
+- Gradle `signingConfigs.release` reads the password from the same env var
+
+## Android S3 CDN Structure
+
+`d13jc1jqzlg4yt.cloudfront.net/kaitu/android/`:
+
+- `latest.json` — stable APK manifest
+- `beta/latest.json` — beta channel
+- `tools/tools.json` — adb binaries
+
+`scripts/publish-mobile.sh` always updates the stable `android/latest.json` since the Android install flow reads the stable channel.
+
+## S3 Log Upload (Mobile)
+
+Feedback uploads use bundle zip with unique feedbackId key: `mobile/{version}/{udid}/{date}/logs-{ts}-{id}.zip`. Only feedback path — mobile has no beta auto-upload equivalent. Legacy prefixes (`service-logs/` / `feedback-logs/`) still supported by Lambda.
+
 ## Related Docs
 
 - [Root Architecture](../CLAUDE.md)
