@@ -10,8 +10,9 @@ interface ProbeChipProps {
 }
 
 /**
- * Compact measurement indicator, rendered alongside RecommendDot in
- * CloudTunnelList. Five visual states:
+ * Compact measurement indicator for a tunnel probe result. Retained for
+ * future on-demand probe UI; not currently rendered anywhere. Five visual
+ * states:
  *
  *  1. loading                  → MUI Skeleton (40x18 rounded)
  *  2. reachable + supported    → "42 ms" + optional "12%" when lossRate >= 0.05
