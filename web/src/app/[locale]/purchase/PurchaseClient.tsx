@@ -480,8 +480,7 @@ export default function PurchaseClient() {
             <div className="flex items-center">
               <AlertTriangleIcon className="w-8 h-8 text-amber-600 mr-3 flex-shrink-0" />
               <p className="text-base sm:text-sm text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
-                {/* i18n key landing in Task 20 — fall back to inline Chinese for now. */}
-                {`您当前为「${userProfile.tier ?? 'basic'}」档，无法购买此档套餐。如需变更档位请联系客服。`}
+                {t('purchase.purchase.tierLocked', { tier: userProfile.tier ?? 'basic' })}
               </p>
             </div>
           </div>

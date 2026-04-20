@@ -328,6 +328,9 @@ func executeApprovalPlanUpdate(ctx context.Context, params json.RawMessage) erro
 		plan.IsActive = req.IsActive
 	}
 	if req.Tier != nil {
+		if !IsValidTier(*req.Tier) {
+			return fmt.Errorf("invalid tier %q for plan %s", *req.Tier, p.PlanID)
+		}
 		plan.Tier = *req.Tier
 	}
 

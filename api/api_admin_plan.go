@@ -141,6 +141,10 @@ func api_admin_update_plan(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, err.Error())
 		return
 	}
+	if req.Tier != nil && !IsValidTier(*req.Tier) {
+		Error(c, ErrorInvalidArgument, "invalid tier")
+		return
+	}
 	log.Debugf(c, "update request for plan %s with data: %+v", planID, req)
 
 	approvalID, executed, err := SubmitApproval(c, "plan_update", planUpdateApprovalParams{
