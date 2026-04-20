@@ -445,6 +445,7 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 		}
 	}
 
+	q := user.Quota()
 	return &DataUser{
 		UUID:             user.UUID,
 		ExpiredAt:        user.ExpiredAt,
@@ -459,9 +460,9 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 		IsAdmin:          user.IsAdmin != nil && *user.IsAdmin,
 		BetaOptedIn:      user.BetaOptedIn != nil && *user.BetaOptedIn,
 		Tier:             user.Tier,
-		MaxDevice:        user.MaxDevice,
-		MaxRouterDevice:  user.MaxRouterDevice,
-		MaxLanClient:     user.MaxLanClient,
+		MaxDevice:        q.MaxDevice,
+		MaxRouterDevice:  q.MaxRouterDevice,
+		MaxLanClient:     q.MaxLanClient,
 
 		RegistrationCountry: user.RegistrationCountry,
 		CurrentCountry:      user.CurrentCountry,

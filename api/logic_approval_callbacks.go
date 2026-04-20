@@ -330,15 +330,6 @@ func executeApprovalPlanUpdate(ctx context.Context, params json.RawMessage) erro
 	if req.Tier != nil {
 		plan.Tier = *req.Tier
 	}
-	if req.MaxDevice != nil {
-		plan.MaxDevice = *req.MaxDevice
-	}
-	if req.MaxRouterDevice != nil {
-		plan.MaxRouterDevice = *req.MaxRouterDevice
-	}
-	if req.MaxLanClient != nil {
-		plan.MaxLanClient = *req.MaxLanClient
-	}
 
 	if err := db.Get().Save(&plan).Error; err != nil {
 		return fmt.Errorf("update plan %s: %w", p.PlanID, err)

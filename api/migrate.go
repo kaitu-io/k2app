@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"fmt"
 
 	db "github.com/wordgate/qtoolkit/db"
 
@@ -101,6 +102,38 @@ func Migrate() error {
 	}
 
 	log.Infof(ctx, "[migrate] tier rename migrations completed")
+
+	// (3) 删除旧配额列（幂等：先检查列是否存在）
+	type colCheck struct {
+		Field string
+	}
+
+	dropIfExists := func(table, column string) error {
+		var rows []colCheck
+		if err := db.Get().Raw(
+			"SELECT COLUMN_NAME AS field FROM information_schema.columns WHERE table_name=? AND column_name=? AND table_schema=DATABASE()",
+			table, column,
+		).Scan(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			log.Debugf(ctx, "[migrate] column %s.%s already dropped, skipping", table, column)
+			return nil
+		}
+		log.Infof(ctx, "[migrate] dropping column %s.%s", table, column)
+		return db.Get().Exec(fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", table, column)).Error
+	}
+
+	for _, col := range []string{"max_device", "max_router_device", "max_lan_client"} {
+		if err := dropIfExists("plans", col); err != nil {
+			log.Errorf(ctx, "[migrate] drop plans.%s failed: %v", col, err)
+			return err
+		}
+		if err := dropIfExists("users", col); err != nil {
+			log.Errorf(ctx, "[migrate] drop users.%s failed: %v", col, err)
+			return err
+		}
+	}
 
 	// Clean up unused legacy license keys without a batch (test data from pre-batch era)
 	db.Get().Where("batch_id = 0 AND is_used = false").Delete(&LicenseKey{})
