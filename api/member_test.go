@@ -2,9 +2,6 @@ package center
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestOrderForUsersMetaHandling(t *testing.T) {
@@ -83,64 +80,5 @@ func TestCanPayForUsers(t *testing.T) {
 	// 注意：由于函数现在需要数据库查询来验证委托关系，
 	// 在单元测试中我们只能测试基本逻辑。
 	// 完整的权限检查需要在集成测试中进行。
-}
-
-func TestApplyOrderToTargetUsers_WritesQuotas(t *testing.T) {
-	t.Skip("Legacy behavior — Plan/User MaxDevice fields removed in Task 11; this test will be rewritten or deleted in Task 6")
-	// Verify new Plan fields survive Meta roundtrip
-	plan := &Plan{
-		PID:             "family-1y",
-		Label:           "家庭版年付",
-		Price:           9999,
-		Month:           12,
-		MaxDevice:       5,
-		MaxRouterDevice: 1,
-		MaxLanClient:    10,
-	}
-	order := Order{}
-	err := order.SetOrderMeta(plan, nil, []string{}, true)
-	require.NoError(t, err)
-
-	retrieved, err := order.GetPlan()
-	require.NoError(t, err)
-	assert.Equal(t, 5, retrieved.MaxDevice)
-	assert.Equal(t, 1, retrieved.MaxRouterDevice)
-	assert.Equal(t, 10, retrieved.MaxLanClient)
-	assert.Equal(t, "family-1y", retrieved.PID)
-}
-
-func TestApplyOrderToTargetUsers_OldPlanDefaults(t *testing.T) {
-	t.Skip("Legacy behavior — Plan/User MaxDevice fields removed in Task 11; this test will be rewritten or deleted in Task 6")
-	// Old plans without MaxDevice should get zero value from Meta
-	plan := &Plan{PID: "1y", Label: "1年", Price: 4999, Month: 12}
-	order := Order{}
-	_ = order.SetOrderMeta(plan, nil, []string{}, true)
-
-	retrieved, _ := order.GetPlan()
-	// Old plan: MaxDevice=0 (zero value), MaxRouterDevice=0
-	assert.Equal(t, 0, retrieved.MaxDevice, "old plan has zero MaxDevice in Meta")
-	assert.Equal(t, 0, retrieved.MaxRouterDevice, "old plan has zero MaxRouterDevice")
-	// The applyOrderToTargetUsers code defaults MaxDevice=0 to DefaultMaxDevice=5
-}
-
-func TestApplyOrderToTargetUsers_UnlimitedLanClient(t *testing.T) {
-	t.Skip("Legacy behavior — Plan/User MaxDevice fields removed in Task 11; this test will be rewritten or deleted in Task 6")
-	// Verify MaxLanClient=-1 (unlimited) roundtrips correctly
-	plan := &Plan{
-		PID:             "business-1y",
-		Label:           "公司版年付",
-		Price:           19999,
-		Month:           12,
-		MaxDevice:       10,
-		MaxRouterDevice: 1,
-		MaxLanClient:    -1,
-	}
-	order := Order{}
-	err := order.SetOrderMeta(plan, nil, []string{}, true)
-	require.NoError(t, err)
-
-	retrieved, err := order.GetPlan()
-	require.NoError(t, err)
-	assert.Equal(t, -1, retrieved.MaxLanClient)
 }
 

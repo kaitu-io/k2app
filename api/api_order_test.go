@@ -95,3 +95,37 @@ func TestCreateOrder_RejectsForUserUUIDsEvenWithForMyselfTrue(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, float64(422002), resp["code"])
 }
+
+// validatePurchase tests (Task 6): tier validation in purchase flow.
+
+func TestValidatePurchase_FirstTimeAnyTierAllowed(t *testing.T) {
+	user := &User{ID: 1, Tier: TierBasic, IsFirstOrderDone: nil}
+	plan := &Plan{ID: 100, Tier: TierFamily}
+	err := validatePurchase(user, plan)
+	assert.NoError(t, err)
+}
+
+func TestValidatePurchase_FirstTimeIsFirstOrderDoneFalse(t *testing.T) {
+	fal := false
+	user := &User{ID: 1, Tier: TierBasic, IsFirstOrderDone: &fal}
+	plan := &Plan{ID: 100, Tier: TierFamily}
+	err := validatePurchase(user, plan)
+	assert.NoError(t, err, "explicit IsFirstOrderDone=false also counts as first-time")
+}
+
+func TestValidatePurchase_SubsequentSameTierAllowed(t *testing.T) {
+	tru := true
+	user := &User{ID: 1, Tier: TierFamily, IsFirstOrderDone: &tru}
+	plan := &Plan{ID: 100, Tier: TierFamily}
+	err := validatePurchase(user, plan)
+	assert.NoError(t, err)
+}
+
+func TestValidatePurchase_SubsequentDifferentTierRejected(t *testing.T) {
+	tru := true
+	user := &User{ID: 1, Tier: TierBasic, IsFirstOrderDone: &tru}
+	plan := &Plan{ID: 100, Tier: TierFamily}
+	err := validatePurchase(user, plan)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tier", "error message should mention tier")
+}

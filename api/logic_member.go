@@ -73,116 +73,51 @@ func addProExpiredDays(ctx context.Context, tx *gorm.DB, user *User, vipType Vip
 	return history, nil
 }
 
-// applyOrderToTargetUsers 订单生效：为指定用户延长授权时间（在给定事务中执行）
-func applyOrderToTargetUsers(ctx context.Context, tx *gorm.DB, order *Order) error {
-	log.Infof(ctx, "[applyOrderToTargetUsers] applying order %d to target users", order.ID)
+// applyOrderToBuyer 订单生效：为购买者本人延长授权时间
+// 注：旧版本支持代付（forUsers），2026-04-20 简化为只处理 buyer
+func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order) error {
+	log.Infof(ctx, "[applyOrderToBuyer] applying order %d to buyer %d", order.ID, order.UserID)
 
 	if order.IsPaid == nil || !*order.IsPaid {
-		log.Warnf(ctx, "[ApplyOrderToTargetUsers] order %d is not paid, skipping", order.ID)
-		return nil // 未支付的订单不处理
-	}
-
-	// 获取套餐信息
-	plan, err := order.GetPlan()
-	if err != nil {
-		log.Errorf(ctx, "[ApplyOrderToTargetUsers] failed to get plan for order %d: %v", order.ID, err)
-		return err
-	}
-	if plan == nil {
-		log.Errorf(ctx, "[ApplyOrderToTargetUsers] plan is nil for order %d", order.ID)
-		return fmt.Errorf("plan not found for order %d", order.ID)
-	}
-
-	// Old plans in Meta don't have MaxDevice — default to current behavior
-	if plan.MaxDevice == 0 {
-		plan.MaxDevice = DefaultMaxDevice
-	}
-	// MaxRouterDevice/MaxLanClient default to 0 (no router) — correct for old plans
-
-	// 使用月数计算实际天数（按自然月计算，正确处理闰年等情况）
-	// 例如：2025-11-26 + 12个月 = 2026-11-26（365天或366天）
-	now := time.Now()
-	futureDate := now.AddDate(0, plan.Month, 0)
-	days := int(futureDate.Sub(now).Hours() / 24)
-	log.Debugf(ctx, "[ApplyOrderToTargetUsers] plan: PID=%s, Month=%d, Days=%d (calculated from %s to %s)",
-		plan.PID, plan.Month, days, now.Format("2006-01-02"), futureDate.Format("2006-01-02"))
-
-	// 获取目标用户列表
-	forUserUUIDs := order.GetForUsers()
-	forMyself := order.GetForMyself()
-	log.Debugf(ctx, "[ApplyOrderToTargetUsers] forMyself=%v, forUserUUIDs=%v", forMyself, forUserUUIDs)
-
-	// 收集所有需要增加 Pro 的用户（直接查询 User 对象，避免后续重复查询）
-	var targetUsers []User
-
-	// 1. 如果为自己购买，查询购买者
-	if forMyself {
-		var buyer User
-		if err := tx.First(&buyer, order.UserID).Error; err != nil {
-			log.Errorf(ctx, "[ApplyOrderToTargetUsers] failed to find order buyer %d: %v", order.UserID, err)
-			return fmt.Errorf("购买者不存在: %v", err)
-		}
-		targetUsers = append(targetUsers, buyer)
-		log.Debugf(ctx, "[ApplyOrderToTargetUsers] added order owner: UserID=%d", order.UserID)
-	}
-
-	// 2. 根据 UUID 查找其他用户
-	if len(forUserUUIDs) > 0 {
-		var users []User
-		if err := tx.Where("uuid IN ?", forUserUUIDs).Find(&users).Error; err != nil {
-			log.Errorf(ctx, "[ApplyOrderToTargetUsers] failed to find users by UUIDs: %v", err)
-			return err
-		}
-
-		// 检查是否所有 UUID 都找到了（严格验证，避免部分用户未授权）
-		if len(users) != len(forUserUUIDs) {
-			log.Errorf(ctx, "[ApplyOrderToTargetUsers] some users not found: expected=%d, found=%d",
-				len(forUserUUIDs), len(users))
-			return fmt.Errorf("部分目标用户不存在: 期望 %d 个，实际找到 %d 个", len(forUserUUIDs), len(users))
-		}
-
-		for _, user := range users {
-			targetUsers = append(targetUsers, user)
-			log.Debugf(ctx, "[ApplyOrderToTargetUsers] added user: UUID=%s, UserID=%d", user.UUID, user.ID)
-		}
-	}
-
-	if len(targetUsers) == 0 {
-		log.Warnf(ctx, "[ApplyOrderToTargetUsers] no target users found for order %d", order.ID)
+		log.Warnf(ctx, "[applyOrderToBuyer] order %d not paid, skipping", order.ID)
 		return nil
 	}
 
-	log.Infof(ctx, "[ApplyOrderToTargetUsers] processing %d target users", len(targetUsers))
-
-	// 3. 直接遍历 targetUsers，为每个用户增加授权（无需再次查询数据库）
-	for i := range targetUsers {
-		user := &targetUsers[i] // 获取指针以便 addProExpiredDays 修改用户数据
-
-		// Update quotas and tier from purchased plan
-		user.MaxDevice = plan.MaxDevice
-		user.MaxRouterDevice = plan.MaxRouterDevice
-		user.MaxLanClient = plan.MaxLanClient
-
-		// Set tier (stable — doesn't change on period renewal)
-		tier := plan.Tier
-		if tier == "" {
-			tier = "pro" // backward compat: old plans without Tier field
-		}
-		user.Tier = tier
-
-		// 使用 addProExpiredDays 统一处理（自动处理过期时间计算、首单标记、历史记录）
-		reason := fmt.Sprintf("订单支付 - %s", order.UUID)
-		_, err := addProExpiredDays(ctx, tx, user, VipPurchase, order.ID, days, reason)
-		if err != nil {
-			log.Errorf(ctx, "[ApplyOrderToTargetUsers] failed to add Pro to user %d: %v", user.ID, err)
-			return err
-		}
-
-		log.Infof(ctx, "[ApplyOrderToTargetUsers] successfully added %d days to user %d", days, user.ID)
+	plan, err := order.GetPlan()
+	if err != nil || plan == nil {
+		return fmt.Errorf("plan not found for order %d", order.ID)
 	}
 
-	log.Infof(ctx, "[ApplyOrderToTargetUsers] successfully applied order %d to all target users", order.ID)
+	var buyer User
+	if err := tx.First(&buyer, order.UserID).Error; err != nil {
+		return fmt.Errorf("buyer not found: %v", err)
+	}
+
+	// Tier 处理：首次购买写入；续费保持（API 层已校验匹配）
+	if buyer.IsFirstOrderDone == nil || !*buyer.IsFirstOrderDone {
+		buyer.Tier = plan.Tier
+		log.Infof(ctx, "[applyOrderToBuyer] first-time purchase, set buyer.Tier=%s", plan.Tier)
+	}
+	// 注：MaxDevice/MaxRouterDevice/MaxLanClient 字段已删除，不再写
+
+	// 计算实际天数（按自然月）
+	now := time.Now()
+	days := int(now.AddDate(0, plan.Month, 0).Sub(now).Hours() / 24)
+
+	reason := fmt.Sprintf("订单支付 - %s", order.UUID)
+	_, err = addProExpiredDays(ctx, tx, &buyer, VipPurchase, order.ID, days, reason)
+	if err != nil {
+		return err
+	}
+
+	log.Infof(ctx, "[applyOrderToBuyer] success: %d days added to buyer %d, tier=%s", days, buyer.ID, buyer.Tier)
 	return nil
+}
+
+// applyOrderToTargetUsers Deprecated: kept as alias for backward compatibility with existing callers.
+// New code should call applyOrderToBuyer directly.
+func applyOrderToTargetUsers(ctx context.Context, tx *gorm.DB, order *Order) error {
+	return applyOrderToBuyer(ctx, tx, order)
 }
 
 // CanPayForUsers 检查用户是否可以为指定用户付费
