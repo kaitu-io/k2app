@@ -5,5 +5,8 @@
     "technical": "技术",
     "comparison": "对比",
     "uncategorized": "其他"
+  },
+  "mobileNav": {
+    "toggleLabel": "目录"
   }
 }

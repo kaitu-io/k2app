@@ -160,9 +160,9 @@ export default async function K2Page({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <article className="prose max-w-none min-w-0 flex-1">
-        <h1 className="text-3xl font-bold text-foreground mb-4">{post.title}</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-3 sm:mb-4">{post.title}</h1>
         {post.summary && (
-          <p className="text-lg text-muted-foreground mb-8">{post.summary}</p>
+          <p className="text-base sm:text-lg text-muted-foreground mb-6 sm:mb-8">{post.summary}</p>
         )}
         <div dangerouslySetInnerHTML={{ __html: post.content }} />
       </article>

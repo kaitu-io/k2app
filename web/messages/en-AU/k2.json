@@ -5,5 +5,8 @@
     "technical": "Technical",
     "comparison": "Comparison",
     "uncategorized": "Other"
+  },
+  "mobileNav": {
+    "toggleLabel": "Navigation"
   }
 }
