@@ -44,7 +44,11 @@ func TestUserMarshalJSON_InjectsLegacyQuotaFields_Active(t *testing.T) {
 	assert.Equal(t, float64(0), out["maxLanClient"])
 }
 
-func TestUserMarshalJSON_ExpiredUserGetsZeroQuota(t *testing.T) {
+func TestUserMarshalJSON_ExpiredUserKeepsTierQuota(t *testing.T) {
+	// Legacy clients reading GET /api/user saw a persisted max_device column
+	// that didn't change on expiry. The new tier-derived shape must preserve
+	// that — zeroing out on expiry would break old clients and block expired
+	// users from logging in (appDeviceCount >= 0 in checkDeviceLimitOrKick).
 	user := User{
 		ID:        100,
 		Tier:      TierFamily,
@@ -56,5 +60,7 @@ func TestUserMarshalJSON_ExpiredUserGetsZeroQuota(t *testing.T) {
 	var out map[string]any
 	require.NoError(t, json.Unmarshal(data, &out))
 
-	assert.Equal(t, float64(0), out["maxDevice"], "expired user must show zero quota")
+	assert.Equal(t, float64(8), out["maxDevice"], "expired family user keeps family-tier maxDevice")
+	assert.Equal(t, float64(1), out["maxRouterDevice"])
+	assert.Equal(t, float64(20), out["maxLanClient"])
 }

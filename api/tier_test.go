@@ -65,9 +65,29 @@ func TestUserQuota_ActiveUser(t *testing.T) {
 	assert.Equal(t, 20, q.MaxLanClient)
 }
 
-func TestUserQuota_ExpiredUser(t *testing.T) {
+func TestUserQuota_ExpiredUserKeepsTierQuota(t *testing.T) {
+	// Expiry must NOT zero out the quota. checkDeviceLimitOrKick (logic_auth.go)
+	// uses quota.MaxDevice on every login; returning ZeroQuota for expired users
+	// makes appDeviceCount >= 0 always true and kicks the oldest device (or fails
+	// login with ErrRecordNotFound when there are zero devices). Legacy behavior
+	// kept persisted user.MaxDevice=5 after expiry so users could still log in
+	// and renew.
 	user := &User{Tier: TierFamily, ExpiredAt: time.Now().Add(-24 * time.Hour).Unix()}
-	assert.Equal(t, ZeroQuota, user.Quota())
+	q := user.Quota()
+	assert.Equal(t, 8, q.MaxDevice, "expired family user still exposes family-tier MaxDevice")
+	assert.Equal(t, 1, q.MaxRouterDevice)
+	assert.Equal(t, 20, q.MaxLanClient)
+}
+
+func TestUserQuota_UnpaidUserDefaultsToBasic(t *testing.T) {
+	// New signups have ExpiredAt=0 (never paid), but DB column default sets
+	// tier='basic'. Quota must return basic-tier values so they can register
+	// up to 5 app devices before a purchase — matching pre-change column default.
+	user := &User{Tier: TierBasic, ExpiredAt: 0}
+	q := user.Quota()
+	assert.Equal(t, 5, q.MaxDevice)
+	assert.Equal(t, 0, q.MaxRouterDevice)
+	assert.Equal(t, 0, q.MaxLanClient)
 }
 
 func TestUserQuota_InvalidTierFallsBackToBasic(t *testing.T) {

@@ -1181,13 +1181,12 @@ type SurveyResponse struct {
 	RewardDays int       `gorm:"default:0" json:"rewardDays"`
 }
 
-// Quota returns the user's effective tier quota.
-// Returns ZeroQuota if the user is not active (expired or never paid).
-// Falls back to basic-tier quota if Tier field is corrupted (defensive).
+// Quota returns the user's tier quota. Does NOT gate on expiry — callers that
+// must refuse expired users (VPN connect, router middleware) enforce that
+// separately. This matches legacy behavior where User.MaxDevice was a persisted
+// DB column that stayed at its value (default 5) even after ExpiredAt passed,
+// so expired users could still log in and manage their account.
 func (u *User) Quota() TierQuota {
-	if !u.IsPro() {
-		return ZeroQuota
-	}
 	info, ok := TierQuotas[u.Tier]
 	if !ok {
 		return TierQuotas[TierBasic].TierQuota
@@ -1226,9 +1225,10 @@ func (p Plan) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// MarshalJSON for User injects tier-derived quota fields. Returns ZeroQuota for
-// inactive (expired/never-paid) users via User.Quota(). See Plan.MarshalJSON for
-// rationale and the value-receiver note.
+// MarshalJSON for User injects tier-derived quota fields via User.Quota().
+// Expiry does NOT zero out the quota — this preserves the legacy API shape where
+// GET /api/user returned the same max_device/max_router_device/max_lan_client
+// regardless of ExpiredAt. See Plan.MarshalJSON for the value-receiver note.
 func (u User) MarshalJSON() ([]byte, error) {
 	type userAlias User
 	q := u.Quota()
