@@ -26,7 +26,6 @@ import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { type Plan, type Order, type AppConfig } from "../services/api-types";
 import { ERROR_CODES } from "../utils/errorCode";
 import { LoadingState, EmptyPlans } from '../components/LoadingAndEmpty';
-import MemberSelection from '../components/MemberSelection';
 import MembershipBenefits from '../components/MembershipBenefits';
 import EmailLoginForm from '../components/EmailLoginForm';
 import {
@@ -549,8 +548,6 @@ export default function Purchase() {
   const [isLoading, setIsLoading] = useState(false);
   const [campaignError, setCampaignError] = useState<string>("");
   const [payDialogOpen, setPayDialogOpen] = useState(false);
-  const [selectedForMyself, setSelectedForMyself] = useState(true);
-  const [selectedMemberUUIDs, setSelectedMemberUUIDs] = useState<string[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [, setAppConfigLoading] = useState(false);
 
@@ -613,21 +610,13 @@ export default function Purchase() {
       return;
     }
 
-    // 检查是否有选择付费对象
-    if (!selectedForMyself && selectedMemberUUIDs.length === 0) {
-      showAlert(t('purchase:purchase.selectAtLeastOneTarget'), "error");
-      return;
-    }
-
     setIsLoading(true);
     try {
-      console.info('[Purchase] 创建订单请求: ' + JSON.stringify({ preview, plan, campaignCode, selectedForMyself, selectedMemberUUIDs }));
+      console.info('[Purchase] 创建订单请求: ' + JSON.stringify({ preview, plan, campaignCode }));
       const response = await cloudApi.post<{ order: Order; payUrl?: string }>('/api/user/orders', {
         preview,
         plan,
         campaignCode: campaignCode || undefined,
-        forMyself: selectedForMyself,
-        forUserUUIDs: selectedMemberUUIDs.length > 0 ? selectedMemberUUIDs : undefined,
       });
       console.info('[Purchase] 创建订单响应: ' + JSON.stringify(response));
       
@@ -671,7 +660,7 @@ export default function Purchase() {
     } finally {
       setIsLoading(false);
     }
-  }, [plan, campaignCode, selectedForMyself, selectedMemberUUIDs, showAlert, t, isAuthenticated, openLoginDialog]);
+  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog]);
 
   // 用于标记是否已选择过默认套餐（避免 plan 变化触发重新获取套餐列表）
   const defaultPlanSelectedRef = useRef(false);
@@ -783,19 +772,13 @@ export default function Purchase() {
     fetchAppConfig();
   }, []);
 
-  // 当计划、优惠码或选择目标变化时，重新获取预览数据
+  // 当计划或优惠码变化时，重新获取预览数据
   useEffect(() => {
-    if (plan && !plansLoading && (selectedForMyself || selectedMemberUUIDs.length > 0)) {
-      console.info('[Purchase] 触发预览订单: ' + JSON.stringify({ plan, campaignCode, selectedForMyself, selectedMemberUUIDs }));
+    if (plan && !plansLoading) {
+      console.info('[Purchase] 触发预览订单: ' + JSON.stringify({ plan, campaignCode }));
       handleOrder({preview: true});
     }
-  }, [campaignCode, plan, plansLoading, selectedForMyself, selectedMemberUUIDs, handleOrder]);
-
-  // 处理成员选择变化
-  const handleMemberSelectionChange = (forMyself: boolean, memberUUIDs: string[]) => {
-    setSelectedForMyself(forMyself);
-    setSelectedMemberUUIDs(memberUUIDs);
-  };
+  }, [campaignCode, plan, plansLoading, handleOrder]);
 
   // 处理套餐选择（使用 useCallback 保证引用稳定，避免 PlanList 不必要的重新渲染）
   const handlePlanSelect = useCallback((pid: string) => {
@@ -884,28 +867,20 @@ export default function Purchase() {
           maxLanClient={plans.find(p => p.pid === plan)?.maxLanClient}
         />
 
-        {/* 登录/注册或成员选择 */}
-        <Box>
-          {!isAuthenticated ? (
-            <>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '1rem' }} component="span">
-                {t('purchase:purchase.bindEmailAndSelectTarget')}
-              </Typography>
-              <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
-                <EmailLoginForm onLoginSuccess={() => {
-                  console.info('[Purchase] Login success, refreshing user info');
-                  // User info will be refreshed automatically
-                }} />
-              </Card>
-            </>
-          ) : (
-            <MemberSelection
-              selectedForMyself={selectedForMyself}
-              selectedMemberUUIDs={selectedMemberUUIDs}
-              onSelectionChange={handleMemberSelectionChange}
-            />
-          )}
-        </Box>
+        {/* 登录/注册 */}
+        {!isAuthenticated && (
+          <Box>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '1rem' }} component="span">
+              {t('purchase:purchase.bindEmailAndSelectTarget')}
+            </Typography>
+            <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+              <EmailLoginForm onLoginSuccess={() => {
+                console.info('[Purchase] Login success, refreshing user info');
+                // User info will be refreshed automatically
+              }} />
+            </Card>
+          </Box>
+        )}
 
         {/* 邀请奖励横幅 */}
         {user?.inviteCode && appConfig?.inviteReward && (
@@ -975,12 +950,7 @@ export default function Purchase() {
                 <Typography variant="body2" color="primary" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }} component="span" >
                   {(() => {
                     const planMonths = plans.find(p => p.pid === plan)?.month || 0;
-                    const targetCount = (selectedForMyself ? 1 : 0) + selectedMemberUUIDs.length;
-                    if (targetCount === 1) {
-                      return t('purchase:purchase.memberAuthorization', { months: planMonths });
-                    } else {
-                      return t('purchase:purchase.memberAuthorizationMultiple', { months: planMonths, count: targetCount });
-                    }
+                    return t('purchase:purchase.memberAuthorization', { months: planMonths });
                   })()}
                   {user?.inviteCode && appConfig?.inviteReward && (
                     <Chip label={t('purchase:purchase.friendReferralGift', { days: appConfig.inviteReward.purchaseRewardDays })} color="success" size="small" sx={{ ml: 1, fontWeight: 'bold' }} component="span" />
@@ -1087,7 +1057,7 @@ export default function Purchase() {
           size="large"
           fullWidth
           onClick={() => handleOrder({ preview: false })}
-          disabled={plansLoading || plans.length === 0 || !plan || isLoading || !isAuthenticated || (!selectedForMyself && selectedMemberUUIDs.length === 0)}
+          disabled={plansLoading || plans.length === 0 || !plan || isLoading || !isAuthenticated}
           sx={{
             fontWeight: 700,
             fontSize: 18,
@@ -1114,7 +1084,7 @@ export default function Purchase() {
         >
           {plansLoading || isLoading ? t('purchase:purchase.loadingPlans') :
            plans.length === 0 ? t('purchase:purchase.noPlans') :
-           (!isAuthenticated || (!selectedForMyself && selectedMemberUUIDs.length === 0)) ? t('purchase:purchase.selectTarget') :
+           !isAuthenticated ? t('purchase:purchase.selectTarget') :
            t('purchase:purchase.payNow')}
         </Button>
         
