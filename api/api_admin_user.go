@@ -952,7 +952,7 @@ func api_admin_change_user_tier(c *gin.Context) {
 	user.Tier = req.Tier
 	if err := db.Get().Save(&user).Error; err != nil {
 		log.Errorf(c, "更新用户 tier 失败: %v", err)
-		Error(c, ErrorSystemError, err.Error())
+		Error(c, ErrorSystemError, "update user tier failed")
 		return
 	}
 
