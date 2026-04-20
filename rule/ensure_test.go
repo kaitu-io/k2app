@@ -137,3 +137,60 @@ func TestEnsureBundles_FreshSkip(t *testing.T) {
 		t.Errorf("expected nil (fresh skip), got %v", err)
 	}
 }
+
+func TestEnsureBundles_AllSourcesFail(t *testing.T) {
+	dir := t.TempDir()
+	srv500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv500.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err := EnsureBundles(ctx, dir, []string{srv500.URL + "/"})
+	if err == nil {
+		t.Fatal("expected error when all sources 500, got nil")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "bundles.version")); statErr == nil {
+		t.Error("bundles.version should not exist on download failure")
+	}
+}
+
+func TestEnsureBundles_CorruptTarball(t *testing.T) {
+	dir := t.TempDir()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/gzip")
+		_, _ = w.Write([]byte("this is not a gzip file"))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := EnsureBundles(ctx, dir, []string{srv.URL + "/"})
+	if err == nil {
+		t.Fatal("expected extract error, got nil")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "bundles.version")); statErr == nil {
+		t.Error("bundles.version should not exist on extract failure")
+	}
+}
+
+func TestEnsureBundles_MaxSize(t *testing.T) {
+	dir := t.TempDir()
+	payload := make([]byte, 6<<20) // 6MB — over 5MB limit
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/gzip")
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := EnsureBundles(ctx, dir, []string{srv.URL + "/"})
+	if err == nil {
+		t.Fatal("expected size-limit error, got nil")
+	}
+}
