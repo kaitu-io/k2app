@@ -275,6 +275,7 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/tiers", GetAdminTiers)
 
 		// 用户管理
+		admin.PUT("/users/:uuid/tier", api_admin_change_user_tier)
 		admin.PUT("/users/:uuid/retailer-status", api_admin_update_user_retailer_status)
 		admin.PUT("/users/:uuid/retailer-contacts", api_admin_update_retailer_contacts)
 		// 用户硬删除（批量）

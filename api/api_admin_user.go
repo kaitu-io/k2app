@@ -901,3 +901,68 @@ func api_admin_revoke_access_key(c *gin.Context) {
 	log.Infof(c, "admin revoked access key for user %s", uuid)
 	SuccessEmpty(c)
 }
+
+// reqAdminChangeUserTier PUT /app/users/:uuid/tier 请求体
+type reqAdminChangeUserTier struct {
+	Tier   string `json:"tier" binding:"required"`
+	Reason string `json:"reason" binding:"required,min=3"`
+}
+
+// respAdminChangeUserTier PUT /app/users/:uuid/tier 响应体
+type respAdminChangeUserTier struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// api_admin_change_user_tier 管理员手动调整用户 tier 等级
+// PUT /app/users/:uuid/tier
+// Auth 在路由组层面强制（AdminRequired）；此处只做输入校验、更新与审计写入。
+func api_admin_change_user_tier(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	var req reqAdminChangeUserTier
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+
+	if !IsValidTier(req.Tier) {
+		Error(c, ErrorInvalidArgument,
+			fmt.Sprintf("非法的 tier 值：%s（必须是 lite/basic/family/business）", req.Tier))
+		return
+	}
+
+	var user User
+	if err := db.Get().Where(&User{UUID: uuid}).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "user not found")
+			return
+		}
+		log.Errorf(c, "查询用户失败: %v", err)
+		Error(c, ErrorSystemError, "query user failed")
+		return
+	}
+
+	oldTier := user.Tier
+	if oldTier == req.Tier {
+		Success(c, &respAdminChangeUserTier{From: oldTier, To: oldTier})
+		return
+	}
+
+	user.Tier = req.Tier
+	if err := db.Get().Save(&user).Error; err != nil {
+		log.Errorf(c, "更新用户 tier 失败: %v", err)
+		Error(c, ErrorSystemError, err.Error())
+		return
+	}
+
+	log.Infof(c, "admin changed tier for user %s: %s -> %s (reason: %s)",
+		uuid, oldTier, req.Tier, req.Reason)
+
+	Success(c, &respAdminChangeUserTier{From: oldTier, To: req.Tier})
+	WriteAuditLog(c, "user_change_tier", "user", uuid, map[string]any{
+		"from":   oldTier,
+		"to":     req.Tier,
+		"reason": req.Reason,
+	})
+}
