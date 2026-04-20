@@ -1211,15 +1211,6 @@ func buildRuleEngine(client *config.ClientConfig, outboundMap map[string]rule.Ta
 	return rule.NewEngine(entries, fallback, bundles, allProxy)
 }
 
-// extractMatches collects MatchConfig from each route for BundlesForConfig.
-func extractMatches(client *config.ClientConfig) []rule.MatchConfig {
-	matches := make([]rule.MatchConfig, len(client.Routes))
-	for i, r := range client.Routes {
-		matches[i] = r.Match
-	}
-	return matches
-}
-
 // computeDNSExclude builds the list of IPs to exclude from TUN routing.
 // This includes DNS direct server IPs and the wire server's resolved IPs.
 func computeDNSExclude(client *config.ClientConfig) []netip.Addr {
