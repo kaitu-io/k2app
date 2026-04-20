@@ -533,15 +533,6 @@ func (d *Daemon) startRulePrefetch(ctx context.Context) {
 		dir = filepath.Join(cacheDir(), "rules")
 	}
 
-	matches := make([]rule.MatchConfig, len(cfg.Routes))
-	for i, r := range cfg.Routes {
-		matches[i] = r.Match
-	}
-	bundleNames := rule.BundlesForConfig(matches)
-	if len(bundleNames) == 0 {
-		return
-	}
-
 	sources := cfg.RuleSources
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
@@ -550,10 +541,10 @@ func (d *Daemon) startRulePrefetch(ctx context.Context) {
 	safego.Go(func() {
 		dlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		if err := rule.DownloadAndReload(dlCtx, nil, dir, bundleNames, sources, nil, 24*time.Hour); err != nil {
+		if err := rule.DownloadAndReload(dlCtx, nil, dir, sources, nil); err != nil {
 			slog.Warn("rule prefetch failed", "err", err)
 		} else {
-			slog.Info("rule prefetch complete", "bundles", len(bundleNames))
+			slog.Info("rule prefetch complete")
 		}
 	})
 }

@@ -308,15 +308,6 @@ func PrefetchRules(configJSON string, cfg *EngineConfig) {
 
 	cacheDir := filepath.Join(cfg.CacheDir, "rules")
 
-	matches := make([]rule.MatchConfig, len(clientCfg.Routes))
-	for i, r := range clientCfg.Routes {
-		matches[i] = r.Match
-	}
-	bundleNames := rule.BundlesForConfig(matches)
-	if len(bundleNames) == 0 {
-		return
-	}
-
 	sources := clientCfg.RuleSources
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
@@ -325,7 +316,7 @@ func PrefetchRules(configJSON string, cfg *EngineConfig) {
 	safego.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := rule.DownloadAndReload(ctx, nil, cacheDir, bundleNames, sources, nil, 24*time.Hour); err != nil {
+		if err := rule.DownloadAndReload(ctx, nil, cacheDir, sources, nil); err != nil {
 			slog.Warn("appext: PrefetchRules failed", "err", err)
 		} else {
 			slog.Info("appext: PrefetchRules complete")

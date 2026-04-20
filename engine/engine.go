@@ -178,7 +178,6 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 1. Rule bundles: load from disk only (downloads handled by daemon/appext prefetch
 	// and StartUpdater background refresh). If cache is empty, fallback routing is used.
-	bundleNames := rule.BundlesForConfig(extractMatches(client))
 	sources := client.RuleSources
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
@@ -528,7 +527,7 @@ func (e *Engine) Start(cfg Config) error {
 	)
 
 	// Start rule bundle updater (24h background check + reload).
-	if len(bundleNames) > 0 && client.CacheDir != "" {
+	if client.CacheDir != "" {
 		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []*rule.Bundle, error) {
 			newBundles, err := rule.Load(cacheDir)
 			if err != nil {
@@ -538,7 +537,7 @@ func (e *Engine) Start(cfg Config) error {
 			entries, _, _ := buildRouteEntries(client.Routes, idx, outboundMap)
 			return entries, newBundles, nil
 		}
-		rule.StartUpdater(ctx, ruleEngine, client.CacheDir, bundleNames, sources, rebuildFn)
+		rule.StartUpdater(ctx, ruleEngine, client.CacheDir, sources, rebuildFn)
 	}
 
 	e.setStateLocked(StateConnected)
