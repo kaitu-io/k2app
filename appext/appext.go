@@ -292,35 +292,29 @@ func (e *Engine) NotifyNetEvent(event *NetEvent) {
 	})
 }
 
-// PrefetchRules downloads rule bundles in the background. Call at app launch
-// or NE startup, before Start(). configJSON is the same JSON config that will
-// be passed to Start(). cfg provides the CacheDir.
-// Skips download if cached bundles are fresh (<24h). Non-blocking.
-func PrefetchRules(configJSON string, cfg *EngineConfig) {
+// PrefetchRules downloads the rule bundle tarball in the background. Call at
+// native service entry (K2Plugin.load / macOS sysext init) — before the first
+// engine.Start — so Engine.Start finds the cache already warm and doesn't
+// block on a cold download.
+//
+// Safe for multiple concurrent calls: EnsureBundles internally dedupes via
+// singleflight.
+//
+// cfg.CacheDir must be set (bundles live in <CacheDir>/rules/).
+func PrefetchRules(cfg *EngineConfig) {
 	if cfg == nil || cfg.CacheDir == "" {
 		return
 	}
-	var clientCfg config.ClientConfig
-	if err := json.Unmarshal([]byte(configJSON), &clientCfg); err != nil {
-		slog.Warn("appext: PrefetchRules parse failed", "err", err)
-		return
-	}
-
-	cacheDir := filepath.Join(cfg.CacheDir, "rules")
-
-	sources := clientCfg.RuleSources
-	if len(sources) == 0 {
-		sources = rule.DefaultSources
-	}
+	dir := filepath.Join(cfg.CacheDir, "rules")
 
 	safego.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := rule.DownloadAndReload(ctx, nil, cacheDir, sources, nil); err != nil {
+		if err := rule.EnsureBundles(ctx, dir, rule.DefaultSources); err != nil {
 			slog.Warn("appext: PrefetchRules failed", "err", err)
-		} else {
-			slog.Info("appext: PrefetchRules complete")
+			return
 		}
+		slog.Info("appext: PrefetchRules complete", "dir", dir)
 	})
 }
 
