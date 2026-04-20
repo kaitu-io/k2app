@@ -62,7 +62,8 @@
     "selectPayTarget": "Select Payment Target",
     "bindEmailAndSelectTarget": "Bind Email and Select Payment Target",
     "inviteRewardTitle": "Referral Reward",
-    "inviteRewardDesc": "Complete your first top-up to receive {{days}} extra days"
+    "inviteRewardDesc": "Complete your first top-up to receive {{days}} extra days",
+    "tierLocked": "Your current tier is {{tier}}. This plan requires a different tier — please contact support to switch tiers."
   },
   "deviceInstall": {
     "title": "Client Download",

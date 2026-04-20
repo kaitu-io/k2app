@@ -95,7 +95,9 @@
       "licenseKeyNotFound": "ライセンスキーが見つかりません",
       "licenseKeyUsed": "ライセンスキーは既に使用済みです",
       "licenseKeyExpired": "ライセンスキーの有効期限が切れています",
-      "licenseKeyNotMatch": "このライセンスキーの使用条件を満たしていません"
+      "licenseKeyNotMatch": "このライセンスキーの使用条件を満たしていません",
+      "tierMismatch": "現在のプランではこのパッケージを購入できません。サポートにお問い合わせください。",
+      "proxyPurchaseDeprecated": "代理購入機能は終了しました。相手方ご自身のアカウントでご購入ください。"
     },
     "vpn": {
       "authFailed": "認証に失敗しました、再度ログインしてください",

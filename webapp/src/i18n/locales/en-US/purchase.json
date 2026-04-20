@@ -62,7 +62,8 @@
     "loginToPurchase": "Login to Complete Purchase",
     "loginToPurchaseDesc": "Login to select payment target and complete your purchase",
     "loginNow": "Login Now",
-    "loginAndPay": "Login & Pay"
+    "loginAndPay": "Login & Pay",
+    "tierLocked": "Your current tier is {{tier}}. This plan requires a different tier — please contact support to switch tiers."
   },
   "deviceInstall": {
     "title": "Client Download",

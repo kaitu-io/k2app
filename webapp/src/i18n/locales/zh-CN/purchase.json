@@ -62,7 +62,8 @@
     "loginToPurchase": "登录以完成购买",
     "loginToPurchaseDesc": "登录后即可选择付费对象并完成支付",
     "loginNow": "立即登录",
-    "loginAndPay": "登录并支付"
+    "loginAndPay": "登录并支付",
+    "tierLocked": "您当前为「{{tier}}」档，无法购买此档套餐。如需变更档位请联系客服。"
   },
   "deviceInstall": {
     "title": "客户端下载",
