@@ -267,6 +267,7 @@ export interface User {
   uuid: string;
   expiredAt: number;
   isFirstOrderDone: boolean;
+  tier?: string;                    // 当前档位: "lite" | "basic" | "family" | "business"
   loginIdentifies: LoginIdentify[];
   device?: Device;
   inviteCode?: InviteCode;
@@ -283,6 +284,7 @@ export interface Plan {
   originPrice: number;
   month: number;
   highlight: boolean;
+  tier?: string;                    // 套餐档位: "lite" | "basic" | "family" | "business"
 }
 
 // 优惠活动类型
@@ -450,6 +452,8 @@ export const ErrorCode = {
   InvalidInviteCode: 400004,       // Invalid invite code
   SelfInvitation: 400005,          // Self invitation
   InvalidCredentials: 400006,      // Invalid credentials
+  TierMismatch: 422001,            // 跨档购买被拒绝（仅同档续费）
+  ProxyPurchaseDeprecated: 422002, // 代付下单已下线
 } as const;
 
 export type ErrorCodeType = typeof ErrorCode[keyof typeof ErrorCode];

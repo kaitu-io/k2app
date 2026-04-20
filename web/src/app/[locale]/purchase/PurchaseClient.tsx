@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, Link } from "@/i18n/routing";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
@@ -115,6 +115,7 @@ export default function PurchaseClient() {
   const [userProfile, setUserProfile] = useState<{
     expiredAt: number;
     isFirstOrderDone: boolean;
+    tier?: string;
     inviteCode?: {
       code: string;
     };
@@ -163,7 +164,8 @@ export default function PurchaseClient() {
             setSelectedPlan("");
           } else {
             setPlans(planItems);
-            // Default select first highlight=true plan, otherwise first plan
+            // Initial pick is best-effort against the full list; once filteredPlans
+            // resolves below it may be re-snapped to a tier-valid choice.
             const highlightPlan = planItems.find((p: Plan) => p.highlight);
             setSelectedPlan(highlightPlan ? highlightPlan.pid : planItems[0]?.pid || "");
           }
@@ -184,6 +186,27 @@ export default function PurchaseClient() {
 
     fetchPlans();
   }, [t]);
+
+  /**
+   * Tier-based plan filter (Plan A):
+   *   - First-time buyer (or unauthenticated browse): show every plan.
+   *   - Repeat buyer: lock to plans whose tier matches `userProfile.tier`.
+   * Backend enforces the same rule and returns TIER_MISMATCH (422001) on
+   * violation, so this filter is the UX mirror of a server-side guard.
+   */
+  const filteredPlans = useMemo(() => {
+    if (!userProfile?.isFirstOrderDone) return plans;
+    return plans.filter((p) => p.tier === userProfile.tier);
+  }, [plans, userProfile]);
+
+  // If the currently selected plan was filtered out by the tier lock, snap
+  // selection to a valid plan in the filtered list (highlight, then first).
+  useEffect(() => {
+    if (plansLoading || filteredPlans.length === 0) return;
+    if (selectedPlan && filteredPlans.some((p) => p.pid === selectedPlan)) return;
+    const highlightPlan = filteredPlans.find((p) => p.highlight);
+    setSelectedPlan(highlightPlan ? highlightPlan.pid : filteredPlans[0]?.pid || "");
+  }, [filteredPlans, selectedPlan, plansLoading]);
 
   /**
    * 预览订单请求 (Preview Order)
@@ -272,6 +295,18 @@ export default function PurchaseClient() {
 
       if (error instanceof ApiError && error.code === ErrorCode.InvalidCampaignCode) {
         setCampaignError(t('purchase.purchase.invalidCampaignCode'));
+      } else if (error instanceof ApiError && error.code === ErrorCode.TierMismatch) {
+        // 跨档购买被拒：仅同档续费，跨档需联系客服。
+        console.warn('[Purchase] Tier mismatch:', error.code, error.message);
+        setCampaignError("");
+        setOrderData(null);
+        toast.error(getApiErrorMessage(error.code, t));
+      } else if (error instanceof ApiError && error.code === ErrorCode.ProxyPurchaseDeprecated) {
+        // 代付下单已下线 — UI 不再发送此请求，仅兜底陈旧客户端。
+        console.warn('[Purchase] Proxy purchase deprecated:', error.code, error.message);
+        setCampaignError("");
+        setOrderData(null);
+        toast.error(getApiErrorMessage(error.code, t));
       } else {
         setCampaignError("");
         setOrderData(null);
@@ -437,6 +472,21 @@ export default function PurchaseClient() {
         {/* Membership Benefits — show value first, then ask for action */}
         <MembershipBenefits />
 
+        {/* Tier locked banner — repeat buyer whose current tier has no
+            purchasable plans (e.g. tier was archived). Backend would also
+            reject the order with TIER_MISMATCH (422001). */}
+        {userProfile?.isFirstOrderDone && plans.length > 0 && filteredPlans.length === 0 && (
+          <div className="bg-amber-50 dark:bg-amber-950/20 border-l-4 border-amber-500 p-4 sm:p-6 rounded-r-lg">
+            <div className="flex items-center">
+              <AlertTriangleIcon className="w-8 h-8 text-amber-600 mr-3 flex-shrink-0" />
+              <p className="text-base sm:text-sm text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
+                {/* i18n key landing in Task 20 — fall back to inline Chinese for now. */}
+                {`您当前为「${userProfile.tier ?? 'basic'}」档，无法购买此档套餐。如需变更档位请联系客服。`}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* All Steps - Mobile: Stacked, Desktop: Multi-column layout */}
         <div className="space-y-6 sm:space-y-8 xl:space-y-0 xl:grid xl:grid-cols-12 xl:gap-8">
           {/* Left Column - Steps 1 & 2 */}
@@ -446,9 +496,9 @@ export default function PurchaseClient() {
               onLoginSuccess={handleLoginSuccess}
             />
 
-            {/* Step 2: Plan Selection */}
+            {/* Step 2: Plan Selection — feed the tier-filtered list. */}
             <PurchaseStep2
-              plans={plans}
+              plans={filteredPlans}
               selectedPlan={selectedPlan}
               onPlanChange={handlePlanChange}
               isLoading={plansLoading}
@@ -460,7 +510,7 @@ export default function PurchaseClient() {
             {/* Step 3: Confirmation and Payment - Sticky on desktop */}
             <div className="xl:sticky xl:top-8">
               <PurchaseStep3
-              plans={plans}
+              plans={filteredPlans}
               selectedPlan={selectedPlan}
               orderData={orderData}
               showCampaign={showCampaign}
