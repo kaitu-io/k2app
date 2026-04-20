@@ -9,6 +9,7 @@ import { Admins } from './collections/Admins.ts'
 import { Categories } from './collections/Categories.ts'
 import { Tags } from './collections/Tags.ts'
 import { Media } from './collections/Media.ts'
+import { Posts } from './collections/Posts.ts'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -22,7 +23,7 @@ export default buildConfig({
     admin: '/cms',
     api: '/payload/api',
   },
-  collections: [Admins, Categories, Tags, Media],
+  collections: [Admins, Categories, Tags, Media, Posts],
   localization: {
     locales: [
       { code: 'zh-CN', label: '简体中文' },
