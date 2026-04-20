@@ -14,7 +14,6 @@ import android.provider.Settings
 import android.util.Log
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
-import appext.Appext
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -83,21 +82,6 @@ class K2Plugin : Plugin() {
             Log.d(TAG, "load: starting auto-update check")
             Thread { performAutoUpdateCheck() }.start()
         }, 3000)
-
-        // Prefetch rule bundles at plugin load so the first connect finds rules
-        // on disk and doesn't block on a 10-second cold download inside Engine.Start.
-        // Non-fatal: any failure here just means the first connect takes longer;
-        // engine.Start will retry inside its own 10s gate.
-        Thread {
-            try {
-                val cacheDir = context.cacheDir.absolutePath
-                val cfg = Appext.newEngineConfig()
-                cfg.cacheDir = cacheDir
-                Appext.prefetchRules(cfg)
-            } catch (t: Throwable) {
-                Log.w(TAG, "rule prefetch failed", t)
-            }
-        }.start()
     }
 
     override fun handleOnDestroy() {
