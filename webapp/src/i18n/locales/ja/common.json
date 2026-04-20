@@ -121,6 +121,9 @@
       "requestFailed": "リクエストに失敗しました。ネットワークを確認してください",
       "responseFailed": "レスポンスの解析に失敗しました"
     },
+    "engine": {
+      "ruleBundlesUnavailable": "ルーティング規則のダウンロードに失敗しました。ネットワークを確認してください。"
+    },
     "installCancelled": "インストールがキャンセルされました",
     "unknown": "不明なエラー",
     "unknownError": "不明なエラー"
