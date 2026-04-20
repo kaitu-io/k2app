@@ -8,6 +8,7 @@ package center
 import (
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,4 +43,14 @@ func TestBuildTierInfos_ReturnsAll4TiersInRankOrder(t *testing.T) {
 	for _, ti := range tiers {
 		assert.Nil(t, ti.Plans, "buildTierInfos must not populate Plans")
 	}
+}
+
+// TestGetAdminTiers_HandlerExists is a compile-time smoke check that the
+// admin variant of the tiers endpoint is wired. The handler's
+// includeInactive=true behavior is exercised by integration tests against a
+// real DB — the qtoolkit/db global cannot be mocked here (see file header
+// note + api_stats_test.go precedent).
+func TestGetAdminTiers_HandlerExists(t *testing.T) {
+	var _ gin.HandlerFunc = GetAdminTiers
+	var _ gin.HandlerFunc = GetTiers
 }

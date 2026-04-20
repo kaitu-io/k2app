@@ -271,6 +271,8 @@ func SetupRouter() *gin.Engine {
 		admin.PUT("/plans/:id", api_admin_update_plan)
 		admin.DELETE("/plans/:id", api_admin_delete_plan)
 		admin.POST("/plans/:id/restore", api_admin_restore_plan)
+		// Tier 列表（含 inactive plans，用于后台 plan 管理 UI）
+		admin.GET("/tiers", GetAdminTiers)
 
 		// 用户管理
 		admin.PUT("/users/:uuid/retailer-status", api_admin_update_user_retailer_status)

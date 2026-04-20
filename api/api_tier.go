@@ -25,10 +25,10 @@ func buildTierInfos() []TierWithPlans {
 	return out
 }
 
-// GetTiers returns all 4 tiers (lite/basic/family/business) ordered by rank,
-// each carrying the active plans purchasable at that tier. Public endpoint, no
-// auth required.
-func GetTiers(c *gin.Context) {
+// loadTiersWithPlans builds the tier list and attaches matching plans from
+// the DB. includeInactive=false (public) returns only active plans;
+// includeInactive=true (admin) returns all plans regardless of is_active.
+func loadTiersWithPlans(c *gin.Context, includeInactive bool) ([]TierWithPlans, error) {
 	out := buildTierInfos()
 
 	names := make([]string, len(out))
@@ -36,13 +36,14 @@ func GetTiers(c *gin.Context) {
 		names[i] = out[i].Name
 	}
 
+	q := db.Get().Where("tier IN ?", names)
+	if !includeInactive {
+		q = q.Where("is_active = ?", true)
+	}
+
 	var plans []Plan
-	if err := db.Get().
-		Where("tier IN ? AND is_active = ?", names, true).
-		Find(&plans).Error; err != nil {
-		log.Errorf(c, "GetTiers: failed to load plans: %v", err)
-		Error(c, ErrorSystemError, "failed to load plans")
-		return
+	if err := q.Find(&plans).Error; err != nil {
+		return nil, err
 	}
 
 	byTier := make(map[string][]Plan, len(out))
@@ -58,5 +59,31 @@ func GetTiers(c *gin.Context) {
 		out[i].Plans = bucket
 	}
 
+	return out, nil
+}
+
+// GetTiers returns all 4 tiers (lite/basic/family/business) ordered by rank,
+// each carrying the active plans purchasable at that tier. Public endpoint, no
+// auth required.
+func GetTiers(c *gin.Context) {
+	out, err := loadTiersWithPlans(c, false)
+	if err != nil {
+		log.Errorf(c, "GetTiers: failed to load plans: %v", err)
+		Error(c, ErrorSystemError, "failed to load plans")
+		return
+	}
+	Success(c, &gin.H{"tiers": out})
+}
+
+// GetAdminTiers returns all 4 tiers with ALL plans, including inactive ones.
+// Admin-only — auth is enforced at the route group via AdminRequired()
+// middleware (see route.go admin := r.Group("/app")).
+func GetAdminTiers(c *gin.Context) {
+	out, err := loadTiersWithPlans(c, true)
+	if err != nil {
+		log.Errorf(c, "GetAdminTiers: failed to load plans: %v", err)
+		Error(c, ErrorSystemError, "failed to load plans")
+		return
+	}
 	Success(c, &gin.H{"tiers": out})
 }
