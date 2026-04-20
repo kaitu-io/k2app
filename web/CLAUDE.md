@@ -266,6 +266,49 @@ Optimizing for AI search engines (Google AI Overview, Perplexity, ChatGPT Search
 - **Embed mode** (`?embed=true`): Pages embedded in desktop app iframe. `useEmbedMode()` hook controls Header/Footer/CTA visibility. `ChatwootWidget` and `CookieConsent` auto-hide in embed mode. Used by `/releases` and `/changelog` routes.
 - **Platform labels in i18n**: Use user-friendly names, not technical ones. iOS → "iPhone / iPad", macOS → "苹果电脑" (zh) / "Mac" (en), Android → "安卓" (zh). No file extensions (.exe/.dmg/.apk) in download button labels.
 
+## CMS (Payload)
+
+Payload v3 admin mounted at `/cms`, REST API at `/payload/api`. GraphQL is disabled (no `(payload)/payload/api/graphql` folders exist). Content collections:
+
+- `posts` — Blog articles with Lexical rich text, draft/published versions, localized to 7 locales (zh-CN source, 6 AI-translated)
+- `categories` — Hierarchical (self-referencing parent) with localized name + description
+- `tags` — Flat labels with localized name
+- `media` — Uploaded images, stored at `public/cms-media/` (gitignored)
+- `admins` — Auth collection; custom Center API cookie strategy (no local password)
+
+### Auth
+Reuses `/manager` admin's `access_token` HttpOnly cookie. Bridge: `src/payload/auth/centerAuthStrategy.ts` calls Center `/api/user/info`, checks `isAdmin || (roles & 0xfffffffe) !== 0`, upserts admin record by Center `uuid`.
+
+### Translation
+`afterChange` on Posts fans out translation to all non-source locales via `@payload-enchants/translator` pointed at OpenRouter. Default model `google/gemini-2.5-flash`. Re-entry safe via `req.locale !== 'zh-CN'` guard. Configurable via env:
+
+- `TRANSLATOR_BASE_URL=https://openrouter.ai/api`
+- `TRANSLATOR_API_KEY=sk-or-v1-...`
+- `TRANSLATOR_MODEL=google/gemini-2.5-flash`
+
+### Local dev
+
+```bash
+docker compose -f web/docker-compose.dev.yml up -d   # Local Postgres (host port 5435 to avoid conflicts)
+cd web && yarn payload generate:types                 # Regenerate types after collection changes (gitignored output)
+cd web && yarn dev                                    # Next.js + Payload; visit http://localhost:3000/cms
+```
+
+### Consumption
+Public `[locale]/blog` pages use Local API via `getPayload().find({ ... overrideAccess: true })`. No public REST, no GraphQL.
+
+### Production (Amplify)
+Required env vars: `DATABASE_URL`, `PAYLOAD_SECRET`, `TRANSLATOR_API_KEY`, `TRANSLATOR_BASE_URL`, `TRANSLATOR_MODEL`, `CENTER_API_URL`. Schema auto-syncs via `push: true`.
+
+**`push: true` destructive-change caveat**: Drizzle push drops + re-adds on incompatible renames (column rename = drop old + add new = data loss). For non-additive schema changes (renames, type narrows), locally switch to `push: false`, generate explicit migrations with `yarn payload migrate:create`, commit them, and amplify.yml can run `yarn payload migrate`. Additive changes (new columns, new tables) are safe under push.
+
+### Gotchas specific to Payload
+- **`.ts` extensions required** on all payload-internal imports (e.g., `import { X } from './collections/X.ts'`) — Payload CLI's tsx loader mandates them.
+- **`--disable-transpile`** on `yarn payload` CLI — avoids `ERR_REQUIRE_ASYNC_MODULE` from tsx loader.
+- **Postgres port 5435** in local dev `.env` — chosen to avoid collision with common local pg containers (5432/5433/5434).
+- **`admins.auth: { disableLocalStrategy: true }`** — removes Payload's auto email/password; explicit `email` field needed.
+- **Middleware passthrough is load-bearing**: `src/middleware.ts` must early-return for `/cms` AND `/payload` prefixes, and the matcher must exclude them (`/((?!api|app|cms|payload|_next|...))`). Without this, i18n middleware mangles Payload's admin requests into locale-prefixed redirects. Verify whenever editing `middleware.ts`.
+
 ## Related Docs
 
 - [Root Architecture](../CLAUDE.md)

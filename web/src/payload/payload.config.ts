@@ -46,6 +46,7 @@ export default buildConfig({
   },
   db: postgresAdapter({
     pool: { connectionString: process.env.DATABASE_URL || '' },
+    push: true,  // Auto-sync schema; production uses push mode per amplify.yml
   }),
   sharp,
   plugins: [
