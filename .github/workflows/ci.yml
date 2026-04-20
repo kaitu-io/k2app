@@ -260,6 +260,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+          cache: 'yarn'
 
       - name: Install yarn
         shell: bash
@@ -269,7 +270,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
-          cache: false
           cache-dependency-path: k2/go.sum
 
       - name: Setup Rust
@@ -277,21 +277,29 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Set persistent cache paths (Windows)
-        shell: bash
-        run: |
-          echo "CARGO_HOME=C:/cache/cargo" >> "$GITHUB_ENV"
-          echo "GOMODCACHE=C:/cache/gomod" >> "$GITHUB_ENV"
-          echo "SCCACHE_DIR=C:/cache/sccache" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "C:/cache/cargo/bin" >> "$GITHUB_PATH"
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Setup sccache (Windows local disk)
+      - name: Verify sccache works
         shell: bash
         run: |
-          if ! command -v sccache &>/dev/null; then
-            RUSTC_WRAPPER= cargo install sccache --locked
+          export SCCACHE_GHA_ENABLED=true
+          if sccache rustc -vV >/dev/null 2>&1; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::sccache GHA backend unavailable, compiling without cache"
           fi
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
 
       - name: Install Node dependencies
         shell: bash
