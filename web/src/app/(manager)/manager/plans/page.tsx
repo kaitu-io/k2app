@@ -34,6 +34,13 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { api, isPendingApproval } from "@/lib/api";
+import {
+  TIER_OPTIONS,
+  DEFAULT_TIER,
+  formatLanClient,
+  type TierInfo,
+  type TiersResponse,
+} from "@/lib/tiers";
 import { toast } from "sonner";
 
 // 定义套餐数据结构
@@ -49,9 +56,6 @@ interface Plan {
   month: number;       // 月数
   highlight: boolean;  // 是否高亮显示
   isActive: boolean;   // 是否激活
-  maxDevice: number;       // app 设备上限 (0=默认5)
-  maxRouterDevice: number; // 路由器登录上限 (0=不支持)
-  maxLanClient: number;    // LAN 接入上限 (0=不支持, -1=无限)
 }
 
 interface PlanListResponse {
@@ -72,9 +76,6 @@ interface PlanFormData {
   month: number;
   highlight: boolean;
   isActive: boolean;
-  maxDevice: number;
-  maxRouterDevice: number;
-  maxLanClient: number;
 }
 
 export default function PlansPage() {
@@ -90,20 +91,20 @@ export default function PlansPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
 
-  // 表单数据
+  // 表单数据 —— 新建默认 tier=basic
   const [formData, setFormData] = useState<PlanFormData>({
     pid: "",
-    tier: "",
+    tier: DEFAULT_TIER,
     label: "",
     price: 0,
     originPrice: 0,
     month: 0,
     highlight: false,
     isActive: true,
-    maxDevice: 0,
-    maxRouterDevice: 0,
-    maxLanClient: 0,
   });
+
+  // 档位配额缓存（来自 GET /app/tiers）
+  const [tierQuotas, setTierQuotas] = useState<Record<string, TierInfo>>({});
 
   const columns: ColumnDef<Plan>[] = [
     {
@@ -144,22 +145,6 @@ export default function PlansPage() {
     {
       accessorKey: "month",
       header: "月数",
-    },
-    {
-      accessorKey: "maxDevice",
-      header: "设备",
-      cell: ({ row }: { row: Row<Plan> }) => {
-        const v = row.getValue<number>("maxDevice");
-        return v > 0 ? v : <span className="text-muted-foreground">默认</span>;
-      },
-    },
-    {
-      accessorKey: "maxRouterDevice",
-      header: "路由器",
-      cell: ({ row }: { row: Row<Plan> }) => {
-        const v = row.getValue<number>("maxRouterDevice");
-        return v > 0 ? "✓" : "—";
-      },
     },
     {
       accessorKey: "highlight",
@@ -225,6 +210,29 @@ export default function PlansPage() {
     fetchPlans();
   }, [page, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 一次性加载 tier 元信息；配额不随分页变化，无需重复拉取
+  useEffect(() => {
+    const fetchTiers = async () => {
+      try {
+        const resp = await api.request<TiersResponse>("/app/tiers");
+        const map: Record<string, TierInfo> = {};
+        (resp.tiers || []).forEach((t) => {
+          map[t.name] = {
+            name: t.name,
+            rank: t.rank,
+            maxDevice: t.maxDevice,
+            maxRouterDevice: t.maxRouterDevice,
+            maxLanClient: t.maxLanClient,
+          };
+        });
+        setTierQuotas(map);
+      } catch (error) {
+        console.error("Failed to fetch tiers:", error);
+      }
+    };
+    fetchTiers();
+  }, []);
+
   const fetchPlans = async () => {
     setIsLoading(true);
     try {
@@ -262,16 +270,13 @@ export default function PlansPage() {
   const resetForm = () => {
     setFormData({
       pid: "",
-      tier: "",
+      tier: DEFAULT_TIER,
       label: "",
       price: 0,
       originPrice: 0,
       month: 0,
       highlight: false,
       isActive: true,
-      maxDevice: 0,
-      maxRouterDevice: 0,
-      maxLanClient: 0,
     });
   };
 
@@ -294,16 +299,13 @@ export default function PlansPage() {
     setEditingPlan(plan);
     setFormData({
       pid: plan.pid,
-      tier: plan.tier || '',
+      tier: plan.tier || DEFAULT_TIER,
       label: plan.label,
       price: plan.price,
       originPrice: plan.originPrice,
       month: plan.month,
       highlight: plan.highlight,
       isActive: plan.isActive,
-      maxDevice: plan.maxDevice || 0,
-      maxRouterDevice: plan.maxRouterDevice || 0,
-      maxLanClient: plan.maxLanClient || 0,
     });
     setIsEditDialogOpen(true);
   };
@@ -315,6 +317,7 @@ export default function PlansPage() {
       const result = await api.request(`/app/plans/${editingPlan.id}`, {
         method: "PUT",
         body: JSON.stringify({
+          tier: formData.tier,
           label: formData.label,
           price: formData.price,
           originPrice: formData.originPrice,
@@ -447,14 +450,39 @@ export default function PlansPage() {
                   value={formData.tier}
                   onChange={(e) => setFormData({ ...formData, tier: e.target.value })}
                 >
-                  <option value="">不指定</option>
-                  <option value="lite">lite — 轻量版</option>
-                  <option value="basic">basic — 标准版</option>
-                  <option value="family">family — 家庭版</option>
-                  <option value="business">business — 商业版</option>
-                  <option value="pro">pro — 专业版</option>
+                  {TIER_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </div>
+              {formData.tier && tierQuotas[formData.tier] && (
+                <div className="grid grid-cols-4 items-start gap-4">
+                  <div className="text-right text-sm text-muted-foreground pt-1">
+                    {"档位配额预览"}
+                  </div>
+                  <div className="col-span-3 rounded border p-3 text-sm space-y-1 bg-muted/30">
+                    <div>
+                      {"设备上限 (Max Device)："}
+                      <span className="font-mono">{tierQuotas[formData.tier].maxDevice}</span>
+                    </div>
+                    <div>
+                      {"路由器上限 (Max Router Device)："}
+                      <span className="font-mono">{tierQuotas[formData.tier].maxRouterDevice}</span>
+                    </div>
+                    <div>
+                      {"LAN 接入上限 (Max LAN Client)："}
+                      <span className="font-mono">
+                        {formatLanClient(tierQuotas[formData.tier].maxLanClient)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground pt-1">
+                      {"配额由档位派生，修改需发版后端。"}
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="label" className="text-right">
                   {"套餐名称"}
@@ -515,24 +543,6 @@ export default function PlansPage() {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">{"设备上限"}</Label>
-                <Input type="number" value={formData.maxDevice}
-                  onChange={(e) => setFormData({ ...formData, maxDevice: parseInt(e.target.value) || 0 })}
-                  className="col-span-3" placeholder="0=默认5" />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">{"路由器上限"}</Label>
-                <Input type="number" value={formData.maxRouterDevice}
-                  onChange={(e) => setFormData({ ...formData, maxRouterDevice: parseInt(e.target.value) || 0 })}
-                  className="col-span-3" placeholder="0=不支持" />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">{"LAN上限"}</Label>
-                <Input type="number" value={formData.maxLanClient}
-                  onChange={(e) => setFormData({ ...formData, maxLanClient: parseInt(e.target.value) || 0 })}
-                  className="col-span-3" placeholder="0=不支持, -1=无限" />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
                 <Label className="text-right">{"高亮推荐"}</Label>
                 <div className="col-span-3">
                   <Checkbox
@@ -590,14 +600,39 @@ export default function PlansPage() {
                 value={formData.tier}
                 onChange={(e) => setFormData({ ...formData, tier: e.target.value })}
               >
-                <option value="">不指定</option>
-                <option value="lite">lite — 轻量版</option>
-                <option value="basic">basic — 标准版</option>
-                <option value="family">family — 家庭版</option>
-                <option value="business">business — 商业版</option>
-                <option value="pro">pro — 专业版</option>
+                {TIER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
+            {formData.tier && tierQuotas[formData.tier] && (
+              <div className="grid grid-cols-4 items-start gap-4">
+                <div className="text-right text-sm text-muted-foreground pt-1">
+                  {"档位配额预览"}
+                </div>
+                <div className="col-span-3 rounded border p-3 text-sm space-y-1 bg-muted/30">
+                  <div>
+                    {"设备上限 (Max Device)："}
+                    <span className="font-mono">{tierQuotas[formData.tier].maxDevice}</span>
+                  </div>
+                  <div>
+                    {"路由器上限 (Max Router Device)："}
+                    <span className="font-mono">{tierQuotas[formData.tier].maxRouterDevice}</span>
+                  </div>
+                  <div>
+                    {"LAN 接入上限 (Max LAN Client)："}
+                    <span className="font-mono">
+                      {formatLanClient(tierQuotas[formData.tier].maxLanClient)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground pt-1">
+                    {"配额由档位派生，修改需发版后端。"}
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="edit-label" className="text-right">
                 {"套餐名称"}
@@ -655,24 +690,6 @@ export default function PlansPage() {
                 }
                 className="col-span-3"
               />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">{"设备上限"}</Label>
-              <Input type="number" value={formData.maxDevice}
-                onChange={(e) => setFormData({ ...formData, maxDevice: parseInt(e.target.value) || 0 })}
-                className="col-span-3" placeholder="0=默认5" />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">{"路由器上限"}</Label>
-              <Input type="number" value={formData.maxRouterDevice}
-                onChange={(e) => setFormData({ ...formData, maxRouterDevice: parseInt(e.target.value) || 0 })}
-                className="col-span-3" placeholder="0=不支持" />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">{"LAN上限"}</Label>
-              <Input type="number" value={formData.maxLanClient}
-                onChange={(e) => setFormData({ ...formData, maxLanClient: parseInt(e.target.value) || 0 })}
-                className="col-span-3" placeholder="0=不支持, -1=无限" />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">{"高亮推荐"}</Label>
