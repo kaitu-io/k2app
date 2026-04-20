@@ -297,15 +297,16 @@ func (e *Engine) NotifyNetEvent(event *NetEvent) {
 // engine.Start — so Engine.Start finds the cache already warm and doesn't
 // block on a cold download.
 //
+// cacheDir is the base directory (bundles live in cacheDir + "/rules"),
+// matching the layout engine.Start uses via clientCfg.CacheDir.
+//
 // Safe for multiple concurrent calls: EnsureBundles internally dedupes via
 // singleflight.
-//
-// cfg.CacheDir must be set (bundles live in <CacheDir>/rules/).
-func PrefetchRules(cfg *EngineConfig) {
-	if cfg == nil || cfg.CacheDir == "" {
+func PrefetchRules(cacheDir string) {
+	if cacheDir == "" {
 		return
 	}
-	dir := filepath.Join(cfg.CacheDir, "rules")
+	dir := filepath.Join(cacheDir, "rules")
 
 	safego.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
