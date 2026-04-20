@@ -10,14 +10,26 @@ import (
 	"time"
 )
 
-// DefaultSources is the list of CDN sources for k2b bundle downloads.
-// Happy Eyeballs races all sources in parallel — fastest wins.
-// Order doesn't matter for performance, but GitHub direct is listed first
-// as the authoritative source; CDN proxies provide China acceleration.
+// DefaultSources is the list of CDN sources for k2-rules.tar.gz downloads.
+// Happy Eyeballs races all sources in parallel — fastest wins. GitHub is
+// listed first as the authoritative origin; jsdelivr/ghproxy mirrors provide
+// acceleration and censorship resilience in CN. The "@release" path is the
+// orphan release branch in kaitu-io/k2-rules that holds just the tarball
+// and per-country .k2b bundles (no source code).
 var DefaultSources = []string{
+	// GitHub Releases (canonical origin)
 	"https://github.com/kaitu-io/k2-rules/releases/latest/download/",
+	// GitHub HTTPS proxies (preserve the /releases/latest/download/ path)
 	"https://ghfast.top/https://github.com/kaitu-io/k2-rules/releases/latest/download/",
 	"https://gh-proxy.com/https://github.com/kaitu-io/k2-rules/releases/latest/download/",
+	// jsdelivr @release branch (4 global POPs)
+	"https://cdn.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
+	"https://fastly.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
+	"https://testingcf.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
+	"https://gcore.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
+	// CN-friendly jsdelivr mirrors
+	"https://cdn.jsdmirror.com/gh/kaitu-io/k2-rules@release/",
+	"https://jsd.onmicrosoft.cn/gh/kaitu-io/k2-rules@release/",
 }
 
 // bundleFileMap maps BundleSet names to k2b file names. Aligned with the

@@ -223,3 +223,26 @@ func TestEnsureBundles_CleansStaleTmp(t *testing.T) {
 		t.Errorf(".tmp/ should be removed after successful EnsureBundles (err=%v)", err)
 	}
 }
+
+func TestDefaultSources_ContainsExpectedMirrors(t *testing.T) {
+	expected := []string{
+		"github.com/kaitu-io/k2-rules/releases/latest/download",
+		"ghfast.top",
+		"gh-proxy.com",
+		"cdn.jsdelivr.net/gh/kaitu-io/k2-rules@release",
+		"fastly.jsdelivr.net/gh/kaitu-io/k2-rules@release",
+		"testingcf.jsdelivr.net/gh/kaitu-io/k2-rules@release",
+		"gcore.jsdelivr.net/gh/kaitu-io/k2-rules@release",
+		"cdn.jsdmirror.com/gh/kaitu-io/k2-rules@release",
+		"jsd.onmicrosoft.cn/gh/kaitu-io/k2-rules@release",
+	}
+	joined := strings.Join(DefaultSources, " ")
+	for _, want := range expected {
+		if !strings.Contains(joined, want) {
+			t.Errorf("DefaultSources missing %q", want)
+		}
+	}
+	if len(DefaultSources) < 9 {
+		t.Errorf("expected ≥9 sources, got %d", len(DefaultSources))
+	}
+}
