@@ -239,3 +239,23 @@ func TestAppextEngineStartInvalidJSON(t *testing.T) {
 		t.Fatalf("expected error containing 'parse config', got: %v", err)
 	}
 }
+
+// ==========================================================================
+// PrefetchRules tests
+// ==========================================================================
+
+// Compile-time signature guard. The mobile plugin was broken in the past by
+// treating PrefetchRules as if it took *EngineConfig — that forced callers
+// through a nullable gomobile init, which broke iOS build. If anyone changes
+// the signature back, this line fails to compile.
+var _ func(string) = PrefetchRules
+
+// TestPrefetchRules_EmptyCacheDirNoOp documents the early-return contract:
+// callers on mobile pass an empty string when the platform container is
+// unavailable, and the function must return without spawning a goroutine
+// or panicking.
+func TestPrefetchRules_EmptyCacheDirNoOp(t *testing.T) {
+	// Must not panic, must not block, must not launch work. If this test
+	// hangs, PrefetchRules is not honoring its early-return guard.
+	PrefetchRules("")
+}
