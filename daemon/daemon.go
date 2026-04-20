@@ -516,45 +516,19 @@ func (d *Daemon) doDown() {
 }
 
 // startRulePrefetch kicks off a background rule bundle download at daemon startup.
-// Uses the persisted config to determine which bundles are needed. Skips the
-// download entirely if cached bundles are less than 24h old (no HTTP at all).
-// Does not block — runs in a safego goroutine.
+// Always fetches the full country-set tarball — no persisted config required.
+// Skips entirely if bundles.version is <24h old (handled inside EnsureBundles).
 func (d *Daemon) startRulePrefetch(ctx context.Context) {
-	st, err := loadState()
-	if err != nil || st.Config == nil {
-		return
-	}
-
-	cfg := st.Config
-	config.SetDefaults(cfg)
-
-	dir := cfg.CacheDir
-	if dir == "" {
-		dir = filepath.Join(cacheDir(), "rules")
-	}
-
-	matches := make([]rule.MatchConfig, len(cfg.Routes))
-	for i, r := range cfg.Routes {
-		matches[i] = r.Match
-	}
-	bundleNames := rule.BundlesForConfig(matches)
-	if len(bundleNames) == 0 {
-		return
-	}
-
-	sources := cfg.RuleSources
-	if len(sources) == 0 {
-		sources = rule.DefaultSources
-	}
+	dir := filepath.Join(cacheDir(), "rules")
 
 	safego.Go(func() {
 		dlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		if err := rule.DownloadAndReload(dlCtx, nil, dir, bundleNames, sources, nil, 24*time.Hour); err != nil {
+		if err := rule.EnsureBundles(dlCtx, dir, rule.DefaultSources); err != nil {
 			slog.Warn("rule prefetch failed", "err", err)
-		} else {
-			slog.Info("rule prefetch complete", "bundles", len(bundleNames))
+			return
 		}
+		slog.Info("rule prefetch complete", "dir", dir)
 	})
 }
 

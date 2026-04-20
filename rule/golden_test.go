@@ -3,10 +3,11 @@
 package rule_test
 
 import (
+	"context"
 	"net/netip"
 	"os"
-	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/kaitu-io/k2/rule"
 	"gopkg.in/yaml.v3"
@@ -52,28 +53,15 @@ func loadGolden(t *testing.T) goldenFile {
 	return gf
 }
 
-func downloadBundles(t *testing.T, gf goldenFile) (string, []*rule.Bundle, map[string]*rule.BundleSet) {
+func downloadBundles(t *testing.T, _ goldenFile) (string, []*rule.Bundle, map[string]*rule.BundleSet) {
 	t.Helper()
 	dir := t.TempDir()
 
-	needed := make(map[string]struct{})
-	needed["overseas.k2b"] = struct{}{}
-	for _, c := range gf.Countries {
-		setNames := rule.ExpandPreset(c.Preset)
-		for _, name := range setNames {
-			files := rule.BundlesForConfig([]rule.MatchConfig{{Names: []string{name}}})
-			for _, f := range files {
-				needed[f] = struct{}{}
-			}
-		}
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-	for name := range needed {
-		url := releaseBase + "/" + name
-		path := filepath.Join(dir, name)
-		if err := downloadFile(url, path); err != nil {
-			t.Fatalf("download %s: %v", name, err)
-		}
+	if err := rule.EnsureBundles(ctx, dir, nil); err != nil {
+		t.Fatalf("EnsureBundles: %v", err)
 	}
 
 	bundles, err := rule.Load(dir)

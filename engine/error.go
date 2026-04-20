@@ -14,13 +14,14 @@ import (
 const (
 	ErrCodeNetworkUnavailable = 101 // Client network unreachable, no route to host
 	ErrCodeTimeout            = 108 // Connection or handshake timeout
-	ErrCodeBadConfig          = 400 // Invalid wire URL, missing auth, bad scheme
-	ErrCodeAuthRejected       = 401 // Server rejected authentication (stream rejected)
-	ErrCodePaymentRequired    = 402 // Subscription expired or payment required
-	ErrCodeForbidden          = 403 // Certificate pin mismatch, blocked CA
-	ErrCodeProtocolError      = 502 // TLS handshake failure, QUIC dial failure
-	ErrCodeServerUnreachable  = 503 // TCP dial failed, connection refused
-	ErrCodeConnectionFatal    = 570 // Unclassified connection error (fallback)
+	ErrCodeBadConfig              = 400 // Invalid wire URL, missing auth, bad scheme
+	ErrCodeAuthRejected           = 401 // Server rejected authentication (stream rejected)
+	ErrCodePaymentRequired        = 402 // Subscription expired or payment required
+	ErrCodeForbidden              = 403 // Certificate pin mismatch, blocked CA
+	ErrCodeRuleBundlesUnavailable = 424 // Failed Dependency: all CDN sources failed to provide rule bundles (user action: retry)
+	ErrCodeProtocolError          = 502 // TLS handshake failure, QUIC dial failure
+	ErrCodeServerUnreachable      = 503 // TCP dial failed, connection refused
+	ErrCodeConnectionFatal        = 570 // Unclassified connection error (fallback)
 )
 
 // Error categories — three-party blame attribution.
@@ -52,7 +53,7 @@ type EngineError struct {
 // categoryForCode maps an error code to its blame category.
 func categoryForCode(code int) string {
 	switch code {
-	case ErrCodeBadConfig, ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden:
+	case ErrCodeBadConfig, ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden, ErrCodeRuleBundlesUnavailable:
 		return CategoryClient
 	case ErrCodeNetworkUnavailable, ErrCodeTimeout:
 		return CategoryNetwork
@@ -73,8 +74,16 @@ func (e *EngineError) Error() string {
 }
 
 // ClassifyError maps a wire/engine error to an HTTP-aligned error code with category.
-// Priority: StreamError (server-provided code) → MultiTransportError → timeout → string pattern → fallback 570.
+// Priority: already-classified EngineError → StreamError (server-provided code) → MultiTransportError → timeout → string pattern → fallback 570.
 func ClassifyError(err error) *EngineError {
+	// Priority 0a: already-classified EngineError passes through untouched.
+	// Allows call sites to pre-classify (e.g. rule-bundle gate, protocol-specific
+	// errors) and still go through Engine.fail() for proper state transition.
+	var ee *EngineError
+	if errors.As(err, &ee) {
+		return ee
+	}
+
 	// Priority 0: StreamError — server responded to a proxy request about a
 	// specific target. The wire is healthy (server received and responded).
 	// Always CategoryTarget regardless of code. Auth/payment errors use

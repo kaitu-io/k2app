@@ -118,7 +118,11 @@ appext-macos:
 
 appext-android:
 	mkdir -p build
-	gomobile bind -tags "with_gvisor deadlock_disable" -target=android -o build/k2mobile.aar -androidapi 24 ./appext/
+	# -checklinkname=0: github.com/wlynxg/anet (transitive via pion/ice) uses
+	# //go:linkname to patch net.zoneCache on Android. Go 1.23+ rejects this
+	# by default. See anet v0.0.5 README. iOS target doesn't compile
+	# interface_android.go so the flag is Android-only.
+	gomobile bind -tags "with_gvisor deadlock_disable" -target=android -o build/k2mobile.aar -androidapi 24 -ldflags=-checklinkname=0 ./appext/
 
 # --- Network degradation tests (Docker netem) ---
 netem-test:

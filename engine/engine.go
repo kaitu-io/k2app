@@ -176,12 +176,33 @@ func (e *Engine) Start(cfg Config) error {
 
 	startTime := time.Now()
 
-	// 1. Rule bundles: load from disk only (downloads handled by daemon/appext prefetch
-	// and StartUpdater background refresh). If cache is empty, fallback routing is used.
-	bundleNames := rule.BundlesForConfig(extractMatches(client))
+	// 1. Rule bundles: ensure on disk before building the rule engine.
+	// Cold start: downloads the tarball from DefaultSources (up to 10s
+	// hard timeout). Warm cache: ~microsecond mtime check, no HTTP.
+	// Failure here is fatal to Start — routes=0 would otherwise lead to
+	// a silent all-direct downgrade.
 	sources := client.RuleSources
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
+	}
+	if client.CacheDir == "" {
+		// Defensive: platforms are expected to provide CacheDir. Empty means
+		// the gate is a no-op, re-exposing the routes=0 cold-start bug if
+		// bundles aren't already on disk. Log loudly so a future regression
+		// in platform wiring surfaces at first connect.
+		slog.Warn("engine: Start without CacheDir — rule bundle prefetch skipped",
+			"risk", "routes=0 cold-start bug may reappear if bundles absent")
+	} else {
+		ensureCtx, cancelEnsure := context.WithTimeout(ctx, 10*time.Second)
+		err := rule.EnsureBundles(ensureCtx, client.CacheDir, sources)
+		cancelEnsure()
+		if err != nil {
+			return e.fail(&EngineError{
+				Code:     ErrCodeRuleBundlesUnavailable,
+				Category: CategoryClient,
+				Message:  fmt.Sprintf("rule bundles unavailable: %v", err),
+			})
+		}
 	}
 
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
@@ -528,7 +549,7 @@ func (e *Engine) Start(cfg Config) error {
 	)
 
 	// Start rule bundle updater (24h background check + reload).
-	if len(bundleNames) > 0 && client.CacheDir != "" {
+	if client.CacheDir != "" {
 		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []*rule.Bundle, error) {
 			newBundles, err := rule.Load(cacheDir)
 			if err != nil {
@@ -538,7 +559,7 @@ func (e *Engine) Start(cfg Config) error {
 			entries, _, _ := buildRouteEntries(client.Routes, idx, outboundMap)
 			return entries, newBundles, nil
 		}
-		rule.StartUpdater(ctx, ruleEngine, client.CacheDir, bundleNames, sources, rebuildFn)
+		rule.StartUpdater(ctx, ruleEngine, client.CacheDir, sources, rebuildFn)
 	}
 
 	e.setStateLocked(StateConnected)
@@ -1210,15 +1231,6 @@ func buildRuleEngine(client *config.ClientConfig, outboundMap map[string]rule.Ta
 	}
 
 	return rule.NewEngine(entries, fallback, bundles, allProxy)
-}
-
-// extractMatches collects MatchConfig from each route for BundlesForConfig.
-func extractMatches(client *config.ClientConfig) []rule.MatchConfig {
-	matches := make([]rule.MatchConfig, len(client.Routes))
-	for i, r := range client.Routes {
-		matches[i] = r.Match
-	}
-	return matches
 }
 
 // computeDNSExclude builds the list of IPs to exclude from TUN routing.

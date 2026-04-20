@@ -1,10 +1,17 @@
 package engine
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -1678,6 +1685,186 @@ func TestSetupOutboundTransport_InvalidURL(t *testing.T) {
 	_, _, err := setupOutboundTransport(ctx, "not-a-valid-url", nil, "")
 	if err == nil {
 		t.Fatal("expected error for invalid URL")
+	}
+}
+
+func TestEngineStart_RuleBundlesUnavailable(t *testing.T) {
+	dir := t.TempDir()
+
+	client := &config.ClientConfig{
+		CacheDir:    dir,
+		RuleSources: []string{"http://127.0.0.1:1/"}, // connection refused — fast fail
+		Server:      "k2v5://udid:tok@127.0.0.1:65534?insecure=1",
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://udid:tok@127.0.0.1:65534?insecure=1", Match: rule.MatchConfig{All: true}},
+		},
+	}
+
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	err := e.Start(Config{Client: client, FileDescriptor: -1})
+	if err == nil {
+		t.Fatal("expected error when rule bundles unreachable, got nil")
+	}
+
+	var engErr *EngineError
+	if !errors.As(err, &engErr) {
+		t.Fatalf("expected *EngineError, got %T: %v", err, err)
+	}
+	if engErr.Code != ErrCodeRuleBundlesUnavailable {
+		t.Errorf("expected code %d, got %d (msg=%q)", ErrCodeRuleBundlesUnavailable, engErr.Code, engErr.Message)
+	}
+	if engErr.Category != CategoryClient {
+		t.Errorf("expected category %q, got %q", CategoryClient, engErr.Category)
+	}
+
+	// e.fail() must have transitioned to disconnected and notified the handler.
+	if e.Status() != StateDisconnected {
+		t.Errorf("expected state %q after failure, got %q", StateDisconnected, e.Status())
+	}
+
+	errs := h.getErrors()
+	found := false
+	for _, msg := range errs {
+		if strings.Contains(msg, "rule bundles unavailable") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("handler never received the rule-bundles error; got errors=%v", errs)
+	}
+}
+
+// TestEngineStart_EmptyCacheDir_WarnsAndSkipsGate verifies defensive logging
+// when the platform shell fails to pass CacheDir. The gate becomes a no-op
+// (which re-exposes the routes=0 cold-start bug if bundles are absent), so
+// future regressions in platform wiring must surface loudly at first connect.
+// This test fails if the warn log goes silent.
+func TestEngineStart_EmptyCacheDir_WarnsAndSkipsGate(t *testing.T) {
+	// Install a capturing slog handler for the duration of this test.
+	var records []slog.Record
+	var mu sync.Mutex
+	captureHandler := slogHandlerFunc(func(_ context.Context, r slog.Record) error {
+		mu.Lock()
+		records = append(records, r)
+		mu.Unlock()
+		return nil
+	})
+	prev := slog.Default()
+	slog.SetDefault(slog.New(captureHandler))
+	defer slog.SetDefault(prev)
+
+	client := &config.ClientConfig{
+		// CacheDir deliberately empty — simulates a broken platform shell.
+		Server: "k2v5://udid:tok@127.0.0.1:65534?insecure=1",
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://udid:tok@127.0.0.1:65534?insecure=1", Match: rule.MatchConfig{All: true}},
+		},
+	}
+
+	e := New()
+	// Start will fail later (no real server), but it must get past the gate
+	// without invoking EnsureBundles and must emit the defensive warn.
+	_ = e.Start(Config{Client: client, FileDescriptor: -1})
+
+	mu.Lock()
+	defer mu.Unlock()
+	var found bool
+	for _, r := range records {
+		if r.Level == slog.LevelWarn && strings.Contains(r.Message, "Start without CacheDir") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected WARN about empty CacheDir; got %d records, none matched", len(records))
+	}
+}
+
+// slogHandlerFunc is a minimal test-only slog.Handler that routes every
+// record through the given func. Enabled at all levels.
+type slogHandlerFunc func(context.Context, slog.Record) error
+
+func (f slogHandlerFunc) Enabled(context.Context, slog.Level) bool  { return true }
+func (f slogHandlerFunc) Handle(c context.Context, r slog.Record) error {
+	return f(c, r)
+}
+func (f slogHandlerFunc) WithAttrs([]slog.Attr) slog.Handler { return f }
+func (f slogHandlerFunc) WithGroup(string) slog.Handler      { return f }
+
+// TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure is a regression guard for
+// the routes=0 cold-start bug: EnsureBundles lands bundles on disk, then
+// buildRuleEngine reads them — they MUST be at paths that align so the
+// rule engine ends up with ≥1 route. If this ever returns 0, we've silently
+// regressed to all-direct routing on first connect.
+func TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure(t *testing.T) {
+	dir := t.TempDir()
+
+	// Build a minimal but valid k2b bundle — a single set "overseas" with
+	// one domain suffix. WriteBundle is already used by other tests.
+	var buf bytes.Buffer
+	if err := rule.WriteBundle(&buf, []rule.BundleSet{
+		{Name: "overseas", DomainSuffixes: []string{"example.com"}},
+	}); err != nil {
+		t.Fatalf("WriteBundle: %v", err)
+	}
+
+	// Serve it inside a tarball.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "k2-rules.tar.gz") {
+			http.NotFound(w, r)
+			return
+		}
+		var tbuf bytes.Buffer
+		gw := gzip.NewWriter(&tbuf)
+		tw := tar.NewWriter(gw)
+		data := buf.Bytes()
+		if err := tw.WriteHeader(&tar.Header{Name: "overseas.k2b", Mode: 0o644, Size: int64(len(data))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		tw.Close()
+		gw.Close()
+		w.Header().Set("Content-Type", "application/gzip")
+		w.Write(tbuf.Bytes())
+	}))
+	defer srv.Close()
+
+	// Step 1: EnsureBundles writes the bundle into `dir`.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := rule.EnsureBundles(ctx, dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatalf("EnsureBundles: %v", err)
+	}
+
+	// Step 2: buildRuleEngine reads from `dir` and must produce ≥1 route.
+	client := &config.ClientConfig{
+		CacheDir: dir,
+		Routes: []config.RouteConfig{
+			{Via: "direct", Match: rule.MatchConfig{Names: []string{"overseas"}}},
+			{Via: "k2v5://udid:tok@example.com:443", Match: rule.MatchConfig{All: true}},
+		},
+	}
+	outboundMap := buildOutboundMap(client.Routes)
+	ruleEngine := buildRuleEngine(client, outboundMap)
+	if ruleEngine == nil {
+		t.Fatal("buildRuleEngine returned nil")
+	}
+	defer ruleEngine.Close()
+
+	if got := ruleEngine.RouteCount(); got == 0 {
+		t.Errorf("regression: buildRuleEngine produced 0 routes after EnsureBundles "+
+			"— bundles at %q, cacheDir=%q. Check path alignment between EnsureBundles and rule.Load.", dir, client.CacheDir)
+	}
+
+	// Sanity: the overseas-bound domain should route via direct (target 0).
+	if got := ruleEngine.Match("example.com"); got != rule.Target(0) {
+		t.Errorf("expected example.com → direct (Target 0), got %v", got)
 	}
 }
 

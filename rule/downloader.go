@@ -6,84 +6,29 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 )
 
-// DefaultSources is the list of CDN sources for k2b bundle downloads.
-// Happy Eyeballs races all sources in parallel — fastest wins.
-// Order doesn't matter for performance, but GitHub direct is listed first
-// as the authoritative source; CDN proxies provide China acceleration.
+// DefaultSources is the list of CDN sources for k2-rules.tar.gz downloads.
+// Happy Eyeballs races all sources in parallel — fastest wins. GitHub is
+// listed first as the authoritative origin; jsdelivr/ghproxy mirrors provide
+// acceleration and censorship resilience in CN. The "@release" path is the
+// orphan release branch in kaitu-io/k2-rules that holds just the tarball
+// and per-country .k2b bundles (no source code).
 var DefaultSources = []string{
+	// GitHub Releases (canonical origin)
 	"https://github.com/kaitu-io/k2-rules/releases/latest/download/",
+	// GitHub HTTPS proxies (preserve the /releases/latest/download/ path)
 	"https://ghfast.top/https://github.com/kaitu-io/k2-rules/releases/latest/download/",
 	"https://gh-proxy.com/https://github.com/kaitu-io/k2-rules/releases/latest/download/",
-}
-
-// bundleFileMap maps BundleSet names to k2b file names. Aligned with the
-// v2 schema shipped by kaitu-io/k2-rules (single "overseas" set, 2-set
-// cn-direct, plus 13 additional per-country bundles). Old per-service names
-// (google, facebook, ...) no longer exist. The "ir-blocked" / "ru-blocked"
-// entries are reserved for a future force-proxy feature and live inside the
-// same ir-direct / ru-direct bundles.
-var bundleFileMap = map[string]string{
-	"overseas": "overseas.k2b",
-	"cn-sites": "cn-direct.k2b",
-	"geoip-cn": "cn-direct.k2b",
-	"ir-sites": "ir-direct.k2b",
-	"geoip-ir": "ir-direct.k2b",
-	"ir-blocked": "ir-direct.k2b",
-	"ru-sites": "ru-direct.k2b",
-	"geoip-ru": "ru-direct.k2b",
-	"ru-blocked": "ru-direct.k2b",
-	"tr-sites": "tr-direct.k2b",
-	"geoip-tr": "tr-direct.k2b",
-	"pk-sites": "pk-direct.k2b",
-	"geoip-pk": "pk-direct.k2b",
-	"vn-sites": "vn-direct.k2b",
-	"geoip-vn": "vn-direct.k2b",
-	"mm-sites": "mm-direct.k2b",
-	"geoip-mm": "mm-direct.k2b",
-	"eg-sites": "eg-direct.k2b",
-	"geoip-eg": "eg-direct.k2b",
-	"id-sites": "id-direct.k2b",
-	"geoip-id": "id-direct.k2b",
-	"sa-sites": "sa-direct.k2b",
-	"geoip-sa": "sa-direct.k2b",
-	"ae-sites": "ae-direct.k2b",
-	"geoip-ae": "ae-direct.k2b",
-	"th-sites": "th-direct.k2b",
-	"geoip-th": "th-direct.k2b",
-	"bd-sites": "bd-direct.k2b",
-	"geoip-bd": "bd-direct.k2b",
-	"by-sites": "by-direct.k2b",
-	"geoip-by": "by-direct.k2b",
-}
-
-// BundlesForConfig returns a deduplicated list of k2b file names referenced
-// by the given route match configs. Returns empty for All:true or inline-only
-// matches.
-func BundlesForConfig(matches []MatchConfig) []string {
-	seen := make(map[string]struct{})
-	var result []string
-	for _, m := range matches {
-		if m.All {
-			continue
-		}
-		names := ExpandMatch(m)
-		for _, name := range names {
-			if file, ok := bundleFileMap[name]; ok {
-				if _, exists := seen[file]; !exists {
-					seen[file] = struct{}{}
-					result = append(result, file)
-				}
-			}
-		}
-	}
-	if result == nil {
-		return []string{}
-	}
-	return result
+	// jsdelivr @release branch (4 global POPs)
+	"https://cdn.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
+	"https://fastly.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
+	"https://testingcf.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
+	"https://gcore.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
+	// CN-friendly jsdelivr mirrors
+	"https://cdn.jsdmirror.com/gh/kaitu-io/k2-rules@release/",
+	"https://jsd.onmicrosoft.cn/gh/kaitu-io/k2-rules@release/",
 }
 
 // downloadResult describes the outcome of a single HTTP fetch attempt.
@@ -94,80 +39,6 @@ const (
 	downloadResultNotModified                // 304
 	downloadResultFailed
 )
-
-// Download ensures all named k2b bundles exist in cacheDir. It creates the
-// directory if needed and uses DefaultSources if sources is empty.
-func Download(ctx context.Context, cacheDir string, bundles []string, sources []string) error {
-	if len(bundles) == 0 {
-		return nil
-	}
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return fmt.Errorf("rule: create cache dir: %w", err)
-	}
-	if len(sources) == 0 {
-		sources = DefaultSources
-	}
-	for _, name := range bundles {
-		if err := downloadOne(ctx, cacheDir, name, sources); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// IsFresh reports whether ALL named k2b files exist in cacheDir with mtime
-// within maxAge. Returns true if bundles is empty or cacheDir is empty
-// (nothing to download). Callers use this to skip HTTP requests entirely
-// when the local cache is recent enough.
-func IsFresh(cacheDir string, bundles []string, maxAge time.Duration) bool {
-	if len(bundles) == 0 || cacheDir == "" {
-		return true
-	}
-	now := time.Now()
-	for _, name := range bundles {
-		info, err := os.Stat(filepath.Join(cacheDir, name))
-		if err != nil || now.Sub(info.ModTime()) > maxAge {
-			return false
-		}
-	}
-	return true
-}
-
-// downloadOne downloads a single k2b bundle file with retry+backoff. If the
-// file already exists on disk and all attempts fail, returns nil (use cached).
-func downloadOne(ctx context.Context, cacheDir, name string, sources []string) error {
-	dest := filepath.Join(cacheDir, name)
-	attempt := 0
-	for {
-		res, err := raceDownload(ctx, dest, name, sources)
-		if err == nil {
-			switch res {
-			case downloadResultOK, downloadResultNotModified:
-				return nil
-			}
-		}
-		// Check if cancelled.
-		if ctx.Err() != nil {
-			// If file already exists, use the cached copy.
-			if _, statErr := os.Stat(dest); statErr == nil {
-				return nil
-			}
-			return fmt.Errorf("rule: download %q cancelled: %w", name, ctx.Err())
-		}
-		// If file already exists, use cached copy on failure.
-		if _, statErr := os.Stat(dest); statErr == nil {
-			return nil
-		}
-		// Retry with backoff.
-		wait := backoffDuration(attempt)
-		attempt++
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("rule: download %q cancelled: %w", name, ctx.Err())
-		case <-time.After(wait):
-		}
-	}
-}
 
 // raceDownload runs Happy Eyeballs: spawns one goroutine per source, first
 // HTTP 200 wins (others are cancelled). Uses If-Modified-Since from local

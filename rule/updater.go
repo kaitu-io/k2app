@@ -30,28 +30,20 @@ func WithCheckInterval(d time.Duration) UpdaterOption {
 // Returns the new routes and bundles for Engine.Reload().
 type RebuildFunc func(cacheDir string) ([]RouteEntry, []*Bundle, error)
 
-// DownloadAndReload downloads bundles (skipping if fresh), then optionally
-// rebuilds and hot-swaps the engine's rules.
-// If engine or rebuild is nil, only downloads (no reload).
-// skipIfFresh > 0 skips the download entirely when all files have mtime within that duration.
+// DownloadAndReload calls EnsureBundles (fetches the rule-bundle tarball
+// when the cache is older than bundlesFreshTTL), then optionally rebuilds
+// and hot-swaps the engine's routes.
+// Safe for concurrent callers — singleflight inside EnsureBundles dedups.
+// If engine or rebuild is nil, only the download side runs.
 func DownloadAndReload(
 	ctx context.Context,
 	engine *Engine,
 	cacheDir string,
-	bundles []string,
 	sources []string,
 	rebuild RebuildFunc,
-	skipIfFresh time.Duration,
 ) error {
-	if len(bundles) == 0 || cacheDir == "" {
-		return nil
-	}
-	if skipIfFresh > 0 && IsFresh(cacheDir, bundles, skipIfFresh) {
-		slog.Debug("rule: bundles fresh, skipping download")
-		return nil
-	}
-	if err := Download(ctx, cacheDir, bundles, sources); err != nil {
-		return fmt.Errorf("rule: download: %w", err)
+	if err := EnsureBundles(ctx, cacheDir, sources); err != nil {
+		return err
 	}
 	if engine == nil || rebuild == nil {
 		return nil
@@ -63,16 +55,14 @@ func DownloadAndReload(
 	return engine.Reload(routes, newBundles)
 }
 
-// StartUpdater launches a background goroutine that periodically checks for
-// bundle updates. When new bundles are downloaded, it calls rebuild to get
-// new routes and bundles, then swaps them into the engine via Reload().
-// An immediate first check runs on start (skipped if bundles are fresh).
-// Stops when ctx is cancelled.
+// StartUpdater launches a background goroutine that periodically refreshes
+// rule bundles (via EnsureBundles tarball fetch) and hot-swaps the engine's
+// routes. An immediate first check runs; subsequent checks honor the
+// configured interval (default 24h). Stops when ctx is cancelled.
 func StartUpdater(
 	ctx context.Context,
 	engine *Engine,
 	cacheDir string,
-	bundles []string,
 	sources []string,
 	rebuild RebuildFunc,
 	opts ...UpdaterOption,
@@ -82,28 +72,19 @@ func StartUpdater(
 		o(&cfg)
 	}
 
-	if len(bundles) == 0 {
-		return
-	}
-
 	safego.Go(func() {
-		// Immediate first check — skip if bundles are already fresh.
-		// Handles the case where user switches country: old cache may lack
-		// the new bundle, so this downloads it right after connection and
-		// hot-reloads within seconds.
-		if err := DownloadAndReload(ctx, engine, cacheDir, bundles, sources, rebuild, defaultCheckInterval); err != nil {
+		if err := DownloadAndReload(ctx, engine, cacheDir, sources, rebuild); err != nil {
 			slog.Warn("rule: updater initial check failed", "err", err)
 		}
 
 		ticker := time.NewTicker(cfg.interval)
 		defer ticker.Stop()
-
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := DownloadAndReload(ctx, engine, cacheDir, bundles, sources, rebuild, 0); err != nil {
+				if err := DownloadAndReload(ctx, engine, cacheDir, sources, rebuild); err != nil {
 					slog.Warn("rule: updater cycle failed", "err", err)
 				}
 			}

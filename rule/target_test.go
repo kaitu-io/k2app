@@ -175,27 +175,6 @@ func TestHasHostCriteria(t *testing.T) {
 	}
 }
 
-// TestBundleFileMap_CountryCoverage verifies that every country in the
-// 14-country bundle set has both its sites and geoip entries pointing at
-// the expected {cc}-direct.k2b file. Alphabetical order for determinism.
-func TestBundleFileMap_CountryCoverage(t *testing.T) {
-	countries := []string{
-		"ae", "bd", "by", "cn", "eg", "id", "ir",
-		"mm", "pk", "ru", "sa", "th", "tr", "vn",
-	}
-	for _, cc := range countries {
-		wantFile := cc + "-direct.k2b"
-		sitesKey := cc + "-sites"
-		geoipKey := "geoip-" + cc
-		if got := bundleFileMap[sitesKey]; got != wantFile {
-			t.Errorf("bundleFileMap[%q] = %q, want %q", sitesKey, got, wantFile)
-		}
-		if got := bundleFileMap[geoipKey]; got != wantFile {
-			t.Errorf("bundleFileMap[%q] = %q, want %q", geoipKey, got, wantFile)
-		}
-	}
-}
-
 func contains(ss []string, s string) bool {
 	for _, v := range ss {
 		if v == s {
