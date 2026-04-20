@@ -109,6 +109,34 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
 
+        // Prefetch rule bundles so the first connect finds the cache warm and
+        // doesn't block on a 10-second cold download inside Engine.Start.
+        // Also mark the rules directory as excluded from iCloud backup — bundles
+        // are re-downloadable at any time and shouldn't eat user backup quota.
+        if let containerURL = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: kAppGroup) {
+
+            let rulesURL = containerURL.appendingPathComponent("k2/rules")
+            try? FileManager.default.createDirectory(
+                at: rulesURL, withIntermediateDirectories: true)
+
+            var excludedURL = rulesURL
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            try? excludedURL.setResourceValues(resourceValues)
+
+            DispatchQueue.global(qos: .utility).async {
+                let cfg = AppextEngineConfig()
+                cfg.cacheDir = containerURL.appendingPathComponent("k2").path
+                // Matches Go side: engine sets clientCfg.CacheDir = cfg.CacheDir + "/rules"
+                // and EnsureBundles writes there. cfg.CacheDir is the BASE, not the rules dir.
+                AppextPrefetchRules(cfg)
+            }
+        } else {
+            // Non-fatal: logging only. Startup still proceeds.
+            NSLog("[K2Plugin] rule prefetch skipped — app group container unavailable")
+        }
+
         loadVPNManager()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
