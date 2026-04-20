@@ -123,6 +123,9 @@
       "requestFailed": "请求失败，请检查网络",
       "responseFailed": "响应解析失败"
     },
+    "engine": {
+      "ruleBundlesUnavailable": "规则包下载失败，请检查网络后重试"
+    },
     "installCancelled": "安装已取消",
     "unknown": "未知错误",
     "unknownError": "未知错误"

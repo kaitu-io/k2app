@@ -61,8 +61,10 @@ export const ERROR_CODES = {
   SERVER_OVERLOAD: 111,
   SERVER_MAINTENANCE: 112,
 
-  // VPN 服务相关错误 (510-519)
-  VPN_STOP_FAILED: 510,
+  // Engine errors from k2 core (HTTP-aligned, 4xx = client action required)
+  RULE_BUNDLES_UNAVAILABLE: 424, // Failed Dependency — all CDN sources failed
+
+  // VPN 服务相关错误 (510-519) — frontend-synthesized
   VPN_START_FAILED: 511,
   VPN_RECONNECT_FAILED: 512,
   VPN_TIMEOUT: 513,
@@ -214,9 +216,12 @@ export function getErrorMessage(
     case ERROR_CODES.SERVER_MAINTENANCE:
       return t('common:errors.server.maintenance', 'Server under maintenance');
 
-    // VPN 服务相关错误 (510-519)
-    case ERROR_CODES.VPN_STOP_FAILED:
-      return t('common:errors.vpn.stopFailed', 'Failed to stop service');
+    // Engine errors from k2 core
+    case ERROR_CODES.RULE_BUNDLES_UNAVAILABLE:
+      return t('common:errors.engine.ruleBundlesUnavailable',
+        'Failed to download routing rules. Check network and retry.');
+
+    // VPN 服务相关错误 (511-519)
     case ERROR_CODES.VPN_START_FAILED:
       return t('common:errors.vpn.startFailed', 'Failed to start service');
     case ERROR_CODES.VPN_RECONNECT_FAILED:

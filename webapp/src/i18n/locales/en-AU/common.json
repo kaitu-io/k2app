@@ -123,6 +123,9 @@
       "requestFailed": "Request failed, please check your network",
       "responseFailed": "Response parsing failed"
     },
+    "engine": {
+      "ruleBundlesUnavailable": "Failed to download routing rules. Check network and retry."
+    },
     "installCancelled": "Installation cancelled",
     "unknown": "Unknown error",
     "unknownError": "Unknown error"
