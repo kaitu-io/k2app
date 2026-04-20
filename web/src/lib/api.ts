@@ -299,8 +299,6 @@ export interface CreateOrderRequest {
   preview: boolean;
   plan: string;
   campaignCode?: string;
-  forMyself?: boolean;
-  forUserUUIDs?: string[];
 }
 
 export interface Order {

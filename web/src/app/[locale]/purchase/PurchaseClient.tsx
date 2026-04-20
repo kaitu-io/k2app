@@ -95,8 +95,6 @@ export default function PurchaseClient() {
   const { showNavigation, showFooter } = useEmbedMode();
 
   // State for each step
-  const [selectedForMyself, setSelectedForMyself] = useState(true);
-  const [selectedMemberUUIDs, setSelectedMemberUUIDs] = useState<string[]>([]);
   const [selectedPlan, setSelectedPlan] = useState("");
   const [plans, setPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -206,11 +204,6 @@ export default function PurchaseClient() {
    * - preview 请求使用 previewLoading 状态，不影响支付按钮的 isLoading 状态
    */
   const fetchPreview = useCallback(async () => {
-    // Check if any payment target is selected
-    if (!selectedForMyself && selectedMemberUUIDs.length === 0) {
-      return;
-    }
-
     if (!selectedPlan) {
       return;
     }
@@ -218,14 +211,12 @@ export default function PurchaseClient() {
     setPreviewLoading(true);
 
     try {
-      console.info('[Purchase] Creating preview request:', { selectedPlan, campaignCode, selectedForMyself, selectedMemberUUIDs });
+      console.info('[Purchase] Creating preview request:', { selectedPlan, campaignCode });
 
       const request: CreateOrderRequest = {
         preview: true,
         plan: selectedPlan,
         campaignCode: campaignCode || undefined,
-        forMyself: selectedForMyself,
-        forUserUUIDs: selectedMemberUUIDs.length > 0 ? selectedMemberUUIDs : undefined,
       };
 
       const data = await api.createOrder(request, { autoRedirectToAuth: false });
@@ -245,7 +236,7 @@ export default function PurchaseClient() {
     } finally {
       setPreviewLoading(false);
     }
-  }, [selectedForMyself, selectedMemberUUIDs, t, selectedPlan, campaignCode]);
+  }, [t, selectedPlan, campaignCode]);
 
   /**
    * 实际下单请求 (Create Order for Payment)
@@ -255,23 +246,15 @@ export default function PurchaseClient() {
    * - 成功后跳转到支付页面 (payUrl)
    */
   const handleOrder = useCallback(async () => {
-    // Check if any payment target is selected
-    if (!selectedForMyself && selectedMemberUUIDs.length === 0) {
-      toast.error(t('purchase.purchase.selectAtLeastOneTarget'));
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      console.info('[Purchase] Creating order request:', { selectedPlan, campaignCode, selectedForMyself, selectedMemberUUIDs });
+      console.info('[Purchase] Creating order request:', { selectedPlan, campaignCode });
 
       const request: CreateOrderRequest = {
         preview: false,
         plan: selectedPlan,
         campaignCode: campaignCode || undefined,
-        forMyself: selectedForMyself,
-        forUserUUIDs: selectedMemberUUIDs.length > 0 ? selectedMemberUUIDs : undefined,
       };
 
       const data = await api.createOrder(request, { autoRedirectToAuth: false });
@@ -299,23 +282,15 @@ export default function PurchaseClient() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedForMyself, selectedMemberUUIDs, t, selectedPlan, campaignCode]);
+  }, [t, selectedPlan, campaignCode]);
 
 
   /**
    * 自动预览触发 (Auto Preview Trigger)
    *
-   * 当以下条件变化时，自动触发预览请求：
-   * - selectedPlan: 用户选择的套餐
-   * - campaignCode: 用户输入的活动码
-   * - selectedForMyself: 是否为自己购买
-   * - selectedMemberUUIDs: 选择的成员列表
-   *
-   * 使用 300ms 防抖，避免频繁请求
-   * 使用 selectedMemberUUIDsKey (字符串) 替代数组引用，避免不必要的重渲染
+   * 当 selectedPlan 或 campaignCode 变化时，自动触发预览请求。
+   * 使用 300ms 防抖，避免频繁请求。
    */
-  const selectedMemberUUIDsKey = selectedMemberUUIDs.join(',');
-
   useEffect(() => {
     // Skip if plans are still loading
     if (plansLoading) {
@@ -329,7 +304,7 @@ export default function PurchaseClient() {
 
     // Set new timeout for debounced request
     previewTimeoutRef.current = setTimeout(() => {
-      if (selectedPlan && (selectedForMyself || selectedMemberUUIDs.length > 0)) {
+      if (selectedPlan) {
         fetchPreview();
       }
     }, 300); // 300ms debounce delay
@@ -341,13 +316,7 @@ export default function PurchaseClient() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignCode, selectedPlan, plansLoading, selectedForMyself, selectedMemberUUIDsKey]);
-
-  // Handle member selection change
-  const handleMemberSelectionChange = useCallback((forMyself: boolean, memberUUIDs: string[]) => {
-    setSelectedForMyself(forMyself);
-    setSelectedMemberUUIDs(memberUUIDs);
-  }, []);
+  }, [campaignCode, selectedPlan, plansLoading]);
 
   const handleLoginSuccess = useCallback(() => {
     // Login succeeded - no need to navigate steps since all are shown
@@ -472,11 +441,8 @@ export default function PurchaseClient() {
         <div className="space-y-6 sm:space-y-8 xl:space-y-0 xl:grid xl:grid-cols-12 xl:gap-8">
           {/* Left Column - Steps 1 & 2 */}
           <div className="xl:col-span-7 2xl:col-span-8 space-y-6 sm:space-y-8">
-            {/* Step 1: Email Binding and Target Selection */}
+            {/* Step 1: Email Binding (login form for unauthenticated users) */}
             <PurchaseStep1
-              selectedForMyself={selectedForMyself}
-              selectedMemberUUIDs={selectedMemberUUIDs}
-              onMemberSelectionChange={handleMemberSelectionChange}
               onLoginSuccess={handleLoginSuccess}
             />
 
@@ -503,8 +469,6 @@ export default function PurchaseClient() {
               onCampaignToggle={handleCampaignToggle}
               onCampaignCodeChange={handleCampaignCodeChange}
               onCampaignErrorClear={handleCampaignErrorClear}
-              selectedForMyself={selectedForMyself}
-              selectedMemberUUIDs={selectedMemberUUIDs}
               previewLoading={previewLoading}
               isLoading={isLoading}
               isAuthenticated={isAuthenticated}
