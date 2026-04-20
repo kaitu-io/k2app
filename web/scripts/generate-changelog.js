@@ -54,6 +54,7 @@ function parseMarkdownSections(content) {
     newFeatures: [],
     bugFixes: [],
     improvements: [],
+    infrastructure: [],
     breakingChanges: []
   };
 
@@ -70,6 +71,8 @@ function parseMarkdownSections(content) {
       currentSection = 'bugFixes';
     } else if (trimmed.startsWith('## Improvements')) {
       currentSection = 'improvements';
+    } else if (trimmed.startsWith('## Infrastructure')) {
+      currentSection = 'infrastructure';
     } else if (trimmed.startsWith('## Breaking Changes')) {
       currentSection = 'breakingChanges';
     } else if (trimmed.startsWith('- ') && currentSection) {
