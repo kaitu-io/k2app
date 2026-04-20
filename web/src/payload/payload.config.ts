@@ -1,5 +1,7 @@
 import { postgresAdapter } from '@payloadcms/db-postgres'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
+import { translator, copyResolver, openAIResolver } from '@payload-enchants/translator'
+import { buildTranslationPrompt } from './translator/customPrompt.ts'
 import path from 'path'
 import { buildConfig } from 'payload'
 import { fileURLToPath } from 'url'
@@ -46,5 +48,20 @@ export default buildConfig({
     pool: { connectionString: process.env.DATABASE_URL || '' },
   }),
   sharp,
-  plugins: [],
+  plugins: [
+    translator({
+      collections: ['posts', 'categories', 'tags'],
+      globals: [],
+      resolvers: [
+        openAIResolver({
+          apiKey: process.env.TRANSLATOR_API_KEY || '',
+          baseUrl: process.env.TRANSLATOR_BASE_URL || 'https://openrouter.ai/api',
+          model: process.env.TRANSLATOR_MODEL || 'google/gemini-2.5-flash',
+          prompt: buildTranslationPrompt,
+          chunkLength: 50,
+        }),
+        copyResolver(),
+      ],
+    }),
+  ],
 })
