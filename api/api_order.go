@@ -16,11 +16,14 @@ import (
 // CreateOrderRequest 创建订单请求数据结构
 //
 type CreateOrderRequest struct {
-	Preview      bool     `json:"preview" example:"false"`                     // 是否预览模式
-	Plan         string   `json:"plan" binding:"required" example:"pro_month"` // 套餐ID
-	CampaignCode string   `json:"campaignCode" example:"SAVE20"`               // 优惠码（可选）
-	ForUserUUIDs []string `json:"forUserUUIDs"`                                // 为其他用户支付（UUID列表）
-	ForMyself    bool     `json:"forMyself"`                                   // 为用户自己
+	Preview      bool   `json:"preview" example:"false"`                     // 是否预览模式
+	Plan         string `json:"plan" binding:"required" example:"pro_month"` // 套餐ID
+	CampaignCode string `json:"campaignCode" example:"SAVE20"`               // 优惠码（可选）
+
+	// Deprecated 2026-04-20: 代付功能已下线，下列字段仅用于检测旧客户端并拒绝其请求，不再写入 Order。
+	// 详见 docs/superpowers/specs/2026-04-20-proxy-purchase-users.md
+	ForUserUUIDs []string `json:"forUserUUIDs,omitempty"` // [Deprecated] 为其他用户支付（UUID列表）
+	ForMyself    *bool    `json:"forMyself,omitempty"`    // [Deprecated] 为用户自己
 }
 
 // CreateOrderResponse 创建订单响应数据结构
@@ -42,6 +45,18 @@ func api_create_order(c *gin.Context) {
 		return
 	}
 	log.Debugf(c, "create order request parsed successfully: preview=%v, plan=%s, campaignCode=%s", req.Preview, req.Plan, req.CampaignCode)
+
+	// Reject deprecated proxy-purchase fields (forUsers / forMyself=false)
+	// 代付功能 2026-04-20 下线，参见 docs/superpowers/specs/2026-04-20-proxy-purchase-users.md
+	if len(req.ForUserUUIDs) > 0 || (req.ForMyself != nil && !*req.ForMyself) {
+		log.Warnf(c, "rejecting deprecated proxy-purchase request: forUserUUIDs=%d, forMyselfExplicit=%v",
+			len(req.ForUserUUIDs), req.ForMyself != nil && !*req.ForMyself)
+		Error(c, ErrorProxyPurchaseDeprecated,
+			"代付款功能已下线，不再支持为他人购买。请让对方使用自己的账号购买。")
+		return
+	}
+	// 代付下线后所有订单都是为自己购买。归一化为 true，便于后续逻辑沿用旧的 boolean 语义。
+	forMyself := true
 	user := ReqUser(c)
 
 	log.Infof(c, "user %d creating order, plan: %s, campaign: %s, preview: %v", user.ID, req.Plan, req.CampaignCode, req.Preview)
@@ -60,7 +75,7 @@ func api_create_order(c *gin.Context) {
 	quantity := 0
 
 	// 如果为自己购买
-	if req.ForMyself {
+	if forMyself {
 		quantity = 1
 	}
 
@@ -154,7 +169,7 @@ func api_create_order(c *gin.Context) {
 
 	// 设置订单 Meta 信息（包括 plan、campaign、forUserUUIDs、forMyself）
 	log.Debugf(c, "setting order meta information")
-	if err := order.SetOrderMeta(plan, campaign, req.ForUserUUIDs, req.ForMyself); err != nil {
+	if err := order.SetOrderMeta(plan, campaign, req.ForUserUUIDs, forMyself); err != nil {
 		log.Errorf(c, "failed to set order meta for order, user %d: %v", user.ID, err)
 		Error(c, ErrorSystemError, err.Error())
 		return
@@ -198,7 +213,7 @@ func api_create_order(c *gin.Context) {
 		CreatedAt:            createdAt,
 		PayAt:                payAt,
 		ForUsers:             forUsers,
-		ForMyself:            req.ForMyself,
+		ForMyself:            forMyself,
 	}
 	log.Infof(c, "DataOrder object created: UUID=%s, PayAmount=%d", dataOrder.UUID, dataOrder.PayAmount)
 
