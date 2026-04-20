@@ -105,7 +105,9 @@
     "colon": "：",
     "dollarSign": "$",
     "inviteRewardTitle": "新使用者專享獎勵",
-    "inviteRewardDesc": "完成購買後，您將額外獲得 {days} 天的專業版使用時長"
+    "inviteRewardDesc": "完成購買後，您將額外獲得 {days} 天的專業版使用時長",
+    "tierLocked": "您目前為「{tier}」級，無法購買此級別方案。如需變更級別請聯絡客服。",
+    "proxyPurchaseDeprecated": "代付款功能已下線，請讓對方使用自己的帳號購買。"
   },
   "error403": {
     "title": "存取被禁止",

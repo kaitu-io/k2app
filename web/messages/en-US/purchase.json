@@ -105,7 +105,9 @@
     "colon": ":",
     "dollarSign": "$",
     "inviteRewardTitle": "New User Exclusive Reward",
-    "inviteRewardDesc": "After completing your purchase, you will receive an additional {days} days of professional membership"
+    "inviteRewardDesc": "After completing your purchase, you will receive an additional {days} days of professional membership",
+    "tierLocked": "Your current tier is {tier}. This plan requires a different tier — please contact support to switch tiers.",
+    "proxyPurchaseDeprecated": "Proxy purchase is no longer supported. Please ask the recipient to purchase with their own account."
   },
   "error403": {
     "title": "Access Forbidden",

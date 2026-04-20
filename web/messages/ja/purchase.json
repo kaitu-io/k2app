@@ -105,7 +105,9 @@
     "colon": "：",
     "dollarSign": "$",
     "inviteRewardTitle": "新規ユーザー限定特典",
-    "inviteRewardDesc": "購入完了後、{days}日間のプロ版使用期間を追加でプレゼントします"
+    "inviteRewardDesc": "購入完了後、{days}日間のプロ版使用期間を追加でプレゼントします",
+    "tierLocked": "現在のプランは「{tier}」です。このプランは別のランクのため購入できません。サポートにお問い合わせください。",
+    "proxyPurchaseDeprecated": "代理購入機能は終了しました。相手方ご自身のアカウントでご購入ください。"
   },
   "error403": {
     "title": "アクセスが禁止されています",
