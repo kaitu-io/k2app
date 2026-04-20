@@ -37,6 +37,7 @@ type CreateOrderRequest struct {
 	// Deprecated 2026-04-20: 代付功能已下线，下列字段仅用于检测旧客户端并拒绝其请求，不再写入 Order。
 	// 详见 docs/superpowers/specs/2026-04-20-proxy-purchase-users.md
 	ForUserUUIDs []string `json:"forUserUUIDs,omitempty"` // [Deprecated] 为其他用户支付（UUID列表）
+	ForUsers     []string `json:"forUsers,omitempty"`     // [Deprecated, legacy pre-tier-rename name] 仅用于识别并拒绝老客户端请求
 	ForMyself    *bool    `json:"forMyself,omitempty"`    // [Deprecated] 为用户自己
 }
 
@@ -60,11 +61,12 @@ func api_create_order(c *gin.Context) {
 	}
 	log.Debugf(c, "create order request parsed successfully: preview=%v, plan=%s, campaignCode=%s", req.Preview, req.Plan, req.CampaignCode)
 
-	// Reject deprecated proxy-purchase fields (forUsers / forMyself=false)
+	// Reject deprecated proxy-purchase fields (forUsers / forUserUUIDs / forMyself=false)
 	// 代付功能 2026-04-20 下线，参见 docs/superpowers/specs/2026-04-20-proxy-purchase-users.md
-	if len(req.ForUserUUIDs) > 0 || (req.ForMyself != nil && !*req.ForMyself) {
-		log.Warnf(c, "rejecting deprecated proxy-purchase request: forUserUUIDs=%d, forMyselfExplicit=%v",
-			len(req.ForUserUUIDs), req.ForMyself != nil && !*req.ForMyself)
+	// forUsers 是 pre-tier-rename 的老字段名，保留 alias 以便给老客户端回友好错误。
+	if len(req.ForUserUUIDs) > 0 || len(req.ForUsers) > 0 || (req.ForMyself != nil && !*req.ForMyself) {
+		log.Warnf(c, "rejecting deprecated proxy-purchase request: forUserUUIDs=%d, forUsers=%d, forMyselfExplicit=%v",
+			len(req.ForUserUUIDs), len(req.ForUsers), req.ForMyself != nil && !*req.ForMyself)
 		Error(c, ErrorProxyPurchaseDeprecated,
 			"代付款功能已下线，不再支持为他人购买。请让对方使用自己的账号购买。")
 		return
