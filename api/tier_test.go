@@ -2,6 +2,7 @@ package center
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,4 +55,36 @@ func TestIsValidTier(t *testing.T) {
 func TestZeroQuota(t *testing.T) {
 	assert.Equal(t, TierQuota{}, ZeroQuota)
 	assert.Equal(t, 0, ZeroQuota.MaxDevice)
+}
+
+func TestUserQuota_ActiveUser(t *testing.T) {
+	user := &User{Tier: TierFamily, ExpiredAt: time.Now().Add(24 * time.Hour).Unix()}
+	q := user.Quota()
+	assert.Equal(t, 8, q.MaxDevice)
+	assert.Equal(t, 1, q.MaxRouterDevice)
+	assert.Equal(t, 20, q.MaxLanClient)
+}
+
+func TestUserQuota_ExpiredUser(t *testing.T) {
+	user := &User{Tier: TierFamily, ExpiredAt: time.Now().Add(-24 * time.Hour).Unix()}
+	assert.Equal(t, ZeroQuota, user.Quota())
+}
+
+func TestUserQuota_InvalidTierFallsBackToBasic(t *testing.T) {
+	user := &User{Tier: "garbage_tier_value", ExpiredAt: time.Now().Add(24 * time.Hour).Unix()}
+	q := user.Quota()
+	assert.Equal(t, 5, q.MaxDevice, "invalid tier should fall back to basic quota")
+}
+
+func TestPlanQuota_ValidTier(t *testing.T) {
+	plan := &Plan{Tier: TierBusiness}
+	q := plan.Quota()
+	assert.Equal(t, 20, q.MaxDevice)
+	assert.Equal(t, 3, q.MaxRouterDevice)
+	assert.Equal(t, -1, q.MaxLanClient)
+}
+
+func TestPlanQuota_InvalidTierFallsBackToBasic(t *testing.T) {
+	plan := &Plan{Tier: ""}
+	assert.Equal(t, 5, plan.Quota().MaxDevice)
 }

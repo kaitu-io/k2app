@@ -1193,3 +1193,26 @@ type SurveyResponse struct {
 	RewardDays int       `gorm:"default:0" json:"rewardDays"`
 }
 
+// Quota returns the user's effective tier quota.
+// Returns ZeroQuota if the user is not active (expired or never paid).
+// Falls back to basic-tier quota if Tier field is corrupted (defensive).
+func (u *User) Quota() TierQuota {
+	if !u.IsPro() {
+		return ZeroQuota
+	}
+	info, ok := TierQuotas[u.Tier]
+	if !ok {
+		return TierQuotas[TierBasic].TierQuota
+	}
+	return info.TierQuota
+}
+
+// Quota returns the plan's tier quota (does not consider user state).
+func (p *Plan) Quota() TierQuota {
+	info, ok := TierQuotas[p.Tier]
+	if !ok {
+		return TierQuotas[TierBasic].TierQuota
+	}
+	return info.TierQuota
+}
+
