@@ -241,3 +241,9 @@ func TestFail_OnStatusReceivesError(t *testing.T) {
 		t.Errorf("OnStatus error message = %q, want %q", errs[0], testErr.Error())
 	}
 }
+
+func TestCategoryForCode_RuleBundlesUnavailable(t *testing.T) {
+	if got := categoryForCode(ErrCodeRuleBundlesUnavailable); got != CategoryClient {
+		t.Errorf("expected CategoryClient for code 510, got %q", got)
+	}
+}
