@@ -6,6 +6,9 @@ import { fileURLToPath } from 'url'
 import sharp from 'sharp'
 
 import { Admins } from './collections/Admins.ts'
+import { Categories } from './collections/Categories.ts'
+import { Tags } from './collections/Tags.ts'
+import { Media } from './collections/Media.ts'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -19,7 +22,20 @@ export default buildConfig({
     admin: '/cms',
     api: '/payload/api',
   },
-  collections: [Admins],
+  collections: [Admins, Categories, Tags, Media],
+  localization: {
+    locales: [
+      { code: 'zh-CN', label: '简体中文' },
+      { code: 'en-US', label: 'English (US)' },
+      { code: 'en-GB', label: 'English (UK)' },
+      { code: 'en-AU', label: 'English (AU)' },
+      { code: 'zh-TW', label: '繁體中文 (台灣)' },
+      { code: 'zh-HK', label: '繁體中文 (香港)' },
+      { code: 'ja', label: '日本語' },
+    ],
+    defaultLocale: 'zh-CN',
+    fallback: true,
+  },
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
