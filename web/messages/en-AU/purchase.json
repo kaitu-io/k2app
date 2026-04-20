@@ -2,18 +2,18 @@
   "purchase": {
     "loading": "Loading...",
     "metaDescription": "Purchase Overleap k2 Pro — multi-device support, stealth tunnel, full speed through heavy packet loss. Secure payment, instant activation.",
-    "proMemberBenefits": "Pro Member Benefits",
+    "memberBenefits": "Membership Benefits",
     "features": {
-      "multiDevice": "Multi-Device Support",
-      "multiDeviceDesc": "Support for multiple simultaneous device logins",
-      "ipAnonymize": "IP Anonymisation",
-      "ipAnonymizeDesc": "Protect your real IP address",
-      "multiThreading": "Multi-Threading Acceleration",
-      "multiThreadingDesc": "Faster network connection speeds",
-      "adBlock": "Ad Blocking",
-      "adBlockDesc": "Block ads and trackers",
+      "multiDevice": "{count} devices simultaneously",
+      "multiDeviceDesc": "One account, shared with family",
+      "globalNodes": "Global Smart Nodes",
+      "globalNodesDesc": "Multi-region auto-selection, switch anytime",
+      "zeroMaintenance": "Zero Maintenance",
+      "zeroMaintenanceDesc": "No server setup needed, works out of the box",
+      "continuousOptimization": "Continuous Optimisation",
+      "continuousOptimizationDesc": "Node network constantly updated & expanded",
       "prioritySupport": "Priority Support",
-      "prioritySupportDesc": "Receive priority customer service"
+      "prioritySupportDesc": "Dedicated fast response"
     },
     "authorizationExpired": "Authorisation Expired",
     "selectPlanToRenew": "Please select a plan to renew your service",

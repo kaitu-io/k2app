@@ -570,7 +570,10 @@ export default function Purchase() {
   }, [plans]);
 
   const tiers = useMemo(() => [...tierGroups.keys()], [tierGroups]);
-  const showTierSelector = tiers.length > 1;
+  // Router product not yet released — force single-tier rendering so a stray
+  // non-pro tier in the DB cannot surface as a purchasable chip. Re-enable
+  // (`tiers.length > 1`) once the router tier is ready to ship.
+  const showTierSelector = false;
 
   // Auto-select tier when plans load
   useEffect(() => {
@@ -582,7 +585,11 @@ export default function Purchase() {
 
   // Filter plans by selected tier
   const filteredPlans = useMemo(() => {
-    if (!showTierSelector) return plans;
+    if (!showTierSelector) {
+      // Router tier not yet released — keep only the default 'pro' tier (or
+      // plans with no tier set) so non-pro entries in the DB stay hidden.
+      return plans.filter(p => !p.tier || p.tier === 'pro');
+    }
     return tierGroups.get(selectedTier) || plans;
   }, [showTierSelector, selectedTier, tierGroups, plans]);
 

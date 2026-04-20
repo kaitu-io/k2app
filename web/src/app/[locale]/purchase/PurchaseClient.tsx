@@ -19,6 +19,7 @@ import { api, ApiError, ErrorCode } from "@/lib/api";
 import type { Plan, Order, CreateOrderRequest } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-errors";
 import { useAppConfig } from "@/contexts/AppConfigContext";
+import MembershipBenefits from "@/components/MembershipBenefits";
 import PurchaseStep1 from "@/components/PurchaseStep1";
 import PurchaseStep2 from "@/components/PurchaseStep2";
 import PurchaseStep3 from "@/components/PurchaseStep3";
@@ -463,6 +464,9 @@ export default function PurchaseClient() {
             {t('purchase.purchase.subtitle')}
           </p>
         </div>
+
+        {/* Membership Benefits — show value first, then ask for action */}
+        <MembershipBenefits />
 
         {/* All Steps - Mobile: Stacked, Desktop: Multi-column layout */}
         <div className="space-y-6 sm:space-y-8 xl:space-y-0 xl:grid xl:grid-cols-12 xl:gap-8">
