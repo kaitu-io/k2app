@@ -14,13 +14,13 @@ import (
 const (
 	ErrCodeNetworkUnavailable = 101 // Client network unreachable, no route to host
 	ErrCodeTimeout            = 108 // Connection or handshake timeout
-	ErrCodeBadConfig          = 400 // Invalid wire URL, missing auth, bad scheme
-	ErrCodeAuthRejected       = 401 // Server rejected authentication (stream rejected)
-	ErrCodePaymentRequired    = 402 // Subscription expired or payment required
-	ErrCodeForbidden          = 403 // Certificate pin mismatch, blocked CA
-	ErrCodeProtocolError      = 502 // TLS handshake failure, QUIC dial failure
+	ErrCodeBadConfig              = 400 // Invalid wire URL, missing auth, bad scheme
+	ErrCodeAuthRejected           = 401 // Server rejected authentication (stream rejected)
+	ErrCodePaymentRequired        = 402 // Subscription expired or payment required
+	ErrCodeForbidden              = 403 // Certificate pin mismatch, blocked CA
+	ErrCodeRuleBundlesUnavailable = 424 // Failed Dependency: all CDN sources failed to provide rule bundles (user action: retry)
+	ErrCodeProtocolError          = 502 // TLS handshake failure, QUIC dial failure
 	ErrCodeServerUnreachable      = 503 // TCP dial failed, connection refused
-	ErrCodeRuleBundlesUnavailable = 510 // All CDN sources failed to provide rule bundles
 	ErrCodeConnectionFatal        = 570 // Unclassified connection error (fallback)
 )
 

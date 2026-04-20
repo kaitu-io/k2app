@@ -244,6 +244,6 @@ func TestFail_OnStatusReceivesError(t *testing.T) {
 
 func TestCategoryForCode_RuleBundlesUnavailable(t *testing.T) {
 	if got := categoryForCode(ErrCodeRuleBundlesUnavailable); got != CategoryClient {
-		t.Errorf("expected CategoryClient for code 510, got %q", got)
+		t.Errorf("expected CategoryClient for code 424, got %q", got)
 	}
 }
