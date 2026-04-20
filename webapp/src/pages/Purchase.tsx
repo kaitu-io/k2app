@@ -651,7 +651,6 @@ export default function Purchase() {
             showAlert(
               t('purchase:purchase.tierLocked', {
                 tier: user?.tier ?? 'basic',
-                defaultValue: '您当前为「{{tier}}」档，无法购买此档套餐。如需变更档位请联系客服。',
               }),
               'error'
             );
@@ -956,7 +955,6 @@ export default function Purchase() {
               <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
                 {t('purchase:purchase.tierLocked', {
                   tier: user?.tier ?? 'basic',
-                  defaultValue: '您当前为「{{tier}}」档，无法购买此档套餐。如需变更档位请联系客服。',
                 })}
               </Typography>
             </Card>
