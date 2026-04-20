@@ -4,6 +4,7 @@ import { slugField } from '../fields/slugField.ts'
 import { isAdmin } from '../access/isAdmin.ts'
 import { setAuthorFromRequest } from '../hooks/setAuthorFromRequest.ts'
 import { setPublishedAt } from '../hooks/setPublishedAt.ts'
+import { autoTranslate } from '../hooks/autoTranslate.ts'
 
 export const Posts: CollectionConfig = {
   slug: 'posts',
@@ -70,6 +71,6 @@ export const Posts: CollectionConfig = {
   ],
   hooks: {
     beforeChange: [setAuthorFromRequest, setPublishedAt],
-    // afterChange wired in Task 9
+    afterChange: [autoTranslate],
   },
 }
