@@ -13,14 +13,32 @@ import (
 	"gorm.io/gorm"
 )
 
+// validatePurchase checks whether the buyer can purchase this plan.
+// First-time buyers (IsFirstOrderDone nil or false) can buy any tier.
+// Repeat buyers must purchase the same tier they currently have — tier upgrades/
+// downgrades require manual operator support.
+func validatePurchase(buyer *User, plan *Plan) error {
+	if buyer.IsFirstOrderDone == nil || !*buyer.IsFirstOrderDone {
+		return nil
+	}
+	if plan.Tier != buyer.Tier {
+		return fmt.Errorf("tier mismatch: user=%s, plan=%s", buyer.Tier, plan.Tier)
+	}
+	return nil
+}
+
 // CreateOrderRequest 创建订单请求数据结构
 //
 type CreateOrderRequest struct {
-	Preview      bool     `json:"preview" example:"false"`                     // 是否预览模式
-	Plan         string   `json:"plan" binding:"required" example:"pro_month"` // 套餐ID
-	CampaignCode string   `json:"campaignCode" example:"SAVE20"`               // 优惠码（可选）
-	ForUserUUIDs []string `json:"forUserUUIDs"`                                // 为其他用户支付（UUID列表）
-	ForMyself    bool     `json:"forMyself"`                                   // 为用户自己
+	Preview      bool   `json:"preview" example:"false"`                     // 是否预览模式
+	Plan         string `json:"plan" binding:"required" example:"pro_month"` // 套餐ID
+	CampaignCode string `json:"campaignCode" example:"SAVE20"`               // 优惠码（可选）
+
+	// Deprecated 2026-04-20: 代付功能已下线，下列字段仅用于检测旧客户端并拒绝其请求，不再写入 Order。
+	// 详见 docs/superpowers/specs/2026-04-20-proxy-purchase-users.md
+	ForUserUUIDs []string `json:"forUserUUIDs,omitempty"` // [Deprecated] 为其他用户支付（UUID列表）
+	ForUsers     []string `json:"forUsers,omitempty"`     // [Deprecated, legacy pre-tier-rename name] 仅用于识别并拒绝老客户端请求
+	ForMyself    *bool    `json:"forMyself,omitempty"`    // [Deprecated] 为用户自己
 }
 
 // CreateOrderResponse 创建订单响应数据结构
@@ -42,6 +60,17 @@ func api_create_order(c *gin.Context) {
 		return
 	}
 	log.Debugf(c, "create order request parsed successfully: preview=%v, plan=%s, campaignCode=%s", req.Preview, req.Plan, req.CampaignCode)
+
+	// Reject deprecated proxy-purchase fields (forUsers / forUserUUIDs / forMyself=false)
+	// 代付功能 2026-04-20 下线，参见 docs/superpowers/specs/2026-04-20-proxy-purchase-users.md
+	// forUsers 是 pre-tier-rename 的老字段名，保留 alias 以便给老客户端回友好错误。
+	if len(req.ForUserUUIDs) > 0 || len(req.ForUsers) > 0 || (req.ForMyself != nil && !*req.ForMyself) {
+		log.Warnf(c, "rejecting deprecated proxy-purchase request: forUserUUIDs=%d, forUsers=%d, forMyselfExplicit=%v",
+			len(req.ForUserUUIDs), len(req.ForUsers), req.ForMyself != nil && !*req.ForMyself)
+		Error(c, ErrorProxyPurchaseDeprecated,
+			"代付款功能已下线，不再支持为他人购买。请让对方使用自己的账号购买。")
+		return
+	}
 	user := ReqUser(c)
 
 	log.Infof(c, "user %d creating order, plan: %s, campaign: %s, preview: %v", user.ID, req.Plan, req.CampaignCode, req.Preview)
@@ -56,53 +85,25 @@ func api_create_order(c *gin.Context) {
 	}
 	log.Debugf(c, "plan found successfully: PID=%s, Label=%s, Price=%d", plan.PID, plan.Label, plan.Price)
 
-	// 计算购买数量和检查权限
-	quantity := 0
-
-	// 如果为自己购买
-	if req.ForMyself {
-		quantity = 1
-	}
-
-	// 如果为其他用户购买，一次性查找并检查权限
-	var targetUsers []User
-	if len(req.ForUserUUIDs) > 0 {
-		// 根据 UUID 查找用户并获取完整信息用于权限检查
-		if err := db.Get().Where("uuid IN ?", req.ForUserUUIDs).Where(User{
-			DelegateID: &user.ID,
-		}).Find(&targetUsers).Error; err != nil {
-			log.Errorf(c, "failed to find users by UUIDs: %v", err)
-			Error(c, ErrorSystemError, "failed to find users")
-			return
-		}
-
-		// 检查是否所有用户都找到了
-		if len(targetUsers) != len(req.ForUserUUIDs) {
-			log.Warnf(c, "some users not found, expected %d, got %d", len(req.ForUserUUIDs), len(targetUsers))
-			Error(c, ErrorInvalidArgument, "some users not found")
-			return
-		}
-		quantity += len(req.ForUserUUIDs)
-	}
-
-	// 如果没有指定任何用户，返回错误
-	if quantity == 0 {
-		log.Warnf(c, "no users specified for purchase")
-		Error(c, ErrorInvalidArgument, "no users specified for purchase")
+	// Tier validation: first-time buyers may pick any tier; repeat buyers must stay on their current tier.
+	if err := validatePurchase(user, plan); err != nil {
+		log.Warnf(c, "tier validation rejected user %d: %v", user.ID, err)
+		Error(c, ErrorTierMismatch,
+			fmt.Sprintf("您当前为「%s」档，无法购买「%s」档套餐。如需变更档位请联系客服。",
+				user.Tier, plan.Tier))
 		return
 	}
 
+	// 代付下线后每个订单都是 buyer 自己购买，quantity 恒为 1。
+	const quantity = 1
+
 	// 创建订单
-	log.Debugf(c, "creating order object for user %d with quantity %d", user.ID, quantity)
-	totalAmount := plan.Price * uint64(quantity)
-	title := plan.Label
-	if quantity > 1 {
-		title = fmt.Sprintf("%s × %d用户", plan.Label, quantity)
-	}
+	log.Debugf(c, "creating order object for user %d", user.ID)
+	totalAmount := plan.Price
 
 	order := &Order{
 		UUID:                 generateId("ord"),
-		Title:                title,
+		Title:                plan.Label,
 		OriginAmount:         totalAmount,
 		PayAmount:            totalAmount,
 		CampaignReduceAmount: 0,
@@ -152,9 +153,10 @@ func api_create_order(c *gin.Context) {
 		log.Infof(c, "no campaign code provided, using original price")
 	}
 
-	// 设置订单 Meta 信息（包括 plan、campaign、forUserUUIDs、forMyself）
+	// 设置订单 Meta 信息（包括 plan、campaign）
+	// 代付下线后 forUserUUIDs 恒为空、forMyself 恒为 true，但 Meta 字段保留以保持旧数据兼容。
 	log.Debugf(c, "setting order meta information")
-	if err := order.SetOrderMeta(plan, campaign, req.ForUserUUIDs, req.ForMyself); err != nil {
+	if err := order.SetOrderMeta(plan, campaign, nil, true); err != nil {
 		log.Errorf(c, "failed to set order meta for order, user %d: %v", user.ID, err)
 		Error(c, ErrorSystemError, err.Error())
 		return
@@ -178,14 +180,7 @@ func api_create_order(c *gin.Context) {
 		createdAt = time.Now().Unix()
 	}
 
-	// 构建 ForUsers 数据（复用已查找的用户）
-	var forUsers []DataUser
-	for _, u := range targetUsers {
-		forUsers = append(forUsers, DataUser{
-			UUID: u.UUID,
-		})
-	}
-
+	// 代付下线：forUsers 恒为空、forMyself 恒为 true。字段保留以保持响应结构兼容旧客户端。
 	dataOrder := DataOrder{
 		UUID:                 order.UUID,
 		Title:                order.Title,
@@ -197,8 +192,8 @@ func api_create_order(c *gin.Context) {
 		Campaign:             campaign,
 		CreatedAt:            createdAt,
 		PayAt:                payAt,
-		ForUsers:             forUsers,
-		ForMyself:            req.ForMyself,
+		ForUsers:             nil,
+		ForMyself:            true,
 	}
 	log.Infof(c, "DataOrder object created: UUID=%s, PayAmount=%d", dataOrder.UUID, dataOrder.PayAmount)
 

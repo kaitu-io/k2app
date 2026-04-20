@@ -95,7 +95,9 @@
       "licenseKeyNotFound": "授權碼唔存在",
       "licenseKeyUsed": "授權碼已經被使用",
       "licenseKeyExpired": "授權碼已過期",
-      "licenseKeyNotMatch": "唔符合此授權碼嘅使用條件"
+      "licenseKeyNotMatch": "唔符合此授權碼嘅使用條件",
+      "tierMismatch": "當前檔位無法購買此套餐，請聯絡客服變更檔位",
+      "proxyPurchaseDeprecated": "代付款功能已下線，請讓對方用自己嘅帳號購買"
     },
     "vpn": {
       "authFailed": "認證失敗，請重新登入",

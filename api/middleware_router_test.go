@@ -23,19 +23,19 @@ func setupRouterTestContext(user *User) (*httptest.ResponseRecorder, *gin.Contex
 
 func TestRouterRequired_HasAccess(t *testing.T) {
 	_, c := setupRouterTestContext(&User{
-		ID:              1,
-		ExpiredAt:       time.Now().Add(30 * 24 * time.Hour).Unix(),
-		MaxRouterDevice: 1,
+		ID:        1,
+		ExpiredAt: time.Now().Add(30 * 24 * time.Hour).Unix(),
+		Tier:      TierFamily, // 1 router device
 	})
 	RouterRequired()(c)
 	assert.False(t, c.IsAborted())
 }
 
-func TestRouterRequired_UnlimitedAccess(t *testing.T) {
+func TestRouterRequired_BusinessAccess(t *testing.T) {
 	_, c := setupRouterTestContext(&User{
-		ID:              1,
-		ExpiredAt:       time.Now().Add(30 * 24 * time.Hour).Unix(),
-		MaxRouterDevice: -1, // unlimited
+		ID:        1,
+		ExpiredAt: time.Now().Add(30 * 24 * time.Hour).Unix(),
+		Tier:      TierBusiness, // 3 router devices
 	})
 	RouterRequired()(c)
 	assert.False(t, c.IsAborted())
@@ -43,9 +43,9 @@ func TestRouterRequired_UnlimitedAccess(t *testing.T) {
 
 func TestRouterRequired_NoAccess(t *testing.T) {
 	w, c := setupRouterTestContext(&User{
-		ID:              1,
-		ExpiredAt:       time.Now().Add(30 * 24 * time.Hour).Unix(),
-		MaxRouterDevice: 0, // no router
+		ID:        1,
+		ExpiredAt: time.Now().Add(30 * 24 * time.Hour).Unix(),
+		Tier:      TierBasic, // basic 不支持路由器
 	})
 	RouterRequired()(c)
 	assert.True(t, c.IsAborted())
@@ -54,9 +54,9 @@ func TestRouterRequired_NoAccess(t *testing.T) {
 
 func TestRouterRequired_Expired(t *testing.T) {
 	_, c := setupRouterTestContext(&User{
-		ID:              1,
-		ExpiredAt:       time.Now().Add(-24 * time.Hour).Unix(),
-		MaxRouterDevice: 1,
+		ID:        1,
+		ExpiredAt: time.Now().Add(-24 * time.Hour).Unix(),
+		Tier:      TierFamily,
 	})
 	RouterRequired()(c)
 	assert.True(t, c.IsAborted())

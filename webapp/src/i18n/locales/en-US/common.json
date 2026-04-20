@@ -99,7 +99,9 @@
       "licenseKeyNotFound": "License key not found",
       "licenseKeyUsed": "License key already used",
       "licenseKeyExpired": "License key expired",
-      "licenseKeyNotMatch": "Not eligible for this license key"
+      "licenseKeyNotMatch": "Not eligible for this license key",
+      "tierMismatch": "Your current tier cannot purchase this plan. Please contact support to switch tiers.",
+      "proxyPurchaseDeprecated": "Proxy purchase is no longer supported. Please ask the recipient to purchase with their own account."
     },
     "tunnel": {
       "listFailed": "Failed to load server list",

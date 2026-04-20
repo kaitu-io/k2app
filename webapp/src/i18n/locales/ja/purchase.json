@@ -62,7 +62,8 @@
     "loginToPurchase": "ログインして購入を完了",
     "loginToPurchaseDesc": "ログインして支払い対象を選択し、購入を完了してください",
     "loginNow": "今すぐログイン",
-    "loginAndPay": "ログインして支払う"
+    "loginAndPay": "ログインして支払う",
+    "tierLocked": "現在のプランは「{{tier}}」です。このプランは別のランクのため購入できません。サポートにお問い合わせください。"
   },
   "deviceInstall": {
     "title": "クライアントダウンロード",

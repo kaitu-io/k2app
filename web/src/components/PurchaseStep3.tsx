@@ -30,10 +30,6 @@ export interface PurchaseStep3Props {
   onCampaignCodeChange: (code: string) => void;
   onCampaignErrorClear: () => void;
 
-  // Selection state
-  selectedForMyself: boolean;
-  selectedMemberUUIDs: string[];
-
   // Loading and action states
   previewLoading: boolean;
   isLoading: boolean;
@@ -53,8 +49,6 @@ export default function PurchaseStep3({
   onCampaignToggle,
   onCampaignCodeChange,
   onCampaignErrorClear,
-  selectedForMyself,
-  selectedMemberUUIDs,
   previewLoading,
   isLoading,
   isAuthenticated,
@@ -98,12 +92,7 @@ export default function PurchaseStep3({
                 <p className="text-base sm:text-sm text-muted-foreground flex items-center font-medium leading-relaxed">
                   {(() => {
                     const planMonths = plans.find(p => p.pid === selectedPlan)?.month || 0;
-                    const targetCount = (selectedForMyself ? 1 : 0) + selectedMemberUUIDs.length;
-                    if (targetCount === 1) {
-                      return t('purchase.purchase.proAuthorization', { months: planMonths });
-                    } else {
-                      return t('purchase.purchase.proAuthorizationMultiple', { months: planMonths, count: targetCount });
-                    }
+                    return t('purchase.purchase.proAuthorization', { months: planMonths });
                   })()}
                 </p>
               </div>
@@ -206,8 +195,7 @@ export default function PurchaseStep3({
               !isAuthenticated ||
               plans.length === 0 ||
               !selectedPlan ||
-              isLoading ||
-              (!selectedForMyself && selectedMemberUUIDs.length === 0)
+              isLoading
             }
           >
             {!isAuthenticated ? (
@@ -222,8 +210,6 @@ export default function PurchaseStep3({
               </>
             ) : plans.length === 0 ? (
               <span className="text-xl sm:text-lg">{t('purchase.purchase.noPlans')}</span>
-            ) : (!selectedForMyself && selectedMemberUUIDs.length === 0) ? (
-              <span className="text-xl sm:text-lg">{t('purchase.purchase.selectTarget')}</span>
             ) : (
               <>
                 <span className="text-2xl mr-2">{"🚀"}</span>

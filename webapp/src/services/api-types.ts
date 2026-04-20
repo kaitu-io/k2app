@@ -148,8 +148,6 @@ export interface CreateOrderRequest {
   preview: boolean; // 是否预览
   plan: string; // 套餐ID
   campaignCode?: string; // 优惠码（可选）
-  forMyself?: boolean; // 为自己购买
-  forUserUUIDs?: string[]; // 为其他用户购买（UUID列表）
 }
 
 // 物理节点信息

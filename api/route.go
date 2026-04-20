@@ -104,6 +104,8 @@ func SetupRouter() *gin.Engine {
 		api.GET("/relays", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
 		// Get plans
 		api.GET("/plans", api_get_plans)
+		// Get tiers (public — returns all 4 tiers with their active plans)
+		api.GET("/tiers", GetTiers)
 		// GeoIP country detection (anonymous, no auth)
 		api.GET("/geo", api_get_geo)
 		// 获取 CA 证书（公开接口，CA 证书是公开信息）
@@ -269,8 +271,11 @@ func SetupRouter() *gin.Engine {
 		admin.PUT("/plans/:id", api_admin_update_plan)
 		admin.DELETE("/plans/:id", api_admin_delete_plan)
 		admin.POST("/plans/:id/restore", api_admin_restore_plan)
+		// Tier 列表（含 inactive plans，用于后台 plan 管理 UI）
+		admin.GET("/tiers", GetAdminTiers)
 
 		// 用户管理
+		admin.PUT("/users/:uuid/tier", api_admin_change_user_tier)
 		admin.PUT("/users/:uuid/retailer-status", api_admin_update_user_retailer_status)
 		admin.PUT("/users/:uuid/retailer-contacts", api_admin_update_retailer_contacts)
 		// 用户硬删除（批量）

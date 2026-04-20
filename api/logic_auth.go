@@ -386,8 +386,9 @@ func isSecureRequest(proto, host string) bool {
 // For gateway (router) devices: rejects with 402/403 if no router permission or limit reached.
 // For app devices: kicks (deletes) the oldest device if limit reached.
 func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGateway bool) error {
+	quota := user.Quota()
 	if isGateway {
-		if user.MaxRouterDevice == 0 {
+		if quota.MaxRouterDevice == 0 {
 			log.Warnf(c, "user %d plan does not support router, rejecting gateway login", user.ID)
 			return e(ErrorPaymentRequired, "plan does not support router")
 		}
@@ -396,8 +397,8 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 			log.Errorf(c, "failed to count router devices for user %d: %v", user.ID, err)
 			return err
 		}
-		if user.MaxRouterDevice > 0 && routerCount >= int64(user.MaxRouterDevice) {
-			log.Warnf(c, "router device limit reached for user %d (%d/%d)", user.ID, routerCount, user.MaxRouterDevice)
+		if quota.MaxRouterDevice > 0 && routerCount >= int64(quota.MaxRouterDevice) {
+			log.Warnf(c, "router device limit reached for user %d (%d/%d)", user.ID, routerCount, quota.MaxRouterDevice)
 			return e(ErrorForbidden, "router device limit reached")
 		}
 		return nil
@@ -409,7 +410,7 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 		log.Errorf(c, "failed to count app devices for user %d: %v", user.ID, err)
 		return err
 	}
-	if appDeviceCount >= int64(user.MaxDevice) {
+	if appDeviceCount >= int64(quota.MaxDevice) {
 		log.Warnf(c, "app device limit reached for user %d, will remove oldest app device", user.ID)
 		var oldestDevice Device
 		if err := tx.Where("user_id = ? AND is_gateway = false", user.ID).Order("token_last_used_at ASC").First(&oldestDevice).Error; err != nil {

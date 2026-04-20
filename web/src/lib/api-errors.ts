@@ -48,6 +48,12 @@ export function getApiErrorMessage(
       return t('errors.selfInvitation');
     case ErrorCode.InvalidCredentials:
       return t('errors.invalidCredentials');
+    case ErrorCode.TierMismatch:
+      // i18n key landing in Task 20 — fall back to inline Chinese for now.
+      return fallback || '您当前档位无法购买此套餐。如需变更档位请联系客服。';
+    case ErrorCode.ProxyPurchaseDeprecated:
+      // i18n key landing in Task 20 — fall back to inline Chinese for now.
+      return fallback || '代付下单已下线，请由本人账号自行购买。';
     default:
       return fallback || t('errors.unknown');
   }
@@ -73,6 +79,8 @@ const zhMessages: Record<number, string> = {
   [ErrorCode.InvalidInviteCode]: '邀请码不正确',
   [ErrorCode.SelfInvitation]: '不能使用自己的邀请码',
   [ErrorCode.InvalidCredentials]: '登录凭证无效',
+  [ErrorCode.TierMismatch]: '您当前档位无法购买此套餐。如需变更档位请联系客服。',
+  [ErrorCode.ProxyPurchaseDeprecated]: '代付下单已下线，请由本人账号自行购买。',
 };
 
 /**

@@ -21,6 +21,7 @@ func api_get_plans(c *gin.Context) {
 		return
 	}
 	for _, plan := range plans {
+		q := plan.Quota()
 		items = append(items, DataPlan{
 			PID:             plan.PID,
 			Tier:            plan.Tier,
@@ -30,9 +31,9 @@ func api_get_plans(c *gin.Context) {
 			Month:           plan.Month,
 			Highlight:       plan.Highlight != nil && *plan.Highlight,
 			IsActive:        plan.IsActive != nil && *plan.IsActive,
-			MaxDevice:       plan.MaxDevice,
-			MaxRouterDevice: plan.MaxRouterDevice,
-			MaxLanClient:    plan.MaxLanClient,
+			MaxDevice:       q.MaxDevice,
+			MaxRouterDevice: q.MaxRouterDevice,
+			MaxLanClient:    q.MaxLanClient,
 		})
 	}
 	log.Infof(c, "successfully loaded %d plans", len(items))

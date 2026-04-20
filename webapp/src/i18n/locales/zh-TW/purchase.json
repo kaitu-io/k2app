@@ -62,7 +62,8 @@
     "selectPayTarget": "選擇付費對象",
     "bindEmailAndSelectTarget": "綁定信箱並選擇付費對象",
     "inviteRewardTitle": "好友推薦獎勵",
-    "inviteRewardDesc": "完成首次儲值即可獲得 {{days}} 天額外贈送"
+    "inviteRewardDesc": "完成首次儲值即可獲得 {{days}} 天額外贈送",
+    "tierLocked": "您目前為「{{tier}}」級，無法購買此級別方案。如需變更級別請聯絡客服。"
   },
   "deviceInstall": {
     "title": "客戶端下載",

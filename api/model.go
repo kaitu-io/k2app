@@ -31,12 +31,6 @@ func init() {
 	}
 }
 
-// 默认配额常量
-const (
-	DefaultMaxDevice       = 5 // 默认 app 设备数量
-	DefaultMaxRouterDevice = 0 // 默认不支持路由器
-)
-
 // VipChangeType VIP变更类型
 type VipChangeType string
 
@@ -70,13 +64,10 @@ type User struct {
 	ProHistories     []UserProHistory `gorm:"foreignKey:UserID"`
 
 	// 成员管理：付费委托
-	DelegateID *uint64 `gorm:"type:bigint;index"`  // 为我付费的用户ID（为空表示自己付费）
-	MaxDevice  int     `gorm:"not null;default:5"` // 最大 app 设备数量限制（不含路由器）
+	DelegateID *uint64 `gorm:"type:bigint;index"` // 为我付费的用户ID（为空表示自己付费）
 
-	// 路由器权限
-	MaxRouterDevice int    `gorm:"not null;default:0" json:"maxRouterDevice"`                // 路由器登录数量上限 (0=不支持)
-	MaxLanClient    int    `gorm:"not null;default:0" json:"maxLanClient"`                   // LAN 接入数量上限 (0=不支持, -1=无限)
-	Tier            string `gorm:"type:varchar(30);not null;default:'pro'" json:"tier"`      // 当前功能等级（稳定标识，不随周期变化）
+	// 功能等级：配额由 TierQuotas 表派生，旧的 MaxDevice/MaxRouterDevice/MaxLanClient 字段已删除
+	Tier string `gorm:"type:varchar(30);not null;default:'basic'" json:"tier"` // 当前功能等级（稳定标识，不随周期变化）
 
 	// API访问密钥（存储 SHA-256 hash，明文仅在生成时返回一次）
 	AccessKey          *string `gorm:"type:varchar(64);uniqueIndex"` // SHA-256 hash of ktu_* access key, NULL = no key
@@ -610,10 +601,7 @@ type Plan struct {
 	Highlight   *bool     `gorm:"default:false" json:"highlight"`                              // 是否高亮显示
 	IsActive    *bool     `gorm:"default:true" json:"isActive"`                                // 是否激活
 
-	Tier            string `gorm:"type:varchar(30);not null;default:'pro'" json:"tier"` // 功能等级标识（lite/basic/family/business，向后兼容: pro）
-	MaxDevice       int    `gorm:"not null;default:5" json:"maxDevice"`                // app 设备数量（不含路由器）
-	MaxRouterDevice int    `gorm:"not null;default:0" json:"maxRouterDevice"`          // 路由器登录数量上限 (0=不支持)
-	MaxLanClient    int    `gorm:"not null;default:0" json:"maxLanClient"`             // LAN 接入数量上限 (0=不支持, -1=无限)
+	Tier string `gorm:"type:varchar(30);not null;default:'basic'" json:"tier"` // 功能等级标识（lite/basic/family/business），配额由 TierQuotas 派生
 }
 
 // EmailMarketingTemplate EDM多语言邮件模板模型
@@ -1191,5 +1179,69 @@ type SurveyResponse struct {
 	Answers    string    `gorm:"type:json;not null" json:"answers"`
 	IPAddress  string    `gorm:"type:varchar(45);default:''" json:"ipAddress"`
 	RewardDays int       `gorm:"default:0" json:"rewardDays"`
+}
+
+// Quota returns the user's tier quota. Does NOT gate on expiry — callers that
+// must refuse expired users (VPN connect, router middleware) enforce that
+// separately. This matches legacy behavior where User.MaxDevice was a persisted
+// DB column that stayed at its value (default 5) even after ExpiredAt passed,
+// so expired users could still log in and manage their account.
+func (u *User) Quota() TierQuota {
+	info, ok := TierQuotas[u.Tier]
+	if !ok {
+		return TierQuotas[TierBasic].TierQuota
+	}
+	return info.TierQuota
+}
+
+// Quota returns the plan's tier quota (does not consider user state).
+func (p *Plan) Quota() TierQuota {
+	info, ok := TierQuotas[p.Tier]
+	if !ok {
+		return TierQuotas[TierBasic].TierQuota
+	}
+	return info.TierQuota
+}
+
+// MarshalJSON for Plan injects tier-derived maxDevice/maxRouterDevice/maxLanClient.
+// This preserves the API contract for legacy clients that read these fields directly.
+// After Task 11 removes the struct fields, this becomes the only source.
+//
+// Value receiver intentional: ensures encoding works for both addressable and
+// non-addressable Plan values (e.g. inside a slice element being marshaled).
+func (p Plan) MarshalJSON() ([]byte, error) {
+	type planAlias Plan // avoid recursive MarshalJSON calls
+	q := p.Quota()
+	return json.Marshal(&struct {
+		planAlias
+		MaxDevice       int `json:"maxDevice"`
+		MaxRouterDevice int `json:"maxRouterDevice"`
+		MaxLanClient    int `json:"maxLanClient"`
+	}{
+		planAlias:       planAlias(p),
+		MaxDevice:       q.MaxDevice,
+		MaxRouterDevice: q.MaxRouterDevice,
+		MaxLanClient:    q.MaxLanClient,
+	})
+}
+
+// MarshalJSON for User injects tier-derived quota fields via User.Quota().
+// Expiry does NOT zero out the quota — this preserves the legacy API shape where
+// GET /api/user returned the same max_device/max_router_device/max_lan_client
+// regardless of ExpiredAt. See Plan.MarshalJSON for the value-receiver note.
+func (u User) MarshalJSON() ([]byte, error) {
+	type userAlias User
+	q := u.Quota()
+	return json.Marshal(&struct {
+		userAlias
+		MaxDevice       int `json:"maxDevice"`
+		MaxRouterDevice int `json:"maxRouterDevice"`
+		MaxLanClient    int `json:"maxLanClient"`
+	}{
+		userAlias:       userAlias(u),
+		MaxDevice:       q.MaxDevice,
+		MaxRouterDevice: q.MaxRouterDevice,
+		MaxLanClient:    q.MaxLanClient,
+	})
 }
 
