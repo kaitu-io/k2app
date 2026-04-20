@@ -185,7 +185,14 @@ func (e *Engine) Start(cfg Config) error {
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
 	}
-	if client.CacheDir != "" {
+	if client.CacheDir == "" {
+		// Defensive: platforms are expected to provide CacheDir. Empty means
+		// the gate is a no-op, re-exposing the routes=0 cold-start bug if
+		// bundles aren't already on disk. Log loudly so a future regression
+		// in platform wiring surfaces at first connect.
+		slog.Warn("engine: Start without CacheDir — rule bundle prefetch skipped",
+			"risk", "routes=0 cold-start bug may reappear if bundles absent")
+	} else {
 		ensureCtx, cancelEnsure := context.WithTimeout(ctx, 10*time.Second)
 		err := rule.EnsureBundles(ensureCtx, client.CacheDir, sources)
 		cancelEnsure()

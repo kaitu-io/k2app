@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1736,6 +1737,63 @@ func TestEngineStart_RuleBundlesUnavailable(t *testing.T) {
 		t.Errorf("handler never received the rule-bundles error; got errors=%v", errs)
 	}
 }
+
+// TestEngineStart_EmptyCacheDir_WarnsAndSkipsGate verifies defensive logging
+// when the platform shell fails to pass CacheDir. The gate becomes a no-op
+// (which re-exposes the routes=0 cold-start bug if bundles are absent), so
+// future regressions in platform wiring must surface loudly at first connect.
+// This test fails if the warn log goes silent.
+func TestEngineStart_EmptyCacheDir_WarnsAndSkipsGate(t *testing.T) {
+	// Install a capturing slog handler for the duration of this test.
+	var records []slog.Record
+	var mu sync.Mutex
+	captureHandler := slogHandlerFunc(func(_ context.Context, r slog.Record) error {
+		mu.Lock()
+		records = append(records, r)
+		mu.Unlock()
+		return nil
+	})
+	prev := slog.Default()
+	slog.SetDefault(slog.New(captureHandler))
+	defer slog.SetDefault(prev)
+
+	client := &config.ClientConfig{
+		// CacheDir deliberately empty — simulates a broken platform shell.
+		Server: "k2v5://udid:tok@127.0.0.1:65534?insecure=1",
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://udid:tok@127.0.0.1:65534?insecure=1", Match: rule.MatchConfig{All: true}},
+		},
+	}
+
+	e := New()
+	// Start will fail later (no real server), but it must get past the gate
+	// without invoking EnsureBundles and must emit the defensive warn.
+	_ = e.Start(Config{Client: client, FileDescriptor: -1})
+
+	mu.Lock()
+	defer mu.Unlock()
+	var found bool
+	for _, r := range records {
+		if r.Level == slog.LevelWarn && strings.Contains(r.Message, "Start without CacheDir") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected WARN about empty CacheDir; got %d records, none matched", len(records))
+	}
+}
+
+// slogHandlerFunc is a minimal test-only slog.Handler that routes every
+// record through the given func. Enabled at all levels.
+type slogHandlerFunc func(context.Context, slog.Record) error
+
+func (f slogHandlerFunc) Enabled(context.Context, slog.Level) bool  { return true }
+func (f slogHandlerFunc) Handle(c context.Context, r slog.Record) error {
+	return f(c, r)
+}
+func (f slogHandlerFunc) WithAttrs([]slog.Attr) slog.Handler { return f }
+func (f slogHandlerFunc) WithGroup(string) slog.Handler      { return f }
 
 // TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure is a regression guard for
 // the routes=0 cold-start bug: EnsureBundles lands bundles on disk, then

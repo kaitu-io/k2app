@@ -60,9 +60,21 @@ func EnsureBundles(ctx context.Context, cacheDir string, sources []string) error
 }
 
 // ensureOnce performs the actual download + extract. Guarded by singleflight
-// so only one runs per cacheDir at a time. Re-checks freshness first (a
-// concurrent caller may have finished while we were queued).
+// (in-process dedup) plus flock (cross-process dedup — iOS Plugin and NE run
+// in separate processes and both call EnsureBundles on the same cacheDir).
+// Re-checks freshness after acquiring the lock in case another process just
+// finished writing bundles.version.
 func ensureOnce(ctx context.Context, cacheDir string, sources []string) error {
+	if isVersionFresh(cacheDir, bundlesFreshTTL) {
+		return nil
+	}
+
+	release, err := acquireLock(ctx, filepath.Join(cacheDir, ".ensure.lock"))
+	if err != nil {
+		return fmt.Errorf("rule: acquire lock: %w", err)
+	}
+	defer release()
+
 	if isVersionFresh(cacheDir, bundlesFreshTTL) {
 		return nil
 	}

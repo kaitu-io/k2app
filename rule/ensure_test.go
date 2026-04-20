@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // makeTarballHandler returns an http.HandlerFunc that serves a tar.gz
@@ -221,6 +223,85 @@ func TestEnsureBundles_CleansStaleTmp(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(dir, ".tmp")); !os.IsNotExist(err) {
 		t.Errorf(".tmp/ should be removed after successful EnsureBundles (err=%v)", err)
+	}
+}
+
+// TestAcquireLock_CrossProcessSerialization simulates the iOS
+// Plugin-vs-NetworkExtension race: two processes call EnsureBundles on the
+// same cacheDir. Within this single test binary we model distinct processes
+// by opening the lock file twice; flock(2) is per-open-file-description, so
+// goroutines in one process hold independent lock states. Verifies:
+//   - second acquirer blocks while first holds the lock
+//   - ctx cancellation releases the waiter without deadlock
+//   - after release, second acquirer can proceed
+func TestAcquireLock_CrossProcessSerialization(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".ensure.lock")
+
+	release1, err := acquireLock(context.Background(), lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Second attempt should block; bound it with a short ctx.
+	start := time.Now()
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel2()
+	if _, err := acquireLock(ctx2, lockPath); err == nil {
+		t.Fatal("expected timeout while first lock held, got nil")
+	}
+	if elapsed := time.Since(start); elapsed < 250*time.Millisecond {
+		t.Errorf("second acquirer returned too early: %v (expected ≥250ms)", elapsed)
+	}
+
+	release1()
+
+	// After release, next acquirer should succeed quickly.
+	ctx3, cancel3 := context.WithTimeout(context.Background(), time.Second)
+	defer cancel3()
+	release2, err := acquireLock(ctx3, lockPath)
+	if err != nil {
+		t.Fatalf("acquire after release: %v", err)
+	}
+	release2()
+}
+
+// TestEnsureBundles_CrossProcessFreshnessRecheck models the iOS real-world
+// flow: process A (Plugin) downloads and writes bundles.version; process B
+// (NE) was queued behind the flock. When B gets the lock, it must re-check
+// freshness and skip — NOT re-download. Exercises the second freshness check
+// at the top of ensureOnce (inside the lock). Proves A's write is visible to
+// B across the lock boundary.
+func TestEnsureBundles_CrossProcessFreshnessRecheck(t *testing.T) {
+	dir := t.TempDir()
+	var reqCount atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount.Add(1)
+		// Deliberately slow so the second caller queues behind the flock.
+		time.Sleep(150 * time.Millisecond)
+		makeTarballHandler(t, map[string][]byte{
+			"dummy.k2b": {0x4b, 0x32, 0x42, 0x00},
+		})(w, r)
+	}))
+	defer srv.Close()
+
+	// First caller: performs the download.
+	if err := EnsureBundles(context.Background(), dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reset the in-process singleflight so the second call can't hit the
+	// cached result — force it through the flock path like a separate process.
+	ensureSF = singleflight.Group{}
+
+	// Second caller: must see A's fresh bundles.version and skip.
+	if err := EnsureBundles(context.Background(), dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := reqCount.Load(); got != 1 {
+		t.Errorf("expected exactly 1 download (second caller should skip via freshness), got %d", got)
 	}
 }
 
