@@ -1216,3 +1216,44 @@ func (p *Plan) Quota() TierQuota {
 	return info.TierQuota
 }
 
+// MarshalJSON for Plan injects tier-derived maxDevice/maxRouterDevice/maxLanClient.
+// This preserves the API contract for legacy clients that read these fields directly.
+// After Task 11 removes the struct fields, this becomes the only source.
+//
+// Value receiver intentional: ensures encoding works for both addressable and
+// non-addressable Plan values (e.g. inside a slice element being marshaled).
+func (p Plan) MarshalJSON() ([]byte, error) {
+	type planAlias Plan // avoid recursive MarshalJSON calls
+	q := p.Quota()
+	return json.Marshal(&struct {
+		planAlias
+		MaxDevice       int `json:"maxDevice"`
+		MaxRouterDevice int `json:"maxRouterDevice"`
+		MaxLanClient    int `json:"maxLanClient"`
+	}{
+		planAlias:       planAlias(p),
+		MaxDevice:       q.MaxDevice,
+		MaxRouterDevice: q.MaxRouterDevice,
+		MaxLanClient:    q.MaxLanClient,
+	})
+}
+
+// MarshalJSON for User injects tier-derived quota fields. Returns ZeroQuota for
+// inactive (expired/never-paid) users via User.Quota(). See Plan.MarshalJSON for
+// rationale and the value-receiver note.
+func (u User) MarshalJSON() ([]byte, error) {
+	type userAlias User
+	q := u.Quota()
+	return json.Marshal(&struct {
+		userAlias
+		MaxDevice       int `json:"maxDevice"`
+		MaxRouterDevice int `json:"maxRouterDevice"`
+		MaxLanClient    int `json:"maxLanClient"`
+	}{
+		userAlias:       userAlias(u),
+		MaxDevice:       q.MaxDevice,
+		MaxRouterDevice: q.MaxRouterDevice,
+		MaxLanClient:    q.MaxLanClient,
+	})
+}
+
