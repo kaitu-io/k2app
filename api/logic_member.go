@@ -95,8 +95,12 @@ func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order) error {
 
 	// Tier 处理：首次购买写入；续费保持（API 层已校验匹配）
 	if buyer.IsFirstOrderDone == nil || !*buyer.IsFirstOrderDone {
-		buyer.Tier = plan.Tier
-		log.Infof(ctx, "[applyOrderToBuyer] first-time purchase, set buyer.Tier=%s", plan.Tier)
+		tier := plan.Tier
+		if tier == "" {
+			tier = TierBasic // legacy plans without Tier field default to basic (the "pro" rename target)
+		}
+		buyer.Tier = tier
+		log.Infof(ctx, "[applyOrderToBuyer] first-time purchase, set buyer.Tier=%s", buyer.Tier)
 	}
 	// 注：MaxDevice/MaxRouterDevice/MaxLanClient 字段已删除，不再写
 
@@ -112,12 +116,6 @@ func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order) error {
 
 	log.Infof(ctx, "[applyOrderToBuyer] success: %d days added to buyer %d, tier=%s", days, buyer.ID, buyer.Tier)
 	return nil
-}
-
-// applyOrderToTargetUsers Deprecated: kept as alias for backward compatibility with existing callers.
-// New code should call applyOrderToBuyer directly.
-func applyOrderToTargetUsers(ctx context.Context, tx *gorm.DB, order *Order) error {
-	return applyOrderToBuyer(ctx, tx, order)
 }
 
 // CanPayForUsers 检查用户是否可以为指定用户付费

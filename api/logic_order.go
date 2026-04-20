@@ -58,7 +58,7 @@ func MarkOrderAsPaid(ctx context.Context, tx *gorm.DB, order *Order) error {
 	}
 
 	// 第三步：为购买用户增加 Pro 授权
-	if err := applyOrderToTargetUsers(ctx, tx, order); err != nil {
+	if err := applyOrderToBuyer(ctx, tx, order); err != nil {
 		log.Errorf(ctx, "[MarkOrderAsPaid] failed to apply order to target users: %v", err)
 		return fmt.Errorf("给用户增加授权失败: %v", err)
 	}
