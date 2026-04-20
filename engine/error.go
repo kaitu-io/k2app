@@ -74,8 +74,16 @@ func (e *EngineError) Error() string {
 }
 
 // ClassifyError maps a wire/engine error to an HTTP-aligned error code with category.
-// Priority: StreamError (server-provided code) → MultiTransportError → timeout → string pattern → fallback 570.
+// Priority: already-classified EngineError → StreamError (server-provided code) → MultiTransportError → timeout → string pattern → fallback 570.
 func ClassifyError(err error) *EngineError {
+	// Priority 0a: already-classified EngineError passes through untouched.
+	// Allows call sites to pre-classify (e.g. rule-bundle gate, protocol-specific
+	// errors) and still go through Engine.fail() for proper state transition.
+	var ee *EngineError
+	if errors.As(err, &ee) {
+		return ee
+	}
+
 	// Priority 0: StreamError — server responded to a proxy request about a
 	// specific target. The wire is healthy (server received and responded).
 	// Always CategoryTarget regardless of code. Auth/payment errors use

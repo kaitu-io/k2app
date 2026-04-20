@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -1678,6 +1679,56 @@ func TestSetupOutboundTransport_InvalidURL(t *testing.T) {
 	_, _, err := setupOutboundTransport(ctx, "not-a-valid-url", nil, "")
 	if err == nil {
 		t.Fatal("expected error for invalid URL")
+	}
+}
+
+func TestEngineStart_RuleBundlesUnavailable(t *testing.T) {
+	dir := t.TempDir()
+
+	client := &config.ClientConfig{
+		CacheDir:    dir,
+		RuleSources: []string{"http://127.0.0.1:1/"}, // connection refused — fast fail
+		Server:      "k2v5://udid:tok@127.0.0.1:65534?insecure=1",
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://udid:tok@127.0.0.1:65534?insecure=1", Match: rule.MatchConfig{All: true}},
+		},
+	}
+
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	err := e.Start(Config{Client: client, FileDescriptor: -1})
+	if err == nil {
+		t.Fatal("expected error when rule bundles unreachable, got nil")
+	}
+
+	var engErr *EngineError
+	if !errors.As(err, &engErr) {
+		t.Fatalf("expected *EngineError, got %T: %v", err, err)
+	}
+	if engErr.Code != ErrCodeRuleBundlesUnavailable {
+		t.Errorf("expected code %d, got %d (msg=%q)", ErrCodeRuleBundlesUnavailable, engErr.Code, engErr.Message)
+	}
+	if engErr.Category != CategoryClient {
+		t.Errorf("expected category %q, got %q", CategoryClient, engErr.Category)
+	}
+
+	// e.fail() must have transitioned to disconnected and notified the handler.
+	if e.Status() != StateDisconnected {
+		t.Errorf("expected state %q after failure, got %q", StateDisconnected, e.Status())
+	}
+
+	errs := h.getErrors()
+	found := false
+	for _, msg := range errs {
+		if strings.Contains(msg, "rule bundles unavailable") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("handler never received the rule-bundles error; got errors=%v", errs)
 	}
 }
 

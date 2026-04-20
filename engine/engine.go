@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -176,11 +177,27 @@ func (e *Engine) Start(cfg Config) error {
 
 	startTime := time.Now()
 
-	// 1. Rule bundles: load from disk only (downloads handled by daemon/appext prefetch
-	// and StartUpdater background refresh). If cache is empty, fallback routing is used.
+	// 1. Rule bundles: ensure on disk before building the rule engine.
+	// Cold start: downloads the tarball from DefaultSources (up to 10s
+	// hard timeout). Warm cache: ~microsecond mtime check, no HTTP.
+	// Failure here is fatal to Start — routes=0 would otherwise lead to
+	// a silent all-direct downgrade.
 	sources := client.RuleSources
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
+	}
+	if client.CacheDir != "" {
+		rulesDir := filepath.Join(client.CacheDir, "rules")
+		ensureCtx, cancelEnsure := context.WithTimeout(ctx, 10*time.Second)
+		err := rule.EnsureBundles(ensureCtx, rulesDir, sources)
+		cancelEnsure()
+		if err != nil {
+			return e.fail(&EngineError{
+				Code:     ErrCodeRuleBundlesUnavailable,
+				Category: CategoryClient,
+				Message:  fmt.Sprintf("rule bundles unavailable: %v", err),
+			})
+		}
 	}
 
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
