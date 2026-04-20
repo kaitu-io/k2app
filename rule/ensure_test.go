@@ -194,3 +194,32 @@ func TestEnsureBundles_MaxSize(t *testing.T) {
 		t.Fatal("expected size-limit error, got nil")
 	}
 }
+
+func TestEnsureBundles_CleansStaleTmp(t *testing.T) {
+	dir := t.TempDir()
+
+	// Pre-populate a leftover .tmp/ from a simulated prior crash.
+	stale := filepath.Join(dir, ".tmp", "leftover.bin")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(makeTarballHandler(t, map[string][]byte{
+		"dummy.k2b": {0x4b, 0x32, 0x42, 0x00},
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	if err := EnsureBundles(ctx, dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, ".tmp")); !os.IsNotExist(err) {
+		t.Errorf(".tmp/ should be removed after successful EnsureBundles (err=%v)", err)
+	}
+}
