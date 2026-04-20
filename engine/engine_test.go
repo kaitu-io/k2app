@@ -1,11 +1,16 @@
 package engine
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -1729,6 +1734,79 @@ func TestEngineStart_RuleBundlesUnavailable(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("handler never received the rule-bundles error; got errors=%v", errs)
+	}
+}
+
+// TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure is a regression guard for
+// the routes=0 cold-start bug: EnsureBundles lands bundles on disk, then
+// buildRuleEngine reads them — they MUST be at paths that align so the
+// rule engine ends up with ≥1 route. If this ever returns 0, we've silently
+// regressed to all-direct routing on first connect.
+func TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure(t *testing.T) {
+	dir := t.TempDir()
+
+	// Build a minimal but valid k2b bundle — a single set "overseas" with
+	// one domain suffix. WriteBundle is already used by other tests.
+	var buf bytes.Buffer
+	if err := rule.WriteBundle(&buf, []rule.BundleSet{
+		{Name: "overseas", DomainSuffixes: []string{"example.com"}},
+	}); err != nil {
+		t.Fatalf("WriteBundle: %v", err)
+	}
+
+	// Serve it inside a tarball.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "k2-rules.tar.gz") {
+			http.NotFound(w, r)
+			return
+		}
+		var tbuf bytes.Buffer
+		gw := gzip.NewWriter(&tbuf)
+		tw := tar.NewWriter(gw)
+		data := buf.Bytes()
+		if err := tw.WriteHeader(&tar.Header{Name: "overseas.k2b", Mode: 0o644, Size: int64(len(data))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		tw.Close()
+		gw.Close()
+		w.Header().Set("Content-Type", "application/gzip")
+		w.Write(tbuf.Bytes())
+	}))
+	defer srv.Close()
+
+	// Step 1: EnsureBundles writes the bundle into `dir`.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := rule.EnsureBundles(ctx, dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatalf("EnsureBundles: %v", err)
+	}
+
+	// Step 2: buildRuleEngine reads from `dir` and must produce ≥1 route.
+	client := &config.ClientConfig{
+		CacheDir: dir,
+		Routes: []config.RouteConfig{
+			{Via: "direct", Match: rule.MatchConfig{Names: []string{"overseas"}}},
+			{Via: "k2v5://udid:tok@example.com:443", Match: rule.MatchConfig{All: true}},
+		},
+	}
+	outboundMap := buildOutboundMap(client.Routes)
+	ruleEngine := buildRuleEngine(client, outboundMap)
+	if ruleEngine == nil {
+		t.Fatal("buildRuleEngine returned nil")
+	}
+	defer ruleEngine.Close()
+
+	if got := ruleEngine.RouteCount(); got == 0 {
+		t.Errorf("regression: buildRuleEngine produced 0 routes after EnsureBundles "+
+			"— bundles at %q, cacheDir=%q. Check path alignment between EnsureBundles and rule.Load.", dir, client.CacheDir)
+	}
+
+	// Sanity: the overseas-bound domain should route via direct (target 0).
+	if got := ruleEngine.Match("example.com"); got != rule.Target(0) {
+		t.Errorf("expected example.com → direct (Target 0), got %v", got)
 	}
 }
 

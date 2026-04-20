@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -187,9 +186,8 @@ func (e *Engine) Start(cfg Config) error {
 		sources = rule.DefaultSources
 	}
 	if client.CacheDir != "" {
-		rulesDir := filepath.Join(client.CacheDir, "rules")
 		ensureCtx, cancelEnsure := context.WithTimeout(ctx, 10*time.Second)
-		err := rule.EnsureBundles(ensureCtx, rulesDir, sources)
+		err := rule.EnsureBundles(ensureCtx, client.CacheDir, sources)
 		cancelEnsure()
 		if err != nil {
 			return e.fail(&EngineError{

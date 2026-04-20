@@ -311,6 +311,14 @@ func (e *Engine) IsAllProxy() bool {
 	return e.allProxy
 }
 
+// RouteCount returns the number of configured route entries. Used by tests
+// and diagnostics — zero indicates a misconfigured or failed rule build.
+func (e *Engine) RouteCount() int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return len(e.routes)
+}
+
 // Close releases all bundle resources.
 func (e *Engine) Close() {
 	e.mu.Lock()
