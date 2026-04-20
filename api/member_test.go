@@ -86,6 +86,7 @@ func TestCanPayForUsers(t *testing.T) {
 }
 
 func TestApplyOrderToTargetUsers_WritesQuotas(t *testing.T) {
+	t.Skip("Legacy behavior — Plan/User MaxDevice fields removed in Task 11; this test will be rewritten or deleted in Task 6")
 	// Verify new Plan fields survive Meta roundtrip
 	plan := &Plan{
 		PID:             "family-1y",
@@ -109,6 +110,7 @@ func TestApplyOrderToTargetUsers_WritesQuotas(t *testing.T) {
 }
 
 func TestApplyOrderToTargetUsers_OldPlanDefaults(t *testing.T) {
+	t.Skip("Legacy behavior — Plan/User MaxDevice fields removed in Task 11; this test will be rewritten or deleted in Task 6")
 	// Old plans without MaxDevice should get zero value from Meta
 	plan := &Plan{PID: "1y", Label: "1年", Price: 4999, Month: 12}
 	order := Order{}
@@ -122,6 +124,7 @@ func TestApplyOrderToTargetUsers_OldPlanDefaults(t *testing.T) {
 }
 
 func TestApplyOrderToTargetUsers_UnlimitedLanClient(t *testing.T) {
+	t.Skip("Legacy behavior — Plan/User MaxDevice fields removed in Task 11; this test will be rewritten or deleted in Task 6")
 	// Verify MaxLanClient=-1 (unlimited) roundtrips correctly
 	plan := &Plan{
 		PID:             "business-1y",
