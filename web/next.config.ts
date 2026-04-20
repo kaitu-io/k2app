@@ -8,6 +8,7 @@ if (!process.env.VELITE_STARTED && (isDev || isBuild)) {
 }
 
 import createNextIntlPlugin from 'next-intl/plugin';
+import { withPayload } from '@payloadcms/next/withPayload';
 import type { NextConfig } from 'next';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
@@ -98,4 +99,6 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+export default withPayload(withNextIntl(nextConfig), {
+  devBundleServerPackages: false,
+});

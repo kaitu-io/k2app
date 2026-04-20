@@ -32,7 +32,12 @@ export default function middleware(request: NextRequest) {
   }
 
   // Skip middleware for admin and manager routes (no locale prefix needed)
-  if (pathname.startsWith('/admin') || pathname.startsWith('/manager')) {
+  if (
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/manager') ||
+    pathname.startsWith('/cms') ||
+    pathname.startsWith('/payload')
+  ) {
     return NextResponse.next();
   }
 
@@ -136,5 +141,5 @@ function getBestLocale(acceptLanguage: string | null): string {
 
 export const config = {
   // Match only internationalized pathnames - exclude API routes (/api/ and /app/)
-  matcher: ['/', '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*', '/((?!api|app|_next|_vercel|.*\\..*).*)']
+  matcher: ['/', '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*', '/((?!api|app|cms|payload|_next|_vercel|.*\\..*).*)']
 };
