@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -75,6 +77,44 @@ func TestEnsureBundles_ColdDownload(t *testing.T) {
 	// .tmp/ must be cleaned up after success.
 	if _, err := os.Stat(filepath.Join(dir, ".tmp")); !os.IsNotExist(err) {
 		t.Errorf(".tmp/ should be removed after success, stat err=%v", err)
+	}
+}
+
+func TestEnsureBundles_ConcurrentSingleflight(t *testing.T) {
+	dir := t.TempDir()
+	var reqCount atomic.Int32
+
+	// Slow server: sleep 200ms per request so multiple callers collide
+	// inside the singleflight window.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount.Add(1)
+		time.Sleep(200 * time.Millisecond)
+		makeTarballHandler(t, map[string][]byte{
+			"dummy.k2b": {0x4b, 0x32, 0x42, 0x00},
+		})(w, r)
+	}))
+	defer srv.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := EnsureBundles(ctx, dir, []string{srv.URL + "/"}); err != nil {
+				t.Errorf("unexpected err: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// 5 callers × 1 source × singleflight => ideally 1 HTTP hit.
+	// Allow up to 3 to tolerate race-window reopening if the first caller
+	// finishes before a late caller reads bundles.version. Anything above
+	// 3 indicates singleflight isn't working.
+	if got := reqCount.Load(); got > 3 {
+		t.Errorf("expected ≤3 HTTP requests via singleflight, got %d", got)
 	}
 }
 
