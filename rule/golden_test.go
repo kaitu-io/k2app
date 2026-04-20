@@ -55,6 +55,9 @@ func loadGolden(t *testing.T) goldenFile {
 
 func downloadBundles(t *testing.T, _ goldenFile) (string, []*rule.Bundle, map[string]*rule.BundleSet) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping golden test that downloads from CDN; use -run without -short to run")
+	}
 	dir := t.TempDir()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
