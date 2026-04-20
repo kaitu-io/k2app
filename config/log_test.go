@@ -242,7 +242,12 @@ func TestSetupLogging_IdempotentStderrRedirect(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SetupLogging call %d: %v", i, err)
 		}
-		_ = cleanup // intentionally not calling cleanup — simulates appext behavior
+		// Intentionally not calling cleanup inline — simulates appext behavior
+		// where cleanups are discarded. Register at test end so Windows can
+		// release file handles on lumberjack writers before TempDir removal.
+		// Stale cleanups are no-op on stderr redirect (generation check) but
+		// still close their lumberjack writer.
+		t.Cleanup(cleanup)
 	}
 
 	// CloseLogging cleans up the last active stderr redirect.
@@ -260,10 +265,15 @@ func TestCloseLogging(t *testing.T) {
 	logPath := dir + "/test-close.log"
 
 	cfg := LogConfig{Level: "info", Output: logPath}
-	_, err := SetupLogging(cfg, "k2")
+	cleanup, err := SetupLogging(cfg, "k2")
 	if err != nil {
 		t.Fatalf("SetupLogging: %v", err)
 	}
+	// Windows holds an exclusive file lock on open files, blocking
+	// t.TempDir() cleanup. Release the lumberjack writer at test end.
+	// cleanup() is idempotent with CloseLogging() below (closeFn tolerates
+	// nil activeStderrCleanupFn).
+	defer cleanup()
 
 	slog.Info("message before close")
 

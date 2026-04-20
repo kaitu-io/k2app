@@ -5,12 +5,22 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/kaitu-io/k2/config"
 )
 
 func TestCacheDir(t *testing.T) {
 	dir := cacheDir()
 	if dir == "" {
 		t.Fatal("cacheDir returned empty string")
+	}
+	// Windows SYSTEM intentionally returns %ProgramData%\Kaitu\cache (no 'k2' suffix)
+	// to avoid system32 DLL search issues. All other paths terminate in 'k2'.
+	if runtime.GOOS == "windows" && config.IsRoot() {
+		if !strings.Contains(dir, "Kaitu") {
+			t.Fatalf("cacheDir = %q, want to contain 'Kaitu' on Windows SYSTEM", dir)
+		}
+		return
 	}
 	if !strings.HasSuffix(dir, "k2") {
 		t.Fatalf("cacheDir = %q, want suffix 'k2'", dir)
