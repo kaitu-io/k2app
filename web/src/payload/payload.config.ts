@@ -5,7 +5,7 @@ import { buildConfig } from 'payload'
 import { fileURLToPath } from 'url'
 import sharp from 'sharp'
 
-import { Admins } from './collections/Admins'
+import { Admins } from './collections/Admins.ts'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
