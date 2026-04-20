@@ -30,16 +30,33 @@ func buildTierInfos() []TierWithPlans {
 // auth required.
 func GetTiers(c *gin.Context) {
 	out := buildTierInfos()
+
+	names := make([]string, len(out))
 	for i := range out {
-		var plans []Plan
-		if err := db.Get().
-			Where("tier = ? AND is_active = ?", out[i].Name, true).
-			Find(&plans).Error; err != nil {
-			log.Errorf(c, "failed to load plans for tier %s: %v", out[i].Name, err)
-			Error(c, ErrorSystemError, "failed to load plans")
-			return
-		}
-		out[i].Plans = plans
+		names[i] = out[i].Name
 	}
+
+	var plans []Plan
+	if err := db.Get().
+		Where("tier IN ? AND is_active = ?", names, true).
+		Find(&plans).Error; err != nil {
+		log.Errorf(c, "GetTiers: failed to load plans: %v", err)
+		Error(c, ErrorSystemError, "failed to load plans")
+		return
+	}
+
+	byTier := make(map[string][]Plan, len(out))
+	for _, p := range plans {
+		byTier[p.Tier] = append(byTier[p.Tier], p)
+	}
+
+	for i := range out {
+		bucket := byTier[out[i].Name]
+		if bucket == nil {
+			bucket = []Plan{} // serialize as `[]` not `null`
+		}
+		out[i].Plans = bucket
+	}
+
 	Success(c, &gin.H{"tiers": out})
 }
