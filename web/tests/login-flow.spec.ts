@@ -621,7 +621,7 @@ test.describe('AuthContext State Management', () => {
     await setupAuthMocks(page, { isAuthenticated: true });
 
     // Then simulate 401 on protected resource
-    await page.route('**/api/user/members', async (route) => {
+    await page.route('**/api/user/info', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

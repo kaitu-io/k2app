@@ -6,43 +6,6 @@
       "title": "续费",
       "description": "管理您的会员服务和续费"
     },
-    "members": {
-      "title": "成员管理",
-      "description": "添加成员后，成员可以共享您的会员权益。适合家庭、企业等多人使用场景。",
-      "addMember": "添加成员",
-      "removeMember": "移除成员",
-      "memberEmail": "成员邮箱",
-      "memberStatus": "状态",
-      "userId": "用户ID",
-      "expiryDate": "到期时间",
-      "noMembers": "暂无成员",
-      "noMembersDesc": "您还没有添加任何成员",
-      "addFirstMember": "添加第一个成员",
-      "addMemberDialog": "添加成员",
-      "emailLabel": "成员邮箱",
-      "emailPlaceholder": "请输入成员邮箱地址",
-      "emailHelp": "成员将通过此邮箱登录并使用您的会员权益",
-      "emailRequired": "请输入邮箱地址",
-      "invalidEmail": "邮箱格式不正确",
-      "emailAlreadyInUse": "该邮箱已被使用",
-      "addMemberSuccess": "成员添加成功",
-      "addMemberFailed": "添加成员失败",
-      "addMemberFailedRetry": "添加成员失败，请重试",
-      "removeMemberConfirm": "确定要移除该成员吗？移除后，该成员将无法继续使用您的会员权益。",
-      "removeMemberSuccess": "成员移除成功",
-      "removeMemberFailed": "移除成员失败",
-      "removeMemberFailedRetry": "移除成员失败，请重试",
-      "getMembersFailed": "获取成员列表失败",
-      "getMembersFailedRetry": "获取成员列表失败，请重试",
-      "loading": "加载成员列表中...",
-      "noEmail": "未设置邮箱",
-      "status": {
-        "notActivated": "未激活",
-        "valid": "正常",
-        "expiringSoon": "即将过期",
-        "expired": "已过期"
-      }
-    },
     "delegate": {
       "title": "代付人管理",
       "description": "管理为您账户付费的用户",
@@ -60,25 +23,6 @@
     "wallet": {
       "title": "我的钱包",
       "description": "管理您的钱包余额和提现"
-    }
-  },
-  "admin": {
-    "members": {
-      "title": "用户成员管理",
-      "manageUserMembers": "管理用户成员",
-      "addMember": "添加成员",
-      "removeMember": "移除成员",
-      "noMembers": "该用户暂无成员",
-      "noMembersDesc": "该用户还没有添加任何成员",
-      "addFirstMember": "添加第一个成员",
-      "addMemberDialog": "添加成员",
-      "addMemberSuccess": "成员添加成功",
-      "addMemberFailed": "添加成员失败",
-      "removeMemberConfirm": "确定要移除该成员吗？移除后，该成员将无法继续使用此用户的会员权益。",
-      "removeMemberSuccess": "成员移除成功",
-      "removeMemberFailed": "移除成员失败",
-      "getMembersFailed": "获取成员列表失败",
-      "getMembersFailedRetry": "获取成员列表失败，请重试"
     }
   },
   "retailer": {

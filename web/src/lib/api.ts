@@ -27,10 +27,10 @@
  * ## Usage
  * ```typescript
  * // Protected endpoint (auto-redirect on 401)
- * await api.getMembers();
+ * await api.getUserProfile();
  *
  * // Public endpoint (handle 401 manually)
- * await api.getMembers({ autoRedirectToAuth: false });
+ * await api.getUserProfile({ autoRedirectToAuth: false });
  * ```
  */
 
@@ -346,11 +346,6 @@ export interface ProHistory {
   reason: string;
   createdAt: number;
   order?: Order;
-}
-
-// 成员管理类型
-export interface AddMemberRequest {
-  memberEmail: string;
 }
 
 // 代付人管理类型
@@ -1269,26 +1264,6 @@ export const api = {
     return this.request<ListResult<ProHistory>>(`/api/user/pro-histories?${queryParams}`);
   },
 
-  // Member management APIs
-  async getMembers(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<ListResult<User>> {
-    return this.request<ListResult<User>>('/api/user/members', options);
-  },
-
-  async addMember(request: AddMemberRequest, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<User> {
-    return this.request<User>('/api/user/members', {
-      method: 'POST',
-      body: JSON.stringify(request),
-      ...options,
-    });
-  },
-
-  async removeMember(userUUID: string, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<void> {
-    return this.request<void>(`/api/user/members/${userUUID}`, {
-      method: 'DELETE',
-      ...options,
-    });
-  },
-
   // Delegate payer APIs
   // Unset delegate: backend sends `{code:0}` with no data field (Response[T].Data is
   // `*T,omitempty`, so a nil pointer is dropped rather than serialized as null).
@@ -1527,24 +1502,6 @@ export const api = {
 
     const query = queryParams.toString();
     return this.request<UserListResponse>(`/app/users${query ? '?' + query : ''}`);
-  },
-
-  // Admin member management APIs
-  async getAdminMembers(userUUID: string): Promise<ListResult<User>> {
-    return this.request<ListResult<User>>(`/app/users/${userUUID}/members`);
-  },
-
-  async addAdminMember(userUUID: string, request: AddMemberRequest): Promise<User> {
-    return this.request<User>(`/app/users/${userUUID}/members`, {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async removeAdminMember(userUUID: string, memberUUID: string): Promise<void> {
-    return this.request<void>(`/app/users/${userUUID}/members/${memberUUID}`, {
-      method: 'DELETE',
-    });
   },
 
   // Retailer config management APIs

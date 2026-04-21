@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
+import NextLink from 'next/link';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Github, Download, Menu, X } from 'lucide-react';
 import Image from 'next/image';
@@ -81,7 +82,7 @@ export default function Header() {
                 </Button>
                 {user?.isAdmin && (
                   <Button asChild variant="outline" size="sm">
-                    <Link href="/admin">{t('nav.nav.adminPanel')}</Link>
+                    <NextLink href="/manager">{t('nav.nav.adminPanel')}</NextLink>
                   </Button>
                 )}
               </div>
