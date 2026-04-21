@@ -470,36 +470,3 @@ func api_admin_member_remove(c *gin.Context) {
 	SuccessEmpty(c)
 	WriteAuditLog(c, "user_remove_member", "user", uuid, nil)
 }
-
-// api_reject_delegate 拒绝代付
-//
-func api_reject_delegate(c *gin.Context) {
-	log.Infof(c, "user request to reject delegate")
-
-	user := ReqUser(c)
-
-	// 检查是否有代付人
-	if user.DelegateID == nil {
-		log.Infof(c, "user %d has no delegate to reject", user.ID)
-		Error(c, ErrorNotFound, "no delegate")
-		return
-	}
-
-	// 清除代付关系
-	err := db.Get().Transaction(func(tx *gorm.DB) error {
-		user.DelegateID = nil
-		if err := tx.Save(user).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-
-	if err != nil {
-		log.Errorf(c, "failed to reject delegate for user %d: %v", user.ID, err)
-		Error(c, ErrorSystemError, "failed to reject delegate")
-		return
-	}
-
-	log.Infof(c, "successfully rejected delegate for user %d", user.ID)
-	SuccessEmpty(c)
-}

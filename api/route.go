@@ -145,7 +145,8 @@ func SetupRouter() *gin.Engine {
 			user.DELETE("/members/:userUUID", AuthRequired(), api_member_remove)
 			// 代付人管理
 			user.GET("/delegate", AuthRequired(), api_get_delegate)
-			user.DELETE("/delegate", AuthRequired(), api_reject_delegate)
+			user.PUT("/delegate", AuthRequired(), api_put_delegate)
+			user.DELETE("/delegate", AuthRequired(), api_delete_delegate)
 			// 自我删除账号
 			user.DELETE("/delete-account", AuthRequired(), api_delete_user_account)
 			// Access key 自助端点已移除 — 统一通过 admin API 管理
