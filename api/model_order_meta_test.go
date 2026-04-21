@@ -9,7 +9,7 @@ import (
 
 func TestOrderMetaPayUrl(t *testing.T) {
 	o := &Order{}
-	err := o.SetOrderMeta(&Plan{PID: "pro-1y", Label: "1 年 Pro"}, nil, nil, true)
+	err := o.SetOrderMeta(&Plan{PID: "pro-1y", Label: "1 年 Pro"}, nil, []string{"uuid-a", "uuid-b"}, false)
 	require.NoError(t, err)
 	require.Equal(t, "", o.GetPayUrl())
 
@@ -17,11 +17,12 @@ func TestOrderMetaPayUrl(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://pay.example.com/c/cs_123", o.GetPayUrl())
 
-	// plan still present after second marshal
+	// Other fields survive second marshal
 	p, err := o.GetPlan()
 	require.NoError(t, err)
 	assert.Equal(t, "pro-1y", p.PID)
-	assert.True(t, o.GetForMyself())
+	assert.False(t, o.GetForMyself())
+	assert.Equal(t, []string{"uuid-a", "uuid-b"}, o.GetForUsers())
 }
 
 func TestOrderMetaSetPayUrlOnEmpty(t *testing.T) {

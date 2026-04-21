@@ -261,7 +261,7 @@ type Order struct {
 	WordgateOrderNo      string    `gorm:"type:varchar(255);index"`                 // 关联的 wordgate 订单号
 	CampaignCode         *string   `gorm:"type:varchar(50);index"`                  // 使用的优惠活动代码
 	Campaign             *Campaign `gorm:"foreignKey:CampaignCode;references:Code"` // 通过Code关联Campaign
-	Meta                 string    `gorm:"type:json"`                               // 存储 Plan、forUserIds、forMyself 信息
+	Meta                 string    `gorm:"type:json"`                               // 存储 Plan、forUserUUIDs、forMyself、payUrl 信息
 }
 
 // GetPlan 获取订单的计划信息
