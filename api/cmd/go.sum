@@ -353,8 +353,8 @@ github.com/wordgate/qtoolkit/ai v1.5.25 h1:BovBjnzlimm5QX/4Jvix8TS/A5EBDfI5gBiYJ
 github.com/wordgate/qtoolkit/ai v1.5.25/go.mod h1:dJ4erGBo8YcfmKH/27ORcY6HI16QFElxj0KrvmU/oTo=
 github.com/wordgate/qtoolkit/asynq v1.5.25 h1:S91M3vpQukIwausX5vXFoz1seOg7F19fKseLuiWmABU=
 github.com/wordgate/qtoolkit/asynq v1.5.25/go.mod h1:7hEjZLQOmr9IySyrq9ocKUCQkLqdzjdxdkhP+TRJfKw=
-github.com/wordgate/qtoolkit/aws/ses v1.5.25 h1:Vs3GaeAQf1O9xRE08PPdm7pooP4u7n82oW3of5hYQbg=
-github.com/wordgate/qtoolkit/aws/ses v1.5.25/go.mod h1:kYgKEoSXQO+LPkmR7ZlnlI+Jk+40C3xNVBscjNpg10U=
+github.com/wordgate/qtoolkit/aws/ses v1.5.29 h1:T6RPqiAUXYgRu1hXiXWksCrY6xavDPNbH6tcK/dBlhU=
+github.com/wordgate/qtoolkit/aws/ses v1.5.29/go.mod h1:KkpDuv2M91ltU5+LSUowodGwIsdaRwTg5u6+uS+Htuo=
 github.com/wordgate/qtoolkit/aws/ssm v1.5.23 h1:Mi27bqWJEvnHr+wZnKda+wrTQtxDkKU4Bn8Q0lfNJJM=
 github.com/wordgate/qtoolkit/aws/ssm v1.5.23/go.mod h1:YJjI4Mtjh2xcbIpRylX9z2h1S/6iOAuUGLW2bZJi2ZI=
 github.com/wordgate/qtoolkit/chatwoot v1.5.25 h1:Wun+P9CdsmDjjqjgFXLfDMwkaIJE9/bdBH2EfYchmos=
@@ -365,8 +365,8 @@ github.com/wordgate/qtoolkit/geoip v1.5.28 h1:EmgFjT1zadXyLuX3t4QKc3n+C/i/cFPY/H
 github.com/wordgate/qtoolkit/geoip v1.5.28/go.mod h1:sUcLhMJvsC52jt54ms2hzxoUbGrGXxxGDnMK19YkHkE=
 github.com/wordgate/qtoolkit/log v1.5.25 h1:4k6DsF8ROQNHnmMDoa3vsRoY1BQ3SZcrwC900sqh2S4=
 github.com/wordgate/qtoolkit/log v1.5.25/go.mod h1:qqZ9Miaigt4pK9gRq7wg2OHeuGUpdAS9VQtMWavZsKk=
-github.com/wordgate/qtoolkit/mail v1.5.25 h1:+kH5tjiPltyfIdcm8yVKOod3oU5flg615xKgh0GdpQE=
-github.com/wordgate/qtoolkit/mail v1.5.25/go.mod h1:Z1BQQpH+qSFJhAqFeM6Ngx8luQk72V8mlfArtHsl7lY=
+github.com/wordgate/qtoolkit/mail v1.5.29 h1:slMGrR/K9u6hnQODCJcS8jMb63agORUGys2gd/CgBCo=
+github.com/wordgate/qtoolkit/mail v1.5.29/go.mod h1:DRvaws9uYcXqq10QUGBbGJbz8tbVsbVVMrei5EFPzsA=
 github.com/wordgate/qtoolkit/openai/filesearch v1.5.25 h1:CUDuPG0syNKDTk/69Sq80v0xvKmjGHnvGhPynXeMWd4=
 github.com/wordgate/qtoolkit/openai/filesearch v1.5.25/go.mod h1:rEGtsFnPUgm1UDVDzD1vwONa8iPaoigM/ndxlScldp0=
 github.com/wordgate/qtoolkit/redis v1.5.25 h1:5Ubrb9g5MiRyOmi/HsD7bwgMlQ2Agml+cSKyUmCKMUk=

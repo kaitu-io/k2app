@@ -2,17 +2,18 @@ package center
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
-	"net"
-	"net/smtp"
 	"strings"
 
 	"github.com/wordgate/qtoolkit/ai"
-	"github.com/wordgate/qtoolkit/aws/ses"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/mail"
 )
+
+// edmSender sends EDM email via qtoolkit/mail's "edm" viper prefix.
+// Dialer / SES client is lazy-loaded on first Send.
+var edmSender = mail.Config("edm")
 
 // getUserEmailByUser 从用户对象获取邮箱地址
 func getUserEmailByUser(ctx context.Context, user *User) (string, error) {
@@ -29,8 +30,7 @@ func getUserLanguagePreference(user *User) string {
 	return user.GetLanguagePreference()
 }
 
-// sendEmail 发送邮件 (支持 SMTP 和 AWS SES)
-// dev 模式下仅打印日志不发送
+// sendEmail 通过 qtoolkit/mail 的 "edm" prefix 发送邮件（dev 模式仅打印不发送）。
 func sendEmail(ctx context.Context, to, subject, body string) error {
 	if isMailDevMode() {
 		log.Infof(ctx, "[DEV-MAIL-EDM] TO: %s | SUBJECT: %s\n--- BODY ---\n%s\n--- END ---",
@@ -38,130 +38,16 @@ func sendEmail(ctx context.Context, to, subject, body string) error {
 		return nil
 	}
 
-	cfg := getEDMConfig(ctx)
-
-	// 根据配置选择发送方式
-	if cfg.Provider == "ses" {
-		return sendEmailWithSES(ctx, to, subject, body)
+	if err := edmSender.Send(&mail.Message{
+		To:      to,
+		Subject: subject,
+		Body:    body,
+	}); err != nil {
+		log.Errorf(ctx, "failed to send EDM email to %s: %v", to, err)
+		return fmt.Errorf("EDM send failed: %w", err)
 	}
 
-	// 默认使用 SMTP
-	return sendEmailWithSMTP(ctx, to, subject, body)
-}
-
-// sendEmailWithSES 使用 AWS SES 发送纯文本邮件
-func sendEmailWithSES(ctx context.Context, to, subject, body string) error {
-	log.Debugf(ctx, "sending plain text email via AWS SES to %s", to)
-
-	cfg := getEDMConfig(ctx)
-
-	// 构建发件人地址（带名称）
-	fromAddress := cfg.FromEmail
-	if cfg.FromName != "" {
-		fromAddress = fmt.Sprintf("%s <%s>", cfg.FromName, cfg.FromEmail)
-	}
-
-	// 使用 qtoolkit SES 发送纯文本邮件
-	resp, err := ses.SendEmail(&ses.EmailRequest{
-		From:     fromAddress,
-		To:       []string{to},
-		Subject:  subject,
-		BodyText: body, // 使用纯文本而非 HTML
-	})
-
-	if err != nil {
-		log.Errorf(ctx, "failed to send email via SES to %s: %v", to, err)
-		return fmt.Errorf("SES send failed: %w", err)
-	}
-
-	log.Infof(ctx, "plain text email sent via SES to %s, MessageID: %s", to, resp.MessageID)
-	return nil
-}
-
-// sendEmailWithSMTP 使用 SMTP 发送邮件
-func sendEmailWithSMTP(ctx context.Context, to, subject, body string) error {
-	log.Debugf(ctx, "sending email via SMTP to %s", to)
-
-	cfg := getEDMConfig(ctx)
-
-	if cfg.SMTPUsername == "" || cfg.SMTPPassword == "" {
-		return fmt.Errorf("SMTP credentials not configured")
-	}
-
-	// 构建发件人地址
-	from := cfg.FromEmail
-	if cfg.FromName != "" {
-		from = fmt.Sprintf("%s <%s>", cfg.FromName, cfg.FromEmail)
-	}
-
-	// 构建邮件头和正文
-	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-		from, to, subject, body))
-
-	// SMTP 服务器地址
-	host := cfg.SMTPHost
-	addr := net.JoinHostPort(host, cfg.SMTPPort)
-
-	// 创建 TLS 配置
-	tlsConfig := &tls.Config{
-		ServerName: host,
-	}
-
-	// 建立 TLS 连接（465 端口使用 SSL/TLS）
-	conn, err := tls.Dial("tcp", addr, tlsConfig)
-	if err != nil {
-		log.Errorf(ctx, "failed to connect to SMTP server %s: %v", addr, err)
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer conn.Close()
-
-	// 创建 SMTP 客户端
-	client, err := smtp.NewClient(conn, host)
-	if err != nil {
-		log.Errorf(ctx, "failed to create SMTP client: %v", err)
-		return fmt.Errorf("failed to create SMTP client: %w", err)
-	}
-	defer client.Quit()
-
-	// 认证
-	auth := smtp.PlainAuth("", cfg.SMTPUsername, cfg.SMTPPassword, host)
-	if err = client.Auth(auth); err != nil {
-		log.Errorf(ctx, "SMTP authentication failed: %v", err)
-		return fmt.Errorf("SMTP authentication failed: %w", err)
-	}
-
-	// 设置发件人
-	if err = client.Mail(cfg.FromEmail); err != nil {
-		log.Errorf(ctx, "failed to set MAIL FROM: %v", err)
-		return fmt.Errorf("failed to set sender: %w", err)
-	}
-
-	// 设置收件人
-	if err = client.Rcpt(to); err != nil {
-		log.Errorf(ctx, "failed to set RCPT TO: %v", err)
-		return fmt.Errorf("failed to set recipient: %w", err)
-	}
-
-	// 发送邮件正文
-	w, err := client.Data()
-	if err != nil {
-		log.Errorf(ctx, "failed to get DATA writer: %v", err)
-		return fmt.Errorf("failed to get data writer: %w", err)
-	}
-
-	_, err = w.Write(msg)
-	if err != nil {
-		log.Errorf(ctx, "failed to write email body: %v", err)
-		return fmt.Errorf("failed to write email body: %w", err)
-	}
-
-	err = w.Close()
-	if err != nil {
-		log.Errorf(ctx, "failed to close DATA writer: %v", err)
-		return fmt.Errorf("failed to close data writer: %w", err)
-	}
-
-	log.Infof(ctx, "email sent via SMTP to %s", to)
+	log.Infof(ctx, "EDM email sent to %s", to)
 	return nil
 }
 
