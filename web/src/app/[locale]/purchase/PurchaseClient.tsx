@@ -411,13 +411,7 @@ export default function PurchaseClient() {
         const d = await api.getDelegate({ autoRedirectToAuth: false });
         setDelegate(d);
       } catch (err) {
-        // 404 / "no delegate" → null; anything else is an unexpected load
-        // failure, log it and keep the empty-state UI.
-        if (err instanceof ApiError && err.code === ErrorCode.NotFound) {
-          setDelegate(null);
-        } else {
-          console.error('[Purchase] Failed to load delegate:', err);
-        }
+        console.error('[Purchase] Failed to load delegate:', err);
       } finally {
         setDelegateLoaded(true);
       }

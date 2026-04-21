@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "@/i18n/routing";
 import { toast } from "sonner";
-import { api, ApiError, type DelegateInfo } from "@/lib/api";
+import { api, type DelegateInfo } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,14 +31,9 @@ export default function DelegateClient() {
         setDelegate(data);
         setEditing(!data);
       } catch (err) {
-        if (err instanceof ApiError && err.code === 404) {
-          setDelegate(null);
-          setEditing(true);
-        } else {
-          console.error("Failed to load delegate:", err);
-          setDelegate(null);
-          setEditing(true);
-        }
+        console.error("Failed to load delegate:", err);
+        setDelegate(null);
+        setEditing(true);
       } finally {
         setLoading(false);
       }

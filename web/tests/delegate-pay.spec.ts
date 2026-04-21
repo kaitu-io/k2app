@@ -94,13 +94,13 @@ async function setupCommonMocks(
           body: JSON.stringify({ code: 0, data: currentDelegate }),
         });
       } else {
-        // No delegate — backend returns 404 in the code field; api.request()
-        // throws ApiError(code=404) which DelegateClient / PurchaseClient
-        // both recognize as "empty state".
+        // No delegate — backend returns {code:0} with no data field
+        // (Response[T].Data is *T,omitempty, so a nil pointer is dropped).
+        // api.getDelegate() normalizes this to null.
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ code: 404, message: 'no delegate' }),
+          body: JSON.stringify({ code: 0 }),
         });
       }
       return;

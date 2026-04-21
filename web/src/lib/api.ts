@@ -1289,8 +1289,14 @@ export const api = {
   },
 
   // Delegate payer APIs
+  // Unset delegate: backend sends `{code:0}` with no data field (Response[T].Data is
+  // `*T,omitempty`, so a nil pointer is dropped rather than serialized as null).
   async getDelegate(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<DelegateInfo | null> {
-    return this.request<DelegateInfo | null>('/api/user/delegate', options);
+    const data = await this.request<DelegateInfo | Record<string, never>>('/api/user/delegate', options);
+    if (data && typeof data === 'object' && 'email' in data && typeof data.email === 'string' && data.email) {
+      return data as DelegateInfo;
+    }
+    return null;
   },
 
   async setDelegate(email: string, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<DelegateInfo> {
