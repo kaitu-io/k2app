@@ -109,6 +109,13 @@
     "tierLocked": "Your current tier is {tier}. This plan requires a different tier — please contact support to switch tiers.",
     "proxyPurchaseDeprecated": "Proxy purchase is no longer supported. Please ask the recipient to purchase with their own account."
   },
+  "wechatGuide": {
+    "title": "Please open this page in your browser",
+    "tapHere": "Tap here",
+    "step1": "Tap the \"···\" menu in the top-right corner",
+    "step2": "Select \"Open in Browser\"",
+    "reason": "WeChat's built-in browser cannot reliably complete payments. Please use your system browser to ensure a successful purchase."
+  },
   "error403": {
     "title": "Access Forbidden",
     "subtitle": "You do not have permission to access this page",
