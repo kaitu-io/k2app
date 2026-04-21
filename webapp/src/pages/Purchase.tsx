@@ -897,7 +897,7 @@ export default function Purchase() {
         {!isAuthenticated && (
           <Box>
             <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '1rem' }} component="span">
-              {t('purchase:purchase.bindEmailAndSelectTarget')}
+              {t('purchase:purchase.bindEmail')}
             </Typography>
             <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
               <EmailLoginForm onLoginSuccess={() => {
@@ -1120,7 +1120,7 @@ export default function Purchase() {
         >
           {plansLoading || isLoading ? t('purchase:purchase.loadingPlans') :
            plans.length === 0 ? t('purchase:purchase.noPlans') :
-           !isAuthenticated ? t('purchase:purchase.selectTarget') :
+           !isAuthenticated ? t('purchase:purchase.bindEmailToPayNow') :
            t('purchase:purchase.payNow')}
         </Button>
         
