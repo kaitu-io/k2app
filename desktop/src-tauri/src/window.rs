@@ -107,7 +107,28 @@ fn get_primary_or_first_monitor(app: &AppHandle) -> tauri::Monitor {
 
 /// Returns the monitor's usable-area logical height (work_area excludes
 /// Dock + menu bar on macOS, taskbar on Windows, notch on MacBook Pro).
+///
+/// Debug builds honor `K2_FAKE_USABLE_HEIGHT=<px>` to simulate small-screen
+/// scenarios that are otherwise impossible to reproduce without specific
+/// hardware (e.g. old MacBook Air with macOS "Larger Text" scaling). This
+/// hook is stripped from release builds.
 fn get_usable_logical_height(monitor: &tauri::Monitor) -> u32 {
+    #[cfg(debug_assertions)]
+    {
+        if let Ok(raw) = std::env::var("K2_FAKE_USABLE_HEIGHT") {
+            if let Ok(v) = raw.parse::<u32>() {
+                log::warn!(
+                    "[test] K2_FAKE_USABLE_HEIGHT override active: returning {} (real work_area ignored)",
+                    v
+                );
+                return v;
+            }
+            log::warn!(
+                "[test] K2_FAKE_USABLE_HEIGHT set to invalid value {:?}, ignoring",
+                raw
+            );
+        }
+    }
     let scale_factor = monitor.scale_factor();
     let work_area = monitor.work_area();
     (work_area.size.height as f64 / scale_factor) as u32
