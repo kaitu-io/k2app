@@ -67,11 +67,20 @@ vi.mock('@/i18n/routing', () => ({
   },
 }));
 
+// Mock Payload CMS imports (sitemap fetches blog posts via Local API).
+// Tests here cover Velite-driven content entries; return no Payload docs.
+vi.mock('@payload-config', () => ({ default: {} }));
+vi.mock('payload', () => ({
+  getPayload: async () => ({
+    find: async () => ({ docs: [] }),
+  }),
+}));
+
 describe('test_sitemap_includes_content', () => {
   it('sitemap includes content page URLs for published posts', async () => {
     // Dynamically import after mocks are set up
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
 
     const urls = entries.map((entry: { url: string }) => entry.url);
 
@@ -90,7 +99,7 @@ describe('test_sitemap_includes_content', () => {
 
   it('sitemap content entries have correct metadata', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
 
     const contentEntry = entries.find(
       (entry: { url: string }) => entry.url === 'https://kaitu.io/zh-CN/blog/hello-world'
@@ -104,7 +113,7 @@ describe('test_sitemap_includes_content', () => {
 
   it('sitemap still includes static pages alongside content pages', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
 
     const urls = entries.map((entry: { url: string }) => entry.url);
 
