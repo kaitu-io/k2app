@@ -9,10 +9,9 @@ import FAQSection from '@/components/home/FAQSection';
 import DownloadCTA from '@/components/home/DownloadCTA';
 import HomeClient from './HomeClient';
 import { generateMetadata as generateBaseMetadata } from './metadata';
+import { getBrand } from '@/lib/brand-server';
 
 type Locale = (typeof routing.locales)[number];
-
-export const dynamic = 'force-static';
 
 /**
  * Generate metadata for the homepage (used by Next.js for <head> tags).
@@ -25,10 +24,11 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
-  const base = generateBaseMetadata(locale);
+  const brand = await getBrand();
+  const base = generateBaseMetadata(locale, '', {}, brand);
   const t = await getTranslations({ locale, namespace: 'hero' });
 
-  const title = `${t('hero.title')} | Kaitu k2cc`;
+  const title = `${t('hero.title')} | ${brand.wordmark} k2cc`;
   const description = t('hero.description');
 
   return {
@@ -57,6 +57,7 @@ export default async function Home({
   const locale = rawLocale as Locale;
   setRequestLocale(locale);
 
+  const brand = await getBrand();
   const t = await getTranslations({ locale, namespace: 'hero' });
 
   const FAQ_ITEMS = [
@@ -91,13 +92,13 @@ export default async function Home({
     {
       '@context': 'https://schema.org',
       '@type': 'SoftwareApplication',
-      name: 'Kaitu k2cc',
+      name: `${brand.displayName} k2cc`,
       applicationCategory: 'NetworkingApplication',
       operatingSystem: 'Windows, macOS, iOS, Android, Linux',
       description:
         'ECH-based stealth tunnel protocol powered by k2cc adaptive rate control. QUIC+TCP-WS dual-stack transport with zero CT log exposure and one-command deployment.',
-      url: 'https://kaitu.io',
-      publisher: { '@type': 'Organization', name: 'Kaitu', url: 'https://kaitu.io' },
+      url: brand.baseUrl,
+      publisher: { '@type': 'Organization', name: brand.displayName, url: brand.baseUrl },
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
       featureList: [
         'ECH (Encrypted Client Hello) stealth',
@@ -112,13 +113,13 @@ export default async function Home({
     {
       '@context': 'https://schema.org',
       '@type': 'Organization',
-      name: 'Kaitu',
-      url: 'https://kaitu.io',
-      logo: 'https://kaitu.io/kaitu-icon.png',
-      sameAs: ['https://github.com/kaitu-io'],
+      name: brand.displayName,
+      url: brand.baseUrl,
+      logo: `${brand.baseUrl}${brand.logoPath}`,
+      sameAs: ['https://github.com/getoverleap'],
       contactPoint: {
         '@type': 'ContactPoint',
-        email: 'support@kaitu.io',
+        email: brand.contactEmail,
         contactType: 'customer support',
       },
     },

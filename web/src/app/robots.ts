@@ -1,16 +1,18 @@
 import { MetadataRoute } from 'next';
+import { getBrand } from '@/lib/brand-server';
 
-export const dynamic = 'force-static';
+// Must be dynamic so robots.txt content reflects the request host (kaitu.io vs overleap.io).
+export const dynamic = 'force-dynamic';
 
-const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://kaitu.io';
-
-export default function robots(): MetadataRoute.Robots {
+export default async function robots(): Promise<MetadataRoute.Robots> {
+  const brand = await getBrand();
   return {
     rules: {
       userAgent: '*',
       allow: '/',
       disallow: ['/api/', '/_next/', '/manager/'],
     },
-    sitemap: `${baseUrl}/sitemap.xml`,
+    sitemap: `${brand.baseUrl}/sitemap.xml`,
+    host: brand.baseUrl.replace(/^https?:\/\//, ''),
   };
 }

@@ -9,6 +9,8 @@ import LanguageDetectionBanner from '@/components/LanguageDetectionBanner';
 import CookieConsent from '@/components/CookieConsent';
 import { EmbedThemeProvider } from '@/components/providers/EmbedThemeProvider';
 import { LocaleProvider } from '@/components/providers/LocaleProvider';
+import { BrandProvider } from '@/components/providers/BrandProvider';
+import { getBrand } from '@/lib/brand-server';
 import { generateMetadata as generatePageMetadata } from './metadata';
 import { Metadata } from 'next';
 import { Suspense } from 'react';
@@ -33,7 +35,8 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }): Promise<Metadata> {
   const { locale } = await params;
-  return generatePageMetadata(locale);
+  const brand = await getBrand();
+  return generatePageMetadata(locale, '', {}, brand);
 }
 
 export default async function LocaleLayout({
@@ -55,6 +58,7 @@ export default async function LocaleLayout({
   // Providing all messages to the client
   // side is the easiest way to get started
   const messages = await getMessages();
+  const brand = await getBrand();
 
 
   return (
@@ -62,19 +66,21 @@ export default async function LocaleLayout({
       <body className={`${inter.className} ${jetbrainsMono.variable}`} suppressHydrationWarning>
         <NextIntlClientProvider messages={messages}>
           <LocaleProvider locale={locale}>
-            <Suspense fallback={null}>
-              <EmbedThemeProvider>
-                <AppConfigProvider>
-                  <AuthProvider>
-                    <LanguageDetectionBanner />
-                    {children}
-                    <Toaster />
-                    <CookieConsent />
-                    <ChatwootWidget />
-                  </AuthProvider>
-                </AppConfigProvider>
-              </EmbedThemeProvider>
-            </Suspense>
+            <BrandProvider brand={brand}>
+              <Suspense fallback={null}>
+                <EmbedThemeProvider>
+                  <AppConfigProvider>
+                    <AuthProvider>
+                      <LanguageDetectionBanner />
+                      {children}
+                      <Toaster />
+                      <CookieConsent />
+                      <ChatwootWidget />
+                    </AuthProvider>
+                  </AppConfigProvider>
+                </EmbedThemeProvider>
+              </Suspense>
+            </BrandProvider>
           </LocaleProvider>
         </NextIntlClientProvider>
       </body>

@@ -1,15 +1,14 @@
 import { MetadataRoute } from 'next';
-import { routing } from '@/i18n/routing';
 import { posts } from '#velite';
 import { getPayload } from 'payload';
 import config from '@payload-config';
+import { getBrand } from '@/lib/brand-server';
 
 // Render at request time — avoids build-time DB dependency and keeps blog listings fresh.
+// Also required for host-aware sitemap (reads `host` header via getBrand()).
 export const dynamic = 'force-dynamic';
 
-const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://kaitu.io';
-
-type BlogEntry = { slug: string; updatedAt?: string };
+type BlogEntry = { slug: string; updatedAt?: string; brand?: string | null };
 
 async function fetchBlogPosts(): Promise<BlogEntry[]> {
   try {
@@ -22,9 +21,10 @@ async function fetchBlogPosts(): Promise<BlogEntry[]> {
       depth: 0,
       overrideAccess: true,
     });
-    return (docs as Array<{ slug: string; updatedAt?: string }>).map((d) => ({
+    return (docs as unknown as Array<{ slug: string; updatedAt?: string; brand?: string | null }>).map((d) => ({
       slug: d.slug,
       updatedAt: d.updatedAt,
+      brand: d.brand,
     }));
   } catch (err) {
     console.error('sitemap: failed to fetch Payload blog posts', err);
@@ -33,6 +33,10 @@ async function fetchBlogPosts(): Promise<BlogEntry[]> {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const brand = await getBrand();
+  const baseUrl = brand.baseUrl;
+  const locales = brand.allowedLocales;
+
   // Static pages in the application
   const staticPages = [
     '',           // Home page
@@ -53,11 +57,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Generate entries for static pages
   staticPages.forEach(page => {
-    routing.locales.forEach(locale => {
+    locales.forEach(locale => {
       const url = `${baseUrl}/${locale}${page}`;
 
       const alternates: Record<string, string> = {};
-      routing.locales.forEach(altLocale => {
+      locales.forEach(altLocale => {
         alternates[altLocale] = `${baseUrl}/${altLocale}${page}`;
       });
 
@@ -80,17 +84,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily',
     priority: 1,
     alternates: {
-      languages: routing.locales.reduce((acc, locale) => {
+      languages: locales.reduce((acc, locale) => {
         acc[locale] = `${baseUrl}/${locale}`;
         return acc;
       }, {} as Record<string, string>),
     },
   });
 
-  // Add content pages from velite (published posts only)
-  // Deduplicate by slug, then expand to all locales with hreflang alternates.
-  // All locale URLs are valid (generateStaticParams + zh-CN fallback).
-  const publishedPosts = posts.filter((post) => !post.draft);
+  // Add content pages from velite (published posts only).
+  // Filter by brand visibility: posts with brand='both' or matching this brand only.
+  const publishedPosts = posts.filter(
+    (post) => !post.draft && (post.brand === 'both' || post.brand === brand.id)
+  );
   const uniqueSlugs = [...new Set(publishedPosts.map(p => p.slug))];
 
   for (const slug of uniqueSlugs) {
@@ -101,11 +106,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     );
 
     const alternates: Record<string, string> = {};
-    routing.locales.forEach(locale => {
+    locales.forEach(locale => {
       alternates[locale] = `${baseUrl}/${locale}/${slug}`;
     });
 
-    routing.locales.forEach(locale => {
+    locales.forEach(locale => {
       sitemapEntries.push({
         url: `${baseUrl}/${locale}/${slug}`,
         lastModified: latestDate,
@@ -118,13 +123,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Payload CMS blog posts — all locales share the same slug.
   // DB fetch is tolerant: if unreachable at build time, blog section is simply omitted.
+  // Payload schema doesn't yet carry brand (Phase 2), so for now treat all payload
+  // posts as brand='both' and emit them under every host.
   const blogPosts = await fetchBlogPosts();
-  for (const { slug, updatedAt } of blogPosts) {
+  for (const { slug, updatedAt, brand: postBrand } of blogPosts) {
+    // Respect brand field if Payload collection adds it later. Missing/null = visible everywhere.
+    if (postBrand && postBrand !== 'both' && postBrand !== brand.id) continue;
+
     const alternates: Record<string, string> = {};
-    routing.locales.forEach(locale => {
+    locales.forEach(locale => {
       alternates[locale] = `${baseUrl}/${locale}/blog/${slug}`;
     });
-    routing.locales.forEach(locale => {
+    locales.forEach(locale => {
       sitemapEntries.push({
         url: `${baseUrl}/${locale}/blog/${slug}`,
         lastModified: updatedAt ? new Date(updatedAt) : new Date(),

@@ -68,9 +68,9 @@ export const ROUTER_PRODUCTS = {
 } as const;
 
 export const GITHUB_LINKS = {
-  server: 'https://github.com/kaitu-io/kaitu-server', // Placeholder URL
-  protocol: 'https://github.com/kaitu-io/kaitu-protocol', // Placeholder URL
-  organization: 'https://github.com/kaitu-io', // Placeholder URL
+  server: 'https://github.com/getoverleap/k2',
+  protocol: 'https://github.com/getoverleap/k2',
+  organization: 'https://github.com/getoverleap',
 } as const;
 
 export const EXTERNAL_LINKS = {
@@ -80,12 +80,4 @@ export const EXTERNAL_LINKS = {
   status: 'https://status.kaitu.me',
   blog: 'https://blog.kaitu.me',
   contact: 'mailto:support@kaitu.me',
-} as const;
-
-export const COMPANY_INFO = {
-  name: 'Kaitu',
-  fullName: '开途 Kaitu',
-  tagline: '安全便捷的网络代理解决方案',
-  email: 'support@kaitu.me',
-  year: new Date().getFullYear(),
 } as const;

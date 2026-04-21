@@ -3,6 +3,7 @@ import config from '@payload-config'
 import { Link } from '@/i18n/routing'
 import { setRequestLocale } from 'next-intl/server'
 import { routing } from '@/i18n/routing'
+import { getBrand } from '@/lib/brand-server'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +12,7 @@ type BlogListItem = {
   slug: string
   title: string
   excerpt?: string
+  brand?: string | null
 }
 
 type Props = {
@@ -20,6 +22,8 @@ type Props = {
 export default async function BlogIndexPage({ params }: Props) {
   const { locale } = await params
   setRequestLocale(locale as (typeof routing.locales)[number])
+
+  const brand = await getBrand()
 
   const payload = await getPayload({ config })
   const { docs } = await payload.find({
@@ -32,29 +36,45 @@ export default async function BlogIndexPage({ params }: Props) {
     overrideAccess: true,
   })
 
-  const posts = docs as unknown as BlogListItem[]
+  // Filter by brand visibility. Payload schema may not carry a `brand` field yet
+  // (Phase 2 work); when absent, treat as visible on all hosts.
+  const posts = (docs as unknown as BlogListItem[]).filter(
+    (p) => !p.brand || p.brand === 'both' || p.brand === brand.id,
+  )
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
       <h1 className="mb-8 text-3xl font-bold">{'Blog'}</h1>
-      <ul className="space-y-6">
-        {posts.map((post) => (
-          <li key={post.id}>
-            <Link href={`/blog/${post.slug}`} className="block hover:underline">
-              <h2 className="text-xl font-semibold">{post.title}</h2>
-              {post.excerpt && <p className="mt-2 text-muted-foreground">{post.excerpt}</p>}
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {posts.length === 0 ? (
+        <p className="text-muted-foreground">
+          {locale.startsWith('zh') ? '即将上线，敬请期待。' : 'Coming soon.'}
+        </p>
+      ) : (
+        <ul className="space-y-6">
+          {posts.map((post) => (
+            <li key={post.id}>
+              <Link href={`/blog/${post.slug}`} className="block hover:underline">
+                <h2 className="text-xl font-semibold">{post.title}</h2>
+                {post.excerpt && <p className="mt-2 text-muted-foreground">{post.excerpt}</p>}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
 
 export async function generateMetadata({ params }: Props) {
   const { locale } = await params
+  const brand = await getBrand()
   return {
-    title: 'Blog | Kaitu',
-    description: locale.startsWith('zh') ? 'Kaitu 博客 — 技术文章与产品动态' : 'Kaitu Blog — technical articles and product updates',
+    title: `Blog | ${brand.displayName}`,
+    description: locale.startsWith('zh')
+      ? `${brand.displayName} 博客 — 技术文章与产品动态`
+      : `${brand.displayName} Blog — technical articles and product updates`,
+    alternates: {
+      canonical: `${brand.baseUrl}/${locale}/blog`,
+    },
   }
 }

@@ -57,6 +57,12 @@ vi.mock('../src/app/[locale]/metadata', () => ({
   baseUrl: 'https://kaitu.io',
 }));
 
+// Mock brand-server (reads request headers at runtime — not available in vitest)
+vi.mock('@/lib/brand-server', async () => {
+  const actual = await vi.importActual<typeof import('../src/lib/brands')>('../src/lib/brands');
+  return { getBrand: async () => actual.KAITU };
+});
+
 // Mock new section components
 vi.mock('@/components/home/HeroSection', () => ({
   default: () => null,

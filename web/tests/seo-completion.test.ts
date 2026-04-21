@@ -116,10 +116,16 @@ describe('test_sitemap_non_k2_default_priority', () => {
   });
 });
 
+// Mock brand-server for robots tests (reads request headers at runtime).
+vi.mock('@/lib/brand-server', async () => {
+  const actual = await vi.importActual<typeof import('../src/lib/brands')>('../src/lib/brands');
+  return { getBrand: async () => actual.KAITU };
+});
+
 describe('test_robots_allows_k2', () => {
   it('robots disallow array does NOT contain any /k2 pattern', async () => {
     const { default: robots } = await import('../src/app/robots');
-    const result = robots();
+    const result = await robots();
 
     const rules = Array.isArray(result.rules) ? result.rules : [result.rules];
 
@@ -137,7 +143,7 @@ describe('test_robots_allows_k2', () => {
 
   it('robots allows root path which covers /k2/', async () => {
     const { default: robots } = await import('../src/app/robots');
-    const result = robots();
+    const result = await robots();
 
     const rules = Array.isArray(result.rules) ? result.rules : [result.rules];
     const hasRootAllow = rules.some((rule: { allow?: string | string[] }) => {
