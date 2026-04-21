@@ -140,3 +140,27 @@ func api_put_delegate(c *gin.Context) {
 		SetAt: time.Now().Unix(),
 	})
 }
+
+// api_delete_delegate clears the current user's delegate payer.
+//
+// Stub users created by api_put_delegate are NOT deleted here — they may be
+// shared across users (multiple callers can point to the same stub) and the
+// cost of an orphan stub is negligible. Only the current user's delegate_id
+// link is cleared.
+func api_delete_delegate(c *gin.Context) {
+	user := ReqUser(c)
+	if user == nil {
+		Error(c, ErrorNotLogin, "not logged in")
+		return
+	}
+
+	if err := db.Get().Model(&User{}).Where("id = ?", user.ID).
+		Update("delegate_id", nil).Error; err != nil {
+		log.Errorf(c, "failed to clear delegate_id for user %d: %v", user.ID, err)
+		Error(c, ErrorSystemError, "failed to clear delegate")
+		return
+	}
+
+	log.Infof(c, "user %d cleared delegate", user.ID)
+	SuccessEmpty(c)
+}

@@ -136,3 +136,23 @@ func TestPutDelegate_EmptyBody(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
 }
+
+func TestDeleteDelegate_NotLoggedIn(t *testing.T) {
+	SetupMockDB(t)
+
+	r := gin.New()
+	r.DELETE("/api/user/delegate", func(c *gin.Context) {
+		api_delete_delegate(c)
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/user/delegate", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorNotLogin), resp.Code)
+}
