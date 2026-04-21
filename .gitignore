@@ -62,5 +62,6 @@ mobile/plugins/k2-plugin/android/.gradle/
 # Local planning docs (not versioned)
 docs/plans/
 docs/superpowers/plans/
+.superpowers/
 mcp/mcp
 api/cmd/cmd

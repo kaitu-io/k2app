@@ -1,6 +1,6 @@
 ---
 name: kaitu-growth
-description: Growth operations for Kaitu VPN — lifecycle framework (acquisition→activation→retention→monetization→referral), data-driven playbooks, campaign/EDM/license-key/retailer/announcement management, GFW event response, and social media operations (Twitter, 小红书). Covers all 61 kaitu-center marketing tools plus social media MCP servers.
+description: Growth operations for Kaitu VPN — lifecycle framework (acquisition→activation→retention→monetization→referral), data-driven playbooks, campaign/EDM/license-key/retailer/announcement management, GFW event response, and social media operations (Twitter, 小红书). Covers all 61 kaitu-center marketing tools plus social media MCP servers. For generic growth methodology (CRO, copywriting, pricing, ASO, SEO, paid ads creative, churn strategy), delegate to the companion `marketingskills` skills listed below.
 triggers:
   - growth
   - 运营
@@ -46,6 +46,42 @@ Acquisition → Activation → Retention → Monetization → Referral
 | Retention | DAU trend / renewal rate | `usage_overview` + `order_statistics` | DAU stable, not declining | → DAU triage first, then Retention playbook |
 | Monetization | Paid conversion / monthly revenue / ARPU | `order_statistics` | No month-over-month decline | → Monetization playbook |
 | Referral | Retailer activity / license key redemption rate | `list_retailers` + `license_key_batch_stats_by_source` | Redemption >30% | → Referral playbook |
+
+---
+
+## Companion Skills (marketing-skills plugin)
+
+`kaitu-growth` is the **execution handbook** — Kaitu MCP tools + Kaitu-specific policies (GFW, retailers, anti-fingerprint). For **generic methodology** (CRO, copy, pricing, ASO, SEO, paid ads creative, churn strategy), invoke one of the 36 `marketing-skills:*` skills alongside this one. The general pattern: invoke the methodology skill to shape the approach, then execute with the Kaitu MCP tools in the playbooks below.
+
+| Kaitu growth task | Delegate methodology to |
+|---|---|
+| kaitu.io subscription / in-app paywall UX | `marketing-skills:paywall-upgrade-cro` |
+| App Store / Google Play listing audit | `marketing-skills:aso-audit` |
+| Welcome / renewal / winback email copy & cadence | `marketing-skills:email-sequence` |
+| KOL / retailer outreach copy | `marketing-skills:cold-email` |
+| Retention strategic framework (reasons to churn, save flows) | `marketing-skills:churn-prevention` |
+| Plan pricing / packaging / discount structure | `marketing-skills:pricing-strategy` |
+| kaitu.io landing / content SEO | `marketing-skills:seo-audit`, `marketing-skills:ai-seo`, `marketing-skills:programmatic-seo`, `marketing-skills:schema-markup`, `marketing-skills:site-architecture` |
+| Paid ads creative (Meta / Google / TG) | `marketing-skills:paid-ads`, `marketing-skills:ad-creative` |
+| Referral program redesign | `marketing-skills:referral-program` |
+| Social post / thread / note writing | `marketing-skills:social-content` |
+| A/B test setup | `marketing-skills:ab-test-setup` |
+| Analytics event taxonomy | `marketing-skills:analytics-tracking` |
+| User interview / JTBD | `marketing-skills:customer-research` |
+| Signup / onboarding flow CRO | `marketing-skills:signup-flow-cro`, `marketing-skills:onboarding-cro` |
+| Form conversion (signup, payment) | `marketing-skills:form-cro` |
+| Popup / modal conversion | `marketing-skills:popup-cro` |
+| Product launch playbook | `marketing-skills:launch-strategy` |
+| Lead magnet design | `marketing-skills:lead-magnets` |
+| Competitor-alternative page | `marketing-skills:competitor-alternatives` |
+| Community strategy (Discord, forum) | `marketing-skills:community-marketing` |
+| Marketing ideation | `marketing-skills:marketing-ideas`, `marketing-skills:marketing-psychology` |
+| Revenue operations / sales enablement | `marketing-skills:revops`, `marketing-skills:sales-enablement` |
+| Homepage / landing / pricing page copy | `marketing-skills:copywriting`, `marketing-skills:copy-editing`, `marketing-skills:page-cro` |
+| Content / blog topic planning | `marketing-skills:content-strategy` |
+| Engineering-as-marketing (free tools) | `marketing-skills:free-tool-strategy` |
+
+**Before using any of the above, populate once**: `marketing-skills:product-marketing-context` — establishes Kaitu's ICP / positioning / JTBD so other skills reference consistent context instead of asking again.
 
 ---
 
