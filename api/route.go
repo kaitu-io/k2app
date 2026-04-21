@@ -133,6 +133,8 @@ func SetupRouter() *gin.Engine {
 			user.GET("/devices", AuthRequired(), api_get_devices)
 			// 创建订单
 			user.POST("/orders", AuthRequired(), api_create_order)
+			// 通知代付人付款（给当前用户的 delegate 发支付邀请邮件）
+			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), api_order_notify_delegate)
 			// 获取授权变更历史
 			user.GET("/pro-histories", AuthRequired(), api_get_pro_histories)
 			// 发送绑定邮箱验证码
