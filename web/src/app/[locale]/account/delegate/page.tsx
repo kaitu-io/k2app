@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { api, type Delegate, ApiError } from "@/lib/api";
+import { api, type DelegateInfo, ApiError } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-errors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { toast } from "sonner";
  */
 export default function DelegatePage() {
   const t = useTranslations();
-  const [delegate, setDelegate] = useState<Delegate | null>(null);
+  const [delegate, setDelegate] = useState<DelegateInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
@@ -56,7 +56,7 @@ export default function DelegatePage() {
 
     try {
       setRejecting(true);
-      await api.rejectDelegate();
+      await api.removeDelegate();
 
       toast.success(t("admin.account.delegate.rejectSuccess.description"));
 
@@ -107,9 +107,6 @@ export default function DelegatePage() {
     );
   }
 
-  // Get the primary email
-  const emailIdentify = delegate.loginIdentifies.find((id) => id.type === "email");
-
   return (
     <Card>
       <CardHeader>
@@ -124,7 +121,7 @@ export default function DelegatePage() {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">{t("admin.account.delegate.payerEmail")}</p>
               <p className="text-sm text-muted-foreground break-all">
-                {emailIdentify?.value || t("common.common.notAvailable")}
+                {delegate.email || t("common.common.notAvailable")}
               </p>
             </div>
           </div>
