@@ -69,7 +69,7 @@ vi.mock('@/hooks/useEmbedMode', () => ({
   }),
 }));
 
-// Mock lucide-react icons
+// Mock lucide-react icons. Whenever a page adds a new icon, add it here.
 vi.mock('lucide-react', () => ({
   Globe: () => null,
   Smartphone: () => null,
@@ -88,6 +88,12 @@ vi.mock('lucide-react', () => ({
   ChevronDown: () => null,
   ChevronUp: () => null,
   Package: () => null,
+  Shield: () => null,
+  Handshake: () => null,
+  BadgeCheck: () => null,
+  Download: () => null,
+  Monitor: () => null,
+  Apple: () => null,
 }));
 
 // Mock shadcn/ui components

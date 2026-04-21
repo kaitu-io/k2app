@@ -168,8 +168,10 @@ test.describe('Send Verification Code', () => {
     // Should show invite code field for new users
     await page.waitForTimeout(500);
 
-    // Verification code field should appear
-    await expect(page.getByPlaceholder(/code|验证码|verification/i)).toBeVisible({ timeout: 5000 });
+    // Invite code field is only rendered for new users (userExists=false).
+    // The regular /code/ placeholder regex also matches the verification code
+    // input, so we target the invite code input by its more specific label.
+    await expect(page.getByRole('textbox', { name: /invite code|邀请码/i })).toBeVisible({ timeout: 5000 });
   });
 
   test('should handle rate limiting (429)', async ({ page }) => {
