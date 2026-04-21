@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api, ApiError, ErrorCode } from "@/lib/api";
-import type { Plan, Order, CreateOrderRequest } from "@/lib/api";
+import type { Plan, Order, CreateOrderRequest, DelegateInfo } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-errors";
 import { useAppConfig } from "@/contexts/AppConfigContext";
 import MembershipBenefits from "@/components/MembershipBenefits";
@@ -119,6 +119,17 @@ export default function PurchaseClient() {
 
   // Debounce timer for preview requests
   const previewTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ---- Delegate pay state (T12–T15) ---------------------------------
+  // `delegate` is the persisted 代付人 for this account (null = none yet).
+  // `delegateLoaded` gates the Step3 UI so we don't flash the empty-state
+  // inline form while the initial fetch is still in-flight.
+  // `confirmation` replaces the entire Step3 body once we've notified the
+  // delegate; `lastOrderUuid` drives the resend button inside that card.
+  const [delegate, setDelegate] = useState<DelegateInfo | null>(null);
+  const [delegateLoaded, setDelegateLoaded] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ email: string } | null>(null);
+  const [lastOrderUuid, setLastOrderUuid] = useState<string | null>(null);
 
   // Get user profile to check status
   const [userProfile, setUserProfile] = useState<{
@@ -389,6 +400,105 @@ export default function PurchaseClient() {
     handleOrder();
   }, [handleOrder]);
 
+  // ---- Load delegate on mount (auth-gated) --------------------------
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setDelegateLoaded(true);
+      return;
+    }
+    (async () => {
+      try {
+        const d = await api.getDelegate({ autoRedirectToAuth: false });
+        setDelegate(d);
+      } catch (err) {
+        // 404 / "no delegate" → null; anything else is an unexpected load
+        // failure, log it and keep the empty-state UI.
+        if (err instanceof ApiError && err.code === ErrorCode.NotFound) {
+          setDelegate(null);
+        } else {
+          console.error('[Purchase] Failed to load delegate:', err);
+        }
+      } finally {
+        setDelegateLoaded(true);
+      }
+    })();
+  }, [isAuthenticated]);
+
+  // ---- Delegate pay handlers (T13–T15) ------------------------------
+  // Set-state primary CTA: create order → notify existing delegate → confirm.
+  const handleDelegatePay = useCallback(async () => {
+    if (!delegate) return;
+    setIsLoading(true);
+    try {
+      const request: CreateOrderRequest = {
+        preview: false,
+        plan: selectedPlan,
+        campaignCode: campaignCode || undefined,
+      };
+      const { order } = await api.createOrder(request, { autoRedirectToAuth: false });
+      await api.notifyDelegate(order.uuid);
+      setLastOrderUuid(order.uuid);
+      setConfirmation({ email: delegate.email });
+    } catch (err) {
+      console.error('[Purchase] Delegate pay failed:', err);
+      toast.error(
+        err instanceof ApiError
+          ? getApiErrorMessage(err.code, t)
+          : t('purchase.purchase.createOrderFailed')
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [delegate, selectedPlan, campaignCode, t]);
+
+  // Empty-state inline send: persist delegate → create order → notify → confirm.
+  const handleEmptyStateDelegatePay = useCallback(
+    async (email: string) => {
+      const trimmed = email.trim();
+      if (!trimmed) return;
+      setIsLoading(true);
+      try {
+        const newDelegate = await api.setDelegate(trimmed, { autoRedirectToAuth: false });
+        setDelegate(newDelegate);
+        const request: CreateOrderRequest = {
+          preview: false,
+          plan: selectedPlan,
+          campaignCode: campaignCode || undefined,
+        };
+        const { order } = await api.createOrder(request, { autoRedirectToAuth: false });
+        await api.notifyDelegate(order.uuid);
+        setLastOrderUuid(order.uuid);
+        setConfirmation({ email: trimmed });
+      } catch (err) {
+        console.error('[Purchase] Empty-state delegate pay failed:', err);
+        toast.error(
+          err instanceof ApiError
+            ? getApiErrorMessage(err.code, t)
+            : t('purchase.purchase.createOrderFailed')
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [selectedPlan, campaignCode, t]
+  );
+
+  // Confirmation card resend: just re-notify the last-created order.
+  const handleResendInvite = useCallback(async () => {
+    if (!lastOrderUuid) return;
+    try {
+      await api.notifyDelegate(lastOrderUuid);
+      toast.success(t('purchase.purchase.delegatePay.confirmationResentToast'));
+    } catch (err) {
+      console.error('[Purchase] Resend delegate invite failed:', err);
+      toast.error(
+        err instanceof ApiError
+          ? getApiErrorMessage(err.code, t)
+          : t('purchase.purchase.createOrderFailed')
+      );
+    }
+  }, [lastOrderUuid, t]);
+
   const handlePaySuccess = useCallback(async () => {
     setPayDialogOpen(false);
     // Refresh user profile
@@ -535,6 +645,12 @@ export default function PurchaseClient() {
               isLoading={isLoading}
               isAuthenticated={isAuthenticated}
               onPurchase={handlePurchase}
+              delegate={delegate}
+              delegateLoaded={delegateLoaded}
+              onDelegatePay={handleDelegatePay}
+              onEmptyStateDelegatePay={handleEmptyStateDelegatePay}
+              onResendInvite={handleResendInvite}
+              confirmation={confirmation}
               />
             </div>
           </div>
