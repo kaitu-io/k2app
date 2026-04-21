@@ -1,81 +1,105 @@
 # 品牌命名与传播策略
 
-## 命名层级
+*Updated: 2026-04-21 — 决策：采用 **Overleap 母品牌 / Kaitu 中国产品** 架构。本文档为终局形态；迁移动作见 content-calendar W1 + ASO audit P1/P2。*
 
-| 层级 | 名称 | 使用场景 |
+## 品牌架构
+
+Overleap 是**母品牌 / 组织名**（未来法律实体方向），Kaitu（开途）是**中国市场的产品名**。协议层 k2 / k2cc 与硬件产品线 k2r 在所有市场共享。
+
+| 层级 | 名称 | 适用场景 |
 |------|------|---------|
-| **传播层** | 开途VPN | SEO 文章标题、测评博主合作、Telegram/Twitter 宣传、搜索广告 |
-| **产品层** | 开途 k2 | 官网 kaitu.io、App 内 UI、应用商店描述 |
-| **协议层** | k2cc (k2 congestion control) | 技术白皮书、GitHub、开发者社区 |
+| **母品牌 / 公司层** | Overleap（overleap.io） | 海外所有渠道 · 公司/组织层叙事 · 法律实体（待注册）· 跨市场 / 多语种文档 |
+| **中国市场产品名** | 开途 / Kaitu | kaitu.io · 小红书 / 知乎 / 微博 · 中国区 App Store · 国内分销 / 客服 |
+| **协议层（全球统一）** | k2（隧道协议）· k2cc（拥塞控制） | 技术白皮书 · GitHub · 开发者内容 · benchmark |
+| **硬件产品线（全球统一）** | k2r（OpenWrt 路由器） | 家用硬件销售（预售期） |
 
 ## 核心原则
 
-### 1. 传播用大众词，产品用品牌词
+### 1. 单市场呈现，不混品牌
 
-用户通过 "VPN" 这个品类词找到我们，进入产品后用 "k2" 建立技术差异化认知。
+- **中国面**（kaitu.io / 小红书 / 知乎 / 中国区 App Store / 分销素材）：只出现 "开途 / Kaitu"，正文不提 Overleap（国内用户不关心公司名，添加只会稀释信任）。
+- **海外面**（overleap.io / 英文 Twitter / Reddit / HN / 全球 App Store / Google Play）：只出现 "Overleap"，不提 Kaitu（英文用户无背景）。
+- **跨语境 / 公司层**（英文 press、footer、ToS / 隐私政策、跨市场技术博客、招聘页）：用 **"Kaitu by Overleap"** 或 "Kaitu, a product of Overleap" 衔接一次，正文之后保持单一叙事。
 
-- 入口："开途VPN 测评" → 用户搜索能命中
-- 产品内："开途 k2" → 用户感知到技术深度
-- 技术讨论："k2cc 协议" → 开发者认同
+### 2. 不回避 "VPN" 品类词
 
-### 2. 不回避 VPN 这个词
+产品已被 GFW 封锁，目标用户就是需要翻墙的人。回避 "VPN" 只会把搜索流量送给竞品。
 
-产品已被 GFW 封锁，目标用户就是需要翻墙的人。回避 "VPN" 只会导致：
-- 用户搜索时找不到我们
-- 找到了不知道我们是干什么的
-- 竞品用了这个词，流量全被他们拿走
+- 中文：**开途VPN**（国内 App Store 合规紧张时可回退 "开途 网络加速"；详见 ASO audit 合规风险段）
+- 英文：**Overleap VPN**
 
-"VPN" 是品类入口词，不用就等于主动退出用户搜索视野。
+### 3. "开途" 中文品牌是干净的，不需要后缀
 
-### 3. 英文语境用 Kaitu.io
+"开途" 在中文搜索中无实体碰撞。
+- 口语 / 简称：开途
+- 正式场合：开途（读音 kāi tú）
+- 传播 / SEO：开途VPN
 
-英文品牌名 "Kaitu" 与 kaitai.io (Kaitai Struct 二进制解析器) 拼写高度相似，Google 会将 "kaitu" 纠错为 "kaitai"。
+### 4. k2cc 必须带技术上下文出现
 
-- 英文内容中始终使用 **Kaitu.io** 或 **Kaitu.io k2**（带域名后缀消歧义）
-- 绝不孤立使用 "Kaitu" 裸词
+"k2cc" 缩写与业余无线电呼号 K2CC（Clarkson University ARC）冲突，需要上下文消歧义。
+- 技术文档首次提及必须写全称 **k2cc (k2 congestion control)**；后续可简写，但周围须保留"拥塞控制 / congestion control / 协议 / 吞吐 / 丢包"等相关词
+- 绝不在无技术上下文处孤立使用 "k2cc"
 
-### 4. k2cc 始终以全称出现
+### 5. 协议层在所有品牌下共享同名
 
-"k2cc" 缩写与业余无线电呼号 K2CC（Clarkson University ARC）冲突。
-
-- 技术文档中首次提及必须写 **k2cc (k2 congestion control)**
-- 后续可简写为 k2cc，但周围必须有网络协议相关上下文词汇
-- 绝不孤立使用 "k2cc" 而不带任何技术上下文
-
-### 5. 中文品牌名 "开途" 是干净的
-
-"开途" 在中文搜索中无实体碰撞，不需要额外后缀消歧义。
-
-- 中文口语/简称：开途
-- 中文正式场合：开途 k2
-- 中文传播/SEO：开途VPN
+k2 / k2cc / k2s / k2r 是协议与产品线的技术名称，全球统一。不因市场切换改名。
+- 中国市场引用时可译为 "k2 隧道协议" / "k2cc 拥塞控制算法"
+- 海外市场引用时直接用 "k2 protocol" / "k2cc congestion control"
+- GitHub 仓库无论挂在哪个 org 都用 `k2` / `k2s` / `k2r` 命名
 
 ## 绝对禁止
 
-- ~~开途加速器~~ — 品类拥挤（UU/迅游/雷神），会被归入游戏加速器品类
-- ~~Kaitu VPN~~ — 英文语境下不必要，且 kaitu 拼写有歧义
-- ~~k2arc~~ — 已弃用，搜索冲突严重（业余无线电、数学公式、电竞战队）
+- ~~开途加速器~~ — 品类拥挤（UU / 迅游 / 雷神），会被归入游戏加速器
+- ~~Kaitu VPN~~（海外英文裸词）— 海外统一 Overleap，不使用 Kaitu 裸词，避免 Google 纠错成 kaitai（Kaitai Struct 二进制解析器）
+- ~~Overleap by Kaitu~~ — 方向错了，Overleap 是母品牌；正确方向为 **"Kaitu by Overleap"**
+- ~~k2arc~~ — 已弃用，搜索冲突严重（业余无线电 / 数学公式 / 电竞战队）
 
 ## SEO 关键词矩阵
 
-### 中文 SEO 目标词
+### 中文（Kaitu / 开途，目标 kaitu.io + 国内社交平台）
 
 | 优先级 | 关键词 | 用法 |
 |--------|--------|------|
-| P0 | 开途VPN | 文章标题、meta description |
-| P0 | 开途 k2 | 品牌词、产品页 |
-| P1 | k2cc 拥塞控制 | 技术文档 |
-| P1 | 30% 丢包满速 | 核心卖点差异化 |
+| P0 | 开途VPN | 文章标题、meta description、小红书正文 |
+| P0 | 开途 k2 | 品牌词 + 产品页 |
+| P1 | k2cc 拥塞控制 | 技术文档、知乎 / V2EX 技术答题 |
+| P1 | 26% 丢包下 2-5× BBR | 核心卖点差异化（数据源：`web/content/*/k2/vs-bbr.md` + USENIX Security 2023 测量） |
 | P2 | 隐身隧道 | 技术特性描述 |
-| P2 | 科学上网 / 翻墙 | 仅用于 SEO 文章，不用于产品内 |
+| P2 | 科学上网 / 翻墙 | **仅外站 SEO 文章**，禁用于产品内 / App Store / 合规素材 |
 
-### 英文 SEO 目标词
+### 英文（Overleap，目标 overleap.io + 英文社交 / 技术社区）
 
 | 优先级 | 关键词 | 用法 |
 |--------|--------|------|
-| P0 | Kaitu.io k2 | 品牌词 |
-| P0 | k2cc congestion control | 技术差异化 |
-| P1 | stealth tunnel | 品类词 |
-| P1 | full speed 30% packet loss | 核心卖点 |
+| P0 | Overleap VPN | 品牌词、App Store Name、主站 hero |
+| P0 | stealth VPN | 海外定位词（低竞争、高相关、context 原意） |
+| P0 | k2cc congestion control | 技术差异化 — 协议层全球通用 |
+| P1 | censorship-resistant VPN | 反审查定位词 |
+| P1 | line-rate under packet loss | 核心卖点（context 原话） |
 | P2 | Hysteria2 alternative | 竞品拦截 |
-| P2 | Cloudflare Tunnel alternative | 竞品拦截 |
+| P2 | WireGuard alternative for censorship | 竞品拦截 |
+| P2 | ECH VPN | 稀缺技术词，长尾占位 |
+
+## 域名 / 渠道映射
+
+| 资源 | 主入口 | 说明 |
+|------|--------|------|
+| 公司主站（英文） | overleap.io | 母品牌站，W1 起建设 |
+| 中国产品站 | kaitu.io | 保留；国内流量入口 |
+| GitHub org | **`getoverleap`**（github.com/getoverleap）| 2026-04-21 创建并确认可用；当前 0 repos，过渡期保持私仓，未来开源内容迁入此 org |
+| 法律实体 | **TBD** — Overleap Inc. / LLC / Ltd. 注册可行性确认中 | 过渡期由现有运营主体承接，ToS / 隐私政策暂用现有主体签名 |
+| iOS App Store（中国区） | 开途（bundle `io.kaitu`，逐步替代 `com.allnationconnect.anc.wgios`）| 不显示 Overleap |
+| iOS App Store（全球区） | Overleap VPN（新建 listing / bundle） | 独立 listing，不复用 Kaitu 评价 |
+| Google Play（全球） | Overleap VPN（待上架） | 中国无 Play，不涉及 |
+| Twitter / X | @kaitu_io（中文）· @overleap_vpn 或 @getoverleap（英文） | 双账号并行 |
+
+## 过渡期动作清单
+
+本文档只记录终局形态。**从当前到终局的具体迁移步骤**分别记在：
+
+- `docs/marketing/content-calendar-2026-Q2.md` W1 基础设施清单（overleap.io 独立站建立 + 英文 Twitter 开通）
+- `docs/marketing/audits/2026-04-21-aso.md` P1/P2 清单（全球 App Store Overleap listing + Google Play 上架 + 老 Kaitu bundle 迁移）
+- Strategic Open Questions（`.agents/product-marketing-context.md`）：GitHub org 命名最终方案 + Overleap 法律实体注册路径
+
+Glossary 统一维护在 `.agents/product-marketing-context.md` 的 Glossary 段。

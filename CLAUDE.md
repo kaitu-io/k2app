@@ -104,3 +104,19 @@ Terms you'll encounter in multiple layers. Per-layer extensions live in the laye
 ### k2 Submodule Docs (read-only)
 
 See `k2/CLAUDE.md` for architecture and `k2/docs/` for feature specs, knowledge base, API contracts, and backlog.
+
+## Marketing Docs
+
+Marketing 策略 / 审查 / 内容日历统一放在 [`docs/marketing/`](docs/marketing/README.md)。开新 marketing 话题前先读 README 索引。
+
+| Doc | Scope |
+|-----|-------|
+| [`docs/marketing/README.md`](docs/marketing/README.md) | 目录索引 + 已知冲突点 + 工作方式 |
+| [`.agents/product-marketing-context.md`](.agents/product-marketing-context.md) | 单一事实源：品牌 / ICP / JTBD / 竞品 / 异议 / 声调（路径硬编码，所有 `marketing-skills:*` 自动引用） |
+| [`docs/marketing/brand-naming-strategy.md`](docs/marketing/brand-naming-strategy.md) | 品牌命名层级（Overleap 母 / Kaitu 中国产品 / k2 协议）+ SEO 关键词矩阵 |
+| [`docs/marketing/content-calendar-2026-Q2.md`](docs/marketing/content-calendar-2026-Q2.md) | 13 周双轨内容日历（Kaitu zh-CN + Overleap en-US），W1-W13 |
+| [`docs/marketing/audits/`](docs/marketing/audits/) | CRO / ASO 审查快照（按日期） |
+
+**品牌架构**（2026-04-21 对齐）：**Overleap 母品牌 / Kaitu 中国产品** 层级结构 —— 海外统一 Overleap、中国统一 开途 / Kaitu、跨语境（footer / ToS / 英文 press）用 "Kaitu by Overleap"。详见 `brand-naming-strategy.md`。
+
+**剩余待对齐**：0 —— 全部 3 个冲突已 resolved (2026-04-21)。
