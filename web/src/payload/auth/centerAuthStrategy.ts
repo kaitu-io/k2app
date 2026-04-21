@@ -96,8 +96,8 @@ export const centerAuthStrategy: AuthStrategy = {
 
     return {
       user: {
-        collection: 'admins',
         ...adminDoc,
+        collection: 'admins' as const,
       },
     }
   },

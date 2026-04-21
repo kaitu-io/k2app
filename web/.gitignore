@@ -56,5 +56,4 @@ next-env.d.ts
 .velite/
 
 # Payload
-public/cms-media/
 src/payload/payload-types.ts

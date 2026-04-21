@@ -1,6 +1,7 @@
 import { postgresAdapter } from '@payloadcms/db-postgres'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { translator, copyResolver, openAIResolver } from '@payload-enchants/translator'
+import { s3Storage } from '@payloadcms/storage-s3'
 import { buildTranslationPrompt } from './translator/customPrompt.ts'
 import path from 'path'
 import { buildConfig } from 'payload'
@@ -20,9 +21,14 @@ export default buildConfig({
   admin: {
     user: 'admins',
     importMap: { baseDir: path.resolve(dirname) },
+    components: {
+      beforeNavLinks: [
+        { path: '@/payload/components/BackToManager', exportName: 'BackToManager' },
+      ],
+    },
   },
   routes: {
-    admin: '/cms',
+    admin: '/manager/cms',
     api: '/payload/api',
   },
   collections: [Admins, Categories, Tags, Media, Posts],
@@ -50,6 +56,25 @@ export default buildConfig({
   }),
   sharp,
   plugins: [
+    s3Storage({
+      collections: {
+        media: {
+          prefix: 'media',
+          generateFileURL: ({ filename, prefix }) => {
+            const cdn = (process.env.CDN_URL || 'https://media.kaitu.io').replace(/\/$/, '')
+            return prefix ? `${cdn}/${prefix}/${filename}` : `${cdn}/${filename}`
+          },
+        },
+      },
+      bucket: process.env.S3_BUCKET || 'kaitu-cms-media',
+      config: {
+        region: process.env.S3_REGION || 'ap-northeast-1',
+        credentials: {
+          accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
+          secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+        },
+      },
+    }),
     translator({
       collections: ['posts', 'categories', 'tags'],
       globals: [],

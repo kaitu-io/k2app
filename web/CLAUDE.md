@@ -268,12 +268,12 @@ Optimizing for AI search engines (Google AI Overview, Perplexity, ChatGPT Search
 
 ## CMS (Payload)
 
-Payload v3 admin mounted at `/cms`, REST API at `/payload/api`. GraphQL is disabled (no `(payload)/payload/api/graphql` folders exist). Content collections:
+Payload v3 admin mounted at `/manager/cms`, REST API at `/payload/api`. GraphQL is disabled (no `(payload)/payload/api/graphql` folders exist). URL is namespaced under `/manager` for consistency with the rest of the admin dashboard, but Payload runs under its own `(payload)` root layout (independent from `(manager)` — Payload's admin ships its own `<html>` shell). A "← 返回管理后台" link is injected into Payload's left nav via `admin.components.beforeNavLinks`. Content collections:
 
 - `posts` — Blog articles with Lexical rich text, draft/published versions, localized to 7 locales (zh-CN source, 6 AI-translated)
 - `categories` — Hierarchical (self-referencing parent) with localized name + description
 - `tags` — Flat labels with localized name
-- `media` — Uploaded images, stored at `public/cms-media/` (gitignored)
+- `media` — Uploaded images, stored in S3 (`kaitu-cms-media`, ap-northeast-1) and served via CloudFront at `https://media.kaitu.io`. REST read is admin-only; public blog pages reach images via `generateFileURL` → CDN URL embedded in post content.
 - `admins` — Auth collection; custom Center API cookie strategy (no local password)
 
 ### Auth
@@ -291,14 +291,20 @@ Reuses `/manager` admin's `access_token` HttpOnly cookie. Bridge: `src/payload/a
 ```bash
 docker compose -f web/docker-compose.dev.yml up -d   # Local Postgres (host port 5435 to avoid conflicts)
 cd web && yarn payload generate:types                 # Regenerate types after collection changes (gitignored output)
-cd web && yarn dev                                    # Next.js + Payload; visit http://localhost:3000/cms
+cd web && yarn dev                                    # Next.js + Payload; visit http://localhost:3000/manager/cms
 ```
 
 ### Consumption
 Public `[locale]/blog` pages use Local API via `getPayload().find({ ... overrideAccess: true })`. No public REST, no GraphQL.
 
 ### Production (Amplify)
-Required env vars: `DATABASE_URL`, `PAYLOAD_SECRET`, `TRANSLATOR_API_KEY`, `TRANSLATOR_BASE_URL`, `TRANSLATOR_MODEL`, `CENTER_API_URL`. Schema auto-syncs via `push: true`.
+Required env vars: `DATABASE_URL`, `PAYLOAD_SECRET`, `TRANSLATOR_API_KEY`, `TRANSLATOR_BASE_URL`, `TRANSLATOR_MODEL`, `CENTER_API_URL`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `CDN_URL`. Schema auto-syncs via `push: true`.
+
+**Media infra (AWS):**
+- S3 bucket `kaitu-cms-media` (ap-northeast-1) — private, block-public-access ON, bucket policy grants read only to CloudFront via OAC
+- CloudFront dist `EDW1KA2NDICCJ` — alias `media.kaitu.io`, ACM cert in us-east-1, Managed-CachingOptimized policy, CORS-S3Origin origin-request policy, `CORS-With-Preflight` response-headers policy
+- IAM user `payload-cms-media-uploader` — scoped to `s3:PutObject/DeleteObject/GetObject/ListBucket` on bucket ARN; access key in Amplify env only
+- Route 53 A+AAAA alias: `media.kaitu.io.` → `d2cb1b6o656sch.cloudfront.net.`
 
 **`push: true` destructive-change caveat**: Drizzle push drops + re-adds on incompatible renames (column rename = drop old + add new = data loss). For non-additive schema changes (renames, type narrows), locally switch to `push: false`, generate explicit migrations with `yarn payload migrate:create`, commit them, and amplify.yml can run `yarn payload migrate`. Additive changes (new columns, new tables) are safe under push.
 
@@ -307,7 +313,7 @@ Required env vars: `DATABASE_URL`, `PAYLOAD_SECRET`, `TRANSLATOR_API_KEY`, `TRAN
 - **`--disable-transpile`** on `yarn payload` CLI — avoids `ERR_REQUIRE_ASYNC_MODULE` from tsx loader.
 - **Postgres port 5435** in local dev `.env` — chosen to avoid collision with common local pg containers (5432/5433/5434).
 - **`admins.auth: { disableLocalStrategy: true }`** — removes Payload's auto email/password; explicit `email` field needed.
-- **Middleware passthrough is load-bearing**: `src/middleware.ts` must early-return for `/cms` AND `/payload` prefixes, and the matcher must exclude them (`/((?!api|app|cms|payload|_next|...))`). Without this, i18n middleware mangles Payload's admin requests into locale-prefixed redirects. Verify whenever editing `middleware.ts`.
+- **Middleware passthrough is load-bearing**: `src/middleware.ts` must early-return for `/manager` AND `/payload` prefixes, and the matcher must exclude them (`/((?!api|app|manager|payload|_next|...))`). `/manager` covers both the manager dashboard and the nested Payload admin at `/manager/cms`; `/payload` covers Payload's REST. Without this, i18n middleware mangles admin requests into locale-prefixed redirects. Verify whenever editing `middleware.ts`.
 
 ## Related Docs
 
