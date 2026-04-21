@@ -48,6 +48,8 @@ export function getApiErrorMessage(
       return t('errors.selfInvitation');
     case ErrorCode.InvalidCredentials:
       return t('errors.invalidCredentials');
+    case ErrorCode.ProxyMembersDeprecated:
+      return fallback || '代付成员管理已下线，请在 kaitu.io/purchase 下单时指定受益方。';
     case ErrorCode.TierMismatch:
       // i18n key landing in Task 20 — fall back to inline Chinese for now.
       return fallback || '您当前档位无法购买此套餐。如需变更档位请联系客服。';
@@ -79,6 +81,7 @@ const zhMessages: Record<number, string> = {
   [ErrorCode.InvalidInviteCode]: '邀请码不正确',
   [ErrorCode.SelfInvitation]: '不能使用自己的邀请码',
   [ErrorCode.InvalidCredentials]: '登录凭证无效',
+  [ErrorCode.ProxyMembersDeprecated]: '代付成员管理已下线，请在 kaitu.io/purchase 下单时指定受益方。',
   [ErrorCode.TierMismatch]: '您当前档位无法购买此套餐。如需变更档位请联系客服。',
   [ErrorCode.ProxyPurchaseDeprecated]: '代付下单已下线，请由本人账号自行购买。',
 };

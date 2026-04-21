@@ -41,6 +41,7 @@ const (
 	ErrorLicenseKeyExpired       ErrorCode = 400009 // 授权码已过期
 	ErrorLicenseKeyNotMatch      ErrorCode = 400010 // 不符合使用条件
 	ErrorLicenseKeyAlreadyRedeemed ErrorCode = 400011 // 用户已使用过授权码
+	ErrorProxyMembersDeprecated    ErrorCode = 400012 // 代付成员管理已下线
 
 	// Tier system error codes (added 2026-04-20)
 	ErrorTierMismatch            ErrorCode = 422001 // Plan tier 与 user tier 不匹配（续费场景）

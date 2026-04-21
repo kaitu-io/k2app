@@ -97,27 +97,6 @@ var (
 系统通知`,
 	}
 
-	memberAddedTemplate = EmailTemplate[MemberAddedMeta]{
-		Subject: "您已被添加为代付成员",
-		Body: `尊敬的用户：
-
-您已被 {{.DelegateEmail}} 添加为代付成员，对方将为您的账户付费。
-
-详细信息：
-- 代付人邮箱：{{.DelegateEmail}}
-- 添加时间：{{.AddedTime}}
-
-如果您不认识此用户或不希望对方为您付费，您可以：
-1. 登录账户管理页面
-2. 进入"代付管理"页面
-3. 点击"拒绝代付"按钮
-
-拒绝代付链接：{{.RejectURL}}
-
-此致
-系统通知`,
-	}
-
 	passwordLoginTemplate = EmailTemplate[PasswordLoginMeta]{
 		Subject: "Kaitu 账号登录提醒",
 		Body: `尊敬的用户：
@@ -187,13 +166,6 @@ type WebLoginMeta struct {
 type DeviceTransferMeta struct {
 	TransferTime  string
 	DeviceRemark  string
-}
-
-// MemberAddedMeta 被添加为成员邮件元数据
-type MemberAddedMeta struct {
-	DelegateEmail string
-	AddedTime     string
-	RejectURL     string
 }
 
 // PasswordLoginMeta password login notification email metadata

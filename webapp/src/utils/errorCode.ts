@@ -41,6 +41,7 @@ export const ERROR_CODES = {
   LICENSE_KEY_USED: 400008,
   LICENSE_KEY_EXPIRED: 400009,
   LICENSE_KEY_NOT_MATCH: 400010,
+  PROXY_MEMBERS_DEPRECATED: 400012,
 
   // Tier system error codes (added 2026-04-20)
   TIER_MISMATCH: 422001,
@@ -187,6 +188,8 @@ export function getErrorMessage(
       return t('common:errors.client.licenseKeyExpired', 'License key expired');
     case ERROR_CODES.LICENSE_KEY_NOT_MATCH:
       return t('common:errors.client.licenseKeyNotMatch', 'Not eligible for this license key');
+    case ERROR_CODES.PROXY_MEMBERS_DEPRECATED:
+      return t('common:errors.client.proxyMembersDeprecated', '代付成员管理已下线，请在 kaitu.io/purchase 下单时指定受益方');
 
     // Tier system error codes
     case ERROR_CODES.TIER_MISMATCH:

@@ -458,6 +458,7 @@ export const ErrorCode = {
   InvalidInviteCode: 400004,       // Invalid invite code
   SelfInvitation: 400005,          // Self invitation
   InvalidCredentials: 400006,      // Invalid credentials
+  ProxyMembersDeprecated: 400012,  // 代付成员管理已下线
   TierMismatch: 422001,            // 跨档购买被拒绝（仅同档续费）
   ProxyPurchaseDeprecated: 422002, // 代付下单已下线
 } as const;
