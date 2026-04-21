@@ -38,6 +38,7 @@ yarn-error.log*
 
 # env files
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -53,3 +54,6 @@ next-env.d.ts
 
 # velite generated output
 .velite/
+
+# Payload
+src/payload/payload-types.ts

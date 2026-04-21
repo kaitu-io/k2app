@@ -8,8 +8,12 @@ applications:
             - yarn install
         build:
           commands:
-            # Note: Payload migrations skipped - using push: true in db config for auto schema sync
-            # If you need migrations, add .ts extensions to imports in payload.config.ts
+            # Payload migrations skipped — postgres adapter uses push: true for auto schema sync.
+            # Required env vars (set via Amplify console):
+            #   DATABASE_URL, PAYLOAD_SECRET,
+            #   TRANSLATOR_API_KEY, TRANSLATOR_BASE_URL, TRANSLATOR_MODEL,
+            #   CENTER_API_URL,
+            #   S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, CDN_URL.
             - echo "Building Next.js application..."
             - yarn run build
       artifacts:

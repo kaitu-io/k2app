@@ -1,13 +1,42 @@
 import { MetadataRoute } from 'next';
 import { routing } from '@/i18n/routing';
 import { posts } from '#velite';
+import { getPayload } from 'payload';
+import config from '@payload-config';
+
+// Render at request time — avoids build-time DB dependency and keeps blog listings fresh.
+export const dynamic = 'force-dynamic';
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://kaitu.io';
 
-export default function sitemap(): MetadataRoute.Sitemap {
+type BlogEntry = { slug: string; updatedAt?: string };
+
+async function fetchBlogPosts(): Promise<BlogEntry[]> {
+  try {
+    const payload = await getPayload({ config });
+    const { docs } = await payload.find({
+      collection: 'posts',
+      locale: 'zh-CN',
+      where: { status: { equals: 'published' } },
+      limit: 500,
+      depth: 0,
+      overrideAccess: true,
+    });
+    return (docs as Array<{ slug: string; updatedAt?: string }>).map((d) => ({
+      slug: d.slug,
+      updatedAt: d.updatedAt,
+    }));
+  } catch (err) {
+    console.error('sitemap: failed to fetch Payload blog posts', err);
+    return [];
+  }
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Static pages in the application
   const staticPages = [
     '',           // Home page
+    '/blog',
     '/login',
     '/discovery',
     '/install',
@@ -82,6 +111,25 @@ export default function sitemap(): MetadataRoute.Sitemap {
         lastModified: latestDate,
         changeFrequency: 'weekly',
         priority: slug.startsWith('k2') ? 0.9 : 0.6,
+        alternates: { languages: alternates },
+      });
+    });
+  }
+
+  // Payload CMS blog posts — all locales share the same slug.
+  // DB fetch is tolerant: if unreachable at build time, blog section is simply omitted.
+  const blogPosts = await fetchBlogPosts();
+  for (const { slug, updatedAt } of blogPosts) {
+    const alternates: Record<string, string> = {};
+    routing.locales.forEach(locale => {
+      alternates[locale] = `${baseUrl}/${locale}/blog/${slug}`;
+    });
+    routing.locales.forEach(locale => {
+      sitemapEntries.push({
+        url: `${baseUrl}/${locale}/blog/${slug}`,
+        lastModified: updatedAt ? new Date(updatedAt) : new Date(),
+        changeFrequency: 'weekly',
+        priority: 0.7,
         alternates: { languages: alternates },
       });
     });

@@ -31,8 +31,13 @@ export default function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Skip middleware for admin and manager routes (no locale prefix needed)
-  if (pathname.startsWith('/admin') || pathname.startsWith('/manager')) {
+  // Skip middleware for admin, manager, and payload routes (no locale prefix needed).
+  // `/manager/cms` is covered by the /manager prefix; `/payload/api` is Payload's REST.
+  if (
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/manager') ||
+    pathname.startsWith('/payload')
+  ) {
     return NextResponse.next();
   }
 
@@ -136,5 +141,5 @@ function getBestLocale(acceptLanguage: string | null): string {
 
 export const config = {
   // Match only internationalized pathnames - exclude API routes (/api/ and /app/)
-  matcher: ['/', '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*', '/((?!api|app|_next|_vercel|.*\\..*).*)']
+  matcher: ['/', '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*', '/((?!api|app|manager|payload|_next|_vercel|.*\\..*).*)']
 };

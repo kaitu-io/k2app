@@ -8,6 +8,7 @@ if (!process.env.VELITE_STARTED && (isDev || isBuild)) {
 }
 
 import createNextIntlPlugin from 'next-intl/plugin';
+import { withPayload } from '@payloadcms/next/withPayload';
 import type { NextConfig } from 'next';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
@@ -69,9 +70,9 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // 动态页面短期缓存（排除API路由）
+      // 动态页面短期缓存（排除 API 与管理后台 —— manager/payload 含已登录态，不能公开缓存）
       {
-        source: '/((?!_next|images|icons|favicon|app-icons|api|app).*)',
+        source: '/((?!_next|images|icons|favicon|app-icons|api|app|manager|payload).*)',
         headers: [
           {
             key: 'Cache-Control',
@@ -79,9 +80,9 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // API路由不缓存 (/api/ 和 /app/)
+      // API 与管理后台不缓存 (/api/、/app/、/manager/、/payload/)
       {
-        source: '/(api|app)/(.*)',
+        source: '/(api|app|manager|payload)/(.*)',
         headers: [
           {
             key: 'Cache-Control',
@@ -98,4 +99,6 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+export default withPayload(withNextIntl(nextConfig), {
+  devBundleServerPackages: false,
+});
