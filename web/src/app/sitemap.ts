@@ -22,7 +22,7 @@ async function fetchBlogPosts(): Promise<BlogEntry[]> {
       depth: 0,
       overrideAccess: true,
     });
-    return (docs as Array<{ slug: string; updatedAt?: string }>).map((d) => ({
+    return (docs as unknown as Array<{ slug: string; updatedAt?: string }>).map((d) => ({
       slug: d.slug,
       updatedAt: d.updatedAt,
     }));
