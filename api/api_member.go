@@ -471,48 +471,6 @@ func api_admin_member_remove(c *gin.Context) {
 	WriteAuditLog(c, "user_remove_member", "user", uuid, nil)
 }
 
-// api_get_delegate 获取我的代付人信息
-//
-func api_get_delegate(c *gin.Context) {
-	log.Infof(c, "user request to get delegate info")
-
-	user := ReqUser(c)
-
-	// 检查是否有代付人
-	if user.DelegateID == nil {
-		log.Infof(c, "user %d has no delegate", user.ID)
-		Error(c, ErrorNotFound, "no delegate")
-		return
-	}
-
-	// 查询代付人信息
-	var delegateUser User
-	if err := db.Get().Preload("LoginIdentifies").Where("id = ?", *user.DelegateID).First(&delegateUser).Error; err != nil {
-		log.Errorf(c, "failed to query delegate user %d: %v", *user.DelegateID, err)
-		Error(c, ErrorSystemError, "failed to query delegate")
-		return
-	}
-
-	// 构造登录身份列表
-	loginIdentifies := make([]DataLoginIdentify, 0)
-	for _, loginIdentify := range delegateUser.LoginIdentifies {
-		value, _ := secretDecryptString(c, loginIdentify.EncryptedValue)
-		loginIdentifies = append(loginIdentifies, DataLoginIdentify{
-			Type:  loginIdentify.Type,
-			Value: value,
-		})
-	}
-
-	// 构造返回的代付人信息
-	dataDelegate := DataDelegate{
-		UUID:            delegateUser.UUID,
-		LoginIdentifies: loginIdentifies,
-	}
-
-	log.Infof(c, "successfully retrieved delegate info for user %d", user.ID)
-	Success(c, &dataDelegate)
-}
-
 // api_reject_delegate 拒绝代付
 //
 func api_reject_delegate(c *gin.Context) {
