@@ -33,6 +33,108 @@ function resolvePathname(path: string[] | undefined): string {
   return `/k2/${path.join('/')}`;
 }
 
+/**
+ * Localized Q&A pairs for the /k2/comparison page, surfaced as FAQPage JSON-LD
+ * so AI search engines (Google AI Overviews, Perplexity, ChatGPT Search) can
+ * extract structured Q&A and cite the page. Mirrors the <h3> comparison sections
+ * in content/{locale}/k2/comparison.md.
+ *
+ * Note: zh-TW / zh-HK currently share COMPARISON_QAS_ZH (Simplified Chinese).
+ * This is an acceptable simplification for structured data — the full Traditional
+ * Chinese prose lives in the Velite markdown, and AI engines primarily consume
+ * JSON-LD for Q&A schema extraction rather than surface rendering. If Traditional
+ * Chinese variants become necessary, split into zh-Hant vs zh-Hans maps here.
+ */
+type ComparisonQA = { question: string; answer: string };
+
+const COMPARISON_QAS_EN: ComparisonQA[] = [
+  {
+    question: 'How does k2 differ from WireGuard?',
+    answer:
+      'WireGuard is a plaintext UDP tunnel without TLS disguise; k2 adds ECH + QUIC/TCP-WS dual-stack fallback for stealth and resilience.',
+  },
+  {
+    question: 'How does k2 differ from Shadowsocks?',
+    answer:
+      'Shadowsocks has only lightweight AEAD without TLS handshake or active-probe defence; k2 adds full TLS 1.3 + ECH handshakes and a reverse proxy on the server.',
+  },
+  {
+    question: 'How does k2 differ from VLESS+Reality?',
+    answer:
+      'Reality mimics TLS fingerprints but lacks ECH, has no QUIC primary + TCP fallback, and no application-layer congestion control.',
+  },
+  {
+    question: 'How does k2 differ from Hysteria2?',
+    answer:
+      'Hysteria2 is QUIC-only with no ECH, no TCP fallback, no active-probe defence, and needs a manually configured bandwidth cap.',
+  },
+];
+
+const COMPARISON_QAS_ZH: ComparisonQA[] = [
+  {
+    question: 'k2 和 WireGuard 有什么区别？',
+    answer:
+      'WireGuard 是 UDP 明文隧道，无 TLS 伪装；k2 通过 ECH + QUIC/TCP-WS 双栈降级兼顾隐身与韧性。',
+  },
+  {
+    question: 'k2 和 Shadowsocks 有什么区别？',
+    answer:
+      'Shadowsocks 只有轻量 AEAD，无 TLS 握手伪装、无主动探测防御；k2 有完整 TLS 1.3 + ECH 握手和服务端反向代理。',
+  },
+  {
+    question: 'k2 和 VLESS+Reality 有什么区别？',
+    answer:
+      'Reality 有 TLS 指纹模仿但无 ECH、无 QUIC+TCP 双栈、无应用层拥塞控制。',
+  },
+  {
+    question: 'k2 和 Hysteria2 有什么区别？',
+    answer:
+      'Hysteria2 仅 QUIC，无 ECH、无 TCP 降级、无主动探测对抗，Brutal 需手动设定带宽上限。',
+  },
+];
+
+const COMPARISON_QAS_JA: ComparisonQA[] = [
+  {
+    question: 'k2 と WireGuard の違いは？',
+    answer:
+      'WireGuard は TLS 偽装のない平文 UDP トンネル；k2 は ECH + QUIC/TCP-WS デュアルスタックフォールバックでステルスと耐性を両立。',
+  },
+  {
+    question: 'k2 と Shadowsocks の違いは？',
+    answer:
+      'Shadowsocks は軽量 AEAD のみで TLS ハンドシェイク偽装もアクティブプローブ防御もない；k2 は完全 TLS 1.3 + ECH ハンドシェイク＋サーバーリバースプロキシ。',
+  },
+  {
+    question: 'k2 と VLESS+Reality の違いは？',
+    answer:
+      'Reality は TLS 指紋模倣があるが、ECH なし、QUIC+TCP デュアルスタックなし、アプリ層輻輳制御なし。',
+  },
+  {
+    question: 'k2 と Hysteria2 の違いは？',
+    answer:
+      'Hysteria2 は QUIC のみで、ECH なし、TCP フォールバックなし、アクティブプローブ対策なし、Brutal は帯域を手動設定。',
+  },
+];
+
+function comparisonQAs(locale: string): ComparisonQA[] {
+  if (locale.startsWith('zh')) return COMPARISON_QAS_ZH;
+  if (locale === 'ja') return COMPARISON_QAS_JA;
+  return COMPARISON_QAS_EN;
+}
+
+function buildComparisonFaqPage(locale: string, baseUrlArg: string, pathname: string) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    '@id': `${baseUrlArg}/${locale}${pathname}#faq`,
+    mainEntity: comparisonQAs(locale).map((qa) => ({
+      '@type': 'Question',
+      name: qa.question,
+      acceptedAnswer: { '@type': 'Answer', text: qa.answer },
+    })),
+  };
+}
+
 /** Find a published k2 post by locale + slug, with zh-CN fallback. */
 function findK2Post(locale: string, slug: string): K2Post | undefined {
   const exactMatch = (posts as K2Post[]).find(
@@ -136,7 +238,7 @@ export default async function K2Page({
   const pathname = resolvePathname(path);
 
   // Per-article structured data — content is Velite-processed at build time (trusted source)
-  const jsonLd = {
+  const techArticle = {
     '@context': 'https://schema.org',
     '@type': 'TechArticle',
     headline: post.title,
@@ -151,6 +253,13 @@ export default async function K2Page({
     isPartOf: { '@type': 'WebSite', name: 'Kaitu', url: baseUrl },
     mainEntityOfPage: { '@type': 'WebPage', '@id': `${baseUrl}/${locale}${pathname}` },
   };
+
+  // The /k2/comparison aggregate page also emits FAQPage JSON-LD so AI search
+  // engines extract structured Q&A. JSON.stringify of an array emits valid
+  // multi-schema JSON-LD (Schema.org supports multiple @type objects on a page).
+  const isComparison = slug === 'k2/comparison';
+  const faqPage = isComparison ? buildComparisonFaqPage(locale, baseUrl, pathname) : null;
+  const jsonLd = faqPage ? [techArticle, faqPage] : techArticle;
 
   // Content is Velite-processed Markdown (trusted build-time source)
   return (
