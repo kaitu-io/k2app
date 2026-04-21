@@ -28,7 +28,7 @@
       },
       "congestion": {
         "title": "k2cc Adaptive Rate Control",
-        "description": "Proprietary k2cc algorithm automatically finds optimal send rates. Censorship-aware mechanism distinguishes censorship drops from congestion. Far outperforms BBR under GFW high-loss conditions",
+        "description": "Proprietary k2cc algorithm automatically finds optimal send rates. QoS-aware mechanism distinguishes ISP-induced drops from congestion. Far outperforms BBR under restricted-network high-loss conditions",
         "icon": "📈"
       },
       "reverseProxy": {
@@ -44,7 +44,7 @@
     },
     "comparison": {
       "title": "Protocol Comparison",
-      "subtitle": "k2 vs. mainstream anti-censorship protocols across key dimensions",
+      "subtitle": "k2 vs. mainstream cross-border access protocols across key dimensions",
       "dimensions": {
         "ech": "ECH Stealth",
         "tlsFingerprint": "TLS Fingerprint Spoofing",
@@ -154,16 +154,16 @@
   },
   "security": {
     "title": "k2cc — Congestion Control Built to Defeat QoS",
-    "description": "k2cc adaptive rate control is purpose-built to counter censorship QoS throttling and probabilistic packet loss. It automatically distinguishes congestion from censorship-induced drops, maintaining effective throughput under GFW's 26% loss rate. Combined with ECH stealth and QUIC transport — speed and stealth in one.",
+    "description": "k2cc adaptive rate control is purpose-built to counter ISP QoS throttling and probabilistic packet loss. It automatically distinguishes congestion from ISP-induced drops, maintaining effective throughput under restricted-network 26% loss rate. Combined with ECH stealth and QUIC transport — speed and stealth in one.",
     "icon": "🛡️",
     "caTech": {
       "title": "k2cc Anti-QoS Congestion Control",
-      "description": "k2cc automatically distinguishes congestion-induced packet loss from censorship infrastructure actively dropping packets. Under QoS throttling and probabilistic loss, it maintains throughput near link capacity. Zero-config, no manual bandwidth settings — far exceeds BBR and Brutal in censored networks.",
+      "description": "k2cc automatically distinguishes congestion-induced packet loss from ISP traffic management actively dropping packets. Under QoS throttling and probabilistic loss, it maintains throughput near link capacity. Zero-config, no manual bandwidth settings — far exceeds BBR and Brutal in throttled networks.",
       "advantages": {
         "title": "Core Features",
         "item1": "ECH encrypts SNI — TLS handshake undetectable",
         "item2": "QUIC-first transport — low latency, high throughput",
-        "item3": "k2cc adaptive rate control — far outperforms BBR under censorship",
+        "item3": "k2cc adaptive rate control — far outperforms BBR under throttling",
         "item4": "Reverse proxy camouflage — active probe defense",
         "bullet": "•"
       },
@@ -190,7 +190,7 @@
       },
       "smartRouting": {
         "title": "k2cc Adaptive Rate Control",
-        "description": "k2cc automatically finds optimal send rates. Censorship-aware mechanism distinguishes censorship drops. Far outperforms BBR under high-loss conditions",
+        "description": "k2cc automatically finds optimal send rates. QoS-aware mechanism distinguishes ISP-induced drops. Far outperforms BBR under high-loss conditions",
         "icon": "📈"
       },
       "disguise": {
@@ -237,7 +237,7 @@
         "ctLog": "Zero CT Log Exposure",
         "portReuse": "Port Reuse"
       },
-      "kaitu": {
+      "overleap": {
         "letter": "K",
         "name": "k2",
         "tech": "ECH stealth + QUIC+TCP-WS dual stack + k2cc adaptive rate control"
@@ -289,7 +289,7 @@
         "failedPath": "Fallback Path",
         "optimalNode": "Optimal Node"
       },
-      "description": "k2 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). k2cc maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
+      "description": "k2 uses ECH to encrypt SNI during the TLS handshake, preventing network middleboxes from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). k2cc maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
     }
   },
   "download": {
@@ -379,27 +379,23 @@
   },
   "faq": {
     "title": "Frequently Asked Questions",
-    "subtitle": "Everything about Kaitu VPN — protocol, platforms, pricing, privacy",
+    "subtitle": "Everything about Overleap — protocol, platforms, pricing, privacy",
     "items": {
       "whatIsK2cc": {
         "question": "What is k2cc?",
-        "answer": "k2cc is Kaitu's proprietary congestion control algorithm, designed specifically for hostile censorship networks. It uses a censorship-aware mechanism to distinguish between packet drops caused by censorship infrastructure and normal network congestion. In Kaitu's internal benchmarks, k2cc delivers 2-5x higher throughput than BBR and Brutal under GFW-like conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss). k2cc is zero-config and requires no manual bandwidth tuning."
+        "answer": "k2cc is Overleap's proprietary congestion control algorithm, designed specifically for hostile high-loss networks. It uses a QoS-aware mechanism to distinguish between packet drops caused by ISP traffic management and normal network congestion. In Overleap's internal benchmarks, k2cc delivers 2-5x higher throughput than BBR and Brutal under high-loss conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss). k2cc is zero-config and requires no manual bandwidth tuning."
       },
       "whatIsK2v5": {
         "question": "What is the k2 protocol?",
-        "answer": "k2 is Kaitu's composite stealth tunnel protocol, built on three pillars: (1) ECH-encrypted Client Hello, making the TLS handshake undetectable to DPI; (2) QUIC/H3 as the primary transport with TCP-WebSocket as automatic fallback; (3) k2cc censorship-aware congestion control. QUIC and TCP-WS share the same server port via protocol detection — one port resists both UDP blocking and DPI inspection simultaneously."
+        "answer": "k2 is Overleap's composite stealth tunnel protocol, built on three pillars: (1) ECH-encrypted Client Hello, making the TLS handshake undetectable to DPI; (2) QUIC/H3 as the primary transport with TCP-WebSocket as automatic fallback; (3) k2cc QoS-aware congestion control. QUIC and TCP-WS share the same server port via protocol detection — one port resists both UDP interference and DPI inspection simultaneously."
       },
       "howDoesEchWork": {
-        "question": "What is ECH and how does it bypass firewall detection?",
-        "answer": "ECH (Encrypted Client Hello) is a TLS 1.3 extension that encrypts the SNI field in the ClientHello. In traditional TLS handshakes, SNI is transmitted in plaintext, exposing the target domain and allowing firewalls to identify and block connections. With ECH enabled, DPI cannot see the real SNI or determine the connection target. Kaitu's server additionally forges ECH configurations so they are indistinguishable from genuine Cloudflare ECH traffic, further strengthening stealth."
+        "question": "What is ECH and how does it bypass middlebox detection?",
+        "answer": "ECH (Encrypted Client Hello) is a TLS 1.3 extension that encrypts the SNI field in the ClientHello. In traditional TLS handshakes, SNI is transmitted in plaintext, exposing the target domain and allowing DPI middleboxes to identify and block connections. With ECH enabled, DPI cannot see the real SNI or determine the connection target. Overleap's server additionally forges ECH configurations so they are indistinguishable from genuine Cloudflare ECH traffic, further strengthening stealth."
       },
-      "comparisonWithOthers": {
-        "question": "How is Kaitu different from WireGuard, Shadowsocks, VLESS+Reality, and Hysteria2?",
-        "answer": "k2 is the only major circumvention protocol that simultaneously implements ECH stealth, QUIC+TCP-WS dual-stack fallback, and censorship-aware congestion control. WireGuard is a plaintext UDP tunnel with no TLS disguise and is nearly unusable under GFW. Shadowsocks has only lightweight encryption without disguise. VLESS+Reality has TLS fingerprint mimicry but lacks ECH, QUIC, and TCP fallback. Hysteria2 has QUIC but no ECH or TCP fallback. Across nine key dimensions — ECH, TLS fingerprinting, active probe defense, QUIC, TCP fallback, congestion control, zero-config deployment, CT log exposure, and port reuse — k2 leads all alternatives."
-      },
-      "gfwSpeed": {
-        "question": "How fast is Kaitu under GFW conditions?",
-        "answer": "In Kaitu's internal benchmarks simulating GFW conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss), k2cc congestion control achieves 2-5x higher throughput than BBR and Brutal. Actual user speed depends on local network quality, ISP-level overseas throttling, and the chosen node, but under identical conditions the k2 protocol consistently outperforms legacy protocols."
+      "networkThrottlingSpeed": {
+        "question": "How fast is Overleap under restricted-network conditions?",
+        "answer": "In Overleap's internal benchmarks simulating restricted-network conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss), k2cc congestion control achieves 2-5x higher throughput than BBR and Brutal. Actual user speed depends on local network quality, ISP-level overseas throttling, and the chosen node, but under identical conditions the k2 protocol consistently outperforms legacy protocols."
       },
       "platforms": {
         "question": "What platforms does Overleap support?",
@@ -415,7 +411,7 @@
       },
       "chinaAccess": {
         "question": "Does Overleap work in mainland China?",
-        "answer": "Yes — this is Overleap's core design goal. Technically, the k2 protocol combines ECH-encrypted SNI, QUIC/TCP-WS dual-stack transport, and k2cc censorship-aware congestion control to maintain stable connections even under high-loss censored networks. Entry-point resolution uses a Happy Eyeballs strategy concurrently probing 6 CDN mirrors to avoid the 10-second timeout common in China. The iOS client is available directly on the China App Store."
+        "answer": "Yes — this is Overleap's core design goal. Technically, the k2 protocol combines ECH-encrypted SNI, QUIC/TCP-WS dual-stack transport, and k2cc QoS-aware congestion control to maintain stable connections even under high-loss restricted networks. Entry-point resolution uses a Happy Eyeballs strategy concurrently probing 6 CDN mirrors to avoid the 10-second timeout common in China. The iOS client is available directly on the China App Store."
       },
       "chinaAppStore": {
         "question": "Can I download Overleap directly from the China App Store?",
@@ -443,7 +439,7 @@
       },
       "ctLog": {
         "question": "Why does Overleap use self-signed certificates instead of Let's Encrypt?",
-        "answer": "Overleap servers use self-signed certificates with certificate pinning on the client. This achieves zero CT (Certificate Transparency) log exposure. Any certificate issued by a public CA is automatically written to CT logs, which attackers can scan to discover circumvention servers. Overleap's self-signed + pinning strategy keeps server domains out of all public logs, hiding nodes far more thoroughly."
+        "answer": "Overleap servers use self-signed certificates with certificate pinning on the client. This achieves zero CT (Certificate Transparency) log exposure. Any certificate issued by a public CA is automatically written to CT logs, which attackers can scan to discover cross-border access servers. Overleap's self-signed + pinning strategy keeps server domains out of all public logs, hiding nodes far more thoroughly."
       },
       "portReuse": {
         "question": "What does Overleap's port reuse mean?",
