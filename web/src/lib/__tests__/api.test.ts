@@ -499,4 +499,48 @@ describe('API Methods', () => {
     });
   });
 
+  describe('getDelegate', () => {
+    // Backend marshals Response[T].Data as `*T,omitempty`, so a nil pointer is dropped
+    // entirely from JSON — a user without a delegate gets `{"code":0}` on the wire.
+    // api.getDelegate must normalize that to null instead of returning `{}`.
+    it('returns null when backend omits the data field (user has no delegate)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ code: 0 }),
+        headers: new Headers({ 'Content-Length': '10' }),
+        status: 200,
+      });
+
+      const result = await api.getDelegate({ autoRedirectToAuth: false });
+      expect(result).toBeNull();
+    });
+
+    it('returns the delegate object when backend sends one', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          code: 0,
+          data: { email: 'bob@example.com', setAt: 1735689600 },
+        }),
+        headers: new Headers({ 'Content-Length': '50' }),
+        status: 200,
+      });
+
+      const result = await api.getDelegate({ autoRedirectToAuth: false });
+      expect(result).toEqual({ email: 'bob@example.com', setAt: 1735689600 });
+    });
+
+    it('returns null when backend sends explicit null data', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ code: 0, data: null }),
+        headers: new Headers({ 'Content-Length': '20' }),
+        status: 200,
+      });
+
+      const result = await api.getDelegate({ autoRedirectToAuth: false });
+      expect(result).toBeNull();
+    });
+  });
+
 });

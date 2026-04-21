@@ -107,7 +107,26 @@
     "inviteRewardTitle": "新規ユーザー限定特典",
     "inviteRewardDesc": "購入完了後、{days}日間のプロ版使用期間を追加でプレゼントします",
     "tierLocked": "現在のプランは「{tier}」です。このプランは別のランクのため購入できません。サポートにお問い合わせください。",
-    "proxyPurchaseDeprecated": "代理購入機能は終了しました。相手方ご自身のアカウントでご購入ください。"
+    "proxyPurchaseDeprecated": "代理購入機能は終了しました。相手方ご自身のアカウントでご購入ください。",
+    "delegatePay": {
+      "inlineTitle": "或请朋友代付",
+      "inlineHint": "我们会把支付链接发给 TA，同时保存为你的代付人，下次付款一键使用。",
+      "emailPlaceholder": "代付人邮箱 friend@example.com",
+      "sendInviteButton": "发送代付请求",
+      "chipLabel": "代付人：{email}",
+      "chipChange": "更改",
+      "primaryCtaWithDelegate": "请 {email} 代付",
+      "secondaryCtaSelfPay": "或自己支付",
+      "confirmationTitle": "已请求 {email} 代付",
+      "confirmationBody": "我们已发邮件给 {email}，附带支付链接。TA 完成付款后你会立刻收到会员时长。",
+      "confirmationSpamHint": "若 TA 收不到邮件请检查垃圾邮件箱。",
+      "confirmationResend": "重新发送邮件",
+      "confirmationResentToast": "已重新发送",
+      "confirmationBackHome": "返回首页",
+      "errorSelfInvite": "不能把自己设为代付人",
+      "errorOrderAlreadyPaid": "订单已支付，无需代付",
+      "errorNoDelegate": "请先设置代付人"
+    }
   },
   "wechatGuide": {
     "title": "このページはブラウザで開いてください",

@@ -359,6 +359,12 @@ export interface Delegate {
   loginIdentifies: LoginIdentify[];
 }
 
+// -------- Delegate Payer --------
+export interface DelegateInfo {
+  email: string;
+  setAt: number;
+}
+
 // 错误码
 export const ErrorInvalidCampaignCode = 400001;
 
@@ -1282,16 +1288,40 @@ export const api = {
     });
   },
 
-  // Delegate management APIs
-  async getDelegate(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<Delegate> {
-    return this.request<Delegate>('/api/user/delegate', options);
+  // Delegate payer APIs
+  // Unset delegate: backend sends `{code:0}` with no data field (Response[T].Data is
+  // `*T,omitempty`, so a nil pointer is dropped rather than serialized as null).
+  async getDelegate(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<DelegateInfo | null> {
+    const data = await this.request<DelegateInfo | Record<string, never>>('/api/user/delegate', options);
+    if (data && typeof data === 'object' && 'email' in data && typeof data.email === 'string' && data.email) {
+      return data as DelegateInfo;
+    }
+    return null;
   },
 
-  async rejectDelegate(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<void> {
+  async setDelegate(email: string, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<DelegateInfo> {
+    return this.request<DelegateInfo>('/api/user/delegate', {
+      method: 'PUT',
+      body: JSON.stringify({ email }),
+      ...options,
+    });
+  },
+
+  async removeDelegate(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<void> {
     return this.request<void>('/api/user/delegate', {
       method: 'DELETE',
       ...options,
     });
+  },
+
+  async notifyDelegate(orderUuid: string, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<{ delegateEmail: string }> {
+    return this.request<{ delegateEmail: string }>(
+      `/api/user/orders/${encodeURIComponent(orderUuid)}/notify-delegate`,
+      {
+        method: 'POST',
+        ...options,
+      }
+    );
   },
 
   // User profile API

@@ -133,6 +133,8 @@ func SetupRouter() *gin.Engine {
 			user.GET("/devices", AuthRequired(), api_get_devices)
 			// 创建订单
 			user.POST("/orders", AuthRequired(), api_create_order)
+			// 通知代付人付款（给当前用户的 delegate 发支付邀请邮件）
+			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), api_order_notify_delegate)
 			// 获取授权变更历史
 			user.GET("/pro-histories", AuthRequired(), api_get_pro_histories)
 			// 发送绑定邮箱验证码
@@ -145,7 +147,8 @@ func SetupRouter() *gin.Engine {
 			user.DELETE("/members/:userUUID", AuthRequired(), api_member_remove)
 			// 代付人管理
 			user.GET("/delegate", AuthRequired(), api_get_delegate)
-			user.DELETE("/delegate", AuthRequired(), api_reject_delegate)
+			user.PUT("/delegate", AuthRequired(), api_put_delegate)
+			user.DELETE("/delegate", AuthRequired(), api_delete_delegate)
 			// 自我删除账号
 			user.DELETE("/delete-account", AuthRequired(), api_delete_user_account)
 			// Access key 自助端点已移除 — 统一通过 admin API 管理

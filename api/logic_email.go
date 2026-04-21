@@ -135,6 +135,27 @@ var (
 此致
 系统通知`,
 	}
+
+	delegatePayInviteTemplate = EmailTemplate[DelegatePayInviteMeta]{
+		Subject: "{{.InviterEmail}} 请你帮忙代付一下 Kaitu 会员",
+		Body: `你好，
+
+{{.InviterEmail}} 想请你帮忙代付一下 Kaitu 会员，希望你愿意 🙏
+
+订单：{{.PlanName}}
+金额：{{.Amount}}
+
+付款链接：
+{{.PayUrl}}
+
+链接是 Stripe 安全支付页。付完以后 {{.InviterEmail}} 会立刻收到会员时长。
+
+如果你不认识 {{.InviterEmail}}，忽略这封邮件就好，不会扣任何费用。
+
+谢谢。
+
+—— Kaitu`,
+	}
 )
 
 // DeviceKickMeta 设备踢除邮件元数据
@@ -181,6 +202,14 @@ type PasswordLoginMeta struct {
 	Platform   string
 	ClientIP   string
 	LoginTime  string
+}
+
+// DelegatePayInviteMeta 代付邀请邮件元数据
+type DelegatePayInviteMeta struct {
+	InviterEmail string
+	PlanName     string
+	Amount       string // pre-formatted, e.g. "$49.90"
+	PayUrl       string
 }
 
 // emailToUser 发送邮件到用户

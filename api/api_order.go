@@ -278,6 +278,16 @@ func api_create_order(c *gin.Context) {
 
 		log.Infof(c, "successfully created wordgate order %s for order %s, user %d", orderResp.OrderNo, order.UUID, user.ID)
 		payUrl = orderResp.PayURL
+
+		// Persist payUrl into order.Meta so delegate-notify (and future retries) can read it
+		if err := order.SetOrderPayUrl(payUrl); err != nil {
+			log.Errorf(c, "failed to save payUrl into meta for order %s: %v", order.UUID, err)
+			return err
+		}
+		if err := tx.Save(order).Error; err != nil {
+			log.Errorf(c, "failed to persist order meta after payUrl update: %v", err)
+			return err
+		}
 		return nil
 	})
 
