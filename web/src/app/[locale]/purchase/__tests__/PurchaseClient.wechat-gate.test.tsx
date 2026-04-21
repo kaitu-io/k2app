@@ -9,7 +9,7 @@
  * because this test is about the branch decision, not those integrations.
  */
 import React from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 
 // Mock i18n routing — the underlying next-intl/navigation chain fails to load in jsdom

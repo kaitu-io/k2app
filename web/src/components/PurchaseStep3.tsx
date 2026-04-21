@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/routing";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,9 +14,10 @@ import {
   CreditCardIcon,
   ShieldIcon,
   ZapIcon,
-  HeadphonesIcon
+  HeadphonesIcon,
+  MailIcon
 } from "lucide-react";
-import type { Plan, Order } from "@/lib/api";
+import type { Plan, Order, DelegateInfo } from "@/lib/api";
 
 export interface PurchaseStep3Props {
   // Plan and pricing data
@@ -35,8 +38,16 @@ export interface PurchaseStep3Props {
   isLoading: boolean;
   isAuthenticated: boolean;
 
-  // Actions
+  // Self-pay action
   onPurchase: () => void;
+
+  // Delegate-pay flow
+  delegate: DelegateInfo | null;
+  delegateLoaded: boolean;
+  onDelegatePay: () => Promise<void> | void;
+  onEmptyStateDelegatePay: (email: string) => Promise<void> | void;
+  onResendInvite: () => Promise<void> | void;
+  confirmation: { email: string } | null;
 }
 
 export default function PurchaseStep3({
@@ -52,9 +63,63 @@ export default function PurchaseStep3({
   previewLoading,
   isLoading,
   isAuthenticated,
-  onPurchase
+  onPurchase,
+  delegate,
+  delegateLoaded,
+  onDelegatePay,
+  onEmptyStateDelegatePay,
+  onResendInvite,
+  confirmation,
 }: PurchaseStep3Props) {
   const t = useTranslations();
+  const [inlineEmail, setInlineEmail] = useState("");
+
+  // ------------------------------------------------------------------
+  // Confirmation state — replace the entire Step3 body with a success card.
+  // Short-circuits before any price/CTA layout.
+  // ------------------------------------------------------------------
+  if (confirmation) {
+    return (
+      <Card>
+        <CardContent className="space-y-6 py-8 text-center">
+          <div className="flex justify-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-950/40">
+              <MailIcon className="h-8 w-8" />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold text-foreground">
+              {t("purchase.purchase.delegatePay.confirmationTitle", { email: confirmation.email })}
+            </h2>
+            <p className="text-base text-muted-foreground leading-relaxed px-2">
+              {t("purchase.purchase.delegatePay.confirmationBody", { email: confirmation.email })}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {t("purchase.purchase.delegatePay.confirmationSpamHint")}
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 pt-2 px-4">
+            <Button
+              variant="outline"
+              onClick={() => { void onResendInvite(); }}
+              className="w-full"
+            >
+              {t("purchase.purchase.delegatePay.confirmationResend")}
+            </Button>
+            <Link
+              href="/"
+              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4"
+            >
+              {t("purchase.purchase.delegatePay.confirmationBackHome")}
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const hasDelegate = Boolean(delegate);
+  const showLoadingSkeleton = isAuthenticated && !delegateLoaded;
 
   return (
     <Card>
@@ -184,57 +249,167 @@ export default function PurchaseStep3({
             </div>
           </div>
 
-        {/* Purchase Button */}
-        <div className="space-y-4 sm:space-y-4">
-          <Button
-            variant="destructive"
-            size="lg"
-            className="w-full font-black text-xl sm:text-lg py-8 sm:py-6 shadow-xl hover:shadow-2xl transition-all duration-300"
-            onClick={onPurchase}
-            disabled={
-              !isAuthenticated ||
-              plans.length === 0 ||
-              !selectedPlan ||
-              isLoading
-            }
-          >
-            {!isAuthenticated ? (
-              <>
-                <span className="text-2xl mr-2">{"📧"}</span>
-                <span className="text-xl sm:text-lg">{t('purchase.purchase.bindEmailToPayNow')}</span>
-              </>
-            ) : isLoading ? (
-              <>
-                <LoaderIcon className="w-6 h-6 sm:w-5 sm:h-5 animate-spin mr-3 sm:mr-2" />
-                <span className="text-xl sm:text-lg">{t('purchase.purchase.processing')}{t('purchase.purchase.ellipsis')}</span>
-              </>
-            ) : plans.length === 0 ? (
-              <span className="text-xl sm:text-lg">{t('purchase.purchase.noPlans')}</span>
-            ) : (
-              <>
-                <span className="text-2xl mr-2">{"🚀"}</span>
-                <span className="text-xl sm:text-lg">{t('purchase.purchase.payNow')}</span>
-              </>
-            )}
-          </Button>
+        {/* Delegate chip — shown only when a delegate is persisted. */}
+        {hasDelegate && delegate && (
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 px-4 py-2.5">
+            <div className="flex items-center gap-2 text-sm sm:text-base text-indigo-900 dark:text-indigo-200 font-medium truncate">
+              <span className="text-lg">{"🙋"}</span>
+              <span className="truncate">
+                {t("purchase.purchase.delegatePay.chipLabel", { email: delegate.email })}
+              </span>
+            </div>
+            <Link
+              href={{ pathname: "/account/delegate", query: { returnTo: "/purchase" } }}
+              className="text-sm text-indigo-700 dark:text-indigo-300 underline underline-offset-4 hover:text-indigo-900 dark:hover:text-indigo-100 shrink-0"
+            >
+              {t("purchase.purchase.delegatePay.chipChange")}
+            </Link>
+          </div>
+        )}
 
-        {/* Trust Signals */}
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 sm:gap-6 text-sm sm:text-xs text-muted-foreground py-6 sm:py-4">
-          <div className="flex items-center gap-2 sm:gap-1 font-medium">
-            <ShieldIcon className="w-5 h-5 sm:w-4 sm:h-4" />
-            {t('purchase.purchase.securePayment')}
+        {/* Delegate-state loading skeleton — avoid flashing the empty-state
+            form while we're still resolving `api.getDelegate()`. */}
+        {showLoadingSkeleton ? (
+          <div className="space-y-4 sm:space-y-4">
+            <div className="w-full h-14 sm:h-12 rounded-md bg-muted/60 animate-pulse" />
           </div>
-          <div className="flex items-center gap-2 sm:gap-1 font-medium">
-            <ZapIcon className="w-5 h-5 sm:w-4 sm:h-4" />
-            {t('purchase.purchase.instantActivation')}
+        ) : hasDelegate && delegate ? (
+          /* ----- Set state: indigo primary delegate CTA + outline self-pay ----- */
+          <div className="space-y-3">
+            <Button
+              size="lg"
+              onClick={() => { void onDelegatePay(); }}
+              disabled={
+                !isAuthenticated ||
+                plans.length === 0 ||
+                !selectedPlan ||
+                isLoading
+              }
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xl sm:text-lg py-7 sm:py-6 shadow-lg hover:shadow-xl transition-all duration-300"
+            >
+              {isLoading ? (
+                <>
+                  <LoaderIcon className="w-6 h-6 sm:w-5 sm:h-5 animate-spin mr-3 sm:mr-2" />
+                  <span className="text-xl sm:text-lg">
+                    {t('purchase.purchase.processing')}{t('purchase.purchase.ellipsis')}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-2xl mr-2">{"🙋"}</span>
+                  <span className="text-xl sm:text-lg">
+                    {t("purchase.purchase.delegatePay.primaryCtaWithDelegate", { email: delegate.email })}
+                  </span>
+                </>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={onPurchase}
+              disabled={
+                !isAuthenticated ||
+                plans.length === 0 ||
+                !selectedPlan ||
+                isLoading
+              }
+              className="w-full text-base sm:text-base py-5"
+            >
+              {t("purchase.purchase.delegatePay.secondaryCtaSelfPay")}
+            </Button>
+            {/* Trust signals shared across branches */}
+            <TrustSignals t={t} />
           </div>
-          <div className="flex items-center gap-2 sm:gap-1 font-medium">
-            <HeadphonesIcon className="w-5 h-5 sm:w-4 sm:h-4" />
-            {t('purchase.purchase.support24x7')}
+        ) : (
+          /* ----- Empty state: existing red self-pay button + dashed inline form ----- */
+          <div className="space-y-4 sm:space-y-4">
+            <Button
+              variant="destructive"
+              size="lg"
+              className="w-full font-black text-xl sm:text-lg py-8 sm:py-6 shadow-xl hover:shadow-2xl transition-all duration-300"
+              onClick={onPurchase}
+              disabled={
+                !isAuthenticated ||
+                plans.length === 0 ||
+                !selectedPlan ||
+                isLoading
+              }
+            >
+              {!isAuthenticated ? (
+                <>
+                  <span className="text-2xl mr-2">{"📧"}</span>
+                  <span className="text-xl sm:text-lg">{t('purchase.purchase.bindEmailToPayNow')}</span>
+                </>
+              ) : isLoading ? (
+                <>
+                  <LoaderIcon className="w-6 h-6 sm:w-5 sm:h-5 animate-spin mr-3 sm:mr-2" />
+                  <span className="text-xl sm:text-lg">{t('purchase.purchase.processing')}{t('purchase.purchase.ellipsis')}</span>
+                </>
+              ) : plans.length === 0 ? (
+                <span className="text-xl sm:text-lg">{t('purchase.purchase.noPlans')}</span>
+              ) : (
+                <>
+                  <span className="text-2xl mr-2">{"🚀"}</span>
+                  <span className="text-xl sm:text-lg">{t('purchase.purchase.payNow')}</span>
+                </>
+              )}
+            </Button>
+
+            {/* Dashed-border delegate invitation (shown only to authenticated users) */}
+            {isAuthenticated && (
+              <div className="rounded-lg border-2 border-dashed border-indigo-300 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 p-4 space-y-3">
+                <div className="flex items-center gap-2 text-base font-semibold text-indigo-900 dark:text-indigo-200">
+                  <span className="text-lg">{"🙋"}</span>
+                  <span>{t("purchase.purchase.delegatePay.inlineTitle")}</span>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    type="email"
+                    placeholder={t("purchase.purchase.delegatePay.emailPlaceholder")}
+                    value={inlineEmail}
+                    onChange={(e) => setInlineEmail(e.target.value)}
+                    disabled={isLoading}
+                    className="flex-1 bg-background"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => { void onEmptyStateDelegatePay(inlineEmail.trim()); }}
+                    disabled={isLoading || !inlineEmail.trim()}
+                    className="border-indigo-300 text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:border-indigo-800 dark:hover:bg-indigo-950/60"
+                  >
+                    {isLoading && <LoaderIcon className="w-4 h-4 mr-2 animate-spin" />}
+                    {t("purchase.purchase.delegatePay.sendInviteButton")}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {t("purchase.purchase.delegatePay.inlineHint")}
+                </p>
+              </div>
+            )}
+
+            <TrustSignals t={t} />
           </div>
-        </div>
-        </div>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+function TrustSignals({ t }: { t: (key: string) => string }) {
+  return (
+    <div className="flex flex-col sm:flex-row justify-center items-center gap-4 sm:gap-6 text-sm sm:text-xs text-muted-foreground py-6 sm:py-4">
+      <div className="flex items-center gap-2 sm:gap-1 font-medium">
+        <ShieldIcon className="w-5 h-5 sm:w-4 sm:h-4" />
+        {t('purchase.purchase.securePayment')}
+      </div>
+      <div className="flex items-center gap-2 sm:gap-1 font-medium">
+        <ZapIcon className="w-5 h-5 sm:w-4 sm:h-4" />
+        {t('purchase.purchase.instantActivation')}
+      </div>
+      <div className="flex items-center gap-2 sm:gap-1 font-medium">
+        <HeadphonesIcon className="w-5 h-5 sm:w-4 sm:h-4" />
+        {t('purchase.purchase.support24x7')}
+      </div>
+    </div>
   );
 }

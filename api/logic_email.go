@@ -97,27 +97,6 @@ var (
 系统通知`,
 	}
 
-	memberAddedTemplate = EmailTemplate[MemberAddedMeta]{
-		Subject: "您已被添加为代付成员",
-		Body: `尊敬的用户：
-
-您已被 {{.DelegateEmail}} 添加为代付成员，对方将为您的账户付费。
-
-详细信息：
-- 代付人邮箱：{{.DelegateEmail}}
-- 添加时间：{{.AddedTime}}
-
-如果您不认识此用户或不希望对方为您付费，您可以：
-1. 登录账户管理页面
-2. 进入"代付管理"页面
-3. 点击"拒绝代付"按钮
-
-拒绝代付链接：{{.RejectURL}}
-
-此致
-系统通知`,
-	}
-
 	passwordLoginTemplate = EmailTemplate[PasswordLoginMeta]{
 		Subject: "Kaitu 账号登录提醒",
 		Body: `尊敬的用户：
@@ -134,6 +113,27 @@ var (
 
 此致
 系统通知`,
+	}
+
+	delegatePayInviteTemplate = EmailTemplate[DelegatePayInviteMeta]{
+		Subject: "{{.InviterEmail}} 请你帮忙代付一下 Kaitu 会员",
+		Body: `你好，
+
+{{.InviterEmail}} 想请你帮忙代付一下 Kaitu 会员，希望你愿意 🙏
+
+订单：{{.PlanName}}
+金额：{{.Amount}}
+
+付款链接：
+{{.PayUrl}}
+
+链接是 Stripe 安全支付页。付完以后 {{.InviterEmail}} 会立刻收到会员时长。
+
+如果你不认识 {{.InviterEmail}}，忽略这封邮件就好，不会扣任何费用。
+
+谢谢。
+
+—— Kaitu`,
 	}
 )
 
@@ -168,19 +168,20 @@ type DeviceTransferMeta struct {
 	DeviceRemark  string
 }
 
-// MemberAddedMeta 被添加为成员邮件元数据
-type MemberAddedMeta struct {
-	DelegateEmail string
-	AddedTime     string
-	RejectURL     string
-}
-
 // PasswordLoginMeta password login notification email metadata
 type PasswordLoginMeta struct {
 	DeviceName string
 	Platform   string
 	ClientIP   string
 	LoginTime  string
+}
+
+// DelegatePayInviteMeta 代付邀请邮件元数据
+type DelegatePayInviteMeta struct {
+	InviterEmail string
+	PlanName     string
+	Amount       string // pre-formatted, e.g. "$49.90"
+	PayUrl       string
 }
 
 // emailToUser 发送邮件到用户

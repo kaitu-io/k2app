@@ -261,13 +261,16 @@ type Order struct {
 	WordgateOrderNo      string    `gorm:"type:varchar(255);index"`                 // 关联的 wordgate 订单号
 	CampaignCode         *string   `gorm:"type:varchar(50);index"`                  // 使用的优惠活动代码
 	Campaign             *Campaign `gorm:"foreignKey:CampaignCode;references:Code"` // 通过Code关联Campaign
-	Meta                 string    `gorm:"type:json"`                               // 存储 Plan、forUserIds、forMyself 信息
+	Meta                 string    `gorm:"type:json"`                               // 存储 Plan、forUserUUIDs、forMyself、payUrl 信息
 }
 
 // GetPlan 获取订单的计划信息
 func (o *Order) GetPlan() (*Plan, error) {
 	var meta struct {
-		Plan *Plan `json:"plan"`
+		Plan         *Plan    `json:"plan"`
+		ForUserUUIDs []string `json:"forUserUUIDs"`
+		ForMyself    bool     `json:"forMyself"`
+		PayUrl       string   `json:"payUrl"`
 	}
 	if err := json.Unmarshal([]byte(o.Meta), &meta); err != nil {
 		return nil, err
@@ -316,7 +319,10 @@ func (o *Order) SetCampaign(campaign *Campaign) error {
 // GetForUsers 从 Meta 中获取为哪些用户购买的 UUID 列表
 func (o *Order) GetForUsers() []string {
 	var meta struct {
+		Plan         *Plan    `json:"plan"`
 		ForUserUUIDs []string `json:"forUserUUIDs"`
+		ForMyself    bool     `json:"forMyself"`
+		PayUrl       string   `json:"payUrl"`
 		// 兼容旧数据的字段
 		ForUserIds []int64 `json:"forUserIds"`
 	}
@@ -337,7 +343,10 @@ func (o *Order) GetForUsers() []string {
 // GetForMyself 从 Meta 中获取是否为自己购买
 func (o *Order) GetForMyself() bool {
 	var meta struct {
-		ForMyself bool `json:"forMyself"`
+		Plan         *Plan    `json:"plan"`
+		ForUserUUIDs []string `json:"forUserUUIDs"`
+		ForMyself    bool     `json:"forMyself"`
+		PayUrl       string   `json:"payUrl"`
 	}
 	if o.Meta == "" {
 		return false
@@ -348,16 +357,18 @@ func (o *Order) GetForMyself() bool {
 	return meta.ForMyself
 }
 
-// SetOrderMeta 设置订单的 Meta 信息，包括 Plan、forUserUUIDs、forMyself (Campaign通过CampaignCode单独存储)
+// SetOrderMeta 设置订单的 Meta 信息，包括 Plan、forUserUUIDs、forMyself、payUrl
 func (o *Order) SetOrderMeta(plan *Plan, campaign *Campaign, forUserUUIDs []string, forMyself bool) error {
 	meta := struct {
 		Plan         *Plan    `json:"plan"`
 		ForUserUUIDs []string `json:"forUserUUIDs"`
 		ForMyself    bool     `json:"forMyself"`
+		PayUrl       string   `json:"payUrl"`
 	}{
 		Plan:         plan,
 		ForUserUUIDs: forUserUUIDs,
 		ForMyself:    forMyself,
+		PayUrl:       "",
 	}
 	data, err := json.Marshal(meta)
 	if err != nil {
@@ -365,6 +376,42 @@ func (o *Order) SetOrderMeta(plan *Plan, campaign *Campaign, forUserUUIDs []stri
 	}
 	o.Meta = string(data)
 	return nil
+}
+
+// SetOrderPayUrl 单独更新 Meta 中的 PayUrl，保留其它字段
+func (o *Order) SetOrderPayUrl(payUrl string) error {
+	var meta struct {
+		Plan         *Plan    `json:"plan"`
+		ForUserUUIDs []string `json:"forUserUUIDs"`
+		ForMyself    bool     `json:"forMyself"`
+		PayUrl       string   `json:"payUrl"`
+	}
+	if o.Meta != "" {
+		if err := json.Unmarshal([]byte(o.Meta), &meta); err != nil {
+			return err
+		}
+	}
+	meta.PayUrl = payUrl
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	o.Meta = string(data)
+	return nil
+}
+
+// GetPayUrl 从 Meta 中提取已保存的支付链接
+func (o *Order) GetPayUrl() string {
+	if o.Meta == "" {
+		return ""
+	}
+	var meta struct {
+		PayUrl string `json:"payUrl"`
+	}
+	if err := json.Unmarshal([]byte(o.Meta), &meta); err != nil {
+		return ""
+	}
+	return meta.PayUrl
 }
 
 // Message 消息模型

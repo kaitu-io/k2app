@@ -65,7 +65,7 @@ export default function PurchaseStep1({
           <div className="flex items-center gap-2 sm:gap-2">
             <UserIcon className="w-6 h-6 sm:w-5 sm:h-5 text-primary flex-shrink-0" />
             <span className="text-lg sm:text-base font-bold sm:font-semibold leading-tight text-foreground">
-              {t('purchase.purchase.bindEmailAndSelectTarget')}
+              {t('purchase.purchase.bindEmail')}
             </span>
           </div>
         </CardTitle>

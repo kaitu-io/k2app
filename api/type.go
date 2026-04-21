@@ -259,12 +259,6 @@ type AddMemberRequest struct {
 	MemberEmail string `json:"memberEmail" binding:"required,email" example:"member@example.com"` // 成员邮箱
 }
 
-// DataDelegate 代付人数据结构
-type DataDelegate struct {
-	UUID            string              `json:"uuid"`            // 代付人UUID
-	LoginIdentifies []DataLoginIdentify `json:"loginIdentifies"` // 登录身份列表
-}
-
 // CreateOrderForUsersRequest 为指定用户创建订单请求数据结构
 type CreateOrderForUsersRequest struct {
 	Preview      bool     `json:"preview" example:"false"`                     // 是否预览模式
