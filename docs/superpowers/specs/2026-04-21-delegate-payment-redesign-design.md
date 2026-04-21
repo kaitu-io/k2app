@@ -3,136 +3,225 @@
 **Date**: 2026-04-21
 **Author**: David (via brainstorm)
 **Status**: Draft — pending implementation plan
+**Revision**: v2（把"每单临时指定"改为"账户级预设"）
 
 ## 1. Summary
 
-把"代付"从旧的**父账号主导**模型（父账号预建子成员并为其付款，见历史 `api_member_*` 端点）重构为**受益人主导**的邀请付款模型：用户在 `/purchase` 页面点 **[找人代付]**，进入独立引导页，选择 (a) 填写代付人邮箱由系统发送邀请邮件，或 (b) 复制支付链接自行分享。订单归属不变（`user_id` = 受益人），Wordgate 支付链是 Bearer token，任何打开链的人都能付款。
+把"代付"从旧的**父账号主导**（`api_member_add` 父账号为子账号付款）重构为**受益人主导的账户级预设**：用户在账户里设置一个代付人邮箱（直接覆盖 `user.delegate_id`），之后每次购买都可以一键请该代付人付款。后端创建 stub 用户（如果邮箱还不存在），前端通过邮件把订单支付链（Wordgate Stripe Checkout）推送给代付人，代付人点击即付。订单归属不变（`user_id = 受益人`），订单模型零 schema 改动。
+
+### 与 v1（已废弃）的差别
+- v1：每单临时输入邮箱、独立 `/purchase/delegate` 页面、两种分享方式（邮件 + 复制链接）
+- v2：代付人作为账户级预设、两个触发点（`/purchase` 内联空态 + `/account/delegate` 独立页）、仅邮件触达
 
 ## 2. Goals / Non-goals
 
 ### Goals
-- 受益人能一键把当前订单的支付责任"外包"给另一个人（父母、朋友、同学）
-- 最小改动：订单模型 0 schema 改动、0 新状态
-- 代付人零注册摩擦（点链接即付，不强制登录）
-- 给填邮箱渠道创建 stub 用户，为未来"claim 账号"软转化留接口
+- 受益人能**一次设置长期生效**，避免每单重填
+- `user.delegate_id` 做字段的**直接覆盖**（按用户指示）
+- 空态用户在 `/purchase` 内联输入即可完成"保存 + 请求"，不强制跳账户页
+- 已设置用户在 `/purchase` 看到双 CTA：[请 alice 代付] / [或自己支付]
+- 代付人零注册摩擦（点邮件链接即付）
+- 订单模型零 schema 改动
 
 ### Non-goals（v1 不做）
 - 代付人后台管理（"我代付过谁"）
-- 受益人的"我发起的代付"管理列表（YAGNI — Wordgate 自己有订单过期，失败直接重新创建）
-- 自定义代付过期/取消逻辑（全部依赖 Wordgate/Stripe checkout session 原生行为）
-- 多语言邮件（v1 复用现有 `emailTo` 的中文硬编码模板，英文作为 follow-up）
-- 订单侧审计字段（`delegate_invited_user_id` 等不加，要分析就走 `login_identifies.created_at` 交叉查）
-- 清理旧 `/api/user/members` / `/api/user/delegate` 端点（已孤立但无害，单独 PR 处理）
+- 复制支付链分享（仅邮件触达）
+- 独立 `/purchase/delegate` 二选一页面（整页已简化掉）
+- 设置代付人时给代付人发"你被设为代付人"通知邮件（代付人第一次接触就是支付请求邮件本身）
+- 多语言邮件（v1 复用现有 `emailTo` 中文硬编码，英文作 follow-up）
+- 订单侧审计字段
+- 清理旧 `/api/user/members` 孤立端点（单独 PR 处理）
+- 企业批量授权同步机制（Novus Academy 那种）
 
 ## 3. UX 流程
 
+### 3.1 空态用户（未设代付人）
+
 ```
 Bob 登录 /purchase
-  → 选 plan / 填活动码 → 点 [🚀 立即支付]
-       （旧流程，不变）
-  → 点主按钮下方次级链接 [🙋 自己不方便？找人代付]
-       → 前端先调 api.createOrder（和自付同一条）拿 payUrl + order.uuid
-       → 跳 /purchase/delegate?order=<uuid>
-
-/purchase/delegate?order=<uuid>
-  上下文卡片：显示 plan_name + amount + 受益人邮箱（= Bob）
-  动作 A（邮件邀请，上）：输入框 + [发送邀请] → POST /api/orders/:uuid/delegate-invite {email}
-    后端：
-      · 校验 order.user_id === 当前用户 且未付款
-      · email 小写 + hash
-      · 若邮箱已存在 LoginIdentify → 不建 stub，直接进下一步
-      · 否则创建 stub user（LoginIdentify cascade，无 DelegateID）
-      · 发邮件（纯文本模板，包含 inviter_email + plan_name + amount + pay_url）
-      · 返回 success
-    前端：显示"已发送到 friend@example.com ✓" + 允许再邀请其他人
-  动作 B（复制链接，下）：展示 payUrl + [复制] → 剪贴板 + toast "已复制"
-  次要：[← 返回支付页]
-
-Alice 打开邮件 / 微信链接
-  → 直接到 Wordgate Stripe Checkout（就是 payUrl 本身）
-  → 用任意支付方式付款（信用卡、Apple Pay 等）
-  → Wordgate webhook → Kaitu 现有 webhook handler → order.user_id = Bob 加会员时长
-  → Alice 看到 Stripe 自带的"支付成功"页，Kaitu 不插手
-
-Bob 端
-  → 支付完成通过现有机制（轮询 /api/orders/:uuid 或 Wordgate webhook 触发的推送）更新 UI
-  → Bob 的会员时长到账
+  → 选 plan / 填活动码（不变）
+  → Step 3 看到：
+     [🚀 立即支付]  ← 自付主路径
+     ---
+     🙋 或请朋友代付
+     [ email input: friend@example.com ]
+     [ 发送代付请求 ]  ← secondary button
+     （小字：我们会把支付链接发给 TA，同时保存为你的代付人，下次付款一键使用）
+  → 填 alice@example.com → 点 [发送代付请求]
+  → 前端连锁调用：
+     1. PUT /api/user/delegate {email: "alice@example.com"}
+        → 后端：查 stub，没有就建，设 user.delegate_id
+     2. POST /api/user/orders（常规订单创建）
+     3. POST /api/user/orders/:uuid/notify-delegate
+        → 后端：给 delegate 发 pay-request 邮件
+  → 显示确认状态："已请求 alice@example.com 代付（等待对方付款）"
 ```
 
-### 关键语义
-- **Bearer URL**：payUrl 持票即付。泄露风险可接受——被陌生人付款 = Bob 仍然受益，无资金损失
-- **一次性使用**：Stripe Checkout session 原生支持
-- **过期**：Stripe checkout session 默认 24h，Wordgate 是否 wrap 视他们实现而定；如过期 Bob 只能重新创建订单（旧订单自然作废）
-- **并发邀请**：Bob 可以连发给多人。若多人都付款，Bob 拿到多倍会员时长（商业正向，不做防重逻辑）
+### 3.2 已设用户（delegate_id 非空）
+
+```
+Bob 登录 /purchase
+  → 选 plan / 填活动码（不变）
+  → Step 3 顶部显示 chip：
+     🙋 代付人：alice@example.com  [更改]
+  → Step 3 底部看到：
+     [🙋 请 alice 代付]  ← 主 CTA（indigo）
+     [或自己支付]        ← secondary（灰色）
+  → 点 [请 alice 代付]
+  → 前端：
+     1. POST /api/user/orders
+     2. POST /api/user/orders/:uuid/notify-delegate
+  → 显示确认状态
+```
+
+### 3.3 账户预设管理 `/account/delegate`
+
+独立页面，两种状态渲染：
+
+**空态**
+```
+标题：代付人设置
+说明：设置后，付款时可一键邀请 TA 代付。只需填邮箱，付款发生时我们会发邮件给 TA。
+[ email input ]
+[ 保存 ]
+小字：保存后不会立刻通知 TA；TA 收到的第一封邮件是你实际付款请求时的支付邀请。
+```
+
+**已设态**
+```
+标题：代付人设置
+当前代付人：alice@example.com
+  于 2026-04-18 设置
+[ 修改 ]  [ 移除代付人 ]
+小字：付款时可选择「请 alice@example.com 代付」，我们会发邮件给 TA。
+```
+
+### 3.4 Alice 侧体验
+
+```
+Alice 收邮件（纯文本）
+  Subject: bob@example.com 请你帮忙代付一下 Kaitu 会员
+  Body:
+    你好，
+    bob@example.com 想请你帮忙代付一下 Kaitu 会员，希望你愿意 🙏
+    订单：1 年 Pro
+    金额：$49.90
+    付款链接：
+    https://pay.wordgate.com/c/cs_...
+    链接是 Stripe 安全支付页。付完以后 bob@example.com 会立刻收到会员时长。
+    如果你不认识 bob@example.com，忽略这封邮件就好，不会扣任何费用。
+    谢谢。
+    —— Kaitu
+
+Alice 点链接 → Stripe Checkout → 付款
+  → Wordgate webhook → Kaitu 现有 handler 给 Bob 加会员时长
+  → Stripe 自带成功页（Kaitu 不插手）
+```
+
+### 3.5 关键语义
+- **`user.delegate_id` 可随时被覆盖**——用户 PUT 不同邮箱时，直接指向新的 stub，不保留历史
+- **设置 delegate 不发通知邮件**——简化系统，Alice 第一次接触就是支付请求（含上下文）
+- **自付退路永远保留**——delegate 只是预设，不是强制。`/purchase` 已设状态保留 [或自己支付] 按钮
+- **Bearer URL**：payUrl 持票即付，Stripe Checkout session 原生处理过期/单次性/并发
 
 ## 4. Backend
 
-### 4.1 新端点
-```
-POST /api/orders/:uuid/delegate-invite
-AuthRequired
-Body: { "email": "friend@example.com" }
-Success: { "stubCreated": bool }
-Errors:
-  404 ErrorNotFound        — 订单不存在
-  403 ErrorForbidden       — 订单非当前用户所有
-  422 ErrorInvalidArgument — 订单已付款 / email 格式非法 / email == 当前用户自己
-  500 ErrorSystemError     — 邮件发送失败（stub 若已创建不回滚）
-```
+### 4.1 端点清单
 
-实现位置：`api/api_order.go`（新增 handler `api_delegate_invite`）或独立 `api/api_delegate_pay.go`（若我们预期代付功能后续扩展则独立更清晰）。推荐**独立文件**。
+| 方法 | 路径 | 用途 | 用户角度 |
+|---|---|---|---|
+| `GET` | `/api/user/delegate` | 查询当前用户的代付人 | "谁在代付我" |
+| `PUT` | `/api/user/delegate` | 设置或覆盖代付人 | "把 X 设为我的代付人" |
+| `DELETE` | `/api/user/delegate` | 移除代付人 | "我不要代付人了" |
+| `POST` | `/api/user/orders/:uuid/notify-delegate` | 给已设代付人发支付请求邮件 | "请 X 现在代付" |
 
-### 4.2 实现细节
-```go
-// api_delegate_pay.go
-func api_delegate_invite(c *gin.Context) {
-    orderUUID := c.Param("uuid")
-    var req struct { Email string `json:"email" binding:"required,email"` }
-    // bind + validate
-    
-    user := ReqUser(c)
-    var order Order
-    // find by uuid, check ownership, check !IsPaid
-    
-    email := strings.ToLower(req.Email)
-    // reject if email == current user's email（避免自己邀自己）
-    
-    indexID := secretHashIt(c, []byte(email))
-    stubCreated := false
-    var existing LoginIdentify
-    err := db.Get().Where("type = ? AND index_id = ?", "email", indexID).First(&existing).Error
-    if err == gorm.ErrRecordNotFound {
-        // 建 stub（不设 DelegateID —— 这是新模型，不挂父子关系）
-        encEmail, _ := secretEncryptString(c, email)
-        li := LoginIdentify{
-            Type: "email", IndexID: indexID, EncryptedValue: encEmail,
-            User: &User{ UUID: generateId("user"), ExpiredAt: 0 },
-        }
-        if e := db.Get().Create(&li).Error; e != nil { /* handle */ }
-        stubCreated = true
-    } else if err != nil { /* sys error */ }
-    
-    // 发送邮件（同步或 goroutine，看 emailTo 语义；现有 member_add 用 goroutine）
-    go emailTo(c, email, delegatePayInviteTemplate, DelegatePayInviteMeta{
-        InviterEmail: <bob's email>,
-        PlanName:     order.GetPlan().Label,
-        Amount:       formatMoney(order.PayAmount),
-        PayUrl:       order.Meta.PayUrl, // 注：需确认 order 模型存了 payUrl；若没存则需先取
-    })
-    
-    Success(c, gin.H{"stubCreated": stubCreated})
+### 4.2 `GET /api/user/delegate`
+
+**Auth**: Required
+**Response**:
+```json
+{
+  "data": {
+    "email": "alice@example.com",
+    "setAt": 1745236789
+  }
 }
 ```
+若未设置：`data: null`
 
-**注**：`payUrl` 是否持久化在 `orders` 表需要确认。若没有，需要在 `create_order` 时存进 `meta` JSON，或在本 handler 里重新向 Wordgate 请求（后者浪费，前者更好）。这是实现期要解决的 one-liner。
+**实现**：
+- 读 `user.delegate_id`
+- 若为 NULL → 返回 `null`
+- 否则 JOIN `login_identifies` where `user_id = delegate_id AND type = "email"`, 解密 `encrypted_value` 作为 email
+- `setAt` 取 `user.updated_at`（近似；若需精确可加独立字段，但 YAGNI）
 
-### 4.3 路由注册
-在 `api/route.go` 的 `/api/orders/*` 分组加：
-```go
-orders.POST("/:uuid/delegate-invite", api_delegate_invite)
+### 4.3 `PUT /api/user/delegate`
+
+**Auth**: Required
+**Body**:
+```json
+{ "email": "alice@example.com" }
 ```
 
-### 4.4 邮件模板（`api/logic_email.go`）
+**逻辑**：
+1. 校验 email 格式（gin binding `email` tag）
+2. 拒绝 email 等于当前用户自己邮箱 → 422
+3. email 小写化，计算 indexID
+4. 查 `login_identifies` where type=email AND index_id=indexID
+   - 命中 → 拿到对应 user.id（设 `delegateUserID`）
+   - 未命中 → 创建 stub：`LoginIdentify{Type: email, IndexID, EncryptedValue, User: &User{UUID, ExpiredAt:0}}` via GORM cascade；`delegateUserID` = 新建 user.id
+5. **直接覆盖** `user.delegate_id = delegateUserID`（即便已有值也覆盖）
+6. 返回与 GET 相同 shape
+
+**Response**: `{ data: { email, setAt } }`
+
+**Error codes**:
+- 422 ErrorInvalidArgument — email 格式非法 / email 等于自己 / stub 创建 DB 错误
+
+### 4.4 `DELETE /api/user/delegate`
+
+**Auth**: Required
+
+**逻辑**：
+- `user.delegate_id = NULL`
+- Stub 用户不删除（可能别人也指向它，且 stub 本身是低开销记录）
+- 返回 success
+
+**注意**：与旧 `api_reject_delegate` 语义一致（都是"我清除我的代付关系"），可以复用现有 handler 或新写。推荐新写一个干净的 `api_delete_delegate` 并废弃旧的（旧的未来随 `/api/user/members` 一起清理）。
+
+### 4.5 `POST /api/user/orders/:uuid/notify-delegate`
+
+**Auth**: Required
+
+**前置校验**：
+1. 订单存在、`user_id = 当前用户`、`is_paid != true`
+2. 当前用户 `delegate_id != NULL`
+
+**逻辑**：
+1. 查订单 + 拿 plan + payUrl（参考 4.7 开放问题）
+2. 查 delegate_id 对应的 email（通过 login_identifies 解密）
+3. 查当前用户自己的 email 作为 InviterEmail
+4. 异步发送邮件（goroutine，模板见 4.6）
+5. 同步返回 success
+
+**Response**: `{ data: { delegateEmail: "alice@example.com" } }`
+
+**Error codes**:
+- 404 ErrorNotFound — 订单不存在
+- 403 ErrorForbidden — 订单非当前用户
+- 422 ErrorInvalidArgument — 订单已付款
+- 422 ErrorInvalidArgument — 当前用户未设代付人
+- 500 ErrorSystemError — 邮件发送失败
+
+**注意**：邮件发送用 goroutine 时，如果失败无法反馈到 HTTP response。方案：
+- 方案 A：同步发送，响应时间 < 2s（SMTP 快），失败返回 500
+- 方案 B：goroutine 异步，HTTP 永远返回 success；失败用日志 + Slack 告警
+- 推荐 A（用户点按钮就是在等反馈，明确成功/失败更好）
+
+### 4.6 邮件模板
+
+新增到 `api/logic_email.go`（继续使用 `EmailTemplate[T]` 模式，与现有 `memberAddedTemplate` 同构）：
+
 ```go
 var delegatePayInviteTemplate = EmailTemplate[DelegatePayInviteMeta]{
     Subject: "{{.InviterEmail}} 请你帮忙代付一下 Kaitu 会员",
@@ -163,169 +252,265 @@ type DelegatePayInviteMeta struct {
 }
 ```
 
-### 4.5 测试
-- `api_delegate_invite_test.go`
-  - 正常路径：未存在邮箱 → 建 stub + 发邮件 → 返回 stubCreated=true
-  - 已存在邮箱 → 不建 stub，仍发邮件 → stubCreated=false
-  - 订单非当前用户 → 403
-  - 订单已付款 → 422
-  - 自己给自己发 → 422
-  - 邮箱格式非法 → 422
-- 走 `SetupMockDB(t)` + testify assert，遵照 CLAUDE.md 的 Test Convention
+纯文本，无 HTML。deliverability 优先。
+
+### 4.7 开放实现问题
+
+1. **Wordgate payUrl 持久化**：`orders` 表的 `meta` JSON 里是否已存 payUrl？若无，需在 `create_order` 时存进去，`notify-delegate` 才能读到。实现期第一件事要查。
+2. **`emailTo` 是否支持按收件人偏好切换语言模板**：当前看代码是硬编码 zh-CN；v1 接受。
+3. **并发覆盖 delegate_id 的竞态**：不太可能（单用户自己设置），不加锁。
+4. **stub 邮箱被真实用户注册后**：已有 `login_identifies` 唯一约束保护；stub 升级为真实用户的路径走现有登录流程（用户首次 OTP 登录该邮箱即认领 stub）。
+
+### 4.8 文件改动
+
+| 文件 | 改动 |
+|---|---|
+| `api/api_user_delegate.go`（新） | 3 个 handler：GET/PUT/DELETE 的 `api_get_delegate`/`api_put_delegate`/`api_delete_delegate` |
+| `api/api_order_notify_delegate.go`（新） | `api_order_notify_delegate` handler |
+| `api/logic_email.go` | + `delegatePayInviteTemplate` + `DelegatePayInviteMeta` |
+| `api/route.go` | + 路由注册（3 delegate 路由 + 1 notify 路由）|
+| `api/api_user_delegate_test.go`（新） | 覆盖正常/异常/覆盖语义 |
+| `api/api_order_notify_delegate_test.go`（新） | 覆盖正常/缺 delegate/订单不属于/已付款等 |
+
+**旧代码保持不动**（本 spec 不处理）：
+- `api_get_delegate` / `api_reject_delegate`（旧名，若路径冲突则重命名新 handler）
+- `api_member_add` / `api_member_list` / `api_member_remove`
+- `/account/delegate` 旧前端（将被新版覆盖）
+
+**路由冲突处理**：旧 `GET /api/user/delegate` 和 `DELETE /api/user/delegate` 在 `route.go` 已注册。新 PUT 是纯新增无冲突。GET 和 DELETE 需要决定：
+- A. 把旧 handler 改写（直接替换函数体）
+- B. 新写 handler，替换 route.go 中的函数名指向
+
+推荐 **A**（就地重写），路径不变、语义升级。旧 handler 内部逻辑整体替换。
 
 ## 5. Frontend (`web/`)
 
-### 5.1 `/purchase` 页改动
-在 `web/src/components/PurchaseStep3.tsx` 的 [立即支付] 按钮**下方**加一个次级链接：
+### 5.1 `/purchase` 页改动（`PurchaseStep3.tsx`）
 
-```tsx
-<Button variant="destructive" ...>🚀 立即支付</Button>
+**页面加载时**：调 `GET /api/user/delegate` 拿当前状态，设到本地 state 中。
 
-<div className="text-center mt-2">
-  <Link 
-    href={`/purchase/delegate?order=${orderData?.uuid}`}
-    className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-  >
-    🙋 {t('purchase.delegatePay.entryLink')}
-  </Link>
-</div>
+**空态渲染**：
+```
+主 CTA: [🚀 立即支付]（保持不变）
+---（dashed divider）
+🙋 或请朋友代付
+[ email input ]
+[ 发送代付请求 ] (outline button, indigo)
+小字说明
 ```
 
-**前置条件**：链接要等 `orderData?.uuid` 就绪再显示（避免用户点了跳空页）。现有 `createOrderPreview` 流程已经会在 Step3 拿到 preview order，若 preview 不带 uuid（推测只带金额），需要判断 `orderData?.uuid` 存在才启用链接；否则 disable。
-
-**额外策略**（需前端架构师确认）：是否进入 delegate 页前"确认创建正式订单"（非 preview）？Wordgate checkout session 是在 preview 阶段还是 confirm 阶段生成，会影响这里。
-
-### 5.2 新页 `web/src/app/[locale]/purchase/delegate/page.tsx`
-- Server Component 导出 `generateMetadata`（遵循 web/CLAUDE.md SEO 规则，虽然此页应为 `noindex`——代付页面不应被搜索引擎索引）
-- 内部 `<DelegatePayClient />` 是 client component，读 URL search param `?order=<uuid>`
-- 通过 `api.getOrder(uuid)` 拿订单详情，渲染上下文
-- 若订单不属于当前用户 → 显示错误"此订单不属于你"
-- 若订单已付款 → 显示"订单已支付，无需代付"+ 跳转账户
-- 若当前用户未登录 → 跳到 `/login?next=/purchase/delegate?order=...`
-
-**布局**（L1 · 纵向堆叠）：
-```
-← 返回支付页
-
-标题：找人代付
-
-上下文 Card：
-  请求为 {planName} · {amount} 付款
-  受益人：{currentUserEmail}
-
-Card A · 📧 邮件邀请
-  Input[邮箱] + Button[发送邀请]
-  成功态：显示"✓ 已发送到 x@y.com（可再邀请他人）"
-  失败态：显示错误（getApiErrorMessage）
-
-Card B · 🔗 复制支付链接
-  payUrl（truncate 显示）+ Button[复制]
-  成功态：toast "已复制"
+点 [发送代付请求] 行为：
+```ts
+const onDelegatePayEmpty = async (email: string) => {
+  setLoading(true);
+  try {
+    await api.setDelegate({ email });          // PUT
+    const { order } = await api.createOrder({ plan, campaignCode });
+    await api.notifyDelegate(order.uuid);
+    setDelegateEmail(email);                   // 局部状态，立即变成已设态
+    showConfirmation(email);                   // 跳确认视图或 in-place 提示
+  } catch (e) { showError(e); }
+  finally { setLoading(false); }
+};
 ```
 
-### 5.3 API 客户端（`web/src/lib/api.ts`）
+**已设状态渲染**：
+```
+顶部 chip: 🙋 代付人：alice@example.com  [更改]
+--
+主 CTA: [🙋 请 alice 代付]（indigo primary）
+Secondary: [或自己支付]（灰色 outline）
+```
+
+点 [请 alice 代付] 行为：
+```ts
+const onDelegatePayExisting = async () => {
+  setLoading(true);
+  try {
+    const { order } = await api.createOrder({ plan, campaignCode });
+    await api.notifyDelegate(order.uuid);
+    showConfirmation(delegateEmail);
+  } catch (e) { showError(e); }
+  finally { setLoading(false); }
+};
+```
+
+点 [或自己支付] = 原有 onPurchase 逻辑，不变。
+点 [更改] = 跳 `/account/delegate`。
+
+### 5.2 确认状态（in-page）
+
+替换整个 step3 为：
+```
+📨 已请求 alice@example.com 代付
+我们已发邮件给 alice@example.com，附带支付链接。
+TA 完成付款后你会立刻收到会员时长。
+
+提醒：若 TA 收不到邮件请检查垃圾邮件箱。
+
+[ 重新发送邮件 ]  [ 返回首页 ]
+```
+
+[重新发送邮件] = 再调一次 `notifyDelegate(order.uuid)`（相同订单，允许多次）。
+
+### 5.3 `/account/delegate` 页改动
+
+现有的旧版页（"拒绝代付"）整页替换。新结构：
+
+```
+/account/delegate/page.tsx (Server Component)
+/account/delegate/DelegateClient.tsx (Client Component)
+
+useEffect → api.getDelegate()
+- 若 null → 渲染空态 form（email input + [保存]）
+- 若 {email, setAt} → 渲染已设态（展示 + 修改/移除）
+
+修改 = 显示 input 覆盖展示（或跳 modal）
+移除 = DELETE /api/user/delegate → 回到空态
+保存 = PUT /api/user/delegate → 回到已设态
+```
+
+**? `?returnTo=/purchase` 支持**：若 URL 带 returnTo，保存成功后自动跳该 URL（便于从 purchase "更改"跳来后无缝回流）。
+
+### 5.4 API 客户端（`web/src/lib/api.ts`）
+
 新增：
 ```ts
-async inviteDelegatePay(orderUuid: string, email: string): Promise<{ stubCreated: boolean }> {
-  return this.post(`/api/orders/${orderUuid}/delegate-invite`, { email });
-}
+async getDelegate(): Promise<{ email: string; setAt: number } | null>
+async setDelegate(req: { email: string }): Promise<{ email: string; setAt: number }>
+async removeDelegate(): Promise<void>
+async notifyDelegate(orderUuid: string): Promise<{ delegateEmail: string }>
 ```
 
-### 5.4 i18n keys（7 种语言 × 一份 JSON 文件）
-在 `web/messages/*/purchase.json` 新增 `delegatePay` 命名空间：
+### 5.5 i18n keys（`web/messages/*/purchase.json` + 可能新建 `account.json`）
+
+加到 `purchase` namespace 的 `delegatePay` 命名空间：
 ```json
 {
   "delegatePay": {
-    "entryLink": "自己不方便？找人代付",
-    "pageTitle": "找人代付",
-    "contextLine": "请求为 {planName} · {amount} 付款",
-    "beneficiary": "受益人：{email}",
-    "backToPay": "返回支付页",
-    "sectionEmail": "邮件邀请",
-    "sectionEmailHint": "填写对方邮箱，我们发送支付链接",
-    "emailPlaceholder": "friend@example.com",
-    "sendInvite": "发送邀请",
-    "inviteSent": "已发送到 {email}",
-    "sectionCopy": "复制支付链接",
-    "sectionCopyHint": "通过微信、短信或任何方式分享给对方",
-    "copy": "复制",
-    "copied": "已复制"
+    "inlineTitle": "或请朋友代付",
+    "inlineHint": "我们会把支付链接发给 TA，同时保存为你的代付人，下次付款一键使用。",
+    "emailPlaceholder": "代付人邮箱 friend@example.com",
+    "sendInviteButton": "发送代付请求",
+    "chipLabel": "代付人：{email}",
+    "chipChange": "更改",
+    "primaryCtaWithDelegate": "请 {email} 代付",
+    "secondaryCtaSelfPay": "或自己支付",
+    "confirmationTitle": "已请求 {email} 代付",
+    "confirmationBody": "我们已发邮件给 {email}，附带支付链接。TA 完成付款后你会立刻收到会员时长。",
+    "confirmationSpamHint": "若 TA 收不到邮件请检查垃圾邮件箱。",
+    "confirmationResend": "重新发送邮件",
+    "confirmationResentToast": "已重新发送",
+    "confirmationBackHome": "返回首页",
+    "errorSelfInvite": "不能把自己设为代付人",
+    "errorOrderAlreadyPaid": "订单已支付，无需代付"
   }
 }
 ```
-zh-CN 为源，其它 6 种语言同步翻译。**不要只加 zh-CN**——web/CLAUDE.md 明确要求每个 key 必须在 7 个 locale 都存在。
 
-### 5.5 前端测试
-- `tests/delegate-pay.spec.ts`（Playwright E2E）：登录 → 建订单 → 点 entry link → 跳 delegate 页 → 填邮箱 → 发送 → 看到成功态
-- `delegate/page.test.tsx`（vitest）：非登录用户看到重定向、订单 已付 状态显示正确等
-- 至少一个 snapshot 测试或 DOM 断言覆盖布局
+`account.json` namespace（新命名空间，需在 `namespaces.ts` 注册）：
+```json
+{
+  "delegate": {
+    "pageTitle": "代付人设置",
+    "emptyTitle": "设置代付人",
+    "emptyDescription": "设置后，付款时可一键邀请 TA 代付。",
+    "emptyHint": "保存后不会立刻通知 TA；TA 收到的第一封邮件是你实际付款请求时的支付邀请。",
+    "emailPlaceholder": "friend@example.com",
+    "saveButton": "保存",
+    "currentTitle": "当前代付人",
+    "setAtLabel": "于 {date} 设置",
+    "modifyButton": "修改",
+    "removeButton": "移除代付人",
+    "removeConfirm": "确认移除？你的付款将不再有预设代付人。",
+    "currentHint": "付款时可选择「请 {email} 代付」，我们会发邮件给 TA。"
+  }
+}
+```
 
-## 6. 边界情况 & 错误处理
+7 个 locale 全加。zh-CN 源，其它 AI 翻译。
+
+### 5.6 前端测试
+
+- `PurchaseStep3.test.tsx`（vitest）：
+  - 无 delegate → 渲染内联 input + [发送代付请求]
+  - 有 delegate → 渲染 chip + 主次 CTA
+  - 点 [发送代付请求] → 调用 setDelegate + createOrder + notifyDelegate 三个 API
+- `account/delegate/DelegateClient.test.tsx`：
+  - 空态 form 正确渲染 + 保存
+  - 已设态展示 + 移除
+- Playwright `tests/delegate-pay.spec.ts`：端到端
+  - 登录 → purchase 无 delegate → 内联填邮箱 → 发送 → 看到确认态
+  - 登录 → /account/delegate → 设置 → 跳 purchase → 看到 chip 和请 X 代付按钮
+
+## 6. 边界情况
 
 | 场景 | 行为 |
 |---|---|
-| 邀请邮箱已是 Kaitu 用户 | 不建 stub，仍发邮件。收件人看到 pay_url，可以登录后付款（若愿）或免登录直接付 Wordgate |
-| 邀请邮箱已是**代付人专用 stub**（之前别人也邀请过） | 幂等：不建新 stub，发邮件 |
-| 重复邀请同一邮箱（同一订单） | 允许，不去重——每次都会新发邮件；Alice 收到 2 封不影响付款（仍然是同一 payUrl） |
-| 邀请邮箱是当前用户自己 | 422 "不能邀请自己" |
-| 订单已付款 | 422 "订单已支付，无需代付邀请" |
-| 订单不属于当前用户 | 403 |
-| 订单 uuid 格式不存在 | 404 |
-| 邮件发送失败（SMTP 异常） | Stub 创建不回滚（已生效的业务），但接口返回 500，前端提示"邀请邮件发送失败，请稍后重试或直接复制链接发送" |
-| Wordgate payUrl 已过期 | 前端检测（或后端），提示"订单已过期，请回到支付页重新创建" |
+| 设置邮箱等于自己 | 422 "不能把自己设为代付人" |
+| 设置邮箱格式非法 | 422（gin binding 自带）|
+| 设置邮箱已是 Kaitu 用户 | 不建 stub，指向已有 user.id |
+| 设置邮箱已是别人的 delegate stub | 共享同一 stub 记录，两个用户指向同一 delegate_id 正常（该 stub 是"收邮件的占位") |
+| 覆盖 delegate_id | 直接改，旧 delegate_id 不清理（stub 可能仍被别人引用）|
+| 移除后立刻再设置 | 正常工作 |
+| 订单已付款时调 notify-delegate | 422 |
+| 订单属于别人 | 403 |
+| 未设 delegate 时调 notify-delegate | 422 "未设代付人" |
+| Stub 邮箱后来注册真实账号 | 自然融合（login_identifies 唯一约束，首次 OTP 登录即认领）|
+| 同订单多次调用 notify-delegate | 允许（即支持前端"重新发送邮件"）|
 
 ## 7. 对现存代码的影响
 
-### 保持不动
-- `api_member_add` / `api_member_list` / `api_member_remove`（旧父账号模式 CRUD）
-- `api_get_delegate` / `api_reject_delegate`（旧"拒绝被代付"端点）
-- `user.delegate_id` 字段（数据库中仍有数据，只是不在新流程中产生）
-- `/account/delegate` 旧管理页（继续服务已有父账号用户）
+### 替换
+- `GET /api/user/delegate` 和 `DELETE /api/user/delegate`：handler 整体重写为新语义（就地替换）
+- `/account/delegate` 前端页整体替换
 
-### 新代码不复用旧 `delegate_id`
-旧 `delegate_id` 语义 = "我被谁代付"，是父子绑定。新代付模式下 Alice 付了 Bob 的某单 ≠ Alice 要代 Bob 未来所有订单——不应绑定。所以新 stub 用户的 `delegate_id` 保持 NULL。
+### 保持不动（单独 ticket）
+- `api_member_add` / `api_member_list` / `api_member_remove`
+- `/api/user/members` 系列端点
+- `user.delegate_id` 字段上已有的历史数据（Novus Academy 等集团账号）
+- 旧的 `memberAddedTemplate` 邮件模板
 
-### 后续清理（不在本 spec 内）
-- 整理 `/api/user/members` 等孤立端点，考虑标记 deprecated 或迁移到新模型
-- 清理 21 个已删除的"壳代付关系"（之前 anc-000 的 182 个已清理）
-- 评估 Novus Academy 集团账号的特殊同步机制是否保留
+### 新代码的字段使用
+- 新模型复用 `user.delegate_id` 字段（就是覆盖它）
+- 不引入新字段、新表
+- Stub 用户仍然是 `User{UUID, ExpiredAt:0}` + `LoginIdentify{Type,IndexID,EncryptedValue}`，与 member_add 同构
 
-## 8. 开放问题（实现期确认）
+## 8. Out of Scope（单独 ticket）
 
-1. **Wordgate payUrl 是否已持久化在 order 上**？若未持久化需在 create_order 时存进 `meta`
-2. **Wordgate Checkout Session 的实际过期时间**？（影响 7.5 条边界提示）
-3. **`emailTo` 是否支持按收件人语言切换模板**？若不支持则 v1 接受中文硬编码
-4. **delegate 页是否应设置 `robots: noindex`**？（几乎肯定 yes，遵循 web/CLAUDE.md "No public pages without SEO metadata"——但该页是交易页不是公开页）
-5. **前端创建订单的时机**：next-intl 下 purchase preview → confirm 的具体时机是否在点"找人代付"时触发 `api.createOrder`（非 preview）以拿到 payUrl？需对照 PurchaseClient.tsx 现有 onPurchase 分支梳理
-
-## 9. Out of Scope（本次不做，单独 ticket）
-
-- 英文/其他 6 语言邮件模板
-- "我发起的代付"管理 UI
-- 代付人激活账号的软转化（邮件里加"创建账号领 3 天会员"）
+- 英文及其它 5 语言邮件模板
+- 清理旧 `api_member_*` 端点和 `/api/user/members` 路由
+- 清理 21 个历史"壳代付关系"（之前 5056 的 182 已清）
+- 企业批量授权同步机制（Novus Academy）
+- 代付人"我代付过谁"的个人后台
 - 代付数据大盘（转化率 / 成功率）
-- 清理旧 delegate_id 孤儿关系
-- 企业批量授权（Novus Academy 那种 9 人同步过期的机制）
+- 设置代付人时的通知邮件（决定不做；若后续产品侧要求可加）
+- 一次性代付（不覆盖 delegate_id，只本次使用）——如果发现有需求再做
 
-## 10. 变更清单（用于 PR 拆分参考）
+## 9. 变更清单（PR 拆分参考）
 
-后端：
-- `api/api_delegate_pay.go`（新）
-- `api/logic_email.go`（+ 模板 `delegatePayInviteTemplate` 与 `DelegatePayInviteMeta`）
-- `api/route.go`（+ 1 行路由）
-- `api/api_delegate_pay_test.go`（新）
+后端（1 PR）：
+- `api/api_user_delegate.go`（新）
+- `api/api_order_notify_delegate.go`（新）
+- `api/logic_email.go`（+ 模板）
+- `api/route.go`（+ 路由）
+- `api/api_user_delegate_test.go`（新）
+- `api/api_order_notify_delegate_test.go`（新）
 
-前端：
-- `web/src/components/PurchaseStep3.tsx`（+ 次级链接）
-- `web/src/app/[locale]/purchase/delegate/page.tsx`（新 Server Component）
-- `web/src/app/[locale]/purchase/delegate/DelegatePayClient.tsx`（新 Client Component）
-- `web/src/lib/api.ts`（+ `inviteDelegatePay`）
-- `web/src/lib/api-errors.ts`（若引入新 error code 需映射）
-- `web/messages/{7 locales}/purchase.json`（+ `delegatePay` 命名空间）
+前端（1 PR）：
+- `web/src/components/PurchaseStep3.tsx`（改）
+- `web/src/app/[locale]/purchase/PurchaseClient.tsx`（改，加载 delegate 状态 + 新流程）
+- `web/src/app/[locale]/account/delegate/page.tsx`（覆盖旧）
+- `web/src/app/[locale]/account/delegate/DelegateClient.tsx`（新 / 覆盖旧）
+- `web/src/lib/api.ts`（+ 4 个方法）
+- `web/messages/{7 locales}/purchase.json`（+ delegatePay）
+- `web/messages/{7 locales}/account.json`（新 namespace）
+- `web/messages/namespaces.ts`（注册 account namespace）
+- `web/src/components/PurchaseStep3.test.tsx`（vitest 新增覆盖）
+- `web/src/app/[locale]/account/delegate/DelegateClient.test.tsx`（vitest 新增）
 - `web/tests/delegate-pay.spec.ts`（Playwright E2E）
-- `web/src/app/[locale]/purchase/delegate/page.test.tsx`（vitest）
 
 其它：
-- 无 schema 变更
-- 无 migration
+- 无 schema 迁移
 - 无 config / env 新增
+- 无审批流程新增
