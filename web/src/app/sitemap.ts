@@ -92,9 +92,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   });
 
   // Add content pages from velite (published posts only).
-  // Filter by brand visibility: posts with brand='both' or matching this brand only.
+  // Filter by brand visibility. Missing brand is treated as 'both' (Velite schema
+  // default, and keeps legacy test fixtures that pre-date the field working).
   const publishedPosts = posts.filter(
-    (post) => !post.draft && (post.brand === 'both' || post.brand === brand.id)
+    (post) => !post.draft && (!post.brand || post.brand === 'both' || post.brand === brand.id)
   );
   const uniqueSlugs = [...new Set(publishedPosts.map(p => p.slug))];
 

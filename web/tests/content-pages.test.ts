@@ -76,6 +76,12 @@ vi.mock('payload', () => ({
   }),
 }));
 
+// Mock brand-server (sitemap is host-aware; tests assert on kaitu.io baseUrl).
+vi.mock('@/lib/brand-server', async () => {
+  const actual = await vi.importActual<typeof import('../src/lib/brands')>('../src/lib/brands');
+  return { getBrand: async () => actual.KAITU };
+});
+
 describe('test_sitemap_includes_content', () => {
   it('sitemap includes content page URLs for published posts', async () => {
     // Dynamically import after mocks are set up
