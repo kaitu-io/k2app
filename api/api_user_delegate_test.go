@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,4 +64,75 @@ func TestGetDelegate_Set_DBQuery(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "alice@example.com", li.EncryptedValue)
 	assert.NoError(t, m.Mock.ExpectationsWereMet())
+}
+
+func TestPutDelegate_NotLoggedIn(t *testing.T) {
+	SetupMockDB(t)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.PUT("/api/user/delegate", func(c *gin.Context) {
+		// No authContext set
+		api_put_delegate(c)
+	})
+
+	body := strings.NewReader(`{"email":"alice@example.com"}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/user/delegate", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorNotLogin), resp.Code)
+}
+
+func TestPutDelegate_InvalidEmail(t *testing.T) {
+	SetupMockDB(t)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.PUT("/api/user/delegate", func(c *gin.Context) {
+		c.Set("authContext", &authContext{UserID: 42, User: &User{ID: 42}})
+		api_put_delegate(c)
+	})
+
+	body := strings.NewReader(`{"email":"not-an-email"}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/user/delegate", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
+}
+
+func TestPutDelegate_EmptyBody(t *testing.T) {
+	SetupMockDB(t)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.PUT("/api/user/delegate", func(c *gin.Context) {
+		c.Set("authContext", &authContext{UserID: 42, User: &User{ID: 42}})
+		api_put_delegate(c)
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "/api/user/delegate", nil)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
 }
