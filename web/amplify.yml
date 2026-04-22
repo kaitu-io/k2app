@@ -12,7 +12,15 @@ applications:
             - yarn install
         build:
           commands:
-            # Payload migrations skipped — postgres adapter uses push: true for auto schema sync.
+            # Payload schema is managed via explicit migrations in src/migrations/.
+            # `push: true` does NOT auto-sync at runtime in serverless — that assumption
+            # caused a prod outage where /manager/cms returned blank pages because the
+            # admins table was never created. Run migrations manually after merging
+            # schema changes:
+            #   cd web && PAYLOAD_SECRET=<...> DATABASE_URL=<prod> yarn payload migrate
+            # Build does not invoke `payload migrate` here because the
+            # @payload-enchants/translator package has an ESM dir-import bug that crashes
+            # the payload CLI on Node 22 (works inside Next.js bundler — only raw CLI fails).
             # Required env vars (set via Amplify console):
             #   DATABASE_URL, PAYLOAD_SECRET,
             #   TRANSLATOR_API_KEY, TRANSLATOR_BASE_URL, TRANSLATOR_MODEL,
