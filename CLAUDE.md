@@ -1,6 +1,6 @@
 # k2app — Kaitu VPN Client
 
-Tauri v2 desktop + Capacitor 6 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management.
+Tauri v2 desktop + Capacitor 7 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management.
 
 This file is an **index**. Per-layer details live in each directory's `CLAUDE.md`.
 
@@ -34,7 +34,7 @@ web/                 Next.js website + admin dashboard
 api/                 Center API service — Go + Gin + GORM
   cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
 desktop/             Tauri v2 Rust shell (macOS + Windows)
-mobile/              Capacitor 6 mobile app
+mobile/              Capacitor 7 mobile app
 mobile/plugins/      K2Plugin (Swift + Kotlin) — native VPN bridge
 tools/kaitu-center/  MCP server (Claude Code) + OpenClaw plugin
 tools/kaitu-mail/    OpenClaw email plugin (himalaya CLI, per-account IMAP)
@@ -54,7 +54,7 @@ docs/plans/          Architecture design docs
 - Desktop: Tauri v2, Rust
 - Core: Go (k2 submodule)
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
-- Mobile: Capacitor 6, gomobile bind (K2Plugin Swift/Kotlin)
+- Mobile: Capacitor 7, gomobile bind (K2Plugin Swift/Kotlin), `@capawesome/capacitor-android-edge-to-edge-support` for Android 15 edge-to-edge
 - Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock; `tools/kaitu-center` uses npm
 - CI: GitHub Actions (`ci.yml`, `release-desktop.yml`, `build-mobile.yml`, `release-openwrt.yml`, `publish-antiblock.yml`, `release-k2s.yml`)
 
