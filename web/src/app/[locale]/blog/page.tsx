@@ -12,7 +12,6 @@ type BlogListItem = {
   slug: string
   title: string
   excerpt?: string
-  brand?: string | null
 }
 
 type Props = {
@@ -25,22 +24,23 @@ export default async function BlogIndexPage({ params }: Props) {
 
   const brand = await getBrand()
 
+  const visibilityField = brand.id === 'kaitu' ? 'showOnKaitu' : 'showOnOverleap'
   const payload = await getPayload({ config })
   const { docs } = await payload.find({
     collection: 'posts',
     locale: locale as (typeof routing.locales)[number],
-    where: { status: { equals: 'published' } },
+    where: {
+      and: [
+        { status: { equals: 'published' } },
+        { [visibilityField]: { equals: true } },
+      ],
+    },
     sort: '-publishedAt',
     limit: 50,
     depth: 1,
     overrideAccess: true,
   })
-
-  // Filter by brand visibility. Payload schema may not carry a `brand` field yet
-  // (Phase 2 work); when absent, treat as visible on all hosts.
-  const posts = (docs as unknown as BlogListItem[]).filter(
-    (p) => !p.brand || p.brand === 'both' || p.brand === brand.id,
-  )
+  const posts = docs as unknown as BlogListItem[]
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">

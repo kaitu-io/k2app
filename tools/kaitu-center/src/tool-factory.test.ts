@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
-import { defineApiTool, fetchPermissions } from './tool-factory.ts'
+import { defineApiTool, defineRestApiTool, fetchPermissions } from './tool-factory.ts'
 import type { CenterApiClient } from './center-api.ts'
 
 vi.mock('./audit.ts', () => ({
@@ -21,6 +21,11 @@ function createMockApiClient(response: unknown = { code: 0, data: {} }) {
   return {
     request: vi.fn().mockResolvedValue(response),
   } as unknown as CenterApiClient
+}
+
+/** Helper: wrap a single mock client as the Center half of ApiClients. */
+function asCenterClients(center: CenterApiClient) {
+  return { center, cms: { request: vi.fn() } as unknown as CenterApiClient }
 }
 
 describe('defineApiTool', () => {
@@ -47,7 +52,7 @@ describe('defineApiTool', () => {
       path: '/api/items',
     })
 
-    reg.register(server as any, apiClient)
+    reg.register(server as any, asCenterClients(apiClient))
 
     expect(server.tool).toHaveBeenCalledWith(
       'my_tool',
@@ -69,7 +74,7 @@ describe('defineApiTool', () => {
         path: '/api/items',
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       await server._tools['list_items'].handler({ page: '2', status: undefined })
 
       const calledPath = (apiClient.request as any).mock.calls[0][0] as string
@@ -88,7 +93,7 @@ describe('defineApiTool', () => {
         path: '/api/search',
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       await server._tools['search'].handler({ q: 'hello', limit: '10' })
 
       const calledPath = (apiClient.request as any).mock.calls[0][0] as string
@@ -107,7 +112,7 @@ describe('defineApiTool', () => {
         path: (p) => `/api/items/${p.id}`,
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       await server._tools['get_item'].handler({ id: '42', fields: 'name,price' })
 
       const calledPath = (apiClient.request as any).mock.calls[0][0] as string
@@ -128,7 +133,7 @@ describe('defineApiTool', () => {
         mapQuery: (params) => ({ q: String(params.keyword), source: 'mcp' }),
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       await server._tools['custom_query'].handler({ keyword: 'test' })
 
       const calledPath = (apiClient.request as any).mock.calls[0][0] as string
@@ -151,7 +156,7 @@ describe('defineApiTool', () => {
         path: '/api/items',
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       await server._tools['create_item'].handler({ name: 'Widget', price: 9.99 })
 
       expect(apiClient.request).toHaveBeenCalledWith('/api/items', {
@@ -173,7 +178,7 @@ describe('defineApiTool', () => {
         mapBody: (params) => ({ user_id: params.user, role_name: params.role }),
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       await server._tools['custom_body'].handler({ user: 'u1', role: 'admin' })
 
       expect(apiClient.request).toHaveBeenCalledWith('/api/assign', {
@@ -196,7 +201,7 @@ describe('defineApiTool', () => {
         path: (p) => `/api/items/${p.id}`,
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       await server._tools['update_item'].handler({ id: '7', name: 'Gadget', price: 19.99 })
 
       expect(apiClient.request).toHaveBeenCalledWith('/api/items/7', {
@@ -219,7 +224,7 @@ describe('defineApiTool', () => {
         path: (p) => `/api/items/${p.id}`,
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       await server._tools['delete_item'].handler({ id: '99' })
 
       expect(apiClient.request).toHaveBeenCalledWith('/api/items/99', {
@@ -239,7 +244,7 @@ describe('defineApiTool', () => {
         path: (p) => `/api/items/${p.id}`,
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       await server._tools['delete_with_reason'].handler({ id: '99', reason: 'obsolete' })
 
       expect(apiClient.request).toHaveBeenCalledWith('/api/items/99', {
@@ -260,7 +265,7 @@ describe('defineApiTool', () => {
         path: '/api/missing',
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       const result = await server._tools['fail_tool'].handler({})
 
       expect(result.content[0].text).toBe(JSON.stringify({ error: 'Not found', code: 1001 }))
@@ -278,7 +283,7 @@ describe('defineApiTool', () => {
         path: '/api/boom',
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       const result = await server._tools['crash_tool'].handler({})
 
       expect(result.content[0].text).toBe(JSON.stringify({ error: 'Network timeout' }))
@@ -296,7 +301,7 @@ describe('defineApiTool', () => {
         path: '/api/oops',
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       const result = await server._tools['string_err'].handler({})
 
       expect(result.content[0].text).toBe(JSON.stringify({ error: 'string error' }))
@@ -315,7 +320,7 @@ describe('defineApiTool', () => {
         path: '/api/users',
       })
 
-      reg.register(server as any, apiClient)
+      reg.register(server as any, asCenterClients(apiClient))
       const result = await server._tools['list_users'].handler({})
 
       expect(result.content[0].text).toBe(JSON.stringify(data, null, 2))
@@ -368,5 +373,149 @@ describe('fetchPermissions', () => {
     const perms = await fetchPermissions(apiClient)
 
     expect(perms).toEqual({ isAdmin: false, roles: 0, groups: [] })
+  })
+})
+
+describe('defineRestApiTool', () => {
+  function makeRejectingClient(err: Error) {
+    return {
+      request: vi.fn().mockRejectedValue(err),
+    } as unknown as CenterApiClient
+  }
+
+  it('uses cms client and returns raw body verbatim (no unwrap)', async () => {
+    const cms = createMockApiClient({ docs: [{ id: 1 }], totalDocs: 1 })
+    // Center must NOT be called for REST tools.
+    const center = createMockApiClient({ code: 0, data: null })
+    const server = createMockServer()
+    const reg = defineRestApiTool({
+      name: 'probe_rest',
+      description: 'test',
+      group: 'cms',
+      path: '/payload/api/posts',
+    })
+
+    reg.register(server as any, { center, cms })
+    const result = await server._tools['probe_rest'].handler({})
+
+    expect(cms.request).toHaveBeenCalledOnce()
+    expect(center.request).not.toHaveBeenCalled()
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed).toEqual({ docs: [{ id: 1 }], totalDocs: 1 })
+  })
+
+  it('surfaces thrown errors (HTTP 4xx) as error text', async () => {
+    const cms = makeRejectingClient(
+      new Error('POST /payload/api/posts → HTTP 400: Missing required field: title'),
+    )
+    const center = createMockApiClient({ code: 0, data: null })
+    const server = createMockServer()
+    const reg = defineRestApiTool({
+      name: 'probe_rest_err',
+      description: 'test',
+      group: 'cms',
+      method: 'POST',
+      path: '/payload/api/posts',
+    })
+
+    reg.register(server as any, { center, cms })
+    const result = await server._tools['probe_rest_err'].handler({})
+
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.error).toContain('Missing required field: title')
+  })
+
+  it('builds query string from non-path params (GET)', async () => {
+    const cms = createMockApiClient({ docs: [] })
+    const center = createMockApiClient({ code: 0, data: null })
+    const server = createMockServer()
+    const reg = defineRestApiTool({
+      name: 'probe_rest_qs',
+      description: 'test',
+      group: 'cms',
+      params: { locale: z.string(), limit: z.number() },
+      path: '/payload/api/posts',
+    })
+
+    reg.register(server as any, { center, cms })
+    await server._tools['probe_rest_qs'].handler({ locale: 'zh-CN', limit: 5 })
+
+    const calledPath = (cms.request as any).mock.calls[0][0] as string
+    expect(calledPath).toContain('/payload/api/posts?')
+    expect(calledPath).toContain('locale=zh-CN')
+    expect(calledPath).toContain('limit=5')
+  })
+
+  it('supports PATCH method with dynamic path + body', async () => {
+    const cms = createMockApiClient({ id: 7, title: 'updated' })
+    const center = createMockApiClient({ code: 0, data: null })
+    const server = createMockServer()
+    const reg = defineRestApiTool({
+      name: 'probe_rest_patch',
+      description: 'test',
+      group: 'cms',
+      params: { id: z.string(), title: z.string() },
+      method: 'PATCH',
+      path: (p) => `/payload/api/posts/${p.id}`,
+    })
+
+    reg.register(server as any, { center, cms })
+    await server._tools['probe_rest_patch'].handler({ id: '7', title: 'updated' })
+
+    expect(cms.request).toHaveBeenCalledWith('/payload/api/posts/7', {
+      method: 'PATCH',
+      body: JSON.stringify({ title: 'updated' }),
+    })
+  })
+
+  it('exposes name and group on the registration', () => {
+    const reg = defineRestApiTool({
+      name: 'probe_rest_meta',
+      description: 'test',
+      group: 'cms.write',
+      path: '/payload/api/posts',
+    })
+    expect(reg.name).toBe('probe_rest_meta')
+    expect(reg.group).toBe('cms.write')
+    expect(typeof reg.register).toBe('function')
+  })
+})
+
+// Spot-check defineApiTool's envelope unwrap still works once ApiClients
+// replaces the bare apiClient arg.
+describe('defineApiTool (Center envelope) still works after ApiClients refactor', () => {
+  it('unwraps data when code is 0', async () => {
+    const center = createMockApiClient({ code: 0, data: { list: [1, 2, 3] } })
+    const cms = { request: vi.fn() } as unknown as CenterApiClient
+    const server = createMockServer()
+    const reg = defineApiTool({
+      name: 'probe_center_ok',
+      description: 'test',
+      group: 'any',
+      path: '/ping',
+    })
+
+    reg.register(server as any, { center, cms })
+    const result = await server._tools['probe_center_ok'].handler({})
+
+    expect(JSON.parse(result.content[0].text)).toEqual({ list: [1, 2, 3] })
+    expect((cms.request as any)).not.toHaveBeenCalled()
+  })
+
+  it('returns {error, code} when code is non-zero', async () => {
+    const center = createMockApiClient({ code: 403, message: 'forbidden' })
+    const cms = { request: vi.fn() } as unknown as CenterApiClient
+    const server = createMockServer()
+    const reg = defineApiTool({
+      name: 'probe_center_err',
+      description: 'test',
+      group: 'any',
+      path: '/x',
+    })
+
+    reg.register(server as any, { center, cms })
+    const result = await server._tools['probe_center_err'].handler({})
+
+    expect(JSON.parse(result.content[0].text)).toEqual({ error: 'forbidden', code: 403 })
   })
 })

@@ -17,8 +17,8 @@ type BlogPost = {
   excerpt?: string
   publishedAt?: string
   content: SerializedEditorState
-  brand?: string | null
-  canonicalBrand?: string | null
+  showOnKaitu: boolean
+  showOnOverleap: boolean
 }
 
 type Props = {
@@ -43,17 +43,16 @@ async function fetchPost(locale: string, slug: string): Promise<BlogPost | null>
   return (docs[0] as unknown as BlogPost) ?? null
 }
 
-// Determine which brand's base URL should own the canonical link for a post.
-// Rules: explicit `canonicalBrand` wins; otherwise single-brand posts canonical
-// to that brand; 'both' (or missing) defaults by locale — en-* → overleap, else kaitu.
+// Single-brand posts canonical to that brand; visible-on-both posts fall back
+// by locale — en-* → overleap, else kaitu.
 function resolveCanonicalBrand(
   locale: string,
-  postBrand: string | null | undefined,
-  canonicalBrand: string | null | undefined,
+  showOnKaitu: boolean,
+  showOnOverleap: boolean,
 ): BrandId {
-  if (canonicalBrand === 'kaitu' || canonicalBrand === 'overleap') return canonicalBrand;
-  if (postBrand === 'kaitu' || postBrand === 'overleap') return postBrand;
-  return locale.startsWith('en-') ? 'overleap' : 'kaitu';
+  if (showOnKaitu && !showOnOverleap) return 'kaitu'
+  if (showOnOverleap && !showOnKaitu) return 'overleap'
+  return locale.startsWith('en-') ? 'overleap' : 'kaitu'
 }
 
 export default async function BlogDetailPage({ params }: Props) {
@@ -64,10 +63,9 @@ export default async function BlogDetailPage({ params }: Props) {
   const post = await fetchPost(locale, slug)
   if (!post) notFound()
 
-  // Respect brand visibility: if this post is pinned to a different brand, 404 on this host.
-  if (post.brand && post.brand !== 'both' && post.brand !== currentBrand.id) {
-    notFound()
-  }
+  // Respect brand visibility: 404 on this host if the post isn't visible here.
+  const visible = currentBrand.id === 'kaitu' ? post.showOnKaitu : post.showOnOverleap
+  if (!visible) notFound()
 
   return (
     <article className="prose dark:prose-invert mx-auto max-w-3xl px-4 py-12">
@@ -88,7 +86,7 @@ export async function generateMetadata({ params }: Props) {
   if (!post) return {}
 
   const currentBrand = await getBrand()
-  const canonicalBrandId = resolveCanonicalBrand(locale, post.brand, post.canonicalBrand)
+  const canonicalBrandId = resolveCanonicalBrand(locale, post.showOnKaitu, post.showOnOverleap)
   const canonicalUrl = `${brandById(canonicalBrandId).baseUrl}/${locale}/blog/${post.slug}`
 
   return {

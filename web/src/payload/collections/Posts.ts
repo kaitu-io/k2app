@@ -57,6 +57,31 @@ export const Posts: CollectionConfig = {
       custom: { translatorSkip: true },
     },
     {
+      name: 'showOnKaitu',
+      type: 'checkbox',
+      defaultValue: true,
+      required: true,
+      custom: { translatorSkip: true },
+      admin: { description: '显示在 Kaitu 品牌站（kaitu.io）' },
+    },
+    {
+      name: 'showOnOverleap',
+      type: 'checkbox',
+      defaultValue: true,
+      required: true,
+      custom: { translatorSkip: true },
+      admin: { description: '显示在 Overleap 品牌站（overleap.*）' },
+      validate: (value: unknown, { siblingData }: { siblingData: Record<string, unknown> }) => {
+        const overleap = Boolean(value)
+        const kaitu = Boolean(siblingData?.showOnKaitu)
+        const published = siblingData?.status === 'published'
+        if (published && !overleap && !kaitu) {
+          return '发布状态下至少需要勾选一个品牌站点；如要全部隐藏请改为 draft'
+        }
+        return true
+      },
+    },
+    {
       name: 'publishedAt',
       type: 'date',
       custom: { translatorSkip: true },
