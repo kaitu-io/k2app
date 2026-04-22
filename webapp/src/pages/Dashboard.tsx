@@ -12,6 +12,9 @@ import {
   ListItemText,
   Radio,
   useTheme,
+  alpha,
+  Alert,
+  Snackbar,
 } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
@@ -29,8 +32,9 @@ import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
+import { AlwaysOnToggle } from '../components/AlwaysOnToggle';
 import { useDashboard } from '../stores/dashboard.store';
-import { CloudTunnelList } from '../components/CloudTunnelList';
+import { CloudTunnelList, type CloudTunnelListHandle } from '../components/CloudTunnelList';
 import { getFlagIcon } from '../utils/country';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { cacheStore } from '../services/cache-store';
@@ -84,35 +88,24 @@ export default function Dashboard() {
     activeTunnel,
     connectedTunnel,
     serverMode,
-    smartCountry,
     selectSelfHosted,
+    selectCloudTunnel,
     connect,
     disconnect,
     enrichFromTunnelList,
   } = useConnectionStore();
 
-  // Cloud tunnels for SmartServerSelector
+  // Cloud tunnels — used for Task 15 auto-select on smart→manual migration.
   const [cloudTunnels, setCloudTunnels] = useState<Tunnel[]>([]);
 
-  // Display tunnel: connected snapshot → manual/self-hosted selection → smart mode synthetic
-  const smartDisplayTunnel = useMemo(() => {
-    if (serverMode !== 'smart') return null;
-    const label = smartCountry
-      ? `${t('dashboard:serverSelector.tabSmart')} · ${smartCountry.toUpperCase()}`
-      : t('dashboard:serverSelector.tabSmart');
-    return { source: 'cloud' as const, domain: 'subs', name: label, country: smartCountry ?? '', serverUrl: '' };
-  }, [serverMode, smartCountry, t]);
-
-  // serverMode is the single source of truth for which display to show
-  const displayTunnel = connectedTunnel
-    ?? (serverMode === 'smart' ? smartDisplayTunnel : activeTunnel);
+  // Display tunnel: connected snapshot → manual/self-hosted selection
+  const displayTunnel = connectedTunnel ?? activeTunnel;
 
   // Cold start / warm start enrichment: when connectedTunnel has domain but no country,
   // try to enrich from cached tunnel list immediately (covers warm start where
   // CloudTunnelList already loaded and won't re-fire onTunnelsLoaded)
   useEffect(() => {
-    // Skip synthetic smart-mode tunnel (domain='subs') — no real tunnel to enrich from.
-    if (connectedTunnel?.source === 'cloud' && !connectedTunnel.country && connectedTunnel.domain !== 'subs') {
+    if (connectedTunnel?.source === 'cloud' && !connectedTunnel.country) {
       const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
       if (cached?.items) {
         enrichFromTunnelList(cached.items);
@@ -198,6 +191,30 @@ export default function Dashboard() {
     enrichFromTunnelList(tunnels);
   }, [enrichFromTunnelList]);
 
+  // Migration aid: users whose persisted serverMode was 'smart' land on
+  // 'manual' without a selectedCloudTunnel — auto-select the first sorted
+  // tunnel so they can connect immediately without re-picking. Ordering
+  // matches CloudTunnelList (country-alphabetical) so the chosen tunnel is
+  // visually the top row of the list.
+  const serverModeLoaded = useConnectionStore((s) => s.serverModeLoaded);
+  const selectedCloudTunnel = useConnectionStore((s) => s.selectedCloudTunnel);
+
+  useEffect(() => {
+    if (!serverModeLoaded) return;
+    if (serverMode !== 'manual') return;
+    if (selectedCloudTunnel) return;
+    if (cloudTunnels.length === 0) return;
+
+    const sorted = [...cloudTunnels].sort((a, b) =>
+      a.node.country.localeCompare(b.node.country)
+    );
+    const first = sorted[0];
+    if (first) {
+      console.info('[Dashboard] auto-select first tunnel for migrating user:', first.domain);
+      selectCloudTunnel(first);
+    }
+  }, [serverModeLoaded, serverMode, selectedCloudTunnel, cloudTunnels, selectCloudTunnel]);
+
   // Stable onSelect for CloudTunnelList — reads activeTunnel at call time, no dep churn
   const handleCloudTunnelSelect = useCallback((tunnel: Tunnel) => {
     useConnectionStore.getState().selectCloudTunnel(tunnel);
@@ -206,9 +223,33 @@ export default function Dashboard() {
   // CloudTunnelList selectedDomain — derived from activeTunnel
   const manualSelectedDomain = activeTunnel?.source === 'cloud' ? activeTunnel.domain : null;
 
+  // Manual refresh wiring: the refresh button lives in SmartServerSelector's
+  // tab row, but CloudTunnelList owns the fetch. We pipe the click through
+  // a ref + force-fresh so the button's spinner reflects a real network
+  // round-trip, and surface failures via a transient Snackbar rather than
+  // letting them bubble up as alarming inline errors.
+  const cloudTunnelListRef = useRef<CloudTunnelListHandle>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [refreshFailSnack, setRefreshFailSnack] = useState(false);
+
+  const handleManualRefresh = useCallback(async () => {
+    if (manualRefreshing) return;
+    setManualRefreshing(true);
+    setRefreshFailSnack(false);
+    try {
+      await cloudTunnelListRef.current?.refresh({ force: true });
+    } catch (err) {
+      console.warn('[Dashboard] manual refresh failed:', err);
+      setRefreshFailSnack(true);
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [manualRefreshing]);
+
   // Manual (指定服务器) tab content — always mounted via SmartServerSelector display toggle
   const manualTabContent = (
     <CloudTunnelList
+      ref={cloudTunnelListRef}
       selectedDomain={manualSelectedDomain}
       onSelect={handleCloudTunnelSelect}
       disabled={isInteractive}
@@ -379,12 +420,41 @@ export default function Dashboard() {
         {/* SmartServerSelector — all tab panels always mounted (display toggle).
              The CloudTunnelList in manualTabContent stays mounted even when on smart tab,
              so it populates cloudTunnels via onTunnelsLoaded on initial load. */}
+        {isAuthenticated && isConnected && (
+          <Box sx={{
+            bgcolor: alpha(theme.palette.success.main, 0.08),
+            border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`,
+            borderRadius: 1.5,
+            px: 2,
+            py: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            mx: 2,
+            mb: 1,
+          }}>
+            <Typography variant="caption" color="text.secondary">
+              {t('dashboard:dashboard.connectedBannerHint')}
+            </Typography>
+            <Button
+              size="small"
+              variant="text"
+              color="error"
+              onClick={disconnect}
+              sx={{ ml: 1, flexShrink: 0 }}
+            >
+              {t('dashboard:dashboard.disconnectBannerBtn')}
+            </Button>
+          </Box>
+        )}
+
         {isAuthenticated && (
           <SmartServerSelector
-            tunnels={cloudTunnels}
             isInteractive={!isInteractive}
             manualContent={manualTabContent}
             selfHostedContent={selfHostedTabContent}
+            onManualRefresh={() => { void handleManualRefresh(); }}
+            manualRefreshing={manualRefreshing}
           />
         )}
 
@@ -544,6 +614,11 @@ export default function Dashboard() {
               </Typography>
             )}
 
+            {/* iOS-only: NEOnDemandRuleConnect toggle (ANC-13) */}
+            {typeof window !== 'undefined' && window._platform?.os === 'ios' && (
+              <AlwaysOnToggle />
+            )}
+
             {/* Routing mode + country selection */}
             {proxyRuleConfig.visible && (
               <RoutingModeSelector />
@@ -554,6 +629,24 @@ export default function Dashboard() {
       </Box>
 
       <DisconnectFeedbackDialog />
+
+      {/* Manual-refresh failure toast — warning (not error) tone, auto-dismiss,
+          so a transient network blip doesn't read as an app-wide outage. */}
+      <Snackbar
+        open={refreshFailSnack}
+        autoHideDuration={4000}
+        onClose={() => setRefreshFailSnack(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert
+          severity="warning"
+          variant="filled"
+          onClose={() => setRefreshFailSnack(false)}
+          sx={{ width: '100%' }}
+        >
+          {t('dashboard:dashboard.refreshRetryHint')}
+        </Alert>
+      </Snackbar>
     </DashboardContainer>
   );
 }

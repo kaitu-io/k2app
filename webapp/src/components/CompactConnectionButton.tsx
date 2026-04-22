@@ -16,7 +16,6 @@ import {
   styled,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { SmartModeIcon } from './SmartModeIcon';
 import { getThemeColors, getStatusColor } from '../theme/colors';
 import { getFlagIcon } from '../utils/country';
 import type { ControlError } from '../services/vpn-types';
@@ -185,11 +184,7 @@ export function CompactConnectionButton({
           >
             {getFlagIcon(tunnelCountry)}
           </Box>
-        ) : hasTunnelSelected ? (
-          <Box sx={{ mr: 1.5, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-            <SmartModeIcon />
-          </Box>
-        ) : (
+        ) : !hasTunnelSelected && (
           <Box
             sx={{
               width: 24,

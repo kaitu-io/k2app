@@ -6,43 +6,6 @@
       "title": "續費",
       "description": "管理您的會員服務和續費"
     },
-    "members": {
-      "title": "成員管理",
-      "description": "新增成員後，成員可以共享您的會員權益。適合家庭、企業等多人使用場景。",
-      "addMember": "新增成員",
-      "removeMember": "移除成員",
-      "memberEmail": "成員電子郵件",
-      "memberStatus": "狀態",
-      "userId": "使用者ID",
-      "expiryDate": "到期時間",
-      "noMembers": "暫無成員",
-      "noMembersDesc": "您還沒有新增任何成員",
-      "addFirstMember": "新增第一個成員",
-      "addMemberDialog": "新增成員",
-      "emailLabel": "成員電子郵件",
-      "emailPlaceholder": "請輸入成員電子郵件地址",
-      "emailHelp": "成員將透過此電子郵件登入並使用您的會員權益",
-      "emailRequired": "請輸入電子郵件地址",
-      "invalidEmail": "電子郵件格式不正確",
-      "emailAlreadyInUse": "該電子郵件已被使用",
-      "addMemberSuccess": "成員新增成功",
-      "addMemberFailed": "新增成員失敗",
-      "addMemberFailedRetry": "新增成員失敗，請重試",
-      "removeMemberConfirm": "確定要移除該成員嗎？移除後，該成員將無法繼續使用您的會員權益。",
-      "removeMemberSuccess": "成員移除成功",
-      "removeMemberFailed": "移除成員失敗",
-      "removeMemberFailedRetry": "移除成員失敗，請重試",
-      "getMembersFailed": "取得成員清單失敗",
-      "getMembersFailedRetry": "取得成員清單失敗，請重試",
-      "loading": "載入成員清單中...",
-      "noEmail": "未設定電子郵件",
-      "status": {
-        "notActivated": "未啟用",
-        "valid": "正常",
-        "expiringSoon": "即將過期",
-        "expired": "已過期"
-      }
-    },
     "delegate": {
       "title": "代付人管理",
       "description": "管理為您帳戶付費的使用者",
@@ -60,25 +23,6 @@
     "wallet": {
       "title": "我的錢包",
       "description": "管理您的錢包餘額和提現"
-    }
-  },
-  "admin": {
-    "members": {
-      "title": "使用者成員管理",
-      "manageUserMembers": "管理使用者成員",
-      "addMember": "新增成員",
-      "removeMember": "移除成員",
-      "noMembers": "該使用者暫無成員",
-      "noMembersDesc": "該使用者還沒有新增任何成員",
-      "addFirstMember": "新增第一個成員",
-      "addMemberDialog": "新增成員",
-      "addMemberSuccess": "成員新增成功",
-      "addMemberFailed": "新增成員失敗",
-      "removeMemberConfirm": "確定要移除該成員嗎？移除後，該成員將無法繼續使用此使用者的會員權益。",
-      "removeMemberSuccess": "成員移除成功",
-      "removeMemberFailed": "移除成員失敗",
-      "getMembersFailed": "取得成員清單失敗",
-      "getMembersFailedRetry": "取得成員清單失敗，請重試"
     }
   },
   "retailer": {

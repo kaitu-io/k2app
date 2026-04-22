@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, Link } from "@/i18n/routing";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useEmbedMode } from "@/hooks/useEmbedMode";
+import { isWeChatAndroid } from "@/lib/device-detection";
+import WeChatBrowserGuide from "@/components/WeChatBrowserGuide";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,9 +18,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api, ApiError, ErrorCode } from "@/lib/api";
-import type { Plan, Order, CreateOrderRequest } from "@/lib/api";
+import type { Plan, Order, CreateOrderRequest, DelegateInfo } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-errors";
 import { useAppConfig } from "@/contexts/AppConfigContext";
+import MembershipBenefits from "@/components/MembershipBenefits";
 import PurchaseStep1 from "@/components/PurchaseStep1";
 import PurchaseStep2 from "@/components/PurchaseStep2";
 import PurchaseStep3 from "@/components/PurchaseStep3";
@@ -93,9 +96,14 @@ export default function PurchaseClient() {
   // Initialize embed mode to handle auth_token URL parameter
   const { showNavigation, showFooter } = useEmbedMode();
 
+  // WeChat Android webview has unreliable cookies across the pay redirect.
+  // Block the purchase flow and guide the user to open in a real browser.
+  const [showWeChatGuide, setShowWeChatGuide] = useState(false);
+  useEffect(() => {
+    setShowWeChatGuide(isWeChatAndroid());
+  }, []);
+
   // State for each step
-  const [selectedForMyself, setSelectedForMyself] = useState(true);
-  const [selectedMemberUUIDs, setSelectedMemberUUIDs] = useState<string[]>([]);
   const [selectedPlan, setSelectedPlan] = useState("");
   const [plans, setPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -112,10 +120,22 @@ export default function PurchaseClient() {
   // Debounce timer for preview requests
   const previewTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // ---- Delegate pay state (T12–T15) ---------------------------------
+  // `delegate` is the persisted 代付人 for this account (null = none yet).
+  // `delegateLoaded` gates the Step3 UI so we don't flash the empty-state
+  // inline form while the initial fetch is still in-flight.
+  // `confirmation` replaces the entire Step3 body once we've notified the
+  // delegate; `lastOrderUuid` drives the resend button inside that card.
+  const [delegate, setDelegate] = useState<DelegateInfo | null>(null);
+  const [delegateLoaded, setDelegateLoaded] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ email: string } | null>(null);
+  const [lastOrderUuid, setLastOrderUuid] = useState<string | null>(null);
+
   // Get user profile to check status
   const [userProfile, setUserProfile] = useState<{
     expiredAt: number;
     isFirstOrderDone: boolean;
+    tier?: string;
     inviteCode?: {
       code: string;
     };
@@ -164,7 +184,8 @@ export default function PurchaseClient() {
             setSelectedPlan("");
           } else {
             setPlans(planItems);
-            // Default select first highlight=true plan, otherwise first plan
+            // Initial pick is best-effort against the full list; once filteredPlans
+            // resolves below it may be re-snapped to a tier-valid choice.
             const highlightPlan = planItems.find((p: Plan) => p.highlight);
             setSelectedPlan(highlightPlan ? highlightPlan.pid : planItems[0]?.pid || "");
           }
@@ -187,6 +208,27 @@ export default function PurchaseClient() {
   }, [t]);
 
   /**
+   * Tier-based plan filter (Plan A):
+   *   - First-time buyer (or unauthenticated browse): show every plan.
+   *   - Repeat buyer: lock to plans whose tier matches `userProfile.tier`.
+   * Backend enforces the same rule and returns TIER_MISMATCH (422001) on
+   * violation, so this filter is the UX mirror of a server-side guard.
+   */
+  const filteredPlans = useMemo(() => {
+    if (!userProfile?.isFirstOrderDone) return plans;
+    return plans.filter((p) => p.tier === userProfile.tier);
+  }, [plans, userProfile]);
+
+  // If the currently selected plan was filtered out by the tier lock, snap
+  // selection to a valid plan in the filtered list (highlight, then first).
+  useEffect(() => {
+    if (plansLoading || filteredPlans.length === 0) return;
+    if (selectedPlan && filteredPlans.some((p) => p.pid === selectedPlan)) return;
+    const highlightPlan = filteredPlans.find((p) => p.highlight);
+    setSelectedPlan(highlightPlan ? highlightPlan.pid : filteredPlans[0]?.pid || "");
+  }, [filteredPlans, selectedPlan, plansLoading]);
+
+  /**
    * 预览订单请求 (Preview Order)
    *
    * 功能说明：
@@ -205,11 +247,6 @@ export default function PurchaseClient() {
    * - preview 请求使用 previewLoading 状态，不影响支付按钮的 isLoading 状态
    */
   const fetchPreview = useCallback(async () => {
-    // Check if any payment target is selected
-    if (!selectedForMyself && selectedMemberUUIDs.length === 0) {
-      return;
-    }
-
     if (!selectedPlan) {
       return;
     }
@@ -217,14 +254,12 @@ export default function PurchaseClient() {
     setPreviewLoading(true);
 
     try {
-      console.info('[Purchase] Creating preview request:', { selectedPlan, campaignCode, selectedForMyself, selectedMemberUUIDs });
+      console.info('[Purchase] Creating preview request:', { selectedPlan, campaignCode });
 
       const request: CreateOrderRequest = {
         preview: true,
         plan: selectedPlan,
         campaignCode: campaignCode || undefined,
-        forMyself: selectedForMyself,
-        forUserUUIDs: selectedMemberUUIDs.length > 0 ? selectedMemberUUIDs : undefined,
       };
 
       const data = await api.createOrder(request, { autoRedirectToAuth: false });
@@ -244,7 +279,7 @@ export default function PurchaseClient() {
     } finally {
       setPreviewLoading(false);
     }
-  }, [selectedForMyself, selectedMemberUUIDs, t, selectedPlan, campaignCode]);
+  }, [t, selectedPlan, campaignCode]);
 
   /**
    * 实际下单请求 (Create Order for Payment)
@@ -254,23 +289,15 @@ export default function PurchaseClient() {
    * - 成功后跳转到支付页面 (payUrl)
    */
   const handleOrder = useCallback(async () => {
-    // Check if any payment target is selected
-    if (!selectedForMyself && selectedMemberUUIDs.length === 0) {
-      toast.error(t('purchase.purchase.selectAtLeastOneTarget'));
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      console.info('[Purchase] Creating order request:', { selectedPlan, campaignCode, selectedForMyself, selectedMemberUUIDs });
+      console.info('[Purchase] Creating order request:', { selectedPlan, campaignCode });
 
       const request: CreateOrderRequest = {
         preview: false,
         plan: selectedPlan,
         campaignCode: campaignCode || undefined,
-        forMyself: selectedForMyself,
-        forUserUUIDs: selectedMemberUUIDs.length > 0 ? selectedMemberUUIDs : undefined,
       };
 
       const data = await api.createOrder(request, { autoRedirectToAuth: false });
@@ -288,6 +315,18 @@ export default function PurchaseClient() {
 
       if (error instanceof ApiError && error.code === ErrorCode.InvalidCampaignCode) {
         setCampaignError(t('purchase.purchase.invalidCampaignCode'));
+      } else if (error instanceof ApiError && error.code === ErrorCode.TierMismatch) {
+        // 跨档购买被拒：仅同档续费，跨档需联系客服。
+        console.warn('[Purchase] Tier mismatch:', error.code, error.message);
+        setCampaignError("");
+        setOrderData(null);
+        toast.error(getApiErrorMessage(error.code, t));
+      } else if (error instanceof ApiError && error.code === ErrorCode.ProxyPurchaseDeprecated) {
+        // 代付下单已下线 — UI 不再发送此请求，仅兜底陈旧客户端。
+        console.warn('[Purchase] Proxy purchase deprecated:', error.code, error.message);
+        setCampaignError("");
+        setOrderData(null);
+        toast.error(getApiErrorMessage(error.code, t));
       } else {
         setCampaignError("");
         setOrderData(null);
@@ -298,23 +337,15 @@ export default function PurchaseClient() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedForMyself, selectedMemberUUIDs, t, selectedPlan, campaignCode]);
+  }, [t, selectedPlan, campaignCode]);
 
 
   /**
    * 自动预览触发 (Auto Preview Trigger)
    *
-   * 当以下条件变化时，自动触发预览请求：
-   * - selectedPlan: 用户选择的套餐
-   * - campaignCode: 用户输入的活动码
-   * - selectedForMyself: 是否为自己购买
-   * - selectedMemberUUIDs: 选择的成员列表
-   *
-   * 使用 300ms 防抖，避免频繁请求
-   * 使用 selectedMemberUUIDsKey (字符串) 替代数组引用，避免不必要的重渲染
+   * 当 selectedPlan 或 campaignCode 变化时，自动触发预览请求。
+   * 使用 300ms 防抖，避免频繁请求。
    */
-  const selectedMemberUUIDsKey = selectedMemberUUIDs.join(',');
-
   useEffect(() => {
     // Skip if plans are still loading
     if (plansLoading) {
@@ -328,7 +359,7 @@ export default function PurchaseClient() {
 
     // Set new timeout for debounced request
     previewTimeoutRef.current = setTimeout(() => {
-      if (selectedPlan && (selectedForMyself || selectedMemberUUIDs.length > 0)) {
+      if (selectedPlan) {
         fetchPreview();
       }
     }, 300); // 300ms debounce delay
@@ -340,13 +371,7 @@ export default function PurchaseClient() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignCode, selectedPlan, plansLoading, selectedForMyself, selectedMemberUUIDsKey]);
-
-  // Handle member selection change
-  const handleMemberSelectionChange = useCallback((forMyself: boolean, memberUUIDs: string[]) => {
-    setSelectedForMyself(forMyself);
-    setSelectedMemberUUIDs(memberUUIDs);
-  }, []);
+  }, [campaignCode, selectedPlan, plansLoading]);
 
   const handleLoginSuccess = useCallback(() => {
     // Login succeeded - no need to navigate steps since all are shown
@@ -374,6 +399,99 @@ export default function PurchaseClient() {
   const handlePurchase = useCallback(() => {
     handleOrder();
   }, [handleOrder]);
+
+  // ---- Load delegate on mount (auth-gated) --------------------------
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setDelegateLoaded(true);
+      return;
+    }
+    (async () => {
+      try {
+        const d = await api.getDelegate({ autoRedirectToAuth: false });
+        setDelegate(d);
+      } catch (err) {
+        console.error('[Purchase] Failed to load delegate:', err);
+      } finally {
+        setDelegateLoaded(true);
+      }
+    })();
+  }, [isAuthenticated]);
+
+  // ---- Delegate pay handlers (T13–T15) ------------------------------
+  // Set-state primary CTA: create order → notify existing delegate → confirm.
+  const handleDelegatePay = useCallback(async () => {
+    if (!delegate) return;
+    setIsLoading(true);
+    try {
+      const request: CreateOrderRequest = {
+        preview: false,
+        plan: selectedPlan,
+        campaignCode: campaignCode || undefined,
+      };
+      const { order } = await api.createOrder(request, { autoRedirectToAuth: false });
+      await api.notifyDelegate(order.uuid);
+      setLastOrderUuid(order.uuid);
+      setConfirmation({ email: delegate.email });
+    } catch (err) {
+      console.error('[Purchase] Delegate pay failed:', err);
+      toast.error(
+        err instanceof ApiError
+          ? getApiErrorMessage(err.code, t)
+          : t('purchase.purchase.createOrderFailed')
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [delegate, selectedPlan, campaignCode, t]);
+
+  // Empty-state inline send: persist delegate → create order → notify → confirm.
+  const handleEmptyStateDelegatePay = useCallback(
+    async (email: string) => {
+      const trimmed = email.trim();
+      if (!trimmed) return;
+      setIsLoading(true);
+      try {
+        const newDelegate = await api.setDelegate(trimmed, { autoRedirectToAuth: false });
+        setDelegate(newDelegate);
+        const request: CreateOrderRequest = {
+          preview: false,
+          plan: selectedPlan,
+          campaignCode: campaignCode || undefined,
+        };
+        const { order } = await api.createOrder(request, { autoRedirectToAuth: false });
+        await api.notifyDelegate(order.uuid);
+        setLastOrderUuid(order.uuid);
+        setConfirmation({ email: trimmed });
+      } catch (err) {
+        console.error('[Purchase] Empty-state delegate pay failed:', err);
+        toast.error(
+          err instanceof ApiError
+            ? getApiErrorMessage(err.code, t)
+            : t('purchase.purchase.createOrderFailed')
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [selectedPlan, campaignCode, t]
+  );
+
+  // Confirmation card resend: just re-notify the last-created order.
+  const handleResendInvite = useCallback(async () => {
+    if (!lastOrderUuid) return;
+    try {
+      await api.notifyDelegate(lastOrderUuid);
+      toast.success(t('purchase.purchase.delegatePay.confirmationResentToast'));
+    } catch (err) {
+      console.error('[Purchase] Resend delegate invite failed:', err);
+      toast.error(
+        err instanceof ApiError
+          ? getApiErrorMessage(err.code, t)
+          : t('purchase.purchase.createOrderFailed')
+      );
+    }
+  }, [lastOrderUuid, t]);
 
   const handlePaySuccess = useCallback(async () => {
     setPayDialogOpen(false);
@@ -403,6 +521,10 @@ export default function PurchaseClient() {
 
   // Purchase page doesn't require authentication - skip redirect logic
   // Users can purchase without login, authentication is handled by API layer when needed
+
+  if (showWeChatGuide) {
+    return <WeChatBrowserGuide />;
+  }
 
   if (isAuthLoading || profileLoading || appConfigLoading) {
     return (
@@ -464,21 +586,35 @@ export default function PurchaseClient() {
           </p>
         </div>
 
+        {/* Membership Benefits — show value first, then ask for action */}
+        <MembershipBenefits />
+
+        {/* Tier locked banner — repeat buyer whose current tier has no
+            purchasable plans (e.g. tier was archived). Backend would also
+            reject the order with TIER_MISMATCH (422001). */}
+        {userProfile?.isFirstOrderDone && plans.length > 0 && filteredPlans.length === 0 && (
+          <div className="bg-amber-50 dark:bg-amber-950/20 border-l-4 border-amber-500 p-4 sm:p-6 rounded-r-lg">
+            <div className="flex items-center">
+              <AlertTriangleIcon className="w-8 h-8 text-amber-600 mr-3 flex-shrink-0" />
+              <p className="text-base sm:text-sm text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
+                {t('purchase.purchase.tierLocked', { tier: userProfile.tier ?? 'basic' })}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* All Steps - Mobile: Stacked, Desktop: Multi-column layout */}
         <div className="space-y-6 sm:space-y-8 xl:space-y-0 xl:grid xl:grid-cols-12 xl:gap-8">
           {/* Left Column - Steps 1 & 2 */}
           <div className="xl:col-span-7 2xl:col-span-8 space-y-6 sm:space-y-8">
-            {/* Step 1: Email Binding and Target Selection */}
+            {/* Step 1: Email Binding (login form for unauthenticated users) */}
             <PurchaseStep1
-              selectedForMyself={selectedForMyself}
-              selectedMemberUUIDs={selectedMemberUUIDs}
-              onMemberSelectionChange={handleMemberSelectionChange}
               onLoginSuccess={handleLoginSuccess}
             />
 
-            {/* Step 2: Plan Selection */}
+            {/* Step 2: Plan Selection — feed the tier-filtered list. */}
             <PurchaseStep2
-              plans={plans}
+              plans={filteredPlans}
               selectedPlan={selectedPlan}
               onPlanChange={handlePlanChange}
               isLoading={plansLoading}
@@ -490,7 +626,7 @@ export default function PurchaseClient() {
             {/* Step 3: Confirmation and Payment - Sticky on desktop */}
             <div className="xl:sticky xl:top-8">
               <PurchaseStep3
-              plans={plans}
+              plans={filteredPlans}
               selectedPlan={selectedPlan}
               orderData={orderData}
               showCampaign={showCampaign}
@@ -499,12 +635,16 @@ export default function PurchaseClient() {
               onCampaignToggle={handleCampaignToggle}
               onCampaignCodeChange={handleCampaignCodeChange}
               onCampaignErrorClear={handleCampaignErrorClear}
-              selectedForMyself={selectedForMyself}
-              selectedMemberUUIDs={selectedMemberUUIDs}
               previewLoading={previewLoading}
               isLoading={isLoading}
               isAuthenticated={isAuthenticated}
               onPurchase={handlePurchase}
+              delegate={delegate}
+              delegateLoaded={delegateLoaded}
+              onDelegatePay={handleDelegatePay}
+              onEmptyStateDelegatePay={handleEmptyStateDelegatePay}
+              onResendInvite={handleResendInvite}
+              confirmation={confirmation}
               />
             </div>
           </div>

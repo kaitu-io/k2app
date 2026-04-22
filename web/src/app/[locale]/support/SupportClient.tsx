@@ -118,11 +118,11 @@ export default function SupportClient() {
         </div>
       </section>
 
-      {/* Why Kaitu Section */}
+      {/* Why Use Us Section */}
       <section className="py-16 px-4 sm:px-6 lg:px-8 bg-card/50">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold text-foreground text-center mb-12">
-            {t('guide-parents.whyKaitu.title')}
+            {t('guide-parents.whyUseUs.title')}
           </h2>
           <div className="grid sm:grid-cols-3 gap-6">
             <Card className="p-6 text-center">
@@ -130,10 +130,10 @@ export default function SupportClient() {
                 <Activity className="w-6 h-6 text-green-600" />
               </div>
               <h3 className="font-bold text-foreground mb-2">
-                {t('guide-parents.whyKaitu.stable.title')}
+                {t('guide-parents.whyUseUs.stable.title')}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {t('guide-parents.whyKaitu.stable.description')}
+                {t('guide-parents.whyUseUs.stable.description')}
               </p>
             </Card>
             <Card className="p-6 text-center">
@@ -141,10 +141,10 @@ export default function SupportClient() {
                 <MousePointerClick className="w-6 h-6 text-blue-600" />
               </div>
               <h3 className="font-bold text-foreground mb-2">
-                {t('guide-parents.whyKaitu.simple.title')}
+                {t('guide-parents.whyUseUs.simple.title')}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {t('guide-parents.whyKaitu.simple.description')}
+                {t('guide-parents.whyUseUs.simple.description')}
               </p>
             </Card>
             <Card className="p-6 text-center">
@@ -152,10 +152,10 @@ export default function SupportClient() {
                 <GraduationCap className="w-6 h-6 text-purple-600" />
               </div>
               <h3 className="font-bold text-foreground mb-2">
-                {t('guide-parents.whyKaitu.education.title')}
+                {t('guide-parents.whyUseUs.education.title')}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {t('guide-parents.whyKaitu.education.description')}
+                {t('guide-parents.whyUseUs.education.description')}
               </p>
             </Card>
           </div>

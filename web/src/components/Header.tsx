@@ -5,11 +5,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
+import NextLink from 'next/link';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Github, Download, Menu, X } from 'lucide-react';
 import Image from 'next/image';
+import { useBrand } from '@/components/providers/BrandProvider';
 
 export default function Header() {
+  const brand = useBrand();
   const { isAuthenticated, user } = useAuth();
   const t = useTranslations();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -20,13 +23,13 @@ export default function Header() {
         <div className="flex justify-between items-center h-16">
           <Link href="/" className="flex items-center space-x-2">
             <Image
-              src="/kaitu-icon.png"
-              alt="Kaitu Logo"
+              src={brand.logoPath}
+              alt={`${brand.displayName} Logo`}
               width={32}
               height={32}
               className="rounded-md"
             />
-            <span className="text-xl font-bold text-foreground">{"Kaitu.io"}</span>
+            <span className="text-xl font-bold text-foreground">{brand.wordmark}</span>
           </Link>
           <div className="flex items-center space-x-4">
             {/* Language Switcher */}
@@ -79,7 +82,7 @@ export default function Header() {
                 </Button>
                 {user?.isAdmin && (
                   <Button asChild variant="outline" size="sm">
-                    <Link href="/admin">{t('nav.nav.adminPanel')}</Link>
+                    <NextLink href="/manager">{t('nav.nav.adminPanel')}</NextLink>
                   </Button>
                 )}
               </div>

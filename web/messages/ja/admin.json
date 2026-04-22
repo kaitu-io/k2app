@@ -6,43 +6,6 @@
       "title": "更新",
       "description": "会員サービスと更新を管理"
     },
-    "members": {
-      "title": "メンバー管理",
-      "description": "メンバーを追加すると、メンバーは会員特典を共有できます。家族や企業などの複数人利用シーンに適しています。",
-      "addMember": "メンバーを追加",
-      "removeMember": "メンバーを削除",
-      "memberEmail": "メンバーメール",
-      "memberStatus": "ステータス",
-      "userId": "ユーザーID",
-      "expiryDate": "有効期限",
-      "noMembers": "メンバーがいません",
-      "noMembersDesc": "まだメンバーを追加していません",
-      "addFirstMember": "最初のメンバーを追加",
-      "addMemberDialog": "メンバーを追加",
-      "emailLabel": "メンバーメール",
-      "emailPlaceholder": "メンバーのメールアドレスを入力してください",
-      "emailHelp": "メンバーはこのメールアドレスでログインし、会員特典を利用します",
-      "emailRequired": "メールアドレスを入力してください",
-      "invalidEmail": "メールアドレスの形式が正しくありません",
-      "emailAlreadyInUse": "このメールアドレスは既に使用されています",
-      "addMemberSuccess": "メンバーを追加しました",
-      "addMemberFailed": "メンバーの追加に失敗しました",
-      "addMemberFailedRetry": "メンバーの追加に失敗しました。再試行してください",
-      "removeMemberConfirm": "このメンバーを削除してもよろしいですか？削除後、このメンバーは会員特典を利用できなくなります。",
-      "removeMemberSuccess": "メンバーを削除しました",
-      "removeMemberFailed": "メンバーの削除に失敗しました",
-      "removeMemberFailedRetry": "メンバーの削除に失敗しました。再試行してください",
-      "getMembersFailed": "メンバーリストの取得に失敗しました",
-      "getMembersFailedRetry": "メンバーリストの取得に失敗しました。再試行してください",
-      "loading": "メンバーリストを読み込み中...",
-      "noEmail": "メールアドレス未設定",
-      "status": {
-        "notActivated": "未有効化",
-        "valid": "正常",
-        "expiringSoon": "まもなく期限切れ",
-        "expired": "期限切れ"
-      }
-    },
     "delegate": {
       "title": "代理支払い管理",
       "description": "アカウントの支払いを行うユーザーを管理",
@@ -60,25 +23,6 @@
     "wallet": {
       "title": "マイウォレット",
       "description": "ウォレット残高と出金を管理"
-    }
-  },
-  "admin": {
-    "members": {
-      "title": "ユーザーメンバー管理",
-      "manageUserMembers": "ユーザーメンバーを管理",
-      "addMember": "メンバーを追加",
-      "removeMember": "メンバーを削除",
-      "noMembers": "このユーザーにはメンバーがいません",
-      "noMembersDesc": "このユーザーはまだメンバーを追加していません",
-      "addFirstMember": "最初のメンバーを追加",
-      "addMemberDialog": "メンバーを追加",
-      "addMemberSuccess": "メンバーを追加しました",
-      "addMemberFailed": "メンバーの追加に失敗しました",
-      "removeMemberConfirm": "このメンバーを削除してもよろしいですか？削除後、このメンバーはこのユーザーの会員特典を利用できなくなります。",
-      "removeMemberSuccess": "メンバーを削除しました",
-      "removeMemberFailed": "メンバーの削除に失敗しました",
-      "getMembersFailed": "メンバーリストの取得に失敗しました",
-      "getMembersFailedRetry": "メンバーリストの取得に失敗しました。再試行してください"
     }
   },
   "retailer": {

@@ -1,12 +1,15 @@
 "use client";
 
-import { useTranslations } from 'next-intl';
-import { COMPANY_INFO } from '@/lib/constants';
+import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import Image from 'next/image';
+import { useBrand } from '@/components/providers/BrandProvider';
 
 export default function Footer() {
+  const brand = useBrand();
   const t = useTranslations();
+  const locale = useLocale();
+  const showTaglineZh = Boolean(brand.taglineZh) && locale.startsWith('zh');
 
   return (
     <footer className="py-12 px-4 sm:px-6 lg:px-8 border-t">
@@ -14,20 +17,20 @@ export default function Footer() {
         <div className="grid md:grid-cols-4 gap-8">
           <div>
             <div className="flex items-center space-x-2 mb-4">
-              <Image 
-                src="/kaitu-icon.png" 
-                alt="Kaitu Logo" 
+              <Image
+                src={brand.logoPath}
+                alt={`${brand.displayName} Logo`}
                 width={32}
                 height={32}
                 className="rounded-md"
               />
-              <span className="text-xl font-bold text-foreground">{t('nav.footer.brandName')}</span>
+              <span className="text-xl font-bold text-foreground">{brand.wordmark}</span>
             </div>
             <p className="text-muted-foreground text-sm">
               {t('nav.footer.brandDescription')}
             </p>
           </div>
-          
+
           <div>
             <h4 className="font-semibold text-foreground mb-4">{t('nav.footer.product.title')}</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
@@ -96,10 +99,12 @@ export default function Footer() {
             </ul>
           </div>
         </div>
-        
+
         <div className="mt-8 pt-8 border-t text-center text-sm text-muted-foreground">
-          <p className="mb-2 text-muted-foreground/60 italic">{"愿上帝为你开路"}</p>
-          <p>{"©"} {COMPANY_INFO.year} {"Kaitu LLC"}{". "}{t('nav.footer.copyright')}</p>
+          {showTaglineZh && (
+            <p className="mb-2 text-muted-foreground/60 italic">{brand.taglineZh}</p>
+          )}
+          <p>{'©'} {new Date().getFullYear()} {brand.legalName}{'. '}{t('nav.footer.copyright')}</p>
         </div>
       </div>
     </footer>

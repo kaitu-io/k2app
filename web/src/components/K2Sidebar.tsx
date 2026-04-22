@@ -7,8 +7,9 @@
  * sidebar itself can be a lightweight Client Component that only needs
  * `usePathname()` for active-link highlighting.
  */
-import { usePathname } from '@/i18n/routing';
-import { Link } from '@/i18n/routing';
+import { ChevronDown } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { usePathname, Link } from '@/i18n/routing';
 import type { K2PostGroup } from '@/lib/k2-posts';
 
 interface K2SidebarProps {
@@ -20,11 +21,57 @@ interface K2SidebarProps {
   locale: string;
 }
 
+interface K2SidebarListProps extends K2SidebarProps {
+  pathname: string;
+}
+
+function K2SidebarList({
+  groups,
+  sectionLabels,
+  locale,
+  pathname,
+}: K2SidebarListProps): React.ReactElement {
+  return (
+    <ul className="space-y-6">
+      {groups.map((group) => {
+        const label = sectionLabels[group.section] ?? group.section;
+        return (
+          <li key={group.section}>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {label}
+            </p>
+            <ul className="space-y-1">
+              {group.posts.map((post) => {
+                const href = `/${locale}/${post.slug}`;
+                const isActive = pathname === href || pathname.endsWith(`/${post.slug}`);
+                return (
+                  <li key={post.slug}>
+                    <Link
+                      href={`/${post.slug}`}
+                      className={
+                        isActive
+                          ? 'block rounded-md px-3 py-1.5 text-sm font-medium bg-muted text-foreground'
+                          : 'block rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors'
+                      }
+                    >
+                      {post.title}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /**
  * Sidebar navigation for the /k2/ documentation section.
  *
- * Renders section headers and links for each k2/ post. Highlights the link
- * matching the current pathname.
+ * Renders a collapsible disclosure on mobile (<md) and a fixed sidebar on
+ * desktop (≥md). Active link is highlighted based on current pathname.
  */
 export default function K2Sidebar({
   groups,
@@ -32,44 +79,41 @@ export default function K2Sidebar({
   locale,
 }: K2SidebarProps): React.ReactElement {
   const pathname = usePathname();
+  const t = useTranslations('k2');
 
   return (
-    <nav
-      aria-label="K2 documentation navigation"
-      className="w-64 shrink-0 pr-6"
-    >
-      <ul className="space-y-6">
-        {groups.map((group) => {
-          const label = sectionLabels[group.section] ?? group.section;
-          return (
-            <li key={group.section}>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {label}
-              </p>
-              <ul className="space-y-1">
-                {group.posts.map((post) => {
-                  const href = `/${locale}/${post.slug}`;
-                  const isActive = pathname === href || pathname.endsWith(`/${post.slug}`);
-                  return (
-                    <li key={post.slug}>
-                      <Link
-                        href={`/${post.slug}`}
-                        className={
-                          isActive
-                            ? 'block rounded-md px-3 py-1.5 text-sm font-medium bg-muted text-foreground'
-                            : 'block rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors'
-                        }
-                      >
-                        {post.title}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+    <>
+      {/* Mobile: collapsible disclosure */}
+      <details className="group md:hidden mb-6 rounded-md border border-border bg-card">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium flex items-center justify-between">
+          <span>{t('mobileNav.toggleLabel')}</span>
+          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+        </summary>
+        <nav
+          aria-label="K2 documentation navigation"
+          className="px-4 pb-4"
+        >
+          <K2SidebarList
+            groups={groups}
+            sectionLabels={sectionLabels}
+            locale={locale}
+            pathname={pathname}
+          />
+        </nav>
+      </details>
+
+      {/* Desktop: fixed sidebar */}
+      <nav
+        aria-label="K2 documentation navigation"
+        className="hidden md:block w-64 shrink-0 pr-6"
+      >
+        <K2SidebarList
+          groups={groups}
+          sectionLabels={sectionLabels}
+          locale={locale}
+          pathname={pathname}
+        />
+      </nav>
+    </>
   );
 }

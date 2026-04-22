@@ -249,6 +249,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 if !engineCfg.cacheDir.isEmpty {
                     do {
                         try FileManager.default.createDirectory(atPath: engineCfg.cacheDir, withIntermediateDirectories: true)
+                        // Align with K2Plugin.load(): rule bundles and cache are re-downloadable,
+                        // exclude from iCloud backup.
+                        var excludedURL = URL(fileURLWithPath: engineCfg.cacheDir)
+                        var resourceValues = URLResourceValues()
+                        resourceValues.isExcludedFromBackup = true
+                        try? excludedURL.setResourceValues(resourceValues)
                     } catch {
                         logger.warning("Failed to create cacheDir: \(error)")
                     }

@@ -148,8 +148,6 @@ export interface CreateOrderRequest {
   preview: boolean; // 是否预览
   plan: string; // 套餐ID
   campaignCode?: string; // 优惠码（可选）
-  forMyself?: boolean; // 为自己购买
-  forUserUUIDs?: string[]; // 为其他用户购买（UUID列表）
 }
 
 // 物理节点信息
@@ -173,7 +171,10 @@ export interface TunnelInstance {
   trafficRatio: number;      // 0-1, fraction of traffic allowance used
   billingCycleEndAt: number; // Unix seconds
   timeRatio: number;         // 0-1, fraction of billing period elapsed
-  budgetScore: number;       // trafficRatio - timeRatio. [-1,+1]. Negative = recommended.
+  /** @deprecated Prefer Tunnel.recommendScore. Kept for admin diagnostics. trafficRatio - timeRatio. [-1,+1]. Negative = recommended. */
+  budgetScore: number;
+  /** Canonical recommendation signal [0,1], higher = better. Mirrors the top-level Tunnel.recommendScore. */
+  recommendScore: number;
 }
 
 // 隧道信息
@@ -189,6 +190,13 @@ export interface Tunnel {
   serverUrl?: string; // k2v5 connection URL (only present for k2v5 tunnels)
   node: SlaveNode; // 关联的物理节点
   instance?: TunnelInstance; // Cloud instance data (only for cloud-managed nodes)
+  /**
+   * Canonical recommendation signal in [0, 1]. Higher = better pick. Present
+   * for both cloud and non-cloud tunnels (non-cloud defaults to 0.5 — neutral).
+   * Callers should not look at `instance.recommendScore` or compute from
+   * budgetScore; this field is the single source of truth.
+   */
+  recommendScore: number;
 }
 
 // 隧道列表响应
@@ -653,5 +661,31 @@ export interface GitHubIssuesListResponse {
 // Create comment request
 export interface CreateGitHubCommentRequest {
   body: string;
+}
+
+/**
+ * Result of a single probe measurement for one candidate URL.
+ * Mirrors Go daemon handleProbe JSON shape.
+ *
+ * Score conventions:
+ *   reachable=false       → probeScore = 0
+ *   echoSupported=false   → probeScore = -1 (sentinel; old k2s)
+ *   normal                → probeScore in (0,1]
+ */
+export interface ProbeResult {
+  url: string;
+  avgRttMs: number;
+  minRttMs: number;
+  maxRttMs: number;
+  jitterMs: number;
+  lossRate: number;
+  reachable: boolean;
+  echoSupported: boolean;
+  probeScore: number;
+  measuredAt: string; // RFC3339
+}
+
+export interface ProbeResponse {
+  results: ProbeResult[];
 }
 

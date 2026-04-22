@@ -7,9 +7,7 @@ import SideNavigation from "./SideNavigation";
 import AnnouncementBanner from "./AnnouncementBanner";
 import ServiceAlert from "./ServiceAlert";
 import FeedbackButton from "./FeedbackButton";
-import { OnboardingGuide } from "./OnboardingGuide";
 import { useLayout } from "../stores";
-import { useOnboardingStore } from "../stores/onboarding.store";
 import { getCurrentAppConfig } from "../config/apps";
 import LoginRequiredGuard from "./LoginRequiredGuard";
 
@@ -77,13 +75,6 @@ export default function Layout() {
   const { isDesktop } = useLayout();
   const appConfig = getCurrentAppConfig();
   const theme = useTheme();
-  const initOnboarding = useOnboardingStore(s => s.init);
-
-  // Initialize onboarding on mount (check storage for completion)
-  useEffect(() => {
-    initOnboarding();
-  }, [initOnboarding]);
-
   // Track which Tab pages have been mounted (for lazy loading and keep-alive)
   const [mountedTabs, setMountedTabs] = useState<Record<string, boolean>>({});
 
@@ -206,9 +197,6 @@ export default function Layout() {
 
       {/* Floating Feedback Button - draggable, for log collection */}
       <FeedbackButton />
-
-      {/* Onboarding Guide - first login tour */}
-      <OnboardingGuide />
     </Box>
   );
 }

@@ -89,6 +89,13 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 	code := generateVerificationCode(c, indexID)
 	expireMinutes := 5
 
+	// 保存验证码（先存再发，避免邮件已送达但存储失败的情况）
+	if err := saveEmailVerificationCode(c, indexID, code, expireMinutes); err != nil {
+		log.Errorf(c, "failed to save verification code for email (hashed) %s: %v", indexID, err)
+		Error(c, ErrorSystemError, "failed to save verification code")
+		return
+	}
+
 	// 发送验证码邮件
 	meta := VerificationCodeMeta{
 		UserEmail:     req.Email,
@@ -98,13 +105,6 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 	if err := emailTo(c, req.Email, verificationCodeTemplate, meta); err != nil {
 		log.Errorf(c, "failed to send verification code email to %s: %v", req.Email, err)
 		Error(c, ErrorSystemError, err.Error())
-		return
-	}
-
-	// 保存验证码
-	if err := saveEmailVerificationCode(c, indexID, code, expireMinutes); err != nil {
-		log.Errorf(c, "failed to save verification code for email (hashed) %s: %v", indexID, err)
-		Error(c, ErrorSystemError, "failed to save verification code")
 		return
 	}
 

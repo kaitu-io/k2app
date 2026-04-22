@@ -25,6 +25,7 @@ interface VersionData {
     newFeatures: string[];
     bugFixes: string[];
     improvements: string[];
+    infrastructure: string[];
     breakingChanges: string[];
   };
   channel: 'beta' | 'stable';
@@ -166,6 +167,7 @@ function ReleaseCard({
     version.sections.newFeatures.length > 0 ||
     version.sections.bugFixes.length > 0 ||
     version.sections.improvements.length > 0 ||
+    version.sections.infrastructure.length > 0 ||
     version.sections.breakingChanges.length > 0;
 
   return (
@@ -206,6 +208,11 @@ function ReleaseCard({
               {version.sections.improvements.length > 0 && (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary/15 text-secondary">
                   {`${version.sections.improvements.length} ${t('releases.sections.improvements')}`}
+                </span>
+              )}
+              {version.sections.infrastructure.length > 0 && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-500/15 text-slate-400">
+                  {`${version.sections.infrastructure.length} ${t('releases.sections.infrastructure')}`}
                 </span>
               )}
               {version.sections.breakingChanges.length > 0 && (
@@ -252,6 +259,13 @@ function ReleaseCard({
                 items={version.sections.improvements}
                 colorClass="text-secondary"
                 label={t('releases.sections.improvements')}
+                bullet={bullet}
+
+              />
+              <SectionList
+                items={version.sections.infrastructure}
+                colorClass="text-slate-400"
+                label={t('releases.sections.infrastructure')}
                 bullet={bullet}
 
               />

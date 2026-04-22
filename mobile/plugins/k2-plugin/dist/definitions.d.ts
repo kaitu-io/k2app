@@ -33,6 +33,7 @@ export interface K2PluginInterface {
     }>;
     connect(options: {
         config: string;
+        alwaysOn?: boolean;
     }): Promise<void>;
     disconnect(): Promise<void>;
     checkWebUpdate(): Promise<WebUpdateInfo>;

@@ -47,15 +47,31 @@
     "favorites": "收藏的服务器",
     "allLocations": "所有位置",
     "advancedSettings": "高级设置",
+    "alwaysOn": {
+      "title": "保持 VPN 常开 (Always On)",
+      "description": "App 被系统释放后自动恢复连接。",
+      "warning": "开启后，VPN 关闭需在 iOS 系统设置中操作。"
+    },
     "searchLocations": "搜索位置...",
     "manualRefresh": "立即刷新",
     "refreshing": "刷新中...",
+    "cloudNodesUnavailable": "暂时无法获取云端节点",
+    "cloudNodesUnavailableHint": "请检查网络后点击重试，或切换到【自部署】继续使用",
+    "refreshRetryHint": "节点列表未能更新，稍后会自动重试",
     "updated": "更新于",
     "justNow": "刚刚",
     "minutesAgo": "分钟前",
     "hoursAgo": "小时前",
     "longTimeAgo": "很久之前",
+    "probe": {
+      "unreachable": "无法连通 (QUIC 握手失败)",
+      "qualityUnknown": "节点未上报质量",
+      "tooltip": "RTT {{rtt}} ms · 抖动 {{jitter}} ms · 丢包 {{loss}}%"
+    },
     "selectServerHint": "请先从下方选择",
+    "selectServerHintShort": "↓ 请选择服务器",
+    "connectedBannerHint": "已连接中，切换服务器前请先断开",
+    "disconnectBannerBtn": "断开",
     "connectionRetrying": "服务器连接失败，正在重试...",
     "serviceFailure": {
       "title": "服务连接失败",

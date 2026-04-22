@@ -54,11 +54,6 @@ export default function AccountLayout({
       icon: CreditCard,
     },
     {
-      href: "/account/members",
-      label: t("admin.account.members.title"),
-      icon: Users,
-    },
-    {
       href: "/account/delegate",
       label: t("admin.account.delegate.title"),
       icon: Users,

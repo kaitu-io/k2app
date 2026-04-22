@@ -43,6 +43,17 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '#velite': path.resolve(__dirname, './.velite'),
+      // Mirror tsconfig paths so vitest can resolve Payload's config alias.
+      // Individual tests mock `@payload-config` + `payload` to avoid loading
+      // the real Payload config (which requires a DB and heavy deps).
+      '@payload-config': path.resolve(__dirname, './src/payload/payload.config.ts'),
+      // `server-only` is ambient in Next.js (bundled under next/dist/compiled)
+      // and not in node_modules. Alias it to Next's compiled copy so vitest
+      // can resolve it in modules that guard themselves as server-only.
+      'server-only': path.resolve(
+        __dirname,
+        './node_modules/next/dist/compiled/server-only/index.js'
+      ),
     },
   },
 });

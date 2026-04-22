@@ -51,18 +51,16 @@
     "createOrderFailedNetwork": "注文の作成に失敗しました、ネットワーク接続を確認して再試行してください",
     "refreshUserProfileFailed": "ユーザープロファイルの更新に失敗しました",
     "memberAuthorizationMultiple": "会員認証 {{months}}か月 × {{count}}ユーザー",
-    "selectTarget": "支払い対象を選択",
-    "selectPayTarget": "支払い対象を選択",
-    "bindEmailAndSelectTarget": "メールアドレスを登録して支払い対象を選択",
-    "selectAtLeastOneTarget": "少なくとも1つの支払い対象を選択してください",
+    "bindEmail": "メールアドレスを登録",
+    "bindEmailToPayNow": "メール登録後に支払う",
     "inviteRewardTitle": "紹介報酬",
     "inviteRewardDesc": "初回チャージで{{days}}日間の追加特典を獲得",
     "operationFailed": "操作に失敗しました",
     "loginRequired": "購入するにはログインしてください",
     "loginToPurchase": "ログインして購入を完了",
-    "loginToPurchaseDesc": "ログインして支払い対象を選択し、購入を完了してください",
     "loginNow": "今すぐログイン",
-    "loginAndPay": "ログインして支払う"
+    "loginAndPay": "ログインして支払う",
+    "tierLocked": "現在のプランは「{{tier}}」です。このプランは別のランクのため購入できません。サポートにお問い合わせください。"
   },
   "deviceInstall": {
     "title": "クライアントダウンロード",
@@ -159,33 +157,5 @@
       "5y": "5年プラン",
       "forever": "永久プラン"
     }
-  },
-  "memberSelection": {
-    "selectPaymentTarget": "支払い対象を選択",
-    "loading": "メンバーを読み込み中...",
-    "myself": "自分",
-    "chargeForMyself": "自分用の認証を購入",
-    "addFirstMember": "最初のメンバーを追加",
-    "addAnotherMember": "他のメンバーを追加",
-    "addMember": "メンバーを追加",
-    "memberEmail": "メンバーメール",
-    "memberEmailPlaceholder": "メンバーのメールアドレスを入力してください",
-    "addMemberHint": "メンバーを追加すると、彼らのために認証を購入できます。メンバーはメールを使用してログインしてサービスを利用できます。",
-    "cancel": "キャンセル",
-    "add": "追加",
-    "adding": "追加中...",
-    "emailRequired": "メールアドレスは必須です",
-    "emailAlreadyInUse": "このメールは既に使用されています、他のメールを使用してください",
-    "addMemberSuccess": "メンバーの追加に成功しました",
-    "addMemberFailed": "メンバーの追加に失敗しました",
-    "addMemberFailedRetry": "メンバーの追加に失敗しました、再試行してください",
-    "getMembersFailed": "メンバーリストの取得に失敗しました",
-    "getMembersFailedRetry": "メンバーリストの取得に失敗しました、再試行してください",
-    "notActivated": "未有効化",
-    "expired": "期限切れ",
-    "noEmail": "メールなし",
-    "expiresAt": "有効期限",
-    "selectAtLeastOne": "少なくとも1つの支払い対象を選択してください",
-    "selectedCount": "{{count}}人選択済み"
   }
 }

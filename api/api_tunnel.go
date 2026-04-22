@@ -163,6 +163,10 @@ func api_k2_tunnels(c *gin.Context) {
 			item.Instance = buildTunnelInstanceData(&inst)
 		}
 
+		// Top-level recommendScore — non-cloud nodes get the neutral 0.5 default
+		// from ComputeRecommendScore(nil), so UI doesn't need instance null checks.
+		item.RecommendScore = ComputeRecommendScore(item.Instance)
+
 		// Always pass through serverUrl for k2v5 tunnels (needed by client regardless of protocol param)
 		if tunnel.Protocol == TunnelProtocolK2V5 && tunnel.ServerURL != "" {
 			item.ServerUrl = tunnel.ServerURL
@@ -244,13 +248,15 @@ func buildTunnelInstanceData(inst *CloudInstance) *DataTunnelInstance {
 
 	timeRatio := calculateTimeRatio(billingCycleEndAt)
 
-	return &DataTunnelInstance{
+	d := &DataTunnelInstance{
 		TrafficTotalBytes: inst.TrafficTotalBytes,
 		TrafficRatio:      trafficRatio,
 		BillingCycleEndAt: billingCycleEndAt,
 		TimeRatio:         timeRatio,
 		BudgetScore:       trafficRatio - timeRatio,
 	}
+	d.RecommendScore = ComputeRecommendScore(d)
+	return d
 }
 
 // calculateTimeRatio calculates elapsed time ratio for a billing cycle

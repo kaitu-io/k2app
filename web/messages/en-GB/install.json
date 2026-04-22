@@ -58,8 +58,6 @@
     "terminalInstall": "Or install via terminal",
     "downloadButton": "Download Installer",
     "mobileDownloads": "Mobile",
-    "kaituIos": "Overleap for iOS",
-    "kaituAndroid": "Overleap for Android",
     "heroTitle": {
       "windows": "Ready for your Windows",
       "macos": "Ready for your Mac",

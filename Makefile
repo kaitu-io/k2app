@@ -185,7 +185,9 @@ publish-docker:
 deploy-api:
 	mkdir -p release
 	cd api && go mod tidy
-	cd api/cmd && go mod tidy && GOOS=linux GOARCH=amd64 go build -o ../../release/kaitu-center .
+	cd api/cmd && go mod tidy && GOOS=linux GOARCH=amd64 go build \
+		-ldflags "-s -w -X main.Version=$(VERSION) -X main.GitCommit=$(K2_COMMIT) -X main.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		-o ../../release/kaitu-center .
 	bash scripts/deploy-center.sh
 
 publish-desktop:
@@ -212,7 +214,22 @@ publish-ios:
 appext-deps:
 	cd k2 && go get golang.org/x/mobile/bind@latest
 
-appext-ios:
+# Guard: Capacitor plugin must never import gomobile symbols directly.
+# If it does, gradle / podspec needs to link k2mobile.aar / K2Mobile.xcframework,
+# which the plugin is not wired for. Call gomobile from the main app shell
+# instead (AppDelegate.swift on iOS, MainApplication.kt on Android).
+plugin-purity-check:
+	@echo "[plugin-purity-check] verifying k2-plugin has no gomobile references..."
+	@if grep -rn -E "(^|[^A-Za-z])appext\.|(^|[^A-Za-z])Appext[A-Z]|import[[:space:]]+appext\." mobile/plugins/k2-plugin/ 2>/dev/null | grep -v -E '/(build|node_modules|\.gradle)/'; then \
+		echo ""; \
+		echo "ERROR: k2-plugin is a Capacitor plugin and must stay gomobile-free."; \
+		echo "       Plugin gradle/podspec does not link k2mobile.aar / K2Mobile.xcframework."; \
+		echo "       Move the gomobile call to the main app (AppDelegate.swift / MainApplication.kt)."; \
+		exit 1; \
+	fi
+	@echo "[plugin-purity-check] OK: plugin is gomobile-pure."
+
+appext-ios: plugin-purity-check
 	cd k2 && make appext-ios
 
 appext-macos:
@@ -221,8 +238,8 @@ appext-macos:
 build-macos-ne-lib: appext-macos
 	@echo "macOS NE xcframework ready: k2/build/K2MobileMacOS.xcframework"
 
-appext-android: appext-deps
-	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
+appext-android: appext-deps plugin-purity-check
+	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable" -ldflags "-checklinkname=0" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
 
 build-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/

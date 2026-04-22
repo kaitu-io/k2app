@@ -24,9 +24,8 @@ import { useUser } from "../hooks/useUser";
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 
 import { type Plan, type Order, type AppConfig } from "../services/api-types";
-import { ERROR_CODES } from "../utils/errorCode";
+import { ERROR_CODES, getErrorMessage } from "../utils/errorCode";
 import { LoadingState, EmptyPlans } from '../components/LoadingAndEmpty';
-import MemberSelection from '../components/MemberSelection';
 import MembershipBenefits from '../components/MembershipBenefits';
 import EmailLoginForm from '../components/EmailLoginForm';
 import {
@@ -549,20 +548,20 @@ export default function Purchase() {
   const [isLoading, setIsLoading] = useState(false);
   const [campaignError, setCampaignError] = useState<string>("");
   const [payDialogOpen, setPayDialogOpen] = useState(false);
-  const [selectedForMyself, setSelectedForMyself] = useState(true);
-  const [selectedMemberUUIDs, setSelectedMemberUUIDs] = useState<string[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [, setAppConfigLoading] = useState(false);
 
   const {showAlert} = useAlert();
 
-  // Tier grouping — hidden when all plans share one tier (backward compat)
+  // Tier grouping — kept for the (currently hidden) multi-tier chip selector.
+  // Repeat-buyer tier lock is enforced by `filteredPlans` below regardless of
+  // selector visibility.
   const [selectedTier, setSelectedTier] = useState('');
 
   const tierGroups = useMemo(() => {
     const groups = new Map<string, Plan[]>();
     for (const p of plans) {
-      const tier = p.tier || 'pro';
+      const tier = p.tier || 'basic';
       if (!groups.has(tier)) groups.set(tier, []);
       groups.get(tier)!.push(p);
     }
@@ -570,7 +569,9 @@ export default function Purchase() {
   }, [plans]);
 
   const tiers = useMemo(() => [...tierGroups.keys()], [tierGroups]);
-  const showTierSelector = tiers.length > 1;
+  // Manual tier picker not yet released — repeat buyers are auto-filtered to
+  // their existing tier, first-time buyers see every tier as one flat list.
+  const showTierSelector = false;
 
   // Auto-select tier when plans load
   useEffect(() => {
@@ -580,11 +581,19 @@ export default function Purchase() {
     setSelectedTier(highlightedPlan?.tier || tiers[0]);
   }, [tiers, plans, selectedTier]);
 
-  // Filter plans by selected tier
+  // Filter plans by user tier (Plan A):
+  //   - First-time buyer (or unauthenticated browse): show every plan.
+  //   - Repeat buyer: lock to plans matching `user.tier`. Backend enforces
+  //     the same rule and returns TIER_MISMATCH (422001) on violation.
   const filteredPlans = useMemo(() => {
-    if (!showTierSelector) return plans;
-    return tierGroups.get(selectedTier) || plans;
-  }, [showTierSelector, selectedTier, tierGroups, plans]);
+    if (showTierSelector) {
+      return tierGroups.get(selectedTier) || plans;
+    }
+    if (!user?.isFirstOrderDone) {
+      return plans;
+    }
+    return plans.filter(p => p.tier === user.tier);
+  }, [showTierSelector, selectedTier, tierGroups, plans, user]);
 
   // When tier changes, ensure selected plan is valid in the new tier
   useEffect(() => {
@@ -606,21 +615,13 @@ export default function Purchase() {
       return;
     }
 
-    // 检查是否有选择付费对象
-    if (!selectedForMyself && selectedMemberUUIDs.length === 0) {
-      showAlert(t('purchase:purchase.selectAtLeastOneTarget'), "error");
-      return;
-    }
-
     setIsLoading(true);
     try {
-      console.info('[Purchase] 创建订单请求: ' + JSON.stringify({ preview, plan, campaignCode, selectedForMyself, selectedMemberUUIDs }));
+      console.info('[Purchase] 创建订单请求: ' + JSON.stringify({ preview, plan, campaignCode }));
       const response = await cloudApi.post<{ order: Order; payUrl?: string }>('/api/user/orders', {
         preview,
         plan,
         campaignCode: campaignCode || undefined,
-        forMyself: selectedForMyself,
-        forUserUUIDs: selectedMemberUUIDs.length > 0 ? selectedMemberUUIDs : undefined,
       });
       console.info('[Purchase] 创建订单响应: ' + JSON.stringify(response));
       
@@ -641,6 +642,27 @@ export default function Purchase() {
           console.error('[Purchase] Invalid campaign code:', response.code, response.message);
           setCampaignError(t('purchase:purchase.invalidCampaignCode'));
           // 优惠码错误时不清除订单数据，保持当前预览状态
+        } else if (response.code === ERROR_CODES.TIER_MISMATCH) {
+          // Tier 锁定：仅同档续费，跨档需联系客服。后端在首单/续费两路都校验。
+          console.warn('[Purchase] Tier mismatch:', response.code, response.message);
+          if (!preview) {
+            setCampaignError("");
+            setOrderData(null);
+            showAlert(
+              t('purchase:purchase.tierLocked', {
+                tier: user?.tier ?? 'basic',
+              }),
+              'error'
+            );
+          }
+        } else if (response.code === ERROR_CODES.PROXY_PURCHASE_DEPRECATED) {
+          // 代付已下线 — UI 已不发送此请求，仅兜底陈旧客户端。
+          console.warn('[Purchase] Proxy purchase deprecated:', response.code, response.message);
+          if (!preview) {
+            setCampaignError("");
+            setOrderData(null);
+            showAlert(getErrorMessage(response.code, t), 'error');
+          }
         } else {
           // 只在非预览模式下清除状态和显示错误提示
           if (!preview) {
@@ -664,7 +686,7 @@ export default function Purchase() {
     } finally {
       setIsLoading(false);
     }
-  }, [plan, campaignCode, selectedForMyself, selectedMemberUUIDs, showAlert, t, isAuthenticated, openLoginDialog]);
+  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog, user]);
 
   // 用于标记是否已选择过默认套餐（避免 plan 变化触发重新获取套餐列表）
   const defaultPlanSelectedRef = useRef(false);
@@ -776,19 +798,13 @@ export default function Purchase() {
     fetchAppConfig();
   }, []);
 
-  // 当计划、优惠码或选择目标变化时，重新获取预览数据
+  // 当计划或优惠码变化时，重新获取预览数据
   useEffect(() => {
-    if (plan && !plansLoading && (selectedForMyself || selectedMemberUUIDs.length > 0)) {
-      console.info('[Purchase] 触发预览订单: ' + JSON.stringify({ plan, campaignCode, selectedForMyself, selectedMemberUUIDs }));
+    if (plan && !plansLoading) {
+      console.info('[Purchase] 触发预览订单: ' + JSON.stringify({ plan, campaignCode }));
       handleOrder({preview: true});
     }
-  }, [campaignCode, plan, plansLoading, selectedForMyself, selectedMemberUUIDs, handleOrder]);
-
-  // 处理成员选择变化
-  const handleMemberSelectionChange = (forMyself: boolean, memberUUIDs: string[]) => {
-    setSelectedForMyself(forMyself);
-    setSelectedMemberUUIDs(memberUUIDs);
-  };
+  }, [campaignCode, plan, plansLoading, handleOrder]);
 
   // 处理套餐选择（使用 useCallback 保证引用稳定，避免 PlanList 不必要的重新渲染）
   const handlePlanSelect = useCallback((pid: string) => {
@@ -877,28 +893,20 @@ export default function Purchase() {
           maxLanClient={plans.find(p => p.pid === plan)?.maxLanClient}
         />
 
-        {/* 登录/注册或成员选择 */}
-        <Box>
-          {!isAuthenticated ? (
-            <>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '1rem' }} component="span">
-                {t('purchase:purchase.bindEmailAndSelectTarget')}
-              </Typography>
-              <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
-                <EmailLoginForm onLoginSuccess={() => {
-                  console.info('[Purchase] Login success, refreshing user info');
-                  // User info will be refreshed automatically
-                }} />
-              </Card>
-            </>
-          ) : (
-            <MemberSelection
-              selectedForMyself={selectedForMyself}
-              selectedMemberUUIDs={selectedMemberUUIDs}
-              onSelectionChange={handleMemberSelectionChange}
-            />
-          )}
-        </Box>
+        {/* 登录/注册 */}
+        {!isAuthenticated && (
+          <Box>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '1rem' }} component="span">
+              {t('purchase:purchase.bindEmail')}
+            </Typography>
+            <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+              <EmailLoginForm onLoginSuccess={() => {
+                console.info('[Purchase] Login success, refreshing user info');
+                // User info will be refreshed automatically
+              }} />
+            </Card>
+          </Box>
+        )}
 
         {/* 邀请奖励横幅 */}
         {user?.inviteCode && appConfig?.inviteReward && (
@@ -940,6 +948,16 @@ export default function Purchase() {
             <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
               <EmptyPlans />
             </Card>
+          ) : filteredPlans.length === 0 ? (
+            // Repeat buyer whose tier currently has no purchasable plans —
+            // show the tier-locked message so they know to contact support.
+            <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+                {t('purchase:purchase.tierLocked', {
+                  tier: user?.tier ?? 'basic',
+                })}
+              </Typography>
+            </Card>
           ) : (
             <PlanList
               plans={filteredPlans}
@@ -968,12 +986,7 @@ export default function Purchase() {
                 <Typography variant="body2" color="primary" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }} component="span" >
                   {(() => {
                     const planMonths = plans.find(p => p.pid === plan)?.month || 0;
-                    const targetCount = (selectedForMyself ? 1 : 0) + selectedMemberUUIDs.length;
-                    if (targetCount === 1) {
-                      return t('purchase:purchase.memberAuthorization', { months: planMonths });
-                    } else {
-                      return t('purchase:purchase.memberAuthorizationMultiple', { months: planMonths, count: targetCount });
-                    }
+                    return t('purchase:purchase.memberAuthorization', { months: planMonths });
                   })()}
                   {user?.inviteCode && appConfig?.inviteReward && (
                     <Chip label={t('purchase:purchase.friendReferralGift', { days: appConfig.inviteReward.purchaseRewardDays })} color="success" size="small" sx={{ ml: 1, fontWeight: 'bold' }} component="span" />
@@ -1080,7 +1093,7 @@ export default function Purchase() {
           size="large"
           fullWidth
           onClick={() => handleOrder({ preview: false })}
-          disabled={plansLoading || plans.length === 0 || !plan || isLoading || !isAuthenticated || (!selectedForMyself && selectedMemberUUIDs.length === 0)}
+          disabled={plansLoading || plans.length === 0 || filteredPlans.length === 0 || !plan || isLoading || !isAuthenticated}
           sx={{
             fontWeight: 700,
             fontSize: 18,
@@ -1107,7 +1120,7 @@ export default function Purchase() {
         >
           {plansLoading || isLoading ? t('purchase:purchase.loadingPlans') :
            plans.length === 0 ? t('purchase:purchase.noPlans') :
-           (!isAuthenticated || (!selectedForMyself && selectedMemberUUIDs.length === 0)) ? t('purchase:purchase.selectTarget') :
+           !isAuthenticated ? t('purchase:purchase.bindEmailToPayNow') :
            t('purchase:purchase.payNow')}
         </Button>
         

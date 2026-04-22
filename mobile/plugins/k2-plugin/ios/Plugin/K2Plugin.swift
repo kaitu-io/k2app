@@ -9,6 +9,11 @@ import os.log
 private let kAppGroup = "group.io.kaitu"
 private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "K2Plugin")
 
+/// One-shot flag set after the first successful on-demand migration in load().
+/// Clears stale `NEOnDemandRuleConnect()` rules left by 0.4.1 and earlier
+/// (which hardcoded on-demand with no user control). See ANC-13.
+private let kOnDemandMigrationKey = "k2.onDemandMigration.v1"
+
 extension Notification.Name {
     static let k2DevEnabledChanged = Notification.Name("k2DevEnabledChanged")
 }
@@ -253,10 +258,18 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             manager.isEnabled = true
             manager.localizedDescription = "kaitu.io"
 
-            // On-demand: auto-restart NE after iOS kills it (jetsam, network loss).
-            // System calls startVPNTunnel() when network becomes available.
-            manager.isOnDemandEnabled = true
-            manager.onDemandRules = [NEOnDemandRuleConnect()]
+            // alwaysOn is the user's Dashboard toggle. When true, iOS auto-restarts
+            // NE after system release (jetsam, network loss) via NEOnDemandRuleConnect.
+            // When false (default), user-initiated disconnect is final. See ANC-13.
+            let alwaysOn = call.getBool("alwaysOn") ?? false
+            logger.info("connect: alwaysOn=\(alwaysOn)")
+            if alwaysOn {
+                manager.isOnDemandEnabled = true
+                manager.onDemandRules = [NEOnDemandRuleConnect()]
+            } else {
+                manager.isOnDemandEnabled = false
+                manager.onDemandRules = []
+            }
 
             logger.info("connect: saving preferences...")
             manager.saveToPreferences { error in
@@ -315,11 +328,21 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        // Disable on-demand BEFORE stopping — prevents system auto-reconnect.
-        // Must save first, then stop in completion handler (strict sequencing).
+        // Unconditional clear — user intent is to disconnect NOW regardless of
+        // the alwaysOn preference. Next connect() re-applies alwaysOn from the
+        // current user setting. This closes the ANC-13 "关不掉" loophole where
+        // stale on-demand rules cached in NE subsystem re-activated the tunnel.
         manager.isOnDemandEnabled = false
-        manager.saveToPreferences { [weak self] _ in
+        manager.onDemandRules = []
+        manager.saveToPreferences { [weak self] error in
             _ = self // prevent unused warning
+
+            if let error = error {
+                logger.error("disconnect: saveToPreferences failed: \(error.localizedDescription) — stopping tunnel anyway")
+                // Continue to stopVPNTunnel — user intent is clear. Save
+                // failure means on-demand might linger in system cache, but
+                // explicitly stopping the tunnel still honors the intent.
+            }
 
             var disconnectObserver: NSObjectProtocol?
             var timeoutWork: DispatchWorkItem?
@@ -353,7 +376,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             timeoutWork = timeout
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeout)
 
-            // Stop AFTER on-demand is disabled
+            // Stop AFTER on-demand is cleared
             connection.stopVPNTunnel()
         }
     }
@@ -923,6 +946,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("loadVPNManager: using \(matchingManager != nil ? "existing" : "new") manager")
                 self?.vpnManager = manager
                 self?.registerStatusObserver()
+                self?.migrateOnDemandIfNeeded(manager: manager)
                 completion?(manager)
             } else {
                 // Remove stale configs and wait for all removals to complete
@@ -943,6 +967,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     logger.info("loadVPNManager: stale removal done, using \(matchingManager != nil ? "existing" : "new") manager")
                     self?.vpnManager = manager
                     self?.registerStatusObserver()
+                    self?.migrateOnDemandIfNeeded(manager: manager)
                     completion?(manager)
                 }
             }
@@ -950,6 +975,41 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     // remapStatusKeys is in K2Helpers.swift (module-level function)
+
+    /// One-shot migration: clear stale on-demand rules left by 0.4.1 and earlier
+    /// builds that hardcoded `NEOnDemandRuleConnect()`. After migration, on-demand
+    /// is only applied when the user opts in via the Dashboard "Always On" toggle
+    /// (wired through K2Plugin.connect's alwaysOn option).
+    ///
+    /// Idempotent: reads a UserDefaults flag to skip on subsequent launches.
+    /// Safe: if save fails, the flag is NOT set — will retry on next cold start.
+    private func migrateOnDemandIfNeeded(manager: NETunnelProviderManager) {
+        if UserDefaults.standard.bool(forKey: kOnDemandMigrationKey) {
+            return
+        }
+
+        let hasStaleOnDemand = manager.isOnDemandEnabled
+            || !(manager.onDemandRules?.isEmpty ?? true)
+
+        guard hasStaleOnDemand else {
+            // Already clean (fresh install or prior migration) — mark done
+            UserDefaults.standard.set(true, forKey: kOnDemandMigrationKey)
+            logger.info("migration: no stale on-demand, flag set")
+            return
+        }
+
+        logger.info("migration: clearing stale on-demand rules from prior version")
+        manager.isOnDemandEnabled = false
+        manager.onDemandRules = []
+        manager.saveToPreferences { error in
+            if let error = error {
+                logger.warning("migration: saveToPreferences failed: \(error.localizedDescription) — will retry next launch")
+                return
+            }
+            UserDefaults.standard.set(true, forKey: kOnDemandMigrationKey)
+            logger.info("migration: on-demand cleanup done, flag set")
+        }
+    }
 
     private func mapVPNStatus(_ status: NEVPNStatus) -> String {
         return mapVPNStatusString(status.rawValue)

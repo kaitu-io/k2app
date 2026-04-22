@@ -328,16 +328,10 @@ func executeApprovalPlanUpdate(ctx context.Context, params json.RawMessage) erro
 		plan.IsActive = req.IsActive
 	}
 	if req.Tier != nil {
+		if !IsValidTier(*req.Tier) {
+			return fmt.Errorf("invalid tier %q for plan %s", *req.Tier, p.PlanID)
+		}
 		plan.Tier = *req.Tier
-	}
-	if req.MaxDevice != nil {
-		plan.MaxDevice = *req.MaxDevice
-	}
-	if req.MaxRouterDevice != nil {
-		plan.MaxRouterDevice = *req.MaxRouterDevice
-	}
-	if req.MaxLanClient != nil {
-		plan.MaxLanClient = *req.MaxLanClient
 	}
 
 	if err := db.Get().Save(&plan).Error; err != nil {

@@ -95,7 +95,10 @@
       "licenseKeyNotFound": "License key not found",
       "licenseKeyUsed": "License key already used",
       "licenseKeyExpired": "License key expired",
-      "licenseKeyNotMatch": "Not eligible for this license key"
+      "licenseKeyNotMatch": "Not eligible for this license key",
+      "tierMismatch": "Your current tier cannot purchase this plan. Please contact support to switch tiers.",
+      "proxyPurchaseDeprecated": "Proxy purchase is no longer supported. Please ask the recipient to purchase with their own account.",
+      "proxyMembersDeprecated": "Proxy member management has been removed. Specify the recipient at kaitu.io/purchase during checkout."
     },
     "vpn": {
       "authFailed": "Authentication failed, please re-login",
@@ -120,6 +123,9 @@
     "api": {
       "requestFailed": "Request failed, please check your network",
       "responseFailed": "Response parsing failed"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "Failed to download routing rules. Check network and retry."
     },
     "installCancelled": "Installation cancelled",
     "unknown": "Unknown error",

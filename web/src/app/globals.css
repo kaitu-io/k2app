@@ -278,3 +278,42 @@
   border-radius: 0.5rem;
   margin: 1.25em 0;
 }
+
+/* Prevent long URLs / inline code from breaking layout on narrow screens */
+.prose {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.prose code {
+  word-break: break-all;
+}
+
+/* Tables scroll horizontally on narrow screens, natural layout on ≥md */
+.prose table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+@media (min-width: 768px) {
+  .prose table {
+    display: table;
+    white-space: normal;
+  }
+}
+
+/* Mobile typography scale (<640px) */
+@media (max-width: 640px) {
+  .prose {
+    font-size: 0.95rem;
+  }
+  .prose h1 {
+    font-size: 1.75em;
+  }
+  .prose h2 {
+    font-size: 1.35em;
+  }
+  .prose h3 {
+    font-size: 1.15em;
+  }
+}

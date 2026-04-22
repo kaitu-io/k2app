@@ -13,6 +13,7 @@
     "newFeatures": "New Features",
     "bugFixes": "Bug Fixes",
     "improvements": "Improvements",
+    "infrastructure": "Infrastructure",
     "breakingChanges": "Breaking Changes"
   },
   "controls": {

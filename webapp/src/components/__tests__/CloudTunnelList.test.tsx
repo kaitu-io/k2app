@@ -1,6 +1,7 @@
+import { useRef, useEffect } from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import { render } from '../../test/utils/render';
-import { CloudTunnelList } from '../CloudTunnelList';
+import { CloudTunnelList, type CloudTunnelListHandle } from '../CloudTunnelList';
 import type { TunnelListResponse } from '../../services/api-types';
 
 // --- Mock state objects ---
@@ -34,17 +35,13 @@ vi.mock('../../services/cloud-api', () => ({
   },
 }));
 
-vi.mock('../../utils/tunnel-sort', () => ({
-  sortTunnelsByRecommendation: (tunnels: unknown[]) => tunnels,
-}));
-
 vi.mock('../../utils/country', () => ({
   getCountryName: (code: string) => code,
   getFlagIcon: (code: string) => code,
 }));
 
-vi.mock('../VerticalLoadBar', () => ({
-  VerticalLoadBar: () => <div data-testid="load-bar" />,
+vi.mock('../RecommendBar', () => ({
+  RecommendBar: () => <div data-testid="recommend-bar" />,
 }));
 
 // --- Helpers ---
@@ -55,7 +52,8 @@ const makeTunnel = (id: number, name: string, country: string) => ({
   name,
   serverUrl: 'https://server.example.com',
   node: { country },
-  instance: { budgetScore: 0 },
+  instance: { budgetScore: 0, recommendScore: 0.5 },
+  recommendScore: 0.5,
 });
 
 const cachedResponse: TunnelListResponse = {
@@ -94,15 +92,12 @@ describe('CloudTunnelList', () => {
   describe('SWR: cache hit → immediate render', () => {
     it('should render tunnel list immediately from cache without showing skeleton', async () => {
       mockCacheGet.mockReturnValue(cachedResponse);
-      // Background revalidate resolves later
       mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Tunnels from cache should be visible immediately (no skeleton)
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
       expect(screen.getByText('Singapore-01')).toBeInTheDocument();
-      // No skeleton should be present
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     });
 
@@ -112,10 +107,8 @@ describe('CloudTunnelList', () => {
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Initially 2 tunnels from cache
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
 
-      // After background refresh, new tunnel appears
       await waitFor(() => {
         expect(screen.getByText('Los Angeles-01')).toBeInTheDocument();
       });
@@ -130,72 +123,156 @@ describe('CloudTunnelList', () => {
       await waitFor(() => {
         expect(mockCacheSet).toHaveBeenCalledWith('api:tunnels', freshResponse);
       });
-      // Verify no TTL option was passed
       expect(mockCacheSet).not.toHaveBeenCalledWith('api:tunnels', freshResponse, expect.anything());
     });
   });
 
-  describe('SWR: cache hit + background failure → list stays with error indicator', () => {
-    it('should keep cached tunnels visible when background refresh returns error code', async () => {
+  describe('SWR: cache hit + background failure → list stays, no user-visible error', () => {
+    it('should keep cached tunnels visible when background refresh returns error code (silent)', async () => {
       mockCacheGet.mockReturnValue(cachedResponse);
       mockCloudApiGet.mockResolvedValue({ code: -1, message: 'Network error' });
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Cached tunnels should remain
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
       expect(screen.getByText('Singapore-01')).toBeInTheDocument();
 
-      // Header should show refresh failed indicator
+      // No red "刷新失败" caption — background failures stay silent so
+      // users aren't alarmed by transient network blips when their list
+      // is still usable from cache.
       await waitFor(() => {
-        expect(screen.getByText('刷新失败')).toBeInTheDocument();
+        expect(mockCloudApiGet).toHaveBeenCalled();
       });
+      expect(screen.queryByText('刷新失败')).not.toBeInTheDocument();
     });
 
-    it('should keep cached tunnels visible when background refresh throws network error', async () => {
+    it('should keep cached tunnels visible when background refresh throws (silent)', async () => {
       mockCacheGet.mockReturnValue(cachedResponse);
       mockCloudApiGet.mockRejectedValue(new Error('fetch failed'));
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Cached tunnels should remain
       expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
 
-      // Header should show refresh failed indicator
       await waitFor(() => {
-        expect(screen.getByText('刷新失败')).toBeInTheDocument();
+        expect(mockCloudApiGet).toHaveBeenCalled();
       });
+      expect(screen.queryByText('刷新失败')).not.toBeInTheDocument();
     });
   });
 
   describe('No cache + loading → skeleton UI', () => {
     it('should render skeleton items while loading with no cache', () => {
       mockCacheGet.mockReturnValue(null);
-      // Never resolves — keeps loading state
       mockCloudApiGet.mockReturnValue(new Promise(() => {}));
 
       render(<CloudTunnelList {...defaultProps} />);
 
-      // Should have 3 skeleton list items
       const skeletons = screen.getAllByRole('listitem');
       expect(skeletons).toHaveLength(3);
 
-      // Should NOT show any real tunnel names
       expect(screen.queryByText('Tokyo-01')).not.toBeInTheDocument();
     });
   });
 
-  describe('No cache + API failure → error UI with retry', () => {
-    it('should show error UI when API fails and no cache exists', async () => {
+  describe('No cache + API failure → friendly empty state', () => {
+    it('shows friendly "cloud nodes unavailable" copy, not alarming "failed" wording', async () => {
       mockCacheGet.mockReturnValue(null);
       mockCloudApiGet.mockResolvedValue({ code: -1, message: 'Network error' });
 
       render(<CloudTunnelList {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('加载节点列表失败')).toBeInTheDocument();
-        expect(screen.getByText('重试加载')).toBeInTheDocument();
+        expect(screen.getByText('暂时无法获取云端节点')).toBeInTheDocument();
       });
+      expect(screen.getByText('重试加载')).toBeInTheDocument();
+
+      // Old alarming copy should be gone.
+      expect(screen.queryByText('加载节点列表失败')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Tunnel ordering', () => {
+    it('sorts tunnels alphabetically by country code', async () => {
+      const tunnels: TunnelListResponse = {
+        items: [
+          makeTunnel(1, 'Singapore-01', 'SG'),
+          makeTunnel(2, 'Japan-01', 'JP'),
+          makeTunnel(3, 'USA-01', 'US'),
+        ] as any,
+        echConfigList: 'ech',
+      };
+      mockCloudApiGet.mockResolvedValue({ code: 0, data: tunnels });
+
+      render(<CloudTunnelList {...defaultProps} />);
+      await waitFor(() => expect(screen.getByText('Japan-01')).toBeInTheDocument());
+
+      const items = screen.getAllByRole('listitem');
+      expect(items[0]).toHaveTextContent('Japan-01');
+      expect(items[1]).toHaveTextContent('Singapore-01');
+      expect(items[2]).toHaveTextContent('USA-01');
+    });
+  });
+
+  describe('Imperative handle: refresh({force})', () => {
+    function HarnessRefresh({ onReady }: { onReady: (h: CloudTunnelListHandle) => void }) {
+      const ref = useRef<CloudTunnelListHandle>(null);
+      useEffect(() => {
+        if (ref.current) onReady(ref.current);
+      }, [onReady]);
+      return <CloudTunnelList ref={ref} {...defaultProps} />;
+    }
+
+    it('force=true bypasses cache-hit fast-path and issues a network fetch', async () => {
+      mockCacheGet.mockReturnValue(cachedResponse);
+      mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
+
+      let handle: CloudTunnelListHandle | null = null;
+      render(<HarnessRefresh onReady={(h) => { handle = h; }} />);
+
+      // Initial mount hits cache — no blocking fetch required for render.
+      expect(screen.getByText('Tokyo-01')).toBeInTheDocument();
+      await waitFor(() => expect(handle).not.toBeNull());
+
+      mockCloudApiGet.mockClear();
+      await handle!.refresh({ force: true });
+
+      // Forced call goes through cloudApi even though cache is available.
+      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/tunnels/k2v4');
+    });
+
+    it('force=true rethrows on non-zero response code', async () => {
+      mockCacheGet.mockReturnValue(cachedResponse);
+      mockCloudApiGet.mockResolvedValue({ code: -1, message: 'oops' });
+
+      let handle: CloudTunnelListHandle | null = null;
+      render(<HarnessRefresh onReady={(h) => { handle = h; }} />);
+      await waitFor(() => expect(handle).not.toBeNull());
+
+      await expect(handle!.refresh({ force: true })).rejects.toThrow(/code=-1/);
+    });
+
+    it('force=true rethrows on thrown fetch error', async () => {
+      mockCacheGet.mockReturnValue(cachedResponse);
+      mockCloudApiGet.mockRejectedValue(new Error('network down'));
+
+      let handle: CloudTunnelListHandle | null = null;
+      render(<HarnessRefresh onReady={(h) => { handle = h; }} />);
+      await waitFor(() => expect(handle).not.toBeNull());
+
+      await expect(handle!.refresh({ force: true })).rejects.toThrow('network down');
+    });
+
+    it('default (non-forced) refresh is silent on cache-hit background failure', async () => {
+      mockCacheGet.mockReturnValue(cachedResponse);
+      mockCloudApiGet.mockResolvedValue({ code: -1, message: 'bg fail' });
+
+      let handle: CloudTunnelListHandle | null = null;
+      render(<HarnessRefresh onReady={(h) => { handle = h; }} />);
+      await waitFor(() => expect(handle).not.toBeNull());
+
+      // Must not throw — SWR path swallows background errors.
+      await expect(handle!.refresh()).resolves.toBeUndefined();
     });
   });
 });

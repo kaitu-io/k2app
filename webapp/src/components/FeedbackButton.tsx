@@ -53,7 +53,6 @@ export default function FeedbackButton() {
           ref={elementRef}
           size="small"
           onClick={handleClick}
-          data-tour="feedback-button"
           {...bindDrag}
           style={{
             left: position.x,

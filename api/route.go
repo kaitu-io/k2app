@@ -104,6 +104,8 @@ func SetupRouter() *gin.Engine {
 		api.GET("/relays", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
 		// Get plans
 		api.GET("/plans", api_get_plans)
+		// Get tiers (public — returns all 4 tiers with their active plans)
+		api.GET("/tiers", GetTiers)
 		// GeoIP country detection (anonymous, no auth)
 		api.GET("/geo", api_get_geo)
 		// 获取 CA 证书（公开接口，CA 证书是公开信息）
@@ -131,6 +133,8 @@ func SetupRouter() *gin.Engine {
 			user.GET("/devices", AuthRequired(), api_get_devices)
 			// 创建订单
 			user.POST("/orders", AuthRequired(), api_create_order)
+			// 通知代付人付款（给当前用户的 delegate 发支付邀请邮件）
+			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), api_order_notify_delegate)
 			// 获取授权变更历史
 			user.GET("/pro-histories", AuthRequired(), api_get_pro_histories)
 			// 发送绑定邮箱验证码
@@ -143,7 +147,8 @@ func SetupRouter() *gin.Engine {
 			user.DELETE("/members/:userUUID", AuthRequired(), api_member_remove)
 			// 代付人管理
 			user.GET("/delegate", AuthRequired(), api_get_delegate)
-			user.DELETE("/delegate", AuthRequired(), api_reject_delegate)
+			user.PUT("/delegate", AuthRequired(), api_put_delegate)
+			user.DELETE("/delegate", AuthRequired(), api_delete_delegate)
 			// 自我删除账号
 			user.DELETE("/delete-account", AuthRequired(), api_delete_user_account)
 			// Access key 自助端点已移除 — 统一通过 admin API 管理
@@ -269,8 +274,11 @@ func SetupRouter() *gin.Engine {
 		admin.PUT("/plans/:id", api_admin_update_plan)
 		admin.DELETE("/plans/:id", api_admin_delete_plan)
 		admin.POST("/plans/:id/restore", api_admin_restore_plan)
+		// Tier 列表（含 inactive plans，用于后台 plan 管理 UI）
+		admin.GET("/tiers", GetAdminTiers)
 
 		// 用户管理
+		admin.PUT("/users/:uuid/tier", api_admin_change_user_tier)
 		admin.PUT("/users/:uuid/retailer-status", api_admin_update_user_retailer_status)
 		admin.PUT("/users/:uuid/retailer-contacts", api_admin_update_retailer_contacts)
 		// 用户硬删除（批量）

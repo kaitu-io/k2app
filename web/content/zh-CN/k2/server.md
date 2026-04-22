@@ -90,7 +90,7 @@ sudo journalctl -u k2s -f
 项目内置 Docker Compose 配置，适合容器化环境：
 
 ```bash
-git clone https://github.com/kaitu-io/k2.git
+git clone https://github.com/getoverleap/k2.git
 cd k2/docker/
 docker compose up --build
 ```

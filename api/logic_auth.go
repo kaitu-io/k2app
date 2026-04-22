@@ -28,8 +28,6 @@ const (
 	VerificationCodeLength     = 6                  // 验证码长度
 	VerificationCodeExpiry     = 300                // 验证码有效期（秒）
 	VerificationCodePrefix     = "auth:code:email:" // 验证码缓存前缀
-	VerificationCodeLockPrefix = "auth:lock:email:" // 验证码发送锁前缀
-	VerificationCodeLockExpiry = 60                 // 验证码发送锁有效期（秒）
 )
 
 var (
@@ -204,30 +202,15 @@ func validateToken(ctx context.Context, tokenString string, tokenType string) (*
 
 // saveEmailVerificationCode 保存验证码
 func saveEmailVerificationCode(ctx context.Context, emailId string, code string, expireMinutes int) error {
-	if EnableMockVerificationCode {
-		return redis.CacheSet(VerificationCodePrefix+emailId, MockVerificationCode, expireMinutes*60)
-	}
-	// 检查是否在冷却时间内
-	lockKey := VerificationCodeLockPrefix + emailId
-	log.Debugf(ctx, "attempting to lock for sending verification code to %s", emailId)
-	locked, err := redis.TryLock(lockKey, VerificationCodeLockExpiry)
-	if err != nil {
-		log.Errorf(ctx, "failed to check cooldown for %s: %v", emailId, err)
-		return fmt.Errorf("failed to check cooldown: %w", err)
-	}
-	if !locked {
-		log.Warnf(ctx, "sending verification code to %s is locked (too many requests)", emailId)
-		return fmt.Errorf("too many requests")
-	}
-
-	// 存储验证码到缓存
 	cacheKey := VerificationCodePrefix + emailId
+	if EnableMockVerificationCode {
+		return redis.CacheSet(cacheKey, MockVerificationCode, expireMinutes*60)
+	}
 	log.Debugf(ctx, "saving verification code for %s", emailId)
 	if err := redis.CacheSet(cacheKey, code, expireMinutes*60); err != nil {
 		log.Errorf(ctx, "failed to save verification code for %s: %v", emailId, err)
 		return fmt.Errorf("failed to save verification code: %w", err)
 	}
-
 	return nil
 }
 
@@ -403,8 +386,9 @@ func isSecureRequest(proto, host string) bool {
 // For gateway (router) devices: rejects with 402/403 if no router permission or limit reached.
 // For app devices: kicks (deletes) the oldest device if limit reached.
 func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGateway bool) error {
+	quota := user.Quota()
 	if isGateway {
-		if user.MaxRouterDevice == 0 {
+		if quota.MaxRouterDevice == 0 {
 			log.Warnf(c, "user %d plan does not support router, rejecting gateway login", user.ID)
 			return e(ErrorPaymentRequired, "plan does not support router")
 		}
@@ -413,8 +397,8 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 			log.Errorf(c, "failed to count router devices for user %d: %v", user.ID, err)
 			return err
 		}
-		if user.MaxRouterDevice > 0 && routerCount >= int64(user.MaxRouterDevice) {
-			log.Warnf(c, "router device limit reached for user %d (%d/%d)", user.ID, routerCount, user.MaxRouterDevice)
+		if quota.MaxRouterDevice > 0 && routerCount >= int64(quota.MaxRouterDevice) {
+			log.Warnf(c, "router device limit reached for user %d (%d/%d)", user.ID, routerCount, quota.MaxRouterDevice)
 			return e(ErrorForbidden, "router device limit reached")
 		}
 		return nil
@@ -426,7 +410,7 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 		log.Errorf(c, "failed to count app devices for user %d: %v", user.ID, err)
 		return err
 	}
-	if appDeviceCount >= int64(user.MaxDevice) {
+	if appDeviceCount >= int64(quota.MaxDevice) {
 		log.Warnf(c, "app device limit reached for user %d, will remove oldest app device", user.ID)
 		var oldestDevice Device
 		if err := tx.Where("user_id = ? AND is_gateway = false", user.ID).Order("token_last_used_at ASC").First(&oldestDevice).Error; err != nil {

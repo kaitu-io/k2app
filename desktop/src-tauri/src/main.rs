@@ -219,6 +219,21 @@ fn main() {
                         log::debug!("Window close requested, hiding instead");
                     }
                 }
+                RunEvent::WindowEvent {
+                    label,
+                    event: WindowEvent::ScaleFactorChanged { scale_factor, .. },
+                    ..
+                } => {
+                    // User toggled "Larger Text" or moved window to a different-DPI
+                    // monitor — usable work area may have changed, re-clamp min_size.
+                    if label == "main" {
+                        log::info!(
+                            "Scale factor changed to {:.0}%, re-clamping min_size",
+                            scale_factor * 100.0
+                        );
+                        window::reclamp_min_size(app);
+                    }
+                }
                 RunEvent::ExitRequested { .. } => {
                     log::info!("Exit requested, stopping VPN before exit");
                     service::stop_vpn();

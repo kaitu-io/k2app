@@ -2,10 +2,10 @@ package center
 
 import (
 	"encoding/base64"
+	"math"
 	"net/http"
 	"strings"
 
-	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 
 	"github.com/gin-gonic/gin"
@@ -33,10 +33,24 @@ import (
 // Changes to this response shape MUST be coordinated with the daemon side.
 // ============================================================================
 
+// Scale used to project the canonical recommendScore [0,1] onto the legacy
+// Weight int field for backward compatibility with daemons that pre-date the
+// recommendScore field. One release cycle after recommendScore ships, Weight
+// can be removed.
+const subsLegacyWeightScale = 100
+
 // SubsTunnel is one entry in the k2subs JSON response.
 type SubsTunnel struct {
-	URL    string `json:"url"`
-	Weight int    `json:"weight"`
+	URL string `json:"url"`
+	// Weight is the legacy integer weight. Derived as round(RecommendScore *
+	// subsLegacyWeightScale). Kept so pre-recommendScore daemons can still do
+	// reasonable weighted picks. Remove in a future release once rollout is
+	// confirmed.
+	Weight int `json:"weight"`
+	// RecommendScore is the canonical [0,1] recommendation signal produced by
+	// ComputeRecommendScore. Higher = better. New daemon/webapp clients prefer
+	// this over Weight.
+	RecommendScore float64 `json:"recommendScore"`
 }
 
 // SubsResponse is the k2subs subscription endpoint response body (raw, no envelope).
@@ -131,38 +145,34 @@ func api_subs(c *gin.Context) {
 		return
 	}
 
-	// Mirror api_k2_tunnels query shape (api_tunnel.go:48-71):
-	//   - Preload("Node") so the response loop can read node fields without N+1
-	//   - tunnelProtocolsForQuery(K2V5) returns [K2V5] today; futureproof if
-	//     the helper ever expands (it already backs k2v4 clients transparently).
-	//   - Non-admins never see IsTest=true tunnels. Admin users do, for live
-	//     testing via real clients.
+	// Admin bypass for test tunnels — mirrors api_k2_tunnels:44,67-71.
 	isAdmin := authCtx.User.IsAdmin != nil && *authCtx.User.IsAdmin
-	q := db.Get().Model(&SlaveTunnel{}).
-		Preload("Node").
-		Where("node_id IS NOT NULL").
-		Where("protocol IN ?", tunnelProtocolsForQuery(TunnelProtocolK2V5))
-	if !isAdmin {
-		q = q.Where(&SlaveTunnel{IsTest: BoolPtr(false)})
-	}
 
-	// Country filter — DB stores ISO-3166 alpha-2 in UPPERCASE (`JP`, `HK`, `US`).
-	// Accept any case from the client and normalize to uppercase so the WHERE
-	// clause matches the canonical stored form (index-friendly, no row-level
-	// function call like LOWER()).
-	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
-	if country != "" {
-		q = q.Joins("Node").
-			Where("slave_nodes.country = ?", country)
-		log.Debugf(c, "subs: filtering by country=%q", country)
-	}
-
-	var tunnels []SlaveTunnel
-	if err := q.Find(&tunnels).Error; err != nil {
+	tunnels, err := fetchK2V5Tunnels(c, isAdmin)
+	if err != nil {
 		log.Errorf(c, "subs: DB query failed: %v", err)
 		subsError(c, http.StatusInternalServerError, "failed to load tunnels")
 		return
 	}
+
+	// Country filter in-memory. DB stores ISO-3166 alpha-2 uppercase; normalize
+	// both sides so future casing drift won't reintroduce silent empty results.
+	// Empty country = no filter. This intentionally does NOT push into SQL — the
+	// JOIN variants (explicit or `Joins("Node")`) are too easy to get subtly
+	// wrong (see 3e20b8e postmortem), and the tunnel set is tiny (<100).
+	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
+
+	// Batch-fetch CloudInstance rows by node IPv4 so we can compute per-tunnel
+	// RecommendScore via the same code path /api/tunnels uses. Non-cloud nodes
+	// fall through to ComputeRecommendScore(nil) → 0.5 (neutral), keeping them
+	// eligible in pickWeighted without being favored.
+	nodeIPs := make([]string, 0, len(tunnels))
+	for _, t := range tunnels {
+		if t.Node != nil && t.Node.Ipv4 != "" {
+			nodeIPs = append(nodeIPs, t.Node.Ipv4)
+		}
+	}
+	instanceMap := getCloudInstancesByIPs(nodeIPs)
 
 	items := make([]SubsTunnel, 0, len(tunnels))
 	for _, t := range tunnels {
@@ -176,18 +186,37 @@ func api_subs(c *gin.Context) {
 		if t.ServerURL == "" {
 			continue
 		}
+		if country != "" && strings.ToUpper(t.Node.Country) != country {
+			continue
+		}
+
+		var instData *DataTunnelInstance
+		if inst, ok := instanceMap[t.Node.Ipv4]; ok {
+			instData = buildTunnelInstanceData(&inst)
+		}
+		score := ComputeRecommendScore(instData)
+
 		items = append(items, SubsTunnel{
-			URL:    injectSubsCreds(t.ServerURL, udid, token),
-			Weight: 1,
+			URL:            injectSubsCreds(t.ServerURL, udid, token),
+			Weight:         int(math.Round(score * subsLegacyWeightScale)),
+			RecommendScore: score,
 		})
 	}
 
 	log.Infof(c, "subs: user=%d country=%q isAdmin=%v returning %d tunnels",
 		authCtx.User.ID, country, isAdmin, len(items))
 
+	writeSubsOK(c, SubsResponse{Tunnels: items, Refresh: 1800})
+}
+
+// writeSubsOK emits the raw /api/subs success response. RecommendScore is
+// derived from CloudInstance billing data which updates on the order of
+// minutes (via worker_cloud sync), so end-to-end caching by CloudFront could
+// freeze a stale view for hours. The Cache-Control header is the client-side
+// half of that contract; CloudFront Behavior for /api/subs must also set
+// Minimum TTL = 0 for the header to be respected.
+func writeSubsOK(c *gin.Context, resp SubsResponse) {
+	c.Header("Cache-Control", "no-store, private")
 	// RAW JSON — see the wire-protocol note at the top of this file.
-	c.JSON(http.StatusOK, SubsResponse{
-		Tunnels: items,
-		Refresh: 1800,
-	})
+	c.JSON(http.StatusOK, resp)
 }

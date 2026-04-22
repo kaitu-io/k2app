@@ -316,3 +316,54 @@ func TestBuildTunnelInstanceData_BudgetScore(t *testing.T) {
 		assert.LessOrEqual(t, result.BudgetScore, 0.0)
 	})
 }
+
+// TestBuildTunnelInstanceData_PopulatesRecommendScore asserts the single-source
+// invariant: whatever BudgetScore the helper ends up with must be projected into
+// RecommendScore via ComputeRecommendScore in the same call. Callers (handlers,
+// batch builders) should never have to do this themselves.
+func TestBuildTunnelInstanceData_PopulatesRecommendScore(t *testing.T) {
+	now := time.Now().Unix()
+	inst := &CloudInstance{
+		TrafficUsedBytes:  600,
+		TrafficTotalBytes: 1000,
+		TrafficResetAt:    now + 15*86400, // ~15 days into a 30-day cycle
+	}
+	result := buildTunnelInstanceData(inst)
+	require.NotNil(t, result)
+
+	// RecommendScore must equal the canonical ComputeRecommendScore of the same
+	// instance. Any drift here means the two code paths diverged.
+	assert.Equal(t, ComputeRecommendScore(result), result.RecommendScore,
+		"RecommendScore must be populated via ComputeRecommendScore")
+	// And it must be within [0, 1].
+	assert.GreaterOrEqual(t, result.RecommendScore, 0.0)
+	assert.LessOrEqual(t, result.RecommendScore, 1.0)
+}
+
+// TestDataSlaveTunnel_RecommendScoreJSONTag verifies the wire contract:
+// `recommendScore` is present at the top level of DataSlaveTunnel so consumers
+// don't need an instance null-check. Non-cloud nodes (no Instance) must still
+// emit the field with the 0.5 neutral default when populated via
+// ComputeRecommendScore(nil).
+func TestDataSlaveTunnel_RecommendScoreJSONTag(t *testing.T) {
+	// Non-cloud tunnel: Instance == nil, top-level recommendScore must still
+	// carry the neutral default.
+	tunnel := DataSlaveTunnel{
+		ID:             42,
+		Domain:         "non-cloud.example.com",
+		RecommendScore: ComputeRecommendScore(nil),
+	}
+	body, err := json.Marshal(tunnel)
+	require.NoError(t, err)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(body, &decoded))
+
+	score, ok := decoded["recommendScore"].(float64)
+	require.True(t, ok, "recommendScore must be present on DataSlaveTunnel JSON")
+	assert.Equal(t, 0.5, score, "non-cloud node must report the neutral 0.5 default")
+
+	// And Instance is omitted (omitempty on nil pointer).
+	_, hasInstance := decoded["instance"]
+	assert.False(t, hasInstance, "non-cloud tunnel must omit instance")
+}

@@ -2,6 +2,8 @@ package center
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -188,5 +190,86 @@ func TestApiSubs_MalformedAuth_ReturnsRaw401(t *testing.T) {
 			// No JSON envelope leak.
 			assert.NotContains(t, w.Body.String(), `"code"`)
 		})
+	}
+}
+
+// =====================================================================
+// TestWriteSubsOK — response framing (Cache-Control + JSON shape)
+//
+// writeSubsOK is the single path for success responses. These tests assert
+// the wire contract end-to-end on the struct-to-JSON path: Cache-Control
+// header, raw (no envelope) body, and both the new recommendScore field and
+// the legacy weight field present for a release-cycle's worth of backward
+// compatibility.
+// =====================================================================
+
+func TestWriteSubsOK_SetsCacheControlHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/test", func(c *gin.Context) {
+		writeSubsOK(c, SubsResponse{
+			Tunnels: []SubsTunnel{{URL: "k2v5://x", Weight: 50, RecommendScore: 0.5}},
+			Refresh: 1800,
+		})
+	})
+
+	req, _ := http.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "no-store, private", w.Header().Get("Cache-Control"),
+		"successful /api/subs responses must disable caching end-to-end")
+	assert.Contains(t, w.Body.String(), `"url":"k2v5://x"`)
+}
+
+func TestSubsResponse_JSONShapeIncludesRecommendScoreAndWeight(t *testing.T) {
+	// The SubsTunnel struct must serialize both fields for one release cycle:
+	// new daemons read recommendScore, pre-release daemons still see weight.
+	resp := SubsResponse{
+		Tunnels: []SubsTunnel{
+			{URL: "k2v5://a", Weight: 75, RecommendScore: 0.75},
+			{URL: "k2v5://b", Weight: 50, RecommendScore: 0.5},
+		},
+		Refresh: 1800,
+	}
+
+	var decoded map[string]any
+	body, err := json.Marshal(resp)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(body, &decoded))
+
+	tunnels, ok := decoded["tunnels"].([]any)
+	require.True(t, ok)
+	require.Len(t, tunnels, 2)
+
+	first := tunnels[0].(map[string]any)
+	assert.Equal(t, "k2v5://a", first["url"])
+	assert.Equal(t, float64(75), first["weight"], "legacy weight int must be present")
+	assert.InDelta(t, 0.75, first["recommendScore"], 1e-9, "recommendScore float must be present")
+}
+
+func TestSubsTunnel_LegacyWeightDerivedFromScore(t *testing.T) {
+	// Contract: Weight = round(RecommendScore * subsLegacyWeightScale). This is
+	// the only invariant backward-compat depends on — any handler that populates
+	// SubsTunnel must honor it. This is a shape test against that invariant on
+	// a hand-rolled tunnel list, not a live handler integration (which would
+	// need DB mocks).
+	cases := []struct {
+		score      float64
+		wantWeight int
+	}{
+		{0.0, 0},
+		{0.25, 25},
+		{0.5, 50},
+		{0.75, 75},
+		{1.0, 100},
+		{0.456, 46},
+	}
+
+	for _, tc := range cases {
+		got := int(math.Round(tc.score * subsLegacyWeightScale))
+		assert.Equal(t, tc.wantWeight, got,
+			"score=%v must project to weight=%d", tc.score, tc.wantWeight)
 	}
 }

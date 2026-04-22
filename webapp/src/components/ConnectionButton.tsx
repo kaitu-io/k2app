@@ -19,7 +19,6 @@ import {
   styled,
 } from '@mui/material';
 import { PlayArrow, Stop, Check } from '@mui/icons-material';
-import { SmartModeIcon } from './SmartModeIcon';
 import { useTranslation } from 'react-i18next';
 import { getThemeColors, getStatusGradient, getStatusShadow } from '../theme/colors';
 import { getFlagIcon } from '../utils/country';
@@ -226,7 +225,7 @@ export function ConnectionButton({
     (isDisconnected && !hasTunnelSelected);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }} data-tour="connect-button">
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <Tooltip title={statusText} arrow placement="top">
         <span>
           <StyledConnectionButton
@@ -247,9 +246,16 @@ export function ConnectionButton({
               >
                 {statusText}
               </Typography>
-              {(tunnelName || tunnelCountry) && (
+              {(!hasTunnelSelected && isDisconnected) ? (
+                <Typography
+                  variant="caption"
+                  sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem', maxWidth: 140, textAlign: 'center' }}
+                >
+                  {t('dashboard:dashboard.selectServerHintShort')}
+                </Typography>
+              ) : (tunnelName || tunnelCountry) && (
                 <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  {tunnelCountry ? (
+                  {tunnelCountry && (
                     <Box sx={{
                       display: 'flex',
                       alignItems: 'center',
@@ -257,8 +263,6 @@ export function ConnectionButton({
                     }}>
                       {getFlagIcon(tunnelCountry)}
                     </Box>
-                  ) : tunnelName && (
-                    <SmartModeIcon />
                   )}
                   {tunnelName && (
                     <Typography
@@ -275,16 +279,6 @@ export function ConnectionButton({
         </span>
       </Tooltip>
 
-      {/* 未选择服务器提示 */}
-      {!hasTunnelSelected && isDisconnected && (
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ mt: 1.5, textAlign: 'center', maxWidth: 280, fontSize: '0.7rem' }}
-        >
-          {t('dashboard:dashboard.selectServerHint') || 'Select a server from the list below to get started'}
-        </Typography>
-      )}
     </Box>
   );
 }

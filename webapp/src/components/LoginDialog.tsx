@@ -33,7 +33,6 @@ import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../stores";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
-import { useOnboardingStore } from "../stores/onboarding.store";
 import { useAppLinks } from "../hooks/useAppLinks";
 import { handleResponseError } from "../utils/errorCode";
 import { suggestEmail } from "../utils/email-suggest";
@@ -184,10 +183,7 @@ export default function LoginDialog() {
       setIsAuthenticated(true);
       close();
 
-      // Trigger onboarding for first-time users (delay for Dashboard to render)
-      setTimeout(() => {
-        useOnboardingStore.getState().tryStart();
-      }, 800);
+
     } catch (err) {
       console.error('[LoginDialog] Failed to verify code:', err);
       setError(t("auth:auth.loginFailedRetry"));
@@ -197,7 +193,13 @@ export default function LoginDialog() {
   };
 
   // Close dialog — redirect to Dashboard if opened by route guard and user is not authenticated
-  const handleClose = () => {
+  const handleClose = (_event?: unknown, reason?: string) => {
+    console.warn('[LoginDialog] onClose triggered, reason:', reason);
+    // Prevent accidental close via backdrop tap on mobile. CSS zoom on body causes
+    // touch event target resolution to be misaligned — taps inside the dialog visually
+    // land on the backdrop in CSS coordinates, triggering spurious backdropClick events.
+    // Users can still close via the X button or the Later/Back button.
+    if (reason === 'backdropClick') return;
     const shouldRedirect = trigger.startsWith('guard:') && !isAuthenticated;
     close();
     if (shouldRedirect) {
@@ -219,6 +221,7 @@ export default function LoginDialog() {
     <Dialog
       open={isOpen}
       onClose={handleClose}
+      disableEscapeKeyDown
       maxWidth="xs"
       fullWidth
       PaperProps={{

@@ -6,43 +6,6 @@
       "title": "Renew",
       "description": "Manage your membership service and renewals"
     },
-    "members": {
-      "title": "Member Management",
-      "description": "After adding members, they can share your membership benefits. Ideal for family, business, and multi-user scenarios.",
-      "addMember": "Add Member",
-      "removeMember": "Remove Member",
-      "memberEmail": "Member Email",
-      "memberStatus": "Status",
-      "userId": "User ID",
-      "expiryDate": "Expiration Date",
-      "noMembers": "No members yet",
-      "noMembersDesc": "You haven't added any members yet",
-      "addFirstMember": "Add first member",
-      "addMemberDialog": "Add Member",
-      "emailLabel": "Member Email",
-      "emailPlaceholder": "Enter member email address",
-      "emailHelp": "Member will login and use your membership benefits with this email",
-      "emailRequired": "Please enter email address",
-      "invalidEmail": "Invalid email format",
-      "emailAlreadyInUse": "This email is already in use",
-      "addMemberSuccess": "Member added successfully",
-      "addMemberFailed": "Failed to add member",
-      "addMemberFailedRetry": "Failed to add member, please retry",
-      "removeMemberConfirm": "Are you sure you want to remove this member? After removal, the member will no longer be able to use your membership benefits.",
-      "removeMemberSuccess": "Member removed successfully",
-      "removeMemberFailed": "Failed to remove member",
-      "removeMemberFailedRetry": "Failed to remove member, please retry",
-      "getMembersFailed": "Failed to get member list",
-      "getMembersFailedRetry": "Failed to get member list, please retry",
-      "loading": "Loading member list...",
-      "noEmail": "No email set",
-      "status": {
-        "notActivated": "Not Activated",
-        "valid": "Active",
-        "expiringSoon": "Expiring Soon",
-        "expired": "Expired"
-      }
-    },
     "delegate": {
       "title": "Payer Management",
       "description": "Manage users who pay for your account",
@@ -60,25 +23,6 @@
     "wallet": {
       "title": "My Wallet",
       "description": "Manage your wallet balance and withdrawals"
-    }
-  },
-  "admin": {
-    "members": {
-      "title": "User Member Management",
-      "manageUserMembers": "Manage user members",
-      "addMember": "Add Member",
-      "removeMember": "Remove Member",
-      "noMembers": "This user has no members yet",
-      "noMembersDesc": "This user hasn't added any members yet",
-      "addFirstMember": "Add first member",
-      "addMemberDialog": "Add Member",
-      "addMemberSuccess": "Member added successfully",
-      "addMemberFailed": "Failed to add member",
-      "removeMemberConfirm": "Are you sure you want to remove this member? After removal, the member will no longer be able to use this user's membership benefits.",
-      "removeMemberSuccess": "Member removed successfully",
-      "removeMemberFailed": "Failed to remove member",
-      "getMembersFailed": "Failed to get member list",
-      "getMembersFailedRetry": "Failed to get member list, please retry"
     }
   },
   "retailer": {

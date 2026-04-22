@@ -75,7 +75,6 @@ function BottomNavigation() {
         icon: <DashboardIcon />,
         path: "/",
         feature: null,
-        dataTour: "nav-dashboard",
       },
       // Gateway-only: Router tab
       ...(window._platform?.platformType === 'gateway' ? [{
@@ -83,21 +82,18 @@ function BottomNavigation() {
         icon: <RouterIcon />,
         path: "/router",
         feature: null,
-        dataTour: "nav-router",
       }] : []),
       {
         label: isAuthenticated ? t("nav:navigation.purchase") : t("nav:navigation.activate"),
         icon: <PurchaseIcon />,
         path: "/purchase",
         feature: null,
-        dataTour: "nav-purchase",
       },
       {
         label: user?.isRetailer ? t("nav:navigation.retailer") : t("nav:navigation.invite"),
         icon: <InviteIcon />,
         path: "/invite",
         feature: "invite" as const,
-        dataTour: "nav-invite",
       },
       {
         label: t("nav:navigation.discover"),
@@ -149,7 +145,6 @@ function BottomNavigation() {
             label={item.label}
             icon={item.icon}
             value={item.path}
-            data-tour={item.dataTour}
           />
         ))}
       </StyledBottomNavigation>

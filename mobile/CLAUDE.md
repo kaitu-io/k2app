@@ -74,6 +74,37 @@ mobile/
 - **Config delivery**: `configJSON` passed via `startVPNTunnel(options:)`, fallback to `providerConfiguration`
 - **TUN fd acquisition** (in order): KVC `packetFlow.value(forKeyPath: "socket.fileDescriptor")` → utun fd scan (`findTunnelFileDescriptor()`)
 
+## Server Selection — Manual only on mobile
+
+Mobile has **no smart-mode / k2subs resolution**. Users pick a specific
+tunnel on Dashboard and the webapp passes that single `k2v5://` URL to
+`_k2.run('up', config)`. Mobile engine never sees `k2subs://`.
+
+```
+user → Dashboard tunnel list → picks one → _k2.run('up', {routes:[{via:'k2v5://...'}]})
+```
+
+**Why no smart mode on mobile:** iOS NE has a 50MB jetsam limit. A Go HTTPS
+client + JSON cache + refresher goroutine inside the extension would bloat
+the binary/memory footprint. Main App process (webapp) could host such a
+resolver, but doing so in the webapp creates a double-encapsulation risk
+(webapp fetches `/api/subs` while VPN is up → request goes through the
+tunnel → fails the very session we're about to establish). So we keep
+mobile strictly manual; smart selection is only available on desktop
+where the daemon's in-process resolver has no such constraints.
+
+**Node-probe note:** `probe.store` + `ProbeChip` populate RTT/loss
+measurements on the Dashboard tunnel list via `runProbe()` so users have
+data-driven guidance when picking manually. The daemon-side background
+probe loop (which updates `probe.Registry`) runs on desktop only —
+mobile's probe path is the explicit webapp-triggered one.
+
+Failure mode: if any webapp code path leaks raw `k2subs://` to appext,
+`engine.buildOutboundMap` drops the route as reserved scheme → code 570
+"no k2v5 outbound configured". See `k2/appext/CLAUDE.md`. That is always
+a webapp bug — the only legitimate `via` on mobile is `k2v5://` or
+`direct`.
+
 ## Android VpnService Architecture
 
 ```
@@ -200,6 +231,36 @@ Optimizing for App Store discoverability. These rules apply to all App Store Con
 - **Review notes template**: Always include: app category justification, demo account credentials (if subscription), explanation of network extension usage.
 - **Privacy nutrition labels**: Keep privacy declarations current with actual data collection. Discrepancies trigger review rejection.
 - **Custom Product Pages**: Create locale-specific pages for different traffic sources (organic search vs social vs ads) when budget allows.
+
+## Cross-Layer Conventions
+
+- **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case. JS/TS expects camelCase. Native bridge layers (`K2Plugin.swift` / `K2Plugin.kt`) must remap at the boundary before forwarding to the webapp.
+- **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
+
+## Android APK Signing
+
+Keystore at `mobile/android/app/kaitu-release.jks.enc` (AES-256-CBC encrypted).
+
+```bash
+make decrypt-keystore    # Requires KAITU_ANDROID_STORE_PASSWORD env var (also GH secret)
+```
+
+- Alias: `kaitu`, RSA 2048
+- Gradle `signingConfigs.release` reads the password from the same env var
+
+## Android S3 CDN Structure
+
+`d13jc1jqzlg4yt.cloudfront.net/kaitu/android/`:
+
+- `latest.json` — stable APK manifest
+- `beta/latest.json` — beta channel
+- `tools/tools.json` — adb binaries
+
+`scripts/publish-mobile.sh` always updates the stable `android/latest.json` since the Android install flow reads the stable channel.
+
+## S3 Log Upload (Mobile)
+
+Feedback uploads use bundle zip with unique feedbackId key: `mobile/{version}/{udid}/{date}/logs-{ts}-{id}.zip`. Only feedback path — mobile has no beta auto-upload equivalent. Legacy prefixes (`service-logs/` / `feedback-logs/`) still supported by Lambda.
 
 ## Related Docs
 

@@ -47,15 +47,31 @@
     "favorites": "お気に入りサーバー",
     "allLocations": "すべての場所",
     "advancedSettings": "詳細設定",
+    "alwaysOn": {
+      "title": "VPN を常にオンに保つ (Always On)",
+      "description": "システムがアプリを解放した後、自動的に再接続します。",
+      "warning": "オンにすると、VPN を切断するには iOS の設定から操作する必要があります。"
+    },
     "searchLocations": "場所を検索...",
     "manualRefresh": "今すぐ更新",
     "refreshing": "更新中...",
+    "cloudNodesUnavailable": "クラウドノードを一時的に取得できません",
+    "cloudNodesUnavailableHint": "ネットワークをご確認のうえ再試行、または「セルフデプロイ」に切り替えてご利用ください",
+    "refreshRetryHint": "ノード一覧を更新できませんでした。しばらくしてから自動的に再試行します",
     "updated": "更新日時",
     "justNow": "たった今",
     "minutesAgo": "分前",
     "hoursAgo": "時間前",
     "longTimeAgo": "かなり前",
+    "probe": {
+      "unreachable": "接続できません (QUIC ハンドシェイク失敗)",
+      "qualityUnknown": "サーバーが品質を報告していません",
+      "tooltip": "RTT {{rtt}} ms · ジッター {{jitter}} ms · 損失 {{loss}}%"
+    },
     "selectServerHint": "下から選択してください",
+    "selectServerHintShort": "↓ サーバーを選択",
+    "connectedBannerHint": "接続中です。サーバーを切り替えるには先に切断してください",
+    "disconnectBannerBtn": "切断",
     "connectionRetrying": "サーバー接続に失敗しました、再試行中...",
     "serviceFailure": {
       "title": "サービス接続失敗",

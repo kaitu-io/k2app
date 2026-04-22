@@ -107,3 +107,42 @@ yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows 
 - Pre-beta log level stored in `{app_data_dir}/pre-beta-log-level` file. Frontend passes `currentLogLevel` (from localStorage) when calling `set_update_channel` IPC since Rust cannot read browser localStorage.
 - Windows Authenticode signing requires intermediate CA chain: `osslsigncode` must use `-ac scripts/ci/macos/certum-chain.pem` (Certum Code Signing 2021 CA). Without it, Windows UAC shows "Publisher: Unknown" because it can't trace Wordgate LLC cert to a trusted root. SimplySign PKCS#11 token must be logged in first (`make simplisign-login`).
 - Windows cross-build from macOS: requires `cargo-xwin`, `makensis`, `osslsigncode`, `libp11`. See `docs/plans/2026-03-11-windows-build-on-macos.md` for full setup.
+
+## Storage Encryption (`storage_crypto.rs`)
+
+Desktop `storage.json` values encrypted with AES-256-GCM. Key derived via HKDF-SHA256 from the `machine-uid` crate's firmware-level ID:
+
+- **macOS**: `ioreg IOPlatformUUID`
+- **Windows**: registry `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`
+- **Linux**: `/var/lib/dbus/machine-id` → `/etc/machine-id`
+
+**Not** `sysctl kern.uuid` — that is a UUIDv3 derived from hostname and collided in v0.4.0 (see commit `d4ebdd6`).
+
+`ENC1:` prefix marks encrypted values; plaintext read transparently for backward compat. MCP Go (`mcp/storage_crypto.go`) reimplements the same crypto with shared test vectors for read-only session sharing.
+
+**Threat model**: scope is 落盘混淆 + 硬件绑定, **not** anti-local-attacker. See the `storage_crypto.rs` module doc for details.
+
+## macOS PKG Install Order
+
+Preinstall runs the OLD binary, postinstall runs the NEW. Always `launchctl unload` before overwriting plist; otherwise the old process keeps the binary locked and the install silently leaves the old one running.
+
+## Artifact Naming
+
+`Kaitu_{VERSION}_{ARCH}.{EXT}` — underscore-separated.
+
+- macOS: `_universal.pkg` / `_universal.app.tar.gz` / `.sig`
+- Windows: `_x64.exe` / `.sig`
+- S3 path: `kaitu/desktop/{VERSION}/`
+
+Never use hyphen separator (`Kaitu-`) or `-setup` suffix.
+
+## Root Daemon adb Discovery
+
+Daemon runs as root on macOS → different `$PATH` and `$HOME` from the user. `findAdbCandidates()` scans all `/Users/*/Library/Android/sdk/` and Homebrew paths before falling back to CDN download. Uses `gadb` (pure Go ADB TCP client) for device ops — no external `adb` dependency at runtime.
+
+## S3 Log Upload (Desktop)
+
+- **Feedback upload**: bundle tar.gz with unique feedbackId key: `desktop/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz`
+- **Beta auto-upload** (desktop only): per-file PUT to `auto/{udid}/{filename}`. Active `.log` files overwrite (latest snapshot). Rotated `.log.gz` files use HEAD check to skip if already uploaded.
+- Legacy `service-logs/` / `feedback-logs/` prefixes still supported by Lambda.
+- Upload modules are read-only — never truncate source log files.

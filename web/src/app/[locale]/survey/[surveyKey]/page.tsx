@@ -11,6 +11,7 @@ import SurveySuccess from "../_components/SurveySuccess";
 import EmailLogin from "@/components/EmailLogin";
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
+import { useBrand } from "@/components/providers/BrandProvider";
 
 type PageState =
   | { kind: "loading" }
@@ -24,6 +25,7 @@ export default function SurveyPage() {
   const params = useParams();
   const surveyKey = params.surveyKey as string;
   const t = useTranslations();
+  const brand = useBrand();
   const { isAuthenticated, isAuthLoading } = useAuth();
   const [pageState, setPageState] = useState<PageState>({ kind: "form" });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -103,8 +105,8 @@ export default function SurveyPage() {
         <div className="flex justify-center mb-8">
           <Link href="/">
             <Image
-              src="/kaitu-icon.png"
-              alt="Kaitu"
+              src={brand.logoPath}
+              alt={brand.displayName}
               width={48}
               height={48}
               className="rounded-lg"

@@ -4,14 +4,14 @@ import * as Sentry from "@sentry/react";
 import App from "./App";
 import { i18nPromise } from "./i18n/i18n";
 import { initializeAllStores } from "./stores";
+import {
+  DESIGN_WIDTH,
+  ViewportState,
+  computeScaleDecision,
+  isAndroidCapacitorWebView,
+} from "./utils/viewport-scaling";
 
 // ==================== Viewport Scaling ====================
-
-/**
- * Design width for the UI
- * The UI is designed for 430px width and will be scaled proportionally when window is narrower
- */
-const DESIGN_WIDTH = 430;
 
 /**
  * Setup viewport scaling for narrow windows.
@@ -20,31 +20,35 @@ const DESIGN_WIDTH = 430;
  * Uses CSS zoom (not transform) so that position:fixed elements (react-joyride
  * overlays, ServiceAlert, MUI Portals) stay relative to the viewport.
  * CSS transform creates a new containing block which breaks fixed positioning.
+ *
+ * Android-only guard: on Capacitor Android, soft-keyboard show/hide fires
+ * resize with width unchanged. Mutating body during that event dismisses
+ * the keyboard and closes MUI Dialogs. The decision helper handles this —
+ * Tauri desktop and iOS always recompute so window drag triggers reflow.
  */
 function setupViewportScaling() {
+  let previous: ViewportState | null = null;
+  const isAndroid = isAndroidCapacitorWebView();
+
   function applyScale() {
-    const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
+    const current: ViewportState = {
+      windowWidth: window.innerWidth,
+      windowHeight: window.innerHeight,
+    };
+    const decision = computeScaleDecision(current, previous, isAndroid);
+    previous = current;
 
-    // Only use width for scaling calculation (height affected by titlebar)
-    const scaleX = windowWidth / DESIGN_WIDTH;
+    if (decision.skip || !decision.bodyStyle) return;
 
-    // Use width-based scale, never scale up
-    const scale = Math.min(scaleX, 1);
+    document.body.style.width = decision.bodyStyle.width;
+    document.body.style.height = decision.bodyStyle.height;
+    document.body.style.zoom = decision.bodyStyle.zoom;
 
-    if (scale < 1) {
-      // Use zoom instead of transform: zoom doesn't create a containing block,
-      // so position:fixed children remain relative to viewport
-      document.body.style.width = `${DESIGN_WIDTH}px`;
-      document.body.style.height = `${windowHeight / scale}px`;
-      document.body.style.zoom = `${scale}`;
-
-      console.info(`[Viewport] Scaling UI: ${scale.toFixed(4)}x (window: ${windowWidth}x${windowHeight}, design width: ${DESIGN_WIDTH})`);
-    } else {
-      // No scaling needed
-      document.body.style.width = "";
-      document.body.style.height = "";
-      document.body.style.zoom = "";
+    if (decision.bodyStyle.zoom) {
+      console.info(
+        `[Viewport] Scaling UI: ${decision.bodyStyle.zoom}x ` +
+          `(window: ${current.windowWidth}x${current.windowHeight}, design width: ${DESIGN_WIDTH})`,
+      );
     }
   }
 

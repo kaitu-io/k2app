@@ -124,17 +124,6 @@ func configInviteBaseURL() string {
 	return fmt.Sprintf("%s/s", webBaseURL)
 }
 
-// EDMConfig EDM邮件发送配置
-type EDMConfig struct {
-	Provider     string // "smtp" or "ses"
-	SMTPHost     string
-	SMTPPort     string
-	SMTPUsername string
-	SMTPPassword string
-	FromEmail    string
-	FromName     string
-}
-
 // AliyunConfig Alibaba Cloud configuration for route diagnosis
 type AliyunConfig struct {
 	AccessKeyID     string
@@ -323,38 +312,3 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-var (
-	edmConfig     *EDMConfig
-	edmConfigOnce sync.Once
-)
-
-// getEDMConfig 获取 EDM 配置 (lazy loading, thread-safe)
-func getEDMConfig(ctx context.Context) *EDMConfig {
-	edmConfigOnce.Do(func() {
-		edmConfig = &EDMConfig{
-			Provider:     viper.GetString("edm.provider"), // "smtp" or "ses"
-			SMTPHost:     viper.GetString("edm.smtp_host"),
-			SMTPPort:     viper.GetString("edm.smtp_port"),
-			SMTPUsername: viper.GetString("edm.smtp_username"),
-			SMTPPassword: viper.GetString("edm.smtp_password"),
-			FromEmail:    viper.GetString("edm.from_email"),
-			FromName:     viper.GetString("edm.from_name"),
-		}
-
-		// 如果使用 SES，日志记录（ses 模块会自动从 viper 加载配置）
-		if edmConfig.Provider == "ses" {
-			region := viper.GetString("aws.ses.region")
-			if region == "" {
-				region = viper.GetString("aws.region")
-			}
-			if region == "" {
-				region = "us-east-1"
-			}
-			useIMDS := viper.GetBool("aws.use_imds")
-			log.Infof(ctx, "EDM: Using AWS SES for email delivery (region: %s, UseIMDS: %v)", region, useIMDS)
-		} else {
-			log.Infof(ctx, "EDM: Using SMTP for email delivery (host: %s:%s)", edmConfig.SMTPHost, edmConfig.SMTPPort)
-		}
-	})
-	return edmConfig
-}

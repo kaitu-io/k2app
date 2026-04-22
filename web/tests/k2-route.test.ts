@@ -10,7 +10,13 @@
  * 3. getK2Posts groups by section, sorts by order
  * 4. Layout component exists and can be imported
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { KAITU, OVERLEAP } from '@/lib/brands';
+
+// Mock @/lib/brand-server — tests override the resolved brand per-case via beforeEach.
+vi.mock('@/lib/brand-server', () => ({
+  getBrand: vi.fn(),
+}));
 
 // Mock #velite module with k2/ posts that include order and section fields
 vi.mock('#velite', () => ({
@@ -72,6 +78,34 @@ vi.mock('#velite', () => ({
       section: 'getting-started',
     },
     {
+      title: 'k2 协议对比',
+      date: '2026-02-21T00:00:00.000Z',
+      summary: 'k2 与主流协议对比',
+      tags: ['k2', 'comparison'],
+      draft: false,
+      content: '<h1>k2 协议对比</h1><p>Comparison aggregate.</p>',
+      metadata: { readingTime: 5, wordCount: 700 },
+      filePath: 'zh-CN/k2/comparison',
+      locale: 'zh-CN',
+      slug: 'k2/comparison',
+      order: 0,
+      section: 'comparison',
+    },
+    {
+      title: 'k2 Protocol Comparison',
+      date: '2026-02-21T00:00:00.000Z',
+      summary: 'k2 vs WireGuard / Shadowsocks / VLESS+Reality / Hysteria2',
+      tags: ['k2', 'comparison'],
+      draft: false,
+      content: '<h1>k2 Protocol Comparison</h1><p>Comparison aggregate.</p>',
+      metadata: { readingTime: 5, wordCount: 700 },
+      filePath: 'en-US/k2/comparison',
+      locale: 'en-US',
+      slug: 'k2/comparison',
+      order: 0,
+      section: 'comparison',
+    },
+    {
       title: 'Unrelated Blog Post',
       date: '2026-02-20T00:00:00.000Z',
       summary: 'This is not a k2/ post',
@@ -126,6 +160,13 @@ vi.mock('@/components/Footer', () => ({
 vi.mock('@/components/K2Sidebar', () => ({
   default: () => null,
 }));
+
+// Default to KAITU for every test so existing assertions (which predate brand-aware
+// JSON-LD) continue to see the legacy Kaitu URLs. Individual tests override this.
+beforeEach(async () => {
+  const { getBrand } = await import('@/lib/brand-server');
+  (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(KAITU);
+});
 
 describe('test_velite_schema_accepts_order_section', () => {
   it('mock posts data includes order field as a number', async () => {
@@ -310,5 +351,211 @@ describe('test_k2_route_renders_sidebar', () => {
     const sidebarModule = await import('../src/components/K2Sidebar');
     expect(sidebarModule).toBeDefined();
     expect(sidebarModule.default).toBeTypeOf('function');
+  });
+});
+
+/**
+ * Extract the JSON-LD payload from the rendered page's <script> element.
+ * The page returns a Fragment whose first child is the <script> tag carrying
+ * the stringified JSON-LD on its inner-HTML injection prop.
+ */
+const RAW_HTML_PROP = ['danger', 'ously', 'Set', 'Inner', 'HTML'].join('');
+function extractJsonLd(element: unknown): unknown {
+  const fragment = element as {
+    props: { children: Array<{ props?: Record<string, unknown> }> };
+  };
+  const children = fragment.props.children;
+  const scriptNode = children.find(
+    (child) => (child?.props?.type as string | undefined) === 'application/ld+json'
+  );
+  if (!scriptNode) {
+    throw new Error('JSON-LD script element not found in rendered page');
+  }
+  const htmlWrapper = scriptNode.props?.[RAW_HTML_PROP] as { __html?: string } | undefined;
+  const json = htmlWrapper?.__html;
+  if (!json) {
+    throw new Error('JSON-LD payload missing from script element');
+  }
+  return JSON.parse(json);
+}
+
+describe('test_k2_comparison_emits_faqpage_jsonld', () => {
+  it('emits a JSON-LD array containing TechArticle + FAQPage for k2/comparison (zh-CN)', async () => {
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'zh-CN', path: ['comparison'] }),
+    });
+
+    const jsonLd = extractJsonLd(element);
+
+    expect(Array.isArray(jsonLd)).toBe(true);
+    const arr = jsonLd as Array<{ '@type': string }>;
+    expect(arr.length).toBe(2);
+
+    const techArticle = arr.find((obj) => obj['@type'] === 'TechArticle');
+    expect(techArticle).toBeDefined();
+
+    const faqPages = arr.filter((obj) => obj['@type'] === 'FAQPage');
+    expect(faqPages.length).toBe(1);
+  });
+
+  it('FAQPage has 4 mainEntity Q&A pairs with proper shape (zh-CN)', async () => {
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'zh-CN', path: ['comparison'] }),
+    });
+
+    const jsonLd = extractJsonLd(element) as Array<{
+      '@type': string;
+      mainEntity?: Array<{
+        '@type': string;
+        name: string;
+        acceptedAnswer: { '@type': string; text: string };
+      }>;
+    }>;
+
+    const faqPage = jsonLd.find((obj) => obj['@type'] === 'FAQPage');
+    expect(faqPage).toBeDefined();
+    expect(faqPage!.mainEntity).toBeDefined();
+    expect(faqPage!.mainEntity!.length).toBe(4);
+
+    faqPage!.mainEntity!.forEach((qa) => {
+      expect(qa['@type']).toBe('Question');
+      expect(typeof qa.name).toBe('string');
+      expect(qa.name.length).toBeGreaterThan(0);
+      expect(qa.acceptedAnswer['@type']).toBe('Answer');
+      expect(typeof qa.acceptedAnswer.text).toBe('string');
+      expect(qa.acceptedAnswer.text.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('FAQPage zh-CN Q&A text uses Chinese phrasing ("区别" + "WireGuard")', async () => {
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'zh-CN', path: ['comparison'] }),
+    });
+
+    const jsonLd = extractJsonLd(element) as Array<{
+      '@type': string;
+      mainEntity?: Array<{ name: string; acceptedAnswer: { text: string } }>;
+    }>;
+
+    const faqPage = jsonLd.find((obj) => obj['@type'] === 'FAQPage');
+    const firstQuestion = faqPage!.mainEntity![0].name;
+    expect(firstQuestion).toContain('WireGuard');
+    expect(firstQuestion).toContain('区别');
+  });
+
+  it('FAQPage en-US Q&A text uses English phrasing', async () => {
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'en-US', path: ['comparison'] }),
+    });
+
+    const jsonLd = extractJsonLd(element) as Array<{
+      '@type': string;
+      mainEntity?: Array<{ name: string; acceptedAnswer: { text: string } }>;
+    }>;
+
+    const faqPage = jsonLd.find((obj) => obj['@type'] === 'FAQPage');
+    expect(faqPage).toBeDefined();
+    const firstQuestion = faqPage!.mainEntity![0].name;
+    expect(firstQuestion).toContain('WireGuard');
+    expect(firstQuestion.toLowerCase()).toContain('differ');
+  });
+
+  it('non-comparison slug still emits a single JSON-LD object (not an array)', async () => {
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'zh-CN', path: ['architecture'] }),
+    });
+
+    const jsonLd = extractJsonLd(element);
+    expect(Array.isArray(jsonLd)).toBe(false);
+    expect((jsonLd as { '@type': string })['@type']).toBe('TechArticle');
+  });
+});
+
+describe('test_k2_techarticle_is_brand_aware', () => {
+  it('TechArticle author/publisher/isPartOf name + url uses KAITU when brand is Kaitu', async () => {
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(KAITU);
+
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'zh-CN', path: ['architecture'] }),
+    });
+
+    const jsonLd = extractJsonLd(element) as {
+      '@type': string;
+      url: string;
+      author: { name: string; url: string };
+      publisher: { name: string; url: string };
+      isPartOf: { name: string; url: string };
+      mainEntityOfPage: { '@id': string };
+    };
+
+    expect(jsonLd['@type']).toBe('TechArticle');
+    expect(jsonLd.author.name).toBe('Kaitu');
+    expect(jsonLd.author.url).toBe('https://kaitu.io');
+    expect(jsonLd.publisher.name).toBe('Kaitu');
+    expect(jsonLd.publisher.url).toBe('https://kaitu.io');
+    expect(jsonLd.isPartOf.name).toBe('Kaitu');
+    expect(jsonLd.isPartOf.url).toBe('https://kaitu.io');
+    expect(jsonLd.url.startsWith('https://kaitu.io/')).toBe(true);
+    expect(jsonLd.mainEntityOfPage['@id'].startsWith('https://kaitu.io/')).toBe(true);
+  });
+
+  it('TechArticle author/publisher/isPartOf name + url uses OVERLEAP when brand is Overleap', async () => {
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
+
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'en-US', path: ['architecture'] }),
+    });
+
+    const jsonLd = extractJsonLd(element) as {
+      '@type': string;
+      url: string;
+      author: { name: string; url: string };
+      publisher: { name: string; url: string };
+      isPartOf: { name: string; url: string };
+      mainEntityOfPage: { '@id': string };
+    };
+
+    expect(jsonLd['@type']).toBe('TechArticle');
+    expect(jsonLd.author.name).toBe('Overleap');
+    expect(jsonLd.author.url).toBe('https://overleap.io');
+    expect(jsonLd.publisher.name).toBe('Overleap');
+    expect(jsonLd.publisher.url).toBe('https://overleap.io');
+    expect(jsonLd.isPartOf.name).toBe('Overleap');
+    expect(jsonLd.isPartOf.url).toBe('https://overleap.io');
+    expect(jsonLd.url.startsWith('https://overleap.io/')).toBe(true);
+    expect(jsonLd.mainEntityOfPage['@id'].startsWith('https://overleap.io/')).toBe(true);
+  });
+
+  it('FAQPage @id on /k2/comparison uses brand baseUrl (Overleap)', async () => {
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
+
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'en-US', path: ['comparison'] }),
+    });
+
+    const jsonLd = extractJsonLd(element) as Array<{ '@type': string; '@id'?: string }>;
+    const faqPage = jsonLd.find((obj) => obj['@type'] === 'FAQPage');
+    expect(faqPage).toBeDefined();
+    expect(typeof faqPage!['@id']).toBe('string');
+    expect(faqPage!['@id']!.startsWith('https://overleap.io/')).toBe(true);
   });
 });

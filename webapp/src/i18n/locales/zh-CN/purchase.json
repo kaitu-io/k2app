@@ -51,18 +51,16 @@
     "createOrderFailedNetwork": "创建订单失败，请检查网络连接后重试",
     "refreshUserProfileFailed": "刷新用户资料失败",
     "memberAuthorizationMultiple": "会员授权 {{months}} 个月 × {{count}} 用户",
-    "selectTarget": "选择付费对象",
-    "selectPayTarget": "选择付费对象",
-    "bindEmailAndSelectTarget": "绑定邮箱并选择付费对象",
-    "selectAtLeastOneTarget": "请至少选择一个付费对象",
+    "bindEmail": "绑定邮箱",
+    "bindEmailToPayNow": "绑定邮箱后支付",
     "inviteRewardTitle": "好友推荐奖励",
     "inviteRewardDesc": "完成首次充值即可获得 {{days}} 天额外赠送",
     "operationFailed": "操作失败",
     "loginRequired": "请先登录后再购买",
     "loginToPurchase": "登录以完成购买",
-    "loginToPurchaseDesc": "登录后即可选择付费对象并完成支付",
     "loginNow": "立即登录",
-    "loginAndPay": "登录并支付"
+    "loginAndPay": "登录并支付",
+    "tierLocked": "您当前为「{{tier}}」档，无法购买此档套餐。如需变更档位请联系客服。"
   },
   "deviceInstall": {
     "title": "客户端下载",
@@ -159,33 +157,5 @@
       "5y": "5年套餐",
       "forever": "永久套餐"
     }
-  },
-  "memberSelection": {
-    "selectPaymentTarget": "选择付费对象",
-    "loading": "正在加载成员...",
-    "myself": "我自己",
-    "chargeForMyself": "为我自己购买授权",
-    "addFirstMember": "添加第一位成员",
-    "addAnotherMember": "添加其他成员",
-    "addMember": "添加成员",
-    "memberEmail": "成员邮箱",
-    "memberEmailPlaceholder": "请输入成员的邮箱地址",
-    "addMemberHint": "添加成员后，您可以为他们购买授权。成员可以使用邮箱登录使用服务。",
-    "cancel": "取消",
-    "add": "添加",
-    "adding": "添加中...",
-    "emailRequired": "邮箱地址为必填项",
-    "emailAlreadyInUse": "该邮箱已被使用，请使用其他邮箱",
-    "addMemberSuccess": "成员添加成功",
-    "addMemberFailed": "成员添加失败",
-    "addMemberFailedRetry": "成员添加失败，请重试",
-    "getMembersFailed": "获取成员列表失败",
-    "getMembersFailedRetry": "获取成员列表失败，请重试",
-    "notActivated": "未激活",
-    "expired": "已过期",
-    "noEmail": "无邮箱",
-    "expiresAt": "到期时间",
-    "selectAtLeastOne": "请至少选择一个付费对象",
-    "selectedCount": "已选 {{count}} 人"
   }
 }

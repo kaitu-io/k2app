@@ -27,10 +27,10 @@
  * ## Usage
  * ```typescript
  * // Protected endpoint (auto-redirect on 401)
- * await api.getMembers();
+ * await api.getUserProfile();
  *
  * // Public endpoint (handle 401 manually)
- * await api.getMembers({ autoRedirectToAuth: false });
+ * await api.getUserProfile({ autoRedirectToAuth: false });
  * ```
  */
 
@@ -267,6 +267,7 @@ export interface User {
   uuid: string;
   expiredAt: number;
   isFirstOrderDone: boolean;
+  tier?: string;                    // 当前档位: "lite" | "basic" | "family" | "business"
   loginIdentifies: LoginIdentify[];
   device?: Device;
   inviteCode?: InviteCode;
@@ -283,6 +284,7 @@ export interface Plan {
   originPrice: number;
   month: number;
   highlight: boolean;
+  tier?: string;                    // 套餐档位: "lite" | "basic" | "family" | "business"
 }
 
 // 优惠活动类型
@@ -299,8 +301,6 @@ export interface CreateOrderRequest {
   preview: boolean;
   plan: string;
   campaignCode?: string;
-  forMyself?: boolean;
-  forUserUUIDs?: string[];
 }
 
 export interface Order {
@@ -348,15 +348,16 @@ export interface ProHistory {
   order?: Order;
 }
 
-// 成员管理类型
-export interface AddMemberRequest {
-  memberEmail: string;
-}
-
 // 代付人管理类型
 export interface Delegate {
   uuid: string;
   loginIdentifies: LoginIdentify[];
+}
+
+// -------- Delegate Payer --------
+export interface DelegateInfo {
+  email: string;
+  setAt: number;
 }
 
 // 错误码
@@ -452,6 +453,9 @@ export const ErrorCode = {
   InvalidInviteCode: 400004,       // Invalid invite code
   SelfInvitation: 400005,          // Self invitation
   InvalidCredentials: 400006,      // Invalid credentials
+  ProxyMembersDeprecated: 400012,  // 代付成员管理已下线
+  TierMismatch: 422001,            // 跨档购买被拒绝（仅同档续费）
+  ProxyPurchaseDeprecated: 422002, // 代付下单已下线
 } as const;
 
 export type ErrorCodeType = typeof ErrorCode[keyof typeof ErrorCode];
@@ -1260,36 +1264,40 @@ export const api = {
     return this.request<ListResult<ProHistory>>(`/api/user/pro-histories?${queryParams}`);
   },
 
-  // Member management APIs
-  async getMembers(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<ListResult<User>> {
-    return this.request<ListResult<User>>('/api/user/members', options);
+  // Delegate payer APIs
+  // Unset delegate: backend sends `{code:0}` with no data field (Response[T].Data is
+  // `*T,omitempty`, so a nil pointer is dropped rather than serialized as null).
+  async getDelegate(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<DelegateInfo | null> {
+    const data = await this.request<DelegateInfo | Record<string, never>>('/api/user/delegate', options);
+    if (data && typeof data === 'object' && 'email' in data && typeof data.email === 'string' && data.email) {
+      return data as DelegateInfo;
+    }
+    return null;
   },
 
-  async addMember(request: AddMemberRequest, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<User> {
-    return this.request<User>('/api/user/members', {
-      method: 'POST',
-      body: JSON.stringify(request),
+  async setDelegate(email: string, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<DelegateInfo> {
+    return this.request<DelegateInfo>('/api/user/delegate', {
+      method: 'PUT',
+      body: JSON.stringify({ email }),
       ...options,
     });
   },
 
-  async removeMember(userUUID: string, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<void> {
-    return this.request<void>(`/api/user/members/${userUUID}`, {
-      method: 'DELETE',
-      ...options,
-    });
-  },
-
-  // Delegate management APIs
-  async getDelegate(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<Delegate> {
-    return this.request<Delegate>('/api/user/delegate', options);
-  },
-
-  async rejectDelegate(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<void> {
+  async removeDelegate(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<void> {
     return this.request<void>('/api/user/delegate', {
       method: 'DELETE',
       ...options,
     });
+  },
+
+  async notifyDelegate(orderUuid: string, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<{ delegateEmail: string }> {
+    return this.request<{ delegateEmail: string }>(
+      `/api/user/orders/${encodeURIComponent(orderUuid)}/notify-delegate`,
+      {
+        method: 'POST',
+        ...options,
+      }
+    );
   },
 
   // User profile API
@@ -1494,24 +1502,6 @@ export const api = {
 
     const query = queryParams.toString();
     return this.request<UserListResponse>(`/app/users${query ? '?' + query : ''}`);
-  },
-
-  // Admin member management APIs
-  async getAdminMembers(userUUID: string): Promise<ListResult<User>> {
-    return this.request<ListResult<User>>(`/app/users/${userUUID}/members`);
-  },
-
-  async addAdminMember(userUUID: string, request: AddMemberRequest): Promise<User> {
-    return this.request<User>(`/app/users/${userUUID}/members`, {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async removeAdminMember(userUUID: string, memberUUID: string): Promise<void> {
-    return this.request<void>(`/app/users/${userUUID}/members/${memberUUID}`, {
-      method: 'DELETE',
-    });
   },
 
   // Retailer config management APIs

@@ -28,10 +28,20 @@ vi.mock('@/i18n/routing', () => ({
   routing: { locales: ['zh-CN', 'en-US'] },
 }));
 
+// Mock Payload CMS imports (sitemap fetches blog posts via Local API).
+// Tests care about Velite posts + k2/ priority; Payload blog posts are not
+// exercised here, so return an empty result.
+vi.mock('@payload-config', () => ({ default: {} }));
+vi.mock('payload', () => ({
+  getPayload: async () => ({
+    find: async () => ({ docs: [] }),
+  }),
+}));
+
 describe('test_sitemap_includes_k2_pages', () => {
   it('sitemap result contains URLs with /k2/quickstart', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
     const urls = entries.map((entry: { url: string }) => entry.url);
 
     expect(urls.some((url: string) => url.includes('/k2/quickstart'))).toBe(true);
@@ -39,7 +49,7 @@ describe('test_sitemap_includes_k2_pages', () => {
 
   it('sitemap result contains URLs with /k2/k2cc', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
     const urls = entries.map((entry: { url: string }) => entry.url);
 
     expect(urls.some((url: string) => url.includes('/k2/k2cc'))).toBe(true);
@@ -47,7 +57,7 @@ describe('test_sitemap_includes_k2_pages', () => {
 
   it('sitemap result contains URLs with /k2/protocol', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
     const urls = entries.map((entry: { url: string }) => entry.url);
 
     expect(urls.some((url: string) => url.includes('/k2/protocol'))).toBe(true);
@@ -55,7 +65,7 @@ describe('test_sitemap_includes_k2_pages', () => {
 
   it('sitemap result contains URLs with /k2/vs-hysteria2', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
     const urls = entries.map((entry: { url: string }) => entry.url);
 
     expect(urls.some((url: string) => url.includes('/k2/vs-hysteria2'))).toBe(true);
@@ -65,7 +75,7 @@ describe('test_sitemap_includes_k2_pages', () => {
 describe('test_sitemap_k2_priority', () => {
   it('k2/ page entries have priority 0.9', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
 
     const k2Entries = entries.filter((entry: { url: string; priority?: number }) =>
       entry.url.includes('/k2/')
@@ -79,7 +89,7 @@ describe('test_sitemap_k2_priority', () => {
 
   it('k2/ entries have changeFrequency weekly', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
 
     const k2Entries = entries.filter((entry: { url: string; changeFrequency?: string }) =>
       entry.url.includes('/k2/')
@@ -95,7 +105,7 @@ describe('test_sitemap_k2_priority', () => {
 describe('test_sitemap_non_k2_default_priority', () => {
   it('non-k2 content pages (blog/hello) keep priority 0.6', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
 
     const blogEntries = entries.filter((entry: { url: string; priority?: number }) =>
       entry.url.includes('/blog/hello')
@@ -109,17 +119,23 @@ describe('test_sitemap_non_k2_default_priority', () => {
 
   it('non-k2 content pages are still included in sitemap', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
     const urls = entries.map((entry: { url: string }) => entry.url);
 
     expect(urls.some((url: string) => url.includes('/blog/hello'))).toBe(true);
   });
 });
 
+// Mock brand-server for robots tests (reads request headers at runtime).
+vi.mock('@/lib/brand-server', async () => {
+  const actual = await vi.importActual<typeof import('../src/lib/brands')>('../src/lib/brands');
+  return { getBrand: async () => actual.KAITU };
+});
+
 describe('test_robots_allows_k2', () => {
   it('robots disallow array does NOT contain any /k2 pattern', async () => {
     const { default: robots } = await import('../src/app/robots');
-    const result = robots();
+    const result = await robots();
 
     const rules = Array.isArray(result.rules) ? result.rules : [result.rules];
 
@@ -137,7 +153,7 @@ describe('test_robots_allows_k2', () => {
 
   it('robots allows root path which covers /k2/', async () => {
     const { default: robots } = await import('../src/app/robots');
-    const result = robots();
+    const result = await robots();
 
     const rules = Array.isArray(result.rules) ? result.rules : [result.rules];
     const hasRootAllow = rules.some((rule: { allow?: string | string[] }) => {

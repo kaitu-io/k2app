@@ -28,7 +28,7 @@ import { format } from "date-fns";
 import Link from "next/link";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DateInput } from "@/components/ui/date-input";
-import { Mail, Users, Trash2 } from "lucide-react";
+import { Mail, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -257,12 +257,6 @@ export default function UsersPage() {
           <Link href={`/manager/users/detail?uuid=${row.original.uuid}`}>
             <Button type="button" variant="outline" size="sm">
               {"详情"}
-            </Button>
-          </Link>
-          <Link href={`/manager/users/${row.original.uuid}/members`}>
-            <Button type="button" variant="ghost" size="sm">
-              <Users className="h-4 w-4 mr-1" />
-              {"成员"}
             </Button>
           </Link>
         </div>

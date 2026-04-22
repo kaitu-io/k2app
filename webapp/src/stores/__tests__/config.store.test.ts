@@ -536,4 +536,82 @@ describe('Config Store', () => {
       loadConfigSpy.mockRestore();
     });
   });
+
+  // ==================== alwaysOn (iOS NEOnDemandRule opt-in) ====================
+
+  describe('alwaysOn', () => {
+    it('defaults to false on fresh install', async () => {
+      mockStorage.get.mockResolvedValue(null);
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      expect(useConfigStore.getState().alwaysOn).toBe(false);
+    });
+
+    it('reads alwaysOn=true from stored v3 config', async () => {
+      mockStorage.get.mockResolvedValue({
+        defaultVia: 'proxy',
+        countryVia: 'direct',
+        country: 'cn',
+        autoDetect: true,
+        alwaysOn: true,
+      });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      expect(useConfigStore.getState().alwaysOn).toBe(true);
+    });
+
+    it('defaults alwaysOn to false when v3 config has no alwaysOn field', async () => {
+      mockStorage.get.mockResolvedValue({
+        defaultVia: 'proxy',
+        countryVia: 'direct',
+        country: 'cn',
+        autoDetect: true,
+      });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      expect(useConfigStore.getState().alwaysOn).toBe(false);
+    });
+
+    it('setAlwaysOn updates state and persists', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      mockStorage.set.mockResolvedValue(undefined);
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+      await useConfigStore.getState().setAlwaysOn(true);
+
+      expect(useConfigStore.getState().alwaysOn).toBe(true);
+      expect(mockStorage.set).toHaveBeenLastCalledWith(
+        'k2.vpn.config',
+        expect.objectContaining({ alwaysOn: true }),
+      );
+    });
+
+    it('setAlwaysOn(false) persists false', async () => {
+      mockStorage.get.mockResolvedValue({
+        defaultVia: 'proxy',
+        countryVia: 'direct',
+        country: 'cn',
+        autoDetect: true,
+        alwaysOn: true,
+      });
+      mockStorage.set.mockResolvedValue(undefined);
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+      await useConfigStore.getState().setAlwaysOn(false);
+
+      expect(useConfigStore.getState().alwaysOn).toBe(false);
+      expect(mockStorage.set).toHaveBeenLastCalledWith(
+        'k2.vpn.config',
+        expect.objectContaining({ alwaysOn: false }),
+      );
+    });
+  });
 });

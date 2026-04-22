@@ -198,6 +198,13 @@ cd api/cmd && ./kaitu-center start -f -c ../config.yml   # Foreground mode
 
 ## Constitution (Coding Conventions)
 
+### Tunnel Scoring
+
+- **Single authority**: `ComputeRecommendScore(inst *DataTunnelInstance) float64` in `logic_tunnel_score.go` is the ONLY place that derives a tunnel's recommendation score `[0,1]` from its budget. `/api/tunnels` and `/api/subs` both call this helper — never inline a score formula elsewhere.
+- **Nil instance = 0.5**: Non-cloud nodes get neutral 0.5, not 0. Zero would blacklist them from client-side `pickWeighted` / daemon `Subscription.Pick`.
+- **Dual-emit**: `/api/subs` emits both `recommendScore: float` and legacy `weight: int = round(score*100)` for backward compat with pre-e210564 daemons. Drop `weight` one release after rollout is confirmed.
+- **No Redis penalty layer**: The old Redis-based penalty scheme (`subsPenalty*` + `applyPenaltyWeights`) was removed in commit `9e12d0b` — it was patching the absence of real scoring, not solving it. Do not reintroduce request-side rate-limiting in the subscription response; if needed, compute a score server-side and expose it through `recommendScore`.
+
 ### Response Convention
 
 - **HTTP status always 200** — error state in JSON `code` field. Never return HTTP 4xx/5xx from business endpoints.

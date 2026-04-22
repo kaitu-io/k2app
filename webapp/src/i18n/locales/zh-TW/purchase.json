@@ -51,18 +51,16 @@
     "createOrderFailedNetwork": "建立訂單失敗，請檢查網路連線後重試",
     "refreshUserProfileFailed": "重新整理使用者資料失敗",
     "memberAuthorizationMultiple": "會員授權 {{months}} 個月 × {{count}} 使用者",
-    "selectTarget": "選擇付費對象",
-    "selectAtLeastOneTarget": "請至少選擇一個付費對象",
+    "bindEmail": "綁定信箱",
+    "bindEmailToPayNow": "綁定信箱後支付",
     "operationFailed": "操作失敗",
     "loginRequired": "請先登入後再購買",
     "loginToPurchase": "登入以完成購買",
-    "loginToPurchaseDesc": "登入後即可選擇付費對象並完成支付",
     "loginNow": "立即登入",
     "loginAndPay": "登入並支付",
-    "selectPayTarget": "選擇付費對象",
-    "bindEmailAndSelectTarget": "綁定信箱並選擇付費對象",
     "inviteRewardTitle": "好友推薦獎勵",
-    "inviteRewardDesc": "完成首次儲值即可獲得 {{days}} 天額外贈送"
+    "inviteRewardDesc": "完成首次儲值即可獲得 {{days}} 天額外贈送",
+    "tierLocked": "您目前為「{{tier}}」級，無法購買此級別方案。如需變更級別請聯絡客服。"
   },
   "deviceInstall": {
     "title": "客戶端下載",
@@ -159,33 +157,5 @@
       "5y": "5 年方案",
       "forever": "永久方案"
     }
-  },
-  "memberSelection": {
-    "selectPaymentTarget": "選擇付費對象",
-    "loading": "正在載入成員...",
-    "myself": "我自己",
-    "chargeForMyself": "為我自己購買授權",
-    "addFirstMember": "新增第一位成員",
-    "addAnotherMember": "新增其他成員",
-    "addMember": "新增成員",
-    "memberEmail": "成員信箱",
-    "memberEmailPlaceholder": "請輸入成員的信箱位址",
-    "addMemberHint": "新增成員後，您可以為他們購買授權。成員可以使用信箱登入使用服務。",
-    "cancel": "取消",
-    "add": "新增",
-    "adding": "新增中...",
-    "emailRequired": "信箱位址為必填項",
-    "emailAlreadyInUse": "該信箱已被使用，請使用其他信箱",
-    "addMemberSuccess": "成員新增成功",
-    "addMemberFailed": "成員新增失敗",
-    "addMemberFailedRetry": "成員新增失敗，請重試",
-    "getMembersFailed": "取得成員清單失敗",
-    "getMembersFailedRetry": "取得成員清單失敗，請重試",
-    "notActivated": "未啟用",
-    "expired": "已過期",
-    "noEmail": "無信箱",
-    "expiresAt": "到期時間",
-    "selectAtLeastOne": "請至少選擇一個付費對象",
-    "selectedCount": "已選 {{count}} 人"
   }
 }

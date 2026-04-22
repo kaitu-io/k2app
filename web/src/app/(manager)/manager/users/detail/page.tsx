@@ -6,6 +6,7 @@ import { useEffect, useState, Suspense, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, ContactInfo, ContactType, getContactUrl, getContactTypeName, AdminDeviceData, IssueDeviceTokenResponse } from "@/lib/api";
+import { TIER_OPTIONS, DEFAULT_TIER, type TierValue } from "@/lib/tiers";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -20,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -136,6 +138,7 @@ interface UserDetailData {
   isFirstOrderDone: boolean;
   deviceCount: number;
   isRetailer: boolean;
+  tier?: string; // 当前功能等级: lite/basic/family/business
   loginIdentifies: DataLoginIdentify[];
   devices: DataDevice[];
   orders: DataOrder[];
@@ -223,6 +226,12 @@ function UserDetailContent() {
   const [isRevokingKey, setIsRevokingKey] = useState(false);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [showKeyDialog, setShowKeyDialog] = useState(false);
+
+  // Tier change state
+  const [tierDialogOpen, setTierDialogOpen] = useState(false);
+  const [newTier, setNewTier] = useState<TierValue>(DEFAULT_TIER);
+  const [tierReason, setTierReason] = useState("");
+  const [isSubmittingTier, setIsSubmittingTier] = useState(false);
 
   // Fetch devices
   useEffect(() => {
@@ -510,6 +519,41 @@ function UserDetailContent() {
     }
   };
 
+  // 打开档位修改对话框
+  const handleOpenTierDialog = () => {
+    const current = userDetail?.tier;
+    // 若当前 tier 是合法的 TierValue，回填；否则默认 basic
+    const isValid = TIER_OPTIONS.some((o) => o.value === current);
+    setNewTier((isValid ? current : DEFAULT_TIER) as TierValue);
+    setTierReason("");
+    setTierDialogOpen(true);
+  };
+
+  // 提交档位修改 —— 调用 PUT /app/users/:uuid/tier（Task 9 端点）
+  const handleSubmitTier = async () => {
+    if (!uuid) return;
+    if (tierReason.trim().length < 3) {
+      toast.error("请填写变更原因（至少 3 字符）");
+      return;
+    }
+    setIsSubmittingTier(true);
+    try {
+      await api.request<{ from: string; to: string }>(`/app/users/${uuid}/tier`, {
+        method: "PUT",
+        body: JSON.stringify({ tier: newTier, reason: tierReason.trim() }),
+      });
+      toast.success("档位已修改");
+      setTierDialogOpen(false);
+      setTierReason("");
+      await fetchUserDetail();
+    } catch (error) {
+      console.error("Failed to update tier:", error);
+      toast.error(error instanceof Error ? error.message : "修改档位失败");
+    } finally {
+      setIsSubmittingTier(false);
+    }
+  };
+
   const handleCopyKey = async () => {
     if (!generatedKey) return;
     try {
@@ -621,6 +665,17 @@ function UserDetailContent() {
             <div>
               <p className="text-sm text-muted-foreground">{"设备数量"}</p>
               <p>{userDetail.deviceCount || 0}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">{"功能档位"}</p>
+              <div className="flex items-center gap-2">
+                <Badge variant={userDetail.tier ? "default" : "secondary"}>
+                  {userDetail.tier || "未设置"}
+                </Badge>
+                <Button variant="outline" size="sm" onClick={handleOpenTierDialog}>
+                  {"修改档位"}
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -1462,6 +1517,69 @@ function UserDetailContent() {
         currentEmail={email}
         onSuccess={fetchUserDetail}
       />
+
+      {/* 修改档位对话框 */}
+      <Dialog open={tierDialogOpen} onOpenChange={setTierDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{"修改用户档位"}</DialogTitle>
+            <DialogDescription>
+              {"调整用户当前功能档位。变更会写入审计日志，请填写变更原因。"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{"目标档位"}</label>
+              <Select
+                value={newTier}
+                onValueChange={(v) => setNewTier(v as TierValue)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择档位" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIER_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {"当前档位："}
+                <span className="font-mono">{userDetail.tier || "未设置"}</span>
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {"变更原因"}
+                <span className="text-red-500 ml-1">{"*"}</span>
+              </label>
+              <Textarea
+                placeholder="请说明变更原因（至少 3 字符，将写入审计日志）"
+                value={tierReason}
+                onChange={(e) => setTierReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setTierDialogOpen(false)}
+              disabled={isSubmittingTier}
+            >
+              {"取消"}
+            </Button>
+            <Button
+              onClick={handleSubmitTier}
+              disabled={isSubmittingTier || tierReason.trim().length < 3}
+            >
+              {isSubmittingTier ? "提交中..." : "确认修改"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

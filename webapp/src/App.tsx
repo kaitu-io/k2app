@@ -89,7 +89,7 @@ function AppRoutes() {
           {appConfig.features.feedback && (
             <>
               <Route path="faq" element={<FAQ />} />
-              <Route path="feedback" element={<LoginRequiredGuard pagePath="/feedback"><Feedback /></LoginRequiredGuard>} />
+              <Route path="feedback" element={<Feedback />} />
               <Route path="submit-ticket" element={<Navigate to="/feedback" replace />} />
               <Route path="submit-ticket-form" element={<MembershipGuard><SubmitTicket /></MembershipGuard>} />
             </>

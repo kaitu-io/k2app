@@ -67,30 +67,49 @@ vi.mock('@/i18n/routing', () => ({
   },
 }));
 
+// Mock Payload CMS imports (sitemap fetches blog posts via Local API).
+// Tests here cover Velite-driven content entries; return no Payload docs.
+vi.mock('@payload-config', () => ({ default: {} }));
+vi.mock('payload', () => ({
+  getPayload: async () => ({
+    find: async () => ({ docs: [] }),
+  }),
+}));
+
+// Mock brand-server (sitemap is host-aware; tests assert on kaitu.io baseUrl).
+vi.mock('@/lib/brand-server', async () => {
+  const actual = await vi.importActual<typeof import('../src/lib/brands')>('../src/lib/brands');
+  return { getBrand: async () => actual.KAITU };
+});
+
 describe('test_sitemap_includes_content', () => {
   it('sitemap includes content page URLs for published posts', async () => {
     // Dynamically import after mocks are set up
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
 
     const urls = entries.map((entry: { url: string }) => entry.url);
 
     // Must include zh-CN blog post
     expect(urls).toContain('https://kaitu.io/zh-CN/blog/hello-world');
 
-    // Must include en-US blog post
-    expect(urls).toContain('https://kaitu.io/en-US/blog/hello-world');
+    // Must include zh-HK blog post (Kaitu owns zh-* locales after Task 2)
+    expect(urls).toContain('https://kaitu.io/zh-HK/blog/hello-world');
 
     // Must include zh-CN guides post
     expect(urls).toContain('https://kaitu.io/zh-CN/guides/getting-started');
 
     // Must NOT include draft post
     expect(urls).not.toContain('https://kaitu.io/zh-CN/blog/draft-post');
+
+    // Kaitu host must NOT serve en-*/ja URLs — those belong to overleap.io
+    expect(urls).not.toContain('https://kaitu.io/en-US/blog/hello-world');
+    expect(urls).not.toContain('https://kaitu.io/ja/blog/hello-world');
   });
 
   it('sitemap content entries have correct metadata', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
 
     const contentEntry = entries.find(
       (entry: { url: string }) => entry.url === 'https://kaitu.io/zh-CN/blog/hello-world'
@@ -104,7 +123,7 @@ describe('test_sitemap_includes_content', () => {
 
   it('sitemap still includes static pages alongside content pages', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
-    const entries = sitemap();
+    const entries = await sitemap();
 
     const urls = entries.map((entry: { url: string }) => entry.url);
 

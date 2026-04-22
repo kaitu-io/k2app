@@ -100,11 +100,11 @@ require (
 	github.com/ugorji/go/codec v1.3.0 // indirect
 	github.com/wordgate/qtoolkit/ai v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/asynq v1.5.25 // indirect
-	github.com/wordgate/qtoolkit/aws/ses v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/aws/ses v1.5.29 // indirect
 	github.com/wordgate/qtoolkit/chatwoot v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/db v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/geoip v1.5.28 // indirect
-	github.com/wordgate/qtoolkit/mail v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/mail v1.5.29 // indirect
 	github.com/wordgate/qtoolkit/openai/filesearch v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/redis v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/slack v1.5.25 // indirect

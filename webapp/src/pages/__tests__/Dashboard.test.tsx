@@ -109,15 +109,14 @@ const createMockConnectionStore = (overrides = {}) => ({
   feedbackRequested: false,
   pendingFeedback: false,
   lastConnectionInfo: null,
-  serverMode: 'smart' as const,
-  smartCountry: null,
+  serverMode: 'manual' as 'manual' | 'self_hosted',
   serverModeLoaded: true,
   setServerMode: vi.fn().mockResolvedValue(undefined),
-  setSmartCountry: vi.fn().mockResolvedValue(undefined),
   selectCloudTunnel: mockSelectCloudTunnel,
   selectSelfHosted: mockSelectSelfHosted,
   connect: mockConnect,
   disconnect: mockDisconnect,
+  enrichFromTunnelList: vi.fn(),
   clearPendingFeedback: vi.fn(),
   ...overrides,
 });
@@ -224,9 +223,8 @@ describe('Dashboard', () => {
 
   describe('隧道选择状态', () => {
     it('未选择隧道时应该显示 hasTunnelSelected=no', async () => {
-      // Use manual mode so no synthetic smart tunnel is displayed
       vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
-        const state = createMockConnectionStore({ serverMode: 'manual' as const });
+        const state = createMockConnectionStore();
         return selector ? selector(state) : state;
       });
       render(<Dashboard />);

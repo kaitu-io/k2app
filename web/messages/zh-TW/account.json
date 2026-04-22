@@ -1,0 +1,21 @@
+{
+  "account": {
+    "delegate": {
+      "pageTitle": "代付人设置",
+      "emptyTitle": "设置代付人",
+      "emptyDescription": "设置后，付款时可一键邀请 TA 代付。",
+      "emptyHint": "保存后不会立刻通知 TA；TA 收到的第一封邮件是你实际付款请求时的支付邀请。",
+      "emailLabel": "代付人邮箱",
+      "emailPlaceholder": "friend@example.com",
+      "saveButton": "保存",
+      "currentTitle": "当前代付人",
+      "setAtLabel": "于 {date} 设置",
+      "modifyButton": "修改",
+      "cancelButton": "取消",
+      "removeButton": "移除代付人",
+      "removeConfirm": "确认移除？你的付款将不再有预设代付人。",
+      "currentHint": "付款时可选择「请 {email} 代付」，我们会发邮件给 TA。",
+      "savedToast": "已保存"
+    }
+  }
+}

@@ -58,8 +58,6 @@
     "terminalInstall": "またはターミナルでワンクリックインストール",
     "downloadButton": "インストーラーをダウンロード",
     "mobileDownloads": "モバイル",
-    "kaituIos": "Overleap iOS版",
-    "kaituAndroid": "Overleap Android版",
     "heroTitle": {
       "windows": "あなたのWindowsに対応",
       "macos": "あなたのMacに対応",

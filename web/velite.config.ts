@@ -25,6 +25,12 @@ const posts = defineCollection({
       draft: s.boolean().default(false),
       order: s.number().optional(),
       section: s.string().optional(),
+      // Brand visibility: which host's /blog listing includes this post.
+      // 'both' (default) = visible on both kaitu.io and overleap.io.
+      brand: s.enum(['kaitu', 'overleap', 'both']).default('both'),
+      // When brand === 'both', optionally pin the canonical URL to a specific brand to
+      // consolidate SEO weight. Absent → canonical defaults by locale (en-* → overleap).
+      canonicalBrand: s.enum(['kaitu', 'overleap']).optional(),
       content: s.markdown(),
       metadata: s.metadata(),
       // filePath is injected by velite: the path relative to the collection root,
