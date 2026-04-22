@@ -106,8 +106,22 @@ export default function middleware(request: NextRequest) {
     return response;
   }
 
-  // For all other routes, use the default next-intl middleware
-  return intlMiddleware(request);
+  // For all other routes, use the default next-intl middleware.
+  // Inject x-pathname (stripped of locale prefix) into the downstream RSC
+  // request so generateMetadata in [locale]/layout.tsx can build correct
+  // hreflang alternates + canonical for the actual page path.
+  //
+  // We use the `x-middleware-request-*` response-header convention:
+  // Next.js converts response headers named `x-middleware-request-{X}` into
+  // request header `{X}` on the downstream request, surviving through
+  // next-intl's internal rewrite/next() response.
+  const response = intlMiddleware(request);
+  const strippedPathname =
+    pathname.replace(/^\/(zh-CN|zh-TW|zh-HK|en-US|en-GB|en-AU|ja)(?=\/|$)/, '') || '/';
+  if (response && typeof (response as Response).headers?.set === 'function') {
+    (response as Response).headers.set('x-middleware-request-x-pathname', strippedPathname);
+  }
+  return response;
 }
 
 // Get the best matching locale based on Accept-Language header, constrained to allowedLocales.

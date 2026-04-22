@@ -157,4 +157,40 @@ describe('middleware: bidirectional 301 cross-domain on locale/brand mismatch', 
       expect(res.status).not.toBe(301);
     });
   });
+
+  // SEO hotfix: middleware must emit `x-middleware-request-x-pathname` on the
+  // pass-through response so [locale]/layout.tsx can build correct hreflang
+  // URLs for nested pages. Next.js converts `x-middleware-request-{X}` response
+  // headers into downstream request headers named `{X}`.
+  describe('x-pathname header injection for downstream RSC', () => {
+    it('16. kaitu.io /zh-CN/install → response carries x-middleware-request-x-pathname=/install', async () => {
+      const res = await runMiddleware(makeRequest('kaitu.io', '/zh-CN/install'));
+      expect(res.status).not.toBe(301);
+      expect(res.headers.get('x-middleware-request-x-pathname')).toBe('/install');
+    });
+
+    it('17. overleap.io /en-US/k2/comparison → header preserves nested path', async () => {
+      const res = await runMiddleware(makeRequest('overleap.io', '/en-US/k2/comparison'));
+      expect(res.status).not.toBe(301);
+      expect(res.headers.get('x-middleware-request-x-pathname')).toBe('/k2/comparison');
+    });
+
+    it('18. kaitu.io /zh-CN (locale root, no trailing slash) → header is "/"', async () => {
+      const res = await runMiddleware(makeRequest('kaitu.io', '/zh-CN'));
+      expect(res.status).not.toBe(301);
+      expect(res.headers.get('x-middleware-request-x-pathname')).toBe('/');
+    });
+
+    it('19. kaitu.io /zh-CN/ (locale root with trailing slash) → header is "/"', async () => {
+      const res = await runMiddleware(makeRequest('kaitu.io', '/zh-CN/'));
+      expect(res.status).not.toBe(301);
+      expect(res.headers.get('x-middleware-request-x-pathname')).toBe('/');
+    });
+
+    it('20. localhost:3000 /en-US/purchase → header works on dev hosts too', async () => {
+      const res = await runMiddleware(makeRequest('localhost:3000', '/en-US/purchase'));
+      expect(res.status).not.toBe(301);
+      expect(res.headers.get('x-middleware-request-x-pathname')).toBe('/purchase');
+    });
+  });
 });

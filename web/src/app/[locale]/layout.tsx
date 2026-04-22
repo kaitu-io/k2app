@@ -11,6 +11,7 @@ import { EmbedThemeProvider } from '@/components/providers/EmbedThemeProvider';
 import { LocaleProvider } from '@/components/providers/LocaleProvider';
 import { BrandProvider } from '@/components/providers/BrandProvider';
 import { getBrand } from '@/lib/brand-server';
+import { getRequestPathname } from '@/lib/request-pathname';
 import { generateMetadata as generatePageMetadata } from './metadata';
 import { Metadata } from 'next';
 import { Suspense } from 'react';
@@ -36,7 +37,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale } = await params;
   const brand = await getBrand();
-  return generatePageMetadata(locale, '', {}, brand);
+  const pathname = await getRequestPathname();
+  return generatePageMetadata(locale, pathname, {}, brand);
 }
 
 export default async function LocaleLayout({
