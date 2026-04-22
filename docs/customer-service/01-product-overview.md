@@ -9,7 +9,7 @@
 开途支持以下平台和系统版本：
 
 - **Windows**：Windows 10 及以上版本（Windows 11 完全兼容）
-- **macOS**：macOS 11（Big Sur）及以上版本
+- **macOS**：macOS 11（Big Sur）及以上版本（官方技术支持限 macOS 12+，详见 [安装指南](./06-install-macos.md#系统要求)）
 - **Linux**：Ubuntu、Fedora、Arch Linux 等主流发行版
 - **iOS**：iPhone 和 iPad，系统需 iOS 15 及以上
 - **Android**：Android 7.0 及以上版本

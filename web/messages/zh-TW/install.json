@@ -25,6 +25,10 @@
     "macos": "蘋果電腦",
     "macosVersion": "macOS 11+",
     "downloadDmg": "蘋果電腦版",
+    "macos11Notice": {
+      "title": "macOS 11 相容性說明",
+      "body": "您下載的版本支援 macOS 11+，可以正常安裝使用。但開途官方技術支援目前僅涵蓋 macOS 12 及以上版本——若在 macOS 11 上遇到問題，歡迎透過 App 內回饋聯繫我們，我們會盡力協助，但不保證一定能修復。建議升級至 macOS 12 或更新版本以獲得完整支援。"
+    },
     "ios": "iPhone / iPad",
     "iosDevices": "iPhone 和 iPad",
     "android": "安卓",

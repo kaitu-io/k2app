@@ -25,6 +25,10 @@
     "macos": "Mac",
     "macosVersion": "macOS 11+",
     "downloadDmg": "Mac",
+    "macos11Notice": {
+      "title": "macOS 11 compatibility note",
+      "body": "This build runs on macOS 11+ and installs cleanly. However, official Overleap support is currently scoped to macOS 12 and above — if you hit an issue on macOS 11, please file feedback in-app and we'll do our best to help, but a fix isn't guaranteed. We recommend upgrading to macOS 12 or later for full support."
+    },
     "ios": "iPhone / iPad",
     "iosDevices": "iPhone and iPad",
     "android": "Android",

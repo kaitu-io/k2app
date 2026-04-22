@@ -20,6 +20,7 @@ vi.mock('lucide-react', () => ({
   Download: () => null,
   CheckCircle: () => null,
   AlertCircle: () => null,
+  AlertTriangle: () => null,
   RefreshCw: () => null,
   ArrowRight: () => null,
   ExternalLink: () => null,

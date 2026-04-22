@@ -2,7 +2,8 @@
 "use client";
 
 import { Button } from '@/components/ui/button';
-import { Download, ExternalLink } from 'lucide-react';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Download, ExternalLink, AlertTriangle } from 'lucide-react';
 import { PlatformIcon, PLATFORM_COLORS } from './platform-icons';
 import {
   BrowserBlockedGuide,
@@ -139,6 +140,12 @@ export function MacOSPanel({
         {t('install.install.heroTitle.macos')}
       </h1>
       <VersionLabel t={t} version={version} isBeta={isBeta} />
+
+      <Alert className="max-w-xl mx-auto mb-6 text-left border-amber-500/40 bg-amber-500/10">
+        <AlertTriangle className="text-amber-600 dark:text-amber-400" />
+        <AlertTitle>{t('install.install.macos11Notice.title')}</AlertTitle>
+        <AlertDescription>{t('install.install.macos11Notice.body')}</AlertDescription>
+      </Alert>
 
       <Button size="lg" onClick={() => openDownloadInNewTab(primaryLink)}>
         <Download className="w-5 h-5 mr-2" />
