@@ -27,7 +27,7 @@ export const KAITU: Brand = {
   legalName: 'Kaitu LLC',
   baseUrl: 'https://kaitu.io',
   defaultLocale: 'zh-CN',
-  allowedLocales: ALL_LOCALES,
+  allowedLocales: ['zh-CN', 'zh-TW', 'zh-HK'],
   logoPath: '/kaitu-icon.png',
   contactEmail: 'support@kaitu.me',
   ogImagePath: '/images/og-default.png',
@@ -41,11 +41,25 @@ export const OVERLEAP: Brand = {
   legalName: 'Overleap',
   baseUrl: 'https://overleap.io',
   defaultLocale: 'en-US',
-  allowedLocales: ['en-US', 'en-GB', 'en-AU'],
+  allowedLocales: ['en-US', 'en-GB', 'en-AU', 'ja'],
   logoPath: '/overleap-icon.png',
   contactEmail: 'support@overleap.io',
   ogImagePath: '/overleap-og.png',
 };
+
+const LOCALE_BRAND: Record<Locale, BrandId> = {
+  'zh-CN': 'kaitu',
+  'zh-TW': 'kaitu',
+  'zh-HK': 'kaitu',
+  'en-US': 'overleap',
+  'en-GB': 'overleap',
+  'en-AU': 'overleap',
+  'ja': 'overleap',
+};
+
+export function ownerBrand(locale: string): BrandId {
+  return LOCALE_BRAND[locale as Locale] ?? 'kaitu';
+}
 
 const HOST_MAP: Record<string, Brand> = {
   'kaitu.io': KAITU,

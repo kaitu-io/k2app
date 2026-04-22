@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { brandFromHost, brandById, KAITU, OVERLEAP } from '../brands';
+import { brandFromHost, brandById, ownerBrand, KAITU, OVERLEAP } from '../brands';
 
 describe('brandFromHost', () => {
   it('maps kaitu.io to KAITU', () => {
@@ -52,14 +52,15 @@ describe('brandById', () => {
 });
 
 describe('brand configs', () => {
-  it('KAITU supports all 7 locales', () => {
-    expect(KAITU.allowedLocales.length).toBe(7);
+  it('KAITU is Chinese-only', () => {
+    expect(KAITU.allowedLocales).toEqual(['zh-CN', 'zh-TW', 'zh-HK']);
+    expect(KAITU.allowedLocales.length).toBe(3);
     expect(KAITU.defaultLocale).toBe('zh-CN');
     expect(KAITU.taglineZh).toBe('愿上帝为你开路');
   });
 
   it('OVERLEAP is English-only', () => {
-    expect(OVERLEAP.allowedLocales).toEqual(['en-US', 'en-GB', 'en-AU']);
+    expect(OVERLEAP.allowedLocales).toEqual(['en-US', 'en-GB', 'en-AU', 'ja']);
     expect(OVERLEAP.defaultLocale).toBe('en-US');
     expect(OVERLEAP.taglineZh).toBeUndefined();
   });
@@ -73,5 +74,39 @@ describe('brand configs', () => {
     expect(KAITU.id).toBe('kaitu');
     expect(OVERLEAP.id).toBe('overleap');
     expect(KAITU.id).not.toBe(OVERLEAP.id);
+  });
+});
+
+describe('ownerBrand', () => {
+  it('maps zh-CN to kaitu', () => {
+    expect(ownerBrand('zh-CN')).toBe('kaitu');
+  });
+
+  it('maps zh-TW to kaitu', () => {
+    expect(ownerBrand('zh-TW')).toBe('kaitu');
+  });
+
+  it('maps zh-HK to kaitu', () => {
+    expect(ownerBrand('zh-HK')).toBe('kaitu');
+  });
+
+  it('maps en-US to overleap', () => {
+    expect(ownerBrand('en-US')).toBe('overleap');
+  });
+
+  it('maps en-GB to overleap', () => {
+    expect(ownerBrand('en-GB')).toBe('overleap');
+  });
+
+  it('maps en-AU to overleap', () => {
+    expect(ownerBrand('en-AU')).toBe('overleap');
+  });
+
+  it('maps ja to overleap', () => {
+    expect(ownerBrand('ja')).toBe('overleap');
+  });
+
+  it('falls back to kaitu on unknown locale', () => {
+    expect(ownerBrand('unknown')).toBe('kaitu');
   });
 });
