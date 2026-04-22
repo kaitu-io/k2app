@@ -13,7 +13,7 @@ export const Posts: CollectionConfig = {
     defaultColumns: ['title', 'status', 'publishedAt', 'updatedAt'],
   },
   access: {
-    read: () => false,
+    read: isAdmin,
     create: isAdmin,
     update: isAdmin,
     delete: isAdmin,

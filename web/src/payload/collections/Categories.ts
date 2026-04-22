@@ -6,7 +6,7 @@ export const Categories: CollectionConfig = {
   slug: 'categories',
   admin: { useAsTitle: 'name', defaultColumns: ['name', 'slug', 'updatedAt'] },
   access: {
-    read: () => false,
+    read: isAdmin,
     create: isAdmin,
     update: isAdmin,
     delete: isAdmin,
