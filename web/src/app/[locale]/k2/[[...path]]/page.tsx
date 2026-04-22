@@ -15,7 +15,8 @@ import type { Metadata } from 'next';
 import { posts } from '#velite';
 import { routing } from '@/i18n/routing';
 import type { K2Post } from '@/lib/k2-posts';
-import { generateMetadata as generateBaseMetadata, baseUrl } from '../../metadata';
+import { getBrand } from '@/lib/brand-server';
+import { generateMetadata as generateBaseMetadata } from '../../metadata';
 
 /** Resolve a slug from the optional catch-all path param. */
 function resolveSlug(path: string[] | undefined): string {
@@ -166,24 +167,35 @@ export async function generateMetadata({
   const slug = resolveSlug(path);
   const post = findK2Post(locale, slug);
   const pathname = resolvePathname(path);
+  const brand = await getBrand();
 
   if (post) {
-    return generateBaseMetadata(locale, pathname, {
-      title: post.title,
-      description: post.summary,
-      ogType: 'article',
-      article: {
-        publishedTime: post.date,
-        modifiedTime: post.date,
-        section: post.section,
-        tags: post.tags,
+    return generateBaseMetadata(
+      locale,
+      pathname,
+      {
+        title: post.title,
+        description: post.summary,
+        ogType: 'article',
+        article: {
+          publishedTime: post.date,
+          modifiedTime: post.date,
+          section: post.section,
+          tags: post.tags,
+        },
       },
-    });
+      brand
+    );
   }
 
-  return generateBaseMetadata(locale, pathname, {
-    title: 'k2 | Kaitu',
-  });
+  return generateBaseMetadata(
+    locale,
+    pathname,
+    {
+      title: `k2 | ${brand.displayName}`,
+    },
+    brand
+  );
 }
 
 export function generateStaticParams(): { locale: string; path: string[] | undefined }[] {
@@ -236,6 +248,7 @@ export default async function K2Page({
   }
 
   const pathname = resolvePathname(path);
+  const brand = await getBrand();
 
   // Per-article structured data — content is Velite-processed at build time (trusted source)
   const techArticle = {
@@ -243,22 +256,22 @@ export default async function K2Page({
     '@type': 'TechArticle',
     headline: post.title,
     description: post.summary || '',
-    url: `${baseUrl}/${locale}${pathname}`,
+    url: `${brand.baseUrl}/${locale}${pathname}`,
     datePublished: post.date,
     dateModified: post.date,
     inLanguage: locale,
     wordCount: post.metadata?.wordCount,
-    author: { '@type': 'Organization', name: 'Kaitu', url: baseUrl },
-    publisher: { '@type': 'Organization', name: 'Kaitu', url: baseUrl },
-    isPartOf: { '@type': 'WebSite', name: 'Kaitu', url: baseUrl },
-    mainEntityOfPage: { '@type': 'WebPage', '@id': `${baseUrl}/${locale}${pathname}` },
+    author: { '@type': 'Organization', name: brand.displayName, url: brand.baseUrl },
+    publisher: { '@type': 'Organization', name: brand.displayName, url: brand.baseUrl },
+    isPartOf: { '@type': 'WebSite', name: brand.displayName, url: brand.baseUrl },
+    mainEntityOfPage: { '@type': 'WebPage', '@id': `${brand.baseUrl}/${locale}${pathname}` },
   };
 
   // The /k2/comparison aggregate page also emits FAQPage JSON-LD so AI search
   // engines extract structured Q&A. JSON.stringify of an array emits valid
   // multi-schema JSON-LD (Schema.org supports multiple @type objects on a page).
   const isComparison = slug === 'k2/comparison';
-  const faqPage = isComparison ? buildComparisonFaqPage(locale, baseUrl, pathname) : null;
+  const faqPage = isComparison ? buildComparisonFaqPage(locale, brand.baseUrl, pathname) : null;
   const jsonLd = faqPage ? [techArticle, faqPage] : techArticle;
 
   // Content is Velite-processed Markdown (trusted build-time source)

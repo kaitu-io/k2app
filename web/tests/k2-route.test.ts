@@ -10,7 +10,13 @@
  * 3. getK2Posts groups by section, sorts by order
  * 4. Layout component exists and can be imported
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { KAITU, OVERLEAP } from '@/lib/brands';
+
+// Mock @/lib/brand-server — tests override the resolved brand per-case via beforeEach.
+vi.mock('@/lib/brand-server', () => ({
+  getBrand: vi.fn(),
+}));
 
 // Mock #velite module with k2/ posts that include order and section fields
 vi.mock('#velite', () => ({
@@ -154,6 +160,13 @@ vi.mock('@/components/Footer', () => ({
 vi.mock('@/components/K2Sidebar', () => ({
   default: () => null,
 }));
+
+// Default to KAITU for every test so existing assertions (which predate brand-aware
+// JSON-LD) continue to see the legacy Kaitu URLs. Individual tests override this.
+beforeEach(async () => {
+  const { getBrand } = await import('@/lib/brand-server');
+  (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(KAITU);
+});
 
 describe('test_velite_schema_accepts_order_section', () => {
   it('mock posts data includes order field as a number', async () => {
@@ -465,5 +478,84 @@ describe('test_k2_comparison_emits_faqpage_jsonld', () => {
     const jsonLd = extractJsonLd(element);
     expect(Array.isArray(jsonLd)).toBe(false);
     expect((jsonLd as { '@type': string })['@type']).toBe('TechArticle');
+  });
+});
+
+describe('test_k2_techarticle_is_brand_aware', () => {
+  it('TechArticle author/publisher/isPartOf name + url uses KAITU when brand is Kaitu', async () => {
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(KAITU);
+
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'zh-CN', path: ['architecture'] }),
+    });
+
+    const jsonLd = extractJsonLd(element) as {
+      '@type': string;
+      url: string;
+      author: { name: string; url: string };
+      publisher: { name: string; url: string };
+      isPartOf: { name: string; url: string };
+      mainEntityOfPage: { '@id': string };
+    };
+
+    expect(jsonLd['@type']).toBe('TechArticle');
+    expect(jsonLd.author.name).toBe('Kaitu');
+    expect(jsonLd.author.url).toBe('https://kaitu.io');
+    expect(jsonLd.publisher.name).toBe('Kaitu');
+    expect(jsonLd.publisher.url).toBe('https://kaitu.io');
+    expect(jsonLd.isPartOf.name).toBe('Kaitu');
+    expect(jsonLd.isPartOf.url).toBe('https://kaitu.io');
+    expect(jsonLd.url.startsWith('https://kaitu.io/')).toBe(true);
+    expect(jsonLd.mainEntityOfPage['@id'].startsWith('https://kaitu.io/')).toBe(true);
+  });
+
+  it('TechArticle author/publisher/isPartOf name + url uses OVERLEAP when brand is Overleap', async () => {
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
+
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'en-US', path: ['architecture'] }),
+    });
+
+    const jsonLd = extractJsonLd(element) as {
+      '@type': string;
+      url: string;
+      author: { name: string; url: string };
+      publisher: { name: string; url: string };
+      isPartOf: { name: string; url: string };
+      mainEntityOfPage: { '@id': string };
+    };
+
+    expect(jsonLd['@type']).toBe('TechArticle');
+    expect(jsonLd.author.name).toBe('Overleap');
+    expect(jsonLd.author.url).toBe('https://overleap.io');
+    expect(jsonLd.publisher.name).toBe('Overleap');
+    expect(jsonLd.publisher.url).toBe('https://overleap.io');
+    expect(jsonLd.isPartOf.name).toBe('Overleap');
+    expect(jsonLd.isPartOf.url).toBe('https://overleap.io');
+    expect(jsonLd.url.startsWith('https://overleap.io/')).toBe(true);
+    expect(jsonLd.mainEntityOfPage['@id'].startsWith('https://overleap.io/')).toBe(true);
+  });
+
+  it('FAQPage @id on /k2/comparison uses brand baseUrl (Overleap)', async () => {
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
+
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const element = await K2Page({
+      params: Promise.resolve({ locale: 'en-US', path: ['comparison'] }),
+    });
+
+    const jsonLd = extractJsonLd(element) as Array<{ '@type': string; '@id'?: string }>;
+    const faqPage = jsonLd.find((obj) => obj['@type'] === 'FAQPage');
+    expect(faqPage).toBeDefined();
+    expect(typeof faqPage!['@id']).toBe('string');
+    expect(faqPage!['@id']!.startsWith('https://overleap.io/')).toBe(true);
   });
 });
