@@ -40,6 +40,7 @@ const (
 	VipInvitedReward VipChangeType = "invited_reward" // 被邀请奖励（被邀请人获得）
 	VipSystemGrant   VipChangeType = "system_grant"   // 系统发放
 	VipSurveyReward  VipChangeType = "survey_reward"  // 问卷奖励
+	VipRefund        VipChangeType = "refund"         // 订单退款撤销授权
 )
 
 // User 用户模型
@@ -258,6 +259,11 @@ type Order struct {
 	User                 *User  `gorm:"foreignKey:UserID"`
 	IsPaid               *bool  `gorm:"default:false"`
 	PaidAt               *time.Time
+	// 退款字段（2026-04 引入）—— is_paid 保留历史事实；退款用独立字段跟踪
+	IsRefunded           *bool      `gorm:"default:false;index"`
+	RefundedAt           *time.Time
+	RefundAmount         uint64     `gorm:"not null;default:0"`
+	RefundReason         string     `gorm:"type:varchar(500)"`
 	WordgateOrderNo      string    `gorm:"type:varchar(255);index"`                 // 关联的 wordgate 订单号
 	CampaignCode         *string   `gorm:"type:varchar(50);index"`                  // 使用的优惠活动代码
 	Campaign             *Campaign `gorm:"foreignKey:CampaignCode;references:Code"` // 通过Code关联Campaign
