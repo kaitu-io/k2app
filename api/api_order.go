@@ -192,8 +192,17 @@ func api_create_order(c *gin.Context) {
 		Campaign:             campaign,
 		CreatedAt:            createdAt,
 		PayAt:                payAt,
-		ForUsers:             nil,
-		ForMyself:            true,
+		IsRefunded:           order.IsRefunded != nil && *order.IsRefunded,
+		RefundedAt: func() int64 {
+			if order.RefundedAt != nil {
+				return order.RefundedAt.Unix()
+			}
+			return 0
+		}(),
+		RefundAmount: order.RefundAmount,
+		RefundReason: order.RefundReason,
+		ForUsers:     nil,
+		ForMyself:    true,
 	}
 	log.Infof(c, "DataOrder object created: UUID=%s, PayAmount=%d", dataOrder.UUID, dataOrder.PayAmount)
 
@@ -416,6 +425,15 @@ func api_get_pro_histories(c *gin.Context) {
 					Campaign:             campaign,
 					Plan:                 plan,
 					PayAt:                payAt,
+					IsRefunded:           o.IsRefunded != nil && *o.IsRefunded,
+					RefundedAt: func() int64 {
+						if o.RefundedAt != nil {
+							return o.RefundedAt.Unix()
+						}
+						return 0
+					}(),
+					RefundAmount: o.RefundAmount,
+					RefundReason: o.RefundReason,
 				}
 				log.Infof(c, "created DataOrder: ID=%s, PayAmount=%d", dataOrder.ID, dataOrder.PayAmount)
 			} else {

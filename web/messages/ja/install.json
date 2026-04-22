@@ -23,8 +23,12 @@
     "windowsVersion": "Windows 10/11",
     "downloadExe": "Windows",
     "macos": "Mac",
-    "macosVersion": "macOS 10.15以上",
+    "macosVersion": "macOS 11以上",
     "downloadDmg": "Mac",
+    "macos11Notice": {
+      "title": "macOS 11 の互換性に関するお知らせ",
+      "body": "このビルドは macOS 11+ で動作し、正常にインストールできます。ただし、Overleap の公式サポートは現在 macOS 12 以降のみを対象としています。macOS 11 で問題が発生した場合は、アプリ内フィードバックからお知らせください。可能な限り対応いたしますが、修正をお約束することはできません。完全なサポートをご利用いただくには、macOS 12 以降へのアップグレードを推奨します。"
+    },
     "ios": "iPhone / iPad",
     "iosDevices": "iPhoneとiPad",
     "android": "Android",

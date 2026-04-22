@@ -133,7 +133,7 @@ func calcConversion(redeems []redeemInfo) (convertedUsers int64, revenue uint64)
 	}
 
 	var orders []Order
-	db.Get().Where("user_id IN ? AND is_paid = true", userIDs).Find(&orders)
+	db.Get().Where("user_id IN ? AND is_paid = true AND (is_refunded IS NULL OR is_refunded = false)", userIDs).Find(&orders)
 
 	convertedSet := make(map[uint64]bool)
 	for _, o := range orders {
@@ -307,7 +307,7 @@ func GetBatchStatsTrend(ctx context.Context, days int) ([]BatchStatsTrendRespons
 	paidUsers := make(map[uint64]bool)
 	if len(userIDSlice) > 0 {
 		var orders []Order
-		db.Get().Where("user_id IN ? AND is_paid = true", userIDSlice).Find(&orders)
+		db.Get().Where("user_id IN ? AND is_paid = true AND (is_refunded IS NULL OR is_refunded = false)", userIDSlice).Find(&orders)
 		for _, o := range orders {
 			redeemTime, ok := allUserIDs[o.UserID]
 			if ok && o.CreatedAt.After(redeemTime) {

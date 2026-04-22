@@ -20,6 +20,7 @@ vi.mock('lucide-react', () => ({
   Download: () => null,
   CheckCircle: () => null,
   AlertCircle: () => null,
+  AlertTriangle: () => null,
   RefreshCw: () => null,
   ArrowRight: () => null,
   ExternalLink: () => null,
@@ -44,6 +45,7 @@ vi.mock('@/lib/device-detection', () => ({
   }),
   triggerDownload: vi.fn().mockReturnValue(true),
   openDownloadInNewTab: vi.fn(),
+  shouldShowMacOS11Notice: vi.fn().mockResolvedValue(true),
 }));
 vi.mock('@/lib/constants', () => ({
   CDN_PRIMARY: 'https://cdn.test',

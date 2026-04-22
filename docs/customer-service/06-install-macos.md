@@ -2,7 +2,11 @@
 
 ## 系统要求
 
-开途支持 macOS 12 (Monterey) 及以上版本，Intel 芯片和 Apple Silicon 芯片（M1/M2/M3/M4）均可使用。
+开途支持 macOS 11 (Big Sur) 及以上版本，Intel 芯片和 Apple Silicon 芯片（M1/M2/M3/M4）均可使用。
+
+> ⚠️ **macOS 11 兼容性说明**
+>
+> 安装包可在 macOS 11 上正常运行，但开途**官方技术支持仅覆盖 macOS 12 及以上版本**。若您在 macOS 11 上遇到问题，欢迎通过 App 内反馈联系我们，我们会尽量协助，但不保证一定能修复。建议升级到 macOS 12 或更高版本以获得完整支持。
 
 ## 下载开途
 

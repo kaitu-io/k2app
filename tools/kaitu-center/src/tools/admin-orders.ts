@@ -34,4 +34,17 @@ export const orderTools: ToolRegistration[] = [
     },
     path: (p) => `/app/orders/${p.uuid}`,
   }),
+
+  defineApiTool({
+    name: 'refund_order',
+    description: 'Refund a paid order. Credits the user wallet, revokes granted Pro days, and reverses retailer cashback. Requires dual-admin approval (superadmin auto-executes). Full refunds only.',
+    group: 'orders.write',
+    method: 'POST',
+    params: {
+      uuid: z.string().describe('Order UUID'),
+      reason: z.string().min(2).max(500).describe('Refund reason (2-500 chars, required)'),
+    },
+    path: (p) => `/app/orders/${p.uuid}/refund`,
+    mapBody: (p) => ({ reason: p.reason }),
+  }),
 ]

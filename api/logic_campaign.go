@@ -71,7 +71,7 @@ func getCampaignMatcherWithDB(gdb *gormdb.DB, matcherType, params string) func(c
 			}
 			var firstPaidAt time.Time
 			err := gdb.Model(&Order{}).
-				Where("user_id = ? AND is_paid = true", user.ID).
+				Where("user_id = ? AND is_paid = true AND (is_refunded IS NULL OR is_refunded = false)", user.ID).
 				Order("paid_at ASC").
 				Limit(1).
 				Select("paid_at").
@@ -94,7 +94,7 @@ func getCampaignMatcherWithDB(gdb *gormdb.DB, matcherType, params string) func(c
 			}
 			var firstPaidAt time.Time
 			err := gdb.Model(&Order{}).
-				Where("user_id = ? AND is_paid = true", user.ID).
+				Where("user_id = ? AND is_paid = true AND (is_refunded IS NULL OR is_refunded = false)", user.ID).
 				Order("paid_at ASC").
 				Limit(1).
 				Select("paid_at").

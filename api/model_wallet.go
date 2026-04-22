@@ -36,9 +36,10 @@ type Wallet struct {
 type WalletChangeType string
 
 const (
-	WalletChangeTypeIncome   WalletChangeType = "income"   // 收入（返现），有冻结期
-	WalletChangeTypeWithdraw WalletChangeType = "withdraw" // 提现（扣款），无冻结期
-	WalletChangeTypeRefund   WalletChangeType = "refund"   // 退款（订单退款，返现作废）
+	WalletChangeTypeIncome      WalletChangeType = "income"       // 收入（返现），有冻结期
+	WalletChangeTypeWithdraw    WalletChangeType = "withdraw"     // 提现（扣款），无冻结期
+	WalletChangeTypeRefund      WalletChangeType = "refund"       // 退款（分销商返现作废）
+	WalletChangeTypeOrderRefund WalletChangeType = "order_refund" // 订单退款进用户钱包
 )
 
 // WalletChange 钱包变动记录（替代 RetailerCashback）
@@ -52,7 +53,7 @@ type WalletChange struct {
 
 	// 变动信息
 	Type   WalletChangeType `gorm:"type:varchar(30);not null;index:idx_wallet_type;uniqueIndex:idx_type_order" json:"type"` // 变动类型
-	Amount int64            `gorm:"not null" json:"amount"`                                                                   // 变动金额（美分，正数=增加，负数=减少）
+	Amount int64            `gorm:"not null" json:"amount"`                                                                 // 变动金额（美分，正数=增加，负数=减少）
 
 	// 余额快照
 	BalanceBefore int64 `gorm:"not null" json:"balanceBefore"` // 变动前总余额
@@ -65,11 +66,11 @@ type WalletChange struct {
 	FrozenUntil *time.Time `gorm:"index:idx_frozen_until" json:"frozenUntil,omitempty"` // 冻结到期时间
 
 	// 关联信息
-	OrderID     *uint64 `gorm:"index:idx_order;uniqueIndex:idx_type_order" json:"orderId,omitempty"`   // 订单ID（income/refund 类型）
-	WithdrawID  *uint64 `gorm:"index:idx_withdraw" json:"withdrawId,omitempty"`                        // 提现ID（withdraw 类型）
-	ParentID    *uint64 `gorm:"index:idx_parent" json:"parentId,omitempty"`                            // 父记录ID（refund 关联 income）
-	Remark      string  `gorm:"type:varchar(500)" json:"remark,omitempty"`                             // 备注
-	OperatorID  *uint64 `json:"operatorId,omitempty"`                                                  // 操作员ID（人工调整）
+	OrderID    *uint64 `gorm:"index:idx_order;uniqueIndex:idx_type_order" json:"orderId,omitempty"` // 订单ID（income/refund 类型）
+	WithdrawID *uint64 `gorm:"index:idx_withdraw" json:"withdrawId,omitempty"`                      // 提现ID（withdraw 类型）
+	ParentID   *uint64 `gorm:"index:idx_parent" json:"parentId,omitempty"`                          // 父记录ID（refund 关联 income）
+	Remark     string  `gorm:"type:varchar(500)" json:"remark,omitempty"`                           // 备注
+	OperatorID *uint64 `json:"operatorId,omitempty"`                                                // 操作员ID（人工调整）
 }
 
 // TableName 指定表名
@@ -220,9 +221,9 @@ type Withdraw struct {
 	Wallet   *Wallet `gorm:"foreignKey:WalletID" json:"wallet,omitempty"`
 
 	// 金额信息（单位：美分）
-	Amount    int64 `gorm:"not null" json:"amount"`    // 申请提现金额
+	Amount    int64 `gorm:"not null" json:"amount"`              // 申请提现金额
 	FeeAmount int64 `gorm:"not null;default:0" json:"feeAmount"` // 手续费
-	NetAmount int64 `gorm:"not null" json:"netAmount"` // 实际到账金额 = Amount - FeeAmount
+	NetAmount int64 `gorm:"not null" json:"netAmount"`           // 实际到账金额 = Amount - FeeAmount
 
 	// 提现账户（快照，防止账户被删除后丢失信息）
 	WithdrawAccountID uint64              `gorm:"not null;index" json:"withdrawAccountId"`
