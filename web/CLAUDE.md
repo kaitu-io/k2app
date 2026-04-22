@@ -298,7 +298,13 @@ cd web && yarn dev                                    # Next.js + Payload; visit
 Public `[locale]/blog` pages use Local API via `getPayload().find({ ... overrideAccess: true })`. No public REST, no GraphQL.
 
 ### Production (Amplify)
-Required env vars: `DATABASE_URL`, `PAYLOAD_SECRET`, `TRANSLATOR_API_KEY`, `TRANSLATOR_BASE_URL`, `TRANSLATOR_MODEL`, `CENTER_API_URL`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `CDN_URL`. Schema auto-syncs via `push: true`.
+Required env vars: `DATABASE_URL`, `PAYLOAD_SECRET`, `TRANSLATOR_API_KEY`, `TRANSLATOR_BASE_URL`, `TRANSLATOR_MODEL`, `CENTER_API_URL`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `CDN_URL`.
+
+**Schema migrations are explicit** (`push: false`). Migration files live in `src/migrations/`. After committing schema changes, run migration manually against prod before/after deploy:
+```bash
+cd web && PAYLOAD_SECRET=<prod> DATABASE_URL=<prod> yarn payload migrate
+```
+amplify.yml does NOT run `payload migrate` automatically because `@payload-enchants/translator` has an ESM dir-import bug that crashes the payload CLI on Node 22 (Next.js bundler tolerates it; raw CLI does not). Until that's resolved, treat migrations as a manual deploy step.
 
 **Media infra (AWS):**
 - S3 bucket `kaitu-cms-media` (ap-northeast-1) — private, block-public-access ON, bucket policy grants read only to CloudFront via OAC
@@ -306,7 +312,9 @@ Required env vars: `DATABASE_URL`, `PAYLOAD_SECRET`, `TRANSLATOR_API_KEY`, `TRAN
 - IAM user `payload-cms-media-uploader` — scoped to `s3:PutObject/DeleteObject/GetObject/ListBucket` on bucket ARN; access key in Amplify env only
 - Route 53 A+AAAA alias: `media.kaitu.io.` → `d2cb1b6o656sch.cloudfront.net.`
 
-**`push: true` destructive-change caveat**: Drizzle push drops + re-adds on incompatible renames (column rename = drop old + add new = data loss). For non-additive schema changes (renames, type narrows), locally switch to `push: false`, generate explicit migrations with `yarn payload migrate:create`, commit them, and amplify.yml can run `yarn payload migrate`. Additive changes (new columns, new tables) are safe under push.
+**Generating new migrations**: When changing collections, regenerate via `cd web && yarn payload migrate:create <name>`. Review the generated `src/migrations/<timestamp>_<name>.ts` (drop columns / type narrows are flagged in DOWN). Commit migration + apply with `yarn payload migrate` against prod.
+
+**importMap path gotcha**: `payload generate:importmap` writes to `src/app/(payload)/manager/cms/importMap.js` (NOT inside `[[...segments]]/`). Both `layout.tsx` and `[[...segments]]/page.tsx`/`not-found.tsx` import from that path — keep them in sync. Stale importMap = silent blank page (server can't resolve internal Payload components, Suspense renders empty).
 
 ### Gotchas specific to Payload
 - **`.ts` extensions required** on all payload-internal imports (e.g., `import { X } from './collections/X.ts'`) — Payload CLI's tsx loader mandates them.
