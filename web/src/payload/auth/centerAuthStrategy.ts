@@ -35,10 +35,12 @@ function extractEmail(identifies: CenterLoginIdentify[] | undefined): string | n
 }
 
 export const centerAuthStrategy: AuthStrategy = {
-  name: 'center-cookie',
+  name: 'center-auth',
   authenticate: async ({ headers, payload }) => {
-    const token = parseCookie(headers.get('cookie'), 'access_token')
-    if (!token) return { user: null }
+    const cookieToken = parseCookie(headers.get('cookie'), 'access_token')
+    const accessKey = headers.get('x-access-key')
+
+    if (!cookieToken && !accessKey) return { user: null }
 
     const centerUrl = process.env.CENTER_API_URL
     if (!centerUrl) {
@@ -46,11 +48,14 @@ export const centerAuthStrategy: AuthStrategy = {
       return { user: null }
     }
 
+    // Priority: cookie first (web admin), then X-Access-Key (MCP, service tokens)
+    const upstreamHeaders: Record<string, string> = cookieToken
+      ? { Cookie: `access_token=${cookieToken}` }
+      : { 'X-Access-Key': accessKey! }
+
     let body: CenterResponse
     try {
-      const res = await fetch(`${centerUrl}/api/user/info`, {
-        headers: { Cookie: `access_token=${token}` },
-      })
+      const res = await fetch(`${centerUrl}/api/user/info`, { headers: upstreamHeaders })
       if (!res.ok) return { user: null }
       body = (await res.json()) as CenterResponse
     } catch (e) {
@@ -80,7 +85,6 @@ export const centerAuthStrategy: AuthStrategy = {
           data: { email: email ?? '', centerId },
         })
       } catch (e) {
-        // Likely unique-constraint race — another request created it first. Refetch.
         const refetch = await payload.find({
           collection: 'admins',
           where: { centerId: { equals: centerId } },
