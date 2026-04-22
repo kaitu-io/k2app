@@ -93,14 +93,18 @@ describe('test_sitemap_includes_content', () => {
     // Must include zh-CN blog post
     expect(urls).toContain('https://kaitu.io/zh-CN/blog/hello-world');
 
-    // Must include en-US blog post
-    expect(urls).toContain('https://kaitu.io/en-US/blog/hello-world');
+    // Must include zh-HK blog post (Kaitu owns zh-* locales after Task 2)
+    expect(urls).toContain('https://kaitu.io/zh-HK/blog/hello-world');
 
     // Must include zh-CN guides post
     expect(urls).toContain('https://kaitu.io/zh-CN/guides/getting-started');
 
     // Must NOT include draft post
     expect(urls).not.toContain('https://kaitu.io/zh-CN/blog/draft-post');
+
+    // Kaitu host must NOT serve en-*/ja URLs — those belong to overleap.io
+    expect(urls).not.toContain('https://kaitu.io/en-US/blog/hello-world');
+    expect(urls).not.toContain('https://kaitu.io/ja/blog/hello-world');
   });
 
   it('sitemap content entries have correct metadata', async () => {

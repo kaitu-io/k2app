@@ -1,15 +1,25 @@
 import { routing } from '@/i18n/routing';
+import { ownerBrand, brandById, KAITU } from '@/lib/brands';
 
 interface HreflangLinksProps {
   pathname: string;
 }
 
+/**
+ * Emits one `<link rel="alternate" hreflang>` per supported locale, each
+ * pointing to the host that owns that locale:
+ *   - zh-* → https://kaitu.io
+ *   - en-*, ja → https://overleap.io
+ *
+ * `x-default` points to zh-CN on kaitu.io (Chinese is the product's default
+ * locale — see brand architecture doc).
+ */
 export default function HreflangLinks({ pathname }: HreflangLinksProps) {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://kaitu.io';
-  
-  // Generate hreflang links for all locales
+  const suffix = pathname === '/' ? '' : pathname;
+
   const hreflangLinks = routing.locales.map(locale => {
-    const url = `${baseUrl}/${locale}${pathname === '/' ? '' : pathname}`;
+    const ownerBaseUrl = brandById(ownerBrand(locale)).baseUrl;
+    const url = `${ownerBaseUrl}/${locale}${suffix}`;
     return (
       <link
         key={locale}
@@ -19,9 +29,9 @@ export default function HreflangLinks({ pathname }: HreflangLinksProps) {
       />
     );
   });
-  
-  // Add x-default for the default locale
-  const defaultUrl = `${baseUrl}/${routing.defaultLocale}${pathname === '/' ? '' : pathname}`;
+
+  // x-default → zh-CN on kaitu.io
+  const defaultUrl = `${KAITU.baseUrl}/${KAITU.defaultLocale}${suffix}`;
   hreflangLinks.push(
     <link
       key="x-default"
@@ -30,6 +40,6 @@ export default function HreflangLinks({ pathname }: HreflangLinksProps) {
       href={defaultUrl}
     />
   );
-  
+
   return <>{hreflangLinks}</>;
 }
