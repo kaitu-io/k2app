@@ -107,7 +107,11 @@ export const cmsPostsTools: ToolRegistration[] = [
       showOnKaitu: z.boolean().optional(),
       showOnOverleap: z.boolean().optional(),
     },
-    mapQuery: (p) => p.locale ? { locale: String(p.locale) } : {},
+    mapQuery: (p) => {
+      const q: Record<string, string> = {}
+      if (p.locale) q.locale = String(p.locale)
+      return q
+    },
     mapBody: (p) => {
       const body: Record<string, unknown> = {}
       for (const k of ['title','slug','excerpt','content','category','tags','coverImage','showOnKaitu','showOnOverleap']) {
