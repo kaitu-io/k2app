@@ -219,7 +219,6 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 
 		if err := tx.Model(wallet).
 			Update("balance", gorm.Expr("balance + ?", order.PayAmount)).
-			Update("total_income", gorm.Expr("total_income + ?", order.PayAmount)).
 			Error; err != nil {
 			return fmt.Errorf("更新钱包余额失败: %v", err)
 		}

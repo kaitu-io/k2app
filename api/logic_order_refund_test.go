@@ -88,9 +88,7 @@ func TestProcessOrderRefund_HappyPath(t *testing.T) {
 	m.Mock.ExpectExec(`INSERT INTO .wallet_changes.`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// UPDATE user wallet balance — two chained Update() calls → two SQL statements
-	m.Mock.ExpectExec(`UPDATE .wallets. SET`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	// UPDATE user wallet balance — single Update() call (balance only; refunds are not income)
 	m.Mock.ExpectExec(`UPDATE .wallets. SET`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -230,9 +228,7 @@ func TestProcessOrderRefund_NoProHistory(t *testing.T) {
 	m.Mock.ExpectExec(`INSERT INTO .wallet_changes.`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// UPDATE wallet balance — two chained Update() calls → two SQL statements
-	m.Mock.ExpectExec(`UPDATE .wallets. SET`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	// UPDATE wallet balance — single Update() call (balance only; refunds are not income)
 	m.Mock.ExpectExec(`UPDATE .wallets. SET`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -379,9 +375,7 @@ func TestProcessOrderRefund_FirstOrderDoneRevoke(t *testing.T) {
 	m.Mock.ExpectExec(`INSERT INTO .wallet_changes.`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// UPDATE wallet balance — two chained Update() calls → two SQL statements
-	m.Mock.ExpectExec(`UPDATE .wallets. SET`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	// UPDATE wallet balance — single Update() call (balance only; refunds are not income)
 	m.Mock.ExpectExec(`UPDATE .wallets. SET`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
