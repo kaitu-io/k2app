@@ -317,6 +317,7 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/wallet/withdraws", api_admin_list_withdraw_requests)
 		admin.POST("/wallet/withdraws/:id/approve", api_admin_approve_withdraw)
 		admin.POST("/wallet/withdraws/:id/complete", api_admin_complete_withdraw)
+		admin.POST("/orders/:uuid/refund", api_admin_refund_order)
 
 		// 订单管理
 		// 订单管理 — GET 已移至 opsAdmin 组（Support + Marketing 可读）

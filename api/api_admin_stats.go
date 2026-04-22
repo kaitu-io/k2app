@@ -59,6 +59,13 @@ type OrderStatisticsResponse struct {
 
 	// Revenue by period (for chart)
 	RevenueByPeriod []RevenuePeriod `json:"revenueByPeriod"`
+
+	// 退款统计（按 refunded_at 口径，2026-04 引入）
+	Refunds24h          RefundStatsWindow `json:"refunds24h"`
+	Refunds7d           RefundStatsWindow `json:"refunds7d"`
+	Refunds30d          RefundStatsWindow `json:"refunds30d"`
+	RefundRate30d       float64           `json:"refundRate30d"`
+	TopRefundReasons30d []RefundReasonRow `json:"topRefundReasons30d"`
 }
 
 // PeriodCount represents count for a specific time period
@@ -72,6 +79,18 @@ type RevenuePeriod struct {
 	Period  string `json:"period"`  // e.g., "2024-01-15"
 	Revenue int64  `json:"revenue"` // Revenue in cents
 	Orders  int64  `json:"orders"`  // Number of paid orders
+}
+
+// RefundStatsWindow 退款统计窗口（按 refunded_at）
+type RefundStatsWindow struct {
+	Count     int64  `json:"count"`
+	SumAmount uint64 `json:"sumAmount"` // 美分
+}
+
+// RefundReasonRow 退款原因聚合
+type RefundReasonRow struct {
+	Reason string `json:"reason"`
+	Count  int64  `json:"count"`
 }
 
 // api_admin_get_user_statistics returns aggregated user statistics
@@ -228,6 +247,38 @@ func api_admin_get_order_statistics(c *gin.Context) {
 			Orders:  dc.Count,
 		})
 	}
+
+	// ===== 退款统计（按 refunded_at，不干扰 paid_at 营收口径）=====
+	computeRefundWindow := func(since time.Time) RefundStatsWindow {
+		var w RefundStatsWindow
+		db.Get().Model(&Order{}).
+			Where("is_refunded = ? AND refunded_at >= ?", true, since).
+			Count(&w.Count)
+		var sum int64
+		db.Get().Model(&Order{}).
+			Select("COALESCE(SUM(refund_amount), 0)").
+			Where("is_refunded = ? AND refunded_at >= ?", true, since).
+			Scan(&sum)
+		w.SumAmount = uint64(sum)
+		return w
+	}
+	result.Refunds24h = computeRefundWindow(h24Ago)
+	result.Refunds7d = computeRefundWindow(d7Ago)
+	result.Refunds30d = computeRefundWindow(d30Ago)
+
+	if result.Orders30d > 0 {
+		result.RefundRate30d = float64(result.Refunds30d.Count) / float64(result.Orders30d)
+	}
+
+	var reasons []RefundReasonRow
+	db.Get().Model(&Order{}).
+		Select("refund_reason as reason, COUNT(*) as count").
+		Where("is_refunded = ? AND refunded_at >= ? AND refund_reason != ''", true, d30Ago).
+		Group("refund_reason").
+		Order("count DESC").
+		Limit(10).
+		Scan(&reasons)
+	result.TopRefundReasons30d = reasons
 
 	Success(c, &result)
 }

@@ -332,6 +332,10 @@ export interface DataOrder {
   payAt: number;
   forUsers: User[];
   forMyself: boolean;
+  isRefunded?: boolean;
+  refundedAt?: number;
+  refundAmount?: number;
+  refundReason?: string;
 }
 
 export interface CreateOrderResponse {
@@ -737,6 +741,10 @@ export interface AdminOrderListItem {
     isPaid: boolean;
     createdAt: number;
     paidAt: number;
+    isRefunded?: boolean;
+    refundedAt?: number;
+    refundAmount?: number;
+    refundReason?: string;
     user: ResourceUser;               // 购买用户
     cashback?: ResourceCashback;      // 分销返现信息（可选）
 }
@@ -770,6 +778,7 @@ export interface AdminOrderListParams {
     loginProvider?: string;
     loginIdentity?: string;
     isPaid?: boolean;
+    isRefunded?: boolean;
     createdAtStart?: number;
     createdAtEnd?: number;
 }
@@ -1232,6 +1241,7 @@ export const api = {
     if (params.loginProvider) queryParams.set('loginProvider', params.loginProvider);
     if (params.loginIdentity) queryParams.set('loginIdentity', params.loginIdentity);
     if (params.isPaid !== undefined) queryParams.set('isPaid', params.isPaid.toString());
+    if (params.isRefunded !== undefined) queryParams.set('isRefunded', params.isRefunded.toString());
     if (params.createdAtStart !== undefined) queryParams.set('createdAtStart', params.createdAtStart.toString());
     if (params.createdAtEnd !== undefined) queryParams.set('createdAtEnd', params.createdAtEnd.toString());
 
@@ -1241,6 +1251,13 @@ export const api = {
 
   async getOrderDetail(uuid: string): Promise<DataOrder> {
     return this.request<DataOrder>(`/app/orders/${uuid}`);
+  },
+
+  async refundOrder(uuid: string, reason: string): Promise<void> {
+    return this.request<void>(`/app/orders/${uuid}/refund`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
   },
 
   // Purchase-related APIs (for regular users)

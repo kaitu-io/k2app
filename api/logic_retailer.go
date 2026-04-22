@@ -361,7 +361,7 @@ func ToDataRetailerConfigWithContext(ctx context.Context, config *RetailerConfig
 func isUserFirstPaidOrderInTx(tx *gorm.DB, userID uint64, retailerID uint64, currentOrderID uint64) bool {
 	var count int64
 	tx.Model(&Order{}).
-		Where("user_id = ? AND retailer_id = ? AND is_paid = ? AND id < ?", userID, retailerID, true, currentOrderID).
+		Where("user_id = ? AND retailer_id = ? AND is_paid = ? AND (is_refunded IS NULL OR is_refunded = ?) AND id < ?", userID, retailerID, true, false, currentOrderID).
 		Count(&count)
 	return count == 0 // 如果之前没有已支付订单，则当前订单是首单
 }

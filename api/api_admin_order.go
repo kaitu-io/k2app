@@ -75,6 +75,13 @@ func api_admin_list_orders(c *gin.Context) {
 		log.Debugf(c, "filtering orders by paid status: %v", *req.IsPaid)
 		query = query.Where("is_paid = ?", *req.IsPaid)
 	}
+	if req.IsRefunded != nil {
+		if *req.IsRefunded {
+			query = query.Where("is_refunded = ?", true)
+		} else {
+			query = query.Where("is_refunded IS NULL OR is_refunded = ?", false)
+		}
+	}
 
 	// 时间范围筛选
 	if req.CreatedAtStart > 0 {
@@ -138,11 +145,19 @@ func api_admin_list_orders(c *gin.Context) {
 			PayAmount:            order.PayAmount,
 			IsPaid:               order.IsPaid != nil && *order.IsPaid,
 			CreatedAt:            order.CreatedAt.Unix(),
+			IsRefunded:           order.IsRefunded != nil && *order.IsRefunded,
+			RefundAmount:         order.RefundAmount,
+			RefundReason:         order.RefundReason,
 		}
 
 		// 设置支付时间
 		if order.PaidAt != nil {
 			item.PaidAt = order.PaidAt.Unix()
+		}
+
+		// 设置退款时间
+		if order.RefundedAt != nil {
+			item.RefundedAt = order.RefundedAt.Unix()
 		}
 
 		// 设置用户资源
@@ -239,6 +254,15 @@ func api_admin_get_order_detail(c *gin.Context) {
 		CreatedAt:            order.CreatedAt.Unix(),
 		Plan:                 plan,
 		Campaign:             campaign,
+		IsRefunded:           order.IsRefunded != nil && *order.IsRefunded,
+		RefundedAt: func() int64 {
+			if order.RefundedAt != nil {
+				return order.RefundedAt.Unix()
+			}
+			return 0
+		}(),
+		RefundAmount: order.RefundAmount,
+		RefundReason: order.RefundReason,
 	}
 
 	if order.PaidAt != nil {
