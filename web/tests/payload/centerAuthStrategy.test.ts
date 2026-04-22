@@ -93,4 +93,52 @@ describe('centerAuthStrategy', () => {
     } as any)
     expect(result.user).toBeNull()
   })
+
+  it('forwards X-Access-Key header when cookie absent', async () => {
+    ;(globalThis.fetch as any).mockResolvedValueOnce(makeCenterResponse())
+    await centerAuthStrategy.authenticate({
+      headers: new Headers({ 'x-access-key': 'ktu_abc' }),
+      payload: makePayload(),
+    } as any)
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://center.test/api/user/info',
+      { headers: { 'X-Access-Key': 'ktu_abc' } },
+    )
+  })
+
+  it('prefers cookie when both cookie and X-Access-Key present', async () => {
+    ;(globalThis.fetch as any).mockResolvedValueOnce(makeCenterResponse())
+    await centerAuthStrategy.authenticate({
+      headers: new Headers({
+        cookie: 'access_token=tok-xyz',
+        'x-access-key': 'ktu_abc',
+      }),
+      payload: makePayload(),
+    } as any)
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://center.test/api/user/info',
+      { headers: { Cookie: 'access_token=tok-xyz' } },
+    )
+  })
+
+  it('returns null user when neither cookie nor X-Access-Key present', async () => {
+    const result = await centerAuthStrategy.authenticate({
+      headers: new Headers(),
+      payload: makePayload(),
+    } as any)
+    expect(result.user).toBeNull()
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+  })
+
+  it('reads X-Access-Key case-insensitively', async () => {
+    ;(globalThis.fetch as any).mockResolvedValueOnce(makeCenterResponse())
+    await centerAuthStrategy.authenticate({
+      headers: new Headers({ 'X-Access-Key': 'ktu_upper' }),
+      payload: makePayload(),
+    } as any)
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://center.test/api/user/info',
+      { headers: { 'X-Access-Key': 'ktu_upper' } },
+    )
+  })
 })

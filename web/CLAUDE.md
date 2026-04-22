@@ -270,14 +270,14 @@ Optimizing for AI search engines (Google AI Overview, Perplexity, ChatGPT Search
 
 Payload v3 admin mounted at `/manager/cms`, REST API at `/payload/api`. GraphQL is disabled (no `(payload)/payload/api/graphql` folders exist). URL is namespaced under `/manager` for consistency with the rest of the admin dashboard, but Payload runs under its own `(payload)` root layout (independent from `(manager)` — Payload's admin ships its own `<html>` shell). A "← 返回管理后台" link is injected into Payload's left nav via `admin.components.beforeNavLinks`. Content collections:
 
-- `posts` — Blog articles with Lexical rich text, draft/published versions, localized to 7 locales (zh-CN source, 6 AI-translated)
+- `posts` — Blog articles with Lexical rich text, draft/published versions, localized to 7 locales (zh-CN source, 6 AI-translated). Per-post brand visibility via `showOnKaitu` / `showOnOverleap` booleans; at least one must be true when status=published (validated server-side). Blog list filters via DB-level `where[showOn<Brand>][equals]=true`; detail page resolves `canonicalBrand` from the pair + locale fallback.
 - `categories` — Hierarchical (self-referencing parent) with localized name + description
 - `tags` — Flat labels with localized name
 - `media` — Uploaded images, stored in S3 (`kaitu-cms-media`, ap-northeast-1) and served via CloudFront at `https://media.kaitu.io`. REST read is admin-only; public blog pages reach images via `generateFileURL` → CDN URL embedded in post content.
 - `admins` — Auth collection; custom Center API cookie strategy (no local password)
 
 ### Auth
-Reuses `/manager` admin's `access_token` HttpOnly cookie. Bridge: `src/payload/auth/centerAuthStrategy.ts` calls Center `/api/user/info`, checks `isAdmin || (roles & 0xfffffffe) !== 0`, upserts admin record by Center `uuid`.
+Reuses `/manager` admin's `access_token` HttpOnly cookie OR an `X-Access-Key: ktu_...` header (for service tokens / MCP clients). Bridge: `src/payload/auth/centerAuthStrategy.ts` extracts whichever credential is present, calls Center `/api/user/info`, checks `isAdmin || (roles & 0xfffffffe) !== 0`, upserts admin record by Center `uuid`. The `kaitu-center` MCP uses the header path to drive Payload REST programmatically.
 
 ### Translation
 `afterChange` on Posts fans out translation to all non-source locales via `@payload-enchants/translator` pointed at OpenRouter. Default model `google/gemini-2.5-flash`. Re-entry safe via `req.locale !== 'zh-CN'` guard. Configurable via env:

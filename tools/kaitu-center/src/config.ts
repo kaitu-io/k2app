@@ -14,6 +14,14 @@ export interface CenterConfig {
 }
 
 /**
+ * Configuration for the CMS (Payload REST) target.
+ */
+export interface CmsConfig {
+  /** Base URL of the CMS origin (e.g. https://kaitu.io or http://localhost:3000) */
+  url: string
+}
+
+/**
  * Configuration for SSH connections to nodes.
  */
 export interface SshConfig {
@@ -30,6 +38,7 @@ export interface SshConfig {
  */
 export interface Config {
   center: CenterConfig
+  cms: CmsConfig
   ssh: SshConfig
 }
 
@@ -40,6 +49,9 @@ interface RawToml {
   center?: {
     url?: string
     access_key?: string
+  }
+  cms?: {
+    url?: string
   }
   ssh?: {
     private_key_path?: string
@@ -123,6 +135,7 @@ export async function loadConfig(
   // Collect resolved values with env var priority over TOML
   const centerUrl = process.env['KAITU_CENTER_URL'] ?? toml.center?.url ?? 'https://k2.52j.me'
   const accessKey = process.env['KAITU_ACCESS_KEY'] ?? toml.center?.access_key
+  const cmsUrl = process.env['KAITU_CMS_URL'] ?? toml.cms?.url ?? 'http://localhost:3000'
   const sshUser = process.env['KAITU_SSH_USER'] ?? toml.ssh?.user ?? 'ubuntu'
   const sshPortRaw = process.env['KAITU_SSH_PORT'] ?? toml.ssh?.port ?? 1022
   const sshKeyPath = resolveSshKeyPath(
@@ -161,6 +174,9 @@ export async function loadConfig(
     center: {
       url: centerUrl as string,
       accessKey: accessKey as string,
+    },
+    cms: {
+      url: cmsUrl,
     },
     ssh: {
       privateKeyPath: sshKeyPath as string,

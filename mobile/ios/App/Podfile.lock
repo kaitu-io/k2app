@@ -1,14 +1,14 @@
 PODS:
-  - Capacitor (6.2.1):
+  - Capacitor (7.6.2):
     - CapacitorCordova
-  - CapacitorApp (6.0.3):
+  - CapacitorApp (7.1.2):
     - Capacitor
-  - CapacitorClipboard (6.0.3):
+  - CapacitorClipboard (7.0.4):
     - Capacitor
-  - CapacitorCordova (6.2.1)
-  - CapacitorShare (6.0.4):
+  - CapacitorCordova (7.6.2)
+  - CapacitorShare (7.0.4):
     - Capacitor
-  - CapacitorStatusBar (6.0.3):
+  - CapacitorStatusBar (7.0.6):
     - Capacitor
   - GzipSwift (5.1.1)
   - K2Plugin (0.1.0):
@@ -48,12 +48,12 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/k2-plugin"
 
 SPEC CHECKSUMS:
-  Capacitor: 1e0d0e7330dea9f983b50da737d8918abcf273f8
-  CapacitorApp: 22c94146dfaae1159ab7059cbd51e76d9f2d45ec
-  CapacitorClipboard: b65bdab75c7f944fdd51d4fa4faa84b8da054d47
-  CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
-  CapacitorShare: 44c43f74b95500ba7399c2ac21f0d55efc1a931e
-  CapacitorStatusBar: 38665f1a18c55677098367a29f6b42126b72dc65
+  Capacitor: 6a4db05694acab0f1ea4ecb5ae06e520d101c4f1
+  CapacitorApp: 6b89831465d6bc99bc89779b1b7f5327e33011ce
+  CapacitorClipboard: 9779d5e2f766d501d8c90e0f0f689abd293efc2f
+  CapacitorCordova: 8214697bed435f6e7c5e3ed86d1632a8c42f7d77
+  CapacitorShare: 14b5d7f0a2c6de86dcad8995da80fb707ee32f62
+  CapacitorStatusBar: a3acb591ff56301e28aa1a01791ba74a8e1faabb
   GzipSwift: 893f3e48e597a1a4f62fafcb6514220fcf8287fa
   K2Plugin: 6417bb0881f846831ac5f066a27fb5879d7fb47b
   SSZipArchive: 8a6ee5677c8e304bebc109e39cf0da91ccef22ea

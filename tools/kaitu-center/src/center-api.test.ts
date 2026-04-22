@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { CenterApiClient } from './center-api.ts'
+import { CenterApiClient, createCenterClient, createCmsClient } from './center-api.ts'
 import type { Config } from './config.ts'
 
 const mockConfig: Config = {
   center: {
     url: 'https://api.example.com',
     accessKey: 'test-secret-key',
+  },
+  cms: {
+    url: 'http://localhost:3000',
   },
   ssh: {
     privateKeyPath: '/home/user/.ssh/id_rsa',
@@ -31,7 +34,7 @@ describe('CenterApiClient', () => {
       )
     })
 
-    const client = new CenterApiClient(mockConfig, mockFetch)
+    const client = new CenterApiClient(mockConfig.center.url, mockConfig.center.accessKey, mockFetch)
     await client.request('/api/test')
 
     expect(capturedInit).toHaveLength(1)
@@ -51,7 +54,7 @@ describe('CenterApiClient', () => {
       )
     })
 
-    const client = new CenterApiClient(mockConfig, mockFetch)
+    const client = new CenterApiClient(mockConfig.center.url, mockConfig.center.accessKey, mockFetch)
     await client.request('/api/users')
 
     expect(capturedUrls).toHaveLength(1)
@@ -70,7 +73,7 @@ describe('CenterApiClient', () => {
       )
     })
 
-    const client = new CenterApiClient(mockConfig, mockFetch)
+    const client = new CenterApiClient(mockConfig.center.url, mockConfig.center.accessKey, mockFetch)
     await client.request('api/nodes')
 
     expect(capturedUrls[0]).toBe('https://api.example.com/api/nodes')
@@ -88,7 +91,7 @@ describe('CenterApiClient', () => {
       )
     })
 
-    const client = new CenterApiClient(mockConfig, mockFetch)
+    const client = new CenterApiClient(mockConfig.center.url, mockConfig.center.accessKey, mockFetch)
     await client.request('/api/resource', {
       method: 'POST',
       body: JSON.stringify({ name: 'test' }),
@@ -96,5 +99,63 @@ describe('CenterApiClient', () => {
 
     expect(capturedInit[0]?.method).toBe('POST')
     expect(capturedInit[0]?.body).toBe(JSON.stringify({ name: 'test' }))
+  })
+})
+
+describe('CenterApiClient — multiple targets', () => {
+  const testConfig = (): Config => ({
+    center: { url: 'https://center.test', accessKey: 'ktu_x' },
+    cms: { url: 'https://kaitu.test' },
+    ssh: { privateKeyPath: '/x', user: 'u', port: 22 },
+  })
+
+  it('creates a CMS client pointing at cms.url with same access key', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ docs: [{ id: 1 }] }),
+    })
+    const client = createCmsClient(testConfig(), fetchFn)
+    await client.request('/payload/api/posts')
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://kaitu.test/payload/api/posts',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-Access-Key': 'ktu_x' }),
+      }),
+    )
+  })
+
+  it('throws with Payload error body preserved on HTTP 4xx', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ errors: [{ message: 'The following field is invalid: title' }] }),
+    })
+    const client = createCmsClient(testConfig(), fetchFn)
+    await expect(
+      client.request('/payload/api/posts', { method: 'POST', body: '{}' })
+    ).rejects.toThrow(/HTTP 400.*following field is invalid: title/)
+  })
+
+  it('throws with plain HTTP status when body is not JSON', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => { throw new Error('not json') },
+    })
+    const client = createCmsClient(testConfig(), fetchFn)
+    await expect(
+      client.request('/payload/api/posts')
+    ).rejects.toThrow(/HTTP 502/)
+  })
+
+  it('preserves Center {message} on HTTP 4xx (non-envelope error)', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ message: 'invalid access key' }),
+    })
+    const client = createCenterClient(testConfig(), fetchFn)
+    await expect(
+      client.request('/app/my-permissions')
+    ).rejects.toThrow(/HTTP 401.*invalid access key/)
   })
 })

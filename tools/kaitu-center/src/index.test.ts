@@ -27,6 +27,7 @@ vi.mock('./tool-factory.ts', async (importOriginal) => {
 
 const testConfig: Config = {
   center: { url: 'https://api.example.com', accessKey: 'test-key' },
+  cms: { url: 'https://cms.example.com' },
   ssh: { privateKeyPath: '/home/user/.ssh/id_rsa', user: 'root', port: 22 },
 }
 
@@ -37,7 +38,7 @@ describe('createServer', () => {
     const innerServer = (server as any)['server'] as Record<string, unknown>
     const info = innerServer['_serverInfo'] as Record<string, unknown>
     expect(info['name']).toBe('kaitu-center')
-    expect(info['version']).toBe('0.4.0')
+    expect(info['version']).toBe('0.5.0')
   })
 
   it('registers standalone and factory tools', async () => {

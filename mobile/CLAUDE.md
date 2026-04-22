@@ -1,6 +1,17 @@
-# Mobile — Capacitor 6 + gomobile
+# Mobile — Capacitor 7 + gomobile
 
-Capacitor 6 mobile app wrapping the k2 Go tunnel core via gomobile. K2Plugin bridges JS ↔ native VPN lifecycle.
+Capacitor 7 mobile app wrapping the k2 Go tunnel core via gomobile. K2Plugin bridges JS ↔ native VPN lifecycle.
+
+## Toolchain baseline (Capacitor 7)
+
+- Node ≥ 20
+- **JDK 21** required for Android builds (Cap 7 regenerates `capacitor.build.gradle` with `VERSION_21` on every `cap sync`; JDK 17 will fail with `invalid source release: 21`).
+  - **Local:** just `brew install openjdk@21`. The root `Makefile`'s `ANDROID_JAVA_HOME` auto-detects it and exports `JAVA_HOME` only for `appext-android` / `build-android` / `dev-android` targets — your shell's default `JAVA_HOME` (e.g. JDK 17 for other projects) stays untouched.
+  - **CI:** `actions/setup-java@v4` with `java-version: '21'` already set in `.github/workflows/build-mobile.yml`.
+  - If `make check-jdk-21` fails, the Makefile prints the install hint.
+- Gradle wrapper 8.11.1 + AGP 8.7.2 + Kotlin 1.9.25
+- Xcode 16+, iOS deployment target 14 (app actually ships 15.6, NE 16)
+- CocoaPods for iOS (NOT SPM — avoids Capacitor 8's SPM regression surface when we later upgrade)
 
 ## Commands
 
@@ -205,7 +216,8 @@ Go package `k2/appext/` → gomobile naming:
 - **iOS entitlements**: Debug config must use `App/App.entitlements` (has NE entitlement), not `App.simulator.entitlements`. Missing NE entitlement → "not entitled to establish IPC with plugins".
 - **iOS extension plist**: Must have explicit `CFBundleExecutable` + `CFBundleVersion`. Build settings NOT inherited from project.
 - **Android JVM unit tests**: Pure utils in `K2VpnServiceUtils.kt` / `K2PluginUtils.kt`. Needs `testImplementation "org.json:json:20231013"` (built into Android runtime but not JVM).
-- **Capacitor iOS router fix**: `AppBridgeViewController` overrides `router()` with `FixedCapacitorRouter` — fixes Capacitor 6.x empty-path bug. Main.storyboard must reference this subclass.
+- **Capacitor iOS router fix**: `AppBridgeViewController` overrides `router()` with `FixedCapacitorRouter` — originally added for the Capacitor 6.x empty-path bug. Kept through the v7 upgrade since the override is harmless if the underlying bug was fixed upstream. Main.storyboard must reference this subclass. If we later confirm v7+ handles empty paths correctly, this can be removed.
+- **Android 15 edge-to-edge**: Handled by `@capawesome/capacitor-android-edge-to-edge-support` (plugin auto-pads the WebView's parent container for system-bar insets). `BottomNavigation.tsx` uses plain `env(safe-area-inset-bottom, 0px)` — works on iOS natively and on Android via the plugin. Do not hand-roll CSS variables or MainActivity WindowInsets listeners.
 - **VPN teardown critical**: `vpnInterface.close()` is mandatory on Android. Without it, Android keeps VPN routing active → all external requests hang. Only phone reboot recovers.
 - **K2Plugin dual-CDN pattern**: `fetchManifest(endpoints)` tries CloudFront first, S3 fallback. `resolveDownloadURL()` handles relative vs absolute URLs.
 - **Android `VpnService.protect()` scope**: Must protect wire transport (QUIC UDP, TCP-WS TCP), direct DNS (raw UDP), and direct tunnel connections (smart routing bypass). Uses `syscall.RawConn.Control()` in Go's `net.Dialer.Control`. gomobile requires `int32` fd parameter (not `int`).
