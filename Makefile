@@ -8,6 +8,29 @@ K2_BIN   = desktop/src-tauri/binaries
 FEATURES ?=
 TAURI_FEATURES_ARG := $(if $(FEATURES),--features $(FEATURES),)
 
+# Capacitor 7 Android targets require JDK 21. Honor caller's JAVA_HOME if it's
+# already 21.x (CI sets this via actions/setup-java); otherwise auto-detect a
+# brew-installed openjdk@21 locally. Leaves system-default JDK alone so other
+# projects keep their JDK 17/20/etc.
+ANDROID_JAVA_HOME := $(shell \
+  v() { [ -x "$$1/bin/java" ] && "$$1/bin/java" -version 2>&1 | head -1 | grep -q '"21\.'; }; \
+  if [ -n "$$JAVA_HOME" ] && v "$$JAVA_HOME"; then echo "$$JAVA_HOME"; \
+  elif jh=$$(/usr/libexec/java_home -v 21 2>/dev/null) && v "$$jh"; then echo "$$jh"; \
+  elif v /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home; then echo /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home; \
+  elif v /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home; then echo /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home; \
+  fi)
+
+check-jdk-21:
+	@if [ -z "$(ANDROID_JAVA_HOME)" ]; then \
+	  echo ""; \
+	  echo "❌ JDK 21 required for Capacitor 7 Android builds, none found."; \
+	  echo "   macOS: brew install openjdk@21"; \
+	  echo "   Or set JAVA_HOME to an existing JDK 21 install."; \
+	  echo ""; \
+	  exit 1; \
+	fi
+	@echo "✓ Android JDK 21: $(ANDROID_JAVA_HOME)"
+
 sync-version:
 	bash scripts/sync-version.sh
 
@@ -238,7 +261,9 @@ appext-macos:
 build-macos-ne-lib: appext-macos
 	@echo "macOS NE xcframework ready: k2/build/K2MobileMacOS.xcframework"
 
-appext-android: appext-deps plugin-purity-check
+appext-android build-android dev-android: export JAVA_HOME = $(ANDROID_JAVA_HOME)
+
+appext-android: appext-deps plugin-purity-check check-jdk-21
 	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable" -ldflags "-checklinkname=0" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
 
 build-ios: pre-build build-webapp appext-ios

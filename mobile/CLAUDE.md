@@ -5,7 +5,10 @@ Capacitor 7 mobile app wrapping the k2 Go tunnel core via gomobile. K2Plugin bri
 ## Toolchain baseline (Capacitor 7)
 
 - Node ≥ 20
-- **JDK 21** required for Android builds (Cap 7 regenerates `capacitor.build.gradle` with `VERSION_21` on every `cap sync`; JDK 17 will fail with `invalid source release: 21`). CI uses `java-version: '21'`. Locally: `brew install openjdk@21` + `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.
+- **JDK 21** required for Android builds (Cap 7 regenerates `capacitor.build.gradle` with `VERSION_21` on every `cap sync`; JDK 17 will fail with `invalid source release: 21`).
+  - **Local:** just `brew install openjdk@21`. The root `Makefile`'s `ANDROID_JAVA_HOME` auto-detects it and exports `JAVA_HOME` only for `appext-android` / `build-android` / `dev-android` targets — your shell's default `JAVA_HOME` (e.g. JDK 17 for other projects) stays untouched.
+  - **CI:** `actions/setup-java@v4` with `java-version: '21'` already set in `.github/workflows/build-mobile.yml`.
+  - If `make check-jdk-21` fails, the Makefile prints the install hint.
 - Gradle wrapper 8.11.1 + AGP 8.7.2 + Kotlin 1.9.25
 - Xcode 16+, iOS deployment target 14 (app actually ships 15.6, NE 16)
 - CocoaPods for iOS (NOT SPM — avoids Capacitor 8's SPM regression surface when we later upgrade)
