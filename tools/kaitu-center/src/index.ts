@@ -37,6 +37,14 @@ import { walletTools } from './tools/admin-wallet.js'
 import { strategyTools } from './tools/admin-strategy.js'
 import { announcementTools } from './tools/admin-announcements.js'
 
+// CMS tools — target Payload REST at /payload/api/*
+import { cmsPostsTools } from './tools/cms-posts.js'
+import { cmsCategoriesTools } from './tools/cms-categories.js'
+import { cmsTagsTools } from './tools/cms-tags.js'
+import { cmsMediaTools } from './tools/cms-media.js'
+import { registerGetPostAllLocales, registerRetranslatePost } from './tools/cms-post-helpers.js'
+import { registerUploadMedia } from './tools/cms-upload-media.js'
+
 /** All factory-declared tools, aggregated for bulk registration. */
 const allFactoryTools: ToolRegistration[] = [
   ...deviceLogTools,
@@ -55,6 +63,10 @@ const allFactoryTools: ToolRegistration[] = [
   ...walletTools,
   ...strategyTools,
   ...announcementTools,
+  ...cmsPostsTools,
+  ...cmsCategoriesTools,
+  ...cmsTagsTools,
+  ...cmsMediaTools,
 ]
 
 /**
@@ -74,6 +86,9 @@ const STANDALONE_TOOLS: Array<{
   { group: 'nodes',        register: (s, _c, cfg) => registerPingNode(s, cfg.ssh) },
   { group: 'nodes.write',  register: (s, c) => registerDeleteNode(s, c.center) },
   { group: 'device_logs',  register: (s) => registerDownloadDeviceLog(s) },
+  { group: 'cms',          register: (s, c) => registerGetPostAllLocales(s, c.cms) },
+  { group: 'cms',          register: (s, c) => registerRetranslatePost(s, c.cms) },
+  { group: 'cms',          register: (s, c) => registerUploadMedia(s, c.cms) },
 ]
 
 export async function createServer(config: Config): Promise<McpServer> {
