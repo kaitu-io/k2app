@@ -438,3 +438,32 @@ func executeApprovalWithdrawComplete(ctx context.Context, params json.RawMessage
 
 	return db.Get().Save(&withdraw).Error
 }
+
+// ===================== Order Refund =====================
+
+type orderRefundApprovalParams struct {
+	OrderID    uint64 `json:"orderId"`
+	Reason     string `json:"reason"`
+	OperatorID uint64 `json:"operatorId"`
+}
+
+func executeApprovalOrderRefund(ctx context.Context, params json.RawMessage) error {
+	var p orderRefundApprovalParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return fmt.Errorf("unmarshal params: %w", err)
+	}
+
+	// 审批期间订单状态可能被改：再次校验前置条件
+	var order Order
+	if err := db.Get().First(&order, p.OrderID).Error; err != nil {
+		return fmt.Errorf("order not found: %w", err)
+	}
+	if order.IsPaid == nil || !*order.IsPaid {
+		return fmt.Errorf("订单未支付，无法退款")
+	}
+	if order.IsRefunded != nil && *order.IsRefunded {
+		return fmt.Errorf("订单已退款")
+	}
+
+	return ProcessOrderRefund(ctx, p.OrderID, p.Reason, p.OperatorID)
+}
