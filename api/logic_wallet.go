@@ -44,6 +44,25 @@ func GetOrCreateWallet(ctx context.Context, userID uint64) (*Wallet, error) {
 	return &wallet, nil
 }
 
+// getOrCreateWalletInTx 在给定事务中查找或创建钱包
+// 现有 GetOrCreateWallet 只用 db.Get()，不能用于事务内；此处提供事务版
+func getOrCreateWalletInTx(ctx context.Context, tx *gorm.DB, userID uint64) (*Wallet, error) {
+	var wallet Wallet
+	err := tx.Where(&Wallet{UserID: userID}).First(&wallet).Error
+	if err == gorm.ErrRecordNotFound {
+		wallet = Wallet{UserID: userID}
+		if err := tx.Create(&wallet).Error; err != nil {
+			return nil, err
+		}
+		log.Infof(ctx, "在事务中创建钱包: user_id=%d, wallet_id=%d", userID, wallet.ID)
+		return &wallet, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &wallet, nil
+}
+
 // ==================== 钱包余额计算逻辑 ====================
 
 // CalculateFrozenBalance 计算钱包的实时冻结余额

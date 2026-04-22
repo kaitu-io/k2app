@@ -121,6 +121,9 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 		if order.IsRefunded != nil && *order.IsRefunded {
 			return fmt.Errorf("订单已退款")
 		}
+		if order.RefundAmount > 0 {
+			return fmt.Errorf("订单已有退款金额记录，无法退款（数据异常）")
+		}
 
 		// ---------- 2. 撤销授权 ----------
 		// SUM 订单直接关联的 VipPurchase 天数（不含邀请奖励）
@@ -136,7 +139,12 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 		if order.User == nil {
 			return fmt.Errorf("订单关联用户为空")
 		}
-		user := *order.User
+		// FOR UPDATE lock on user row — prevents race with concurrent refunds on different orders of the same user
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&user, order.User.ID).Error; err != nil {
+			return fmt.Errorf("锁定用户行失败: %v", err)
+		}
 
 		if purchaseDays > 0 {
 			// 扣 ExpiredAt（不强制置 0，小于 now 自然过期即可）
@@ -178,9 +186,10 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 		}
 
 		// ---------- 3. 撤销分销商返现 ----------
+		// refundCashbackInTx 内部已吸收 ErrRecordNotFound（无返现记录时返 nil）。
+		// 若这里拿到非 nil 错误说明是真实故障（DB 异常），应回滚整个事务。
 		if err := refundCashbackInTx(ctx, tx, orderID); err != nil {
-			// 没有 income 记录 → warning，不 rollback（沿用现有行为）
-			log.Warnf(ctx, "退回返现失败（可能没有返现记录）: %v", err)
+			return fmt.Errorf("撤销分销商返现失败: %v", err)
 		}
 
 		// ---------- 4. 给用户钱包打款 ----------
@@ -234,22 +243,4 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 	})
 }
 
-// getOrCreateWalletInTx 在给定事务中查找或创建钱包
-// 现有 GetOrCreateWallet 只用 db.Get()，不能用于事务内；此处提供事务版
-func getOrCreateWalletInTx(ctx context.Context, tx *gorm.DB, userID uint64) (*Wallet, error) {
-	var wallet Wallet
-	err := tx.Where(&Wallet{UserID: userID}).First(&wallet).Error
-	if err == gorm.ErrRecordNotFound {
-		wallet = Wallet{UserID: userID}
-		if err := tx.Create(&wallet).Error; err != nil {
-			return nil, err
-		}
-		log.Infof(ctx, "在事务中创建钱包: user_id=%d, wallet_id=%d", userID, wallet.ID)
-		return &wallet, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &wallet, nil
-}
 

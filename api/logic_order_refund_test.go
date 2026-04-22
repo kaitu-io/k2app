@@ -45,6 +45,12 @@ func TestProcessOrderRefund_HappyPath(t *testing.T) {
 	m.Mock.ExpectQuery(`SELECT COALESCE\(SUM\(days\), 0\) FROM .user_pro_histories. WHERE .*`).
 		WillReturnRows(sqlmock.NewRows([]string{"days"}).AddRow(365))
 
+	// 2b. FOR UPDATE lock on user row (re-load under lock, separate from Preload)
+	m.Mock.ExpectQuery(`SELECT \* FROM .users. WHERE .users...id. = \? .* FOR UPDATE`).
+		WithArgs(uint64(100), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "expired_at", "is_first_order_done"}).
+			AddRow(uint64(100), now.Add(335*24*time.Hour).Unix(), true))
+
 	// INSERT reverse UserProHistory
 	m.Mock.ExpectExec(`INSERT INTO .user_pro_histories.`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
