@@ -62,7 +62,7 @@ export default async function LocaleLayout({
 
 
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html lang={locale} data-brand={brand.id} suppressHydrationWarning>
       <body className={`${inter.className} ${jetbrainsMono.variable}`} suppressHydrationWarning>
         <NextIntlClientProvider messages={messages}>
           <LocaleProvider locale={locale}>
