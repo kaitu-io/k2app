@@ -1,4 +1,4 @@
-import { styled } from "@mui/material/styles";
+import { styled, keyframes } from "@mui/material/styles";
 import {
   BottomNavigation as MuiBottomNavigation,
   BottomNavigationAction,
@@ -18,6 +18,44 @@ import { getCurrentAppConfig } from "../config/apps";
 import { useMemo, memo } from "react";
 import { useUser } from "../hooks/useUser";
 import { useAuthStore } from "../stores";
+
+const inviteWiggle = keyframes`
+  0%, 82%, 100% { transform: rotate(0deg) scale(1); }
+  85% { transform: rotate(-20deg) scale(1.15); }
+  88% { transform: rotate(18deg) scale(1.18); }
+  91% { transform: rotate(-14deg) scale(1.12); }
+  94% { transform: rotate(10deg) scale(1.06); }
+  97% { transform: rotate(-5deg) scale(1.02); }
+`;
+
+const inviteGlow = keyframes`
+  0%, 80%, 100% { filter: drop-shadow(0 0 0px transparent); color: inherit; }
+  86%, 92% { filter: drop-shadow(0 0 8px rgba(255, 167, 38, 0.85)); color: #ffa726; }
+`;
+
+const dotPulse = keyframes`
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.65; }
+`;
+
+const AnimatedInviteIcon = styled("span")(() => ({
+  display: "inline-flex",
+  position: "relative",
+  transformOrigin: "center 70%",
+  animation: `${inviteWiggle} 6s ease-in-out infinite, ${inviteGlow} 6s ease-in-out infinite`,
+  "&::after": {
+    content: '""',
+    position: "absolute",
+    top: 1,
+    right: -1,
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    backgroundColor: "#ffa726",
+    boxShadow: "0 0 5px rgba(255, 167, 38, 0.7)",
+    animation: `${dotPulse} 2s ease-in-out infinite`,
+  },
+}));
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
   // Use relative positioning - parent controls placement via flexbox
@@ -91,7 +129,7 @@ function BottomNavigation() {
       },
       {
         label: user?.isRetailer ? t("nav:navigation.retailer") : t("nav:navigation.invite"),
-        icon: <InviteIcon />,
+        icon: <AnimatedInviteIcon><InviteIcon /></AnimatedInviteIcon>,
         path: "/invite",
         feature: "invite" as const,
       },
