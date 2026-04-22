@@ -9,8 +9,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig } from './config.js'
 import type { Config } from './config.js'
-import { CenterApiClient } from './center-api.js'
-import { fetchPermissions, type ToolRegistration } from './tool-factory.js'
+import { createCenterClient, createCmsClient } from './center-api.js'
+import { fetchPermissions, type ApiClients, type ToolRegistration } from './tool-factory.js'
 
 // Standalone tools (SSH, S3, custom logic)
 import { registerListNodes } from './tools/list-nodes.js'
@@ -60,24 +60,30 @@ const allFactoryTools: ToolRegistration[] = [
 /**
  * Standalone tool group mapping.
  * These tools have custom logic and can't use the factory.
+ *
+ * Receive both API clients plus the config. Standalone tools that only need
+ * the Center client pick `clients.center`; SSH-only tools ignore `clients`
+ * entirely and read from `config.ssh`.
  */
 const STANDALONE_TOOLS: Array<{
   group: string
-  register: (server: McpServer, apiClient: CenterApiClient, config: Config) => void
+  register: (server: McpServer, clients: ApiClients, config: Config) => void
 }> = [
-  { group: 'nodes', register: (s, a) => registerListNodes(s, a) },
-  { group: 'nodes.write', register: (s, _, c) => registerExecOnNode(s, c.ssh) },
-  { group: 'nodes', register: (s, _, c) => registerPingNode(s, c.ssh) },
-  { group: 'nodes.write', register: (s, a) => registerDeleteNode(s, a) },
-  { group: 'device_logs', register: (s) => registerDownloadDeviceLog(s) },
+  { group: 'nodes',        register: (s, c) => registerListNodes(s, c.center) },
+  { group: 'nodes.write',  register: (s, _c, cfg) => registerExecOnNode(s, cfg.ssh) },
+  { group: 'nodes',        register: (s, _c, cfg) => registerPingNode(s, cfg.ssh) },
+  { group: 'nodes.write',  register: (s, c) => registerDeleteNode(s, c.center) },
+  { group: 'device_logs',  register: (s) => registerDownloadDeviceLog(s) },
 ]
 
 export async function createServer(config: Config): Promise<McpServer> {
-  const apiClient = new CenterApiClient(config)
-  const server = new McpServer({ name: 'kaitu-center', version: '0.4.0' })
+  const centerClient = createCenterClient(config)
+  const cmsClient = createCmsClient(config)
+  const clients: ApiClients = { center: centerClient, cms: cmsClient }
+  const server = new McpServer({ name: 'kaitu-center', version: '0.5.0' })
 
-  // Fetch permissions from backend
-  const permissions = await fetchPermissions(apiClient)
+  // Fetch permissions from backend (always via the Center client).
+  const permissions = await fetchPermissions(centerClient)
   const allowedGroups = new Set(permissions.groups)
 
   console.error(`[kaitu-center] Permissions: admin=${permissions.isAdmin}, groups=${permissions.groups.length}`)
@@ -85,14 +91,14 @@ export async function createServer(config: Config): Promise<McpServer> {
   // Register standalone tools
   for (const tool of STANDALONE_TOOLS) {
     if (allowedGroups.has(tool.group)) {
-      tool.register(server, apiClient, config)
+      tool.register(server, clients, config)
     }
   }
 
   // Register factory tools
   for (const tool of allFactoryTools) {
     if (allowedGroups.has(tool.group)) {
-      tool.register(server, apiClient)
+      tool.register(server, clients)
     }
   }
 
