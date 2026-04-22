@@ -23,7 +23,7 @@
     "windowsVersion": "Windows 10/11",
     "downloadExe": "Windows 电脑版",
     "macos": "苹果电脑",
-    "macosVersion": "macOS 12+",
+    "macosVersion": "macOS 11+",
     "downloadDmg": "苹果电脑版",
     "ios": "iPhone / iPad",
     "iosDevices": "iPhone 和 iPad",

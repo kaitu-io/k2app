@@ -2,7 +2,7 @@
 
 ## 系统要求
 
-开途支持 macOS 12 (Monterey) 及以上版本，Intel 芯片和 Apple Silicon 芯片（M1/M2/M3/M4）均可使用。
+开途支持 macOS 11 (Big Sur) 及以上版本，Intel 芯片和 Apple Silicon 芯片（M1/M2/M3/M4）均可使用。
 
 ## 下载开途
 

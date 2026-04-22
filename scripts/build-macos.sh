@@ -201,11 +201,11 @@ if [ "$NE_MODE" = true ]; then
   }
 
   if [ "$SINGLE_ARCH" = true ]; then
-    compile_sysext "${NE_ARCH}-apple-macos12" "$SYSEXT_DIR/KaituTunnel"
+    compile_sysext "${NE_ARCH}-apple-macos11" "$SYSEXT_DIR/KaituTunnel"
   else
     # Universal: compile both architectures and merge with lipo
-    compile_sysext "arm64-apple-macos12" "$SYSEXT_DIR/KaituTunnel-arm64"
-    compile_sysext "x86_64-apple-macos12" "$SYSEXT_DIR/KaituTunnel-x86_64"
+    compile_sysext "arm64-apple-macos11" "$SYSEXT_DIR/KaituTunnel-arm64"
+    compile_sysext "x86_64-apple-macos11" "$SYSEXT_DIR/KaituTunnel-x86_64"
     lipo -create "$SYSEXT_DIR/KaituTunnel-arm64" "$SYSEXT_DIR/KaituTunnel-x86_64" \
       -output "$SYSEXT_DIR/KaituTunnel"
     rm -f "$SYSEXT_DIR/KaituTunnel-arm64" "$SYSEXT_DIR/KaituTunnel-x86_64"
