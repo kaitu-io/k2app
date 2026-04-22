@@ -38,6 +38,7 @@ func TestProcessOrderRefund_Integration_EndToEnd(t *testing.T) {
 		PayAmount: 4900,
 		IsPaid:    &isPaid,
 		PaidAt:    &paidAt,
+		Meta:      "{}",
 	}
 	require.NoError(t, db.Get().Create(&order).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&order) })

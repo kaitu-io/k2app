@@ -171,12 +171,13 @@ func TestAdmin_RefundOrder_Success_SuperAdmin(t *testing.T) {
 	isPaid := true
 	paidAt := now.Add(-5 * 24 * time.Hour)
 	order := Order{
-		UUID:      "ord-handler-superadmin-" + now.Format("20060102150405"),
+		UUID:      "ord-h-sa-" + now.Format("20060102150405"),
 		Title:     "Test Handler SuperAdmin",
 		UserID:    user.ID,
 		PayAmount: 4900,
 		IsPaid:    &isPaid,
 		PaidAt:    &paidAt,
+		Meta:      "{}",
 	}
 	require.NoError(t, db.Get().Create(&order).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&order) })
@@ -251,12 +252,13 @@ func TestAdmin_RefundOrder_Success_RegularAdmin(t *testing.T) {
 	isPaid := true
 	paidAt := now.Add(-3 * 24 * time.Hour)
 	order := Order{
-		UUID:      "ord-handler-regadmin-" + now.Format("20060102150405"),
+		UUID:      "ord-h-ra-" + now.Format("20060102150405"),
 		Title:     "Test Handler RegAdmin",
 		UserID:    user.ID,
 		PayAmount: 1900,
 		IsPaid:    &isPaid,
 		PaidAt:    &paidAt,
+		Meta:      "{}",
 	}
 	require.NoError(t, db.Get().Create(&order).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&order) })
@@ -317,12 +319,13 @@ func TestAdmin_RefundOrder_ApprovalReValidation(t *testing.T) {
 	isPaid := true
 	paidAt := now.Add(-2 * 24 * time.Hour)
 	order := Order{
-		UUID:      "ord-handler-revalidate-" + now.Format("20060102150405"),
+		UUID:      "ord-h-rv-" + now.Format("20060102150405"),
 		Title:     "Test ReValidation",
 		UserID:    user.ID,
 		PayAmount: 2900,
 		IsPaid:    &isPaid,
 		PaidAt:    &paidAt,
+		Meta:      "{}",
 	}
 	require.NoError(t, db.Get().Create(&order).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&order) })
