@@ -22,7 +22,7 @@ func api_admin_refund_order(c *gin.Context) {
 
 	// 预校验订单
 	var order Order
-	if err := getDB().Preload("User").Where(&Order{UUID: orderUUID}).First(&order).Error; err != nil {
+	if err := getDB().Where(&Order{UUID: orderUUID}).First(&order).Error; err != nil {
 		log.Warnf(c, "order not found: uuid=%s err=%v", orderUUID, err)
 		Error(c, ErrorNotFound, "订单不存在")
 		return
@@ -37,10 +37,7 @@ func api_admin_refund_order(c *gin.Context) {
 	}
 
 	operatorID := ReqUserID(c)
-	userIdent := ""
-	if order.User != nil {
-		userIdent = order.User.UUID
-	}
+	userIdent := fmt.Sprintf("uid:%d", order.UserID)
 	summary := fmt.Sprintf("退款订单 %s（¥%.2f，用户 %s，原因：%s）",
 		order.UUID, float64(order.PayAmount)/100.0, userIdent, req.Reason)
 

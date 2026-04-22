@@ -61,4 +61,64 @@ func TestAdmin_RefundOrder_OrderNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), "订单不存在")
+	m.ExpectationsWereMet(t)
+}
+
+// TestAdmin_RefundOrder_OrderNotPaid: order exists but IsPaid=false → ErrorInvalidOperation + "订单未支付".
+func TestAdmin_RefundOrder_OrderNotPaid(t *testing.T) {
+	m := SetupMockDB(t)
+
+	origGetDB := getDB
+	getDB = func() *gorm.DB { return m.DB }
+	t.Cleanup(func() { getDB = origGetDB })
+
+	isPaid := false
+	m.Mock.ExpectQuery(`SELECT \* FROM .orders. WHERE`).
+		WithArgs("ord-unpaid", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "uuid", "user_id", "is_paid"}).
+			AddRow(uint64(1), "ord-unpaid", uint64(100), &isPaid))
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/app/orders/:uuid/refund", api_admin_refund_order)
+
+	body, _ := json.Marshal(map[string]string{"reason": "valid reason"})
+	req := httptest.NewRequest(http.MethodPost, "/app/orders/ord-unpaid/refund", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "订单未支付")
+	m.ExpectationsWereMet(t)
+}
+
+// TestAdmin_RefundOrder_AlreadyRefunded: order exists, IsPaid=true, IsRefunded=true → ErrorConflict + "订单已退款".
+func TestAdmin_RefundOrder_AlreadyRefunded(t *testing.T) {
+	m := SetupMockDB(t)
+
+	origGetDB := getDB
+	getDB = func() *gorm.DB { return m.DB }
+	t.Cleanup(func() { getDB = origGetDB })
+
+	isPaid := true
+	isRefunded := true
+	m.Mock.ExpectQuery(`SELECT \* FROM .orders. WHERE`).
+		WithArgs("ord-refunded", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "uuid", "user_id", "is_paid", "is_refunded"}).
+			AddRow(uint64(1), "ord-refunded", uint64(100), &isPaid, &isRefunded))
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/app/orders/:uuid/refund", api_admin_refund_order)
+
+	body, _ := json.Marshal(map[string]string{"reason": "valid reason"})
+	req := httptest.NewRequest(http.MethodPost, "/app/orders/ord-refunded/refund", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "订单已退款")
+	m.ExpectationsWereMet(t)
 }
