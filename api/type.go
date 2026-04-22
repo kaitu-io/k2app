@@ -402,6 +402,11 @@ type DataOrder struct {
 	Campaign             *Campaign  `json:"campaign"`
 	Plan                 *Plan      `json:"plan"`
 	PayAt                int64      `json:"payAt"`
+	// 退款字段（2026-04 引入）
+	IsRefunded   bool   `json:"isRefunded"`
+	RefundedAt   int64  `json:"refundedAt,omitempty"`
+	RefundAmount uint64 `json:"refundAmount,omitempty"`
+	RefundReason string `json:"refundReason,omitempty"`
 	ForUsers             []DataUser `json:"forUsers"`
 	ForMyself            bool       `json:"forMyself"`
 }
@@ -421,6 +426,7 @@ type AdminOrderListRequest struct {
 	LoginProvider  string `json:"loginProvider" form:"loginProvider"` // email, google, apple等
 	LoginIdentity  string `json:"loginIdentity" form:"loginIdentity"` // 对应的值
 	IsPaid         *bool  `json:"isPaid" form:"isPaid"`
+	IsRefunded     *bool  `json:"isRefunded" form:"isRefunded"`
 	CreatedAtStart int64  `json:"createdAtStart" form:"createdAtStart"`
 	CreatedAtEnd   int64  `json:"createdAtEnd" form:"createdAtEnd"`
 }
@@ -489,6 +495,11 @@ type AdminOrderListItem struct {
 	IsPaid               bool              `json:"isPaid"`
 	CreatedAt            int64             `json:"createdAt"`
 	PaidAt               int64             `json:"paidAt"`
+	// 退款字段（2026-04 引入）
+	IsRefunded   bool   `json:"isRefunded"`
+	RefundedAt   int64  `json:"refundedAt,omitempty"`
+	RefundAmount uint64 `json:"refundAmount,omitempty"`
+	RefundReason string `json:"refundReason,omitempty"`
 	User                 ResourceUser      `json:"user"`               // 购买用户
 	Cashback             *ResourceCashback `json:"cashback,omitempty"` // 分销返现信息（可选）
 }
@@ -716,7 +727,7 @@ type CreateWithdrawRequest struct {
 
 // RefundOrderRequest 退款订单请求
 type RefundOrderRequest struct {
-	Reason string `json:"reason" binding:"required"` // 退款原因
+	Reason string `json:"reason" binding:"required,min=2,max=500"` // 退款原因，必填，2-500 字符
 }
 
 // ========================= 邮件发送日志类型定义 =========================
