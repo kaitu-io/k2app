@@ -2,8 +2,7 @@
 "use client";
 
 import { Button } from '@/components/ui/button';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Download, ExternalLink, AlertTriangle } from 'lucide-react';
+import { Download, ExternalLink } from 'lucide-react';
 import { PlatformIcon, PLATFORM_COLORS } from './platform-icons';
 import {
   BrowserBlockedGuide,
@@ -13,6 +12,7 @@ import {
   CliBlock,
   DownloadTipCard,
 } from './install-guides';
+import { MacOS11Notice } from './macos-11-notice';
 import { openDownloadInNewTab } from '@/lib/device-detection';
 
 // ---------------------------------------------------------------------------
@@ -141,11 +141,7 @@ export function MacOSPanel({
       </h1>
       <VersionLabel t={t} version={version} isBeta={isBeta} />
 
-      <Alert className="max-w-xl mx-auto mb-6 text-left border-amber-500/40 bg-amber-500/10">
-        <AlertTriangle className="text-amber-600 dark:text-amber-400" />
-        <AlertTitle>{t('install.install.macos11Notice.title')}</AlertTitle>
-        <AlertDescription>{t('install.install.macos11Notice.body')}</AlertDescription>
-      </Alert>
+      <MacOS11Notice t={t} />
 
       <Button size="lg" onClick={() => openDownloadInNewTab(primaryLink)}>
         <Download className="w-5 h-5 mr-2" />
