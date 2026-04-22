@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
-import { KAITU, type Brand } from '@/lib/brands';
+import { KAITU, ownerBrand, brandById, type Brand } from '@/lib/brands';
 
 // Legacy export retained for pages that stay Kaitu-branded regardless of host
 // (e.g., k2 protocol docs, support page — see spec 2026-04-21-overleap-brand-web-design).
@@ -53,11 +53,19 @@ export function generateMetadata(
   const ogImageUrl = `${resolvedBaseUrl}${ogImageRelative}`;
   const ogType = overrides.ogType || 'website';
 
-  // Generate alternate links only for locales allowed by this brand.
+  // Cross-domain hreflang: each locale points to its owning brand's host,
+  // so Googlebot can link kaitu.io (zh-*) and overleap.io (en-*/ja) as a
+  // single multi-regional property. Hreflang must use the brand-resolved
+  // base URL — NOT NEXT_PUBLIC_BASE_URL — because a preview env override
+  // would break cross-domain linking. See spec §"Known Limitations".
   const languages: Record<string, string> = {};
-  brand.allowedLocales.forEach(loc => {
-    languages[loc.toLowerCase()] = `${resolvedBaseUrl}/${loc}${pathname}`;
+  routing.locales.forEach(loc => {
+    const ownerBaseUrl = brandById(ownerBrand(loc)).baseUrl;
+    languages[loc.toLowerCase()] = `${ownerBaseUrl}/${loc}${pathname}`;
   });
+
+  // x-default points to the Chinese main market on kaitu.io (spec's choice).
+  languages['x-default'] = `${KAITU.baseUrl}/${KAITU.defaultLocale}${pathname}`;
 
   const ogBase = {
     title,
