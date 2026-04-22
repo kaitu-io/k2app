@@ -48,6 +48,10 @@ webapp/playwright-report/
 webapp/test-results/
 .k2-dev-config.yaml
 
+# Root-level Playwright output + ad-hoc manual-test screenshots
+/test-results/
+/*.png
+
 # adb platform-tools (Google original zips, managed via S3)
 tools/adb-platform-tools/*.zip
 
