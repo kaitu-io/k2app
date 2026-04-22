@@ -87,6 +87,7 @@ func InitWorker() {
 	RegisterApprovalCallback("plan_delete", executeApprovalPlanDelete)
 	RegisterApprovalCallback("withdraw_approve", executeApprovalWithdrawApprove)
 	RegisterApprovalCallback("withdraw_complete", executeApprovalWithdrawComplete)
+	RegisterApprovalCallback("order_refund", executeApprovalOrderRefund)
 
 	log.Infof(context.Background(), "[WORKER] Task handlers registered (renewal 10:30, abandoned hourly + 11:00 Beijing time)")
 }
