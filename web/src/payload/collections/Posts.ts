@@ -57,6 +57,22 @@ export const Posts: CollectionConfig = {
       custom: { translatorSkip: true },
     },
     {
+      name: 'showOnKaitu',
+      type: 'checkbox',
+      defaultValue: true,
+      required: true,
+      custom: { translatorSkip: true },
+      admin: { description: '显示在 Kaitu 品牌站（kaitu.io）' },
+    },
+    {
+      name: 'showOnOverleap',
+      type: 'checkbox',
+      defaultValue: true,
+      required: true,
+      custom: { translatorSkip: true },
+      admin: { description: '显示在 Overleap 品牌站（overleap.*）' },
+    },
+    {
       name: 'publishedAt',
       type: 'date',
       custom: { translatorSkip: true },
