@@ -130,3 +130,59 @@ port = 22
     expect(config.ssh.privateKeyPath).toBe('/custom/.ssh/id_ed25519')
   })
 })
+
+describe('loadConfig — cms section', () => {
+  let savedEnv: NodeJS.ProcessEnv
+
+  beforeEach(() => {
+    savedEnv = { ...process.env }
+    delete process.env['KAITU_CENTER_URL']
+    delete process.env['KAITU_ACCESS_KEY']
+    delete process.env['KAITU_CMS_URL']
+    delete process.env['KAITU_SSH_KEY']
+    delete process.env['KAITU_SSH_USER']
+    delete process.env['KAITU_SSH_PORT']
+  })
+
+  afterEach(() => {
+    for (const key of ['KAITU_CENTER_URL', 'KAITU_ACCESS_KEY', 'KAITU_CMS_URL', 'KAITU_SSH_KEY', 'KAITU_SSH_USER', 'KAITU_SSH_PORT']) {
+      if (savedEnv[key] !== undefined) {
+        process.env[key] = savedEnv[key]
+      } else {
+        delete process.env[key]
+      }
+    }
+  })
+
+  it('loads cms.url from KAITU_CMS_URL env var', async () => {
+    const tomlPath = writeTempToml(FULL_TOML)
+    process.env['KAITU_CMS_URL'] = 'https://kaitu.test'
+    const cfg = await loadConfig(tomlPath)
+    expect(cfg.cms.url).toBe('https://kaitu.test')
+  })
+
+  it('loads cms.url from TOML [cms] section', async () => {
+    const tomlPath = writeTempToml(`${FULL_TOML}
+[cms]
+url = "https://cms.toml.example"
+`)
+    const cfg = await loadConfig(tomlPath)
+    expect(cfg.cms.url).toBe('https://cms.toml.example')
+  })
+
+  it('env var wins over TOML [cms] section', async () => {
+    const tomlPath = writeTempToml(`${FULL_TOML}
+[cms]
+url = "https://cms.toml.example"
+`)
+    process.env['KAITU_CMS_URL'] = 'https://env.wins.example'
+    const cfg = await loadConfig(tomlPath)
+    expect(cfg.cms.url).toBe('https://env.wins.example')
+  })
+
+  it('defaults cms.url to http://localhost:3000 when unset', async () => {
+    const tomlPath = writeTempToml(FULL_TOML)
+    const cfg = await loadConfig(tomlPath)
+    expect(cfg.cms.url).toBe('http://localhost:3000')
+  })
+})
