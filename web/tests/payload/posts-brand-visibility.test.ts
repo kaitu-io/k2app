@@ -27,3 +27,28 @@ describe('Posts brand visibility fields', () => {
     expect(f.custom?.translatorSkip).toBe(true)
   })
 })
+
+describe('Posts brand visibility validate', () => {
+  const getValidate = () => {
+    const f = (Posts.fields as Array<{ name?: string; validate?: any }>)
+      .find(f => f.name === 'showOnOverleap')
+    return f?.validate
+  }
+
+  it('rejects published when both visibility bools are false', () => {
+    const validate = getValidate()!
+    const result = validate(false, { siblingData: { status: 'published', showOnKaitu: false } })
+    expect(result).toMatch(/至少/)
+  })
+
+  it('accepts published when at least one is true', () => {
+    const validate = getValidate()!
+    expect(validate(true, { siblingData: { status: 'published', showOnKaitu: false } })).toBe(true)
+    expect(validate(false, { siblingData: { status: 'published', showOnKaitu: true } })).toBe(true)
+  })
+
+  it('accepts draft with both false', () => {
+    const validate = getValidate()!
+    expect(validate(false, { siblingData: { status: 'draft', showOnKaitu: false } })).toBe(true)
+  })
+})
