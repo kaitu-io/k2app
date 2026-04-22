@@ -1,13 +1,15 @@
 import createMiddleware from 'next-intl/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 import { routing } from './i18n/routing';
-import { brandFromHost } from './lib/brands';
+import { KAITU, OVERLEAP, brandFromHost, ownerBrand } from './lib/brands';
+import { isProductionHost } from './lib/host-utils';
 
 type Locale = (typeof routing.locales)[number];
 
 const intlMiddleware = createMiddleware(routing);
 
-const NON_OVERLEAP_LOCALE_RE = /^\/(zh-CN|zh-TW|zh-HK|ja)(\/.*)?$/;
+// Any locale-prefixed request path. Used to decide whether to cross-domain 301.
+const LOCALE_PREFIX_RE = /^\/(zh-CN|zh-TW|zh-HK|en-US|en-GB|en-AU|ja)(\/.*)?$/;
 
 export default function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -48,12 +50,22 @@ export default function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Overleap.io only serves English locales. Rewrite zh-*/ja URLs to en-US.
-  if (brand.id === 'overleap') {
-    const match = pathname.match(NON_OVERLEAP_LOCALE_RE);
-    if (match) {
-      const rest = match[2] ?? '';
-      return NextResponse.redirect(new URL(`/en-US${rest}`, request.url), 307);
+  // Bidirectional 301 cross-domain redirect.
+  // If the URL's locale prefix is "owned" by the other brand (per ownerBrand())
+  // AND the current host is a production host, 301 to the owning brand's baseUrl.
+  // Dev hosts (localhost, amplify previews) pass through so each environment can
+  // exercise any locale without bouncing off-domain.
+  const localeMatch = pathname.match(LOCALE_PREFIX_RE);
+  if (localeMatch && isProductionHost(host)) {
+    const pathLocale = localeMatch[1];
+    const rest = localeMatch[2] ?? '';
+    const targetBrandId = ownerBrand(pathLocale);
+    if (targetBrandId !== brand.id) {
+      const targetBrand = targetBrandId === 'kaitu' ? KAITU : OVERLEAP;
+      const targetUrl = new URL(`/${pathLocale}${rest}`, targetBrand.baseUrl);
+      targetUrl.search = request.nextUrl.search;
+      targetUrl.hash = request.nextUrl.hash;
+      return NextResponse.redirect(targetUrl, 301);
     }
   }
 
