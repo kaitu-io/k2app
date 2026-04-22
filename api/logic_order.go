@@ -1,14 +1,20 @@
 package center
 
 import (
-	db "github.com/wordgate/qtoolkit/db"
 	"context"
 	"fmt"
 	"time"
 
+	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/util"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// getDB returns the global database instance.
+// Overrideable in tests via package-level variable.
+var getDB = func() *gorm.DB { return db.Get() }
 
 // ==================== 订单支付处理 ====================
 
@@ -93,43 +99,157 @@ func processOrderCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint64) 
 // ==================== 订单退款处理 ====================
 
 // ProcessOrderRefund 处理订单退款
-// 完整的退款流程：退款订单、退回返现、更新相关状态
-func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string) error {
-	return db.Get().Transaction(func(tx *gorm.DB) error {
-		// 1. 查询订单
+// 完整的退款流程：
+//  1. 加行锁加载订单 + 预校验
+//  2. 撤销授权（扣 ExpiredAt、写反向 UserProHistory、必要时翻回 IsFirstOrderDone）
+//  3. 撤销分销商返现（refundCashbackInTx）
+//  4. 给用户钱包打款（order_refund 记录）
+//  5. 更新订单状态（IsRefunded/RefundedAt/RefundAmount/RefundReason）
+//
+// operatorID 必传：落到 wallet_changes.operator_id，用于审计追溯
+func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string, operatorID uint64) error {
+	return getDB().Transaction(func(tx *gorm.DB) error {
+		// ---------- 1. 加行锁加载订单 + 预校验 ----------
 		var order Order
-		if err := tx.Preload("User").First(&order, orderID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("User").First(&order, orderID).Error; err != nil {
 			return fmt.Errorf("查询订单失败: %v", err)
 		}
-
-		// 检查订单是否已支付
 		if order.IsPaid == nil || !*order.IsPaid {
 			return fmt.Errorf("订单未支付，无法退款")
 		}
+		if order.IsRefunded != nil && *order.IsRefunded {
+			return fmt.Errorf("订单已退款")
+		}
 
-		// 2. 处理返现退回（如果有返现记录）
+		// ---------- 2. 撤销授权 ----------
+		// SUM 订单直接关联的 VipPurchase 天数（不含邀请奖励）
+		var purchaseDays int64
+		if err := tx.Model(&UserProHistory{}).
+			Select("COALESCE(SUM(days), 0)").
+			Where("user_id = ? AND reference_id = ? AND type = ? AND days > ?",
+				order.UserID, orderID, VipPurchase, 0).
+			Scan(&purchaseDays).Error; err != nil {
+			return fmt.Errorf("查询授权天数失败: %v", err)
+		}
+
+		if order.User == nil {
+			return fmt.Errorf("订单关联用户为空")
+		}
+		user := *order.User
+
+		if purchaseDays > 0 {
+			// 扣 ExpiredAt（不强制置 0，小于 now 自然过期即可）
+			user.ExpiredAt -= purchaseDays * 86400
+
+			// 写反向 UserProHistory
+			reverseHistory := UserProHistory{
+				UserID:      user.ID,
+				Type:        VipRefund,
+				ReferenceID: orderID,
+				Days:        int(-purchaseDays),
+				Reason:      fmt.Sprintf("订单退款撤销授权 - 订单 %s，原因：%s", order.UUID, refundReason),
+			}
+			if err := tx.Create(&reverseHistory).Error; err != nil {
+				return fmt.Errorf("写反向授权记录失败: %v", err)
+			}
+		} else {
+			log.Warnf(ctx, "订单 %d 未找到关联的 VipPurchase 记录，跳过扣天数（脏数据）", orderID)
+		}
+
+		// 若是唯一有效付费订单，翻回 IsFirstOrderDone
+		if user.IsFirstOrderDone != nil && *user.IsFirstOrderDone {
+			var otherPaidCount int64
+			if err := tx.Model(&Order{}).
+				Where("user_id = ? AND is_paid = ? AND (is_refunded IS NULL OR is_refunded = ?) AND id != ?",
+					user.ID, true, false, orderID).
+				Count(&otherPaidCount).Error; err != nil {
+				return fmt.Errorf("查询其它付费订单失败: %v", err)
+			}
+			if otherPaidCount == 0 {
+				user.IsFirstOrderDone = BoolPtr(false)
+			}
+		}
+
+		if err := tx.Model(&user).
+			Select("ExpiredAt", "IsFirstOrderDone").
+			Updates(&user).Error; err != nil {
+			return fmt.Errorf("更新用户授权失败: %v", err)
+		}
+
+		// ---------- 3. 撤销分销商返现 ----------
 		if err := refundCashbackInTx(ctx, tx, orderID); err != nil {
-			// 如果没有返现记录，仅记录警告，不影响退款流程
+			// 没有 income 记录 → warning，不 rollback（沿用现有行为）
 			log.Warnf(ctx, "退回返现失败（可能没有返现记录）: %v", err)
 		}
 
-		// 3. 更新订单状态为已退款
-		order.IsPaid = BoolPtr(false)
-		if err := tx.Model(&order).
-			Select("IsPaid").
-			Updates(&order).Error; err != nil {
-			return fmt.Errorf("更新订单状态失败: %v", err)
+		// ---------- 4. 给用户钱包打款 ----------
+		wallet, err := getOrCreateWalletInTx(ctx, tx, user.ID)
+		if err != nil {
+			return fmt.Errorf("查询/创建用户钱包失败: %v", err)
 		}
-		// TODO: 如果有 is_refunded, refunded_at, refund_reason 字段，应该一起更新
 
-		// 4. 处理用户套餐权限（如果需要）
-		// TODO: 根据业务需求，可能需要撤销用户的 Pro 权限
-		// 这部分逻辑需要根据实际业务场景实现
+		balanceBefore := wallet.Balance
+		orderRefundChange := WalletChange{
+			WalletID:      wallet.ID,
+			Type:          WalletChangeTypeOrderRefund,
+			Amount:        int64(order.PayAmount),
+			BalanceBefore: balanceBefore,
+			BalanceAfter:  balanceBefore + int64(order.PayAmount),
+			FrozenUntil:   nil, // E1: 不冻结
+			OrderID:       &orderID,
+			OperatorID:    &operatorID,
+			Remark:        refundReason,
+		}
+		if err := tx.Create(&orderRefundChange).Error; err != nil {
+			if util.DbIsDuplicatedErr(err) {
+				return fmt.Errorf("订单已退款（wallet_changes 唯一索引冲突）")
+			}
+			return fmt.Errorf("记录钱包退款变动失败: %v", err)
+		}
 
-		log.Infof(ctx, "订单退款处理完成: order_id=%d, user_id=%d, amount=%d, reason=%s",
-			orderID, order.UserID, order.PayAmount, refundReason)
+		if err := tx.Model(wallet).
+			Update("balance", gorm.Expr("balance + ?", order.PayAmount)).
+			Update("total_income", gorm.Expr("total_income + ?", order.PayAmount)).
+			Error; err != nil {
+			return fmt.Errorf("更新钱包余额失败: %v", err)
+		}
+
+		// ---------- 5. 更新订单状态 ----------
+		nowTime := time.Now()
+		order.IsRefunded = BoolPtr(true)
+		order.RefundedAt = &nowTime
+		order.RefundAmount = order.PayAmount
+		order.RefundReason = refundReason
+		if err := tx.Model(&order).
+			Select("IsRefunded", "RefundedAt", "RefundAmount", "RefundReason").
+			Updates(&order).Error; err != nil {
+			return fmt.Errorf("更新订单退款状态失败: %v", err)
+		}
+
+		log.Infof(ctx, "order refunded: uuid=%s user=%d amount=%d reason=%s operator=%d",
+			order.UUID, order.UserID, order.PayAmount, refundReason, operatorID)
 
 		return nil
 	})
+}
+
+// getOrCreateWalletInTx 在给定事务中查找或创建钱包
+// 现有 GetOrCreateWallet 只用 db.Get()，不能用于事务内；此处提供事务版
+func getOrCreateWalletInTx(ctx context.Context, tx *gorm.DB, userID uint64) (*Wallet, error) {
+	var wallet Wallet
+	err := tx.Where(&Wallet{UserID: userID}).First(&wallet).Error
+	if err == gorm.ErrRecordNotFound {
+		wallet = Wallet{UserID: userID}
+		if err := tx.Create(&wallet).Error; err != nil {
+			return nil, err
+		}
+		log.Infof(ctx, "在事务中创建钱包: user_id=%d, wallet_id=%d", userID, wallet.ID)
+		return &wallet, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &wallet, nil
 }
 

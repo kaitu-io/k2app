@@ -28,7 +28,8 @@ func api_admin_refund_order(c *gin.Context) {
 	}
 
 	// 执行退款流程
-	if err := ProcessOrderRefund(c, orderID, req.Reason); err != nil {
+	operatorID := ReqUserID(c)
+	if err := ProcessOrderRefund(c, orderID, req.Reason, operatorID); err != nil {
 		log.Errorf(c, "退款订单失败: %v", err)
 		Error(c, ErrorSystemError, err.Error())
 		return
