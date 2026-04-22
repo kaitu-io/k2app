@@ -37,12 +37,15 @@ const FORBIDDEN_TERMS: ForbiddenTerm[] = [
 
 // For zh-* content: "Kaitu" must never appear as a standalone token (only inside
 // "Kaitu by Overleap", "Kaitu LLC", "Kaitu.io" wordmark).
-// Regex: Kaitu not immediately followed by " by Overleap" / " LLC" / ".io" / "-"
-const ZH_KAITU_BARE = /Kaitu(?!(\s+by\s+Overleap|\s+LLC|\.io|-))/;
+// Regex: Kaitu not immediately followed by " by Overleap" / " LLC" / ".io" / ".service" / "-"
+// Note: `.service` whitelist covers the Linux systemd unit name `kaitu.service`,
+// which is hardcoded in packaging/linux/install.sh and cannot be renamed without
+// breaking production installs (see install.json installSteps.linux).
+const ZH_KAITU_BARE = /Kaitu(?!(\s+by\s+Overleap|\s+LLC|\.io|\.service|-))/;
 
 // For en-*/ja content: similar rule; "kaitu" (case-insensitive) forbidden except in
-// the same exception substrings.
-const EN_JA_KAITU_BARE = /kaitu(?!(\s+by\s+overleap|\s+llc|\.io|-))/i;
+// the same exception substrings. `.service` whitelist: same rationale as above.
+const EN_JA_KAITU_BARE = /kaitu(?!(\s+by\s+overleap|\s+llc|\.io|\.service|-))/i;
 
 function readNamespace(locale: string, namespace: string): string {
   const p = path.join(MESSAGES_DIR, locale, `${namespace}.json`);
