@@ -302,7 +302,7 @@
       "androidLabel": "安卓",
       "windows": "支持 Windows 10/11",
       "windowsLabel": "Windows",
-      "macos": "支持苹果电脑 macOS 12+",
+      "macos": "支持苹果电脑 macOS 11+",
       "macosLabel": "苹果电脑"
     },
     "downloadButton": "下载",
@@ -399,7 +399,7 @@
       },
       "platforms": {
         "question": "开途 支持哪些设备？",
-        "answer": "开途 全平台支持：Windows 10/11、macOS 12+（Intel + Apple Silicon 通用二进制）、Linux（Ubuntu/Debian 及主流发行版）、iOS（iPhone/iPad，中国区 App Store 可直接下载）、Android、OpenWrt 智能路由器。一个账号最多 5 台设备同时在线。此外提供 k2s 服务端，支持自部署到任意 VPS。"
+        "answer": "开途 全平台支持：Windows 10/11、macOS 11+（Intel + Apple Silicon 通用二进制）、Linux（Ubuntu/Debian 及主流发行版）、iOS（iPhone/iPad，中国区 App Store 可直接下载）、Android、OpenWrt 智能路由器。一个账号最多 5 台设备同时在线。此外提供 k2s 服务端，支持自部署到任意 VPS。"
       },
       "selfHosting": {
         "question": "我可以自己部署 开途 服务器吗？",
