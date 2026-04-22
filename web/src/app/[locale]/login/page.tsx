@@ -14,10 +14,12 @@ import { toast } from "sonner";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Image from "next/image";
+import { useBrand } from "@/components/providers/BrandProvider";
 
 function LoginPageContent() {
   const { login, isAuthenticated } = useAuth();
   const t = useTranslations();
+  const brand = useBrand();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -122,8 +124,8 @@ function LoginPageContent() {
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
               <Image
-                src="/kaitu-icon.png"
-                alt="Kaitu Logo"
+                src={brand.logoPath}
+                alt={`${brand.displayName} Logo`}
                 width={48}
                 height={48}
                 className="rounded-lg"
