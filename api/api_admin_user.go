@@ -233,6 +233,15 @@ func api_admin_get_user_detail(c *gin.Context) {
 			Campaign:             campaign,
 			Plan:                 plan,
 			PayAt:                paidAt,
+			IsRefunded:           o.IsRefunded != nil && *o.IsRefunded,
+			RefundedAt: func() int64 {
+				if o.RefundedAt != nil {
+					return o.RefundedAt.Unix()
+				}
+				return 0
+			}(),
+			RefundAmount: o.RefundAmount,
+			RefundReason: o.RefundReason,
 		}
 	}
 
@@ -260,6 +269,15 @@ func api_admin_get_user_detail(c *gin.Context) {
 					Plan:      plan,
 					Campaign:  campaign,
 					PayAt:     paidAt,
+					IsRefunded: order.IsRefunded != nil && *order.IsRefunded,
+					RefundedAt: func() int64 {
+						if order.RefundedAt != nil {
+							return order.RefundedAt.Unix()
+						}
+						return 0
+					}(),
+					RefundAmount: order.RefundAmount,
+					RefundReason: order.RefundReason,
 				}
 			}
 		}
