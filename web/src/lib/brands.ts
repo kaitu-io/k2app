@@ -23,7 +23,7 @@ export type Brand = {
 export const KAITU: Brand = {
   id: 'kaitu',
   displayName: 'Kaitu',
-  wordmark: 'Kaitu.io',
+  wordmark: '开途',
   legalName: 'Kaitu LLC',
   baseUrl: 'https://kaitu.io',
   defaultLocale: 'zh-CN',
