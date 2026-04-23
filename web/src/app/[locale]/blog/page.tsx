@@ -4,6 +4,8 @@ import { Link } from '@/i18n/routing'
 import { setRequestLocale } from 'next-intl/server'
 import { routing } from '@/i18n/routing'
 import { getBrand } from '@/lib/brand-server'
+import Header from '@/components/Header'
+import Footer from '@/components/Footer'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,25 +45,29 @@ export default async function BlogIndexPage({ params }: Props) {
   const posts = docs as unknown as BlogListItem[]
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12">
-      <h1 className="mb-8 text-3xl font-bold">{'Blog'}</h1>
-      {posts.length === 0 ? (
-        <p className="text-muted-foreground">
-          {locale.startsWith('zh') ? '即将上线，敬请期待。' : 'Coming soon.'}
-        </p>
-      ) : (
-        <ul className="space-y-6">
-          {posts.map((post) => (
-            <li key={post.id}>
-              <Link href={`/blog/${post.slug}`} className="block hover:underline">
-                <h2 className="text-xl font-semibold">{post.title}</h2>
-                {post.excerpt && <p className="mt-2 text-muted-foreground">{post.excerpt}</p>}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <>
+      <Header />
+      <div className="mx-auto max-w-3xl px-4 py-12">
+        <h1 className="mb-8 text-3xl font-bold">{'Blog'}</h1>
+        {posts.length === 0 ? (
+          <p className="text-muted-foreground">
+            {locale.startsWith('zh') ? '即将上线，敬请期待。' : 'Coming soon.'}
+          </p>
+        ) : (
+          <ul className="space-y-6">
+            {posts.map((post) => (
+              <li key={post.id}>
+                <Link href={`/blog/${post.slug}`} className="block hover:underline">
+                  <h2 className="text-xl font-semibold">{post.title}</h2>
+                  {post.excerpt && <p className="mt-2 text-muted-foreground">{post.excerpt}</p>}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <Footer />
+    </>
   )
 }
 

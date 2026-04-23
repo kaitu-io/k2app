@@ -13,7 +13,23 @@
     "k2Protocol": "k2協議",
     "routers": "路由器",
     "download": "下載",
-    "quickstart": "快速自部署"
+    "quickstart": "快速自部署",
+    "productFeatures": "產品功能",
+    "whyBrand": "為什麼選 {brand}",
+    "freeDownload": "免費下載",
+    "pricing": "定價",
+    "help": "幫助",
+    "useCases": "使用場景",
+    "breakBarriers": "突破網路限制",
+    "familyProtection": "家庭全設備保護",
+    "mobilePlusDesktop": "行動端 + 桌面端",
+    "supportedPlatforms": "支援平台",
+    "whySpeed": "速度與穩定性",
+    "whySecurity": "安全與隱私承諾",
+    "whyTestimonials": "用戶評價",
+    "quickStart": "快速入門",
+    "faq": "常見問題",
+    "contactUs": "聯絡我們"
   },
   "footer": {
     "brandName": "開途 Overleap",
@@ -29,7 +45,12 @@
       "title": "開發者",
       "apiDocs": "API文件",
       "openSource": "開源程式碼",
-      "techBlog": "技術部落格"
+      "techBlog": "技術部落格",
+      "k2Docs": "k2 協議文件",
+      "selfDeploy": "快速自部署",
+      "routerConfig": "路由器設定",
+      "github": "GitHub 開源",
+      "changelog": "更新日誌"
     },
     "support": {
       "title": "支援",

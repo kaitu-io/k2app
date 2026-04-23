@@ -13,7 +13,23 @@
     "k2Protocol": "k2 Protocol",
     "routers": "Routers",
     "download": "Download",
-    "quickstart": "Self-Deploy Guide"
+    "quickstart": "Self-Deploy Guide",
+    "productFeatures": "Product",
+    "whyBrand": "Why {brand}",
+    "freeDownload": "Free Download",
+    "pricing": "Pricing",
+    "help": "Help",
+    "useCases": "Use Cases",
+    "breakBarriers": "Bypass Restrictions",
+    "familyProtection": "Family Device Protection",
+    "mobilePlusDesktop": "Mobile & Desktop",
+    "supportedPlatforms": "Supported Platforms",
+    "whySpeed": "Speed & Stability",
+    "whySecurity": "Security & Privacy",
+    "whyTestimonials": "User Reviews",
+    "quickStart": "Quick Start",
+    "faq": "FAQ",
+    "contactUs": "Contact Us"
   },
   "footer": {
     "brandName": "Overleap",
@@ -29,7 +45,12 @@
       "title": "Developer",
       "apiDocs": "API Documentation",
       "openSource": "Open Source Code",
-      "techBlog": "Tech Blog"
+      "techBlog": "Tech Blog",
+      "k2Docs": "k2 Protocol Docs",
+      "selfDeploy": "Self-Deploy Guide",
+      "routerConfig": "Router Setup",
+      "github": "GitHub Open Source",
+      "changelog": "Changelog"
     },
     "support": {
       "title": "Support",
