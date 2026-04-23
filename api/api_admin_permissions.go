@@ -31,6 +31,7 @@ var allGroups = []string{
 	"strategy", "strategy.write",
 	"surveys",
 	"admins",
+	"cms",
 }
 
 // roleGroupMap maps each role bitmask to its permitted groups.

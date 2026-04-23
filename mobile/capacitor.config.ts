@@ -19,6 +19,9 @@ const config: CapacitorConfig = {
       style: 'DARK',
       backgroundColor: '#00000000',
     },
+    EdgeToEdge: {
+      backgroundColor: '#0F0F13',
+    },
   },
 };
 

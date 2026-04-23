@@ -1,43 +1,52 @@
 {
   "hero": {
+    "badge": "境外網路代理 · 全平台客戶端",
     "title": "別人斷線，你滿速。",
-    "subtitle": "越擁堵，越從容。",
-    "description": "k2cc 重寫了擁塞控制的規則。在高丟包弱網環境中，k2 依然保持遠超傳統協議的穩定吞吐。基於 ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署。",
-    "cta_primary": "我要買",
+    "subtitle": "在中國大陸網路環境下，穩定連線境外內容",
+    "description": "開途是專為中國大陸網路環境優化的代理工具。當其他工具在運營商限速下頻繁掉線，k2 協議幫助你保持穩定連線。支援 Windows、macOS、iOS、Android，開通即用，無需技術背景。",
+    "cta_primary": "立即開通",
     "cta_secondary": "下載客戶端",
+    "connected": "已連線",
+    "nodeInfo": "香港 · 最優節點",
+    "onboarding": {
+      "title": "三步開始使用",
+      "step1": { "label": "選擇套餐，完成購買", "detail": "支援支付寶 · 微信 · 信用卡" },
+      "step2": { "label": "下載對應平台客戶端", "detail": "Windows · macOS · iOS · Android" },
+      "step3": { "label": "輸入啟用碼，立即連線", "detail": "無需配置，開通即用" }
+    },
     "terminalTitle": "伺服端自部署",
     "downloadClient": "下載客戶端",
     "quickActivation": "快速開通",
     "smartRouter": "智慧路由器",
     "features": {
-      "title": "核心技術優勢",
+      "title": "為什麼開途在別人斷線時依然穩定？",
       "ech": {
-        "title": "ECH 隱身",
+        "title": "連線不被識別，用著放心",
         "description": "加密客戶端問候，SNI 完全隱藏，TLS 握手不可檢測，DPI 深度封包檢測無效",
         "icon": "🛡️"
       },
       "zeroDeploy": {
-        "title": "零配置部署",
+        "title": "無需技術基礎，買了就能用",
         "description": "curl 一行命令安裝伺服器與客戶端，自動生成 k2:// 連接 URI，無需手動配置憑證",
         "icon": "⚡"
       },
       "transport": {
-        "title": "QUIC + TCP-WS 複合傳輸",
+        "title": "自動切換線路，掉線自愈",
         "description": "優先 QUIC 低延遲傳輸，網路受限自動降級為 TCP-WebSocket，無縫切換無感知",
         "icon": "🔀"
       },
       "congestion": {
-        "title": "k2cc 自適應速率控制",
+        "title": "網路再差，速度依然穩定",
         "description": "k2cc 自動探測最優速率，QoS 感知機制區分營運商主動丟棄與擁塞丟包，高丟包營運商網路下吞吐量遠超 BBR",
         "icon": "📈"
       },
       "reverseProxy": {
-        "title": "反向代理偽裝",
+        "title": "流量特徵完全隱蔽",
         "description": "內建反向代理，非 k2 流量轉發至真實網站，主動探測回傳合法 HTTPS 回應",
         "icon": "🎭"
       },
       "selfSign": {
-        "title": "自簽名 + Pin",
+        "title": "不出現在任何公開記錄",
         "description": "自簽名憑證 + 憑證 Pin，CT 日誌零暴露，無需購買憑證，伺服器域名完全隱藏",
         "icon": "🔐"
       }
@@ -149,6 +158,24 @@
         "step2": "curl -fsSL https://kaitu.io/i/k2 | sudo sh",
         "step3": "# 連接（貼上 URI）",
         "step4": "k2 up k2://..."
+      }
+    },
+    "testimonials": {
+      "title": "用戶真實評價",
+      "item1": {
+        "quote": "X 上到處都在說「如果你的 VPN 最近還能用，那你真的很幸運」。身邊很多人換了一個又一個。我用的開途一直正常，作為老用戶真的太開心了！",
+        "author": "來自 X 的老用戶",
+        "tag": "社交媒體評價"
+      },
+      "item2": {
+        "quote": "我老婆用的快連不能用了，但是我用的開途還能用，而且速度還挺快的。用不同工具，差距挺大的。",
+        "author": "匿名用戶",
+        "tag": "普通用戶"
+      },
+      "item3": {
+        "quote": "我們在中國做 homeschool，很多內容需要代理才能正常訪問。開途能夠流暢使用，真的幫了大忙。現在各種梯子都在跑路或不穩定，開途加油！",
+        "author": "Homeschool 家長",
+        "tag": "教育用戶"
       }
     }
   },
@@ -423,7 +450,7 @@
       },
       "trial": {
         "question": "有免費試用嗎？",
-        "answer": "有。新使用者註冊即可獲得免費試用額度，可在購買前完整體驗 開途 全平台客戶端、所有節點線路和完整功能，確認速度和穩定性滿意後再付費訂閱。無需信用卡預授權。"
+        "answer": "暫時沒有免費試用。如果購買後不滿意，可在首次購買 7 天內（使用流量不超過 1GB）申請退款，退款返還至帳戶錢包餘額，可用於續費或提現。"
       },
       "refund": {
         "question": "可以退款嗎？",

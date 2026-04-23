@@ -5,6 +5,8 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import HeroSection from '@/components/home/HeroSection';
 import FeaturesSection from '@/components/home/FeaturesSection';
+import TestimonialsSection from '@/components/home/TestimonialsSection';
+import OnboardingSection from '@/components/home/OnboardingSection';
 import FAQSection from '@/components/home/FAQSection';
 import DownloadCTA from '@/components/home/DownloadCTA';
 import HomeClient from './HomeClient';
@@ -87,6 +89,20 @@ export default async function Home({
     answer: t(`faq.items.${key}.answer`),
   }));
 
+  const TESTIMONIAL_KEYS = ['item1', 'item2', 'item3'] as const;
+  const testimonials = TESTIMONIAL_KEYS.map((key) => ({
+    key,
+    quote: t(`hero.testimonials.${key}.quote`),
+    author: t(`hero.testimonials.${key}.author`),
+    tag: t(`hero.testimonials.${key}.tag`),
+  }));
+
+  const onboardingSteps = [
+    { key: 'step1', number: '01', label: t('hero.onboarding.step1.label'), detail: t('hero.onboarding.step1.detail') },
+    { key: 'step2', number: '02', label: t('hero.onboarding.step2.label'), detail: t('hero.onboarding.step2.detail') },
+    { key: 'step3', number: '03', label: t('hero.onboarding.step3.label'), detail: t('hero.onboarding.step3.detail') },
+  ];
+
   const jsonLd = JSON.stringify([
     {
       '@context': 'https://schema.org',
@@ -148,12 +164,14 @@ export default async function Home({
       <HomeClient />
 
       <HeroSection
+        badge={t('hero.badge')}
         title={t('hero.title')}
         subtitle={t('hero.subtitle')}
         description={t('hero.description')}
         ctaPrimary={t('hero.cta_primary')}
         ctaSecondary={t('hero.cta_secondary')}
-        terminalTitle={t('hero.terminalTitle')}
+        connected={t('hero.connected')}
+        nodeInfo={t('hero.nodeInfo')}
       />
 
       <FeaturesSection
@@ -184,6 +202,17 @@ export default async function Home({
             description: t('hero.features.selfSign.description'),
           },
         }}
+      />
+
+      <OnboardingSection
+        title={t('hero.onboarding.title')}
+        steps={onboardingSteps}
+        ctaText={t('hero.cta_primary')}
+      />
+
+      <TestimonialsSection
+        sectionTitle={t('hero.testimonials.title')}
+        testimonials={testimonials}
       />
 
       <FAQSection

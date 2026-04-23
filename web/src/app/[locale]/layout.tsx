@@ -36,7 +36,7 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }): Promise<Metadata> {
   const { locale } = await params;
-  const brand = await getBrand();
+  const brand = await getBrand(locale);
   const pathname = await getRequestPathname();
   return generatePageMetadata(locale, pathname, {}, brand);
 }
@@ -60,8 +60,7 @@ export default async function LocaleLayout({
   // Providing all messages to the client
   // side is the easiest way to get started
   const messages = await getMessages();
-  const brand = await getBrand();
-
+  const brand = await getBrand(locale);
 
   return (
     <html lang={locale} data-brand={brand.id} suppressHydrationWarning>

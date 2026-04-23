@@ -23,7 +23,7 @@ export type Brand = {
 export const KAITU: Brand = {
   id: 'kaitu',
   displayName: 'Kaitu',
-  wordmark: 'Kaitu.io',
+  wordmark: '开途',
   legalName: 'Kaitu LLC',
   baseUrl: 'https://kaitu.io',
   defaultLocale: 'zh-CN',
@@ -76,4 +76,15 @@ export function brandFromHost(host: string | null | undefined): Brand {
 
 export function brandById(id: BrandId): Brand {
   return id === 'overleap' ? OVERLEAP : KAITU;
+}
+
+export function brandFromHostOrLocale(
+  host: string | null | undefined,
+  locale: string,
+): Brand {
+  if (host) {
+    const h = host.toLowerCase().split(':')[0];
+    if (HOST_MAP[h]) return HOST_MAP[h];
+  }
+  return brandById(ownerBrand(locale));
 }

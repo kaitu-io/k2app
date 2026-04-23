@@ -270,10 +270,10 @@ Optimizing for AI search engines (Google AI Overview, Perplexity, ChatGPT Search
 
 Payload v3 admin mounted at `/manager/cms`, REST API at `/payload/api`. GraphQL is disabled (no `(payload)/payload/api/graphql` folders exist). URL is namespaced under `/manager` for consistency with the rest of the admin dashboard, but Payload runs under its own `(payload)` root layout (independent from `(manager)` — Payload's admin ships its own `<html>` shell). A "← 返回管理后台" link is injected into Payload's left nav via `admin.components.beforeNavLinks`. Content collections:
 
-- `posts` — Blog articles with Lexical rich text, draft/published versions, localized to 7 locales (zh-CN source, 6 AI-translated). Per-post brand visibility via `showOnKaitu` / `showOnOverleap` booleans; at least one must be true when status=published (validated server-side). Blog list filters via DB-level `where[showOn<Brand>][equals]=true`; detail page resolves `canonicalBrand` from the pair + locale fallback.
-- `categories` — Hierarchical (self-referencing parent) with localized name + description
+- `posts` — Articles with Lexical rich text, draft/published versions, localized to 7 locales (zh-CN source, 6 AI-translated). Each post belongs to exactly one `category` (required when publishing; validated via `validateCategoryRequired` export). Per-post brand visibility via `showOnKaitu` / `showOnOverleap` booleans; at least one must be true when status=published. Category list + detail pages rendered through the unified `[locale]/[...slug]/page.tsx` catch-all: 1 segment = category list, 2 segments = post detail (with brand visibility 404), 3+ = 404. `canonicalBrand` resolved from the visibility pair + locale fallback (`en-*` → overleap, else kaitu).
+- `categories` — Flat grouping (no nesting) with localized name + description; URL structure is `/{category.slug}/{post.slug}`
 - `tags` — Flat labels with localized name
-- `media` — Uploaded images, stored in S3 (`kaitu-cms-media`, ap-northeast-1) and served via CloudFront at `https://media.kaitu.io`. REST read is admin-only; public blog pages reach images via `generateFileURL` → CDN URL embedded in post content.
+- `media` — Uploaded images, stored in S3 (`kaitu-cms-media`, ap-northeast-1) and served via CloudFront at `https://media.kaitu.io`. REST read is admin-only; public post pages reach images via `generateFileURL` → CDN URL embedded in post content.
 - `admins` — Auth collection; custom Center API cookie strategy (no local password)
 
 ### Auth
@@ -295,7 +295,7 @@ cd web && yarn dev                                    # Next.js + Payload; visit
 ```
 
 ### Consumption
-Public `[locale]/blog` pages use Local API via `getPayload().find({ ... overrideAccess: true })`. No public REST, no GraphQL.
+Public `[locale]/{category}/*` pages use the Payload Local API via `getPayload().find({ ... overrideAccess: true })` in `web/src/app/[locale]/[...slug]/page.tsx` + its `./queries.ts` helpers. No public REST, no GraphQL.
 
 ### Production (Amplify)
 Required env vars: `DATABASE_URL`, `PAYLOAD_SECRET`, `TRANSLATOR_API_KEY`, `TRANSLATOR_BASE_URL`, `TRANSLATOR_MODEL`, `CENTER_API_URL`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `CDN_URL`.

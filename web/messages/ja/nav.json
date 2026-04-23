@@ -13,7 +13,23 @@
     "k2Protocol": "k2プロトコル",
     "routers": "ルーター",
     "download": "ダウンロード",
-    "quickstart": "自己デプロイガイド"
+    "quickstart": "自己デプロイガイド",
+    "productFeatures": "製品機能",
+    "whyBrand": "{brand}を選ぶ理由",
+    "freeDownload": "無料ダウンロード",
+    "pricing": "料金",
+    "help": "ヘルプ",
+    "useCases": "使用ケース",
+    "breakBarriers": "ネット制限を突破",
+    "familyProtection": "家族のデバイス保護",
+    "mobilePlusDesktop": "モバイル＆デスクトップ",
+    "supportedPlatforms": "対応プラットフォーム",
+    "whySpeed": "速度と安定性",
+    "whyTech": "技術能力",
+    "whyTestimonials": "ユーザーレビュー",
+    "quickStart": "クイックスタート",
+    "faq": "よくある質問",
+    "contactUs": "お問い合わせ"
   },
   "footer": {
     "brandName": "Overleap",
@@ -29,7 +45,12 @@
       "title": "開発者",
       "apiDocs": "APIドキュメント",
       "openSource": "オープンソース",
-      "techBlog": "技術ブログ"
+      "techBlog": "技術ブログ",
+      "k2Docs": "k2プロトコルドキュメント",
+      "selfDeploy": "自己デプロイガイド",
+      "routerConfig": "ルーター設定",
+      "github": "GitHub オープンソース",
+      "changelog": "更新履歴"
     },
     "support": {
       "title": "サポート",

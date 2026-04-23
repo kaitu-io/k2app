@@ -33,9 +33,6 @@ import {
   Logout as LogoutIcon,
   Language as LanguageIcon,
   Group as GroupIcon,
-  DarkMode as DarkModeIcon,
-  LightMode as LightModeIcon,
-  SettingsBrightness as SystemThemeIcon,
   CardMembership as MembershipIcon,
   PhoneAndroid as PhoneAndroidIcon,
   Feedback as FeedbackIcon,
@@ -49,7 +46,6 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../stores";
 import { useUser } from "../hooks/useUser";
-import { useTheme } from "../contexts/ThemeContext";
 import { getFlagIcon } from "../utils/country";
 import { languages, changeLanguage, type LanguageCode } from "../i18n/i18n";
 import { formatDate } from "../utils/time";
@@ -65,7 +61,6 @@ import BetaChannelToggle from "../components/BetaChannelToggle";
 export default function Account() {
   const { user, loading, isMembership, isExpired, fetchUser } = useUser();
   const { isAuthenticated, setIsAuthenticated } = useAuth();
-  const { themeMode, setThemeMode } = useTheme();
   const muiTheme = useMuiTheme();
   const colors = getThemeColors(muiTheme.palette.mode === 'dark');
   const navigate = useNavigate();
@@ -320,10 +315,9 @@ export default function Account() {
                     {displayTime}
                   </Typography>
                 </Box>
-                {/* Tier + quota info */}
+                {/* Quota info */}
                 {user?.tier && (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
-                    <Chip label={t(`purchase:tier.${user.tier}`, user.tier)} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
                     <Typography variant="caption" color="text.secondary">
                       {t('account:account.quotaDevices', { count: user.maxDevice || 5 })}
                       {(user.maxRouterDevice ?? 0) > 0 && ` · ${t('account:account.quotaRouter')}`}
@@ -729,66 +723,6 @@ export default function Account() {
                         </Box>
                       </MenuItem>
                     ))}
-                  </Select>
-                </FormControl>
-              </ListItemSecondaryAction>
-            </ListItem>
-
-            <Divider />
-
-            <ListItem sx={{ py: 1.5 }}>
-              <ListItemIcon>
-                {themeMode === 'dark' ? (
-                  <DarkModeIcon />
-                ) : themeMode === 'light' ? (
-                  <LightModeIcon />
-                ) : (
-                  <SystemThemeIcon />
-                )}
-              </ListItemIcon>
-              <ListItemText
-                primary={
-                  <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
-                    {t('account:account.theme')}
-                  </Typography>
-                }
-              />
-              <ListItemSecondaryAction>
-                <FormControl size="small" sx={{ minWidth: 140 }}>
-                  <Select
-                    value={themeMode}
-                    onChange={(e) => {
-                      setThemeMode(e.target.value as 'light' | 'dark' | 'system');
-                    }}
-                    variant="outlined"
-                    sx={{
-                      borderRadius: 1.5,
-                      '& .MuiSelect-select': {
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        py: 1
-                      }
-                    }}
-                  >
-                    <MenuItem value="light">
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <LightModeIcon sx={{ fontSize: '1.1rem' }} />
-                        <Typography sx={{ fontSize: '0.8rem' }}>{t('theme:theme.light')}</Typography>
-                      </Box>
-                    </MenuItem>
-                    <MenuItem value="dark">
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <DarkModeIcon sx={{ fontSize: '1.1rem' }} />
-                        <Typography sx={{ fontSize: '0.8rem' }}>{t('theme:theme.dark')}</Typography>
-                      </Box>
-                    </MenuItem>
-                    <MenuItem value="system">
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <SystemThemeIcon sx={{ fontSize: '1.1rem' }} />
-                        <Typography sx={{ fontSize: '0.8rem' }}>{t('theme:theme.system')}</Typography>
-                      </Box>
-                    </MenuItem>
                   </Select>
                 </FormControl>
               </ListItemSecondaryAction>
