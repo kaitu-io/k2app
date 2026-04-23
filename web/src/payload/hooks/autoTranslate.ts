@@ -12,29 +12,30 @@ export const autoTranslate: CollectionAfterChangeHook = async ({
   const targets = req.payload.config.localization.locales
     .filter(l => l.code !== SOURCE_LOCALE)
 
-  const results = await Promise.allSettled(
-    targets.map(({ code }) =>
-      translateOperation({
+  // Serial, not parallel: each translateOperation ends in payload.update({ req })
+  // which reuses the outer req.transactionID. Concurrent queries on a single
+  // Postgres transaction trigger "another command already in progress" — one
+  // update aborts the txn, the enclosing create is rolled back, and the doc
+  // silently disappears. Sequential execution keeps every update on the same
+  // txn one at a time so nothing races.
+  for (const target of targets) {
+    try {
+      await translateOperation({
         collectionSlug: collection.slug,
         id: doc.id,
-        locale: code,
+        locale: target.code,
         localeFrom: SOURCE_LOCALE,
         resolver: 'openai',
         update: true,
         req,
-      }),
-    ),
-  )
-
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i]
-    if (r.status === 'rejected') {
+      })
+    } catch (e) {
       req.payload.logger.error({
         msg: 'autoTranslate: locale failed',
         collection: collection.slug,
         id: doc.id,
-        locale: targets[i].code,
-        err: r.reason,
+        locale: target.code,
+        err: e,
       })
     }
   }

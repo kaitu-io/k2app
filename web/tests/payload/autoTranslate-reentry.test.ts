@@ -30,6 +30,7 @@ describe('autoTranslate', () => {
       operation: 'update',
       previousDoc: {} as any,
       context: {} as any,
+      data: {} as any,
     })
     expect(mockTranslate).not.toHaveBeenCalled()
   })
@@ -43,6 +44,7 @@ describe('autoTranslate', () => {
       operation: 'update',
       previousDoc: {} as any,
       context: {} as any,
+      data: {} as any,
     })
     expect(mockTranslate).toHaveBeenCalledTimes(2)
     const locales = mockTranslate.mock.calls.map(c => c[0].locale).sort()
@@ -60,6 +62,51 @@ describe('autoTranslate', () => {
       operation: 'update',
       previousDoc: {} as any,
       context: {} as any,
+      data: {} as any,
     })).resolves.toBeDefined()
+  })
+
+  it('fans out SERIALLY — one translate in flight at a time', async () => {
+    // Parallel fan-out (Promise.allSettled) shares the outer req's Postgres
+    // transaction across concurrent payload.update calls and aborts the txn,
+    // rolling back the entire create. Serial execution avoids the conflict.
+    const inflight = new Set<string>()
+    const collisions: string[] = []
+    mockTranslate.mockClear().mockImplementation(async ({ locale }: { locale: string }) => {
+      if (inflight.size > 0) collisions.push(locale)
+      inflight.add(locale)
+      await new Promise(r => setTimeout(r, 3))
+      inflight.delete(locale)
+      return { success: true }
+    })
+    await autoTranslate({
+      collection: { slug: 'posts' } as any,
+      doc: { id: 'p1' } as any,
+      req: baseReq('zh-CN'),
+      operation: 'update',
+      previousDoc: {} as any,
+      context: {} as any,
+      data: {} as any,
+    })
+    expect(collisions).toEqual([])
+  })
+
+  it('continues subsequent locales even when an earlier one throws', async () => {
+    const seen: string[] = []
+    mockTranslate.mockClear().mockImplementation(async ({ locale }: { locale: string }) => {
+      seen.push(locale)
+      if (locale === 'en-US') throw new Error('boom')
+      return { success: true }
+    })
+    await autoTranslate({
+      collection: { slug: 'posts' } as any,
+      doc: { id: 'p1' } as any,
+      req: baseReq('zh-CN'),
+      operation: 'update',
+      previousDoc: {} as any,
+      context: {} as any,
+      data: {} as any,
+    })
+    expect(seen.sort()).toEqual(['en-US', 'ja'])
   })
 })
