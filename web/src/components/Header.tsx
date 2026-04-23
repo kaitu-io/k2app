@@ -15,7 +15,7 @@ type MobileSection = 'why'
 
 export default function Header() {
   const brand = useBrand()
-  const { isAuthenticated, user } = useAuth()
+  const { isAuthenticated } = useAuth()
   const t = useTranslations()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [openDropdown, setOpenDropdown] = useState<DropdownId | null>(null)

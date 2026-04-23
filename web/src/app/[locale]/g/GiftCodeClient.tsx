@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Gift, AlertCircle, Clock, CheckCircle, Loader2, Search } from 'lucide-react';
 import type { LicenseKeyPublic } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
+import { useBrand } from '@/components/providers/BrandProvider';
 
 const ErrorLicenseKeyNotFound = 400007;
 const ErrorLicenseKeyUsed = 400008;
@@ -25,6 +26,8 @@ function getDaysRemaining(expiresAt: number): number {
 
 export default function GiftCodeClient() {
   const t = useTranslations('licenseKeys');
+  const brand = useBrand();
+  const productBadge = brand.id === 'kaitu' ? '开途 VPN' : 'Overleap';
   const [inputCode, setInputCode] = useState('');
   const [state, setState] = useState<PageState>('idle');
   const [keyData, setKeyData] = useState<LicenseKeyPublic | null>(null);
@@ -150,7 +153,7 @@ export default function GiftCodeClient() {
         </div>
 
         <Card className="p-8 sm:p-10 mb-8 border-primary/30 bg-primary/5 text-center">
-          <p className="text-sm uppercase tracking-widest text-primary mb-4 font-mono">Kaitu VPN</p>
+          <p className="text-sm uppercase tracking-widest text-primary mb-4 font-mono">{productBadge}</p>
           <div className="text-5xl sm:text-6xl font-mono font-bold text-primary mb-4">
             {t('gift.planDays', { days: keyData.planDays })}
           </div>
