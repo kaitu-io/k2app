@@ -1,271 +1,163 @@
-import { notFound } from 'next/navigation';
-import { setRequestLocale } from 'next-intl/server';
-import { Metadata } from 'next';
-import { format } from 'date-fns';
-import NextLink from 'next/link';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
-import { posts } from '#velite';
-import { routing } from '@/i18n/routing';
+import { notFound } from 'next/navigation'
+import { setRequestLocale } from 'next-intl/server'
+import type { Metadata } from 'next'
+import { getPayload } from 'payload'
+import config from '@payload-config'
+import { RichText } from '@payloadcms/richtext-lexical/react'
+import type { SerializedEditorState } from '@payloadcms/richtext-lexical/lexical'
+import { Link } from '@/i18n/routing'
+import { routing } from '@/i18n/routing'
+import { getBrand } from '@/lib/brand-server'
+import { brandById, type BrandId } from '@/lib/brands'
+import Header from '@/components/Header'
+import Footer from '@/components/Footer'
+import {
+  findCategoryBySlug,
+  findPostInCategory,
+  listPostsInCategory,
+  type CategoryDoc,
+  type PostDoc,
+  type PostListItem,
+} from './queries'
 
-export const dynamicParams = true;
+export const dynamic = 'force-dynamic'
 
-interface Post {
-  title: string;
-  date: string;
-  summary?: string;
-  tags?: string[];
-  coverImage?: string;
-  draft: boolean;
-  content: string;
-  metadata: { readingTime: number; wordCount: number };
-  filePath: string;
-  locale: string;
-  slug: string;
+type Props = {
+  params: Promise<{ locale: string; slug: string[] }>
 }
 
-/**
- * Find a single published post matching locale + slug.
- * Returns undefined if not found or if draft.
- */
-function findPost(locale: string, slug: string): Post | undefined {
-  return (posts as Post[]).find(
-    (post) => post.locale === locale && post.slug === slug && !post.draft
-  );
+type Locale = (typeof routing.locales)[number]
+
+function resolveCanonicalBrand(
+  locale: string,
+  showOnKaitu: boolean,
+  showOnOverleap: boolean,
+): BrandId {
+  if (showOnKaitu && !showOnOverleap) return 'kaitu'
+  if (showOnOverleap && !showOnKaitu) return 'overleap'
+  return locale.startsWith('en-') ? 'overleap' : 'kaitu'
 }
 
-/**
- * Find all published posts whose slug starts with the given directory prefix.
- * Returns them sorted by date descending.
- */
-function findPostsInDirectory(locale: string, prefix: string): Post[] {
-  return (posts as Post[])
-    .filter(
-      (post) =>
-        post.locale === locale &&
-        post.slug.startsWith(prefix + '/') &&
-        !post.draft
-    )
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-}
+export default async function CatchAll({ params }: Props) {
+  const { locale, slug } = await params
+  setRequestLocale(locale as Locale)
 
-interface PageParams {
-  locale: string;
-  slug: string[];
-}
+  const brand = await getBrand()
+  const visibilityField = brand.id === 'kaitu' ? 'showOnKaitu' : 'showOnOverleap'
+  const payload = await getPayload({ config })
 
-export function generateStaticParams(): { locale: string; slug: string[] }[] {
-  const params: { locale: string; slug: string[] }[] = [];
-  const directories = new Set<string>();
-
-  const publishedPosts = (posts as Post[]).filter((p) => !p.draft);
-
-  for (const post of publishedPosts) {
-    params.push({ locale: post.locale, slug: post.slug.split('/') });
-
-    // Collect directory paths (locale-agnostic for fallback support)
-    const parts = post.slug.split('/');
-    for (let i = 1; i < parts.length; i++) {
-      directories.add(parts.slice(0, i).join('/'));
-    }
+  if (slug.length === 1) {
+    const category = await findCategoryBySlug(payload, locale as Locale, slug[0])
+    if (!category) notFound()
+    const posts = await listPostsInCategory(payload, locale as Locale, category.id, visibilityField)
+    return <CategoryListPage category={category} posts={posts} />
   }
 
-  // Generate directory params for ALL locales so fallback pages are pre-rendered
-  for (const dir of directories) {
-    for (const locale of routing.locales) {
-      params.push({ locale, slug: dir.split('/') });
-    }
+  if (slug.length === 2) {
+    const [catSlug, postSlug] = slug
+    const category = await findCategoryBySlug(payload, locale as Locale, catSlug)
+    if (!category) notFound()
+    const post = await findPostInCategory(payload, locale as Locale, category.id, postSlug)
+    if (!post) notFound()
+    const visible = brand.id === 'kaitu' ? post.showOnKaitu : post.showOnOverleap
+    if (!visible) notFound()
+    return <PostDetailPage post={post} locale={locale} />
   }
 
-  return params;
+  notFound()
 }
 
-export async function generateMetadata({
-  params,
+function CategoryListPage({
+  category,
+  posts,
 }: {
-  params: Promise<PageParams>;
-}): Promise<Metadata> {
-  const { locale, slug } = await params;
-  const slugPath = slug.join('/');
-
-  // Check for exact post match
-  const post = findPost(locale, slugPath);
-  if (post) {
-    return {
-      title: post.title,
-      description: post.summary,
-      openGraph: {
-        title: post.title,
-        description: post.summary,
-        ...(post.coverImage ? { images: [post.coverImage] } : {}),
-      },
-    };
-  }
-
-  // Check for zh-CN fallback
-  const fallbackPost =
-    locale !== 'zh-CN' ? findPost('zh-CN', slugPath) : undefined;
-  if (fallbackPost) {
-    return {
-      title: fallbackPost.title,
-      description: fallbackPost.summary,
-      openGraph: {
-        title: fallbackPost.title,
-        description: fallbackPost.summary,
-        ...(fallbackPost.coverImage ? { images: [fallbackPost.coverImage] } : {}),
-      },
-    };
-  }
-
-  // Directory listing
-  const dirName = slug[slug.length - 1] ?? '';
-  const capitalizedDirName =
-    dirName.charAt(0).toUpperCase() + dirName.slice(1);
-  return {
-    title: `${capitalizedDirName} | Kaitu`,
-  };
-}
-
-export default async function ContentPage({
-  params,
-}: {
-  params: Promise<PageParams>;
+  category: CategoryDoc
+  posts: PostListItem[]
 }) {
-  const { locale, slug } = await params;
-
-  // Enable static rendering for this locale
-  setRequestLocale(locale as (typeof routing.locales)[number]);
-
-  const slugPath = slug.join('/');
-
-  // 1. Try exact post match in requested locale
-  const post = findPost(locale, slugPath);
-  if (post) {
-    return <ArticleDetail post={post} locale={locale} />;
-  }
-
-  // 2. Try directory listing for requested locale
-  const directoryPosts = findPostsInDirectory(locale, slugPath);
-  if (directoryPosts.length > 0) {
-    const dirName = slug[slug.length - 1] ?? '';
-    return (
-      <DirectoryListing
-        posts={directoryPosts}
-        locale={locale}
-        dirName={dirName}
-      />
-    );
-  }
-
-  // 3. Try zh-CN fallback for the article
-  if (locale !== 'zh-CN') {
-    const fallbackPost = findPost('zh-CN', slugPath);
-    if (fallbackPost) {
-      return <ArticleDetail post={fallbackPost} locale={locale} />;
-    }
-
-    // 3.5 Try zh-CN fallback for directory listing
-    const fallbackDirPosts = findPostsInDirectory('zh-CN', slugPath);
-    if (fallbackDirPosts.length > 0) {
-      const dirName = slug[slug.length - 1] ?? '';
-      return (
-        <DirectoryListing
-          posts={fallbackDirPosts}
-          locale={locale}
-          dirName={dirName}
-        />
-      );
-    }
-  }
-
-  // 4. Nothing found
-  notFound();
-}
-
-interface ArticleDetailProps {
-  post: Post;
-  locale: string;
-}
-
-function ArticleDetail({ post }: ArticleDetailProps) {
-  const formattedDate = format(new Date(post.date), 'yyyy-MM-dd');
-
   return (
-    <div className="min-h-screen bg-background">
+    <>
       <Header />
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <article className="prose max-w-none">
-          <h1 className="text-3xl font-bold text-foreground mb-4">
-            {post.title}
-          </h1>
-          <div className="flex flex-wrap items-center gap-4 mb-8 text-sm text-muted-foreground">
-            <time dateTime={post.date}>{formattedDate}</time>
-            {post.tags && post.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {post.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div dangerouslySetInnerHTML={{ __html: post.content }} />
-        </article>
-      </main>
-      <Footer />
-    </div>
-  );
-}
-
-interface DirectoryListingProps {
-  posts: Post[];
-  locale: string;
-  dirName: string;
-}
-
-function DirectoryListing({ posts, locale, dirName }: DirectoryListingProps) {
-  const capitalizedDirName =
-    dirName.charAt(0).toUpperCase() + dirName.slice(1);
-
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <h1 className="text-3xl font-bold text-foreground mb-8">
-          {capitalizedDirName}
-        </h1>
-        <ul className="space-y-8">
-          {posts.map((post) => {
-            const formattedDate = format(new Date(post.date), 'yyyy-MM-dd');
-            return (
-              <li key={post.slug} className="border-b pb-8 last:border-0">
-                <NextLink
-                  href={`/${locale}/${post.slug}`}
-                  className="group"
+      <div className="mx-auto max-w-3xl px-4 py-12">
+        <h1 className="mb-8 text-3xl font-bold">{category.name}</h1>
+        {posts.length === 0 ? (
+          <p className="text-muted-foreground">{'Coming soon.'}</p>
+        ) : (
+          <ul className="space-y-6">
+            {posts.map((post) => (
+              <li key={post.id}>
+                <Link
+                  href={`/${category.slug}/${post.slug}`}
+                  className="block hover:underline"
                 >
-                  <h2 className="text-xl font-semibold text-foreground group-hover:text-primary transition-colors mb-2">
-                    {post.title}
-                  </h2>
-                </NextLink>
-                <time
-                  dateTime={post.date}
-                  className="text-sm text-muted-foreground block mb-2"
-                >
-                  {formattedDate}
-                </time>
-                {post.summary && (
-                  <p className="text-muted-foreground">{post.summary}</p>
-                )}
+                  <h2 className="text-xl font-semibold">{post.title}</h2>
+                  {post.excerpt && (
+                    <p className="mt-2 text-muted-foreground">{post.excerpt}</p>
+                  )}
+                </Link>
               </li>
-            );
-          })}
-        </ul>
-      </main>
+            ))}
+          </ul>
+        )}
+      </div>
       <Footer />
-    </div>
-  );
+    </>
+  )
+}
+
+function PostDetailPage({ post, locale }: { post: PostDoc; locale: string }) {
+  return (
+    <>
+      <Header />
+      <article className="prose dark:prose-invert mx-auto max-w-3xl px-4 py-12">
+        <h1>{post.title}</h1>
+        {post.publishedAt && (
+          <time dateTime={post.publishedAt}>
+            {new Date(post.publishedAt).toLocaleDateString(locale)}
+          </time>
+        )}
+        <RichText data={post.content as SerializedEditorState} />
+      </article>
+      <Footer />
+    </>
+  )
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { locale, slug } = await params
+  const brand = await getBrand()
+  const payload = await getPayload({ config })
+
+  if (slug.length === 1) {
+    const category = await findCategoryBySlug(payload, locale as Locale, slug[0])
+    if (!category) return {}
+    return {
+      title: `${category.name} | ${brand.displayName}`,
+      description: category.description ?? undefined,
+    }
+  }
+
+  if (slug.length === 2) {
+    const [catSlug, postSlug] = slug
+    const category = await findCategoryBySlug(payload, locale as Locale, catSlug)
+    if (!category) return {}
+    const post = await findPostInCategory(payload, locale as Locale, category.id, postSlug)
+    if (!post) return {}
+
+    const canonicalBrandId = resolveCanonicalBrand(
+      locale,
+      post.showOnKaitu,
+      post.showOnOverleap,
+    )
+    const canonicalUrl = `${brandById(canonicalBrandId).baseUrl}/${locale}/${category.slug}/${post.slug}`
+
+    return {
+      title: `${post.title} | ${brand.displayName}`,
+      description: post.excerpt,
+      alternates: {
+        canonical: canonicalUrl,
+      },
+    }
+  }
+
+  return {}
 }
