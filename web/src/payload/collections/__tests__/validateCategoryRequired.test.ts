@@ -34,10 +34,12 @@ describe('validateCategoryRequired', () => {
   it('returns an error string when status is published and category is undefined', () => {
     const result = validateCategoryRequired(undefined, { siblingData: { status: 'published' } })
     expect(typeof result).toBe('string')
+    expect(result).toMatch(/category/i)
   })
 
   it('returns an error string when status is published and category is empty string', () => {
     const result = validateCategoryRequired('', { siblingData: { status: 'published' } })
     expect(typeof result).toBe('string')
+    expect(result).toMatch(/category/i)
   })
 })
