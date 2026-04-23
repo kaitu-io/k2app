@@ -1,24 +1,28 @@
 /* eslint-disable react/jsx-no-literals */
 import { Button } from '@/components/ui/button';
 import { Link } from '@/i18n/routing';
-import { Download, Zap } from 'lucide-react';
+import { Download, ShieldCheck, Zap } from 'lucide-react';
 
 interface HeroSectionProps {
+  badge: string;
   title: string;
   subtitle: string;
   description: string;
   ctaPrimary: string;
   ctaSecondary: string;
-  terminalTitle: string;
+  connected: string;
+  nodeInfo: string;
 }
 
 export default function HeroSection({
+  badge,
   title,
   subtitle,
   description,
   ctaPrimary,
   ctaSecondary,
-  terminalTitle,
+  connected,
+  nodeInfo,
 }: HeroSectionProps) {
   return (
     <section id="hero" className="relative z-10 min-h-[100dvh] flex flex-col justify-center px-4 sm:px-6 lg:px-8 py-10 sm:py-20">
@@ -26,7 +30,7 @@ export default function HeroSection({
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs mb-6 bg-primary/10 text-primary border border-primary/30 font-mono">
           <span className="w-2 h-2 rounded-full animate-pulse bg-primary" />
-          k2 — k2cc Anti-QoS Congestion Control
+          {badge}
         </div>
 
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight font-mono text-foreground">
@@ -37,7 +41,7 @@ export default function HeroSection({
           {subtitle}
         </p>
 
-        <p className="text-base mb-10 max-w-3xl mx-auto text-muted-foreground">
+        <p className="text-base mb-10 max-w-2xl mx-auto text-muted-foreground leading-relaxed">
           {description}
         </p>
 
@@ -57,25 +61,28 @@ export default function HeroSection({
           </Link>
         </div>
 
-        {/* Terminal preview — hidden on mobile to keep hero clean */}
-        <div className="hidden sm:block mt-14 max-w-2xl mx-auto rounded-lg overflow-hidden text-left bg-card border border-primary/20">
-          <div className="flex items-center gap-2 px-4 py-3 bg-primary/5 border-b border-primary/10">
-            <span className="w-3 h-3 rounded-full bg-red-500 opacity-70" />
-            <span className="w-3 h-3 rounded-full bg-yellow-500 opacity-70" />
-            <span className="w-3 h-3 rounded-full bg-primary opacity-70" />
-            <span className="ml-2 text-xs text-muted-foreground font-mono">
-              k2s — {terminalTitle}
-            </span>
-          </div>
-          <div className="p-6 text-sm space-y-2 font-mono">
-            <div>
-              <span className="text-muted-foreground">$ </span>
-              <span className="text-primary">curl -fsSL https://kaitu.io/i/k2s | sudo sh</span>
+        {/* Client UI mockup — hidden on mobile */}
+        <div className="hidden sm:flex mt-14 justify-center">
+          <div className="w-60 rounded-2xl bg-card border border-border/40 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/30">
+              <span className="text-sm font-bold text-foreground">k2</span>
+              <span className="text-xs text-primary font-medium flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                {connected}
+              </span>
             </div>
-            <div className="text-muted-foreground">Installing k2s...</div>
-            <div className="text-secondary">[k2s] ECH stealth tunnel started on :443</div>
-            <div className="text-secondary">[k2s] Connection URI:</div>
-            <div className="break-all text-primary">k2://Zt8x...@your-server:443</div>
+            <div className="py-10 flex flex-col items-center">
+              <div className="w-24 h-24 rounded-full border-4 border-primary/20 flex items-center justify-center">
+                <div className="w-16 h-16 rounded-full border-2 border-primary/40 flex items-center justify-center bg-primary/5">
+                  <ShieldCheck className="w-8 h-8 text-primary" />
+                </div>
+              </div>
+              <p className="mt-5 text-base font-semibold text-primary">{connected}</p>
+              <p className="text-xs text-muted-foreground mt-1">{nodeInfo}</p>
+            </div>
+            <div className="px-4 py-3 border-t border-border/20 flex items-center justify-center gap-2 text-xs text-muted-foreground/40 font-mono">
+              <span>Win</span><span>·</span><span>Mac</span><span>·</span><span>iOS</span><span>·</span><span>Android</span>
+            </div>
           </div>
         </div>
       </div>

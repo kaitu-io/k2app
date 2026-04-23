@@ -1,43 +1,52 @@
 {
   "hero": {
+    "badge": "境外网络代理 · 全平台客户端",
     "title": "别人断线，你满速。",
-    "subtitle": "k2 协议 · 越拥堵，越从容。",
-    "description": "k2cc 重写了拥塞控制的规则。在高丢包弱网环境中，k2 依然保持远超传统协议的稳定吞吐。基于 ECH 加密隐身 + QUIC/TCP-WS 双栈传输，一行命令部署。",
-    "cta_primary": "我要买",
+    "subtitle": "在国内网络环境下，稳定连接境外内容",
+    "description": "开途是专为国内网络环境优化的代理工具。当其他工具在运营商限速下频繁掉线，k2 协议帮助你保持稳定连接。支持 Windows、macOS、iOS、Android，开通即用，无需技术背景。",
+    "cta_primary": "免费试用",
     "cta_secondary": "下载客户端",
+    "connected": "已连接",
+    "nodeInfo": "香港 · 最优节点",
     "terminalTitle": "服务端自部署",
     "downloadClient": "下载客户端",
     "quickActivation": "快速开通",
     "smartRouter": "智能路由器",
+    "onboarding": {
+      "title": "三步开始使用",
+      "step1": { "label": "选择套餐，完成购买", "detail": "支持支付宝 · 微信 · 信用卡" },
+      "step2": { "label": "下载对应平台客户端", "detail": "Windows · macOS · iOS · Android" },
+      "step3": { "label": "输入激活码，立即连接", "detail": "无需配置，开通即用" }
+    },
     "features": {
-      "title": "核心技术优势",
+      "title": "为什么开途在别人断线时依然稳定？",
       "ech": {
-        "title": "ECH 隐身",
+        "title": "连接不被识别，用着放心",
         "description": "加密客户端问候，SNI 完全隐藏，TLS 握手不可检测，DPI 深度包检测无效",
         "icon": "🛡️"
       },
       "zeroDeploy": {
-        "title": "零配置部署",
+        "title": "无需技术基础，买了就能用",
         "description": "curl 一行命令安装服务端与客户端，自动生成 k2:// 连接 URI，无需手动配置证书",
         "icon": "⚡"
       },
       "transport": {
-        "title": "QUIC + TCP-WS 复合传输",
+        "title": "自动切换线路，掉线自愈",
         "description": "优先 QUIC 低延迟传输，网络受限自动降级为 TCP-WebSocket，无缝切换无感知",
         "icon": "🔀"
       },
       "congestion": {
-        "title": "k2cc 自适应速率控制",
+        "title": "网络再差，速度依然稳定",
         "description": "k2cc 自动探测最优速率，QoS 感知机制区分运营商主动丢弃与拥塞丢包，高丢包运营商网络下吞吐量远超 BBR",
         "icon": "📈"
       },
       "reverseProxy": {
-        "title": "反向代理伪装",
+        "title": "流量特征完全隐蔽",
         "description": "内建反向代理，非 k2 流量转发至真实网站，主动探测返回合法 HTTPS 响应",
         "icon": "🎭"
       },
       "selfSign": {
-        "title": "自签名 + Pin",
+        "title": "不出现在任何公开记录",
         "description": "自签名证书 + 证书 Pin，CT 日志零暴露，无需购买证书，服务端域名完全隐藏",
         "icon": "🔐"
       }

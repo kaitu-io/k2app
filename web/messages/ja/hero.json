@@ -1,43 +1,52 @@
 {
   "hero": {
+    "badge": "海外ネットワークプロキシ · 全プラットフォーム対応",
     "title": "他が切れる場所で、あなたは満速。",
-    "subtitle": "混雑するほど、余裕が生まれる。",
-    "description": "k2cc は輻輳制御のルールを書き換えました。高パケットロスの劣悪なネットワーク環境でも、k2 は従来のプロトコルをはるかに超える安定したスループットを維持します。ECH ステルス暗号化 + QUIC/TCP-WS デュアルスタック転送、1コマンドでデプロイ。",
-    "cta_primary": "購入する",
+    "subtitle": "中国本土のネットワーク環境から、海外コンテンツへ安定接続",
+    "description": "Overleap は規制されたネットワーク環境向けに最適化されたプロキシツールです。他のツールが ISP による速度制限で接続を失うとき、k2 プロトコルが安定した接続を維持します。Windows・macOS・iOS・Android に対応。登録後すぐ使えます。",
+    "cta_primary": "無料で試す",
     "cta_secondary": "クライアントをダウンロード",
+    "connected": "接続済み",
+    "nodeInfo": "香港 · 最適ノード",
+    "onboarding": {
+      "title": "3ステップで始める",
+      "step1": { "label": "プランを選んで登録", "detail": "Alipay · WeChat · クレジットカード" },
+      "step2": { "label": "アプリをダウンロード", "detail": "Windows · macOS · iOS · Android" },
+      "step3": { "label": "コードを入力して接続", "detail": "設定不要、すぐに使える" }
+    },
     "terminalTitle": "サーバーセルフホスト",
     "downloadClient": "クライアントをダウンロード",
     "quickActivation": "クイック開始",
     "smartRouter": "スマートルーター",
     "features": {
-      "title": "コア技術の優位性",
+      "title": "なぜ Overleap は他が切れるときも安定しているのか",
       "ech": {
-        "title": "ECH ステルス",
+        "title": "接続が検出されない、安心して使える",
         "description": "暗号化クライアントハローにより SNI を完全に隠蔽。TLS ハンドシェイクは検出不可能、DPI ディープパケットインスペクションは無効",
         "icon": "🛡️"
       },
       "zeroDeploy": {
-        "title": "ゼロ設定デプロイ",
+        "title": "サーバー不要、購入後すぐ使える",
         "description": "1行の curl コマンドでサーバーとクライアントを両方インストール。k2:// 接続 URI を自動生成。証書の手動設定不要",
         "icon": "⚡"
       },
       "transport": {
-        "title": "QUIC + TCP-WS デュアルスタック",
+        "title": "自動でルート切替、接続が途切れない",
         "description": "低遅延 QUIC 転送を優先。QUIC がブロックされた場合は自動的に TCP-WebSocket にフォールバック。シームレスな切り替えでユーザーには気づかれない",
         "icon": "🔀"
       },
       "congestion": {
-        "title": "k2cc 適応型レート制御",
+        "title": "回線が悪くても速度は安定",
         "description": "独自開発 k2cc が最適レートを自動探索。QoS 認識メカニズムが ISP 主導ドロップと輻輳を区別。高制限ネットワーク下で BBR を大幅に上回るスループット",
         "icon": "📈"
       },
       "reverseProxy": {
-        "title": "リバースプロキシ偽装",
+        "title": "トラフィックの特徴を完全に隠蔽",
         "description": "内蔵リバースプロキシが非 k2 トラフィックを実際のウェブサイトに転送。アクティブプロービングには正当な HTTPS レスポンスを返す",
         "icon": "🎭"
       },
       "selfSign": {
-        "title": "自己署名 + 証書ピン",
+        "title": "いかなる公開記録にも残らない",
         "description": "自己署名証書と証書ピニング。CT ログへの露出ゼロ。証書購入不要。サーバードメインを完全に隠蔽",
         "icon": "🔐"
       }
