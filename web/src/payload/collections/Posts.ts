@@ -6,6 +6,17 @@ import { setAuthorFromRequest } from '../hooks/setAuthorFromRequest.ts'
 import { setPublishedAt } from '../hooks/setPublishedAt.ts'
 import { autoTranslate } from '../hooks/autoTranslate.ts'
 
+export const validateCategoryRequired = (
+  value: unknown,
+  { siblingData }: { siblingData: Record<string, unknown> },
+): string | true => {
+  const published = siblingData?.status === 'published'
+  if (published && !value) {
+    return 'Category is required when publishing'
+  }
+  return true
+}
+
 export const Posts: CollectionConfig = {
   slug: 'posts',
   admin: {
@@ -41,6 +52,7 @@ export const Posts: CollectionConfig = {
       type: 'relationship',
       relationTo: 'categories',
       custom: { translatorSkip: true },
+      validate: validateCategoryRequired,
     },
     {
       name: 'tags',
