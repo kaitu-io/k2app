@@ -4,7 +4,7 @@
     "title": "Others Drop. You Don't.",
     "subtitle": "Stable access to global content from anywhere.",
     "description": "Overleap is a network proxy optimized for restricted network environments. When other tools drop under ISP throttling, the k2 protocol keeps you connected. Available on Windows, macOS, iOS, and Android — subscribe and connect, no technical setup required.",
-    "cta_primary": "Start Free Trial",
+    "cta_primary": "Get Started",
     "cta_secondary": "Download Client",
     "connected": "Connected",
     "nodeInfo": "HK · Best Node",
@@ -450,7 +450,7 @@
       },
       "trial": {
         "question": "Is there a free trial?",
-        "answer": "Yes. New users receive free trial credit upon registration. You can fully test Overleap's clients across all platforms, all nodes, and all features before paying. No credit card pre-authorization required."
+        "answer": "There is no free trial. If you are not satisfied after purchasing, you can request a refund within 7 days of your first purchase (data usage under 1GB). Refunds are credited to your account wallet balance and can be used for renewal or withdrawn to a cryptocurrency wallet."
       },
       "refund": {
         "question": "Can I get a refund?",
