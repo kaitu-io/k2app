@@ -5,6 +5,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import HeroSection from '@/components/home/HeroSection';
 import FeaturesSection from '@/components/home/FeaturesSection';
+import TestimonialsSection from '@/components/home/TestimonialsSection';
 import FAQSection from '@/components/home/FAQSection';
 import DownloadCTA from '@/components/home/DownloadCTA';
 import HomeClient from './HomeClient';
@@ -85,6 +86,14 @@ export default async function Home({
     key,
     question: t(`faq.items.${key}.question`),
     answer: t(`faq.items.${key}.answer`),
+  }));
+
+  const TESTIMONIAL_KEYS = ['item1', 'item2', 'item3'] as const;
+  const testimonials = TESTIMONIAL_KEYS.map((key) => ({
+    key,
+    quote: t(`hero.testimonials.${key}.quote`),
+    author: t(`hero.testimonials.${key}.author`),
+    tag: t(`hero.testimonials.${key}.tag`),
   }));
 
   const jsonLd = JSON.stringify([
@@ -184,6 +193,11 @@ export default async function Home({
             description: t('hero.features.selfSign.description'),
           },
         }}
+      />
+
+      <TestimonialsSection
+        sectionTitle={t('hero.testimonials.title')}
+        testimonials={testimonials}
       />
 
       <FAQSection

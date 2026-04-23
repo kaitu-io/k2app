@@ -131,9 +131,10 @@ export default function Header() {
                 <div className="absolute top-full left-0 mt-1 w-52 bg-background border border-border rounded-lg shadow-lg p-2 z-50">
                   {(
                     [
-                      { key: 'whySpeed', href: '/' },
-                      { key: 'whySecurity', href: '/' },
-                      { key: 'whyTestimonials', href: '/' },
+                      { key: 'whySpeed', href: '/#hero' },
+                      { key: 'whyTech', href: '/#features' },
+                      { key: 'whyTestimonials', href: '/#testimonials' },
+                      { key: 'faq', href: '/#faq' },
                     ] as const
                   ).map(({ key, href }) => (
                     <Link
@@ -273,9 +274,10 @@ export default function Header() {
               <div className="pl-4 mb-1">
                 {(
                   [
-                    { key: 'whySpeed', href: '/' },
-                    { key: 'whySecurity', href: '/' },
-                    { key: 'whyTestimonials', href: '/' },
+                    { key: 'whySpeed', href: '/#hero' },
+                    { key: 'whyTech', href: '/#features' },
+                    { key: 'whyTestimonials', href: '/#testimonials' },
+                    { key: 'faq', href: '/#faq' },
                   ] as const
                 ).map(({ key, href }) => (
                   <Link

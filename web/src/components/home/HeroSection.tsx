@@ -21,7 +21,7 @@ export default function HeroSection({
   terminalTitle,
 }: HeroSectionProps) {
   return (
-    <section className="relative z-10 min-h-[100dvh] flex flex-col justify-center px-4 sm:px-6 lg:px-8 py-10 sm:py-20">
+    <section id="hero" className="relative z-10 min-h-[100dvh] flex flex-col justify-center px-4 sm:px-6 lg:px-8 py-10 sm:py-20">
       <div className="max-w-7xl mx-auto text-center">
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs mb-6 bg-primary/10 text-primary border border-primary/30 font-mono">

@@ -150,6 +150,24 @@
         "step3": "# Connect (paste URI)",
         "step4": "k2 up k2://..."
       }
+    },
+    "testimonials": {
+      "title": "What Our Users Say",
+      "item1": {
+        "quote": "All over X, people are posting 'if your VPN still works lately, you're lucky.' My friends' services have gone down one by one. Overleap is still running — stable and fast. In this environment, that's genuinely surprising. So stoked.",
+        "author": "Verified X User",
+        "tag": "Review from X"
+      },
+      "item2": {
+        "quote": "My wife's VPN stopped working completely. Switched her to Overleap — not only does it work, it's actually fast. We've had zero disconnects. The whole family's on it now.",
+        "author": "Anonymous",
+        "tag": "Family User"
+      },
+      "item3": {
+        "quote": "We homeschool in China and YouTube is central to our curriculum. Most services have either shut down or become unreliable. Overleap is one of the few that still streams smoothly. It's been an enormous help — keep going!",
+        "author": "Homeschool Parent",
+        "tag": "Education"
+      }
     }
   },
   "security": {
