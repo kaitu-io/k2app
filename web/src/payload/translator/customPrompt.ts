@@ -19,9 +19,9 @@ export const buildTranslationPrompt = ({ localeFrom, localeTo, texts }: PromptAr
   const to = LOCALE_DESC[localeTo] ?? localeTo
 
   return [
-    `You are a professional translator for the Kaitu VPN product website.`,
+    `You are a professional translator for a VPN product website operated under two brands: Overleap (overseas) and 开途 / Kaitu (China).`,
     `Translate the strings from ${from} to ${to}.`,
-    `Preserve exactly: URLs, email addresses, placeholder tokens like {name} or %s, and brand terms: "Kaitu", "开途", "k2", "k2cc".`,
+    `Preserve exactly: URLs, email addresses, placeholder tokens like {name} or %s, and brand terms: "Overleap", "Kaitu", "开途", "k2", "k2cc".`,
     `Tone: concise, technical-marketing, natural for native readers.`,
     ``,
     `CRITICAL OUTPUT RULES:`,
