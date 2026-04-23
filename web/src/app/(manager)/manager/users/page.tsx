@@ -28,7 +28,7 @@ import { format } from "date-fns";
 import Link from "next/link";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DateInput } from "@/components/ui/date-input";
-import { Mail, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -346,16 +346,6 @@ export default function UsersPage() {
     router.push(`/manager/users?${params.toString()}`);
   };
 
-  const handleSendMarketingEmail = () => {
-    const selectedRowIds = Object.keys(rowSelection).filter(id => rowSelection[id]);
-    if (selectedRowIds.length === 0) {
-      return;
-    }
-
-    const userUuids = selectedRowIds.join(',');
-    router.push(`/manager/edm/create-task?userUuids=${userUuids}`);
-  };
-
   const handlePageChange = (newPageIndex: number) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", newPageIndex.toString());
@@ -455,10 +445,6 @@ export default function UsersPage() {
             <span className="text-sm text-muted-foreground">
               {"已选择 "}{Object.keys(rowSelection).filter(id => rowSelection[id]).length}{" 个用户"}
             </span>
-            <Button onClick={handleSendMarketingEmail} variant="default" size="sm">
-              <Mail className="mr-2 h-4 w-4" />
-              {"发送营销邮件"}
-            </Button>
             <Button onClick={handleDeleteUsers} variant="destructive" size="sm">
               <Trash2 className="mr-2 h-4 w-4" />
               {"硬删除"}

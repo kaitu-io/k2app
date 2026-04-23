@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { Package, Users, Server, Receipt, Mail, Tag, Wallet, FileText, Activity, LogOut, Gauge, UserCircle, ClipboardList, Cloud, BarChart3, Key, MessageSquare, ShieldCheck, Megaphone, BookOpen } from "lucide-react";
+import { Package, Users, Server, Receipt, Tag, Wallet, FileText, Activity, LogOut, Gauge, UserCircle, ClipboardList, Cloud, BarChart3, Key, MessageSquare, ShieldCheck, Megaphone, BookOpen } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -70,7 +70,6 @@ const menuGroups: MenuGroup[] = [
   {
     title: "营销管理",
     items: [
-      { href: "/manager/edm/create-task", icon: Mail, label: "邮件营销" },
       { href: "/manager/edm/templates", icon: FileText, label: "邮件模板" },
       { href: "/manager/edm/send-logs", icon: Activity, label: "发送日志" },
       { href: "/manager/retailers", icon: UserCircle, label: "分销商" },
