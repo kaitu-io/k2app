@@ -10,10 +10,8 @@ import { Download, Menu, X, ChevronDown } from 'lucide-react'
 import Image from 'next/image'
 import { useBrand } from '@/components/providers/BrandProvider'
 
-type DropdownId = 'product' | 'why' | 'help'
-type MobileSection = 'product' | 'why' | 'help'
-
-const PLATFORMS = ['macOS', 'Windows', 'iOS', 'Android', 'Linux']
+type DropdownId = 'why' | 'help'
+type MobileSection = 'why' | 'help'
 
 export default function Header() {
   const brand = useBrand()
@@ -66,57 +64,6 @@ export default function Header() {
 
           {/* Desktop nav */}
           <div className="hidden sm:flex items-center gap-1">
-
-            {/* Product Features */}
-            <div className="relative">
-              <button
-                onClick={() => toggleDropdown('product')}
-                className="flex items-center gap-1 px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md"
-              >
-                {t('nav.nav.productFeatures')}
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${openDropdown === 'product' ? 'rotate-180' : ''}`} />
-              </button>
-              {openDropdown === 'product' && (
-                <div className="absolute top-full left-0 mt-1 w-72 bg-background border border-border rounded-lg shadow-lg p-4 z-50">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    {t('nav.nav.useCases')}
-                  </p>
-                  <div className="space-y-0.5 mb-4">
-                    {(
-                      [
-                        { key: 'breakBarriers', href: '/' },
-                        { key: 'familyProtection', href: '/' },
-                        { key: 'mobilePlusDesktop', href: '/install' },
-                      ] as const
-                    ).map(({ key, href }) => (
-                      <Link
-                        key={key}
-                        href={href}
-                        onClick={() => setOpenDropdown(null)}
-                        className="block px-2 py-1.5 text-sm text-foreground/80 hover:text-foreground hover:bg-muted/50 rounded-md transition-colors"
-                      >
-                        {t(`nav.nav.${key}`)}
-                      </Link>
-                    ))}
-                  </div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    {t('nav.nav.supportedPlatforms')}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {PLATFORMS.map(p => (
-                      <Link
-                        key={p}
-                        href="/install"
-                        onClick={() => setOpenDropdown(null)}
-                        className="px-2 py-0.5 text-xs bg-muted text-muted-foreground hover:text-foreground rounded transition-colors"
-                      >
-                        {p}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
 
             {/* Why Brand */}
             <div className="relative">
@@ -232,35 +179,6 @@ export default function Header() {
               <Download className="w-4 h-4" />
               {t('nav.nav.freeDownload')}
             </Link>
-
-            {/* Product accordion */}
-            <button
-              className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted/50 rounded-md"
-              onClick={() => toggleMobileSection('product')}
-            >
-              {t('nav.nav.productFeatures')}
-              <ChevronDown className={`w-4 h-4 transition-transform ${mobileExpanded.has('product') ? 'rotate-180' : ''}`} />
-            </button>
-            {mobileExpanded.has('product') && (
-              <div className="pl-4 mb-1">
-                {(
-                  [
-                    { key: 'breakBarriers', href: '/' },
-                    { key: 'familyProtection', href: '/' },
-                    { key: 'mobilePlusDesktop', href: '/install' },
-                  ] as const
-                ).map(({ key, href }) => (
-                  <Link
-                    key={key}
-                    href={href}
-                    className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    {t(`nav.nav.${key}`)}
-                  </Link>
-                ))}
-              </div>
-            )}
 
             {/* Why Brand accordion */}
             <button

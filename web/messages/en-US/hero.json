@@ -154,17 +154,17 @@
     "testimonials": {
       "title": "What Our Users Say",
       "item1": {
-        "quote": "All over X, people are posting 'if your VPN still works lately, you're lucky.' My friends' services have gone down one by one. Overleap is still running — stable, fast. In this environment, that's genuinely surprising. I'm so happy.",
-        "author": "Verified X User",
+        "quote": "X is full of posts saying 'if your VPN still works lately, consider yourself lucky.' A lot of people have been scrambling to find something new. My Overleap has kept working without issues — as a longtime user, I couldn't be happier.",
+        "author": "Longtime X User",
         "tag": "Review from X"
       },
       "item2": {
-        "quote": "My wife's VPN stopped working completely. Switched her to Overleap — not only does it work, it's actually fast. We've had zero disconnects. Now the whole family uses it.",
+        "quote": "My wife uses a different service (KuaiLian) — it stopped working. My Overleap still runs fine and is actually fast. We're on different tools and the gap is pretty noticeable.",
         "author": "Anonymous",
-        "tag": "Family User"
+        "tag": "Regular User"
       },
       "item3": {
-        "quote": "We homeschool in China and YouTube is essential for our curriculum. Most services have either shut down or become unreliable. Overleap is one of the few that still streams smoothly. It's been an enormous help — keep going!",
+        "quote": "We homeschool in China and a lot of content requires a VPN to access. Overleap has been smooth and reliable — it's been a real help. So many other services have shut down lately. Keep it up!",
         "author": "Homeschool Parent",
         "tag": "Education"
       }
