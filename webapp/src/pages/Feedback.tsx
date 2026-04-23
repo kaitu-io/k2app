@@ -17,7 +17,6 @@ import {
 import {
   Send as SendIcon,
   HelpOutline as HelpOutlineIcon,
-  ChevronRight as ChevronRightIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 
@@ -110,40 +109,24 @@ function TicketList({
     <>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
         <Typography variant="h6">{t("ticket:feedback.title")}</Typography>
-        <Button
-          variant="contained"
-          size="small"
-          onClick={() => navigate("/submit-ticket-form")}
-        >
-          {t("ticket:feedback.newTicket")}
-        </Button>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<HelpOutlineIcon />}
+            onClick={() => navigate("/faq")}
+          >
+            {t("ticket:faq.entryTitle")}
+          </Button>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => navigate("/submit-ticket-form")}
+          >
+            {t("ticket:feedback.newTicket")}
+          </Button>
+        </Stack>
       </Stack>
-
-      <Card
-        sx={{
-          cursor: "pointer",
-          transition: "all 0.2s",
-          "&:hover": { bgcolor: "action.hover" },
-        }}
-        onClick={() => navigate("/faq")}
-      >
-        <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Stack direction="row" alignItems="center" gap={1.5}>
-              <HelpOutlineIcon color="primary" />
-              <Box>
-                <Typography variant="subtitle2">
-                  {t("ticket:faq.entryTitle")}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {t("ticket:faq.entryHint")}
-                </Typography>
-              </Box>
-            </Stack>
-            <ChevronRightIcon color="action" />
-          </Stack>
-        </CardContent>
-      </Card>
 
       {isLoading ? (
         <Box display="flex" justifyContent="center" py={4}>
