@@ -10,8 +10,8 @@ import { Download, Menu, X, ChevronDown } from 'lucide-react'
 import Image from 'next/image'
 import { useBrand } from '@/components/providers/BrandProvider'
 
-type DropdownId = 'why' | 'help'
-type MobileSection = 'why' | 'help'
+type DropdownId = 'why'
+type MobileSection = 'why'
 
 export default function Header() {
   const brand = useBrand()
@@ -105,36 +105,6 @@ export default function Header() {
               {t('nav.nav.pricing')}
             </Link>
 
-            {/* Help */}
-            <div className="relative">
-              <button
-                onClick={() => toggleDropdown('help')}
-                className="flex items-center gap-1 px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md"
-              >
-                {t('nav.nav.help')}
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${openDropdown === 'help' ? 'rotate-180' : ''}`} />
-              </button>
-              {openDropdown === 'help' && (
-                <div className="absolute top-full left-0 mt-1 w-44 bg-background border border-border rounded-lg shadow-lg p-2 z-50">
-                  {(
-                    [
-                      { key: 'quickStart', href: '/guides' },
-                      { key: 'faq', href: '/support' },
-                      { key: 'contactUs', href: '/support' },
-                    ] as const
-                  ).map(({ key, href }) => (
-                    <Link
-                      key={key}
-                      href={href}
-                      onClick={() => setOpenDropdown(null)}
-                      className="block px-3 py-2 text-sm text-foreground/80 hover:text-foreground hover:bg-muted/50 rounded-md transition-colors"
-                    >
-                      {t(`nav.nav.${key}`)}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Right actions */}
@@ -218,35 +188,6 @@ export default function Header() {
             >
               {t('nav.nav.pricing')}
             </Link>
-
-            {/* Help accordion */}
-            <button
-              className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted/50 rounded-md"
-              onClick={() => toggleMobileSection('help')}
-            >
-              {t('nav.nav.help')}
-              <ChevronDown className={`w-4 h-4 transition-transform ${mobileExpanded.has('help') ? 'rotate-180' : ''}`} />
-            </button>
-            {mobileExpanded.has('help') && (
-              <div className="pl-4 mb-1">
-                {(
-                  [
-                    { key: 'quickStart', href: '/guides' },
-                    { key: 'faq', href: '/support' },
-                    { key: 'contactUs', href: '/support' },
-                  ] as const
-                ).map(({ key, href }) => (
-                  <Link
-                    key={key}
-                    href={href}
-                    className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    {t(`nav.nav.${key}`)}
-                  </Link>
-                ))}
-              </div>
-            )}
 
             {!isAuthenticated && (
               <Link
