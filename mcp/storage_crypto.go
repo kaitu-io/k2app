@@ -9,7 +9,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/denisbrodbeck/machineid"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -72,11 +71,13 @@ func isEncrypted(value string) bool {
 	return strings.HasPrefix(value, encPrefix)
 }
 
-// getHardwareID returns a platform-specific hardware identifier via
-// denisbrodbeck/machineid (same sources as Rust machine-uid crate):
-//   - macOS: IOPlatformUUID via ioreg
-//   - Windows: Registry HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid
-//   - Linux: /var/lib/dbus/machine-id → /etc/machine-id
-func getHardwareID() (string, error) {
-	return machineid.ID()
-}
+// getHardwareID returns a platform-specific hardware identifier matching
+// Rust machine-uid 0.5.4 byte-for-byte:
+//   - macOS: IOPlatformUUID via `ioreg -rd1 -c IOPlatformExpertDevice` (hwid_darwin.go)
+//   - Windows: HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid, no WOW64 flag (hwid_windows.go)
+//   - Linux: /var/lib/dbus/machine-id → /etc/machine-id (hwid_linux.go)
+//
+// Implemented per-platform so the Windows path can control registry access
+// flags exactly — denisbrodbeck/machineid forced WOW64_64KEY which on
+// Windows Server 2025 returned a different value than Rust's default flags,
+// breaking cross-language key derivation.
