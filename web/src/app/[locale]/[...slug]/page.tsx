@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import { setRequestLocale } from 'next-intl/server'
 import type { Metadata } from 'next'
@@ -28,6 +29,20 @@ type Props = {
 
 type Locale = (typeof routing.locales)[number]
 
+const getCategory = cache(
+  async (locale: Locale, slug: string) => {
+    const payload = await getPayload({ config })
+    return findCategoryBySlug(payload, locale, slug)
+  },
+)
+
+const getPost = cache(
+  async (locale: Locale, categoryId: number | string, postSlug: string) => {
+    const payload = await getPayload({ config })
+    return findPostInCategory(payload, locale, categoryId, postSlug)
+  },
+)
+
 function resolveCanonicalBrand(
   locale: string,
   showOnKaitu: boolean,
@@ -47,17 +62,17 @@ export default async function CatchAll({ params }: Props) {
   const payload = await getPayload({ config })
 
   if (slug.length === 1) {
-    const category = await findCategoryBySlug(payload, locale as Locale, slug[0])
+    const category = await getCategory(locale as Locale, slug[0])
     if (!category) notFound()
     const posts = await listPostsInCategory(payload, locale as Locale, category.id, visibilityField)
-    return <CategoryListPage category={category} posts={posts} />
+    return <CategoryListPage category={category} posts={posts} locale={locale} />
   }
 
   if (slug.length === 2) {
     const [catSlug, postSlug] = slug
-    const category = await findCategoryBySlug(payload, locale as Locale, catSlug)
+    const category = await getCategory(locale as Locale, catSlug)
     if (!category) notFound()
-    const post = await findPostInCategory(payload, locale as Locale, category.id, postSlug)
+    const post = await getPost(locale as Locale, category.id, postSlug)
     if (!post) notFound()
     const visible = brand.id === 'kaitu' ? post.showOnKaitu : post.showOnOverleap
     if (!visible) notFound()
@@ -70,17 +85,21 @@ export default async function CatchAll({ params }: Props) {
 function CategoryListPage({
   category,
   posts,
+  locale,
 }: {
   category: CategoryDoc
   posts: PostListItem[]
+  locale: string
 }) {
   return (
     <>
       <Header />
-      <div className="mx-auto max-w-3xl px-4 py-12">
+      <main className="mx-auto max-w-3xl px-4 py-12">
         <h1 className="mb-8 text-3xl font-bold">{category.name}</h1>
         {posts.length === 0 ? (
-          <p className="text-muted-foreground">{'Coming soon.'}</p>
+          <p className="text-muted-foreground">
+            {locale.startsWith('zh') ? '即将上线，敬请期待。' : 'Coming soon.'}
+          </p>
         ) : (
           <ul className="space-y-6">
             {posts.map((post) => (
@@ -98,7 +117,7 @@ function CategoryListPage({
             ))}
           </ul>
         )}
-      </div>
+      </main>
       <Footer />
     </>
   )
@@ -108,15 +127,17 @@ function PostDetailPage({ post, locale }: { post: PostDoc; locale: string }) {
   return (
     <>
       <Header />
-      <article className="prose dark:prose-invert mx-auto max-w-3xl px-4 py-12">
-        <h1>{post.title}</h1>
-        {post.publishedAt && (
-          <time dateTime={post.publishedAt}>
-            {new Date(post.publishedAt).toLocaleDateString(locale)}
-          </time>
-        )}
-        <RichText data={post.content as SerializedEditorState} />
-      </article>
+      <main>
+        <article className="prose dark:prose-invert mx-auto max-w-3xl px-4 py-12">
+          <h1>{post.title}</h1>
+          {post.publishedAt && (
+            <time dateTime={post.publishedAt}>
+              {new Date(post.publishedAt).toLocaleDateString(locale)}
+            </time>
+          )}
+          <RichText data={post.content as SerializedEditorState} />
+        </article>
+      </main>
       <Footer />
     </>
   )
@@ -125,10 +146,9 @@ function PostDetailPage({ post, locale }: { post: PostDoc; locale: string }) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { locale, slug } = await params
   const brand = await getBrand()
-  const payload = await getPayload({ config })
 
   if (slug.length === 1) {
-    const category = await findCategoryBySlug(payload, locale as Locale, slug[0])
+    const category = await getCategory(locale as Locale, slug[0])
     if (!category) return {}
     return {
       title: `${category.name} | ${brand.displayName}`,
@@ -138,9 +158,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (slug.length === 2) {
     const [catSlug, postSlug] = slug
-    const category = await findCategoryBySlug(payload, locale as Locale, catSlug)
+    const category = await getCategory(locale as Locale, catSlug)
     if (!category) return {}
-    const post = await findPostInCategory(payload, locale as Locale, category.id, postSlug)
+    const post = await getPost(locale as Locale, category.id, postSlug)
     if (!post) return {}
 
     const canonicalBrandId = resolveCanonicalBrand(
