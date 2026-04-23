@@ -5,7 +5,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { useTranslations } from 'next-intl'
 import { Link } from '@/i18n/routing'
-import NextLink from 'next/link'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { Download, Menu, X, ChevronDown } from 'lucide-react'
 import Image from 'next/image'
@@ -199,11 +198,6 @@ export default function Header() {
                   <Button asChild variant="outline" size="sm">
                     <Link href="/account">{t('admin.account.title')}</Link>
                   </Button>
-                  {user?.isAdmin && (
-                    <Button asChild variant="outline" size="sm">
-                      <NextLink href="/manager">{t('nav.nav.adminPanel')}</NextLink>
-                    </Button>
-                  )}
                 </>
               ) : (
                 <Button asChild variant="ghost" size="sm">
