@@ -1,8 +1,10 @@
 import 'server-only';
 import { headers } from 'next/headers';
-import { brandFromHost, type Brand } from './brands';
+import { brandFromHost, brandFromHostOrLocale, type Brand } from './brands';
 
-export async function getBrand(): Promise<Brand> {
+export async function getBrand(locale?: string): Promise<Brand> {
   const h = await headers();
-  return brandFromHost(h.get('host'));
+  const host = h.get('host');
+  if (locale) return brandFromHostOrLocale(host, locale);
+  return brandFromHost(host);
 }

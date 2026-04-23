@@ -5,11 +5,13 @@ import { Link } from '@/i18n/routing';
 import NextLink from 'next/link';
 import Image from 'next/image';
 import { useBrand } from '@/components/providers/BrandProvider';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Footer() {
   const brand = useBrand();
   const t = useTranslations();
   const locale = useLocale();
+  const { user } = useAuth();
   const showTaglineZh = Boolean(brand.taglineZh) && locale.startsWith('zh');
 
   return (
@@ -142,6 +144,14 @@ export default function Footer() {
             <p className="mb-2 text-muted-foreground/60 italic">{brand.taglineZh}</p>
           )}
           <p>{'©'} {new Date().getFullYear()} {brand.legalName}{'. '}{t('nav.footer.copyright')}</p>
+          {user?.isAdmin && (
+            <NextLink
+              href="/manager"
+              className="mt-2 inline-block text-xs text-muted-foreground/30 hover:text-muted-foreground transition-colors"
+            >
+              {t('nav.nav.adminPanel')}
+            </NextLink>
+          )}
         </div>
       </div>
     </footer>
