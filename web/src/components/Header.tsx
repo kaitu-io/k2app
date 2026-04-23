@@ -85,7 +85,7 @@ export default function Header() {
                   <div className="space-y-0.5 mb-4">
                     {(
                       [
-                        { key: 'breakGFW', href: '/' },
+                        { key: 'breakBarriers', href: '/' },
                         { key: 'familyProtection', href: '/' },
                         { key: 'mobilePlusDesktop', href: '/install' },
                       ] as const
@@ -250,7 +250,7 @@ export default function Header() {
               <div className="pl-4 mb-1">
                 {(
                   [
-                    { key: 'breakGFW', href: '/' },
+                    { key: 'breakBarriers', href: '/' },
                     { key: 'familyProtection', href: '/' },
                     { key: 'mobilePlusDesktop', href: '/install' },
                   ] as const
