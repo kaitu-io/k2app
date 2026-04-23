@@ -7,6 +7,8 @@ import { RichText } from '@payloadcms/richtext-lexical/react'
 import type { SerializedEditorState } from '@payloadcms/richtext-lexical/lexical'
 import { getBrand } from '@/lib/brand-server'
 import { brandById, type BrandId } from '@/lib/brands'
+import Header from '@/components/Header'
+import Footer from '@/components/Footer'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,15 +70,19 @@ export default async function BlogDetailPage({ params }: Props) {
   if (!visible) notFound()
 
   return (
-    <article className="prose dark:prose-invert mx-auto max-w-3xl px-4 py-12">
-      <h1>{post.title}</h1>
-      {post.publishedAt && (
-        <time dateTime={post.publishedAt}>
-          {new Date(post.publishedAt).toLocaleDateString(locale)}
-        </time>
-      )}
-      <RichText data={post.content} />
-    </article>
+    <>
+      <Header />
+      <article className="prose dark:prose-invert mx-auto max-w-3xl px-4 py-12">
+        <h1>{post.title}</h1>
+        {post.publishedAt && (
+          <time dateTime={post.publishedAt}>
+            {new Date(post.publishedAt).toLocaleDateString(locale)}
+          </time>
+        )}
+        <RichText data={post.content} />
+      </article>
+      <Footer />
+    </>
   )
 }
 
