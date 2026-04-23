@@ -15,6 +15,5 @@ export const Categories: CollectionConfig = {
     slugField(),
     { name: 'name', type: 'text', required: true, localized: true },
     { name: 'description', type: 'textarea', localized: true },
-    { name: 'parent', type: 'relationship', relationTo: 'categories' },
   ],
 }
