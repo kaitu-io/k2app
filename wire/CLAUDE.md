@@ -9,6 +9,10 @@
 type Dialer interface {
     DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error)
     DialUDP(ctx context.Context, addr string) (net.PacketConn, error)
+    // DialStreamUDP opens a stream-backed UDP session (reliable, congestion-controlled).
+    DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error)
+    // Reset clears cached connection state without closing the Dialer.
+    Reset()
     Close() error
 }
 
