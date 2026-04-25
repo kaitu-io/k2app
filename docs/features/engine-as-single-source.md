@@ -316,7 +316,7 @@ Desktop:
   sing-tun InterfaceMonitor → daemon.NewNetworkMonitor
     → callback → engine.OnNetworkChanged()
       → EventHandler.OnStateChange("reconnecting")  ← daemon 现在能收到了
-      → tm.ResetConnections()
+      → tm.Reset()
       → EventHandler.OnStateChange("connected")
 
 Mobile:

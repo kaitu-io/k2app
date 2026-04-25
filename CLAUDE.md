@@ -441,19 +441,18 @@ The layer model (Platform Shell → Engine → Core → Provider → Wire) defin
 3. **Optional capabilities use registered interfaces**: If an upper layer needs an optional capability from a lower layer, the lower layer defines and documents the capability interface (e.g., `StatsProvider`). The upper layer type-asserts to the *interface*, not the concrete type.
 
 ```go
-// WRONG: upper layer type-asserts to concrete type
-if qc, ok := tm.quic.(*QUICClient); ok {
-    qc.resetConnection()
-    qc.portHopAttempts.Store(0)
+// WRONG: upper layer type-asserts to concrete type to read stats
+if qc, ok := tm.primary.(*QUICClient); ok {
+    stats := qc.WireStats()
 }
 
 // RIGHT: lower layer defines capability interface
-type Resettable interface {
-    Reset()
+type StatsProvider interface {
+    WireStats() WireStats
 }
 // upper layer asserts on interface
-if r, ok := tm.quic.(Resettable); ok {
-    r.Reset()
+if sp, ok := tm.primary.(StatsProvider); ok {
+    stats := sp.WireStats()
 }
 ```
 
@@ -465,7 +464,6 @@ All optional capability interfaces that upper layers may type-assert on must be 
 |-----------|---------|----------------|-------------|
 | `StatsProvider` | wire | QUICClient, TCPWSClient | engine (stats collection) |
 | `EchoProber` | wire | QUICClient | engine (echo health probe) |
-| `Resettable` | wire | QUICClient, TCPWSClient | TransportManager.ResetConnections (network change) |
 
 When adding a new optional interface, add it to this table.
 
@@ -551,7 +549,7 @@ Platform Shell (daemon/appext/gateway) assembles `engine.Config` with platform-s
 
 ### Interfaces
 
-- `wire.Dialer`: DialTCP, DialUDP, Close (implemented by QUICClient, TCPWSClient, TransportManager)
+- `wire.Dialer`: DialTCP, DialUDP, DialStreamUDP, Reset, Close (implemented by QUICClient, TCPWSClient, TransportManager, SwappableDialer)
 - `wire.Listener`: AcceptTCP, ServeUDP, Close (implemented by QUICServer, TCPWSServer)
 - `wire.DirectDialer`: DialContext, ListenPacket (implemented by daemon.directDialer, appext.protectedDialer)
 - `wire.DialerController`: ControlFunc() (optional, for DNS socket protection — implemented by appext.protectedDialer)
