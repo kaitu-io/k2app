@@ -1550,6 +1550,14 @@ func TestPipe_Watchdog_ForceCloseOnStuckCleanExit(t *testing.T) {
 // complete normally (EOF on Read) without the watchdog firing. Validates that
 // the fix doesn't cause spurious force-closes on well-behaved pipes.
 func TestPipe_CleanBidirectionalExit(t *testing.T) {
+	// pipeWatchdogGrace is package-level; explicitly set a generous value so
+	// this test does not depend on whichever value an earlier test left
+	// behind. Windows GitHub runners need >300ms for two TCP loopback
+	// directions to flush before the watchdog force-closes them.
+	orig := pipeWatchdogGrace
+	pipeWatchdogGrace = 30 * time.Second
+	defer func() { pipeWatchdogGrace = orig }()
+
 	localClient, localApp := makeTCPPair(t)
 	remoteClient, remoteServer := makeTCPPair(t)
 
