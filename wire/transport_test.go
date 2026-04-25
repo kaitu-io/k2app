@@ -41,6 +41,8 @@ func (m *mockTransport) DialStreamUDP(ctx context.Context, addr string) (net.Pac
 	return m.DialUDP(ctx, addr)
 }
 
+func (m *mockTransport) Reset() {}
+
 func (m *mockTransport) Close() error {
 	m.closed = true
 	return nil

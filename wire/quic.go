@@ -27,7 +27,6 @@ var (
 	_ Dialer     = (*QUICClient)(nil)
 	_ Listener   = (*QUICServer)(nil)
 	_ EchoProber = (*QUICClient)(nil)
-	_ Resettable = (*QUICClient)(nil)
 )
 
 // maxServerUDPSessions caps per-connection UDP session count on the server.

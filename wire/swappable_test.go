@@ -49,6 +49,8 @@ func (f *fakeDialer) DialStreamUDP(ctx context.Context, addr string) (net.Packet
 	return &fakePacketConn{dialerID: f.id}, nil
 }
 
+func (f *fakeDialer) Reset() {}
+
 func (f *fakeDialer) Close() error {
 	f.closed.Store(true)
 	return f.closeErr

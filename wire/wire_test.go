@@ -22,6 +22,7 @@ func (m *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 func (m *mockDialer) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	return nil, nil
 }
+func (m *mockDialer) Reset()       {}
 func (m *mockDialer) Close() error { return nil }
 
 type mockListener struct{}

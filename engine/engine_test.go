@@ -207,6 +207,7 @@ func (d *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 func (d *mockDialer) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	return nil, nil
 }
+func (d *mockDialer) Reset()       {}
 func (d *mockDialer) Close() error { return nil }
 
 // blockingPacketConn is a PacketConn whose ReadFrom blocks until Close.
@@ -252,6 +253,7 @@ func (d *mockWireDialer) DialUDP(ctx context.Context, addr string) (net.PacketCo
 func (d *mockWireDialer) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	return d.pc, nil
 }
+func (d *mockWireDialer) Reset()       {}
 func (d *mockWireDialer) Close() error { return nil }
 
 // packetPipe creates a connected pair of net.PacketConns using loopback UDP.

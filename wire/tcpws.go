@@ -121,7 +121,6 @@ func (c *TCPWSClient) WireStats() WireStats {
 
 var (
 	_ StatsProvider = (*TCPWSClient)(nil)
-	_ Resettable    = (*TCPWSClient)(nil)
 )
 
 // NewTCPWSClient creates a new TCP-WS client transport.

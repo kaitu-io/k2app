@@ -42,6 +42,8 @@ func (d *mockDialer) DialStreamUDP(ctx context.Context, addr string) (net.Packet
 	return d.DialUDP(ctx, addr)
 }
 
+func (d *mockDialer) Reset() {}
+
 func (d *mockDialer) Close() error { return nil }
 
 // mockPacketConn that returns a pre-set DNS response.

@@ -116,3 +116,16 @@ func (s *SwappableDialer) Close() error {
 	}
 	return d.Close()
 }
+
+// Reset forwards to the current Dialer if it supports the Dialer contract's
+// Reset method. SwappableDialer is itself a Dialer; its Reset clears the
+// inner Dialer's cached connection state. Note this does NOT replace the
+// inner Dialer — Reset is for connection-level state, Swap is for Dialer
+// replacement.
+func (s *SwappableDialer) Reset() {
+	d := s.Current()
+	if d == nil {
+		return
+	}
+	d.Reset()
+}

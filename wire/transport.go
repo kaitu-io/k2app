@@ -507,6 +507,13 @@ func (tm *TransportManager) quicProbeLoop(ctx context.Context) {
 	}
 }
 
+// Reset implements the Dialer Reset contract — alias for ResetConnections.
+// During the rename rollout, both names exist; ResetConnections will be
+// removed once all callers migrate to Reset (Task 6).
+func (tm *TransportManager) Reset() {
+	tm.ResetConnections()
+}
+
 // ResetConnections resets cached connections on all transports and clears
 // fallback state, giving QUIC a fresh chance on the next dial.
 func (tm *TransportManager) ResetConnections() {
@@ -518,11 +525,11 @@ func (tm *TransportManager) ResetConnections() {
 	t := tm.tcpws
 	tm.mu.RUnlock()
 
-	if r, ok := p.(Resettable); ok {
-		r.Reset()
+	if p != nil {
+		p.Reset()
 	}
-	if r, ok := t.(Resettable); ok {
-		r.Reset()
+	if t != nil {
+		t.Reset()
 	}
 
 	tm.fallbackActive.Store(false)
