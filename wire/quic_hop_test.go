@@ -343,7 +343,7 @@ func TestQUICClient_DialUDP_RelayUnhealthy_AlwaysFallback(t *testing.T) {
 }
 
 // TestQUICClient_DialUDP_HopRecoveryResetOnNetworkChange verifies that
-// ResetConnections() clears the portHopExhaustedAt timestamp along with
+// Reset() clears the portHopExhaustedAt timestamp along with
 // the hop counter, giving QUIC a fully fresh start on the new network.
 func TestQUICClient_DialUDP_HopRecoveryResetOnNetworkChange(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
@@ -353,15 +353,15 @@ func TestQUICClient_DialUDP_HopRecoveryResetOnNetworkChange(t *testing.T) {
 	client.portHopAttempts.Store(int32(3))
 	client.portHopExhaustedAt.Store(time.Now().Add(-1 * time.Minute).UnixNano())
 
-	// Network change → ResetConnections
+	// Network change → Reset
 	tm := NewTransportManager()
 	tm.SetPrimary(client, "quic-hop")
-	tm.ResetConnections()
+	tm.Reset()
 
 	if got := client.portHopAttempts.Load(); got != 0 {
-		t.Fatalf("portHopAttempts = %d, want 0 (cleared by ResetConnections)", got)
+		t.Fatalf("portHopAttempts = %d, want 0 (cleared by Reset)", got)
 	}
 	if got := client.portHopExhaustedAt.Load(); got != 0 {
-		t.Fatalf("portHopExhaustedAt = %d, want 0 (cleared by ResetConnections)", got)
+		t.Fatalf("portHopExhaustedAt = %d, want 0 (cleared by Reset)", got)
 	}
 }

@@ -1428,7 +1428,7 @@ func (c *errOnReadConn) Read(b []byte) (int, error) {
 
 // TestPipe_ErrorPath_UnblocksPeer is the core regression test for the
 // slot-leak introduced by commit 2068d24 (see ticket #97). When the remote
-// wire stream returns a non-EOF error (simulating tm.ResetConnections()
+// wire stream returns a non-EOF error (simulating tm.Reset()
 // closing an in-flight smux/QUIC stream), the RX goroutine must full-close
 // BOTH conns so the TX goroutine's blocked Read on the local peer returns
 // immediately. Before the fix, the RX goroutine only half-closed the local
@@ -1473,7 +1473,7 @@ func TestPipe_ErrorPath_UnblocksPeer(t *testing.T) {
 	// Let both directions enter their blocking Reads.
 	time.Sleep(100 * time.Millisecond)
 
-	// Simulate tm.ResetConnections(): remote stream Read returns a
+	// Simulate tm.Reset(): remote stream Read returns a
 	// non-EOF transport error.
 	close(trigger)
 

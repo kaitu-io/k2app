@@ -10,7 +10,7 @@ import (
 )
 
 // mockTransportManager returns a TransportManager with no transports set.
-// WireStats() returns zero values; ResetConnections() is a no-op.
+// WireStats() returns zero values; Reset() is a no-op.
 func mockTransportManager() *wire.TransportManager {
 	return wire.NewTransportManager()
 }

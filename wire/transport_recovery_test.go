@@ -114,7 +114,7 @@ func TestTransportManager_QuicRecovery(t *testing.T) {
 	}
 }
 
-// TestTransportManager_ResetClearsFallback verifies that ResetConnections()
+// TestTransportManager_ResetClearsFallback verifies that Reset()
 // clears fallback state.
 func TestTransportManager_ResetClearsFallback(t *testing.T) {
 	tm := NewTransportManager()
@@ -126,26 +126,26 @@ func TestTransportManager_ResetClearsFallback(t *testing.T) {
 		t.Fatal("fallback should be active")
 	}
 
-	tm.ResetConnections()
+	tm.Reset()
 
 	if tm.FallbackActive() {
 		t.Fatal("fallback should be cleared after reset")
 	}
 }
 
-// TestResetConnections_ClearsConsecConnFails verifies that ResetConnections()
+// TestReset_ClearsConsecConnFails verifies that Reset()
 // clears the consecutive connection failure counter.
-func TestResetConnections_ClearsConsecConnFails(t *testing.T) {
+func TestReset_ClearsConsecConnFails(t *testing.T) {
 	qc := NewQUICClient(Config{}, nil)
 	qc.handshakeFailStreak.Store(2)
 
 	tm := NewTransportManager()
 	tm.SetPrimary(qc, "quic-hop")
 
-	tm.ResetConnections()
+	tm.Reset()
 
 	if got := qc.ConsecConnFails(); got != 0 {
-		t.Fatalf("handshakeFailStreak = %d after ResetConnections, want 0", got)
+		t.Fatalf("handshakeFailStreak = %d after Reset, want 0", got)
 	}
 }
 

@@ -93,7 +93,7 @@ type outboundTransport struct {
 	// swappable wraps tm for indirection at the wire.Dialer boundary. All
 	// outward-facing Dial traffic (core.WireOutbound, ProxyDNSClient) goes
 	// through swappable; engine-internal TransportManager methods
-	// (ResetConnections, ReplacePrimary, WireStats, Primary, Close, etc.)
+	// (Reset, ReplacePrimary, WireStats, Primary, Close, etc.)
 	// continue to use tm directly.
 	//
 	// Ownership: tm is engine-owned (Closed in engine.Stop OR in

@@ -75,10 +75,10 @@ type TransportManager struct {
 
 	// Fallback state: tracks QUIC→TCP-WS transport-level fallback.
 	// Set when consecutive QUIC handshake failures reach quicConnFailThreshold.
-	// Cleared on QUIC recovery, ResetConnections(), or successful probe.
+	// Cleared on QUIC recovery, Reset(), or successful probe.
 	fallbackActive atomic.Bool
 
-	// Post-reset grace: first QUIC dial after ResetConnections gets extended budget.
+	// Post-reset grace: first QUIC dial after Reset gets extended budget.
 	freshAfterReset atomic.Bool
 
 	// Background QUIC probe: actively tests QUIC recovery during fallback.
@@ -433,7 +433,7 @@ func (tm *TransportManager) quicContext(parent context.Context, hasFallback bool
 		reconnectBudget = 8 * time.Second // post-reset: full handshake needs more time
 	)
 
-	// First QUIC dial after ResetConnections gets extended budget for
+	// First QUIC dial after Reset gets extended budget for
 	// DNS + TLS/ECH + QUIC handshake on a potentially new network path.
 	budget := maxQUICBudget
 	if tm.freshAfterReset.CompareAndSwap(true, false) {
@@ -457,7 +457,7 @@ func (tm *TransportManager) quicContext(parent context.Context, hasFallback bool
 // StartQuicProbe starts a background goroutine that actively probes QUIC
 // recovery while TCP-WS fallback is active. The probe resets the cached
 // QUIC connection and attempts a fresh handshake every quicProbeInterval.
-// Call this after SetPrimary/SetTCPWS. Stopped by Close() or ResetConnections().
+// Call this after SetPrimary/SetTCPWS. Stopped by Close() or Reset().
 func (tm *TransportManager) StartQuicProbe(ctx context.Context) {
 	// Cancel any existing probe.
 	if tm.probeCancel != nil {
@@ -507,16 +507,10 @@ func (tm *TransportManager) quicProbeLoop(ctx context.Context) {
 	}
 }
 
-// Reset implements the Dialer Reset contract — alias for ResetConnections.
-// During the rename rollout, both names exist; ResetConnections will be
-// removed once all callers migrate to Reset (Task 6).
+// Reset implements the Dialer Reset contract: resets cached connections on
+// the primary and TCP-WS transports and clears fallback state, giving QUIC
+// a fresh chance on the next dial. Called by engine on network change.
 func (tm *TransportManager) Reset() {
-	tm.ResetConnections()
-}
-
-// ResetConnections resets cached connections on all transports and clears
-// fallback state, giving QUIC a fresh chance on the next dial.
-func (tm *TransportManager) ResetConnections() {
 	slog.Debug("wire: connections reset",
 		"wasFallback", tm.fallbackActive.Load(),
 	)

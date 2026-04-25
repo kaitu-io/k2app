@@ -250,10 +250,10 @@ func TestTransportManager_DialUDP_BothDown(t *testing.T) {
 }
 
 // ==========================================================================
-// ResetConnections tests
+// Reset tests
 // ==========================================================================
 
-func TestTransportManager_ResetConnections(t *testing.T) {
+func TestTransportManager_Reset(t *testing.T) {
 	tests := []struct {
 		name  string
 		quic  Dialer
@@ -288,7 +288,7 @@ func TestTransportManager_ResetConnections(t *testing.T) {
 			}
 
 			// Should not panic with any combination.
-			tm.ResetConnections()
+			tm.Reset()
 
 			// Verify fallback state cleared.
 			if tm.fallbackActive.Load() {
@@ -302,17 +302,17 @@ func TestTransportManager_ResetConnections(t *testing.T) {
 // Network change recovery tests
 // ==========================================================================
 
-func TestResetConnections_ClearsPortHopAttempts(t *testing.T) {
+func TestReset_ClearsPortHopAttempts(t *testing.T) {
 	client := NewQUICClient(Config{HopStart: 1000, HopEnd: 2000}, nil)
 	client.portHopAttempts.Store(3) // exhausted
 
 	tm := NewTransportManager()
 	tm.SetPrimary(client, "quic-hop")
 
-	tm.ResetConnections()
+	tm.Reset()
 
 	if got := client.portHopAttempts.Load(); got != 0 {
-		t.Fatalf("portHopAttempts = %d after ResetConnections, want 0", got)
+		t.Fatalf("portHopAttempts = %d after Reset, want 0", got)
 	}
 }
 
@@ -482,7 +482,7 @@ func TestTransportManager_ConsecConnFailsReset(t *testing.T) {
 
 func TestQuicContext_ExtendedBudgetAfterReset(t *testing.T) {
 	tm := NewTransportManager()
-	tm.ResetConnections() // sets freshAfterReset
+	tm.Reset() // sets freshAfterReset
 
 	// First call after reset: should get extended budget (~8s).
 	ctx := context.Background()

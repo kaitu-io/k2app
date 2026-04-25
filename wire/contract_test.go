@@ -282,7 +282,7 @@ func TestContract_NetworkSwitch_ResetAll(t *testing.T) {
 	tm.SetFallbackActive(true)
 
 	// Simulate network change.
-	tm.ResetConnections()
+	tm.Reset()
 
 	if tm.FallbackActive() {
 		t.Fatal("contract: fallback must be cleared after network switch")

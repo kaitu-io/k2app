@@ -60,7 +60,7 @@ func TestDeadlock_TransportManagerThenQUICClient(t *testing.T) {
 		}
 	}()
 
-	// Goroutine 2: simulates ResetConnections — tm.mu.RLock then qc.mu.Lock
+	// Goroutine 2: simulates Reset — tm.mu.RLock then qc.mu.Lock
 	go func() {
 		defer wg.Done()
 		for range 20 {

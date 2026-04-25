@@ -983,7 +983,7 @@ func (c *QUICClient) resetConnection() {
 }
 
 // Reset closes cached connections and clears all fallback/hop state.
-// Called by TransportManager.ResetConnections() on network change.
+// Called by TransportManager.Reset() on network change.
 // After Reset(), the next DialTCP/DialUDP will establish a fresh connection
 // with a clean handshake failure streak and hop counter.
 func (c *QUICClient) Reset() {
