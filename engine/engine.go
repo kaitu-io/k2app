@@ -614,7 +614,7 @@ func (e *Engine) reconnect() bool {
 		dh.CancelInflight()
 	}
 	for _, ot := range outboundTMs {
-		ot.tm.ResetConnections()
+		ot.tm.Reset()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -738,7 +738,7 @@ func (e *Engine) Pause() {
 	// Pause has no CancelInflight — no in-flight DNS during iOS memory pause.
 	// TM→pdns order: shared tcpwsDialer (see Start comment).
 	for _, ot := range outboundTMs {
-		ot.tm.ResetConnections()
+		ot.tm.Reset()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -764,7 +764,7 @@ func (e *Engine) Wake() {
 	e.mu.Unlock()
 
 	for _, ot := range outboundTMs {
-		ot.tm.ResetConnections()
+		ot.tm.Reset()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
