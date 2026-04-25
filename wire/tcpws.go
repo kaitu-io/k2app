@@ -119,7 +119,10 @@ func (c *TCPWSClient) WireStats() WireStats {
 	return WireStats{Transport: "tcpws"}
 }
 
-var _ StatsProvider = (*TCPWSClient)(nil)
+var (
+	_ StatsProvider = (*TCPWSClient)(nil)
+	_ Resettable    = (*TCPWSClient)(nil)
+)
 
 // NewTCPWSClient creates a new TCP-WS client transport.
 func NewTCPWSClient(cfg Config, store *TicketStore) *TCPWSClient {

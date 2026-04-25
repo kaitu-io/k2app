@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -773,6 +774,31 @@ func (e *Engine) Wake() {
 	}
 }
 
+// closeOutboundTMs closes all outbound TransportManagers concurrently and
+// blocks until every Close has returned. Each TM.Close internally bounds at
+// ~15s (5s QUIC conn + 5s QUIC transport + 5s smux); calling them serially
+// makes total wait scale with N outbounds, exceeding the daemon's outer Stop
+// budget. Parallel close keeps total wait at the slowest single TM.
+//
+// Safety: each TM owns its own state lock; engine has already extracted the
+// slice and nil'd e.outboundTMs before calling this. Callers must invoke
+// outside any engine lock.
+func closeOutboundTMs(outboundTMs []*outboundTransport) {
+	if len(outboundTMs) == 0 {
+		return
+	}
+	var wg sync.WaitGroup
+	for _, ot := range outboundTMs {
+		wg.Add(1)
+		ot := ot
+		safego.Go(func() {
+			defer wg.Done()
+			ot.tm.Close()
+		})
+	}
+	wg.Wait()
+}
+
 // Stop tears down the tunnel and returns the engine to disconnected.
 func (e *Engine) Stop() error {
 	e.mu.Lock()
@@ -877,9 +903,7 @@ func (e *Engine) Stop() error {
 	if prov != nil {
 		prov.Close()
 	}
-	for _, ot := range outboundTMs {
-		ot.tm.Close()
-	}
+	closeOutboundTMs(outboundTMs)
 	// Close all outbounds. directOutbound and wireOutbound have no-op Close()
 	// (engine owns tm, closed via outboundTMs). k2pOutbound closes its ICE/QUIC connection.
 	for _, ob := range outbounds {
@@ -1027,9 +1051,7 @@ func (e *Engine) fail(err error) error {
 	if prov != nil {
 		prov.Close()
 	}
-	for _, ot := range outboundTMs {
-		ot.tm.Close()
-	}
+	closeOutboundTMs(outboundTMs)
 	for _, ob := range outbounds {
 		if ob != nil {
 			ob.Close()

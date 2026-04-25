@@ -62,6 +62,18 @@ type StatsProvider interface {
 	WireStats() WireStats
 }
 
+// Resettable is an optional interface for Dialers that support clearing
+// cached connection state without being fully closed. Implemented by
+// QUICClient and TCPWSClient. Asserted by TransportManager.ResetConnections
+// on network change so a new dial gets a fresh handshake.
+//
+// Per CLAUDE.md Layer Boundary Rule, callers MUST type-assert on this
+// interface rather than the concrete *QUICClient / *TCPWSClient — adding a
+// third Dialer implementation otherwise causes silent reset no-ops.
+type Resettable interface {
+	Reset()
+}
+
 // Dialer is the k2v5 client transport interface.
 // It manages both QUIC and TCP-WS transports internally.
 // Transport selection is transparent to callers.

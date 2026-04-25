@@ -465,6 +465,7 @@ All optional capability interfaces that upper layers may type-assert on must be 
 |-----------|---------|----------------|-------------|
 | `StatsProvider` | wire | QUICClient, TCPWSClient | engine (stats collection) |
 | `EchoProber` | wire | QUICClient | engine (echo health probe) |
+| `Resettable` | wire | QUICClient, TCPWSClient | TransportManager.ResetConnections (network change) |
 
 When adding a new optional interface, add it to this table.
 

@@ -518,11 +518,11 @@ func (tm *TransportManager) ResetConnections() {
 	t := tm.tcpws
 	tm.mu.RUnlock()
 
-	if qc, ok := p.(*QUICClient); ok {
-		qc.Reset()
+	if r, ok := p.(Resettable); ok {
+		r.Reset()
 	}
-	if tc, ok := t.(*TCPWSClient); ok {
-		tc.Reset()
+	if r, ok := t.(Resettable); ok {
+		r.Reset()
 	}
 
 	tm.fallbackActive.Store(false)
