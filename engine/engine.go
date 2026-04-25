@@ -962,6 +962,19 @@ func (e *Engine) fail(err error) error {
 		"category", e.lastError.Category,
 		"message", e.lastError.Message,
 	)
+
+	// Extract goroutine owners whose callbacks may need e.mu.
+	// Must mirror Stop() — without this, healthMonitor/outboundReplaceLoop
+	// keep running with stale references, the heartbeat keeps logging
+	// transport="" against a closed TM, and wake/network reconnect fires
+	// no-ops because reconnect() guards on state == StateConnected.
+	hm := e.health
+	e.health = nil
+	reRaceCancel := e.reRaceCancel
+	e.reRaceCancel = nil
+	e.netCoord = nil
+	e.dnsH = nil
+
 	// Extract resources under lock (Rule #4: no Close under state lock).
 	nm := e.networkMonitor
 	e.networkMonitor = nil
@@ -972,20 +985,64 @@ func (e *Engine) fail(err error) error {
 		e.cancel()
 		e.cancel = nil
 	}
+	prov := e.prov
+	e.prov = nil
+	tunnel := e.tunnel
+	e.tunnel = nil
+	e.proxyDNS = nil // tm.Close() closes shared tcpws → smux dies → recvLoops exit
+	re := e.ruleEngine
+	e.ruleEngine = nil
+	missRep := e.missReporter
+	e.missReporter = nil
+	if re != nil && missRep != nil {
+		re.SetMissReporter(nil)
+	}
+	outbounds := e.outbounds
+	e.outbounds = nil
+
 	e.setStateLocked(StateDisconnected)
 	handler := e.handler
 	status := e.buildStatusLocked()
 	e.mu.Unlock()
 
-	// External calls outside lock.
+	// Stop goroutines OUTSIDE lock — health monitor's onReconnect callback
+	// calls OnNetworkChanged() which briefly acquires e.mu; holding e.mu
+	// here would cross-deadlock with hm.wg.Wait() (mirrors Stop()).
+	if hm != nil {
+		hm.stop()
+	}
+	if reRaceCancel != nil {
+		reRaceCancel()
+	}
+
+	// External calls outside lock — ordering per Resource Ownership Rules
+	// (mirrors Stop()): networkMonitor → provider → transport → outbounds
+	// → tunnel → ruleEngine → missReporter.
 	if handler != nil {
 		handler.OnStatus(status)
 	}
 	if nm != nil {
 		nm.Close()
 	}
+	if prov != nil {
+		prov.Close()
+	}
 	for _, ot := range outboundTMs {
 		ot.tm.Close()
+	}
+	for _, ob := range outbounds {
+		if ob != nil {
+			ob.Close()
+		}
+	}
+	if tunnel != nil {
+		tunnel.Close()
+	}
+	if re != nil {
+		re.Close()
+	}
+	if missRep != nil {
+		missRep.Stop()
 	}
 	return err
 }

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	mdns "github.com/miekg/dns"
 
 	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/rule"
@@ -1069,6 +1071,65 @@ func TestEngine_NetworkMonitor_ClosedOnFail(t *testing.T) {
 	errs := h.getErrors()
 	if len(errs) == 0 || errs[0] != "connection lost" {
 		t.Fatalf("expected error 'connection lost', got %v", errs)
+	}
+}
+
+// TestEngine_HealthMonitor_StoppedOnFail verifies that fail() stops the
+// healthMonitor goroutine, nils e.health, and lets the goroutine count
+// return to baseline. Without this, a stuck-after-fail() bug leaves the
+// healthMonitor logging heartbeats forever against a closed TM, while
+// wake/network reconnect callbacks no-op (state != StateConnected).
+func TestEngine_HealthMonitor_StoppedOnFail(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// Build a real (running) healthMonitor — same pattern as health_test.go.
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
+	hm.start()
+
+	// Simulate post-Start engine state: connected with active health monitor.
+	_, cancel := context.WithCancel(context.Background())
+	e.mu.Lock()
+	e.state = StateConnected
+	e.health = hm
+	e.cancel = cancel
+	e.outboundTMs = []*outboundTransport{ot}
+	e.primaryTM = ot
+	e.mu.Unlock()
+
+	baseline := runtime.NumGoroutine()
+
+	// Trigger fail() — should stop hm and clear references.
+	e.fail(fmt.Errorf("simulated outbound exhaustion"))
+
+	e.mu.Lock()
+	healthIsNil := e.health == nil
+	primaryIsNil := e.primaryTM == nil
+	tmsIsNil := e.outboundTMs == nil
+	e.mu.Unlock()
+
+	if !healthIsNil {
+		t.Fatal("e.health must be nil after fail() — orphaned healthMonitor caused 15h stuck heartbeat in production")
+	}
+	if !primaryIsNil {
+		t.Fatal("e.primaryTM must be nil after fail()")
+	}
+	if !tmsIsNil {
+		t.Fatal("e.outboundTMs must be nil after fail()")
+	}
+
+	// Allow the stopped goroutine to fully exit (hm.stop() returns after
+	// wg.Wait, but Go's scheduler may need a beat to update NumGoroutine).
+	deadline := time.Now().Add(2 * time.Second)
+	for runtime.NumGoroutine() > baseline && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := runtime.NumGoroutine(); got > baseline {
+		t.Fatalf("goroutine leak after fail(): baseline=%d, after=%d (healthMonitor sample/echoLoop should have exited)", baseline, got)
 	}
 }
 
