@@ -3,9 +3,11 @@ package engine
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -70,30 +72,43 @@ func (h *dnsHandler) serveDNS(conn net.PacketConn) {
 		if err != nil {
 			return
 		}
-		ctx, cancel := h.queryCtx()
-		resp, err := h.dns.HandleQuery(ctx, buf[:n])
-		cancel()
-		if err != nil {
-			if isDNSParseError(err) {
-				// Incoming query is malformed (not a wire/upstream issue).
-				// Send SERVFAIL so the client retries immediately instead
-				// of waiting for a DNS timeout.
-				if sf := buildSERVFAIL(buf[:n]); sf != nil {
-					conn.WriteTo(sf, addr)
-				}
-				continue
-			}
-			h.recordDNSFailure(err)
-			// Upstream failure: send SERVFAIL so the client retries
-			// immediately instead of waiting for a DNS timeout.
-			if sf := buildSERVFAIL(buf[:n]); sf != nil {
+		h.processOneUDPQuery(conn, buf[:n], addr)
+	}
+}
+
+// processOneUDPQuery handles a single UDP DNS query under a recover guard.
+// A panic in the middleware (corrupted rule bundle, unexpected type assertion,
+// dependency bug) must not propagate to the serveDNS goroutine root, where
+// debug.SetTraceback("crash") in appext converts it to a SIGABRT that kills
+// the iOS/Android VPN session. After recover, we send SERVFAIL so the client
+// retries immediately instead of waiting for a DNS timeout.
+func (h *dnsHandler) processOneUDPQuery(conn net.PacketConn, query []byte, addr net.Addr) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("DIAG: dns-handler-panic",
+				"transport", "udp",
+				"panic", fmt.Sprint(r),
+				"stack", string(debug.Stack()),
+			)
+			if sf := buildSERVFAIL(query); sf != nil {
 				conn.WriteTo(sf, addr)
 			}
-			continue
 		}
-		h.recordDNSSuccess()
-		conn.WriteTo(resp, addr)
+	}()
+	ctx, cancel := h.queryCtx()
+	resp, err := h.dns.HandleQuery(ctx, query)
+	cancel()
+	if err != nil {
+		if !isDNSParseError(err) {
+			h.recordDNSFailure(err)
+		}
+		if sf := buildSERVFAIL(query); sf != nil {
+			conn.WriteTo(sf, addr)
+		}
+		return
 	}
+	h.recordDNSSuccess()
+	conn.WriteTo(resp, addr)
 }
 
 // serveDNSStream handles DNS-over-TCP (RFC 1035 §4.2.2).
@@ -124,34 +139,63 @@ func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 			return
 		}
 
-		ctx, cancel := h.queryCtx()
-		resp, err := h.dns.HandleQuery(ctx, buf)
-		cancel()
-		if err != nil {
-			if !isDNSParseError(err) {
-				h.recordDNSFailure(err)
-			}
-			// Send SERVFAIL so the client retries immediately.
-			if sf := buildSERVFAIL(buf); sf != nil {
+		// processOneTCPQuery returns false to signal that the loop should
+		// exit (write error, conn unrecoverable). It returns true after a
+		// recovered panic so the next query can be served on the same conn.
+		if !h.processOneTCPQuery(conn, buf) {
+			return
+		}
+	}
+}
+
+// processOneTCPQuery handles a single TCP DNS query under a recover guard.
+// Returns false if the underlying conn write failed (caller should exit the
+// loop); true otherwise (including after a recovered panic — the conn is
+// still usable for the next length-prefixed message).
+func (h *dnsHandler) processOneTCPQuery(conn net.Conn, query []byte) bool {
+	keepGoing := true
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("DIAG: dns-handler-panic",
+				"transport", "tcp",
+				"panic", fmt.Sprint(r),
+				"stack", string(debug.Stack()),
+			)
+			if sf := buildSERVFAIL(query); sf != nil {
 				var respLen [2]byte
 				binary.BigEndian.PutUint16(respLen[:], uint16(len(sf)))
 				conn.Write(respLen[:])
 				conn.Write(sf)
 			}
-			continue
 		}
-		h.recordDNSSuccess()
-
-		// Write 2-byte length prefix + response.
-		var respLen [2]byte
-		binary.BigEndian.PutUint16(respLen[:], uint16(len(resp)))
-		if _, err := conn.Write(respLen[:]); err != nil {
-			return
+	}()
+	ctx, cancel := h.queryCtx()
+	resp, err := h.dns.HandleQuery(ctx, query)
+	cancel()
+	if err != nil {
+		if !isDNSParseError(err) {
+			h.recordDNSFailure(err)
 		}
-		if _, err := conn.Write(resp); err != nil {
-			return
+		if sf := buildSERVFAIL(query); sf != nil {
+			var respLen [2]byte
+			binary.BigEndian.PutUint16(respLen[:], uint16(len(sf)))
+			conn.Write(respLen[:])
+			conn.Write(sf)
 		}
+		return keepGoing
 	}
+	h.recordDNSSuccess()
+
+	var respLen [2]byte
+	binary.BigEndian.PutUint16(respLen[:], uint16(len(resp)))
+	if _, err := conn.Write(respLen[:]); err != nil {
+		keepGoing = false
+		return keepGoing
+	}
+	if _, err := conn.Write(resp); err != nil {
+		keepGoing = false
+	}
+	return keepGoing
 }
 
 // isDNSParseError returns true if the error is from parsing the incoming

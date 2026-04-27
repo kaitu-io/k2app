@@ -200,6 +200,116 @@ func (p *pipePacketConn) LocalAddr() net.Addr {
 	return p.Conn.LocalAddr()
 }
 
+// TestServeDNS_RecoversFromMiddlewarePanic verifies that a panic during DNS
+// query handling does not propagate to the goroutine root. Without recover,
+// a panic in the middleware (e.g. from a malicious rule bundle, a future
+// type-assertion bug, or any unexpected nil deref) crashes the entire k2
+// process — and on iOS/Android, debug.SetTraceback("crash") in appext turns
+// it into a SIGABRT that kills the user's VPN session.
+//
+// Defense: serveDNS must wrap each query with recover() so a single bad
+// query cannot bring down the whole DNS handler goroutine.
+func TestServeDNS_RecoversFromMiddlewarePanic(t *testing.T) {
+	msg := new(mdns.Msg)
+	msg.SetQuestion(mdns.Fqdn("example.com"), mdns.TypeA)
+	msg.Id = 0xDEAD
+	queryBytes, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("pack query: %v", err)
+	}
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	clientPC := &pipePacketConn{Conn: client}
+	serverPC := &pipePacketConn{Conn: server}
+
+	mw := dns.NewMiddleware(dns.MiddlewareConfig{
+		DirectDNS:    &alwaysFailQuerier{},
+		ProxyDNS:     &alwaysFailQuerier{},
+		MatchRule:    func(string) rule.Target { panic("simulated rule engine panic") },
+		SetTmpRule:   func(string, rule.Target) {},
+		RejectTarget: rule.Target(1),
+	})
+	h := &dnsHandler{dns: mw}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.serveDNS(serverPC)
+	}()
+
+	// Send the query. Without recover, the goroutine panics and the panic
+	// propagates to the runtime, crashing the test binary. With recover,
+	// serveDNS continues running until the conn is closed.
+	if _, err := clientPC.WriteTo(queryBytes, nil); err != nil {
+		t.Fatalf("write query: %v", err)
+	}
+
+	// Allow time for the panic-or-recover path to settle.
+	time.Sleep(100 * time.Millisecond)
+
+	// Close the client to unblock serveDNS's ReadFrom and let it exit.
+	client.Close()
+
+	select {
+	case <-done:
+		// serveDNS exited cleanly (recovered the panic, then ReadFrom errored
+		// when the conn closed). This is the expected behavior with recover.
+	case <-time.After(2 * time.Second):
+		t.Fatal("serveDNS did not exit after client close — likely stuck or panicked uncleanly")
+	}
+}
+
+// TestServeDNSStream_RecoversFromMiddlewarePanic mirrors the UDP test for the
+// TCP DNS path (RFC 1035 §4.2.2). Same threat, same defense.
+func TestServeDNSStream_RecoversFromMiddlewarePanic(t *testing.T) {
+	msg := new(mdns.Msg)
+	msg.SetQuestion(mdns.Fqdn("example.com"), mdns.TypeA)
+	msg.Id = 0xBEEF
+	queryBytes, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("pack query: %v", err)
+	}
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	mw := dns.NewMiddleware(dns.MiddlewareConfig{
+		DirectDNS:    &alwaysFailQuerier{},
+		ProxyDNS:     &alwaysFailQuerier{},
+		MatchRule:    func(string) rule.Target { panic("simulated rule engine panic") },
+		SetTmpRule:   func(string, rule.Target) {},
+		RejectTarget: rule.Target(1),
+	})
+	h := &dnsHandler{dns: mw}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.serveDNSStream(server)
+	}()
+
+	var lenBuf [2]byte
+	binary.BigEndian.PutUint16(lenBuf[:], uint16(len(queryBytes)))
+	if _, err := client.Write(lenBuf[:]); err != nil {
+		t.Fatalf("write length prefix: %v", err)
+	}
+	if _, err := client.Write(queryBytes); err != nil {
+		t.Fatalf("write query: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	client.Close()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("serveDNSStream did not exit after client close — likely stuck or panicked uncleanly")
+	}
+}
+
 // Ensure buildSERVFAIL works correctly.
 func TestBuildSERVFAIL(t *testing.T) {
 	// Too short.
