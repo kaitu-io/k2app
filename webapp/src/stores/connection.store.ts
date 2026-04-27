@@ -424,7 +424,6 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       + ', name=' + (match.name || match.domain) + ', country=' + (match.node?.country || ''));
     set({
       connectedTunnel: enriched,
-      selectedCloudTunnel: match,
       activeTunnel: enriched,
     });
   },

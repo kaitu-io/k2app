@@ -875,3 +875,54 @@ describe('smart → manual migration', () => {
     expect(keys).not.toContain('k2.vpn.smart_country');
   });
 });
+
+// ==================== enrichFromTunnelList Tests ====================
+
+describe('enrichFromTunnelList preserves Auto', () => {
+  it('does not overwrite selectedCloudTunnel when null (Auto)', async () => {
+    const { useConnectionStore } = await getStores();
+
+    // Arrange: cold-start — VPN is up (cloud source) but country not yet populated
+    useConnectionStore.setState({
+      selectedCloudTunnel: null, // Auto mode
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'tokyo.kaitu.io',
+        name: '',
+        country: '',
+        load: 0,
+      } as any,
+    });
+
+    const tunnels = [
+      {
+        id: 1,
+        domain: 'tokyo.kaitu.io',
+        name: 'Tokyo',
+        protocol: 'k2v5',
+        port: 443,
+        serverUrl: 'k2v5://tokyo.kaitu.io',
+        node: {
+          name: 'tokyo',
+          country: 'JP',
+          region: 'Tokyo',
+          ipv4: '1.1.1.1',
+          ipv6: '',
+          isAlive: true,
+          load: 50,
+          trafficUsagePercent: 0,
+          bandwidthUsagePercent: 0,
+        },
+        recommendScore: 0.7,
+      },
+    ] as any[];
+
+    // Act
+    useConnectionStore.getState().enrichFromTunnelList(tunnels);
+
+    // Assert
+    const s = useConnectionStore.getState();
+    expect(s.connectedTunnel?.country).toBe('JP'); // enrichment applied
+    expect(s.selectedCloudTunnel).toBeNull();       // Auto preserved
+  });
+});
