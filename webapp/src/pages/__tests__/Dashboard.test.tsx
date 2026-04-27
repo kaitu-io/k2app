@@ -46,6 +46,7 @@ vi.mock('../../stores/connection.store', async () => {
   return {
     ...actual,
     useConnectionStore: vi.fn(),
+    useEffectiveCloudSelection: vi.fn(),
   };
 });
 
@@ -75,7 +76,7 @@ import { useAuthStore } from '../../stores';
 import { useLoginDialogStore } from '../../stores/login-dialog.store';
 import { useDashboard } from '../../stores/dashboard.store';
 import { useVPNMachine } from '../../stores/vpn-machine.store';
-import { useConnectionStore } from '../../stores/connection.store';
+import { useConnectionStore, useEffectiveCloudSelection, AUTO_TUNNEL_SENTINEL } from '../../stores/connection.store';
 import { useUser } from '../../hooks/useUser';
 import Dashboard from '../Dashboard';
 
@@ -99,6 +100,8 @@ const mockConnect = vi.fn();
 const mockDisconnect = vi.fn();
 const mockSelectCloudTunnel = vi.fn();
 const mockSelectSelfHosted = vi.fn();
+const mockClearCloudSelection = vi.fn();
+const mockReconcileSelection = vi.fn();
 
 const createMockConnectionStore = (overrides = {}) => ({
   selectedCloudTunnel: null,
@@ -118,6 +121,8 @@ const createMockConnectionStore = (overrides = {}) => ({
   disconnect: mockDisconnect,
   enrichFromTunnelList: vi.fn(),
   clearPendingFeedback: vi.fn(),
+  clearCloudSelection: mockClearCloudSelection,
+  reconcileSelection: mockReconcileSelection,
   ...overrides,
 });
 
@@ -144,10 +149,13 @@ describe('Dashboard', () => {
 
     // Setup default mocks
     vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine() as any);
+    const defaultState = createMockConnectionStore();
     vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
-      const state = createMockConnectionStore();
-      return selector ? selector(state) : state;
+      return selector ? selector(defaultState) : defaultState;
     });
+    (useConnectionStore as any).getState = vi.fn(() => defaultState);
+    // Default: no concrete tunnel selected → Auto mode
+    vi.mocked(useEffectiveCloudSelection).mockReturnValue(AUTO_TUNNEL_SENTINEL);
     vi.mocked(useAuthStore).mockImplementation((selector: any) => {
       const state = { isAuthenticated: false, user: null };
       return selector(state);
@@ -227,6 +235,8 @@ describe('Dashboard', () => {
         const state = createMockConnectionStore();
         return selector ? selector(state) : state;
       });
+      // Explicit non-Auto mode (concrete null selection) so hasTunnelSelected is false
+      vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
       render(<Dashboard />);
 
       await waitFor(() => {
@@ -235,19 +245,22 @@ describe('Dashboard', () => {
     });
 
     it('选择隧道后应该显示 tunnel name', async () => {
+      const tunnel = {
+        source: 'cloud' as const,
+        domain: 'test.example.com',
+        name: 'Test Tunnel',
+        country: 'JP',
+        serverUrl: 'k2v5://test.example.com:443',
+      };
       vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
         const state = createMockConnectionStore({
           serverMode: 'manual' as const,
-          activeTunnel: {
-            source: 'cloud',
-            domain: 'test.example.com',
-            name: 'Test Tunnel',
-            country: 'JP',
-            serverUrl: 'k2v5://test.example.com:443',
-          },
+          selectedCloudTunnel: tunnel,
+          activeTunnel: tunnel,
         });
         return selector ? selector(state) : state;
       });
+      vi.mocked(useEffectiveCloudSelection).mockReturnValue(tunnel as any);
 
       render(<Dashboard />);
 
@@ -286,6 +299,8 @@ describe('Dashboard', () => {
         const state = createMockConnectionStore({ serverMode: 'manual' as const });
         return selector ? selector(state) : state;
       });
+      // No tunnel and NOT Auto → guard must abort
+      vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
 
       render(<Dashboard />);
 
@@ -338,6 +353,8 @@ describe('Dashboard', () => {
         const state = createMockConnectionStore({ serverMode: 'manual' as const });
         return selector ? selector(state) : state;
       });
+      // No tunnel and NOT Auto → guard must abort
+      vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
 
       render(<Dashboard />);
 
@@ -428,6 +445,174 @@ describe('Dashboard', () => {
         const dashboardContainer = container.firstChild as HTMLElement;
         expect(dashboardContainer).toBeInTheDocument();
         expect(dashboardContainer.className).toContain('MuiBox-root');
+      });
+    });
+  });
+
+  describe('Auto 自动选择', () => {
+    it('serverMode=manual + selectedCloudTunnel=null 时顶部卡片显示 ⚡ 自动选择', async () => {
+      // Default mock: serverMode='manual', selectedCloudTunnel=null → Auto mode
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        // tunnelName prop contains '⚡' prefix for Auto mode
+        const tunnelNameEl = screen.getByTestId('tunnel-name');
+        expect(tunnelNameEl.textContent).toContain('⚡');
+      });
+    });
+
+    it('已连接时顶部卡片追加当前命中隧道名', async () => {
+      const state = createMockConnectionStore({
+        selectedCloudTunnel: null,
+        serverMode: 'manual' as const,
+        connectedTunnel: {
+          source: 'cloud' as const,
+          domain: 'jp-01.example.com',
+          name: 'Tokyo-01',
+          country: 'JP',
+          serverUrl: 'k2v5://jp-01.example.com:443',
+        },
+      });
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        return selector ? selector(state) : state;
+      });
+      (useConnectionStore as any).getState = vi.fn(() => state);
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        const tunnelNameEl = screen.getByTestId('tunnel-name');
+        expect(tunnelNameEl.textContent).toContain('⚡');
+        expect(tunnelNameEl.textContent).toContain('Tokyo-01');
+      });
+    });
+
+    it('selectedCloudTunnel 非 null 时显示具体隧道名', async () => {
+      const concreteTunnel = {
+        source: 'cloud' as const,
+        domain: 'sg-01.example.com',
+        name: 'Singapore-01',
+        country: 'SG',
+        serverUrl: 'k2v5://sg-01.example.com:443',
+      };
+      const state = createMockConnectionStore({
+        selectedCloudTunnel: concreteTunnel,
+        activeTunnel: concreteTunnel,
+        serverMode: 'manual' as const,
+      });
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        return selector ? selector(state) : state;
+      });
+      (useConnectionStore as any).getState = vi.fn(() => state);
+      vi.mocked(useEffectiveCloudSelection).mockReturnValue(concreteTunnel as any);
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        const tunnelNameEl = screen.getByTestId('tunnel-name');
+        expect(tunnelNameEl.textContent).toBe('Singapore-01');
+        expect(tunnelNameEl.textContent).not.toContain('⚡');
+      });
+    });
+
+    it('点击 Auto 虚拟行调用 clearCloudSelection', async () => {
+      // Authenticate so CloudTunnelList renders
+      vi.mocked(useAuthStore).mockImplementation((selector: any) => {
+        return selector({ isAuthenticated: true, user: null });
+      });
+
+      const { CloudTunnelList } = await import('../../components/CloudTunnelList');
+      let capturedOnSelect: ((t: any) => void) | undefined;
+      vi.mocked(CloudTunnelList).mockImplementation(({ onSelect }: any) => {
+        capturedOnSelect = onSelect;
+        return null;
+      });
+
+      const state = createMockConnectionStore();
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        return selector ? selector(state) : state;
+      });
+      (useConnectionStore as any).getState = vi.fn(() => state);
+
+      render(<Dashboard />);
+
+      await waitFor(() => expect(capturedOnSelect).toBeDefined());
+      capturedOnSelect!(AUTO_TUNNEL_SENTINEL);
+
+      expect(mockClearCloudSelection).toHaveBeenCalled();
+      expect(mockSelectCloudTunnel).not.toHaveBeenCalled();
+    });
+
+    it('点击具体隧道行调用 selectCloudTunnel', async () => {
+      // Authenticate so CloudTunnelList renders
+      vi.mocked(useAuthStore).mockImplementation((selector: any) => {
+        return selector({ isAuthenticated: true, user: null });
+      });
+
+      const { CloudTunnelList } = await import('../../components/CloudTunnelList');
+      let capturedOnSelect: ((t: any) => void) | undefined;
+      vi.mocked(CloudTunnelList).mockImplementation(({ onSelect }: any) => {
+        capturedOnSelect = onSelect;
+        return null;
+      });
+
+      const state = createMockConnectionStore();
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        return selector ? selector(state) : state;
+      });
+      (useConnectionStore as any).getState = vi.fn(() => state);
+
+      render(<Dashboard />);
+
+      const concreteTunnel = {
+        source: 'cloud' as const,
+        domain: 'hk-01.example.com',
+        name: 'Hong Kong-01',
+        country: 'HK',
+        serverUrl: 'k2v5://hk-01.example.com:443',
+      };
+
+      await waitFor(() => expect(capturedOnSelect).toBeDefined());
+      capturedOnSelect!(concreteTunnel);
+
+      expect(mockSelectCloudTunnel).toHaveBeenCalledWith(concreteTunnel);
+      expect(mockClearCloudSelection).not.toHaveBeenCalled();
+    });
+
+    it('connect button is enabled in Auto mode + disconnected state', async () => {
+      // Default beforeEach: serverMode='manual', selectedCloudTunnel=null,
+      // useEffectiveCloudSelection=AUTO_TUNNEL_SENTINEL → hasTunnelSelected must be true
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'idle',
+        isDisconnected: true,
+      }) as any);
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('tunnel-selected')).toHaveTextContent('yes');
+      });
+    });
+
+    it('clicking connect in Auto+disconnected calls connect() (does not abort)', async () => {
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'idle',
+        isDisconnected: true,
+      }) as any);
+      // Default: useEffectiveCloudSelection = AUTO_TUNNEL_SENTINEL, no displayTunnel
+      const state = createMockConnectionStore();
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        return selector ? selector(state) : state;
+      });
+      (useConnectionStore as any).getState = vi.fn(() => state);
+
+      render(<Dashboard />);
+
+      const toggleBtn = screen.getByTestId('toggle-btn');
+      fireEvent.click(toggleBtn);
+
+      await waitFor(() => {
+        expect(mockConnect).toHaveBeenCalled();
       });
     });
   });

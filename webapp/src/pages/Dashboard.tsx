@@ -26,7 +26,7 @@ import { useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
-import { useConnectionStore } from '../stores/connection.store';
+import { useConnectionStore, AUTO_TUNNEL_DOMAIN, useEffectiveCloudSelection, isAutoSelection } from '../stores/connection.store';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { getCurrentAppConfig } from '../config/apps';
@@ -89,14 +89,10 @@ export default function Dashboard() {
     connectedTunnel,
     serverMode,
     selectSelfHosted,
-    selectCloudTunnel,
     connect,
     disconnect,
     enrichFromTunnelList,
   } = useConnectionStore();
-
-  // Cloud tunnels — used for Task 15 auto-select on smart→manual migration.
-  const [cloudTunnels, setCloudTunnels] = useState<Tunnel[]>([]);
 
   // Display tunnel: connected snapshot → manual/self-hosted selection
   const displayTunnel = connectedTunnel ?? activeTunnel;
@@ -109,6 +105,7 @@ export default function Dashboard() {
       const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
       if (cached?.items) {
         enrichFromTunnelList(cached.items);
+        useConnectionStore.getState().reconcileSelection(cached.items);
       }
     }
   }, [connectedTunnel, enrichFromTunnelList]);
@@ -185,43 +182,31 @@ export default function Dashboard() {
     }
   }, [location.pathname]);
 
-  // Handle cloud tunnels loaded — feed both SmartServerSelector and enrichment
+  // Handle cloud tunnels loaded — feed enrichment + reconcile selection
   const handleTunnelsLoaded = useCallback((tunnels: Tunnel[]) => {
-    setCloudTunnels(tunnels);
     enrichFromTunnelList(tunnels);
+    useConnectionStore.getState().reconcileSelection(tunnels);
   }, [enrichFromTunnelList]);
 
-  // Migration aid: users whose persisted serverMode was 'smart' land on
-  // 'manual' without a selectedCloudTunnel — auto-select the first sorted
-  // tunnel so they can connect immediately without re-picking. Ordering
-  // matches CloudTunnelList (country-alphabetical) so the chosen tunnel is
-  // visually the top row of the list.
-  const serverModeLoaded = useConnectionStore((s) => s.serverModeLoaded);
-  const selectedCloudTunnel = useConnectionStore((s) => s.selectedCloudTunnel);
+  // Effective cloud selection for UI — Auto sentinel when no concrete tunnel picked
+  const effectiveCloudSelection = useEffectiveCloudSelection();
 
-  useEffect(() => {
-    if (!serverModeLoaded) return;
-    if (serverMode !== 'manual') return;
-    if (selectedCloudTunnel) return;
-    if (cloudTunnels.length === 0) return;
-
-    const sorted = [...cloudTunnels].sort((a, b) =>
-      a.node.country.localeCompare(b.node.country)
-    );
-    const first = sorted[0];
-    if (first) {
-      console.info('[Dashboard] auto-select first tunnel for migrating user:', first.domain);
-      selectCloudTunnel(first);
-    }
-  }, [serverModeLoaded, serverMode, selectedCloudTunnel, cloudTunnels, selectCloudTunnel]);
-
-  // Stable onSelect for CloudTunnelList — reads activeTunnel at call time, no dep churn
+  // Stable onSelect for CloudTunnelList — Auto row → clearCloudSelection, concrete → selectCloudTunnel
   const handleCloudTunnelSelect = useCallback((tunnel: Tunnel) => {
-    useConnectionStore.getState().selectCloudTunnel(tunnel);
+    if (isAutoSelection(tunnel)) {
+      useConnectionStore.getState().clearCloudSelection();
+    } else {
+      useConnectionStore.getState().selectCloudTunnel(tunnel);
+    }
   }, []);
 
   // CloudTunnelList selectedDomain — derived from activeTunnel
-  const manualSelectedDomain = activeTunnel?.source === 'cloud' ? activeTunnel.domain : null;
+  const manualSelectedDomain =
+    effectiveCloudSelection === null
+      ? null
+      : isAutoSelection(effectiveCloudSelection)
+        ? AUTO_TUNNEL_DOMAIN
+        : effectiveCloudSelection.domain;
 
   // Manual refresh wiring: the refresh button lives in SmartServerSelector's
   // tab row, but CloudTunnelList owns the fetch. We pipe the click through
@@ -342,19 +327,20 @@ export default function Dashboard() {
       console.info('[Dashboard] handleToggleConnection: → disconnect');
       disconnect();
     } else if (isDisconnected) {
-      if (!displayTunnel) {
+      const isAuto = isAutoSelection(effectiveCloudSelection);
+      if (!displayTunnel && !isAuto) {
         console.warn('[Dashboard] handleToggleConnection: no tunnel selected, aborting');
         return;
       }
-      console.info('[Dashboard] handleToggleConnection: → connect (tunnel=' + displayTunnel.domain + ')');
+      console.info('[Dashboard] handleToggleConnection: → connect (tunnel=' + (displayTunnel?.domain ?? 'auto') + ')');
       connect();
     } else {
       console.warn('[Dashboard] handleToggleConnection: no matching branch (vpnState=' + vpnState + ', isRetrying=' + isRetrying + ')');
     }
-  }, [isConnected, isDisconnected, isTransitioning, vpnState, displayTunnel, connect, disconnect]);
+  }, [isConnected, isDisconnected, isTransitioning, vpnState, displayTunnel, effectiveCloudSelection, connect, disconnect]);
 
   // Check if any tunnel is selected (cloud or self-hosted)
-  const hasTunnelSelected = !!displayTunnel;
+  const hasTunnelSelected = !!displayTunnel || isAutoSelection(effectiveCloudSelection);
 
   // Map vpnState to ServiceState for CollapsibleConnectionSection
   const serviceState = vpnState === 'idle' ? 'disconnected'
@@ -392,8 +378,16 @@ export default function Dashboard() {
       <CollapsibleConnectionSection
         serviceState={serviceState}
         hasTunnelSelected={hasTunnelSelected}
-        tunnelName={displayTunnel?.name}
-        tunnelCountry={displayTunnel?.country}
+        tunnelName={
+          isAutoSelection(effectiveCloudSelection)
+            ? `⚡ ${t('dashboard:auto.title')}${connectedTunnel ? ` · ${connectedTunnel.name || connectedTunnel.domain}` : ''}`
+            : displayTunnel?.name
+        }
+        tunnelCountry={
+          isAutoSelection(effectiveCloudSelection)
+            ? connectedTunnel?.country
+            : displayTunnel?.country
+        }
         onToggle={handleToggleConnection}
         error={error}
         isRetrying={isRetrying}
@@ -419,7 +413,7 @@ export default function Dashboard() {
         {/* Cloud Tunnels + Self-hosted — authenticated users with SmartServerSelector */}
         {/* SmartServerSelector — all tab panels always mounted (display toggle).
              The CloudTunnelList in manualTabContent stays mounted even when on smart tab,
-             so it populates cloudTunnels via onTunnelsLoaded on initial load. */}
+             so it fires onTunnelsLoaded (→ enrichment + reconcileSelection) on initial load. */}
         {isAuthenticated && isConnected && (
           <Box sx={{
             bgcolor: alpha(theme.palette.success.main, 0.08),
