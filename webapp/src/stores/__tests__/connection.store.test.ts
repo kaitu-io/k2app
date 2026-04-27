@@ -876,6 +876,71 @@ describe('smart → manual migration', () => {
   });
 });
 
+// ==================== connect() Auto resolution Tests ====================
+
+describe('connect() resolves Auto via pickAutoTunnel', () => {
+  afterEach(async () => {
+    const { cacheStore } = await import('../../services/cache-store');
+    cacheStore.clear();
+  });
+
+  it('dispatches BACKEND_ERROR (code 400) when cacheStore is empty (Auto + no list)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    // Default state: manual mode, no selection (Auto sentinel in effect)
+    // cacheStore has no entry → pickAutoTunnel receives [] → returns null
+
+    await useConnectionStore.getState().connect();
+
+    // _k2.run('up') must NOT be called
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    // VPN machine should reflect the error (idle + error set)
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(vpn.useVPNMachineStore.getState().error).not.toBeNull();
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(400);
+  });
+
+  it('resolves Auto via pickAutoTunnel and proceeds to call _k2.run(up)', async () => {
+    const { useConnectionStore } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@auto.example.com:443');
+
+    // Put a tunnel into cacheStore so Auto resolution succeeds
+    const { cacheStore } = await import('../../services/cache-store');
+    const tunnel = {
+      id: 42,
+      domain: 'auto.example.com',
+      name: 'Auto Node',
+      protocol: 'k2v5',
+      port: 443,
+      serverUrl: 'k2v5://auto.example.com:443',
+      recommendScore: 0.8,
+      node: { country: 'SG' },
+    } as any;
+    cacheStore.set('api:tunnels', { items: [tunnel] });
+
+    // Manual mode, no selectedCloudTunnel → triggers Auto path
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({
+      config: expect.objectContaining({ mode: 'tun' }),
+    }));
+    const upCall = mockRun.mock.calls.find((c: any[]) => c[0] === 'up');
+    const routes = upCall?.[1]?.config?.routes as Array<{ via: string }>;
+    expect(routes.some((r: { via: string }) => r.via === 'k2v5://u:t@auto.example.com:443')).toBe(true);
+
+    // connectedTunnel snapshot uses the auto-picked tunnel's domain
+    const state = useConnectionStore.getState();
+    expect(state.connectedTunnel?.domain).toBe('auto.example.com');
+
+    // selectedCloudTunnel remains null (re-pick on next connect = decision #2)
+    expect(state.selectedCloudTunnel).toBeNull();
+  });
+});
+
 // ==================== enrichFromTunnelList Tests ====================
 
 describe('enrichFromTunnelList preserves Auto', () => {

@@ -16,12 +16,14 @@
  */
 
 import { create } from 'zustand';
-import type { Tunnel } from '../services/api-types';
+import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { authService } from '../services/auth-service';
+import { cacheStore } from '../services/cache-store';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
 import { useVPNMachineStore, dispatch as vpnDispatch } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
+import { pickAutoTunnel } from '../utils/auto-tunnel-pick';
 
 // ============ Types ============
 
@@ -288,6 +290,24 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     const { selectedCloudTunnel, connectEpoch, serverMode } = get();
 
+    // Resolve Auto sentinel (manual mode + null selection) into a concrete Tunnel.
+    let resolvedTunnel: Tunnel | null = selectedCloudTunnel;
+    if (serverMode === 'manual' && selectedCloudTunnel === null) {
+      const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
+      const tunnelList = cached?.items ?? [];
+      resolvedTunnel = pickAutoTunnel(tunnelList);
+      if (!resolvedTunnel) {
+        console.warn('[Connection] connect: Auto mode but no tunnel available, aborting');
+        vpnDispatch('BACKEND_ERROR', {
+          error: { code: 400, message: 'No tunnel available for auto pick' },
+          isRetrying: false,
+        });
+        return;
+      }
+      console.info('[Connection] auto-pick → ' + resolvedTunnel.domain
+        + ' (score=' + resolvedTunnel.recommendScore + ')');
+    }
+
     // Pre-flight mode/selection validity. Tightened to reject empty-string uri/serverUrl
     // (stale tunnel list, externally wiped self-hosted config), not just null, so we never
     // send an empty-routes payload to the daemon.
@@ -300,8 +320,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       return;
     }
 
-    if (serverMode === 'manual' && !selectedCloudTunnel?.serverUrl) {
-      console.warn('[Connection] connect: manual mode but selected tunnel has no serverUrl, aborting');
+    if (serverMode === 'manual' && !resolvedTunnel?.serverUrl) {
+      console.warn('[Connection] connect: manual mode but resolved tunnel has no serverUrl, aborting');
       vpnDispatch('BACKEND_ERROR', {
         error: { code: 400, message: 'No server selected' },
         isRetrying: false,
@@ -316,8 +336,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     const connectedTunnelSnapshot: ActiveTunnel | null =
       serverMode === 'self_hosted'
         ? (selfHostedSnap ?? { source: 'self_hosted', domain: 'self_hosted', name: '自部署', country: '', serverUrl: '' })
-        : selectedCloudTunnel
-          ? computeCloudActiveTunnel(selectedCloudTunnel)
+        : resolvedTunnel
+          ? computeCloudActiveTunnel(resolvedTunnel)
           : null;
     if (!connectedTunnelSnapshot) {
       // Pre-flight checks above catch manual-mode-without-tunnel.
@@ -328,7 +348,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       '[Connection] connect: mode=' + serverMode
       + (serverMode === 'self_hosted'
         ? ', uri=' + (selfHostedSnap?.serverUrl ?? 'none')
-        : ', tunnel=' + (selectedCloudTunnel?.domain ?? 'none'))
+        : ', tunnel=' + (resolvedTunnel?.domain ?? 'none'))
       + ', epoch=' + connectEpoch + '→' + myEpoch,
     );
     set({ connectedTunnel: connectedTunnelSnapshot, connectEpoch: myEpoch, connectedAt: Date.now() });
@@ -338,8 +358,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     let serverUrl: string | undefined;
     if (serverMode === 'self_hosted') {
       serverUrl = useSelfHostedStore.getState().tunnel?.uri;
-    } else if (selectedCloudTunnel?.serverUrl) {
-      serverUrl = await authService.buildTunnelUrl(selectedCloudTunnel.serverUrl);
+    } else if (resolvedTunnel?.serverUrl) {
+      serverUrl = await authService.buildTunnelUrl(resolvedTunnel.serverUrl);
     }
     console.warn('[Connection] TRACE buildTunnelUrl done t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
 
