@@ -123,8 +123,8 @@ export function initializeAllStores(): () => void {
           const connState = useConnectionStore.getState();
           const configState = useConfigStore.getState();
           lastConnectedSource = connState.serverMode === 'self_hosted' ? 'self_hosted' : 'cloud';
-          lastNodeIpv4 = connState.selectedCloudTunnel?.node?.ipv4 || '';
-          lastNodeRegion = connState.selectedCloudTunnel?.node?.country || '';
+          lastNodeIpv4 = connState.connectedTunnel?.ipv4 || '';
+          lastNodeRegion = connState.connectedTunnel?.country || '';
           lastRuleMode = configState.resolvePreset() === 'global'
             ? 'global'
             : (configState.country ?? 'split');

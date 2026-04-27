@@ -289,8 +289,6 @@
   "auto": {
     "title": "Auto",
     "subtitle": "Random pick from top 3 servers",
-    "connected": "Connected: {{country}} · {{name}}",
-    "notConnected": "Not connected",
     "noTunnelAvailable": "No server available"
   }
 }

@@ -289,8 +289,6 @@
   "auto": {
     "title": "自動選擇",
     "subtitle": "喺最佳三個節點中隨機選擇",
-    "connected": "當前命中：{{country}} · {{name}}",
-    "notConnected": "未連接",
     "noTunnelAvailable": "暫無可用節點"
   }
 }

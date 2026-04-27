@@ -34,6 +34,7 @@ export interface ActiveTunnel {
   name: string;
   country: string;
   serverUrl: string;
+  ipv4: string;
 }
 
 export interface LastConnectionInfo {
@@ -167,6 +168,7 @@ function computeCloudActiveTunnel(tunnel: Tunnel): ActiveTunnel {
     name: tunnel.name || tunnel.domain,
     country: tunnel.node?.country || '',
     serverUrl: tunnel.serverUrl || '',
+    ipv4: tunnel.node?.ipv4 ?? '',
   };
 }
 
@@ -186,6 +188,7 @@ function computeSelfHostedActiveTunnel(): ActiveTunnel | null {
     name: selfHosted.name,
     country: selfHosted.country || '',
     serverUrl: selfHosted.uri,
+    ipv4: '',
   };
 }
 
@@ -336,7 +339,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     const selfHostedSnap = serverMode === 'self_hosted' ? computeSelfHostedActiveTunnel() : null;
     const connectedTunnelSnapshot: ActiveTunnel | null =
       serverMode === 'self_hosted'
-        ? (selfHostedSnap ?? { source: 'self_hosted', domain: 'self_hosted', name: '自部署', country: '', serverUrl: '' })
+        ? (selfHostedSnap ?? { source: 'self_hosted', domain: 'self_hosted', name: '自部署', country: '', serverUrl: '', ipv4: '' })
         : resolvedTunnel
           ? computeCloudActiveTunnel(resolvedTunnel)
           : null;
@@ -574,6 +577,7 @@ function tryRestoreConnectedTunnel(): boolean {
       name: domain,
       country: '',
       serverUrl,
+      ipv4: '',
     },
   });
   return true;

@@ -103,6 +103,7 @@ describe('Connection Store - Selection', () => {
       name: 'Tokyo',
       country: 'JP',
       serverUrl: 'k2v5://tokyo.example.com:443',
+      ipv4: '',
     });
   });
 
@@ -129,6 +130,7 @@ describe('Connection Store - Selection', () => {
       name: 'tokyo',
       country: 'JP',
       serverUrl: 'k2v5://alice:token@1.2.3.4:443?country=JP#tokyo',
+      ipv4: '',
     });
   });
 
@@ -938,6 +940,34 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
 
     // selectedCloudTunnel remains null (re-pick on next connect = decision #2)
     expect(state.selectedCloudTunnel).toBeNull();
+  });
+
+  it('connectedTunnel snapshot carries ipv4 from resolved Auto pick', async () => {
+    const { useConnectionStore } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@auto.example.com:443');
+
+    const { cacheStore } = await import('../../services/cache-store');
+    const tunnel = {
+      id: 43,
+      domain: 'auto.example.com',
+      name: 'Auto Node',
+      protocol: 'k2v5',
+      port: 443,
+      serverUrl: 'k2v5://auto.example.com:443',
+      recommendScore: 0.9,
+      node: { country: 'SG', ipv4: '1.2.3.4', region: '', name: '', ipv6: '', isAlive: true, load: 0, trafficUsagePercent: 0, bandwidthUsagePercent: 0 },
+    } as any;
+    cacheStore.set('api:tunnels', { items: [tunnel] });
+
+    // Manual mode + no selectedCloudTunnel → Auto resolve
+    await useConnectionStore.getState().connect();
+
+    const { connectedTunnel } = useConnectionStore.getState();
+    expect(connectedTunnel?.ipv4).toBe('1.2.3.4');
+    expect(connectedTunnel?.country).toBe('SG');
   });
 });
 

@@ -289,8 +289,6 @@
   "auto": {
     "title": "自動選択",
     "subtitle": "上位3つのサーバーからランダムに選択",
-    "connected": "接続中: {{country}} · {{name}}",
-    "notConnected": "未接続",
     "noTunnelAvailable": "利用可能なサーバーがありません"
   }
 }
