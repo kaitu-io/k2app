@@ -288,7 +288,7 @@
   },
   "auto": {
     "title": "Auto",
-    "subtitle": "Random pick from top 3 servers",
+    "subtitle": "Automatically pick a better server",
     "noTunnelAvailable": "No server available"
   }
 }

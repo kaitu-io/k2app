@@ -287,7 +287,7 @@
   },
   "auto": {
     "title": "自动选择",
-    "subtitle": "在最优三个节点中随机选择",
+    "subtitle": "自动选择更优的节点",
     "noTunnelAvailable": "暂无可用节点"
   }
 }

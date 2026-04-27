@@ -288,7 +288,7 @@
   },
   "auto": {
     "title": "自動選擇",
-    "subtitle": "在最佳三個節點中隨機選擇",
+    "subtitle": "自動選擇更優的節點",
     "noTunnelAvailable": "暫無可用節點"
   }
 }

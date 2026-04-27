@@ -1,7 +1,9 @@
 import type { Tunnel } from '../services/api-types';
 
+const AUTO_PICK_TOP_N = 5;
+
 /**
- * Pick one tunnel from the top-3 by recommendScore at random.
+ * Pick one tunnel from the top-N (default 5) by recommendScore at random.
  *
  * - Excludes tunnels with `recommendScore === 0` (project hard-blacklist
  *   convention, see api/CLAUDE.md "Tunnel Scoring").
@@ -22,6 +24,6 @@ export function pickAutoTunnel(
   const pool = eligible.length > 0 ? eligible : tunnels.filter(t => !!t.serverUrl);
   if (pool.length === 0) return null;
   const sorted = [...pool].sort((a, b) => b.recommendScore - a.recommendScore);
-  const top = sorted.slice(0, 3);
+  const top = sorted.slice(0, AUTO_PICK_TOP_N);
   return top[Math.floor(rng() * top.length)];
 }
