@@ -700,9 +700,38 @@ func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, re
 	}
 }
 
+// runSmuxUDPHandler invokes handler.HandleUDP and removes the session from
+// the per-stream map when it returns. ProxyHandler.HandleUDP returns within
+// ~60s of target idle (server/handler.go:286 SetReadDeadline), so without
+// this cleanup the map grows monotonically and eventually hits
+// maxServerUDPSessions (4096), silently dropping new flows.
+//
+// closeOnce in smuxServerUDPConn.close() makes the cleanup idempotent vs the
+// stream-shutdown path that calls close on every remaining session.
+func runSmuxUDPHandler(
+	sessions map[uint32]*smuxServerUDPConn,
+	mu *sync.Mutex,
+	sid uint32,
+	sess *smuxServerUDPConn,
+	handler UDPHandler,
+	addr string,
+) {
+	defer func() {
+		if r := recover(); r != nil {
+			sess.log.Error("TCPWSServer: panic in HandleUDP", "panic", r, "addr", addr)
+		}
+		mu.Lock()
+		delete(sessions, sid)
+		mu.Unlock()
+		sess.close()
+	}()
+	handler.HandleUDP(sess, addr)
+}
+
 func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, remote net.Addr) {
 	mux := &serverSmuxWriter{stream: stream}
 	sessions := make(map[uint32]*smuxServerUDPConn)
+	var sessionsMu sync.Mutex
 	var remoteStr string
 	if remote != nil {
 		remoteStr = remote.String()
@@ -712,15 +741,19 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, con
 		frame, err := ReadSmuxUDPFrame(br)
 		if err != nil {
 			// Close all sessions
+			sessionsMu.Lock()
 			for _, sess := range sessions {
 				sess.close()
 			}
+			sessionsMu.Unlock()
 			return
 		}
 
+		sessionsMu.Lock()
 		sess, ok := sessions[frame.SessionID]
 		if !ok {
 			if len(sessions) >= maxServerUDPSessions {
+				sessionsMu.Unlock()
 				continue // at capacity, drop frame
 			}
 			sessLog := connLog.With("sid", frame.SessionID, "addr", frame.Addr)
@@ -740,16 +773,11 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, con
 			s.mu.Unlock()
 			if handler != nil {
 				addr := frame.Addr
-				go func() {
-					defer func() {
-						if r := recover(); r != nil {
-							connLog.Error("TCPWSServer: panic in HandleUDP", "panic", r, "addr", addr)
-						}
-					}()
-					handler.HandleUDP(sess, addr)
-				}()
+				sid := frame.SessionID
+				go runSmuxUDPHandler(sessions, &sessionsMu, sid, sess, handler, addr)
 			}
 		}
+		sessionsMu.Unlock()
 
 		sess.deliver(frame.Payload)
 	}
