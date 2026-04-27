@@ -134,6 +134,8 @@ async function persistServerMode(mode: 'manual' | 'self_hosted'): Promise<void> 
 
 interface ConnectionActions {
   selectCloudTunnel: (tunnel: Tunnel) => void;
+  clearCloudSelection: () => void;
+  reconcileSelection: (tunnels: Tunnel[]) => void;
   selectSelfHosted: () => void;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
@@ -211,6 +213,27 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       serverMode: 'manual',
     });
     void persistServerMode('manual');
+  },
+
+  clearCloudSelection: () => {
+    console.info('[Connection] clearCloudSelection (→ Auto via derivation)');
+    set({
+      selectedCloudTunnel: null,
+      activeTunnel: null,
+      serverMode: 'manual',
+    });
+    void persistServerMode('manual');
+  },
+
+  reconcileSelection: (tunnels) => {
+    const { selectedCloudTunnel } = get();
+    if (!selectedCloudTunnel || isAutoSelection(selectedCloudTunnel)) return;
+    const stillExists = tunnels.some(t => t.domain === selectedCloudTunnel.domain);
+    if (!stillExists) {
+      console.info('[Connection] selected tunnel ' + selectedCloudTunnel.domain
+        + ' offline, falling back to Auto');
+      set({ selectedCloudTunnel: null, activeTunnel: null });
+    }
   },
 
   selectSelfHosted: () => {
