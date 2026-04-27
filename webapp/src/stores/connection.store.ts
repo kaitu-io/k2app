@@ -68,6 +68,50 @@ interface ConnectionState {
 const LAST_SERVER_URL_STORAGE_KEY = 'k2.vpn.last_server_url';
 const SERVER_MODE_STORAGE_KEY = 'k2.vpn.server_mode';
 
+/**
+ * Canonical "Auto pick" sentinel domain.
+ *
+ * Exported so UI props that flow as `selectedDomain: string | null` (e.g.,
+ * CloudTunnelList) can compare against this constant instead of repeating
+ * the literal `'__auto__'`.
+ */
+export const AUTO_TUNNEL_DOMAIN = '__auto__';
+
+/**
+ * Module-level sentinel Tunnel representing "Auto pick mode".
+ *
+ * Identity is by reference equality (use `isAutoSelection`). Field values
+ * are inert and intentionally unusable: serverUrl is empty so the sentinel
+ * can never be passed to `_k2.run('up')` by accident. The `connect()` path
+ * resolves the sentinel into a concrete Tunnel via `pickAutoTunnel` before
+ * any call into the bridge.
+ */
+export const AUTO_TUNNEL_SENTINEL: Readonly<Tunnel> = Object.freeze({
+  id: -1,
+  domain: AUTO_TUNNEL_DOMAIN,
+  name: 'Auto',
+  protocol: 'k2v5',
+  port: 0,
+  serverUrl: '',
+  node: Object.freeze({
+    name: '',
+    country: '',
+    region: '',
+    ipv4: '',
+    ipv6: '',
+    isAlive: false,
+    load: 0,
+    trafficUsagePercent: 0,
+    bandwidthUsagePercent: 0,
+  }),
+  recommendScore: 0,
+});
+
+/** True when `t` is the Auto sentinel (reference equality). */
+export function isAutoSelection(t: Tunnel | null): boolean {
+  return t === AUTO_TUNNEL_SENTINEL;
+}
+
 async function persistLastServerUrl(url: string | null): Promise<void> {
   try {
     if (url) {
