@@ -613,3 +613,21 @@ export function initializeConnectionStore(): () => void {
     unsubSelfHosted();
   };
 }
+
+/**
+ * Returns the effective cloud tunnel selection for UI consumption.
+ *
+ * - Returns AUTO_TUNNEL_SENTINEL when serverMode='manual' and no concrete
+ *   tunnel is selected (the default state — Auto is selected).
+ * - Returns the concrete selected tunnel when one is chosen.
+ * - Returns null in self_hosted mode (cloud selection does not apply).
+ *
+ * UI components should use this hook rather than reading `selectedCloudTunnel`
+ * directly, so the Auto default surfaces consistently in the list and top card.
+ */
+export function useEffectiveCloudSelection(): Tunnel | null {
+  return useConnectionStore((s) => {
+    if (s.serverMode !== 'manual') return null;
+    return s.selectedCloudTunnel ?? AUTO_TUNNEL_SENTINEL;
+  });
+}
