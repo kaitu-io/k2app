@@ -14,7 +14,7 @@ import {
   useTheme,
   Skeleton,
 } from '@mui/material';
-import { Refresh as RefreshIcon, CloudOff as CloudOffIcon } from '@mui/icons-material';
+import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
@@ -25,6 +25,7 @@ import { cacheStore } from '../services/cache-store';
 import { useAuthStore } from '../stores/auth.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
+import { AUTO_TUNNEL_SENTINEL, AUTO_TUNNEL_DOMAIN } from '../stores/connection.store';
 
 interface CloudTunnelListProps {
   selectedDomain: string | null;
@@ -364,6 +365,45 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
 
       {/* List */}
       <List disablePadding sx={{ px: 2 }}>
+        {/* Auto virtual row — first item, ahead of country-sorted tunnels */}
+        <ListItem
+          key="auto"
+          disableGutters
+          onClick={() => {
+            console.debug('[CloudTunnelList] tunnelClick: AUTO');
+            !disabled && onSelect(AUTO_TUNNEL_SENTINEL, echConfigList);
+          }}
+          sx={{
+            borderRadius: 2,
+            mb: 0.5,
+            minHeight: 64,
+            bgcolor: selectedDomain === AUTO_TUNNEL_DOMAIN ? colors.selectedBg : undefined,
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            opacity: disabled ? '0.6 !important' : 1,
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              bgcolor: disabled ? undefined : 'action.hover',
+              transform: disabled ? 'none' : 'scale(1.01)',
+            },
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 40, fontSize: 24 }}>
+            <FlashOnIcon sx={{ fontSize: 24, color: 'primary.main' }} />
+          </ListItemIcon>
+          <ListItemText
+            primary={t('dashboard:auto.title')}
+            secondary={t('dashboard:auto.subtitle')}
+            primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+            secondaryTypographyProps={{ fontSize: '0.75rem' }}
+          />
+          <Radio
+            checked={selectedDomain === AUTO_TUNNEL_DOMAIN}
+            color="primary"
+            value={AUTO_TUNNEL_DOMAIN}
+            sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
+          />
+        </ListItem>
+
         {sortedTunnels.map((tunnel) => {
           const domain = tunnel.domain.toLowerCase();
           const isSelected = selectedDomain === domain;

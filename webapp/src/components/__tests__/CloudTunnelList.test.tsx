@@ -1,8 +1,9 @@
 import { useRef, useEffect } from 'react';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../../test/utils/render';
 import { CloudTunnelList, type CloudTunnelListHandle } from '../CloudTunnelList';
 import type { TunnelListResponse } from '../../services/api-types';
+import { AUTO_TUNNEL_DOMAIN, AUTO_TUNNEL_SENTINEL } from '../../stores/connection.store';
 
 // --- Mock state objects ---
 
@@ -208,9 +209,10 @@ describe('CloudTunnelList', () => {
       await waitFor(() => expect(screen.getByText('Japan-01')).toBeInTheDocument());
 
       const items = screen.getAllByRole('listitem');
-      expect(items[0]).toHaveTextContent('Japan-01');
-      expect(items[1]).toHaveTextContent('Singapore-01');
-      expect(items[2]).toHaveTextContent('USA-01');
+      // items[0] is the Auto virtual row; concrete tunnels follow in alpha order
+      expect(items[1]).toHaveTextContent('Japan-01');
+      expect(items[2]).toHaveTextContent('Singapore-01');
+      expect(items[3]).toHaveTextContent('USA-01');
     });
   });
 
@@ -273,6 +275,62 @@ describe('CloudTunnelList', () => {
 
       // Must not throw — SWR path swallows background errors.
       await expect(handle!.refresh()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('Auto virtual row', () => {
+    beforeEach(() => {
+      mockCacheGet.mockReturnValue(cachedResponse);
+      mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
+    });
+
+    it('renders Auto row as the first list item', async () => {
+      render(<CloudTunnelList {...defaultProps} selectedDomain={AUTO_TUNNEL_DOMAIN} />);
+      await waitFor(() => expect(screen.getByText('Tokyo-01')).toBeInTheDocument());
+
+      const items = screen.getAllByRole('listitem');
+      // Auto row must be first — before any concrete tunnel
+      expect(items[0]).toHaveTextContent(/auto/i);
+    });
+
+    it('marks Auto row radio as checked when selectedDomain === AUTO_TUNNEL_DOMAIN', async () => {
+      render(<CloudTunnelList {...defaultProps} selectedDomain={AUTO_TUNNEL_DOMAIN} />);
+      await waitFor(() => expect(screen.getByText('Tokyo-01')).toBeInTheDocument());
+
+      const radios = screen.getAllByRole('radio') as HTMLInputElement[];
+      // First radio belongs to the Auto row
+      expect(radios[0].checked).toBe(true);
+      // Concrete tunnel radios are unchecked
+      expect(radios[1].checked).toBe(false);
+    });
+
+    it('does not mark Auto radio when selectedDomain points to a concrete tunnel', async () => {
+      const concreteDomain = 'tokyo-01.example.com';
+      render(<CloudTunnelList {...defaultProps} selectedDomain={concreteDomain} />);
+      await waitFor(() => expect(screen.getByText('Tokyo-01')).toBeInTheDocument());
+
+      const radios = screen.getAllByRole('radio') as HTMLInputElement[];
+      // Auto row radio (index 0) must NOT be checked
+      expect(radios[0].checked).toBe(false);
+      // The matching concrete tunnel radio IS checked
+      const checkedRadios = radios.filter((r) => r.checked);
+      expect(checkedRadios).toHaveLength(1);
+      expect(checkedRadios[0].value).toBe(concreteDomain);
+    });
+
+    it('calls onSelect with the AUTO_TUNNEL_SENTINEL when Auto row is clicked', async () => {
+      const onSelect = vi.fn();
+      render(<CloudTunnelList {...defaultProps} onSelect={onSelect} selectedDomain={null} />);
+      await waitFor(() => expect(screen.getByText('Tokyo-01')).toBeInTheDocument());
+
+      const items = screen.getAllByRole('listitem');
+      fireEvent.click(items[0]);
+
+      expect(onSelect).toHaveBeenCalledTimes(1);
+      const [tunnelArg] = onSelect.mock.calls[0] as [typeof AUTO_TUNNEL_SENTINEL, string?];
+      expect(tunnelArg.domain).toBe(AUTO_TUNNEL_DOMAIN);
+      // sentinel identity
+      expect(tunnelArg).toBe(AUTO_TUNNEL_SENTINEL);
     });
   });
 });
