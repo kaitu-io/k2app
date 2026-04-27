@@ -285,5 +285,12 @@
     "smartHint": "k2 が遅延に基づいて最適なノードを自動選択します",
     "manualHint": "固定 IP が必要なユーザー向け",
     "tabSelfHosted": "セルフホスト"
+  },
+  "auto": {
+    "title": "自動選択",
+    "subtitle": "上位3つのサーバーからランダムに選択",
+    "connected": "接続中: {{country}} · {{name}}",
+    "notConnected": "未接続",
+    "noTunnelAvailable": "利用可能なサーバーがありません"
   }
 }

@@ -285,5 +285,12 @@
     "smartHint": "k2 將根據延遲自動選擇最優節點",
     "manualHint": "適合需要固定 IP 的場景",
     "tabSelfHosted": "自部署"
+  },
+  "auto": {
+    "title": "自動選擇",
+    "subtitle": "在最佳三個節點中隨機選擇",
+    "connected": "當前命中：{{country}} · {{name}}",
+    "notConnected": "未連接",
+    "noTunnelAvailable": "暫無可用節點"
   }
 }

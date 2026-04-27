@@ -285,5 +285,12 @@
     "smartHint": "k2 selects the optimal node automatically",
     "manualHint": "For users who need a fixed server IP",
     "tabSelfHosted": "Self-hosted"
+  },
+  "auto": {
+    "title": "Auto",
+    "subtitle": "Random pick from top 3 servers",
+    "connected": "Connected: {{country}} · {{name}}",
+    "notConnected": "Not connected",
+    "noTunnelAvailable": "No server available"
   }
 }

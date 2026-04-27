@@ -284,5 +284,12 @@
     "nodesAvailable": "{{count}} 台节点 · {{regions}} 个地区",
     "smartHint": "k2 将根据延迟自动选择最优节点",
     "manualHint": "适合需要固定 IP 的场景"
+  },
+  "auto": {
+    "title": "自动选择",
+    "subtitle": "在最优三个节点中随机选择",
+    "connected": "当前命中：{{country}} · {{name}}",
+    "notConnected": "未连接",
+    "noTunnelAvailable": "暂无可用节点"
   }
 }

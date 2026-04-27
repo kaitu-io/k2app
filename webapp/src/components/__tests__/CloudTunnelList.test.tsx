@@ -290,7 +290,7 @@ describe('CloudTunnelList', () => {
 
       const items = screen.getAllByRole('listitem');
       // Auto row must be first — before any concrete tunnel
-      expect(items[0]).toHaveTextContent(/auto/i);
+      expect(items[0]).toHaveTextContent('自动选择');
     });
 
     it('marks Auto row radio as checked when selectedDomain === AUTO_TUNNEL_DOMAIN', async () => {
