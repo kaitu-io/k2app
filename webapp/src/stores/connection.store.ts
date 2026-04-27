@@ -19,6 +19,7 @@ import { create } from 'zustand';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { authService } from '../services/auth-service';
 import { cacheStore } from '../services/cache-store';
+import { cloudApi } from '../services/cloud-api';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
 import { useVPNMachineStore, dispatch as vpnDispatch } from './vpn-machine.store';
@@ -114,6 +115,29 @@ export const AUTO_TUNNEL_SENTINEL: Readonly<Tunnel> = Object.freeze({
 /** True when `t` is the Auto sentinel (reference equality). */
 export function isAutoSelection(t: Tunnel | null): boolean {
   return t === AUTO_TUNNEL_SENTINEL;
+}
+
+// Auto pick triggers a fire-and-forget tunnel refresh so the *next* pick uses
+// fresher recommendScores. Delayed so the request doesn't race the active
+// connect — by the time it fires the tunnel is up and routes are stable.
+const AUTO_PICK_REFRESH_DELAY_MS = 5000;
+
+export function refreshTunnelsCacheAfterAutoPick(
+  delayMs: number = AUTO_PICK_REFRESH_DELAY_MS,
+): void {
+  setTimeout(() => {
+    cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
+      if (res.code === 0 && res.data) {
+        cacheStore.set('api:tunnels', res.data);
+        console.debug('[Connection] auto-pick: tunnel cache refreshed ('
+          + (res.data.items?.length ?? 0) + ' items)');
+      } else if (res.code !== 401) {
+        console.warn('[Connection] auto-pick: tunnel refresh failed code=' + res.code);
+      }
+    }).catch(err => {
+      console.warn('[Connection] auto-pick: tunnel refresh error', err);
+    });
+  }, delayMs);
 }
 
 async function persistLastServerUrl(url: string | null): Promise<void> {
@@ -310,6 +334,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       }
       console.info('[Connection] auto-pick → ' + resolvedTunnel.domain
         + ' (score=' + resolvedTunnel.recommendScore + ')');
+      refreshTunnelsCacheAfterAutoPick();
     }
 
     // Pre-flight mode/selection validity. Tightened to reject empty-string uri/serverUrl

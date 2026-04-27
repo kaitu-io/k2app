@@ -16,6 +16,14 @@ vi.mock('../../services/auth-service', () => ({
   },
 }));
 
+// Mock cloud-api so the Auto-pick refresh doesn't issue real HTTP calls.
+const mockCloudApiGet = vi.fn();
+vi.mock('../../services/cloud-api', () => ({
+  cloudApi: {
+    get: (...args: unknown[]) => mockCloudApiGet(...args),
+  },
+}));
+
 // Mock window globals
 const mockRun = vi.fn();
 const mockStorage = {
@@ -36,6 +44,8 @@ beforeEach(() => {
   mockRun.mockReset();
   mockStorage.get.mockReset();
   mockStorage.set.mockReset();
+  mockCloudApiGet.mockReset();
+  mockCloudApiGet.mockResolvedValue({ code: 0, message: 'ok', data: { items: [], echConfigList: undefined } });
 });
 
 afterEach(() => {
@@ -968,6 +978,77 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
     const { connectedTunnel } = useConnectionStore.getState();
     expect(connectedTunnel?.ipv4).toBe('1.2.3.4');
     expect(connectedTunnel?.country).toBe('SG');
+  });
+
+  it('schedules a delayed tunnel cache refresh after Auto pick', async () => {
+    vi.useFakeTimers();
+    try {
+      const { useConnectionStore } = await getStores();
+      mockRun.mockResolvedValue({ code: 0 });
+
+      const { authService } = await import('../../services/auth-service');
+      vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@auto.example.com:443');
+
+      const { cacheStore } = await import('../../services/cache-store');
+      const tunnel = {
+        id: 44,
+        domain: 'auto.example.com',
+        name: 'Auto Node',
+        protocol: 'k2v5',
+        port: 443,
+        serverUrl: 'k2v5://auto.example.com:443',
+        recommendScore: 0.7,
+        node: { country: 'SG' },
+      } as any;
+      cacheStore.set('api:tunnels', { items: [tunnel] });
+
+      const refreshedItems = [{ ...tunnel, recommendScore: 0.95 }];
+      mockCloudApiGet.mockResolvedValue({ code: 0, message: 'ok', data: { items: refreshedItems } });
+
+      await useConnectionStore.getState().connect();
+
+      // Refresh hasn't fired yet — it's scheduled.
+      expect(mockCloudApiGet).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/tunnels/k2v4');
+      // Fresh data lands in the cache for the next Auto pick.
+      const refreshed = cacheStore.get<any>('api:tunnels');
+      expect(refreshed?.items?.[0]?.recommendScore).toBe(0.95);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not trigger tunnel refresh when a concrete tunnel is selected', async () => {
+    vi.useFakeTimers();
+    try {
+      const { useConnectionStore } = await getStores();
+      mockRun.mockResolvedValue({ code: 0 });
+
+      const { authService } = await import('../../services/auth-service');
+      vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@manual.example.com:443');
+
+      const tunnel = {
+        id: 45,
+        domain: 'manual.example.com',
+        name: 'Manual Node',
+        protocol: 'k2v5',
+        port: 443,
+        serverUrl: 'k2v5://manual.example.com:443',
+        recommendScore: 0.5,
+        node: { country: 'JP' },
+      } as any;
+      useConnectionStore.getState().selectCloudTunnel(tunnel);
+
+      await useConnectionStore.getState().connect();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(mockCloudApiGet).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
