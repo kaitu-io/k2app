@@ -3,9 +3,10 @@ package wire
 import (
 	"log/slog"
 	"net"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/sasha-s/go-deadlock"
 )
 
 // TestSmuxSessions_RunUDPHandler_RemovesSessionOnExit verifies that the
@@ -15,7 +16,7 @@ import (
 // rest of the stream's lifetime — same failure mode as QUIC server.
 func TestSmuxSessions_RunUDPHandler_RemovesSessionOnExit(t *testing.T) {
 	sessions := make(map[uint32]*smuxServerUDPConn)
-	var mu sync.Mutex
+	var mu deadlock.Mutex
 	sess := &smuxServerUDPConn{
 		sessionID: 42,
 		readCh:    make(chan []byte, 32),
@@ -58,7 +59,7 @@ func TestSmuxSessions_RunUDPHandler_RemovesSessionOnExit(t *testing.T) {
 // fires even when HandleUDP panics (recovered by the defer).
 func TestSmuxSessions_RunUDPHandler_RemovesSessionOnPanic(t *testing.T) {
 	sessions := make(map[uint32]*smuxServerUDPConn)
-	var mu sync.Mutex
+	var mu deadlock.Mutex
 	sess := &smuxServerUDPConn{
 		sessionID: 99,
 		readCh:    make(chan []byte, 32),

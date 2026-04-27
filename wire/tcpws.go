@@ -710,7 +710,7 @@ func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, re
 // stream-shutdown path that calls close on every remaining session.
 func runSmuxUDPHandler(
 	sessions map[uint32]*smuxServerUDPConn,
-	mu *sync.Mutex,
+	mu *deadlock.Mutex,
 	sid uint32,
 	sess *smuxServerUDPConn,
 	handler UDPHandler,
@@ -731,7 +731,7 @@ func runSmuxUDPHandler(
 func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, remote net.Addr) {
 	mux := &serverSmuxWriter{stream: stream}
 	sessions := make(map[uint32]*smuxServerUDPConn)
-	var sessionsMu sync.Mutex
+	var sessionsMu deadlock.Mutex
 	var remoteStr string
 	if remote != nil {
 		remoteStr = remote.String()
