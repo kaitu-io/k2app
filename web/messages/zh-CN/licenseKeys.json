@@ -15,7 +15,8 @@
     "notEligible": "不符合使用条件",
     "redeemFailed": "兑换失败，请重试",
     "titleAnonymous": "你收到一个礼物",
-    "alreadyRedeemed": "您已使用过授权码"
+    "alreadyRedeemed": "您已使用过授权码",
+    "signInToRedeem": "登录后领取"
   },
   "landing": {
     "title": "兑换授权码",

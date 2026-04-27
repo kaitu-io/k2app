@@ -10,6 +10,8 @@ import { Gift, AlertCircle, Clock, CheckCircle, Loader2, Search } from 'lucide-r
 import type { LicenseKeyPublic } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
 import { useBrand } from '@/components/providers/BrandProvider';
+import { useAuth } from '@/contexts/AuthContext';
+import EmailLogin from '@/components/EmailLogin';
 
 const ErrorLicenseKeyNotFound = 400007;
 const ErrorLicenseKeyUsed = 400008;
@@ -28,6 +30,7 @@ export default function GiftCodeClient() {
   const t = useTranslations('licenseKeys');
   const brand = useBrand();
   const productBadge = brand.id === 'kaitu' ? '开途 VPN' : 'Overleap';
+  const { isAuthenticated } = useAuth();
   const [inputCode, setInputCode] = useState('');
   const [state, setState] = useState<PageState>('idle');
   const [keyData, setKeyData] = useState<LicenseKeyPublic | null>(null);
@@ -163,6 +166,15 @@ export default function GiftCodeClient() {
           </div>
         </Card>
 
+        {!isAuthenticated && (
+          <Card className="p-6 sm:p-8 mb-6">
+            <h2 className="text-lg font-bold text-foreground mb-4 text-center">
+              {t('gift.signInToRedeem')}
+            </h2>
+            <EmailLogin mode="bind" />
+          </Card>
+        )}
+
         {errorMsg && (
           <p className="text-sm text-destructive text-center mb-4">{errorMsg}</p>
         )}
@@ -172,7 +184,7 @@ export default function GiftCodeClient() {
             size="lg"
             className="w-full sm:w-auto px-12 py-6 text-lg font-bold"
             onClick={handleRedeem}
-            disabled={state === 'redeeming'}
+            disabled={state === 'redeeming' || !isAuthenticated}
           >
             {state === 'redeeming' ? t('gift.loading') : t('gift.cta')}
           </Button>

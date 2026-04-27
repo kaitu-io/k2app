@@ -14,8 +14,9 @@
     "viewAccount": "查看我的賬戶",
     "notEligible": "不符合使用條件",
     "redeemFailed": "兌換失敗，請重試",
-    "titleAnonymous": "你收到一个礼物",
-    "alreadyRedeemed": "您已使用过授权码"
+    "titleAnonymous": "你收到一個禮物",
+    "alreadyRedeemed": "您已使用過授權碼",
+    "signInToRedeem": "登入後領取"
   },
   "landing": {
     "title": "兑换授权码",

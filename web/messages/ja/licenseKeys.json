@@ -14,8 +14,9 @@
     "viewAccount": "アカウントを確認",
     "notEligible": "このギフトを使用する資格がありません",
     "redeemFailed": "交換に失敗しました。もう一度お試しください",
-    "titleAnonymous": "你收到一个礼物",
-    "alreadyRedeemed": "您已使用过授权码"
+    "titleAnonymous": "ギフトが届いています",
+    "alreadyRedeemed": "すでにライセンスキーを使用しています",
+    "signInToRedeem": "ログインして受け取る"
   },
   "landing": {
     "title": "兑换授权码",

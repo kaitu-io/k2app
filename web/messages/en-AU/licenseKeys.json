@@ -15,7 +15,8 @@
     "notEligible": "You are not eligible to use this gift",
     "redeemFailed": "Redemption failed, please try again",
     "titleAnonymous": "You received a gift",
-    "alreadyRedeemed": "You have already redeemed a license key"
+    "alreadyRedeemed": "You have already redeemed a licence key",
+    "signInToRedeem": "Sign in to claim"
   },
   "landing": {
     "title": "Redeem Gift Code",
