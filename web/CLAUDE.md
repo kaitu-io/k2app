@@ -44,8 +44,7 @@ web/
 │   │   │   └── manager/       # /manager/* routes
 │   │   │       ├── users/     # User management + detail
 │   │   │       ├── orders/    # Order list
-│   │   │       ├── nodes/     # Node matrix, SSH terminal, batch ops
-│   │   │       ├── tunnels/   # Tunnel management
+│   │   │       ├── nodes/     # Node matrix, SSH terminal, batch ops (tunnels shown inline per node)
 │   │   │       ├── cloud/     # Cloud instance management
 │   │   │       ├── approvals/  # Approval management (maker-checker)
 │   │   │       ├── campaigns/ # Campaign management
