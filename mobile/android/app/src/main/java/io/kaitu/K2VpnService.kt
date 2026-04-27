@@ -242,6 +242,15 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
             .setMtu(1400)
             .also { b -> dnsServers.forEach { b.addDnsServer(it) } }
 
+        // Same-UID traffic (cloudApi, S3 log upload, OTA, auto-update) must bypass our
+        // own TUN — otherwise log upload fails exactly when VPN is unhealthy, the case
+        // we need logs for. iOS gets this for free via the separate NE process.
+        try {
+            builder.addDisallowedApplication(packageName)
+        } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+            Log.w(TAG, "addDisallowedApplication failed for own package: ${e.message}")
+        }
+
         vpnInterface = builder.establish()
         Log.d(TAG, "establish() result: vpnInterface=$vpnInterface")
 

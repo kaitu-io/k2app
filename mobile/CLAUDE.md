@@ -133,6 +133,7 @@ a webapp bug — the only legitimate `via` on mobile is `k2v5://` or
 - **TUN fd**: `Builder().establish()` returns `ParcelFileDescriptor`. Pass `fd` (not `detachFd()`) — Go `syscall.Dup()` internally. Kotlin retains ownership for `close()` on teardown.
 - **Engine calls**: All gomobile JNI calls run on `engineExecutor` (single-thread) to prevent ANR
 - **Foreground service**: Required for VPN. Uses `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` on Android 14+
+- **Self-UID exemption**: `Builder.addDisallowedApplication(packageName)` is mandatory. Android captures same-UID traffic in the app's own TUN by default — without this, K2Plugin's S3 log uploads, cloudApi calls, and OTA downloads all route through the very tunnel they're trying to debug, and fail precisely when VPN is unhealthy (the case logs are needed for). iOS gets this isolation for free via the separate NE process. Symptom of regression: Android tickets with `vpnState=connected` show `logCount=0` while iOS/desktop with the same state show `logCount=1`.
 
 ## Crash Diagnostics (appext)
 
