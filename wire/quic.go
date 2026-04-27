@@ -150,6 +150,27 @@ type connUDPState struct {
 	log          *slog.Logger // scoped logger with "remote" field
 }
 
+// runUDPHandler invokes handler.HandleUDP and removes the session from the
+// map when it returns. ProxyHandler.HandleUDP returns within ~60s of target
+// idle (handler.go:286 SetReadDeadline), so without this cleanup state.sessions
+// grows monotonically and eventually hits maxServerUDPSessions (4096), silently
+// dropping new flows for the rest of the QUIC connection's lifetime.
+//
+// closeOnce in serverUDPConn.close() makes the cleanup idempotent vs the
+// connection-shutdown path in handleConn.
+func (state *connUDPState) runUDPHandler(handler UDPHandler, sess *serverUDPConn, addr string) {
+	defer func() {
+		if r := recover(); r != nil {
+			sess.log.Error("QUICServer: panic in HandleUDP", "panic", r)
+		}
+		state.mu.Lock()
+		delete(state.sessions, sess.sessionID)
+		state.mu.Unlock()
+		sess.close()
+	}()
+	handler.HandleUDP(sess, addr)
+}
+
 // DefaultQUICConfig returns the QUIC configuration for clients.
 // Flow control windows and max streams are platform-specific (see quic_limits_*.go).
 // Desktop/server: large windows for throughput. Mobile: small windows for memory.
@@ -1331,14 +1352,7 @@ func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, fram
 		sessLog.Info("QUICServer: new UDP session", "handlerSet", handler != nil)
 		if handler != nil {
 			addr := frame.Addr
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						sessLog.Error("QUICServer: panic in HandleUDP", "panic", r)
-					}
-				}()
-				handler.HandleUDP(sess, addr)
-			}()
+			go state.runUDPHandler(handler, sess, addr)
 		}
 	}
 	state.mu.Unlock()
