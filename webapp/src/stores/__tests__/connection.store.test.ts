@@ -884,7 +884,7 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
     cacheStore.clear();
   });
 
-  it('dispatches BACKEND_ERROR (code 400) when cacheStore is empty (Auto + no list)', async () => {
+  it('dispatches BACKEND_ERROR (code 572) when cacheStore is empty (Auto + no list)', async () => {
     const { useConnectionStore, vpn } = await getStores();
     mockRun.mockResolvedValue({ code: 0 });
 
@@ -898,7 +898,7 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
     // VPN machine should reflect the error (idle + error set)
     expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
     expect(vpn.useVPNMachineStore.getState().error).not.toBeNull();
-    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(400);
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(572);
   });
 
   it('resolves Auto via pickAutoTunnel and proceeds to call _k2.run(up)', async () => {

@@ -24,6 +24,7 @@ import { useConfigStore } from './config.store';
 import { useVPNMachineStore, dispatch as vpnDispatch } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
 import { pickAutoTunnel } from '../utils/auto-tunnel-pick';
+import { ERROR_CODES } from '../utils/errorCode';
 
 // ============ Types ============
 
@@ -299,7 +300,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       if (!resolvedTunnel) {
         console.warn('[Connection] connect: Auto mode but no tunnel available, aborting');
         vpnDispatch('BACKEND_ERROR', {
-          error: { code: 400, message: 'No tunnel available for auto pick' },
+          error: { code: ERROR_CODES.NO_TUNNEL_AVAILABLE_AUTO, message: 'No tunnel available for auto pick' },
           isRetrying: false,
         });
         return;

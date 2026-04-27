@@ -79,6 +79,7 @@ export const ERROR_CODES = {
   // 连接错误 (570-579)
   CONNECTION_FATAL: 570,
   ALL_ADDRS_FAILED: 571,
+  NO_TUNNEL_AVAILABLE_AUTO: 572,
 
   // VPN 权限错误 (580-589)
   VPN_PERMISSION_DENIED: 580,
@@ -247,6 +248,8 @@ export function getErrorMessage(
       return t('common:errors.vpn.connectionFatal', 'Connection failed');
     case ERROR_CODES.ALL_ADDRS_FAILED:
       return t('common:errors.vpn.allAddrsFailed', 'All server addresses failed');
+    case ERROR_CODES.NO_TUNNEL_AVAILABLE_AUTO:
+      return t('dashboard:auto.noTunnelAvailable');
 
     // VPN 权限错误 (580-589)
     case ERROR_CODES.VPN_PERMISSION_DENIED:
