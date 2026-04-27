@@ -268,7 +268,11 @@ func ReadBundle(data []byte) (*Bundle, error) {
 			if minRequired > len(data) {
 				return nil, fmt.Errorf("k2b: set[%d] domain count %d exceeds data bounds", i, actualCount)
 			}
-			bundle.Sets[i].domains = domainSection{data: data[domainOff:], count: actualCount}
+			sectionData := data[domainOff:]
+			if err := validateDomainOffsets(sectionData, actualCount); err != nil {
+				return nil, fmt.Errorf("k2b: set[%d] domain: %w", i, err)
+			}
+			bundle.Sets[i].domains = domainSection{data: sectionData, count: actualCount}
 		}
 
 		// IPv4 section.
@@ -301,9 +305,40 @@ func ReadBundle(data []byte) (*Bundle, error) {
 			if minRequired > len(data) {
 				return nil, fmt.Errorf("k2b: set[%d] exclude domain count %d exceeds data bounds", i, actualCount)
 			}
-			bundle.Sets[i].excludeDomains = domainSection{data: data[exclDomainOff:], count: actualCount}
+			sectionData := data[exclDomainOff:]
+			if err := validateDomainOffsets(sectionData, actualCount); err != nil {
+				return nil, fmt.Errorf("k2b: set[%d] exclude domain: %w", i, err)
+			}
+			bundle.Sets[i].excludeDomains = domainSection{data: sectionData, count: actualCount}
 		}
 	}
 
 	return bundle, nil
+}
+
+// validateDomainOffsets checks that every entry in a domainSection's offset
+// table points within the section's string area and is monotonically
+// non-decreasing. Without this guard, a crafted bundle whose offsets exceed
+// the data slice triggers a slice-out-of-bounds panic in entryAt during the
+// first MatchDomain call. Bundles are downloaded from CDN mirrors with no
+// signature verification (rule/downloader.go), so the bytes here are
+// untrusted.
+func validateDomainOffsets(sectionData []byte, count int) error {
+	stringBase := 4 + (count+1)*4
+	if stringBase > len(sectionData) {
+		return fmt.Errorf("offset table %d bytes exceeds section %d bytes", stringBase, len(sectionData))
+	}
+	stringAreaLen := len(sectionData) - stringBase
+	var prev uint32
+	for k := 0; k <= count; k++ {
+		off := binary.LittleEndian.Uint32(sectionData[4+k*4 : 4+k*4+4])
+		if int(off) > stringAreaLen {
+			return fmt.Errorf("offset[%d]=%d exceeds string area (%d bytes)", k, off, stringAreaLen)
+		}
+		if k > 0 && off < prev {
+			return fmt.Errorf("offsets non-monotonic at %d: %d < %d", k, off, prev)
+		}
+		prev = off
+	}
+	return nil
 }

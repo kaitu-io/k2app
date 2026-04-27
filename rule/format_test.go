@@ -253,6 +253,100 @@ func TestReadBundleBoundsCheckExclude(t *testing.T) {
 	}
 }
 
+// TestReadBundleRejectsMaliciousDomainOffsets verifies that a k2b whose domain
+// offset table contains attacker-controlled offsets pointing past the data
+// slice does not cause a slice-out-of-bounds panic during MatchDomain.
+//
+// Threat model: rule bundles are downloaded over plain HTTPS from any of nine
+// CDN mirrors (rule/downloader.go) with no signature or hash verification. A
+// compromised mirror, MITM with a valid mirror cert, or a corrupted on-disk
+// cache can deliver a crafted .k2b. The first DNS query exercises
+// domainSection.Match → entryAt, which reads start/end offsets from the data
+// and slices ds.data[base+start:base+end]. Without bounds validation, the
+// runtime panics; combined with debug.SetTraceback("crash") in appext, this
+// crashes the iOS/Android app via SIGABRT.
+//
+// Defense: ReadBundle must reject the bundle, OR MatchDomain must not panic.
+// Either outcome passes this test.
+func TestReadBundleRejectsMaliciousDomainOffsets(t *testing.T) {
+	setCount := 1
+	headerAndIndex := headerSize + indexSize*setCount
+	domainSectionStart := headerAndIndex
+	// domain section: count(4) + (actualCount+1)*4 offsets = 12 bytes
+	domainSectionLen := 4 + 2*4
+	total := headerAndIndex + domainSectionLen
+	data := make([]byte, total)
+
+	copy(data[0:4], magic)
+	binary.LittleEndian.PutUint32(data[4:8], version)
+	binary.LittleEndian.PutUint32(data[8:12], uint32(setCount))
+
+	idx := data[headerSize:]
+	binary.LittleEndian.PutUint32(idx[0:4], uint32(domainSectionStart)) // nameOff
+	binary.LittleEndian.PutUint16(idx[4:6], 0)                          // nameLen
+	binary.LittleEndian.PutUint32(idx[8:12], uint32(domainSectionStart))
+	binary.LittleEndian.PutUint32(idx[12:16], 1) // domainCnt > 0 forces parsing
+	// ipv4/ipv6/exclDomain all zero (count = 0 skips parsing)
+
+	ds := data[domainSectionStart:]
+	binary.LittleEndian.PutUint32(ds[0:4], 1)          // actualCount = 1
+	binary.LittleEndian.PutUint32(ds[4:8], 0xFFFFFFF0) // start: way out of bounds
+	binary.LittleEndian.PutUint32(ds[8:12], 0xFFFFFFFF) // end (sentinel)
+
+	bundle, err := ReadBundle(data)
+	if err != nil {
+		// Acceptable: ReadBundle rejected the malicious offsets up-front.
+		return
+	}
+
+	// ReadBundle accepted the bundle. MatchDomain must not panic.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("malicious bundle caused panic in MatchDomain: %v", r)
+		}
+	}()
+	_ = bundle.Sets[0].MatchDomain("example.com")
+}
+
+// TestReadBundleRejectsMaliciousExcludeDomainOffsets covers the same threat
+// for the excludeDomains section, which uses the same domainSection type.
+func TestReadBundleRejectsMaliciousExcludeDomainOffsets(t *testing.T) {
+	setCount := 1
+	headerAndIndex := headerSize + indexSize*setCount
+	exclSectionStart := headerAndIndex
+	exclSectionLen := 4 + 2*4
+	total := headerAndIndex + exclSectionLen
+	data := make([]byte, total)
+
+	copy(data[0:4], magic)
+	binary.LittleEndian.PutUint32(data[4:8], version)
+	binary.LittleEndian.PutUint32(data[8:12], uint32(setCount))
+
+	idx := data[headerSize:]
+	binary.LittleEndian.PutUint32(idx[0:4], uint32(exclSectionStart)) // nameOff
+	binary.LittleEndian.PutUint16(idx[4:6], 0)
+	// domain/ipv4/ipv6 zero
+	binary.LittleEndian.PutUint32(idx[28:32], uint32(exclSectionStart))
+	binary.LittleEndian.PutUint32(idx[32:36], 1) // exclDomainCnt > 0 forces parse
+
+	es := data[exclSectionStart:]
+	binary.LittleEndian.PutUint32(es[0:4], 1)
+	binary.LittleEndian.PutUint32(es[4:8], 0xFFFFFFF0)
+	binary.LittleEndian.PutUint32(es[8:12], 0xFFFFFFFF)
+
+	bundle, err := ReadBundle(data)
+	if err != nil {
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("malicious bundle caused panic in MatchDomain (exclude): %v", r)
+		}
+	}()
+	_ = bundle.Sets[0].MatchDomain("example.com")
+}
+
 func TestFormatIPsOnly(t *testing.T) {
 	sets := []BundleSet{
 		{
