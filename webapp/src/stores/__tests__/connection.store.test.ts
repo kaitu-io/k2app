@@ -980,10 +980,10 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
     expect(connectedTunnel?.country).toBe('SG');
   });
 
-  it('schedules a delayed tunnel cache refresh after Auto pick', async () => {
+  it('refreshes tunnel cache after Auto pick once VPN reaches a stable state', async () => {
     vi.useFakeTimers();
     try {
-      const { useConnectionStore } = await getStores();
+      const { useConnectionStore, vpn } = await getStores();
       mockRun.mockResolvedValue({ code: 0 });
 
       const { authService } = await import('../../services/auth-service');
@@ -1007,15 +1007,72 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
 
       await useConnectionStore.getState().connect();
 
-      // Refresh hasn't fired yet — it's scheduled.
+      // After connect() returns, machine is in 'connecting'. Poll should hold.
+      await vi.advanceTimersByTimeAsync(3000);
       expect(mockCloudApiGet).not.toHaveBeenCalled();
 
-      await vi.advanceTimersByTimeAsync(5000);
+      // Simulate connect completing — now stable.
+      vpn.useVPNMachineStore.setState({ state: 'connected' });
+      await vi.advanceTimersByTimeAsync(1000);
 
       expect(mockCloudApiGet).toHaveBeenCalledWith('/api/tunnels/k2v4');
-      // Fresh data lands in the cache for the next Auto pick.
       const refreshed = cacheStore.get<any>('api:tunnels');
       expect(refreshed?.items?.[0]?.recommendScore).toBe(0.95);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refreshes when VPN ends in idle (connect failure path)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { useConnectionStore, vpn } = await getStores();
+      mockRun.mockResolvedValue({ code: 0 });
+
+      const { authService } = await import('../../services/auth-service');
+      vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@auto.example.com:443');
+
+      const { cacheStore } = await import('../../services/cache-store');
+      cacheStore.set('api:tunnels', {
+        items: [{
+          id: 44, domain: 'auto.example.com', name: 'Auto', protocol: 'k2v5', port: 443,
+          serverUrl: 'k2v5://auto.example.com:443', recommendScore: 0.7, node: { country: 'SG' },
+        }],
+      } as any);
+
+      await useConnectionStore.getState().connect();
+      // Simulate failure → state lands at idle.
+      vpn.useVPNMachineStore.setState({ state: 'idle' });
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/tunnels/k2v4');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up tunnel refresh if VPN never stabilizes within max wait', async () => {
+    vi.useFakeTimers();
+    try {
+      const { useConnectionStore } = await getStores();
+      mockRun.mockResolvedValue({ code: 0 });
+
+      const { authService } = await import('../../services/auth-service');
+      vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@auto.example.com:443');
+
+      const { cacheStore } = await import('../../services/cache-store');
+      cacheStore.set('api:tunnels', {
+        items: [{
+          id: 44, domain: 'auto.example.com', name: 'Auto', protocol: 'k2v5', port: 443,
+          serverUrl: 'k2v5://auto.example.com:443', recommendScore: 0.7, node: { country: 'SG' },
+        }],
+      } as any);
+
+      await useConnectionStore.getState().connect();
+      // Stay in 'connecting' the whole time. Advance past the 30s cap.
+      await vi.advanceTimersByTimeAsync(35_000);
+
+      expect(mockCloudApiGet).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -1024,7 +1081,7 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
   it('does not trigger tunnel refresh when a concrete tunnel is selected', async () => {
     vi.useFakeTimers();
     try {
-      const { useConnectionStore } = await getStores();
+      const { useConnectionStore, vpn } = await getStores();
       mockRun.mockResolvedValue({ code: 0 });
 
       const { authService } = await import('../../services/auth-service');
@@ -1043,7 +1100,9 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
       useConnectionStore.getState().selectCloudTunnel(tunnel);
 
       await useConnectionStore.getState().connect();
-      await vi.advanceTimersByTimeAsync(10_000);
+      // Even after VPN reaches a stable state, no refresh should fire.
+      vpn.useVPNMachineStore.setState({ state: 'connected' });
+      await vi.advanceTimersByTimeAsync(35_000);
 
       expect(mockCloudApiGet).not.toHaveBeenCalled();
     } finally {

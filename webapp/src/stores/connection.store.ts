@@ -22,7 +22,7 @@ import { cacheStore } from '../services/cache-store';
 import { cloudApi } from '../services/cloud-api';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
-import { useVPNMachineStore, dispatch as vpnDispatch } from './vpn-machine.store';
+import { useVPNMachineStore, dispatch as vpnDispatch, type VPNState } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
 import { pickAutoTunnel } from '../utils/auto-tunnel-pick';
 import { ERROR_CODES } from '../utils/errorCode';
@@ -118,26 +118,46 @@ export function isAutoSelection(t: Tunnel | null): boolean {
 }
 
 // Auto pick triggers a fire-and-forget tunnel refresh so the *next* pick uses
-// fresher recommendScores. Delayed so the request doesn't race the active
-// connect — by the time it fires the tunnel is up and routes are stable.
-const AUTO_PICK_REFRESH_DELAY_MS = 5000;
+// fresher recommendScores. Polled so the request fires only once the VPN
+// machine is stable (connected/idle/serviceDown) — avoids racing the active
+// connect, which would compete with TUN/route setup.
+const AUTO_PICK_REFRESH_POLL_MS = 1000;
+const AUTO_PICK_REFRESH_MAX_WAIT_MS = 30000;
+
+const STABLE_STATES: ReadonlySet<VPNState> = new Set(['connected', 'idle', 'serviceDown']);
 
 export function refreshTunnelsCacheAfterAutoPick(
-  delayMs: number = AUTO_PICK_REFRESH_DELAY_MS,
+  opts?: { pollIntervalMs?: number; maxWaitMs?: number },
 ): void {
-  setTimeout(() => {
-    cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
-      if (res.code === 0 && res.data) {
-        cacheStore.set('api:tunnels', res.data);
-        console.debug('[Connection] auto-pick: tunnel cache refreshed ('
-          + (res.data.items?.length ?? 0) + ' items)');
-      } else if (res.code !== 401) {
-        console.warn('[Connection] auto-pick: tunnel refresh failed code=' + res.code);
-      }
-    }).catch(err => {
-      console.warn('[Connection] auto-pick: tunnel refresh error', err);
-    });
-  }, delayMs);
+  const pollMs = opts?.pollIntervalMs ?? AUTO_PICK_REFRESH_POLL_MS;
+  const maxMs = opts?.maxWaitMs ?? AUTO_PICK_REFRESH_MAX_WAIT_MS;
+  const startedAt = Date.now();
+
+  const attempt = (): void => {
+    const state = useVPNMachineStore.getState().state;
+    if (STABLE_STATES.has(state)) {
+      cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
+        if (res.code === 0 && res.data) {
+          cacheStore.set('api:tunnels', res.data);
+          console.debug('[Connection] auto-pick: tunnel cache refreshed ('
+            + (res.data.items?.length ?? 0) + ' items, vpnState=' + state + ')');
+        } else if (res.code !== 401) {
+          console.warn('[Connection] auto-pick: tunnel refresh failed code=' + res.code);
+        }
+      }).catch(err => {
+        console.warn('[Connection] auto-pick: tunnel refresh error', err);
+      });
+      return;
+    }
+    if (Date.now() - startedAt >= maxMs) {
+      console.warn('[Connection] auto-pick: tunnel refresh skipped, vpnState=' + state
+        + ' did not stabilize within ' + maxMs + 'ms');
+      return;
+    }
+    setTimeout(attempt, pollMs);
+  };
+
+  setTimeout(attempt, pollMs);
 }
 
 async function persistLastServerUrl(url: string | null): Promise<void> {
