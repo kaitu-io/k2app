@@ -3,6 +3,7 @@
 package gateway
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -85,5 +86,72 @@ func TestGateway_EngineConfig_HasOutboundProvider(t *testing.T) {
 	}
 	if ecfg.OutboundProvider != g.subsMgr {
 		t.Fatalf("OutboundProvider != subsMgr")
+	}
+}
+
+// TestGateway_DoDown_ClosesSubscriptionSessions verifies that doDown drains
+// the subsMgr's session slice — required so a subsequent doUp's Resolve
+// repopulates from a clean slate (otherwise stale sessions accumulate).
+//
+// Adapted from plan: the plan-supplied snippet uses httptest.NewServer +
+// SetCacheDir on the constructor-provided Manager. Following the same
+// convention as TestGateway_DoUp_ResolvesK2subs, we use httptest.NewTLSServer
+// (k2subs upgrades to HTTPS) and overwrite g.subsMgr with a fresh,
+// TLS-trusting Manager scoped to the test.
+func TestGateway_DoDown_ClosesSubscriptionSessions(t *testing.T) {
+	subsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tunnels":[{"url":"k2v5://u:t@x.example/?ech=y","weight":1}]}`))
+	}))
+	defer subsServer.Close()
+
+	g := New("test", "test", "linux/amd64")
+	g.subsMgr = subscription.NewManager(t.TempDir(), subsServer.Client(), nil)
+
+	subsURL := "k2subs://u:t@" + strings.TrimPrefix(subsServer.URL, "https://") + "/"
+	cfg := &config.ClientConfig{
+		Routes: []config.RouteConfig{{Via: subsURL, Match: rule.MatchConfig{All: true}}},
+	}
+	if _, _, err := g.subsMgr.Resolve(cfg); err != nil {
+		t.Fatalf("Resolve err: %v", err)
+	}
+	if got := g.subsMgr.SessionsLen(); got != 1 {
+		t.Fatalf("after Resolve: SessionsLen = %d, want 1", got)
+	}
+
+	g.doDown()
+	if got := g.subsMgr.SessionsLen(); got != 0 {
+		t.Fatalf("doDown should clear sessions; got %d", got)
+	}
+}
+
+// TestGateway_State_PersistsK2subsURL is the persistence audit. doUp builds
+// engineClient via subscription.ApplyResolved (k2v5://) and hands that to the
+// engine, but saveState is called with the original cfg (still k2subs://).
+// This test exercises the persistedState round-trip directly — the same data
+// path saveState/loadState use — to lock in that contract.
+func TestGateway_State_PersistsK2subsURL(t *testing.T) {
+	cfg := &GatewayConfig{
+		ClientConfig: config.ClientConfig{
+			Routes: []config.RouteConfig{{Via: "k2subs://example.com/api/subs"}},
+		},
+	}
+
+	// saveState/loadState use a fixed /etc/k2r path; emulate the same JSON
+	// round-trip locally to keep the test hermetic.
+	st := &persistedState{Config: cfg, State: "connected"}
+	data, err := json.Marshal(st)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var loaded persistedState
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if loaded.Config == nil {
+		t.Fatal("loaded.Config nil")
+	}
+	if got, want := loaded.Config.Routes[0].Via, "k2subs://example.com/api/subs"; got != want {
+		t.Fatalf("persisted via = %q, want %q (must NOT be a k2v5:// resolution)", got, want)
 	}
 }

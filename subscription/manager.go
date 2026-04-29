@@ -142,6 +142,14 @@ func (m *Manager) Sessions() []*Session {
 	return sessions
 }
 
+// SessionsLen returns the active session count. Test-only helper used to
+// assert that doDown / CloseAll has drained the slice.
+func (m *Manager) SessionsLen() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.sessions)
+}
+
 // HTTPClient returns the http.Client a Session built (or was supplied with)
 // during Resolve. Returns nil if not yet fetched. Used by platform shells
 // to wire StartRefresh against the same Transport that Close will release.

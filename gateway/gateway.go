@@ -305,6 +305,11 @@ func (g *Gateway) doDown() {
 	g.opMu.Lock()
 	defer g.opMu.Unlock()
 	g.closeTunnel()
+	// Drain any active subscription sessions. Engine.Stop() (called via
+	// closeTunnel) does not own subscription state — Manager does — so the
+	// shell must close them explicitly. Idempotent: safe when no sessions
+	// were ever resolved (e.g. doDown without prior doUp).
+	g.subsMgr.CloseAll()
 	saveState(&persistedState{State: "disconnected", Timestamp: time.Now()})
 }
 
