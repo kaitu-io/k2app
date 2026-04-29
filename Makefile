@@ -194,6 +194,9 @@ test-openwrt: build-openwrt-docker
 dev-standalone: pre-build
 	./scripts/dev-standalone.sh
 
+dev-openwrt: pre-build
+	./scripts/dev-openwrt.sh
+
 dev-macos: pre-build
 	./scripts/dev-macos.sh
 

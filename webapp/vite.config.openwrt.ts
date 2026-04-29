@@ -8,22 +8,52 @@
  * - HTTP control via kaitu-service
  */
 
-import { defineConfig } from "vite";
+import { defineConfig, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from 'path';
 
+// Mirrors what k2/webui/serve.go injects in production. Without this script
+// the webapp would fall through to standalone-k2 instead of gateway-k2.
+function injectGatewayGlobal(): PluginOption {
+  return {
+    name: 'inject-k2-gateway-global',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        const tag = `<script>window.__K2_GATEWAY__={version:"dev",commit:"dev",arch:"linux/arm64"}</script>`;
+        return html.replace('<head>', `<head>${tag}`);
+      },
+    },
+  };
+}
+
+const gatewayPort = process.env.K2_GATEWAY_PORT || '1779';
+const gatewayProxy = { target: `http://127.0.0.1:${gatewayPort}`, changeOrigin: true };
+// SSE endpoint needs streaming — disable proxy buffering by keeping the same
+// http-proxy options; vite/http-proxy passes text/event-stream through fine.
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), injectGatewayGlobal()],
 
   // Prevent vite from obscuring errors
   clearScreen: false,
 
-  // Development server (for testing OpenWRT build locally)
+  // Development server (for testing OpenWRT build locally — paired with k2r in Docker)
   server: {
     port: 1422,
     strictPort: false,
     host: true,
     cors: true,
+    proxy: {
+      '/ping': gatewayProxy,
+      '/api/core': gatewayProxy,
+      '/api/events': gatewayProxy,
+      '/api/log-level': gatewayProxy,
+      '/api/storage': gatewayProxy,
+      '/api/platform': gatewayProxy,
+      '/api/upgrade': gatewayProxy,
+      '/api/router-devices': gatewayProxy,
+    },
   },
 
   // Build configuration

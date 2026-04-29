@@ -39,7 +39,7 @@ done
 
 # 4. Generate checksums
 echo "=== Generating checksums ==="
-(cd "${OUTDIR}" && sha256sum k2r-linux-* > checksums.txt)
+(cd "${OUTDIR}" && shasum -a 256 k2r-linux-* > checksums.txt)
 cat "${OUTDIR}/checksums.txt"
 
 # 5. Restore gateway/dist placeholder
