@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/sasha-s/go-deadlock"
@@ -99,4 +100,58 @@ func findSessionByURL(sessions []*Session, url string) *Session {
 		}
 	}
 	return nil
+}
+
+// CandidateURLs returns the union of all tunnel URLs across active sessions.
+// Order follows session insertion order with first-seen semantics across
+// duplicates. Returns nil/empty when no sessions are active. Used by
+// platform shells to feed background probe loops.
+//
+// Concurrency: snapshots sessions slice under m.mu.RLock, then releases the
+// lock before calling sub.Tunnels() on each session. Subscription.mu is a
+// standalone lock — never held while m.mu is held.
+func (m *Manager) CandidateURLs() []string {
+	m.mu.RLock()
+	sessions := make([]*Session, len(m.sessions))
+	copy(sessions, m.sessions)
+	m.mu.RUnlock()
+
+	seen := make(map[string]struct{})
+	var urls []string
+	for _, sess := range sessions {
+		for _, t := range sess.sub.Tunnels() {
+			if _, ok := seen[t.URL]; ok {
+				continue
+			}
+			seen[t.URL] = struct{}{}
+			urls = append(urls, t.URL)
+		}
+	}
+	return urls
+}
+
+// Sessions returns a snapshot of active sessions. Intended for platform
+// shells that need to drive Session.sub.StartRefresh from doUp. The
+// returned slice is a copy — mutating it does not affect Manager state,
+// but the *Session pointers reference live state.
+func (m *Manager) Sessions() []*Session {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	sessions := make([]*Session, len(m.sessions))
+	copy(sessions, m.sessions)
+	return sessions
+}
+
+// HTTPClient returns the http.Client a Session built (or was supplied with)
+// during Resolve. Returns nil if not yet fetched. Used by platform shells
+// to wire StartRefresh against the same Transport that Close will release.
+func (s *Session) HTTPClient() *http.Client {
+	return s.httpClient
+}
+
+// Subscription returns the underlying *config.Subscription. Used by
+// platform shells to call StartRefresh and by tests that need to inspect
+// the parsed tunnel list.
+func (s *Session) Subscription() *config.Subscription {
+	return s.sub
 }
