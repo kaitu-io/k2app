@@ -175,7 +175,7 @@ go test ./wire/k2cc/... -run TestDescent_Benchmark -v      # descent: rate start
 
 ### Integration Test Architecture
 
-`arc_integration_test.go` uses a UDP relay between QUIC client and server to simulate realistic network conditions:
+`k2cc_integration_test.go` uses a UDP relay between QUIC client and server to simulate realistic network conditions:
 - **Delay**: `delayFunc` abstraction — `stableDelay(d)` for fixed, `jitterDelay(base, maxJitter)` for ±segment-based jitter (100ms segments to avoid QUIC reordering false-positives)
 - **Loss**: Configurable packet drop rate on both directions
 - **Rate limiting**: Server write rate can be capped to simulate upstream bandwidth
