@@ -1,4 +1,6 @@
 import type { ISecureStorage } from '../types/kaitu-core';
+import { randomUUID } from '../utils/uuid';
+import { sha256 } from '../utils/sha256';
 
 const STORAGE_KEY = 'device-udid';
 let cachedUdid: string | null = null;
@@ -7,7 +9,7 @@ let cachedUdid: string | null = null;
  * Get or generate a persistent device UDID.
  *
  * First call: reads from _platform.storage.
- * If not found: generates crypto.randomUUID(), stores it, returns SHA-256 hash.
+ * If not found: generates a v4 UUID, stores it, returns SHA-256 hash.
  * Subsequent calls: returns cached value (no I/O).
  *
  * Output: 32 lowercase hex chars (SHA-256 first 16 bytes), same format as previous
@@ -21,7 +23,7 @@ export async function getDeviceUdid(): Promise<string> {
 
   let raw = await storage.get<string>(STORAGE_KEY);
   if (!raw) {
-    raw = crypto.randomUUID();
+    raw = randomUUID();
     await storage.set(STORAGE_KEY, raw);
     await clearStaleAuthTokens(storage);
   }
@@ -31,9 +33,8 @@ export async function getDeviceUdid(): Promise<string> {
 }
 
 async function hashToUdid(raw: string): Promise<string> {
-  const data = new TextEncoder().encode(raw);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer))
+  const hash = await sha256(new TextEncoder().encode(raw));
+  return Array.from(hash)
     .slice(0, 16)
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');

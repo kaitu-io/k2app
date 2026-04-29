@@ -19,6 +19,7 @@ import { useAlertStore } from '../stores/alert.store';
 import { cloudApi } from '../services/cloud-api';
 import { getDeviceUdid } from '../services/device-udid';
 import { refreshNetworkEnv } from '../services/network-env';
+import { randomUUID } from '../utils/uuid';
 
 function formatConnectionInfo(info: LastConnectionInfo): string {
   return [
@@ -63,7 +64,7 @@ async function submitRating(
 }
 
 async function submitNegativeFeedback(info: LastConnectionInfo): Promise<void> {
-  const feedbackId = crypto.randomUUID();
+  const feedbackId = randomUUID();
   let s3Keys: Array<{ name: string; s3Key: string }> = [];
 
   // Step 1: Upload logs (best-effort)
@@ -160,7 +161,7 @@ export function DisconnectFeedbackDialog() {
     connectionInfoRef.current = null;
 
     if (info) {
-      const feedbackId = crypto.randomUUID();
+      const feedbackId = randomUUID();
       submitRating('good', info, feedbackId).catch((err) => {
         console.error('[DisconnectFeedback] good rating error:', err);
       });
