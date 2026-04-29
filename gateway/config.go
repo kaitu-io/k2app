@@ -82,17 +82,39 @@ func engineConfig(client *config.ClientConfig, prov provider.Provider, healthCb 
 	}
 }
 
-func resolveExcludeIPs(serverURL string, directDNS []string) ([]string, error) {
-	host := extractServerHost(serverURL)
-	if host == "" {
-		return nil, fmt.Errorf("gateway: cannot extract host from server URL")
+// extractRouteHosts returns the host portion of every wire-outbound route
+// (k2v5://, k2p://). Returns empty when no wire route exists or all are
+// "direct"/"reject"/k2subs:// (k2subs is unresolved at this point and must
+// not be queried for IP exclusion — its host would be the subscription API,
+// not the actual wire server).
+func extractRouteHosts(routes []config.RouteConfig) []string {
+	var hosts []string
+	for _, r := range routes {
+		scheme := config.ViaScheme(r.Via)
+		if scheme != config.ViaSchemeK2v5 && scheme != config.ViaSchemeK2p {
+			continue
+		}
+		host := extractServerHost(r.Via)
+		if host == "" {
+			continue
+		}
+		hosts = append(hosts, host)
 	}
-	serverIPs, err := net.LookupHost(host)
-	if err != nil {
-		return nil, fmt.Errorf("resolve server %s: %w", host, err)
+	return hosts
+}
+
+func resolveExcludeIPs(hosts []string, directDNS []string) ([]string, error) {
+	if len(hosts) == 0 {
+		return nil, fmt.Errorf("gateway: no wire-outbound routes to derive exclude IPs from")
 	}
-	exclude := make([]string, 0, len(serverIPs)+len(directDNS)+8)
-	exclude = append(exclude, serverIPs...)
+	exclude := make([]string, 0, len(hosts)*2+len(directDNS)+8)
+	for _, host := range hosts {
+		serverIPs, err := net.LookupHost(host)
+		if err != nil {
+			return nil, fmt.Errorf("resolve server %s: %w", host, err)
+		}
+		exclude = append(exclude, serverIPs...)
+	}
 
 	for _, dns := range directDNS {
 		h, _, _ := net.SplitHostPort(dns)

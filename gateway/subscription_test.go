@@ -6,8 +6,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/rule"
@@ -122,6 +127,92 @@ func TestGateway_DoDown_ClosesSubscriptionSessions(t *testing.T) {
 	g.doDown()
 	if got := g.subsMgr.SessionsLen(); got != 0 {
 		t.Fatalf("doDown should clear sessions; got %d", got)
+	}
+}
+
+// TestGateway_DoUp_StartsBackgroundRefresh is a build-time guard ensuring
+// the doUp body actually wires Subscription.StartRefresh. Without this call
+// the subscription is fetched once at doUp and never refreshed; if the
+// upstream tunnel list changes, gateway never picks up the new servers
+// until a manual restart — defeating k2subs's set-and-forget hot-swap
+// design.
+//
+// The test scans the gateway.go source verbatim because spinning up a
+// real eng.Start path requires nft/TUN that the unit-test environment
+// lacks. The full goroutine-leak semantics for StartRefresh + Close are
+// already covered by subscription/session_leak_test.go.
+func TestGateway_DoUp_StartsBackgroundRefresh(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	gwPath := filepath.Join(filepath.Dir(file), "gateway.go")
+	src, err := os.ReadFile(gwPath)
+	if err != nil {
+		t.Fatalf("read gateway.go: %v", err)
+	}
+	if !strings.Contains(string(src), "StartRefresh") {
+		t.Fatalf("gateway.go must call Subscription.StartRefresh — without it, " +
+			"k2subs:// hot-swap on upstream changes is broken (see daemon.go:440-443)")
+	}
+}
+
+// TestGateway_StartRefresh_RuntimeBehavior is a real integration test that
+// drives the same flow doUp uses (Resolve → StartRefresh on each session)
+// and verifies the background refresh goroutine actually fires against a
+// short-interval (refresh=1) k2subs URL. CloseAll() then must drain the
+// goroutine cleanly — Session.Close blocks on the refresh `done` channel.
+func TestGateway_StartRefresh_RuntimeBehavior(t *testing.T) {
+	var hits atomic.Int32
+	subsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tunnels":[{"url":"k2v5://u:t@picked.example/?ech=x","weight":1}]}`))
+	}))
+	defer subsServer.Close()
+
+	subsURL := "k2subs://u:t@" + strings.TrimPrefix(subsServer.URL, "https://") + "/?refresh=1"
+
+	cfg := &config.ClientConfig{
+		Routes: []config.RouteConfig{{Via: subsURL, Match: rule.MatchConfig{All: true}}},
+	}
+
+	g := New("test", "test", "linux/amd64")
+	g.subsMgr = subscription.NewManager(t.TempDir(), subsServer.Client(), nil)
+
+	subs, _, err := g.subsMgr.Resolve(cfg)
+	if err != nil {
+		t.Fatalf("Resolve err: %v", err)
+	}
+
+	// Mirror the StartRefresh wiring doUp does after eng.Start succeeds.
+	for _, sess := range subs {
+		client := sess.HTTPClient()
+		sess.Subscription().StartRefresh(g.ctx, func() *http.Client { return client })
+	}
+
+	// Initial fetch counted as 1; with refresh=1s, we expect at least 2 by 1.5s.
+	deadline := time.Now().Add(1500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if hits.Load() >= 2 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := hits.Load(); got < 2 {
+		t.Fatalf("expected >=2 hits (initial fetch + >=1 refresh), got %d — StartRefresh not running", got)
+	}
+
+	// CloseAll must drain the refresh goroutine; if not, this hangs.
+	done := make(chan struct{})
+	go func() {
+		g.subsMgr.CloseAll()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("CloseAll did not return — refresh goroutine leaked")
 	}
 }
 

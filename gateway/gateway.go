@@ -194,23 +194,13 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	}
 	slog.Info("DIAG: gw-lan-discover", "subnets", subnets, "ifaceCount", len(subnets))
 
-	excludeIPs, err := resolveExcludeIPs(cfg.Server, cfg.DNS.Direct)
-	if err != nil {
-		return err
-	}
-
-	var sc sysctlState
-	if err := sc.Enable(); err != nil {
-		return err
-	}
-
-	// Resolve k2subs:// routes BEFORE building the interceptor or engine so the
-	// engine sees a fully-resolved (k2v5://) ClientConfig. Sessions are owned
-	// by g.subsMgr; cleanup is deferred until either an early-return path or
-	// (on success) doDown via closeTunnel/CloseAll.
+	// Resolve k2subs:// routes BEFORE computing TPROXY exclude IPs so the
+	// exclude list contains the actual k2v5 wire server IPs (not empty or the
+	// k2subs API host). Sessions are owned by g.subsMgr; cleanup is deferred
+	// until either an early-return path or (on success) doDown via
+	// closeTunnel/CloseAll.
 	subs, resolved, subsErr := g.subsMgr.Resolve(&cfg.ClientConfig)
 	if subsErr != nil {
-		sc.Restore()
 		return fmt.Errorf("gateway: subscription resolve: %w", subsErr)
 	}
 	subsCleanup := true
@@ -219,7 +209,21 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 			g.subsMgr.CloseAll()
 		}
 	}()
-	_ = subs // sessions captured on g.subsMgr; reference kept for log/debug parity
+
+	// Engine runs against the resolved client (k2subs:// → k2v5://). The
+	// original cfg.ClientConfig keeps the k2subs:// route for persistence so
+	// a restart re-fetches the subscription.
+	engineClient := subscription.ApplyResolved(&cfg.ClientConfig, resolved)
+
+	excludeIPs, err := resolveExcludeIPs(extractRouteHosts(engineClient.Routes), engineClient.DNS.Direct)
+	if err != nil {
+		return err
+	}
+
+	var sc sysctlState
+	if err := sc.Enable(); err != nil {
+		return err
+	}
 
 	interceptor, err := NewInterceptor()
 	if err != nil {
@@ -272,11 +276,6 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 
 	prov := newGatewayProvider(interceptor, icfg)
 
-	// Engine runs against the resolved client (k2subs:// → k2v5://). The
-	// original cfg.ClientConfig keeps the k2subs:// route for persistence so
-	// a restart re-fetches the subscription.
-	engineClient := subscription.ApplyResolved(&cfg.ClientConfig, resolved)
-
 	eng := engine.New()
 	eng.SetEventHandler(g)
 	ecfg := engineConfig(engineClient, prov, g.broadcastSnapshot, g.subsMgr)
@@ -287,6 +286,15 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 		return err
 	}
 	subsCleanup = false // engine owns sessions until doDown/closeTunnel
+
+	// Start background subscription refresh — reuse the per-session HTTP
+	// client built in subsMgr.Resolve so refresh fetches go through the
+	// same Transport (connection pool) that Session.Close will later
+	// release via CloseIdleConnections. Mirrors daemon.go.
+	for _, sess := range subs {
+		client := sess.HTTPClient()
+		sess.Subscription().StartRefresh(g.ctx, func() *http.Client { return client })
+	}
 
 	g.mu.Lock()
 	g.eng = eng

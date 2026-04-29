@@ -5,7 +5,10 @@ package gateway
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/kaitu-io/k2/config"
 )
 
 func TestExtractServerHost(t *testing.T) {
@@ -104,5 +107,56 @@ func TestLoadGateway_NotFound(t *testing.T) {
 	_, err := LoadGateway("/nonexistent/path.yml")
 	if err == nil {
 		t.Error("expected error for missing file")
+	}
+}
+
+// TestExtractRouteHosts pins the contract that resolveExcludeIPs depends on:
+// only wire-outbound (k2v5/k2p) routes contribute hosts to the TPROXY exclude
+// list. k2subs:// must NOT — it is unresolved at this point and resolving it
+// would yield the subscription API host, not the actual wire server. "direct"
+// and "reject" sentinels are skipped.
+func TestExtractRouteHosts(t *testing.T) {
+	tests := []struct {
+		name   string
+		routes []config.RouteConfig
+		want   []string
+	}{
+		{
+			name:   "single k2v5 route",
+			routes: []config.RouteConfig{{Via: "k2v5://u:t@picked.example/?ech=x"}},
+			want:   []string{"picked.example"},
+		},
+		{
+			name: "two k2v5 routes",
+			routes: []config.RouteConfig{
+				{Via: "k2v5://u:t@a.example:443/?ech=x"},
+				{Via: "k2v5://u:t@b.example:443"},
+			},
+			want: []string{"a.example", "b.example"},
+		},
+		{
+			name: "direct + k2subs are skipped",
+			routes: []config.RouteConfig{
+				{Via: "direct"},
+				{Via: "k2subs://api.example/"},
+			},
+			want: nil,
+		},
+		{
+			name: "k2v5 + direct keeps wire only",
+			routes: []config.RouteConfig{
+				{Via: "k2v5://u:t@a.example/?ech=x"},
+				{Via: "direct"},
+			},
+			want: []string{"a.example"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractRouteHosts(tt.routes)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("extractRouteHosts(%+v) = %v, want %v", tt.routes, got, tt.want)
+			}
+		})
 	}
 }
