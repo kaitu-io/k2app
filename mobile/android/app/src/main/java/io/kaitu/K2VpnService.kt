@@ -44,6 +44,10 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         private const val TAG = "K2VpnService"
     }
 
+    // @Volatile: read from main, engineExecutor, and system callback threads.
+    // Stale-engine guard in EventHandler.onStatus relies on fresh visibility of
+    // this field to drop late emits from retired engines.
+    @Volatile
     private var engine: Engine? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     @Volatile
@@ -103,6 +107,22 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
             }
             "STOP" -> {
                 Log.d(TAG, "onStartCommand STOP: tearing down VPN")
+                NativeLogger.log("INFO", "onStartCommand STOP: synthesizing disconnected before teardown")
+                // Synthesize disconnected status BEFORE eng.stop() runs.
+                //
+                // eng.stop() goes through engineExecutor (single-thread). Under wire-recovery
+                // conditions, the executor can be queued behind a slow Wake/Pause/notifyNetEvent
+                // whose tm.ResetConnections takes seconds — so the engine's own OnStatus emit
+                // is unbounded. Without this synthetic, UI is stuck on "disconnecting" until
+                // either the executor drains or the user swipe-kills the app (#254 mechanism).
+                //
+                // Mirror onRevoke()'s pattern: caller synthesizes, then calls stopVpn(). Only
+                // the user-disconnect entry needs this — internal stopVpn callers (startVpn
+                // restart, establish failure, engine.start failure) already emit appropriate
+                // status before calling stopVpn, and the JS state machine they'd hit is not
+                // "connected", so a synthetic disconnected here would cause a UI flash.
+                val syntheticStatus = JSONObject().apply { put("state", "disconnected") }
+                plugin?.onStatus(syntheticStatus.toString())
                 stopVpn()
             }
             else -> {
@@ -176,14 +196,30 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         }
 
         Log.d(TAG, "Creating engine...")
-        engine = Appext.newEngine()
-        engine?.setEventHandler(object : AppextEventHandler {
+        // Bind the engine instance to a local val so the EventHandler closure can
+        // identity-compare against the field — this lets late emits from a retired
+        // engine (rapid stop+connect race) be dropped before they reach JS.
+        val newEngine = Appext.newEngine()
+        engine = newEngine
+        newEngine.setEventHandler(object : AppextEventHandler {
             /**
              * Unified status callback — receives JSON: {"state":"...","error":{...},"connected_at":"..."}
              * Replaces the old onStateChange+onError dual callbacks (Go EventHandler API migrated).
              * iOS already uses this pattern (PacketTunnelProvider.swift EventBridge.onStatus).
              */
             override fun onStatus(statusJSON: String?) {
+                // Stale-engine guard: rapid stop+connect leaves the OLD engine's
+                // pending eng.stop() to complete on the executor — its synchronous
+                // OnStatus(disconnected) emit would race the new session's
+                // "connecting" state and flash the UI to idle. Closure-captured
+                // newEngine ≠ current field engine ⇒ this handler belongs to a
+                // retired session, drop the emit. iOS doesn't need this because
+                // VPN status is owned by the system (NEVPNStatusDidChange).
+                if (engine !== newEngine) {
+                    Log.d(TAG, "onStatus from stale engine — ignoring: $statusJSON")
+                    NativeLogger.log("DEBUG", "onStatus from stale engine — ignored: ${statusJSON ?: "null"}")
+                    return
+                }
                 Log.d(TAG, "onStatus: $statusJSON")
                 NativeLogger.log("DEBUG", "onStatus: ${statusJSON ?: "null"}")
                 if (statusJSON == null) {
@@ -325,8 +361,22 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         NativeLogger.log("INFO", "stopVpn: beginning teardown")
         enginePaused.set(false)
         unregisterNetworkCallback()
+        // Capture eng + pfd locally and clear fields synchronously on the caller thread.
+        //
+        // Race A (close-after-replace): the deferred mainHandler.post below may run after
+        // a startVpn() has assigned a NEW vpnInterface — without local capture, the post
+        // would close the new TUN. Local pfd ref → only the OLD pfd is closed.
+        //
+        // Race B (stopSelf-killing-new-session): same scenario — without the engine==null
+        // gate below, the deferred stopSelf would terminate the just-started session.
+        //
+        // Both writes to engine/vpnInterface happen on main thread (startVpn + stopVpn +
+        // mainHandler.post all main-thread-bound), so the field reads in the post are
+        // serialized — no torn read possible.
         val eng = engine
+        val pfd = vpnInterface
         engine = null
+        vpnInterface = null
         if (eng != null) {
             // Run blocking gomobile stop() off main thread
             engineExecutor.execute {
@@ -334,23 +384,30 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
                     Log.d(TAG, "stopVpn: calling engine.stop() on background thread")
                     eng.stop()
                     Log.d(TAG, "stopVpn: engine.stop() completed")
+                    NativeLogger.log("INFO", "stopVpn: engine.stop() completed")
                 } catch (e: Exception) {
                     Log.e(TAG, "stopVpn: engine.stop() threw: ${e.message}", e)
+                    NativeLogger.log("ERROR", "stopVpn: engine.stop() threw: ${e.message}")
                 }
                 mainHandler.post {
-                    // Close VPN interface AFTER engine stops — this notifies Android's VPN
-                    // framework to tear down routing and remove the status bar icon.
+                    // Close the LOCAL pfd captured at stopVpn entry — never the field.
                     // ParcelFileDescriptor.close() is idempotent (safe if called twice).
-                    try { vpnInterface?.close() } catch (_: Exception) {}
-                    vpnInterface = null
-                    Log.d(TAG, "stopVpn: removing foreground service + stopping self")
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
+                    try { pfd?.close() } catch (_: Exception) {}
+                    // Only stop the service if no new session has started in the meantime.
+                    // engine != null here means startVpn() ran during teardown — the new
+                    // session owns the foreground notification + service lifecycle now.
+                    if (engine == null) {
+                        Log.d(TAG, "stopVpn: removing foreground service + stopping self")
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    } else {
+                        Log.i(TAG, "stopVpn: deferred stopSelf skipped — new session active")
+                        NativeLogger.log("INFO", "stopVpn: deferred stopSelf skipped — new session active")
+                    }
                 }
             }
         } else {
-            try { vpnInterface?.close() } catch (_: Exception) {}
-            vpnInterface = null
+            try { pfd?.close() } catch (_: Exception) {}
             Log.d(TAG, "stopVpn: no engine — just stopping foreground service")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
