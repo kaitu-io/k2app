@@ -5,6 +5,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/subscription"
@@ -202,6 +204,23 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 		return err
 	}
 
+	// Resolve k2subs:// routes BEFORE building the interceptor or engine so the
+	// engine sees a fully-resolved (k2v5://) ClientConfig. Sessions are owned
+	// by g.subsMgr; cleanup is deferred until either an early-return path or
+	// (on success) doDown via closeTunnel/CloseAll.
+	subs, resolved, subsErr := g.subsMgr.Resolve(&cfg.ClientConfig)
+	if subsErr != nil {
+		sc.Restore()
+		return fmt.Errorf("gateway: subscription resolve: %w", subsErr)
+	}
+	subsCleanup := true
+	defer func() {
+		if subsCleanup {
+			g.subsMgr.CloseAll()
+		}
+	}()
+	_ = subs // sessions captured on g.subsMgr; reference kept for log/debug parity
+
 	interceptor, err := NewInterceptor()
 	if err != nil {
 		sc.Restore()
@@ -253,15 +272,21 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 
 	prov := newGatewayProvider(interceptor, icfg)
 
+	// Engine runs against the resolved client (k2subs:// → k2v5://). The
+	// original cfg.ClientConfig keeps the k2subs:// route for persistence so
+	// a restart re-fetches the subscription.
+	engineClient := subscription.ApplyResolved(&cfg.ClientConfig, resolved)
+
 	eng := engine.New()
 	eng.SetEventHandler(g)
-	ecfg := engineConfig(cfg, prov, g.broadcastSnapshot)
+	ecfg := engineConfig(engineClient, prov, g.broadcastSnapshot, g.subsMgr)
 	if err := eng.Start(ecfg); err != nil {
 		prov.Close()
 		interceptor.Remove()
 		sc.Restore()
 		return err
 	}
+	subsCleanup = false // engine owns sessions until doDown/closeTunnel
 
 	g.mu.Lock()
 	g.eng = eng
@@ -319,11 +344,13 @@ func (g *Gateway) OnStatus(status engine.Status) {
 // OnStats implements engine.EventHandler.
 func (g *Gateway) OnStats(tx, rx int64) {}
 
-// OnOutboundFatal implements engine.EventHandler. Gateway does not use
-// k2subs:// subscriptions (no OutboundProvider wired), so this path only
-// fires when the engine's replace logic decides a static k2v5:// URL is
-// terminally dead — same user-visible outcome as today's e.fail().
-func (g *Gateway) OnOutboundFatal(outbound string, err error) {}
+// OnOutboundFatal implements engine.EventHandler. Fired when the
+// OutboundProvider (subsMgr) returns no further candidates and the engine
+// has terminated the tunnel. Gateway logs and updates lastStatus; the SSE
+// broadcast happens via OnStatus's normal path.
+func (g *Gateway) OnOutboundFatal(outbound string, err error) {
+	slog.Warn("gateway: outbound fatal", "url", config.TruncateVia(outbound), "err", err)
+}
 
 func (g *Gateway) broadcastSnapshot(snap engine.HealthSnapshot) {
 	data, _ := json.Marshal(snap)

@@ -71,3 +71,19 @@ func TestGateway_DoUp_ResolvesK2subs(t *testing.T) {
 		t.Fatalf("original cfg should retain k2subs:// — got %q", cfg.Routes[0].Via)
 	}
 }
+
+// TestGateway_EngineConfig_HasOutboundProvider verifies the gateway
+// hands its subsMgr to engine.Config.OutboundProvider so the engine's
+// outboundReplaceLoop can drive hot-swap.
+func TestGateway_EngineConfig_HasOutboundProvider(t *testing.T) {
+	g := New("test", "test", "linux/amd64")
+	cfg := &GatewayConfig{ClientConfig: config.ClientConfig{}}
+
+	ecfg := engineConfig(&cfg.ClientConfig, nil, nil, g.subsMgr)
+	if ecfg.OutboundProvider == nil {
+		t.Fatalf("engineConfig must set OutboundProvider when subsMgr is non-nil")
+	}
+	if ecfg.OutboundProvider != g.subsMgr {
+		t.Fatalf("OutboundProvider != subsMgr")
+	}
+}

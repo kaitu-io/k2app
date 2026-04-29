@@ -61,13 +61,24 @@ func SetGatewayDefaults(cfg *GatewayConfig) {
 	}
 }
 
-func engineConfig(cfg *GatewayConfig, prov provider.Provider, healthCb func(engine.HealthSnapshot)) engine.Config {
+// engineConfig assembles the engine.Config the gateway hands to engine.Start.
+//
+// The first argument is the ClientConfig the engine should run against — for
+// k2subs:// routes, this is the *resolved* (k2v5://) client built by
+// subscription.ApplyResolved. The unresolved cfg.ClientConfig is preserved
+// elsewhere for persistence + Resolve replay.
+//
+// outboundProvider is the gateway's subscription.Manager — wired into
+// engine.Config.OutboundProvider so the engine's outboundReplaceLoop can
+// hot-swap k2v5:// targets when one fails persistently.
+func engineConfig(client *config.ClientConfig, prov provider.Provider, healthCb func(engine.HealthSnapshot), outboundProvider engine.OutboundProvider) engine.Config {
 	return engine.Config{
-		Client:         &cfg.ClientConfig,
-		FileDescriptor: -1,
-		Provider:       prov,
-		HealthCallback: healthCb,
-		WireMode:       "gateway",
+		Client:           client,
+		FileDescriptor:   -1,
+		Provider:         prov,
+		HealthCallback:   healthCb,
+		WireMode:         "gateway",
+		OutboundProvider: outboundProvider,
 	}
 }
 
