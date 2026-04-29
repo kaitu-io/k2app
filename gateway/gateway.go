@@ -14,6 +14,7 @@ import (
 
 	"github.com/kaitu-io/k2/engine"
 	"github.com/kaitu-io/k2/safego"
+	"github.com/kaitu-io/k2/subscription"
 	"github.com/kaitu-io/k2/webui"
 	"github.com/sasha-s/go-deadlock"
 )
@@ -48,6 +49,10 @@ type Gateway struct {
 	arch            string
 	routerDeviceMgr *RouterDeviceManager
 	updater         *webui.Upgrader
+
+	// Subscription manager — handles k2subs:// routes, OutboundProvider
+	// hot-swap, exclude state. Cleared on doDown via CloseAll.
+	subsMgr *subscription.Manager
 }
 
 // k2rReleaseEndpoints lists the CDN base URLs used by k2r's OTA upgrader.
@@ -78,7 +83,7 @@ func newK2rUpgrader(version string) *webui.Upgrader {
 // New creates a Gateway ready to Run.
 func New(version, commit, arch string) *Gateway {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Gateway{
+	g := &Gateway{
 		ctx:        ctx,
 		cancel:     cancel,
 		lastStatus: engine.Status{State: engine.StateDisconnected},
@@ -89,6 +94,12 @@ func New(version, commit, arch string) *Gateway {
 		arch:       arch,
 		updater:    newK2rUpgrader(version),
 	}
+	g.subsMgr = subscription.NewManager(
+		filepath.Join(stateDir(), "subs"),
+		nil,
+		nil, // probe.Registry is daemon-only for now; gateway can wire later
+	)
+	return g
 }
 
 // Run starts the HTTP API server and blocks until Stop is called or the
