@@ -26,7 +26,7 @@ import { useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
-import { useConnectionStore, AUTO_TUNNEL_DOMAIN, useEffectiveCloudSelection, isAutoSelection } from '../stores/connection.store';
+import { useConnectionStore, AUTO_TUNNEL_DOMAIN, useEffectiveCloudSelection, useHasConnectableSelection, isAutoSelection } from '../stores/connection.store';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { getCurrentAppConfig } from '../config/apps';
@@ -35,7 +35,7 @@ import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingMod
 import { AlwaysOnToggle } from '../components/AlwaysOnToggle';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList, type CloudTunnelListHandle } from '../components/CloudTunnelList';
-import { getFlagIcon } from '../utils/country';
+import { getFlagIcon, getCountryName } from '../utils/country';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { cacheStore } from '../services/cache-store';
 import { DisconnectFeedbackDialog } from '../components/DisconnectFeedbackDialog';
@@ -198,6 +198,11 @@ export default function Dashboard() {
   // Effective cloud selection for UI — Auto sentinel when no concrete tunnel picked
   const effectiveCloudSelection = useEffectiveCloudSelection();
 
+  // Single source of truth: ready to initiate connect across all server modes
+  // (manual / self_hosted / k2sub). Drives both the connect-button enable
+  // state and the click handler's pre-connect guard.
+  const hasTunnelSelected = useHasConnectableSelection();
+
   // Stable onSelect for CloudTunnelList — Auto row → clearCloudSelection, concrete → selectCloudTunnel
   const handleCloudTunnelSelect = useCallback((tunnel: Tunnel) => {
     if (isAutoSelection(tunnel)) {
@@ -348,8 +353,7 @@ export default function Dashboard() {
       console.info('[Dashboard] handleToggleConnection: → disconnect');
       disconnect();
     } else if (isDisconnected) {
-      const isAuto = isAutoSelection(effectiveCloudSelection);
-      if (!displayTunnel && !isAuto) {
+      if (!hasTunnelSelected) {
         console.warn('[Dashboard] handleToggleConnection: no tunnel selected, aborting');
         return;
       }
@@ -358,10 +362,7 @@ export default function Dashboard() {
     } else {
       console.warn('[Dashboard] handleToggleConnection: no matching branch (vpnState=' + vpnState + ', isRetrying=' + isRetrying + ')');
     }
-  }, [isConnected, isDisconnected, isTransitioning, vpnState, displayTunnel, effectiveCloudSelection, connect, disconnect]);
-
-  // Check if any tunnel is selected (cloud or self-hosted)
-  const hasTunnelSelected = !!displayTunnel || isAutoSelection(effectiveCloudSelection);
+  }, [isConnected, isDisconnected, isTransitioning, vpnState, displayTunnel, hasTunnelSelected, connect, disconnect]);
 
   // Map vpnState to ServiceState for CollapsibleConnectionSection
   const serviceState = vpnState === 'idle' ? 'disconnected'
@@ -400,14 +401,20 @@ export default function Dashboard() {
         serviceState={serviceState}
         hasTunnelSelected={hasTunnelSelected}
         tunnelName={
-          isAutoSelection(effectiveCloudSelection)
-            ? `⚡ ${t('dashboard:auto.title')}${connectedTunnel ? ` · ${connectedTunnel.name || connectedTunnel.domain}` : ''}`
-            : displayTunnel?.name
+          serverMode === 'k2sub'
+            ? (subsCountry === null
+                ? `⚡ ${t('dashboard:auto.title')}`
+                : getCountryName(subsCountry))
+            : isAutoSelection(effectiveCloudSelection)
+              ? `⚡ ${t('dashboard:auto.title')}${connectedTunnel ? ` · ${connectedTunnel.name || connectedTunnel.domain}` : ''}`
+              : displayTunnel?.name
         }
         tunnelCountry={
-          isAutoSelection(effectiveCloudSelection)
-            ? connectedTunnel?.country
-            : displayTunnel?.country
+          serverMode === 'k2sub'
+            ? (subsCountry ?? undefined)
+            : isAutoSelection(effectiveCloudSelection)
+              ? connectedTunnel?.country
+              : displayTunnel?.country
         }
         onToggle={handleToggleConnection}
         error={error}

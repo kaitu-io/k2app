@@ -1173,6 +1173,66 @@ describe('serverMode = k2sub (gateway)', () => {
   });
 });
 
+// ==================== hasConnectableSelection ====================
+
+describe('hasConnectableSelection predicate', () => {
+  it('manual + Auto sentinel default: true', async () => {
+    const { hasConnectableSelection } = await import('../connection.store');
+    expect(hasConnectableSelection({
+      serverMode: 'manual',
+      activeTunnel: null,
+      selectedCloudTunnel: null,
+    })).toBe(true);
+  });
+
+  it('manual + concrete tunnel: true', async () => {
+    const { hasConnectableSelection } = await import('../connection.store');
+    expect(hasConnectableSelection({
+      serverMode: 'manual',
+      activeTunnel: { source: 'cloud', domain: 'd', name: 'n', country: 'JP', serverUrl: 'k2v5://x', ipv4: '' },
+      selectedCloudTunnel: { domain: 'd' } as any,
+    })).toBe(true);
+  });
+
+  it('self_hosted with tunnel: true', async () => {
+    const { hasConnectableSelection } = await import('../connection.store');
+    expect(hasConnectableSelection({
+      serverMode: 'self_hosted',
+      activeTunnel: { source: 'self_hosted', domain: 'd', name: 'n', country: '', serverUrl: 'k2v5://x', ipv4: '' },
+      selectedCloudTunnel: null,
+    })).toBe(true);
+  });
+
+  it('self_hosted without tunnel: false', async () => {
+    const { hasConnectableSelection } = await import('../connection.store');
+    expect(hasConnectableSelection({
+      serverMode: 'self_hosted',
+      activeTunnel: null,
+      selectedCloudTunnel: null,
+    })).toBe(false);
+  });
+
+  it('k2sub with no country (Auto): true', async () => {
+    const { hasConnectableSelection } = await import('../connection.store');
+    expect(hasConnectableSelection({
+      serverMode: 'k2sub',
+      activeTunnel: null,
+      selectedCloudTunnel: null,
+    })).toBe(true);
+  });
+
+  it('k2sub with country selected: true', async () => {
+    const { hasConnectableSelection } = await import('../connection.store');
+    // subsCountry is independent of activeTunnel/selectedCloudTunnel — k2sub
+    // is always ready regardless of those fields.
+    expect(hasConnectableSelection({
+      serverMode: 'k2sub',
+      activeTunnel: null,
+      selectedCloudTunnel: null,
+    })).toBe(true);
+  });
+});
+
 // ==================== enrichFromTunnelList Tests ====================
 
 describe('enrichFromTunnelList preserves Auto', () => {

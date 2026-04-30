@@ -47,6 +47,7 @@ vi.mock('../../stores/connection.store', async () => {
     ...actual,
     useConnectionStore: vi.fn(),
     useEffectiveCloudSelection: vi.fn(),
+    useHasConnectableSelection: vi.fn(),
   };
 });
 
@@ -76,7 +77,7 @@ import { useAuthStore } from '../../stores';
 import { useLoginDialogStore } from '../../stores/login-dialog.store';
 import { useDashboard } from '../../stores/dashboard.store';
 import { useVPNMachine } from '../../stores/vpn-machine.store';
-import { useConnectionStore, useEffectiveCloudSelection, AUTO_TUNNEL_SENTINEL } from '../../stores/connection.store';
+import { useConnectionStore, useEffectiveCloudSelection, useHasConnectableSelection, hasConnectableSelection, AUTO_TUNNEL_SENTINEL } from '../../stores/connection.store';
 import { useUser } from '../../hooks/useUser';
 import Dashboard from '../Dashboard';
 
@@ -112,7 +113,7 @@ const createMockConnectionStore = (overrides = {}) => ({
   feedbackRequested: false,
   pendingFeedback: false,
   lastConnectionInfo: null,
-  serverMode: 'manual' as 'manual' | 'self_hosted',
+  serverMode: 'manual' as 'manual' | 'self_hosted' | 'k2sub',
   serverModeLoaded: true,
   setServerMode: vi.fn().mockResolvedValue(undefined),
   selectCloudTunnel: mockSelectCloudTunnel,
@@ -156,6 +157,9 @@ describe('Dashboard', () => {
     (useConnectionStore as any).getState = vi.fn(() => defaultState);
     // Default: no concrete tunnel selected → Auto mode
     vi.mocked(useEffectiveCloudSelection).mockReturnValue(AUTO_TUNNEL_SENTINEL);
+    // Default: manual + Auto fallback ⇒ ready to connect. Tests that model
+    // an unselected state (self_hosted-without-tunnel) override to false.
+    vi.mocked(useHasConnectableSelection).mockReturnValue(true);
     vi.mocked(useAuthStore).mockImplementation((selector: any) => {
       const state = { isAuthenticated: false, user: null };
       return selector(state);
@@ -231,12 +235,19 @@ describe('Dashboard', () => {
 
   describe('隧道选择状态', () => {
     it('未选择隧道时应该显示 hasTunnelSelected=no', async () => {
+      // Only legitimately-unselected production state: self_hosted mode with
+      // no configured tunnel. (Manual mode always has Auto fallback; k2sub
+      // always has subsCountry=null fallback — neither can be "unselected".)
       vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
-        const state = createMockConnectionStore();
+        const state = createMockConnectionStore({
+          serverMode: 'self_hosted' as const,
+          activeTunnel: null,
+          selectedCloudTunnel: null,
+        });
         return selector ? selector(state) : state;
       });
-      // Explicit non-Auto mode (concrete null selection) so hasTunnelSelected is false
       vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
+      vi.mocked(useHasConnectableSelection).mockReturnValue(false);
       render(<Dashboard />);
 
       await waitFor(() => {
@@ -291,16 +302,22 @@ describe('Dashboard', () => {
     });
 
     it('未选择隧道时点击 toggle 不应该调用 connect', async () => {
+      // self_hosted mode without a configured tunnel — the only "no selection"
+      // production state. Guard must abort before calling connect().
       vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
         state: 'idle',
         isDisconnected: true,
       }) as any);
       vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
-        const state = createMockConnectionStore({ serverMode: 'manual' as const });
+        const state = createMockConnectionStore({
+          serverMode: 'self_hosted' as const,
+          activeTunnel: null,
+          selectedCloudTunnel: null,
+        });
         return selector ? selector(state) : state;
       });
-      // No tunnel and NOT Auto → guard must abort
       vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
+      vi.mocked(useHasConnectableSelection).mockReturnValue(false);
 
       render(<Dashboard />);
 
@@ -343,6 +360,8 @@ describe('Dashboard', () => {
     });
 
     it('idle with error without tunnel should not reconnect', async () => {
+      // self_hosted without configured tunnel: even in error+idle state, the
+      // guard must abort because the user has no resolvable selection.
       vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
         state: 'idle',
         isDisconnected: true,
@@ -350,11 +369,15 @@ describe('Dashboard', () => {
         error: { code: 503, message: 'fail' },
       }) as any);
       vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
-        const state = createMockConnectionStore({ serverMode: 'manual' as const });
+        const state = createMockConnectionStore({
+          serverMode: 'self_hosted' as const,
+          activeTunnel: null,
+          selectedCloudTunnel: null,
+        });
         return selector ? selector(state) : state;
       });
-      // No tunnel and NOT Auto → guard must abort
       vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
+      vi.mocked(useHasConnectableSelection).mockReturnValue(false);
 
       render(<Dashboard />);
 
@@ -605,6 +628,63 @@ describe('Dashboard', () => {
         return selector ? selector(state) : state;
       });
       (useConnectionStore as any).getState = vi.fn(() => state);
+
+      render(<Dashboard />);
+
+      const toggleBtn = screen.getByTestId('toggle-btn');
+      fireEvent.click(toggleBtn);
+
+      await waitFor(() => {
+        expect(mockConnect).toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('serverMode = k2sub (gateway)', () => {
+    // Regression: picking a k2subs:// link (gateway K2sub tab) used to leave
+    // the connect button disabled because the old hasTunnelSelected check
+    // only recognized manual + Auto sentinel and self_hosted's activeTunnel.
+    // The daemon resolves k2subs:// itself, so the UI is always ready.
+
+    it('connect button enabled in k2sub mode + disconnected (Auto/no country)', async () => {
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'idle',
+        isDisconnected: true,
+      }) as any);
+      const state = createMockConnectionStore({
+        serverMode: 'k2sub' as const,
+        selectedCloudTunnel: null,
+        activeTunnel: null,
+      });
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        return selector ? selector(state) : state;
+      });
+      (useConnectionStore as any).getState = vi.fn(() => state);
+      // useEffectiveCloudSelection returns null for non-manual modes
+      vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('tunnel-selected')).toHaveTextContent('yes');
+      });
+    });
+
+    it('clicking connect in k2sub+disconnected calls connect() (does not abort)', async () => {
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'idle',
+        isDisconnected: true,
+      }) as any);
+      const state = createMockConnectionStore({
+        serverMode: 'k2sub' as const,
+        selectedCloudTunnel: null,
+        activeTunnel: null,
+      });
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        return selector ? selector(state) : state;
+      });
+      (useConnectionStore as any).getState = vi.fn(() => state);
+      vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
 
       render(<Dashboard />);
 

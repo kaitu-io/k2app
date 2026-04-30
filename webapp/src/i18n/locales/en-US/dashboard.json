@@ -70,6 +70,7 @@
     },
     "selectServerHint": "Please select from below",
     "selectServerHintShort": "↓ Select a server",
+    "selectedServer": "Selected server",
     "connectedBannerHint": "Connected — disconnect first to switch servers",
     "disconnectBannerBtn": "Disconnect",
     "connectionRetrying": "Server connection failed, retrying...",

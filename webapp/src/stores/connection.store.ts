@@ -783,3 +783,26 @@ export function useEffectiveCloudSelection(): Tunnel | null {
     return s.selectedCloudTunnel ?? AUTO_TUNNEL_SENTINEL;
   });
 }
+
+/**
+ * Pure predicate: is the user's current selection ready to initiate a connect?
+ *
+ * Each serverMode has its own readiness rule:
+ *   - manual: Auto is the always-fallback. Ready when a concrete tunnel is
+ *     active OR no concrete pick (Auto sentinel default).
+ *   - self_hosted: requires a configured tunnel (activeTunnel set).
+ *   - k2sub: subsCountry===null is the always-fallback (Auto). The daemon
+ *     resolves the k2subs:// URL on connect, so the UI is always ready.
+ */
+export function hasConnectableSelection(
+  s: Pick<ConnectionState, 'serverMode' | 'activeTunnel' | 'selectedCloudTunnel'>,
+): boolean {
+  if (s.serverMode === 'self_hosted') return !!s.activeTunnel;
+  if (s.serverMode === 'k2sub') return true;
+  return !!s.activeTunnel || s.selectedCloudTunnel === null;
+}
+
+/** Hook wrapper around `hasConnectableSelection` for component consumers. */
+export function useHasConnectableSelection(): boolean {
+  return useConnectionStore(hasConnectableSelection);
+}
