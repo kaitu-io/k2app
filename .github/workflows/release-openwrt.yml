@@ -134,9 +134,14 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
+          DISTRIBUTION_ID: ${{ secrets.CDN_DISTRIBUTION_ID }}
         run: |
+          if [ -z "${DISTRIBUTION_ID}" ]; then
+            echo "::warning::CDN_DISTRIBUTION_ID secret not set — skipping invalidation (new uploads don't need it; only relevant when overwriting LATEST or install-k2r.sh)"
+            exit 0
+          fi
           aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CDN_DISTRIBUTION_ID }} \
+            --distribution-id "${DISTRIBUTION_ID}" \
             --paths "/kaitu/k2r/LATEST" "/kaitu/k2r/install-k2r.sh"
 
       - name: Notify Slack on success
