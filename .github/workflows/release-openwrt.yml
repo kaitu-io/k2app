@@ -68,6 +68,7 @@ jobs:
           COMMIT=$(cd k2 && git rev-parse --short HEAD)
           mkdir -p build
           cd k2 && go build \
+            -tags release \
             -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
             -o ../build/k2r-linux-${{ matrix.name }} \
             ./cmd/k2r

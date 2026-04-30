@@ -29,6 +29,7 @@ echo ""
 # 1. Cross-compile binaries
 echo "[1/4] Building binaries (linux/amd64)..."
 cd k2 && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -tags release \
     -ldflags "-s -w" \
     -o ../docker/k2s/k2s ./cmd/k2s
 cd ..

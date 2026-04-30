@@ -66,7 +66,7 @@ jobs:
             GOARCH="${pair##*:}"
             echo "  k2s-${GOOS}-${GOARCH}"
             CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-              go build -C k2 -ldflags "$LDFLAGS" -o "../build/k2s-${GOOS}-${GOARCH}" ./cmd/k2s
+              go build -C k2 -tags release -ldflags "$LDFLAGS" -o "../build/k2s-${GOOS}-${GOARCH}" ./cmd/k2s
           done
 
           echo ""

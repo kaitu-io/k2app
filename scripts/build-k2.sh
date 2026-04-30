@@ -11,7 +11,7 @@ TARGET="${1:-$(uname -m)-apple-darwin}"
 echo "Building k2 $VERSION ($COMMIT) for $TARGET..."
 
 cd "$ROOT_DIR/k2"
-go build -tags nowebapp \
+go build -tags "nowebapp release" \
   -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT" \
   -o "$ROOT_DIR/desktop/src-tauri/binaries/k2-$TARGET" \
   ./cmd/k2

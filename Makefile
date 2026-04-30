@@ -134,6 +134,7 @@ build-linux: pre-build stage-k2-webui-dist
 	@echo "--- [host] Go cross-compile k2 for Linux (embedded webapp) ---"
 	cd k2 && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 		go build \
+		-tags release \
 		-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(K2_COMMIT) -X github.com/kaitu-io/k2/config.buildLogLevel=$(K2_BUILD_LOG_LEVEL)" \
 		-o build/k2-linux-amd64 ./cmd/k2
 	@echo "--- Packaging tarball ---"
@@ -267,7 +268,7 @@ build-macos-ne-lib: appext-macos
 appext-android build-android dev-android: export JAVA_HOME = $(ANDROID_JAVA_HOME)
 
 appext-android: appext-deps plugin-purity-check check-jdk-21
-	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable" -ldflags "-checklinkname=0" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
+	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable release" -ldflags "-checklinkname=0" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
 
 build-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/

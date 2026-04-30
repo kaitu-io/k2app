@@ -29,6 +29,7 @@ for target in "${TARGETS[@]}"; do
     env CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" ${goarm:+GOARM="${goarm}"} \
         go build \
         -C k2 \
+        -tags release \
         -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
         -o "../${OUTDIR}/k2r-linux-${name}" \
         ./cmd/k2r

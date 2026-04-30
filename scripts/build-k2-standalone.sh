@@ -52,8 +52,8 @@ for platform in "${PLATFORMS[@]}"; do
         continue
     fi
 
-    build_binary "$os" "$arch" "k2"  "cmd/k2"  "nowebapp"
-    build_binary "$os" "$arch" "k2s" "cmd/k2s" ""
+    build_binary "$os" "$arch" "k2"  "cmd/k2"  "nowebapp,release"
+    build_binary "$os" "$arch" "k2s" "cmd/k2s" "release"
 done
 
 echo ""
