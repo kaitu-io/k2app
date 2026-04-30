@@ -110,5 +110,9 @@ export default defineConfig({
     // Mark as OpenWRT build
     'import.meta.env.IS_OPENWRT_BUILD': JSON.stringify(true),
     'import.meta.env.IS_MOBILE_BUILD': JSON.stringify(false),
+
+    // Build-time log level (referenced unconditionally in config.store.ts).
+    // Must mirror vite.config.ts or runtime ReferenceError aborts connect().
+    '__K2_BUILD_LOG_LEVEL__': JSON.stringify(process.env.K2_BUILD_LOG_LEVEL || 'debug'),
   },
 });
