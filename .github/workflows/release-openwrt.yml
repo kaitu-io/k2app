@@ -94,7 +94,7 @@ jobs:
           sudo apt-get install -y -qq qemu-user-static binfmt-support
           for arch in arm64 amd64 armv7; do
             echo "  k2r-linux-${arch}:"
-            "build/k2r-linux-${arch}" -v
+            "build/k2r-linux-${arch}" version
           done
 
       - name: Generate checksums
