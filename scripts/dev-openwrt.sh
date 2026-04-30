@@ -126,13 +126,8 @@ open "http://localhost:${VITE_PORT}" 2>/dev/null || true
 
 cat <<EOF
 
-[dev-openwrt] Running. Endpoints:
-    Vite UI       : http://localhost:${VITE_PORT}
-    k2r gateway   : http://localhost:${GATEWAY_PORT}
-    Container     : ${CONTAINER}
-    Logs          : docker logs -f ${CONTAINER}
-
-Press Ctrl+C to stop.
+[dev-openwrt] Open: http://localhost:${VITE_PORT}
+[dev-openwrt] (k2r :${GATEWAY_PORT} · docker logs -f ${CONTAINER}) — Ctrl+C to stop.
 EOF
 
 wait "$VITE_PID"
