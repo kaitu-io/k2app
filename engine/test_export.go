@@ -1,12 +1,24 @@
+//go:build !release
+
 package engine
 
 // Test-only helpers for cross-package E2E tests under k2/test/.
 //
-// These symbols are reachable from production builds because cross-package
-// tests cannot see _test.go files. Do NOT call any of these from production
-// code paths — they exist solely to let test code construct outboundTransport
-// instances and drive replaceOutboundServer without spinning up the full
-// engine.Start() pipeline. Mirrors the pattern of ForceConnected in engine.go.
+// File excluded from release builds via the `release` build tag. Default
+// builds (developer + CI test) compile this file; production release builds
+// must pass `-tags release` (e.g. via Makefile / release.sh) to strip it.
+//
+// Why this is needed: cross-package tests cannot see _test.go files, so
+// these helpers must live in a regular .go file. The `!release` constraint
+// guarantees the symbols never reach a tagged production binary even by
+// accident. Mirrors the pattern of ForceConnected in engine.go (kept
+// untagged because it predates this convention and is referenced by other
+// in-tree tests).
+//
+// Do NOT call any of these from production code paths — they exist solely
+// to let test code construct outboundTransport instances and drive
+// replaceOutboundServer without spinning up the full engine.Start()
+// pipeline.
 
 import (
 	"context"

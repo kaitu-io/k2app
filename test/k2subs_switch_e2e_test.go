@@ -1,3 +1,5 @@
+//go:build !release
+
 package test
 
 // E2E tests for k2subs:// server-switching scenarios.
