@@ -41,6 +41,7 @@ import { cacheStore } from '../services/cache-store';
 import { DisconnectFeedbackDialog } from '../components/DisconnectFeedbackDialog';
 import { SmartServerSelector } from '../components/SmartServerSelector';
 import { SelfHostedTunnelItem } from '../components/SelfHostedTunnelItem';
+import { K2subConfig } from '../components/K2subConfig';
 
 // Styled Components for Modern Design
 const DashboardContainer = styled(Box)(({ theme }) => ({
@@ -182,8 +183,14 @@ export default function Dashboard() {
     }
   }, [location.pathname]);
 
+  // Tunnels list for K2subConfig country derivation. CloudTunnelList loads
+  // these regardless of which tab is active; we mirror them into local state
+  // so K2subConfig (gateway tab) can show the country list without re-fetching.
+  const [loadedTunnels, setLoadedTunnels] = useState<Tunnel[]>([]);
+
   // Handle cloud tunnels loaded — feed enrichment + reconcile selection
   const handleTunnelsLoaded = useCallback((tunnels: Tunnel[]) => {
+    setLoadedTunnels(tunnels);
     enrichFromTunnelList(tunnels);
     useConnectionStore.getState().reconcileSelection(tunnels);
   }, [enrichFromTunnelList]);
@@ -240,6 +247,20 @@ export default function Dashboard() {
       disabled={isInteractive}
       onTunnelsLoaded={handleTunnelsLoaded}
       hideHeader
+    />
+  );
+
+  // K2sub (gateway-only) tab content. CloudTunnelList in manualTabContent
+  // is what populates loadedTunnels — on gateway it stays mounted invisibly
+  // so the country list here keeps refreshing on the same cadence.
+  const subsCountry = useConnectionStore((s) => s.subsCountry);
+  const setSubsCountry = useConnectionStore((s) => s.setSubsCountry);
+  const k2subTabContent = (
+    <K2subConfig
+      tunnels={loadedTunnels}
+      subsCountry={subsCountry}
+      setSubsCountry={(c) => { void setSubsCountry(c); }}
+      isInteractive={!isInteractive}
     />
   );
 
@@ -447,6 +468,7 @@ export default function Dashboard() {
             isInteractive={!isInteractive}
             manualContent={manualTabContent}
             selfHostedContent={selfHostedTabContent}
+            k2subContent={k2subTabContent}
             onManualRefresh={() => { void handleManualRefresh(); }}
             manualRefreshing={manualRefreshing}
           />
