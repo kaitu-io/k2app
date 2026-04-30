@@ -7,21 +7,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { goos: linux, goarch: arm64, name: arm64 }
-          - { goos: linux, goarch: amd64, name: amd64 }
-          - { goos: linux, goarch: arm, goarm: '7', name: armv7 }
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -46,6 +37,18 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: k2/go.sum
 
+      - name: Verify tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG_VERSION="${TAG_VERSION%-k2r}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Tag and package.json version match: $TAG_VERSION"
+
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile --network-timeout 600000 --network-concurrency 4
 
@@ -57,118 +60,74 @@ jobs:
           rm -rf k2/gateway/dist
           cp -r webapp/dist k2/gateway/dist
 
-      - name: Cross-compile k2r
-        env:
-          CGO_ENABLED: '0'
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          GOARM: ${{ matrix.goarm }}
+      - name: Cross-compile k2r binaries
         run: |
           VERSION=$(node -p "require('./package.json').version")
           COMMIT=$(cd k2 && git rev-parse --short HEAD)
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}"
           mkdir -p build
-          cd k2 && go build \
-            -tags release \
-            -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
-            -o ../build/k2r-linux-${{ matrix.name }} \
-            ./cmd/k2r
 
-      - name: Verify binary architecture
-        run: file build/k2r-linux-${{ matrix.name }}
+          build_one() {
+            arch="$1"; goarm="$2"; name="$3"
+            echo "  k2r-linux-${name} (GOARCH=${arch}${goarm:+ GOARM=${goarm}})"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM="$goarm" \
+              go build -C k2 \
+                -tags release \
+                -ldflags "$LDFLAGS" \
+                -o "../build/k2r-linux-${name}" \
+                ./cmd/k2r
+          }
 
-      - name: Smoke test with qemu
+          build_one arm64 ""  arm64
+          build_one amd64 ""  amd64
+          build_one arm   "7" armv7
+
+      - name: Verify binary architectures
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static binfmt-support
-          build/k2r-linux-${{ matrix.name }} -v
+          for arch in arm64 amd64 armv7; do
+            file "build/k2r-linux-${arch}"
+          done
 
-      - name: Generate checksum
+      - name: Smoke test binaries via qemu
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-user-static binfmt-support
+          for arch in arm64 amd64 armv7; do
+            echo "  k2r-linux-${arch}:"
+            "build/k2r-linux-${arch}" -v
+          done
+
+      - name: Generate checksums
         run: |
           cd build
-          sha256sum k2r-linux-${{ matrix.name }} > checksums-${{ matrix.name }}.txt
+          sha256sum k2r-linux-* > checksums.txt
+          cat checksums.txt
 
-      - name: Upload binary and checksum to S3
+      - name: Upload binaries + checksums to S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          aws s3 cp "build/k2r-linux-${{ matrix.name }}" \
-            "s3://d0.all7.cc/kaitu/k2r/${VERSION}/"
-          aws s3 cp "build/checksums-${{ matrix.name }}.txt" \
-            "s3://d0.all7.cc/kaitu/k2r/${VERSION}/"
+          aws s3 cp build/ "s3://d0.all7.cc/kaitu/k2r/${VERSION}/" \
+            --recursive \
+            --exclude "*" --include "k2r-linux-*" --include "checksums.txt"
 
-      - name: Notify Slack on failure
-        if: failure()
-        run: |
-          ./scripts/ci/notify-slack.sh build-failure \
-            --platform "k2r-${{ matrix.name }}" \
-            --error "k2r build failed for ${{ matrix.name }}"
-        env:
-          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
-
-  finalize:
-    runs-on: ubuntu-latest
-    needs: build
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Merge checksums and upload
+      - name: Publish LATEST and install script
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          mkdir -p build
-          for arch in arm64 amd64 armv7; do
-            aws s3 cp "s3://d0.all7.cc/kaitu/k2r/${VERSION}/checksums-${arch}.txt" \
-              "build/checksums-${arch}.txt"
-            cat "build/checksums-${arch}.txt" >> build/checksums.txt
-          done
-          aws s3 cp build/checksums.txt \
-            "s3://d0.all7.cc/kaitu/k2r/${VERSION}/checksums.txt"
-
-      - name: Upload LATEST file
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo -n "${VERSION}" > build/LATEST
-          aws s3 cp build/LATEST "s3://d0.all7.cc/kaitu/k2r/LATEST" \
+          printf '%s' "${VERSION}" > /tmp/LATEST
+          aws s3 cp /tmp/LATEST "s3://d0.all7.cc/kaitu/k2r/LATEST" \
             --cache-control "max-age=60" \
             --content-type "text/plain"
-
-      - name: Upload install script
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        run: |
           aws s3 cp k2/scripts/install-k2r.sh "s3://d0.all7.cc/kaitu/k2r/install-k2r.sh" \
-            --content-type "text/plain" \
-            --cache-control "max-age=300"
-
-      - name: Clean per-arch checksum files from S3
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          for arch in arm64 amd64 armv7; do
-            aws s3 rm "s3://d0.all7.cc/kaitu/k2r/${VERSION}/checksums-${arch}.txt"
-          done
+            --cache-control "max-age=300" \
+            --content-type "text/plain"
 
       - name: Invalidate CloudFront cache
         env:
@@ -182,6 +141,7 @@ jobs:
 
       - name: Notify Slack on success
         if: success()
+        shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
           ./scripts/ci/notify-slack.sh deploy-success \
@@ -192,9 +152,10 @@ jobs:
 
       - name: Notify Slack on failure
         if: failure()
+        shell: bash
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
-            --platform "k2r-finalize" \
-            --error "k2r finalize job failed"
+            --platform "k2r" \
+            --error "k2r release build failed. Check workflow run for details."
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
