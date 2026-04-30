@@ -238,6 +238,23 @@ Full reserved event table lives in `k2/CLAUDE.md` § Diagnostic Logging Constitu
 - Proxy: `proxy-dial-fail`, `proxy-dial-slow`, `udp-relay-timeout`
 - Subs / misc: `subs-refresh-fail`, `pipe-watchdog`, `datagram-readloop-exit`
 
+## Diagnostic Anti-Patterns (do not make these mistakes)
+
+### "节点远 → 速度慢 / 卡顿" — WRONG
+
+**Distance to a node only adds RTT (latency); it does NOT cause throughput loss, app hangs, or pipe-watchdog bursts.** Kaitu's k2cc congestion control + BBR are designed for long links — a 200ms-RTT path to AU is not "slower" than a 60ms-RTT path to HK in terms of bandwidth or reliability. RTT 100ms vs 250ms is a UX nuance for interactive apps, not a root cause for connectivity failure.
+
+**Never** recommend "switch to a closer node" as a fix for:
+- Slow downloads / video buffering
+- Apps not loading
+- pipe-watchdog / proxy-dial-fail bursts
+- Goroutine spikes
+- "VPN connected but nothing works"
+
+If the heartbeat shows healthy `loss=0` and stable `rttMs`, distance is **not** the cause — keep digging. Real causes for those symptoms: server-side egress saturation, destination geo-blocking, GFW interference on the specific path, or app-side issues. None of those are fixed by picking a node 100ms closer.
+
+Acceptable distance-related advice is narrow: only mention RTT when the user's complaint is **explicitly** about interactive latency (gaming ping, voice call lag, SSH responsiveness) — and even then, frame it as "lower RTT improves *interactive feel*", not "fixes speed".
+
 ## Classification Guide
 
 | Classification | Meaning | Reply Template |
