@@ -14,9 +14,11 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/wire"
 )
 
 const (
@@ -78,4 +80,92 @@ func TestK2SubsSwitch_A2_NextURLSwapsDialer(t *testing.T) {
 	if got := f.Target.Swappable().Current(); got != wantTM {
 		t.Errorf("swappable.Current() != fakeWireSetup-built TM for %q", newURL)
 	}
+}
+
+// A1 — Resolve's initial Pick distribution roughly tracks recommendScore.
+// Runs 400 cold-start fixtures; ~75% of picks should land on URL-A
+// (recommendScore 0.75), tolerating 60–90% per existing project conventions.
+func TestK2SubsSwitch_A1_WeightedInitialPick(t *testing.T) {
+	tunnels := []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.75},
+		{URL: tunB, RecommendScore: 0.25},
+	}
+
+	counts := map[string]int{}
+	const N = 400
+	for i := 0; i < N; i++ {
+		// Each iteration runs in its own subtest scope so cleanups (incl.
+		// goleak) settle per-iteration. Without this, all 400 fixtures'
+		// httptest servers + manager state would pile up before the parent's
+		// goleak runs and the report would be unactionable.
+		t.Run("", func(t *testing.T) {
+			f := newK2subsFixture(t, tunnels)
+			resolvedURL := f.Resolve(context.Background())
+			counts[stripCreds(resolvedURL)]++
+		})
+	}
+
+	aPct := float64(counts[tunA]) / float64(N) * 100
+	if aPct < 60 || aPct > 90 {
+		t.Errorf("A = %.1f%% (counts=%v), want 60-90%% (recommendScore 0.75)", aPct, counts)
+	}
+}
+
+// A3 — When 7 candidates have a ScoreSource installed, only the top 5 by
+// adjusted weight are eligible. The bottom 2 (scores 0.4, 0.3) are never
+// picked.
+func TestK2SubsSwitch_A3_TopK5Truncation(t *testing.T) {
+	bareTunnels := []string{
+		"k2v5://t1:443", "k2v5://t2:443", "k2v5://t3:443",
+		"k2v5://t4:443", "k2v5://t5:443", "k2v5://t6:443",
+		"k2v5://t7:443",
+	}
+	tunnels := make([]config.Tunnel, len(bareTunnels))
+	for i, u := range bareTunnels {
+		tunnels[i] = config.Tunnel{URL: u, RecommendScore: 1}
+	}
+
+	f := newK2subsFixture(t, tunnels)
+	sessions, _, err := f.Mgr.Resolve(&config.ClientConfig{
+		Routes: []config.RouteConfig{{Via: f.SubsURL(), Match: muxAll()}},
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	// Install a deterministic ScoreSource keyed by the credentialed URLs
+	// (Subscription stores tunnels with creds injected by Manager.Resolve).
+	sub := sessions[0].Subscription()
+	scores := mapScoreSource{}
+	descScores := []float64{0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3}
+	for i, tun := range sub.Tunnels() {
+		scores[tun.URL] = descScores[i]
+	}
+	sub.SetScoreSource(scores)
+
+	seen := map[string]bool{}
+	for i := 0; i < 3000; i++ {
+		tun, err := sub.Pick(nil)
+		if err != nil {
+			t.Fatalf("Pick: %v", err)
+		}
+		seen[stripCreds(tun.URL)] = true
+	}
+
+	// Bottom 2 (t6, t7) must never appear; top 5 must each appear at least
+	// once across 3000 samples.
+	for _, banned := range []string{"k2v5://t6:443", "k2v5://t7:443"} {
+		if seen[banned] {
+			t.Errorf("top-K=5 violated; %s appeared in selections", banned)
+		}
+	}
+	for _, want := range []string{"k2v5://t1:443", "k2v5://t2:443", "k2v5://t3:443", "k2v5://t4:443", "k2v5://t5:443"} {
+		if !seen[want] {
+			t.Errorf("top-5 candidate %s never selected", want)
+		}
+	}
+
+	// Silence unused-import warnings until other groups land.
+	_ = time.Second
+	_ = wire.WireStats{}
 }
