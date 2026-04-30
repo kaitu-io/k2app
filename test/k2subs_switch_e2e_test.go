@@ -169,3 +169,116 @@ func TestK2SubsSwitch_A3_TopK5Truncation(t *testing.T) {
 	_ = time.Second
 	_ = wire.WireStats{}
 }
+
+// ---------------------------------------------------------------------------
+// Group B — Probe ↔ switch interaction
+// ---------------------------------------------------------------------------
+
+// B1 — Sentinel score (-1) means "echo unsupported"; do not penalize.
+// Pick falls back to pure recommendScore distribution.
+func TestK2SubsSwitch_B1_SentinelNoPenalty(t *testing.T) {
+	tunnels := []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.9},
+		{URL: tunB, RecommendScore: 0.1},
+	}
+	f := newK2subsFixture(t, tunnels)
+	sessions, _, err := f.Mgr.Resolve(&config.ClientConfig{
+		Routes: []config.RouteConfig{{Via: f.SubsURL(), Match: muxAll()}},
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	sub := sessions[0].Subscription()
+
+	// Record sentinel for both URLs (Reachable=true, EchoSupported=false → Score=-1).
+	for _, tun := range sub.Tunnels() {
+		f.Reg.Record(tun.URL, wire.ProbeStats{
+			Reachable: true, EchoSupported: false, MeasuredAt: time.Now(),
+		})
+	}
+
+	counts := pickN(t, sub, 2000)
+	if counts[tunA] <= counts[tunB] {
+		t.Errorf("sentinel must not penalize; counts=%v", counts)
+	}
+}
+
+// B2 — A single zero-score record is treated as "no data" (flake tolerance).
+// URL is not excluded after just one bad probe.
+func TestK2SubsSwitch_B2_SingleZeroFlakeTolerated(t *testing.T) {
+	tunnels := []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.5},
+		{URL: tunB, RecommendScore: 0.5},
+	}
+	f := newK2subsFixture(t, tunnels)
+	sessions, _, err := f.Mgr.Resolve(&config.ClientConfig{
+		Routes: []config.RouteConfig{{Via: f.SubsURL(), Match: muxAll()}},
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	sub := sessions[0].Subscription()
+
+	credsB := withCreds(tunB, "alice:tok")
+	f.Reg.Record(credsB, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
+
+	saw := map[string]bool{}
+	for i := 0; i < 200; i++ {
+		tun, err := sub.Pick(nil)
+		if err != nil {
+			t.Fatalf("Pick: %v", err)
+		}
+		saw[stripCreds(tun.URL)] = true
+	}
+	if !saw[tunB] {
+		t.Errorf("single zero should not exclude; tunB never picked in 200 calls")
+	}
+}
+
+// B3 — Two consecutive zeros confirm hard exclusion.
+func TestK2SubsSwitch_B3_DoubleZeroHardExclude(t *testing.T) {
+	tunnels := []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.5},
+		{URL: tunB, RecommendScore: 0.5},
+	}
+	f := newK2subsFixture(t, tunnels)
+	sessions, _, err := f.Mgr.Resolve(&config.ClientConfig{
+		Routes: []config.RouteConfig{{Via: f.SubsURL(), Match: muxAll()}},
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	sub := sessions[0].Subscription()
+
+	credsB := withCreds(tunB, "alice:tok")
+	f.Reg.Record(credsB, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
+	f.Reg.Record(credsB, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
+
+	neverSeenInPick(t, sub, tunB, 50)
+}
+
+// B4 — All tunnels probe-excluded → NextURL exhausts via Manager.
+func TestK2SubsSwitch_B4_AllExcludedFiresFatal(t *testing.T) {
+	tunnels := []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.5},
+		{URL: tunB, RecommendScore: 0.5},
+	}
+	f := newK2subsFixture(t, tunnels)
+	f.Resolve(context.Background())
+
+	credsA := withCreds(tunA, "alice:tok")
+	credsB := withCreds(tunB, "alice:tok")
+	for _, c := range []string{credsA, credsB} {
+		f.Reg.Record(c, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
+		f.Reg.Record(c, wire.ProbeStats{Reachable: false, MeasuredAt: time.Now()})
+	}
+
+	err := f.TriggerSwitch(context.Background(), errors.New("wire dead"))
+	if err == nil {
+		t.Fatal("expected error when all tunnels probe-excluded")
+	}
+	if !errIs(err, nil, "all subscribed tunnels failed") &&
+		!errIs(err, nil, "all tunnels excluded") {
+		t.Errorf("error should mention exhaustion: %v", err)
+	}
+}
