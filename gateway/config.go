@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strings"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/k2p"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/rule"
+	"github.com/kaitu-io/k2/wire"
 	"gopkg.in/yaml.v3"
 )
 
@@ -82,36 +83,77 @@ func engineConfig(client *config.ClientConfig, prov provider.Provider, healthCb 
 	}
 }
 
-// extractRouteHosts returns the host portion of every wire-outbound route
-// (k2v5://, k2p://). Returns empty when no wire route exists or all are
-// "direct"/"reject"/k2subs:// (k2subs is unresolved at this point and must
-// not be queried for IP exclusion — its host would be the subscription API,
-// not the actual wire server).
-func extractRouteHosts(routes []config.RouteConfig) []string {
-	var hosts []string
-	for _, r := range routes {
-		scheme := config.ViaScheme(r.Via)
-		if scheme != config.ViaSchemeK2v5 && scheme != config.ViaSchemeK2p {
-			continue
-		}
-		host := extractServerHost(r.Via)
-		if host == "" {
-			continue
-		}
-		hosts = append(hosts, host)
-	}
-	return hosts
+// dialTarget describes one wire-outbound dial destination derived from a
+// route's Via URL. hintedIPs are populated from URL ip=/ip6= params; when
+// non-empty the engine.resolveDialAddr path skips DNS, so the gateway must
+// do the same to keep the TPROXY exclude set in sync with what wire actually
+// connects to. host is used only as a DNS fallback when no IP hint is given.
+type dialTarget struct {
+	host      string
+	hintedIPs []string
 }
 
-func resolveExcludeIPs(hosts []string, directDNS []string) ([]string, error) {
-	if len(hosts) == 0 {
+// extractDialTargets returns one dialTarget per wire-outbound route (k2v5://,
+// k2p://). Delegates to wire.ParseURL / k2p.ParseURL — the same parsers the
+// engine uses (engine/engine.go:1184, k2p/url.go:32) — so the gateway never
+// diverges from the engine's view of "what address will I dial".
+//
+// k2subs:// is intentionally skipped: it is unresolved at this layer (the
+// gateway resolves subscriptions before calling this, then passes the
+// resolved k2v5 URLs in via Routes). "direct"/"reject" sentinels are also
+// skipped. Returns nil when no wire route exists.
+//
+// A malformed wire URL is a hard error here — if wire can't dial it, gateway
+// has nothing to exclude from TPROXY either.
+func extractDialTargets(routes []config.RouteConfig) ([]dialTarget, error) {
+	var targets []dialTarget
+	for _, r := range routes {
+		switch config.ViaScheme(r.Via) {
+		case config.ViaSchemeK2v5:
+			cfg, err := wire.ParseURL(r.Via)
+			if err != nil {
+				return nil, fmt.Errorf("gateway: parse k2v5 outbound: %w", err)
+			}
+			targets = append(targets, dialTargetFromWire(cfg))
+		case config.ViaSchemeK2p:
+			cfg, err := k2p.ParseURL(r.Via)
+			if err != nil {
+				return nil, fmt.Errorf("gateway: parse k2p outbound: %w", err)
+			}
+			targets = append(targets, dialTargetFromWire(cfg.WireCfg))
+		}
+	}
+	return targets, nil
+}
+
+func dialTargetFromWire(cfg wire.Config) dialTarget {
+	var ips []string
+	if cfg.IPv4 != "" {
+		ips = append(ips, cfg.IPv4)
+	}
+	if cfg.IPv6 != "" {
+		ips = append(ips, cfg.IPv6)
+	}
+	return dialTarget{host: cfg.Host, hintedIPs: ips}
+}
+
+func resolveExcludeIPs(targets []dialTarget, directDNS []string) ([]string, error) {
+	if len(targets) == 0 {
 		return nil, fmt.Errorf("gateway: no wire-outbound routes to derive exclude IPs from")
 	}
-	exclude := make([]string, 0, len(hosts)*2+len(directDNS)+8)
-	for _, host := range hosts {
-		serverIPs, err := net.LookupHost(host)
+	exclude := make([]string, 0, len(targets)*2+len(directDNS)+8)
+	for _, t := range targets {
+		if len(t.hintedIPs) > 0 {
+			// URL carries ip=/ip6= — engine.resolveDialAddr dials these
+			// directly, no DNS round trip. Mirror that here so the exclude
+			// set matches what wire actually connects to (and so the gateway
+			// keeps working when the host's DNS is poisoned/blocked).
+			exclude = append(exclude, t.hintedIPs...)
+			continue
+		}
+		serverIPs, err := net.LookupHost(t.host)
 		if err != nil {
-			return nil, fmt.Errorf("resolve server %s: %w", host, err)
+			return nil, fmt.Errorf("resolve server %s: %w", t.host, err)
 		}
 		exclude = append(exclude, serverIPs...)
 	}
@@ -141,22 +183,4 @@ func resolveExcludeIPs(hosts []string, directDNS []string) ([]string, error) {
 		}
 	}
 	return exclude, nil
-}
-
-func extractServerHost(serverURL string) string {
-	s := serverURL
-	if idx := strings.Index(s, "://"); idx >= 0 {
-		s = s[idx+3:]
-	}
-	if idx := strings.Index(s, "@"); idx >= 0 {
-		s = s[idx+1:]
-	}
-	if idx := strings.Index(s, "/"); idx >= 0 {
-		s = s[:idx]
-	}
-	host, _, err := net.SplitHostPort(s)
-	if err != nil {
-		return s
-	}
-	return host
 }

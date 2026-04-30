@@ -6,30 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/kaitu-io/k2/config"
 )
 
-func TestExtractServerHost(t *testing.T) {
-	tests := []struct {
-		url  string
-		want string
-	}{
-		{"k2v5://example.com:443/path?token=x", "example.com"},
-		{"k2v5://user:pass@example.com:443/path", "example.com"},
-		{"k2v5://1.2.3.4:443/path", "1.2.3.4"},
-		{"k2v5://[::1]:443/path", "::1"},
-		{"k2v5://host:443", "host"},
-		{"k2v5://udid:token@my-server.example.com:443/?ech=abc", "my-server.example.com"},
-	}
-	for _, tt := range tests {
-		got := extractServerHost(tt.url)
-		if got != tt.want {
-			t.Errorf("extractServerHost(%q) = %q, want %q", tt.url, got, tt.want)
-		}
-	}
-}
 
 func TestSetGatewayDefaults(t *testing.T) {
 	cfg := &GatewayConfig{}
@@ -110,29 +92,34 @@ func TestLoadGateway_NotFound(t *testing.T) {
 	}
 }
 
-// TestExtractRouteHosts pins the contract that resolveExcludeIPs depends on:
-// only wire-outbound (k2v5/k2p) routes contribute hosts to the TPROXY exclude
-// list. k2subs:// must NOT — it is unresolved at this point and resolving it
-// would yield the subscription API host, not the actual wire server. "direct"
-// and "reject" sentinels are skipped.
-func TestExtractRouteHosts(t *testing.T) {
+// TestExtractDialTargets pins the contract that resolveExcludeIPs depends on:
+// only wire-outbound (k2v5/k2p) routes contribute targets. k2subs:// MUST NOT
+// — it is unresolved at this point; its host is the subscription API, not the
+// wire server. "direct"/"reject" sentinels are skipped. ip=/ip6= URL params
+// flow through as hintedIPs so the exclude path can skip DNS, matching the
+// engine's resolveDialAddr behavior.
+func TestExtractDialTargets(t *testing.T) {
 	tests := []struct {
-		name   string
-		routes []config.RouteConfig
-		want   []string
+		name    string
+		routes  []config.RouteConfig
+		want    []dialTarget
+		wantErr bool
 	}{
 		{
-			name:   "single k2v5 route",
-			routes: []config.RouteConfig{{Via: "k2v5://u:t@picked.example/?ech=x"}},
-			want:   []string{"picked.example"},
+			name:   "single k2v5 route, no ip hint",
+			routes: []config.RouteConfig{{Via: "k2v5://u:t@picked.example:443/?ech=x"}},
+			want:   []dialTarget{{host: "picked.example"}},
 		},
 		{
 			name: "two k2v5 routes",
 			routes: []config.RouteConfig{
 				{Via: "k2v5://u:t@a.example:443/?ech=x"},
-				{Via: "k2v5://u:t@b.example:443"},
+				{Via: "k2v5://u:t@b.example:443/"},
 			},
-			want: []string{"a.example", "b.example"},
+			want: []dialTarget{
+				{host: "a.example"},
+				{host: "b.example"},
+			},
 		},
 		{
 			name: "direct + k2subs are skipped",
@@ -145,18 +132,67 @@ func TestExtractRouteHosts(t *testing.T) {
 		{
 			name: "k2v5 + direct keeps wire only",
 			routes: []config.RouteConfig{
-				{Via: "k2v5://u:t@a.example/?ech=x"},
+				{Via: "k2v5://u:t@a.example:443/?ech=x"},
 				{Via: "direct"},
 			},
-			want: []string{"a.example"},
+			want: []dialTarget{{host: "a.example"}},
+		},
+		{
+			name:   "ip= hint populates hintedIPs",
+			routes: []config.RouteConfig{{Via: "k2v5://u:t@host.example:443/?ech=x&ip=1.2.3.4"}},
+			want:   []dialTarget{{host: "host.example", hintedIPs: []string{"1.2.3.4"}}},
+		},
+		{
+			name:   "ip6= hint populates hintedIPs",
+			routes: []config.RouteConfig{{Via: "k2v5://u:t@host.example:443/?ech=x&ip6=2001:db8::1"}},
+			want:   []dialTarget{{host: "host.example", hintedIPs: []string{"2001:db8::1"}}},
+		},
+		{
+			name:   "ip= and ip6= both flow through",
+			routes: []config.RouteConfig{{Via: "k2v5://u:t@host.example:443/?ech=x&ip=1.2.3.4&ip6=2001:db8::1"}},
+			want:   []dialTarget{{host: "host.example", hintedIPs: []string{"1.2.3.4", "2001:db8::1"}}},
+		},
+		{
+			name: "subscription-emitted form (no slash before ?, with ip= hint)",
+			routes: []config.RouteConfig{
+				{Via: "k2v5://u:t@www.sichuan.people.cn:443?ech=AAA=&pin=sha256:abc&hop=40000-40019&ip=97.64.25.90"},
+			},
+			want: []dialTarget{{host: "www.sichuan.people.cn", hintedIPs: []string{"97.64.25.90"}}},
+		},
+		{
+			name:    "malformed k2v5 returns error (no port)",
+			routes:  []config.RouteConfig{{Via: "k2v5://u:t@host.example/?ech=x"}},
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractRouteHosts(tt.routes)
+			got, err := extractDialTargets(tt.routes)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("extractDialTargets err = %v, wantErr = %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("extractRouteHosts(%+v) = %v, want %v", tt.routes, got, tt.want)
+				t.Errorf("extractDialTargets(%+v) = %+v, want %+v", tt.routes, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestResolveExcludeIPs_HintedIPSkipsDNS proves that targets carrying
+// hintedIPs do not trigger net.LookupHost. We use an RFC 6761 .invalid host
+// — if DNS were attempted it would NXDOMAIN and the call would error out.
+func TestResolveExcludeIPs_HintedIPSkipsDNS(t *testing.T) {
+	targets := []dialTarget{
+		{host: "this-must-never-resolve.invalid", hintedIPs: []string{"203.0.113.7"}},
+	}
+	got, err := resolveExcludeIPs(targets, nil)
+	if err != nil {
+		t.Fatalf("resolveExcludeIPs returned error (DNS was attempted on hinted target?): %v", err)
+	}
+	if !slices.Contains(got, "203.0.113.7") {
+		t.Errorf("expected 203.0.113.7 in exclude list, got %v", got)
 	}
 }

@@ -215,7 +215,11 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	// a restart re-fetches the subscription.
 	engineClient := subscription.ApplyResolved(&cfg.ClientConfig, resolved)
 
-	excludeIPs, err := resolveExcludeIPs(extractRouteHosts(engineClient.Routes), engineClient.DNS.Direct)
+	dialTargets, err := extractDialTargets(engineClient.Routes)
+	if err != nil {
+		return err
+	}
+	excludeIPs, err := resolveExcludeIPs(dialTargets, engineClient.DNS.Direct)
 	if err != nil {
 		return err
 	}
