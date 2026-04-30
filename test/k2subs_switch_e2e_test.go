@@ -423,3 +423,205 @@ func TestK2SubsSwitch_C4_ServerOverridesRefreshInterval(t *testing.T) {
 		t.Fatal("server saw no fetches")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Group D — Lifecycle / concurrency
+// ---------------------------------------------------------------------------
+
+// D1 — Offline startup with valid disk cache → Resolve succeeds.
+func TestK2SubsSwitch_D1_OfflineWithCache(t *testing.T) {
+	// Run 1: populate cache by Resolving once successfully.
+	f := newK2subsFixture(t, []config.Tunnel{{URL: tunA, RecommendScore: 1}})
+	f.Resolve(context.Background())
+	cacheDir := f.CacheDir
+	subsURL := f.SubsURL()
+	f.Mgr.CloseAll()
+	f.SubsSrv.FailAll(true) // simulate Center down for run 2
+
+	// Run 2: same URL, same cacheDir, but server is down. Resolve must
+	// succeed using the cached data written by run 1.
+	mgr := subscription.NewManager(cacheDir, f.SubsSrv.HTTPClient(), nil)
+	defer mgr.CloseAll()
+
+	cfg := &config.ClientConfig{
+		Routes: []config.RouteConfig{{Via: subsURL, Match: muxAll()}},
+	}
+	_, resolved, err := mgr.Resolve(cfg)
+	if err != nil {
+		t.Fatalf("Resolve with cache + offline: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("resolved len = %d, want 1", len(resolved))
+	}
+	if stripCreds(resolved[0]) != tunA {
+		t.Errorf("resolved URL not from cache: stripCreds=%q, want %q", stripCreds(resolved[0]), tunA)
+	}
+}
+
+// D2 — Offline startup with no cache → Resolve fails.
+func TestK2SubsSwitch_D2_OfflineNoCache(t *testing.T) {
+	srv := newFakeSubsServer(t)
+	srv.SetTunnels([]config.Tunnel{{URL: tunA, RecommendScore: 1}})
+	srv.FailAll(true)
+
+	cacheDir := t.TempDir()
+	mgr := subscription.NewManager(cacheDir, srv.HTTPClient(), nil)
+	defer mgr.CloseAll()
+
+	subsURL := srv.SubsURL("u:p", "")
+	_, _, err := mgr.Resolve(&config.ClientConfig{
+		Routes: []config.RouteConfig{{Via: subsURL, Match: muxAll()}},
+	})
+	if err == nil {
+		t.Fatal("expected error when subs server unreachable and no cache")
+	}
+	if !errIs(err, nil, "fetch") && !errIs(err, nil, "no cache") {
+		t.Errorf("error should mention fetch failure: %v", err)
+	}
+}
+
+// D3 — Two distinct k2subs:// routes produce two isolated Sessions.
+func TestK2SubsSwitch_D3_MultiRouteIsolation(t *testing.T) {
+	srvX := newFakeSubsServer(t)
+	srvX.SetTunnels([]config.Tunnel{{URL: tunA, RecommendScore: 1}})
+	srvY := newFakeSubsServer(t)
+	srvY.SetTunnels([]config.Tunnel{{URL: tunB, RecommendScore: 1}})
+
+	mgr := subscription.NewManager(t.TempDir(), srvX.HTTPClient(), nil)
+	defer mgr.CloseAll()
+
+	urlX := srvX.SubsURL("u1:p1", "")
+	urlY := srvY.SubsURL("u2:p2", "")
+
+	sessions, _, err := mgr.Resolve(&config.ClientConfig{
+		Routes: []config.RouteConfig{
+			{Via: urlX, Match: muxAll()},
+			{Via: urlY, Match: muxAll()},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("sessions = %d, want 2", len(sessions))
+	}
+	if sessions[0] == sessions[1] {
+		t.Fatal("sessions must be distinct pointers")
+	}
+
+	// Each session's tunnel pool should reflect only its own subs server.
+	xTuns := sessions[0].Subscription().Tunnels()
+	yTuns := sessions[1].Subscription().Tunnels()
+	if len(xTuns) != 1 || stripCreds(xTuns[0].URL) != tunA {
+		t.Errorf("X session tunnels = %v, want [tunA]", xTuns)
+	}
+	if len(yTuns) != 1 || stripCreds(yTuns[0].URL) != tunB {
+		t.Errorf("Y session tunnels = %v, want [tunB]", yTuns)
+	}
+}
+
+// D4 — Stop racing with Phase-B replace cleans up the in-flight new TM.
+// Strategy: make setup of the replacement URL slow; cancel ctx mid-setup;
+// verify replaceOutboundServer returns context.Canceled. goleak (running
+// from the fixture's t.Cleanup) catches any leaked goroutine.
+func TestK2SubsSwitch_D4_StopDuringPhaseB(t *testing.T) {
+	f := newK2subsFixture(t, []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.5},
+		{URL: tunB, RecommendScore: 0.5},
+	})
+	current := f.Resolve(context.Background())
+
+	// Identify which URL Resolve picked, slow the OTHER one.
+	credsA := withCreds(tunA, "alice:tok")
+	credsB := withCreds(tunB, "alice:tok")
+	other := credsA
+	if current == credsA {
+		other = credsB
+	}
+	f.WireSetup.SlowURL(other, 200*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	err := f.TriggerSwitch(ctx, errors.New("wire dead"))
+	if err == nil {
+		t.Fatal("expected ctx-cancel error from TriggerSwitch")
+	}
+	if !errors.Is(err, context.Canceled) && !errIs(err, nil, "context canceled") {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	// goleak in fixture cleanup catches any orphan TM/goroutine.
+}
+
+// D5 — Setup-fail-then-success: provider's calls show currentURL progression
+// (origin → first-failed → next), and setupLog shows attempted URLs in order.
+func TestK2SubsSwitch_D5_SetupFailEscalatesExclude(t *testing.T) {
+	f := newK2subsFixture(t, []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.5},
+		{URL: tunB, RecommendScore: 0.5},
+		{URL: tunC, RecommendScore: 0.5},
+	})
+	current := f.Resolve(context.Background())
+
+	// Identify the two non-current URLs in deterministic order.
+	currentBare := stripCreds(current)
+	var candidates []string
+	for _, u := range []string{tunA, tunB, tunC} {
+		if u != currentBare {
+			candidates = append(candidates, u)
+		}
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("unexpected candidate count: %v", candidates)
+	}
+
+	// Fail BOTH non-current URLs once, so we know the test exhausts cleanly
+	// when there are only 2 candidates and 1 must fail. We need 3 tunnels to
+	// reliably exercise the fail-then-succeed path: fail first (any), succeed
+	// second. Pick the first probe-Picked URL to fail; the OTHER will succeed.
+	//
+	// Approach: fail both candidates' creds-injected forms, but only the
+	// FIRST one Manager.NextURL returns becomes a setup attempt. We don't
+	// know the order in advance; let the test trace what happened.
+	credsCandidates := []string{
+		withCreds(candidates[0], "alice:tok"),
+		withCreds(candidates[1], "alice:tok"),
+	}
+	// Fail the first one Pick is likely to choose. Since recommendScore is
+	// equal across all 3, Pick is uniform random over the 2 non-excluded
+	// candidates; pick either to fail and the other will succeed.
+	f.WireSetup.FailURL(credsCandidates[0], errors.New("handshake-timeout"))
+
+	if err := f.TriggerSwitch(context.Background(), errors.New("wire dead")); err != nil {
+		t.Fatalf("TriggerSwitch (expected eventual success): %v", err)
+	}
+
+	calls := f.WireSetup.Calls()
+	// Expect at least 1 call (success path on first try) or 2 calls
+	// (fail-then-success). Both are valid outcomes; we assert the fail-URL
+	// was tried before the success when 2 calls happened.
+	switch len(calls) {
+	case 1:
+		// Pick chose credsCandidates[1] first (the success URL). Fine.
+		if calls[0] == credsCandidates[0] {
+			t.Errorf("setup succeeded on a URL we marked to fail: %q", calls[0])
+		}
+	case 2:
+		if calls[0] != credsCandidates[0] {
+			t.Errorf("first setup call = %q, want %q (fail URL)", calls[0], credsCandidates[0])
+		}
+		if calls[1] != credsCandidates[1] {
+			t.Errorf("second setup call = %q, want %q (success URL)", calls[1], credsCandidates[1])
+		}
+	default:
+		t.Errorf("WireSetup.Calls = %v, want 1 or 2", calls)
+	}
+
+	// Whichever URL succeeded must now be the target's URL.
+	if f.Target.URL() == current {
+		t.Errorf("target.URL still original: %q", f.Target.URL())
+	}
+}
