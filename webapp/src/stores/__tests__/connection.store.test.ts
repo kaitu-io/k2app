@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 vi.mock('../../services/auth-service', () => ({
   authService: {
     buildTunnelUrl: vi.fn(),
+    buildSubsUrl: vi.fn(),
   },
 }));
 
@@ -1108,6 +1109,67 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ==================== serverMode = k2sub Tests ====================
+
+describe('serverMode = k2sub (gateway)', () => {
+  beforeEach(() => {
+    (window as any)._platform = {
+      os: 'linux' as const,
+      version: '0.4.4',
+      storage: mockStorage,
+      platformType: 'gateway',
+    };
+  });
+
+  it('loadServerMode pins to k2sub on gateway when no stored value', async () => {
+    mockStorage.get.mockResolvedValue(undefined);
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().loadServerMode();
+    expect(connMod.useConnectionStore.getState().serverMode).toBe('k2sub');
+  });
+
+  it('loadServerMode preserves stored "self_hosted" on gateway', async () => {
+    mockStorage.get.mockImplementation(async (key: string) => {
+      if (key === 'k2.vpn.server_mode') return 'self_hosted';
+      return undefined;
+    });
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().loadServerMode();
+    expect(connMod.useConnectionStore.getState().serverMode).toBe('self_hosted');
+  });
+
+  it('setSubsCountry persists country', async () => {
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().setSubsCountry('jp');
+    expect(connMod.useConnectionStore.getState().subsCountry).toBe('jp');
+    expect(mockStorage.set).toHaveBeenCalledWith('k2.connection.subsCountry', 'jp');
+  });
+
+  it('setSubsCountry(null) removes from storage', async () => {
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().setSubsCountry(null);
+    expect(connMod.useConnectionStore.getState().subsCountry).toBeNull();
+    expect(mockStorage.remove).toHaveBeenCalledWith('k2.connection.subsCountry');
+  });
+
+  it('connect with k2sub mode builds k2subs URL via buildSubsUrl', async () => {
+    const { useConnectionStore } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://UDID:T@a.example/api/subs?country=jp');
+
+    useConnectionStore.setState({ serverMode: 'k2sub', subsCountry: 'jp' });
+    await useConnectionStore.getState().connect();
+
+    expect(authService.buildSubsUrl).toHaveBeenCalledWith('jp');
+    const upCall = mockRun.mock.calls.find(c => c[0] === 'up');
+    expect(upCall).toBeDefined();
+    const routes = upCall?.[1]?.config?.routes as Array<{ via: string }>;
+    expect(routes.some(r => r.via === 'k2subs://UDID:T@a.example/api/subs?country=jp')).toBe(true);
   });
 });
 

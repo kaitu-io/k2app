@@ -4,47 +4,56 @@ import { Refresh as RefreshIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../stores/connection.store';
 
+type TabValue = 'manual' | 'self_hosted' | 'k2sub';
+
 interface Props {
   /** False when VPN is connecting/connected — disables mode switching. */
   isInteractive: boolean;
-  /** 指定服务器 tab content. */
+  /** 指定服务器 tab content (non-gateway only). */
   manualContent: React.ReactNode;
   /** 自部署 tab content. */
   selfHostedContent: React.ReactNode;
+  /** K2sub (subscription) tab content (gateway only). */
+  k2subContent: React.ReactNode;
   /**
    * Invoked when the user clicks the refresh icon on the 指定服务器 tab.
    * Parent owns the spinner state and surfaces failures (e.g. Snackbar).
-   * Button is not rendered when omitted.
+   * Button is not rendered when omitted, on gateway, or on non-manual tabs.
    */
   onManualRefresh?: () => void;
   /** True while an async refresh is in flight — drives spinner + disables click. */
   manualRefreshing?: boolean;
 }
 
-// Filename retained from the smart-mode era; component now only switches
-// between 'manual' (cloud tunnel list) and 'self_hosted'.
+// Filename retained from the smart-mode era. Gateway now exposes a `k2sub` tab
+// (daemon-resolved subscription) in place of `manual`; non-gateway keeps `manual`.
 export function SmartServerSelector({
   isInteractive,
   manualContent,
   selfHostedContent,
+  k2subContent,
   onManualRefresh,
   manualRefreshing,
 }: Props) {
   const { t } = useTranslation('dashboard');
   const serverMode = useConnectionStore((s) => s.serverMode);
   const setServerMode = useConnectionStore((s) => s.setServerMode);
+  const isGateway = window._platform?.platformType === 'gateway';
 
-  const handleTabChange = (_: React.SyntheticEvent, value: 'manual' | 'self_hosted') => {
+  const tabValue: TabValue =
+    serverMode === 'self_hosted' ? 'self_hosted'
+    : serverMode === 'k2sub' ? 'k2sub'
+    : isGateway ? 'k2sub'
+    : 'manual';
+
+  const handleTabChange = (_: React.SyntheticEvent, value: TabValue) => {
     if (!isInteractive) return;
     setServerMode(value).catch((err) =>
       console.warn('[ServerSelector] setServerMode failed:', err)
     );
   };
 
-  const tabValue: 'manual' | 'self_hosted' =
-    serverMode === 'self_hosted' ? 'self_hosted' : 'manual';
-
-  const showManualRefresh = tabValue === 'manual' && onManualRefresh !== undefined;
+  const showManualRefresh = !isGateway && tabValue === 'manual' && onManualRefresh !== undefined;
 
   return (
     <Box>
@@ -64,12 +73,21 @@ export function SmartServerSelector({
           sx={{ mb: 0.5, minHeight: 36, flexGrow: 1 }}
           TabIndicatorProps={{ style: { height: 2 } }}
         >
-          <Tab
-            value="manual"
-            label={t('serverSelector.tabManual')}
-            sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
-            disabled={!isInteractive}
-          />
+          {isGateway ? (
+            <Tab
+              value="k2sub"
+              label={t('serverSelector.tabSmart')}
+              sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
+              disabled={!isInteractive}
+            />
+          ) : (
+            <Tab
+              value="manual"
+              label={t('serverSelector.tabManual')}
+              sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
+              disabled={!isInteractive}
+            />
+          )}
           <Tab
             value="self_hosted"
             label={t('serverSelector.tabSelfHosted')}
@@ -103,9 +121,17 @@ export function SmartServerSelector({
         )}
       </Box>
 
-      <Box sx={{ display: tabValue === 'manual' ? 'block' : 'none' }}>
+      {/* manualContent (CloudTunnelList) stays mounted in gateway mode too —
+          its onTunnelsLoaded callback feeds the country list inside k2subContent.
+          In gateway mode tabValue is never 'manual', so it's always hidden. */}
+      <Box sx={{ display: !isGateway && tabValue === 'manual' ? 'block' : 'none' }}>
         {manualContent}
       </Box>
+      {isGateway && (
+        <Box sx={{ display: tabValue === 'k2sub' ? 'block' : 'none' }}>
+          {k2subContent}
+        </Box>
+      )}
       <Box sx={{ display: tabValue === 'self_hosted' ? 'block' : 'none' }}>
         {selfHostedContent}
       </Box>
