@@ -18,6 +18,7 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/subscription"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -280,5 +281,145 @@ func TestK2SubsSwitch_B4_AllExcludedFiresFatal(t *testing.T) {
 	if !errIs(err, nil, "all subscribed tunnels failed") &&
 		!errIs(err, nil, "all tunnels excluded") {
 		t.Errorf("error should mention exhaustion: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Group C — Refresh ↔ switch interaction
+// ---------------------------------------------------------------------------
+
+// C1 — A refresh that adds a new tunnel makes it eligible on subsequent picks.
+func TestK2SubsSwitch_C1_RefreshAddsTunnel(t *testing.T) {
+	f := newK2subsFixture(t, []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.5},
+		{URL: tunB, RecommendScore: 0.5},
+	})
+	current := f.Resolve(context.Background())
+
+	// Update server pool to include C; trigger a manual Fetch (deterministic;
+	// avoids relying on background refresh timing).
+	f.SubsSrv.SetTunnels([]config.Tunnel{
+		{URL: tunA, RecommendScore: 0.5},
+		{URL: tunB, RecommendScore: 0.5},
+		{URL: tunC, RecommendScore: 0.5},
+	})
+	sessions := f.Mgr.Sessions()
+	if err := sessions[0].Subscription().Fetch(context.Background(), f.SubsSrv.HTTPClient()); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+
+	// Drive NextURL until we either visit tunC or exhaust the pool. The
+	// per-session exclude set accumulates failed URLs across calls.
+	visited := map[string]bool{stripCreds(current): true}
+	curr := current
+	for i := 0; i < 5 && !visited[tunC]; i++ {
+		next, err := f.Mgr.NextURL(curr, errors.New("test"))
+		if err != nil {
+			break
+		}
+		visited[stripCreds(next)] = true
+		curr = next
+	}
+	if !visited[tunC] {
+		t.Errorf("after refresh added C, switch never reached C; visited=%v", visited)
+	}
+}
+
+// C2 — Refresh that drops the engine's current URL surfaces
+// ErrNoSubscription from Manager.NextURL.
+//
+// Manager.NextURL identifies the calling session by exact-URL match against
+// stored tunnels. If a refresh has just removed the URL the engine is using,
+// no session "owns" it and NextURL reports ErrNoSubscription. Documented in
+// manager.go — labelled "expected during the doDown/Stop wind-down window."
+//
+// Real-world implication: if Center's refresh strips the current URL while
+// the engine is mid-Phase-B, the engine cannot rotate via this session and
+// the swap fails. This test locks in the current contract so any change is
+// deliberate.
+func TestK2SubsSwitch_C2_RefreshRemovesCurrentURL(t *testing.T) {
+	f := newK2subsFixture(t, []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.5},
+		{URL: tunB, RecommendScore: 0.5},
+		{URL: tunC, RecommendScore: 0.5},
+	})
+	current := f.Resolve(context.Background())
+
+	// Refresh: drop `current` from the pool, keep the other two.
+	currentBare := stripCreds(current)
+	newPool := []config.Tunnel{}
+	for _, u := range []string{tunA, tunB, tunC} {
+		if u != currentBare {
+			newPool = append(newPool, config.Tunnel{URL: u, RecommendScore: 0.5})
+		}
+	}
+	f.SubsSrv.SetTunnels(newPool)
+	if err := f.Mgr.Sessions()[0].Subscription().Fetch(context.Background(), f.SubsSrv.HTTPClient()); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+
+	_, err := f.Mgr.NextURL(current, errors.New("test"))
+	if !errors.Is(err, subscription.ErrNoSubscription) {
+		t.Fatalf("NextURL after current-URL removal: got %v, want ErrNoSubscription", err)
+	}
+
+	// Whole-stack: replaceOutboundServer wraps NextURL's error and returns it.
+	switchErr := f.TriggerSwitch(context.Background(), errors.New("test"))
+	if switchErr == nil {
+		t.Fatal("expected TriggerSwitch to fail when current URL is no longer in pool")
+	}
+}
+
+// C3 — Refresh failure preserves the in-memory tunnel list; switching still works.
+func TestK2SubsSwitch_C3_RefreshFailPreservesData(t *testing.T) {
+	f := newK2subsFixture(t, []config.Tunnel{
+		{URL: tunA, RecommendScore: 0.5},
+		{URL: tunB, RecommendScore: 0.5},
+	})
+	f.Resolve(context.Background())
+
+	// Force all subsequent fetches to fail.
+	f.SubsSrv.FailAll(true)
+	err := f.Mgr.Sessions()[0].Subscription().Fetch(context.Background(), f.SubsSrv.HTTPClient())
+	if err == nil {
+		t.Fatal("expected Fetch to fail under failAll")
+	}
+
+	// In-memory tunnels survived.
+	stored := f.Mgr.Sessions()[0].Subscription().Tunnels()
+	if len(stored) != 2 {
+		t.Fatalf("tunnels lost on refresh fail: got %d, want 2", len(stored))
+	}
+
+	// Server recovers; next refresh syncs new tunnel list.
+	f.SubsSrv.FailAll(false)
+	f.SubsSrv.SetTunnels([]config.Tunnel{{URL: tunC, RecommendScore: 1}})
+	if err := f.Mgr.Sessions()[0].Subscription().Fetch(context.Background(), f.SubsSrv.HTTPClient()); err != nil {
+		t.Fatalf("post-recovery Fetch: %v", err)
+	}
+	stored = f.Mgr.Sessions()[0].Subscription().Tunnels()
+	if len(stored) != 1 || stripCreds(stored[0].URL) != tunC {
+		t.Errorf("post-recovery tunnels = %v, want [%q]", stored, tunC)
+	}
+}
+
+// C4 — Server-supplied refresh override is accepted by Fetch (the integration
+// path through fakeSubsServer.SetRefresh + Subscription.Fetch).
+func TestK2SubsSwitch_C4_ServerOverridesRefreshInterval(t *testing.T) {
+	f := newK2subsFixture(t, []config.Tunnel{{URL: tunA, RecommendScore: 1}})
+	f.SubsSrv.SetRefresh(300)
+	f.Resolve(context.Background())
+
+	tunnels := f.Mgr.Sessions()[0].Subscription().Tunnels()
+	if len(tunnels) != 1 {
+		t.Fatalf("expected 1 tunnel, got %d", len(tunnels))
+	}
+	// The Subscription has no public accessor for `interval`. The
+	// integration check is: setting `refresh` on the server and calling
+	// Fetch must succeed and store tunnels. Detailed interval semantics live
+	// in subscription_test.go::TestSubscription_FetchServerRefreshOverride.
+	queries := f.SubsSrv.QuerySnapshot()
+	if len(queries) == 0 {
+		t.Fatal("server saw no fetches")
 	}
 }
