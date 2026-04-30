@@ -205,4 +205,19 @@ export const authService = {
     return `${scheme}://${udid}:${token}@${rest}`;
   },
 
+  /**
+   * Build a k2subs:// subscription URL for the cloud API.
+   *
+   * @param country - ISO 3166-1 alpha-2 country code (e.g. 'jp'), or null for auto.
+   * @returns k2subs://udid:token@host/api/subs[?country=xx]
+   */
+  async buildSubsUrl(country: string | null): Promise<string> {
+    const { resolveEntry } = await import('./antiblock');
+    const entry = await resolveEntry();
+    const host = entry.replace(/^https?:\/\//, '');
+    const query = country ? `?country=${encodeURIComponent(country.toLowerCase())}` : '';
+    const raw = `k2subs://${host}/api/subs${query}`;
+    return this.buildTunnelUrl(raw);
+  },
+
 };
