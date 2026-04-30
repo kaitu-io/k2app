@@ -121,11 +121,12 @@ export function SmartServerSelector({
         )}
       </Box>
 
-      {!isGateway && (
-        <Box sx={{ display: tabValue === 'manual' ? 'block' : 'none' }}>
-          {manualContent}
-        </Box>
-      )}
+      {/* manualContent (CloudTunnelList) stays mounted in gateway mode too —
+          its onTunnelsLoaded callback feeds the country list inside k2subContent.
+          In gateway mode tabValue is never 'manual', so it's always hidden. */}
+      <Box sx={{ display: !isGateway && tabValue === 'manual' ? 'block' : 'none' }}>
+        {manualContent}
+      </Box>
       {isGateway && (
         <Box sx={{ display: tabValue === 'k2sub' ? 'block' : 'none' }}>
           {k2subContent}

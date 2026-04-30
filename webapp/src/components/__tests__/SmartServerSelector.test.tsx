@@ -111,7 +111,7 @@ describe('SmartServerSelector — platform-aware tabs', () => {
     delete (window as any)._platform;
   });
 
-  it('gateway shows k2sub tab content (not manual)', () => {
+  it('gateway mounts both k2sub content and manual content (manual hidden — needed for CloudTunnelList side effects)', () => {
     (window as any)._platform = { platformType: 'gateway' };
     render(
       <SmartServerSelector
@@ -121,9 +121,11 @@ describe('SmartServerSelector — platform-aware tabs', () => {
         k2subContent={k2subContent}
       />
     );
-    // K2sub content visible, manual content NOT mounted (gateway never renders manual tab)
+    // K2sub content is in DOM (visible in gateway mode).
     expect(screen.getByTestId('k2sub-content')).toBeInTheDocument();
-    expect(screen.queryByTestId('manual-content')).not.toBeInTheDocument();
+    // Manual content is also in DOM (hidden via CSS) — CloudTunnelList must keep
+    // running so its onTunnelsLoaded feeds K2sub's country list.
+    expect(screen.getByTestId('manual-content')).toBeInTheDocument();
   });
 
   it('non-gateway shows manual tab content (not k2sub)', () => {
