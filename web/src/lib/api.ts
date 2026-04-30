@@ -107,17 +107,38 @@ export interface ArchCount {
   count: number;
 }
 
+export interface OSVersionCount {
+  osVersion: string;
+  count: number;
+}
+
+export interface DeviceModelCount {
+  deviceModel: string;
+  count: number;
+}
+
 export interface DeviceStatisticsResponse {
   totalDevices: number;
   unknownDevices: number;
   desktopDevices: number;
   mobileDevices: number;
+  routerDevices: number;
   byPlatform: PlatformCount[];
   byVersion: VersionCount[];
   byArch: ArchCount[];
+  byOsVersion: OSVersionCount[];
+  byDeviceModel: DeviceModelCount[];
   active24h: number;
   active7d: number;
   active30d: number;
+  routerByPlatform: PlatformCount[];
+  routerByVersion: VersionCount[];
+  routerByArch: ArchCount[];
+  routerByOsVersion: OSVersionCount[];
+  routerByDeviceModel: DeviceModelCount[];
+  activeRouter24h: number;
+  activeRouter7d: number;
+  activeRouter30d: number;
 }
 
 export interface ActiveDeviceItem {
@@ -127,6 +148,9 @@ export interface ActiveDeviceItem {
   appPlatform: string;
   appVersion: string;
   appArch: string;
+  osVersion: string;
+  deviceModel: string;
+  isGateway: boolean;
   tokenLastUsedAt: number;
   createdAt: number;
 }
@@ -1865,11 +1889,13 @@ export const api = {
     page?: number;
     pageSize?: number;
     period?: '24h' | '7d' | '30d';
+    type?: 'all' | 'app' | 'router';
   } = {}): Promise<ActiveDevicesResponse> {
     const queryParams = new URLSearchParams();
     if (params.page !== undefined) queryParams.set('page', params.page.toString());
     if (params.pageSize !== undefined) queryParams.set('pageSize', params.pageSize.toString());
     if (params.period) queryParams.set('period', params.period);
+    if (params.type) queryParams.set('type', params.type);
 
     const query = queryParams.toString();
     return this.request<ActiveDevicesResponse>(`/app/devices/active${query ? '?' + query : ''}`);

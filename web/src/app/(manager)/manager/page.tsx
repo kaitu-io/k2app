@@ -71,6 +71,7 @@ export default function ManagerDashboardPage() {
   const [activeDevices, setActiveDevices] = useState<ActiveDeviceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePeriod, setActivePeriod] = useState<"24h" | "7d" | "30d">("7d");
+  const [activeType, setActiveType] = useState<"all" | "app" | "router">("all");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [activeTab, setActiveTab] = useState("overview");
@@ -105,6 +106,7 @@ export default function ManagerDashboardPage() {
         page,
         pageSize: 10,
         period: activePeriod,
+        type: activeType,
       });
       setActiveDevices(response.items);
       setTotalPages(Math.ceil(response.pagination.total / response.pagination.pageSize));
@@ -116,7 +118,7 @@ export default function ManagerDashboardPage() {
   useEffect(() => {
     loadActiveDevices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePeriod, page]);
+  }, [activePeriod, activeType, page]);
 
   if (loading) {
     return (
@@ -293,7 +295,7 @@ export default function ManagerDashboardPage() {
               <CardTitle>设备概览</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold">{deviceStats?.totalDevices ?? 0}</div>
                   <div className="text-sm text-muted-foreground">总设备</div>
@@ -307,7 +309,13 @@ export default function ManagerDashboardPage() {
                   <div className="text-sm text-muted-foreground">移动</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold">{deviceStats?.active7d ?? 0}</div>
+                  <div className="text-2xl font-bold">{deviceStats?.routerDevices ?? 0}</div>
+                  <div className="text-sm text-muted-foreground">路由器</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold">
+                    {(deviceStats?.active7d ?? 0) + (deviceStats?.activeRouter7d ?? 0)}
+                  </div>
                   <div className="text-sm text-muted-foreground">7天活跃</div>
                 </div>
               </div>
@@ -618,7 +626,7 @@ export default function ManagerDashboardPage() {
         {/* Devices Tab */}
         <TabsContent value="devices" className="space-y-6">
           {/* Device Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>总设备数</CardDescription>
@@ -626,7 +634,7 @@ export default function ManagerDashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-sm text-muted-foreground">
-                  {deviceStats?.unknownDevices ?? 0} 未知类型
+                  应用 {(deviceStats?.desktopDevices ?? 0) + (deviceStats?.mobileDevices ?? 0) + (deviceStats?.unknownDevices ?? 0)} | 路由器 {deviceStats?.routerDevices ?? 0}
                 </div>
               </CardContent>
             </Card>
@@ -638,7 +646,7 @@ export default function ManagerDashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-sm text-muted-foreground">
-                  macOS / Windows / Linux
+                  macOS / Windows / Linux 应用
                 </div>
               </CardContent>
             </Card>
@@ -657,12 +665,26 @@ export default function ManagerDashboardPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>活跃设备 (7天)</CardDescription>
-                <CardTitle className="text-3xl">{deviceStats?.active7d ?? 0}</CardTitle>
+                <CardDescription>路由器</CardDescription>
+                <CardTitle className="text-3xl">{deviceStats?.routerDevices ?? 0}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-sm text-muted-foreground">
-                  24小时: {deviceStats?.active24h ?? 0} | 30天: {deviceStats?.active30d ?? 0}
+                  24h: {deviceStats?.activeRouter24h ?? 0} | 7d: {deviceStats?.activeRouter7d ?? 0} | 30d: {deviceStats?.activeRouter30d ?? 0}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>活跃设备 (7天)</CardDescription>
+                <CardTitle className="text-3xl">
+                  {(deviceStats?.active7d ?? 0) + (deviceStats?.activeRouter7d ?? 0)}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-muted-foreground">
+                  应用: {deviceStats?.active7d ?? 0} | 路由器: {deviceStats?.activeRouter7d ?? 0}
                 </div>
               </CardContent>
             </Card>
@@ -742,6 +764,101 @@ export default function ManagerDashboardPage() {
             </CardContent>
           </Card>
 
+          {/* Router Stats Section */}
+          {deviceStats && deviceStats.routerDevices > 0 && (
+            <>
+              <div className="pt-2">
+                <h2 className="text-xl font-semibold">路由器统计</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  共 {deviceStats.routerDevices} 台路由器，7天活跃 {deviceStats.activeRouter7d}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>路由器型号</CardTitle>
+                    <CardDescription>前10</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {deviceStats.routerByDeviceModel.map((m) => (
+                        <div key={m.deviceModel} className="flex items-center justify-between">
+                          <span className="font-mono text-sm">{m.deviceModel}</span>
+                          <Badge variant="secondary">{m.count}</Badge>
+                        </div>
+                      ))}
+                      {deviceStats.routerByDeviceModel.length === 0 && (
+                        <div className="text-muted-foreground text-sm">暂无型号数据</div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>固件 (OpenWrt)</CardTitle>
+                    <CardDescription>前10</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {deviceStats.routerByOsVersion.map((v) => (
+                        <div key={v.osVersion} className="flex items-center justify-between">
+                          <span className="font-mono text-sm">{v.osVersion}</span>
+                          <Badge variant="secondary">{v.count}</Badge>
+                        </div>
+                      ))}
+                      {deviceStats.routerByOsVersion.length === 0 && (
+                        <div className="text-muted-foreground text-sm">暂无固件数据</div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>路由器架构</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-4">
+                      {deviceStats.routerByArch.map((a) => (
+                        <div key={a.arch} className="flex items-center gap-2 bg-muted px-4 py-2 rounded-lg">
+                          <span className="font-mono font-medium">{a.arch}</span>
+                          <Badge variant="secondary">{a.count}</Badge>
+                        </div>
+                      ))}
+                      {deviceStats.routerByArch.length === 0 && (
+                        <div className="text-muted-foreground text-sm">暂无架构数据</div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>k2 固件版本</CardTitle>
+                    <CardDescription>前10</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {deviceStats.routerByVersion.map((v, i) => (
+                        <div key={v.version} className="flex items-center justify-between">
+                          <span className="font-mono text-sm">{v.version}</span>
+                          <Badge variant={i === 0 ? "default" : "secondary"}>{v.count}</Badge>
+                        </div>
+                      ))}
+                      {deviceStats.routerByVersion.length === 0 && (
+                        <div className="text-muted-foreground text-sm">暂无版本数据</div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          )}
+
           {/* Active Devices Table */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -749,22 +866,35 @@ export default function ManagerDashboardPage() {
                 <CardTitle>活跃设备</CardTitle>
                 <CardDescription>最近活跃的设备列表</CardDescription>
               </div>
-              <Select value={activePeriod} onValueChange={(v) => { setActivePeriod(v as typeof activePeriod); setPage(1); }}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="24h">最近24小时</SelectItem>
-                  <SelectItem value="7d">最近7天</SelectItem>
-                  <SelectItem value="30d">最近30天</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select value={activeType} onValueChange={(v) => { setActiveType(v as typeof activeType); setPage(1); }}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部</SelectItem>
+                    <SelectItem value="app">应用</SelectItem>
+                    <SelectItem value="router">路由器</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={activePeriod} onValueChange={(v) => { setActivePeriod(v as typeof activePeriod); setPage(1); }}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="24h">最近24小时</SelectItem>
+                    <SelectItem value="7d">最近7天</SelectItem>
+                    <SelectItem value="30d">最近30天</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>用户</TableHead>
+                    <TableHead>类型</TableHead>
                     <TableHead>平台</TableHead>
                     <TableHead>版本</TableHead>
                     <TableHead>架构</TableHead>
@@ -781,6 +911,13 @@ export default function ManagerDashboardPage() {
                           <div className="max-w-[200px] truncate" title={device.userEmail}>
                             {device.userEmail || "-"}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {device.isGateway ? (
+                            <Badge className="bg-amber-500 text-white">路由器</Badge>
+                          ) : (
+                            <Badge variant="outline">应用</Badge>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={`${info.color} text-white`}>
@@ -804,7 +941,7 @@ export default function ManagerDashboardPage() {
                   })}
                   {activeDevices.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                         该时间段内无活跃设备
                       </TableCell>
                     </TableRow>

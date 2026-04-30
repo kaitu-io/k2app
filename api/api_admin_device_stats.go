@@ -8,144 +8,196 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 )
 
-// api_admin_get_device_statistics returns aggregated device statistics
+// api_admin_get_device_statistics returns aggregated device statistics.
+// App devices (is_gateway=false) and routers (is_gateway=true) are reported in
+// mutually exclusive buckets: Desktop+Mobile+Unknown+Router == TotalDevices.
 // GET /app/devices/statistics
 func api_admin_get_device_statistics(c *gin.Context) {
 	var result DeviceStatisticsResponse
 
-	// Get total device count
+	// Grand total
 	db.Get().Model(&Device{}).Count(&result.TotalDevices)
 
-	// Get platform breakdown
-	type platformResult struct {
-		Platform string
-		Count    int64
-	}
-	var platformCounts []platformResult
-	db.Get().Model(&Device{}).
-		Select("COALESCE(NULLIF(app_platform, ''), 'unknown') as platform, COUNT(*) as count").
-		Group("COALESCE(NULLIF(app_platform, ''), 'unknown')").
-		Order("count DESC").
-		Find(&platformCounts)
+	// Router count
+	db.Get().Model(&Device{}).Where("is_gateway = ?", true).Count(&result.RouterDevices)
 
-	// Convert to response format and calculate aggregates
-	desktopPlatforms := map[string]bool{"darwin": true, "windows": true, "linux": true}
-	mobilePlatforms := map[string]bool{"ios": true, "android": true}
+	// App-device aggregations
+	collectPlatformCounts(false, &result.ByPlatform, &result.DesktopDevices, &result.MobileDevices, &result.UnknownDevices)
+	collectVersionCounts(false, &result.ByVersion)
+	collectArchCounts(false, &result.ByArch)
+	collectOSVersionCounts(false, &result.ByOSVersion)
+	collectDeviceModelCounts(false, &result.ByDeviceModel)
 
-	for _, pc := range platformCounts {
-		result.ByPlatform = append(result.ByPlatform, PlatformCount{
-			Platform: pc.Platform,
-			Count:    pc.Count,
-		})
+	// Router-device aggregations (desktop/mobile/unknown counters discarded — routers don't fit those buckets)
+	var routerDesktopUnused, routerMobileUnused, routerUnknownUnused int64
+	collectPlatformCounts(true, &result.RouterByPlatform, &routerDesktopUnused, &routerMobileUnused, &routerUnknownUnused)
+	collectVersionCounts(true, &result.RouterByVersion)
+	collectArchCounts(true, &result.RouterByArch)
+	collectOSVersionCounts(true, &result.RouterByOSVersion)
+	collectDeviceModelCounts(true, &result.RouterByDeviceModel)
 
-		if pc.Platform == "unknown" || pc.Platform == "" {
-			result.UnknownDevices += pc.Count
-		} else if desktopPlatforms[pc.Platform] {
-			result.DesktopDevices += pc.Count
-		} else if mobilePlatforms[pc.Platform] {
-			result.MobileDevices += pc.Count
-		}
-	}
-
-	// Get version breakdown (top 10)
-	type versionResult struct {
-		Version string
-		Count   int64
-	}
-	var versionCounts []versionResult
-	db.Get().Model(&Device{}).
-		Select("COALESCE(NULLIF(app_version, ''), 'unknown') as version, COUNT(*) as count").
-		Group("COALESCE(NULLIF(app_version, ''), 'unknown')").
-		Order("count DESC").
-		Limit(10).
-		Find(&versionCounts)
-
-	for _, vc := range versionCounts {
-		result.ByVersion = append(result.ByVersion, VersionCount{
-			Version: vc.Version,
-			Count:   vc.Count,
-		})
-	}
-
-	// Get architecture breakdown
-	type archResult struct {
-		Arch  string
-		Count int64
-	}
-	var archCounts []archResult
-	db.Get().Model(&Device{}).
-		Select("COALESCE(NULLIF(app_arch, ''), 'unknown') as arch, COUNT(*) as count").
-		Group("COALESCE(NULLIF(app_arch, ''), 'unknown')").
-		Order("count DESC").
-		Find(&archCounts)
-
-	for _, ac := range archCounts {
-		result.ByArch = append(result.ByArch, ArchCount{
-			Arch:  ac.Arch,
-			Count: ac.Count,
-		})
-	}
-
-	// Get OS version breakdown (top 10)
-	type osVersionResult struct {
-		OSVersion string
-		Count     int64
-	}
-	var osVersionCounts []osVersionResult
-	db.Get().Model(&Device{}).
-		Select("COALESCE(NULLIF(os_version, ''), 'unknown') as os_version, COUNT(*) as count").
-		Group("COALESCE(NULLIF(os_version, ''), 'unknown')").
-		Order("count DESC").
-		Limit(10).
-		Find(&osVersionCounts)
-
-	for _, ovc := range osVersionCounts {
-		result.ByOSVersion = append(result.ByOSVersion, OSVersionCount{
-			OSVersion: ovc.OSVersion,
-			Count:     ovc.Count,
-		})
-	}
-
-	// Get device model breakdown (top 10)
-	type deviceModelResult struct {
-		DeviceModel string
-		Count       int64
-	}
-	var deviceModelCounts []deviceModelResult
-	db.Get().Model(&Device{}).
-		Select("COALESCE(NULLIF(device_model, ''), 'unknown') as device_model, COUNT(*) as count").
-		Group("COALESCE(NULLIF(device_model, ''), 'unknown')").
-		Order("count DESC").
-		Limit(10).
-		Find(&deviceModelCounts)
-
-	for _, dmc := range deviceModelCounts {
-		result.ByDeviceModel = append(result.ByDeviceModel, DeviceModelCount{
-			DeviceModel: dmc.DeviceModel,
-			Count:       dmc.Count,
-		})
-	}
-
-	// Get active device counts
+	// Active counts (split by gateway flag)
 	now := time.Now().Unix()
 	h24Ago := now - 24*60*60
 	d7Ago := now - 7*24*60*60
 	d30Ago := now - 30*24*60*60
 
-	db.Get().Model(&Device{}).Where("token_last_used_at >= ?", h24Ago).Count(&result.Active24h)
-	db.Get().Model(&Device{}).Where("token_last_used_at >= ?", d7Ago).Count(&result.Active7d)
-	db.Get().Model(&Device{}).Where("token_last_used_at >= ?", d30Ago).Count(&result.Active30d)
+	db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", false, h24Ago).Count(&result.Active24h)
+	db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", false, d7Ago).Count(&result.Active7d)
+	db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", false, d30Ago).Count(&result.Active30d)
+
+	db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", true, h24Ago).Count(&result.ActiveRouter24h)
+	db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", true, d7Ago).Count(&result.ActiveRouter7d)
+	db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", true, d30Ago).Count(&result.ActiveRouter30d)
+
+	// Ensure non-nil slices for stable JSON output
+	if result.ByPlatform == nil {
+		result.ByPlatform = []PlatformCount{}
+	}
+	if result.ByVersion == nil {
+		result.ByVersion = []VersionCount{}
+	}
+	if result.ByArch == nil {
+		result.ByArch = []ArchCount{}
+	}
+	if result.ByOSVersion == nil {
+		result.ByOSVersion = []OSVersionCount{}
+	}
+	if result.ByDeviceModel == nil {
+		result.ByDeviceModel = []DeviceModelCount{}
+	}
+	if result.RouterByPlatform == nil {
+		result.RouterByPlatform = []PlatformCount{}
+	}
+	if result.RouterByVersion == nil {
+		result.RouterByVersion = []VersionCount{}
+	}
+	if result.RouterByArch == nil {
+		result.RouterByArch = []ArchCount{}
+	}
+	if result.RouterByOSVersion == nil {
+		result.RouterByOSVersion = []OSVersionCount{}
+	}
+	if result.RouterByDeviceModel == nil {
+		result.RouterByDeviceModel = []DeviceModelCount{}
+	}
 
 	Success(c, &result)
 }
 
-// api_admin_get_active_devices returns paginated list of active devices
+// collectPlatformCounts groups devices by app_platform for is_gateway = isRouter,
+// appending into out and incrementing the desktop/mobile/unknown summary counters.
+func collectPlatformCounts(isRouter bool, out *[]PlatformCount, desktop, mobile, unknown *int64) {
+	type row struct {
+		Platform string
+		Count    int64
+	}
+	var rows []row
+	db.Get().Model(&Device{}).
+		Select("COALESCE(NULLIF(app_platform, ''), 'unknown') as platform, COUNT(*) as count").
+		Where("is_gateway = ?", isRouter).
+		Group("COALESCE(NULLIF(app_platform, ''), 'unknown')").
+		Order("count DESC").
+		Find(&rows)
+
+	desktopPlatforms := map[string]bool{"darwin": true, "windows": true, "linux": true}
+	mobilePlatforms := map[string]bool{"ios": true, "android": true}
+
+	for _, r := range rows {
+		*out = append(*out, PlatformCount{Platform: r.Platform, Count: r.Count})
+		switch {
+		case r.Platform == "unknown":
+			*unknown += r.Count
+		case desktopPlatforms[r.Platform]:
+			*desktop += r.Count
+		case mobilePlatforms[r.Platform]:
+			*mobile += r.Count
+		default:
+			// Treat any unrecognised non-empty platform as unknown for summary tally
+			*unknown += r.Count
+		}
+	}
+}
+
+func collectVersionCounts(isRouter bool, out *[]VersionCount) {
+	type row struct {
+		Version string
+		Count   int64
+	}
+	var rows []row
+	db.Get().Model(&Device{}).
+		Select("COALESCE(NULLIF(app_version, ''), 'unknown') as version, COUNT(*) as count").
+		Where("is_gateway = ?", isRouter).
+		Group("COALESCE(NULLIF(app_version, ''), 'unknown')").
+		Order("count DESC").
+		Limit(10).
+		Find(&rows)
+	for _, r := range rows {
+		*out = append(*out, VersionCount{Version: r.Version, Count: r.Count})
+	}
+}
+
+func collectArchCounts(isRouter bool, out *[]ArchCount) {
+	type row struct {
+		Arch  string
+		Count int64
+	}
+	var rows []row
+	db.Get().Model(&Device{}).
+		Select("COALESCE(NULLIF(app_arch, ''), 'unknown') as arch, COUNT(*) as count").
+		Where("is_gateway = ?", isRouter).
+		Group("COALESCE(NULLIF(app_arch, ''), 'unknown')").
+		Order("count DESC").
+		Find(&rows)
+	for _, r := range rows {
+		*out = append(*out, ArchCount{Arch: r.Arch, Count: r.Count})
+	}
+}
+
+func collectOSVersionCounts(isRouter bool, out *[]OSVersionCount) {
+	type row struct {
+		OSVersion string
+		Count     int64
+	}
+	var rows []row
+	db.Get().Model(&Device{}).
+		Select("COALESCE(NULLIF(os_version, ''), 'unknown') as os_version, COUNT(*) as count").
+		Where("is_gateway = ?", isRouter).
+		Group("COALESCE(NULLIF(os_version, ''), 'unknown')").
+		Order("count DESC").
+		Limit(10).
+		Find(&rows)
+	for _, r := range rows {
+		*out = append(*out, OSVersionCount{OSVersion: r.OSVersion, Count: r.Count})
+	}
+}
+
+func collectDeviceModelCounts(isRouter bool, out *[]DeviceModelCount) {
+	type row struct {
+		DeviceModel string
+		Count       int64
+	}
+	var rows []row
+	db.Get().Model(&Device{}).
+		Select("COALESCE(NULLIF(device_model, ''), 'unknown') as device_model, COUNT(*) as count").
+		Where("is_gateway = ?", isRouter).
+		Group("COALESCE(NULLIF(device_model, ''), 'unknown')").
+		Order("count DESC").
+		Limit(10).
+		Find(&rows)
+	for _, r := range rows {
+		*out = append(*out, DeviceModelCount{DeviceModel: r.DeviceModel, Count: r.Count})
+	}
+}
+
+// api_admin_get_active_devices returns paginated list of active devices.
+// Query params: page, pageSize, period (24h|7d|30d), type (app|router|all, default all)
 // GET /app/devices/active
 func api_admin_get_active_devices(c *gin.Context) {
-	// Parse query parameters
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	period := c.Query("period") // 24h, 7d, 30d
+	period := c.Query("period")
+	deviceType := c.DefaultQuery("type", "all")
 
 	if page < 1 {
 		page = 1
@@ -154,7 +206,6 @@ func api_admin_get_active_devices(c *gin.Context) {
 		pageSize = 20
 	}
 
-	// Determine time filter
 	now := time.Now().Unix()
 	var sinceTime int64
 	switch period {
@@ -163,38 +214,43 @@ func api_admin_get_active_devices(c *gin.Context) {
 	case "7d":
 		sinceTime = now - 7*24*60*60
 	default:
-		sinceTime = now - 30*24*60*60 // Default to 30 days
+		sinceTime = now - 30*24*60*60
 	}
 
-	// Build query
-	query := db.Get().Model(&Device{}).
-		Where("token_last_used_at >= ?", sinceTime)
-
-	// Get total count
-	var total int64
-	query.Count(&total)
-
-	// Get paginated results with user info
 	type deviceWithUser struct {
 		Device
 		UserEmail string
 		UserUUID  string
 	}
 
-	var devices []deviceWithUser
-	offset := (page - 1) * pageSize
+	// Count query: model-level, no joins.
+	countQ := db.Get().Model(&Device{}).Where("token_last_used_at >= ?", sinceTime)
+	switch deviceType {
+	case "app":
+		countQ = countQ.Where("is_gateway = ?", false)
+	case "router":
+		countQ = countQ.Where("is_gateway = ?", true)
+	}
+	var total int64
+	countQ.Count(&total)
 
-	db.Get().Table("devices").
+	// List query: joins to surface email + uuid.
+	listQ := db.Get().Table("devices").
 		Select("devices.*, users.uuid as user_uuid, login_identifies.index_id as user_email").
 		Joins("LEFT JOIN users ON users.id = devices.user_id").
 		Joins("LEFT JOIN login_identifies ON login_identifies.user_id = users.id AND login_identifies.type = 'email'").
-		Where("devices.token_last_used_at >= ?", sinceTime).
-		Order("devices.token_last_used_at DESC").
-		Offset(offset).
-		Limit(pageSize).
-		Find(&devices)
+		Where("devices.token_last_used_at >= ?", sinceTime)
+	switch deviceType {
+	case "app":
+		listQ = listQ.Where("devices.is_gateway = ?", false)
+	case "router":
+		listQ = listQ.Where("devices.is_gateway = ?", true)
+	}
 
-	// Build response
+	var devices []deviceWithUser
+	offset := (page - 1) * pageSize
+	listQ.Order("devices.token_last_used_at DESC").Offset(offset).Limit(pageSize).Find(&devices)
+
 	items := make([]ActiveDeviceItem, len(devices))
 	for i, d := range devices {
 		platform := d.AppPlatform
@@ -209,7 +265,6 @@ func api_admin_get_active_devices(c *gin.Context) {
 		if arch == "" {
 			arch = "unknown"
 		}
-
 		items[i] = ActiveDeviceItem{
 			UDID:            d.UDID,
 			UserEmail:       d.UserEmail,
@@ -219,18 +274,18 @@ func api_admin_get_active_devices(c *gin.Context) {
 			AppArch:         arch,
 			OSVersion:       d.OSVersion,
 			DeviceModel:     d.DeviceModel,
+			IsGateway:       d.IsGateway,
 			TokenLastUsedAt: d.TokenLastUsedAt,
 			CreatedAt:       d.CreatedAt.Unix(),
 		}
 	}
 
-	result := ActiveDevicesResponse{
+	Success(c, &ActiveDevicesResponse{
 		Items: items,
 		Pagination: Pagination{
 			Page:     page,
 			PageSize: pageSize,
 			Total:    total,
 		},
-	}
-	Success(c, &result)
+	})
 }

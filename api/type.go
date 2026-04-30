@@ -919,33 +919,51 @@ type DeviceModelCount struct {
 	Count       int64  `json:"count"`       // Number of devices
 }
 
-// DeviceStatisticsResponse contains aggregated device statistics
+// DeviceStatisticsResponse contains aggregated device statistics.
+//
+// App-device counts (Desktop/Mobile/Unknown + ByPlatform/Version/Arch/OSVersion/DeviceModel
+// + Active24h/7d/30d) describe is_gateway=false devices only.
+// Router-device counts live under the Router* fields and are mutually exclusive with the above.
+// TotalDevices is the grand total: Desktop + Mobile + Unknown + Router.
 type DeviceStatisticsResponse struct {
 	// Total counts
-	TotalDevices   int64 `json:"totalDevices"`   // Total registered devices
-	UnknownDevices int64 `json:"unknownDevices"` // Devices with unknown platform
-	DesktopDevices int64 `json:"desktopDevices"` // darwin + windows + linux
-	MobileDevices  int64 `json:"mobileDevices"`  // ios + android
+	TotalDevices   int64 `json:"totalDevices"`   // Grand total (apps + routers)
+	UnknownDevices int64 `json:"unknownDevices"` // App devices with unknown platform
+	DesktopDevices int64 `json:"desktopDevices"` // App devices: darwin + windows + linux
+	MobileDevices  int64 `json:"mobileDevices"`  // App devices: ios + android
+	RouterDevices  int64 `json:"routerDevices"`  // is_gateway=true devices
 
-	// Breakdown by platform
+	// Breakdown by platform (app devices only)
 	ByPlatform []PlatformCount `json:"byPlatform"`
 
-	// Breakdown by version
+	// Breakdown by version (app devices only)
 	ByVersion []VersionCount `json:"byVersion"`
 
-	// Breakdown by architecture
+	// Breakdown by architecture (app devices only)
 	ByArch []ArchCount `json:"byArch"`
 
-	// Breakdown by OS version (top 10)
+	// Breakdown by OS version (app devices only, top 10)
 	ByOSVersion []OSVersionCount `json:"byOsVersion"`
 
-	// Breakdown by device model (top 10)
+	// Breakdown by device model (app devices only, top 10)
 	ByDeviceModel []DeviceModelCount `json:"byDeviceModel"`
 
-	// Active devices (by last used time)
-	Active24h int64 `json:"active24h"` // Devices used in last 24 hours
-	Active7d  int64 `json:"active7d"`  // Devices used in last 7 days
-	Active30d int64 `json:"active30d"` // Devices used in last 30 days
+	// Active devices (app devices only, by last used time)
+	Active24h int64 `json:"active24h"`
+	Active7d  int64 `json:"active7d"`
+	Active30d int64 `json:"active30d"`
+
+	// Router-only breakdowns
+	RouterByPlatform    []PlatformCount    `json:"routerByPlatform"`
+	RouterByVersion     []VersionCount     `json:"routerByVersion"`     // k2 binary version
+	RouterByArch        []ArchCount        `json:"routerByArch"`        // mips/arm/arm64
+	RouterByOSVersion   []OSVersionCount   `json:"routerByOsVersion"`   // OpenWrt version (top 10)
+	RouterByDeviceModel []DeviceModelCount `json:"routerByDeviceModel"` // router model (top 10)
+
+	// Active routers (by last used time)
+	ActiveRouter24h int64 `json:"activeRouter24h"`
+	ActiveRouter7d  int64 `json:"activeRouter7d"`
+	ActiveRouter30d int64 `json:"activeRouter30d"`
 }
 
 // ActiveDeviceItem represents a single active device in the list
@@ -958,6 +976,7 @@ type ActiveDeviceItem struct {
 	AppArch         string `json:"appArch"`         // CPU architecture
 	OSVersion       string `json:"osVersion"`       // OS version (e.g., "macOS 14.5")
 	DeviceModel     string `json:"deviceModel"`     // Device model (e.g., "MacBookPro18,1")
+	IsGateway       bool   `json:"isGateway"`       // true = router/gateway, false = end-user app
 	TokenLastUsedAt int64  `json:"tokenLastUsedAt"` // Last activity timestamp
 	CreatedAt       int64  `json:"createdAt"`       // Device registration time
 }
