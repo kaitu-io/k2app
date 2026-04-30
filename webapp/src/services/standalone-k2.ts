@@ -73,7 +73,7 @@ export function isPlatformInjected(): boolean {
   return typeof window._platform !== 'undefined';
 }
 
-export function getK2Source(): 'tauri' | 'capacitor' | 'standalone' | 'none' {
+export function getK2Source(): 'tauri' | 'capacitor' | 'gateway' | 'standalone' | 'none' {
   if (!isK2Injected()) {
     return 'none';
   }
@@ -83,6 +83,12 @@ export function getK2Source(): 'tauri' | 'capacitor' | 'standalone' | 'none' {
   }
 
   const platform = window._platform;
+
+  // Gateway (k2r) — must come before tauri check: gateway uses os='linux' which
+  // would otherwise be misclassified as desktop tauri.
+  if (platform.platformType === 'gateway') {
+    return 'gateway';
+  }
 
   // Tauri: desktop OS + non-standalone version
   if (['macos', 'windows', 'linux'].includes(platform.os) && platform.version !== 'standalone') {

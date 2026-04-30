@@ -68,20 +68,40 @@ fi
 
 # 2. Start k2r in Docker. The container only needs to serve the HTTP API;
 # TPROXY rules are only installed when the user clicks "connect".
+#
+# /etc/k2r/ holds storage.json (webapp _platform.storage), state.json
+# (auto-reconnect), and subs/ (k2subs cache). It is mounted as a named
+# Docker volume so state survives `docker rm -f` on the next rebuild.
+# Wipe with: docker volume rm k2app-dev-openwrt-state
 echo "[dev-openwrt] Starting k2r in Docker on :${GATEWAY_PORT}..."
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+# NET_ADMIN/NET_RAW + nftables/iptables/iproute2 + ip_forward sysctls are
+# required at connect time: gateway/intercept.go probes netlink → nft → iptables
+# in that order, and the alpine base image has none of them. Without these,
+# doUp fails with "no firewall backend available" and the webapp sees a silent
+# disconnected → idle bounce. Mirrors k2/test/k2r-uat/{Dockerfile.k2r,docker-compose.yml}.
 docker run -d --name "$CONTAINER" \
     --platform "$PLATFORM" \
     -p "${GATEWAY_PORT}:${GATEWAY_PORT}" \
+    --cap-add NET_ADMIN \
+    --cap-add NET_RAW \
+    --sysctl net.ipv4.ip_forward=1 \
+    --sysctl net.ipv6.conf.all.forwarding=1 \
     --entrypoint "" \
     -v "$K2R_BIN:/usr/bin/k2r:ro" \
+    -v k2app-dev-openwrt-state:/etc/k2r \
     alpine:latest \
-    /bin/sh -c "mkdir -p /etc/k2r && /usr/bin/k2r run" >/dev/null
+    /bin/sh -c "apk add --no-cache nftables iptables iproute2 >/dev/null 2>&1 && mkdir -p /etc/k2r && exec /usr/bin/k2r run" >/dev/null
 
 # 3. k2r run uses /etc/k2r/k2r.yml; we feed it via env-less default by
 # generating a config inside the container.
+# log.output=stderr lets `docker logs -f` show live k2r output (default is
+# /var/log/kaitu/k2r.log, which is invisible to the host).
 docker exec "$CONTAINER" sh -c "cat > /etc/k2r/k2r.yml <<EOF
 listen: 0.0.0.0:${GATEWAY_PORT}
+log:
+  output: stderr
+  level: debug
 EOF
 "
 docker restart "$CONTAINER" >/dev/null
