@@ -68,7 +68,8 @@
       "linux": "為你的 Linux 準備好了",
       "ios": "開途 iOS 版",
       "android": "開途安卓版",
-      "unknown": "選擇你的平台"
+      "unknown": "選擇你的平台",
+      "router": "在路由器上執行 k2 閘道"
     },
     "installSteps": {
       "title": "安裝步驟",
@@ -128,6 +129,31 @@
         "question": "開途客戶端安全嗎？",
         "answer": "開途客戶端已通過 Apple 公證和 Windows EV 程式碼簽署。所有安裝包透過 HTTPS 分發，可驗證 SHA-256 校驗和。k2 協議核心已納入獨立安全審查計劃。"
       }
-    }
+    },
+    "router": "路由器",
+    "routerSubtitle": "把開途安裝到 OpenWrt / 軟路由 / 嵌入式 Linux，讓家中所有裝置自動走加密通道。",
+    "routerCliHint": "在路由器 SSH 中貼上執行；腳本自動偵測架構並註冊開機自啟。",
+    "routerVariants": {
+      "openwrt": {
+        "title": "OpenWrt 路由器",
+        "body": "透過 procd 註冊服務，附帶可選的 LuCI 管理介面，支援 ARMv7 / arm64 / x86_64。"
+      },
+      "softrouter": {
+        "title": "Debian / Ubuntu 軟路由",
+        "body": "透過 systemd 註冊服務，適用於 N100、iStoreOS、ImmortalWrt 衍生板。"
+      },
+      "sbc": {
+        "title": "通用 Linux SBC",
+        "body": "樹莓派、香橙派、N1 盒子等 Linux 裝置：腳本自動偵測發行版並設定守護程序。"
+      }
+    },
+    "routerNextSteps": {
+      "title": "安裝完成後",
+      "step1": "在瀏覽器開啟 http://<路由器 IP>:1779 進入閘道面板",
+      "step2": "貼上你的訂閱連結（k2subs://）或 k2v5:// 節點 URL",
+      "step3": "點選連線 — 之後所有區網裝置自動透過 k2 出站"
+    },
+    "routerHardwarePrompt": "需要相容硬體？",
+    "routerHardwareLink": "檢視路由器型號 →"
   }
 }

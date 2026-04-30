@@ -68,7 +68,8 @@
       "linux": "Ready for your Linux",
       "ios": "Overleap for iOS",
       "android": "Overleap for Android",
-      "unknown": "Choose your platform"
+      "unknown": "Choose your platform",
+      "router": "Run the k2 gateway on your router"
     },
     "installSteps": {
       "title": "Installation Steps",
@@ -128,6 +129,31 @@
         "question": "Is Overleap safe?",
         "answer": "Overleap is Apple notarized and Windows EV code-signed. All installers are distributed via HTTPS with verifiable SHA-256 checksums. The k2 protocol core is under an independent security audit programme."
       }
-    }
+    },
+    "router": "Router",
+    "routerSubtitle": "Install Overleap on OpenWrt, x86 soft router, or embedded Linux — every device on your LAN goes through the tunnel automatically.",
+    "routerCliHint": "Paste this into your router SSH session. The installer detects your architecture and registers a startup service.",
+    "routerVariants": {
+      "openwrt": {
+        "title": "OpenWrt routers",
+        "body": "Registers as a procd service with optional LuCI integration. Supports ARMv7, arm64, x86_64."
+      },
+      "softrouter": {
+        "title": "Debian / Ubuntu soft router",
+        "body": "Registers as a systemd unit. Works on N100 mini-PCs, iStoreOS, ImmortalWrt derivatives."
+      },
+      "sbc": {
+        "title": "Generic Linux SBC",
+        "body": "Raspberry Pi, Orange Pi, N1 boxes — installer auto-detects the distribution and wires up the daemon."
+      }
+    },
+    "routerNextSteps": {
+      "title": "After install",
+      "step1": "Open http://<router-ip>:1779 in your browser to reach the gateway dashboard.",
+      "step2": "Paste your subscription URL (k2subs://) or a k2v5:// node URL.",
+      "step3": "Click connect — every device on the LAN flows through k2."
+    },
+    "routerHardwarePrompt": "Need compatible hardware?",
+    "routerHardwareLink": "Browse router models →"
   }
 }

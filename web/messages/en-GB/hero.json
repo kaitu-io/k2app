@@ -10,9 +10,18 @@
     "nodeInfo": "HK · Best Node",
     "onboarding": {
       "title": "Get Started in 3 Steps",
-      "step1": { "label": "Choose a Plan & Subscribe", "detail": "Alipay · WeChat · Credit Card" },
-      "step2": { "label": "Download the App", "detail": "Windows · macOS · iOS · Android" },
-      "step3": { "label": "Activate & Connect", "detail": "Enter your code — done" }
+      "step1": {
+        "label": "Choose a Plan & Subscribe",
+        "detail": "Alipay · WeChat · Credit Card"
+      },
+      "step2": {
+        "label": "Download the App",
+        "detail": "Windows · macOS · iOS · Android"
+      },
+      "step3": {
+        "label": "Activate & Connect",
+        "detail": "Enter your code — done"
+      }
     },
     "terminalTitle": "Self-hosted Server",
     "downloadClient": "Download Client",
@@ -402,7 +411,10 @@
     "onlineService": "Online Support",
     "realTimeResponse": "Real-time consultation, quick response",
     "startOnlineService": "Start Online Support",
-    "warranty": "All router products include 1-year warranty • Free technical support • 7-day no-questions-asked return"
+    "warranty": "All router products include 1-year warranty • Free technical support • 7-day no-questions-asked return",
+    "diyBannerTitle": "Already running OpenWrt or a soft router?",
+    "diyBannerBody": "One command installs the Overleap gateway onto your existing device — no need to buy dedicated hardware.",
+    "diyBannerCta": "View DIY install guide"
   },
   "faq": {
     "title": "Frequently Asked Questions",

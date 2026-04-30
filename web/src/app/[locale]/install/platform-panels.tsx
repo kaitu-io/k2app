@@ -10,10 +10,12 @@ import {
   MacOSAllowGuide,
   DesktopUsbInstallGuide,
   CliBlock,
+  RouterCliBlock,
   DownloadTipCard,
 } from './install-guides';
 import { MacOS11Notice } from './macos-11-notice';
 import { openDownloadInNewTab } from '@/lib/device-detection';
+import { Link } from '@/i18n/routing';
 
 // ---------------------------------------------------------------------------
 // Shared prop interfaces
@@ -261,6 +263,69 @@ export function AndroidPanel({
           <DesktopUsbInstallGuide />
         </DownloadTipCard>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RouterPanel — k2r gateway installer for OpenWrt / soft router / Linux SBC
+// ---------------------------------------------------------------------------
+
+const ROUTER_INSTALL_CMD = 'wget -qO- https://kaitu.io/i/k2r | sudo sh';
+
+export function RouterPanel({
+  t,
+  onCopy,
+  copied,
+}: { t: PlatformPanelProps['t']; onCopy: () => void; copied: boolean }) {
+  const variants = ['openwrt', 'softrouter', 'sbc'] as const;
+  return (
+    <div className="text-center">
+      <PanelHeroIcon type="router" />
+
+      <h1 className="text-3xl sm:text-4xl font-bold font-mono text-foreground mb-2">
+        {t('install.install.heroTitle.router')}
+      </h1>
+      <p className="text-sm text-muted-foreground mb-6 max-w-xl mx-auto">
+        {t('install.install.routerSubtitle')}
+      </p>
+
+      <div className="max-w-2xl mx-auto">
+        <RouterCliBlock command={ROUTER_INSTALL_CMD} onCopy={onCopy} copied={copied} />
+        <p className="text-xs text-muted-foreground mt-3">
+          {t('install.install.routerCliHint')}
+        </p>
+      </div>
+
+      <div className="mt-8 max-w-2xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-3 text-left">
+        {variants.map((v) => (
+          <div key={v} className="bg-card border rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-2">
+              {t(`install.install.routerVariants.${v}.title`)}
+            </h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {t(`install.install.routerVariants.${v}.body`)}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-8 max-w-xl mx-auto text-left">
+        <DownloadTipCard title={t('install.install.routerNextSteps.title')}>
+          <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+            <li>{t('install.install.routerNextSteps.step1')}</li>
+            <li>{t('install.install.routerNextSteps.step2')}</li>
+            <li>{t('install.install.routerNextSteps.step3')}</li>
+          </ol>
+        </DownloadTipCard>
+      </div>
+
+      <p className="text-sm text-muted-foreground mt-8">
+        {t('install.install.routerHardwarePrompt')}{' '}
+        <Link href="/routers" className="text-primary hover:underline">
+          {t('install.install.routerHardwareLink')}
+        </Link>
+      </p>
     </div>
   );
 }

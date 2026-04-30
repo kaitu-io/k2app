@@ -68,7 +68,8 @@
       "linux": "为你的 Linux 准备好了",
       "ios": "开途 iOS 版",
       "android": "开途安卓版",
-      "unknown": "选择你的平台"
+      "unknown": "选择你的平台",
+      "router": "在路由器上运行 k2 网关"
     },
     "installSteps": {
       "title": "安装步骤",
@@ -128,6 +129,31 @@
         "question": "开途客户端安全吗？",
         "answer": "开途客户端已通过 Apple 公证和 Windows EV 代码签名。所有安装包通过 HTTPS 分发，可验证 SHA-256 校验和。k2 协议核心已纳入独立安全审查计划。"
       }
-    }
+    },
+    "router": "路由器",
+    "routerSubtitle": "把开途装到 OpenWrt / 软路由 / 嵌入式 Linux 上，让全家所有设备自动走加密通道。",
+    "routerCliHint": "在路由器 SSH 里粘贴运行；脚本自动识别架构，安装服务并注册开机自启。",
+    "routerVariants": {
+      "openwrt": {
+        "title": "OpenWrt 路由器",
+        "body": "通过 procd 注册服务，附带可选的 LuCI 管理界面，支持 ARMv7 / arm64 / x86_64。"
+      },
+      "softrouter": {
+        "title": "Debian / Ubuntu 软路由",
+        "body": "通过 systemd 注册服务，适用于 N100、爱快、iStoreOS、ImmortalWrt 衍生板。"
+      },
+      "sbc": {
+        "title": "通用 Linux SBC",
+        "body": "树莓派、香橙派、N1 盒子等 Linux 设备：脚本自动检测发行版并配置守护进程。"
+      }
+    },
+    "routerNextSteps": {
+      "title": "安装完成后",
+      "step1": "在浏览器打开 http://<路由器 IP>:1779 进入网关面板",
+      "step2": "粘贴你的订阅链接（k2subs://）或 k2v5:// 节点 URL",
+      "step3": "点击连接 — 之后所有局域网设备自动通过 k2 出站"
+    },
+    "routerHardwarePrompt": "需要兼容的硬件？",
+    "routerHardwareLink": "查看路由器型号 →"
   }
 }

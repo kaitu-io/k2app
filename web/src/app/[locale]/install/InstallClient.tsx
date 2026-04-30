@@ -13,7 +13,7 @@ import { getDownloadLinks } from '@/lib/constants';
 import type { MobileLinks } from '@/lib/downloads';
 import { detectDevice, triggerAutoDownload, type DeviceType } from '@/lib/device-detection';
 import { PlatformIcon, PLATFORM_COLORS, PLATFORM_IDS, type PlatformId } from './platform-icons';
-import { WindowsPanel, MacOSPanel, LinuxPanel, IOSPanel, AndroidPanel } from './platform-panels';
+import { WindowsPanel, MacOSPanel, LinuxPanel, IOSPanel, AndroidPanel, RouterPanel } from './platform-panels';
 import { ArrowRight } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 
@@ -63,10 +63,11 @@ function PlatformTabBar({
     linux: t('install.install.linux'),
     ios: t('install.install.ios'),
     android: t('install.install.android'),
+    router: t('install.install.router'),
   };
 
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-8">
+    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-8">
       {PLATFORM_IDS.map((id) => (
         <button
           key={id}
@@ -149,20 +150,24 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   // Device detection -> auto-select tab + auto-download for desktop/android
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const platformParam = params.get('platform') as DeviceType | null;
+    const platformParam = params.get('platform');
     const noAutoDownload = params.get('nodownload') !== null;
-    const validPlatforms: DeviceType[] = ['windows', 'macos', 'linux', 'ios', 'android'];
+    const validPlatforms: PlatformId[] = ['windows', 'macos', 'linux', 'ios', 'android', 'router'];
 
+    let selectedId: PlatformId | null = null;
     let detectedType: DeviceType;
-    if (platformParam && validPlatforms.includes(platformParam)) {
-      detectedType = platformParam;
+    if (platformParam && (validPlatforms as string[]).includes(platformParam)) {
+      selectedId = platformParam as PlatformId;
+      detectedType = (platformParam === 'router' ? 'unknown' : platformParam) as DeviceType;
     } else {
       detectedType = detectDevice().type;
+      if (PLATFORM_IDS.includes(detectedType as PlatformId)) {
+        selectedId = detectedType as PlatformId;
+      }
     }
 
-    // Map to PlatformId (unknown -> windows fallback)
-    if (PLATFORM_IDS.includes(detectedType as PlatformId)) {
-      setSelectedPlatform(detectedType as PlatformId);
+    if (selectedId) {
+      setSelectedPlatform(selectedId);
     }
 
     // Auto-download for desktop platforms and Android (skip iOS/Linux/unknown)
@@ -204,6 +209,16 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   const copyCliCommand = useCallback(async () => {
     try {
       await navigator.clipboard.writeText('curl -fsSL https://kaitu.io/i/k2 | sudo bash');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable
+    }
+  }, []);
+
+  const copyRouterCliCommand = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText('wget -qO- https://kaitu.io/i/k2r | sudo sh');
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -277,6 +292,13 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
             version={mobileLinks?.android?.version ?? null}
             primaryLink={mobileLinks?.android?.primary ?? ''}
             backupLink={mobileLinks?.android?.backup ?? ''}
+          />
+        </TabsContent>
+        <TabsContent value="router">
+          <RouterPanel
+            t={t}
+            onCopy={copyRouterCliCommand}
+            copied={copied}
           />
         </TabsContent>
       </Tabs>

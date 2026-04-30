@@ -10,9 +10,18 @@
     "nodeInfo": "香港 · 最適ノード",
     "onboarding": {
       "title": "3ステップで始める",
-      "step1": { "label": "プランを選んで登録", "detail": "Alipay · WeChat · クレジットカード" },
-      "step2": { "label": "アプリをダウンロード", "detail": "Windows · macOS · iOS · Android" },
-      "step3": { "label": "コードを入力して接続", "detail": "設定不要、すぐに使える" }
+      "step1": {
+        "label": "プランを選んで登録",
+        "detail": "Alipay · WeChat · クレジットカード"
+      },
+      "step2": {
+        "label": "アプリをダウンロード",
+        "detail": "Windows · macOS · iOS · Android"
+      },
+      "step3": {
+        "label": "コードを入力して接続",
+        "detail": "設定不要、すぐに使える"
+      }
     },
     "terminalTitle": "サーバーセルフホスト",
     "downloadClient": "クライアントをダウンロード",
@@ -402,7 +411,10 @@
     "onlineService": "オンラインサポート",
     "realTimeResponse": "リアルタイム相談、迅速な対応",
     "startOnlineService": "オンラインサポートを開始",
-    "warranty": "すべてのルーター製品には1年保証 • 無料技術サポート • 7日間返金保証"
+    "warranty": "すべてのルーター製品には1年保証 • 無料技術サポート • 7日間返金保証",
+    "diyBannerTitle": "すでに OpenWrt やソフトルーターをお使いですか？",
+    "diyBannerBody": "1 行のコマンドで既存のデバイスに Overleap ゲートウェイをインストール — 専用ハードウェアを買う必要はありません。",
+    "diyBannerCta": "DIY インストールガイドを見る"
   },
   "faq": {
     "title": "よくある質問",

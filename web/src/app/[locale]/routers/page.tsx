@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ROUTER_PRODUCTS } from '@/lib/constants';
 import Image from 'next/image';
+import NextLink from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { routing } from '@/i18n/routing';
@@ -74,6 +75,23 @@ export default async function RoutersPage({
             <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
               {t('routers.subtitle')}
             </p>
+          </div>
+
+          {/* DIY install banner — for users who already have a compatible OpenWrt device */}
+          <div className="max-w-3xl mx-auto bg-card border rounded-2xl p-6 text-left flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-foreground mb-1">
+                {t('routers.diyBannerTitle')}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {t('routers.diyBannerBody')}
+              </p>
+            </div>
+            <Button asChild size="lg" variant="outline" className="shrink-0">
+              <NextLink href={`/${locale}/install?platform=router&nodownload`}>
+                {t('routers.diyBannerCta')}
+              </NextLink>
+            </Button>
           </div>
         </div>
       </section>

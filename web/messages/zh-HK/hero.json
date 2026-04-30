@@ -10,9 +10,18 @@
     "nodeInfo": "香港 · 最優節點",
     "onboarding": {
       "title": "三步開始使用",
-      "step1": { "label": "選擇套餐，完成購買", "detail": "支援支付寶 · 微信 · 信用卡" },
-      "step2": { "label": "下載對應平台客戶端", "detail": "Windows · macOS · iOS · Android" },
-      "step3": { "label": "輸入啟用碼，立即連線", "detail": "無需配置，開通即用" }
+      "step1": {
+        "label": "選擇套餐，完成購買",
+        "detail": "支援支付寶 · 微信 · 信用卡"
+      },
+      "step2": {
+        "label": "下載對應平台客戶端",
+        "detail": "Windows · macOS · iOS · Android"
+      },
+      "step3": {
+        "label": "輸入啟用碼，立即連線",
+        "detail": "無需配置，開通即用"
+      }
     },
     "terminalTitle": "伺服端自部署",
     "downloadClient": "下載客戶端",
@@ -402,7 +411,10 @@
     "onlineService": "在線客服",
     "realTimeResponse": "即時諮詢、快速回應",
     "startOnlineService": "啟動在線客服",
-    "warranty": "所有路由器產品均提供1年質保 • 免費技術支援 • 7天無理由退貨"
+    "warranty": "所有路由器產品均提供1年質保 • 免費技術支援 • 7天無理由退貨",
+    "diyBannerTitle": "已經有 OpenWrt / 軟路由？",
+    "diyBannerBody": "一行指令將 開途閘道裝到你現有嘅裝置度，唔使買專用硬件。",
+    "diyBannerCta": "睇 DIY 安裝指南"
   },
   "faq": {
     "title": "常見問題",

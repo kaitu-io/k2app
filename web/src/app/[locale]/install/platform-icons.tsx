@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const PLATFORM_IDS = ['windows', 'macos', 'linux', 'ios', 'android'] as const;
+export const PLATFORM_IDS = ['windows', 'macos', 'linux', 'ios', 'android', 'router'] as const;
 export type PlatformId = (typeof PLATFORM_IDS)[number];
 
 export const platformIcons: Record<string, React.FC<{ className?: string }>> = {
@@ -51,6 +51,16 @@ export const platformIcons: Record<string, React.FC<{ className?: string }>> = {
       <path d="M15.4 8.8l-2.9-5c-.2-.4-.1-.8.3-1 .4-.2.8-.1 1 .3l2.9 5.1c2.2-1 4.7-1.5 7.3-1.5s5.1.6 7.3 1.5l2.9-5.1c.2-.4.6-.5 1-.3.4.2.5.6.3 1l-2.9 5c5.1 2.5 8.5 7.3 8.5 12.8H6.9c0-5.5 3.4-10.3 8.5-12.8zM18 16.5c-.8 0-1.5.7-1.5 1.5s.7 1.5 1.5 1.5 1.5-.7 1.5-1.5-.7-1.5-1.5-1.5zm12 0c-.8 0-1.5.7-1.5 1.5s.7 1.5 1.5 1.5 1.5-.7 1.5-1.5-.7-1.5-1.5-1.5zM6.9 24h34.2v16c0 1.7-1.3 3-3 3H9.9c-1.7 0-3-1.3-3-3V24z"/>
     </svg>
   ),
+  router: ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="2" y="14" width="20" height="6" rx="2"/>
+      <line x1="6.5" y1="17" x2="6.5" y2="17"/>
+      <line x1="10" y1="17" x2="10" y2="17"/>
+      <path d="M6 14V9a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v5"/>
+      <path d="M12 6V3"/>
+      <path d="M9 3h6"/>
+    </svg>
+  ),
 };
 
 export function PlatformIcon({ type, className }: { type: string; className?: string }) {
@@ -64,6 +74,7 @@ export const PLATFORM_COLORS: Record<string, string> = {
   linux: 'text-amber-400',
   ios: 'text-blue-400',
   android: 'text-green-400',
+  router: 'text-purple-400',
 };
 
 export const PLATFORM_LABELS: Record<PlatformId, string> = {
@@ -72,4 +83,5 @@ export const PLATFORM_LABELS: Record<PlatformId, string> = {
   linux: 'Linux',
   ios: 'iOS',
   android: 'Android',
+  router: 'Router',
 };

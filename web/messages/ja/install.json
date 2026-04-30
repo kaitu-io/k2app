@@ -68,7 +68,8 @@
       "linux": "あなたのLinuxに対応",
       "ios": "Overleap iOS版",
       "android": "Overleap Android版",
-      "unknown": "プラットフォームを選択"
+      "unknown": "プラットフォームを選択",
+      "router": "ルーターで k2 ゲートウェイを動かす"
     },
     "installSteps": {
       "title": "インストール手順",
@@ -128,6 +129,31 @@
         "question": "Overleapは安全ですか？",
         "answer": "OverleapはApple公証済みおよびWindows EVコード署名済みです。すべてのインストーラーはHTTPS経由で配布され、SHA-256チェックサムで検証可能です。k2プロトコルのコアは独立したセキュリティ監査プログラムの対象です。"
       }
-    }
+    },
+    "router": "ルーター",
+    "routerSubtitle": "OpenWrt、x86 ソフトルーター、組み込み Linux に Overleap をインストール — LAN 上の全デバイスが自動でトンネルを通過します。",
+    "routerCliHint": "ルーターの SSH で貼り付けて実行。インストーラーがアーキテクチャを検出し、起動サービスを登録します。",
+    "routerVariants": {
+      "openwrt": {
+        "title": "OpenWrt ルーター",
+        "body": "procd サービスとして登録、LuCI 連携も選択可。ARMv7 / arm64 / x86_64 対応。"
+      },
+      "softrouter": {
+        "title": "Debian / Ubuntu ソフトルーター",
+        "body": "systemd ユニットとして登録。N100 ミニ PC、iStoreOS、ImmortalWrt 派生で動作。"
+      },
+      "sbc": {
+        "title": "汎用 Linux SBC",
+        "body": "Raspberry Pi、Orange Pi、N1 ボックス等。インストーラーがディストリビューションを自動検出します。"
+      }
+    },
+    "routerNextSteps": {
+      "title": "インストール後",
+      "step1": "ブラウザで http://<router-ip>:1779 を開きゲートウェイ画面へ。",
+      "step2": "サブスクリプション URL（k2subs://）または k2v5:// ノード URL を貼り付け。",
+      "step3": "接続をクリック — LAN 上の全デバイスが k2 経由で通信します。"
+    },
+    "routerHardwarePrompt": "対応ハードウェアをお探しですか？",
+    "routerHardwareLink": "ルーターモデル一覧 →"
   }
 }

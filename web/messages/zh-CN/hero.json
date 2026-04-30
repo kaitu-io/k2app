@@ -14,9 +14,18 @@
     "smartRouter": "智能路由器",
     "onboarding": {
       "title": "三步开始使用",
-      "step1": { "label": "选择套餐，完成购买", "detail": "支持支付宝 · 微信 · 信用卡" },
-      "step2": { "label": "下载对应平台客户端", "detail": "Windows · macOS · iOS · Android" },
-      "step3": { "label": "输入激活码，立即连接", "detail": "无需配置，开通即用" }
+      "step1": {
+        "label": "选择套餐，完成购买",
+        "detail": "支持支付宝 · 微信 · 信用卡"
+      },
+      "step2": {
+        "label": "下载对应平台客户端",
+        "detail": "Windows · macOS · iOS · Android"
+      },
+      "step3": {
+        "label": "输入激活码，立即连接",
+        "detail": "无需配置，开通即用"
+      }
     },
     "features": {
       "title": "为什么开途在别人断线时依然稳定？",
@@ -402,7 +411,10 @@
     "onlineService": "在线客服",
     "realTimeResponse": "实时咨询、快速响应",
     "startOnlineService": "启动在线客服",
-    "warranty": "所有路由器产品均提供1年质保 • 免费技术支持 • 7天无理由退货"
+    "warranty": "所有路由器产品均提供1年质保 • 免费技术支持 • 7天无理由退货",
+    "diyBannerTitle": "已经有 OpenWrt / 软路由？",
+    "diyBannerBody": "一行命令把开途网关装到你已有的设备上，无需购买专用硬件。",
+    "diyBannerCta": "查看 DIY 安装指南"
   },
   "faq": {
     "title": "常见问题",

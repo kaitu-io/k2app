@@ -276,3 +276,25 @@ export function CliBlock({ onCopy, copied }: { onCopy: () => void; copied: boole
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Router CLI block — wget-pipe-sh installer for k2r gateway
+// ---------------------------------------------------------------------------
+
+export function RouterCliBlock({ command, onCopy, copied }: { command: string; onCopy: () => void; copied: boolean }) {
+  return (
+    <div className="bg-card rounded-lg border font-mono text-sm p-4">
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground">$</span>
+        <code className="flex-1 text-foreground break-all">{command}</code>
+        <button
+          onClick={onCopy}
+          className="shrink-0 p-1 hover:text-foreground transition-colors text-muted-foreground"
+          aria-label="copy"
+        >
+          {copied ? <CheckCircle className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+        </button>
+      </div>
+    </div>
+  );
+}

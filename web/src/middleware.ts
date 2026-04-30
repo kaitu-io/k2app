@@ -21,15 +21,15 @@ export default function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Track k2s download
-  if (pathname === '/i/k2s') {
-    // Fire-and-forget: record download to Center API
+  // Track k2s/k2r download
+  if (pathname === '/i/k2s' || pathname === '/i/k2r') {
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       || request.headers.get('x-real-ip')
       || 'unknown';
     const ua = request.headers.get('user-agent') || '';
+    const endpoint = pathname === '/i/k2s' ? 'k2s-download' : 'k2r-download';
 
-    fetch('https://k2.52j.me/api/stats/k2s-download', {
+    fetch(`https://k2.52j.me/api/stats/${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ip_raw: ip, ua }),
