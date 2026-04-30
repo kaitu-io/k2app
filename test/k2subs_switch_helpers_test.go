@@ -18,6 +18,8 @@ import (
 	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/subscription"
 	"github.com/kaitu-io/k2/wire"
+
+	"go.uber.org/goleak"
 )
 
 // ---------------------------------------------------------------------------
@@ -209,8 +211,26 @@ type k2subsFixture struct {
 
 // newK2subsFixture builds a fully-wired fixture with `initialTunnels` as the
 // fakeSubsServer's first response.
+//
+// The fixture registers a goleak.VerifyNone cleanup BEFORE any other cleanups
+// so that — under t.Cleanup's LIFO order — goleak runs LAST, after the
+// httptest server has been Close()d and all subscription refresh goroutines
+// (if started) have exited. Tests should therefore call newK2subsFixture as
+// their first non-trivial setup step.
 func newK2subsFixture(t *testing.T, initialTunnels []config.Tunnel) *k2subsFixture {
 	t.Helper()
+
+	// Register goleak first → runs last (LIFO) → catches leaks after
+	// every other cleanup has settled.
+	t.Cleanup(func() {
+		goleak.VerifyNone(t,
+			// HTTP/2 transport idle conn keepalive — released as the
+			// httptest.Server's idle conns close. Sometimes lingers a few ms
+			// after Close(); harmless.
+			goleak.IgnoreAnyFunction("net/http.(*persistConn).readLoop"),
+			goleak.IgnoreAnyFunction("net/http.(*persistConn).writeLoop"),
+		)
+	})
 
 	srv := newFakeSubsServer(t)
 	srv.SetTunnels(initialTunnels)
