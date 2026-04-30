@@ -10,10 +10,19 @@ VERSION ?= dev
 COMMIT  ?= $(shell git rev-parse --short HEAD)
 K2_BUILD_LOG_LEVEL ?= debug
 LDFLAGS  = -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X github.com/kaitu-io/k2/config.buildLogLevel=$(K2_BUILD_LOG_LEVEL)
+# Build constraints. `release` strips test-only symbols (engine/test_export.go,
+# test/k2subs_switch_*_test.go). Default test/dev paths (go test, quick-check)
+# pass NO tags, so test_export.go is included and the E2E suite compiles.
+# Production binaries built via these Makefile targets always include `release`.
+RELEASE_TAGS = release
 # Desktop: lock-ordering detection enabled (low overhead, catches deadlocks).
+DESKTOP_TAGS = -tags=$(RELEASE_TAGS)
+# Gateway (k2r): production-only build, same constraint.
+PROD_TAGS    = -tags=$(RELEASE_TAGS)
 # Mobile: deadlock_disable for zero overhead (tight iOS NE ~50MB jetsam).
-DESKTOP_TAGS =
-MOBILE_TAGS = -tags=deadlock_disable
+MOBILE_TAGS  = -tags=deadlock_disable,$(RELEASE_TAGS)
+# gomobile bind takes a single -tags argument with space-separated values.
+GOMOBILE_TAGS = with_gvisor deadlock_disable $(RELEASE_TAGS)
 
 # --- Native build ---
 build:
@@ -110,11 +119,11 @@ build-server-linux:
 # --- Mobile (gomobile bind) ---
 appext-ios:
 	mkdir -p build
-	gomobile bind -tags "with_gvisor deadlock_disable" -target=ios -o build/K2Mobile.xcframework ./appext/
+	gomobile bind -tags "$(GOMOBILE_TAGS)" -target=ios -o build/K2Mobile.xcframework ./appext/
 
 appext-macos:
 	mkdir -p build
-	gomobile bind -tags "with_gvisor deadlock_disable" -target=macos -o build/K2MobileMacOS.xcframework ./appext/
+	gomobile bind -tags "$(GOMOBILE_TAGS)" -target=macos -o build/K2MobileMacOS.xcframework ./appext/
 
 appext-android:
 	mkdir -p build
@@ -122,7 +131,7 @@ appext-android:
 	# //go:linkname to patch net.zoneCache on Android. Go 1.23+ rejects this
 	# by default. See anet v0.0.5 README. iOS target doesn't compile
 	# interface_android.go so the flag is Android-only.
-	gomobile bind -tags "with_gvisor deadlock_disable" -target=android -o build/k2mobile.aar -androidapi 24 -ldflags=-checklinkname=0 ./appext/
+	gomobile bind -tags "$(GOMOBILE_TAGS)" -target=android -o build/k2mobile.aar -androidapi 24 -ldflags=-checklinkname=0 ./appext/
 
 # --- Network degradation tests (Docker netem) ---
 netem-test:
