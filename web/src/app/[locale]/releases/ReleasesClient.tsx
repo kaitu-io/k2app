@@ -15,6 +15,9 @@ import {
   Download,
   Monitor,
   Apple,
+  Terminal,
+  Smartphone,
+  ExternalLink,
 } from 'lucide-react';
 
 interface VersionData {
@@ -33,8 +36,13 @@ interface VersionData {
   downloads: {
     windows?: string;
     macos?: string;
+    linux?: string;
+    android?: string;
+    ios?: string;
     windowsBackup?: string;
     macosBackup?: string;
+    linuxBackup?: string;
+    androidBackup?: string;
   };
 }
 
@@ -70,6 +78,47 @@ function ChannelBadge({ channel }: { channel: 'beta' | 'stable' }) {
   );
 }
 
+function PlatformDownload({
+  href,
+  backupHref,
+  icon: Icon,
+  label,
+  external,
+}: {
+  href: string;
+  backupHref?: string;
+  icon: typeof Monitor;
+  label: string;
+  external?: boolean;
+}) {
+  const t = useTranslations();
+  const linkProps = external
+    ? { target: '_blank' as const, rel: 'noopener noreferrer' }
+    : {};
+  return (
+    <div className="flex items-center gap-2">
+      <a
+        href={href}
+        {...linkProps}
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-foreground transition-colors"
+      >
+        <Icon className="w-4 h-4" />
+        {label}
+      </a>
+      {backupHref && (
+        <a
+          href={backupHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+        >
+          {t('releases.backupDownload')}
+        </a>
+      )}
+    </div>
+  );
+}
+
 function DownloadAssets({ downloads }: { downloads: VersionData['downloads'] }) {
   const t = useTranslations();
   return (
@@ -78,46 +127,44 @@ function DownloadAssets({ downloads }: { downloads: VersionData['downloads'] }) 
         {t('releases.downloadAssets')}{':'}
       </span>
       {downloads.windows && (
-        <div className="flex items-center gap-2">
-          <a
-            href={downloads.windows}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-foreground transition-colors"
-          >
-            <Monitor className="w-4 h-4" />
-            {t('releases.downloadWindows')}
-          </a>
-          {downloads.windowsBackup && (
-            <a
-              href={downloads.windowsBackup}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-            >
-              {t('releases.backupDownload')}
-            </a>
-          )}
-        </div>
+        <PlatformDownload
+          href={downloads.windows}
+          backupHref={downloads.windowsBackup}
+          icon={Monitor}
+          label={t('releases.downloadWindows')}
+        />
       )}
       {downloads.macos && (
-        <div className="flex items-center gap-2">
-          <a
-            href={downloads.macos}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-foreground transition-colors"
-          >
-            <Apple className="w-4 h-4" />
-            {t('releases.downloadMacOS')}
-          </a>
-          {downloads.macosBackup && (
-            <a
-              href={downloads.macosBackup}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-            >
-              {t('releases.backupDownload')}
-            </a>
-          )}
-        </div>
+        <PlatformDownload
+          href={downloads.macos}
+          backupHref={downloads.macosBackup}
+          icon={Apple}
+          label={t('releases.downloadMacOS')}
+        />
+      )}
+      {downloads.linux && (
+        <PlatformDownload
+          href={downloads.linux}
+          backupHref={downloads.linuxBackup}
+          icon={Terminal}
+          label={t('releases.downloadLinux')}
+        />
+      )}
+      {downloads.android && (
+        <PlatformDownload
+          href={downloads.android}
+          backupHref={downloads.androidBackup}
+          icon={Smartphone}
+          label={t('releases.downloadAndroid')}
+        />
+      )}
+      {downloads.ios && (
+        <PlatformDownload
+          href={downloads.ios}
+          icon={ExternalLink}
+          label={t('releases.downloadIOS')}
+          external
+        />
       )}
     </div>
   );

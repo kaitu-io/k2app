@@ -16,9 +16,23 @@ const path = require('path');
  *   node scripts/generate-changelog.js     (from web/)
  */
 
-const CDN_PRIMARY = 'https://dl.kaitu.io/kaitu/desktop';
-const CDN_BACKUP = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
-const MIN_DOWNLOAD_VERSION = { major: 0, minor: 3, patch: 22 };
+const CDN_PRIMARY_BASE = 'https://dl.kaitu.io/kaitu';
+const CDN_BACKUP_BASE = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu';
+const CDN_PRIMARY = `${CDN_PRIMARY_BASE}/desktop`;
+const CDN_BACKUP = `${CDN_BACKUP_BASE}/desktop`;
+const CDN_PRIMARY_ANDROID = `${CDN_PRIMARY_BASE}/android`;
+const CDN_BACKUP_ANDROID = `${CDN_BACKUP_BASE}/android`;
+// iOS is App Store only — version-independent.
+const IOS_APPSTORE_URL = 'https://apps.apple.com/app/id6448744655';
+
+// Per-platform first version that has a published artifact on the CDN. Platforms
+// added later (Linux tarball, Android APK) start showing later than Windows/macOS.
+const MIN_VERSION = {
+  desktop: { major: 0, minor: 3, patch: 22 },
+  linux: { major: 0, minor: 4, patch: 3 },
+  android: { major: 0, minor: 4, patch: 1 },
+  ios: { major: 0, minor: 4, patch: 1 },
+};
 
 function parseVersion(filename) {
   // Extract version from filename (e.g., "v0.3.18.md" or "v0.4.0-beta.1.md")
@@ -149,6 +163,9 @@ function generateChangelog() {
     // Extract date from frontmatter
     const dateMatch = content.match(/date:\s*(\d{4}-\d{2}-\d{2})/);
     const date = dateMatch ? dateMatch[1] : 'Unknown';
+    // Optional `noDownloads: true` flag for releases that don't ship app binaries
+    // (e.g. router-only releases where the install one-liner is in the body).
+    const noDownloads = /noDownloads:\s*true/i.test(content);
 
     // Strip YAML frontmatter
     let withoutFrontmatter = content;
@@ -164,15 +181,32 @@ function generateChangelog() {
     // Parse sections for JSON
     const sections = parseMarkdownSections(withoutFrontmatter);
 
-    // Determine channel and download availability
+    // Determine channel and per-platform download availability
     const channel = version.prerelease ? 'beta' : 'stable';
-    const hasDownloads = isVersionGte(version, MIN_DOWNLOAD_VERSION);
-    const downloads = hasDownloads ? {
-      windows: `${CDN_PRIMARY}/${version.string}/Kaitu_${version.string}_x64.exe`,
-      windowsBackup: `${CDN_BACKUP}/${version.string}/Kaitu_${version.string}_x64.exe`,
-      macos: `${CDN_PRIMARY}/${version.string}/Kaitu-${version.string}.pkg`,
-      macosBackup: `${CDN_BACKUP}/${version.string}/Kaitu-${version.string}.pkg`,
-    } : {};
+    const hasDesktop = !noDownloads && isVersionGte(version, MIN_VERSION.desktop);
+    const hasLinux = !noDownloads && isVersionGte(version, MIN_VERSION.linux);
+    const hasAndroid = !noDownloads && isVersionGte(version, MIN_VERSION.android);
+    const hasIOS = !noDownloads && isVersionGte(version, MIN_VERSION.ios);
+    const hasDownloads = hasDesktop || hasLinux || hasAndroid || hasIOS;
+
+    const downloads = {};
+    if (hasDesktop) {
+      downloads.windows = `${CDN_PRIMARY}/${version.string}/Kaitu_${version.string}_x64.exe`;
+      downloads.windowsBackup = `${CDN_BACKUP}/${version.string}/Kaitu_${version.string}_x64.exe`;
+      downloads.macos = `${CDN_PRIMARY}/${version.string}/Kaitu_${version.string}_universal.pkg`;
+      downloads.macosBackup = `${CDN_BACKUP}/${version.string}/Kaitu_${version.string}_universal.pkg`;
+    }
+    if (hasLinux) {
+      downloads.linux = `${CDN_PRIMARY}/${version.string}/Kaitu_${version.string}_linux_amd64.tar.gz`;
+      downloads.linuxBackup = `${CDN_BACKUP}/${version.string}/Kaitu_${version.string}_linux_amd64.tar.gz`;
+    }
+    if (hasAndroid) {
+      downloads.android = `${CDN_PRIMARY_ANDROID}/${version.string}/Kaitu-${version.string}.apk`;
+      downloads.androidBackup = `${CDN_BACKUP_ANDROID}/${version.string}/Kaitu-${version.string}.apk`;
+    }
+    if (hasIOS) {
+      downloads.ios = IOS_APPSTORE_URL;
+    }
 
     // Track latest beta and stable
     if (channel === 'beta' && !jsonData.latestBeta) {
