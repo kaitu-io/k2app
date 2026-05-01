@@ -30,7 +30,7 @@ type SlaveNodeUpsertRequest struct {
 //
 type TunnelConfigInput struct {
 	Domain       string `json:"domain" binding:"required" example:"*.example.com"` // 隧道域名
-	Protocol     string `json:"protocol" example:"k2v4"`                           // 隧道协议（k2v4, k2wss, k2oc）
+	Protocol     string `json:"protocol" example:"k2v4"`                           // 隧道协议（k2v4, k2v5, k2wss）
 	Port         int    `json:"port" binding:"required" example:"443"`             // 隧道端口
 	HopPortStart int    `json:"hopPortStart" example:"10000"`                      // Port hopping start (0 = disabled)
 	HopPortEnd   int    `json:"hopPortEnd" example:"20000"`                        // Port hopping end
@@ -44,7 +44,7 @@ type TunnelConfigInput struct {
 //
 type TunnelConfigOutput struct {
 	Domain       string `json:"domain" example:"*.example.com"` // 隧道域名
-	Protocol     string `json:"protocol" example:"k2v4"`        // 隧道协议（k2v4, k2wss, k2oc）
+	Protocol     string `json:"protocol" example:"k2v4"`        // 隧道协议（k2v4, k2v5, k2wss）
 	Port         int    `json:"port" example:"443"`             // 隧道端口
 	HopPortStart int    `json:"hopPortStart" example:"10000"`   // Port hopping start
 	HopPortEnd   int    `json:"hopPortEnd" example:"20000"`     // Port hopping end
@@ -259,8 +259,8 @@ func upsertTunnelForNode(c *gin.Context, node *SlaveNode, input TunnelConfigInpu
 		return nil, fmt.Errorf("failed to create tunnel: %w", err)
 	}
 
-	// 根据协议生成 SSL 证书
-	certPEM, keyPEM, err := GetDomainCertForProtocol(c, input.Domain, protocol)
+	// 生成 SSL 证书（ECDSA CA 签名，所有协议统一）
+	certPEM, keyPEM, err := GetDomainCert(c, input.Domain, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate SSL certificate: %w", err)
 	}
@@ -283,7 +283,7 @@ func upsertTunnelForNode(c *gin.Context, node *SlaveNode, input TunnelConfigInpu
 //
 type SlaveNodeUpsertTunnelRequest struct {
 	Name        string `json:"name" binding:"required" example:"Example Tunnel"` // Tunnel name
-	Protocol    string `json:"protocol" example:"k2v4"`                          // Tunnel protocol (k2v4, k2wss, k2oc)
+	Protocol    string `json:"protocol" example:"k2v4"`                          // Tunnel protocol (k2v4, k2v5, k2wss)
 	Port        int    `json:"port" binding:"required" example:"443"`            // Tunnel port
 	SecretToken string `json:"secretToken" example:"xyz789..."`                  // Tunnel auth token (optional, generates new if not provided)
 }
@@ -374,8 +374,8 @@ func api_slave_node_upsert_tunnel(c *gin.Context) {
 		return
 	}
 
-	// 根据协议生成 SSL 证书
-	certPEM, keyPEM, err := GetDomainCertForProtocol(c, domain, protocol)
+	// 生成 SSL 证书（ECDSA CA 签名，所有协议统一）
+	certPEM, keyPEM, err := GetDomainCert(c, domain, false)
 	if err != nil {
 		Error(c, ErrorSystemError, "failed to generate SSL certificate")
 		return

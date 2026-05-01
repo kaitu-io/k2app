@@ -40,41 +40,39 @@ exec_on_node(ip, "docker ps --format '{{.Names}}'")
 
 Deployment path: `/apps/kaitu-slave/`
 
-4 containers with strict dependency chain:
+3 containers with strict dependency chain:
 
 ```
 k2-sidecar (bridge network)
   ├── healthy ──→ k2v5 (bridge network, Docker port mapping :443 TCP+UDP + 40000-40019 UDP)
-  ├── healthy ──→ k2v4-slave (bridge, :8443 mapped to container :443)
-  └── healthy ──→ k2-oc (bridge, :10001 mapped to container :443)
+  └── healthy ──→ k2v4-slave (bridge, :8443 mapped to container :443)
 ```
 
 | Container | Role | Network | Image |
 |-----------|------|---------|-------|
-| k2-sidecar | Registration, config generation, RADIUS proxy, health reporting | bridge (k2-internal) | k2-sidecar:latest |
-| k2v5 | ECH front door. Owns port 443. ECH traffic → in-process; non-ECH → SNI route to k2v4/k2-oc | bridge (k2-internal) | k2v5:latest |
+| k2-sidecar | Registration, config generation, health reporting | bridge (k2-internal) | k2-sidecar:latest |
+| k2v5 | ECH front door. Owns port 443. ECH traffic → in-process; non-ECH → SNI route to k2v4 | bridge (k2-internal) | k2v5:latest |
 | k2v4-slave | Legacy TCP-WS tunnel, receives forwarded non-ECH traffic from k2v5 | bridge (k2-internal) | k2-slave:latest |
-| k2-oc | OpenConnect tunnel, RADIUS auth via sidecar | bridge (k2-internal) | k2-oc:latest |
 
 Key details:
 - k2-sidecar writes `/etc/kaitu/.ready` when config generation is complete
 - All other containers wait for sidecar healthcheck before starting
-- All 4 containers use bridge network (k2-internal). k2v5 uses Docker port mapping: 443/tcp + 443/udp + 40000-40019/udp → container 443
-- k2v5→k2v4-slave/k2-oc communication uses Docker internal DNS (container names), not host ports
+- All 3 containers use bridge network (k2-internal). k2v5 uses Docker port mapping: 443/tcp + 443/udp + 40000-40019/udp → container 443
+- k2v5→k2v4-slave communication uses Docker internal DNS (container names), not host ports
 - No iptables management, no NET_ADMIN, no wrapper scripts
 - Images from `public.ecr.aws/d6n9t2r2/`
+- **k2-oc (OpenConnect) was retired 2026-04-30**. Compose no longer passes `K2OC_DOMAIN` to the sidecar, so even old sidecar images skip OC registration (gated by `s.config.OC.Domain != ""`). New sidecar source has no OC code path at all. If you find a node still running `k2-oc`, push the latest compose and run `docker compose up -d --remove-orphans`.
 
 ### Old Architecture (k2-slave SNI router)
 
 Deployment path: `/apps/kaitu-slave/` (same)
 
-3 containers:
+2 containers:
 
 | Container | Role | Network | Image |
 |-----------|------|---------|-------|
 | k2-sidecar | Same as k2-sidecar above | bridge | k2-sidecar:latest |
 | k2-slave | SNI router (no ECH), host network, port 443 | host | k2-slave:latest |
-| k2-oc | Same as above | bridge | k2-oc:latest |
 
 Differences from new architecture:
 - Container names: `k2-sidecar` (same name, same image), `k2-slave` instead of `k2v5`
@@ -90,8 +88,6 @@ The `.env` file is at `/apps/kaitu-slave/.env`. Core variables:
 |----------|---------|-------|
 | `K2_NODE_SECRET` | Node authentication key | **NEVER read, display, or modify** |
 | `K2_DOMAIN` | Tunnel domain (wildcard `*.example.com`) | Shared by k2v5 + k2v4 |
-| `K2OC_ENABLED` | Enable OpenConnect tunnel | `true` / `false` |
-| `K2OC_DOMAIN` | OpenConnect domain | Separate from K2_DOMAIN |
 | `K2_JUMP_PORT_MIN` | Hop port range start (default 40000) | Docker port mapping to container 443 |
 | `K2_JUMP_PORT_MAX` | Hop port range end (default 40019) | 20 ports, high range to avoid GFW scan |
 | `K2_CENTER_URL` | Center API URL | Default `https://k2.52j.me` |
@@ -161,7 +157,7 @@ After provisioning a new node (or reinstalling OS), ensure these are all done:
 2. **SSH port**: Now automated by provision-node.sh step 11 (port 22 → 1022 only). Verify: `ss -tlnp | grep :1022`
 3. **provision-node.sh**: Timezone + Docker CE + IPv6 + BBR + SSH port 1022 + docker group + daemon.json + UFW-Docker + cron + unattended-upgrades removal.
 4. **docker-compose.yml**: Deploy via `deploy-compose.sh --node=IP` or SCP manually.
-5. **.env**: Restore from backup or generate new. **K2_DOMAIN and K2OC_DOMAIN must be globally unique** — run `list_nodes()` first and verify no other node uses the same domains. Domain collision silently breaks the other node.
+5. **.env**: Restore from backup or generate new. **K2_DOMAIN must be globally unique** — run `list_nodes()` first and verify no other node uses the same domain. Domain collision silently breaks the other node.
 6. **auto-update.sh + cron**: Deploy via `deploy-auto-update.sh --node=IP`.
 7. **Containers up**: `docker compose up -d` and verify sidecar healthy.
 8. **BBR active**: `sysctl net.ipv4.tcp_congestion_control` should show `bbr`. Included in provision-node.sh step 8.
@@ -212,7 +208,7 @@ All tunnel domains MUST follow: **`www.{city}.people.cn`**
 - `{city}` is a Chinese province or city name in pinyin (lowercase, no spaces)
 - Examples: `www.beijing.people.cn`, `www.chengdu.people.cn`, `www.dalian.people.cn`
 - No random prefixes, no other TLDs (`.aliyun.com` etc.)
-- Each domain is globally unique — no two nodes share the same domain, regardless of protocol (k2v5/k2oc)
+- Each domain is globally unique — no two nodes share the same domain
 - Live data source: always `list_nodes()` — never hardcode node-specific data in this skill
 
 ### Domain Assignment Procedure (MANDATORY)
@@ -228,8 +224,8 @@ When assigning domains for a new node or changing an existing node's domains:
 
 When diagnosing node issues, check for domain collisions:
 
-1. `list_nodes()` — if a node has fewer tunnels than expected (e.g., only k2oc but no k2v5), it's likely a collision victim
-2. Read the victim node's `.env` (`K2_DOMAIN` / `K2OC_DOMAIN`) and search `list_nodes()` output for that domain — it will appear on a different node
+1. `list_nodes()` — if a node has no tunnels (`tunnels: []`), it's likely a collision victim
+2. Read the victim node's `.env` (`K2_DOMAIN`) and search `list_nodes()` output for that domain — it will appear on a different node
 3. Fix: change the offending node's `.env` to a unique domain → `docker compose up -d` → then restart victim's sidecar to re-register
 
 ### `docker restart` vs `docker compose up -d`
@@ -422,7 +418,7 @@ Note: `provision-node.sh` step 2 handles this for new provisions. This fix is fo
 
 **Symptom**: A previously working node suddenly shows `tunnels: []` in `list_nodes()`.
 
-**Root cause**: Another node registered with the same `K2_DOMAIN` or `K2OC_DOMAIN`. Center reassigns the tunnel to the last registrant.
+**Root cause**: Another node registered with the same `K2_DOMAIN`. Center reassigns the tunnel to the last registrant.
 
 **Detection**: Run `list_nodes()` and search for the missing domain — it will appear on the wrong node.
 
@@ -446,12 +442,12 @@ Note: `provision-node.sh` step 2 handles this for new provisions. This fix is fo
 | # | Check | Command | Expected |
 |---|-------|---------|----------|
 | 0 | Timezone correct | `timedatectl \| grep 'Time zone'` | `Asia/Singapore (+08, +0800)` |
-| 1 | Containers running | `cd /apps/kaitu-slave && docker compose ps` | All 4 containers Up, sidecar (healthy) |
-| 2 | Sidecar registered | `docker logs --tail 30 k2-sidecar \| grep "Registration completed"` | `tunnels=2` |
-| 3 | Tunnel domains correct | `docker logs --tail 30 k2-sidecar \| grep "Tunnel registered"` | Correct domains, `created=true` |
+| 1 | Containers running | `cd /apps/kaitu-slave && docker compose ps` | All 3 containers Up, sidecar (healthy), no `k2-oc` orphan |
+| 2 | Sidecar registered | `docker logs --tail 30 k2-sidecar \| grep "Registration completed"` | `tunnels=1` |
+| 3 | Tunnel domain correct | `docker logs --tail 30 k2-sidecar \| grep "Tunnel registered"` | Correct k2v5 domain, `created=true` |
 | 4 | k2v5 started | `docker logs --tail 20 k2v5 \| grep "server ready"` | `k2s server ready listen=:443` |
 | 5 | Container network | `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org` | Returns node's public IP |
-| 6 | MCP cross-check | `list_nodes(name=NODE_NAME)` | `tunnels` array has 2 entries with correct domains |
+| 6 | MCP cross-check | `list_nodes(name=NODE_NAME)` | `tunnels` array has 1 entry (k2v5) with correct domain |
 | 7 | No domain conflict | `list_nodes()` — scan ALL nodes | No other node has `tunnels: []` unexpectedly |
 | 8 | Port mapping | `docker port k2v5` | 22 mappings: 443/tcp + 443/udp + 40000-40019/udp |
 

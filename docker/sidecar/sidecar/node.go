@@ -57,7 +57,7 @@ type CenterResponse[T any] struct {
 // TunnelConfig tunnel configuration (for batch registration)
 type TunnelConfig struct {
 	Domain        string `json:"domain"`
-	Protocol      string `json:"protocol,omitempty"`      // Protocol: k2v5, k2v4, k2wss, k2oc
+	Protocol      string `json:"protocol,omitempty"`      // Protocol: k2v5, k2v4, k2wss
 	Port          int    `json:"port"`
 	HopPortStart  int    `json:"hopPortStart,omitempty"`  // Port hopping start (0 = disabled)
 	HopPortEnd    int    `json:"hopPortEnd,omitempty"`    // Port hopping end
@@ -70,7 +70,7 @@ type TunnelConfig struct {
 // TunnelResult tunnel registration result (with certificate)
 type TunnelResult struct {
 	Domain       string `json:"domain"`
-	Protocol     string `json:"protocol"`     // Protocol: k2v5, k2v4, k2wss, k2oc
+	Protocol     string `json:"protocol"`     // Protocol: k2v5, k2v4, k2wss
 	Port         int    `json:"port"`
 	HopPortStart int    `json:"hopPortStart"` // Port hopping start
 	HopPortEnd   int    `json:"hopPortEnd"`   // Port hopping end

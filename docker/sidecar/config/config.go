@@ -51,15 +51,6 @@ type RelaySectionConfig struct {
 	Enabled bool `yaml:"enabled" default:"false"`
 }
 
-// OCTunnelConfig holds OpenConnect tunnel settings (for sidecar registration)
-type OCTunnelConfig struct {
-	Enabled      bool   `yaml:"enabled" default:"false"`
-	Domain       string `yaml:"domain"`
-	Port         int    `yaml:"port" default:"443"`        // Registration port (for SNI routing, always 443)
-	ListenPort   int    `yaml:"listen_port" default:"443"` // Container listening port (exposed via port mapping)
-	RadiusServer string `yaml:"radius_server" default:"k2-sidecar"`
-}
-
 // ECHSectionConfig holds ECH (Encrypted Client Hello) configuration
 type ECHSectionConfig struct {
 	Enabled  bool   `yaml:"enabled" default:"false"`
@@ -93,15 +84,12 @@ type Config struct {
 	Relay  RelaySectionConfig  `yaml:"relay"`
 	Node   NodeSectionConfig   `yaml:"node"`
 
-	// OpenConnect tunnel (sidecar registers, k2-slave routes via SNI)
-	OC OCTunnelConfig `yaml:"oc"`
-
 	// ECH (Encrypted Client Hello) configuration
 	// Keys file is managed by sidecar, k2-slave only reads from it
 	ECH ECHSectionConfig `yaml:"ech"`
 
 	// SNI local routing rules (higher priority than Center lookup)
-	// Format: domain -> target (e.g., "*.oc.example.com" -> "k2oc:443")
+	// Format: domain -> target (e.g., "*.example.com" -> "k2v4:443")
 	// Use "LOCAL" as target to indicate local handling
 	LocalRoutes map[string]string `yaml:"local_routes"`
 

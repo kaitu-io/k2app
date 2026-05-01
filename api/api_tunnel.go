@@ -13,13 +13,13 @@ import (
 
 // tunnelProtocolsForQuery returns the set of DB protocols to query for a given
 // requested protocol. k2v5 front-door forwards ALL non-ECH traffic to the
-// appropriate backend (k2v4-slave, k2-oc) via local_routes SNI matching.
+// appropriate backend (k2v4-slave) via local_routes SNI matching.
 // Therefore any k2-family client (k2, k2v4, k2wss) can connect through a
 // k2v5 node, and queries for those protocols must also return k2v5 tunnels.
 //
 // Rules:
 //   - k2, k2v4, k2wss → also include k2v5 tunnels
-//   - k2v5, k2oc → exact match only
+//   - k2v5 → exact match only
 func tunnelProtocolsForQuery(requested TunnelProtocol) []TunnelProtocol {
 	switch requested {
 	case TunnelProtocolK2, TunnelProtocolK2V4, TunnelProtocolK2WSS:
@@ -29,7 +29,7 @@ func tunnelProtocolsForQuery(requested TunnelProtocol) []TunnelProtocol {
 	}
 }
 
-// api_k2_tunnels get all tunnel list (excludes k2oc protocol)
+// api_k2_tunnels get all tunnel list
 // Routes:
 //   - GET /tunnels - returns tunnels with protocol forced to "k2wss" for backward compatibility
 //   - GET /tunnels/:protocol - returns tunnels with real protocol value
@@ -53,15 +53,10 @@ func api_k2_tunnels(c *gin.Context) {
 		// Protocol-specific query: use tunnelProtocolsForQuery to expand the
 		// requested protocol into the full set of DB protocols to include.
 		// This handles k2v4 backward compatibility (also returns k2v5 tunnels).
-		// k2oc is never included because tunnelProtocolsForQuery never adds it
-		// unless explicitly requested, and the route only allows non-k2oc protocols.
 		requestedProtocol := TunnelProtocol(protocolParam)
 		queryProtocols := tunnelProtocolsForQuery(requestedProtocol)
-		q = q.Where("protocol IN ? AND protocol != ?", queryProtocols, TunnelProtocolK2OC)
+		q = q.Where("protocol IN ?", queryProtocols)
 		log.Debugf(c, "filtering by protocol set %v (requested: %s)", queryProtocols, protocolParam)
-	} else {
-		// Legacy API: exclude only k2oc, return all other protocols (k2, k2wss, k2v4, k2v5, etc.)
-		q = q.Where("protocol != ?", TunnelProtocolK2OC)
 	}
 
 	// Filter out test nodes for non-admin users

@@ -14,16 +14,13 @@ import (
 
 func TestK2V5ConfigTemplate_ContainsCertDir(t *testing.T) {
 	data := K2V5ConfigData{
-		CertDir:     "/etc/k2v5",
-		CertPath:    "/etc/kaitu/certs/server-cert.pem",
-		KeyPath:     "/etc/kaitu/certs/server-key.pem",
-		K2Domain:    "test.example.com",
-		K2V4Port:    "8443",
-		K2OCDomain:  "",
-		K2OCPort:    "10001",
-		CenterURL:   "https://k2.52j.me",
-		LogLevel:    "info",
-		HasOCDomain: false,
+		CertDir:   "/etc/k2v5",
+		CertPath:  "/etc/kaitu/certs/server-cert.pem",
+		KeyPath:   "/etc/kaitu/certs/server-key.pem",
+		K2Domain:  "test.example.com",
+		K2V4Port:  "8443",
+		CenterURL: "https://k2.52j.me",
+		LogLevel:  "info",
 	}
 
 	tmpl, err := template.New("k2v5-config").Parse(k2v5ConfigTemplate)

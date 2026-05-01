@@ -190,19 +190,17 @@ type AdminDeviceData struct {
 
 // IssueDeviceTokenResponse 设备 token 签发响应
 type IssueDeviceTokenResponse struct {
-	AccessToken  string `json:"accessToken"`           // 访问令牌
-	RefreshToken string `json:"refreshToken"`          // 刷新令牌
-	IssuedAt     int64  `json:"issuedAt"`              // 签发时间（与数据库 TokenIssueAt 一致）
-	ExpiresIn    int64  `json:"expiresIn"`             // 过期时间（秒）
-	Password     string `json:"password,omitempty"`    // 设备密码（用于 k2oc 协议 RADIUS 认证）
+	AccessToken  string `json:"accessToken"`  // 访问令牌
+	RefreshToken string `json:"refreshToken"` // 刷新令牌
+	IssuedAt     int64  `json:"issuedAt"`     // 签发时间（与数据库 TokenIssueAt 一致）
+	ExpiresIn    int64  `json:"expiresIn"`    // 过期时间（秒）
 }
 
 // DataAuthResult 认证结果数据结构
 type DataAuthResult struct {
-	AccessToken  string `json:"accessToken"`            // 访问令牌
-	RefreshToken string `json:"refreshToken"`           // 刷新令牌
-	IssuedAt     int64  `json:"issuedAt"`               // 签发时间
-	Password     string `json:"password,omitempty"`     // 设备密码（已废弃，auth-with-device 接口已停用）
+	AccessToken  string `json:"accessToken"`  // 访问令牌
+	RefreshToken string `json:"refreshToken"` // 刷新令牌
+	IssuedAt     int64  `json:"issuedAt"`     // 签发时间
 }
 
 // DataWebLoginResponse Web登录响应数据结构
@@ -315,7 +313,7 @@ type DataSlaveTunnel struct {
 	ID             uint64              `json:"id"`                    // Tunnel ID
 	Domain         string              `json:"domain"`                // Tunnel domain
 	Name           string              `json:"name"`                  // Tunnel name
-	Protocol       TunnelProtocol      `json:"protocol"`              // Tunnel protocol (k2v4, k2wss, k2oc)
+	Protocol       TunnelProtocol      `json:"protocol"`              // Tunnel protocol (k2v4, k2v5, k2wss)
 	Port           int64               `json:"port"`                  // Tunnel port
 	HopPortStart   int64               `json:"hopPortStart"`          // Port hopping range start (0 = disabled)
 	HopPortEnd     int64               `json:"hopPortEnd"`            // Port hopping range end (0 = disabled)

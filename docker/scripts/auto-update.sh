@@ -73,7 +73,7 @@ fi
 # --- Compare running container image IDs vs pulled :latest IDs ---
 # If any container uses an outdated image, trigger restart.
 NEEDS_RESTART=0
-for SVC_CONTAINER in "k2-sidecar:k2-sidecar" "k2v5:k2v5" "k2v4-slave:k2-slave" "k2-oc:k2-oc"; do
+for SVC_CONTAINER in "k2-sidecar:k2-sidecar" "k2v5:k2v5" "k2v4-slave:k2-slave"; do
     CONTAINER="${SVC_CONTAINER%%:*}"
     IMAGE="${SVC_CONTAINER##*:}"
     RUNNING_ID=$(docker inspect --format='{{.Image}}' "$CONTAINER" 2>/dev/null | cut -c8-19)
