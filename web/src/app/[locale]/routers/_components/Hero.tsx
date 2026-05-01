@@ -1,6 +1,5 @@
 import { Router } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Link } from '@/i18n/routing';
 import { getTranslations } from 'next-intl/server';
 
 export async function Hero() {
@@ -15,14 +14,9 @@ export async function Hero() {
         <p className="text-xl text-muted-foreground mb-10 max-w-3xl mx-auto leading-relaxed">
           {t('subtitle')}
         </p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <div className="flex justify-center">
           <Button asChild size="lg">
             <a href="#step-1">{t('heroCta.primary')}</a>
-          </Button>
-          <Button asChild size="lg" variant="outline">
-            <Link href="/install?platform=router&nodownload">
-              {t('heroCta.secondary')}
-            </Link>
           </Button>
         </div>
       </div>

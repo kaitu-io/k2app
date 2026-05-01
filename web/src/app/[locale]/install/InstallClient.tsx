@@ -13,9 +13,9 @@ import { getDownloadLinks } from '@/lib/constants';
 import type { MobileLinks } from '@/lib/downloads';
 import { detectDevice, triggerAutoDownload, type DeviceType } from '@/lib/device-detection';
 import { PlatformIcon, PLATFORM_COLORS, PLATFORM_IDS, type PlatformId } from './platform-icons';
-import { WindowsPanel, MacOSPanel, LinuxPanel, IOSPanel, AndroidPanel, RouterPanel } from './platform-panels';
+import { WindowsPanel, MacOSPanel, LinuxPanel, IOSPanel, AndroidPanel } from './platform-panels';
 import { ArrowRight } from 'lucide-react';
-import { Link } from '@/i18n/routing';
+import { Link, useRouter } from '@/i18n/routing';
 
 const AUTO_DOWNLOAD_SECONDS = 5;
 
@@ -66,24 +66,45 @@ function PlatformTabBar({
     router: t('install.install.router'),
   };
 
+  const tileClass = (isSelected: boolean) =>
+    `flex flex-col items-center gap-1.5 px-3 py-3 rounded-lg border transition-all ${
+      isSelected
+        ? 'border-primary bg-primary/10 shadow-sm'
+        : 'border-transparent hover:bg-muted/50'
+    }`;
+
   return (
     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-8">
-      {PLATFORM_IDS.map((id) => (
-        <button
-          key={id}
-          onClick={() => onSelect(id)}
-          className={`flex flex-col items-center gap-1.5 px-3 py-3 rounded-lg border transition-all ${
-            selected === id
-              ? 'border-primary bg-primary/10 shadow-sm'
-              : 'border-transparent hover:bg-muted/50'
-          }`}
-        >
-          <PlatformIcon type={id} className={`w-8 h-8 ${PLATFORM_COLORS[id]}`} />
-          <span className={`text-xs font-medium ${selected === id ? 'text-foreground' : 'text-muted-foreground'}`}>
-            {labels[id]}
-          </span>
-        </button>
-      ))}
+      {PLATFORM_IDS.map((id) => {
+        if (id === 'router') {
+          return (
+            <Link
+              key={id}
+              href="/routers"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={tileClass(false)}
+            >
+              <PlatformIcon type={id} className={`w-8 h-8 ${PLATFORM_COLORS[id]}`} />
+              <span className="text-xs font-medium text-muted-foreground">
+                {labels[id]}
+              </span>
+            </Link>
+          );
+        }
+        return (
+          <button
+            key={id}
+            onClick={() => onSelect(id)}
+            className={tileClass(selected === id)}
+          >
+            <PlatformIcon type={id} className={`w-8 h-8 ${PLATFORM_COLORS[id]}`} />
+            <span className={`text-xs font-medium ${selected === id ? 'text-foreground' : 'text-muted-foreground'}`}>
+              {labels[id]}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -121,6 +142,7 @@ function FaqJsonLd({ t }: { t: (key: string) => string }) {
 
 export default function InstallClient({ betaVersion, stableVersion: serverStable, mobileLinks }: InstallClientProps) {
   const t = useTranslations();
+  const router = useRouter();
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformId>('windows');
   const [copied, setCopied] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -152,13 +174,18 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
     const params = new URLSearchParams(window.location.search);
     const platformParam = params.get('platform');
     const noAutoDownload = params.get('nodownload') !== null;
-    const validPlatforms: PlatformId[] = ['windows', 'macos', 'linux', 'ios', 'android', 'router'];
+    const validPlatforms: PlatformId[] = ['windows', 'macos', 'linux', 'ios', 'android'];
+
+    if (platformParam === 'router') {
+      router.replace('/routers');
+      return;
+    }
 
     let selectedId: PlatformId | null = null;
     let detectedType: DeviceType;
     if (platformParam && (validPlatforms as string[]).includes(platformParam)) {
       selectedId = platformParam as PlatformId;
-      detectedType = (platformParam === 'router' ? 'unknown' : platformParam) as DeviceType;
+      detectedType = platformParam as DeviceType;
     } else {
       detectedType = detectDevice().type;
       if (PLATFORM_IDS.includes(detectedType as PlatformId)) {
@@ -209,16 +236,6 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   const copyCliCommand = useCallback(async () => {
     try {
       await navigator.clipboard.writeText('curl -fsSL https://kaitu.io/i/k2 | sudo bash');
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API unavailable
-    }
-  }, []);
-
-  const copyRouterCliCommand = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText('wget -qO- https://kaitu.io/i/k2r | sudo sh');
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -292,13 +309,6 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
             version={mobileLinks?.android?.version ?? null}
             primaryLink={mobileLinks?.android?.primary ?? ''}
             backupLink={mobileLinks?.android?.backup ?? ''}
-          />
-        </TabsContent>
-        <TabsContent value="router">
-          <RouterPanel
-            t={t}
-            onCopy={copyRouterCliCommand}
-            copied={copied}
           />
         </TabsContent>
       </Tabs>
