@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/wordgate/qtoolkit/ai"
 	db "github.com/wordgate/qtoolkit/db"
@@ -114,6 +115,11 @@ func getTemplateForLanguage(ctx context.Context, templateID uint64, targetLang s
 // 同时处理主题和正文，无论是翻译还是润色都使用同一接口
 func processEmailWithAI(ctx context.Context, subject, content, targetLang string) (string, string, error) {
 	log.Infof(ctx, "processing email with AI, target language: %s", targetLang)
+
+	// 30s 上限。调用方 (getTemplateForLanguage) 在 AI 出错时退回原始模板，业务不中断。
+	// 没这个 timeout，AI 上游慢/挂会卡死 worker，Asynq 把整批邮件无限重试。
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
 	var processedSubject, processedContent string
 	var err error
