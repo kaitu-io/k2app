@@ -1,0 +1,260 @@
+{
+  "title": "路由器方案 + 4 步安裝精靈",
+  "subtitle": "買一台合適硬體，按 4 步安裝，全家所有裝置自動連通——電視、Switch、智慧音箱都能直接用",
+  "heroCta": {
+    "primary": "看看推薦機型",
+    "secondary": "我已有相容路由器"
+  },
+  "wizard": {
+    "label": "4 步安裝",
+    "step": "第 {n} 步",
+    "step1": {
+      "title": "準備硬體",
+      "subtitle": "下面這 5 款是我們實測過、跑 k2r 穩定的機型，覆蓋入門到專業不同預算",
+      "specsLabel": {
+        "soc": "處理器",
+        "ram": "記憶體",
+        "flash": "儲存",
+        "wifi": "Wi-Fi",
+        "ports": "網路埠",
+        "throughput": "k2r 跑分"
+      },
+      "tierBadge": {
+        "budget": "入門",
+        "mainstream": "主流",
+        "premium": "高階"
+      },
+      "typeBadge": {
+        "wifi-router": "無線路由",
+        "soft-router": "軟路由"
+      },
+      "priceLabel": "參考價",
+      "buyAt": "在 {platform} 購買",
+      "morePlatforms": "其他平台",
+      "platforms": {
+        "taobao": "淘寶",
+        "jd": "京東",
+        "amazon": "Amazon",
+        "lazada": "Lazada",
+        "aliexpress": "AliExpress"
+      },
+      "prosLabel": "優點",
+      "consLabel": "注意",
+      "fitLabel": "適合",
+      "imageAlt": "{model} 路由器外觀圖",
+      "hardware": {
+        "redmi-ax6s": {
+          "name": "紅米 AX6S (RB03)",
+          "tagline": "OpenWrt 刷機社群主力機型，CP 值之王",
+          "pros": [
+            "OpenWrt 社群第一保有量，韌體迭代成熟",
+            "二手存量大，¥150 也能淘到良品",
+            "刷機教程鋪天蓋地，新手友善"
+          ],
+          "cons": [
+            "僅 Gigabit WAN/LAN，跑不滿 1Gbps 出口",
+            "WiFi 速率限於 AX1800"
+          ],
+          "fit": "300M-500M 家用寬頻 / 不在意刷機折騰的入門使用者"
+        },
+        "xiaomi-ax3000t": {
+          "name": "小米 AX3000T (RA82)",
+          "tagline": "CP 值甜點，比 AX6S 略強一檔",
+          "pros": [
+            "CPU 比 AX6S 略強，WiFi 滿速 2402Mbps",
+            "OpenWrt 主線已合併，韌體穩定",
+            "全屋 WiFi6 體驗，Mesh 組網友善"
+          ],
+          "cons": [
+            "仍是 Gigabit 埠，無 2.5G",
+            "刷機門檻比 AX6S 略高"
+          ],
+          "fit": "500M-800M 家用寬頻 / 主流家庭"
+        },
+        "glinet-flint2": {
+          "name": "GL.iNet Flint 2 (GL-MT6000)",
+          "tagline": "原廠 OpenWrt，開箱即用",
+          "pros": [
+            "出廠即 OpenWrt，無需刷機零風險",
+            "AES 硬體加密，k2r 跑滿 Gigabit",
+            "2.5G WAN/LAN 雙埠，匹配 Gigabit+ 家用寬頻",
+            "海外品牌保固健全"
+          ],
+          "cons": [
+            "價格偏高，預算敏感慎選",
+            "國內購買渠道相對少"
+          ],
+          "fit": "Gigabit 家用寬頻 / 不想刷機的高需求使用者"
+        },
+        "j4125-router": {
+          "name": "J4125 4×Gigabit 軟路由",
+          "tagline": "CP 值之選，穩定老將",
+          "pros": [
+            "CPU 4 核 + AES-NI，跑滿 Gigabit 毫無壓力",
+            "二手 / 模具機白菜價，¥400 起步",
+            "可裝 iStoreOS / OpenWrt / iKuai 任你選"
+          ],
+          "cons": [
+            "上限鎖 Gigabit，未來 2.5G 普及後擴充性差",
+            "無 WiFi，需配獨立 AP"
+          ],
+          "fit": "旁路由 / 已有 AP 想加 k2r 的家庭"
+        },
+        "n100-router": {
+          "name": "N100 4×2.5G 軟路由",
+          "tagline": "效能怪獸，5-10 年硬體不淘汰",
+          "pros": [
+            "Boost 3.4GHz + AES-NI，QUIC 跑 2.5G 毫無壓力",
+            "可虛擬化跑 OpenWrt + AdGuard + NAS 一台搞定",
+            "i226 2.5G 網路埠，匹配萬兆光纖家用寬頻"
+          ],
+          "cons": [
+            "價格較高，需要自裝系統",
+            "無 WiFi，需配獨立 AP"
+          ],
+          "fit": "Gigabit+ 家用寬頻 / 折騰愛好者 / 多服務整合使用者"
+        }
+      }
+    },
+    "step2": {
+      "title": "安裝系統",
+      "subtitle": "根據你買的硬體類型選擇對應路徑。刷機有變磚風險，新手建議買已刷好的路由器（頁面底部「開途官方代刷」）。",
+      "warning": "⚠️ 刷機操作有變磚風險，操作前請務必備份原廠韌體；不熟悉的使用者建議直接選擇「開途官方代刷」服務。",
+      "tabs": {
+        "arm": "ARM 路由器（紅米 / 小米 / Flint）",
+        "x86": "x86 軟路由（J4125 / N100）"
+      },
+      "arm": {
+        "title": "刷入 OpenWrt 韌體",
+        "intro": "ARM 路由器需要先刷入第三方 OpenWrt 韌體，常用方案是 ImmortalWrt 或 OpenWrt 主線。下面是核心步驟：",
+        "steps": [
+          "在恩山論壇 / GitHub Releases 找到對應機型的 ImmortalWrt 或 OpenWrt sysupgrade 映像檔",
+          "透過 SSH / TFTP / U-Boot 等方式刷入韌體（具體步驟隨機型不同）",
+          "刷完後從瀏覽器進入 192.168.1.1 設定好 root 密碼、WAN 撥號方式"
+        ],
+        "resourcesLabel": "外部資源",
+        "resources": [
+          { "label": "恩山論壇 — 各機型刷機教程", "url": "https://www.right.com.cn/forum/" },
+          { "label": "ImmortalWrt 官方下載", "url": "https://downloads.immortalwrt.org/" },
+          { "label": "OpenWrt Table of Hardware", "url": "https://openwrt.org/toh/start" }
+        ]
+      },
+      "x86": {
+        "title": "軟路由裝系統",
+        "intro": "x86 軟路由本質是一台精簡 PC，從 USB 開機安裝系統即可。我們推薦 iStoreOS（基於 OpenWrt，對新手友善）：",
+        "steps": [
+          "下載 iStoreOS img 映像檔（https://fw0.koolcenter.com/iStoreOS/）",
+          "用 balenaEtcher 把映像檔寫入 USB 隨身碟",
+          "把 USB 插入軟路由，開機進 BIOS 設為 USB 開機",
+          "進入臨時系統後用 dd 命令把映像檔寫入硬碟 /dev/sda",
+          "斷電拔 USB，重啟從硬碟進入 iStoreOS 主頁"
+        ],
+        "resourcesLabel": "外部資源",
+        "resources": [
+          { "label": "iStoreOS 官方文件", "url": "https://doc.linkease.com/zh/guide/istoreos/" },
+          { "label": "balenaEtcher 映像檔寫入工具", "url": "https://etcher.balena.io/" },
+          { "label": "OpenWrt x86 安裝指南", "url": "https://openwrt.org/docs/guide-user/installation/openwrt_x86" }
+        ]
+      }
+    },
+    "step3": {
+      "title": "安裝 k2r",
+      "subtitle": "進入路由器 SSH 終端，執行下面這條命令——指令稿會自動偵測 ARM64 / x86_64 / ARMv7 三種架構並下載對應二進位檔。",
+      "command": "wget -qO- https://kaitu.io/i/k2r | sudo sh",
+      "copyButton": "複製命令",
+      "copiedLabel": "已複製",
+      "explanation": "指令稿會做三件事：①下載對應架構的 k2r 可執行檔；②寫入 /etc/init.d 啟動指令稿；③立即啟動 k2r 服務。完成後瀏覽器輸入 http://<路由器IP>:9000 即可進入設定頁。",
+      "troubleshooting": {
+        "label": "常見問題",
+        "items": [
+          { "q": "命令報 wget: command not found", "a": "OpenWrt 預設使用 wget-ssl，可改用 curl: curl -fsSL https://kaitu.io/i/k2r | sudo sh" },
+          { "q": "提示無法下載", "a": "國內部分 IP 可能被風控，可手動下載 https://d0.all7.cc/kaitu/k2r/LATEST/ 內的二進位檔並 scp 上傳到路由器" },
+          { "q": "已安裝如何升級", "a": "重新跑一次安裝命令即可，指令稿會替換二進位檔並重啟服務" }
+        ]
+      }
+    },
+    "step4": {
+      "title": "設定 & 啟用",
+      "subtitle": "k2r 啟動後第一次存取 admin 面板需要綁定開途帳號 + 輸入授權碼（或 k2subs 訂閱連結）",
+      "steps": [
+        {
+          "title": "瀏覽器進入 admin 面板",
+          "body": "存取 http://<路由器IP>:9000，首次會要求設定 admin 密碼"
+        },
+        {
+          "title": "登入開途帳號",
+          "body": "用購買開途服務時的電子郵件登入，收到驗證碼即可"
+        },
+        {
+          "title": "貼上 k2subs 訂閱連結",
+          "body": "在「智慧選服」Tab 貼上 k2subs:// 連結，路由器會自動從中選擇最佳伺服器"
+        },
+        {
+          "title": "客戶端無感入網",
+          "body": "全家所有裝置只要連這台路由器的 WiFi / 網路線，流量自動走 VPN，電視 / Switch / 智慧音箱無需任何設定"
+        }
+      ],
+      "screenshotPlaceholder": "（設定面板截圖，待補）"
+    }
+  },
+  "faq": {
+    "title": "常見問題",
+    "items": [
+      {
+        "q": "刷機失敗把路由器搞磚了怎麼辦？",
+        "a": "ARM 路由器都有 U-Boot 救磚模式（短接 + TFTP 刷回原廠），但新手仍有機率徹底變磚。如果你不熟悉，強烈建議買開途官方代刷的 K2 Mini / K2-001（頁面底部）。"
+      },
+      {
+        "q": "刷了第三方韌體還能保固嗎？",
+        "a": "通常廠家會以「私自改裝」為由拒保。買二手 / 工包機型再刷可以省心，或買帶保固的預刷機型。"
+      },
+      {
+        "q": "推薦清單外的路由器能跑 k2r 嗎？",
+        "a": "只要架構是 arm64 / armv7 / amd64 / mipsle 之一，且系統是 OpenWrt / Linux，理論都能跑。效能取決於 CPU——MIPS 老路由器只能跑 100Mbps 左右；A53×4 2GHz 可跑滿 Gigabit。"
+      },
+      {
+        "q": "需要會命令列嗎？",
+        "a": "Step 3 安裝 k2r 需要 SSH 進路由器跑一條命令，新手用 PuTTY 或 Termius 即可；Step 4 設定完全在瀏覽器圖形介面完成。"
+      },
+      {
+        "q": "k2r 占多少記憶體？",
+        "a": "二進位檔約 17MB，執行時常駐 ~30-50MB 記憶體，對 256MB RAM 的入門路由器完全夠用。"
+      }
+    ]
+  },
+  "vsClient": {
+    "title": "路由器 vs 客戶端",
+    "subtitle": "為什麼推薦路由器方案",
+    "router": {
+      "title": "智慧路由器",
+      "tag": "推薦方案",
+      "items": [
+        "全家裝置自動連通，無需單獨設定",
+        "24小時上線，開機即用",
+        "支援智慧電視、遊戲機、智慧音箱等所有裝置",
+        "老人小孩都能用，零學習成本",
+        "一次設定長期使用"
+      ]
+    },
+    "client": {
+      "title": "客戶端軟體",
+      "tag": "傳統方案",
+      "items": [
+        "每台裝置需要單獨安裝設定",
+        "需要手動啟動，容易忘記",
+        "智慧電視 / 遊戲機 / 智慧音箱不支援",
+        "設定複雜，學習成本高",
+        "需在每台裝置維護登入態"
+      ]
+    }
+  },
+  "presale": {
+    "title": "不想折騰？開途官方代刷",
+    "subtitle": "我們也提供已刷好 k2r 的成品路由器，開箱即用，含 1 年保固",
+    "presaleTag": "預售中",
+    "productFeatures": "產品特色",
+    "contactInquiry": "聯絡諮詢",
+    "presalePriceConsult": "預售價格請諮詢客服 · 1 年保固",
+    "presalePriceConsultFull": "預售價格請諮詢客服 · 1 年保固 · 贈送服務啟用碼"
+  }
+}

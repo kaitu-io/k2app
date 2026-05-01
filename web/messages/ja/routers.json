@@ -1,0 +1,260 @@
+{
+  "title": "ルーター活用 + 4 ステップインストールガイド",
+  "subtitle": "適切なハードウェアを選び、4 ステップでインストール。家中のすべてのデバイス（テレビ、ゲーム機、スマートスピーカー）が自動で VPN 経由になります。",
+  "heroCta": {
+    "primary": "推奨機種を見る",
+    "secondary": "対応ルーターを既に持っている"
+  },
+  "wizard": {
+    "label": "4 ステップ",
+    "step": "ステップ {n}",
+    "step1": {
+      "title": "ハードウェアを準備",
+      "subtitle": "以下の 5 機種は実機検証済みで、k2r が安定動作します。エントリーから業務用までの予算をカバーします。",
+      "specsLabel": {
+        "soc": "CPU",
+        "ram": "メモリ",
+        "flash": "ストレージ",
+        "wifi": "Wi-Fi",
+        "ports": "ポート",
+        "throughput": "k2r スループット"
+      },
+      "tierBadge": {
+        "budget": "エントリー",
+        "mainstream": "メインストリーム",
+        "premium": "ハイエンド"
+      },
+      "typeBadge": {
+        "wifi-router": "無線ルーター",
+        "soft-router": "ソフトウェアルーター"
+      },
+      "priceLabel": "参考価格",
+      "buyAt": "{platform} で購入",
+      "morePlatforms": "他のプラットフォーム",
+      "platforms": {
+        "taobao": "Taobao",
+        "jd": "JD",
+        "amazon": "Amazon",
+        "lazada": "Lazada",
+        "aliexpress": "AliExpress"
+      },
+      "prosLabel": "メリット",
+      "consLabel": "注意点",
+      "fitLabel": "おすすめ",
+      "imageAlt": "{model} ルーター製品画像",
+      "hardware": {
+        "redmi-ax6s": {
+          "name": "Redmi AX6S (RB03)",
+          "tagline": "OpenWrt コミュニティの定番機・コスパ王",
+          "pros": [
+            "OpenWrt コミュニティ保有数 No.1、ファームウェアが成熟",
+            "中古市場の在庫が豊富、¥150 程度で良品も入手可",
+            "書き換えガイドが豊富、初心者にも優しい"
+          ],
+          "cons": [
+            "ギガビットポートのみ、1Gbps 回線をフルに使えない",
+            "Wi-Fi が AX1800 まで"
+          ],
+          "fit": "300M-500M 家庭回線 / フラッシュに抵抗のない初心者"
+        },
+        "xiaomi-ax3000t": {
+          "name": "Xiaomi AX3000T (RA82)",
+          "tagline": "コスパ最強・AX6S よりワンランク上",
+          "pros": [
+            "CPU は AX6S より少し速く、Wi-Fi は 2402Mbps フル対応",
+            "OpenWrt メインライン対応、ファームが安定",
+            "全室 Wi-Fi 6、メッシュ構成にも対応"
+          ],
+          "cons": [
+            "ギガビットポートのみ、2.5G 非対応",
+            "書き換え難易度は AX6S よりやや上"
+          ],
+          "fit": "500M-800M 家庭回線 / 一般家庭"
+        },
+        "glinet-flint2": {
+          "name": "GL.iNet Flint 2 (GL-MT6000)",
+          "tagline": "OpenWrt 工場出荷・書き換え不要",
+          "pros": [
+            "出荷時点で OpenWrt、フラッシュ不要でリスクゼロ",
+            "ハードウェア AES、k2r でギガビットを満たす",
+            "2.5G WAN/LAN 2 ポート、ギガビット超回線にも対応",
+            "海外メーカーの保証が充実"
+          ],
+          "cons": [
+            "価格はやや高め",
+            "中国本土での販路は限定的"
+          ],
+          "fit": "ギガビット家庭回線 / 書き換えを避けたいハイエンドユーザー"
+        },
+        "j4125-router": {
+          "name": "J4125 4×ギガビット ソフトウェアルーター",
+          "tagline": "コスパ重視・安定の定番機",
+          "pros": [
+            "4 コア + AES-NI、ギガビットを楽々こなす",
+            "中古・OEM が安い、¥400 から",
+            "iStoreOS / OpenWrt / iKuai お好みで"
+          ],
+          "cons": [
+            "ギガビット上限、2.5G 普及後は拡張性が低い",
+            "Wi-Fi 非搭載、別途 AP 必要"
+          ],
+          "fit": "サブルーター / 既に AP を持っていて k2r を追加したい家庭"
+        },
+        "n100-router": {
+          "name": "N100 4×2.5G ソフトウェアルーター",
+          "tagline": "性能モンスター・5-10 年使えるハードウェア",
+          "pros": [
+            "Boost 3.4GHz + AES-NI、2.5G QUIC を余裕でこなす",
+            "OpenWrt + AdGuard + NAS を一台で仮想化運用可能",
+            "i226 2.5G ポート、光ファイバー超回線にも対応"
+          ],
+          "cons": [
+            "価格は高め、OS インストールが必要",
+            "Wi-Fi 非搭載、別途 AP 必要"
+          ],
+          "fit": "ギガビット超家庭回線 / こだわり派 / 複数サービス統合運用"
+        }
+      }
+    },
+    "step2": {
+      "title": "OS をインストール",
+      "subtitle": "ハードウェアタイプに応じて手順が分かれます。書き換えには文鎮化のリスクがあり、初心者はページ末尾の「Kaitu 公式書き換え済み」を検討してください。",
+      "warning": "⚠️ フラッシュ書き換えは文鎮化のリスクがあります。必ず純正ファームをバックアップしてから作業してください。不安な場合は Kaitu 公式書き換え済みルーターをご検討ください。",
+      "tabs": {
+        "arm": "ARM ルーター（Redmi / Xiaomi / Flint）",
+        "x86": "x86 ソフトウェアルーター（J4125 / N100）"
+      },
+      "arm": {
+        "title": "OpenWrt ファームを書き込む",
+        "intro": "ARM ルーターはサードパーティの OpenWrt ファームを書き込みます。一般的なのは ImmortalWrt または OpenWrt メインラインです。基本ステップ：",
+        "steps": [
+          "OpenWrt フォーラムや GitHub Releases で機種に対応する ImmortalWrt / OpenWrt sysupgrade イメージを入手",
+          "SSH / TFTP / U-Boot などの方法でファームを書き込み（手順は機種ごとに異なる）",
+          "書き込み後、ブラウザで 192.168.1.1 にアクセスして root パスワードと WAN 接続方式を設定"
+        ],
+        "resourcesLabel": "参考リソース",
+        "resources": [
+          { "label": "OpenWrt フォーラム", "url": "https://forum.openwrt.org/" },
+          { "label": "ImmortalWrt 公式ダウンロード", "url": "https://downloads.immortalwrt.org/" },
+          { "label": "OpenWrt Table of Hardware", "url": "https://openwrt.org/toh/start" }
+        ]
+      },
+      "x86": {
+        "title": "ソフトウェアルーターに OS を入れる",
+        "intro": "x86 ソフトウェアルーターは小型 PC です。USB ブートで OS をインストールします。iStoreOS（OpenWrt ベース、初心者にも親切）を推奨：",
+        "steps": [
+          "iStoreOS img イメージ（https://fw0.koolcenter.com/iStoreOS/）または OpenWrt x86_64 を入手",
+          "balenaEtcher で USB メモリに書き込む",
+          "USB をルーターに挿し、BIOS で USB ブートに設定",
+          "一時システムから dd コマンドでイメージをディスク (/dev/sda) に書き込む",
+          "電源オフ・USB を抜き、再起動して iStoreOS を起動"
+        ],
+        "resourcesLabel": "参考リソース",
+        "resources": [
+          { "label": "iStoreOS 公式ドキュメント", "url": "https://doc.linkease.com/zh/guide/istoreos/" },
+          { "label": "balenaEtcher", "url": "https://etcher.balena.io/" },
+          { "label": "OpenWrt x86 インストールガイド", "url": "https://openwrt.org/docs/guide-user/installation/openwrt_x86" }
+        ]
+      }
+    },
+    "step3": {
+      "title": "k2r をインストール",
+      "subtitle": "ルーターに SSH 接続して、以下のワンライナーを実行。ARM64 / x86_64 / ARMv7 を自動検出して対応バイナリをダウンロードします。",
+      "command": "wget -qO- https://kaitu.io/i/k2r | sudo sh",
+      "copyButton": "コマンドをコピー",
+      "copiedLabel": "コピーしました",
+      "explanation": "スクリプトは 3 つのことを行います：① k2r バイナリをダウンロード、② /etc/init.d 起動スクリプトを設置、③ k2r サービスを起動。完了したらブラウザで http://<ルーターIP>:9000 にアクセスして管理画面を開けます。",
+      "troubleshooting": {
+        "label": "よくあるトラブル",
+        "items": [
+          { "q": "wget: command not found", "a": "OpenWrt のデフォルトは wget-ssl です。curl に置き換え可能：curl -fsSL https://kaitu.io/i/k2r | sudo sh" },
+          { "q": "ダウンロードに失敗する", "a": "中国本土の一部 ISP では CDN がブロックされる場合があります。https://d0.all7.cc/kaitu/k2r/LATEST/ から手動でダウンロードして scp でルーターに転送してください。" },
+          { "q": "アップグレード方法", "a": "同じインストールコマンドを再実行するだけ。バイナリを置き換えサービスを再起動します。" }
+        ]
+      }
+    },
+    "step4": {
+      "title": "セットアップ & アクティベート",
+      "subtitle": "k2r 初回起動後、管理画面で Kaitu アカウントの紐付け + ライセンスキー（または k2subs 購読 URL）の入力が必要です。",
+      "steps": [
+        {
+          "title": "ブラウザで管理画面を開く",
+          "body": "http://<ルーターIP>:9000 にアクセス。初回は admin パスワードの設定を求められます。"
+        },
+        {
+          "title": "Kaitu アカウントにログイン",
+          "body": "Kaitu 購入時のメールアドレスでログイン。ワンタイムコードが届きます。"
+        },
+        {
+          "title": "k2subs 購読 URL を貼り付け",
+          "body": "「スマートサーバー」タブに k2subs:// URL を貼り付けると、ルーターが最適サーバーを自動選択します。"
+        },
+        {
+          "title": "クライアントは透過接続",
+          "body": "このルーターの Wi-Fi / LAN に繋がるすべてのデバイスが自動で VPN 経由になります。テレビ / ゲーム機 / スマートスピーカー — 個別設定不要。"
+        }
+      ],
+      "screenshotPlaceholder": "（管理画面スクリーンショット — 準備中）"
+    }
+  },
+  "faq": {
+    "title": "よくある質問",
+    "items": [
+      {
+        "q": "書き換えに失敗してルーターが文鎮化したら？",
+        "a": "ARM ルーターには U-Boot リカバリーモード（ショート + TFTP で純正に戻す）があります。ただし完全な文鎮化のリスクは残ります。不安な場合は Kaitu 公式書き換え済みの K2 Mini / K2-001（ページ末尾）をご検討ください。"
+      },
+      {
+        "q": "サードパーティファームに変えると保証は？",
+        "a": "メーカーは「無断改造」を理由に保証を拒否することが一般的です。中古・OEM 個体を入手して書き換えるのが現実的な解決策です。Kaitu 書き換え済みは独自保証付きです。"
+      },
+      {
+        "q": "推奨リスト外のルーターでも k2r は動く？",
+        "a": "アーキテクチャが arm64 / armv7 / amd64 / mipsle のいずれか、OS が OpenWrt または Linux ならば動作します。性能は CPU 次第：古い MIPS ルーターは ~100Mbps、A53×4 @ 2GHz ならギガビット飽和。"
+      },
+      {
+        "q": "コマンドラインの知識は必要？",
+        "a": "ステップ 3 で SSH コマンドを 1 つ実行するだけ（PuTTY や Termius で十分）。ステップ 4 の設定はすべてブラウザの GUI で完結します。"
+      },
+      {
+        "q": "k2r のメモリ使用量は？",
+        "a": "バイナリ約 17MB、実行時 ~30-50MB。256MB RAM のエントリーモデルでも余裕で動作します。"
+      }
+    ]
+  },
+  "vsClient": {
+    "title": "ルーター vs クライアントアプリ",
+    "subtitle": "ルーター方式を推奨する理由",
+    "router": {
+      "title": "スマートルーター",
+      "tag": "推奨",
+      "items": [
+        "家中のデバイスが自動接続、個別設定不要",
+        "24 時間オン、電源を入れた瞬間から使える",
+        "スマートテレビ・ゲーム機・スマートスピーカーなど Wi-Fi 接続デバイス全対応",
+        "学習コストゼロ、子供から高齢者まで使える",
+        "一度設定すれば長期間動作"
+      ]
+    },
+    "client": {
+      "title": "クライアントアプリ",
+      "tag": "従来方式",
+      "items": [
+        "デバイスごとにインストール・設定が必要",
+        "手動起動、忘れがち",
+        "スマートテレビ・ゲーム機・スマートスピーカー非対応",
+        "設定が複雑、学習コスト高",
+        "デバイスごとにログイン状態を維持する必要"
+      ]
+    }
+  },
+  "presale": {
+    "title": "書き換えしたくない？Kaitu 公式書き換え済み",
+    "subtitle": "k2r プリインストール済みの完成品ルーターも販売しています。電源を入れるだけで使え、1 年保証付き。",
+    "presaleTag": "予約販売中",
+    "productFeatures": "製品特徴",
+    "contactInquiry": "お問い合わせ",
+    "presalePriceConsult": "予約価格はお問い合わせください · 1 年保証",
+    "presalePriceConsultFull": "予約価格はお問い合わせください · 1 年保証 · アクティベーションコード付属"
+  }
+}

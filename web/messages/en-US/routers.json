@@ -1,0 +1,260 @@
+{
+  "title": "Router setup + 4-step install guide",
+  "subtitle": "Pick the right hardware, follow 4 steps, and every device on your home network — TV, console, smart speaker — gets seamless VPN.",
+  "heroCta": {
+    "primary": "See recommended hardware",
+    "secondary": "I already have a compatible router"
+  },
+  "wizard": {
+    "label": "4-step install",
+    "step": "Step {n}",
+    "step1": {
+      "title": "Prepare hardware",
+      "subtitle": "These five models are field-tested with k2r and span entry-level to pro-grade budgets.",
+      "specsLabel": {
+        "soc": "CPU",
+        "ram": "RAM",
+        "flash": "Storage",
+        "wifi": "Wi-Fi",
+        "ports": "Ports",
+        "throughput": "k2r throughput"
+      },
+      "tierBadge": {
+        "budget": "Budget",
+        "mainstream": "Mainstream",
+        "premium": "Premium"
+      },
+      "typeBadge": {
+        "wifi-router": "Wireless router",
+        "soft-router": "Soft router"
+      },
+      "priceLabel": "Reference price",
+      "buyAt": "Buy on {platform}",
+      "morePlatforms": "Other platforms",
+      "platforms": {
+        "taobao": "Taobao",
+        "jd": "JD",
+        "amazon": "Amazon",
+        "lazada": "Lazada",
+        "aliexpress": "AliExpress"
+      },
+      "prosLabel": "Pros",
+      "consLabel": "Caveats",
+      "fitLabel": "Best for",
+      "imageAlt": "{model} router product photo",
+      "hardware": {
+        "redmi-ax6s": {
+          "name": "Redmi AX6S (RB03)",
+          "tagline": "The OpenWrt community workhorse — best price-to-performance",
+          "pros": [
+            "Largest OpenWrt community install base; firmware is mature",
+            "Cheap on second-hand markets — units in good condition for ~¥150",
+            "Dozens of step-by-step flashing guides online"
+          ],
+          "cons": [
+            "Only gigabit WAN/LAN — can't saturate 1Gbps uplinks",
+            "Wi-Fi capped at AX1800"
+          ],
+          "fit": "300M-500M home broadband / users new to flashing"
+        },
+        "xiaomi-ax3000t": {
+          "name": "Xiaomi AX3000T (RA82)",
+          "tagline": "The sweet spot — slightly stronger than AX6S",
+          "pros": [
+            "Slightly faster CPU than AX6S; full 2402Mbps Wi-Fi",
+            "Mainline OpenWrt support — stable firmware",
+            "Whole-home Wi-Fi 6, mesh-friendly"
+          ],
+          "cons": [
+            "Still gigabit ports only, no 2.5G",
+            "Flashing is slightly trickier than AX6S"
+          ],
+          "fit": "500M-800M home broadband / mainstream households"
+        },
+        "glinet-flint2": {
+          "name": "GL.iNet Flint 2 (GL-MT6000)",
+          "tagline": "Ships with OpenWrt — zero flashing required",
+          "pros": [
+            "OpenWrt out of the box — no flashing risk",
+            "Hardware AES acceleration; k2r saturates 1Gbps",
+            "Dual 2.5G WAN/LAN ports for gigabit-plus broadband",
+            "Real international warranty"
+          ],
+          "cons": [
+            "Premium price",
+            "Limited availability in mainland China retail channels"
+          ],
+          "fit": "Gigabit broadband / users who want no-flash convenience"
+        },
+        "j4125-router": {
+          "name": "J4125 4-port gigabit soft router",
+          "tagline": "The reliable mid-range workhorse",
+          "pros": [
+            "4-core CPU + AES-NI saturates gigabit easily",
+            "Cheap on second-hand / OEM markets — from ~¥400",
+            "Run iStoreOS, OpenWrt, or iKuai — your choice"
+          ],
+          "cons": [
+            "Capped at gigabit — no 2.5G headroom",
+            "No Wi-Fi — needs a separate access point"
+          ],
+          "fit": "Sidecar router / households that already have a Wi-Fi AP"
+        },
+        "n100-router": {
+          "name": "N100 4×2.5G soft router",
+          "tagline": "Performance monster — won't bottleneck for 5-10 years",
+          "pros": [
+            "Boost 3.4GHz + AES-NI — 2.5G QUIC effortless",
+            "Virtualize OpenWrt + AdGuard + NAS on one box",
+            "i226 2.5G ports match modern fiber broadband"
+          ],
+          "cons": [
+            "Premium price; needs OS install",
+            "No Wi-Fi — separate AP required"
+          ],
+          "fit": "Gigabit-plus broadband / power users running multiple services"
+        }
+      }
+    },
+    "step2": {
+      "title": "Install the OS",
+      "subtitle": "The path depends on hardware type. Flashing carries brick risk — newcomers should consider a pre-flashed Kaitu router (see bottom of page).",
+      "warning": "⚠️ Flashing has bricking risk. Always back up the stock firmware first; if you're not comfortable, choose the pre-flashed Kaitu router service below.",
+      "tabs": {
+        "arm": "ARM router (Redmi / Xiaomi / Flint)",
+        "x86": "x86 soft router (J4125 / N100)"
+      },
+      "arm": {
+        "title": "Flash OpenWrt firmware",
+        "intro": "ARM routers need third-party OpenWrt firmware. Common choices are ImmortalWrt or mainline OpenWrt. Core steps:",
+        "steps": [
+          "Find the ImmortalWrt or OpenWrt sysupgrade image for your model on the OpenWrt forum, GitHub Releases, or 恩山论坛 (Right.com)",
+          "Flash via SSH / TFTP / U-Boot (procedure varies by model)",
+          "Open 192.168.1.1 in a browser, set the root password and WAN config"
+        ],
+        "resourcesLabel": "External resources",
+        "resources": [
+          { "label": "OpenWrt forum (English)", "url": "https://forum.openwrt.org/" },
+          { "label": "ImmortalWrt official downloads", "url": "https://downloads.immortalwrt.org/" },
+          { "label": "OpenWrt Table of Hardware", "url": "https://openwrt.org/toh/start" }
+        ]
+      },
+      "x86": {
+        "title": "Install OS on soft router",
+        "intro": "x86 soft routers are stripped-down PCs — boot from USB to install. We recommend iStoreOS (OpenWrt-based, friendlier UI):",
+        "steps": [
+          "Download the iStoreOS img (https://fw0.koolcenter.com/iStoreOS/) or vanilla OpenWrt x86_64 image",
+          "Write it to a USB stick with balenaEtcher",
+          "Insert USB into the soft router; in BIOS, set USB as boot device",
+          "From the temporary system, dd the image to the disk (/dev/sda)",
+          "Power off, remove USB, boot from disk into iStoreOS"
+        ],
+        "resourcesLabel": "External resources",
+        "resources": [
+          { "label": "iStoreOS docs", "url": "https://doc.linkease.com/zh/guide/istoreos/" },
+          { "label": "balenaEtcher", "url": "https://etcher.balena.io/" },
+          { "label": "OpenWrt x86 install guide", "url": "https://openwrt.org/docs/guide-user/installation/openwrt_x86" }
+        ]
+      }
+    },
+    "step3": {
+      "title": "Install k2r",
+      "subtitle": "SSH into the router and run this one-liner — it auto-detects ARM64 / x86_64 / ARMv7 and downloads the matching binary.",
+      "command": "wget -qO- https://kaitu.io/i/k2r | sudo sh",
+      "copyButton": "Copy command",
+      "copiedLabel": "Copied",
+      "explanation": "The script does three things: ① download the k2r binary for your CPU; ② install an /etc/init.d service; ③ start k2r immediately. After that, open http://<router-IP>:9000 in your browser to reach the admin panel.",
+      "troubleshooting": {
+        "label": "Common issues",
+        "items": [
+          { "q": "wget: command not found", "a": "OpenWrt usually ships wget-ssl. Use curl instead: curl -fsSL https://kaitu.io/i/k2r | sudo sh" },
+          { "q": "Download fails", "a": "Some Chinese ISPs block the CDN. Manually download the binary from https://d0.all7.cc/kaitu/k2r/LATEST/ and scp it to the router." },
+          { "q": "How to upgrade", "a": "Re-run the install command. The script swaps the binary and restarts the service." }
+        ]
+      }
+    },
+    "step4": {
+      "title": "Set up & activate",
+      "subtitle": "On first launch, the admin panel asks you to bind a Kaitu account and paste a license key (or k2subs subscription URL).",
+      "steps": [
+        {
+          "title": "Open the admin panel",
+          "body": "Visit http://<router-IP>:9000. You'll be prompted to set an admin password the first time."
+        },
+        {
+          "title": "Sign in to your Kaitu account",
+          "body": "Use the email associated with your Kaitu purchase; you'll receive a one-time code."
+        },
+        {
+          "title": "Paste your k2subs subscription",
+          "body": "On the Smart Server tab, paste your k2subs:// URL. The router auto-picks the best server."
+        },
+        {
+          "title": "Devices connect transparently",
+          "body": "Any device on this router's Wi-Fi or LAN now uses the VPN automatically — TVs, consoles, smart speakers, no per-device setup."
+        }
+      ],
+      "screenshotPlaceholder": "(Admin panel screenshot — coming soon)"
+    }
+  },
+  "faq": {
+    "title": "FAQ",
+    "items": [
+      {
+        "q": "What if flashing bricks my router?",
+        "a": "ARM routers have U-Boot recovery (short-circuit + TFTP back to stock), but full bricks happen. If you're uncertain, the pre-flashed Kaitu K2 Mini / K2-001 (bottom of page) eliminates this risk."
+      },
+      {
+        "q": "Does flashing void the warranty?",
+        "a": "Manufacturers usually deny warranty claims for 'unauthorized modification'. Buying second-hand or OEM units to flash is one workaround; pre-flashed Kaitu units come with their own warranty."
+      },
+      {
+        "q": "Can routers outside this list run k2r?",
+        "a": "Yes — any router with arm64 / armv7 / amd64 / mipsle running OpenWrt or Linux works. Performance scales with CPU: old MIPS routers do ~100Mbps; A53×4 @ 2GHz saturates gigabit."
+      },
+      {
+        "q": "Do I need to know the command line?",
+        "a": "Step 3 needs one SSH command (use PuTTY or Termius — beginner-friendly). Step 4 is fully GUI in the browser."
+      },
+      {
+        "q": "How much RAM does k2r use?",
+        "a": "Binary is ~17MB; runtime usage is ~30-50MB. Comfortable on 256MB RAM entry-level routers."
+      }
+    ]
+  },
+  "vsClient": {
+    "title": "Router vs. client app",
+    "subtitle": "Why we recommend the router approach",
+    "router": {
+      "title": "Smart router",
+      "tag": "Recommended",
+      "items": [
+        "All household devices connect automatically, no per-device setup",
+        "Always on — works the moment you power up any device",
+        "Supports smart TVs, consoles, smart speakers — anything that connects to Wi-Fi",
+        "No technical learning curve — even kids and grandparents can use it",
+        "Configure once, runs for years"
+      ]
+    },
+    "client": {
+      "title": "Client app",
+      "tag": "Traditional",
+      "items": [
+        "Install and configure on every device",
+        "Manual launch — easy to forget",
+        "Smart TVs, consoles, smart speakers not supported",
+        "Steeper learning curve",
+        "Maintain login state across every device"
+      ]
+    }
+  },
+  "presale": {
+    "title": "Don't want to flash? Get a pre-flashed Kaitu router",
+    "subtitle": "We also sell ready-to-use routers with k2r pre-installed. Plug in and go — 1-year warranty included.",
+    "presaleTag": "Pre-order",
+    "productFeatures": "Features",
+    "contactInquiry": "Contact us",
+    "presalePriceConsult": "Pre-order pricing — contact us · 1-year warranty",
+    "presalePriceConsultFull": "Pre-order pricing — contact us · 1-year warranty · activation code included"
+  }
+}

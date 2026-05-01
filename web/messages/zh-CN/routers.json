@@ -1,0 +1,260 @@
+{
+  "title": "路由器方案 + 4 步安装向导",
+  "subtitle": "买一台合适硬件，按 4 步安装，全家所有设备自动联通——电视、Switch、智能音箱都能直接用",
+  "heroCta": {
+    "primary": "看看推荐机型",
+    "secondary": "我已有兼容路由器"
+  },
+  "wizard": {
+    "label": "4 步安装",
+    "step": "第 {n} 步",
+    "step1": {
+      "title": "准备硬件",
+      "subtitle": "下面这 5 款是我们实测过、跑 k2r 稳定的机型，覆盖入门到专业不同预算",
+      "specsLabel": {
+        "soc": "处理器",
+        "ram": "内存",
+        "flash": "存储",
+        "wifi": "Wi-Fi",
+        "ports": "网口",
+        "throughput": "k2r 跑分"
+      },
+      "tierBadge": {
+        "budget": "入门",
+        "mainstream": "主流",
+        "premium": "高端"
+      },
+      "typeBadge": {
+        "wifi-router": "无线路由",
+        "soft-router": "软路由"
+      },
+      "priceLabel": "参考价",
+      "buyAt": "在 {platform} 购买",
+      "morePlatforms": "其他平台",
+      "platforms": {
+        "taobao": "淘宝",
+        "jd": "京东",
+        "amazon": "Amazon",
+        "lazada": "Lazada",
+        "aliexpress": "AliExpress"
+      },
+      "prosLabel": "优点",
+      "consLabel": "注意",
+      "fitLabel": "适合",
+      "imageAlt": "{model} 路由器外观图",
+      "hardware": {
+        "redmi-ax6s": {
+          "name": "红米 AX6S (RB03)",
+          "tagline": "OpenWrt 刷机社区主力机型，性价比之王",
+          "pros": [
+            "OpenWrt 社区第一保有量，固件迭代成熟",
+            "二手存量大，¥150 也能淘到良品",
+            "刷机教程铺天盖地，新手友好"
+          ],
+          "cons": [
+            "仅千兆 WAN/LAN，跑不满 1Gbps 出口",
+            "WiFi 速率限于 AX1800"
+          ],
+          "fit": "300M-500M 家宽 / 不在意刷机折腾的入门用户"
+        },
+        "xiaomi-ax3000t": {
+          "name": "小米 AX3000T (RA82)",
+          "tagline": "性价比甜点，比 AX6S 略强一档",
+          "pros": [
+            "CPU 比 AX6S 略强，WiFi 满速 2402Mbps",
+            "OpenWrt 主线已合并，固件稳定",
+            "全屋 WiFi6 体验，Mesh 组网友好"
+          ],
+          "cons": [
+            "仍是千兆口，无 2.5G",
+            "刷机门槛比 AX6S 略高"
+          ],
+          "fit": "500M-800M 家宽 / 主流家庭"
+        },
+        "glinet-flint2": {
+          "name": "GL.iNet Flint 2 (GL-MT6000)",
+          "tagline": "原厂 OpenWrt，开箱即用",
+          "pros": [
+            "出厂即 OpenWrt，无需刷机零风险",
+            "AES 硬件加密，k2r 跑满千兆",
+            "2.5G WAN/LAN 双口，匹配千兆+ 家宽",
+            "海外品牌保修健全"
+          ],
+          "cons": [
+            "价格偏高，预算敏感慎选",
+            "国内购买渠道相对少"
+          ],
+          "fit": "千兆家宽 / 不想刷机的高需求用户"
+        },
+        "j4125-router": {
+          "name": "J4125 4×千兆 软路由",
+          "tagline": "性价比之选，稳定老将",
+          "pros": [
+            "CPU 4 核 + AES-NI，跑满千兆毫无压力",
+            "二手 / 模具机白菜价，¥400 起步",
+            "可装 iStoreOS / OpenWrt / iKuai 任你选"
+          ],
+          "cons": [
+            "上限锁千兆，未来 2.5G 普及后扩展性差",
+            "无 WiFi，需配独立 AP"
+          ],
+          "fit": "旁路由 / 已有 AP 想加 k2r 的家庭"
+        },
+        "n100-router": {
+          "name": "N100 4×2.5G 软路由",
+          "tagline": "性能怪兽，5-10 年硬件不淘汰",
+          "pros": [
+            "Boost 3.4GHz + AES-NI，QUIC 跑 2.5G 毫无压力",
+            "可虚拟化跑 OpenWrt + AdGuard + NAS 一台搞定",
+            "i226 2.5G 网口，匹配万兆光猫家宽"
+          ],
+          "cons": [
+            "价格较高，需要自装系统",
+            "无 WiFi，需配独立 AP"
+          ],
+          "fit": "千兆+ 家宽 / 折腾爱好者 / 多服务整合用户"
+        }
+      }
+    },
+    "step2": {
+      "title": "安装系统",
+      "subtitle": "根据你买的硬件类型选择对应路径。刷机有变砖风险，新手建议买已刷好的路由器（页面底部「开途官方代刷」）。",
+      "warning": "⚠️ 刷机操作有变砖风险，操作前请务必备份原厂固件；不熟悉的用户建议直接选择「开途官方代刷」服务。",
+      "tabs": {
+        "arm": "ARM 路由器（红米 / 小米 / Flint）",
+        "x86": "x86 软路由（J4125 / N100）"
+      },
+      "arm": {
+        "title": "刷入 OpenWrt 固件",
+        "intro": "ARM 路由器需要先刷入第三方 OpenWrt 固件，常用方案是 ImmortalWrt 或 OpenWrt 主线。下面是核心步骤：",
+        "steps": [
+          "在恩山论坛 / GitHub Releases 找到对应型号的 ImmortalWrt 或 OpenWrt sysupgrade 镜像",
+          "通过 SSH / TFTP / U-Boot 等方式刷入固件（具体步骤随机型不同）",
+          "刷完后从浏览器进入 192.168.1.1 设置好 root 密码、WAN 拨号方式"
+        ],
+        "resourcesLabel": "外部资源",
+        "resources": [
+          { "label": "恩山论坛 — 各机型刷机教程", "url": "https://www.right.com.cn/forum/" },
+          { "label": "ImmortalWrt 官方下载", "url": "https://downloads.immortalwrt.org/" },
+          { "label": "OpenWrt Table of Hardware", "url": "https://openwrt.org/toh/start" }
+        ]
+      },
+      "x86": {
+        "title": "软路由装系统",
+        "intro": "x86 软路由本质是一台精简 PC，从 U 盘启动安装系统即可。我们推荐 iStoreOS（基于 OpenWrt，对小白友好）：",
+        "steps": [
+          "下载 iStoreOS img 镜像（https://fw0.koolcenter.com/iStoreOS/）",
+          "用 balenaEtcher 把镜像写入 U 盘",
+          "把 U 盘插入软路由，开机进 BIOS 设为 USB 启动",
+          "进入临时系统后用 dd 命令把镜像写入硬盘 /dev/sda",
+          "断电拔 U 盘，重启从硬盘进入 iStoreOS 主页"
+        ],
+        "resourcesLabel": "外部资源",
+        "resources": [
+          { "label": "iStoreOS 官方文档", "url": "https://doc.linkease.com/zh/guide/istoreos/" },
+          { "label": "balenaEtcher 镜像写入工具", "url": "https://etcher.balena.io/" },
+          { "label": "OpenWrt x86 安装指南", "url": "https://openwrt.org/docs/guide-user/installation/openwrt_x86" }
+        ]
+      }
+    },
+    "step3": {
+      "title": "安装 k2r",
+      "subtitle": "进入路由器 SSH 终端，运行下面这条命令——脚本会自动检测 ARM64 / x86_64 / ARMv7 三种架构并下载对应二进制。",
+      "command": "wget -qO- https://kaitu.io/i/k2r | sudo sh",
+      "copyButton": "复制命令",
+      "copiedLabel": "已复制",
+      "explanation": "脚本会做三件事：①下载对应架构的 k2r 可执行文件；②写入 /etc/init.d 启动脚本；③立即启动 k2r 服务。完成后浏览器输入 http://<路由器IP>:9000 即可进入设置页。",
+      "troubleshooting": {
+        "label": "常见问题",
+        "items": [
+          { "q": "命令报 wget: command not found", "a": "OpenWrt 默认使用 wget-ssl，可改用 curl: curl -fsSL https://kaitu.io/i/k2r | sudo sh" },
+          { "q": "提示无法下载", "a": "国内部分 IP 可能被风控，可手动下载 https://d0.all7.cc/kaitu/k2r/LATEST/ 内的二进制并 scp 上传到路由器" },
+          { "q": "已安装如何升级", "a": "重新跑一次安装命令即可，脚本会替换二进制并重启服务" }
+        ]
+      }
+    },
+    "step4": {
+      "title": "设置 & 激活",
+      "subtitle": "k2r 启动后第一次访问 admin 面板需要绑定开途账号 + 输入授权码（或 k2subs 订阅链接）",
+      "steps": [
+        {
+          "title": "浏览器进入 admin 面板",
+          "body": "访问 http://<路由器IP>:9000，首次会要求设置 admin 密码"
+        },
+        {
+          "title": "登录开途账号",
+          "body": "用购买开途服务时的邮箱登录，收到验证码即可"
+        },
+        {
+          "title": "粘贴 k2subs 订阅链接",
+          "body": "在「智能选服」Tab 粘贴 k2subs:// 链接，路由器会自动从中选择最优服务器"
+        },
+        {
+          "title": "客户端无感入网",
+          "body": "全家所有设备只要连这台路由器的 WiFi / 网线，流量自动走 VPN，电视 / Switch / 智能音箱无需任何设置"
+        }
+      ],
+      "screenshotPlaceholder": "（设置面板截图，待补）"
+    }
+  },
+  "faq": {
+    "title": "常见问题",
+    "items": [
+      {
+        "q": "刷机失败把路由器搞砖了怎么办？",
+        "a": "ARM 路由器都有 U-Boot 救砖模式（短接 + TFTP 刷回原厂），但新手仍有概率彻底变砖。如果你不熟悉，强烈建议买开途官方代刷的 K2 Mini / K2-001（页面底部）。"
+      },
+      {
+        "q": "刷了第三方固件还能保修吗？",
+        "a": "通常厂家会以「私自改装」为由拒保。买二手 / 工包机型再刷可以省心，或买带保修的预刷机型。"
+      },
+      {
+        "q": "推荐列表外的路由器能跑 k2r 吗？",
+        "a": "只要架构是 arm64 / armv7 / amd64 / mipsle 之一，且系统是 OpenWrt / Linux，理论都能跑。性能取决于 CPU——MIPS 老路由器只能跑 100Mbps 左右；A53×4 2GHz 可跑满千兆。"
+      },
+      {
+        "q": "需要会命令行吗？",
+        "a": "Step 3 安装 k2r 需要 SSH 进路由器跑一条命令，新手用 PuTTY 或 Termius 即可；Step 4 设置完全在浏览器图形界面完成。"
+      },
+      {
+        "q": "k2r 占多少内存？",
+        "a": "二进制约 17MB，运行时常驻 ~30-50MB 内存，对 256MB RAM 的入门路由器完全够用。"
+      }
+    ]
+  },
+  "vsClient": {
+    "title": "路由器 vs 客户端",
+    "subtitle": "为什么推荐路由器方案",
+    "router": {
+      "title": "智能路由器",
+      "tag": "推荐方案",
+      "items": [
+        "全家设备自动联通，无需单独配置",
+        "24小时在线，开机即用",
+        "支持智能电视、游戏机、智能音箱等所有设备",
+        "老人小孩都能用，零学习成本",
+        "一次配置长期使用"
+      ]
+    },
+    "client": {
+      "title": "客户端软件",
+      "tag": "传统方案",
+      "items": [
+        "每台设备需要单独安装配置",
+        "需要手动启动，容易忘记",
+        "智能电视 / 游戏机 / 智能音箱不支持",
+        "配置复杂，学习成本高",
+        "需在每台设备维护登录态"
+      ]
+    }
+  },
+  "presale": {
+    "title": "不想折腾？开途官方代刷",
+    "subtitle": "我们也提供已刷好 k2r 的成品路由器，开箱即用，含 1 年质保",
+    "presaleTag": "预售中",
+    "productFeatures": "产品特色",
+    "contactInquiry": "联系咨询",
+    "presalePriceConsult": "预售价格请咨询客服 · 1 年质保",
+    "presalePriceConsultFull": "预售价格请咨询客服 · 1 年质保 · 赠送服务激活码"
+  }
+}
