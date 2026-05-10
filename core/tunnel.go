@@ -344,13 +344,12 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 
 	host, port, _ := net.SplitHostPort(dest)
 
-	// Block IPv6 destinations: k2 server doesn't support IPv6,
-	// fast-fail so Happy Eyeballs falls back to IPv4.
+	// Drop IPv6 destinations: k2 server doesn't support IPv6.
+	// Silent drop lets Happy Eyeballs fall back to IPv4 via timeout.
+	// (Sending ICMPv6 Port Unreachable here races against gVisor buffer
+	// chunk refcounts and panics under load.)
 	if addr, err := netip.ParseAddr(host); err == nil && addr.Is6() {
-		slog.Debug("tunnel: reject IPv6 dest", "dest", dest)
-		if r, ok := conn.(provider.UDPRejecter); ok {
-			r.RejectHandshake()
-		}
+		slog.Debug("tunnel: drop IPv6 dest", "dest", dest)
 		return
 	}
 
@@ -361,7 +360,6 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 	// Triggers: sniffBT (BT/WebRTC), sniffSNI (domain upgrade), blockQUIC (QUIC reject).
 	if t.outbound(action) != nil && (t.sniffBT || t.sniffSNI || t.blockQUIC) {
 		if packet, addr := peekUDP(conn); packet != nil {
-			origConn := conn // save before wrapping — prefixPacketConn hides UDPRejecter
 			conn = &prefixPacketConn{PacketConn: conn, first: packet, firstAddr: addr}
 
 			var meta sniff.Result
@@ -400,10 +398,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 				// Fast path: QUIC already routed to proxy → block immediately.
 				// Skips expensive SniffQUIC (HKDF + AES decrypt + ~5KB alloc).
 				if t.blockQUIC && action != t.directTarget {
-					slog.Debug("tunnel: QUIC blocked, sending ICMP unreachable", "dest", dest)
-					if r, ok := origConn.(provider.UDPRejecter); ok {
-						r.RejectHandshake()
-					}
+					slog.Debug("tunnel: drop QUIC", "dest", dest)
 					return
 				}
 				// Extract domain for routing upgrade or IPv6 hostname rewrite.
@@ -427,10 +422,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 			// 4. Block QUIC going through proxy (prevents double-QUIC tunneling).
 			// Browsers fall back to TCP/TLS which uses the tunnel's stream path.
 			if t.blockQUIC && meta.Protocol == sniff.ProtoQUIC && action != t.directTarget {
-				slog.Debug("tunnel: QUIC blocked, sending ICMP unreachable", "dest", dest, "domain", meta.Domain)
-				if r, ok := origConn.(provider.UDPRejecter); ok {
-					r.RejectHandshake()
-				}
+				slog.Debug("tunnel: drop QUIC", "dest", dest, "domain", meta.Domain)
 				return
 			}
 

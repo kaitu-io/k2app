@@ -386,6 +386,104 @@ func (c *mockPacketConn) SetDeadline(time.Time) error        { return nil }
 func (c *mockPacketConn) SetReadDeadline(time.Time) error    { return nil }
 func (c *mockPacketConn) SetWriteDeadline(time.Time) error   { return nil }
 
+// mockRejectingPacketConn implements provider.UDPRejecter on top of mockPacketConn
+// so type assertions in HandleUDP succeed and we can count RejectHandshake calls.
+type mockRejectingPacketConn struct {
+	*mockPacketConn
+	rejectCount atomic.Int32
+}
+
+func newMockRejectingPacketConn() *mockRejectingPacketConn {
+	return &mockRejectingPacketConn{mockPacketConn: newMockPacketConn()}
+}
+
+func (c *mockRejectingPacketConn) RejectHandshake() error {
+	c.rejectCount.Add(1)
+	return nil
+}
+
+// TestClientTunnel_HandleUDP_IPv6Drop verifies IPv6 UDP destinations are
+// silently dropped without invoking RejectHandshake (which routes through
+// gVisor's gWriteUnreachable and races against buffer chunk refcounts).
+func TestClientTunnel_HandleUDP_IPv6Drop(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
+	})
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer tunnel.Close()
+
+	localPC := newMockRejectingPacketConn()
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, "[2001:db8::1]:443")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("HandleUDP did not return for IPv6 dest")
+	}
+
+	if got := localPC.rejectCount.Load(); got != 0 {
+		t.Errorf("RejectHandshake called %d times for IPv6 dest, want 0 (panic-prone path)", got)
+	}
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.udpCalls) != 0 {
+		t.Errorf("DialUDP called %d times, want 0 (IPv6 should be silently dropped)", len(dialer.udpCalls))
+	}
+}
+
+// TestClientTunnel_HandleUDP_QUICBlockedDrop verifies the blockQUIC paths
+// also drop silently without invoking RejectHandshake (same gVisor concern).
+func TestClientTunnel_HandleUDP_QUICBlockedDrop(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		BlockQUIC:     true,
+		DefaultTarget: rule.Target(2),
+	})
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer tunnel.Close()
+
+	quicPacket := make([]byte, 32)
+	quicPacket[0] = 0xC3
+	binary.BigEndian.PutUint32(quicPacket[1:5], 0x00000001)
+
+	localPC := newMockRejectingPacketConn()
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, "142.250.197.99:443")
+		close(done)
+	}()
+	localPC.injectRead(quicPacket, nil)
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("HandleUDP did not return — QUIC block not working")
+	}
+
+	if got := localPC.rejectCount.Load(); got != 0 {
+		t.Errorf("RejectHandshake called %d times for blocked QUIC, want 0", got)
+	}
+}
+
 // --- Close unblocking tests ---
 
 // TestClientTunnel_Close_UnblocksStuckTCP verifies that Close() forcefully
