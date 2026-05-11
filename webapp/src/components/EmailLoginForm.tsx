@@ -131,9 +131,11 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       setIsSubmitting(true);
       setError("");
 
+      const udid = await getDeviceUdid();
       const response = await cloudApi.post<SendCodeResponse>('/api/auth/code', {
         email,
         language: i18n.language,
+        udid,
       });
 
       handleResponseError(

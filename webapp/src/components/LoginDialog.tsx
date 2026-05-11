@@ -123,11 +123,12 @@ export default function LoginDialog() {
       setIsSubmitting(true);
       setError("");
 
+      const udid = await getDeviceUdid();
       const response = await cloudApi.post<{
         userExists: boolean;
         isActivated: boolean;
         isFirstOrderDone: boolean;
-      }>('/api/auth/code', { email, language: i18n.language });
+      }>('/api/auth/code', { email, language: i18n.language, udid });
 
       handleResponseError(
         response.code,
