@@ -43,6 +43,10 @@ export interface VPNMachineState {
   isRetrying: boolean;
   networkAvailable: boolean;
   initialization: InitializationStatus | null;
+  // Engine's session start (Unix seconds). Authoritative session timestamp —
+  // survives webapp reload/cold-start. Read by disconnect() and analytics
+  // to compute durationSec. null when no active session.
+  startAt: number | null;
 }
 
 // ============ Transition Table ============
@@ -100,6 +104,7 @@ export const useVPNMachineStore = create<VPNMachineState>()(
     isRetrying: false,
     networkAvailable: true,
     initialization: null,
+    startAt: null,
   })),
 );
 
@@ -216,6 +221,9 @@ export function backendStatusToEvent(status: StatusResponseData): VPNEvent {
 
 export function initializeVPNMachine(): () => void {
   const dispatchStatus = (status: StatusResponseData) => {
+    // Forward engine's session start. Engine emits startAt only when state=connected;
+    // when omitted, clear local copy so consumers fall back to webapp-local timestamps.
+    useVPNMachineStore.setState({ startAt: status.startAt ?? null });
     const event = backendStatusToEvent(status);
     dispatch(event, {
       error: status.error ?? null,

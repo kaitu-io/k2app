@@ -117,7 +117,11 @@ export function initializeAllStores(): () => void {
       (s) => s.state,
       (state, prevState) => {
         if (state === 'connected' && prevState !== 'connected') {
-          connectTime = Date.now();
+          // Prefer engine's startAt (survives webapp reload mid-session) over local Date.now().
+          // dispatchStatus updates startAt before dispatching the state event, so it's already
+          // populated by the time this subscriber fires.
+          const startAt = useVPNMachineStore.getState().startAt;
+          connectTime = startAt ? startAt * 1000 : Date.now();
 
           // Read tunnel metadata from connection store
           const connState = useConnectionStore.getState();
@@ -143,7 +147,7 @@ export function initializeAllStores(): () => void {
         // error (reconnecting→idle), serviceDown recovery (serviceDown→idle).
         // Excludes paths that never reached connected (connecting→idle, idle→idle self-transition).
         if (state === 'idle' && connectTime !== null) {
-          const durationSec = Math.floor((Date.now() - connectTime) / 1000);
+          const durationSec = Math.max(0, Math.floor((Date.now() - connectTime) / 1000));
           const errorInfo = useVPNMachineStore.getState().error;
           statsService.trackDisconnect({
             nodeType: lastConnectedSource === 'self_hosted' ? 'self-hosted' : 'cloud',

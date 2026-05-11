@@ -13,9 +13,16 @@
     "platformNotSupported": "當前平台暫不支援此功能",
     "disconnectFeedback": {
       "title": "本次連線體驗如何？",
-      "good": "好",
-      "bad": "唔好",
-      "thankYou": "感謝回饋"
+      "thankYou": "感謝回饋",
+      "detailTitle": "遇到咗咩問題？(可選)",
+      "submit": "提交",
+      "tags": {
+        "slow": "速度慢",
+        "cantConnect": "連唔到",
+        "frequentDrops": "成日斷線",
+        "contentBlocked": "影片或網頁打唔開",
+        "other": "其他"
+      }
     }
   }
 }

@@ -1,17 +1,25 @@
 /**
- * DisconnectFeedbackDialog — mandatory post-disconnect quality dialog
+ * DisconnectFeedbackDialog — post-disconnect 5-star rating dialog.
  *
- * Shown once after each user-initiated disconnect (authenticated only).
- * Both "好" and "不好" submit a connection rating.
- * "不好" additionally auto-submits a ticket (hidden from user) + uploads logs.
+ * Shown once after each user-initiated disconnect when the connection
+ * lasted at least MIN_FEEDBACK_DURATION_SEC (gated upstream in
+ * connection.store). 4-5 stars submit a "good" rating instantly. 3 stars
+ * submits "bad" instantly. 1-2 stars expand an inline detail step with
+ * optional problem-tag chips, then submit "bad" + auto-ticket whose body
+ * always uses zh-CN labels (admin reads in Chinese).
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogTitle,
+  DialogContent,
   DialogActions,
   Button,
+  Rating,
+  Chip,
+  Box,
+  Typography,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore, type LastConnectionInfo } from '../stores/connection.store';
@@ -20,6 +28,20 @@ import { cloudApi } from '../services/cloud-api';
 import { getDeviceUdid } from '../services/device-udid';
 import { refreshNetworkEnv } from '../services/network-env';
 import { randomUUID } from '../utils/uuid';
+
+type TagKey = 'slow' | 'cantConnect' | 'frequentDrops' | 'contentBlocked' | 'other';
+const TAG_KEYS: readonly TagKey[] = ['slow', 'cantConnect', 'frequentDrops', 'contentBlocked', 'other'] as const;
+
+// Locale-independent zh-CN labels written into auto-tickets. The admin team
+// reads tickets in Chinese, so ticket content is locked to zh-CN regardless
+// of the user's current locale.
+const TAG_LABEL_ZH: Record<TagKey, string> = {
+  slow: '速度慢',
+  cantConnect: '连不上',
+  frequentDrops: '经常断开',
+  contentBlocked: '视频或网页打不开',
+  other: '其他',
+};
 
 function formatConnectionInfo(info: LastConnectionInfo): string {
   return [
@@ -63,7 +85,11 @@ async function submitRating(
   }
 }
 
-async function submitNegativeFeedback(info: LastConnectionInfo): Promise<void> {
+async function submitNegativeFeedback(
+  info: LastConnectionInfo,
+  stars: number,
+  tags: TagKey[],
+): Promise<void> {
   const feedbackId = randomUUID();
   let s3Keys: Array<{ name: string; s3Key: string }> = [];
 
@@ -85,10 +111,14 @@ async function submitNegativeFeedback(info: LastConnectionInfo): Promise<void> {
     }
   }
 
+  const tagsLine = tags.length > 0
+    ? tags.map((k) => TAG_LABEL_ZH[k]).join(', ')
+    : '无';
+
   // Step 2: Submit ticket with auto_generated flag (hidden from user)
   try {
     await cloudApi.post('/api/user/ticket', {
-      content: `[Auto] User reported bad connection experience after disconnect.\n\n${formatConnectionInfo(info)}`,
+      content: `[Auto] 用户报告体验问题 (${stars}★)\nTags: ${tagsLine}\n\n${formatConnectionInfo(info)}`,
       feedbackId,
       os: info.os,
       app_version: info.appVersion,
@@ -136,9 +166,25 @@ async function submitNegativeFeedback(info: LastConnectionInfo): Promise<void> {
   await submitRating('bad', info, feedbackId);
 }
 
+function fireSubmit(stars: number, tags: TagKey[], info: LastConnectionInfo): void {
+  if (stars <= 2) {
+    submitNegativeFeedback(info, stars, tags).catch((err) => {
+      console.error('[DisconnectFeedback] negative feedback error:', err);
+    });
+    return;
+  }
+  const rating: 'good' | 'bad' = stars >= 4 ? 'good' : 'bad';
+  const feedbackId = randomUUID();
+  submitRating(rating, info, feedbackId).catch((err) => {
+    console.error('[DisconnectFeedback] rating error:', err);
+  });
+}
+
 export function DisconnectFeedbackDialog() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [stars, setStars] = useState(0);
+  const [tags, setTags] = useState<TagKey[]>([]);
   const connectionInfoRef = useRef<LastConnectionInfo | null>(null);
 
   const pendingFeedback = useConnectionStore((s) => s.pendingFeedback);
@@ -146,74 +192,98 @@ export function DisconnectFeedbackDialog() {
   const clearPendingFeedback = useConnectionStore((s) => s.clearPendingFeedback);
   const showAlert = useAlertStore((s) => s.showAlert);
 
-  // When pendingFeedback becomes true, consume it and open dialog
   useEffect(() => {
     if (pendingFeedback) {
       connectionInfoRef.current = lastConnectionInfo;
       clearPendingFeedback();
+      setStars(0);
+      setTags([]);
       setOpen(true);
     }
   }, [pendingFeedback, lastConnectionInfo, clearPendingFeedback]);
 
-  const handleGood = useCallback(() => {
+  const closeWithThanks = useCallback(() => {
     setOpen(false);
+    showAlert(t('feedback:feedback.disconnectFeedback.thankYou'), 'info');
+  }, [showAlert, t]);
+
+  const handleStarsChange = useCallback((_e: unknown, newValue: number | null) => {
+    const value = newValue ?? 0;
+    if (value <= 0) return;
+    setStars(value);
+    if (value >= 3) {
+      const info = connectionInfoRef.current;
+      connectionInfoRef.current = null;
+      if (info) fireSubmit(value, [], info);
+      closeWithThanks();
+    }
+  }, [closeWithThanks]);
+
+  const handleSubmitDetail = useCallback(() => {
     const info = connectionInfoRef.current;
     connectionInfoRef.current = null;
+    if (info) fireSubmit(stars, tags, info);
+    closeWithThanks();
+  }, [stars, tags, closeWithThanks]);
 
-    if (info) {
-      const feedbackId = randomUUID();
-      submitRating('good', info, feedbackId).catch((err) => {
-        console.error('[DisconnectFeedback] good rating error:', err);
-      });
-    }
+  const toggleTag = useCallback((key: TagKey) => {
+    setTags((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
   }, []);
 
-  const handleBad = useCallback(() => {
-    setOpen(false);
-    const info = connectionInfoRef.current;
-    connectionInfoRef.current = null;
-
-    if (info) {
-      showAlert(t('feedback:feedback.disconnectFeedback.thankYou'), 'info');
-      // Fire-and-forget
-      submitNegativeFeedback(info).catch((err) => {
-        console.error('[DisconnectFeedback] submission error:', err);
-      });
-    }
-  }, [showAlert, t]);
+  const inDetail = stars > 0 && stars <= 2;
 
   return (
     <Dialog
       open={open}
       disableEscapeKeyDown
       onClose={(_event, reason) => {
-        // Block backdrop click — force user to choose
         if (reason === 'backdropClick') return;
       }}
-      PaperProps={{
-        sx: { minWidth: 280, textAlign: 'center' },
-      }}
+      PaperProps={{ sx: { minWidth: 320, textAlign: 'center' } }}
     >
       <DialogTitle sx={{ pb: 1 }}>
         {t('feedback:feedback.disconnectFeedback.title')}
       </DialogTitle>
-      <DialogActions sx={{ justifyContent: 'center', pb: 2, gap: 2 }}>
-        <Button
-          variant="outlined"
-          onClick={handleGood}
-          sx={{ minWidth: 80 }}
-        >
-          {t('feedback:feedback.disconnectFeedback.good')}
-        </Button>
-        <Button
-          variant="contained"
-          color="error"
-          onClick={handleBad}
-          sx={{ minWidth: 80 }}
-        >
-          {t('feedback:feedback.disconnectFeedback.bad')}
-        </Button>
-      </DialogActions>
+      <DialogContent sx={{ pb: 1 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
+          <Rating
+            value={stars}
+            size="large"
+            onChange={handleStarsChange}
+            sx={{ color: 'warning.main' }}
+          />
+        </Box>
+        {inDetail && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" sx={{ mb: 1.5, color: 'text.secondary' }}>
+              {t('feedback:feedback.disconnectFeedback.detailTitle')}
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center' }}>
+              {TAG_KEYS.map((key) => {
+                const selected = tags.includes(key);
+                return (
+                  <Chip
+                    key={key}
+                    label={t(`feedback:feedback.disconnectFeedback.tags.${key}`)}
+                    variant={selected ? 'filled' : 'outlined'}
+                    color={selected ? 'primary' : 'default'}
+                    onClick={() => toggleTag(key)}
+                  />
+                );
+              })}
+            </Box>
+          </Box>
+        )}
+      </DialogContent>
+      {inDetail && (
+        <DialogActions sx={{ justifyContent: 'center', pb: 2 }}>
+          <Button variant="contained" onClick={handleSubmitDetail} sx={{ minWidth: 100 }}>
+            {t('feedback:feedback.disconnectFeedback.submit')}
+          </Button>
+        </DialogActions>
+      )}
     </Dialog>
   );
 }

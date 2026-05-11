@@ -27,6 +27,11 @@ import { useAuthStore } from './auth.store';
 import { pickAutoTunnel } from '../utils/auto-tunnel-pick';
 import { ERROR_CODES } from '../utils/errorCode';
 
+// Minimum connection duration to surface the post-disconnect feedback dialog.
+// Connections shorter than this are deemed too brief for a meaningful quality
+// judgment, so the dialog is suppressed. Tune based on suppression-log volume.
+const MIN_FEEDBACK_DURATION_SEC = 20;
+
 // ============ Types ============
 
 export interface ActiveTunnel {
@@ -569,8 +574,14 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     if (connectedTunnel && isAuthenticated) {
       const configState = useConfigStore.getState();
       const disconnectPreset = configState.resolvePreset();
-      const durationSec = connectedAt
-        ? Math.round((Date.now() - connectedAt) / 1000)
+      // Source-of-truth chain for session start: engine startAt → webapp connectedAt → 0.
+      // Engine startAt survives webapp cold-start (e.g., iOS background-reload),
+      // which connectedAt does not — see tryRestoreConnectedTunnel below.
+      // Math.max(0, ...) guards against transient NTP backward jumps.
+      const startAt = useVPNMachineStore.getState().startAt;
+      const sessionStartMs = startAt ? startAt * 1000 : connectedAt;
+      const durationSec = sessionStartMs
+        ? Math.max(0, Math.round((Date.now() - sessionStartMs) / 1000))
         : 0;
       lastConnectionInfo = {
         domain: connectedTunnel.domain,
@@ -585,16 +596,19 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       };
     }
 
+    const shouldRequestFeedback = !!lastConnectionInfo && lastConnectionInfo.durationSec >= MIN_FEEDBACK_DURATION_SEC;
+    if (lastConnectionInfo && !shouldRequestFeedback) {
+      console.info(
+        `[Connection] feedback dialog suppressed: domain=${lastConnectionInfo.domain} durationSec=${lastConnectionInfo.durationSec}s`,
+      );
+    }
     console.info('[Connection] disconnect: bumping epoch, dispatching USER_DISCONNECT');
     set((s) => ({
       connectedTunnel: null,
       connectedAt: null,
       connectEpoch: s.connectEpoch + 1,
-      // Mark feedback as requested — promoted to pendingFeedback when VPN reaches idle
-      feedbackRequested: !!lastConnectionInfo,
-      lastConnectionInfo,
-      // Clear tunnel identity so cold-start after a killed webapp doesn't
-      // restore a tunnel the user explicitly disconnected from.
+      feedbackRequested: shouldRequestFeedback,
+      lastConnectionInfo: shouldRequestFeedback ? lastConnectionInfo : null,
       lastServerUrl: null,
     }));
     // Fire-and-forget: persisted identity must not outlive the user's intent.

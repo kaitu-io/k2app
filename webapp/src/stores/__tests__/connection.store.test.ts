@@ -1283,3 +1283,139 @@ describe('enrichFromTunnelList preserves Auto', () => {
     expect(s.selectedCloudTunnel).toBeNull();       // Auto preserved
   });
 });
+
+// ==================== Disconnect Feedback Gating Tests ====================
+
+describe('Connection Store - Disconnect Feedback Gating', () => {
+  function setupConnected(useConnectionStore: any, vpn: any, durationMs: number) {
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'test.com',
+        name: 'Test',
+        country: 'US',
+        serverUrl: 'k2v5://test.com:443',
+      },
+      connectedAt: Date.now() - durationMs,
+    });
+  }
+
+  it('does NOT set feedbackRequested when durationSec < 20', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+    setupConnected(useConnectionStore, vpn, 5_000); // 5s connection
+
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    await useConnectionStore.getState().disconnect();
+
+    const state = useConnectionStore.getState();
+    expect(state.feedbackRequested).toBe(false);
+    expect(state.lastConnectionInfo).toBeNull();
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.stringContaining('feedback dialog suppressed'),
+    );
+    infoSpy.mockRestore();
+  });
+
+  it('sets feedbackRequested when durationSec >= 20', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+    setupConnected(useConnectionStore, vpn, 25_000); // 25s connection
+
+    await useConnectionStore.getState().disconnect();
+
+    const state = useConnectionStore.getState();
+    expect(state.feedbackRequested).toBe(true);
+    expect(state.lastConnectionInfo).not.toBeNull();
+    expect(state.lastConnectionInfo!.durationSec).toBeGreaterThanOrEqual(20);
+  });
+
+  it('does NOT set feedbackRequested when user is not authenticated (current behavior)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+    setupConnected(useConnectionStore, vpn, 30_000);
+
+    const authMod = await import('../auth.store');
+    authMod.useAuthStore.setState({ isAuthenticated: false });
+
+    await useConnectionStore.getState().disconnect();
+
+    expect(useConnectionStore.getState().feedbackRequested).toBe(false);
+  });
+
+  // ===== startAt-preferred duration tests (cold-start regression guard) =====
+
+  it('uses engine startAt when set, ignoring stale local connectedAt (cold-start case)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    const { useVPNMachineStore } = vpn;
+    mockRun.mockResolvedValue({ code: 0 });
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    // Simulate post-cold-start: connectedTunnel restored, connectedAt still null,
+    // engine reports session started 600s ago.
+    useVPNMachineStore.setState({ startAt: Math.floor(Date.now() / 1000) - 600 });
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'test.com',
+        name: 'Test',
+        country: 'US',
+        serverUrl: 'k2v5://test.com:443',
+      },
+      connectedAt: null,
+    });
+
+    await useConnectionStore.getState().disconnect();
+
+    const info = useConnectionStore.getState().lastConnectionInfo;
+    expect(info).not.toBeNull();
+    expect(info!.durationSec).toBeGreaterThanOrEqual(595);
+    expect(info!.durationSec).toBeLessThanOrEqual(605);
+  });
+
+  it('falls back to local connectedAt when engine startAt is null', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    const { useVPNMachineStore } = vpn;
+    mockRun.mockResolvedValue({ code: 0 });
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    useVPNMachineStore.setState({ startAt: null });
+    setupConnected(useConnectionStore, vpn, 30_000);
+
+    await useConnectionStore.getState().disconnect();
+
+    const info = useConnectionStore.getState().lastConnectionInfo;
+    expect(info!.durationSec).toBeGreaterThanOrEqual(28);
+    expect(info!.durationSec).toBeLessThanOrEqual(32);
+  });
+
+  it('clamps to 0 when startAt is in the future (NTP backward jump guard)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    const { useVPNMachineStore } = vpn;
+    mockRun.mockResolvedValue({ code: 0 });
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    useVPNMachineStore.setState({ startAt: Math.floor(Date.now() / 1000) + 60 });
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'test.com',
+        name: 'Test',
+        country: 'US',
+        serverUrl: 'k2v5://test.com:443',
+      },
+      connectedAt: Date.now() - 25_000,
+    });
+
+    await useConnectionStore.getState().disconnect();
+
+    const info = useConnectionStore.getState().lastConnectionInfo;
+    // 25s connectedAt would normally pass the 20s gate, but startAt-future clamps to 0
+    // → suppressed below MIN_FEEDBACK_DURATION_SEC.
+    expect(info).toBeNull();
+    expect(useConnectionStore.getState().feedbackRequested).toBe(false);
+  });
+});
