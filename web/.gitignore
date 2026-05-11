@@ -57,3 +57,7 @@ next-env.d.ts
 
 # Payload
 src/payload/payload-types.ts
+
+# Sentry
+.sentryclirc
+.env.sentry-build-plugin

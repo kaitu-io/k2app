@@ -8,7 +8,7 @@ applications:
             # Amplify console env vars live only in the build shell; output: 'standalone'
             # does not forward them to the SSR Lambda. Bake them into .env.production so
             # Next.js bundles them into the standalone output.
-            - env | grep -E '^(DATABASE_URL|PAYLOAD_SECRET|CENTER_API_URL|CDN_URL|S3_BUCKET|S3_REGION|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|TRANSLATOR_API_KEY|TRANSLATOR_BASE_URL|TRANSLATOR_MODEL)=' >> .env.production
+            - env | grep -E '^(DATABASE_URL|PAYLOAD_SECRET|CENTER_API_URL|CDN_URL|S3_BUCKET|S3_REGION|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|TRANSLATOR_API_KEY|TRANSLATOR_BASE_URL|TRANSLATOR_MODEL|NEXT_PUBLIC_SENTRY_DSN|SENTRY_ORG|SENTRY_PROJECT|SENTRY_AUTH_TOKEN)=' >> .env.production
             - yarn install
         build:
           commands:
@@ -25,7 +25,8 @@ applications:
             #   DATABASE_URL, PAYLOAD_SECRET,
             #   TRANSLATOR_API_KEY, TRANSLATOR_BASE_URL, TRANSLATOR_MODEL,
             #   CENTER_API_URL,
-            #   S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, CDN_URL.
+            #   S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, CDN_URL,
+            #   NEXT_PUBLIC_SENTRY_DSN, SENTRY_ORG, SENTRY_PROJECT, SENTRY_AUTH_TOKEN.
             - echo "Building Next.js application..."
             - yarn run build
       artifacts:
