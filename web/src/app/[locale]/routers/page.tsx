@@ -1,34 +1,21 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { ROUTER_PRODUCTS } from '@/lib/constants';
-import Image from 'next/image';
-import NextLink from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { routing } from '@/i18n/routing';
-import {
-  Router,
-  Wifi,
-  Home as HomeIcon,
-  Clock,
-  HeartHandshake,
-  DollarSign,
-  Smartphone,
-  CheckCircle,
-  Star,
-  Mail
-} from 'lucide-react';
+import { Hero } from './_components/Hero';
+import { Step1Hardware } from './_components/Step1Hardware';
+import { Step2InstallOS } from './_components/Step2InstallOS';
+import { Step3InstallK2r } from './_components/Step3InstallK2r';
+import { Step4Setup } from './_components/Step4Setup';
+import { RoutersFAQ } from './_components/RoutersFAQ';
+import { VsClient } from './_components/VsClient';
+import { PresaleFooterCards } from './_components/PresaleFooterCards';
 
 type Locale = (typeof routing.locales)[number];
 
 export const dynamic = 'force-static';
 
-/**
- * Generate metadata for the routers page (used by Next.js for <head> tags).
- * Requires server-side translation to produce locale-aware title/description.
- */
 export async function generateMetadata({
   params,
 }: {
@@ -36,20 +23,13 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
-  const t = await getTranslations({ locale, namespace: 'hero' });
-
+  const t = await getTranslations({ locale, namespace: 'routers' });
   return {
-    title: t('routers.title'),
-    description: t('routers.subtitle'),
+    title: t('title'),
+    description: t('subtitle'),
   };
 }
 
-/**
- * Routers page Server Component — SSR-converted from client component.
- *
- * Pure translation swap with zero client interactivity.
- * Uses async params per Next.js 15 pattern.
- */
 export default async function RoutersPage({
   params,
 }: {
@@ -58,366 +38,18 @@ export default async function RoutersPage({
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
   setRequestLocale(locale);
-  const t = await getTranslations({ locale, namespace: 'hero' });
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
-
-      {/* Hero Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto text-center">
-          <div className="mb-8">
-            <Router className="w-20 h-20 text-blue-600 mx-auto mb-6" />
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-foreground mb-6">
-              {t('routers.title')}
-            </h1>
-            <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-              {t('routers.subtitle')}
-            </p>
-          </div>
-
-          {/* DIY install banner — for users who already have a compatible OpenWrt device */}
-          <div className="max-w-3xl mx-auto bg-card border rounded-2xl p-6 text-left flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-foreground mb-1">
-                {t('routers.diyBannerTitle')}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {t('routers.diyBannerBody')}
-              </p>
-            </div>
-            <Button asChild size="lg" variant="outline" className="shrink-0">
-              <NextLink href={`/${locale}/install?platform=router&nodownload`}>
-                {t('routers.diyBannerCta')}
-              </NextLink>
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      {/* Product Showcase */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-12">
-
-            {/* K2 Mini Router */}
-            <Card className="p-8 relative overflow-hidden">
-              <div className="absolute top-6 right-6">
-                <span className="bg-orange-100 text-orange-800 text-sm font-medium px-3 py-1 rounded-full dark:bg-orange-900 dark:text-orange-300">
-                  {t('routers.presaleTag')}
-                </span>
-              </div>
-
-              <div className="mb-8">
-                <Router className="w-16 h-16 text-blue-600 mb-4" />
-                <h2 className="text-2xl font-bold text-foreground mb-2">
-                  {ROUTER_PRODUCTS.k2Mini.name}
-                </h2>
-                <p className="text-blue-600 font-medium mb-4">
-                  {ROUTER_PRODUCTS.k2Mini.englishName}
-                </p>
-                <p className="text-muted-foreground text-lg">
-                  {ROUTER_PRODUCTS.k2Mini.tagline}
-                </p>
-              </div>
-
-              {/* Product Images */}
-              <div className="grid grid-cols-3 gap-4 mb-8">
-                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
-                  <Image
-                    src="/images/routers/k2-mini.jpg"
-                    alt={"开途 K2 Mini 路由器"}
-                    width={200}
-                    height={200}
-                    className="object-cover w-full h-full"
-                  />
-                </div>
-                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
-                  <Image
-                    src="/images/routers/k2-mini.1.jpeg"
-                    alt={"开途 K2 Mini 路由器详图"}
-                    width={200}
-                    height={200}
-                    className="object-cover w-full h-full"
-                  />
-                </div>
-                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
-                  <Image
-                    src="/images/routers/k2-mini.2.webp"
-                    alt={"开途 K2 Mini 路由器包装"}
-                    width={200}
-                    height={200}
-                    className="object-cover w-full h-full"
-                  />
-                </div>
-              </div>
-
-              {/* Features */}
-              <div className="mb-8">
-                <h3 className="font-semibold mb-4 flex items-center text-foreground">
-                  <CheckCircle className="w-5 h-5 mr-2 text-green-600" />
-                  {t('routers.productFeatures')}
-                </h3>
-                <ul className="space-y-2">
-                  {ROUTER_PRODUCTS.k2Mini.features.map((feature, index) => (
-                    <li key={index} className="flex items-center text-muted-foreground">
-                      <Star className="w-4 h-4 mr-2 text-blue-600 flex-shrink-0" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="space-y-3">
-                <Button className="w-full" size="lg">
-                  <Mail className="w-4 h-4 mr-2" />
-                  {t('routers.contactInquiry')}
-                </Button>
-                <p className="text-center text-sm text-muted-foreground">
-                  {t('routers.presalePriceConsult')}
-                </p>
-              </div>
-            </Card>
-
-            {/* K2-001 Router */}
-            <Card className="p-8 relative overflow-hidden">
-              <div className="absolute top-6 right-6">
-                <span className="bg-orange-100 text-orange-800 text-sm font-medium px-3 py-1 rounded-full dark:bg-orange-900 dark:text-orange-300">
-                  {t('routers.presaleTag')}
-                </span>
-              </div>
-
-              <div className="mb-8">
-                <Router className="w-16 h-16 text-green-600 mb-4" />
-                <h2 className="text-2xl font-bold text-foreground mb-2">
-                  {ROUTER_PRODUCTS.k2001.name}
-                </h2>
-                <p className="text-green-600 font-medium mb-4">
-                  {ROUTER_PRODUCTS.k2001.englishName}
-                </p>
-                <p className="text-muted-foreground text-lg">
-                  {ROUTER_PRODUCTS.k2001.tagline}
-                </p>
-              </div>
-
-              {/* Product Images */}
-              <div className="grid grid-cols-3 gap-4 mb-8">
-                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
-                  <Image
-                    src="/images/routers/1.1.jpg"
-                    alt={"开途 K2-001 路由器"}
-                    width={200}
-                    height={200}
-                    className="object-cover w-full h-full"
-                  />
-                </div>
-                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
-                  <Image
-                    src="/images/routers/1.2.jpg"
-                    alt={"开途 K2-001 路由器接口"}
-                    width={200}
-                    height={200}
-                    className="object-cover w-full h-full"
-                  />
-                </div>
-                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
-                  <Image
-                    src="/images/routers/1.3.jpg"
-                    alt={"开途 K2-001 路由器配置"}
-                    width={200}
-                    height={200}
-                    className="object-cover w-full h-full"
-                  />
-                </div>
-              </div>
-
-              {/* Features */}
-              <div className="mb-8">
-                <h3 className="font-semibold mb-4 flex items-center text-foreground">
-                  <CheckCircle className="w-5 h-5 mr-2 text-green-600" />
-                  {t('routers.productFeatures')}
-                </h3>
-                <ul className="space-y-2">
-                  {ROUTER_PRODUCTS.k2001.features.map((feature, index) => (
-                    <li key={index} className="flex items-center text-muted-foreground">
-                      <Star className="w-4 h-4 mr-2 text-green-600 flex-shrink-0" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="space-y-3">
-                <Button className="w-full" size="lg" variant="secondary">
-                  <Mail className="w-4 h-4 mr-2" />
-                  {t('routers.contactInquiry')}
-                </Button>
-                <p className="text-center text-sm text-muted-foreground">
-                  {t('routers.presalePriceConsultFull')}
-                </p>
-              </div>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-      {/* Router Benefits */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-muted">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-foreground mb-4">
-              {t('routers.benefits.title')}
-            </h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              {t('routers.benefits.subtitle')}
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <Card className="p-6 hover:shadow-lg transition-shadow">
-              <Wifi className="w-12 h-12 text-blue-600 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">
-                {t('routers.benefits.items.easySetup.title')}
-              </h3>
-              <p className="text-muted-foreground">
-                {t('routers.benefits.items.easySetup.description')}
-              </p>
-            </Card>
-
-            <Card className="p-6 hover:shadow-lg transition-shadow">
-              <HomeIcon className="w-12 h-12 text-green-600 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">
-                {t('routers.benefits.items.familyFriendly.title')}
-              </h3>
-              <p className="text-muted-foreground">
-                {t('routers.benefits.items.familyFriendly.description')}
-              </p>
-            </Card>
-
-            <Card className="p-6 hover:shadow-lg transition-shadow">
-              <Clock className="w-12 h-12 text-purple-600 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">
-                {t('routers.benefits.items.alwaysOn.title')}
-              </h3>
-              <p className="text-muted-foreground">
-                {t('routers.benefits.items.alwaysOn.description')}
-              </p>
-            </Card>
-
-            <Card className="p-6 hover:shadow-lg transition-shadow">
-              <Smartphone className="w-12 h-12 text-orange-600 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">
-                {t('routers.benefits.items.multiDevice.title')}
-              </h3>
-              <p className="text-muted-foreground">
-                {t('routers.benefits.items.multiDevice.description')}
-              </p>
-            </Card>
-
-            <Card className="p-6 hover:shadow-lg transition-shadow">
-              <HeartHandshake className="w-12 h-12 text-red-600 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">
-                {t('routers.benefits.items.techSupport.title')}
-              </h3>
-              <p className="text-muted-foreground">
-                {t('routers.benefits.items.techSupport.description')}
-              </p>
-            </Card>
-
-            <Card className="p-6 hover:shadow-lg transition-shadow">
-              <DollarSign className="w-12 h-12 text-indigo-600 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">
-                {t('routers.benefits.items.costEffective.title')}
-              </h3>
-              <p className="text-muted-foreground">
-                {t('routers.benefits.items.costEffective.description')}
-              </p>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-      {/* Technical Comparison */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-foreground mb-4">
-              {t('routers.routerVsClient')}
-            </h2>
-            <p className="text-muted-foreground text-lg">
-              {t('routers.whyChooseRouter')}
-            </p>
-          </div>
-
-          <div className="grid lg:grid-cols-2 gap-8">
-            <Card className="p-8 border-2 border-green-500 bg-green-50 dark:bg-green-900/20">
-              <div className="flex items-center mb-6">
-                <Router className="w-10 h-10 text-green-600 mr-3" />
-                <div>
-                  <h3 className="text-xl font-bold text-green-800 dark:text-green-300">{t('routers.smartRouter')}</h3>
-                  <p className="text-green-600 dark:text-green-400">{t('routers.recommended')}</p>
-                </div>
-              </div>
-              <ul className="space-y-3 text-foreground">
-                <li className="flex items-start">
-                  <CheckCircle className="w-5 h-5 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
-                  <span>{t('routers.autoConnect')}</span>
-                </li>
-                <li className="flex items-start">
-                  <CheckCircle className="w-5 h-5 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
-                  <span>{t('routers.alwaysRunning')}</span>
-                </li>
-                <li className="flex items-start">
-                  <CheckCircle className="w-5 h-5 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
-                  <span>{t('routers.allDevices')}</span>
-                </li>
-                <li className="flex items-start">
-                  <CheckCircle className="w-5 h-5 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
-                  <span>{t('routers.easyUse')}</span>
-                </li>
-                <li className="flex items-start">
-                  <CheckCircle className="w-5 h-5 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
-                  <span>{t('routers.onePurchase')}</span>
-                </li>
-              </ul>
-            </Card>
-
-            <Card className="p-8">
-              <div className="flex items-center mb-6">
-                <Smartphone className="w-10 h-10 text-muted-foreground mr-3" />
-                <div>
-                  <h3 className="text-xl font-bold text-foreground">{t('routers.clientSoftware')}</h3>
-                  <p className="text-muted-foreground">{t('routers.traditional')}</p>
-                </div>
-              </div>
-              <ul className="space-y-3 text-muted-foreground">
-                <li className="flex items-start">
-                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
-                  <span>{t('routers.individualSetup')}</span>
-                </li>
-                <li className="flex items-start">
-                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
-                  <span>{t('routers.manualStart')}</span>
-                </li>
-                <li className="flex items-start">
-                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
-                  <span>{t('routers.deviceLimits')}</span>
-                </li>
-                <li className="flex items-start">
-                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
-                  <span>{t('routers.complexConfig')}</span>
-                </li>
-                <li className="flex items-start">
-                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
-                  <span>{t('routers.ongoing')}</span>
-                </li>
-              </ul>
-            </Card>
-          </div>
-        </div>
-      </section>
-
+      <Hero />
+      <Step1Hardware locale={locale} />
+      <Step2InstallOS />
+      <Step3InstallK2r />
+      <Step4Setup />
+      <RoutersFAQ />
+      <VsClient />
+      <PresaleFooterCards />
       <Footer />
     </div>
   );
