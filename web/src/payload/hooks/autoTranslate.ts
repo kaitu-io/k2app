@@ -1,11 +1,7 @@
 import type { CollectionAfterChangeHook } from 'payload'
+import { translateOperation } from '@payload-enchants/translator'
 
 const SOURCE_LOCALE = 'zh-CN'
-
-// Per-locale fields cleared when the zh-CN source changes. lazyTranslate.ts
-// detects an empty `title` (via fallbackLocale: null) and triggers translation
-// on first read.
-const TRANSLATABLE_FIELDS = ['title', 'excerpt', 'content'] as const
 
 export const autoTranslate: CollectionAfterChangeHook = async ({
   collection, doc, req,
@@ -13,39 +9,32 @@ export const autoTranslate: CollectionAfterChangeHook = async ({
   if (req.locale !== SOURCE_LOCALE) return doc
   if (!req.payload.config.localization) return doc
 
-  // Lazy-translation model: on zh-CN write, null out every other locale's
-  // translatable fields so SSR re-fetches see an empty translation and
-  // synchronously translate that single locale on demand. Calling six
-  // OpenRouter operations synchronously inside the request transaction
-  // exceeds Amplify's 30s SSR Lambda timeout; deferring to read-time keeps
-  // each request bounded to one translation.
-  //
-  // We go straight to db.updateOne to bypass collection validation (the
-  // localized title/content fields are required, so payload.update would
-  // reject the null values). Re-entry into this hook is impossible because
-  // db.updateOne does not fire collection hooks.
   const targets = req.payload.config.localization.locales
-    .map(l => l.code)
-    .filter(code => code !== SOURCE_LOCALE)
+    .filter(l => l.code !== SOURCE_LOCALE)
 
-  const cleared: Record<string, null> = {}
-  for (const field of TRANSLATABLE_FIELDS) cleared[field] = null
-
-  for (const locale of targets) {
+  // Serial, not parallel: each translateOperation ends in payload.update({ req })
+  // which reuses the outer req.transactionID. Concurrent queries on a single
+  // Postgres transaction trigger "another command already in progress" — one
+  // update aborts the txn, the enclosing create is rolled back, and the doc
+  // silently disappears. Sequential execution keeps every update on the same
+  // txn one at a time so nothing races.
+  for (const target of targets) {
     try {
-      await req.payload.db.updateOne({
-        collection: collection.slug,
+      await translateOperation({
+        collectionSlug: collection.slug,
         id: doc.id,
-        locale,
-        data: cleared,
+        locale: target.code,
+        localeFrom: SOURCE_LOCALE,
+        resolver: 'openai',
+        update: true,
         req,
       })
     } catch (e) {
       req.payload.logger.error({
-        msg: 'autoTranslate: failed to clear stale translation',
+        msg: 'autoTranslate: locale failed',
         collection: collection.slug,
         id: doc.id,
-        locale,
+        locale: target.code,
         err: e,
       })
     }

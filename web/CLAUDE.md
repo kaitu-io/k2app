@@ -278,23 +278,9 @@ Payload v3 admin mounted at `/manager/cms`, REST API at `/payload/api`. GraphQL 
 ### Auth
 Reuses `/manager` admin's `access_token` HttpOnly cookie OR an `X-Access-Key: ktu_...` header (for service tokens / MCP clients). Bridge: `src/payload/auth/centerAuthStrategy.ts` extracts whichever credential is present, calls Center `/api/user/info`, checks `isAdmin || (roles & 0xfffffffe) !== 0`, upserts admin record by Center `uuid`. The `kaitu-center` MCP uses the header path to drive Payload REST programmatically.
 
-### Translation (lazy on-demand)
+### Translation
+`afterChange` on Posts fans out translation to all non-source locales via `@payload-enchants/translator` pointed at OpenRouter. Default model `google/gemini-2.5-flash`. Re-entry safe via `req.locale !== 'zh-CN'` guard. Configurable via env:
 
-Translations are **populated on first read**, not in the write request.
-
-Why: Amplify Hosting SSR Lambda is capped at 30s. Translating into six locales synchronously inside the `afterChange` hook exceeds the cap and rolls back the create/update via gateway timeout. The lazy model bounds each request to at most one translation (~5–15s on `gemini-2.5-flash`).
-
-Flow:
-1. **Source write** (`zh-CN`) — `autoTranslate` hook (`src/payload/hooks/autoTranslate.ts`) nulls `title` / `excerpt` / `content` on every non-source locale via `db.updateOne` (~50ms × 6 ≈ 300ms, well inside the cap). `db.updateOne` bypasses collection validation (required fields would otherwise reject null) and does not fire hooks (no re-entry).
-2. **Detail-page read** (`src/app/[locale]/[...slug]/queries.ts → findPostInCategory`) — probe with `fallbackLocale: false` to detect a missing translation, then `lazyTranslate(...)` fills it under a Postgres advisory lock with a 25s `AbortController`-style timeout.
-3. **List read** (`listPostsInCategory`) — does **not** trigger lazy translate. A list of N items would serialize N translations. Lists render via the default source-locale fallback; the first detail-page visit hydrates the locale and subsequent list renders pick up the cached value.
-
-Failure modes (caller falls back to source locale automatically because the final `findByID` uses default fallback):
-- `locked-by-other` — another reader holds the advisory lock; we return without translating.
-- `timeout` — OpenRouter > 25s; logged at error level.
-- `error` — translator threw; logged with the error object.
-
-Configurable via env:
 - `TRANSLATOR_BASE_URL=https://openrouter.ai/api`
 - `TRANSLATOR_API_KEY=sk-or-v1-...`
 - `TRANSLATOR_MODEL=google/gemini-2.5-flash`

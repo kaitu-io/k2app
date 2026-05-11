@@ -30,32 +30,14 @@ vi.mock('@/lib/brand-server', () => ({
 }))
 
 // Mock Payload. The factory must not reference top-level variables (vi.mock is
-// hoisted) so we use vi.hoisted() to declare mockFind/mockFindByID before
-// hoisting occurs.
-const { mockFind, mockFindByID } = vi.hoisted(() => ({
-  mockFind: vi.fn(),
-  mockFindByID: vi.fn(),
-}))
+// hoisted) so we use vi.hoisted() to declare mockFind before hoisting occurs.
+const { mockFind } = vi.hoisted(() => ({ mockFind: vi.fn() }))
 
 vi.mock('payload', () => ({
-  getPayload: vi.fn().mockResolvedValue({ find: mockFind, findByID: mockFindByID }),
+  getPayload: vi.fn().mockResolvedValue({ find: mockFind }),
 }))
 
 vi.mock('@payload-config', () => ({ default: {} }))
-
-// @payload-enchants/translator has an ESM dir-import bug; stub before
-// queries.ts (imported transitively) pulls it in.
-vi.mock('@payload-enchants/translator', () => ({ translateOperation: vi.fn() }))
-
-// Stub lazyTranslate: metadata tests don't exercise translation, just the
-// query orchestration. Default to a no-op that always reports translated.
-vi.mock('@/payload/lazyTranslate', async () => {
-  const actual = await vi.importActual<typeof import('@/payload/lazyTranslate')>('@/payload/lazyTranslate')
-  return {
-    ...actual,
-    lazyTranslate: vi.fn().mockResolvedValue({ status: 'translated' }),
-  }
-})
 
 vi.mock('@/lib/brands', () => ({
   brandById: (id: string) => ({
@@ -117,17 +99,13 @@ describe('generateMetadata (post detail, 2 segments)', () => {
       slug: 'hello',
       title: 'Hello',
       excerpt: 'Excerpted',
-      content: { root: {} },
       showOnKaitu: true,
       showOnOverleap: false,
     }
 
-    // First find call: findCategoryBySlug. Second find call: findPostInCategory probe.
     mockFind
       .mockResolvedValueOnce({ docs: [category] })
       .mockResolvedValueOnce({ docs: [post] })
-    // Then findPostInCategory final fetch
-    mockFindByID.mockResolvedValueOnce(post)
 
     const meta = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN', slug: ['cat-detail-1', 'hello'] }),
