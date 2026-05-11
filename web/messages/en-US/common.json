@@ -60,5 +60,8 @@
     "status": "Status",
     "page": "Page",
     "available": "Available"
+  },
+  "browserWarning": {
+    "message": "⚠️ The browser you're using may prevent login or checkout from working. If you hit a problem, open {domain} in Chrome, Edge, or Safari."
   }
 }

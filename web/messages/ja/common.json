@@ -58,5 +58,8 @@
     "status": "ステータス",
     "page": "ページ番号",
     "available": "利用可能"
+  },
+  "browserWarning": {
+    "message": "⚠️ お使いのブラウザでは、ログインや決済が正常に動作しない場合があります。問題が発生した場合は、Chrome、Edge、または Safari で {domain} を開いてください。"
   }
 }

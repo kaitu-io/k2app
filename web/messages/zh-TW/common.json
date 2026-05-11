@@ -58,5 +58,8 @@
     "status": "狀態",
     "page": "頁碼",
     "available": "可用"
+  },
+  "browserWarning": {
+    "message": "⚠️ 您目前的瀏覽器可能影響登入和付款。如遇問題，請使用 Chrome、Edge 或 Safari 開啟 {domain}。"
   }
 }

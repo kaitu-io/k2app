@@ -60,5 +60,8 @@
     "status": "状态",
     "page": "页码",
     "available": "可用"
+  },
+  "browserWarning": {
+    "message": "⚠️ 您当前的浏览器可能影响登录和支付。如遇问题，请在 Chrome、Edge 或 Safari 中打开 {domain}。"
   }
 }
