@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { detectBrowser, type BrowserFamily } from '../browser-detection';
 
 const MAINSTREAM: Array<{ ua: string; family: BrowserFamily; label: string }> = [
@@ -26,6 +26,14 @@ const MAINSTREAM: Array<{ ua: string; family: BrowserFamily; label: string }> = 
     ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Arc/1.50.0' },
   { label: 'Vivaldi desktop', family: 'vivaldi',
     ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Vivaldi/6.5.3206.55' },
+  { label: 'Chrome iOS', family: 'chrome',
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.106 Mobile/15E148 Safari/604.1' },
+  { label: 'Firefox iOS', family: 'firefox',
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/120.0 Mobile/15E148 Safari/605.1.15' },
+  { label: 'Edge iOS', family: 'edge',
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 EdgiOS/120.0.0.0 Mobile/15E148 Safari/604.1' },
+  { label: 'Opera iOS', family: 'opera',
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 OPiOS/4.0 Mobile/15E148 Safari/604.1' },
 ];
 
 const IN_APP_WEBVIEW: Array<{ ua: string; label: string }> = [
@@ -123,8 +131,4 @@ describe('detectBrowser — empty / SSR', () => {
       });
     }
   });
-});
-
-afterEach(() => {
-  // Each `it` cleans up via try/finally where it spoofs; nothing global to reset.
 });

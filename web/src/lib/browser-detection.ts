@@ -13,7 +13,6 @@ export type BrowserFamily =
   | 'safari'
   | 'firefox'
   | 'opera'
-  | 'brave'
   | 'samsung'
   | 'arc'
   | 'vivaldi'
@@ -58,6 +57,10 @@ function hasAndroidWebViewMarker(ua: string): boolean {
 
 function isIOSWKWebView(ua: string): boolean {
   if (!/iPhone|iPad|iPod/.test(ua)) return false;
+  // Mainstream iOS browsers legitimately omit Version/ even though they
+  // are not in-app webviews. Recognize them explicitly so they don't trip
+  // the warning bar.
+  if (/CriOS\/|FxiOS\/|EdgiOS\/|OPiOS\//.test(ua)) return false;
   // Real mobile Safari has BOTH "Safari/" and "Version/". WKWebViews
   // embedded in in-app browsers typically lack one or both.
   return !(/Safari\//.test(ua) && /Version\//.test(ua));
@@ -67,12 +70,12 @@ function identifyMainstream(ua: string): BrowserFamily {
   // Order matters: specific tokens before generic Chrome/Safari, because
   // Chromium-derived browsers all also include "Chrome/" in their UA.
   if (/Edg(?:A|iOS)?\//.test(ua)) return 'edge';
-  if (/OPR\/|Opera/.test(ua)) return 'opera';
+  if (/OPR\/|Opera|OPiOS\//.test(ua)) return 'opera';
   if (/SamsungBrowser/.test(ua)) return 'samsung';
   if (/Vivaldi/.test(ua)) return 'vivaldi';
   if (/Arc\//.test(ua)) return 'arc';
-  if (/Firefox\//.test(ua)) return 'firefox';
-  if (/Chrome\//.test(ua)) return 'chrome';
+  if (/Firefox\/|FxiOS\//.test(ua)) return 'firefox';
+  if (/Chrome\/|CriOS\//.test(ua)) return 'chrome';
   if (/Safari\//.test(ua) && /Version\//.test(ua)) return 'safari';
   return 'unknown';
 }
