@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 
 const mockUseEmbedMode = vi.fn(() => ({
@@ -27,8 +27,8 @@ function spoofUA(ua: string) {
 }
 
 const originalUA = window.navigator.userAgent;
-afterEach(() => {
-  spoofUA(originalUA);
+
+beforeEach(() => {
   mockUseEmbedMode.mockReturnValue({
     isEmbedded: false,
     showNavigation: true,
@@ -37,6 +37,10 @@ afterEach(() => {
     authToken: null,
     embedTheme: null,
   });
+});
+
+afterEach(() => {
+  spoofUA(originalUA);
 });
 
 describe('BrowserWarningBar', () => {
