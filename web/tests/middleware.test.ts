@@ -27,10 +27,19 @@ vi.mock('../src/i18n/routing', () => ({
 
 import middleware from '../src/middleware';
 
-function makeRequest(host: string, path: string, search = '', hash = ''): NextRequest {
+function makeRequest(
+  host: string,
+  path: string,
+  search = '',
+  hash = '',
+  extra: { acceptLanguage?: string; cookie?: string } = {},
+): NextRequest {
   const protocol = host.startsWith('localhost') ? 'http' : 'https';
   const url = `${protocol}://${host}${path}${search}${hash}`;
-  return new NextRequest(url, { headers: { host } });
+  const headers: Record<string, string> = { host };
+  if (extra.acceptLanguage) headers['accept-language'] = extra.acceptLanguage;
+  if (extra.cookie) headers['cookie'] = extra.cookie;
+  return new NextRequest(url, { headers });
 }
 
 async function runMiddleware(req: NextRequest): Promise<Response> {
@@ -191,6 +200,65 @@ describe('middleware: bidirectional 301 cross-domain on locale/brand mismatch', 
       const res = await runMiddleware(makeRequest('localhost:3000', '/en-US/purchase'));
       expect(res.status).not.toBe(301);
       expect(res.headers.get('x-middleware-request-x-pathname')).toBe('/purchase');
+    });
+  });
+
+  // Root path locale picking must (a) ignore cross-brand cookies, (b) be uncacheable
+  // by the CDN. CloudFront previously cached this 307 keyed only by URL → first
+  // visitor's Accept-Language poisoned the whole PoP for an hour.
+  describe('root path / locale selection + CDN safety', () => {
+    it('21. kaitu.io / with stale Overleap preferredLocale cookie → falls back to zh-CN (not en-GB)', async () => {
+      const res = await runMiddleware(
+        makeRequest('kaitu.io', '/', '', '', { cookie: 'preferredLocale=en-GB' }),
+      );
+      expect(res.status).toBe(307);
+      const loc = res.headers.get('location');
+      expect(loc).toBeTruthy();
+      const locPath = new URL(loc!, 'https://kaitu.io').pathname;
+      expect(locPath).toBe('/zh-CN');
+    });
+
+    it('22. kaitu.io / with valid kaitu preferredLocale=zh-TW → honors cookie', async () => {
+      const res = await runMiddleware(
+        makeRequest('kaitu.io', '/', '', '', { cookie: 'preferredLocale=zh-TW' }),
+      );
+      expect(res.status).toBe(307);
+      const locPath = new URL(res.headers.get('location')!, 'https://kaitu.io').pathname;
+      expect(locPath).toBe('/zh-TW');
+    });
+
+    it('23. kaitu.io / with Accept-Language: en-GB,en;q=0.9 → still zh-CN (en-* not allowed for kaitu)', async () => {
+      const res = await runMiddleware(
+        makeRequest('kaitu.io', '/', '', '', { acceptLanguage: 'en-GB,en;q=0.9' }),
+      );
+      expect(res.status).toBe(307);
+      const locPath = new URL(res.headers.get('location')!, 'https://kaitu.io').pathname;
+      expect(locPath).toBe('/zh-CN');
+    });
+
+    it('24. kaitu.io / root redirect must carry Cache-Control: no-store (defense vs CDN cache poisoning)', async () => {
+      const res = await runMiddleware(makeRequest('kaitu.io', '/'));
+      expect(res.status).toBe(307);
+      const cc = res.headers.get('cache-control') ?? '';
+      expect(cc.toLowerCase()).toContain('no-store');
+    });
+
+    it('25. overleap.io / → /en-US with no-store (deterministic but kept consistent)', async () => {
+      const res = await runMiddleware(makeRequest('overleap.io', '/'));
+      expect(res.status).toBe(307);
+      const locPath = new URL(res.headers.get('location')!, 'https://overleap.io').pathname;
+      expect(locPath).toBe('/en-US');
+      const cc = res.headers.get('cache-control') ?? '';
+      expect(cc.toLowerCase()).toContain('no-store');
+    });
+
+    it('26. overleap.io / ignores preferredLocale cookie (Overleap is English-only)', async () => {
+      const res = await runMiddleware(
+        makeRequest('overleap.io', '/', '', '', { cookie: 'preferredLocale=zh-CN' }),
+      );
+      expect(res.status).toBe(307);
+      const locPath = new URL(res.headers.get('location')!, 'https://overleap.io').pathname;
+      expect(locPath).toBe('/en-US');
     });
   });
 });

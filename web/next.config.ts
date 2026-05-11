@@ -72,8 +72,10 @@ const nextConfig: NextConfig = {
         ],
       },
       // 动态页面短期缓存（排除 API 与管理后台 —— manager/payload 含已登录态，不能公开缓存）
+      // `.+` 而非 `.*`：根路径 `/` 由中间件按 Accept-Language + Cookie 计算 307，
+      // 公共缓存会让首位访客的语言污染整个 CloudFront PoP。
       {
-        source: '/((?!_next|images|icons|favicon|app-icons|api|app|manager|payload).*)',
+        source: '/((?!_next|images|icons|favicon|app-icons|api|app|manager|payload).+)',
         headers: [
           {
             key: 'Cache-Control',
@@ -88,6 +90,16 @@ const nextConfig: NextConfig = {
           {
             key: 'Cache-Control',
             value: 'no-cache, no-store, must-revalidate',
+          },
+        ],
+      },
+      // 根路径 `/` 是中间件按请求头计算的 307，不能进 CDN 公共缓存
+      {
+        source: '/',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'private, no-store, must-revalidate',
           },
         ],
       },

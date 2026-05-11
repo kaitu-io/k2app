@@ -72,22 +72,29 @@ export default function middleware(request: NextRequest) {
   // Root path → pick locale
   if (pathname === '/') {
     if (brand.id === 'overleap') {
-      // Overleap is English-only. Always route to en-US, no language suggestion cookie.
-      return NextResponse.redirect(new URL('/en-US', request.url), 307);
+      const response = NextResponse.redirect(new URL('/en-US', request.url), 307);
+      response.headers.set('Cache-Control', 'private, no-store, must-revalidate');
+      return response;
     }
 
-    // Kaitu.io retains Accept-Language + cookie-based detection.
+    // Cookie must be valid for the current brand — a leftover `en-GB` from clicking
+    // the language switcher on kaitu.io would otherwise bounce the user off-domain.
+    const allowedSet = new Set<string>(brand.allowedLocales);
     const preferredLocale = request.cookies.get('preferredLocale')?.value;
-    if (preferredLocale && routing.locales.includes(preferredLocale as Locale)) {
-      return NextResponse.redirect(new URL(`/${preferredLocale}`, request.url));
+    if (preferredLocale && allowedSet.has(preferredLocale)) {
+      const response = NextResponse.redirect(new URL(`/${preferredLocale}`, request.url));
+      response.headers.set('Cache-Control', 'private, no-store, must-revalidate');
+      return response;
     }
 
     const acceptLanguage = request.headers.get('accept-language');
     const detectedLocale = getBestLocale(acceptLanguage, brand.allowedLocales);
 
     const response = NextResponse.redirect(new URL(`/${detectedLocale}`, request.url));
+    // The redirect target depends on Accept-Language + cookies; must not be publicly
+    // cached or CloudFront pins one PoP-wide answer for everybody.
+    response.headers.set('Cache-Control', 'private, no-store, must-revalidate');
 
-    // Set a cookie to indicate first visit for language detection
     if (!request.cookies.get('hasVisited')) {
       response.cookies.set('hasVisited', 'true', {
         httpOnly: false,
