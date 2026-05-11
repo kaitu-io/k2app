@@ -180,8 +180,12 @@ func (e *Engine) Start(cfg Config) error {
 	// 1. Rule bundles: ensure on disk before building the rule engine.
 	// Cold start: downloads the tarball from DefaultSources (up to 10s
 	// hard timeout). Warm cache: ~microsecond mtime check, no HTTP.
-	// Failure here is fatal to Start — routes=0 would otherwise lead to
-	// a silent all-direct downgrade.
+	//
+	// If fresh download fails but a stale .k2b is already on disk (from a prior
+	// successful connect), fall through to the stale cache — the background
+	// StartUpdater (started below) hot-reloads via rule.Engine.Reload() once
+	// a mirror becomes reachable. Only true cold-start with no bundles at all
+	// is fatal, preserving the routes=0 all-direct guard.
 	sources := client.RuleSources
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
@@ -195,14 +199,23 @@ func (e *Engine) Start(cfg Config) error {
 			"risk", "routes=0 cold-start bug may reappear if bundles absent")
 	} else {
 		ensureCtx, cancelEnsure := context.WithTimeout(ctx, 10*time.Second)
-		err := rule.EnsureBundles(ensureCtx, client.CacheDir, sources)
+		ensureErr := rule.EnsureBundles(ensureCtx, client.CacheDir, sources)
 		cancelEnsure()
-		if err != nil {
-			return e.fail(&EngineError{
-				Code:     ErrCodeRuleBundlesUnavailable,
-				Category: CategoryClient,
-				Message:  fmt.Sprintf("rule bundles unavailable: %v", err),
-			})
+		if ensureErr != nil {
+			existing, _ := rule.Load(client.CacheDir)
+			if len(existing) == 0 {
+				// True cold start: no disk cache to fall back to.
+				return e.fail(&EngineError{
+					Code:     ErrCodeRuleBundlesUnavailable,
+					Category: CategoryClient,
+					Message:  fmt.Sprintf("rule bundles unavailable: %v", ensureErr),
+				})
+			}
+			slog.Warn("DIAG: rule-bundle-stale",
+				"err", ensureErr.Error(),
+				"bundleCount", len(existing),
+				"cacheDir", client.CacheDir,
+			)
 		}
 	}
 

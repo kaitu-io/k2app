@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -1798,6 +1800,81 @@ func TestEngineStart_RuleBundlesUnavailable(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("handler never received the rule-bundles error; got errors=%v", errs)
+	}
+}
+
+// TestEngineStart_RuleBundlesStaleCacheFallback verifies that when fresh
+// rule bundle download fails but at least one stale .k2b is on disk, Engine.Start
+// MUST fall through to the stale cache instead of returning ErrCodeRuleBundlesUnavailable.
+// The background StartUpdater hot-reloads fresh bundles once a mirror becomes
+// reachable. Regression of this fallback would resurface support ticket #620 —
+// users with a working stale cache cannot connect when jsdelivr/GitHub mirrors
+// are blocked (common in China).
+func TestEngineStart_RuleBundlesStaleCacheFallback(t *testing.T) {
+	dir := t.TempDir()
+
+	// Pre-seed a valid .k2b on disk — mimics the state after a prior successful
+	// connect. bundles.version is intentionally absent, so isVersionFresh returns
+	// false and EnsureBundles will attempt (and fail) a download.
+	var buf bytes.Buffer
+	if err := rule.WriteBundle(&buf, []rule.BundleSet{
+		{Name: "overseas", DomainSuffixes: []string{"example.com"}},
+	}); err != nil {
+		t.Fatalf("WriteBundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "overseas.k2b"), buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write stale .k2b: %v", err)
+	}
+
+	// Capture slog to assert the DIAG event is emitted.
+	var records []slog.Record
+	var recMu sync.Mutex
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slogHandlerFunc(func(_ context.Context, r slog.Record) error {
+		recMu.Lock()
+		records = append(records, r)
+		recMu.Unlock()
+		return nil
+	})))
+	defer slog.SetDefault(prev)
+
+	client := &config.ClientConfig{
+		CacheDir:    dir,
+		RuleSources: []string{"http://127.0.0.1:1/"}, // connection refused — fast fail
+		Server:      "k2v5://udid:tok@127.0.0.1:65534?insecure=1",
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://udid:tok@127.0.0.1:65534?insecure=1", Match: rule.MatchConfig{All: true}},
+		},
+	}
+
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	err := e.Start(Config{Client: client, FileDescriptor: -1})
+	// Start may still fail later (wire dial to 127.0.0.1:65534 will be refused),
+	// but it MUST NOT be the rule-bundle gate.
+	if err != nil {
+		var engErr *EngineError
+		if errors.As(err, &engErr) && engErr.Code == ErrCodeRuleBundlesUnavailable {
+			t.Fatalf("regression: Start failed with ErrCodeRuleBundlesUnavailable=%d "+
+				"despite stale .k2b on disk; engine must fall through to stale cache. msg=%q",
+				ErrCodeRuleBundlesUnavailable, engErr.Message)
+		}
+	}
+
+	// DIAG event must be emitted for support visibility.
+	recMu.Lock()
+	defer recMu.Unlock()
+	var found bool
+	for _, r := range records {
+		if strings.Contains(r.Message, "DIAG: rule-bundle-stale") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected `DIAG: rule-bundle-stale` log when falling through to stale cache; got %d records", len(records))
 	}
 }
 

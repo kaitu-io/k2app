@@ -100,6 +100,7 @@ Reserved event names:
 | `DIAG: dns-proxy-recv-no-callback` | WARN | DNS response arrived after callback expired | server, queryID, domain, numCallbacks |
 | `DIAG: datagram-readloop-exit` | WARN | QUIC datagram read loop terminated | totalReceived, err |
 | `DIAG: subs-refresh-fail` | WARN | subscription background refresh failed | endpoint, err |
+| `DIAG: rule-bundle-stale` | WARN | engine.Start fell through to stale .k2b after fresh download failed | err, bundleCount, cacheDir |
 | `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
 | `DIAG: pipe-watchdog` | WARN | pipe() watchdog force-closed a stuck half-closed pipe | firstExitDir, graceMs |
 
