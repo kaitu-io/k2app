@@ -156,17 +156,25 @@ Manager (`/manager/*`), Payload (`/payload/*`), API (`/api/*`, `/app/*`), and th
 
 Add a single key `common.browserWarning.message` to all 7 locale files:
 
-| Locale | Message |
+| Locale | Message (with `{domain}` placeholder) |
 |---|---|
-| zh-CN | `⚠️ 您当前的浏览器可能影响登录和支付。如遇问题，请在 Chrome、Edge 或 Safari 中打开 kaitu.io。` |
-| zh-TW | `⚠️ 您目前的瀏覽器可能影響登入和付款。如遇問題，請使用 Chrome、Edge 或 Safari 開啟 kaitu.io。` |
-| zh-HK | `⚠️ 您目前的瀏覽器可能影響登入和付款。如遇問題，請使用 Chrome、Edge 或 Safari 開啟 kaitu.io。` |
-| en-US | `⚠️ The browser you're using may prevent login or checkout from working. If you hit a problem, open kaitu.io in Chrome, Edge, or Safari.` |
+| zh-CN | `⚠️ 您当前的浏览器可能影响登录和支付。如遇问题，请在 Chrome、Edge 或 Safari 中打开 {domain}。` |
+| zh-TW | `⚠️ 您目前的瀏覽器可能影響登入和付款。如遇問題，請使用 Chrome、Edge 或 Safari 開啟 {domain}。` |
+| zh-HK | `⚠️ 您目前的瀏覽器可能影響登入和付款。如遇問題，請使用 Chrome、Edge 或 Safari 開啟 {domain}。` |
+| en-US | `⚠️ The browser you're using may prevent login or checkout from working. If you hit a problem, open {domain} in Chrome, Edge, or Safari.` |
 | en-GB | (same as en-US) |
 | en-AU | (same as en-US) |
-| ja | `⚠️ お使いのブラウザでは、ログインや決済が正常に動作しない場合があります。問題が発生した場合は、Chrome、Edge、または Safari で kaitu.io を開いてください。` |
+| ja | `⚠️ お使いのブラウザでは、ログインや決済が正常に動作しない場合があります。問題が発生した場合は、Chrome、Edge、または Safari で {domain} を開いてください。` |
 
-Brand: Overleap copy reads the same English string — the domain reference can stay `kaitu.io` for Kaitu hosts; for Overleap hosts the message should say `overleap.app` instead. Resolve via the existing `brandFromHost`/`brand.baseUrl` indirection at component render time (read brand from a context if available, otherwise default to "this site" wording). **Implementation detail**: keep the spec minimal — the implementation plan will decide whether to inject brand at server level via a layout prop or do a `window.location.hostname` check client-side.
+Brand-aware domain: the message references a domain (`kaitu.io` / `overleap.app`). Use a single i18n key with an interpolated placeholder:
+
+```json
+"browserWarning": {
+  "message": "⚠️ ... 请在 Chrome、Edge 或 Safari 中打开 {domain}。"
+}
+```
+
+The layout (Server Component) computes the brand domain via the existing `brandFromHost(headers().get('host'))` helper and passes it as a prop to `<BrowserWarningBar brandDomain={brand.domain} />`. The component forwards it to `t('common.browserWarning.message', { domain: brandDomain })`. No client-side hostname inspection — the server already knows the brand.
 
 ### 5. Cleanup of existing WeChat code
 
