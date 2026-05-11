@@ -103,54 +103,57 @@ export default async function Home({
     { key: 'step3', number: '03', label: t('hero.onboarding.step3.label'), detail: t('hero.onboarding.step3.detail') },
   ];
 
-  const jsonLd = JSON.stringify([
-    {
-      '@context': 'https://schema.org',
-      '@type': 'SoftwareApplication',
-      name: `${brand.displayName} k2cc`,
-      applicationCategory: 'NetworkingApplication',
-      operatingSystem: 'Windows, macOS, iOS, Android, Linux',
-      description:
-        'ECH-based stealth tunnel protocol powered by k2cc adaptive rate control. QUIC+TCP-WS dual-stack transport with zero CT log exposure and one-command deployment.',
-      url: brand.baseUrl,
-      publisher: { '@type': 'Organization', name: brand.displayName, url: brand.baseUrl },
-      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-      featureList: [
-        'ECH (Encrypted Client Hello) stealth',
-        'QUIC + TCP-WebSocket dual-stack transport',
-        'k2cc adaptive rate control',
-        'Reverse proxy camouflage',
-        'Self-signed certificate + certificate pinning',
-        'Zero CT log exposure',
-        'One-command deployment',
-      ],
+  // Each schema.org entity is emitted as its own <script> tag.
+  // Reason: some third-party JSON-LD parsers (browser extensions, AI summarizers)
+  // assume the root of an ld+json blob is a single object and crash on a root array.
+  const softwareApplicationJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: `${brand.displayName} k2cc`,
+    applicationCategory: 'NetworkingApplication',
+    operatingSystem: 'Windows, macOS, iOS, Android, Linux',
+    description:
+      'ECH-based stealth tunnel protocol powered by k2cc adaptive rate control. QUIC+TCP-WS dual-stack transport with zero CT log exposure and one-command deployment.',
+    url: brand.baseUrl,
+    publisher: { '@type': 'Organization', name: brand.displayName, url: brand.baseUrl },
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    featureList: [
+      'ECH (Encrypted Client Hello) stealth',
+      'QUIC + TCP-WebSocket dual-stack transport',
+      'k2cc adaptive rate control',
+      'Reverse proxy camouflage',
+      'Self-signed certificate + certificate pinning',
+      'Zero CT log exposure',
+      'One-command deployment',
+    ],
+  };
+
+  const organizationJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: brand.displayName,
+    url: brand.baseUrl,
+    logo: `${brand.baseUrl}${brand.logoPath}`,
+    sameAs: ['https://github.com/getoverleap'],
+    contactPoint: {
+      '@type': 'ContactPoint',
+      email: brand.contactEmail,
+      contactType: 'customer support',
     },
-    {
-      '@context': 'https://schema.org',
-      '@type': 'Organization',
-      name: brand.displayName,
-      url: brand.baseUrl,
-      logo: `${brand.baseUrl}${brand.logoPath}`,
-      sameAs: ['https://github.com/getoverleap'],
-      contactPoint: {
-        '@type': 'ContactPoint',
-        email: brand.contactEmail,
-        contactType: 'customer support',
+  };
+
+  const faqPageJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: FAQ_ITEMS.map((item) => ({
+      '@type': 'Question',
+      name: t(`faq.items.${item}.question`),
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: t(`faq.items.${item}.answer`),
       },
-    },
-    {
-      '@context': 'https://schema.org',
-      '@type': 'FAQPage',
-      mainEntity: FAQ_ITEMS.map((item) => ({
-        '@type': 'Question',
-        name: t(`faq.items.${item}.question`),
-        acceptedAnswer: {
-          '@type': 'Answer',
-          text: t(`faq.items.${item}.answer`),
-        },
-      })),
-    },
-  ]);
+    })),
+  };
 
   return (
     <div className="min-h-screen text-foreground" style={{ backgroundColor: '#050508' }}>
@@ -158,7 +161,17 @@ export default async function Home({
       <script
         type="application/ld+json"
         suppressHydrationWarning
-        dangerouslySetInnerHTML={{ __html: jsonLd }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageJsonLd) }}
       />
       <Header />
       <HomeClient />

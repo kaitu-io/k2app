@@ -172,6 +172,17 @@ describe('test_homepage_json_ld', () => {
     const content = readWebFile('src/app/[locale]/page.tsx');
     expect(content).toContain('application/ld+json');
   });
+
+  // Regression guard for Sentry issue 7472882319: third-party JSON-LD parsers
+  // (browser extensions, AI summarizers) assume the root of an ld+json blob is
+  // a single object and crash on `parsed["@context"].toLowerCase()` when it's
+  // a root-level array. Emit one entity per <script> instead.
+  it('page.tsx emits each schema.org entity as a separate <script> (no root-array ld+json)', () => {
+    const content = readWebFile('src/app/[locale]/page.tsx');
+    expect(content).not.toMatch(/JSON\.stringify\(\s*\[/);
+    const scriptTags = content.match(/type="application\/ld\+json"/g) ?? [];
+    expect(scriptTags.length).toBeGreaterThanOrEqual(3);
+  });
 });
 
 describe('test_metadata_no_incorrect_descriptions', () => {

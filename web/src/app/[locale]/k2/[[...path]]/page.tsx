@@ -268,19 +268,24 @@ export default async function K2Page({
   };
 
   // The /k2/comparison aggregate page also emits FAQPage JSON-LD so AI search
-  // engines extract structured Q&A. JSON.stringify of an array emits valid
-  // multi-schema JSON-LD (Schema.org supports multiple @type objects on a page).
+  // engines extract structured Q&A. Each schema.org entity is rendered as its
+  // own <script> tag (rather than a JSON array root) so third-party parsers
+  // that assume a single-object root don't crash on @context lookup.
   const isComparison = slug === 'k2/comparison';
   const faqPage = isComparison ? buildComparisonFaqPage(locale, brand.baseUrl, pathname) : null;
-  const jsonLd = faqPage ? [techArticle, faqPage] : techArticle;
-
   // Content is Velite-processed Markdown (trusted build-time source)
   return (
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(techArticle) }}
       />
+      {faqPage && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPage) }}
+        />
+      )}
       <article className="prose max-w-none min-w-0 flex-1">
         <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-3 sm:mb-4">{post.title}</h1>
         {post.summary && (
