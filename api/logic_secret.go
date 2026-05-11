@@ -20,7 +20,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/kaitu-io/k2app/api/waymaker"
 	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -280,29 +279,10 @@ func GetCa(ctx context.Context) (certPEM, keyPEM []byte, err error) {
 	return certPEM, keyPEM, nil
 }
 
-// GetDomainCert generates domain certificate and private key on demand
-// Default uses k2 protocol's ECDSA CA signature
+// GetDomainCert generates domain certificate and private key on demand using
+// the k2 protocol's ECDSA CA signature.
 func GetDomainCert(ctx context.Context, domain string, _ bool) (certPEM, keyPEM []byte, err error) {
-	return GetDomainCertForProtocol(ctx, domain, TunnelProtocolK2)
-}
-
-// GetDomainCertForProtocol 根据协议即时生成域名证书和私钥
-// k2wss 协议：使用 golang ECDSA CA 签名
-// k2oc 协议：使用 certtool (GnuTLS) RSA CA 签名（与 wgcenter 一致）
-func GetDomainCertForProtocol(ctx context.Context, domain string, protocol TunnelProtocol) (certPEM, keyPEM []byte, err error) {
-	// k2oc 协议使用 waymaker certtool 签名
-	if protocol == TunnelProtocolK2OC {
-		log.Infof(ctx, "generating domain cert for %s using certtool (k2oc)", domain)
-		keyStr, certStr, err := waymaker.KeyPairOfDomain(ctx, domain)
-		if err != nil {
-			log.Errorf(ctx, "failed to generate cert for %s: %v", domain, err)
-			return nil, nil, err
-		}
-		return []byte(certStr), []byte(keyStr), nil
-	}
-
-	// k2wss 及其他协议使用 golang ECDSA CA 签名
-	log.Infof(ctx, "generating domain cert for %s using ECDSA CA (k2wss)", domain)
+	log.Infof(ctx, "generating domain cert for %s using ECDSA CA", domain)
 
 	// 生成域名私钥
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

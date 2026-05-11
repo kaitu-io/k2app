@@ -54,7 +54,6 @@ Required:
 ```
 cmd/                 CLI entry point (start, stop, migrate, health-check, user management)
 cloudprovider/       Multi-cloud VPS management (5 providers + SSH standalone)
-waymaker/            Legacy k2oc protocol support (embedded CA certs)
 templates/           Embedded templates (docker-compose, init-node.sh)
 ```
 

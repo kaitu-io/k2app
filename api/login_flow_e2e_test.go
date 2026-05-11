@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -425,3 +426,197 @@ func TestE2E_AuthenticationPriority(t *testing.T) {
 // =====================================================================
 // Test 6: Database State Verification
 // Note: SendCodeResponse type is defined in type.go
+
+// TestE2E_LoginFlow_WithUnicodeWhitespace is the regression test for the
+// 2026-05-02 prod incident: validator.v10's `email` tag let an email containing
+// U+2006 SIX-PER-EM SPACE through into the SMTP path; SMTP rejected it as a
+// 500 Bad request, blocking the user's verification code 5 retries in a row.
+//
+// This test proves the fix is consistent across send-code AND web-login: if
+// sanitization were applied to one endpoint but not the other, the user-lookup
+// hash would differ between the two paths and login would fail with "user not
+// found" even after the code was successfully sent. A green test = both
+// endpoints clean the email identically before hashing.
+func TestE2E_LoginFlow_WithUnicodeWhitespace(t *testing.T) {
+	skipIfNoDB(t)
+	r := SetupTestRouter()
+
+	EnableMockVerificationCode = true
+	defer func() { EnableMockVerificationCode = false }()
+
+	// Same byte sequence as the prod log: U+2006 inside the domain.
+	dirtyEmail := "u2006-regression@gmail.co m"
+	cleanEmail := "u2006-regression@gmail.com"
+
+	t.Run("send_code_accepts_dirty_email", func(t *testing.T) {
+		w := NewTestRequest("POST", "/api/auth/code").
+			WithBody(map[string]string{"email": dirtyEmail}).
+			Execute(r)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		assert.Equal(t, 0, resp.Code,
+			"send_code should sanitize U+2006 and succeed; got message: %s", resp.Message)
+	})
+
+	t.Run("web_login_with_dirty_email_finds_same_user", func(t *testing.T) {
+		w := NewTestRequest("POST", "/api/auth/web-login").
+			WithBody(map[string]string{
+				"email":            dirtyEmail,
+				"verificationCode": MockVerificationCode,
+			}).
+			Execute(r)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		assert.Equal(t, 0, resp.Code,
+			"web-login with the same dirty email must hash to the same user record; got message: %s", resp.Message)
+	})
+
+	t.Run("web_login_with_clean_email_finds_same_user", func(t *testing.T) {
+		// Re-send a code (the previous login consumed it) using the CLEAN form
+		// and log in — confirms send-code(dirty) and login(clean) converge on
+		// the same indexID.
+		w := NewTestRequest("POST", "/api/auth/code").
+			WithBody(map[string]string{"email": cleanEmail}).
+			Execute(r)
+		require.Equal(t, http.StatusOK, w.Code)
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		require.Equal(t, 0, resp.Code, "send_code clean form should succeed")
+
+		w = NewTestRequest("POST", "/api/auth/web-login").
+			WithBody(map[string]string{
+				"email":            cleanEmail,
+				"verificationCode": MockVerificationCode,
+			}).
+			Execute(r)
+		assert.Equal(t, http.StatusOK, w.Code)
+		resp, err = ParseResponse(w)
+		require.NoError(t, err)
+		assert.Equal(t, 0, resp.Code, "login with clean form must find the same user; got: %s", resp.Message)
+	})
+
+	t.Run("send_code_rejects_unsalvageable_input", func(t *testing.T) {
+		// A whitespace-only email cleans to "" which net/mail rejects.
+		w := NewTestRequest("POST", "/api/auth/code").
+			WithBody(map[string]string{"email": "   "}).
+			Execute(r)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		assert.Equal(t, int(ErrorInvalidArgument), resp.Code,
+			"empty/whitespace email must be rejected with 422")
+	})
+}
+
+// TestE2E_HardDelete_FreesEmailSlot is the regression test for the 2026-05-02
+// prod incident where admin tried to update a user's email to a value that had
+// previously belonged to a "hard-deleted" account. The deletion was actually a
+// GORM soft delete, and login_identifies' (type, index_id) unique index didn't
+// include deleted_at, so the soft-deleted row permanently occupied the slot
+// and triggered MariaDB error 1062 on every reuse attempt.
+//
+// The fix removed gorm.DeletedAt from LoginIdentify so all deletes are
+// physical. This test exercises the full cycle:
+//
+//  1. Register user A with a unique email
+//  2. Hard-delete user A via the approval callback (executes the same code
+//     path the admin tool uses)
+//  3. Register user B with the same email
+//  4. Assert user B is a fresh row and no orphan login_identifies blocks it
+func TestE2E_HardDelete_FreesEmailSlot(t *testing.T) {
+	skipIfNoDB(t)
+	r := SetupTestRouter()
+
+	EnableMockVerificationCode = true
+	defer func() { EnableMockVerificationCode = false }()
+
+	testEmail := "hard-delete-slot-test@example.com"
+
+	indexID := secretHashIt(context.Background(), []byte(testEmail))
+	cleanup := func() {
+		// belt-and-suspenders: ensure no leftover rows from previous test runs
+		db.Get().Where("type = ? AND index_id = ?", "email", indexID).Delete(&LoginIdentify{})
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	// Step 1: register user A by sending code + logging in.
+	{
+		w := NewTestRequest("POST", "/api/auth/code").
+			WithBody(map[string]string{"email": testEmail}).
+			Execute(r)
+		require.Equal(t, http.StatusOK, w.Code)
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		require.Equal(t, 0, resp.Code, "send_code (user A) should succeed: %s", resp.Message)
+
+		w = NewTestRequest("POST", "/api/auth/web-login").
+			WithBody(map[string]string{
+				"email":            testEmail,
+				"verificationCode": MockVerificationCode,
+			}).
+			Execute(r)
+		require.Equal(t, http.StatusOK, w.Code)
+		resp, err = ParseResponse(w)
+		require.NoError(t, err)
+		require.Equal(t, 0, resp.Code, "web-login (user A) should succeed: %s", resp.Message)
+	}
+
+	var userA User
+	require.NoError(t,
+		db.Get().Where("id IN (?)",
+			db.Get().Model(&LoginIdentify{}).Select("user_id").Where("type = ? AND index_id = ?", "email", indexID),
+		).First(&userA).Error,
+		"user A should be created and reachable via login_identifies",
+	)
+
+	// Step 2: hard-delete user A via the same callback the admin tool runs.
+	params, err := json.Marshal(HardDeleteUsersRequest{UserUUIDs: []string{userA.UUID}})
+	require.NoError(t, err)
+	require.NoError(t, executeApprovalUserHardDelete(context.Background(), params))
+
+	// Step 3: the (type, index_id) slot must now be free — no row, soft or hard.
+	var leftover int64
+	require.NoError(t,
+		db.Get().Model(&LoginIdentify{}).Where("type = ? AND index_id = ?", "email", indexID).Count(&leftover).Error,
+	)
+	assert.Equal(t, int64(0), leftover,
+		"hard delete must physically remove login_identifies; soft-deleted rows would block reuse")
+
+	// Step 4: register user B with the same email — must succeed end-to-end.
+	{
+		w := NewTestRequest("POST", "/api/auth/code").
+			WithBody(map[string]string{"email": testEmail}).
+			Execute(r)
+		require.Equal(t, http.StatusOK, w.Code)
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		require.Equal(t, 0, resp.Code,
+			"send_code (user B, same email after hard delete) must succeed: %s", resp.Message)
+
+		w = NewTestRequest("POST", "/api/auth/web-login").
+			WithBody(map[string]string{
+				"email":            testEmail,
+				"verificationCode": MockVerificationCode,
+			}).
+			Execute(r)
+		require.Equal(t, http.StatusOK, w.Code)
+		resp, err = ParseResponse(w)
+		require.NoError(t, err)
+		require.Equal(t, 0, resp.Code,
+			"web-login (user B) must succeed: %s", resp.Message)
+	}
+
+	var userB User
+	require.NoError(t,
+		db.Get().Where("id IN (?)",
+			db.Get().Model(&LoginIdentify{}).Select("user_id").Where("type = ? AND index_id = ?", "email", indexID),
+		).First(&userB).Error,
+	)
+	assert.NotEqual(t, userA.ID, userB.ID, "user B should be a fresh row, not user A")
+}

@@ -4,8 +4,10 @@ package center
 import (
 	"fmt"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
@@ -28,6 +30,39 @@ func api_send_auth_code(c *gin.Context) {
 	sendCodeWithMode(c, false) // 统一不要求用户存在，自动创建
 }
 
+// sanitizeEmail strips all whitespace (including non-ASCII like U+2006) and
+// re-validates with net/mail. validator.v10's `email` tag uses an ASCII-only
+// regex and lets non-ASCII whitespace through into the SMTP path; this helper
+// is the second line of defense.
+func sanitizeEmail(raw string) (string, error) {
+	cleaned := strings.ToLower(strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, raw))
+	if _, err := mail.ParseAddress(cleaned); err != nil {
+		return "", err
+	}
+	return cleaned, nil
+}
+
+// cleanEmailField sanitizes an email pointer in place and emits an audit log
+// when sanitization actually changed the value. Used by all auth handlers that
+// take a user-supplied email so that fixes like "strip U+2006" stay consistent
+// across send-code, login, web-login, and password-login.
+func cleanEmailField(c *gin.Context, email *string) error {
+	cleaned, err := sanitizeEmail(*email)
+	if err != nil {
+		return err
+	}
+	if cleaned != *email {
+		log.Infof(c, "sanitized email input: %q -> %q", *email, cleaned)
+	}
+	*email = cleaned
+	return nil
+}
+
 // sendCodeWithMode 发送验证码的内部实现
 func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 	var req SendAuthCodeRequest
@@ -36,7 +71,11 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 		Error(c, ErrorInvalidArgument, err.Error())
 		return
 	}
-	req.Email = strings.ToLower(req.Email)
+	if err := cleanEmailField(c, &req.Email); err != nil {
+		log.Warnf(c, "invalid email format after sanitization: %v", err)
+		Error(c, ErrorInvalidArgument, "invalid email format")
+		return
+	}
 
 	log.Infof(c, "request to send auth code to email: %s, userExistRequired: %v", req.Email, userExistRequired)
 	indexID := secretHashIt(c, []byte(req.Email))
@@ -145,7 +184,11 @@ func api_login(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, err.Error())
 		return
 	}
-	req.Email = strings.ToLower(req.Email)
+	if err := cleanEmailField(c, &req.Email); err != nil {
+		log.Warnf(c, "invalid email format on login: %v", err)
+		Error(c, ErrorInvalidArgument, "invalid email format")
+		return
+	}
 	log.Infof(c, "login request from email: %s, udid: %s", req.Email, req.UDID)
 
 	indexID := secretHashIt(c, []byte(req.Email))
@@ -420,7 +463,11 @@ func api_web_auth(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, err.Error())
 		return
 	}
-	req.Email = strings.ToLower(req.Email)
+	if err := cleanEmailField(c, &req.Email); err != nil {
+		log.Warnf(c, "invalid email format on web login: %v", err)
+		Error(c, ErrorInvalidArgument, "invalid email format")
+		return
+	}
 	log.Infof(c, "web login request from email: %s", req.Email)
 
 	indexID := secretHashIt(c, []byte(req.Email))
@@ -662,7 +709,11 @@ func api_password_login(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, err.Error())
 		return
 	}
-	req.Email = strings.ToLower(req.Email)
+	if err := cleanEmailField(c, &req.Email); err != nil {
+		log.Warnf(c, "invalid email format on password login: %v", err)
+		Error(c, ErrorInvalidArgument, "invalid email format")
+		return
+	}
 	log.Infof(c, "password login request from email: %s, udid: %s", hideEmail(req.Email), req.UDID)
 
 	indexID := secretHashIt(c, []byte(req.Email))

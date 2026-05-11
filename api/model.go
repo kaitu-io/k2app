@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-crypt/crypt"
-	"github.com/go-crypt/crypt/algorithm/pbkdf2"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/util"
 	"golang.org/x/crypto/bcrypt"
@@ -123,16 +121,21 @@ func (u *User) GetDelegatedUsers() ([]User, error) {
 }
 
 // LoginIdentify 登录身份识别模型
+//
+// No soft delete: this is an auth lookup table mapping (type, hashed value) to
+// user_id. Soft-deleted rows occupied the (type, index_id) unique slot forever,
+// blocking email reuse after account deletion (prod incident 2026-05-02). All
+// deletes are physical so the slot is freed immediately. Audit trail lives on
+// the User row's DeletedAt.
 type LoginIdentify struct {
 	ID             uint64 `gorm:"primarykey"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
-	DeletedAt      gorm.DeletedAt `gorm:"index"`
-	UserID         uint64         `gorm:"not null;index"`
-	Type           string         `gorm:"type:varchar(50);not null;default:'email';uniqueIndex:idx_type_index_global"`
-	IndexID        string         `gorm:"type:varchar(128);not null;uniqueIndex:idx_type_index_global"`
-	EncryptedValue string         `gorm:"type:varchar(5000);not null"`
-	User           *User          `gorm:"foreignKey:UserID"`
+	UserID         uint64 `gorm:"not null;index"`
+	Type           string `gorm:"type:varchar(50);not null;default:'email';uniqueIndex:idx_type_index_global"`
+	IndexID        string `gorm:"type:varchar(128);not null;uniqueIndex:idx_type_index_global"`
+	EncryptedValue string `gorm:"type:varchar(5000);not null"`
+	User           *User  `gorm:"foreignKey:UserID"`
 }
 
 // Device 设备模型
@@ -147,9 +150,6 @@ type Device struct {
 	TokenIssueAt    int64  `gorm:"not null"`
 	TokenLastUsedAt int64  `gorm:"not null"`
 
-	// 设备密码（用于 k2oc 协议认证）
-	PasswordHash string `gorm:"type:varchar(255)"` // 设备密码哈希
-
 	// App 版本信息（从 X-K2-Client header 解析）
 	AppVersion  string `gorm:"type:varchar(32)"` // 应用版本，如 "0.4.0-beta.1"
 	AppPlatform string `gorm:"type:varchar(20)"` // 运行平台，如 "macos", "windows", "linux", "ios", "android"
@@ -161,24 +161,6 @@ type Device struct {
 
 	// 路由器标识
 	IsGateway bool `gorm:"not null;default:false;index:idx_user_gateway,priority:2" json:"isGateway"` // 是否为路由器/网关设备
-}
-
-func PasswordHash(password string) (string, error) {
-	hash, err := pbkdf2.NewSHA256()
-	if err != nil {
-		return "", err
-	}
-
-	digest, err := hash.Hash(password)
-	if err != nil {
-		return "", err
-	}
-	return digest.Encode(), nil
-}
-
-func PasswordVerify(password string, passwordHashed string) bool {
-	ok, err := crypt.CheckPassword(password, passwordHashed)
-	return ok && err == nil
 }
 
 // UserPasswordHash hashes a user password using bcrypt
@@ -448,7 +430,6 @@ const (
 	TunnelProtocolK2V4  TunnelProtocol = "k2v4"  // K2 protocol version 4 (QUIC, recommended)
 	TunnelProtocolK2V5  TunnelProtocol = "k2v5"  // K2 protocol version 5 (QUIC+ECH, front-door forwarding)
 	TunnelProtocolK2WSS TunnelProtocol = "k2wss" // K2WSS protocol (WebSocket, legacy)
-	TunnelProtocolK2OC  TunnelProtocol = "k2oc"  // K2OC protocol (OpenConnect, WayMaker compatible)
 )
 
 // SlaveNode 物理节点模型
@@ -486,7 +467,7 @@ type SlaveTunnel struct {
 	// Can be removed with a DB migration in a future version.
 	SecretToken string         `gorm:"type:varchar(64);not null"`
 	Name        string         `gorm:"type:varchar(255);not null"`            // Tunnel name
-	Protocol     TunnelProtocol `gorm:"type:varchar(10);not null;default:'k2v4'"` // Tunnel protocol (k2v4, k2wss, k2oc)
+	Protocol     TunnelProtocol `gorm:"type:varchar(10);not null;default:'k2v4'"` // Tunnel protocol (k2v4, k2v5, k2wss)
 	Port         int64          `gorm:"not null;default:10001"`                 // Tunnel port
 	HopPortStart int64          `gorm:"not null;default:0"`                     // Port hopping range start (0 = disabled)
 	HopPortEnd   int64          `gorm:"not null;default:0"`                     // Port hopping range end (0 = disabled)

@@ -230,7 +230,7 @@ func TestMockDB_LoginIdentify_Operations(t *testing.T) {
 			1, "email", "hashed-email-index", "encrypted-email-value",
 		)
 
-		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `login_identifies` WHERE (type = ? AND index_id = ?) AND `login_identifies`.`deleted_at` IS NULL ORDER BY `login_identifies`.`id` LIMIT ?")).
+		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `login_identifies` WHERE type = ? AND index_id = ? ORDER BY `login_identifies`.`id` LIMIT ?")).
 			WithArgs("email", "hashed-email-index", 1).
 			WillReturnRows(rows)
 
@@ -350,7 +350,7 @@ func TestMockDB_Preload(t *testing.T) {
 			1, "email", "hash-index", "encrypted-value",
 		)
 
-		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `login_identifies` WHERE (type = ? AND index_id = ?) AND `login_identifies`.`deleted_at` IS NULL ORDER BY `login_identifies`.`id` LIMIT ?")).
+		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `login_identifies` WHERE type = ? AND index_id = ? ORDER BY `login_identifies`.`id` LIMIT ?")).
 			WithArgs("email", "hash-index", 1).
 			WillReturnRows(identifyRows)
 
@@ -674,7 +674,7 @@ func TestMockDB_StructQuery(t *testing.T) {
 		)
 
 		// GORM wraps struct conditions in parentheses
-		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `login_identifies` WHERE (`login_identifies`.`type` = ? AND `login_identifies`.`index_id` = ?) AND `login_identifies`.`deleted_at` IS NULL ORDER BY `login_identifies`.`id` LIMIT ?")).
+		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `login_identifies` WHERE `login_identifies`.`type` = ? AND `login_identifies`.`index_id` = ? ORDER BY `login_identifies`.`id` LIMIT ?")).
 			WithArgs("email", "test-index", 1).
 			WillReturnRows(rows)
 

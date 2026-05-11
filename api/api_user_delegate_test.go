@@ -49,7 +49,7 @@ func TestGetDelegate_NotSet(t *testing.T) {
 func TestGetDelegate_Set_DBQuery(t *testing.T) {
 	m := SetupMockDB(t)
 
-	m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `login_identifies` WHERE (user_id = ? AND type = ?) AND `login_identifies`.`deleted_at` IS NULL ORDER BY `login_identifies`.`id` LIMIT ?")).
+	m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `login_identifies` WHERE user_id = ? AND type = ? ORDER BY `login_identifies`.`id` LIMIT ?")).
 		WithArgs(uint64(99), "email", 1).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "created_at", "updated_at", "deleted_at",

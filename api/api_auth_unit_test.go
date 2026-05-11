@@ -64,6 +64,18 @@ func TestAuthCode_EmailValidation(t *testing.T) {
 			expectCode:  422,
 			expectError: true,
 		},
+		{
+			name:        "Email with ASCII internal space",
+			body:        map[string]interface{}{"email": "user@gmail.co m"},
+			expectCode:  422,
+			expectError: true,
+		},
+		{
+			name:        "Email that is only whitespace",
+			body:        map[string]interface{}{"email": "   "},
+			expectCode:  422,
+			expectError: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -84,6 +96,44 @@ func TestAuthCode_EmailValidation(t *testing.T) {
 						"Expected error code %d for %s", tc.expectCode, tc.name)
 				}
 			}
+		})
+	}
+}
+
+// TestSanitizeEmail verifies the email cleanup helper that defends against
+// non-ASCII whitespace bypassing validator.v10's `email` tag.
+//
+// Production regression (2026-05-02): user "chengpaul987" submitted an email
+// with U+2006 SIX-PER-EM SPACE inside the domain. validator's regex let it
+// through and SMTP relay rejected it as a 500 Bad request, blocking 5 retries.
+func TestSanitizeEmail(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		want      string
+		wantError bool
+	}{
+		{name: "plain valid", input: "user@example.com", want: "user@example.com"},
+		{name: "uppercase normalized", input: "USER@EXAMPLE.COM", want: "user@example.com"},
+		{name: "trailing ASCII space", input: "user@example.com ", want: "user@example.com"},
+		{name: "leading ASCII space", input: " user@example.com", want: "user@example.com"},
+		{name: "internal U+2006 (prod regression)", input: "chengpaul987@gmail.co\u2006m", want: "chengpaul987@gmail.com"},
+		{name: "internal NBSP (U+00A0)", input: "user@gmail.co\u00a0m", want: "user@gmail.com"},
+		{name: "tab + newline", input: "user@\texample.com\n", want: "user@example.com"},
+		{name: "empty after strip", input: "   ", wantError: true},
+		{name: "missing @", input: "not-an-email", wantError: true},
+		{name: "missing domain", input: "user@", wantError: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := sanitizeEmail(tc.input)
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }

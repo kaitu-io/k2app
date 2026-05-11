@@ -24,11 +24,6 @@ func TestTunnelProtocolK2V5_Constant(t *testing.T) {
 			"TunnelProtocolK2V5 must be distinct from TunnelProtocolK2V4")
 	})
 
-	t.Run("k2v5 constant is distinct from k2oc", func(t *testing.T) {
-		assert.NotEqual(t, TunnelProtocolK2OC, TunnelProtocolK2V5,
-			"TunnelProtocolK2V5 must be distinct from TunnelProtocolK2OC")
-	})
-
 	t.Run("k2v5 protocol can be stored in SlaveTunnel struct", func(t *testing.T) {
 		tunnel := SlaveTunnel{Protocol: TunnelProtocolK2V5}
 		require.Equal(t, TunnelProtocolK2V5, tunnel.Protocol,
@@ -62,19 +57,6 @@ func TestTunnelProtocolK2V5_BackwardCompatibility(t *testing.T) {
 	t.Run("k2v5 request returns only k2v5", func(t *testing.T) {
 		protocols := tunnelProtocolsForQuery(TunnelProtocolK2V5)
 		assert.Equal(t, []TunnelProtocol{TunnelProtocolK2V5}, protocols)
-	})
-
-	t.Run("k2oc request returns only k2oc", func(t *testing.T) {
-		protocols := tunnelProtocolsForQuery(TunnelProtocolK2OC)
-		assert.Equal(t, []TunnelProtocol{TunnelProtocolK2OC}, protocols)
-	})
-
-	t.Run("k2-family query sets never include k2oc", func(t *testing.T) {
-		for _, p := range []TunnelProtocol{TunnelProtocolK2, TunnelProtocolK2V4, TunnelProtocolK2WSS} {
-			protocols := tunnelProtocolsForQuery(p)
-			assert.NotContains(t, protocols, TunnelProtocolK2OC,
-				"%s query set must not contain k2oc", p)
-		}
 	})
 }
 

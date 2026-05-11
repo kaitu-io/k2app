@@ -12,6 +12,24 @@ import (
 func Migrate() error {
 	ctx := context.Background()
 	log.Infof(ctx, "start migrating database...")
+
+	// Legacy cleanup: LoginIdentify previously used gorm.DeletedAt; soft-deleted
+	// rows occupied the (type, index_id) unique slot forever and blocked email
+	// reuse after account deletion (prod incident 2026-05-02). The DeletedAt
+	// field has been removed; physically purge any leftover soft-deleted rows
+	// before AutoMigrate so they don't reappear as "active" rows under the new
+	// query semantics. Idempotent — empty tables return RowsAffected=0.
+	if database := db.Get(); database != nil {
+		result := database.Exec("DELETE FROM login_identifies WHERE deleted_at IS NOT NULL")
+		if result.Error != nil {
+			log.Errorf(ctx, "failed to purge soft-deleted login_identifies: %v", result.Error)
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			log.Infof(ctx, "purged %d legacy soft-deleted login_identifies rows", result.RowsAffected)
+		}
+	}
+
 	err := db.Get().AutoMigrate(
 		&Plan{},
 		&User{},

@@ -1,8 +1,6 @@
 package center
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -100,18 +98,17 @@ func api_admin_issue_test_token(c *gin.Context) {
 	now := time.Now()
 	tokenIssueAt := now.Unix()
 
-	// 生成 token 和密码（传入用户角色）
-	tokenResp, err := generateDeviceTokenWithPassword(c, user.ID, device.UDID, tokenIssueAt, user.Roles)
+	// 生成 token（传入用户角色）
+	tokenResp, err := generateDeviceToken(c, user.ID, device.UDID, tokenIssueAt, user.Roles)
 	if err != nil {
 		log.Errorf(c, "Failed to generate device token: %v", err)
 		Error(c, ErrorSystemError, "failed to generate device token")
 		return
 	}
 
-	// 更新设备的 TokenIssueAt 和 PasswordHash
+	// 更新设备的 TokenIssueAt
 	device.TokenIssueAt = tokenIssueAt
 	device.TokenLastUsedAt = now.Unix()
-	device.PasswordHash = tokenResp.passwordHash // 内部字段，不返回给前端
 	if err := db.Get().Save(&device).Error; err != nil {
 		log.Errorf(c, "Failed to update device: %v", err)
 		Error(c, ErrorSystemError, "failed to update device")
@@ -124,24 +121,19 @@ func api_admin_issue_test_token(c *gin.Context) {
 		RefreshToken: tokenResp.RefreshToken,
 		IssuedAt:     tokenResp.IssuedAt,
 		ExpiresIn:    tokenResp.ExpiresIn,
-		Password:     tokenResp.Password,
 	})
 	WriteAuditLog(c, "user_issue_test_token", "user", userUUID, nil)
 }
 
-// deviceTokenResult 内部结构，包含密码哈希
 type deviceTokenResult struct {
 	AccessToken  string
 	RefreshToken string
 	IssuedAt     int64
 	ExpiresIn    int64
-	Password     string // 密码 = AccessToken 的 MD5
-	passwordHash string // 密码哈希（内部使用）
 }
 
-// generateDeviceTokenWithPassword 生成设备 token 和密码
-// 密码 = AccessToken 的 MD5 (32位)
-func generateDeviceTokenWithPassword(ctx *gin.Context, userID uint64, deviceID string, tokenIssueAt int64, roles uint64) (*deviceTokenResult, error) {
+// generateDeviceToken 生成设备 access + refresh token
+func generateDeviceToken(ctx *gin.Context, userID uint64, deviceID string, tokenIssueAt int64, roles uint64) (*deviceTokenResult, error) {
 	jwtConfig := configJwt(ctx)
 	jwtSecret := []byte(jwtConfig.Secret)
 
@@ -178,28 +170,10 @@ func generateDeviceTokenWithPassword(ctx *gin.Context, userID uint64, deviceID s
 		return nil, err
 	}
 
-	// 生成密码 = AccessToken 的 MD5
-	password := md5Hash(accessToken)
-
-	// 计算密码哈希用于存储
-	passwordHash, err := PasswordHash(password)
-	if err != nil {
-		return nil, err
-	}
-
 	return &deviceTokenResult{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		IssuedAt:     tokenIssueAt,
 		ExpiresIn:    accessExp,
-		Password:     password,
-		passwordHash: passwordHash,
 	}, nil
-}
-
-// md5Hash 计算字符串的 MD5 哈希（32位小写十六进制）
-func md5Hash(s string) string {
-	h := md5.New()
-	h.Write([]byte(s))
-	return hex.EncodeToString(h.Sum(nil))
 }
