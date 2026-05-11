@@ -176,25 +176,47 @@ Brand-aware domain: the message references a domain (`kaitu.io` / `overleap.app`
 
 The layout (Server Component) computes the brand domain via the existing `brandFromHost(headers().get('host'))` helper and passes it as a prop to `<BrowserWarningBar brandDomain={brand.domain} />`. The component forwards it to `t('common.browserWarning.message', { domain: brandDomain })`. No client-side hostname inspection — the server already knows the brand.
 
-### 5. Cleanup of existing WeChat code
+### 5. Cleanup of existing WeChat-browser code — single source of truth
 
-Delete:
+The new bar must be the **only** WeChat / in-app-webview detection path. After this work, `grep -ri "WeChatBrowserGuide\|isWeChatAndroid\|wechatGuide" web/src web/messages` must return zero matches.
 
-- `src/components/WeChatBrowserGuide.tsx`
-- `src/components/__tests__/WeChatBrowserGuide.test.tsx`
-- `src/app/[locale]/purchase/__tests__/PurchaseClient.wechat-gate.test.tsx`
-- `isWeChatAndroid` function + its test block in `src/lib/__tests__/device-detection.test.ts` (keep `shouldShowMacOS11Notice` and the rest of device-detection)
+**Delete entire files:**
 
-Edit `src/app/[locale]/purchase/PurchaseClient.tsx`:
+- `web/src/components/WeChatBrowserGuide.tsx`
+- `web/src/components/__tests__/WeChatBrowserGuide.test.tsx`
+- `web/src/app/[locale]/purchase/__tests__/PurchaseClient.wechat-gate.test.tsx`
 
-- Remove `isWeChatAndroid` import (line 9)
-- Remove `WeChatBrowserGuide` import (line 10)
-- Remove `showWeChatGuide` state and effect (lines 99-103)
-- Remove the early-return at lines 525-526
+**Edit `web/src/lib/device-detection.ts`:**
 
-Remove i18n keys `purchase.wechatGuide.*` from all 7 locale JSON files.
+- Delete the `isWeChatAndroid` function and its block comment (lines 189-201 of current file).
+- Keep everything else: `DeviceInfo`, `DeviceType`, `detectDevice`, `getPrimaryDownloadLink`, `hasAvailableDownload`, `getAlternativeDownloads`, `shouldShowMacOS11Notice`, `triggerDownload`, `triggerAutoDownload`, `openDownloadInNewTab`. These are unrelated (download routing + macOS-version disclaimer).
 
-`src/lib/device-detection.ts` keeps everything except `isWeChatAndroid`. The new `browser-detection.ts` is a separate module — it does not absorb `detectDevice()` / `shouldShowMacOS11Notice()`, which serve different purposes (download routing, version disclaimer).
+**Edit `web/src/lib/__tests__/device-detection.test.ts`:**
+
+- Delete the `WECHAT_ANDROID_UAS` const, the `NON_WECHAT_ANDROID_UAS` const, and all three `describe('isWeChatAndroid ...')` blocks.
+- Update the import line to drop `isWeChatAndroid`; keep `shouldShowMacOS11Notice` and any remaining exports under test.
+
+**Edit `web/src/app/[locale]/purchase/PurchaseClient.tsx`:**
+
+- Drop the `isWeChatAndroid` import (line 9) and the `WeChatBrowserGuide` import (line 10).
+- Drop the `showWeChatGuide` state, the `useEffect` that sets it, and the comment above (lines 99-103).
+- Drop the early-return `if (showWeChatGuide) return <WeChatBrowserGuide />` (lines 525-526).
+
+**Edit i18n** (all 7 locale files):
+
+- Remove the `wechatGuide` block under `purchase` in `web/messages/{locale}/purchase.json`. (Block starts at line 106 in current zh-CN/en-US.)
+
+**Explicitly out of scope — DO NOT touch.** These contain the word "WeChat" or "微信" for unrelated reasons; modifying them would be incorrect:
+
+| Path | Why it stays |
+|---|---|
+| `web/src/lib/api.ts` `ContactType = 'wechat' \| ...` and related code paths | Admin contact-type for retailer CRM. Unrelated to browser detection. |
+| `web/src/app/(manager)/manager/users/detail/page.tsx` `<option value="wechat">微信</option>` | Same — admin UI for contact info. |
+| `web/src/lib/__tests__/api.test.ts` cases for `'wechat'` ContactType | Tests for the admin contact feature. |
+| `web/messages/{locale}/guide-parents.json` `wechatPay` keys | Onboarding tip about WeChat Pay payment method. Not browser. |
+| `web/messages/{locale}/hero.json` "WeChat Pay" payment-method mentions | Marketing copy about accepted payment methods. Not browser. |
+
+The new `browser-detection.ts` module is **separate** from `device-detection.ts`. Do not merge them — they have different responsibilities (browser-family allowlist vs OS/device routing) and merging would create the same multi-truth coupling we're cleaning up.
 
 ### 6. Tests
 
