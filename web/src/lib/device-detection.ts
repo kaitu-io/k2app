@@ -187,7 +187,6 @@ export async function shouldShowMacOS11Notice(): Promise<boolean> {
   return true;
 }
 
-
 /**
  * Trigger automatic download for supported browsers
  */
