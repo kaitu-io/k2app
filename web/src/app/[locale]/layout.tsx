@@ -16,8 +16,11 @@ import { generateMetadata as generatePageMetadata } from './metadata';
 import { Metadata } from 'next';
 import { Suspense } from 'react';
 import { Inter, JetBrains_Mono } from "next/font/google";
+import Script from 'next/script';
 import ChatwootWidget from '@/components/ChatwootWidget';
 import "../globals.css";
+
+const GA_MEASUREMENT_ID = 'G-EH2PY4S0CX';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -65,6 +68,18 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} data-brand={brand.id} suppressHydrationWarning>
       <body className={`${inter.className} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${GA_MEASUREMENT_ID}');
+          `}
+        </Script>
         <NextIntlClientProvider messages={messages}>
           <LocaleProvider locale={locale}>
             <BrandProvider brand={brand}>
