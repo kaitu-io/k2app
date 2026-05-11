@@ -12,7 +12,7 @@ export const feedbackTicketTools: ToolRegistration[] = [
   defineApiTool({
     name: 'query_feedback_tickets',
     description:
-      'Query user feedback tickets. Filter by UDID, email, user ID, status, or time range. Each ticket may have associated device logs (use feedback_id to cross-reference).',
+      'Query user feedback tickets. Filter by UDID, email, user ID, status, time range, or auto_generated flag. Each ticket may have associated device logs (use feedback_id to cross-reference). By default returns all tickets — pass auto_generated="false" to focus on human-submitted tickets and skip auto-generated reports.',
     group: 'feedback_tickets',
     path: '/app/feedback-tickets',
     params: {
@@ -20,6 +20,10 @@ export const feedbackTicketTools: ToolRegistration[] = [
       email: z.string().optional().describe('Filter by user email (partial match)'),
       user_id: z.string().optional().describe('Filter by user ID'),
       status: z.enum(['open', 'resolved', 'closed']).optional().describe('Filter by ticket status'),
+      auto_generated: z
+        .enum(['true', 'false'])
+        .optional()
+        .describe('Filter by submission source. "false"=human-submitted only, "true"=auto-generated only, omit=both.'),
       from: z.string().optional().describe('Start time (RFC3339)'),
       to: z.string().optional().describe('End time (RFC3339)'),
       page: z.number().optional().describe('Page number (default 1)'),
@@ -31,6 +35,7 @@ export const feedbackTicketTools: ToolRegistration[] = [
       if (p.email) q.email = String(p.email)
       if (p.user_id) q.user_id = String(p.user_id)
       if (p.status) q.status = String(p.status)
+      if (p.auto_generated) q.auto_generated = String(p.auto_generated)
       if (p.from) q.from = String(p.from)
       if (p.to) q.to = String(p.to)
       if (p.page) q.page = String(p.page)

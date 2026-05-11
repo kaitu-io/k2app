@@ -94,8 +94,9 @@ describe('loadConfig', () => {
   })
 
   it('test_config_missing_error — no TOML + no env → clear error listing missing fields', async () => {
+    // center.url defaults to https://k2.52j.me; access_key is the only field with no fallback.
     await expect(loadConfig('/nonexistent/path/config.toml')).rejects.toThrow(/missing/)
-    await expect(loadConfig('/nonexistent/path/config.toml')).rejects.toThrow(/center\.url|KAITU_CENTER_URL/)
+    await expect(loadConfig('/nonexistent/path/config.toml')).rejects.toThrow(/center\.access_key|KAITU_ACCESS_KEY/)
   })
 
   it('test_config_partial_missing — TOML has center but no ssh → uses defaults for ssh.user and ssh.port', async () => {
