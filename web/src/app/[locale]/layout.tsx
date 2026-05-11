@@ -5,6 +5,7 @@ import { routing } from '@/i18n/routing';
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AppConfigProvider } from "@/contexts/AppConfigContext";
 import { Toaster } from "@/components/ui/sonner";
+import BrowserWarningBar from '@/components/BrowserWarningBar';
 import LanguageDetectionBanner from '@/components/LanguageDetectionBanner';
 import CookieConsent from '@/components/CookieConsent';
 import { EmbedThemeProvider } from '@/components/providers/EmbedThemeProvider';
@@ -87,6 +88,7 @@ export default async function LocaleLayout({
                 <EmbedThemeProvider>
                   <AppConfigProvider>
                     <AuthProvider>
+                      <BrowserWarningBar brandDomain={new URL(brand.baseUrl).hostname} />
                       <LanguageDetectionBanner />
                       {children}
                       <Toaster />
