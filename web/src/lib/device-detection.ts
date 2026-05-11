@@ -187,18 +187,6 @@ export async function shouldShowMacOS11Notice(): Promise<boolean> {
   return true;
 }
 
-/**
- * Detect WeChat in-app browser on Android.
- *
- * WeChat's Android webview (X5/TBS kernel) has unreliable HttpOnly cookie
- * handling across redirects — the purchase flow depends on cookies surviving
- * OTP login → payUrl redirect → return. iOS WeChat uses WKWebView and is more
- * reliable, so this check is Android-only by design.
- */
-export function isWeChatAndroid(userAgent?: string): boolean {
-  const ua = (userAgent ?? (typeof window !== 'undefined' ? window.navigator.userAgent : '')).toLowerCase();
-  return /micromessenger/.test(ua) && /android/.test(ua);
-}
 
 /**
  * Trigger automatic download for supported browsers

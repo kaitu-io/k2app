@@ -6,8 +6,6 @@ import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useEmbedMode } from "@/hooks/useEmbedMode";
-import { isWeChatAndroid } from "@/lib/device-detection";
-import WeChatBrowserGuide from "@/components/WeChatBrowserGuide";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -95,13 +93,6 @@ export default function PurchaseClient() {
 
   // Initialize embed mode to handle auth_token URL parameter
   const { showNavigation, showFooter } = useEmbedMode();
-
-  // WeChat Android webview has unreliable cookies across the pay redirect.
-  // Block the purchase flow and guide the user to open in a real browser.
-  const [showWeChatGuide, setShowWeChatGuide] = useState(false);
-  useEffect(() => {
-    setShowWeChatGuide(isWeChatAndroid());
-  }, []);
 
   // State for each step
   const [selectedPlan, setSelectedPlan] = useState("");
@@ -521,10 +512,6 @@ export default function PurchaseClient() {
 
   // Purchase page doesn't require authentication - skip redirect logic
   // Users can purchase without login, authentication is handled by API layer when needed
-
-  if (showWeChatGuide) {
-    return <WeChatBrowserGuide />;
-  }
 
   if (isAuthLoading || profileLoading || appConfigLoading) {
     return (

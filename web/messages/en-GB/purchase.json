@@ -103,13 +103,6 @@
       "errorNoDelegate": "请先设置代付人"
     }
   },
-  "wechatGuide": {
-    "title": "Please open this page in your browser",
-    "tapHere": "Tap here",
-    "step1": "Tap the \"···\" menu in the top-right corner",
-    "step2": "Select \"Open in Browser\"",
-    "reason": "WeChat's built-in browser cannot reliably complete payments. Please use your system browser to ensure a successful purchase."
-  },
   "error403": {
     "title": "Access Forbidden",
     "subtitle": "You do not have permission to access this page",
