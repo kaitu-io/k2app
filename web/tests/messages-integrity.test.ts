@@ -45,7 +45,10 @@ const ZH_KAITU_BARE = /Kaitu(?!(\s+by\s+Overleap|\s+LLC|\.io|\.service|-))/;
 
 // For en-*/ja content: similar rule; "kaitu" (case-insensitive) forbidden except in
 // the same exception substrings. `.service` whitelist: same rationale as above.
-const EN_JA_KAITU_BARE = /kaitu(?!(\s+by\s+overleap|\s+llc|\.io|\.service|-))/i;
+// `/` whitelist: CDN paths like `dl.kaitu.io/kaitu/k2r/` and the fallback
+// `d0.all7.cc/kaitu/k2r/` are real distribution URLs whose `kaitu/` directory
+// segment cannot be renamed without breaking existing installs.
+const EN_JA_KAITU_BARE = /kaitu(?!(\s+by\s+overleap|\s+llc|\.io|\.service|-|\/))/i;
 
 function readNamespace(locale: string, namespace: string): string {
   const p = path.join(MESSAGES_DIR, locale, `${namespace}.json`);

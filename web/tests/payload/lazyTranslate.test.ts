@@ -104,7 +104,10 @@ describe('lazyTranslate', () => {
 
   it('returns timeout when translation exceeds the configured timeout', async () => {
     const payload = buildPayload({ lockResult: true })
-    let translateResolve: ((v: unknown) => void) | null = null
+    // Seed with a no-op so the type stays a plain callable — TS narrows the
+    // closure-assigned variable to `never` after the intervening await
+    // otherwise, breaking the cleanup call below.
+    let translateResolve: (v: unknown) => void = () => {}
     mockTranslate.mockImplementation(() => new Promise((resolve) => {
       translateResolve = resolve
     }))
@@ -117,7 +120,7 @@ describe('lazyTranslate', () => {
     expect(result.status).toBe('timeout')
     expect(payload.logger.error).toHaveBeenCalled()
     expect(payload._client.release).toHaveBeenCalledOnce()
-    translateResolve?.({ success: true })
+    translateResolve({ success: true })
   })
 
   it('returns error when translateOperation throws', async () => {

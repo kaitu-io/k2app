@@ -15,6 +15,14 @@ vi.mock('radix-ui', () => ({
 
 vi.mock('@/i18n/routing', () => ({
   Link: ({ children }: any) => children,
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    refresh: vi.fn(),
+    prefetch: vi.fn(),
+  }),
 }));
 vi.mock('lucide-react', () => ({
   Download: () => null,

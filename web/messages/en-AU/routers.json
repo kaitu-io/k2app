@@ -118,8 +118,8 @@
     },
     "step2": {
       "title": "Install the OS",
-      "subtitle": "The path depends on hardware type. Flashing carries brick risk — newcomers should consider a pre-flashed Kaitu router (see bottom of page).",
-      "warning": "⚠️ Flashing has bricking risk. Always back up the stock firmware first; if you're not comfortable, choose the pre-flashed Kaitu router service below.",
+      "subtitle": "The path depends on hardware type. Flashing carries brick risk — newcomers should consider a pre-flashed Overleap router (see bottom of page).",
+      "warning": "⚠️ Flashing has bricking risk. Always back up the stock firmware first; if you're not comfortable, choose the pre-flashed Overleap router service below.",
       "tabs": {
         "arm": "ARM router (Redmi / Xiaomi / Flint)",
         "x86": "x86 soft router (J4125 / N100)"
@@ -175,15 +175,15 @@
     },
     "step4": {
       "title": "Set up & activate",
-      "subtitle": "On first launch, the admin panel asks you to bind a Kaitu account and paste a license key (or k2subs subscription URL).",
+      "subtitle": "On first launch, the admin panel asks you to bind a Overleap account and paste a license key (or k2subs subscription URL).",
       "steps": [
         {
           "title": "Open the admin panel",
           "body": "Visit http://<router-IP>:9000. You'll be prompted to set an admin password the first time."
         },
         {
-          "title": "Sign in to your Kaitu account",
-          "body": "Use the email associated with your Kaitu purchase; you'll receive a one-time code."
+          "title": "Sign in to your Overleap account",
+          "body": "Use the email associated with your Overleap purchase; you'll receive a one-time code."
         },
         {
           "title": "Paste your k2subs subscription",
@@ -202,11 +202,11 @@
     "items": [
       {
         "q": "What if flashing bricks my router?",
-        "a": "ARM routers have U-Boot recovery (short-circuit + TFTP back to stock), but full bricks happen. If you're uncertain, the pre-flashed Kaitu K2 Mini / K2-001 (bottom of page) eliminates this risk."
+        "a": "ARM routers have U-Boot recovery (short-circuit + TFTP back to stock), but full bricks happen. If you're uncertain, the pre-flashed Overleap K2 Mini / K2-001 (bottom of page) eliminates this risk."
       },
       {
         "q": "Does flashing void the warranty?",
-        "a": "Manufacturers usually deny warranty claims for 'unauthorized modification'. Buying second-hand or OEM units to flash is one workaround; pre-flashed Kaitu units come with their own warranty."
+        "a": "Manufacturers usually deny warranty claims for 'unauthorized modification'. Buying second-hand or OEM units to flash is one workaround; pre-flashed Overleap units come with their own warranty."
       },
       {
         "q": "Can routers outside this list run k2r?",
@@ -249,7 +249,7 @@
     }
   },
   "presale": {
-    "title": "Don't want to flash? Get a pre-flashed Kaitu router",
+    "title": "Don't want to flash? Get a pre-flashed Overleap router",
     "subtitle": "We also sell ready-to-use routers with k2r pre-installed. Plug in and go — 1-year warranty included.",
     "presaleTag": "Pre-order",
     "productFeatures": "Features",
