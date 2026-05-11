@@ -25,13 +25,6 @@ tunnel:
   domain: "${K2_DOMAIN:-}"
   port: ${K2_PORT:-443}
 
-oc:
-  enabled: ${K2OC_ENABLED:-false}
-  domain: "${K2OC_DOMAIN:-}"
-  port: 443
-  listen_port: 443
-  radius_server: "k2-sidecar"
-
 ech:
   enabled: ${K2_ECH_ENABLED:-false}
 

@@ -3,9 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,11 +14,9 @@ import (
 
 	"github.com/kaitu-io/k2-sidecar/config"
 	"github.com/kaitu-io/k2-sidecar/sidecar"
-	"layeh.com/radius"
-	"layeh.com/radius/rfc2865"
 )
 
-// Sidecar manages node registration, config generation, RADIUS proxy, and metrics
+// Sidecar manages node registration, config generation, and metrics
 type Sidecar struct {
 	config       *config.Config
 	nodeInstance *sidecar.Node
@@ -80,9 +76,6 @@ func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 		slog.Info("Auto-generated K2 domain", "component", "sidecar", "domain", cfg.Tunnel.Domain)
 	}
 
-	// Note: OC domain is NOT auto-generated - must be explicitly configured
-	// (unlike K2 tunnel which auto-generates using sslip.io)
-
 	return &Sidecar{
 		config:       cfg,
 		nodeInstance: n,
@@ -100,7 +93,7 @@ func (s *Sidecar) Start() error {
 	slog.Info("Tunnels to register", "component", "sidecar", "count", len(tunnels))
 
 	if len(tunnels) == 0 {
-		return fmt.Errorf("no tunnels configured (K2_DOMAIN and K2OC_DOMAIN are both empty)")
+		return fmt.Errorf("no tunnels configured (K2_DOMAIN is empty)")
 	}
 
 	// Step 2: Register node with all tunnels
@@ -148,14 +141,7 @@ func (s *Sidecar) Start() error {
 		go s.pollAndRegisterK2V5ConnectURL()
 	}
 
-	// Step 4: Start RADIUS proxy (if OC tunnel is configured)
-	if s.config.OC.Domain != "" {
-		if err := s.startRadiusProxy(); err != nil {
-			return fmt.Errorf("failed to start RADIUS proxy: %w", err)
-		}
-	}
-
-	// Step 5: Initialize and start metrics collector
+	// Step 4: Initialize and start metrics collector
 	reportInterval := parseReportInterval(s.config.K2Center.ReportInterval)
 	s.collector = sidecar.NewCollector(
 		s.nodeInstance,
@@ -238,26 +224,6 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 			"protocol", "k2v5",
 			"hopPortStart", s.config.Tunnel.HopPortStart,
 			"hopPortEnd", s.config.Tunnel.HopPortEnd,
-			"suffix", testSuffix)
-	}
-
-	// OC tunnel (register if domain is configured, regardless of oc.enabled flag)
-	// oc.enabled controls RADIUS proxy, not registration
-	if s.config.OC.Domain != "" {
-		tunnels = append(tunnels, sidecar.TunnelConfig{
-			Domain:   s.config.OC.Domain,
-			Protocol: "k2oc",
-			Port:     s.config.OC.Port,
-			IsTest:   s.config.TestNode,
-		})
-		testSuffix := ""
-		if s.config.TestNode {
-			testSuffix = " (test node)"
-		}
-		slog.Info("OC tunnel configured",
-			"component", "sidecar",
-			"domain", s.config.OC.Domain,
-			"port", s.config.OC.Port,
 			"suffix", testSuffix)
 	}
 
@@ -354,26 +320,6 @@ func (s *Sidecar) saveCertificates(result *sidecar.RegisterResult) error {
 			slog.Info("Linked K2 certificate to server-cert.pem", "component", "sidecar")
 		}
 
-		// OC tunnel cert -> /etc/ocserv/
-		if domain == s.config.OC.Domain {
-			ocservDir := "/etc/ocserv"
-			domainCertFile := fmt.Sprintf("%s-cert.pem", domain)
-			domainKeyFile := fmt.Sprintf("%s-key.pem", domain)
-
-			if err := cert.SaveToFiles(ocservDir, domainCertFile, domainKeyFile); err != nil {
-				return fmt.Errorf("failed to save OC cert to %s: %w", ocservDir, err)
-			}
-			slog.Info("Saved OC certificate", "component", "sidecar", "dir", ocservDir, "file", domainCertFile)
-
-			// Create symlinks or copy to fixed filenames
-			if err := s.linkOrCopyCertificate(ocservDir, domainCertFile, "server-cert.pem"); err != nil {
-				return fmt.Errorf("failed to link OC cert: %w", err)
-			}
-			if err := s.linkOrCopyCertificate(ocservDir, domainKeyFile, "server-key.pem"); err != nil {
-				return fmt.Errorf("failed to link OC key: %w", err)
-			}
-			slog.Info("Linked OC certificate to server-cert.pem", "component", "sidecar")
-		}
 	}
 
 	return nil
@@ -425,33 +371,22 @@ func (s *Sidecar) generateConfigs(result *sidecar.RegisterResult) error {
 		}
 	}
 
-	// Generate OC config if OC tunnel is configured
-	if s.config.OC.Domain != "" {
-		if err := s.generateOcservConfig(); err != nil {
-			return fmt.Errorf("failed to generate ocserv config: %w", err)
-		}
-	}
-
 	return nil
 }
 
 // K2V5ConfigData holds template data for k2v5 configuration
 type K2V5ConfigData struct {
-	CertDir      string
-	CertPath     string
-	KeyPath      string
-	K2Domain     string
-	K2V4Host     string
-	K2V4Port     string
-	K2OCDomain   string
-	K2OCHost     string
-	K2OCPort     string
-	CenterURL    string
-	LogLevel     string
-	HasOCDomain  bool
-	UsersFile    string
-	HopStart     int
-	HopEnd       int
+	CertDir   string
+	CertPath  string
+	KeyPath   string
+	K2Domain  string
+	K2V4Host  string
+	K2V4Port  string
+	CenterURL string
+	LogLevel  string
+	UsersFile string
+	HopStart  int
+	HopEnd    int
 }
 
 const k2v5ConfigTemplate = `listen: ":443"
@@ -467,9 +402,6 @@ auth:
   cache_ttl: 5m
 local_routes:
   "{{.K2Domain}}": "{{.K2V4Host}}:{{.K2V4Port}}"
-{{- if .HasOCDomain}}
-  "{{.K2OCDomain}}": "{{.K2OCHost}}:{{.K2OCPort}}"
-{{- end}}
 log:
   level: "{{.LogLevel}}"
 {{- if and .HopStart .HopEnd}}
@@ -488,38 +420,25 @@ func (s *Sidecar) generateK2V5Config() error {
 		logLevel = "info"
 	}
 
-	k2ocPort := os.Getenv("K2OC_PORT")
-	if k2ocPort == "" {
-		k2ocPort = "10001"
-	}
-
 	k2v4Host := os.Getenv("K2V4_HOST")
 	if k2v4Host == "" {
 		k2v4Host = "127.0.0.1"
-	}
-	k2ocHost := os.Getenv("K2OC_HOST")
-	if k2ocHost == "" {
-		k2ocHost = "127.0.0.1"
 	}
 
 	k2v5DataDir := "/etc/k2v5"
 
 	data := K2V5ConfigData{
-		CertDir:     k2v5DataDir,
-		CertPath:    fmt.Sprintf("%s/certs/server-cert.pem", configDir),
-		KeyPath:     fmt.Sprintf("%s/certs/server-key.pem", configDir),
-		K2Domain:    s.config.Tunnel.Domain,
-		K2V4Host:    k2v4Host,
-		K2V4Port:    s.config.K2V4Port,
-		K2OCDomain:  s.config.OC.Domain,
-		K2OCHost:    k2ocHost,
-		K2OCPort:    k2ocPort,
-		CenterURL:   s.config.K2Center.BaseURL,
-		LogLevel:    logLevel,
-		HasOCDomain: s.config.OC.Domain != "",
-		UsersFile:   k2v5DataDir + "/users",
-		HopStart:    s.config.Tunnel.HopPortStart,
-		HopEnd:      s.config.Tunnel.HopPortEnd,
+		CertDir:   k2v5DataDir,
+		CertPath:  fmt.Sprintf("%s/certs/server-cert.pem", configDir),
+		KeyPath:   fmt.Sprintf("%s/certs/server-key.pem", configDir),
+		K2Domain:  s.config.Tunnel.Domain,
+		K2V4Host:  k2v4Host,
+		K2V4Port:  s.config.K2V4Port,
+		CenterURL: s.config.K2Center.BaseURL,
+		LogLevel:  logLevel,
+		UsersFile: k2v5DataDir + "/users",
+		HopStart:  s.config.Tunnel.HopPortStart,
+		HopEnd:    s.config.Tunnel.HopPortEnd,
 	}
 
 	return s.generateConfigFromTemplate("k2v5-config.yaml", k2v5ConfigTemplate, outputPath, data)
@@ -563,137 +482,6 @@ func (s *Sidecar) generateK2V4Config() error {
 	return s.generateConfigFromTemplate("config.yaml", k2v4ConfigTemplate, outputPath, data)
 }
 
-// OcservConfigData holds template data for ocserv configuration
-type OcservConfigData struct {
-	ConfigDir       string
-	OcservConfigDir string
-	TunnelDomain    string
-	ListenPort      int    // Actual port ocserv listens on (host network mode)
-	RadiusServer    string // RADIUS server address (127.0.0.1 for host network mode)
-	RadiusSecret    string
-}
-
-const ocservConfTemplate = `auth = "radius [config={{.OcservConfigDir}}/radius-client.conf,groupconfig=true]"
-
-default-domain={{.TunnelDomain}}
-
-tcp-port = {{.ListenPort}}
-udp-port = {{.ListenPort}}
-
-cert-user-oid = 0.9.2342.19200300.100.1.1
-
-run-as-user = nobody
-run-as-group = daemon
-
-socket-file = /var/run/ocserv-socket
-
-server-cert = {{.OcservConfigDir}}/server-cert.pem
-server-key = {{.OcservConfigDir}}/server-key.pem
-ca-cert = {{.OcservConfigDir}}/root-ca-cert.pem
-
-isolate-workers = false
-max-clients = 2000
-max-same-clients = 1
-
-server-stats-reset-time = 604800
-keepalive = 32400
-dpd = 90
-mobile-dpd = 1800
-switch-to-tcp-timeout = 25
-try-mtu-discovery = true
-
-compression = true
-tls-priorities = "NORMAL:%SERVER_PRECEDENCE:%COMPAT:-VERS-SSL3.0"
-auth-timeout = 240
-idle-timeout = 1200
-mobile-idle-timeout = 2400
-min-reauth-time = 1
-max-ban-score = 50
-ban-reset-time = 300
-cookie-timeout = 172800
-persistent-cookies = true
-deny-roaming = false
-rekey-time = 172800
-rekey-method = ssl
-
-use-occtl = true
-pid-file = /var/run/ocserv.pid
-net-priority = 5
-device = vpns
-predictable-ips = true
-ipv4-network = 10.3.0.0
-ipv4-netmask = 255.255.0.0
-tunnel-all-dns = true
-dns = 8.8.8.8
-dns = 8.8.4.4
-
-ping-leases = false
-mtu = 1420
-
-cisco-client-compat = true
-stats-report-time = 60
-
-no-route = 192.168.0.0/255.255.0.0
-no-route = 172.16.0.0/255.240.0.0
-no-route = 10.0.0.0/255.0.0.0
-route = default
-`
-
-const radiusClientConfTemplate = `nas-identifier {{.TunnelDomain}}:ocserv-slave
-
-authserver 	{{.RadiusServer}}:1812
-
-servers		{{.OcservConfigDir}}/radius-servers
-
-dictionary 	/usr/share/radcli/dictionary
-
-default_realm
-radius_timeout	10
-radius_retries	3
-bindaddr	*
-`
-
-const radiusServersTemplate = `{{.RadiusServer}} {{.RadiusSecret}}
-`
-
-// generateOcservConfig generates ocserv configuration files
-func (s *Sidecar) generateOcservConfig() error {
-	ocservDir := "/etc/ocserv"
-	if err := os.MkdirAll(ocservDir, 0755); err != nil {
-		return fmt.Errorf("failed to create ocserv config dir: %w", err)
-	}
-
-	data := OcservConfigData{
-		ConfigDir:       s.config.ConfigDir,
-		OcservConfigDir: ocservDir,
-		TunnelDomain:    s.config.OC.Domain,
-		ListenPort:      s.config.OC.ListenPort,
-		RadiusServer:    s.config.OC.RadiusServer,
-		RadiusSecret:    "localhost-radius",
-	}
-
-	// Download CA certificate
-	if err := s.downloadCACert(ocservDir + "/root-ca-cert.pem"); err != nil {
-		return fmt.Errorf("failed to download CA cert: %w", err)
-	}
-
-	// Generate config files
-	configs := map[string]string{
-		"ocserv.conf":        ocservConfTemplate,
-		"radius-client.conf": radiusClientConfTemplate,
-		"radius-servers":     radiusServersTemplate,
-	}
-
-	for filename, tmplStr := range configs {
-		if err := s.generateConfigFromTemplate(filename, tmplStr, ocservDir+"/"+filename, data); err != nil {
-			return fmt.Errorf("failed to generate %s: %w", filename, err)
-		}
-	}
-
-	slog.Info("Generated ocserv configuration files", "component", "sidecar", "dir", ocservDir)
-	return nil
-}
-
 func (s *Sidecar) generateConfigFromTemplate(name, tmplStr, outputPath string, data interface{}) error {
 	tmpl, err := template.New(name).Parse(tmplStr)
 	if err != nil {
@@ -714,103 +502,6 @@ func (s *Sidecar) generateConfigFromTemplate(name, tmplStr, outputPath string, d
 	return nil
 }
 
-func (s *Sidecar) downloadCACert(outputPath string) error {
-	caCertURL := s.config.K2Center.BaseURL + "/api/ca"
-
-	// CA certificate is public - no authentication needed
-	resp, err := getHTTPClient().Get(caCertURL)
-	if err != nil {
-		return fmt.Errorf("failed to download CA cert: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to download CA cert: status %d", resp.StatusCode)
-	}
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read CA cert response: %w", err)
-	}
-
-	// Validate it's a PEM certificate (not a JSON error response)
-	if !strings.HasPrefix(string(body), "-----BEGIN") {
-		preview := string(body)
-		if len(preview) > 100 {
-			preview = preview[:100]
-		}
-		return fmt.Errorf("invalid CA cert response: expected PEM certificate, got: %s", preview)
-	}
-
-	if err := os.WriteFile(outputPath, body, 0644); err != nil {
-		return fmt.Errorf("failed to write CA cert file: %w", err)
-	}
-
-	slog.Info("Downloaded CA certificate", "component", "sidecar", "path", outputPath)
-	return nil
-}
-
-// startRadiusProxy starts the RADIUS authentication proxy
-func (s *Sidecar) startRadiusProxy() error {
-	handler := radius.HandlerFunc(s.handleRadiusRequest)
-	server := radius.PacketServer{
-		Handler:      handler,
-		SecretSource: radius.StaticSecretSource([]byte("localhost-radius")),
-		Addr:         ":1812",
-	}
-
-	slog.Info("Starting RADIUS proxy on :1812", "component", "radius")
-
-	go func() {
-		if err := server.ListenAndServe(); err != nil {
-			slog.Error("Server error", "component", "radius", "err", err)
-		}
-	}()
-
-	return nil
-}
-
-// handleRadiusRequest processes RADIUS authentication requests
-// RADIUS protocol: UserName = UDID, UserPassword = Password (MD5)
-// Supports UDID format: "udid" or "udid@user_id" (auto-extracts part before @)
-func (s *Sidecar) handleRadiusRequest(w radius.ResponseWriter, r *radius.Request) {
-	rawUDID := rfc2865.UserName_GetString(r.Packet)
-	password := rfc2865.UserPassword_GetString(r.Packet)
-
-	if rawUDID == "" || password == "" {
-		slog.Warn("Request missing username (udid) or password", "component", "radius")
-		w.Write(r.Response(radius.CodeAccessReject))
-		return
-	}
-
-	// Parse UDID: extract the part before "@" if format is "udid@user_id"
-	// This handles RADIUS clients that append realm/user_id to the username
-	udid := rawUDID
-	if strings.Contains(rawUDID, "@") {
-		parts := strings.SplitN(rawUDID, "@", 2)
-		udid = parts[0]
-		slog.Info("Parsed UDID format", "component", "radius", "raw", rawUDID, "udid", udid)
-	}
-
-	udidPreview := udid
-	if len(udidPreview) > 16 {
-		udidPreview = udidPreview[:16]
-	}
-	slog.Info("Auth request", "component", "radius", "udid_prefix", udidPreview)
-
-	// Use node.CheckAuth with internal caching
-	success := s.nodeInstance.CheckAuth(udid, password)
-
-	if success {
-		slog.Info("Authentication successful", "component", "radius")
-		w.Write(r.Response(radius.CodeAccessAccept))
-	} else {
-		slog.Info("Authentication failed", "component", "radius")
-		w.Write(r.Response(radius.CodeAccessReject))
-	}
-}
-
 // shutdown gracefully shuts down the sidecar
 func (s *Sidecar) shutdown() error {
 	slog.Info("Shutting down...", "component", "sidecar")
@@ -823,10 +514,4 @@ func (s *Sidecar) shutdown() error {
 
 	slog.Info("Shutdown complete", "component", "sidecar")
 	return nil
-}
-
-// Helper functions
-
-func getHTTPClient() *http.Client {
-	return &http.Client{Timeout: 10 * time.Second}
 }
