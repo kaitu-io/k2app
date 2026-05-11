@@ -893,7 +893,7 @@ export default function ManagerDashboardPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>用户</TableHead>
+                    <TableHead>设备 UDID</TableHead>
                     <TableHead>类型</TableHead>
                     <TableHead>平台</TableHead>
                     <TableHead>版本</TableHead>
@@ -908,8 +908,8 @@ export default function ManagerDashboardPage() {
                     return (
                       <TableRow key={device.udid}>
                         <TableCell>
-                          <div className="max-w-[200px] truncate" title={device.userEmail}>
-                            {device.userEmail || "-"}
+                          <div className="max-w-[160px] truncate font-mono text-xs" title={device.udid}>
+                            {device.udid || "-"}
                           </div>
                         </TableCell>
                         <TableCell>
