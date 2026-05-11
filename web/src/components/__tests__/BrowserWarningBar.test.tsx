@@ -7,7 +7,7 @@ const mockUseEmbedMode = vi.fn(() => ({
   showNavigation: true,
   showFooter: true,
   compactLayout: false,
-  authToken: null,
+  authToken: null as string | null,
   embedTheme: null as 'auto' | 'light' | 'dark' | null,
 }));
 
