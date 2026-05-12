@@ -111,6 +111,17 @@ Native impls:
 
 加入黑名单的 app **强制 direct**，**无视** chnroute / global 模式。
 
+**已知场景限制（v1 不解决）：**
+
+| 场景 | 解决吗 | 原因 |
+|---|---|---|
+| 用户在中国 + VPN 海外 + 微信被风控 | ✅ v1 解决 | direct = 走真实中国 IP，符合微信预期 |
+| 用户在海外 + 需要中国 IP 才能用某 app | ❌ v1 不解决 | direct = 走真实海外 IP，问题没变。需要"该 app 走某条 China-bound tunnel"的多 routing group 能力 |
+| 用户在中国 + Adobe CC 死在某 fallback IP | ✅ v1 解决 | direct 绕过任何代理路径 |
+| 黑名单 app 访问的目标本身被墙 | ⚠️ 副作用 | 该 app 在加入黑名单后会发现"网断了"——这是 split-exclude 的预期语义，UI 不主动提示 |
+
+第 2 行场景作为 **v2 backlog** ——"多 routing group（按 app 走不同 server）"在 §10.2 / §10.3 已 defer 出去；新增对应工单时若有真实需求量再启动设计。
+
 ### 4.2 Route Emission
 
 `buildConnectConfig` 在既有 routes 数组**前**插入 bypass routes：
@@ -575,22 +586,74 @@ zh-CN 母版（其余 6 locale：ja, en-US, en-AU, en-GB, zh-TW, zh-HK 草稿翻
 
 新 namespace `appBypass` 加入 `webapp/src/i18n/index.ts` 的 namespaces 列表，与既有 `account`/`dashboard` 等同级。
 
-## 12. Phase 0 — Attribution Verification
+## 12. Phase 0 — Attribution Verification (Blocking Dependency)
 
-**实施前必跑**。每平台独立 smoke：
+**实施前必跑**。**预期结果是至少一个平台需要 k2 子模块补 attribution wiring** —— 不是"清白通过"。那条补丁是 v1 的**阻塞依赖**，不是 fallback。Plan 阶段第一步评估该依赖的工作量与负责人。
 
-| 平台 | 步骤 | Pass |
+### 12.1 Test endpoint
+
+使用 `https://ip.kaitu.io/` (返回 client 公网 IP 文本) 作为"出口 IP"探针：
+- direct 路径 → 用户真实 ISP 出口 IP
+- tunnel 路径 → server 节点出口 IP
+
+### 12.2 Per-platform smoke
+
+| 平台 | 测试 app | Routes 注入 | Pass 准则 | 失败处理 |
+|---|---|---|---|---|
+| macOS sysext | terminal `curl` + 浏览器 | `{via:'direct', match:{process_name:['curl']}}` 前置 | `curl https://ip.kaitu.io` 返 ISP IP；浏览器返 server IP | 走代码：trace `k2/appext/` 是否传 process_name 到 rule engine；缺口 → k2 子模块 ticket |
+| Windows daemon | `curl.exe` + Edge | `process_name:['curl.exe']` | 同 | trace `k2/daemon/` |
+| Linux desktop | `curl` + firefox | `process_name:['curl']` | 同 | trace `/proc/<pid>/exe` → rule engine 链路 |
+| Android | Chrome + 其它 user app | `package_name:['com.android.chrome']` | Chrome 看到 ISP IP，其它 app 看到 server IP | trace `k2/appext/` Android path，看 uid → package 解析 |
+
+### 12.3 macOS 真实 helper 名验证（额外 smoke）
+
+设计依赖 "bundle → all helper executable basenames" 全集映射。需验证 5 个高价值 app 的实际 helper 命名：
+
+| App | 预期 helper 名 | 命令验证 |
 |---|---|---|
-| macOS | 手写 routes 加 `{via:'direct', match:{process_name:['curl']}}` 在 chnroute 前 → 起隧道 → `curl https://ip.kaitu.io` vs 浏览器 `https://ip.kaitu.io` | IP 不同 |
-| Windows | 同（`curl.exe`） | 同 |
-| Linux desktop | 同 | 同 |
-| Android | `{match:{package_name:['com.android.chrome']}}` → Chrome vs 其他 app 访问 ip.kaitu.io | IP 不同 |
+| Google Chrome | Google Chrome / Google Chrome Helper / Google Chrome Helper (Renderer) / Google Chrome Helper (GPU) / Google Chrome Helper (NetworkService) / Google Chrome Helper (Plugin) | `ps -ax -o comm \| grep -i chrome` |
+| WeChat | WeChat / WeChatAppEx / 微信WeChat | `ps -ax -o comm \| grep -i wechat` |
+| Slack | Slack / Slack Helper / Slack Helper (GPU) | `ps -ax -o comm \| grep -i slack` |
+| Zoom | zoom.us / CptHost / CptInstaller | `ps -ax -o comm \| grep -i zoom` |
+| Telegram | Telegram | （单进程，验证 baseline） |
 
-任一失败 → 该平台 v1 砍出，开 k2 ticket 单独修。
+发现 helper 命名与 spec 预期偏差 → 在 plan 文档记录实际命名 + 实现端 unit test 用真实数据。
+
+### 12.4 Icon scheme POC（必须先于主实现）
+
+Custom scheme `kaitu-icon://<kind>/<id>` 在两套 WebView 上未实测。**主实现前先打小 POC**：
+
+| 平台 | POC 步骤 | Pass 准则 |
+|---|---|---|
+| macOS / Win Tauri | Tauri 注册 `kaitu-icon` protocol → 返一张固定 32×32 测试 PNG → webapp 一个测试页 `<img src="kaitu-icon://test/1">` | 图像正常渲染，DevTools Network 无 CSP / CORS 错误 |
+| Android Capacitor | K2Plugin override `shouldInterceptRequest` 拦 `kaitu-icon://*` → 返测试 PNG → webapp `<img>` | 同上 |
+
+POC 失败的退路顺位：
+
+1. **A**：改用 HTTPS 假 host（`https://kaitu-icon.local/...`）+ WebViewAssetLoader（Android 推荐路径）/ Tauri custom protocol 注册 HTTPS scheme
+2. **B**：lazy fetch HTTP endpoint —— `_platform.appList.fetchIcon(id) → Promise<Blob>` ；webapp `URL.createObjectURL(blob)`；显式管理 lifecycle
+3. **C**：v1 完全无 icon，纯首字母 Avatar fallback —— UI 仍可用，体验降级
+
+### 12.5 失败处理 protocol
+
+§12.2 attribution 任一平台失败：
+1. plan 文档对应平台栏记 "PHASE 0 BLOCKED — k2 子模块 ticket #XXX"
+2. 评估补 attribution wiring 工作量（粗略 1-5 天 per platform）
+3. v1 GA 标准 = 至少 **3 平台过**；不接受"全 4 平台砍只剩 1"
+
+§12.3 helper 命名偏差：
+- 不阻塞 GA
+- plan 阶段更新 unit test fixtures + 用户文档
+
+§12.4 icon POC 失败：
+- 按退路顺位降级；v1 不阻塞
+- 选择降级方案后**回头修订 spec 的 §5.5 / §7.5**
 
 ## 13. Definition of Done
 
-- [ ] Phase 0 全 4 平台通过（或砍出失败平台）
+- [ ] Phase 0 §12.2 attribution：至少 3 平台过；任何砍出的平台已在 plan 显式记录
+- [ ] Phase 0 §12.3 helper 命名：5 个 macOS app 实测命名进 unit test fixtures
+- [ ] Phase 0 §12.4 icon scheme POC：两平台都通过；若降级则 §5.5/§7.5 已 amend
 - [ ] Unit tests 覆盖 buildBypassRoutes、appBypassStore、bridge remap、Connected-Guard、page guard；coverage ≥ 80% on new files
 - [ ] E2E spec (Playwright, web/Linux 路径) 通过
 - [ ] 7 个 locale 全翻译 commit
