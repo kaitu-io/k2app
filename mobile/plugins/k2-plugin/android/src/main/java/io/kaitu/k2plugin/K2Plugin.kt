@@ -12,8 +12,12 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
+import com.getcapacitor.BridgeWebViewClient
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -75,6 +79,10 @@ class K2Plugin : Plugin() {
 
         // Initialize logs directory for webapp.log writes
         logsDir = File(context.filesDir, "logs").also { it.mkdirs() }
+
+        // Install custom WebViewClient to handle kaitu-icon:// URLs for app-bypass icons.
+        // Must run on UI thread — load() is invoked on the main thread by Capacitor.
+        installIconWebViewClient()
 
         bindToService()
 
@@ -972,5 +980,65 @@ class K2Plugin : Plugin() {
         } catch (e: Exception) {
             call.reject("LIST_INSTALLED_FAILED", e)
         }
+    }
+
+    // ── App bypass: kaitu-icon:// WebViewClient interception ────────────
+
+    /**
+     * Install a custom BridgeWebViewClient subclass that intercepts
+     * `kaitu-icon://package/<urlencoded-pkg>` requests and returns the
+     * installed app's launcher icon as a PNG. All other requests fall
+     * through to the original Capacitor bridge client.
+     */
+    private fun installIconWebViewClient() {
+        try {
+            Handler(Looper.getMainLooper()).post {
+                bridge.webView.webViewClient = IconWebViewClient(bridge)
+                Log.d(TAG, "installIconWebViewClient: kaitu-icon WebViewClient installed")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "installIconWebViewClient failed", e)
+        }
+    }
+
+    private inner class IconWebViewClient(b: com.getcapacitor.Bridge) : BridgeWebViewClient(b) {
+        override fun shouldInterceptRequest(
+            view: WebView,
+            request: WebResourceRequest
+        ): WebResourceResponse? {
+            val url = request.url
+            if (url.scheme == "kaitu-icon" && url.host == "package") {
+                val packageName = url.pathSegments?.firstOrNull()?.let {
+                    java.net.URLDecoder.decode(it, "UTF-8")
+                } ?: return null
+                return try {
+                    val pm = context.packageManager
+                    val drawable = pm.getApplicationIcon(packageName)
+                    val bitmap = drawableToBitmap(drawable, 64, 64)
+                    val stream = java.io.ByteArrayOutputStream()
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+                    val responseHeaders = mapOf("Cache-Control" to "public, max-age=86400")
+                    WebResourceResponse(
+                        "image/png", "binary", 200, "OK", responseHeaders,
+                        java.io.ByteArrayInputStream(stream.toByteArray())
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "kaitu-icon failed for $packageName", e)
+                    null  // 404
+                }
+            }
+            return super.shouldInterceptRequest(view, request)
+        }
+    }
+
+    private fun drawableToBitmap(drawable: android.graphics.drawable.Drawable, w: Int, h: Int): android.graphics.Bitmap {
+        if (drawable is android.graphics.drawable.BitmapDrawable && drawable.bitmap != null) {
+            return android.graphics.Bitmap.createScaledBitmap(drawable.bitmap, w, h, true)
+        }
+        val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bmp
     }
 }
