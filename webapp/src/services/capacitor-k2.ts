@@ -231,6 +231,13 @@ export async function injectCapacitorGlobals(): Promise<void> {
     setDevEnabled: (enabled: boolean): void => {
       K2Plugin.setDevEnabled({ enabled }).catch(() => {});
     },
+
+    appList: Capacitor.getPlatform() === 'android' ? {
+      listInstalled: async () => {
+        const res = await K2Plugin.listInstalledApps();
+        return res.apps;
+      },
+    } : undefined,
   };
 
   // Inject globals
