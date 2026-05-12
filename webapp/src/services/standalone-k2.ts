@@ -64,15 +64,12 @@ export const standalonePlatform: IPlatform = {
   storage: plainLocalStorage,
   setDevEnabled: () => {},
 
-  // App list — only exposed when running on Linux desktop (cmd/k2 with embedded
-  // webapp). Web standalone has no Go daemon to answer /api/helper, so leave
-  // appList undefined and the Dashboard bypass entry won't render.
-  //
-  // Gated on window._platform?.platformType at construction time: if a host
-  // page set platformType='desktop' on window._platform before this module
-  // ran, we expose appList; otherwise (pure web standalone, where _platform
-  // is set BY this module) it stays undefined.
-  appList: window._platform?.platformType === 'desktop' ? {
+  // appList is exposed unconditionally on the standalone bridge. On Linux
+  // desktop with the Go daemon, /api/helper answers app-list-running. On pure
+  // web standalone, the helper endpoint isn't present — listRunning will
+  // reject, caller shows empty list. Whether the bypass entry actually renders
+  // in Dashboard is gated separately by feature.appBypass + os.
+  appList: {
     listRunning: async () => {
       const resp = await fetch(HELPER_ENDPOINT, {
         method: 'POST',
@@ -91,7 +88,7 @@ export const standalonePlatform: IPlatform = {
         iconUrl: undefined, // Linux desktop has no icons in v1; Avatar falls back to first letter
       }));
     },
-  } : undefined,
+  },
 };
 
 export function isK2Injected(): boolean {
