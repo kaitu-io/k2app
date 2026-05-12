@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_list;
 mod channel;
 mod log_upload;
 mod ne;
@@ -119,6 +120,7 @@ fn main() {
             storage::storage_get,
             storage::storage_set,
             storage::storage_remove,
+            app_list::list_running_apps,
         ]);
 
     #[cfg(feature = "mcp-bridge")]
