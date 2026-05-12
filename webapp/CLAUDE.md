@@ -286,6 +286,10 @@ cd webapp && npx tsc --noEmit            # Type check
 - **AuthGate** — Startup gate: checks service readiness + version match before showing main UI.
 - **LoginDialog** — Global modal for all auth flows (no `/login` route).
 - **transformStatus()** — Bridge normalization (see "Bridge & VPN State Contract" above).
+- **App Bypass (Split-Exclude)** — Per-app blacklist routing apps to direct. List
+  is stored in `_platform.storage` under `k2.advanced.app_bypass` and never
+  appears in logs, uploaded feedback zips, telemetry, or Sentry breadcrumbs.
+  See `docs/superpowers/specs/2026-05-12-app-bypass-design.md`.
 
 ## Style
 
