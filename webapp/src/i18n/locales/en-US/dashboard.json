@@ -47,6 +47,13 @@
     "favorites": "Favorites",
     "allLocations": "All Locations",
     "advancedSettings": "Advanced Settings",
+    "advancedSettingsLocked": "VPN is connected. Disconnect first to change advanced settings.",
+    "disconnectVpn": "Disconnect VPN",
+    "appBypassEntry": {
+      "label": "Apps that bypass VPN",
+      "count": "{{count}} apps",
+      "empty": "None"
+    },
     "alwaysOn": {
       "title": "Keep VPN Always On",
       "description": "Auto-reconnect after the system releases the app.",
@@ -124,6 +131,27 @@
       "message": "Login to unlock more cloud nodes",
       "viewPlans": "View Plans"
     }
+  },
+  "appBypass": {
+    "title": "Apps that bypass VPN",
+    "description": "Traffic from these apps will not go through the VPN. Useful for apps that flag VPN IPs (banking, payment, etc.).",
+    "macMultiUserNote": "Only apps started in the current user account are listed.",
+    "addedSection": "Added ({{count}})",
+    "availableSection": "Available",
+    "manualAdd": "+ Add manually",
+    "manualAddTitle": "Add process name",
+    "manualAddPlaceholder": "e.g. chrome.exe / Adobe Photoshop / com.tencent.mm",
+    "manualAddConfirm": "Add",
+    "manualAddCancel": "Cancel",
+    "manualAddUnsavedConfirm": "Unsaved input will be lost. Discard?",
+    "refresh": "Refresh",
+    "rescan": "Re-scan",
+    "rescanResult": "Updated ({{count}} processes)",
+    "processCount": "{{count}} processes blocked",
+    "kickedOutDueToConnect": "VPN connected; returning to home",
+    "loadFailed": "Failed to load app list",
+    "saveFailed": "Save failed, please try again",
+    "uninstalledHint": "App may be uninstalled"
   },
   "smartMode": {
     "routingMode": "Routing Mode",

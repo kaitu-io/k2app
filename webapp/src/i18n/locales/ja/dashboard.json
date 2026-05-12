@@ -47,6 +47,13 @@
     "favorites": "お気に入りサーバー",
     "allLocations": "すべての場所",
     "advancedSettings": "詳細設定",
+    "advancedSettingsLocked": "VPN 接続中です。詳細設定を変更するには切断してください。",
+    "disconnectVpn": "VPN を切断",
+    "appBypassEntry": {
+      "label": "VPN を経由しないアプリ",
+      "count": "{{count}} 個",
+      "empty": "未選択"
+    },
     "alwaysOn": {
       "title": "VPN を常にオンに保つ (Always On)",
       "description": "システムがアプリを解放した後、自動的に再接続します。",
@@ -124,6 +131,27 @@
       "message": "ログインしてクラウドノードを解放",
       "viewPlans": "プランを見る"
     }
+  },
+  "appBypass": {
+    "title": "VPN を経由しないアプリ",
+    "description": "これらのアプリのトラフィックは VPN を経由せず直接通信します。VPN IP がブロックされやすいアプリ（オンラインバンキング、決済、12306 等）に最適です。",
+    "macMultiUserNote": "現在のユーザーアカウントで起動したアプリのみ表示されます。",
+    "addedSection": "追加済み（{{count}}）",
+    "availableSection": "追加可能",
+    "manualAdd": "+ 手動で追加",
+    "manualAddTitle": "プロセス名を追加",
+    "manualAddPlaceholder": "例: chrome.exe / Adobe Photoshop / com.tencent.mm",
+    "manualAddConfirm": "追加",
+    "manualAddCancel": "キャンセル",
+    "manualAddUnsavedConfirm": "未保存の入力は破棄されます。終了しますか？",
+    "refresh": "更新",
+    "rescan": "再検出",
+    "rescanResult": "更新しました（{{count}} 個のプロセス）",
+    "processCount": "{{count}} 個のプロセスをブロック",
+    "kickedOutDueToConnect": "VPN 接続後は変更できません。ホームに戻りました",
+    "loadFailed": "アプリ一覧の読み込みに失敗しました",
+    "saveFailed": "保存に失敗しました。再試行してください",
+    "uninstalledHint": "アプリがアンインストールされている可能性があります"
   },
   "smartMode": {
     "routingMode": "ルーティングモード",

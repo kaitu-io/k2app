@@ -47,6 +47,13 @@
     "favorites": "收藏的伺服器",
     "allLocations": "所有位置",
     "advancedSettings": "進階設定",
+    "advancedSettingsLocked": "VPN 已連線，請先中斷連線後再修改進階設定",
+    "disconnectVpn": "中斷 VPN",
+    "appBypassEntry": {
+      "label": "不走代理的應用",
+      "count": "{{count}} 個",
+      "empty": "未選"
+    },
     "alwaysOn": {
       "title": "保持 VPN 常開 (Always On)",
       "description": "App 被系統釋放後自動恢復連線。",
@@ -124,6 +131,27 @@
       "message": "登入解鎖更多雲端節點",
       "viewPlans": "了解會員"
     }
+  },
+  "appBypass": {
+    "title": "不走代理的應用",
+    "description": "這些應用的流量將不走 VPN，直接出網。適合避免被風控的應用（網銀、微信、12306 等）。",
+    "macMultiUserNote": "此處只列出當前帳戶啟動的應用。",
+    "addedSection": "已加入（{{count}}）",
+    "availableSection": "可新增",
+    "manualAdd": "+ 手動新增",
+    "manualAddTitle": "新增程序名稱",
+    "manualAddPlaceholder": "如 chrome.exe / Adobe Photoshop / com.tencent.mm",
+    "manualAddConfirm": "新增",
+    "manualAddCancel": "取消",
+    "manualAddUnsavedConfirm": "未儲存的輸入將遺失，確認離開？",
+    "refresh": "重新整理",
+    "rescan": "重新偵測",
+    "rescanResult": "已更新（共 {{count}} 個程序）",
+    "processCount": "封鎖 {{count}} 個程序",
+    "kickedOutDueToConnect": "VPN 連線後無法修改，已返回主頁",
+    "loadFailed": "載入應用清單失敗",
+    "saveFailed": "儲存失敗，請重試",
+    "uninstalledHint": "應用程式可能已解除安裝"
   },
   "smartMode": {
     "routingMode": "路由模式",
