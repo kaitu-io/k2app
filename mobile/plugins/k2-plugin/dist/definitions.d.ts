@@ -91,6 +91,13 @@ export interface K2PluginInterface {
     storageRemove(options: {
         key: string;
     }): Promise<void>;
+    listInstalledApps(): Promise<{
+        apps: Array<{
+            packageName: string;
+            label: string;
+            iconUrl?: string;
+        }>;
+    }>;
     addListener(eventName: 'vpnStateChange', handler: (data: {
         state: string;
     }) => void): Promise<PluginListenerHandle>;

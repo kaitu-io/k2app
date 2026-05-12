@@ -14,6 +14,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
+import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -941,5 +942,35 @@ class K2Plugin : Plugin() {
         val key = call.getString("key") ?: ""
         storagePrefs().edit().remove(key).commit()
         call.resolve()
+    }
+
+    // ── App bypass: enumerate user-launchable installed apps ───────────
+
+    @PluginMethod
+    fun listInstalledApps(call: PluginCall) {
+        try {
+            val pm = context.packageManager
+            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val resolved = pm.queryIntentActivities(intent, 0)
+            val seen = mutableSetOf<String>()
+            val apps = JSArray()
+            for (info in resolved) {
+                val appInfo = info.activityInfo.applicationInfo
+                val pkg = appInfo.packageName ?: continue
+                if (pkg == context.packageName) continue
+                if (!seen.add(pkg)) continue
+                val label = pm.getApplicationLabel(appInfo).toString()
+                val iconUrl = "kaitu-icon://package/" + java.net.URLEncoder.encode(pkg, "UTF-8")
+                val entry = JSObject().apply {
+                    put("packageName", pkg)
+                    put("label", label)
+                    put("iconUrl", iconUrl)
+                }
+                apps.put(entry)
+            }
+            call.resolve(JSObject().apply { put("apps", apps) })
+        } catch (e: Exception) {
+            call.reject("LIST_INSTALLED_FAILED", e)
+        }
     }
 }
