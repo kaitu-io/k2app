@@ -135,7 +135,7 @@ mod macos {
 
             let icon_url = format!(
                 "kaitu-icon://bundle/{}",
-                urlencoding::encode(&bundle_path)
+                urlencoding::encode(&bundle_id)
             );
 
             out.push(RunningApp {
@@ -177,6 +177,7 @@ mod windows {
             if basename.is_empty() {
                 continue;
             }
+            // label: use stem for cleaner UI; process_name still uses full basename
             let label = std::path::Path::new(exe_path)
                 .file_stem()
                 .and_then(|s| s.to_str())
