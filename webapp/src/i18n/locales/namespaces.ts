@@ -27,6 +27,7 @@ export const namespaceMapping: Record<string, Namespace> = {
   "dashboard": "dashboard",
   "troubleshooting": "dashboard",
   "versionComparison": "dashboard",
+  "appBypass": "dashboard",
   "purchase": "purchase",
   "plan": "purchase",
   "memberSelection": "purchase",
