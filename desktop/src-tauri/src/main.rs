@@ -2,6 +2,7 @@
 
 mod app_list;
 mod channel;
+mod icon_protocol;
 mod log_upload;
 mod ne;
 mod service;
@@ -99,6 +100,7 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
+        .register_uri_scheme_protocol("kaitu-icon", icon_protocol::handle_kaitu_icon)
         .invoke_handler(tauri::generate_handler![
             show_window,
             hide_window,

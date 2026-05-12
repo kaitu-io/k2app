@@ -43,10 +43,15 @@ objc2-foundation = { version = "0.2", features = [
     "NSString",
     "NSURL",
     "NSObject",
+    "NSData",
+    "NSDictionary",
 ] }
 objc2-app-kit = { version = "0.2", features = [
     "NSWorkspace",
     "NSRunningApplication",
+    "NSImage",
+    "NSImageRep",
+    "NSBitmapImageRep",
 ] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
