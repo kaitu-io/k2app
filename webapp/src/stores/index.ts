@@ -42,6 +42,9 @@ export {
 // ============ Config Store ============
 export { useConfigStore } from './config.store';
 
+// ============ App Bypass Store ============
+export { useAppBypassStore } from './app-bypass.store';
+
 // ============ Connection Store ============
 export { useConnectionStore, initializeConnectionStore } from './connection.store';
 
@@ -67,6 +70,7 @@ import { useConfigStore } from './config.store';
 import { initializeConnectionStore, useConnectionStore } from './connection.store';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useFeedbackStore } from './feedback.store';
+import { useAppBypassStore } from './app-bypass.store';
 
 /**
  * 初始化所有 Store
@@ -86,6 +90,7 @@ export function initializeAllStores(): () => void {
     useConfigStore.getState().fetchGeoDetection();
   });
   useSelfHostedStore.getState().loadTunnel(); // fire-and-forget, sets loaded=true when done
+  useAppBypassStore.getState().load(); // fire-and-forget; sets loaded=true when done
   const cleanupAuth = initializeAuthStore();
   const cleanupVPNMachine = initializeVPNMachine();
   const cleanupConnection = initializeConnectionStore();
