@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box, Typography, Stack, IconButton, CircularProgress, Avatar, Button,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -32,6 +33,9 @@ export default function AppBypass() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualInput, setManualInput] = useState('');
+  const isAndroid = window._platform?.os === 'android';
 
   // Page-level VPN guard: redirect to '/' if VPN leaves the idle state.
   useEffect(() => {
@@ -163,6 +167,9 @@ export default function AppBypass() {
           <Typography variant="subtitle1" sx={{ flex: 1 }}>
             {t('dashboard:appBypass.availableSection')}
           </Typography>
+          <Button size="small" onClick={() => setManualOpen(true)}>
+            {t('dashboard:appBypass.manualAdd')}
+          </Button>
           <IconButton
             onClick={refresh}
             size="small"
@@ -202,6 +209,51 @@ export default function AppBypass() {
           </Stack>
         )}
       </Box>
+
+      <Dialog
+        open={manualOpen}
+        onClose={() => {
+          if (manualInput !== '' && !confirm(t('dashboard:appBypass.manualAddUnsavedConfirm'))) return;
+          setManualOpen(false);
+          setManualInput('');
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{t('dashboard:appBypass.manualAddTitle')}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            value={manualInput}
+            onChange={e => setManualInput(e.target.value)}
+            placeholder={t('dashboard:appBypass.manualAddPlaceholder')}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setManualInput(''); setManualOpen(false); }}>
+            {t('dashboard:appBypass.manualAddCancel')}
+          </Button>
+          <Button
+            variant="contained"
+            disabled={manualInput.trim() === ''}
+            onClick={async () => {
+              const v = manualInput.trim();
+              const kind: 'process' | 'package' = isAndroid ? 'package' : 'process';
+              await useAppBypassStore.getState().add({
+                id: 'manual:' + v,
+                label: v,
+                kind,
+                names: [v],
+              });
+              setManualInput('');
+              setManualOpen(false);
+            }}
+          >
+            {t('dashboard:appBypass.manualAddConfirm')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
