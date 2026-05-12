@@ -11,7 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
-import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, RunningApp } from '../types/kaitu-core';
 import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { getDeviceUdid } from './device-udid';
@@ -224,6 +224,13 @@ export async function injectTauriGlobals(): Promise<void> {
 
     setDevEnabled: (enabled: boolean): void => {
       invoke('set_dev_enabled', { enabled }).catch(() => {});
+    },
+
+    appList: {
+      listRunning: async (): Promise<RunningApp[]> => {
+        const result = await invoke<RunningApp[]>('list_running_apps');
+        return result;
+      },
     },
   };
 
