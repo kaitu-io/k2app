@@ -20,6 +20,8 @@ import type { ClientConfig, RouteConfig } from '../types/client-config';
 import { CLIENT_CONFIG_DEFAULTS } from '../types/client-config';
 import { countryToProfile, PROFILE_TO_PRESET } from '../utils/routes';
 import { cloudApi } from '../services/cloud-api';
+import type { AppBypassEntry } from './app-bypass.store';
+import { useAppBypassStore } from './app-bypass.store';
 
 /** Build-time log level from K2_BUILD_LOG_LEVEL env var (default: 'debug'). Injected by Vite define. */
 declare const __K2_BUILD_LOG_LEVEL__: string;
@@ -106,6 +108,36 @@ function gatewayPrefix(): RouteConfig[] {
     return [{ via: 'direct', match: { domain_suffix: ['ipinfo.io'] } }];
   }
   return [];
+}
+
+/**
+ * Build app-bypass direct routes from user-managed entries.
+ *
+ * Emits at most two routes (one per kind) to keep the rule engine fast:
+ *   - process kind → `{ via: 'direct', match: { process_name: [...] } }`
+ *   - package kind → `{ via: 'direct', match: { package_name: [...] } }`
+ *
+ * Names are deduped across all entries of the same kind, preserving
+ * first-seen order. Returns [] on iOS (NEPacketTunnelProvider cannot
+ * see per-app process identity, so the feature is unsupported there).
+ *
+ * Privacy: callers must NEVER log entry names — only the count.
+ */
+export function buildBypassRoutes(entries: AppBypassEntry[]): RouteConfig[] {
+  if (window._platform?.os === 'ios') return [];
+  if (entries.length === 0) return [];
+
+  const processNames = [...new Set(
+    entries.filter(e => e.kind === 'process').flatMap(e => e.names)
+  )];
+  const packageNames = [...new Set(
+    entries.filter(e => e.kind === 'package').flatMap(e => e.names)
+  )];
+
+  const routes: RouteConfig[] = [];
+  if (processNames.length > 0) routes.push({ via: 'direct', match: { process_name: processNames } });
+  if (packageNames.length > 0) routes.push({ via: 'direct', match: { package_name: packageNames } });
+  return routes;
 }
 
 function buildRoutes(
@@ -420,16 +452,23 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
 
   buildConnectConfig: (params?: ConnectConfigParams | string) => {
     const { defaultVia, countryVia, country, autoDetect, telemetry } = get();
+    // Cross-store read: app-bypass entries are user-managed (per-app direct routes).
+    // Counted-only in logs — names MUST NEVER be logged (see Section 8 privacy invariant).
+    const bypassEntries = useAppBypassStore.getState().entries;
     const preset = derivePreset(defaultVia, countryVia);
     const serverUrl = typeof params === 'string'
       ? params
       : params?.serverUrl;
 
+    const baseRoutes = buildRoutes(defaultVia, countryVia, country, serverUrl);
     const result: ClientConfig = {
       ...CLIENT_CONFIG_DEFAULTS,
       mode: 'tun',
       log: { ...CLIENT_CONFIG_DEFAULTS.log, level: __K2_BUILD_LOG_LEVEL__ },
-      routes: buildRoutes(defaultVia, countryVia, country, serverUrl),
+      routes: [
+        ...buildBypassRoutes(bypassEntries),
+        ...baseRoutes,
+      ],
     };
 
     if (telemetry.ruleMissEnabled) {
@@ -445,6 +484,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       + ', country=' + (country ?? 'null')
       + ', autoDetect=' + autoDetect
       + ', routes=' + (result.routes?.length ?? 0)
+      + ', bypassEntryCount=' + bypassEntries.length
       + ', serverUrl=' + (serverUrl ?? 'none')
       + ', logLevel=' + result.log?.level
       + ', mode=' + result.mode
