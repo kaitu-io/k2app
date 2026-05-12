@@ -54,6 +54,8 @@ func (d *Daemon) handleHelper(w http.ResponseWriter, r *http.Request) {
 		d.helper.handleInstall(w, req.Params)
 	case "adb-status":
 		d.helper.handleStatus(w)
+	case "app-list-running":
+		d.handleAppListRunning(w, r)
 	default:
 		writeJSON(w, Response{Code: 400, Message: "unknown helper action"})
 	}
