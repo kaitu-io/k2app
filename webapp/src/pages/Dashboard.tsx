@@ -8,6 +8,7 @@ import {
   Collapse,
   List,
   ListItem,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Radio,
@@ -19,10 +20,11 @@ import {
 import {
   ExpandMore as ExpandMoreIcon,
   Settings as SettingsIcon,
+  ChevronRight as ChevronRightIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useAuthStore } from "../stores";
+import { useAuthStore, useAppBypassStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
@@ -42,6 +44,7 @@ import { DisconnectFeedbackDialog } from '../components/DisconnectFeedbackDialog
 import { SmartServerSelector } from '../components/SmartServerSelector';
 import { SelfHostedTunnelItem } from '../components/SelfHostedTunnelItem';
 import { K2subConfig } from '../components/K2subConfig';
+import ConnectedSettingsLock from '../components/ConnectedSettingsLock';
 
 // Styled Components for Modern Design
 const DashboardContainer = styled(Box)(({ theme }) => ({
@@ -114,6 +117,9 @@ export default function Dashboard() {
   // Get app-specific configuration
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
+
+  // App-bypass entry count (Advanced Settings row)
+  const bypassCount = useAppBypassStore((s) => s.entries.length);
 
   // Theme
   const theme = useTheme();
@@ -625,28 +631,35 @@ export default function Dashboard() {
             pb: 0.5,
             pt: 1,
           }}>
-            {isInteractive && (
-              <Typography variant="caption" sx={{
-                color: 'warning.main',
-                fontSize: '0.75rem',
-                fontWeight: 500,
-                mb: 2,
-                display: 'block'
-              }}>
-                {t('dashboard:dashboard.disconnectToModify')}
-              </Typography>
-            )}
+            <ConnectedSettingsLock>
+              {/* iOS-only: NEOnDemandRuleConnect toggle (ANC-13) */}
+              {typeof window !== 'undefined' && window._platform?.os === 'ios' && (
+                <AlwaysOnToggle />
+              )}
 
-            {/* iOS-only: NEOnDemandRuleConnect toggle (ANC-13) */}
-            {typeof window !== 'undefined' && window._platform?.os === 'ios' && (
-              <AlwaysOnToggle />
-            )}
+              {/* Routing mode + country selection */}
+              {proxyRuleConfig.visible && (
+                <RoutingModeSelector />
+              )}
 
-            {/* Routing mode + country selection */}
-            {proxyRuleConfig.visible && (
-              <RoutingModeSelector />
-            )}
-
+              {/* App-bypass entry (Task 6.2) */}
+              {appConfig.features.appBypass && window._platform?.appList && (
+                <ListItemButton
+                  onClick={() => navigate('/app-bypass')}
+                  sx={{ mt: 1.5, borderRadius: 1, border: 1, borderColor: 'divider' }}
+                >
+                  <ListItemText
+                    primary={t('dashboard:dashboard.appBypassEntry.label')}
+                    secondary={
+                      bypassCount > 0
+                        ? t('dashboard:dashboard.appBypassEntry.count', { count: bypassCount })
+                        : t('dashboard:dashboard.appBypassEntry.empty')
+                    }
+                  />
+                  <ChevronRightIcon />
+                </ListItemButton>
+              )}
+            </ConnectedSettingsLock>
           </Box>
         </Collapse>
       </Box>
