@@ -15,7 +15,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Box, Typography, Stack, IconButton, CircularProgress,
+  Box, Typography, Stack, IconButton, CircularProgress, Avatar, Button,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -100,7 +100,6 @@ export default function AppBypass() {
   // Filter out already-added candidates — used by Task 6.4.
   const addedIds = new Set(entries.map((e) => e.id));
   const available = candidates.filter((c) => !addedIds.has(c.id));
-  void available; // referenced by upcoming list-rendering task
 
   return (
     <Box sx={{ p: 2, maxWidth: 700, mx: 'auto' }}>
@@ -133,7 +132,32 @@ export default function AppBypass() {
         </Typography>
       )}
 
-      {/* Added section + Available section to be filled in Task 6.4 */}
+      {entries.length > 0 && (
+        <Box>
+          <Typography variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
+            {t('dashboard:appBypass.addedSection', { count: entries.length })}
+          </Typography>
+          <Stack spacing={1}>
+            {entries.map(e => (
+              <Stack key={e.id} direction="row" alignItems="center" spacing={1.5} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                <Avatar src={e.iconUrl} variant="rounded" sx={{ width: 32, height: 32 }}>
+                  {e.label[0]?.toUpperCase()}
+                </Avatar>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={600} noWrap>{e.label}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {t('dashboard:appBypass.processCount', { count: e.names.length })}
+                  </Typography>
+                </Box>
+                <Button size="small" color="error" onClick={() => useAppBypassStore.getState().remove(e.id)}>
+                  ✕
+                </Button>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
+      )}
+
       <Box>
         <Stack direction="row" alignItems="center" sx={{ mt: 3, mb: 1 }}>
           <Typography variant="subtitle1" sx={{ flex: 1 }}>
@@ -148,7 +172,35 @@ export default function AppBypass() {
             <RefreshIcon />
           </IconButton>
         </Stack>
-        {loading && <CircularProgress size={20} />}
+        {loading ? (
+          <CircularProgress size={20} />
+        ) : (
+          <Stack spacing={1}>
+            {available.map(c => (
+              <Stack key={c.id} direction="row" alignItems="center" spacing={1.5} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                <Avatar src={c.iconUrl} variant="rounded" sx={{ width: 32, height: 32 }}>
+                  {c.label[0]?.toUpperCase()}
+                </Avatar>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={600} noWrap>{c.label}</Typography>
+                </Box>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => {
+                    if (c.kind === 'process') {
+                      useAppBypassStore.getState().add({ id: c.id, label: c.label, kind: 'process', names: c.processNames, iconUrl: c.iconUrl });
+                    } else {
+                      useAppBypassStore.getState().add({ id: c.id, label: c.label, kind: 'package', names: [c.id], iconUrl: c.iconUrl });
+                    }
+                  }}
+                >
+                  +
+                </Button>
+              </Stack>
+            ))}
+          </Stack>
+        )}
       </Box>
     </Box>
   );
