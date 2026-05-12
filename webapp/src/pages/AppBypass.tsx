@@ -153,6 +153,28 @@ export default function AppBypass() {
                     {t('dashboard:appBypass.processCount', { count: e.names.length })}
                   </Typography>
                 </Box>
+                {e.kind === 'process' && window._platform?.appList?.listRunning && (
+                  <IconButton
+                    size="small"
+                    title={t('dashboard:appBypass.rescan')}
+                    onClick={async () => {
+                      try {
+                        const running = await window._platform!.appList!.listRunning!();
+                        const match = running.find(r => r.id === e.id);
+                        if (!match) return;
+                        await useAppBypassStore.getState().rescan(e.id, match.processNames);
+                        useAlertStore.getState().showAlert(
+                          t('dashboard:appBypass.rescanResult', { count: match.processNames.length }),
+                          'success'
+                        );
+                      } catch (err) {
+                        useAlertStore.getState().showAlert(t('dashboard:appBypass.loadFailed'), 'error');
+                      }
+                    }}
+                  >
+                    <RefreshIcon fontSize="small" />
+                  </IconButton>
+                )}
                 <Button size="small" color="error" onClick={() => useAppBypassStore.getState().remove(e.id)}>
                   ✕
                 </Button>
