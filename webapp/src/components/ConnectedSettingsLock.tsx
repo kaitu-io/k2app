@@ -16,11 +16,11 @@ export default function ConnectedSettingsLock({ children }: { children: React.Re
         sx={{ mb: 1.5 }}
         action={
           <Button size="small" onClick={() => vpnMachineDispatch('USER_DISCONNECT')}>
-            {t('dashboard:disconnectVpn')}
+            {t('dashboard:dashboard.disconnectVpn')}
           </Button>
         }
       >
-        {t('dashboard:advancedSettingsLocked')}
+        {t('dashboard:dashboard.advancedSettingsLocked')}
       </Alert>
       <Box sx={{ pointerEvents: 'none', opacity: 0.45 }}>
         {children}

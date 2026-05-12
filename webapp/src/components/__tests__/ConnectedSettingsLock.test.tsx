@@ -7,8 +7,8 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
-        'dashboard:advancedSettingsLocked': 'VPN 已连接，请先断开后再修改高级设置',
-        'dashboard:disconnectVpn': '断开 VPN',
+        'dashboard:dashboard.advancedSettingsLocked': 'VPN 已连接，请先断开后再修改高级设置',
+        'dashboard:dashboard.disconnectVpn': '断开 VPN',
       };
       return translations[key] ?? key;
     },
