@@ -610,7 +610,8 @@ func api_web_auth(c *gin.Context) {
 
 	log.Infof(c, "user %d successfully logged in via web", identify.UserID)
 
-	// 返回用户信息（tokens已通过HttpOnly Cookie设置）
+	// Tokens 通过 HttpOnly Cookie 设置，AccessToken 也在 body 里返回供
+	// fallback 使用（iOS 微信 WKWebView 等不持久化 Set-Cookie 的环境）。
 	Success(c, &DataWebLoginResponse{
 		User: DataWebLoginUser{
 			ID:      identify.UserID,
@@ -618,6 +619,7 @@ func api_web_auth(c *gin.Context) {
 			IsAdmin: userIsAdmin,
 			Roles:   userRoles,
 		},
+		AccessToken: authResult.AccessToken,
 	})
 }
 
