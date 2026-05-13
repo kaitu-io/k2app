@@ -635,6 +635,36 @@ describe('API Methods', () => {
         expect(localStorage.getItem('auth_fallback_token')).toBeNull();
       });
     });
+
+    describe('Safari "Block All Cookies" — localStorage throws SecurityError', () => {
+      function makeStorageThrow() {
+        const err = () => {
+          throw new DOMException('The operation is insecure.', 'SecurityError');
+        };
+        // jsdom puts get/set/removeItem on the instance, not Storage.prototype,
+        // so spying on the prototype is silently ineffective. Spy on the
+        // instance directly.
+        vi.spyOn(window.localStorage, 'getItem').mockImplementation(err);
+        vi.spyOn(window.localStorage, 'setItem').mockImplementation(err);
+        vi.spyOn(window.localStorage, 'removeItem').mockImplementation(err);
+      }
+
+      it('applyLoginCredentials degrades to "cookie" without rejecting when storage is blocked', async () => {
+        makeStorageThrow();
+        setCookie('');
+        await expect(api.applyLoginCredentials('any-token')).resolves.toBe('cookie');
+      });
+
+      it('getValidAuthHeader returns {} without rejecting when storage is blocked', async () => {
+        makeStorageThrow();
+        await expect(api.getValidAuthHeader()).resolves.toEqual({});
+      });
+
+      it('clearAuthData does not throw when storage is blocked', () => {
+        makeStorageThrow();
+        expect(() => api.clearAuthData()).not.toThrow();
+      });
+    });
   });
 
 });

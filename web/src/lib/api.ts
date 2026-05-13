@@ -36,6 +36,7 @@
 
 import { toast } from "sonner";
 import { appEvents } from "./events";
+import { safeStorage } from "./safeStorage";
 
 // ============================================================================
 // API Types (moved from @/types/api.ts to avoid conflicts)
@@ -1121,8 +1122,8 @@ export const api = {
    */
   clearAuthData(): void {
     console.log('[API] Clearing auth data');
-    localStorage.removeItem('embed_auth_token');
-    localStorage.removeItem('auth_fallback_token');
+    safeStorage.remove('embed_auth_token');
+    safeStorage.remove('auth_fallback_token');
 
     // Emit event to sync AuthContext state only (no redirect)
     appEvents.emit('auth:unauthorized');
@@ -1161,11 +1162,11 @@ export const api = {
     //      failed to persist (iOS WeChat WKWebView etc.); see applyLoginCredentials.
     // Normal web auth uses HttpOnly cookies (automatic via credentials: 'include').
     if (typeof window === 'undefined') return {};
-    const embedToken = localStorage.getItem('embed_auth_token');
+    const embedToken = safeStorage.get('embed_auth_token');
     if (embedToken) {
       return { Authorization: `Bearer ${embedToken}` };
     }
-    const fallbackToken = localStorage.getItem('auth_fallback_token');
+    const fallbackToken = safeStorage.get('auth_fallback_token');
     if (fallbackToken) {
       return { Authorization: `Bearer ${fallbackToken}` };
     }
@@ -1201,13 +1202,18 @@ export const api = {
     if (typeof window === 'undefined') return 'cookie';
     const cookieOk = await this.hasCookieAuth();
     if (cookieOk) {
-      localStorage.removeItem('auth_fallback_token');
+      safeStorage.remove('auth_fallback_token');
       return 'cookie';
     }
     if (accessToken) {
-      localStorage.setItem('auth_fallback_token', accessToken);
-      console.warn('[API] Cookie auth failed to persist; using localStorage Bearer fallback');
-      return 'fallback';
+      if (safeStorage.set('auth_fallback_token', accessToken)) {
+        console.warn('[API] Cookie auth failed to persist; using localStorage Bearer fallback');
+        return 'fallback';
+      }
+      // Cookie blocked AND storage blocked (Safari ties Web Storage to the
+      // cookie setting). Auth will almost certainly fail on the next request,
+      // but at least we don't throw SecurityError out of this async chain.
+      console.warn('[API] Cookie auth failed and localStorage unavailable; login will likely fail');
     }
     return 'cookie';
   },

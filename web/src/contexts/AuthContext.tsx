@@ -11,6 +11,7 @@ import React, {
 import { appEvents } from "@/lib/events";
 import { redirectToLogin } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { safeStorage } from "@/lib/safeStorage";
 
 interface User {
   id: number;
@@ -73,7 +74,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const checkAuthStatus = async () => {
       try {
         // Special case: embed mode with Bearer token
-        const embedToken = localStorage.getItem("embed_auth_token");
+        const embedToken = safeStorage.get("embed_auth_token");
         if (embedToken) {
           console.log("[AuthContext] Embed mode detected");
           // For embed mode, we still need to verify with API
@@ -88,7 +89,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             });
           } catch {
             console.log("[AuthContext] Embed token invalid");
-            localStorage.removeItem("embed_auth_token");
+            safeStorage.remove("embed_auth_token");
           }
           setIsAuthLoading(false);
           return;
