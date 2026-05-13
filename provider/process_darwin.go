@@ -5,7 +5,9 @@ package provider
 import (
 	"fmt"
 	"net/netip"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,8 +56,13 @@ func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, sr
 }
 
 // lsofLookup calls lsof to find the process name for a socket.
-// lsof -i <proto>@<ip>:<port> -P -n -F c
-// Output: "p<pid>\nc<command>\n"
+// lsof -i <proto>@<ip>:<port> returns BOTH endpoints (client + server) when
+// a connection is established. We must exclude our own PID (the daemon) so
+// we return the actual peer (e.g., curl, browser).
+//
+// Output format (-F pc): one "p<pid>" line per process, followed by a "c<command>"
+// line, then "f<fd>" lines per matching socket. We scan line-by-line, tracking
+// the current PID, and return the first command whose PID is not our own.
 func lsofLookup(network string, srcIP netip.Addr, srcPort uint16) string {
 	proto := "tcp"
 	if network == "udp" {
@@ -63,16 +70,40 @@ func lsofLookup(network string, srcIP netip.Addr, srcPort uint16) string {
 	}
 	spec := fmt.Sprintf("%s@%s:%d", proto, srcIP, srcPort)
 
-	out, err := exec.Command("lsof", "-i", spec, "-P", "-n", "-F", "c").Output()
+	out, err := exec.Command("lsof", "-i", spec, "-P", "-n", "-F", "pc").Output()
 	if err != nil || len(out) == 0 {
 		return ""
 	}
 
-	// Parse -F c output: lines starting with 'c' have the command name.
+	selfPid := os.Getpid()
+	var currentPid int
+	var currentCmd string
 	for _, line := range strings.Split(string(out), "\n") {
-		if strings.HasPrefix(line, "c") {
-			return line[1:]
+		if len(line) < 1 {
+			continue
 		}
+		switch line[0] {
+		case 'p':
+			// Emit previous (pid, cmd) if it was not self.
+			if currentPid != 0 && currentPid != selfPid && currentCmd != "" {
+				return currentCmd
+			}
+			// New PID block.
+			pid, err := strconv.Atoi(line[1:])
+			if err != nil {
+				currentPid = 0
+				currentCmd = ""
+				continue
+			}
+			currentPid = pid
+			currentCmd = ""
+		case 'c':
+			currentCmd = line[1:]
+		}
+	}
+	// Tail: last block not yet emitted.
+	if currentPid != 0 && currentPid != selfPid && currentCmd != "" {
+		return currentCmd
 	}
 	return ""
 }

@@ -8,8 +8,16 @@ import (
 	"testing"
 )
 
-func TestProcessSearcher_FindSelf(t *testing.T) {
-	// Create a TCP listener to have a known socket.
+// TestProcessSearcher_SkipsSelf asserts the searcher does NOT return our own
+// process name when only our own socket is bound to the (ip,port).
+// lsof -i tcp@<ip>:<port> on a listening socket returns our own PID; the
+// searcher must skip self (os.Getpid()) and return empty.
+//
+// Real-world attribution is tested in integration smoke (curl + daemon),
+// where the daemon and peer are distinct processes.
+func TestProcessSearcher_SkipsSelf(t *testing.T) {
+	// Create a TCP listener so there's a known socket on a known port,
+	// owned by THIS test process (which is self).
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -22,9 +30,7 @@ func TestProcessSearcher_FindSelf(t *testing.T) {
 
 	searcher := DarwinProcessSearcher{}
 	name, _ := searcher.FindProcess("tcp", srcIP, srcPort)
-	if name == "" {
-		t.Errorf("FindProcess(127.0.0.1:%d) returned empty process name", srcPort)
-	} else {
-		t.Logf("FindProcess(127.0.0.1:%d) = %q", srcPort, name)
+	if name != "" {
+		t.Errorf("FindProcess(127.0.0.1:%d) = %q, want empty (self-PID must be skipped)", srcPort, name)
 	}
 }
