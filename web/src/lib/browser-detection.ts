@@ -22,8 +22,19 @@ export interface BrowserInfo {
   family: BrowserFamily;
   isMainstream: boolean;
   isInAppWebView: boolean;
+  /** iOS version × 100 (e.g. 1304 for iOS 13.4), null when not iOS. All iOS
+   *  browsers share the system WebKit, so this gates JS-feature support for
+   *  every iOS browser regardless of brand. */
+  iosVersion: number | null;
+  /** true when iOS version is below our minimum target (13.4). Client code
+   *  shipped to the browser uses `?.` / `??` (ES2020) which iOS Safari < 13.4
+   *  rejects at parse time — those users get a blank page. */
+  isOutdatedIOS: boolean;
   userAgent: string;
 }
+
+/** Minimum iOS version we can serve. Below this, our chunks fail to parse. */
+export const MIN_IOS_VERSION = 1304;
 
 const IN_APP_WEBVIEW_TOKENS = [
   'micromessenger',
@@ -66,6 +77,22 @@ function isIOSWKWebView(ua: string): boolean {
   return !(/Safari\//.test(ua) && /Version\//.test(ua));
 }
 
+/** Extract iOS major.minor version × 100 from a UA. Returns null if not iOS.
+ *  iOS UA examples:
+ *    "CPU iPhone OS 17_0 like Mac OS X"  -> 1700
+ *    "CPU iPhone OS 13_4 like Mac OS X"  -> 1304
+ *    "CPU iPad OS 16_3_1 like Mac OS X"  -> 1603
+ *    "CPU iPhone OS 12 like Mac OS X"    -> 1200 */
+export function getIOSVersion(ua: string): number | null {
+  if (!/iPhone|iPad|iPod/.test(ua)) return null;
+  const m = ua.match(/(?:iPhone OS|iPad OS|CPU OS)\s+(\d+)(?:[._](\d+))?/);
+  if (!m) return null;
+  const major = parseInt(m[1], 10);
+  const minor = m[2] ? parseInt(m[2], 10) : 0;
+  if (!Number.isFinite(major)) return null;
+  return major * 100 + minor;
+}
+
 function identifyMainstream(ua: string): BrowserFamily {
   // Order matters: specific tokens before generic Chrome/Safari, because
   // Chromium-derived browsers all also include "Chrome/" in their UA.
@@ -84,11 +111,28 @@ export function detectBrowser(userAgent?: string): BrowserInfo {
   const ua = userAgent ?? (typeof window !== 'undefined' ? window.navigator.userAgent : '');
 
   if (!ua) {
-    return { family: 'unknown', isMainstream: false, isInAppWebView: false, userAgent: '' };
+    return {
+      family: 'unknown',
+      isMainstream: false,
+      isInAppWebView: false,
+      iosVersion: null,
+      isOutdatedIOS: false,
+      userAgent: '',
+    };
   }
 
+  const iosVersion = getIOSVersion(ua);
+  const isOutdatedIOS = iosVersion !== null && iosVersion < MIN_IOS_VERSION;
+
   if (hasInAppWebViewToken(ua) || hasAndroidWebViewMarker(ua) || isIOSWKWebView(ua)) {
-    return { family: 'unknown', isMainstream: false, isInAppWebView: true, userAgent: ua };
+    return {
+      family: 'unknown',
+      isMainstream: false,
+      isInAppWebView: true,
+      iosVersion,
+      isOutdatedIOS,
+      userAgent: ua,
+    };
   }
 
   const family = identifyMainstream(ua);
@@ -96,6 +140,8 @@ export function detectBrowser(userAgent?: string): BrowserInfo {
     family,
     isMainstream: family !== 'unknown',
     isInAppWebView: false,
+    iosVersion,
+    isOutdatedIOS,
     userAgent: ua,
   };
 }

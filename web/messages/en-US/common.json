@@ -62,6 +62,7 @@
     "available": "Available"
   },
   "browserWarning": {
-    "message": "⚠️ The browser you're using may prevent login or checkout from working. If you hit a problem, open {domain} in Chrome, Edge, or Safari."
+    "message": "⚠️ The browser you're using may prevent login or checkout from working. If you hit a problem, open {domain} in Chrome, Edge, or Safari.",
+    "outdatedIos": "⚠️ Your iOS version is too old and may prevent this page from working. Please update your device to iOS 13.4 or later."
   }
 }

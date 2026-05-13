@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectBrowser, type BrowserFamily } from '../browser-detection';
+import { detectBrowser, getIOSVersion, MIN_IOS_VERSION, type BrowserFamily } from '../browser-detection';
 
 const MAINSTREAM: Array<{ ua: string; family: BrowserFamily; label: string }> = [
   { label: 'Chrome desktop (Win)', family: 'chrome',
@@ -106,12 +106,70 @@ describe('detectBrowser — order sensitivity', () => {
   });
 });
 
+describe('getIOSVersion', () => {
+  it.each([
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 13_4 like Mac OS X) ...', 1304],
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 12_5_7 like Mac OS X) ...', 1205],
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) ...', 1700],
+    ['Mozilla/5.0 (iPad; CPU OS 16_3 like Mac OS X) ...', 1603],
+    ['Mozilla/5.0 (iPod touch; CPU iPhone OS 15_4 like Mac OS X) ...', 1504],
+    ['Mozilla/5.0 (iPad; CPU iPad OS 16_3 like Mac OS X) ...', 1603],
+  ])('extracts version %i × 100', (ua, expected) => {
+    expect(getIOSVersion(ua)).toBe(expected);
+  });
+
+  it('returns null for non-iOS user agents', () => {
+    expect(getIOSVersion('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/17.0')).toBeNull();
+    expect(getIOSVersion('Mozilla/5.0 (Linux; Android 13)')).toBeNull();
+    expect(getIOSVersion('Mozilla/5.0 (Windows NT 10.0)')).toBeNull();
+    expect(getIOSVersion('')).toBeNull();
+  });
+});
+
+describe('detectBrowser — outdated iOS', () => {
+  it('flags iOS 12 Safari as isOutdatedIOS', () => {
+    const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 12_5_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Mobile/15E148 Safari/604.1';
+    const info = detectBrowser(ua);
+    expect(info.isOutdatedIOS).toBe(true);
+    expect(info.iosVersion).toBe(1205);
+    expect(info.iosVersion! < MIN_IOS_VERSION).toBe(true);
+  });
+
+  it('does not flag iOS 13.4 Safari as outdated (exact threshold)', () => {
+    const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1 Mobile/15E148 Safari/604.1';
+    const info = detectBrowser(ua);
+    expect(info.isOutdatedIOS).toBe(false);
+    expect(info.iosVersion).toBe(1304);
+  });
+
+  it('does not flag iOS 17 Safari as outdated', () => {
+    const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+    expect(detectBrowser(ua).isOutdatedIOS).toBe(false);
+  });
+
+  it('reports iosVersion=null and isOutdatedIOS=false for non-iOS browsers', () => {
+    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15';
+    const info = detectBrowser(ua);
+    expect(info.iosVersion).toBeNull();
+    expect(info.isOutdatedIOS).toBe(false);
+  });
+
+  it('still detects outdated iOS even inside an in-app webview (e.g. WeChat on iOS 12)', () => {
+    const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 12_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.40';
+    const info = detectBrowser(ua);
+    expect(info.isInAppWebView).toBe(true);
+    expect(info.isOutdatedIOS).toBe(true);
+  });
+});
+
 describe('detectBrowser — empty / SSR', () => {
   it('returns unknown for empty string', () => {
     expect(detectBrowser('')).toEqual({
       family: 'unknown',
       isMainstream: false,
       isInAppWebView: false,
+      iosVersion: null,
+      isOutdatedIOS: false,
       userAgent: '',
     });
   });
