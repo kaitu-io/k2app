@@ -34,7 +34,7 @@ import { useAuthStore } from "../stores";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useAppLinks } from "../hooks/useAppLinks";
-import { handleResponseError } from "../utils/errorCode";
+import { ERROR_CODES, handleResponseError } from "../utils/errorCode";
 import { suggestEmail } from "../utils/email-suggest";
 import EmailSuggestion from "./EmailSuggestion";
 import { cloudApi } from '../services/cloud-api';
@@ -171,6 +171,15 @@ export default function LoginDialog() {
         language: i18n.language,
       });
 
+      // Surface VERIFICATION_CODE_EXPIRED (400013) before throwing so we can
+      // clear the input + send the user back to step 1 where the resend
+      // button lives.
+      if (response.code === ERROR_CODES.VERIFICATION_CODE_EXPIRED) {
+        setVerificationCode("");
+        setStep("email");
+        setCountdown(0);
+      }
+
       handleResponseError(
         response.code,
         response.message,
@@ -187,7 +196,10 @@ export default function LoginDialog() {
 
     } catch (err) {
       console.error('[LoginDialog] Failed to verify code:', err);
-      setError(t("auth:auth.loginFailedRetry"));
+      // Surface the precise i18n message (400003 vs 400013) instead of a
+      // generic fallback. The previous setError(loginFailedRetry) swallowed
+      // the distinction users need to see.
+      setError(err instanceof Error ? err.message : t("auth:auth.loginFailedRetry"));
     } finally {
       setIsSubmitting(false);
     }

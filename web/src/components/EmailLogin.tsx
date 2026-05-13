@@ -5,7 +5,7 @@ import { suggestEmail } from "@/lib/email-suggest";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAppConfig } from "@/contexts/AppConfigContext";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, ErrorCode } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,6 +124,12 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(getApiErrorMessage(error.code, t));
+        // On expired/missing code, clear the input AND send the user back to
+        // step 1 so the "send code" button is the obvious next move.
+        if (error.code === ErrorCode.VerificationCodeExpired) {
+          setCode("");
+          setStep(1);
+        }
       } else {
         toast.error(t('auth.login.loginFailed'));
       }

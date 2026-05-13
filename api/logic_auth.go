@@ -25,9 +25,30 @@ const (
 	TokenTypeRefresh = "refresh"
 
 	// 验证码相关常量
-	VerificationCodeLength     = 6                  // 验证码长度
-	VerificationCodeExpiry     = 300                // 验证码有效期（秒）
-	VerificationCodePrefix     = "auth:code:email:" // 验证码缓存前缀
+	VerificationCodeLength = 6 // 验证码长度
+	// VerificationCodeExpiry 是验证码的初始/刷新有效期（秒）。
+	// 同一邮箱在窗口内复用同一验证码，每次重发都把 TTL 重置到 30 分钟。
+	VerificationCodeExpiry        = 1800
+	VerificationCodeExpiryMinutes = VerificationCodeExpiry / 60 // 暴露给邮件模板
+	// VerificationCodeUsedGracePeriod 是 verify 成功后保留验证码的宽限期（秒）。
+	// 用途：客户端双击 / 网络抖动重试时，second verify 仍能命中并幂等成功。
+	// 上限严格：宽限期内任何一次 /api/auth/code 重发都会作废老码生成新码，
+	// 即"60s 上限"由代码强制 —— 而不是"60s 或者直到下一次重发"。
+	VerificationCodeUsedGracePeriod = 60
+	VerificationCodePrefix          = "auth:code:email:" // 验证码缓存前缀
+	// verificationCodeConsumedPrefix 标记一份码已经通过 verify、正处于宽限期。
+	// 用 value-prefix（而不是另一个 key）来表达"已消费"语义，避免双 key
+	// 同步漂移；issueOrRefresh 看到这个前缀必须重新生成而不是复用。
+	verificationCodeConsumedPrefix = "used:"
+)
+
+// VerifyCodeResult 区分 verify 失败的子原因，让前端能给出更精准的提示。
+type VerifyCodeResult int
+
+const (
+	VerifyCodeOK        VerifyCodeResult = iota // 验证通过
+	VerifyCodeWrong                             // 缓存里有码但值不匹配（用户输错）
+	VerifyCodeNotIssued                         // 缓存里没有码（已过期 / 从未发送 / 已超出宽限期）
 )
 
 var (
@@ -200,74 +221,122 @@ func validateToken(ctx context.Context, tokenString string, tokenType string) (*
 
 }
 
-// saveEmailVerificationCode 保存验证码
-func saveEmailVerificationCode(ctx context.Context, emailId string, code string, expireMinutes int) error {
-	cacheKey := VerificationCodePrefix + emailId
-	if EnableMockVerificationCode {
-		return redis.CacheSet(cacheKey, MockVerificationCode, expireMinutes*60)
-	}
-	log.Debugf(ctx, "saving verification code for %s", emailId)
-	if err := redis.CacheSet(cacheKey, code, expireMinutes*60); err != nil {
-		log.Errorf(ctx, "failed to save verification code for %s: %v", emailId, err)
-		return fmt.Errorf("failed to save verification code: %w", err)
-	}
-	return nil
+// verificationCodeKey 返回验证码在 Redis 中的统一存储 key。
+// 单一 key 同时承担"复用同码"和"verify 校验"两个角色——历史上分成两个 key
+// (`auth:code:email:stable:<hash>` 复用 + `auth:code:email:<hash>` 校验)
+// 会出现 stable 命中但 storage 没命中的 case，合并后不会再有这种漂移。
+func verificationCodeKey(emailHash string) string {
+	return VerificationCodePrefix + emailHash
 }
 
-// generateVerificationCode 生成验证码，支持稳定因子（stableKey）
-func generateVerificationCode(ctx context.Context, stableKey string) string {
+// issueOrRefreshVerificationCode 拿到给定邮箱当前有效的验证码：
+// - 缓存里已有"活跃"码 → 复用，并把 TTL 重置到 VerificationCodeExpiry。
+// - 缓存里有"已消费"标记（used: 前缀，处于宽限期）→ 不复用，生成新码覆盖，
+//   把宽限期内的老码即时作废。这保证了"60s 上限"语义。
+// - 缓存里没有 → 新生成 6 位数字码，写入并返回。
+// 调用方负责把返回的 code 发出去（邮件 / Slack）。
+func issueOrRefreshVerificationCode(ctx context.Context, emailHash string) (string, error) {
 	if EnableMockVerificationCode {
-		return MockVerificationCode
+		return MockVerificationCode, nil
 	}
-	cacheKey := ""
-	if stableKey != "" {
-		cacheKey = VerificationCodePrefix + "stable:" + stableKey
-		var cachedCode string
-		exist, err := redis.CacheGet(cacheKey, &cachedCode)
-		if err == nil && exist && cachedCode != "" {
-			log.Debugf(ctx, "returning stable verification code for key %s", stableKey)
-			return cachedCode
+	cacheKey := verificationCodeKey(emailHash)
+	var existing string
+	if exist, err := redis.CacheGet(cacheKey, &existing); err == nil && exist && existing != "" {
+		if !strings.HasPrefix(existing, verificationCodeConsumedPrefix) {
+			// 活跃码 — 复用并刷 TTL
+			if err := redis.CacheSet(cacheKey, existing, VerificationCodeExpiry); err != nil {
+				log.Errorf(ctx, "failed to refresh verification code TTL for %s: %v", emailHash, err)
+				return "", fmt.Errorf("failed to refresh verification code: %w", err)
+			}
+			log.Debugf(ctx, "reusing verification code for %s, TTL refreshed", emailHash)
+			return existing, nil
 		}
+		// 已消费 — 落入下面的"生成新码"分支，老码在新码 SET 后立即失效
+		log.Debugf(ctx, "verification code for %s is in grace period, issuing fresh code", emailHash)
+	} else if err != nil {
+		log.Errorf(ctx, "failed to read verification code cache for %s: %v", emailHash, err)
+		// 不致命——继续生成新码覆盖写入
 	}
-	// 生成6位数字验证码
 	code := fmt.Sprintf("%06d", mathrand.Intn(1000000))
-	log.Debugf(ctx, "generated new verification code %s for key %s", code, stableKey)
-	if cacheKey != "" {
-		_ = redis.CacheSet(cacheKey, code, VerificationCodeExpiry) // 5分钟
+	if err := redis.CacheSet(cacheKey, code, VerificationCodeExpiry); err != nil {
+		log.Errorf(ctx, "failed to save verification code for %s: %v", emailHash, err)
+		return "", fmt.Errorf("failed to save verification code: %w", err)
 	}
-	return code
+	log.Debugf(ctx, "generated new verification code for %s", emailHash)
+	return code, nil
 }
 
-// verifyEmailCode 验证验证码
-func verifyEmailCode(ctx context.Context, emailId, code string) bool {
+// verifyEmailCode 校验验证码。返回值区分"输错"和"未发/已过期"，
+// 让前端能给出精准提示而不是笼统的"验证码错误"。
+// 已消费的码（used: 前缀）在宽限期内仍接受，实现双击/重试幂等。
+func verifyEmailCode(ctx context.Context, emailHash, code string) VerifyCodeResult {
 	if EnableMockVerificationCode {
-		return code == MockVerificationCode
-	}
-	cacheKey := VerificationCodePrefix + emailId
-	var savedCode string
-	log.Debugf(ctx, "verifying email code for %s", emailId)
-	exist, err := redis.CacheGet(cacheKey, &savedCode)
-	if err != nil || !exist {
-		if err != nil {
-			log.Errorf(ctx, "failed to get verification code from cache for %s: %v", emailId, err)
-		} else {
-			log.Warnf(ctx, "verification code not found in cache for %s", emailId)
+		if code == MockVerificationCode {
+			return VerifyCodeOK
 		}
-		return false
+		return VerifyCodeWrong
 	}
-	isValid := savedCode == code
-	if !isValid {
-		log.Warnf(ctx, "invalid verification code for %s. expected: %s, got: %s", emailId, savedCode, code)
+	cacheKey := verificationCodeKey(emailHash)
+	var savedCode string
+	log.Debugf(ctx, "verifying email code for %s", emailHash)
+	exist, err := redis.CacheGet(cacheKey, &savedCode)
+	if err != nil {
+		log.Errorf(ctx, "failed to get verification code from cache for %s: %v", emailHash, err)
+		// Redis 故障当作"未发/已过期"处理——比误判为"输错"更安全：
+		// 用户会被提示重新发送，而不是反复尝试同一个码。
+		return VerifyCodeNotIssued
 	}
-
-	return isValid
+	if !exist {
+		log.Warnf(ctx, "verification code not found in cache for %s", emailHash)
+		return VerifyCodeNotIssued
+	}
+	if strings.HasPrefix(savedCode, verificationCodeConsumedPrefix) {
+		// 宽限期：剥前缀比对原始码，匹配则幂等通过
+		original := strings.TrimPrefix(savedCode, verificationCodeConsumedPrefix)
+		if original == code {
+			return VerifyCodeOK
+		}
+		log.Warnf(ctx, "invalid verification code (during grace) for %s", emailHash)
+		return VerifyCodeWrong
+	}
+	if savedCode != code {
+		log.Warnf(ctx, "invalid verification code for %s", emailHash)
+		return VerifyCodeWrong
+	}
+	return VerifyCodeOK
 }
 
-// deleteVerificationCode 删除验证码
-func deleteVerificationCode(ctx context.Context, email string) error {
-	cacheKey := VerificationCodePrefix + email
-	log.Infof(ctx, "deleting verification code for %s", email)
-	return redis.CacheDel(cacheKey)
+// markVerificationCodeUsed 把已通过验证的码改写为 "used:<原码>" 并把 TTL
+// 缩短到 VerificationCodeUsedGracePeriod。
+// - 宽限期内 verify 仍能识别（剥前缀比对）→ 双击 / 网络抖动重试幂等
+// - 宽限期内 issueOrRefresh 看到 used: 前缀 → 强制生成新码、覆盖老码
+// 历史上这里是 deleteVerificationCode(rawEmail) — 但 save 写的是 indexID，
+// raw email 永远不命中 → 实际"删不掉"。本函数统一收到 emailHash (indexID)。
+func markVerificationCodeUsed(ctx context.Context, emailHash string) error {
+	cacheKey := verificationCodeKey(emailHash)
+	var savedCode string
+	exist, err := redis.CacheGet(cacheKey, &savedCode)
+	if err != nil {
+		log.Errorf(ctx, "failed to read verification code while marking used for %s: %v", emailHash, err)
+		return fmt.Errorf("failed to read verification code: %w", err)
+	}
+	if !exist {
+		// 已过期 / 并发被另一次请求消耗 — 都不算错误
+		log.Debugf(ctx, "verification code already gone for %s, nothing to mark", emailHash)
+		return nil
+	}
+	if strings.HasPrefix(savedCode, verificationCodeConsumedPrefix) {
+		// 已是 used: 状态（并发的 second verify 已经标记过）— 不重复写
+		log.Debugf(ctx, "verification code for %s already marked used", emailHash)
+		return nil
+	}
+	consumed := verificationCodeConsumedPrefix + savedCode
+	if err := redis.CacheSet(cacheKey, consumed, VerificationCodeUsedGracePeriod); err != nil {
+		log.Errorf(ctx, "failed to mark verification code used for %s: %v", emailHash, err)
+		return fmt.Errorf("failed to mark verification code used: %w", err)
+	}
+	log.Infof(ctx, "verification code for %s marked used (grace=%ds)", emailHash, VerificationCodeUsedGracePeriod)
+	return nil
 }
 
 // ===================== 智能语言检测系统 =====================

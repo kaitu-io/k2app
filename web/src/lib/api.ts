@@ -485,11 +485,12 @@ export const ErrorCode = {
   // Custom error codes
   InvalidCampaignCode: 400001,    // Invalid campaign code
   InvalidClientClock: 400002,      // Invalid client timestamp
-  InvalidVerificationCode: 400003, // Invalid verification code
+  InvalidVerificationCode: 400003, // Invalid verification code (user typed wrong)
   InvalidInviteCode: 400004,       // Invalid invite code
   SelfInvitation: 400005,          // Self invitation
   InvalidCredentials: 400006,      // Invalid credentials
   ProxyMembersDeprecated: 400012,  // 代付成员管理已下线
+  VerificationCodeExpired: 400013, // Verification code expired or not sent
   TierMismatch: 422001,            // 跨档购买被拒绝（仅同档续费）
   ProxyPurchaseDeprecated: 422002, // 代付下单已下线
 } as const;

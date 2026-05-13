@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import EmailTextField from "../components/EmailTextField";
 import BackButton from "../components/BackButton";
 import { cloudApi } from '../services/cloud-api';
+import { ERROR_CODES, handleResponseError } from "../utils/errorCode";
 import { delayedFocus } from '../utils/ui';
 
 export default function UpdateLoginEmail() {
@@ -47,7 +48,16 @@ export default function UpdateLoginEmail() {
     setError("");
     setSending(true);
     try {
-      await cloudApi.post('/api/user/email/send-bind-verification', { email });
+      // cloudApi.post does NOT throw on code !== 0; it returns the response
+      // verbatim. Without handleResponseError here the user would see the
+      // "code sent" UX even on a backend rejection.
+      const response = await cloudApi.post('/api/user/email/send-bind-verification', { email });
+      handleResponseError(
+        response.code,
+        response.message,
+        t,
+        t('auth:updateEmail.sendCodeFailed')
+      );
       setSuccess(true);
       setCountdown(60);
       const timer = setInterval(() => {
@@ -60,7 +70,7 @@ export default function UpdateLoginEmail() {
         });
       }, 1000);
     } catch (err) {
-      setError(t('auth:updateEmail.sendCodeFailed'));
+      setError(err instanceof Error ? err.message : t('auth:updateEmail.sendCodeFailed'));
     } finally {
       setSending(false);
     }
@@ -72,11 +82,22 @@ export default function UpdateLoginEmail() {
     setError("");
     setLoading(true);
     try {
-      await cloudApi.post('/api/user/email/update-email', { email, verificationCode: code });
+      const response = await cloudApi.post('/api/user/email/update-email', { email, verificationCode: code });
+      // Clear the input on expired code so the user can't keep submitting the
+      // same stale value, and surface the precise i18n message.
+      if (response.code === ERROR_CODES.VERIFICATION_CODE_EXPIRED) {
+        setCode("");
+      }
+      handleResponseError(
+        response.code,
+        response.message,
+        t,
+        t('auth:updateEmail.setEmailFailed')
+      );
       setSuccess(true);
       navigate("/account", { replace: true });
     } catch (err) {
-      setError(t('auth:updateEmail.setEmailFailed'));
+      setError(err instanceof Error ? err.message : t('auth:updateEmail.setEmailFailed'));
     } finally {
       setLoading(false);
     }

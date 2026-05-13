@@ -28,7 +28,7 @@ import {
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../stores";
-import { handleResponseError } from "../utils/errorCode";
+import { ERROR_CODES, handleResponseError } from "../utils/errorCode";
 import { suggestEmail } from "../utils/email-suggest";
 import EmailSuggestion from "./EmailSuggestion";
 import type { SendCodeResponse, AuthResult } from "../services/api-types";
@@ -184,6 +184,13 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
         language: i18n.language,
       });
 
+      // Surface VERIFICATION_CODE_EXPIRED (400013) before throwing so we can
+      // also clear the input + reset countdown to nudge the user to resend.
+      if (response.code === ERROR_CODES.VERIFICATION_CODE_EXPIRED) {
+        setVerificationCode("");
+        setCountdown(0);
+      }
+
       handleResponseError(
         response.code,
         response.message,
@@ -201,7 +208,11 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
 
     } catch (err) {
       console.error('[EmailLoginForm] Failed to verify code:', err);
-      setError(t("auth:auth.loginFailedRetry"));
+      // Use the precise i18n message from handleResponseError instead of a
+      // generic fallback — historically this catch overwrote 400003/400013
+      // with "auth.loginFailedRetry", which is why users couldn't tell
+      // "wrong code" from "expired code".
+      setError(err instanceof Error ? err.message : t("auth:auth.loginFailedRetry"));
     } finally {
       setIsSubmitting(false);
     }
