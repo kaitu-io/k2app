@@ -543,4 +543,98 @@ describe('API Methods', () => {
     });
   });
 
+  describe('Auth credential fallback (cookie-fail → localStorage Bearer)', () => {
+    beforeEach(() => {
+      // Outer "API Methods" describe only clears mocks, not localStorage or
+      // cookies. These tests need a clean credential state per case.
+      localStorage.clear();
+      Object.defineProperty(document, 'cookie', { writable: true, value: '' });
+    });
+
+    function setCookie(value: string) {
+      Object.defineProperty(document, 'cookie', { writable: true, value });
+    }
+
+    describe('hasCookieAuth', () => {
+      it('returns true when csrf_token cookie is present', async () => {
+        setCookie('csrf_token=abc123; other=foo');
+        expect(await api.hasCookieAuth(20)).toBe(true);
+      });
+
+      it('returns false when only unrelated cookies exist', async () => {
+        setCookie('preferredLocale=zh-CN; hasVisited=true');
+        expect(await api.hasCookieAuth(40)).toBe(false);
+      });
+
+      it('returns false on empty cookie string after polling timeout', async () => {
+        setCookie('');
+        expect(await api.hasCookieAuth(40)).toBe(false);
+      });
+
+      it('does not match substring (csrf_token_other should not count)', async () => {
+        setCookie('my_csrf_token_other=abc');
+        expect(await api.hasCookieAuth(40)).toBe(false);
+      });
+
+      it('matches csrf_token at start of cookie string', async () => {
+        setCookie('csrf_token=xyz');
+        expect(await api.hasCookieAuth(20)).toBe(true);
+      });
+    });
+
+    describe('applyLoginCredentials', () => {
+      it('returns "cookie" and clears fallback when cookie auth works', async () => {
+        localStorage.setItem('auth_fallback_token', 'stale-token');
+        setCookie('csrf_token=abc');
+        const mode = await api.applyLoginCredentials('new-token');
+        expect(mode).toBe('cookie');
+        expect(localStorage.getItem('auth_fallback_token')).toBeNull();
+      });
+
+      it('returns "fallback" and stores token in localStorage when cookie missing', async () => {
+        setCookie('');
+        const mode = await api.applyLoginCredentials('new-token');
+        expect(mode).toBe('fallback');
+        expect(localStorage.getItem('auth_fallback_token')).toBe('new-token');
+      });
+
+      it('does not store empty accessToken even when cookie missing', async () => {
+        setCookie('');
+        const mode = await api.applyLoginCredentials('');
+        expect(mode).toBe('cookie');
+        expect(localStorage.getItem('auth_fallback_token')).toBeNull();
+      });
+    });
+
+    describe('getValidAuthHeader priority', () => {
+      it('prefers embed_auth_token over fallback', async () => {
+        localStorage.setItem('embed_auth_token', 'embed-token');
+        localStorage.setItem('auth_fallback_token', 'fallback-token');
+        const headers = await api.getValidAuthHeader();
+        expect(headers).toEqual({ Authorization: 'Bearer embed-token' });
+      });
+
+      it('uses auth_fallback_token when embed_auth_token absent', async () => {
+        localStorage.setItem('auth_fallback_token', 'fallback-token');
+        const headers = await api.getValidAuthHeader();
+        expect(headers).toEqual({ Authorization: 'Bearer fallback-token' });
+      });
+
+      it('returns empty headers when neither token present (cookie-only path)', async () => {
+        const headers = await api.getValidAuthHeader();
+        expect(headers).toEqual({});
+      });
+    });
+
+    describe('clearAuthData', () => {
+      it('clears both embed and fallback tokens', () => {
+        localStorage.setItem('embed_auth_token', 'embed');
+        localStorage.setItem('auth_fallback_token', 'fallback');
+        api.clearAuthData();
+        expect(localStorage.getItem('embed_auth_token')).toBeNull();
+        expect(localStorage.getItem('auth_fallback_token')).toBeNull();
+      });
+    });
+  });
+
 });

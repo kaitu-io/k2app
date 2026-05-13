@@ -93,10 +93,11 @@ function LoginPageContent() {
         autoRedirectToAuth: false,
       });
 
-      // 登录成功 - Server already set HttpOnly cookie
+      // 登录成功 - Server set HttpOnly cookie; accessToken in body enables
+      // localStorage fallback when the browser drops the Set-Cookie.
       toast.success(t('auth.login.loginSuccess'));
-      const { user } = response;
-      login(user);
+      const { user, accessToken } = response;
+      await login(user, accessToken);
 
       // 修复双重 locale 问题：如果 next 已包含 locale，直接 replace
       if (next.startsWith('/')) {
