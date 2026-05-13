@@ -481,6 +481,7 @@ func (d *Daemon) engineConfigFromClientConfig(
 		DirectDialer:     dd,
 		HealthCallback:   d.broadcastSnapshot,
 		OutboundProvider: d.subsMgr, // subscription.Manager implements engine.OutboundProvider (k2subs rotation).
+		ProcessSearcher:  newProcessSearcher(),
 	}
 
 	// Apply network monitor if available.
