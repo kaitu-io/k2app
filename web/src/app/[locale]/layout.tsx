@@ -23,6 +23,12 @@ import "../globals.css";
 
 const GA_MEASUREMENT_ID = 'G-EH2PY4S0CX';
 
+// Inline polyfill for Array.prototype.at — Sentry web-vitals (INP) and Next.js
+// server-action digest parsing call it. Native on iOS Safari 15.4+ / Chrome 92+.
+// Below that (iOS 13.4–15.3) we substitute a spec-faithful implementation so
+// those code paths don't TypeError. Sized for inline; ~250 bytes minified.
+const ARRAY_AT_POLYFILL = `(function(){if(typeof Array.prototype.at==="function")return;var at=function(n){n=Math.trunc(n)||0;if(n<0)n+=this.length;if(n<0||n>=this.length)return undefined;return this[n]};Object.defineProperty(Array.prototype,"at",{value:at,writable:true,configurable:true});})();`;
+
 const inter = Inter({ subsets: ["latin"] });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -69,6 +75,17 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} data-brand={brand.id} suppressHydrationWarning>
       <body className={`${inter.className} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+        {/* Inline-rendered <script> JSX inside a React 19 / Next.js 15 server
+            component is serialized into the RSC payload, not emitted as a
+            synchronous inline <script> tag — verified by inspecting the
+            prerendered HTML. The closest reliable approximation is next/script
+            with afterInteractive: it runs once hydration completes, which is
+            still well before any of our Array.prototype.at call sites
+            (Sentry web-vitals INP — needs first user interaction; Next.js
+            server-action digest parsing — needs a failed action). */}
+        <Script id="array-at-polyfill" strategy="afterInteractive">
+          {ARRAY_AT_POLYFILL}
+        </Script>
         <Script
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
           strategy="afterInteractive"

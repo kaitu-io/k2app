@@ -87,12 +87,12 @@
     "node": ">=22.0.0"
   },
   "browserslist": [
-    "Chrome >= 70",
-    "Firefox >= 68",
-    "Safari >= 12",
-    "Edge >= 79",
-    "iOS >= 12",
-    "Android >= 70",
+    "Chrome >= 80",
+    "Firefox >= 78",
+    "Safari >= 13.4",
+    "Edge >= 80",
+    "iOS >= 13.4",
+    "Android >= 80",
     "> 0.5% in CN",
     "not dead"
   ]
