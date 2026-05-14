@@ -82,15 +82,6 @@ build-macos: sync-adb-tools
 build-macos-test:
 	bash scripts/build-macos.sh --single-arch --skip-notarization --features=mcp-bridge
 
-build-macos-sysext:
-	bash scripts/build-macos.sh --ne-mode
-
-build-macos-sysext-fast:
-	bash scripts/build-macos.sh --ne-mode --skip-notarization
-
-build-macos-sysext-test:
-	bash scripts/build-macos.sh --ne-mode --single-arch --skip-notarization
-
 simplisign-login:
 	@if [ "$$(uname -s)" = "Darwin" ]; then \
 		bash scripts/ci/macos/simplisign-login.sh; \
@@ -261,9 +252,6 @@ appext-ios: plugin-purity-check
 
 appext-macos:
 	cd k2 && make appext-macos
-
-build-macos-ne-lib: appext-macos
-	@echo "macOS NE xcframework ready: k2/build/K2MobileMacOS.xcframework"
 
 appext-android build-android dev-android: export JAVA_HOME = $(ANDROID_JAVA_HOME)
 

@@ -2,11 +2,6 @@
 //!
 //! Persists the user's update channel preference (stable/beta) to disk.
 //! The updater reads this on each check cycle to determine which endpoints to use.
-//!
-//! Two read paths:
-//! - `get_channel(app)` — uses Tauri's AppHandle for normal runtime use
-//! - `get_channel_early()` — uses `dirs` crate directly, for pre-AppHandle contexts
-//!   (e.g., log plugin configuration in builder chain before `.setup()`)
 
 use std::fs;
 use std::path::PathBuf;
@@ -17,10 +12,6 @@ use url::Url;
 const CHANNEL_FILE: &str = "update-channel";
 const STABLE: &str = "stable";
 const BETA: &str = "beta";
-
-/// Tauri app identifier — must match `identifier` in tauri.conf.json.
-/// Used by `get_channel_early()` to resolve the app data directory without AppHandle.
-const APP_IDENTIFIER: &str = "io.kaitu.desktop";
 
 // Stable endpoints (same as tauri.conf.json)
 const STABLE_ENDPOINTS: &[&str] = &[
@@ -36,22 +27,6 @@ const BETA_ENDPOINTS: &[&str] = &[
 
 fn channel_file_path(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|dir| dir.join(CHANNEL_FILE))
-}
-
-/// Read channel from disk without AppHandle (for pre-setup use).
-/// Uses `dirs::data_dir()` + hardcoded app identifier to match Tauri's `app_data_dir()`.
-/// Platform resolution: macOS ~/Library/Application Support, Windows %APPDATA%, Linux $XDG_DATA_HOME.
-pub fn get_channel_early() -> String {
-    let path = dirs::data_dir().map(|d| d.join(APP_IDENTIFIER).join(CHANNEL_FILE));
-    match path {
-        Some(p) => read_channel_from_file(&p),
-        None => STABLE.to_string(),
-    }
-}
-
-/// Whether the current channel is beta (pre-AppHandle version).
-pub fn is_beta_early() -> bool {
-    get_channel_early() == BETA
 }
 
 fn read_channel_from_file(path: &PathBuf) -> String {
@@ -176,16 +151,4 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn test_get_channel_early_no_crash() {
-        // Should not crash even without the channel file
-        let ch = get_channel_early();
-        assert!(ch == "stable" || ch == "beta");
-    }
-
-    #[test]
-    fn test_is_beta_early_returns_bool() {
-        // Just verify it doesn't crash
-        let _ = is_beta_early();
-    }
 }

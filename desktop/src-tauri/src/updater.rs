@@ -269,10 +269,10 @@ pub async fn apply_update_now(app: AppHandle) -> Result<(), String> {
     if !is_update_ready() {
         return Err("No update available".to_string());
     }
-    // macOS daemon mode: pre-install service before restart to avoid second password prompt.
+    // macOS: pre-install service before restart to avoid second password prompt.
     // The new k2 binary is already at /Applications/Kaitu.app/Contents/MacOS/k2.
     // If this fails (user cancels, etc.), ensure_service_running handles it after restart.
-    #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
+    #[cfg(target_os = "macos")]
     {
         log::info!("[updater] Pre-installing service before restart...");
         match service::admin_reinstall_service().await {
