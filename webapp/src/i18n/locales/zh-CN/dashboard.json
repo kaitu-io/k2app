@@ -80,7 +80,6 @@
     "selectServerHintShort": "↓ 请选择服务器",
     "selectedServer": "已选服务器",
     "connectedBannerHint": "已连接中，切换服务器前请先断开",
-    "disconnectBannerBtn": "断开",
     "connectionRetrying": "服务器连接失败，正在重试...",
     "serviceFailure": {
       "title": "服务连接失败",

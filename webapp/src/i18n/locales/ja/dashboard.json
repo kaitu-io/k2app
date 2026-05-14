@@ -80,7 +80,6 @@
     "selectServerHintShort": "↓ サーバーを選択",
     "selectedServer": "選択済みサーバー",
     "connectedBannerHint": "接続中です。サーバーを切り替えるには先に切断してください",
-    "disconnectBannerBtn": "切断",
     "connectionRetrying": "サーバー接続に失敗しました、再試行中...",
     "serviceFailure": {
       "title": "サービス接続失敗",

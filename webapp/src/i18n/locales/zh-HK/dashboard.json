@@ -80,7 +80,6 @@
     "selectServerHintShort": "↓ 請選擇伺服器",
     "selectedServer": "已選伺服器",
     "connectedBannerHint": "已連線中，切換伺服器前請先斷線",
-    "disconnectBannerBtn": "斷線",
     "connectionRetrying": "伺服器連接失敗，正在重試...",
     "serviceFailure": {
       "title": "服務連接失敗",

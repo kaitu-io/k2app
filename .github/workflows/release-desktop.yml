@@ -316,7 +316,7 @@ jobs:
         # the standard formula.
         run: brew install minisign
 
-      - name: Sign Linux tarball
+      - name: Sign Linux tarballs (amd64 + arm64)
         if: matrix.platform == 'Linux'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -326,15 +326,16 @@ jobs:
           # Decode Tauri's base64-encoded minisign private key (shared
           # across platforms — same key that signs macOS app.tar.gz).
           echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > /tmp/minisign.key
-          echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | minisign -S -s /tmp/minisign.key \
-            -m "release/${VERSION}/Kaitu_${VERSION}_linux_amd64.tar.gz"
-          # Base64-encode the .minisig file to match Tauri's .sig format
-          # (latest.json stores signatures as base64; raw minisign is
-          # multi-line text).
-          base64 < "release/${VERSION}/Kaitu_${VERSION}_linux_amd64.tar.gz.minisig" \
-            | tr -d '\n' \
-            > "release/${VERSION}/Kaitu_${VERSION}_linux_amd64.tar.gz.sig"
-          rm -f /tmp/minisign.key "release/${VERSION}/Kaitu_${VERSION}_linux_amd64.tar.gz.minisig"
+          for ARCH in amd64 arm64; do
+            TARBALL="release/${VERSION}/Kaitu_${VERSION}_linux_${ARCH}.tar.gz"
+            echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | minisign -S -s /tmp/minisign.key -m "${TARBALL}"
+            # Base64-encode the .minisig file to match Tauri's .sig format
+            # (latest.json stores signatures as base64; raw minisign is
+            # multi-line text).
+            base64 < "${TARBALL}.minisig" | tr -d '\n' > "${TARBALL}.sig"
+            rm -f "${TARBALL}.minisig"
+          done
+          rm -f /tmp/minisign.key
 
       # --- Upload artifacts to S3 + CDN invalidation ---
 
@@ -371,7 +372,7 @@ jobs:
           if [ "${PLATFORM}" = "macOS" ]; then
             DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_universal.pkg|macOS PKG>"
           elif [ "${PLATFORM}" = "Linux" ]; then
-            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_linux_amd64.tar.gz|Linux tarball>"
+            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_linux_amd64.tar.gz|Linux amd64> · <${CDN_BASE}/Kaitu_${VERSION}_linux_arm64.tar.gz|arm64>"
           else
             DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_x64.exe|Windows Setup>"
           fi

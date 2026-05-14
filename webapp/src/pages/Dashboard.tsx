@@ -462,24 +462,12 @@ export default function Dashboard() {
             borderRadius: 1.5,
             px: 2,
             py: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
             mx: 2,
             mb: 1,
           }}>
             <Typography variant="caption" color="text.secondary">
               {t('dashboard:dashboard.connectedBannerHint')}
             </Typography>
-            <Button
-              size="small"
-              variant="text"
-              color="error"
-              onClick={disconnect}
-              sx={{ ml: 1, flexShrink: 0 }}
-            >
-              {t('dashboard:dashboard.disconnectBannerBtn')}
-            </Button>
           </Box>
         )}
 
