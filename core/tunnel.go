@@ -232,7 +232,7 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 			srcAddr = &net.UDPAddr{IP: ta.IP, Port: ta.Port}
 		}
 	}
-	action := t.routeConn(dest, "tcp", srcAddr)
+	action, connMeta := t.routeConn(dest, "tcp", srcAddr)
 
 	var earlyData []byte // peeked bytes sent as wire early data for PROXY path
 
@@ -260,9 +260,12 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 				}
 			}
 
-			// SNI: upgrade DIRECT → PROXY
+			// SNI: upgrade DIRECT → PROXY, but preserve meta-based bypass.
+			// Pass connMeta so a process_name match at routeConn time is honored
+			// by the SNI re-route: a Chrome-bypass connection stays direct even
+			// when the SNI domain would otherwise route to proxy.
 			if sni != "" && t.router != nil && action == t.directTarget {
-				if sniAction := t.router.RouteAddr(sni); sniAction != t.directTarget {
+				if sniAction := t.router.RouteConn(sni, connMeta); sniAction != t.directTarget {
 					action = sniAction
 					dest = net.JoinHostPort(sni, port)
 					t.router.SetTmpRule(host, sniAction)
@@ -353,7 +356,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 		return
 	}
 
-	action := t.routeConn(dest, "udp", provider.SourcePacketAddr(conn))
+	action, connMeta := t.routeConn(dest, "udp", provider.SourcePacketAddr(conn))
 	slog.Debug("tunnel: route UDP", "dest", dest, "action", action)
 
 	// Peek first packet for protocol detection + domain extraction.
@@ -409,9 +412,12 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 				}
 			}
 
-			// 3. Domain-based routing: DIRECT → PROXY upgrade
+			// 3. Domain-based routing: DIRECT → PROXY upgrade.
+			// Pass connMeta so a process_name bypass at routeConn time is honored
+			// — a Chrome-bypass QUIC flow stays direct even when the SNI domain
+			// would otherwise route to proxy.
 			if t.sniffSNI && meta.Domain != "" && t.router != nil && action == t.directTarget {
-				if sniAction := t.router.RouteAddr(meta.Domain); sniAction != t.directTarget {
+				if sniAction := t.router.RouteConn(meta.Domain, connMeta); sniAction != t.directTarget {
 					action = sniAction
 					dest = net.JoinHostPort(meta.Domain, port)
 					t.router.SetTmpRule(host, sniAction)
@@ -462,24 +468,34 @@ func (t *ClientTunnel) outbound(target rule.Target) Outbound {
 }
 
 // routeConn builds ConnMeta from source addr + process lookup, then routes.
-func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) rule.Target {
+// Returns both the matched target AND the ConnMeta so callers (sniffer-based
+// SNI upgrade) can re-route the connection by domain while preserving the same
+// per-connection identity — otherwise a process_name bypass match would be
+// silently overridden when the sniffer re-routes by SNI without meta.
+func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) (rule.Target, rule.ConnMeta) {
 	if t.router == nil {
-		return t.defaultTarget
+		return t.defaultTarget, rule.ConnMeta{}
 	}
 	host, _, err := net.SplitHostPort(dest)
 	if err != nil {
-		return t.directTarget
+		return t.directTarget, rule.ConnMeta{}
 	}
 
 	meta := rule.ConnMeta{Network: network}
 	if t.processSearcher != nil && srcAddr != nil {
 		srcIP, ok := netip.AddrFromSlice(srcAddr.IP)
 		if ok {
+			// net.IPv4 / net.ParseIP return 16-byte IPv4-mapped IPv6, which makes
+			// netip.AddrFromSlice produce an addr whose Is4() reports false. Both
+			// Darwin and Linux ProcessSearchers early-return when Is4() is false,
+			// so attribution never fires. Unmap() strips the ::ffff: prefix so
+			// downstream searchers see a true 4-byte IPv4 addr.
+			srcIP = srcIP.Unmap()
 			meta.ProcessName, meta.PackageName = t.processSearcher.FindProcess(network, srcIP, uint16(srcAddr.Port))
 		}
 	}
 
-	return t.router.RouteConn(host, meta)
+	return t.router.RouteConn(host, meta), meta
 }
 
 
