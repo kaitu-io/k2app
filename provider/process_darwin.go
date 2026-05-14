@@ -9,49 +9,37 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 )
 
 // DarwinProcessSearcher uses lsof to look up process names by source (IP, port).
-// Results are cached briefly to amortize the cost of exec.
+// Results cached via shared processCache helper.
 type DarwinProcessSearcher struct {
-	mu    sync.Mutex
-	cache map[string]cacheEntry
+	cache *processCache
 }
 
-type cacheEntry struct {
-	name    string
-	expires time.Time
+// NewDarwinProcessSearcher constructs a Darwin process searcher with the
+// project-standard cache (2s TTL, 4096 soft cap).
+func NewDarwinProcessSearcher() *DarwinProcessSearcher {
+	return &DarwinProcessSearcher{
+		cache: newProcessCache(processCacheCap, processCacheTTL),
+	}
 }
-
-const cacheTTL = 2 * time.Second
 
 func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
 	if !srcIP.Is4() {
 		return "", ""
 	}
-
-	key := fmt.Sprintf("%s:%s:%d", network, srcIP, srcPort)
-
-	s.mu.Lock()
-	if s.cache != nil {
-		if e, ok := s.cache[key]; ok && time.Now().Before(e.expires) {
-			s.mu.Unlock()
-			return e.name, ""
-		}
-	}
-	s.mu.Unlock()
-
-	name := lsofLookup(network, srcIP, srcPort)
-
-	s.mu.Lock()
+	// Lazy-init cache for zero-value struct callers (e.g. daemon factory
+	// pre-shared-cache callers that did `&DarwinProcessSearcher{}`).
 	if s.cache == nil {
-		s.cache = make(map[string]cacheEntry)
+		s.cache = newProcessCache(processCacheCap, processCacheTTL)
 	}
-	s.cache[key] = cacheEntry{name: name, expires: time.Now().Add(cacheTTL)}
-	s.mu.Unlock()
-
+	key := cacheKey(network, srcIP, srcPort)
+	if name, pkg, ok := s.cache.get(key); ok {
+		return name, pkg
+	}
+	name := lsofLookup(network, srcIP, srcPort)
+	s.cache.set(key, name, "")
 	return name, ""
 }
 
@@ -84,11 +72,9 @@ func lsofLookup(network string, srcIP netip.Addr, srcPort uint16) string {
 		}
 		switch line[0] {
 		case 'p':
-			// Emit previous (pid, cmd) if it was not self.
 			if currentPid != 0 && currentPid != selfPid && currentCmd != "" {
 				return currentCmd
 			}
-			// New PID block.
 			pid, err := strconv.Atoi(line[1:])
 			if err != nil {
 				currentPid = 0
@@ -101,7 +87,6 @@ func lsofLookup(network string, srcIP netip.Addr, srcPort uint16) string {
 			currentCmd = line[1:]
 		}
 	}
-	// Tail: last block not yet emitted.
 	if currentPid != 0 && currentPid != selfPid && currentCmd != "" {
 		return currentCmd
 	}
