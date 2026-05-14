@@ -22,6 +22,31 @@ All work happens in the k2 submodule under the worktree root:
 
 Run all `go` commands and git operations from inside `k2/` (the submodule has its own git history). Final task bumps the submodule pointer in the parent worktree.
 
+## Cross-Platform Test Execution
+
+The plan creates code on three platforms but the dev machine is typically macOS. Build verification works cross-platform, but **runtime execution of platform-tagged tests requires that platform**:
+
+| Test File | Build Tag | Where it Runs |
+|-----------|-----------|---------------|
+| `process_cache_test.go` | none | Any platform (incl. macOS dev) |
+| `process_test.go` | `darwin && !ios` | macOS only |
+| `process_linux_test.go` | `linux` | Linux only |
+| `process_windows_test.go` | `windows` | Windows only |
+
+**For each platform without local hardware:**
+
+- **Linux from macOS dev:** Run tests inside Docker:
+  ```bash
+  docker run --rm -v "$(pwd):/work" -w /work/k2 --platform linux/amd64 \
+    golang:1.22 go test -race ./provider/...
+  ```
+- **Windows from macOS dev:** Cross-compile only — `GOOS=windows go vet ./...` + `GOOS=windows go build ./...`. Runtime test deferred to Windows dev box or future CI runner.
+
+The plan's test steps assume host can run the test. When the host is macOS:
+- macOS tests (`process_test.go`, `process_cache_test.go`) — run directly
+- Linux tests — run via Docker (per command above)
+- Windows tests — vet/build only; runtime test marked as manual in §12.2 of spec
+
 ---
 
 ## File Structure
@@ -1936,43 +1961,54 @@ Expected: all PASS, no race warnings.
 ### Task 11: Benchmark — hot cache <1μs verification
 
 **Files:**
-- Modify: `k2/provider/process_linux_test.go` (add benchmark)
+- Modify: `k2/provider/process_cache_test.go` (add benchmark — platform-neutral)
 
-- [ ] **Step 11.1: Append benchmark**
+The benchmark targets the cache hot path (`cacheKey` + `processCache.get`), which is the dominant cost of `FindProcess` on a cache hit. Putting it in `process_cache_test.go` (no build tag) means it runs on macOS dev machines, not just Linux/Windows.
 
-Append to `k2/provider/process_linux_test.go`:
+- [ ] **Step 11.1: Append benchmark to `process_cache_test.go`**
+
+Append to `k2/provider/process_cache_test.go`:
 
 ```go
-func BenchmarkLinuxFindProcess_HotCache(b *testing.B) {
-    s := NewLinuxProcessSearcher(nil)
-    s.cache.set("tcp:1.2.3.4:5678", "chrome", "")
+import (
+    "net/netip"
+    // existing imports retained
+)
+
+func BenchmarkProcessCache_HotPath(b *testing.B) {
+    c := newProcessCache(processCacheCap, processCacheTTL)
     addr := netip.MustParseAddr("1.2.3.4")
+    key := cacheKey("tcp", addr, 5678)
+    c.set(key, "chrome", "")
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
-        s.FindProcess("tcp", addr, 5678)
+        // Mimic FindProcess hot path: key construction + map lookup.
+        k := cacheKey("tcp", addr, 5678)
+        c.get(k)
     }
+    b.ReportAllocs()
 }
 ```
 
-- [ ] **Step 11.2: Run benchmark**
+- [ ] **Step 11.2: Run benchmark on host platform**
 
 ```bash
-cd k2 && go test -bench BenchmarkLinuxFindProcess_HotCache -benchmem ./provider/ -run=^$
+cd k2 && go test -bench BenchmarkProcessCache_HotPath -benchmem ./provider/ -run=^$
 ```
 
-Expected: ns/op < 1000 (i.e. <1μs/op).
+Expected: ns/op < 1000 (i.e. <1μs/op). Allocs/op should be 1 (string from cacheKey builder).
 
-If higher: investigate. Likely culprit = lock contention or string allocation in cacheKey. Document actual measurement in commit message.
+If higher than 1000ns: investigate. Likely culprit = lock contention under benchmark concurrency, or excessive allocation in cacheKey. Document actual measurement in commit message.
 
 - [ ] **Step 11.3: Commit**
 
 ```bash
-git -C k2 add provider/process_linux_test.go
+git -C k2 add provider/process_cache_test.go
 git -C k2 diff --cached --name-only
-git -C k2 commit -m "test(provider): benchmark hot-cache FindProcess <1μs target" \
-  -m "BenchmarkLinuxFindProcess_HotCache validates per-call latency budget
-when cache is warm. If perf regresses past 1μs, this catches it before
-shipping."
+git -C k2 commit -m "test(provider): benchmark hot-cache <1μs target" \
+  -m "BenchmarkProcessCache_HotPath validates per-call latency budget for
+the cache layer (the FindProcess hot path on cache hits). Build-tag-free
+so it runs on any dev platform. Catches perf regression before shipping."
 ```
 
 ---
@@ -1982,26 +2018,36 @@ shipping."
 ### Task 12: Bump k2 submodule pointer in parent worktree
 
 **Files:**
-- Modify: parent worktree `.gitmodules` ref (implicit via git submodule update)
+- Modify: parent worktree submodule ref (via `git add k2`)
+
+**Pre-condition:** k2 submodule starts in detached HEAD state (typical for submodules). The Phase 1-6 commits are accumulating on top of that detached HEAD. Before bumping the parent pointer, we name the new HEAD onto a feature branch so the commits aren't orphaned if anyone later checks out a different ref in the submodule.
 
 - [ ] **Step 12.1: Confirm all k2 commits landed**
 
 ```bash
-git -C k2 log --oneline origin/main..HEAD
+git -C k2 log --oneline -12
 ```
 
-Expected: at least 9 new commits from this plan (Tasks 1, 2, 3, 4, 5, 6, 7, 8, 9, 11).
+Expected: 9 new commits from this plan (Tasks 1, 2, 3, 4, 5, 6, 7, 8, 9, 11 — Task 10 is validation only, Task 12 is parent-side). The 10th expected line is the original detached-HEAD commit (`3257a21 perf(engine): skip ProcessSearcher when no rule references it`).
 
-- [ ] **Step 12.2: Push k2 branch (if working on a branch)**
+- [ ] **Step 12.2: Create / fast-forward k2 feature branch onto these commits**
 
 ```bash
-# Check current k2 branch
+git -C k2 checkout -B feat/win-linux-process-searcher
 git -C k2 branch --show-current
 ```
 
-If not `main`, ensure the branch is pushed so parent worktree CI can fetch it. Typically App Bypass work lives on a feature branch — confirm with user before pushing.
+Expected: `feat/win-linux-process-searcher` printed. The detached HEAD's commits are now reachable from this branch.
 
-- [ ] **Step 12.3: Verify parent worktree sees the submodule change**
+- [ ] **Step 12.3: Push k2 feature branch to origin**
+
+```bash
+git -C k2 push -u origin feat/win-linux-process-searcher
+```
+
+Expected: branch published. (If origin is a local mirror per `git -C k2 remote -v`, push is essentially copying into the local clone — still useful so the commits are tracked under a name.)
+
+- [ ] **Step 12.4: Verify parent worktree sees the submodule change**
 
 ```bash
 git status
@@ -2009,27 +2055,28 @@ git status
 
 Expected: `modified: k2 (new commits)` line in the parent worktree status.
 
-- [ ] **Step 12.4: Commit submodule pointer bump in parent**
+- [ ] **Step 12.5: Commit submodule pointer bump in parent**
 
 ```bash
 git add k2
 git diff --cached
 git commit -m "chore(k2): bump submodule — Win/Linux ProcessSearcher" \
-  -m "Brings in Phase 2-7 commits implementing detect path for Windows +
-Linux desktop daemon. Closes App Bypass v0.4.5 GA gate (≥3 platforms;
-reaches 4: macOS + Android + Linux desktop + Windows)."
+  -m "Brings in 9 commits implementing detect path for Windows + Linux
+desktop daemon. Closes App Bypass v0.4.5 GA gate (≥3 platforms; reaches
+4: macOS + Android + Linux desktop + Windows). k2 branch: feat/win-linux-process-searcher."
 ```
 
-- [ ] **Step 12.5: Final smoke summary**
+- [ ] **Step 12.6: Final smoke summary**
 
 Run a final sanity check from the worktree root:
 
 ```bash
 git log --oneline -3
 git -C k2 log --oneline -10
+git -C k2 branch --show-current
 ```
 
-Verify the parent points to the latest k2 commit.
+Verify the parent's last commit is the submodule bump, the k2 branch is `feat/win-linux-process-searcher`, and 9 new commits sit on top of the prior k2 HEAD.
 
 ---
 
