@@ -1,10 +1,11 @@
 import { Box, Alert, Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { useVPNMachineStore, vpnMachineDispatch } from '../stores';
+import { useVPNMachineStore, useConnectionStore } from '../stores';
 
 export default function ConnectedSettingsLock({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const vpnState = useVPNMachineStore(s => s.state);
+  const disconnect = useConnectionStore(s => s.disconnect);
   const locked = vpnState !== 'idle';
 
   if (!locked) return <>{children}</>;
@@ -15,7 +16,7 @@ export default function ConnectedSettingsLock({ children }: { children: React.Re
         severity="info"
         sx={{ mb: 1.5 }}
         action={
-          <Button size="small" onClick={() => vpnMachineDispatch('USER_DISCONNECT')}>
+          <Button size="small" onClick={() => { void disconnect(); }}>
             {t('dashboard:dashboard.disconnectVpn')}
           </Button>
         }

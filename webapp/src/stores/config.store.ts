@@ -123,16 +123,22 @@ function gatewayPrefix(): RouteConfig[] {
  *
  * Privacy: callers must NEVER log entry names — only the count.
  */
-export function buildBypassRoutes(entries: AppBypassEntry[]): RouteConfig[] {
+export function buildBypassRoutes(
+  entries: AppBypassEntry[],
+  autoPackageNames: string[] = [],
+): RouteConfig[] {
   if (window._platform?.os === 'ios') return [];
-  if (entries.length === 0) return [];
+  if (entries.length === 0 && autoPackageNames.length === 0) return [];
 
   const processNames = [...new Set(
     entries.filter(e => e.kind === 'process').flatMap(e => e.names)
   )];
-  const packageNames = [...new Set(
-    entries.filter(e => e.kind === 'package').flatMap(e => e.names)
-  )];
+  // Union user-added package routes with auto-detected Chinese apps (smart-mode default).
+  // Dedupe via Set; user-added wins ordering when overlapping (LinkedHashSet semantics).
+  const packageNames = [...new Set([
+    ...entries.filter(e => e.kind === 'package').flatMap(e => e.names),
+    ...autoPackageNames,
+  ])];
 
   const routes: RouteConfig[] = [];
   if (processNames.length > 0) routes.push({ via: 'direct', match: { process_name: processNames } });
@@ -454,8 +460,15 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     const { defaultVia, countryVia, country, autoDetect, telemetry } = get();
     // Cross-store read: app-bypass entries are user-managed (per-app direct routes).
     // Counted-only in logs — names MUST NEVER be logged (see Section 8 privacy invariant).
-    const bypassEntries = useAppBypassStore.getState().entries;
+    const appBypassState = useAppBypassStore.getState();
+    const bypassEntries = appBypassState.entries;
+    // Smart-routing (preset != 'global') auto-bypasses detected Chinese apps so
+    // ISP-optimised Chinese services don't go through the overseas exit. Global
+    // mode is an explicit "everything through VPN" intent — skip auto-detection.
     const preset = derivePreset(defaultVia, countryVia);
+    const autoPackageNames = preset === 'global'
+      ? []
+      : appBypassState.autoDetected.map(e => e.packageName);
     const serverUrl = typeof params === 'string'
       ? params
       : params?.serverUrl;
@@ -466,7 +479,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       mode: 'tun',
       log: { ...CLIENT_CONFIG_DEFAULTS.log, level: __K2_BUILD_LOG_LEVEL__ },
       routes: [
-        ...buildBypassRoutes(bypassEntries),
+        ...buildBypassRoutes(bypassEntries, autoPackageNames),
         ...baseRoutes,
       ],
     };
@@ -485,6 +498,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       + ', autoDetect=' + autoDetect
       + ', routes=' + (result.routes?.length ?? 0)
       + ', bypassEntryCount=' + bypassEntries.length
+      + ', autoBypassCount=' + autoPackageNames.length
       + ', serverUrl=' + (serverUrl ?? 'none')
       + ', logLevel=' + result.log?.level
       + ', mode=' + result.mode

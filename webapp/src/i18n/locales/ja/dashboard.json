@@ -51,7 +51,9 @@
     "disconnectVpn": "VPN を切断",
     "appBypassEntry": {
       "label": "VPN を経由しないアプリ",
-      "count": "{{count}} 個",
+      "count": "手動 {{count}} 個",
+      "countAuto": "自動検出 {{count}} 個",
+      "countBoth": "手動 {{manual}} + 自動検出 {{auto}}",
       "empty": "未選択"
     },
     "alwaysOn": {
@@ -151,7 +153,33 @@
     "kickedOutDueToConnect": "VPN 接続後は変更できません。ホームに戻りました",
     "loadFailed": "アプリ一覧の読み込みに失敗しました",
     "saveFailed": "保存に失敗しました。再試行してください",
-    "uninstalledHint": "アプリがアンインストールされている可能性があります"
+    "uninstalledHint": "アプリがアンインストールされている可能性があります",
+    "ruleCard": {
+      "summary": "{{total}} 個のアプリが直接接続：手動 {{manual}} + 自動検出 {{auto}}",
+      "refresh": "再スキャン",
+      "globalWarning": "⚠ グローバルプロキシモード — 現在この設定は適用されません"
+    },
+    "smartDetection": {
+      "showAll": "すべて表示（あと {{count}} 個）",
+      "collapse": "折りたたむ"
+    },
+    "manualSection": "手動で追加（{{count}}）",
+    "addMoreSection": "アプリを追加",
+    "searchPlaceholder": "アプリを検索…",
+    "searchEmpty": "一致するアプリがありません",
+    "addInline": "追加",
+    "remove": "削除",
+    "rescanAuto": "スマート検出を再スキャン",
+    "rescanResultDetected": "{{count}} 個のアプリを検出",
+    "rescanResultEmpty": "アプリは検出されませんでした",
+    "rescanResultNoop": "現在の国 [{{country}}] ではスマート検出が無効です",
+    "cn": {
+      "section": "中国アプリ自動検出（{{count}}）",
+      "noteSmart": "スマートルーティング時、検出された中国アプリは自動的に直接接続されます",
+      "noteGlobal": "グローバルプロキシモードでは自動検出は適用されません",
+      "reasonInstaller": "中国のアプリストアからインストール",
+      "reasonPrefix": "中国系パッケージ名と一致"
+    }
   },
   "smartMode": {
     "routingMode": "ルーティングモード",

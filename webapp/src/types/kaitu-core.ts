@@ -219,6 +219,8 @@ export interface InstalledApp {
   packageName: string;
   label: string;
   iconUrl?: string;
+  /** Android only: the package that installed this app (PackageManager.getInstallSourceInfo). null if unknown / sideloaded / system. */
+  installerPackageName?: string | null;
 }
 
 export interface IAppListProvider {

@@ -51,7 +51,9 @@
     "disconnectVpn": "断开 VPN",
     "appBypassEntry": {
       "label": "不走代理的应用",
-      "count": "{{count}} 个",
+      "count": "{{count}} 个手动",
+      "countAuto": "{{count}} 个智能识别",
+      "countBoth": "{{manual}} 个手动 + {{auto}} 个智能识别",
       "empty": "未选"
     },
     "alwaysOn": {
@@ -151,7 +153,33 @@
     "kickedOutDueToConnect": "VPN 连接后无法修改，已返回主页",
     "loadFailed": "加载应用列表失败",
     "saveFailed": "保存失败，请重试",
-    "uninstalledHint": "应用可能已卸载"
+    "uninstalledHint": "应用可能已卸载",
+    "ruleCard": {
+      "summary": "共 {{total}} 个 app 直连：{{manual}} 手动 + {{auto}} 智能识别",
+      "refresh": "重新扫描",
+      "globalWarning": "⚠ 当前全球代理模式 — 下方配置当前不生效"
+    },
+    "smartDetection": {
+      "showAll": "查看全部（{{count}} 个未显示）",
+      "collapse": "收起"
+    },
+    "manualSection": "我手动添加（{{count}}）",
+    "addMoreSection": "添加更多 app",
+    "searchPlaceholder": "搜索应用名…",
+    "searchEmpty": "没有匹配的应用",
+    "addInline": "加入",
+    "remove": "移除",
+    "rescanAuto": "重新扫描智能识别",
+    "rescanResultDetected": "已识别 {{count}} 个 app",
+    "rescanResultEmpty": "未识别到任何 app",
+    "rescanResultNoop": "当前国家 [{{country}}] 不触发智能识别",
+    "cn": {
+      "section": "智能识别为中国 App（{{count}}）",
+      "noteSmart": "智能分流模式下，识别到的中国 app 已自动加入直连",
+      "noteGlobal": "全局代理模式下不应用智能识别",
+      "reasonInstaller": "来自国内应用商店",
+      "reasonPrefix": "命名前缀匹配"
+    }
   },
   "smartMode": {
     "routingMode": "路由模式",

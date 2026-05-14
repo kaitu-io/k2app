@@ -91,6 +91,18 @@ export function initializeAllStores(): () => void {
   });
   useSelfHostedStore.getState().loadTunnel(); // fire-and-forget, sets loaded=true when done
   useAppBypassStore.getState().load(); // fire-and-forget; sets loaded=true when done
+  useAppBypassStore.getState().loadAutoDetected(); // fire-and-forget; dispatcher picks per-region detector from useConfigStore.country
+
+  // Country changes (manual pick, autoDetect toggle, or Center/geo sync) must
+  // re-run the regional detector so the auto-detected section reflects the
+  // new region. Single subscribe covers all three mutator paths. config.store
+  // doesn't use subscribeWithSelector, so we diff the field manually.
+  const unsubCountry = useConfigStore.subscribe((state, prevState) => {
+    if (state.country !== prevState.country) {
+      useAppBypassStore.getState().loadAutoDetected();
+    }
+  });
+
   const cleanupAuth = initializeAuthStore();
   const cleanupVPNMachine = initializeVPNMachine();
   const cleanupConnection = initializeConnectionStore();
@@ -171,6 +183,7 @@ export function initializeAllStores(): () => void {
   }).catch(() => {});
 
   return () => {
+    unsubCountry();
     unsubFeedback();
     useFeedbackStore.getState().stopPolling();
     cleanupConnection();

@@ -3,6 +3,7 @@ package io.kaitu
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class K2VpnServiceUtilsTest {
@@ -124,5 +125,99 @@ class K2VpnServiceUtilsTest {
         val result = K2VpnServiceUtils.parseClientConfig(json)
         assertNotNull(result)
         assertEquals(listOf("[::1]:53", "114.114.114.114:53"), result!!.dnsProxy)
+    }
+
+    // ==================== parseDisallowedPackages ====================
+
+    @Test
+    fun parseDisallowedPackages_empty_object() {
+        assertTrue(K2VpnServiceUtils.parseDisallowedPackages("{}", "io.kaitu").isEmpty())
+    }
+
+    @Test
+    fun parseDisallowedPackages_empty_routes() {
+        assertTrue(K2VpnServiceUtils.parseDisallowedPackages("""{"routes":[]}""", "io.kaitu").isEmpty())
+    }
+
+    @Test
+    fun parseDisallowedPackages_malformed_json_returns_empty() {
+        assertTrue(K2VpnServiceUtils.parseDisallowedPackages("not json", "io.kaitu").isEmpty())
+    }
+
+    @Test
+    fun parseDisallowedPackages_single_direct_bypass() {
+        val json = """{"routes":[{"via":"direct","match":{"package_name":["com.tencent.mm","com.android.chrome"]}}]}"""
+        assertEquals(
+            listOf("com.tencent.mm", "com.android.chrome"),
+            K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu")
+        )
+    }
+
+    @Test
+    fun parseDisallowedPackages_skips_non_direct_via() {
+        val json = """{"routes":[{"via":"k2v5://x@y:443","match":{"package_name":["com.test"]}}]}"""
+        assertTrue(K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu").isEmpty())
+    }
+
+    @Test
+    fun parseDisallowedPackages_skips_routes_without_package_name() {
+        val json = """{"routes":[{"via":"direct","match":{"preset":"th-access"}}]}"""
+        assertTrue(K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu").isEmpty())
+    }
+
+    @Test
+    fun parseDisallowedPackages_skips_routes_without_match() {
+        val json = """{"routes":[{"via":"direct"}]}"""
+        assertTrue(K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu").isEmpty())
+    }
+
+    @Test
+    fun parseDisallowedPackages_excludes_self_package() {
+        val json = """{"routes":[{"via":"direct","match":{"package_name":["io.kaitu","com.android.chrome"]}}]}"""
+        assertEquals(
+            listOf("com.android.chrome"),
+            K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu")
+        )
+    }
+
+    @Test
+    fun parseDisallowedPackages_filters_empty_strings_and_trims() {
+        val json = """{"routes":[{"via":"direct","match":{"package_name":["","  com.android.chrome  ","   "]}}]}"""
+        assertEquals(
+            listOf("com.android.chrome"),
+            K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu")
+        )
+    }
+
+    @Test
+    fun parseDisallowedPackages_dedupes_across_multiple_routes() {
+        val json = """{"routes":[
+            {"via":"direct","match":{"package_name":["a","b"]}},
+            {"via":"direct","match":{"package_name":["b","c"]}}
+        ]}"""
+        assertEquals(
+            listOf("a", "b", "c"),
+            K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu")
+        )
+    }
+
+    @Test
+    fun parseDisallowedPackages_mixed_routes_full_config() {
+        // Mimics actual webapp output: bypass + preset + k2v5 fallback
+        val json = """{"mode":"tun","routes":[
+            {"via":"direct","match":{"package_name":["com.tencent.mm","com.android.chrome"]}},
+            {"via":"direct","match":{"preset":"th-access"}},
+            {"via":"k2v5://abc@d.example.com:443","match":{}}
+        ]}"""
+        assertEquals(
+            listOf("com.tencent.mm", "com.android.chrome"),
+            K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu")
+        )
+    }
+
+    @Test
+    fun parseDisallowedPackages_routes_field_wrong_type_returns_empty() {
+        val json = """{"routes":"not-an-array"}"""
+        assertTrue(K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu").isEmpty())
     }
 }

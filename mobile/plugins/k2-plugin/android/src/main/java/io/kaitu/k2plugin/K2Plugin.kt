@@ -969,10 +969,21 @@ class K2Plugin : Plugin() {
                 if (!seen.add(pkg)) continue
                 val label = pm.getApplicationLabel(appInfo).toString()
                 val iconUrl = "kaitu-icon://package/" + java.net.URLEncoder.encode(pkg, "UTF-8")
+                val installer: String? = try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        pm.getInstallSourceInfo(pkg).installingPackageName
+                    } else {
+                        @Suppress("DEPRECATION")
+                        pm.getInstallerPackageName(pkg)
+                    }
+                } catch (e: Exception) {
+                    null
+                }
                 val entry = JSObject().apply {
                     put("packageName", pkg)
                     put("label", label)
                     put("iconUrl", iconUrl)
+                    if (installer != null) put("installerPackageName", installer)
                 }
                 apps.put(entry)
             }

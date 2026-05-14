@@ -16,6 +16,7 @@ import {
   alpha,
   Alert,
   Snackbar,
+  Paper,
 } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
@@ -120,6 +121,13 @@ export default function Dashboard() {
 
   // App-bypass entry count (Advanced Settings row)
   const bypassCount = useAppBypassStore((s) => s.entries.length);
+  // Auto-detected count after de-dup against the manually-added list — mirrors
+  // the AppBypass page's autoNotAdded so the Dashboard entry summary stays
+  // consistent with what users see inside.
+  const autoBypassCount = useAppBypassStore((s) => {
+    const added = new Set(s.entries.map((e) => e.id));
+    return s.autoDetected.filter((a) => !added.has(a.packageName)).length;
+  });
 
   // Theme
   const theme = useTheme();
@@ -596,10 +604,13 @@ export default function Dashboard() {
       </Box>
 
 
-      {/* SECTION 3: Advanced Settings */}
+      {/* SECTION 3: Advanced Settings — visually distinct from tunnels list above.
+          Uses bg.default (darker recess) + inset top shadow to read as a footer drawer,
+          not another paper card like the tunnels list. */}
       <Box sx={{
-        borderTop: (theme) => `1px solid ${theme.palette.divider}`,
-        backgroundColor: 'background.paper',
+        borderTop: (theme) => `2px solid ${theme.palette.divider}`,
+        backgroundColor: 'background.default',
+        boxShadow: 'inset 0 8px 16px -10px rgba(0,0,0,0.45)',
         mt: 'auto',
       }}>
         <Button
@@ -628,9 +639,10 @@ export default function Dashboard() {
             maxHeight: '40vh',
             overflowY: 'auto',
             px: 2,
-            pb: 0.5,
-            pt: 1,
+            pb: 1.5,
+            pt: 1.5,
           }}>
+            <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'background.paper' }}>
             <ConnectedSettingsLock>
               {/* iOS-only: NEOnDemandRuleConnect toggle (ANC-13) */}
               {typeof window !== 'undefined' && window._platform?.os === 'ios' && (
@@ -651,15 +663,20 @@ export default function Dashboard() {
                   <ListItemText
                     primary={t('dashboard:dashboard.appBypassEntry.label')}
                     secondary={
-                      bypassCount > 0
-                        ? t('dashboard:dashboard.appBypassEntry.count', { count: bypassCount })
-                        : t('dashboard:dashboard.appBypassEntry.empty')
+                      bypassCount > 0 && autoBypassCount > 0
+                        ? t('dashboard:dashboard.appBypassEntry.countBoth', { manual: bypassCount, auto: autoBypassCount })
+                        : bypassCount > 0
+                          ? t('dashboard:dashboard.appBypassEntry.count', { count: bypassCount })
+                          : autoBypassCount > 0
+                            ? t('dashboard:dashboard.appBypassEntry.countAuto', { count: autoBypassCount })
+                            : t('dashboard:dashboard.appBypassEntry.empty')
                     }
                   />
                   <ChevronRightIcon />
                 </ListItemButton>
               )}
             </ConnectedSettingsLock>
+            </Paper>
           </Box>
         </Collapse>
       </Box>

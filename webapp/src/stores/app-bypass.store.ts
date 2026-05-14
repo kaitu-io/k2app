@@ -1,4 +1,8 @@
 import { create } from 'zustand';
+import { getRegionalDetector, type AutoDetectedAppEntry } from '../utils/regionalAppDetection';
+import { useConfigStore } from './config.store';
+
+export type { AutoDetectedAppEntry } from '../utils/regionalAppDetection';
 
 export interface AppBypassEntry {
   id: string;
@@ -7,6 +11,17 @@ export interface AppBypassEntry {
   names: string[];
   iconUrl?: string;
   addedAt: number;
+}
+
+/**
+ * Detector-supplied i18n keys for the auto-detected section. Set when a
+ * region-specific detector ran successfully; cleared when the dispatcher
+ * resolves to the no-op (non-CN country, null country, missing provider).
+ */
+export interface AutoDetectorMeta {
+  sectionTitleKey: string;
+  noteSmartKey: string;
+  noteGlobalKey: string;
 }
 
 interface AppBypassStorageShape {
@@ -18,7 +33,10 @@ const STORAGE_KEY = 'k2.advanced.app_bypass';
 
 interface AppBypassState {
   entries: AppBypassEntry[];
+  autoDetected: AutoDetectedAppEntry[];
+  autoDetectorMeta: AutoDetectorMeta | null;
   loaded: boolean;
+  autoDetectLoaded: boolean;
 }
 
 interface AppBypassActions {
@@ -28,6 +46,8 @@ interface AppBypassActions {
   clear(): Promise<void>;
   /** rescan: replace names of one entry (by id) with a fresh helper-name set */
   rescan(id: string, names: string[]): Promise<void>;
+  /** Refresh auto-detected Chinese-app list from the platform's installed-app provider. */
+  loadAutoDetected(): Promise<void>;
 }
 
 async function persist(entries: AppBypassEntry[]): Promise<void> {
@@ -37,7 +57,10 @@ async function persist(entries: AppBypassEntry[]): Promise<void> {
 
 export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((set, get) => ({
   entries: [],
+  autoDetected: [],
+  autoDetectorMeta: null,
   loaded: false,
+  autoDetectLoaded: false,
 
   async load() {
     try {
@@ -50,6 +73,36 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
     } catch (err) {
       console.warn('[AppBypassStore] load failed:', err);
       set({ entries: [], loaded: true });
+    }
+  },
+
+  async loadAutoDetected() {
+    const provider = window._platform?.appList;
+    if (!provider?.listInstalled) {
+      set({ autoDetected: [], autoDetectorMeta: null, autoDetectLoaded: true });
+      return;
+    }
+    const country = useConfigStore.getState().country;
+    const detector = getRegionalDetector(country);
+    if (detector.region === 'noop') {
+      set({ autoDetected: [], autoDetectorMeta: null, autoDetectLoaded: true });
+      return;
+    }
+    try {
+      const installed = await provider.listInstalled();
+      const detected = detector.detect(installed);
+      set({
+        autoDetected: detected,
+        autoDetectorMeta: {
+          sectionTitleKey: detector.sectionTitleKey,
+          noteSmartKey: detector.noteSmartKey,
+          noteGlobalKey: detector.noteGlobalKey,
+        },
+        autoDetectLoaded: true,
+      });
+    } catch (err) {
+      console.warn('[AppBypassStore] loadAutoDetected failed:', err);
+      set({ autoDetected: [], autoDetectorMeta: null, autoDetectLoaded: true });
     }
   },
 

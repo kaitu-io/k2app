@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ConnectedSettingsLock from '../ConnectedSettingsLock';
-import { useVPNMachineStore, vpnMachineDispatch } from '../../stores';
+import { useVPNMachineStore, useConnectionStore } from '../../stores';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -15,17 +15,12 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../../stores', async () => {
-  const actual = await vi.importActual<any>('../../stores');
-  return {
-    ...actual,
-    vpnMachineDispatch: vi.fn(),
-  };
-});
+const mockDisconnect = vi.fn().mockResolvedValue(undefined);
 
 beforeEach(() => {
   useVPNMachineStore.setState({ state: 'idle' } as any);
-  vi.clearAllMocks();
+  useConnectionStore.setState({ disconnect: mockDisconnect } as any);
+  mockDisconnect.mockClear();
 });
 
 describe('ConnectedSettingsLock', () => {
@@ -43,10 +38,10 @@ describe('ConnectedSettingsLock', () => {
     expect(screen.getByText(/断开 VPN/)).toBeInTheDocument();
   });
 
-  it('clicking 断开 VPN dispatches USER_DISCONNECT', () => {
+  it('clicking 断开 VPN calls connection.disconnect (which drives _k2.run(down))', () => {
     useVPNMachineStore.setState({ state: 'connected' } as any);
     render(<ConnectedSettingsLock><div /></ConnectedSettingsLock>);
     fireEvent.click(screen.getByText(/断开 VPN/));
-    expect(vpnMachineDispatch).toHaveBeenCalledWith('USER_DISCONNECT');
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 });

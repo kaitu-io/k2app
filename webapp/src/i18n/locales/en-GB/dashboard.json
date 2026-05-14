@@ -51,7 +51,9 @@
     "disconnectVpn": "Disconnect VPN",
     "appBypassEntry": {
       "label": "Apps that bypass VPN",
-      "count": "{{count}} apps",
+      "count": "{{count}} manual",
+      "countAuto": "{{count}} auto-detected",
+      "countBoth": "{{manual}} manual + {{auto}} auto-detected",
       "empty": "None"
     },
     "alwaysOn": {
@@ -151,7 +153,33 @@
     "kickedOutDueToConnect": "VPN connected; returning to home",
     "loadFailed": "Failed to load app list",
     "saveFailed": "Save failed, please try again",
-    "uninstalledHint": "App may be uninstalled"
+    "uninstalledHint": "App may be uninstalled",
+    "ruleCard": {
+      "summary": "{{total}} apps bypassed: {{manual}} manual + {{auto}} auto-detected",
+      "refresh": "Rescan",
+      "globalWarning": "⚠ Global proxy mode — bypass list doesn't apply right now"
+    },
+    "smartDetection": {
+      "showAll": "Show all ({{count}} more)",
+      "collapse": "Collapse"
+    },
+    "manualSection": "Manually added ({{count}})",
+    "addMoreSection": "Add more apps",
+    "searchPlaceholder": "Search apps…",
+    "searchEmpty": "No matching apps",
+    "addInline": "Add",
+    "remove": "Remove",
+    "rescanAuto": "Rescan smart detection",
+    "rescanResultDetected": "Detected {{count}} apps",
+    "rescanResultEmpty": "No apps detected",
+    "rescanResultNoop": "Current country [{{country}}] doesn't trigger smart detection",
+    "cn": {
+      "section": "Auto-detected Chinese apps ({{count}})",
+      "noteSmart": "Smart-routing mode automatically routes detected Chinese apps direct",
+      "noteGlobal": "Auto-detection not applied in global proxy mode",
+      "reasonInstaller": "Installed from a Chinese app store",
+      "reasonPrefix": "Matches Chinese-namespace package prefix"
+    }
   },
   "smartMode": {
     "routingMode": "Routing Mode",

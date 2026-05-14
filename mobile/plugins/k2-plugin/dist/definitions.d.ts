@@ -96,6 +96,7 @@ export interface K2PluginInterface {
             packageName: string;
             label: string;
             iconUrl?: string;
+            installerPackageName?: string | null;
         }>;
     }>;
     addListener(eventName: 'vpnStateChange', handler: (data: {

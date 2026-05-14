@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAppBypassStore } from '../app-bypass.store';
+import { useConfigStore } from '../config.store';
 
 const mockStorage = {
   get: vi.fn(),
@@ -10,12 +11,26 @@ const mockStorage = {
   clear: vi.fn(),
 };
 
+const mockListInstalled = vi.fn();
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockStorage.get.mockResolvedValue(null);
   mockStorage.set.mockResolvedValue(undefined);
-  (window as any)._platform = { storage: mockStorage };
-  useAppBypassStore.setState({ entries: [], loaded: false });
+  mockListInstalled.mockResolvedValue([]);
+  (window as any)._platform = {
+    storage: mockStorage,
+    appList: { listInstalled: mockListInstalled },
+  };
+  useAppBypassStore.setState({
+    entries: [],
+    autoDetected: [],
+    autoDetectorMeta: null,
+    loaded: false,
+    autoDetectLoaded: false,
+  });
+  // Default: no country → dispatcher resolves to noop unless a test sets it.
+  useConfigStore.setState({ country: null } as any);
 });
 
 describe('app-bypass store', () => {
@@ -105,5 +120,89 @@ describe('app-bypass store', () => {
       useAppBypassStore.getState().add({ id: 'a', label: 'A', kind: 'package', names: ['a'] })
     ).rejects.toThrow();
     expect(useAppBypassStore.getState().entries).toEqual([]);
+  });
+});
+
+describe('loadAutoDetected dispatcher', () => {
+  it('country=cn → chinaDetector runs, populates list + meta', async () => {
+    useConfigStore.setState({ country: 'cn' } as any);
+    mockListInstalled.mockResolvedValueOnce([
+      { packageName: 'com.tencent.mm', label: '微信' },
+      { packageName: 'com.android.chrome', label: 'Chrome' },
+    ]);
+    await useAppBypassStore.getState().loadAutoDetected();
+    const s = useAppBypassStore.getState();
+    expect(s.autoDetected.map((e) => e.packageName)).toEqual(['com.tencent.mm']);
+    expect(s.autoDetected[0].reasonKey).toBe('dashboard:appBypass.cn.reasonPrefix');
+    expect(s.autoDetectorMeta).toEqual({
+      sectionTitleKey: 'dashboard:appBypass.cn.section',
+      noteSmartKey: 'dashboard:appBypass.cn.noteSmart',
+      noteGlobalKey: 'dashboard:appBypass.cn.noteGlobal',
+    });
+    expect(s.autoDetectLoaded).toBe(true);
+  });
+
+  it('country=CN (uppercase) is normalised to chinaDetector', async () => {
+    useConfigStore.setState({ country: 'CN' } as any);
+    mockListInstalled.mockResolvedValueOnce([
+      { packageName: 'com.tencent.mm', label: 'WeChat' },
+    ]);
+    await useAppBypassStore.getState().loadAutoDetected();
+    expect(useAppBypassStore.getState().autoDetected).toHaveLength(1);
+    expect(useAppBypassStore.getState().autoDetectorMeta).not.toBeNull();
+  });
+
+  it('country=us → noop, list empty, meta null, listInstalled NOT called', async () => {
+    useConfigStore.setState({ country: 'us' } as any);
+    await useAppBypassStore.getState().loadAutoDetected();
+    const s = useAppBypassStore.getState();
+    expect(s.autoDetected).toEqual([]);
+    expect(s.autoDetectorMeta).toBeNull();
+    expect(s.autoDetectLoaded).toBe(true);
+    expect(mockListInstalled).not.toHaveBeenCalled();
+  });
+
+  it('country=null → noop, list empty, meta null, listInstalled NOT called', async () => {
+    useConfigStore.setState({ country: null } as any);
+    await useAppBypassStore.getState().loadAutoDetected();
+    const s = useAppBypassStore.getState();
+    expect(s.autoDetected).toEqual([]);
+    expect(s.autoDetectorMeta).toBeNull();
+    expect(mockListInstalled).not.toHaveBeenCalled();
+  });
+
+  it('no appList provider → noop, list empty, meta null', async () => {
+    (window as any)._platform = { storage: mockStorage }; // no appList
+    useConfigStore.setState({ country: 'cn' } as any);
+    await useAppBypassStore.getState().loadAutoDetected();
+    const s = useAppBypassStore.getState();
+    expect(s.autoDetected).toEqual([]);
+    expect(s.autoDetectorMeta).toBeNull();
+    expect(s.autoDetectLoaded).toBe(true);
+  });
+
+  it('listInstalled throws → list empty, meta null, autoDetectLoaded=true', async () => {
+    useConfigStore.setState({ country: 'cn' } as any);
+    mockListInstalled.mockRejectedValueOnce(new Error('platform unavailable'));
+    await useAppBypassStore.getState().loadAutoDetected();
+    const s = useAppBypassStore.getState();
+    expect(s.autoDetected).toEqual([]);
+    expect(s.autoDetectorMeta).toBeNull();
+    expect(s.autoDetectLoaded).toBe(true);
+  });
+
+  it('switching country=cn → us clears previously-detected list + meta', async () => {
+    useConfigStore.setState({ country: 'cn' } as any);
+    mockListInstalled.mockResolvedValueOnce([
+      { packageName: 'com.tencent.mm', label: 'WeChat' },
+    ]);
+    await useAppBypassStore.getState().loadAutoDetected();
+    expect(useAppBypassStore.getState().autoDetected).toHaveLength(1);
+
+    useConfigStore.setState({ country: 'us' } as any);
+    await useAppBypassStore.getState().loadAutoDetected();
+    const s = useAppBypassStore.getState();
+    expect(s.autoDetected).toEqual([]);
+    expect(s.autoDetectorMeta).toBeNull();
   });
 });

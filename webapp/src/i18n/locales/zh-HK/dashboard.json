@@ -51,7 +51,9 @@
     "disconnectVpn": "斷開 VPN",
     "appBypassEntry": {
       "label": "唔走代理嘅應用",
-      "count": "{{count}} 個",
+      "count": "{{count}} 個手動",
+      "countAuto": "{{count}} 個智能識別",
+      "countBoth": "{{manual}} 個手動 + {{auto}} 個智能識別",
       "empty": "未選"
     },
     "alwaysOn": {
@@ -151,7 +153,33 @@
     "kickedOutDueToConnect": "VPN 連接後無法修改，已返回主頁",
     "loadFailed": "載入應用清單失敗",
     "saveFailed": "儲存失敗，請重試",
-    "uninstalledHint": "應用可能已解除安裝"
+    "uninstalledHint": "應用可能已解除安裝",
+    "ruleCard": {
+      "summary": "共 {{total}} 個 app 直連：{{manual}} 手動 + {{auto}} 智能識別",
+      "refresh": "重新掃描",
+      "globalWarning": "⚠ 目前是全域代理模式 — 下方設定當前不生效"
+    },
+    "smartDetection": {
+      "showAll": "查看全部（{{count}} 個未顯示）",
+      "collapse": "收起"
+    },
+    "manualSection": "我手動加入（{{count}}）",
+    "addMoreSection": "新增更多 app",
+    "searchPlaceholder": "搜尋應用名稱…",
+    "searchEmpty": "沒有相符的應用",
+    "addInline": "加入",
+    "remove": "移除",
+    "rescanAuto": "重新掃描智能識別",
+    "rescanResultDetected": "已識別 {{count}} 個 app",
+    "rescanResultEmpty": "未識別到任何 app",
+    "rescanResultNoop": "目前國家 [{{country}}] 不觸發智能識別",
+    "cn": {
+      "section": "智能識別為中國 App（{{count}}）",
+      "noteSmart": "智能分流模式下，識別到的中國 app 已自動加入直連",
+      "noteGlobal": "全域代理模式下不應用智能識別",
+      "reasonInstaller": "來自國內應用商店",
+      "reasonPrefix": "命名前綴匹配"
+    }
   },
   "smartMode": {
     "routingMode": "路由模式",
