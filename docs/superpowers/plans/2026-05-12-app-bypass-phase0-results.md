@@ -75,30 +75,57 @@ zoom.us
 ```
 5 basenames. **Validates path-prefix algorithm**: Zoom doesn't use "<App> Helper" naming convention; product code names. The macOS bundle enumeration in `app_list.rs` filters by path-under-bundleURL, not name pattern → works correctly.
 
-### WeChat — DEFERRED
-User must launch WeChat then run `ps -ax -o comm | grep -i wechat`.
+### Telegram — **CAPTURED 2026-05-14**
+```
+Telegram
+```
+**1 basename**. Telegram macOS 是 single-process bundle，没有 `Contents/Helpers/`；`/Applications/Telegram.app/Contents/MacOS/` 只有一个 `Telegram` 可执行 + `Frameworks/` 里的 swift dylibs。`pids_by_type(All)` 前缀匹配 bundle URL 只命中主进程 PID。bundleId = `ru.keepcoder.Telegram`. **Validates single-process branch** of `app_list.rs::macos::enumerate` — `collect_helper_basenames` 返回 1 元素时 UI 显示 "屏蔽 1 个进程"。
 
-### Telegram — DEFERRED
-Same.
+### WeChat — STILL DEFERRED
+Worktree machine 没装微信。需在装有 WeChat for macOS 的开发机上跑 `ps -ax -o comm | grep -i wechat` 抓 helper basenames。不阻塞 v0.4.5（UI / 规则匹配链路跟具体 bundle 解耦）。
 
 ---
 
-## §12.4 — Icon scheme POC
+## §12.4 — Tauri icon POC (macOS) — **✅ PASS (2026-05-14)**
 
-**Status:** DEFERRED to user (needs running Tauri dev build + DevTools).
+Tested via Tauri MCP against running dev build (`yarn tauri dev --features mcp-bridge`, Vite :1420). Verification: `_platform.appList.listRunning()` returned 45 apps; spot-fetched icons via `<img src="kaitu-icon://bundle/...">`:
 
-Handler code in `desktop/src-tauri/src/icon_protocol.rs` compiles and registers via `register_uri_scheme_protocol`. Real `<img src="kaitu-icon://bundle/com.apple.Safari">` rendering test must be done by user:
+| bundle | naturalW×H | verdict |
+|---|---|---|
+| `com.apple.Safari` | 1024×1024 | ✅ |
+| `com.apple.finder` | 1024×1024 | ✅ |
+| `com.apple.loginwindow` | 1024×1024 | ✅ (generic system icon — Apple design) |
+| `com.apple.controlcenter` | 1024×1024 | ✅ |
+| `com.googlecode.iterm2` | 1024×1024 | ✅ |
+| `com.microsoft.VSCode` | 1024×1024 | ✅ |
+| `com.tinyspeck.slackmacgap` | 1024×1024 | ✅ |
+| `com.runningwithcrayons.Alfred` | 1024×1024 | ✅ |
 
-```
-cd /Users/david/projects/kaitu-io/k2app/.claude/worktrees/v0.4.5+app-bypass
-make dev-macos
-# wait for window, Cmd+Opt+I to open DevTools, then in console:
-const img = new Image();
-img.src = 'kaitu-icon://bundle/com.apple.Safari';
-img.onload = () => console.log('PASS', img.width, img.height);
-img.onerror = (e) => console.error('FAIL', e);
-document.body.appendChild(img);
-```
+**Gotcha**: WebKit `fetch()` API refuses custom URI schemes — must test via `new Image()` or `<img src>`. Production webapp uses `<img>` so this is fine; just don't waste time grepping for `fetch('kaitu-icon://...')`.
+
+**End-to-end UX smoke** (drove webview at `/app-bypass`):
+- Rule card + count summary + 智能分流国家 picker rendered correctly
+- 添加更多 list shows running apps with icons + 加入 buttons
+- Clicking 加入 on Slack: count `0 手动` → `1 手动`, "我手动添加(1)" section appears with "屏蔽 6 个进程", Slack auto-dedups from available list
+- Clicking 移除: count back to 0, manual section disappears, Slack returns to available
+
+Screenshots: `/tmp/k2-phase0/appbypass-macos-{initial,rendered,slack-filter,slack-added}.png`
+
+### UX follow-ups
+
+**Fix 1 + 2 applied in same session (2026-05-14)** to `desktop/src-tauri/src/app_list.rs::macos::enumerate`:
+
+1. **System-daemon noise** — RESOLVED. Skip any `bundle_id.starts_with("com.apple")`. Hides ~15 system daemons (loginwindow / dock / WindowManager / controlcenter / systemuiserver / Spotlight / etc.) and also `com.apple.Safari` / `com.apple.Mail` / `com.apple.Messages` / `com.apple.Photos` / etc. **Trade-off acknowledged**: Apple-bundled user apps disappear from the autocomplete list — power users wanting to bypass Safari can use "+ 手动添加" button (process name input).
+2. **Duplicate entries** — RESOLVED. `NSWorkspace.runningApplications()` returns one entry per PID; multi-process bundles (Chrome × 2, Docker × 2, Chrome Helper × 3 in test) had duplicate rows. Added `seen_ids: HashSet<String>` dedup, first-seen wins (all instances of same bundle have identical bundle_url so process_names collected are identical anyway).
+3. **Search filter false-positive** — NOT REPRODUCED. JS simulation of `filteredAvailable` logic returns correct 2-entry match for "slack". Tauri MCP synthetic input events do not propagate to React `onChange` reliably on WebKit, so I cannot conclusively test via automation. **Pending: real keyboard typing by user to confirm.**
+
+**Before/after counts** (same dev machine): `listRunning()` 48 → 16; 0 Apple bundles, 0 duplicates. Cargo build 5.93s, zero warnings. Regression: Telegram add → "屏蔽 1 个进程" (correct, single-process bundle); Chrome add → "屏蔽 5 个进程" (correct, all helpers collected).
+
+**Fix 4: Sub-bundle filtering** — RESOLVED (same session). User pointed out that searching "chrome" produced both "Google Chrome" and "Google Chrome Helper" as separate entries despite the main bundle's processNames already including all helper basenames. Same for Slack / Docker Desktop / DeepLUninstall. Added post-pass in `enumerate()`: drop any candidate whose `bundle_path` is a strict descendant of another candidate's `bundle_path` (e.g. `/Applications/Slack.app/.../Slack Helper (Plugin).app` lives under `/Applications/Slack.app`). DeepLUninstall.app also dropped, confirming it's nested inside DeepL.app (not a sibling install).
+
+Final count: 48 → 12 on dev machine, one row per user-facing top-level app. Cargo rebuild 6.24s.
+
+Screenshots: `/tmp/k2-phase0/appbypass-macos-{initial,rendered,slack-filter,slack-added,after-dedup-filter,final-v2}.png` (6 stages).
 
 ---
 
@@ -106,13 +133,13 @@ document.body.appendChild(img);
 
 Per spec §12.5: "v1 GA 标准 = 至少 3 平台过；不接受'全 4 平台砍只剩 1'".
 
-Current status:
-- **macOS:** ✅ PASS (after fixes 3c56a62 + 82025a9)
-- **Windows:** deferred — but only nil-stub for now; needs v2 work to wire a Windows process searcher
-- **Linux desktop:** deferred — needs no-PackageResolver Linux variant
-- **Android:** deferred — code path looks correct, needs real-device validation
+Current status (2026-05-14):
+- **macOS:** ✅ PASS — attribution (commits `3c56a62` + `82025a9`) + icon POC + full UX smoke
+- **Android:** ✅ PASS — Redmi K40 Pro UAT, kernel-level `VpnService.Builder.addDisallowedApplication`
+- **Windows:** deferred to v0.5.x — `k2/daemon/process_other.go` is nil-stub; needs `GetExtendedTcpTable2` searcher (per Spec §12.5 推荐 Option A: webapp `features.appBypass` 在 Windows 上 platform-gate 为 false 出 v0.4.5)
+- **Linux desktop:** deferred — needs no-PackageResolver LinuxProcessSearcher variant
 
-**Risk:** if Windows + Linux + Android all need additional submodule work, GA bar (≥3) may not be met. macOS alone is insufficient. Recommend the user prioritize Android validation (largest user base after macOS, and the code path already wires LinuxProcessSearcher).
+**GA bar:** 2/3 met (macOS + Android). Spec §12.5 says ≥3 platforms. **Pending user decision** to relax that bar for v0.4.5 or implement Windows attribution before GA.
 
 ---
 

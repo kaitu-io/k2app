@@ -86,7 +86,11 @@ mod macos {
         let running = unsafe { workspace.runningApplications() };
         let count = running.count();
 
-        let mut out: Vec<RunningApp> = Vec::new();
+        // Collect raw candidates first so we can post-filter sub-bundles (e.g.
+        // /Applications/Slack.app/.../Slack Helper (Plugin).app whose parent
+        // /Applications/Slack.app is also in the list).
+        let mut raw: Vec<(String /*bundle_path*/, RunningApp)> = Vec::new();
+        let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for i in 0..count {
             let app = unsafe { running.objectAtIndex(i) };
@@ -113,6 +117,22 @@ mod macos {
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| bundle_path.clone());
 
+            // Hide all Apple-owned bundles (system daemons + first-party apps like
+            // Safari/Mail/Messages). Rationale: 99% of bypass use cases target third-
+            // party apps (WeChat, banking, 12306). The rare case of bypassing a built-in
+            // Apple app stays reachable via the "+ 手动添加" button.
+            if bundle_id.starts_with("com.apple") {
+                continue;
+            }
+
+            // NSWorkspace returns one NSRunningApplication per process; helper bundles
+            // like com.google.Chrome.helper appear once per renderer PID. Dedup by
+            // bundleId — all instances share the same bundle_url, so process_names
+            // collected below are identical anyway.
+            if !seen_ids.insert(bundle_id.clone()) {
+                continue;
+            }
+
             // localizedName (Option)
             let label = unsafe { app.localizedName() }
                 .map(|s| s.to_string())
@@ -138,13 +158,30 @@ mod macos {
                 urlencoding::encode(&bundle_id)
             );
 
-            out.push(RunningApp {
-                id: bundle_id,
-                label,
-                process_names: helpers,
-                icon_url: Some(icon_url),
-            });
+            raw.push((
+                bundle_path,
+                RunningApp {
+                    id: bundle_id,
+                    label,
+                    process_names: helpers,
+                    icon_url: Some(icon_url),
+                },
+            ));
         }
+
+        // Drop nested sub-bundles: any candidate whose bundle_path lives strictly
+        // inside another candidate's bundle_path is redundant — the parent
+        // already covers all child PIDs via collect_helper_basenames.
+        let all_paths: Vec<String> = raw.iter().map(|(p, _)| p.clone()).collect();
+        let out: Vec<RunningApp> = raw
+            .into_iter()
+            .filter(|(this_path, _)| {
+                !all_paths.iter().any(|other| {
+                    other != this_path && this_path.starts_with(&format!("{other}/"))
+                })
+            })
+            .map(|(_, app)| app)
+            .collect();
 
         Ok(out)
     }
