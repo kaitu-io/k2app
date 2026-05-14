@@ -38,7 +38,6 @@ import { CloudTunnelList, type CloudTunnelListHandle } from '../components/Cloud
 import { getFlagIcon, getCountryName } from '../utils/country';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { cacheStore } from '../services/cache-store';
-import { DisconnectFeedbackDialog } from '../components/DisconnectFeedbackDialog';
 import { SmartServerSelector } from '../components/SmartServerSelector';
 import { SelfHostedTunnelItem } from '../components/SelfHostedTunnelItem';
 import { K2subConfig } from '../components/K2subConfig';
@@ -650,8 +649,6 @@ export default function Dashboard() {
           </Box>
         </Collapse>
       </Box>
-
-      <DisconnectFeedbackDialog />
 
       {/* Manual-refresh failure toast — warning (not error) tone, auto-dismiss,
           so a transient network blip doesn't read as an app-wide outage. */}
