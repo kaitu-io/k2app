@@ -188,7 +188,25 @@ func (e *Engine) matchHostLocked(host string) Target {
 }
 
 // matchConnLocked matches host + meta, AND semantics within each route.
+//
+// Meta-only rules (process_name / package_name / network without host criteria)
+// are checked BEFORE the DNS-learned tmp cache, because per-connection identity
+// supersedes IP-level caching: a process bypass must fire regardless of which
+// route the destination's domain happened to resolve to via DNS.
 func (e *Engine) matchConnLocked(host string, meta ConnMeta) Target {
+	hasAnyMeta := meta.ProcessName != "" || meta.PackageName != "" || meta.Network != ""
+	if hasAnyMeta {
+		for i := range e.routes {
+			r := &e.routes[i]
+			if r.hasHostCriteria() || !r.hasMetaCriteria() {
+				continue // need a meta-only route here
+			}
+			if matchMeta(r, meta) {
+				return r.Target
+			}
+		}
+	}
+
 	if addr, err := netip.ParseAddr(host); err == nil {
 		if t, ok := e.tmp[addr]; ok {
 			return t
