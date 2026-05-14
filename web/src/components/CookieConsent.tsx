@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Cookie, X } from "lucide-react";
+import { safeStorage } from "@/lib/safeStorage";
 
 const COOKIE_CONSENT_KEY = "kaitu_cookie_consent";
 const COOKIE_CONSENT_VERSION = "1"; // Increment when cookie policy changes
@@ -24,7 +25,7 @@ export default function CookieConsent() {
     }
 
     // Check if user has already consented
-    const consent = localStorage.getItem(COOKIE_CONSENT_KEY);
+    const consent = safeStorage.get(COOKIE_CONSENT_KEY);
     if (!consent || consent !== COOKIE_CONSENT_VERSION) {
       // Show banner after a short delay for better UX
       const timer = setTimeout(() => {
@@ -42,7 +43,7 @@ export default function CookieConsent() {
     setIsVisible(false);
     // Wait for animation to complete before hiding
     setTimeout(() => {
-      localStorage.setItem(COOKIE_CONSENT_KEY, COOKIE_CONSENT_VERSION);
+      safeStorage.set(COOKIE_CONSENT_KEY, COOKIE_CONSENT_VERSION);
       if (!accepted) {
         // Clear invite code cookie if declined
         document.cookie = "kaitu_invite_code=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";

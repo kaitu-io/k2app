@@ -97,14 +97,21 @@ func api_update_login_email(c *gin.Context) {
 	indexID := secretHashIt(c, []byte(req.Email))
 
 	// 校验验证码
-	if !verifyEmailCode(c, indexID, req.VerificationCode) {
+	switch verifyEmailCode(c, indexID, req.VerificationCode) {
+	case VerifyCodeOK:
+		// fall through
+	case VerifyCodeNotIssued:
+		log.Warnf(c, "verification code expired or not issued for user %d, email %s", userID, req.Email)
+		Error(c, ErrorVerificationCodeExpired, "verification code expired or not sent")
+		return
+	case VerifyCodeWrong:
 		log.Warnf(c, "invalid verification code for user %d, email %s", userID, req.Email)
-		Error(c, ErrorInvalidArgument, "invalid verification code")
+		Error(c, ErrorInvalidVerificationCode, "invalid verification code")
 		return
 	}
-	if err := deleteVerificationCode(c, req.Email); err != nil {
-		log.Errorf(c, "failed to delete verification code for user %d, email %s: %v", userID, req.Email, err)
-		Error(c, ErrorSystemError, "failed to delete verification code")
+	if err := markVerificationCodeUsed(c, indexID); err != nil {
+		log.Errorf(c, "failed to mark verification code used for user %d, email %s: %v", userID, req.Email, err)
+		Error(c, ErrorSystemError, "failed to mark verification code used")
 		return
 	}
 	// 获取当前用户
@@ -178,7 +185,6 @@ type SendVerificationEmailRequest struct {
 // api_send_bind_email_verification 发送绑定邮箱验证码
 //
 func api_send_bind_email_verification(c *gin.Context) {
-	deviceID := ReqUDID(c)
 	userID := ReqUserID(c)
 	user := ReqUser(c)
 	var req SendVerificationEmailRequest
@@ -213,9 +219,14 @@ func api_send_bind_email_verification(c *gin.Context) {
 		return
 	}
 
-	// 生成验证码
-	code := generateVerificationCode(c, deviceID)
-	expireMinutes := 5
+	// 生成（或复用）验证码 — 同邮箱在 TTL 窗口内复用同一个码，每次重发刷 TTL
+	code, err := issueOrRefreshVerificationCode(c, indexID)
+	if err != nil {
+		log.Errorf(c, "failed to issue verification code for email %s, user %d: %v", indexID, userID, err)
+		Error(c, ErrorSystemError, "failed to issue verification code")
+		return
+	}
+	expireMinutes := VerificationCodeExpiryMinutes
 	// 发送验证码邮件
 	meta := VerificationCodeMeta{
 		UserEmail:     req.Email,
@@ -225,12 +236,6 @@ func api_send_bind_email_verification(c *gin.Context) {
 	if err := emailTo(c, req.Email, verificationCodeTemplate, meta); err != nil {
 		log.Errorf(c, "failed to send verification email to %s for user %d: %v", req.Email, userID, err)
 		Error(c, ErrorSystemError, err.Error())
-		return
-	}
-	// 保存验证码
-	if err := saveEmailVerificationCode(c, indexID, code, expireMinutes); err != nil {
-		log.Errorf(c, "failed to save verification code for email %s, user %d: %v", indexID, userID, err)
-		Error(c, ErrorSystemError, "failed to save verification code")
 		return
 	}
 	if user.IsAdmin != nil && *user.IsAdmin {

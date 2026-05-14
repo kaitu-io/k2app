@@ -42,6 +42,7 @@ export const ERROR_CODES = {
   LICENSE_KEY_EXPIRED: 400009,
   LICENSE_KEY_NOT_MATCH: 400010,
   PROXY_MEMBERS_DEPRECATED: 400012,
+  VERIFICATION_CODE_EXPIRED: 400013,
 
   // Tier system error codes (added 2026-04-20)
   TIER_MISMATCH: 422001,
@@ -171,6 +172,10 @@ export function getErrorMessage(
 
     case ERROR_CODES.INVALID_VERIFICATION_CODE:
       return t('auth:auth.invalidVerificationCode', 'Invalid verification code');
+
+    case ERROR_CODES.VERIFICATION_CODE_EXPIRED:
+      return t('auth:auth.verificationCodeExpired',
+        'Verification code expired or not sent. Please request a new one.');
 
     case ERROR_CODES.INVALID_INVITE_CODE:
       return t('auth:auth.inviteCodeIncorrect', 'Invalid invite code');

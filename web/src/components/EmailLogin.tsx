@@ -5,7 +5,7 @@ import { suggestEmail } from "@/lib/email-suggest";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAppConfig } from "@/contexts/AppConfigContext";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, ErrorCode } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,14 +115,21 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
         autoRedirectToAuth: false,
       });
 
-      // 登录成功 - Server already set HttpOnly cookie
+      // 登录成功 - Server set HttpOnly cookie; accessToken in body enables
+      // localStorage fallback when the browser drops the Set-Cookie.
       toast.success(t('auth.login.loginSuccess'));
-      const { user } = response;
-      login(user);
+      const { user, accessToken } = response;
+      await login(user, accessToken);
       onLoginSuccess?.();
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(getApiErrorMessage(error.code, t));
+        // On expired/missing code, clear the input AND send the user back to
+        // step 1 so the "send code" button is the obvious next move.
+        if (error.code === ErrorCode.VerificationCodeExpired) {
+          setCode("");
+          setStep(1);
+        }
       } else {
         toast.error(t('auth.login.loginFailed'));
       }

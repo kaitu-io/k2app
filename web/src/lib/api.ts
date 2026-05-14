@@ -36,6 +36,7 @@
 
 import { toast } from "sonner";
 import { appEvents } from "./events";
+import { safeStorage } from "./safeStorage";
 
 // ============================================================================
 // API Types (moved from @/types/api.ts to avoid conflicts)
@@ -444,6 +445,14 @@ export interface WebLoginRequest {
 // Web登录响应 - tokens通过HttpOnly Cookie设置，response只返回user信息
 export interface WebLoginResponse {
   user: AuthUser;
+  /**
+   * JWT also returned in the body so the client can fall back to
+   * localStorage + `Authorization: Bearer` when the browser fails to
+   * persist the HttpOnly `Set-Cookie` from the same response (observed
+   * on iOS WeChat in-app WKWebView). Cookie remains the preferred path
+   * — this token is only stored when cookie persistence fails.
+   */
+  accessToken: string;
 }
 
 export interface SendCodeResponse {
@@ -477,11 +486,12 @@ export const ErrorCode = {
   // Custom error codes
   InvalidCampaignCode: 400001,    // Invalid campaign code
   InvalidClientClock: 400002,      // Invalid client timestamp
-  InvalidVerificationCode: 400003, // Invalid verification code
+  InvalidVerificationCode: 400003, // Invalid verification code (user typed wrong)
   InvalidInviteCode: 400004,       // Invalid invite code
   SelfInvitation: 400005,          // Self invitation
   InvalidCredentials: 400006,      // Invalid credentials
   ProxyMembersDeprecated: 400012,  // 代付成员管理已下线
+  VerificationCodeExpired: 400013, // Verification code expired or not sent
   TierMismatch: 422001,            // 跨档购买被拒绝（仅同档续费）
   ProxyPurchaseDeprecated: 422002, // 代付下单已下线
 } as const;
@@ -1112,7 +1122,8 @@ export const api = {
    */
   clearAuthData(): void {
     console.log('[API] Clearing auth data');
-    localStorage.removeItem('embed_auth_token');
+    safeStorage.remove('embed_auth_token');
+    safeStorage.remove('auth_fallback_token');
 
     // Emit event to sync AuthContext state only (no redirect)
     appEvents.emit('auth:unauthorized');
@@ -1145,15 +1156,66 @@ export const api = {
    * Returns empty object {} for normal web auth
    */
   async getValidAuthHeader(): Promise<Record<string, string>> {
-    // Only embed mode uses Bearer token header
-    // Normal web auth uses HttpOnly cookies (automatic via credentials: 'include')
+    // Bearer token paths (in priority order):
+    //   1. embed_auth_token   — iframe-embedded webapp (desktop bridge)
+    //   2. auth_fallback_token — set when the login response's Set-Cookie
+    //      failed to persist (iOS WeChat WKWebView etc.); see applyLoginCredentials.
+    // Normal web auth uses HttpOnly cookies (automatic via credentials: 'include').
     if (typeof window === 'undefined') return {};
-    const embedToken = localStorage.getItem('embed_auth_token');
+    const embedToken = safeStorage.get('embed_auth_token');
     if (embedToken) {
-      console.log('[API] Using embed auth token');
       return { Authorization: `Bearer ${embedToken}` };
     }
+    const fallbackToken = safeStorage.get('auth_fallback_token');
+    if (fallbackToken) {
+      return { Authorization: `Bearer ${fallbackToken}` };
+    }
     return {};
+  },
+
+  /**
+   * Check whether the browser persisted the auth cookies from the most recent
+   * login response. We read `csrf_token` because it's the only non-HttpOnly
+   * auth cookie — if it's missing, `access_token` is certainly missing too.
+   *
+   * Set-Cookie persistence is synchronous in the spec, but real browsers
+   * (Sentry session-replay hooks, slow main thread, iOS WKWebView quirks)
+   * can lag. Poll for up to `maxMs` before giving up.
+   */
+  async hasCookieAuth(maxMs = 200): Promise<boolean> {
+    if (typeof document === 'undefined') return false;
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+      if (/(?:^|;\s*)csrf_token=/.test(document.cookie)) return true;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return /(?:^|;\s*)csrf_token=/.test(document.cookie);
+  },
+
+  /**
+   * After a successful web-login: prefer cookies, fall back to localStorage
+   * Bearer if the browser dropped the Set-Cookie. Clears any stale fallback
+   * token when cookies do work, so a recovered browser doesn't keep using
+   * the lower-security path.
+   */
+  async applyLoginCredentials(accessToken: string): Promise<'cookie' | 'fallback'> {
+    if (typeof window === 'undefined') return 'cookie';
+    const cookieOk = await this.hasCookieAuth();
+    if (cookieOk) {
+      safeStorage.remove('auth_fallback_token');
+      return 'cookie';
+    }
+    if (accessToken) {
+      if (safeStorage.set('auth_fallback_token', accessToken)) {
+        console.warn('[API] Cookie auth failed to persist; using localStorage Bearer fallback');
+        return 'fallback';
+      }
+      // Cookie blocked AND storage blocked (Safari ties Web Storage to the
+      // cookie setting). Auth will almost certainly fail on the next request,
+      // but at least we don't throw SecurityError out of this async chain.
+      console.warn('[API] Cookie auth failed and localStorage unavailable; login will likely fail');
+    }
+    return 'cookie';
   },
 
   // Note: Token refresh is now handled server-side via sliding expiration

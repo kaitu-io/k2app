@@ -42,6 +42,8 @@ export function getApiErrorMessage(
       return t('errors.invalidClock');
     case ErrorCode.InvalidVerificationCode:
       return t('errors.invalidVerificationCode');
+    case ErrorCode.VerificationCodeExpired:
+      return t('errors.verificationCodeExpired');
     case ErrorCode.InvalidInviteCode:
       return t('errors.invalidInviteCode');
     case ErrorCode.SelfInvitation:
@@ -77,7 +79,8 @@ const zhMessages: Record<number, string> = {
   [ErrorCode.ServiceUnavailable]: '服务器不可用，请稍后重试',
   [ErrorCode.InvalidCampaignCode]: '活动码无效',
   [ErrorCode.InvalidClientClock]: '设备时间不正确，请校准系统时间',
-  [ErrorCode.InvalidVerificationCode]: '验证码错误',
+  [ErrorCode.InvalidVerificationCode]: '验证码错误，请检查后重试',
+  [ErrorCode.VerificationCodeExpired]: '验证码已过期或未发送，请点击重新发送',
   [ErrorCode.InvalidInviteCode]: '邀请码不正确',
   [ErrorCode.SelfInvitation]: '不能使用自己的邀请码',
   [ErrorCode.InvalidCredentials]: '登录凭证无效',

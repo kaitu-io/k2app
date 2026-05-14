@@ -11,6 +11,7 @@ import React, {
 import { appEvents } from "@/lib/events";
 import { redirectToLogin } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { safeStorage } from "@/lib/safeStorage";
 
 interface User {
   id: number;
@@ -21,7 +22,12 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  login: (user: User) => void;
+  /**
+   * Apply login credentials. `accessToken` enables a localStorage Bearer
+   * fallback when the browser fails to persist the HttpOnly cookie from
+   * the same response (iOS WeChat WKWebView). Cookie path stays preferred.
+   */
+  login: (user: User, accessToken?: string) => Promise<void>;
   logout: () => void;
   navigateToLogin: () => void;
   isAuthenticated: boolean;
@@ -52,8 +58,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   }, []);
 
-  const login = useCallback((newUser: User) => {
-    // Server already set HttpOnly cookie, just update React state
+  const login = useCallback(async (newUser: User, accessToken?: string) => {
+    // Verify cookie persisted (or stash Bearer fallback) BEFORE setUser, so
+    // downstream effects that fire on isAuthenticated=true (e.g. PurchaseClient
+    // fetching /api/delegate) find a usable auth credential in the first
+    // request they make.
+    if (accessToken) {
+      await api.applyLoginCredentials(accessToken);
+    }
     setUser(newUser);
   }, []);
 
@@ -62,7 +74,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const checkAuthStatus = async () => {
       try {
         // Special case: embed mode with Bearer token
-        const embedToken = localStorage.getItem("embed_auth_token");
+        const embedToken = safeStorage.get("embed_auth_token");
         if (embedToken) {
           console.log("[AuthContext] Embed mode detected");
           // For embed mode, we still need to verify with API
@@ -77,7 +89,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             });
           } catch {
             console.log("[AuthContext] Embed token invalid");
-            localStorage.removeItem("embed_auth_token");
+            safeStorage.remove("embed_auth_token");
           }
           setIsAuthLoading(false);
           return;

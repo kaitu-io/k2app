@@ -204,9 +204,14 @@ type DataAuthResult struct {
 }
 
 // DataWebLoginResponse Web登录响应数据结构
-// 注意：Web端使用HttpOnly Cookie认证，tokens已通过cookie设置，response只返回user信息
+//
+// 默认认证走 HttpOnly Cookie。但部分浏览器（iOS 微信 WKWebView 在某些版本下、
+// 第三方 cookie 被禁用的隐私模式等）不会持久化 fetch 响应里的 Set-Cookie，
+// 导致用户登录后立刻又"未登录"。为这些环境保留 fallback：accessToken 同时
+// 在 body 里返回，前端检测到 cookie 写入失败时改用 localStorage + Bearer。
 type DataWebLoginResponse struct {
-	User DataWebLoginUser `json:"user"` // 用户信息
+	User        DataWebLoginUser `json:"user"`        // 用户信息
+	AccessToken string           `json:"accessToken"` // JWT；前端 cookie 失败时存 localStorage
 }
 
 // DataWebLoginUser Web登录用户信息

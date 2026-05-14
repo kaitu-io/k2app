@@ -124,16 +124,14 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 		}
 	}
 
-	// 生成验证码
-	code := generateVerificationCode(c, indexID)
-	expireMinutes := 5
-
-	// 保存验证码（先存再发，避免邮件已送达但存储失败的情况）
-	if err := saveEmailVerificationCode(c, indexID, code, expireMinutes); err != nil {
-		log.Errorf(c, "failed to save verification code for email (hashed) %s: %v", indexID, err)
-		Error(c, ErrorSystemError, "failed to save verification code")
+	// 生成（或复用）验证码 — 同邮箱在 TTL 窗口内复用同一个码，每次重发刷 TTL
+	code, err := issueOrRefreshVerificationCode(c, indexID)
+	if err != nil {
+		log.Errorf(c, "failed to issue verification code for email (hashed) %s: %v", indexID, err)
+		Error(c, ErrorSystemError, "failed to issue verification code")
 		return
 	}
+	expireMinutes := VerificationCodeExpiryMinutes
 
 	// 发送验证码邮件
 	meta := VerificationCodeMeta{
@@ -193,15 +191,23 @@ func api_login(c *gin.Context) {
 
 	indexID := secretHashIt(c, []byte(req.Email))
 
-	if !verifyEmailCode(c, indexID, req.VerificationCode) {
+	switch verifyEmailCode(c, indexID, req.VerificationCode) {
+	case VerifyCodeOK:
+		// fall through to login flow
+	case VerifyCodeNotIssued:
+		log.Warnf(c, "verification code expired or not issued for email: %s", req.Email)
+		Error(c, ErrorVerificationCodeExpired, "verification code expired or not sent")
+		return
+	case VerifyCodeWrong:
 		log.Warnf(c, "invalid verification code for email: %s", req.Email)
 		Error(c, ErrorInvalidVerificationCode, "invalid verification code")
 		return
 	}
 
-	if err := deleteVerificationCode(c, req.Email); err != nil {
-		log.Errorf(c, "failed to delete verification code for email %s: %v", req.Email, err)
-		Error(c, ErrorSystemError, "failed to delete verification code")
+	// 缩短 TTL 到宽限期（非立即删除），让双击 / 网络抖动重试在宽限期内幂等成功
+	if err := markVerificationCodeUsed(c, indexID); err != nil {
+		log.Errorf(c, "failed to mark verification code used for email %s: %v", req.Email, err)
+		Error(c, ErrorSystemError, "failed to mark verification code used")
 		return
 	}
 
@@ -472,15 +478,22 @@ func api_web_auth(c *gin.Context) {
 
 	indexID := secretHashIt(c, []byte(req.Email))
 
-	if !verifyEmailCode(c, indexID, req.VerificationCode) {
+	switch verifyEmailCode(c, indexID, req.VerificationCode) {
+	case VerifyCodeOK:
+		// fall through
+	case VerifyCodeNotIssued:
+		log.Warnf(c, "verification code expired or not issued for web login email: %s", req.Email)
+		Error(c, ErrorVerificationCodeExpired, "verification code expired or not sent")
+		return
+	case VerifyCodeWrong:
 		log.Warnf(c, "invalid verification code for web login email: %s", req.Email)
 		Error(c, ErrorInvalidVerificationCode, "invalid verification code")
 		return
 	}
 
-	if err := deleteVerificationCode(c, req.Email); err != nil {
-		log.Errorf(c, "failed to delete verification code for email %s: %v", req.Email, err)
-		Error(c, ErrorSystemError, "failed to delete verification code")
+	if err := markVerificationCodeUsed(c, indexID); err != nil {
+		log.Errorf(c, "failed to mark verification code used for email %s: %v", req.Email, err)
+		Error(c, ErrorSystemError, "failed to mark verification code used")
 		return
 	}
 
@@ -610,7 +623,8 @@ func api_web_auth(c *gin.Context) {
 
 	log.Infof(c, "user %d successfully logged in via web", identify.UserID)
 
-	// 返回用户信息（tokens已通过HttpOnly Cookie设置）
+	// Tokens 通过 HttpOnly Cookie 设置，AccessToken 也在 body 里返回供
+	// fallback 使用（iOS 微信 WKWebView 等不持久化 Set-Cookie 的环境）。
 	Success(c, &DataWebLoginResponse{
 		User: DataWebLoginUser{
 			ID:      identify.UserID,
@@ -618,6 +632,7 @@ func api_web_auth(c *gin.Context) {
 			IsAdmin: userIsAdmin,
 			Roles:   userRoles,
 		},
+		AccessToken: authResult.AccessToken,
 	})
 }
 

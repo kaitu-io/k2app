@@ -10,21 +10,32 @@ interface BrowserWarningBarProps {
   brandDomain: string;
 }
 
+type Reason = 'inAppWebView' | 'outdatedIos' | null;
+
 export default function BrowserWarningBar({ brandDomain }: BrowserWarningBarProps) {
   const t = useTranslations();
   const { isEmbedded } = useEmbedMode();
-  const [show, setShow] = useState(false);
+  const [reason, setReason] = useState<Reason>(null);
 
   useEffect(() => {
     if (isEmbedded) {
-      setShow(false);
+      setReason(null);
       return;
     }
     const info = detectBrowser(window.navigator.userAgent);
-    setShow(!info.isMainstream);
+    // Outdated iOS takes precedence — even mainstream iOS Safari can be too old
+    // to parse our chunks, and upgrading the browser won't help (system WebKit).
+    if (info.isOutdatedIOS) setReason('outdatedIos');
+    else if (!info.isMainstream) setReason('inAppWebView');
+    else setReason(null);
   }, [isEmbedded]);
 
-  if (!show) return null;
+  if (!reason) return null;
+
+  const message =
+    reason === 'outdatedIos'
+      ? t('common.browserWarning.outdatedIos')
+      : t('common.browserWarning.message', { domain: brandDomain });
 
   return (
     <div
@@ -33,7 +44,7 @@ export default function BrowserWarningBar({ brandDomain }: BrowserWarningBarProp
     >
       <div className="mx-auto max-w-7xl flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
-        <span>{t('common.browserWarning.message', { domain: brandDomain })}</span>
+        <span>{message}</span>
       </div>
     </div>
   );

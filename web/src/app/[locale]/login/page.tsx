@@ -5,7 +5,7 @@ import { useRouter, Link } from "@/i18n/routing";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTranslations } from "next-intl";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, ErrorCode } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,10 +93,11 @@ function LoginPageContent() {
         autoRedirectToAuth: false,
       });
 
-      // 登录成功 - Server already set HttpOnly cookie
+      // 登录成功 - Server set HttpOnly cookie; accessToken in body enables
+      // localStorage fallback when the browser drops the Set-Cookie.
       toast.success(t('auth.login.loginSuccess'));
-      const { user } = response;
-      login(user);
+      const { user, accessToken } = response;
+      await login(user, accessToken);
 
       // 修复双重 locale 问题：如果 next 已包含 locale，直接 replace
       if (next.startsWith('/')) {
@@ -107,6 +108,10 @@ function LoginPageContent() {
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(getApiErrorMessage(error.code, t));
+        if (error.code === ErrorCode.VerificationCodeExpired) {
+          setCode("");
+          setStep(1);
+        }
       } else {
         toast.error(t('auth.login.loginFailed'));
       }

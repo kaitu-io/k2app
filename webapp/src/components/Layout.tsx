@@ -7,6 +7,7 @@ import SideNavigation from "./SideNavigation";
 import AnnouncementBanner from "./AnnouncementBanner";
 import ServiceAlert from "./ServiceAlert";
 import FeedbackButton from "./FeedbackButton";
+import { DisconnectFeedbackStrip } from "./DisconnectFeedbackStrip";
 import { useLayout } from "../stores";
 import { getCurrentAppConfig } from "../config/apps";
 import LoginRequiredGuard from "./LoginRequiredGuard";
@@ -187,6 +188,14 @@ export default function Layout() {
           </Box>
         )}
       </Main>
+
+      {/* Disconnect rating strip — flex sibling between Main and BottomNav.
+          Sized via max-height inside the component so layout footprint is
+          zero when hidden. Pushes Main upward when visible, leaving
+          Dashboard's sticky-bottom Advanced Settings tappable. */}
+      <Box sx={{ flexShrink: 0, marginLeft: isDesktop ? `${SIDEBAR_WIDTH}px` : 0 }}>
+        <DisconnectFeedbackStrip />
+      </Box>
 
       {/* Mobile: Bottom Navigation - fixed at bottom, outside scroll area */}
       {!isDesktop && (
