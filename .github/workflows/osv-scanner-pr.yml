@@ -1,0 +1,21 @@
+name: OSV-Scanner PR Scan
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  # Fails only on vulnerabilities INTRODUCED by the PR (diff against base).
+  # Existing vulns are surfaced by osv-scanner-scheduled.yml.
+  scan-pr:
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.3.8
+    with:
+      scan-args: |-
+        --lockfile=./yarn.lock
+        --lockfile=./web/yarn.lock
+        --lockfile=./tools/kaitu-center/package-lock.json

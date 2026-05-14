@@ -272,6 +272,7 @@ cd webapp && npx tsc --noEmit            # Type check
 | Service reachable? | `curl http://127.0.0.1:1777/ping` |
 | White flash on app start | `index.html` must use `background: #0f0f13` directly on `html, body` WITHOUT `@media (prefers-color-scheme: dark)`. Media query causes 100-300ms white flash on light-mode OS before MUI loads. |
 | Vitest mock state leaks between tests | `vi.clearAllMocks()` clears implementations, not just call counts. Re-call `mockFn.mockResolvedValue()` in each `describe`'s `beforeEach` — not just once at module level. |
+| Vitest 3 gotchas (when adding new tests) | `mockReset()` now **restores** the original implementation (was: returns `undefined`). `vi.spyOn()` on the same method twice **reuses** the existing spy instead of creating a new one. `expect(err).toEqual(new Error('x'))` now checks `name` + `message` + `cause` + prototype — `TypeError` no longer matches a generic `Error`. `vi.useFakeTimers()` mocks **everything** including `performance.now()` by default — pass `{ toFake: [...] }` to restore old scope. |
 | Login fails with 422 | All login paths must include `udid` from `getDeviceUdid()` (in `services/device-udid.ts`) in POST body. Backend requires UDID for device association. |
 | RegExp `.replace()` skips some matches | Module-level global regexes (`/g` flag) retain `lastIndex` between calls. Reset with `re.lastIndex = 0` before each `.replace()`, or inline the literal. |
 
