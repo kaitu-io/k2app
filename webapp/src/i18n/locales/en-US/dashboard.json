@@ -48,7 +48,6 @@
     "allLocations": "All Locations",
     "advancedSettings": "Advanced Settings",
     "advancedSettingsLocked": "VPN is connected. Disconnect first to change advanced settings.",
-    "disconnectVpn": "Disconnect VPN",
     "appBypassEntry": {
       "label": "Apps that bypass VPN",
       "count": "{{count}} manual",

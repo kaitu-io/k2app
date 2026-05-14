@@ -48,7 +48,6 @@
     "allLocations": "所有位置",
     "advancedSettings": "高级设置",
     "advancedSettingsLocked": "VPN 已连接，请先断开后再修改高级设置",
-    "disconnectVpn": "断开 VPN",
     "appBypassEntry": {
       "label": "不走代理的应用",
       "count": "{{count}} 个手动",
