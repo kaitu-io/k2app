@@ -155,17 +155,15 @@ cleanup_legacy_install() {
 }
 
 install_linux() {
-    if [ "$ARCH" != "amd64" ]; then
-        error "Linux currently only supports amd64."
-    fi
-
+    # ARCH is already normalized by detect_platform() to one of
+    # "amd64" / "arm64" — both are supported.
     if ! has_systemd; then
         error "systemd not detected. Kaitu Linux requires systemd."
     fi
 
     cleanup_legacy_install
 
-    TARBALL="Kaitu_${VERSION}_linux_amd64.tar.gz"
+    TARBALL="Kaitu_${VERSION}_linux_${ARCH}.tar.gz"
     SHA_FILE="${TARBALL}.sha256"
     TMP_DIR="$(mktemp -d -t kaitu-install.XXXXXX)"
     trap 'rm -rf "$TMP_DIR"' EXIT

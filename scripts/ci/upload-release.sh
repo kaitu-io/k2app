@@ -95,14 +95,17 @@ case "$PLATFORM" in
     # Embedded-webapp Linux build: single Go binary + install.sh bundle.
     # Naming includes the `linux_` infix to disambiguate from the old
     # Tauri AppImage era artifact `Kaitu_${VERSION}_amd64.tar.gz`.
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_amd64.tar.gz"
-    # Checksum is required — the install shim at web/public/i/k2 verifies
-    # the tarball against this file before extracting. Hard-fail if missing
-    # so a half-baked release never reaches the CDN.
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_amd64.tar.gz.sha256"
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_amd64.tar.gz.sig" --optional
-    upload_file "${RELEASE_DIR}/k2-linux-amd64"
-    echo "Uploaded: Linux artifacts"
+    # We ship both amd64 and arm64; the install shim (web/public/i/k2)
+    # picks the right one via `uname -m`. The .sha256 is required —
+    # the shim verifies the tarball before extracting. Hard-fail if
+    # missing so a half-baked release never reaches the CDN.
+    for ARCH in amd64 arm64; do
+      upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_${ARCH}.tar.gz"
+      upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_${ARCH}.tar.gz.sha256"
+      upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_${ARCH}.tar.gz.sig" --optional
+      upload_file "${RELEASE_DIR}/k2-linux-${ARCH}"
+    done
+    echo "Uploaded: Linux artifacts (amd64 + arm64)"
     ;;
   android)
     S3_DEST="${S3_BUCKET}/android/${VERSION}"
