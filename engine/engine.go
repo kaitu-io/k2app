@@ -425,13 +425,20 @@ func (e *Engine) Start(cfg Config) error {
 	}
 
 	// 7. Build client tunnel.
+	// Gate ProcessSearcher: skip per-connection process attribution when no
+	// loaded rule references it. This zeroes out the lsof exec cost for the
+	// 99% of users who haven't configured an App Bypass list.
+	processSearcher := cfg.ProcessSearcher
+	if processSearcher != nil && !ruleEngine.HasMetaCriteria() {
+		processSearcher = nil
+	}
 	tunnelCfg := core.ClientTunnelConfig{
 		Provider:        prov,
 		Outbounds:       outbounds,
 		DirectTarget:    outboundDirect,
 		DefaultTarget:   outboundDirect, // router is always set; fallback for tests
 		Router:          router,
-		ProcessSearcher: cfg.ProcessSearcher,
+		ProcessSearcher: processSearcher,
 		SniffBT:   !ruleEngine.IsAllProxy(), // sniff BT in smart mode only
 		SniffSNI:  !ruleEngine.IsAllProxy(), // sniff TLS/QUIC SNI in smart mode only
 		BlockQUIC: client.BlockQUIC,

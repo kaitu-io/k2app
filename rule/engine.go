@@ -329,6 +329,22 @@ func (e *Engine) IsAllProxy() bool {
 	return e.allProxy
 }
 
+// HasMetaCriteria reports whether any loaded route matches on connection
+// metadata (process_name / package_name / network). The tunnel uses this to
+// short-circuit per-connection ProcessSearcher invocation when no rule needs
+// it — without any bypass list, calling lsof/equivalent per connection is
+// pure waste.
+func (e *Engine) HasMetaCriteria() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for i := range e.routes {
+		if e.routes[i].hasMetaCriteria() {
+			return true
+		}
+	}
+	return false
+}
+
 // RouteCount returns the number of configured route entries. Used by tests
 // and diagnostics — zero indicates a misconfigured or failed rule build.
 func (e *Engine) RouteCount() int {
