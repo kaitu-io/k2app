@@ -6,72 +6,93 @@ import (
 	"bufio"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // LinuxProcessSearcher looks up process names by reading /proc/net/tcp{,6}
 // to find the socket inode, then scanning /proc/*/fd/ for the owning PID,
 // and reading /proc/PID/comm for the process name.
+//
+// Note: Task 3 keeps the O(N) /proc/*/fd walk per lookup. Task 4 adds an
+// inode→PID reverse index with stale-while-revalidate to amortize this cost.
 type LinuxProcessSearcher struct {
 	packageResolver PackageResolver
+	cache           *processCache
+	procRoot        string // default "/proc", overridable for tests
 }
 
 // NewLinuxProcessSearcher creates a LinuxProcessSearcher with an optional
 // PackageResolver for Android UID→package name mapping.
 // Pass nil on non-Android Linux.
 func NewLinuxProcessSearcher(pr PackageResolver) *LinuxProcessSearcher {
-	return &LinuxProcessSearcher{packageResolver: pr}
+	return &LinuxProcessSearcher{
+		packageResolver: pr,
+		cache:           newProcessCache(processCacheCap, processCacheTTL),
+		procRoot:        "/proc",
+	}
 }
 
 func (s *LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
-	inode := findSocketInode(network, srcIP, srcPort)
+	if !srcIP.Is4() {
+		return "", ""
+	}
+	key := cacheKey(network, srcIP, srcPort)
+	if name, pkg, ok := s.cache.get(key); ok {
+		return name, pkg
+	}
+
+	start := time.Now()
+	name, pkg := s.lookupUncached(network, srcIP, srcPort)
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		slog.Info("DIAG: process-lookup-slow",
+			"platform", "linux",
+			"network", network,
+			"latencyMs", elapsed.Milliseconds())
+	}
+
+	s.cache.set(key, name, pkg)
+	return name, pkg
+}
+
+func (s *LinuxProcessSearcher) lookupUncached(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
+	inode := s.findSocketInode(network, srcIP, srcPort)
 	if inode == 0 {
 		return "", ""
 	}
-	pid := findPIDByInode(inode)
-	if pid == 0 {
+	pid := s.findPIDByInode(inode)
+	if pid == 0 || pid == os.Getpid() {
 		return "", ""
 	}
-	name := readProcessName(pid)
+	name := s.readProcessName(pid)
 
-	// On Android, resolve UID → package name via callback.
-	var packageName string
+	var pkg string
 	if s.packageResolver != nil {
-		if uid := readProcessUID(pid); uid >= 10000 {
-			packageName = s.packageResolver.PackageForUID(int32(uid))
+		if uid := s.readProcessUID(pid); uid >= 10000 {
+			pkg = s.packageResolver.PackageForUID(int32(uid))
 		}
 	}
-
-	return name, packageName
+	return name, pkg
 }
 
-// findSocketInode searches /proc/net/tcp or /proc/net/tcp6 for a matching
-// source (IP, port) and returns the socket inode.
-func findSocketInode(network string, srcIP netip.Addr, srcPort uint16) uint64 {
-	var paths []string
-	if srcIP.Is4() {
-		paths = []string{"/proc/net/tcp"}
-	} else {
-		paths = []string{"/proc/net/tcp6"}
+func (s *LinuxProcessSearcher) findSocketInode(network string, srcIP netip.Addr, srcPort uint16) uint64 {
+	var path string
+	switch {
+	case network == "udp" && srcIP.Is4():
+		path = filepath.Join(s.procRoot, "net/udp")
+	case network == "udp":
+		path = filepath.Join(s.procRoot, "net/udp6")
+	case srcIP.Is4():
+		path = filepath.Join(s.procRoot, "net/tcp")
+	default:
+		path = filepath.Join(s.procRoot, "net/tcp6")
 	}
-	if network == "udp" {
-		if srcIP.Is4() {
-			paths = []string{"/proc/net/udp"}
-		} else {
-			paths = []string{"/proc/net/udp6"}
-		}
-	}
-
-	for _, path := range paths {
-		if inode := searchProcNet(path, srcIP, srcPort); inode != 0 {
-			return inode
-		}
-	}
-	return 0
+	return searchProcNet(path, srcIP, srcPort)
 }
 
 // searchProcNet parses a /proc/net/tcp{,6} or /proc/net/udp{,6} file.
@@ -121,7 +142,6 @@ func parseProcNetAddr(s string) (netip.Addr, uint16, bool) {
 	if err != nil {
 		return netip.Addr{}, 0, false
 	}
-
 	var addr netip.Addr
 	switch len(ipBytes) {
 	case 4:
@@ -143,10 +163,11 @@ func parseProcNetAddr(s string) (netip.Addr, uint16, bool) {
 	return addr, uint16(port), true
 }
 
-// findPIDByInode scans /proc/*/fd/ for a symlink pointing to the socket inode.
-func findPIDByInode(inode uint64) int {
+// findPIDByInode scans s.procRoot/*/fd/ for a symlink pointing to the socket inode.
+// O(N) walk. Replaced in Task 4 with cached reverse index.
+func (s *LinuxProcessSearcher) findPIDByInode(inode uint64) int {
 	target := fmt.Sprintf("socket:[%d]", inode)
-	entries, err := os.ReadDir("/proc")
+	entries, err := os.ReadDir(s.procRoot)
 	if err != nil {
 		return 0
 	}
@@ -158,7 +179,7 @@ func findPIDByInode(inode uint64) int {
 		if err != nil {
 			continue
 		}
-		fdDir := filepath.Join("/proc", entry.Name(), "fd")
+		fdDir := filepath.Join(s.procRoot, entry.Name(), "fd")
 		fds, err := os.ReadDir(fdDir)
 		if err != nil {
 			continue
@@ -176,18 +197,18 @@ func findPIDByInode(inode uint64) int {
 	return 0
 }
 
-// readProcessName reads the process name from /proc/PID/comm.
-func readProcessName(pid int) string {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
+// readProcessName reads the process name from procRoot/PID/comm.
+func (s *LinuxProcessSearcher) readProcessName(pid int) string {
+	data, err := os.ReadFile(filepath.Join(s.procRoot, strconv.Itoa(pid), "comm"))
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
 }
 
-// readProcessUID reads the process UID from /proc/PID/status.
-func readProcessUID(pid int) int {
-	f, err := os.Open(fmt.Sprintf("/proc/%d/status", pid))
+// readProcessUID reads the process UID from procRoot/PID/status.
+func (s *LinuxProcessSearcher) readProcessUID(pid int) int {
+	f, err := os.Open(filepath.Join(s.procRoot, strconv.Itoa(pid), "status"))
 	if err != nil {
 		return -1
 	}
