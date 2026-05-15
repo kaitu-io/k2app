@@ -64,3 +64,17 @@ func TestProcessCache_SoftCapEvictsExpired(t *testing.T) {
 		t.Errorf("k3 should be present")
 	}
 }
+
+func BenchmarkProcessCache_HotPath(b *testing.B) {
+	c := newProcessCache(processCacheCap, processCacheTTL)
+	addr := netip.MustParseAddr("1.2.3.4")
+	key := cacheKey("tcp", addr, 5678)
+	c.set(key, "chrome", "")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Mimic FindProcess hot path: key construction + map lookup.
+		k := cacheKey("tcp", addr, 5678)
+		c.get(k)
+	}
+	b.ReportAllocs()
+}
