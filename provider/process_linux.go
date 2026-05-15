@@ -5,7 +5,6 @@ package provider
 import (
 	"bufio"
 	"encoding/hex"
-	"fmt"
 	"log/slog"
 	"net/netip"
 	"os"
@@ -13,29 +12,42 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kaitu-io/k2/safego"
+	"github.com/sasha-s/go-deadlock"
+	"golang.org/x/sync/singleflight"
 )
 
+const inodeIndexTTL = 5 * time.Second
+
 // LinuxProcessSearcher looks up process names by reading /proc/net/tcp{,6}
-// to find the socket inode, then scanning /proc/*/fd/ for the owning PID,
-// and reading /proc/PID/comm for the process name.
-//
-// Note: Task 3 keeps the O(N) /proc/*/fd walk per lookup. Task 4 adds an
-// inode→PID reverse index with stale-while-revalidate to amortize this cost.
+// to find the socket inode, then resolving inode→PID via a cached reverse
+// index (stale-while-revalidate, singleflight-guarded rebuild), and finally
+// reading /proc/PID/comm for the process name.
 type LinuxProcessSearcher struct {
 	packageResolver PackageResolver
 	cache           *processCache
 	procRoot        string // default "/proc", overridable for tests
+
+	indexMu      deadlock.RWMutex
+	inodeIndex   map[uint64]int // inode → PID snapshot
+	indexExpires time.Time      // zero = never built
+
+	sf                singleflight.Group    // dedup concurrent rebuilds
+	buildInodeIndexFn func() map[uint64]int // seam for tests
 }
 
 // NewLinuxProcessSearcher creates a LinuxProcessSearcher with an optional
 // PackageResolver for Android UID→package name mapping.
 // Pass nil on non-Android Linux.
 func NewLinuxProcessSearcher(pr PackageResolver) *LinuxProcessSearcher {
-	return &LinuxProcessSearcher{
+	s := &LinuxProcessSearcher{
 		packageResolver: pr,
 		cache:           newProcessCache(processCacheCap, processCacheTTL),
 		procRoot:        "/proc",
 	}
+	s.buildInodeIndexFn = s.buildInodeIndex
+	return s
 }
 
 func (s *LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
@@ -65,7 +77,7 @@ func (s *LinuxProcessSearcher) lookupUncached(network string, srcIP netip.Addr, 
 	if inode == 0 {
 		return "", ""
 	}
-	pid := s.findPIDByInode(inode)
+	pid := s.lookupPID(inode)
 	if pid == 0 || pid == os.Getpid() {
 		return "", ""
 	}
@@ -163,13 +175,48 @@ func parseProcNetAddr(s string) (netip.Addr, uint16, bool) {
 	return addr, uint16(port), true
 }
 
-// findPIDByInode scans s.procRoot/*/fd/ for a symlink pointing to the socket inode.
-// O(N) walk. Replaced in Task 4 with cached reverse index.
-func (s *LinuxProcessSearcher) findPIDByInode(inode uint64) int {
-	target := fmt.Sprintf("socket:[%d]", inode)
+// lookupPID resolves an inode → PID via the cached reverse index.
+// Cold start: synchronous index build (singleflight-protected).
+// Stale: returns last-known value, kicks async rebuild.
+// Fresh: direct map lookup.
+func (s *LinuxProcessSearcher) lookupPID(inode uint64) int {
+	s.indexMu.RLock()
+	indexBuilt := !s.indexExpires.IsZero()
+	pid := s.inodeIndex[inode]
+	expired := indexBuilt && time.Now().After(s.indexExpires)
+	s.indexMu.RUnlock()
+
+	if !indexBuilt {
+		s.sf.Do("rebuild", s.doRebuild)
+		s.indexMu.RLock()
+		pid = s.inodeIndex[inode]
+		s.indexMu.RUnlock()
+		return pid
+	}
+
+	if expired {
+		safego.Go(func() { s.sf.Do("rebuild", s.doRebuild) })
+	}
+	return pid
+}
+
+func (s *LinuxProcessSearcher) doRebuild() (any, error) {
+	idx := s.buildInodeIndexFn()
+	s.indexMu.Lock()
+	s.inodeIndex = idx
+	s.indexExpires = time.Now().Add(inodeIndexTTL)
+	s.indexMu.Unlock()
+	return nil, nil
+}
+
+// buildInodeIndex walks s.procRoot/*/fd/ once and returns inode→PID map.
+// Replaces per-lookup O(N) walk with single-pass index. Singleflight
+// (via doRebuild) ensures concurrent triggers collapse to one build.
+func (s *LinuxProcessSearcher) buildInodeIndex() map[uint64]int {
+	idx := make(map[uint64]int, 1024)
 	entries, err := os.ReadDir(s.procRoot)
 	if err != nil {
-		return 0
+		return idx
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -186,15 +233,21 @@ func (s *LinuxProcessSearcher) findPIDByInode(inode uint64) int {
 		}
 		for _, fd := range fds {
 			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
+			if err != nil || !strings.HasPrefix(link, "socket:[") {
+				continue
+			}
+			end := strings.IndexByte(link, ']')
+			if end < 0 {
+				continue
+			}
+			inode, err := strconv.ParseUint(link[8:end], 10, 64)
 			if err != nil {
 				continue
 			}
-			if link == target {
-				return pid
-			}
+			idx[inode] = pid
 		}
 	}
-	return 0
+	return idx
 }
 
 // readProcessName reads the process name from procRoot/PID/comm.

@@ -6,7 +6,11 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type mockPackageResolver struct {
@@ -107,5 +111,99 @@ func TestFindProcess_PackageResolution(t *testing.T) {
 	name, pkg := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "chrome" || pkg != "com.android.chrome" {
 		t.Errorf("got (%q,%q), want (chrome, com.android.chrome)", name, pkg)
+	}
+}
+
+func TestLookupPID_ColdStartBuildsIndex(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	s.procRoot = setupFakeProcfs(t)
+	pid := s.lookupPID(1001)
+	if pid != 8000 {
+		t.Errorf("pid = %d, want 8000", pid)
+	}
+}
+
+func TestLookupPID_StaleReturnsCachedAsyncRebuilds(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	s.procRoot = setupFakeProcfs(t)
+	// Cold start: builds index synchronously.
+	if pid := s.lookupPID(1001); pid != 8000 {
+		t.Fatalf("cold start pid = %d, want 8000", pid)
+	}
+	// Force stale by rewinding expires.
+	s.indexMu.Lock()
+	s.indexExpires = time.Now().Add(-time.Second)
+	s.indexMu.Unlock()
+	// Stale call must return cached value immediately.
+	if pid := s.lookupPID(1001); pid != 8000 {
+		t.Errorf("stale pid = %d, want 8000 (stale cached)", pid)
+	}
+	// Wait for async rebuild to complete.
+	for i := 0; i < 100; i++ {
+		s.indexMu.RLock()
+		fresh := time.Now().Before(s.indexExpires)
+		s.indexMu.RUnlock()
+		if fresh {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Errorf("async rebuild did not complete within 1s")
+}
+
+func TestLookupPID_SingleflightDedupsRebuild(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	s.procRoot = setupFakeProcfs(t)
+	// Hook buildInodeIndex via counter — wrap with a slow build that increments
+	// before delegating, to maximize concurrent overlap.
+	var calls atomic.Int32
+	origBuild := s.buildInodeIndexFn
+	s.buildInodeIndexFn = func() map[uint64]int {
+		calls.Add(1)
+		time.Sleep(50 * time.Millisecond) // make overlap likely
+		return origBuild()
+	}
+	// 10 concurrent cold-start lookups → singleflight should collapse to 1 build.
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.lookupPID(1001)
+		}()
+	}
+	wg.Wait()
+	if got := calls.Load(); got != 1 {
+		t.Errorf("buildInodeIndex called %d times, want 1 (singleflight)", got)
+	}
+}
+
+func TestSelfPIDSkip_ViaFakeProcfs(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	dir := t.TempDir()
+	// Build minimal /proc with our OWN pid owning the inode.
+	selfPid := os.Getpid()
+	selfDir := filepath.Join(dir, strconv.Itoa(selfPid))
+	if err := os.MkdirAll(filepath.Join(selfDir, "fd"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("socket:[1001]", filepath.Join(selfDir, "fd/3")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(selfDir, "comm"), []byte("k2-test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "net"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	tcpLine := "  sl  local_address rem_address\n" +
+		"   0: 0501A8C0:D431 00000000:0000 01 00000000:00000000 00:00000000 00000000  1000        0 1001 0 0000000000000000 100 0 0 10 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "net/tcp"), []byte(tcpLine), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s.procRoot = dir
+	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "" {
+		t.Errorf("expected self-PID skip → empty name, got %q", name)
 	}
 }
