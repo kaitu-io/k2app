@@ -5,7 +5,11 @@ package provider
 import (
 	"encoding/binary"
 	"fmt"
+	"log/slog"
+	"net/netip"
+	"os"
 	"path/filepath"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -162,4 +166,97 @@ func (realProcNamer) NameForPID(pid uint32) string {
 		return ""
 	}
 	return filepath.Base(windows.UTF16ToString(buf[:size]))
+}
+
+type WindowsProcessSearcher struct {
+	cache      *processCache
+	tcpFetcher tcpTableFetcher
+	udpFetcher udpTableFetcher
+	procNamer  processNamer
+	selfPID    uint32
+}
+
+func NewWindowsProcessSearcher() *WindowsProcessSearcher {
+	return &WindowsProcessSearcher{
+		cache:      newProcessCache(processCacheCap, processCacheTTL),
+		tcpFetcher: realTCPFetcher{},
+		udpFetcher: realUDPFetcher{},
+		procNamer:  realProcNamer{},
+		selfPID:    uint32(os.Getpid()),
+	}
+}
+
+func (s *WindowsProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
+	if !srcIP.Is4() {
+		return "", ""
+	}
+	key := cacheKey(network, srcIP, srcPort)
+	if name, pkg, ok := s.cache.get(key); ok {
+		return name, pkg
+	}
+
+	start := time.Now()
+	name := s.lookupUncached(network, srcIP, srcPort)
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		slog.Info("DIAG: process-lookup-slow",
+			"platform", "windows",
+			"network", network,
+			"latencyMs", elapsed.Milliseconds())
+	}
+
+	s.cache.set(key, name, "")
+	return name, ""
+}
+
+func (s *WindowsProcessSearcher) lookupUncached(network string, srcIP netip.Addr, srcPort uint16) string {
+	srcBytes := srcIP.As4()
+	switch network {
+	case "tcp":
+		return s.findInTCP(srcBytes, srcPort)
+	case "udp":
+		return s.findInUDP(srcBytes, srcPort)
+	}
+	return ""
+}
+
+func (s *WindowsProcessSearcher) findInTCP(srcAddr [4]byte, srcPort uint16) string {
+	rows, err := s.tcpFetcher.Fetch()
+	if err != nil {
+		return ""
+	}
+	for i := range rows {
+		r := &rows[i]
+		if r.OwningPID == 0 || r.OwningPID == s.selfPID {
+			continue
+		}
+		if ntohs(r.LocalPort) != srcPort {
+			continue
+		}
+		if uint32ToIPv4(r.LocalAddr) != srcAddr {
+			continue
+		}
+		return s.procNamer.NameForPID(r.OwningPID)
+	}
+	return ""
+}
+
+func (s *WindowsProcessSearcher) findInUDP(srcAddr [4]byte, srcPort uint16) string {
+	rows, err := s.udpFetcher.Fetch()
+	if err != nil {
+		return ""
+	}
+	for i := range rows {
+		r := &rows[i]
+		if r.OwningPID == 0 || r.OwningPID == s.selfPID {
+			continue
+		}
+		if ntohs(r.LocalPort) != srcPort {
+			continue
+		}
+		if uint32ToIPv4(r.LocalAddr) != srcAddr {
+			continue
+		}
+		return s.procNamer.NameForPID(r.OwningPID)
+	}
+	return ""
 }
