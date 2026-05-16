@@ -187,3 +187,41 @@ func TestWindowsFindProcess_UDPMatch(t *testing.T) {
 		t.Errorf("got %q, want dns-app.exe", name)
 	}
 }
+
+// Windows kernel registers most UDP sockets with dwLocalAddr=0.0.0.0 (the
+// default for socket()+sendto() workflows used by net.Dial("udp"), browser
+// QUIC stacks, online games, etc.) regardless of where outbound packets
+// actually route. findInUDP must match port-only when the row's LocalAddr
+// is 0.0.0.0, otherwise UDP App Bypass attribution silently breaks on
+// Windows for any app that doesn't bind() to a specific local interface.
+func TestWindowsFindProcess_UDPMatch_WildcardLocalAddr(t *testing.T) {
+	udp := &mockUDPFetcher{rows: []udpRowOwnerPID{{
+		LocalAddr: 0x00000000, // 0.0.0.0 — kernel wildcard
+		LocalPort: 0x000031D4, // port 54321
+		OwningPID: 9000,
+	}}}
+	namer := &mockProcNamer{names: map[uint32]string{9000: "chrome.exe"}}
+	s := newTestSearcher(&mockTCPFetcher{}, udp, namer)
+	// Tunnel observed packet src = TUN interface IP; kernel UDP table
+	// has 0.0.0.0. Must still attribute to chrome.exe.
+	name, _ := s.FindProcess("udp", netip.MustParseAddr("198.18.0.2"), 54321)
+	if name != "chrome.exe" {
+		t.Errorf("got %q, want chrome.exe (wildcard 0.0.0.0 must match any srcIP)", name)
+	}
+}
+
+// Specific LocalAddr that doesn't match srcAddr must NOT match — only
+// 0.0.0.0 is wildcard, not "any non-matching IP".
+func TestWindowsFindProcess_UDPNoMatch_SpecificLocalAddrMismatch(t *testing.T) {
+	udp := &mockUDPFetcher{rows: []udpRowOwnerPID{{
+		LocalAddr: 0x0501A8C0, // 192.168.1.5 — specific, not wildcard
+		LocalPort: 0x000031D4,
+		OwningPID: 9000,
+	}}}
+	namer := &mockProcNamer{names: map[uint32]string{9000: "app.exe"}}
+	s := newTestSearcher(&mockTCPFetcher{}, udp, namer)
+	name, _ := s.FindProcess("udp", netip.MustParseAddr("10.0.0.1"), 54321)
+	if name != "" {
+		t.Errorf("got %q, want empty (specific LocalAddr 192.168.1.5 must NOT match 10.0.0.1)", name)
+	}
+}

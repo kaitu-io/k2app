@@ -245,6 +245,14 @@ func (s *WindowsProcessSearcher) findInUDP(srcAddr [4]byte, srcPort uint16) stri
 	if err != nil {
 		return ""
 	}
+	// Windows registers UDP sockets created via socket()+sendto() (the default
+	// for net.Dial("udp"), most app SDKs, browser QUIC, online games, etc.)
+	// with dwLocalAddr=0.0.0.0 even when the OS later routes outbound packets
+	// through a specific interface. Treat 0.0.0.0 as a wildcard and match
+	// on port alone. Collisions are bounded by the kernel: at most one
+	// socket can own (0.0.0.0:port) absent SO_REUSEADDR, and ephemeral ports
+	// are unique per active flow.
+	zeroAddr := [4]byte{0, 0, 0, 0}
 	for i := range rows {
 		r := &rows[i]
 		if r.OwningPID == 0 || r.OwningPID == s.selfPID {
@@ -253,7 +261,8 @@ func (s *WindowsProcessSearcher) findInUDP(srcAddr [4]byte, srcPort uint16) stri
 		if ntohs(r.LocalPort) != srcPort {
 			continue
 		}
-		if uint32ToIPv4(r.LocalAddr) != srcAddr {
+		local := uint32ToIPv4(r.LocalAddr)
+		if local != srcAddr && local != zeroAddr {
 			continue
 		}
 		return s.procNamer.NameForPID(r.OwningPID)
