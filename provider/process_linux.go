@@ -176,9 +176,15 @@ func parseProcNetAddr(s string) (netip.Addr, uint16, bool) {
 }
 
 // lookupPID resolves an inode → PID via the cached reverse index.
-// Cold start: synchronous index build (singleflight-protected).
-// Stale: returns last-known value, kicks async rebuild.
-// Fresh: direct map lookup.
+//
+//   - Cold start (no index yet): synchronous build, then look up.
+//   - Fresh hit: return cached PID.
+//   - Fresh miss: process likely spawned after last build (e.g. a newly-launched
+//     browser making its first connection). Synchronous rebuild via
+//     singleflight, then re-look-up. Negative lookups are cached at the
+//     FindProcess layer (2s TTL by 4-tuple) so a ghost inode triggers at most
+//     one rebuild per source 4-tuple.
+//   - Stale hit: return cached PID immediately, kick async rebuild.
 func (s *LinuxProcessSearcher) lookupPID(inode uint64) int {
 	s.indexMu.RLock()
 	indexBuilt := !s.indexExpires.IsZero()
@@ -186,7 +192,8 @@ func (s *LinuxProcessSearcher) lookupPID(inode uint64) int {
 	expired := indexBuilt && time.Now().After(s.indexExpires)
 	s.indexMu.RUnlock()
 
-	if !indexBuilt {
+	if !indexBuilt || pid == 0 {
+		// Cold start, or fresh-index miss: synchronous rebuild.
 		s.sf.Do("rebuild", s.doRebuild)
 		s.indexMu.RLock()
 		pid = s.inodeIndex[inode]

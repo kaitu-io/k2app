@@ -178,6 +178,52 @@ func TestLookupPID_SingleflightDedupsRebuild(t *testing.T) {
 	}
 }
 
+// TestLookupPID_FreshMissTriggersRebuild covers the production scenario where
+// a process spawns AFTER the inode index was last built (e.g., user launches a
+// new browser; daemon already serviced earlier connections from other apps).
+// Previously the fresh-index miss returned 0 without rebuilding, breaking
+// App Bypass for the newly-launched process for up to inodeIndexTTL.
+func TestLookupPID_FreshMissTriggersRebuild(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	s.procRoot = setupFakeProcfs(t)
+	// First call: cold-start, builds index (contains inode 1001 → 8000).
+	if pid := s.lookupPID(1001); pid != 8000 {
+		t.Fatalf("cold pid = %d, want 8000", pid)
+	}
+	// Now simulate a brand-new process spawning a socket with inode 2002,
+	// AFTER the index has been built — but well within its TTL (fresh).
+	origBuild := s.buildInodeIndexFn
+	var calls atomic.Int32
+	s.buildInodeIndexFn = func() map[uint64]int {
+		calls.Add(1)
+		idx := origBuild()
+		idx[2002] = 9000 // new process
+		return idx
+	}
+	// Without the fix, lookupPID(2002) returns 0 because the fresh cached
+	// index lacks 2002 and the code never rebuilds on miss.
+	pid := s.lookupPID(2002)
+	if pid != 9000 {
+		t.Fatalf("fresh-miss pid = %d, want 9000 (rebuild on miss)", pid)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("buildInodeIndexFn calls = %d, want 1 (single rebuild)", calls.Load())
+	}
+	// Subsequent lookup must hit cache, NOT trigger another rebuild.
+	if pid := s.lookupPID(2002); pid != 9000 {
+		t.Fatalf("second lookup pid = %d, want 9000", pid)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("buildInodeIndexFn calls after second lookup = %d, want 1", calls.Load())
+	}
+	// True miss (no such inode) still triggers a rebuild and returns 0.
+	// This is acceptable thrash: bounded by the 2s negative cache at the
+	// FindProcess layer (keyed by source 4-tuple, not inode).
+	if pid := s.lookupPID(9999); pid != 0 {
+		t.Errorf("ghost-inode pid = %d, want 0", pid)
+	}
+}
+
 func TestSelfPIDSkip_ViaFakeProcfs(t *testing.T) {
 	s := NewLinuxProcessSearcher(nil)
 	dir := t.TempDir()
