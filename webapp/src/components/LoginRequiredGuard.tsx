@@ -24,7 +24,7 @@ const PAGE_MESSAGE_MAP: Record<string, string> = {
   "/devices": "guard.devicesMessage",
   "/invite": "guard.inviteMessage",
   "/invite-codes": "guard.inviteMessage",
-  "/member-management": "guard.memberManagementMessage",
+  "/delegate": "guard.delegateMessage",
   "/pro-histories": "guard.proHistoriesMessage",
 };
 

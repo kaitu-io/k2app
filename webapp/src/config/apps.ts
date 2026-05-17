@@ -21,8 +21,8 @@ export interface AppConfig {
     invite?: boolean;
     /** Discovery/explore page */
     discover?: boolean;
-    /** Member management */
-    memberManagement?: boolean;
+    /** Delegate payer setup */
+    delegate?: boolean;
     /** Pro history */
     proHistory?: boolean;
     /** Feedback page */
@@ -71,7 +71,7 @@ const KAITU_CONFIG: AppConfig = {
   features: {
     invite: true,
     discover: true,
-    memberManagement: true,
+    delegate: true,
     proHistory: true,
     feedback: true,
     deviceInstall: true,

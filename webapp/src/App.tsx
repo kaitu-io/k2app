@@ -31,7 +31,7 @@ import FAQ from "./pages/FAQ";
 import SubmitTicket from "./pages/SubmitTicket";
 import Feedback from "./pages/Feedback";
 import ServiceError from "./pages/ServiceError";
-import MemberManagement from "./pages/MemberManagement";
+import Delegate from "./pages/Delegate";
 import Changelog from "./pages/Changelog";
 import { getCurrentAppConfig } from "./config/apps";
 
@@ -75,8 +75,8 @@ function AppRoutes() {
             <Route path="invite-codes" element={<LoginRequiredGuard pagePath="/invite-codes"><MyInviteCodeList /></LoginRequiredGuard>} />
           )}
 
-          {appConfig.features.memberManagement && (
-            <Route path="member-management" element={<LoginRequiredGuard pagePath="/member-management"><MemberManagement /></LoginRequiredGuard>} />
+          {appConfig.features.delegate && (
+            <Route path="delegate" element={<LoginRequiredGuard pagePath="/delegate"><Delegate /></LoginRequiredGuard>} />
           )}
 
           {appConfig.features.deviceInstall && (

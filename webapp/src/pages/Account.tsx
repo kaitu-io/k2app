@@ -558,7 +558,7 @@ export default function Account() {
                   backgroundColor: 'action.hover'
                 }
               }}
-              onClick={() => navigate("/member-management")}
+              onClick={() => navigate("/delegate")}
             >
               <ListItemIcon>
                 <GroupIcon />
@@ -566,7 +566,7 @@ export default function Account() {
               <ListItemText
                 primary={
                   <Typography component="span" variant="body2" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
-                    {t('account:account.memberManagement')}
+                    {t('account:account.delegate')}
                   </Typography>
                 }
               />

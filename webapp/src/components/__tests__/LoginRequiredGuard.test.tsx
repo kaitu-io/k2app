@@ -187,7 +187,7 @@ describe('LoginRequiredGuard', () => {
       { path: '/devices', expectedMessage: 'guard.devicesMessage' },
       { path: '/invite', expectedMessage: 'guard.inviteMessage' },
       { path: '/invite-codes', expectedMessage: 'guard.inviteMessage' },
-      { path: '/member-management', expectedMessage: 'guard.memberManagementMessage' },
+      { path: '/delegate', expectedMessage: 'guard.delegateMessage' },
       { path: '/pro-histories', expectedMessage: 'guard.proHistoriesMessage' },
     ];
 

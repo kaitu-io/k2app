@@ -23,7 +23,7 @@ export const namespaceMapping: Record<string, Namespace> = {
   "account": "account",
   "devices": "account",
   "proHistory": "account",
-  "memberManagement": "account",
+  "delegate": "account",
   "dashboard": "dashboard",
   "troubleshooting": "dashboard",
   "versionComparison": "dashboard",

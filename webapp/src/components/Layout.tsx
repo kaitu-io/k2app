@@ -56,7 +56,7 @@ interface TabPageConfig {
   component: React.LazyExoticComponent<() => JSX.Element>;
   requiresLogin?: boolean;
   noPadding?: boolean; // For full-screen pages like Discover
-  featureFlag?: 'invite' | 'discover' | 'proHistory' | 'feedback' | 'deviceInstall' | 'memberManagement' | 'updateLoginEmail';
+  featureFlag?: 'invite' | 'discover' | 'proHistory' | 'feedback' | 'deviceInstall' | 'delegate' | 'updateLoginEmail';
 }
 
 const TAB_PAGES: TabPageConfig[] = [
