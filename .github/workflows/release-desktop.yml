@@ -14,7 +14,11 @@ permissions:
   contents: write
 
 env:
-  K2_BUILD_LOG_LEVEL: debug  # debug for beta phase; change to info for production
+  # Production releases ship at info level. Debug logs leak token-bearing
+  # URLs and engine internals into S3-uploaded log files. For local debug
+  # builds, override via `make build-* K2_BUILD_LOG_LEVEL=debug`. Runtime
+  # SetLogLevel() still works regardless.
+  K2_BUILD_LOG_LEVEL: info
 
 jobs:
   # --- Test gates: 3 parallel jobs, all must pass before release ---
@@ -101,11 +105,16 @@ jobs:
       # Guards against regressions like the v0.4.1 missing-initdScript
       # constant that broke the Linux build — caught here in the test
       # gate before the release matrix. nowebapp mirrors the headless
-      # path some call sites still use.
-      - name: Linux cross-compile smoke (cmd/k2, nowebapp + default)
+      # path some call sites still use. Covers both shipping architectures
+      # (amd64 + arm64) so an arm64-only compile error fails fast here
+      # instead of leaking into the release job. CGO_ENABLED=0 means no
+      # cross-toolchain is required.
+      - name: Linux cross-compile smoke (cmd/k2, nowebapp + default, amd64 + arm64)
         run: |
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -tags nowebapp ./cmd/k2
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/k2
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -tags nowebapp ./cmd/k2
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build ./cmd/k2
+          done
         working-directory: k2
 
       - name: Notify Slack on test failure

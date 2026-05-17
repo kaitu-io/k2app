@@ -13,6 +13,7 @@ declare const __K2_BUILD_COMMIT__: string;
 
 import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
 import { plainLocalStorage } from './plain-storage';
+import { transformStatus } from './status-transform';
 import { webPlatform } from './web-platform';
 
 const CORE_ENDPOINT = '/api/core';
@@ -35,7 +36,21 @@ async function coreExec<T = any>(action: string, params?: any): Promise<SRespons
       };
     }
 
-    return await response.json();
+    const json = (await response.json()) as SResponse<T>;
+
+    // Normalize status response — mirrors tauri-k2.ts / capacitor-k2.ts.
+    // Rewrites legacy 'stopped' → 'disconnected' and synthesizes
+    // state='error' from disconnected/connected + lastError. Without this,
+    // Linux/standalone users never see error overlays on connect failures.
+    if (action === 'status' && json.code === 0 && json.data) {
+      return {
+        code: json.code,
+        message: json.message,
+        data: transformStatus(json.data) as unknown as T,
+      };
+    }
+
+    return json;
   } catch {
     return {
       code: -1,
