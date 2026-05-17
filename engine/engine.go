@@ -1710,18 +1710,3 @@ func (e *Engine) replaceOutboundServer(
 	}
 }
 
-// ForceConnected sets the engine to connected state and fires OnStatus.
-// For testing only — allows daemon tests to simulate a connected engine.
-// Releases lock before calling handler to match OnNetworkChanged/Pause/Wake pattern.
-func (e *Engine) ForceConnected() {
-	e.mu.Lock()
-	e.state = StateConnected
-	e.connectedAt = time.Now()
-	e.lastError = nil
-	status := e.buildStatusLocked()
-	handler := e.handler
-	e.mu.Unlock()
-	if handler != nil {
-		handler.OnStatus(status)
-	}
-}
