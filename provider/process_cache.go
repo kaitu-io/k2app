@@ -60,8 +60,12 @@ func (c *processCache) get(key string) (name, pkg string, hit bool) {
 
 func (c *processCache) set(key, name, pkg string) {
 	now := time.Now()
+	entry := processCacheEntry{
+		name:    name,
+		pkg:     pkg,
+		expires: now.Add(c.ttl),
+	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if len(c.entries) >= c.cap {
 		// Lazy sweep: amortized O(1), worst-case O(cap) every cap inserts.
 		for k, e := range c.entries {
@@ -70,9 +74,6 @@ func (c *processCache) set(key, name, pkg string) {
 			}
 		}
 	}
-	c.entries[key] = processCacheEntry{
-		name:    name,
-		pkg:     pkg,
-		expires: now.Add(c.ttl),
-	}
+	c.entries[key] = entry
+	c.mu.Unlock()
 }
