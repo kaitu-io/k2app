@@ -98,14 +98,13 @@ describe('pickAutoTunnel', () => {
     expect(pickAutoTunnel(t, () => 0.5)?.domain).toBe('good');
   });
 
-  it('falls back to all-with-serverUrl when every score is 0', () => {
+  it('returns null when every score is 0 (hard blacklist — no fallback)', () => {
     const t = [
       tunnel(1, 'a', 0),
       tunnel(2, 'b', 0),
       tunnel(3, 'c', 0),
     ];
-    const picked = pickAutoTunnel(t, () => 0);
-    expect(picked?.domain).toBe('a');
+    expect(pickAutoTunnel(t, () => 0)).toBeNull();
   });
 
   it('excludes tunnels missing serverUrl', () => {
