@@ -172,10 +172,11 @@ Markdown files in `content/{locale}/` are processed by Velite at build time and 
 
 **Release notes / Changelog:**
 - **Single source of truth**: `web/releases/v{VERSION}.md`
-- **Frontmatter**: `version` + `date`. Sections: `## New Features`, `## Bug Fixes`, `## Improvements`, `## Breaking Changes`
-- **Generate**: `cd web && node scripts/generate-changelog.js` → produces `public/releases.json` (gitignored), `changelog.json`, `changelog.md`
+- **Frontmatter**: `version` + `date` (required), plus optional `noDownloads: true` for releases that don't ship app binaries (e.g. router-only or hot-fix bumps that share the previous version's downloads). When set, the `/releases` page hides macOS / Windows / Linux / Android / iOS download buttons for that row.
+- **Sections**: `## New Features`, `## Bug Fixes`, `## Improvements`, `## Breaking Changes` (see `web/releases/README.md` for user-focused writing guidelines — user-visible items only, no internal refactors / pure deps bumps / dev-only changes)
+- **Generate**: `cd web && node scripts/generate-changelog.js` → produces `public/releases.json`, `public/changelog.json`, `public/changelog.md` — **all three are gitignored** (`web/.gitignore`)
 - **Display**: `/releases` page fetches `/releases.json` at runtime
-- **Never edit `web/public/releases.json` directly** — always edit source `.md` then regenerate
+- **Never edit `web/public/{releases,changelog}.{json,md}` directly** — always edit source `.md` under `web/releases/` then regenerate
 
 **K2 protocol docs** (`web/content/{locale}/k2/*.md`):
 - Served by `web/src/app/[locale]/k2/[[...path]]/page.tsx` (NOT the `[...slug]` catch-all)
