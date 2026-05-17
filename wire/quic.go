@@ -70,13 +70,26 @@ type datagramSender interface {
 // Write serialization: initMu protects lazy init (rare), writeMu serializes
 // frame writes (hot path). This avoids holding a single lock across both
 // init and I/O, keeping mutex hold time minimal on the data plane.
+//
+// Both locks are sync.Mutex (not deadlock.Mutex) because they legitimately
+// hold across I/O: initMu spans OpenStreamSync + header writes (up to 10s),
+// writeMu spans WriteSmuxUDPFrame which can block under peer flow control.
+// Tracking them as state locks would trigger spurious POTENTIAL DEADLOCK →
+// os.Exit(2) crashes under sustained slow consumers (same class of bug as
+// serverSmuxWriter in tcpws.go).
+//
+// Same stream-level isolation as serverSmuxWriter: per-Write deadline +
+// active stream kill on failure (`dead` flag bypasses the mutex for fast
+// fail-out, closeOnce ensures Close is invoked exactly once).
 type udpOverflowStream struct {
-	qconn   *quic.Conn
-	initMu  deadlock.Mutex
-	writeMu deadlock.Mutex
-	stream  *quic.Stream
-	initErr error
-	opened  bool
+	qconn     *quic.Conn
+	initMu    sync.Mutex
+	writeMu   sync.Mutex
+	stream    *quic.Stream
+	initErr   error
+	opened    bool
+	closeOnce sync.Once
+	dead      atomic.Bool
 }
 
 // init lazily opens the overflow stream on first call. Subsequent calls are no-ops.
@@ -118,24 +131,70 @@ func (o *udpOverflowStream) init() error {
 }
 
 // send writes a single UDP frame to the overflow stream, lazily opening it on first call.
+//
+// Concurrency contract:
+//   - dead.Store happens under writeMu (so subsequent writers see it before
+//     they get past the in-lock re-check)
+//   - closeStreamOnce runs OUTSIDE writeMu and OUTSIDE the writeFrame lock
+//     ordering. It uses initMu only to safely read o.stream (set inside init()).
+//   - Therefore writeMu is NEVER held while acquiring initMu — no nested
+//     acquisition, lock-order graph unchanged.
 func (o *udpOverflowStream) send(sessionID uint32, addr string, payload []byte) error {
+	if o.dead.Load() {
+		return errStreamDead
+	}
 	if err := o.init(); err != nil {
 		return err
 	}
 
 	o.writeMu.Lock()
-	defer o.writeMu.Unlock()
-	return WriteSmuxUDPFrame(o.stream, sessionID, addr, payload)
+	if o.dead.Load() {
+		o.writeMu.Unlock()
+		return errStreamDead
+	}
+
+	_ = o.stream.SetWriteDeadline(time.Now().Add(streamWriteDeadline))
+	start := time.Now()
+	err := WriteSmuxUDPFrame(o.stream, sessionID, addr, payload)
+	if err != nil {
+		o.dead.Store(true)
+	}
+	o.writeMu.Unlock()
+
+	if err != nil {
+		writeMs := time.Since(start).Milliseconds()
+		slog.Warn("DIAG: stream-killed-on-write-fail",
+			"transport", "quic-overflow", "sessionID", sessionID,
+			"len", len(payload), "writeMs", writeMs, "err", err)
+		o.closeStreamOnce()
+		return err
+	}
+	return nil
+}
+
+// markDead is the external entry point (e.g., from connection cleanup).
+func (o *udpOverflowStream) markDead() {
+	o.dead.Store(true)
+	o.closeStreamOnce()
+}
+
+// closeStreamOnce closes the underlying stream exactly once. It acquires
+// initMu to synchronize-read o.stream (which is set inside init() under
+// initMu) and to nil it out for safe re-entry. It does NOT acquire writeMu.
+func (o *udpOverflowStream) closeStreamOnce() {
+	o.closeOnce.Do(func() {
+		o.initMu.Lock()
+		defer o.initMu.Unlock()
+		if o.stream != nil {
+			o.stream.CancelRead(0)
+			_ = o.stream.Close()
+			o.stream = nil
+		}
+	})
 }
 
 func (o *udpOverflowStream) close() {
-	o.initMu.Lock()
-	defer o.initMu.Unlock()
-	if o.stream != nil {
-		o.stream.CancelRead(0)
-		o.stream.Close()
-		o.stream = nil
-	}
+	o.markDead()
 }
 
 // connUDPState holds shared UDP state for a single QUIC connection on the server.
@@ -1909,24 +1968,63 @@ func (c *serverUDPConn) SetWriteDeadline(time.Time) error    { return nil }
 // ============================================================================
 // Server-side QUIC stream writer (shared, mutex-protected)
 // ============================================================================
+//
+// Same stream-level isolation design as serverSmuxWriter (tcpws.go):
+// sync.Mutex for the serialization lock + per-Write deadline + active kill
+// on failure. See that file for the rationale.
 
 type quicStreamWriter struct {
-	stream  *quic.Stream
-	writeMu deadlock.Mutex
+	stream    *quic.Stream
+	writeMu   sync.Mutex
+	closeOnce sync.Once
+	dead      atomic.Bool
 }
 
 func (w *quicStreamWriter) writeFrame(sessionID uint32, addr string, payload []byte) error {
+	if w.dead.Load() {
+		return errStreamDead
+	}
+
 	w.writeMu.Lock()
-	defer w.writeMu.Unlock()
+	if w.dead.Load() {
+		w.writeMu.Unlock()
+		return errStreamDead
+	}
+
+	_ = w.stream.SetWriteDeadline(time.Now().Add(streamWriteDeadline))
 	start := time.Now()
 	err := WriteSmuxUDPFrame(w.stream, sessionID, addr, payload)
 	writeMs := time.Since(start).Milliseconds()
 	if err != nil {
-		slog.Warn("DIAG: stream-writer-fail", "sessionID", sessionID, "len", len(payload), "writeMs", writeMs, "err", err)
-	} else if writeMs > 100 {
-		slog.Warn("DIAG: stream-writer-slow", "sessionID", sessionID, "len", len(payload), "writeMs", writeMs)
+		w.dead.Store(true)
 	}
-	return err
+	w.writeMu.Unlock()
+
+	if err != nil {
+		slog.Warn("DIAG: stream-killed-on-write-fail",
+			"transport", "quic-stream", "sessionID", sessionID,
+			"len", len(payload), "writeMs", writeMs, "err", err)
+		w.closeStreamOnce()
+		return err
+	}
+	if writeMs > 100 {
+		slog.Warn("DIAG: stream-writer-slow",
+			"transport", "quic-stream", "sessionID", sessionID,
+			"len", len(payload), "writeMs", writeMs)
+	}
+	return nil
+}
+
+func (w *quicStreamWriter) markDead() {
+	w.dead.Store(true)
+	w.closeStreamOnce()
+}
+
+func (w *quicStreamWriter) closeStreamOnce() {
+	w.closeOnce.Do(func() {
+		w.stream.CancelRead(0)
+		_ = w.stream.Close()
+	})
 }
 
 // ============================================================================

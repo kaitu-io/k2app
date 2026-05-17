@@ -1047,16 +1047,92 @@ func (c *smuxUDPConn) SetWriteDeadline(time.Time) error       { return nil }
 // ============================================================================
 // Server-side smux UDP stream writer (shared, mutex-protected)
 // ============================================================================
+//
+// Design (stream-level isolation):
+//
+//   1. writeMu is a serialization lock — sync.Mutex (not deadlock.Mutex)
+//      because it legitimately holds across smux.Stream.Write, which can
+//      block under peer-window flow control when a client app stops reading
+//      its UDP relay. deadlock.Mutex would mis-detect this as a deadlock
+//      and trigger os.Exit(2), crashing the whole k2v5 process (jp01 May 2026).
+//
+//   2. Each Write has a deadline (streamWriteDeadline). If a write doesn't
+//      complete within that window, the stream is treated as dead: the
+//      smux.Stream is Close()d, future writeFrame calls fast-fail via the
+//      `dead` flag without queueing on the mutex.
+//
+//   3. Failure stays at stream level. Close() cascades through smux:
+//      ReadSmuxUDPFrame() returns ErrClosedPipe → handleUDPStream main loop
+//      tears down all sessions on this stream. Other streams on the same
+//      smux session, other clients, and the process are all unaffected.
+
+// streamWriteDeadline bounds the maximum time the writer mutex is held.
+// Healthy smux.Stream.Write completes in microseconds; 5s is generous slack
+// for transient slow networks. Past this, peer is presumed unable to read
+// (stream is effectively dead) and we proactively kill the stream.
+const streamWriteDeadline = 5 * time.Second
+
+// errStreamDead is returned by writeFrame after the stream has been killed.
+// Producers see this and abandon the UDP session cleanly.
+var errStreamDead = errors.New("wire: stream killed (peer flow-control stalled)")
 
 type serverSmuxWriter struct {
-	stream  *smux.Stream
-	writeMu deadlock.Mutex
+	stream    *smux.Stream
+	writeMu   sync.Mutex
+	closeOnce sync.Once
+	dead      atomic.Bool
 }
 
 func (w *serverSmuxWriter) writeFrame(sessionID uint32, addr string, payload []byte) error {
+	// Fast-path bypass: once the stream is dead, don't queue on the mutex —
+	// release any waiting producer immediately so cleanup propagates fast.
+	if w.dead.Load() {
+		return errStreamDead
+	}
+
 	w.writeMu.Lock()
-	defer w.writeMu.Unlock()
-	return WriteSmuxUDPFrame(w.stream, sessionID, addr, payload)
+	// Re-check after acquiring the lock: a peer goroutine that just timed out
+	// may have marked the stream dead while we were waiting.
+	if w.dead.Load() {
+		w.writeMu.Unlock()
+		return errStreamDead
+	}
+
+	_ = w.stream.SetWriteDeadline(time.Now().Add(streamWriteDeadline))
+	start := time.Now()
+	err := WriteSmuxUDPFrame(w.stream, sessionID, addr, payload)
+	if err != nil {
+		// Set dead under writeMu so any subsequent writer that acquires the
+		// lock immediately sees dead=true and fast-fails — no head-of-line
+		// queue keeps growing while we tear down.
+		w.dead.Store(true)
+	}
+	w.writeMu.Unlock()
+
+	if err != nil {
+		// Stream cleanup outside the lock so we never call Close (which may
+		// touch internal locks of smux) under writeMu.
+		writeMs := time.Since(start).Milliseconds()
+		slog.Warn("DIAG: stream-killed-on-write-fail",
+			"transport", "tcpws", "sessionID", sessionID,
+			"len", len(payload), "writeMs", writeMs, "err", err)
+		w.closeStreamOnce()
+	}
+	return err
+}
+
+// markDead is the external entry point (e.g., from connection cleanup).
+// It is safe to call from any goroutine — closeOnce gates the underlying
+// Close to exactly one invocation.
+func (w *serverSmuxWriter) markDead() {
+	w.dead.Store(true)
+	w.closeStreamOnce()
+}
+
+func (w *serverSmuxWriter) closeStreamOnce() {
+	w.closeOnce.Do(func() {
+		_ = w.stream.Close()
+	})
 }
 
 // ============================================================================
