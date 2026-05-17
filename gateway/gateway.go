@@ -45,6 +45,13 @@ type Gateway struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// engineCtx is a per-session context derived from ctx in doUp and
+	// cancelled in closeTunnel. Subscription refresh loops use it so they
+	// stop on engine teardown without relying solely on sub.Close()
+	// (defense-in-depth: ctx cancel + sub.Close both terminate refresh).
+	engineCtx context.Context
+	engineCnl context.CancelFunc
+
 	storage         *webui.Storage
 	version         string
 	commit          string
@@ -291,13 +298,18 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	}
 	subsCleanup = false // engine owns sessions until doDown/closeTunnel
 
+	// Per-session context for refresh goroutines — cancelled in closeTunnel
+	// so background fetches stop even if sub.Close() is delayed. Mirrors
+	// daemon.go's engineCtx pattern.
+	engineCtx, engineCnl := context.WithCancel(g.ctx)
+
 	// Start background subscription refresh — reuse the per-session HTTP
 	// client built in subsMgr.Resolve so refresh fetches go through the
 	// same Transport (connection pool) that Session.Close will later
 	// release via CloseIdleConnections. Mirrors daemon.go.
 	for _, sess := range subs {
 		client := sess.HTTPClient()
-		sess.Subscription().StartRefresh(g.ctx, func() *http.Client { return client })
+		sess.Subscription().StartRefresh(engineCtx, func() *http.Client { return client })
 	}
 
 	g.mu.Lock()
@@ -306,6 +318,8 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	g.provider = prov
 	g.sysctl = sc
 	g.routerDeviceMgr = rdm
+	g.engineCtx = engineCtx
+	g.engineCnl = engineCnl
 	g.mu.Unlock()
 
 	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
@@ -337,8 +351,17 @@ func (g *Gateway) closeTunnel() {
 	sc := g.sysctl
 	g.sysctl = sysctlState{}
 	g.routerDeviceMgr = nil
+	engineCnl := g.engineCnl
+	g.engineCnl = nil
+	g.engineCtx = nil
 	g.mu.Unlock()
 
+	// Cancel per-session ctx first so subscription refresh goroutines stop
+	// independently of sub.Close (called via CloseAll in doDown). No-op on
+	// idempotent re-entry — engineCnl is nilled under mu above.
+	if engineCnl != nil {
+		engineCnl()
+	}
 	if eng != nil {
 		eng.Stop()
 	}
