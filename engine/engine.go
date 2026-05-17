@@ -207,7 +207,7 @@ func (e *Engine) Start(cfg Config) error {
 				// True cold start: no disk cache to fall back to.
 				return e.fail(&EngineError{
 					Code:     ErrCodeRuleBundlesUnavailable,
-					Category: CategoryClient,
+					Category: CategoryServer,
 					Message:  fmt.Sprintf("rule bundles unavailable: %v", ensureErr),
 				})
 			}

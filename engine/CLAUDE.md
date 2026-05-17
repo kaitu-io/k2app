@@ -44,15 +44,18 @@ Note: `reconnecting` and `paused` are transient — engine.state stays `connecte
 
 HTTP-aligned error codes for frontend consumption:
 
-| Code | Meaning | Pattern |
-|------|---------|---------|
-| 400 | Bad config | parse URL, missing auth |
-| 401 | Auth rejected | stream rejected |
-| 403 | Forbidden | pin mismatch, blocked CA |
-| 408 | Timeout | net.Error.Timeout() |
-| 502 | Protocol error | TLS/QUIC handshake failure |
-| 503 | Server unreachable | TCP dial, connection refused |
-| 570 | Unclassified | fallback |
+| Code | Category | Meaning | Pattern |
+|------|----------|---------|---------|
+| 101 | network | Network unavailable | network unreachable, no route to host |
+| 108 | network | Timeout | net.Error.Timeout(), context.DeadlineExceeded |
+| 400 | client | Bad config | parse URL, missing auth |
+| 401 | client | Auth rejected | stream rejected |
+| 402 | client | Payment required | subscription expired |
+| 403 | client | Forbidden | pin mismatch, blocked CA |
+| 502 | server | Protocol error | TLS/QUIC handshake failure |
+| 503 | server | Server unreachable | TCP dial, connection refused |
+| 504 | server | Rule bundle dependency unreachable | CDN sources all failed (transient, retryable) |
+| 570 | server | Unclassified | fallback |
 
 ## Config (config.go)
 

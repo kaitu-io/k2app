@@ -1781,8 +1781,8 @@ func TestEngineStart_RuleBundlesUnavailable(t *testing.T) {
 	if engErr.Code != ErrCodeRuleBundlesUnavailable {
 		t.Errorf("expected code %d, got %d (msg=%q)", ErrCodeRuleBundlesUnavailable, engErr.Code, engErr.Message)
 	}
-	if engErr.Category != CategoryClient {
-		t.Errorf("expected category %q, got %q", CategoryClient, engErr.Category)
+	if engErr.Category != CategoryServer {
+		t.Errorf("expected category %q, got %q", CategoryServer, engErr.Category)
 	}
 
 	// e.fail() must have transitioned to disconnected and notified the handler.
