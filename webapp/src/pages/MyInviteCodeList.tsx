@@ -20,6 +20,7 @@ import {
   Link as LinkIcon,
   Edit as EditIcon,
   Download as DownloadIcon,
+  Lock as LockIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 
@@ -263,24 +264,30 @@ export default function MyInviteCodeList() {
 
                         {/* Action Buttons Group */}
                         <Stack direction="row" spacing={0.5}>
-                          {/* Share Button - Narrow */}
-                          <Button
-                            variant="contained"
-                            size="small"
-                            onClick={() => handleShareClick(row)}
-                            disabled={shareLinkLoading}
-                            sx={{
-                              textTransform: "none",
-                              borderRadius: 1,
-                              py: 0.25,
-                              px: 0.75,
-                              fontSize: "0.7rem",
-                              minHeight: 24,
-                              minWidth: 'auto',
-                            }}
-                          >
-                            {t('invite:inviteCodeList.share')}
-                          </Button>
+                          {/* Share Button - Private link, narrow */}
+                          <Tooltip title={t('invite:inviteCodeList.shareSecureTooltip')}>
+                            <span>
+                              <Button
+                                variant="contained"
+                                size="small"
+                                startIcon={<LockIcon sx={{ fontSize: 12 }} />}
+                                onClick={() => handleShareClick(row)}
+                                disabled={shareLinkLoading}
+                                sx={{
+                                  textTransform: "none",
+                                  borderRadius: 1,
+                                  py: 0.25,
+                                  px: 0.75,
+                                  fontSize: "0.7rem",
+                                  minHeight: 24,
+                                  minWidth: 'auto',
+                                  '& .MuiButton-startIcon': { marginRight: '4px', marginLeft: 0 },
+                                }}
+                              >
+                                {t('invite:inviteCodeList.share')}
+                              </Button>
+                            </span>
+                          </Tooltip>
 
                           {/* Secondary Actions - Icon Buttons */}
                           <Tooltip title={t('invite:inviteCodeList.copyLink')}>
