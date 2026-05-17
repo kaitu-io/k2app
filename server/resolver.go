@@ -26,6 +26,14 @@ func NewResolver(cache *k2dns.DNSCache, client k2dns.DNSQuerier) *Resolver {
 	return &Resolver{cache: cache, client: client}
 }
 
+// Client returns the underlying DNS querier. Used by handleDNSUDP for the
+// packed-bytes hot path: cache hits return pre-packed bytes via DNSCache.GetPacked,
+// misses call Client().Query(...) and cache the response. Exposing the client
+// instead of wrapping every call avoids an unnecessary Pack/Unpack round trip.
+func (r *Resolver) Client() k2dns.DNSQuerier {
+	return r.client
+}
+
 // LookupHost resolves a hostname to IP addresses.
 // If host is already an IP literal, returns it directly.
 // Otherwise checks DNS cache, then queries upstream on miss.

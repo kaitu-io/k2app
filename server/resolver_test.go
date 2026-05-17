@@ -89,7 +89,7 @@ func TestResolver_LookupHost_SharedCache(t *testing.T) {
 		conns:          connTracker{conns: make(map[io.Closer]struct{})},
 		dnsCache:       cache,
 		resolver:       NewResolver(cache, client),
-		dnsUpstream:    fakeDNS.LocalAddr().String(),
+		dnsMaxInflight: 32,
 	}
 
 	sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(),

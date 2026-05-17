@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -115,19 +116,44 @@ type ProxyHandler struct {
 	AllowPrivateIP bool // for testing only; default false blocks reserved IPs
 	conns          connTracker
 	dnsCache       *k2dns.DNSCache // shared DNS cache for port-53 UDP
-	resolver       *Resolver
-	dnsUpstream    string // system DNS upstream (default: Docker resolver)
+	resolver       *Resolver       // racing upstream resolver (defaultResolverServers or K2_DNS_SERVERS)
+	dnsMaxInflight int             // per-session in-flight DNS query cap for handleDNSUDP
 }
 
-// Global DNS servers for server-side domain resolution.
+// Default DNS upstream servers for server-side resolution.
 // 3 providers × 2 servers, covering all node regions (HK, JP, SG, US, CA, AU, KR).
+// Operators can override per-node via the K2_DNS_SERVERS env var
+// (comma-separated "ip:port,ip:port,..." — port defaults to 53 when omitted).
 var defaultResolverServers = []string{
 	"8.8.8.8:53", "8.8.4.4:53",         // Google
 	"1.1.1.1:53", "1.0.0.1:53",         // Cloudflare
 	"9.9.9.9:53", "149.112.112.112:53", // Quad9
 }
 
+// parseResolverList parses a comma-separated "ip:port,ip:port,..." string.
+// Port defaults to 53 when omitted. Whitespace around entries is trimmed.
+// Returns nil for empty input or all-empty entries.
+func parseResolverList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, _, err := net.SplitHostPort(part); err != nil {
+			part = net.JoinHostPort(part, "53")
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
 // NewProxyHandler creates a proxy handler with default settings.
+// Reads K2_DNS_SERVERS env var to override the upstream DNS server list;
+// falls back to defaultResolverServers when unset or empty.
 func NewProxyHandler() *ProxyHandler {
 	cache := k2dns.NewDNSCache(k2dns.DNSCacheConfig{
 		MinTTL:     5 * time.Minute,
@@ -135,12 +161,23 @@ func NewProxyHandler() *ProxyHandler {
 		MaxEntries: 10000,
 		StaleFor:   30 * time.Minute,
 	})
+
+	servers := defaultResolverServers
+	if env := os.Getenv("K2_DNS_SERVERS"); env != "" {
+		if parsed := parseResolverList(env); len(parsed) > 0 {
+			servers = parsed
+			slog.Info("DIAG: dns-servers-override", "servers", servers)
+		} else {
+			slog.Warn("K2_DNS_SERVERS set but empty after parse; using defaults", "raw", env)
+		}
+	}
+
 	return &ProxyHandler{
-		DialTimeout: 5 * time.Second,
-		conns:       connTracker{conns: make(map[io.Closer]struct{})},
-		dnsCache:    cache,
-		resolver:    NewResolver(cache, k2dns.NewDirectDNSClient(defaultResolverServers)),
-		dnsUpstream: "127.0.0.11:53",
+		DialTimeout:    5 * time.Second,
+		conns:          connTracker{conns: make(map[io.Closer]struct{})},
+		dnsCache:       cache,
+		resolver:       NewResolver(cache, k2dns.NewDirectDNSClient(servers)),
+		dnsMaxInflight: 32,
 	}
 }
 
@@ -310,141 +347,135 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		"exitReason", exitReason, "durationS", int(time.Since(startTime).Seconds()))
 }
 
-// handleDNSUDP handles DNS UDP sessions with transparent caching.
-// Cache hit: respond directly without upstream query.
-// Cache miss: forward to upstream, cache response, respond to client.
+// handleDNSUDP handles DNS UDP sessions with transparent caching and a
+// racing upstream resolver. Per query: cache lookup → on miss, dispatch
+// resolver.Client().Query (races top-N healthy upstreams in parallel) →
+// cache the response → respond to client.
+//
+// Concurrent queries within a session run in bounded goroutines (dnsMaxInflight).
+// When the session ends, in-flight queries are cancelled via context.
 func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, _ string, log *slog.Logger) {
 	defer conn.Close()
 
-	// Use system resolver instead of client-specified upstream.
-	upstream := h.dnsUpstream
-	targetAddr, err := net.ResolveUDPAddr("udp4", upstream)
-	if err != nil {
-		log.Error("server: DNS UDP resolve", "upstream", upstream, "err", err)
-		return
-	}
+	// Per-session context: cancels in-flight resolver.Query when the session ends.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	target, err := net.DialUDP("udp4", nil, targetAddr)
-	if err != nil {
-		log.Error("server: DNS UDP dial", "upstream", upstream, "err", err)
-		return
-	}
-	defer target.Close()
-	untrackTarget := h.conns.track(target)
-	defer untrackTarget()
-
-	type pendingQuery struct {
-		domain string
-		qtype  uint16
-		sentAt time.Time
-	}
-	var pendingMu sync.Mutex
-	pending := make(map[uint16]*pendingQuery)
-
-	// writeToMu serializes writes to conn — cache-hit path (client→target goroutine)
-	// and upstream-response path (target→client goroutine) both call conn.WriteTo.
+	// writeToMu serializes writes to conn across per-query goroutines.
 	var writeToMu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, h.dnsMaxInflight)
 
-	done := make(chan struct{})
-
-	// client → cache/target
-	go func() {
-		defer close(done)
-		defer target.Close() // unblock target→client Read
-		bp := udpBufPool.Get().(*[]byte)
-		buf := *bp
-		for {
-			n, _, err := conn.ReadFrom(buf)
-			if err != nil {
-				break
-			}
-
-			var query dns.Msg
-			if err := query.Unpack(buf[:n]); err != nil {
-				// Not valid DNS — forward as-is (defensive).
-				target.Write(buf[:n])
-				continue
-			}
-
-			if len(query.Question) == 0 {
-				target.Write(buf[:n])
-				continue
-			}
-
-			domain := query.Question[0].Name
-			qtype := query.Question[0].Qtype
-
-			// Cache lookup.
-			if packed, found := h.dnsCache.GetPacked(domain, qtype, query.Id); found {
-				writeToMu.Lock()
-				conn.WriteTo(packed, nil)
-				writeToMu.Unlock()
-				log.Info("DIAG: dns-cache-hit", "domain", domain, "qtype", qtype)
-				continue
-			}
-
-			// Cache miss — track and forward.
-			log.Info("DIAG: dns-cache-miss", "domain", domain, "qtype", qtype, "upstream", upstream)
-			pendingMu.Lock()
-			pending[query.Id] = &pendingQuery{domain: domain, qtype: qtype, sentAt: time.Now()}
-			pendingMu.Unlock()
-
-			if _, err := target.Write(buf[:n]); err != nil {
-				pendingMu.Lock()
-				delete(pending, query.Id)
-				pendingMu.Unlock()
-				break
-			}
-		}
-		udpBufPool.Put(bp)
-	}()
-
-	// target → cache + client
 	bp := udpBufPool.Get().(*[]byte)
 	buf := *bp
+	defer udpBufPool.Put(bp)
+
 	for {
-		target.SetReadDeadline(time.Now().Add(60 * time.Second))
-		n, err := target.Read(buf)
+		n, _, err := conn.ReadFrom(buf)
 		if err != nil {
+			log.Debug("server: DNS UDP read done", "err", err)
 			break
 		}
 
-		var resp dns.Msg
-		if err := resp.Unpack(buf[:n]); err == nil {
-			pendingMu.Lock()
-			pq, ok := pending[resp.Id]
-			if ok {
-				delete(pending, resp.Id)
-			}
-			pendingMu.Unlock()
+		// Copy because buf is reused on the next iteration.
+		queryBytes := make([]byte, n)
+		copy(queryBytes, buf[:n])
 
-			// Cache response (skip truncated — incomplete data).
-			if ok && !resp.Truncated {
-				h.dnsCache.Add(pq.domain, pq.qtype, &resp)
-				rttMs := time.Since(pq.sentAt).Milliseconds()
-				log.Info("DIAG: dns-upstream-ok", "domain", pq.domain, "qtype", pq.qtype, "rcode", resp.Rcode, "rttMs", rttMs, "upstream", upstream)
-				if rttMs > 500 {
-					log.Warn("DIAG: dns-upstream-slow", "domain", pq.domain, "qtype", pq.qtype, "rttMs", rttMs, "upstream", upstream)
-				}
-			}
+		// Bounded in-flight: blocks the read loop when 32 queries are in flight
+		// (natural backpressure — VPN client will retry on its own timeout).
+		// Aborts immediately if the session is being torn down.
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			return
 		}
 
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			h.handleSingleDNSQuery(ctx, conn, queryBytes, &writeToMu, log)
+		}()
+	}
+
+	cancel()
+	wg.Wait()
+	log.Debug("server: DNS UDP done")
+}
+
+// handleSingleDNSQuery processes one DNS query: cache lookup, racing upstream
+// on miss, write response back to conn. All writes go through writeToMu.
+func (h *ProxyHandler) handleSingleDNSQuery(
+	ctx context.Context,
+	conn net.PacketConn,
+	queryBytes []byte,
+	writeToMu *sync.Mutex,
+	log *slog.Logger,
+) {
+	var query dns.Msg
+	if err := query.Unpack(queryBytes); err != nil {
+		log.Debug("server: DNS UDP unpack failed", "err", err)
+		return
+	}
+	if len(query.Question) == 0 {
+		log.Debug("server: DNS UDP no questions")
+		return
+	}
+
+	domain := query.Question[0].Name
+	qtype := query.Question[0].Qtype
+
+	// Cache hit: zero-alloc fast path — pre-packed bytes with ID patched.
+	if packed, found := h.dnsCache.GetPacked(domain, qtype, query.Id); found {
+		log.Info("DIAG: dns-cache-hit", "domain", domain, "qtype", qtype)
 		writeToMu.Lock()
-		_, werr := conn.WriteTo(buf[:n], nil)
+		_, werr := conn.WriteTo(packed, nil)
 		writeToMu.Unlock()
 		if werr != nil {
-			log.Warn("DIAG: dns-stream-write-fail", "err", werr, "len", n)
-			break
+			log.Warn("DIAG: dns-stream-write-fail", "err", werr, "len", len(packed))
 		}
-		log.Debug("DIAG: dns-stream-write-ok", "len", n)
+		return
 	}
-	udpBufPool.Put(bp)
 
-	// conn.Close() handled by defer at top of function.
-	// Explicit close here would be redundant (wire PacketConn uses sync.Once,
-	// so it's safe but unnecessary).
-	<-done
-	log.Debug("server: DNS UDP done")
+	log.Info("DIAG: dns-cache-miss", "domain", domain, "qtype", qtype)
+
+	// Cache miss: race upstream via racingResolver inside DirectDNSClient.
+	start := time.Now()
+	resp, err := h.resolver.Client().Query(ctx, &query)
+	rttMs := time.Since(start).Milliseconds()
+
+	if err != nil {
+		// racingResolver already tracks per-server health/degradation;
+		// this is a session-level fault for the caller (client will retry).
+		log.Warn("DIAG: dns-upstream-fail",
+			"domain", domain, "qtype", qtype, "rttMs", rttMs, "err", err)
+		return
+	}
+
+	log.Info("DIAG: dns-upstream-ok",
+		"domain", domain, "qtype", qtype, "rcode", resp.Rcode, "rttMs", rttMs)
+	if rttMs > 500 {
+		log.Warn("DIAG: dns-upstream-slow",
+			"domain", domain, "qtype", qtype, "rttMs", rttMs)
+	}
+
+	// Cache the response. Add handles negative-cache (NXDOMAIN) internally
+	// and skips RFC-illegal TC responses; Query already retries TC over TCP
+	// (direct.go:86-97), so resp.Truncated is effectively never set here.
+	h.dnsCache.Add(domain, qtype, resp)
+
+	packed, err := resp.Pack()
+	if err != nil {
+		log.Warn("DIAG: dns-response-pack-fail", "domain", domain, "err", err)
+		return
+	}
+
+	writeToMu.Lock()
+	_, werr := conn.WriteTo(packed, nil)
+	writeToMu.Unlock()
+	if werr != nil {
+		log.Warn("DIAG: dns-stream-write-fail", "err", werr, "len", len(packed))
+	}
 }
 
 // closeWriter is implemented by connections that support half-close (write-only FIN).
