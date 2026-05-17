@@ -294,7 +294,6 @@ export default function MyInviteCodeList() {
                             <IconButton
                               size="small"
                               onClick={() => handleCopyLinkClick(row)}
-                              disabled={shareLinkLoading}
                               sx={{
                                 border: "1px solid",
                                 borderColor: "divider",

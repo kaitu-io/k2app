@@ -24,7 +24,6 @@
     "addRemark": "添加備註",
     "editRemark": "編輯備註",
     "remarkPlaceholder": "請輸入備註信息",
-    "noShareLink": "暫無分享連結",
     "rewardRules": "邀請獎勵規則",
     "ruleDescription": "邀請好友註冊並購買會員，##雙方##都將獲得額外嘅會員時長獎勵。",
     "retailerRuleDescription": "邀請好友註冊並購買會員，##被邀請人##將獲得額外嘅會員時長獎勵。",
@@ -38,7 +37,6 @@
     "shareSuccess": "分享成功",
     "shareContentCopied": "分享內容已複製",
     "inviteCodeCopied": "邀請碼已複製",
-    "sharePageUrlCopied": "分享連結已複製",
     "visitSharePage": "訪問分享頁面",
     "loadInviteCodeFailed": "載入邀請碼失敗，請重試",
     "loadInviteCodeFailedShort": "載入邀請碼失敗",
@@ -70,7 +68,7 @@
     "inviteCodeLabel": "🎁 邀請碼",
     "paidPurchase": "• 付費購買: ##雙方##各獲得",
     "copyFailed": "複製失敗",
-    "getShareLinkFailed": "取得分享連結失敗",
+    "getShareLinkFailed": "獲取分享連結失敗",
     "copyInviteLink": "邀請連結已複製",
     "getInviteCodesFailed": "獲取邀請碼列表失敗",
     "retry": "獲取邀請碼列表失敗，請重試",
@@ -89,9 +87,6 @@
     "generateNewCodeTip": "用唔同嘅邀請碼追蹤發布渠道",
     "generateComplete": "生成完整內容",
     "generateLink": "生成連結",
-    "selectExpiration": "選擇連結有效期",
-    "expirationSecurityHint": "短期分享連結在聊天中更安全，過期後自動失效，保護你嘅私隱",
-    "getShareLinkFailed": "獲取分享連結失敗",
     "shareToFriends": "分享畀好友",
     "linkValid7Days": "連結 7 天內有效，適合喺聊天中分享",
     "promotionLink": "推廣連結（永久有效）",
@@ -99,13 +94,7 @@
     "copyShareContent": "複製分享內容",
     "shareGiftText": "🎁 送你一份好禮，打開連結領取\n{{link}}",
     "promotionLinkCopied": "推廣連結已複製",
-    "scanQRToShare": "用手機掃碼，直接轉發畀好友",
-    "expiration": {
-      "1day": "1天",
-      "7days": "7天（推薦）",
-      "30days": "30天",
-      "365days": "永久（365天）"
-    }
+    "scanQRToShare": "用手機掃碼，直接轉發畀好友"
   },
   "inviteCodeList": {
     "title": "邀請獎勵明細",

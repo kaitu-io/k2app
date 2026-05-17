@@ -24,7 +24,6 @@
     "addRemark": "添加备注",
     "editRemark": "编辑备注",
     "remarkPlaceholder": "请输入备注信息",
-    "noShareLink": "暂无分享链接",
     "rewardRules": "邀请奖励规则",
     "ruleDescription": "邀请好友注册并购买会员，##双方##都将获得额外的会员时长奖励。",
     "retailerRuleDescription": "邀请好友注册并购买会员，##被邀请人##将获得额外的会员时长奖励。",
@@ -38,7 +37,6 @@
     "shareSuccess": "分享成功",
     "shareContentCopied": "分享内容已复制",
     "inviteCodeCopied": "邀请码已复制",
-    "sharePageUrlCopied": "分享链接已复制",
     "visitSharePage": "访问分享页面",
     "loadInviteCodeFailed": "加载邀请码失败，请重试",
     "loadInviteCodeFailedShort": "加载邀请码失败",
@@ -89,9 +87,6 @@
     "generateNewCodeTip": "用不同的邀请码跟踪发布渠道",
     "generateComplete": "生成完整内容",
     "generateLink": "生成链接",
-    "selectExpiration": "选择链接有效期",
-    "expirationSecurityHint": "短期分享链接在聊天中更安全，过期后自动失效，保护你的隐私",
-    "getShareLinkFailed": "获取分享链接失败",
     "shareToFriends": "分享给好友",
     "linkValid7Days": "链接 7 天内有效，适合在聊天中分享",
     "promotionLink": "推广链接（永久有效）",
@@ -99,13 +94,7 @@
     "copyShareContent": "复制分享内容",
     "shareGiftText": "🎁 送你一份好礼，打开链接领取\n{{link}}",
     "promotionLinkCopied": "推广链接已复制",
-    "scanQRToShare": "用手机扫码，直接转发给好友",
-    "expiration": {
-      "1day": "1天",
-      "7days": "7天（推荐）",
-      "30days": "30天",
-      "365days": "永久（365天）"
-    }
+    "scanQRToShare": "用手机扫码，直接转发给好友"
   },
   "inviteCodeList": {
     "title": "邀请奖励明细",

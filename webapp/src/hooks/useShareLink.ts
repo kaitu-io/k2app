@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
 import { cloudApi } from '../services/cloud-api';
 
 
@@ -24,9 +23,7 @@ interface ShareLinkData {
  * - Automatically clears expired cache
  */
 export function useShareLink() {
-  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const cacheRef = useRef<ShareLinkCache>({});
 
   /**
@@ -51,7 +48,6 @@ export function useShareLink() {
 
     // Cache miss or expired, fetch from API
     setLoading(true);
-    setError(null);
 
     try {
       console.log(`[useShareLink] Fetching share link for ${cacheKey}`);
@@ -71,43 +67,21 @@ export function useShareLink() {
         };
 
         console.log(`[useShareLink] Fetched and cached share link for ${cacheKey}: ${shareLink}`);
-        setLoading(false);
         return shareLink;
       } else {
         console.error(`[useShareLink] API error for ${cacheKey}:`, apiResponse.code, apiResponse.message);
-        setError(t('invite:invite.getShareLinkFailed'));
-        setLoading(false);
         return null;
       }
     } catch (err) {
       console.error(`[useShareLink] Error fetching share link for ${cacheKey}:`, err);
-      setError(t('invite:invite.getShareLinkFailed'));
-      setLoading(false);
       return null;
+    } finally {
+      setLoading(false);
     }
-  }, []);
-
-  /**
-   * Clear cache for a specific invite code
-   */
-  const clearCache = useCallback((inviteCode: string) => {
-    delete cacheRef.current[inviteCode];
-    console.log(`[useShareLink] Cleared cache for code: ${inviteCode}`);
-  }, []);
-
-  /**
-   * Clear all cached share links
-   */
-  const clearAllCache = useCallback(() => {
-    cacheRef.current = {};
-    console.log('[useShareLink] Cleared all cache');
   }, []);
 
   return {
     getShareLink,
-    clearCache,
-    clearAllCache,
     loading,
-    error,
   };
 }

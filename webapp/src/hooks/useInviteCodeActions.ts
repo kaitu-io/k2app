@@ -50,32 +50,6 @@ export function useInviteCodeActions() {
   };
 
   /**
-   * 复制分享链接
-   * @param code 邀请码
-   */
-  const copyShareLink = async (code: string) => {
-    if (!code) {
-      showAlert(t('invite:invite.noShareLink'), "warning");
-      return;
-    }
-
-    // 获取分享链接（带缓存）
-    const shareLink = await getShareLink(code);
-    if (!shareLink) {
-      showAlert(t('invite:invite.getShareLinkFailed', '获取分享链接失败'), "error");
-      return;
-    }
-
-    try {
-      await window._platform!.writeClipboard?.(shareLink);
-      showAlert(t('invite:invite.sharePageUrlCopied'), "success");
-    } catch (error) {
-      console.error(t('invite:invite.copyFailed'));
-      showAlert(t('invite:invite.copyFailed'), "error");
-    }
-  };
-
-  /**
    * 复制邀请码
    */
   const copyInviteCode = async (code: string) => {
@@ -128,7 +102,6 @@ export function useInviteCodeActions() {
 
   return {
     shareInviteCode,
-    copyShareLink,
     copyInviteCode,
     updateRemark,
     shareLinkLoading,
