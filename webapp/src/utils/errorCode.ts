@@ -63,8 +63,8 @@ export const ERROR_CODES = {
   SERVER_OVERLOAD: 111,
   SERVER_MAINTENANCE: 112,
 
-  // Engine errors from k2 core (HTTP-aligned, 4xx = client action required)
-  RULE_BUNDLES_UNAVAILABLE: 424, // Failed Dependency — all CDN sources failed
+  // Engine errors from k2 core (HTTP-aligned, 5xx = server/dependency-side)
+  RULE_BUNDLES_UNAVAILABLE: 504, // Rule-bundle CDN dependency unreachable (transient, retryable)
 
   // VPN 服务相关错误 (510-519) — frontend-synthesized
   VPN_START_FAILED: 511,
