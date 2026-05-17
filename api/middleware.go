@@ -308,7 +308,7 @@ func handleJWTAuth(c *gin.Context, token string) *authContext {
 		return []byte(jwtConfig.Secret), nil
 	})
 	if err != nil {
-		log.Warnf(c, "failed to parse jwt token=%s: err=%v", token, err)
+		log.Warnf(c, "failed to parse jwt: %v", err)
 		return nil
 	}
 	claims, ok := parsedToken.Claims.(*TokenClaims)

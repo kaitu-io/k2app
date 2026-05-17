@@ -145,13 +145,14 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 		return
 	}
 
-	// 发送管理员 Slack 通知
+	// 发送管理员 Slack 通知。
+	// Slack 消息本身就是 admin 2FA 的递送通道，必须带明文 code；
+	// 但 Errorf/Debugf 日志会落到 S3，绝不能把 code 写进日志。
 	if user != nil && user.IsAdmin != nil && *user.IsAdmin {
-		err := slack.Send("verify", fmt.Sprintf("管理员 %s 登录验证码: %s", req.Email, code))
-		if err != nil {
-			log.Errorf(c, "failed to send slack alert for admin %s login verification code: %s: %v", hideEmail(req.Email), code, err)
+		if err := slack.Send("verify", fmt.Sprintf("管理员 %s 登录验证码: %s", req.Email, code)); err != nil {
+			log.Errorf(c, "failed to send slack alert for admin %s login verification code: %v", hideEmail(req.Email), err)
 		} else {
-			log.Debugf(c, "successfully sent slack alert for admin %s login verification code: %s", hideEmail(req.Email), code)
+			log.Debugf(c, "successfully sent slack alert for admin %s login verification code", hideEmail(req.Email))
 		}
 	}
 

@@ -255,3 +255,24 @@ func TestIssueOrRefreshVerificationCode_DifferentEmailsGetDifferentCodes(t *test
 		"code from one email must not validate against another email")
 	_ = codeB
 }
+
+func TestRandomSixDigitCode_ShapeAndDistribution(t *testing.T) {
+	// Smoke test: every output is exactly 6 decimal digits and codes are
+	// not degenerate (a math/rand seed bug would manifest as repeated codes
+	// across calls; crypto/rand should not).
+	seen := make(map[string]struct{}, 1024)
+	for range 1024 {
+		code, err := randomSixDigitCode()
+		require.NoError(t, err)
+		require.Len(t, code, 6, "code must be 6 chars")
+		for _, ch := range code {
+			require.True(t, ch >= '0' && ch <= '9', "code must be all digits, got %q", code)
+		}
+		seen[code] = struct{}{}
+	}
+	// With 10^6 space and 1024 draws, birthday-collision probability is
+	// ~1024^2 / (2 * 10^6) ≈ 52%. Allow up to 5 collisions but require
+	// vast majority unique — catches a degenerate "always returns 000000".
+	assert.GreaterOrEqual(t, len(seen), 1024-5,
+		"random codes are degenerate (likely PRNG / mod bug)")
+}

@@ -3,9 +3,9 @@ package center
 import (
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	mathrand "math/rand"
 	"strings"
 	"time"
 
@@ -137,14 +137,6 @@ func generateTokens(ctx context.Context, userID uint64, deviceID string, roles u
 	return &r, now, nil
 }
 
-// generateWebTokens 生成Web认证令牌（无设备绑定）
-// 用于 App 端 Bearer Token 认证（保留 refresh token）
-func generateWebTokens(ctx context.Context, userID uint64, roles uint64) (*DataAuthResult, time.Time, error) {
-	log.Debugf(ctx, "generating web tokens for user %d (no device), roles %d", userID, roles)
-	// 使用空字符串作为 deviceID 表示Web认证
-	return generateTokens(ctx, userID, "", roles)
-}
-
 // WebCookieTokenExpiry Web Cookie 认证的 access_token 有效期（2个月）
 const WebCookieTokenExpiry = 60 * 24 * time.Hour // 60 days
 
@@ -193,9 +185,7 @@ func validateToken(ctx context.Context, tokenString string, tokenType string) (*
 	}
 
 	claims, ok := token.Claims.(*TokenClaims)
-
 	if !ok || !token.Valid {
-		log.Debugf(ctx, "token is valid for user %d, device %s", claims.UserID, claims.DeviceID)
 		log.Warnf(ctx, "invalid token received")
 		return nil, nil, ErrInvalidToken
 	}
@@ -219,6 +209,47 @@ func validateToken(ctx context.Context, tokenString string, tokenType string) (*
 	}
 	return claims, &device, nil
 
+}
+
+// init 启动期 self-test：验证 crypto/rand 工作正常。
+// Go 1.24+ 起 crypto/rand 已是 infallible —— 系统 entropy 不可用时 crypto/rand
+// 内部直接 panic，不再向调用方返回 error。本 self-test 是 belt-and-suspenders：
+// 任何 crypto/rand 故障会在进程启动期暴露（包括 unit test、CI、deploy），
+// 而不是运行时 OTP / CSRF 路径偶发。失败 → process 退出 → systemd 标记失败 →
+// 部署中断 → 0 流量受影响。
+func init() {
+	if _, err := randomSixDigitCode(); err != nil {
+		panic(fmt.Sprintf("crypto/rand self-test failed at startup (randomSixDigitCode): %v", err))
+	}
+	if got := GenerateCSRFToken(); len(got) != CSRFTokenLength*2 {
+		panic(fmt.Sprintf("CSRF token self-test failed: expected %d hex chars, got %d", CSRFTokenLength*2, len(got)))
+	}
+}
+
+// randomSixDigitCode 用 crypto/rand 生成 6 位数字验证码（左零填充）。
+// 用 crypto/rand 而不是 math/rand：OTP 是认证凭据，可猜测性即可登录。
+// 在 Go 1.24+ 上 crypto/rand.Read 是 infallible（失败会 panic in crypto/rand），
+// 返回的 err 实际是 dead branch；保留 error 返回值是为了：
+//  1) 应对未来 Go 版本可能再改契约
+//  2) 让 init() self-test 可以走 error 通道而不是依赖 panic 链
+//
+// 用 rejection sampling 而不是 `% 1000000`：彻底消除 modulo bias，让所有
+// 10^6 个码等概率出现。
+func randomSixDigitCode() (string, error) {
+	const codeSpace = 1000000
+	// 2^32 = 4294967296; 4294 * 10^6 = 4294000000 是最大无偏上界
+	const limit = 4294000000
+	var b [4]byte
+	for {
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", err
+		}
+		n := binary.BigEndian.Uint32(b[:])
+		if n < limit {
+			return fmt.Sprintf("%06d", n%codeSpace), nil
+		}
+		// 落入偏置区——重新抽样（每次拒绝概率 ~0.23%）
+	}
 }
 
 // verificationCodeKey 返回验证码在 Redis 中的统一存储 key。
@@ -257,7 +288,11 @@ func issueOrRefreshVerificationCode(ctx context.Context, emailHash string) (stri
 		log.Errorf(ctx, "failed to read verification code cache for %s: %v", emailHash, err)
 		// 不致命——继续生成新码覆盖写入
 	}
-	code := fmt.Sprintf("%06d", mathrand.Intn(1000000))
+	code, err := randomSixDigitCode()
+	if err != nil {
+		log.Errorf(ctx, "failed to generate verification code for %s: %v", emailHash, err)
+		return "", fmt.Errorf("failed to generate verification code: %w", err)
+	}
 	if err := redis.CacheSet(cacheKey, code, VerificationCodeExpiry); err != nil {
 		log.Errorf(ctx, "failed to save verification code for %s: %v", emailHash, err)
 		return "", fmt.Errorf("failed to save verification code: %w", err)
@@ -434,14 +469,14 @@ const (
 	CSRFTokenLength = 32
 )
 
-// GenerateCSRFToken 生成安全的 CSRF Token
+// GenerateCSRFToken 生成安全的 CSRF Token。
+// crypto/rand 失败是系统级故障——绝不降级到 math/rand，否则会签发可猜测的
+// CSRF token，破坏 Cookie auth 的 CSRF 防御。让 panic 升到 recovery middleware
+// 比静默签发弱 token 安全。
 func GenerateCSRFToken() string {
 	bytes := make([]byte, CSRFTokenLength)
 	if _, err := rand.Read(bytes); err != nil {
-		// fallback to less secure method if crypto/rand fails
-		for i := range bytes {
-			bytes[i] = byte(mathrand.Intn(256))
-		}
+		panic(fmt.Sprintf("crypto/rand unavailable, refusing to issue weak CSRF token: %v", err))
 	}
 	return hex.EncodeToString(bytes)
 }
