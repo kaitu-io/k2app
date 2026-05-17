@@ -46,6 +46,12 @@ export default defineConfig({
   // Build configuration
   build: {
     outDir: 'dist',
+    // Floor set for Android System WebView on stock CN ROMs (no Play Store),
+    // where users are stuck on Chrome 60–75. Vite's default 'modules' target
+    // (Chrome 87+) keeps `??` / `?.` in the bundle and parse fails with
+    // SyntaxError → blank screen / unresponsive login. esbuild transpiles
+    // those operators down for chrome70.
+    target: ['chrome70', 'safari14', 'firefox78', 'edge88'],
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
