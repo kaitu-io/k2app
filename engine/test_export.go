@@ -11,9 +11,7 @@ package engine
 // Why this is needed: cross-package tests cannot see _test.go files, so
 // these helpers must live in a regular .go file. The `!release` constraint
 // guarantees the symbols never reach a tagged production binary even by
-// accident. Mirrors the pattern of ForceConnected in engine.go (kept
-// untagged because it predates this convention and is referenced by other
-// in-tree tests).
+// accident.
 //
 // Do NOT call any of these from production code paths — they exist solely
 // to let test code construct outboundTransport instances and drive
@@ -22,9 +20,26 @@ package engine
 
 import (
 	"context"
+	"time"
 
 	"github.com/kaitu-io/k2/wire"
 )
+
+// ForceConnected sets the engine to connected state and fires OnStatus.
+// For testing only — allows daemon tests to simulate a connected engine.
+// Releases lock before calling handler to match OnNetworkChanged/Pause/Wake pattern.
+func (e *Engine) ForceConnected() {
+	e.mu.Lock()
+	e.state = StateConnected
+	e.connectedAt = time.Now()
+	e.lastError = nil
+	status := e.buildStatusLocked()
+	handler := e.handler
+	e.mu.Unlock()
+	if handler != nil {
+		handler.OnStatus(status)
+	}
+}
 
 // OutboundTransportShape is the exported alias for outboundTransport.
 // Used only by E2E test helpers in package test that need to construct

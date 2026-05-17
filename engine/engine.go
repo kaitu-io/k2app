@@ -207,7 +207,7 @@ func (e *Engine) Start(cfg Config) error {
 				// True cold start: no disk cache to fall back to.
 				return e.fail(&EngineError{
 					Code:     ErrCodeRuleBundlesUnavailable,
-					Category: CategoryClient,
+					Category: CategoryServer,
 					Message:  fmt.Sprintf("rule bundles unavailable: %v", ensureErr),
 				})
 			}
@@ -850,6 +850,7 @@ func (e *Engine) Stop() error {
 	e.health = nil
 	reRaceCancel := e.reRaceCancel
 	e.reRaceCancel = nil
+	nc := e.netCoord
 	e.netCoord = nil
 	e.dnsH = nil
 	e.mu.Unlock()
@@ -857,6 +858,9 @@ func (e *Engine) Stop() error {
 	// Stop goroutines WITHOUT holding e.mu — health monitor's onReconnect
 	// callback calls OnNetworkChanged() which briefly acquires e.mu.
 	// Holding e.mu here would cross-deadlock with hm.wg.Wait().
+	if nc != nil {
+		nc.close()
+	}
 	if hm != nil {
 		hm.stop()
 	}
@@ -1016,6 +1020,7 @@ func (e *Engine) fail(err error) error {
 	e.health = nil
 	reRaceCancel := e.reRaceCancel
 	e.reRaceCancel = nil
+	nc := e.netCoord
 	e.netCoord = nil
 	e.dnsH = nil
 
@@ -1052,6 +1057,9 @@ func (e *Engine) fail(err error) error {
 	// Stop goroutines OUTSIDE lock — health monitor's onReconnect callback
 	// calls OnNetworkChanged() which briefly acquires e.mu; holding e.mu
 	// here would cross-deadlock with hm.wg.Wait() (mirrors Stop()).
+	if nc != nil {
+		nc.close()
+	}
 	if hm != nil {
 		hm.stop()
 	}
@@ -1717,18 +1725,3 @@ func (e *Engine) replaceOutboundServer(
 	}
 }
 
-// ForceConnected sets the engine to connected state and fires OnStatus.
-// For testing only — allows daemon tests to simulate a connected engine.
-// Releases lock before calling handler to match OnNetworkChanged/Pause/Wake pattern.
-func (e *Engine) ForceConnected() {
-	e.mu.Lock()
-	e.state = StateConnected
-	e.connectedAt = time.Now()
-	e.lastError = nil
-	status := e.buildStatusLocked()
-	handler := e.handler
-	e.mu.Unlock()
-	if handler != nil {
-		handler.OnStatus(status)
-	}
-}

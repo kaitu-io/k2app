@@ -18,9 +18,9 @@ const (
 	ErrCodeAuthRejected           = 401 // Server rejected authentication (stream rejected)
 	ErrCodePaymentRequired        = 402 // Subscription expired or payment required
 	ErrCodeForbidden              = 403 // Certificate pin mismatch, blocked CA
-	ErrCodeRuleBundlesUnavailable = 424 // Failed Dependency: all CDN sources failed to provide rule bundles (user action: retry)
 	ErrCodeProtocolError          = 502 // TLS handshake failure, QUIC dial failure
 	ErrCodeServerUnreachable      = 503 // TCP dial failed, connection refused
+	ErrCodeRuleBundlesUnavailable = 504 // Dependency unreachable: rule bundle CDN sources all failed (transient, retryable)
 	ErrCodeConnectionFatal        = 570 // Unclassified connection error (fallback)
 )
 
@@ -53,11 +53,11 @@ type EngineError struct {
 // categoryForCode maps an error code to its blame category.
 func categoryForCode(code int) string {
 	switch code {
-	case ErrCodeBadConfig, ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden, ErrCodeRuleBundlesUnavailable:
+	case ErrCodeBadConfig, ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden:
 		return CategoryClient
 	case ErrCodeNetworkUnavailable, ErrCodeTimeout:
 		return CategoryNetwork
-	case ErrCodeProtocolError, ErrCodeServerUnreachable, ErrCodeConnectionFatal:
+	case ErrCodeProtocolError, ErrCodeServerUnreachable, ErrCodeRuleBundlesUnavailable, ErrCodeConnectionFatal:
 		return CategoryServer
 	default:
 		return CategoryUnknown
