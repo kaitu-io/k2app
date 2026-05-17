@@ -14,7 +14,7 @@ require (
 	github.com/pion/stun/v3 v3.1.2
 	github.com/pion/turn/v4 v4.1.4
 	github.com/sagernet/sing v0.7.6
-	github.com/sagernet/sing-tun v0.7.11
+	github.com/sagernet/sing-tun v0.7.13
 	github.com/sasha-s/go-deadlock v0.3.7
 	github.com/xtaci/smux/v2 v2.1.0
 	go.uber.org/goleak v1.3.0
