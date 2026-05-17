@@ -17,11 +17,18 @@ import (
 // and a map of route index → resolved k2v5:// URL. Caller passes the
 // resolved map to ApplyResolved for the engine config.
 //
-// On error, all already-created sessions are closed before returning.
+// On error, all already-created (new) sessions are closed before returning.
 //
-// CALLER OWNS LIFECYCLE: caller must invoke m.CloseAll() (typically in
-// doDown / closeTunnel) when the engine session ends.
+// Replace semantics: Resolve closes any previously-resolved sessions on
+// entry. This makes the call idempotent for callers like gateway whose
+// closeTunnel path does not itself call CloseAll — back-to-back doUp
+// requests cannot orphan a prior session's refresh loop or HTTP transport.
+// Callers still call CloseAll on doDown to release after the engine stops.
 func (m *Manager) Resolve(cfg *config.ClientConfig) (sessions []*Session, resolved map[int]string, err error) {
+	// Drain any sessions left over from a prior Resolve. CloseAll is
+	// idempotent — safe even when the caller already called it.
+	m.CloseAll()
+
 	resolved = make(map[int]string)
 	closeAll := func(ss []*Session) {
 		for _, s := range ss {
