@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { useAlert } from "../stores";
-import { useUser } from "./useUser";
 
 import { useShareLink } from './useShareLink';
+import { useAppConfig } from './useAppConfig';
 import type { MyInviteCode } from '../services/api-types';
 import { cloudApi } from '../services/cloud-api';
 
@@ -13,8 +13,8 @@ import { cloudApi } from '../services/cloud-api';
 export function useInviteCodeActions() {
   const { t } = useTranslation();
   const { showAlert } = useAlert();
-  const { user } = useUser();
   const { getShareLink, loading: shareLinkLoading } = useShareLink();
+  const { appConfig } = useAppConfig();
 
 
   /**
@@ -111,78 +111,18 @@ export function useInviteCodeActions() {
   };
 
   /**
-   * 分享完整邀请内容（带有效期）
-   * @param inviteCode 邀请码对象
-   * @param expiresInDays 链接有效期（天数）
+   * 复制推广链接（明文 /s/{code}，不带 token、不过期）
+   * 与 InviteHub 的「复制推广链接」按钮行为一致
    */
-  const shareInviteCodeWithExpiration = async (inviteCode: MyInviteCode, expiresInDays: number) => {
-    // 获取分享链接（带缓存）
-    const shareLink = await getShareLink(inviteCode.code, expiresInDays);
-    if (!shareLink) {
-      showAlert(t('invite:invite.getShareLinkFailed', '获取分享链接失败'), "error");
-      return;
-    }
-
-    // 根据是否为分销商显示不同的奖励规则
-    const rewardDays = inviteCode.config.purchaseRewardDays;
-    const rewardText = user?.isRetailer
-      ? `💳 ${t('invite:invite.inviteeReward')} ${rewardDays} ${t('invite:invite.days')}`
-      : `💳 ${t('invite:invite.paidPurchase')} ${rewardDays} ${t('invite:invite.days')}`;
-
-    const copyContent = `${t('invite:invite.inviteYouToUse')}
-
-🎁 ${t('invite:invite.rewardRules')}:
-${rewardText}
-
-📱 ${t('invite:invite.downloadApp')}: ${shareLink}
-🏷️ ${t('invite:invite.inviteCodeLabel')}: ${inviteCode.code.toUpperCase()}`;
-
-    if (window._platform?.share) {
-      try {
-        await window._platform.share({
-          title: t('invite:invite.inviteYouToUse'),
-          text: copyContent,
-        });
-        return;
-      } catch (error) {
-        console.warn('Native share failed, falling back to clipboard:', error);
-      }
-    }
-
-    // 桌面或分享失败时使用剪贴板
+  const copyPromotionLink = async (code: string) => {
+    const baseURL = appConfig?.appLinks?.baseURL || 'https://kaitu.io';
+    const link = `${baseURL}/s/${code}`;
     try {
-      await window._platform!.writeClipboard?.(copyContent);
-      showAlert(t('invite:invite.shareContentCopied'), "success");
+      await window._platform!.writeClipboard?.(link);
+      showAlert(t('invite:invite.promotionLinkCopied'), "success");
     } catch (error) {
       console.error(t('invite:invite.copyFailed'));
       showAlert(t('invite:invite.copyFailedPermission'), "error");
-    }
-  };
-
-  /**
-   * 复制分享链接（带有效期）
-   * @param code 邀请码
-   * @param expiresInDays 链接有效期（天数）
-   */
-  const copyShareLinkWithExpiration = async (code: string, expiresInDays: number) => {
-    if (!code) {
-      showAlert(t('invite:invite.noShareLink'), "warning");
-      return;
-    }
-
-    // 获取分享链接（带缓存）
-    const shareLink = await getShareLink(code, expiresInDays);
-    if (!shareLink) {
-      showAlert(t('invite:invite.getShareLinkFailed', '获取分享链接失败'), "error");
-      return;
-    }
-
-    try {
-      await window._platform!.writeClipboard?.(shareLink);
-      showAlert(t('invite:invite.sharePageUrlCopied'), "success");
-    } catch (error) {
-      console.error(t('invite:invite.copyFailed'));
-      showAlert(t('invite:invite.copyFailed'), "error");
     }
   };
 
@@ -192,7 +132,6 @@ ${rewardText}
     copyInviteCode,
     updateRemark,
     shareLinkLoading,
-    shareInviteCodeWithExpiration,
-    copyShareLinkWithExpiration,
+    copyPromotionLink,
   };
 }

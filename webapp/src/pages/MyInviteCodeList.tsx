@@ -29,7 +29,6 @@ import { LoadingState, EmptyInviteCodes } from "../components/LoadingAndEmpty";
 import { useAlert } from "../stores";
 import BackButton from "../components/BackButton";
 import { useInviteCodeActions } from "../hooks/useInviteCodeActions";
-import ExpirationSelectorPopover from "../components/ExpirationSelectorPopover";
 import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
 
@@ -41,10 +40,10 @@ export default function MyInviteCodeList() {
 
   // 邀请码操作 hook
   const {
-    shareInviteCodeWithExpiration,
-    copyShareLinkWithExpiration,
+    shareInviteCode,
+    copyPromotionLink,
     updateRemark,
-    shareLinkLoading
+    shareLinkLoading,
   } = useInviteCodeActions();
 
   // 编辑备注状态
@@ -60,11 +59,6 @@ export default function MyInviteCodeList() {
     return cancel;
   }, [editingCode]);
   const [editRemark, setEditRemark] = useState("");
-
-  // Popover state
-  const [popoverAnchorEl, setPopoverAnchorEl] = useState<HTMLElement | null>(null);
-  const [popoverAction, setPopoverAction] = useState<'complete' | 'link'>('complete');
-  const [selectedInviteCode, setSelectedInviteCode] = useState<MyInviteCode | null>(null);
 
   // 移动端应用，统一使用卡片布局
 
@@ -125,29 +119,14 @@ export default function MyInviteCodeList() {
     }
   };
 
-  // 处理分享按钮点击 (打开 Popover)
-  const handleShareClick = (event: React.MouseEvent<HTMLButtonElement>, inviteCode: MyInviteCode) => {
-    setSelectedInviteCode(inviteCode);
-    setPopoverAction('complete');
-    setPopoverAnchorEl(event.currentTarget);
+  // 分享按钮：直接系统分享/复制完整邀请内容（默认 7 天）
+  const handleShareClick = (inviteCode: MyInviteCode) => {
+    shareInviteCode(inviteCode);
   };
 
-  // 处理复制链接按钮点击 (打开 Popover)
-  const handleCopyLinkClick = (event: React.MouseEvent<HTMLButtonElement>, inviteCode: MyInviteCode) => {
-    setSelectedInviteCode(inviteCode);
-    setPopoverAction('link');
-    setPopoverAnchorEl(event.currentTarget);
-  };
-
-  // 处理有效期选择
-  const handleExpirationSelect = async (days: number) => {
-    if (!selectedInviteCode) return;
-
-    if (popoverAction === 'complete') {
-      await shareInviteCodeWithExpiration(selectedInviteCode, days);
-    } else {
-      await copyShareLinkWithExpiration(selectedInviteCode.code, days);
-    }
+  // 复制链接按钮：直接复制推广链 baseURL/s/{code}
+  const handleCopyLinkClick = (inviteCode: MyInviteCode) => {
+    copyPromotionLink(inviteCode.code);
   };
 
   return (
@@ -288,7 +267,7 @@ export default function MyInviteCodeList() {
                           <Button
                             variant="contained"
                             size="small"
-                            onClick={(e) => handleShareClick(e, row)}
+                            onClick={() => handleShareClick(row)}
                             disabled={shareLinkLoading}
                             sx={{
                               textTransform: "none",
@@ -307,7 +286,7 @@ export default function MyInviteCodeList() {
                           <Tooltip title={t('invite:inviteCodeList.copyLink')}>
                             <IconButton
                               size="small"
-                              onClick={(e) => handleCopyLinkClick(e, row)}
+                              onClick={() => handleCopyLinkClick(row)}
                               disabled={shareLinkLoading}
                               sx={{
                                 border: "1px solid",
@@ -376,14 +355,6 @@ export default function MyInviteCodeList() {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Expiration Selector Popover */}
-      <ExpirationSelectorPopover
-        anchorEl={popoverAnchorEl}
-        open={Boolean(popoverAnchorEl)}
-        onClose={() => setPopoverAnchorEl(null)}
-        onSelect={handleExpirationSelect}
-      />
     </Box>
   );
 }
