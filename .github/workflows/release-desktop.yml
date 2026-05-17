@@ -14,7 +14,11 @@ permissions:
   contents: write
 
 env:
-  K2_BUILD_LOG_LEVEL: debug  # debug for beta phase; change to info for production
+  # Production releases ship at info level. Debug logs leak token-bearing
+  # URLs and engine internals into S3-uploaded log files. For local debug
+  # builds, override via `make build-* K2_BUILD_LOG_LEVEL=debug`. Runtime
+  # SetLogLevel() still works regardless.
+  K2_BUILD_LOG_LEVEL: info
 
 jobs:
   # --- Test gates: 3 parallel jobs, all must pass before release ---

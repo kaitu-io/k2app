@@ -26,7 +26,11 @@ permissions:
   contents: read
 
 env:
-  K2_BUILD_LOG_LEVEL: debug  # debug for beta phase; change to info for production
+  # Production releases ship at info level. Debug logs leak token-bearing
+  # URLs and engine internals into the app sandbox / device-log uploads.
+  # For local debug builds, override via `make dev-android K2_BUILD_LOG_LEVEL=debug`.
+  # Runtime SetLogLevel() still works regardless.
+  K2_BUILD_LOG_LEVEL: info
 
 jobs:
   build-ios:
