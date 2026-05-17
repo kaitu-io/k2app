@@ -2,6 +2,7 @@ package dns
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -260,6 +261,12 @@ func TestProxyDNSClient_ResetConnections(t *testing.T) {
 	case <-conn1.done:
 	default:
 		t.Fatal("old connection's done channel should be closed after reset")
+	}
+
+	// Reset must inject errConnPoolReset so queryServer can suppress WARN-level
+	// dns-proxy-conn-dead for these by-design closures (log noise reduction).
+	if !errors.Is(conn1.err, errConnPoolReset) {
+		t.Fatalf("expected pc.err = errConnPoolReset, got %v", conn1.err)
 	}
 
 	// Next open must dial fresh.

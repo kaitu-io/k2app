@@ -2,6 +2,7 @@ package dns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -14,6 +15,12 @@ import (
 	"github.com/kaitu-io/k2/wire"
 	"github.com/miekg/dns"
 )
+
+// errConnPoolReset is the sentinel error injected into in-flight queries when
+// ResetConnections() runs on a network change / wake event. Distinguishing it
+// from real connection death keeps WARN-level DIAG events focused on actual
+// failures rather than expected by-design closures. See dns-proxy-conn-dead.
+var errConnPoolReset = errors.New("dns connection pool reset (by-design)")
 
 // ProxyDNSClient queries DNS through the wire tunnel using persistent UDP
 // connections with message-ID-based multiplexing (sing-box pattern).
@@ -206,11 +213,21 @@ func (c *ProxyDNSClient) queryServer(ctx context.Context, server string, query *
 	isNewConn := false
 	pc, err := c.open(ctx, server)
 	if err != nil {
-		slog.Warn("DIAG: dns-proxy-dial-fail",
-			"server", server,
-			"domain", extractDomain(query),
-			"err", err,
-		)
+		// Race-loser cancellations (Happy Eyeballs winner cancels siblings)
+		// are by-design and must not pollute WARN-level metrics. Genuine dial
+		// failures (DNS timeout, TCP refused, TLS error) do not carry Canceled.
+		if errors.Is(err, context.Canceled) {
+			slog.Debug("dns-proxy-dial-canceled",
+				"server", server,
+				"domain", extractDomain(query),
+			)
+		} else {
+			slog.Warn("DIAG: dns-proxy-dial-fail",
+				"server", server,
+				"domain", extractDomain(query),
+				"err", err,
+			)
+		}
 		return nil, fmt.Errorf("open connection to %s: %w", server, err)
 	}
 	connAgeS := int(time.Since(pc.createdAt).Seconds())
@@ -267,13 +284,24 @@ func (c *ProxyDNSClient) queryServer(ctx context.Context, server string, query *
 		slog.Debug("proxy DNS query ok", "domain", extractDomain(query), "server", server)
 		return cb.message, nil
 	case <-pc.done:
-		slog.Warn("DIAG: dns-proxy-conn-dead",
-			"server", server,
-			"domain", extractDomain(query),
-			"connAgeS", connAgeS,
-			"isNewConn", isNewConn,
-			"err", pc.err,
-		)
+		// Pool-reset on wake/network-change is by-design — don't pollute WARN.
+		// Genuine conn death (recvLoop read error, write failure) keeps WARN.
+		if errors.Is(pc.err, errConnPoolReset) {
+			slog.Debug("dns-proxy-conn-reset",
+				"server", server,
+				"domain", extractDomain(query),
+				"connAgeS", connAgeS,
+				"isNewConn", isNewConn,
+			)
+		} else {
+			slog.Warn("DIAG: dns-proxy-conn-dead",
+				"server", server,
+				"domain", extractDomain(query),
+				"connAgeS", connAgeS,
+				"isNewConn", isNewConn,
+				"err", pc.err,
+			)
+		}
 		return nil, fmt.Errorf("connection to %s closed: %w", server, pc.err)
 	case <-ctx.Done():
 		// Fail-fast on genuine timeout only — connection is likely a zombie.
@@ -425,7 +453,7 @@ func (c *ProxyDNSClient) ResetConnections() {
 	c.mu.Unlock()
 
 	for _, pc := range conns {
-		pc.closeWithErr(fmt.Errorf("connections reset"))
+		pc.closeWithErr(errConnPoolReset)
 	}
 
 	// Reset health tracking — fresh transport after reconnect.
