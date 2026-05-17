@@ -51,6 +51,20 @@ describe("Delegate page", () => {
     showAlert.mockReset();
     mockGet.mockReset();
     mockRequest.mockReset();
+    // Global setup.ts mocks `window.getComputedStyle` via `vi.fn().mockImplementation(...)`,
+    // but its global `beforeEach` runs `vi.clearAllMocks()` which strips the implementation.
+    // MUI Modal's `getPaddingRight()` then crashes on `getComputedStyle(el).paddingRight`.
+    // Restore a minimal stub here.
+    (window.getComputedStyle as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        ({
+          paddingRight: "0px",
+          paddingLeft: "0px",
+          marginRight: "0px",
+          marginLeft: "0px",
+          getPropertyValue: () => "",
+        }) as unknown as CSSStyleDeclaration,
+    );
   });
 
   afterEach(() => {
@@ -164,20 +178,27 @@ describe("Delegate page", () => {
     expect(msg).toBe("Internal server error");
   });
 
-  it("remove confirmed → DELETE → returns to empty form", async () => {
+  it("remove confirmed via dialog → DELETE → returns to empty form", async () => {
     mockGet.mockResolvedValue({
       code: 0,
       data: { email: "friend@example.com", setAt: 1715900000 },
     });
     mockRequest.mockResolvedValue({ code: 0 });
 
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderPage();
     await waitFor(() =>
       expect(screen.getByText("account:delegate.removeButton")).toBeInTheDocument(),
     );
 
+    // Click trigger button — opens confirm dialog, does NOT call DELETE yet
     fireEvent.click(screen.getByText("account:delegate.removeButton"));
+    await waitFor(() =>
+      expect(screen.getByText("account:delegate.removeConfirm")).toBeInTheDocument(),
+    );
+    expect(mockRequest).not.toHaveBeenCalled();
+
+    // Click confirm inside the dialog
+    fireEvent.click(screen.getByText("common:common.confirm"));
 
     await waitFor(() =>
       expect(mockRequest).toHaveBeenCalledWith("DELETE", "/api/user/delegate"),
@@ -185,24 +206,53 @@ describe("Delegate page", () => {
     await waitFor(() =>
       expect(screen.getByText("account:delegate.emptyDescription")).toBeInTheDocument(),
     );
-    expect(confirmSpy).toHaveBeenCalled();
   });
 
-  it("remove cancelled → no DELETE issued, panel unchanged", async () => {
+  it("remove cancelled via dialog → no DELETE issued, panel unchanged", async () => {
     mockGet.mockResolvedValue({
       code: 0,
       data: { email: "friend@example.com", setAt: 1715900000 },
     });
-    vi.spyOn(window, "confirm").mockReturnValue(false);
+
     renderPage();
     await waitFor(() =>
       expect(screen.getByText("account:delegate.removeButton")).toBeInTheDocument(),
     );
 
     fireEvent.click(screen.getByText("account:delegate.removeButton"));
+    await waitFor(() =>
+      expect(screen.getByText("account:delegate.removeConfirm")).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByText("common:common.cancel"));
 
     expect(mockRequest).not.toHaveBeenCalled();
     expect(screen.getByText("friend@example.com")).toBeInTheDocument();
+  });
+
+  it("never calls window.confirm — uses MUI Dialog instead (cross-platform regression guard)", async () => {
+    mockGet.mockResolvedValue({
+      code: 0,
+      data: { email: "friend@example.com", setAt: 1715900000 },
+    });
+    mockRequest.mockResolvedValue({ code: 0 });
+    const confirmSpy = vi.spyOn(window, "confirm");
+
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("account:delegate.removeButton")).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByText("account:delegate.removeButton"));
+    await waitFor(() =>
+      expect(screen.getByText("account:delegate.removeConfirm")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByText("common:common.confirm"));
+
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith("DELETE", "/api/user/delegate"),
+    );
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it("save with returnTo query param redirects after success", async () => {

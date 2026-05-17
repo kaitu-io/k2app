@@ -11,6 +11,11 @@ import {
   Stack,
   CircularProgress,
   Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from "@mui/material";
 
 import BackButton from "../components/BackButton";
@@ -46,6 +51,7 @@ export default function Delegate() {
   const [editing, setEditing] = useState(false);
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -105,9 +111,7 @@ export default function Delegate() {
   };
 
   const handleRemove = async () => {
-    if (typeof window !== "undefined" && !window.confirm(t("account:delegate.removeConfirm"))) {
-      return;
-    }
+    setRemoveConfirmOpen(false);
     setSaving(true);
     try {
       const response = await cloudApi.request("DELETE", "/api/user/delegate");
@@ -227,7 +231,7 @@ export default function Delegate() {
                   <Button
                     variant="outlined"
                     color="error"
-                    onClick={handleRemove}
+                    onClick={() => setRemoveConfirmOpen(true)}
                     disabled={saving}
                     startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}
                   >
@@ -243,6 +247,34 @@ export default function Delegate() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={removeConfirmOpen}
+        onClose={() => !saving && setRemoveConfirmOpen(false)}
+      >
+        <DialogTitle>{t("account:delegate.removeButton")}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {t("account:delegate.removeConfirm")}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setRemoveConfirmOpen(false)}
+            disabled={saving}
+          >
+            {t("common:common.cancel")}
+          </Button>
+          <Button
+            onClick={handleRemove}
+            color="error"
+            disabled={saving}
+            startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            {t("common:common.confirm")}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
