@@ -843,6 +843,7 @@ func (e *Engine) Stop() error {
 	e.health = nil
 	reRaceCancel := e.reRaceCancel
 	e.reRaceCancel = nil
+	nc := e.netCoord
 	e.netCoord = nil
 	e.dnsH = nil
 	e.mu.Unlock()
@@ -850,6 +851,9 @@ func (e *Engine) Stop() error {
 	// Stop goroutines WITHOUT holding e.mu — health monitor's onReconnect
 	// callback calls OnNetworkChanged() which briefly acquires e.mu.
 	// Holding e.mu here would cross-deadlock with hm.wg.Wait().
+	if nc != nil {
+		nc.close()
+	}
 	if hm != nil {
 		hm.stop()
 	}
@@ -1009,6 +1013,7 @@ func (e *Engine) fail(err error) error {
 	e.health = nil
 	reRaceCancel := e.reRaceCancel
 	e.reRaceCancel = nil
+	nc := e.netCoord
 	e.netCoord = nil
 	e.dnsH = nil
 
@@ -1045,6 +1050,9 @@ func (e *Engine) fail(err error) error {
 	// Stop goroutines OUTSIDE lock — health monitor's onReconnect callback
 	// calls OnNetworkChanged() which briefly acquires e.mu; holding e.mu
 	// here would cross-deadlock with hm.wg.Wait() (mirrors Stop()).
+	if nc != nil {
+		nc.close()
+	}
 	if hm != nil {
 		hm.stop()
 	}
