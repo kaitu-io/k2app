@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { authService } from "../services/auth-service";
+import { useAuth } from "../stores/auth.store";
 import {
   Box,
   Typography,
@@ -13,10 +13,16 @@ import {
   Button,
   TextField,
   Badge,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Divider,
 } from "@mui/material";
 import {
   Send as SendIcon,
-  HelpOutline as HelpOutlineIcon,
+  Add as AddIcon,
+  ExpandMore as ExpandMoreIcon,
+  ListAlt as ListAltIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 
@@ -28,6 +34,7 @@ import type {
   UserTicketDetail,
   TicketReply,
 } from "../services/api-types";
+import { FAQ_KEYS } from "./faq-items";
 
 // ============ Helpers ============
 
@@ -61,17 +68,62 @@ const statusColorMap: Record<string, "warning" | "success" | "default"> = {
   closed: "default",
 };
 
+// ============ FAQ Section (inline on Feedback list view) ============
+
+function FaqSection() {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState<string | null>(null);
+  return (
+    <Stack spacing={1}>
+      <Typography variant="body2" color="text.secondary">
+        {t("ticket:faq.subtitle")}
+      </Typography>
+      <Stack spacing={0.5} sx={{ mt: 1 }}>
+        {FAQ_KEYS.map((key) => (
+          <Accordion
+            key={key}
+            disableGutters
+            expanded={expanded === key}
+            onChange={(_, isExpanded) => setExpanded(isExpanded ? key : null)}
+            sx={{
+              bgcolor: "background.paper",
+              "&:before": { display: "none" },
+              borderRadius: 1,
+            }}
+          >
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                {t(`ticket:faq.items.${key}.question`)}
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}
+              >
+                {t(`ticket:faq.items.${key}.answer`)}
+              </Typography>
+            </AccordionDetails>
+          </Accordion>
+        ))}
+      </Stack>
+    </Stack>
+  );
+}
+
 // ============ Ticket List ============
 
 function TicketList({
+  hasAuth,
   onSelect,
 }: {
+  hasAuth: boolean;
   onSelect: (id: number) => void;
 }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const [tickets, setTickets] = useState<UserTicketListItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(hasAuth);
   const [error, setError] = useState<string | null>(null);
 
   const fetchTickets = useCallback(async () => {
@@ -96,41 +148,17 @@ function TicketList({
   }, [t]);
 
   useEffect(() => {
-    authService.hasToken().then((hasToken) => {
-      if (!hasToken) {
-        setIsLoading(false);
-        return;
-      }
-      fetchTickets();
-    });
-  }, [fetchTickets]);
+    if (hasAuth) fetchTickets();
+  }, [hasAuth, fetchTickets]);
+
+  if (!hasAuth) return null;
 
   return (
-    <>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="h6">{t("ticket:feedback.title")}</Typography>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<HelpOutlineIcon />}
-            onClick={() => navigate("/faq")}
-          >
-            {t("ticket:faq.entryTitle")}
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => navigate("/submit-ticket-form")}
-          >
-            {t("ticket:feedback.newTicket")}
-          </Button>
-        </Stack>
-      </Stack>
-
+    <Stack spacing={1}>
+      <Typography variant="h6">{t("ticket:feedback.myTickets")}</Typography>
       {isLoading ? (
-        <Box display="flex" justifyContent="center" py={4}>
-          <CircularProgress />
+        <Box display="flex" justifyContent="center" py={2}>
+          <CircularProgress size={24} />
         </Box>
       ) : error ? (
         <Alert
@@ -144,25 +172,9 @@ function TicketList({
           {error}
         </Alert>
       ) : tickets.length === 0 ? (
-        <Card>
-          <CardContent>
-            <Stack spacing={2} alignItems="center" py={2}>
-              <Typography variant="body2" color="text.secondary">
-                {t("ticket:feedback.noTickets")}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t("ticket:feedback.noTicketsHint")}
-              </Typography>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => navigate("/submit-ticket-form")}
-              >
-                {t("ticket:feedback.newTicket")}
-              </Button>
-            </Stack>
-          </CardContent>
-        </Card>
+        <Typography variant="caption" color="text.secondary">
+          {t("ticket:feedback.noTickets")}
+        </Typography>
       ) : (
         <Stack spacing={1}>
           {tickets.map((ticket) => (
@@ -217,7 +229,7 @@ function TicketList({
           ))}
         </Stack>
       )}
-    </>
+    </Stack>
   );
 }
 
@@ -439,6 +451,77 @@ function TicketDetailView({
   );
 }
 
+// ============ List View (FAQ + tickets + bottom CTA) ============
+
+function FeedbackListView({
+  onSelect,
+}: {
+  onSelect: (id: number) => void;
+}) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  const ticketSectionRef = useRef<HTMLDivElement | null>(null);
+
+  return (
+    <>
+      {/* Header: page title + actions */}
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="h6">{t("ticket:faq.title")}</Typography>
+        <Stack direction="row" spacing={1}>
+          {isAuthenticated && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<ListAltIcon />}
+              onClick={() =>
+                ticketSectionRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                })
+              }
+            >
+              {t("ticket:feedback.viewTickets")}
+            </Button>
+          )}
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={() => navigate("/submit-ticket-form")}
+          >
+            {t("ticket:feedback.newTicket")}
+          </Button>
+        </Stack>
+      </Stack>
+
+      <FaqSection />
+
+      {isAuthenticated && (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <Box ref={ticketSectionRef} sx={{ scrollMarginTop: 16 }}>
+            <TicketList hasAuth={isAuthenticated} onSelect={onSelect} />
+          </Box>
+        </>
+      )}
+
+      {/* Bottom CTA: natural endpoint after browsing FAQ */}
+      <Stack spacing={1} sx={{ mt: 2, alignItems: "center" }}>
+        <Typography variant="body2" color="text.secondary">
+          {t("ticket:faq.stillNeedHelp")}
+        </Typography>
+        <Button
+          variant="contained"
+          onClick={() => navigate("/submit-ticket-form")}
+        >
+          {t("ticket:faq.submitCta")}
+        </Button>
+      </Stack>
+    </>
+  );
+}
+
 // ============ Main Page ============
 
 export default function Feedback() {
@@ -475,7 +558,7 @@ export default function Feedback() {
           {selectedTicketId !== null ? (
             <TicketDetailView ticketId={selectedTicketId} />
           ) : (
-            <TicketList onSelect={setSelectedTicketId} />
+            <FeedbackListView onSelect={setSelectedTicketId} />
           )}
         </Box>
       </Box>

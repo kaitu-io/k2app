@@ -14,16 +14,7 @@ import {
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import BackButton from "../components/BackButton";
-
-const FAQ_KEYS = [
-  "connection",
-  "wifiSwitch",
-  "deviceRemoved",
-  "updateIssue",
-  "loginFailed",
-  "linuxSupport",
-  "chinaAppStore",
-] as const;
+import { FAQ_KEYS } from "./faq-items";
 
 export default function FAQ() {
   const { t } = useTranslation();

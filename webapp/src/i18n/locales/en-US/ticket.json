@@ -1,7 +1,8 @@
 {
   "feedback": {
-    "title": "Feedback Center",
     "newTicket": "New Ticket",
+    "viewTickets": "View Tickets",
+    "myTickets": "My Tickets",
     "noTickets": "No tickets yet",
     "noTicketsHint": "Having an issue? Submit a ticket and we'll get back to you",
     "loadError": "Failed to load, please retry",
@@ -26,14 +27,22 @@
   "faq": {
     "title": "FAQ",
     "subtitle": "Check here first — most issues resolve quickly",
-    "stillNeedHelp": "Didn't find your issue?",
-    "submitCta": "Submit Feedback",
+    "stillNeedHelp": "Didn't find your answer?",
+    "submitCta": "Submit Ticket",
     "entryTitle": "FAQ",
     "entryHint": "Check the FAQ before submitting — it may solve your issue faster",
     "items": {
       "connection": {
         "question": "What should I do about unstable connection or slow speed?",
         "answer": "Speed issues are usually related to your local network. Please troubleshoot in this order:\n\n1. Try different tunnel lines first. If all lines are slow, it's almost certainly a local network issue.\n2. Restart your router. This resolves most temporary routing cache and link issues.\n3. Call your ISP and ask whether they've applied targeted throttling for overseas traffic.\n4. If the ISP offers to send a technician on-site, decline — ISPs often have \"broadband processing\" KPIs and will push you to downgrade your plan by citing fake \"line faults\".\n5. Only after ruling out the above is it possibly a node issue. Submit feedback with logs and we'll investigate."
+      },
+      "appNotWorking": {
+        "question": "A specific app or game stopped working after I installed Kaitu — what now?",
+        "answer": "Some apps (notably Adobe Creative Cloud, certain games, and third-party IM tools) cache their own server addresses. When Kaitu is on, those cached addresses get routed through the proxy and may be rejected or time out. Try in this order:\n\n1. Restart the app — most of the time, quitting and reopening lets it refresh its server cache.\n2. Switch routing mode — toggle between Smart and Global in Kaitu, then try the app again.\n3. Temporarily disconnect Kaitu — in rare cases (e.g. Adobe Creative Cloud caching a now-defunct legacy IP), disconnect Kaitu while using that app and reconnect afterwards.\n4. If none of the above helps, submit a ticket with logs and our engineers will investigate."
+      },
+      "nodeChoice": {
+        "question": "There are so many nodes — which one should I pick?",
+        "answer": "Easiest option: use Auto Select. Tap \"Auto Select\" at the top of the node list and Kaitu will pick the best node based on real-time latency and load. Turn on \"Auto Switch\" and it'll move you to a better node when conditions change. This is the best choice for most users.\n\nIf you really want to pick manually:\n\n• Don't always tap the first node — the first few (especially AU / Australia) get hammered because most users tap the first one by reflex.\n• Try JP / SG / KR / US first — usually more stable and faster.\n• If it won't connect or feels slow, switch to a different one — the best node varies by region and time of day.\n• Streaming and browsing aren't sensitive to node choice; gaming and video calls are latency-sensitive, so try a few and stick with the most stable."
       },
       "wifiSwitch": {
         "question": "VPN disconnects after switching WiFi or network?",
@@ -51,12 +60,12 @@
         "question": "Login failed / verification code not received?",
         "answer": "The most common cause is a typo in the email — about 30% of users in our database mistype their email on first attempt. Please check letter by letter:\n\n• Spaces or extra characters around the @ sign\n• Domain spelling (e.g. gmial → gmail, hotmial → hotmail)\n• Confusion between 0 (zero) and O (letter)\n\nAfter confirming, check your spam folder. If nothing arrives, try a different email address."
       },
-      "linuxSupport": {
-        "question": "Linux version can't connect — what should I do?",
-        "answer": "The Linux client is still in limited testing. Distribution and kernel coverage is not yet complete, so some combinations may have issues.\n\nIf you encounter problems, submit feedback with logs. Our engineers will fix issues quickly based on your logs so you can get up and running soon."
+      "allNationConnect": {
+        "question": "I used to use AllNationConnect — can I log in with Kaitu?",
+        "answer": "Yes. AllNationConnect is the earlier name of our Kaitu client and is no longer maintained (no protocol updates, no new nodes). Please:\n\n1. Search \"Kaitu\" on the App Store / Google Play, or visit kaitu.io to download the new client.\n2. Log in with your original email — your subscription syncs automatically, no need to repurchase.\n3. If you hit stability issues on the old client, upgrade to the new Kaitu — the old version no longer receives fixes."
       },
       "chinaAppStore": {
-        "question": "How is Kaitu listed on the China App Store?",
+        "question": "How is Kaitu listed on the App Store?",
         "answer": "Our iOS client is designed within a compliant framework and passed Apple's standard review process for listing.\n\nIf other developers would like to discuss iOS listing experiences, feel free to contact us by email — we're happy to share."
       }
     }
