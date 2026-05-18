@@ -16,7 +16,12 @@ echo "=== SIGNING: $(basename "$1") ==="
 echo ""
 
 # --- Config ---
-PKCS11_ENGINE="/opt/homebrew/Cellar/openssl@3/3.6.1/lib/engines-3/pkcs11.dylib"
+# PKCS#11 engine ships with libp11, not openssl@3 (which has none).
+# Use brew --prefix to survive libp11 version bumps; the previous
+# hardcoded openssl@3/3.6.1 path was wrong — it only ever resolved
+# because of stale symlinks that disappeared on the next openssl@3
+# upgrade (3.6.1 → 3.6.2), breaking Windows Authenticode signing.
+PKCS11_ENGINE="$(brew --prefix libp11 2>/dev/null)/lib/engines-3/pkcs11.dylib"
 PKCS11_MODULE="/usr/local/lib/SimplySignPKCS/SimplySignPKCS-MS-1.1.24.dylib"
 PKCS11_CERT="pkcs11:token=wordgate;object=334AB051AA095E46AF497253EB398C98;type=cert"
 PKCS11_KEY="pkcs11:token=wordgate"
