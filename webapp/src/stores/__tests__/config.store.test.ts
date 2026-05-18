@@ -15,6 +15,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+declare const __K2_BUILD_LOG_LEVEL__: string;
+
 // ==================== Mock window._platform ====================
 
 const mockStorage = {
@@ -485,7 +487,7 @@ describe('Config Store', () => {
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
-      expect(result.log?.level).toBe('debug');
+      expect(result.log?.level).toBe(__K2_BUILD_LOG_LEVEL__);
     });
   });
 
