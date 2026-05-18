@@ -94,6 +94,65 @@ end tell
 EOF
 }
 
+# Count AXTextField (+ AXSecureTextField) elements inside the WebView.
+# Returns "0" if window/scroll area/web area not present yet.
+count_login_fields() {
+    osascript << 'EOF' 2>/dev/null
+tell application "System Events"
+    tell process "SimplySign Desktop"
+        try
+            tell window "SimplySign Desktop"
+                tell scroll area 1
+                    set wa to first UI element whose role is "AXWebArea"
+                    set tf to every UI element of wa whose role is "AXTextField"
+                    set sf to every UI element of wa whose role is "AXSecureTextField"
+                    return ((count of tf) + (count of sf)) as text
+                end tell
+            end tell
+        on error
+            return "0"
+        end try
+    end tell
+end tell
+EOF
+}
+
+# Dump the SimplySign Desktop window UI tree (roles + descriptions). For
+# diagnostic logging when field detection fails — lets the next CI run
+# surface what actually changed without needing a live Mac mini session.
+dump_ui_tree() {
+    osascript << 'EOF' 2>/dev/null
+tell application "System Events"
+    tell process "SimplySign Desktop"
+        try
+            tell window "SimplySign Desktop"
+                set out to ""
+                set elems to entire contents
+                repeat with e in elems
+                    try
+                        set r to role of e
+                        set d to ""
+                        try
+                            set d to description of e
+                        end try
+                        set v to ""
+                        try
+                            set v to value of e
+                        end try
+                        set out to out & r & " | " & d & " | " & v & "
+"
+                    end try
+                end repeat
+                return out
+            end tell
+        on error errMsg
+            return "dump_failed: " & errMsg
+        end try
+    end tell
+end tell
+EOF
+}
+
 close_window() {
     osascript << 'EOF' 2>/dev/null
 tell application "System Events"
@@ -129,25 +188,27 @@ tell application "System Events"
         tell window "SimplySign Desktop"
             tell scroll area 1
                 set wa to first UI element whose role is "AXWebArea"
-                set fields to every UI element of wa whose role is "AXTextField"
-                if (count of fields) < 2 then
+                set tfList to every UI element of wa whose role is "AXTextField"
+                set sfList to every UI element of wa whose role is "AXSecureTextField"
+                set allFields to tfList & sfList
+                if (count of allFields) is 0 then
                     return "error:no_fields"
                 end if
-                -- Focus token field (AXPress unreliable for WebKit inputs)
-                set tokenField to item 2 of fields
+                -- TOTP is always the last input on the form, regardless of
+                -- whether SimplySign currently asks for email + token (2
+                -- fields) or token-only (1 field, when the email was saved
+                -- from a prior session).
+                set tokenField to item -1 of allFields
                 set focused of tokenField to true
                 delay 0.5
-                -- Click to ensure cursor is in field
                 perform action "AXPress" of tokenField
                 delay 0.5
-                -- Select all + delete + type code via keystrokes
                 keystroke "a" using command down
                 delay 0.3
                 key code 51
                 delay 0.3
                 keystroke "${code}"
                 delay 2.0
-                -- Click Login button (WebView needs time to process input and enable button)
                 set btns to every UI element of wa whose role is "AXButton"
                 if (count of btns) > 0 then
                     perform action "AXPress" of item 1 of btns
@@ -220,21 +281,26 @@ tell application "System Events"
 end tell
 EOF
 
-    # Wait for WebView to load (the white screen issue)
-    echo "Waiting for WebView to load..."
+    # Wait for WebView form to be interactable.
+    # Previous version matched on static text ("Login", "E-MAIL") which
+    # appears as a page header before the <input> elements register with
+    # the macOS Accessibility tree — fill_totp_and_login then raced and
+    # saw zero fields. Wait for the actual AXTextField/AXSecureTextField
+    # count instead.
+    echo "Waiting for WebView form fields..."
     loaded=false
-    for i in $(seq 1 15); do
+    for i in $(seq 1 20); do
         sleep 1
-        text=$(get_window_text)
-        if echo "$text" | grep -qi "E-MAIL\|email\|token\|Login"; then
+        n=$(count_login_fields)
+        if [ "$n" -ge 1 ] 2>/dev/null; then
             loaded=true
-            echo "WebView loaded."
+            echo "WebView form ready ($n field(s) detected)."
             break
         fi
     done
 
     if [ "$loaded" = "false" ]; then
-        echo "WebView didn't load (white screen). Retrying..."
+        echo "WebView didn't expose any form fields after 20s. Retrying..."
         continue
     fi
 
@@ -249,7 +315,10 @@ EOF
     echo "  Result: $result"
 
     if echo "$result" | grep -q "error"; then
-        echo "Form fill failed. Retrying..."
+        echo "Form fill failed: $result"
+        echo "----- UI tree dump (role | description | value) -----"
+        dump_ui_tree
+        echo "----- end dump -----"
         continue
     fi
 
