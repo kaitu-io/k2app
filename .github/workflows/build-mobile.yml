@@ -38,7 +38,10 @@ jobs:
       (github.event_name == 'push' && !endsWith(github.ref_name, '-android')) ||
       inputs.platform == 'ios' ||
       inputs.platform == 'both'
-    runs-on: macos-latest
+    # macos-26 (Tahoe) ships Xcode 26.x. Apple requires Xcode 26 + iOS 26 SDK
+    # for App Store submissions from 2026-04-28. Pinning the runner (instead of
+    # macos-latest) makes future Xcode upgrades explicit and reproducible.
+    runs-on: macos-26
     timeout-minutes: 60
 
     steps:
@@ -54,6 +57,11 @@ jobs:
         run: |
           git config --global url."git@github.com:".insteadOf "https://github.com/"
           git submodule update --init --recursive
+
+      - name: Select Xcode 26
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

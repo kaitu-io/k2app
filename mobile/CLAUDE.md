@@ -10,7 +10,8 @@ Capacitor 7 mobile app wrapping the k2 Go tunnel core via gomobile. K2Plugin bri
   - **CI:** `actions/setup-java@v4` with `java-version: '21'` already set in `.github/workflows/build-mobile.yml`.
   - If `make check-jdk-21` fails, the Makefile prints the install hint.
 - Gradle wrapper 8.11.1 + AGP 8.7.2 + Kotlin 1.9.25
-- Xcode 16+, iOS deployment target 14 (app actually ships 15.6, NE 16)
+- **Xcode 26+** required for App Store submissions (Apple mandate from 2026-04-28: iOS 26 SDK + Xcode 26). CI pins `runs-on: macos-26` with `setup-xcode@v1 xcode-version: '26.4'`. Local dev machines need macOS 15.6+ to install Xcode 26.
+- iOS deployment target 14 in pbxproj root, app target ships 15.6, NE 16 (unchanged — iOS 26 SDK supports old deployment targets via build settings)
 - CocoaPods for iOS (NOT SPM — avoids Capacitor 8's SPM regression surface when we later upgrade)
 
 ## Commands
