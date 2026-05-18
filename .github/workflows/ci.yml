@@ -317,15 +317,42 @@ jobs:
         run: cargo check
         working-directory: desktop/src-tauri
 
+      - name: MachineGuid baseline (pre-Rust)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          echo === reg query (cmd, pre-Rust, native view) ===
+          reg query "HKLM\SOFTWARE\Microsoft\Cryptography" /v MachineGuid
+          echo === reg query KEY_WOW64_64KEY view ===
+          reg query "HKLM\SOFTWARE\Microsoft\Cryptography" /v MachineGuid /reg:64
+          echo === reg query KEY_WOW64_32KEY view ===
+          reg query "HKLM\SOFTWARE\Microsoft\Cryptography" /v MachineGuid /reg:32
+          echo === wmic csproduct UUID ===
+          wmic csproduct get UUID
+
       - name: Cargo test (Tauri)
         shell: bash
         run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output.txt
         working-directory: desktop/src-tauri
 
+      - name: MachineGuid mid-check (post-Rust, pre-Go)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          echo === reg query (cmd, post-Rust pre-Go) ===
+          reg query "HKLM\SOFTWARE\Microsoft\Cryptography" /v MachineGuid
+
       - name: Go test MCP
         shell: bash
         run: go test ./... -v 2>&1 | tee /tmp/go-test-output.txt
         working-directory: mcp
+
+      - name: MachineGuid post-Go check
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          echo === reg query (cmd, post-Go) ===
+          reg query "HKLM\SOFTWARE\Microsoft\Cryptography" /v MachineGuid
 
       - name: Cross-language hardware ID gate
         shell: bash
@@ -341,6 +368,7 @@ jobs:
           if [ "$RUST_HWID" != "$GO_HWID" ]; then
             echo "::error::Hardware ID mismatch! Rust ($RUST_HWID) != Go ($GO_HWID)"
             echo "::error::This means encrypted storage written by Tauri cannot be read by MCP"
+            echo "::error::Inspect 'MachineGuid baseline / mid-check / post-Go' steps for ground truth from reg.exe"
             exit 1
           fi
           echo "Cross-language hardware ID gate PASSED"
