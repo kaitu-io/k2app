@@ -94,20 +94,26 @@ end tell
 EOF
 }
 
-# Count AXTextField (+ AXSecureTextField) elements inside the WebView.
-# Returns "0" if window/scroll area/web area not present yet.
+# Count AXTextField (+ AXSecureTextField) anywhere in the SimplySign window.
+# Walks `entire contents` so the count is robust to changes in the parent
+# hierarchy (scroll area, group wrappers, etc. that SimplySign may add).
 count_login_fields() {
     osascript << 'EOF' 2>/dev/null
 tell application "System Events"
     tell process "SimplySign Desktop"
         try
             tell window "SimplySign Desktop"
-                tell scroll area 1
-                    set wa to first UI element whose role is "AXWebArea"
-                    set tf to every UI element of wa whose role is "AXTextField"
-                    set sf to every UI element of wa whose role is "AXSecureTextField"
-                    return ((count of tf) + (count of sf)) as text
-                end tell
+                set n to 0
+                set elems to entire contents
+                repeat with e in elems
+                    try
+                        set r to role of e
+                        if r is "AXTextField" or r is "AXSecureTextField" then
+                            set n to n + 1
+                        end if
+                    end try
+                end repeat
+                return n as text
             end tell
         on error
             return "0"
@@ -186,37 +192,65 @@ tell application "System Events"
         set frontmost to true
         delay 0.5
         tell window "SimplySign Desktop"
-            tell scroll area 1
-                set wa to first UI element whose role is "AXWebArea"
-                set tfList to every UI element of wa whose role is "AXTextField"
-                set sfList to every UI element of wa whose role is "AXSecureTextField"
-                set allFields to tfList & sfList
-                if (count of allFields) is 0 then
-                    return "error:no_fields"
-                end if
-                -- TOTP is always the last input on the form, regardless of
-                -- whether SimplySign currently asks for email + token (2
-                -- fields) or token-only (1 field, when the email was saved
-                -- from a prior session).
-                set tokenField to item -1 of allFields
+            -- Walk entire contents so the field/button discovery is
+            -- robust to SimplySign reshaping the parent hierarchy
+            -- (scroll area, intermediate groups, etc.).
+            set allFields to {}
+            set allButtons to {}
+            set elems to entire contents
+            repeat with e in elems
+                try
+                    set r to role of e
+                    if r is "AXTextField" or r is "AXSecureTextField" then
+                        set end of allFields to e
+                    else if r is "AXButton" then
+                        set end of allButtons to e
+                    end if
+                end try
+            end repeat
+            if (count of allFields) is 0 then
+                return "error:no_fields"
+            end if
+            -- TOTP is always the last input on the form: works for
+            -- 2-field (email + token) and 1-field (token-only when
+            -- email was remembered from prior session) flows.
+            set tokenField to item -1 of allFields
+            try
                 set focused of tokenField to true
-                delay 0.5
+            end try
+            delay 0.5
+            try
                 perform action "AXPress" of tokenField
-                delay 0.5
-                keystroke "a" using command down
-                delay 0.3
-                key code 51
-                delay 0.3
-                keystroke "${code}"
-                delay 2.0
-                set btns to every UI element of wa whose role is "AXButton"
-                if (count of btns) > 0 then
-                    perform action "AXPress" of item 1 of btns
-                    return "ok"
-                else
-                    return "error:no_button"
+            end try
+            delay 0.5
+            keystroke "a" using command down
+            delay 0.3
+            key code 51
+            delay 0.3
+            keystroke "${code}"
+            delay 2.0
+            -- Find the form's Login button. SimplySign WebView buttons
+            -- have description = missing value or "button"; window
+            -- chrome buttons have "close button" / "zoom button" /
+            -- "minimize button". Exclude chrome, take the first
+            -- remaining button — that's the form's primary action.
+            set loginBtn to missing value
+            repeat with b in allButtons
+                set d to ""
+                try
+                    set d to description of b
+                end try
+                if d is not "close button" and d is not "zoom button" and d is not "minimize button" then
+                    set loginBtn to b
+                    exit repeat
                 end if
-            end tell
+            end repeat
+            if loginBtn is not missing value then
+                perform action "AXPress" of loginBtn
+                return "ok"
+            else
+                return "error:no_button"
+            end if
         end tell
     end tell
 end tell
@@ -289,18 +323,33 @@ EOF
     # count instead.
     echo "Waiting for WebView form fields..."
     loaded=false
-    for i in $(seq 1 20); do
+    for i in $(seq 1 30); do
         sleep 1
         n=$(count_login_fields)
         if [ "$n" -ge 1 ] 2>/dev/null; then
             loaded=true
-            echo "WebView form ready ($n field(s) detected)."
+            echo "WebView form ready ($n field(s) detected after ${i}s)."
             break
         fi
     done
 
     if [ "$loaded" = "false" ]; then
-        echo "WebView didn't expose any form fields after 20s. Retrying..."
+        echo "WebView didn't expose any form fields after 30s."
+        echo "----- diagnostic: window list -----"
+        osascript -e 'tell application "System Events" to tell process "SimplySign Desktop" to return name of every window' 2>&1 || true
+        echo "----- diagnostic: visible static text -----"
+        get_window_text 2>&1 || true
+        echo "----- diagnostic: UI tree (role | description | value) -----"
+        dump_ui_tree 2>&1 || true
+        echo "----- diagnostic: screenshot -----"
+        SHOT_PATH="${RUNNER_TEMP:-/tmp}/simplisign-attempt-${attempt}.png"
+        if screencapture -x "$SHOT_PATH" 2>&1; then
+            echo "screenshot saved: $SHOT_PATH ($(stat -f%z "$SHOT_PATH" 2>/dev/null) bytes)"
+        else
+            echo "screencapture failed"
+        fi
+        echo "----- end diagnostics -----"
+        echo "Retrying..."
         continue
     fi
 
