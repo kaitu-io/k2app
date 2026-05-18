@@ -20,23 +20,47 @@ done
 
 VERSION=$(node -p "require('./package.json').version")
 
-# Derive iOS-compatible version numbers.
-# App Store Connect requires MARKETING_VERSION to be pure X.Y.Z (no pre-release suffix).
-# CURRENT_PROJECT_VERSION is a monotonically increasing integer build number.
-# Scheme: major*10000 + minor*100 + patch for release, + beta_num for pre-release.
-# e.g. 0.4.0 → 400, 0.4.0-beta.2 → 402, 1.2.3 → 10203, 1.2.3-beta.5 → 10208
-MARKETING_VERSION="${VERSION%%-*}"  # strip everything after first hyphen
-# iOS App Store: strip leading "0." — previous app version was 3.0.1,
-# so 0.x.y would be rejected as a downgrade. 0.4.0 → 4.0, 0.5.1 → 5.1.
-if [[ "$MARKETING_VERSION" == 0.* ]]; then
-  MARKETING_VERSION="${MARKETING_VERSION#0.}"
-fi
+# Derive iOS-compatible MARKETING_VERSION + CURRENT_PROJECT_VERSION.
+#
+# Marketing version: predecessor "ANC" shipped at 3.0.1; current Kaitu series
+# started on App Store at 4.0. Internal 0.x.y is rewritten to user-visible 4.x.y
+# (0.4.4 → 4.4.4, 0.5.1 → 4.5.1) so Apple's downgrade check sees a higher version
+# than the legacy 3.x.
+#
+# Bundle version layout (decimal):
+#   400000 + MINOR*10000 + PATCH*100 + SLOT
+#   SLOT = beta_num (1..98) for `-beta.N` pre-release, or 99 for final release.
+# Guarantees beta.1 < beta.2 < … < release < next.beta.1 monotonically across
+# minor/patch bumps, and stays above the 4xx range already burned on TestFlight
+# (ASC was at 406 when we switched schemes — see 2026-05-18 incident).
+#
+# Constraints (script aborts if violated — forces rework when we outgrow them):
+#   V_MAJOR == 0, MINOR ∈ [0, 99], PATCH ∈ [0, 99], beta_num ∈ [1, 98].
 IFS='.' read -r V_MAJOR V_MINOR V_PATCH <<< "${VERSION%%-*}"
-BUILD_NUMBER=$(( V_MAJOR * 10000 + V_MINOR * 100 + V_PATCH ))
+if [[ "$V_MAJOR" != "0" ]]; then
+  echo "::error::Build-number scheme only supports 0.x.y (got $VERSION)." >&2
+  echo "When bumping past 0.x.y, redesign scripts/build-mobile-ios.sh:" \
+       "the 0→4 marketing remap and the 400000 bundle base both need rework." >&2
+  exit 1
+fi
+if (( V_MINOR > 99 || V_PATCH > 99 )); then
+  echo "::error::MINOR/PATCH > 99 not supported by current scheme (got $VERSION)." >&2
+  exit 1
+fi
+
+MARKETING_VERSION="4.${V_MINOR}.${V_PATCH}"
+
+SLOT=99
 if [[ "$VERSION" == *"-beta."* ]]; then
   BETA_NUM="${VERSION##*-beta.}"
-  BUILD_NUMBER=$(( BUILD_NUMBER + BETA_NUM ))
+  if [[ ! "$BETA_NUM" =~ ^[0-9]+$ ]] || (( BETA_NUM < 1 || BETA_NUM > 98 )); then
+    echo "::error::beta number must be in [1, 98], got '$BETA_NUM' (from $VERSION)." >&2
+    exit 1
+  fi
+  SLOT=$BETA_NUM
 fi
+
+BUILD_NUMBER=$(( 400000 + V_MINOR * 10000 + V_PATCH * 100 + SLOT ))
 
 echo "=== Building Kaitu $VERSION for iOS ==="
 echo "  MARKETING_VERSION: $MARKETING_VERSION"
