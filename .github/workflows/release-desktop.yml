@@ -2,12 +2,9 @@ name: Release Desktop
 
 on:
   push:
-    tags:
-      - 'v*'
-      - '!v*-ios'
-      - '!v*-android'
-      - '!v*-k2s'
-      - '!v*-k2r'
+    # Listen to all v* tags; job-level `if` decides whether to actually run.
+    # No blacklist: new platform/suffix added elsewhere never breaks this file.
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -22,8 +19,20 @@ env:
 
 jobs:
   # --- Test gates: 3 parallel jobs, all must pass before release ---
+  #
+  # Each job is gated by tag suffix: only runs for bare v* (no suffix → release
+  # everything) or for one of our owned desktop platforms (-windows, -macos,
+  # -linux, -desktop). Tags belonging to other workflows (-ios, -android,
+  # -k2s, -k2r, future -foo) start this workflow but skip all jobs.
 
   test-webapp:
+    if: >-
+      github.event_name != 'push' ||
+      !contains(github.ref_name, '-') ||
+      endsWith(github.ref_name, '-windows') ||
+      endsWith(github.ref_name, '-macos') ||
+      endsWith(github.ref_name, '-linux') ||
+      endsWith(github.ref_name, '-desktop')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -47,6 +56,13 @@ jobs:
         working-directory: webapp
 
   test-cargo:
+    if: >-
+      github.event_name != 'push' ||
+      !contains(github.ref_name, '-') ||
+      endsWith(github.ref_name, '-windows') ||
+      endsWith(github.ref_name, '-macos') ||
+      endsWith(github.ref_name, '-linux') ||
+      endsWith(github.ref_name, '-desktop')
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -82,6 +98,13 @@ jobs:
         working-directory: desktop/src-tauri
 
   test-go:
+    if: >-
+      github.event_name != 'push' ||
+      !contains(github.ref_name, '-') ||
+      endsWith(github.ref_name, '-windows') ||
+      endsWith(github.ref_name, '-macos') ||
+      endsWith(github.ref_name, '-linux') ||
+      endsWith(github.ref_name, '-desktop')
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -128,6 +151,14 @@ jobs:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
   release:
+    # Gate by tag suffix: bare v* runs every matrix entry; -desktop runs all
+    # three; -<platform> runs only that one. `platform_tag` (lowercase suffix
+    # token) is matched against the tag's trailing segment via format().
+    if: >-
+      github.event_name != 'push' ||
+      !contains(github.ref_name, '-') ||
+      endsWith(github.ref_name, '-desktop') ||
+      endsWith(github.ref_name, format('-{0}', matrix.platform_tag))
     needs: [test-webapp, test-cargo, test-go]
     strategy:
       fail-fast: false
@@ -136,9 +167,11 @@ jobs:
           - runner: macos-latest
             target: universal-apple-darwin
             platform: macOS
+            platform_tag: macos
           - runner: [self-hosted, macOS, ARM64]
             target: x86_64-pc-windows-msvc
             platform: Windows
+            platform_tag: windows
           # Linux ships a single Go binary with the React webapp embedded
           # (no Tauri). Cross-compile from macOS via CGO_ENABLED=0 — much
           # faster than Linux runners because no apt, no webkit2gtk, no
@@ -146,6 +179,7 @@ jobs:
           - runner: macos-latest
             target: linux-amd64
             platform: Linux
+            platform_tag: linux
 
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -244,10 +278,13 @@ jobs:
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          # Strip only the suffixes this workflow owns. The job-level `if`
+          # already guarantees we only run on bare / -windows / -macos /
+          # -linux / -desktop tags.
           TAG_VERSION="${TAG_VERSION%-desktop}"
-          TAG_VERSION="${TAG_VERSION%-ios}"
-          TAG_VERSION="${TAG_VERSION%-android}"
-          TAG_VERSION="${TAG_VERSION%-k2s}"
+          TAG_VERSION="${TAG_VERSION%-windows}"
+          TAG_VERSION="${TAG_VERSION%-macos}"
+          TAG_VERSION="${TAG_VERSION%-linux}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) does not match package.json ($PKG_VERSION)"
