@@ -18,21 +18,63 @@ env:
   K2_BUILD_LOG_LEVEL: info
 
 jobs:
-  # --- Test gates: 3 parallel jobs, all must pass before release ---
+  # --- Plan: decide which desktop platforms (if any) this run targets ---
   #
-  # Each job is gated by tag suffix: only runs for bare v* (no suffix → release
-  # everything) or for one of our owned desktop platforms (-windows, -macos,
-  # -linux, -desktop). Tags belonging to other workflows (-ios, -android,
-  # -k2s, -k2r, future -foo) start this workflow but skip all jobs.
+  # Single source of truth for "does this tag belong to me, and if so, which
+  # matrix entries should I build". Bare v* (no suffix) → all three; -desktop
+  # → all three; -windows/-macos/-linux → just that one; anything else → none
+  # (workflow-skipped, no false-positive failure).
+  #
+  # The dynamic matrix output is consumed verbatim by the `release` job. We
+  # use dynamic matrix instead of a job-level `if: ... matrix.X ...` because
+  # GHA does NOT expose the `matrix` context to job-level `if` expressions.
+
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+      should_run: ${{ steps.set.outputs.should_run }}
+    steps:
+      - id: set
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -eu
+          # Each desktop platform entry as JSON. Keep in sync with the
+          # release-job-step expectations (matrix.runner / target / platform).
+          MAC='{"runner":"macos-latest","target":"universal-apple-darwin","platform":"macOS"}'
+          WIN='{"runner":["self-hosted","macOS","ARM64"],"target":"x86_64-pc-windows-msvc","platform":"Windows"}'
+          LIN='{"runner":"macos-latest","target":"linux-amd64","platform":"Linux"}'
+
+          INCLUDE=()
+          if [[ "$EVENT_NAME" != "push" ]] || [[ "$TAG_NAME" != *-* ]] || [[ "$TAG_NAME" == *-desktop ]]; then
+            INCLUDE=("$MAC" "$WIN" "$LIN")
+          elif [[ "$TAG_NAME" == *-macos ]]; then
+            INCLUDE=("$MAC")
+          elif [[ "$TAG_NAME" == *-windows ]]; then
+            INCLUDE=("$WIN")
+          elif [[ "$TAG_NAME" == *-linux ]]; then
+            INCLUDE=("$LIN")
+          fi
+
+          if [[ ${#INCLUDE[@]} -eq 0 ]]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            echo "::notice::Tag $TAG_NAME is not a desktop release tag — skipping"
+          else
+            JOINED=$(IFS=, ; echo "${INCLUDE[*]}")
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[$JOINED]}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # --- Test gates: 3 parallel jobs, all must pass before release ---
 
   test-webapp:
-    if: >-
-      github.event_name != 'push' ||
-      !contains(github.ref_name, '-') ||
-      endsWith(github.ref_name, '-windows') ||
-      endsWith(github.ref_name, '-macos') ||
-      endsWith(github.ref_name, '-linux') ||
-      endsWith(github.ref_name, '-desktop')
+    needs: plan
+    if: needs.plan.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -56,13 +98,8 @@ jobs:
         working-directory: webapp
 
   test-cargo:
-    if: >-
-      github.event_name != 'push' ||
-      !contains(github.ref_name, '-') ||
-      endsWith(github.ref_name, '-windows') ||
-      endsWith(github.ref_name, '-macos') ||
-      endsWith(github.ref_name, '-linux') ||
-      endsWith(github.ref_name, '-desktop')
+    needs: plan
+    if: needs.plan.outputs.should_run == 'true'
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -98,13 +135,8 @@ jobs:
         working-directory: desktop/src-tauri
 
   test-go:
-    if: >-
-      github.event_name != 'push' ||
-      !contains(github.ref_name, '-') ||
-      endsWith(github.ref_name, '-windows') ||
-      endsWith(github.ref_name, '-macos') ||
-      endsWith(github.ref_name, '-linux') ||
-      endsWith(github.ref_name, '-desktop')
+    needs: plan
+    if: needs.plan.outputs.should_run == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -151,35 +183,18 @@ jobs:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
   release:
-    # Gate by tag suffix: bare v* runs every matrix entry; -desktop runs all
-    # three; -<platform> runs only that one. `platform_tag` (lowercase suffix
-    # token) is matched against the tag's trailing segment via format().
-    if: >-
-      github.event_name != 'push' ||
-      !contains(github.ref_name, '-') ||
-      endsWith(github.ref_name, '-desktop') ||
-      endsWith(github.ref_name, format('-{0}', matrix.platform_tag))
-    needs: [test-webapp, test-cargo, test-go]
+    # Matrix is produced by `plan` — it already contains only the platforms
+    # this tag targets. No further filtering needed here.
+    #
+    # Linux ships a single Go binary with the React webapp embedded (no
+    # Tauri). Cross-compile from macOS via CGO_ENABLED=0 — much faster than
+    # Linux runners because no apt, no webkit2gtk, no Rust. See
+    # packaging/linux/ for the install.sh + systemd unit.
+    needs: [plan, test-webapp, test-cargo, test-go]
+    if: needs.plan.outputs.should_run == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-latest
-            target: universal-apple-darwin
-            platform: macOS
-            platform_tag: macos
-          - runner: [self-hosted, macOS, ARM64]
-            target: x86_64-pc-windows-msvc
-            platform: Windows
-            platform_tag: windows
-          # Linux ships a single Go binary with the React webapp embedded
-          # (no Tauri). Cross-compile from macOS via CGO_ENABLED=0 — much
-          # faster than Linux runners because no apt, no webkit2gtk, no
-          # Rust. See packaging/linux/ for the install.sh + systemd unit.
-          - runner: macos-latest
-            target: linux-amd64
-            platform: Linux
-            platform_tag: linux
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
 
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
