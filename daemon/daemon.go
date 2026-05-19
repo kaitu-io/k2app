@@ -46,6 +46,19 @@ type Daemon struct {
 	abortUp atomic.Bool      // doDown sets before opMu.Lock; doUp checks after Start
 	mu      deadlock.RWMutex // protects field access
 
+	// inDoUpTeardown counts doUp invocations currently in their teardown
+	// window. While > 0, OnStatus(disconnected) with Error==nil is dropped —
+	// it's the engine.Stop teardown noise from swapping engines, not a real
+	// disconnect. Real failures (Error != nil) and all non-disconnected states
+	// pass through unconditionally.
+	//
+	// A counter (not a bool) is required because concurrent doUps would
+	// otherwise stomp each other's flag on defer — doUp #1's deferred clear
+	// would zero the flag while doUp #2 still needs it set across its own
+	// closeTunnel. With Add(+1)/Add(-1) pairing, each doUp manages its own
+	// contribution and the filter stays active iff any doUp is mid-teardown.
+	inDoUpTeardown atomic.Int32
+
 	// lastStatus is updated by engine's OnStatus callback — single source of truth.
 	lastStatus engine.Status
 
@@ -298,13 +311,50 @@ func (d *Daemon) closeTunnel() {
 // Engine is created with EventHandler(d) set BEFORE Start, so the daemon
 // receives all state transitions (connecting, connected, disconnected+error).
 func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
+	// Pre-fire "connecting" + arm the teardown filter BEFORE opMu.Lock so the
+	// opMu wait window — which can be 5–9s on Windows while a previous
+	// doDown's engine.Stop blocks on wintun teardown — also looks like
+	// monotonic "connecting" to external consumers. Without this, consumers
+	// polling during the wait would see the previous doDown's lingering
+	// "disconnected" status and the webapp vpn-machine would flicker through
+	// idle/reconnecting.
+	//
+	// The filter (see OnStatus) drops clean OnStatus(disconnected) while
+	// inDoUpTeardown is true. Real failures (Error != nil) always propagate.
+	// We clear the flag IMMEDIATELY after closeTunnel returns so the rest of
+	// doUp (including the post-start abort path that calls eng.Stop) is
+	// unaffected — those engine.Stop events are legitimate user-visible
+	// signals, not teardown noise. `defer Store(false)` is the safety net
+	// for any error path that returns before reaching closeTunnel.
+	pre := engine.Status{State: engine.StateConnecting}
+	d.mu.Lock()
+	d.lastStatus = pre
+	d.mu.Unlock()
+	d.broadcastStatus(pre)
+
+	// Counter semantics, not a bool: under concurrent doUp, a deferred
+	// Store(false) from one call would otherwise zero the flag while a
+	// peer's closeTunnel still needs it set. Add/armed guards against that.
+	d.inDoUpTeardown.Add(1)
+	armed := true
+	defer func() {
+		if armed {
+			d.inDoUpTeardown.Add(-1)
+		}
+	}()
+
 	d.opMu.Lock()
 	defer d.opMu.Unlock()
 	d.abortUp.Store(false) // reset on new up
 	slog.Info("daemon: doUp", "mode", cfg.Mode, "pid", pid)
 
 	// Unconditionally tear down any existing tunnel (idempotent).
+	// OnStatus(disconnected) from this engine.Stop is the teardown noise we
+	// suppress. After closeTunnel returns, decrement the counter so the rest
+	// of doUp behaves normally — including the post-start abort eng.Stop below.
 	d.closeTunnel()
+	d.inDoUpTeardown.Add(-1)
+	armed = false
 
 	d.mu.Lock()
 	d.lastConfig = cfg
@@ -590,7 +640,18 @@ func (d *Daemon) statusInfo() map[string]any {
 }
 
 // OnStatus implements engine.EventHandler — updates lastStatus and broadcasts to SSE clients.
+//
+// Teardown noise filter: during a doUp closeTunnel window the previous engine
+// fires OnStatus(disconnected) as part of being swapped out. That intermediate
+// disconnected state is an implementation artifact, not a real disconnect, and
+// must not leak to external consumers (webapp state machine, SSE clients).
+// The filter is narrow: only clean disconnected (Error == nil) while any doUp
+// is mid-teardown (counter > 0) is dropped — real failures (Error != nil)
+// always propagate.
 func (d *Daemon) OnStatus(status engine.Status) {
+	if d.inDoUpTeardown.Load() > 0 && status.State == engine.StateDisconnected && status.Error == nil {
+		return
+	}
 	d.mu.Lock()
 	d.lastStatus = status
 	d.mu.Unlock()

@@ -113,14 +113,19 @@ Request/Response: `daemon.Request{Action, Params}` / `daemon.Response{Code, Mess
 **doUp(cfg *ClientConfig, pid int)**:
 1. `opMu.Lock()` — serialize with other doUp/doDown
 2. `abortUp.Store(false)` — reset on new up
-3. `closeTunnel()` — unconditional teardown (engine.Stop fires OnStatus(disconnected))
-4. Network monitor + directdial setup
-5. `engineConfigFromClientConfig(cfg)` — assemble `engine.Config` with platform fields
-6. `eng := engine.New()` + `eng.SetEventHandler(d)` — daemon receives events from this point
-7. **Early abort check**: if `abortUp.Load()` → return error (doDown arrived during setup)
-8. `d.StartFunc(eng, cfg)` — engine fires OnStatus(connecting), then OnStatus(connected) or error
-9. **Post-start abort check**: if `abortUp.Load()` → `eng.Stop()` + return error (doDown arrived during Start)
-10. Install engine, start PID monitor, persist state for auto-reconnect
+3. **Pre-fire `OnStatus(connecting)` + broadcast** — gives external consumers a monotonic connecting → connected/error view across the whole doUp, even though closeTunnel internally fires disconnected
+4. **`inDoUpTeardown.Store(true)` → `closeTunnel()` → `inDoUpTeardown.Store(false)`** — the OnStatus filter (see below) drops the engine.Stop's `OnStatus(disconnected, Error=nil)` so SSE/polling consumers never see the teardown noise. Real failures (Error != nil) still propagate.
+5. Network monitor + directdial setup
+6. `engineConfigFromClientConfig(cfg)` — assemble `engine.Config` with platform fields
+7. `eng := engine.New()` + `eng.SetEventHandler(d)` — daemon receives events from this point
+8. **Early abort check**: if `abortUp.Load()` → return error (doDown arrived during setup)
+9. `d.StartFunc(eng, cfg)` — engine fires OnStatus(connecting), then OnStatus(connected) or error
+10. **Post-start abort check**: if `abortUp.Load()` → `eng.Stop()` + return error (doDown arrived during Start)
+11. Install engine, start PID monitor, persist state for auto-reconnect
+
+**OnStatus teardown filter** (added 2026-05-19): `OnStatus(disconnected)` with `Error == nil` is dropped while `inDoUpTeardown > 0`. This narrowly suppresses the engine.Stop noise emitted from closeTunnel during an engine swap; classified failures (Error != nil) are never suppressed. Without this filter, webapp consumers observe `connected → disconnected → connecting → connected` and the vpn-machine state briefly transitions through `idle` and `reconnecting`, causing visible UI flicker ("重连中") on every non-first connect.
+
+`inDoUpTeardown` is an `atomic.Int32` counter, not a bool: under concurrent doUps a single-bool flag would be stomped by one call's deferred `Store(false)` while a peer still needs it set across its own closeTunnel. The counter is incremented before `opMu.Lock` (covers the wait window where an in-flight `doDown`'s closeTunnel might fire `OnStatus(disconnected)`) and decremented immediately after `closeTunnel` returns (so the post-start abort path's `eng.Stop` propagates normally). A deferred decrement guarded by `armed = true` is the safety net for early returns / panics. See `TestDoUp_SuppressesTeardownDisconnectedExternally` and `TestTeardownFilter_CounterSemantics` in `daemon_test.go`.
 
 Error path: engine's fail() fires OnStatus(disconnected+error) → daemon's lastStatus updated automatically.
 Abort path: both Start and Stop happen within the same opMu critical section — route atomicity guaranteed.
