@@ -39,8 +39,7 @@ jobs:
       - id: set
         shell: bash
         env:
-          TAG_NAME: ${{ github.ref_name }}
-          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -eu
           # Each desktop platform entry as JSON. Keep in sync with the
@@ -49,21 +48,24 @@ jobs:
           WIN='{"runner":["self-hosted","macOS","ARM64"],"target":"x86_64-pc-windows-msvc","platform":"Windows"}'
           LIN='{"runner":"macos-latest","target":"linux-amd64","platform":"Linux"}'
 
-          INCLUDE=()
-          if [[ "$EVENT_NAME" != "push" ]] || [[ "$TAG_NAME" != *-* ]] || [[ "$TAG_NAME" == *-desktop ]]; then
-            INCLUDE=("$MAC" "$WIN" "$LIN")
-          elif [[ "$TAG_NAME" == *-macos ]]; then
-            INCLUDE=("$MAC")
-          elif [[ "$TAG_NAME" == *-windows ]]; then
-            INCLUDE=("$WIN")
-          elif [[ "$TAG_NAME" == *-linux ]]; then
-            INCLUDE=("$LIN")
-          fi
+          # Decision is driven by the ref suffix alone — push and
+          # workflow_dispatch behave identically so that
+          # `gh workflow run --ref v0.4.4-windows` honors the suffix.
+          # Unknown suffix → empty (workflow run skips) so unrelated tags
+          # like v*-foo never spawn matrix entries.
+          case "$REF_NAME" in
+            *-windows)  INCLUDE=("$WIN") ;;
+            *-macos)    INCLUDE=("$MAC") ;;
+            *-linux)    INCLUDE=("$LIN") ;;
+            *-desktop)  INCLUDE=("$MAC" "$WIN" "$LIN") ;;
+            *-*)        INCLUDE=() ;;
+            *)          INCLUDE=("$MAC" "$WIN" "$LIN") ;;
+          esac
 
           if [[ ${#INCLUDE[@]} -eq 0 ]]; then
             echo "should_run=false" >> "$GITHUB_OUTPUT"
             echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
-            echo "::notice::Tag $TAG_NAME is not a desktop release tag — skipping"
+            echo "::notice::Ref $REF_NAME is not a desktop release ref — skipping"
           else
             JOINED=$(IFS=, ; echo "${INCLUDE[*]}")
             echo "should_run=true" >> "$GITHUB_OUTPUT"
