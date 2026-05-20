@@ -2,7 +2,10 @@
 
 package daemon
 
-import "golang.org/x/sys/windows"
+import (
+	"github.com/kaitu-io/k2/provider"
+	"golang.org/x/sys/windows"
+)
 
 // shouldMonitorPID reports whether PID monitoring is supported on this platform.
 // Windows: enabled — uses OpenProcess (Signal(0) is not supported on Windows).
@@ -18,4 +21,10 @@ func processExists(pid int) bool {
 	}
 	windows.CloseHandle(h)
 	return true
+}
+
+// newProcessSearcher returns a Windows ProcessSearcher backed by
+// GetExtendedTcpTable / GetExtendedUdpTable.
+func newProcessSearcher() provider.ProcessSearcher {
+	return provider.NewWindowsProcessSearcher()
 }

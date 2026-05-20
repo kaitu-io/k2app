@@ -103,6 +103,7 @@ Reserved event names:
 | `DIAG: rule-bundle-stale` | WARN | engine.Start fell through to stale .k2b after fresh download failed | err, bundleCount, cacheDir |
 | `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
 | `DIAG: pipe-watchdog` | WARN | pipe() watchdog force-closed a stuck half-closed pipe | firstExitDir, graceMs |
+| `DIAG: process-lookup-slow` | INFO | latency > 100ms | platform, network, latencyMs |
 
 ### Layer 3 Rules — Full Trace
 
@@ -189,6 +190,9 @@ Serialization locks (never nested inside any state lock above):
 rule.Engine.mu (state, RWMutex, standalone — no nesting with engine locks)
 
 config.Subscription.mu (state, standalone — no nesting with engine/daemon locks)
+
+provider.processCache.mu (state, standalone — no nesting with engine/daemon locks)
+provider.LinuxProcessSearcher.indexMu (state, RWMutex, standalone — no nesting with engine/daemon locks)
 
 gateway standalone locks (no nesting with engine locks):
   Gateway.opMu (serialization) → Gateway.mu (state) → Gateway.sseMu (state)
