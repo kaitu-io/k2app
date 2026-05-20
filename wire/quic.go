@@ -2054,6 +2054,13 @@ func (c *quicStreamServerUDPConn) deliver(payload []byte) {
 	select {
 	case c.readCh <- payload:
 	case <-c.done:
+	default:
+		// Drop: handler exited or too slow. Protocol-correct for unreliable UDP.
+		// Without default, a full readCh blocks handleUDPStream main loop forever
+		// — freezing flow control and triggering client-side writeMu deadlock
+		// FATAL. Mirrors serverUDPConn.deliver datagram-path protection.
+		slog.Debug("DIAG: udp-deliver-drop", "transport", "quic-stream",
+			"sessionID", c.sessionID, "addr", c.addr, "len", len(payload))
 	}
 }
 

@@ -1162,6 +1162,14 @@ func (c *smuxServerUDPConn) deliver(payload []byte) {
 	select {
 	case c.readCh <- payload:
 	case <-c.done:
+	default:
+		// Drop: handler exited or too slow. Protocol-correct for unreliable UDP.
+		// Without default, a full readCh blocks handleUDPStream main loop forever
+		// — freezing smux peer-window flow control and triggering client-side
+		// writeMu deadlock FATAL (desktop) or silent UDP freeze (mobile).
+		// Mirrors serverUDPConn.deliver (quic.go) datagram-path protection.
+		slog.Debug("DIAG: udp-deliver-drop", "transport", "tcpws",
+			"sessionID", c.sessionID, "addr", c.addr, "len", len(payload))
 	}
 }
 
