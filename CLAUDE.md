@@ -104,6 +104,8 @@ Reserved event names:
 | `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
 | `DIAG: pipe-watchdog` | WARN | pipe() watchdog force-closed a stuck half-closed pipe | firstExitDir, graceMs |
 | `DIAG: process-lookup-slow` | INFO | latency > 100ms | platform, network, latencyMs |
+| `DIAG: udp-deliver-drop` | DEBUG | server session readCh full — handler stuck/slow | transport, sessionID, addr, len |
+| `DIAG: stream-killed-on-write-fail` | WARN | per-Write deadline (5s) exceeded or write error on UDP relay mux | transport, side, sessionID, len, writeMs, err |
 
 ### Layer 3 Rules — Full Trace
 
