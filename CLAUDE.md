@@ -103,6 +103,7 @@ Reserved event names:
 | `DIAG: rule-bundle-stale` | WARN | engine.Start fell through to stale .k2b after fresh download failed | err, bundleCount, cacheDir |
 | `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
 | `DIAG: pipe-watchdog` | WARN | pipe() watchdog force-closed a stuck half-closed pipe | firstExitDir, graceMs |
+| `DIAG: stream-killed-on-write-fail` | WARN | per-Write deadline (5s) exceeded or write error on UDP relay mux | transport, side, sessionID, len, writeMs, err |
 
 ### Layer 3 Rules — Full Trace
 

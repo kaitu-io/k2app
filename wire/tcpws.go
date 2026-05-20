@@ -837,10 +837,39 @@ func (s *TCPWSServer) Close() error {
 // Client-side shared UDP stream mux
 // ============================================================================
 
+// smuxUDPMux is the client-side multiplexer over a single smux.Stream that
+// carries all UDP relay frames for a TCPWSClient. There is exactly one mux
+// per TCPWSClient instance — all UDP sessions share one mux — so a stall on
+// writeMu freezes the entire UDP data plane for that client.
+//
+// Design (mirror of serverSmuxWriter for stream-level isolation; see
+// commit 17e06b1 for jp01 May 2026 incident and rationale):
+//
+//   1. writeMu is sync.Mutex (NOT deadlock.Mutex). It is a serialization
+//      lock that legitimately holds across smux.Stream.Write, which may
+//      block under peer-window flow control when the server's
+//      handleUDPStream main loop stalls (server-side fix in deliver()
+//      mitigates the most common cause but does not eliminate it).
+//      deadlock.Mutex's 30/60s watchdog would mis-detect this as a
+//      deadlock and trigger os.Exit(2) on desktop production builds (which
+//      do NOT carry -tags=deadlock_disable) — the v0.4.4 daemon-FATAL
+//      root cause this fix exists for.
+//
+//   2. Each Write has a deadline (streamWriteDeadline = 5s). If the write
+//      does not complete in that window, the stream is treated as dead:
+//      smux.Stream is Close()d, future writeFrame calls fast-fail via the
+//      dead flag without queueing on the mutex.
+//
+//   3. Failure stays at mux level. Stream.Close cascades through smux:
+//      ReadSmuxUDPFrame returns ErrClosedPipe → readLoop exits and closes
+//      m.done → smuxUDPConn.ReadFrom returns net.ErrClosed. Consumers
+//      naturally unwind; TCPWSClient rebuilds a fresh mux on next DialUDP.
 type smuxUDPMux struct {
 	stream      *smux.Stream
 	br          *bufio.Reader
-	writeMu     deadlock.Mutex
+	writeMu     sync.Mutex // serialization, may hold across I/O — see (1)
+	streamOnce  sync.Once  // guards stream.Close (called from close() + writeFrame failure)
+	dead        atomic.Bool
 	mu          deadlock.Mutex
 	sessions    map[uint32]chan *UDPFrame
 	sessionDone map[uint32]chan struct{} // closed by reaper to notify smuxUDPConn
@@ -899,9 +928,57 @@ func (m *smuxUDPMux) readLoop() {
 }
 
 func (m *smuxUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) error {
+	// Fast-path bypass: once dead, do not queue on the mutex. This drains any
+	// backlog of waiting writers immediately so cleanup propagates fast.
+	if m.dead.Load() {
+		return errStreamDead
+	}
+
 	m.writeMu.Lock()
-	defer m.writeMu.Unlock()
-	return WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
+	// Re-check after acquiring the lock: a peer goroutine that just timed
+	// out may have marked the mux dead while we were waiting on Lock.
+	if m.dead.Load() {
+		m.writeMu.Unlock()
+		return errStreamDead
+	}
+
+	_ = m.stream.SetWriteDeadline(time.Now().Add(streamWriteDeadline))
+	start := time.Now()
+	err := WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
+	if err != nil {
+		// Store dead under writeMu so any subsequent writer that acquires
+		// the lock sees dead=true immediately and fast-fails — no head-of-
+		// line queue keeps growing while we tear down.
+		m.dead.Store(true)
+	}
+	m.writeMu.Unlock()
+
+	if err != nil {
+		// Stream cleanup outside writeMu so we never call Close (which may
+		// touch smux internal locks) under our serialization lock.
+		slog.Warn("DIAG: stream-killed-on-write-fail",
+			"transport", "tcpws", "side", "client", "sessionID", sessionID,
+			"len", len(payload), "writeMs", time.Since(start).Milliseconds(), "err", err)
+		m.closeStreamOnce()
+	}
+	return err
+}
+
+// markDead transitions the mux to the dead state and closes the underlying
+// stream once. Safe to call from any goroutine; idempotent across concurrent
+// callers via streamOnce. Used by close() to pre-mark the mux so concurrent
+// writeFrame calls fast-fail without emitting a false-positive DIAG warning.
+func (m *smuxUDPMux) markDead() {
+	m.dead.Store(true)
+	m.closeStreamOnce()
+}
+
+func (m *smuxUDPMux) closeStreamOnce() {
+	m.streamOnce.Do(func() {
+		if m.stream != nil {
+			_ = m.stream.Close()
+		}
+	})
 }
 
 func (m *smuxUDPMux) register(sessionID uint32) (chan *UDPFrame, chan struct{}) {
@@ -968,8 +1045,10 @@ func (m *smuxUDPMux) reapOnce() {
 }
 
 func (m *smuxUDPMux) close() {
+	// markDead first so any concurrent writeFrame fast-fails without
+	// emitting a false-positive DIAG warning during graceful shutdown.
+	m.markDead()
 	m.closeDone()
-	m.stream.Close()
 }
 
 // ============================================================================
