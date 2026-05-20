@@ -72,3 +72,36 @@ func ComputeRecommendScore(inst *DataTunnelInstance) float64 {
 	}
 	return score
 }
+
+// overQuotaThreshold is the fraction of a node's monthly traffic budget at
+// which the node is hard-excluded from /api/tunnels and /api/subs responses
+// for non-admin users. The 5% buffer absorbs worker_cloud sync lag
+// (asynq cron, ~25 min unique lock) — by the time a snapshot says 95% the
+// real usage may already be 100%+ and AWS overage billing has begun.
+const overQuotaThreshold = 0.95
+
+// isTunnelOverQuota reports whether a CloudInstance has consumed enough of
+// its monthly traffic budget to be hidden from non-admin tunnel lists.
+//
+// nil instance / zero TrafficTotalBytes return false: we only filter nodes
+// with known finite quotas. This keeps non-cloud nodes (no CloudInstance row)
+// and unlimited/unconfigured instances visible.
+func isTunnelOverQuota(inst *CloudInstance) bool {
+	if inst == nil || inst.TrafficTotalBytes <= 0 {
+		return false
+	}
+	threshold := float64(inst.TrafficTotalBytes) * overQuotaThreshold
+	return float64(inst.TrafficUsedBytes) >= threshold
+}
+
+// shouldHideTunnelForUser is the single decision point used by /api/tunnels
+// and /api/subs to filter tunnels out of the response. Admins always see
+// every tunnel (debugging / over-quota investigation path); non-admins are
+// shielded from over-quota nodes so client weighted-pick never lands on an
+// AWS-overage-billing target.
+func shouldHideTunnelForUser(inst *CloudInstance, isAdmin bool) bool {
+	if isAdmin {
+		return false
+	}
+	return isTunnelOverQuota(inst)
+}

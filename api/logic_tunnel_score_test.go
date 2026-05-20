@@ -93,3 +93,93 @@ func TestComputeRecommendScore_ClampsOutOfRangeInputs(t *testing.T) {
 	assert.Equal(t, 0.0, ComputeRecommendScore(&DataTunnelInstance{TrafficRatio: 2.0, TimeRatio: 0.5}))
 	assert.Equal(t, 1.0, ComputeRecommendScore(&DataTunnelInstance{TrafficRatio: 0.0, TimeRatio: 2.0}))
 }
+
+func TestIsTunnelOverQuota_NilInstance(t *testing.T) {
+	// Non-cloud nodes have no quota information — never filter them out.
+	assert.False(t, isTunnelOverQuota(nil))
+}
+
+func TestIsTunnelOverQuota_ZeroTotal(t *testing.T) {
+	// TrafficTotalBytes == 0 means unlimited / unconfigured. Must not be
+	// treated as "over quota" (would hide every such node).
+	inst := &CloudInstance{TrafficUsedBytes: 999_000_000_000, TrafficTotalBytes: 0}
+	assert.False(t, isTunnelOverQuota(inst))
+}
+
+func TestIsTunnelOverQuota_HalfUsed(t *testing.T) {
+	// 50% used — well below the 95% threshold.
+	inst := &CloudInstance{
+		TrafficUsedBytes:  500 * 1024 * 1024 * 1024,
+		TrafficTotalBytes: 1024 * 1024 * 1024 * 1024,
+	}
+	assert.False(t, isTunnelOverQuota(inst))
+}
+
+func TestIsTunnelOverQuota_JustBelowThreshold(t *testing.T) {
+	// 94% used — under the 95% buffer threshold.
+	inst := &CloudInstance{
+		TrafficUsedBytes:  940 * 1024 * 1024 * 1024,
+		TrafficTotalBytes: 1000 * 1024 * 1024 * 1024,
+	}
+	assert.False(t, isTunnelOverQuota(inst))
+}
+
+func TestIsTunnelOverQuota_ExactlyAtThreshold(t *testing.T) {
+	// 95% used — at the threshold. Must trigger to keep the buffer
+	// meaningful (worker_cloud sync is cron-lagged, so 95% snapshot may
+	// already be 100%+ in reality).
+	inst := &CloudInstance{
+		TrafficUsedBytes:  950 * 1024 * 1024 * 1024,
+		TrafficTotalBytes: 1000 * 1024 * 1024 * 1024,
+	}
+	assert.True(t, isTunnelOverQuota(inst))
+}
+
+func TestIsTunnelOverQuota_Overused(t *testing.T) {
+	// Real au-1 numbers from 2026-05-19: 1513 GB used / 1024 GB quota.
+	// Every additional byte is overage billed by AWS.
+	inst := &CloudInstance{
+		TrafficUsedBytes:  1513 * 1024 * 1024 * 1024,
+		TrafficTotalBytes: 1024 * 1024 * 1024 * 1024,
+	}
+	assert.True(t, isTunnelOverQuota(inst))
+}
+
+func TestShouldHideTunnelForUser_NonAdminOverQuota(t *testing.T) {
+	// Non-admin user must not see an over-quota node.
+	overUsed := &CloudInstance{
+		TrafficUsedBytes:  1024 * 1024 * 1024 * 1024,
+		TrafficTotalBytes: 1024 * 1024 * 1024 * 1024,
+	}
+	assert.True(t, shouldHideTunnelForUser(overUsed, false))
+}
+
+func TestShouldHideTunnelForUser_NonAdminUnderQuota(t *testing.T) {
+	underUsed := &CloudInstance{
+		TrafficUsedBytes:  100 * 1024 * 1024 * 1024,
+		TrafficTotalBytes: 1024 * 1024 * 1024 * 1024,
+	}
+	assert.False(t, shouldHideTunnelForUser(underUsed, false))
+}
+
+func TestShouldHideTunnelForUser_NonAdminNonCloud(t *testing.T) {
+	// Non-cloud nodes (nil instance) are never hidden — no quota to enforce.
+	assert.False(t, shouldHideTunnelForUser(nil, false))
+}
+
+func TestShouldHideTunnelForUser_AdminOverQuota(t *testing.T) {
+	// Admin sees over-quota nodes (debugging path stays intact).
+	overUsed := &CloudInstance{
+		TrafficUsedBytes:  1513 * 1024 * 1024 * 1024,
+		TrafficTotalBytes: 1024 * 1024 * 1024 * 1024,
+	}
+	assert.False(t, shouldHideTunnelForUser(overUsed, true))
+}
+
+func TestShouldHideTunnelForUser_AdminUnderQuota(t *testing.T) {
+	underUsed := &CloudInstance{
+		TrafficUsedBytes:  100 * 1024 * 1024 * 1024,
+		TrafficTotalBytes: 1024 * 1024 * 1024 * 1024,
+	}
+	assert.False(t, shouldHideTunnelForUser(underUsed, true))
+}

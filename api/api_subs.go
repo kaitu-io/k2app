@@ -190,9 +190,25 @@ func api_subs(c *gin.Context) {
 			continue
 		}
 
+		// Same over-quota hard-exclude as /api/tunnels. Subscription clients
+		// run weighted-pick over this list — once AWS billing tips into
+		// overage every byte costs real money, so even a low score is not
+		// safe enough. Admin bypass keeps the path open for triage.
+		inst, hasInst := instanceMap[t.Node.Ipv4]
+		var instPtr *CloudInstance
+		if hasInst {
+			instPtr = &inst
+		}
+		if shouldHideTunnelForUser(instPtr, isAdmin) {
+			log.Warnf(c, "subs: tunnel %d (node=%s, ip=%s) over quota, hiding from non-admin: used=%dB total=%dB",
+				t.ID, t.Node.Name, t.Node.Ipv4,
+				inst.TrafficUsedBytes, inst.TrafficTotalBytes)
+			continue
+		}
+
 		var instData *DataTunnelInstance
-		if inst, ok := instanceMap[t.Node.Ipv4]; ok {
-			instData = buildTunnelInstanceData(&inst)
+		if hasInst {
+			instData = buildTunnelInstanceData(instPtr)
 		}
 		score := ComputeRecommendScore(instData)
 

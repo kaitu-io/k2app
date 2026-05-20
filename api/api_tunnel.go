@@ -123,6 +123,23 @@ func api_k2_tunnels(c *gin.Context) {
 			details = d
 		}
 
+		// Hard-exclude over-quota cloud instances for non-admin users.
+		// Scoring already penalizes them, but pickWeighted can still land on
+		// a low-score node — and once AWS billing has tipped into overage
+		// every additional byte costs real money. Admin path stays open so
+		// over-quota nodes remain visible for triage.
+		instForFilter, hasInst := instanceMap[tunnel.Node.Ipv4]
+		var instPtr *CloudInstance
+		if hasInst {
+			instPtr = &instForFilter
+		}
+		if shouldHideTunnelForUser(instPtr, isAdmin) {
+			log.Warnf(c, "tunnel %d (node=%s, ip=%s) over quota, hiding from non-admin: used=%dB total=%dB",
+				tunnel.ID, tunnel.Node.Name, tunnel.Node.Ipv4,
+				instForFilter.TrafficUsedBytes, instForFilter.TrafficTotalBytes)
+			continue
+		}
+
 		nodeData := DataSlaveNode{
 			Name:                  tunnel.Node.Name,
 			Country:               tunnel.Node.Country,
@@ -154,8 +171,8 @@ func api_k2_tunnels(c *gin.Context) {
 		}
 
 		// Add instance data if CloudInstance found by IP
-		if inst, exists := instanceMap[tunnel.Node.Ipv4]; exists {
-			item.Instance = buildTunnelInstanceData(&inst)
+		if hasInst {
+			item.Instance = buildTunnelInstanceData(instPtr)
 		}
 
 		// Top-level recommendScore — non-cloud nodes get the neutral 0.5 default
