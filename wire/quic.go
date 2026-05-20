@@ -2110,11 +2110,21 @@ func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error    { return 
 // Client-side stream-based UDP mux (fallback when datagrams not supported)
 // ============================================================================
 
+// quicStreamUDPMux is the client-side multiplexer over a single quic.Stream
+// used for UDP relay when QUIC datagrams are unavailable. Same lock-isolation
+// design as smuxUDPMux (TCP-WS path); see that type's doc for full rationale.
+//
+// writeMu is sync.Mutex (not deadlock.Mutex) because Stream.Write may
+// legitimately block under flow-control. Each Write has a 5s deadline;
+// failure marks the mux dead and closes the stream once via streamOnce.
 type quicStreamUDPMux struct {
 	stream      *quic.Stream
 	qconn       *quic.Conn
 	br          *bufio.Reader
-	writeMu     deadlock.Mutex
+	writeMu     sync.Mutex // serialization, may hold across I/O
+	streamOnce  sync.Once  // guards stream.Close
+	dead        atomic.Bool
+	doneOnce    sync.Once  // guards close(done) — replaces ad-hoc select pattern
 	mu          deadlock.Mutex
 	sessions    map[uint32]chan *UDPFrame
 	sessionDone map[uint32]chan struct{} // closed by reaper to notify quicStreamUDPConn
@@ -2147,14 +2157,12 @@ func (m *quicStreamUDPMux) start() {
 	go m.reapIdleSessions()
 }
 
+func (m *quicStreamUDPMux) closeDone() {
+	m.doneOnce.Do(func() { close(m.done) })
+}
+
 func (m *quicStreamUDPMux) readLoop() {
-	defer func() {
-		select {
-		case <-m.done:
-		default:
-			close(m.done)
-		}
-	}()
+	defer m.closeDone()
 	for {
 		frame, err := ReadSmuxUDPFrame(m.br)
 		if err != nil {
@@ -2179,9 +2187,44 @@ func (m *quicStreamUDPMux) readLoop() {
 }
 
 func (m *quicStreamUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) error {
+	if m.dead.Load() {
+		return errStreamDead
+	}
+
 	m.writeMu.Lock()
-	defer m.writeMu.Unlock()
-	return WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
+	if m.dead.Load() {
+		m.writeMu.Unlock()
+		return errStreamDead
+	}
+
+	_ = m.stream.SetWriteDeadline(time.Now().Add(streamWriteDeadline))
+	start := time.Now()
+	err := WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
+	if err != nil {
+		m.dead.Store(true)
+	}
+	m.writeMu.Unlock()
+
+	if err != nil {
+		slog.Warn("DIAG: stream-killed-on-write-fail",
+			"transport", "quic-stream", "side", "client", "sessionID", sessionID,
+			"len", len(payload), "writeMs", time.Since(start).Milliseconds(), "err", err)
+		m.closeStreamOnce()
+	}
+	return err
+}
+
+func (m *quicStreamUDPMux) markDead() {
+	m.dead.Store(true)
+	m.closeStreamOnce()
+}
+
+func (m *quicStreamUDPMux) closeStreamOnce() {
+	m.streamOnce.Do(func() {
+		if m.stream != nil {
+			_ = m.stream.Close()
+		}
+	})
 }
 
 func (m *quicStreamUDPMux) register(sessionID uint32) (chan *UDPFrame, chan struct{}) {
@@ -2247,12 +2290,8 @@ func (m *quicStreamUDPMux) reapOnce() {
 }
 
 func (m *quicStreamUDPMux) close() {
-	select {
-	case <-m.done:
-	default:
-		close(m.done)
-	}
-	m.stream.Close()
+	m.markDead()
+	m.closeDone()
 }
 
 // ============================================================================
