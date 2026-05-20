@@ -6,7 +6,7 @@
  *                  global-mode warning + a single refresh action.
  *  2. Smart detection — first 3 detected apps + "查看全部" expander.
  *  3. Manual added — entries the user explicitly added.
- *  4. Add more — search filter + manual-input button + remaining installed apps.
+ *  4. Add more — search filter + remaining installed apps.
  *
  * VPN-guard: the page kicks back to '/' the moment VPN leaves the idle state.
  */
@@ -15,8 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box, Typography, Stack, IconButton, CircularProgress, Avatar, Button,
-  Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-  Paper, Divider, InputAdornment,
+  TextField, Paper, Divider, InputAdornment,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -43,11 +42,8 @@ export default function AppBypass() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [manualOpen, setManualOpen] = useState(false);
-  const [manualInput, setManualInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [autoExpanded, setAutoExpanded] = useState(false);
-  const isAndroid = window._platform?.os === 'android';
 
   // Page-level VPN guard: redirect to '/' if VPN leaves the idle state.
   useEffect(() => {
@@ -333,31 +329,31 @@ export default function AppBypass() {
           {t('dashboard:appBypass.addMoreSection')}
         </Typography>
 
-        <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
-          <TextField
-            size="small"
-            fullWidth
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('dashboard:appBypass.searchPlaceholder')}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-            }}
-          />
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<AddIcon fontSize="small" />}
-            onClick={() => setManualOpen(true)}
-            sx={{ flexShrink: 0 }}
+        {!!window._platform?.appList?.listRunning && !window._platform?.appList?.listInstalled && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mb: 1.5 }}
           >
-            {t('dashboard:appBypass.manualAdd')}
-          </Button>
-        </Stack>
+            {t('dashboard:appBypass.runningOnlyHint')}
+          </Typography>
+        )}
+
+        <TextField
+          size="small"
+          fullWidth
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={t('dashboard:appBypass.searchPlaceholder')}
+          sx={{ mb: 1.5 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" />
+              </InputAdornment>
+            ),
+          }}
+        />
 
         {loading ? (
           <CircularProgress size={20} />
@@ -417,51 +413,6 @@ export default function AppBypass() {
           </Stack>
         )}
       </Box>
-
-      <Dialog
-        open={manualOpen}
-        onClose={() => {
-          if (manualInput !== '' && !confirm(t('dashboard:appBypass.manualAddUnsavedConfirm'))) return;
-          setManualOpen(false);
-          setManualInput('');
-        }}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>{t('dashboard:appBypass.manualAddTitle')}</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            value={manualInput}
-            onChange={(e) => setManualInput(e.target.value)}
-            placeholder={t('dashboard:appBypass.manualAddPlaceholder')}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setManualInput(''); setManualOpen(false); }}>
-            {t('dashboard:appBypass.manualAddCancel')}
-          </Button>
-          <Button
-            variant="contained"
-            disabled={manualInput.trim() === ''}
-            onClick={async () => {
-              const v = manualInput.trim();
-              const kind: 'process' | 'package' = isAndroid ? 'package' : 'process';
-              await useAppBypassStore.getState().add({
-                id: 'manual:' + v,
-                label: v,
-                kind,
-                names: [v],
-              });
-              setManualInput('');
-              setManualOpen(false);
-            }}
-          >
-            {t('dashboard:appBypass.manualAddConfirm')}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }
