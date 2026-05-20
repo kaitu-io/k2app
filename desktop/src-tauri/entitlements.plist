@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Identity: required by nesessionmanager for NE IPC authorization -->
+    <!-- Identity -->
     <key>com.apple.application-identifier</key>
     <string>NJT954Q3RH.io.kaitu.desktop</string>
     <key>com.apple.developer.team-identifier</key>
@@ -13,15 +13,5 @@
     <true/>
     <key>com.apple.security.network.server</key>
     <true/>
-
-    <!-- System Extension install: required for OSSystemExtensionManager.submitRequest() -->
-    <key>com.apple.developer.system-extension.install</key>
-    <true/>
-
-    <!-- Network Extension: packet-tunnel-provider-systemextension for macOS NE mode -->
-    <key>com.apple.developer.networking.networkextension</key>
-    <array>
-        <string>packet-tunnel-provider-systemextension</string>
-    </array>
 </dict>
 </plist>

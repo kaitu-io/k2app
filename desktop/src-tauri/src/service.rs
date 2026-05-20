@@ -196,28 +196,16 @@ pub fn check_service_version(app_version: &str) -> VersionCheckResult {
     }
 }
 
-/// IPC command: proxy VPN action to k2 daemon or NE bridge (macOS + ne-mode).
-///
-/// In NE mode (macOS + `ne-mode` feature) the call is routed through the Swift NE helper.
-/// Otherwise (default, all platforms) the call goes to the k2 daemon HTTP API at :1777.
+/// IPC command: proxy VPN action to the k2 daemon HTTP API at :1777.
 /// Called from webapp as window.__TAURI__.core.invoke('daemon_exec', {action, params})
 #[tauri::command]
 pub async fn daemon_exec(
     action: String,
     params: Option<serde_json::Value>,
 ) -> Result<ServiceResponse, String> {
-    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
-    {
-        tokio::task::spawn_blocking(move || crate::ne::ne_action(&action, params))
-            .await
-            .map_err(|e| format!("Task join error: {}", e))?
-    }
-    #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
-    {
-        tokio::task::spawn_blocking(move || core_action(&action, params))
-            .await
-            .map_err(|e| format!("Task join error: {}", e))?
-    }
+    tokio::task::spawn_blocking(move || core_action(&action, params))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// IPC command: proxy helper action to k2 daemon POST /api/helper.
@@ -234,7 +222,6 @@ pub async fn daemon_helper_exec(
 
 /// Internal: set daemon log level via HTTP (no IPC, no channel check).
 /// Blocking — call from sync context or wrap in `spawn_blocking`.
-#[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
 pub fn set_log_level_internal(level: &str) -> Result<ServiceResponse, String> {
     let url = format!("{}/api/log-level", service_base_url());
     let client = reqwest::blocking::Client::builder()
@@ -251,21 +238,10 @@ pub fn set_log_level_internal(level: &str) -> Result<ServiceResponse, String> {
         .map_err(|e| format!("Failed to parse response: {}", e))
 }
 
-/// NE mode stub: no daemon to hot-switch.
-#[cfg(all(target_os = "macos", feature = "ne-mode"))]
-pub fn set_log_level_internal(_level: &str) -> Result<ServiceResponse, String> {
-    Ok(ServiceResponse {
-        code: 0,
-        message: "ok".to_string(),
-        data: serde_json::Value::Null,
-    })
-}
-
 /// IPC command: hot-switch daemon log level.
 ///
 /// Beta channel forces debug level — any other level is rejected.
-/// Daemon mode: POST /api/log-level to k2 daemon.
-/// NE mode: no-op (level applies on next connect via config).
+/// POST /api/log-level to k2 daemon.
 #[tauri::command]
 pub async fn set_log_level(app: tauri::AppHandle, level: String) -> Result<ServiceResponse, String> {
     let effective_level = if crate::channel::get_channel(&app) == "beta" {
@@ -328,15 +304,7 @@ pub fn get_platform_info() -> serde_json::Value {
 pub async fn admin_reinstall_service() -> Result<String, String> {
     log::info!("[service] Admin service install requested");
 
-    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
-    {
-        // On macOS NE mode: delegate to NE helper (Swift static library)
-        tokio::task::spawn_blocking(|| crate::ne::admin_reinstall_ne())
-            .await
-            .map_err(|e| format!("Task join error: {}", e))?
-    }
-
-    #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
+    #[cfg(target_os = "macos")]
     {
         tokio::task::spawn_blocking(admin_reinstall_service_macos)
             .await
@@ -388,10 +356,10 @@ async fn admin_reinstall_service_windows() -> Result<String, String> {
     }
 }
 
-/// macOS daemon mode: install k2 service with admin privileges via osascript.
+/// macOS: install k2 service with admin privileges via osascript.
 /// Uses the k2 sidecar binary at Contents/MacOS/k2 relative to the running app.
 /// The osascript dialog prompts the user for their admin password.
-#[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
+#[cfg(target_os = "macos")]
 fn admin_reinstall_service_macos() -> Result<String, String> {
     let exe_path = std::env::current_exe()
         .map_err(|e| format!("Failed to get exe path: {}", e))?;
@@ -451,14 +419,10 @@ fn admin_reinstall_service_macos() -> Result<String, String> {
 
 /// Detect old kaitu-service
 pub fn detect_old_kaitu_service() -> bool {
-    #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
+    #[cfg(target_os = "macos")]
     {
         std::path::Path::new("/Library/LaunchDaemons/io.kaitu.service.plist").exists()
             || std::path::Path::new("/Library/LaunchDaemons/com.kaitu.service.plist").exists()
-    }
-    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
-    {
-        false
     }
     #[cfg(target_os = "windows")]
     {
@@ -484,7 +448,7 @@ pub fn cleanup_old_kaitu_service() {
     }
     log::info!("[service] Cleaning up old kaitu-service");
 
-    #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
+    #[cfg(target_os = "macos")]
     {
         for plist in &[
             "/Library/LaunchDaemons/io.kaitu.service.plist",
@@ -542,33 +506,13 @@ fn wait_for_version_match(app_version: &str, timeout_ms: u64, poll_ms: u64) -> V
 
 /// Ensure service running with correct version.
 ///
-/// NE mode (macOS + `ne-mode`): installs NE VPN profile via Swift helper.
-/// Daemon mode (default): version check → wait → osascript install if needed.
-#[tauri::command]
-pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
-    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
-    {
-        log::info!(
-            "[service] macOS: ensuring NE installed (v{})",
-            app_version
-        );
-        return tokio::task::spawn_blocking(|| crate::ne::ensure_ne_installed())
-            .await
-            .map_err(|e| format!("spawn_blocking failed: {}", e))?;
-    }
-
-    #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
-    ensure_service_running_daemon(app_version).await
-}
-
-/// Daemon-based service lifecycle: version check as single source of truth.
-///
+/// Version check as single source of truth.
 /// Phase 1: cleanup legacy services + wait for version match (8s).
 ///          Covers: already running, cold start via launchd, dev bypass.
 /// Phase 2: osascript admin install (only if phase 1 fails).
 /// Phase 3: post-install verification — wait for version match (5s).
-#[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
-async fn ensure_service_running_daemon(app_version: String) -> Result<(), String> {
+#[tauri::command]
+pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
     const STARTUP_WAIT_MS: u64 = 15000;
     const POST_INSTALL_WAIT_MS: u64 = 5000;
     const POLL_MS: u64 = 500;
@@ -728,14 +672,10 @@ mod tests {
         assert!(pid > 0, "PID should be positive");
     }
 
-    // -----------------------------------------------------------------------
-    // REFACTOR [MUST] 3: ServiceResponse is shared — ne.rs imports from service
-    // -----------------------------------------------------------------------
-    // This is verified at compile time: ne.rs uses `crate::service::ServiceResponse`.
-    // The test below confirms the struct is publicly accessible and the fields align.
+    // ServiceResponse serialization round-trip — verifies the canonical
+    // {code, message, data} shape is preserved across JSON boundaries.
     #[test]
-    fn test_refactor_service_response_shared_type() {
-        // Construct a ServiceResponse as ne.rs would (same type, same fields)
+    fn test_service_response_serialization() {
         let resp = ServiceResponse {
             code: 0,
             message: "ok".into(),

@@ -196,6 +196,38 @@ export interface IPlatform {
     version?: string;
     feedbackId?: string;
   }): Promise<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }>;
+
+  // ====== App List（可选）======
+
+  appList?: IAppListProvider;
+}
+
+// ==================== App List ====================
+
+export interface RunningApp {
+  /** macOS: bundle identifier · Win/Linux: absolute executable path */
+  id: string;
+  /** Display name */
+  label: string;
+  /** Names to write into config.process_name — macOS: bundle's full helper set; Win/Linux: [exe basename] */
+  processNames: string[];
+  /** Custom-scheme URL or undefined; webapp renders <img src={iconUrl}> */
+  iconUrl?: string;
+}
+
+export interface InstalledApp {
+  packageName: string;
+  label: string;
+  iconUrl?: string;
+  /** Android only: the package that installed this app (PackageManager.getInstallSourceInfo). null if unknown / sideloaded / system. */
+  installerPackageName?: string | null;
+}
+
+export interface IAppListProvider {
+  /** Desktop only (macOS / Windows / Linux desktop) */
+  listRunning?(): Promise<RunningApp[]>;
+  /** Android only */
+  listInstalled?(): Promise<InstalledApp[]>;
 }
 
 // ==================== 核心接口 ====================

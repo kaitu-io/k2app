@@ -82,4 +82,8 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
   async storageRemove(_options: { key: string }): Promise<void> {
     throw this.unavailable('K2Plugin is not available on web');
   }
+
+  async listInstalledApps(): Promise<{ apps: Array<{ packageName: string; label: string; iconUrl?: string }> }> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
 }

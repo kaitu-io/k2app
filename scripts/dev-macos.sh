@@ -53,8 +53,6 @@ PIDS+=($!)
 sleep 2
 
 # ── 3. Build and start k2 daemon ──
-# Default build uses daemon mode on all platforms (including macOS).
-# NE mode (macOS sysext) is only used with `--features ne-mode` in production builds.
 if [ ! -f "$K2_BIN" ] || [ "$ROOT_DIR/k2/cmd/k2/main.go" -nt "$K2_BIN" ]; then
   echo "[dev-desktop] Building k2..."
   cd "$ROOT_DIR/k2"

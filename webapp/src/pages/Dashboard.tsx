@@ -8,6 +8,7 @@ import {
   Collapse,
   List,
   ListItem,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Radio,
@@ -15,14 +16,16 @@ import {
   alpha,
   Alert,
   Snackbar,
+  Paper,
 } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
   Settings as SettingsIcon,
+  ChevronRight as ChevronRightIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useAuthStore } from "../stores";
+import { useAuthStore, useAppBypassStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
@@ -41,6 +44,7 @@ import { cacheStore } from '../services/cache-store';
 import { SmartServerSelector } from '../components/SmartServerSelector';
 import { SelfHostedTunnelItem } from '../components/SelfHostedTunnelItem';
 import { K2subConfig } from '../components/K2subConfig';
+import ConnectedSettingsLock from '../components/ConnectedSettingsLock';
 
 // Styled Components for Modern Design
 const DashboardContainer = styled(Box)(({ theme }) => ({
@@ -113,6 +117,16 @@ export default function Dashboard() {
   // Get app-specific configuration
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
+
+  // App-bypass entry count (Advanced Settings row)
+  const bypassCount = useAppBypassStore((s) => s.entries.length);
+  // Auto-detected count after de-dup against the manually-added list — mirrors
+  // the AppBypass page's autoNotAdded so the Dashboard entry summary stays
+  // consistent with what users see inside.
+  const autoBypassCount = useAppBypassStore((s) => {
+    const added = new Set(s.entries.map((e) => e.id));
+    return s.autoDetected.filter((a) => !added.has(a.packageName)).length;
+  });
 
   // Theme
   const theme = useTheme();
@@ -577,10 +591,13 @@ export default function Dashboard() {
       </Box>
 
 
-      {/* SECTION 3: Advanced Settings */}
+      {/* SECTION 3: Advanced Settings — visually distinct from tunnels list above.
+          Uses bg.default (darker recess) + inset top shadow to read as a footer drawer,
+          not another paper card like the tunnels list. */}
       <Box sx={{
-        borderTop: (theme) => `1px solid ${theme.palette.divider}`,
-        backgroundColor: 'background.paper',
+        borderTop: (theme) => `2px solid ${theme.palette.divider}`,
+        backgroundColor: 'background.default',
+        boxShadow: 'inset 0 8px 16px -10px rgba(0,0,0,0.45)',
         mt: 'auto',
       }}>
         <Button
@@ -609,31 +626,44 @@ export default function Dashboard() {
             maxHeight: '40vh',
             overflowY: 'auto',
             px: 2,
-            pb: 0.5,
-            pt: 1,
+            pb: 1.5,
+            pt: 1.5,
           }}>
-            {isInteractive && (
-              <Typography variant="caption" sx={{
-                color: 'warning.main',
-                fontSize: '0.75rem',
-                fontWeight: 500,
-                mb: 2,
-                display: 'block'
-              }}>
-                {t('dashboard:dashboard.disconnectToModify')}
-              </Typography>
-            )}
+            <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'background.paper' }}>
+            <ConnectedSettingsLock>
+              {/* iOS-only: NEOnDemandRuleConnect toggle (ANC-13) */}
+              {typeof window !== 'undefined' && window._platform?.os === 'ios' && (
+                <AlwaysOnToggle />
+              )}
 
-            {/* iOS-only: NEOnDemandRuleConnect toggle (ANC-13) */}
-            {typeof window !== 'undefined' && window._platform?.os === 'ios' && (
-              <AlwaysOnToggle />
-            )}
+              {/* Routing mode + country selection */}
+              {proxyRuleConfig.visible && (
+                <RoutingModeSelector />
+              )}
 
-            {/* Routing mode + country selection */}
-            {proxyRuleConfig.visible && (
-              <RoutingModeSelector />
-            )}
-
+              {/* App-bypass entry (Task 6.2) */}
+              {appConfig.features.appBypass && window._platform?.appList && (
+                <ListItemButton
+                  onClick={() => navigate('/app-bypass')}
+                  sx={{ mt: 1.5, borderRadius: 1, border: 1, borderColor: 'divider' }}
+                >
+                  <ListItemText
+                    primary={t('dashboard:dashboard.appBypassEntry.label')}
+                    secondary={
+                      bypassCount > 0 && autoBypassCount > 0
+                        ? t('dashboard:dashboard.appBypassEntry.countBoth', { manual: bypassCount, auto: autoBypassCount })
+                        : bypassCount > 0
+                          ? t('dashboard:dashboard.appBypassEntry.count', { count: bypassCount })
+                          : autoBypassCount > 0
+                            ? t('dashboard:dashboard.appBypassEntry.countAuto', { count: autoBypassCount })
+                            : t('dashboard:dashboard.appBypassEntry.empty')
+                    }
+                  />
+                  <ChevronRightIcon />
+                </ListItemButton>
+              )}
+            </ConnectedSettingsLock>
+            </Paper>
           </Box>
         </Collapse>
       </Box>

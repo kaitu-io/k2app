@@ -600,7 +600,7 @@ zh-CN 母版（其余 6 locale：ja, en-US, en-AU, en-GB, zh-TW, zh-HK 草稿翻
 
 | 平台 | 测试 app | Routes 注入 | Pass 准则 | 失败处理 |
 |---|---|---|---|---|
-| macOS sysext | terminal `curl` + 浏览器 | `{via:'direct', match:{process_name:['curl']}}` 前置 | `curl https://ip.kaitu.io` 返 ISP IP；浏览器返 server IP | 走代码：trace `k2/appext/` 是否传 process_name 到 rule engine；缺口 → k2 子模块 ticket |
+| macOS daemon | terminal `curl` + 浏览器 | `{via:'direct', match:{process_name:['curl']}}` 前置 | `curl https://ip.kaitu.io` 返 ISP IP；浏览器返 server IP | 走代码：trace `k2/daemon/` ProcessSearcher 是否被 engine.Config 注入；缺口 → k2 子模块 ticket |
 | Windows daemon | `curl.exe` + Edge | `process_name:['curl.exe']` | 同 | trace `k2/daemon/` |
 | Linux desktop | `curl` + firefox | `process_name:['curl']` | 同 | trace `/proc/<pid>/exe` → rule engine 链路 |
 | Android | Chrome + 其它 user app | `package_name:['com.android.chrome']` | Chrome 看到 ISP IP，其它 app 看到 server IP | trace `k2/appext/` Android path，看 uid → package 解析 |

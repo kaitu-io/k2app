@@ -47,6 +47,14 @@
     "favorites": "收藏的服务器",
     "allLocations": "所有位置",
     "advancedSettings": "高级设置",
+    "advancedSettingsLocked": "VPN 已连接，请先断开后再修改高级设置",
+    "appBypassEntry": {
+      "label": "不走代理的应用",
+      "count": "{{count}} 个手动",
+      "countAuto": "{{count}} 个智能识别",
+      "countBoth": "{{manual}} 个手动 + {{auto}} 个智能识别",
+      "empty": "未选"
+    },
     "alwaysOn": {
       "title": "保持 VPN 常开 (Always On)",
       "description": "App 被系统释放后自动恢复连接。",
@@ -122,6 +130,53 @@
     "loginBanner": {
       "message": "登录解锁更多云端节点",
       "viewPlans": "了解会员"
+    }
+  },
+  "appBypass": {
+    "title": "不走代理的应用",
+    "description": "这些应用的流量将不走 VPN，直接出网。适合避免被风控的应用（网银、微信、12306 等）。",
+    "macMultiUserNote": "此处只列出当前账户启动的应用。",
+    "addedSection": "已加入（{{count}}）",
+    "availableSection": "可添加",
+    "manualAdd": "+ 手动添加",
+    "manualAddTitle": "添加进程名",
+    "manualAddPlaceholder": "如 chrome.exe / Adobe Photoshop / com.tencent.mm",
+    "manualAddConfirm": "添加",
+    "manualAddCancel": "取消",
+    "manualAddUnsavedConfirm": "未保存的输入将丢失，确认离开？",
+    "refresh": "刷新",
+    "rescan": "重新检测",
+    "rescanResult": "已更新（共 {{count}} 个进程）",
+    "processCount": "屏蔽 {{count}} 个进程",
+    "kickedOutDueToConnect": "VPN 连接后无法修改，已返回主页",
+    "loadFailed": "加载应用列表失败",
+    "saveFailed": "保存失败，请重试",
+    "uninstalledHint": "应用可能已卸载",
+    "ruleCard": {
+      "summary": "共 {{total}} 个 app 直连：{{manual}} 手动 + {{auto}} 智能识别",
+      "refresh": "重新扫描",
+      "globalWarning": "⚠ 当前全球代理模式 — 下方配置当前不生效"
+    },
+    "smartDetection": {
+      "showAll": "查看全部（{{count}} 个未显示）",
+      "collapse": "收起"
+    },
+    "manualSection": "我手动添加（{{count}}）",
+    "addMoreSection": "添加更多 app",
+    "searchPlaceholder": "搜索应用名…",
+    "searchEmpty": "没有匹配的应用",
+    "addInline": "加入",
+    "remove": "移除",
+    "rescanAuto": "重新扫描智能识别",
+    "rescanResultDetected": "已识别 {{count}} 个 app",
+    "rescanResultEmpty": "未识别到任何 app",
+    "rescanResultNoop": "当前国家 [{{country}}] 不触发智能识别",
+    "cn": {
+      "section": "智能识别为中国 App（{{count}}）",
+      "noteSmart": "智能分流模式下，识别到的中国 app 已自动加入直连",
+      "noteGlobal": "全局代理模式下不应用智能识别",
+      "reasonInstaller": "来自国内应用商店",
+      "reasonPrefix": "命名前缀匹配"
     }
   },
   "smartMode": {

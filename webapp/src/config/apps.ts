@@ -44,6 +44,8 @@ export interface AppConfig {
     };
     /** Chatwoot chat widget */
     chatwoot?: boolean;
+    /** App bypass (per-app VPN exclusion) */
+    appBypass?: boolean;
   };
 
   /** Branding configuration */
@@ -83,6 +85,7 @@ const KAITU_CONFIG: AppConfig = {
       defaultValue: 'chnroute',   // Default to chnroute mode
     },
     chatwoot: true,               // Enable Chatwoot chat widget
+    appBypass: true,              // toggle to true in beta builds
   },
   branding: {
     primaryColor: '#1976d2',

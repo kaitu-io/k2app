@@ -47,6 +47,14 @@
     "favorites": "Favourite servers",
     "allLocations": "All locations",
     "advancedSettings": "Advanced settings",
+    "advancedSettingsLocked": "VPN is connected. Disconnect first to change advanced settings.",
+    "appBypassEntry": {
+      "label": "Apps that bypass VPN",
+      "count": "{{count}} manual",
+      "countAuto": "{{count}} auto-detected",
+      "countBoth": "{{manual}} manual + {{auto}} auto-detected",
+      "empty": "None"
+    },
     "alwaysOn": {
       "title": "Keep VPN Always On",
       "description": "Auto-reconnect after the system releases the app.",
@@ -122,6 +130,53 @@
     "loginBanner": {
       "message": "Login to unlock more cloud nodes",
       "viewPlans": "View Plans"
+    }
+  },
+  "appBypass": {
+    "title": "Apps that bypass VPN",
+    "description": "Traffic from these apps will not go through the VPN. Useful for apps that flag VPN IPs (banking, payment, etc.).",
+    "macMultiUserNote": "Only apps started in the current user account are listed.",
+    "addedSection": "Added ({{count}})",
+    "availableSection": "Available",
+    "manualAdd": "+ Add manually",
+    "manualAddTitle": "Add process name",
+    "manualAddPlaceholder": "e.g. chrome.exe / Adobe Photoshop / com.tencent.mm",
+    "manualAddConfirm": "Add",
+    "manualAddCancel": "Cancel",
+    "manualAddUnsavedConfirm": "Unsaved input will be lost. Discard?",
+    "refresh": "Refresh",
+    "rescan": "Re-scan",
+    "rescanResult": "Updated ({{count}} processes)",
+    "processCount": "{{count}} processes blocked",
+    "kickedOutDueToConnect": "VPN connected; returning to home",
+    "loadFailed": "Failed to load app list",
+    "saveFailed": "Save failed, please try again",
+    "uninstalledHint": "App may be uninstalled",
+    "ruleCard": {
+      "summary": "{{total}} apps bypassed: {{manual}} manual + {{auto}} auto-detected",
+      "refresh": "Rescan",
+      "globalWarning": "⚠ Global proxy mode — bypass list doesn't apply right now"
+    },
+    "smartDetection": {
+      "showAll": "Show all ({{count}} more)",
+      "collapse": "Collapse"
+    },
+    "manualSection": "Manually added ({{count}})",
+    "addMoreSection": "Add more apps",
+    "searchPlaceholder": "Search apps…",
+    "searchEmpty": "No matching apps",
+    "addInline": "Add",
+    "remove": "Remove",
+    "rescanAuto": "Rescan smart detection",
+    "rescanResultDetected": "Detected {{count}} apps",
+    "rescanResultEmpty": "No apps detected",
+    "rescanResultNoop": "Current country [{{country}}] doesn't trigger smart detection",
+    "cn": {
+      "section": "Auto-detected Chinese apps ({{count}})",
+      "noteSmart": "Smart-routing mode automatically routes detected Chinese apps direct",
+      "noteGlobal": "Auto-detection not applied in global proxy mode",
+      "reasonInstaller": "Installed from a Chinese app store",
+      "reasonPrefix": "Matches Chinese-namespace package prefix"
     }
   },
   "smartMode": {

@@ -47,6 +47,14 @@
     "favorites": "お気に入りサーバー",
     "allLocations": "すべての場所",
     "advancedSettings": "詳細設定",
+    "advancedSettingsLocked": "VPN 接続中です。詳細設定を変更するには切断してください。",
+    "appBypassEntry": {
+      "label": "VPN を経由しないアプリ",
+      "count": "手動 {{count}} 個",
+      "countAuto": "自動検出 {{count}} 個",
+      "countBoth": "手動 {{manual}} + 自動検出 {{auto}}",
+      "empty": "未選択"
+    },
     "alwaysOn": {
       "title": "VPN を常にオンに保つ (Always On)",
       "description": "システムがアプリを解放した後、自動的に再接続します。",
@@ -122,6 +130,53 @@
     "loginBanner": {
       "message": "ログインしてクラウドノードを解放",
       "viewPlans": "プランを見る"
+    }
+  },
+  "appBypass": {
+    "title": "VPN を経由しないアプリ",
+    "description": "これらのアプリのトラフィックは VPN を経由せず直接通信します。VPN IP がブロックされやすいアプリ（オンラインバンキング、決済、12306 等）に最適です。",
+    "macMultiUserNote": "現在のユーザーアカウントで起動したアプリのみ表示されます。",
+    "addedSection": "追加済み（{{count}}）",
+    "availableSection": "追加可能",
+    "manualAdd": "+ 手動で追加",
+    "manualAddTitle": "プロセス名を追加",
+    "manualAddPlaceholder": "例: chrome.exe / Adobe Photoshop / com.tencent.mm",
+    "manualAddConfirm": "追加",
+    "manualAddCancel": "キャンセル",
+    "manualAddUnsavedConfirm": "未保存の入力は破棄されます。終了しますか？",
+    "refresh": "更新",
+    "rescan": "再検出",
+    "rescanResult": "更新しました（{{count}} 個のプロセス）",
+    "processCount": "{{count}} 個のプロセスをブロック",
+    "kickedOutDueToConnect": "VPN 接続後は変更できません。ホームに戻りました",
+    "loadFailed": "アプリ一覧の読み込みに失敗しました",
+    "saveFailed": "保存に失敗しました。再試行してください",
+    "uninstalledHint": "アプリがアンインストールされている可能性があります",
+    "ruleCard": {
+      "summary": "{{total}} 個のアプリが直接接続：手動 {{manual}} + 自動検出 {{auto}}",
+      "refresh": "再スキャン",
+      "globalWarning": "⚠ グローバルプロキシモード — 現在この設定は適用されません"
+    },
+    "smartDetection": {
+      "showAll": "すべて表示（あと {{count}} 個）",
+      "collapse": "折りたたむ"
+    },
+    "manualSection": "手動で追加（{{count}}）",
+    "addMoreSection": "アプリを追加",
+    "searchPlaceholder": "アプリを検索…",
+    "searchEmpty": "一致するアプリがありません",
+    "addInline": "追加",
+    "remove": "削除",
+    "rescanAuto": "スマート検出を再スキャン",
+    "rescanResultDetected": "{{count}} 個のアプリを検出",
+    "rescanResultEmpty": "アプリは検出されませんでした",
+    "rescanResultNoop": "現在の国 [{{country}}] ではスマート検出が無効です",
+    "cn": {
+      "section": "中国アプリ自動検出（{{count}}）",
+      "noteSmart": "スマートルーティング時、検出された中国アプリは自動的に直接接続されます",
+      "noteGlobal": "グローバルプロキシモードでは自動検出は適用されません",
+      "reasonInstaller": "中国のアプリストアからインストール",
+      "reasonPrefix": "中国系パッケージ名と一致"
     }
   },
   "smartMode": {

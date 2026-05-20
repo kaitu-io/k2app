@@ -78,6 +78,32 @@ export const standalonePlatform: IPlatform = {
   commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',
   storage: plainLocalStorage,
   setDevEnabled: () => {},
+
+  // appList is exposed unconditionally on the standalone bridge. On Linux
+  // desktop with the Go daemon, /api/helper answers app-list-running. On pure
+  // web standalone, the helper endpoint isn't present — listRunning will
+  // reject, caller shows empty list. Whether the bypass entry actually renders
+  // in Dashboard is gated separately by feature.appBypass + os.
+  appList: {
+    listRunning: async () => {
+      const resp = await fetch(HELPER_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'app-list-running' }),
+      }).then(r => r.json());
+      if (resp.code !== 0) {
+        throw new Error(resp.message || 'app-list-running failed');
+      }
+      // Remap snake_case → camelCase per project convention (Go json.Marshal
+      // emits snake_case; webapp consumes camelCase).
+      return (resp.data?.apps ?? []).map((a: any) => ({
+        id: a.id,
+        label: a.label,
+        processNames: a.process_names ?? [],
+        iconUrl: undefined, // Linux desktop has no icons in v1; Avatar falls back to first letter
+      }));
+    },
+  },
 };
 
 export function isK2Injected(): boolean {

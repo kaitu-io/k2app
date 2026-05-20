@@ -19,21 +19,14 @@ yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows 
 
 ## Rust Modules (`src-tauri/src/`)
 
-- **main.rs** — App setup: localhost plugin (14580), single-instance, process, updater, opener, clipboard-manager plugins. Wires tray + service + updater in setup closure. Beta channel: forces debug log level via `channel::is_beta_early()`, chains daemon debug after `ensure_service_running`, starts beta auto-upload. `RunEvent::ExitRequested` handler auto-applies pending updates.
-- **service.rs** — k2 daemon lifecycle. macOS dual build: NE mode (`--features ne-mode`) routes to `ne.rs`; daemon mode (default) uses HTTP to :1777 (same as Win/Linux).
-  - `daemon_exec`: NE mode → `ne::ne_action()`; daemon mode → `core_action()` HTTP to :1777
-  - `get_udid`: NE mode → `ne::get_udid_native()`; daemon mode → daemon HTTP
-  - `ensure_service_running`: NE mode → `ne::ensure_ne_installed()`; daemon mode → ping + version check + install
-  - `admin_reinstall_service`: NE mode → `ne::admin_reinstall_ne()`; Windows → PowerShell elevated
+- **main.rs** — App setup: localhost plugin (14580), single-instance, process, updater, opener, clipboard-manager plugins. Wires tray + service + updater in setup closure. `RunEvent::ExitRequested` handler auto-applies pending updates.
+- **service.rs** — k2 daemon lifecycle. Routes VPN actions to the k2 daemon HTTP API at `:1777` on all platforms.
+  - `daemon_exec`: HTTP to `:1777/api/core`
+  - `ensure_service_running`: ping + version check + auto-install daemon (osascript on macOS, PowerShell elevated on Windows)
+  - `admin_reinstall_service`: elevated reinstall (osascript on macOS, PowerShell on Windows)
   - `set_log_level`: IPC command with beta channel check — forces debug when beta. Uses `set_log_level_internal()` (pub, blocking HTTP, reusable by updater/main).
-  - All macOS cfg gates: `#[cfg(all(target_os = "macos", feature = "ne-mode"))]`
-- **channel.rs** — Update channel persistence (stable/beta). Reads/writes `update-channel` file in app data dir. Two read paths: `get_channel(app)` (runtime, needs `AppHandle`) and `get_channel_early()` (pre-setup, uses `dirs` crate directly). `endpoints_for_channel()` returns stable or beta CDN URLs.
-- **ne.rs** — macOS Network Extension bridge (`#[cfg(all(target_os = "macos", feature = "ne-mode"))]`):
-  - `ne_action()`: routes up/down/status/version to Swift NE helper via C FFI
-  - `ensure_ne_installed()`: installs NE VPN profile via `k2ne_install()`
-  - `register_state_callback()`: emits `service-state-changed` + `vpn-status-changed` Tauri events
-  - Linked against `libk2_ne_helper.a` (Swift static library) + NetworkExtension framework
-- **status_stream.rs** — SSE client for daemon's `GET /api/events` (daemon mode only, not in ne-mode):
+- **channel.rs** — Update channel persistence (stable/beta). Reads/writes `update-channel` file in app data dir via `get_channel(app)`. `endpoints_for_channel()` returns stable or beta CDN URLs.
+- **status_stream.rs** — SSE client for daemon's `GET /api/events`:
   - Maintains persistent SSE connection, auto-reconnects with 3s delay
   - Emits `service-state-changed { available }` on connect/disconnect
   - Emits `vpn-status-changed { ...engine.Status }` on SSE status events
@@ -66,17 +59,12 @@ yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows 
 
 | Command | Module | Purpose |
 |---------|--------|---------|
-| `daemon_exec` (daemon mode) | service | Proxy VPN actions (up/down/status/version) to k2 daemon HTTP |
-| `daemon_exec` (NE mode) | ne | VPN actions routed to NE helper via C FFI (`ne_action()`) |
+| `daemon_exec` | service | Proxy VPN actions (up/down/status/version) to k2 daemon HTTP |
 | `daemon_helper_exec` | service | Proxy `adb-*` actions to k2 daemon `/api/helper` (not `/api/core`) |
 | `get_platform_info` | service | Returns `{ os, version }` |
-| `get_udid` (daemon mode) | service | Returns device UDID from daemon |
-| `get_udid` (NE mode) | ne | Hardware UUID via `sysctl -n kern.uuid` (no daemon) |
 | `get_pid` | service | Returns k2 daemon PID |
-| `ensure_service_running` (daemon mode) | service | Ping + version check + auto-install daemon |
-| `ensure_service_running` (NE mode) | ne | Install NE VPN profile via `k2ne_install()` |
-| `admin_reinstall_service` (daemon mode) | service | Elevated reinstall via PowerShell |
-| `admin_reinstall_service` (NE mode) | ne | Remove + reinstall NE VPN profile |
+| `ensure_service_running` | service | Ping + version check + auto-install daemon |
+| `admin_reinstall_service` | service | Elevated reinstall (osascript on macOS, PowerShell on Windows) |
 | `check_update_now` | updater | Manual update check |
 | `apply_update_now` | updater | Apply downloaded update |
 | `get_update_status` | updater | Returns `UpdateInfo \| null` |
@@ -96,14 +84,10 @@ yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows 
 - k2 binary must be at `binaries/k2-{arch}-{os}` for Tauri sidecar resolution
 - Event permissions require `core:event:default` in capabilities (NOT `event:default`)
 - `reqwest::blocking::Client` panics in async context — always wrap in `tokio::task::spawn_blocking()`
-- macOS dual build: default = daemon mode (no NE, same as Win/Linux); `--features ne-mode` = NE mode (gomobile + sysext + NE helper). `cfg(all(target_os = "macos", feature = "ne-mode"))` gates all NE code.
-- NE helper uses DispatchSemaphore — C FFI functions in ne.rs must NOT be called from the main thread (use `tokio::task::spawn_blocking`)
-- NE appex must be codesigned with the same identity as the main app, with a separate entitlements file that includes `com.apple.developer.networking.networkextension`
 - SSE status stream (`status_stream.rs`) emits Tauri events: `service-state-changed` (SSE connection state) + `vpn-status-changed` (VPN status from SSE). Used by webapp VPN store for event-driven updates instead of 2s polling.
-- `get_channel_early()` uses `dirs::data_dir().join("io.kaitu.desktop")` to read channel BEFORE `AppHandle` exists (log plugin is configured in builder chain before `.setup()`). Path must match Tauri's `app_data_dir()` on all platforms.
 - Missing `#[tauri::command]` registration in `tauri::generate_handler![]` causes white screen — first `invoke()` fails silently, React never renders.
 - Windows updater: `update.install()` launches NSIS as child process, must call `app.exit(0)` immediately — NSIS needs old process to exit to overwrite binaries.
-- Beta channel forces ALL 3 log layers to debug: desktop log (tauri-plugin-log via `is_beta_early()`), daemon log (HTTP via `set_log_level_internal`), engine log (`buildConnectConfig()` in webapp). User cannot override while on beta.
+- Beta channel forces ALL 3 log layers to debug: desktop log (tauri-plugin-log), daemon log (HTTP via `set_log_level_internal`), engine log (`buildConnectConfig()` in webapp). User cannot override while on beta.
 - Pre-beta log level stored in `{app_data_dir}/pre-beta-log-level` file. Frontend passes `currentLogLevel` (from localStorage) when calling `set_update_channel` IPC since Rust cannot read browser localStorage.
 - Windows Authenticode signing requires intermediate CA chain: `osslsigncode` must use `-ac scripts/ci/macos/certum-chain.pem` (Certum Code Signing 2021 CA). Without it, Windows UAC shows "Publisher: Unknown" because it can't trace Wordgate LLC cert to a trusted root. SimplySign PKCS#11 token must be logged in first (`make simplisign-login`).
 - Windows cross-build from macOS: requires `cargo-xwin`, `makensis`, `osslsigncode`, `libp11`. See `docs/plans/2026-03-11-windows-build-on-macos.md` for full setup.

@@ -1,8 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_list;
 mod channel;
+mod icon_protocol;
 mod log_upload;
-mod ne;
 mod service;
 mod storage;
 mod storage_crypto;
@@ -98,6 +99,7 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
+        .register_uri_scheme_protocol("kaitu-icon", icon_protocol::handle_kaitu_icon)
         .invoke_handler(tauri::generate_handler![
             show_window,
             hide_window,
@@ -119,6 +121,7 @@ fn main() {
             storage::storage_get,
             storage::storage_set,
             storage::storage_remove,
+            app_list::list_running_apps,
         ]);
 
     #[cfg(feature = "mcp-bridge")]
@@ -157,12 +160,7 @@ fn main() {
                 }
             });
 
-            // In NE mode: register NE state callback before ensuring NE is installed.
-            // This ensures state change events are emitted to the webapp from startup.
-            #[cfg(all(target_os = "macos", feature = "ne-mode"))]
-            ne::register_state_callback(app.handle().clone());
-
-            // Ensure k2 service / NE configuration is running with correct version
+            // Ensure k2 service is running with correct version
             let app_version = env!("CARGO_PKG_VERSION").to_string();
             log::info!("[startup] App version: {}, os: {}", app_version, std::env::consts::OS);
 
@@ -192,12 +190,9 @@ fn main() {
                 }
             });
 
-            // Start SSE status stream (daemon mode only — not NE mode)
-            #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
-            {
-                let sse_handle = app.handle().clone();
-                status_stream::start(sse_handle);
-            }
+            // Start SSE status stream
+            let sse_handle = app.handle().clone();
+            status_stream::start(sse_handle);
 
             // Start auto-updater
             updater::start_auto_updater(app.handle().clone());

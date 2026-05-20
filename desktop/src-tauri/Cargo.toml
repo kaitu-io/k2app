@@ -33,10 +33,32 @@ hkdf = "0.12"
 sha2 = "0.10"
 getrandom = "0.2"
 machine-uid = "0.5.4"
+urlencoding = "2.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libproc = "0.14"
+objc2 = "0.5"
+objc2-foundation = { version = "0.2", features = [
+    "NSArray",
+    "NSString",
+    "NSURL",
+    "NSObject",
+    "NSData",
+    "NSDictionary",
+] }
+objc2-app-kit = { version = "0.2", features = [
+    "NSWorkspace",
+    "NSRunningApplication",
+    "NSImage",
+    "NSImageRep",
+    "NSBitmapImageRep",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+sysinfo = "0.30"
 
 [features]
 mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]
-ne-mode = []
 
 [profile.release]
 strip = true

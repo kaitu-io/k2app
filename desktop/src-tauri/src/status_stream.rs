@@ -1,6 +1,5 @@
 //! SSE client for daemon's GET /api/events endpoint.
 //!
-//! Daemon mode only (not compiled in ne-mode).
 //! Maintains a persistent SSE connection and emits Tauri events:
 //! - `service-state-changed { available: bool }` — SSE connection state
 //! - `vpn-status-changed { ...engine.Status }` — VPN status from SSE events

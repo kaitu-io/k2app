@@ -28,7 +28,7 @@ yarn install                                # Always from root (workspace)
 k2/                  Go core (submodule, read-only — has its own CLAUDE.md)
   engine/            Unified tunnel lifecycle manager (desktop + mobile)
   daemon/            HTTP API shell over engine (desktop only)
-  appext/            gomobile type adapter over engine (mobile + macOS sysext)
+  appext/            gomobile type adapter over engine (iOS + Android)
 webapp/              React + MUI frontend — shared across Web/Desktop/Mobile
 web/                 Next.js website + admin dashboard
 api/                 Center API service — Go + Gin + GORM

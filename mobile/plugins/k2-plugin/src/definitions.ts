@@ -40,6 +40,8 @@ export interface K2PluginInterface {
   storageSet(options: { key: string; value: string }): Promise<void>;
   storageRemove(options: { key: string }): Promise<void>;
 
+  listInstalledApps(): Promise<{ apps: Array<{ packageName: string; label: string; iconUrl?: string; installerPackageName?: string | null }> }>;
+
   addListener(eventName: 'vpnStateChange', handler: (data: { state: string }) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'vpnError', handler: (data: { message: string }) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'nativeUpdateAvailable', handler: (data: { version: string; url?: string; appStoreUrl?: string }) => void): Promise<PluginListenerHandle>;

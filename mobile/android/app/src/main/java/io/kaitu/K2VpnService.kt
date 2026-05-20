@@ -31,13 +31,21 @@ import java.util.concurrent.atomic.AtomicBoolean
 // Pure utility functions (parseCIDR, stripPort, parseClientConfig, ParsedClientConfig)
 // are in K2VpnServiceUtils.kt for JVM unit testing.
 
-class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
+class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, appext.PackageResolver {
 
     // appext.SocketProtector — marks socket FDs for VPN routing exclusion.
     // Delegates to VpnService.protect(int) which tells the OS kernel to route
     // this socket outside the TUN interface, preventing routing loops.
     override fun protect(fd: Int): Boolean {
         return super.protect(fd)
+    }
+
+    // appext.PackageResolver — maps Android UID → package name for the rule
+    // engine's package_name match (App Bypass per-app routing).
+    override fun packageForUID(uid: Int): String {
+        val pm = packageManager
+        pm.getPackagesForUid(uid)?.firstOrNull()?.let { return it }
+        return pm.getNameForUid(uid) ?: ""
     }
 
     companion object {
@@ -287,6 +295,21 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
             Log.w(TAG, "addDisallowedApplication failed for own package: ${e.message}")
         }
 
+        // App Bypass — kernel-level per-package exclusion. Android sandboxing (API 29+
+        // SELinux + hidepid=2) blocks /proc/net/tcp reads, so the Go rule engine's
+        // package_name match cannot work. addDisallowedApplication routes the listed
+        // apps' traffic around our TUN at the kernel layer instead.
+        val disallowed = K2VpnServiceUtils.parseDisallowedPackages(configJSON, packageName)
+        for (pkg in disallowed) {
+            try {
+                builder.addDisallowedApplication(pkg)
+                Log.i(TAG, "App Bypass: addDisallowedApplication $pkg")
+            } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+                Log.w(TAG, "App Bypass: package not installed, skipped: $pkg")
+            }
+        }
+        NativeLogger.log("INFO", "App Bypass: applied ${disallowed.size} disallowed packages")
+
         vpnInterface = builder.establish()
         Log.d(TAG, "establish() result: vpnInterface=$vpnInterface")
 
@@ -326,6 +349,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
                 }
                 Log.d(TAG, "EngineConfig logDir=$logsDirPath debug=${engineCfg.debug}")
                 engineCfg.socketProtector = this@K2VpnService
+                engineCfg.packageResolver = this@K2VpnService
                 engine?.start(configJSON, rawFd.toLong(), engineCfg)
                 Log.d(TAG, "Engine started successfully")
                 NativeLogger.log("INFO", "startVpn: engine started successfully")

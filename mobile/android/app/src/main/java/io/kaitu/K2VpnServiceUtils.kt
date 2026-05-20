@@ -46,4 +46,35 @@ internal object K2VpnServiceUtils {
             null
         }
     }
+
+    /**
+     * Extracts the App Bypass package list from ClientConfig JSON for
+     * kernel-level exclusion via VpnService.Builder.addDisallowedApplication.
+     *
+     * Consumes any route whose via == "direct" and match.package_name is a
+     * non-empty array. Deduplicates (LinkedHashSet preserves first-seen order),
+     * trims whitespace, drops empty strings, and excludes selfPackage (already
+     * added by the caller). Returns empty list on parse failure — bypass is
+     * advisory; engine still operates without it.
+     */
+    fun parseDisallowedPackages(configJSON: String, selfPackage: String): List<String> {
+        return try {
+            val routes = JSONObject(configJSON).optJSONArray("routes") ?: return emptyList()
+            val result = LinkedHashSet<String>()
+            for (i in 0 until routes.length()) {
+                val route = routes.optJSONObject(i) ?: continue
+                if (route.optString("via") != "direct") continue
+                val pkgs = route.optJSONObject("match")?.optJSONArray("package_name") ?: continue
+                for (j in 0 until pkgs.length()) {
+                    val pkg = pkgs.optString(j).trim()
+                    if (pkg.isNotEmpty() && pkg != selfPackage) {
+                        result.add(pkg)
+                    }
+                }
+            }
+            result.toList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 }
