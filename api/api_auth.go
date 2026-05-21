@@ -513,8 +513,9 @@ func api_web_auth(c *gin.Context) {
 
 	var authResult *DataAuthResult
 	var err error
-	var userIsAdmin bool  // 用于响应中返回用户信息
-	var userRoles uint64  // 用于 JWT 中的角色
+	var userIsAdmin bool     // 用于响应中返回用户信息
+	var userRoles uint64     // 用于 JWT 中的角色
+	var userHasPassword bool // 用于响应中告知前端 /account/security 应显示「修改」还是「设置」
 
 	// 使用事务处理用户信息更新和邀请码设置
 	err = db.Get().Transaction(func(tx *gorm.DB) error {
@@ -527,6 +528,7 @@ func api_web_auth(c *gin.Context) {
 		// 保存用户信息用于响应和 JWT
 		userIsAdmin = user.IsAdmin != nil && *user.IsAdmin
 		userRoles = user.Roles
+		userHasPassword = HasPasswordSet(&user)
 
 		// 追踪是否需要保存用户信息
 		needSave := false
@@ -628,10 +630,11 @@ func api_web_auth(c *gin.Context) {
 	// fallback 使用（iOS 微信 WKWebView 等不持久化 Set-Cookie 的环境）。
 	Success(c, &DataWebLoginResponse{
 		User: DataWebLoginUser{
-			ID:      identify.UserID,
-			Email:   req.Email,
-			IsAdmin: userIsAdmin,
-			Roles:   userRoles,
+			ID:          identify.UserID,
+			Email:       req.Email,
+			IsAdmin:     userIsAdmin,
+			Roles:       userRoles,
+			HasPassword: userHasPassword,
 		},
 		AccessToken: authResult.AccessToken,
 	})
@@ -1025,12 +1028,16 @@ func api_web_password_login(c *gin.Context) {
 	}
 
 	log.Infof(c, "user %d successfully logged in via web password", identify.UserID)
+	// HasPassword is unconditionally true on this code path — we just verified
+	// the user's password to get here. Routed through HasPasswordSet for
+	// consistency with api_web_auth (cheap, no extra query).
 	Success(c, &DataWebLoginResponse{
 		User: DataWebLoginUser{
-			ID:      identify.UserID,
-			Email:   req.Email,
-			IsAdmin: userIsAdmin,
-			Roles:   userRoles,
+			ID:          identify.UserID,
+			Email:       req.Email,
+			IsAdmin:     userIsAdmin,
+			Roles:       userRoles,
+			HasPassword: HasPasswordSet(user),
 		},
 		AccessToken: authResult.AccessToken,
 	})

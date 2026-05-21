@@ -121,8 +121,9 @@ func TestWebPasswordLogin_HappyPath(t *testing.T) {
 		Data struct {
 			AccessToken string `json:"accessToken"`
 			User        struct {
-				ID    uint64 `json:"id"`
-				Email string `json:"email"`
+				ID          uint64 `json:"id"`
+				Email       string `json:"email"`
+				HasPassword bool   `json:"hasPassword"`
 			} `json:"user"`
 		} `json:"data"`
 	}
@@ -130,6 +131,10 @@ func TestWebPasswordLogin_HappyPath(t *testing.T) {
 	assert.Equal(t, 0, resp.Code, "expected success, got body: %s", w.Body.String())
 	assert.NotEmpty(t, resp.Data.AccessToken, "accessToken must be in body for WebView fallback")
 	assert.Equal(t, email, resp.Data.User.Email)
+	// T21 regression guard: server MUST emit hasPassword=true so the web client
+	// doesn't render the wrong "set password" CTA on first /account/security
+	// render after a fresh password login.
+	assert.True(t, resp.Data.User.HasPassword, "password-login response must carry hasPassword=true")
 
 	// HttpOnly cookie path: Set-Cookie header must include access_token.
 	setCookieHeader := w.Header().Get("Set-Cookie")

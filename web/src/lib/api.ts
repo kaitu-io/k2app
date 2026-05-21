@@ -429,6 +429,12 @@ export interface AuthUser {
   email: string;
   isAdmin: boolean;
   roles: number;
+  /**
+   * Server-populated since the T21 fix. Pre-T21 clients that read this from
+   * `localStorage` (none currently — the field is only consumed via AuthContext
+   * after a fresh login response) can still treat undefined as `false`.
+   */
+  hasPassword: boolean;
 }
 
 export interface SendAuthCodeRequest {

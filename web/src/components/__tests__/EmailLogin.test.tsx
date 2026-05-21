@@ -31,8 +31,9 @@ vi.mock('@/lib/api', () => {
   };
 });
 
+const mockLogin = vi.fn().mockResolvedValue(undefined);
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({ login: vi.fn().mockResolvedValue(undefined) }),
+  useAuth: () => ({ login: mockLogin }),
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
@@ -98,5 +99,36 @@ describe('EmailLogin password tab', () => {
     render(<EmailLogin />);
     fireEvent.click(screen.getByText('auth.login.passwordLogin'));
     expect(screen.getByText('auth.login.forgotPasswordHint')).toBeInTheDocument();
+  });
+
+  // T21 + Risk #2 regression guard: ensure password tab hydrates the
+  // AuthContext with hasPassword=true AND invokes the parent onLoginSuccess
+  // callback. This is the contract that PurchaseStep1 / RedeemClient /
+  // GiftCodeClient / survey page rely on for their gating to flip.
+  it('hydrates AuthContext with hasPassword=true and fires onLoginSuccess', async () => {
+    const onLoginSuccess = vi.fn();
+    render(<EmailLogin onLoginSuccess={onLoginSuccess} />);
+
+    fireEvent.click(screen.getByText('auth.login.passwordLogin'));
+
+    const emailInput = document.getElementById('login-email-pw') as HTMLInputElement;
+    const passwordInput = document.getElementById('login-password') as HTMLInputElement;
+    fireEvent.change(emailInput, { target: { value: 'a@b.com' } });
+    fireEvent.change(passwordInput, { target: { value: 'k7N#mq2P!xT9' } });
+
+    const submitBtn = screen
+      .getAllByRole('button')
+      .find((b) => (b.textContent || '').includes('auth.login.loginButton'));
+    fireEvent.click(submitBtn!);
+
+    await waitFor(() => expect(mockLogin).toHaveBeenCalled());
+    // First arg to login() must be the user shape with hasPassword=true,
+    // so the parent re-render shows "Change password" instead of "Set password"
+    // immediately, without waiting for the next /api/user/info round-trip.
+    expect(mockLogin).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, email: 'a@b.com', hasPassword: true }),
+      't',
+    );
+    await waitFor(() => expect(onLoginSuccess).toHaveBeenCalledTimes(1));
   });
 });

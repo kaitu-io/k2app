@@ -119,7 +119,10 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
       );
       toast.success(t('auth.login.loginSuccess'));
       const { user, accessToken } = response;
-      await login(user, accessToken);
+      // Password login always implies hasPassword=true; backend now sets it
+      // explicitly but we belt-and-suspenders here to survive a hypothetical
+      // server-side regression that drops the field.
+      await login({ ...user, hasPassword: true }, accessToken);
       onLoginSuccess?.();
     } catch (error) {
       if (error instanceof ApiError) {

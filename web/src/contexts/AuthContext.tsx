@@ -20,10 +20,11 @@ interface User {
   roles: number;
   /**
    * Whether the user has a password on file. Populated by `getCurrentUser`
-   * on mount; left undefined immediately after `login()` (the OTP/password
-   * login response does not carry this field — the next mount or page
-   * navigation refreshes it via `/api/user/info`). Consumers must default
-   * to `false` when undefined.
+   * on mount and also by both login paths (OTP + password — server now
+   * returns this field on the WebLogin response, so the CTA on
+   * `/account/security` resolves correctly on the first render after login).
+   * Consumers should still default to `false` when undefined, as a
+   * defensive measure against future shape regressions.
    */
   hasPassword?: boolean;
 }
