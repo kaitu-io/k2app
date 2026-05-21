@@ -99,7 +99,7 @@ func TestWebPasswordLogin_HappyPath(t *testing.T) {
 	t.Cleanup(func() { viper.Set("mail.dev_mode", prevDevMode) })
 
 	const password = "k7N#mq2P!xT9"
-	_, email := seedWebPasswordLoginUser(t, password)
+	user, email := seedWebPasswordLoginUser(t, password)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -134,6 +134,12 @@ func TestWebPasswordLogin_HappyPath(t *testing.T) {
 	// HttpOnly cookie path: Set-Cookie header must include access_token.
 	setCookieHeader := w.Header().Get("Set-Cookie")
 	assert.Contains(t, setCookieHeader, "access_token", "Set-Cookie must include access_token")
+
+	// Verify the success path reset the failure counter.
+	var refreshed User
+	require.NoError(t, db.Get().First(&refreshed, user.ID).Error)
+	assert.Equal(t, 0, int(refreshed.PasswordFailedAttempts), "successful login should reset failed-attempt counter")
+	assert.Equal(t, int64(0), refreshed.PasswordLockedUntil, "successful login should clear any lock")
 }
 
 // TestWebPasswordLogin_WrongPasswordReturnsInvalidCredentials verifies the

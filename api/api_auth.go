@@ -758,7 +758,7 @@ func api_password_login(c *gin.Context) {
 	// Check if password is set
 	if !HasPasswordSet(user) {
 		log.Warnf(c, "user %d has no password set", user.ID)
-		Error(c, ErrorInvalidCredentials, "password not set")
+		Error(c, ErrorInvalidCredentials, "invalid email or password")
 		return
 	}
 
