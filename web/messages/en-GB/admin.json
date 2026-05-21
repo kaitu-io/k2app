@@ -23,6 +23,32 @@
     "wallet": {
       "title": "My Wallet",
       "description": "Manage your wallet balance and withdrawals"
+    },
+    "password": {
+      "setPassword": "Set password",
+      "changePassword": "Change password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password",
+      "requirements": "At least {length} characters; avoid common words, keyboard patterns, repeated characters",
+      "tooShort": "Password is too short",
+      "tooWeak": "Password is too weak. Use a longer or more random combination (avoid common words, keyboard patterns, repeated characters).",
+      "mismatch": "Passwords do not match",
+      "setFailed": "Failed to set password",
+      "setSuccess": "Password set successfully",
+      "strength": {
+        "label": "Password strength",
+        "veryWeak": "Very weak",
+        "weak": "Weak",
+        "fair": "Fair",
+        "good": "Good",
+        "strong": "Strong"
+      }
+    },
+    "security": {
+      "title": "Account security",
+      "description": "Manage your login password",
+      "passwordSet": "Set a password to log in with email and password, while still being able to use verification codes.",
+      "passwordChange": "You have a password set — you can change it here."
     }
   },
   "retailer": {

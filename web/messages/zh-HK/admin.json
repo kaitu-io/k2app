@@ -23,6 +23,32 @@
     "wallet": {
       "title": "我嘅錢包",
       "description": "管理您嘅錢包餘額同提現"
+    },
+    "password": {
+      "setPassword": "設定密碼",
+      "changePassword": "修改密碼",
+      "newPassword": "新密碼",
+      "confirmPassword": "確認密碼",
+      "requirements": "至少 {length} 位，請避免常見詞、鍵盤順序、重複字元",
+      "tooShort": "密碼長度過短",
+      "tooWeak": "密碼過弱，請使用更長或更隨機的組合（避免常見詞、鍵盤順序、重複字元）",
+      "mismatch": "兩次輸入的密碼不一致",
+      "setFailed": "設定密碼失敗",
+      "setSuccess": "密碼設定成功",
+      "strength": {
+        "label": "密碼強度",
+        "veryWeak": "極弱",
+        "weak": "弱",
+        "fair": "一般",
+        "good": "強",
+        "strong": "極強"
+      }
+    },
+    "security": {
+      "title": "帳號安全",
+      "description": "管理你的登入密碼",
+      "passwordSet": "設定密碼後可以使用密碼登入，仍可繼續用驗證碼登入",
+      "passwordChange": "你已經設定過密碼，可以在此修改"
     }
   },
   "retailer": {
