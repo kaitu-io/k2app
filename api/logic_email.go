@@ -115,6 +115,22 @@ var (
 系统通知`,
 	}
 
+	passwordChangedTemplate = EmailTemplate[PasswordChangedMeta]{
+		Subject: "Kaitu 账号密码已修改",
+		Body: `尊敬的用户：
+
+您的 Kaitu 账号密码刚刚已更新。
+
+详细信息：
+- 修改时间：{{.ChangeTime}}
+- 来源 IP：{{.ClientIP}}
+
+如果这不是您本人操作，请立即联系客服重置账号。
+
+此致
+系统通知`,
+	}
+
 	delegatePayInviteTemplate = EmailTemplate[DelegatePayInviteMeta]{
 		Subject: "{{.InviterEmail}} 请你帮忙代付一下 Kaitu 会员",
 		Body: `你好，
@@ -174,6 +190,12 @@ type PasswordLoginMeta struct {
 	Platform   string
 	ClientIP   string
 	LoginTime  string
+}
+
+// PasswordChangedMeta is the template payload for password change notifications.
+type PasswordChangedMeta struct {
+	ChangeTime string
+	ClientIP   string
 }
 
 // DelegatePayInviteMeta 代付邀请邮件元数据

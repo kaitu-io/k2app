@@ -105,13 +105,22 @@
     "changePassword": "Change Password",
     "newPassword": "New Password",
     "confirmPassword": "Confirm Password",
-    "requirements": "At least 8 characters, including letters and numbers",
-    "tooShort": "Password must be at least 8 characters",
+    "requirements": "At least {{length}} characters; avoid common words, keyboard patterns, repeated characters",
+    "tooShort": "Password must be at least {{length}} characters",
     "needsLetter": "Password must contain letters",
     "needsNumber": "Password must contain numbers",
     "mismatch": "Passwords do not match",
     "setFailed": "Failed to set password",
-    "setSuccess": "Password set successfully"
+    "setSuccess": "Password set successfully",
+    "tooWeak": "Password is too weak. Use a longer or more random combination (avoid common words, keyboard patterns, repeated characters).",
+    "strength": {
+      "label": "Password strength",
+      "veryWeak": "Very weak",
+      "weak": "Weak",
+      "fair": "Fair",
+      "good": "Good",
+      "strong": "Strong"
+    }
   },
   "betaProgram": {
     "title": "Beta Program",

@@ -105,13 +105,22 @@
     "changePassword": "パスワードを変更",
     "newPassword": "新しいパスワード",
     "confirmPassword": "パスワードを確認",
-    "requirements": "8文字以上、英字と数字を含む",
-    "tooShort": "パスワードは8文字以上必要です",
+    "requirements": "{{length}}文字以上、よくある単語・キーボード配列・繰り返し文字は避けてください",
+    "tooShort": "パスワードは{{length}}文字以上にしてください",
     "needsLetter": "パスワードに英字が必要です",
     "needsNumber": "パスワードに数字が必要です",
     "mismatch": "パスワードが一致しません",
     "setFailed": "パスワードの設定に失敗しました",
-    "setSuccess": "パスワードを設定しました"
+    "setSuccess": "パスワードを設定しました",
+    "tooWeak": "パスワードが弱すぎます。より長くランダムな組み合わせを使用してください（よくある単語、キーボード配列、繰り返し文字は避ける）",
+    "strength": {
+      "label": "パスワード強度",
+      "veryWeak": "非常に弱い",
+      "weak": "弱い",
+      "fair": "普通",
+      "good": "強い",
+      "strong": "非常に強い"
+    }
   },
   "betaProgram": {
     "title": "ベータプログラム",

@@ -23,6 +23,32 @@
     "wallet": {
       "title": "我的钱包",
       "description": "管理您的钱包余额和提现"
+    },
+    "password": {
+      "setPassword": "设置密码",
+      "changePassword": "修改密码",
+      "newPassword": "新密码",
+      "confirmPassword": "确认密码",
+      "requirements": "至少 {length} 位，请避免常见词、键盘顺序、重复字符",
+      "tooShort": "密码长度过短",
+      "tooWeak": "密码过弱，请使用更长或更随机的组合（避免常见词、键盘顺序、重复字符）",
+      "mismatch": "两次输入的密码不一致",
+      "setFailed": "设置密码失败",
+      "setSuccess": "密码设置成功",
+      "strength": {
+        "label": "密码强度",
+        "veryWeak": "极弱",
+        "weak": "弱",
+        "fair": "一般",
+        "good": "强",
+        "strong": "极强"
+      }
+    },
+    "security": {
+      "title": "账号安全",
+      "description": "管理你的登录密码",
+      "passwordSet": "设置一个密码后可以使用密码登录，仍可继续用验证码登录",
+      "passwordChange": "你已经设置过密码，可以在此修改"
     }
   },
   "retailer": {

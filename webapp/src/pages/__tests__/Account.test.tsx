@@ -274,4 +274,35 @@ describe('Account', () => {
       expect(findSlogan()).not.toBeNull();
     });
   });
+
+  // ==================== Task 13: 密码入口 ====================
+  describe('密码入口', () => {
+    it('user.hasPassword=true 时显示 "修改密码"', () => {
+      vi.mocked(useUser).mockReturnValue({
+        user: createMockUser({ hasPassword: true }),
+        loading: false,
+        isMembership: true,
+        isExpired: false,
+        fetchUser: vi.fn(),
+      } as any);
+
+      render(<Account />);
+      expect(screen.getByText('修改密码')).toBeTruthy();
+      expect(screen.queryByText('设置密码')).toBeNull();
+    });
+
+    it('user.hasPassword=false 时显示 "设置密码"', () => {
+      vi.mocked(useUser).mockReturnValue({
+        user: createMockUser({ hasPassword: false }),
+        loading: false,
+        isMembership: true,
+        isExpired: false,
+        fetchUser: vi.fn(),
+      } as any);
+
+      render(<Account />);
+      expect(screen.getByText('设置密码')).toBeTruthy();
+      expect(screen.queryByText('修改密码')).toBeNull();
+    });
+  });
 });

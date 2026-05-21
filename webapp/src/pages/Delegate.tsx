@@ -98,7 +98,7 @@ export default function Delegate() {
       } else {
         console.warn("[Delegate] save failed:", response?.code, response?.message);
         showAlert(
-          getErrorMessage(response?.code ?? -1, t, t("account:delegate.saveFailed")),
+          getErrorMessage(response?.code ?? -1, response?.message, t, t("account:delegate.saveFailed")),
           "error"
         );
       }
@@ -121,7 +121,7 @@ export default function Delegate() {
       } else {
         console.warn("[Delegate] remove failed:", response?.code, response?.message);
         showAlert(
-          getErrorMessage(response?.code ?? -1, t, t("account:delegate.removeFailed")),
+          getErrorMessage(response?.code ?? -1, response?.message, t, t("account:delegate.removeFailed")),
           "error"
         );
       }

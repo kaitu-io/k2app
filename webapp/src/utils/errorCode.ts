@@ -5,6 +5,8 @@
 
 import { TFunction } from 'i18next';
 
+import { PASSWORD_MIN_LENGTH } from './password-strength';
+
 /**
  * Error codes — backend API codes synced with api/response.go,
  * plus frontend-only codes for VPN/network/action errors.
@@ -107,13 +109,22 @@ export const ERROR_CODES = {
 
 /**
  * Get error message by error code
+ *
+ * `message` is the raw backend `response.message`. It is NOT displayed to users
+ * (that would violate webapp/CLAUDE.md "API Error Code Constitution"). It is
+ * only used to disambiguate a small set of `ErrorInvalidArgument` (422)
+ * sub-cases where the backend exposes a stable enum string — currently the
+ * password strength validator (`password_too_short` / `password_too_weak`).
+ *
  * @param code - Error code from response
+ * @param message - Backend response.message (used only for enum routing)
  * @param t - i18next translation function
  * @param defaultMessage - Default message if no mapping found
  * @returns Localized error message
  */
 export function getErrorMessage(
   code: number,
+  message: string | undefined,
   t: TFunction,
   defaultMessage?: string
 ): string {
@@ -148,6 +159,13 @@ export function getErrorMessage(
       return t('common:errors.client.conflict', 'Operation conflict, please try again');
 
     case ERROR_CODES.INVALID_ARGUMENT:
+      // Backend's password strength validator returns a stable enum string in
+      // `response.message` (`password_too_short` / `password_too_weak`) — this
+      // is the ONLY allowed message-based routing per webapp/CLAUDE.md
+      // "API Error Code Constitution". See spec
+      // `docs/superpowers/specs/2026-05-21-password-login-completion-design.md` §4.5.
+      if (message === 'password_too_short') return t('account:password.tooShort', { length: PASSWORD_MIN_LENGTH });
+      if (message === 'password_too_weak') return t('account:password.tooWeak');
       return t('common:errors.client.invalidArgument', 'Invalid parameters');
 
     case ERROR_CODES.TOO_EARLY:
@@ -320,7 +338,9 @@ export function handleResponseError(
     return;
   }
 
-  // Prefer code-based message over response message
-  const errorMessage = getErrorMessage(code, t, message || defaultMessage);
+  // Prefer code-based message over response message. `message` is passed through
+  // so getErrorMessage can route `ErrorInvalidArgument` sub-cases (e.g. password
+  // strength enum) to specific i18n keys; the raw string is never shown to users.
+  const errorMessage = getErrorMessage(code, message, t, defaultMessage);
   throw new Error(errorMessage);
 }

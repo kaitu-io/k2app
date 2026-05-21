@@ -72,8 +72,9 @@ export function showErrorToast(error: unknown, t: TFunction): void {
 
   if (isApiError(error)) {
     const code = error.code || ERROR_CODES.INTERNAL_SERVER_ERROR;
-    // Never pass raw error.message as fallback — it may contain internal API domains
-    const message = getErrorMessage(code, t);
+    // Never pass raw error.message as fallback — it may contain internal API domains.
+    // Forward response.message so getErrorMessage can route enum sub-cases.
+    const message = getErrorMessage(code, error.response?.message, t);
     showAlert(message, 'error');
   } else if (error instanceof Error) {
     showAlert(t('common:common.unknownError'), 'error');
@@ -118,8 +119,9 @@ export function isApiError(error: unknown): error is ApiError {
  */
 export function getErrorMessageText(error: unknown, t: TFunction, fallback?: string): string {
   if (isApiError(error) && error.code !== undefined) {
-    // Never pass raw error.message as fallback — it may contain internal API domains
-    return getErrorMessage(error.code, t, fallback);
+    // Never pass raw error.message as fallback — it may contain internal API domains.
+    // Forward response.message so getErrorMessage can route enum sub-cases.
+    return getErrorMessage(error.code, error.response?.message, t, fallback);
   }
   // Don't expose raw Error.message to users — may contain URLs or technical details
   return fallback || t('common:common.unknownError');
@@ -223,8 +225,9 @@ export function validateResponse<T>(
   defaultError: string
 ): T {
   if (response.code !== ERROR_CODES.SUCCESS) {
-    // Never pass response.message as fallback — it may contain internal API domains
-    const message = getErrorMessage(response.code, t, defaultError);
+    // Never pass response.message as fallback — it may contain internal API domains.
+    // Forward response.message so getErrorMessage can route enum sub-cases.
+    const message = getErrorMessage(response.code, response.message, t, defaultError);
     const error = new Error(message) as ApiError;
     error.code = response.code;
     error.response = response;

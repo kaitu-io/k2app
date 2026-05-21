@@ -64,6 +64,8 @@ func SetupRouter() *gin.Engine {
 			auth.POST("/login/password", api_password_login)
 			// Web用户登录（无设备绑定）
 			auth.POST("/web-login", api_web_auth)
+			// Web 密码登录（无设备绑定，cookie 认证）
+			auth.POST("/web-login/password", api_web_password_login)
 			// 刷新 token
 			auth.POST("/refresh", api_refresh_token)
 			// 设备登出

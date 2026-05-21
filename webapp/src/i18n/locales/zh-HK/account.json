@@ -105,13 +105,22 @@
     "changePassword": "修改密碼",
     "newPassword": "新密碼",
     "confirmPassword": "確認密碼",
-    "requirements": "至少8位，包含字母和數字",
-    "tooShort": "密碼至少8位",
+    "requirements": "至少 {{length}} 位，請避免常見詞、鍵盤順序、重複字元",
+    "tooShort": "密碼至少 {{length}} 位",
     "needsLetter": "密碼需要包含字母",
     "needsNumber": "密碼需要包含數字",
     "mismatch": "兩次輸入嘅密碼唔一致",
     "setFailed": "設定密碼失敗",
-    "setSuccess": "密碼設定成功"
+    "setSuccess": "密碼設定成功",
+    "tooWeak": "密碼過弱，請使用更長或更隨機的組合（避免常見詞、鍵盤順序、重複字元）",
+    "strength": {
+      "label": "密碼強度",
+      "veryWeak": "極弱",
+      "weak": "弱",
+      "fair": "一般",
+      "good": "強",
+      "strong": "極強"
+    }
   },
   "betaProgram": {
     "title": "Beta 測試計畫",

@@ -110,6 +110,7 @@ type DataUser struct {
 	Wallet           *DataWallet          `json:"wallet,omitempty"`         // 钱包信息（仅管理员可见）
 	Roles            uint64               `json:"roles"`                    // 角色位掩码
 	IsAdmin            bool                 `json:"isAdmin,omitempty"`            // 是否超级管理员
+	HasPassword        bool                 `json:"hasPassword"`                  // 是否已设置密码
 	HasAccessKey       bool                 `json:"hasAccessKey,omitempty"`       // 是否有 Access Key
 	AccessKeyCreatedAt int64                `json:"accessKeyCreatedAt,omitempty"` // Access Key 创建时间
 	BetaOptedIn        bool                 `json:"betaOptedIn"`                  // 是否订阅 beta
@@ -216,10 +217,11 @@ type DataWebLoginResponse struct {
 
 // DataWebLoginUser Web登录用户信息
 type DataWebLoginUser struct {
-	ID      uint64 `json:"id"`      // 用户ID
-	Email   string `json:"email"`   // 用户邮箱
-	IsAdmin bool   `json:"isAdmin"` // 是否管理员（向后兼容）
-	Roles   uint64 `json:"roles"`   // 角色位掩码
+	ID          uint64 `json:"id"`          // 用户ID
+	Email       string `json:"email"`       // 用户邮箱
+	IsAdmin     bool   `json:"isAdmin"`     // 是否管理员（向后兼容）
+	Roles       uint64 `json:"roles"`       // 角色位掩码
+	HasPassword bool   `json:"hasPassword"` // 是否设置过密码（前端 /account/security CTA 标签依赖此字段，避免登录后刷新前误显示「设置密码」）
 }
 
 // DataLoginRequest 登录请求数据结构

@@ -366,7 +366,10 @@ type SetPasswordRequest struct {
 	ConfirmPassword string `json:"confirmPassword" binding:"required"`
 }
 
-// api_set_password sets or updates user password
+// api_set_password sets or updates the authenticated user's password.
+// Note: does NOT require the old password — we trust the bearer token /
+// auth cookie. To compensate, every successful change sends an email
+// notification (defense-in-depth against cookie/token theft).
 func api_set_password(c *gin.Context) {
 	userID := ReqUserID(c)
 	log.Infof(c, "user %d request to set password", userID)
@@ -378,33 +381,34 @@ func api_set_password(c *gin.Context) {
 		return
 	}
 
-	// Validate passwords match
 	if req.Password != req.ConfirmPassword {
 		log.Warnf(c, "passwords do not match for user %d", userID)
 		Error(c, ErrorInvalidArgument, "passwords do not match")
 		return
 	}
 
-	// Validate password strength
-	if errKey := ValidatePasswordStrength(req.Password); errKey != "" {
+	// Pull the user (with login identities) to harvest the email for
+	// zxcvbn userInputs. This lets the strength gate penalize passwords
+	// that contain the user's email or its local part.
+	var user User
+	if err := db.Get().Preload("LoginIdentifies").First(&user, userID).Error; err != nil {
+		log.Errorf(c, "failed to find user %d: %v", userID, err)
+		Error(c, ErrorSystemError, "user not found")
+		return
+	}
+
+	userInputs := collectUserInputsForPasswordStrength(c, &user)
+
+	if errKey := ValidatePasswordStrength(req.Password, userInputs); errKey != "" {
 		log.Warnf(c, "password does not meet requirements for user %d: %s", userID, errKey)
 		Error(c, ErrorInvalidArgument, errKey)
 		return
 	}
 
-	// Hash password
 	hash, err := UserPasswordHash(req.Password)
 	if err != nil {
 		log.Errorf(c, "failed to hash password for user %d: %v", userID, err)
 		Error(c, ErrorSystemError, "failed to set password")
-		return
-	}
-
-	// Update user
-	var user User
-	if err := db.Get().First(&user, userID).Error; err != nil {
-		log.Errorf(c, "failed to find user %d: %v", userID, err)
-		Error(c, ErrorSystemError, "user not found")
 		return
 	}
 
@@ -418,8 +422,41 @@ func api_set_password(c *gin.Context) {
 		return
 	}
 
+	// Fire-and-log: email failure must not surface to the user — we still
+	// changed the password successfully.
+	meta := PasswordChangedMeta{
+		ChangeTime: time.Now().Format("2006-01-02 15:04:05"),
+		ClientIP:   c.ClientIP(),
+	}
+	if err := emailToUser(c, int64(userID), passwordChangedTemplate, meta); err != nil {
+		log.Errorf(c, "failed to send password changed email to user %d: %v", userID, err)
+	}
+
 	log.Infof(c, "user %d successfully set password", userID)
 	SuccessEmpty(c)
+}
+
+// collectUserInputsForPasswordStrength returns plaintext tokens (currently
+// the user's email and its local part) for zxcvbn so it can penalize
+// passwords that contain them. Best-effort: on decrypt failure we return
+// an empty slice — the length + score gates still apply.
+func collectUserInputsForPasswordStrength(c *gin.Context, user *User) []string {
+	var inputs []string
+	for i := range user.LoginIdentifies {
+		if user.LoginIdentifies[i].Type != "email" {
+			continue
+		}
+		email, err := secretDecryptString(c, user.LoginIdentifies[i].EncryptedValue)
+		if err != nil {
+			log.Warnf(c, "failed to decrypt email for user %d strength check: %v", user.ID, err)
+			continue
+		}
+		inputs = append(inputs, email)
+		if at := strings.Index(email, "@"); at > 0 {
+			inputs = append(inputs, email[:at])
+		}
+	}
+	return inputs
 }
 
 // buildDataUserWithDevice 构建用户数据响应（带设备信息）
@@ -463,6 +500,7 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 		IsRetailer:       user.IsRetailer != nil && *user.IsRetailer,
 		Roles:            user.Roles,
 		IsAdmin:          user.IsAdmin != nil && *user.IsAdmin,
+		HasPassword:      HasPasswordSet(user),
 		BetaOptedIn:      user.BetaOptedIn != nil && *user.BetaOptedIn,
 		Tier:             user.Tier,
 		MaxDevice:        q.MaxDevice,

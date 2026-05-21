@@ -18,6 +18,15 @@ interface User {
   email: string;
   isAdmin: boolean;
   roles: number;
+  /**
+   * Whether the user has a password on file. Populated by `getCurrentUser`
+   * on mount and also by both login paths (OTP + password — server now
+   * returns this field on the WebLogin response, so the CTA on
+   * `/account/security` resolves correctly on the first render after login).
+   * Consumers should still default to `false` when undefined, as a
+   * defensive measure against future shape regressions.
+   */
+  hasPassword?: boolean;
 }
 
 interface AuthContextType {
@@ -86,6 +95,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               email: userInfo.email || "",
               isAdmin: userInfo.isAdmin || false,
               roles: userInfo.roles ?? 1,
+              hasPassword: userInfo.hasPassword,
             });
           } catch {
             console.log("[AuthContext] Embed token invalid");
@@ -102,6 +112,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           email: userInfo.email || "",
           isAdmin: userInfo.isAdmin || false,
           roles: userInfo.roles ?? 1,
+          hasPassword: userInfo.hasPassword,
         });
       } catch {
         // Not authenticated or error - user stays null

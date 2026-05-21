@@ -513,8 +513,9 @@ func api_web_auth(c *gin.Context) {
 
 	var authResult *DataAuthResult
 	var err error
-	var userIsAdmin bool  // 用于响应中返回用户信息
-	var userRoles uint64  // 用于 JWT 中的角色
+	var userIsAdmin bool     // 用于响应中返回用户信息
+	var userRoles uint64     // 用于 JWT 中的角色
+	var userHasPassword bool // 用于响应中告知前端 /account/security 应显示「修改」还是「设置」
 
 	// 使用事务处理用户信息更新和邀请码设置
 	err = db.Get().Transaction(func(tx *gorm.DB) error {
@@ -527,6 +528,7 @@ func api_web_auth(c *gin.Context) {
 		// 保存用户信息用于响应和 JWT
 		userIsAdmin = user.IsAdmin != nil && *user.IsAdmin
 		userRoles = user.Roles
+		userHasPassword = HasPasswordSet(&user)
 
 		// 追踪是否需要保存用户信息
 		needSave := false
@@ -628,10 +630,11 @@ func api_web_auth(c *gin.Context) {
 	// fallback 使用（iOS 微信 WKWebView 等不持久化 Set-Cookie 的环境）。
 	Success(c, &DataWebLoginResponse{
 		User: DataWebLoginUser{
-			ID:      identify.UserID,
-			Email:   req.Email,
-			IsAdmin: userIsAdmin,
-			Roles:   userRoles,
+			ID:          identify.UserID,
+			Email:       req.Email,
+			IsAdmin:     userIsAdmin,
+			Roles:       userRoles,
+			HasPassword: userHasPassword,
 		},
 		AccessToken: authResult.AccessToken,
 	})
@@ -758,7 +761,7 @@ func api_password_login(c *gin.Context) {
 	// Check if password is set
 	if !HasPasswordSet(user) {
 		log.Warnf(c, "user %d has no password set", user.ID)
-		Error(c, ErrorInvalidCredentials, "password not set")
+		Error(c, ErrorInvalidCredentials, "invalid email or password")
 		return
 	}
 
@@ -860,5 +863,183 @@ func api_password_login(c *gin.Context) {
 
 	log.Infof(c, "user %d logged in via password with device %s", identify.UserID, device.UDID)
 	Success(c, authResult)
+}
+
+// WebPasswordLoginRequest is the request body for cookie-based password
+// login on the public website. No UDID, no device binding — pure
+// authentication that returns an HttpOnly cookie (plus accessToken in body
+// for WebView fallback).
+type WebPasswordLoginRequest struct {
+	Email      string `json:"email" binding:"required,email"`
+	Password   string `json:"password" binding:"required"`
+	Language   string `json:"language"`
+	InviteCode string `json:"inviteCode"`
+}
+
+// api_web_password_login handles cookie-based password authentication for
+// the public website. Mirrors api_web_auth's transaction template
+// (language + invite + activation) but gates on password instead of
+// verification code, using the same lock/strength helpers as the
+// device-bound api_password_login.
+//
+// Anti-enumeration: unknown user, wrong password, and "password not set"
+// all collapse to ErrorInvalidCredentials. Only IsAccountLocked diverges
+// (ErrorTooManyRequests), which is acceptable because the lockout state
+// is observable to the attacker regardless.
+func api_web_password_login(c *gin.Context) {
+	var req WebPasswordLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Warnf(c, "invalid web password login request: %v", err)
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+	if err := cleanEmailField(c, &req.Email); err != nil {
+		log.Warnf(c, "invalid email format on web password login: %v", err)
+		Error(c, ErrorInvalidArgument, "invalid email format")
+		return
+	}
+	log.Infof(c, "web password login request from email: %s", hideEmail(req.Email))
+
+	indexID := secretHashIt(c, []byte(req.Email))
+
+	var identify LoginIdentify
+	if err := db.Get().Preload("User").Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+		if util.DbIsNotFoundErr(err) {
+			log.Warnf(c, "user not found for web password login, email (hashed): %s", indexID)
+			Error(c, ErrorInvalidCredentials, "invalid email or password")
+			return
+		}
+		log.Errorf(c, "failed to find user for web password login: %v", err)
+		Error(c, ErrorSystemError, "login failed")
+		return
+	}
+
+	user := identify.User
+	if user == nil {
+		log.Errorf(c, "user object is nil for identify %d", identify.ID)
+		Error(c, ErrorSystemError, "login failed")
+		return
+	}
+
+	if !HasPasswordSet(user) {
+		log.Warnf(c, "user %d has no password set (web)", user.ID)
+		Error(c, ErrorInvalidCredentials, "invalid email or password")
+		return
+	}
+
+	if IsAccountLocked(user) {
+		remainingSeconds := user.PasswordLockedUntil - time.Now().Unix()
+		log.Warnf(c, "user %d account is locked (web), remaining: %ds", user.ID, remainingSeconds)
+		Error(c, ErrorTooManyRequests, "account temporarily locked")
+		return
+	}
+
+	if !UserPasswordVerify(req.Password, user.PasswordHash) {
+		log.Warnf(c, "invalid password for user %d (web)", user.ID)
+		if err := RecordFailedPasswordAttempt(c, user); err != nil {
+			log.Errorf(c, "failed to record failed attempt for user %d: %v", user.ID, err)
+		}
+		Error(c, ErrorInvalidCredentials, "invalid email or password")
+		return
+	}
+
+	if err := ResetFailedPasswordAttempts(c, user); err != nil {
+		log.Errorf(c, "failed to reset failed attempts for user %d: %v", user.ID, err)
+	}
+
+	var userIsAdmin bool
+	var userRoles uint64
+
+	err := db.Get().Transaction(func(tx *gorm.DB) error {
+		var u User
+		if err := tx.First(&u, identify.UserID).Error; err != nil {
+			return err
+		}
+		userIsAdmin = u.IsAdmin != nil && *u.IsAdmin
+		userRoles = u.Roles
+
+		needSave := false
+
+		if req.Language != "" {
+			acceptLanguage := c.GetHeader("Accept-Language")
+			detectedLanguage := detectUserLanguage(c, req.Language, req.Email, acceptLanguage)
+			if detectedLanguage != u.Language {
+				u.Language = detectedLanguage
+				needSave = true
+			}
+		}
+
+		// Invite code: only honoured for unactivated users — same rule as
+		// the web verify-code login path.
+		if req.InviteCode != "" && (u.IsActivated == nil || !*u.IsActivated) {
+			inviteCodeID := InviteCodeID(req.InviteCode)
+			var inviteCode InviteCode
+			if err := tx.First(&inviteCode, inviteCodeID).Error; err != nil {
+				if util.DbIsNotFoundErr(err) {
+					return e(ErrorInvalidInviteCode, "invalid invite code")
+				}
+				return err
+			}
+			if inviteCode.UserID == identify.UserID {
+				return e(ErrorSelfInvitation, "cannot use your own invite code")
+			}
+			u.InvitedByCodeID = inviteCodeID
+			needSave = true
+			go handleInviteDownloadReward(c, identify.UserID)
+		}
+
+		if u.IsActivated == nil || !*u.IsActivated {
+			u.IsActivated = BoolPtr(true)
+			u.ActivatedAt = time.Now().Unix()
+			needSave = true
+		}
+
+		if needSave {
+			if err := tx.Save(&u).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		log.Errorf(c, "web password login transaction failed for user %d: %v", identify.UserID, err)
+		ErrorE(c, err)
+		return
+	}
+
+	authResult, _, err := generateWebCookieToken(c, identify.UserID, userRoles)
+	if err != nil {
+		log.Errorf(c, "failed to generate web cookie token for user %d: %v", identify.UserID, err)
+		Error(c, ErrorSystemError, "failed to generate tokens")
+		return
+	}
+
+	setAuthCookies(c, authResult)
+
+	// Reuse the existing webLoginTemplate — users get the same notification
+	// email regardless of whether they used the code or password path.
+	meta := WebLoginMeta{
+		LoginTime: time.Now().Format("2006-01-02 15:04:05"),
+		ClientIP:  c.ClientIP(),
+	}
+	if err := emailToUser(c, int64(identify.UserID), webLoginTemplate, meta); err != nil {
+		log.Errorf(c, "failed to send web login email to user %d: %v", identify.UserID, err)
+	}
+
+	log.Infof(c, "user %d successfully logged in via web password", identify.UserID)
+	// HasPassword is unconditionally true on this code path — we just verified
+	// the user's password to get here. Routed through HasPasswordSet for
+	// consistency with api_web_auth (cheap, no extra query).
+	Success(c, &DataWebLoginResponse{
+		User: DataWebLoginUser{
+			ID:          identify.UserID,
+			Email:       req.Email,
+			IsAdmin:     userIsAdmin,
+			Roles:       userRoles,
+			HasPassword: HasPasswordSet(user),
+		},
+		AccessToken: authResult.AccessToken,
+	})
 }
 
