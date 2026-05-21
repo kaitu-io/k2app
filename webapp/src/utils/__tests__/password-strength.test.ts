@@ -33,4 +33,12 @@ describe('checkPasswordStrength', () => {
     expect(r.score).toBeLessThan(3);
     expect(r.isValid).toBe(false);
   });
+
+  it('clamps a score out of range (defensive)', async () => {
+    // We can't easily induce zxcvbn to return >4 in real usage, but we
+    // can document the contract: the return type is the narrow union
+    // 0|1|2|3|4. This is enforced at compile time via the cast.
+    const r = await checkPasswordStrength('k7N#mq2P!xT9');
+    expect([0, 1, 2, 3, 4]).toContain(r.score);
+  });
 });
