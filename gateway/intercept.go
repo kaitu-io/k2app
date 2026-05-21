@@ -87,10 +87,30 @@ func splitSubnetsByFamily(subnets []string) (v4, v6 []string) {
 	return
 }
 
-func runCmd(name string, args ...string) error {
+// runCmd / listChainRules are package vars so unit tests can inject fakes
+// without invoking real iptables. Production code MUST go through these
+// indirections.
+var (
+	runCmd          = execRunCmd
+	listChainRules  = execListChainRules
+)
+
+func execRunCmd(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s %s: %s: %w", name, strings.Join(args, " "), out, err)
 	}
 	return nil
+}
+
+// execListChainRules returns the rules in the given iptables/ip6tables table
+// in -S (restore) format. Used by the interceptor's Remove() to discover
+// orphan K2R / K2R_DNS / K2R_MAC references that the in-memory state does
+// not know about (e.g. left over from a prior daemon crash).
+func execListChainRules(ipBin, table string) (string, error) {
+	out, err := exec.Command(ipBin, "-t", table, "-S").Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }

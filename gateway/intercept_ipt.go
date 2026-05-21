@@ -5,14 +5,11 @@ package gateway
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 type iptInterceptor struct {
-	installed   bool
-	hadV4Subnet bool
-	hadV6Subnet bool
-	v4Subnets   []string
-	v6Subnets   []string
+	installed bool
 }
 
 func (i *iptInterceptor) Name() string { return "iptables" }
@@ -22,57 +19,113 @@ type cmdSpec struct {
 	args []string
 }
 
+// Install configures iptables rules for TPROXY interception. Idempotent:
+// any stale K2R-family chains or PREROUTING jumps (from a previous crashed
+// daemon, mid-life reconfigure, or partial Remove) are cleaned first.
 func (i *iptInterceptor) Install(cfg InterceptConfig) error {
-	cmds, v4Subnets, v6Subnets := buildIptCommands(cfg)
+	// Pre-flight: tear down anything that resembles K2R state. Required so
+	// `-N K2R` below doesn't fail with "Chain already exists" when a prior
+	// crash left rules behind (bug discovered on OpenWrt MIPS during UAT).
+	i.Remove()
+
+	cmds, _, _ := buildIptCommands(cfg)
 	for _, c := range cmds {
 		if err := runCmd(c.name, c.args...); err != nil {
 			i.Remove()
 			return fmt.Errorf("gateway: %s %v: %w", c.name, c.args, err)
 		}
 	}
-	i.v4Subnets = v4Subnets
-	i.v6Subnets = v6Subnets
-	i.hadV4Subnet = len(v4Subnets) > 0
-	i.hadV6Subnet = len(v6Subnets) > 0
 	i.installed = true
 	slog.Info("DIAG: gw-intercept-install", "backend", "iptables",
 		"subnets", cfg.LANSubnets, "excludeCount", len(cfg.ExcludeIPs))
 	return nil
 }
 
+// Remove unconditionally tears down K2R-family chains (K2R, K2R_MAC, K2R_DNS)
+// and their PREROUTING jumps in mangle + nat tables for both IPv4 and IPv6.
+// Discovers what's present via `iptables -S` rather than relying on cached
+// in-memory state — so it correctly cleans orphans left by a previous daemon
+// instance whose state was lost on restart.
+//
+// All errors are logged at DEBUG, never propagated. Remove must be
+// best-effort: it's called both as a pre-flight in Install and as a teardown
+// in doDown.
 func (i *iptInterceptor) Remove() {
-	if i.hadV4Subnet {
-		for _, s := range i.v4Subnets {
-			_ = runCmd("iptables", "-t", "mangle", "-D", "PREROUTING", "-s", s, "-j", "K2R")
-		}
-		_ = runCmd("iptables", "-t", "mangle", "-F", "K2R")
-		_ = runCmd("iptables", "-t", "mangle", "-X", "K2R")
-		_ = runCmd("iptables", "-t", "mangle", "-F", "K2R_MAC")
-		_ = runCmd("iptables", "-t", "mangle", "-X", "K2R_MAC")
-	}
-	if i.hadV6Subnet {
-		for _, s := range i.v6Subnets {
-			_ = runCmd("ip6tables", "-t", "mangle", "-D", "PREROUTING", "-s", s, "-j", "K2R")
-		}
-		_ = runCmd("ip6tables", "-t", "mangle", "-F", "K2R")
-		_ = runCmd("ip6tables", "-t", "mangle", "-X", "K2R")
-		_ = runCmd("ip6tables", "-t", "mangle", "-F", "K2R_MAC")
-		_ = runCmd("ip6tables", "-t", "mangle", "-X", "K2R_MAC")
-	}
-	// Clean DNS redirect chains
-	_ = runCmd("iptables", "-t", "nat", "-D", "PREROUTING", "-j", "K2R_DNS")
-	_ = runCmd("iptables", "-t", "nat", "-F", "K2R_DNS")
-	_ = runCmd("iptables", "-t", "nat", "-X", "K2R_DNS")
-	_ = runCmd("ip6tables", "-t", "nat", "-D", "PREROUTING", "-j", "K2R_DNS")
-	_ = runCmd("ip6tables", "-t", "nat", "-F", "K2R_DNS")
-	_ = runCmd("ip6tables", "-t", "nat", "-X", "K2R_DNS")
-	// Clean ip rules
+	cleanK2RFamily("iptables", "mangle")
+	cleanK2RFamily("iptables", "nat")
+	cleanK2RFamily("ip6tables", "mangle")
+	cleanK2RFamily("ip6tables", "nat")
+
+	// IP rules — idempotent del. Errors expected when not present.
 	_ = runCmd("ip", "rule", "del", "fwmark", "1", "table", "100")
 	_ = runCmd("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100")
 	_ = runCmd("ip", "-6", "rule", "del", "fwmark", "1", "table", "100")
 	_ = runCmd("ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", "100")
+
 	i.installed = false
 	slog.Info("gateway: iptables rules cleaned up")
+}
+
+// cleanK2RFamily removes every PREROUTING jump targeting a K2R* chain, then
+// flushes and deletes every K2R* chain it finds. Discovers state from
+// `iptables -t <table> -S` so it works even when the caller has no prior
+// in-memory tracking.
+func cleanK2RFamily(ipBin, table string) {
+	out, err := listChainRules(ipBin, table)
+	if err != nil {
+		slog.Debug("gateway: listChainRules", "ipBin", ipBin, "table", table, "err", err)
+		return
+	}
+
+	// Pass 1: delete every PREROUTING jump targeting a K2R-family chain.
+	// Must come before -X so the chain becomes deletable.
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "-A PREROUTING") {
+			continue
+		}
+		target := extractJumpTarget(line)
+		if !strings.HasPrefix(target, "K2R") {
+			continue
+		}
+		// Convert "-A PREROUTING ..." to "-D PREROUTING ..." and prepend -t.
+		args := append([]string{"-t", table}, strings.Fields("-D"+line[2:])...)
+		if err := runCmd(ipBin, args...); err != nil {
+			slog.Debug("gateway: drop PREROUTING jump", "ipBin", ipBin, "rule", line, "err", err)
+		}
+	}
+
+	// Pass 2: flush + delete every K2R-family chain in this table.
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "-N ") {
+			continue
+		}
+		chain := strings.TrimSpace(line[3:])
+		if !strings.HasPrefix(chain, "K2R") {
+			continue
+		}
+		if err := runCmd(ipBin, "-t", table, "-F", chain); err != nil {
+			slog.Debug("gateway: flush chain", "ipBin", ipBin, "table", table, "chain", chain, "err", err)
+		}
+		if err := runCmd(ipBin, "-t", table, "-X", chain); err != nil {
+			slog.Debug("gateway: delete chain", "ipBin", ipBin, "table", table, "chain", chain, "err", err)
+		}
+	}
+}
+
+// extractJumpTarget returns the value after "-j " in an iptables rule line,
+// or "" if no -j is present.
+func extractJumpTarget(line string) string {
+	idx := strings.Index(line, "-j ")
+	if idx < 0 {
+		return ""
+	}
+	rest := line[idx+3:]
+	if sp := strings.IndexByte(rest, ' '); sp >= 0 {
+		return rest[:sp]
+	}
+	return rest
 }
 
 // buildIptCommands is a pure function — generates commands without mutating receiver.

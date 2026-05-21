@@ -3,6 +3,7 @@
 package gateway
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -374,4 +375,277 @@ func flattenCmds(cmds []cmdSpec) string {
 		flat = append(flat, c.name+" "+strings.Join(c.args, " "))
 	}
 	return strings.Join(flat, "\n")
+}
+
+// fakeIptablesState simulates iptables/ip6tables semantics tightly enough to
+// catch the two bugs we care about:
+//   - `-N CHAIN` fails with "Chain already exists" when the chain is present
+//   - `-X CHAIN` fails when references to the chain still exist
+//
+// Used as a runCmd / listChainRules backend for unit tests so we don't need
+// a real Linux kernel + iptables.
+type fakeIptablesState struct {
+	calls         []string
+	chains        map[string]bool   // "iptables:mangle:K2R" → exists
+	refs          map[string]int    // "iptables:mangle:K2R" → reference count from PREROUTING jumps
+	failPredicate func(name string, args []string) error
+}
+
+func newFakeIptables() *fakeIptablesState {
+	return &fakeIptablesState{
+		chains: map[string]bool{},
+		refs:   map[string]int{},
+	}
+}
+
+func (f *fakeIptablesState) install(t *testing.T) {
+	t.Helper()
+	origRunCmd := runCmd
+	origListChainRules := listChainRules
+	t.Cleanup(func() {
+		runCmd = origRunCmd
+		listChainRules = origListChainRules
+	})
+	runCmd = func(name string, args ...string) error {
+		f.calls = append(f.calls, name+" "+strings.Join(args, " "))
+		if f.failPredicate != nil {
+			if err := f.failPredicate(name, args); err != nil {
+				return err
+			}
+		}
+		return f.simulate(name, args)
+	}
+	listChainRules = func(ipBin, table string) (string, error) {
+		var lines []string
+		for k := range f.chains {
+			parts := strings.SplitN(k, ":", 3)
+			if len(parts) == 3 && parts[0] == ipBin && parts[1] == table {
+				lines = append(lines, "-N "+parts[2])
+			}
+		}
+		// Emit -A PREROUTING for each reference.
+		for k, count := range f.refs {
+			parts := strings.SplitN(k, ":", 3)
+			if len(parts) == 3 && parts[0] == ipBin && parts[1] == table && count > 0 {
+				for i := 0; i < count; i++ {
+					lines = append(lines, "-A PREROUTING -j "+parts[2])
+				}
+			}
+		}
+		return strings.Join(lines, "\n"), nil
+	}
+}
+
+// simulate models the iptables behaviors that matter for our tests.
+func (f *fakeIptablesState) simulate(name string, args []string) error {
+	// Skip non-iptables binaries (ip, ip6) — succeed silently.
+	if name != "iptables" && name != "ip6tables" {
+		return nil
+	}
+	// Parse: -t TABLE -OP CHAIN ...
+	var table, op, chain string
+	for idx := 0; idx < len(args); idx++ {
+		switch args[idx] {
+		case "-t":
+			if idx+1 < len(args) {
+				table = args[idx+1]
+			}
+		case "-N", "-X", "-F":
+			op = args[idx]
+			if idx+1 < len(args) {
+				chain = args[idx+1]
+			}
+		case "-A", "-D":
+			op = args[idx]
+			if idx+1 < len(args) {
+				chain = args[idx+1]
+			}
+		}
+	}
+	key := name + ":" + table + ":" + chain
+	// Only track operations on K2R-family chains; everything else is a no-op success.
+	if !strings.HasPrefix(chain, "K2R") && op != "-A" && op != "-D" {
+		return nil
+	}
+	switch op {
+	case "-N":
+		if f.chains[key] {
+			return fmt.Errorf("%s -t %s -N %s: %s: exit status 1",
+				name, table, chain, "iptables: Chain already exists.")
+		}
+		f.chains[key] = true
+	case "-X":
+		if f.refs[key] > 0 {
+			return fmt.Errorf("%s -t %s -X %s: chain still referenced", name, table, chain)
+		}
+		delete(f.chains, key)
+	case "-F":
+		// Flush — leaves chain alive but empties rules. We don't model the rules; OK.
+	case "-A":
+		// -A PREROUTING ... -j K2R → bump ref count for K2R chain
+		if chain == "PREROUTING" {
+			if targetIdx := indexOf(args, "-j"); targetIdx >= 0 && targetIdx+1 < len(args) {
+				target := args[targetIdx+1]
+				if strings.HasPrefix(target, "K2R") {
+					f.refs[name+":"+table+":"+target]++
+				}
+			}
+		}
+	case "-D":
+		if chain == "PREROUTING" {
+			if targetIdx := indexOf(args, "-j"); targetIdx >= 0 && targetIdx+1 < len(args) {
+				target := args[targetIdx+1]
+				refKey := name + ":" + table + ":" + target
+				if f.refs[refKey] > 0 {
+					f.refs[refKey]--
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func indexOf(s []string, v string) int {
+	for i, x := range s {
+		if x == v {
+			return i
+		}
+	}
+	return -1
+}
+
+func (f *fakeIptablesState) hasCallExact(want string) bool {
+	for _, c := range f.calls {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
+
+// seedChain pre-populates a chain (and optionally PREROUTING references) so a
+// test can simulate "stale chain left over from a previous daemon crash".
+func (f *fakeIptablesState) seedChain(ipBin, table, chain string, refs int) {
+	key := ipBin + ":" + table + ":" + chain
+	f.chains[key] = true
+	if refs > 0 {
+		f.refs[key] = refs
+	}
+}
+
+// ── Bug 2: Install must be idempotent on back-to-back calls ──────────
+
+// Install + Install (no Remove between) must not fail with "Chain already
+// exists". Simulator enforces real iptables semantic: -N CHAIN fails if chain
+// already exists, mirroring the production failure mode.
+func TestInstall_IdempotentBackToBack(t *testing.T) {
+	f := newFakeIptables()
+	f.install(t)
+	i := &iptInterceptor{}
+	cfg := InterceptConfig{ListenPort: 12345, LANSubnets: []string{"192.168.1.0/24"}}
+
+	if err := i.Install(cfg); err != nil {
+		t.Fatalf("first Install: %v", err)
+	}
+	if err := i.Install(cfg); err != nil {
+		t.Fatalf("second Install must succeed (was Bug 2), got: %v", err)
+	}
+}
+
+// Fresh interceptor instance running Install when the kernel still has a
+// stale K2R chain from a previous daemon crash. Mirrors `cleanStaleRules`'s
+// real-world scenario at daemon startup.
+func TestInstall_RecoverFromStaleOrphanChain(t *testing.T) {
+	f := newFakeIptables()
+	// Pre-seed: previous daemon left K2R chain with two PREROUTING refs.
+	f.seedChain("iptables", "mangle", "K2R", 2)
+	f.install(t)
+	i := &iptInterceptor{}
+	cfg := InterceptConfig{ListenPort: 12345, LANSubnets: []string{"192.168.1.0/24"}}
+
+	if err := i.Install(cfg); err != nil {
+		t.Fatalf("Install over stale orphan must succeed (Bug 1+2), got: %v", err)
+	}
+	// Final state: chain exists exactly once, with exactly one PREROUTING ref
+	// (the new one we installed — stale refs from seed must be gone).
+	if got := f.refs["iptables:mangle:K2R"]; got != 1 {
+		t.Errorf("K2R refs = %d, want 1 (stale refs not cleaned)", got)
+	}
+}
+
+// ── Bug 1: Remove must clean orphan rules even on fresh interceptor ──
+
+// A fresh iptInterceptor (zero-value, hadV4Subnet=false) must still find and
+// delete orphan K2R chain + PREROUTING jumps left over from a prior crashed
+// daemon. Today's behavior: Remove() returns immediately because
+// hadV4Subnet=false — Bug 1.5 making cleanStaleRules a no-op.
+func TestRemove_DiscoversOrphansOnFreshStruct(t *testing.T) {
+	f := newFakeIptables()
+	f.seedChain("iptables", "mangle", "K2R", 2)     // chain + 2 PREROUTING refs
+	f.seedChain("iptables", "nat", "K2R_DNS", 1)    // DNS chain + 1 ref
+	f.install(t)
+
+	i := &iptInterceptor{} // zero value — no prior in-memory state
+
+	i.Remove()
+
+	if f.chains["iptables:mangle:K2R"] {
+		t.Errorf("K2R chain must be deleted by Remove; calls:\n%s",
+			strings.Join(f.calls, "\n"))
+	}
+	if f.refs["iptables:mangle:K2R"] != 0 {
+		t.Errorf("K2R PREROUTING refs must be zero, got %d", f.refs["iptables:mangle:K2R"])
+	}
+	if f.chains["iptables:nat:K2R_DNS"] {
+		t.Errorf("K2R_DNS chain must be deleted by Remove")
+	}
+}
+
+// Remove() must continue cleaning subsequent rules even if an early cmd fails
+// (e.g. iptables xtables-lock contention). Today: any silently-swallowed
+// error CAN break the cleanup chain → stale chain blocks next Install.
+func TestRemove_PartialFailureContinues(t *testing.T) {
+	f := newFakeIptables()
+	f.seedChain("iptables", "mangle", "K2R", 1)
+	// Inject failure: first -D attempt fails (lock contention).
+	firstD := true
+	f.failPredicate = func(name string, args []string) error {
+		joined := strings.Join(args, " ")
+		if firstD && strings.Contains(joined, "-D PREROUTING") && strings.Contains(joined, "-j K2R") {
+			firstD = false
+			return fmt.Errorf("simulated xtables lock contention")
+		}
+		return nil
+	}
+	f.install(t)
+
+	i := &iptInterceptor{}
+	i.Remove()
+
+	// -F K2R and -X K2R (mangle, not K2R_DNS) must still have been issued.
+	if !f.hasCallExact("iptables -t mangle -F K2R") {
+		t.Errorf("must issue -F K2R despite earlier failure; calls:\n%s",
+			strings.Join(f.calls, "\n"))
+	}
+	if !f.hasCallExact("iptables -t mangle -X K2R") {
+		t.Errorf("must issue -X K2R despite earlier failure; calls:\n%s",
+			strings.Join(f.calls, "\n"))
+	}
+}
+
+// Full lifecycle: Install → Remove → Install on the SAME interceptor instance
+// must work cleanly with simulator enforcing real iptables semantics.
+func TestInstall_RemoveInstallRoundtrip(t *testing.T) {
+	f := newFakeIptables()
+	f.install(t)
+	i := &iptInterceptor{}
+	cfg := InterceptConfig{ListenPort: 12345, LANSubnets: []string{"192.168.1.0/24"}}
+
+	if err := i.Install(cfg); err != nil {
+		t.Fatalf("first Install: %v", err)
+	}
+	i.Remove()
+	if err := i.Install(cfg); err != nil {
+		t.Fatalf("Install after Remove: %v", err)
+	}
 }
