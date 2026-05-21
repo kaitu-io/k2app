@@ -172,6 +172,103 @@ func TestWebPasswordLogin_WrongPasswordReturnsInvalidCredentials(t *testing.T) {
 	assert.Equal(t, 1, refreshed.PasswordFailedAttempts, "failed attempts must increment to 1")
 }
 
+// TestWebPasswordLogin_AccountLockedReturnsErrorTooManyRequests verifies
+// that when a user's account is locked (PasswordLockedUntil in the
+// future), the handler returns ErrorTooManyRequests BEFORE performing
+// password verification — so even submitting the correct password
+// during the lockout window still yields 429.
+func TestWebPasswordLogin_AccountLockedReturnsErrorTooManyRequests(t *testing.T) {
+	skipIfNoConfig(t)
+
+	const password = "k7N#mq2P!xT9"
+	user, email := seedWebPasswordLoginUser(t, password)
+
+	// Lock the account: PasswordLockedUntil 1h in the future ensures
+	// IsAccountLocked(user) returns true at request time.
+	require.NoError(t, db.Get().Model(&user).
+		Update("password_locked_until", time.Now().Add(1*time.Hour).Unix()).Error)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/api/auth/web-login/password", api_web_password_login)
+
+	body, _ := json.Marshal(map[string]string{
+		"email":    email,
+		"password": password, // correct password — must still be rejected
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/web-login/password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorTooManyRequests), resp.Code,
+		"locked account must return ErrorTooManyRequests even with correct password")
+}
+
+// TestWebPasswordLogin_NoPasswordSetReturnsInvalidCredentials verifies
+// that a user who exists but has never set a password (PasswordHash == "")
+// gets the same anti-enumeration ErrorInvalidCredentials response as a
+// wrong-password or unknown-user — attackers must not be able to detect
+// "this account exists but has no password" via the response code.
+func TestWebPasswordLogin_NoPasswordSetReturnsInvalidCredentials(t *testing.T) {
+	skipIfNoConfig(t)
+
+	// Seed user directly here so we can leave PasswordHash empty —
+	// the shared helper always hashes a password.
+	now := time.Now()
+	suffix := now.Format("20060102150405.000000")
+
+	user := User{
+		UUID:         "usr-web-pwd-nopw-" + suffix,
+		Language:     "en-US",
+		PasswordHash: "", // never set a password
+		IsActivated:  BoolPtr(true),
+	}
+	require.NoError(t, db.Get().Create(&user).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	email := "nopw-" + suffix + "@example.com"
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	indexID := secretHashIt(c, []byte(email))
+
+	identify := LoginIdentify{
+		UserID:         user.ID,
+		Type:           "email",
+		IndexID:        indexID,
+		EncryptedValue: email,
+	}
+	require.NoError(t, db.Get().Create(&identify).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&identify) })
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/api/auth/web-login/password", api_web_password_login)
+
+	body, _ := json.Marshal(map[string]string{
+		"email":    email,
+		"password": "anything-here-12!",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/web-login/password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorInvalidCredentials), resp.Code,
+		"no-password-set must collapse to ErrorInvalidCredentials (anti-enumeration)")
+}
+
 // TestWebPasswordLogin_UnknownUserReturnsInvalidCredentials verifies that
 // a non-existent email returns the SAME error code as a wrong password
 // (anti-enumeration: attackers must not be able to distinguish "no such
