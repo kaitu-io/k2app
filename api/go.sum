@@ -325,6 +325,8 @@ github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.17 h1:pjL2v
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.17/go.mod h1:r5r4xbfxSaeR04b166HGsBa/R4U3SueirEUpXGuw+Q0=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/lighthouse v1.3.17 h1:8SKxxAriDgXIqkA6ud4XHDXp3qqFb8mIkMmim94irow=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/lighthouse v1.3.17/go.mod h1:UpcFUQJOsj8vkv3k60khBpuHM6y7CSvJqsyNYJhjiUk=
+github.com/test-go/testify v1.1.4 h1:Tf9lntrKUMHiXQ07qBScBTSA0dhYQlu83hswqelv1iE=
+github.com/test-go/testify v1.1.4/go.mod h1:rH7cfJo/47vWGdi4GPj16x3/t1xGOj2YxzmNQzk2ghU=
 github.com/tidwall/gjson v1.14.2/go.mod h1:/wbyibRr2FHMks5tjHJ5F8dMZh3AcwJEMf5vlfC0lxk=
 github.com/tidwall/gjson v1.14.4 h1:uo0p8EbA09J7RQaflQ1aBRffTR7xedD2bcIVSYxLnkM=
 github.com/tidwall/gjson v1.14.4/go.mod h1:/wbyibRr2FHMks5tjHJ5F8dMZh3AcwJEMf5vlfC0lxk=
