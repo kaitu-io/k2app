@@ -70,4 +70,36 @@ describe('PasswordAuthFields', () => {
     fireEvent.click(submit!);
     expect(props.onSubmit).toHaveBeenCalledTimes(1);
   });
+
+  it('forwards onEmailChange with the typed value', () => {
+    const props = renderFields();
+    const emailInput = screen.getAllByRole('textbox')[0] as HTMLInputElement;
+    fireEvent.change(emailInput, { target: { value: 'typed@example.com' } });
+    expect(props.onEmailChange).toHaveBeenCalledWith('typed@example.com');
+  });
+
+  it('forwards onPasswordChange with the typed value', () => {
+    const props = renderFields();
+    const pwInput = screen.getByLabelText(/password|密码|密碼|パスワード/i) as HTMLInputElement;
+    fireEvent.change(pwInput, { target: { value: 'p@ssw0rd!23' } });
+    expect(props.onPasswordChange).toHaveBeenCalledWith('p@ssw0rd!23');
+  });
+
+  it('fires onEmailBlur when email field loses focus', () => {
+    const props = renderFields({ email: 'a@b.com' });
+    const emailInput = screen.getAllByRole('textbox')[0] as HTMLInputElement;
+    fireEvent.blur(emailInput);
+    expect(props.onEmailBlur).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders EmailSuggestion when emailSuggestion is non-null and accepts it', () => {
+    const props = renderFields({ emailSuggestion: 'fixed@example.com', email: 'fixed@example.con' });
+    // EmailSuggestion renders the accept action as a MUI Link rendered as a
+    // <button>. Use getByText with the i18n "Use suggestion" label across
+    // locales — getByRole('button', {name}) trips on jsdom + MUI Link in
+    // this test env (dom-accessibility-api getComputedStyle quirk).
+    const acceptButton = screen.getByText(/use suggestion|使用建议|使用建議|修正する/i);
+    fireEvent.click(acceptButton);
+    expect(props.onAcceptSuggestion).toHaveBeenCalledTimes(1);
+  });
 });

@@ -30,6 +30,7 @@ import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../stores";
 import { ERROR_CODES, handleResponseError } from "../utils/errorCode";
 import { suggestEmail } from "../utils/email-suggest";
+import { isValidEmail } from "../utils/email";
 import EmailSuggestion from "./EmailSuggestion";
 import type { SendCodeResponse, AuthResult } from "../services/api-types";
 import { cloudApi } from '../services/cloud-api';
@@ -94,8 +95,7 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
   }, []);
 
   // Email validation
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const isEmailValid = email.trim() !== "" && emailRegex.test(email);
+  const isEmailValid = isValidEmail(email);
 
   // Delayed focus management - avoids autoFocus timing issues on old WebViews
   useEffect(() => {

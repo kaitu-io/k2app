@@ -9,6 +9,7 @@ import { AlternateEmail as AlternateEmailIcon, Lock as LockIcon } from '@mui/ico
 import { useTranslation } from 'react-i18next';
 import EmailSuggestion from './EmailSuggestion';
 import { delayedFocus } from '../utils/ui';
+import { isValidEmail } from '../utils/email';
 
 export interface PasswordAuthFieldsProps {
   email: string;
@@ -24,13 +25,11 @@ export interface PasswordAuthFieldsProps {
   autoFocusEmail?: boolean;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 export default function PasswordAuthFields(props: PasswordAuthFieldsProps) {
   const { t } = useTranslation();
   const emailRef = useRef<HTMLInputElement>(null);
 
-  const emailValid = props.email.trim() !== '' && EMAIL_RE.test(props.email);
+  const emailValid = isValidEmail(props.email);
   const canSubmit = emailValid && props.password.length > 0 && !props.isSubmitting;
 
   useEffect(() => {
