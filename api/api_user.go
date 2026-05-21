@@ -463,6 +463,7 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 		IsRetailer:       user.IsRetailer != nil && *user.IsRetailer,
 		Roles:            user.Roles,
 		IsAdmin:          user.IsAdmin != nil && *user.IsAdmin,
+		HasPassword:      HasPasswordSet(user),
 		BetaOptedIn:      user.BetaOptedIn != nil && *user.BetaOptedIn,
 		Tier:             user.Tier,
 		MaxDevice:        q.MaxDevice,
