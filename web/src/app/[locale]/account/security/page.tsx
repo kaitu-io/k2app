@@ -16,7 +16,7 @@ export default function SecurityPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   if (!user) return null;
-  const hasPassword = Boolean((user as { hasPassword?: boolean }).hasPassword);
+  const hasPassword = user.hasPassword ?? false;
 
   return (
     <div className="container max-w-3xl py-6">
