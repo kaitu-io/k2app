@@ -32,6 +32,7 @@ import { ERROR_CODES, handleResponseError } from "../utils/errorCode";
 import { suggestEmail } from "../utils/email-suggest";
 import { isValidEmail } from "../utils/email";
 import EmailSuggestion from "./EmailSuggestion";
+import PasswordAuthFields from "./PasswordAuthFields";
 import type { SendCodeResponse, AuthResult } from "../services/api-types";
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
@@ -73,9 +74,9 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
   const [error, setError] = useState("");
 
   // Refs for delayed focus (avoid autoFocus timing issues on old WebViews)
+  // Note: the password tab manages its own focus inside <PasswordAuthFields>.
   const emailInputRef = useRef<HTMLInputElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
-  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
 
@@ -389,104 +390,21 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
 
         {/* Password Login - Email + Password fields */}
         {step === "email" && loginMethod === "password" && (
-          <>
-            <TextField
-              fullWidth
-              label={t("auth:auth.email")}
-              placeholder={t("auth:auth.emailPlaceholder")}
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); if (emailSuggestion) setEmailSuggestion(null); }}
-              onBlur={(e) => { const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, ''); setEmail(cleaned); const suggested = suggestEmail(cleaned); setEmailSuggestion(suggested); }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !isSubmitting && isEmailValid && password) {
-                  handlePasswordLogin();
-                }
-              }}
-              disabled={isSubmitting}
-              inputRef={emailInputRef}
-              inputProps={{
-                autoCapitalize: "none",
-                autoCorrect: "off",
-                autoComplete: "email",
-                spellCheck: false,
-              }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <AlternateEmailIcon color="primary" />
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  borderRadius: 2,
-                },
-              }}
-            />
-
-            {emailSuggestion && (
-              <EmailSuggestion
-                suggestion={emailSuggestion}
-                onAccept={() => { setEmail(emailSuggestion); setEmailSuggestion(null); }}
-              />
-            )}
-
-            <TextField
-              fullWidth
-              type="password"
-              label={t("auth:auth.password")}
-              placeholder={t("auth:auth.passwordPlaceholder")}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !isSubmitting && isEmailValid && password) {
-                  handlePasswordLogin();
-                }
-              }}
-              disabled={isSubmitting}
-              inputRef={passwordInputRef}
-              inputProps={{
-                autoCapitalize: "none",
-                autoCorrect: "off",
-                autoComplete: "current-password",
-                spellCheck: false,
-              }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <LockIcon color="primary" />
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  borderRadius: 2,
-                },
-              }}
-            />
-
-            <Button
-              fullWidth
-              size="large"
-              variant="contained"
-              onClick={handlePasswordLogin}
-              disabled={!isEmailValid || !password || isSubmitting}
-              startIcon={
-                isSubmitting ? (
-                  <CircularProgress size={20} color="inherit" />
-                ) : null
-              }
-              sx={{
-                py: 1.5,
-                borderRadius: 2,
-                textTransform: "none",
-                fontSize: "1rem",
-                fontWeight: 600,
-              }}
-            >
-              {t("auth:auth.login")}
-            </Button>
-          </>
+          <PasswordAuthFields
+            email={email}
+            password={password}
+            onEmailChange={(v) => { setEmail(v); if (emailSuggestion) setEmailSuggestion(null); }}
+            onPasswordChange={setPassword}
+            onSubmit={handlePasswordLogin}
+            onEmailBlur={() => {
+              const cleaned = email.trim().toLowerCase().replace(/\s+/g, '');
+              setEmail(cleaned);
+              setEmailSuggestion(suggestEmail(cleaned));
+            }}
+            emailSuggestion={emailSuggestion}
+            onAcceptSuggestion={() => { setEmail(emailSuggestion!); setEmailSuggestion(null); }}
+            isSubmitting={isSubmitting}
+          />
         )}
 
         {/* Step 2: Verification Code Input */}
