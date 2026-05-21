@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useEffect } from "react";
 import { useRouter } from "@/i18n/routing";
 import { useAuth } from "@/contexts/AuthContext";
-import { CircleDashed, Users, CreditCard, Wallet, LogOut } from "lucide-react";
+import { CircleDashed, Users, CreditCard, Wallet, Lock, LogOut } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { useTranslations } from "next-intl";
@@ -62,6 +62,11 @@ export default function AccountLayout({
       href: "/account/wallet",
       label: t("admin.account.wallet.title"),
       icon: Wallet,
+    },
+    {
+      href: "/account/security",
+      label: t("admin.account.security.title"),
+      icon: Lock,
     },
     // Reserved for future features
     // {
