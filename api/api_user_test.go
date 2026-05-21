@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildDataUserWithDevice_HasPassword(t *testing.T) {
@@ -19,9 +20,7 @@ func TestBuildDataUserWithDevice_HasPassword(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			u := &User{PasswordHash: tt.hash}
 			got := buildDataUserWithDevice(u, nil)
-			if got == nil {
-				t.Fatal("buildDataUserWithDevice returned nil")
-			}
+			require.NotNil(t, got)
 			assert.Equal(t, tt.expected, got.HasPassword)
 		})
 	}
