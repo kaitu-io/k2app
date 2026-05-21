@@ -374,6 +374,9 @@ export interface DataUser {
   deviceCount: number;
   isRetailer?: boolean; // 是否为分销商
   retailerConfig?: DataRetailerConfig; // 分销商配置
+  // 是否已设置密码 (mirrors Go `DataUser.HasPassword`). Drives the
+  // "Set password" vs "Change password" affordance on Account / Login.
+  hasPassword: boolean;
   betaOptedIn?: boolean;
   // Tier quota fields (from Plan A)
   tier?: string; // "lite" | "basic" | "family" | "business" | "pro"

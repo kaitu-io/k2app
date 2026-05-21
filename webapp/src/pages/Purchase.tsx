@@ -661,7 +661,7 @@ export default function Purchase() {
           if (!preview) {
             setCampaignError("");
             setOrderData(null);
-            showAlert(getErrorMessage(response.code, t), 'error');
+            showAlert(getErrorMessage(response.code, response.message, t), 'error');
           }
         } else {
           // 只在非预览模式下清除状态和显示错误提示
