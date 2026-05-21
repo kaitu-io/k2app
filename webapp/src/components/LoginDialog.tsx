@@ -216,7 +216,7 @@ export default function LoginDialog() {
   // Shares the password-tab UX so both entry points stay in lock-step.
   const handlePasswordLogin = async () => {
     if (!isEmailValid || !password) {
-      setError(t("auth:auth.passwordPlaceholder"));
+      setError(t("auth:auth.pleaseEnterPassword"));
       return;
     }
     try {
