@@ -108,7 +108,8 @@ func execRunCmd(name string, args ...string) error {
 // orphan K2R / K2R_DNS / K2R_MAC references that the in-memory state does
 // not know about (e.g. left over from a prior daemon crash).
 func execListChainRules(ipBin, table string) (string, error) {
-	out, err := exec.Command(ipBin, "-t", table, "-S").Output()
+	// -w 5: wait for xtables.lock — even -S (read) briefly grabs it.
+	out, err := exec.Command(ipBin, ipt("-t", table, "-S")...).Output()
 	if err != nil {
 		return "", err
 	}

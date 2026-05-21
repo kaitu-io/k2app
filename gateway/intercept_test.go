@@ -187,17 +187,17 @@ func TestIptRuleGeneration_DualStack(t *testing.T) {
 	}
 	joined := flattenCmds(cmds)
 	// Both iptables and ip6tables chains.
-	if !strings.Contains(joined, "iptables -t mangle -N K2R") {
+	if !strings.Contains(joined, "iptables -w 5 -t mangle -N K2R") {
 		t.Error("missing iptables chain creation")
 	}
-	if !strings.Contains(joined, "ip6tables -t mangle -N K2R") {
+	if !strings.Contains(joined, "ip6tables -w 5 -t mangle -N K2R") {
 		t.Error("missing ip6tables chain creation")
 	}
 	// Exclude rules in correct tool.
-	if !strings.Contains(joined, "iptables -t mangle -A K2R -d 1.2.3.4 -j RETURN") {
+	if !strings.Contains(joined, "iptables -w 5 -t mangle -A K2R -d 1.2.3.4 -j RETURN") {
 		t.Error("missing iptables IPv4 exclude")
 	}
-	if !strings.Contains(joined, "ip6tables -t mangle -A K2R -d 2001:db8::1 -j RETURN") {
+	if !strings.Contains(joined, "ip6tables -w 5 -t mangle -A K2R -d 2001:db8::1 -j RETURN") {
 		t.Error("missing ip6tables IPv6 exclude")
 	}
 	// ip rule + route for both families.
@@ -221,10 +221,10 @@ func TestIptRuleGeneration_NoIPv4(t *testing.T) {
 		t.Errorf("v6Subnets should have 1, got %v", v6Sub)
 	}
 	joined := flattenCmds(cmds)
-	if strings.Contains(joined, "iptables -t mangle -N K2R") {
+	if strings.Contains(joined, "iptables -w 5 -t mangle -N K2R") {
 		t.Error("should not create iptables chain when no IPv4 subnets")
 	}
-	if !strings.Contains(joined, "ip6tables -t mangle -N K2R") {
+	if !strings.Contains(joined, "ip6tables -w 5 -t mangle -N K2R") {
 		t.Error("missing ip6tables chain for IPv6-only")
 	}
 }
@@ -623,11 +623,11 @@ func TestRemove_PartialFailureContinues(t *testing.T) {
 	i.Remove()
 
 	// -F K2R and -X K2R (mangle, not K2R_DNS) must still have been issued.
-	if !f.hasCallExact("iptables -t mangle -F K2R") {
+	if !f.hasCallExact("iptables -w 5 -t mangle -F K2R") {
 		t.Errorf("must issue -F K2R despite earlier failure; calls:\n%s",
 			strings.Join(f.calls, "\n"))
 	}
-	if !f.hasCallExact("iptables -t mangle -X K2R") {
+	if !f.hasCallExact("iptables -w 5 -t mangle -X K2R") {
 		t.Errorf("must issue -X K2R despite earlier failure; calls:\n%s",
 			strings.Join(f.calls, "\n"))
 	}
@@ -647,5 +647,105 @@ func TestInstall_RemoveInstallRoundtrip(t *testing.T) {
 	i.Remove()
 	if err := i.Install(cfg); err != nil {
 		t.Fatalf("Install after Remove: %v", err)
+	}
+}
+
+// ── Bug 8: iptables xtables.lock contention — must wait, not fail ────
+
+// `ipt()` helper builds an iptables-family args slice with `-w 5` prefix so
+// the underlying iptables waits up to 5 s for /var/run/xtables.lock instead
+// of failing immediately when another process holds it. Confirmed on
+// GL-XE300 MIPS (iptables v1.8.3 legacy) 2026-05-21.
+func TestIpt_PrependsWaitFlag(t *testing.T) {
+	got := ipt("-t", "mangle", "-N", "K2R")
+	want := []string{"-w", "5", "-t", "mangle", "-N", "K2R"}
+	if len(got) != len(want) {
+		t.Fatalf("ipt() len = %d, want %d; got = %v", len(got), len(want), got)
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Errorf("ipt()[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+}
+
+// Every iptables/ip6tables command emitted by buildIptCommands must start
+// with `-w 5`. ip(8) commands must NOT have it — they use netlink, not
+// /var/run/xtables.lock, and would error on the unknown flag.
+//
+// Bug 8 (2026-05-21): on real OpenWRT during WiFi re-association, the
+// hotplug.d/iface/20-firewall script briefly holds xtables.lock; without
+// -w our `-A K2R -d 114.114.114.114 -j RETURN` failed mid-Install,
+// triggered error cleanup, and stranded the LAN with no chain for 15 s.
+func TestBuildIptCommands_AllIptablesHaveWaitFlag(t *testing.T) {
+	cmds, _, _ := buildIptCommands(InterceptConfig{
+		ListenPort:    12345,
+		LANSubnets:    []string{"192.168.1.0/24", "fd00::/64"},
+		ExcludeIPs:    []string{"1.2.3.4", "2001:db8::1"},
+		DNSRedirect:   true,
+		DNSPort:       5353,
+		AllowlistMode: true,
+		AllowedMACs:   []string{"aa:bb:cc:dd:ee:ff"},
+	})
+	if len(cmds) < 10 {
+		t.Fatalf("expected dual-stack + DNS + MAC config to produce many commands; got %d", len(cmds))
+	}
+	var iptCount, ipCount int
+	for i, c := range cmds {
+		switch c.name {
+		case "iptables", "ip6tables":
+			iptCount++
+			if len(c.args) < 2 || c.args[0] != "-w" || c.args[1] != "5" {
+				t.Errorf("Bug 8: cmd[%d] %s missing -w 5 prefix; got: %v", i, c.name, c.args)
+			}
+		case "ip":
+			ipCount++
+			// ip(8) uses netlink, not xtables.lock. -w is invalid there.
+			if len(c.args) >= 2 && c.args[0] == "-w" {
+				t.Errorf("Bug 8: cmd[%d] ip(8) must not have -w prefix; got: %v", i, c.args)
+			}
+		default:
+			t.Errorf("cmd[%d] unexpected binary %q; got: %v", i, c.name, c.args)
+		}
+	}
+	if iptCount == 0 {
+		t.Error("no iptables/ip6tables commands generated — config probably wrong")
+	}
+}
+
+// cleanK2RFamily issues iptables -D / -F / -X commands at runtime — they
+// also need -w 5 to ride out hotplug-driven xtables.lock contention.
+func TestCleanK2RFamily_UsesWaitFlag(t *testing.T) {
+	f := newFakeIptables()
+	// Seed: chain + 2 PREROUTING refs so cleanK2RFamily has work to do
+	// across all three pass types: -D, -F, -X.
+	f.seedChain("iptables", "mangle", "K2R", 2)
+	f.install(t)
+
+	cleanK2RFamily("iptables", "mangle")
+
+	if len(f.calls) == 0 {
+		t.Fatal("cleanK2RFamily issued zero commands — seeding wrong?")
+	}
+	var sawD, sawF, sawX bool
+	for _, call := range f.calls {
+		if !strings.HasPrefix(call, "iptables ") && !strings.HasPrefix(call, "ip6tables ") {
+			continue
+		}
+		if !strings.HasPrefix(call, "iptables -w 5 ") && !strings.HasPrefix(call, "ip6tables -w 5 ") {
+			t.Errorf("Bug 8: cleanK2RFamily call missing -w 5 prefix: %q", call)
+		}
+		switch {
+		case strings.Contains(call, " -D "):
+			sawD = true
+		case strings.Contains(call, " -F "):
+			sawF = true
+		case strings.Contains(call, " -X "):
+			sawX = true
+		}
+	}
+	if !sawD || !sawF || !sawX {
+		t.Errorf("must exercise -D (%v), -F (%v), and -X (%v) paths; calls:\n%s",
+			sawD, sawF, sawX, strings.Join(f.calls, "\n"))
 	}
 }
