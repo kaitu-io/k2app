@@ -3,9 +3,12 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -209,7 +212,117 @@ func TestPersistedState_SurvivesShutdownRoundtrip(t *testing.T) {
 	autoReconnectReady := st != nil && st.State == "connected" && st.Config != nil
 	if !autoReconnectReady {
 		t.Fatalf("post-shutdown state.json must satisfy tryAutoReconnect prerequisites: state=%q, hasConfig=%v",
-			func() string { if st == nil { return "<nil>" }; return st.State }(),
+			func() string {
+				if st == nil {
+					return "<nil>"
+				}
+				return st.State
+			}(),
 			st != nil && st.Config != nil)
+	}
+}
+
+// ── Bug 4: auto-reconnect must retry on failure ─────────────────────
+
+// When state.json says "disconnected" (user explicitly down or never
+// connected), runAutoReconnectLoop must bail without ever calling attempt.
+func TestRunAutoReconnectLoop_NoConfigBails(t *testing.T) {
+	setStateDirForTest(t, t.TempDir())
+	saveState(&persistedState{State: "disconnected", Timestamp: time.Now()})
+
+	var calls atomic.Int32
+	attempt := func(*GatewayConfig) error {
+		calls.Add(1)
+		return nil
+	}
+	g := New("test", "test", "amd64")
+	g.runAutoReconnectLoop(context.Background(), attempt, []time.Duration{time.Millisecond})
+
+	if got := calls.Load(); got != 0 {
+		t.Errorf("attempt called %d times; expected 0 (no Config to reconnect with)", got)
+	}
+}
+
+// Single successful attempt — must not keep retrying.
+func TestRunAutoReconnectLoop_SucceedsOnFirstTry(t *testing.T) {
+	setStateDirForTest(t, t.TempDir())
+	saveState(&persistedState{
+		Config:    &GatewayConfig{ListenPort: 12345},
+		State:     "connected",
+		Timestamp: time.Now(),
+	})
+
+	var calls atomic.Int32
+	attempt := func(*GatewayConfig) error {
+		calls.Add(1)
+		return nil
+	}
+	g := New("test", "test", "amd64")
+	g.runAutoReconnectLoop(context.Background(), attempt, []time.Duration{time.Millisecond, time.Millisecond})
+
+	if got := calls.Load(); got != 1 {
+		t.Errorf("attempt called %d times; expected exactly 1", got)
+	}
+}
+
+// Bug 4 core: 2 failures must NOT make us give up — the loop continues
+// through backoff until success.
+func TestRunAutoReconnectLoop_RetriesAfterFailure(t *testing.T) {
+	setStateDirForTest(t, t.TempDir())
+	saveState(&persistedState{
+		Config:    &GatewayConfig{ListenPort: 12345},
+		State:     "connected",
+		Timestamp: time.Now(),
+	})
+
+	var calls atomic.Int32
+	attempt := func(*GatewayConfig) error {
+		n := calls.Add(1)
+		if n < 3 {
+			return errors.New("simulated reconnect failure")
+		}
+		return nil
+	}
+	g := New("test", "test", "amd64")
+	g.runAutoReconnectLoop(context.Background(), attempt, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond})
+
+	if got := calls.Load(); got != 3 {
+		t.Errorf("attempt called %d times; expected 3 (2 fails + 1 success)", got)
+	}
+}
+
+// Loop must honor ctx cancellation between attempts — a long-running router
+// shutting down should not be blocked by an in-progress backoff sleep.
+func TestRunAutoReconnectLoop_RespectsCtxCancel(t *testing.T) {
+	setStateDirForTest(t, t.TempDir())
+	saveState(&persistedState{
+		Config:    &GatewayConfig{ListenPort: 12345},
+		State:     "connected",
+		Timestamp: time.Now(),
+	})
+
+	var calls atomic.Int32
+	attempt := func(*GatewayConfig) error {
+		calls.Add(1)
+		return errors.New("always fail")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g := New("test", "test", "amd64")
+
+	// Cancel after the first attempt observes (it always fails).
+	go func() {
+		for calls.Load() < 1 {
+			time.Sleep(100 * time.Microsecond)
+		}
+		cancel()
+	}()
+
+	// 2nd and later delays are long enough that the cancel must kick in
+	// before they elapse.
+	g.runAutoReconnectLoop(ctx, attempt, []time.Duration{time.Millisecond, 30 * time.Second, 30 * time.Second})
+
+	if got := calls.Load(); got > 2 {
+		t.Errorf("attempt called %d times; ctx cancel should have stopped the loop after 1-2", got)
 	}
 }

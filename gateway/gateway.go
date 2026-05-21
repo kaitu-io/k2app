@@ -448,9 +448,46 @@ func (g *Gateway) handlePanic() {
 	}
 }
 
+// autoReconnectBackoff is the schedule of delays between auto-reconnect
+// attempts. After this list is exhausted, the loop keeps retrying at the
+// final cap interval indefinitely (until g.ctx is cancelled). 3 s first
+// to let the HTTP server + kernel network stack settle after boot.
+//
+// Variable rather than const so unit tests can shrink it without changing
+// the production schedule.
+var autoReconnectBackoff = []time.Duration{
+	3 * time.Second,
+	15 * time.Second,
+	30 * time.Second,
+	60 * time.Second,
+	120 * time.Second,
+	300 * time.Second,
+}
+
 // tryAutoReconnect loads persisted state and reconnects if the gateway was
-// previously connected within the last 7 days.
+// previously connected within the last 7 days. Retries with bounded backoff
+// (autoReconnectBackoff) then steady-state at the cap interval until either
+// reconnect succeeds or g.ctx is cancelled.
 func (g *Gateway) tryAutoReconnect() {
+	g.runAutoReconnectLoop(g.ctx, g.doUp, autoReconnectBackoff)
+}
+
+// runAutoReconnectLoop is the testable core of tryAutoReconnect. attempt is
+// invoked between sleeps from the backoff slice. After backoff is exhausted,
+// the final delay is reused indefinitely. Returns on first attempt success
+// or on ctx cancel.
+//
+// Invariants:
+//   - attempt is never called if state.json fails the connected+config gate
+//     (mirrors the original tryAutoReconnect bail-out).
+//   - ctx.Done() between sleeps interrupts immediately; in-flight attempts
+//     are NOT cancelled (doUp owns its own context lifecycle).
+//   - Empty backoff slice → no-op (returns immediately).
+func (g *Gateway) runAutoReconnectLoop(
+	ctx context.Context,
+	attempt func(*GatewayConfig) error,
+	backoff []time.Duration,
+) {
 	st := loadState()
 	if st == nil || st.State != "connected" || st.Config == nil {
 		return
@@ -458,16 +495,54 @@ func (g *Gateway) tryAutoReconnect() {
 	if time.Since(st.Timestamp) > 7*24*time.Hour {
 		return
 	}
+	if len(backoff) == 0 {
+		return
+	}
 	// Derive Server from routes (Server is json:"-", not persisted).
 	SetGatewayDefaults(st.Config)
-	time.Sleep(3 * time.Second) // wait for HTTP server + network stack to be ready
-	select {
-	case <-g.ctx.Done():
-		return
-	default:
+
+	sleepThen := func(d time.Duration) bool {
+		select {
+		case <-time.After(d):
+			return true
+		case <-ctx.Done():
+			return false
+		}
 	}
-	slog.Info("gateway: auto-reconnecting from saved state")
-	if err := g.doUp(st.Config); err != nil {
-		slog.Warn("gateway: auto-reconnect failed", "err", err)
+
+	tryOnce := func(n int) bool {
+		if n == 1 {
+			slog.Info("gateway: auto-reconnecting from saved state")
+		} else {
+			slog.Info("gateway: auto-reconnect retrying", "attempt", n)
+		}
+		if err := attempt(st.Config); err != nil {
+			slog.Warn("gateway: auto-reconnect failed", "attempt", n, "err", err)
+			return false
+		}
+		return true
+	}
+
+	var n int
+	for _, delay := range backoff {
+		if !sleepThen(delay) {
+			return
+		}
+		n++
+		if tryOnce(n) {
+			return
+		}
+	}
+
+	// Steady-state retries at the cap interval.
+	cap := backoff[len(backoff)-1]
+	for {
+		if !sleepThen(cap) {
+			return
+		}
+		n++
+		if tryOnce(n) {
+			return
+		}
 	}
 }
