@@ -89,12 +89,18 @@ func uninstallSystemd() error {
 	return nil
 }
 
-func installOpenWRT() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	script := fmt.Sprintf(`#!/bin/sh /etc/rc.common
+// generateOpenWRTInitScript renders the procd init.d script for the given
+// k2r binary path. Extracted so unit tests can verify the procd parameters
+// without writing to /etc/init.d/.
+//
+// `respawn 3600 5 0`: threshold=3600 s (count crashes within an hour),
+// term grace 5 s, retry count 0 = INFINITE retries. Empirically verified
+// on procd to mean infinite (15 respawns in 15 s). Without explicit args,
+// procd defaults to retry=5 which permanently disables the service after
+// 5 crashes in an hour — leaving a VPN gateway without iptables protection
+// (fail-OPEN). Fix tracked as Bug 7 (2026-05-21).
+func generateOpenWRTInitScript(exe string) string {
+	return fmt.Sprintf(`#!/bin/sh /etc/rc.common
 
 START=99
 STOP=10
@@ -103,12 +109,20 @@ USE_PROCD=1
 start_service() {
     procd_open_instance
     procd_set_param command %s run
-    procd_set_param respawn
+    procd_set_param respawn 3600 5 0
     procd_set_param stdout 1
     procd_set_param stderr 1
     procd_close_instance
 }
 `, exe)
+}
+
+func installOpenWRT() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	script := generateOpenWRTInitScript(exe)
 	if err := os.WriteFile(initdScript, []byte(script), 0755); err != nil {
 		return err
 	}
