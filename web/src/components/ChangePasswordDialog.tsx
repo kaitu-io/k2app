@@ -141,11 +141,11 @@ export default function ChangePasswordDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={close} disabled={submitting}>
-            {t('common.cancel')}
+            {t('common.common.cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit}>
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('common.confirm')}
+            {t('common.common.confirm')}
           </Button>
         </DialogFooter>
       </DialogContent>
