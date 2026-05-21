@@ -5,6 +5,8 @@
 
 import { TFunction } from 'i18next';
 
+import { PASSWORD_MIN_LENGTH } from './password-strength';
+
 /**
  * Error codes — backend API codes synced with api/response.go,
  * plus frontend-only codes for VPN/network/action errors.
@@ -162,7 +164,7 @@ export function getErrorMessage(
       // is the ONLY allowed message-based routing per webapp/CLAUDE.md
       // "API Error Code Constitution". See spec
       // `docs/superpowers/specs/2026-05-21-password-login-completion-design.md` §4.5.
-      if (message === 'password_too_short') return t('account:password.tooShort');
+      if (message === 'password_too_short') return t('account:password.tooShort', { length: PASSWORD_MIN_LENGTH });
       if (message === 'password_too_weak') return t('account:password.tooWeak');
       return t('common:errors.client.invalidArgument', 'Invalid parameters');
 

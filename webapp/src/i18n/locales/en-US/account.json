@@ -5,7 +5,7 @@
     "newPassword": "New Password",
     "confirmPassword": "Confirm Password",
     "requirements": "At least 8 characters with letters and numbers",
-    "tooShort": "Password must be at least 8 characters",
+    "tooShort": "Password must be at least {{length}} characters",
     "needsLetter": "Password must contain a letter",
     "needsNumber": "Password must contain a number",
     "mismatch": "Passwords do not match",

@@ -106,7 +106,7 @@
     "newPassword": "新密碼",
     "confirmPassword": "確認密碼",
     "requirements": "至少8位，包含字母和數字",
-    "tooShort": "密碼至少8位",
+    "tooShort": "密碼至少 {{length}} 位",
     "needsLetter": "密碼需要包含字母",
     "needsNumber": "密碼需要包含數字",
     "mismatch": "兩次輸入嘅密碼唔一致",

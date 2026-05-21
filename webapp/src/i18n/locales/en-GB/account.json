@@ -106,7 +106,7 @@
     "newPassword": "New Password",
     "confirmPassword": "Confirm Password",
     "requirements": "At least 8 characters, including letters and numbers",
-    "tooShort": "Password must be at least 8 characters",
+    "tooShort": "Password must be at least {{length}} characters",
     "needsLetter": "Password must contain letters",
     "needsNumber": "Password must contain numbers",
     "mismatch": "Passwords do not match",

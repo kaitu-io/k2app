@@ -5,7 +5,7 @@
     "newPassword": "新密码",
     "confirmPassword": "确认密码",
     "requirements": "至少8位，包含字母和数字",
-    "tooShort": "密码至少8位",
+    "tooShort": "密码至少 {{length}} 位",
     "needsLetter": "密码需要包含字母",
     "needsNumber": "密码需要包含数字",
     "mismatch": "两次输入的密码不一致",
