@@ -166,7 +166,10 @@ func (g *Gateway) Run(addr string) error {
 
 	select {
 	case <-g.ctx.Done():
-		g.doDown()
+		// Daemon-internal shutdown (procd SIGTERM, systemctl restart, etc.).
+		// userInitiated=false so state.json keeps {State:"connected", Config}
+		// — next start's tryAutoReconnect resumes the tunnel automatically.
+		g.doDown(false)
 		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutCancel()
 		g.httpServer.Shutdown(shutCtx)
@@ -327,7 +330,19 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 }
 
 // doDown disconnects and cleans up. Acquires opMu to serialize.
-func (g *Gateway) doDown() {
+//
+// userInitiated distinguishes two shutdown semantics:
+//   - true: user explicitly ran `k2r down`. State.json gets {State:
+//     "disconnected", Config:nil} so the next start does NOT auto-reconnect —
+//     the user wanted to stay disconnected.
+//   - false: daemon-internal shutdown (ctx.Done() from SIGTERM / procd
+//     restart / Linux reboot). State.json is left untouched so the previous
+//     doUp's {State:"connected", Config} survives — next start's
+//     tryAutoReconnect resumes the tunnel.
+//
+// Both paths close the tunnel + drain subscription sessions. They differ
+// only in whether they persist a disconnect intent.
+func (g *Gateway) doDown(userInitiated bool) {
 	g.opMu.Lock()
 	defer g.opMu.Unlock()
 	g.closeTunnel()
@@ -336,7 +351,11 @@ func (g *Gateway) doDown() {
 	// shell must close them explicitly. Idempotent: safe when no sessions
 	// were ever resolved (e.g. doDown without prior doUp).
 	g.subsMgr.CloseAll()
-	saveState(&persistedState{State: "disconnected", Timestamp: time.Now()})
+	if userInitiated {
+		saveState(&persistedState{State: "disconnected", Timestamp: time.Now()})
+	}
+	// else: preserve whatever state.json the last doUp wrote — auto-reconnect
+	// on next start is the intent.
 }
 
 // closeTunnel extracts resources under mu, then closes outside lock.

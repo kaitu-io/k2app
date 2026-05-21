@@ -126,3 +126,90 @@ func TestPersistedState_DisconnectedHasNoConfig(t *testing.T) {
 		t.Error("disconnected state should have nil config")
 	}
 }
+
+// setStateDirForTest redirects state.json reads/writes to a temp directory
+// for the duration of the test.
+func setStateDirForTest(t *testing.T, dir string) {
+	t.Helper()
+	prev := stateDirOverride
+	stateDirOverride = dir
+	t.Cleanup(func() { stateDirOverride = prev })
+}
+
+// ── Bug 5: state.json must preserve Config across daemon restart ────
+
+// User-initiated `k2r down` (handleDown → safego.Go(g.doDown)) calls
+// doDown(userInitiated=true). state.json must reflect "I want to be
+// disconnected, forget my config" so the next start does NOT auto-reconnect.
+func TestDoDown_UserInitiated_ClearsConfig(t *testing.T) {
+	setStateDirForTest(t, t.TempDir())
+	// Seed: simulate a previously successful doUp that wrote a connected state.
+	cfg := &GatewayConfig{ListenPort: 12345}
+	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
+
+	g := New("test", "test", "amd64")
+	g.doDown(true) // user-initiated via `k2r down`
+
+	loaded := loadState()
+	if loaded == nil {
+		t.Fatal("state.json must exist after user-initiated down")
+	}
+	if loaded.State != "disconnected" {
+		t.Errorf("State = %q, want %q", loaded.State, "disconnected")
+	}
+	if loaded.Config != nil {
+		t.Errorf("user-initiated down must clear Config so tryAutoReconnect bails on next start, got: %+v", loaded.Config)
+	}
+}
+
+// Daemon shutdown via ctx.Done() (procd SIGTERM, `/etc/init.d/k2r restart`,
+// Linux reboot) MUST NOT clear the saved config — the user expects the
+// tunnel to resume on next start. doDown(userInitiated=false) must leave
+// state.json in a state that lets tryAutoReconnect resume.
+func TestDoDown_Shutdown_PreservesAutoReconnect(t *testing.T) {
+	setStateDirForTest(t, t.TempDir())
+	cfg := &GatewayConfig{ListenPort: 12345}
+	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
+	original := loadState()
+
+	g := New("test", "test", "amd64")
+	g.doDown(false) // daemon-internal shutdown (NOT user-initiated)
+
+	loaded := loadState()
+	if loaded == nil {
+		t.Fatal("state.json must still exist after daemon shutdown")
+	}
+	if loaded.Config == nil {
+		t.Fatal("daemon shutdown must preserve Config so next start auto-reconnects (Bug 5)")
+	}
+	if loaded.Config.ListenPort != cfg.ListenPort {
+		t.Errorf("Config.ListenPort = %d, want %d (preserved from before shutdown)",
+			loaded.Config.ListenPort, cfg.ListenPort)
+	}
+	if loaded.State != "connected" {
+		t.Errorf("State = %q, want %q (tryAutoReconnect requires connected state)",
+			loaded.State, "connected")
+	}
+	_ = original
+}
+
+// Full lifecycle: doUp writes connected + Config → doDown(false) for
+// shutdown → on next start, tryAutoReconnect's prerequisites (state ==
+// "connected" && Config != nil) must still hold so it would attempt
+// reconnect. Goal: prove the procd restart path is not destructive.
+func TestPersistedState_SurvivesShutdownRoundtrip(t *testing.T) {
+	setStateDirForTest(t, t.TempDir())
+	cfg := &GatewayConfig{ListenPort: 12345}
+	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
+
+	g := New("test", "test", "amd64")
+	g.doDown(false) // shutdown
+
+	st := loadState()
+	autoReconnectReady := st != nil && st.State == "connected" && st.Config != nil
+	if !autoReconnectReady {
+		t.Fatalf("post-shutdown state.json must satisfy tryAutoReconnect prerequisites: state=%q, hasConfig=%v",
+			func() string { if st == nil { return "<nil>" }; return st.State }(),
+			st != nil && st.Config != nil)
+	}
+}
