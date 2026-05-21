@@ -4,7 +4,7 @@
     "changePassword": "Change Password",
     "newPassword": "New Password",
     "confirmPassword": "Confirm Password",
-    "requirements": "At least 8 characters with letters and numbers",
+    "requirements": "At least {{length}} characters; avoid common words, keyboard patterns, repeated characters",
     "tooShort": "Password must be at least {{length}} characters",
     "needsLetter": "Password must contain a letter",
     "needsNumber": "Password must contain a number",

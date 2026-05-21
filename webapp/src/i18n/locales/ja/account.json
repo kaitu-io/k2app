@@ -105,7 +105,7 @@
     "changePassword": "パスワードを変更",
     "newPassword": "新しいパスワード",
     "confirmPassword": "パスワードを確認",
-    "requirements": "8文字以上、英字と数字を含む",
+    "requirements": "{{length}}文字以上、よくある単語・キーボード配列・繰り返し文字は避けてください",
     "tooShort": "パスワードは{{length}}文字以上にしてください",
     "needsLetter": "パスワードに英字が必要です",
     "needsNumber": "パスワードに数字が必要です",

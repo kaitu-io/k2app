@@ -4,7 +4,7 @@
     "changePassword": "修改密码",
     "newPassword": "新密码",
     "confirmPassword": "确认密码",
-    "requirements": "至少8位，包含字母和数字",
+    "requirements": "至少 {{length}} 位，请避免常见词、键盘顺序、重复字符",
     "tooShort": "密码至少 {{length}} 位",
     "needsLetter": "密码需要包含字母",
     "needsNumber": "密码需要包含数字",
