@@ -52,3 +52,13 @@ func TestWebLoginTemplate_StillExists(t *testing.T) {
 	assert.NotEmpty(t, webLoginTemplate.Subject, "Web login template should still exist")
 	assert.Equal(t, "Web管理后台登录通知", webLoginTemplate.Subject)
 }
+
+// TestPasswordChangedTemplate_Format verifies the password changed notification template.
+func TestPasswordChangedTemplate_Format(t *testing.T) {
+	assert.NotEmpty(t, passwordChangedTemplate.Subject)
+	assert.NotEmpty(t, passwordChangedTemplate.Body)
+	assert.Equal(t, "Kaitu 账号密码已修改", passwordChangedTemplate.Subject)
+	assert.Contains(t, passwordChangedTemplate.Body, "{{.ChangeTime}}")
+	assert.Contains(t, passwordChangedTemplate.Body, "{{.ClientIP}}")
+	assert.Contains(t, passwordChangedTemplate.Body, "请立即联系客服")
+}
