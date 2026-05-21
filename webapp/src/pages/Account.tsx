@@ -41,6 +41,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
   AccountBalanceWallet as WalletIcon,
+  Lock as LockIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -57,6 +58,7 @@ import { getThemeColors } from '../theme/colors';
 import { useAppLinks } from "../hooks/useAppLinks";
 import VersionItem from "../components/VersionItem";
 import BetaChannelToggle from "../components/BetaChannelToggle";
+import PasswordDialog from "../components/PasswordDialog";
 
 export default function Account() {
   const { user, loading, isMembership, isExpired, fetchUser } = useUser();
@@ -70,6 +72,7 @@ export default function Account() {
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(i18n.language as LanguageCode || 'zh-CN');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   useEffect(() => {
     let version = window._platform!.version;
     // iOS App Store 审核要求：版本号不能包含 beta 后缀（如 0.4.0-beta.4），
@@ -523,6 +526,37 @@ export default function Account() {
             <Divider />
 
             <ListItem
+              button
+              onClick={() => setShowPasswordDialog(true)}
+              disabled={!isAuthenticated}
+              sx={{
+                py: 1.5,
+                cursor: 'pointer',
+                '&:hover': {
+                  backgroundColor: 'action.hover',
+                }
+              }}
+            >
+              <ListItemIcon>
+                <LockIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary={
+                  <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                    {user?.hasPassword
+                      ? t('account:password.changePassword')
+                      : t('account:password.setPassword')}
+                  </Typography>
+                }
+              />
+              <ListItemSecondaryAction>
+                <ChevronRightIcon color="action" />
+              </ListItemSecondaryAction>
+            </ListItem>
+
+            <Divider />
+
+            <ListItem
               button={true}
               onClick={() => navigate("/devices")}
               sx={{
@@ -797,6 +831,16 @@ export default function Account() {
         </DialogActions>
       </Dialog>
 
+      <PasswordDialog
+        open={showPasswordDialog}
+        hasPassword={user?.hasPassword ?? false}
+        userEmail={user?.loginIdentifies?.find((i) => i.type === 'email')?.value ?? ''}
+        onClose={() => setShowPasswordDialog(false)}
+        onSuccess={() => {
+          setShowPasswordDialog(false);
+          fetchUser();
+        }}
+      />
     </Box>
   );
 }
