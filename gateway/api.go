@@ -86,7 +86,9 @@ func (g *Gateway) handleUp(w http.ResponseWriter, params map[string]any) {
 }
 
 func (g *Gateway) handleDown(w http.ResponseWriter) {
-	safego.Go(g.doDown)
+	// User explicitly asked to disconnect via `k2r down` / webapp. Persist
+	// the disconnect intent so daemon restart does not auto-reconnect.
+	safego.Go(func() { g.doDown(true) })
 	writeJSON(w, Response{Code: 0, Message: "disconnecting"})
 }
 

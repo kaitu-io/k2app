@@ -112,12 +112,17 @@ func New(version, commit, arch string) *Gateway {
 }
 
 // Run starts the HTTP API server and blocks until Stop is called or the
-// listener fails. It cleans stale firewall rules on startup and attempts
-// auto-reconnect from saved state.
+// listener fails. It attempts auto-reconnect from saved state.
+//
+// Note: stale firewall rules from a previous crashed daemon are NOT cleaned
+// at startup — that would tear down the previous chain immediately, opening
+// a multi-second LAN-escape window before auto-reconnect's first Install can
+// restore protection. Install's pre-flight Remove handles stale state at the
+// correct moment (back-to-back replacement). See startupRecovery + Bug 6 fix.
 func (g *Gateway) Run(addr string) error {
 	defer g.handlePanic()
 
-	g.cleanStaleRules()
+	g.startupRecovery()
 
 	if g.updater != nil {
 		g.updater.RecoverOnStartup()
@@ -166,7 +171,10 @@ func (g *Gateway) Run(addr string) error {
 
 	select {
 	case <-g.ctx.Done():
-		g.doDown()
+		// Daemon-internal shutdown (procd SIGTERM, systemctl restart, etc.).
+		// userInitiated=false so state.json keeps {State:"connected", Config}
+		// — next start's tryAutoReconnect resumes the tunnel automatically.
+		g.doDown(false)
 		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutCancel()
 		g.httpServer.Shutdown(shutCtx)
@@ -327,7 +335,19 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 }
 
 // doDown disconnects and cleans up. Acquires opMu to serialize.
-func (g *Gateway) doDown() {
+//
+// userInitiated distinguishes two shutdown semantics:
+//   - true: user explicitly ran `k2r down`. State.json gets {State:
+//     "disconnected", Config:nil} so the next start does NOT auto-reconnect —
+//     the user wanted to stay disconnected.
+//   - false: daemon-internal shutdown (ctx.Done() from SIGTERM / procd
+//     restart / Linux reboot). State.json is left untouched so the previous
+//     doUp's {State:"connected", Config} survives — next start's
+//     tryAutoReconnect resumes the tunnel.
+//
+// Both paths close the tunnel + drain subscription sessions. They differ
+// only in whether they persist a disconnect intent.
+func (g *Gateway) doDown(userInitiated bool) {
 	g.opMu.Lock()
 	defer g.opMu.Unlock()
 	g.closeTunnel()
@@ -336,7 +356,11 @@ func (g *Gateway) doDown() {
 	// shell must close them explicitly. Idempotent: safe when no sessions
 	// were ever resolved (e.g. doDown without prior doUp).
 	g.subsMgr.CloseAll()
-	saveState(&persistedState{State: "disconnected", Timestamp: time.Now()})
+	if userInitiated {
+		saveState(&persistedState{State: "disconnected", Timestamp: time.Now()})
+	}
+	// else: preserve whatever state.json the last doUp wrote — auto-reconnect
+	// on next start is the intent.
 }
 
 // closeTunnel extracts resources under mu, then closes outside lock.
@@ -362,13 +386,18 @@ func (g *Gateway) closeTunnel() {
 	if engineCnl != nil {
 		engineCnl()
 	}
-	if eng != nil {
-		eng.Stop()
-	}
+	// Tear down iptables + sysctl BEFORE engine.Stop fires
+	// OnStatus(disconnected). The previous order let observers see
+	// state=disconnected while PREROUTING still had K2R refs (~100 ms race
+	// on MIPS), during which LAN traffic kept being TPROXY'd to the
+	// listener being torn down. Bug 9 fix (2026-05-21).
 	if interceptor != nil {
 		interceptor.Remove()
 	}
 	sc.Restore()
+	if eng != nil {
+		eng.Stop()
+	}
 }
 
 // --- EventHandler impl (engine.EventHandler) ---
@@ -404,11 +433,27 @@ func (g *Gateway) broadcastStatus(status engine.Status) {
 
 // --- Recovery ---
 
-// cleanStaleRules removes any leftover firewall rules from a previous crash.
-func (g *Gateway) cleanStaleRules() {
-	if i, err := NewInterceptor(); err == nil {
-		i.Remove()
-	}
+// startupRecovery is the startup-phase recovery hook invoked from Run before
+// the HTTP API binds and auto-reconnect kicks in.
+//
+// Intentionally empty re: interceptor state. Previously this eagerly removed
+// any pre-existing K2R chain on startup (under the theory that a crashed
+// daemon left bad state). In practice that caused an ~8 s LAN-escape window
+// — measured 2026-05-21 on GL-XE300 MIPS after `kill -9`: startup-Remove
+// fired at T+0, but Install could not re-add until auto-reconnect's 3 s
+// settle + transport race (3-5 s on real RTT) completed.
+//
+// The pre-existing chain — if any — points TPROXY at a port whose listener
+// died with the previous daemon. Packets arriving at that port are dropped
+// by the kernel = fail-CLOSED, the correct security posture for a VPN
+// router. Install's pre-flight Remove + atomic re-add then takes over the
+// moment auto-reconnect succeeds, with only a microsecond window.
+//
+// If a future startup-time recovery task is needed (cleaning some other
+// resource, validating a non-iptables artifact), add it here.
+func (g *Gateway) startupRecovery() {
+	// intentionally empty: stale iptables state is cleaned by Install's
+	// pre-flight Remove, not here. See Bug 6 fix.
 }
 
 // handlePanic is a deferred recovery handler that cleans up firewall rules
@@ -429,9 +474,46 @@ func (g *Gateway) handlePanic() {
 	}
 }
 
+// autoReconnectBackoff is the schedule of delays between auto-reconnect
+// attempts. After this list is exhausted, the loop keeps retrying at the
+// final cap interval indefinitely (until g.ctx is cancelled). 3 s first
+// to let the HTTP server + kernel network stack settle after boot.
+//
+// Variable rather than const so unit tests can shrink it without changing
+// the production schedule.
+var autoReconnectBackoff = []time.Duration{
+	3 * time.Second,
+	15 * time.Second,
+	30 * time.Second,
+	60 * time.Second,
+	120 * time.Second,
+	300 * time.Second,
+}
+
 // tryAutoReconnect loads persisted state and reconnects if the gateway was
-// previously connected within the last 7 days.
+// previously connected within the last 7 days. Retries with bounded backoff
+// (autoReconnectBackoff) then steady-state at the cap interval until either
+// reconnect succeeds or g.ctx is cancelled.
 func (g *Gateway) tryAutoReconnect() {
+	g.runAutoReconnectLoop(g.ctx, g.doUp, autoReconnectBackoff)
+}
+
+// runAutoReconnectLoop is the testable core of tryAutoReconnect. attempt is
+// invoked between sleeps from the backoff slice. After backoff is exhausted,
+// the final delay is reused indefinitely. Returns on first attempt success
+// or on ctx cancel.
+//
+// Invariants:
+//   - attempt is never called if state.json fails the connected+config gate
+//     (mirrors the original tryAutoReconnect bail-out).
+//   - ctx.Done() between sleeps interrupts immediately; in-flight attempts
+//     are NOT cancelled (doUp owns its own context lifecycle).
+//   - Empty backoff slice → no-op (returns immediately).
+func (g *Gateway) runAutoReconnectLoop(
+	ctx context.Context,
+	attempt func(*GatewayConfig) error,
+	backoff []time.Duration,
+) {
 	st := loadState()
 	if st == nil || st.State != "connected" || st.Config == nil {
 		return
@@ -439,16 +521,54 @@ func (g *Gateway) tryAutoReconnect() {
 	if time.Since(st.Timestamp) > 7*24*time.Hour {
 		return
 	}
+	if len(backoff) == 0 {
+		return
+	}
 	// Derive Server from routes (Server is json:"-", not persisted).
 	SetGatewayDefaults(st.Config)
-	time.Sleep(3 * time.Second) // wait for HTTP server + network stack to be ready
-	select {
-	case <-g.ctx.Done():
-		return
-	default:
+
+	sleepThen := func(d time.Duration) bool {
+		select {
+		case <-time.After(d):
+			return true
+		case <-ctx.Done():
+			return false
+		}
 	}
-	slog.Info("gateway: auto-reconnecting from saved state")
-	if err := g.doUp(st.Config); err != nil {
-		slog.Warn("gateway: auto-reconnect failed", "err", err)
+
+	tryOnce := func(n int) bool {
+		if n == 1 {
+			slog.Info("gateway: auto-reconnecting from saved state")
+		} else {
+			slog.Info("gateway: auto-reconnect retrying", "attempt", n)
+		}
+		if err := attempt(st.Config); err != nil {
+			slog.Warn("gateway: auto-reconnect failed", "attempt", n, "err", err)
+			return false
+		}
+		return true
+	}
+
+	var n int
+	for _, delay := range backoff {
+		if !sleepThen(delay) {
+			return
+		}
+		n++
+		if tryOnce(n) {
+			return
+		}
+	}
+
+	// Steady-state retries at the cap interval.
+	cap := backoff[len(backoff)-1]
+	for {
+		if !sleepThen(cap) {
+			return
+		}
+		n++
+		if tryOnce(n) {
+			return
+		}
 	}
 }

@@ -72,6 +72,7 @@ func (n *nftNetlinkInterceptor) Install(cfg InterceptConfig) error {
 
 	if cfg.DNSRedirect && cfg.DNSPort > 0 {
 		n.addDNSRedirect(cfg, n.table)
+		n.addDNSRedirectOutput(cfg, n.table)
 	}
 
 	n.addTPROXYRules(cfg)
@@ -246,6 +247,49 @@ func (n *nftNetlinkInterceptor) addDNSRedirect(cfg InterceptConfig, table *nftab
 				},
 			})
 		}
+	}
+}
+
+// addDNSRedirectOutput installs the OUTPUT-hook NAT chain that catches
+// locally-originated DNS traffic (e.g. dnsmasq → ISP upstream). The mark
+// RETURN must come FIRST in the rule list so k2r's own DirectDNS queries,
+// which carry the K2RFwmark via gatewayDirectDialer.ControlFunc, are not
+// trapped in an infinite recursion loop through the DNS listener.
+func (n *nftNetlinkInterceptor) addDNSRedirectOutput(cfg InterceptConfig, table *nftables.Table) {
+	outChain := n.conn.AddChain(&nftables.Chain{
+		Name:     "dnsredir_out",
+		Table:    table,
+		Type:     nftables.ChainTypeNAT,
+		Hooknum:  nftables.ChainHookOutput,
+		Priority: nftables.ChainPriorityNATDest,
+	})
+
+	dnsPort := uint16(cfg.DNSPort)
+
+	// Rule 1 (must be first): exempt k2r's own marked traffic.
+	n.conn.AddRule(&nftables.Rule{
+		Table: table, Chain: outChain,
+		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(uint32(K2RFwmark))},
+			&expr.Verdict{Kind: expr.VerdictReturn},
+		},
+	})
+
+	// Rules 2-3: REDIRECT port 53 (TCP + UDP) to the local DNS listener.
+	// No subnet filter — any locally-originated DNS query qualifies.
+	for _, proto := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
+		n.conn.AddRule(&nftables.Rule{
+			Table: table, Chain: outChain,
+			Exprs: []expr.Any{
+				&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{proto}},
+				&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
+				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(53)},
+				&expr.Immediate{Register: 1, Data: binaryutil.BigEndian.PutUint16(dnsPort)},
+				&expr.Redir{RegisterProtoMin: 1},
+			},
+		})
 	}
 }
 

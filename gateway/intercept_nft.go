@@ -70,10 +70,13 @@ func (n *nftShellInterceptor) buildScript(cfg InterceptConfig) string {
 	lines = append(lines,
 		"add chain inet k2r prerouting { type filter hook prerouting priority mangle ; policy accept ; }")
 
-	// DNS redirect needs a NAT chain (redirect is a NAT operation)
+	// DNS redirect needs a NAT chain (redirect is a NAT operation).
+	// dnsredir covers LAN→ANY:53; dnsredir_out covers locally-generated DNS
+	// (dnsmasq → ISP upstream) which never traverses PREROUTING.
 	if cfg.DNSRedirect && cfg.DNSPort > 0 {
 		lines = append(lines,
-			"add chain inet k2r dnsredir { type nat hook prerouting priority dstnat ; policy accept ; }")
+			"add chain inet k2r dnsredir { type nat hook prerouting priority dstnat ; policy accept ; }",
+			"add chain inet k2r dnsredir_out { type nat hook output priority -100 ; policy accept ; }")
 	}
 
 	lines = append(lines,
@@ -108,6 +111,15 @@ func (n *nftShellInterceptor) buildScript(cfg InterceptConfig) string {
 			lines = append(lines, fmt.Sprintf(
 				"add rule inet k2r dnsredir ip6 saddr %s meta l4proto { tcp, udp } th dport 53 redirect to :%s", subnet, dnsPort))
 		}
+
+		// OUTPUT-hook chain — mark RETURN must be the FIRST rule so k2r's
+		// own DirectDNS queries (stamped with K2RFwmark in
+		// gatewayDirectDialer.ControlFunc) escape before the REDIRECT,
+		// avoiding infinite recursion through k2r's own DNS listener.
+		lines = append(lines, fmt.Sprintf(
+			"add rule inet k2r dnsredir_out meta mark 0x%x return", K2RFwmark))
+		lines = append(lines, fmt.Sprintf(
+			"add rule inet k2r dnsredir_out meta l4proto { tcp, udp } th dport 53 redirect to :%s", dnsPort))
 	}
 
 	for _, subnet := range v4Subnets {

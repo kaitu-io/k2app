@@ -18,6 +18,7 @@ const (
 	ErrCodeAuthRejected           = 401 // Server rejected authentication (stream rejected)
 	ErrCodePaymentRequired        = 402 // Subscription expired or payment required
 	ErrCodeForbidden              = 403 // Certificate pin mismatch, blocked CA
+	ErrCodeEnvironmentSetupFailed = 412 // Local host setup failed (iptables, sysctl, file perms) — operator must fix env. HTTP 412 Precondition Failed semantics
 	ErrCodeProtocolError          = 502 // TLS handshake failure, QUIC dial failure
 	ErrCodeServerUnreachable      = 503 // TCP dial failed, connection refused
 	ErrCodeRuleBundlesUnavailable = 504 // Dependency unreachable: rule bundle CDN sources all failed (transient, retryable)
@@ -53,7 +54,7 @@ type EngineError struct {
 // categoryForCode maps an error code to its blame category.
 func categoryForCode(code int) string {
 	switch code {
-	case ErrCodeBadConfig, ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden:
+	case ErrCodeBadConfig, ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden, ErrCodeEnvironmentSetupFailed:
 		return CategoryClient
 	case ErrCodeNetworkUnavailable, ErrCodeTimeout:
 		return CategoryNetwork
@@ -150,6 +151,18 @@ func classifyByPatterns(msg string) *EngineError {
 		strings.Contains(msg, "unsupported scheme") ||
 		strings.Contains(msg, "missing port") {
 		return newEngineError(ErrCodeBadConfig, msg)
+	}
+
+	// 406: Local host setup failed (gateway iptables/ip6tables/sysctl). The
+	// gateway daemon runs these commands on its own host; failures here are
+	// operator-actionable (missing kernel module, permission denied, stale
+	// chain). Must be client-category — never server. Checked before the
+	// generic "TCP dial" / "listen UDP" patterns so the leading "gateway:"
+	// prefix is matched first.
+	if strings.Contains(msg, "install intercept") ||
+		strings.Contains(msg, "iptables") ||
+		strings.Contains(msg, "ip6tables") {
+		return newEngineError(ErrCodeEnvironmentSetupFailed, msg)
 	}
 
 	// 101: Client network unavailable (checked BEFORE 503 — "TCP dial: network unreachable" is client-side).

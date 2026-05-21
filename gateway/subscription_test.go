@@ -124,7 +124,7 @@ func TestGateway_DoDown_ClosesSubscriptionSessions(t *testing.T) {
 		t.Fatalf("after Resolve: SessionsLen = %d, want 1", got)
 	}
 
-	g.doDown()
+	g.doDown(false)
 	if got := g.subsMgr.SessionsLen(); got != 0 {
 		t.Fatalf("doDown should clear sessions; got %d", got)
 	}

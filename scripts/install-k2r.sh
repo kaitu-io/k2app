@@ -161,6 +161,108 @@ get_lan_ip() {
     fi
 }
 
+# detect_pkg_mgr — sets PKG_MGR to one of: opkg, apt, apk, dnf, pacman, ""
+detect_pkg_mgr() {
+    if command -v opkg >/dev/null 2>&1; then PKG_MGR=opkg
+    elif command -v apt-get >/dev/null 2>&1; then PKG_MGR=apt
+    elif command -v apk >/dev/null 2>&1; then PKG_MGR=apk
+    elif command -v dnf >/dev/null 2>&1; then PKG_MGR=dnf
+    elif command -v pacman >/dev/null 2>&1; then PKG_MGR=pacman
+    else PKG_MGR=""
+    fi
+}
+
+# iptables_tproxy_works — true when iptables has working TPROXY support.
+# Tries a real (then removed) rule against the mangle table. Avoids printing
+# spurious failures to stderr.
+iptables_tproxy_works() {
+    command -v iptables >/dev/null 2>&1 || return 1
+    iptables -t mangle -N __K2R_TPROXY_PROBE 2>/dev/null || return 1
+    rc=0
+    iptables -t mangle -A __K2R_TPROXY_PROBE \
+        -p udp -j TPROXY --tproxy-mark 1/1 --on-port 12345 2>/dev/null || rc=1
+    iptables -t mangle -F __K2R_TPROXY_PROBE 2>/dev/null
+    iptables -t mangle -X __K2R_TPROXY_PROBE 2>/dev/null
+    return $rc
+}
+
+# nft_tproxy_works — true when nft has tproxy expression support. Tests via
+# a throwaway table that's deleted right after.
+nft_tproxy_works() {
+    command -v nft >/dev/null 2>&1 || return 1
+    rc=0
+    nft -c "add table inet __k2r_probe
+add chain inet __k2r_probe pre { type filter hook prerouting priority -150 ; }
+add rule inet __k2r_probe pre meta l4proto udp tproxy ip to :12345 meta mark set 1" \
+        2>/dev/null || rc=1
+    return $rc
+}
+
+# Install TPROXY packages for the detected package manager. Errors are
+# tolerated — we re-test capability after this returns.
+install_tproxy_pkg() {
+    case "$PKG_MGR" in
+        opkg)
+            log "  opkg: installing iptables-mod-tproxy kmod-ipt-tproxy..."
+            opkg update >/dev/null 2>&1 || true
+            opkg install iptables-mod-tproxy kmod-ipt-tproxy >/dev/null 2>&1 || true
+            ;;
+        apt)
+            log "  apt-get: installing iptables..."
+            DEBIAN_FRONTEND=noninteractive apt-get install -y iptables >/dev/null 2>&1 || true
+            ;;
+        apk)
+            log "  apk: installing iptables..."
+            apk add --no-cache iptables >/dev/null 2>&1 || true
+            ;;
+        dnf)
+            log "  dnf: installing iptables..."
+            dnf install -y iptables >/dev/null 2>&1 || true
+            ;;
+        pacman)
+            log "  pacman: installing iptables..."
+            pacman -S --noconfirm iptables >/dev/null 2>&1 || true
+            ;;
+        *)
+            log "  no supported package manager detected — install TPROXY support manually"
+            ;;
+    esac
+    # Load the kernel module — name varies by kernel version, try both.
+    modprobe xt_TPROXY 2>/dev/null || modprobe ipt_TPROXY 2>/dev/null || true
+}
+
+# ensure_tproxy — guarantee TPROXY is usable before installing k2r, otherwise
+# the daemon will start, fail Install(), and bounce in a respawn loop.
+# Either iptables OR nftables support is sufficient — k2r auto-detects.
+ensure_tproxy() {
+    log "Checking TPROXY support..."
+
+    if iptables_tproxy_works || nft_tproxy_works; then
+        log "  TPROXY available"
+        return 0
+    fi
+
+    detect_pkg_mgr
+    install_tproxy_pkg
+
+    if iptables_tproxy_works || nft_tproxy_works; then
+        log "  TPROXY installed"
+        return 0
+    fi
+
+    log ""
+    log "ERROR: TPROXY support not available and could not be installed."
+    log "k2r requires either iptables with xt_TPROXY or nftables with tproxy."
+    log ""
+    log "Install manually for your platform:"
+    log "  OpenWrt:        opkg update && opkg install iptables-mod-tproxy kmod-ipt-tproxy"
+    log "  Debian/Ubuntu:  apt-get install iptables  &&  modprobe xt_TPROXY"
+    log "  Alpine:         apk add iptables          &&  modprobe xt_TPROXY"
+    log "  Fedora/RHEL:    dnf install iptables      &&  modprobe xt_TPROXY"
+    log ""
+    die "TPROXY missing — see instructions above"
+}
+
 # --- main ---
 
 main() {
@@ -168,6 +270,7 @@ main() {
 
     require_root
     detect_platform
+    ensure_tproxy
 
     log "Fetching latest version..."
     VERSION="$(fetch_cdn "/LATEST")" || die "failed to fetch latest version"

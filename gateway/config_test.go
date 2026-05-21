@@ -24,6 +24,24 @@ func TestSetGatewayDefaults(t *testing.T) {
 	}
 }
 
+// DNS redirect is the default behavior for k2r — without it, dnsmasq's upstream
+// queries leak directly out the WAN since PREROUTING-only TPROXY can't catch
+// locally-generated packets. Default-on closes that leak; explicit opt-out is
+// reserved for diagnostic builds and not exposed today.
+func TestSetGatewayDefaults_EnablesDNSRedirect(t *testing.T) {
+	cfg := &GatewayConfig{}
+	SetGatewayDefaults(cfg)
+	if !cfg.DNSRedirect {
+		t.Error("DNSRedirect = false, want true (default-on to prevent dnsmasq DNS leak)")
+	}
+	if cfg.DNSPort == 0 {
+		t.Error("DNSPort = 0, want non-zero (ListenPort+1)")
+	}
+	if cfg.DNSPort != cfg.ListenPort+1 {
+		t.Errorf("DNSPort = %d, want ListenPort+1 = %d", cfg.DNSPort, cfg.ListenPort+1)
+	}
+}
+
 func TestSetGatewayDefaults_PreservesCustomPort(t *testing.T) {
 	cfg := &GatewayConfig{ListenPort: 9999}
 	SetGatewayDefaults(cfg)

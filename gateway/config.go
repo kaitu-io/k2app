@@ -60,6 +60,11 @@ func SetGatewayDefaults(cfg *GatewayConfig) {
 	if cfg.DNSPort == 0 {
 		cfg.DNSPort = cfg.ListenPort + 1
 	}
+	// DNS redirect must be default-on to close the dnsmasq leak path. Without
+	// it, locally-generated DNS (dnsmasq → ISP upstream) bypasses TPROXY,
+	// since PREROUTING never sees router-originated packets. Opt-out is not
+	// exposed at the YAML layer today; would require switching to *bool.
+	cfg.DNSRedirect = true
 }
 
 // engineConfig assembles the engine.Config the gateway hands to engine.Start.
@@ -80,6 +85,11 @@ func engineConfig(client *config.ClientConfig, prov provider.Provider, healthCb 
 		HealthCallback:   healthCb,
 		WireMode:         "gateway",
 		OutboundProvider: outboundProvider,
+		// DirectDialer stamps SO_MARK on direct sockets so the OUTPUT-chain
+		// DNS REDIRECT exempts k2r's own DirectDNS queries before they
+		// recurse through the DNS listener. See K2RFwmark and gateway/intercept_ipt.go
+		// K2R_DNS_OUT chain.
+		DirectDialer: &gatewayDirectDialer{},
 	}
 }
 

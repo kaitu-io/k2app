@@ -15,7 +15,14 @@ type persistedState struct {
 	Timestamp time.Time      `json:"timestamp"`
 }
 
+// stateDirOverride lets tests redirect the state directory away from
+// /etc/k2r. Production code never sets this.
+var stateDirOverride string
+
 func stateDir() string {
+	if stateDirOverride != "" {
+		return stateDirOverride
+	}
 	return "/etc/k2r"
 }
 
