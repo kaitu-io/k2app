@@ -22,6 +22,8 @@ import {
   IconButton,
   Link,
   Divider,
+  Tabs,
+  Tab,
 } from "@mui/material";
 import {
   Close as CloseIcon,
@@ -37,6 +39,7 @@ import { useAppLinks } from "../hooks/useAppLinks";
 import { ERROR_CODES, handleResponseError } from "../utils/errorCode";
 import { suggestEmail } from "../utils/email-suggest";
 import EmailSuggestion from "./EmailSuggestion";
+import PasswordAuthFields from "./PasswordAuthFields";
 import { cloudApi } from '../services/cloud-api';
 import { getDeviceUdid } from '../services/device-udid';
 import { cacheStore } from '../services/cache-store';
@@ -66,6 +69,8 @@ export default function LoginDialog() {
   const [countdown, setCountdown] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [loginMethod, setLoginMethod] = useState<"code" | "password">("code");
+  const [password, setPassword] = useState("");
 
   // Refs for delayed focus (avoid autoFocus timing issues on old WebViews)
   const emailInputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +94,8 @@ export default function LoginDialog() {
       setError("");
       setIsActivated(true);
       setEmailSuggestion(null);
+      setLoginMethod("code");
+      setPassword("");
     }
   }, [isOpen]);
 
@@ -205,6 +212,39 @@ export default function LoginDialog() {
     }
   };
 
+  // Password login handler — mirrors EmailLoginForm.handlePasswordLogin.
+  // Shares the password-tab UX so both entry points stay in lock-step.
+  const handlePasswordLogin = async () => {
+    if (!isEmailValid || !password) {
+      setError(t("auth:auth.passwordPlaceholder"));
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      setError("");
+      const deviceRemark = t("startup:startup.newDevice");
+      const udid = await getDeviceUdid();
+      const response = await cloudApi.post<AuthResult>('/api/auth/login/password', {
+        email,
+        password,
+        udid,
+        remark: deviceRemark,
+        deviceName: deviceRemark,
+        platform: window._platform?.os || '',
+        language: i18n.language,
+      });
+      handleResponseError(response.code, response.message, t, t("auth:auth.loginFailed"));
+      cacheStore.clear();
+      setIsAuthenticated(true);
+      close();
+    } catch (err) {
+      console.error('[LoginDialog] Password login failed:', err);
+      setError(err instanceof Error ? err.message : t("auth:auth.loginFailedRetry"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Close dialog — redirect to Dashboard if opened by route guard and user is not authenticated
   const handleClose = (_event?: unknown, reason?: string) => {
     console.warn('[LoginDialog] onClose triggered, reason:', reason);
@@ -304,8 +344,21 @@ export default function LoginDialog() {
           </Alert>
         )}
 
-        {/* Step 1: Email Input */}
+        {/* Login Method Tabs - only show on email step */}
         {step === "email" && (
+          <Tabs
+            value={loginMethod}
+            onChange={(_, v) => { setLoginMethod(v); setError(""); }}
+            centered
+            sx={{ mb: 2 }}
+          >
+            <Tab value="code" label={t("auth:auth.codeLogin")} />
+            <Tab value="password" label={t("auth:auth.passwordLogin")} />
+          </Tabs>
+        )}
+
+        {/* Step 1: Email Input (Code Login) */}
+        {step === "email" && loginMethod === "code" && (
           <Stack spacing={2}>
             <TextField
               fullWidth
@@ -387,6 +440,27 @@ export default function LoginDialog() {
                 </Button>
               </>
             )}
+          </Stack>
+        )}
+
+        {/* Step 1: Password Login */}
+        {step === "email" && loginMethod === "password" && (
+          <Stack spacing={2}>
+            <PasswordAuthFields
+              email={email}
+              password={password}
+              onEmailChange={(v) => { setEmail(v); if (emailSuggestion) setEmailSuggestion(null); }}
+              onPasswordChange={setPassword}
+              onSubmit={handlePasswordLogin}
+              onEmailBlur={() => {
+                const cleaned = email.trim().toLowerCase().replace(/\s+/g, '');
+                setEmail(cleaned);
+                setEmailSuggestion(suggestEmail(cleaned));
+              }}
+              emailSuggestion={emailSuggestion}
+              onAcceptSuggestion={() => { setEmail(emailSuggestion!); setEmailSuggestion(null); }}
+              isSubmitting={isSubmitting}
+            />
           </Stack>
         )}
 
