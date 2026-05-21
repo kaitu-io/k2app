@@ -2,49 +2,41 @@ package center
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestValidatePasswordStrength(t *testing.T) {
 	tests := []struct {
-		name     string
-		password string
-		wantErr  string
+		name       string
+		password   string
+		userInputs []string
+		wantErr    string
 	}{
-		{"valid password", "Password123", ""},
-		{"too short", "Pass1", "password_too_short"},
-		{"no letter", "12345678", "password_needs_letter"},
-		{"no number", "Password", "password_needs_number"},
-		{"exactly 8 chars", "Pass1234", ""},
-		{"special chars ok", "Pass123!", ""},
+		{"too short — under 10", "Pass1234", nil, "password_too_short"},
+		{"common dictionary word", "Password12", nil, "password_too_weak"},
+		{"keyboard pattern", "qwerty1234A", nil, "password_too_weak"},
+		{"repeated chars", "aaaaaaaaaaa1A", nil, "password_too_weak"},
+		{"contains user email local part", "alice12345!", []string{"alice@example.com"}, "password_too_weak"},
+		{"strong passphrase ok", "correct horse battery staple", nil, ""},
+		{"random strong ok", "k7N#mq2P!xT9", nil, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ValidatePasswordStrength(tt.password)
-			if got != tt.wantErr {
-				t.Errorf("ValidatePasswordStrength(%q) = %q, want %q", tt.password, got, tt.wantErr)
-			}
+			got := ValidatePasswordStrength(tt.password, tt.userInputs)
+			assert.Equal(t, tt.wantErr, got)
 		})
 	}
 }
 
 func TestUserPasswordHashAndVerify(t *testing.T) {
-	password := "TestPassword123"
+	password := "k7N#mq2P!xT9"
 
 	hash, err := UserPasswordHash(password)
-	if err != nil {
-		t.Fatalf("UserPasswordHash failed: %v", err)
-	}
+	assert.NoError(t, err)
+	assert.NotEmpty(t, hash)
 
-	if hash == "" {
-		t.Error("UserPasswordHash returned empty hash")
-	}
-
-	if !UserPasswordVerify(password, hash) {
-		t.Error("UserPasswordVerify failed for correct password")
-	}
-
-	if UserPasswordVerify("wrongpassword", hash) {
-		t.Error("UserPasswordVerify succeeded for wrong password")
-	}
+	assert.True(t, UserPasswordVerify(password, hash), "verify should succeed for correct password")
+	assert.False(t, UserPasswordVerify("wrongpassword", hash), "verify should fail for wrong password")
 }

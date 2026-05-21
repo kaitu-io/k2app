@@ -386,7 +386,7 @@ func api_set_password(c *gin.Context) {
 	}
 
 	// Validate password strength
-	if errKey := ValidatePasswordStrength(req.Password); errKey != "" {
+	if errKey := ValidatePasswordStrength(req.Password, nil); errKey != "" {
 		log.Warnf(c, "password does not meet requirements for user %d: %s", userID, errKey)
 		Error(c, ErrorInvalidArgument, errKey)
 		return
