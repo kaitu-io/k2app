@@ -247,3 +247,39 @@ func TestCategoryForCode_RuleBundlesUnavailable(t *testing.T) {
 		t.Errorf("expected CategoryServer for code %d, got %q", ErrCodeRuleBundlesUnavailable, got)
 	}
 }
+
+// Gateway environment setup failures (iptables, sysctl, etc.) are local-host
+// problems — never server fault. Must classify as 4xx client, not 570 server.
+// Regression guard for misclassification observed on OpenWrt MIPS where
+// "gateway: install intercept: iptables: Chain already exists" fell through
+// to fallback 570 + CategoryServer.
+func TestClassifyError_GatewayIptablesFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			"install intercept chain exists",
+			errors.New("gateway: install intercept: gateway: iptables [-t mangle -N K2R]: iptables -t mangle -N K2R: iptables: Chain already exists.\n: exit status 1"),
+		},
+		{
+			"iptables generic failure",
+			errors.New("gateway: iptables [-t mangle -A K2R -j TPROXY]: Operation not permitted"),
+		},
+		{
+			"ip6tables failure",
+			errors.New("gateway: ip6tables [-t mangle -N K2R]: command not found"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ClassifyError(tt.err)
+			if result.Code != ErrCodeEnvironmentSetupFailed {
+				t.Errorf("code = %d, want %d (ErrCodeEnvironmentSetupFailed)", result.Code, ErrCodeEnvironmentSetupFailed)
+			}
+			if result.Category != CategoryClient {
+				t.Errorf("category = %q, want %q (gateway-host problem, not server)", result.Category, CategoryClient)
+			}
+		})
+	}
+}
