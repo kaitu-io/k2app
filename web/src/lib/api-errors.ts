@@ -3,12 +3,22 @@ import { ErrorCode } from './api';
 /**
  * Map API error code to i18n error message.
  * Use in public [locale] pages with next-intl's useTranslations().
+ *
+ * `message` is the raw backend message string (debug-only — never shown
+ * to users). We use it to disambiguate enum-style payloads under
+ * `InvalidArgument` (e.g. `password_too_short` / `password_too_weak`).
  */
 export function getApiErrorMessage(
   code: number,
   t: (key: string) => string,
-  fallback?: string
+  fallback?: string,
+  message?: string
 ): string {
+  // Route password strength sub-errors before the generic switch.
+  if (code === ErrorCode.InvalidArgument) {
+    if (message === 'password_too_short') return t('admin.account.password.tooShort');
+    if (message === 'password_too_weak') return t('admin.account.password.tooWeak');
+  }
   switch (code) {
     case ErrorCode.InvalidOperation:
       return t('errors.badRequest');
@@ -92,7 +102,18 @@ const zhMessages: Record<number, string> = {
 /**
  * Map API error code to Chinese error message.
  * Use in manager pages (Chinese-only, no i18n context).
+ *
+ * `message` disambiguates enum-style payloads under `InvalidArgument`
+ * (e.g. `password_too_short` / `password_too_weak`).
  */
-export function getApiErrorMessageZh(code: number, fallback?: string): string {
+export function getApiErrorMessageZh(
+  code: number,
+  fallback?: string,
+  message?: string,
+): string {
+  if (code === ErrorCode.InvalidArgument) {
+    if (message === 'password_too_short') return '密码长度过短';
+    if (message === 'password_too_weak') return '密码过弱，请使用更长或更随机的组合（避免常见词、键盘顺序、重复字符）';
+  }
   return zhMessages[code] || fallback || '操作失败，请重试';
 }

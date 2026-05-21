@@ -292,6 +292,7 @@ export interface User {
   uuid: string;
   expiredAt: number;
   isFirstOrderDone: boolean;
+  hasPassword: boolean;             // 是否已设置登录密码（后端 DataUser 始终返回此字段）
   tier?: string;                    // 当前档位: "lite" | "basic" | "family" | "business"
   loginIdentifies: LoginIdentify[];
   device?: Device;
@@ -459,6 +460,20 @@ export interface SendCodeResponse {
   userExists: boolean;       // 用户是否存在
   isActivated: boolean;      // 用户账号是否已激活
   isFirstOrderDone: boolean; // 用户是否完成首单
+}
+
+// 密码登录请求 (POST /api/auth/web-login/password)
+export interface PasswordLoginRequest {
+  email: string;
+  password: string;
+  language?: string;
+  inviteCode?: string;
+}
+
+// 设置 / 修改密码请求 (POST /api/user/password)
+export interface SetPasswordRequest {
+  password: string;
+  confirmPassword: string;
 }
 
 // ============================================================================
@@ -1753,6 +1768,34 @@ export const api = {
   },
 
   /**
+   * Password login — only available for users who have set a password.
+   * Falls back to verification-code flow (`webLogin`) when the user
+   * has no password yet or forgets it.
+   */
+  async passwordLogin(
+    data: PasswordLoginRequest,
+    options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>,
+  ): Promise<WebLoginResponse> {
+    return this.request<WebLoginResponse>('/api/auth/web-login/password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      ...options,
+    });
+  },
+
+  /**
+   * Set or change the current user's login password.
+   * Backend enforces zxcvbn strength + length and emits
+   * `password_too_short` / `password_too_weak` under InvalidArgument.
+   */
+  async setPassword(data: SetPasswordRequest): Promise<void> {
+    return this.request<void>('/api/user/password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
    * Logout - clears server-side HttpOnly cookies
    */
   async logout(): Promise<void> {
@@ -1776,6 +1819,7 @@ export const api = {
     email?: string;
     isAdmin?: boolean;
     roles?: number;
+    hasPassword: boolean;
   }> {
     return this.request('/api/user/info', {
       ...options,
