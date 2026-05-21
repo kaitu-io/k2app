@@ -10,7 +10,16 @@
     "needsNumber": "密码需要包含数字",
     "mismatch": "两次输入的密码不一致",
     "setFailed": "设置密码失败",
-    "setSuccess": "密码设置成功"
+    "setSuccess": "密码设置成功",
+    "tooWeak": "密码过弱，请使用更长或更随机的组合（避免常见词、键盘顺序、重复字符）",
+    "strength": {
+      "label": "密码强度",
+      "veryWeak": "极弱",
+      "weak": "弱",
+      "fair": "一般",
+      "good": "强",
+      "strong": "极强"
+    }
   },
   "account": {
     "title": "账户",

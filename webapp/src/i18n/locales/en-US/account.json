@@ -10,7 +10,16 @@
     "needsNumber": "Password must contain a number",
     "mismatch": "Passwords do not match",
     "setFailed": "Failed to set password",
-    "setSuccess": "Password set successfully"
+    "setSuccess": "Password set successfully",
+    "tooWeak": "Password is too weak. Use a longer or more random combination (avoid common words, keyboard patterns, repeated characters).",
+    "strength": {
+      "label": "Password strength",
+      "veryWeak": "Very weak",
+      "weak": "Weak",
+      "fair": "Fair",
+      "good": "Strong",
+      "strong": "Very strong"
+    }
   },
   "account": {
     "title": "Account",
