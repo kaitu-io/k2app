@@ -386,13 +386,18 @@ func (g *Gateway) closeTunnel() {
 	if engineCnl != nil {
 		engineCnl()
 	}
-	if eng != nil {
-		eng.Stop()
-	}
+	// Tear down iptables + sysctl BEFORE engine.Stop fires
+	// OnStatus(disconnected). The previous order let observers see
+	// state=disconnected while PREROUTING still had K2R refs (~100 ms race
+	// on MIPS), during which LAN traffic kept being TPROXY'd to the
+	// listener being torn down. Bug 9 fix (2026-05-21).
 	if interceptor != nil {
 		interceptor.Remove()
 	}
 	sc.Restore()
+	if eng != nil {
+		eng.Stop()
+	}
 }
 
 // --- EventHandler impl (engine.EventHandler) ---
