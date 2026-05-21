@@ -14,6 +14,7 @@ func TestValidatePasswordStrength(t *testing.T) {
 		wantErr    string
 	}{
 		{"too short — under 10", "Pass1234", nil, "password_too_short"},
+		{"exactly 10 chars — boundary", "k7N#mq2P!x", nil, ""},
 		{"common dictionary word", "Password12", nil, "password_too_weak"},
 		{"keyboard pattern", "qwerty1234A", nil, "password_too_weak"},
 		{"repeated chars", "aaaaaaaaaaa1A", nil, "password_too_weak"},

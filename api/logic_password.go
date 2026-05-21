@@ -38,6 +38,7 @@ func ValidatePasswordStrength(password string, userInputs []string) string {
 	return ""
 }
 
+// IsAccountLocked reports whether the user's account is currently locked due to too many failed password attempts.
 func IsAccountLocked(user *User) bool {
 	if user.PasswordLockedUntil == 0 {
 		return false
@@ -45,6 +46,7 @@ func IsAccountLocked(user *User) bool {
 	return time.Now().Unix() < user.PasswordLockedUntil
 }
 
+// RecordFailedPasswordAttempt increments the user's failed-attempt counter and locks the account when the threshold is hit.
 func RecordFailedPasswordAttempt(ctx context.Context, user *User) error {
 	user.PasswordFailedAttempts++
 
@@ -57,6 +59,7 @@ func RecordFailedPasswordAttempt(ctx context.Context, user *User) error {
 	return db.Get().Save(user).Error
 }
 
+// ResetFailedPasswordAttempts clears the counter and any active lock — call on successful authentication.
 func ResetFailedPasswordAttempts(ctx context.Context, user *User) error {
 	if user.PasswordFailedAttempts == 0 && user.PasswordLockedUntil == 0 {
 		return nil
@@ -66,6 +69,7 @@ func ResetFailedPasswordAttempts(ctx context.Context, user *User) error {
 	return db.Get().Save(user).Error
 }
 
+// HasPasswordSet reports whether the user has a password hash on record.
 func HasPasswordSet(user *User) bool {
 	return user.PasswordHash != ""
 }
