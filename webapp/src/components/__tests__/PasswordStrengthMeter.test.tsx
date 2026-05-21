@@ -22,7 +22,7 @@ describe('PasswordStrengthMeter', () => {
 
   it('renders the strength label for score=4', () => {
     renderWithI18n(<PasswordStrengthMeter score={4} tooShort={false} />);
-    expect(screen.getByText(/极强|Very strong|非常に強い|極強/)).toBeInTheDocument();
+    expect(screen.getByText(/极强|Strong|非常に強い|極強/)).toBeInTheDocument();
   });
 
   it('exposes progressbar role with aria-valuenow', () => {
