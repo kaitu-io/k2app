@@ -10,8 +10,9 @@ import { getApiErrorMessage } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Mail, ArrowRight, Check, AlertCircleIcon } from "lucide-react";
+import { Mail, ArrowRight, Check, AlertCircleIcon, Lock } from "lucide-react";
 
 // Cookie helper functions
 function getCookie(name: string): string | null {
@@ -43,6 +44,9 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
   const [isActivated, setIsActivated] = useState(true); // 用户激活状态
   const [hasInviteCodeCookie, setHasInviteCodeCookie] = useState(false); // 是否有邀请码 cookie
   const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
+  // Step-1 sub-tab: "code" (verification-code flow, default) | "password" (T18).
+  const [loginMethod, setLoginMethod] = useState<"code" | "password">("code");
+  const [password, setPassword] = useState("");
 
   // Load invite code from cookie on component mount
   useEffect(() => {
@@ -88,7 +92,38 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
       setStep(2);
     } catch (error) {
       if (error instanceof ApiError) {
-        toast.error(getApiErrorMessage(error.code, t));
+        toast.error(getApiErrorMessage(error.code, t, undefined, error.message));
+      } else {
+        toast.error(t('auth.login.loginFailed'));
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Password-login flow (T18). Routed through api.passwordLogin (T16) which
+  // POSTs /api/auth/web-login/password. Server sets the HttpOnly cookie and
+  // returns the same WebLoginResponse shape as the verification-code flow.
+  const handlePasswordLogin = async () => {
+    if (!isValidEmail(email) || !password) {
+      toast.error(t('auth.login.passwordPlaceholder'));
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const userLanguage = typeof window !== 'undefined' ?
+        window.location.pathname.split('/')[1] || 'en-US' : 'en-US';
+      const response = await api.passwordLogin(
+        { email, password, language: userLanguage },
+        { autoRedirectToAuth: false },
+      );
+      toast.success(t('auth.login.loginSuccess'));
+      const { user, accessToken } = response;
+      await login(user, accessToken);
+      onLoginSuccess?.();
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(getApiErrorMessage(error.code, t, undefined, error.message));
       } else {
         toast.error(t('auth.login.loginFailed'));
       }
@@ -123,7 +158,7 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
       onLoginSuccess?.();
     } catch (error) {
       if (error instanceof ApiError) {
-        toast.error(getApiErrorMessage(error.code, t));
+        toast.error(getApiErrorMessage(error.code, t, undefined, error.message));
         // On expired/missing code, clear the input AND send the user back to
         // step 1 so the "send code" button is the obvious next move.
         if (error.code === ErrorCode.VerificationCodeExpired) {
@@ -141,57 +176,138 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
   return (
     <div className="space-y-1">
       {step === 1 ? (
-        <div className="space-y-4 sm:space-y-4">
-          <div>
-            <Label htmlFor="login-email" className="flex items-center gap-2 text-base sm:text-sm font-bold sm:font-medium">
-              <Mail className="w-5 h-5 sm:w-4 sm:h-4" />
-              {t('auth.login.email')}
-            </Label>
-            <Input
-              id="login-email"
-              type="email"
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); if (emailSuggestion) setEmailSuggestion(null); }}
-              onBlur={(e) => { const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, ''); setEmail(cleaned); const suggested = suggestEmail(cleaned); setEmailSuggestion(suggested); }}
-              placeholder={t('auth.login.emailPlaceholder')}
-              className="mt-2 sm:mt-1 text-lg sm:text-base py-3 sm:py-2 px-4 sm:px-3"
-            />
-            {emailSuggestion && (
-              <p className="text-sm text-amber-500 mt-1">
-                {t('auth.login.emailTypoSuggestion', { suggested: emailSuggestion })}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail(emailSuggestion);
-                    setEmailSuggestion(null);
-                  }}
-                  className="ml-1 font-semibold underline hover:no-underline cursor-pointer"
+        <Tabs
+          value={loginMethod}
+          onValueChange={(v) => setLoginMethod(v as 'code' | 'password')}
+        >
+          <TabsList className="grid w-full grid-cols-2 mb-4">
+            <TabsTrigger value="code">{t('auth.login.codeLogin')}</TabsTrigger>
+            <TabsTrigger value="password">{t('auth.login.passwordLogin')}</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="code">
+            <div className="space-y-4 sm:space-y-4">
+              <div>
+                <Label htmlFor="login-email" className="flex items-center gap-2 text-base sm:text-sm font-bold sm:font-medium">
+                  <Mail className="w-5 h-5 sm:w-4 sm:h-4" />
+                  {t('auth.login.email')}
+                </Label>
+                <Input
+                  id="login-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); if (emailSuggestion) setEmailSuggestion(null); }}
+                  onBlur={(e) => { const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, ''); setEmail(cleaned); const suggested = suggestEmail(cleaned); setEmailSuggestion(suggested); }}
+                  placeholder={t('auth.login.emailPlaceholder')}
+                  className="mt-2 sm:mt-1 text-lg sm:text-base py-3 sm:py-2 px-4 sm:px-3"
+                />
+                {emailSuggestion && (
+                  <p className="text-sm text-amber-500 mt-1">
+                    {t('auth.login.emailTypoSuggestion', { suggested: emailSuggestion })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmail(emailSuggestion);
+                        setEmailSuggestion(null);
+                      }}
+                      className="ml-1 font-semibold underline hover:no-underline cursor-pointer"
+                    >
+                      {t('auth.login.emailTypoUseSuggestion')}
+                    </button>
+                  </p>
+                )}
+              </div>
+              {isValidEmail(email) && (
+                <Button
+                  onClick={handleSendCode}
+                  disabled={isLoading}
+                  className="w-full font-bold text-lg sm:text-base py-6 sm:py-3"
+                  size="lg"
                 >
-                  {t('auth.login.emailTypoUseSuggestion')}
-                </button>
-              </p>
-            )}
-          </div>
-          {isValidEmail(email) && (
-            <Button
-              onClick={handleSendCode}
-              disabled={isLoading}
-              className="w-full font-bold text-lg sm:text-base py-6 sm:py-3"
-              size="lg"
-            >
-              {isLoading ? (
-                <span className="text-lg sm:text-base">{t('auth.login.sendingCode')}</span>
-              ) : (
-                <>
-                  <span className="text-lg sm:text-base">
-                    {mode === 'bind' ? t('purchase.purchase.sendVerificationCode') : t('auth.login.sendCode')}
-                  </span>
-                  <ArrowRight className="w-5 h-5 sm:w-4 sm:h-4 ml-3 sm:ml-2" />
-                </>
+                  {isLoading ? (
+                    <span className="text-lg sm:text-base">{t('auth.login.sendingCode')}</span>
+                  ) : (
+                    <>
+                      <span className="text-lg sm:text-base">
+                        {mode === 'bind' ? t('purchase.purchase.sendVerificationCode') : t('auth.login.sendCode')}
+                      </span>
+                      <ArrowRight className="w-5 h-5 sm:w-4 sm:h-4 ml-3 sm:ml-2" />
+                    </>
+                  )}
+                </Button>
               )}
-            </Button>
-          )}
-        </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="password">
+            <div className="space-y-4 sm:space-y-4">
+              <div>
+                <Label htmlFor="login-email-pw" className="flex items-center gap-2 text-base sm:text-sm font-bold sm:font-medium">
+                  <Mail className="w-5 h-5 sm:w-4 sm:h-4" />
+                  {t('auth.login.email')}
+                </Label>
+                <Input
+                  id="login-email-pw"
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); if (emailSuggestion) setEmailSuggestion(null); }}
+                  onBlur={(e) => { const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, ''); setEmail(cleaned); setEmailSuggestion(suggestEmail(cleaned)); }}
+                  placeholder={t('auth.login.emailPlaceholder')}
+                  className="mt-2 sm:mt-1 text-lg sm:text-base py-3 sm:py-2 px-4 sm:px-3"
+                  autoComplete="email"
+                />
+                {emailSuggestion && (
+                  <p className="text-sm text-amber-500 mt-1">
+                    {t('auth.login.emailTypoSuggestion', { suggested: emailSuggestion })}
+                    <button
+                      type="button"
+                      onClick={() => { setEmail(emailSuggestion); setEmailSuggestion(null); }}
+                      className="ml-1 font-semibold underline hover:no-underline cursor-pointer"
+                    >
+                      {t('auth.login.emailTypoUseSuggestion')}
+                    </button>
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="login-password" className="flex items-center gap-2 text-base sm:text-sm font-bold sm:font-medium">
+                  <Lock className="w-5 h-5 sm:w-4 sm:h-4" />
+                  {t('auth.login.password')}
+                </Label>
+                <Input
+                  id="login-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && isValidEmail(email) && password) handlePasswordLogin(); }}
+                  placeholder={t('auth.login.passwordPlaceholder')}
+                  className="mt-2 sm:mt-1 text-lg sm:text-base py-3 sm:py-2 px-4 sm:px-3"
+                  autoComplete="current-password"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('auth.login.forgotPasswordHint')}
+                </p>
+              </div>
+              <Button
+                onClick={handlePasswordLogin}
+                disabled={isLoading || !isValidEmail(email) || !password}
+                className="w-full font-bold text-lg sm:text-base py-6 sm:py-3"
+                size="lg"
+              >
+                {isLoading ? (
+                  <span className="text-lg sm:text-base">{t('auth.login.loggingIn')}</span>
+                ) : (
+                  <>
+                    <span className="text-lg sm:text-base">
+                      {mode === 'bind' ? t('purchase.purchase.confirmBinding') : t('auth.login.loginButton')}
+                    </span>
+                    <ArrowRight className="w-5 h-5 sm:w-4 sm:h-4 ml-3 sm:ml-2" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
       ) : (
         <form onSubmit={handleLogin} className="space-y-4 sm:space-y-4">
           {/* 如果用户未激活，显示提示信息 */}
