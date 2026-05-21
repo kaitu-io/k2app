@@ -112,12 +112,17 @@ func New(version, commit, arch string) *Gateway {
 }
 
 // Run starts the HTTP API server and blocks until Stop is called or the
-// listener fails. It cleans stale firewall rules on startup and attempts
-// auto-reconnect from saved state.
+// listener fails. It attempts auto-reconnect from saved state.
+//
+// Note: stale firewall rules from a previous crashed daemon are NOT cleaned
+// at startup — that would tear down the previous chain immediately, opening
+// a multi-second LAN-escape window before auto-reconnect's first Install can
+// restore protection. Install's pre-flight Remove handles stale state at the
+// correct moment (back-to-back replacement). See startupRecovery + Bug 6 fix.
 func (g *Gateway) Run(addr string) error {
 	defer g.handlePanic()
 
-	g.cleanStaleRules()
+	g.startupRecovery()
 
 	if g.updater != nil {
 		g.updater.RecoverOnStartup()
@@ -423,11 +428,27 @@ func (g *Gateway) broadcastStatus(status engine.Status) {
 
 // --- Recovery ---
 
-// cleanStaleRules removes any leftover firewall rules from a previous crash.
-func (g *Gateway) cleanStaleRules() {
-	if i, err := NewInterceptor(); err == nil {
-		i.Remove()
-	}
+// startupRecovery is the startup-phase recovery hook invoked from Run before
+// the HTTP API binds and auto-reconnect kicks in.
+//
+// Intentionally empty re: interceptor state. Previously this eagerly removed
+// any pre-existing K2R chain on startup (under the theory that a crashed
+// daemon left bad state). In practice that caused an ~8 s LAN-escape window
+// — measured 2026-05-21 on GL-XE300 MIPS after `kill -9`: startup-Remove
+// fired at T+0, but Install could not re-add until auto-reconnect's 3 s
+// settle + transport race (3-5 s on real RTT) completed.
+//
+// The pre-existing chain — if any — points TPROXY at a port whose listener
+// died with the previous daemon. Packets arriving at that port are dropped
+// by the kernel = fail-CLOSED, the correct security posture for a VPN
+// router. Install's pre-flight Remove + atomic re-add then takes over the
+// moment auto-reconnect succeeds, with only a microsecond window.
+//
+// If a future startup-time recovery task is needed (cleaning some other
+// resource, validating a non-iptables artifact), add it here.
+func (g *Gateway) startupRecovery() {
+	// intentionally empty: stale iptables state is cleaned by Install's
+	// pre-flight Remove, not here. See Bug 6 fix.
 }
 
 // handlePanic is a deferred recovery handler that cleans up firewall rules
