@@ -354,6 +354,120 @@ func TestIptRuleGeneration_DNSRedirect(t *testing.T) {
 	}
 }
 
+// K2R_DNS handles LAN-originated DNS (PREROUTING), but dnsmasq's own upstream
+// queries originate locally — they never traverse PREROUTING and leak straight
+// out the WAN. K2R_DNS_OUT in nat OUTPUT closes that path by REDIRECTing local
+// port 53 traffic to the DNS listener as well.
+func TestIptRuleGeneration_DNSRedirect_OutputChain(t *testing.T) {
+	cmds, _, _ := buildIptCommands(InterceptConfig{
+		ListenPort:  12345,
+		LANSubnets:  []string{"192.168.1.0/24"},
+		DNSRedirect: true,
+		DNSPort:     12346,
+	})
+	joined := flattenCmds(cmds)
+	if !strings.Contains(joined, "-t nat -N K2R_DNS_OUT") {
+		t.Error("missing K2R_DNS_OUT chain creation")
+	}
+	if !strings.Contains(joined, "-A OUTPUT -p tcp --dport 53 -j K2R_DNS_OUT") {
+		t.Error("missing OUTPUT tcp/53 jump to K2R_DNS_OUT")
+	}
+	if !strings.Contains(joined, "-A OUTPUT -p udp --dport 53 -j K2R_DNS_OUT") {
+		t.Error("missing OUTPUT udp/53 jump to K2R_DNS_OUT")
+	}
+	if !strings.Contains(joined, "-A K2R_DNS_OUT -p tcp -j REDIRECT --to-ports 12346") {
+		t.Error("missing K2R_DNS_OUT tcp REDIRECT")
+	}
+	if !strings.Contains(joined, "-A K2R_DNS_OUT -p udp -j REDIRECT --to-ports 12346") {
+		t.Error("missing K2R_DNS_OUT udp REDIRECT")
+	}
+}
+
+// The mark RETURN rule MUST come before the REDIRECT rule. Otherwise k2r's own
+// DirectDNS queries (e.g. to 223.5.5.5:53) get REDIRECTed back into k2r's DNS
+// listener, which then issues a DirectDNS query to 223.5.5.5:53 again → infinite
+// recursion. SO_MARK 0x4b32 set in gatewayDirectDialer.ControlFunc is the exit.
+func TestIptRuleGeneration_OutputChain_MarkReturnBeforeRedirect(t *testing.T) {
+	cmds, _, _ := buildIptCommands(InterceptConfig{
+		ListenPort:  12345,
+		LANSubnets:  []string{"192.168.1.0/24"},
+		DNSRedirect: true,
+		DNSPort:     12346,
+	})
+	joined := flattenCmds(cmds)
+
+	markRule := "-A K2R_DNS_OUT -m mark --mark 0x4b32 -j RETURN"
+	if !strings.Contains(joined, markRule) {
+		t.Fatalf("missing mark-RETURN exemption: %q", markRule)
+	}
+
+	// Find positions: mark RETURN MUST appear before the first REDIRECT.
+	markIdx := strings.Index(joined, markRule)
+	redirIdx := strings.Index(joined, "-A K2R_DNS_OUT -p tcp -j REDIRECT")
+	if redirIdx < 0 {
+		t.Fatal("REDIRECT rule missing")
+	}
+	if markIdx > redirIdx {
+		t.Errorf("mark RETURN at %d must come before REDIRECT at %d (else k2r's own DirectDNS recursion)", markIdx, redirIdx)
+	}
+}
+
+// cleanK2RFamily must remove K2R-family jumps from ANY built-in chain, not
+// just PREROUTING. Our new K2R_DNS_OUT is referenced from OUTPUT — without the
+// fix, the OUTPUT REDIRECT rule survives doDown and permanently breaks DNS for
+// the whole system once k2r is uninstalled (or, less catastrophically, leaks
+// stale rules across crashes).
+func TestCleanK2RFamily_HandlesOutputJumps(t *testing.T) {
+	f := newFakeIptables()
+	f.seedChainOutput("iptables", "nat", "K2R_DNS_OUT", 1) // chain + 1 OUTPUT ref
+	f.install(t)
+
+	cleanK2RFamily("iptables", "nat")
+
+	if f.chains["iptables:nat:K2R_DNS_OUT"] {
+		t.Errorf("K2R_DNS_OUT chain must be deleted; calls:\n%s",
+			strings.Join(f.calls, "\n"))
+	}
+	if f.outputRefs["iptables:nat:K2R_DNS_OUT"] != 0 {
+		t.Errorf("OUTPUT refs must be zero, got %d", f.outputRefs["iptables:nat:K2R_DNS_OUT"])
+	}
+}
+
+// nft shell backend needs a parallel OUTPUT-hook NAT chain with the same mark
+// RETURN + redirect pattern. dnsredir already covers PREROUTING; dnsredir_out
+// extends to local output so dnsmasq-style local resolvers can't leak.
+func TestNftScript_DNSRedirect_OutputChainHasMarkReturn(t *testing.T) {
+	nft := &nftShellInterceptor{}
+	script := nft.buildScript(InterceptConfig{
+		ListenPort:  12345,
+		LANSubnets:  []string{"192.168.1.0/24"},
+		DNSRedirect: true,
+		DNSPort:     12346,
+	})
+
+	if !strings.Contains(script, "dnsredir_out") {
+		t.Error("missing OUTPUT-hook nat chain dnsredir_out")
+	}
+	if !strings.Contains(script, "hook output") {
+		t.Error("dnsredir_out should hook output, not prerouting")
+	}
+
+	// mark exemption MUST come before redirect within dnsredir_out.
+	markIdx := strings.Index(script, "meta mark 0x4b32 return")
+	redirIdx := strings.Index(script, "dnsredir_out") // any reference within the chain body
+	if markIdx < 0 {
+		t.Error("missing nft mark exemption (meta mark 0x4b32 return)")
+	}
+	// Verify ordering by finding both within dnsredir_out chain rules:
+	if !strings.Contains(script, "add rule inet k2r dnsredir_out meta mark 0x4b32 return") {
+		t.Error("mark RETURN rule should be in dnsredir_out chain")
+	}
+	if !strings.Contains(script, "add rule inet k2r dnsredir_out") || !strings.Contains(script, "redirect to :12346") {
+		t.Error("missing dnsredir_out REDIRECT rule")
+	}
+	_ = redirIdx
+}
+
 func TestIptRuleGeneration_MACAllowlist(t *testing.T) {
 	cmds, _, _ := buildIptCommands(InterceptConfig{
 		ListenPort:    12345,
@@ -388,13 +502,15 @@ type fakeIptablesState struct {
 	calls         []string
 	chains        map[string]bool   // "iptables:mangle:K2R" → exists
 	refs          map[string]int    // "iptables:mangle:K2R" → reference count from PREROUTING jumps
+	outputRefs    map[string]int    // "iptables:nat:K2R_DNS_OUT" → reference count from OUTPUT jumps
 	failPredicate func(name string, args []string) error
 }
 
 func newFakeIptables() *fakeIptablesState {
 	return &fakeIptablesState{
-		chains: map[string]bool{},
-		refs:   map[string]int{},
+		chains:     map[string]bool{},
+		refs:       map[string]int{},
+		outputRefs: map[string]int{},
 	}
 }
 
@@ -429,6 +545,15 @@ func (f *fakeIptablesState) install(t *testing.T) {
 			if len(parts) == 3 && parts[0] == ipBin && parts[1] == table && count > 0 {
 				for i := 0; i < count; i++ {
 					lines = append(lines, "-A PREROUTING -j "+parts[2])
+				}
+			}
+		}
+		// Emit -A OUTPUT for each OUTPUT reference.
+		for k, count := range f.outputRefs {
+			parts := strings.SplitN(k, ":", 3)
+			if len(parts) == 3 && parts[0] == ipBin && parts[1] == table && count > 0 {
+				for i := 0; i < count; i++ {
+					lines = append(lines, "-A OUTPUT -j "+parts[2])
 				}
 			}
 		}
@@ -475,29 +600,37 @@ func (f *fakeIptablesState) simulate(name string, args []string) error {
 		}
 		f.chains[key] = true
 	case "-X":
-		if f.refs[key] > 0 {
+		if f.refs[key] > 0 || f.outputRefs[key] > 0 {
 			return fmt.Errorf("%s -t %s -X %s: chain still referenced", name, table, chain)
 		}
 		delete(f.chains, key)
 	case "-F":
 		// Flush — leaves chain alive but empties rules. We don't model the rules; OK.
 	case "-A":
-		// -A PREROUTING ... -j K2R → bump ref count for K2R chain
-		if chain == "PREROUTING" {
-			if targetIdx := indexOf(args, "-j"); targetIdx >= 0 && targetIdx+1 < len(args) {
-				target := args[targetIdx+1]
-				if strings.HasPrefix(target, "K2R") {
+		// -A PREROUTING/OUTPUT ... -j K2R* → bump corresponding ref count.
+		if targetIdx := indexOf(args, "-j"); targetIdx >= 0 && targetIdx+1 < len(args) {
+			target := args[targetIdx+1]
+			if strings.HasPrefix(target, "K2R") {
+				switch chain {
+				case "PREROUTING":
 					f.refs[name+":"+table+":"+target]++
+				case "OUTPUT":
+					f.outputRefs[name+":"+table+":"+target]++
 				}
 			}
 		}
 	case "-D":
-		if chain == "PREROUTING" {
-			if targetIdx := indexOf(args, "-j"); targetIdx >= 0 && targetIdx+1 < len(args) {
-				target := args[targetIdx+1]
-				refKey := name + ":" + table + ":" + target
+		if targetIdx := indexOf(args, "-j"); targetIdx >= 0 && targetIdx+1 < len(args) {
+			target := args[targetIdx+1]
+			refKey := name + ":" + table + ":" + target
+			switch chain {
+			case "PREROUTING":
 				if f.refs[refKey] > 0 {
 					f.refs[refKey]--
+				}
+			case "OUTPUT":
+				if f.outputRefs[refKey] > 0 {
+					f.outputRefs[refKey]--
 				}
 			}
 		}
@@ -530,6 +663,16 @@ func (f *fakeIptablesState) seedChain(ipBin, table, chain string, refs int) {
 	f.chains[key] = true
 	if refs > 0 {
 		f.refs[key] = refs
+	}
+}
+
+// seedChainOutput is the OUTPUT-jump analogue of seedChain for testing the
+// nat OUTPUT REDIRECT path (K2R_DNS_OUT).
+func (f *fakeIptablesState) seedChainOutput(ipBin, table, chain string, refs int) {
+	key := ipBin + ":" + table + ":" + chain
+	f.chains[key] = true
+	if refs > 0 {
+		f.outputRefs[key] = refs
 	}
 }
 

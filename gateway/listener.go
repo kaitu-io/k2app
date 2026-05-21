@@ -143,3 +143,83 @@ func (c *tproxyUDPConn) LocalAddr() net.Addr               { return c.dst }
 func (c *tproxyUDPConn) SetDeadline(t time.Time) error      { return nil }
 func (c *tproxyUDPConn) SetReadDeadline(t time.Time) error   { return nil }
 func (c *tproxyUDPConn) SetWriteDeadline(t time.Time) error  { return nil }
+
+// dnsUDPConn wraps a single REDIRECTed UDP packet for the DNS listener path.
+// Unlike tproxyUDPConn this is strictly single-shot: dnsHandler.serveDNS does
+// a ReadFrom loop, processes the query, replies via WriteTo, then loops; the
+// second ReadFrom returns net.ErrClosed so serveDNS exits cleanly and its
+// goroutine doesn't leak. Each incoming packet gets its own dnsUDPConn +
+// goroutine, so concurrency is provided at the listener accept layer.
+//
+// Source-address preservation is automatic: REDIRECT only rewrites the
+// destination, so conntrack reverses our reply back to the original sender
+// (e.g. dnsmasq, or the LAN client) without any per-packet bookkeeping in
+// userspace.
+type dnsUDPConn struct {
+	conn    *net.UDPConn
+	src     net.Addr
+	initial []byte
+	read    atomic.Bool
+	closed  atomic.Bool
+}
+
+func newDNSUDPConn(conn *net.UDPConn, src net.Addr, initial []byte) *dnsUDPConn {
+	data := make([]byte, len(initial))
+	copy(data, initial)
+	return &dnsUDPConn{conn: conn, src: src, initial: data}
+}
+
+func (c *dnsUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	if c.read.CompareAndSwap(false, true) {
+		n := copy(b, c.initial)
+		return n, c.src, nil
+	}
+	return 0, nil, net.ErrClosed
+}
+
+// WriteTo writes the response back to the original sender. The addr parameter
+// is ignored — single-shot conn only ever replies to one peer, the one
+// captured at construction.
+func (c *dnsUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
+	if c.closed.Load() {
+		return 0, net.ErrClosed
+	}
+	return c.conn.WriteTo(b, c.src)
+}
+
+func (c *dnsUDPConn) Close() error                          { c.closed.Store(true); return nil }
+func (c *dnsUDPConn) LocalAddr() net.Addr                   { return c.conn.LocalAddr() }
+func (c *dnsUDPConn) SetDeadline(t time.Time) error         { return nil }
+func (c *dnsUDPConn) SetReadDeadline(t time.Time) error     { return nil }
+func (c *dnsUDPConn) SetWriteDeadline(t time.Time) error    { return nil }
+
+// newDNSTCPListeners binds plain TCP listeners (no TPROXY socket options) on
+// the DNS port for v4 and v6. REDIRECT-delivered packets arrive as normal
+// local connections to 127.0.0.1:DNSPort; IP_TRANSPARENT is unnecessary.
+func newDNSTCPListeners(ctx context.Context, port int) (v4, v6 net.Listener, err error) {
+	var lc net.ListenConfig
+	v4, err = lc.Listen(ctx, "tcp4", fmt.Sprintf("0.0.0.0:%d", port))
+	if err != nil {
+		return nil, nil, fmt.Errorf("dns tcp4: %w", err)
+	}
+	v6, err = lc.Listen(ctx, "tcp6", fmt.Sprintf("[::]:%d", port))
+	if err != nil {
+		v4.Close()
+		return nil, nil, fmt.Errorf("dns tcp6: %w", err)
+	}
+	return v4, v6, nil
+}
+
+func newDNSUDPListeners(ctx context.Context, port int) (v4, v6 *net.UDPConn, err error) {
+	var lc net.ListenConfig
+	c4, err := lc.ListenPacket(ctx, "udp4", fmt.Sprintf("0.0.0.0:%d", port))
+	if err != nil {
+		return nil, nil, fmt.Errorf("dns udp4: %w", err)
+	}
+	c6, err := lc.ListenPacket(ctx, "udp6", fmt.Sprintf("[::]:%d", port))
+	if err != nil {
+		c4.Close()
+		return nil, nil, fmt.Errorf("dns udp6: %w", err)
+	}
+	return c4.(*net.UDPConn), c6.(*net.UDPConn), nil
+}

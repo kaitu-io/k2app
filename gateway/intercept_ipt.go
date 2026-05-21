@@ -77,21 +77,25 @@ func cleanK2RFamily(ipBin, table string) {
 		return
 	}
 
-	// Pass 1: delete every PREROUTING jump targeting a K2R-family chain.
-	// Must come before -X so the chain becomes deletable.
+	// Pass 1: delete every jump (from any built-in chain) targeting a
+	// K2R-family chain. Must come before -X so the chain becomes deletable.
+	//
+	// Previously this scanned only PREROUTING. K2R_DNS_OUT is jumped from
+	// OUTPUT (nat); without the generalization, the OUTPUT jump survives
+	// doDown and permanently breaks system DNS once k2r removes the chain.
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "-A PREROUTING") {
+		if !strings.HasPrefix(line, "-A ") {
 			continue
 		}
 		target := extractJumpTarget(line)
 		if !strings.HasPrefix(target, "K2R") {
 			continue
 		}
-		// Convert "-A PREROUTING ..." to "-D PREROUTING ..." and prepend -t.
+		// Convert "-A <CHAIN> ..." to "-D <CHAIN> ..." and prepend -t.
 		args := append(ipt("-t", table), strings.Fields("-D"+line[2:])...)
 		if err := runCmd(ipBin, args...); err != nil {
-			slog.Debug("gateway: drop PREROUTING jump", "ipBin", ipBin, "rule", line, "err", err)
+			slog.Debug("gateway: drop jump", "ipBin", ipBin, "rule", line, "err", err)
 		}
 	}
 
@@ -196,6 +200,7 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 	// DNS redirect (nat table, separate chain)
 	if cfg.DNSRedirect && cfg.DNSPort > 0 {
 		dnsPort := fmt.Sprintf("%d", cfg.DNSPort)
+		fwmark := fmt.Sprintf("0x%x", K2RFwmark)
 		if len(v4Subnets) > 0 {
 			cmds = append(cmds, cmdSpec{"iptables", ipt("-t", "nat", "-N", "K2R_DNS")})
 			for _, s := range v4Subnets {
@@ -216,6 +221,31 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 			}
 			cmds = append(cmds, cmdSpec{"ip6tables", ipt("-t", "nat", "-A", "PREROUTING", "-j", "K2R_DNS")})
 		}
+
+		// K2R_DNS_OUT: OUTPUT-chain REDIRECT for locally-generated DNS (the
+		// dnsmasq → ISP upstream leak path). Mark RETURN must come FIRST so
+		// k2r's own DirectDNS queries (stamped with K2RFwmark via
+		// gatewayDirectDialer.ControlFunc) escape before REDIRECT — otherwise
+		// every DirectDNS query would land back in k2r's DNS listener and
+		// recurse.
+		//
+		// Dual-stack: always installed (router may originate v4 or v6 DNS).
+		cmds = append(cmds,
+			cmdSpec{"iptables", ipt("-t", "nat", "-N", "K2R_DNS_OUT")},
+			cmdSpec{"iptables", ipt("-t", "nat", "-A", "K2R_DNS_OUT", "-m", "mark", "--mark", fwmark, "-j", "RETURN")},
+			cmdSpec{"iptables", ipt("-t", "nat", "-A", "K2R_DNS_OUT", "-p", "tcp", "-j", "REDIRECT", "--to-ports", dnsPort)},
+			cmdSpec{"iptables", ipt("-t", "nat", "-A", "K2R_DNS_OUT", "-p", "udp", "-j", "REDIRECT", "--to-ports", dnsPort)},
+			cmdSpec{"iptables", ipt("-t", "nat", "-A", "OUTPUT", "-p", "tcp", "--dport", "53", "-j", "K2R_DNS_OUT")},
+			cmdSpec{"iptables", ipt("-t", "nat", "-A", "OUTPUT", "-p", "udp", "--dport", "53", "-j", "K2R_DNS_OUT")},
+		)
+		cmds = append(cmds,
+			cmdSpec{"ip6tables", ipt("-t", "nat", "-N", "K2R_DNS_OUT")},
+			cmdSpec{"ip6tables", ipt("-t", "nat", "-A", "K2R_DNS_OUT", "-m", "mark", "--mark", fwmark, "-j", "RETURN")},
+			cmdSpec{"ip6tables", ipt("-t", "nat", "-A", "K2R_DNS_OUT", "-p", "tcp", "-j", "REDIRECT", "--to-ports", dnsPort)},
+			cmdSpec{"ip6tables", ipt("-t", "nat", "-A", "K2R_DNS_OUT", "-p", "udp", "-j", "REDIRECT", "--to-ports", dnsPort)},
+			cmdSpec{"ip6tables", ipt("-t", "nat", "-A", "OUTPUT", "-p", "tcp", "--dport", "53", "-j", "K2R_DNS_OUT")},
+			cmdSpec{"ip6tables", ipt("-t", "nat", "-A", "OUTPUT", "-p", "udp", "--dport", "53", "-j", "K2R_DNS_OUT")},
+		)
 	}
 
 	cmds = append(cmds,

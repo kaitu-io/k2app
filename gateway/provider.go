@@ -19,7 +19,16 @@ type gatewayProvider struct {
 	tcpLn6      net.Listener
 	udpConn4    *net.UDPConn
 	udpConn6    *net.UDPConn
-	done        chan struct{}
+
+	// DNS-port listeners (REDIRECT target for K2R_DNS / K2R_DNS_OUT chains).
+	// Plain sockets — no TPROXY/IP_TRANSPARENT — since REDIRECT delivers
+	// packets to the local IP normally. Empty when DNSRedirect is off.
+	dnsTCPLn4 net.Listener
+	dnsTCPLn6 net.Listener
+	dnsUDP4   *net.UDPConn
+	dnsUDP6   *net.UDPConn
+
+	done chan struct{}
 }
 
 var _ provider.Provider = (*gatewayProvider)(nil)
@@ -54,11 +63,46 @@ func (p *gatewayProvider) Start(ctx context.Context, handler provider.Connection
 	p.udpConn4 = udpConn4
 	p.udpConn6 = udpConn6
 
+	// Optional DNS listener on DNSPort — REDIRECT target for OUTPUT-chain
+	// (and PREROUTING-chain) DNS interception. Bound BEFORE interceptor.Install
+	// to avoid a race where iptables rules send packets at a closed port.
+	if p.cfg.DNSRedirect && p.cfg.DNSPort > 0 {
+		dnsTCPLn4, dnsTCPLn6, err := newDNSTCPListeners(ctx, p.cfg.DNSPort)
+		if err != nil {
+			tcpLn4.Close()
+			tcpLn6.Close()
+			udpConn4.Close()
+			udpConn6.Close()
+			return fmt.Errorf("gateway: dns tproxy listen: %w", err)
+		}
+		p.dnsTCPLn4 = dnsTCPLn4
+		p.dnsTCPLn6 = dnsTCPLn6
+
+		dnsUDP4, dnsUDP6, err := newDNSUDPListeners(ctx, p.cfg.DNSPort)
+		if err != nil {
+			tcpLn4.Close()
+			tcpLn6.Close()
+			udpConn4.Close()
+			udpConn6.Close()
+			dnsTCPLn4.Close()
+			dnsTCPLn6.Close()
+			return fmt.Errorf("gateway: dns udp listen: %w", err)
+		}
+		p.dnsUDP4 = dnsUDP4
+		p.dnsUDP6 = dnsUDP6
+	}
+
 	if err := p.interceptor.Install(p.cfg); err != nil {
 		tcpLn4.Close()
 		tcpLn6.Close()
 		udpConn4.Close()
 		udpConn6.Close()
+		if p.dnsTCPLn4 != nil {
+			p.dnsTCPLn4.Close()
+			p.dnsTCPLn6.Close()
+			p.dnsUDP4.Close()
+			p.dnsUDP6.Close()
+		}
 		return fmt.Errorf("gateway: install intercept: %w", err)
 	}
 
@@ -70,7 +114,17 @@ func (p *gatewayProvider) Start(ctx context.Context, handler provider.Connection
 	p.startUDPRead(udpConn4, handler)
 	p.startUDPRead(udpConn6, handler)
 
-	slog.Info("gateway provider started", "port", port, "interceptor", p.interceptor.Name())
+	// DNS-port loops: TCP accept + UDP read. Each conn/packet gets a
+	// synthetic dest ":53" so dnsHandler short-circuits via port-53 match.
+	if p.dnsTCPLn4 != nil {
+		p.startDNSTCPAccept(p.dnsTCPLn4, handler)
+		p.startDNSTCPAccept(p.dnsTCPLn6, handler)
+		p.startDNSUDPRead(p.dnsUDP4, handler)
+		p.startDNSUDPRead(p.dnsUDP6, handler)
+	}
+
+	slog.Info("gateway provider started", "port", port, "dnsPort", p.cfg.DNSPort,
+		"dnsRedirect", p.cfg.DNSRedirect, "interceptor", p.interceptor.Name())
 	return nil
 }
 
@@ -111,6 +165,50 @@ func (p *gatewayProvider) startUDPRead(udpConn *net.UDPConn, handler provider.Co
 	})
 }
 
+// startDNSTCPAccept loops over Accept on the DNS TCP listener and dispatches
+// each conn to the handler with a synthetic ":53" dest, so dnsHandler.HandleTCP
+// short-circuits into serveDNSStream regardless of where the connection
+// actually landed (e.g. the REDIRECT-rewritten 127.0.0.1:DNSPort).
+func (p *gatewayProvider) startDNSTCPAccept(ln net.Listener, handler provider.ConnectionHandler) {
+	safego.Go(func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				select {
+				case <-p.done:
+					return
+				default:
+					continue
+				}
+			}
+			go handler.HandleTCP(conn, ":53")
+		}
+	})
+}
+
+// startDNSUDPRead loops over packets on the DNS UDP listener and dispatches
+// each one to a fresh single-shot dnsUDPConn so dnsHandler.serveDNS handles
+// it in its own goroutine — concurrent DNS query processing without per-flow
+// state in the listener.
+func (p *gatewayProvider) startDNSUDPRead(udpConn *net.UDPConn, handler provider.ConnectionHandler) {
+	safego.Go(func() {
+		buf := make([]byte, 4096)
+		for {
+			n, src, err := udpConn.ReadFrom(buf)
+			if err != nil {
+				select {
+				case <-p.done:
+					return
+				default:
+					continue
+				}
+			}
+			pconn := newDNSUDPConn(udpConn, src, buf[:n])
+			go handler.HandleUDP(pconn, ":53")
+		}
+	})
+}
+
 func (p *gatewayProvider) Close() error {
 	select {
 	case <-p.done:
@@ -131,6 +229,18 @@ func (p *gatewayProvider) Close() error {
 	}
 	if p.udpConn6 != nil {
 		p.udpConn6.Close()
+	}
+	if p.dnsTCPLn4 != nil {
+		p.dnsTCPLn4.Close()
+	}
+	if p.dnsTCPLn6 != nil {
+		p.dnsTCPLn6.Close()
+	}
+	if p.dnsUDP4 != nil {
+		p.dnsUDP4.Close()
+	}
+	if p.dnsUDP6 != nil {
+		p.dnsUDP6.Close()
 	}
 	return nil
 }
