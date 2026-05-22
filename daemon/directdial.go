@@ -10,7 +10,9 @@ package daemon
 
 import (
 	"context"
+	"log/slog"
 	"net"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,8 +25,9 @@ import (
 // bypassing TUN/VPN routing. Interface resolution is dynamic — every
 // dial reads the current default interface from the monitor.
 type directDialer struct {
-	finder  control.InterfaceFinder
-	monitor tun.DefaultInterfaceMonitor
+	finder    control.InterfaceFinder
+	monitor   tun.DefaultInterfaceMonitor
+	dialCount atomic.Uint64
 }
 
 // newDirectDialer creates a directDialer that dynamically resolves the default
@@ -75,12 +78,49 @@ func (d *directDialer) interfaceName() string {
 // When DefaultInterface() returns nil (transient during TUN route setup on Windows),
 // skip binding instead of passing empty name to BindToInterface0 which would fail
 // with "interface not found: ".
+//
+// Observability: first 20 dials always logged, then 1-in-100 sampled, plus all
+// nil-iface and bind-error paths. Logs are INFO level so default-config users
+// can capture them for diagnostic uploads (ticket #2186 Windows TUN direct fail).
 func (d *directDialer) controlFunc() control.Func {
 	return func(network, address string, conn syscall.RawConn) error {
+		count := d.dialCount.Add(1)
+		shouldLog := count <= 20 || count%100 == 0
+
 		iface := d.monitor.DefaultInterface()
 		if iface == nil {
-			return nil // skip binding — interface unknown during TUN route setup
+			slog.Info("directdial: skip bind (no default interface)",
+				"network", network,
+				"address", address,
+				"dialCount", count,
+			)
+			return nil
 		}
-		return control.BindToInterface0(d.finder, conn, network, address, iface.Name, iface.Index, false)
+
+		err := control.BindToInterface0(d.finder, conn, network, address, iface.Name, iface.Index, false)
+		if err != nil {
+			slog.Warn("directdial: bind failed",
+				"network", network,
+				"address", address,
+				"iface", iface.Name,
+				"ifaceIdx", iface.Index,
+				"err", err,
+			)
+			return err
+		}
+
+		if shouldLog {
+			readbackIdx, readbackErr := readUnicastIfV4(conn)
+			slog.Info("directdial: bound",
+				"network", network,
+				"address", address,
+				"iface", iface.Name,
+				"ifaceIdx", iface.Index,
+				"readbackIdx", readbackIdx,
+				"readbackErr", readbackErr,
+				"dialCount", count,
+			)
+		}
+		return nil
 	}
 }
