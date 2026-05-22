@@ -77,9 +77,10 @@ func isGatewayRequest(c *gin.Context) bool {
 	return parseClientHeader(c.GetHeader("X-K2-Client")).IsGateway()
 }
 
-// fillDeviceAppInfo 从 X-K2-Client header 填充设备的应用版本信息（用于设备创建时）。
-// 注意：本函数将在 Task 4 拆分为 createDeviceWithAppInfo + refreshDeviceAppInfo。
-func fillDeviceAppInfo(c *gin.Context, device *Device) {
+// createDeviceWithAppInfo: called ONLY by login/register handlers when creating
+// a fresh Device row. Writes IsGateway from the header — this is the one moment
+// device class is decided. After creation, IsGateway is read-only.
+func createDeviceWithAppInfo(c *gin.Context, device *Device) {
 	info := parseClientHeader(c.GetHeader("X-K2-Client"))
 	if info == nil {
 		return
@@ -92,36 +93,41 @@ func fillDeviceAppInfo(c *gin.Context, device *Device) {
 	device.IsGateway = info.IsGateway()
 }
 
-// updateDeviceAppInfo 更新设备的应用版本信息（如果有变化）
-func updateDeviceAppInfo(c *gin.Context, device *Device, appInfo *AppInfo) {
+// refreshDeviceAppInfo: drop-in replacement for updateDeviceAppInfo. Updates
+// version/platform/arch/os_version/device_model only. NEVER touches IsGateway —
+// device class is locked at creation.
+//
+// Same signature as the old updateDeviceAppInfo so caller code in handleJWTAuth
+// (which already pre-parses AppInfo) only needs a function rename.
+func refreshDeviceAppInfo(c *gin.Context, device *Device, appInfo *AppInfo) {
 	if appInfo == nil || device == nil {
 		return
 	}
 
-	// 检查是否需要更新
+	// Preserve change-detection short-circuit from the original updateDeviceAppInfo.
 	if device.AppVersion == appInfo.Version &&
 		device.AppPlatform == appInfo.Platform &&
 		device.AppArch == appInfo.Arch &&
 		device.OSVersion == appInfo.OSVersion &&
 		device.DeviceModel == appInfo.DeviceModel {
-		return // 没有变化，不需要更新
+		return
 	}
 
-	// 更新设备的应用信息
 	updates := map[string]interface{}{
 		"app_version":  appInfo.Version,
 		"app_platform": appInfo.Platform,
 		"app_arch":     appInfo.Arch,
 		"os_version":   appInfo.OSVersion,
 		"device_model": appInfo.DeviceModel,
+		// is_gateway intentionally NOT written — locked at creation.
 	}
 
 	if err := db.Get().Model(device).Updates(updates).Error; err != nil {
-		log.Warnf(c, "failed to update device app info for %s: %v", device.UDID, err)
+		log.Warnf(c, "failed to refresh device app info for %s: %v", device.UDID, err)
 		return
 	}
 
-	log.Debugf(c, "updated device %s app info: version=%s, platform=%s, arch=%s, os=%s, model=%s",
+	log.Debugf(c, "refreshed device %s app info: version=%s, platform=%s, arch=%s, os=%s, model=%s",
 		device.UDID, appInfo.Version, appInfo.Platform, appInfo.Arch, appInfo.OSVersion, appInfo.DeviceModel)
 
 	// 更新内存中的设备对象
@@ -350,7 +356,7 @@ func handleJWTAuth(c *gin.Context, token string) *authContext {
 	// 解析 X-K2-Client header 并更新设备的应用版本信息
 	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
 		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
-			updateDeviceAppInfo(c, &device, appInfo)
+			refreshDeviceAppInfo(c, &device, appInfo)
 		}
 	}
 

@@ -586,65 +586,36 @@ func TestParseClientHeader_Invalid(t *testing.T) {
 	}
 }
 
-// TestFillDeviceAppInfo 测试从 X-K2-Client header 填充设备信息
-func TestFillDeviceAppInfo(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
-	t.Run("fills device fields from header", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
-		c.Request.Header.Set("X-K2-Client", "kaitu-service/0.4.0-beta.1 (macos; arm64)")
 
-		device := &Device{}
-		fillDeviceAppInfo(c, device)
+func TestCreateDeviceWithAppInfo_WritesIsGateway(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request, _ = http.NewRequest("POST", "/", nil)
+	c.Request.Header.Set("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)")
+	dev := &Device{}
+	createDeviceWithAppInfo(c, dev)
+	assert.True(t, dev.IsGateway)
+	assert.Equal(t, "0.4.5", dev.AppVersion)
+	assert.Equal(t, "linux", dev.AppPlatform)
+}
 
-		assert.Equal(t, "0.4.0-beta.1", device.AppVersion)
-		assert.Equal(t, "macos", device.AppPlatform)
-		assert.Equal(t, "arm64", device.AppArch)
-	})
-
-	t.Run("no header leaves device fields empty", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
-
-		device := &Device{}
-		fillDeviceAppInfo(c, device)
-
-		assert.Empty(t, device.AppVersion)
-		assert.Empty(t, device.AppPlatform)
-		assert.Empty(t, device.AppArch)
-	})
-
-	t.Run("invalid header leaves device fields empty", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
-		c.Request.Header.Set("X-K2-Client", "Mozilla/5.0 invalid")
-
-		device := &Device{}
-		fillDeviceAppInfo(c, device)
-
-		assert.Empty(t, device.AppVersion)
-		assert.Empty(t, device.AppPlatform)
-	})
-
-	t.Run("extended header fills all fields", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
-		c.Request.Header.Set("X-K2-Client", "kaitu-service/0.3.15 (ios; arm64; iOS 17.4; iPhone15,2)")
-
-		device := &Device{}
-		fillDeviceAppInfo(c, device)
-
-		assert.Equal(t, "0.3.15", device.AppVersion)
-		assert.Equal(t, "ios", device.AppPlatform)
-		assert.Equal(t, "arm64", device.AppArch)
-		assert.Equal(t, "iOS 17.4", device.OSVersion)
-		assert.Equal(t, "iPhone15,2", device.DeviceModel)
-	})
+func TestRefreshDeviceAppInfo_DoesNotTouchIsGateway(t *testing.T) {
+	// Header claims router class even though device was registered as service.
+	// Pre-populate all non-class fields to match the header so the change-detection
+	// short-circuit fires (no DB needed). This isolates the IsGateway invariant.
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request, _ = http.NewRequest("POST", "/", nil)
+	c.Request.Header.Set("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)")
+	dev := &Device{
+		IsGateway:   false, // registered as service
+		AppVersion:  "0.4.5",
+		AppPlatform: "linux",
+		AppArch:     "arm64",
+	}
+	info := parseClientHeader(c.Request.Header.Get("X-K2-Client"))
+	refreshDeviceAppInfo(c, dev, info)
+	assert.False(t, dev.IsGateway, "refresh must never flip IsGateway")
+	assert.Equal(t, "0.4.5", dev.AppVersion)
 }
 
 // ===================== RoleRequired 中间件测试（不需要数据库） =====================

@@ -351,7 +351,7 @@ func api_login(c *gin.Context) {
 			TokenIssueAt:    tokenIssueTime.Unix(),
 			TokenLastUsedAt: time.Now().Unix(),
 		}
-		fillDeviceAppInfo(c, &device)
+		createDeviceWithAppInfo(c, &device)
 		if err := tx.Create(&device).Error; err != nil {
 			log.Errorf(c, "failed to create new device in transaction for user %d: %v", identify.UserID, err)
 			return err
@@ -834,7 +834,7 @@ func api_password_login(c *gin.Context) {
 			TokenIssueAt:    tokenIssueTime.Unix(),
 			TokenLastUsedAt: time.Now().Unix(),
 		}
-		fillDeviceAppInfo(c, &device)
+		createDeviceWithAppInfo(c, &device)
 		return tx.Create(&device).Error
 	})
 
