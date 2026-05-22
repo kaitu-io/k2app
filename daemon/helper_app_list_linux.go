@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // appListRunningResp is the JSON payload returned by /api/helper app-list-running.
@@ -23,7 +24,14 @@ type runningAppJSON struct {
 
 // parseProcExeBasename extracts a comparable basename from a /proc/<pid>/exe
 // readlink target. Returns "" for empty or directory-only inputs.
+//
+// Strips the kernel's " (deleted)" suffix that appears when the binary has
+// been replaced mid-run (apt/dpkg/snap upgrade). The provider-layer
+// ProcessSearcher also strips this suffix so the UI's view and the
+// daemon's runtime attribution stay byte-identical — otherwise a user who
+// adds a freshly-upgraded app to bypass would see the rule fail to fire.
 func parseProcExeBasename(link string) string {
+	link = strings.TrimSuffix(link, " (deleted)")
 	if link == "" || link == "/" {
 		return ""
 	}

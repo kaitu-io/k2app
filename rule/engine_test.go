@@ -248,6 +248,48 @@ func TestEngineMatchConn_ProcessName(t *testing.T) {
 	}
 }
 
+// Linux /proc/PID/comm and macOS lsof COMMAND truncate process names to 15
+// chars. UI-supplied rule names come from full executable basenames. Match
+// must tolerate the truncation so App Bypass actually fires for apps like
+// "Google Chrome Helper" (20 chars) where the daemon only ever sees
+// "Google Chrome H".
+func TestEngineMatchConn_ProcessName_KernelTruncation(t *testing.T) {
+	routes := []RouteEntry{
+		{Target: Target(0), ProcessNames: []string{
+			"Google Chrome Helper",            // 20 chars — Chrome network helper
+			"Microsoft PowerPoint",            // 20 chars
+			"Code Helper (Renderer)",          // 22 chars — VS Code
+			"firefox",                         // 7 chars — fits, exact-match path
+		}},
+	}
+	eng := NewEngine(routes, Target(2), nil, false)
+	defer eng.Close()
+
+	// Daemon observes the 15-char truncation
+	if got := eng.MatchConn("1.1.1.1", ConnMeta{ProcessName: "Google Chrome H"}); got != Target(0) {
+		t.Errorf("truncated 'Google Chrome H' = %v, want direct (0)", got)
+	}
+	if got := eng.MatchConn("1.1.1.1", ConnMeta{ProcessName: "Microsoft Power"}); got != Target(0) {
+		t.Errorf("truncated 'Microsoft Power' = %v, want direct (0)", got)
+	}
+	if got := eng.MatchConn("1.1.1.1", ConnMeta{ProcessName: "Code Helper (Re"}); got != Target(0) {
+		t.Errorf("truncated 'Code Helper (Re' = %v, want direct (0)", got)
+	}
+	// Short name still works exact-match
+	if got := eng.MatchConn("1.1.1.1", ConnMeta{ProcessName: "firefox"}); got != Target(0) {
+		t.Errorf("exact 'firefox' = %v, want direct (0)", got)
+	}
+	// Non-truncation prefix collision: observed 14 chars matching rule prefix
+	// must NOT match (would over-match unrelated processes).
+	if got := eng.MatchConn("1.1.1.1", ConnMeta{ProcessName: "Google Chrome"}); got != Target(2) {
+		t.Errorf("non-truncated 'Google Chrome' (13 chars) should NOT match 20-char rule = %v, want proxy (2)", got)
+	}
+	// Truncation only when observed is exactly 15 chars AND matches rule prefix
+	if got := eng.MatchConn("1.1.1.1", ConnMeta{ProcessName: "Slack Helper (R"}); got != Target(2) {
+		t.Errorf("15-char truncation of unrelated process = %v, want proxy (2)", got)
+	}
+}
+
 func TestEngineMatchConn_PackageName(t *testing.T) {
 	routes := []RouteEntry{
 		{Target: Target(2), PackageNames: []string{"com.android.chrome"}},

@@ -35,6 +35,7 @@ func TestLinuxProcessSearcher_PreservesResolverSignature(t *testing.T) {
 //   /proc/net/tcp: socket inode 1001 owned by 192.168.1.5:54321 (state 01)
 //   /proc/8000/fd/3 → socket:[1001]
 //   /proc/8000/comm: "chrome\n"
+//   /proc/8000/exe → /usr/bin/chrome
 //   /proc/8000/status: includes "Uid:\t10156\t..."
 func setupFakeProcfs(t *testing.T) string {
 	t.Helper()
@@ -54,9 +55,34 @@ func setupFakeProcfs(t *testing.T) string {
 	must(os.MkdirAll(filepath.Join(dir, "8000/fd"), 0755))
 	must(os.Symlink("socket:[1001]", filepath.Join(dir, "8000/fd/3")))
 	must(os.WriteFile(filepath.Join(dir, "8000/comm"), []byte("chrome\n"), 0644))
+	must(os.Symlink("/usr/bin/chrome", filepath.Join(dir, "8000/exe")))
 	must(os.WriteFile(filepath.Join(dir, "8000/status"),
 		[]byte("Name:\tchrome\nUid:\t10156\t10156\t10156\t10156\n"), 0644))
 	return dir
+}
+
+// writeProcEntry overlays a single PID's exe symlink + comm onto an
+// existing fake procfs root. Returns the PID's dir path for further
+// per-test customization.
+func writeProcEntry(t *testing.T, procRoot string, pid int, exeTarget, comm string) string {
+	t.Helper()
+	pidDir := filepath.Join(procRoot, strconv.Itoa(pid))
+	if err := os.MkdirAll(pidDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	exePath := filepath.Join(pidDir, "exe")
+	_ = os.Remove(exePath)
+	if exeTarget != "" {
+		if err := os.Symlink(exeTarget, exePath); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if comm != "" {
+		if err := os.WriteFile(filepath.Join(pidDir, "comm"), []byte(comm), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return pidDir
 }
 
 func TestFindProcess_IPv6Early(t *testing.T) {
@@ -221,6 +247,166 @@ func TestLookupPID_FreshMissTriggersRebuild(t *testing.T) {
 	// FindProcess layer (keyed by source 4-tuple, not inode).
 	if pid := s.lookupPID(9999); pid != 0 {
 		t.Errorf("ghost-inode pid = %d, want 0", pid)
+	}
+}
+
+// ====================================================================
+// OS-specific quirk coverage — added 2026-05-22 to push App Bypass
+// confidence to 10/10 without requiring physical Linux hardware. Each
+// test reproduces an empirically-observed kernel/userland behavior that
+// would silently break the rule engine's process_name match.
+// ====================================================================
+
+// Real-world: Chrome's worker threads call prctl(PR_SET_NAME) to set
+// /proc/PID/comm to "Chrome_ChildIOT" / "Chrome_IOThread". The UI's
+// listRunning gives the user the *executable basename* ("Google Chrome
+// Helper"). Without reading /proc/PID/exe, App Bypass for every
+// Electron app (Chrome, VS Code, Slack, Discord, Signal, Element) and
+// most modern browsers would silently never fire.
+//
+// Verified empirically on linux/arm64 Docker — see audit transcript.
+func TestReadProcessName_PrctlOverride_PrefersExe(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	dir := setupFakeProcfs(t)
+	s.procRoot = dir
+
+	// Overwrite 8000's exe + comm to mimic a Chrome helper:
+	//   - argv[0] basename / exe → "Google Chrome Helper" (UI's view)
+	//   - comm → "Chrome_ChildIOT" (prctl override; useless to UI)
+	writeProcEntry(t, dir, 8000, "/Applications/Google Chrome.app/Contents/Frameworks/.../Helpers/Google Chrome Helper", "Chrome_ChildIOT\n")
+
+	name := s.readProcessName(8000)
+	if name != "Google Chrome Helper" {
+		t.Errorf("readProcessName(prctl-renamed) = %q, want %q (exe basename, not comm)",
+			name, "Google Chrome Helper")
+	}
+}
+
+// /proc/PID/exe with " (deleted)" suffix appears when the binary is
+// replaced mid-run (apt/dpkg/snap upgrade, brew upgrade analog). The
+// kernel keeps the original inode mapped; readlink decorates the
+// resolved path. We strip the suffix so the bypass rule keeps matching.
+func TestReadProcessName_DeletedBinarySuffix(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	dir := setupFakeProcfs(t)
+	s.procRoot = dir
+	writeProcEntry(t, dir, 8000, "/usr/bin/chrome (deleted)", "chrome\n")
+
+	if got := s.readProcessName(8000); got != "chrome" {
+		t.Errorf("readProcessName(deleted binary) = %q, want %q (suffix stripped)", got, "chrome")
+	}
+}
+
+// When /proc/PID/exe symlink is unreadable (rare: post-exit race,
+// Yama ptrace_scope restricting introspection, container without
+// hidepid relaxation), fall back to /proc/PID/comm. The rule engine's
+// 15-char truncation tolerance covers the comm-fallback path.
+func TestReadProcessName_ExeUnreadable_FallsBackToComm(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	dir := setupFakeProcfs(t)
+	s.procRoot = dir
+	// Remove exe but keep comm (kernel rare: exe missing, comm present).
+	writeProcEntry(t, dir, 8000, "", "kworker\n")
+
+	if got := s.readProcessName(8000); got != "kworker" {
+		t.Errorf("readProcessName(no exe) = %q, want %q (comm fallback)", got, "kworker")
+	}
+}
+
+// Both exe and comm unreadable → empty (process gone). FindProcess
+// caches the empty result via the 2s negative-cache layer above.
+func TestReadProcessName_BothUnreadable_ReturnsEmpty(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	dir := setupFakeProcfs(t)
+	s.procRoot = dir
+	writeProcEntry(t, dir, 9999, "", "")
+
+	if got := s.readProcessName(9999); got != "" {
+		t.Errorf("readProcessName(absent) = %q, want empty", got)
+	}
+}
+
+// Executable basename longer than TASK_COMM_LEN-1 = 15 chars MUST be
+// returned untruncated via the exe path. comm would have given
+// "Microsoft Power"; exe gives the real name. End-to-end this is what
+// makes Office / Chrome / VS Code bypass work.
+func TestReadProcessName_LongBasename_NotTruncated(t *testing.T) {
+	cases := []struct {
+		name    string
+		exeBase string
+	}{
+		{"Microsoft PowerPoint (20 char)", "Microsoft PowerPoint"},
+		{"Google Chrome Helper (20 char)", "Google Chrome Helper"},
+		{"Visual Studio Code (18 char)", "Visual Studio Code"},
+		{"com.apple.WebKit.Networking (27 char)", "com.apple.WebKit.Networking"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewLinuxProcessSearcher(nil)
+			dir := setupFakeProcfs(t)
+			s.procRoot = dir
+			writeProcEntry(t, dir, 8000, "/opt/foo/"+tc.exeBase, "anything-truncated-here\n")
+			if got := s.readProcessName(8000); got != tc.exeBase {
+				t.Errorf("got %q, want %q (full basename, not truncated)", got, tc.exeBase)
+			}
+		})
+	}
+}
+
+// Multi-byte UTF-8 names. App basenames containing CJK characters
+// (微信 / 钉钉 / 百度网盘) must survive the exe-symlink readlink path
+// byte-perfect — rule match is byte-equality, not codepoint-equality.
+func TestReadProcessName_UTF8MultiByte(t *testing.T) {
+	cases := []string{
+		"微信",        // 6 bytes (3+3) — well under 15
+		"百度网盘",     // 12 bytes — under 15
+		"微信网络助手",   // 18 bytes — over 15, comm would truncate mid-rune
+		"DingTalk助手", // mixed ASCII + CJK, 14 bytes
+	}
+	for _, base := range cases {
+		t.Run(base, func(t *testing.T) {
+			s := NewLinuxProcessSearcher(nil)
+			dir := setupFakeProcfs(t)
+			s.procRoot = dir
+			writeProcEntry(t, dir, 8000, "/Applications/"+base, "irrelevant\n")
+			if got := s.readProcessName(8000); got != base {
+				t.Errorf("got %q (% x), want %q (% x)", got, got, base, base)
+			}
+		})
+	}
+}
+
+// End-to-end through FindProcess (not just readProcessName): a prctl-
+// renamed process matched via TCP socket must still return its exe
+// basename. This is the exact path the rule engine sees.
+func TestFindProcess_PrctlRenamedHelper_EndToEnd(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	dir := setupFakeProcfs(t)
+	s.procRoot = dir
+	// Replace 8000's exe to a long, prctl-renamed Chrome helper.
+	writeProcEntry(t, dir, 8000,
+		"/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/X/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+		"Chrome_ChildIOT\n")
+
+	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "Google Chrome Helper" {
+		t.Errorf("FindProcess returned %q, want %q (prctl-renamed → exe basename)",
+			name, "Google Chrome Helper")
+	}
+}
+
+// Path with trailing slash or unusual edge characters — basename must
+// not degenerate to "." or "/".
+func TestReadProcessName_RootSlashEdge(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	dir := setupFakeProcfs(t)
+	s.procRoot = dir
+	// exe pointing to root — filepath.Base("/") returns "/" → must be
+	// rejected and fall through to comm.
+	writeProcEntry(t, dir, 8000, "/", "fallback-name\n")
+	if got := s.readProcessName(8000); got != "fallback-name" {
+		t.Errorf("readProcessName(exe='/') = %q, want %q (root rejected, comm fallback)",
+			got, "fallback-name")
 	}
 }
 

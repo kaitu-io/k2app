@@ -272,6 +272,29 @@ func matchRouteDomain(r *RouteEntry, domain string) bool {
 	return false
 }
 
+// commTruncLen is the kernel-imposed cap on what process searchers can
+// observe via /proc/PID/comm (Linux TASK_COMM_LEN) or lsof COMMAND (macOS
+// MAXCOMLEN) — 15 visible characters before the trailing nul. UI-supplied
+// rule names come from full executable basenames (e.g. "Google Chrome
+// Helper"), so a literal == match would silently miss every rule whose
+// process is >15 chars. Windows is unaffected (full image name).
+const commTruncLen = 15
+
+// processNameMatches reports whether the observed process name (as seen by
+// the daemon-side ProcessSearcher) matches a rule entry. Accepts both:
+//   - exact equality (Windows full name, or short Linux/macOS names)
+//   - rule-prefix match when the observed value is exactly the 15-char
+//     kernel truncation of the rule (Linux /proc/PID/comm, macOS lsof)
+func processNameMatches(rule, observed string) bool {
+	if rule == observed {
+		return true
+	}
+	if len(rule) > commTruncLen && len(observed) == commTruncLen && rule[:commTruncLen] == observed {
+		return true
+	}
+	return false
+}
+
 // matchMeta checks connection metadata against route criteria.
 // All criteria within a route AND together. Empty meta field = no match.
 func matchMeta(r *RouteEntry, meta ConnMeta) bool {
@@ -281,7 +304,7 @@ func matchMeta(r *RouteEntry, meta ConnMeta) bool {
 		}
 		found := false
 		for _, p := range r.ProcessNames {
-			if meta.ProcessName == p {
+			if processNameMatches(p, meta.ProcessName) {
 				found = true
 				break
 			}

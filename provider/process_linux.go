@@ -257,8 +257,36 @@ func (s *LinuxProcessSearcher) buildInodeIndex() map[uint64]int {
 	return idx
 }
 
-// readProcessName reads the process name from procRoot/PID/comm.
+// readProcessName resolves the process name as the basename of
+// procRoot/PID/exe. Falls back to procRoot/PID/comm only if the exe
+// symlink is unreadable.
+//
+// Why exe, not comm: /proc/PID/comm reflects whatever the app last set
+// via prctl(PR_SET_NAME) or pthread_setname_np on the main thread.
+// Every Electron app (Chrome, VS Code, Slack, Discord, Signal, Element)
+// and most browsers (Firefox) rename their workers to internal labels
+// like "Chrome_ChildIOT" or "DOM Worker", which the UI never sees —
+// so a comm-based match silently misses every modern multi-process app.
+// /proc/PID/exe is the kernel's record of the executable image and is
+// unaffected by app-level renaming. It also matches what the UI's
+// app-list provider reports (executable basename), so the user-visible
+// name and the daemon-observed name agree.
+//
+// `os.Readlink` returns the resolved path with " (deleted)" suffix when
+// the binary has been replaced (e.g. mid-upgrade). Strip it so a
+// post-upgrade flow still matches the original name.
 func (s *LinuxProcessSearcher) readProcessName(pid int) string {
+	exePath, err := os.Readlink(filepath.Join(s.procRoot, strconv.Itoa(pid), "exe"))
+	if err == nil && exePath != "" {
+		exePath = strings.TrimSuffix(exePath, " (deleted)")
+		if name := filepath.Base(exePath); name != "" && name != "." && name != "/" {
+			return name
+		}
+	}
+	// Fallback: /proc/PID/comm. Subject to TASK_COMM_LEN=16 truncation and
+	// prctl override, but the rule engine's processNameMatches() tolerates
+	// the truncation case. This path catches processes whose exe symlink
+	// can't be read (rare: post-exit race, restricted Yama ptrace_scope).
 	data, err := os.ReadFile(filepath.Join(s.procRoot, strconv.Itoa(pid), "comm"))
 	if err != nil {
 		return ""
