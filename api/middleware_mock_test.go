@@ -770,6 +770,39 @@ func TestRoleRequired_CombinedRole_EitherSuffices(t *testing.T) {
 	})
 }
 
+func TestParseClientHeader_ClientClass(t *testing.T) {
+	tests := []struct {
+		name        string
+		header      string
+		wantNil     bool
+		wantClass   string
+		wantIsGW    bool
+		wantVersion string
+	}{
+		{"service token", "kaitu-service/0.4.5 (ios; arm64)", false, "service", false, "0.4.5"},
+		{"router token", "kaitu-router/0.4.5 (linux; arm64; OpenWrt 23.05; mt7620)", false, "router", true, "0.4.5"},
+		{"unknown class", "kaitu-iot/0.4.5 (linux; arm64)", true, "", false, ""},
+		{"empty header", "", true, "", false, ""},
+		{"malformed (no slash)", "kaitu-router 0.4.5 linux arm64", true, "", false, ""},
+		{"extra product tokens", "kaitu-router/0.4.5 OpenWrt/23.05 (linux; arm64)", true, "", false, ""},
+		{"version with suffix", "kaitu-service/0.4.0-beta.1 (macos; arm64)", false, "service", false, "0.4.0-beta.1"},
+		{"linux desktop is service", "kaitu-service/0.4.5 (linux; amd64)", false, "service", false, "0.4.5"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			info := parseClientHeader(tc.header)
+			if tc.wantNil {
+				assert.Nil(t, info)
+				return
+			}
+			assert.NotNil(t, info)
+			assert.Equal(t, tc.wantClass, info.ClientClass)
+			assert.Equal(t, tc.wantIsGW, info.IsGateway())
+			assert.Equal(t, tc.wantVersion, info.Version)
+		})
+	}
+}
+
 // TestRoleRequired_MultipleRoles 用户拥有多个角色时，任一满足即通过
 func TestRoleRequired_MultipleRoles(t *testing.T) {
 	testInitConfig()

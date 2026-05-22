@@ -20,46 +20,55 @@ import (
 )
 
 // AppInfo 从 X-K2-Client header 解析出的应用信息
-type AppInfo struct {
-	Version     string // 应用版本，如 "1.0.0"
-	Platform    string // 运行平台，如 "macos", "windows", "linux", "ios", "android"
-	Arch        string // CPU架构，如 "amd64", "arm64"
-	OSVersion   string // 系统版本，如 "14.5", "11", "23H2"
-	DeviceModel string // 设备型号，如 "MacBookPro18,1", "iPhone15,2"
-}
-
-// X-K2-Client header 格式:
-// Basic:    kaitu-service/{version} ({platform}; {arch})
-// Extended: kaitu-service/{version} ({platform}; {arch}; {os_version}; {device_model})
+// X-K2-Client header 格式 (RFC 7231 User-Agent grammar):
+//   kaitu-<class>/<version> (<platform>; <arch>[; <os-version>[; <device-model>]])
+//
+// class:
+//   - "service": end-user app (desktop, mobile, web)
+//   - "router":  k2r gateway
 //
 // 示例:
 //   kaitu-service/0.4.0-beta.1 (macos; arm64)
-//   kaitu-service/0.3.15 (macos; arm64; macOS 14.5; MacBookPro18,1)
 //   kaitu-service/0.3.15 (ios; arm64; iOS 17.4; iPhone15,2)
-//   kaitu-service/0.3.15 (windows; amd64; Windows 11 23H2; Dell XPS 15)
-var clientHeaderRegex = regexp.MustCompile(`^kaitu-service/([^\s]+)\s*\(([^;)]+);\s*([^;)]+)(?:;\s*([^;)]+))?(?:;\s*([^)]+))?\)`)
+//   kaitu-service/0.4.5 (linux; amd64; Ubuntu 24.04; ThinkPad X1)   ; cmd/k2 desktop
+//   kaitu-router/0.4.5 (linux; arm64; OpenWrt 23.05; mt7620)        ; cmd/k2r router
+type AppInfo struct {
+	ClientClass string // "service" | "router" — single source of device-class signal
+	Version     string
+	Platform    string
+	Arch        string
+	OSVersion   string
+	DeviceModel string
+}
 
-// parseClientHeader 解析 X-K2-Client header 获取应用信息
+// IsGateway 派生方法：唯一从 AppInfo 判定 IsGateway 的入口。
+func (a *AppInfo) IsGateway() bool { return a != nil && a.ClientClass == "router" }
+
+// Trailing `$` anchor rejects extra product tokens after the first.
+// Capture groups: 1=class, 2=version, 3=platform, 4=arch, 5=os_version?, 6=device_model?
+var clientHeaderRegex = regexp.MustCompile(
+	`^kaitu-(service|router)/([^\s]+)\s*\(\s*([^;)]+?)\s*;\s*([^;)]+?)(?:\s*;\s*([^;)]+?))?(?:\s*;\s*([^)]+?))?\s*\)$`)
+
+// parseClientHeader 解析 X-K2-Client header 获取应用信息。
+// 返回 nil 表示 header 缺失、格式错误、或携带未知 client-class token。
+// 调用者根据 nil + 原始 header 区分 "缺失"（兼容老客户端）vs "格式错误"（应拒绝）。
 func parseClientHeader(header string) *AppInfo {
 	matches := clientHeaderRegex.FindStringSubmatch(header)
-	if len(matches) < 4 {
+	if len(matches) < 5 {
 		return nil
 	}
-
 	info := &AppInfo{
-		Version:  strings.TrimSpace(matches[1]),
-		Platform: strings.TrimSpace(matches[2]),
-		Arch:     strings.TrimSpace(matches[3]),
-	}
-
-	// Parse extended fields if present
-	if len(matches) > 4 && matches[4] != "" {
-		info.OSVersion = strings.TrimSpace(matches[4])
+		ClientClass: strings.TrimSpace(matches[1]),
+		Version:     strings.TrimSpace(matches[2]),
+		Platform:    strings.TrimSpace(matches[3]),
+		Arch:        strings.TrimSpace(matches[4]),
 	}
 	if len(matches) > 5 && matches[5] != "" {
-		info.DeviceModel = strings.TrimSpace(matches[5])
+		info.OSVersion = strings.TrimSpace(matches[5])
 	}
-
+	if len(matches) > 6 && matches[6] != "" {
+		info.DeviceModel = strings.TrimSpace(matches[6])
+	}
 	return info
 }
 
