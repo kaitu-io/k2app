@@ -476,7 +476,8 @@ func RouterRequired() gin.HandlerFunc {
 			return
 		}
 		if user.Quota().MaxRouterDevice == 0 {
-			Error(c, ErrorPaymentRequired, "router access requires upgrade")
+			log.Infof(c, "plan no router: user=%d tier=%s remote=%s", user.ID, user.Tier, c.ClientIP())
+			Error(c, ErrorPlanNoRouter, "plan does not support router")
 			c.Abort()
 			return
 		}

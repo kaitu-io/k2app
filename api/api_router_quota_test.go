@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -40,7 +41,9 @@ func TestRouterQuota_GatedByRouterRequired(t *testing.T) {
 		func(c *gin.Context) {
 			c.Set("authContext", &authContext{
 				UserID: 1,
-				User:   &User{ID: 1, Tier: TierBasic},
+				// ExpiredAt set to future so IsExpired() returns false — we want to
+				// reach the MaxRouterDevice == 0 branch, not the expiry branch.
+				User: &User{ID: 1, Tier: TierBasic, ExpiredAt: time.Now().Add(30 * 24 * time.Hour).Unix()},
 			})
 			c.Next()
 		},
@@ -60,8 +63,7 @@ func TestRouterQuota_GatedByRouterRequired(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-	// Accept either the current ErrorPaymentRequired (402) or the upcoming
-	// ErrorPlanNoRouter (402001) — Task 10 switches the emit code.
-	assert.Contains(t, []int{int(ErrorPaymentRequired), int(ErrorPlanNoRouter)}, resp.Code,
-		"expected 402 or 402001 for basic-tier user, got %d", resp.Code)
+	// After Task 10, RouterRequired must emit ErrorPlanNoRouter (402001) for no-entitlement tier.
+	assert.Equal(t, int(ErrorPlanNoRouter), resp.Code,
+		"after Task 10, RouterRequired must emit ErrorPlanNoRouter (402001)")
 }
