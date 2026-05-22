@@ -494,7 +494,7 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 	if isGateway {
 		if quota.MaxRouterDevice == 0 {
 			log.Warnf(c, "user %d plan does not support router, rejecting gateway login", user.ID)
-			return e(ErrorPaymentRequired, "plan does not support router")
+			return e(ErrorPlanNoRouter, "plan does not support router")
 		}
 		var routerCount int64
 		if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = true", user.ID).Count(&routerCount).Error; err != nil {
@@ -503,7 +503,7 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 		}
 		if quota.MaxRouterDevice > 0 && routerCount >= int64(quota.MaxRouterDevice) {
 			log.Warnf(c, "router device limit reached for user %d (%d/%d)", user.ID, routerCount, quota.MaxRouterDevice)
-			return e(ErrorForbidden, "router device limit reached")
+			return e(ErrorRouterDeviceLimit, "router device limit reached")
 		}
 		return nil
 	}
