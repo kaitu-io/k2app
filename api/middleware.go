@@ -484,6 +484,55 @@ func RouterRequired() gin.HandlerFunc {
 	}
 }
 
+// classStr renders Device.IsGateway as a log-friendly token name.
+func classStr(isGateway bool) string {
+	if isGateway {
+		return "router"
+	}
+	return "service"
+}
+
+// EnforceDeviceClass compares the X-K2-Client class token against the persisted
+// Device.IsGateway on every authenticated, device-bound request. Mounted after
+// AuthRequired in the route chain. See plan/spec § C "EnforceDeviceClass".
+//
+// Behavior:
+//   - absent header:               bypass (legacy / WebSocket compat)
+//   - parses to known class, match:    next()
+//   - parses to known class, mismatch: 403002 + clearAuthCookies
+//   - present but unparseable / unknown class: 422003
+//   - no device in context (web-cookie auth): bypass
+func EnforceDeviceClass() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := getAuthContext(c)
+		if ctx == nil || ctx.Device == nil {
+			c.Next()
+			return
+		}
+		header := c.GetHeader("X-K2-Client")
+		if header == "" {
+			c.Next()
+			return
+		}
+		info := parseClientHeader(header)
+		if info == nil {
+			Error(c, ErrorInvalidClientClass, "invalid client class token")
+			c.Abort()
+			return
+		}
+		if info.IsGateway() != ctx.Device.IsGateway {
+			log.Warnf(c, "device class mismatch: udid=%s db_class=%s header_class=%s remote=%s ua=%q",
+				ctx.Device.UDID, classStr(ctx.Device.IsGateway), classStr(info.IsGateway()),
+				c.ClientIP(), c.Request.UserAgent())
+			clearAuthCookies(c)
+			Error(c, ErrorDeviceClassMismatch, "device class mismatch")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // SlaveAuthRequired authenticates slave nodes via Basic Auth (IPv4:NodeSecret).
 func SlaveAuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {

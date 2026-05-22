@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // =====================================================================
@@ -797,4 +798,89 @@ func TestRoleRequired_MultipleRoles(t *testing.T) {
 		r.ServeHTTP(w, req)
 		assertAuthSuccess(t, w)
 	})
+}
+
+// =====================================================================
+// EnforceDeviceClass middleware unit tests
+// =====================================================================
+
+// enforceClassTestCtx builds a gin.Context with pre-populated authContext so
+// EnforceDeviceClass can run in isolation (no real auth needed). Per
+// getAuthContext (middleware.go:175), it early-returns when "authContext" is
+// already set via c.Set — that's how we inject the test fixture.
+func enforceClassTestCtx(headerVal string, device *Device) (*gin.Context, *httptest.ResponseRecorder) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest("GET", "/", nil)
+	if headerVal != "" {
+		c.Request.Header.Set("X-K2-Client", headerVal)
+	}
+	if device != nil {
+		c.Set("authContext", &authContext{UDID: device.UDID, Device: device})
+	}
+	return c, w
+}
+
+func TestEnforceDeviceClass_ConsistentApp(t *testing.T) {
+	c, _ := enforceClassTestCtx("kaitu-service/0.4.5 (ios; arm64)", &Device{UDID: "u1", IsGateway: false})
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestEnforceDeviceClass_ConsistentRouter(t *testing.T) {
+	c, _ := enforceClassTestCtx("kaitu-router/0.4.5 (linux; arm64)", &Device{UDID: "u2", IsGateway: true})
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestEnforceDeviceClass_MismatchAppOnRouterDevice(t *testing.T) {
+	c, w := enforceClassTestCtx("kaitu-service/0.4.5 (ios; arm64)", &Device{UDID: "u3", IsGateway: true})
+	EnforceDeviceClass()(c)
+	assert.True(t, c.IsAborted())
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorDeviceClassMismatch), resp.Code)
+}
+
+func TestEnforceDeviceClass_MismatchRouterOnAppDevice(t *testing.T) {
+	c, w := enforceClassTestCtx("kaitu-router/0.4.5 (linux; arm64)", &Device{UDID: "u4", IsGateway: false})
+	EnforceDeviceClass()(c)
+	assert.True(t, c.IsAborted())
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorDeviceClassMismatch), resp.Code)
+}
+
+func TestEnforceDeviceClass_NoHeader_LegacyAppBypass(t *testing.T) {
+	c, _ := enforceClassTestCtx("", &Device{UDID: "u5", IsGateway: false})
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestEnforceDeviceClass_NoHeader_LegacyRouterBypass(t *testing.T) {
+	c, _ := enforceClassTestCtx("", &Device{UDID: "u6", IsGateway: true})
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted(), "absent header is treated as legacy bypass even for router device")
+}
+
+func TestEnforceDeviceClass_WebCookieBypass(t *testing.T) {
+	// No device in context → web-cookie auth path.
+	c, _ := enforceClassTestCtx("kaitu-service/0.4.5 (web; unknown)", nil)
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestEnforceDeviceClass_UnknownClass(t *testing.T) {
+	c, w := enforceClassTestCtx("kaitu-iot/0.4.5 (linux; arm64)", &Device{UDID: "u7", IsGateway: false})
+	EnforceDeviceClass()(c)
+	assert.True(t, c.IsAborted())
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorInvalidClientClass), resp.Code)
 }
