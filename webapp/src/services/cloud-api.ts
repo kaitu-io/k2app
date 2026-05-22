@@ -28,7 +28,7 @@ import { cacheStore } from './cache-store';
 function buildClientHeader(): string | null {
   const p = window._platform;
   if (!p?.version || !p?.os) return null;
-  const cls = (p as any).platformType === 'gateway' ? 'router' : 'service';
+  const cls = p.platformType === 'gateway' ? 'router' : 'service';
   const arch = p.arch || 'unknown';
   return `kaitu-${cls}/${p.version} (${p.os}; ${arch})`;
 }
