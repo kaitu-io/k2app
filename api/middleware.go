@@ -1,7 +1,6 @@
 package center
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -72,52 +71,25 @@ func parseClientHeader(header string) *AppInfo {
 	return info
 }
 
-// isGatewayRequest 检查请求是否来自路由器/网关设备
+// isGatewayRequest 检查请求是否来自路由器/网关设备。
+// 唯一信号源：X-K2-Client 的 product token == "kaitu-router"。
 func isGatewayRequest(c *gin.Context) bool {
-	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
-		var info struct {
-			IsGateway bool `json:"isGateway"`
-		}
-		if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
-			return info.IsGateway
-		}
-	}
-	return false
+	return parseClientHeader(c.GetHeader("X-K2-Client")).IsGateway()
 }
 
-// fillDeviceAppInfo 从 X-K2-Client header 填充设备的应用版本信息（用于设备创建时）
-// 同时解析 X-App-Info JSON header（k2r 路由器发送，包含 isGateway 标志）
+// fillDeviceAppInfo 从 X-K2-Client header 填充设备的应用版本信息（用于设备创建时）。
+// 注意：本函数将在 Task 4 拆分为 createDeviceWithAppInfo + refreshDeviceAppInfo。
 func fillDeviceAppInfo(c *gin.Context, device *Device) {
-	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
-		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
-			device.AppVersion = appInfo.Version
-			device.AppPlatform = appInfo.Platform
-			device.AppArch = appInfo.Arch
-			device.OSVersion = appInfo.OSVersion
-			device.DeviceModel = appInfo.DeviceModel
-		}
+	info := parseClientHeader(c.GetHeader("X-K2-Client"))
+	if info == nil {
+		return
 	}
-	// k2r sends X-App-Info JSON with isGateway flag
-	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
-		var info struct {
-			Version   string `json:"version"`
-			Platform  string `json:"platform"`
-			Arch      string `json:"arch"`
-			IsGateway bool   `json:"isGateway"`
-		}
-		if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
-			device.IsGateway = info.IsGateway
-			if info.Version != "" {
-				device.AppVersion = info.Version
-			}
-			if info.Platform != "" {
-				device.AppPlatform = info.Platform
-			}
-			if info.Arch != "" {
-				device.AppArch = info.Arch
-			}
-		}
-	}
+	device.AppVersion = info.Version
+	device.AppPlatform = info.Platform
+	device.AppArch = info.Arch
+	device.OSVersion = info.OSVersion
+	device.DeviceModel = info.DeviceModel
+	device.IsGateway = info.IsGateway()
 }
 
 // updateDeviceAppInfo 更新设备的应用版本信息（如果有变化）
