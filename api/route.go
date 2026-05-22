@@ -83,27 +83,27 @@ func SetupRouter() *gin.Engine {
 			// 获取邀请码信息
 			invite.GET("/code", api_get_invite_code)
 			// 获取我的邀请码列表
-			invite.GET("/my-codes", AuthRequired(), api_my_inviteCodes)
+			invite.GET("/my-codes", AuthRequired(), EnforceDeviceClass(), api_my_inviteCodes)
 			// 获取我的最新邀请码
-			invite.GET("/my-codes/latest", AuthRequired(), api_my_latest_invite_code)
+			invite.GET("/my-codes/latest", AuthRequired(), EnforceDeviceClass(), api_my_latest_invite_code)
 			// 创建我的邀请码
-			invite.POST("/my-codes", AuthRequired(), api_create_my_invite_code)
+			invite.POST("/my-codes", AuthRequired(), EnforceDeviceClass(), api_create_my_invite_code)
 			// 更新我的邀请码备注
-			invite.PUT("/my-codes/:code/remark", AuthRequired(), api_update_my_invite_code_remark)
+			invite.PUT("/my-codes/:code/remark", AuthRequired(), EnforceDeviceClass(), api_update_my_invite_code_remark)
 			// 获取邀请码分享链接
-			invite.GET("/my-codes/:code/share-link", AuthRequired(), api_get_share_link)
+			invite.GET("/my-codes/:code/share-link", AuthRequired(), EnforceDeviceClass(), api_get_share_link)
 			// 获取我邀请的用户列表
-			invite.GET("/my-users", AuthRequired(), api_my_invite_users)
+			invite.GET("/my-users", AuthRequired(), EnforceDeviceClass(), api_my_invite_users)
 		}
 
 		// Get tunnel list
-		api.GET("/tunnels", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
-		api.GET("/tunnels/:protocol", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
+		api.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
+		api.GET("/tunnels/:protocol", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
 		// k2subs subscription endpoint — Basic Auth (udid:token) validated inside handler,
 		// because k2 engine sends Basic Auth, not the Bearer token the middleware chain expects.
 		api.GET("/subs", api_subs)
 		// Get relay list (nodes with has_relay=true)
-		api.GET("/relays", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
+		api.GET("/relays", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
 		// Get plans
 		api.GET("/plans", api_get_plans)
 		// Get tiers (public — returns all 4 tiers with their active plans)
@@ -125,56 +125,56 @@ func SetupRouter() *gin.Engine {
 		log.Debugf(ctx, "registering /api/user group")
 		{
 			// 获取用户信息
-			user.GET("", AuthRequired(), api_get_user_info)
-			user.GET("/info", AuthRequired(), api_get_user_info)
+			user.GET("", AuthRequired(), EnforceDeviceClass(), api_get_user_info)
+			user.GET("/info", AuthRequired(), EnforceDeviceClass(), api_get_user_info)
 			// 删除设备
-			user.DELETE("/devices/:uuid", AuthRequired(), api_delete_device)
+			user.DELETE("/devices/:uuid", AuthRequired(), EnforceDeviceClass(), api_delete_device)
 			// 更新设备备注
-			user.PUT("/devices/:uuid/remark", AuthRequired(), api_update_device_remark)
+			user.PUT("/devices/:uuid/remark", AuthRequired(), EnforceDeviceClass(), api_update_device_remark)
 			// 获取设备列表
-			user.GET("/devices", AuthRequired(), api_get_devices)
+			user.GET("/devices", AuthRequired(), EnforceDeviceClass(), api_get_devices)
 			// 创建订单
-			user.POST("/orders", AuthRequired(), api_create_order)
+			user.POST("/orders", AuthRequired(), EnforceDeviceClass(), api_create_order)
 			// 通知代付人付款（给当前用户的 delegate 发支付邀请邮件）
-			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), api_order_notify_delegate)
+			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), EnforceDeviceClass(), api_order_notify_delegate)
 			// 获取授权变更历史
-			user.GET("/pro-histories", AuthRequired(), api_get_pro_histories)
+			user.GET("/pro-histories", AuthRequired(), EnforceDeviceClass(), api_get_pro_histories)
 			// 发送绑定邮箱验证码
-			user.POST("/email/send-bind-verification", AuthRequired(), api_send_bind_email_verification)
+			user.POST("/email/send-bind-verification", AuthRequired(), EnforceDeviceClass(), api_send_bind_email_verification)
 			// 修改邮箱
-			user.POST("/email/update-email", AuthRequired(), api_update_login_email)
+			user.POST("/email/update-email", AuthRequired(), EnforceDeviceClass(), api_update_login_email)
 			// 成员管理
-			user.GET("/members", AuthRequired(), api_member_list)
-			user.POST("/members", AuthRequired(), api_member_add)
-			user.DELETE("/members/:userUUID", AuthRequired(), api_member_remove)
+			user.GET("/members", AuthRequired(), EnforceDeviceClass(), api_member_list)
+			user.POST("/members", AuthRequired(), EnforceDeviceClass(), api_member_add)
+			user.DELETE("/members/:userUUID", AuthRequired(), EnforceDeviceClass(), api_member_remove)
 			// 代付人管理
-			user.GET("/delegate", AuthRequired(), api_get_delegate)
-			user.PUT("/delegate", AuthRequired(), api_put_delegate)
-			user.DELETE("/delegate", AuthRequired(), api_delete_delegate)
+			user.GET("/delegate", AuthRequired(), EnforceDeviceClass(), api_get_delegate)
+			user.PUT("/delegate", AuthRequired(), EnforceDeviceClass(), api_put_delegate)
+			user.DELETE("/delegate", AuthRequired(), EnforceDeviceClass(), api_delete_delegate)
 			// 自我删除账号
-			user.DELETE("/delete-account", AuthRequired(), api_delete_user_account)
+			user.DELETE("/delete-account", AuthRequired(), EnforceDeviceClass(), api_delete_user_account)
 			// Access key 自助端点已移除 — 统一通过 admin API 管理
 			// 更新用户语言偏好
-			user.PUT("/language", AuthRequired(), api_update_user_language)
+			user.PUT("/language", AuthRequired(), EnforceDeviceClass(), api_update_user_language)
 			// 更新 beta channel 订阅状态
-			user.PUT("/beta-channel", AuthRequired(), api_update_user_beta_channel)
+			user.PUT("/beta-channel", AuthRequired(), EnforceDeviceClass(), api_update_user_beta_channel)
 			// 创建工单
 			user.POST("/ticket", AuthOptional(), api_create_ticket)
 			// 注册设备日志元数据（S3 上传后调用）
 			user.POST("/device-log", AuthOptional(), api_register_device_log)
 			// 日志上传后通知（Slack）
-			user.POST("/feedback-notify", AuthRequired(), api_feedback_notify)
+			user.POST("/feedback-notify", AuthRequired(), EnforceDeviceClass(), api_feedback_notify)
 			// 工单对话
-			user.GET("/tickets", AuthRequired(), api_user_list_tickets)
-			user.GET("/tickets/unread", AuthRequired(), api_user_tickets_unread)
-			user.GET("/tickets/:id", AuthRequired(), api_user_ticket_detail)
-			user.POST("/tickets/:id/reply", AuthRequired(), api_user_ticket_reply)
+			user.GET("/tickets", AuthRequired(), EnforceDeviceClass(), api_user_list_tickets)
+			user.GET("/tickets/unread", AuthRequired(), EnforceDeviceClass(), api_user_tickets_unread)
+			user.GET("/tickets/:id", AuthRequired(), EnforceDeviceClass(), api_user_ticket_detail)
+			user.POST("/tickets/:id/reply", AuthRequired(), EnforceDeviceClass(), api_user_ticket_reply)
 			// 设置/更新密码
-			user.POST("/password", AuthRequired(), api_set_password)
+			user.POST("/password", AuthRequired(), EnforceDeviceClass(), api_set_password)
 			// OTT 签发 — webapp → web auth handoff
-			user.POST("/ott", AuthRequired(), api_issue_ott)
+			user.POST("/ott", AuthRequired(), EnforceDeviceClass(), api_issue_ott)
 			// 连接质量评分
-			user.POST("/connection-rating", AuthRequired(), api_create_connection_rating)
+			user.POST("/connection-rating", AuthRequired(), EnforceDeviceClass(), api_create_connection_rating)
 		}
 
 		// 分销商管理
@@ -219,7 +219,7 @@ func SetupRouter() *gin.Engine {
 		// Strategy system routes (requires device auth)
 		strategy := api.Group("/strategy")
 		log.Debugf(ctx, "registering /api/strategy group")
-		strategy.Use(AuthRequired(), DeviceAuthRequired())
+		strategy.Use(AuthRequired(), EnforceDeviceClass(), DeviceAuthRequired())
 		{
 			// Get latest rules configuration
 			strategy.GET("/rules", api_strategy_get_rules)
@@ -236,14 +236,14 @@ func SetupRouter() *gin.Engine {
 
 			// Submit batch telemetry events (requires device auth)
 			authed := telemetry.Group("")
-			authed.Use(AuthRequired(), DeviceAuthRequired())
+			authed.Use(AuthRequired(), EnforceDeviceClass(), DeviceAuthRequired())
 			authed.POST("/batch", api_strategy_telemetry_batch)
 		}
 
 		// Route diagnosis routes (requires device auth)
 		diagnosis := api.Group("/diagnosis")
 		log.Debugf(ctx, "registering /api/diagnosis group")
-		diagnosis.Use(AuthRequired(), DeviceAuthRequired())
+		diagnosis.Use(AuthRequired(), EnforceDeviceClass(), DeviceAuthRequired())
 		{
 			// Get outbound route for a specific node
 			diagnosis.GET("/outbound-route", api_outbound_route)
