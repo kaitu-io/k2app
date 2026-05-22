@@ -59,4 +59,94 @@ describe('buildBypassRoutes', () => {
     ];
     expect(buildBypassRoutes(entries)).toEqual([]);
   });
+
+  // =========================================================================
+  // OS-specific quirks (added 2026-05-22) — empirically motivated by per-OS
+  // process naming behaviors discovered during the 10/10 audit.
+  // =========================================================================
+
+  it('passes long executable basenames through verbatim (Linux exe-symlink path)', () => {
+    // Linux searcher reads /proc/PID/exe → full basename, no TASK_COMM_LEN
+    // truncation. Bypass entries for Electron apps must round-trip the full
+    // name so the rule engine can match observed kernel attribution.
+    const entries: AppBypassEntry[] = [
+      { id: 'chrome', label: 'Google Chrome', kind: 'process',
+        names: ['Google Chrome', 'Google Chrome Helper', 'Google Chrome Helper (GPU)', 'Google Chrome Helper (Renderer)'],
+        addedAt: 1 },
+    ];
+    const routes = buildBypassRoutes(entries);
+    expect(routes[0].match.process_name).toContain('Google Chrome Helper (Renderer)');
+    // No name should be truncated to 15 chars
+    for (const name of routes[0].match.process_name as string[]) {
+      expect(name.length === 0 || name === name.trim()).toBe(true);
+    }
+  });
+
+  it('passes multi-byte UTF-8 names through verbatim (Chinese app bundles)', () => {
+    const entries: AppBypassEntry[] = [
+      { id: 'wx', label: '微信', kind: 'process', names: ['微信', '微信网络助手'], addedAt: 1 },
+    ];
+    const routes = buildBypassRoutes(entries);
+    expect(routes[0].match.process_name).toEqual(['微信', '微信网络助手']);
+  });
+
+  it('preserves spaces and parens (macOS helper bundle naming)', () => {
+    // Verified empirically: lsof returns "Code Helper (Renderer)" with
+    // spaces + parens intact. Route construction must not normalize.
+    const entries: AppBypassEntry[] = [
+      { id: 'code', label: 'Visual Studio Code', kind: 'process',
+        names: ['Code Helper', 'Code Helper (GPU)', 'Code Helper (Renderer)', 'Code Helper (Plugin)'],
+        addedAt: 1 },
+    ];
+    const routes = buildBypassRoutes(entries);
+    expect(routes[0].match.process_name).toEqual([
+      'Code Helper', 'Code Helper (GPU)', 'Code Helper (Renderer)', 'Code Helper (Plugin)',
+    ]);
+  });
+
+  it('preserves Windows .exe suffix and ApplicationFrameHost for UWP', () => {
+    (window as any)._platform = { os: 'windows' };
+    const entries: AppBypassEntry[] = [
+      { id: 'edge', label: 'Microsoft Edge', kind: 'process',
+        names: ['msedge.exe'], addedAt: 1 },
+      { id: 'uwp', label: 'WeChat (Store)', kind: 'process',
+        names: ['ApplicationFrameHost.exe'], addedAt: 2 },
+    ];
+    const routes = buildBypassRoutes(entries);
+    expect(routes[0].match.process_name).toEqual([
+      'msedge.exe', 'ApplicationFrameHost.exe',
+    ]);
+  });
+
+  // =========================================================================
+  // Auto-detected (Android Smart Bypass) path
+  // =========================================================================
+
+  it('autoPackageNames alone produces a package_name route (no user entries)', () => {
+    (window as any)._platform = { os: 'android' };
+    const routes = buildBypassRoutes([], ['com.tencent.mm', 'com.alipay.android']);
+    expect(routes).toEqual([
+      { via: 'direct', match: { package_name: ['com.tencent.mm', 'com.alipay.android'] } },
+    ]);
+  });
+
+  it('autoPackageNames unions with user package entries, dedup wins on overlap', () => {
+    (window as any)._platform = { os: 'android' };
+    const entries: AppBypassEntry[] = [
+      { id: 'mm', label: 'WeChat', kind: 'package', names: ['com.tencent.mm'], addedAt: 1 },
+      { id: 'custom', label: 'Custom', kind: 'package', names: ['com.example.custom'], addedAt: 2 },
+    ];
+    // Auto-detected also includes com.tencent.mm — must dedup once,
+    // preserving user-added first-seen order.
+    const routes = buildBypassRoutes(entries, ['com.tencent.mm', 'com.unionpay']);
+    expect(routes[0].match.package_name).toEqual([
+      'com.tencent.mm',     // user-added first
+      'com.example.custom', // user-added second
+      'com.unionpay',       // auto-detected, unique
+    ]);
+  });
+
+  it('empty entries + empty autoPackageNames returns []', () => {
+    expect(buildBypassRoutes([], [])).toEqual([]);
+  });
 });
