@@ -28,7 +28,12 @@ function buildClientHeader(): string | null {
 }
 
 /** Auth paths where tokens should be auto-saved on success */
-const AUTH_TOKEN_PATHS = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh'];
+const AUTH_TOKEN_PATHS = [
+  '/api/auth/login',
+  '/api/auth/login/password',
+  '/api/auth/register',
+  '/api/auth/refresh',
+];
 
 /** Auth path where tokens + cache should be cleared on success */
 const AUTH_LOGOUT_PATH = '/api/auth/logout';

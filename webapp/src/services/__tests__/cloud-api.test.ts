@@ -426,6 +426,34 @@ describe('Cloud API Client', () => {
       });
     });
 
+    // Regression guard: /api/auth/login/password used to fall through the
+    // exact-match path allowlist, so a successful password login returned
+    // tokens that were silently discarded. Dialog closed, user not logged in.
+    it('test_password_login_auto_saves_tokens', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          code: 0,
+          data: { accessToken: 'at', refreshToken: 'rt' },
+        }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+      mockedAuthService.setTokens.mockResolvedValue(undefined);
+
+      const response = await cloudApi.post('/api/auth/login/password', {
+        email: 'user@example.com',
+        password: 'hunter2',
+      });
+
+      expect(response.code).toBe(0);
+      expect(mockedAuthService.setTokens).toHaveBeenCalledWith({
+        accessToken: 'at',
+        refreshToken: 'rt',
+      });
+    });
+
     it('test_logout_auto_clears', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
