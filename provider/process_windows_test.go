@@ -9,6 +9,12 @@ import (
 	"testing"
 )
 
+// errFetcher is a sentinel error returned by mock fetchers to simulate
+// GetExtendedTcpTable/GetExtendedUdpTable failures.
+type errFetcher string
+
+func (e errFetcher) Error() string { return string(e) }
+
 func TestNtohs_KnownValues(t *testing.T) {
 	cases := []struct {
 		in   uint32
@@ -207,6 +213,130 @@ func TestWindowsFindProcess_UDPMatch_WildcardLocalAddr(t *testing.T) {
 	name, _ := s.FindProcess("udp", netip.MustParseAddr("198.18.0.2"), 54321)
 	if name != "chrome.exe" {
 		t.Errorf("got %q, want chrome.exe (wildcard 0.0.0.0 must match any srcIP)", name)
+	}
+}
+
+// =============================================================================
+// OS-specific quirk coverage — added 2026-05-22 to push App Bypass
+// confidence to 10/10. Each test reproduces a Windows-specific behavior
+// that could silently break process attribution.
+// =============================================================================
+
+// Process name with embedded space (e.g. "Microsoft Edge.exe"). The
+// kernel's QueryFullProcessImageName preserves spaces; the searcher
+// must pass them through to the rule engine unchanged. Otherwise
+// `process_name: ["Microsoft Edge.exe"]` rules silently miss.
+func TestWindowsFindProcess_NameWithSpaces(t *testing.T) {
+	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}
+	namer := &mockProcNamer{names: map[uint32]string{8000: "Microsoft Edge.exe"}}
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
+	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "Microsoft Edge.exe" {
+		t.Errorf("got %q, want %q (spaces preserved)", name, "Microsoft Edge.exe")
+	}
+}
+
+// UWP / Microsoft Store apps run inside ApplicationFrameHost.exe. The
+// kernel registers the host's PID as the socket owner, not the inner
+// package. Users who bypass UWP apps add "ApplicationFrameHost.exe" to
+// their list. Verify the attribution returns exactly that name.
+func TestWindowsFindProcess_UWPHostAttribution(t *testing.T) {
+	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}
+	namer := &mockProcNamer{names: map[uint32]string{8000: "ApplicationFrameHost.exe"}}
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
+	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "ApplicationFrameHost.exe" {
+		t.Errorf("got %q, want UWP host name", name)
+	}
+}
+
+// Multi-byte UTF-8 names (e.g. localized exe filenames "微信.exe" on
+// Chinese Windows). realProcNamer uses UTF-16 wide-API + UTF16ToString;
+// mock-level test verifies the matcher doesn't garble UTF-8 bytes.
+func TestWindowsFindProcess_UTF8Name(t *testing.T) {
+	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}
+	namer := &mockProcNamer{names: map[uint32]string{8000: "微信.exe"}}
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
+	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "微信.exe" {
+		t.Errorf("got %q, want %q", name, "微信.exe")
+	}
+}
+
+// GetExtendedTcpTable / GetExtendedUdpTable failure path. The fetcher
+// returns err != nil; FindProcess must return empty gracefully (no
+// panic, no garbage value).
+func TestWindowsFindProcess_TCPFetcherError(t *testing.T) {
+	tcp := &mockTCPFetcher{err: errFetcher("simulated GetExtendedTcpTable failure")}
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{})
+	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "" {
+		t.Errorf("got %q, want empty (fetcher error must surface as empty)", name)
+	}
+}
+
+func TestWindowsFindProcess_UDPFetcherError(t *testing.T) {
+	udp := &mockUDPFetcher{err: errFetcher("simulated GetExtendedUdpTable failure")}
+	s := newTestSearcher(&mockTCPFetcher{}, udp, &mockProcNamer{})
+	name, _ := s.FindProcess("udp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "" {
+		t.Errorf("got %q, want empty", name)
+	}
+}
+
+// Multiple non-self rows matching the same (ip, port) — kernel anomaly
+// (e.g. SO_REUSEPORT, stale TIME_WAIT). Parser returns the FIRST
+// non-self match in fetch order. Deterministic; rule engine treats it
+// as authoritative.
+func TestWindowsFindProcess_MultipleMatches_ReturnsFirstNonSelf(t *testing.T) {
+	rows := []tcpRowOwnerPID{
+		{State: 1, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: uint32(os.Getpid())}, // self
+		{State: 5, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: 7777},                 // first non-self
+		{State: 5, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: 8888},                 // shadowed
+	}
+	tcp := &mockTCPFetcher{rows: rows}
+	namer := &mockProcNamer{names: map[uint32]string{
+		7777: "wget.exe",
+		8888: "curl.exe",
+	}}
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
+	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "wget.exe" {
+		t.Errorf("got %q, want wget.exe (first non-self match)", name)
+	}
+}
+
+// NameForPID returning empty string (PPL / protected process / race
+// after fetch). The matcher returns empty rather than a placeholder —
+// silent miss is preferable to wrong attribution.
+func TestWindowsFindProcess_NamerReturnsEmpty(t *testing.T) {
+	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}
+	namer := &mockProcNamer{names: map[uint32]string{}} // PID 8000 not registered → returns ""
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
+	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "" {
+		t.Errorf("got %q, want empty (PPL/protected → namer returns empty)", name)
+	}
+}
+
+// Different (ip,port) keys MUST NOT collide in the cache. Two distinct
+// processes on adjacent ports must each get their correct attribution.
+func TestWindowsFindProcess_CacheKeyIsolation(t *testing.T) {
+	rows := []tcpRowOwnerPID{
+		{State: 5, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: 7777}, // 192.168.1.5:54321
+		{State: 5, LocalAddr: 0x0501A8C0, LocalPort: 0x000032D4, OwningPID: 8888}, // 192.168.1.5:54322
+	}
+	tcp := &mockTCPFetcher{rows: rows}
+	namer := &mockProcNamer{names: map[uint32]string{
+		7777: "wget.exe",
+		8888: "curl.exe",
+	}}
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
+	if name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321); name != "wget.exe" {
+		t.Errorf("port 54321 attributed to %q, want wget.exe", name)
+	}
+	if name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54322); name != "curl.exe" {
+		t.Errorf("port 54322 attributed to %q, want curl.exe", name)
 	}
 }
 
