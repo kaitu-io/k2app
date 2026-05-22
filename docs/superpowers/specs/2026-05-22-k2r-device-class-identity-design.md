@@ -40,8 +40,14 @@ Examples:
 ```
 kaitu-service/0.4.5 (ios; arm64; iOS 17.4; iPhone15,2)
 kaitu-service/0.4.5 (macos; arm64)
-kaitu-router/0.4.5  (linux; arm64; OpenWrt 23.05; mt7620)
+kaitu-service/0.4.5 (linux; amd64; Ubuntu 24.04; ThinkPad X1)   ; cmd/k2 Linux desktop
+kaitu-router/0.4.5  (linux; arm64; OpenWrt 23.05; mt7620)       ; cmd/k2r router
 ```
+
+Note Linux desktop (`cmd/k2`, also using `k2/webui/`) is `kaitu-service` because its
+`webui/platform.go` sets `PlatformType="desktop"`. Only `cmd/k2r` sets
+`PlatformType="gateway"`. The `linux` platform string in the comment does NOT signal
+class — only the product token does.
 
 Why `X-K2-Client` and not `User-Agent`: browser fetch/XHR puts `User-Agent` on the [forbidden header name list](https://fetch.spec.whatwg.org/#forbidden-header-name), so the webapp cannot override it. The server therefore must not trust `User-Agent` for any business logic. `X-K2-Client` is the custom header that carries the UA-grammar payload the webapp can actually set.
 
@@ -112,6 +118,10 @@ func refreshDeviceAppInfo(c *gin.Context, device *Device)
 
 This prevents a later request with a different class signal from silently flipping the persisted class.
 
+**Call site migration**:
+- `api_auth.go` `login` / `login_password` (both fresh-device branch and device-transfer recreate branch at `api_auth.go:235` and `:799`) → use `createDeviceWithAppInfo`.
+- The existing `updateDeviceAppInfo` call in `handleJWTAuth` (middleware.go ~line 369) → replace with `refreshDeviceAppInfo`. Same signature, never writes IsGateway.
+
 #### `api/middleware.go` — `isGatewayRequest` becomes a thin wrapper
 
 ```go
@@ -123,6 +133,26 @@ func isGatewayRequest(c *gin.Context) bool {
 
 Remove all `X-App-Info` parsing code (both branches in current file).
 
+#### Login handler — validate unknown class token
+
+`isGatewayRequest` returns `false` for any non-`router` token, including a malformed or
+unknown one like `kaitu-iot/...`. If the login handler used `isGatewayRequest` alone,
+an unknown-class client would silently register as a service device, only to be
+rejected by `EnforceDeviceClass` on every subsequent request — an unrecoverable
+state.
+
+Add an explicit check in `login` / `login_password` **before** `checkDeviceLimitOrKick`:
+
+```go
+header := c.GetHeader("X-K2-Client")
+if header != "" && parseClientHeader(header) == nil {
+    Error(c, ErrorInvalidClientClass, "invalid client class token")
+    return
+}
+```
+
+Header absence remains legal (legacy client compatibility); only header-present-but-unparseable returns 422003.
+
 #### `api/middleware.go` — new `EnforceDeviceClass`
 
 Mounted on the auth chain after `AuthRequired`, before `ProRequired`:
@@ -130,22 +160,32 @@ Mounted on the auth chain after `AuthRequired`, before `ProRequired`:
 ```go
 func EnforceDeviceClass() gin.HandlerFunc {
     return func(c *gin.Context) {
-        ctx := ReqAuthContext(c)
+        ctx := getAuthContext(c)
         if ctx == nil || ctx.Device == nil {
             // Web-cookie auth has no device binding — bypass.
             c.Next()
             return
         }
-        info := parseClientHeader(c.GetHeader("X-K2-Client"))
-        if info == nil && c.GetHeader("X-K2-Client") != "" {
+        header := c.GetHeader("X-K2-Client")
+        // Legacy-client bypass: header absent means pre-rollout client OR
+        // a path that cannot send custom headers (e.g. WebSocket upgrade).
+        // Either way, no class assertion is made — pass through. The
+        // server-side persisted Device.IsGateway remains authoritative.
+        if header == "" {
+            c.Next()
+            return
+        }
+        info := parseClientHeader(header)
+        if info == nil {
+            // Header present but unparseable / unknown class — strict reject.
             Error(c, ErrorInvalidClientClass, "invalid client class token")
             c.Abort()
             return
         }
-        claimed := info != nil && info.IsGateway()
-        if claimed != ctx.Device.IsGateway {
-            log.Warnf(c, "device class mismatch: udid=%s db_class=%s header_class=%s remote=%s",
-                ctx.Device.UDID, classStr(ctx.Device.IsGateway), classStr(claimed), c.ClientIP())
+        if info.IsGateway() != ctx.Device.IsGateway {
+            log.Warnf(c, "device class mismatch: udid=%s db_class=%s header_class=%s remote=%s ua=%q",
+                ctx.Device.UDID, classStr(ctx.Device.IsGateway), classStr(info.IsGateway()),
+                c.ClientIP(), c.Request.UserAgent())
             clearAuthCookies(c)
             Error(c, ErrorDeviceClassMismatch, "device class mismatch")
             c.Abort()
@@ -156,12 +196,48 @@ func EnforceDeviceClass() gin.HandlerFunc {
 }
 ```
 
-Missing header (`X-K2-Client: ""`) is treated as `IsGateway=false` and only matches legacy app devices — old k2r users with `IsGateway=false` rows remain consistent (they were registered as app, header absence keeps that view). Old k2r users wanting to be properly classified must re-login after the new client ships.
+**Behavior summary**:
+
+| `X-K2-Client` value | Result |
+|---|---|
+| absent (legacy / WebSocket) | bypass — no class assertion made; `Device.IsGateway` unchanged |
+| present, parses to known class, matches DB | next() |
+| present, parses to known class, mismatches DB | 403002 + clear cookies (core defense) |
+| present but unparseable or unknown class | 422003 |
+
+The legacy bypass closes the door to the obvious copy-token attack (which goes through the webapp that *always* sends the header), while preserving compatibility with:
+- pre-rollout clients still in the wild,
+- WebSocket connections that cannot send custom headers in the upgrade request,
+- any future non-webapp tooling.
+
+Tightening this bypass (e.g. requiring header for all auth-bound requests after a sunset date) is tracked in the rollout plan.
 
 #### `api/route.go` — wire-up
 
-- Mount `EnforceDeviceClass()` after `AuthRequired()` on all device-bound auth routes (i.e., wherever `getAuthContext` may populate `Device`). Web-cookie-only routes are unaffected because the middleware bypasses on `Device==nil`.
-- Mount `RouterRequired()` on at least one router-meaningful endpoint to make the entitlement real. Smallest viable endpoint: `GET /api/router/quota` returning `{maxRouterDevice, maxLanClient}` — this is what k2r needs to enforce its LAN allowlist size locally. (The actual LAN MAC allowlist remains on the router, per the 2026-04-09 spec.)
+Mount `EnforceDeviceClass()` after `AuthRequired()` on every route group whose handlers
+expect a device context. Explicit list (matching `api/CLAUDE.md` route group table):
+
+| Route group | Mount EnforceDeviceClass? | Rationale |
+|---|---|---|
+| `/api/tunnels` | ✅ yes | Device-bound (AuthRequired + Pro + Device) |
+| `/api/relays` | ✅ yes | Same chain |
+| `/api/user/*` | ✅ yes | Profile / devices / membership |
+| `/api/strategy/*` | ✅ yes | Auth + Device |
+| `/api/telemetry/*` | ✅ yes | Auth + Device |
+| `/api/device-logs` | ✅ yes | Auth + Device |
+| `/api/router/*` (new) | ✅ yes | New router-only routes |
+| `/api/invite/*` | ✅ yes | Auth (Device populated when present) |
+| `/api/wallet/*` | ❌ no | Web-portal flow, no device assertion |
+| `/api/retailer/*` | ❌ no | `X-Access-Key` auth, no device |
+| `/api/issues/*` | ❌ no | Anonymous-ish issue proxy |
+| `/api/feedback-tickets` | ❌ no | Anonymous submission allowed |
+| `/api/auth/*`, `/api/plans`, `/api/app/config`, `/api/ech/config`, `/api/ca` | ❌ no | Unauthenticated |
+| `/app/*` admin | ❌ no | Admin-only, no device class concept |
+| `/slave/*`, `/csr/*` | ❌ no | Non-user auth |
+
+For groups marked "no", the bypass-on-`Device==nil` inside the middleware would already handle them safely, but we omit the mount entirely to keep the per-request cost zero and to make route intent explicit.
+
+Mount `RouterRequired()` on at least one router-meaningful endpoint to make the entitlement real. Smallest viable endpoint: `GET /api/router/quota` returning `{maxRouterDevice, maxLanClient}` — this is what k2r needs to enforce its LAN allowlist size locally. (The actual LAN MAC allowlist remains on the router, per the 2026-04-09 spec.)
 
 #### `api/api_router_quota.go` — new file
 
@@ -271,12 +347,12 @@ Translations follow the existing webapp i18n process: add to `zh-CN` first, then
 
 ## Error Handling Matrix
 
-| Code | Trigger | Clear token | Webapp behavior |
-|---|---|---|---|
-| 402001 | `Quota().MaxRouterDevice==0 && (gateway login OR router-only endpoint)` | No | Open purchase page, highlight family tier |
-| 403001 | `routerCount >= MaxRouterDevice` on router login | No | Show "router slot full", instruct user to logout original router |
-| 403002 | `EnforceDeviceClass` mismatch | **Yes** | `authService.logout()` + `openLoginDialog()` + show mismatch message |
-| 422003 | `parseClientHeader` cannot parse or returns unknown class | No | Sentry report + show "client incompatible, please upgrade" |
+| Code | Trigger | Where | Clear token | Webapp behavior |
+|---|---|---|---|---|
+| 402001 | `Quota().MaxRouterDevice==0` AND (router login attempt OR `/api/router/*` access) | `checkDeviceLimitOrKick` (login) + `RouterRequired()` (post-auth) | No | Open purchase page, highlight family tier |
+| 403001 | `routerCount >= MaxRouterDevice` | `checkDeviceLimitOrKick` **only — fires at new device registration**; once a device row exists it holds a slot, so post-login refreshes cannot trigger this | No | Show "router slot full", instruct user to logout original router |
+| 403002 | header class ≠ persisted `Device.IsGateway` | `EnforceDeviceClass` middleware (every authenticated request) | **Yes** | `authService.logout()` + `openLoginDialog()` + show mismatch message |
+| 422003 | `X-K2-Client` present but unparseable / unknown class | `EnforceDeviceClass` middleware + `/api/auth/login` handler (pre-create gate) | No | Sentry report + show "client incompatible, please upgrade" |
 
 ## Server Logging (DIAG-style, for kaitu-support ticket triage)
 
@@ -323,6 +399,8 @@ log.Warnf(c, "invalid client class: header=%q remote=%s", header, c.ClientIP())
 | `TestLogin_AppRegister_KicksOldestApp` | service | basic | 3 app devices (MaxDevice=3) | 200, oldest app device deleted |
 | `TestLogin_DeviceTransfer_CrossClass` | router | family | same UDID held by other user, IsGateway=false | delete old, create new with IsGateway=true |
 | `TestLogin_NoHeader_LegacyClient` | absent | basic | none | 200, IsGateway=false |
+| `TestLogin_UnknownClassToken_Rejected` | `kaitu-iot/0.4.5 (...)` | basic | none | code=422003, **no Device row created** |
+| `TestLogin_MalformedHeader_Rejected` | `kaitu-router 0.4.5 ...` | basic | none | code=422003 |
 
 ### Server mock DB tests (`api/middleware_test.go` — EnforceDeviceClass)
 
@@ -351,7 +429,8 @@ log.Warnf(c, "invalid client class: header=%q remote=%s", header, c.ClientIP())
 | Test | platformType | Expected `X-K2-Client` |
 |---|---|---|
 | `should send kaitu-router on gateway platform` | gateway | `kaitu-router/0.4.5 (linux; arm64)` |
-| `should send kaitu-service on desktop platform` | desktop | `kaitu-service/0.4.5 (macos; arm64)` |
+| `should send kaitu-service on macos desktop` | desktop (`os: 'macos'`) | `kaitu-service/0.4.5 (macos; arm64)` |
+| `should send kaitu-service on linux desktop (cmd/k2)` | desktop (`os: 'linux'`) | `kaitu-service/0.4.5 (linux; amd64)` — distinct from `kaitu-router/...` even though platform=linux |
 | `should send kaitu-service on mobile with extended fields` | mobile | `kaitu-service/0.4.5 (ios; arm64; iOS 17.4; iPhone15,2)` |
 | `should send kaitu-service on web platform` | web | `kaitu-service/0.4.5 (windows; amd64)` |
 | `should not send header when _platform missing` | undefined | header absent |
@@ -415,7 +494,8 @@ log.Warnf(c, "invalid client class: header=%q remote=%s", header, c.ClientIP())
 ## Verification Before Merge
 
 - All new tests pass.
+- **Full regression**: `cd api && go test ./...` (with config.yml) and `cd webapp && yarn test` both clean — confirm no existing test broke. Pay special attention to `api_auth_test.go` device-transfer paths (line 235 / 799 region) — the `fillDeviceAppInfo` → `createDeviceWithAppInfo` rename must preserve transfer-recreate semantics.
 - `cd webapp && npx tsc --noEmit` clean.
-- `cd api && go test ./...` clean (with config.yml for integration tests).
 - Manual E2E checklist 1–6 above run on at least macOS + one mobile + one k2r.
-- Center log audit during canary: zero unexpected 403002 events from regular users.
+- Existing webapp builds still log in successfully against the new server (no-header legacy path is intentional).
+- Center log audit during canary: zero unexpected 403002 events from regular users (a small number from copy-token testing is expected).
