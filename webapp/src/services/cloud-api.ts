@@ -17,14 +17,20 @@ import { resolveEntry } from './antiblock';
 import { cacheStore } from './cache-store';
 
 /**
- * Build X-K2-Client header from window._platform for device version tracking.
- * Format: kaitu-service/{version} ({platform}; {arch})
+ * Build X-K2-Client header — sole origination point for this header.
+ *
+ * Format: RFC 7231 User-Agent grammar with product token encoding device class:
+ *   kaitu-router/{version} (...)  — k2r gateway (window._platform.platformType === 'gateway')
+ *   kaitu-service/{version} (...) — all other clients (desktop, mobile, web)
+ *
+ * No other module may construct this header (single source of truth).
  */
 function buildClientHeader(): string | null {
   const p = window._platform;
   if (!p?.version || !p?.os) return null;
+  const cls = (p as any).platformType === 'gateway' ? 'router' : 'service';
   const arch = p.arch || 'unknown';
-  return `kaitu-service/${p.version} (${p.os}; ${arch})`;
+  return `kaitu-${cls}/${p.version} (${p.os}; ${arch})`;
 }
 
 /** Auth paths where tokens should be auto-saved on success */

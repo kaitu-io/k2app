@@ -580,6 +580,80 @@ describe('Cloud API Client', () => {
 
       delete (window as any)._platform;
     });
+
+    it('should send kaitu-router product token when platformType is gateway', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0 }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+
+      (window as any)._platform = {
+        os: 'linux',
+        arch: 'arm64',
+        version: '0.4.5',
+        platformType: 'gateway',
+      };
+
+      await cloudApi.request('GET', '/api/test');
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers['X-K2-Client']).toBe('kaitu-router/0.4.5 (linux; arm64)');
+
+      delete (window as any)._platform;
+    });
+
+    it('should send kaitu-service product token on linux desktop (cmd/k2)', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0 }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+
+      (window as any)._platform = {
+        os: 'linux',
+        arch: 'amd64',
+        version: '0.4.5',
+        platformType: 'desktop',
+      };
+
+      await cloudApi.request('GET', '/api/test');
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers['X-K2-Client']).toBe('kaitu-service/0.4.5 (linux; amd64)');
+
+      delete (window as any)._platform;
+    });
+
+    it('should send kaitu-service for desktop/mobile/web platformTypes', async () => {
+      for (const pt of ['desktop', 'mobile', 'web'] as const) {
+        const mockFetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ code: 0 }),
+        });
+        globalThis.fetch = mockFetch;
+        mockedAuthService.getToken.mockResolvedValue(null);
+
+        (window as any)._platform = {
+          os: 'macos',
+          arch: 'arm64',
+          version: '0.4.5',
+          platformType: pt,
+        };
+
+        await cloudApi.request('GET', '/api/test');
+
+        const [, options] = mockFetch.mock.calls[0];
+        expect(options.headers['X-K2-Client']).toMatch(/^kaitu-service\//);
+
+        delete (window as any)._platform;
+      }
+    });
   });
 
   // ==================== 401 Edge Cases ====================
