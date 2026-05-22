@@ -52,6 +52,14 @@ vi.mock('../cache-store', () => ({
   },
 }));
 
+// Mock login-dialog store
+const loginDialogOpen = vi.fn();
+vi.mock('../../stores/login-dialog.store', () => ({
+  useLoginDialogStore: {
+    getState: () => ({ open: loginDialogOpen }),
+  },
+}));
+
 import { cloudApi } from '../cloud-api';
 import { authService } from '../auth-service';
 import { useAuthStore } from '../../stores/auth.store';
@@ -878,6 +886,51 @@ describe('Cloud API Client', () => {
 
       // Only ONE refresh call should have been made
       expect(refreshCalls).toHaveLength(1);
+    });
+  });
+
+  // ==================== 403002 Device Class Mismatch ====================
+
+  describe('403002 device class mismatch', () => {
+    beforeEach(() => {
+      (authService.clearTokens as any).mockClear();
+      loginDialogOpen.mockClear();
+    });
+
+    it('should clearTokens + openLoginDialog when server returns 403002', async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ code: 403002, message: 'device class mismatch' }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue('some-token');
+      mockedAuthService.clearTokens.mockResolvedValue(undefined);
+
+      const result = await cloudApi.request('GET', '/api/test');
+
+      expect(authService.clearTokens).toHaveBeenCalledTimes(1);
+      expect(loginDialogOpen).toHaveBeenCalledWith(expect.objectContaining({
+        trigger: 'device-class-mismatch',
+      }));
+      expect(result.code).toBe(403002);
+    });
+
+    it('should NOT trigger logout on 402001/403001/422003', async () => {
+      for (const code of [402001, 403001, 422003]) {
+        const mockFetch = vi.fn().mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ code, message: 'whatever' }),
+        });
+        globalThis.fetch = mockFetch;
+        mockedAuthService.getToken.mockResolvedValue('some-token');
+
+        await cloudApi.request('GET', '/api/test');
+      }
+
+      expect(authService.clearTokens).not.toHaveBeenCalled();
+      expect(loginDialogOpen).not.toHaveBeenCalled();
     });
   });
 });

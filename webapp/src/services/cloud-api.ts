@@ -15,6 +15,7 @@ import { authService } from './auth-service';
 import { useAuthStore } from '../stores/auth.store';
 import { resolveEntry } from './antiblock';
 import { cacheStore } from './cache-store';
+import { useLoginDialogStore } from '../stores/login-dialog.store';
 
 /**
  * Build X-K2-Client header — sole origination point for this header.
@@ -114,17 +115,29 @@ export const cloudApi = {
         console.warn('[CloudAPI] response error:', method, path, 'code:', jsonResponse.code, 'msg:', jsonResponse.message);
       }
 
-      // 7. Handle 401: try token refresh (pass epoch to detect stale requests)
+      // 7. Handle 403002: server detected device class mismatch
+      // (e.g. phone token reused on a router). Clear session and open login dialog.
+      if (jsonResponse.code === 403002) {
+        console.warn('[CloudAPI] device class mismatch (403002) — clearing session');
+        await authService.clearTokens();
+        useLoginDialogStore.getState().open({
+          trigger: 'device-class-mismatch',
+          message: 'device class mismatch — please log in again',
+        });
+        return jsonResponse;
+      }
+
+      // 8. Handle 401: try token refresh (pass epoch to detect stale requests)
       if (httpResponse.status === 401 || jsonResponse.code === 401) {
         return await this._handle401<T>(method, path, body, requestEpoch);
       }
 
-      // 8. Auto-handle auth paths on success
+      // 9. Auto-handle auth paths on success
       if (jsonResponse.code === 0) {
         await this._handleAuthPath(path, jsonResponse);
       }
 
-      // 9. Return the response as SResponse
+      // 10. Return the response as SResponse
       return jsonResponse;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
