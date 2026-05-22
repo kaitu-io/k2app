@@ -225,6 +225,14 @@ func SetupRouter() *gin.Engine {
 			strategy.GET("/rules", api_strategy_get_rules)
 		}
 
+		// Router-only endpoints (require family-tier or above)
+		router := api.Group("/router")
+		log.Debugf(ctx, "registering /api/router group")
+		router.Use(AuthRequired(), EnforceDeviceClass(), ProRequired(), RouterRequired())
+		{
+			router.GET("/quota", api_router_quota)
+		}
+
 		// Telemetry routes
 		telemetry := api.Group("/telemetry")
 		log.Debugf(ctx, "registering /api/telemetry group")
