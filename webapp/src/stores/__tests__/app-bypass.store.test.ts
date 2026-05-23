@@ -205,4 +205,17 @@ describe('loadAutoDetected dispatcher', () => {
     expect(s.autoDetected).toEqual([]);
     expect(s.autoDetectorMeta).toBeNull();
   });
+
+  it('preFetched installed list skips listInstalled IPC and feeds detector directly', async () => {
+    useConfigStore.setState({ country: 'cn' } as any);
+    const preFetched = [
+      { packageName: 'com.tencent.mm', label: '微信' },
+      { packageName: 'com.android.chrome', label: 'Chrome' },
+    ];
+    await useAppBypassStore.getState().loadAutoDetected(preFetched);
+    expect(mockListInstalled).not.toHaveBeenCalled();
+    expect(useAppBypassStore.getState().autoDetected.map((e) => e.packageName))
+      .toEqual(['com.tencent.mm']);
+    expect(useAppBypassStore.getState().autoDetectorMeta).not.toBeNull();
+  });
 });

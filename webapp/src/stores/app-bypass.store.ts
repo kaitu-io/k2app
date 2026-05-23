@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { getRegionalDetector, type AutoDetectedAppEntry } from '../utils/regionalAppDetection';
 import { useConfigStore } from './config.store';
+import type { InstalledApp } from '../types/kaitu-core';
 
 export type { AutoDetectedAppEntry } from '../utils/regionalAppDetection';
 
@@ -46,8 +47,12 @@ interface AppBypassActions {
   clear(): Promise<void>;
   /** rescan: replace names of one entry (by id) with a fresh helper-name set */
   rescan(id: string, names: string[]): Promise<void>;
-  /** Refresh auto-detected Chinese-app list from the platform's installed-app provider. */
-  loadAutoDetected(): Promise<void>;
+  /**
+   * Refresh auto-detected Chinese-app list from the platform's installed-app provider.
+   * Accepts a pre-fetched installed list to avoid double `listInstalled` IPC calls
+   * when the caller has already enumerated apps (e.g. from `refreshCandidates`).
+   */
+  loadAutoDetected(preFetchedInstalled?: InstalledApp[]): Promise<void>;
 }
 
 async function persist(entries: AppBypassEntry[]): Promise<void> {
@@ -76,9 +81,9 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
     }
   },
 
-  async loadAutoDetected() {
+  async loadAutoDetected(preFetchedInstalled) {
     const provider = window._platform?.appList;
-    if (!provider?.listInstalled) {
+    if (!provider?.listInstalled && !preFetchedInstalled) {
       set({ autoDetected: [], autoDetectorMeta: null, autoDetectLoaded: true });
       return;
     }
@@ -89,7 +94,7 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
       return;
     }
     try {
-      const installed = await provider.listInstalled();
+      const installed = preFetchedInstalled ?? (await provider!.listInstalled!());
       const detected = detector.detect(installed);
       set({
         autoDetected: detected,
