@@ -10,12 +10,12 @@
  *
  * VPN-guard: the page kicks back to '/' the moment VPN leaves the idle state.
  */
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useCallback, useMemo, useState, useDeferredValue } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box, Typography, Stack, IconButton, CircularProgress, Avatar, Button,
-  TextField, Paper, Divider, InputAdornment,
+  TextField, Paper, Divider, InputAdornment, LinearProgress,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -26,24 +26,26 @@ import AddIcon from '@mui/icons-material/Add';
 import { useAppBypassStore, useVPNMachineStore, useAlertStore, useConfigStore } from '../stores';
 import RoutingModeSelector from '../components/RoutingModeSelector';
 
-type Candidate =
-  | { kind: 'process'; id: string; label: string; processNames: string[]; iconUrl?: string }
-  | { kind: 'package'; id: string; label: string; iconUrl?: string };
-
 export default function AppBypass() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const entries = useAppBypassStore((s) => s.entries);
   const autoDetected = useAppBypassStore((s) => s.autoDetected);
   const autoDetectorMeta = useAppBypassStore((s) => s.autoDetectorMeta);
-  const loadAutoDetected = useAppBypassStore((s) => s.loadAutoDetected);
+  const candidates = useAppBypassStore((s) => s.candidates);
+  const candidatesLoadedAt = useAppBypassStore((s) => s.candidatesLoadedAt);
+  const candidatesLoading = useAppBypassStore((s) => s.candidatesLoading);
+  const candidatesError = useAppBypassStore((s) => s.candidatesError);
+  const refreshCandidates = useAppBypassStore((s) => s.refreshCandidates);
   const preset = useConfigStore((s) => s.resolvePreset());
   const autoActive = preset !== 'global' && window._platform?.os === 'android';
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearch = useDeferredValue(searchQuery);
   const [autoExpanded, setAutoExpanded] = useState(false);
+  // Frame-flash guard: between initial mount and useEffect firing refreshCandidates,
+  // candidatesLoading is still false and candidates is []. Treat "never loaded" as
+  // loading so the user never sees an "empty + idle" flash.
+  const showInitialLoad = candidatesLoading || candidatesLoadedAt === 0;
 
   // Page-level VPN guard: redirect to '/' if VPN leaves the idle state.
   useEffect(() => {
@@ -64,52 +66,14 @@ export default function AppBypass() {
     return useVPNMachineStore.subscribe((s) => s.state, onState);
   }, [navigate, t]);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    const autoPromise = loadAutoDetected();
-    try {
-      const appList = window._platform?.appList;
-      if (appList?.listInstalled) {
-        const apps = await appList.listInstalled();
-        setCandidates(
-          apps.map((a) => ({
-            kind: 'package',
-            id: a.packageName,
-            label: a.label,
-            iconUrl: a.iconUrl,
-          })),
-        );
-      } else if (appList?.listRunning) {
-        const apps = await appList.listRunning();
-        setCandidates(
-          apps.map((a) => ({
-            kind: 'process',
-            id: a.id,
-            label: a.label,
-            processNames: a.processNames,
-            iconUrl: a.iconUrl,
-          })),
-        );
-      } else {
-        setCandidates([]);
-      }
-    } catch (e) {
-      console.warn('[AppBypass] refresh failed', e);
-      setError(t('dashboard:appBypass.loadFailed'));
-    } finally {
-      setLoading(false);
-    }
-    await autoPromise;
-  }, [loadAutoDetected, t]);
-
+  // Kick off a background refresh on mount; UI renders cached data immediately.
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    refreshCandidates();
+  }, [refreshCandidates]);
 
-  // Rule-card refresh: re-runs refresh() and surfaces the detector outcome as a toast.
+  // Rule-card refresh: kicks off store refresh + surfaces detector outcome as a toast.
   const handleManualScan = useCallback(async () => {
-    await refresh();
+    await refreshCandidates();
     const { autoDetected: latest, autoDetectorMeta: meta } = useAppBypassStore.getState();
     const country = useConfigStore.getState().country;
     if (!meta) {
@@ -128,7 +92,7 @@ export default function AppBypass() {
         'success',
       );
     }
-  }, [refresh, t]);
+  }, [refreshCandidates, t]);
 
   // De-dup chain: user-added > auto-detected > installed list.
   const addedIds = useMemo(() => new Set(entries.map((e) => e.id)), [entries]);
@@ -142,14 +106,14 @@ export default function AppBypass() {
     [candidates, addedIds, autoIds],
   );
 
-  // Client-side search filter (no backend involvement).
+  // Client-side search filter; uses deferred value so keystrokes never wait for filter+render.
   const filteredAvailable = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     if (!q) return available;
     return available.filter(
       (c) => c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q),
     );
-  }, [available, searchQuery]);
+  }, [available, deferredSearch]);
 
   // Smart-detection top-3 with expander.
   const autoVisible = autoExpanded ? autoNotAdded : autoNotAdded.slice(0, 3);
@@ -177,9 +141,9 @@ export default function AppBypass() {
         </Typography>
       )}
 
-      {error && (
+      {candidatesError && (
         <Typography color="error" sx={{ mb: 1 }}>
-          {error}
+          {t(candidatesError)}
         </Typography>
       )}
 
@@ -355,63 +319,67 @@ export default function AppBypass() {
           }}
         />
 
-        {loading ? (
-          <CircularProgress size={20} />
-        ) : (
-          <Stack spacing={1}>
-            {filteredAvailable.length === 0 && searchQuery.trim() !== '' && (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ p: 2, textAlign: 'center' }}
-              >
-                {t('dashboard:appBypass.searchEmpty')}
-              </Typography>
-            )}
-            {filteredAvailable.map((c) => (
-              <Stack
-                key={c.id}
-                direction="row"
-                alignItems="center"
-                spacing={1.5}
-                sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}
-              >
-                <Avatar src={c.iconUrl} variant="rounded" sx={{ width: 32, height: 32 }}>
-                  {c.label[0]?.toUpperCase()}
-                </Avatar>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="body2" fontWeight={600} noWrap>{c.label}</Typography>
-                </Box>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<AddIcon fontSize="small" />}
-                  onClick={() => {
-                    if (c.kind === 'process') {
-                      useAppBypassStore.getState().add({
-                        id: c.id,
-                        label: c.label,
-                        kind: 'process',
-                        names: c.processNames,
-                        iconUrl: c.iconUrl,
-                      });
-                    } else {
-                      useAppBypassStore.getState().add({
-                        id: c.id,
-                        label: c.label,
-                        kind: 'package',
-                        names: [c.id],
-                        iconUrl: c.iconUrl,
-                      });
-                    }
-                  }}
-                >
-                  {t('dashboard:appBypass.addInline')}
-                </Button>
-              </Stack>
-            ))}
+        {showInitialLoad && candidates.length === 0 && (
+          <Stack direction="row" justifyContent="center" sx={{ py: 2 }}>
+            <CircularProgress size={20} />
           </Stack>
         )}
+        {candidatesLoading && candidates.length > 0 && (
+          <LinearProgress sx={{ mb: 1.5, borderRadius: 1 }} />
+        )}
+        <Stack spacing={1}>
+          {filteredAvailable.length === 0 && searchQuery.trim() !== '' && !candidatesLoading && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ p: 2, textAlign: 'center' }}
+            >
+              {t('dashboard:appBypass.searchEmpty')}
+            </Typography>
+          )}
+          {filteredAvailable.map((c) => (
+            <Stack
+              key={c.id}
+              direction="row"
+              alignItems="center"
+              spacing={1.5}
+              sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}
+            >
+              <Avatar src={c.iconUrl} variant="rounded" sx={{ width: 32, height: 32 }}>
+                {c.label[0]?.toUpperCase()}
+              </Avatar>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600} noWrap>{c.label}</Typography>
+              </Box>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AddIcon fontSize="small" />}
+                onClick={() => {
+                  if (c.kind === 'process') {
+                    useAppBypassStore.getState().add({
+                      id: c.id,
+                      label: c.label,
+                      kind: 'process',
+                      names: c.processNames,
+                      iconUrl: c.iconUrl,
+                    });
+                  } else {
+                    useAppBypassStore.getState().add({
+                      id: c.id,
+                      label: c.label,
+                      kind: 'package',
+                      names: [c.id],
+                      iconUrl: c.iconUrl,
+                    });
+                  }
+                }}
+              >
+                {t('dashboard:appBypass.addInline')}
+              </Button>
+            </Stack>
+          ))}
+        </Stack>
       </Box>
     </Box>
   );
