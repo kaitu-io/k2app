@@ -68,6 +68,26 @@ interface AppBypassActions {
    * when the caller has already enumerated apps (e.g. from `refreshCandidates`).
    */
   loadAutoDetected(preFetchedInstalled?: InstalledApp[]): Promise<void>;
+  /**
+   * Refresh the in-memory candidates cache from the platform's app-list provider.
+   * Single IPC per call (in-flight dedup), preserves stale cache during load,
+   * passes installed list to loadAutoDetected to avoid double PackageManager work.
+   */
+  refreshCandidates(): Promise<void>;
+}
+
+// Module-scoped in-flight dedup. Not part of store state — UI doesn't observe it.
+// Cleared in the finally block so a follow-up refresh can run.
+let inflightCandidatesRefresh: Promise<void> | null = null;
+
+/**
+ * Test-only escape hatch: clear the in-flight dedup guard between tests so a
+ * test that fails before resolving its mocked IPC doesn't leak a pending Promise
+ * into the next test (which would hit the dedup guard and hang).
+ * @internal
+ */
+export function __resetAppBypassInflightForTests(): void {
+  inflightCandidatesRefresh = null;
 }
 
 async function persist(entries: AppBypassEntry[]): Promise<void> {
@@ -155,5 +175,67 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
     );
     await persist(next);
     set({ entries: next });
+  },
+
+  refreshCandidates() {
+    // Note: intentionally NOT declared `async` — an async function would wrap
+    // `return inflightCandidatesRefresh` in a fresh Promise, breaking the
+    // identity-equality the in-flight dedup test relies on.
+    if (inflightCandidatesRefresh) return inflightCandidatesRefresh;
+    const run = async () => {
+      set({ candidatesLoading: true });
+      const provider = window._platform?.appList;
+      try {
+        if (provider?.listInstalled) {
+          const installed = await provider.listInstalled();
+          const candidates: Candidate[] = installed.map((a) => ({
+            kind: 'package',
+            id: a.packageName,
+            label: a.label,
+            iconUrl: a.iconUrl,
+          }));
+          set({
+            candidates,
+            candidatesLoadedAt: Date.now(),
+            candidatesError: null,
+          });
+          await get().loadAutoDetected(installed);
+        } else if (provider?.listRunning) {
+          const running = await provider.listRunning();
+          const candidates: Candidate[] = running.map((a) => ({
+            kind: 'process',
+            id: a.id,
+            label: a.label,
+            processNames: a.processNames,
+            iconUrl: a.iconUrl,
+          }));
+          set({
+            candidates,
+            candidatesLoadedAt: Date.now(),
+            candidatesError: null,
+          });
+          // Desktop: no listInstalled — loadAutoDetected becomes a noop, but
+          // calling it preserves the `autoDetectLoaded=true` contract for
+          // first-time visitors observing the auto-detect section.
+          await get().loadAutoDetected();
+        } else {
+          set({
+            candidates: [],
+            candidatesLoadedAt: Date.now(),
+            candidatesError: null,
+          });
+          await get().loadAutoDetected();
+        }
+      } catch (err) {
+        console.warn('[AppBypassStore] refreshCandidates failed:', err);
+        set({ candidatesError: 'dashboard:appBypass.loadFailed' });
+      } finally {
+        set({ candidatesLoading: false });
+      }
+    };
+    inflightCandidatesRefresh = run().finally(() => {
+      inflightCandidatesRefresh = null;
+    });
+    return inflightCandidatesRefresh;
   },
 }));

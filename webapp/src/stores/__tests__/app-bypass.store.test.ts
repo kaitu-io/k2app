@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useAppBypassStore } from '../app-bypass.store';
+import { useAppBypassStore, __resetAppBypassInflightForTests } from '../app-bypass.store';
 import { useConfigStore } from '../config.store';
 
 const mockStorage = {
@@ -28,7 +28,12 @@ beforeEach(() => {
     autoDetectorMeta: null,
     loaded: false,
     autoDetectLoaded: false,
+    candidates: [],
+    candidatesLoadedAt: 0,
+    candidatesLoading: false,
+    candidatesError: null,
   });
+  __resetAppBypassInflightForTests();
   // Default: no country → dispatcher resolves to noop unless a test sets it.
   useConfigStore.setState({ country: null } as any);
 });
@@ -217,5 +222,103 @@ describe('loadAutoDetected dispatcher', () => {
     expect(useAppBypassStore.getState().autoDetected.map((e) => e.packageName))
       .toEqual(['com.tencent.mm']);
     expect(useAppBypassStore.getState().autoDetectorMeta).not.toBeNull();
+  });
+});
+
+describe('refreshCandidates', () => {
+  it('on Android (listInstalled provider) calls listInstalled exactly once and caches', async () => {
+    mockListInstalled.mockResolvedValueOnce([
+      { packageName: 'com.x', label: 'X', iconUrl: 'kaitu-icon://package/com.x' },
+    ]);
+    await useAppBypassStore.getState().refreshCandidates();
+    expect(mockListInstalled).toHaveBeenCalledTimes(1);
+    const s = useAppBypassStore.getState();
+    expect(s.candidates).toEqual([
+      { kind: 'package', id: 'com.x', label: 'X', iconUrl: 'kaitu-icon://package/com.x' },
+    ]);
+    expect(s.candidatesLoadedAt).toBeGreaterThan(0);
+    expect(s.candidatesLoading).toBe(false);
+    expect(s.candidatesError).toBeNull();
+  });
+
+  it('on desktop (listRunning provider only) calls listRunning and maps to process kind', async () => {
+    const mockListRunning = vi.fn().mockResolvedValue([
+      { id: '/Apps/Foo.app', label: 'Foo', processNames: ['Foo'], iconUrl: undefined },
+    ]);
+    (window as any)._platform = {
+      storage: mockStorage,
+      appList: { listRunning: mockListRunning },
+    };
+    await useAppBypassStore.getState().refreshCandidates();
+    expect(mockListRunning).toHaveBeenCalledTimes(1);
+    expect(useAppBypassStore.getState().candidates).toEqual([
+      { kind: 'process', id: '/Apps/Foo.app', label: 'Foo', processNames: ['Foo'], iconUrl: undefined },
+    ]);
+  });
+
+  it('preserves stale candidates during in-flight refresh', async () => {
+    useAppBypassStore.setState({
+      candidates: [{ kind: 'package', id: 'com.cached', label: 'Cached' }],
+      candidatesLoadedAt: 100,
+    });
+    let resolveIpc: (v: any) => void = () => {};
+    mockListInstalled.mockReturnValueOnce(new Promise((r) => { resolveIpc = r; }));
+    const p = useAppBypassStore.getState().refreshCandidates();
+    expect(useAppBypassStore.getState().candidatesLoading).toBe(true);
+    expect(useAppBypassStore.getState().candidates).toHaveLength(1);
+    expect(useAppBypassStore.getState().candidates[0].id).toBe('com.cached');
+    resolveIpc([{ packageName: 'com.new', label: 'New' }]);
+    await p;
+    expect(useAppBypassStore.getState().candidatesLoading).toBe(false);
+    expect(useAppBypassStore.getState().candidates).toHaveLength(1);
+    expect(useAppBypassStore.getState().candidates[0].id).toBe('com.new');
+  });
+
+  it('dedups concurrent calls (returns same Promise, IPC fired once)', async () => {
+    let resolveIpc: (v: any) => void = () => {};
+    mockListInstalled.mockReturnValueOnce(new Promise((r) => { resolveIpc = r; }));
+    const p1 = useAppBypassStore.getState().refreshCandidates();
+    const p2 = useAppBypassStore.getState().refreshCandidates();
+    // Resolve + await BEFORE asserting identity so a failure doesn't leak an
+    // unresolved in-flight Promise into the next test (which would hit the
+    // dedup-guard and hang on a never-resolving cached promise).
+    resolveIpc([]);
+    await Promise.all([p1, p2]);
+    expect(mockListInstalled).toHaveBeenCalledTimes(1);
+    expect(p1).toBe(p2);
+  });
+
+  it('IPC failure preserves cached candidates and sets i18n error key', async () => {
+    useAppBypassStore.setState({
+      candidates: [{ kind: 'package', id: 'com.cached', label: 'Cached' }],
+    });
+    mockListInstalled.mockRejectedValueOnce(new Error('IPC boom'));
+    await useAppBypassStore.getState().refreshCandidates();
+    const s = useAppBypassStore.getState();
+    expect(s.candidates).toHaveLength(1);
+    expect(s.candidates[0].id).toBe('com.cached');
+    expect(s.candidatesError).toBe('dashboard:appBypass.loadFailed');
+    expect(s.candidatesLoading).toBe(false);
+  });
+
+  it('no appList provider resolves cleanly with empty candidates', async () => {
+    (window as any)._platform = { storage: mockStorage }; // no appList
+    await useAppBypassStore.getState().refreshCandidates();
+    const s = useAppBypassStore.getState();
+    expect(s.candidates).toEqual([]);
+    expect(s.candidatesError).toBeNull();
+    expect(s.candidatesLoading).toBe(false);
+  });
+
+  it('on Android feeds the same installed list to loadAutoDetected (single PackageManager call)', async () => {
+    useConfigStore.setState({ country: 'cn' } as any);
+    mockListInstalled.mockResolvedValueOnce([
+      { packageName: 'com.tencent.mm', label: '微信' },
+    ]);
+    await useAppBypassStore.getState().refreshCandidates();
+    expect(mockListInstalled).toHaveBeenCalledTimes(1);
+    expect(useAppBypassStore.getState().autoDetected.map((e) => e.packageName))
+      .toEqual(['com.tencent.mm']);
+    expect(useAppBypassStore.getState().candidates).toHaveLength(1);
   });
 });
