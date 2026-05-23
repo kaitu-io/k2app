@@ -7,7 +7,7 @@ import {
 
 describe('computeScaleDecision', () => {
   describe('Android Capacitor (keyboard event protection)', () => {
-    it('skips body mutation when only height changes (soft keyboard show)', () => {
+    it('skips body mutation on large height shrink (soft keyboard show: 900 -> 500, 400px shrink)', () => {
       const decision = computeScaleDecision(
         { windowWidth: 400, windowHeight: 500 },
         { windowWidth: 400, windowHeight: 900 },
@@ -15,6 +15,60 @@ describe('computeScaleDecision', () => {
       );
       expect(decision.skip).toBe(true);
       expect(decision.bodyStyle).toBeUndefined();
+    });
+
+    it('skips on typical numeric-keyboard shrink (797 -> 530, 267px)', () => {
+      const decision = computeScaleDecision(
+        { windowWidth: 393, windowHeight: 530 },
+        { windowWidth: 393, windowHeight: 797 },
+        true,
+      );
+      expect(decision.skip).toBe(true);
+    });
+
+    it('APPLIES on small height shrink (edge-to-edge inset settle: 844 -> 797, 47px)', () => {
+      // This is the bug: WebView reports innerHeight=844 before edge-to-edge
+      // plugin applies bottom system-bar inset, then resizes to 797. The old
+      // guard treated this as keyboard and skipped, leaving body.height
+      // stuck at 844/scale and BottomNav clipped below the visible viewport.
+      const decision = computeScaleDecision(
+        { windowWidth: 393, windowHeight: 797 },
+        { windowWidth: 393, windowHeight: 844 },
+        true,
+      );
+      expect(decision.skip).toBe(false);
+      expect(decision.bodyStyle).toBeDefined();
+    });
+
+    it('APPLIES on height grow (keyboard dismiss / system-bar reveal: 500 -> 797)', () => {
+      // Grows are never keyboard-showing — always apply so body re-syncs.
+      const decision = computeScaleDecision(
+        { windowWidth: 393, windowHeight: 797 },
+        { windowWidth: 393, windowHeight: 500 },
+        true,
+      );
+      expect(decision.skip).toBe(false);
+      expect(decision.bodyStyle).toBeDefined();
+    });
+
+    it('APPLIES at exactly the threshold boundary (150px shrink: 797 -> 647)', () => {
+      // 150px boundary belongs to non-keyboard side (system bars max ~100px,
+      // keyboard min ~200px — 150 is the safe middle that excludes both).
+      const decision = computeScaleDecision(
+        { windowWidth: 393, windowHeight: 647 },
+        { windowWidth: 393, windowHeight: 797 },
+        true,
+      );
+      expect(decision.skip).toBe(false);
+    });
+
+    it('skips just past the threshold (151px shrink)', () => {
+      const decision = computeScaleDecision(
+        { windowWidth: 393, windowHeight: 646 },
+        { windowWidth: 393, windowHeight: 797 },
+        true,
+      );
+      expect(decision.skip).toBe(true);
     });
 
     it('applies scale when width changes (orientation/window resize)', () => {

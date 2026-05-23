@@ -15,6 +15,13 @@
 
 export const DESIGN_WIDTH = 430;
 
+// Threshold (px) above which a width-stable height shrink is attributed to
+// the soft keyboard rather than transient system-bar settling. Empirically:
+// Android keyboards are 200-450px tall; status / navigation bar insets
+// rarely exceed 100px. 150 is the safe middle that excludes both extremes.
+// Used only by the Android-keyboard guard in computeScaleDecision.
+const KEYBOARD_SHRINK_THRESHOLD_PX = 150;
+
 export interface ViewportState {
   windowWidth: number;
   windowHeight: number;
@@ -46,8 +53,14 @@ export function computeScaleDecision(
 ): ScaleDecision {
   if (previous && isAndroidCapacitor) {
     const widthChanged = current.windowWidth !== previous.windowWidth;
-    const heightChanged = current.windowHeight !== previous.windowHeight;
-    if (!widthChanged && heightChanged) {
+    const heightShrinkagePx = previous.windowHeight - current.windowHeight;
+    // Skip only LARGE width-stable height shrinks (keyboard signature). Small
+    // shrinks come from system-bar inset settling on first paint and from
+    // edge-to-edge transitions — applying them is required so body.height
+    // stays in sync with the viewport; otherwise BottomNavigation gets
+    // clipped below the visible area. Height GROWS (keyboard dismiss) are
+    // never skipped — they re-sync the body after a keyboard-up skip.
+    if (!widthChanged && heightShrinkagePx > KEYBOARD_SHRINK_THRESHOLD_PX) {
       return { skip: true };
     }
   }
