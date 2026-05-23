@@ -18,7 +18,12 @@ import { subscribeWithSelector } from 'zustand/middleware';
 
 type LayoutMode = 'mobile' | 'desktop';
 
-const DESKTOP_BREAKPOINT = 768;
+// Tablet form-factor threshold applied to the *shorter* viewport dimension.
+// `min(innerWidth, innerHeight) >= 600` keeps a phone in mobile layout on
+// rotation (where the long side may exceed 768) and keeps a tablet in
+// desktop layout on rotation (where the short side stays >= 600).
+// Aligns with Material Design's sw600dp tablet breakpoint.
+const TABLET_MIN_DIM = 600;
 const SIDEBAR_WIDTH = 220;
 
 interface LayoutState {
@@ -38,13 +43,14 @@ interface LayoutState {
   toggleConnectionButtonCollapsed: () => void;
 }
 
-// 计算初始布局模式
+// 计算初始布局模式（按较短边判断，避免旋转/分屏抖动）
 function getInitialLayoutMode(isRouterMode: boolean): LayoutMode {
   if (isRouterMode) {
     return 'desktop';
   }
   if (typeof window !== 'undefined') {
-    return window.innerWidth >= DESKTOP_BREAKPOINT ? 'desktop' : 'mobile';
+    const minDim = Math.min(window.innerWidth, window.innerHeight);
+    return minDim >= TABLET_MIN_DIM ? 'desktop' : 'mobile';
   }
   return 'mobile';
 }
@@ -100,8 +106,12 @@ export function initializeLayoutStore(): () => void {
     return () => {};
   }
 
-  // 使用 matchMedia 监听屏幕宽度变化
-  const mediaQuery = window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`);
+  // 同时监听宽 / 高两个维度：旋转手机时较长边可能跨过 600 阈值，但较短边
+  // 不会，所以单看宽度的 matchMedia 会误切；用复合查询要求两边都 >= 600 才
+  // 视为 desktop，与 getInitialLayoutMode 的较短边逻辑等价。
+  const mediaQuery = window.matchMedia(
+    `(min-width: ${TABLET_MIN_DIM}px) and (min-height: ${TABLET_MIN_DIM}px)`
+  );
 
   const handleMediaChange = (e: MediaQueryListEvent | MediaQueryList) => {
     const mode: LayoutMode = e.matches ? 'desktop' : 'mobile';
