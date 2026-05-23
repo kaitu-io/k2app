@@ -24,6 +24,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import PushPinIcon from '@mui/icons-material/PushPin';
 import AddIcon from '@mui/icons-material/Add';
 import { useAppBypassStore, useVPNMachineStore, useAlertStore, useConfigStore } from '../stores';
+import type { Candidate } from '../stores/app-bypass.store';
 import RoutingModeSelector from '../components/RoutingModeSelector';
 
 export default function AppBypass() {
@@ -255,9 +256,30 @@ export default function AppBypass() {
                     title={t('dashboard:appBypass.rescan')}
                     onClick={async () => {
                       try {
-                        const running = await window._platform!.appList!.listRunning!();
-                        const match = running.find((r) => r.id === e.id);
-                        if (!match) return;
+                        const cache = useAppBypassStore.getState().candidates;
+                        let match = cache.find(
+                          (c) => c.kind === 'process' && c.id === e.id,
+                        ) as Extract<Candidate, { kind: 'process' }> | undefined;
+                        if (!match) {
+                          const running = await window._platform!.appList!.listRunning!();
+                          const found = running.find((r) => r.id === e.id);
+                          if (found) {
+                            match = {
+                              kind: 'process',
+                              id: found.id,
+                              label: found.label,
+                              processNames: found.processNames,
+                              iconUrl: found.iconUrl,
+                            };
+                          }
+                        }
+                        if (!match) {
+                          useAlertStore.getState().showAlert(
+                            t('dashboard:appBypass.loadFailed'),
+                            'error',
+                          );
+                          return;
+                        }
                         await useAppBypassStore.getState().rescan(e.id, match.processNames);
                         useAlertStore.getState().showAlert(
                           t('dashboard:appBypass.rescanResult', { count: match.processNames.length }),
