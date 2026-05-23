@@ -2,7 +2,33 @@
 
 **Status:** Draft (2026-05-23) — pre-implementation
 **Scope:** v0.4.5 patch / next desktop & mobile release
-**Owner:** webapp + mobile/plugins/k2-plugin (Android)
+**Owner:** webapp
+
+## Diagnosis correction (2026-05-23, post-author-review)
+
+Initial diagnosis claimed Android `K2Plugin.listInstalledApps` blocks
+WebView main thread because Capacitor `@PluginMethod` defaults to main.
+**This is wrong.** Capacitor 7's `Bridge.java:138` already runs all
+plugin methods on a dedicated `HandlerThread("CapacitorPlugins")`; the
+PackageManager full-enumeration never touched the UI thread to begin
+with.
+
+Real bottlenecks (re-ranked):
+
+1. **React commit time** of hundreds of `<Stack><Avatar>` items in one
+   commit on `setCandidates` — main-thread work, hundreds of ms on
+   devices with many apps. (Mitigated by A+B+D, not eliminated; full
+   elimination needs virtualization which is out-of-scope.)
+2. Component-state `candidates` rebuilt on every page visit (Change A).
+3. Page-level `loading` boolean hiding everything (Change A).
+4. `listInstalled` called twice on Android (Change B).
+5. Search input fires synchronous filter+render on every keystroke
+   (Change D).
+
+Original "Change C" (Android plugin Thread{} wrap) **removed from
+scope** — it would have isolated `listInstalledApps` from other
+CapacitorPlugins HandlerThread work but does NOT address the user's
+perceived blocking.
 
 ## Problem
 
@@ -32,16 +58,19 @@ IPC 数据量。
 
 ## Goals
 
-* 进入 AppBypass 页面 **< 100ms 首帧可交互**（有缓存时）/
-  **< 300ms 首帧可交互**（首次冷加载，候选区显示骨架/进度条
-  但页面其他 3 个 section 完全可用）。
-* Android 设备上 `listInstalled` IPC **不阻塞 WebView 渲染** —
-  主线程 frame time 在枚举期间保持 < 16ms。
+* **回访 AppBypass 页面：< 100ms 首帧可交互（缓存命中）**。
+* 首次冷加载：3 个 section 立即可见（rule card / smart / manual），
+  "Add more"section 顶部细进度条 + 列表区延后填充（不被 spinner
+  全盖）。
 * Refresh 按钮不打断当前浏览状态 — 列表保留旧数据，只在顶部
-  显示细进度条。
+  显示 LinearProgress。
 * 每次进入页面或按 Refresh **最多触发 1 次** `listInstalled` /
-  `listRunning` IPC。
+  `listRunning` IPC（消灭 Android 上的双调）。
 * Search 输入流畅 —— 输入框响应不被 filter+render 阻塞。
+
+**Out of "Goals":** 首次冷加载在 200+ app 的 Android 设备上完全无
+React commit 卡顿 — 这只能通过虚拟化（react-window）解决，
+本次 YAGNI。本次仅消除"refresh / 回访 / 输入"三类用户感知卡顿。
 
 ## Non-goals
 
@@ -118,70 +147,6 @@ loadAutoDetected(preFetchedInstalled?: InstalledApp[]): Promise<void>
 
 `refreshCandidates` 在 Android（有 listInstalled）路径上**只调一次**
 `listInstalled`，把结果同时喂双方。
-
-### Android plugin 后台线程化 (Change C)
-
-`K2Plugin.kt:listInstalledApps` 改造为：
-
-```kotlin
-@PluginMethod
-fun listInstalledApps(call: PluginCall) {
-    Thread {
-        try {
-            val pm = context.packageManager
-            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-            val resolved = pm.queryIntentActivities(intent, 0)
-            val seen = mutableSetOf<String>()
-            val apps = JSArray()
-            for (info in resolved) {
-                try {
-                    val appInfo = info.activityInfo.applicationInfo
-                    val pkg = appInfo.packageName ?: continue
-                    if (pkg == context.packageName) continue
-                    if (!seen.add(pkg)) continue
-                    val label = pm.getApplicationLabel(appInfo).toString()
-                    val iconUrl = "kaitu-icon://package/" +
-                        java.net.URLEncoder.encode(pkg, "UTF-8")
-                    val installer: String? = try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            pm.getInstallSourceInfo(pkg).installingPackageName
-                        } else {
-                            @Suppress("DEPRECATION")
-                            pm.getInstallerPackageName(pkg)
-                        }
-                    } catch (e: Exception) { null }
-                    apps.put(JSObject().apply {
-                        put("packageName", pkg)
-                        put("label", label)
-                        put("iconUrl", iconUrl)
-                        if (installer != null) put("installerPackageName", installer)
-                    })
-                } catch (e: Exception) {
-                    Log.w(TAG, "listInstalledApps: skip entry", e)
-                    // continue — one bad entry doesn't kill the whole list
-                }
-            }
-            call.resolve(JSObject().apply { put("apps", apps) })
-        } catch (e: Exception) {
-            call.reject("LIST_INSTALLED_FAILED", e)
-        }
-    }.start()
-}
-```
-
-**两点不同于原版：**
-
-1. 全函数体包在 `Thread {}.start()` 内 —— 对齐 K2Plugin.kt 内
-   既有的 `checkWebUpdate` / `downloadWebUpdate` 等异步 plugin
-   pattern（line 308, 361, 399, 526）。Capacitor 自动 marshal
-   `call.resolve` 回 main。
-2. 内层 per-entry `try/catch` —— 一个 app 的 `getApplicationLabel`
-   或 `getInstallSourceInfo` 抛异常不再让整个枚举跳出（原版的
-   外层 `catch (e: Exception) { call.reject(...) }` 太宽，部分
-   失败会把整个 IPC 拒绝）。
-
-无 plugin API 变更、无 TypeScript `dist/` 定义变更、无 webapp
-bridge 改动。
 
 ### Search input 解耦 (Change D)
 
@@ -262,8 +227,8 @@ Search input keystroke
 | VPN comes up mid-refresh | Page navigates to `/`; in-flight refresh continues writing to store (harmless — store survives nav) |
 | Manual rescan, cache hit | Zero IPC; store updated; toast |
 | Manual rescan, cache miss | Falls back to `listRunning()`; cache NOT refreshed (intentional —— rescan is targeted) |
-| Android: PackageManager throws on one app | Skipped via inner try/catch; remaining apps returned |
-| Android: PackageManager throws on whole `queryIntentActivities` | `call.reject` → webapp `candidatesError` |
+| Android: listInstalled rejects | webapp `candidatesError = 'dashboard:appBypass.loadFailed'`; cached candidates (if any) preserved |
+| Frame-flash on cold mount | UI gates "loading visual" on `candidatesLoading \|\| candidatesLoadedAt === 0` so the brief window between initial mount and useEffect-fire still shows the progress indicator (no "empty + not loading" flash) |
 
 ## Privacy invariant (unchanged)
 
@@ -313,30 +278,26 @@ Search input keystroke
 
 ### Android smoke (你跑 ~5 分钟)
 
-设备 prerequisites：装 0.4.4 release 或 dev build。
+无 plugin 改动 —— smoke 只验证 webapp 侧重构在 Capacitor WebView
+里行为正确。设备 prerequisites：装 0.4.4 release 或 dev build。
 
 步骤：
 1. 卸载旧版，安装新构建（带本次改动）。
 2. 启动 app → Dashboard 立即可见 → 进入 AppBypass。
-3. **观察 1**: 页面 header 与"已添加 / 智能检测"section **必须立
-   即出现**（不再有 1-3 秒白屏）；"添加更多 (Add more)"section
-   上方应短暂显示 LinearProgress 横条，1-2 秒后填充 app 列表。
-4. **观察 2**: 加载期间，用手指上下滑动整个页面 —— **必须流畅**，
-   不能有冻结。
-5. 按 Rule card 的 Refresh 按钮 → 列表不消失、只看到顶部
-   LinearProgress 一闪。
-6. 在 search 框快速输入"a b c" → 输入框 **每个字符立即出现**，
-   不卡。
-7. 退回 Dashboard → 立即重新进入 AppBypass → 列表立即出现（缓存
-   命中）。
+3. **PASS 1**: 页面 header / 已添加 / 智能检测 三个 section 立即
+   显示（< 300ms）；"添加更多"section 上方显示 LinearProgress
+   横条，下方逐步填充。
+4. **PASS 2**: 按 Rule card Refresh —— 列表不消失，只 LinearProgress
+   闪一下。
+5. **PASS 3**: search 框快速输入"a b c"，每个字符立即出现，
+   filter 结果在空闲跟上。
+6. **PASS 4**: 退 Dashboard → 立即重进 AppBypass —— 列表瞬间出现
+   （缓存命中）。
 
-**计时阈值** (Pass / Fail):
-- 进入 AppBypass 到第一帧渲染 < 300ms (PASS)
-- 滑动 FPS 主观 ≥ 30（不"顿"）(PASS)
-- search 输入到字符显示 < 100ms (PASS)
-
-**反例对照**：在 0.4.4 release 上跑同样步骤，对比"卡 1-3 秒"+
-"输入卡顿"的体感。
+**可接受的"剩余卡感"**：首次冷加载时，列表区从空到填满会有
+~200-500ms 的 React commit 时间（设备 app 越多越长）。这是
+本次 scope **不消除**的部分（需要虚拟化）。**只要其他 3 个
+section 在此期间可见、可滚 / 可操作 / 可输入，就算 PASS。**
 
 ### iOS smoke (无需 —— 改动不影响 iOS)
 
@@ -346,15 +307,20 @@ iOS Capacitor bridge `appList` 当前为 `undefined`（`capacitor-k2.ts:235`
 
 ## Confidence model
 
-| Layer | Confidence | Notes |
-|-------|-----------|-------|
-| A (store cache) | 10/10 | Pure Zustand pattern, vitest 覆盖 |
-| B (dedup) | 10/10 | 单签名扩展，向后兼容 |
-| C (Android thread) | 6/10 → **10/10 after device smoke** | 既有 K2Plugin pattern；理论无风险；但跨进程线程化必须真机验证 |
-| D (useDeferredValue) | 10/10 | React 18 原生 API |
+| 维度 | 信心 | 说明 |
+|------|------|------|
+| A 代码正确性 | 10/10 | Zustand pattern + 7 个 vitest 覆盖；frame-flash bug 已用 `candidatesLoadedAt===0` gate 修 |
+| B 代码正确性 | 10/10 | 单签名扩展，向后兼容 |
+| D 代码正确性 | 10/10 | React 18 原生 `useDeferredValue` |
+| 解决"refresh / 回访 / 输入"卡顿 desk-only | 9/10 | macOS standalone smoke 我自己跑 |
+| 解决"refresh / 回访 / 输入"卡顿真机 | **10/10 after Android smoke** | smoke 4 步骤通过即满分 |
+| 解决"200+app 设备冷加载零卡顿" | **6/10** | 不在 scope（需要 react-window 虚拟化，YAGNI for v0.4.5） |
 
-**封顶 10/10 唯一硬依赖：Android 真机 smoke 通过**（步骤见上）。
-桌面/web 端无设备风险。
+**封顶 10/10 硬依赖：Android 真机 smoke 4 步骤通过**。
+
+**原 Change C（Android plugin Thread{}）已删除** —— Capacitor 7
+plugin method 默认在 `HandlerThread("CapacitorPlugins")` 跑，不在
+main thread，所以 Thread{} 不解决用户感知的卡顿。
 
 ## Out-of-scope follow-ups
 
@@ -366,14 +332,13 @@ iOS Capacitor bridge `appList` 当前为 `undefined`（`capacitor-k2.ts:235`
 
 | File | Change |
 |------|--------|
-| `webapp/src/stores/app-bypass.store.ts` | Add candidates state + refreshCandidates action; loadAutoDetected accepts preFetched param |
-| `webapp/src/stores/__tests__/app-bypass.store.test.ts` | Add 7 new test cases |
-| `webapp/src/pages/AppBypass.tsx` | Remove component candidates/loading/error state; read from store; useDeferredValue for search; rescan-from-cache |
-| `mobile/plugins/k2-plugin/android/src/main/java/io/kaitu/k2plugin/K2Plugin.kt` | Wrap listInstalledApps body in `Thread{}`; per-entry try/catch |
+| `webapp/src/stores/app-bypass.store.ts` | Add Candidate type + candidates state + refreshCandidates action; loadAutoDetected accepts preFetched param |
+| `webapp/src/stores/__tests__/app-bypass.store.test.ts` | Add 8 new test cases (7 refreshCandidates + 1 loadAutoDetected preFetched) |
+| `webapp/src/pages/AppBypass.tsx` | Remove component candidates/loading/error state; read from store; useDeferredValue for search; rescan-from-cache; frame-flash guard |
 
 No changes to:
-- `K2Plugin.kt` plugin API surface, TypeScript `dist/` definitions
+- Any native plugin (K2Plugin.kt / Swift / Rust)
+- `K2Plugin.kt` TypeScript `dist/` definitions
 - `tauri-k2.ts` / `capacitor-k2.ts` / `standalone-k2.ts` bridges
-- `app_list.rs` Rust side
 - Wire protocol / storage shape / privacy boundary
-- i18n files (uses existing keys; new `candidatesError` mapped via existing `appBypass.loadFailed`)
+- i18n files (uses existing keys; `candidatesError` stores `'dashboard:appBypass.loadFailed'` and renders via existing `t()`)
