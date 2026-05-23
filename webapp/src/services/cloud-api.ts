@@ -16,6 +16,7 @@ import { useAuthStore } from '../stores/auth.store';
 import { resolveEntry } from './antiblock';
 import { cacheStore } from './cache-store';
 import { useLoginDialogStore } from '../stores/login-dialog.store';
+import i18n from '../i18n/i18n';
 
 /**
  * Build X-K2-Client header — sole origination point for this header.
@@ -117,12 +118,15 @@ export const cloudApi = {
 
       // 7. Handle 403002: server detected device class mismatch
       // (e.g. phone token reused on a router). Clear session and open login dialog.
+      // Mirrors the 401-with-no-refresh path: clearTokens + isAuthenticated=false
+      // keeps UI gating consistent if the user dismisses the dialog.
       if (jsonResponse.code === 403002) {
         console.warn('[CloudAPI] device class mismatch (403002) — clearing session');
         await authService.clearTokens();
+        useAuthStore.setState({ isAuthenticated: false });
         useLoginDialogStore.getState().open({
           trigger: 'device-class-mismatch',
-          message: 'device class mismatch — please log in again',
+          message: i18n.t('auth:auth.deviceClassMismatch'),
         });
         return jsonResponse;
       }

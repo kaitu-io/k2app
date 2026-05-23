@@ -60,6 +60,11 @@ vi.mock('../../stores/login-dialog.store', () => ({
   },
 }));
 
+// Mock i18n — echo the key so tests can assert on it
+vi.mock('../../i18n/i18n', () => ({
+  default: { t: (key: string) => key },
+}));
+
 import { cloudApi } from '../cloud-api';
 import { authService } from '../auth-service';
 import { useAuthStore } from '../../stores/auth.store';
@@ -897,7 +902,7 @@ describe('Cloud API Client', () => {
       loginDialogOpen.mockClear();
     });
 
-    it('should clearTokens + openLoginDialog when server returns 403002', async () => {
+    it('should clearTokens + isAuthenticated=false + openLoginDialog when server returns 403002', async () => {
       const mockFetch = vi.fn().mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -910,9 +915,13 @@ describe('Cloud API Client', () => {
       const result = await cloudApi.request('GET', '/api/test');
 
       expect(authService.clearTokens).toHaveBeenCalledTimes(1);
-      expect(loginDialogOpen).toHaveBeenCalledWith(expect.objectContaining({
+      // Mirror 401-with-no-refresh: must flip isAuthenticated so UI gates re-evaluate
+      // even if user dismisses the dialog.
+      expect(mockedAuthStore.setState).toHaveBeenCalledWith({ isAuthenticated: false });
+      expect(loginDialogOpen).toHaveBeenCalledWith({
         trigger: 'device-class-mismatch',
-      }));
+        message: 'auth:auth.deviceClassMismatch',
+      });
       expect(result.code).toBe(403002);
     });
 
