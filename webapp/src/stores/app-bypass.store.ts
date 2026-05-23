@@ -15,6 +15,16 @@ export interface AppBypassEntry {
 }
 
 /**
+ * Candidate apps shown in the "Add more" section of AppBypass page.
+ * In-memory only — never persisted to storage or logs (privacy invariant).
+ *  - process: macOS / Windows / Linux desktop (id = bundle id or exe path)
+ *  - package: Android (id = packageName)
+ */
+export type Candidate =
+  | { kind: 'process'; id: string; label: string; processNames: string[]; iconUrl?: string }
+  | { kind: 'package'; id: string; label: string; iconUrl?: string };
+
+/**
  * Detector-supplied i18n keys for the auto-detected section. Set when a
  * region-specific detector ran successfully; cleared when the dispatcher
  * resolves to the no-op (non-CN country, null country, missing provider).
@@ -38,6 +48,11 @@ interface AppBypassState {
   autoDetectorMeta: AutoDetectorMeta | null;
   loaded: boolean;
   autoDetectLoaded: boolean;
+  candidates: Candidate[];
+  candidatesLoadedAt: number;
+  candidatesLoading: boolean;
+  /** i18n key on failure (e.g. 'dashboard:appBypass.loadFailed'); null on success. */
+  candidatesError: string | null;
 }
 
 interface AppBypassActions {
@@ -66,6 +81,10 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
   autoDetectorMeta: null,
   loaded: false,
   autoDetectLoaded: false,
+  candidates: [],
+  candidatesLoadedAt: 0,
+  candidatesLoading: false,
+  candidatesError: null,
 
   async load() {
     try {
