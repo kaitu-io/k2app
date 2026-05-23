@@ -600,6 +600,32 @@ func TestCreateDeviceWithAppInfo_WritesIsGateway(t *testing.T) {
 	assert.Equal(t, "linux", dev.AppPlatform)
 }
 
+// Legacy / no-X-K2-Client clients (old webapp builds, third-party callers,
+// curl). createDeviceWithAppInfo must leave the device unchanged so it falls
+// through to Go's zero value IsGateway=false — the service-class default.
+// This is the backward-compat invariant for the new device-class system.
+func TestCreateDeviceWithAppInfo_NoHeaderLeavesDefaults(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request, _ = http.NewRequest("POST", "/", nil)
+	// Intentionally do NOT set X-K2-Client.
+	dev := &Device{}
+	createDeviceWithAppInfo(c, dev)
+	assert.False(t, dev.IsGateway, "no header → IsGateway must default to false (service class)")
+	assert.Empty(t, dev.AppVersion, "no header → AppVersion must not be set")
+	assert.Empty(t, dev.AppPlatform, "no header → AppPlatform must not be set")
+	assert.Empty(t, dev.AppArch, "no header → AppArch must not be set")
+}
+
+// isGatewayRequest is the signal feeding checkDeviceLimitOrKick during login.
+// With no header it MUST return false so legacy clients route to the app
+// device-limit path (kick-oldest), not the router path (402001/403001).
+func TestIsGatewayRequest_NoHeaderReturnsFalse(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request, _ = http.NewRequest("POST", "/", nil)
+	// No X-K2-Client header.
+	assert.False(t, isGatewayRequest(c), "no header → must classify as app/service request")
+}
+
 func TestRefreshDeviceAppInfo_DoesNotTouchIsGateway(t *testing.T) {
 	// Header claims router class even though device was registered as service.
 	// Pre-populate all non-class fields to match the header so the change-detection

@@ -836,3 +836,78 @@ func TestLoginFlow_PlanDowngrade(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, resp.Code, "tunnel listing must remain accessible after downgrade: %s", resp.Message)
 }
+
+// TestLoginFlow_NoHeaderLegacyApp locks the backward-compat invariant:
+// a client that never sends X-K2-Client (legacy app build, third-party caller,
+// curl, etc.) MUST still log in, get Device.IsGateway=false, and access
+// device-bound endpoints — EnforceDeviceClass bypasses on absent header.
+//
+// This is the regression guard for the "old webapp on new Center" path.
+func TestLoginFlow_NoHeaderLegacyApp(t *testing.T) {
+	skipIfNoDB(t)
+	r := SetupDeviceClassTestRouter()
+
+	EnableMockVerificationCode = true
+	defer func() { EnableMockVerificationCode = false }()
+
+	testEmail := "test-no-header-legacy@example.com"
+	udid := "test-udid-no-header"
+
+	indexID := secretHashIt(context.Background(), []byte(testEmail))
+	cleanup := func() {
+		db.Get().Where("type = ? AND index_id = ?", "email", indexID).Delete(&LoginIdentify{})
+		db.Get().Where("udid = ?", udid).Delete(&Device{})
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	// Step A: send OTP (no X-K2-Client).
+	w := NewTestRequest("POST", "/api/auth/code").
+		WithBody(map[string]string{"email": testEmail}).
+		Execute(r)
+	resp, err := ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "send_code without header should succeed: %s", resp.Message)
+
+	// Step B: login without any X-K2-Client header.
+	w = NewTestRequest("POST", "/api/auth/login").
+		WithBody(map[string]any{
+			"email":            testEmail,
+			"verificationCode": MockVerificationCode,
+			"udid":             udid,
+		}).
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "login without X-K2-Client must succeed (legacy compat); got %d: %s", resp.Code, resp.Message)
+
+	var loginData struct {
+		AccessToken string `json:"accessToken"`
+	}
+	require.NoError(t, json.Unmarshal(resp.Data, &loginData))
+	require.NotEmpty(t, loginData.AccessToken)
+
+	// Cleanup the user row created by login.
+	var user User
+	require.NoError(t,
+		db.Get().Where("id IN (?)",
+			db.Get().Model(&LoginIdentify{}).Select("user_id").Where("type = ? AND index_id = ?", "email", indexID),
+		).First(&user).Error,
+	)
+	t.Cleanup(func() { db.Get().Delete(&user) })
+
+	// Step C: Device row exists with IsGateway=false (zero value — header absent).
+	var dev Device
+	require.NoError(t, db.Get().Where("udid = ?", udid).First(&dev).Error)
+	assert.False(t, dev.IsGateway, "Device.IsGateway must default to false when X-K2-Client header is absent at login")
+
+	// Step D: device-bound endpoint without header must pass EnforceDeviceClass.
+	w = NewTestRequest("GET", "/api/user/info").
+		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	assert.Equal(t, 0, resp.Code,
+		"no-header request to /api/user/info must bypass EnforceDeviceClass; got %d: %s",
+		resp.Code, resp.Message)
+}
