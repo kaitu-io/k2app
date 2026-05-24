@@ -3,6 +3,7 @@ import type { ErrorEvent } from '@sentry/nextjs';
 import {
   dropChatwootSdkErrors,
   dropFailedFormDataParseFromBotProbes,
+  dropFailedServerActionLookupFromBotProbes,
   dropNativePostMessageRejections,
   dropOutdatedBrowserSyntaxErrors,
 } from '../sentry-filters';
@@ -289,5 +290,75 @@ describe('dropNativePostMessageRejections', () => {
       },
     } as unknown as ErrorEvent;
     expect(dropNativePostMessageRejections(event)).toBe(event);
+  });
+});
+
+describe('dropFailedServerActionLookupFromBotProbes', () => {
+  it('drops the exact Next.js "Failed to find Server Action" Error (no actionId form)', () => {
+    // Reproduces Sentry issue 7476230548: bot POSTs to /[locale]/[...slug] with
+    // a forged Next-Action header; Next.js's action-handler can't match the id
+    // and throws from node_modules/next/dist/server/app-render/action-handler.js.
+    const event = nextOnRequestErrorEvent(
+      'Failed to find Server Action. This request might be from an older or newer deployment.\nRead more: https://nextjs.org/docs/messages/failed-to-find-server-action',
+      'auto.function.nextjs.on_request_error',
+      'Error'
+    );
+    expect(dropFailedServerActionLookupFromBotProbes(event)).toBeNull();
+  });
+
+  it('drops the variant with a quoted action id (action-handler.js:819)', () => {
+    const event = nextOnRequestErrorEvent(
+      'Failed to find Server Action "7f4a9b2c". This request might be from an older or newer deployment.',
+      'auto.function.nextjs.on_request_error',
+      'Error'
+    );
+    expect(dropFailedServerActionLookupFromBotProbes(event)).toBeNull();
+  });
+
+  it('KEEPS the same string if it ever appears OUTSIDE the onRequestError mechanism', () => {
+    const event = nextOnRequestErrorEvent(
+      'Failed to find Server Action. This request might be from an older or newer deployment.',
+      'generic',
+      'Error'
+    );
+    expect(dropFailedServerActionLookupFromBotProbes(event)).toBe(event);
+  });
+
+  it('KEEPS other generic Errors coming through onRequestError (real app bugs)', () => {
+    const event = nextOnRequestErrorEvent('Database connection refused', undefined, 'Error');
+    expect(dropFailedServerActionLookupFromBotProbes(event)).toBe(event);
+  });
+
+  it('KEEPS non-Error exceptions with the same value (unexpected, surface it)', () => {
+    const event = nextOnRequestErrorEvent(
+      'Failed to find Server Action. This request might be from an older or newer deployment.',
+      undefined,
+      'TypeError'
+    );
+    expect(dropFailedServerActionLookupFromBotProbes(event)).toBe(event);
+  });
+
+  it('keeps events with no exception payload', () => {
+    const event = { message: 'just a log' } as ErrorEvent;
+    expect(dropFailedServerActionLookupFromBotProbes(event)).toBe(event);
+  });
+
+  it('keeps events with empty exception values', () => {
+    const event = { exception: { values: [] } } as unknown as ErrorEvent;
+    expect(dropFailedServerActionLookupFromBotProbes(event)).toBe(event);
+  });
+
+  it('keeps events with no mechanism field', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'Failed to find Server Action. This request might be from an older or newer deployment.',
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+    expect(dropFailedServerActionLookupFromBotProbes(event)).toBe(event);
   });
 });

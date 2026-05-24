@@ -1,8 +1,14 @@
 import * as Sentry from '@sentry/nextjs';
-import { dropFailedFormDataParseFromBotProbes } from '@/lib/sentry-filters';
+import {
+  dropFailedFormDataParseFromBotProbes,
+  dropFailedServerActionLookupFromBotProbes,
+} from '@/lib/sentry-filters';
 
-const beforeSend = (event: Sentry.ErrorEvent) =>
-  dropFailedFormDataParseFromBotProbes(event);
+const beforeSend = (event: Sentry.ErrorEvent) => {
+  const afterFormData = dropFailedFormDataParseFromBotProbes(event);
+  if (!afterFormData) return null;
+  return dropFailedServerActionLookupFromBotProbes(afterFormData);
+};
 
 export async function register() {
   const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;

@@ -9,6 +9,8 @@ const NEXTJS_ON_REQUEST_ERROR_MECHANISM = 'auto.function.nextjs.on_request_error
 
 const FORMDATA_PARSE_ERROR = /^Failed to parse body as FormData/;
 
+const SERVER_ACTION_LOOKUP_ERROR = /^Failed to find Server Action/;
+
 const UNHANDLED_REJECTION_MECHANISM = 'auto.browser.global_handlers.onunhandledrejection';
 
 const NATIVE_CODE_FILENAME = '[native code]';
@@ -71,6 +73,23 @@ export function dropFailedFormDataParseFromBotProbes(event: ErrorEvent): ErrorEv
   const exc = event.exception?.values?.[0];
   if (exc?.type !== 'TypeError') return event;
   if (!exc.value || !FORMDATA_PARSE_ERROR.test(exc.value)) return event;
+  if (exc.mechanism?.type !== NEXTJS_ON_REQUEST_ERROR_MECHANISM) return event;
+  return null;
+}
+
+/**
+ * Drop `Error: Failed to find Server Action.` surfaced through Next.js's
+ * `onRequestError` hook. Sibling of `dropFailedFormDataParseFromBotProbes`:
+ * the same bots POST to `[locale]/[...slug]/page` with a forged `Next-Action`
+ * header; the action-handler at
+ * `node_modules/next/dist/server/app-render/action-handler.js` can't find a
+ * matching built action and throws (with or without a quoted action id).
+ * Narrowed by mechanism so app-code errors with this string still surface.
+ */
+export function dropFailedServerActionLookupFromBotProbes(event: ErrorEvent): ErrorEvent | null {
+  const exc = event.exception?.values?.[0];
+  if (exc?.type !== 'Error') return event;
+  if (!exc.value || !SERVER_ACTION_LOOKUP_ERROR.test(exc.value)) return event;
   if (exc.mechanism?.type !== NEXTJS_ON_REQUEST_ERROR_MECHANISM) return event;
   return null;
 }
