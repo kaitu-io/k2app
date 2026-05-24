@@ -33,13 +33,15 @@ func TestExpandPreset(t *testing.T) {
 		t.Errorf("ExpandPreset(\"overseas\") = %v, want [overseas]", overseas)
 	}
 
-	// "cn-access" preset bundles cn-sites + geoip-cn + cn-httpdns-anchors.
+	// "cn-access" preset is [cn-sites, geoip-cn] in v2 schema. HTTPDNS anchor
+	// IPs are blended into geoip-cn at bundle build time (k2-rules), not
+	// surfaced as a separate set here.
 	cn := ExpandPreset("cn-access")
 	if cn == nil {
 		t.Fatal("ExpandPreset(\"cn-access\") returned nil")
 	}
-	if !contains(cn, "cn-sites") || !contains(cn, "geoip-cn") || !contains(cn, "cn-httpdns-anchors") {
-		t.Errorf("ExpandPreset(\"cn-access\") = %v, want cn-sites + geoip-cn + cn-httpdns-anchors", cn)
+	if !contains(cn, "cn-sites") || !contains(cn, "geoip-cn") {
+		t.Errorf("ExpandPreset(\"cn-access\") = %v, want cn-sites and geoip-cn", cn)
 	}
 
 	// Country-specific presets follow the "{cc}-access" → [{cc}-sites, geoip-{cc}] shape.

@@ -50,17 +50,20 @@ func (m MatchConfig) HasHostCriteria() bool {
 // Since k2b v2 (commit 77f117e, 2026-04), bundles consolidate services:
 //   - overseas.k2b contains a single "overseas" set (full v2fly geolocation-!cn
 //     + orphan sites, with @cn entries carved out via exclude-domains)
-//   - cn-direct.k2b contains "cn-sites" + "geoip-cn" + "cn-httpdns-anchors"
-//     (bilibili merged into cn-sites via v2fly geolocation-cn;
-//     cn-httpdns-anchors holds build-time pre-resolved HTTPDNS server PoP
-//     IPs to anchor apps like WeChat that bypass sys DNS — see k2-rules
-//     b47a02a)
+//   - cn-direct.k2b contains "cn-sites" + "geoip-cn" (bilibili merged into
+//     cn-sites via v2fly geolocation-cn)
 //
 // Country-specific presets follow the "{cc}-access" naming convention and
 // expand to [{cc}-sites, geoip-{cc}], served from the per-country
 // {cc}-direct.k2b bundle published by kaitu-io/k2-rules (14 countries:
-// cn, ir, ru, tr, pk, vn, mm, eg, id, sa, ae, th, bd, by). cn-access
-// additionally bundles the HTTPDNS anchor set.
+// cn, ir, ru, tr, pk, vn, mm, eg, id, sa, ae, th, bd, by).
+//
+// Note on geoip-cn: as of k2-rules sources.go (post HTTPDNS-anchors merge),
+// the "geoip-cn" set blends two data sources — Loyalsoldier mainland CIDRs
+// plus build-time pre-resolved HTTPDNS server PoP IPs (often Tencent HK).
+// The set is intentionally a superset of pure geoip data so existing client
+// binaries pick up HTTPDNS anchors on the next daily bundle refresh without
+// needing this preset map to change. See k2-rules sources.go for details.
 //
 // The set names "ir-blocked" and "ru-blocked" are reserved for a future
 // force-proxy feature (IP+domain data from runetfreedom / citizenlab). They
@@ -68,7 +71,7 @@ func (m MatchConfig) HasHostCriteria() bool {
 // exposed via any preset here.
 var presets = map[string][]string{
 	"overseas":  {"overseas"},
-	"cn-access": {"cn-sites", "geoip-cn", "cn-httpdns-anchors"},
+	"cn-access": {"cn-sites", "geoip-cn"},
 	"ir-access": {"ir-sites", "geoip-ir"},
 	"ru-access": {"ru-sites", "geoip-ru"},
 	"tr-access": {"tr-sites", "geoip-tr"},
