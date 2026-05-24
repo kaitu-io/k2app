@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -9,34 +10,133 @@ import (
 	"github.com/kaitu-io/k2/config"
 )
 
+func TestResolveCacheDir(t *testing.T) {
+	tests := []struct {
+		name          string
+		goos          string
+		isRoot        bool
+		userCacheBase string
+		programData   string
+		tempDir       string
+		want          string
+	}{
+		{
+			name:          "macOS root (launchd, $HOME unset → empty userCacheBase)",
+			goos:          "darwin",
+			isRoot:        true,
+			userCacheBase: "",
+			tempDir:       "/tmp",
+			want:          "/var/root/Library/Application Support/io.kaitu.desktop",
+		},
+		{
+			name:          "macOS root (HOME stale-set to user home — must still pin to root)",
+			goos:          "darwin",
+			isRoot:        true,
+			userCacheBase: "/Users/dave/Library/Caches",
+			tempDir:       "/tmp",
+			want:          "/var/root/Library/Application Support/io.kaitu.desktop",
+		},
+		{
+			name:          "macOS user",
+			goos:          "darwin",
+			isRoot:        false,
+			userCacheBase: "/Users/dave/Library/Caches",
+			tempDir:       "/tmp",
+			want:          "/Users/dave/Library/Caches/k2",
+		},
+		{
+			name:          "Linux root (systemd injects HOME=/root)",
+			goos:          "linux",
+			isRoot:        true,
+			userCacheBase: "/root/.cache",
+			tempDir:       "/tmp",
+			want:          "/root/.cache/k2",
+		},
+		{
+			name:          "Linux user",
+			goos:          "linux",
+			isRoot:        false,
+			userCacheBase: "/home/dave/.cache",
+			tempDir:       "/tmp",
+			want:          "/home/dave/.cache/k2",
+		},
+		{
+			name:          "Linux root no HOME (degraded fallback to tempDir)",
+			goos:          "linux",
+			isRoot:        true,
+			userCacheBase: "",
+			tempDir:       "/tmp",
+			want:          "/tmp/k2",
+		},
+		{
+			name:        "Windows SYSTEM with ProgramData",
+			goos:        "windows",
+			isRoot:      true,
+			programData: `C:\ProgramData`,
+			tempDir:     `C:\Windows\Temp`,
+			want:        filepath.Join(`C:\ProgramData`, "Kaitu", "cache"),
+		},
+		{
+			name:        "Windows SYSTEM ProgramData env unset",
+			goos:        "windows",
+			isRoot:      true,
+			programData: "",
+			tempDir:     `C:\Windows\Temp`,
+			want:        filepath.Join(`C:\ProgramData`, "Kaitu", "cache"),
+		},
+		{
+			name:          "Windows user",
+			goos:          "windows",
+			isRoot:        false,
+			userCacheBase: `C:\Users\dave\AppData\Local`,
+			tempDir:       `C:\Windows\Temp`,
+			want:          filepath.Join(`C:\Users\dave\AppData\Local`, "k2"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveCacheDir(tt.goos, tt.isRoot, tt.userCacheBase, tt.programData, tt.tempDir)
+			if got != tt.want {
+				t.Errorf("resolveCacheDir(%q, isRoot=%v, base=%q, pd=%q, tmp=%q) = %q, want %q",
+					tt.goos, tt.isRoot, tt.userCacheBase, tt.programData, tt.tempDir, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCacheDir is the integration smoke test — exercises the live wrapper
+// against the current process's runtime.GOOS/euid/env. Only asserts that the
+// result is non-empty and platform-shaped; full table coverage lives in
+// TestResolveCacheDir above.
 func TestCacheDir(t *testing.T) {
 	dir := cacheDir()
 	if dir == "" {
 		t.Fatal("cacheDir returned empty string")
 	}
-	// Windows SYSTEM intentionally returns %ProgramData%\Kaitu\cache (no 'k2' suffix)
-	// to avoid system32 DLL search issues. All other paths terminate in 'k2'.
-	if runtime.GOOS == "windows" && config.IsRoot() {
-		if !strings.Contains(dir, "Kaitu") {
-			t.Fatalf("cacheDir = %q, want to contain 'Kaitu' on Windows SYSTEM", dir)
-		}
-		return
-	}
-	if !strings.HasSuffix(dir, "k2") {
-		t.Fatalf("cacheDir = %q, want suffix 'k2'", dir)
-	}
-}
-
-func TestCacheDir_ContainsK2(t *testing.T) {
-	dir := cacheDir()
 	switch runtime.GOOS {
 	case "darwin":
-		if !strings.Contains(dir, "Library/Caches/k2") {
-			t.Fatalf("CacheDir = %q, want to contain Library/Caches/k2 on macOS", dir)
+		if config.IsRoot() {
+			if dir != "/var/root/Library/Application Support/io.kaitu.desktop" {
+				t.Fatalf("cacheDir as root = %q, want /var/root/Library/Application Support/io.kaitu.desktop", dir)
+			}
+		} else {
+			if !strings.Contains(dir, "Library/Caches/k2") {
+				t.Fatalf("cacheDir = %q, want to contain Library/Caches/k2 on macOS user", dir)
+			}
 		}
 	case "linux":
-		if !strings.Contains(dir, ".cache/k2") && !strings.Contains(dir, "cache/k2") {
-			t.Fatalf("CacheDir = %q, want to contain .cache/k2 or cache/k2 on Linux", dir)
+		if !strings.Contains(dir, "cache/k2") {
+			t.Fatalf("cacheDir = %q, want to contain cache/k2 on Linux", dir)
+		}
+	case "windows":
+		if config.IsRoot() {
+			if !strings.Contains(dir, "Kaitu") {
+				t.Fatalf("cacheDir = %q, want to contain Kaitu on Windows SYSTEM", dir)
+			}
+		} else {
+			if !strings.HasSuffix(dir, "k2") {
+				t.Fatalf("cacheDir = %q, want suffix k2 on Windows user", dir)
+			}
 		}
 	}
 }

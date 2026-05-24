@@ -8,27 +8,48 @@ import (
 	"github.com/kaitu-io/k2/config"
 )
 
-// CacheDir returns the k2 cache directory for the current user.
+// cacheDir returns the k2 cache directory for the current user.
 //
-//	macOS root:   /var/root/Library/Caches/k2
-//	macOS user:   ~/Library/Caches/k2
-//	Linux root:   /root/.cache/k2
-//	Linux user:   ~/.cache/k2
+//	macOS root:     /var/root/Library/Application Support/io.kaitu.desktop
+//	                (NOT ~/Library/Caches — launchd does not propagate $HOME
+//	                to system daemons, so os.UserCacheDir() would error; and
+//	                Application Support survives OS cache purges, which
+//	                matters because rule bundles are expensive to refetch
+//	                under GFW conditions.)
+//	macOS user:     ~/Library/Caches/k2
+//	Linux root:     /root/.cache/k2     (systemd injects HOME=/root)
+//	Linux user:     ~/.cache/k2
 //	Windows SYSTEM: %ProgramData%\Kaitu\cache  (avoids system32 DLL search issues)
-//	Windows user:   %LocalAppData%\k2\cache
+//	Windows user:   %LocalAppData%\k2
 func cacheDir() string {
-	if runtime.GOOS == "windows" && config.IsRoot() {
-		programData := os.Getenv("ProgramData")
-		if programData == "" {
-			programData = `C:\ProgramData`
+	base, _ := os.UserCacheDir()
+	return resolveCacheDir(runtime.GOOS, config.IsRoot(), base, os.Getenv("ProgramData"), os.TempDir())
+}
+
+// resolveCacheDir is the pure-function form of cacheDir, parameterized for
+// testability. Does not touch the filesystem or environment.
+func resolveCacheDir(goos string, isRoot bool, userCacheBase, programData, tempDir string) string {
+	if isRoot {
+		switch goos {
+		case "darwin":
+			// launchd starts system daemons with no $HOME, which makes
+			// os.UserCacheDir() return ("", error). The previous fallback
+			// landed in /tmp, which macOS periodic cleanup can purge.
+			// Pin to the canonical root Application Support path; using
+			// the Tauri bundle identifier keeps namespace consistency
+			// with the desktop shell at ~/Library/Application Support/io.kaitu.desktop.
+			return "/var/root/Library/Application Support/io.kaitu.desktop"
+		case "windows":
+			if programData == "" {
+				programData = `C:\ProgramData`
+			}
+			return filepath.Join(programData, "Kaitu", "cache")
 		}
-		return filepath.Join(programData, "Kaitu", "cache")
 	}
-	base, err := os.UserCacheDir()
-	if err != nil {
-		base = os.TempDir()
+	if userCacheBase == "" {
+		userCacheBase = tempDir
 	}
-	return filepath.Join(base, "k2")
+	return filepath.Join(userCacheBase, "k2")
 }
 
 // LogDir returns the k2 log directory for the current user.
