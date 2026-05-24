@@ -50,13 +50,17 @@ func (m MatchConfig) HasHostCriteria() bool {
 // Since k2b v2 (commit 77f117e, 2026-04), bundles consolidate services:
 //   - overseas.k2b contains a single "overseas" set (full v2fly geolocation-!cn
 //     + orphan sites, with @cn entries carved out via exclude-domains)
-//   - cn-direct.k2b contains "cn-sites" + "geoip-cn" (bilibili merged into
-//     cn-sites via v2fly geolocation-cn)
+//   - cn-direct.k2b contains "cn-sites" + "geoip-cn" + "cn-httpdns-anchors"
+//     (bilibili merged into cn-sites via v2fly geolocation-cn;
+//     cn-httpdns-anchors holds build-time pre-resolved HTTPDNS server PoP
+//     IPs to anchor apps like WeChat that bypass sys DNS — see k2-rules
+//     b47a02a)
 //
 // Country-specific presets follow the "{cc}-access" naming convention and
 // expand to [{cc}-sites, geoip-{cc}], served from the per-country
 // {cc}-direct.k2b bundle published by kaitu-io/k2-rules (14 countries:
-// cn, ir, ru, tr, pk, vn, mm, eg, id, sa, ae, th, bd, by).
+// cn, ir, ru, tr, pk, vn, mm, eg, id, sa, ae, th, bd, by). cn-access
+// additionally bundles the HTTPDNS anchor set.
 //
 // The set names "ir-blocked" and "ru-blocked" are reserved for a future
 // force-proxy feature (IP+domain data from runetfreedom / citizenlab). They
@@ -64,7 +68,7 @@ func (m MatchConfig) HasHostCriteria() bool {
 // exposed via any preset here.
 var presets = map[string][]string{
 	"overseas":  {"overseas"},
-	"cn-access": {"cn-sites", "geoip-cn"},
+	"cn-access": {"cn-sites", "geoip-cn", "cn-httpdns-anchors"},
 	"ir-access": {"ir-sites", "geoip-ir"},
 	"ru-access": {"ru-sites", "geoip-ru"},
 	"tr-access": {"tr-sites", "geoip-tr"},
