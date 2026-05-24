@@ -2621,7 +2621,7 @@ Document results in PR description.
 
 **Files:**
 - Modify: `webapp/CLAUDE.md` (Domain Vocabulary)
-- Create: `docs/release-notes/<next-version>.md` (or update existing release notes file)
+- Create: `web/releases/v<next-version>.md` (or update existing release notes file — single source of truth per `web/releases/README.md`)
 
 - [ ] **Step 1: Add to webapp/CLAUDE.md Domain Vocabulary**
 
@@ -2654,7 +2654,7 @@ iOS is not supported (OS-level limitation).
 - [ ] **Step 3: Commit**
 
 ```bash
-git add webapp/CLAUDE.md docs/release-notes/
+git add webapp/CLAUDE.md web/releases/
 git commit -m "docs: app-bypass privacy invariant + release notes"
 ```
 
