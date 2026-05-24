@@ -18,6 +18,16 @@ const nextConfig: NextConfig = {
   // Force SSR mode - explicitly disable static export
   output: 'standalone',
   trailingSlash: false,
+
+  // Force these deps through SWC so class static initialization blocks
+  // (`static { ... }`) get lowered to property assignments. Without this,
+  // their published ESM ships to iOS 16.0-16.3 / Safari < 16.4 verbatim and
+  // fails parsing with `SyntaxError: Unexpected token '{'`, blanking the
+  // page. Next.js does not transpile node_modules by default; browserslist
+  // is honored only for code that goes through SWC.
+  //   - intl-messageformat: pulled into every [locale]/* page via next-intl
+  //   - @xterm/xterm: SSH terminal on /manager/nodes
+  transpilePackages: ['intl-messageformat', '@xterm/xterm'],
   
   // Enable SSR-compatible image optimization for Amplify
   images: {
