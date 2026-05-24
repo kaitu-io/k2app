@@ -1,5 +1,9 @@
 import * as Sentry from '@sentry/nextjs';
-import { dropChatwootSdkErrors, dropOutdatedBrowserSyntaxErrors } from '@/lib/sentry-filters';
+import {
+  dropChatwootSdkErrors,
+  dropNativePostMessageRejections,
+  dropOutdatedBrowserSyntaxErrors,
+} from '@/lib/sentry-filters';
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -14,7 +18,9 @@ if (dsn) {
     beforeSend: (event) => {
       const afterChatwoot = dropChatwootSdkErrors(event);
       if (!afterChatwoot) return null;
-      return dropOutdatedBrowserSyntaxErrors(afterChatwoot);
+      const afterNativePostMessage = dropNativePostMessageRejections(afterChatwoot);
+      if (!afterNativePostMessage) return null;
+      return dropOutdatedBrowserSyntaxErrors(afterNativePostMessage);
     },
     integrations: [
       Sentry.replayIntegration({

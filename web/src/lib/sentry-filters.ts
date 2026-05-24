@@ -9,6 +9,10 @@ const NEXTJS_ON_REQUEST_ERROR_MECHANISM = 'auto.function.nextjs.on_request_error
 
 const FORMDATA_PARSE_ERROR = /^Failed to parse body as FormData/;
 
+const UNHANDLED_REJECTION_MECHANISM = 'auto.browser.global_handlers.onunhandledrejection';
+
+const NATIVE_CODE_FILENAME = '[native code]';
+
 /**
  * Drop SyntaxErrors caused by outdated iOS WebKit parsing regex features
  * (lookbehind / Unicode property escapes) it doesn't support. These users
@@ -69,4 +73,32 @@ export function dropFailedFormDataParseFromBotProbes(event: ErrorEvent): ErrorEv
   if (!exc.value || !FORMDATA_PARSE_ERROR.test(exc.value)) return event;
   if (exc.mechanism?.type !== NEXTJS_ON_REQUEST_ERROR_MECHANISM) return event;
   return null;
+}
+
+/**
+ * Drop `InvalidAccessError` unhandled promise rejections originating in
+ * native `postMessage` calls with no app frame in the stack.
+ *
+ * Companion to `dropChatwootSdkErrors`: when the same Chatwoot SDK
+ * postMessage bug fires on iOS Safari / Baidu Explorer's WebView, the engine
+ * strips the JS stack for errors thrown from native code, leaving only
+ * `postMessage in [native code]`. The frame-based Chatwoot filter therefore
+ * can't see the SDK origin. We narrow on three signals instead:
+ *   - exception type === 'InvalidAccessError' (DOMException code 15)
+ *   - mechanism is the global unhandled-rejection handler
+ *   - stack contains no app frame (only native frames, or none at all)
+ *
+ * Our only direct `postMessage` call lives in `useEmbedMode` and is wrapped
+ * in a synchronous try/catch, so it cannot produce an unhandled rejection.
+ * Any app frame in the stack therefore signals a real bug — keep it.
+ */
+export function dropNativePostMessageRejections(event: ErrorEvent): ErrorEvent | null {
+  const exc = event.exception?.values?.[0];
+  if (exc?.type !== 'InvalidAccessError') return event;
+  if (exc.mechanism?.type !== UNHANDLED_REJECTION_MECHANISM) return event;
+  const frames = exc.stacktrace?.frames ?? [];
+  const hasAppFrame = frames.some(
+    (f) => typeof f.filename === 'string' && f.filename !== NATIVE_CODE_FILENAME
+  );
+  return hasAppFrame ? event : null;
 }

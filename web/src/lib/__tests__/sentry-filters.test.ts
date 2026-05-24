@@ -3,6 +3,7 @@ import type { ErrorEvent } from '@sentry/nextjs';
 import {
   dropChatwootSdkErrors,
   dropFailedFormDataParseFromBotProbes,
+  dropNativePostMessageRejections,
   dropOutdatedBrowserSyntaxErrors,
 } from '../sentry-filters';
 
@@ -203,5 +204,90 @@ describe('dropFailedFormDataParseFromBotProbes', () => {
       },
     } as unknown as ErrorEvent;
     expect(dropFailedFormDataParseFromBotProbes(event)).toBe(event);
+  });
+});
+
+function nativePostMessageRejectionEvent(
+  framesFilenames: string[] | null,
+  type: string = 'InvalidAccessError',
+  mechanismType: string = 'auto.browser.global_handlers.onunhandledrejection'
+): ErrorEvent {
+  const stacktrace =
+    framesFilenames === null
+      ? undefined
+      : { frames: framesFilenames.map((filename) => ({ filename, function: 'postMessage' })) };
+  return {
+    exception: {
+      values: [
+        {
+          type,
+          value: 'The object does not support the operation or argument.',
+          mechanism: { handled: false, type: mechanismType },
+          stacktrace,
+        },
+      ],
+    },
+  } as ErrorEvent;
+}
+
+describe('dropNativePostMessageRejections', () => {
+  it('drops the Baidu Explorer / iOS postMessage InvalidAccessError (only [native code] frame)', () => {
+    // Reproduces Sentry issue 7496826552: iOS Safari/Baidu WebView strips
+    // the SDK frame from native errors, leaving only "postMessage in [native code]".
+    const event = nativePostMessageRejectionEvent(['[native code]']);
+    expect(dropNativePostMessageRejections(event)).toBeNull();
+  });
+
+  it('drops when the exception has no stacktrace at all', () => {
+    const event = nativePostMessageRejectionEvent(null);
+    expect(dropNativePostMessageRejections(event)).toBeNull();
+  });
+
+  it('drops when frames array is empty', () => {
+    const event = nativePostMessageRejectionEvent([]);
+    expect(dropNativePostMessageRejections(event)).toBeNull();
+  });
+
+  it('KEEPS the InvalidAccessError when an app frame is present (would be a real bug)', () => {
+    const event = nativePostMessageRejectionEvent([
+      '[native code]',
+      'https://www.kaitu.io/_next/static/chunks/main-abc123.js',
+    ]);
+    expect(dropNativePostMessageRejections(event)).toBe(event);
+  });
+
+  it('KEEPS the same DOMException when it is a synchronous error (not an unhandled rejection)', () => {
+    const event = nativePostMessageRejectionEvent(['[native code]'], 'InvalidAccessError', 'generic');
+    expect(dropNativePostMessageRejections(event)).toBe(event);
+  });
+
+  it('KEEPS other DOMException types with same shape (only InvalidAccessError is known noise)', () => {
+    const event = nativePostMessageRejectionEvent(['[native code]'], 'SecurityError');
+    expect(dropNativePostMessageRejections(event)).toBe(event);
+  });
+
+  it('keeps events with no exception payload', () => {
+    const event = { message: 'just a log' } as ErrorEvent;
+    expect(dropNativePostMessageRejections(event)).toBe(event);
+  });
+
+  it('keeps events with empty exception values', () => {
+    const event = { exception: { values: [] } } as unknown as ErrorEvent;
+    expect(dropNativePostMessageRejections(event)).toBe(event);
+  });
+
+  it('keeps events with no mechanism field', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            type: 'InvalidAccessError',
+            value: 'The object does not support the operation or argument.',
+            stacktrace: { frames: [{ filename: '[native code]', function: 'postMessage' }] },
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+    expect(dropNativePostMessageRejections(event)).toBe(event);
   });
 });
