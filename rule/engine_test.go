@@ -2,9 +2,22 @@ package rule
 
 import (
 	"bytes"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 )
+
+// captureSlog redirects slog default logger into a buffer for the duration of
+// the test, restoring it on cleanup. Returns the buffer the test can search.
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
 
 // mustBundle creates a Bundle from BundleSets for testing.
 func mustBundle(t *testing.T, sets []BundleSet) *Bundle {
@@ -508,4 +521,100 @@ func TestEngineReload_Concurrent(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestEngineSetTmpRule_DIAGNewPin(t *testing.T) {
+	buf := captureSlog(t)
+	eng := NewEngine(nil, Target(0), nil, false)
+	defer eng.Close()
+
+	eng.SetTmpRule("8.8.8.8", Target(2))
+
+	out := buf.String()
+	if !strings.Contains(out, "DIAG: rule-tmp-pin") {
+		t.Fatalf("missing rule-tmp-pin log:\n%s", out)
+	}
+	if !strings.Contains(out, `ip=8.8.8.8`) {
+		t.Errorf("log missing ip field:\n%s", out)
+	}
+	if !strings.Contains(out, `target=2`) {
+		t.Errorf("log missing target field:\n%s", out)
+	}
+	if !strings.Contains(out, `action=add`) {
+		t.Errorf("log missing action=add:\n%s", out)
+	}
+}
+
+func TestEngineSetTmpRule_DIAGDuplicateSuppressed(t *testing.T) {
+	// Same ip + same target called twice. Second call must NOT emit a log —
+	// DNS pipeline re-pins on every cache hit and we don't want a flood.
+	buf := captureSlog(t)
+	eng := NewEngine(nil, Target(0), nil, false)
+	defer eng.Close()
+
+	eng.SetTmpRule("8.8.8.8", Target(2))
+	firstLen := buf.Len()
+	eng.SetTmpRule("8.8.8.8", Target(2)) // duplicate
+	secondLen := buf.Len()
+
+	if secondLen != firstLen {
+		t.Fatalf("duplicate SetTmpRule emitted log (delta %d bytes):\n%s",
+			secondLen-firstLen, buf.String()[firstLen:])
+	}
+}
+
+func TestEngineSetTmpRule_DIAGTargetChange(t *testing.T) {
+	buf := captureSlog(t)
+	eng := NewEngine(nil, Target(0), nil, false)
+	defer eng.Close()
+
+	eng.SetTmpRule("8.8.8.8", Target(2)) // initial pin
+	buf.Reset()                          // discard add log
+	eng.SetTmpRule("8.8.8.8", Target(0)) // change to direct
+
+	out := buf.String()
+	if !strings.Contains(out, "DIAG: rule-tmp-pin") {
+		t.Fatalf("change did not emit rule-tmp-pin:\n%s", out)
+	}
+	if !strings.Contains(out, `action=change`) {
+		t.Errorf("log missing action=change:\n%s", out)
+	}
+	if !strings.Contains(out, `prevTarget=2`) {
+		t.Errorf("log missing prevTarget=2:\n%s", out)
+	}
+}
+
+func TestEngineSetTmpRule_DIAGInvalidIPSilent(t *testing.T) {
+	// An unparseable IP must produce neither a pin nor a log.
+	buf := captureSlog(t)
+	eng := NewEngine(nil, Target(0), nil, false)
+	defer eng.Close()
+
+	eng.SetTmpRule("not.an.ip.address", Target(2))
+
+	if strings.Contains(buf.String(), "DIAG:") {
+		t.Fatalf("invalid IP emitted DIAG:\n%s", buf.String())
+	}
+}
+
+func TestEngineReload_DIAGEmitsCleared(t *testing.T) {
+	buf := captureSlog(t)
+	eng := NewEngine(nil, Target(0), nil, false)
+	defer eng.Close()
+
+	eng.SetTmpRule("1.1.1.1", Target(2))
+	eng.SetTmpRule("2.2.2.2", Target(2))
+	buf.Reset() // discard pin logs
+
+	if err := eng.Reload(nil, nil); err != nil {
+		t.Fatalf("Reload error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "DIAG: rule-tmp-reload") {
+		t.Fatalf("missing rule-tmp-reload log:\n%s", out)
+	}
+	if !strings.Contains(out, `cleared=2`) {
+		t.Errorf("expected cleared=2 (we pinned 2 IPs):\n%s", out)
+	}
 }

@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"log/slog"
 	"net/netip"
 	"strings"
 	"sync/atomic"
@@ -335,16 +336,35 @@ func matchMeta(r *RouteEntry, meta ConnMeta) bool {
 }
 
 // SetTmpRule adds a DNS-learned temporary routing rule.
+//
+// Threshold-gated DIAG: emits `DIAG: rule-tmp-pin` only on first pin of an
+// IP, or when target changes for an already-pinned IP. Duplicate calls
+// (same ip + same target) are silent — DNS pipeline re-pins on every cache
+// hit and we'd flood the log otherwise.
 func (e *Engine) SetTmpRule(ip string, target Target) {
 	addr, err := netip.ParseAddr(ip)
 	if err != nil {
 		return
 	}
 	e.mu.Lock()
-	if e.tmp != nil {
-		e.tmp[addr] = target
+	if e.tmp == nil {
+		e.mu.Unlock()
+		return
 	}
+	prev, existed := e.tmp[addr]
+	e.tmp[addr] = target
+	tmpSize := len(e.tmp)
 	e.mu.Unlock()
+
+	switch {
+	case !existed:
+		slog.Info("DIAG: rule-tmp-pin",
+			"ip", ip, "target", uint8(target), "action", "add", "tmpSize", tmpSize)
+	case prev != target:
+		slog.Info("DIAG: rule-tmp-pin",
+			"ip", ip, "target", uint8(target), "action", "change",
+			"prevTarget", uint8(prev), "tmpSize", tmpSize)
+	}
 }
 
 // IsAllProxy returns true if engine is in match-all proxy mode.
@@ -393,11 +413,15 @@ func (e *Engine) Close() {
 // bundles outside lock (Rule #4: no Close under state lock).
 func (e *Engine) Reload(routes []RouteEntry, bundles []*Bundle) error {
 	e.mu.Lock()
+	cleared := len(e.tmp)
 	oldBundles := e.bundles
 	e.bundles = bundles
 	e.routes = routes
 	e.tmp = make(map[netip.Addr]Target)
 	e.mu.Unlock()
+
+	slog.Info("DIAG: rule-tmp-reload",
+		"cleared", cleared, "routes", len(routes), "bundles", len(bundles))
 
 	_ = oldBundles // Bundle has no explicit Close — data is GC'd.
 	return nil

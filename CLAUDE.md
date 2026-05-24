@@ -106,6 +106,8 @@ Reserved event names:
 | `DIAG: process-lookup-slow` | INFO | latency > 100ms | platform, network, latencyMs |
 | `DIAG: udp-deliver-drop` | DEBUG | server session readCh full — handler stuck/slow | transport, sessionID, addr, len |
 | `DIAG: stream-killed-on-write-fail` | WARN | per-Write deadline (5s) exceeded or write error on UDP relay mux | transport, side, sessionID, len, writeMs, err |
+| `DIAG: rule-tmp-pin` | INFO | new IP pinned to tmp rule, or target changed for already-pinned IP (duplicates suppressed) | ip, target, action ("add"/"change"), prevTarget (change only), tmpSize |
+| `DIAG: rule-tmp-reload` | INFO | rule engine reload cleared the DNS-learned tmp cache | cleared, routes, bundles |
 
 ### Layer 3 Rules — Full Trace
 
