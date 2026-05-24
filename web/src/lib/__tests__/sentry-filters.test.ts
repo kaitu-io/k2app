@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ErrorEvent } from '@sentry/nextjs';
-import { dropChatwootSdkErrors, dropOutdatedBrowserSyntaxErrors } from '../sentry-filters';
+import {
+  dropChatwootSdkErrors,
+  dropFailedFormDataParseFromBotProbes,
+  dropOutdatedBrowserSyntaxErrors,
+} from '../sentry-filters';
 
 const originalUA = window.navigator.userAgent;
 
@@ -136,5 +140,68 @@ describe('dropChatwootSdkErrors', () => {
       },
     } as unknown as ErrorEvent;
     expect(dropChatwootSdkErrors(event)).toBe(event);
+  });
+});
+
+function nextOnRequestErrorEvent(
+  value: string,
+  mechanismType: string = 'auto.function.nextjs.on_request_error',
+  type: string = 'TypeError'
+): ErrorEvent {
+  return {
+    exception: {
+      values: [{ type, value, mechanism: { handled: false, type: mechanismType } }],
+    },
+  } as ErrorEvent;
+}
+
+describe('dropFailedFormDataParseFromBotProbes', () => {
+  it('drops the exact Next.js Server-Action FormData parse TypeError', () => {
+    // Reproduces Sentry issue 7494712884: bot POSTs junk body to
+    // /[locale]/[...slug]/page, Next.js tries to dispatch as Server Action,
+    // undici throws inside captureRequestError.
+    const event = nextOnRequestErrorEvent('Failed to parse body as FormData.');
+    expect(dropFailedFormDataParseFromBotProbes(event)).toBeNull();
+  });
+
+  it('drops the variant without trailing period (defensive against framework wording changes)', () => {
+    const event = nextOnRequestErrorEvent('Failed to parse body as FormData');
+    expect(dropFailedFormDataParseFromBotProbes(event)).toBeNull();
+  });
+
+  it('KEEPS the same string if it ever appears OUTSIDE the onRequestError mechanism', () => {
+    // Hypothetical: app code or another library throws the same string.
+    // We do NOT mask it — only the framework's request-error path is noise.
+    const event = nextOnRequestErrorEvent('Failed to parse body as FormData.', 'generic');
+    expect(dropFailedFormDataParseFromBotProbes(event)).toBe(event);
+  });
+
+  it('KEEPS other TypeErrors coming through onRequestError (real app bugs)', () => {
+    const event = nextOnRequestErrorEvent("Cannot read properties of undefined (reading 'x')");
+    expect(dropFailedFormDataParseFromBotProbes(event)).toBe(event);
+  });
+
+  it('KEEPS non-TypeError exceptions with the same value (unexpected, surface it)', () => {
+    const event = nextOnRequestErrorEvent('Failed to parse body as FormData.', undefined, 'Error');
+    expect(dropFailedFormDataParseFromBotProbes(event)).toBe(event);
+  });
+
+  it('keeps events with no exception payload', () => {
+    const event = { message: 'just a log' } as ErrorEvent;
+    expect(dropFailedFormDataParseFromBotProbes(event)).toBe(event);
+  });
+
+  it('keeps events with empty exception values', () => {
+    const event = { exception: { values: [] } } as unknown as ErrorEvent;
+    expect(dropFailedFormDataParseFromBotProbes(event)).toBe(event);
+  });
+
+  it('keeps events with no mechanism field', () => {
+    const event = {
+      exception: {
+        values: [{ type: 'TypeError', value: 'Failed to parse body as FormData.' }],
+      },
+    } as unknown as ErrorEvent;
+    expect(dropFailedFormDataParseFromBotProbes(event)).toBe(event);
   });
 });

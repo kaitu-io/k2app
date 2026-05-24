@@ -5,6 +5,10 @@ const LOOKBEHIND_SYNTAX_ERROR = /invalid group specifier name/i;
 
 const CHATWOOT_SDK_FRAME = /packs\/js\/sdk\.js/i;
 
+const NEXTJS_ON_REQUEST_ERROR_MECHANISM = 'auto.function.nextjs.on_request_error';
+
+const FORMDATA_PARSE_ERROR = /^Failed to parse body as FormData/;
+
 /**
  * Drop SyntaxErrors caused by outdated iOS WebKit parsing regex features
  * (lookbehind / Unicode property escapes) it doesn't support. These users
@@ -48,4 +52,21 @@ export function dropChatwootSdkErrors(event: ErrorEvent): ErrorEvent | null {
     (f) => typeof f.filename === 'string' && CHATWOOT_SDK_FRAME.test(f.filename)
   );
   return fromChatwoot ? null : event;
+}
+
+/**
+ * Drop `TypeError: Failed to parse body as FormData.` surfaced through
+ * Next.js's `onRequestError` hook. Bots POST junk bodies to URLs that match
+ * our catch-all `[locale]/[...slug]/page` route; Next.js tries to dispatch
+ * them as Server Actions and undici / @edge-runtime/primitives throws while
+ * reading the body. The mechanism check (`auto.function.nextjs.on_request_error`)
+ * ensures we only suppress the framework-originated noise — if app code ever
+ * throws the same string, it still reaches Sentry.
+ */
+export function dropFailedFormDataParseFromBotProbes(event: ErrorEvent): ErrorEvent | null {
+  const exc = event.exception?.values?.[0];
+  if (exc?.type !== 'TypeError') return event;
+  if (!exc.value || !FORMDATA_PARSE_ERROR.test(exc.value)) return event;
+  if (exc.mechanism?.type !== NEXTJS_ON_REQUEST_ERROR_MECHANISM) return event;
+  return null;
 }
