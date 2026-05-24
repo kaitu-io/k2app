@@ -9,7 +9,13 @@ import (
 	"github.com/kaitu-io/k2/safego"
 )
 
-const defaultCheckInterval = 24 * time.Hour
+// defaultCheckInterval is how often a connected engine re-checks for new
+// rule bundles. Each tick calls rule.EnsureBundles, which is short-circuited
+// by the 24h bundlesFreshTTL gate plus singleflight — so a 1h tick is mostly
+// noop os.Stat calls with one real download per day when the upstream daily
+// build emits a new tarball. The aggressive tick rate ensures the engine
+// hot-reloads within an hour of a new bundle landing on disk.
+const defaultCheckInterval = 1 * time.Hour
 
 // UpdaterOption configures the updater.
 type UpdaterOption func(*updaterConfig)
@@ -18,7 +24,7 @@ type updaterConfig struct {
 	interval time.Duration
 }
 
-// WithCheckInterval overrides the default 24h check interval (for testing).
+// WithCheckInterval overrides the default 1h check interval.
 func WithCheckInterval(d time.Duration) UpdaterOption {
 	return func(c *updaterConfig) {
 		c.interval = d
@@ -58,7 +64,7 @@ func DownloadAndReload(
 // StartUpdater launches a background goroutine that periodically refreshes
 // rule bundles (via EnsureBundles tarball fetch) and hot-swaps the engine's
 // routes. An immediate first check runs; subsequent checks honor the
-// configured interval (default 24h). Stops when ctx is cancelled.
+// configured interval (default 1h). Stops when ctx is cancelled.
 func StartUpdater(
 	ctx context.Context,
 	engine *Engine,

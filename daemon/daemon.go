@@ -126,6 +126,15 @@ type Daemon struct {
 	// probeService runs the periodic background probe loop. May be nil in
 	// tests that don't need it.
 	probeService *probe.Service
+
+	// ruleCacheDir is the bundles directory derived from cacheDir() once at
+	// daemon construction. Cached so the refresh loop doesn't recompute the
+	// platform path on every tick.
+	ruleCacheDir string
+
+	// refreshAction is the body executed by the rule refresh ticker.
+	// Real Daemon instances use doRefreshRules; tests inject a counter.
+	refreshAction func(ctx context.Context, dir string)
 }
 
 // New creates a new daemon.
@@ -136,7 +145,9 @@ func New() *Daemon {
 		helper:        &AndroidHelper{state: InstallState{Phase: "idle"}},
 		probeRegistry: probe.NewRegistry(15 * time.Minute),
 		probeFn:       wire.ProbeURL,
+		ruleCacheDir:  filepath.Join(cacheDir(), "rules"),
 	}
+	d.refreshAction = d.doRefreshRules
 	d.subsMgr = subscription.NewManager(
 		filepath.Join(cacheDir(), "subs"),
 		nil,
@@ -210,7 +221,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 
 	// Pre-warm rule bundle cache in the background so engine.Start()
 	// can load rules from disk instantly.
-	d.startRulePrefetch(ctx)
+	d.startRuleRefreshLoop(ctx)
 
 	// Load persisted state and auto-reconnect if applicable.
 	d.tryAutoReconnect(ctx)
@@ -556,21 +567,56 @@ func (d *Daemon) doDown() {
 	d.closeTunnel()
 }
 
-// startRulePrefetch kicks off a background rule bundle download at daemon startup.
-// Always fetches the full country-set tarball — no persisted config required.
-// Skips entirely if bundles.version is <24h old (handled inside EnsureBundles).
-func (d *Daemon) startRulePrefetch(ctx context.Context) {
-	dir := filepath.Join(cacheDir(), "rules")
-
+// startRuleRefreshLoop spawns a background goroutine that performs an
+// immediate rule bundle refresh and then re-checks every 1h for the
+// lifetime of the daemon process. Unlike the previous one-shot prefetch,
+// this loop runs independently of tunnel connect state, so a daemon that
+// stays up for days without a connect still picks up new bundles.
+//
+// Cost per tick is dominated by one os.Stat (rule.EnsureBundles short-
+// circuits via the 24h bundlesFreshTTL gate when bundles.version is
+// present and recent); a real CDN fetch happens at most once per day.
+// When bundles.version is absent (cold start or failed prior fetch),
+// every tick attempts a real download until one succeeds.
+func (d *Daemon) startRuleRefreshLoop(ctx context.Context) {
 	safego.Go(func() {
-		dlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		if err := rule.EnsureBundles(dlCtx, dir, rule.DefaultSources); err != nil {
-			slog.Warn("rule prefetch failed", "err", err)
-			return
-		}
-		slog.Info("rule prefetch complete", "dir", dir)
+		d.runRuleRefreshLoop(ctx, 1*time.Hour)
 	})
+}
+
+// runRuleRefreshLoop is the loop body extracted for testing — accepts an
+// explicit interval so unit tests can run with millisecond-scale ticks
+// without sleeping for hours.
+func (d *Daemon) runRuleRefreshLoop(ctx context.Context, interval time.Duration) {
+	// Fire once immediately so cold-start behavior matches the previous
+	// one-shot prefetch.
+	d.refreshAction(ctx, d.ruleCacheDir)
+
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			d.refreshAction(ctx, d.ruleCacheDir)
+		}
+	}
+}
+
+// doRefreshRules is the default refreshAction — performs a bounded
+// EnsureBundles call with a 30s overall timeout.
+func (d *Daemon) doRefreshRules(ctx context.Context, dir string) {
+	dlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := rule.EnsureBundles(dlCtx, dir, rule.DefaultSources); err != nil {
+		// Warn so cold-start failures (no cached bundle, GFW block, etc.) surface
+		// in support logs. Steady-state hourly ticks share this level — rule
+		// fetches rarely fail in production, so noise is bounded.
+		slog.Warn("rule refresh failed", "err", err, "dir", dir)
+		return
+	}
+	slog.Debug("rule refresh complete", "dir", dir)
 }
 
 // tryAutoReconnect checks persisted state and reconnects if applicable.
