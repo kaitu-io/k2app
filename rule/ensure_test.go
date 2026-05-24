@@ -314,8 +314,6 @@ func TestDefaultSources_ContainsExpectedMirrors(t *testing.T) {
 		"fastly.jsdelivr.net/gh/kaitu-io/k2-rules@release",
 		"testingcf.jsdelivr.net/gh/kaitu-io/k2-rules@release",
 		"gcore.jsdelivr.net/gh/kaitu-io/k2-rules@release",
-		"cdn.jsdmirror.com/gh/kaitu-io/k2-rules@release",
-		"jsd.onmicrosoft.cn/gh/kaitu-io/k2-rules@release",
 	}
 	joined := strings.Join(DefaultSources, " ")
 	for _, want := range expected {
@@ -323,7 +321,13 @@ func TestDefaultSources_ContainsExpectedMirrors(t *testing.T) {
 			t.Errorf("DefaultSources missing %q", want)
 		}
 	}
-	if len(DefaultSources) < 9 {
-		t.Errorf("expected ≥9 sources, got %d", len(DefaultSources))
+	if len(DefaultSources) < len(expected) {
+		t.Errorf("expected ≥%d sources, got %d", len(expected), len(DefaultSources))
+	}
+	// Removed 2026-05-24: third-party mirrors with ~25-day cache staleness.
+	for _, banned := range []string{"cdn.jsdmirror.com", "jsd.onmicrosoft.cn"} {
+		if strings.Contains(joined, banned) {
+			t.Errorf("DefaultSources must not contain stale mirror %q", banned)
+		}
 	}
 }

@@ -21,14 +21,16 @@ var DefaultSources = []string{
 	// GitHub HTTPS proxies (preserve the /releases/latest/download/ path)
 	"https://ghfast.top/https://github.com/kaitu-io/k2-rules/releases/latest/download/",
 	"https://gh-proxy.com/https://github.com/kaitu-io/k2-rules/releases/latest/download/",
-	// jsdelivr @release branch (4 global POPs)
+	// jsdelivr @release branch (4 global POPs).
+	// Bounded staleness: s-maxage=43200 (≤12h behind origin).
+	// Two third-party "jsdelivr-compatible" mirrors (cdn.jsdmirror.com,
+	// jsd.onmicrosoft.cn) were removed 2026-05-24 after Age headers
+	// showed ~25-day cache staleness — they don't honor revalidation
+	// and served pre-merge bundles in production.
 	"https://cdn.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
 	"https://fastly.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
 	"https://testingcf.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
 	"https://gcore.jsdelivr.net/gh/kaitu-io/k2-rules@release/",
-	// CN-friendly jsdelivr mirrors
-	"https://cdn.jsdmirror.com/gh/kaitu-io/k2-rules@release/",
-	"https://jsd.onmicrosoft.cn/gh/kaitu-io/k2-rules@release/",
 }
 
 // downloadResult describes the outcome of a single HTTP fetch attempt.
