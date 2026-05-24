@@ -52,6 +52,19 @@ vi.mock('../cache-store', () => ({
   },
 }));
 
+// Mock login-dialog store
+const loginDialogOpen = vi.fn();
+vi.mock('../../stores/login-dialog.store', () => ({
+  useLoginDialogStore: {
+    getState: () => ({ open: loginDialogOpen }),
+  },
+}));
+
+// Mock i18n — echo the key so tests can assert on it
+vi.mock('../../i18n/i18n', () => ({
+  default: { t: (key: string) => key },
+}));
+
 import { cloudApi } from '../cloud-api';
 import { authService } from '../auth-service';
 import { useAuthStore } from '../../stores/auth.store';
@@ -580,6 +593,80 @@ describe('Cloud API Client', () => {
 
       delete (window as any)._platform;
     });
+
+    it('should send kaitu-router product token when platformType is gateway', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0 }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+
+      (window as any)._platform = {
+        os: 'linux',
+        arch: 'arm64',
+        version: '0.4.5',
+        platformType: 'gateway',
+      };
+
+      await cloudApi.request('GET', '/api/test');
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers['X-K2-Client']).toBe('kaitu-router/0.4.5 (linux; arm64)');
+
+      delete (window as any)._platform;
+    });
+
+    it('should send kaitu-service product token on linux desktop (cmd/k2)', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0 }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+
+      (window as any)._platform = {
+        os: 'linux',
+        arch: 'amd64',
+        version: '0.4.5',
+        platformType: 'desktop',
+      };
+
+      await cloudApi.request('GET', '/api/test');
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers['X-K2-Client']).toBe('kaitu-service/0.4.5 (linux; amd64)');
+
+      delete (window as any)._platform;
+    });
+
+    it('should send kaitu-service for desktop/mobile/web platformTypes', async () => {
+      for (const pt of ['desktop', 'mobile', 'web'] as const) {
+        const mockFetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ code: 0 }),
+        });
+        globalThis.fetch = mockFetch;
+        mockedAuthService.getToken.mockResolvedValue(null);
+
+        (window as any)._platform = {
+          os: 'macos',
+          arch: 'arm64',
+          version: '0.4.5',
+          platformType: pt,
+        };
+
+        await cloudApi.request('GET', '/api/test');
+
+        const [, options] = mockFetch.mock.calls[0];
+        expect(options.headers['X-K2-Client']).toMatch(/^kaitu-service\//);
+
+        delete (window as any)._platform;
+      }
+    });
   });
 
   // ==================== 401 Edge Cases ====================
@@ -804,6 +891,55 @@ describe('Cloud API Client', () => {
 
       // Only ONE refresh call should have been made
       expect(refreshCalls).toHaveLength(1);
+    });
+  });
+
+  // ==================== 403002 Device Class Mismatch ====================
+
+  describe('403002 device class mismatch', () => {
+    beforeEach(() => {
+      (authService.clearTokens as any).mockClear();
+      loginDialogOpen.mockClear();
+    });
+
+    it('should clearTokens + isAuthenticated=false + openLoginDialog when server returns 403002', async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ code: 403002, message: 'device class mismatch' }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue('some-token');
+      mockedAuthService.clearTokens.mockResolvedValue(undefined);
+
+      const result = await cloudApi.request('GET', '/api/test');
+
+      expect(authService.clearTokens).toHaveBeenCalledTimes(1);
+      // Mirror 401-with-no-refresh: must flip isAuthenticated so UI gates re-evaluate
+      // even if user dismisses the dialog.
+      expect(mockedAuthStore.setState).toHaveBeenCalledWith({ isAuthenticated: false });
+      expect(loginDialogOpen).toHaveBeenCalledWith({
+        trigger: 'device-class-mismatch',
+        message: 'auth:auth.deviceClassMismatch',
+      });
+      expect(result.code).toBe(403002);
+    });
+
+    it('should NOT trigger logout on 402001/403001/422003', async () => {
+      for (const code of [402001, 403001, 422003]) {
+        const mockFetch = vi.fn().mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ code, message: 'whatever' }),
+        });
+        globalThis.fetch = mockFetch;
+        mockedAuthService.getToken.mockResolvedValue('some-token');
+
+        await cloudApi.request('GET', '/api/test');
+      }
+
+      expect(authService.clearTokens).not.toHaveBeenCalled();
+      expect(loginDialogOpen).not.toHaveBeenCalled();
     });
   });
 });

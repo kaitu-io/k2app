@@ -620,3 +620,294 @@ func TestE2E_HardDelete_FreesEmailSlot(t *testing.T) {
 	)
 	assert.NotEqual(t, userA.ID, userB.ID, "user B should be a fresh row, not user A")
 }
+
+// =====================================================================
+// Test 8: Router Device-Class Locking (k2r integration)
+// =====================================================================
+
+// TestLoginFlow_RouterFullCycle exercises the end-to-end class-locking guarantee:
+// 1. Family-tier user logs in on k2r → Device.IsGateway=true.
+// 2. Same token used with service header → 403002.
+func TestLoginFlow_RouterFullCycle(t *testing.T) {
+	skipIfNoDB(t)
+	r := SetupDeviceClassTestRouter()
+
+	EnableMockVerificationCode = true
+	defer func() { EnableMockVerificationCode = false }()
+
+	testEmail := "test-router-full-cycle@example.com"
+	udid := "test-udid-router-cycle"
+
+	// Ensure clean state across runs.
+	indexID := secretHashIt(context.Background(), []byte(testEmail))
+	cleanup := func() {
+		db.Get().Where("type = ? AND index_id = ?", "email", indexID).Delete(&LoginIdentify{})
+		db.Get().Where("udid = ?", udid).Delete(&Device{})
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	// Step A: request OTP (mock-bypassed).
+	w := NewTestRequest("POST", "/api/auth/code").
+		WithBody(map[string]string{"email": testEmail}).
+		Execute(r)
+	resp, err := ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "send_code should succeed: %s", resp.Message)
+
+	// Step B: first login as a service client to create the user record.
+	// We use a different UDID so this device is separate from the router device.
+	setupUDID := "test-udid-router-cycle-setup"
+	t.Cleanup(func() { db.Get().Where("udid = ?", setupUDID).Delete(&Device{}) })
+	NewTestRequest("POST", "/api/auth/login").
+		WithHeader("X-K2-Client", "kaitu-service/0.4.5 (ios; arm64)").
+		WithBody(map[string]any{
+			"email":            testEmail,
+			"verificationCode": MockVerificationCode,
+			"udid":             setupUDID,
+		}).
+		Execute(r)
+
+	// Look up the user created by the OTP flow and promote to family tier.
+	var user User
+	require.NoError(t,
+		db.Get().Where("id IN (?)",
+			db.Get().Model(&LoginIdentify{}).Select("user_id").Where("type = ? AND index_id = ?", "email", indexID),
+		).First(&user).Error,
+		"user must exist after first login",
+	)
+	t.Cleanup(func() { db.Get().Delete(&user) })
+	require.NoError(t, db.Get().Model(&user).Updates(map[string]any{
+		"tier":       TierFamily,
+		"expired_at": time.Now().Add(30 * 24 * time.Hour).Unix(),
+	}).Error)
+
+	// Step C: send a fresh OTP for the router login.
+	w = NewTestRequest("POST", "/api/auth/code").
+		WithBody(map[string]string{"email": testEmail}).
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "second send_code should succeed: %s", resp.Message)
+
+	// Step D: login as router with the new UDID.
+	w = NewTestRequest("POST", "/api/auth/login").
+		WithHeader("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)").
+		WithBody(map[string]any{
+			"email":            testEmail,
+			"verificationCode": MockVerificationCode,
+			"udid":             udid,
+		}).
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "router login should succeed; got %s", resp.Message)
+
+	var loginData struct {
+		AccessToken string `json:"accessToken"`
+	}
+	require.NoError(t, json.Unmarshal(resp.Data, &loginData))
+	require.NotEmpty(t, loginData.AccessToken)
+
+	// Verify Device.IsGateway=true in DB.
+	var dev Device
+	require.NoError(t, db.Get().Where("udid = ?", udid).First(&dev).Error)
+	assert.True(t, dev.IsGateway, "Device.IsGateway must be true after router login")
+
+	// Step E: same token + router header → /api/user/info passes.
+	w = NewTestRequest("GET", "/api/user/info").
+		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
+		WithHeader("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)").
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	assert.Equal(t, 0, resp.Code, "router token + router header must pass EnforceDeviceClass: %s", resp.Message)
+
+	// Step F: same token + service header → 403002.
+	w = NewTestRequest("GET", "/api/user/info").
+		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
+		WithHeader("X-K2-Client", "kaitu-service/0.4.5 (ios; arm64)").
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	assert.Equal(t, int(ErrorDeviceClassMismatch), resp.Code,
+		"router token + service header must return 403002; got %d: %s", resp.Code, resp.Message)
+}
+
+// TestLoginFlow_PlanDowngrade: family user registers router, then tier is
+// downgraded to basic. Class check still passes (Device.IsGateway=true,
+// header=router) but RouterRequired-gated endpoints return 402001.
+func TestLoginFlow_PlanDowngrade(t *testing.T) {
+	skipIfNoDB(t)
+	r := SetupDeviceClassTestRouter()
+
+	EnableMockVerificationCode = true
+	defer func() { EnableMockVerificationCode = false }()
+
+	testEmail := "test-router-plan-downgrade@example.com"
+	udid := "test-udid-router-dg"
+
+	// Ensure clean state across runs.
+	indexID := secretHashIt(context.Background(), []byte(testEmail))
+	cleanup := func() {
+		db.Get().Where("type = ? AND index_id = ?", "email", indexID).Delete(&LoginIdentify{})
+		db.Get().Where("udid = ?", udid).Delete(&Device{})
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	// Setup: create user via OTP, promote to family, then router-login.
+	w := NewTestRequest("POST", "/api/auth/code").
+		WithBody(map[string]string{"email": testEmail}).
+		Execute(r)
+	resp, err := ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "send_code should succeed: %s", resp.Message)
+
+	// First login with service UDID to materialize the user row.
+	setupUDID := "test-udid-router-dg-setup"
+	t.Cleanup(func() { db.Get().Where("udid = ?", setupUDID).Delete(&Device{}) })
+	NewTestRequest("POST", "/api/auth/login").
+		WithHeader("X-K2-Client", "kaitu-service/0.4.5 (ios; arm64)").
+		WithBody(map[string]any{
+			"email":            testEmail,
+			"verificationCode": MockVerificationCode,
+			"udid":             setupUDID,
+		}).
+		Execute(r)
+
+	var user User
+	require.NoError(t,
+		db.Get().Where("id IN (?)",
+			db.Get().Model(&LoginIdentify{}).Select("user_id").Where("type = ? AND index_id = ?", "email", indexID),
+		).First(&user).Error,
+	)
+	t.Cleanup(func() { db.Get().Delete(&user) })
+	require.NoError(t, db.Get().Model(&user).Updates(map[string]any{
+		"tier":       TierFamily,
+		"expired_at": time.Now().Add(30 * 24 * time.Hour).Unix(),
+	}).Error)
+
+	// Send fresh OTP for router login.
+	w = NewTestRequest("POST", "/api/auth/code").
+		WithBody(map[string]string{"email": testEmail}).
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "second send_code should succeed: %s", resp.Message)
+
+	// Router login — registers Device.IsGateway=true.
+	w = NewTestRequest("POST", "/api/auth/login").
+		WithHeader("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)").
+		WithBody(map[string]any{
+			"email":            testEmail,
+			"verificationCode": MockVerificationCode,
+			"udid":             udid,
+		}).
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "router login should succeed: %s", resp.Message)
+	var loginData struct {
+		AccessToken string `json:"accessToken"`
+	}
+	require.NoError(t, json.Unmarshal(resp.Data, &loginData))
+
+	// Tier downgrade — no admin API helper exists; mutate DB directly.
+	require.NoError(t, db.Get().Model(&user).Update("tier", TierBasic).Error)
+
+	// /api/router/quota should return 402001 (RouterRequired denies basic tier).
+	w = NewTestRequest("GET", "/api/router/quota").
+		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
+		WithHeader("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)").
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	assert.Equal(t, int(ErrorPlanNoRouter), resp.Code,
+		"/api/router/quota must return 402001 after downgrade; got %d: %s", resp.Code, resp.Message)
+
+	// /api/tunnels should still serve — ProRequired passes (ExpiredAt still in future),
+	// EnforceDeviceClass passes (IsGateway=true, header=router).
+	w = NewTestRequest("GET", "/api/tunnels").
+		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
+		WithHeader("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)").
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	assert.Equal(t, 0, resp.Code, "tunnel listing must remain accessible after downgrade: %s", resp.Message)
+}
+
+// TestLoginFlow_NoHeaderLegacyApp locks the backward-compat invariant:
+// a client that never sends X-K2-Client (legacy app build, third-party caller,
+// curl, etc.) MUST still log in, get Device.IsGateway=false, and access
+// device-bound endpoints — EnforceDeviceClass bypasses on absent header.
+//
+// This is the regression guard for the "old webapp on new Center" path.
+func TestLoginFlow_NoHeaderLegacyApp(t *testing.T) {
+	skipIfNoDB(t)
+	r := SetupDeviceClassTestRouter()
+
+	EnableMockVerificationCode = true
+	defer func() { EnableMockVerificationCode = false }()
+
+	testEmail := "test-no-header-legacy@example.com"
+	udid := "test-udid-no-header"
+
+	indexID := secretHashIt(context.Background(), []byte(testEmail))
+	cleanup := func() {
+		db.Get().Where("type = ? AND index_id = ?", "email", indexID).Delete(&LoginIdentify{})
+		db.Get().Where("udid = ?", udid).Delete(&Device{})
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	// Step A: send OTP (no X-K2-Client).
+	w := NewTestRequest("POST", "/api/auth/code").
+		WithBody(map[string]string{"email": testEmail}).
+		Execute(r)
+	resp, err := ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "send_code without header should succeed: %s", resp.Message)
+
+	// Step B: login without any X-K2-Client header.
+	w = NewTestRequest("POST", "/api/auth/login").
+		WithBody(map[string]any{
+			"email":            testEmail,
+			"verificationCode": MockVerificationCode,
+			"udid":             udid,
+		}).
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, 0, resp.Code, "login without X-K2-Client must succeed (legacy compat); got %d: %s", resp.Code, resp.Message)
+
+	var loginData struct {
+		AccessToken string `json:"accessToken"`
+	}
+	require.NoError(t, json.Unmarshal(resp.Data, &loginData))
+	require.NotEmpty(t, loginData.AccessToken)
+
+	// Cleanup the user row created by login.
+	var user User
+	require.NoError(t,
+		db.Get().Where("id IN (?)",
+			db.Get().Model(&LoginIdentify{}).Select("user_id").Where("type = ? AND index_id = ?", "email", indexID),
+		).First(&user).Error,
+	)
+	t.Cleanup(func() { db.Get().Delete(&user) })
+
+	// Step C: Device row exists with IsGateway=false (zero value — header absent).
+	var dev Device
+	require.NoError(t, db.Get().Where("udid = ?", udid).First(&dev).Error)
+	assert.False(t, dev.IsGateway, "Device.IsGateway must default to false when X-K2-Client header is absent at login")
+
+	// Step D: device-bound endpoint without header must pass EnforceDeviceClass.
+	w = NewTestRequest("GET", "/api/user/info").
+		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	assert.Equal(t, 0, resp.Code,
+		"no-header request to /api/user/info must bypass EnforceDeviceClass; got %d: %s",
+		resp.Code, resp.Message)
+}

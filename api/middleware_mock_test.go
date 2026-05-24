@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // =====================================================================
@@ -586,65 +587,62 @@ func TestParseClientHeader_Invalid(t *testing.T) {
 	}
 }
 
-// TestFillDeviceAppInfo 测试从 X-K2-Client header 填充设备信息
-func TestFillDeviceAppInfo(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
-	t.Run("fills device fields from header", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
-		c.Request.Header.Set("X-K2-Client", "kaitu-service/0.4.0-beta.1 (macos; arm64)")
 
-		device := &Device{}
-		fillDeviceAppInfo(c, device)
+func TestCreateDeviceWithAppInfo_WritesIsGateway(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request, _ = http.NewRequest("POST", "/", nil)
+	c.Request.Header.Set("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)")
+	dev := &Device{}
+	createDeviceWithAppInfo(c, dev)
+	assert.True(t, dev.IsGateway)
+	assert.Equal(t, "0.4.5", dev.AppVersion)
+	assert.Equal(t, "linux", dev.AppPlatform)
+}
 
-		assert.Equal(t, "0.4.0-beta.1", device.AppVersion)
-		assert.Equal(t, "macos", device.AppPlatform)
-		assert.Equal(t, "arm64", device.AppArch)
-	})
+// Legacy / no-X-K2-Client clients (old webapp builds, third-party callers,
+// curl). createDeviceWithAppInfo must leave the device unchanged so it falls
+// through to Go's zero value IsGateway=false — the service-class default.
+// This is the backward-compat invariant for the new device-class system.
+func TestCreateDeviceWithAppInfo_NoHeaderLeavesDefaults(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request, _ = http.NewRequest("POST", "/", nil)
+	// Intentionally do NOT set X-K2-Client.
+	dev := &Device{}
+	createDeviceWithAppInfo(c, dev)
+	assert.False(t, dev.IsGateway, "no header → IsGateway must default to false (service class)")
+	assert.Empty(t, dev.AppVersion, "no header → AppVersion must not be set")
+	assert.Empty(t, dev.AppPlatform, "no header → AppPlatform must not be set")
+	assert.Empty(t, dev.AppArch, "no header → AppArch must not be set")
+}
 
-	t.Run("no header leaves device fields empty", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
+// isGatewayRequest is the signal feeding checkDeviceLimitOrKick during login.
+// With no header it MUST return false so legacy clients route to the app
+// device-limit path (kick-oldest), not the router path (402001/403001).
+func TestIsGatewayRequest_NoHeaderReturnsFalse(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request, _ = http.NewRequest("POST", "/", nil)
+	// No X-K2-Client header.
+	assert.False(t, isGatewayRequest(c), "no header → must classify as app/service request")
+}
 
-		device := &Device{}
-		fillDeviceAppInfo(c, device)
-
-		assert.Empty(t, device.AppVersion)
-		assert.Empty(t, device.AppPlatform)
-		assert.Empty(t, device.AppArch)
-	})
-
-	t.Run("invalid header leaves device fields empty", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
-		c.Request.Header.Set("X-K2-Client", "Mozilla/5.0 invalid")
-
-		device := &Device{}
-		fillDeviceAppInfo(c, device)
-
-		assert.Empty(t, device.AppVersion)
-		assert.Empty(t, device.AppPlatform)
-	})
-
-	t.Run("extended header fills all fields", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
-		c.Request.Header.Set("X-K2-Client", "kaitu-service/0.3.15 (ios; arm64; iOS 17.4; iPhone15,2)")
-
-		device := &Device{}
-		fillDeviceAppInfo(c, device)
-
-		assert.Equal(t, "0.3.15", device.AppVersion)
-		assert.Equal(t, "ios", device.AppPlatform)
-		assert.Equal(t, "arm64", device.AppArch)
-		assert.Equal(t, "iOS 17.4", device.OSVersion)
-		assert.Equal(t, "iPhone15,2", device.DeviceModel)
-	})
+func TestRefreshDeviceAppInfo_DoesNotTouchIsGateway(t *testing.T) {
+	// Header claims router class even though device was registered as service.
+	// Pre-populate all non-class fields to match the header so the change-detection
+	// short-circuit fires (no DB needed). This isolates the IsGateway invariant.
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request, _ = http.NewRequest("POST", "/", nil)
+	c.Request.Header.Set("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)")
+	dev := &Device{
+		IsGateway:   false, // registered as service
+		AppVersion:  "0.4.5",
+		AppPlatform: "linux",
+		AppArch:     "arm64",
+	}
+	info := parseClientHeader(c.Request.Header.Get("X-K2-Client"))
+	refreshDeviceAppInfo(c, dev, info)
+	assert.False(t, dev.IsGateway, "refresh must never flip IsGateway")
+	assert.Equal(t, "0.4.5", dev.AppVersion)
 }
 
 // ===================== RoleRequired 中间件测试（不需要数据库） =====================
@@ -770,6 +768,39 @@ func TestRoleRequired_CombinedRole_EitherSuffices(t *testing.T) {
 	})
 }
 
+func TestParseClientHeader_ClientClass(t *testing.T) {
+	tests := []struct {
+		name        string
+		header      string
+		wantNil     bool
+		wantClass   string
+		wantIsGW    bool
+		wantVersion string
+	}{
+		{"service token", "kaitu-service/0.4.5 (ios; arm64)", false, "service", false, "0.4.5"},
+		{"router token", "kaitu-router/0.4.5 (linux; arm64; OpenWrt 23.05; mt7620)", false, "router", true, "0.4.5"},
+		{"unknown class", "kaitu-iot/0.4.5 (linux; arm64)", true, "", false, ""},
+		{"empty header", "", true, "", false, ""},
+		{"malformed (no slash)", "kaitu-router 0.4.5 linux arm64", true, "", false, ""},
+		{"extra product tokens", "kaitu-router/0.4.5 OpenWrt/23.05 (linux; arm64)", true, "", false, ""},
+		{"version with suffix", "kaitu-service/0.4.0-beta.1 (macos; arm64)", false, "service", false, "0.4.0-beta.1"},
+		{"linux desktop is service", "kaitu-service/0.4.5 (linux; amd64)", false, "service", false, "0.4.5"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			info := parseClientHeader(tc.header)
+			if tc.wantNil {
+				assert.Nil(t, info)
+				return
+			}
+			assert.NotNil(t, info)
+			assert.Equal(t, tc.wantClass, info.ClientClass)
+			assert.Equal(t, tc.wantIsGW, info.IsGateway())
+			assert.Equal(t, tc.wantVersion, info.Version)
+		})
+	}
+}
+
 // TestRoleRequired_MultipleRoles 用户拥有多个角色时，任一满足即通过
 func TestRoleRequired_MultipleRoles(t *testing.T) {
 	testInitConfig()
@@ -793,4 +824,89 @@ func TestRoleRequired_MultipleRoles(t *testing.T) {
 		r.ServeHTTP(w, req)
 		assertAuthSuccess(t, w)
 	})
+}
+
+// =====================================================================
+// EnforceDeviceClass middleware unit tests
+// =====================================================================
+
+// enforceClassTestCtx builds a gin.Context with pre-populated authContext so
+// EnforceDeviceClass can run in isolation (no real auth needed). Per
+// getAuthContext (middleware.go:175), it early-returns when "authContext" is
+// already set via c.Set — that's how we inject the test fixture.
+func enforceClassTestCtx(headerVal string, device *Device) (*gin.Context, *httptest.ResponseRecorder) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest("GET", "/", nil)
+	if headerVal != "" {
+		c.Request.Header.Set("X-K2-Client", headerVal)
+	}
+	if device != nil {
+		c.Set("authContext", &authContext{UDID: device.UDID, Device: device})
+	}
+	return c, w
+}
+
+func TestEnforceDeviceClass_ConsistentApp(t *testing.T) {
+	c, _ := enforceClassTestCtx("kaitu-service/0.4.5 (ios; arm64)", &Device{UDID: "u1", IsGateway: false})
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestEnforceDeviceClass_ConsistentRouter(t *testing.T) {
+	c, _ := enforceClassTestCtx("kaitu-router/0.4.5 (linux; arm64)", &Device{UDID: "u2", IsGateway: true})
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestEnforceDeviceClass_MismatchAppOnRouterDevice(t *testing.T) {
+	c, w := enforceClassTestCtx("kaitu-service/0.4.5 (ios; arm64)", &Device{UDID: "u3", IsGateway: true})
+	EnforceDeviceClass()(c)
+	assert.True(t, c.IsAborted())
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorDeviceClassMismatch), resp.Code)
+}
+
+func TestEnforceDeviceClass_MismatchRouterOnAppDevice(t *testing.T) {
+	c, w := enforceClassTestCtx("kaitu-router/0.4.5 (linux; arm64)", &Device{UDID: "u4", IsGateway: false})
+	EnforceDeviceClass()(c)
+	assert.True(t, c.IsAborted())
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorDeviceClassMismatch), resp.Code)
+}
+
+func TestEnforceDeviceClass_NoHeader_LegacyAppBypass(t *testing.T) {
+	c, _ := enforceClassTestCtx("", &Device{UDID: "u5", IsGateway: false})
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestEnforceDeviceClass_NoHeader_LegacyRouterBypass(t *testing.T) {
+	c, _ := enforceClassTestCtx("", &Device{UDID: "u6", IsGateway: true})
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted(), "absent header is treated as legacy bypass even for router device")
+}
+
+func TestEnforceDeviceClass_WebCookieBypass(t *testing.T) {
+	// No device in context → web-cookie auth path.
+	c, _ := enforceClassTestCtx("kaitu-service/0.4.5 (web; unknown)", nil)
+	EnforceDeviceClass()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestEnforceDeviceClass_UnknownClass(t *testing.T) {
+	c, w := enforceClassTestCtx("kaitu-iot/0.4.5 (linux; arm64)", &Device{UDID: "u7", IsGateway: false})
+	EnforceDeviceClass()(c)
+	assert.True(t, c.IsAborted())
+	var resp struct {
+		Code int `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorInvalidClientClass), resp.Code)
 }

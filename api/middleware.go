@@ -1,7 +1,6 @@
 package center
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -20,127 +19,115 @@ import (
 )
 
 // AppInfo 从 X-K2-Client header 解析出的应用信息
-type AppInfo struct {
-	Version     string // 应用版本，如 "1.0.0"
-	Platform    string // 运行平台，如 "macos", "windows", "linux", "ios", "android"
-	Arch        string // CPU架构，如 "amd64", "arm64"
-	OSVersion   string // 系统版本，如 "14.5", "11", "23H2"
-	DeviceModel string // 设备型号，如 "MacBookPro18,1", "iPhone15,2"
-}
-
-// X-K2-Client header 格式:
-// Basic:    kaitu-service/{version} ({platform}; {arch})
-// Extended: kaitu-service/{version} ({platform}; {arch}; {os_version}; {device_model})
+// X-K2-Client header 格式 (RFC 7231 User-Agent grammar):
+//   kaitu-<class>/<version> (<platform>; <arch>[; <os-version>[; <device-model>]])
+//
+// class:
+//   - "service": end-user app (desktop, mobile, web)
+//   - "router":  k2r gateway
 //
 // 示例:
 //   kaitu-service/0.4.0-beta.1 (macos; arm64)
-//   kaitu-service/0.3.15 (macos; arm64; macOS 14.5; MacBookPro18,1)
 //   kaitu-service/0.3.15 (ios; arm64; iOS 17.4; iPhone15,2)
-//   kaitu-service/0.3.15 (windows; amd64; Windows 11 23H2; Dell XPS 15)
-var clientHeaderRegex = regexp.MustCompile(`^kaitu-service/([^\s]+)\s*\(([^;)]+);\s*([^;)]+)(?:;\s*([^;)]+))?(?:;\s*([^)]+))?\)`)
+//   kaitu-service/0.4.5 (linux; amd64; Ubuntu 24.04; ThinkPad X1)   ; cmd/k2 desktop
+//   kaitu-router/0.4.5 (linux; arm64; OpenWrt 23.05; mt7620)        ; cmd/k2r router
+type AppInfo struct {
+	ClientClass string // "service" | "router" — single source of device-class signal
+	Version     string
+	Platform    string
+	Arch        string
+	OSVersion   string
+	DeviceModel string
+}
 
-// parseClientHeader 解析 X-K2-Client header 获取应用信息
+// IsGateway 派生方法：唯一从 AppInfo 判定 IsGateway 的入口。
+func (a *AppInfo) IsGateway() bool { return a != nil && a.ClientClass == "router" }
+
+// Trailing `$` anchor rejects extra product tokens after the first.
+// Capture groups: 1=class, 2=version, 3=platform, 4=arch, 5=os_version?, 6=device_model?
+var clientHeaderRegex = regexp.MustCompile(
+	`^kaitu-(service|router)/([^\s]+)\s*\(\s*([^;)]+?)\s*;\s*([^;)]+?)(?:\s*;\s*([^;)]+?))?(?:\s*;\s*([^)]+?))?\s*\)$`)
+
+// parseClientHeader 解析 X-K2-Client header 获取应用信息。
+// 返回 nil 表示 header 缺失、格式错误、或携带未知 client-class token。
+// 调用者根据 nil + 原始 header 区分 "缺失"（兼容老客户端）vs "格式错误"（应拒绝）。
 func parseClientHeader(header string) *AppInfo {
 	matches := clientHeaderRegex.FindStringSubmatch(header)
-	if len(matches) < 4 {
+	if len(matches) < 5 {
 		return nil
 	}
-
 	info := &AppInfo{
-		Version:  strings.TrimSpace(matches[1]),
-		Platform: strings.TrimSpace(matches[2]),
-		Arch:     strings.TrimSpace(matches[3]),
-	}
-
-	// Parse extended fields if present
-	if len(matches) > 4 && matches[4] != "" {
-		info.OSVersion = strings.TrimSpace(matches[4])
+		ClientClass: strings.TrimSpace(matches[1]),
+		Version:     strings.TrimSpace(matches[2]),
+		Platform:    strings.TrimSpace(matches[3]),
+		Arch:        strings.TrimSpace(matches[4]),
 	}
 	if len(matches) > 5 && matches[5] != "" {
-		info.DeviceModel = strings.TrimSpace(matches[5])
+		info.OSVersion = strings.TrimSpace(matches[5])
 	}
-
+	if len(matches) > 6 && matches[6] != "" {
+		info.DeviceModel = strings.TrimSpace(matches[6])
+	}
 	return info
 }
 
-// isGatewayRequest 检查请求是否来自路由器/网关设备
+// isGatewayRequest 检查请求是否来自路由器/网关设备。
+// 唯一信号源：X-K2-Client 的 product token == "kaitu-router"。
 func isGatewayRequest(c *gin.Context) bool {
-	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
-		var info struct {
-			IsGateway bool `json:"isGateway"`
-		}
-		if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
-			return info.IsGateway
-		}
-	}
-	return false
+	return parseClientHeader(c.GetHeader("X-K2-Client")).IsGateway()
 }
 
-// fillDeviceAppInfo 从 X-K2-Client header 填充设备的应用版本信息（用于设备创建时）
-// 同时解析 X-App-Info JSON header（k2r 路由器发送，包含 isGateway 标志）
-func fillDeviceAppInfo(c *gin.Context, device *Device) {
-	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
-		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
-			device.AppVersion = appInfo.Version
-			device.AppPlatform = appInfo.Platform
-			device.AppArch = appInfo.Arch
-			device.OSVersion = appInfo.OSVersion
-			device.DeviceModel = appInfo.DeviceModel
-		}
+// createDeviceWithAppInfo: called ONLY by login/register handlers when creating
+// a fresh Device row. Writes IsGateway from the header — this is the one moment
+// device class is decided. After creation, IsGateway is read-only.
+func createDeviceWithAppInfo(c *gin.Context, device *Device) {
+	info := parseClientHeader(c.GetHeader("X-K2-Client"))
+	if info == nil {
+		return
 	}
-	// k2r sends X-App-Info JSON with isGateway flag
-	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
-		var info struct {
-			Version   string `json:"version"`
-			Platform  string `json:"platform"`
-			Arch      string `json:"arch"`
-			IsGateway bool   `json:"isGateway"`
-		}
-		if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
-			device.IsGateway = info.IsGateway
-			if info.Version != "" {
-				device.AppVersion = info.Version
-			}
-			if info.Platform != "" {
-				device.AppPlatform = info.Platform
-			}
-			if info.Arch != "" {
-				device.AppArch = info.Arch
-			}
-		}
-	}
+	device.AppVersion = info.Version
+	device.AppPlatform = info.Platform
+	device.AppArch = info.Arch
+	device.OSVersion = info.OSVersion
+	device.DeviceModel = info.DeviceModel
+	device.IsGateway = info.IsGateway()
 }
 
-// updateDeviceAppInfo 更新设备的应用版本信息（如果有变化）
-func updateDeviceAppInfo(c *gin.Context, device *Device, appInfo *AppInfo) {
+// refreshDeviceAppInfo: drop-in replacement for updateDeviceAppInfo. Updates
+// version/platform/arch/os_version/device_model only. NEVER touches IsGateway —
+// device class is locked at creation.
+//
+// Same signature as the old updateDeviceAppInfo so caller code in handleJWTAuth
+// (which already pre-parses AppInfo) only needs a function rename.
+func refreshDeviceAppInfo(c *gin.Context, device *Device, appInfo *AppInfo) {
 	if appInfo == nil || device == nil {
 		return
 	}
 
-	// 检查是否需要更新
+	// Preserve change-detection short-circuit from the original updateDeviceAppInfo.
 	if device.AppVersion == appInfo.Version &&
 		device.AppPlatform == appInfo.Platform &&
 		device.AppArch == appInfo.Arch &&
 		device.OSVersion == appInfo.OSVersion &&
 		device.DeviceModel == appInfo.DeviceModel {
-		return // 没有变化，不需要更新
+		return
 	}
 
-	// 更新设备的应用信息
 	updates := map[string]interface{}{
 		"app_version":  appInfo.Version,
 		"app_platform": appInfo.Platform,
 		"app_arch":     appInfo.Arch,
 		"os_version":   appInfo.OSVersion,
 		"device_model": appInfo.DeviceModel,
+		// is_gateway intentionally NOT written — locked at creation.
 	}
 
 	if err := db.Get().Model(device).Updates(updates).Error; err != nil {
-		log.Warnf(c, "failed to update device app info for %s: %v", device.UDID, err)
+		log.Warnf(c, "failed to refresh device app info for %s: %v", device.UDID, err)
 		return
 	}
 
-	log.Debugf(c, "updated device %s app info: version=%s, platform=%s, arch=%s, os=%s, model=%s",
+	log.Debugf(c, "refreshed device %s app info: version=%s, platform=%s, arch=%s, os=%s, model=%s",
 		device.UDID, appInfo.Version, appInfo.Platform, appInfo.Arch, appInfo.OSVersion, appInfo.DeviceModel)
 
 	// 更新内存中的设备对象
@@ -369,7 +356,7 @@ func handleJWTAuth(c *gin.Context, token string) *authContext {
 	// 解析 X-K2-Client header 并更新设备的应用版本信息
 	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
 		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
-			updateDeviceAppInfo(c, &device, appInfo)
+			refreshDeviceAppInfo(c, &device, appInfo)
 		}
 	}
 
@@ -489,7 +476,57 @@ func RouterRequired() gin.HandlerFunc {
 			return
 		}
 		if user.Quota().MaxRouterDevice == 0 {
-			Error(c, ErrorPaymentRequired, "router access requires upgrade")
+			log.Infof(c, "plan no router: user=%d tier=%s remote=%s", user.ID, user.Tier, c.ClientIP())
+			Error(c, ErrorPlanNoRouter, "plan does not support router")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// classStr renders Device.IsGateway as a log-friendly token name.
+func classStr(isGateway bool) string {
+	if isGateway {
+		return "router"
+	}
+	return "service"
+}
+
+// EnforceDeviceClass compares the X-K2-Client class token against the persisted
+// Device.IsGateway on every authenticated, device-bound request. Mounted after
+// AuthRequired in the route chain. See plan/spec § C "EnforceDeviceClass".
+//
+// Behavior:
+//   - absent header:               bypass (legacy / WebSocket compat)
+//   - parses to known class, match:    next()
+//   - parses to known class, mismatch: 403002 + clearAuthCookies
+//   - present but unparseable / unknown class: 422003
+//   - no device in context (web-cookie auth): bypass
+func EnforceDeviceClass() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := getAuthContext(c)
+		if ctx == nil || ctx.Device == nil {
+			c.Next()
+			return
+		}
+		header := c.GetHeader("X-K2-Client")
+		if header == "" {
+			c.Next()
+			return
+		}
+		info := parseClientHeader(header)
+		if info == nil {
+			Error(c, ErrorInvalidClientClass, "invalid client class token")
+			c.Abort()
+			return
+		}
+		if info.IsGateway() != ctx.Device.IsGateway {
+			log.Warnf(c, "device class mismatch: udid=%s db_class=%s header_class=%s remote=%s ua=%q",
+				ctx.Device.UDID, classStr(ctx.Device.IsGateway), classStr(info.IsGateway()),
+				c.ClientIP(), c.Request.UserAgent())
+			clearAuthCookies(c)
+			Error(c, ErrorDeviceClassMismatch, "device class mismatch")
 			c.Abort()
 			return
 		}

@@ -450,6 +450,80 @@ func TestContentType_Handling(t *testing.T) {
 }
 
 // =====================================================================
+// Test: Login 422003 pre-gate for unknown X-K2-Client class tokens
+// These tests fire before any DB call — no DB required.
+// =====================================================================
+
+func TestLogin_UnknownClassToken_Rejected(t *testing.T) {
+	r := setupMinimalRouter()
+	r.POST("/api/auth/login", api_login)
+
+	body, _ := json.Marshal(map[string]string{
+		"email":            "test-cls@example.com",
+		"verificationCode": "anything",
+		"udid":             "test-udid-cls-1",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-K2-Client", "kaitu-iot/0.4.5 (linux; arm64)")
+	r.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	code, _ := resp["code"].(float64)
+	assert.Equal(t, float64(ErrorInvalidClientClass), code,
+		"unknown class token must be rejected with 422003 before any DB write")
+}
+
+func TestLogin_MalformedClassHeader_Rejected(t *testing.T) {
+	r := setupMinimalRouter()
+	r.POST("/api/auth/login", api_login)
+
+	body, _ := json.Marshal(map[string]string{
+		"email":            "test-cls@example.com",
+		"verificationCode": "anything",
+		"udid":             "test-udid-cls-2",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-K2-Client", "kaitu-router 0.4.5 linux arm64")
+	r.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	code, _ := resp["code"].(float64)
+	assert.Equal(t, float64(ErrorInvalidClientClass), code,
+		"malformed class header must be rejected with 422003")
+}
+
+func TestPasswordLogin_UnknownClassToken_Rejected(t *testing.T) {
+	r := setupMinimalRouter()
+	r.POST("/api/auth/login/password", api_password_login)
+
+	body, _ := json.Marshal(map[string]string{
+		"email":    "test-cls@example.com",
+		"password": "anypassword",
+		"udid":     "test-udid-cls-3",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/auth/login/password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-K2-Client", "kaitu-iot/0.4.5 (linux; arm64)")
+	r.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	code, _ := resp["code"].(float64)
+	assert.Equal(t, float64(ErrorInvalidClientClass), code,
+		"unknown class token must be rejected with 422003 on password login before any DB write")
+}
+
+// =====================================================================
 // Test 10: HTTP Method Validation
 // =====================================================================
 

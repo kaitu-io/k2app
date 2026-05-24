@@ -109,6 +109,42 @@ func SetupTestRouter() *gin.Engine {
 	return r
 }
 
+// SetupDeviceClassTestRouter creates a test router that mirrors the production
+// middleware chain for device-class-related routes. Used by device-class
+// integration tests (TestLoginFlow_RouterFullCycle, TestLoginFlow_PlanDowngrade).
+func SetupDeviceClassTestRouter() *gin.Engine {
+	testInitConfig()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+
+	// Auth routes (no authentication required)
+	auth := r.Group("/api/auth")
+	{
+		auth.POST("/code", api_send_auth_code)
+		auth.POST("/login", api_login)
+		auth.POST("/web-login", api_web_auth)
+	}
+
+	// User info — requires auth + device-class enforcement (production: AuthRequired + EnforceDeviceClass)
+	user := r.Group("/api/user")
+	{
+		user.GET("/info", AuthRequired(), EnforceDeviceClass(), api_get_user_info)
+	}
+
+	// Router quota — requires auth + device-class + membership + router tier
+	routerGroup := r.Group("/api/router")
+	routerGroup.Use(AuthRequired(), EnforceDeviceClass(), ProRequired(), RouterRequired())
+	{
+		routerGroup.GET("/quota", api_router_quota)
+	}
+
+	// Tunnel list — requires auth + device-class + membership + device context
+	r.GET("/api/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
+
+	return r
+}
+
 // SetupMinimalRouter 创建最小化测试路由器（不包含数据库依赖）
 func SetupMinimalRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)

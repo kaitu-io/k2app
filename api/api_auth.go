@@ -190,6 +190,15 @@ func api_login(c *gin.Context) {
 	}
 	log.Infof(c, "login request from email: %s, udid: %s", req.Email, req.UDID)
 
+	// Reject unknown client-class tokens early — silently creating a Device row
+	// here would create an unrecoverable account once EnforceDeviceClass kicks in
+	// on the next request. Header absence is still legal (legacy compat).
+	if rawHeader := c.GetHeader("X-K2-Client"); rawHeader != "" && parseClientHeader(rawHeader) == nil {
+		log.Warnf(c, "login rejected: invalid client class header=%q remote=%s", rawHeader, c.ClientIP())
+		Error(c, ErrorInvalidClientClass, "invalid client class token")
+		return
+	}
+
 	indexID := secretHashIt(c, []byte(req.Email))
 
 	switch verifyEmailCode(c, indexID, req.VerificationCode) {
@@ -351,7 +360,7 @@ func api_login(c *gin.Context) {
 			TokenIssueAt:    tokenIssueTime.Unix(),
 			TokenLastUsedAt: time.Now().Unix(),
 		}
-		fillDeviceAppInfo(c, &device)
+		createDeviceWithAppInfo(c, &device)
 		if err := tx.Create(&device).Error; err != nil {
 			log.Errorf(c, "failed to create new device in transaction for user %d: %v", identify.UserID, err)
 			return err
@@ -735,6 +744,15 @@ func api_password_login(c *gin.Context) {
 	}
 	log.Infof(c, "password login request from email: %s, udid: %s", hideEmail(req.Email), req.UDID)
 
+	// Reject unknown client-class tokens early — silently creating a Device row
+	// here would create an unrecoverable account once EnforceDeviceClass kicks in
+	// on the next request. Header absence is still legal (legacy compat).
+	if rawHeader := c.GetHeader("X-K2-Client"); rawHeader != "" && parseClientHeader(rawHeader) == nil {
+		log.Warnf(c, "login rejected: invalid client class header=%q remote=%s", rawHeader, c.ClientIP())
+		Error(c, ErrorInvalidClientClass, "invalid client class token")
+		return
+	}
+
 	indexID := secretHashIt(c, []byte(req.Email))
 
 	// Find user by email
@@ -834,7 +852,7 @@ func api_password_login(c *gin.Context) {
 			TokenIssueAt:    tokenIssueTime.Unix(),
 			TokenLastUsedAt: time.Now().Unix(),
 		}
-		fillDeviceAppInfo(c, &device)
+		createDeviceWithAppInfo(c, &device)
 		return tx.Create(&device).Error
 	})
 

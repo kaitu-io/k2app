@@ -15,16 +15,24 @@ import { authService } from './auth-service';
 import { useAuthStore } from '../stores/auth.store';
 import { resolveEntry } from './antiblock';
 import { cacheStore } from './cache-store';
+import { useLoginDialogStore } from '../stores/login-dialog.store';
+import i18n from '../i18n/i18n';
 
 /**
- * Build X-K2-Client header from window._platform for device version tracking.
- * Format: kaitu-service/{version} ({platform}; {arch})
+ * Build X-K2-Client header — sole origination point for this header.
+ *
+ * Format: RFC 7231 User-Agent grammar with product token encoding device class:
+ *   kaitu-router/{version} (...)  — k2r gateway (window._platform.platformType === 'gateway')
+ *   kaitu-service/{version} (...) — all other clients (desktop, mobile, web)
+ *
+ * No other module may construct this header (single source of truth).
  */
 function buildClientHeader(): string | null {
   const p = window._platform;
   if (!p?.version || !p?.os) return null;
+  const cls = p.platformType === 'gateway' ? 'router' : 'service';
   const arch = p.arch || 'unknown';
-  return `kaitu-service/${p.version} (${p.os}; ${arch})`;
+  return `kaitu-${cls}/${p.version} (${p.os}; ${arch})`;
 }
 
 /** Auth paths where tokens should be auto-saved on success */
@@ -108,17 +116,32 @@ export const cloudApi = {
         console.warn('[CloudAPI] response error:', method, path, 'code:', jsonResponse.code, 'msg:', jsonResponse.message);
       }
 
-      // 7. Handle 401: try token refresh (pass epoch to detect stale requests)
+      // 7. Handle 403002: server detected device class mismatch
+      // (e.g. phone token reused on a router). Clear session and open login dialog.
+      // Mirrors the 401-with-no-refresh path: clearTokens + isAuthenticated=false
+      // keeps UI gating consistent if the user dismisses the dialog.
+      if (jsonResponse.code === 403002) {
+        console.warn('[CloudAPI] device class mismatch (403002) — clearing session');
+        await authService.clearTokens();
+        useAuthStore.setState({ isAuthenticated: false });
+        useLoginDialogStore.getState().open({
+          trigger: 'device-class-mismatch',
+          message: i18n.t('auth:auth.deviceClassMismatch'),
+        });
+        return jsonResponse;
+      }
+
+      // 8. Handle 401: try token refresh (pass epoch to detect stale requests)
       if (httpResponse.status === 401 || jsonResponse.code === 401) {
         return await this._handle401<T>(method, path, body, requestEpoch);
       }
 
-      // 8. Auto-handle auth paths on success
+      // 9. Auto-handle auth paths on success
       if (jsonResponse.code === 0) {
         await this._handleAuthPath(path, jsonResponse);
       }
 
-      // 9. Return the response as SResponse
+      // 10. Return the response as SResponse
       return jsonResponse;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {

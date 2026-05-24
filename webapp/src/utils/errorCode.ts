@@ -50,6 +50,12 @@ export const ERROR_CODES = {
   TIER_MISMATCH: 422001,
   PROXY_PURCHASE_DEPRECATED: 422002,
 
+  // Router / device-class error codes (added 2026-05-22)
+  PLAN_NO_ROUTER: 402001,
+  ROUTER_DEVICE_LIMIT: 403001,
+  DEVICE_CLASS_MISMATCH: 403002,
+  INVALID_CLIENT_CLASS: 422003,
+
   // === Frontend-only codes (NOT from backend API) ===
 
   // 网络错误 (100-109) - 来自 classifyNetworkError
@@ -220,6 +226,16 @@ export function getErrorMessage(
       return t('common:errors.client.tierMismatch', '当前档位无法购买此套餐，请联系客服变更档位');
     case ERROR_CODES.PROXY_PURCHASE_DEPRECATED:
       return t('common:errors.client.proxyPurchaseDeprecated', '代付款功能已下线，请让对方使用自己的账号购买');
+
+    // Router / device-class error codes
+    case ERROR_CODES.PLAN_NO_ROUTER:
+      return t('auth:auth.planNoRouter');
+    case ERROR_CODES.ROUTER_DEVICE_LIMIT:
+      return t('auth:auth.routerLimitReached');
+    case ERROR_CODES.DEVICE_CLASS_MISMATCH:
+      return t('auth:auth.deviceClassMismatch');
+    case ERROR_CODES.INVALID_CLIENT_CLASS:
+      return t('auth:auth.invalidClientClass');
 
     // 网络错误 (100-109)
     case ERROR_CODES.NETWORK_TIMEOUT:
