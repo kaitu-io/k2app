@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ErrorEvent } from '@sentry/nextjs';
-import { dropOutdatedBrowserSyntaxErrors } from '../sentry-filters';
+import { dropChatwootSdkErrors, dropOutdatedBrowserSyntaxErrors } from '../sentry-filters';
 
 const originalUA = window.navigator.userAgent;
 
@@ -73,5 +73,68 @@ describe('dropOutdatedBrowserSyntaxErrors', () => {
       const event = { exception: { values: [] } } as unknown as ErrorEvent;
       expect(dropOutdatedBrowserSyntaxErrors(event)).toBe(event);
     });
+  });
+});
+
+function chatwootEvent(frameFilenames: string[]): ErrorEvent {
+  return {
+    exception: {
+      values: [
+        {
+          type: 'TypeError',
+          value: "Cannot read properties of null (reading 'postMessage')",
+          stacktrace: { frames: frameFilenames.map((filename) => ({ filename })) },
+        },
+      ],
+    },
+  } as ErrorEvent;
+}
+
+describe('dropChatwootSdkErrors', () => {
+  it('drops the Chatwoot postMessage TypeError (frame URL = self-hosted SDK)', () => {
+    const event = chatwootEvent(['https://chat.anc.52j.me/packs/js/sdk.js']);
+    expect(dropChatwootSdkErrors(event)).toBeNull();
+  });
+
+  it('drops when the Chatwoot frame is buried below a Sentry helper frame', () => {
+    const event = chatwootEvent([
+      'webpack-internal:///./node_modules/@sentry/browser/build/npm/esm/prod/helpers.js',
+      'https://chat.anc.52j.me/packs/js/sdk.js',
+    ]);
+    expect(dropChatwootSdkErrors(event)).toBeNull();
+  });
+
+  it('drops when filename is the Sentry app:// normalized form', () => {
+    const event = chatwootEvent(['app:///packs/js/sdk.js']);
+    expect(dropChatwootSdkErrors(event)).toBeNull();
+  });
+
+  it('KEEPS the same TypeError when it originates in our own code (real regression)', () => {
+    const event = chatwootEvent([
+      'https://overleap.io/_next/static/chunks/main-abc123.js',
+      'https://overleap.io/_next/static/chunks/app/[locale]/layout-def456.js',
+    ]);
+    expect(dropChatwootSdkErrors(event)).toBe(event);
+  });
+
+  it('keeps events with no stacktrace', () => {
+    const event = {
+      exception: { values: [{ type: 'TypeError', value: 'something' }] },
+    } as ErrorEvent;
+    expect(dropChatwootSdkErrors(event)).toBe(event);
+  });
+
+  it('keeps events with no exception payload', () => {
+    const event = { message: 'just a log' } as ErrorEvent;
+    expect(dropChatwootSdkErrors(event)).toBe(event);
+  });
+
+  it('keeps events with empty frames array', () => {
+    const event = {
+      exception: {
+        values: [{ type: 'TypeError', value: 'x', stacktrace: { frames: [] } }],
+      },
+    } as unknown as ErrorEvent;
+    expect(dropChatwootSdkErrors(event)).toBe(event);
   });
 });

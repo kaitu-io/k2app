@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
-import { dropOutdatedBrowserSyntaxErrors } from '@/lib/sentry-filters';
+import { dropChatwootSdkErrors, dropOutdatedBrowserSyntaxErrors } from '@/lib/sentry-filters';
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -11,7 +11,11 @@ if (dsn) {
     replaysOnErrorSampleRate: 1.0,
     sendDefaultPii: true,
     debug: false,
-    beforeSend: dropOutdatedBrowserSyntaxErrors,
+    beforeSend: (event) => {
+      const afterChatwoot = dropChatwootSdkErrors(event);
+      if (!afterChatwoot) return null;
+      return dropOutdatedBrowserSyntaxErrors(afterChatwoot);
+    },
     integrations: [
       Sentry.replayIntegration({
         // Show UI text so we can see error messages and page state when debugging.
