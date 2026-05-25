@@ -19,8 +19,18 @@ type RouteEntry struct {
 	// Connection metadata matchers.
 	ProcessNames []string // match any (OR within list)
 	PackageNames []string // match any (OR within list)
-	NetworkMatch string   // "tcp" or "udp" (empty = any)
-	IPIsPrivate  bool     // match private/loopback IPs
+
+	// v2 (app-bypass) — prefix + installer.
+	// ProcessNamePrefixes entries are PRE-LOWERCASED at compile time so the
+	// per-flow matcher can do a single strings.ToLower on the observed name.
+	// PackageNamePrefixes are case-preserved (Android package names are
+	// case-sensitive identifiers per Android convention).
+	ProcessNamePrefixes []string
+	PackageNamePrefixes []string
+	InstallerPackages   []string
+
+	NetworkMatch string // "tcp" or "udp" (empty = any)
+	IPIsPrivate  bool   // match private/loopback IPs
 }
 
 // hasHostCriteria reports whether this route has domain/IP matching criteria.
@@ -36,7 +46,10 @@ func (r *RouteEntry) hasHostCriteria() bool {
 
 // hasMetaCriteria reports whether this route has connection metadata criteria.
 func (r *RouteEntry) hasMetaCriteria() bool {
-	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 || r.NetworkMatch != ""
+	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 ||
+		len(r.ProcessNamePrefixes) > 0 || len(r.PackageNamePrefixes) > 0 ||
+		len(r.InstallerPackages) > 0 ||
+		r.NetworkMatch != ""
 }
 
 // Engine is the multi-ruleset matching engine.

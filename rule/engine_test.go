@@ -420,6 +420,24 @@ func TestEngineReload_ClearsTmpRules(t *testing.T) {
 	}
 }
 
+func TestRouteEntry_HasMetaCriteria_NewFields(t *testing.T) {
+	tests := []struct {
+		name string
+		r    RouteEntry
+	}{
+		{"process_name_prefixes", RouteEntry{ProcessNamePrefixes: []string{"wechat"}}},
+		{"package_name_prefixes", RouteEntry{PackageNamePrefixes: []string{"com.tencent."}}},
+		{"installer_packages",    RouteEntry{InstallerPackages: []string{"com.xiaomi.market"}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if !tc.r.hasMetaCriteria() {
+				t.Errorf("hasMetaCriteria should be true for %s", tc.name)
+			}
+		})
+	}
+}
+
 func TestEngineReload_Concurrent(t *testing.T) {
 	b := mustBundle(t, []BundleSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}, CIDRs: []string{"8.8.8.0/24"}},
