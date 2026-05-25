@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"os"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -94,5 +95,52 @@ func TestAutoReconnectSkipsStale(t *testing.T) {
 	// State should remain stopped.
 	if d.State() != engine.StateDisconnected {
 		t.Fatalf("expected stopped, got %s", d.State())
+	}
+}
+
+func TestPersistedState_AppBypassRoundTrip(t *testing.T) {
+	// Use a custom state dir for isolation
+	origDir := stateDir
+	tmpDir := t.TempDir()
+	stateDir = func() string { return tmpDir }
+	defer func() { stateDir = origDir }()
+
+	want := persistedState{
+		Config:    nil, // OK — AppBypass alone, no active connection yet
+		State:     "disconnected",
+		Timestamp: time.Now().UTC(),
+		AppBypass: &AppBypassOverrides{
+			Region:      "cn",
+			ProcessAdds: []string{"Steam", "VSCode"},
+			PackageAdds: []string{"com.user.app"},
+		},
+	}
+	saveState(want)
+	got, err := loadState()
+	if err != nil {
+		t.Fatalf("loadState: %v", err)
+	}
+	if got.AppBypass == nil {
+		t.Fatal("AppBypass field nil after round-trip")
+	}
+	if got.AppBypass.Region != "cn" {
+		t.Errorf("Region = %q, want cn", got.AppBypass.Region)
+	}
+	if !reflect.DeepEqual([]string{"Steam", "VSCode"}, got.AppBypass.ProcessAdds) {
+		t.Errorf("ProcessAdds = %v", got.AppBypass.ProcessAdds)
+	}
+}
+
+func TestPersistedState_AppBypassNilIsOmitted(t *testing.T) {
+	// When AppBypass is nil, JSON should not contain the key (omitempty).
+	origDir := stateDir
+	tmpDir := t.TempDir()
+	stateDir = func() string { return tmpDir }
+	defer func() { stateDir = origDir }()
+
+	saveState(persistedState{State: "disconnected", Timestamp: time.Now().UTC()})
+	data, _ := os.ReadFile(stateFilePath())
+	if strings.Contains(string(data), "app_bypass") {
+		t.Errorf("nil AppBypass should be omitted from JSON, got: %s", string(data))
 	}
 }
