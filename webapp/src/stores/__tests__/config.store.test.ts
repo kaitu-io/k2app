@@ -617,49 +617,7 @@ describe('Config Store', () => {
     });
   });
 
-  describe('buildBypassRoutes (auto-detected merge)', () => {
-    beforeEach(() => {
-      (window as any)._platform = { os: 'android', isDesktop: false, isMobile: true };
-    });
-
-    it('returns [] when both user and auto are empty', async () => {
-      const { buildBypassRoutes } = await import('../config.store');
-      expect(buildBypassRoutes([])).toEqual([]);
-      expect(buildBypassRoutes([], [])).toEqual([]);
-    });
-
-    it('user-only emits a package_name route', async () => {
-      const { buildBypassRoutes } = await import('../config.store');
-      const entries = [
-        { id: 'com.foo', label: 'Foo', kind: 'package' as const, names: ['com.foo'], addedAt: 0 },
-      ];
-      expect(buildBypassRoutes(entries)).toEqual([
-        { via: 'direct', match: { package_name: ['com.foo'] } },
-      ]);
-    });
-
-    it('auto-only emits a package_name route', async () => {
-      const { buildBypassRoutes } = await import('../config.store');
-      expect(buildBypassRoutes([], ['com.tencent.mm', 'cmb.pb'])).toEqual([
-        { via: 'direct', match: { package_name: ['com.tencent.mm', 'cmb.pb'] } },
-      ]);
-    });
-
-    it('unions user + auto with dedupe', async () => {
-      const { buildBypassRoutes } = await import('../config.store');
-      const entries = [
-        { id: 'cmb.pb', label: '招行', kind: 'package' as const, names: ['cmb.pb'], addedAt: 0 },
-      ];
-      const routes = buildBypassRoutes(entries, ['com.tencent.mm', 'cmb.pb']);
-      expect(routes).toHaveLength(1);
-      // Set semantics: cmb.pb appears once
-      expect(routes[0].match.package_name).toEqual(['cmb.pb', 'com.tencent.mm']);
-    });
-
-    it('returns [] on iOS regardless of inputs', async () => {
-      (window as any)._platform.os = 'ios';
-      const { buildBypassRoutes } = await import('../config.store');
-      expect(buildBypassRoutes([], ['com.tencent.mm'])).toEqual([]);
-    });
-  });
+  // App Bypass v2 retired buildBypassRoutes — app-bypass routing now lives
+  // inside the Go engine. ClientConfig.app_bypass coverage is asserted in the
+  // buildConnectConfig block above.
 });

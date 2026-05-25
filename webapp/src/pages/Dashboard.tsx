@@ -118,15 +118,10 @@ export default function Dashboard() {
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
-  // App-bypass entry count (Advanced Settings row)
+  // App-bypass entry count (Advanced Settings row). Smart-bypass auto matches
+  // now happen inside the Go engine via region presets, so webapp no longer
+  // surfaces an auto count — engine knows the full list, not the renderer.
   const bypassCount = useAppBypassStore((s) => s.entries.length);
-  // Auto-detected count after de-dup against the manually-added list — mirrors
-  // the AppBypass page's autoNotAdded so the Dashboard entry summary stays
-  // consistent with what users see inside.
-  const autoBypassCount = useAppBypassStore((s) => {
-    const added = new Set(s.entries.map((e) => e.id));
-    return s.autoDetected.filter((a) => !added.has(a.packageName)).length;
-  });
 
   // Theme
   const theme = useTheme();
@@ -650,13 +645,9 @@ export default function Dashboard() {
                   <ListItemText
                     primary={t('dashboard:dashboard.appBypassEntry.label')}
                     secondary={
-                      bypassCount > 0 && autoBypassCount > 0
-                        ? t('dashboard:dashboard.appBypassEntry.countBoth', { manual: bypassCount, auto: autoBypassCount })
-                        : bypassCount > 0
-                          ? t('dashboard:dashboard.appBypassEntry.count', { count: bypassCount })
-                          : autoBypassCount > 0
-                            ? t('dashboard:dashboard.appBypassEntry.countAuto', { count: autoBypassCount })
-                            : t('dashboard:dashboard.appBypassEntry.empty')
+                      bypassCount > 0
+                        ? t('dashboard:dashboard.appBypassEntry.count', { count: bypassCount })
+                        : t('dashboard:dashboard.appBypassEntry.empty')
                     }
                   />
                   <ChevronRightIcon />
