@@ -6,6 +6,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => fallback || key,
   }),
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 // Mock MUI Dialog to avoid ModalManager jsdom incompatibility

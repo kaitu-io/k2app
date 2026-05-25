@@ -9,6 +9,7 @@ import { K2subConfig } from '../K2subConfig';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 vi.mock('../../utils/country', () => ({

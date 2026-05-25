@@ -12,6 +12,9 @@ vi.mock('react-i18next', () => ({
       return translations[key] ?? key;
     },
   }),
+  // i18n/i18n.ts runs initI18n() on module load via i18n.use(initReactI18next);
+  // omitting this export causes an unhandled rejection that fails vitest with exit 1.
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 beforeEach(() => {

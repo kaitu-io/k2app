@@ -14,6 +14,7 @@ vi.mock('react-i18next', () => ({
     t: (key: string, fallback?: string) => fallback || key,
     i18n: { language: 'en' },
   }),
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 // Mock stores
