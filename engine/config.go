@@ -68,6 +68,15 @@ type Config struct {
 	// Hardcoded by the platform shell — not user-configurable.
 	WireMode string
 
+	// AppBypassRegion is the ISO 3166-1 alpha-2 region key (e.g. "cn") used
+	// to select a preset from app-bypass-<region>.yaml under Client.CacheDir.
+	// Empty disables smart-mode injection.
+	AppBypassRegion string
+
+	// AppBypassCustom is daemon-loaded user override list. Empty if no
+	// overrides persisted yet.
+	AppBypassCustom AppBypassCustom
+
 	// OutboundProvider supplies replacement k2v5:// URLs when a running
 	// outbound's wire transport fails persistently (RaceTransport fails
 	// repeatedly for the same URL). Nil = engine falls back to today's
@@ -82,6 +91,14 @@ type Config struct {
 	// OUTSIDE engine.mu (read-copy-act pattern). The provider must not
 	// acquire any lock the caller also holds.
 	OutboundProvider OutboundProvider
+}
+
+// AppBypassCustom carries user-added exact bypass entries (read from daemon
+// storage at startup). Merged with the YAML preset's exact sets at engine
+// route-assembly time. Pure addition — no removal semantics.
+type AppBypassCustom struct {
+	ProcessAdds []string // → MatchConfig.ProcessName (exact)
+	PackageAdds []string // → MatchConfig.PackageName (exact)
 }
 
 // OutboundProvider supplies replacement k2v5:// URLs when an existing
