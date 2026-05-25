@@ -12,6 +12,7 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/rule"
 )
 
 // ==========================================================================
@@ -543,4 +544,64 @@ func containsAppBypassStr(ss []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestIngestClientAppBypass_ExplicitRegion verifies that a ClientConfig
+// carrying an explicit AppBypass block populates the daemon's in-memory
+// overrides directly (no derivation needed).
+func TestIngestClientAppBypass_ExplicitRegion(t *testing.T) {
+	d := New()
+	d.ingestClientAppBypass(&config.ClientConfig{
+		AppBypass: &config.AppBypassConfig{
+			Region:      "CN", // upper-case → daemon lower-cases
+			ProcessAdds: []string{"Steam", "steam_osx"},
+			PackageAdds: []string{"com.gtja.client"},
+		},
+	})
+	got := d.currentAppBypass()
+	if got.Region != "cn" {
+		t.Errorf("Region = %q, want cn", got.Region)
+	}
+	if !containsAppBypassStr(got.ProcessAdds, "Steam") || !containsAppBypassStr(got.ProcessAdds, "steam_osx") {
+		t.Errorf("ProcessAdds = %v, want both Steam and steam_osx", got.ProcessAdds)
+	}
+	if !containsAppBypassStr(got.PackageAdds, "com.gtja.client") {
+		t.Errorf("PackageAdds = %v, want com.gtja.client", got.PackageAdds)
+	}
+}
+
+// TestIngestClientAppBypass_DeriveFromPreset verifies the fallback: when
+// ClientConfig.AppBypass is nil, the daemon scans routes for a
+// "<cc>-access" preset and uses that as the smart-bypass region. Lets a
+// global-mode connect still pick up region-aware app bypass.
+func TestIngestClientAppBypass_DeriveFromPreset(t *testing.T) {
+	d := New()
+	d.ingestClientAppBypass(&config.ClientConfig{
+		Routes: []config.RouteConfig{
+			{Via: "direct", Match: rule.MatchConfig{Preset: "cn-access"}},
+			{Via: "k2v5://example/", Match: rule.MatchConfig{}},
+		},
+	})
+	got := d.currentAppBypass()
+	if got.Region != "cn" {
+		t.Errorf("Region = %q, want cn (derived from cn-access preset)", got.Region)
+	}
+}
+
+// TestIngestClientAppBypass_NoSignal verifies the no-op path: a connect
+// without any AppBypass payload and without a region-preset clears any
+// stale overrides so the engine builds with smart bypass off.
+func TestIngestClientAppBypass_NoSignal(t *testing.T) {
+	d := New()
+	// Pre-load a stale region to confirm it gets cleared.
+	d.appBypassOverrides = AppBypassOverrides{Region: "ru"}
+	d.ingestClientAppBypass(&config.ClientConfig{
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://example/", Match: rule.MatchConfig{All: true}},
+		},
+	})
+	got := d.currentAppBypass()
+	if got.Region != "" {
+		t.Errorf("Region = %q, want empty (no AppBypass payload, no preset)", got.Region)
+	}
 }

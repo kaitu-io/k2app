@@ -9,61 +9,75 @@ import (
 	"github.com/kaitu-io/k2/rule"
 )
 
-// buildAppBypassRoute loads the preset for cfg.AppBypassRegion under
-// Client.CacheDir and builds up to two platform-specific direct routes:
+// buildAppBypassRoute builds up to two platform-specific direct routes from
+// any combination of the AppBypassRegion preset + AppBypassCustom additions:
 //
-//   - desktop route: ProcessName (exact + custom) + ProcessNamePrefix
-//   - android route: PackageName (exact + custom) + PackageNamePrefix + InstallerPackage
+//   - desktop route: ProcessName (preset.exact + custom) + ProcessNamePrefix (preset)
+//   - android route: PackageName (preset.exact + custom) + PackageNamePrefix (preset) + InstallerPackage (preset)
 //
 // Both routes target "direct". Splitting per-platform preserves the rule
 // engine's AND-across-groups semantics (mixing desktop + android fields in
-// one route would never match on either platform because the absent platform's
-// observed fields are always empty).
+// one route would never match on either platform because the absent
+// platform's observed fields are always empty).
 //
-// Returns nil (no routes) when:
-//   - AppBypassRegion is empty
-//   - Client is nil or Client.CacheDir is empty
-//   - No preset exists for the region
+// The preset is optional: when AppBypassRegion is empty (e.g. global-mode
+// connect) or the preset YAML is missing, custom entries alone still
+// produce direct routes so user-added apps (e.g. "Steam") get bypassed
+// regardless of routing mode.
 //
-// Returns shorter slices when only one platform's section has criteria.
-// Returns (nil, err) only on filesystem read failure.
+// Returns nil (no routes) when neither preset nor custom contributes any
+// criteria. Returns (nil, err) only on filesystem read failure.
 func buildAppBypassRoute(cfg *Config) ([]*config.RouteConfig, error) {
-	if cfg == nil || cfg.AppBypassRegion == "" {
-		return nil, nil
-	}
-	if cfg.Client == nil || cfg.Client.CacheDir == "" {
-		return nil, nil
-	}
-	ps, err := appbypass.Load(cfg.Client.CacheDir)
-	if err != nil {
-		return nil, err
-	}
-	if ps.Empty() {
-		return nil, nil
-	}
-	preset := ps.Get(cfg.AppBypassRegion)
-	if preset == nil {
-		slog.Info("appbypass: no preset for region", "region", cfg.AppBypassRegion)
+	if cfg == nil {
 		return nil, nil
 	}
 	custom := cfg.AppBypassCustom
 
+	// Load preset lazily — only when both region is set and a cache dir
+	// exists to read from. A missing preset is silently ignored so custom
+	// entries can still drive the route.
+	var preset *appbypass.Preset
+	if cfg.AppBypassRegion != "" && cfg.Client != nil && cfg.Client.CacheDir != "" {
+		ps, err := appbypass.Load(cfg.Client.CacheDir)
+		if err != nil {
+			return nil, err
+		}
+		if !ps.Empty() {
+			preset = ps.Get(cfg.AppBypassRegion)
+			if preset == nil {
+				slog.Info("appbypass: no preset for region", "region", cfg.AppBypassRegion)
+			}
+		}
+	}
+
+	// Short-circuit when both inputs are empty.
+	if preset == nil && len(custom.ProcessAdds) == 0 && len(custom.PackageAdds) == 0 {
+		return nil, nil
+	}
+
+	var (
+		dpExact, dpPrefix              []string
+		instExact, pkgExact, pkgPrefix []string
+	)
+	if preset != nil {
+		dpExact, dpPrefix = preset.Desktop.ProcessExact, preset.Desktop.ProcessPrefix
+		instExact, pkgExact, pkgPrefix = preset.Android.InstallerExact, preset.Android.PackageExact, preset.Android.PackagePrefix
+	}
+
 	var routes []*config.RouteConfig
 
-	// Desktop route: process names + prefixes only.
 	desktopMC := rule.MatchConfig{
-		ProcessName:       unionStrings(preset.Desktop.ProcessExact, custom.ProcessAdds),
-		ProcessNamePrefix: preset.Desktop.ProcessPrefix,
+		ProcessName:       unionStrings(dpExact, custom.ProcessAdds),
+		ProcessNamePrefix: dpPrefix,
 	}
 	if desktopMC.HasCriteria() {
 		routes = append(routes, &config.RouteConfig{Via: "direct", Match: desktopMC})
 	}
 
-	// Android route: package names + prefixes + installer only.
 	androidMC := rule.MatchConfig{
-		InstallerPackage:  preset.Android.InstallerExact,
-		PackageName:       unionStrings(preset.Android.PackageExact, custom.PackageAdds),
-		PackageNamePrefix: preset.Android.PackagePrefix,
+		InstallerPackage:  instExact,
+		PackageName:       unionStrings(pkgExact, custom.PackageAdds),
+		PackageNamePrefix: pkgPrefix,
 	}
 	if androidMC.HasCriteria() {
 		routes = append(routes, &config.RouteConfig{Via: "direct", Match: androidMC})
@@ -74,6 +88,7 @@ func buildAppBypassRoute(cfg *Config) ([]*config.RouteConfig, error) {
 	}
 	slog.Info("appbypass: routes built",
 		"region", cfg.AppBypassRegion,
+		"preset_loaded", preset != nil,
 		"route_count", len(routes),
 		"desktop_process_exact", len(desktopMC.ProcessName),
 		"desktop_process_prefix", len(desktopMC.ProcessNamePrefix),
