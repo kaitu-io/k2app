@@ -191,3 +191,63 @@ func TestEngine_SetAppBypassCustomThenRefresh(t *testing.T) {
 		t.Errorf("SetAppBypassCustom failed: %v", e.appBypassCustom)
 	}
 }
+
+// TestE2E_AppBypass_RoutingScenarios covers six real-world matching scenarios.
+// Uses the fixture cn.yaml + manually-built rule.Engine to verify per-flow
+// match behavior end-to-end across both desktop and android platform routes.
+func TestE2E_AppBypass_RoutingScenarios(t *testing.T) {
+	tmp := t.TempDir()
+	copyFixture(t, "../appbypass/testdata/app-bypass-cn.yaml",
+		filepath.Join(tmp, "app-bypass-cn.yaml"))
+
+	client := &config.ClientConfig{
+		CacheDir: tmp,
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://example.com/", Match: rule.MatchConfig{All: true}},
+		},
+	}
+	cfg := &Config{AppBypassRegion: "cn", Client: client}
+	abRoutes, err := buildAppBypassRoute(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(abRoutes) == 0 {
+		t.Fatal("expected appbypass routes")
+	}
+
+	var extraRoutes []config.RouteConfig
+	for _, r := range abRoutes {
+		extraRoutes = append(extraRoutes, *r)
+	}
+
+	outboundMap := map[string]rule.Target{"k2v5://example.com/": rule.Target(2)}
+	re := buildRuleEngine(client, outboundMap, extraRoutes)
+
+	type tc struct {
+		name       string
+		meta       rule.ConnMeta
+		wantDirect bool
+	}
+	cases := []tc{
+		{"mac helper basename", rule.ConnMeta{ProcessName: "WeChatHelper", Network: "tcp"}, true},
+		{"win exe basename", rule.ConnMeta{ProcessName: "WeChat.exe", Network: "tcp"}, true},
+		{"linux lowercase", rule.ConnMeta{ProcessName: "wechat", Network: "tcp"}, true},
+		{"non-Chinese app", rule.ConnMeta{ProcessName: "Telegram", Network: "tcp"}, false},
+		{"android package prefix", rule.ConnMeta{PackageName: "com.tencent.mm", Network: "tcp"}, true},
+		{"android installer signal", rule.ConnMeta{
+			PackageName:      "com.random.foo",
+			InstallerPackage: "com.xiaomi.market",
+			Network:          "tcp",
+		}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			target := re.MatchConn("example.org", c.meta)
+			isDirect := target == rule.Target(0)
+			if isDirect != c.wantDirect {
+				t.Errorf("got direct=%v want direct=%v (target=%d) for meta=%+v",
+					isDirect, c.wantDirect, target, c.meta)
+			}
+		})
+	}
+}
