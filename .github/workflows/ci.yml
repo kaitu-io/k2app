@@ -320,6 +320,7 @@ jobs:
       - name: MachineGuid baseline (pre-Rust)
         if: runner.os == 'Windows'
         shell: cmd
+        continue-on-error: true
         run: |
           echo === reg query (cmd, pre-Rust, native view) ===
           reg query "HKLM\SOFTWARE\Microsoft\Cryptography" /v MachineGuid
@@ -338,6 +339,7 @@ jobs:
       - name: MachineGuid mid-check (post-Rust, pre-Go)
         if: runner.os == 'Windows'
         shell: cmd
+        continue-on-error: true
         run: |
           echo === reg query (cmd, post-Rust pre-Go) ===
           reg query "HKLM\SOFTWARE\Microsoft\Cryptography" /v MachineGuid
@@ -350,6 +352,7 @@ jobs:
       - name: MachineGuid post-Go check
         if: runner.os == 'Windows'
         shell: cmd
+        continue-on-error: true
         run: |
           echo === reg query (cmd, post-Go) ===
           reg query "HKLM\SOFTWARE\Microsoft\Cryptography" /v MachineGuid
