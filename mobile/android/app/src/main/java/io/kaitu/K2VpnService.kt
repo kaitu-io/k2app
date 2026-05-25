@@ -25,6 +25,7 @@ import appext.Appext
 import appext.Engine
 import appext.EventHandler as AppextEventHandler
 import appext.NetEvent
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -46,6 +47,27 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         val pm = packageManager
         pm.getPackagesForUid(uid)?.firstOrNull()?.let { return it }
         return pm.getNameForUid(uid) ?: ""
+    }
+
+    // App-Bypass v2: installer source is install-time fixed, cache per-process.
+    private val installerCache = ConcurrentHashMap<String, String>()
+
+    override fun installerForPackage(packageName: String): String {
+        if (packageName.isEmpty()) return ""
+        installerCache[packageName]?.let { return it }
+        val installer = try {
+            val pm = packageManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                pm.getInstallSourceInfo(packageName).installingPackageName ?: ""
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getInstallerPackageName(packageName) ?: ""
+            }
+        } catch (e: Exception) {
+            ""
+        }
+        installerCache[packageName] = installer
+        return installer
     }
 
     companion object {
