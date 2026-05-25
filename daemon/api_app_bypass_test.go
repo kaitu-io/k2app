@@ -176,3 +176,21 @@ func TestAPI_AppBypassSetRegion_RejectsInvalidLength(t *testing.T) {
 		t.Errorf("expected error code for invalid region length")
 	}
 }
+
+type appBypassPreviewData struct {
+	Matched      []map[string]any `json:"matched"`
+	PhaseOneStub bool             `json:"phase_one_stub"`
+}
+
+func TestAPI_AppBypassPreview_Stub(t *testing.T) {
+	d := New()
+	resp := callCore(t, d, "app-bypass-preview", nil)
+	if resp.Code != 0 { t.Fatalf("code = %d (%s)", resp.Code, resp.Message) }
+	preview := decodeData[appBypassPreviewData](t, resp)
+	if !preview.PhaseOneStub {
+		t.Errorf("expected PhaseOneStub true")
+	}
+	if len(preview.Matched) != 0 {
+		t.Errorf("Phase 1 should return empty matched list, got %d entries", len(preview.Matched))
+	}
+}

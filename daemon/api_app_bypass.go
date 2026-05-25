@@ -193,6 +193,29 @@ func (d *Daemon) appBypassSetRegion(w http.ResponseWriter, params map[string]any
 	writeJSON(w, Response{Code: 0, Message: "ok", Data: d.snapshotAppBypassState()})
 }
 
+type appBypassPreviewResult struct {
+	Matched      []appBypassPreviewEntry `json:"matched"`
+	PhaseOneStub bool                    `json:"phase_one_stub"`
+}
+
+type appBypassPreviewEntry struct {
+	ID         string   `json:"id"`
+	Label      string   `json:"label"`
+	Names      []string `json:"names,omitempty"`
+	HitKind    string   `json:"hit_kind,omitempty"`
+	HitPattern string   `json:"hit_pattern,omitempty"`
+}
+
+// appBypassPreview handles action "app-bypass-preview".
+// Phase 1: returns empty stub {matched: [], phase_one_stub: true}.
+// Phase 2 will plug AppListProvider here to surface the actual matched apps.
 func (d *Daemon) appBypassPreview(w http.ResponseWriter, _ map[string]any) {
-	writeJSON(w, Response{Code: 501, Message: "not implemented (Task 19)"})
+	writeJSON(w, Response{
+		Code:    0,
+		Message: "ok",
+		Data: appBypassPreviewResult{
+			Matched:      []appBypassPreviewEntry{},
+			PhaseOneStub: true,
+		},
+	})
 }
