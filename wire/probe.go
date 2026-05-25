@@ -74,7 +74,7 @@ func probeConnection(ctx context.Context, conn *quic.Conn, rounds int, interval 
 		rtt, err := EchoProbe(roundCtx, conn)
 		cancel()
 		if err != nil {
-			if isEchoUnsupported(err) {
+			if IsEchoUnsupported(err) {
 				anyUnsupported = true
 				break
 			}
