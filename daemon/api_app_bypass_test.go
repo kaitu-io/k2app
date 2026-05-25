@@ -141,3 +141,38 @@ func TestAPI_AppBypassSetCustom_DedupOnRepeat(t *testing.T) {
 		t.Errorf("expected Steam dedup'd to 1 entry, got %d", count)
 	}
 }
+
+func TestAPI_AppBypassSetRegion(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir := stateDir
+	stateDir = func() string { return tmpDir }
+	defer func() { stateDir = origDir }()
+
+	d := New()
+	resp := callCore(t, d, "app-bypass-set-region", map[string]any{"region": "cn"})
+	if resp.Code != 0 { t.Fatalf("code = %d (%s)", resp.Code, resp.Message) }
+	st, _ := loadState()
+	if st.AppBypass == nil || st.AppBypass.Region != "cn" {
+		t.Errorf("Region should persist as cn, got %+v", st.AppBypass)
+	}
+
+	// Clear region
+	callCore(t, d, "app-bypass-set-region", map[string]any{"region": ""})
+	st2, _ := loadState()
+	if st2.AppBypass != nil && st2.AppBypass.Region != "" {
+		t.Errorf("Region should clear, got %q", st2.AppBypass.Region)
+	}
+}
+
+func TestAPI_AppBypassSetRegion_RejectsInvalidLength(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir := stateDir
+	stateDir = func() string { return tmpDir }
+	defer func() { stateDir = origDir }()
+
+	d := New()
+	resp := callCore(t, d, "app-bypass-set-region", map[string]any{"region": "CHINA"})
+	if resp.Code == 0 {
+		t.Errorf("expected error code for invalid region length")
+	}
+}

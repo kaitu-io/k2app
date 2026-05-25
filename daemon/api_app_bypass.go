@@ -159,12 +159,40 @@ func (d *Daemon) appBypassSetCustom(w http.ResponseWriter, params map[string]any
 	writeJSON(w, Response{Code: 0, Message: "ok", Data: d.snapshotAppBypassState()})
 }
 
-func (d *Daemon) appBypassSetRegion(w http.ResponseWriter, _ map[string]any) {
-	writeJSON(w, Response{Code: 501, Message: "not implemented (Task 18)"})
+type appBypassRegionReq struct {
+	Region string `json:"region"`
 }
+
+// appBypassSetRegion handles action "app-bypass-set-region".
+// Empty region disables smart bypass; ISO 3166-1 alpha-2 (2 chars) otherwise.
+func (d *Daemon) appBypassSetRegion(w http.ResponseWriter, params map[string]any) {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("bad params: %v", err)})
+		return
+	}
+	var req appBypassRegionReq
+	if err := json.Unmarshal(raw, &req); err != nil {
+		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("bad request: %v", err)})
+		return
+	}
+	region := trimRegion(req.Region)
+	if region != "" && len(region) != 2 {
+		writeJSON(w, Response{Code: 400,
+			Message: "region must be empty or ISO 3166-1 alpha-2 (2 chars)"})
+		return
+	}
+
+	d.mu.Lock()
+	d.appBypassOverrides.Region = region
+	d.mu.Unlock()
+
+	d.persistAppBypass()
+	d.applyEngineNow()
+
+	writeJSON(w, Response{Code: 0, Message: "ok", Data: d.snapshotAppBypassState()})
+}
+
 func (d *Daemon) appBypassPreview(w http.ResponseWriter, _ map[string]any) {
 	writeJSON(w, Response{Code: 501, Message: "not implemented (Task 19)"})
 }
-
-// Silence unused-symbol warnings until Tasks 18-19 replace placeholders.
-var _ = trimRegion
