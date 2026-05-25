@@ -175,6 +175,24 @@ func TestHasHostCriteria(t *testing.T) {
 	}
 }
 
+func TestHasCriteria_NewFields(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   MatchConfig
+	}{
+		{"process_name_prefix", MatchConfig{ProcessNamePrefix: []string{"WeChat"}}},
+		{"package_name_prefix", MatchConfig{PackageNamePrefix: []string{"com.tencent."}}},
+		{"installer_package",   MatchConfig{InstallerPackage:  []string{"com.xiaomi.market"}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if !tc.mc.HasCriteria() {
+				t.Errorf("HasCriteria should be true for %s", tc.name)
+			}
+		})
+	}
+}
+
 func contains(ss []string, s string) bool {
 	for _, v := range ss {
 		if v == s {
