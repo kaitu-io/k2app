@@ -12,35 +12,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # --- Platform-independent tests (Ubuntu) ---
   test-webapp:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    uses: ./.github/workflows/test-webapp-reusable.yml
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-
-      - name: Install Node dependencies
-        run: yarn install --frozen-lockfile
-
-      - name: Run webapp tests (vitest)
-        run: yarn test
-        working-directory: webapp
-
-      - name: Type-check webapp (tsc)
-        run: npx tsc --noEmit
-        working-directory: webapp
-
-      - name: Type-check K2 Plugin (mobile)
-        run: npx tsc --noEmit
-        working-directory: mobile/plugins/k2-plugin
-
-  # --- Version consistency checks (Ubuntu) ---
   check-versions:
     runs-on: ubuntu-latest
     steps:

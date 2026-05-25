@@ -72,32 +72,24 @@ jobs:
             echo "matrix={\"include\":[$JOINED]}" >> "$GITHUB_OUTPUT"
           fi
 
-  # --- Test gates: 3 parallel jobs, all must pass before release ---
-
   test-webapp:
     needs: plan
     if: needs.plan.outputs.should_run == 'true'
+    uses: ./.github/workflows/test-webapp-reusable.yml
+
+  check-versions:
+    needs: plan
+    if: needs.plan.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-      - run: yarn install --frozen-lockfile
-      - name: Version consistency check
-        run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          CARGO_VERSION=$(grep '^version' desktop/src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
-          if [ "$PKG_VERSION" != "$CARGO_VERSION" ]; then
-            echo "::error::Version mismatch: package.json ($PKG_VERSION) != Cargo.toml ($CARGO_VERSION)"
-            exit 1
-          fi
-          echo "Versions consistent: $PKG_VERSION"
-      - name: Webapp tests (vitest)
-        run: yarn test
-        working-directory: webapp
+      - run: |
+          set -e
+          PKG=$(node -p "require('./package.json').version")
+          CARGO=$(grep '^version' desktop/src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          [ "$PKG" = "$CARGO" ] || { echo "::error::package.json ($PKG) != Cargo.toml ($CARGO)"; exit 1; }
+          echo "Versions consistent: $PKG"
 
   test-cargo:
     needs: plan
@@ -192,7 +184,7 @@ jobs:
     # Tauri). Cross-compile from macOS via CGO_ENABLED=0 — much faster than
     # Linux runners because no apt, no webkit2gtk, no Rust. See
     # packaging/linux/ for the install.sh + systemd unit.
-    needs: [plan, test-webapp, test-cargo, test-go]
+    needs: [plan, test-webapp, check-versions, test-cargo, test-go]
     if: needs.plan.outputs.should_run == 'true'
     strategy:
       fail-fast: false

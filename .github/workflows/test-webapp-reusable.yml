@@ -1,0 +1,36 @@
+name: Test Webapp (reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install Node dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Run webapp tests (vitest)
+        run: yarn test
+        working-directory: webapp
+
+      - name: Type-check webapp (tsc)
+        run: npx tsc --noEmit
+        working-directory: webapp
+
+      - name: Type-check K2 Plugin (mobile)
+        run: npx tsc --noEmit
+        working-directory: mobile/plugins/k2-plugin
