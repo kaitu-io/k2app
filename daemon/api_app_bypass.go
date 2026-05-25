@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime"
@@ -117,13 +119,46 @@ func applyDelta(existing, adds, removes []string) []string {
 	return out
 }
 
-// Placeholders for Tasks 17-19. Real bodies replace these in their tasks.
-// Registering all 4 action cases now (Step 4 below) locks in the API surface
-// so the webapp side can be written against a stable contract.
-
-func (d *Daemon) appBypassSetCustom(w http.ResponseWriter, _ map[string]any) {
-	writeJSON(w, Response{Code: 501, Message: "not implemented (Task 17)"})
+type appBypassDelta struct {
+	Process []string `json:"process,omitempty"`
+	Package []string `json:"package,omitempty"`
 }
+
+type appBypassCustomReq struct {
+	Add    appBypassDelta `json:"add"`
+	Remove appBypassDelta `json:"remove"`
+}
+
+// appBypassSetCustom handles action "app-bypass-set-custom".
+// params decodes into appBypassCustomReq; updates ProcessAdds + PackageAdds
+// via applyDelta; persists via persistAppBypass; refreshes engine if running.
+func (d *Daemon) appBypassSetCustom(w http.ResponseWriter, params map[string]any) {
+	// Re-marshal params into the typed struct (same pattern as handleUp's
+	// config decode at api.go:88-97).
+	raw, err := json.Marshal(params)
+	if err != nil {
+		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("bad params: %v", err)})
+		return
+	}
+	var req appBypassCustomReq
+	if err := json.Unmarshal(raw, &req); err != nil {
+		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("bad request: %v", err)})
+		return
+	}
+
+	d.mu.Lock()
+	o := d.appBypassOverrides
+	o.ProcessAdds = applyDelta(o.ProcessAdds, req.Add.Process, req.Remove.Process)
+	o.PackageAdds = applyDelta(o.PackageAdds, req.Add.Package, req.Remove.Package)
+	d.appBypassOverrides = o
+	d.mu.Unlock()
+
+	d.persistAppBypass()
+	d.applyEngineNow()
+
+	writeJSON(w, Response{Code: 0, Message: "ok", Data: d.snapshotAppBypassState()})
+}
+
 func (d *Daemon) appBypassSetRegion(w http.ResponseWriter, _ map[string]any) {
 	writeJSON(w, Response{Code: 501, Message: "not implemented (Task 18)"})
 }
@@ -131,7 +166,5 @@ func (d *Daemon) appBypassPreview(w http.ResponseWriter, _ map[string]any) {
 	writeJSON(w, Response{Code: 501, Message: "not implemented (Task 19)"})
 }
 
-// Silence unused-symbol warnings until Tasks 17-19 replace placeholders.
+// Silence unused-symbol warnings until Tasks 18-19 replace placeholders.
 var _ = trimRegion
-var _ = applyDelta
-var _ = (*Daemon).applyEngineNow

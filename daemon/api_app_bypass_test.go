@@ -69,3 +69,75 @@ func TestAPI_AppBypassGet_Populated(t *testing.T) {
 		t.Errorf("ProcessAdds should contain Steam")
 	}
 }
+
+func TestAPI_AppBypassSetCustom_AddRemove(t *testing.T) {
+	// Isolated state.json
+	tmpDir := t.TempDir()
+	origDir := stateDir
+	stateDir = func() string { return tmpDir }
+	defer func() { stateDir = origDir }()
+
+	d := New()
+
+	resp := callCore(t, d, "app-bypass-set-custom", map[string]any{
+		"add":    map[string]any{"process": []string{"Steam"}, "package": []string{"com.user.app"}},
+		"remove": map[string]any{"process": []string{}, "package": []string{}},
+	})
+	if resp.Code != 0 {
+		t.Fatalf("set-custom code = %d (%s)", resp.Code, resp.Message)
+	}
+
+	// Verify persistence via loadState (same path daemon uses on next startup).
+	st, err := loadState()
+	if err != nil {
+		t.Fatalf("loadState: %v", err)
+	}
+	if st.AppBypass == nil {
+		t.Fatal("AppBypass not persisted")
+	}
+	if !containsAppBypassStr(st.AppBypass.ProcessAdds, "Steam") {
+		t.Errorf("persistence: ProcessAdds should contain Steam, got %v", st.AppBypass.ProcessAdds)
+	}
+
+	// Remove it.
+	resp2 := callCore(t, d, "app-bypass-set-custom", map[string]any{
+		"add":    map[string]any{"process": []string{}, "package": []string{}},
+		"remove": map[string]any{"process": []string{"Steam"}, "package": []string{}},
+	})
+	if resp2.Code != 0 {
+		t.Fatalf("remove code = %d", resp2.Code)
+	}
+	st2, _ := loadState()
+	if st2.AppBypass != nil && containsAppBypassStr(st2.AppBypass.ProcessAdds, "Steam") {
+		t.Errorf("Steam should have been removed; got %v", st2.AppBypass.ProcessAdds)
+	}
+}
+
+func TestAPI_AppBypassSetCustom_DedupOnRepeat(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir := stateDir
+	stateDir = func() string { return tmpDir }
+	defer func() { stateDir = origDir }()
+
+	d := New()
+	payload := map[string]any{
+		"add":    map[string]any{"process": []string{"Steam"}, "package": []string{}},
+		"remove": map[string]any{"process": []string{}, "package": []string{}},
+	}
+	for i := 0; i < 3; i++ {
+		callCore(t, d, "app-bypass-set-custom", payload)
+	}
+	st, _ := loadState()
+	if st.AppBypass == nil {
+		t.Fatal("not persisted")
+	}
+	count := 0
+	for _, s := range st.AppBypass.ProcessAdds {
+		if s == "Steam" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected Steam dedup'd to 1 entry, got %d", count)
+	}
+}
