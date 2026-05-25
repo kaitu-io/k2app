@@ -125,6 +125,11 @@ type Daemon struct {
 	// resolveSubscriptions. Empty string = use platform default. Tests
 	// point this at t.TempDir() so cached tunnels can be preloaded.
 	subsCacheDirOverride string
+
+	// appBypassOverrides is the in-memory cache of daemon's persisted app-bypass
+	// state. Loaded at Run() startup from state.json via tryAutoReconnect.
+	// Mutated via /api/core app-bypass-* actions.
+	appBypassOverrides AppBypassOverrides
 }
 
 // New creates a new daemon.
@@ -485,12 +490,21 @@ func (d *Daemon) engineConfigFromClientConfig(
 		cfg.CacheDir = filepath.Join(cacheDir(), "rules")
 	}
 
+	d.mu.RLock()
+	overrides := d.appBypassOverrides
+	d.mu.RUnlock()
+
 	ecfg := engine.Config{
 		Client:           cfg,
 		FileDescriptor:   -1, // Desktop: engine creates its own TUN.
 		DirectDialer:     dd,
 		HealthCallback:   d.broadcastSnapshot,
 		OutboundProvider: d, // Daemon implements engine.OutboundProvider (k2subs rotation).
+		AppBypassRegion:  overrides.Region,
+		AppBypassCustom: engine.AppBypassCustom{
+			ProcessAdds: overrides.ProcessAdds,
+			PackageAdds: overrides.PackageAdds,
+		},
 	}
 
 	// Apply network monitor if available.
@@ -536,6 +550,21 @@ func (d *Daemon) startRulePrefetch(ctx context.Context) {
 // ctx is the daemon's lifecycle context — reconnect is aborted if ctx is cancelled.
 func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 	st, err := loadState()
+
+	// Seed app-bypass overrides from persisted state. Independent of
+	// reconnect decision — even if Config is nil / State != connected,
+	// the user's app-bypass preferences should survive daemon restarts.
+	if err == nil && st.AppBypass != nil {
+		d.mu.Lock()
+		d.appBypassOverrides = *st.AppBypass
+		d.mu.Unlock()
+		slog.Info("daemon: loaded app-bypass overrides",
+			"region", st.AppBypass.Region,
+			"process_count", len(st.AppBypass.ProcessAdds),
+			"package_count", len(st.AppBypass.PackageAdds),
+		)
+	}
+
 	if err != nil || st.State != engine.StateConnected {
 		return
 	}
@@ -597,6 +626,31 @@ func (d *Daemon) statusInfo() map[string]any {
 		info["config"] = cfg
 	}
 	return info
+}
+
+// currentAppBypass returns a snapshot of the current app-bypass overrides.
+func (d *Daemon) currentAppBypass() AppBypassOverrides {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.appBypassOverrides
+}
+
+// persistAppBypass writes the daemon's full persistedState (including the
+// current Config + AppBypass) atomically via saveState. Returns silently —
+// saveState already logs on failure (matches existing daemon convention).
+func (d *Daemon) persistAppBypass() {
+	d.mu.RLock()
+	o := d.appBypassOverrides
+	cfg := d.lastConfig
+	state := d.lastStatus.State
+	d.mu.RUnlock()
+
+	saveState(persistedState{
+		Config:    cfg,
+		State:     state,
+		Timestamp: time.Now().UTC(),
+		AppBypass: &o,
+	})
 }
 
 // OnStatus implements engine.EventHandler — updates lastStatus and broadcasts to SSE clients.

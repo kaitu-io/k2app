@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
@@ -496,4 +497,50 @@ func TestDoDownConcurrent(t *testing.T) {
 	if eng != nil {
 		t.Fatal("expected engine to be nil after concurrent doDown")
 	}
+}
+
+// ==========================================================================
+// App-bypass startup-seed tests (Task 15)
+// ==========================================================================
+
+func TestDaemon_StartupSeedsAppBypassFromState(t *testing.T) {
+	// Inject a test state dir so saveState/loadState use an isolated file.
+	tmpDir := t.TempDir()
+	origDir := stateDir
+	stateDir = func() string { return tmpDir }
+	defer func() { stateDir = origDir }()
+
+	// Seed state.json with an AppBypass entry, no Config (fresh-install case).
+	saveState(persistedState{
+		State:     "disconnected",
+		Timestamp: time.Now().UTC(),
+		AppBypass: &AppBypassOverrides{
+			Region:      "cn",
+			ProcessAdds: []string{"Steam"},
+		},
+	})
+
+	d := New()
+	// tryAutoReconnect is the existing loadState call site; invoke it with a
+	// pre-cancelled context so it won't attempt a real tunnel connection.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	d.tryAutoReconnect(ctx)
+
+	got := d.currentAppBypass()
+	if got.Region != "cn" {
+		t.Errorf("Region = %q, want cn (got: %+v)", got.Region, got)
+	}
+	if !containsAppBypassStr(got.ProcessAdds, "Steam") {
+		t.Errorf("ProcessAdds should contain Steam: %v", got.ProcessAdds)
+	}
+}
+
+func containsAppBypassStr(ss []string, want string) bool {
+	for _, s := range ss {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
