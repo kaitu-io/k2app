@@ -70,6 +70,12 @@ type Engine struct {
 	wireMode         string
 	outboundProvider OutboundProvider
 
+	// appBypassRegion and appBypassCustom are mutable via SetAppBypassRegion /
+	// SetAppBypassCustom. They survive Stop so the next Start picks them up,
+	// and RefreshAppBypass reads them to rebuild routes without reconnecting.
+	appBypassRegion string
+	appBypassCustom AppBypassCustom
+
 	// missReporter is non-nil only when client.Telemetry.RuleMiss.Enabled
 	// is true. When nil, the rule engine's MissReporter hook is also nil
 	// and the match hot path has zero rule-miss overhead. Phase 1.
@@ -526,6 +532,12 @@ func (e *Engine) Start(cfg Config) error {
 	e.wireMode = cfg.WireMode
 	e.outboundProvider = cfg.OutboundProvider
 
+	// Snapshot appbypass config so SetAppBypassRegion / SetAppBypassCustom
+	// can update them independently without touching the original cfg copy,
+	// and RefreshAppBypass can read them back under mu.
+	e.appBypassRegion = cfg.AppBypassRegion
+	e.appBypassCustom = cfg.AppBypassCustom
+
 	// Re-race loop: replaces recoveryProbe.
 	e.reRaceChan = make(chan *outboundTransport, 1)
 	reRaceCtx, reRaceCancel := context.WithCancel(ctx)
@@ -564,7 +576,16 @@ func (e *Engine) Start(cfg Config) error {
 			idx := rule.Index(newBundles)
 
 			// Recompute appbypass routes — YAML may have refreshed via CDN.
-			abRoutes, _ := buildAppBypassRoute(&cfg)
+			// Read current appbypass config from the engine fields so that
+			// SetAppBypassRegion/SetAppBypassCustom changes are reflected here.
+			e.mu.Lock()
+			abCfg := Config{
+				AppBypassRegion: e.appBypassRegion,
+				AppBypassCustom: e.appBypassCustom,
+				Client:          client,
+			}
+			e.mu.Unlock()
+			abRoutes, _ := buildAppBypassRoute(&abCfg)
 			finalRoutes := make([]config.RouteConfig, 0, len(abRoutes)+len(client.Routes))
 			for _, r := range abRoutes {
 				finalRoutes = append(finalRoutes, *r)

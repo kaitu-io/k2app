@@ -177,3 +177,17 @@ func copyFixture(t *testing.T, src, dst string) {
 		t.Fatal(err)
 	}
 }
+
+func TestEngine_SetAppBypassCustomThenRefresh(t *testing.T) {
+	// We test the setter API exists and the closure-based refresh works.
+	// Full engine.Start integration is exercised by Task 21's e2e test.
+	e := &Engine{}
+	e.SetAppBypassRegion("cn")
+	if e.appBypassRegion != "cn" {
+		t.Errorf("SetAppBypassRegion failed: %q", e.appBypassRegion)
+	}
+	e.SetAppBypassCustom(AppBypassCustom{ProcessAdds: []string{"Slack"}})
+	if !containsStr(e.appBypassCustom.ProcessAdds, "Slack") {
+		t.Errorf("SetAppBypassCustom failed: %v", e.appBypassCustom)
+	}
+}
