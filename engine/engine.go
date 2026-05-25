@@ -1119,9 +1119,16 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]*rule.BundleS
 		entry.NetworkMatch = route.Match.Network
 		entry.IPIsPrivate = route.Match.IPIsPrivate
 
+		// v2: prefix + installer.
+		entry.ProcessNamePrefixes = lowerCopy(route.Match.ProcessNamePrefix)
+		entry.PackageNamePrefixes = append([]string(nil), route.Match.PackageNamePrefix...)
+		entry.InstallerPackages = append([]string(nil), route.Match.InstallerPackage...)
+
 		hasAnyCriteria := len(entry.Sets) > 0 ||
 			(entry.Inline != nil && !entry.Inline.IsEmpty()) ||
 			len(entry.ProcessNames) > 0 || len(entry.PackageNames) > 0 ||
+			len(entry.ProcessNamePrefixes) > 0 || len(entry.PackageNamePrefixes) > 0 ||
+			len(entry.InstallerPackages) > 0 ||
 			entry.NetworkMatch != "" || entry.IPIsPrivate
 		if hasAnyCriteria {
 			entries = append(entries, entry)
@@ -1711,4 +1718,17 @@ func (e *Engine) ForceConnected() {
 	if handler != nil {
 		handler.OnStatus(status)
 	}
+}
+
+// lowerCopy returns a new slice with every element lowercased.
+// Returns nil when in is empty so hasAnyCriteria len-checks stay correct.
+func lowerCopy(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	for i, s := range in {
+		out[i] = strings.ToLower(s)
+	}
+	return out
 }
