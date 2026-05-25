@@ -17,9 +17,17 @@ func TestLinuxProcessSearcher_WithPackageResolver(t *testing.T) {
 }
 
 type mockPackageResolver struct {
-	packages map[int32]string
+	packages   map[int32]string
+	installers map[string]string
 }
 
 func (m *mockPackageResolver) PackageForUID(uid int32) string {
 	return m.packages[uid]
+}
+
+func (m *mockPackageResolver) InstallerForPackage(packageName string) string {
+	if m.installers == nil {
+		return ""
+	}
+	return m.installers[packageName]
 }

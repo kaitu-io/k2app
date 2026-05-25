@@ -27,26 +27,29 @@ func NewLinuxProcessSearcher(pr PackageResolver) *LinuxProcessSearcher {
 	return &LinuxProcessSearcher{packageResolver: pr}
 }
 
-func (s *LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
+func (s *LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
 	inode := findSocketInode(network, srcIP, srcPort)
 	if inode == 0 {
-		return "", ""
+		return "", "", ""
 	}
 	pid := findPIDByInode(inode)
 	if pid == 0 {
-		return "", ""
+		return "", "", ""
 	}
 	name := readProcessName(pid)
 
 	// On Android, resolve UID → package name via callback.
-	var packageName string
+	var packageName, installerPackage string
 	if s.packageResolver != nil {
 		if uid := readProcessUID(pid); uid >= 10000 {
 			packageName = s.packageResolver.PackageForUID(int32(uid))
+			if packageName != "" {
+				installerPackage = s.packageResolver.InstallerForPackage(packageName)
+			}
 		}
 	}
 
-	return name, packageName
+	return name, packageName, installerPackage
 }
 
 // findSocketInode searches /proc/net/tcp or /proc/net/tcp6 for a matching

@@ -483,7 +483,7 @@ func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) rul
 	if t.processSearcher != nil && srcAddr != nil {
 		srcIP, ok := netip.AddrFromSlice(srcAddr.IP)
 		if ok {
-			meta.ProcessName, meta.PackageName = t.processSearcher.FindProcess(network, srcIP, uint16(srcAddr.Port))
+			meta.ProcessName, meta.PackageName, meta.InstallerPackage = t.processSearcher.FindProcess(network, srcIP, uint16(srcAddr.Port))
 		}
 	}
 

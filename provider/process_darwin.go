@@ -25,9 +25,9 @@ type cacheEntry struct {
 
 const cacheTTL = 2 * time.Second
 
-func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
+func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
 	if !srcIP.Is4() {
-		return "", ""
+		return "", "", ""
 	}
 
 	key := fmt.Sprintf("%s:%s:%d", network, srcIP, srcPort)
@@ -36,7 +36,7 @@ func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, sr
 	if s.cache != nil {
 		if e, ok := s.cache[key]; ok && time.Now().Before(e.expires) {
 			s.mu.Unlock()
-			return e.name, ""
+			return e.name, "", ""
 		}
 	}
 	s.mu.Unlock()
@@ -50,7 +50,7 @@ func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, sr
 	s.cache[key] = cacheEntry{name: name, expires: time.Now().Add(cacheTTL)}
 	s.mu.Unlock()
 
-	return name, ""
+	return name, "", ""
 }
 
 // lsofLookup calls lsof to find the process name for a socket.
