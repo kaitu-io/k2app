@@ -1658,6 +1658,12 @@ func TestPipe_CleanBidirectionalExit(t *testing.T) {
 
 	localClient, localApp := makeTCPPair(t)
 	remoteClient, remoteServer := makeTCPPair(t)
+	// Cleanup: pipe() / pipeDirExit half-close one side per conn; full-close
+	// the remaining halves so the test does not leak descriptors.
+	defer localClient.Close()
+	defer localApp.Close()
+	defer remoteClient.Close()
+	defer remoteServer.Close()
 
 	done := make(chan struct{})
 	var tx, rx atomic.Int64
@@ -1667,15 +1673,23 @@ func TestPipe_CleanBidirectionalExit(t *testing.T) {
 		pipe(localClient, remoteClient, &tx, &rx)
 	}()
 
-	// Both peers send a small payload and fully close. pipe() should
-	// complete quickly via natural EOF on both sides.
+	// Both peers send a small payload and half-close their write direction.
+	// pipe() should complete quickly via natural EOF on both sides.
+	//
+	// CloseWrite (not full Close) on purpose: a full Close on one peer races
+	// the other direction's Write. On Windows loopback the recently-closed
+	// peer kernel RSTs the in-flight Write fast enough that io.CopyBuffer
+	// returns (0, ECONNRESET) and the byte counter never bumps. The
+	// implementation is correct in production (real wire RTTs > the RST
+	// window); only this synthetic-loopback test trips the race. Half-close
+	// keeps the peer's read side open so Writes drain cleanly to EOF.
 	go func() {
 		localApp.Write([]byte("hello"))
-		localApp.Close()
+		localApp.(*net.TCPConn).CloseWrite()
 	}()
 	go func() {
 		remoteServer.Write([]byte("world"))
-		remoteServer.Close()
+		remoteServer.(*net.TCPConn).CloseWrite()
 	}()
 
 	select {

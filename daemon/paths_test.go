@@ -42,7 +42,10 @@ func TestResolveCacheDir(t *testing.T) {
 			isRoot:        false,
 			userCacheBase: "/Users/dave/Library/Caches",
 			tempDir:       "/tmp",
-			want:          "/Users/dave/Library/Caches/k2",
+			// filepath.Join wraps the literal so the comparison stays correct on
+			// Windows runners — the implementation uses host-aware filepath.Join,
+			// not goos-aware path construction. Matches the Windows subtests' pattern.
+			want: filepath.Join("/Users/dave/Library/Caches", "k2"),
 		},
 		{
 			name:          "Linux root (systemd injects HOME=/root)",
@@ -50,7 +53,7 @@ func TestResolveCacheDir(t *testing.T) {
 			isRoot:        true,
 			userCacheBase: "/root/.cache",
 			tempDir:       "/tmp",
-			want:          "/root/.cache/k2",
+			want:          filepath.Join("/root/.cache", "k2"),
 		},
 		{
 			name:          "Linux user",
@@ -58,7 +61,7 @@ func TestResolveCacheDir(t *testing.T) {
 			isRoot:        false,
 			userCacheBase: "/home/dave/.cache",
 			tempDir:       "/tmp",
-			want:          "/home/dave/.cache/k2",
+			want:          filepath.Join("/home/dave/.cache", "k2"),
 		},
 		{
 			name:          "Linux root no HOME (degraded fallback to tempDir)",
@@ -66,7 +69,7 @@ func TestResolveCacheDir(t *testing.T) {
 			isRoot:        true,
 			userCacheBase: "",
 			tempDir:       "/tmp",
-			want:          "/tmp/k2",
+			want:          filepath.Join("/tmp", "k2"),
 		},
 		{
 			name:        "Windows SYSTEM with ProgramData",
