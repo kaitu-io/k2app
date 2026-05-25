@@ -268,38 +268,75 @@ func matchRouteDomain(r *RouteEntry, domain string) bool {
 }
 
 // matchMeta checks connection metadata against route criteria.
-// All criteria within a route AND together. Empty meta field = no match.
+//
+// Semantics:
+//   - Process group   = ProcessNames ∪ ProcessNamePrefixes (any hit)
+//   - Package group   = PackageNames ∪ PackageNamePrefixes ∪ InstallerPackages (any hit)
+//   - Network         = exact match if set
+//
+// Groups are AND'd: a route with both process and package criteria must satisfy both.
+//
+// Empty observed field where the route has criteria for that group = no match.
 func matchMeta(r *RouteEntry, meta ConnMeta) bool {
-	if len(r.ProcessNames) > 0 {
+	hasProcess := len(r.ProcessNames) > 0 || len(r.ProcessNamePrefixes) > 0
+	if hasProcess {
 		if meta.ProcessName == "" {
 			return false
 		}
-		found := false
+		hit := false
 		for _, p := range r.ProcessNames {
 			if meta.ProcessName == p {
-				found = true
+				hit = true
 				break
 			}
 		}
-		if !found {
-			return false
-		}
-	}
-	if len(r.PackageNames) > 0 {
-		if meta.PackageName == "" {
-			return false
-		}
-		found := false
-		for _, p := range r.PackageNames {
-			if meta.PackageName == p {
-				found = true
-				break
+		if !hit && len(r.ProcessNamePrefixes) > 0 {
+			lower := strings.ToLower(meta.ProcessName)
+			for _, p := range r.ProcessNamePrefixes {
+				// Entries pre-lowercased at compile time.
+				if strings.HasPrefix(lower, p) {
+					hit = true
+					break
+				}
 			}
 		}
-		if !found {
+		if !hit {
 			return false
 		}
 	}
+
+	hasPackage := len(r.PackageNames) > 0 || len(r.PackageNamePrefixes) > 0 || len(r.InstallerPackages) > 0
+	if hasPackage {
+		hit := false
+		if meta.PackageName != "" {
+			for _, p := range r.PackageNames {
+				if meta.PackageName == p {
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				for _, p := range r.PackageNamePrefixes {
+					if strings.HasPrefix(meta.PackageName, p) {
+						hit = true
+						break
+					}
+				}
+			}
+		}
+		if !hit && meta.InstallerPackage != "" {
+			for _, p := range r.InstallerPackages {
+				if meta.InstallerPackage == p {
+					hit = true
+					break
+				}
+			}
+		}
+		if !hit {
+			return false
+		}
+	}
+
 	if r.NetworkMatch != "" && meta.Network != r.NetworkMatch {
 		return false
 	}
