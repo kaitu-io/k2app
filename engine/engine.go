@@ -208,10 +208,10 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
 	outboundMap := buildOutboundMap(client.Routes)
-	abRoute, _ := buildAppBypassRoute(&cfg)
+	abRoutes, _ := buildAppBypassRoute(&cfg)
 	var extraRoutes []config.RouteConfig
-	if abRoute != nil {
-		extraRoutes = append(extraRoutes, *abRoute)
+	for _, r := range abRoutes {
+		extraRoutes = append(extraRoutes, *r)
 	}
 	ruleEngine := buildRuleEngine(client, outboundMap, extraRoutes)
 
@@ -563,11 +563,11 @@ func (e *Engine) Start(cfg Config) error {
 			}
 			idx := rule.Index(newBundles)
 
-			// Recompute appbypass route — YAML may have refreshed via CDN.
-			abRoute, _ := buildAppBypassRoute(&cfg)
-			finalRoutes := make([]config.RouteConfig, 0, 1+len(client.Routes))
-			if abRoute != nil {
-				finalRoutes = append(finalRoutes, *abRoute)
+			// Recompute appbypass routes — YAML may have refreshed via CDN.
+			abRoutes, _ := buildAppBypassRoute(&cfg)
+			finalRoutes := make([]config.RouteConfig, 0, len(abRoutes)+len(client.Routes))
+			for _, r := range abRoutes {
+				finalRoutes = append(finalRoutes, *r)
 			}
 			finalRoutes = append(finalRoutes, client.Routes...)
 

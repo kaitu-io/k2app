@@ -8,19 +8,25 @@ import (
 	"github.com/kaitu-io/k2/rule"
 )
 
-// buildAppBypassRoute consults the YAML preset for cfg.AppBypassRegion and
-// merges with cfg.AppBypassCustom to produce a single direct-target
-// config.RouteConfig suitable for prepending to client.Routes at Start.
+// buildAppBypassRoute loads the preset for cfg.AppBypassRegion under
+// Client.CacheDir and builds up to two platform-specific direct routes:
 //
-// Returns (nil, nil) when:
+//   - desktop route: ProcessName (exact + custom) + ProcessNamePrefix
+//   - android route: PackageName (exact + custom) + PackageNamePrefix + InstallerPackage
+//
+// Both routes target "direct". Splitting per-platform preserves the rule
+// engine's AND-across-groups semantics (mixing desktop + android fields in
+// one route would never match on either platform because the absent platform's
+// observed fields are always empty).
+//
+// Returns nil (no routes) when:
 //   - AppBypassRegion is empty
 //   - Client is nil or Client.CacheDir is empty
-//   - The preset is absent for the region
-//   - The merged MatchConfig has no criteria
+//   - No preset exists for the region
 //
-// Returns (nil, err) only on filesystem read failure. Per-file YAML errors
-// are absorbed by appbypass.Load and yield (nil, nil).
-func buildAppBypassRoute(cfg *Config) (*config.RouteConfig, error) {
+// Returns shorter slices when only one platform's section has criteria.
+// Returns (nil, err) only on filesystem read failure.
+func buildAppBypassRoute(cfg *Config) ([]*config.RouteConfig, error) {
 	if cfg == nil || cfg.AppBypassRegion == "" {
 		return nil, nil
 	}
@@ -41,25 +47,40 @@ func buildAppBypassRoute(cfg *Config) (*config.RouteConfig, error) {
 	}
 	custom := cfg.AppBypassCustom
 
-	mc := rule.MatchConfig{
-		InstallerPackage:  preset.Android.InstallerExact,
-		PackageName:       unionStrings(preset.Android.PackageExact, custom.PackageAdds),
-		PackageNamePrefix: preset.Android.PackagePrefix,
+	var routes []*config.RouteConfig
+
+	// Desktop route: process names + prefixes only.
+	desktopMC := rule.MatchConfig{
 		ProcessName:       unionStrings(preset.Desktop.ProcessExact, custom.ProcessAdds),
 		ProcessNamePrefix: preset.Desktop.ProcessPrefix,
 	}
-	if !mc.HasCriteria() {
+	if desktopMC.HasCriteria() {
+		routes = append(routes, &config.RouteConfig{Via: "direct", Match: desktopMC})
+	}
+
+	// Android route: package names + prefixes + installer only.
+	androidMC := rule.MatchConfig{
+		InstallerPackage:  preset.Android.InstallerExact,
+		PackageName:       unionStrings(preset.Android.PackageExact, custom.PackageAdds),
+		PackageNamePrefix: preset.Android.PackagePrefix,
+	}
+	if androidMC.HasCriteria() {
+		routes = append(routes, &config.RouteConfig{Via: "direct", Match: androidMC})
+	}
+
+	if len(routes) == 0 {
 		return nil, nil
 	}
-	slog.Info("appbypass: route built",
+	slog.Info("appbypass: routes built",
 		"region", cfg.AppBypassRegion,
-		"installer_count", len(mc.InstallerPackage),
-		"package_exact_count", len(mc.PackageName),
-		"package_prefix_count", len(mc.PackageNamePrefix),
-		"process_exact_count", len(mc.ProcessName),
-		"process_prefix_count", len(mc.ProcessNamePrefix),
+		"route_count", len(routes),
+		"desktop_process_exact", len(desktopMC.ProcessName),
+		"desktop_process_prefix", len(desktopMC.ProcessNamePrefix),
+		"android_installer", len(androidMC.InstallerPackage),
+		"android_package_exact", len(androidMC.PackageName),
+		"android_package_prefix", len(androidMC.PackageNamePrefix),
 	)
-	return &config.RouteConfig{Via: "direct", Match: mc}, nil
+	return routes, nil
 }
 
 // unionStrings returns the deduped union of a and b, preserving first-seen order.

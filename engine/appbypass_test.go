@@ -13,12 +13,12 @@ import (
 
 func TestBuildAppBypassRoute_NoRegion_ReturnsNil(t *testing.T) {
 	cfg := Config{Client: &config.ClientConfig{}}
-	rt, err := buildAppBypassRoute(&cfg)
+	rts, err := buildAppBypassRoute(&cfg)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if rt != nil {
-		t.Errorf("expected nil route when region empty")
+	if rts != nil {
+		t.Errorf("expected nil routes when region empty")
 	}
 }
 
@@ -28,8 +28,8 @@ func TestBuildAppBypassRoute_RegionWithoutPreset(t *testing.T) {
 		AppBypassRegion: "cn",
 		Client:          &config.ClientConfig{CacheDir: tmp},
 	}
-	rt, _ := buildAppBypassRoute(&cfg)
-	if rt != nil {
+	rts, _ := buildAppBypassRoute(&cfg)
+	if rts != nil {
 		t.Errorf("expected nil when no preset present")
 	}
 }
@@ -47,34 +47,64 @@ func TestBuildAppBypassRoute_FixtureCN(t *testing.T) {
 			PackageAdds: []string{"com.user.app"},
 		},
 	}
-	rt, err := buildAppBypassRoute(&cfg)
+	rts, err := buildAppBypassRoute(&cfg)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if rt == nil {
-		t.Fatal("expected non-nil route")
-	}
-	if rt.Via != "direct" {
-		t.Errorf("Via = %q want direct", rt.Via)
+	if len(rts) != 2 {
+		t.Fatalf("expected 2 routes (desktop + android), got %d", len(rts))
 	}
 
-	// Installer (Android exact, sorted by compile)
+	// Find desktop + android routes by which fields are populated.
+	var desktop, android *config.RouteConfig
+	for _, r := range rts {
+		if len(r.Match.ProcessName) > 0 || len(r.Match.ProcessNamePrefix) > 0 {
+			desktop = r
+		}
+		if len(r.Match.PackageName) > 0 || len(r.Match.PackageNamePrefix) > 0 || len(r.Match.InstallerPackage) > 0 {
+			android = r
+		}
+	}
+	if desktop == nil {
+		t.Fatal("missing desktop route")
+	}
+	if android == nil {
+		t.Fatal("missing android route")
+	}
+
+	if desktop.Via != "direct" {
+		t.Errorf("desktop.Via = %q", desktop.Via)
+	}
+	if android.Via != "direct" {
+		t.Errorf("android.Via = %q", android.Via)
+	}
+
+	// Custom adds + preset on desktop.
+	if !containsStr(desktop.Match.ProcessName, "Steam") {
+		t.Errorf("desktop ProcessName should contain custom Steam: %v", desktop.Match.ProcessName)
+	}
+	if !containsStr(desktop.Match.ProcessNamePrefix, "wechat") {
+		t.Errorf("desktop ProcessNamePrefix should contain lowercased wechat: %v", desktop.Match.ProcessNamePrefix)
+	}
+	// Desktop should NOT have Android fields.
+	if len(desktop.Match.PackageName) > 0 || len(desktop.Match.PackageNamePrefix) > 0 || len(desktop.Match.InstallerPackage) > 0 {
+		t.Errorf("desktop route should not contain Android fields: %+v", desktop.Match)
+	}
+
+	// Android route fields.
 	wantInstaller := []string{"com.huawei.appmarket", "com.xiaomi.market"}
-	if !reflect.DeepEqual(wantInstaller, rt.Match.InstallerPackage) {
-		t.Errorf("InstallerPackage = %v, want %v", rt.Match.InstallerPackage, wantInstaller)
+	if !reflect.DeepEqual(wantInstaller, android.Match.InstallerPackage) {
+		t.Errorf("android InstallerPackage = %v, want %v", android.Match.InstallerPackage, wantInstaller)
 	}
-	if !containsStr(rt.Match.ProcessName, "Steam") {
-		t.Errorf("ProcessName should contain custom Steam: %v", rt.Match.ProcessName)
+	if !containsStr(android.Match.PackageName, "com.user.app") {
+		t.Errorf("android PackageName should contain custom com.user.app: %v", android.Match.PackageName)
 	}
-	if !containsStr(rt.Match.PackageName, "com.user.app") {
-		t.Errorf("PackageName should contain custom com.user.app")
+	if !containsStr(android.Match.PackageNamePrefix, "com.tencent.") {
+		t.Errorf("android PackageNamePrefix should contain com.tencent.")
 	}
-	// Lowercased preset prefix should be present
-	if !containsStr(rt.Match.ProcessNamePrefix, "wechat") {
-		t.Errorf("ProcessNamePrefix should contain lowercased 'wechat': %v", rt.Match.ProcessNamePrefix)
-	}
-	if !containsStr(rt.Match.PackageNamePrefix, "com.tencent.") {
-		t.Errorf("PackageNamePrefix should contain com.tencent.")
+	// Android route should NOT have desktop process fields.
+	if len(android.Match.ProcessName) > 0 || len(android.Match.ProcessNamePrefix) > 0 {
+		t.Errorf("android route should not contain desktop fields: %+v", android.Match)
 	}
 }
 
@@ -98,30 +128,36 @@ func TestBuildRuleEngine_PrependsAppBypassRoute(t *testing.T) {
 			{Via: "k2v5://example.com/", Match: rule.MatchConfig{All: true}},
 		},
 	}
-	extra, err := buildAppBypassRoute(&Config{
+	extras, err := buildAppBypassRoute(&Config{
 		AppBypassRegion: "cn",
 		Client:          client,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if extra == nil {
-		t.Fatal("expected appbypass route")
+	if len(extras) == 0 {
+		t.Fatal("expected appbypass routes")
+	}
+
+	var extraRoutes []config.RouteConfig
+	for _, r := range extras {
+		extraRoutes = append(extraRoutes, *r)
 	}
 
 	outboundMap := map[string]rule.Target{
 		"k2v5://example.com/": rule.Target(2),
 	}
-	re := buildRuleEngine(client, outboundMap, []config.RouteConfig{*extra})
+	re := buildRuleEngine(client, outboundMap, extraRoutes)
 
-	// The rule engine should now route a process matching our preset to direct (Target 0).
+	// Desktop WeChat → direct (matches desktop route's ProcessNamePrefix "wechat")
 	target := re.MatchConn("example.org", rule.ConnMeta{ProcessName: "WeChat", Network: "tcp"})
 	if target != rule.Target(0) {
-		t.Errorf("WeChat should route to direct (Target 0), got Target(%d)", target)
+		t.Errorf("WeChat should route direct (0), got Target(%d)", target)
 	}
+	// Telegram → should NOT direct
 	target = re.MatchConn("example.org", rule.ConnMeta{ProcessName: "Telegram", Network: "tcp"})
 	if target == rule.Target(0) {
-		t.Errorf("Telegram should NOT route direct; should fall to user route")
+		t.Errorf("Telegram should NOT route direct")
 	}
 }
 
