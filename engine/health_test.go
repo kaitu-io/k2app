@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"context"
+	"errors"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -558,5 +561,155 @@ func applyEWMA(hm *healthMonitor, ws wire.WireStats) {
 		hm.ewmaInitialized = true
 	} else {
 		hm.smoothWireLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothWireLoss
+	}
+}
+
+// --- echoStep state-machine tests ----------------------------------------
+//
+// echoStep is a pure function; these tests cover every transition in §6 of
+// the wire-health-exponential-trust plan. No time, no I/O, no goroutines.
+
+func TestEchoStep_OkGrowsTrustOneStep(t *testing.T) {
+	res := echoStep(0, 0, nil)
+	if res.NewTrust != 1 || res.NewStrikes != 0 || res.ShouldRerace || res.Classify != echoOK {
+		t.Fatalf("got %+v", res)
+	}
+}
+
+func TestEchoStep_OkCapsAtMaxTrust(t *testing.T) {
+	maxIdx := int32(len(echoIntervals)) - 1
+	res := echoStep(maxIdx, 0, nil)
+	if res.NewTrust != maxIdx {
+		t.Fatalf("trust should cap at %d, got %d", maxIdx, res.NewTrust)
+	}
+}
+
+func TestEchoStep_OkResetsStrikes(t *testing.T) {
+	// strikes was non-zero (mid-failure-streak); a single ok resets it.
+	res := echoStep(0, 2, nil)
+	if res.NewStrikes != 0 {
+		t.Fatalf("strikes should reset to 0 on ok, got %d", res.NewStrikes)
+	}
+}
+
+func TestEchoStep_UnsupportedTreatedAsOk(t *testing.T) {
+	// errors.New = non-DeadlineExceeded → IsEchoUnsupported = true.
+	res := echoStep(0, 0, errors.New("stream reset by old server"))
+	if res.NewTrust != 1 || res.NewStrikes != 0 || res.ShouldRerace || res.Classify != echoUnsupported {
+		t.Fatalf("unsupported should behave like ok for trust/strikes/rerace, got %+v", res)
+	}
+}
+
+func TestEchoStep_UnsupportedAlsoCapsAtMaxTrust(t *testing.T) {
+	maxIdx := int32(len(echoIntervals)) - 1
+	res := echoStep(maxIdx, 0, io.EOF)
+	if res.NewTrust != maxIdx || res.Classify != echoUnsupported {
+		t.Fatalf("unsupported at max should stay at max, got %+v", res)
+	}
+}
+
+func TestEchoStep_FailResetsTrust(t *testing.T) {
+	// At max trust, single real failure collapses to 0.
+	maxIdx := int32(len(echoIntervals)) - 1
+	res := echoStep(maxIdx, 0, context.DeadlineExceeded)
+	if res.NewTrust != 0 || res.Classify != echoFail {
+		t.Fatalf("fail should collapse trust to 0, got %+v", res)
+	}
+}
+
+func TestEchoStep_FailAccumulatesStrikes(t *testing.T) {
+	r1 := echoStep(0, 0, context.DeadlineExceeded)
+	r2 := echoStep(r1.NewTrust, r1.NewStrikes, context.DeadlineExceeded)
+	if r1.NewStrikes != 1 || r2.NewStrikes != 2 {
+		t.Fatalf("strikes should accumulate: r1=%d r2=%d", r1.NewStrikes, r2.NewStrikes)
+	}
+	if r1.ShouldRerace || r2.ShouldRerace {
+		t.Fatal("rerace must not fire below threshold")
+	}
+}
+
+func TestEchoStep_FailFiresReraceAtThreshold(t *testing.T) {
+	// Walk to 3 strikes — third must signal rerace.
+	trust, strikes := int32(0), int32(0)
+	for i := 1; i <= echoReraceThreshold; i++ {
+		r := echoStep(trust, strikes, context.DeadlineExceeded)
+		trust, strikes = r.NewTrust, r.NewStrikes
+		if i < echoReraceThreshold && r.ShouldRerace {
+			t.Fatalf("rerace fired prematurely at strike %d", i)
+		}
+		if i == echoReraceThreshold && !r.ShouldRerace {
+			t.Fatalf("rerace did not fire at strike %d", i)
+		}
+	}
+}
+
+func TestEchoStep_OkAfterFailResetsStrikesNotTrust(t *testing.T) {
+	// After 2 fails: trust=0, strikes=2.
+	r1 := echoStep(2, 0, context.DeadlineExceeded) // trust 2→0, strikes 0→1
+	r2 := echoStep(r1.NewTrust, r1.NewStrikes, context.DeadlineExceeded)
+	// One ok must reset strikes and start growing trust again.
+	r3 := echoStep(r2.NewTrust, r2.NewStrikes, nil)
+	if r3.NewStrikes != 0 {
+		t.Fatalf("ok should reset strikes, got %d", r3.NewStrikes)
+	}
+	if r3.NewTrust != 1 {
+		t.Fatalf("ok should grow trust by 1, got %d", r3.NewTrust)
+	}
+}
+
+// --- echoIntervals invariants --------------------------------------------
+
+func TestEchoIntervals_WorstCaseDetectionBelowQUICIdle(t *testing.T) {
+	// Mirror of the init() invariant. Tests the same property explicitly so
+	// failure mode is a test fail (clear) instead of a startup panic (opaque).
+	ceiling := echoIntervals[len(echoIntervals)-1]
+	base := echoIntervals[0]
+	worst := ceiling + echoProbeTimeout +
+		time.Duration(echoReraceThreshold-1)*(base+echoProbeTimeout)
+	quicIdle := wire.DefaultQUICConfig().MaxIdleTimeout
+	if worst >= quicIdle {
+		t.Fatalf("worst-case detection %v ≥ QUIC MaxIdleTimeout %v — echoLoop "+
+			"would lose detection race to passive idle teardown",
+			worst, quicIdle)
+	}
+}
+
+func TestEchoIntervals_ExponentiallyGrowing(t *testing.T) {
+	for i := 1; i < len(echoIntervals); i++ {
+		if echoIntervals[i] != 2*echoIntervals[i-1] {
+			t.Fatalf("echoIntervals[%d]=%v should be 2× echoIntervals[%d]=%v",
+				i, echoIntervals[i], i-1, echoIntervals[i-1])
+		}
+	}
+}
+
+func TestEchoIntervals_BaseIsOneSecond(t *testing.T) {
+	if echoIntervals[0] != time.Second {
+		t.Fatalf("echoIntervals[0] = %v, expected 1s (must be fast to catch t≈0 wire failures)",
+			echoIntervals[0])
+	}
+}
+
+// Scenario walk: wire dies at t≈1s — verify detection at ~5s per plan §5.1.
+// Replays the iteration logic against echoStep with synthesized probe outcomes.
+func TestEchoStep_ScenarioWireFailsEarly(t *testing.T) {
+	// t=1s: handshake just succeeded, first probe finds wire still healthy.
+	r := echoStep(0, 0, nil)
+	if r.Classify != echoOK || r.NewTrust != 1 {
+		t.Fatalf("step 1 (ok at t=1s): %+v", r)
+	}
+
+	// Wire breaks. Subsequent probes timeout.
+	r = echoStep(r.NewTrust, r.NewStrikes, context.DeadlineExceeded)
+	if r.NewStrikes != 1 || r.NewTrust != 0 || r.ShouldRerace {
+		t.Fatalf("step 2 (fail #1): %+v", r)
+	}
+	r = echoStep(r.NewTrust, r.NewStrikes, context.DeadlineExceeded)
+	if r.NewStrikes != 2 || r.ShouldRerace {
+		t.Fatalf("step 3 (fail #2): %+v", r)
+	}
+	r = echoStep(r.NewTrust, r.NewStrikes, context.DeadlineExceeded)
+	if r.NewStrikes != echoReraceThreshold || !r.ShouldRerace {
+		t.Fatalf("step 4 (fail #3, expect rerace): %+v", r)
 	}
 }

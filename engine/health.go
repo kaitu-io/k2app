@@ -406,53 +406,194 @@ func (hm *healthMonitor) resetCounters() {
 	hm.ewmaInitialized = false
 }
 
-// echoLoop periodically runs echo probes on each outbound transport to verify
-// data-path health. 3 consecutive failures for a specific TM trigger a re-race
-// via reRaceChan carrying the failed *outboundTransport.
-// Decoupled from sample() — runs on its own 30s ticker, no lock nesting.
+// Echo wire-health probing — exponential-trust schedule.
+//
+// Principle: "trust" = time we're willing to skip verification. Each successful
+// probe halves uncertainty about wire health → next probe interval doubles. Each
+// failure resets trust → tighten back to base. Same family as TCP Karn / BGP
+// holdtime — proven adaptive verification pattern.
+//
+// Ceiling MUST sit below QUIC MaxIdleTimeout/2 so echo detects failure before
+// QUIC's passive idle timer fires (otherwise this loop adds no value beyond
+// quic-go's built-in keepalive). Enforced at init() time below.
+//
+// Detection timeline (wire dies at t=2s after handshake):
+//   t=1:  probe ok      → trust=1, interval=2s
+//   t=3:  probe FAIL    → trust=0, strikes=1, interval=1s + DIAG: echo-probe-fail
+//   t=4:  probe FAIL    → strikes=2
+//   t=5:  probe FAIL    → strikes=3 → rerace signal sent
+//
+// vs old design (single 30s ticker, 3-strike absolute): ~92s nominal, ∞ in
+// practice (short-session reconnect loop reset the counter every <30s).
+var echoIntervals = []time.Duration{
+	1 * time.Second,
+	2 * time.Second,
+	4 * time.Second,
+	8 * time.Second,
+	16 * time.Second,
+}
+
+const (
+	echoProbeTimeout    = 2 * time.Second
+	echoReraceThreshold = 3 // consecutive real failures (unsupported and ok don't count)
+)
+
+func init() {
+	// Invariant: worst-case time from wire-death to rerace-signal must stay
+	// strictly less than QUIC MaxIdleTimeout, so echo wins the detection race
+	// over QUIC's passive idle timer. Otherwise this loop adds no value beyond
+	// quic-go's built-in keepalive.
+	//
+	// Worst case: wire dies right after a successful probe at max trust →
+	//   wait `ceiling` for next probe →
+	//   first probe times out (strike #1) →
+	//   remaining `threshold-1` strikes accumulate at base interval+timeout.
+	quicIdle := wire.DefaultQUICConfig().MaxIdleTimeout
+	ceiling := echoIntervals[len(echoIntervals)-1]
+	base := echoIntervals[0]
+	worstCase := ceiling + echoProbeTimeout +
+		time.Duration(echoReraceThreshold-1)*(base+echoProbeTimeout)
+	if worstCase >= quicIdle {
+		panic(fmt.Sprintf(
+			"engine: echo worst-case detection %v ≥ QUIC MaxIdleTimeout %v — "+
+				"shrink echoIntervals ceiling, base interval, or echoReraceThreshold",
+			worstCase, quicIdle,
+		))
+	}
+}
+
+// echoStepResult is the pure-function output of one probe iteration.
+// Extracted from echoProbeLoop for unit testability.
+type echoStepResult struct {
+	NewTrust     int32
+	NewStrikes   int32
+	ShouldRerace bool
+	Classify     echoClass
+}
+
+type echoClass int
+
+const (
+	echoOK echoClass = iota
+	echoUnsupported
+	echoFail
+)
+
+// echoStep is the state-machine transition for one probe outcome.
+// Pure function — no time, no I/O, no logging. Tests cover all 4 cases.
+func echoStep(trust, strikes int32, err error) echoStepResult {
+	maxTrust := int32(len(echoIntervals)) - 1
+	switch {
+	case err == nil:
+		return echoStepResult{NewTrust: min(trust+1, maxTrust), NewStrikes: 0, Classify: echoOK}
+	case wire.IsEchoUnsupported(err):
+		// Pre-echo server: treat as success-equivalent for trust accounting.
+		// Server can't validate but isn't broken; other failure modes (QUIC idle,
+		// stream-open failures elsewhere) will surface real wire death.
+		// CRITICAL: without this branch, 1s probe tick would emit 18× rerace
+		// storm against pre-echo servers (vs the old 30s tick's tolerable noise).
+		return echoStepResult{NewTrust: min(trust+1, maxTrust), NewStrikes: 0, Classify: echoUnsupported}
+	default:
+		newStrikes := strikes + 1
+		return echoStepResult{
+			NewTrust:     0,
+			NewStrikes:   newStrikes,
+			ShouldRerace: newStrikes >= echoReraceThreshold,
+			Classify:     echoFail,
+		}
+	}
+}
+
+// echoLoop spawns one probe goroutine per outboundTransport, joins on hm.done.
+// Per-transport state is local to each child goroutine — no shared map, no lock.
 func (hm *healthMonitor) echoLoop() {
 	defer hm.wg.Done()
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+	var wg sync.WaitGroup
+	for _, ot := range hm.tms {
+		ot := ot
+		wg.Add(1)
+		safego.Go(func() {
+			defer wg.Done()
+			hm.echoProbeLoop(ot)
+		})
+	}
+	wg.Wait()
+}
 
-	echoFails := make(map[*outboundTransport]int32)
+// echoProbeLoop runs one transport's exponential-trust echo schedule until
+// hm.done. State (trust, strikes, unsupportedLogged) is goroutine-local.
+func (hm *healthMonitor) echoProbeLoop(ot *outboundTransport) {
+	var trustIdx, strikes int32
+	// Rate-limit DIAG: echo-probe-unsupported to once per (transport, state-change)
+	// to avoid spam when probing a pre-echo server at high cadence.
+	unsupportedLogged := false
+
+	timer := time.NewTimer(echoIntervals[trustIdx])
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-hm.done:
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
 
-		for _, ot := range hm.tms {
-			primary := ot.tm.Primary()
-			if primary == nil {
-				continue
-			}
-
-			ep, ok := primary.(wire.EchoProber)
-			if !ok {
-				echoFails[ot] = 0
-				continue
-			}
-
-			echoCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			err := ep.RunEchoProbe(echoCtx)
-			cancel()
-
-			if err != nil {
-				echoFails[ot]++
-				if echoFails[ot] >= 3 && hm.reRaceChan != nil {
-					select {
-					case hm.reRaceChan <- ot:
-					default:
-					}
-					echoFails[ot] = 0
-				}
-			} else {
-				echoFails[ot] = 0
-			}
+		primary := ot.tm.Primary()
+		if primary == nil {
+			trustIdx, strikes, unsupportedLogged = 0, 0, false
+			timer.Reset(echoIntervals[0])
+			continue
 		}
+		ep, ok := primary.(wire.EchoProber)
+		if !ok {
+			// TCP-WS or similar — built-in WS ping/pong covers liveness.
+			// Sleep at max interval (cheap no-op pacing).
+			trustIdx, strikes, unsupportedLogged = 0, 0, false
+			timer.Reset(echoIntervals[len(echoIntervals)-1])
+			continue
+		}
+
+		transport := ot.tm.PrimaryType()
+		echoCtx, cancel := context.WithTimeout(context.Background(), echoProbeTimeout)
+		err := ep.RunEchoProbe(echoCtx)
+		cancel()
+
+		res := echoStep(trustIdx, strikes, err)
+
+		switch res.Classify {
+		case echoOK:
+			unsupportedLogged = false
+			// echo-probe-ok is logged inside wire.EchoProbe at DEBUG with rttMs;
+			// no need to duplicate here.
+		case echoUnsupported:
+			if !unsupportedLogged {
+				slog.Warn("DIAG: echo-probe-unsupported", "transport", transport)
+				unsupportedLogged = true
+			}
+		case echoFail:
+			unsupportedLogged = false
+			slog.Warn("DIAG: echo-probe-fail",
+				"transport", transport,
+				"err", err.Error(),
+				"trustIdx", trustIdx,
+				"strikes", res.NewStrikes,
+			)
+		}
+
+		trustIdx = res.NewTrust
+		strikes = res.NewStrikes
+
+		if res.ShouldRerace && hm.reRaceChan != nil {
+			// Cap-1 channel + select-default in engine.outboundReplaceLoop gives
+			// natural burst throttling; consumer logs DIAG: transport-rerace.
+			select {
+			case hm.reRaceChan <- ot:
+			default:
+			}
+			strikes = 0
+		}
+
+		timer.Reset(echoIntervals[trustIdx])
 	}
 }
 
