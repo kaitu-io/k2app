@@ -208,7 +208,12 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
 	outboundMap := buildOutboundMap(client.Routes)
-	ruleEngine := buildRuleEngine(client, outboundMap)
+	abRoute, _ := buildAppBypassRoute(&cfg)
+	var extraRoutes []config.RouteConfig
+	if abRoute != nil {
+		extraRoutes = append(extraRoutes, *abRoute)
+	}
+	ruleEngine := buildRuleEngine(client, outboundMap, extraRoutes)
 
 	// 1c. (Phase 1 dark instrumentation) Wire rule-miss telemetry reporter
 	// ONLY when explicitly opted in via config. Zero-value config = off,
@@ -557,7 +562,16 @@ func (e *Engine) Start(cfg Config) error {
 				return nil, nil, err
 			}
 			idx := rule.Index(newBundles)
-			entries, _, _ := buildRouteEntries(client.Routes, idx, outboundMap)
+
+			// Recompute appbypass route — YAML may have refreshed via CDN.
+			abRoute, _ := buildAppBypassRoute(&cfg)
+			finalRoutes := make([]config.RouteConfig, 0, 1+len(client.Routes))
+			if abRoute != nil {
+				finalRoutes = append(finalRoutes, *abRoute)
+			}
+			finalRoutes = append(finalRoutes, client.Routes...)
+
+			entries, _, _ := buildRouteEntries(finalRoutes, idx, outboundMap)
 			return entries, newBundles, nil
 		}
 		rule.StartUpdater(ctx, ruleEngine, client.CacheDir, sources, rebuildFn)
@@ -1282,10 +1296,24 @@ func buildDNSRouter(outboundMap map[string]rule.Target) func(rule.Target) bool {
 
 // buildRuleEngine creates a rule.Engine from the client's route configuration.
 // CacheDir must be set by the platform shell (daemon/appext) before calling engine.
-func buildRuleEngine(client *config.ClientConfig, outboundMap map[string]rule.Target) *rule.Engine {
+//
+// extraRoutes are prepended to client.Routes (typically the appbypass direct route).
+// They take match precedence over user routes — this is intentional so smart bypass
+// fires before a user-declared "match: all" wire route swallows everything.
+func buildRuleEngine(
+	client *config.ClientConfig,
+	outboundMap map[string]rule.Target,
+	extraRoutes []config.RouteConfig,
+) *rule.Engine {
+	// Assemble final route list: extras first, then user routes.
+	finalRoutes := make([]config.RouteConfig, 0, len(extraRoutes)+len(client.Routes))
+	finalRoutes = append(finalRoutes, extraRoutes...)
+	finalRoutes = append(finalRoutes, client.Routes...)
+
 	// Simple case: single route with match:all and wire outbound → all proxy, no routes.
-	if client.IsAllProxy() && len(client.Routes) == 1 {
-		target := outboundMap[client.Routes[0].Via]
+	// Only applies when there are no extra routes and the single user route is all-proxy.
+	if client.IsAllProxy() && len(finalRoutes) == 1 {
+		target := outboundMap[finalRoutes[0].Via]
 		return rule.NewEngine(nil, target, nil, true)
 	}
 
@@ -1295,7 +1323,7 @@ func buildRuleEngine(client *config.ClientConfig, outboundMap map[string]rule.Ta
 		slog.Warn("engine: rule load failed", "err", err)
 	}
 	idx := rule.Index(bundles)
-	entries, fallback, allProxy := buildRouteEntries(client.Routes, idx, outboundMap)
+	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap)
 
 	hasRules := len(bundles) > 0
 	for _, e := range entries {
@@ -1303,7 +1331,9 @@ func buildRuleEngine(client *config.ClientConfig, outboundMap map[string]rule.Ta
 			hasRules = true
 			break
 		}
-		if len(e.ProcessNames) > 0 || len(e.PackageNames) > 0 {
+		if len(e.ProcessNames) > 0 || len(e.PackageNames) > 0 ||
+			len(e.ProcessNamePrefixes) > 0 || len(e.PackageNamePrefixes) > 0 ||
+			len(e.InstallerPackages) > 0 {
 			hasRules = true
 			break
 		}

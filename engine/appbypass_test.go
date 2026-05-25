@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/rule"
 )
 
 func TestBuildAppBypassRoute_NoRegion_ReturnsNil(t *testing.T) {
@@ -84,6 +85,44 @@ func containsStr(ss []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestBuildRuleEngine_PrependsAppBypassRoute(t *testing.T) {
+	tmp := t.TempDir()
+	copyFixture(t, "../appbypass/testdata/app-bypass-cn.yaml",
+		filepath.Join(tmp, "app-bypass-cn.yaml"))
+
+	client := &config.ClientConfig{
+		CacheDir: tmp,
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://example.com/", Match: rule.MatchConfig{All: true}},
+		},
+	}
+	extra, err := buildAppBypassRoute(&Config{
+		AppBypassRegion: "cn",
+		Client:          client,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extra == nil {
+		t.Fatal("expected appbypass route")
+	}
+
+	outboundMap := map[string]rule.Target{
+		"k2v5://example.com/": rule.Target(2),
+	}
+	re := buildRuleEngine(client, outboundMap, []config.RouteConfig{*extra})
+
+	// The rule engine should now route a process matching our preset to direct (Target 0).
+	target := re.MatchConn("example.org", rule.ConnMeta{ProcessName: "WeChat", Network: "tcp"})
+	if target != rule.Target(0) {
+		t.Errorf("WeChat should route to direct (Target 0), got Target(%d)", target)
+	}
+	target = re.MatchConn("example.org", rule.ConnMeta{ProcessName: "Telegram", Network: "tcp"})
+	if target == rule.Target(0) {
+		t.Errorf("Telegram should NOT route direct; should fall to user route")
+	}
 }
 
 func copyFixture(t *testing.T, src, dst string) {

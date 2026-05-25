@@ -526,25 +526,39 @@ func TestMatchMeta_InstallerPackage_Hit(t *testing.T) {
 	}
 }
 
-func TestMatchMeta_OrSemanticsWithinPackageGroup(t *testing.T) {
-	// Within the package group (PackageNames / PackageNamePrefixes / InstallerPackages),
-	// ANY hit means group satisfied. Across groups (process/package/network),
-	// AND semantics still apply.
+func TestMatchMeta_OrSemanticsBetweenProcessAndPackageGroups(t *testing.T) {
+	// When BOTH process and package criteria are set, the groups use OR semantics:
+	// a connection satisfying EITHER group is matched. This supports app-bypass
+	// routes that list desktop process names AND Android package/installer
+	// criteria in one route entry.
+	//
+	// When only one group is set, the behaviour is unchanged (the lone group
+	// must match; the absent group is trivially satisfied).
 	r := &RouteEntry{
 		ProcessNamePrefixes: []string{"wechat"},
 		InstallerPackages:   []string{"com.xiaomi.market"},
 	}
-	// Process matches → group ok; package group has criteria but no field set → fail.
-	if matchMeta(r, ConnMeta{ProcessName: "WeChat"}) {
-		t.Errorf("missing installer/package fields with installer criterion set should fail")
+	// Process group satisfied alone → should pass (OR semantics).
+	if !matchMeta(r, ConnMeta{ProcessName: "WeChat"}) {
+		t.Errorf("process group satisfied alone should pass under OR semantics")
 	}
-	// Both match
+	// Both groups satisfied → should pass.
 	if !matchMeta(r, ConnMeta{ProcessName: "WeChat", InstallerPackage: "com.xiaomi.market"}) {
 		t.Errorf("both groups satisfied should pass")
 	}
-	// Only installer (no process — but process group has criteria)
-	if matchMeta(r, ConnMeta{InstallerPackage: "com.xiaomi.market"}) {
-		t.Errorf("process group has criteria + empty process → fail")
+	// Package group satisfied alone → should pass (OR semantics).
+	if !matchMeta(r, ConnMeta{InstallerPackage: "com.xiaomi.market"}) {
+		t.Errorf("package group satisfied alone should pass under OR semantics")
+	}
+	// Neither group satisfied → should fail.
+	if matchMeta(r, ConnMeta{ProcessName: "Telegram"}) {
+		t.Errorf("neither group satisfied should fail")
+	}
+	if matchMeta(r, ConnMeta{InstallerPackage: "com.google.play"}) {
+		t.Errorf("wrong installer should fail")
+	}
+	if matchMeta(r, ConnMeta{}) {
+		t.Errorf("empty meta should fail")
 	}
 }
 

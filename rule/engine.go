@@ -279,60 +279,31 @@ func matchRouteDomain(r *RouteEntry, domain string) bool {
 // Empty observed field where the route has criteria for that group = no match.
 func matchMeta(r *RouteEntry, meta ConnMeta) bool {
 	hasProcess := len(r.ProcessNames) > 0 || len(r.ProcessNamePrefixes) > 0
-	if hasProcess {
+	hasPackage := len(r.PackageNames) > 0 || len(r.PackageNamePrefixes) > 0 || len(r.InstallerPackages) > 0
+
+	if hasProcess && hasPackage {
+		// Both groups are set: use OR semantics between groups.
+		// This supports app-bypass routes that combine desktop process names
+		// with Android package/installer criteria in one route entry:
+		// a desktop WeChat connection (ProcessName only) satisfies the process
+		// group; an Android WeChat connection (PackageName/InstallerPackage)
+		// satisfies the package group. Either group satisfying is sufficient.
+		processHit := matchProcessGroup(r, meta)
+		packageHit := matchPackageGroup(r, meta)
+		if !processHit && !packageHit {
+			return false
+		}
+	} else if hasProcess {
+		// Only process criteria — must match (AND semantics, single group).
 		if meta.ProcessName == "" {
 			return false
 		}
-		hit := false
-		for _, p := range r.ProcessNames {
-			if meta.ProcessName == p {
-				hit = true
-				break
-			}
-		}
-		if !hit && len(r.ProcessNamePrefixes) > 0 {
-			lower := strings.ToLower(meta.ProcessName)
-			for _, p := range r.ProcessNamePrefixes {
-				// Entries pre-lowercased at compile time.
-				if strings.HasPrefix(lower, p) {
-					hit = true
-					break
-				}
-			}
-		}
-		if !hit {
+		if !matchProcessGroup(r, meta) {
 			return false
 		}
-	}
-
-	hasPackage := len(r.PackageNames) > 0 || len(r.PackageNamePrefixes) > 0 || len(r.InstallerPackages) > 0
-	if hasPackage {
-		hit := false
-		if meta.PackageName != "" {
-			for _, p := range r.PackageNames {
-				if meta.PackageName == p {
-					hit = true
-					break
-				}
-			}
-			if !hit {
-				for _, p := range r.PackageNamePrefixes {
-					if strings.HasPrefix(meta.PackageName, p) {
-						hit = true
-						break
-					}
-				}
-			}
-		}
-		if !hit && meta.InstallerPackage != "" {
-			for _, p := range r.InstallerPackages {
-				if meta.InstallerPackage == p {
-					hit = true
-					break
-				}
-			}
-		}
-		if !hit {
+	} else if hasPackage {
+		// Only package criteria — must match (AND semantics, single group).
+		if !matchPackageGroup(r, meta) {
 			return false
 		}
 	}
@@ -341,6 +312,54 @@ func matchMeta(r *RouteEntry, meta ConnMeta) bool {
 		return false
 	}
 	return true
+}
+
+// matchProcessGroup returns true if meta.ProcessName matches any process name
+// or prefix in the route entry.
+func matchProcessGroup(r *RouteEntry, meta ConnMeta) bool {
+	if meta.ProcessName == "" {
+		return false
+	}
+	for _, p := range r.ProcessNames {
+		if meta.ProcessName == p {
+			return true
+		}
+	}
+	if len(r.ProcessNamePrefixes) > 0 {
+		lower := strings.ToLower(meta.ProcessName)
+		for _, p := range r.ProcessNamePrefixes {
+			// Entries pre-lowercased at compile time.
+			if strings.HasPrefix(lower, p) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// matchPackageGroup returns true if meta.PackageName or meta.InstallerPackage
+// matches any package name, prefix, or installer in the route entry.
+func matchPackageGroup(r *RouteEntry, meta ConnMeta) bool {
+	if meta.PackageName != "" {
+		for _, p := range r.PackageNames {
+			if meta.PackageName == p {
+				return true
+			}
+		}
+		for _, p := range r.PackageNamePrefixes {
+			if strings.HasPrefix(meta.PackageName, p) {
+				return true
+			}
+		}
+	}
+	if meta.InstallerPackage != "" {
+		for _, p := range r.InstallerPackages {
+			if meta.InstallerPackage == p {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SetTmpRule adds a DNS-learned temporary routing rule.
