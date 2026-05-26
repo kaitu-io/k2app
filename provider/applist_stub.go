@@ -1,4 +1,4 @@
-//go:build (!darwin && !windows && !linux) || android || ios
+//go:build ios || (linux && android) || (!darwin && !windows && !linux)
 
 package provider
 
