@@ -41,6 +41,7 @@ export default function AppBypass() {
   const candidatesLoading = useAppBypassStore((s) => s.candidatesLoading);
   const candidatesError = useAppBypassStore((s) => s.candidatesError);
   const refreshCandidates = useAppBypassStore((s) => s.refreshCandidates);
+  const featureSupported = useAppBypassStore((s) => s.featureSupported);
   const preset = useConfigStore((s) => s.resolvePreset());
   const country = useConfigStore((s) => s.country);
   const smartBypassActive = preset !== 'global' && !!country;
@@ -69,6 +70,15 @@ export default function AppBypass() {
     }
     return useVPNMachineStore.subscribe((s) => s.state, onState);
   }, [navigate, t]);
+
+  // Daemon-platform guard: redirect home if the daemon reports the platform
+  // doesn't support per-app attribution (iOS today). `undefined` means "not
+  // resolved yet" (mobile / pre-load) so we don't bounce the user prematurely.
+  useEffect(() => {
+    if (featureSupported === false) {
+      navigate('/', { replace: true });
+    }
+  }, [featureSupported, navigate]);
 
   // Kick off a background refresh on mount; UI renders cached data immediately.
   useEffect(() => {

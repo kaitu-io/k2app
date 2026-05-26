@@ -280,6 +280,21 @@ async function persist(
   }
 }
 
+/**
+ * Push the current effective app-bypass region to the daemon when running
+ * on a daemon-backed platform. No-op on mobile (region travels via
+ * ClientConfig.app_bypass at connect time, packed by buildConnectConfig).
+ * Best-effort: failures are logged inside the store action; UI is not blocked.
+ */
+function pushAppBypassRegionToDaemon(state: ConfigState): void {
+  const isDaemonBacked = !!window._platform?.appBypass?.daemonBacked;
+  if (!isDaemonBacked) return;
+  const preset = derivePreset(state.defaultVia, state.countryVia);
+  const region = preset === 'global' ? '' : (state.country ?? '');
+  // Fire-and-forget — setRegion() inside the store action handles errors.
+  void useAppBypassStore.getState().setRegion(region);
+}
+
 // ============ Store ============
 
 export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) => ({
@@ -329,6 +344,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     set({ defaultVia, countryVia });
     const { country, autoDetect, alwaysOn } = get();
     await persist(defaultVia, countryVia, country, autoDetect, alwaysOn);
+    pushAppBypassRegionToDaemon(get());
   },
 
   setCountry: async (cc) => {
@@ -336,6 +352,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     set({ country: lower, autoDetect: false });
     const { defaultVia, countryVia, alwaysOn } = get();
     await persist(defaultVia, countryVia, lower, false, alwaysOn);
+    pushAppBypassRegionToDaemon(get());
   },
 
   setAutoDetect: async (on) => {
@@ -349,6 +366,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     set(next);
     const { defaultVia, countryVia, country, alwaysOn } = get();
     await persist(defaultVia, countryVia, country, on, alwaysOn);
+    pushAppBypassRegionToDaemon(get());
   },
 
   setAlwaysOn: async (on) => {
@@ -444,6 +462,14 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     //     Empty region + custom adds still produces direct routes for
     //     user-managed apps (e.g. Steam) per buildAppBypassRoute fallback.
     //   - iOS: feature_supported=false on the daemon side; harmless to send.
+    //
+    // On daemon-backed platforms (desktop / standalone) the daemon already
+    // owns app-bypass state via HTTP actions; packing into ClientConfig is
+    // redundant and would re-seed daemon state from a possibly-stale webapp
+    // cache on every reconnect (dual-writer hazard). Mobile (Capacitor) has
+    // no daemon HTTP surface — appext reads cfg.AppBypass directly, so we
+    // keep packing there.
+    const isDaemonBacked = !!window._platform?.appBypass?.daemonBacked;
     const processAdds = [...new Set(
       bypassEntries.filter(e => e.kind === 'process').flatMap(e => e.names),
     )];
@@ -451,12 +477,14 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       bypassEntries.filter(e => e.kind === 'package').flatMap(e => e.names),
     )];
     const appBypassRegion = preset === 'global' ? '' : (country ?? '');
-    if (appBypassRegion || processAdds.length > 0 || packageAdds.length > 0) {
-      const ab: AppBypassConfig = {};
-      if (appBypassRegion) ab.region = appBypassRegion;
-      if (processAdds.length > 0) ab.process_adds = processAdds;
-      if (packageAdds.length > 0) ab.package_adds = packageAdds;
-      result.app_bypass = ab;
+    if (!isDaemonBacked) {
+      if (appBypassRegion || processAdds.length > 0 || packageAdds.length > 0) {
+        const ab: AppBypassConfig = {};
+        if (appBypassRegion) ab.region = appBypassRegion;
+        if (processAdds.length > 0) ab.process_adds = processAdds;
+        if (packageAdds.length > 0) ab.package_adds = packageAdds;
+        result.app_bypass = ab;
+      }
     }
 
     if (telemetry.ruleMissEnabled) {
@@ -476,6 +504,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       + ', appBypassRegion=' + (appBypassRegion || 'none')
       + ', processAddsCount=' + processAdds.length
       + ', packageAddsCount=' + packageAdds.length
+      + ', isDaemonBacked=' + isDaemonBacked
       + ', serverUrl=' + (serverUrl ?? 'none')
       + ', logLevel=' + result.log?.level
       + ', mode=' + result.mode

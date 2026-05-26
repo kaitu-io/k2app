@@ -35,7 +35,7 @@ beforeEach(() => {
   useConfigStore.setState({ country: null } as any);
 });
 
-describe('app-bypass store', () => {
+describe('app-bypass store (mobile / local-storage path)', () => {
   it('load() reads from _platform.storage and parses v1 shape', async () => {
     mockStorage.get.mockResolvedValueOnce({
       v: 1,
