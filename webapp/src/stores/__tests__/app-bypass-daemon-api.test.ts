@@ -187,4 +187,30 @@ describe('app-bypass.store daemon API path', () => {
     // Existing stale view kept; daemon path bails on null snapshot.
     expect(useAppBypassStore.getState().entries.map(e => e.id)).toEqual(['existing']);
   });
+
+  it('load() with old daemon (code 400 unknown action) sets featureSupported=false and matched=[]', async () => {
+    mockK2Run(async () => ({
+      code: 400,
+      message: 'unknown action: app-bypass-get',
+      data: null,
+    }));
+    await useAppBypassStore.getState().load();
+    const s = useAppBypassStore.getState();
+    expect(s.loaded).toBe(true);
+    expect(s.featureSupported).toBe(false);
+    expect(s.entries).toEqual([]);
+  });
+
+  it('daemonSetRegion against old daemon does not crash; returns without updating region', async () => {
+    useAppBypassStore.setState({ loaded: true, region: '' });
+    mockK2Run(async () => ({
+      code: 400,
+      message: 'unknown action: app-bypass-set-region',
+      data: null,
+    }));
+    // Should not throw
+    await useAppBypassStore.getState().setRegion('cn');
+    // Region stays unchanged because the unsupported path bails early
+    expect(useAppBypassStore.getState().region).toBe('');
+  });
 });

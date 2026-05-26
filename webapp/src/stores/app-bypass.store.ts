@@ -25,6 +25,7 @@ interface AppBypassStorageShape {
 }
 
 const STORAGE_KEY = 'k2.advanced.app_bypass';
+const MIGRATED_MARKER = 'k2.advanced.app_bypass.migrated_at';
 
 export interface PreviewHit {
   id: string;
@@ -63,27 +64,55 @@ function isDaemonBacked(): boolean {
   return !!window._platform?.appBypass?.daemonBacked;
 }
 
-async function daemonGet(): Promise<DaemonAppBypassState | null> {
+/**
+ * Sentinel returned by daemon helpers when the old daemon (pre-v0.4.5) responds
+ * with `code: 400, message: "unknown action: <action>"`. Callers can distinguish
+ * this from a transient failure and set `featureSupported: false` explicitly.
+ */
+const DAEMON_UNSUPPORTED = Symbol('DAEMON_UNSUPPORTED');
+
+function isUnknownAction(code: number, message: string | undefined): boolean {
+  return code === 400 && typeof message === 'string' && message.includes('unknown action');
+}
+
+/** Returns true if the daemon response is a transient failure OR unsupported action. */
+function isNullOrUnsupported(v: DaemonAppBypassState | null | typeof DAEMON_UNSUPPORTED): v is null | typeof DAEMON_UNSUPPORTED {
+  return v == null || v === DAEMON_UNSUPPORTED;
+}
+
+async function daemonGet(): Promise<DaemonAppBypassState | null | typeof DAEMON_UNSUPPORTED> {
   const r = await window._k2.run<DaemonAppBypassState>('app-bypass-get');
   if (r.code !== 0 || !r.data) {
+    if (isUnknownAction(r.code, r.message)) {
+      console.warn('[AppBypassStore] old daemon — app-bypass-get not supported, disabling feature');
+      return DAEMON_UNSUPPORTED;
+    }
     console.warn('[AppBypassStore] daemon get failed:', r.code, r.message);
     return null;
   }
   return r.data;
 }
 
-async function daemonSetCustom(add: DaemonDelta, remove: DaemonDelta): Promise<DaemonAppBypassState | null> {
+async function daemonSetCustom(add: DaemonDelta, remove: DaemonDelta): Promise<DaemonAppBypassState | null | typeof DAEMON_UNSUPPORTED> {
   const r = await window._k2.run<DaemonAppBypassState>('app-bypass-set-custom', { add, remove });
   if (r.code !== 0 || !r.data) {
+    if (isUnknownAction(r.code, r.message)) {
+      console.warn('[AppBypassStore] old daemon — app-bypass-set-custom not supported');
+      return DAEMON_UNSUPPORTED;
+    }
     console.warn('[AppBypassStore] daemon set-custom failed:', r.code, r.message);
     return null;
   }
   return r.data;
 }
 
-async function daemonSetRegion(region: string): Promise<DaemonAppBypassState | null> {
+async function daemonSetRegion(region: string): Promise<DaemonAppBypassState | null | typeof DAEMON_UNSUPPORTED> {
   const r = await window._k2.run<DaemonAppBypassState>('app-bypass-set-region', { region });
   if (r.code !== 0 || !r.data) {
+    if (isUnknownAction(r.code, r.message)) {
+      console.warn('[AppBypassStore] old daemon — app-bypass-set-region not supported');
+      return DAEMON_UNSUPPORTED;
+    }
     console.warn('[AppBypassStore] daemon set-region failed:', r.code, r.message);
     return null;
   }
@@ -223,6 +252,12 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
 
     // Desktop / standalone path: daemon owns state.
     const snapshot = await daemonGet();
+    if (snapshot === DAEMON_UNSUPPORTED) {
+      // Old daemon (pre-v0.4.5) — doesn't know app-bypass actions.
+      // Set featureSupported=false so the AppBypass page gate redirects home.
+      set({ entries: [], loaded: true, featureSupported: false });
+      return;
+    }
     if (snapshot == null) {
       // Daemon unreachable. Show empty UI without spinning — better than
       // hanging the page on an offline daemon during AuthGate startup.
@@ -231,29 +266,34 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
     }
 
     // One-shot migration (spec §10.4): if daemon has no custom entries but
-    // local storage does, push local → daemon, then delete local. Idempotent
-    // via daemon applyDelta dedup.
+    // local storage does, push local → daemon. A marker key is written on
+    // success so re-migration is skipped even if daemon entries are later
+    // cleared. Local storage is kept intact as a downgrade backup.
     let entriesFromDaemon = daemonStateToEntries(snapshot);
     if (entriesFromDaemon.length === 0) {
       try {
-        const legacy = await window._platform.storage.get<AppBypassStorageShape>(STORAGE_KEY);
-        if (legacy && legacy.v === 1 && Array.isArray(legacy.entries) && legacy.entries.length > 0) {
-          const processAdds: string[] = [];
-          const packageAdds: string[] = [];
-          for (const e of legacy.entries) {
-            for (const n of e.names ?? []) {
-              if (e.kind === 'process') processAdds.push(n);
-              else if (e.kind === 'package') packageAdds.push(n);
+        const migratedAt = await window._platform.storage.get<string>(MIGRATED_MARKER);
+        if (!migratedAt) {
+          const legacy = await window._platform.storage.get<AppBypassStorageShape>(STORAGE_KEY);
+          if (legacy && legacy.v === 1 && Array.isArray(legacy.entries) && legacy.entries.length > 0) {
+            const processAdds: string[] = [];
+            const packageAdds: string[] = [];
+            for (const e of legacy.entries) {
+              for (const n of e.names ?? []) {
+                if (e.kind === 'process') processAdds.push(n);
+                else if (e.kind === 'package') packageAdds.push(n);
+              }
             }
-          }
-          const migrated = await daemonSetCustom(
-            { process: processAdds, package: packageAdds },
-            { process: [], package: [] },
-          );
-          if (migrated) {
-            await window._platform.storage.remove(STORAGE_KEY);
-            entriesFromDaemon = daemonStateToEntries(migrated);
-            console.info('[AppBypassStore] migrated', legacy.entries.length, 'local entries to daemon');
+            const migrated = await daemonSetCustom(
+              { process: processAdds, package: packageAdds },
+              { process: [], package: [] },
+            );
+            if (migrated && !isNullOrUnsupported(migrated)) {
+              // Write marker but keep local backup intact for downgrade safety.
+              await window._platform.storage.set(MIGRATED_MARKER, new Date().toISOString());
+              entriesFromDaemon = daemonStateToEntries(migrated);
+              console.info('[AppBypassStore] migrated', legacy.entries.length, 'local entries to daemon');
+            }
           }
         }
       } catch (err) {
@@ -286,7 +326,7 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
     // Daemon path: push add delta, refresh entries from daemon response.
     const delta = entryToDelta(entry);
     const snap = await daemonSetCustom(delta, { process: [], package: [] });
-    if (snap == null) return; // daemon unreachable; UI keeps stale view
+    if (isNullOrUnsupported(snap)) return; // daemon unreachable or old daemon; UI keeps stale view
     set({ entries: daemonStateToEntries(snap) });
   },
 
@@ -304,7 +344,7 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
 
     const delta = entryToDelta(target);
     const snap = await daemonSetCustom({ process: [], package: [] }, delta);
-    if (snap == null) return;
+    if (isNullOrUnsupported(snap)) return;
     set({ entries: daemonStateToEntries(snap) });
   },
 
@@ -328,7 +368,7 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
       { process: [], package: [] },
       { process: proc, package: pkg },
     );
-    if (snap == null) return;
+    if (isNullOrUnsupported(snap)) return;
     set({ entries: daemonStateToEntries(snap) });
   },
 
@@ -356,14 +396,14 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
       ? { process: uniqNew, package: [] }
       : { process: [], package: uniqNew };
     const snap = await daemonSetCustom(newDelta, oldDelta);
-    if (snap == null) return;
+    if (isNullOrUnsupported(snap)) return;
     set({ entries: daemonStateToEntries(snap) });
   },
 
   async setRegion(region) {
     if (!isDaemonBacked()) return; // mobile picks region from country via config.store
     const snap = await daemonSetRegion(region);
-    if (snap == null) return;
+    if (isNullOrUnsupported(snap)) return;
     set({ region: snap.region });
   },
 
