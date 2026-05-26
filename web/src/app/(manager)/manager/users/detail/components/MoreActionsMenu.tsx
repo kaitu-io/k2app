@@ -17,10 +17,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MoreHorizontal, Trash2 } from "lucide-react";
+import { MoreHorizontal, Trash2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { api, isPendingApproval } from "@/lib/api";
 import { useRouter } from "next/navigation";
+import { ResetPasswordDialog } from "./ResetPasswordDialog";
 
 interface MoreActionsMenuProps {
   userUUID: string;
@@ -29,6 +30,7 @@ interface MoreActionsMenuProps {
 
 export function MoreActionsMenu({ userUUID, userEmail }: MoreActionsMenuProps) {
   const router = useRouter();
+  const [showResetPasswordDialog, setShowResetPasswordDialog] = useState(false);
   const [showFirstConfirm, setShowFirstConfirm] = useState(false);
   const [showSecondConfirm, setShowSecondConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -81,6 +83,13 @@ export function MoreActionsMenu({ userUUID, userEmail }: MoreActionsMenuProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onClick={() => setShowResetPasswordDialog(true)}
+          >
+            <KeyRound className="mr-2 h-4 w-4" />
+            {"重置密码"}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className="text-destructive focus:text-destructive cursor-pointer"
@@ -155,6 +164,13 @@ export function MoreActionsMenu({ userUUID, userEmail }: MoreActionsMenuProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ResetPasswordDialog
+        open={showResetPasswordDialog}
+        onOpenChange={setShowResetPasswordDialog}
+        userUUID={userUUID}
+        userEmail={userEmail}
+      />
     </>
   );
 }
