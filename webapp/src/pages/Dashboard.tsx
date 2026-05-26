@@ -146,6 +146,20 @@ export default function Dashboard() {
   // Ref for scroll container
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Preload AppBypass chunk so the route-level lazy import is warm when the
+  // user clicks the entry below. Chunk is ~50KB gzipped; downloading early
+  // removes the multi-second blank-screen wait on first visit.
+  useEffect(() => {
+    if (!appConfig.features.appBypass) return;
+    if (!window._platform?.appList) return;
+    // Fire-and-forget; React.lazy caches the import promise, so the route
+    // transition immediately resolves to the already-loaded chunk.
+    import('./AppBypass').catch(() => {
+      // Network failure here is non-fatal — the route still resolves on
+      // click, just with the original Suspense fallback. No need to surface.
+    });
+  }, []);
+
   // Restore scroll position on mount
   useEffect(() => {
     if (scrollContainerRef.current && scrollPosition > 0) {

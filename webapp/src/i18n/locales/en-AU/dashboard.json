@@ -141,13 +141,19 @@
     "refresh": "Refresh",
     "rescan": "Re-scan",
     "rescanResult": "Updated ({{count}} processes)",
+    "rescanRefreshed": "App list refreshed",
     "processCount": "{{count}} processes blocked",
     "kickedOutDueToConnect": "VPN connected; returning to home",
     "loadFailed": "Failed to load app list",
     "saveFailed": "Save failed, please try again",
+    "smartStatus": {
+      "enabled": "Smart bypass active ({{region}}) — detected apps route directly",
+      "disabled": "Smart bypass off"
+    },
     "uninstalledHint": "App may be uninstalled",
     "ruleCard": {
       "summary": "{{total}} apps bypassed: {{manual}} manual + {{auto}} auto-detected",
+      "manualSummary": "{{count}} manually added",
       "refresh": "Rescan",
       "globalWarning": "⚠ Global proxy mode — bypass list doesn't apply right now"
     },

@@ -141,13 +141,19 @@
     "refresh": "刷新",
     "rescan": "重新检测",
     "rescanResult": "已更新（共 {{count}} 个进程）",
+    "rescanRefreshed": "已刷新应用列表",
     "processCount": "屏蔽 {{count}} 个进程",
     "kickedOutDueToConnect": "VPN 连接后无法修改，已返回主页",
     "loadFailed": "加载应用列表失败",
     "saveFailed": "保存失败，请重试",
+    "smartStatus": {
+      "enabled": "智能识别已启用（{{region}}）— 已识别的应用会自动直连",
+      "disabled": "智能识别未启用"
+    },
     "uninstalledHint": "应用可能已卸载",
     "ruleCard": {
       "summary": "共 {{total}} 个 app 直连：{{manual}} 手动 + {{auto}} 智能识别",
+      "manualSummary": "已手动添加 {{count}} 个",
       "refresh": "重新扫描",
       "globalWarning": "⚠ 当前全球代理模式 — 下方配置当前不生效"
     },
