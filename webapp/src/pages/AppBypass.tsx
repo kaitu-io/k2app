@@ -42,6 +42,12 @@ export default function AppBypass() {
   const candidatesError = useAppBypassStore((s) => s.candidatesError);
   const refreshCandidates = useAppBypassStore((s) => s.refreshCandidates);
   const featureSupported = useAppBypassStore((s) => s.featureSupported);
+  const region = useAppBypassStore((s) => s.region);
+  const matched = useAppBypassStore((s) => s.matched);
+  const matchedLoading = useAppBypassStore((s) => s.matchedLoading);
+  const matchedError = useAppBypassStore((s) => s.matchedError);
+  const refreshPreview = useAppBypassStore((s) => s.refreshPreview);
+  const daemonBacked = !!window._platform?.appBypass?.daemonBacked;
   const preset = useConfigStore((s) => s.resolvePreset());
   const country = useConfigStore((s) => s.country);
   const smartBypassActive = preset !== 'global' && !!country;
@@ -84,6 +90,12 @@ export default function AppBypass() {
   useEffect(() => {
     refreshCandidates();
   }, [refreshCandidates]);
+
+  // Refresh the engine-side preview whenever region or daemonBacked changes.
+  useEffect(() => {
+    if (!daemonBacked || !region) return;
+    void refreshPreview();
+  }, [daemonBacked, region, refreshPreview]);
 
   // Rule-card refresh: re-pulls the candidates list for the "Add more" picker.
   // Smart-bypass matches are now decided by the engine at flow time, so there's
@@ -175,6 +187,60 @@ export default function AppBypass() {
           </Typography>
         )}
       </Paper>
+
+      {/* ── SECTION 1.5: Detected apps preview (daemon-backed only) ── */}
+      {daemonBacked && featureSupported !== false && region && (
+        <Box sx={{ mb: 2 }}>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+            <AutoAwesomeIcon fontSize="small" color="primary" />
+            <Typography variant="subtitle1" sx={{ flex: 1 }}>
+              {t('dashboard:appBypass.preview.section', { count: matched.length })}
+            </Typography>
+            <IconButton
+              size="small"
+              onClick={() => void refreshPreview()}
+              title={t('dashboard:appBypass.preview.refresh')}
+              disabled={matchedLoading}
+            >
+              <RefreshIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+          {matchedLoading && matched.length === 0 && (
+            <Typography variant="caption" color="text.secondary">
+              {t('dashboard:appBypass.preview.loading')}
+            </Typography>
+          )}
+          {!matchedLoading && matched.length === 0 && !matchedError && (
+            <Typography variant="caption" color="text.secondary">
+              {t('dashboard:appBypass.preview.empty')}
+            </Typography>
+          )}
+          {matchedError && (
+            <Typography variant="caption" color="error">
+              {t(matchedError)}
+            </Typography>
+          )}
+          <Stack spacing={1}>
+            {matched.map((m) => (
+              <Stack
+                key={m.id}
+                direction="row"
+                alignItems="center"
+                spacing={1.5}
+                sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}
+              >
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={600} noWrap>{m.label}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {t(`dashboard:appBypass.preview.hitKind.${m.hit_kind}`)}
+                    {m.hit_pattern ? ` — ${m.hit_pattern}` : ''}
+                  </Typography>
+                </Box>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
+      )}
 
       {/* ── SECTION 2: Manual added ── */}
       {entries.length > 0 && (

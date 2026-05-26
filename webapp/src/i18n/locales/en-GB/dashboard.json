@@ -178,6 +178,19 @@
       "noteGlobal": "Auto-detection not applied in global proxy mode",
       "reasonInstaller": "Installed from a Chinese app store",
       "reasonPrefix": "Matches Chinese-namespace package prefix"
+    },
+    "preview": {
+      "section": "Detected apps ({{count}})",
+      "empty": "No installed apps matched yet",
+      "refresh": "Rescan",
+      "loading": "Scanning installed apps…",
+      "hitKind": {
+        "process_exact": "Process name match",
+        "process_prefix": "Process prefix match",
+        "package_exact": "Package name match",
+        "package_prefix": "Package prefix match",
+        "installer_exact": "Installer match"
+      }
     }
   },
   "smartMode": {
