@@ -22,6 +22,15 @@ const REQUIRED_KEYS: Array<[string, (ab: any) => unknown]> = [
   ['smartStatus.enabled', (ab) => ab.smartStatus?.enabled],
   ['smartStatus.disabled', (ab) => ab.smartStatus?.disabled],
   ['ruleCard.manualSummary', (ab) => ab.ruleCard?.manualSummary],
+  ['preview.section', (ab) => ab.preview?.section],
+  ['preview.empty', (ab) => ab.preview?.empty],
+  ['preview.refresh', (ab) => ab.preview?.refresh],
+  ['preview.loading', (ab) => ab.preview?.loading],
+  ['preview.hitKind.process_exact', (ab) => ab.preview?.hitKind?.process_exact],
+  ['preview.hitKind.process_prefix', (ab) => ab.preview?.hitKind?.process_prefix],
+  ['preview.hitKind.package_exact', (ab) => ab.preview?.hitKind?.package_exact],
+  ['preview.hitKind.package_prefix', (ab) => ab.preview?.hitKind?.package_prefix],
+  ['preview.hitKind.installer_exact', (ab) => ab.preview?.hitKind?.installer_exact],
 ];
 
 describe('AppBypass i18n catalogue', () => {
@@ -52,6 +61,12 @@ describe('AppBypass i18n catalogue', () => {
     for (const [name, doc] of Object.entries(locales)) {
       const v = (doc as any).appBypass.ruleCard.manualSummary as string;
       expect(v, `${name} missing {{count}}`).toContain('{{count}}');
+    }
+  });
+
+  it('preview.section has {{count}} placeholder', () => {
+    for (const [name, doc] of Object.entries(locales)) {
+      expect((doc as any).appBypass.preview.section, `${name} missing {{count}}`).toContain('{{count}}');
     }
   });
 });

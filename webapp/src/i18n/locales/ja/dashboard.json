@@ -178,6 +178,19 @@
       "noteGlobal": "グローバルプロキシモードでは自動検出は適用されません",
       "reasonInstaller": "中国のアプリストアからインストール",
       "reasonPrefix": "中国系パッケージ名と一致"
+    },
+    "preview": {
+      "section": "検出されたアプリ ({{count}})",
+      "empty": "一致するインストール済みアプリなし",
+      "refresh": "再スキャン",
+      "loading": "インストール済みアプリをスキャン中…",
+      "hitKind": {
+        "process_exact": "プロセス名一致",
+        "process_prefix": "プロセス前方一致",
+        "package_exact": "パッケージ名一致",
+        "package_prefix": "パッケージ前方一致",
+        "installer_exact": "インストーラ一致"
+      }
     }
   },
   "smartMode": {

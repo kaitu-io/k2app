@@ -178,6 +178,19 @@
       "noteGlobal": "全域代理模式下不套用智慧辨識",
       "reasonInstaller": "來自國內應用商店",
       "reasonPrefix": "命名前綴比對"
+    },
+    "preview": {
+      "section": "智能識別命中（{{count}}）",
+      "empty": "目前未匹配到已安裝的應用",
+      "refresh": "重新掃描",
+      "loading": "正在掃描已安裝應用…",
+      "hitKind": {
+        "process_exact": "行程名稱完全匹配",
+        "process_prefix": "行程前綴匹配",
+        "package_exact": "套件名稱完全匹配",
+        "package_prefix": "套件前綴匹配",
+        "installer_exact": "應用商店匹配"
+      }
     }
   },
   "smartMode": {

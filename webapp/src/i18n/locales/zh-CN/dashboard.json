@@ -178,6 +178,19 @@
       "noteGlobal": "全局代理模式下不应用智能识别",
       "reasonInstaller": "来自国内应用商店",
       "reasonPrefix": "命名前缀匹配"
+    },
+    "preview": {
+      "section": "智能识别命中（{{count}}）",
+      "empty": "当前未匹配到已安装的应用",
+      "refresh": "重新扫描",
+      "loading": "正在扫描已安装应用…",
+      "hitKind": {
+        "process_exact": "进程名精确匹配",
+        "process_prefix": "进程前缀匹配",
+        "package_exact": "包名精确匹配",
+        "package_prefix": "包前缀匹配",
+        "installer_exact": "应用商店匹配"
+      }
     }
   },
   "smartMode": {
