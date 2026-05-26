@@ -98,6 +98,12 @@ function daemonStateToEntries(s: DaemonAppBypassState): AppBypassEntry[] {
   return out;
 }
 
+function entryToDelta(e: { kind: 'process' | 'package'; names: string[] }): DaemonDelta {
+  return e.kind === 'process'
+    ? { process: e.names, package: [] }
+    : { process: [], package: e.names };
+}
+
 interface AppBypassState {
   entries: AppBypassEntry[];
   loaded: boolean;
@@ -236,28 +242,90 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
   async add(entry) {
     const current = get().entries;
     if (current.some(e => e.id === entry.id)) return;
-    const next = [...current, { ...entry, addedAt: Date.now() }];
-    await persist(next);
-    set({ entries: next });
+
+    if (!isDaemonBacked()) {
+      // Mobile: local persist as before.
+      const next = [...current, { ...entry, addedAt: Date.now() }];
+      await persist(next);
+      set({ entries: next });
+      return;
+    }
+
+    // Daemon path: push add delta, refresh entries from daemon response.
+    const delta = entryToDelta(entry);
+    const snap = await daemonSetCustom(delta, { process: [], package: [] });
+    if (snap == null) return; // daemon unreachable; UI keeps stale view
+    set({ entries: daemonStateToEntries(snap) });
   },
 
   async remove(id) {
-    const next = get().entries.filter(e => e.id !== id);
-    await persist(next);
-    set({ entries: next });
+    const current = get().entries;
+    const target = current.find(e => e.id === id);
+    if (!target) return;
+
+    if (!isDaemonBacked()) {
+      const next = current.filter(e => e.id !== id);
+      await persist(next);
+      set({ entries: next });
+      return;
+    }
+
+    const delta = entryToDelta(target);
+    const snap = await daemonSetCustom({ process: [], package: [] }, delta);
+    if (snap == null) return;
+    set({ entries: daemonStateToEntries(snap) });
   },
 
   async clear() {
-    await persist([]);
-    set({ entries: [] });
+    if (!isDaemonBacked()) {
+      await persist([]);
+      set({ entries: [] });
+      return;
+    }
+    // Daemon path: delete every name we currently know about.
+    const current = get().entries;
+    const proc: string[] = [];
+    const pkg: string[] = [];
+    for (const e of current) {
+      for (const n of e.names ?? []) {
+        if (e.kind === 'process') proc.push(n);
+        else if (e.kind === 'package') pkg.push(n);
+      }
+    }
+    const snap = await daemonSetCustom(
+      { process: [], package: [] },
+      { process: proc, package: pkg },
+    );
+    if (snap == null) return;
+    set({ entries: daemonStateToEntries(snap) });
   },
 
   async rescan(id, names) {
-    const next = get().entries.map(e =>
-      e.id === id ? { ...e, names: [...new Set(names)] } : e
-    );
-    await persist(next);
-    set({ entries: next });
+    const current = get().entries;
+    const target = current.find(e => e.id === id);
+    if (!target) return;
+    const uniqNew = [...new Set(names)];
+
+    if (!isDaemonBacked()) {
+      const next = current.map(e =>
+        e.id === id ? { ...e, names: uniqNew } : e
+      );
+      await persist(next);
+      set({ entries: next });
+      return;
+    }
+
+    // Daemon: remove old names, add new names. Both lists keyed by entry.kind.
+    const oldNames = target.names ?? [];
+    const oldDelta = target.kind === 'process'
+      ? { process: oldNames, package: [] }
+      : { process: [], package: oldNames };
+    const newDelta = target.kind === 'process'
+      ? { process: uniqNew, package: [] }
+      : { process: [], package: uniqNew };
+    const snap = await daemonSetCustom(newDelta, oldDelta);
+    if (snap == null) return;
+    set({ entries: daemonStateToEntries(snap) });
   },
 
   refreshCandidates() {
