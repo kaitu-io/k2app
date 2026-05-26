@@ -1,12 +1,17 @@
 /**
  * AppBypass — 不走代理的应用 (App Bypass page)
  *
- * Layout (4 sections):
- *  1. Rule card  — wraps the existing <RoutingModeSelector /> + count summary +
- *                  global-mode warning + a single refresh action.
- *  2. Smart detection — first 3 detected apps + "查看全部" expander.
- *  3. Manual added — entries the user explicitly added.
- *  4. Add more — search filter + remaining installed apps.
+ * Layout (3 sections):
+ *  1. Rule card  — wraps the existing <RoutingModeSelector /> + smart-bypass
+ *                  status line + manual count + global-mode warning.
+ *  2. Manual added — entries the user explicitly added.
+ *  3. Add more — search filter + remaining installed apps.
+ *
+ * Smart bypass for the user's region (Chinese apps, Iran apps, etc.) is now
+ * owned by the Go engine via region presets shipped through k2-rules — webapp
+ * no longer enumerates installed apps for client-side detection. The
+ * ClientConfig.app_bypass.region field at connect time tells the engine
+ * which preset to merge with user-added overrides.
  *
  * VPN-guard: the page kicks back to '/' the moment VPN leaves the idle state.
  */
@@ -31,18 +36,16 @@ export default function AppBypass() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const entries = useAppBypassStore((s) => s.entries);
-  const autoDetected = useAppBypassStore((s) => s.autoDetected);
-  const autoDetectorMeta = useAppBypassStore((s) => s.autoDetectorMeta);
   const candidates = useAppBypassStore((s) => s.candidates);
   const candidatesLoadedAt = useAppBypassStore((s) => s.candidatesLoadedAt);
   const candidatesLoading = useAppBypassStore((s) => s.candidatesLoading);
   const candidatesError = useAppBypassStore((s) => s.candidatesError);
   const refreshCandidates = useAppBypassStore((s) => s.refreshCandidates);
   const preset = useConfigStore((s) => s.resolvePreset());
-  const autoActive = preset !== 'global' && window._platform?.os === 'android';
+  const country = useConfigStore((s) => s.country);
+  const smartBypassActive = preset !== 'global' && !!country;
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearch = useDeferredValue(searchQuery);
-  const [autoExpanded, setAutoExpanded] = useState(false);
   // Frame-flash guard: between initial mount and useEffect firing refreshCandidates,
   // candidatesLoading is still false and candidates is []. Treat "never loaded" as
   // loading so the user never sees an "empty + idle" flash.
@@ -72,39 +75,22 @@ export default function AppBypass() {
     refreshCandidates();
   }, [refreshCandidates]);
 
-  // Rule-card refresh: kicks off store refresh + surfaces detector outcome as a toast.
+  // Rule-card refresh: re-pulls the candidates list for the "Add more" picker.
+  // Smart-bypass matches are now decided by the engine at flow time, so there's
+  // no detector outcome to surface — keep a simple confirmation toast instead.
   const handleManualScan = useCallback(async () => {
     await refreshCandidates();
-    const { autoDetected: latest, autoDetectorMeta: meta } = useAppBypassStore.getState();
-    const country = useConfigStore.getState().country;
-    if (!meta) {
-      useAlertStore.getState().showAlert(
-        t('dashboard:appBypass.rescanResultNoop', { country: country ?? '—' }),
-        'info',
-      );
-    } else if (latest.length === 0) {
-      useAlertStore.getState().showAlert(
-        t('dashboard:appBypass.rescanResultEmpty'),
-        'info',
-      );
-    } else {
-      useAlertStore.getState().showAlert(
-        t('dashboard:appBypass.rescanResultDetected', { count: latest.length }),
-        'success',
-      );
-    }
+    useAlertStore.getState().showAlert(
+      t('dashboard:appBypass.rescanRefreshed'),
+      'info',
+    );
   }, [refreshCandidates, t]);
 
-  // De-dup chain: user-added > auto-detected > installed list.
+  // De-dup chain: user-added > installed list.
   const addedIds = useMemo(() => new Set(entries.map((e) => e.id)), [entries]);
-  const autoNotAdded = useMemo(
-    () => autoDetected.filter((a) => !addedIds.has(a.packageName)),
-    [autoDetected, addedIds],
-  );
-  const autoIds = useMemo(() => new Set(autoNotAdded.map((a) => a.packageName)), [autoNotAdded]);
   const available = useMemo(
-    () => candidates.filter((c) => !addedIds.has(c.id) && !autoIds.has(c.id)),
-    [candidates, addedIds, autoIds],
+    () => candidates.filter((c) => !addedIds.has(c.id)),
+    [candidates, addedIds],
   );
 
   // Client-side search filter; uses deferred value so keystrokes never wait for filter+render.
@@ -115,10 +101,6 @@ export default function AppBypass() {
       (c) => c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q),
     );
   }, [available, deferredSearch]);
-
-  // Smart-detection top-3 with expander.
-  const autoVisible = autoExpanded ? autoNotAdded : autoNotAdded.slice(0, 3);
-  const autoHidden = autoNotAdded.length - 3;
 
   return (
     <Box sx={{ p: 2, maxWidth: 700, mx: 'auto' }}>
@@ -152,13 +134,19 @@ export default function AppBypass() {
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <RoutingModeSelector />
         <Divider sx={{ my: 1.5 }} />
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
-            {t('dashboard:appBypass.ruleCard.summary', {
-              total: entries.length + autoNotAdded.length,
-              manual: entries.length,
-              auto: autoNotAdded.length,
-            })}
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+          <AutoAwesomeIcon
+            fontSize="small"
+            color={smartBypassActive ? 'primary' : 'disabled'}
+          />
+          <Typography
+            variant="body2"
+            sx={{ flex: 1 }}
+            color={smartBypassActive ? 'text.primary' : 'text.disabled'}
+          >
+            {smartBypassActive
+              ? t('dashboard:appBypass.smartStatus.enabled', { region: (country ?? '').toUpperCase() })
+              : t('dashboard:appBypass.smartStatus.disabled')}
           </Typography>
           <IconButton
             size="small"
@@ -168,6 +156,9 @@ export default function AppBypass() {
             <RefreshIcon fontSize="small" />
           </IconButton>
         </Stack>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+          {t('dashboard:appBypass.ruleCard.manualSummary', { count: entries.length })}
+        </Typography>
         {preset === 'global' && (
           <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
             {t('dashboard:appBypass.ruleCard.globalWarning')}
@@ -175,55 +166,7 @@ export default function AppBypass() {
         )}
       </Paper>
 
-      {/* ── SECTION 2: Smart detection (top-3 + expander) ── */}
-      {autoDetectorMeta && autoNotAdded.length > 0 && (
-        <Box sx={{ mb: 2 }}>
-          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-            <AutoAwesomeIcon fontSize="small" color={autoActive ? 'primary' : 'disabled'} />
-            <Typography
-              variant="subtitle1"
-              sx={{ flex: 1 }}
-              color={autoActive ? 'text.primary' : 'text.disabled'}
-            >
-              {t(autoDetectorMeta.sectionTitleKey, { count: autoNotAdded.length })}
-            </Typography>
-          </Stack>
-          <Stack spacing={1} sx={{ opacity: autoActive ? 1 : 0.55 }}>
-            {autoVisible.map((a) => (
-              <Stack
-                key={a.packageName}
-                direction="row"
-                alignItems="center"
-                spacing={1.5}
-                sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}
-              >
-                <Avatar src={a.iconUrl} variant="rounded" sx={{ width: 32, height: 32 }}>
-                  {a.label[0]?.toUpperCase()}
-                </Avatar>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="body2" fontWeight={600} noWrap>{a.label}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {t(a.reasonKey)}
-                  </Typography>
-                </Box>
-              </Stack>
-            ))}
-            {autoNotAdded.length > 3 && (
-              <Button
-                size="small"
-                onClick={() => setAutoExpanded(!autoExpanded)}
-                sx={{ alignSelf: 'flex-start' }}
-              >
-                {autoExpanded
-                  ? t('dashboard:appBypass.smartDetection.collapse')
-                  : t('dashboard:appBypass.smartDetection.showAll', { count: autoHidden })}
-              </Button>
-            )}
-          </Stack>
-        </Box>
-      )}
-
-      {/* ── SECTION 3: Manual added ── */}
+      {/* ── SECTION 2: Manual added ── */}
       {entries.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
@@ -309,7 +252,7 @@ export default function AppBypass() {
         </Box>
       )}
 
-      {/* ── SECTION 4: Add more ── */}
+      {/* ── SECTION 3: Add more ── */}
       <Box>
         <Typography variant="subtitle1" sx={{ mb: 1 }}>
           {t('dashboard:appBypass.addMoreSection')}

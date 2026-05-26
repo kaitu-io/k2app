@@ -16,11 +16,10 @@
 
 import { create } from 'zustand';
 
-import type { ClientConfig, RouteConfig } from '../types/client-config';
+import type { AppBypassConfig, ClientConfig, RouteConfig } from '../types/client-config';
 import { CLIENT_CONFIG_DEFAULTS } from '../types/client-config';
 import { countryToProfile, PROFILE_TO_PRESET } from '../utils/routes';
 import { cloudApi } from '../services/cloud-api';
-import type { AppBypassEntry } from './app-bypass.store';
 import { useAppBypassStore } from './app-bypass.store';
 
 /** Build-time log level from K2_BUILD_LOG_LEVEL env var (default: 'debug'). Injected by Vite define. */
@@ -108,42 +107,6 @@ function gatewayPrefix(): RouteConfig[] {
     return [{ via: 'direct', match: { domain_suffix: ['ipinfo.io'] } }];
   }
   return [];
-}
-
-/**
- * Build app-bypass direct routes from user-managed entries.
- *
- * Emits at most two routes (one per kind) to keep the rule engine fast:
- *   - process kind → `{ via: 'direct', match: { process_name: [...] } }`
- *   - package kind → `{ via: 'direct', match: { package_name: [...] } }`
- *
- * Names are deduped across all entries of the same kind, preserving
- * first-seen order. Returns [] on iOS (NEPacketTunnelProvider cannot
- * see per-app process identity, so the feature is unsupported there).
- *
- * Privacy: callers must NEVER log entry names — only the count.
- */
-export function buildBypassRoutes(
-  entries: AppBypassEntry[],
-  autoPackageNames: string[] = [],
-): RouteConfig[] {
-  if (window._platform?.os === 'ios') return [];
-  if (entries.length === 0 && autoPackageNames.length === 0) return [];
-
-  const processNames = [...new Set(
-    entries.filter(e => e.kind === 'process').flatMap(e => e.names)
-  )];
-  // Union user-added package routes with auto-detected Chinese apps (smart-mode default).
-  // Dedupe via Set; user-added wins ordering when overlapping (LinkedHashSet semantics).
-  const packageNames = [...new Set([
-    ...entries.filter(e => e.kind === 'package').flatMap(e => e.names),
-    ...autoPackageNames,
-  ])];
-
-  const routes: RouteConfig[] = [];
-  if (processNames.length > 0) routes.push({ via: 'direct', match: { process_name: processNames } });
-  if (packageNames.length > 0) routes.push({ via: 'direct', match: { package_name: packageNames } });
-  return routes;
 }
 
 function buildRoutes(
@@ -460,15 +423,8 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     const { defaultVia, countryVia, country, autoDetect, telemetry } = get();
     // Cross-store read: app-bypass entries are user-managed (per-app direct routes).
     // Counted-only in logs — names MUST NEVER be logged (see Section 8 privacy invariant).
-    const appBypassState = useAppBypassStore.getState();
-    const bypassEntries = appBypassState.entries;
-    // Smart-routing (preset != 'global') auto-bypasses detected Chinese apps so
-    // ISP-optimised Chinese services don't go through the overseas exit. Global
-    // mode is an explicit "everything through VPN" intent — skip auto-detection.
+    const bypassEntries = useAppBypassStore.getState().entries;
     const preset = derivePreset(defaultVia, countryVia);
-    const autoPackageNames = preset === 'global'
-      ? []
-      : appBypassState.autoDetected.map(e => e.packageName);
     const serverUrl = typeof params === 'string'
       ? params
       : params?.serverUrl;
@@ -478,11 +434,30 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       ...CLIENT_CONFIG_DEFAULTS,
       mode: 'tun',
       log: { ...CLIENT_CONFIG_DEFAULTS.log, level: __K2_BUILD_LOG_LEVEL__ },
-      routes: [
-        ...buildBypassRoutes(bypassEntries, autoPackageNames),
-        ...baseRoutes,
-      ],
+      routes: baseRoutes,
     };
+
+    // App Bypass v2: the Go engine now owns regional pattern matching and
+    // merges them with user-added process/package overrides at engine.Start.
+    // Webapp only forwards the inputs.
+    //   - region: only set in smart-routing presets (skip in global).
+    //     Empty region + custom adds still produces direct routes for
+    //     user-managed apps (e.g. Steam) per buildAppBypassRoute fallback.
+    //   - iOS: feature_supported=false on the daemon side; harmless to send.
+    const processAdds = [...new Set(
+      bypassEntries.filter(e => e.kind === 'process').flatMap(e => e.names),
+    )];
+    const packageAdds = [...new Set(
+      bypassEntries.filter(e => e.kind === 'package').flatMap(e => e.names),
+    )];
+    const appBypassRegion = preset === 'global' ? '' : (country ?? '');
+    if (appBypassRegion || processAdds.length > 0 || packageAdds.length > 0) {
+      const ab: AppBypassConfig = {};
+      if (appBypassRegion) ab.region = appBypassRegion;
+      if (processAdds.length > 0) ab.process_adds = processAdds;
+      if (packageAdds.length > 0) ab.package_adds = packageAdds;
+      result.app_bypass = ab;
+    }
 
     if (telemetry.ruleMissEnabled) {
       result.telemetry = {
@@ -498,7 +473,9 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       + ', autoDetect=' + autoDetect
       + ', routes=' + (result.routes?.length ?? 0)
       + ', bypassEntryCount=' + bypassEntries.length
-      + ', autoBypassCount=' + autoPackageNames.length
+      + ', appBypassRegion=' + (appBypassRegion || 'none')
+      + ', processAddsCount=' + processAdds.length
+      + ', packageAddsCount=' + packageAdds.length
       + ', serverUrl=' + (serverUrl ?? 'none')
       + ', logLevel=' + result.log?.level
       + ', mode=' + result.mode

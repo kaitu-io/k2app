@@ -1,9 +1,4 @@
 import { create } from 'zustand';
-import { getRegionalDetector, type AutoDetectedAppEntry } from '../utils/regionalAppDetection';
-import { useConfigStore } from './config.store';
-import type { InstalledApp } from '../types/kaitu-core';
-
-export type { AutoDetectedAppEntry } from '../utils/regionalAppDetection';
 
 export interface AppBypassEntry {
   id: string;
@@ -24,17 +19,6 @@ export type Candidate =
   | { kind: 'process'; id: string; label: string; processNames: string[]; iconUrl?: string }
   | { kind: 'package'; id: string; label: string; iconUrl?: string };
 
-/**
- * Detector-supplied i18n keys for the auto-detected section. Set when a
- * region-specific detector ran successfully; cleared when the dispatcher
- * resolves to the no-op (non-CN country, null country, missing provider).
- */
-export interface AutoDetectorMeta {
-  sectionTitleKey: string;
-  noteSmartKey: string;
-  noteGlobalKey: string;
-}
-
 interface AppBypassStorageShape {
   v: 1;
   entries: AppBypassEntry[];
@@ -44,10 +28,7 @@ const STORAGE_KEY = 'k2.advanced.app_bypass';
 
 interface AppBypassState {
   entries: AppBypassEntry[];
-  autoDetected: AutoDetectedAppEntry[];
-  autoDetectorMeta: AutoDetectorMeta | null;
   loaded: boolean;
-  autoDetectLoaded: boolean;
   candidates: Candidate[];
   candidatesLoadedAt: number;
   candidatesLoading: boolean;
@@ -63,15 +44,12 @@ interface AppBypassActions {
   /** rescan: replace names of one entry (by id) with a fresh helper-name set */
   rescan(id: string, names: string[]): Promise<void>;
   /**
-   * Refresh auto-detected Chinese-app list from the platform's installed-app provider.
-   * Accepts a pre-fetched installed list to avoid double `listInstalled` IPC calls
-   * when the caller has already enumerated apps (e.g. from `refreshCandidates`).
-   */
-  loadAutoDetected(preFetchedInstalled?: InstalledApp[]): Promise<void>;
-  /**
    * Refresh the in-memory candidates cache from the platform's app-list provider.
-   * Single IPC per call (in-flight dedup), preserves stale cache during load,
-   * passes installed list to loadAutoDetected to avoid double PackageManager work.
+   * Single IPC per call (in-flight dedup), preserves stale cache during load.
+   *
+   * App Bypass v2 retired local Chinese-app detection; smart bypass now runs
+   * inside the Go engine via region presets shipped through k2-rules, so this
+   * helper only feeds the "Add more" picker.
    */
   refreshCandidates(): Promise<void>;
 }
@@ -97,10 +75,7 @@ async function persist(entries: AppBypassEntry[]): Promise<void> {
 
 export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((set, get) => ({
   entries: [],
-  autoDetected: [],
-  autoDetectorMeta: null,
   loaded: false,
-  autoDetectLoaded: false,
   candidates: [],
   candidatesLoadedAt: 0,
   candidatesLoading: false,
@@ -117,36 +92,6 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
     } catch (err) {
       console.warn('[AppBypassStore] load failed:', err);
       set({ entries: [], loaded: true });
-    }
-  },
-
-  async loadAutoDetected(preFetchedInstalled) {
-    const provider = window._platform?.appList;
-    if (!provider?.listInstalled && !preFetchedInstalled) {
-      set({ autoDetected: [], autoDetectorMeta: null, autoDetectLoaded: true });
-      return;
-    }
-    const country = useConfigStore.getState().country;
-    const detector = getRegionalDetector(country);
-    if (detector.region === 'noop') {
-      set({ autoDetected: [], autoDetectorMeta: null, autoDetectLoaded: true });
-      return;
-    }
-    try {
-      const installed = preFetchedInstalled ?? (await provider!.listInstalled!());
-      const detected = detector.detect(installed);
-      set({
-        autoDetected: detected,
-        autoDetectorMeta: {
-          sectionTitleKey: detector.sectionTitleKey,
-          noteSmartKey: detector.noteSmartKey,
-          noteGlobalKey: detector.noteGlobalKey,
-        },
-        autoDetectLoaded: true,
-      });
-    } catch (err) {
-      console.warn('[AppBypassStore] loadAutoDetected failed:', err);
-      set({ autoDetected: [], autoDetectorMeta: null, autoDetectLoaded: true });
     }
   },
 
@@ -199,7 +144,6 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
             candidatesLoadedAt: Date.now(),
             candidatesError: null,
           });
-          await get().loadAutoDetected(installed);
         } else if (provider?.listRunning) {
           const running = await provider.listRunning();
           const candidates: Candidate[] = running.map((a) => ({
@@ -214,17 +158,12 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
             candidatesLoadedAt: Date.now(),
             candidatesError: null,
           });
-          // Desktop: no listInstalled — loadAutoDetected becomes a noop, but
-          // calling it preserves the `autoDetectLoaded=true` contract for
-          // first-time visitors observing the auto-detect section.
-          await get().loadAutoDetected();
         } else {
           set({
             candidates: [],
             candidatesLoadedAt: Date.now(),
             candidatesError: null,
           });
-          await get().loadAutoDetected();
         }
       } catch (err) {
         console.warn('[AppBypassStore] refreshCandidates failed:', err);
