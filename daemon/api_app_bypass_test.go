@@ -2,10 +2,15 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/kaitu-io/k2/provider"
 )
 
 // callCore posts a {action, params} body to handleCore and returns the
@@ -178,19 +183,129 @@ func TestAPI_AppBypassSetRegion_RejectsInvalidLength(t *testing.T) {
 }
 
 type appBypassPreviewData struct {
-	Matched      []map[string]any `json:"matched"`
-	PhaseOneStub bool             `json:"phase_one_stub"`
+	Matched []map[string]any `json:"matched"`
+	Region  string           `json:"region"`
 }
 
-func TestAPI_AppBypassPreview_Stub(t *testing.T) {
+// fakeAppListProvider returns a fixed list for tests.
+type fakeAppListProvider struct {
+	apps []provider.InstalledApp
+	err  error
+}
+
+func (f fakeAppListProvider) ListInstalled(_ context.Context) ([]provider.InstalledApp, error) {
+	return f.apps, f.err
+}
+
+func TestAPI_AppBypassPreview_NoRegion_EmptyMatched(t *testing.T) {
 	d := New()
+	d.appListProvider = fakeAppListProvider{apps: []provider.InstalledApp{
+		{ID: "/Applications/WeChat.app", Label: "WeChat", ProcessNames: []string{"wechat"}},
+	}}
 	resp := callCore(t, d, "app-bypass-preview", nil)
-	if resp.Code != 0 { t.Fatalf("code = %d (%s)", resp.Code, resp.Message) }
+	if resp.Code != 0 {
+		t.Fatalf("code %d msg %q", resp.Code, resp.Message)
+	}
 	preview := decodeData[appBypassPreviewData](t, resp)
-	if !preview.PhaseOneStub {
-		t.Errorf("expected PhaseOneStub true")
+	if preview.Region != "" {
+		t.Errorf("region should be empty, got %q", preview.Region)
 	}
 	if len(preview.Matched) != 0 {
-		t.Errorf("Phase 1 should return empty matched list, got %d entries", len(preview.Matched))
+		t.Fatalf("want empty (no region), got %d", len(preview.Matched))
+	}
+}
+
+func TestAPI_AppBypassPreview_PresetNotLoaded_EmptyMatched(t *testing.T) {
+	d := New()
+	// Point at an empty cache dir so no preset is found.
+	d.ruleCacheDir = t.TempDir()
+	d.appBypassOverrides.Region = "cn"
+	d.appListProvider = fakeAppListProvider{apps: []provider.InstalledApp{
+		{ID: "/Applications/WeChat.app", Label: "WeChat", ProcessNames: []string{"wechat"}},
+	}}
+	resp := callCore(t, d, "app-bypass-preview", nil)
+	if resp.Code != 0 {
+		t.Fatalf("code %d", resp.Code)
+	}
+	preview := decodeData[appBypassPreviewData](t, resp)
+	if preview.Region != "cn" {
+		t.Errorf("region should be 'cn', got %q", preview.Region)
+	}
+	if len(preview.Matched) != 0 {
+		t.Errorf("want empty (no preset on disk), got %d", len(preview.Matched))
+	}
+}
+
+func TestAPI_AppBypassPreview_MatchesPreset(t *testing.T) {
+	d := New()
+	cacheDir := t.TempDir()
+	d.ruleCacheDir = cacheDir
+
+	// Drop a minimal cn preset into the cache dir.
+	yamlBody := `version: 1
+region: cn
+desktop:
+  process_prefix:
+    - wechat
+`
+	if err := os.WriteFile(filepath.Join(cacheDir, "app-bypass-cn.yaml"), []byte(yamlBody), 0644); err != nil {
+		t.Fatalf("write preset: %v", err)
+	}
+
+	d.appBypassOverrides.Region = "cn"
+	d.appListProvider = fakeAppListProvider{apps: []provider.InstalledApp{
+		{ID: "/Applications/WeChat.app", Label: "WeChat", ProcessNames: []string{"wechat", "wechathelper"}},
+		{ID: "/Applications/Firefox.app", Label: "Firefox", ProcessNames: []string{"firefox"}},
+	}}
+
+	resp := callCore(t, d, "app-bypass-preview", nil)
+	if resp.Code != 0 {
+		t.Fatalf("code %d msg %q", resp.Code, resp.Message)
+	}
+	preview := decodeData[appBypassPreviewData](t, resp)
+	if preview.Region != "cn" {
+		t.Errorf("region %q want cn", preview.Region)
+	}
+	if len(preview.Matched) != 1 {
+		t.Fatalf("want 1 match, got %d: %v", len(preview.Matched), preview.Matched)
+	}
+	hit := preview.Matched[0]
+	if hit["hit_kind"] != "process_prefix" {
+		t.Errorf("hit_kind %v want process_prefix", hit["hit_kind"])
+	}
+	if hit["hit_pattern"] != "wechat" {
+		t.Errorf("hit_pattern %v want wechat", hit["hit_pattern"])
+	}
+	if hit["label"] != "WeChat" {
+		t.Errorf("label %v want WeChat", hit["label"])
+	}
+}
+
+func TestAPI_AppBypassPreview_ProviderError_EmptyMatched(t *testing.T) {
+	d := New()
+	cacheDir := t.TempDir()
+	d.ruleCacheDir = cacheDir
+	yamlBody := `version: 1
+region: cn
+desktop:
+  process_prefix:
+    - wechat
+`
+	if err := os.WriteFile(filepath.Join(cacheDir, "app-bypass-cn.yaml"), []byte(yamlBody), 0644); err != nil {
+		t.Fatalf("write preset: %v", err)
+	}
+	d.appBypassOverrides.Region = "cn"
+	d.appListProvider = fakeAppListProvider{err: context.Canceled}
+
+	resp := callCore(t, d, "app-bypass-preview", nil)
+	if resp.Code != 0 {
+		t.Fatalf("code %d", resp.Code)
+	}
+	preview := decodeData[appBypassPreviewData](t, resp)
+	if len(preview.Matched) != 0 {
+		t.Errorf("provider error should yield empty list, got %v", preview.Matched)
+	}
+	if preview.Region != "cn" {
+		t.Errorf("region should still be reported, got %q", preview.Region)
 	}
 }
