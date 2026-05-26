@@ -122,6 +122,10 @@ export default function Dashboard() {
   // now happen inside the Go engine via region presets, so webapp no longer
   // surfaces an auto count — engine knows the full list, not the renderer.
   const bypassCount = useAppBypassStore((s) => s.entries.length);
+  // Daemon-reported platform support. `undefined` on mobile (no daemon) keeps
+  // the legacy fallback path active; `false` on iOS / unsupported platforms
+  // hides the entry button.
+  const bypassFeatureSupported = useAppBypassStore((s) => s.featureSupported);
 
   // Theme
   const theme = useTheme();
@@ -650,8 +654,9 @@ export default function Dashboard() {
                 <RoutingModeSelector />
               )}
 
-              {/* App-bypass entry (Task 6.2) */}
-              {appConfig.features.appBypass && window._platform?.appList && (
+              {/* App-bypass entry (Task 6.2). Daemon platforms add a third gate
+                  on `feature_supported` (false on iOS even when appList exists). */}
+              {appConfig.features.appBypass && window._platform?.appList && bypassFeatureSupported !== false && (
                 <ListItemButton
                   onClick={() => navigate('/app-bypass')}
                   sx={{ mt: 1.5, borderRadius: 1, border: 1, borderColor: 'divider' }}
