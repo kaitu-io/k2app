@@ -72,18 +72,26 @@ func TestAdminSetUserPassword_ReasonTooShort(t *testing.T) {
 	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
 	assert.Contains(t, resp.Message, "reason too short")
 
-	// 2: 2-char reason — also short.
+	// 2: 2-char reason — also short. Same path as case 1; assert same message
+	// so a regression that swaps in a different validator (e.g. password
+	// strength) returning the same code can't slip through.
 	resp = postAdminPassword(t, r, "some-uuid", map[string]string{
 		"password":        "abcdef1234XY",
 		"confirmPassword": "abcdef1234XY",
 		"reason":          "ab",
 	})
 	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
+	assert.Contains(t, resp.Message, "reason too short")
 
-	// 3: missing reason field — binding:"required" fails.
+	// 3: missing reason field — binding:"required" fails. This hits Gin's
+	// binding layer, not our trim+len check, so the message format is
+	// different. We assert it's NOT the trim path to prove we're testing the
+	// binding path.
 	resp = postAdminPassword(t, r, "some-uuid", map[string]string{
 		"password":        "abcdef1234XY",
 		"confirmPassword": "abcdef1234XY",
 	})
 	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
+	assert.NotEmpty(t, resp.Message)
+	assert.NotContains(t, resp.Message, "reason too short")
 }
