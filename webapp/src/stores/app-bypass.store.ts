@@ -26,6 +26,19 @@ interface AppBypassStorageShape {
 
 const STORAGE_KEY = 'k2.advanced.app_bypass';
 
+export interface PreviewHit {
+  id: string;
+  label: string;
+  names?: string[];
+  hit_kind: 'process_exact' | 'process_prefix' | 'package_exact' | 'package_prefix' | 'installer_exact';
+  hit_pattern: string;
+}
+
+export interface DaemonPreviewResult {
+  matched: PreviewHit[];
+  region: string;
+}
+
 /**
  * Wire shape of the `app-bypass-get` daemon response. Mirrors
  * k2/daemon/api_app_bypass.go `appBypassState`. Snake_case keys come from
@@ -120,6 +133,10 @@ interface AppBypassState {
    * On mobile mirrors what's about to be packed into ClientConfig.
    */
   region: string;
+  matched: PreviewHit[];
+  matchedLoadedAt: number;
+  matchedLoading: boolean;
+  matchedError: string | null;
 }
 
 interface AppBypassActions {
@@ -145,6 +162,7 @@ interface AppBypassActions {
    * helper only feeds the "Add more" picker.
    */
   refreshCandidates(): Promise<void>;
+  refreshPreview(): Promise<void>;
 }
 
 // Module-scoped in-flight dedup. Not part of store state — UI doesn't observe it.
@@ -161,6 +179,12 @@ export function __resetAppBypassInflightForTests(): void {
   inflightCandidatesRefresh = null;
 }
 
+let inflightPreviewRefresh: Promise<void> | null = null;
+
+export function __resetAppBypassPreviewInflightForTests(): void {
+  inflightPreviewRefresh = null;
+}
+
 async function persist(entries: AppBypassEntry[]): Promise<void> {
   const payload: AppBypassStorageShape = { v: 1, entries };
   await window._platform.storage.set(STORAGE_KEY, payload);
@@ -175,6 +199,10 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
   candidatesError: null,
   featureSupported: undefined,
   region: '',
+  matched: [],
+  matchedLoadedAt: 0,
+  matchedLoading: false,
+  matchedError: null,
 
   async load() {
     if (!isDaemonBacked()) {
@@ -393,5 +421,32 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
       inflightCandidatesRefresh = null;
     });
     return inflightCandidatesRefresh;
+  },
+
+  refreshPreview() {
+    if (!isDaemonBacked()) return Promise.resolve();
+    if (inflightPreviewRefresh) return inflightPreviewRefresh;
+    const run = async () => {
+      set({ matchedLoading: true });
+      try {
+        const r = await window._k2.run<DaemonPreviewResult>('app-bypass-preview');
+        if (r.code !== 0 || !r.data) {
+          set({ matchedError: 'dashboard:appBypass.loadFailed' });
+          return;
+        }
+        set({
+          matched: r.data.matched ?? [],
+          matchedLoadedAt: Date.now(),
+          matchedError: null,
+        });
+      } catch (err) {
+        console.warn('[AppBypassStore] refreshPreview failed:', err);
+        set({ matchedError: 'dashboard:appBypass.loadFailed' });
+      } finally {
+        set({ matchedLoading: false });
+      }
+    };
+    inflightPreviewRefresh = run().finally(() => { inflightPreviewRefresh = null; });
+    return inflightPreviewRefresh;
   },
 }));
