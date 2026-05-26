@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { useAppBypassStore, __resetAppBypassInflightForTests } from '../app-bypass.store';
+import { useAppBypassStore, __resetAppBypassInflightForTests, __resetAppBypassSetRegionInflightForTests } from '../app-bypass.store';
 import { mockDaemonBackedPlatform, mockK2Run } from '../../test/utils/platform-mock';
 
 describe('app-bypass.store daemon API path', () => {
   beforeEach(() => {
     mockDaemonBackedPlatform();
     __resetAppBypassInflightForTests();
+    __resetAppBypassSetRegionInflightForTests();
     useAppBypassStore.setState({
       entries: [], loaded: false, featureSupported: undefined, region: '',
       candidates: [], candidatesLoadedAt: 0, candidatesLoading: false, candidatesError: null,
@@ -212,5 +213,36 @@ describe('app-bypass.store daemon API path', () => {
     await useAppBypassStore.getState().setRegion('cn');
     // Region stays unchanged because the unsupported path bails early
     expect(useAppBypassStore.getState().region).toBe('');
+  });
+
+  it('setRegion() serializes rapid calls so daemon ends on LAST user choice', async () => {
+    useAppBypassStore.setState({ loaded: true });
+    // Track the sequence of regions actually sent to the daemon — intermediate
+    // calls between an in-flight call and the latest pending should be DROPPED.
+    const daemonReceived: string[] = [];
+    mockK2Run(async (action, params) => {
+      if (action === 'app-bypass-set-region') {
+        const r = (params as { region: string }).region;
+        daemonReceived.push(r);
+        // Simulate non-zero daemon latency so intermediate calls queue up.
+        await new Promise(resolve => setTimeout(resolve, 5));
+        return { code: 0, message: 'ok', data: {
+          feature_supported: true,
+          region: r,
+          custom: { process_adds: [], package_adds: [] },
+        }};
+      }
+      throw new Error('unexpected');
+    });
+    // Fire 3 rapid setRegion calls — the daemon should NOT see all three.
+    // Without the race guard, the daemon would see cn → us → jp and the
+    // arrival order on goroutines could end in any region; with the guard,
+    // the daemon sees cn (in-flight) and then jp (latest pending). 'us' is dropped.
+    const p1 = useAppBypassStore.getState().setRegion('cn');
+    const p2 = useAppBypassStore.getState().setRegion('us');
+    const p3 = useAppBypassStore.getState().setRegion('jp');
+    await Promise.all([p1, p2, p3]);
+    expect(daemonReceived).toEqual(['cn', 'jp']); // 'us' was overwritten by 'jp' before fire
+    expect(useAppBypassStore.getState().region).toBe('jp'); // last user choice wins
   });
 });

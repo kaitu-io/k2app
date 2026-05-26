@@ -214,6 +214,17 @@ export function __resetAppBypassPreviewInflightForTests(): void {
   inflightPreviewRefresh = null;
 }
 
+// Race-safe setRegion: only one in-flight daemon call at a time; while in-flight,
+// new calls overwrite a single "pending" slot so the daemon ends in the LAST
+// region the user picked, not whichever response arrived last on the wire.
+let setRegionInflight: Promise<void> | null = null;
+let setRegionPending: string | null = null;
+
+export function __resetAppBypassSetRegionInflightForTests(): void {
+  setRegionInflight = null;
+  setRegionPending = null;
+}
+
 async function persist(entries: AppBypassEntry[]): Promise<void> {
   const payload: AppBypassStorageShape = { v: 1, entries };
   await window._platform.storage.set(STORAGE_KEY, payload);
@@ -402,9 +413,24 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
 
   async setRegion(region) {
     if (!isDaemonBacked()) return; // mobile picks region from country via config.store
-    const snap = await daemonSetRegion(region);
-    if (isNullOrUnsupported(snap)) return;
-    set({ region: snap.region });
+    // Race guard: serialize setRegion to prevent daemon ending in a non-last-write-wins
+    // state when the user toggles country rapidly. A pending region is overwritten
+    // by newer calls so only the latest user choice reaches the daemon after the
+    // current in-flight call resolves. Intermediate calls are intentionally dropped.
+    setRegionPending = region;
+    if (setRegionInflight) return setRegionInflight;
+    const run = async () => {
+      while (setRegionPending !== null) {
+        const next = setRegionPending;
+        setRegionPending = null;
+        const snap = await daemonSetRegion(next);
+        if (isNullOrUnsupported(snap)) continue;
+        // Only commit the LATEST resolved region to store (drops intermediates).
+        if (setRegionPending === null) set({ region: snap.region });
+      }
+    };
+    setRegionInflight = run().finally(() => { setRegionInflight = null; });
+    return setRegionInflight;
   },
 
   refreshCandidates() {
