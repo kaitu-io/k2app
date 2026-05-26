@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
 )
@@ -45,7 +44,7 @@ func api_admin_set_user_password(c *gin.Context) {
 	}
 
 	var user User
-	if err := db.Get().Preload("LoginIdentifies").Where(&User{UUID: uuid}).First(&user).Error; err != nil {
+	if err := getDB().Preload("LoginIdentifies").Where(&User{UUID: uuid}).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			Error(c, ErrorNotFound, "user not found")
 			return
@@ -74,7 +73,7 @@ func api_admin_set_user_password(c *gin.Context) {
 	// Scope the save to the three password columns. `LoginIdentifies` was
 	// preloaded for strength-check userInputs; without Select(), GORM would
 	// attempt to upsert that association on every reset.
-	if err := db.Get().Select("PasswordHash", "PasswordFailedAttempts", "PasswordLockedUntil").Save(&user).Error; err != nil {
+	if err := getDB().Select("PasswordHash", "PasswordFailedAttempts", "PasswordLockedUntil").Save(&user).Error; err != nil {
 		log.Errorf(c, "save password for user %s failed: %v", uuid, err)
 		Error(c, ErrorSystemError, "save password failed")
 		return
@@ -109,7 +108,7 @@ func adminDisplayEmail(c *gin.Context) string {
 	}
 	// LoginIdentifies may not be preloaded on the auth-context user; load fresh.
 	var identifies []LoginIdentify
-	if err := db.Get().Where("user_id = ? AND type = ?", actor.ID, "email").Find(&identifies).Error; err != nil {
+	if err := getDB().Where("user_id = ? AND type = ?", actor.ID, "email").Find(&identifies).Error; err != nil {
 		return ""
 	}
 	for i := range identifies {

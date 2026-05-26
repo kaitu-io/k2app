@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/gin-gonic/gin"
-	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
 
@@ -38,7 +37,7 @@ func WriteAuditLog(c *gin.Context, action, targetType, targetID string, detail a
 	// IMPORTANT: c.Copy() is required — Gin recycles *gin.Context after handler returns.
 	cc := c.Copy()
 	go func() {
-		if err := db.Get().Create(&entry).Error; err != nil {
+		if err := getDB().Create(&entry).Error; err != nil {
 			log.Errorf(cc, "failed to write audit log: action=%s target=%s/%s err=%v",
 				action, targetType, targetID, err)
 		}

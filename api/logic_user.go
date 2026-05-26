@@ -18,7 +18,7 @@ func GetEmailIdentifyByUserID(ctx context.Context, userID int64) (*LoginIdentify
 	var identify LoginIdentify
 
 	// 查询用户的邮箱标识
-	err := db.Get().Where("user_id = ? AND type = ?", userID, "email").First(&identify).Error
+	err := getDB().Where("user_id = ? AND type = ?", userID, "email").First(&identify).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warnf(ctx, "email identify not found for user %d", userID)
