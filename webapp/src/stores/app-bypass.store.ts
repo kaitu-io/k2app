@@ -26,6 +26,64 @@ interface AppBypassStorageShape {
 
 const STORAGE_KEY = 'k2.advanced.app_bypass';
 
+/**
+ * Wire shape of the `app-bypass-get` daemon response. Mirrors
+ * k2/daemon/api_app_bypass.go `appBypassState`. Snake_case keys come from
+ * Go json.Marshal; webapp keeps them snake_case here (no bridge remap) to
+ * match the daemon contract.
+ */
+export interface DaemonAppBypassState {
+  feature_supported: boolean;
+  region: string;
+  custom: {
+    process_adds: string[];
+    package_adds: string[];
+  };
+}
+
+interface DaemonDelta {
+  process?: string[];
+  package?: string[];
+}
+
+function isDaemonBacked(): boolean {
+  return !!window._platform?.appBypass?.daemonBacked;
+}
+
+async function daemonGet(): Promise<DaemonAppBypassState | null> {
+  const r = await window._k2.run<DaemonAppBypassState>('app-bypass-get');
+  if (r.code !== 0 || !r.data) {
+    console.warn('[AppBypassStore] daemon get failed:', r.code, r.message);
+    return null;
+  }
+  return r.data;
+}
+
+async function daemonSetCustom(add: DaemonDelta, remove: DaemonDelta): Promise<DaemonAppBypassState | null> {
+  const r = await window._k2.run<DaemonAppBypassState>('app-bypass-set-custom', { add, remove });
+  if (r.code !== 0 || !r.data) {
+    console.warn('[AppBypassStore] daemon set-custom failed:', r.code, r.message);
+    return null;
+  }
+  return r.data;
+}
+
+async function daemonSetRegion(region: string): Promise<DaemonAppBypassState | null> {
+  const r = await window._k2.run<DaemonAppBypassState>('app-bypass-set-region', { region });
+  if (r.code !== 0 || !r.data) {
+    console.warn('[AppBypassStore] daemon set-region failed:', r.code, r.message);
+    return null;
+  }
+  return r.data;
+}
+
+// Helpers above are consumed by the store actions in Task 3+. Reference them
+// here to keep `noUnusedLocals` happy until the wiring lands.
+void isDaemonBacked;
+void daemonGet;
+void daemonSetCustom;
+void daemonSetRegion;
+
 interface AppBypassState {
   entries: AppBypassEntry[];
   loaded: boolean;
