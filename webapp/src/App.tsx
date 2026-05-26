@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { useTranslation } from "react-i18next";
 import {
+  Box,
+  CircularProgress,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -37,6 +39,13 @@ import { getCurrentAppConfig } from "./config/apps";
 
 const AppBypass = lazy(() => import('./pages/AppBypass'));
 
+function RouteSpinner() {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+      <CircularProgress size={28} />
+    </Box>
+  );
+}
 
 // 应用路由组件
 function AppRoutes() {
@@ -66,7 +75,7 @@ function AppRoutes() {
           <Route path="tunnels" element={<Tunnels />} />
           {appConfig.features.appBypass && (
             <Route path="app-bypass" element={
-              <Suspense fallback={null}>
+              <Suspense fallback={<RouteSpinner />}>
                 <AppBypass />
               </Suspense>
             } />
