@@ -146,6 +146,12 @@ type Daemon struct {
 	// state. Loaded at Run() startup from state.json via tryAutoReconnect.
 	// Mutated via /api/core app-bypass-* actions.
 	appBypassOverrides AppBypassOverrides
+
+	// appListProvider enumerates installed apps for app-bypass-preview.
+	// Constructed once at New() via provider.NewAppListProvider();
+	// per-OS implementation chosen by build tags. Never nil — unsupported
+	// platforms get a stub that returns empty lists.
+	appListProvider provider.AppListProvider
 }
 
 // New creates a new daemon.
@@ -164,6 +170,7 @@ func New() *Daemon {
 		nil,
 		d.probeRegistry,
 	)
+	d.appListProvider = provider.NewAppListProvider()
 	return d
 }
 

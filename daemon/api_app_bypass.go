@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/kaitu-io/k2/appbypass"
 	"github.com/kaitu-io/k2/engine"
 )
 
@@ -194,28 +196,90 @@ func (d *Daemon) appBypassSetRegion(w http.ResponseWriter, params map[string]any
 }
 
 type appBypassPreviewResult struct {
-	Matched      []appBypassPreviewEntry `json:"matched"`
-	PhaseOneStub bool                    `json:"phase_one_stub"`
+	Matched []appBypassPreviewEntry `json:"matched"`
+	Region  string                  `json:"region"`
 }
 
 type appBypassPreviewEntry struct {
 	ID         string   `json:"id"`
 	Label      string   `json:"label"`
 	Names      []string `json:"names,omitempty"`
-	HitKind    string   `json:"hit_kind,omitempty"`
-	HitPattern string   `json:"hit_pattern,omitempty"`
+	HitKind    string   `json:"hit_kind"`
+	HitPattern string   `json:"hit_pattern"`
 }
 
-// appBypassPreview handles action "app-bypass-preview".
-// Phase 1: returns empty stub {matched: [], phase_one_stub: true}.
-// Phase 2 will plug AppListProvider here to surface the actual matched apps.
+// appBypassPreview handles action "app-bypass-preview" (spec §9.4).
+// 1. Loads installed-apps from the platform provider.
+// 2. Runs the active region's preset over the list via appbypass.MatchInstalled.
+// 3. Returns the matched subset for the webapp UI.
+//
+// Failure modes (always return Code: 0 — preview is best-effort; the UI must
+// degrade gracefully rather than show an error toast):
+//   - No region set → empty matched + region: ""
+//   - Provider returns error → log + empty matched + active region
+//   - Preset not found → empty matched + active region (lets UI surface "no preset loaded")
 func (d *Daemon) appBypassPreview(w http.ResponseWriter, _ map[string]any) {
-	writeJSON(w, Response{
-		Code:    0,
-		Message: "ok",
-		Data: appBypassPreviewResult{
-			Matched:      []appBypassPreviewEntry{},
-			PhaseOneStub: true,
-		},
-	})
+	overrides := d.currentAppBypass()
+	region := overrides.Region
+
+	emptyResult := func(r string) appBypassPreviewResult {
+		return appBypassPreviewResult{Matched: []appBypassPreviewEntry{}, Region: r}
+	}
+
+	if region == "" {
+		writeJSON(w, Response{Code: 0, Message: "ok", Data: emptyResult("")})
+		return
+	}
+
+	// Resolve preset cache dir (same path engine uses — see engine/appbypass.go).
+	d.mu.RLock()
+	cacheDir := d.ruleCacheDir
+	provider := d.appListProvider
+	d.mu.RUnlock()
+
+	presets, err := appbypass.Load(cacheDir)
+	if err != nil {
+		slog.Warn("appbypass/preview: load failed", "err", err)
+		writeJSON(w, Response{Code: 0, Message: "ok", Data: emptyResult(region)})
+		return
+	}
+	preset := presets.Get(region)
+	if preset == nil {
+		writeJSON(w, Response{Code: 0, Message: "ok", Data: emptyResult(region)})
+		return
+	}
+
+	// Enumerate installed apps. provider is always non-nil (stub for unsupported OS).
+	apps, err := provider.ListInstalled(context.Background())
+	if err != nil {
+		slog.Warn("appbypass/preview: ListInstalled failed", "err", err)
+		writeJSON(w, Response{Code: 0, Message: "ok", Data: emptyResult(region)})
+		return
+	}
+
+	// Convert provider.InstalledApp → appbypass.MatchableApp (decoupled shape;
+	// keeps appbypass package free of the provider import).
+	matchable := make([]appbypass.MatchableApp, 0, len(apps))
+	for _, a := range apps {
+		matchable = append(matchable, appbypass.MatchableApp{
+			ID:                   a.ID,
+			Label:                a.Label,
+			InstallerPackageName: a.InstallerPackageName,
+			ProcessNames:         a.ProcessNames,
+		})
+	}
+
+	matched := appbypass.MatchInstalled(preset, matchable, runtime.GOOS)
+	out := make([]appBypassPreviewEntry, len(matched))
+	for i, m := range matched {
+		out[i] = appBypassPreviewEntry{
+			ID:         m.ID,
+			Label:      m.Label,
+			Names:      m.Names,
+			HitKind:    m.HitKind,
+			HitPattern: m.HitPattern,
+		}
+	}
+	writeJSON(w, Response{Code: 0, Message: "ok",
+		Data: appBypassPreviewResult{Matched: out, Region: region}})
 }
