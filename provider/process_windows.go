@@ -186,13 +186,16 @@ func NewWindowsProcessSearcher() *WindowsProcessSearcher {
 	}
 }
 
-func (s *WindowsProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
+// FindProcess returns (processName, "", "") — Windows has no packageName /
+// installerPackage (Android-only); the cache key + entry carry empty strings
+// for those fields.
+func (s *WindowsProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
 	if !srcIP.Is4() {
-		return "", ""
+		return "", "", ""
 	}
 	key := cacheKey(network, srcIP, srcPort)
-	if name, pkg, ok := s.cache.get(key); ok {
-		return name, pkg
+	if name, pkg, installer, ok := s.cache.get(key); ok {
+		return name, pkg, installer
 	}
 
 	start := time.Now()
@@ -204,8 +207,8 @@ func (s *WindowsProcessSearcher) FindProcess(network string, srcIP netip.Addr, s
 			"latencyMs", elapsed.Milliseconds())
 	}
 
-	s.cache.set(key, name, "")
-	return name, ""
+	s.cache.set(key, name, "", "")
+	return name, "", ""
 }
 
 func (s *WindowsProcessSearcher) lookupUncached(network string, srcIP netip.Addr, srcPort uint16) string {

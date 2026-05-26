@@ -70,6 +70,12 @@ type Engine struct {
 	wireMode         string
 	outboundProvider OutboundProvider
 
+	// appBypassRegion and appBypassCustom are mutable via SetAppBypassRegion /
+	// SetAppBypassCustom. They survive Stop so the next Start picks them up,
+	// and RefreshAppBypass reads them to rebuild routes without reconnecting.
+	appBypassRegion string
+	appBypassCustom AppBypassCustom
+
 	// missReporter is non-nil only when client.Telemetry.RuleMiss.Enabled
 	// is true. When nil, the rule engine's MissReporter hook is also nil
 	// and the match hot path has zero rule-miss overhead. Phase 1.
@@ -221,7 +227,23 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
 	outboundMap := buildOutboundMap(client.Routes)
-	ruleEngine := buildRuleEngine(client, outboundMap)
+	abRoutes, abErr := buildAppBypassRoute(&cfg)
+	if abErr != nil {
+		// Non-fatal: corrupted yaml, partial CDN download, or unsupported version.
+		// Engine proceeds without smart bypass rather than failing the connect —
+		// matches "graceful skip on per-file errors" in appbypass.Load contract.
+		// Logged loudly so a regression in bundle delivery surfaces in support
+		// tickets immediately rather than silently degrading smart bypass.
+		slog.Warn("engine: app-bypass route build failed (smart bypass disabled)",
+			"region", cfg.AppBypassRegion,
+			"err", abErr,
+		)
+	}
+	var extraRoutes []config.RouteConfig
+	for _, r := range abRoutes {
+		extraRoutes = append(extraRoutes, *r)
+	}
+	ruleEngine := buildRuleEngine(client, outboundMap, extraRoutes)
 
 	// 1c. (Phase 1 dark instrumentation) Wire rule-miss telemetry reporter
 	// ONLY when explicitly opted in via config. Zero-value config = off,
@@ -541,6 +563,12 @@ func (e *Engine) Start(cfg Config) error {
 	e.wireMode = cfg.WireMode
 	e.outboundProvider = cfg.OutboundProvider
 
+	// Snapshot appbypass config so SetAppBypassRegion / SetAppBypassCustom
+	// can update them independently without touching the original cfg copy,
+	// and RefreshAppBypass can read them back under mu.
+	e.appBypassRegion = cfg.AppBypassRegion
+	e.appBypassCustom = cfg.AppBypassCustom
+
 	// Re-race loop: replaces recoveryProbe.
 	e.reRaceChan = make(chan *outboundTransport, 1)
 	reRaceCtx, reRaceCancel := context.WithCancel(ctx)
@@ -577,7 +605,36 @@ func (e *Engine) Start(cfg Config) error {
 				return nil, nil, err
 			}
 			idx := rule.Index(newBundles)
-			entries, _, _ := buildRouteEntries(client.Routes, idx, outboundMap)
+
+			// Recompute appbypass routes — YAML may have refreshed via CDN.
+			// Read current appbypass config from the engine fields so that
+			// SetAppBypassRegion/SetAppBypassCustom changes are reflected here.
+			e.mu.Lock()
+			abCfg := Config{
+				AppBypassRegion: e.appBypassRegion,
+				AppBypassCustom: e.appBypassCustom,
+				Client:          client,
+			}
+			e.mu.Unlock()
+			abRoutes, abErr := buildAppBypassRoute(&abCfg)
+			if abErr != nil {
+				// Same gracefully-skip contract as engine.Start, applied to the
+				// 24h background bundle refresh path. Refresh-time failure
+				// leaves the previously-loaded smart-bypass rules in place
+				// (the rebuild aborts and rule.Engine keeps its current state)
+				// rather than silently zeroing out the user's smart bypass.
+				slog.Warn("engine: app-bypass refresh build failed (keeping current rules)",
+					"region", abCfg.AppBypassRegion,
+					"err", abErr,
+				)
+			}
+			finalRoutes := make([]config.RouteConfig, 0, len(abRoutes)+len(client.Routes))
+			for _, r := range abRoutes {
+				finalRoutes = append(finalRoutes, *r)
+			}
+			finalRoutes = append(finalRoutes, client.Routes...)
+
+			entries, _, _ := buildRouteEntries(finalRoutes, idx, outboundMap)
 			return entries, newBundles, nil
 		}
 		rule.StartUpdater(ctx, ruleEngine, client.CacheDir, sources, rebuildFn)
@@ -1147,9 +1204,16 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]*rule.BundleS
 		entry.NetworkMatch = route.Match.Network
 		entry.IPIsPrivate = route.Match.IPIsPrivate
 
+		// v2: prefix + installer.
+		entry.ProcessNamePrefixes = lowerCopy(route.Match.ProcessNamePrefix)
+		entry.PackageNamePrefixes = append([]string(nil), route.Match.PackageNamePrefix...)
+		entry.InstallerPackages = append([]string(nil), route.Match.InstallerPackage...)
+
 		hasAnyCriteria := len(entry.Sets) > 0 ||
 			(entry.Inline != nil && !entry.Inline.IsEmpty()) ||
 			len(entry.ProcessNames) > 0 || len(entry.PackageNames) > 0 ||
+			len(entry.ProcessNamePrefixes) > 0 || len(entry.PackageNamePrefixes) > 0 ||
+			len(entry.InstallerPackages) > 0 ||
 			entry.NetworkMatch != "" || entry.IPIsPrivate
 		if hasAnyCriteria {
 			entries = append(entries, entry)
@@ -1303,10 +1367,24 @@ func buildDNSRouter(outboundMap map[string]rule.Target) func(rule.Target) bool {
 
 // buildRuleEngine creates a rule.Engine from the client's route configuration.
 // CacheDir must be set by the platform shell (daemon/appext) before calling engine.
-func buildRuleEngine(client *config.ClientConfig, outboundMap map[string]rule.Target) *rule.Engine {
+//
+// extraRoutes are prepended to client.Routes (typically the appbypass direct route).
+// They take match precedence over user routes — this is intentional so smart bypass
+// fires before a user-declared "match: all" wire route swallows everything.
+func buildRuleEngine(
+	client *config.ClientConfig,
+	outboundMap map[string]rule.Target,
+	extraRoutes []config.RouteConfig,
+) *rule.Engine {
+	// Assemble final route list: extras first, then user routes.
+	finalRoutes := make([]config.RouteConfig, 0, len(extraRoutes)+len(client.Routes))
+	finalRoutes = append(finalRoutes, extraRoutes...)
+	finalRoutes = append(finalRoutes, client.Routes...)
+
 	// Simple case: single route with match:all and wire outbound → all proxy, no routes.
-	if client.IsAllProxy() && len(client.Routes) == 1 {
-		target := outboundMap[client.Routes[0].Via]
+	// Only applies when there are no extra routes and the single user route is all-proxy.
+	if client.IsAllProxy() && len(finalRoutes) == 1 {
+		target := outboundMap[finalRoutes[0].Via]
 		return rule.NewEngine(nil, target, nil, true)
 	}
 
@@ -1316,7 +1394,7 @@ func buildRuleEngine(client *config.ClientConfig, outboundMap map[string]rule.Ta
 		slog.Warn("engine: rule load failed", "err", err)
 	}
 	idx := rule.Index(bundles)
-	entries, fallback, allProxy := buildRouteEntries(client.Routes, idx, outboundMap)
+	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap)
 
 	hasRules := len(bundles) > 0
 	for _, e := range entries {
@@ -1324,7 +1402,9 @@ func buildRuleEngine(client *config.ClientConfig, outboundMap map[string]rule.Ta
 			hasRules = true
 			break
 		}
-		if len(e.ProcessNames) > 0 || len(e.PackageNames) > 0 {
+		if len(e.ProcessNames) > 0 || len(e.PackageNames) > 0 ||
+			len(e.ProcessNamePrefixes) > 0 || len(e.PackageNamePrefixes) > 0 ||
+			len(e.InstallerPackages) > 0 {
 			hasRules = true
 			break
 		}
@@ -1725,3 +1805,18 @@ func (e *Engine) replaceOutboundServer(
 	}
 }
 
+// lowerCopy returns a new slice with every element lowercased.
+// Used by buildRouteEntries to pre-lowercase ProcessNamePrefix entries at
+// compile time so matchMeta's per-flow hot path only lowercases the
+// observed process name once. Returns nil when in is empty so
+// hasAnyCriteria len-checks stay correct.
+func lowerCopy(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	for i, s := range in {
+		out[i] = strings.ToLower(s)
+	}
+	return out
+}

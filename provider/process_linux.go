@@ -50,17 +50,17 @@ func NewLinuxProcessSearcher(pr PackageResolver) *LinuxProcessSearcher {
 	return s
 }
 
-func (s *LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
+func (s *LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
 	if !srcIP.Is4() {
-		return "", ""
+		return "", "", ""
 	}
 	key := cacheKey(network, srcIP, srcPort)
-	if name, pkg, ok := s.cache.get(key); ok {
-		return name, pkg
+	if name, pkg, installer, ok := s.cache.get(key); ok {
+		return name, pkg, installer
 	}
 
 	start := time.Now()
-	name, pkg := s.lookupUncached(network, srcIP, srcPort)
+	name, pkg, installer := s.lookupUncached(network, srcIP, srcPort)
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
 		slog.Info("DIAG: process-lookup-slow",
 			"platform", "linux",
@@ -68,28 +68,33 @@ func (s *LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, src
 			"latencyMs", elapsed.Milliseconds())
 	}
 
-	s.cache.set(key, name, pkg)
-	return name, pkg
+	s.cache.set(key, name, pkg, installer)
+	return name, pkg, installer
 }
 
-func (s *LinuxProcessSearcher) lookupUncached(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
+func (s *LinuxProcessSearcher) lookupUncached(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
 	inode := s.findSocketInode(network, srcIP, srcPort)
 	if inode == 0 {
-		return "", ""
+		return "", "", ""
 	}
 	pid := s.lookupPID(inode)
 	if pid == 0 || pid == os.Getpid() {
-		return "", ""
+		return "", "", ""
 	}
 	name := s.readProcessName(pid)
 
-	var pkg string
+	// On Android, resolve UID → package name via callback, then installer
+	// source via PackageManager.getInstallSourceInfo (App Bypass v2 signal).
+	var packageName, installerPackage string
 	if s.packageResolver != nil {
 		if uid := s.readProcessUID(pid); uid >= 10000 {
-			pkg = s.packageResolver.PackageForUID(int32(uid))
+			packageName = s.packageResolver.PackageForUID(int32(uid))
+			if packageName != "" {
+				installerPackage = s.packageResolver.InstallerForPackage(packageName)
+			}
 		}
 	}
-	return name, pkg
+	return name, packageName, installerPackage
 }
 
 func (s *LinuxProcessSearcher) findSocketInode(network string, srcIP netip.Addr, srcPort uint16) uint64 {

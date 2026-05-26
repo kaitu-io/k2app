@@ -141,9 +141,9 @@ func downloadTarball(ctx context.Context, dest string, sources []string) (string
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// extractTarball unpacks .k2b entries from the gzipped tarball at tarballPath
-// into newDir, stripping any directory components (defense against path traversal).
-// Non-.k2b entries and non-regular files are silently ignored.
+// extractTarball unpacks .k2b and .yaml entries from the gzipped tarball at
+// tarballPath into newDir, stripping any directory components (defense against
+// path traversal). Other entry types and non-regular files are silently ignored.
 func extractTarball(tarballPath, newDir string) error {
 	f, err := os.Open(tarballPath)
 	if err != nil {
@@ -170,7 +170,7 @@ func extractTarball(tarballPath, newDir string) error {
 			continue
 		}
 		name := filepath.Base(hdr.Name)
-		if !strings.HasSuffix(name, ".k2b") {
+		if !strings.HasSuffix(name, ".k2b") && !strings.HasSuffix(name, ".yaml") {
 			continue
 		}
 		dst := filepath.Join(newDir, name)
@@ -189,8 +189,9 @@ func extractTarball(tarballPath, newDir string) error {
 	return nil
 }
 
-// atomicSwap renames each .k2b from newDir into cacheDir, then removes any
-// .k2b files in cacheDir that were NOT part of the new set (orphan pruning).
+// atomicSwap renames each .k2b and .yaml from newDir into cacheDir, then
+// removes any .k2b/.yaml files in cacheDir that were NOT part of the new set
+// (orphan pruning).
 func atomicSwap(cacheDir, newDir string) error {
 	entries, err := os.ReadDir(newDir)
 	if err != nil {
@@ -198,13 +199,17 @@ func atomicSwap(cacheDir, newDir string) error {
 	}
 	newNames := map[string]struct{}{}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".k2b") {
+		if e.IsDir() {
 			continue
 		}
-		newNames[e.Name()] = struct{}{}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".k2b") && !strings.HasSuffix(name, ".yaml") {
+			continue
+		}
+		newNames[name] = struct{}{}
 		if err := os.Rename(
-			filepath.Join(newDir, e.Name()),
-			filepath.Join(cacheDir, e.Name()),
+			filepath.Join(newDir, name),
+			filepath.Join(cacheDir, name),
 		); err != nil {
 			return err
 		}
@@ -215,11 +220,15 @@ func atomicSwap(cacheDir, newDir string) error {
 		return nil // best effort — a stat failure here doesn't invalidate the rename
 	}
 	for _, e := range existing {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".k2b") {
+		if e.IsDir() {
 			continue
 		}
-		if _, keep := newNames[e.Name()]; !keep {
-			_ = os.Remove(filepath.Join(cacheDir, e.Name()))
+		name := e.Name()
+		if !strings.HasSuffix(name, ".k2b") && !strings.HasSuffix(name, ".yaml") {
+			continue
+		}
+		if _, keep := newNames[name]; !keep {
+			_ = os.Remove(filepath.Join(cacheDir, name))
 		}
 	}
 	return nil

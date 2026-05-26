@@ -25,9 +25,12 @@ func NewDarwinProcessSearcher() *DarwinProcessSearcher {
 	}
 }
 
-func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
+// FindProcess returns (processName, "", "") — Darwin has no packageName /
+// installerPackage; those are Android-only. lsof handles macOS process
+// attribution; the cache key + entry carry empty strings for the latter two.
+func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
 	if !srcIP.Is4() {
-		return "", ""
+		return "", "", ""
 	}
 	// Lazy-init cache for zero-value struct callers (e.g. daemon factory
 	// pre-shared-cache callers that did `&DarwinProcessSearcher{}`).
@@ -35,12 +38,12 @@ func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, sr
 		s.cache = newProcessCache(processCacheCap, processCacheTTL)
 	}
 	key := cacheKey(network, srcIP, srcPort)
-	if name, pkg, ok := s.cache.get(key); ok {
-		return name, pkg
+	if name, pkg, installer, ok := s.cache.get(key); ok {
+		return name, pkg, installer
 	}
 	name := lsofLookup(network, srcIP, srcPort)
-	s.cache.set(key, name, "")
-	return name, ""
+	s.cache.set(key, name, "", "")
+	return name, "", ""
 }
 
 // lsofLookup calls lsof to find the process name for a socket.

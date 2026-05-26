@@ -305,6 +305,80 @@ func TestEnsureBundles_CrossProcessFreshnessRecheck(t *testing.T) {
 	}
 }
 
+func TestExtractTarball_AcceptsYAMLFiles(t *testing.T) {
+	// Build a fake tarball with one .k2b and one .yaml entry.
+	tmp := t.TempDir()
+	tgz := filepath.Join(tmp, "test.tar.gz")
+
+	f, _ := os.Create(tgz)
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+
+	writeEntry := func(name, content string) {
+		hdr := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(content)), Typeflag: tar.TypeReg}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeEntry("cn-direct.k2b", "K2RBfake-binary-data")
+	writeEntry("app-bypass-cn.yaml", "version: 1\nregion: cn\n")
+	tw.Close()
+	gz.Close()
+	f.Close()
+
+	out := t.TempDir()
+	if err := extractTarball(tgz, out); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(out, "cn-direct.k2b")); err != nil {
+		t.Errorf(".k2b missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "app-bypass-cn.yaml")); err != nil {
+		t.Errorf(".yaml missing: %v", err)
+	}
+}
+
+func TestAtomicSwap_HandlesYAML(t *testing.T) {
+	cache := t.TempDir()
+	newDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(newDir, "app-bypass-cn.yaml"), []byte("yaml content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newDir, "cn-direct.k2b"), []byte("binary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := atomicSwap(cache, newDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(cache, "app-bypass-cn.yaml")); err != nil {
+		t.Errorf(".yaml not swapped: %v", err)
+	}
+}
+
+func TestAtomicSwap_PrunesOrphanedYAML(t *testing.T) {
+	cache := t.TempDir()
+	// Pre-existing .yaml in cache that's NOT in newDir → should be pruned.
+	if err := os.WriteFile(filepath.Join(cache, "app-bypass-old.yaml"), []byte("orphan"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	newDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(newDir, "app-bypass-cn.yaml"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := atomicSwap(cache, newDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(cache, "app-bypass-old.yaml")); !os.IsNotExist(err) {
+		t.Errorf("orphan .yaml should have been pruned")
+	}
+}
+
 func TestDefaultSources_ContainsExpectedMirrors(t *testing.T) {
 	expected := []string{
 		"github.com/kaitu-io/k2-rules/releases/latest/download",

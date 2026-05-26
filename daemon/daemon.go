@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -135,6 +136,16 @@ type Daemon struct {
 	// refreshAction is the body executed by the rule refresh ticker.
 	// Real Daemon instances use doRefreshRules; tests inject a counter.
 	refreshAction func(ctx context.Context, dir string)
+
+	// subsCacheDirOverride pins the disk cache directory used by
+	// resolveSubscriptions. Empty string = use platform default. Tests
+	// point this at t.TempDir() so cached tunnels can be preloaded.
+	subsCacheDirOverride string
+
+	// appBypassOverrides is the in-memory cache of daemon's persisted app-bypass
+	// state. Loaded at Run() startup from state.json via tryAutoReconnect.
+	// Mutated via /api/core app-bypass-* actions.
+	appBypassOverrides AppBypassOverrides
 }
 
 // New creates a new daemon.
@@ -315,7 +326,7 @@ func (d *Daemon) closeTunnel() {
 	d.mu.RLock()
 	cfg := d.lastConfig
 	d.mu.RUnlock()
-	saveState(persistedState{Config: cfg, State: engine.StateDisconnected, Timestamp: time.Now()})
+	d.saveLifecycleState(cfg, engine.StateDisconnected)
 }
 
 // doUp connects the tunnel with the given ClientConfig.
@@ -372,13 +383,14 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.monitorPID = pid
 	d.mu.Unlock()
 
+	// Pull ClientConfig.AppBypass into in-memory overrides BEFORE the first
+	// saveState so the persisted snapshot is fresh and engineConfigFromClientConfig
+	// (called below) picks up the updated region + custom adds.
+	d.ingestClientAppBypass(cfg)
+
 	// Persist state for auto-reconnect across restarts.
 	// Note: cfg still has original k2subs:// URLs — never persist resolved k2v5://.
-	saveState(persistedState{
-		Config:    cfg,
-		State:     engine.StateConnecting,
-		Timestamp: time.Now(),
-	})
+	d.saveLifecycleState(cfg, engine.StateConnecting)
 
 	// Resolve k2subs:// subscriptions to k2v5:// URLs.
 	subs, resolved, subsErr := d.subsMgr.Resolve(cfg)
@@ -466,7 +478,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	if d.abortUp.Load() {
 		slog.Info("daemon: doUp aborted after start")
 		eng.Stop()
-		saveState(persistedState{Config: cfg, State: engine.StateDisconnected, Timestamp: time.Now()})
+		d.saveLifecycleState(cfg, engine.StateDisconnected)
 		return fmt.Errorf("aborted by pending down")
 	}
 
@@ -485,11 +497,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	}
 
 	// Update persisted state (original cfg with k2subs:// URLs).
-	saveState(persistedState{
-		Config:    cfg,
-		State:     engine.StateConnected,
-		Timestamp: time.Now(),
-	})
+	d.saveLifecycleState(cfg, engine.StateConnected)
 
 	// Disarm cleanup — subs are now owned by subsMgr (closed in closeTunnel).
 	subsCleanup = false
@@ -536,6 +544,10 @@ func (d *Daemon) engineConfigFromClientConfig(
 		cfg.CacheDir = filepath.Join(cacheDir(), "rules")
 	}
 
+	d.mu.RLock()
+	overrides := d.appBypassOverrides
+	d.mu.RUnlock()
+
 	ecfg := engine.Config{
 		Client:           cfg,
 		FileDescriptor:   -1, // Desktop: engine creates its own TUN.
@@ -543,6 +555,11 @@ func (d *Daemon) engineConfigFromClientConfig(
 		HealthCallback:   d.broadcastSnapshot,
 		OutboundProvider: d.subsMgr, // subscription.Manager implements engine.OutboundProvider (k2subs rotation).
 		ProcessSearcher:  newProcessSearcher(),
+		AppBypassRegion:  overrides.Region,
+		AppBypassCustom: engine.AppBypassCustom{
+			ProcessAdds: overrides.ProcessAdds,
+			PackageAdds: overrides.PackageAdds,
+		},
 	}
 
 	// Apply network monitor if available.
@@ -623,6 +640,21 @@ func (d *Daemon) doRefreshRules(ctx context.Context, dir string) {
 // ctx is the daemon's lifecycle context — reconnect is aborted if ctx is cancelled.
 func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 	st, err := loadState()
+
+	// Seed app-bypass overrides from persisted state. Independent of
+	// reconnect decision — even if Config is nil / State != connected,
+	// the user's app-bypass preferences should survive daemon restarts.
+	if err == nil && st.AppBypass != nil {
+		d.mu.Lock()
+		d.appBypassOverrides = *st.AppBypass
+		d.mu.Unlock()
+		slog.Info("daemon: loaded app-bypass overrides",
+			"region", st.AppBypass.Region,
+			"process_count", len(st.AppBypass.ProcessAdds),
+			"package_count", len(st.AppBypass.PackageAdds),
+		)
+	}
+
 	if err != nil || st.State != engine.StateConnected {
 		return
 	}
@@ -684,6 +716,96 @@ func (d *Daemon) statusInfo() map[string]any {
 		info["config"] = cfg
 	}
 	return info
+}
+
+// currentAppBypass returns a snapshot of the current app-bypass overrides.
+func (d *Daemon) currentAppBypass() AppBypassOverrides {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.appBypassOverrides
+}
+
+// persistAppBypass writes the daemon's full persistedState (including the
+// current Config + AppBypass) atomically via saveState. Returns silently —
+// saveState already logs on failure (matches existing daemon convention).
+func (d *Daemon) persistAppBypass() {
+	d.mu.RLock()
+	o := d.appBypassOverrides
+	cfg := d.lastConfig
+	state := d.lastStatus.State
+	d.mu.RUnlock()
+
+	saveState(persistedState{
+		Config:    cfg,
+		State:     state,
+		Timestamp: time.Now().UTC(),
+		AppBypass: &o,
+	})
+}
+
+// saveLifecycleState writes persistedState while preserving the current
+// AppBypass overrides. Used by lifecycle transitions (doUp / closeTunnel)
+// so smart-bypass preferences round-trip across daemon restarts without
+// having to call persistAppBypass separately.
+func (d *Daemon) saveLifecycleState(cfg *config.ClientConfig, state string) {
+	d.mu.RLock()
+	o := d.appBypassOverrides
+	d.mu.RUnlock()
+	saveState(persistedState{
+		Config:    cfg,
+		State:     state,
+		Timestamp: time.Now().UTC(),
+		AppBypass: &o,
+	})
+}
+
+// ingestClientAppBypass mirrors ClientConfig.AppBypass into the daemon's
+// in-memory overrides so the engine.Config built later picks them up.
+// Empty Region falls back to deriving from the routes' "<cc>-access"
+// preset, letting a global-mode connect still pick up a region preset
+// when the user has one set.
+func (d *Daemon) ingestClientAppBypass(cfg *config.ClientConfig) {
+	if cfg == nil {
+		return
+	}
+	region := ""
+	var processAdds, packageAdds []string
+	if cfg.AppBypass != nil {
+		region = strings.ToLower(strings.TrimSpace(cfg.AppBypass.Region))
+		if len(cfg.AppBypass.ProcessAdds) > 0 {
+			processAdds = append([]string(nil), cfg.AppBypass.ProcessAdds...)
+		}
+		if len(cfg.AppBypass.PackageAdds) > 0 {
+			packageAdds = append([]string(nil), cfg.AppBypass.PackageAdds...)
+		}
+	}
+	if region == "" {
+		region = deriveRegionFromRoutes(cfg.Routes)
+	}
+	d.mu.Lock()
+	d.appBypassOverrides = AppBypassOverrides{
+		Region:      region,
+		ProcessAdds: processAdds,
+		PackageAdds: packageAdds,
+	}
+	d.mu.Unlock()
+}
+
+// deriveRegionFromRoutes returns the country code embedded in the first
+// "<cc>-access" preset found in routes (e.g. "cn-access" → "cn"). Returns
+// "" when no such preset exists. Lets the daemon pick up region-aware
+// smart bypass even when ClientConfig.AppBypass.Region is empty.
+func deriveRegionFromRoutes(routes []config.RouteConfig) string {
+	for _, r := range routes {
+		preset := r.Match.Preset
+		if preset == "" {
+			continue
+		}
+		if cc, ok := strings.CutSuffix(preset, "-access"); ok && len(cc) == 2 {
+			return strings.ToLower(cc)
+		}
+	}
+	return ""
 }
 
 // OnStatus implements engine.EventHandler — updates lastStatus and broadcasts to SSE clients.

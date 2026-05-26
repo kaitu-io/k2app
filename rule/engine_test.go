@@ -475,6 +475,24 @@ func TestEngineReload_ClearsTmpRules(t *testing.T) {
 	}
 }
 
+func TestRouteEntry_HasMetaCriteria_NewFields(t *testing.T) {
+	tests := []struct {
+		name string
+		r    RouteEntry
+	}{
+		{"process_name_prefixes", RouteEntry{ProcessNamePrefixes: []string{"wechat"}}},
+		{"package_name_prefixes", RouteEntry{PackageNamePrefixes: []string{"com.tencent."}}},
+		{"installer_packages",    RouteEntry{InstallerPackages: []string{"com.xiaomi.market"}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if !tc.r.hasMetaCriteria() {
+				t.Errorf("hasMetaCriteria should be true for %s", tc.name)
+			}
+		})
+	}
+}
+
 func TestEngineReload_Concurrent(t *testing.T) {
 	b := mustBundle(t, []BundleSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}, CIDRs: []string{"8.8.8.0/24"}},
@@ -616,5 +634,112 @@ func TestEngineReload_DIAGEmitsCleared(t *testing.T) {
 	}
 	if !strings.Contains(out, `cleared=2`) {
 		t.Errorf("expected cleared=2 (we pinned 2 IPs):\n%s", out)
+	}
+}
+
+func TestMatchMeta_ProcessNamePrefix_Hit(t *testing.T) {
+	// Entries pre-lowercased at compile; matcher lowercases meta.ProcessName.
+	r := &RouteEntry{ProcessNamePrefixes: []string{"wechat"}}
+	for _, name := range []string{"WeChat", "WeChatHelper", "wechat", "WeChat.exe", "WeChatStart.exe"} {
+		if !matchMeta(r, ConnMeta{ProcessName: name}) {
+			t.Errorf("prefix 'wechat' should match %q", name)
+		}
+	}
+}
+
+func TestMatchMeta_ProcessNamePrefix_Miss(t *testing.T) {
+	r := &RouteEntry{ProcessNamePrefixes: []string{"wechat"}}
+	if matchMeta(r, ConnMeta{ProcessName: "Telegram"}) {
+		t.Errorf("prefix 'wechat' should NOT match 'Telegram'")
+	}
+	if matchMeta(r, ConnMeta{ProcessName: ""}) {
+		t.Errorf("prefix should NOT match empty process name")
+	}
+}
+
+func TestMatchMeta_PackageNamePrefix_CaseSensitive(t *testing.T) {
+	r := &RouteEntry{PackageNamePrefixes: []string{"com.tencent."}}
+	if !matchMeta(r, ConnMeta{PackageName: "com.tencent.mm"}) {
+		t.Errorf("expected match on com.tencent.mm")
+	}
+	if matchMeta(r, ConnMeta{PackageName: "com.Tencent.mm"}) {
+		t.Errorf("package prefix should be case-sensitive (capital T)")
+	}
+}
+
+func TestMatchMeta_InstallerPackage_Hit(t *testing.T) {
+	r := &RouteEntry{InstallerPackages: []string{"com.xiaomi.market", "com.huawei.appmarket"}}
+	if !matchMeta(r, ConnMeta{InstallerPackage: "com.xiaomi.market"}) {
+		t.Errorf("should match Xiaomi installer")
+	}
+	if matchMeta(r, ConnMeta{InstallerPackage: "com.google.android.packageinstaller"}) {
+		t.Errorf("should NOT match Google installer")
+	}
+}
+
+func TestMatchMeta_OrSemanticsWithinPackageGroup(t *testing.T) {
+	// Within the package group (PackageNames / PackageNamePrefixes / InstallerPackages),
+	// ANY hit means group satisfied. Across groups (process/package/network),
+	// AND semantics still apply.
+	r := &RouteEntry{
+		ProcessNamePrefixes: []string{"wechat"},
+		InstallerPackages:   []string{"com.xiaomi.market"},
+	}
+	// Process matches → group ok; package group has criteria but no field set → fail.
+	if matchMeta(r, ConnMeta{ProcessName: "WeChat"}) {
+		t.Errorf("missing installer/package fields with installer criterion set should fail")
+	}
+	// Both match
+	if !matchMeta(r, ConnMeta{ProcessName: "WeChat", InstallerPackage: "com.xiaomi.market"}) {
+		t.Errorf("both groups satisfied should pass")
+	}
+	// Only installer (no process — but process group has criteria)
+	if matchMeta(r, ConnMeta{InstallerPackage: "com.xiaomi.market"}) {
+		t.Errorf("process group has criteria + empty process → fail")
+	}
+}
+
+func TestMatchMeta_OrWithinProcessGroup(t *testing.T) {
+	// Route has BOTH exact and prefix entries. Either alone should satisfy.
+	r := &RouteEntry{
+		ProcessNames:        []string{"Telegram"},
+		ProcessNamePrefixes: []string{"wechat"},
+	}
+	// Exact-only hit.
+	if !matchMeta(r, ConnMeta{ProcessName: "Telegram"}) {
+		t.Errorf("exact ProcessNames match should satisfy process group")
+	}
+	// Prefix-only hit.
+	if !matchMeta(r, ConnMeta{ProcessName: "WeChat"}) {
+		t.Errorf("prefix ProcessNamePrefixes match should satisfy process group")
+	}
+	// Neither.
+	if matchMeta(r, ConnMeta{ProcessName: "Firefox"}) {
+		t.Errorf("non-matching name should fail process group")
+	}
+}
+
+func TestMatchMeta_OrWithinPackageGroup(t *testing.T) {
+	// Route has all three kinds of package criteria. Any one match satisfies.
+	r := &RouteEntry{
+		PackageNames:        []string{"com.exact.app"},
+		PackageNamePrefixes: []string{"com.prefix."},
+		InstallerPackages:   []string{"com.xiaomi.market"},
+	}
+	// Exact-only hit.
+	if !matchMeta(r, ConnMeta{PackageName: "com.exact.app"}) {
+		t.Errorf("PackageNames exact should satisfy")
+	}
+	// Prefix-only hit.
+	if !matchMeta(r, ConnMeta{PackageName: "com.prefix.foo"}) {
+		t.Errorf("PackageNamePrefixes prefix should satisfy")
+	}
+	// Installer-only hit (PackageName non-empty but doesn't match exact/prefix).
+	if !matchMeta(r, ConnMeta{PackageName: "com.unrelated.app", InstallerPackage: "com.xiaomi.market"}) {
+		t.Errorf("InstallerPackages match should satisfy even when PackageName misses")
+	}
+	// No hits.
+	if matchMeta(r, ConnMeta{PackageName: "com.unrelated.app", InstallerPackage: "com.google.android.packageinstaller"}) {
+		t.Errorf("all three lists missing → should fail")
 	}
 }

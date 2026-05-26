@@ -35,9 +35,10 @@ type processCache struct {
 }
 
 type processCacheEntry struct {
-	name    string
-	pkg     string
-	expires time.Time
+	name      string
+	pkg       string
+	installer string
+	expires   time.Time
 }
 
 func newProcessCache(cap int, ttl time.Duration) *processCache {
@@ -48,22 +49,23 @@ func newProcessCache(cap int, ttl time.Duration) *processCache {
 	}
 }
 
-func (c *processCache) get(key string) (name, pkg string, hit bool) {
+func (c *processCache) get(key string) (name, pkg, installer string, hit bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.entries[key]
 	if !ok || time.Now().After(e.expires) {
-		return "", "", false
+		return "", "", "", false
 	}
-	return e.name, e.pkg, true
+	return e.name, e.pkg, e.installer, true
 }
 
-func (c *processCache) set(key, name, pkg string) {
+func (c *processCache) set(key, name, pkg, installer string) {
 	now := time.Now()
 	entry := processCacheEntry{
-		name:    name,
-		pkg:     pkg,
-		expires: now.Add(c.ttl),
+		name:      name,
+		pkg:       pkg,
+		installer: installer,
+		expires:   now.Add(c.ttl),
 	}
 	c.mu.Lock()
 	if len(c.entries) >= c.cap {

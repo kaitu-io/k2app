@@ -491,7 +491,7 @@ func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) (ru
 			// so attribution never fires. Unmap() strips the ::ffff: prefix so
 			// downstream searchers see a true 4-byte IPv4 addr.
 			srcIP = srcIP.Unmap()
-			meta.ProcessName, meta.PackageName = t.processSearcher.FindProcess(network, srcIP, uint16(srcAddr.Port))
+			meta.ProcessName, meta.PackageName, meta.InstallerPackage = t.processSearcher.FindProcess(network, srcIP, uint16(srcAddr.Port))
 		}
 	}
 

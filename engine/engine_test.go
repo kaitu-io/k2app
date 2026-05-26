@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -407,7 +408,7 @@ func TestBuildRuleEngine_Default(t *testing.T) {
 	client := &config.ClientConfig{
 		Server: "k2v5://udid:tok@host:443",
 	}
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), nil)
 	defer re.Close()
 	if re.IsAllProxy() {
 		t.Fatal("expected IsAllProxy false when no routes set")
@@ -420,7 +421,7 @@ func TestBuildRuleEngine_Default(t *testing.T) {
 
 func TestBuildRuleEngine_AllProxy(t *testing.T) {
 	client := config.ClientFromURL("k2v5://udid:tok@host:443")
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), nil)
 	defer re.Close()
 	if !re.IsAllProxy() {
 		t.Fatal("expected IsAllProxy true for ClientFromURL")
@@ -453,7 +454,7 @@ func TestBuildRuleEngine_InlineRules(t *testing.T) {
 			},
 		},
 	}
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), nil)
 	defer re.Close()
 
 	if got := re.Match("ads.example.com"); got != rule.Target(1) {
@@ -485,7 +486,7 @@ func TestBuildRuleEngine_ProcessRoute(t *testing.T) {
 			},
 		},
 	}
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), nil)
 	defer re.Close()
 
 	// DNS-time: process-only route skipped
@@ -517,7 +518,7 @@ func TestBuildRuleEngine_IPIsPrivate(t *testing.T) {
 			},
 		},
 	}
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), nil)
 	defer re.Close()
 
 	if got := re.Match("192.168.1.1"); got != rule.Target(0) {
@@ -1991,7 +1992,7 @@ func TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure(t *testing.T) {
 		},
 	}
 	outboundMap := buildOutboundMap(client.Routes)
-	ruleEngine := buildRuleEngine(client, outboundMap)
+	ruleEngine := buildRuleEngine(client, outboundMap, nil)
 	if ruleEngine == nil {
 		t.Fatal("buildRuleEngine returned nil")
 	}
@@ -2022,4 +2023,32 @@ func waitForTCPCalls(m *mockConnectionHandler, n int, timeout time.Duration) []s
 		time.Sleep(5 * time.Millisecond)
 	}
 	return m.getTCPCalls()
+}
+
+func TestBuildRouteEntries_NewFieldsCopied(t *testing.T) {
+	routes := []config.RouteConfig{{
+		Via: "direct",
+		Match: rule.MatchConfig{
+			ProcessNamePrefix: []string{"WeChat", "QQ"},
+			PackageNamePrefix: []string{"com.tencent."},
+			InstallerPackage:  []string{"com.xiaomi.market"},
+		},
+	}}
+	entries, _, _ := buildRouteEntries(routes, nil, map[string]rule.Target{})
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	e := entries[0]
+	// ProcessNamePrefixes lowercased at compile.
+	if !reflect.DeepEqual([]string{"wechat", "qq"}, e.ProcessNamePrefixes) {
+		t.Errorf("ProcessNamePrefixes = %v, want [wechat qq] (lowercased)", e.ProcessNamePrefixes)
+	}
+	// PackageNamePrefixes case preserved.
+	if !reflect.DeepEqual([]string{"com.tencent."}, e.PackageNamePrefixes) {
+		t.Errorf("PackageNamePrefixes = %v", e.PackageNamePrefixes)
+	}
+	// InstallerPackages case preserved.
+	if !reflect.DeepEqual([]string{"com.xiaomi.market"}, e.InstallerPackages) {
+		t.Errorf("InstallerPackages = %v", e.InstallerPackages)
+	}
 }

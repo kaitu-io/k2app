@@ -61,6 +61,11 @@ func setupFakeProcfs(t *testing.T) string {
 	return dir
 }
 
+type mockPackageResolver struct {
+	packages   map[int32]string
+	installers map[string]string
+}
+
 // writeProcEntry overlays a single PID's exe symlink + comm onto an
 // existing fake procfs root. Returns the PID's dir path for further
 // per-test customization.
@@ -438,4 +443,11 @@ func TestSelfPIDSkip_ViaFakeProcfs(t *testing.T) {
 	if name != "" {
 		t.Errorf("expected self-PID skip → empty name, got %q", name)
 	}
+}
+
+func (m *mockPackageResolver) InstallerForPackage(packageName string) string {
+	if m.installers == nil {
+		return ""
+	}
+	return m.installers[packageName]
 }

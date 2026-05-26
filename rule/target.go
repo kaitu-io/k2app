@@ -24,8 +24,14 @@ type MatchConfig struct {
 	// Connection metadata matching.
 	ProcessName []string `yaml:"process_name,omitempty" json:"process_name,omitempty"`
 	PackageName []string `yaml:"package_name,omitempty" json:"package_name,omitempty"`
-	Network     string   `yaml:"network,omitempty"      json:"network,omitempty"`
-	IPIsPrivate bool     `yaml:"ip_is_private,omitempty" json:"ip_is_private,omitempty"`
+
+	// v2 (app-bypass): prefix matching + Android installer source.
+	ProcessNamePrefix []string `yaml:"process_name_prefix,omitempty" json:"process_name_prefix,omitempty"`
+	PackageNamePrefix []string `yaml:"package_name_prefix,omitempty" json:"package_name_prefix,omitempty"`
+	InstallerPackage  []string `yaml:"installer_package,omitempty"  json:"installer_package,omitempty"`
+
+	Network     string `yaml:"network,omitempty"      json:"network,omitempty"`
+	IPIsPrivate bool   `yaml:"ip_is_private,omitempty" json:"ip_is_private,omitempty"`
 
 	// Catch-all.
 	All bool `yaml:"all,omitempty" json:"all,omitempty"`
@@ -36,6 +42,8 @@ func (m MatchConfig) HasCriteria() bool {
 	return m.Preset != "" || len(m.Names) > 0 || len(m.Exclude) > 0 || m.All ||
 		len(m.DomainSuffix) > 0 || len(m.IPCIDR) > 0 ||
 		len(m.ProcessName) > 0 || len(m.PackageName) > 0 ||
+		len(m.ProcessNamePrefix) > 0 || len(m.PackageNamePrefix) > 0 ||
+		len(m.InstallerPackage) > 0 ||
 		m.Network != "" || m.IPIsPrivate
 }
 

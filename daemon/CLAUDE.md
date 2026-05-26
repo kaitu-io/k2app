@@ -151,7 +151,7 @@ Abort path: both Start and Stop happen within the same opMu critical section —
 - `recovery.go` / `recovery_darwin.go` / `recovery_linux.go` / `recovery_windows.go` — Panic recovery + network restore (macOS + Windows: calls `provider.CleanupStaleDNSOverride()`)
 - `rlimit.go` / `rlimit_unix.go` / `rlimit_windows.go` — `RLIMIT_NPROC=4000`, `RLIMIT_NOFILE=10240`
 - `directdial.go` / `directdial_test.go` — `directDialer` (implements `wire.DirectDialer`, sing-tun interface binding)
-- `network_monitor.go` / `network_monitor_test.go` — Desktop network change detection (WiFi/cellular switch)
+- `network_monitor_test.go` — Tests for desktop network change detection
 - `paths.go` / `paths_test.go` — `cacheDir()`, `logDir()` (platform-specific cache/log directories)
 - `slog_migration_test.go` — Guard: no old `log.Printf` calls in daemon package
 - `wintun/` — wintun.dll embedding (amd64 + arm64) + runtime arch detection via `IsWow64Process2`

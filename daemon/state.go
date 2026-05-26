@@ -11,11 +11,25 @@ import (
 	"github.com/kaitu-io/k2/config"
 )
 
+// AppBypassOverrides is the persistent shape of daemon's app-bypass state.
+// Lives inside persistedState so the existing saveState/loadState path
+// carries it alongside the auto-reconnect Config. No separate file.
+//
+// Privacy: persistedState is written plaintext to stateFilePath() (0o600,
+// dir 0o700). Entry names never appear in logs / feedback / Sentry per
+// spec §13. Encryption deferred until daemon gains a shared encrypted KV.
+type AppBypassOverrides struct {
+	Region      string   `json:"region"`
+	ProcessAdds []string `json:"process_adds,omitempty"`
+	PackageAdds []string `json:"package_adds,omitempty"`
+}
+
 // persistedState is saved to disk for auto-reconnect across daemon restarts.
 type persistedState struct {
 	Config    *config.ClientConfig `json:"config,omitempty"`
 	State     string               `json:"state"`
 	Timestamp time.Time            `json:"timestamp"`
+	AppBypass *AppBypassOverrides  `json:"app_bypass,omitempty"`
 }
 
 func stateFilePath() string {
@@ -26,7 +40,10 @@ func stateFilePath() string {
 // Windows SYSTEM: %ProgramData%\k2 (admin-only ACL).
 // Windows user: %LocalAppData%\k2 (per-user).
 // macOS/Linux: os.TempDir()/k2 (per-user, 0700 enforced by OS).
-func stateDir() string {
+//
+// Declared as var (not func) so tests can inject a temporary directory
+// via stateDir = func() string { return t.TempDir() } without side effects.
+var stateDir = func() string {
 	if runtime.GOOS == "windows" {
 		if config.IsRoot() {
 			programData := os.Getenv("ProgramData")

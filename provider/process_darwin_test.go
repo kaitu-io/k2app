@@ -163,8 +163,8 @@ func TestDarwinProcessSearcher_CacheHitShortCircuits(t *testing.T) {
 	srcPort := uint16(54321)
 	// Pre-populate cache with a known answer (simulates "we already looked
 	// this up 1.5s ago, lsof should NOT be re-run").
-	s.cache.set(cacheKey("tcp", srcIP, srcPort), "WeChat", "")
-	name, _ := s.FindProcess("tcp", srcIP, srcPort)
+	s.cache.set(cacheKey("tcp", srcIP, srcPort), "WeChat", "", "")
+	name, _, _ := s.FindProcess("tcp", srcIP, srcPort)
 	if name != "WeChat" {
 		t.Errorf("got %q, want WeChat (cache hit)", name)
 	}
@@ -175,9 +175,9 @@ func TestDarwinProcessSearcher_CacheHitShortCircuits(t *testing.T) {
 // behavior).
 func TestDarwinProcessSearcher_IPv6Early(t *testing.T) {
 	s := NewDarwinProcessSearcher()
-	name, pkg := s.FindProcess("tcp", netip.MustParseAddr("2001:db8::1"), 443)
-	if name != "" || pkg != "" {
-		t.Errorf("IPv6 must early-return empty, got (%q,%q)", name, pkg)
+	name, pkg, installer := s.FindProcess("tcp", netip.MustParseAddr("2001:db8::1"), 443)
+	if name != "" || pkg != "" || installer != "" {
+		t.Errorf("IPv6 must early-return empty, got (%q,%q,%q)", name, pkg, installer)
 	}
 }
 
@@ -196,5 +196,5 @@ func TestDarwinProcessSearcher_ZeroValueLazyInits(t *testing.T) {
 			t.Fatalf("FindProcess panicked on zero-value struct: %v", r)
 		}
 	}()
-	_, _ = s.FindProcess("tcp", netip.MustParseAddr("127.0.0.1"), 0)
+	_, _, _ = s.FindProcess("tcp", netip.MustParseAddr("127.0.0.1"), 0)
 }

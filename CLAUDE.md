@@ -490,6 +490,7 @@ Concrete type assertions create hidden coupling. If a third transport is added (
 
 ```
 sniff/CLAUDE.md                Protocol sniffing (TLS/QUIC/HTTP/BT/STUN/DTLS detectors)
+rule/                          In-tree routing engine: domain suffix + IP range binary search, k2b mmap format, inline/remote rule sets, connection-metadata matching (no CLAUDE.md — start at rule/engine.go)
 cmd/k2/CLAUDE.md               Client CLI subcommands + dispatch
 cmd/k2s/CLAUDE.md              Server CLI + foreground/service mode
 cmd/k2r/CLAUDE.md              Gateway CLI subcommands + dispatch (Linux only)
@@ -507,6 +508,9 @@ wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage,
 wire/VOCABULARY.md             Three-layer vocabulary convention (Wire/Relay/Tunnel)
 wire/k2cc/CLAUDE.md            K2CC Vivace congestion control
 appext/CLAUDE.md               App extension shell: gomobile SDK (macOS sysext, iOS, Android)
+k2p/                           P2P home access — k2s behind NAT + ICE hole punching, data plane is k2v5 (no CLAUDE.md — see docs/superpowers/specs/2026-03-24-k2p-e2e-design.md)
+signal/                        k2p signal/relay server — zero-trust, cannot decrypt or impersonate (no CLAUDE.md — start at signal/store.go)
+probe/                         Wire transport probe registry + service (handshake + echo health) (no CLAUDE.md — start at probe/service.go)
 safego/                        Panic-safe goroutine launcher (Go() wraps recover + slog)
 test/CLAUDE.md                 E2E integration tests
 docs/features/                 Feature specs (cloud-webapp, mobile-sdk, private-ip-guard, etc.)
