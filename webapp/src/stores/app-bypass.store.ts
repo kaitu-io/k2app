@@ -77,12 +77,26 @@ async function daemonSetRegion(region: string): Promise<DaemonAppBypassState | n
   return r.data;
 }
 
-// Helpers above are consumed by the store actions in Task 3+. Reference them
-// here to keep `noUnusedLocals` happy until the wiring lands.
-void isDaemonBacked;
-void daemonGet;
-void daemonSetCustom;
+// daemonSetRegion is consumed by setRegion() action added in Task 5.
 void daemonSetRegion;
+
+/**
+ * Lift daemon's flat process/package add lists into the webapp's grouped
+ * AppBypassEntry shape. Each daemon entry becomes one synthetic entry with
+ * id = name, label = name (UI can resolve a prettier label via candidates
+ * lookup later — not all daemon entries have icon/label metadata).
+ */
+function daemonStateToEntries(s: DaemonAppBypassState): AppBypassEntry[] {
+  const now = Date.now();
+  const out: AppBypassEntry[] = [];
+  for (const n of s.custom.process_adds ?? []) {
+    out.push({ id: n, label: n, kind: 'process', names: [n], addedAt: now });
+  }
+  for (const n of s.custom.package_adds ?? []) {
+    out.push({ id: n, label: n, kind: 'package', names: [n], addedAt: now });
+  }
+  return out;
+}
 
 interface AppBypassState {
   entries: AppBypassEntry[];
@@ -92,6 +106,17 @@ interface AppBypassState {
   candidatesLoading: boolean;
   /** i18n key on failure (e.g. 'dashboard:appBypass.loadFailed'); null on success. */
   candidatesError: string | null;
+  /**
+   * Daemon-reported platform support. `undefined` until first load resolves.
+   * On mobile (no daemon) this stays `undefined`; UI uses a separate fallback
+   * gate (`!!window._platform?.appList`).
+   */
+  featureSupported: boolean | undefined;
+  /**
+   * Region returned by daemon (`'cn' / 'ir' / ...` or `''` for off).
+   * On mobile mirrors what's about to be packed into ClientConfig.
+   */
+  region: string;
 }
 
 interface AppBypassActions {
@@ -138,19 +163,74 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
   candidatesLoadedAt: 0,
   candidatesLoading: false,
   candidatesError: null,
+  featureSupported: undefined,
+  region: '',
 
   async load() {
-    try {
-      const stored = await window._platform.storage.get<AppBypassStorageShape>(STORAGE_KEY);
-      if (stored && stored.v === 1 && Array.isArray(stored.entries)) {
-        set({ entries: stored.entries, loaded: true });
-      } else {
+    if (!isDaemonBacked()) {
+      // Mobile path: read from local storage as before.
+      try {
+        const stored = await window._platform.storage.get<AppBypassStorageShape>(STORAGE_KEY);
+        if (stored && stored.v === 1 && Array.isArray(stored.entries)) {
+          set({ entries: stored.entries, loaded: true });
+        } else {
+          set({ entries: [], loaded: true });
+        }
+      } catch (err) {
+        console.warn('[AppBypassStore] load failed (mobile):', err);
         set({ entries: [], loaded: true });
       }
-    } catch (err) {
-      console.warn('[AppBypassStore] load failed:', err);
-      set({ entries: [], loaded: true });
+      return;
     }
+
+    // Desktop / standalone path: daemon owns state.
+    const snapshot = await daemonGet();
+    if (snapshot == null) {
+      // Daemon unreachable. Show empty UI without spinning — better than
+      // hanging the page on an offline daemon during AuthGate startup.
+      set({ entries: [], loaded: true, featureSupported: undefined });
+      return;
+    }
+
+    // One-shot migration (spec §10.4): if daemon has no custom entries but
+    // local storage does, push local → daemon, then delete local. Idempotent
+    // via daemon applyDelta dedup.
+    let entriesFromDaemon = daemonStateToEntries(snapshot);
+    if (entriesFromDaemon.length === 0) {
+      try {
+        const legacy = await window._platform.storage.get<AppBypassStorageShape>(STORAGE_KEY);
+        if (legacy && legacy.v === 1 && Array.isArray(legacy.entries) && legacy.entries.length > 0) {
+          const processAdds: string[] = [];
+          const packageAdds: string[] = [];
+          for (const e of legacy.entries) {
+            for (const n of e.names ?? []) {
+              if (e.kind === 'process') processAdds.push(n);
+              else if (e.kind === 'package') packageAdds.push(n);
+            }
+          }
+          const migrated = await daemonSetCustom(
+            { process: processAdds, package: packageAdds },
+            { process: [], package: [] },
+          );
+          if (migrated) {
+            await window._platform.storage.remove(STORAGE_KEY);
+            entriesFromDaemon = daemonStateToEntries(migrated);
+            console.info('[AppBypassStore] migrated', legacy.entries.length, 'local entries to daemon');
+          }
+        }
+      } catch (err) {
+        // Migration is best-effort. Failure leaves local storage intact so the
+        // next launch can retry. Don't surface to the user.
+        console.warn('[AppBypassStore] migration attempt failed (will retry next launch):', err);
+      }
+    }
+
+    set({
+      entries: entriesFromDaemon,
+      loaded: true,
+      featureSupported: snapshot.feature_supported,
+      region: snapshot.region,
+    });
   },
 
   async add(entry) {
