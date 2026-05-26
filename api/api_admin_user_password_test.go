@@ -188,6 +188,36 @@ func TestAdminSetUserPassword_PasswordTooWeak(t *testing.T) {
 	assert.NoError(t, m.Mock.ExpectationsWereMet())
 }
 
+// Spec §7 T6: a password equal to the user's own email must be rejected as
+// too weak. Exercises the userInputs path through
+// collectUserInputsForPasswordStrength -> secretDecryptString -> zxcvbn
+// penalty. secretDecryptString is currently a stub identity function, so
+// the mocked encrypted_value can hold plaintext.
+func TestAdminSetUserPassword_RejectsEmailAsPassword(t *testing.T) {
+	m := SetupMockDB(t)
+	swapGetDB(t, m)
+
+	const email = "alice@example.com"
+	userRows := sqlmock.NewRows([]string{"id", "uuid", "password_hash", "password_failed_attempts", "password_locked_until"}).
+		AddRow(int64(42), "uuid-1", "", 0, int64(0))
+	m.Mock.ExpectQuery(regexp.QuoteMeta("FROM `users`")).WillReturnRows(userRows)
+	loginRows := sqlmock.NewRows([]string{"id", "user_id", "type", "encrypted_value", "index_id"}).
+		AddRow(int64(1), int64(42), "email", email, "")
+	m.Mock.ExpectQuery(regexp.QuoteMeta("FROM `login_identifies`")).WillReturnRows(loginRows)
+
+	body := validBody(t)
+	body["password"] = email
+	body["confirmPassword"] = email
+
+	r := gin.New()
+	r.POST("/app/users/:uuid/password", api_admin_set_user_password)
+	resp := postAdminPassword(t, r, "uuid-1", body)
+
+	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
+	assert.Equal(t, "password_too_weak", resp.Message)
+	assert.NoError(t, m.Mock.ExpectationsWereMet())
+}
+
 func TestAdminSetUserPassword_HappyPath(t *testing.T) {
 	m := SetupMockDB(t)
 	swapGetDB(t, m)
