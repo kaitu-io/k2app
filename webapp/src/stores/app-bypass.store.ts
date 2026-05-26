@@ -77,9 +77,6 @@ async function daemonSetRegion(region: string): Promise<DaemonAppBypassState | n
   return r.data;
 }
 
-// daemonSetRegion is consumed by setRegion() action added in Task 5.
-void daemonSetRegion;
-
 /**
  * Lift daemon's flat process/package add lists into the webapp's grouped
  * AppBypassEntry shape. Each daemon entry becomes one synthetic entry with
@@ -132,6 +129,13 @@ interface AppBypassActions {
   clear(): Promise<void>;
   /** rescan: replace names of one entry (by id) with a fresh helper-name set */
   rescan(id: string, names: string[]): Promise<void>;
+  /**
+   * Sync the smart-bypass region to the daemon. On mobile this is a no-op
+   * (region travels via ClientConfig.app_bypass at connect time).
+   *
+   * Pass empty string to disable smart bypass.
+   */
+  setRegion(region: string): Promise<void>;
   /**
    * Refresh the in-memory candidates cache from the platform's app-list provider.
    * Single IPC per call (in-flight dedup), preserves stale cache during load.
@@ -326,6 +330,13 @@ export const useAppBypassStore = create<AppBypassState & AppBypassActions>()((se
     const snap = await daemonSetCustom(newDelta, oldDelta);
     if (snap == null) return;
     set({ entries: daemonStateToEntries(snap) });
+  },
+
+  async setRegion(region) {
+    if (!isDaemonBacked()) return; // mobile picks region from country via config.store
+    const snap = await daemonSetRegion(region);
+    if (snap == null) return;
+    set({ region: snap.region });
   },
 
   refreshCandidates() {

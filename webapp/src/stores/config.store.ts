@@ -280,6 +280,21 @@ async function persist(
   }
 }
 
+/**
+ * Push the current effective app-bypass region to the daemon when running
+ * on a daemon-backed platform. No-op on mobile (region travels via
+ * ClientConfig.app_bypass at connect time, packed by buildConnectConfig).
+ * Best-effort: failures are logged inside the store action; UI is not blocked.
+ */
+function pushAppBypassRegionToDaemon(state: ConfigState): void {
+  const isDaemonBacked = !!window._platform?.appBypass?.daemonBacked;
+  if (!isDaemonBacked) return;
+  const preset = derivePreset(state.defaultVia, state.countryVia);
+  const region = preset === 'global' ? '' : (state.country ?? '');
+  // Fire-and-forget — setRegion() inside the store action handles errors.
+  void useAppBypassStore.getState().setRegion(region);
+}
+
 // ============ Store ============
 
 export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) => ({
@@ -329,6 +344,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     set({ defaultVia, countryVia });
     const { country, autoDetect, alwaysOn } = get();
     await persist(defaultVia, countryVia, country, autoDetect, alwaysOn);
+    pushAppBypassRegionToDaemon(get());
   },
 
   setCountry: async (cc) => {
@@ -336,6 +352,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     set({ country: lower, autoDetect: false });
     const { defaultVia, countryVia, alwaysOn } = get();
     await persist(defaultVia, countryVia, lower, false, alwaysOn);
+    pushAppBypassRegionToDaemon(get());
   },
 
   setAutoDetect: async (on) => {
@@ -349,6 +366,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     set(next);
     const { defaultVia, countryVia, country, alwaysOn } = get();
     await persist(defaultVia, countryVia, country, on, alwaysOn);
+    pushAppBypassRegionToDaemon(get());
   },
 
   setAlwaysOn: async (on) => {
