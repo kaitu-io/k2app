@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/kaitu-io/k2/config"
 )
 
 // ==========================================================================
@@ -258,4 +260,121 @@ func TestPrefetchRules_EmptyCacheDirNoOp(t *testing.T) {
 	// Must not panic, must not block, must not launch work. If this test
 	// hangs, PrefetchRules is not honoring its early-return guard.
 	PrefetchRules("")
+}
+
+// ==========================================================================
+// App Bypass v2 wire test
+// ==========================================================================
+
+// TestResolveAppBypass mirrors daemon.ingestClientAppBypass behavior so the
+// same JSON payload from webapp yields identical engine.Config on both
+// the desktop (daemon) and mobile (appext) paths. The original P0 was that
+// appext silently dropped ClientConfig.AppBypass on the floor, leaving
+// Android with a non-working feature even though K2VpnService.kt exposes
+// PackageResolver.InstallerForPackage and cn.yaml ships installer + package
+// entries explicitly targeting Android.
+func TestResolveAppBypass(t *testing.T) {
+	tests := []struct {
+		name        string
+		configJSON  string
+		wantRegion  string
+		wantProcess []string
+		wantPackage []string
+	}{
+		{
+			name: "explicit region + custom adds",
+			configJSON: `{
+				"app_bypass": {
+					"region": "CN",
+					"process_adds": ["Steam.app"],
+					"package_adds": ["com.example.foo"]
+				}
+			}`,
+			wantRegion:  "cn",
+			wantProcess: []string{"Steam.app"},
+			wantPackage: []string{"com.example.foo"},
+		},
+		{
+			name: "derive region from cn-access preset when region empty",
+			configJSON: `{
+				"routes": [
+					{"via": "direct", "match": {"preset": "cn-access"}},
+					{"via": "k2v5://example.com/", "match": {}}
+				]
+			}`,
+			wantRegion: "cn",
+		},
+		{
+			name: "explicit region wins over routes preset",
+			configJSON: `{
+				"app_bypass": {"region": "ir"},
+				"routes": [{"via": "direct", "match": {"preset": "cn-access"}}]
+			}`,
+			wantRegion: "ir",
+		},
+		{
+			name:       "global mode (no app_bypass, no preset) yields no region",
+			configJSON: `{"routes": [{"via": "k2v5://example.com/", "match": {"all": true}}]}`,
+			wantRegion: "",
+		},
+		{
+			name: "custom-only (Plan C key fix: works without region)",
+			configJSON: `{
+				"app_bypass": {"process_adds": ["Steam.app"]}
+			}`,
+			wantRegion:  "",
+			wantProcess: []string{"Steam.app"},
+		},
+		{
+			name: "region whitespace + uppercase normalized",
+			configJSON: `{
+				"app_bypass": {"region": "  Ru  "}
+			}`,
+			wantRegion: "ru",
+		},
+		{
+			name: "non-2-letter preset suffix ignored in derive",
+			configJSON: `{
+				"routes": [{"via": "direct", "match": {"preset": "overseas"}}]
+			}`,
+			wantRegion: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var c config.ClientConfig
+			if err := json.Unmarshal([]byte(tc.configJSON), &c); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			region, custom := resolveAppBypass(&c)
+			if region != tc.wantRegion {
+				t.Errorf("region = %q, want %q", region, tc.wantRegion)
+			}
+			if !stringSlicesEqual(custom.ProcessAdds, tc.wantProcess) {
+				t.Errorf("process = %v, want %v", custom.ProcessAdds, tc.wantProcess)
+			}
+			if !stringSlicesEqual(custom.PackageAdds, tc.wantPackage) {
+				t.Errorf("package = %v, want %v", custom.PackageAdds, tc.wantPackage)
+			}
+		})
+	}
+}
+
+func TestResolveAppBypass_NilSafe(t *testing.T) {
+	region, custom := resolveAppBypass(nil)
+	if region != "" || custom.ProcessAdds != nil || custom.PackageAdds != nil {
+		t.Errorf("nil ClientConfig should yield zero values, got region=%q custom=%+v", region, custom)
+	}
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, s := range a {
+		if s != b[i] {
+			return false
+		}
+	}
+	return true
 }

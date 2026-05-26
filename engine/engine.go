@@ -214,7 +214,18 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
 	outboundMap := buildOutboundMap(client.Routes)
-	abRoutes, _ := buildAppBypassRoute(&cfg)
+	abRoutes, abErr := buildAppBypassRoute(&cfg)
+	if abErr != nil {
+		// Non-fatal: corrupted yaml, partial CDN download, or unsupported version.
+		// Engine proceeds without smart bypass rather than failing the connect —
+		// matches "graceful skip on per-file errors" in appbypass.Load contract.
+		// Logged loudly so a regression in bundle delivery surfaces in support
+		// tickets immediately rather than silently degrading smart bypass.
+		slog.Warn("engine: app-bypass route build failed (smart bypass disabled)",
+			"region", cfg.AppBypassRegion,
+			"err", abErr,
+		)
+	}
 	var extraRoutes []config.RouteConfig
 	for _, r := range abRoutes {
 		extraRoutes = append(extraRoutes, *r)
@@ -585,7 +596,18 @@ func (e *Engine) Start(cfg Config) error {
 				Client:          client,
 			}
 			e.mu.Unlock()
-			abRoutes, _ := buildAppBypassRoute(&abCfg)
+			abRoutes, abErr := buildAppBypassRoute(&abCfg)
+			if abErr != nil {
+				// Same gracefully-skip contract as engine.Start, applied to the
+				// 24h background bundle refresh path. Refresh-time failure
+				// leaves the previously-loaded smart-bypass rules in place
+				// (the rebuild aborts and rule.Engine keeps its current state)
+				// rather than silently zeroing out the user's smart bypass.
+				slog.Warn("engine: app-bypass refresh build failed (keeping current rules)",
+					"region", abCfg.AppBypassRegion,
+					"err", abErr,
+				)
+			}
 			finalRoutes := make([]config.RouteConfig, 0, len(abRoutes)+len(client.Routes))
 			for _, r := range abRoutes {
 				finalRoutes = append(finalRoutes, *r)

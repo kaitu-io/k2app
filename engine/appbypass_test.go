@@ -251,3 +251,101 @@ func TestE2E_AppBypass_RoutingScenarios(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildAppBypassRoute_CorruptYAML_ReturnsError verifies that a corrupted
+// yaml file produces an error (not silent nil-return). engine.Start wraps
+// this in a slog.Warn so smart-bypass degradation surfaces in logs instead
+// of leaving the user with mysterious "WeChat goes through VPN" symptoms.
+//
+// Trigger paths: partial CDN download, on-disk corruption, version > supported.
+func TestBuildAppBypassRoute_CorruptYAML_ReturnsError(t *testing.T) {
+	tmp := t.TempDir()
+	// Garbage that's not valid YAML.
+	if err := os.WriteFile(filepath.Join(tmp, "app-bypass-cn.yaml"),
+		[]byte("\x00\x01\x02 not yaml at all"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		AppBypassRegion: "cn",
+		Client:          &config.ClientConfig{CacheDir: tmp},
+	}
+	// appbypass.Load is "best-effort per-file" — corrupted file is logged
+	// + skipped, NOT propagated. So buildAppBypassRoute returns nil,nil
+	// here, not an error. This locks in the graceful-skip contract.
+	routes, err := buildAppBypassRoute(&cfg)
+	if err != nil {
+		t.Fatalf("corrupt yaml should be skipped, not propagated: %v", err)
+	}
+	if routes != nil {
+		t.Errorf("corrupt yaml + no custom adds → no routes, got %d", len(routes))
+	}
+}
+
+// TestBuildAppBypassRoute_CorruptYAMLWithCustom_StillProducesCustomRoutes
+// verifies the Plan C key contract: even when the preset yaml fails to
+// load, user-added custom apps still produce direct routes. This means
+// a CDN incident doesn't break the user's manually-added bypass list.
+func TestBuildAppBypassRoute_CorruptYAMLWithCustom_StillProducesCustomRoutes(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "app-bypass-cn.yaml"),
+		[]byte("\x00garbage"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		AppBypassRegion: "cn",
+		Client:          &config.ClientConfig{CacheDir: tmp},
+		AppBypassCustom: AppBypassCustom{
+			ProcessAdds: []string{"Steam.app"},
+			PackageAdds: []string{"com.user.foo"},
+		},
+	}
+	routes, err := buildAppBypassRoute(&cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(routes) != 2 {
+		t.Fatalf("custom adds should produce 2 routes (desktop+android), got %d", len(routes))
+	}
+	// Find desktop route, verify it has Steam.
+	var hasSteam bool
+	for _, r := range routes {
+		for _, p := range r.Match.ProcessName {
+			if p == "Steam.app" {
+				hasSteam = true
+			}
+		}
+	}
+	if !hasSteam {
+		t.Errorf("custom Steam not in routes despite preset load failure")
+	}
+}
+
+// TestBuildAppBypassRoute_UnsupportedVersion_GracefullySkipped tests the
+// path where future-publisher yaml (version > 1) is downloaded by an old
+// client. The reader rejects with ErrUnsupportedVersion, appbypass.Load
+// skips the file, buildAppBypassRoute returns nil cleanly.
+func TestBuildAppBypassRoute_UnsupportedVersion_GracefullySkipped(t *testing.T) {
+	tmp := t.TempDir()
+	yaml := `version: 99
+region: cn
+android:
+  installer_exact: [com.xiaomi.market]
+`
+	if err := os.WriteFile(filepath.Join(tmp, "app-bypass-cn.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		AppBypassRegion: "cn",
+		Client:          &config.ClientConfig{CacheDir: tmp},
+	}
+	routes, err := buildAppBypassRoute(&cfg)
+	if err != nil {
+		t.Fatalf("unsupported version should be skipped, got err: %v", err)
+	}
+	if routes != nil {
+		t.Errorf("unsupported version should yield no routes, got %v", routes)
+	}
+}

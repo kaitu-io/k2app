@@ -518,3 +518,152 @@ func TestSetDefaultsExported(t *testing.T) {
 		t.Errorf("Tun.IPv6 = %q, want %q", cfg.Tun.IPv6, DefaultTunIPv6)
 	}
 }
+
+// TestClientConfig_AppBypass_JSONRoundtrip locks the wire format between
+// webapp (TS) and Go. Field drift here is the #1 way App Bypass v2 can
+// silently break — TS sends `app_bypass.process_adds` but Go expects
+// `app_bypass.processAdds`, and you'd never notice in unit tests because
+// both sides default to nil. This test asserts the exact snake_case keys
+// the webapp emits in webapp/src/stores/config.store.ts buildConnectConfig.
+func TestClientConfig_AppBypass_JSONRoundtrip(t *testing.T) {
+	cfg := ClientConfig{
+		AppBypass: &AppBypassConfig{
+			Region:      "cn",
+			ProcessAdds: []string{"Steam.app", "Battle.net Helper"},
+			PackageAdds: []string{"com.epicgames.unrealtournament"},
+		},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	// Verify wire-level snake_case keys match webapp's emit.
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal raw: %v", err)
+	}
+	ab, ok := raw["app_bypass"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected top-level 'app_bypass' key, got: %s", string(data))
+	}
+	for _, key := range []string{"region", "process_adds", "package_adds"} {
+		if _, ok := ab[key]; !ok {
+			t.Errorf("expected app_bypass.%s, missing in: %v", key, ab)
+		}
+	}
+	for _, badKey := range []string{"processAdds", "packageAdds", "Region"} {
+		if _, ok := ab[badKey]; ok {
+			t.Errorf("camelCase/PascalCase leaked: app_bypass.%s present", badKey)
+		}
+	}
+
+	// Roundtrip back into struct.
+	var got ClientConfig
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal struct: %v", err)
+	}
+	if got.AppBypass == nil {
+		t.Fatal("got.AppBypass is nil")
+	}
+	if got.AppBypass.Region != "cn" {
+		t.Errorf("region = %q, want cn", got.AppBypass.Region)
+	}
+	if len(got.AppBypass.ProcessAdds) != 2 || got.AppBypass.ProcessAdds[0] != "Steam.app" {
+		t.Errorf("process_adds = %v", got.AppBypass.ProcessAdds)
+	}
+	if len(got.AppBypass.PackageAdds) != 1 || got.AppBypass.PackageAdds[0] != "com.epicgames.unrealtournament" {
+		t.Errorf("package_adds = %v", got.AppBypass.PackageAdds)
+	}
+}
+
+// TestClientConfig_AppBypass_OmitemptySafety verifies that nil and zero-value
+// AppBypass do not pollute the wire payload. Old webapps that don't set the
+// field must produce JSON that old daemons (and Go json.Unmarshal in general)
+// accept without errors, and new daemons must treat absent AppBypass as
+// "no smart bypass requested" without crashing.
+func TestClientConfig_AppBypass_OmitemptySafety(t *testing.T) {
+	t.Run("nil pointer omitted", func(t *testing.T) {
+		cfg := ClientConfig{Mode: "tun"}
+		data, _ := json.Marshal(cfg)
+		var raw map[string]any
+		json.Unmarshal(data, &raw)
+		if _, present := raw["app_bypass"]; present {
+			t.Errorf("nil AppBypass should be omitted, got: %s", string(data))
+		}
+	})
+
+	t.Run("unmarshal missing field yields nil", func(t *testing.T) {
+		var cfg ClientConfig
+		if err := json.Unmarshal([]byte(`{"mode":"tun"}`), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		if cfg.AppBypass != nil {
+			t.Errorf("missing app_bypass should yield nil, got %+v", cfg.AppBypass)
+		}
+	})
+
+	t.Run("unknown fields tolerated (forward compat)", func(t *testing.T) {
+		// Future webapps may add fields like enabled, version, etc. Go's default
+		// json.Unmarshal silently ignores unknown fields, but assert here so a
+		// future strict-decode regression is caught immediately.
+		var cfg ClientConfig
+		err := json.Unmarshal([]byte(`{
+			"app_bypass": {
+				"region": "cn",
+				"future_field": "ignored",
+				"enabled": true
+			}
+		}`), &cfg)
+		if err != nil {
+			t.Errorf("forward compat: unknown fields rejected: %v", err)
+		}
+		if cfg.AppBypass == nil || cfg.AppBypass.Region != "cn" {
+			t.Errorf("known fields lost: %+v", cfg.AppBypass)
+		}
+	})
+
+	t.Run("empty arrays decoded as nil-or-empty (both acceptable)", func(t *testing.T) {
+		var cfg ClientConfig
+		err := json.Unmarshal([]byte(`{
+			"app_bypass": {"region": "cn", "process_adds": []}
+		}`), &cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Go json decodes "[]" as zero-length slice, NOT nil. Either is fine for
+		// downstream — buildAppBypassRoute uses len() not nil-check.
+		if cfg.AppBypass.ProcessAdds == nil {
+			// not necessarily wrong; nil is len==0
+		}
+		if len(cfg.AppBypass.ProcessAdds) != 0 {
+			t.Errorf("expected zero-length process_adds, got %v", cfg.AppBypass.ProcessAdds)
+		}
+	})
+}
+
+// TestClientConfig_AppBypass_YAMLRoundtrip verifies daemon config-file parsing
+// (used when k2 daemon loads -c config.yaml) preserves the same shape. This
+// is more relevant for advanced users / self-hosters than the wire path,
+// but the YAML tags share the same source-of-truth struct so a drift would
+// surface here too.
+func TestClientConfig_AppBypass_YAMLRoundtrip(t *testing.T) {
+	yamlIn := `
+app_bypass:
+  region: ir
+  process_adds:
+    - Telegram.app
+  package_adds:
+    - org.telegram.messenger
+`
+	var cfg ClientConfig
+	if err := yaml.Unmarshal([]byte(yamlIn), &cfg); err != nil {
+		t.Fatalf("yaml unmarshal: %v", err)
+	}
+	if cfg.AppBypass == nil || cfg.AppBypass.Region != "ir" {
+		t.Errorf("region missing/wrong: %+v", cfg.AppBypass)
+	}
+	if len(cfg.AppBypass.ProcessAdds) != 1 || cfg.AppBypass.ProcessAdds[0] != "Telegram.app" {
+		t.Errorf("process_adds: %v", cfg.AppBypass.ProcessAdds)
+	}
+}
