@@ -141,13 +141,19 @@
     "refresh": "刷新",
     "rescan": "重新偵測",
     "rescanResult": "已更新（共 {{count}} 個進程）",
+    "rescanRefreshed": "已重新整理應用程式清單",
     "processCount": "封鎖 {{count}} 個進程",
     "kickedOutDueToConnect": "VPN 連接後無法修改，已返回主頁",
     "loadFailed": "載入應用清單失敗",
     "saveFailed": "儲存失敗，請重試",
+    "smartStatus": {
+      "enabled": "智能識別已啟用（{{region}}）— 已識別的應用會自動直連",
+      "disabled": "智能識別未啟用"
+    },
     "uninstalledHint": "應用可能已解除安裝",
     "ruleCard": {
       "summary": "共 {{total}} 個 app 直連：{{manual}} 手動 + {{auto}} 智能識別",
+      "manualSummary": "已手動加入 {{count}} 個",
       "refresh": "重新掃描",
       "globalWarning": "⚠ 目前是全域代理模式 — 下方設定當前不生效"
     },

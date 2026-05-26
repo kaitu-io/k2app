@@ -141,13 +141,19 @@
     "refresh": "更新",
     "rescan": "再検出",
     "rescanResult": "更新しました（{{count}} 個のプロセス）",
+    "rescanRefreshed": "アプリ一覧を更新しました",
     "processCount": "{{count}} 個のプロセスをブロック",
     "kickedOutDueToConnect": "VPN 接続後は変更できません。ホームに戻りました",
     "loadFailed": "アプリ一覧の読み込みに失敗しました",
     "saveFailed": "保存に失敗しました。再試行してください",
+    "smartStatus": {
+      "enabled": "スマートバイパス有効 ({{region}}) — 検出されたアプリは直接接続されます",
+      "disabled": "スマートバイパス無効"
+    },
     "uninstalledHint": "アプリがアンインストールされている可能性があります",
     "ruleCard": {
       "summary": "{{total}} 個のアプリが直接接続：手動 {{manual}} + 自動検出 {{auto}}",
+      "manualSummary": "手動追加 {{count}} 件",
       "refresh": "再スキャン",
       "globalWarning": "⚠ グローバルプロキシモード — 現在この設定は適用されません"
     },
