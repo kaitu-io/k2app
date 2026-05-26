@@ -232,6 +232,8 @@ export async function injectTauriGlobals(): Promise<void> {
         return result;
       },
     },
+
+    appBypass: { daemonBacked: true },
   };
 
   (window as any)._k2 = tauriK2;

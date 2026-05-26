@@ -200,6 +200,17 @@ export interface IPlatform {
   // ====== App List（可选）======
 
   appList?: IAppListProvider;
+
+  /**
+   * App Bypass platform capabilities. `daemonBacked: true` means the platform
+   * has a running daemon that owns app-bypass state via HTTP actions
+   * (`app-bypass-get` / `app-bypass-set-custom` / `app-bypass-set-region`).
+   * When undefined, the webapp falls back to local-storage persistence and
+   * connect-time ClientConfig packing (mobile).
+   */
+  appBypass?: {
+    daemonBacked: true;
+  };
 }
 
 // ==================== App List ====================
