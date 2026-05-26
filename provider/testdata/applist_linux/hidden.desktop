@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=ShouldNotShow
+Exec=/usr/bin/foo
+Type=Application
+Hidden=true
