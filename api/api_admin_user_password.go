@@ -71,7 +71,10 @@ func api_admin_set_user_password(c *gin.Context) {
 	user.PasswordHash = hash
 	user.PasswordFailedAttempts = 0
 	user.PasswordLockedUntil = 0
-	if err := db.Get().Save(&user).Error; err != nil {
+	// Scope the save to the three password columns. `LoginIdentifies` was
+	// preloaded for strength-check userInputs; without Select(), GORM would
+	// attempt to upsert that association on every reset.
+	if err := db.Get().Select("PasswordHash", "PasswordFailedAttempts", "PasswordLockedUntil").Save(&user).Error; err != nil {
 		log.Errorf(c, "save password for user %s failed: %v", uuid, err)
 		Error(c, ErrorSystemError, "save password failed")
 		return
