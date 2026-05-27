@@ -81,7 +81,10 @@ log:
 	wireURL := fmt.Sprintf("k2v5://docker-device:docker-token@%s:%d?ech=%s&insecure=1",
 		*serverHost, *serverPort, echB64)
 
-	clientCfg := fmt.Sprintf(`server: "%s"
+	clientCfg := fmt.Sprintf(`routes:
+  - via: "%s"
+    match:
+      all: true
 mode: proxy
 proxy:
   listen: "0.0.0.0:1080"
@@ -110,7 +113,10 @@ log:
 
 	// 5. Write gateway config (k2r) if mode=gateway
 	if *mode == "gateway" {
-		gatewayCfg := fmt.Sprintf(`server: "%s"
+		gatewayCfg := fmt.Sprintf(`routes:
+  - via: "%s"
+    match:
+      all: true
 dns:
   direct:
     - "8.8.8.8:53"

@@ -173,7 +173,7 @@ ensure_connected() {
     if [[ "$state" == "connected" ]]; then
         return 0
     fi
-    k2r_exec k2r ctl up /etc/k2/k2r.yml 2>&1 || true
+    k2r_exec k2r up /etc/k2/k2r.yml 2>&1 || true
     if wait_connected; then
         return 0
     fi
@@ -252,7 +252,7 @@ start_containers() {
 test_rules() {
     log_phase "2 — Firewall rules"
 
-    log_info "Triggering k2r ctl up..."
+    log_info "Triggering k2r up..."
     ensure_connected || {
         log_fail "k2r did not reach connected state"
         return
@@ -537,8 +537,8 @@ test_cleanup() {
     ensure_connected || true
 
     # 6.1 Trigger disconnect.
-    log_info "Triggering k2r ctl down..."
-    k2r_exec k2r ctl down 2>&1 || true
+    log_info "Triggering k2r down..."
+    k2r_exec k2r down 2>&1 || true
     sleep 3
 
     # 6.2 State is not connected.
@@ -651,7 +651,7 @@ test_reconnect() {
         rule_count_before=$(k2r_exec nft list table inet k2r 2>&1 | grep -c "tproxy" || echo "0")
 
         # Down then up again.
-        k2r_exec k2r ctl down 2>&1 || true
+        k2r_exec k2r down 2>&1 || true
         sleep 3
         ensure_connected || {
             log_fail "7.2 Reconnect for stacking test failed"
@@ -672,7 +672,7 @@ test_reconnect() {
 
     # 7.3 Hot switch (up while already connected, via ctl).
     log_info "Testing hot switch (up while connected)..."
-    k2r_exec k2r ctl up /etc/k2/k2r.yml 2>&1 || true
+    k2r_exec k2r up /etc/k2/k2r.yml 2>&1 || true
     # Wait for reconnection.
     sleep 5
     if wait_connected 30; then
@@ -879,9 +879,9 @@ test_api() {
     sleep 1
 
     # Trigger a down+up to generate status events.
-    k2r_exec k2r ctl down 2>&1 >/dev/null || true
+    k2r_exec k2r down 2>&1 >/dev/null || true
     sleep 2
-    k2r_exec k2r ctl up /etc/k2/k2r.yml 2>&1 >/dev/null || true
+    k2r_exec k2r up /etc/k2/k2r.yml 2>&1 >/dev/null || true
     sleep 3
 
     # Wait a bit more for events.
