@@ -25,8 +25,8 @@ func TestDarwinAppList_ScansBundles(t *testing.T) {
 	if a.Label != "Test App" { // DisplayName wins over Name
 		t.Errorf("Label %q want %q", a.Label, "Test App")
 	}
-	if len(a.ProcessNames) != 1 || a.ProcessNames[0] != "testapp" {
-		t.Errorf("ProcessNames %v; want [testapp] (lowercased)", a.ProcessNames)
+	if len(a.ProcessNames) != 1 || a.ProcessNames[0] != "TestApp" {
+		t.Errorf("ProcessNames %v; want [TestApp] (case preserved for krs case-sensitive Darwin matcher)", a.ProcessNames)
 	}
 }
 
