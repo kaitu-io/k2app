@@ -119,9 +119,16 @@ func parseDarwinBundle(bundlePath string) (InstalledApp, bool) {
 	}, true
 }
 
-// collectDarwinProcessNames returns lower-cased basenames of executables
+// collectDarwinProcessNames returns case-preserved basenames of executables
 // inside the bundle. Includes the primary CFBundleExecutable + any helper
 // .app's CFBundleExecutable found at typical helper paths.
+//
+// Case is preserved because the krs library's MatchDarwinProcess is
+// case-sensitive (Darwin process names are case-sensitive by macOS
+// convention — "WeChat" ≠ "wechat"). Dedup uses a lowercased key so
+// "TestApp" and "TestApp" with quirky case from CFBundleExecutable don't
+// duplicate, but the emitted slice keeps the original casing for the
+// matcher.
 func collectDarwinProcessNames(bundlePath, primary string) []string {
 	seen := make(map[string]struct{})
 	var out []string
@@ -129,12 +136,12 @@ func collectDarwinProcessNames(bundlePath, primary string) []string {
 		if name == "" {
 			return
 		}
-		l := strings.ToLower(name)
-		if _, dup := seen[l]; dup {
+		key := strings.ToLower(name)
+		if _, dup := seen[key]; dup {
 			return
 		}
-		seen[l] = struct{}{}
-		out = append(out, l)
+		seen[key] = struct{}{}
+		out = append(out, name)
 	}
 	add(primary)
 

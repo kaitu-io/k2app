@@ -294,6 +294,48 @@ func TestAPI_AppBypassPreview_MatchesPreset(t *testing.T) {
 	}
 }
 
+// TestAPI_AppBypassPreview_DarwinCasePreserved is a regression guard for
+// the case-sensitivity asymmetry between provider output and krs matcher.
+//
+// krs.MatchDarwinProcess is case-SENSITIVE — Darwin process names are
+// case-sensitive by macOS convention ("WeChat" ≠ "wechat"). The provider
+// MUST emit case-preserved ProcessNames so this matching works. An earlier
+// implementation of provider/applist_darwin.go lowercased process names
+// (presumably leftover from the pre-krs appbypass matcher era), which
+// produced a silent regression where preview always returned 0 matched on
+// macOS in production. The existing TestAPI_AppBypassPreview_MatchesPreset
+// test passed only because it manually fed case-preserved fake data.
+//
+// This test asserts that lowercased input (the regression shape) does NOT
+// match, ensuring future provider refactors don't silently re-introduce
+// the lowercasing.
+func TestAPI_AppBypassPreview_DarwinLowercaseDoesNotMatch(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Darwin-specific case-sensitivity check")
+	}
+	d := New()
+	cacheDir := t.TempDir()
+	d.ruleCacheDir = cacheDir
+	writeCNBundle(t, cacheDir)
+
+	d.appBypassOverrides.Region = "cn"
+	// Simulate the BUGGY shape: lowercased process names. If a regression
+	// ever re-lowercases at the provider, this test catches it.
+	d.appListProvider = fakeAppListProvider{apps: []provider.InstalledApp{
+		{ID: "/Applications/WeChat.app", Label: "WeChat", ProcessNames: []string{"wechat", "wechathelper"}},
+	}}
+
+	resp := callCore(t, d, "app-bypass-preview", nil)
+	if resp.Code != 0 {
+		t.Fatalf("code %d msg %q", resp.Code, resp.Message)
+	}
+	preview := decodeData[appBypassPreviewData](t, resp)
+	if len(preview.Matched) != 0 {
+		t.Fatalf("lowercase input must NOT match case-sensitive Darwin pattern WeChat*; got %d hit(s): %v",
+			len(preview.Matched), preview.Matched)
+	}
+}
+
 func TestAPI_AppBypassPreview_ProviderError_EmptyMatched(t *testing.T) {
 	d := New()
 	cacheDir := t.TempDir()
