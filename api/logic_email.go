@@ -151,6 +151,22 @@ var (
 
 —— Kaitu`,
 	}
+
+	adminResetPasswordTemplate = EmailTemplate[AdminResetPasswordMeta]{
+		Subject: "Kaitu 账号密码已被管理员重置",
+		Body: `尊敬的用户：
+
+您的 Kaitu 账号密码刚刚被管理员重置。
+
+详细信息：
+- 操作时间：{{.ChangeTime}}
+- 操作人：{{if .AdminEmail}}{{.AdminEmail}}{{else}}（系统管理员）{{end}}
+
+如果您不知情，或这并非您主动联系客服请求的操作，请立即联系我们的客服。
+
+此致
+系统通知`,
+	}
 )
 
 // DeviceKickMeta 设备踢除邮件元数据
@@ -196,6 +212,12 @@ type PasswordLoginMeta struct {
 type PasswordChangedMeta struct {
 	ChangeTime string
 	ClientIP   string
+}
+
+// AdminResetPasswordMeta 管理员代为重置密码邮件元数据
+type AdminResetPasswordMeta struct {
+	ChangeTime string
+	AdminEmail string // 可能为空字符串：解密失败 / admin 无邮箱身份
 }
 
 // DelegatePayInviteMeta 代付邀请邮件元数据

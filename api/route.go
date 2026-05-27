@@ -303,6 +303,8 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/users/:uuid/membership", api_admin_add_user_membership)
 		// 用户邮箱管理
 		admin.PUT("/users/:uuid/email", api_admin_update_user_email)
+		// 用户密码管理（管理员代为重置）
+		admin.POST("/users/:uuid/password", api_admin_set_user_password)
 		// 用户角色管理（仅超级管理员）
 		admin.PUT("/users/:uuid/roles", api_admin_set_user_roles)
 		admin.POST("/users/:uuid/devices/:udid/test-token", api_admin_issue_test_token)
