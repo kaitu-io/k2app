@@ -745,3 +745,41 @@ func TestMatchMeta_OrWithinPackageGroup(t *testing.T) {
 		t.Errorf("all three lists missing → should fail")
 	}
 }
+
+func TestEngine_BundleByRegion(t *testing.T) {
+	cn := mustBundle(t, []krs.NamedSet{{Name: "cn-sites", DomainSuffixes: []string{"baidu.com"}}})
+	ir := mustBundle(t, []krs.NamedSet{{Name: "ir-sites", DomainSuffixes: []string{"digikala.ir"}}})
+	named := []NamedBundle{
+		{Region: "cn", Bundle: cn},
+		{Region: "ir", Bundle: ir},
+	}
+	e := NewEngineNamed(nil, Target(0), named, false)
+	defer e.Close()
+
+	if got := e.BundleByRegion("cn"); got != cn {
+		t.Errorf("BundleByRegion(cn) = %p, want %p", got, cn)
+	}
+	if got := e.BundleByRegion("ir"); got != ir {
+		t.Errorf("BundleByRegion(ir) = %p, want %p", got, ir)
+	}
+	if got := e.BundleByRegion("unknown"); got != nil {
+		t.Errorf("BundleByRegion(unknown) = %p, want nil", got)
+	}
+}
+
+func TestEngine_ReloadNamed(t *testing.T) {
+	cn := mustBundle(t, []krs.NamedSet{{Name: "cn-sites", DomainSuffixes: []string{"baidu.com"}}})
+	e := NewEngineNamed(nil, Target(0), []NamedBundle{{Region: "cn", Bundle: cn}}, false)
+	defer e.Close()
+
+	th := mustBundle(t, []krs.NamedSet{{Name: "th-sites", DomainSuffixes: []string{"pantip.com"}}})
+	if err := e.ReloadNamed(nil, []NamedBundle{{Region: "th", Bundle: th}}); err != nil {
+		t.Fatalf("ReloadNamed: %v", err)
+	}
+	if got := e.BundleByRegion("cn"); got != nil {
+		t.Errorf("after reload, BundleByRegion(cn) should be nil, got %p", got)
+	}
+	if got := e.BundleByRegion("th"); got != th {
+		t.Errorf("BundleByRegion(th) = %p, want %p", got, th)
+	}
+}
