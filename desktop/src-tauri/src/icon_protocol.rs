@@ -17,12 +17,25 @@ use tauri::{UriSchemeContext, Wry};
 
 #[cfg(target_os = "macos")]
 fn icon_for_bundle(bundle_id: &str) -> Option<Vec<u8>> {
-    use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSWorkspace};
-    use objc2_foundation::{NSDictionary, NSString};
+    use objc2::ClassType; // brings `NSBitmapImageRep::alloc()` into scope
+    use objc2_app_kit::{
+        NSBitmapImageFileType, NSBitmapImageRep, NSCompositingOperation, NSDeviceRGBColorSpace,
+        NSGraphicsContext, NSWorkspace,
+    };
+    use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize, NSString};
 
-    // SAFETY: NSWorkspace + NSBitmapImageRep are read-only metadata accessors
-    // and safe to invoke from a worker thread. The Tauri protocol handler runs
-    // off the main thread; we mutate no AppKit state.
+    // 128 px covers 4× retina at the 32 px <Avatar> render size in AppBypass.
+    // The system icon source is 1024 px; returning it raw made each fetch take
+    // ~350 ms and bottlenecked page load. Downsampling once here cuts that to
+    // <50 ms and the cached PNG is much smaller in transit too.
+    const ICON_PX: isize = 128;
+    const ICON_F: f64 = 128.0;
+
+    // SAFETY: NSWorkspace, NSImage, NSBitmapImageRep, and NSGraphicsContext are
+    // read-only / per-call drawing APIs. The Tauri protocol handler runs off
+    // the main thread; we mutate no shared AppKit state. The
+    // save/setCurrent/restore pair is scoped to this function and does not
+    // leak the current context to any other code.
     unsafe {
         let workspace = NSWorkspace::sharedWorkspace();
         let bundle_id_ns = NSString::from_str(bundle_id);
@@ -31,21 +44,47 @@ fn icon_for_bundle(bundle_id: &str) -> Option<Vec<u8>> {
         let app_url = workspace.URLForApplicationWithBundleIdentifier(&bundle_id_ns)?;
         let path_ns = app_url.path()?;
 
-        // NSWorkspace#iconForFile returns the Finder/Launch Services icon for
-        // any path. Documented as never returning nil (falls back to a generic
-        // icon), but we still go through NSImage → TIFF → bitmap rep, each of
-        // which may return None for unusual images.
+        // NSWorkspace#iconForFile is documented as never nil — falls back to a
+        // generic icon if extraction fails. setSize aligns the logical
+        // coordinates with the bitmap so drawInRect maps 1:1.
         let image = workspace.iconForFile(&path_ns);
-        let tiff = image.TIFFRepresentation()?;
-        let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)?;
-        let properties = NSDictionary::new();
-        let png_data = bitmap.representationUsingType_properties(
-            NSBitmapImageFileType::PNG,
-            &properties,
+        image.setSize(NSSize::new(ICON_F, ICON_F));
+
+        // Empty 128×128 RGBA bitmap.
+        let bitmap = NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+            NSBitmapImageRep::alloc(),
+            std::ptr::null_mut(),
+            ICON_PX, // pixelsWide
+            ICON_PX, // pixelsHigh
+            8,       // bitsPerSample
+            4,       // samplesPerPixel (RGBA)
+            true,    // hasAlpha
+            false,   // isPlanar
+            NSDeviceRGBColorSpace,
+            0,  // bytesPerRow (auto)
+            32, // bitsPerPixel
         )?;
 
-        // NSData → &[u8] is documented contiguous; copy into a Vec so the bytes
-        // outlive the autorelease scope.
+        let ctx = NSGraphicsContext::graphicsContextWithBitmapImageRep(&bitmap)?;
+        NSGraphicsContext::saveGraphicsState_class();
+        NSGraphicsContext::setCurrentContext(Some(&ctx));
+
+        let dst = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(ICON_F, ICON_F));
+        // fromRect == NSZeroRect (zero-sized) tells AppKit to draw the whole image.
+        let zero = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0));
+        image.drawInRect_fromRect_operation_fraction(
+            dst,
+            zero,
+            NSCompositingOperation::SourceOver,
+            1.0,
+        );
+
+        NSGraphicsContext::restoreGraphicsState_class();
+
+        let properties = NSDictionary::new();
+        let png_data = bitmap
+            .representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)?;
+
         Some(png_data.bytes().to_vec())
     }
 }

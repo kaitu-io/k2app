@@ -45,6 +45,7 @@ objc2-foundation = { version = "0.2", features = [
     "NSObject",
     "NSData",
     "NSDictionary",
+    "NSGeometry",
 ] }
 objc2-app-kit = { version = "0.2", features = [
     "NSWorkspace",
@@ -52,6 +53,8 @@ objc2-app-kit = { version = "0.2", features = [
     "NSImage",
     "NSImageRep",
     "NSBitmapImageRep",
+    "NSGraphics",
+    "NSGraphicsContext",
 ] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
