@@ -30,8 +30,10 @@ type ClientConfig struct {
 
 	// AppBypass selects a region preset + carries user-added per-app routing
 	// overrides. Omitted (nil) disables smart app bypass; the engine still
-	// honors any explicit direct routes in Routes. See k2/appbypass and
-	// docs/superpowers/specs/2026-05-25-app-bypass-engine-managed-design.md.
+	// honors any explicit direct routes in Routes. Patterns come from the
+	// per-region <cc>.krs bundle's Apps section. See
+	// docs/superpowers/specs/2026-05-27-app-bypass-routes-unification.md.
+	// Plan B retires this field in favor of routes[].match.region.
 	AppBypass *AppBypassConfig `yaml:"app_bypass,omitempty" json:"app_bypass,omitempty"`
 
 	// Derived fields (not serialized to YAML/JSON).
