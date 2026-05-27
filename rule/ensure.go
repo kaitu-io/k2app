@@ -190,8 +190,10 @@ func extractTarball(tarballPath, newDir string) error {
 }
 
 // atomicSwap renames each .krs and .yaml from newDir into cacheDir, then
-// removes any .krs/.yaml files in cacheDir that were NOT part of the new set
-// (orphan pruning).
+// removes any .krs/.yaml/.k2b files in cacheDir that were NOT part of the
+// new set (orphan pruning). .k2b is included in the prune filter to drop
+// leftover bundles from pre-Plan-A binaries — the new extractor no longer
+// produces .k2b files, so any encountered are stale.
 func atomicSwap(cacheDir, newDir string) error {
 	entries, err := os.ReadDir(newDir)
 	if err != nil {
@@ -224,7 +226,9 @@ func atomicSwap(cacheDir, newDir string) error {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".krs") && !strings.HasSuffix(name, ".yaml") {
+		if !strings.HasSuffix(name, ".krs") &&
+			!strings.HasSuffix(name, ".yaml") &&
+			!strings.HasSuffix(name, ".k2b") {
 			continue
 		}
 		if _, keep := newNames[name]; !keep {

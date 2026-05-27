@@ -379,6 +379,50 @@ func TestAtomicSwap_PrunesOrphanedYAML(t *testing.T) {
 	}
 }
 
+// TestAtomicSwap_PrunesLeftoverK2B covers the Plan A upgrade-path rollover:
+// a pre-Plan-A client wrote <cc>-direct.k2b into the cache, the Plan A binary
+// now extracts only .krs from the tarball, and atomicSwap's prune loop must
+// delete the leftover .k2b so the cache reflects the new format.
+//
+// Without this guard, cn-direct.k2b would linger forever (never written by
+// the new extractor, never deleted by the swap), bloating disk and confusing
+// support telemetry about which format is active.
+func TestAtomicSwap_PrunesLeftoverK2B(t *testing.T) {
+	cache := t.TempDir()
+	// Simulate previous binary's cache: two leftover .k2b files.
+	if err := os.WriteFile(filepath.Join(cache, "cn-direct.k2b"), []byte("old cn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cache, "overseas.k2b"), []byte("old overseas"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Fresh extraction has only .krs.
+	newDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(newDir, "cn.krs"), []byte("new cn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newDir, "overseas.krs"), []byte("new overseas"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := atomicSwap(cache, newDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Leftover .k2b must be gone.
+	for _, name := range []string{"cn-direct.k2b", "overseas.k2b"} {
+		if _, err := os.Stat(filepath.Join(cache, name)); !os.IsNotExist(err) {
+			t.Errorf("%s should have been pruned, stat err=%v", name, err)
+		}
+	}
+	// New .krs must be in place.
+	for _, name := range []string{"cn.krs", "overseas.krs"} {
+		if _, err := os.Stat(filepath.Join(cache, name)); err != nil {
+			t.Errorf("%s should exist after swap, stat err=%v", name, err)
+		}
+	}
+}
+
 func TestDefaultSources_ContainsExpectedMirrors(t *testing.T) {
 	expected := []string{
 		"github.com/kaitu-io/k2-rules/releases/latest/download",
