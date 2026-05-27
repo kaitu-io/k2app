@@ -15,6 +15,7 @@ import (
 	"github.com/sasha-s/go-deadlock"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/core/dns"
@@ -208,7 +209,7 @@ func (e *Engine) Start(cfg Config) error {
 		ensureErr := rule.EnsureBundles(ensureCtx, client.CacheDir, sources)
 		cancelEnsure()
 		if ensureErr != nil {
-			existing, _ := rule.Load(client.CacheDir)
+			existing, _ := krs.Load(client.CacheDir)
 			if len(existing) == 0 {
 				// True cold start: no disk cache to fall back to.
 				return e.fail(&EngineError{
@@ -599,12 +600,12 @@ func (e *Engine) Start(cfg Config) error {
 
 	// Start rule bundle updater (24h background check + reload).
 	if client.CacheDir != "" {
-		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []*rule.Bundle, error) {
-			newBundles, err := rule.Load(cacheDir)
+		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []*krs.Bundle, error) {
+			newBundles, err := krs.Load(cacheDir)
 			if err != nil {
 				return nil, nil, err
 			}
-			idx := rule.Index(newBundles)
+			idx := krs.Index(newBundles)
 
 			// Recompute appbypass routes — YAML may have refreshed via CDN.
 			// Read current appbypass config from the engine fields so that
@@ -1158,7 +1159,7 @@ func (e *Engine) fail(err error) error {
 // outboundMap maps via URL → rule.Target for wire outbounds.
 // Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
 // ensures both always produce identical routing tables from the same config+bundles.
-func buildRouteEntries(routes []config.RouteConfig, idx map[string]*rule.BundleSet, outboundMap map[string]rule.Target) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
+func buildRouteEntries(routes []config.RouteConfig, idx map[string]*krs.NamedSet, outboundMap map[string]rule.Target) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
 	fallback = outboundDirect
 
 	for i, route := range routes {
@@ -1389,11 +1390,11 @@ func buildRuleEngine(
 	}
 
 	// Load bundles from cache.
-	bundles, err := rule.Load(client.CacheDir)
+	bundles, err := krs.Load(client.CacheDir)
 	if err != nil {
 		slog.Warn("engine: rule load failed", "err", err)
 	}
-	idx := rule.Index(bundles)
+	idx := krs.Index(bundles)
 	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap)
 
 	hasRules := len(bundles) > 0

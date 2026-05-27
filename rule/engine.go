@@ -6,13 +6,14 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/sasha-s/go-deadlock"
 )
 
 // RouteEntry represents one route in the routing table.
 type RouteEntry struct {
 	Target Target
-	Sets   []*BundleSet // from k2b files
+	Sets   []*krs.NamedSet // resolved by name from loaded .krs bundles
 
 	// Inline matchers (compiled from config domain_suffix/ip_cidr).
 	Inline *InlineSet
@@ -62,7 +63,7 @@ type Engine struct {
 	routes   []RouteEntry
 	fallback Target
 	allProxy bool      // match:all mode (disables sniffing)
-	bundles  []*Bundle // lifecycle: Close releases all
+	bundles  []*krs.Bundle // lifecycle: Close releases all
 
 	// missReporter is an optional hook invoked when a domain lookup
 	// reaches the fallback target (no route matched). Phase 1 rule-miss
@@ -81,7 +82,7 @@ type Engine struct {
 type reporterSlot struct{ r MissReporter }
 
 // NewEngine creates a routing engine.
-func NewEngine(routes []RouteEntry, fallback Target, bundles []*Bundle, allProxy bool) *Engine {
+func NewEngine(routes []RouteEntry, fallback Target, bundles []*krs.Bundle, allProxy bool) *Engine {
 	return &Engine{
 		tmp:      make(map[netip.Addr]Target),
 		routes:   routes,
@@ -461,7 +462,7 @@ func (e *Engine) Close() {
 //
 // Concurrency: builds new data outside lock, swaps under WLock, closes old
 // bundles outside lock (Rule #4: no Close under state lock).
-func (e *Engine) Reload(routes []RouteEntry, bundles []*Bundle) error {
+func (e *Engine) Reload(routes []RouteEntry, bundles []*krs.Bundle) error {
 	e.mu.Lock()
 	cleared := len(e.tmp)
 	oldBundles := e.bundles

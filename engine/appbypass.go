@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/appbypass"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/rule"
@@ -150,11 +151,11 @@ func (e *Engine) RefreshAppBypass() error {
 	}
 	finalRoutes = append(finalRoutes, client.Routes...)
 
-	bundles, err := rule.Load(client.CacheDir)
+	bundles, err := krs.Load(client.CacheDir)
 	if err != nil {
 		return fmt.Errorf("appbypass refresh: load bundles: %w", err)
 	}
-	idx := rule.Index(bundles)
+	idx := krs.Index(bundles)
 	outboundMap := buildOutboundMap(client.Routes)
 	entries, _, _ := buildRouteEntries(finalRoutes, idx, outboundMap)
 	return re.Reload(entries, bundles)

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/safego"
 )
 
@@ -34,7 +35,7 @@ func WithCheckInterval(d time.Duration) UpdaterOption {
 // RebuildFunc loads bundles from cacheDir and rebuilds the engine's routes.
 // Called by the updater after downloading new bundles.
 // Returns the new routes and bundles for Engine.Reload().
-type RebuildFunc func(cacheDir string) ([]RouteEntry, []*Bundle, error)
+type RebuildFunc func(cacheDir string) ([]RouteEntry, []*krs.Bundle, error)
 
 // DownloadAndReload calls EnsureBundles (fetches the rule-bundle tarball
 // when the cache is older than bundlesFreshTTL), then optionally rebuilds
