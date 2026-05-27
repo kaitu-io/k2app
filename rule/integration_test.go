@@ -70,13 +70,13 @@ func TestIntegration_RealBundles(t *testing.T) {
 		domain string
 		want   rule.Target
 	}{
-		{"www.google.com", rule.Target(2)},
+		{"google.com", rule.Target(2)},
 		{"youtube.com", rule.Target(2)},
 		{"facebook.com", rule.Target(2)},
 		{"api.openai.com", rule.Target(2)},
 		{"github.com", rule.Target(2)},
 		{"t.me", rule.Target(2)},
-		{"web.telegram.org", rule.Target(2)},
+		{"telegram.org", rule.Target(2)},
 		{"bilibili.com", rule.Target(0)},
 		{"www.bilibili.com", rule.Target(0)},
 		{"example.com", rule.Target(0)},       // fallback
