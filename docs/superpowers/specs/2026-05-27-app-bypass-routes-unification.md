@@ -25,25 +25,52 @@ Three coupled defects in the current architecture:
 
 ## 2. Solution: Three-Layer Refactor
 
-### Layer 1 — `.k2b2` unified binary bundle (Plan A)
+### Layer 1 — `.krs` unified bundle (Plan A: integrate `k2-rules/krs` library)
 
-One file per region containing ALL rule types:
+One `.krs` file per region (e.g. `cn.krs`, `ir.krs`), produced by the `k2-rules` repo's CI from per-region YAML sources. Contains all rule types in a single binary:
 
 ```
-cn.k2b2
-├── header (K2B2 magic + version + region + section index)
-├── ip_v4_ranges        ← sorted CIDR (binary search)
-├── ip_v6_ranges        ← sorted CIDR
-├── domain_suffixes     ← sorted reverse-string suffixes
-├── android_installers  ← exact match list
-├── android_apps        ← glob patterns
-├── windows_apps        ← glob patterns (lowercased)
-└── darwin_apps         ← glob patterns
+cn.krs
+├── header        magic "K2RL" + version u16 + section count u16
+├── section index count × 10 bytes (TypeID u16 + offset u32 + length u32)
+├── SetTable                     0x0001  named routing sets ("geoip-cn", "domain-cn", ...)
+├── IPv4RangesBySet              0x0010  per-set IPv4 ranges
+├── IPv6RangesBySet              0x0011  per-set IPv6 ranges
+├── DomainSuffixBySet            0x0012  per-set reversed-suffix list
+├── DomainExcludeBySet           0x0013  per-set negative-suffix overrides
+├── AndroidInstallers            0x0100  exact-match installer packages
+├── AndroidApps                  0x0101  glob, case-sensitive
+├── WindowsApps                  0x0200  glob, lowercased at compile
+└── DarwinApps                   0x0300  glob, case-sensitive
 ```
 
-Loaded once via mmap. Sections accessed independently; small per-section overhead. Signed via existing `.sig` detached-signature flow.
+**Format ownership lives in `k2-rules` repo** (`github.com/kaitu-io/k2-rules/krs`). k2 imports the library — no parallel format implementation:
 
-YAML source lives in k2-rules repo; CI compiles to `.k2b2`. Client only reads.
+```go
+import "github.com/kaitu-io/k2-rules/krs"
+
+bundles, _ := krs.Load(cacheDir)        // replaces rule.Load
+idx        := krs.Index(bundles)         // replaces rule.Index
+ok         := namedSet.MatchDomain(host) // replaces BundleSet.MatchDomain
+ok         := namedSet.MatchIP(addr)     // replaces BundleSet.MatchIP
+matched    := krs.MatchInstalled(bundle.Apps, apps, runtime.GOOS) // replaces appbypass.MatchInstalled
+```
+
+**API mapping (existing k2 surface → krs):**
+
+| k2 (today) | krs (after Plan A) |
+|---|---|
+| `rule.Load(dir)`, `rule.ReadBundle(data)` | `krs.Load(dir)`, `krs.ReadBundle(data)` |
+| `rule.Bundle`, `rule.BundleSet` | `krs.Bundle`, `krs.NamedSet` |
+| `BundleSet.MatchDomain/MatchIP` | `NamedSet.MatchDomain/MatchIP` (same signatures) |
+| `rule.Index(bundles)` | `krs.Index(bundles)` |
+| `appbypass.Load`, `*Preset`, `MatchInstalled` | `bundle.Apps` (`*AppPatterns`), `krs.MatchInstalled` |
+| `appbypass.AndroidPatterns.Package{Exact,Prefix}` | `AppPatterns.Android.Apps` (single-`*` glob) |
+| `appbypass.DesktopPatterns.Process{Exact,Prefix}` | `AppPatterns.Windows.Apps` + `AppPatterns.Darwin.Apps` (platform-split, glob) |
+
+Bundles are **unsigned** (CDN + manifest sha256 trust). Signing is a future cross-repo task.
+
+Legacy `.k2b` continues to ship alongside `.krs` for ~6 months during transition; k2 reads either format via the krs reader if available, falling back to its existing `.k2b` reader for unmigrated regions.
 
 ### Layer 2 — Routes vocabulary unification (Plan B)
 
@@ -122,8 +149,8 @@ Per-platform implementation:
 - `routes[]`: extended with `match.region` and `match.apps` (Plan B). `match.preset` deprecated, retained.
 
 ### Bundle format
-- `.k2b`: read-only fallback for one release after `.k2b2` ships (Plan A). Once `.k2b2` is universal, `.k2b` reader deleted.
-- `.k2b2`: produced by k2-rules CI. Compiles same YAML source as today but per-region (not per-rule-type).
+- `.k2b`: read by legacy `k2/rule` code path for ~6 months alongside `.krs`. After all regions migrate, k2's `.k2b` reader path is deleted; `.k2b` is dropped from `k2-rules` CI output.
+- `.krs`: read via imported `github.com/kaitu-io/k2-rules/krs` library — k2 has zero parallel reader/writer implementation. Plan A's deliverable is the import wiring + caller-site updates, not a new format.
 
 ### State.json (daemon)
 - `AppBypass.Region` field: marked `json:"-"` (Plan B), never persisted.
@@ -132,8 +159,11 @@ Per-platform implementation:
 ## 5. Plan Dependencies
 
 ```
-Plan A (.k2b2)
-  └→ rule engine has unified bundle reader; appbypass package merged in
+Plan A (krs integration)
+  └→ k2 imports github.com/kaitu-io/k2-rules/krs
+     k2/rule/ Bundle/BundleSet/Load/Index code deleted (engine imports krs directly)
+     k2/appbypass/ package deleted (callers use krs.MatchInstalled)
+     EnsureBundles downloads .krs alongside .k2b during transition
        │
        └→ Plan B (routes vocab)
              ├→ ClientConfig.app_bypass removed
@@ -155,7 +185,7 @@ Plans must merge in order. Each plan ships forward-compatible (newer daemon read
 Per Plan, see individual plan docs. Master-level "done" gate:
 
 1. ✅ Region drift bug ([§1.1](#11-region-drift)) cannot recur (single source of truth in webapp localStorage + Tier 2 region route).
-2. ✅ `cn-access.k2b` + `app-bypass-cn.yaml` no longer exist on client disk; only `cn.k2b2` + `.sig`.
+2. ✅ `k2/rule/` no longer contains Bundle/BundleSet/Load/Index — engine imports `krs` directly. `k2/appbypass/` package deleted. Client disk holds `.krs` files served by k2-rules CDN.
 3. ✅ Daemon has zero `app-bypass-*` actions; zero `provider.ListInstalled` calls on mac/win/android.
 4. ✅ AppBypass page can express force-proxy override (regression-test against previous "direct only" model).
 5. ✅ Manual smoke (3 plans × their own smoke each).
@@ -170,15 +200,16 @@ Per Plan, see individual plan docs. Master-level "done" gate:
 
 | Risk | Likelihood | Mitigation |
 |------|-----------:|------------|
-| `.k2b2` mmap implementation has portability issues (Windows file-mapping vs Unix mmap) | Medium | Use `mmap-go` or existing k2 `rule/domain.go` pattern (already does mmap). Test fixtures on all 3 desktop OSes in CI. |
+| krs library v0.1.0 API shifts before stabilization | Medium (explicitly pre-1.0 per k2-rules tag annotation) | Pin to exact version (`require ... v0.1.0`) in k2 go.mod; coordinate any API changes via PR to k2-rules first. |
 | Plan B ClientConfig schema break leaves mobile users with `app_bypass.region` in stored config | Low (mobile localStorage is webapp-controlled, will be cleared on first new-build start) | One-shot localStorage migration in webapp boot: read old `k2.advanced.app_bypass`, push to new `k2.routes.overrides`, then delete. |
 | Webapp's `classify-apps` IPC adds latency to AppBypass page render | Low | Single batch call per region selection; expected <50ms for typical 50-200 installed-app list. Cached in webapp store. |
-| k2-rules CI doesn't exist or doesn't have `.k2b2` compiler | Medium | Plan A delivers Go-side compiler in `cmd/k2b2compile` usable by k2-rules CI. Stop-gap: keep emitting both `.k2b` and `.k2b2` until production CI is wired. |
+| `.k2b` legacy reader bitrot during 6-month coexistence | Low | Keep the existing reader untouched; gate new bundle-format work entirely behind krs. Delete `.k2b` reader in one PR once all regions migrate. |
 
 ## 9. Vocabulary
 
 - **Region**: ISO 3166-1 alpha-2 country code OR a future logical grouping (currently always a country). `cn`, `th`, `us`. Wire format: lowercase 2-char.
-- **Region bundle**: `.k2b2` file containing all rule types for one region.
+- **Region bundle**: `.krs` file containing all rule types for one region.
+- **Named set**: One entry inside a `.krs` bundle's SetTable (e.g. `geoip-cn`, `domain-cn`). Routes reference these by name.
 - **Override**: User-set Tier-1 force-proxy or force-direct rule for a specific app.
 - **Classification**: Engine-derived answer for "given current region + this app, where does it go?". Returned by `classify-apps`.
 - **Preset**: Legacy term, used in pre-Plan-B routes for `cn-access`. Phased out for region-based matches; reserved for non-region named bundles if any emerge.
