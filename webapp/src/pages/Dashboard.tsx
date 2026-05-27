@@ -118,14 +118,16 @@ export default function Dashboard() {
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
-  // App-bypass entry count (Advanced Settings row). Smart-bypass auto matches
-  // now happen inside the Go engine via region presets, so webapp no longer
-  // surfaces an auto count — engine knows the full list, not the renderer.
-  const bypassCount = useAppBypassStore((s) => s.entries.length);
+  // App-bypass entry count (Advanced Settings row).
+  // manual = user-added entries; auto = engine-side smart preset matches surfaced
+  // via daemon `app-bypass-preview`. Both contribute to "what's actually direct".
+  const bypassManualCount = useAppBypassStore((s) => s.entries.length);
+  const bypassAutoCount = useAppBypassStore((s) => s.matched.length);
   // Daemon-reported platform support. `undefined` on mobile (no daemon) keeps
   // the legacy fallback path active; `false` on iOS / unsupported platforms
   // hides the entry button.
   const bypassFeatureSupported = useAppBypassStore((s) => s.featureSupported);
+  const refreshBypassPreview = useAppBypassStore((s) => s.refreshPreview);
 
   // Theme
   const theme = useTheme();
@@ -186,6 +188,13 @@ export default function Dashboard() {
       container.removeEventListener('scroll', handleScroll);
     };
   }, [setScrollPosition]);
+
+  // Refresh smart-bypass preview on Dashboard mount so the advanced-settings
+  // appBypassEntry secondary text reflects engine-side matches (no-op on mobile;
+  // store action self-gates on daemonBacked).
+  useEffect(() => {
+    void refreshBypassPreview();
+  }, [refreshBypassPreview]);
 
   // Workaround: WebKit compositing bug — force repaint when tab becomes visible
   // after being hidden by keep-alive system, to ensure opacity/filter layer changes
@@ -664,9 +673,13 @@ export default function Dashboard() {
                   <ListItemText
                     primary={t('dashboard:dashboard.appBypassEntry.label')}
                     secondary={
-                      bypassCount > 0
-                        ? t('dashboard:dashboard.appBypassEntry.count', { count: bypassCount })
-                        : t('dashboard:dashboard.appBypassEntry.empty')
+                      bypassManualCount > 0 && bypassAutoCount > 0
+                        ? t('dashboard:dashboard.appBypassEntry.countBoth', { manual: bypassManualCount, auto: bypassAutoCount })
+                        : bypassManualCount > 0
+                          ? t('dashboard:dashboard.appBypassEntry.count', { count: bypassManualCount })
+                          : bypassAutoCount > 0
+                            ? t('dashboard:dashboard.appBypassEntry.countAuto', { count: bypassAutoCount })
+                            : t('dashboard:dashboard.appBypassEntry.empty')
                     }
                   />
                   <ChevronRightIcon />
