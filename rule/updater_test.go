@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/kaitu-io/k2-rules/krs"
 )
 
 // TestUpdater_TriggersReload verifies that StartUpdater downloads updated
@@ -16,10 +18,10 @@ import (
 func TestUpdater_TriggersReload(t *testing.T) {
 	// Build updated k2b: google set now includes youtube.com.
 	var updatedBuf bytes.Buffer
-	if err := WriteBundle(&updatedBuf, []BundleSet{
+	if err := krs.WriteBundle(&updatedBuf, &krs.Bundle{Sets: []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com", "youtube.com"}},
-	}); err != nil {
-		t.Fatalf("WriteBundle: %v", err)
+	}}); err != nil {
+		t.Fatalf("krs.WriteBundle: %v", err)
 	}
 	updatedData := updatedBuf.Bytes()
 
@@ -35,24 +37,24 @@ func TestUpdater_TriggersReload(t *testing.T) {
 	// Do NOT write bundles.version — EnsureBundles must see the cache as stale
 	// and download the tarball on the first tick.
 	var initialBuf bytes.Buffer
-	if err := WriteBundle(&initialBuf, []BundleSet{
+	if err := krs.WriteBundle(&initialBuf, &krs.Bundle{Sets: []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}},
-	}); err != nil {
-		t.Fatalf("WriteBundle initial: %v", err)
+	}}); err != nil {
+		t.Fatalf("krs.WriteBundle initial: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "overseas.k2b"), initialBuf.Bytes(), 0o644); err != nil {
 		t.Fatalf("WriteFile initial: %v", err)
 	}
 
 	// Build initial engine: google→proxy but youtube.com is NOT in the set yet.
-	initialBundle := mustBundle(t, []BundleSet{
+	initialBundle := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}},
 	})
-	initialIdx := Index([]*Bundle{initialBundle})
+	initialIdx := krs.Index([]*krs.Bundle{initialBundle})
 	initialRoutes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(initialIdx, "google")},
 	}
-	eng := NewEngine(initialRoutes, Target(0), []*Bundle{initialBundle}, false)
+	eng := NewEngine(initialRoutes, Target(0), []*krs.Bundle{initialBundle}, false)
 	defer eng.Close()
 
 	// Confirm initial state: youtube.com does NOT match proxy.
@@ -61,12 +63,12 @@ func TestUpdater_TriggersReload(t *testing.T) {
 	}
 
 	// RebuildFunc: loads bundles from cacheDir, builds routes with google→proxy.
-	rebuild := func(cacheDir string) ([]RouteEntry, []*Bundle, error) {
-		bundles, err := Load(cacheDir)
+	rebuild := func(cacheDir string) ([]RouteEntry, []*krs.Bundle, error) {
+		bundles, err := krs.Load(cacheDir)
 		if err != nil {
 			return nil, nil, err
 		}
-		idx := Index(bundles)
+		idx := krs.Index(bundles)
 		routes := []RouteEntry{
 			{Target: Target(2), Sets: bindSets(idx, "google")},
 		}

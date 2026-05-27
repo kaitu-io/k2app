@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/rule"
 )
 
@@ -34,7 +35,7 @@ func TestIntegration_RealBundles(t *testing.T) {
 	}
 
 	// Load all bundles.
-	bundles, err := rule.Load(dir)
+	bundles, err := krs.Load(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -42,7 +43,7 @@ func TestIntegration_RealBundles(t *testing.T) {
 		t.Fatalf("expected >=2 bundles, got %d", len(bundles))
 	}
 
-	idx := rule.Index(bundles)
+	idx := krs.Index(bundles)
 	t.Logf("loaded %d bundles, %d sets indexed", len(bundles), len(idx))
 
 	// Verify expected sets exist (v2 schema: consolidated).
@@ -119,8 +120,8 @@ func TestIntegration_RealBundles(t *testing.T) {
 	}
 }
 
-func resolveNames(idx map[string]*rule.BundleSet, names []string) []*rule.BundleSet {
-	var sets []*rule.BundleSet
+func resolveNames(idx map[string]*krs.NamedSet, names []string) []*krs.NamedSet {
+	var sets []*krs.NamedSet
 	for _, name := range names {
 		if bs, ok := idx[name]; ok {
 			sets = append(sets, bs)

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/rule"
 	"gopkg.in/yaml.v3"
 )
@@ -53,7 +54,7 @@ func loadGolden(t *testing.T) goldenFile {
 	return gf
 }
 
-func downloadBundles(t *testing.T, _ goldenFile) (string, []*rule.Bundle, map[string]*rule.BundleSet) {
+func downloadBundles(t *testing.T, _ goldenFile) (string, []*krs.Bundle, map[string]*krs.NamedSet) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping golden test that downloads from CDN; use -run without -short to run")
@@ -67,11 +68,11 @@ func downloadBundles(t *testing.T, _ goldenFile) (string, []*rule.Bundle, map[st
 		t.Fatalf("EnsureBundles: %v", err)
 	}
 
-	bundles, err := rule.Load(dir)
+	bundles, err := krs.Load(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	idx := rule.Index(bundles)
+	idx := krs.Index(bundles)
 	return dir, bundles, idx
 }
 
@@ -83,16 +84,16 @@ func firstIPInCIDR(cidr string) (netip.Addr, error) {
 	return prefix.Addr().Next(), nil
 }
 
-func buildEngine(t *testing.T, preset string, bundles []*rule.Bundle, idx map[string]*rule.BundleSet) *rule.Engine {
+func buildEngine(t *testing.T, preset string, bundles []*krs.Bundle, idx map[string]*krs.NamedSet) *rule.Engine {
 	t.Helper()
 	presetNames := rule.ExpandPreset(preset)
-	var directSets []*rule.BundleSet
+	var directSets []*krs.NamedSet
 	for _, name := range presetNames {
 		if s, ok := idx[name]; ok {
 			directSets = append(directSets, s)
 		}
 	}
-	var proxySets []*rule.BundleSet
+	var proxySets []*krs.NamedSet
 	if s, ok := idx["overseas"]; ok {
 		proxySets = append(proxySets, s)
 	}
@@ -241,7 +242,7 @@ func TestGolden_L3_EndToEnd(t *testing.T) {
 			if presetNames == nil {
 				t.Fatalf("ExpandPreset(%q) returned nil", country.Preset)
 			}
-			var directSets []*rule.BundleSet
+			var directSets []*krs.NamedSet
 			for _, name := range presetNames {
 				s, ok := idx[name]
 				if !ok {
@@ -255,7 +256,7 @@ func TestGolden_L3_EndToEnd(t *testing.T) {
 			}
 			routes := []rule.RouteEntry{
 				{Target: rule.Target(0), Sets: directSets},
-				{Target: rule.Target(2), Sets: []*rule.BundleSet{overseasSet}},
+				{Target: rule.Target(2), Sets: []*krs.NamedSet{overseasSet}},
 			}
 			eng := rule.NewEngine(routes, rule.Target(0), bundles, false)
 			defer eng.Close()

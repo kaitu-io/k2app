@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/kaitu-io/k2-rules/krs"
 )
 
 // captureSlog redirects slog default logger into a buffer for the duration of
@@ -19,14 +21,14 @@ func captureSlog(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-// mustBundle creates a Bundle from BundleSets for testing.
-func mustBundle(t *testing.T, sets []BundleSet) *Bundle {
+// mustBundle creates a krs.Bundle from BundleSets for testing.
+func mustBundle(t *testing.T, sets []krs.NamedSet) *krs.Bundle {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := WriteBundle(&buf, sets); err != nil {
+	if err := krs.WriteBundle(&buf, &krs.Bundle{Sets: sets}); err != nil {
 		t.Fatal(err)
 	}
-	b, err := ReadBundle(buf.Bytes())
+	b, err := krs.ReadBundle(buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,8 +36,8 @@ func mustBundle(t *testing.T, sets []BundleSet) *Bundle {
 }
 
 // bindSets looks up BundleSets by name from an index.
-func bindSets(idx map[string]*BundleSet, names ...string) []*BundleSet {
-	var sets []*BundleSet
+func bindSets(idx map[string]*krs.NamedSet, names ...string) []*krs.NamedSet {
+	var sets []*krs.NamedSet
 	for _, n := range names {
 		if s, ok := idx[n]; ok {
 			sets = append(sets, s)
@@ -45,16 +47,16 @@ func bindSets(idx map[string]*BundleSet, names ...string) []*BundleSet {
 }
 
 func TestEngineMatchDomain(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com", "youtube.com"}},
 		{Name: "telegram", DomainSuffixes: []string{"telegram.org", "t.me"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google", "telegram")},
 	}
-	eng := NewEngine(routes, Target(0), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	tests := []struct {
@@ -77,17 +79,17 @@ func TestEngineMatchDomain(t *testing.T) {
 }
 
 func TestEngineMatchIP(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", CIDRs: []string{"8.8.8.0/24", "8.8.4.0/24"}},
 		{Name: "geoip-cn", CIDRs: []string{"114.114.114.0/24", "223.5.5.0/24"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google")},
 		{Target: Target(0), Sets: bindSets(idx, "geoip-cn")},
 	}
-	eng := NewEngine(routes, Target(1), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(1), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	tests := []struct {
@@ -108,15 +110,15 @@ func TestEngineMatchIP(t *testing.T) {
 }
 
 func TestEngineSetTmpRule(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google")},
 	}
-	eng := NewEngine(routes, Target(0), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	// 9.9.9.9 not in any set — should be direct (fallback).
@@ -132,15 +134,15 @@ func TestEngineSetTmpRule(t *testing.T) {
 }
 
 func TestEngineTmpRulePriority(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", CIDRs: []string{"8.8.8.0/24"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google")},
 	}
-	eng := NewEngine(routes, Target(0), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	// 8.8.8.8 matches static route → proxy.
@@ -156,17 +158,17 @@ func TestEngineTmpRulePriority(t *testing.T) {
 }
 
 func TestEngineRouteOrder(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "set-a", DomainSuffixes: []string{"overlap.com"}},
 		{Name: "set-b", DomainSuffixes: []string{"overlap.com"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 
 	routes := []RouteEntry{
 		{Target: Target(1), Sets: bindSets(idx, "set-a")},  // first wins
 		{Target: Target(2), Sets: bindSets(idx, "set-b")},
 	}
-	eng := NewEngine(routes, Target(0), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	if got := eng.Match("overlap.com"); got != Target(1) {
@@ -175,15 +177,15 @@ func TestEngineRouteOrder(t *testing.T) {
 }
 
 func TestEngineConcurrency(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}, CIDRs: []string{"8.8.8.0/24"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google")},
 	}
-	eng := NewEngine(routes, Target(0), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	var wg sync.WaitGroup
@@ -360,14 +362,14 @@ func TestEngineMatchConn_IPIsPrivate(t *testing.T) {
 }
 
 func TestEngineMatchConn_AND(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google"), ProcessNames: []string{"Chrome"}},
 	}
-	eng := NewEngine(routes, Target(0), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	if got := eng.MatchConn("google.com", ConnMeta{ProcessName: "Chrome"}); got != Target(2) {
@@ -408,15 +410,15 @@ func TestEngineIsAllProxy(t *testing.T) {
 }
 
 func TestEngineReload(t *testing.T) {
-	b1 := mustBundle(t, []BundleSet{
+	b1 := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}},
 	})
-	idx1 := Index([]*Bundle{b1})
+	idx1 := krs.Index([]*krs.Bundle{b1})
 
 	routes1 := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx1, "google")},
 	}
-	eng := NewEngine(routes1, Target(0), []*Bundle{b1}, false)
+	eng := NewEngine(routes1, Target(0), []*krs.Bundle{b1}, false)
 	defer eng.Close()
 
 	// Before reload: google→proxy, facebook→direct (fallback).
@@ -428,14 +430,14 @@ func TestEngineReload(t *testing.T) {
 	}
 
 	// Reload: facebook→proxy, google removed.
-	b2 := mustBundle(t, []BundleSet{
+	b2 := mustBundle(t, []krs.NamedSet{
 		{Name: "facebook", DomainSuffixes: []string{"facebook.com"}},
 	})
-	idx2 := Index([]*Bundle{b2})
+	idx2 := krs.Index([]*krs.Bundle{b2})
 	routes2 := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx2, "facebook")},
 	}
-	if err := eng.Reload(routes2, []*Bundle{b2}); err != nil {
+	if err := eng.Reload(routes2, []*krs.Bundle{b2}); err != nil {
 		t.Fatalf("Reload() error: %v", err)
 	}
 
@@ -449,15 +451,15 @@ func TestEngineReload(t *testing.T) {
 }
 
 func TestEngineReload_ClearsTmpRules(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google")},
 	}
-	eng := NewEngine(routes, Target(0), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	// Set a tmp rule for 8.8.8.8 → proxy.
@@ -467,7 +469,7 @@ func TestEngineReload_ClearsTmpRules(t *testing.T) {
 	}
 
 	// Reload with the same routes — tmp rules must be cleared.
-	if err := eng.Reload(routes, []*Bundle{b}); err != nil {
+	if err := eng.Reload(routes, []*krs.Bundle{b}); err != nil {
 		t.Fatalf("Reload() error: %v", err)
 	}
 	if got := eng.Match("8.8.8.8"); got != Target(0) {
@@ -494,15 +496,15 @@ func TestRouteEntry_HasMetaCriteria_NewFields(t *testing.T) {
 }
 
 func TestEngineReload_Concurrent(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}, CIDRs: []string{"8.8.8.0/24"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google")},
 	}
-	eng := NewEngine(routes, Target(0), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	var wg sync.WaitGroup
@@ -525,14 +527,14 @@ func TestEngineReload_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			b2 := mustBundle(t, []BundleSet{
+			b2 := mustBundle(t, []krs.NamedSet{
 				{Name: "google", DomainSuffixes: []string{"google.com"}, CIDRs: []string{"8.8.8.0/24"}},
 			})
-			idx2 := Index([]*Bundle{b2})
+			idx2 := krs.Index([]*krs.Bundle{b2})
 			r2 := []RouteEntry{
 				{Target: Target(2), Sets: bindSets(idx2, "google")},
 			}
-			if err := eng.Reload(r2, []*Bundle{b2}); err != nil {
+			if err := eng.Reload(r2, []*krs.Bundle{b2}); err != nil {
 				t.Errorf("Reload() error: %v", err)
 			}
 		}()

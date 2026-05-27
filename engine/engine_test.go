@@ -23,6 +23,7 @@ import (
 
 	mdns "github.com/miekg/dns"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/core/dns"
@@ -1818,9 +1819,9 @@ func TestEngineStart_RuleBundlesStaleCacheFallback(t *testing.T) {
 	// connect. bundles.version is intentionally absent, so isVersionFresh returns
 	// false and EnsureBundles will attempt (and fail) a download.
 	var buf bytes.Buffer
-	if err := rule.WriteBundle(&buf, []rule.BundleSet{
+	if err := krs.WriteBundle(&buf, &krs.Bundle{Sets: []krs.NamedSet{
 		{Name: "overseas", DomainSuffixes: []string{"example.com"}},
-	}); err != nil {
+	}}); err != nil {
 		t.Fatalf("WriteBundle: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "overseas.k2b"), buf.Bytes(), 0o644); err != nil {
@@ -1947,9 +1948,9 @@ func TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure(t *testing.T) {
 	// Build a minimal but valid k2b bundle — a single set "overseas" with
 	// one domain suffix. WriteBundle is already used by other tests.
 	var buf bytes.Buffer
-	if err := rule.WriteBundle(&buf, []rule.BundleSet{
+	if err := krs.WriteBundle(&buf, &krs.Bundle{Sets: []krs.NamedSet{
 		{Name: "overseas", DomainSuffixes: []string{"example.com"}},
-	}); err != nil {
+	}}); err != nil {
 		t.Fatalf("WriteBundle: %v", err)
 	}
 
@@ -2000,7 +2001,7 @@ func TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure(t *testing.T) {
 
 	if got := ruleEngine.RouteCount(); got == 0 {
 		t.Errorf("regression: buildRuleEngine produced 0 routes after EnsureBundles "+
-			"— bundles at %q, cacheDir=%q. Check path alignment between EnsureBundles and rule.Load.", dir, client.CacheDir)
+			"— bundles at %q, cacheDir=%q. Check path alignment between EnsureBundles and krs.Load.", dir, client.CacheDir)
 	}
 
 	// Sanity: the overseas-bound domain should route via direct (target 0).
