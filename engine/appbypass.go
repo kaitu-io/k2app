@@ -3,66 +3,75 @@ package engine
 import (
 	"fmt"
 	"log/slog"
+	"runtime"
+	"strings"
 
 	"github.com/kaitu-io/k2-rules/krs"
-	"github.com/kaitu-io/k2/appbypass"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/rule"
 )
 
 // buildAppBypassRoute builds up to two platform-specific direct routes from
-// any combination of the AppBypassRegion preset + AppBypassCustom additions:
+// the AppBypassRegion preset (sourced from <region>.krs's bundle.Apps) plus
+// AppBypassCustom additions:
 //
-//   - desktop route: ProcessName (preset.exact + custom) + ProcessNamePrefix (preset)
-//   - android route: PackageName (preset.exact + custom) + PackageNamePrefix (preset) + InstallerPackage (preset)
+//   - desktop route: ProcessName + ProcessNamePrefix (from krs Darwin/Windows.Apps via SplitGlobs + custom adds)
+//   - android route: InstallerPackage + PackageName + PackageNamePrefix (from krs Android via SplitGlobs)
 //
-// Both routes target "direct". Splitting per-platform preserves the rule
-// engine's AND-across-groups semantics (mixing desktop + android fields in
-// one route would never match on either platform because the absent
-// platform's observed fields are always empty).
-//
-// The preset is optional: when AppBypassRegion is empty (e.g. global-mode
-// connect) or the preset YAML is missing, custom entries alone still
-// produce direct routes so user-added apps (e.g. "Steam") get bypassed
-// regardless of routing mode.
+// Splitting per-platform preserves the rule engine's AND-across-groups
+// semantics (mixing desktop + android fields in one route would never match
+// on either platform because the absent platform's observed fields are
+// always empty).
 //
 // Returns nil (no routes) when neither preset nor custom contributes any
 // criteria. Returns (nil, err) only on filesystem read failure.
+//
+// SplitGlobs is transitional — Plan B retires the krs→MatchConfig translation
+// when engine.Start consumes bundle.Apps directly via match.region.
 func buildAppBypassRoute(cfg *Config) ([]*config.RouteConfig, error) {
 	if cfg == nil {
 		return nil, nil
 	}
 	custom := cfg.AppBypassCustom
 
-	// Load preset lazily — only when both region is set and a cache dir
-	// exists to read from. A missing preset is silently ignored so custom
-	// entries can still drive the route.
-	var preset *appbypass.Preset
-	if cfg.AppBypassRegion != "" && cfg.Client != nil && cfg.Client.CacheDir != "" {
-		ps, err := appbypass.Load(cfg.Client.CacheDir)
-		if err != nil {
-			return nil, err
-		}
-		if !ps.Empty() {
-			preset = ps.Get(cfg.AppBypassRegion)
-			if preset == nil {
-				slog.Info("appbypass: no preset for region", "region", cfg.AppBypassRegion)
-			}
-		}
-	}
-
-	// Short-circuit when both inputs are empty.
-	if preset == nil && len(custom.ProcessAdds) == 0 && len(custom.PackageAdds) == 0 {
-		return nil, nil
-	}
-
 	var (
 		dpExact, dpPrefix              []string
 		instExact, pkgExact, pkgPrefix []string
+		presetLoaded                   bool
 	)
-	if preset != nil {
-		dpExact, dpPrefix = preset.Desktop.ProcessExact, preset.Desktop.ProcessPrefix
-		instExact, pkgExact, pkgPrefix = preset.Android.InstallerExact, preset.Android.PackageExact, preset.Android.PackagePrefix
+	if cfg.AppBypassRegion != "" && cfg.Client != nil && cfg.Client.CacheDir != "" {
+		named, err := rule.LoadNamed(cfg.Client.CacheDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, nb := range named {
+			if nb.Region != cfg.AppBypassRegion || nb.Bundle == nil || nb.Bundle.Apps == nil {
+				continue
+			}
+			apps := nb.Bundle.Apps
+			switch runtime.GOOS {
+			case "darwin":
+				// rule.MatchConfig.ProcessNamePrefix is matched case-insensitively
+				// (rule engine pre-lowercases the entries + lowercases the observed
+				// process name). krs Darwin.Apps is stored case-sensitive, so we
+				// lowercase here to align with engine semantics. (Windows.Apps is
+				// already lowercased at krs compile time — apps.go normalizeStrings.)
+				dpExact, dpPrefix = rule.SplitGlobs(lowerSlice(apps.Darwin.Apps))
+			case "windows":
+				dpExact, dpPrefix = rule.SplitGlobs(apps.Windows.Apps)
+			}
+			instExact = append([]string(nil), apps.Android.Installers...)
+			pkgExact, pkgPrefix = rule.SplitGlobs(apps.Android.Apps)
+			presetLoaded = true
+			break
+		}
+		if !presetLoaded {
+			slog.Info("appbypass: no preset for region", "region", cfg.AppBypassRegion)
+		}
+	}
+
+	if !presetLoaded && len(custom.ProcessAdds) == 0 && len(custom.PackageAdds) == 0 {
+		return nil, nil
 	}
 
 	var routes []*config.RouteConfig
@@ -89,7 +98,7 @@ func buildAppBypassRoute(cfg *Config) ([]*config.RouteConfig, error) {
 	}
 	slog.Info("appbypass: routes built",
 		"region", cfg.AppBypassRegion,
-		"preset_loaded", preset != nil,
+		"preset_loaded", presetLoaded,
 		"route_count", len(routes),
 		"desktop_process_exact", len(desktopMC.ProcessName),
 		"desktop_process_prefix", len(desktopMC.ProcessNamePrefix),
@@ -151,14 +160,30 @@ func (e *Engine) RefreshAppBypass() error {
 	}
 	finalRoutes = append(finalRoutes, client.Routes...)
 
-	bundles, err := krs.Load(client.CacheDir)
+	named, err := rule.LoadNamed(client.CacheDir)
 	if err != nil {
 		return fmt.Errorf("appbypass refresh: load bundles: %w", err)
+	}
+	bundles := make([]*krs.Bundle, 0, len(named))
+	for _, nb := range named {
+		bundles = append(bundles, nb.Bundle)
 	}
 	idx := krs.Index(bundles)
 	outboundMap := buildOutboundMap(client.Routes)
 	entries, _, _ := buildRouteEntries(finalRoutes, idx, outboundMap)
-	return re.Reload(entries, bundles)
+	return re.ReloadNamed(entries, named)
+}
+
+// lowerSlice returns a fresh slice with each entry lowercased. Empty input → nil.
+func lowerSlice(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	for i, s := range in {
+		out[i] = strings.ToLower(s)
+	}
+	return out
 }
 
 // unionStrings returns the deduped union of a and b, preserving first-seen order.
