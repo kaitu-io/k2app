@@ -53,7 +53,10 @@ PIDS+=($!)
 sleep 2
 
 # ── 3. Build and start k2 daemon ──
-if [ ! -f "$K2_BIN" ] || [ "$ROOT_DIR/k2/cmd/k2/main.go" -nt "$K2_BIN" ]; then
+# Rebuild if binary is missing or any non-test .go source under k2/ is newer.
+# (`find … -quit` short-circuits on the first match.)
+if [ ! -f "$K2_BIN" ] || \
+   [ -n "$(find "$ROOT_DIR/k2" -name '*.go' -not -name '*_test.go' -newer "$K2_BIN" -print -quit 2>/dev/null)" ]; then
   echo "[dev-desktop] Building k2..."
   cd "$ROOT_DIR/k2"
   go build -tags nowebapp -o "$K2_BIN" ./cmd/k2

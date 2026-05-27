@@ -31,7 +31,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # ── 1. Build k2 if missing or outdated ──
-if [ ! -f "$K2_BIN" ] || [ "$ROOT_DIR/k2/cmd/k2/main.go" -nt "$K2_BIN" ]; then
+# Rebuild if binary is missing or any non-test .go source under k2/ is newer.
+# (`find … -quit` short-circuits on the first match.)
+if [ ! -f "$K2_BIN" ] || \
+   [ -n "$(find "$ROOT_DIR/k2" -name '*.go' -not -name '*_test.go' -newer "$K2_BIN" -print -quit 2>/dev/null)" ]; then
   echo "[dev-windows] Building k2 (amd64, v$VERSION)..."
 
   # Ensure wintun DLLs exist (downloaded once, committed to gitignore)
