@@ -8,6 +8,7 @@ require (
 	github.com/electricbubble/gadb v0.1.0
 	github.com/google/nftables v0.3.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/kaitu-io/k2-rules v0.1.1
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
 	github.com/pion/ice/v4 v4.2.2
@@ -25,6 +26,7 @@ require (
 	golang.org/x/sys v0.44.0
 	gopkg.in/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v3 v3.0.1
+	howett.net/plist v1.0.1
 )
 
 require (
@@ -55,9 +57,9 @@ require (
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
 	golang.org/x/mod v0.36.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	howett.net/plist v1.0.1 // indirect
 )

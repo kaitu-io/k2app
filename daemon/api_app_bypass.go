@@ -9,8 +9,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/kaitu-io/k2/appbypass"
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/rule"
 )
 
 // appBypassState is the Response.Data shape for action "app-bypass-get" /
@@ -210,7 +211,7 @@ type appBypassPreviewEntry struct {
 
 // appBypassPreview handles action "app-bypass-preview" (spec §9.4).
 // 1. Loads installed-apps from the platform provider.
-// 2. Runs the active region's preset over the list via appbypass.MatchInstalled.
+// 2. Runs the active region's app patterns over the list via krs.MatchInstalled.
 // 3. Returns the matched subset for the webapp UI.
 //
 // Failure modes (always return Code: 0 — preview is best-effort; the UI must
@@ -231,37 +232,40 @@ func (d *Daemon) appBypassPreview(w http.ResponseWriter, _ map[string]any) {
 		return
 	}
 
-	// Resolve preset cache dir (same path engine uses — see engine/appbypass.go).
 	d.mu.RLock()
 	cacheDir := d.ruleCacheDir
 	provider := d.appListProvider
 	d.mu.RUnlock()
 
-	presets, err := appbypass.Load(cacheDir)
+	// Resolve region's app patterns from krs bundles via rule.LoadNamed.
+	named, err := rule.LoadNamed(cacheDir)
 	if err != nil {
 		slog.Warn("appbypass/preview: load failed", "err", err)
 		writeJSON(w, Response{Code: 0, Message: "ok", Data: emptyResult(region)})
 		return
 	}
-	preset := presets.Get(region)
-	if preset == nil {
+	var apps *krs.AppPatterns
+	for _, nb := range named {
+		if nb.Region == region {
+			apps = nb.Bundle.Apps
+			break
+		}
+	}
+	if apps == nil {
 		writeJSON(w, Response{Code: 0, Message: "ok", Data: emptyResult(region)})
 		return
 	}
 
-	// Enumerate installed apps. provider is always non-nil (stub for unsupported OS).
-	apps, err := provider.ListInstalled(context.Background())
+	installed, err := provider.ListInstalled(context.Background())
 	if err != nil {
 		slog.Warn("appbypass/preview: ListInstalled failed", "err", err)
 		writeJSON(w, Response{Code: 0, Message: "ok", Data: emptyResult(region)})
 		return
 	}
 
-	// Convert provider.InstalledApp → appbypass.MatchableApp (decoupled shape;
-	// keeps appbypass package free of the provider import).
-	matchable := make([]appbypass.MatchableApp, 0, len(apps))
-	for _, a := range apps {
-		matchable = append(matchable, appbypass.MatchableApp{
+	matchable := make([]krs.MatchableApp, 0, len(installed))
+	for _, a := range installed {
+		matchable = append(matchable, krs.MatchableApp{
 			ID:                   a.ID,
 			Label:                a.Label,
 			InstallerPackageName: a.InstallerPackageName,
@@ -269,7 +273,7 @@ func (d *Daemon) appBypassPreview(w http.ResponseWriter, _ map[string]any) {
 		})
 	}
 
-	matched := appbypass.MatchInstalled(preset, matchable, runtime.GOOS)
+	matched := krs.MatchInstalled(apps, matchable, runtime.GOOS)
 	out := make([]appBypassPreviewEntry, len(matched))
 	for i, m := range matched {
 		out[i] = appBypassPreviewEntry{

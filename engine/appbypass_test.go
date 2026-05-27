@@ -1,15 +1,40 @@
 package engine
 
 import (
-	"io"
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/rule"
 )
+
+// writeCNBundle drops a minimal cn.krs into dir matching the production
+// shape (prefix globs on desktop, exact installers + prefix globs on android).
+// Mirrors the relevant subset of k2-rules/app-bypass/cn.yaml so engine
+// route-building tests don't depend on the deleted appbypass YAML fixture.
+func writeCNBundle(t *testing.T, dir string) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := krs.WriteBundle(&buf, &krs.Bundle{
+		Apps: &krs.AppPatterns{
+			Darwin:  krs.DarwinPatterns{Apps: []string{"WeChat*", "QQ*", "DingTalk*"}},
+			Windows: krs.WindowsPatterns{Apps: []string{"WeChat*", "QQ*", "DingTalk*"}},
+			Android: krs.AndroidPatterns{
+				Installers: []string{"com.huawei.appmarket", "com.xiaomi.market"},
+				Apps:       []string{"com.tencent.*", "com.alipay.*"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("krs.WriteBundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cn.krs"), buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write cn.krs: %v", err)
+	}
+}
 
 func TestBuildAppBypassRoute_NoRegion_ReturnsNil(t *testing.T) {
 	cfg := Config{Client: &config.ClientConfig{}}
@@ -36,8 +61,7 @@ func TestBuildAppBypassRoute_RegionWithoutPreset(t *testing.T) {
 
 func TestBuildAppBypassRoute_FixtureCN(t *testing.T) {
 	tmp := t.TempDir()
-	copyFixture(t, "../appbypass/testdata/app-bypass-cn.yaml",
-		filepath.Join(tmp, "app-bypass-cn.yaml"))
+	writeCNBundle(t, tmp)
 
 	cfg := Config{
 		AppBypassRegion: "cn",
@@ -119,8 +143,7 @@ func containsStr(ss []string, want string) bool {
 
 func TestBuildRuleEngine_PrependsAppBypassRoute(t *testing.T) {
 	tmp := t.TempDir()
-	copyFixture(t, "../appbypass/testdata/app-bypass-cn.yaml",
-		filepath.Join(tmp, "app-bypass-cn.yaml"))
+	writeCNBundle(t, tmp)
 
 	client := &config.ClientConfig{
 		CacheDir: tmp,
@@ -161,23 +184,6 @@ func TestBuildRuleEngine_PrependsAppBypassRoute(t *testing.T) {
 	}
 }
 
-func copyFixture(t *testing.T, src, dst string) {
-	t.Helper()
-	in, err := os.Open(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestEngine_SetAppBypassCustomThenRefresh(t *testing.T) {
 	// We test the setter API exists and the closure-based refresh works.
 	// Full engine.Start integration is exercised by Task 21's e2e test.
@@ -197,8 +203,7 @@ func TestEngine_SetAppBypassCustomThenRefresh(t *testing.T) {
 // match behavior end-to-end across both desktop and android platform routes.
 func TestE2E_AppBypass_RoutingScenarios(t *testing.T) {
 	tmp := t.TempDir()
-	copyFixture(t, "../appbypass/testdata/app-bypass-cn.yaml",
-		filepath.Join(tmp, "app-bypass-cn.yaml"))
+	writeCNBundle(t, tmp)
 
 	client := &config.ClientConfig{
 		CacheDir: tmp,
@@ -252,17 +257,19 @@ func TestE2E_AppBypass_RoutingScenarios(t *testing.T) {
 	}
 }
 
-// TestBuildAppBypassRoute_CorruptYAML_ReturnsError verifies that a corrupted
-// yaml file produces an error (not silent nil-return). engine.Start wraps
-// this in a slog.Warn so smart-bypass degradation surfaces in logs instead
-// of leaving the user with mysterious "WeChat goes through VPN" symptoms.
+// TestBuildAppBypassRoute_CorruptBundle_GracefullySkipped verifies that a
+// corrupted .krs file is treated as "no preset" rather than propagating
+// an error. rule.LoadNamed skips parse failures with WARN; buildAppBypassRoute
+// then sees zero matching named bundles for the region and returns nil
+// when there are no custom adds. Locks in the graceful-skip contract.
 //
-// Trigger paths: partial CDN download, on-disk corruption, version > supported.
-func TestBuildAppBypassRoute_CorruptYAML_ReturnsError(t *testing.T) {
+// Trigger paths: partial CDN download, on-disk corruption, future-version
+// .krs from a publisher newer than the running client.
+func TestBuildAppBypassRoute_CorruptBundle_GracefullySkipped(t *testing.T) {
 	tmp := t.TempDir()
-	// Garbage that's not valid YAML.
-	if err := os.WriteFile(filepath.Join(tmp, "app-bypass-cn.yaml"),
-		[]byte("\x00\x01\x02 not yaml at all"), 0o644); err != nil {
+	// Garbage that's not a valid krs payload (bad magic).
+	if err := os.WriteFile(filepath.Join(tmp, "cn.krs"),
+		[]byte("\x00\x01\x02 not a krs bundle at all"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -270,25 +277,22 @@ func TestBuildAppBypassRoute_CorruptYAML_ReturnsError(t *testing.T) {
 		AppBypassRegion: "cn",
 		Client:          &config.ClientConfig{CacheDir: tmp},
 	}
-	// appbypass.Load is "best-effort per-file" — corrupted file is logged
-	// + skipped, NOT propagated. So buildAppBypassRoute returns nil,nil
-	// here, not an error. This locks in the graceful-skip contract.
 	routes, err := buildAppBypassRoute(&cfg)
 	if err != nil {
-		t.Fatalf("corrupt yaml should be skipped, not propagated: %v", err)
+		t.Fatalf("corrupt bundle should be skipped, not propagated: %v", err)
 	}
 	if routes != nil {
-		t.Errorf("corrupt yaml + no custom adds → no routes, got %d", len(routes))
+		t.Errorf("corrupt bundle + no custom adds → no routes, got %d", len(routes))
 	}
 }
 
-// TestBuildAppBypassRoute_CorruptYAMLWithCustom_StillProducesCustomRoutes
-// verifies the Plan C key contract: even when the preset yaml fails to
-// load, user-added custom apps still produce direct routes. This means
-// a CDN incident doesn't break the user's manually-added bypass list.
-func TestBuildAppBypassRoute_CorruptYAMLWithCustom_StillProducesCustomRoutes(t *testing.T) {
+// TestBuildAppBypassRoute_CorruptBundleWithCustom_StillProducesCustomRoutes
+// verifies the key contract: even when the preset bundle fails to load,
+// user-added custom apps still produce direct routes. A CDN incident
+// doesn't break the user's manually-added bypass list.
+func TestBuildAppBypassRoute_CorruptBundleWithCustom_StillProducesCustomRoutes(t *testing.T) {
 	tmp := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmp, "app-bypass-cn.yaml"),
+	if err := os.WriteFile(filepath.Join(tmp, "cn.krs"),
 		[]byte("\x00garbage"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -322,18 +326,21 @@ func TestBuildAppBypassRoute_CorruptYAMLWithCustom_StillProducesCustomRoutes(t *
 	}
 }
 
-// TestBuildAppBypassRoute_UnsupportedVersion_GracefullySkipped tests the
-// path where future-publisher yaml (version > 1) is downloaded by an old
-// client. The reader rejects with ErrUnsupportedVersion, appbypass.Load
-// skips the file, buildAppBypassRoute returns nil cleanly.
-func TestBuildAppBypassRoute_UnsupportedVersion_GracefullySkipped(t *testing.T) {
+// TestBuildAppBypassRoute_NoMatchingRegion_GracefullySkipped covers the case
+// where the cache contains valid .krs bundles but none match the requested
+// region. Engine logs "no preset for region" and returns nil cleanly.
+func TestBuildAppBypassRoute_NoMatchingRegion_GracefullySkipped(t *testing.T) {
 	tmp := t.TempDir()
-	yaml := `version: 99
-region: cn
-android:
-  installer_exact: [com.xiaomi.market]
-`
-	if err := os.WriteFile(filepath.Join(tmp, "app-bypass-cn.yaml"), []byte(yaml), 0o644); err != nil {
+	// Write a valid ir.krs but request region "cn" — no match.
+	var buf bytes.Buffer
+	if err := krs.WriteBundle(&buf, &krs.Bundle{
+		Apps: &krs.AppPatterns{
+			Darwin: krs.DarwinPatterns{Apps: []string{"Telegram*"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "ir.krs"), buf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -343,7 +350,7 @@ android:
 	}
 	routes, err := buildAppBypassRoute(&cfg)
 	if err != nil {
-		t.Fatalf("unsupported version should be skipped, got err: %v", err)
+		t.Fatalf("missing region should be skipped, got err: %v", err)
 	}
 	if routes != nil {
 		t.Errorf("unsupported version should yield no routes, got %v", routes)

@@ -4,18 +4,20 @@ import (
 	"bytes"
 	"testing"
 	"time"
+
+	"github.com/kaitu-io/k2-rules/krs"
 )
 
-// makeTestK2B creates a minimal valid k2b binary via WriteBundle and returns
+// makeTestK2B creates a minimal valid k2b binary via krs.WriteBundle and returns
 // the raw bytes.
 func makeTestK2B(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	err := WriteBundle(&buf, []BundleSet{
+	err := krs.WriteBundle(&buf, &krs.Bundle{Sets: []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}},
-	})
+	}})
 	if err != nil {
-		t.Fatalf("WriteBundle: %v", err)
+		t.Fatalf("krs.WriteBundle: %v", err)
 	}
 	return buf.Bytes()
 }

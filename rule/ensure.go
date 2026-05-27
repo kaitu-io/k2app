@@ -32,7 +32,7 @@ const (
 var ensureSF singleflight.Group
 
 // EnsureBundles downloads the rule bundle tarball (when not fresh) and
-// atomically extracts *.k2b entries into cacheDir. When bundles.version is
+// atomically extracts *.krs entries into cacheDir. When bundles.version is
 // less than bundlesFreshTTL old, returns nil without any network activity.
 //
 // Concurrent calls with the same cacheDir are deduplicated via singleflight —
@@ -141,7 +141,7 @@ func downloadTarball(ctx context.Context, dest string, sources []string) (string
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// extractTarball unpacks .k2b and .yaml entries from the gzipped tarball at
+// extractTarball unpacks .krs and .yaml entries from the gzipped tarball at
 // tarballPath into newDir, stripping any directory components (defense against
 // path traversal). Other entry types and non-regular files are silently ignored.
 func extractTarball(tarballPath, newDir string) error {
@@ -170,7 +170,7 @@ func extractTarball(tarballPath, newDir string) error {
 			continue
 		}
 		name := filepath.Base(hdr.Name)
-		if !strings.HasSuffix(name, ".k2b") && !strings.HasSuffix(name, ".yaml") {
+		if !strings.HasSuffix(name, ".krs") && !strings.HasSuffix(name, ".yaml") {
 			continue
 		}
 		dst := filepath.Join(newDir, name)
@@ -189,9 +189,11 @@ func extractTarball(tarballPath, newDir string) error {
 	return nil
 }
 
-// atomicSwap renames each .k2b and .yaml from newDir into cacheDir, then
-// removes any .k2b/.yaml files in cacheDir that were NOT part of the new set
-// (orphan pruning).
+// atomicSwap renames each .krs and .yaml from newDir into cacheDir, then
+// removes any .krs/.yaml/.k2b files in cacheDir that were NOT part of the
+// new set (orphan pruning). .k2b is included in the prune filter to drop
+// leftover bundles from pre-Plan-A binaries — the new extractor no longer
+// produces .k2b files, so any encountered are stale.
 func atomicSwap(cacheDir, newDir string) error {
 	entries, err := os.ReadDir(newDir)
 	if err != nil {
@@ -203,7 +205,7 @@ func atomicSwap(cacheDir, newDir string) error {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".k2b") && !strings.HasSuffix(name, ".yaml") {
+		if !strings.HasSuffix(name, ".krs") && !strings.HasSuffix(name, ".yaml") {
 			continue
 		}
 		newNames[name] = struct{}{}
@@ -224,7 +226,9 @@ func atomicSwap(cacheDir, newDir string) error {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".k2b") && !strings.HasSuffix(name, ".yaml") {
+		if !strings.HasSuffix(name, ".krs") &&
+			!strings.HasSuffix(name, ".yaml") &&
+			!strings.HasSuffix(name, ".k2b") {
 			continue
 		}
 		if _, keep := newNames[name]; !keep {

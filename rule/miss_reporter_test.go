@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"sync/atomic"
 	"testing"
+
+	"github.com/kaitu-io/k2-rules/krs"
 )
 
 // stubReporter is a test MissReporter that records calls.
@@ -37,14 +39,14 @@ func TestMissReporter_NilSafe(t *testing.T) {
 // exact host and protocol on fallback, and only for FQDNs (no IPs, no
 // bare hostnames, no .local).
 func TestMissReporter_ReceivesFQDN(t *testing.T) {
-	b := mustBundle(t, []BundleSet{
+	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}},
 	})
-	idx := Index([]*Bundle{b})
+	idx := krs.Index([]*krs.Bundle{b})
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google")},
 	}
-	eng := NewEngine(routes, Target(0), []*Bundle{b}, false)
+	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
 	var rep stubReporter
@@ -128,11 +130,11 @@ func TestIsFQDN(t *testing.T) {
 // unlocked raw-match that skips the MissReporter field read entirely,
 // approximating the pre-instrumentation ns/op.
 func BenchmarkMatchHostLocked(b *testing.B) {
-	bundle := mustBenchBundle(b, []BundleSet{
+	bundle := mustBenchBundle(b, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com", "youtube.com"}},
 		{Name: "cn-sites", DomainSuffixes: []string{"baidu.com", "qq.com", "weibo.com"}},
 	})
-	idx := Index([]*Bundle{bundle})
+	idx := krs.Index([]*krs.Bundle{bundle})
 	routes := []RouteEntry{
 		{Target: Target(2), Sets: bindSets(idx, "google")},
 		{Target: Target(0), Sets: bindSets(idx, "cn-sites")},
@@ -154,7 +156,7 @@ func BenchmarkMatchHostLocked(b *testing.B) {
 	// This is an apples-to-apples comparison: both are method calls via
 	// the Engine vtable; the only delta is the instrumentation code.
 	b.Run("baseline", func(b *testing.B) {
-		eng := NewEngine(routes, Target(0), []*Bundle{bundle}, false)
+		eng := NewEngine(routes, Target(0), []*krs.Bundle{bundle}, false)
 		defer eng.Close()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -165,7 +167,7 @@ func BenchmarkMatchHostLocked(b *testing.B) {
 	// nil_reporter: the actual Phase 1 default — Match() with a nil
 	// MissReporter field. Should be within 1% of baseline.
 	b.Run("nil_reporter", func(b *testing.B) {
-		eng := NewEngine(routes, Target(0), []*Bundle{bundle}, false)
+		eng := NewEngine(routes, Target(0), []*krs.Bundle{bundle}, false)
 		defer eng.Close()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -176,7 +178,7 @@ func BenchmarkMatchHostLocked(b *testing.B) {
 	// stub_reporter: worst-case Phase 1 cost — reporter installed,
 	// isFQDN evaluated, interface method called on fallbacks.
 	b.Run("stub_reporter", func(b *testing.B) {
-		eng := NewEngine(routes, Target(0), []*Bundle{bundle}, false)
+		eng := NewEngine(routes, Target(0), []*krs.Bundle{bundle}, false)
 		defer eng.Close()
 		eng.SetMissReporter(&stubReporter{})
 		b.ResetTimer()
@@ -198,13 +200,13 @@ func (e *Engine) matchNoTelemetry(host string) Target {
 }
 
 // mustBenchBundle mirrors mustBundle but takes a *testing.B.
-func mustBenchBundle(b *testing.B, sets []BundleSet) *Bundle {
+func mustBenchBundle(b *testing.B, sets []krs.NamedSet) *krs.Bundle {
 	b.Helper()
 	var buf bytes.Buffer
-	if err := WriteBundle(&buf, sets); err != nil {
+	if err := krs.WriteBundle(&buf, &krs.Bundle{Sets: sets}); err != nil {
 		b.Fatal(err)
 	}
-	bundle, err := ReadBundle(buf.Bytes())
+	bundle, err := krs.ReadBundle(buf.Bytes())
 	if err != nil {
 		b.Fatal(err)
 	}

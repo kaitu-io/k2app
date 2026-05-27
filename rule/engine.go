@@ -6,13 +6,14 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/sasha-s/go-deadlock"
 )
 
 // RouteEntry represents one route in the routing table.
 type RouteEntry struct {
 	Target Target
-	Sets   []*BundleSet // from k2b files
+	Sets   []*krs.NamedSet // resolved by name from loaded .krs bundles
 
 	// Inline matchers (compiled from config domain_suffix/ip_cidr).
 	Inline *InlineSet
@@ -62,7 +63,13 @@ type Engine struct {
 	routes   []RouteEntry
 	fallback Target
 	allProxy bool      // match:all mode (disables sniffing)
-	bundles  []*Bundle // lifecycle: Close releases all
+	bundles  []*krs.Bundle // lifecycle: Close releases all
+
+	// regionBundles maps a region key (the .krs filename basename, e.g. "cn")
+	// to the corresponding loaded bundle. Populated by NewEngineNamed /
+	// ReloadNamed; consumed by BundleByRegion for match.region resolution.
+	// Always non-nil; entries share identity with bundles slice.
+	regionBundles map[string]*krs.Bundle
 
 	// missReporter is an optional hook invoked when a domain lookup
 	// reaches the fallback target (no route matched). Phase 1 rule-miss
@@ -81,13 +88,39 @@ type Engine struct {
 type reporterSlot struct{ r MissReporter }
 
 // NewEngine creates a routing engine.
-func NewEngine(routes []RouteEntry, fallback Target, bundles []*Bundle, allProxy bool) *Engine {
+func NewEngine(routes []RouteEntry, fallback Target, bundles []*krs.Bundle, allProxy bool) *Engine {
 	return &Engine{
-		tmp:      make(map[netip.Addr]Target),
-		routes:   routes,
-		fallback: fallback,
-		bundles:  bundles,
-		allProxy: allProxy,
+		tmp:           make(map[netip.Addr]Target),
+		routes:        routes,
+		fallback:      fallback,
+		bundles:       bundles,
+		allProxy:      allProxy,
+		regionBundles: make(map[string]*krs.Bundle),
+	}
+}
+
+// NewEngineNamed creates an engine from NamedBundles, populating the
+// region→bundle map used by BundleByRegion. Equivalent to NewEngine for
+// the route/match path; adds the region accessor on top.
+func NewEngineNamed(routes []RouteEntry, fallback Target, named []NamedBundle, allProxy bool) *Engine {
+	bundles := make([]*krs.Bundle, 0, len(named))
+	regionMap := make(map[string]*krs.Bundle, len(named))
+	for _, nb := range named {
+		if nb.Bundle == nil {
+			continue
+		}
+		bundles = append(bundles, nb.Bundle)
+		if nb.Region != "" {
+			regionMap[nb.Region] = nb.Bundle
+		}
+	}
+	return &Engine{
+		tmp:           make(map[netip.Addr]Target),
+		routes:        routes,
+		fallback:      fallback,
+		bundles:       bundles,
+		allProxy:      allProxy,
+		regionBundles: regionMap,
 	}
 }
 
@@ -446,11 +479,21 @@ func (e *Engine) RouteCount() int {
 	return len(e.routes)
 }
 
+// BundleByRegion returns the loaded krs.Bundle for the given region
+// (e.g. "cn"), or nil if no .krs file with that filename basename was
+// loaded. Plan B's match.region resolution consumes this.
+func (e *Engine) BundleByRegion(region string) *krs.Bundle {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.regionBundles[region]
+}
+
 // Close releases all bundle resources.
 func (e *Engine) Close() {
 	e.mu.Lock()
 	e.bundles = nil
 	e.routes = nil
+	e.regionBundles = make(map[string]*krs.Bundle)
 	e.tmp = make(map[netip.Addr]Target)
 	e.mu.Unlock()
 }
@@ -461,12 +504,47 @@ func (e *Engine) Close() {
 //
 // Concurrency: builds new data outside lock, swaps under WLock, closes old
 // bundles outside lock (Rule #4: no Close under state lock).
-func (e *Engine) Reload(routes []RouteEntry, bundles []*Bundle) error {
+func (e *Engine) Reload(routes []RouteEntry, bundles []*krs.Bundle) error {
 	e.mu.Lock()
 	cleared := len(e.tmp)
 	oldBundles := e.bundles
 	e.bundles = bundles
 	e.routes = routes
+	e.tmp = make(map[netip.Addr]Target)
+	e.mu.Unlock()
+
+	slog.Info("DIAG: rule-tmp-reload",
+		"cleared", cleared, "routes", len(routes), "bundles", len(bundles))
+
+	_ = oldBundles // Bundle has no explicit Close — data is GC'd.
+	return nil
+}
+
+// ReloadNamed mirrors Reload but updates the region→bundle map atomically
+// with routes + bundles. Used by Plan B's match.region resolver.
+//
+// Concurrency: builds new data outside lock (per Rule #2: no I/O under lock),
+// swaps routes + bundles + regionBundles + tmp under a single WLock to keep
+// the data plane atomic (per Rule #1: pure field read/write only).
+func (e *Engine) ReloadNamed(routes []RouteEntry, named []NamedBundle) error {
+	bundles := make([]*krs.Bundle, 0, len(named))
+	regionMap := make(map[string]*krs.Bundle, len(named))
+	for _, nb := range named {
+		if nb.Bundle == nil {
+			continue
+		}
+		bundles = append(bundles, nb.Bundle)
+		if nb.Region != "" {
+			regionMap[nb.Region] = nb.Bundle
+		}
+	}
+
+	e.mu.Lock()
+	cleared := len(e.tmp)
+	oldBundles := e.bundles
+	e.bundles = bundles
+	e.routes = routes
+	e.regionBundles = regionMap
 	e.tmp = make(map[netip.Addr]Target)
 	e.mu.Unlock()
 

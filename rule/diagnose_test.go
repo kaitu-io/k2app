@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/rule"
 )
 
@@ -43,11 +44,11 @@ func TestDiagnose(t *testing.T) {
 		}
 	}
 
-	bundles, err := rule.Load(dir)
+	bundles, err := krs.Load(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	idx := rule.Index(bundles)
+	idx := krs.Index(bundles)
 
 	isIP := false
 	var addr netip.Addr
@@ -111,7 +112,7 @@ func TestDiagnose(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "\n")
 }
 
-func sortedKeys(m map[string]*rule.BundleSet) []string {
+func sortedKeys(m map[string]*krs.NamedSet) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

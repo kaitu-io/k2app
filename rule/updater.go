@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/safego"
 )
 
@@ -34,7 +35,12 @@ func WithCheckInterval(d time.Duration) UpdaterOption {
 // RebuildFunc loads bundles from cacheDir and rebuilds the engine's routes.
 // Called by the updater after downloading new bundles.
 // Returns the new routes and bundles for Engine.Reload().
-type RebuildFunc func(cacheDir string) ([]RouteEntry, []*Bundle, error)
+type RebuildFunc func(cacheDir string) ([]RouteEntry, []*krs.Bundle, error)
+
+// RebuildFuncNamed is the NamedBundle variant of RebuildFunc — preserves
+// filename→region mapping across background refreshes so Engine.BundleByRegion
+// keeps returning the current bundle (consumed by Plan B's match.region resolver).
+type RebuildFuncNamed func(cacheDir string) ([]RouteEntry, []NamedBundle, error)
 
 // DownloadAndReload calls EnsureBundles (fetches the rule-bundle tarball
 // when the cache is older than bundlesFreshTTL), then optionally rebuilds
@@ -91,6 +97,63 @@ func StartUpdater(
 				return
 			case <-ticker.C:
 				if err := DownloadAndReload(ctx, engine, cacheDir, sources, rebuild); err != nil {
+					slog.Warn("rule: updater cycle failed", "err", err)
+				}
+			}
+		}
+	})
+}
+
+// DownloadAndReloadNamed is the NamedBundle variant of DownloadAndReload.
+// Calls EnsureBundles, runs the rebuild, then Engine.ReloadNamed so the
+// engine's region→bundle map stays in sync with disk.
+func DownloadAndReloadNamed(
+	ctx context.Context,
+	engine *Engine,
+	cacheDir string,
+	sources []string,
+	rebuild RebuildFuncNamed,
+) error {
+	if err := EnsureBundles(ctx, cacheDir, sources); err != nil {
+		return err
+	}
+	if engine == nil || rebuild == nil {
+		return nil
+	}
+	routes, named, err := rebuild(cacheDir)
+	if err != nil {
+		return fmt.Errorf("rule: rebuild after download: %w", err)
+	}
+	return engine.ReloadNamed(routes, named)
+}
+
+// StartUpdaterNamed is the NamedBundle variant of StartUpdater.
+func StartUpdaterNamed(
+	ctx context.Context,
+	engine *Engine,
+	cacheDir string,
+	sources []string,
+	rebuild RebuildFuncNamed,
+	opts ...UpdaterOption,
+) {
+	cfg := updaterConfig{interval: defaultCheckInterval}
+	for _, o := range opts {
+		o(&cfg)
+	}
+
+	safego.Go(func() {
+		if err := DownloadAndReloadNamed(ctx, engine, cacheDir, sources, rebuild); err != nil {
+			slog.Warn("rule: updater initial check failed", "err", err)
+		}
+
+		ticker := time.NewTicker(cfg.interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := DownloadAndReloadNamed(ctx, engine, cacheDir, sources, rebuild); err != nil {
 					slog.Warn("rule: updater cycle failed", "err", err)
 				}
 			}

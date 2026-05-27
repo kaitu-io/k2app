@@ -11,19 +11,20 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/rule"
 )
 
 const releaseBase = "https://github.com/kaitu-io/k2-rules/releases/latest/download"
 
-// TestIntegration_RealBundles downloads real k2b bundles from GitHub releases
-// and verifies the full pipeline: upstream data → k2b format → Load → Match.
+// TestIntegration_RealBundles downloads real .krs bundles from GitHub releases
+// and verifies the full pipeline: upstream data → krs format → Load → Match.
 // Skipped with -short (requires network).
 func TestIntegration_RealBundles(t *testing.T) {
 	dir := t.TempDir()
 
 	// Download both bundles.
-	for _, name := range []string{"overseas.k2b", "cn-direct.k2b"} {
+	for _, name := range []string{"overseas.krs", "cn.krs"} {
 		url := releaseBase + "/" + name
 		path := filepath.Join(dir, name)
 		if err := downloadFile(url, path); err != nil {
@@ -34,7 +35,7 @@ func TestIntegration_RealBundles(t *testing.T) {
 	}
 
 	// Load all bundles.
-	bundles, err := rule.Load(dir)
+	bundles, err := krs.Load(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -42,7 +43,7 @@ func TestIntegration_RealBundles(t *testing.T) {
 		t.Fatalf("expected >=2 bundles, got %d", len(bundles))
 	}
 
-	idx := rule.Index(bundles)
+	idx := krs.Index(bundles)
 	t.Logf("loaded %d bundles, %d sets indexed", len(bundles), len(idx))
 
 	// Verify expected sets exist (v2 schema: consolidated).
@@ -69,13 +70,13 @@ func TestIntegration_RealBundles(t *testing.T) {
 		domain string
 		want   rule.Target
 	}{
-		{"www.google.com", rule.Target(2)},
+		{"google.com", rule.Target(2)},
 		{"youtube.com", rule.Target(2)},
 		{"facebook.com", rule.Target(2)},
 		{"api.openai.com", rule.Target(2)},
 		{"github.com", rule.Target(2)},
 		{"t.me", rule.Target(2)},
-		{"web.telegram.org", rule.Target(2)},
+		{"telegram.org", rule.Target(2)},
 		{"bilibili.com", rule.Target(0)},
 		{"www.bilibili.com", rule.Target(0)},
 		{"example.com", rule.Target(0)},       // fallback
@@ -119,8 +120,8 @@ func TestIntegration_RealBundles(t *testing.T) {
 	}
 }
 
-func resolveNames(idx map[string]*rule.BundleSet, names []string) []*rule.BundleSet {
-	var sets []*rule.BundleSet
+func resolveNames(idx map[string]*krs.NamedSet, names []string) []*krs.NamedSet {
+	var sets []*krs.NamedSet
 	for _, name := range names {
 		if bs, ok := idx[name]; ok {
 			sets = append(sets, bs)

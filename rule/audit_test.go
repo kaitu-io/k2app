@@ -40,11 +40,11 @@ func TestAudit_GeositeCrossCheck(t *testing.T) {
 		}
 	}
 
-	bundles, err := rule.Load(dir)
+	bundles, err := krs.Load(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	idx := rule.Index(bundles)
+	idx := krs.Index(bundles)
 
 	for setName, categories := range geositeCategories {
 		bs, ok := idx[setName]

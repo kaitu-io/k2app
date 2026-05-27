@@ -8,10 +8,30 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/provider"
 )
+
+// writeCNBundle drops a minimal cn.krs file in dir with WeChat patterns for
+// Darwin + Windows. Used by app-bypass-preview tests.
+func writeCNBundle(t *testing.T, dir string) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := krs.WriteBundle(&buf, &krs.Bundle{
+		Apps: &krs.AppPatterns{
+			Darwin:  krs.DarwinPatterns{Apps: []string{"WeChat*"}},
+			Windows: krs.WindowsPatterns{Apps: []string{"WeChat*"}},
+		},
+	}); err != nil {
+		t.Fatalf("krs.WriteBundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cn.krs"), buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write preset: %v", err)
+	}
+}
 
 // callCore posts a {action, params} body to handleCore and returns the
 // decoded Response. Mirrors how the webapp talks to daemon.
@@ -237,24 +257,17 @@ func TestAPI_AppBypassPreview_PresetNotLoaded_EmptyMatched(t *testing.T) {
 }
 
 func TestAPI_AppBypassPreview_MatchesPreset(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("hit_pattern assertion uses Darwin case-sensitive form; krs lowercases Windows and has no Linux patterns")
+	}
 	d := New()
 	cacheDir := t.TempDir()
 	d.ruleCacheDir = cacheDir
-
-	// Drop a minimal cn preset into the cache dir.
-	yamlBody := `version: 1
-region: cn
-desktop:
-  process_prefix:
-    - wechat
-`
-	if err := os.WriteFile(filepath.Join(cacheDir, "app-bypass-cn.yaml"), []byte(yamlBody), 0644); err != nil {
-		t.Fatalf("write preset: %v", err)
-	}
+	writeCNBundle(t, cacheDir)
 
 	d.appBypassOverrides.Region = "cn"
 	d.appListProvider = fakeAppListProvider{apps: []provider.InstalledApp{
-		{ID: "/Applications/WeChat.app", Label: "WeChat", ProcessNames: []string{"wechat", "wechathelper"}},
+		{ID: "/Applications/WeChat.app", Label: "WeChat", ProcessNames: []string{"WeChat", "WeChatHelper"}},
 		{ID: "/Applications/Firefox.app", Label: "Firefox", ProcessNames: []string{"firefox"}},
 	}}
 
@@ -270,11 +283,11 @@ desktop:
 		t.Fatalf("want 1 match, got %d: %v", len(preview.Matched), preview.Matched)
 	}
 	hit := preview.Matched[0]
-	if hit["hit_kind"] != "process_prefix" {
-		t.Errorf("hit_kind %v want process_prefix", hit["hit_kind"])
+	if hit["hit_kind"] != "app" {
+		t.Errorf("hit_kind %v want app", hit["hit_kind"])
 	}
-	if hit["hit_pattern"] != "wechat" {
-		t.Errorf("hit_pattern %v want wechat", hit["hit_pattern"])
+	if hit["hit_pattern"] != "WeChat*" {
+		t.Errorf("hit_pattern %v want WeChat*", hit["hit_pattern"])
 	}
 	if hit["label"] != "WeChat" {
 		t.Errorf("label %v want WeChat", hit["label"])
@@ -285,15 +298,7 @@ func TestAPI_AppBypassPreview_ProviderError_EmptyMatched(t *testing.T) {
 	d := New()
 	cacheDir := t.TempDir()
 	d.ruleCacheDir = cacheDir
-	yamlBody := `version: 1
-region: cn
-desktop:
-  process_prefix:
-    - wechat
-`
-	if err := os.WriteFile(filepath.Join(cacheDir, "app-bypass-cn.yaml"), []byte(yamlBody), 0644); err != nil {
-		t.Fatalf("write preset: %v", err)
-	}
+	writeCNBundle(t, cacheDir)
 	d.appBypassOverrides.Region = "cn"
 	d.appListProvider = fakeAppListProvider{err: context.Canceled}
 
