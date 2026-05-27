@@ -1824,8 +1824,8 @@ func TestEngineStart_RuleBundlesStaleCacheFallback(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("WriteBundle: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "overseas.k2b"), buf.Bytes(), 0o644); err != nil {
-		t.Fatalf("write stale .k2b: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, "overseas.krs"), buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write stale .krs: %v", err)
 	}
 
 	// Capture slog to assert the DIAG event is emitted.
@@ -1964,7 +1964,7 @@ func TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure(t *testing.T) {
 		gw := gzip.NewWriter(&tbuf)
 		tw := tar.NewWriter(gw)
 		data := buf.Bytes()
-		if err := tw.WriteHeader(&tar.Header{Name: "overseas.k2b", Mode: 0o644, Size: int64(len(data))}); err != nil {
+		if err := tw.WriteHeader(&tar.Header{Name: "overseas.krs", Mode: 0o644, Size: int64(len(data))}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tw.Write(data); err != nil {

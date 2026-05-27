@@ -55,11 +55,11 @@ func makeTarballHandler(t *testing.T, files map[string][]byte) http.HandlerFunc 
 func TestEnsureBundles_ColdDownload(t *testing.T) {
 	dir := t.TempDir()
 
-	// A fake .k2b (magic-only). EnsureBundles doesn't parse bundles —
+	// A fake .krs (magic-only). EnsureBundles doesn't parse bundles —
 	// that's the loader's job — so as long as the file lands on disk
 	// with the right name, this test is satisfied.
 	srv := httptest.NewServer(makeTarballHandler(t, map[string][]byte{
-		"dummy.k2b": {0x4b, 0x32, 0x42, 0x00}, // K2B\0
+		"dummy.krs": {0x4b, 0x32, 0x42, 0x00}, // K2B\0
 	}))
 	defer srv.Close()
 
@@ -70,8 +70,8 @@ func TestEnsureBundles_ColdDownload(t *testing.T) {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "dummy.k2b")); err != nil {
-		t.Errorf("dummy.k2b not extracted: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "dummy.krs")); err != nil {
+		t.Errorf("dummy.krs not extracted: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "bundles.version")); err != nil {
 		t.Errorf("bundles.version not written: %v", err)
@@ -92,7 +92,7 @@ func TestEnsureBundles_ConcurrentSingleflight(t *testing.T) {
 		reqCount.Add(1)
 		time.Sleep(200 * time.Millisecond)
 		makeTarballHandler(t, map[string][]byte{
-			"dummy.k2b": {0x4b, 0x32, 0x42, 0x00},
+			"dummy.krs": {0x4b, 0x32, 0x42, 0x00},
 		})(w, r)
 	}))
 	defer srv.Close()
@@ -210,7 +210,7 @@ func TestEnsureBundles_CleansStaleTmp(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(makeTarballHandler(t, map[string][]byte{
-		"dummy.k2b": {0x4b, 0x32, 0x42, 0x00},
+		"dummy.krs": {0x4b, 0x32, 0x42, 0x00},
 	}))
 	defer srv.Close()
 
@@ -281,7 +281,7 @@ func TestEnsureBundles_CrossProcessFreshnessRecheck(t *testing.T) {
 		// Deliberately slow so the second caller queues behind the flock.
 		time.Sleep(150 * time.Millisecond)
 		makeTarballHandler(t, map[string][]byte{
-			"dummy.k2b": {0x4b, 0x32, 0x42, 0x00},
+			"dummy.krs": {0x4b, 0x32, 0x42, 0x00},
 		})(w, r)
 	}))
 	defer srv.Close()
@@ -306,7 +306,7 @@ func TestEnsureBundles_CrossProcessFreshnessRecheck(t *testing.T) {
 }
 
 func TestExtractTarball_AcceptsYAMLFiles(t *testing.T) {
-	// Build a fake tarball with one .k2b and one .yaml entry.
+	// Build a fake tarball with one .krs and one .yaml entry.
 	tmp := t.TempDir()
 	tgz := filepath.Join(tmp, "test.tar.gz")
 
@@ -323,7 +323,7 @@ func TestExtractTarball_AcceptsYAMLFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	writeEntry("cn-direct.k2b", "K2RBfake-binary-data")
+	writeEntry("cn-direct.krs", "K2RBfake-binary-data")
 	writeEntry("app-bypass-cn.yaml", "version: 1\nregion: cn\n")
 	tw.Close()
 	gz.Close()
@@ -334,8 +334,8 @@ func TestExtractTarball_AcceptsYAMLFiles(t *testing.T) {
 		t.Fatalf("extract: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(out, "cn-direct.k2b")); err != nil {
-		t.Errorf(".k2b missing: %v", err)
+	if _, err := os.Stat(filepath.Join(out, "cn-direct.krs")); err != nil {
+		t.Errorf(".krs missing: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(out, "app-bypass-cn.yaml")); err != nil {
 		t.Errorf(".yaml missing: %v", err)
@@ -348,7 +348,7 @@ func TestAtomicSwap_HandlesYAML(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(newDir, "app-bypass-cn.yaml"), []byte("yaml content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(newDir, "cn-direct.k2b"), []byte("binary"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(newDir, "cn-direct.krs"), []byte("binary"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

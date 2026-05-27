@@ -25,15 +25,15 @@ func TestUpdater_TriggersReload(t *testing.T) {
 	}
 	updatedData := updatedBuf.Bytes()
 
-	// httptest server that serves a tarball containing the updated k2b.
+	// httptest server that serves a tarball containing the updated bundle.
 	srv := httptest.NewServer(makeTarballHandler(t, map[string][]byte{
-		"overseas.k2b": updatedData,
+		"overseas.krs": updatedData,
 	}))
 	defer srv.Close()
 
 	dir := t.TempDir()
 
-	// Write the initial k2b: google set with only google.com (no youtube.com).
+	// Write the initial bundle: google set with only google.com (no youtube.com).
 	// Do NOT write bundles.version — EnsureBundles must see the cache as stale
 	// and download the tarball on the first tick.
 	var initialBuf bytes.Buffer
@@ -42,7 +42,7 @@ func TestUpdater_TriggersReload(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("krs.WriteBundle initial: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "overseas.k2b"), initialBuf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "overseas.krs"), initialBuf.Bytes(), 0o644); err != nil {
 		t.Fatalf("WriteFile initial: %v", err)
 	}
 
@@ -75,8 +75,7 @@ func TestUpdater_TriggersReload(t *testing.T) {
 		return routes, bundles, nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	StartUpdater(
 		ctx,
@@ -125,7 +124,7 @@ func TestDownloadAndReload_DownloadsWhenStale(t *testing.T) {
 	dir := t.TempDir()
 	data := makeTestK2B(t)
 	srv := httptest.NewServer(makeTarballHandler(t, map[string][]byte{
-		"overseas.k2b": data,
+		"overseas.krs": data,
 	}))
 	defer srv.Close()
 
@@ -135,7 +134,7 @@ func TestDownloadAndReload_DownloadsWhenStale(t *testing.T) {
 	if err := DownloadAndReload(ctx, nil, dir, []string{srv.URL + "/"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, "overseas.k2b"))
+	got, err := os.ReadFile(filepath.Join(dir, "overseas.krs"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +147,7 @@ func TestDownloadAndReload_DownloadsWhenStale(t *testing.T) {
 func TestDownloadAndReload_NilEngine(t *testing.T) {
 	dir := t.TempDir()
 	srv := httptest.NewServer(makeTarballHandler(t, map[string][]byte{
-		"overseas.k2b": makeTestK2B(t),
+		"overseas.krs": makeTestK2B(t),
 	}))
 	defer srv.Close()
 
@@ -158,7 +157,7 @@ func TestDownloadAndReload_NilEngine(t *testing.T) {
 	if err := DownloadAndReload(ctx, nil, dir, []string{srv.URL + "/"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "overseas.k2b")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "overseas.krs")); err != nil {
 		t.Fatal(err)
 	}
 }

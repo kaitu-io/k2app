@@ -17,14 +17,14 @@ import (
 
 const releaseBase = "https://github.com/kaitu-io/k2-rules/releases/latest/download"
 
-// TestIntegration_RealBundles downloads real k2b bundles from GitHub releases
-// and verifies the full pipeline: upstream data → k2b format → Load → Match.
+// TestIntegration_RealBundles downloads real .krs bundles from GitHub releases
+// and verifies the full pipeline: upstream data → krs format → Load → Match.
 // Skipped with -short (requires network).
 func TestIntegration_RealBundles(t *testing.T) {
 	dir := t.TempDir()
 
 	// Download both bundles.
-	for _, name := range []string{"overseas.k2b", "cn-direct.k2b"} {
+	for _, name := range []string{"overseas.krs", "cn.krs"} {
 		url := releaseBase + "/" + name
 		path := filepath.Join(dir, name)
 		if err := downloadFile(url, path); err != nil {
