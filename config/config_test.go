@@ -667,3 +667,50 @@ app_bypass:
 		t.Errorf("process_adds: %v", cfg.AppBypass.ProcessAdds)
 	}
 }
+
+func TestClientConfig_RouteMatch_RegionAppsJSONRoundtrip(t *testing.T) {
+	cfg := ClientConfig{
+		Routes: []RouteConfig{
+			{Via: "direct", Match: rule.MatchConfig{Region: "cn"}},
+			{Via: "k2v5://x", Match: rule.MatchConfig{Apps: []string{"Firefox*", "Chrome.app"}}},
+		},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal raw: %v", err)
+	}
+	routes, ok := raw["routes"].([]any)
+	if !ok || len(routes) != 2 {
+		t.Fatalf("expected routes array of len 2, got: %v", raw["routes"])
+	}
+	m0 := routes[0].(map[string]any)["match"].(map[string]any)
+	if m0["region"] != "cn" {
+		t.Errorf("routes[0].match.region = %v, want cn", m0["region"])
+	}
+	if _, present := m0["apps"]; present {
+		t.Errorf("routes[0].match.apps should be omitted (empty), got: %v", m0["apps"])
+	}
+	m1 := routes[1].(map[string]any)["match"].(map[string]any)
+	apps, _ := m1["apps"].([]any)
+	if len(apps) != 2 || apps[0] != "Firefox*" {
+		t.Errorf("routes[1].match.apps = %v, want [Firefox* Chrome.app]", apps)
+	}
+	if _, present := m1["region"]; present {
+		t.Errorf("routes[1].match.region should be omitted (empty), got: %v", m1["region"])
+	}
+
+	var got ClientConfig
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal struct: %v", err)
+	}
+	if got.Routes[0].Match.Region != "cn" {
+		t.Errorf("Region roundtrip lost: %q", got.Routes[0].Match.Region)
+	}
+	if len(got.Routes[1].Match.Apps) != 2 || got.Routes[1].Match.Apps[1] != "Chrome.app" {
+		t.Errorf("Apps roundtrip lost: %v", got.Routes[1].Match.Apps)
+	}
+}

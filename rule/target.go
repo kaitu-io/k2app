@@ -17,9 +17,24 @@ type MatchConfig struct {
 	Names   []string `yaml:"names,omitempty"   json:"names,omitempty"`
 	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
 
+	// Region selects a loaded *.krs bundle by basename (e.g. "cn").
+	// Expanded by engine.buildRouteEntries into one host route over
+	// bundle.Sets + one meta route over bundle.Apps[GOOS] via
+	// rule.SplitGlobs. Empty = no region match. Plan B replaces the
+	// legacy app_bypass top-level field + the cn-access preset pair.
+	Region string `yaml:"region,omitempty" json:"region,omitempty"`
+
 	// Inline host matching (compiled at engine build time).
 	DomainSuffix []string `yaml:"domain_suffix,omitempty" json:"domain_suffix,omitempty"`
 	IPCIDR       []string `yaml:"ip_cidr,omitempty"       json:"ip_cidr,omitempty"`
+
+	// Apps lists single-* glob patterns matched against the running
+	// process's executable basename (desktop) or installed package id
+	// (Android). Platform-dispatched at engine.buildRouteEntries via
+	// runtime.GOOS — patterns aimed at the wrong platform are silently
+	// ignored. Used by Plan C Tier-1 force-override routes; emitted by
+	// webapp app-routes.store.
+	Apps []string `yaml:"apps,omitempty" json:"apps,omitempty"`
 
 	// Connection metadata matching.
 	ProcessName []string `yaml:"process_name,omitempty" json:"process_name,omitempty"`
