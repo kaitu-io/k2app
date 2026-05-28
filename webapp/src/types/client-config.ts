@@ -38,6 +38,11 @@ export interface MatchConfig {
   names?: string[];
   exclude?: string[];
 
+  // Region selects a loaded *.krs bundle by basename (e.g. 'cn').
+  // Engine expands it into host + meta routes at build time. Plan B
+  // replaces the legacy `app_bypass` top-level field.
+  region?: string;
+
   // Inline host matching
   domain_suffix?: string[];
   ip_cidr?: string[];
@@ -49,6 +54,11 @@ export interface MatchConfig {
   process_name_prefix?: string[];
   package_name_prefix?: string[];
   installer_package?: string[];
+
+  // Apps are platform-dispatched glob patterns for force-overrides.
+  // Plan C wires the UI; Plan B reserves the wire shape.
+  apps?: string[];
+
   network?: 'tcp' | 'udp';
   ip_is_private?: boolean;
 
