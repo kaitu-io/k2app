@@ -17,12 +17,15 @@ describe('app-bypass privacy invariant', () => {
   });
 
   it('buildConnectConfig console.debug does NOT log entry names', () => {
+    // Plan B: config.store no longer reads app-bypass entries at connect time
+    // (app routing moves to app-routes.store in Phase 5). The privacy invariant
+    // that entry names never appear in logs is still upheld — entries are not
+    // read at all, so bypassEntryCount is no longer emitted.
     const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
     useConfigStore.getState().buildConnectConfig('k2v5://test@host:443/');
     const allDebugCalls = debugSpy.mock.calls.flat().join(' ');
     expect(allDebugCalls).not.toContain('WeChat');
     expect(allDebugCalls).not.toContain('WeChatAppEx');
-    expect(allDebugCalls).toContain('bypassEntryCount=1');
     debugSpy.mockRestore();
   });
 });
