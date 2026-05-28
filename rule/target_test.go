@@ -195,6 +195,19 @@ func TestHasCriteria_NewFields(t *testing.T) {
 	}
 }
 
+func TestMatchConfig_HasCriteria_RegionAndApps(t *testing.T) {
+	if !(MatchConfig{Region: "cn"}).HasCriteria() {
+		t.Error("MatchConfig{Region: \"cn\"}.HasCriteria() = false, want true")
+	}
+	if !(MatchConfig{Apps: []string{"Firefox*"}}).HasCriteria() {
+		t.Error("MatchConfig{Apps: [...]}.HasCriteria() = false, want true")
+	}
+	// Empty match still has no criteria.
+	if (MatchConfig{}).HasCriteria() {
+		t.Error("empty MatchConfig.HasCriteria() = true, want false")
+	}
+}
+
 func contains(ss []string, s string) bool {
 	for _, v := range ss {
 		if v == s {

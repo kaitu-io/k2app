@@ -55,6 +55,7 @@ type MatchConfig struct {
 // HasCriteria reports whether any matching criterion is set.
 func (m MatchConfig) HasCriteria() bool {
 	return m.Preset != "" || len(m.Names) > 0 || len(m.Exclude) > 0 || m.All ||
+		m.Region != "" || len(m.Apps) > 0 ||
 		len(m.DomainSuffix) > 0 || len(m.IPCIDR) > 0 ||
 		len(m.ProcessName) > 0 || len(m.PackageName) > 0 ||
 		len(m.ProcessNamePrefix) > 0 || len(m.PackageNamePrefix) > 0 ||
