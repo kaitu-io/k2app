@@ -14,7 +14,6 @@ type getPresetsData struct {
 
 type presetRegion struct {
 	ID               string          `json:"id"`
-	Loaded           bool            `json:"loaded"`
 	SetCount         int             `json:"set_count"`
 	AppPatternCounts patternCountSet `json:"app_pattern_counts"`
 }
@@ -50,7 +49,6 @@ func (d *Daemon) getPresets(w http.ResponseWriter, _ map[string]any) {
 	for _, nb := range named {
 		r := presetRegion{
 			ID:       nb.Region,
-			Loaded:   nb.Bundle != nil,
 			SetCount: len(nb.Bundle.Sets),
 		}
 		if nb.Bundle.Apps != nil {

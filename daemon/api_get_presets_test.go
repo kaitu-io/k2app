@@ -18,7 +18,7 @@ func TestAPI_GetPresets_EmptyCacheReturnsEmptyList(t *testing.T) {
 	}
 }
 
-func TestAPI_GetPresets_LoadedBundleAppearsWithCounts(t *testing.T) {
+func TestAPI_GetPresets_BundleAppearsWithCounts(t *testing.T) {
 	d := New()
 	cacheDir := t.TempDir()
 	d.ruleCacheDir = cacheDir
@@ -35,9 +35,6 @@ func TestAPI_GetPresets_LoadedBundleAppearsWithCounts(t *testing.T) {
 	r := data.Regions[0]
 	if r.ID != "cn" {
 		t.Errorf("ID = %q, want cn", r.ID)
-	}
-	if !r.Loaded {
-		t.Errorf("Loaded = false; want true")
 	}
 	if r.SetCount != 1 {
 		t.Errorf("SetCount = %d, want 1", r.SetCount)
