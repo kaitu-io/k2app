@@ -4,6 +4,7 @@ package engine
 
 import (
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/kaitu-io/k2-rules/krs"
@@ -82,10 +83,10 @@ func TestExpandRegionRoute_WindowsMetaUsesWindowsApps(t *testing.T) {
 	if meta == nil {
 		t.Fatal("meta expected")
 	}
-	if !containsStr(meta.ProcessNames, "qq.exe") {
+	if !slices.Contains(meta.ProcessNames, "qq.exe") {
 		t.Errorf("ProcessNames missing qq.exe: %v", meta.ProcessNames)
 	}
-	if !containsStr(meta.ProcessNamePrefixes, "wechat") {
+	if !slices.Contains(meta.ProcessNamePrefixes, "wechat") {
 		t.Errorf("ProcessNamePrefixes missing wechat: %v", meta.ProcessNamePrefixes)
 	}
 }
@@ -102,13 +103,13 @@ func TestExpandRegionRoute_AndroidMetaUsesAndroidAppsAndInstallers(t *testing.T)
 	if meta == nil {
 		t.Fatal("meta expected")
 	}
-	if !containsStr(meta.PackageNames, "com.tencent.mm") {
+	if !slices.Contains(meta.PackageNames, "com.tencent.mm") {
 		t.Errorf("PackageNames missing com.tencent.mm: %v", meta.PackageNames)
 	}
-	if !containsStr(meta.PackageNamePrefixes, "com.alibaba.") {
+	if !slices.Contains(meta.PackageNamePrefixes, "com.alibaba.") {
 		t.Errorf("PackageNamePrefixes missing com.alibaba.: %v", meta.PackageNamePrefixes)
 	}
-	if !containsStr(meta.InstallerPackages, "com.tencent.android.qqdownloader") {
+	if !slices.Contains(meta.InstallerPackages, "com.tencent.android.qqdownloader") {
 		t.Errorf("InstallerPackages missing entry: %v", meta.InstallerPackages)
 	}
 }
@@ -136,10 +137,10 @@ func TestExpandAppsRoute_DarwinPlatformDispatch(t *testing.T) {
 	if entry == nil {
 		t.Fatal("expected meta entry on Darwin")
 	}
-	if !containsStr(entry.ProcessNames, "Firefox") {
+	if !slices.Contains(entry.ProcessNames, "Firefox") {
 		t.Errorf("ProcessNames = %v, want contains Firefox", entry.ProcessNames)
 	}
-	if !containsStr(entry.ProcessNamePrefixes, "chrome") {
+	if !slices.Contains(entry.ProcessNamePrefixes, "chrome") {
 		t.Errorf("ProcessNamePrefixes = %v, want contains chrome (lowercased)", entry.ProcessNamePrefixes)
 	}
 	if entry.Target != rule.Target(3) {
@@ -180,7 +181,6 @@ func equalStrSlices(a, b []string) bool {
 	return true
 }
 
-// containsStr is declared in appbypass_test.go (same package).
 
 func TestBuildRouteEntries_ExpandsMatchRegion(t *testing.T) {
 	cnBundle := fakeBundle("cn-sites", []string{"WeChat"}, nil, nil, nil)
@@ -240,7 +240,7 @@ func TestBuildRouteEntries_ExpandsMatchApps(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("len(entries) = %d, want 1; entries=%+v", len(entries), entries)
 	}
-	if !containsStr(entries[0].ProcessNamePrefixes, "firefox") {
+	if !slices.Contains(entries[0].ProcessNamePrefixes, "firefox") {
 		t.Errorf("ProcessNamePrefixes = %v, want contains firefox", entries[0].ProcessNamePrefixes)
 	}
 }
