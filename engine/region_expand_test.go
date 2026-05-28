@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kaitu-io/k2-rules/krs"
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/rule"
 )
 
@@ -180,3 +181,66 @@ func equalStrSlices(a, b []string) bool {
 }
 
 // containsStr is declared in appbypass_test.go (same package).
+
+func TestBuildRouteEntries_ExpandsMatchRegion(t *testing.T) {
+	cnBundle := fakeBundle("cn-sites", []string{"WeChat"}, nil, nil, nil)
+	regionMap := map[string]*krs.Bundle{"cn": cnBundle}
+
+	cfgRoutes := []config.RouteConfig{
+		{Via: "direct", Match: rule.MatchConfig{Region: "cn"}},
+		{Match: rule.MatchConfig{All: true}, Via: "k2v5://x"},
+	}
+	outboundMap := map[string]rule.Target{"k2v5://x": rule.Target(2)}
+
+	entries, _, _ := buildRouteEntries(cfgRoutes, nil, outboundMap, regionMap)
+
+	wantEntries := 1
+	switch runtime.GOOS {
+	case "darwin", "windows", "android":
+		wantEntries = 2
+	}
+	if len(entries) != wantEntries {
+		t.Fatalf("len(entries) = %d, want %d; entries=%+v", len(entries), wantEntries, entries)
+	}
+	if len(entries[0].Sets) != 1 {
+		t.Errorf("entries[0] (host) Sets = %d, want 1", len(entries[0].Sets))
+	}
+}
+
+func TestBuildRouteEntries_UnknownRegionLogsAndSkips(t *testing.T) {
+	regionMap := map[string]*krs.Bundle{} // empty — no "cn" loaded
+	cfgRoutes := []config.RouteConfig{
+		{Via: "direct", Match: rule.MatchConfig{Region: "cn"}},
+		{Match: rule.MatchConfig{All: true}, Via: "k2v5://x"},
+	}
+	outboundMap := map[string]rule.Target{"k2v5://x": rule.Target(2)}
+
+	entries, fallback, _ := buildRouteEntries(cfgRoutes, nil, outboundMap, regionMap)
+
+	if len(entries) != 0 {
+		t.Errorf("unknown region must produce 0 entries; got %+v", entries)
+	}
+	if fallback != rule.Target(2) {
+		t.Errorf("fallback should still be set from catch-all; got %v", fallback)
+	}
+}
+
+func TestBuildRouteEntries_ExpandsMatchApps(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Darwin-only smoke for apps expansion")
+	}
+	cfgRoutes := []config.RouteConfig{
+		{Via: "k2v5://x", Match: rule.MatchConfig{Apps: []string{"Firefox*"}}},
+		{Match: rule.MatchConfig{All: true}, Via: "k2v5://x"},
+	}
+	outboundMap := map[string]rule.Target{"k2v5://x": rule.Target(2)}
+
+	entries, _, _ := buildRouteEntries(cfgRoutes, nil, outboundMap, nil)
+
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1; entries=%+v", len(entries), entries)
+	}
+	if !containsStr(entries[0].ProcessNamePrefixes, "firefox") {
+		t.Errorf("ProcessNamePrefixes = %v, want contains firefox", entries[0].ProcessNamePrefixes)
+	}
+}

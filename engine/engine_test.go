@@ -2035,7 +2035,7 @@ func TestBuildRouteEntries_NewFieldsCopied(t *testing.T) {
 			InstallerPackage:  []string{"com.xiaomi.market"},
 		},
 	}}
-	entries, _, _ := buildRouteEntries(routes, nil, map[string]rule.Target{})
+	entries, _, _ := buildRouteEntries(routes, nil, map[string]rule.Target{}, nil)
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}

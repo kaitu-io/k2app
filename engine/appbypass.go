@@ -165,12 +165,16 @@ func (e *Engine) RefreshAppBypass() error {
 		return fmt.Errorf("appbypass refresh: load bundles: %w", err)
 	}
 	bundles := make([]*krs.Bundle, 0, len(named))
+	regionBundles := make(map[string]*krs.Bundle, len(named))
 	for _, nb := range named {
 		bundles = append(bundles, nb.Bundle)
+		if nb.Region != "" {
+			regionBundles[nb.Region] = nb.Bundle
+		}
 	}
 	idx := krs.Index(bundles)
 	outboundMap := buildOutboundMap(client.Routes)
-	entries, _, _ := buildRouteEntries(finalRoutes, idx, outboundMap)
+	entries, _, _ := buildRouteEntries(finalRoutes, idx, outboundMap, regionBundles)
 	return re.ReloadNamed(entries, named)
 }
 

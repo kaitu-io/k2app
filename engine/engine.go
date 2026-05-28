@@ -606,8 +606,12 @@ func (e *Engine) Start(cfg Config) error {
 				return nil, nil, err
 			}
 			bundles := make([]*krs.Bundle, 0, len(named))
+			regionBundlesRebuild := make(map[string]*krs.Bundle, len(named))
 			for _, nb := range named {
 				bundles = append(bundles, nb.Bundle)
+				if nb.Region != "" {
+					regionBundlesRebuild[nb.Region] = nb.Bundle
+				}
 			}
 			idx := krs.Index(bundles)
 
@@ -639,7 +643,7 @@ func (e *Engine) Start(cfg Config) error {
 			}
 			finalRoutes = append(finalRoutes, client.Routes...)
 
-			entries, _, _ := buildRouteEntries(finalRoutes, idx, outboundMap)
+			entries, _, _ := buildRouteEntries(finalRoutes, idx, outboundMap, regionBundlesRebuild)
 			return entries, named, nil
 		}
 		rule.StartUpdaterNamed(ctx, ruleEngine, client.CacheDir, sources, rebuildFn)
@@ -1163,7 +1167,7 @@ func (e *Engine) fail(err error) error {
 // outboundMap maps via URL → rule.Target for wire outbounds.
 // Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
 // ensures both always produce identical routing tables from the same config+bundles.
-func buildRouteEntries(routes []config.RouteConfig, idx map[string]*krs.NamedSet, outboundMap map[string]rule.Target) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
+func buildRouteEntries(routes []config.RouteConfig, idx map[string]*krs.NamedSet, outboundMap map[string]rule.Target, regionBundles map[string]*krs.Bundle) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
 	fallback = outboundDirect
 
 	for i, route := range routes {
@@ -1213,6 +1217,33 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]*krs.NamedSet
 		entry.ProcessNamePrefixes = lowerCopy(route.Match.ProcessNamePrefix)
 		entry.PackageNamePrefixes = append([]string(nil), route.Match.PackageNamePrefix...)
 		entry.InstallerPackages = append([]string(nil), route.Match.InstallerPackage...)
+
+		// Plan B: expand match.region into one host entry (Sets) + one meta
+		// entry (process/package criteria from bundle.Apps[GOOS]). The two
+		// entries are appended directly to `entries` — the per-route `entry`
+		// below is legacy (preset/names/inline/meta) and only appended if it
+		// has its own criteria. region/apps and legacy fields can coexist on
+		// one route, though webapp emits them on separate routes.
+		if route.Match.Region != "" {
+			b, ok := regionBundles[route.Match.Region]
+			if !ok || b == nil {
+				slog.Warn("engine: match.region bundle not loaded — skipping route",
+					"region", route.Match.Region, "via", config.TruncateVia(route.Via))
+			} else {
+				host, meta := expandRegionRoute(b, target)
+				if host != nil {
+					entries = append(entries, *host)
+				}
+				if meta != nil {
+					entries = append(entries, *meta)
+				}
+			}
+		}
+		if len(route.Match.Apps) > 0 {
+			if meta := expandAppsRoute(route.Match.Apps, target); meta != nil {
+				entries = append(entries, *meta)
+			}
+		}
 
 		hasAnyCriteria := len(entry.Sets) > 0 ||
 			(entry.Inline != nil && !entry.Inline.IsEmpty()) ||
@@ -1399,11 +1430,15 @@ func buildRuleEngine(
 		slog.Warn("engine: rule load failed", "err", err)
 	}
 	bundles := make([]*krs.Bundle, 0, len(named))
+	regionBundles := make(map[string]*krs.Bundle, len(named))
 	for _, nb := range named {
 		bundles = append(bundles, nb.Bundle)
+		if nb.Region != "" {
+			regionBundles[nb.Region] = nb.Bundle
+		}
 	}
 	idx := krs.Index(bundles)
-	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap)
+	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap, regionBundles)
 
 	hasRules := len(bundles) > 0
 	for _, e := range entries {
