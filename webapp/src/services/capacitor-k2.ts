@@ -14,7 +14,7 @@ import { Clipboard } from '@capacitor/clipboard';
 import { Share } from '@capacitor/share';
 import { getDeviceUdid } from './device-udid';
 import { K2Plugin } from 'k2-plugin';
-import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, InstalledApp } from '../types/kaitu-core';
 import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { createCapacitorStorage } from './capacitor-storage';
@@ -233,9 +233,15 @@ export async function injectCapacitorGlobals(): Promise<void> {
     },
 
     appList: Capacitor.getPlatform() === 'android' ? {
-      listInstalled: async () => {
+      listInstalled: async (): Promise<InstalledApp[]> => {
         const res = await K2Plugin.listInstalledApps();
-        return res.apps;
+        return res.apps.map((a: { packageName: string; label: string; iconUrl?: string; installerPackageName?: string | null }) => ({
+          id: a.packageName,
+          label: a.label,
+          iconUrl: a.iconUrl,
+          installerPackageName: a.installerPackageName ?? undefined,
+          processNames: [a.packageName],
+        }));
       },
     } : undefined,
   };
