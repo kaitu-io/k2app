@@ -81,6 +81,8 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		d.appBypassPreview(w, req.Params)
 	case "classify-apps":
 		d.classifyApps(w, req.Params)
+	case "get-presets":
+		d.getPresets(w, req.Params)
 	default:
 		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("unknown action: %s", req.Action)})
 	}
