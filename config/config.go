@@ -28,34 +28,9 @@ type ClientConfig struct {
 	RuleSources []string `yaml:"rule_sources,omitempty" json:"rule_sources,omitempty"` // override default k2b download sources
 	Telemetry TelemetryConfig `yaml:"telemetry,omitempty" json:"telemetry,omitempty"` // anonymous usage telemetry (Phase 1: rule miss)
 
-	// AppBypass selects a region preset + carries user-added per-app routing
-	// overrides. Omitted (nil) disables smart app bypass; the engine still
-	// honors any explicit direct routes in Routes. Patterns come from the
-	// per-region <cc>.krs bundle's Apps section. See
-	// docs/superpowers/specs/2026-05-27-app-bypass-routes-unification.md.
-	// Plan B retires this field in favor of routes[].match.region.
-	AppBypass *AppBypassConfig `yaml:"app_bypass,omitempty" json:"app_bypass,omitempty"`
-
 	// Derived fields (not serialized to YAML/JSON).
 	Server string `yaml:"-" json:"-"` // first k2v5:// URL from routes
 
-}
-
-// AppBypassConfig is the on-wire shape of the App Bypass v2 client payload.
-//
-// Region is an ISO 3166-1 alpha-2 code (lowercase, e.g. "cn"). When empty,
-// the daemon may derive it from the routes' preset (e.g. "cn-access" → "cn")
-// so a global-mode connect still picks up smart bypass tied to the user's
-// geography.
-//
-// ProcessAdds / PackageAdds are merged into the region preset's
-// process_name / package_name lists at engine.Start time. Both are
-// case-sensitive — entries copied verbatim from PackageManager / process
-// attribution output.
-type AppBypassConfig struct {
-	Region      string   `yaml:"region,omitempty"       json:"region,omitempty"`
-	ProcessAdds []string `yaml:"process_adds,omitempty" json:"process_adds,omitempty"`
-	PackageAdds []string `yaml:"package_adds,omitempty" json:"package_adds,omitempty"`
 }
 
 // TelemetryConfig groups anonymous telemetry sub-features. Zero value means

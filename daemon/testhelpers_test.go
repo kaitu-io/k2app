@@ -14,7 +14,7 @@ import (
 
 // writeCNBundle drops a minimal cn.krs file in dir with WeChat patterns for
 // Darwin + Windows, plus a named set so get-presets can count sets.
-// Used by app-bypass-preview, classify-apps, and get-presets tests.
+// Used by classify-apps and get-presets tests.
 func writeCNBundle(t *testing.T, dir string) {
 	t.Helper()
 	var buf bytes.Buffer

@@ -43,8 +43,9 @@ type classifyResult struct {
 // codepath as the engine consumes at runtime (krs.MatchInstalled over the
 // same bundle.Apps), so UI badges and routing agree.
 //
-// Plan B replaces app-bypass-preview. Unknown region or missing bundle =
-// every app defaults to proxy (fail-soft, no error).
+// Plan B's installed-app classifier (supersedes the removed preview action).
+// Unknown region or missing bundle = every app defaults to proxy
+// (fail-soft, no error).
 func (d *Daemon) classifyApps(w http.ResponseWriter, params map[string]any) {
 	raw, err := json.Marshal(params)
 	if err != nil {

@@ -20,8 +20,8 @@ type MatchConfig struct {
 	// Region selects a loaded *.krs bundle by basename (e.g. "cn").
 	// Expanded by engine.buildRouteEntries into one host route over
 	// bundle.Sets + one meta route over bundle.Apps[GOOS] via
-	// rule.SplitGlobs. Empty = no region match. Plan B replaces the
-	// legacy app_bypass top-level field + the cn-access preset pair.
+	// rule.SplitGlobs. Empty = no region match. Plan B's single smart-bypass
+	// routing vocabulary, replacing the old top-level field + cn-access preset.
 	Region string `yaml:"region,omitempty" json:"region,omitempty"`
 
 	// Inline host matching (compiled at engine build time).

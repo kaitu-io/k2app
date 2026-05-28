@@ -11,7 +11,6 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
-	"github.com/kaitu-io/k2/rule"
 )
 
 // ==========================================================================
@@ -663,35 +662,4 @@ func TestTeardownFilter_CounterSemantics(t *testing.T) {
 	if d.State() != engine.StateDisconnected {
 		t.Fatalf("filter still active despite counter=0: state=%q", d.State())
 	}
-}
-
-// TestDoUp_IgnoresStaleAppBypassWireField guards spec §5 forward-compat:
-// a newer daemon must accept an older client that still emits app_bypass on
-// the wire and must not crash or surface that legacy state. config.AppBypass
-// struct field stays alive until a later phase; this test is deleted then.
-func TestDoUp_IgnoresStaleAppBypassWireField(t *testing.T) {
-	cfg := &config.ClientConfig{
-		Server: "k2v5://x",
-		Mode:   "tun",
-		AppBypass: &config.AppBypassConfig{
-			Region:      "cn",
-			ProcessAdds: []string{"Steam.app"},
-		},
-		Routes: []config.RouteConfig{{Via: "k2v5://x", Match: rule.MatchConfig{All: true}}},
-	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var got config.ClientConfig
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if got.AppBypass == nil || got.AppBypass.Region != "cn" {
-		t.Errorf("legacy app_bypass roundtrip lost: %+v", got.AppBypass)
-	}
-	// Daemon ingest is gone: constructing a daemon and feeding it this config
-	// must not panic or surface the legacy field anywhere.
-	d := New()
-	_ = d
 }
