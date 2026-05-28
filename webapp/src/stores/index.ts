@@ -42,9 +42,6 @@ export {
 // ============ Config Store ============
 export { useConfigStore } from './config.store';
 
-// ============ App Bypass Store ============
-export { useAppBypassStore } from './app-bypass.store';
-
 // ============ Connection Store ============
 export { useConnectionStore, initializeConnectionStore } from './connection.store';
 
