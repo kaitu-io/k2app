@@ -1,10 +1,8 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { useTranslation } from "react-i18next";
 import {
-  Box,
-  CircularProgress,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -37,16 +35,6 @@ import Delegate from "./pages/Delegate";
 import Changelog from "./pages/Changelog";
 import { getCurrentAppConfig } from "./config/apps";
 
-const AppBypass = lazy(() => import('./pages/AppBypass'));
-
-function RouteSpinner() {
-  return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-      <CircularProgress size={28} />
-    </Box>
-  );
-}
-
 // 应用路由组件
 function AppRoutes() {
   const { t } = useTranslation();
@@ -73,13 +61,6 @@ function AppRoutes() {
             <Route path="purchase" element={<Purchase />} />
           )}
           <Route path="tunnels" element={<Tunnels />} />
-          {appConfig.features.appBypass && (
-            <Route path="app-bypass" element={
-              <Suspense fallback={<RouteSpinner />}>
-                <AppBypass />
-              </Suspense>
-            } />
-          )}
           <Route path="changelog" element={<Changelog />} />
           <Route path="service-error" element={<ServiceError />} />
           <Route path="devices" element={<LoginRequiredGuard pagePath="/devices"><Devices /></LoginRequiredGuard>} />
