@@ -37,9 +37,9 @@ func WithCheckInterval(d time.Duration) UpdaterOption {
 // Returns the new routes and bundles for Engine.Reload().
 type RebuildFunc func(cacheDir string) ([]RouteEntry, []*krs.Bundle, error)
 
-// RebuildFuncNamed is the NamedBundle variant of RebuildFunc — preserves
-// filename→region mapping across background refreshes so Engine.BundleByRegion
-// keeps returning the current bundle (consumed by Plan B's match.region resolver).
+// RebuildFuncNamed is the NamedBundle variant of RebuildFunc. The engine's
+// background refresh builds NamedBundles (region + bundle) so the rebuild
+// closure can recompute match.region routes from the refreshed set.
 type RebuildFuncNamed func(cacheDir string) ([]RouteEntry, []NamedBundle, error)
 
 // DownloadAndReload calls EnsureBundles (fetches the rule-bundle tarball

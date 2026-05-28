@@ -36,8 +36,8 @@ type InstalledApp struct {
 }
 
 // AppListProvider enumerates installed user applications. Used only by
-// the daemon's `app-bypass-preview` action (spec §9.4) — routing does
-// NOT depend on this list, so a transient enumeration failure cannot
+// the daemon's classify-apps / get-presets discovery actions — routing
+// does NOT depend on this list, so a transient enumeration failure cannot
 // break VPN flows.
 type AppListProvider interface {
 	// ListInstalled returns the current installed-apps snapshot.
