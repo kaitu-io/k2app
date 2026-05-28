@@ -17,9 +17,24 @@ type MatchConfig struct {
 	Names   []string `yaml:"names,omitempty"   json:"names,omitempty"`
 	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
 
+	// Region selects a loaded *.krs bundle by basename (e.g. "cn").
+	// Expanded by engine.buildRouteEntries into one host route over
+	// bundle.Sets + one meta route over bundle.Apps[GOOS] via
+	// rule.SplitGlobs. Empty = no region match. Plan B's single smart-bypass
+	// routing vocabulary, replacing the old top-level field + cn-access preset.
+	Region string `yaml:"region,omitempty" json:"region,omitempty"`
+
 	// Inline host matching (compiled at engine build time).
 	DomainSuffix []string `yaml:"domain_suffix,omitempty" json:"domain_suffix,omitempty"`
 	IPCIDR       []string `yaml:"ip_cidr,omitempty"       json:"ip_cidr,omitempty"`
+
+	// Apps lists single-* glob patterns matched against the running
+	// process's executable basename (desktop) or installed package id
+	// (Android). Platform-dispatched at engine.buildRouteEntries via
+	// runtime.GOOS — patterns aimed at the wrong platform are silently
+	// ignored. Used by Plan C Tier-1 force-override routes; emitted by
+	// webapp app-routes.store.
+	Apps []string `yaml:"apps,omitempty" json:"apps,omitempty"`
 
 	// Connection metadata matching.
 	ProcessName []string `yaml:"process_name,omitempty" json:"process_name,omitempty"`
@@ -40,6 +55,7 @@ type MatchConfig struct {
 // HasCriteria reports whether any matching criterion is set.
 func (m MatchConfig) HasCriteria() bool {
 	return m.Preset != "" || len(m.Names) > 0 || len(m.Exclude) > 0 || m.All ||
+		m.Region != "" || len(m.Apps) > 0 ||
 		len(m.DomainSuffix) > 0 || len(m.IPCIDR) > 0 ||
 		len(m.ProcessName) > 0 || len(m.PackageName) > 0 ||
 		len(m.ProcessNamePrefix) > 0 || len(m.PackageNamePrefix) > 0 ||

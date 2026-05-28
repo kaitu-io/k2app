@@ -71,14 +71,10 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		d.handleVersion(w)
 	case "probe":
 		d.handleProbe(w, req.Params)
-	case "app-bypass-get":
-		d.appBypassGet(w, req.Params)
-	case "app-bypass-set-custom":
-		d.appBypassSetCustom(w, req.Params)
-	case "app-bypass-set-region":
-		d.appBypassSetRegion(w, req.Params)
-	case "app-bypass-preview":
-		d.appBypassPreview(w, req.Params)
+	case "classify-apps":
+		d.classifyApps(w, req.Params)
+	case "get-presets":
+		d.getPresets(w, req.Params)
 	default:
 		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("unknown action: %s", req.Action)})
 	}

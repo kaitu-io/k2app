@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
-	"github.com/kaitu-io/k2/rule"
 )
 
 // ==========================================================================
@@ -663,111 +661,5 @@ func TestTeardownFilter_CounterSemantics(t *testing.T) {
 	d.OnStatus(engine.Status{State: engine.StateDisconnected})
 	if d.State() != engine.StateDisconnected {
 		t.Fatalf("filter still active despite counter=0: state=%q", d.State())
-	}
-}
-
-// ==========================================================================
-// App-bypass startup-seed tests (Task 15)
-// ==========================================================================
-
-func TestDaemon_StartupSeedsAppBypassFromState(t *testing.T) {
-	// Inject a test state dir so saveState/loadState use an isolated file.
-	tmpDir := t.TempDir()
-	origDir := stateDir
-	stateDir = func() string { return tmpDir }
-	defer func() { stateDir = origDir }()
-
-	// Seed state.json with an AppBypass entry, no Config (fresh-install case).
-	saveState(persistedState{
-		State:     "disconnected",
-		Timestamp: time.Now().UTC(),
-		AppBypass: &AppBypassOverrides{
-			Region:      "cn",
-			ProcessAdds: []string{"Steam"},
-		},
-	})
-
-	d := New()
-	// tryAutoReconnect is the existing loadState call site; invoke it with a
-	// pre-cancelled context so it won't attempt a real tunnel connection.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	d.tryAutoReconnect(ctx)
-
-	got := d.currentAppBypass()
-	if got.Region != "cn" {
-		t.Errorf("Region = %q, want cn (got: %+v)", got.Region, got)
-	}
-	if !containsAppBypassStr(got.ProcessAdds, "Steam") {
-		t.Errorf("ProcessAdds should contain Steam: %v", got.ProcessAdds)
-	}
-}
-
-func containsAppBypassStr(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
-}
-
-// TestIngestClientAppBypass_ExplicitRegion verifies that a ClientConfig
-// carrying an explicit AppBypass block populates the daemon's in-memory
-// overrides directly (no derivation needed).
-func TestIngestClientAppBypass_ExplicitRegion(t *testing.T) {
-	d := New()
-	d.ingestClientAppBypass(&config.ClientConfig{
-		AppBypass: &config.AppBypassConfig{
-			Region:      "CN", // upper-case → daemon lower-cases
-			ProcessAdds: []string{"Steam", "steam_osx"},
-			PackageAdds: []string{"com.gtja.client"},
-		},
-	})
-	got := d.currentAppBypass()
-	if got.Region != "cn" {
-		t.Errorf("Region = %q, want cn", got.Region)
-	}
-	if !containsAppBypassStr(got.ProcessAdds, "Steam") || !containsAppBypassStr(got.ProcessAdds, "steam_osx") {
-		t.Errorf("ProcessAdds = %v, want both Steam and steam_osx", got.ProcessAdds)
-	}
-	if !containsAppBypassStr(got.PackageAdds, "com.gtja.client") {
-		t.Errorf("PackageAdds = %v, want com.gtja.client", got.PackageAdds)
-	}
-}
-
-// TestIngestClientAppBypass_DeriveFromPreset verifies the fallback: when
-// ClientConfig.AppBypass is nil, the daemon scans routes for a
-// "<cc>-access" preset and uses that as the smart-bypass region. Lets a
-// global-mode connect still pick up region-aware app bypass.
-func TestIngestClientAppBypass_DeriveFromPreset(t *testing.T) {
-	d := New()
-	d.ingestClientAppBypass(&config.ClientConfig{
-		Routes: []config.RouteConfig{
-			{Via: "direct", Match: rule.MatchConfig{Preset: "cn-access"}},
-			{Via: "k2v5://example/", Match: rule.MatchConfig{}},
-		},
-	})
-	got := d.currentAppBypass()
-	if got.Region != "cn" {
-		t.Errorf("Region = %q, want cn (derived from cn-access preset)", got.Region)
-	}
-}
-
-// TestIngestClientAppBypass_NoSignal verifies the no-op path: a connect
-// without any AppBypass payload and without a region-preset clears any
-// stale overrides so the engine builds with smart bypass off.
-func TestIngestClientAppBypass_NoSignal(t *testing.T) {
-	d := New()
-	// Pre-load a stale region to confirm it gets cleared.
-	d.appBypassOverrides = AppBypassOverrides{Region: "ru"}
-	d.ingestClientAppBypass(&config.ClientConfig{
-		Routes: []config.RouteConfig{
-			{Via: "k2v5://example/", Match: rule.MatchConfig{All: true}},
-		},
-	})
-	got := d.currentAppBypass()
-	if got.Region != "" {
-		t.Errorf("Region = %q, want empty (no AppBypass payload, no preset)", got.Region)
 	}
 }

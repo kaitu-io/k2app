@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
-	"strings"
 	"syscall"
 	"time"
 
@@ -178,12 +177,6 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 		FileDescriptor:   fd,
 		NetworkExtension: isNetworkExtension,
 	}
-	// App Bypass v2: wire ClientConfig.AppBypass → engine.Config so mobile
-	// (Android, primarily) honors the webapp's region preset + user-added
-	// process/package list. iOS is feature-supported=false on the daemon
-	// side (no per-process attribution in NE), but harmless to forward —
-	// engine.buildAppBypassRoute drops the routes when matchers never fire.
-	ecfg.AppBypassRegion, ecfg.AppBypassCustom = resolveAppBypass(&clientCfg)
 	if cfg.SocketProtector != nil {
 		p := cfg.SocketProtector
 		ecfg.DirectDialer = &protectedDialer{
@@ -336,37 +329,4 @@ func (e *Engine) StatusJSON() (result string) {
 		}
 	}()
 	return e.inner.StatusJSON()
-}
-
-// resolveAppBypass extracts the App Bypass v2 region + custom adds from a
-// ClientConfig. Mirrors daemon.ingestClientAppBypass + deriveRegionFromRoutes
-// so the same wire payload yields the same engine config on both desktop
-// (daemon-mediated) and mobile (appext-mediated) paths.
-//
-// Behavior:
-//   - explicit AppBypass.Region (trimmed + lowercased) wins
-//   - empty region falls back to first "<cc>-access" preset in routes
-//   - ProcessAdds / PackageAdds copied as-is (engine.buildAppBypassRoute dedups)
-//
-// Returns the zero region + zero AppBypassCustom when no signal is present.
-func resolveAppBypass(c *config.ClientConfig) (string, engine.AppBypassCustom) {
-	if c == nil {
-		return "", engine.AppBypassCustom{}
-	}
-	var region string
-	var custom engine.AppBypassCustom
-	if ab := c.AppBypass; ab != nil {
-		region = strings.ToLower(strings.TrimSpace(ab.Region))
-		custom.ProcessAdds = ab.ProcessAdds
-		custom.PackageAdds = ab.PackageAdds
-	}
-	if region == "" {
-		for _, r := range c.Routes {
-			if cc, ok := strings.CutSuffix(r.Match.Preset, "-access"); ok && len(cc) == 2 {
-				region = strings.ToLower(cc)
-				break
-			}
-		}
-	}
-	return region, custom
 }
