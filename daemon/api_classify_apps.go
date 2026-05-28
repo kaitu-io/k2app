@@ -48,7 +48,7 @@ type classifyResult struct {
 func (d *Daemon) classifyApps(w http.ResponseWriter, params map[string]any) {
 	raw, err := json.Marshal(params)
 	if err != nil {
-		writeJSON(w, Response{Code: 400, Message: "bad params"})
+		writeJSON(w, Response{Code: 400, Message: "bad params: " + err.Error()})
 		return
 	}
 	var req classifyAppsRequest

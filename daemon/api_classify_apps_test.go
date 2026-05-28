@@ -1,5 +1,3 @@
-//go:build !ios
-
 package daemon
 
 import (
@@ -94,6 +92,7 @@ func TestAPI_ClassifyApps_UnknownRegionReturnsAllProxy(t *testing.T) {
 func TestAPI_ClassifyApps_RespectsAndroidInstallerPriority(t *testing.T) {
 	if runtime.GOOS != "android" {
 		t.Skip("Android installer-priority test")
+		// NOTE: desktop CI always skips this — exercise via an Android test run.
 	}
 	d := New()
 	cacheDir := t.TempDir()
