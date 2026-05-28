@@ -39,9 +39,7 @@ func TestExpandRegionRoute_HostEntryReferencesBundleSets(t *testing.T) {
 	if host.Target != target {
 		t.Errorf("host.Target = %v, want %v", host.Target, target)
 	}
-	if meta != nil && len(meta.ProcessNames) == 0 && len(meta.ProcessNamePrefixes) == 0 &&
-		len(meta.PackageNames) == 0 && len(meta.PackageNamePrefixes) == 0 &&
-		len(meta.InstallerPackages) == 0 {
+	if meta != nil {
 		t.Errorf("meta entry should be nil when bundle.Apps has no patterns; got %+v", meta)
 	}
 }
@@ -76,7 +74,7 @@ func TestExpandRegionRoute_WindowsMetaUsesWindowsApps(t *testing.T) {
 		t.Skip("Windows-only — Windows.Apps expansion")
 	}
 	b := fakeBundle("cn-sites", nil,
-		[]string{"qq.exe", "wechat*.exe"},
+		[]string{"qq.exe", "wechat*"},
 		nil, nil,
 	)
 	_, meta := expandRegionRoute(b, rule.Target(2))
@@ -154,6 +152,18 @@ func TestExpandAppsRoute_EmptyReturnsNil(t *testing.T) {
 	}
 	if entry := expandAppsRoute([]string{}, rule.Target(3)); entry != nil {
 		t.Errorf("empty globs → nil entry; got %+v", entry)
+	}
+}
+
+func TestExpandAppsRoute_UnsupportedPlatformReturnsNil(t *testing.T) {
+	switch runtime.GOOS {
+	case "darwin", "windows", "android":
+		t.Skip("covered by platform-specific dispatch tests")
+	}
+	// linux / ios: non-empty globs still produce no meta entry (no per-process
+	// attribution available).
+	if entry := expandAppsRoute([]string{"firefox", "chrome*"}, rule.Target(3)); entry != nil {
+		t.Errorf("unsupported platform must return nil even for non-empty globs; got %+v", entry)
 	}
 }
 
