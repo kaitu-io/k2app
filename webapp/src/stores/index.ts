@@ -70,7 +70,7 @@ import { useConfigStore } from './config.store';
 import { initializeConnectionStore, useConnectionStore } from './connection.store';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useFeedbackStore } from './feedback.store';
-import { useAppBypassStore } from './app-bypass.store';
+import { useAppRoutesStore } from './app-routes.store';
 
 /**
  * 初始化所有 Store
@@ -90,11 +90,7 @@ export function initializeAllStores(): () => void {
     useConfigStore.getState().fetchGeoDetection();
   });
   useSelfHostedStore.getState().loadTunnel(); // fire-and-forget, sets loaded=true when done
-  useAppBypassStore.getState().load(); // fire-and-forget; sets loaded=true when done
-
-  // App Bypass v2: regional detection moved into the Go engine. Webapp no
-  // longer enumerates installed apps client-side — region + custom adds are
-  // forwarded via ClientConfig.app_bypass at every connect.
+  useAppRoutesStore.getState().load(); // fire-and-forget; runs legacy-key migration + hydrate
 
   const cleanupAuth = initializeAuthStore();
   const cleanupVPNMachine = initializeVPNMachine();
