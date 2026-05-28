@@ -79,6 +79,8 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		d.appBypassSetRegion(w, req.Params)
 	case "app-bypass-preview":
 		d.appBypassPreview(w, req.Params)
+	case "classify-apps":
+		d.classifyApps(w, req.Params)
 	default:
 		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("unknown action: %s", req.Action)})
 	}
