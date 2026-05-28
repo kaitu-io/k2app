@@ -50,7 +50,7 @@ export interface MatchConfig {
   // Connection metadata
   process_name?: string[];
   package_name?: string[];
-  // v2 (app-bypass): prefix matching + Android installer source.
+  // Prefix matching + Android installer source.
   process_name_prefix?: string[];
   package_name_prefix?: string[];
   installer_package?: string[];

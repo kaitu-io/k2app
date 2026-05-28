@@ -232,11 +232,6 @@ export async function injectCapacitorGlobals(): Promise<void> {
       K2Plugin.setDevEnabled({ enabled }).catch(() => {});
     },
 
-    // NOTE: capacitor-k2 deliberately does NOT set `appBypass.daemonBacked`.
-    // Mobile has no daemon HTTP surface — app-bypass state lives in
-    // _platform.storage on this platform and gets packed into ClientConfig
-    // at connect time by config.store.buildConnectConfig(). See P2 plan §
-    // "Mobile scoping decision".
     appList: Capacitor.getPlatform() === 'android' ? {
       listInstalled: async () => {
         const res = await K2Plugin.listInstalledApps();

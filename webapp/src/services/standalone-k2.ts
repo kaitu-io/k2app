@@ -104,8 +104,6 @@ export const standalonePlatform: IPlatform = {
       }));
     },
   },
-
-  appBypass: { daemonBacked: true },
 };
 
 export function isK2Injected(): boolean {
