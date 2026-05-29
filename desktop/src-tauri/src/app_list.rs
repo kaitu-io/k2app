@@ -51,15 +51,18 @@ fn collect_helper_basenames(bundle_url: &str, pid_paths: &[(i32, &str)]) -> Vec<
 fn is_macos_system_path(path: &str) -> bool {
     const SYS_DIRS: &[&str] = &[
         "/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/usr/bin/", "/bin/",
+        "/Library/Apple/", "/Library/Developer/",
+        "/private/var/folders/", "/private/tmp/", "/tmp/",
     ];
     SYS_DIRS.iter().any(|p| path.starts_with(p))
 }
 
-/// True if `path` is inside a `.app` bundle (some ancestor path segment ends in
-/// ".app"). Such processes are GUI apps already covered by the NSWorkspace pass.
+/// True if `path` is inside a `.app` or `.xpc` bundle (some path segment ends in
+/// ".app"/".xpc"). `.app`s are GUI apps already covered by the NSWorkspace pass;
+/// `.xpc` services are background helpers, never user-routable.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn is_inside_app_bundle(path: &str) -> bool {
-    path.split('/').any(|seg| seg.ends_with(".app"))
+fn is_inside_bundle(path: &str) -> bool {
+    path.split('/').any(|seg| seg.ends_with(".app") || seg.ends_with(".xpc"))
 }
 
 /// True if `path` is under `C:\Windows` (case-insensitive, slash-normalized).
@@ -215,7 +218,7 @@ mod macos {
         let mut seen_exe: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for (_, path) in &pid_paths_owned {
             let path = path.as_str();
-            if is_inside_app_bundle(path) || is_macos_system_path(path) {
+            if is_inside_bundle(path) || is_macos_system_path(path) {
                 continue;
             }
             if !seen_exe.insert(path) {
@@ -355,22 +358,32 @@ mod tests {
         assert!(is_macos_system_path("/sbin/launchd"));
         assert!(is_macos_system_path("/usr/bin/ssh"));
         assert!(is_macos_system_path("/bin/zsh"));
+        assert!(is_macos_system_path("/Library/Apple/System/Library/PrivateFrameworks/MobileDevice.framework/Versions/A/Resources/usbmuxd"));
+        assert!(is_macos_system_path("/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simdiskimaged"));
+        assert!(is_macos_system_path("/private/var/folders/qh/abc/T/go-build123/b001/exe/meety"));
+        assert!(is_macos_system_path("/private/tmp/foo"));
+        assert!(is_macos_system_path("/tmp/foo"));
         // User-relevant locations are NOT system paths:
         assert!(!is_macos_system_path("/opt/homebrew/bin/node"));
         assert!(!is_macos_system_path("/usr/local/bin/yt-dlp"));
         assert!(!is_macos_system_path("/Users/david/go/bin/mytool"));
         assert!(!is_macos_system_path("/Applications/QQ.app/Contents/MacOS/QQ"));
+        assert!(!is_macos_system_path("/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home/bin/java"));
     }
 
     #[test]
-    fn detects_inside_app_bundle() {
-        assert!(is_inside_app_bundle("/Applications/QQ.app/Contents/MacOS/QQ"));
-        assert!(is_inside_app_bundle(
+    fn detects_inside_bundle() {
+        assert!(is_inside_bundle("/Applications/QQ.app/Contents/MacOS/QQ"));
+        assert!(is_inside_bundle(
             "/Applications/Slack.app/Contents/Frameworks/Slack Helper.app/Contents/MacOS/Slack Helper"
         ));
+        // .xpc services are bundles too:
+        assert!(is_inside_bundle(
+            "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/XPCServices/SimLaunchHost.arm64.xpc/Contents/MacOS/SimLaunchHost.arm64"
+        ));
         // Standalone binaries are NOT inside a bundle:
-        assert!(!is_inside_app_bundle("/opt/homebrew/bin/node"));
-        assert!(!is_inside_app_bundle("/usr/local/bin/python3"));
+        assert!(!is_inside_bundle("/opt/homebrew/bin/node"));
+        assert!(!is_inside_bundle("/usr/local/bin/python3"));
     }
 
     #[test]
