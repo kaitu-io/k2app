@@ -80,15 +80,24 @@ The existing `enumerate` already walks every process. **Add** rule (a): skip any
 process whose exe path is under `C:\Windows` (case-insensitive). No owner lookup.
 Everything else unchanged.
 
-### Known limitation — macOS root processes (verify first)
-`app_list` runs in the **Tauri user process**, not the root daemon. macOS may
-return `EPERM` from `proc_pidpath` for processes owned by *other* users (root).
-If so, truly-root programs will not appear on macOS in v1. This is acceptable:
-the common brew/`node`/dev-server case runs as the logged-in user and is
-unaffected. **Implementation step 1 is to verify the EPERM behaviour** with a
-real `sudo`-launched binary; if confirmed, degrade gracefully (skip processes we
-can't read, do not error). Moving enumeration into the root daemon (which has
-`ProcessSearcher`) is a possible future enhancement, explicitly out of scope here.
+### macOS root-process coverage — VERIFIED (2026-05-29)
+Empirically confirmed that the **user-level Tauri process can read every
+process's exe path, including root-owned ones**, with no special privilege.
+Test (ctypes against the same libproc syscall the `proc_pid` crate uses, run as
+uid 501):
+
+- `proc_pidpath(1)` (launchd, root) → `/sbin/launchd`; configd, syslogd,
+  opendirectoryd, mds all resolved.
+- Full `proc_listpids(PROC_ALL_PIDS)` sweep: 822 pids, **820 resolved, all 122
+  root-owned resolved.** The only 2 failures were our *own* uid-501 processes
+  that exited between list and resolve.
+
+`PROC_PIDPATHINFO` is not a privileged operation (unlike reading process memory
+or manipulating a process). So root programs (`sudo node`, privileged-port dev
+servers, `sudo brew services`) **will appear** on macOS from the Tauri process —
+no need to move enumeration into the root daemon. The only required handling is
+to **skip a pid that returns `ESRCH`/`ENOENT`** (benign TOCTOU race — process
+died mid-scan), never error the whole enumeration.
 
 ## Webapp changes (`webapp/src/pages/AppBypass.tsx` + i18n)
 
@@ -135,13 +144,13 @@ change only affects *which candidate rows the page offers*.
   cases. Live process enumeration is not unit-tested.
 - **Real verification:** `make dev-macos`, launch `node`/a brew tool, confirm it
   appears once and installed apps are not duplicated; on Windows confirm system
-  services disappear. Verify the macOS EPERM behaviour (limitation above) before
-  finalizing.
+  services disappear. (macOS `proc_pidpath` cross-uid access already verified —
+  see "macOS root-process coverage — VERIFIED".)
 
 ## Out of scope
 
-- Moving running-process enumeration into the root daemon for full root-process
-  coverage on macOS.
+- Moving running-process enumeration into the root daemon — **not needed**: root
+  coverage works from the user-level Tauri process (verified above).
 - Icons for standalone macOS binaries (first-letter Avatar fallback is fine).
 - Linux (Tauri `list_running_processes` returns empty; Linux desktop uses the Go
   webui bridge where running apps are already the primary list — no separate
