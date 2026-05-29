@@ -197,7 +197,7 @@ mod macos {
         // inside another candidate's bundle_path is redundant — the parent
         // already covers all child PIDs via collect_helper_basenames.
         let all_paths: Vec<String> = raw.iter().map(|(p, _)| p.clone()).collect();
-        let out: Vec<RunningApp> = raw
+        let mut out: Vec<RunningApp> = raw
             .into_iter()
             .filter(|(this_path, _)| {
                 !all_paths.iter().any(|other| {
@@ -206,6 +206,41 @@ mod macos {
             })
             .map(|(_, app)| app)
             .collect();
+
+        // Second pass: standalone binaries (CLI tools, brew, node, dev servers)
+        // that are NOT inside any .app bundle and NOT under a system directory.
+        // NSWorkspace only lists GUI .app bundles, so these would otherwise never
+        // appear. proc_pidpath (via snapshot_pid_paths) reads paths for all uids
+        // including root; dead pids were already dropped by its `.ok()`.
+        let mut seen_exe: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for (_, path) in &pid_paths_owned {
+            let path = path.as_str();
+            if is_inside_app_bundle(path) || is_macos_system_path(path) {
+                continue;
+            }
+            if !seen_exe.insert(path) {
+                continue;
+            }
+            let basename = std::path::Path::new(path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            if basename.is_empty() {
+                continue;
+            }
+            let label = std::path::Path::new(path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(basename)
+                .to_string();
+            let icon_url = format!("kaitu-icon://exe/{}", urlencoding::encode(path));
+            out.push(RunningApp {
+                id: path.to_string(),
+                label,
+                process_names: vec![basename.to_string()],
+                icon_url: Some(icon_url),
+            });
+        }
 
         Ok(out)
     }
