@@ -71,6 +71,31 @@ func TestExpandRegionRoute_DarwinMetaUsesSplitGlobsCasePreserved(t *testing.T) {
 	}
 }
 
+// Regression: match.apps force overrides used to compile to nil on Linux
+// (expandAppsRoute had no linux case → default: return nil), so per-app
+// overrides silently did nothing despite Linux having a working
+// ProcessSearcher. They must now build a process-name meta entry, mirroring
+// Darwin semantics (/proc/PID/exe basename, case-sensitive exact match).
+func TestExpandAppsRoute_LinuxBuildsProcessNames(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux-only — match.apps expansion on linux desktop")
+	}
+	target := rule.Target(2)
+	entry := expandAppsRoute([]string{"curl", "Chrome*"}, target)
+	if entry == nil {
+		t.Fatal("expandAppsRoute must build a meta entry on linux (regression: was nil)")
+	}
+	if !equalStrSlices(entry.ProcessNames, []string{"curl"}) {
+		t.Errorf("entry.ProcessNames = %v, want [curl] (case preserved)", entry.ProcessNames)
+	}
+	if !equalStrSlices(entry.ProcessNamePrefixes, []string{"chrome"}) {
+		t.Errorf("entry.ProcessNamePrefixes = %v, want [chrome] (lowercased)", entry.ProcessNamePrefixes)
+	}
+	if entry.Target != target {
+		t.Errorf("entry.Target = %v, want %v", entry.Target, target)
+	}
+}
+
 func TestExpandRegionRoute_WindowsMetaUsesWindowsApps(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows-only — Windows.Apps expansion")
@@ -157,17 +182,12 @@ func TestExpandAppsRoute_EmptyReturnsNil(t *testing.T) {
 	}
 }
 
-func TestExpandAppsRoute_UnsupportedPlatformReturnsNil(t *testing.T) {
-	switch runtime.GOOS {
-	case "darwin", "windows", "android":
-		t.Skip("covered by platform-specific dispatch tests")
-	}
-	// linux / ios: non-empty globs still produce no meta entry (no per-process
-	// attribution available).
-	if entry := expandAppsRoute([]string{"firefox", "chrome*"}, rule.Target(3)); entry != nil {
-		t.Errorf("unsupported platform must return nil even for non-empty globs; got %+v", entry)
-	}
-}
+// NOTE: a former TestExpandAppsRoute_UnsupportedPlatformReturnsNil asserted
+// linux returned nil here. That codified the App Bypass-on-Linux bug (overrides
+// silently dropped) as expected behavior. Linux is now supported
+// (TestExpandAppsRoute_LinuxBuildsProcessNames), and iOS never compiles this
+// file (//go:build !ios), so the "unsupported desktop platform" case no longer
+// has a live target — the test was removed rather than left asserting a bug.
 
 func equalStrSlices(a, b []string) bool {
 	if len(a) != len(b) {
@@ -180,7 +200,6 @@ func equalStrSlices(a, b []string) bool {
 	}
 	return true
 }
-
 
 func TestBuildRouteEntries_ExpandsMatchRegion(t *testing.T) {
 	cnBundle := fakeBundle("cn-sites", []string{"WeChat"}, nil, nil, nil)

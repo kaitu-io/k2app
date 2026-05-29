@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -165,7 +166,14 @@ func (realProcNamer) NameForPID(pid uint32) string {
 	if err := windows.QueryFullProcessImageName(h, 0, &buf[0], &size); err != nil {
 		return ""
 	}
-	return filepath.Base(windows.UTF16ToString(buf[:size]))
+	// Lowercase to match the rule side: app-bypass rules are built with the
+	// process names lowercased on Windows (engine/region_expand.go), and
+	// rule.processNameMatches is a case-sensitive exact compare. Without this,
+	// any app whose on-disk exe basename is not already lowercase
+	// (Discord.exe, Code.exe, WeChat.exe, Telegram.exe) would never match its
+	// override — a silent App Bypass failure. Windows paths are
+	// case-insensitive, so lowercasing the observed name is always safe.
+	return strings.ToLower(filepath.Base(windows.UTF16ToString(buf[:size])))
 }
 
 type WindowsProcessSearcher struct {

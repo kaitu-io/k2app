@@ -3,13 +3,20 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// lsofTimeout caps the lsof subprocess that runs on the connection-setup
+// critical path. See lsofLookup for the rationale.
+const lsofTimeout = 2 * time.Second
 
 // DarwinProcessSearcher uses lsof to look up process names by source (IP, port).
 // Results cached via shared processCache helper.
@@ -41,7 +48,16 @@ func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, sr
 	if name, pkg, installer, ok := s.cache.get(key); ok {
 		return name, pkg, installer
 	}
+	start := time.Now()
 	name := lsofLookup(network, srcIP, srcPort)
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		// macOS is the only platform that shells out (lsof) for attribution,
+		// so it's the most stall-prone — mirror the Linux/Windows slow-lookup
+		// DIAG (k2/CLAUDE.md reserved event) so a slow or hung lsof is visible
+		// in logs instead of presenting as an unexplained connection stall.
+		slog.Info("DIAG: process-lookup-slow",
+			"platform", "darwin", "network", network, "latencyMs", elapsed.Milliseconds())
+	}
 	s.cache.set(key, name, "", "")
 	return name, "", ""
 }
@@ -57,7 +73,15 @@ func lsofLookup(network string, srcIP netip.Addr, srcPort uint16) string {
 	}
 	spec := fmt.Sprintf("%s@%s:%d", proto, srcIP, srcPort)
 
-	out, err := exec.Command("lsof", "-i", spec, "-P", "-n", "-F", "pc").Output()
+	// Hard timeout: lsof normally returns in <30ms, but a stuck fd or a stalled
+	// process-table walk can hang it indefinitely. Attribution runs synchronously
+	// on the connection-setup path while the caller holds a conn-slot, so an
+	// unbounded hang would block that connection forever and, under systemic
+	// slowness, exhaust the conn-slot semaphore. Cap it; on timeout (or any
+	// error) return "" → the connection falls back to the region/default route.
+	ctx, cancel := context.WithTimeout(context.Background(), lsofTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "lsof", "-i", spec, "-P", "-n", "-F", "pc").Output()
 	if err != nil || len(out) == 0 {
 		return ""
 	}
@@ -85,7 +109,7 @@ func lsofLookup(network string, srcIP netip.Addr, srcPort uint16) string {
 //     consumed as-is, no field splitting.
 //   - Multi-process records: lsof outputs every PID that has a matching
 //     socket. With a connected TCP/UDP pair, that's two records (client
-//     + server) sharing one (proto, ip, port). The daemon is one of
+//   - server) sharing one (proto, ip, port). The daemon is one of
 //     them; we skip self and return the peer.
 //   - Empty cmd ("c\n"): treated as no command, record skipped.
 //   - PID 0: should not appear (kernel sockets), but if it does the

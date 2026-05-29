@@ -45,11 +45,12 @@ func expandRegionRoute(b *krs.Bundle, target rule.Target) (host, meta *rule.Rout
 }
 
 // expandAppsRoute converts one logical `match.apps` route into a meta-only
-// rule.RouteEntry by platform-dispatching the globs to the right field.
-// iOS / linux fall through to nil (no per-process attribution).
+// rule.RouteEntry by platform-dispatching the globs. darwin/windows/android
+// route through buildMetaEntryFromApps; linux is built inline (krs has no
+// Linux field); iOS falls through to nil (sandbox precludes attribution).
 //
 // Returns nil when globs is empty or the runtime platform has no place
-// to put them (linux/ios on desktop; nothing on linux server).
+// to put them (iOS on desktop; nothing on linux server).
 func expandAppsRoute(globs []string, target rule.Target) *rule.RouteEntry {
 	if len(globs) == 0 {
 		return nil
@@ -62,6 +63,23 @@ func expandAppsRoute(globs []string, target rule.Target) *rule.RouteEntry {
 		apps.Windows.Apps = lowerStrings(globs)
 	case "android":
 		apps.Android.Apps = append([]string(nil), globs...)
+	case "linux":
+		// krs.AppPatterns has no Linux field (region .krs bundles carry no
+		// Linux app patterns), so Linux can't route through
+		// buildMetaEntryFromApps. Build the meta entry directly here — only
+		// the explicit match.apps path needs it, NOT the region path, so we
+		// must not add a linux case to the shared buildMetaEntryFromApps.
+		// Linux attributes by /proc/PID/exe basename, case-sensitive exact —
+		// identical semantics to Darwin — matched by rule.processNameMatches.
+		exact, prefix := rule.SplitGlobs(globs)
+		if len(exact) == 0 && len(prefix) == 0 {
+			return nil
+		}
+		return &rule.RouteEntry{
+			Target:              target,
+			ProcessNames:        exact,
+			ProcessNamePrefixes: lowerStrings(prefix),
+		}
 	default:
 		return nil
 	}
