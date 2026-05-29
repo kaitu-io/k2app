@@ -8,6 +8,7 @@ import {
   Collapse,
   List,
   ListItem,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Radio,
@@ -18,12 +19,13 @@ import {
   Paper,
 } from "@mui/material";
 import {
+  ChevronRight as ChevronRightIcon,
   ExpandMore as ExpandMoreIcon,
   Settings as SettingsIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useAuthStore } from "../stores";
+import { useAuthStore, useAppRoutesStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
@@ -115,6 +117,9 @@ export default function Dashboard() {
   // Get app-specific configuration
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
+
+  // App Bypass override count for Dashboard entry secondary text
+  const bypassOverrideCount = useAppRoutesStore((s) => s.forceDirect.length + s.forceProxy.length);
 
   // Theme
   const theme = useTheme();
@@ -627,6 +632,24 @@ export default function Dashboard() {
               {/* Routing mode + country selection */}
               {proxyRuleConfig.visible && (
                 <RoutingModeSelector />
+              )}
+
+              {/* App Bypass entry — hidden on iOS (appList undefined) */}
+              {appConfig.features.appBypass && window._platform?.appList && (
+                <ListItemButton
+                  onClick={() => navigate('/app-bypass')}
+                  sx={{ mt: 1.5, borderRadius: 1, border: 1, borderColor: 'divider' }}
+                >
+                  <ListItemText
+                    primary={t('dashboard:dashboard.appBypassEntry.label')}
+                    secondary={
+                      bypassOverrideCount > 0
+                        ? t('dashboard:appBypass.v2.overrideCount', { count: bypassOverrideCount })
+                        : t('dashboard:dashboard.appBypassEntry.empty')
+                    }
+                  />
+                  <ChevronRightIcon />
+                </ListItemButton>
               )}
 
             </ConnectedSettingsLock>
