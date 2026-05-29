@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"runtime"
 
@@ -28,22 +27,14 @@ type classifyInstalledItem struct {
 
 // classifyAppsData is the response envelope.
 type classifyAppsData struct {
-	Classifications []classifyResult `json:"classifications"`
-}
-
-type classifyResult struct {
-	ID         string `json:"id"`
-	Default    string `json:"default"`               // "direct" | "proxy"
-	HitKind    string `json:"hit_kind,omitempty"`    // "installer" | "app"
-	HitPattern string `json:"hit_pattern,omitempty"` // matched glob
+	Classifications []rule.ClassifyResult `json:"classifications"`
 }
 
 // classifyApps is the stateless classifier for "given region X, which of
-// these installed apps default to direct vs proxy?". Identical match
-// codepath as the engine consumes at runtime (krs.MatchInstalled over the
-// same bundle.Apps), so UI badges and routing agree.
+// these installed apps default to direct vs proxy?". The actual matching lives
+// in rule.ClassifyInstalled (shared with the mobile appext.ClassifyApps export)
+// so UI badges and engine routing agree across every platform.
 //
-// Plan B's installed-app classifier (supersedes the removed preview action).
 // Unknown region or missing bundle = every app defaults to proxy
 // (fail-soft, no error).
 func (d *Daemon) classifyApps(w http.ResponseWriter, params map[string]any) {
@@ -62,27 +53,9 @@ func (d *Daemon) classifyApps(w http.ResponseWriter, params map[string]any) {
 	cacheDir := d.ruleCacheDir
 	d.mu.RUnlock()
 
-	out := classifyAppsData{
-		Classifications: make([]classifyResult, 0, len(req.Installed)),
-	}
-
-	var apps *krs.AppPatterns
-	if req.Region != "" && cacheDir != "" {
-		named, err := rule.LoadNamed(cacheDir)
-		if err != nil {
-			slog.Warn("classify-apps: LoadNamed failed", "err", err)
-		}
-		for _, nb := range named {
-			if nb.Region == req.Region && nb.Bundle != nil && nb.Bundle.Apps != nil {
-				apps = nb.Bundle.Apps
-				break
-			}
-		}
-	}
-
-	matchInputs := make([]krs.MatchableApp, 0, len(req.Installed))
+	apps := make([]krs.MatchableApp, 0, len(req.Installed))
 	for _, item := range req.Installed {
-		matchInputs = append(matchInputs, krs.MatchableApp{
+		apps = append(apps, krs.MatchableApp{
 			ID:                   item.ID,
 			Label:                item.Label,
 			InstallerPackageName: item.InstallerPackageName,
@@ -90,24 +63,6 @@ func (d *Daemon) classifyApps(w http.ResponseWriter, params map[string]any) {
 		})
 	}
 
-	var matched []krs.MatchedEntry
-	if apps != nil {
-		matched = krs.MatchInstalled(apps, matchInputs, runtime.GOOS)
-	}
-	matchedByID := make(map[string]krs.MatchedEntry, len(matched))
-	for _, m := range matched {
-		matchedByID[m.ID] = m
-	}
-
-	for _, item := range req.Installed {
-		res := classifyResult{ID: item.ID, Default: "proxy"}
-		if m, ok := matchedByID[item.ID]; ok {
-			res.Default = "direct"
-			res.HitKind = m.HitKind
-			res.HitPattern = m.HitPattern
-		}
-		out.Classifications = append(out.Classifications, res)
-	}
-
-	writeJSON(w, Response{Code: 0, Message: "ok", Data: out})
+	results := rule.ClassifyInstalled(cacheDir, req.Region, runtime.GOOS, apps)
+	writeJSON(w, Response{Code: 0, Message: "ok", Data: classifyAppsData{Classifications: results}})
 }
