@@ -6,10 +6,11 @@
  *   window._platform = { os, version, storage, ... }
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Clipboard } from '@capacitor/clipboard';
 import { Capacitor } from '@capacitor/core';
+import { mapInstalledApp } from '../capacitor-app-map';
 
 // Mock @capacitor/core
 vi.mock('@capacitor/core', () => ({
@@ -873,5 +874,29 @@ describe('cross-layer JSON contract', () => {
     if (expected.retrying !== undefined) {
       expect(result.data.retrying).toBe(expected.retrying);
     }
+  });
+});
+
+describe('mapInstalledApp (Android PackageManager → InstalledApp)', () => {
+  test('maps packageName→id and seeds processNames', () => {
+    expect(mapInstalledApp({
+      packageName: 'com.tencent.mm',
+      label: 'WeChat',
+      iconUrl: 'kaitu-icon://package/com.tencent.mm',
+      installerPackageName: 'com.android.vending',
+    })).toEqual({
+      id: 'com.tencent.mm',
+      label: 'WeChat',
+      iconUrl: 'kaitu-icon://package/com.tencent.mm',
+      installerPackageName: 'com.android.vending',
+      processNames: ['com.tencent.mm'],
+    });
+  });
+
+  test('null/absent installer becomes undefined; processNames=[packageName]', () => {
+    const r = mapInstalledApp({ packageName: 'com.foo', label: 'Foo' });
+    expect(r.installerPackageName).toBeUndefined();
+    expect(r.processNames).toEqual(['com.foo']);
+    expect(r.iconUrl).toBeUndefined();
   });
 });

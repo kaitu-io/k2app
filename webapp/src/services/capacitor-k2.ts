@@ -18,6 +18,7 @@ import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, InstalledApp }
 import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { createCapacitorStorage } from './capacitor-storage';
+import { mapInstalledApp, type AndroidInstalledApp } from './capacitor-app-map';
 
 /**
  * Check if running inside a Capacitor native environment.
@@ -235,13 +236,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
     appList: Capacitor.getPlatform() === 'android' ? {
       listInstalled: async (): Promise<InstalledApp[]> => {
         const res = await K2Plugin.listInstalledApps();
-        return res.apps.map((a: { packageName: string; label: string; iconUrl?: string; installerPackageName?: string | null }) => ({
-          id: a.packageName,
-          label: a.label,
-          iconUrl: a.iconUrl,
-          installerPackageName: a.installerPackageName ?? undefined,
-          processNames: [a.packageName],
-        }));
+        return res.apps.map((a: AndroidInstalledApp) => mapInstalledApp(a));
       },
     } : undefined,
   };
