@@ -205,7 +205,7 @@ export interface IPlatform {
 // ==================== App List ====================
 
 export interface RunningApp {
-  /** macOS: bundle identifier · Win/Linux: absolute executable path */
+  /** macOS: bundle identifier (GUI apps) or exe path (standalone binaries) · Win/Linux: absolute executable path */
   id: string;
   /** Display name */
   label: string;
