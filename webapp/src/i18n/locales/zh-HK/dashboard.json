@@ -50,7 +50,7 @@
     "advancedSettingsLocked": "VPN 已連線，請先斷開後再修改進階設定",
     "appBypassEntry": {
       "label": "唔走代理嘅應用",
-      "empty": "未選"
+      "empty": "自動識別 · 智能分流"
     },
     "alwaysOn": {
       "title": "保持 VPN 常開 (Always On)",

@@ -50,7 +50,7 @@
     "advancedSettingsLocked": "VPN is connected. Disconnect first to change advanced settings.",
     "appBypassEntry": {
       "label": "Apps that bypass VPN",
-      "empty": "None"
+      "empty": "Auto-detected · Smart routing"
     },
     "alwaysOn": {
       "title": "Keep VPN Always On",

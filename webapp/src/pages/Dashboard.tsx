@@ -16,7 +16,6 @@ import {
   alpha,
   Alert,
   Snackbar,
-  Paper,
 } from "@mui/material";
 import {
   ChevronRight as ChevronRightIcon,
@@ -584,13 +583,15 @@ export default function Dashboard() {
       </Box>
 
 
-      {/* SECTION 3: Advanced Settings — visually distinct from tunnels list above.
-          Uses bg.default (darker recess) + inset top shadow to read as a footer drawer,
-          not another paper card like the tunnels list. */}
+      {/* SECTION 3: Advanced Settings — distinguished from the tunnels list above by
+          STRUCTURE + ACCENT COLOR, not background luminance (bg.default #FAFAFA vs
+          bg.paper #FFFFFF differ by ~2% in light mode — too weak to read as a divider).
+          Footer sits flush on bg.paper; expanding reveals a recessed well, and the
+          header turns into a primary-tinted active panel header. Both cues are
+          theme-independent. */}
       <Box sx={{
-        borderTop: (theme) => `2px solid ${theme.palette.divider}`,
-        backgroundColor: 'background.default',
-        boxShadow: 'inset 0 8px 16px -10px rgba(0,0,0,0.45)',
+        borderTop: (theme) => `1px solid ${theme.palette.divider}`,
+        backgroundColor: 'background.paper',
         mt: 'auto',
       }}>
         <Button
@@ -602,7 +603,26 @@ export default function Dashboard() {
             transition: 'transform 0.3s ease',
           }} />}
           startIcon={<SettingsIcon />}
-          sx={{ py: 1, px: 2, justifyContent: 'space-between', textTransform: 'none' }}
+          sx={{
+            py: 1,
+            px: 2,
+            borderRadius: 0,
+            justifyContent: 'space-between',
+            textTransform: 'none',
+            color: showAdvancedSettings ? 'primary.main' : 'text.primary',
+            backgroundColor: showAdvancedSettings
+              ? (theme) => alpha(theme.palette.primary.main, 0.08)
+              : 'transparent',
+            borderBottom: (theme) => `1px solid ${
+              showAdvancedSettings ? alpha(theme.palette.primary.main, 0.25) : 'transparent'
+            }`,
+            transition: 'background-color 0.2s ease, color 0.2s ease',
+            '&:hover': {
+              backgroundColor: showAdvancedSettings
+                ? (theme) => alpha(theme.palette.primary.main, 0.12)
+                : 'action.hover',
+            },
+          }}
         >
           <Typography variant="body2" fontWeight={600} sx={{ flex: 1, textAlign: 'left' }}>
             {t('dashboard:dashboard.advancedSettings') || 'Advanced Settings'}
@@ -615,14 +635,17 @@ export default function Dashboard() {
         </Button>
 
         <Collapse in={showAdvancedSettings}>
+          {/* Recessed well — content sinks below the flush footer surface, so the
+              boundary reads even when bg.default barely differs from bg.paper. */}
           <Box sx={{
             maxHeight: '40vh',
             overflowY: 'auto',
             px: 2,
-            pb: 1.5,
-            pt: 1.5,
+            pb: 2,
+            pt: 2,
+            backgroundColor: 'background.default',
+            boxShadow: 'inset 0 8px 16px -10px rgba(0,0,0,0.35)',
           }}>
-            <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'background.paper' }}>
             <ConnectedSettingsLock>
               {/* iOS-only: NEOnDemandRuleConnect toggle (ANC-13) */}
               {typeof window !== 'undefined' && window._platform?.os === 'ios' && (
@@ -634,11 +657,18 @@ export default function Dashboard() {
                 <RoutingModeSelector />
               )}
 
-              {/* App Bypass entry — hidden on iOS (appList undefined) */}
+              {/* App Bypass entry — hidden on iOS (appList undefined).
+                  bg.paper so it lifts off the recessed well as a tappable row. */}
               {appConfig.features.appBypass && window._platform?.appList && (
                 <ListItemButton
                   onClick={() => navigate('/app-bypass')}
-                  sx={{ mt: 1.5, borderRadius: 1, border: 1, borderColor: 'divider' }}
+                  sx={{
+                    mt: 1.5,
+                    borderRadius: 1,
+                    border: 1,
+                    borderColor: 'divider',
+                    bgcolor: 'background.paper',
+                  }}
                 >
                   <ListItemText
                     primary={t('dashboard:dashboard.appBypassEntry.label')}
@@ -653,7 +683,6 @@ export default function Dashboard() {
               )}
 
             </ConnectedSettingsLock>
-            </Paper>
           </Box>
         </Collapse>
       </Box>

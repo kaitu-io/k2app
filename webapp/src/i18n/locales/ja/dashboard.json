@@ -50,7 +50,7 @@
     "advancedSettingsLocked": "VPN 接続中です。詳細設定を変更するには切断してください。",
     "appBypassEntry": {
       "label": "VPN を経由しないアプリ",
-      "empty": "未選択"
+      "empty": "自動識別 · スマート振り分け"
     },
     "alwaysOn": {
       "title": "VPN を常にオンに保つ (Always On)",
