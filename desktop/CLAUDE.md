@@ -36,6 +36,9 @@ yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows 
 - **storage.rs** — App-private key-value storage. Persists `storage.json` in Tauri app data dir. In-memory `HashMap` mirror with atomic write (write `.tmp` then `fs::rename`). Single-instance plugin guarantees no concurrent writers. Used by webapp for secure storage on desktop (IPlatform.storage). Values encrypted with AES-256-GCM via `storage_crypto.rs`; reads auto-detect `ENC1:` prefix for backward compat with plaintext.
 - **storage_crypto.rs** — AES-256-GCM encryption for storage values. Key derived via HKDF-SHA256 from platform hardware ID (macOS: IOPlatformUUID via `ioreg`, Windows: Registry `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`, Linux: `/etc/machine-id`). Encrypted values prefixed with `ENC1:`. Plaintext values (pre-encryption) read transparently for backward compatibility. Platform-specific hardware ID tests gated with `#[cfg(target_os)]`.
 - **log_upload.rs** — Service log upload: reads 4 log sources (service, crash, desktop, system), sanitizes sensitive data, gzip compresses, uploads to S3 with `desktop/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz` key format. Uses `spawn_blocking` for blocking HTTP. Auto-cleans up log files after successful `beta-auto-upload` (delete on macOS/Linux, truncate on Windows due to file locks).
+- **app_list.rs** — `list_running_processes` command: running GUI app process names for the App Bypass page (macOS/Windows).
+- **installed_apps.rs** — `list_installed_apps` command: installed apps (`id`, `label`, `processNames`, `icon_url`) for the App Bypass page.
+- **icon_protocol.rs** — Registers the `kaitu-icon://` URI scheme (`handle_kaitu_icon`) serving per-app icons to the App Bypass UI. macOS renders via NSWorkspace + NSBitmapImageRep → PNG; Windows is a v1 stub (404).
 
 ## Tauri Config (`src-tauri/tauri.conf.json`)
 
@@ -76,6 +79,9 @@ yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows 
 | `storage_remove` | storage | Remove key from app storage |
 | `sync_locale` | tray | Sync locale to system tray |
 | `upload_service_log_command` | log_upload | Collect + upload logs to S3 |
+| `set_dev_enabled` | service | Toggle WebView devtools inspection |
+| `list_running_processes` | app_list | Running GUI app process names (App Bypass) |
+| `list_installed_apps` | installed_apps | Installed apps for App Bypass (id/label/processNames/icon_url) |
 
 ## Gotchas
 
