@@ -59,6 +59,9 @@ export {
   initializeVPNMachine,
 } from './vpn-machine.store';
 
+// ============ App Routes Store ============
+export { useAppRoutesStore } from './app-routes.store';
+
 // 内部导入（用于 initializeAllStores）
 import { initializeAuthStore, useAuthStore } from './auth.store';
 import { initializeVPNMachine, useVPNMachineStore } from './vpn-machine.store';

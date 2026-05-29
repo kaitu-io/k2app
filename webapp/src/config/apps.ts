@@ -85,7 +85,7 @@ const KAITU_CONFIG: AppConfig = {
       defaultValue: 'chnroute',   // Default to chnroute mode
     },
     chatwoot: true,               // Enable Chatwoot chat widget
-    appBypass: false,              // Plan B disables; Plan C re-enables with redesigned page
+    appBypass: true,               // Plan C: redesigned page
   },
   branding: {
     primaryColor: '#1976d2',

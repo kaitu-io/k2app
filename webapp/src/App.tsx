@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { useTranslation } from "react-i18next";
@@ -35,6 +35,8 @@ import Delegate from "./pages/Delegate";
 import Changelog from "./pages/Changelog";
 import { getCurrentAppConfig } from "./config/apps";
 
+const AppBypass = lazy(() => import('./pages/AppBypass'));
+
 // 应用路由组件
 function AppRoutes() {
   const { t } = useTranslation();
@@ -68,6 +70,11 @@ function AppRoutes() {
           {/* Conditional routes based on app configuration */}
           {appConfig.features.proHistory && (
             <Route path="pro-histories" element={<LoginRequiredGuard pagePath="/pro-histories"><ProHistory /></LoginRequiredGuard>} />
+          )}
+
+          {/* App bypass / per-app routing — local setting, no login guard */}
+          {appConfig.features.appBypass && (
+            <Route path="app-bypass" element={<Suspense fallback={null}><AppBypass /></Suspense>} />
           )}
 
           {appConfig.features.invite && (
