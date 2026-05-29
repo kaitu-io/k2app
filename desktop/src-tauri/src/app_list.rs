@@ -265,6 +265,11 @@ mod windows {
             if exe_path.is_empty() {
                 continue;
             }
+            // Drop OS-internal processes (svchost, services, etc.) — they live
+            // under C:\Windows and are never user-routable bypass targets.
+            if is_windows_system_path(exe_path) {
+                continue;
+            }
             if seen_exe.contains_key(exe_path) {
                 continue;
             }
