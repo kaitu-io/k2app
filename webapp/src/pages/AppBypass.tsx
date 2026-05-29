@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, useDeferredValue } from 'react';
 import {
   Box, Typography, Avatar, Chip, Stack, TextField, InputAdornment,
-  CircularProgress, Button, Accordion, AccordionSummary, AccordionDetails,
+  CircularProgress, Button,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useTranslation } from 'react-i18next';
 import { useAppRoutesStore, useConfigStore } from '../stores';
+import BackButton from '../components/BackButton';
 import ConnectedSettingsLock from '../components/ConnectedSettingsLock';
 import type { InstalledApp, RunningApp } from '../types/kaitu-core';
 
@@ -65,12 +65,26 @@ export default function AppBypass() {
     return installed.filter((a) => a.label.toLowerCase().includes(q) || a.id.toLowerCase().includes(q));
   }, [installed, q]);
 
+  // Running-but-not-installed: the genuine supplement (standalone binaries,
+  // brew tools, node…). Dedup by PROCESS NAME, not id — macOS installed.id is
+  // the bundle path while running.id is the bundle identifier, so an id compare
+  // never matches and every installed app would leak back into this list. Both
+  // lists share processNames (executable basenames inside the same bundle).
+  const runningExtra = useMemo(() => {
+    if (!installed) return [];
+    const installedProc = new Set(installed.flatMap((a) => a.processNames));
+    return running
+      .filter((r) => !r.processNames.some((n) => installedProc.has(n)))
+      .filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
+  }, [installed, running, q]);
+
   const overrideCount = forceDirect.length + forceProxy.length;
 
   if (!supported) {
     return (
-      <Box sx={{ p: 2 }}>
-        <Typography variant="h6">{t('dashboard:appBypass.v2.title')}</Typography>
+      <Box sx={{ p: 2, position: 'relative' }}>
+        <BackButton to="/" />
+        <Typography variant="h6" sx={{ pt: 5 }}>{t('dashboard:appBypass.v2.title')}</Typography>
         <Typography color="text.secondary" sx={{ mt: 2 }}>
           {t('dashboard:appBypass.v2.unsupported')}
         </Typography>
@@ -79,8 +93,9 @@ export default function AppBypass() {
   }
 
   return (
-    <Box sx={{ p: 2 }}>
-      <Typography variant="h6">{t('dashboard:appBypass.v2.title')}</Typography>
+    <Box sx={{ p: 2, position: 'relative' }}>
+      <BackButton to="/" />
+      <Typography variant="h6" sx={{ pt: 5 }}>{t('dashboard:appBypass.v2.title')}</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         {t('dashboard:appBypass.v2.intro')}
       </Typography>
@@ -126,32 +141,28 @@ export default function AppBypass() {
           </Stack>
         )}
 
-        {running.length > 0 && (
-          <Accordion sx={{ mt: 2 }} disableGutters>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography variant="subtitle2">{t('dashboard:appBypass.v2.moreSection')}</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Stack spacing={0.5}>
-                {running
-                  .filter((r) => !installed?.some((a) => a.id === r.id))
-                  .map((r) => {
-                    const rApp: InstalledApp = {
-                      id: r.id, label: r.label, processNames: r.processNames, iconUrl: r.iconUrl,
-                    };
-                    return (
-                      <AppRow
-                        key={r.id}
-                        app={rApp}
-                        def={classifications.get(r.id) ?? 'proxy'}
-                        mode={modeOf(rApp, forceDirect, forceProxy)}
-                        onSet={(m) => void setOverride(rApp, m)}
-                      />
-                    );
-                  })}
-              </Stack>
-            </AccordionDetails>
-          </Accordion>
+        {runningExtra.length > 0 && (
+          <>
+            <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>
+              {t('dashboard:appBypass.v2.moreSection')}
+            </Typography>
+            <Stack spacing={0.5}>
+              {runningExtra.map((r) => {
+                const rApp: InstalledApp = {
+                  id: r.id, label: r.label, processNames: r.processNames, iconUrl: r.iconUrl,
+                };
+                return (
+                  <AppRow
+                    key={r.id}
+                    app={rApp}
+                    def={classifications.get(r.id) ?? 'proxy'}
+                    mode={modeOf(rApp, forceDirect, forceProxy)}
+                    onSet={(m) => void setOverride(rApp, m)}
+                  />
+                );
+              })}
+            </Stack>
+          </>
         )}
       </ConnectedSettingsLock>
     </Box>
@@ -165,6 +176,12 @@ function AppRow({ app, def, mode, onSet }: {
   onSet: (m: OverrideMode) => void;
 }) {
   const { t } = useTranslation();
+  // Two spatially-stable chips: proxy always on the left, direct always on the
+  // right. The chip matching the region default carries the "默认" prefix and
+  // clears any override on click; the opposite chip is the explicit "强制"
+  // override. Effective routing = the override, or the region default when none.
+  const proxyIsDefault = def === 'proxy';
+  const effective = mode === 'default' ? def : mode;
   return (
     <Stack direction="row" alignItems="center" spacing={1} sx={{ py: 0.5 }}>
       <Avatar src={app.iconUrl} variant="rounded" sx={{ width: 32, height: 32 }}>
@@ -172,28 +189,20 @@ function AppRow({ app, def, mode, onSet }: {
       </Avatar>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography noWrap variant="body2">{app.label}</Typography>
-        <Chip
-          size="small" variant="outlined"
-          label={def === 'direct'
-            ? t('dashboard:appBypass.v2.badgeDirect')
-            : t('dashboard:appBypass.v2.badgeProxy')}
-          color={def === 'direct' ? 'success' : 'default'}
-          sx={{ height: 18, fontSize: 11 }}
-        />
       </Box>
       <Stack direction="row" spacing={0.5}>
         <Chip size="small" clickable
-          label={t('dashboard:appBypass.v2.chipDefault')}
-          color={mode === 'default' ? 'primary' : 'default'}
-          onClick={() => onSet('default')} />
+          label={proxyIsDefault
+            ? t('dashboard:appBypass.v2.chipDefaultProxy')
+            : t('dashboard:appBypass.v2.chipForceProxy')}
+          color={effective === 'proxy' ? 'primary' : 'default'}
+          onClick={() => onSet(proxyIsDefault ? 'default' : 'proxy')} />
         <Chip size="small" clickable
-          label={t('dashboard:appBypass.v2.chipForceDirect')}
-          color={mode === 'direct' ? 'success' : 'default'}
-          onClick={() => onSet('direct')} />
-        <Chip size="small" clickable
-          label={t('dashboard:appBypass.v2.chipForceProxy')}
-          color={mode === 'proxy' ? 'warning' : 'default'}
-          onClick={() => onSet('proxy')} />
+          label={proxyIsDefault
+            ? t('dashboard:appBypass.v2.chipForceDirect')
+            : t('dashboard:appBypass.v2.chipDefaultDirect')}
+          color={effective === 'direct' ? 'primary' : 'default'}
+          onClick={() => onSet(proxyIsDefault ? 'direct' : 'default')} />
       </Stack>
     </Stack>
   );
