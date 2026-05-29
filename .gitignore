@@ -36,6 +36,10 @@ desktop/src-tauri/gen/schemas/
 .mcp.json
 .playwright-mcp/
 
+# One-off DB dumps from the shared-dev-container migration (kept locally as a
+# safety net, never versioned)
+.migration-backup/
+
 # API local dev data (docker volumes, config with secrets, test artifacts)
 api/data/
 api/logs/
