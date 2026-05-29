@@ -1,10 +1,10 @@
 // desktop/src-tauri/src/icon_protocol.rs
 //
 // Tauri URI-scheme handler for `kaitu-icon://` — serves app icons to the
-// webapp for the App Bypass UI. The list_running_apps command (Task 4.1)
-// emits per-app `icon_url` strings of the form:
+// webapp for the App Bypass UI. The list_running_processes and
+// list_installed_apps commands emit per-app `icon_url` strings of the form:
 //
-//   macOS:    kaitu-icon://bundle/<urlencoded-bundle-id>
+//   macOS:    kaitu-icon://bundle/<urlencoded-bundle-id-or-path>
 //   Windows:  kaitu-icon://exe/<urlencoded-exe-path>
 //
 // The WebView resolves these via this handler. macOS uses NSWorkspace +
