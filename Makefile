@@ -292,7 +292,10 @@ decrypt-keystore:
 		echo "Keystore decrypted."; \
 	fi
 
-IOS_DEVICE ?= $(shell xcrun xctrace list devices 2>/dev/null | grep 'iPhone' | grep -v 'Simulator' | sed 's/.*(\([0-9A-Fa-f-]\{25,\}\)).*/\1/' | head -1)
+# Auto-detect the connected physical iPhone. Filters out paired-but-offline
+# devices (devicectl tunnelState) so a second, disconnected iPhone can't shadow
+# the one you're actually plugged into. Override with `make dev-ios IOS_DEVICE=<udid>`.
+IOS_DEVICE ?= $(shell scripts/detect-ios-device.sh 2>/dev/null)
 
 dev-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
