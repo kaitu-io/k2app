@@ -200,17 +200,6 @@ export interface IPlatform {
   // ====== App List（可选）======
 
   appList?: IAppListProvider;
-
-  /**
-   * App Bypass platform capabilities. `daemonBacked: true` means the platform
-   * has a running daemon that owns app-bypass state via HTTP actions
-   * (`app-bypass-get` / `app-bypass-set-custom` / `app-bypass-set-region`).
-   * When undefined, the webapp falls back to local-storage persistence and
-   * connect-time ClientConfig packing (mobile).
-   */
-  appBypass?: {
-    daemonBacked: true;
-  };
 }
 
 // ==================== App List ====================
@@ -227,11 +216,16 @@ export interface RunningApp {
 }
 
 export interface InstalledApp {
-  packageName: string;
+  /** Platform-stable id. macOS: .app bundle path · Windows: exe path · Linux: .desktop path · Android: packageName */
+  id: string;
+  /** Display name */
   label: string;
+  /** kaitu-icon://… url, or undefined (Avatar falls back to first letter) */
   iconUrl?: string;
-  /** Android only: the package that installed this app (PackageManager.getInstallSourceInfo). null if unknown / sideloaded / system. */
+  /** Android only: installing package (PackageManager.getInstallSourceInfo). undefined elsewhere. Feeds classify-apps installer match. */
   installerPackageName?: string | null;
+  /** Names matched by classify-apps. Desktop: exe/helper basenames · Android: [packageName] */
+  processNames: string[];
 }
 
 export interface IAppListProvider {

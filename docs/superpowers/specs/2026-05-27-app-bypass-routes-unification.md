@@ -1,8 +1,25 @@
 # App Bypass Routes Unification — Master Spec
 
-> **Status:** Approved (2026-05-27), revised after Plan A in-flight review (2026-05-27)
+> **Status:** Approved (2026-05-27), revised after Plan A in-flight review (2026-05-27); Plan C decisions appended 2026-05-28; Plan C review hardening appended 2026-05-28b (see revision notes below)
 > **Supersedes:** Partial revision of `2026-05-25-app-bypass-engine-managed-design.md` (App Bypass v2 Phase 2). All Phase 2 logic now subsumed under the routes-unified model below.
-> **Related plans:** `plans/2026-05-27-plan-a-krs-integration.md` · `plans/2026-05-27-plan-bc-outline.md`
+> **Related plans:** `plans/2026-05-27-plan-a-krs-integration.md` (merged) · `plans/2026-05-28-plan-b-routes-vocab.md` (code-complete, unmerged) · `plans/2026-05-27-plan-bc-outline.md` (Plan C outline)
+
+> ### Revision 2026-05-28 — Plan C implementation decisions
+>
+> Plan A merged (k2 master `25e510f` locally; origin still at Plan A `f818786`). Plan B is code-complete + all-green in worktree `feat/plan-b-routes-vocab` but **unmerged/unpushed**. Plan C builds **stacked on Plan B** (`feat/plan-c-appbypass-ui`) so B+C merge as one unit — no user-visible regression window. The following decisions **supersede** the corresponding lines in §2 Layer 3 / §3 below:
+>
+> 1. **Region-change reconnect (was: "Plan C adds auto-reconnect"): dropped — not needed.** `webapp/src/components/ConnectedSettingsLock.tsx` already disables the entire advanced-settings surface (opacity 0.45 + `pointerEvents:none`) whenever `vpnState !== 'idle'`. There is no mid-session region-change path, so Plan B's reconnect gap is moot. The redesigned AppBypass page is wrapped in `ConnectedSettingsLock`; no banner/dialog/auto-reconnect mechanism is built.
+> 2. **macOS `list_installed_apps` source (was: `system_profiler SPApplicationsDataType -json`): use a Rust FS scan instead.** `system_profiler` reads LaunchServices and is marginally more complete (non-standard install locations, /System apps) but costs 1–3 s — it violates the <100 ms cold-render acceptance budget, and the completeness delta is apps users do not bypass. Plan C scans `/Applications` + `~/Applications` + `/System/Applications` and reads each `Info.plist` (`CFBundleName` / `CFBundleIdentifier`). A future `system_profiler` background-enrichment pass is YAGNI until a real "missing app" report appears.
+> 3. **"Your bypass list was reset" one-time notice (was: recommended): skipped (YAGNI).** Desktop had no smart mode before v0.4.5, so the population that ever added per-app bypass entries is tiny. No sentinel/notice plumbing.
+> 4. **Δ vs `plan-bc-outline.md` task 7 — the Go app-list provider is ALREADY fully deleted by Plan B**, including `provider/applist_linux.go` (commit `b8986fd`; `grep -rn ListInstalled k2` = 0 hits). The outline assumed the Linux Go scanner survived — it did not. Plan C therefore does **not** "delete mac/win/android Go" (done). **See Revision 2026-05-28b #2 — Linux is now running-only and Plan C adds NO Go code** (this supersedes the "newly adds Linux endpoints + `.desktop` scanner" idea recorded here).
+
+> ### Revision 2026-05-28b — Plan C review hardening (pre-execution)
+>
+> A pre-execution review of the Plan C plan (verified against live code) resolved three points:
+>
+> 1. **App-icon delivery: keep the `kaitu-icon://` custom protocol; do NOT switch to inline base64.** The protocol is already implemented on all three GUI platforms (macOS/Windows via Tauri `UriSchemeContext`, Android via a `WebViewClient` interceptor in `K2Plugin.kt`) and is **lazy** — the list response carries only a short URL per app, and the webview fetches + caches each PNG only when its `<img>` renders. For a 50–200-entry installed list, base64 would eagerly encode + ship every icon (~1 MB+, +33% inflation) inside one JSON blob and defeat lazy loading. `standalone`/Linux (http-served webapp, no native interceptor) fall back to a letter avatar (`iconUrl: undefined`) — already handled.
+> 2. **Linux: running-processes only — Plan C adds NO `k2/` (Go) code.** Supersedes #4 above. The `.desktop` scan is dropped: it misses AppImage/flatpak/snap and its `Exec=`→process-name mapping is unreliable, so it would silently mis-attribute. Linux reuses the existing `app-list-running` (`/proc`) daemon action (survived Plan B) — its names are exactly the `comm` names the engine routes on. The redesigned page treats a `listRunning`-only platform as supported with running apps as the primary list. The submodule stays at Plan B's `25e510f`; no Plan C k2 branch / `.desktop` scanner / pointer bump.
+> 3. **Override identity = process names, not app id (bug fix).** Per-app force overrides are emitted verbatim as `match.apps`, which the engine matches against the live process `comm` name. The app *id* is a bundle/exe **path** on desktop (`/Applications/WeChat.app`) and would never match — desktop overrides would set/persist in the UI but never route. `setOverride(app)` now stores `app.processNames`; `modeOf(app)` reads them back. (Android was coincidentally safe: id == packageName == process name.) Other verified contracts: `_k2.run(action, x)` nests `x` under `params` (matches daemon `req.Params`); classify request/response shapes match `api_classify_apps.go`; `buildConnectConfig`'s real signature is `(ConnectConfigParams | string)`.
 
 ## 1. Problem Statement
 

@@ -1,6 +1,6 @@
 // desktop/src-tauri/src/app_list.rs
 //
-// Tauri command `list_running_apps` — enumerates currently running user-facing
+// Tauri command `list_running_processes` — enumerates currently running user-facing
 // applications for the App Bypass feature. On macOS it walks NSWorkspace's
 // runningApplications and groups child PIDs (helper processes) under their
 // owning bundle. On Windows it walks sysinfo's process list. Linux + other
@@ -236,18 +236,18 @@ mod windows {
 }
 
 #[tauri::command]
-pub async fn list_running_apps() -> Result<Vec<RunningApp>, String> {
+pub async fn list_running_processes() -> Result<Vec<RunningApp>, String> {
     #[cfg(target_os = "macos")]
     {
         return tokio::task::spawn_blocking(macos::enumerate)
             .await
-            .map_err(|e| format!("list_running_apps join error: {e}"))?;
+            .map_err(|e| format!("list_running_processes join error: {e}"))?;
     }
     #[cfg(target_os = "windows")]
     {
         return tokio::task::spawn_blocking(windows::enumerate)
             .await
-            .map_err(|e| format!("list_running_apps join error: {e}"))?;
+            .map_err(|e| format!("list_running_processes join error: {e}"))?;
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

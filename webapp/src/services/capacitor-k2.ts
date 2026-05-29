@@ -14,10 +14,11 @@ import { Clipboard } from '@capacitor/clipboard';
 import { Share } from '@capacitor/share';
 import { getDeviceUdid } from './device-udid';
 import { K2Plugin } from 'k2-plugin';
-import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, InstalledApp } from '../types/kaitu-core';
 import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { createCapacitorStorage } from './capacitor-storage';
+import { mapInstalledApp, type AndroidInstalledApp } from './capacitor-app-map';
 
 /**
  * Check if running inside a Capacitor native environment.
@@ -232,15 +233,10 @@ export async function injectCapacitorGlobals(): Promise<void> {
       K2Plugin.setDevEnabled({ enabled }).catch(() => {});
     },
 
-    // NOTE: capacitor-k2 deliberately does NOT set `appBypass.daemonBacked`.
-    // Mobile has no daemon HTTP surface — app-bypass state lives in
-    // _platform.storage on this platform and gets packed into ClientConfig
-    // at connect time by config.store.buildConnectConfig(). See P2 plan §
-    // "Mobile scoping decision".
     appList: Capacitor.getPlatform() === 'android' ? {
-      listInstalled: async () => {
+      listInstalled: async (): Promise<InstalledApp[]> => {
         const res = await K2Plugin.listInstalledApps();
-        return res.apps;
+        return res.apps.map((a: AndroidInstalledApp) => mapInstalledApp(a));
       },
     } : undefined,
   };

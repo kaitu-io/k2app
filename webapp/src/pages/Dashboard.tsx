@@ -19,13 +19,13 @@ import {
   Paper,
 } from "@mui/material";
 import {
+  ChevronRight as ChevronRightIcon,
   ExpandMore as ExpandMoreIcon,
   Settings as SettingsIcon,
-  ChevronRight as ChevronRightIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useAuthStore, useAppBypassStore } from "../stores";
+import { useAuthStore, useAppRoutesStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
@@ -118,16 +118,8 @@ export default function Dashboard() {
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
-  // App-bypass entry count (Advanced Settings row).
-  // manual = user-added entries; auto = engine-side smart preset matches surfaced
-  // via daemon `app-bypass-preview`. Both contribute to "what's actually direct".
-  const bypassManualCount = useAppBypassStore((s) => s.entries.length);
-  const bypassAutoCount = useAppBypassStore((s) => s.matched.length);
-  // Daemon-reported platform support. `undefined` on mobile (no daemon) keeps
-  // the legacy fallback path active; `false` on iOS / unsupported platforms
-  // hides the entry button.
-  const bypassFeatureSupported = useAppBypassStore((s) => s.featureSupported);
-  const refreshBypassPreview = useAppBypassStore((s) => s.refreshPreview);
+  // App Bypass override count for Dashboard entry secondary text
+  const bypassOverrideCount = useAppRoutesStore((s) => s.forceDirect.length + s.forceProxy.length);
 
   // Theme
   const theme = useTheme();
@@ -152,20 +144,6 @@ export default function Dashboard() {
   // Ref for scroll container
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Preload AppBypass chunk so the route-level lazy import is warm when the
-  // user clicks the entry below. Chunk is ~50KB gzipped; downloading early
-  // removes the multi-second blank-screen wait on first visit.
-  useEffect(() => {
-    if (!appConfig.features.appBypass) return;
-    if (!window._platform?.appList) return;
-    // Fire-and-forget; React.lazy caches the import promise, so the route
-    // transition immediately resolves to the already-loaded chunk.
-    import('./AppBypass').catch(() => {
-      // Network failure here is non-fatal — the route still resolves on
-      // click, just with the original Suspense fallback. No need to surface.
-    });
-  }, []);
-
   // Restore scroll position on mount
   useEffect(() => {
     if (scrollContainerRef.current && scrollPosition > 0) {
@@ -188,13 +166,6 @@ export default function Dashboard() {
       container.removeEventListener('scroll', handleScroll);
     };
   }, [setScrollPosition]);
-
-  // Refresh smart-bypass preview on Dashboard mount so the advanced-settings
-  // appBypassEntry secondary text reflects engine-side matches (no-op on mobile;
-  // store action self-gates on daemonBacked).
-  useEffect(() => {
-    void refreshBypassPreview();
-  }, [refreshBypassPreview]);
 
   // Workaround: WebKit compositing bug — force repaint when tab becomes visible
   // after being hidden by keep-alive system, to ensure opacity/filter layer changes
@@ -663,9 +634,8 @@ export default function Dashboard() {
                 <RoutingModeSelector />
               )}
 
-              {/* App-bypass entry (Task 6.2). Daemon platforms add a third gate
-                  on `feature_supported` (false on iOS even when appList exists). */}
-              {appConfig.features.appBypass && window._platform?.appList && bypassFeatureSupported !== false && (
+              {/* App Bypass entry — hidden on iOS (appList undefined) */}
+              {appConfig.features.appBypass && window._platform?.appList && (
                 <ListItemButton
                   onClick={() => navigate('/app-bypass')}
                   sx={{ mt: 1.5, borderRadius: 1, border: 1, borderColor: 'divider' }}
@@ -673,18 +643,15 @@ export default function Dashboard() {
                   <ListItemText
                     primary={t('dashboard:dashboard.appBypassEntry.label')}
                     secondary={
-                      bypassManualCount > 0 && bypassAutoCount > 0
-                        ? t('dashboard:dashboard.appBypassEntry.countBoth', { manual: bypassManualCount, auto: bypassAutoCount })
-                        : bypassManualCount > 0
-                          ? t('dashboard:dashboard.appBypassEntry.count', { count: bypassManualCount })
-                          : bypassAutoCount > 0
-                            ? t('dashboard:dashboard.appBypassEntry.countAuto', { count: bypassAutoCount })
-                            : t('dashboard:dashboard.appBypassEntry.empty')
+                      bypassOverrideCount > 0
+                        ? t('dashboard:appBypass.v2.overrideCount', { count: bypassOverrideCount })
+                        : t('dashboard:dashboard.appBypassEntry.empty')
                     }
                   />
                   <ChevronRightIcon />
                 </ListItemButton>
               )}
+
             </ConnectedSettingsLock>
             </Paper>
           </Box>

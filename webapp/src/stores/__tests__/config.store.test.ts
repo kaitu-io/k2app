@@ -379,20 +379,21 @@ describe('Config Store', () => {
       expect((result as any).server).toBeUndefined();
     });
 
-    it('bypass preset with cn emits cn-access direct + proxy fallback', async () => {
+    it('bypass preset with cn emits region:cn direct + all-match proxy (Plan B vocab)', async () => {
       mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 
+      expect(result.app_bypass).toBeUndefined();
       expect(result.routes).toEqual([
-        { via: 'direct', match: { preset: 'cn-access' } },
-        { via: 'k2v5://example', match: {} },
+        { match: { region: 'cn' }, via: 'direct' },
+        { match: { all: true }, via: 'k2v5://example' },
       ]);
     });
 
-    it('bypass preset with ir emits ir-access direct + proxy fallback', async () => {
+    it('bypass preset with ir emits region:ir direct + all-match proxy (Plan B vocab)', async () => {
       mockStorage.get.mockResolvedValue(null);
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
@@ -401,9 +402,10 @@ describe('Config Store', () => {
 
       const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 
+      expect(result.app_bypass).toBeUndefined();
       expect(result.routes).toEqual([
-        { via: 'direct', match: { preset: 'ir-access' } },
-        { via: 'k2v5://example', match: {} },
+        { match: { region: 'ir' }, via: 'direct' },
+        { match: { all: true }, via: 'k2v5://example' },
       ]);
     });
 
@@ -465,16 +467,69 @@ describe('Config Store', () => {
       expect(result.routes).toEqual([]);
     });
 
-    it('unknown country falls back to global routes', async () => {
+    it('bypass mode with unknown country emits region route (engine handles missing bundle gracefully)', async () => {
       mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'xx', autoDetect: false });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 
+      // Plan B: region-based routing passes any country code to the engine;
+      // the engine treats an unknown region bundle as a no-op (no preset lookup needed).
       expect(result.routes).toEqual([
-        { via: 'k2v5://example', match: { all: true } },
+        { match: { region: 'xx' }, via: 'direct' },
+        { match: { all: true }, via: 'k2v5://example' },
       ]);
+    });
+  });
+
+  // ==================== buildConnectConfig (Plan B routes vocab) ====================
+
+  describe('buildConnectConfig (Plan B routes vocab)', () => {
+    it('global mode emits a single catch-all route, no region, no app_bypass', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: null, autoDetect: true });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(cfg.app_bypass).toBeUndefined();
+      expect(cfg.routes).toHaveLength(1);
+      expect(cfg.routes![0]).toMatchObject({ via: 'k2v5://example', match: { all: true } });
+    });
+
+    it('chnroute (smart) mode emits one match.region route before the catch-all', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(cfg.app_bypass).toBeUndefined();
+      expect(cfg.routes).toHaveLength(2);
+      expect(cfg.routes![0]).toEqual({ match: { region: 'cn' }, via: 'direct' });
+      expect(cfg.routes![1]).toMatchObject({ via: 'k2v5://example', match: { all: true } });
+    });
+
+    it('chnroute mode with empty country falls back to global (no region route)', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: false });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(cfg.app_bypass).toBeUndefined();
+      expect(cfg.routes!.every((r) => !r.match.region)).toBe(true);
+    });
+
+    it('legacy preset routes are not emitted for bypass mode', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(cfg.routes!.some((r) => r.match.preset)).toBe(false);
     });
   });
 
@@ -620,4 +675,80 @@ describe('Config Store', () => {
   // App Bypass v2 retired buildBypassRoutes — app-bypass routing now lives
   // inside the Go engine. ClientConfig.app_bypass coverage is asserted in the
   // buildConnectConfig block above.
+
+  // ==================== buildConnectConfig — Plan C Tier-1 overrides ====================
+
+  describe('buildConnectConfig — Plan C Tier-1 overrides', () => {
+    beforeEach(async () => {
+      vi.resetModules();
+      mockStorage.get.mockReset();
+      mockStorage.set.mockReset();
+    });
+
+    test('forceDirect apps prepend a direct match.apps route before region', async () => {
+      // bypass + cn: proxy defaultVia, direct countryVia, country=cn
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({
+        serverUrl: 'k2v5://example',
+        forceDirect: ['Firefox', 'Firefox Helper'],
+        forceProxy: [],
+      });
+      expect(cfg.routes![0]).toEqual({ match: { apps: ['Firefox', 'Firefox Helper'] }, via: 'direct' });
+      expect(cfg.routes![1]).toEqual({ match: { region: 'cn' }, via: 'direct' });
+      expect(cfg.routes![2]).toMatchObject({ match: { all: true }, via: 'k2v5://example' });
+    });
+
+    test('forceProxy apps prepend a proxy match.apps route', async () => {
+      // bypass + cn
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({
+        serverUrl: 'k2v5://example',
+        forceDirect: [],
+        forceProxy: ['Steam'],
+      });
+      expect(cfg.routes![0]).toEqual({ match: { apps: ['Steam'] }, via: 'k2v5://example' });
+    });
+
+    test('no overrides → unchanged region-first routes', async () => {
+      // bypass + cn
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+      expect(cfg.routes![0]).toEqual({ match: { region: 'cn' }, via: 'direct' });
+    });
+
+    test('both forceDirect and forceProxy emit two Tier-1 routes before region', async () => {
+      // bypass + cn
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({
+        serverUrl: 'k2v5://example',
+        forceDirect: ['curl'],
+        forceProxy: ['Steam'],
+      });
+      expect(cfg.routes![0]).toEqual({ match: { apps: ['curl'] }, via: 'direct' });
+      expect(cfg.routes![1]).toEqual({ match: { apps: ['Steam'] }, via: 'k2v5://example' });
+      expect(cfg.routes![2]).toEqual({ match: { region: 'cn' }, via: 'direct' });
+    });
+
+    test('string-form param has no overrides (Tier-1 empty)', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: null, autoDetect: true });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig('k2v5://legacy');
+      // global mode: single catch-all, no apps routes
+      expect(cfg.routes!.every((r) => !r.match.apps)).toBe(true);
+    });
+  });
 });

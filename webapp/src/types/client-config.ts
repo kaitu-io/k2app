@@ -38,6 +38,11 @@ export interface MatchConfig {
   names?: string[];
   exclude?: string[];
 
+  // Region selects a loaded *.krs bundle by basename (e.g. 'cn').
+  // Engine expands it into host + meta routes at build time. Plan B's
+  // single smart-bypass routing vocabulary.
+  region?: string;
+
   // Inline host matching
   domain_suffix?: string[];
   ip_cidr?: string[];
@@ -45,10 +50,15 @@ export interface MatchConfig {
   // Connection metadata
   process_name?: string[];
   package_name?: string[];
-  // v2 (app-bypass): prefix matching + Android installer source.
+  // Prefix matching + Android installer source.
   process_name_prefix?: string[];
   package_name_prefix?: string[];
   installer_package?: string[];
+
+  // Apps are platform-dispatched glob patterns for force-overrides.
+  // Plan C wires the UI; Plan B reserves the wire shape.
+  apps?: string[];
+
   network?: 'tcp' | 'udp';
   ip_is_private?: boolean;
 
@@ -79,23 +89,6 @@ export interface TelemetryConfig {
   rule_miss?: RuleMissTelemetryConfig;
 }
 
-/**
- * App Bypass v2 payload — opt-in smart routing of per-app traffic to direct.
- *
- * Mirrors Go `config.AppBypassConfig`. When `region` is set, the engine
- * loads `app-bypass-<region>.yaml` from its rule cache and merges the
- * preset's process / package / installer signals with the user-added
- * `process_adds` / `package_adds` overrides. When `region` is empty (or
- * the preset is missing) the engine still produces direct routes from
- * the custom adds alone, so user-managed bypass entries work in any
- * routing mode.
- */
-export interface AppBypassConfig {
-  region?: string;
-  process_adds?: string[];
-  package_adds?: string[];
-}
-
 export interface ClientConfig {
   mode?: 'tun' | 'proxy';
   routes?: RouteConfig[];
@@ -104,7 +97,6 @@ export interface ClientConfig {
   proxy?: { listen?: string };
   dns?: { direct?: string[]; proxy?: string[] };
   telemetry?: TelemetryConfig;
-  app_bypass?: AppBypassConfig;
 }
 
 export const CLIENT_CONFIG_DEFAULTS: ClientConfig = {

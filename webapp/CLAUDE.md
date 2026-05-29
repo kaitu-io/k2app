@@ -287,10 +287,15 @@ cd webapp && npx tsc --noEmit            # Type check
 - **AuthGate** — Startup gate: checks service readiness + version match before showing main UI.
 - **LoginDialog** — Global modal for all auth flows (no `/login` route).
 - **transformStatus()** — Bridge normalization (see "Bridge & VPN State Contract" above).
-- **App Bypass (Split-Exclude)** — Per-app blacklist routing apps to direct. List
-  is stored in `_platform.storage` under `k2.advanced.app_bypass` and never
-  appears in logs, uploaded feedback zips, telemetry, or Sentry breadcrumbs.
-  See `docs/superpowers/specs/2026-05-12-app-bypass-design.md`.
+- **App routing (Plan B unification)** — Smart region routing is expressed solely
+  via `routes[].match.region` (the old separate `app_bypass` field is gone). The
+  region is sourced from `config.store.country`; `config.store buildRoutes()` emits
+  `match.region` on the direct branch. Per-app force overrides (`forceProxy` /
+  `forceDirect`) live in `app-routes.store` (`_platform.storage` key
+  `k2.routes.overrides`) and are reserved for Plan C — Plan B persists the shape
+  but does not yet emit `match.apps`. The legacy `k2.advanced.app_bypass` key is
+  migration-cleanup-only (discarded on first `load()`).
+  See `docs/superpowers/specs/2026-05-27-app-bypass-routes-unification.md`.
 
 ## Style
 

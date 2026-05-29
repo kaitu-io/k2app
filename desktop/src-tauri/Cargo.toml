@@ -37,6 +37,7 @@ urlencoding = "2.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libproc = "0.14"
+plist = "1"
 objc2 = "0.5"
 objc2-foundation = { version = "0.2", features = [
     "NSArray",
@@ -59,6 +60,7 @@ objc2-app-kit = { version = "0.2", features = [
 
 [target.'cfg(target_os = "windows")'.dependencies]
 sysinfo = "0.30"
+winreg = "0.52"
 
 [features]
 mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]

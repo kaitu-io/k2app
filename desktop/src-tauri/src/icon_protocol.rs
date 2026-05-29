@@ -1,10 +1,10 @@
 // desktop/src-tauri/src/icon_protocol.rs
 //
 // Tauri URI-scheme handler for `kaitu-icon://` — serves app icons to the
-// webapp for the App Bypass UI. The list_running_apps command (Task 4.1)
-// emits per-app `icon_url` strings of the form:
+// webapp for the App Bypass UI. The list_running_processes and
+// list_installed_apps commands emit per-app `icon_url` strings of the form:
 //
-//   macOS:    kaitu-icon://bundle/<urlencoded-bundle-id>
+//   macOS:    kaitu-icon://bundle/<urlencoded-bundle-id-or-path>
 //   Windows:  kaitu-icon://exe/<urlencoded-exe-path>
 //
 // The WebView resolves these via this handler. macOS uses NSWorkspace +
@@ -16,19 +16,60 @@ use tauri::http::Response;
 use tauri::{UriSchemeContext, Wry};
 
 #[cfg(target_os = "macos")]
-fn icon_for_bundle(bundle_id: &str) -> Option<Vec<u8>> {
-    use objc2::ClassType; // brings `NSBitmapImageRep::alloc()` into scope
+unsafe fn encode_icon_png(image: &objc2_app_kit::NSImage) -> Option<Vec<u8>> {
+    use objc2::ClassType;
     use objc2_app_kit::{
         NSBitmapImageFileType, NSBitmapImageRep, NSCompositingOperation, NSDeviceRGBColorSpace,
-        NSGraphicsContext, NSWorkspace,
+        NSGraphicsContext,
     };
-    use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize, NSString};
+    use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize};
 
-    // 128 px covers 4× retina at the 32 px <Avatar> render size in AppBypass.
-    // The system icon source is 1024 px; returning it raw made each fetch take
-    // ~350 ms and bottlenecked page load. Downsampling once here cuts that to
-    // <50 ms and the cached PNG is much smaller in transit too.
     const ICON_PX: isize = 128;
+    const ICON_F: f64 = 128.0;
+
+    // Empty 128×128 RGBA bitmap.
+    let bitmap = NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+        NSBitmapImageRep::alloc(),
+        std::ptr::null_mut(),
+        ICON_PX, // pixelsWide
+        ICON_PX, // pixelsHigh
+        8,       // bitsPerSample
+        4,       // samplesPerPixel (RGBA)
+        true,    // hasAlpha
+        false,   // isPlanar
+        NSDeviceRGBColorSpace,
+        0,  // bytesPerRow (auto)
+        32, // bitsPerPixel
+    )?;
+
+    let ctx = NSGraphicsContext::graphicsContextWithBitmapImageRep(&bitmap)?;
+    NSGraphicsContext::saveGraphicsState_class();
+    NSGraphicsContext::setCurrentContext(Some(&ctx));
+
+    let dst = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(ICON_F, ICON_F));
+    // fromRect == NSZeroRect (zero-sized) tells AppKit to draw the whole image.
+    let zero = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0));
+    image.drawInRect_fromRect_operation_fraction(
+        dst,
+        zero,
+        NSCompositingOperation::SourceOver,
+        1.0,
+    );
+
+    NSGraphicsContext::restoreGraphicsState_class();
+
+    let properties = NSDictionary::new();
+    let png_data = bitmap
+        .representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)?;
+
+    Some(png_data.bytes().to_vec())
+}
+
+#[cfg(target_os = "macos")]
+fn icon_for_bundle(bundle_id: &str) -> Option<Vec<u8>> {
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::{NSSize, NSString};
+
     const ICON_F: f64 = 128.0;
 
     // SAFETY: NSWorkspace, NSImage, NSBitmapImageRep, and NSGraphicsContext are
@@ -38,11 +79,19 @@ fn icon_for_bundle(bundle_id: &str) -> Option<Vec<u8>> {
     // leak the current context to any other code.
     unsafe {
         let workspace = NSWorkspace::sharedWorkspace();
-        let bundle_id_ns = NSString::from_str(bundle_id);
 
-        // Resolve bundle id → app URL on disk. Returns None if not installed.
-        let app_url = workspace.URLForApplicationWithBundleIdentifier(&bundle_id_ns)?;
-        let path_ns = app_url.path()?;
+        // Accept either a bundle PATH ("/Applications/WeChat.app") or a bundle
+        // ID ("com.tencent.xinWeChat"). Installed apps key their icon on the
+        // bundle path; running apps key on the bundle id.
+        let path_ns = if bundle_id.contains('/') || bundle_id.ends_with(".app") {
+            // It's a filesystem path — use directly.
+            NSString::from_str(bundle_id)
+        } else {
+            // It's a bundle ID — resolve to path via NSWorkspace.
+            let bundle_id_ns = NSString::from_str(bundle_id);
+            let app_url = workspace.URLForApplicationWithBundleIdentifier(&bundle_id_ns)?;
+            app_url.path()?
+        };
 
         // NSWorkspace#iconForFile is documented as never nil — falls back to a
         // generic icon if extraction fails. setSize aligns the logical
@@ -50,42 +99,7 @@ fn icon_for_bundle(bundle_id: &str) -> Option<Vec<u8>> {
         let image = workspace.iconForFile(&path_ns);
         image.setSize(NSSize::new(ICON_F, ICON_F));
 
-        // Empty 128×128 RGBA bitmap.
-        let bitmap = NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
-            NSBitmapImageRep::alloc(),
-            std::ptr::null_mut(),
-            ICON_PX, // pixelsWide
-            ICON_PX, // pixelsHigh
-            8,       // bitsPerSample
-            4,       // samplesPerPixel (RGBA)
-            true,    // hasAlpha
-            false,   // isPlanar
-            NSDeviceRGBColorSpace,
-            0,  // bytesPerRow (auto)
-            32, // bitsPerPixel
-        )?;
-
-        let ctx = NSGraphicsContext::graphicsContextWithBitmapImageRep(&bitmap)?;
-        NSGraphicsContext::saveGraphicsState_class();
-        NSGraphicsContext::setCurrentContext(Some(&ctx));
-
-        let dst = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(ICON_F, ICON_F));
-        // fromRect == NSZeroRect (zero-sized) tells AppKit to draw the whole image.
-        let zero = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0));
-        image.drawInRect_fromRect_operation_fraction(
-            dst,
-            zero,
-            NSCompositingOperation::SourceOver,
-            1.0,
-        );
-
-        NSGraphicsContext::restoreGraphicsState_class();
-
-        let properties = NSDictionary::new();
-        let png_data = bitmap
-            .representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)?;
-
-        Some(png_data.bytes().to_vec())
+        encode_icon_png(&image)
     }
 }
 

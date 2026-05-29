@@ -191,6 +191,23 @@
         "package_prefix": "套件前綴匹配",
         "installer_exact": "應用商店匹配"
       }
+    },
+    "v2": {
+      "title": "分應用分流",
+      "intro": "為單一應用強制選擇走代理或直連，覆蓋目前區域的智慧預設。連線期間無法修改。",
+      "badgeDirect": "預設直連",
+      "badgeProxy": "預設代理",
+      "chipDefault": "預設",
+      "chipForceDirect": "強制直連",
+      "chipForceProxy": "強制代理",
+      "installedSection": "已安裝應用（{{count}}）",
+      "moreSection": "更多 — 執行中的處理程序",
+      "search": "搜尋應用…",
+      "empty": "沒有符合的應用",
+      "loading": "正在載入應用清單…",
+      "unsupported": "本平台不支援分應用分流",
+      "reset": "全部還原預設",
+      "overrideCount": "已自訂 {{count}} 個應用"
     }
   },
   "smartMode": {

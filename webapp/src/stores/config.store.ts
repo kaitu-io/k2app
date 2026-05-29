@@ -16,12 +16,10 @@
 
 import { create } from 'zustand';
 
-import type { AppBypassConfig, ClientConfig, RouteConfig } from '../types/client-config';
+import type { ClientConfig, RouteConfig } from '../types/client-config';
 import { CLIENT_CONFIG_DEFAULTS } from '../types/client-config';
 import { countryToProfile, PROFILE_TO_PRESET } from '../utils/routes';
 import { cloudApi } from '../services/cloud-api';
-import { useAppBypassStore } from './app-bypass.store';
-
 /** Build-time log level from K2_BUILD_LOG_LEVEL env var (default: 'debug'). Injected by Vite define. */
 declare const __K2_BUILD_LOG_LEVEL__: string;
 
@@ -42,6 +40,8 @@ export interface TelemetryState {
 
 export interface ConnectConfigParams {
   serverUrl?: string;
+  forceDirect?: string[];   // Plan C: process names → Tier-1 direct route
+  forceProxy?: string[];    // Plan C: process names → Tier-1 proxy route
 }
 
 export interface DetectedProfileUpdate {
@@ -128,8 +128,20 @@ function buildRoutes(
     return [...prefix, { via: serverUrl, match: { all: true } }];
   }
 
+  // Smart (bypass) mode: emit a region route for direct local traffic.
+  if (countryVia === 'direct') {
+    if (!country) {
+      // No country set — fall back to global shape
+      return [...prefix, { via: serverUrl, match: { all: true } }];
+    }
+    return [
+      ...prefix,
+      { match: { region: country }, via: 'direct' },
+      { match: { all: true }, via: serverUrl },
+    ];
+  }
 
-  // Split: need a valid country profile
+  // Home / home_proxy: need a valid country profile (preset-based)
   const profile = countryToProfile(country);
   const preset = PROFILE_TO_PRESET[profile];
   if (!preset) {
@@ -137,9 +149,7 @@ function buildRoutes(
     return [...prefix, { via: serverUrl, match: { all: true } }];
   }
 
-  const countryRoute: RouteConfig = countryVia === 'direct'
-    ? { via: 'direct', match: { preset } }
-    : { via: 'k2p://home', match: { preset } };
+  const countryRoute: RouteConfig = { via: 'k2p://home', match: { preset } };
 
   const defaultRoute: RouteConfig = defaultVia === 'proxy'
     ? { via: serverUrl, match: {} }
@@ -280,21 +290,6 @@ async function persist(
   }
 }
 
-/**
- * Push the current effective app-bypass region to the daemon when running
- * on a daemon-backed platform. No-op on mobile (region travels via
- * ClientConfig.app_bypass at connect time, packed by buildConnectConfig).
- * Best-effort: failures are logged inside the store action; UI is not blocked.
- */
-function pushAppBypassRegionToDaemon(state: ConfigState): void {
-  const isDaemonBacked = !!window._platform?.appBypass?.daemonBacked;
-  if (!isDaemonBacked) return;
-  const preset = derivePreset(state.defaultVia, state.countryVia);
-  const region = preset === 'global' ? '' : (state.country ?? '');
-  // Fire-and-forget — setRegion() inside the store action handles errors.
-  void useAppBypassStore.getState().setRegion(region);
-}
-
 // ============ Store ============
 
 export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) => ({
@@ -344,7 +339,6 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     set({ defaultVia, countryVia });
     const { country, autoDetect, alwaysOn } = get();
     await persist(defaultVia, countryVia, country, autoDetect, alwaysOn);
-    pushAppBypassRegionToDaemon(get());
   },
 
   setCountry: async (cc) => {
@@ -352,7 +346,6 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     set({ country: lower, autoDetect: false });
     const { defaultVia, countryVia, alwaysOn } = get();
     await persist(defaultVia, countryVia, lower, false, alwaysOn);
-    pushAppBypassRegionToDaemon(get());
   },
 
   setAutoDetect: async (on) => {
@@ -366,7 +359,6 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     set(next);
     const { defaultVia, countryVia, country, alwaysOn } = get();
     await persist(defaultVia, countryVia, country, on, alwaysOn);
-    pushAppBypassRegionToDaemon(get());
   },
 
   setAlwaysOn: async (on) => {
@@ -439,53 +431,26 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
 
   buildConnectConfig: (params?: ConnectConfigParams | string) => {
     const { defaultVia, countryVia, country, autoDetect, telemetry } = get();
-    // Cross-store read: app-bypass entries are user-managed (per-app direct routes).
-    // Counted-only in logs — names MUST NEVER be logged (see Section 8 privacy invariant).
-    const bypassEntries = useAppBypassStore.getState().entries;
     const preset = derivePreset(defaultVia, countryVia);
-    const serverUrl = typeof params === 'string'
-      ? params
-      : params?.serverUrl;
+    const opts = typeof params === 'string' ? { serverUrl: params } : (params ?? {});
+    const serverUrl = opts.serverUrl;
 
     const baseRoutes = buildRoutes(defaultVia, countryVia, country, serverUrl);
+
+    // Plan C: Tier-1 per-app override routes — prepended before the region route
+    const fd = opts.forceDirect ?? [];
+    const fp = opts.forceProxy ?? [];
+    const overrideRoutes: RouteConfig[] = [];
+    if (fd.length > 0) overrideRoutes.push({ match: { apps: [...fd] }, via: 'direct' });
+    if (fp.length > 0) overrideRoutes.push({ match: { apps: [...fp] }, via: serverUrl as string });
+    const routes = [...overrideRoutes, ...baseRoutes];
+
     const result: ClientConfig = {
       ...CLIENT_CONFIG_DEFAULTS,
       mode: 'tun',
       log: { ...CLIENT_CONFIG_DEFAULTS.log, level: __K2_BUILD_LOG_LEVEL__ },
-      routes: baseRoutes,
+      routes,
     };
-
-    // App Bypass v2: the Go engine now owns regional pattern matching and
-    // merges them with user-added process/package overrides at engine.Start.
-    // Webapp only forwards the inputs.
-    //   - region: only set in smart-routing presets (skip in global).
-    //     Empty region + custom adds still produces direct routes for
-    //     user-managed apps (e.g. Steam) per buildAppBypassRoute fallback.
-    //   - iOS: feature_supported=false on the daemon side; harmless to send.
-    //
-    // On daemon-backed platforms (desktop / standalone) the daemon already
-    // owns app-bypass state via HTTP actions; packing into ClientConfig is
-    // redundant and would re-seed daemon state from a possibly-stale webapp
-    // cache on every reconnect (dual-writer hazard). Mobile (Capacitor) has
-    // no daemon HTTP surface — appext reads cfg.AppBypass directly, so we
-    // keep packing there.
-    const isDaemonBacked = !!window._platform?.appBypass?.daemonBacked;
-    const processAdds = [...new Set(
-      bypassEntries.filter(e => e.kind === 'process').flatMap(e => e.names),
-    )];
-    const packageAdds = [...new Set(
-      bypassEntries.filter(e => e.kind === 'package').flatMap(e => e.names),
-    )];
-    const appBypassRegion = preset === 'global' ? '' : (country ?? '');
-    if (!isDaemonBacked) {
-      if (appBypassRegion || processAdds.length > 0 || packageAdds.length > 0) {
-        const ab: AppBypassConfig = {};
-        if (appBypassRegion) ab.region = appBypassRegion;
-        if (processAdds.length > 0) ab.process_adds = processAdds;
-        if (packageAdds.length > 0) ab.package_adds = packageAdds;
-        result.app_bypass = ab;
-      }
-    }
 
     if (telemetry.ruleMissEnabled) {
       result.telemetry = {
@@ -500,11 +465,6 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       + ', country=' + (country ?? 'null')
       + ', autoDetect=' + autoDetect
       + ', routes=' + (result.routes?.length ?? 0)
-      + ', bypassEntryCount=' + bypassEntries.length
-      + ', appBypassRegion=' + (appBypassRegion || 'none')
-      + ', processAddsCount=' + processAdds.length
-      + ', packageAddsCount=' + packageAdds.length
-      + ', isDaemonBacked=' + isDaemonBacked
       + ', serverUrl=' + (serverUrl ?? 'none')
       + ', logLevel=' + result.log?.level
       + ', mode=' + result.mode
