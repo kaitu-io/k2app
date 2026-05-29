@@ -191,6 +191,23 @@
         "package_prefix": "Package prefix match",
         "installer_exact": "Installer match"
       }
+    },
+    "v2": {
+      "title": "Per-App Routing",
+      "intro": "Force individual apps to use the proxy or go direct, overriding the smart default for your region. Cannot be changed while connected.",
+      "badgeDirect": "Direct by default",
+      "badgeProxy": "Proxied by default",
+      "chipDefault": "Default",
+      "chipForceDirect": "Force direct",
+      "chipForceProxy": "Force proxy",
+      "installedSection": "Installed apps ({{count}})",
+      "moreSection": "More — running processes",
+      "search": "Search apps…",
+      "empty": "No matching apps",
+      "loading": "Loading apps…",
+      "unsupported": "Per-app routing isn't supported on this platform",
+      "reset": "Reset all to default",
+      "overrideCount": "{{count}} app(s) customized"
     }
   },
   "smartMode": {

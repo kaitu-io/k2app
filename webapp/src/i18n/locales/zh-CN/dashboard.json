@@ -191,6 +191,23 @@
         "package_prefix": "包前缀匹配",
         "installer_exact": "应用商店匹配"
       }
+    },
+    "v2": {
+      "title": "分应用分流",
+      "intro": "为单个应用强制选择走代理或直连，覆盖当前区域的智能默认。连接期间不可修改。",
+      "badgeDirect": "默认直连",
+      "badgeProxy": "默认代理",
+      "chipDefault": "默认",
+      "chipForceDirect": "强制直连",
+      "chipForceProxy": "强制代理",
+      "installedSection": "已安装应用（{{count}}）",
+      "moreSection": "更多 — 运行中的进程",
+      "search": "搜索应用…",
+      "empty": "没有匹配的应用",
+      "loading": "正在加载应用列表…",
+      "unsupported": "本平台不支持分应用分流",
+      "reset": "全部恢复默认",
+      "overrideCount": "已自定义 {{count}} 个应用"
     }
   },
   "smartMode": {
