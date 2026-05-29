@@ -45,6 +45,30 @@ fn collect_helper_basenames(bundle_url: &str, pid_paths: &[(i32, &str)]) -> Vec<
     out
 }
 
+/// True if `path` lives under a macOS OS system directory (Apple daemons/bins).
+/// Trailing slashes guard against false prefixes (e.g. "/usr/bindle").
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn is_macos_system_path(path: &str) -> bool {
+    const SYS_DIRS: &[&str] = &[
+        "/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/usr/bin/", "/bin/",
+    ];
+    SYS_DIRS.iter().any(|p| path.starts_with(p))
+}
+
+/// True if `path` is inside a `.app` bundle (some ancestor path segment ends in
+/// ".app"). Such processes are GUI apps already covered by the NSWorkspace pass.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn is_inside_app_bundle(path: &str) -> bool {
+    path.split('/').any(|seg| seg.ends_with(".app"))
+}
+
+/// True if `path` is under `C:\Windows` (case-insensitive, slash-normalized).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn is_windows_system_path(path: &str) -> bool {
+    let p = path.to_ascii_lowercase().replace('/', "\\");
+    p.starts_with("c:\\windows\\")
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
@@ -286,5 +310,41 @@ mod tests {
         ];
         let helpers = collect_helper_basenames(bundle_url, &pid_paths);
         assert_eq!(helpers, vec!["Foo".to_string()]);
+    }
+
+    #[test]
+    fn macos_system_paths_excluded() {
+        assert!(is_macos_system_path("/System/Library/CoreServices/foo"));
+        assert!(is_macos_system_path("/usr/libexec/configd"));
+        assert!(is_macos_system_path("/usr/sbin/systemstats"));
+        assert!(is_macos_system_path("/sbin/launchd"));
+        assert!(is_macos_system_path("/usr/bin/ssh"));
+        assert!(is_macos_system_path("/bin/zsh"));
+        // User-relevant locations are NOT system paths:
+        assert!(!is_macos_system_path("/opt/homebrew/bin/node"));
+        assert!(!is_macos_system_path("/usr/local/bin/yt-dlp"));
+        assert!(!is_macos_system_path("/Users/david/go/bin/mytool"));
+        assert!(!is_macos_system_path("/Applications/QQ.app/Contents/MacOS/QQ"));
+    }
+
+    #[test]
+    fn detects_inside_app_bundle() {
+        assert!(is_inside_app_bundle("/Applications/QQ.app/Contents/MacOS/QQ"));
+        assert!(is_inside_app_bundle(
+            "/Applications/Slack.app/Contents/Frameworks/Slack Helper.app/Contents/MacOS/Slack Helper"
+        ));
+        // Standalone binaries are NOT inside a bundle:
+        assert!(!is_inside_app_bundle("/opt/homebrew/bin/node"));
+        assert!(!is_inside_app_bundle("/usr/local/bin/python3"));
+    }
+
+    #[test]
+    fn windows_system_paths_excluded() {
+        assert!(is_windows_system_path("C:\\Windows\\System32\\svchost.exe"));
+        assert!(is_windows_system_path("c:\\windows\\explorer.exe")); // case-insensitive
+        assert!(is_windows_system_path("C:/Windows/System32/services.exe")); // forward slashes
+        // User-installed / portable exes are NOT system paths:
+        assert!(!is_windows_system_path("C:\\Program Files\\nodejs\\node.exe"));
+        assert!(!is_windows_system_path("C:\\Users\\david\\tools\\portable.exe"));
     }
 }
