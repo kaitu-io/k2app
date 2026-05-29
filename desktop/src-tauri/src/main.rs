@@ -3,6 +3,7 @@
 mod app_list;
 mod channel;
 mod icon_protocol;
+mod installed_apps;
 mod log_upload;
 mod service;
 mod storage;
@@ -121,7 +122,8 @@ fn main() {
             storage::storage_get,
             storage::storage_set,
             storage::storage_remove,
-            app_list::list_running_apps,
+            app_list::list_running_processes,
+            installed_apps::list_installed_apps,
         ]);
 
     #[cfg(feature = "mcp-bridge")]
