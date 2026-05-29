@@ -41,11 +41,23 @@ sheds system-service noise. Both converge on the same filtering rule.
 
 A running process appears in the list iff:
 
-- **(a) Not in an OS system directory.** Executable path is not under:
-  - macOS: `/System`, `/usr/libexec`, `/usr/sbin`, `/sbin`, `/usr/bin`, `/bin`
+- **(a) Not inside an app/service bundle.** No path segment ends in `.app` or
+  `.xpc` (GUI apps are covered by the NSWorkspace pass; `.xpc` services are
+  background helpers, never user-routable). macOS only.
+- **(b) Not in an OS system directory.** Executable path is not under:
+  - macOS: `/System`, `/usr/libexec`, `/usr/sbin`, `/sbin`, `/usr/bin`, `/bin`,
+    `/Library/Apple`, `/Library/Developer`, `/private/var/folders`, `/private/tmp`, `/tmp`
   - Windows: `C:\Windows\**` (case-insensitive)
-- **(b) Not already an installed app.** Shares no process name with any
+- **(c) Not already an installed app.** Shares no process name with any
   `InstalledApp.processNames` (enforced in the webapp — see "Webapp changes").
+
+The macOS directory list in (b) beyond the obvious system roots was derived
+empirically (2026-05-29): a live scan of 822 processes produced 36 standalone
+candidates under the minimal rule; adding `/Library/Apple`, `/Library/Developer`
+(Xcode/CoreSimulator/CoreDevice daemons), the `.xpc` bundle check, and the
+transient `/private/var/folders` + `/tmp` paths reduced it to 23 — all of which
+were genuine user-launched programs (node, go, java, python, uv, gopls, adb,
+esbuild, CLI tools), zero Apple/XPC/temp noise.
 
 There is **no current-user / owner filter.** Rationale: OS daemons are almost
 all root-owned *and* live in system directories, so rule (a) already excludes
@@ -66,9 +78,10 @@ names, helper grouping). **Add** a second pass:
 
 - Enumerate all PIDs; resolve each executable path via `proc_pid::pidpath`
   (already a dependency, used at `app_list.rs:67`).
-- Skip a path if it is inside any `.app` bundle (any ancestor directory ends in
-  `.app`) — those are covered by the NSWorkspace pass.
-- Skip a path under a system directory (rule (a)).
+- Skip a path inside any `.app` or `.xpc` bundle (any segment ends in `.app` /
+  `.xpc`) — `.app`s are covered by the NSWorkspace pass; `.xpc` services are
+  background helpers (rule (a)).
+- Skip a path under a system directory (rule (b)).
 - Emit the remainder as `RunningApp { id: exe_path, label: file_stem,
   process_names: [basename], icon_url: Some("kaitu-icon://exe/<enc>") }`.
 
@@ -139,8 +152,8 @@ change only affects *which candidate rows the page offers*.
   standalone binary with no installed counterpart **does** appear under "其他运行
   中的程序"; the installed app renders exactly once; the section is absent when
   the difference set is empty.
-- **Rust (`app_list.rs` unit tests):** pure path helpers — `is_system_path`
-  (macOS + Windows prefixes) and `is_inside_app_bundle` (macOS) — with table
+- **Rust (`app_list.rs` unit tests):** pure path helpers — `is_macos_system_path`
+  / `is_windows_system_path` and `is_inside_bundle` (`.app`/`.xpc`) — with table
   cases. Live process enumeration is not unit-tested.
 - **Real verification:** `make dev-macos`, launch `node`/a brew tool, confirm it
   appears once and installed apps are not duplicated; on Windows confirm system
