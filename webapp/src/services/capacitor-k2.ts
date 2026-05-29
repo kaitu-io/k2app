@@ -86,6 +86,19 @@ export async function injectCapacitorGlobals(): Promise<void> {
             return { code: 0, message: 'ok', data: versionInfo as unknown as T };
           }
 
+          case 'classify-apps': {
+            // App Bypass region-default badges. Forward {region, installed} to
+            // native (which runs the same krs.MatchInstalled codepath as the
+            // engine). installed is JSON-stringified for the gomobile boundary.
+            const region: string = params?.region ?? '';
+            const installed = Array.isArray(params?.installed) ? params.installed : [];
+            const res = await K2Plugin.classifyApps({
+              region,
+              installed: JSON.stringify(installed),
+            });
+            return { code: 0, message: 'ok', data: res as unknown as T };
+          }
+
           default:
             return { code: -1, message: `Unknown action: ${action}` };
         }

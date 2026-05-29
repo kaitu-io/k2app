@@ -680,6 +680,29 @@ class K2Plugin : Plugin() {
         }
     }
 
+    // App Bypass region-default classifier. Forwards {region, installed(JSON)} to
+    // the app-module service (the only gomobile-allowed layer) and returns its
+    // {"classifications":[...]} payload verbatim. Fail-soft: if the service bridge
+    // isn't bound yet, resolve empty so the webapp falls back to all-proxy rather
+    // than erroring.
+    @PluginMethod
+    fun classifyApps(call: PluginCall) {
+        val region = call.getString("region") ?: ""
+        val installed = call.getString("installed") ?: "[]"
+        val svc = vpnService
+        if (svc == null) {
+            Log.w(TAG, "classifyApps: service bridge not bound, returning empty (fail-soft)")
+            call.resolve(JSObject("{\"classifications\":[]}"))
+            return
+        }
+        try {
+            call.resolve(JSObject(svc.classifyApps(region, installed)))
+        } catch (e: Exception) {
+            Log.w(TAG, "classifyApps failed: ${e.message}")
+            call.resolve(JSObject("{\"classifications\":[]}"))
+        }
+    }
+
     @PluginMethod
     fun setDevEnabled(call: PluginCall) {
         val enabled = call.getBoolean("enabled", false) ?: false

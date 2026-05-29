@@ -38,6 +38,7 @@ const mockK2Plugin = {
   addListener: vi.fn(),
   openUrl: vi.fn().mockResolvedValue(undefined),
   setLogLevel: vi.fn().mockResolvedValue(undefined),
+  classifyApps: vi.fn(),
 };
 
 vi.mock('k2-plugin', () => ({
@@ -898,5 +899,52 @@ describe('mapInstalledApp (Android PackageManager → InstalledApp)', () => {
     expect(r.installerPackageName).toBeUndefined();
     expect(r.processNames).toEqual(['com.foo']);
     expect(r.iconUrl).toBeUndefined();
+  });
+});
+
+describe('capacitor-k2 run(classify-apps)', () => {
+  let originalK2: any;
+  let originalPlatform: any;
+
+  beforeEach(() => {
+    originalK2 = window._k2;
+    originalPlatform = window._platform;
+    delete (window as any)._k2;
+    delete (window as any)._platform;
+    vi.clearAllMocks();
+    mockK2Plugin.checkReady.mockResolvedValue({ ready: true, version: '0.4.0' });
+    mockK2Plugin.addListener.mockResolvedValue({ remove: vi.fn() });
+  });
+
+  afterEach(() => {
+    (window as any)._k2 = originalK2;
+    (window as any)._platform = originalPlatform;
+  });
+
+  it('forwards region + stringified installed to K2Plugin and returns classifications', async () => {
+    mockK2Plugin.classifyApps.mockResolvedValue({
+      classifications: [{ id: 'com.tencent.mm', default: 'direct' }, { id: 'com.foreign', default: 'proxy' }],
+    });
+    const { injectCapacitorGlobals } = await import('../capacitor-k2');
+    await injectCapacitorGlobals();
+
+    const installed = [{ id: 'com.tencent.mm', label: 'WeChat', installer_package_name: '', process_names: ['com.tencent.mm'] }];
+    const resp = await window._k2.run('classify-apps', { region: 'cn', installed });
+
+    expect(mockK2Plugin.classifyApps).toHaveBeenCalledWith({ region: 'cn', installed: JSON.stringify(installed) });
+    expect(resp.code).toBe(0);
+    expect((resp.data as any).classifications).toEqual([
+      { id: 'com.tencent.mm', default: 'direct' },
+      { id: 'com.foreign', default: 'proxy' },
+    ]);
+  });
+
+  it('fails soft to code -1 when the native plugin rejects (webapp then defaults all to proxy)', async () => {
+    mockK2Plugin.classifyApps.mockRejectedValue(new Error('bridge not bound'));
+    const { injectCapacitorGlobals } = await import('../capacitor-k2');
+    await injectCapacitorGlobals();
+
+    const resp = await window._k2.run('classify-apps', { region: 'cn', installed: [] });
+    expect(resp.code).toBe(-1);
   });
 });

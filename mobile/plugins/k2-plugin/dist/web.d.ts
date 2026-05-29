@@ -85,4 +85,12 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
             iconUrl?: string;
         }>;
     }>;
+    classifyApps(): Promise<{
+        classifications: Array<{
+            id: string;
+            default: 'direct' | 'proxy';
+            hit_kind?: string;
+            hit_pattern?: string;
+        }>;
+    }>;
 }

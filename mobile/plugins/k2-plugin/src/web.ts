@@ -86,4 +86,9 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
   async listInstalledApps(): Promise<{ apps: Array<{ packageName: string; label: string; iconUrl?: string }> }> {
     throw this.unavailable('K2Plugin is not available on web');
   }
+
+  async classifyApps(): Promise<{ classifications: Array<{ id: string; default: 'direct' | 'proxy'; hit_kind?: string; hit_pattern?: string }> }> {
+    // Fail-soft (not throw): App Bypass on web degrades to all-proxy badges.
+    return { classifications: [] };
+  }
 }

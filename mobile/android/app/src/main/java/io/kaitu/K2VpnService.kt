@@ -210,6 +210,19 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         Appext.setLogLevel(level)
     }
 
+    // Stateless app-region classifier for the App Bypass page. Pure gomobile call
+    // (file read + krs match, no engine state) so it runs directly off the
+    // plugin's worker thread without engineExecutor, like setLogLevel. cacheDir is
+    // the same base passed to Engine.Start; Appext appends "/rules" internally.
+    override fun classifyApps(region: String, installedJSON: String): String {
+        return try {
+            Appext.classifyApps(cacheDir.absolutePath, region, installedJSON)
+        } catch (e: Exception) {
+            Log.w(TAG, "classifyApps failed: ${e.message}")
+            "{\"classifications\":[]}"
+        }
+    }
+
     private fun startVpn(configJSON: String) {
         Log.i(TAG, "startVpn: configJSON length=${configJSON.length}")
         NativeLogger.log("INFO", "startVpn: configJSON length=${configJSON.length}")

@@ -99,6 +99,23 @@ export interface K2PluginInterface {
             installerPackageName?: string | null;
         }>;
     }>;
+    /**
+     * Region-default app routing classifier for the App Bypass page. `installed` is
+     * a JSON-stringified array of {id,label,installer_package_name,process_names}.
+     * Mirrors the desktop daemon's classify-apps action (same krs.MatchInstalled),
+     * so badges agree with engine routing.
+     */
+    classifyApps(options: {
+        region: string;
+        installed: string;
+    }): Promise<{
+        classifications: Array<{
+            id: string;
+            default: 'direct' | 'proxy';
+            hit_kind?: string;
+            hit_pattern?: string;
+        }>;
+    }>;
     addListener(eventName: 'vpnStateChange', handler: (data: {
         state: string;
     }) => void): Promise<PluginListenerHandle>;

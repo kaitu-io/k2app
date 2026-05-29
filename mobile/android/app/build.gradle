@@ -29,6 +29,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Dev builds (cap run android) sign with the production keystore so
+            // they install straight over the released io.kaitu app — same
+            // signature, no uninstall, no data loss. Falls back to the default
+            // debug keystore when KAITU_ANDROID_STORE_PASSWORD isn't set (e.g.
+            // CI debug jobs or contributors without the key).
+            if (System.getenv("KAITU_ANDROID_STORE_PASSWORD")) {
+                signingConfig signingConfigs.release
+            }
+        }
         release {
             signingConfig signingConfigs.release
             minifyEnabled false

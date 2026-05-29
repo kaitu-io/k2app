@@ -301,7 +301,7 @@ dev-ios: pre-build build-webapp appext-ios
 dev-android: pre-build build-webapp appext-android
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
-	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync android && npx cap run android
+	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync android && npx cap run android $(if $(ANDROID_DEVICE),--target $(ANDROID_DEVICE),)
 
 # --- Upload artifacts to S3 (run AFTER build-*, separate to prevent accidental uploads) ---
 upload-macos:

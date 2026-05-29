@@ -63,4 +63,8 @@ export class K2PluginWeb extends WebPlugin {
     async listInstalledApps() {
         throw this.unavailable('K2Plugin is not available on web');
     }
+    async classifyApps() {
+        // Fail-soft (not throw): App Bypass on web degrades to all-proxy badges.
+        return { classifications: [] };
+    }
 }
