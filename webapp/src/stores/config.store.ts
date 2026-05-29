@@ -40,6 +40,8 @@ export interface TelemetryState {
 
 export interface ConnectConfigParams {
   serverUrl?: string;
+  forceDirect?: string[];   // Plan C: process names → Tier-1 direct route
+  forceProxy?: string[];    // Plan C: process names → Tier-1 proxy route
 }
 
 export interface DetectedProfileUpdate {
@@ -430,16 +432,24 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
   buildConnectConfig: (params?: ConnectConfigParams | string) => {
     const { defaultVia, countryVia, country, autoDetect, telemetry } = get();
     const preset = derivePreset(defaultVia, countryVia);
-    const serverUrl = typeof params === 'string'
-      ? params
-      : params?.serverUrl;
+    const opts = typeof params === 'string' ? { serverUrl: params } : (params ?? {});
+    const serverUrl = opts.serverUrl;
 
     const baseRoutes = buildRoutes(defaultVia, countryVia, country, serverUrl);
+
+    // Plan C: Tier-1 per-app override routes — prepended before the region route
+    const fd = opts.forceDirect ?? [];
+    const fp = opts.forceProxy ?? [];
+    const overrideRoutes: RouteConfig[] = [];
+    if (fd.length > 0) overrideRoutes.push({ match: { apps: [...fd] }, via: 'direct' });
+    if (fp.length > 0) overrideRoutes.push({ match: { apps: [...fp] }, via: serverUrl as string });
+    const routes = [...overrideRoutes, ...baseRoutes];
+
     const result: ClientConfig = {
       ...CLIENT_CONFIG_DEFAULTS,
       mode: 'tun',
       log: { ...CLIENT_CONFIG_DEFAULTS.log, level: __K2_BUILD_LOG_LEVEL__ },
-      routes: baseRoutes,
+      routes,
     };
 
     if (telemetry.ruleMissEnabled) {

@@ -22,6 +22,7 @@ import { cacheStore } from '../services/cache-store';
 import { cloudApi } from '../services/cloud-api';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
+import { useAppRoutesStore } from './app-routes.store';
 import { useVPNMachineStore, dispatch as vpnDispatch, type VPNState } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
 import { pickAutoTunnel } from '../utils/auto-tunnel-pick';
@@ -499,7 +500,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     // Build config with explicit params
     const { buildConnectConfig, resolvePreset, country: configCountry, alwaysOn } = useConfigStore.getState();
-    const config = buildConnectConfig({ serverUrl });
+    const { forceDirect, forceProxy } = useAppRoutesStore.getState();
+    const config = buildConnectConfig({ serverUrl, forceDirect, forceProxy });
     const currentPreset = resolvePreset();
     console.debug('[Connection] connect: config built, preset=' + currentPreset
       + ', country=' + (configCountry ?? 'null')

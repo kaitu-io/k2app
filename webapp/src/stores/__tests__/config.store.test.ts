@@ -675,4 +675,80 @@ describe('Config Store', () => {
   // App Bypass v2 retired buildBypassRoutes — app-bypass routing now lives
   // inside the Go engine. ClientConfig.app_bypass coverage is asserted in the
   // buildConnectConfig block above.
+
+  // ==================== buildConnectConfig — Plan C Tier-1 overrides ====================
+
+  describe('buildConnectConfig — Plan C Tier-1 overrides', () => {
+    beforeEach(async () => {
+      vi.resetModules();
+      mockStorage.get.mockReset();
+      mockStorage.set.mockReset();
+    });
+
+    test('forceDirect apps prepend a direct match.apps route before region', async () => {
+      // bypass + cn: proxy defaultVia, direct countryVia, country=cn
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({
+        serverUrl: 'k2v5://example',
+        forceDirect: ['Firefox', 'Firefox Helper'],
+        forceProxy: [],
+      });
+      expect(cfg.routes![0]).toEqual({ match: { apps: ['Firefox', 'Firefox Helper'] }, via: 'direct' });
+      expect(cfg.routes![1]).toEqual({ match: { region: 'cn' }, via: 'direct' });
+      expect(cfg.routes![2]).toMatchObject({ match: { all: true }, via: 'k2v5://example' });
+    });
+
+    test('forceProxy apps prepend a proxy match.apps route', async () => {
+      // bypass + cn
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({
+        serverUrl: 'k2v5://example',
+        forceDirect: [],
+        forceProxy: ['Steam'],
+      });
+      expect(cfg.routes![0]).toEqual({ match: { apps: ['Steam'] }, via: 'k2v5://example' });
+    });
+
+    test('no overrides → unchanged region-first routes', async () => {
+      // bypass + cn
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+      expect(cfg.routes![0]).toEqual({ match: { region: 'cn' }, via: 'direct' });
+    });
+
+    test('both forceDirect and forceProxy emit two Tier-1 routes before region', async () => {
+      // bypass + cn
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({
+        serverUrl: 'k2v5://example',
+        forceDirect: ['curl'],
+        forceProxy: ['Steam'],
+      });
+      expect(cfg.routes![0]).toEqual({ match: { apps: ['curl'] }, via: 'direct' });
+      expect(cfg.routes![1]).toEqual({ match: { apps: ['Steam'] }, via: 'k2v5://example' });
+      expect(cfg.routes![2]).toEqual({ match: { region: 'cn' }, via: 'direct' });
+    });
+
+    test('string-form param has no overrides (Tier-1 empty)', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: null, autoDetect: true });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig('k2v5://legacy');
+      // global mode: single catch-all, no apps routes
+      expect(cfg.routes!.every((r) => !r.match.apps)).toBe(true);
+    });
+  });
 });
