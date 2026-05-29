@@ -158,6 +158,7 @@ export default function AppBypass() {
                     def={classifications.get(r.id) ?? 'proxy'}
                     mode={modeOf(rApp, forceDirect, forceProxy)}
                     onSet={(m) => void setOverride(rApp, m)}
+                    subtitle={r.id}
                   />
                 );
               })}
@@ -169,11 +170,16 @@ export default function AppBypass() {
   );
 }
 
-function AppRow({ app, def, mode, onSet }: {
+function AppRow({ app, def, mode, onSet, subtitle }: {
   app: InstalledApp;
   def: 'direct' | 'proxy';
   mode: OverrideMode;
   onSet: (m: OverrideMode) => void;
+  // Running-process rows pass the executable path here. The engine matches by
+  // process NAME, so two binaries that share a basename (e.g. /usr/bin/curl and
+  // /opt/homebrew/bin/curl) appear as two rows that toggle together — the path
+  // is what tells them apart. Installed-app rows omit this and stay single-line.
+  subtitle?: string;
 }) {
   const { t } = useTranslation();
   // Two spatially-stable chips: proxy always on the left, direct always on the
@@ -189,6 +195,11 @@ function AppRow({ app, def, mode, onSet }: {
       </Avatar>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography noWrap variant="body2">{app.label}</Typography>
+        {subtitle && (
+          <Typography noWrap variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            {subtitle}
+          </Typography>
+        )}
       </Box>
       <Stack direction="row" spacing={0.5}>
         <Chip size="small" clickable

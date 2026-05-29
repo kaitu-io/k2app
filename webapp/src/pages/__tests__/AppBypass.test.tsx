@@ -81,6 +81,36 @@ describe('AppBypass page', () => {
     expect(screen.getAllByText('WeChat')).toHaveLength(1);
   });
 
+  test('running rows show the executable path as a subtitle', async () => {
+    // Two binaries share the basename "curl" (same process name) but live at
+    // different paths. Both must render as separate rows (the engine matches by
+    // name, so the path is the only thing telling them apart), and each row must
+    // surface its full path. Installed apps must NOT show their bundle path.
+    (window as any)._platform = {
+      os: 'macos',
+      appList: {
+        listInstalled: vi.fn().mockResolvedValue([
+          { id: '/Applications/WeChat.app', label: 'WeChat', processNames: ['WeChat'] },
+        ]),
+        // Both paths are outside system dirs (the native macOS pass filters
+        // /usr/bin/* etc.), so both reach the webapp as separate rows.
+        listRunning: vi.fn().mockResolvedValue([
+          { id: '/usr/local/bin/curl', label: 'curl', processNames: ['curl'] },
+          { id: '/opt/homebrew/bin/curl', label: 'curl', processNames: ['curl'] },
+        ]),
+      },
+    };
+    renderPage();
+    await screen.findByText(/其他运行中的程序|Other running programs/);
+    // Both same-name binaries render (dedup is by path, not name).
+    expect(screen.getAllByText('curl')).toHaveLength(2);
+    // Each row surfaces its own path.
+    expect(screen.getByText('/usr/local/bin/curl')).toBeInTheDocument();
+    expect(screen.getByText('/opt/homebrew/bin/curl')).toBeInTheDocument();
+    // The installed app's bundle path is never shown.
+    expect(screen.queryByText('/Applications/WeChat.app')).not.toBeInTheDocument();
+  });
+
   test('unsupported platform shows empty state', async () => {
     (window as any)._platform = { os: 'ios', appList: undefined };
     renderPage();
