@@ -304,7 +304,9 @@ Configurable via env:
 ### Local dev
 
 ```bash
-docker compose -f web/docker-compose.dev.yml up -d   # Local Postgres (host port 5435 to avoid conflicts)
+# Postgres comes from the shared dev-postgres container (managed by user-level postgres-dev MCP).
+# Standard port 5432 — credentials in web/.env.local DATABASE_URL.
+# Project no longer ships docker-compose.dev.yml — see docker-compose.dev.yml.deprecated
 cd web && yarn payload generate:types                 # Regenerate types after collection changes (gitignored output)
 cd web && yarn dev                                    # Next.js + Payload; visit http://localhost:3000/manager/cms
 ```
@@ -334,7 +336,7 @@ amplify.yml does NOT run `payload migrate` automatically because `@payload-encha
 ### Gotchas specific to Payload
 - **`.ts` extensions required** on all payload-internal imports (e.g., `import { X } from './collections/X.ts'`) — Payload CLI's tsx loader mandates them.
 - **`--disable-transpile`** on `yarn payload` CLI — avoids `ERR_REQUIRE_ASYNC_MODULE` from tsx loader.
-- **Postgres port 5435** in local dev `.env` — chosen to avoid collision with common local pg containers (5432/5433/5434).
+- **Postgres on standard port 5432** — uses the shared dev-postgres container managed by user-level `postgres-dev` MCP. The dedicated `web/docker-compose.dev.yml` (host port 5435) was retired 2026-05-27; the file remains as `.deprecated` for reference.
 - **`admins.auth: { disableLocalStrategy: true }`** — removes Payload's auto email/password; explicit `email` field needed.
 - **Middleware passthrough is load-bearing**: `src/middleware.ts` must early-return for `/manager` AND `/payload` prefixes, and the matcher must exclude them (`/((?!api|app|manager|payload|_next|...))`). `/manager` covers both the manager dashboard and the nested Payload admin at `/manager/cms`; `/payload` covers Payload's REST. Without this, i18n middleware mangles admin requests into locale-prefixed redirects. Verify whenever editing `middleware.ts`.
 

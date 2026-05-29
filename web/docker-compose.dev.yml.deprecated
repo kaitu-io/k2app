@@ -1,3 +1,11 @@
+# DEPRECATED 2026-05-27 — Payload CMS no longer ships its own dev Postgres container.
+# The web service now connects to the shared dev-postgres container managed at the
+# user level via the postgres-dev MCP server.
+#
+#   Postgres: 127.0.0.1:5432  payload:payload  database `kaitu_cms`
+#
+# Connection details are in web/.env.local DATABASE_URL. To restore the legacy
+# local stack (host port 5435), rename this file back to docker-compose.dev.yml.
 services:
   postgres:
     image: postgres:16-alpine

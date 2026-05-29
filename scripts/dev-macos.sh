@@ -19,27 +19,23 @@ cleanup() {
   for pid in "${PIDS[@]}"; do
     wait "$pid" 2>/dev/null || true
   done
-  docker compose -f "$API_DIR/docker-compose.yml" stop 2>/dev/null || true
   echo "All services stopped."
 }
 trap cleanup EXIT INT TERM
 
-# ── 1. Start MySQL + Redis via docker-compose ──
-echo "[dev-desktop] Starting MySQL + Redis..."
-docker compose -f "$API_DIR/docker-compose.yml" up -d
-
-echo "[dev-desktop] Waiting for MySQL..."
-for i in $(seq 1 30); do
-  if docker compose -f "$API_DIR/docker-compose.yml" exec -T mysql mysqladmin ping -u root -p123456 --silent 2>/dev/null; then
-    echo "[dev-desktop] MySQL ready."
-    break
-  fi
-  if [ "$i" -eq 30 ]; then
-    echo "[dev-desktop] MySQL failed to start within 30s"
-    exit 1
-  fi
-  sleep 1
-done
+# ── 1. Verify shared dev containers (dev-mariadb / dev-redis) ──
+# User-level long-running containers managed via mysql-dev / redis-dev MCP.
+# Project no longer ships its own docker-compose — see api/docker-compose.yml.deprecated.
+echo "[dev-desktop] Checking shared dev containers..."
+missing=()
+nc -z 127.0.0.1 3306 2>/dev/null || missing+=("dev-mariadb (127.0.0.1:3306)")
+nc -z 127.0.0.1 6379 2>/dev/null || missing+=("dev-redis (127.0.0.1:6379)")
+if [ ${#missing[@]} -ne 0 ]; then
+  echo "[dev-desktop] ERROR: shared dev container(s) not reachable: ${missing[*]}" >&2
+  echo "[dev-desktop] Start them via the mysql-dev / redis-dev MCP, or run 'docker ps' to verify." >&2
+  exit 1
+fi
+echo "[dev-desktop] MySQL + Redis reachable."
 
 # ── 2. Build and start API server ──
 echo "[dev-desktop] Building API server..."

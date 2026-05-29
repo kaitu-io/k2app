@@ -1,3 +1,13 @@
+# DEPRECATED 2026-05-27 — k2app no longer ships its own MySQL/Redis dev containers.
+# The api service now connects to the shared dev-mariadb / dev-redis containers
+# managed at the user level via the mysql-dev / redis-dev MCP servers.
+#
+#   MySQL:  127.0.0.1:3306  root:dev    database `kaitu`
+#   Redis:  127.0.0.1:6379  pw=dev      db=1
+#
+# Connection details are in api/config.yml. To restore the legacy local stack
+# (port 53721 / 49183), rename this file back to docker-compose.yml. The
+# .data/mysql + .data/redis volumes are preserved in this directory.
 services:
   mysql:
     image: mariadb:10.6.18

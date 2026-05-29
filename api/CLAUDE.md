@@ -180,8 +180,11 @@ Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, lice
 ## Local Development
 
 ```bash
-# Start dependencies
-cd api && docker-compose up -d      # MariaDB 10.6 (port 53721) + Redis (port 49183)
+# Dependencies are the shared dev containers (dev-mariadb / dev-redis) managed
+# at the user level via mysql-dev / redis-dev MCP. Connect on standard ports:
+#   MySQL  127.0.0.1:3306  root:dev   database `kaitu`
+#   Redis  127.0.0.1:6379  pw=dev     db=1
+# Project no longer ships its own docker-compose for these — see api/docker-compose.yml.deprecated
 
 # First time setup
 cd api/cmd && go build -o kaitu-center . && ./kaitu-center migrate -c ../config.yml
