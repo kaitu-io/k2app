@@ -43,16 +43,19 @@ function renderPage() {
 }
 
 describe('AppBypass page', () => {
-  test('renders installed apps with a default-direct chip', async () => {
+  test('renders installed apps with a direct chip', async () => {
     renderPage();
     expect(await screen.findByText('WeChat')).toBeInTheDocument();
-    expect(screen.getByText(/默认直连|Direct by default/)).toBeInTheDocument();
+    // The intro prose also says 直连/Direct, so scope to the Chip via its class.
+    const directChip = screen.getAllByText(/直连|Direct/).find((el) => el.closest('.MuiChip-root'));
+    expect(directChip).toBeTruthy();
   });
 
-  test('clicking force-proxy calls setOverride with the app', async () => {
+  test('clicking the smart chip calls setOverride with the app', async () => {
     renderPage();
     await screen.findByText('WeChat');
-    fireEvent.click(screen.getByText(/强制代理|Force proxy/));
+    const smartChip = screen.getAllByText(/智能|Smart/).find((el) => el.closest('.MuiChip-root'));
+    fireEvent.click(smartChip!);
     await waitFor(() => expect(setOverride).toHaveBeenCalledWith(
       expect.objectContaining({ id: '/Applications/WeChat.app', processNames: ['WeChat'] }), 'proxy'));
   });

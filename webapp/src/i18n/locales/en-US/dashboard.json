@@ -133,10 +133,8 @@
     "v2": {
       "title": "Per-App Routing",
       "intro": "Force individual apps to use the proxy or go direct, overriding the smart default for your region. Cannot be changed while connected.",
-      "chipDefaultDirect": "Direct by default",
-      "chipDefaultProxy": "Proxied by default",
-      "chipForceDirect": "Force direct",
-      "chipForceProxy": "Force proxy",
+      "chipProxy": "Smart",
+      "chipDirect": "Direct",
       "installedSection": "Installed apps ({{count}})",
       "moreSection": "Other running programs",
       "search": "Search apps…",

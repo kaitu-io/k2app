@@ -182,10 +182,11 @@ function AppRow({ app, def, mode, onSet, subtitle }: {
   subtitle?: string;
 }) {
   const { t } = useTranslation();
-  // Two spatially-stable chips: proxy always on the left, direct always on the
-  // right. The chip matching the region default carries the "默认" prefix and
-  // clears any override on click; the opposite chip is the explicit "强制"
-  // override. Effective routing = the override, or the region default when none.
+  // Two spatially-stable chips: 智能 (proxy) always on the left, 直连 (direct)
+  // always on the right. The active chip is the highlighted one; clicking the
+  // chip that matches the region default clears any override, clicking the other
+  // sets an explicit override. Effective routing = the override, or the region
+  // default when none.
   const proxyIsDefault = def === 'proxy';
   const effective = mode === 'default' ? def : mode;
   return (
@@ -203,15 +204,11 @@ function AppRow({ app, def, mode, onSet, subtitle }: {
       </Box>
       <Stack direction="row" spacing={0.5}>
         <Chip size="small" clickable
-          label={proxyIsDefault
-            ? t('dashboard:appBypass.v2.chipDefaultProxy')
-            : t('dashboard:appBypass.v2.chipForceProxy')}
+          label={t('dashboard:appBypass.v2.chipProxy')}
           color={effective === 'proxy' ? 'primary' : 'default'}
           onClick={() => onSet(proxyIsDefault ? 'default' : 'proxy')} />
         <Chip size="small" clickable
-          label={proxyIsDefault
-            ? t('dashboard:appBypass.v2.chipForceDirect')
-            : t('dashboard:appBypass.v2.chipDefaultDirect')}
+          label={t('dashboard:appBypass.v2.chipDirect')}
           color={effective === 'direct' ? 'primary' : 'default'}
           onClick={() => onSet(proxyIsDefault ? 'direct' : 'default')} />
       </Stack>
