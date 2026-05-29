@@ -1,5 +1,7 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { useAppRoutesStore, migrateLegacyKey, STORAGE_KEY, OLD_STORAGE_KEY, OLD_MARKER } from './app-routes.store';
+import { classifyApps } from '../services/classify-apps';
+vi.mock('../services/classify-apps', () => ({ classifyApps: vi.fn() }));
 
 function installStorageMock(): Map<string, unknown> {
   const m = new Map<string, unknown>();
@@ -58,5 +60,48 @@ describe('app-routes.store (Plan B)', () => {
   test('migrateLegacyKey is a no-op when no _platform.storage', async () => {
     (window as any)._platform = undefined;
     await expect(migrateLegacyKey()).resolves.toBeUndefined();
+  });
+});
+
+describe('app-routes classify cache + toggles', () => {
+  beforeEach(() => {
+    installStorageMock();
+    useAppRoutesStore.setState({ forceProxy: [], forceDirect: [], classifications: new Map(), loaded: true });
+    (classifyApps as any).mockReset();
+  });
+
+  test('classifyInstalled stores the map', async () => {
+    (classifyApps as any).mockResolvedValue(new Map([['a', 'direct'], ['b', 'proxy']]));
+    await useAppRoutesStore.getState().classifyInstalled('cn', [
+      { id: 'a', label: 'A', processNames: ['A'] },
+      { id: 'b', label: 'B', processNames: ['B'] },
+    ]);
+    expect(useAppRoutesStore.getState().classifications.get('a')).toBe('direct');
+  });
+
+  // overrides store PROCESS NAMES (engine match.apps), NOT the app id.
+  test('setOverride(direct) stores all process names + is exclusive with proxy', async () => {
+    const steam = { id: '/Applications/Steam.app', processNames: ['Steam', 'steamwebhelper'] };
+    await useAppRoutesStore.getState().setOverride(steam, 'proxy');
+    await useAppRoutesStore.getState().setOverride(steam, 'direct');
+    expect(useAppRoutesStore.getState().forceDirect).toEqual(
+      expect.arrayContaining(['Steam', 'steamwebhelper']));
+    expect(useAppRoutesStore.getState().forceProxy).not.toContain('Steam');
+  });
+
+  test('setOverride(default) clears all of the app process names', async () => {
+    const steam = { id: '/Applications/Steam.app', processNames: ['Steam', 'steamwebhelper'] };
+    await useAppRoutesStore.getState().setOverride(steam, 'direct');
+    await useAppRoutesStore.getState().setOverride(steam, 'default');
+    expect(useAppRoutesStore.getState().forceDirect).not.toContain('Steam');
+    expect(useAppRoutesStore.getState().forceDirect).not.toContain('steamwebhelper');
+    expect(useAppRoutesStore.getState().forceProxy).not.toContain('Steam');
+  });
+
+  test('resetOverrides clears both sets', async () => {
+    await useAppRoutesStore.getState().setOverride({ id: 'x', processNames: ['x'] }, 'direct');
+    await useAppRoutesStore.getState().resetOverrides();
+    expect(useAppRoutesStore.getState().forceDirect).toEqual([]);
+    expect(useAppRoutesStore.getState().forceProxy).toEqual([]);
   });
 });

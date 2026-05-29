@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { classifyApps, type RouteDefault } from '../services/classify-apps';
+import type { InstalledApp } from '../types/kaitu-core';
 
 export const STORAGE_KEY = 'k2.routes.overrides';
 export const OLD_STORAGE_KEY = 'k2.advanced.app_bypass';
@@ -10,15 +12,23 @@ interface AppRoutesStorageShape {
   forceDirect: string[];
 }
 
+/** Minimal app shape required by setOverride — both InstalledApp and RunningApp satisfy it. */
+type OverrideApp = Pick<InstalledApp, 'processNames'>;
+
 interface AppRoutesState {
-  /** Plan C: app ids force-routed via proxy regardless of region default. */
+  /** Plan C: process names force-routed via proxy regardless of region default. */
   forceProxy: string[];
-  /** Plan C: app ids force-routed direct regardless of region default. */
+  /** Plan C: process names force-routed direct regardless of region default. */
   forceDirect: string[];
+  /** Cached classify-apps result (keyed by app id). */
+  classifications: Map<string, RouteDefault>;
   loaded: boolean;
   setForceProxy: (ids: string[]) => Promise<void>;
   setForceDirect: (ids: string[]) => Promise<void>;
   load: () => Promise<void>;
+  classifyInstalled: (region: string, installed: InstalledApp[]) => Promise<void>;
+  setOverride: (app: OverrideApp, mode: 'direct' | 'proxy' | 'default') => Promise<void>;
+  resetOverrides: () => Promise<void>;
 }
 
 async function persist(forceProxy: string[], forceDirect: string[]): Promise<void> {
@@ -45,6 +55,7 @@ export async function migrateLegacyKey(): Promise<void> {
 export const useAppRoutesStore = create<AppRoutesState>((set, get) => ({
   forceProxy: [],
   forceDirect: [],
+  classifications: new Map(),
   loaded: false,
   setForceProxy: async (ids) => {
     const v = [...new Set(ids)];
@@ -64,5 +75,24 @@ export const useAppRoutesStore = create<AppRoutesState>((set, get) => ({
     } else {
       set({ loaded: true });
     }
+  },
+  classifyInstalled: async (region, installed) => {
+    const map = await classifyApps(region, installed);
+    set({ classifications: map });
+  },
+  setOverride: async (app, mode) => {
+    const names = app.processNames ?? [];
+    const fp = new Set(get().forceProxy);
+    const fd = new Set(get().forceDirect);
+    for (const n of names) { fp.delete(n); fd.delete(n); }
+    if (mode === 'proxy') for (const n of names) fp.add(n);
+    if (mode === 'direct') for (const n of names) fd.add(n);
+    const proxy = [...fp]; const direct = [...fd];
+    set({ forceProxy: proxy, forceDirect: direct });
+    await persist(proxy, direct);
+  },
+  resetOverrides: async () => {
+    set({ forceProxy: [], forceDirect: [] });
+    await persist([], []);
   },
 }));
