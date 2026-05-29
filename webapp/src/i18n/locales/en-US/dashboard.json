@@ -50,9 +50,6 @@
     "advancedSettingsLocked": "VPN is connected. Disconnect first to change advanced settings.",
     "appBypassEntry": {
       "label": "Apps that bypass VPN",
-      "count": "{{count}} manual",
-      "countAuto": "{{count}} auto-detected",
-      "countBoth": "{{manual}} manual + {{auto}} auto-detected",
       "empty": "None"
     },
     "alwaysOn": {
@@ -133,65 +130,6 @@
     }
   },
   "appBypass": {
-    "title": "Apps that bypass VPN",
-    "description": "Traffic from these apps will not go through the VPN. Useful for apps that flag VPN IPs (banking, payment, etc.).",
-    "macMultiUserNote": "Only apps started in the current user account are listed.",
-    "addedSection": "Added ({{count}})",
-    "availableSection": "Available",
-    "refresh": "Refresh",
-    "rescan": "Re-scan",
-    "rescanResult": "Updated ({{count}} processes)",
-    "rescanRefreshed": "App list refreshed",
-    "processCount": "{{count}} processes blocked",
-    "kickedOutDueToConnect": "VPN connected; returning to home",
-    "loadFailed": "Failed to load app list",
-    "saveFailed": "Save failed, please try again",
-    "smartStatus": {
-      "enabled": "Smart bypass active ({{region}}) — detected apps route directly",
-      "disabled": "Smart bypass off"
-    },
-    "uninstalledHint": "App may be uninstalled",
-    "ruleCard": {
-      "summary": "{{total}} apps bypassed: {{manual}} manual + {{auto}} auto-detected",
-      "manualSummary": "{{count}} manually added",
-      "refresh": "Rescan",
-      "globalWarning": "⚠ Global proxy mode — bypass list doesn't apply right now"
-    },
-    "smartDetection": {
-      "showAll": "Show all ({{count}} more)",
-      "collapse": "Collapse"
-    },
-    "manualSection": "Manually added ({{count}})",
-    "addMoreSection": "Add more apps",
-    "runningOnlyHint": "Only currently running apps are shown. If the app you want isn't listed, launch it first, then click the refresh button above.",
-    "searchPlaceholder": "Search apps…",
-    "searchEmpty": "No matching apps",
-    "addInline": "Add",
-    "remove": "Remove",
-    "rescanAuto": "Rescan smart detection",
-    "rescanResultDetected": "Detected {{count}} apps",
-    "rescanResultEmpty": "No apps detected",
-    "rescanResultNoop": "Current country [{{country}}] doesn't trigger smart detection",
-    "cn": {
-      "section": "Auto-detected Chinese apps ({{count}})",
-      "noteSmart": "Smart-routing mode automatically routes detected Chinese apps direct",
-      "noteGlobal": "Auto-detection not applied in global proxy mode",
-      "reasonInstaller": "Installed from a Chinese app store",
-      "reasonPrefix": "Matches Chinese-namespace package prefix"
-    },
-    "preview": {
-      "section": "Detected apps ({{count}})",
-      "empty": "No installed apps matched yet",
-      "refresh": "Rescan",
-      "loading": "Scanning installed apps…",
-      "hitKind": {
-        "process_exact": "Process name match",
-        "process_prefix": "Process prefix match",
-        "package_exact": "Package name match",
-        "package_prefix": "Package prefix match",
-        "installer_exact": "Installer match"
-      }
-    },
     "v2": {
       "title": "Per-App Routing",
       "intro": "Force individual apps to use the proxy or go direct, overriding the smart default for your region. Cannot be changed while connected.",

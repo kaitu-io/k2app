@@ -50,9 +50,6 @@
     "advancedSettingsLocked": "VPN 已连接，请先断开后再修改高级设置",
     "appBypassEntry": {
       "label": "不走代理的应用",
-      "count": "{{count}} 个手动",
-      "countAuto": "{{count}} 个智能识别",
-      "countBoth": "{{manual}} 个手动 + {{auto}} 个智能识别",
       "empty": "未选"
     },
     "alwaysOn": {
@@ -133,65 +130,6 @@
     }
   },
   "appBypass": {
-    "title": "不走代理的应用",
-    "description": "这些应用的流量将不走 VPN，直接出网。适合避免被风控的应用（网银、微信、12306 等）。",
-    "macMultiUserNote": "此处只列出当前账户启动的应用。",
-    "addedSection": "已加入（{{count}}）",
-    "availableSection": "可添加",
-    "refresh": "刷新",
-    "rescan": "重新检测",
-    "rescanResult": "已更新（共 {{count}} 个进程）",
-    "rescanRefreshed": "已刷新应用列表",
-    "processCount": "屏蔽 {{count}} 个进程",
-    "kickedOutDueToConnect": "VPN 连接后无法修改，已返回主页",
-    "loadFailed": "加载应用列表失败",
-    "saveFailed": "保存失败，请重试",
-    "smartStatus": {
-      "enabled": "智能识别已启用（{{region}}）— 已识别的应用会自动直连",
-      "disabled": "智能识别未启用"
-    },
-    "uninstalledHint": "应用可能已卸载",
-    "ruleCard": {
-      "summary": "共 {{total}} 个 app 直连：{{manual}} 手动 + {{auto}} 智能识别",
-      "manualSummary": "已手动添加 {{count}} 个",
-      "refresh": "重新扫描",
-      "globalWarning": "⚠ 当前全球代理模式 — 下方配置当前不生效"
-    },
-    "smartDetection": {
-      "showAll": "查看全部（{{count}} 个未显示）",
-      "collapse": "收起"
-    },
-    "manualSection": "我手动添加（{{count}}）",
-    "addMoreSection": "添加更多 app",
-    "runningOnlyHint": "仅显示当前正在运行的应用。如果想添加的应用没出现在列表中，请先打开它，然后点击上方的刷新按钮。",
-    "searchPlaceholder": "搜索应用名…",
-    "searchEmpty": "没有匹配的应用",
-    "addInline": "加入",
-    "remove": "移除",
-    "rescanAuto": "重新扫描智能识别",
-    "rescanResultDetected": "已识别 {{count}} 个 app",
-    "rescanResultEmpty": "未识别到任何 app",
-    "rescanResultNoop": "当前国家 [{{country}}] 不触发智能识别",
-    "cn": {
-      "section": "智能识别为中国 App（{{count}}）",
-      "noteSmart": "智能分流模式下，识别到的中国 app 已自动加入直连",
-      "noteGlobal": "全局代理模式下不应用智能识别",
-      "reasonInstaller": "来自国内应用商店",
-      "reasonPrefix": "命名前缀匹配"
-    },
-    "preview": {
-      "section": "智能识别命中（{{count}}）",
-      "empty": "当前未匹配到已安装的应用",
-      "refresh": "重新扫描",
-      "loading": "正在扫描已安装应用…",
-      "hitKind": {
-        "process_exact": "进程名精确匹配",
-        "process_prefix": "进程前缀匹配",
-        "package_exact": "包名精确匹配",
-        "package_prefix": "包前缀匹配",
-        "installer_exact": "应用商店匹配"
-      }
-    },
     "v2": {
       "title": "分应用分流",
       "intro": "为单个应用强制选择走代理或直连，覆盖当前区域的智能默认。连接期间不可修改。",

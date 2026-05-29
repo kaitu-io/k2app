@@ -50,9 +50,6 @@
     "advancedSettingsLocked": "VPN 接続中です。詳細設定を変更するには切断してください。",
     "appBypassEntry": {
       "label": "VPN を経由しないアプリ",
-      "count": "手動 {{count}} 個",
-      "countAuto": "自動検出 {{count}} 個",
-      "countBoth": "手動 {{manual}} + 自動検出 {{auto}}",
       "empty": "未選択"
     },
     "alwaysOn": {
@@ -133,65 +130,6 @@
     }
   },
   "appBypass": {
-    "title": "VPN を経由しないアプリ",
-    "description": "これらのアプリのトラフィックは VPN を経由せず直接通信します。VPN IP がブロックされやすいアプリ（オンラインバンキング、決済、12306 等）に最適です。",
-    "macMultiUserNote": "現在のユーザーアカウントで起動したアプリのみ表示されます。",
-    "addedSection": "追加済み（{{count}}）",
-    "availableSection": "追加可能",
-    "refresh": "更新",
-    "rescan": "再検出",
-    "rescanResult": "更新しました（{{count}} 個のプロセス）",
-    "rescanRefreshed": "アプリ一覧を更新しました",
-    "processCount": "{{count}} 個のプロセスをブロック",
-    "kickedOutDueToConnect": "VPN 接続後は変更できません。ホームに戻りました",
-    "loadFailed": "アプリ一覧の読み込みに失敗しました",
-    "saveFailed": "保存に失敗しました。再試行してください",
-    "smartStatus": {
-      "enabled": "スマートバイパス有効 ({{region}}) — 検出されたアプリは直接接続されます",
-      "disabled": "スマートバイパス無効"
-    },
-    "uninstalledHint": "アプリがアンインストールされている可能性があります",
-    "ruleCard": {
-      "summary": "{{total}} 個のアプリが直接接続：手動 {{manual}} + 自動検出 {{auto}}",
-      "manualSummary": "手動追加 {{count}} 件",
-      "refresh": "再スキャン",
-      "globalWarning": "⚠ グローバルプロキシモード — 現在この設定は適用されません"
-    },
-    "smartDetection": {
-      "showAll": "すべて表示（あと {{count}} 個）",
-      "collapse": "折りたたむ"
-    },
-    "manualSection": "手動で追加（{{count}}）",
-    "addMoreSection": "アプリを追加",
-    "runningOnlyHint": "現在実行中のアプリのみ表示されます。追加したいアプリが一覧にない場合は、先にそのアプリを起動してから上の更新ボタンをクリックしてください。",
-    "searchPlaceholder": "アプリを検索…",
-    "searchEmpty": "一致するアプリがありません",
-    "addInline": "追加",
-    "remove": "削除",
-    "rescanAuto": "スマート検出を再スキャン",
-    "rescanResultDetected": "{{count}} 個のアプリを検出",
-    "rescanResultEmpty": "アプリは検出されませんでした",
-    "rescanResultNoop": "現在の国 [{{country}}] ではスマート検出が無効です",
-    "cn": {
-      "section": "中国アプリ自動検出（{{count}}）",
-      "noteSmart": "スマートルーティング時、検出された中国アプリは自動的に直接接続されます",
-      "noteGlobal": "グローバルプロキシモードでは自動検出は適用されません",
-      "reasonInstaller": "中国のアプリストアからインストール",
-      "reasonPrefix": "中国系パッケージ名と一致"
-    },
-    "preview": {
-      "section": "検出されたアプリ ({{count}})",
-      "empty": "一致するインストール済みアプリなし",
-      "refresh": "再スキャン",
-      "loading": "インストール済みアプリをスキャン中…",
-      "hitKind": {
-        "process_exact": "プロセス名一致",
-        "process_prefix": "プロセス前方一致",
-        "package_exact": "パッケージ名一致",
-        "package_prefix": "パッケージ前方一致",
-        "installer_exact": "インストーラ一致"
-      }
-    },
     "v2": {
       "title": "アプリ別ルーティング",
       "intro": "個々のアプリをプロキシ経由または直接接続に強制し、地域のスマート既定を上書きします。接続中は変更できません。",

@@ -50,9 +50,6 @@
     "advancedSettingsLocked": "VPN 已連線，請先中斷連線後再修改進階設定",
     "appBypassEntry": {
       "label": "不走代理的應用",
-      "count": "{{count}} 個手動",
-      "countAuto": "{{count}} 個智慧辨識",
-      "countBoth": "{{manual}} 個手動 + {{auto}} 個智慧辨識",
       "empty": "未選"
     },
     "alwaysOn": {
@@ -133,65 +130,6 @@
     }
   },
   "appBypass": {
-    "title": "不走代理的應用",
-    "description": "這些應用的流量將不走 VPN，直接出網。適合避免被風控的應用（網銀、微信、12306 等）。",
-    "macMultiUserNote": "此處只列出當前帳戶啟動的應用。",
-    "addedSection": "已加入（{{count}}）",
-    "availableSection": "可新增",
-    "refresh": "重新整理",
-    "rescan": "重新偵測",
-    "rescanResult": "已更新（共 {{count}} 個程序）",
-    "rescanRefreshed": "已重新整理應用程式清單",
-    "processCount": "封鎖 {{count}} 個程序",
-    "kickedOutDueToConnect": "VPN 連線後無法修改，已返回主頁",
-    "loadFailed": "載入應用清單失敗",
-    "saveFailed": "儲存失敗，請重試",
-    "smartStatus": {
-      "enabled": "智能識別已啟用（{{region}}）— 已識別的應用會自動直連",
-      "disabled": "智能識別未啟用"
-    },
-    "uninstalledHint": "應用程式可能已解除安裝",
-    "ruleCard": {
-      "summary": "共 {{total}} 個 app 直連：{{manual}} 手動 + {{auto}} 智慧辨識",
-      "manualSummary": "已手動加入 {{count}} 個",
-      "refresh": "重新掃描",
-      "globalWarning": "⚠ 目前是全域代理模式 — 下方設定當前不生效"
-    },
-    "smartDetection": {
-      "showAll": "查看全部（{{count}} 個未顯示）",
-      "collapse": "收起"
-    },
-    "manualSection": "我手動加入（{{count}}）",
-    "addMoreSection": "新增更多 app",
-    "runningOnlyHint": "僅顯示目前執行中的應用程式。若要新增的應用未出現在清單中，請先開啟它，再點選上方的重新整理按鈕。",
-    "searchPlaceholder": "搜尋應用名稱…",
-    "searchEmpty": "沒有相符的應用",
-    "addInline": "加入",
-    "remove": "移除",
-    "rescanAuto": "重新掃描智慧辨識",
-    "rescanResultDetected": "已辨識 {{count}} 個 app",
-    "rescanResultEmpty": "未辨識到任何 app",
-    "rescanResultNoop": "目前國家 [{{country}}] 不觸發智慧辨識",
-    "cn": {
-      "section": "智慧辨識為中國 App（{{count}}）",
-      "noteSmart": "智慧分流模式下，辨識到的中國 app 已自動加入直連",
-      "noteGlobal": "全域代理模式下不套用智慧辨識",
-      "reasonInstaller": "來自國內應用商店",
-      "reasonPrefix": "命名前綴比對"
-    },
-    "preview": {
-      "section": "智能識別命中（{{count}}）",
-      "empty": "目前未匹配到已安裝的應用",
-      "refresh": "重新掃描",
-      "loading": "正在掃描已安裝應用…",
-      "hitKind": {
-        "process_exact": "行程名稱完全匹配",
-        "process_prefix": "行程前綴匹配",
-        "package_exact": "套件名稱完全匹配",
-        "package_prefix": "套件前綴匹配",
-        "installer_exact": "應用商店匹配"
-      }
-    },
     "v2": {
       "title": "分應用分流",
       "intro": "為單一應用強制選擇走代理或直連，覆蓋目前區域的智慧預設。連線期間無法修改。",
