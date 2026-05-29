@@ -172,6 +172,80 @@ mod macos {
     }
 }
 
+#[cfg(target_os = "windows")]
+mod windows {
+    use super::*;
+    use std::path::Path;
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    const UNINSTALL: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+
+    fn scan_hive(root: RegKey, out: &mut Vec<InstalledApp>, seen: &mut std::collections::HashSet<String>) {
+        let Ok(uninstall) = root.open_subkey(UNINSTALL) else {
+            return;
+        };
+        for sub in uninstall.enum_keys().flatten() {
+            let Ok(k) = uninstall.open_subkey(&sub) else { continue };
+            let name: String = match k.get_value("DisplayName") {
+                Ok(n) => n,
+                Err(_) => continue, // entries without a display name are components/patches
+            };
+            // Skip system components + updates.
+            if let Ok(sys) = k.get_value::<u32, _>("SystemComponent") {
+                if sys == 1 { continue; }
+            }
+            if k.get_value::<String, _>("ParentKeyName").is_ok() { continue; }
+            let install_location: String = k.get_value("InstallLocation").unwrap_or_default();
+            let mut process_names: Vec<String> = Vec::new();
+            if !install_location.is_empty() {
+                collect_exes(Path::new(&install_location), &mut process_names, 0);
+            }
+            if process_names.is_empty() {
+                continue; // nothing to match a process against
+            }
+            let id = if !install_location.is_empty() { install_location.clone() } else { sub.clone() };
+            if !seen.insert(id.clone()) { continue; }
+            // Icon: reuse the exe path scheme; first exe under install dir.
+            let icon_url = process_names.first().map(|_| {
+                format!("kaitu-icon://exe/{}", urlencoding::encode(&id))
+            });
+            out.push(InstalledApp {
+                id,
+                label: name,
+                process_names,
+                icon_url,
+                installer_package_name: None,
+            });
+        }
+    }
+
+    fn collect_exes(dir: &Path, out: &mut Vec<String>, depth: usize) {
+        if depth > 2 { return; }
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                collect_exes(&p, out, depth + 1);
+            } else if p.extension().and_then(|s| s.to_str()).map(|s| s.eq_ignore_ascii_case("exe")).unwrap_or(false) {
+                if let Some(base) = p.file_name().and_then(|s| s.to_str()) {
+                    let b = base.to_string();
+                    if !out.contains(&b) { out.push(b); }
+                }
+            }
+        }
+    }
+
+    pub fn enumerate() -> Result<Vec<InstalledApp>, String> {
+        let mut out: Vec<InstalledApp> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        scan_hive(RegKey::predef(HKEY_LOCAL_MACHINE), &mut out, &mut seen);
+        scan_hive(RegKey::predef(HKEY_CURRENT_USER), &mut out, &mut seen);
+        out.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+        Ok(out)
+    }
+}
+
 #[tauri::command]
 pub async fn list_installed_apps() -> Result<Vec<InstalledApp>, String> {
     #[cfg(target_os = "macos")]
