@@ -102,8 +102,14 @@ func TestUpdater_TriggersReload(t *testing.T) {
 // HTTP entirely when bundles.version is fresh.
 func TestDownloadAndReload_SkipsFresh(t *testing.T) {
 	dir := t.TempDir()
+	// Warm cache = fresh bundles.version AND a bundle present. The .krs is
+	// required: a fresh marker over an empty cache is no longer treated as
+	// fresh (see isVersionFresh / cache-poisoning fix).
 	if err := os.WriteFile(filepath.Join(dir, "bundles.version"),
 		[]byte("2026-04-20T00:00:00Z sha256:abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "overseas.krs"), makeTestK2B(t), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

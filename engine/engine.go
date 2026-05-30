@@ -220,6 +220,23 @@ func (e *Engine) Start(cfg Config) error {
 		}
 	}
 
+	// 1a. Fail loud if a configured match.region route has no usable bundle.
+	// Without this guard the route is silently dropped (engine.go buildRouteEntries)
+	// and every connection falls through to the proxy fallback — sending all
+	// in-region traffic abroad and overloading the exit (the all-proxy incident).
+	// 504 is retryable: isVersionFresh now re-downloads a poisoned cache, the
+	// background updater hot-reloads, and the next connect succeeds.
+	if client.CacheDir != "" {
+		if miss := missingConfiguredRegions(client.Routes, client.CacheDir); len(miss) > 0 {
+			slog.Warn("DIAG: rule-bundle-missing-region", "regions", miss, "cacheDir", client.CacheDir)
+			return e.fail(&EngineError{
+				Code:     ErrCodeRuleBundlesUnavailable,
+				Category: CategoryServer,
+				Message:  fmt.Sprintf("required region bundle(s) not loaded: %v", miss),
+			})
+		}
+	}
+
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
 	outboundMap := buildOutboundMap(client.Routes)
 	ruleEngine := buildRuleEngine(client, outboundMap)
@@ -1343,6 +1360,40 @@ func buildDNSRouter(outboundMap map[string]rule.Target) func(rule.Target) bool {
 	return func(t rule.Target) bool {
 		return proxyDNSTargets[t]
 	}
+}
+
+// missingConfiguredRegions returns the names of match.region routes whose bundle
+// is not usable in cacheDir — either absent or present-but-unparseable (LoadNamed
+// skips bundles that fail to parse). A non-empty result for a split-tunnel config
+// means the direct route would silently degrade to all-proxy, so Start treats it
+// as a retryable rule-bundle failure rather than connecting with broken routing.
+func missingConfiguredRegions(routes []config.RouteConfig, cacheDir string) []string {
+	var want []string
+	for _, r := range routes {
+		if r.Match.Region != "" {
+			want = append(want, r.Match.Region)
+		}
+	}
+	if len(want) == 0 {
+		return nil
+	}
+
+	have := make(map[string]bool)
+	if named, err := rule.LoadNamed(cacheDir); err == nil {
+		for _, nb := range named {
+			if nb.Region != "" {
+				have[nb.Region] = true
+			}
+		}
+	}
+
+	var missing []string
+	for _, region := range want {
+		if !have[region] {
+			missing = append(missing, region)
+		}
+	}
+	return missing
 }
 
 // buildRuleEngine creates a rule.Engine from the client's route configuration.

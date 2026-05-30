@@ -100,6 +100,18 @@ func ensureOnce(ctx context.Context, cacheDir string, sources []string) error {
 		return fmt.Errorf("rule: extract tarball: %w", err)
 	}
 
+	// Reject a download that produced zero .krs bundles before touching the
+	// live cache. A stale CDN mirror serving the pre-Plan-A tarball (only
+	// .k2b/.yaml) extracts no .krs; committing it would write a fresh
+	// bundles.version over an empty set, poisoning the cache for the whole TTL
+	// and silently degrading region routes to all-proxy. Treat as a failed
+	// download so the engine falls back to the prior cache (or fails loud).
+	if countKRS(newDir) == 0 {
+		slog.Warn("DIAG: rule-bundle-empty", "cacheDir", cacheDir,
+			"reason", "downloaded tarball extracted 0 .krs (stale mirror or format skew)")
+		return errors.New("rule: tarball contained 0 .krs bundles (stale mirror or format skew)")
+	}
+
 	if err := atomicSwap(cacheDir, newDir); err != nil {
 		return fmt.Errorf("rule: atomic swap: %w", err)
 	}
@@ -238,12 +250,37 @@ func atomicSwap(cacheDir, newDir string) error {
 	return nil
 }
 
-// isVersionFresh reports whether <cacheDir>/bundles.version exists with
-// mtime within maxAge. Returns false on any error (missing, I/O, stat).
+// countKRS returns the number of regular *.krs files directly under dir.
+// Used to validate an extraction (or a cache) actually holds usable bundles —
+// a "fresh" bundles.version marker is meaningless without them.
+func countKRS(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".krs") {
+			n++
+		}
+	}
+	return n
+}
+
+// isVersionFresh reports whether the cache is genuinely warm: <cacheDir>/
+// bundles.version exists with mtime within maxAge AND at least one .krs bundle
+// is actually present. The .krs check is what prevents a poisoned cache (fresh
+// marker, zero bundles — from iOS App-Group eviction or a pre-guard empty
+// extraction) from short-circuiting the download forever; without it such a
+// cache silently degrades region routes to all-proxy for the whole TTL.
+// Returns false on any error (missing, I/O, stat).
 func isVersionFresh(cacheDir string, maxAge time.Duration) bool {
 	info, err := os.Stat(filepath.Join(cacheDir, "bundles.version"))
 	if err != nil {
 		return false
 	}
-	return time.Since(info.ModTime()) <= maxAge
+	if time.Since(info.ModTime()) > maxAge {
+		return false
+	}
+	return countKRS(cacheDir) > 0
 }

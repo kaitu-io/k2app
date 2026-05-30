@@ -123,11 +123,14 @@ func TestEnsureBundles_ConcurrentSingleflight(t *testing.T) {
 func TestEnsureBundles_FreshSkip(t *testing.T) {
 	dir := t.TempDir()
 
-	// Write a fresh bundles.version — EnsureBundles should see it and skip
-	// any network work. We give it an unreachable source to prove no HTTP
-	// request was attempted.
+	// A genuinely warm cache = fresh bundles.version AND at least one .krs
+	// bundle present. EnsureBundles should see it and skip any network work;
+	// the unreachable source proves no HTTP request was attempted.
 	versionPath := filepath.Join(dir, "bundles.version")
 	if err := os.WriteFile(versionPath, []byte("2026-04-20T00:00:00Z sha256:abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "geoip.krs"), []byte{0x4b, 0x32, 0x42, 0x00}, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -137,6 +140,29 @@ func TestEnsureBundles_FreshSkip(t *testing.T) {
 	err := EnsureBundles(ctx, dir, []string{"http://127.0.0.1:1/"})
 	if err != nil {
 		t.Errorf("expected nil (fresh skip), got %v", err)
+	}
+}
+
+// TestEnsureBundles_StaleWhenVersionFreshButNoKRS guards the self-heal half of
+// the cache-poisoning fix. A fresh bundles.version with zero .krs on disk (iOS
+// App-Group eviction, or a cache poisoned before the Fix-1 guard shipped) must
+// NOT count as fresh. EnsureBundles must re-download instead of short-circuiting
+// so the cache self-heals on the next connect rather than waiting out the TTL.
+func TestEnsureBundles_StaleWhenVersionFreshButNoKRS(t *testing.T) {
+	dir := t.TempDir()
+	// Fresh marker by mtime, but no .krs bundles — the poisoned state.
+	if err := os.WriteFile(filepath.Join(dir, "bundles.version"),
+		[]byte("2026-04-20T00:00:00Z sha256:abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unreachable source: if EnsureBundles attempts a download it errors —
+	// which is exactly what proves it did NOT treat the empty cache as fresh.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := EnsureBundles(ctx, dir, []string{"http://127.0.0.1:1/"})
+	if err == nil {
+		t.Fatal("expected a download attempt (error) when version fresh but zero .krs present — poisoned cache treated as fresh")
 	}
 }
 
@@ -156,6 +182,33 @@ func TestEnsureBundles_AllSourcesFail(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(dir, "bundles.version")); statErr == nil {
 		t.Error("bundles.version should not exist on download failure")
+	}
+}
+
+// TestEnsureBundles_RejectsTarballWithZeroKRS reproduces the cache-poisoning
+// root cause: a stale CDN mirror still serving the pre-Plan-A tarball (only
+// .k2b + .yaml, zero .krs). The current extractor pulls no .krs yet ensureOnce
+// still writes a fresh bundles.version — marking the cache "ready" with zero
+// usable bundles, so region routes silently fall through to all-proxy for the
+// whole TTL. A download that yields zero .krs must be treated as a failure:
+// no atomic swap, no bundles.version.
+func TestEnsureBundles_RejectsTarballWithZeroKRS(t *testing.T) {
+	dir := t.TempDir()
+	srv := httptest.NewServer(makeTarballHandler(t, map[string][]byte{
+		"cn-direct.k2b": {0x4b, 0x32, 0x42, 0x00}, // legacy format, ignored by extractor
+		"meta.yaml":     []byte("schema: 1\n"),
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := EnsureBundles(ctx, dir, []string{srv.URL + "/"})
+	if err == nil {
+		t.Fatal("expected error when tarball has zero .krs bundles, got nil")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "bundles.version")); statErr == nil {
+		t.Error("bundles.version must NOT be written when extraction yields zero .krs (cache poisoning)")
 	}
 }
 

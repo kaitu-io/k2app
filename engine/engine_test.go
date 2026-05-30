@@ -2010,6 +2010,41 @@ func TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure(t *testing.T) {
 	}
 }
 
+// TestMissingConfiguredRegions guards the Fix-3 safety net. When a config route
+// requires match.region but that bundle isn't usable (absent, or present but
+// unparseable so LoadNamed skips it), Start must surface it instead of silently
+// dropping the direct route and degrading all CN traffic to the overseas proxy
+// (the disconnect_feedback_bad incident). Global configs (no region route) must
+// never be flagged, even with an empty cache.
+func TestMissingConfiguredRegions(t *testing.T) {
+	withCN := t.TempDir()
+	var buf bytes.Buffer
+	if err := krs.WriteBundle(&buf, &krs.Bundle{Sets: []krs.NamedSet{
+		{Name: "geoip-cn", DomainSuffixes: []string{"example.cn"}},
+	}}); err != nil {
+		t.Fatalf("WriteBundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(withCN, "cn.krs"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	bypassRoutes := []config.RouteConfig{
+		{Via: "direct", Match: rule.MatchConfig{Region: "cn"}},
+		{Via: "k2v5://x", Match: rule.MatchConfig{All: true}},
+	}
+
+	if miss := missingConfiguredRegions(bypassRoutes, withCN); len(miss) != 0 {
+		t.Errorf("cn.krs present and parseable: want no missing regions, got %v", miss)
+	}
+	if miss := missingConfiguredRegions(bypassRoutes, t.TempDir()); len(miss) != 1 || miss[0] != "cn" {
+		t.Errorf("empty cache: want [cn] missing, got %v", miss)
+	}
+	global := []config.RouteConfig{{Via: "k2v5://x", Match: rule.MatchConfig{All: true}}}
+	if miss := missingConfiguredRegions(global, t.TempDir()); len(miss) != 0 {
+		t.Errorf("global config: want no missing regions, got %v", miss)
+	}
+}
+
 // ==========================================================================
 // Test helpers
 // ==========================================================================
