@@ -389,8 +389,29 @@ describe('Config Store', () => {
       expect(result.app_bypass).toBeUndefined();
       expect(result.routes).toEqual([
         { match: { region: 'cn' }, via: 'direct' },
+        { match: { names: ['tencent-overseas'] }, via: 'reject' },
         { match: { all: true }, via: 'k2v5://example' },
       ]);
+    });
+
+    it('bypass + non-cn country does NOT emit tencent-overseas reject', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'ir', autoDetect: false });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(result.routes?.some((r) => r.match?.names?.includes('tencent-overseas'))).toBe(false);
+    });
+
+    it('home mode (k2p) does NOT emit tencent-overseas reject (abroad scenario)', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'direct', countryVia: 'k2p', country: 'cn', autoDetect: false });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(result.routes?.some((r) => r.match?.names?.includes('tencent-overseas'))).toBe(false);
     });
 
     it('bypass preset with ir emits region:ir direct + all-match proxy (Plan B vocab)', async () => {
@@ -506,9 +527,10 @@ describe('Config Store', () => {
       const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 
       expect(cfg.app_bypass).toBeUndefined();
-      expect(cfg.routes).toHaveLength(2);
+      expect(cfg.routes).toHaveLength(3);
       expect(cfg.routes![0]).toEqual({ match: { region: 'cn' }, via: 'direct' });
-      expect(cfg.routes![1]).toMatchObject({ via: 'k2v5://example', match: { all: true } });
+      expect(cfg.routes![1]).toEqual({ match: { names: ['tencent-overseas'] }, via: 'reject' });
+      expect(cfg.routes![2]).toMatchObject({ via: 'k2v5://example', match: { all: true } });
     });
 
     it('chnroute mode with empty country falls back to global (no region route)', async () => {
@@ -698,7 +720,8 @@ describe('Config Store', () => {
       });
       expect(cfg.routes![0]).toEqual({ match: { apps: ['Firefox', 'Firefox Helper'] }, via: 'direct' });
       expect(cfg.routes![1]).toEqual({ match: { region: 'cn' }, via: 'direct' });
-      expect(cfg.routes![2]).toMatchObject({ match: { all: true }, via: 'k2v5://example' });
+      expect(cfg.routes![2]).toEqual({ match: { names: ['tencent-overseas'] }, via: 'reject' });
+      expect(cfg.routes![3]).toMatchObject({ match: { all: true }, via: 'k2v5://example' });
     });
 
     test('forceProxy apps prepend a proxy match.apps route', async () => {

@@ -134,11 +134,25 @@ function buildRoutes(
       // No country set — fall back to global shape
       return [...prefix, { via: serverUrl, match: { all: true } }];
     }
-    return [
+    const routes: RouteConfig[] = [
       ...prefix,
       { match: { region: country }, via: 'direct' },
-      { match: { all: true }, via: serverUrl },
     ];
+    // CN-only: drop connections to Tencent's overseas ASN (the tencent-overseas
+    // rule-set = AS132203) so WeChat/Tencent HTTPDNS apps — which reach overseas
+    // Tencent PoPs as bare IPs, bypassing our DNS layer — fail over to mainland
+    // endpoints, which the region:cn route above routes direct. Ordered AFTER
+    // region:cn so the HTTPDNS anchor PoPs merged into geoip-cn win `direct`
+    // first; only the non-CN AS132203 remainder is dropped. Scenario-gated:
+    // emitted ONLY in cn-bypass — home/回国 and global must NOT drop (an abroad
+    // user's overseas-Tencent connection is legitimate). Missing bundle degrades
+    // safely (the engine skips a names route whose set is absent). via:'reject'
+    // = silent drop. See docs/superpowers/plans/2026-05-30-tencent-overseas-reject.md.
+    if (country === 'cn') {
+      routes.push({ match: { names: ['tencent-overseas'] }, via: 'reject' });
+    }
+    routes.push({ match: { all: true }, via: serverUrl });
+    return routes;
   }
 
   // Home / home_proxy: need a valid country profile (preset-based)
