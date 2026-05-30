@@ -51,8 +51,9 @@ internal object K2VpnServiceUtils {
      * Extracts the App Bypass package list from ClientConfig JSON for
      * kernel-level exclusion via VpnService.Builder.addDisallowedApplication.
      *
-     * Consumes any route whose via == "direct" and match.package_name is a
-     * non-empty array. Deduplicates (LinkedHashSet preserves first-seen order),
+     * Consumes any route whose via == "direct" and match.apps is a
+     * non-empty array (the Plan B/C unified per-app override field — on Android
+     * each entry is a package name). Deduplicates (LinkedHashSet preserves first-seen order),
      * trims whitespace, drops empty strings, and excludes selfPackage (already
      * added by the caller). Returns empty list on parse failure — bypass is
      * advisory; engine still operates without it.
@@ -64,7 +65,7 @@ internal object K2VpnServiceUtils {
             for (i in 0 until routes.length()) {
                 val route = routes.optJSONObject(i) ?: continue
                 if (route.optString("via") != "direct") continue
-                val pkgs = route.optJSONObject("match")?.optJSONArray("package_name") ?: continue
+                val pkgs = route.optJSONObject("match")?.optJSONArray("apps") ?: continue
                 for (j in 0 until pkgs.length()) {
                     val pkg = pkgs.optString(j).trim()
                     if (pkg.isNotEmpty() && pkg != selfPackage) {

@@ -146,7 +146,7 @@ class K2VpnServiceUtilsTest {
 
     @Test
     fun parseDisallowedPackages_single_direct_bypass() {
-        val json = """{"routes":[{"via":"direct","match":{"package_name":["com.tencent.mm","com.android.chrome"]}}]}"""
+        val json = """{"routes":[{"via":"direct","match":{"apps":["com.tencent.mm","com.android.chrome"]}}]}"""
         assertEquals(
             listOf("com.tencent.mm", "com.android.chrome"),
             K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu")
@@ -155,12 +155,12 @@ class K2VpnServiceUtilsTest {
 
     @Test
     fun parseDisallowedPackages_skips_non_direct_via() {
-        val json = """{"routes":[{"via":"k2v5://x@y:443","match":{"package_name":["com.test"]}}]}"""
+        val json = """{"routes":[{"via":"k2v5://x@y:443","match":{"apps":["com.test"]}}]}"""
         assertTrue(K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu").isEmpty())
     }
 
     @Test
-    fun parseDisallowedPackages_skips_routes_without_package_name() {
+    fun parseDisallowedPackages_skips_routes_without_apps() {
         val json = """{"routes":[{"via":"direct","match":{"preset":"th-access"}}]}"""
         assertTrue(K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu").isEmpty())
     }
@@ -173,7 +173,7 @@ class K2VpnServiceUtilsTest {
 
     @Test
     fun parseDisallowedPackages_excludes_self_package() {
-        val json = """{"routes":[{"via":"direct","match":{"package_name":["io.kaitu","com.android.chrome"]}}]}"""
+        val json = """{"routes":[{"via":"direct","match":{"apps":["io.kaitu","com.android.chrome"]}}]}"""
         assertEquals(
             listOf("com.android.chrome"),
             K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu")
@@ -182,7 +182,7 @@ class K2VpnServiceUtilsTest {
 
     @Test
     fun parseDisallowedPackages_filters_empty_strings_and_trims() {
-        val json = """{"routes":[{"via":"direct","match":{"package_name":["","  com.android.chrome  ","   "]}}]}"""
+        val json = """{"routes":[{"via":"direct","match":{"apps":["","  com.android.chrome  ","   "]}}]}"""
         assertEquals(
             listOf("com.android.chrome"),
             K2VpnServiceUtils.parseDisallowedPackages(json, "io.kaitu")
@@ -192,8 +192,8 @@ class K2VpnServiceUtilsTest {
     @Test
     fun parseDisallowedPackages_dedupes_across_multiple_routes() {
         val json = """{"routes":[
-            {"via":"direct","match":{"package_name":["a","b"]}},
-            {"via":"direct","match":{"package_name":["b","c"]}}
+            {"via":"direct","match":{"apps":["a","b"]}},
+            {"via":"direct","match":{"apps":["b","c"]}}
         ]}"""
         assertEquals(
             listOf("a", "b", "c"),
@@ -205,7 +205,7 @@ class K2VpnServiceUtilsTest {
     fun parseDisallowedPackages_mixed_routes_full_config() {
         // Mimics actual webapp output: bypass + preset + k2v5 fallback
         val json = """{"mode":"tun","routes":[
-            {"via":"direct","match":{"package_name":["com.tencent.mm","com.android.chrome"]}},
+            {"via":"direct","match":{"apps":["com.tencent.mm","com.android.chrome"]}},
             {"via":"direct","match":{"preset":"th-access"}},
             {"via":"k2v5://abc@d.example.com:443","match":{}}
         ]}"""
