@@ -50,7 +50,8 @@
     "advancedSettingsLocked": "VPN is connected. Disconnect first to change advanced settings.",
     "appBypassEntry": {
       "label": "Apps that bypass VPN",
-      "empty": "Auto-detected · Smart routing"
+      "empty": "Smart",
+      "withOverrides": "Smart + {{count}} custom app(s)"
     },
     "alwaysOn": {
       "title": "Keep VPN Always On",
@@ -141,8 +142,7 @@
       "empty": "No matching apps",
       "loading": "Loading apps…",
       "unsupported": "Per-app routing isn't supported on this platform",
-      "reset": "Reset all to default",
-      "overrideCount": "{{count}} app(s) customized"
+      "reset": "Reset all to default"
     }
   },
   "smartMode": {

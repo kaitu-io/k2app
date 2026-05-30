@@ -50,7 +50,8 @@
     "advancedSettingsLocked": "VPN 已连接，请先断开后再修改高级设置",
     "appBypassEntry": {
       "label": "不走代理的应用",
-      "empty": "自动识别 · 智能分流"
+      "empty": "智能",
+      "withOverrides": "智能 + 自定义 {{count}} 个应用"
     },
     "alwaysOn": {
       "title": "保持 VPN 常开 (Always On)",
@@ -141,8 +142,7 @@
       "empty": "没有匹配的应用",
       "loading": "正在加载应用列表…",
       "unsupported": "本平台不支持分应用分流",
-      "reset": "全部恢复默认",
-      "overrideCount": "已自定义 {{count}} 个应用"
+      "reset": "全部恢复默认"
     }
   },
   "smartMode": {

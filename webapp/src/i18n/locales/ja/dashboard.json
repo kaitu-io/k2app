@@ -50,7 +50,8 @@
     "advancedSettingsLocked": "VPN 接続中です。詳細設定を変更するには切断してください。",
     "appBypassEntry": {
       "label": "VPN を経由しないアプリ",
-      "empty": "自動識別 · スマート振り分け"
+      "empty": "スマート",
+      "withOverrides": "スマート + カスタム {{count}} 件"
     },
     "alwaysOn": {
       "title": "VPN を常にオンに保つ (Always On)",
@@ -141,8 +142,7 @@
       "empty": "一致するアプリがありません",
       "loading": "アプリを読み込み中…",
       "unsupported": "このプラットフォームではアプリ別ルーティングはサポートされていません",
-      "reset": "すべて既定に戻す",
-      "overrideCount": "{{count}} 個のアプリをカスタマイズ済み"
+      "reset": "すべて既定に戻す"
     }
   },
   "smartMode": {

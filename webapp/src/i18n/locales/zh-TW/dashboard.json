@@ -50,7 +50,8 @@
     "advancedSettingsLocked": "VPN 已連線，請先中斷連線後再修改進階設定",
     "appBypassEntry": {
       "label": "不走代理的應用",
-      "empty": "自動識別 · 智慧分流"
+      "empty": "智慧",
+      "withOverrides": "智慧 + 自訂 {{count}} 個應用"
     },
     "alwaysOn": {
       "title": "保持 VPN 常開 (Always On)",
@@ -133,7 +134,7 @@
     "v2": {
       "title": "分應用分流",
       "intro": "為單一應用強制選擇走代理或直連，覆蓋目前區域的智慧預設。連線期間無法修改。",
-      "chipProxy": "智能",
+      "chipProxy": "智慧",
       "chipDirect": "直連",
       "installedSection": "已安裝應用（{{count}}）",
       "moreSection": "其他執行中的程式",
@@ -141,8 +142,7 @@
       "empty": "沒有符合的應用",
       "loading": "正在載入應用清單…",
       "unsupported": "本平台不支援分應用分流",
-      "reset": "全部還原預設",
-      "overrideCount": "已自訂 {{count}} 個應用"
+      "reset": "全部還原預設"
     }
   },
   "smartMode": {

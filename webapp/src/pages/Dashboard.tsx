@@ -674,7 +674,7 @@ export default function Dashboard() {
                     primary={t('dashboard:dashboard.appBypassEntry.label')}
                     secondary={
                       bypassOverrideCount > 0
-                        ? t('dashboard:appBypass.v2.overrideCount', { count: bypassOverrideCount })
+                        ? t('dashboard:dashboard.appBypassEntry.withOverrides', { count: bypassOverrideCount })
                         : t('dashboard:dashboard.appBypassEntry.empty')
                     }
                   />
