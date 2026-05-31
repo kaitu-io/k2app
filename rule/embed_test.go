@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -45,5 +47,55 @@ func TestEmbeddedRules_IsUsableTarball(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("embedded archive missing cn.krs (names=%v)", names)
+	}
+}
+
+func TestSeedFromEmbedIfEmpty_SeedsColdCache(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := SeedFromEmbedIfEmpty(dir); err != nil {
+		t.Fatalf("SeedFromEmbedIfEmpty: %v", err)
+	}
+	if countKRS(dir) == 0 {
+		t.Fatal("cold cache not seeded")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cn.krs")); err != nil {
+		t.Errorf("cn.krs not seeded: %v", err)
+	}
+	v, err := os.ReadFile(filepath.Join(dir, "bundles.version"))
+	if err != nil {
+		t.Fatalf("bundles.version not written: %v", err)
+	}
+	if !strings.Contains(string(v), "embedded") {
+		t.Errorf("bundles.version missing 'embedded' marker: %q", v)
+	}
+	if !isVersionFresh(dir, bundlesFreshTTL) {
+		t.Error("cache not fresh after seeding")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".seed-tmp")); !os.IsNotExist(err) {
+		t.Errorf(".seed-tmp should be removed, stat err=%v", err)
+	}
+}
+
+func TestSeedFromEmbedIfEmpty_NoOpWhenWarm(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "existing.krs")
+	if err := os.WriteFile(marker, []byte{0x4b, 0x32, 0x42, 0x00}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SeedFromEmbedIfEmpty(dir); err != nil {
+		t.Fatalf("SeedFromEmbedIfEmpty on warm cache: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cn.krs")); !os.IsNotExist(err) {
+		t.Errorf("warm cache was re-seeded (cn.krs appeared), stat err=%v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("existing.krs disturbed: %v", err)
+	}
+}
+
+func TestSeedFromEmbedIfEmpty_EmptyCacheDirIsNoOp(t *testing.T) {
+	if err := SeedFromEmbedIfEmpty(""); err != nil {
+		t.Errorf("empty cacheDir should be a no-op, got %v", err)
 	}
 }

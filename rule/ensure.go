@@ -2,6 +2,7 @@ package rule
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -162,8 +163,15 @@ func extractTarball(tarballPath, newDir string) error {
 		return err
 	}
 	defer f.Close()
+	return extractTarballReader(f, newDir)
+}
 
-	gz, err := gzip.NewReader(f)
+// extractTarballReader unpacks .krs and .yaml entries from a gzipped tar stream
+// into newDir, stripping directory components (path-traversal defense). Other
+// entry types and non-regular files are ignored. Shared by CDN downloads
+// (extractTarball) and the binary-embedded seed (seedFromEmbed).
+func extractTarballReader(r io.Reader, newDir string) error {
+	gz, err := gzip.NewReader(r)
 	if err != nil {
 		return err
 	}
@@ -199,6 +207,35 @@ func extractTarball(tarballPath, newDir string) error {
 		}
 	}
 	return nil
+}
+
+// seedFromEmbed extracts the binary-embedded all.krs.tar.gz into cacheDir.
+// Extracts to a temp dir then atomicSwap so a concurrent reader never sees a
+// half-written cache. Writes bundles.version stamped "embedded" so the cache
+// reads fresh. Lock-agnostic: the public SeedFromEmbedIfEmpty wraps it in the
+// cache flock.
+func seedFromEmbed(cacheDir string) error {
+	tmpDir := filepath.Join(cacheDir, ".seed-tmp")
+	_ = os.RemoveAll(tmpDir)
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := extractTarballReader(bytes.NewReader(embeddedRules), tmpDir); err != nil {
+		return fmt.Errorf("rule: extract embedded: %w", err)
+	}
+	if countKRS(tmpDir) == 0 {
+		return errors.New("rule: embedded archive contained 0 .krs (broken placeholder or build-fetch)")
+	}
+	if err := atomicSwap(cacheDir, tmpDir); err != nil {
+		return fmt.Errorf("rule: seed atomic swap: %w", err)
+	}
+
+	sum := sha256.Sum256(embeddedRules)
+	stamp := time.Now().UTC().Format(time.RFC3339)
+	line := fmt.Sprintf("%s embedded sha256:%s\n", stamp, hex.EncodeToString(sum[:]))
+	return os.WriteFile(filepath.Join(cacheDir, "bundles.version"), []byte(line), 0o644)
 }
 
 // atomicSwap renames each .krs and .yaml from newDir into cacheDir, then
