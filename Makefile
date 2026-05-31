@@ -34,7 +34,34 @@ check-jdk-21:
 sync-version:
 	bash scripts/sync-version.sh
 
-pre-build: sync-version
+# Embed the full production rule archive into the k2 binary at build time.
+# go:embed needs k2/rule/embed/all.krs.tar.gz present; the committed copy is a
+# small cn-baseline placeholder, overwritten here with the full ~2MB archive.
+# Local-cache fallback: a transient CDN miss reuses whatever is already there
+# (last fetch, or the placeholder) — never fails the build. Do NOT commit the
+# overwritten 2MB file (scripts/check-embed-size.sh guards this).
+RULES_EMBED_PATH := k2/rule/embed/all.krs.tar.gz
+RULES_EMBED_URL  := https://github.com/kaitu-io/k2-rules/releases/latest/download/all.krs.tar.gz
+RULES_EMBED_URL_FALLBACK := https://cdn.jsdelivr.net/gh/kaitu-io/k2-rules@release/all.krs.tar.gz
+
+.PHONY: fetch-rules-embed
+fetch-rules-embed:
+	@mkdir -p $(dir $(RULES_EMBED_PATH))
+	@if curl -fsSL "$(RULES_EMBED_URL)" -o "$(RULES_EMBED_PATH).tmp" && [ -s "$(RULES_EMBED_PATH).tmp" ]; then \
+		mv "$(RULES_EMBED_PATH).tmp" "$(RULES_EMBED_PATH)"; \
+		echo "fetch-rules-embed: refreshed ($$(wc -c < $(RULES_EMBED_PATH)) bytes) from origin"; \
+	elif curl -fsSL "$(RULES_EMBED_URL_FALLBACK)" -o "$(RULES_EMBED_PATH).tmp" && [ -s "$(RULES_EMBED_PATH).tmp" ]; then \
+		mv "$(RULES_EMBED_PATH).tmp" "$(RULES_EMBED_PATH)"; \
+		echo "fetch-rules-embed: refreshed ($$(wc -c < $(RULES_EMBED_PATH)) bytes) from jsdelivr"; \
+	elif [ -f "$(RULES_EMBED_PATH)" ]; then \
+		echo "fetch-rules-embed: CDN unreachable — using existing $(RULES_EMBED_PATH)"; \
+	else \
+		echo "fetch-rules-embed: CDN unreachable AND no embed present — build will fail go:embed"; \
+		exit 1; \
+	fi
+	@rm -f "$(RULES_EMBED_PATH).tmp"
+
+pre-build: sync-version fetch-rules-embed
 	mkdir -p webapp/public
 	echo '{"version":"$(VERSION)","commit":"$(K2_COMMIT)"}' > webapp/public/version.json
 
