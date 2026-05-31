@@ -4,11 +4,13 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEmbeddedRules_IsUsableTarball(t *testing.T) {
@@ -97,5 +99,23 @@ func TestSeedFromEmbedIfEmpty_NoOpWhenWarm(t *testing.T) {
 func TestSeedFromEmbedIfEmpty_EmptyCacheDirIsNoOp(t *testing.T) {
 	if err := SeedFromEmbedIfEmpty(""); err != nil {
 		t.Errorf("empty cacheDir should be a no-op, got %v", err)
+	}
+}
+
+func TestColdStartComposition_SeedThenEnsureOffline(t *testing.T) {
+	dir := t.TempDir()
+	// Mirror engine.Start(): seed the embed floor, then EnsureBundles with an
+	// unreachable source. Cold start must succeed offline and leave a usable
+	// cache — EnsureBundles sees the fresh seeded cache and skips the network.
+	if err := SeedFromEmbedIfEmpty(dir); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := EnsureBundles(ctx, dir, []string{"http://127.0.0.1:1/"}); err != nil {
+		t.Fatalf("EnsureBundles after seed should be a fresh no-op, got %v", err)
+	}
+	if countKRS(dir) == 0 {
+		t.Fatal("composition left no .krs")
 	}
 }

@@ -1755,6 +1755,11 @@ func TestSetupOutboundTransport_InvalidURL(t *testing.T) {
 	}
 }
 
+// TestEngineStart_RuleBundlesUnavailable verifies that when remote rule bundle
+// sources are unreachable on a cold start, the embedded seed floor allows
+// Start to proceed past the rule-bundle gate (no ErrCodeRuleBundlesUnavailable).
+// The engine may still fail later for a wire-level reason (no server), but the
+// 504 rule-bundle gate must NOT fire when the embedded archive provides a floor.
 func TestEngineStart_RuleBundlesUnavailable(t *testing.T) {
 	dir := t.TempDir()
 
@@ -1772,36 +1777,23 @@ func TestEngineStart_RuleBundlesUnavailable(t *testing.T) {
 	e.SetEventHandler(h)
 
 	err := e.Start(Config{Client: client, FileDescriptor: -1})
-	if err == nil {
-		t.Fatal("expected error when rule bundles unreachable, got nil")
-	}
 
-	var engErr *EngineError
-	if !errors.As(err, &engErr) {
-		t.Fatalf("expected *EngineError, got %T: %v", err, err)
-	}
-	if engErr.Code != ErrCodeRuleBundlesUnavailable {
-		t.Errorf("expected code %d, got %d (msg=%q)", ErrCodeRuleBundlesUnavailable, engErr.Code, engErr.Message)
-	}
-	if engErr.Category != CategoryServer {
-		t.Errorf("expected category %q, got %q", CategoryServer, engErr.Category)
-	}
-
-	// e.fail() must have transitioned to disconnected and notified the handler.
-	if e.Status() != StateDisconnected {
-		t.Errorf("expected state %q after failure, got %q", StateDisconnected, e.Status())
-	}
-
-	errs := h.getErrors()
-	found := false
-	for _, msg := range errs {
-		if strings.Contains(msg, "rule bundles unavailable") {
-			found = true
-			break
+	// With the embedded seed floor, the rule-bundle gate is satisfied offline.
+	// Start must NOT return ErrCodeRuleBundlesUnavailable (504).
+	if err != nil {
+		var engErr *EngineError
+		if errors.As(err, &engErr) && engErr.Code == ErrCodeRuleBundlesUnavailable {
+			t.Fatalf("regression: embedded seed should prevent ErrCodeRuleBundlesUnavailable; "+
+				"got code=%d msg=%q — the embedded archive or SeedFromEmbedIfEmpty wiring is broken",
+				engErr.Code, engErr.Message)
 		}
+		// Any other error (wire dial refused, etc.) is acceptable — the bundle gate passed.
 	}
-	if !found {
-		t.Errorf("handler never received the rule-bundles error; got errors=%v", errs)
+
+	// Engine must have reached at least the connecting phase before failing (not
+	// rejected at the rule-bundle gate). State is disconnected because wire dial fails.
+	if e.Status() != StateDisconnected {
+		t.Errorf("expected state %q after wire failure, got %q", StateDisconnected, e.Status())
 	}
 }
 

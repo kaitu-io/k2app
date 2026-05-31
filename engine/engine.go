@@ -199,6 +199,12 @@ func (e *Engine) Start(cfg Config) error {
 		slog.Warn("engine: Start without CacheDir — rule bundle prefetch skipped",
 			"risk", "routes=0 cold-start bug may reappear if bundles absent")
 	} else {
+		// Seed the embedded rule floor before any network — instant, offline,
+		// censorship-proof. After this the cache is warm, so EnsureBundles
+		// short-circuits (fresh) instead of blocking on a cold download.
+		if err := rule.SeedFromEmbedIfEmpty(client.CacheDir); err != nil {
+			slog.Warn("engine: seed from embed failed", "err", err, "cacheDir", client.CacheDir)
+		}
 		ensureCtx, cancelEnsure := context.WithTimeout(ctx, 10*time.Second)
 		ensureErr := rule.EnsureBundles(ensureCtx, client.CacheDir, sources)
 		cancelEnsure()

@@ -309,6 +309,9 @@ func PrefetchRules(cacheDir string) {
 	dir := filepath.Join(cacheDir, "rules")
 
 	safego.Go(func() {
+		if err := rule.SeedFromEmbedIfEmpty(dir); err != nil {
+			slog.Warn("appext: seed from embed failed", "err", err, "dir", dir)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := rule.EnsureBundles(ctx, dir, rule.DefaultSources); err != nil {
