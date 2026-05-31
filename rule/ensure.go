@@ -24,7 +24,7 @@ import (
 const bundlesFreshTTL = 24 * time.Hour
 
 const (
-	tarballName    = "k2-rules.tar.gz"
+	tarballName    = "all.krs.tar.gz"
 	maxTarballSize = 5 << 20 // 5 MB
 )
 
