@@ -299,7 +299,16 @@ IOS_DEVICE ?= $(shell scripts/detect-ios-device.sh 2>/dev/null)
 
 dev-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
-	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync ios && npx cap run ios $(if $(IOS_DEVICE),--target $(IOS_DEVICE),)
+	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync ios
+	@# Real devices (iOS 17+/26) only speak the CoreDevice tunnel, which Capacitor's
+	@# legacy `cap run` path reports as "Offline". Deploy hardware via devicectl;
+	@# fall back to `cap run` (simulator) when no physical device is detected.
+	@if [ -n "$(IOS_DEVICE)" ]; then \
+		scripts/deploy-ios-device.sh $(IOS_DEVICE); \
+	else \
+		echo "No physical iPhone detected — launching on simulator via cap run."; \
+		cd mobile && npx cap run ios; \
+	fi
 
 dev-android: pre-build build-webapp appext-android
 	mkdir -p mobile/android/app/libs
