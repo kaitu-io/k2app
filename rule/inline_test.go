@@ -3,6 +3,8 @@ package rule
 import (
 	"net/netip"
 	"testing"
+
+	"github.com/kaitu-io/k2-rules/krs"
 )
 
 func TestInlineSet_DomainMatch(t *testing.T) {
@@ -75,5 +77,27 @@ func TestInlineSet_Mixed(t *testing.T) {
 	}
 	if s.IsEmpty() {
 		t.Error("non-empty InlineSet should not report IsEmpty")
+	}
+}
+
+func TestInlineSet_MatchDomainReversed_AgreesWithMatchDomain(t *testing.T) {
+	s := BuildInlineSet([]string{"example.com", "youtube.com"}, nil)
+	hosts := []string{
+		"example.com", "www.example.com", "a.b.example.com",
+		"notexample.com", "example.org", "youtube.com", "com", "x.youtube.com",
+	}
+	for _, host := range hosts {
+		want := s.MatchDomain(host)
+		got := s.MatchDomainReversed(krs.ReversedParents(host))
+		if got != want {
+			t.Errorf("host=%q: MatchDomainReversed=%v want(MatchDomain)=%v", host, got, want)
+		}
+	}
+}
+
+func TestInlineSet_MatchDomainReversed_EmptySet(t *testing.T) {
+	var s InlineSet
+	if s.MatchDomainReversed(krs.ReversedParents("anything.com")) {
+		t.Error("empty inline set must not match")
 	}
 }
