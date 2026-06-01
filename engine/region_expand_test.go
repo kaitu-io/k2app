@@ -3,6 +3,9 @@
 package engine
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"testing"
@@ -11,6 +14,47 @@ import (
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/rule"
 )
+
+// openTempDiskBundle writes b to a temp .krs and mmaps it; unmapped on cleanup.
+func openTempDiskBundle(t *testing.T, b *krs.Bundle) *krs.DiskBundle {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := krs.WriteBundle(&buf, b); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "x.krs")
+	if err := os.WriteFile(p, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db, err := krs.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+func TestExpandRegionRouteDisk_HostOnly(t *testing.T) {
+	db := openTempDiskBundle(t, &krs.Bundle{Sets: []krs.NamedSet{
+		{Name: "cn", DomainSuffixes: []string{"qq.com"}, CIDRs: []string{"1.1.1.0/24"}},
+	}})
+	host := expandRegionRouteDisk(db, rule.Target(2))
+	if host == nil || len(host.Sets) == 0 {
+		t.Fatal("want host entry with sets")
+	}
+	if host.Target != rule.Target(2) {
+		t.Fatalf("target = %v, want 2", host.Target)
+	}
+	if !host.Sets[0].MatchDomainReversed(krs.ReversedParents("www.qq.com")) {
+		t.Error("disk set should match www.qq.com")
+	}
+}
+
+func TestExpandRegionRouteDisk_Nil(t *testing.T) {
+	if expandRegionRouteDisk(nil, rule.Target(2)) != nil {
+		t.Error("nil bundle must yield nil entry")
+	}
+}
 
 // fakeBundle builds a minimal krs.Bundle with one named set and platform-
 // specific app patterns sufficient to exercise the expander.

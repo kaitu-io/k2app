@@ -44,6 +44,27 @@ func expandRegionRoute(b *krs.Bundle, target rule.Target) (host, meta *rule.Rout
 	return host, meta
 }
 
+// expandRegionRouteDisk is the mmap-backed counterpart to expandRegionRoute,
+// used on the NE (NetworkExtension) path. It builds ONLY the host entry
+// (domain/IP) from the disk bundle's matchers; region-Apps meta is omitted by
+// design. This is exact parity with iOS — the only NE platform — where
+// expandRegionRoute already returns (host, nil) because the sandbox precludes
+// process attribution. krs.DiskBundle also exposes no Apps accessor, so there
+// is nothing to lose. Returns nil when the bundle is nil or carries no sets.
+func expandRegionRouteDisk(b *krs.DiskBundle, target rule.Target) *rule.RouteEntry {
+	if b == nil {
+		return nil
+	}
+	sets := b.Sets() // []krs.Matcher, valid until the bundle is unmapped
+	if len(sets) == 0 {
+		return nil
+	}
+	return &rule.RouteEntry{
+		Target: target,
+		Sets:   sets,
+	}
+}
+
 // expandAppsRoute converts one logical `match.apps` route into a meta-only
 // rule.RouteEntry by platform-dispatching the globs. darwin/windows/android
 // route through buildMetaEntryFromApps; linux is built inline (krs has no
