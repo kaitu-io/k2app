@@ -30,7 +30,7 @@ env:
   # For local debug builds, override via `make dev-android K2_BUILD_LOG_LEVEL=debug`.
   # Runtime SetLogLevel() still works regardless.
   K2_BUILD_LOG_LEVEL: info
-  # Release builds must embed the full all.krs.tar.gz, never the cn-baseline
+  # Release builds must embed the full krs.tar.gz, never the cn-baseline
   # placeholder: fetch-rules-embed fails if the CDN archive is unreachable or
   # placeholder-sized. Mechanically enforces the deploy order (k2-rules live
   # first). See Makefile fetch-rules-embed.

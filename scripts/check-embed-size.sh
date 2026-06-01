@@ -5,7 +5,7 @@
 # immune to a working-tree overwrite from `make fetch-rules-embed`.
 set -euo pipefail
 MAX=307200   # 300 KB
-PATH_IN_K2="rule/embed/all.krs.tar.gz"
+PATH_IN_K2="rule/embed/krs.tar.gz"
 
 size=$(git -C k2 cat-file -s "HEAD:${PATH_IN_K2}" 2>/dev/null || echo "missing")
 if [ "$size" = "missing" ]; then

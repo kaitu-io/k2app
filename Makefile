@@ -35,14 +35,14 @@ sync-version:
 	bash scripts/sync-version.sh
 
 # Embed the full production rule archive into the k2 binary at build time.
-# go:embed needs k2/rule/embed/all.krs.tar.gz present; the committed copy is a
+# go:embed needs k2/rule/embed/krs.tar.gz present; the committed copy is a
 # small cn-baseline placeholder, overwritten here with the full ~2MB archive.
 # Local-cache fallback: a transient CDN miss reuses whatever is already there
 # (last fetch, or the placeholder) — never fails the build. Do NOT commit the
 # overwritten 2MB file (scripts/check-embed-size.sh guards this).
-RULES_EMBED_PATH := k2/rule/embed/all.krs.tar.gz
-RULES_EMBED_URL  := https://github.com/kaitu-io/k2-rules/releases/latest/download/all.krs.tar.gz
-RULES_EMBED_URL_FALLBACK := https://cdn.jsdelivr.net/gh/kaitu-io/k2-rules@release/all.krs.tar.gz
+RULES_EMBED_PATH := k2/rule/embed/krs.tar.gz
+RULES_EMBED_URL  := https://github.com/kaitu-io/k2-rules/releases/latest/download/krs.tar.gz
+RULES_EMBED_URL_FALLBACK := https://cdn.jsdelivr.net/gh/kaitu-io/k2-rules@release/krs.tar.gz
 # EMBED_REQUIRE_FULL=1 (set in the env by the release CI workflows) forbids
 # shipping the cn-baseline placeholder: if every CDN source is unreachable the
 # build FAILS instead of silently embedding the 66KB floor, and a post-fetch
@@ -63,9 +63,9 @@ fetch-rules-embed:
 		echo "fetch-rules-embed: refreshed ($$(wc -c < $(RULES_EMBED_PATH)) bytes) from jsdelivr"; \
 	elif [ "$(EMBED_REQUIRE_FULL)" = "1" ]; then \
 		echo "fetch-rules-embed: FAIL — release build (EMBED_REQUIRE_FULL=1) needs the full" >&2; \
-		echo "  all.krs.tar.gz from CDN, but every source was unreachable. Refusing to embed" >&2; \
+		echo "  krs.tar.gz from CDN, but every source was unreachable. Refusing to embed" >&2; \
 		echo "  the cn-baseline placeholder into a shipped binary. Push k2-rules + run the" >&2; \
-		echo "  daily-build so all.krs.tar.gz is live, then rebuild." >&2; \
+		echo "  daily-build so krs.tar.gz is live, then rebuild." >&2; \
 		rm -f "$(RULES_EMBED_PATH).tmp"; exit 1; \
 	elif [ -f "$(RULES_EMBED_PATH)" ]; then \
 		echo "fetch-rules-embed: CDN unreachable — using existing $(RULES_EMBED_PATH) (dev only)"; \
@@ -79,7 +79,7 @@ fetch-rules-embed:
 		if [ "$$sz" -le "$(EMBED_PLACEHOLDER_MAX)" ]; then \
 			echo "fetch-rules-embed: FAIL — release embed is $$sz bytes (<= $(EMBED_PLACEHOLDER_MAX)), i.e." >&2; \
 			echo "  the cn-baseline placeholder, not the full archive. A CDN source returned a" >&2; \
-			echo "  truncated/placeholder file. Verify all.krs.tar.gz on Release + jsdelivr." >&2; \
+			echo "  truncated/placeholder file. Verify krs.tar.gz on Release + jsdelivr." >&2; \
 			exit 1; \
 		fi; \
 		echo "fetch-rules-embed: release embed verified full ($$sz bytes)"; \
