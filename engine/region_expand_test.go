@@ -4,6 +4,7 @@ package engine
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +15,57 @@ import (
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/rule"
 )
+
+// TestNEDiskPath_DirtyHeapBudget is the in-tree regression guard for the whole
+// effort: building the NE (useDiskReader) engine over a large corpus must keep
+// resident dirty heap O(set count) — tens of KB — not O(rule count) (~19 MB,
+// which the heap path would cost). Generous 2 MB budget vs measured ~tens of KB.
+func TestNEDiskPath_DirtyHeapBudget(t *testing.T) {
+	dir := t.TempDir()
+	regions := []string{"cn", "overseas", "ru", "ir", "id", "bd"}
+	for _, r := range regions {
+		domains := make([]string, 8000)
+		for i := range domains {
+			domains[i] = fmt.Sprintf("d%d-%s.example.com", i, r)
+		}
+		cidrs := make([]string, 2000)
+		for i := range cidrs {
+			cidrs[i] = fmt.Sprintf("10.%d.%d.0/24", (i>>8)&255, i&255)
+		}
+		writeDiskKRS(t, dir, r+".krs", &krs.Bundle{Sets: []krs.NamedSet{
+			{Name: r, DomainSuffixes: domains, CIDRs: cidrs},
+		}})
+	}
+	client := &config.ClientConfig{
+		CacheDir: dir,
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://x", Match: rule.MatchConfig{Region: "cn"}},
+			{Via: "direct", Match: rule.MatchConfig{All: true}},
+		},
+	}
+	outboundMap := buildOutboundMap(client.Routes)
+
+	runtime.GC()
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	re := buildRuleEngine(client, outboundMap, true) // NE disk path
+
+	runtime.GC()
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+
+	deltaMB := float64(int64(after.HeapInuse)-int64(before.HeapInuse)) / (1 << 20)
+	t.Logf("NE disk-path resident dirty heap: %.3f MB across %d regions (8000 domains + 2000 CIDRs each)",
+		deltaMB, len(regions))
+	if deltaMB > 2.0 {
+		t.Fatalf("NE disk path dirty heap %.3f MB exceeds 2 MB budget — mmap reader not O(sets)? "+
+			"(heap path over this corpus would cost ~tens of MB)", deltaMB)
+	}
+	runtime.KeepAlive(re)
+	re.Close()
+}
 
 // openTempDiskBundle writes b to a temp .krs and mmaps it; unmapped on cleanup.
 func openTempDiskBundle(t *testing.T, b *krs.Bundle) *krs.DiskBundle {
