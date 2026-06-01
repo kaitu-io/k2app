@@ -11,11 +11,14 @@ import (
 )
 
 // defaultCheckInterval is how often a connected engine re-checks for new
-// rule bundles. Each tick calls rule.EnsureBundles, which is short-circuited
+// rule bundles. Each tick calls DownloadAndReload, which is short-circuited
 // by the 24h bundlesFreshTTL gate plus singleflight — so a 1h tick is mostly
 // noop os.Stat calls with one real download per day when the upstream daily
 // build emits a new tarball. The aggressive tick rate ensures the engine
-// hot-reloads within an hour of a new bundle landing on disk.
+// hot-reloads within an hour of a new bundle landing on disk. Exception: a
+// cache still on the binary-embedded floor (wasEmbedSeeded) is force-refreshed
+// on the first tick so the floor lifts to the CDN ceiling promptly rather than
+// after the full TTL.
 const defaultCheckInterval = 1 * time.Hour
 
 // UpdaterOption configures the updater.
@@ -42,11 +45,16 @@ type RebuildFunc func(cacheDir string) ([]RouteEntry, []*krs.Bundle, error)
 // closure can recompute match.region routes from the refreshed set.
 type RebuildFuncNamed func(cacheDir string) ([]RouteEntry, []NamedBundle, error)
 
-// DownloadAndReload calls EnsureBundles (fetches the rule-bundle tarball
-// when the cache is older than bundlesFreshTTL), then optionally rebuilds
-// and hot-swaps the engine's routes.
-// Safe for concurrent callers — singleflight inside EnsureBundles dedups.
-// If engine or rebuild is nil, only the download side runs.
+// DownloadAndReload fetches the rule-bundle tarball when the cache is older
+// than bundlesFreshTTL, then optionally rebuilds and hot-swaps the engine's
+// routes. Safe for concurrent callers — singleflight inside EnsureBundles
+// dedups. If engine or rebuild is nil, only the download side runs.
+//
+// When the cache was populated from the binary-embedded floor
+// (wasEmbedSeeded), the download is FORCED past the freshness gate so the
+// build-time baseline lifts to the CDN ceiling on the first background tick
+// instead of staying frozen for a whole TTL. A successful download clears the
+// embed marker, so subsequent ticks fall back to the gated 24h cadence.
 func DownloadAndReload(
 	ctx context.Context,
 	engine *Engine,
@@ -54,7 +62,7 @@ func DownloadAndReload(
 	sources []string,
 	rebuild RebuildFunc,
 ) error {
-	if err := EnsureBundles(ctx, cacheDir, sources); err != nil {
+	if err := ensureBundles(ctx, cacheDir, sources, wasEmbedSeeded(cacheDir)); err != nil {
 		return err
 	}
 	if engine == nil || rebuild == nil {
@@ -105,8 +113,11 @@ func StartUpdater(
 }
 
 // DownloadAndReloadNamed is the NamedBundle variant of DownloadAndReload.
-// Calls EnsureBundles, runs the rebuild, then Engine.ReloadNamed so the
-// engine's region→bundle map stays in sync with disk.
+// Runs the download, the rebuild, then Engine.ReloadNamed so the engine's
+// region→bundle map stays in sync with disk. Like DownloadAndReload it FORCES
+// the download past the freshness gate when the cache is an embed-seeded floor
+// (wasEmbedSeeded), so a cold-started device upgrades to the CDN ruleset on the
+// first background tick rather than after the 24h TTL.
 func DownloadAndReloadNamed(
 	ctx context.Context,
 	engine *Engine,
@@ -114,7 +125,7 @@ func DownloadAndReloadNamed(
 	sources []string,
 	rebuild RebuildFuncNamed,
 ) error {
-	if err := EnsureBundles(ctx, cacheDir, sources); err != nil {
+	if err := ensureBundles(ctx, cacheDir, sources, wasEmbedSeeded(cacheDir)); err != nil {
 		return err
 	}
 	if engine == nil || rebuild == nil {

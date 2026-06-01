@@ -182,11 +182,12 @@ func (e *Engine) Start(cfg Config) error {
 	// Cold start: downloads the tarball from DefaultSources (up to 10s
 	// hard timeout). Warm cache: ~microsecond mtime check, no HTTP.
 	//
-	// If fresh download fails but a stale .k2b is already on disk (from a prior
-	// successful connect), fall through to the stale cache — the background
-	// StartUpdater (started below) hot-reloads via rule.Engine.Reload() once
-	// a mirror becomes reachable. Only true cold-start with no bundles at all
-	// is fatal, preserving the routes=0 all-direct guard.
+	// If fresh download fails but stale .krs bundles are already on disk (from
+	// the embedded seed above or a prior successful connect), fall through to
+	// the stale cache — the background StartUpdater (started below) hot-reloads
+	// via rule.Engine.Reload() once a mirror becomes reachable. Only true
+	// cold-start with no bundles at all is fatal, preserving the routes=0
+	// all-direct guard.
 	sources := client.RuleSources
 	if len(sources) == 0 {
 		sources = rule.DefaultSources

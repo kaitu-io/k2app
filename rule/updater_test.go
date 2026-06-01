@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -146,6 +147,91 @@ func TestDownloadAndReload_DownloadsWhenStale(t *testing.T) {
 	}
 	if !bytes.Equal(got, data) {
 		t.Fatal("file should have been downloaded")
+	}
+}
+
+// TestDownloadAndReload_UpgradesEmbedFloor is the Finding-A guard: a cache
+// seeded from the embedded archive reads as "fresh" (mtime now + .krs present),
+// so the plain 24h gate would skip the CDN download and the device would serve
+// the build-time baseline for a whole TTL. DownloadAndReload must detect the
+// embed provenance and FORCE a refresh that replaces the floor and clears the
+// embedded marker — then later ticks fall back to the normal gated cadence.
+func TestDownloadAndReload_UpgradesEmbedFloor(t *testing.T) {
+	dir := t.TempDir()
+
+	// Cold-start floor: seed from the embedded archive. Cache is now fresh.
+	if err := SeedFromEmbedIfEmpty(dir); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if !isVersionFresh(dir, bundlesFreshTTL) {
+		t.Fatal("precondition: seeded cache should read fresh")
+	}
+
+	var reqCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount.Add(1)
+		makeTarballHandler(t, map[string][]byte{
+			"cn.krs":       {0x4b, 0x32, 0x42, 0x00},
+			"overseas.krs": {0x4b, 0x32, 0x42, 0x00},
+		})(w, r)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := DownloadAndReload(ctx, nil, dir, []string{srv.URL + "/"}, nil); err != nil {
+		t.Fatalf("DownloadAndReload: %v", err)
+	}
+
+	if reqCount.Load() == 0 {
+		t.Fatal("embed-seeded floor must force a CDN download (got 0 HTTP requests — 24h gate not bypassed)")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "overseas.krs")); err != nil {
+		t.Errorf("CDN bundle not written over the floor: %v", err)
+	}
+	if wasEmbedSeeded(dir) {
+		t.Error("embedded marker must be cleared after a successful CDN upgrade")
+	}
+
+	// Second pass on the now-CDN-stamped fresh cache must NOT re-download —
+	// proving the force is embed-only, not always-on (normal 24h cadence intact).
+	before := reqCount.Load()
+	if err := DownloadAndReload(ctx, nil, dir, []string{srv.URL + "/"}, nil); err != nil {
+		t.Fatalf("second DownloadAndReload: %v", err)
+	}
+	if reqCount.Load() != before {
+		t.Errorf("CDN-stamped fresh cache must be gated (no extra download); requests %d → %d", before, reqCount.Load())
+	}
+}
+
+// TestDownloadAndReloadNamed_UpgradesEmbedFloor mirrors the above for the
+// NamedBundle variant the engine actually wires (StartUpdaterNamed).
+func TestDownloadAndReloadNamed_UpgradesEmbedFloor(t *testing.T) {
+	dir := t.TempDir()
+	if err := SeedFromEmbedIfEmpty(dir); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	var reqCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount.Add(1)
+		makeTarballHandler(t, map[string][]byte{
+			"cn.krs":       {0x4b, 0x32, 0x42, 0x00},
+			"overseas.krs": {0x4b, 0x32, 0x42, 0x00},
+		})(w, r)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := DownloadAndReloadNamed(ctx, nil, dir, []string{srv.URL + "/"}, nil); err != nil {
+		t.Fatalf("DownloadAndReloadNamed: %v", err)
+	}
+	if reqCount.Load() == 0 {
+		t.Fatal("Named variant must also force a CDN download for an embed-seeded floor")
+	}
+	if wasEmbedSeeded(dir) {
+		t.Error("embedded marker must be cleared after a successful CDN upgrade (Named)")
 	}
 }
 

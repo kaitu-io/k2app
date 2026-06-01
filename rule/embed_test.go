@@ -102,6 +102,37 @@ func TestSeedFromEmbedIfEmpty_EmptyCacheDirIsNoOp(t *testing.T) {
 	}
 }
 
+// TestWasEmbedSeeded guards the provenance signal that lets the background
+// updater tell an embedded floor apart from a real CDN download. Without it,
+// a freshly-seeded cache reads as "fresh" and the updater honors the 24h gate
+// — serving the build-time baseline untouched for a whole TTL (Finding A).
+func TestWasEmbedSeeded(t *testing.T) {
+	dir := t.TempDir()
+
+	// No bundles.version yet → not embed-seeded.
+	if wasEmbedSeeded(dir) {
+		t.Error("empty cache must not read as embed-seeded")
+	}
+
+	// After a seed, the version line carries the embedded marker.
+	if err := SeedFromEmbedIfEmpty(dir); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if !wasEmbedSeeded(dir) {
+		t.Error("seeded cache must read as embed-seeded")
+	}
+
+	// A CDN-style stamp (no marker) must NOT read as embed-seeded — otherwise
+	// the updater would force a download on every tick forever.
+	if err := os.WriteFile(filepath.Join(dir, "bundles.version"),
+		[]byte("2026-06-01T00:00:00Z sha256:deadbeef\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if wasEmbedSeeded(dir) {
+		t.Error("CDN-stamped cache must not read as embed-seeded")
+	}
+}
+
 func TestColdStartComposition_SeedThenEnsureOffline(t *testing.T) {
 	dir := t.TempDir()
 	// Mirror engine.Start(): seed the embed floor, then EnsureBundles with an

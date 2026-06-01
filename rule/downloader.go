@@ -9,12 +9,12 @@ import (
 	"time"
 )
 
-// DefaultSources is the list of CDN sources for k2-rules.tar.gz downloads.
-// Happy Eyeballs races all sources in parallel — fastest wins. GitHub is
-// listed first as the authoritative origin; jsdelivr/ghproxy mirrors provide
-// acceleration and censorship resilience in CN. The "@release" path is the
-// orphan release branch in kaitu-io/k2-rules that holds just the tarball
-// and per-country .k2b bundles (no source code).
+// DefaultSources is the list of CDN sources for all.krs.tar.gz downloads
+// (the single .krs archive; see ensure.go tarballName). Happy Eyeballs races
+// all sources in parallel — fastest wins. GitHub is listed first as the
+// authoritative origin; jsdelivr/ghproxy mirrors provide acceleration and
+// censorship resilience in CN. The "@release" path is the orphan release
+// branch in kaitu-io/k2-rules that holds the published artifacts (no source).
 var DefaultSources = []string{
 	// GitHub Releases (canonical origin)
 	"https://github.com/kaitu-io/k2-rules/releases/latest/download/",

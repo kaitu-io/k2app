@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"log/slog"
@@ -52,4 +53,31 @@ func SeedFromEmbedIfEmpty(cacheDir string) error {
 	}
 	slog.Info("rule: seeded cache from embedded archive", "dir", cacheDir)
 	return nil
+}
+
+// embedMarker is the token seedFromEmbed writes into bundles.version to record
+// that the cache was populated from the binary-embedded archive rather than a
+// CDN download. seedFromEmbed writes "<stamp> embedded sha256:<hash>"; a CDN
+// download writes "<stamp> sha256:<hash>" (no marker).
+var embedMarker = []byte("embedded sha256:")
+
+// wasEmbedSeeded reports whether cacheDir's bundles.version was written by the
+// embedded-archive seed (seedFromEmbed) rather than a CDN download.
+//
+// The background updater uses this to FORCE a CDN refresh that upgrades the
+// build-time floor instead of honoring the 24h freshness gate. Without it a
+// freshly-seeded device reads as "fresh" and serves the embedded baseline
+// untouched for a whole TTL even on a healthy network — the floor never lifts
+// to the CDN ceiling. A successful CDN download rewrites bundles.version
+// without the marker, so the force is self-clearing: it applies only until the
+// floor is upgraded, then the normal gated cadence resumes.
+func wasEmbedSeeded(cacheDir string) bool {
+	if cacheDir == "" {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(cacheDir, "bundles.version"))
+	if err != nil {
+		return false
+	}
+	return bytes.Contains(data, embedMarker)
 }

@@ -42,6 +42,16 @@ var ensureSF singleflight.Group
 // See docs/superpowers/specs/2026-04-20-rule-bundle-coldstart-fix-design.md
 // for the full contract.
 func EnsureBundles(ctx context.Context, cacheDir string, sources []string) error {
+	return ensureBundles(ctx, cacheDir, sources, false)
+}
+
+// ensureBundles is EnsureBundles with an explicit force flag. force=true
+// bypasses the freshness gate (both the pre-lock and post-lock checks) so the
+// background updater can upgrade an embed-seeded floor that would otherwise
+// read as fresh for the full TTL. The connect-path caller (engine.Start) uses
+// force=false so a warm cache stays instant; only DownloadAndReload(Named)
+// forces, and only while wasEmbedSeeded is still true.
+func ensureBundles(ctx context.Context, cacheDir string, sources []string, force bool) error {
 	if cacheDir == "" {
 		return nil
 	}
@@ -49,13 +59,13 @@ func EnsureBundles(ctx context.Context, cacheDir string, sources []string) error
 		return fmt.Errorf("rule: create cache dir: %w", err)
 	}
 
-	if isVersionFresh(cacheDir, bundlesFreshTTL) {
+	if !force && isVersionFresh(cacheDir, bundlesFreshTTL) {
 		slog.Debug("rule: bundles fresh, skipping download", "dir", cacheDir)
 		return nil
 	}
 
 	_, err, _ := ensureSF.Do(cacheDir, func() (any, error) {
-		return nil, ensureOnce(ctx, cacheDir, sources)
+		return nil, ensureOnce(ctx, cacheDir, sources, force)
 	})
 	return err
 }
@@ -65,8 +75,8 @@ func EnsureBundles(ctx context.Context, cacheDir string, sources []string) error
 // in separate processes and both call EnsureBundles on the same cacheDir).
 // Re-checks freshness after acquiring the lock in case another process just
 // finished writing bundles.version.
-func ensureOnce(ctx context.Context, cacheDir string, sources []string) error {
-	if isVersionFresh(cacheDir, bundlesFreshTTL) {
+func ensureOnce(ctx context.Context, cacheDir string, sources []string, force bool) error {
+	if !force && isVersionFresh(cacheDir, bundlesFreshTTL) {
 		return nil
 	}
 
@@ -76,7 +86,7 @@ func ensureOnce(ctx context.Context, cacheDir string, sources []string) error {
 	}
 	defer release()
 
-	if isVersionFresh(cacheDir, bundlesFreshTTL) {
+	if !force && isVersionFresh(cacheDir, bundlesFreshTTL) {
 		return nil
 	}
 
@@ -232,9 +242,12 @@ func seedFromEmbed(cacheDir string) error {
 		return fmt.Errorf("rule: seed atomic swap: %w", err)
 	}
 
+	// Stamp with the embed marker (embedMarker, embed.go) so wasEmbedSeeded can
+	// later tell this floor apart from a CDN download and force an upgrade. Both
+	// sides share embedMarker so the write/read can't drift.
 	sum := sha256.Sum256(embeddedRules)
 	stamp := time.Now().UTC().Format(time.RFC3339)
-	line := fmt.Sprintf("%s embedded sha256:%s\n", stamp, hex.EncodeToString(sum[:]))
+	line := fmt.Sprintf("%s %s%s\n", stamp, embedMarker, hex.EncodeToString(sum[:]))
 	return os.WriteFile(filepath.Join(cacheDir, "bundles.version"), []byte(line), 0o644)
 }
 
