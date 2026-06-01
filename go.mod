@@ -8,7 +8,7 @@ require (
 	github.com/electricbubble/gadb v0.1.0
 	github.com/google/nftables v0.3.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/kaitu-io/k2-rules v0.1.1
+	github.com/kaitu-io/k2-rules v0.1.3
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
 	github.com/pion/ice/v4 v4.2.2
@@ -20,13 +20,12 @@ require (
 	github.com/xtaci/smux/v2 v2.1.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.51.0
-	golang.org/x/mobile v0.0.0-20260508232728-bebd421c7fa8
+	golang.org/x/mobile v0.0.0-20260529142300-ecb4cd65260a
 	golang.org/x/net v0.54.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.44.0
 	gopkg.in/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v3 v3.0.1
-	howett.net/plist v1.0.1
 )
 
 require (
