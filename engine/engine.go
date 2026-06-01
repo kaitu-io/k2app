@@ -246,7 +246,7 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
 	outboundMap := buildOutboundMap(client.Routes)
-	ruleEngine := buildRuleEngine(client, outboundMap)
+	ruleEngine := buildRuleEngine(client, outboundMap, cfg.NetworkExtension)
 
 	// 1c. (Phase 1 dark instrumentation) Wire rule-miss telemetry reporter
 	// ONLY when explicitly opted in via config. Zero-value config = off,
@@ -609,9 +609,9 @@ func (e *Engine) Start(cfg Config) error {
 					regionBundlesRebuild[nb.Region] = nb.Bundle
 				}
 			}
-			idx := krs.Index(bundles)
+			idx := matcherIndex(krs.Index(bundles))
 
-			entries, _, _ := buildRouteEntries(client.Routes, idx, outboundMap, regionBundlesRebuild)
+			entries, _, _ := buildRouteEntries(client.Routes, idx, outboundMap, heapRegionExpander(regionBundlesRebuild))
 			return entries, named, nil
 		}
 		rule.StartUpdaterNamed(ctx, ruleEngine, client.CacheDir, sources, rebuildFn)
@@ -1135,7 +1135,7 @@ func (e *Engine) fail(err error) error {
 // outboundMap maps via URL → rule.Target for wire outbounds.
 // Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
 // ensures both always produce identical routing tables from the same config+bundles.
-func buildRouteEntries(routes []config.RouteConfig, idx map[string]*krs.NamedSet, outboundMap map[string]rule.Target, regionBundles map[string]*krs.Bundle) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
+func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, outboundMap map[string]rule.Target, expandRegion func(region string, target rule.Target) []rule.RouteEntry) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
 	fallback = outboundDirect
 
 	for i, route := range routes {
@@ -1193,19 +1193,12 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]*krs.NamedSet
 		// has its own criteria. region/apps and legacy fields can coexist on
 		// one route, though webapp emits them on separate routes.
 		if route.Match.Region != "" {
-			b, ok := regionBundles[route.Match.Region]
-			if !ok || b == nil {
+			regionEntries := expandRegion(route.Match.Region, target)
+			if len(regionEntries) == 0 {
 				slog.Warn("engine: match.region bundle not loaded — skipping route",
 					"region", route.Match.Region, "via", config.TruncateVia(route.Via))
-			} else {
-				host, meta := expandRegionRoute(b, target)
-				if host != nil {
-					entries = append(entries, *host)
-				}
-				if meta != nil {
-					entries = append(entries, *meta)
-				}
 			}
+			entries = append(entries, regionEntries...)
 		}
 		if len(route.Match.Apps) > 0 {
 			if meta := expandAppsRoute(route.Match.Apps, target); meta != nil {
@@ -1408,6 +1401,7 @@ func missingConfiguredRegions(routes []config.RouteConfig, cacheDir string) []st
 func buildRuleEngine(
 	client *config.ClientConfig,
 	outboundMap map[string]rule.Target,
+	useDiskReader bool,
 ) *rule.Engine {
 	finalRoutes := client.Routes
 
@@ -1417,7 +1411,11 @@ func buildRuleEngine(
 		return rule.NewEngine(nil, target, nil, true)
 	}
 
-	// Load bundles from cache.
+	if useDiskReader {
+		return buildRuleEngineDisk(client, finalRoutes, outboundMap)
+	}
+
+	// Heap path (desktop daemon + Android): full-expand rule bundles into heap.
 	named, err := rule.LoadNamed(client.CacheDir)
 	if err != nil {
 		slog.Warn("engine: rule load failed", "err", err)
@@ -1430,10 +1428,41 @@ func buildRuleEngine(
 			regionBundles[nb.Region] = nb.Bundle
 		}
 	}
-	idx := krs.Index(bundles)
-	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap, regionBundles)
+	idx := matcherIndex(krs.Index(bundles))
+	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap, heapRegionExpander(regionBundles))
 
-	hasRules := len(bundles) > 0
+	logRuleEngineState(client.CacheDir, len(bundles) > 0, entries, fallback)
+	return rule.NewEngineNamed(entries, fallback, named, allProxy)
+}
+
+// buildRuleEngineDisk is the NetworkExtension (iOS NE) variant of
+// buildRuleEngine. It mmaps the rule bundles via rule.OpenNamed — keeping
+// resident dirty heap O(set count) (~tens of KB vs ~19 MB) so the NE survives
+// the 50 MB jetsam ceiling — and hands the matchers + unmap closers to the
+// engine. Region routes resolve host-only (expandRegionRouteDisk); region-Apps
+// meta is omitted because iOS cannot attribute processes anyway.
+func buildRuleEngineDisk(client *config.ClientConfig, finalRoutes []config.RouteConfig, outboundMap map[string]rule.Target) *rule.Engine {
+	named, closers, err := rule.OpenNamed(client.CacheDir)
+	if err != nil {
+		slog.Warn("engine: rule mmap open failed", "err", err)
+	}
+	idx := rule.IndexDisk(named)
+	regionDisk := make(map[string]*krs.DiskBundle, len(named))
+	for _, nb := range named {
+		if nb.Region != "" {
+			regionDisk[nb.Region] = nb.Bundle
+		}
+	}
+	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap, diskRegionExpander(regionDisk))
+
+	logRuleEngineState(client.CacheDir, len(named) > 0, entries, fallback)
+	return rule.NewEngineWithClosers(entries, fallback, closers, allProxy)
+}
+
+// logRuleEngineState emits the "rule engine loaded" / "fallback only" line,
+// shared by the heap and disk builders so both report identically.
+func logRuleEngineState(cacheDir string, hasBundles bool, entries []rule.RouteEntry, fallback rule.Target) {
+	hasRules := hasBundles
 	for _, e := range entries {
 		if e.Inline != nil && !e.Inline.IsEmpty() {
 			hasRules = true
@@ -1448,13 +1477,55 @@ func buildRuleEngine(
 	}
 	if !hasRules {
 		slog.Info("engine: no rule bundles or inline rules, using fallback only",
-			"cacheDir", client.CacheDir, "fallback", fallback)
+			"cacheDir", cacheDir, "fallback", fallback)
 	} else {
-		slog.Info("engine: rule engine loaded",
-			"routes", len(entries), "fallback", fallback)
+		slog.Info("engine: rule engine loaded", "routes", len(entries), "fallback", fallback)
 	}
+}
 
-	return rule.NewEngineNamed(entries, fallback, named, allProxy)
+// matcherIndex widens a name→*NamedSet index (heap) to name→krs.Matcher so the
+// shared buildRouteEntries is agnostic to heap vs mmap sets.
+func matcherIndex(ns map[string]*krs.NamedSet) map[string]krs.Matcher {
+	m := make(map[string]krs.Matcher, len(ns))
+	for k, v := range ns {
+		m[k] = v
+	}
+	return m
+}
+
+// heapRegionExpander builds the region-expansion closure for the heap path:
+// host (Sets) + meta (Apps[GOOS]) entries from a *krs.Bundle.
+func heapRegionExpander(regionBundles map[string]*krs.Bundle) func(string, rule.Target) []rule.RouteEntry {
+	return func(region string, target rule.Target) []rule.RouteEntry {
+		b, ok := regionBundles[region]
+		if !ok || b == nil {
+			return nil
+		}
+		host, meta := expandRegionRoute(b, target)
+		var out []rule.RouteEntry
+		if host != nil {
+			out = append(out, *host)
+		}
+		if meta != nil {
+			out = append(out, *meta)
+		}
+		return out
+	}
+}
+
+// diskRegionExpander builds the region-expansion closure for the NE/mmap path:
+// host-only entry from a *krs.DiskBundle (no Apps meta — see buildRuleEngineDisk).
+func diskRegionExpander(regionDisk map[string]*krs.DiskBundle) func(string, rule.Target) []rule.RouteEntry {
+	return func(region string, target rule.Target) []rule.RouteEntry {
+		db, ok := regionDisk[region]
+		if !ok || db == nil {
+			return nil
+		}
+		if host := expandRegionRouteDisk(db, target); host != nil {
+			return []rule.RouteEntry{*host}
+		}
+		return nil
+	}
 }
 
 // computeDNSExclude builds the list of IPs to exclude from TUN routing.

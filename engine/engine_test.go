@@ -409,7 +409,7 @@ func TestBuildRuleEngine_Default(t *testing.T) {
 	client := &config.ClientConfig{
 		Server: "k2v5://udid:tok@host:443",
 	}
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), false)
 	defer re.Close()
 	if re.IsAllProxy() {
 		t.Fatal("expected IsAllProxy false when no routes set")
@@ -422,7 +422,7 @@ func TestBuildRuleEngine_Default(t *testing.T) {
 
 func TestBuildRuleEngine_AllProxy(t *testing.T) {
 	client := config.ClientFromURL("k2v5://udid:tok@host:443")
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), false)
 	defer re.Close()
 	if !re.IsAllProxy() {
 		t.Fatal("expected IsAllProxy true for ClientFromURL")
@@ -455,7 +455,7 @@ func TestBuildRuleEngine_InlineRules(t *testing.T) {
 			},
 		},
 	}
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), false)
 	defer re.Close()
 
 	if got := re.Match("ads.example.com"); got != rule.Target(1) {
@@ -487,7 +487,7 @@ func TestBuildRuleEngine_ProcessRoute(t *testing.T) {
 			},
 		},
 	}
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), false)
 	defer re.Close()
 
 	// DNS-time: process-only route skipped
@@ -519,7 +519,7 @@ func TestBuildRuleEngine_IPIsPrivate(t *testing.T) {
 			},
 		},
 	}
-	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes), false)
 	defer re.Close()
 
 	if got := re.Match("192.168.1.1"); got != rule.Target(0) {
@@ -1985,7 +1985,7 @@ func TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure(t *testing.T) {
 		},
 	}
 	outboundMap := buildOutboundMap(client.Routes)
-	ruleEngine := buildRuleEngine(client, outboundMap)
+	ruleEngine := buildRuleEngine(client, outboundMap, false)
 	if ruleEngine == nil {
 		t.Fatal("buildRuleEngine returned nil")
 	}
@@ -2062,7 +2062,7 @@ func TestBuildRouteEntries_NewFieldsCopied(t *testing.T) {
 			InstallerPackage:  []string{"com.xiaomi.market"},
 		},
 	}}
-	entries, _, _ := buildRouteEntries(routes, nil, map[string]rule.Target{}, nil)
+	entries, _, _ := buildRouteEntries(routes, nil, map[string]rule.Target{}, heapRegionExpander(nil))
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}

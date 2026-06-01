@@ -56,6 +56,48 @@ func TestExpandRegionRouteDisk_Nil(t *testing.T) {
 	}
 }
 
+func writeDiskKRS(t *testing.T, dir, name string, b *krs.Bundle) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := krs.WriteBundle(&buf, b); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestBuildRuleEngine_DiskPath_RoutesAndCloses drives the NE (useDiskReader)
+// branch end to end: region route resolves via the mmap reader and Close
+// munmaps without panic.
+func TestBuildRuleEngine_DiskPath_RoutesAndCloses(t *testing.T) {
+	dir := t.TempDir()
+	writeDiskKRS(t, dir, "cn.krs", &krs.Bundle{Sets: []krs.NamedSet{
+		{Name: "cn", DomainSuffixes: []string{"qq.com"}},
+	}})
+	client := &config.ClientConfig{
+		CacheDir: dir,
+		Routes: []config.RouteConfig{
+			{Via: "k2v5://x", Match: rule.MatchConfig{Region: "cn"}},
+			{Via: "direct", Match: rule.MatchConfig{All: true}},
+		},
+	}
+	outboundMap := buildOutboundMap(client.Routes)
+	proxy := outboundMap["k2v5://x"]
+
+	re := buildRuleEngine(client, outboundMap, true) // NE path = mmap reader
+	if re == nil {
+		t.Fatal("nil engine")
+	}
+	if got := re.Match("www.qq.com"); got != proxy {
+		t.Fatalf("cn domain → proxy %v, got %v", proxy, got)
+	}
+	if got := re.Match("google.com"); got == proxy {
+		t.Fatal("non-cn domain must not route to proxy")
+	}
+	re.Close() // must munmap without panic
+}
+
 // fakeBundle builds a minimal krs.Bundle with one named set and platform-
 // specific app patterns sufficient to exercise the expander.
 func fakeBundle(setName string, darwin, win, android, installers []string) *krs.Bundle {
@@ -255,7 +297,7 @@ func TestBuildRouteEntries_ExpandsMatchRegion(t *testing.T) {
 	}
 	outboundMap := map[string]rule.Target{"k2v5://x": rule.Target(2)}
 
-	entries, _, _ := buildRouteEntries(cfgRoutes, nil, outboundMap, regionMap)
+	entries, _, _ := buildRouteEntries(cfgRoutes, nil, outboundMap, heapRegionExpander(regionMap))
 
 	wantEntries := 1
 	switch runtime.GOOS {
@@ -278,7 +320,7 @@ func TestBuildRouteEntries_UnknownRegionLogsAndSkips(t *testing.T) {
 	}
 	outboundMap := map[string]rule.Target{"k2v5://x": rule.Target(2)}
 
-	entries, fallback, _ := buildRouteEntries(cfgRoutes, nil, outboundMap, regionMap)
+	entries, fallback, _ := buildRouteEntries(cfgRoutes, nil, outboundMap, heapRegionExpander(regionMap))
 
 	if len(entries) != 0 {
 		t.Errorf("unknown region must produce 0 entries; got %+v", entries)
@@ -298,7 +340,7 @@ func TestBuildRouteEntries_ExpandsMatchApps(t *testing.T) {
 	}
 	outboundMap := map[string]rule.Target{"k2v5://x": rule.Target(2)}
 
-	entries, _, _ := buildRouteEntries(cfgRoutes, nil, outboundMap, nil)
+	entries, _, _ := buildRouteEntries(cfgRoutes, nil, outboundMap, heapRegionExpander(nil))
 
 	if len(entries) != 1 {
 		t.Fatalf("len(entries) = %d, want 1; entries=%+v", len(entries), entries)
