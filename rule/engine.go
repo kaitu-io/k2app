@@ -446,11 +446,30 @@ func (e *Engine) SetTmpRule(ip string, target Target) {
 		e.mu.Unlock()
 		return
 	}
+	// allProxy has no routes — every host already takes the fallback, so a DNS
+	// pin changes nothing yet grows unbounded for the tunnel's lifetime. Skip it
+	// (constitution: bound the loaded-engine dirty heap).
+	if e.allProxy {
+		e.mu.Unlock()
+		return
+	}
 	prev, existed := e.tmp[addr]
+	evicted := 0
+	if !existed && len(e.tmp) >= tmpRuleCap {
+		// Bounded cache: clear and let DNS re-pin live IPs on their next lookup.
+		// Cheaper and constitution-safe vs an LRU; the pin cache is an
+		// optimization, not a source of truth (routes still match correctly).
+		evicted = len(e.tmp)
+		e.tmp = make(map[netip.Addr]Target)
+		prev, existed = 0, false
+	}
 	e.tmp[addr] = target
 	tmpSize := len(e.tmp)
 	e.mu.Unlock()
 
+	if evicted > 0 {
+		slog.Info("DIAG: rule-tmp-evict", "evicted", evicted, "cap", tmpRuleCap)
+	}
 	switch {
 	case !existed:
 		slog.Info("DIAG: rule-tmp-pin",
@@ -460,6 +479,17 @@ func (e *Engine) SetTmpRule(ip string, target Target) {
 			"ip", ip, "target", uint8(target), "action", "change",
 			"prevTarget", uint8(prev), "tmpSize", tmpSize)
 	}
+}
+
+// tmpRuleCap bounds the DNS-learned pin cache so a long-lived tunnel under heavy
+// DNS churn cannot grow e.tmp without limit (iOS NE jetsam budget).
+const tmpRuleCap = 4096
+
+// tmpLen returns the number of DNS-learned pins. Test/diagnostic accessor.
+func (e *Engine) tmpLen() int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return len(e.tmp)
 }
 
 // IsAllProxy returns true if engine is in match-all proxy mode.

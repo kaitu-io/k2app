@@ -2,6 +2,7 @@ package rule
 
 import (
 	"bytes"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -814,5 +815,23 @@ func TestEngine_Closers_RunOnReloadNotTwice(t *testing.T) {
 	e.Close() // closers were swapped out (to nil) by Reload
 	if n != 1 {
 		t.Fatalf("close must not re-run swapped-out closer: want 1 got %d", n)
+	}
+}
+
+func TestSetTmpRule_SkipsUnderAllProxy(t *testing.T) {
+	e := NewEngine(nil, Target(2), nil, true) // allProxy
+	e.SetTmpRule("1.2.3.4", Target(0))
+	if n := e.tmpLen(); n != 0 {
+		t.Fatalf("allProxy must not pin DNS rules; tmpLen=%d", n)
+	}
+}
+
+func TestSetTmpRule_CapsGrowth(t *testing.T) {
+	e := NewEngine(nil, Target(0), nil, false)
+	for i := 0; i < 5000; i++ {
+		e.SetTmpRule(fmt.Sprintf("10.%d.%d.%d", (i>>16)&255, (i>>8)&255, i&255), Target(2))
+	}
+	if n := e.tmpLen(); n > 4096 {
+		t.Fatalf("tmp grew to %d, must stay <= cap 4096", n)
 	}
 }
