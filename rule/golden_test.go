@@ -87,13 +87,13 @@ func firstIPInCIDR(cidr string) (netip.Addr, error) {
 func buildEngine(t *testing.T, preset string, bundles []*krs.Bundle, idx map[string]*krs.NamedSet) *rule.Engine {
 	t.Helper()
 	presetNames := rule.ExpandPreset(preset)
-	var directSets []*krs.NamedSet
+	var directSets []krs.Matcher
 	for _, name := range presetNames {
 		if s, ok := idx[name]; ok {
 			directSets = append(directSets, s)
 		}
 	}
-	var proxySets []*krs.NamedSet
+	var proxySets []krs.Matcher
 	if s, ok := idx["overseas"]; ok {
 		proxySets = append(proxySets, s)
 	}
@@ -242,7 +242,7 @@ func TestGolden_L3_EndToEnd(t *testing.T) {
 			if presetNames == nil {
 				t.Fatalf("ExpandPreset(%q) returned nil", country.Preset)
 			}
-			var directSets []*krs.NamedSet
+			var directSets []krs.Matcher
 			for _, name := range presetNames {
 				s, ok := idx[name]
 				if !ok {
@@ -256,7 +256,7 @@ func TestGolden_L3_EndToEnd(t *testing.T) {
 			}
 			routes := []rule.RouteEntry{
 				{Target: rule.Target(0), Sets: directSets},
-				{Target: rule.Target(2), Sets: []*krs.NamedSet{overseasSet}},
+				{Target: rule.Target(2), Sets: []krs.Matcher{overseasSet}},
 			}
 			eng := rule.NewEngine(routes, rule.Target(0), bundles, false)
 			defer eng.Close()

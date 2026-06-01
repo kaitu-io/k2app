@@ -120,8 +120,8 @@ func TestIntegration_RealBundles(t *testing.T) {
 	}
 }
 
-func resolveNames(idx map[string]*krs.NamedSet, names []string) []*krs.NamedSet {
-	var sets []*krs.NamedSet
+func resolveNames(idx map[string]*krs.NamedSet, names []string) []krs.Matcher {
+	var sets []krs.Matcher
 	for _, name := range names {
 		if bs, ok := idx[name]; ok {
 			sets = append(sets, bs)

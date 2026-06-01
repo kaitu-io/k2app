@@ -13,7 +13,7 @@ import (
 // RouteEntry represents one route in the routing table.
 type RouteEntry struct {
 	Target Target
-	Sets   []*krs.NamedSet // resolved by name from loaded .krs bundles
+	Sets   []krs.Matcher // resolved by name from loaded bundles (heap *NamedSet or mmap *diskSet)
 
 	// Inline matchers (compiled from config domain_suffix/ip_cidr).
 	Inline *InlineSet
@@ -202,13 +202,16 @@ func (e *Engine) matchHostLocked(host string) Target {
 		}
 		return e.fallback
 	}
-	domain := strings.ToLower(host)
+	// Hoist: normalize (IDNA + lowercase + reverse) once per lookup, not once
+	// per set (constitution rule 5). Both heap *NamedSet and mmap *diskSet match
+	// on these pre-reversed parents.
+	parents := krs.ReversedParents(host)
 	for i := range e.routes {
 		r := &e.routes[i]
 		if !r.hasHostCriteria() {
 			continue
 		}
-		if matchRouteDomain(r, domain) {
+		if matchRouteDomain(r, parents) {
 			return r.Target
 		}
 	}
@@ -254,7 +257,7 @@ func (e *Engine) matchConnLocked(host string, meta ConnMeta) Target {
 		}
 		return e.fallback
 	}
-	domain := strings.ToLower(host)
+	parents := krs.ReversedParents(host)
 	for i := range e.routes {
 		r := &e.routes[i]
 		hasHost := r.hasHostCriteria()
@@ -262,7 +265,7 @@ func (e *Engine) matchConnLocked(host string, meta ConnMeta) Target {
 		if !hasHost && !hasMeta {
 			continue
 		}
-		hostOK := !hasHost || matchRouteDomain(r, domain)
+		hostOK := !hasHost || matchRouteDomain(r, parents)
 		metaOK := !hasMeta || matchMeta(r, meta)
 		if hostOK && metaOK {
 			return r.Target
@@ -288,13 +291,15 @@ func matchRouteIP(r *RouteEntry, addr netip.Addr) bool {
 }
 
 // matchRouteDomain checks if a domain matches any host criteria in the route.
-func matchRouteDomain(r *RouteEntry, domain string) bool {
+// parents are the pre-reversed parent suffixes from krs.ReversedParents,
+// computed once by the caller (constitution rule 5).
+func matchRouteDomain(r *RouteEntry, parents []string) bool {
 	for _, s := range r.Sets {
-		if s.MatchDomain(domain) {
+		if s.MatchDomainReversed(parents) {
 			return true
 		}
 	}
-	if r.Inline != nil && r.Inline.MatchDomain(domain) {
+	if r.Inline != nil && r.Inline.MatchDomainReversed(parents) {
 		return true
 	}
 	return false

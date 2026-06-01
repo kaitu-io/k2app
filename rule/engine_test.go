@@ -36,8 +36,8 @@ func mustBundle(t *testing.T, sets []krs.NamedSet) *krs.Bundle {
 }
 
 // bindSets looks up BundleSets by name from an index.
-func bindSets(idx map[string]*krs.NamedSet, names ...string) []*krs.NamedSet {
-	var sets []*krs.NamedSet
+func bindSets(idx map[string]*krs.NamedSet, names ...string) []krs.Matcher {
+	var sets []krs.Matcher
 	for _, n := range names {
 		if s, ok := idx[n]; ok {
 			sets = append(sets, s)
@@ -759,5 +759,33 @@ func TestEngine_ReloadNamed(t *testing.T) {
 	}
 	if got := e.RouteCount(); got != len(newRoutes) {
 		t.Errorf("RouteCount after reload = %d, want %d", got, len(newRoutes))
+	}
+}
+
+// TestEngine_MatchDomain_OverMatcherInterface proves the engine routes domains
+// when RouteEntry.Sets holds a krs.Matcher (the type both the heap *NamedSet and
+// the mmap *diskSet satisfy). Drives the []krs.Matcher migration + ReversedParents hoist.
+func TestEngine_MatchDomain_OverMatcherInterface(t *testing.T) {
+	var buf bytes.Buffer
+	if err := krs.WriteBundle(&buf, &krs.Bundle{Sets: []krs.NamedSet{
+		{Name: "t", DomainSuffixes: []string{"example.com"}, CIDRs: []string{"1.2.3.0/24"}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := krs.ReadBundle(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m krs.Matcher = &b.Sets[0]
+	e := NewEngine([]RouteEntry{{Target: 2, Sets: []krs.Matcher{m}}}, 0, nil, false)
+
+	if got := e.Match("www.example.com"); got != 2 {
+		t.Fatalf("domain: want 2 got %d", got)
+	}
+	if got := e.Match("other.org"); got != 0 {
+		t.Fatalf("domain fallback: want 0 got %d", got)
+	}
+	if got := e.Match("1.2.3.4"); got != 2 {
+		t.Fatalf("ip: want 2 got %d", got)
 	}
 }

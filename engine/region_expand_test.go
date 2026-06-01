@@ -35,7 +35,7 @@ func TestExpandRegionRoute_HostEntryReferencesBundleSets(t *testing.T) {
 	if host == nil {
 		t.Fatal("host entry must be non-nil when bundle has Sets")
 	}
-	if len(host.Sets) != 1 || host.Sets[0].Name != "geoip-cn" {
+	if ns, ok := host.Sets[0].(*krs.NamedSet); len(host.Sets) != 1 || !ok || ns.Name != "geoip-cn" {
 		t.Errorf("host.Sets = %+v, want [geoip-cn]", host.Sets)
 	}
 	if host.Target != target {

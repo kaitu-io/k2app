@@ -28,7 +28,7 @@ func expandRegionRoute(b *krs.Bundle, target rule.Target) (host, meta *rule.Rout
 	}
 
 	if len(b.Sets) > 0 {
-		setRefs := make([]*krs.NamedSet, len(b.Sets))
+		setRefs := make([]krs.Matcher, len(b.Sets))
 		for i := range b.Sets {
 			setRefs[i] = &b.Sets[i]
 		}
