@@ -63,7 +63,13 @@ type Engine struct {
 	routes   []RouteEntry
 	fallback Target
 	allProxy bool      // match:all mode (disables sniffing)
-	bundles  []*krs.Bundle // lifecycle: Close releases all
+	bundles  []*krs.Bundle // heap lifecycle: GC'd on Close (no explicit free)
+
+	// closers releases non-GC resources held by the current rule set —
+	// specifically mmap unmaps for the disk-backed reader (krs.DiskBundle.Close).
+	// Run by Close and swapped+run by reload, always OUTSIDE the state lock
+	// (constitution rule 4). nil for the heap path.
+	closers []func() error
 
 	// missReporter is an optional hook invoked when a domain lookup
 	// reaches the fallback target (no route matched). Phase 1 rule-miss
@@ -103,6 +109,26 @@ func NewEngineNamed(routes []RouteEntry, fallback Target, named []NamedBundle, a
 		bundles = append(bundles, nb.Bundle)
 	}
 	return NewEngine(routes, fallback, bundles, allProxy)
+}
+
+// NewEngineWithClosers creates an engine whose rule sets are backed by
+// resources requiring explicit release (mmap unmaps). closers are run by Close
+// / reload outside the state lock. Used by the disk-backed (NE) loader; the
+// matchers themselves live in routes[].Sets as krs.Matcher (mmap *diskSet).
+func NewEngineWithClosers(routes []RouteEntry, fallback Target, closers []func() error, allProxy bool) *Engine {
+	e := NewEngine(routes, fallback, nil, allProxy)
+	e.closers = closers
+	return e
+}
+
+// runClosers invokes each non-nil closer, ignoring errors (best-effort munmap).
+// MUST be called outside the engine state lock (constitution rule 4).
+func runClosers(cs []func() error) {
+	for _, c := range cs {
+		if c != nil {
+			_ = c()
+		}
+	}
 }
 
 // Match returns the routing target for a host (IP or domain).
@@ -465,13 +491,17 @@ func (e *Engine) RouteCount() int {
 	return len(e.routes)
 }
 
-// Close releases all bundle resources.
+// Close releases all bundle resources, including mmap unmaps (closers).
+// Closers run outside the state lock (constitution rule 4).
 func (e *Engine) Close() {
 	e.mu.Lock()
+	cs := e.closers
+	e.closers = nil
 	e.bundles = nil
 	e.routes = nil
 	e.tmp = make(map[netip.Addr]Target)
 	e.mu.Unlock()
+	runClosers(cs)
 }
 
 // Reload atomically replaces the engine's routes and bundles.
@@ -481,10 +511,23 @@ func (e *Engine) Close() {
 // Concurrency: builds new data outside lock, swaps under WLock, closes old
 // bundles outside lock (Rule #4: no Close under state lock).
 func (e *Engine) Reload(routes []RouteEntry, bundles []*krs.Bundle) error {
+	return e.reload(routes, bundles, nil)
+}
+
+// ReloadWithClosers is the disk-backed variant of Reload: it swaps in new mmap
+// matchers (held in routes[].Sets) plus their unmap closers, and munmaps the
+// previous set's mappings outside the state lock. Used by the NE hot-reload.
+func (e *Engine) ReloadWithClosers(routes []RouteEntry, closers []func() error) error {
+	return e.reload(routes, nil, closers)
+}
+
+func (e *Engine) reload(routes []RouteEntry, bundles []*krs.Bundle, closers []func() error) error {
 	e.mu.Lock()
 	cleared := len(e.tmp)
 	oldBundles := e.bundles
+	oldClosers := e.closers
 	e.bundles = bundles
+	e.closers = closers
 	e.routes = routes
 	e.tmp = make(map[netip.Addr]Target)
 	e.mu.Unlock()
@@ -492,7 +535,8 @@ func (e *Engine) Reload(routes []RouteEntry, bundles []*krs.Bundle) error {
 	slog.Info("DIAG: rule-tmp-reload",
 		"cleared", cleared, "routes", len(routes), "bundles", len(bundles))
 
-	_ = oldBundles // Bundle has no explicit Close — data is GC'd.
+	_ = oldBundles                // heap Bundle has no explicit Close — GC'd.
+	runClosers(oldClosers)        // disk: munmap previous mappings (outside lock).
 	return nil
 }
 

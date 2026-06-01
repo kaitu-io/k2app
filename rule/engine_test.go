@@ -789,3 +789,30 @@ func TestEngine_MatchDomain_OverMatcherInterface(t *testing.T) {
 		t.Fatalf("ip: want 2 got %d", got)
 	}
 }
+
+// TestEngine_Closers_* verify the munmap-closer lifecycle: Close runs them
+// once, Reload runs the OLD set once (and swaps to the new set), and a closer
+// already swapped out by Reload is not re-run by a later Close.
+func TestEngine_Closers_RunOnClose(t *testing.T) {
+	var n int
+	e := NewEngineWithClosers(nil, 0, []func() error{func() error { n++; return nil }}, false)
+	e.Close()
+	if n != 1 {
+		t.Fatalf("close must run closer once: want 1 got %d", n)
+	}
+}
+
+func TestEngine_Closers_RunOnReloadNotTwice(t *testing.T) {
+	var n int
+	e := NewEngineWithClosers(nil, 0, []func() error{func() error { n++; return nil }}, false)
+	if err := e.Reload(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("reload must fire old closer once: want 1 got %d", n)
+	}
+	e.Close() // closers were swapped out (to nil) by Reload
+	if n != 1 {
+		t.Fatalf("close must not re-run swapped-out closer: want 1 got %d", n)
+	}
+}
