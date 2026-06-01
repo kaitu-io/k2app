@@ -21,6 +21,9 @@ const releaseBase = "https://github.com/kaitu-io/k2-rules/releases/latest/downlo
 // and verifies the full pipeline: upstream data → krs format → Load → Match.
 // Skipped with -short (requires network).
 func TestIntegration_RealBundles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires network (downloads release bundles)")
+	}
 	dir := t.TempDir()
 
 	// Download both bundles.
