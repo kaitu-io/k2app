@@ -1948,7 +1948,7 @@ func TestBuildRuleEngine_AlwaysHasRoutesAfterEnsure(t *testing.T) {
 
 	// Serve it inside a tarball.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "all.krs.tar.gz") {
+		if !strings.HasSuffix(r.URL.Path, "krs.tar.gz") {
 			http.NotFound(w, r)
 			return
 		}

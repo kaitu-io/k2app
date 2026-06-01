@@ -43,7 +43,7 @@ func makeTarballHandler(t *testing.T, files map[string][]byte) http.HandlerFunc 
 	}
 	payload := buf.Bytes()
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "all.krs.tar.gz") {
+		if !strings.HasSuffix(r.URL.Path, "krs.tar.gz") {
 			http.NotFound(w, r)
 			return
 		}

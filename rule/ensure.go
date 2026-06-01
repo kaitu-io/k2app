@@ -24,7 +24,7 @@ import (
 const bundlesFreshTTL = 24 * time.Hour
 
 const (
-	tarballName    = "all.krs.tar.gz"
+	tarballName    = "krs.tar.gz"
 	maxTarballSize = 5 << 20 // 5 MB
 )
 
@@ -219,7 +219,7 @@ func extractTarballReader(r io.Reader, newDir string) error {
 	return nil
 }
 
-// seedFromEmbed extracts the binary-embedded all.krs.tar.gz into cacheDir.
+// seedFromEmbed extracts the binary-embedded krs.tar.gz into cacheDir.
 // Extracts to a temp dir then atomicSwap so a concurrent reader never sees a
 // half-written cache. Writes bundles.version stamped "embedded" so the cache
 // reads fresh. Lock-agnostic: the public SeedFromEmbedIfEmpty wraps it in the

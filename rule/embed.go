@@ -12,7 +12,7 @@ import (
 
 // embeddedRules is the gzipped tarball of all .krs rule bundles, baked into
 // the binary at build time. The build pipeline (`make fetch-rules-embed`)
-// overwrites rule/embed/all.krs.tar.gz with the full production archive before
+// overwrites rule/embed/krs.tar.gz with the full production archive before
 // a release build; the committed copy is a small cn-baseline placeholder so the
 // package always compiles and dev/test builds have real bundles.
 //
@@ -20,7 +20,7 @@ import (
 // instant, offline, censorship-proof. The CDN remains the source of newer
 // rules via the background updater.
 //
-//go:embed embed/all.krs.tar.gz
+//go:embed embed/krs.tar.gz
 var embeddedRules []byte
 
 // SeedFromEmbedIfEmpty seeds cacheDir from the embedded archive when it holds

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// DefaultSources is the list of CDN sources for all.krs.tar.gz downloads
+// DefaultSources is the list of CDN sources for krs.tar.gz downloads
 // (the single .krs archive; see ensure.go tarballName). Happy Eyeballs races
 // all sources in parallel — fastest wins. GitHub is listed first as the
 // authoritative origin; jsdelivr/ghproxy mirrors provide acceleration and
