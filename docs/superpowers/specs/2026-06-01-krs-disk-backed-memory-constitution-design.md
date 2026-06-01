@@ -49,25 +49,42 @@ kernel log and the connect+200 ms death timing.
 
 ## The Constitution
 
-To be written verbatim to `k2-rules/krs/CONSTITUTION.md` and referenced from
-`k2/rule/CLAUDE.md`:
+Binding and CI-enforced. To be written verbatim to
+`k2-rules/krs/CONSTITUTION.md` and referenced from `k2/rule/CLAUDE.md`. The
+numeric budgets below are normative: a change that exceeds them fails CI and
+must not merge.
 
-> **krs Memory Constitution**
+> **krs Memory Constitution** (binding)
 >
-> 1. The rule corpus **and all indexes** live on disk. Runtime access is
->    exclusively via read-only `mmap` (clean / file-backed pages — excluded
->    from, or trivially reclaimable under, iOS jetsam `phys_footprint`).
-> 2. **Invariant (testable): a loaded bundle's resident dirty heap MUST be
->    `O(number of sets)`, never `O(number of rules)`.** No per-rule heap object
->    is permitted — no `[]string` domain table, no `[][]byte` IP table.
-> 3. Load **only** the regions actually referenced by the active config
->    (user region + `overseas`). Never load the whole corpus.
-> 4. Hot-path lookups allocate **O(1) transient** only (normalize/reverse the
->    query once). Never per-set, never per-rule.
+> 1. **On disk only.** The rule corpus **and all indexes** live on disk.
+>    Runtime access is exclusively via read-only `mmap` (clean / file-backed
+>    pages — excluded from, or trivially reclaimable under, iOS jetsam
+>    `phys_footprint`).
+> 2. **Heap invariant (testable, CI-gated).** A loaded bundle's resident dirty
+>    heap MUST be `O(set count)`, never `O(rule count)`. **Budgets:** marginal
+>    dirty heap per loaded region `< 8 KB`; total rule-attributable dirty heap
+>    for *any* config `< 64 KB`, independent of corpus size or region count.
+> 3. **Load only what is referenced.** Open exactly the regions referenced by
+>    the active config (`match.region` ∪ `overseas`). Never the whole corpus.
+> 4. **Never touch the whole mapping** on the constrained path: no full scan,
+>    `canonicalize`, re-sort, or checksum of a mapped bundle (each would fault
+>    and dirty the entire file, defeating mmap). Trust the producer; validate
+>    structure at publish time in k2-rules CI.
+> 5. **Hot path O(1).** Normalize/reverse the query **once** at the engine
+>    boundary; matching allocates a small constant per lookup, never per-set,
+>    never per-rule.
+>
+> **Prohibited on the client runtime path (NE / Service / daemon):**
+> - Calling `krs.Load`, `krs.LoadNamed`, or `krs.ReadBundle` (all full-expand).
+> - Any `[]string` domain table or `[][]byte` IP table held resident.
+> - Loading a region not referenced by the active config.
+> - Silently falling back to full-expand when an index is missing/corrupt —
+>   the bundle MUST error instead (a silent fallback reintroduces the OOM).
+> - Pre-faulting / `madvise(WILLNEED)` the whole mapping.
 >
 > Rationale: the iOS NE has a hard 50 MB `ActiveHard` jetsam ceiling. Read-only
 > mmap converts rule data from counted dirty heap into reclaimable clean
-> file-backed pages, the only way to fit a growing corpus in a fixed budget.
+> file-backed pages — the only way to fit a growing corpus in a fixed budget.
 
 ### Why mmap is jetsam-cheap (physical basis)
 
@@ -91,19 +108,65 @@ backward-compatible format extension.**
   *disk* via suffix sharing, but mmap clean pages are already jetsam-cheap; the
   ROI does not justify the complexity. Out of scope.
 
-### Why B is additive (low blast radius)
+### Wire Format Extension (normative)
 
-The format already silently skips unknown section TypeIDs (forward-compat). So:
+The format already silently skips unknown section TypeIDs, so the extension is
+**additive and backward-compatible**: old `ReadBundle` ignores the new sections;
+the new `Open` requires them. `all.krs.tar.gz` grows ~4 bytes/domain (~1 MB raw,
+far less after gzip). No released client ships the v0.4.5 embed build yet, so
+there is no in-field consumer to break.
 
-- The variable-width **domain** sections gain a new companion **index section**
-  (new TypeID) carrying a `u32` offset per entry. Old `ReadBundle` skips it and
-  still works; the new `Open` uses it for in-place binary search on mmap.
-- The **IP** sections are already fixed-width (`2 + 2·addrLen` bytes) and sorted
-  by `(set_idx, start)` → **binary-searchable in place on mmap with zero index,
-  zero heap**. No format change needed for IP.
+**New section TypeIDs (append-only; values fixed here):**
 
-`all.krs.tar.gz` grows ~4 bytes/domain (~1 MB raw, far less after gzip). No old
-client breaks; no released client currently ships the v0.4.5 embed build.
+```
+typeDomainSuffixIndex  uint16 = 0x0014   // index for 0x0012 DomainSuffixBySet
+typeDomainExcludeIndex uint16 = 0x0015   // index for 0x0013 DomainExcludeBySet
+```
+
+**Index section payload layout** (little-endian):
+
+```
+u16            setCount
+setCount × {                          // per-set directory (mmap-read, O(sets))
+  u32  entryStart   // index of this set's first entry in the offset table
+  u32  entryCount   // number of domain entries for this set
+}
+N × u32        offset                  // N = total domain entries, in the SAME
+                                       // (set_idx ASC, value ASC) order as the
+                                       // companion domain payload. Each offset
+                                       // is RELATIVE to the domain section
+                                       // payload start, pointing at that
+                                       // entry's [u16 set_idx][uvarint len][bytes].
+```
+
+A bundle that emits a `DomainSuffixBySet` (0x0012) section **MUST** also emit its
+`DomainSuffixIndex` (0x0014); likewise 0x0013 ⇒ 0x0015. `Open` errors if a
+domain payload is present without its index (constitution rule: no silent
+full-expand fallback). The producer (`WriteBundle`) emits both unconditionally.
+
+**IP sections need no extension.** `typeIPv4RangesBySet` / `typeIPv6RangesBySet`
+are already fixed-width (`2 + 2·addrLen` bytes/entry) and sorted by
+`(set_idx, start)`, so per-set blocks and the in-block ranges are both
+**binary-searchable in place on mmap** by index arithmetic — zero index, zero
+heap.
+
+### mmap Match Algorithm (normative)
+
+All reads bounds-checked against the mapped length; an out-of-bounds offset is a
+load-time error (see Error Handling), never a runtime panic.
+
+- **Domain (set S):** read S's `{entryStart, entryCount}` from the index
+  directory; binary-search that offset slice (`entryCount` `u32`s) by comparing
+  the query's reversed parent suffix against the entry bytes at
+  `domainPayload[offset:]` (skip `u16 set_idx` + `uvarint len`, read `len`
+  bytes). Walk the L parent suffixes exactly as today's `domainSection.Match`.
+  Heap per lookup: O(1) (the normalized/reversed query, built once at the engine
+  boundary). Excludes checked first via the 0x0015 index.
+- **IP (set S):** binary-search the fixed-width IP section for S's
+  `[start,end)` block by reading `u16 set_idx` at `payload[i·entrySize:]`, then
+  binary-search ranges within the block (`bytes.Compare` against mmap'd
+  `start`/`end`). Identical semantics to today's `ipRangeSection.Contains`,
+  operands read from mmap.
 
 ## Components & Data Flow
 
@@ -154,8 +217,23 @@ DiskBundle.Close()           ─ munmap
 - **② reversed parents once**: compute the host's L reversed parent suffixes
   once per lookup; reuse across all sets. Removes per-set `reverseASCII` allocs.
 - **`e.tmp` discipline**: under `allProxy` do **not** pin DNS-learned IPs (never
-  consulted); otherwise bound the map (cap + simple eviction or per-session
-  reset) so it cannot grow unbounded.
+  consulted). Otherwise bound the map to a hard cap of **4096** entries with
+  drop-newest-on-full (or per-session reset on `Stop`); it must never grow
+  unbounded over a long session.
+- **Universality**: the mmap path is the single path on **all** platforms
+  (desktop daemon included) — no `ReadBundle` runtime fork. Desktop has no 50 MB
+  limit, but one code path is simpler and the constitution holds everywhere.
+- **Import boundary**: `appext` and `engine` runtime packages MUST NOT reference
+  `krs.Load`/`LoadNamed`/`ReadBundle`. Enforced by a test that greps the build
+  import graph (see Enforcement).
+
+### Embed & updater must carry the index
+
+`make fetch-rules-embed` and the CDN `all.krs.tar.gz` must be regenerated by the
+new producer so every shipped `.krs` carries its index sections. `SeedFromEmbed`
+and the background updater extract bytes verbatim (no re-encode), so they
+propagate the index automatically — but the **embedded blob in the binary must
+be re-fetched** as part of this change, or `Open` errors on a cold-start seed.
 
 ### Docs
 
@@ -178,9 +256,12 @@ DiskBundle.Close()           ─ munmap
 ## Testing
 
 - **Constitution invariant test (the guard):** load `cn` + `overseas` via `Open`,
-  force GC, assert `runtime.MemStats.HeapInuse` delta `< 100 KB` (vs `Open` of an
-  empty dir). This is the executable form of invariant #2 and lives in **both**
-  k2-rules (`Open` unit) and k2 (engine integration).
+  force `runtime.GC()`, assert `HeapInuse` delta is within the normative budget
+  (`< 64 KB` total; `< 8 KB` marginal per added region) vs `Open` of an empty
+  dir. The executable form of invariant #2; lives in **both** k2-rules (`Open`
+  unit) and k2 (engine integration). HeapInuse is span-coarse, so the test
+  loads several regions and asserts the *slope* stays flat (O(sets)), not just
+  the absolute delta.
 - **Match parity:** table-driven — for a fixed bundle, `Open(...).MatchDomain/IP`
   must agree with `ReadBundle(...).MatchDomain/IP` on a domain/IP corpus
   (subdomain boundary, exclude precedence, 4-in-6, range edges).
@@ -194,6 +275,30 @@ DiskBundle.Close()           ─ munmap
 - **Lifecycle:** `Open` → `Close` munmaps; atomic-rename swap under a live
   mapping does not crash and keeps serving old data until `Close`.
 - **Cross-platform mmap:** darwin/linux/android/windows unit coverage.
+
+## Enforcement & CI Gates
+
+The constitution binds only if violations fail CI. Required gates:
+
+- **Heap-budget gate** (both repos): the invariant test asserts the normative
+  budgets — marginal dirty heap per loaded region `< 8 KB`, total
+  rule-attributable dirty heap `< 64 KB` for any config — measured via
+  `HeapInuse` deltas after `runtime.GC()`. Merge-blocking.
+- **Allocation gate**: `testing.AllocsPerRun(Engine.Match)` ≤ a fixed small
+  constant (e.g. ≤4), asserted in a `-benchmem` test. Catches reintroduced
+  per-set/per-rule allocation.
+- **Import-boundary gate**: a test that fails if the `engine`/`appext` runtime
+  build graph imports `krs.Load`/`LoadNamed`/`ReadBundle` (the full-expand
+  entry points). This is the mechanical form of the "Prohibited" list.
+- **Format-validity gate** (k2-rules CI): every published `.krs` is parsed and
+  its index sections validated — present-when-domain-present, sorted, offsets
+  in-bounds — so the runtime can trust without scanning.
+- **Producer parity gate**: `WriteBundle → Open` and `WriteBundle → ReadBundle`
+  produce identical match results on a fixed corpus.
+
+A future change that needs to exceed a budget must amend this spec + the
+`CONSTITUTION.md` in the same PR, with justification — the numbers are not
+silently adjustable.
 
 ## Out of Scope
 
