@@ -16,6 +16,11 @@ env:
   # builds, override via `make build-* K2_BUILD_LOG_LEVEL=debug`. Runtime
   # SetLogLevel() still works regardless.
   K2_BUILD_LOG_LEVEL: info
+  # Release builds must embed the full all.krs.tar.gz, never the cn-baseline
+  # placeholder: fetch-rules-embed fails if the CDN archive is unreachable or
+  # placeholder-sized. Mechanically enforces the deploy order (k2-rules live
+  # first). See Makefile fetch-rules-embed.
+  EMBED_REQUIRE_FULL: "1"
 
 jobs:
   # --- Plan: decide which desktop platforms (if any) this run targets ---
