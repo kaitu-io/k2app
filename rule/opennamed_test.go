@@ -5,6 +5,8 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"testing"
 
 	"github.com/kaitu-io/k2-rules/krs"
@@ -63,5 +65,22 @@ func TestOpenNamed_MissingDir(t *testing.T) {
 	named, closers, err := OpenNamed(filepath.Join(t.TempDir(), "nope"))
 	if err != nil || named != nil || closers != nil {
 		t.Fatalf("missing dir: want (nil,nil,nil), got (%v,%v,%v)", named, closers, err)
+	}
+}
+
+func TestListRegions(t *testing.T) {
+	dir := t.TempDir()
+	writeKRSFile(t, dir, "cn.krs", &krs.Bundle{Sets: []krs.NamedSet{{Name: "cn"}}})
+	writeKRSFile(t, dir, "overseas.krs", &krs.Bundle{Sets: []krs.NamedSet{{Name: "os"}}})
+	if err := os.WriteFile(filepath.Join(dir, "ignore.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ListRegions(dir)
+	sort.Strings(got)
+	if want := []string{"cn", "overseas"}; !slices.Equal(got, want) {
+		t.Fatalf("ListRegions = %v, want %v", got, want)
+	}
+	if ListRegions(filepath.Join(dir, "nope")) != nil {
+		t.Error("missing dir must return nil")
 	}
 }

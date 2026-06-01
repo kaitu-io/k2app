@@ -210,7 +210,7 @@ func (e *Engine) Start(cfg Config) error {
 		ensureErr := rule.EnsureBundles(ensureCtx, client.CacheDir, sources)
 		cancelEnsure()
 		if ensureErr != nil {
-			existing, _ := rule.LoadNamed(client.CacheDir)
+			existing := rule.ListRegions(client.CacheDir) // count-only; no heap expand
 			if len(existing) == 0 {
 				// True cold start: no disk cache to fall back to.
 				return e.fail(&EngineError{
@@ -595,7 +595,14 @@ func (e *Engine) Start(cfg Config) error {
 	)
 
 	// Start rule bundle updater (24h background check + reload).
-	if client.CacheDir != "" {
+	//
+	// Skipped on the NetworkExtension path: the rebuild closure heap-loads the
+	// full corpus (LoadNamed, ~19 MB) and ReloadNamed would swap the mmap engine
+	// back to a heap one — reintroducing the jetsam pressure this whole path
+	// exists to remove. NE cold-start downloads still happen above via
+	// EnsureBundles; NE sessions are short, so periodic mid-session refresh is
+	// unnecessary. Desktop daemon + Android keep the updater.
+	if client.CacheDir != "" && !cfg.NetworkExtension {
 		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []rule.NamedBundle, error) {
 			named, err := rule.LoadNamed(cacheDir)
 			if err != nil {
@@ -1379,12 +1386,8 @@ func missingConfiguredRegions(routes []config.RouteConfig, cacheDir string) []st
 	}
 
 	have := make(map[string]bool)
-	if named, err := rule.LoadNamed(cacheDir); err == nil {
-		for _, nb := range named {
-			if nb.Region != "" {
-				have[nb.Region] = true
-			}
-		}
+	for _, region := range rule.ListRegions(cacheDir) { // glob basenames; no heap expand
+		have[region] = true
 	}
 
 	var missing []string

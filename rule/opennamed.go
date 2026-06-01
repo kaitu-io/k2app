@@ -56,6 +56,26 @@ func OpenNamed(cacheDir string) ([]NamedDiskBundle, []func() error, error) {
 	return out, closers, nil
 }
 
+// ListRegions returns the region key (basename without ".krs") of every *.krs
+// in cacheDir WITHOUT parsing any bundle. Callers that only need the set of
+// present regions (existence checks, config validation) use this instead of
+// LoadNamed to avoid expanding the full rule corpus onto the heap. A missing
+// or unreadable dir returns nil.
+func ListRegions(cacheDir string) []string {
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		n := e.Name()
+		if !e.IsDir() && strings.HasSuffix(n, ".krs") {
+			out = append(out, strings.TrimSuffix(n, ".krs"))
+		}
+	}
+	return out
+}
+
 // IndexDisk builds a name->Matcher lookup across opened disk bundles. On name
 // collision later bundles win (mirrors krs.Index, with a WARN — a silent
 // overwrite would mask a curation mistake). Names come from SetNames();
