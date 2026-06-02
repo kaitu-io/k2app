@@ -157,12 +157,19 @@ func TestBackoffDuration(t *testing.T) {
 
 func TestRaceDownload_CapsConcurrency(t *testing.T) {
 	const cap = 4
+	const nSources = 8
 	body := makeTestK2B(t)
 	var inFlight, maxSeen atomic.Int32
 
+	// gate parks every handler that reaches the server until the test releases
+	// it. arrived signals each handler entry (buffered to nSources so a handler
+	// never blocks on the send). Together they make concurrency observable
+	// without any sleep-based timing: the test receives exactly `cap` arrivals
+	// (deterministic — blocks until that many handlers are parked), then proves
+	// no further handler can run while the gate is held.
 	gate := make(chan struct{})
 	var gateOnce sync.Once
-	reachedCap := make(chan struct{})
+	arrived := make(chan struct{}, nSources)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cur := inFlight.Add(1)
@@ -173,9 +180,7 @@ func TestRaceDownload_CapsConcurrency(t *testing.T) {
 				break
 			}
 		}
-		if inFlight.Load() >= cap {
-			gateOnce.Do(func() { close(reachedCap) })
-		}
+		arrived <- struct{}{}
 		<-gate // park until released — proves these are concurrent, no sleep
 		if strings.HasSuffix(r.URL.Path, "krs.tar.gz") {
 			_, _ = w.Write(body)
@@ -184,12 +189,21 @@ func TestRaceDownload_CapsConcurrency(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
+	// Ensure the gate is always released even on an early t.Fatal, so parked
+	// server goroutines can drain (avoids httptest.Server.Close hanging).
+	defer gateOnce.Do(func() { close(gate) })
 
-	sources := make([]string, 8)
+	sources := make([]string, nSources)
 	for i := range sources {
 		sources[i] = srv.URL + "/"
 	}
-	destDir := t.TempDir()
+	// Own a dedicated subdir for the download so cleanup is under our control:
+	// raceDownload returns at winner-rename while loser goroutines may still be
+	// writing/renaming temp files, which would race t.TempDir's auto-RemoveAll.
+	destDir := filepath.Join(t.TempDir(), "dl")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	dest := filepath.Join(destDir, "krs.tar.gz")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -200,59 +214,42 @@ func TestRaceDownload_CapsConcurrency(t *testing.T) {
 		done <- err
 	}()
 
-	select {
-	case <-reachedCap:
-	case <-time.After(5 * time.Second):
-		close(gate)
-		t.Fatal("never reached the concurrency cap — fetches not running")
-	}
-	// All handlers park on <-gate and cannot exit until we close it, so the
-	// concurrent in-flight count only ever grows while gate is held. Let it
-	// settle: poll until it stops climbing for a quiescence window. With the
-	// cap, exactly maxConcurrent handlers park (the rest block on the client
-	// semaphore, never reaching the server); without it, all 8 pile up. This
-	// is what makes the ceiling assertion observe the TRUE peak deterministically
-	// — the parked handlers are the barrier, the poll just waits for the barrier
-	// to fill. No fetch can slip past gate to deflate the count.
-	prev := int32(-1)
-	stableDeadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(stableDeadline) {
-		cur := inFlight.Load()
-		if cur == prev {
-			break // count quiesced — peak reached
+	// Block until exactly `cap` handlers have entered and parked. This is fully
+	// deterministic — no timeout, no poll. With the semaphore, exactly `cap`
+	// goroutines get past the client-side gate to reach the server; the rest
+	// block on the semaphore and never arrive.
+	for i := 0; i < cap; i++ {
+		select {
+		case <-arrived:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("only %d/%d handlers reached the server — fetches not running", i, cap)
 		}
-		prev = cur
-		time.Sleep(20 * time.Millisecond)
+	}
+	// Overshoot guard: with a correct cap, handlers cap+1..nSources are blocked
+	// on the semaphore and can NEVER reach the server while the gate holds the
+	// first `cap` parked. A broken cap (no semaphore) starts all nSources
+	// concurrently, so the surplus handlers have already sent to `arrived`
+	// before they park — a (cap+1)th receive succeeds within microseconds. The
+	// 1s window is a ~100x margin over even a heavily-loaded scheduler, not a
+	// tuning knob.
+	select {
+	case <-arrived:
+		t.Fatalf("a %dth handler ran concurrently — concurrency cap exceeded", cap+1)
+	case <-time.After(1 * time.Second):
+		// No further handler ran — the cap held.
 	}
 	if got := maxSeen.Load(); got > cap {
-		close(gate)
 		t.Fatalf("max concurrent in-flight = %d, want <= %d", got, cap)
 	}
-	close(gate) // release; winner completes, others cancel
+
+	gateOnce.Do(func() { close(gate) }) // release; winner completes, losers cancel
+	// raceDownload drains all its goroutines before returning (clean-FS
+	// contract), so on <-done no straggler is still writing temp files into
+	// destDir — t.TempDir's auto-cleanup can't race a live write.
 	if err := <-done; err != nil {
 		t.Fatalf("raceDownload: %v", err)
 	}
-	if maxSeen.Load() > cap {
-		t.Errorf("post-run max concurrent = %d, want <= %d", maxSeen.Load(), cap)
-	}
-	// raceDownload returns as soon as a winner renames; loser goroutines may
-	// still be writing/renaming temp files (".dl.N", ".part") into dest's dir
-	// after raceDownload returns. Wait until only the winner's dest remains so
-	// TempDir cleanup doesn't race a live write (not a cap assertion — the cap
-	// is proven deterministically above via the barrier).
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		entries, _ := os.ReadDir(destDir)
-		settled := true
-		for _, e := range entries {
-			if e.Name() != "krs.tar.gz" {
-				settled = false
-				break
-			}
-		}
-		if settled {
-			break
-		}
-		time.Sleep(time.Millisecond)
+	if got := maxSeen.Load(); got > cap {
+		t.Errorf("post-run max concurrent = %d, want <= %d", got, cap)
 	}
 }

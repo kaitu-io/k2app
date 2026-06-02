@@ -108,28 +108,31 @@ func raceDownload(ctx context.Context, dest, name string, sources []string) (dow
 		}()
 	}
 
+	// Drain ALL len(sources) results before returning. Each goroutine sends to
+	// ch as its very last action — after every os.Rename/os.Remove — so once we
+	// have read all of them, no spawned goroutine is still touching the
+	// filesystem. The winner calls cancel() before sending OK, so the losers
+	// abort promptly (sem-wait or in-flight fetch both observe raceCtx.Done).
+	// This clean-FS-on-return contract lets callers RemoveAll the temp dir
+	// without racing a straggler write.
 	var lastErr error
 	notModifiedCount := 0
+	gotOK := false
 	for i := 0; i < len(sources); i++ {
 		r := <-ch
 		switch r.res {
 		case downloadResultOK:
-			return downloadResultOK, nil
+			gotOK = true
 		case downloadResultNotModified:
 			notModifiedCount++
-			if notModifiedCount == len(sources) {
-				return downloadResultNotModified, nil
-			}
 		default:
 			if r.err != nil {
 				lastErr = r.err
 			}
 		}
-		// If at least one succeeded (OK) we already returned; check ctx.
-		if raceCtx.Err() != nil && r.res != downloadResultOK {
-			// Drain remaining but don't wait forever.
-			continue
-		}
+	}
+	if gotOK {
+		return downloadResultOK, nil
 	}
 	if notModifiedCount > 0 {
 		return downloadResultNotModified, nil
