@@ -1,6 +1,14 @@
 package rule
 
-import "time"
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"sync"
+	"time"
+)
 
 // Manifest mirrors k2-rules dist/manifest.json (schema v2). Only the fields
 // the client consumes are modeled; unknown fields are ignored by json.
@@ -32,4 +40,89 @@ func parseVersion(v string) time.Time {
 // version b. Numeric (time) comparison, not string — robust to format drift.
 func remoteNewer(a, b string) bool {
 	return parseVersion(a).After(parseVersion(b))
+}
+
+const manifestName = "manifest.json"
+
+// maxManifestSize caps the manifest body. It's a few hundred bytes per region;
+// 1 MB is generous and guards against a hostile/broken response.
+const maxManifestSize = 1 << 20
+
+// fetchManifest GETs src+"manifest.json" and decodes it. src is a CDN base
+// ending in "/".
+func fetchManifest(ctx context.Context, src string) (*Manifest, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src+manifestName, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("rule: manifest %q: status %d", src, resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestSize))
+	if err != nil {
+		return nil, err
+	}
+	var m Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("rule: manifest %q: %w", src, err)
+	}
+	return &m, nil
+}
+
+// manifestRaceTimeout bounds the whole manifest race. The manifest fetch is on
+// the connect path for clients staler than shortTTL, so a slow/blocked mirror
+// set must not eat the connect budget — past this bound we give up and the
+// caller falls back to the local cache / legacy TTL.
+const manifestRaceTimeout = 5 * time.Second
+
+// raceManifest fetches the manifest from all sources concurrently and returns
+// the one with the newest Version, plus the source URL it came from (so the
+// tarball download can be pinned to the same mirror — avoiding cross-mirror
+// propagation skew). Returns an error only if every source failed. Bounded by
+// manifestRaceTimeout regardless of the caller's ctx deadline.
+func raceManifest(ctx context.Context, sources []string) (*Manifest, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, manifestRaceTimeout)
+	defer cancel()
+	type res struct {
+		m   *Manifest
+		src string
+		err error
+	}
+	ch := make(chan res, len(sources))
+	var wg sync.WaitGroup
+	for _, src := range sources {
+		src := src
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m, err := fetchManifest(ctx, src)
+			ch <- res{m: m, src: src, err: err}
+		}()
+	}
+	go func() { wg.Wait(); close(ch) }()
+
+	var best *Manifest
+	var bestSrc string
+	var lastErr error
+	for r := range ch {
+		if r.err != nil || r.m == nil {
+			lastErr = r.err
+			continue
+		}
+		if best == nil || remoteNewer(r.m.Version, best.Version) {
+			best, bestSrc = r.m, r.src
+		}
+	}
+	if best == nil {
+		if lastErr == nil {
+			lastErr = fmt.Errorf("rule: all manifest sources failed")
+		}
+		return nil, "", lastErr
+	}
+	return best, bestSrc, nil
 }
