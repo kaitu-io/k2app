@@ -134,6 +134,16 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 		slog.Warn("appext: SetupLogging failed, using defaults", "err", err)
 	}
 
+	// Route Go fatal/unrecovered panics straight to {LogDir}/k2-crash.log via the
+	// runtime (not the stderr→pipe→lumberjack path, which races process exit on a
+	// memory-constrained NE). Ensures a Go-side crash stack reaches the next
+	// uploaded feedback bundle. Recovered panics already slog to k2.log. Best-effort.
+	if cfg.LogDir != "" {
+		if err := config.SetupCrashOutput(cfg.LogDir); err != nil {
+			slog.Warn("appext: SetupCrashOutput failed", "err", err)
+		}
+	}
+
 	// Diagnostic: verify k2.log is writable after SetupLogging.
 	// Write results to native.log (known to be uploadable) instead of stderr.
 	if cfg.LogDir != "" {

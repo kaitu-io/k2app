@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sync"
 
 	"gopkg.in/lumberjack.v2"
@@ -250,6 +251,40 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 	}
 
 	return cleanup, nil
+}
+
+// SetupCrashOutput tells the Go runtime to ALSO write unhandled panics and
+// fatal runtime errors directly to {logDir}/k2-crash.log, in addition to stderr.
+//
+// Why this is separate from SetupLogging: on iOS/Android, SetupLogging routes
+// stderr (and thus runtime crash output) through a pipe + reader goroutine into
+// lumberjack. That path races process exit — a fatal panic's stack can be stuck
+// in the pipe buffer and never reach k2.log, so NE crashes were undiagnosable.
+// debug.SetCrashOutput makes the runtime write the crash report straight to a
+// durable file descriptor (no pipe, no goroutine), so the next uploaded feedback
+// bundle contains the stack. The file is named k2-crash.log so mobile uploadLogs
+// (which globs *.log) ships it automatically.
+//
+// Empty logDir is a no-op (desktop already gets crashes inline via the stderr
+// redirect; this targets the memory-constrained mobile NE/Service processes).
+// SetCrashOutput duplicates the fd, so the local handle is closed immediately.
+func SetupCrashOutput(logDir string) error {
+	if logDir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return fmt.Errorf("crash output: create dir: %w", err)
+	}
+	path := filepath.Join(logDir, "k2-crash.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("crash output: open %s: %w", path, err)
+	}
+	defer f.Close() // SetCrashOutput dups the fd; ours is no longer needed.
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		return fmt.Errorf("crash output: SetCrashOutput: %w", err)
+	}
+	return nil
 }
 
 // SetLogLevel changes the global log level at runtime without recreating
