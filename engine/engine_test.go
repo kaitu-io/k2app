@@ -2080,3 +2080,20 @@ func TestBuildRouteEntries_NewFieldsCopied(t *testing.T) {
 		t.Errorf("InstallerPackages = %v", e.InstallerPackages)
 	}
 }
+
+// TestBuildRouteEntries_AllInvalidInlineDropped pins the IsEmpty guard at the
+// assembly site: an inline route whose domain_suffix is not a valid hostname
+// must contribute NO route entry (old BuildInlineSet stored the garbage and
+// produced a bogus matching route; krs.BuildSet drops it).
+func TestBuildRouteEntries_AllInvalidInlineDropped(t *testing.T) {
+	routes := []config.RouteConfig{
+		{Via: "px", Match: rule.MatchConfig{DomainSuffix: []string{"_not_a_host_"}}},
+	}
+	outboundMap := map[string]rule.Target{"px": rule.Target(2)}
+	noRegion := func(string, rule.Target) []rule.RouteEntry { return nil }
+
+	entries, _, _ := buildRouteEntries(routes, nil, outboundMap, noRegion)
+	if len(entries) != 0 {
+		t.Errorf("all-invalid inline route should produce 0 entries, got %d", len(entries))
+	}
+}
