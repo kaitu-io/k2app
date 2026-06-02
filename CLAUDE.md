@@ -102,6 +102,8 @@ Reserved event names:
 | `DIAG: subs-refresh-fail` | WARN | subscription background refresh failed | endpoint, err |
 | `DIAG: rule-bundle-stale` | WARN | engine.Start fell through to stale .k2b after fresh download failed | err, bundleCount, cacheDir |
 | `DIAG: rule-bundle-empty` | WARN | downloaded tarball extracted 0 .krs (stale mirror / format skew) — rejected to avoid poisoning the cache | cacheDir, reason |
+| `DIAG: rule-manifest-unreachable` | WARN | every manifest mirror failed — ensureOnce falls back to the legacy blind download (24h backstop honored first) | err, dir |
+| `DIAG: rule-pin-fallback` | WARN | the manifest's winning mirror failed the tarball fetch — falling back to racing the remaining mirrors | pinned, fallbacks |
 | `DIAG: rule-bundle-missing-region` | WARN | a configured match.region route has no usable bundle — engine.Start fails loud (504) instead of silently degrading to all-proxy | regions, cacheDir |
 | `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
 | `DIAG: pipe-watchdog` | WARN | pipe() watchdog force-closed a stuck half-closed pipe | firstExitDir, graceMs |

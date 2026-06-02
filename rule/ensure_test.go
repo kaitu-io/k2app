@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,8 +16,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"golang.org/x/sync/singleflight"
 )
 
 // makeTarballHandler returns an http.HandlerFunc that serves a tar.gz
@@ -327,10 +327,18 @@ func TestAcquireLock_CrossProcessSerialization(t *testing.T) {
 // B across the lock boundary.
 func TestEnsureBundles_CrossProcessFreshnessRecheck(t *testing.T) {
 	dir := t.TempDir()
-	var reqCount atomic.Int32
+	var tarballHits atomic.Int32
 
+	// This server has no manifest route, so EnsureBundles takes the
+	// manifest-unreachable legacy path. We count only krs.tar.gz fetches — the
+	// "download" the test is asserting on — so the manifest probe (a 404 here)
+	// doesn't pollute the count. The cross-process freshness contract is: the
+	// second caller must perform ZERO tarball downloads (fast-path skip on the
+	// fresh bundles.version the first caller wrote).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqCount.Add(1)
+		if strings.HasSuffix(r.URL.Path, "krs.tar.gz") {
+			tarballHits.Add(1)
+		}
 		// Deliberately slow so the second caller queues behind the flock.
 		time.Sleep(150 * time.Millisecond)
 		makeTarballHandler(t, map[string][]byte{
@@ -344,17 +352,13 @@ func TestEnsureBundles_CrossProcessFreshnessRecheck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Reset the in-process singleflight so the second call can't hit the
-	// cached result — force it through the flock path like a separate process.
-	ensureSF = singleflight.Group{}
-
 	// Second caller: must see A's fresh bundles.version and skip.
 	if err := EnsureBundles(context.Background(), dir, []string{srv.URL + "/"}); err != nil {
 		t.Fatal(err)
 	}
 
-	if got := reqCount.Load(); got != 1 {
-		t.Errorf("expected exactly 1 download (second caller should skip via freshness), got %d", got)
+	if got := tarballHits.Load(); got != 1 {
+		t.Errorf("expected exactly 1 tarball download (second caller should skip via freshness), got %d", got)
 	}
 }
 
@@ -500,5 +504,256 @@ func TestDefaultSources_ContainsExpectedMirrors(t *testing.T) {
 		if strings.Contains(joined, banned) {
 			t.Errorf("DefaultSources must not contain stale mirror %q", banned)
 		}
+	}
+}
+
+// makeManifestAndTarballHandler serves manifest.json (with the given version
+// and computed shas) AND krs.tar.gz of the given files from one server.
+func makeManifestAndTarballHandler(t *testing.T, version string, files map[string][]byte) http.HandlerFunc {
+	t.Helper()
+	// Build tarball.
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	bundles := map[string]string{}
+	for name, data := range files {
+		hdr := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(data))}
+		_ = tw.WriteHeader(hdr)
+		_, _ = tw.Write(data)
+		if strings.HasSuffix(name, ".krs") {
+			sum := sha256.Sum256(data)
+			region := strings.TrimSuffix(name, ".krs")
+			bundles[region] = hex.EncodeToString(sum[:])
+		}
+	}
+	_ = tw.Close()
+	_ = gw.Close()
+	tarball := buf.Bytes()
+
+	var mb strings.Builder
+	mb.WriteString(`{"schemaVersion":2,"version":"` + version + `","bundles":{`)
+	first := true
+	for region, sha := range bundles {
+		if !first {
+			mb.WriteString(",")
+		}
+		first = false
+		mb.WriteString(`"` + region + `":{"sha256":"` + sha + `","size":1,"ruleCount":9}`)
+	}
+	mb.WriteString(`}}`)
+	manifestJSON := mb.String()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "manifest.json"):
+			_, _ = w.Write([]byte(manifestJSON))
+		case strings.HasSuffix(r.URL.Path, "krs.tar.gz"):
+			_, _ = w.Write(tarball)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+}
+
+func sha256Hex(b []byte) string {
+	s := sha256.Sum256(b)
+	return hex.EncodeToString(s[:])
+}
+
+func TestEnsureBundles_VersionIdentity_DownloadsWhenNewer(t *testing.T) {
+	dir := t.TempDir()
+	srv := httptest.NewServer(makeManifestAndTarballHandler(t, "2026-06-02T00:00:00Z", map[string][]byte{
+		"cn.krs": {0x4b, 0x32, 0x52, 0x4c}, // K2RL magic-ish; content only needs to round-trip sha
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := EnsureBundles(ctx, dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatalf("EnsureBundles: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cn.krs")); err != nil {
+		t.Errorf("cn.krs not extracted: %v", err)
+	}
+	if v := readLocalManifestVersion(dir); v != "2026-06-02T00:00:00Z" {
+		t.Errorf("recorded version %q, want the manifest version", v)
+	}
+}
+
+func TestEnsureBundles_VersionIdentity_SkipsWhenSameVersion(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string][]byte{"cn.krs": {1, 2, 3, 4}}
+	srv := httptest.NewServer(makeManifestAndTarballHandler(t, "2026-06-02T00:00:00Z", files))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// First call downloads.
+	if err := EnsureBundles(ctx, dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatal(err)
+	}
+	// Make local cache appear older than shortTTL so the manifest path runs again.
+	old := time.Now().Add(-2 * time.Hour)
+	_ = os.Chtimes(filepath.Join(dir, "bundles.version"), old, old)
+
+	// Second call: same manifest version + matching sha → must NOT re-extract.
+	// Detect by counting tarball requests.
+	var tarballHits atomic.Int32
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "manifest.json") {
+			_, _ = w.Write([]byte(`{"schemaVersion":2,"version":"2026-06-02T00:00:00Z","bundles":{"cn":{"sha256":"` +
+				sha256Hex(files["cn.krs"]) + `","size":1,"ruleCount":9}}}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "krs.tar.gz") {
+			tarballHits.Add(1)
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv2.Close()
+
+	if err := EnsureBundles(ctx, dir, []string{srv2.URL + "/"}); err != nil {
+		t.Fatalf("second EnsureBundles: %v", err)
+	}
+	if tarballHits.Load() != 0 {
+		t.Errorf("tarball fetched %d times, want 0 (version unchanged)", tarballHits.Load())
+	}
+}
+
+func TestEnsureBundles_ManifestUnreachable_FallsBackToLegacy(t *testing.T) {
+	dir := t.TempDir()
+	// Server serves the tarball but 500s the manifest → client must fall back
+	// to the legacy blind download (no manifest verify) rather than failing.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "manifest.json") {
+			http.Error(w, "no manifest", http.StatusInternalServerError)
+			return
+		}
+		makeTarballHandler(t, map[string][]byte{"cn.krs": {1, 2, 3, 4}})(w, r)
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := EnsureBundles(ctx, dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatalf("fallback path should still populate cache: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cn.krs")); err != nil {
+		t.Errorf("legacy fallback did not extract cn.krs: %v", err)
+	}
+}
+
+func TestEnsureBundles_ShaMismatch_KeepsPriorCache(t *testing.T) {
+	dir := t.TempDir()
+	// Pre-populate a known-good cn.krs + recorded older version.
+	goodCN := []byte("good-cn-bytes")
+	if err := os.WriteFile(filepath.Join(dir, "cn.krs"), goodCN, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeLocalVersion(dir, "2026-06-01T00:00:00Z", false); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	_ = os.Chtimes(filepath.Join(dir, "bundles.version"), old, old)
+
+	// Server: manifest advertises a NEW version with a sha that does NOT match
+	// the tarball it serves (a stale mirror mid-propagation). Verify must fail
+	// and the prior good cn.krs must survive untouched.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "manifest.json") {
+			_, _ = w.Write([]byte(`{"schemaVersion":2,"version":"2026-06-02T00:00:00Z","bundles":{"cn":{"sha256":"deadbeefmismatch","size":1,"ruleCount":9}}}`))
+			return
+		}
+		// Tarball contains a DIFFERENT cn.krs than the manifest sha claims.
+		makeTarballHandler(t, map[string][]byte{"cn.krs": []byte("stale-different-bytes")})(w, r)
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := EnsureBundles(ctx, dir, []string{srv.URL + "/"})
+	if err == nil {
+		t.Fatal("expected verify failure on sha mismatch")
+	}
+	// Prior cache must be intact (not poisoned by the mismatched download).
+	got, _ := os.ReadFile(filepath.Join(dir, "cn.krs"))
+	if !bytes.Equal(got, goodCN) {
+		t.Errorf("prior cn.krs was clobbered by a mismatched download — cache poisoned")
+	}
+}
+
+func TestEnsureBundles_PinsManifestSource(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string][]byte{"cn.krs": {9, 9, 9, 9}}
+	cnSHA := sha256Hex(files["cn.krs"])
+
+	// "stale" mirror: serves an OLDER manifest, and counts tarball hits.
+	var staleTarballHits atomic.Int32
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "manifest.json") {
+			_, _ = w.Write([]byte(`{"schemaVersion":2,"version":"2026-06-01T00:00:00Z","bundles":{"cn":{"sha256":"` + cnSHA + `","size":1,"ruleCount":9}}}`))
+			return
+		}
+		staleTarballHits.Add(1)
+		makeTarballHandler(t, files)(w, r)
+	}))
+	defer stale.Close()
+
+	// "fresh" mirror: serves the NEWER manifest (wins newest-wins) + the tarball.
+	fresh := httptest.NewServer(makeManifestAndTarballHandler(t, "2026-06-02T00:00:00Z", files))
+	defer fresh.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// Pass stale first to prove the download pins to fresh (the manifest winner),
+	// not to whoever is first in the source list.
+	if err := EnsureBundles(ctx, dir, []string{stale.URL + "/", fresh.URL + "/"}); err != nil {
+		t.Fatalf("EnsureBundles: %v", err)
+	}
+	if staleTarballHits.Load() != 0 {
+		t.Errorf("tarball was fetched from the stale mirror %d times — pin-source failed",
+			staleTarballHits.Load())
+	}
+}
+
+func TestEnsureBundles_ManifestUnreachable_BackstopSkipsDownload(t *testing.T) {
+	dir := t.TempDir()
+	// Pre-populate a valid cache: one good cn.krs + a recorded version, aged to
+	// ~2h (past shortTTL=1h, within freshTTL=24h).
+	if err := os.WriteFile(filepath.Join(dir, "cn.krs"), []byte("good-cn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeLocalVersion(dir, "2026-06-01T00:00:00Z", false); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	_ = os.Chtimes(filepath.Join(dir, "bundles.version"), old, old)
+
+	// Server 500s the manifest AND would count any tarball fetch.
+	var tarballHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "manifest.json") {
+			http.Error(w, "no manifest", http.StatusInternalServerError)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "krs.tar.gz") {
+			tarballHits.Add(1)
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Manifest unreachable + cache within 24h backstop → return nil, NO download.
+	if err := EnsureBundles(ctx, dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatalf("backstop should return nil: %v", err)
+	}
+	if tarballHits.Load() != 0 {
+		t.Errorf("tarball fetched %d times, want 0 (24h backstop should skip download)", tarballHits.Load())
+	}
+	// Prior cache intact.
+	got, _ := os.ReadFile(filepath.Join(dir, "cn.krs"))
+	if string(got) != "good-cn" {
+		t.Errorf("prior cn.krs changed: %q", got)
 	}
 }
