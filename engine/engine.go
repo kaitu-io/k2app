@@ -192,39 +192,8 @@ func (e *Engine) Start(cfg Config) error {
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
 	}
-	if client.CacheDir == "" {
-		// Defensive: platforms are expected to provide CacheDir. Empty means
-		// the gate is a no-op, re-exposing the routes=0 cold-start bug if
-		// bundles aren't already on disk. Log loudly so a future regression
-		// in platform wiring surfaces at first connect.
-		slog.Warn("engine: Start without CacheDir — rule bundle prefetch skipped",
-			"risk", "routes=0 cold-start bug may reappear if bundles absent")
-	} else {
-		// Seed the embedded rule floor before any network — instant, offline,
-		// censorship-proof. After this the cache is warm, so EnsureBundles
-		// short-circuits (fresh) instead of blocking on a cold download.
-		if err := rule.SeedFromEmbedIfEmpty(client.CacheDir); err != nil {
-			slog.Warn("engine: seed from embed failed", "err", err, "cacheDir", client.CacheDir)
-		}
-		ensureCtx, cancelEnsure := context.WithTimeout(ctx, 10*time.Second)
-		ensureErr := rule.EnsureBundles(ensureCtx, client.CacheDir, sources)
-		cancelEnsure()
-		if ensureErr != nil {
-			existing := rule.ListRegions(client.CacheDir) // count-only; no heap expand
-			if len(existing) == 0 {
-				// True cold start: no disk cache to fall back to.
-				return e.fail(&EngineError{
-					Code:     ErrCodeRuleBundlesUnavailable,
-					Category: CategoryServer,
-					Message:  fmt.Sprintf("rule bundles unavailable: %v", ensureErr),
-				})
-			}
-			slog.Warn("DIAG: rule-bundle-stale",
-				"err", ensureErr.Error(),
-				"bundleCount", len(existing),
-				"cacheDir", client.CacheDir,
-			)
-		}
+	if ee := e.prefetchRulesForStart(ctx, client, sources, cfg.NetworkExtension); ee != nil {
+		return e.fail(ee)
 	}
 
 	// 1a. Fail loud if a configured match.region route has no usable bundle.
@@ -1043,6 +1012,58 @@ func (e *Engine) setStateLocked(s string) {
 // fail records an error, cancels any in-flight context, resets to
 // disconnected, and returns the error. The OnStatus event carries both
 // the disconnected state and the classified error atomically.
+// prefetchRulesForStart warms the rule cache before the engine builds routes.
+// On the Network Extension the networked EnsureBundles is skipped entirely —
+// the NE runs in a ~50MB jetsam process and must never download. It seeds the
+// embedded floor (so every region is present and missingConfiguredRegions
+// won't false-504) and relies on the main app's PrefetchRules for CDN refresh
+// into the shared App-Group cache. Returns a non-nil *EngineError only on a
+// genuine cold-start (no bundles at all on the non-NE path); the caller fails
+// the Start with it.
+func (e *Engine) prefetchRulesForStart(ctx context.Context, client *config.ClientConfig, sources []string, networkExtension bool) *EngineError {
+	if client.CacheDir == "" {
+		// Defensive: platforms are expected to provide CacheDir. Empty means
+		// the gate is a no-op, re-exposing the routes=0 cold-start bug if
+		// bundles aren't already on disk. Log loudly so a future regression
+		// in platform wiring surfaces at first connect.
+		slog.Warn("engine: Start without CacheDir — rule bundle prefetch skipped",
+			"risk", "routes=0 cold-start bug may reappear if bundles absent")
+		return nil
+	}
+	// Always seed the offline floor — instant, no network. Censorship-proof and
+	// satisfies the missingConfiguredRegions 504 guard even on the NE path.
+	if err := rule.SeedFromEmbedIfEmpty(client.CacheDir); err != nil {
+		slog.Warn("engine: seed from embed failed", "err", err, "cacheDir", client.CacheDir)
+	}
+	if networkExtension {
+		// The NE must never run networked EnsureBundles — OOM risk in the
+		// jetsam process. The main app's PrefetchRules owns CDN refresh into
+		// the shared App-Group cache; the NE only reads it.
+		slog.Info("engine: NE path — skipping networked rule refresh (main app owns it)",
+			"cacheDir", client.CacheDir)
+		return nil
+	}
+	ensureCtx, cancelEnsure := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelEnsure()
+	if ensureErr := rule.EnsureBundles(ensureCtx, client.CacheDir, sources); ensureErr != nil {
+		existing := rule.ListRegions(client.CacheDir) // count-only; no heap expand
+		if len(existing) == 0 {
+			// True cold start: no disk cache to fall back to.
+			return &EngineError{
+				Code:     ErrCodeRuleBundlesUnavailable,
+				Category: CategoryServer,
+				Message:  fmt.Sprintf("rule bundles unavailable: %v", ensureErr),
+			}
+		}
+		slog.Warn("DIAG: rule-bundle-stale",
+			"err", ensureErr.Error(),
+			"bundleCount", len(existing),
+			"cacheDir", client.CacheDir,
+		)
+	}
+	return nil
+}
+
 func (e *Engine) fail(err error) error {
 	e.mu.Lock()
 	e.lastError = ClassifyError(err)
