@@ -8,7 +8,7 @@ require (
 	github.com/electricbubble/gadb v0.1.0
 	github.com/google/nftables v0.3.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/kaitu-io/k2-rules v0.1.3
+	github.com/kaitu-io/k2-rules v0.1.4
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
 	github.com/pion/ice/v4 v4.2.2
@@ -62,5 +62,3 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace github.com/kaitu-io/k2-rules => ../../k2-rules
