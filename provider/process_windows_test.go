@@ -105,7 +105,7 @@ var chromeRow = tcpRowOwnerPID{
 func TestWindowsFindProcess_IPv6Early(t *testing.T) {
 	tcp := &mockTCPFetcher{}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{})
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("2001:db8::1"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("2001:db8::1"), 54321)
 	if name != "" {
 		t.Errorf("got %q, want empty", name)
 	}
@@ -118,7 +118,7 @@ func TestWindowsFindProcess_TCPMatch(t *testing.T) {
 	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}
 	namer := &mockProcNamer{names: map[uint32]string{8000: "chrome.exe"}}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "chrome.exe" {
 		t.Errorf("got %q, want chrome.exe", name)
 	}
@@ -129,7 +129,7 @@ func TestWindowsFindProcess_PIDZeroSkipped(t *testing.T) {
 	row.OwningPID = 0 // TIME_WAIT zombie
 	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{row}}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{names: map[uint32]string{}})
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "" {
 		t.Errorf("got %q, want empty (PID=0 should be skipped)", name)
 	}
@@ -142,7 +142,7 @@ func TestWindowsFindProcess_SelfPIDSkipped(t *testing.T) {
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{names: map[uint32]string{
 		uint32(os.Getpid()): "k2.exe",
 	}})
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "" {
 		t.Errorf("got %q, want empty (self-PID should be skipped)", name)
 	}
@@ -174,7 +174,7 @@ func TestWindowsFindProcess_NegativeCache(t *testing.T) {
 func TestWindowsFindProcess_NoMatchEmptyTable(t *testing.T) {
 	tcp := &mockTCPFetcher{rows: nil}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{})
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "" {
 		t.Errorf("got %q, want empty", name)
 	}
@@ -188,7 +188,7 @@ func TestWindowsFindProcess_UDPMatch(t *testing.T) {
 	}}}
 	namer := &mockProcNamer{names: map[uint32]string{9000: "dns-app.exe"}}
 	s := newTestSearcher(&mockTCPFetcher{}, udp, namer)
-	name, _ := s.FindProcess("udp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "dns-app.exe" {
 		t.Errorf("got %q, want dns-app.exe", name)
 	}
@@ -210,7 +210,7 @@ func TestWindowsFindProcess_UDPMatch_WildcardLocalAddr(t *testing.T) {
 	s := newTestSearcher(&mockTCPFetcher{}, udp, namer)
 	// Tunnel observed packet src = TUN interface IP; kernel UDP table
 	// has 0.0.0.0. Must still attribute to chrome.exe.
-	name, _ := s.FindProcess("udp", netip.MustParseAddr("198.18.0.2"), 54321)
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("198.18.0.2"), 54321)
 	if name != "chrome.exe" {
 		t.Errorf("got %q, want chrome.exe (wildcard 0.0.0.0 must match any srcIP)", name)
 	}
@@ -230,7 +230,7 @@ func TestWindowsFindProcess_NameWithSpaces(t *testing.T) {
 	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}
 	namer := &mockProcNamer{names: map[uint32]string{8000: "Microsoft Edge.exe"}}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "Microsoft Edge.exe" {
 		t.Errorf("got %q, want %q (spaces preserved)", name, "Microsoft Edge.exe")
 	}
@@ -244,7 +244,7 @@ func TestWindowsFindProcess_UWPHostAttribution(t *testing.T) {
 	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}
 	namer := &mockProcNamer{names: map[uint32]string{8000: "ApplicationFrameHost.exe"}}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "ApplicationFrameHost.exe" {
 		t.Errorf("got %q, want UWP host name", name)
 	}
@@ -257,7 +257,7 @@ func TestWindowsFindProcess_UTF8Name(t *testing.T) {
 	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}
 	namer := &mockProcNamer{names: map[uint32]string{8000: "微信.exe"}}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "微信.exe" {
 		t.Errorf("got %q, want %q", name, "微信.exe")
 	}
@@ -269,7 +269,7 @@ func TestWindowsFindProcess_UTF8Name(t *testing.T) {
 func TestWindowsFindProcess_TCPFetcherError(t *testing.T) {
 	tcp := &mockTCPFetcher{err: errFetcher("simulated GetExtendedTcpTable failure")}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{})
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "" {
 		t.Errorf("got %q, want empty (fetcher error must surface as empty)", name)
 	}
@@ -278,7 +278,7 @@ func TestWindowsFindProcess_TCPFetcherError(t *testing.T) {
 func TestWindowsFindProcess_UDPFetcherError(t *testing.T) {
 	udp := &mockUDPFetcher{err: errFetcher("simulated GetExtendedUdpTable failure")}
 	s := newTestSearcher(&mockTCPFetcher{}, udp, &mockProcNamer{})
-	name, _ := s.FindProcess("udp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "" {
 		t.Errorf("got %q, want empty", name)
 	}
@@ -300,7 +300,7 @@ func TestWindowsFindProcess_MultipleMatches_ReturnsFirstNonSelf(t *testing.T) {
 		8888: "curl.exe",
 	}}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "wget.exe" {
 		t.Errorf("got %q, want wget.exe (first non-self match)", name)
 	}
@@ -313,7 +313,7 @@ func TestWindowsFindProcess_NamerReturnsEmpty(t *testing.T) {
 	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}
 	namer := &mockProcNamer{names: map[uint32]string{}} // PID 8000 not registered → returns ""
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "" {
 		t.Errorf("got %q, want empty (PPL/protected → namer returns empty)", name)
 	}
@@ -332,10 +332,10 @@ func TestWindowsFindProcess_CacheKeyIsolation(t *testing.T) {
 		8888: "curl.exe",
 	}}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, namer)
-	if name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321); name != "wget.exe" {
+	if name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321); name != "wget.exe" {
 		t.Errorf("port 54321 attributed to %q, want wget.exe", name)
 	}
-	if name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54322); name != "curl.exe" {
+	if name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54322); name != "curl.exe" {
 		t.Errorf("port 54322 attributed to %q, want curl.exe", name)
 	}
 }
@@ -350,7 +350,7 @@ func TestWindowsFindProcess_UDPNoMatch_SpecificLocalAddrMismatch(t *testing.T) {
 	}}}
 	namer := &mockProcNamer{names: map[uint32]string{9000: "app.exe"}}
 	s := newTestSearcher(&mockTCPFetcher{}, udp, namer)
-	name, _ := s.FindProcess("udp", netip.MustParseAddr("10.0.0.1"), 54321)
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("10.0.0.1"), 54321)
 	if name != "" {
 		t.Errorf("got %q, want empty (specific LocalAddr 192.168.1.5 must NOT match 10.0.0.1)", name)
 	}

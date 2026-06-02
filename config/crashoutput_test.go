@@ -11,11 +11,12 @@ import (
 // creates k2-crash.log in the given dir, is safely repeatable (SetCrashOutput
 // override semantics), and treats an empty dir as a no-op.
 func TestSetupCrashOutput_CreatesFileAndRegisters(t *testing.T) {
-	// Reset process-global crash output when done so the temp file (removed by
-	// t.TempDir cleanup) is not left registered for the rest of the test binary.
-	t.Cleanup(func() { _ = debug.SetCrashOutput(nil, debug.CrashOptions{}) })
-
 	dir := t.TempDir()
+	// Reset process-global crash output when done. Registered AFTER t.TempDir so
+	// it runs BEFORE TempDir's RemoveAll (t.Cleanup is LIFO): the runtime holds a
+	// dup'd handle to k2-crash.log until SetCrashOutput(nil), and Windows refuses
+	// to delete a file that's still open — so the reset must precede the removal.
+	t.Cleanup(func() { _ = debug.SetCrashOutput(nil, debug.CrashOptions{}) })
 	if err := SetupCrashOutput(dir); err != nil {
 		t.Fatalf("SetupCrashOutput(%q) error: %v", dir, err)
 	}

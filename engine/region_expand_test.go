@@ -340,7 +340,16 @@ func equalStrSlices(a, b []string) bool {
 }
 
 func TestBuildRouteEntries_ExpandsMatchRegion(t *testing.T) {
-	cnBundle := fakeBundle("cn-sites", []string{"WeChat"}, nil, nil, nil)
+	// Populate the app patterns for every app-attribution platform (darwin,
+	// windows, android) so the region bundle expands into a meta entry on each —
+	// matching the wantEntries=2 switch below. (A darwin-only fixture made
+	// Windows/Android correctly yield 1 entry while the switch expected 2.)
+	cnBundle := fakeBundle("cn-sites",
+		[]string{"WeChat"},          // darwin
+		[]string{"wechat.exe"},      // windows
+		[]string{"com.tencent.mm"},  // android
+		nil,
+	)
 	regionMap := map[string]*krs.Bundle{"cn": cnBundle}
 
 	cfgRoutes := []config.RouteConfig{
