@@ -48,6 +48,34 @@ func remoteNewer(a, b string) bool {
 	return parseVersion(a).After(parseVersion(b))
 }
 
+// embedSuffix marks a bundles.version written from the binary-embedded floor.
+// Kept compatible with wasEmbedSeeded (embed.go), which substring-matches the
+// embed marker so the background updater force-lifts the floor to the CDN.
+const embedSuffix = " [embedded]"
+
+// writeLocalVersion records the manifest version the cache currently holds.
+// When embedded, appends the embed marker so wasEmbedSeeded detects the floor.
+func writeLocalVersion(cacheDir, version string, embedded bool) error {
+	line := version
+	if embedded {
+		line += embedSuffix
+	}
+	return os.WriteFile(filepath.Join(cacheDir, "bundles.version"), []byte(line+"\n"), 0o644)
+}
+
+// readLocalManifestVersion returns the manifest version recorded in
+// bundles.version (embed marker stripped), or "" if absent/unreadable. This is
+// the field the old design wrote but never read.
+func readLocalManifestVersion(cacheDir string) string {
+	data, err := os.ReadFile(filepath.Join(cacheDir, "bundles.version"))
+	if err != nil {
+		return ""
+	}
+	s := strings.TrimSpace(string(data))
+	s = strings.TrimSuffix(s, embedSuffix)
+	return strings.TrimSpace(s)
+}
+
 const manifestName = "manifest.json"
 
 // maxManifestSize caps the manifest body. It's a few hundred bytes per region;

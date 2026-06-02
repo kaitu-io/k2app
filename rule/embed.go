@@ -55,11 +55,11 @@ func SeedFromEmbedIfEmpty(cacheDir string) error {
 	return nil
 }
 
-// embedMarker is the token seedFromEmbed writes into bundles.version to record
-// that the cache was populated from the binary-embedded archive rather than a
-// CDN download. seedFromEmbed writes "<stamp> embedded sha256:<hash>"; a CDN
-// download writes "<stamp> sha256:<hash>" (no marker).
-var embedMarker = []byte("embedded sha256:")
+// embedMarker is the token writeLocalVersion (manifest.go) appends to
+// bundles.version to record that the cache was populated from the
+// binary-embedded archive rather than a CDN download. An embed seed writes
+// "<version> [embedded]"; a CDN download writes "<version>" (no marker).
+var embedMarker = []byte("[embedded]")
 
 // wasEmbedSeeded reports whether cacheDir's bundles.version was written by the
 // embedded-archive seed (seedFromEmbed) rather than a CDN download.

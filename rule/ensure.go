@@ -242,13 +242,11 @@ func seedFromEmbed(cacheDir string) error {
 		return fmt.Errorf("rule: seed atomic swap: %w", err)
 	}
 
-	// Stamp with the embed marker (embedMarker, embed.go) so wasEmbedSeeded can
-	// later tell this floor apart from a CDN download and force an upgrade. Both
-	// sides share embedMarker so the write/read can't drift.
-	sum := sha256.Sum256(embeddedRules)
-	stamp := time.Now().UTC().Format(time.RFC3339)
-	line := fmt.Sprintf("%s %s%s\n", stamp, embedMarker, hex.EncodeToString(sum[:]))
-	return os.WriteFile(filepath.Join(cacheDir, "bundles.version"), []byte(line), 0o644)
+	// Stamp the "embedded" sentinel version with the embed marker so wasEmbedSeeded
+	// (embed.go) can tell this floor apart from a CDN download and force an upgrade.
+	// "embedded" parses to the zero time, so any real CDN version always out-ranks
+	// it and the updater lifts the floor to the CDN ceiling.
+	return writeLocalVersion(cacheDir, "embedded", true)
 }
 
 // atomicSwap renames each .krs and .yaml from newDir into cacheDir, then

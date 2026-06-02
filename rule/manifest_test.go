@@ -122,6 +122,46 @@ func TestVerifyAgainstManifest(t *testing.T) {
 	}
 }
 
+func TestLocalManifestVersionRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeLocalVersion(dir, "2026-06-02T00:31:05Z", false); err != nil {
+		t.Fatal(err)
+	}
+	if v := readLocalManifestVersion(dir); v != "2026-06-02T00:31:05Z" {
+		t.Errorf("read %q, want the written version", v)
+	}
+	if wasEmbedSeeded(dir) {
+		t.Error("non-embed write must not look embed-seeded")
+	}
+
+	if err := writeLocalVersion(dir, "2026-06-02T00:31:05Z", true); err != nil {
+		t.Fatal(err)
+	}
+	if !wasEmbedSeeded(dir) {
+		t.Error("embed write must set the embed marker")
+	}
+	if v := readLocalManifestVersion(dir); v != "2026-06-02T00:31:05Z" {
+		t.Errorf("embed read %q, want the version (marker stripped)", v)
+	}
+}
+
+func TestEmbedSeedAlwaysUpgrades(t *testing.T) {
+	dir := t.TempDir()
+	// seedFromEmbed uses the "embedded" sentinel version (no real CDN version).
+	if err := writeLocalVersion(dir, "embedded", true); err != nil {
+		t.Fatal(err)
+	}
+	local := readLocalManifestVersion(dir) // "embedded"
+	// Any well-formed CDN version must be newer than the embed sentinel, so the
+	// updater always lifts the floor to the CDN ceiling.
+	if !remoteNewer("2026-06-02T00:00:00Z", local) {
+		t.Error("a real CDN version must out-rank the embed sentinel (floor would never lift)")
+	}
+	if !wasEmbedSeeded(dir) {
+		t.Error("embed marker lost — updater force-refresh would not trigger")
+	}
+}
+
 func TestVerifyAgainstManifest_BoundaryRegions(t *testing.T) {
 	dir := t.TempDir()
 	content := []byte("cn-bytes")
