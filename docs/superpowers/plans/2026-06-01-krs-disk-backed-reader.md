@@ -1271,15 +1271,17 @@ Expected: ok.
 ```bash
 git add krs/format.go
 git commit -m "feat(krs): bump format Version to 2 (index sections present)"
-git tag v0.2.0
+git tag v0.1.2
 ```
 
 - [ ] **Step 5: Note for the publish pipeline**
 
-The CI that builds `all.krs.tar.gz` must run on this tag so published bundles
+The CI that builds `krs.tar.gz` must run on this tag so published bundles
 carry the index sections. The k2 consumer plan re-fetches the embedded blob
 (`make fetch-rules-embed`) against this version. Do **not** mark this plan done
-until `go test ./...` is green and `v0.2.0` is tagged.
+until `go test ./...` is green and `v0.1.2` is tagged. (Patch bump from the
+`v0.1.1` Go-module lineage — the changes are additive/backward-compatible. The
+calendar tags `v2026.MM.DD` are a separate bundle-CI scheme, not Go versions.)
 
 ---
 
@@ -1302,7 +1304,7 @@ until `go test ./...` is green and `v0.2.0` is tagged.
 ## Follow-on (separate plan)
 
 `docs/superpowers/plans/2026-06-01-k2-krs-consumer.md` (to be written after this
-lands): bump `k2-rules` to `v0.2.0`; region-scoped `Open` in
+lands): bump `k2-rules` to `v0.1.2`; region-scoped `Open` in
 `engine.buildRuleEngine`; hold `[]*krs.DiskBundle` + `Engine.Close()` munmap;
 hoist `ReversedParents` to `Engine.Match`/`MatchConn`; `e.tmp` allProxy-no-pin +
 4096 cap; the heap-budget integration test; `make fetch-rules-embed` re-fetch;
