@@ -62,10 +62,26 @@ func raceDownload(ctx context.Context, dest, name string, sources []string) (dow
 
 	ch := make(chan result, len(sources))
 
+	// Cap concurrent fetches so we never open all 8 TLS connections at once.
+	// Slots refill as fetches finish/fail, so every source is still attempted
+	// (CN punch-through preserved) — just never more than maxConcurrent in flight.
+	const maxConcurrent = 4
+	sem := make(chan struct{}, maxConcurrent)
+
 	for i, src := range sources {
 		i, src := i, src
 		url := src + name
 		go func() {
+			// Acquire a concurrency slot first; bail if the race is already
+			// cancelled (a winner renamed, or ctx/timeout fired) while waiting.
+			select {
+			case sem <- struct{}{}:
+			case <-raceCtx.Done():
+				ch <- result{res: downloadResultFailed, err: raceCtx.Err()}
+				return
+			}
+			defer func() { <-sem }()
+
 			// Stream straight to a unique temp file (avoids 8× in-memory buffers).
 			// Keyed by the loop index — collision-free by construction, so two
 			// sources sharing a path suffix can't race on the same temp path.
