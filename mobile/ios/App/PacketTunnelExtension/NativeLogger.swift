@@ -62,10 +62,26 @@ final class NativeLogger {
         }
     }
 
-    /// Close the file descriptor.
+    /// Force queued writes to disk. Synchronous: because `queue` is serial,
+    /// this barrier runs only after every previously-enqueued `log()` write has
+    /// executed, then `fsync` pushes them past the kernel page cache. Call this
+    /// after teardown / memory-pressure / crash-relevant lines so an imminent
+    /// iOS process kill (jetsam / SIGKILL) cannot eat the last buffered writes —
+    /// the exact failure mode that made NE deaths undiagnosable.
+    func flush() {
+        queue.sync {
+            if fd >= 0 {
+                fsync(fd)
+            }
+        }
+    }
+
+    /// Close the file descriptor. fsync first so anything still in the page
+    /// cache survives even if the process is killed right after close.
     func close() {
         queue.sync {
             if fd >= 0 {
+                fsync(fd)
                 Darwin.close(fd)
                 fd = -1
             }

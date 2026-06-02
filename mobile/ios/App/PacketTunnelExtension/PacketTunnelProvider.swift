@@ -165,7 +165,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             let prevStart = neDefaults?.object(forKey: "engineStartTime") as? Date
             let uptime = prevStart.map { Int(Date().timeIntervalSince($0)) } ?? -1
             logger.warning("startTunnel: previous session did NOT call stopTunnel (likely jetsam), uptime=\(uptime)s")
-            NativeLogger.shared.log("WARN", "startTunnel: previous session ended without stopTunnel (jetsam?), uptime=\(uptime)s")
+            // This replay is the ONLY way an OS kill (jetsam/SIGKILL) of the prior
+            // session reaches an uploaded log — the dead process couldn't log its
+            // own death. Flush it so a second rapid kill can't eat it too.
+            NativeLogger.shared.log("WARN", "startTunnel: previous session ended WITHOUT stopTunnel (jetsam/SIGKILL — no graceful teardown), prevUptime=\(uptime)s")
+            NativeLogger.shared.flush()
         }
 
         let configJSON: String
@@ -351,6 +355,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let uptime = engineStartTime.map { Int(Date().timeIntervalSince($0)) } ?? -1
         logger.info("stopTunnel: reason=\(reasonName)(\(reason.rawValue)) uptime=\(uptime)s")
         NativeLogger.shared.log("INFO", "stopTunnel: reason=\(reasonName)(\(reason.rawValue)) uptime=\(uptime)s")
+        // Flush now: the stop reason is THE diagnostic that distinguishes a clean
+        // userInitiated stop from providerFailed / OS teardown. iOS may kill the
+        // process during teardown, so make this line durable before doing anything
+        // else (close() flushes too, but we may not reach it).
+        NativeLogger.shared.flush()
         neDefaults?.set(false, forKey: "engineRunning")
         stopMemoryMonitor()
         stopPathMonitor()
@@ -401,6 +410,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             guard self != nil else { return }
             let snapshot = AppextMemorySnapshot()
             logger.notice("MEM: \(snapshot, privacy: .public)")
+            // Also persist to native.log (uploaded) + flush. os_log alone is NOT
+            // collected in feedback bundles, so the memory trajectory leading up
+            // to a jetsam kill was invisible. Flushing each snapshot guarantees
+            // the last pre-jetsam reading survives the kill (jetsam = OOM, so this
+            // trajectory is the primary evidence for it).
+            NativeLogger.shared.log("INFO", "MEM: \(snapshot)")
+            NativeLogger.shared.flush()
         }
         timer.resume()
         memoryTimer = timer
