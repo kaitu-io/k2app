@@ -206,9 +206,12 @@ func TestEngineConcurrency(t *testing.T) {
 }
 
 func TestEngineMatchConn_InlineDomain(t *testing.T) {
-	inline := BuildInlineSet([]string{"custom-blocked.com"}, nil)
+	ns, err := krs.BuildSet(krs.NamedSet{DomainSuffixes: []string{"custom-blocked.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	routes := []RouteEntry{
-		{Target: Target(2), Inline: &inline},
+		{Target: Target(2), Sets: []krs.Matcher{ns}},
 	}
 	eng := NewEngine(routes, Target(0), nil, false)
 	defer eng.Close()
@@ -226,9 +229,12 @@ func TestEngineMatchConn_InlineDomain(t *testing.T) {
 }
 
 func TestEngineMatchConn_InlineIP(t *testing.T) {
-	inline := BuildInlineSet(nil, []string{"10.0.0.0/8"})
+	ns, err := krs.BuildSet(krs.NamedSet{CIDRs: []string{"10.0.0.0/8"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	routes := []RouteEntry{
-		{Target: Target(0), Inline: &inline},
+		{Target: Target(0), Sets: []krs.Matcher{ns}},
 	}
 	eng := NewEngine(routes, Target(2), nil, false)
 	defer eng.Close()

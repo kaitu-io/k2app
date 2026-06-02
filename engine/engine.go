@@ -1176,10 +1176,19 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 			}
 		}
 
-		// Inline rules.
+		// Inline rules — compiled into a krs.Matcher via BuildSet and folded
+		// into entry.Sets. Skip when the build yields nothing (all-invalid
+		// input), so an empty matcher never grants spurious host criteria.
 		if len(route.Match.DomainSuffix) > 0 || len(route.Match.IPCIDR) > 0 {
-			inline := rule.BuildInlineSet(route.Match.DomainSuffix, route.Match.IPCIDR)
-			entry.Inline = &inline
+			ns, err := krs.BuildSet(krs.NamedSet{
+				DomainSuffixes: route.Match.DomainSuffix,
+				CIDRs:          route.Match.IPCIDR,
+			})
+			if err != nil {
+				slog.Warn("rule: skip inline set (build failed)", "err", err)
+			} else if !ns.IsEmpty() {
+				entry.Sets = append(entry.Sets, ns)
+			}
 		}
 
 		// Meta criteria.
@@ -1214,7 +1223,6 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 		}
 
 		hasAnyCriteria := len(entry.Sets) > 0 ||
-			(entry.Inline != nil && !entry.Inline.IsEmpty()) ||
 			len(entry.ProcessNames) > 0 || len(entry.PackageNames) > 0 ||
 			len(entry.ProcessNamePrefixes) > 0 || len(entry.PackageNamePrefixes) > 0 ||
 			len(entry.InstallerPackages) > 0 ||
@@ -1467,7 +1475,7 @@ func buildRuleEngineDisk(client *config.ClientConfig, finalRoutes []config.Route
 func logRuleEngineState(cacheDir string, hasBundles bool, entries []rule.RouteEntry, fallback rule.Target) {
 	hasRules := hasBundles
 	for _, e := range entries {
-		if e.Inline != nil && !e.Inline.IsEmpty() {
+		if len(e.Sets) > 0 {
 			hasRules = true
 			break
 		}

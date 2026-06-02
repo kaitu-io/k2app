@@ -13,10 +13,7 @@ import (
 // RouteEntry represents one route in the routing table.
 type RouteEntry struct {
 	Target Target
-	Sets   []krs.Matcher // resolved by name from loaded bundles (heap *NamedSet or mmap *diskSet)
-
-	// Inline matchers (compiled from config domain_suffix/ip_cidr).
-	Inline *InlineSet
+	Sets   []krs.Matcher // resolved by name from loaded bundles (heap *NamedSet or mmap *diskSet); inline config rules are compiled via krs.BuildSet and appended here too
 
 	// Connection metadata matchers.
 	ProcessNames []string // match any (OR within list)
@@ -38,9 +35,6 @@ type RouteEntry struct {
 // hasHostCriteria reports whether this route has domain/IP matching criteria.
 func (r *RouteEntry) hasHostCriteria() bool {
 	if len(r.Sets) > 0 {
-		return true
-	}
-	if r.Inline != nil && !r.Inline.IsEmpty() {
 		return true
 	}
 	return r.IPIsPrivate
@@ -310,9 +304,6 @@ func matchRouteIP(r *RouteEntry, addr netip.Addr) bool {
 			return true
 		}
 	}
-	if r.Inline != nil && r.Inline.MatchIP(addr) {
-		return true
-	}
 	return false
 }
 
@@ -324,9 +315,6 @@ func matchRouteDomain(r *RouteEntry, parents []string) bool {
 		if s.MatchDomainReversed(parents) {
 			return true
 		}
-	}
-	if r.Inline != nil && r.Inline.MatchDomainReversed(parents) {
-		return true
 	}
 	return false
 }
