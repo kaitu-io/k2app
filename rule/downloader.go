@@ -62,12 +62,17 @@ func raceDownload(ctx context.Context, dest, name string, sources []string) (dow
 
 	ch := make(chan result, len(sources))
 
-	for _, src := range sources {
-		src := src
+	for i, src := range sources {
+		i, src := i, src
 		url := src + name
 		go func() {
-			data, res, err := fetchBundle(raceCtx, url, modTime)
+			// Stream straight to a unique temp file (avoids 8× in-memory buffers).
+			// Keyed by the loop index — collision-free by construction, so two
+			// sources sharing a path suffix can't race on the same temp path.
+			tmp := fmt.Sprintf("%s.dl.%d", dest, i)
+			res, err := fetchBundleToFile(raceCtx, url, modTime, tmp)
 			if err != nil || res == downloadResultFailed {
+				_ = os.Remove(tmp)
 				ch <- result{res: downloadResultFailed, err: err}
 				return
 			}
@@ -75,12 +80,8 @@ func raceDownload(ctx context.Context, dest, name string, sources []string) (dow
 				ch <- result{res: downloadResultNotModified}
 				return
 			}
-			// Atomic write: tmp → rename.
-			tmp := dest + ".tmp"
-			if werr := os.WriteFile(tmp, data, 0o644); werr != nil {
-				ch <- result{res: downloadResultFailed, err: werr}
-				return
-			}
+			// A late loser may overwrite dest with its own complete,
+			// byte-identical copy — harmless (atomic rename, same artifact).
 			if rerr := os.Rename(tmp, dest); rerr != nil {
 				_ = os.Remove(tmp)
 				ch <- result{res: downloadResultFailed, err: rerr}
@@ -123,40 +124,59 @@ func raceDownload(ctx context.Context, dest, name string, sources []string) (dow
 	return downloadResultFailed, lastErr
 }
 
-// fetchBundle performs a single HTTP GET with If-Modified-Since. Returns
-// (data, downloadResultOK, nil) on 200, (nil, downloadResultNotModified, nil)
-// on 304, or (nil, downloadResultFailed, err) on error.
-func fetchBundle(ctx context.Context, url string, modTime time.Time) ([]byte, downloadResult, error) {
+// fetchBundleToFile performs a single HTTP GET with If-Modified-Since and
+// streams the body to dst+".part" (then renames to dst), capping at
+// maxBundleSize. Streaming avoids holding the whole tarball in memory — the
+// resident cost is the 32 KB io.Copy buffer, not the ~2.4 MB archive. Returns
+// downloadResultOK on 200 (file written), downloadResultNotModified on 304
+// (dst untouched), or downloadResultFailed on error (no dst left behind).
+func fetchBundleToFile(ctx context.Context, url string, modTime time.Time, dst string) (downloadResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, downloadResultFailed, fmt.Errorf("rule: build request: %w", err)
+		return downloadResultFailed, fmt.Errorf("rule: build request: %w", err)
 	}
 	if !modTime.IsZero() {
 		req.Header.Set("If-Modified-Since", modTime.UTC().Format(http.TimeFormat))
 	}
-
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, downloadResultFailed, fmt.Errorf("rule: fetch %q: %w", url, err)
+		return downloadResultFailed, fmt.Errorf("rule: fetch %q: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotModified {
-		return nil, downloadResultNotModified, nil
+		return downloadResultNotModified, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, downloadResultFailed, fmt.Errorf("rule: fetch %q: status %d", url, resp.StatusCode)
+		return downloadResultFailed, fmt.Errorf("rule: fetch %q: status %d", url, resp.StatusCode)
 	}
 
-	const maxBundleSize = 10 << 20 // 10 MB hard cap — prevents OOM on corrupted/malicious response
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBundleSize+1))
+	const maxBundleSize = 10 << 20 // 10 MB hard cap — guards against a corrupt/hostile response
+	part := dst + ".part"
+	f, err := os.OpenFile(part, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		return nil, downloadResultFailed, fmt.Errorf("rule: read body %q: %w", url, err)
+		return downloadResultFailed, fmt.Errorf("rule: open %q: %w", part, err)
 	}
-	if len(data) > maxBundleSize {
-		return nil, downloadResultFailed, fmt.Errorf("rule: body too large from %q: %d bytes", url, len(data))
+	// LimitReader cap+1 so an exactly-max body still distinguishes "too large".
+	n, copyErr := io.Copy(f, io.LimitReader(resp.Body, maxBundleSize+1))
+	closeErr := f.Close()
+	if copyErr != nil {
+		_ = os.Remove(part)
+		return downloadResultFailed, fmt.Errorf("rule: stream body %q: %w", url, copyErr)
 	}
-	return data, downloadResultOK, nil
+	if closeErr != nil {
+		_ = os.Remove(part)
+		return downloadResultFailed, fmt.Errorf("rule: close %q: %w", part, closeErr)
+	}
+	if n > maxBundleSize {
+		_ = os.Remove(part)
+		return downloadResultFailed, fmt.Errorf("rule: body too large from %q: >%d bytes", url, maxBundleSize)
+	}
+	if err := os.Rename(part, dst); err != nil {
+		_ = os.Remove(part)
+		return downloadResultFailed, fmt.Errorf("rule: rename %q: %w", dst, err)
+	}
+	return downloadResultOK, nil
 }
 
 // backoffDuration returns 1s, 2s, 4s, 8s… capped at 60s.
