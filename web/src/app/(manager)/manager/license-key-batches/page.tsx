@@ -70,7 +70,7 @@ export default function LicenseKeyBatchesPage() {
         return <span>{b.redeemedCount}<span className="text-muted-foreground">/{b.quantity}</span></span>;
       },
     },
-    { accessorKey: "planDays", header: "天数", cell: ({ row }) => `${row.original.planDays} 天` },
+    { accessorKey: "planDays", header: "会员时长", cell: ({ row }) => `${row.original.planDays} 天` },
     {
       accessorKey: "recipientMatcher", header: "限制",
       cell: ({ row }) => row.original.recipientMatcher === "never_paid"
@@ -215,9 +215,9 @@ export default function LicenseKeyBatchesPage() {
             <div><label className="text-sm font-medium block mb-1">渠道标签</label><Input value={createForm.sourceTag} onChange={e => setCreateForm(f => ({ ...f, sourceTag: e.target.value }))} placeholder="twitter / kol-xxx / winback" /></div>
             <div className="grid grid-cols-2 gap-4">
               <div><label className="text-sm font-medium block mb-1">数量 (1-10000)</label><Input type="number" min={1} max={10000} value={createForm.quantity} onChange={e => setCreateForm(f => ({ ...f, quantity: parseInt(e.target.value) || 100 }))} /></div>
-              <div><label className="text-sm font-medium block mb-1">天数</label><Input type="number" min={1} value={createForm.planDays} onChange={e => setCreateForm(f => ({ ...f, planDays: parseInt(e.target.value) || 30 }))} /></div>
+              <div><label className="text-sm font-medium block mb-1">会员时长（天）</label><Input type="number" min={1} value={createForm.planDays} onChange={e => setCreateForm(f => ({ ...f, planDays: parseInt(e.target.value) || 30 }))} /><p className="text-xs text-muted-foreground mt-1">兑换后赠送的会员天数</p></div>
             </div>
-            <div><label className="text-sm font-medium block mb-1">有效期（天）</label><Input type="number" min={1} value={createForm.expiresInDays} onChange={e => setCreateForm(f => ({ ...f, expiresInDays: parseInt(e.target.value) || 30 }))} /></div>
+            <div><label className="text-sm font-medium block mb-1">兑换有效期（天）</label><Input type="number" min={1} value={createForm.expiresInDays} onChange={e => setCreateForm(f => ({ ...f, expiresInDays: parseInt(e.target.value) || 30 }))} /><p className="text-xs text-muted-foreground mt-1">授权码在多少天内可兑换，过期作废（不是会员时长）</p></div>
             <div><label className="text-sm font-medium block mb-1">使用条件</label><select className="w-full p-2 border border-border bg-background text-foreground rounded-md" value={createForm.recipientMatcher} onChange={e => setCreateForm(f => ({ ...f, recipientMatcher: e.target.value }))}><option value="all">所有用户</option><option value="never_paid">未付费用户</option></select></div>
             <div><label className="text-sm font-medium block mb-1">备注</label><Input value={createForm.note || ""} onChange={e => setCreateForm(f => ({ ...f, note: e.target.value }))} placeholder="可选" /></div>
           </div>
