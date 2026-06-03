@@ -40,9 +40,18 @@ function setupViewportScaling() {
 
     if (decision.skip || !decision.bodyStyle) return;
 
-    document.body.style.width = decision.bodyStyle.width;
-    document.body.style.height = decision.bodyStyle.height;
-    document.body.style.zoom = decision.bodyStyle.zoom;
+    // Scale #root (the React app), NOT <body>. The Discover tab's cross-origin
+    // <iframe> is portaled to #discover-overlay — a sibling of #root with no
+    // zoom — so it escapes this scaling and renders correctly on WebKit. If the
+    // zoom lived on <body> (an ancestor of BOTH #root and the overlay) the
+    // iframe could not escape it. The displayed result is identical to before.
+    const root = document.getElementById('root');
+    if (!root) return;
+    root.style.width = decision.bodyStyle.width;
+    root.style.height = decision.bodyStyle.height;
+    root.style.zoom = decision.bodyStyle.zoom;
+    // Single source of truth for the current scale, read by useDraggable etc.
+    document.documentElement.style.setProperty('--app-zoom', decision.bodyStyle.zoom || '1');
 
     if (decision.bodyStyle.zoom) {
       console.info(

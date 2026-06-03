@@ -46,6 +46,13 @@
 
 <body>
   <div id="root"></div>
+  <!-- Unscaled overlay layer: the Discover tab embeds the website in a
+       cross-origin <iframe>, which macOS/iOS WebKit mis-renders when any
+       ancestor carries CSS `zoom` (the viewport-scaling applied to #root on
+       narrow windows / phones). This node is a sibling of #root with NO zoom,
+       so the iframe portaled here renders at native scale and fills correctly.
+       Positioned per-frame to overlay the Discover content area. -->
+  <div id="discover-overlay"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

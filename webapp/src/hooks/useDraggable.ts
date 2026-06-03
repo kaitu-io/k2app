@@ -31,7 +31,12 @@ const DEFAULT_BOTTOM_CLEARANCE = 90;
 const SNAP_DURATION = 300;
 
 function getBodyScale(): number {
-  const z = document.body.style.zoom;
+  // Scale now lives on #root (see main.tsx applyScale); `--app-zoom` mirrors it
+  // as the single source of truth. Falls back to #root's inline zoom, then 1.
+  const cssVar = getComputedStyle(document.documentElement)
+    .getPropertyValue('--app-zoom')
+    .trim();
+  const z = cssVar || document.getElementById('root')?.style.zoom || '';
   if (!z || z === '1') return 1;
   return parseFloat(z) || 1;
 }
