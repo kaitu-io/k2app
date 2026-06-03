@@ -57,3 +57,23 @@ reason = "ajv ReDoS via $data option — dev-only via old eslint chain, $data un
 id = "GHSA-67mh-4wv8-2f99"
 ignoreUntil = 2026-11-14
 reason = "esbuild dev-server SSRF — dev-only via velite, dev-server never started in CI/prod"
+
+# --- vitest test runner (webapp + web + tools) ---
+# GHSA-5xrq-8626-4rwp is exploitable only via vitest's serve / browser-mode dev
+# websocket, which we never run in CI or production (tests run headless, no
+# --api / browser server). vitest is a direct devDependency in all three
+# workspaces, pinned ^3.0.0; the fix is vitest 4.x — a major upgrade tracked
+# separately (web has documented adaptations to vitest-3 behavior shifts).
+[[IgnoredVulns]]
+id = "GHSA-5xrq-8626-4rwp"
+ignoreUntil = 2026-12-02
+reason = "vitest dev-server/browser RCE — dev-only test runner, never run with --api/browser in CI/prod; v4 major upgrade tracked separately"
+
+# --- brace-expansion (eslint chain, second advisory) ---
+# Same dev-only eslint/minimatch chain as GHSA-f886 above; a blanket resolution
+# is unsafe (multiple brace-expansion majors coexist in the tree for different
+# tooling), so ignore rather than force-pin. Never processes untrusted input.
+[[IgnoredVulns]]
+id = "GHSA-jxxr-4gwj-5jf2"
+ignoreUntil = 2026-12-02
+reason = "brace-expansion ReDoS — dev-only via eslint/minimatch chain, never sees untrusted input"
