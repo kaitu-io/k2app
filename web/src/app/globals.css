@@ -51,6 +51,13 @@
 
 :root {
   --radius: 0.625rem;
+  /* This is a dark-only product. Declaring the color-scheme makes the browser
+     render its DEFAULT surfaces dark — the canvas/backdrop behind the document,
+     form controls, and scrollbars. Critical when embedded in the desktop app's
+     <iframe> under CSS `zoom`: macOS WebKit can leave the iframe content not
+     fully covering its box, and without this the uncovered area falls back to
+     the system LIGHT canvas (a white strip). `dark` makes that fallback dark. */
+  color-scheme: dark;
   /* Terminal Dark Color System */
   --background: #0a0a0f;
   --foreground: #e0e0e0;
@@ -97,6 +104,15 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Set the dark background on the root element, not just <body>. When this page
+     is embedded in the desktop app's <iframe> and the webapp applies CSS `zoom`
+     to scale the UI (narrow windows < 430px), macOS WebKit can leave the
+     iframe content not fully covering its box. Without a root background that
+     uncovered area renders WHITE (the default canvas), producing a jarring
+     white strip. Backing the root with the theme color makes any such gap dark. */
+  html {
+    @apply bg-background;
+  }
   body {
     @apply bg-background text-foreground;
   }
@@ -118,9 +134,10 @@
    Placed outside @layer so Turbopack always processes these rules. */
 .prose {
   color: var(--foreground);
-  font-size: 1rem;
-  line-height: 1.75;
-  max-width: 65ch;
+  font-size: 1.0625rem; /* 17px — CJK glyphs are denser; 16px reads cramped */
+  line-height: 1.9; /* roomier leading for Chinese long-form (no ascender/descender whitespace) */
+  letter-spacing: 0.01em;
+  max-width: 68ch;
 }
 .prose.max-w-none {
   max-width: none;
@@ -162,7 +179,7 @@
 
 /* Body text */
 .prose p {
-  margin-bottom: 1.25em;
+  margin-bottom: 1.5em;
 }
 
 /* Links */
@@ -279,6 +296,19 @@
   margin: 1.25em 0;
 }
 
+/* Figure caption: the paragraph immediately after an image.
+   Centered, smaller, muted — and never faux-italic (CJK has no real italics). */
+.prose img + p {
+  margin-top: -0.5em;
+  text-align: center;
+  font-size: 0.875em;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.prose img + p em {
+  font-style: normal;
+}
+
 /* Prevent long URLs / inline code from breaking layout on narrow screens */
 .prose {
   overflow-wrap: break-word;
@@ -305,7 +335,8 @@
 /* Mobile typography scale (<640px) */
 @media (max-width: 640px) {
   .prose {
-    font-size: 0.95rem;
+    font-size: 1rem;
+    line-height: 1.85;
   }
   .prose h1 {
     font-size: 1.75em;
