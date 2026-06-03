@@ -101,12 +101,6 @@ const DISCOVERY_DATA = {
       description: "亚马逊旗下流媒体服务，提供独家内容和电影租赁"
     },
     {
-      name: "Disney+",
-      url: "https://www.disneyplus.com",
-      icon: "🏰",
-      description: "迪士尼官方流媒体平台，家庭友好的优质内容"
-    },
-    {
       name: "Apple Music",
       url: "https://music.apple.com",
       icon: "🍎",

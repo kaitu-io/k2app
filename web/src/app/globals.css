@@ -51,13 +51,6 @@
 
 :root {
   --radius: 0.625rem;
-  /* This is a dark-only product. Declaring the color-scheme makes the browser
-     render its DEFAULT surfaces dark — the canvas/backdrop behind the document,
-     form controls, and scrollbars. Critical when embedded in the desktop app's
-     <iframe> under CSS `zoom`: macOS WebKit can leave the iframe content not
-     fully covering its box, and without this the uncovered area falls back to
-     the system LIGHT canvas (a white strip). `dark` makes that fallback dark. */
-  color-scheme: dark;
   /* Terminal Dark Color System */
   --background: #0a0a0f;
   --foreground: #e0e0e0;
@@ -103,15 +96,6 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-  }
-  /* Set the dark background on the root element, not just <body>. When this page
-     is embedded in the desktop app's <iframe> and the webapp applies CSS `zoom`
-     to scale the UI (narrow windows < 430px), macOS WebKit can leave the
-     iframe content not fully covering its box. Without a root background that
-     uncovered area renders WHITE (the default canvas), producing a jarring
-     white strip. Backing the root with the theme color makes any such gap dark. */
-  html {
-    @apply bg-background;
   }
   body {
     @apply bg-background text-foreground;
