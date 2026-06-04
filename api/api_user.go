@@ -489,8 +489,9 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 
 	q := user.Quota()
 	return &DataUser{
-		UUID:             user.UUID,
-		ExpiredAt:        user.ExpiredAt,
+		UUID:              user.UUID,
+		AppleAccountToken: deriveAppleAccountToken(user.UUID),
+		ExpiredAt:         user.ExpiredAt,
 		IsFirstOrderDone: user.IsFirstOrderDone != nil && *user.IsFirstOrderDone,
 		InvitedByCode:    inviteCode,
 		LoginIdentifies:  loginIdentifies,

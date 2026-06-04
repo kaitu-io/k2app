@@ -98,6 +98,7 @@ type ContactInfo struct {
 // DataUser API 用户数据结构
 type DataUser struct {
 	UUID             string               `json:"uuid"`
+	AppleAccountToken string              `json:"appleAccountToken,omitempty"` // StoreKit appAccountToken（uuidv5 派生），iOS 购买时下发以绑定账号
 	ExpiredAt        int64                `json:"expiredAt"`
 	IsFirstOrderDone bool                 `json:"isFirstOrderDone"`
 	InvitedByCode    *DataInviteCode      `json:"inviteCode"`
