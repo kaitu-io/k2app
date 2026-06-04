@@ -15,14 +15,7 @@
       "purchaseFailed": "購入に失敗しました。もう一度お試しください。",
       "verifyFailed": "購入を確認できませんでした。もう一度お試しください。",
       "restoreFailed": "購入の復元に失敗しました。もう一度お試しください。",
-      "nothingToRestore": "復元できる購入はありません。",
-      "basicMonthly": "ベーシック · 月額",
-      "basicYearly": "ベーシック · 年額",
-      "familyMonthly": "ファミリー · 月額",
-      "familyYearly": "ファミリー · 年額",
-      "perMonth": "月額",
-      "perYear": "年額",
-      "saveWithAnnual": "年額がお得"
+      "nothingToRestore": "復元できる購入はありません。"
     },
     "title": "プランを購入",
     "memberBenefits": "会員特典",

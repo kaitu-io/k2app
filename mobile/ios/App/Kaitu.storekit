@@ -20,30 +20,9 @@
         {
           "adHocOffers" : [],
           "codeOffers" : [],
-          "displayPrice" : "1.99",
+          "displayPrice" : "49.00",
           "familyShareable" : false,
           "groupNumber" : 1,
-          "internalID" : "30001",
-          "introductoryOffer" : null,
-          "localizations" : [
-            {
-              "description" : "Kaitu Basic — billed monthly",
-              "displayName" : "Basic Monthly",
-              "locale" : "en_US"
-            }
-          ],
-          "productID" : "io.kaitu.sub.basic.1m",
-          "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Basic Monthly",
-          "subscriptionGroupID" : "20001",
-          "type" : "RecurringSubscription"
-        },
-        {
-          "adHocOffers" : [],
-          "codeOffers" : [],
-          "displayPrice" : "19.99",
-          "familyShareable" : false,
-          "groupNumber" : 2,
           "internalID" : "30002",
           "introductoryOffer" : null,
           "localizations" : [
@@ -56,48 +35,6 @@
           "productID" : "io.kaitu.sub.basic.1y",
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Basic Yearly",
-          "subscriptionGroupID" : "20001",
-          "type" : "RecurringSubscription"
-        },
-        {
-          "adHocOffers" : [],
-          "codeOffers" : [],
-          "displayPrice" : "3.99",
-          "familyShareable" : false,
-          "groupNumber" : 3,
-          "internalID" : "30003",
-          "introductoryOffer" : null,
-          "localizations" : [
-            {
-              "description" : "Kaitu Family — billed monthly",
-              "displayName" : "Family Monthly",
-              "locale" : "en_US"
-            }
-          ],
-          "productID" : "io.kaitu.sub.family.1m",
-          "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Family Monthly",
-          "subscriptionGroupID" : "20001",
-          "type" : "RecurringSubscription"
-        },
-        {
-          "adHocOffers" : [],
-          "codeOffers" : [],
-          "displayPrice" : "39.99",
-          "familyShareable" : false,
-          "groupNumber" : 4,
-          "internalID" : "30004",
-          "introductoryOffer" : null,
-          "localizations" : [
-            {
-              "description" : "Kaitu Family — billed yearly",
-              "displayName" : "Family Yearly",
-              "locale" : "en_US"
-            }
-          ],
-          "productID" : "io.kaitu.sub.family.1y",
-          "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Family Yearly",
           "subscriptionGroupID" : "20001",
           "type" : "RecurringSubscription"
         }

@@ -43,14 +43,23 @@ const mockPurchase = vi.fn();
 const mockLoadProducts = vi.fn();
 let hookState: any;
 vi.mock('../../hooks/useIapPurchase', () => ({
-  IAP_PRODUCT_IDS: [
-    'io.kaitu.sub.basic.1m',
-    'io.kaitu.sub.basic.1y',
-    'io.kaitu.sub.family.1m',
-    'io.kaitu.sub.family.1y',
-  ],
+  IAP_PRODUCT_IDS: ['io.kaitu.sub.basic.1y'],
   useIapPurchase: () => hookState,
 }));
+
+const BASIC_1Y = 'io.kaitu.sub.basic.1y';
+
+function makeProduct() {
+  return {
+    id: BASIC_1Y,
+    displayName: 'Basic Yearly',
+    description: 'Kaitu Basic — billed yearly',
+    displayPrice: 'US$49.00',
+    price: 49,
+    periodUnit: 'year' as const,
+    periodValue: 1,
+  };
+}
 
 import IapPurchaseSheet from '../IapPurchaseSheet';
 
@@ -126,5 +135,32 @@ describe('IapPurchaseSheet', () => {
     fireEvent.click(screen.getByText('purchase:purchase.iap.restorePurchases'));
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it('renders a single product row driven by the StoreKit product', () => {
+    hookState = { ...defaultHookState(), products: [makeProduct()] };
+    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
+    // Exactly one product row, identified by the single product id.
+    const rows = screen.getAllByTestId(/^iap-product-/);
+    expect(rows).toHaveLength(1);
+    expect(screen.getByTestId(`iap-product-${BASIC_1Y}`)).toBeDefined();
+    // Apple-authoritative displayName + displayPrice are shown (not hardcoded).
+    expect(screen.getByText('Basic Yearly')).toBeDefined();
+    expect(screen.getByText('US$49.00')).toBeDefined();
+  });
+
+  it('falls back to a single placeholder row when products are empty', () => {
+    hookState = { ...defaultHookState(), products: [] };
+    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
+    const rows = screen.getAllByTestId(/^iap-product-/);
+    expect(rows).toHaveLength(1);
+    expect(screen.getByTestId(`iap-product-${BASIC_1Y}`)).toBeDefined();
+  });
+
+  it('Subscribe purchases the single basic.1y product', () => {
+    hookState = { ...defaultHookState(), products: [makeProduct()] };
+    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
+    fireEvent.click(screen.getByText('purchase:purchase.iap.subscribeNow'));
+    expect(mockPurchase).toHaveBeenCalledWith(BASIC_1Y, 'tok');
   });
 });

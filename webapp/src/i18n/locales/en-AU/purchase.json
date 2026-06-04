@@ -15,14 +15,7 @@
       "purchaseFailed": "Purchase failed, please try again.",
       "verifyFailed": "Could not verify your purchase, please try again.",
       "restoreFailed": "Could not restore purchases, please try again.",
-      "nothingToRestore": "No purchases to restore.",
-      "basicMonthly": "Basic · Monthly",
-      "basicYearly": "Basic · Yearly",
-      "familyMonthly": "Family · Monthly",
-      "familyYearly": "Family · Yearly",
-      "perMonth": "per month",
-      "perYear": "per year",
-      "saveWithAnnual": "Save with annual"
+      "nothingToRestore": "No purchases to restore."
     },
     "title": "Purchase plan",
     "memberBenefits": "Membership Benefits",
