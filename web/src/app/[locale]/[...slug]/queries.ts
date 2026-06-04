@@ -26,6 +26,9 @@ export type PostDoc = {
   content: unknown
   showOnKaitu: boolean
   showOnOverleap: boolean
+  // Populated to a media doc at depth>=1; absolute CDN url. May be null/number
+  // (id) when absent or unpopulated.
+  coverImage?: { url?: string | null; alt?: string | null } | number | string | null
 }
 
 export type PostListItem = Pick<PostDoc, 'id' | 'slug' | 'title' | 'excerpt' | 'publishedAt' | 'showOnKaitu' | 'showOnOverleap'>

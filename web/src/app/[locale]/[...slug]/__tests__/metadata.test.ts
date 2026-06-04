@@ -137,6 +137,7 @@ describe('generateMetadata (post detail, 2 segments)', () => {
       content: { root: {} },
       showOnKaitu: true,
       showOnOverleap: false,
+      coverImage: { url: 'https://media.kaitu.io/media/hello.png', alt: 'Hello cover' },
     }
 
     // First find call: findCategoryBySlug. Second find call: findPostInCategory probe.
@@ -163,6 +164,11 @@ describe('generateMetadata (post detail, 2 segments)', () => {
     expect(meta.twitter?.title).toBe('Hello | Kaitu')
     // hreflang alternates now present (cross-domain locale linking).
     expect(meta.alternates?.languages?.['zh-cn']).toBe('https://kaitu.io/zh-CN/cat-detail-1/hello')
+    // coverImage (absolute CDN url) becomes og:image as-is — NOT prefixed with
+    // the brand base URL (would otherwise be https://kaitu.iohttps://media...).
+    const ogImages = (meta.openGraph as { images?: Array<{ url?: string }> })?.images
+    expect(ogImages?.[0]?.url).toBe('https://media.kaitu.io/media/hello.png')
+    expect(meta.twitter?.images).toContain('https://media.kaitu.io/media/hello.png')
   })
 
   it('returns empty when category not found', async () => {

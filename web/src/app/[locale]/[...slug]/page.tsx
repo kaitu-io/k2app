@@ -181,6 +181,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     )
     const canonicalUrl = `${brandById(canonicalBrandId).baseUrl}/${locale}/${category.slug}/${post.slug}`
 
+    // coverImage is populated to a media doc (absolute CDN url) at depth>=1.
+    const cover =
+      post.coverImage && typeof post.coverImage === 'object'
+        ? post.coverImage.url ?? undefined
+        : undefined
+
     const meta = generatePageMetadata(
       locale,
       pathname,
@@ -188,6 +194,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         title: `${post.title} | ${brand.displayName}`,
         description: post.excerpt,
         ogType: 'article',
+        ogImage: cover,
         article: {
           publishedTime: post.publishedAt,
           section: category.name,

@@ -49,8 +49,13 @@ export function generateMetadata(
 
   const title = overrides.title || titles[locale] || titles['zh-CN'];
   const description = overrides.description || descriptions[locale] || descriptions['zh-CN'];
-  const ogImageRelative = overrides.ogImage || brand.ogImagePath;
-  const ogImageUrl = `${resolvedBaseUrl}${ogImageRelative}`;
+  // overrides.ogImage may be an absolute CDN URL (a post coverImage from
+  // media.kaitu.io) or a brand-relative path. Only prepend the base URL for the
+  // relative case, otherwise we'd produce `https://kaitu.iohttps://media...`.
+  const ogImageSrc = overrides.ogImage || brand.ogImagePath;
+  const ogImageUrl = /^https?:\/\//.test(ogImageSrc)
+    ? ogImageSrc
+    : `${resolvedBaseUrl}${ogImageSrc}`;
   const ogType = overrides.ogType || 'website';
 
   // Cross-domain hreflang: each locale points to its owning brand's host,
