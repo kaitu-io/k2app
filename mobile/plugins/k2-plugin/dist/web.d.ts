@@ -93,4 +93,14 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
             hit_pattern?: string;
         }>;
     }>;
+    iapGetProducts(): Promise<{
+        products: [];
+    }>;
+    iapPurchase(): Promise<{
+        result: 'cancelled';
+    }>;
+    iapRestore(): Promise<{
+        transactions: [];
+    }>;
+    iapFinishTransaction(): Promise<void>;
 }

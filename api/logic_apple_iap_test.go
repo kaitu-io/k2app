@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -70,6 +71,24 @@ func TestComputeAppleEntitlement(t *testing.T) {
 			assert.Equal(t, tc.wantAdvanced, gotAdvanced, "advanced")
 		})
 	}
+}
+
+// TestDeriveAppleAccountToken: the appAccountToken must be a deterministic,
+// valid RFC-4122 UUID per user (the raw Center UUID "user-<xid>" is not a UUID),
+// so StoreKit accepts it and Center can recompute it for the anti-claim check.
+func TestDeriveAppleAccountToken(t *testing.T) {
+	a := deriveAppleAccountToken("user-cv0abc123def456gh")
+	a2 := deriveAppleAccountToken("user-cv0abc123def456gh")
+	b := deriveAppleAccountToken("user-zz9zzz999zzz999zz")
+
+	assert.Equal(t, a, a2, "must be deterministic for the same user")
+	assert.NotEqual(t, a, b, "different users must derive different tokens")
+
+	parsed, err := uuid.Parse(a)
+	require.NoError(t, err, "derived token must be a valid RFC-4122 UUID")
+	assert.Equal(t, a, parsed.String(), "canonical lowercase form")
+	// v5 (name-based SHA-1) → version nibble is 5.
+	assert.Equal(t, uuid.Version(5), parsed.Version())
 }
 
 // TestVerifyAndGrantTransaction_Integration exercises the full DB grant path

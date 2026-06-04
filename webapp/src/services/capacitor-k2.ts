@@ -14,7 +14,7 @@ import { Clipboard } from '@capacitor/clipboard';
 import { Share } from '@capacitor/share';
 import { getDeviceUdid } from './device-udid';
 import { K2Plugin } from 'k2-plugin';
-import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, InstalledApp } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, InstalledApp, IIap } from '../types/kaitu-core';
 import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { createCapacitorStorage } from './capacitor-storage';
@@ -25,6 +25,37 @@ import { mapInstalledApp, type AndroidInstalledApp } from './capacitor-app-map';
  */
 export function isCapacitorNative(): boolean {
   return Capacitor.isNativePlatform();
+}
+
+/**
+ * Build the iOS StoreKit IAP bridge over K2Plugin. Native returns raw
+ * transactionIds; the verify→finish orchestration lives in the webapp
+ * (useIapPurchase) where the auth'd cloudApi call belongs — the bridge stays
+ * a thin primitive layer per the constitutional bridge-boundary rule.
+ */
+function buildIapBridge(): IIap {
+  return {
+    getProducts: async (productIds: string[]) => {
+      const res = await K2Plugin.iapGetProducts({ productIds });
+      return res.products;
+    },
+    purchase: async (productId: string, accountToken: string) => {
+      return await K2Plugin.iapPurchase({ productId, accountToken });
+    },
+    restore: async () => {
+      const res = await K2Plugin.iapRestore();
+      return res.transactions;
+    },
+    finishTransaction: async (transactionId: string) => {
+      await K2Plugin.iapFinishTransaction({ transactionId });
+    },
+    onTransactionUpdate: (cb) => {
+      const handle = K2Plugin.addListener('iapTransactionUpdate', (data: { transactionId: string; productId: string }) => {
+        cb(data);
+      });
+      return () => { handle.then(h => h.remove()); };
+    },
+  };
 }
 
 /**
@@ -252,6 +283,10 @@ export async function injectCapacitorGlobals(): Promise<void> {
         return res.apps.map((a: AndroidInstalledApp) => mapInstalledApp(a));
       },
     } : undefined,
+
+    // IAP: iOS-only (StoreKit 2). Android/web keep WordGate external-link flow
+    // (capability stays undefined → Purchase.tsx falls back automatically).
+    iap: platform === 'ios' ? buildIapBridge() : undefined,
   };
 
   // Inject globals

@@ -67,4 +67,16 @@ export class K2PluginWeb extends WebPlugin {
         // Fail-soft (not throw): App Bypass on web degrades to all-proxy badges.
         return { classifications: [] };
     }
+    async iapGetProducts() {
+        throw this.unavailable('IAP is not available on web');
+    }
+    async iapPurchase() {
+        throw this.unavailable('IAP is not available on web');
+    }
+    async iapRestore() {
+        throw this.unavailable('IAP is not available on web');
+    }
+    async iapFinishTransaction() {
+        throw this.unavailable('IAP is not available on web');
+    }
 }

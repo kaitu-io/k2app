@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/appstore"
 	"github.com/wordgate/qtoolkit/log"
@@ -19,6 +21,18 @@ var fetchAppleTransaction = appstore.GetTransaction
 
 // appleBundleID 返回配置的 iOS bundle id（appstore.bundleId）。
 func appleBundleID() string { return viper.GetString("appstore.bundleId") }
+
+// appleAccountNS 是派生 appAccountToken 的固定命名空间（任意固定 UUID）。
+// 用户的 Center UUID（"user-"+xid）不是合法 RFC 4122 UUID，不能直接当 StoreKit
+// appAccountToken。这里用 uuidv5(NS, userUUID) 派生一个确定性的合法 UUID：
+// 仅 Go 端计算（无跨语言 parity 风险），暴露给 webapp 原样下发给 StoreKit，
+// verify 时用同一算法核对 transaction.appAccountToken，阻断盗用 transactionId 的跨账号冒领。
+var appleAccountNS = uuid.MustParse("e8c7b6a5-4d3e-2f1a-9b8c-7d6e5f4a3b2c")
+
+// deriveAppleAccountToken 返回用户的确定性 StoreKit appAccountToken（小写 UUID）。
+func deriveAppleAccountToken(userUUID string) string {
+	return uuid.NewSHA1(appleAccountNS, []byte(userUUID)).String()
+}
 
 // computeAppleEntitlement 纯函数：给定用户当前到期(unix 秒)、Apple 绝对到期(unix 秒)、
 // now(unix 秒)，返回新的到期时间、用于审计的净增天数、是否推进。
@@ -141,6 +155,19 @@ func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID
 	}
 	if info.InAppOwnershipType == appstore.OwnershipType_FAMILY_SHARED {
 		return fmt.Errorf("family-shared ownership not entitled")
+	}
+
+	// 防盗用（defense-in-depth）：交易若携带 appAccountToken，必须等于本用户派生值。
+	// 阻断"偷到他人 transactionId 用自己会话冒领"——购买时 token 绑的是受害者账号。
+	// token 为空（旧客户端/边缘）时退回 first-write-wins 单一保护，不强拒。
+	if info.AppAccountToken != "" {
+		var u User
+		if err := getDB().Select("uuid").First(&u, userID).Error; err != nil {
+			return fmt.Errorf("load user for appAccountToken check: %w", err)
+		}
+		if want := deriveAppleAccountToken(u.UUID); !strings.EqualFold(info.AppAccountToken, want) {
+			return fmt.Errorf("appAccountToken mismatch: transaction bound to a different account")
+		}
 	}
 
 	return withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
