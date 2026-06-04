@@ -57,13 +57,21 @@ vi.mock('@/payload/lazyTranslate', async () => {
   }
 })
 
-vi.mock('@/lib/brands', () => ({
-  brandById: (id: string) => ({
+vi.mock('@/lib/brands', () => {
+  const mk = (id: string) => ({
     id,
     displayName: id === 'kaitu' ? 'Kaitu' : 'Overleap',
     baseUrl: id === 'kaitu' ? 'https://kaitu.io' : 'https://overleap.io',
-  }),
-}))
+    defaultLocale: 'zh-CN',
+    ogImagePath: '/og-image.png',
+  })
+  return {
+    brandById: (id: string) => mk(id),
+    // metadata.ts pulls KAITU + ownerBrand through the shared helper.
+    KAITU: mk('kaitu'),
+    ownerBrand: (loc: string) => (loc.startsWith('zh') ? 'kaitu' : 'overleap'),
+  }
+})
 
 // Mock Header/Footer to avoid pulling their transitive client-component deps.
 vi.mock('@/components/Header', () => ({ default: () => null }))
@@ -83,6 +91,8 @@ beforeEach(() => {
     id: 'kaitu',
     displayName: 'Kaitu',
     baseUrl: 'https://kaitu.io',
+    defaultLocale: 'zh-CN',
+    ogImagePath: '/og-image.png',
   } as never)
 })
 
@@ -98,6 +108,12 @@ describe('generateMetadata (category list, 1 segment)', () => {
 
     expect(meta.title).toBe('Blog | Kaitu')
     expect(meta.description).toBe('Latest posts')
+    // Regression: category pages must carry their own OG title (not inherit
+    // the homepage k2cc default via Next.js shallow metadata merge).
+    expect(meta.openGraph?.title).toBe('Blog | Kaitu')
+    expect((meta.openGraph as { url?: string })?.url).toBe('https://kaitu.io/zh-CN/blog')
+    expect((meta.openGraph as { type?: string })?.type).toBe('website')
+    expect(meta.twitter?.title).toBe('Blog | Kaitu')
   })
 
   it('returns empty object when category not found', async () => {
@@ -117,6 +133,7 @@ describe('generateMetadata (post detail, 2 segments)', () => {
       slug: 'hello',
       title: 'Hello',
       excerpt: 'Excerpted',
+      publishedAt: '2026-06-04T00:00:00.000Z',
       content: { root: {} },
       showOnKaitu: true,
       showOnOverleap: false,
@@ -135,7 +152,17 @@ describe('generateMetadata (post detail, 2 segments)', () => {
 
     expect(meta.title).toBe('Hello | Kaitu')
     expect(meta.description).toBe('Excerpted')
+    // Cross-brand canonical must be preserved (post is kaitu-only here).
     expect(meta.alternates?.canonical).toBe('https://kaitu.io/zh-CN/cat-detail-1/hello')
+    // Regression: post pages emit article-type OG with the post's own title +
+    // URL, not the inherited homepage default.
+    expect(meta.openGraph?.title).toBe('Hello | Kaitu')
+    expect((meta.openGraph as { type?: string })?.type).toBe('article')
+    expect((meta.openGraph as { url?: string })?.url).toBe('https://kaitu.io/zh-CN/cat-detail-1/hello')
+    expect((meta.openGraph as { publishedTime?: string })?.publishedTime).toBe('2026-06-04T00:00:00.000Z')
+    expect(meta.twitter?.title).toBe('Hello | Kaitu')
+    // hreflang alternates now present (cross-domain locale linking).
+    expect(meta.alternates?.languages?.['zh-cn']).toBe('https://kaitu.io/zh-CN/cat-detail-1/hello')
   })
 
   it('returns empty when category not found', async () => {
