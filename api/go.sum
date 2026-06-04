@@ -345,6 +345,8 @@ github.com/ugorji/go/codec v1.3.0 h1:Qd2W2sQawAfG8XSvzwhBeoGq71zXOC/Q1E9y/wUcsUA
 github.com/ugorji/go/codec v1.3.0/go.mod h1:pRBVtBSKl77K30Bv8R2P+cLSGaTtex6fsA2Wjqmfxj4=
 github.com/wordgate/qtoolkit/ai v1.5.25 h1:BovBjnzlimm5QX/4Jvix8TS/A5EBDfI5gBiYJFYcLIw=
 github.com/wordgate/qtoolkit/ai v1.5.25/go.mod h1:dJ4erGBo8YcfmKH/27ORcY6HI16QFElxj0KrvmU/oTo=
+github.com/wordgate/qtoolkit/appstore v1.5.32 h1:uCcim/5vSsSBHLAyC2gyKP7NHnoiNKMpiben4t4Kvms=
+github.com/wordgate/qtoolkit/appstore v1.5.32/go.mod h1:MWFv9v0QNKFsp9Iq49Mj4EFQ+V719utBKFu+pcG1kps=
 github.com/wordgate/qtoolkit/asynq v1.5.25 h1:S91M3vpQukIwausX5vXFoz1seOg7F19fKseLuiWmABU=
 github.com/wordgate/qtoolkit/asynq v1.5.25/go.mod h1:7hEjZLQOmr9IySyrq9ocKUCQkLqdzjdxdkhP+TRJfKw=
 github.com/wordgate/qtoolkit/aws/ses v1.5.29 h1:T6RPqiAUXYgRu1hXiXWksCrY6xavDPNbH6tcK/dBlhU=

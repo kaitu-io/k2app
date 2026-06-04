@@ -38,6 +38,7 @@ func Migrate() error {
 		&InviteCode{},
 		&Order{},
 		&UserProHistory{},
+		&AppleSubscription{},
 		&Message{},
 		&Secret{},
 		&SlaveNode{},
