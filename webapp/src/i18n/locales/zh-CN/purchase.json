@@ -15,14 +15,7 @@
       "purchaseFailed": "购买失败，请稍后重试。",
       "verifyFailed": "无法验证你的购买，请稍后重试。",
       "restoreFailed": "恢复购买失败，请稍后重试。",
-      "nothingToRestore": "没有可恢复的购买。",
-      "basicMonthly": "标准版 · 月付",
-      "basicYearly": "标准版 · 年付",
-      "familyMonthly": "家庭版 · 月付",
-      "familyYearly": "家庭版 · 年付",
-      "perMonth": "每月",
-      "perYear": "每年",
-      "saveWithAnnual": "年付更划算"
+      "nothingToRestore": "没有可恢复的购买。"
     },
     "title": "购买套餐",
     "memberBenefits": "会员权益",

@@ -15,14 +15,7 @@
       "purchaseFailed": "購買失敗，請稍後重試。",
       "verifyFailed": "無法驗證你的購買，請稍後重試。",
       "restoreFailed": "恢復購買失敗，請稍後重試。",
-      "nothingToRestore": "沒有可恢復的購買。",
-      "basicMonthly": "標準版 · 月付",
-      "basicYearly": "標準版 · 年付",
-      "familyMonthly": "家庭版 · 月付",
-      "familyYearly": "家庭版 · 年付",
-      "perMonth": "每月",
-      "perYear": "每年",
-      "saveWithAnnual": "年付更划算"
+      "nothingToRestore": "沒有可恢復的購買。"
     },
     "title": "購買套餐",
     "memberBenefits": "會員權益",
