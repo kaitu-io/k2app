@@ -93,6 +93,12 @@ export const ERROR_CODES = {
   // VPN 权限错误 (580-589)
   VPN_PERMISSION_DENIED: 580,
 
+  // IAP (iOS StoreKit) 错误 (590-599) — frontend-synthesized
+  IAP_PURCHASE_FAILED: 590,
+  IAP_VERIFY_FAILED: 591,
+  IAP_FINISH_FAILED: 592,   // log-only, no user message
+  IAP_NOT_AVAILABLE: 593,   // log-only, no user message
+
   // 认证相关错误 (530-539)
   LOGOUT_FAILED: 530,
   TOKEN_REFRESH_FAILED: 531,
@@ -293,6 +299,13 @@ export function getErrorMessage(
     // VPN 权限错误 (580-589)
     case ERROR_CODES.VPN_PERMISSION_DENIED:
       return t('common:errors.vpn.permissionDenied', 'VPN permission denied. Please enable VPN in system settings.');
+
+    // IAP (iOS StoreKit) 错误 (590-599)
+    // 592 (finish) / 593 (not available) are log-only — no user-facing message.
+    case ERROR_CODES.IAP_PURCHASE_FAILED:
+      return t('purchase:purchase.iap.purchaseFailed', 'Purchase failed, please try again');
+    case ERROR_CODES.IAP_VERIFY_FAILED:
+      return t('purchase:purchase.iap.verifyFailed', 'Could not verify your purchase, please try again');
 
     // 认证相关错误 (530-539)
     case ERROR_CODES.LOGOUT_FAILED:

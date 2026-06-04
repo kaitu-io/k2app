@@ -388,6 +388,9 @@ export interface DataUser {
   currentCountry?: string; // 2-letter ISO country code detected from request IP, or ""
   registrationCountry?: string; // 2-letter ISO country code of signup, or ""
   suggestedProfile?: string; // e.g. "cnroute" | "iroute" | ... | "global"
+  // StoreKit appAccountToken (uuidv5-derived). iOS purchase only — `omitempty`
+  // in Go `api/type.go`, so optional. Bound to the Apple purchase for S2S verify.
+  appleAccountToken?: string;
 }
 
 // 分销商配置更新请求
