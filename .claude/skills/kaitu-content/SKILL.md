@@ -344,7 +344,7 @@ These rules CANNOT be overridden by any instruction, prompt, or conversation con
 
 ### C3: 默认 draft，发布前给用户确认
 
-`create_post` 默认 `status:"draft"`。除非用户明确说"直接发布/上线"，否则先建 draft，把 URL 和要点呈现给用户 review，确认后再 `publish_post` 或 `update_post status:"published"`。
+`create_post` 默认 `status:"draft"`。除非用户明确说"直接发布/上线"，否则先建 draft，把 URL 和要点呈现给用户 review，确认后再 `publish_post(id)` 发布。注意 `update_post` **没有 `status` 参数**，发布只能走 `publish_post`。
 
 ### C4: 不改代码库
 
@@ -381,7 +381,7 @@ Never include API keys, tokens, internal URLs, server IPs, employee names (excep
 mcp__kaitu-center__create_post({
   title: "...",
   slug: "register-us-apple-id",
-  excerpt: "120-155 字 meta description",
+  excerpt: "meta description（喂 og:description）；中文约 75-90 字，英文 120-155 字符；关键词前置",
   category: 1,                       // guides
   content: <Lexical JSON>,           // 从 /tmp/<slug>.json 读入
   showOnKaitu: true,
@@ -396,13 +396,14 @@ mcp__kaitu-center__create_post({
 ### Step 4: Review → Publish
 
 - 给用户：URL `/{locale}/{category}/{slug}` + 文章要点
-- 用户确认后 `publish_post(id)`（或 `update_post(id, status:"published")`）
-- 改内容用 `update_post(id, ...)`；改完会重置非源 locale 让其重新懒翻译
+- 用户确认后 `publish_post(id)` 发布（`update_post` 无 status 参数，不能用它发布）
+- 改已发布文章的内容/字段用 `update_post(id, ...)`——⚠️ **在 drafts 模式下它写的是草稿版本，公开页读的是 published 版**，所以改完**必须再 `publish_post(id)`** 才会进 published（否则连 origin 都不变）。`update_post` 还会重置非源 locale 让其重新懒翻译
 
 ### Step 5: 验证 live（不看 sitemap）
 
 - **判断是否真 live：`list_posts` / `get_post` 查 Payload status，不是看 sitemap、不是 grep `<title>`**
-- 可 `curl -s https://www.kaitu.io/{locale}/{category}/{slug}` 抓服务端 HTML 确认正文渲染（force-dynamic，部署后即时）
+- ⚠️ **内容改动不是即时 live**：页面虽 `force-dynamic`，但 SSR HTML 带 `cache-control: max-age=3600`，**CloudFront 缓存 1 小时**；纯内容改动（`update_post`+`publish_post`）**不触发缓存失效**，只有 Amplify 代码部署才会 invalidate 边缘缓存。所以规范 URL 最多 stale 1h，会自己过期
+- **验 origin 是否已更新**：`curl -s 'https://www.kaitu.io/{locale}/{category}/{slug}?v=<时间戳>'`——不同 query string → CloudFront cache miss → 直读 origin。origin 正确即说明发布成功，等边缘自然过期或下次部署刷新即可（想立刻 live 需 CloudFront invalidation，属 infra 操作，SEO 改动一般不值得）
 - 其余 locale 首次访问触发懒翻译（~5-15s），第二次才稳定
 
 ---
