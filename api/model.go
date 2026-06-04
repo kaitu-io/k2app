@@ -38,7 +38,8 @@ const (
 	VipInvitedReward VipChangeType = "invited_reward" // 被邀请奖励（被邀请人获得）
 	VipSystemGrant   VipChangeType = "system_grant"   // 系统发放
 	VipSurveyReward  VipChangeType = "survey_reward"  // 问卷奖励
-	VipRefund        VipChangeType = "refund"         // 订单退款撤销授权
+	VipRefund        VipChangeType = "refund"         // 订单退款撤销授权 / Apple 退款撤销
+	VipAppleSub      VipChangeType = "apple_sub"      // Apple 自动续订订阅入账
 )
 
 // User 用户模型
@@ -636,6 +637,27 @@ type Plan struct {
 	IsActive    *bool     `gorm:"default:true" json:"isActive"`                                // 是否激活
 
 	Tier string `gorm:"type:varchar(30);not null;default:'basic'" json:"tier"` // 功能等级标识（lite/basic/family/business），配额由 TierQuotas 派生
+
+	// Apple App Store 商品ID（如 io.kaitu.sub.family.1y）。仅 iOS IAP 用：非空才在 iOS 购买面板出现。
+	AppleProductID string `gorm:"column:apple_product_id;type:varchar(255);index" json:"appleProductId,omitempty"`
+}
+
+// AppleSubscription 记录一条 Apple 自动续订订阅链（按 originalTransactionId 唯一）。
+// user_id 在首次（已鉴权的）verify 时绑定，之后不变（first-write-wins，防伪造改归属）。
+// 权益由 ExpiresDate 驱动（绝对到期，毫秒）。LastNotificationUUID 提供 webhook 幂等。
+type AppleSubscription struct {
+	ID                    uint64    `gorm:"primarykey" json:"id"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
+	UserID                uint64    `gorm:"column:user_id;not null;index" json:"userId"`
+	OriginalTransactionID string    `gorm:"column:original_transaction_id;type:varchar(64);not null;uniqueIndex" json:"originalTransactionId"`
+	ProductID             string    `gorm:"column:product_id;type:varchar(255);not null" json:"productId"`
+	LastTransactionID     string    `gorm:"column:last_transaction_id;type:varchar(64)" json:"lastTransactionId"`
+	ExpiresDate           int64     `gorm:"column:expires_date" json:"expiresDate"` // Apple 绝对到期时间（unix 毫秒）
+	AutoRenewStatus       int32     `gorm:"column:auto_renew_status" json:"autoRenewStatus"`
+	Environment           string    `gorm:"column:environment;type:varchar(16)" json:"environment"`
+	Status                string    `gorm:"column:status;type:varchar(24)" json:"status"` // active|expired|revoked
+	LastNotificationUUID  string    `gorm:"column:last_notification_uuid;type:varchar(64)" json:"-"`
 }
 
 // EmailMarketingTemplate EDM多语言邮件模板模型

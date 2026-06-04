@@ -542,6 +542,8 @@ type DataPlan struct {
 	MaxDevice       int    `json:"maxDevice"`
 	MaxRouterDevice int    `json:"maxRouterDevice"`
 	MaxLanClient    int    `json:"maxLanClient"`
+	// Apple App Store 商品ID（仅 iOS IAP）：非空才在 iOS 购买面板出现，webapp 据此向 StoreKit 取商品。
+	AppleProductID string `json:"appleProductId,omitempty"`
 }
 
 // Response_SlaveDeviceCheckAuthResult 节点设备认证结果响应
