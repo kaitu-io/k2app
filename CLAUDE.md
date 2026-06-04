@@ -38,6 +38,7 @@ mobile/              Capacitor 7 mobile app
 mobile/plugins/      K2Plugin (Swift + Kotlin) — native VPN bridge
 tools/kaitu-center/  MCP server (Claude Code) + OpenClaw plugin
 tools/kaitu-mail/    OpenClaw email plugin (himalaya CLI, per-account IMAP)
+tools/kaitu-signer/  Windows code-signing tray app (SimplySign + pywinauto, SQS-driven)
 mcp/                 Go MCP server for Claude Code (k2 user-facing tools)
 scripts/             Build, deploy, test helpers (see scripts/CLAUDE.md)
 docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
