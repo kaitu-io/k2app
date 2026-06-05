@@ -59,9 +59,11 @@ import { useAppLinks } from "../hooks/useAppLinks";
 import VersionItem from "../components/VersionItem";
 import BetaChannelToggle from "../components/BetaChannelToggle";
 import PasswordDialog from "../components/PasswordDialog";
+import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 
 export default function Account() {
   const { user, loading, isMembership, isExpired, fetchUser } = useUser();
+  const affordance = useSubscriptionAffordance();
   const { isAuthenticated, setIsAuthenticated } = useAuth();
   const muiTheme = useMuiTheme();
   const colors = getThemeColors(muiTheme.palette.mode === 'dark');
@@ -377,7 +379,8 @@ export default function Account() {
                   {t('common:common.retry')}
                 </Button>
               )}
-              {!isNotLoggedIn && !hasError && isExpired && window._platform?.os !== 'ios' && (
+              {!isNotLoggedIn && !hasError && isExpired &&
+  (window._platform?.os !== 'ios' || affordance.mode === 'subscribe') && (
                 <Button
                   variant="contained"
                   color="primary"
@@ -486,7 +489,7 @@ export default function Account() {
                       {t('account:account.modifyEmail')}
                     </Button>
                   )
-                ) : window._platform?.os !== 'ios' ? (
+                ) : (window._platform?.os !== 'ios' || affordance.mode === 'subscribe') ? (
                   <Button
                     size="small"
                     variant="contained"

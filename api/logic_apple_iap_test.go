@@ -14,10 +14,10 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 )
 
-// TestComputeAppleEntitlement covers the load-bearing entitlement math: Apple's
+// TestComputeRecurringEntitlement covers the load-bearing entitlement math: Apple's
 // absolute expiresDate only ever raises the user's expiry (never shortens), and
 // re-delivery of the same expiry is a no-op (idempotent).
-func TestComputeAppleEntitlement(t *testing.T) {
+func TestComputeRecurringEntitlement(t *testing.T) {
 	const day = int64(86400)
 	now := int64(1_700_000_000)
 
@@ -65,7 +65,7 @@ func TestComputeAppleEntitlement(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotExpiry, gotDays, gotAdvanced := computeAppleEntitlement(tc.current, tc.appleExpires, now)
+			gotExpiry, gotDays, gotAdvanced := computeRecurringEntitlement(tc.current, tc.appleExpires, now)
 			assert.Equal(t, tc.wantExpiry, gotExpiry, "expiry")
 			assert.Equal(t, tc.wantDays, gotDays, "days")
 			assert.Equal(t, tc.wantAdvanced, gotAdvanced, "advanced")
@@ -136,7 +136,7 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 	}
 	t.Cleanup(func() { fetchAppleTransaction = old })
 	t.Cleanup(func() {
-		db.Get().Where("original_transaction_id = ?", otx).Delete(&AppleSubscription{})
+		db.Get().Where("provider = ? AND provider_subscription_id = ?", "apple", otx).Delete(&Subscription{})
 		db.Get().Where("user_id = ? AND type = ?", user.ID, VipAppleSub).Delete(&UserProHistory{})
 	})
 
@@ -149,8 +149,8 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 	assert.InDelta(t, appleExpiresMs/1000, u1.ExpiredAt, 2, "expiry should equal apple expiresDate (sec)")
 	assert.Equal(t, "family", u1.Tier, "tier set from plan on first order")
 
-	var sub AppleSubscription
-	require.NoError(t, db.Get().Where("original_transaction_id = ?", otx).First(&sub).Error)
+	var sub Subscription
+	require.NoError(t, db.Get().Where("provider = ? AND provider_subscription_id = ?", "apple", otx).First(&sub).Error)
 	assert.Equal(t, user.ID, sub.UserID)
 	assert.Equal(t, "active", sub.Status)
 
@@ -171,10 +171,51 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 	// ---- first-write-wins: a different user cannot rebind the same subscription ----
 	other := CreateTestUser(t)
 	require.NoError(t, verifyAndGrantTransaction(ctx, other.ID, "TXN1"))
-	var subAfter AppleSubscription
-	require.NoError(t, db.Get().Where("original_transaction_id = ?", otx).First(&subAfter).Error)
+	var subAfter Subscription
+	require.NoError(t, db.Get().Where("provider = ? AND provider_subscription_id = ?", "apple", otx).First(&subAfter).Error)
 	assert.Equal(t, user.ID, subAfter.UserID, "subscription stays bound to the first user")
 	var otherReloaded User
 	require.NoError(t, db.Get().First(&otherReloaded, other.ID).Error)
 	assert.True(t, otherReloaded.IsExpired(), "the second user must not receive entitlement")
+}
+
+// TestGetActiveSubscriptions_Integration verifies the read model returns the
+// active subscription with the Apple manage surface, and excludes expired ones.
+func TestGetActiveSubscriptions_Integration(t *testing.T) {
+	skipIfNoDB(t)
+
+	uniq := time.Now().UnixNano()
+	productID := fmt.Sprintf("io.kaitu.test.basic.1y.%d", uniq)
+	plan := &Plan{
+		PID: fmt.Sprintf("tgas%d", uniq), Label: "GAS", Price: 1000, OriginPrice: 1000,
+		Month: 12, Tier: "basic", AppleProductID: productID,
+	}
+	require.NoError(t, db.Get().Create(plan).Error)
+	t.Cleanup(func() { db.Get().Delete(plan) })
+
+	user := CreateTestUser(t)
+	active := &Subscription{
+		UserID: user.ID, Provider: "apple",
+		ProviderSubscriptionID: fmt.Sprintf("OTX-A-%d", uniq),
+		ProductID:              productID,
+		CurrentPeriodEnd:       time.Now().Unix() + 200*86400,
+		AutoRenew:              true, Environment: "Sandbox", Status: "active",
+	}
+	expired := &Subscription{
+		UserID: user.ID, Provider: "apple",
+		ProviderSubscriptionID: fmt.Sprintf("OTX-E-%d", uniq),
+		ProductID:              productID,
+		CurrentPeriodEnd:       time.Now().Unix() - 10*86400,
+		Status:                 "expired",
+	}
+	require.NoError(t, db.Get().Create(active).Error)
+	require.NoError(t, db.Get().Create(expired).Error)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&Subscription{}) })
+
+	got := GetActiveSubscriptions(user.ID)
+	require.Len(t, got, 1, "only the active sub is returned")
+	assert.Equal(t, "apple", got[0].Provider)
+	assert.Equal(t, "basic", got[0].Tier)
+	assert.True(t, got[0].AutoRenew)
+	assert.Equal(t, "apple_settings", got[0].Manage.Kind)
 }

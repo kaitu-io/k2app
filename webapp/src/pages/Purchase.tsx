@@ -29,6 +29,8 @@ import { LoadingState, EmptyPlans } from '../components/LoadingAndEmpty';
 import MembershipBenefits from '../components/MembershipBenefits';
 import EmailLoginForm from '../components/EmailLoginForm';
 import IapPurchaseSheet from '../components/IapPurchaseSheet';
+import IosMembershipPanel from '../components/IosMembershipPanel';
+import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import {
   Warning as WarningIcon,
   CheckCircle as CheckCircleIcon,
@@ -553,6 +555,7 @@ export default function Purchase() {
   // of the external WordGate link (Apple 3.1.1 — no external payment on iOS).
   const [iapSheetOpen, setIapSheetOpen] = useState(false);
   const iap = window._platform?.iap;
+  const affordance = useSubscriptionAffordance();
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [, setAppConfigLoading] = useState(false);
 
@@ -844,6 +847,18 @@ export default function Purchase() {
     // 跳转到付费和授权历史页面
     navigate('/pro-histories?type=recharge&from=/purchase');
   };
+
+  // iOS 订阅轨：manage/status 模式不进入购买流（不建 WordGate 订单），直接给会员面板。
+  // subscribe 模式（含未登录潜客）继续走下方正常套餐/购买 UI。
+  if (iap && affordance.mode !== 'subscribe') {
+    return (
+      <IosMembershipPanel
+        mode={affordance.mode as 'manage' | 'status'}
+        expiredAt={user?.expiredAt ?? 0}
+        manageSurface={affordance.activeSub?.manage}
+      />
+    );
+  }
 
   return (
     <Box sx={{

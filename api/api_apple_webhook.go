@@ -52,8 +52,8 @@ func api_apple_webhook(c *gin.Context) {
 	log.Infof(c, "[AppleWebhook] type=%s subtype=%s otx=%s uuid=%s", nType, asn.Payload.Subtype, otx, uuid)
 
 	// 仅处理我们已知（已在 verify 端点绑定过 userID）的订阅链。
-	var sub AppleSubscription
-	if err := db.Get().Where(&AppleSubscription{OriginalTransactionID: otx}).First(&sub).Error; err != nil {
+	var sub Subscription
+	if err := db.Get().Where(&Subscription{Provider: "apple", ProviderSubscriptionID: otx}).First(&sub).Error; err != nil {
 		// 未知 originalTransactionId（如 SUBSCRIBED 早于已鉴权 verify 到达）→ 忽略，Apple 不重试。
 		log.Infof(c, "[AppleWebhook] unknown originalTransactionId=%s, ignoring", otx)
 		c.Status(200)
@@ -61,7 +61,7 @@ func api_apple_webhook(c *gin.Context) {
 	}
 
 	// 幂等：同一通知 UUID 已处理过则跳过。
-	if sub.LastNotificationUUID != "" && sub.LastNotificationUUID == uuid {
+	if sub.LastEventID != "" && sub.LastEventID == uuid {
 		log.Debugf(c, "[AppleWebhook] duplicate notification uuid=%s, skipping", uuid)
 		c.Status(200)
 		return
@@ -80,7 +80,7 @@ func api_apple_webhook(c *gin.Context) {
 		}
 
 	case appstore.NotificationType_REFUND, appstore.NotificationType_REVOKE:
-		if err := revokeAppleSubscription(c, &sub); err != nil {
+		if err := revokeSubscription(c, &sub); err != nil {
 			log.Errorf(c, "[AppleWebhook] revoke failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)
 			return
@@ -88,7 +88,7 @@ func api_apple_webhook(c *gin.Context) {
 
 	case appstore.NotificationType_EXPIRED, appstore.NotificationType_GRACE_PERIOD_EXPIRED:
 		// 到期：expired_at 已等于 Apple expiresDate，自然过期，仅标记状态。
-		if err := setAppleSubStatus(c, sub.ID, "expired"); err != nil {
+		if err := setSubStatus(c, sub.ID, "expired"); err != nil {
 			log.Errorf(c, "[AppleWebhook] mark expired failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)
 			return
@@ -98,16 +98,16 @@ func api_apple_webhook(c *gin.Context) {
 		log.Infof(c, "[AppleWebhook] unhandled type=%s otx=%s", nType, otx)
 	}
 
-	if err := recordAppleNotificationUUID(c, sub.ID, uuid); err != nil {
+	if err := recordSubEventID(c, sub.ID, uuid); err != nil {
 		log.Warnf(c, "[AppleWebhook] record uuid failed otx=%s: %v", otx, err)
 	}
 	c.Status(200)
 }
 
-func setAppleSubStatus(ctx context.Context, id uint64, status string) error {
-	return db.Get().Model(&AppleSubscription{}).Where("id = ?", id).Update("status", status).Error
+func setSubStatus(ctx context.Context, id uint64, status string) error {
+	return db.Get().Model(&Subscription{}).Where("id = ?", id).Update("status", status).Error
 }
 
-func recordAppleNotificationUUID(ctx context.Context, id uint64, uuid string) error {
-	return db.Get().Model(&AppleSubscription{}).Where("id = ?", id).Update("last_notification_uuid", uuid).Error
+func recordSubEventID(ctx context.Context, id uint64, eventID string) error {
+	return db.Get().Model(&Subscription{}).Where("id = ?", id).Update("last_event_id", eventID).Error
 }
