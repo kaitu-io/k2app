@@ -193,6 +193,28 @@ describe('CloudTunnelList', () => {
     });
   });
 
+  describe('No cache + 402 membership-required → activation prompt (not a network error)', () => {
+    it('shows an activation CTA, not the "check network and retry" copy, and does not auto-retry', async () => {
+      mockCacheGet.mockReturnValue(null);
+      // ProRequired denies a non-activated/expired account with code 402.
+      mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+      render(<CloudTunnelList {...defaultProps} />);
+
+      // Membership-required state — honest activation prompt.
+      expect(await screen.findByText('开通会员后解锁云端节点')).toBeInTheDocument();
+
+      // The misleading network-error copy must be gone…
+      expect(screen.queryByText('暂时无法获取云端节点')).not.toBeInTheDocument();
+      expect(screen.queryByText('重试加载')).not.toBeInTheDocument();
+
+      // …and 402 must NOT kick off the exponential-backoff auto-retry loop
+      // (retrying can never grant membership): exactly one fetch was issued,
+      // and the 402 branch schedules no setTimeout to re-fetch.
+      expect(mockCloudApiGet).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('Tunnel ordering', () => {
     it('sorts tunnels alphabetically by country code', async () => {
       const tunnels: TunnelListResponse = {

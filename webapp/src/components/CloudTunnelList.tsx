@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
 import { EmptyState } from './LoadingAndEmpty';
@@ -56,6 +57,7 @@ export interface CloudTunnelListHandle {
 export const CloudTunnelList = forwardRef<CloudTunnelListHandle, CloudTunnelListProps>(
 function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, hideHeader }, ref) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const colors = getThemeColors(isDark);
@@ -65,6 +67,9 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  // Distinct from `error`: a 402 means the account isn't an active member, which
+  // is an entitlement state (→ activation prompt), not a transient network fault.
+  const [membershipRequired, setMembershipRequired] = useState(false);
 
   // Stable ref for callback to avoid re-triggering effects
   const onTunnelsLoadedRef = useRef(onTunnelsLoaded);
@@ -101,6 +106,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
 
     setRefreshing(true);
     setError(null);
+    setMembershipRequired(false);
 
     // SWR fast-path: return cached immediately, revalidate in background.
     // Skipped when caller explicitly requests a fresh fetch (force=true)
@@ -144,6 +150,13 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         console.debug('[CloudTunnelList] ECH config from API:', response.data.echConfigList ? `present (len=${response.data.echConfigList.length})` : 'empty');
         retryCountRef.current = 0;
         onTunnelsLoadedRef.current?.(loadedTunnels);
+      } else if (response.code === 402) {
+        // Membership not active — cloud nodes are Pro-only. This is a known
+        // entitlement state, NOT a network failure: show an activation prompt,
+        // never set the "check network & retry" error, and never auto-retry
+        // (a retry can't grant membership). Self-hosted tunnels stay usable.
+        setMembershipRequired(true);
+        retryCountRef.current = 0;
       } else {
         // Skip noisy log for 401 (user not logged in yet).
         if (response.code !== 401) {
@@ -244,6 +257,26 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
             </ListItem>
           ))}
         </List>
+      </Box>
+    );
+  }
+
+  // Membership-required state (402): cloud nodes are Pro-only. Show an honest
+  // activation prompt instead of the misleading "check network & retry" copy.
+  if (membershipRequired && tunnels.length === 0) {
+    return (
+      <Box sx={{ px: 2, py: 2 }}>
+        <EmptyState
+          icon={<CloudOffIcon sx={{ fontSize: 48, color: 'text.disabled' }} />}
+          title={t('dashboard:dashboard.cloudNodesMembershipRequired')}
+          description={t('dashboard:dashboard.cloudNodesMembershipRequiredHint')}
+          action={
+            <Button onClick={() => navigate('/purchase')} variant="contained" size="small">
+              {t('dashboard:dashboard.cloudNodesActivateCta')}
+            </Button>
+          }
+          minHeight={150}
+        />
       </Box>
     );
   }
