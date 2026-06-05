@@ -178,7 +178,7 @@ func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID
 			ProductID:              info.ProductId,
 			ProviderLatestRef:      info.TransactionId,
 			CurrentPeriodEnd:       info.ExpiresDate / 1000, // Apple ms → s 归一
-			AutoRenew:              true,                     // 入账即自动续订（best-effort；DID_CHANGE_RENEWAL_STATUS 后续修正）
+			AutoRenew:              true,                     // 入账即自动续订（best-effort；用户取消后由 DID_CHANGE_RENEWAL_STATUS → applyRenewalInfo 修正为 false）
 			Environment:            info.Environment,
 			Status:                 "active",
 		})
@@ -219,6 +219,68 @@ func revokeSubscription(ctx context.Context, sub *Subscription) error {
 		}
 		return tx.Model(&Subscription{}).Where("id = ?", sub.ID).Update("status", "revoked").Error
 	})
+}
+
+// computeRenewalState 纯函数：依据 Apple 已签名的 RenewalInfo（缺失时退回 subtype）
+// 推导订阅的自动续订开关与计费状态。provider 无关、无副作用。
+//   - autoRenew：RenewalInfo.AutoRenewStatus 为权威；RenewalInfo 缺失时退回 subtype；
+//     两者都无信息则返回 nil（表示"不改"）。
+//   - status：terminal（expired/revoked）一律返回 ""（绝不复活已终结订阅）；否则按
+//     计费重试 / 宽限期 / 正常 推导为 billing_retry|grace|active。
+//
+// 关键：此函数绝不触碰权益到期——取消自动续订 / 扣费失败都不缩短用户已购周期，
+// 到期由 EXPIRED 事件落地。
+func computeRenewalState(currentStatus string, ri *appstore.RenewalInfo, subtype string, nowSec int64) (autoRenew *bool, status string) {
+	if ri != nil {
+		v := ri.AutoRenewStatus == appstore.AutoRenewStatus_On
+		autoRenew = &v
+	} else {
+		switch subtype {
+		case appstore.Subtype_AUTO_RENEW_ENABLED:
+			v := true
+			autoRenew = &v
+		case appstore.Subtype_AUTO_RENEW_DISABLED:
+			v := false
+			autoRenew = &v
+		}
+	}
+
+	if currentStatus == "expired" || currentStatus == "revoked" {
+		return autoRenew, "" // terminal：绝不复活
+	}
+
+	status = "active"
+	if ri != nil {
+		if ri.IsInBillingRetryPeriod {
+			status = "billing_retry"
+		} else if ri.GracePeriodExpiresDate/1000 > nowSec {
+			status = "grace"
+		}
+	}
+	return autoRenew, status
+}
+
+// applyRenewalInfo 落地续订状态变更（DID_CHANGE_RENEWAL_STATUS / DID_FAIL_TO_RENEW）：
+// 把 computeRenewalState 的结论写入订阅行。绝不 re-grant、绝不改用户到期。
+// 用 map 更新而非 struct，以免 GORM 跳过 auto_renew=false 这一零值。
+func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.RenewalInfo, subtype string) error {
+	autoRenew, status := computeRenewalState(sub.Status, ri, subtype, time.Now().Unix())
+	updates := map[string]any{}
+	if autoRenew != nil {
+		updates["auto_renew"] = *autoRenew
+	}
+	if status != "" {
+		updates["status"] = status
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	if err := getDB().Model(&Subscription{}).Where("id = ?", sub.ID).Updates(updates).Error; err != nil {
+		return err
+	}
+	log.Infof(ctx, "[applyRenewalInfo] sub %s autoRenew=%v status=%v (subtype=%s)",
+		sub.ProviderSubscriptionID, updates["auto_renew"], updates["status"], subtype)
+	return nil
 }
 
 // activeSubStatuses 视为"活跃"的状态：grace/billing_retry 也算活跃，避免在 Apple 仍在

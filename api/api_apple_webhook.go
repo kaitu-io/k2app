@@ -70,11 +70,21 @@ func api_apple_webhook(c *gin.Context) {
 	switch nType {
 	case appstore.NotificationType_DID_RENEW,
 		appstore.NotificationType_SUBSCRIBED,
-		appstore.NotificationType_OFFER_REDEEMED,
-		appstore.NotificationType_DID_CHANGE_RENEWAL_STATUS:
+		appstore.NotificationType_OFFER_REDEEMED:
 		// 复核当前交易并入账（绝对 expiresDate，幂等抬升）。
 		if err := verifyAndGrantTransaction(c, sub.UserID, asn.TransactionInfo.TransactionId); err != nil {
 			log.Errorf(c, "[AppleWebhook] grant failed otx=%s: %v", otx, err)
+			c.AbortWithStatus(500)
+			return
+		}
+
+	case appstore.NotificationType_DID_CHANGE_RENEWAL_STATUS,
+		appstore.NotificationType_DID_FAIL_TO_RENEW:
+		// 续订开关 / 计费状态变更（用户取消自动续订、扣费失败进入宽限或重试）。
+		// 关键：不 re-grant、不改用户权益到期——取消后用户仍享有到本周期结束，
+		// 真正到期由 EXPIRED 事件落地。仅把 auto_renew + status 落到订阅行。
+		if err := applyRenewalInfo(c, &sub, asn.RenewalInfo, asn.Payload.Subtype); err != nil {
+			log.Errorf(c, "[AppleWebhook] apply renewal info failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)
 			return
 		}

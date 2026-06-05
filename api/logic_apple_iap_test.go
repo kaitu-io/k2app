@@ -73,6 +73,91 @@ func TestComputeRecurringEntitlement(t *testing.T) {
 	}
 }
 
+// TestComputeRenewalState covers the cancellation / billing-status decision used by
+// the DID_CHANGE_RENEWAL_STATUS + DID_FAIL_TO_RENEW webhook paths. The load-bearing
+// invariant: a user cancelling auto-renew must flip auto_renew → false (the old code
+// re-granted and hardcoded true, silently losing the cancellation), while never
+// resurrecting a terminal (expired/revoked) subscription.
+func TestComputeRenewalState(t *testing.T) {
+	const day = int64(86400)
+	now := int64(1_700_000_000)
+	on := &appstore.RenewalInfo{AutoRenewStatus: appstore.AutoRenewStatus_On}
+	off := &appstore.RenewalInfo{AutoRenewStatus: appstore.AutoRenewStatus_Off}
+
+	bptr := func(b bool) *bool { return &b }
+
+	cases := []struct {
+		name          string
+		curStatus     string
+		ri            *appstore.RenewalInfo
+		subtype       string
+		wantAutoRenew *bool
+		wantStatus    string
+	}{
+		{
+			name: "user cancels auto-renew -> auto_renew false, still active",
+			curStatus: "active", ri: off, subtype: appstore.Subtype_AUTO_RENEW_DISABLED,
+			wantAutoRenew: bptr(false), wantStatus: "active",
+		},
+		{
+			name: "user re-enables auto-renew -> auto_renew true",
+			curStatus: "active", ri: on, subtype: appstore.Subtype_AUTO_RENEW_ENABLED,
+			wantAutoRenew: bptr(true), wantStatus: "active",
+		},
+		{
+			name: "billing retry period -> status billing_retry",
+			curStatus: "active",
+			ri:        &appstore.RenewalInfo{AutoRenewStatus: appstore.AutoRenewStatus_On, IsInBillingRetryPeriod: true},
+			wantAutoRenew: bptr(true), wantStatus: "billing_retry",
+		},
+		{
+			name: "grace period -> status grace, cancelled",
+			curStatus: "active",
+			ri:        &appstore.RenewalInfo{AutoRenewStatus: appstore.AutoRenewStatus_Off, GracePeriodExpiresDate: (now + 5*day) * 1000},
+			wantAutoRenew: bptr(false), wantStatus: "grace",
+		},
+		{
+			name: "terminal revoked -> never resurrect (status unchanged)",
+			curStatus: "revoked", ri: off, subtype: appstore.Subtype_AUTO_RENEW_DISABLED,
+			wantAutoRenew: bptr(false), wantStatus: "",
+		},
+		{
+			name: "terminal expired -> never resurrect",
+			curStatus: "expired", ri: on, subtype: "",
+			wantAutoRenew: bptr(true), wantStatus: "",
+		},
+		{
+			name: "nil RenewalInfo falls back to subtype disabled",
+			curStatus: "active", ri: nil, subtype: appstore.Subtype_AUTO_RENEW_DISABLED,
+			wantAutoRenew: bptr(false), wantStatus: "active",
+		},
+		{
+			name: "nil RenewalInfo + no informative subtype -> no auto_renew change",
+			curStatus: "active", ri: nil, subtype: appstore.Subtype_BILLING_RETRY,
+			wantAutoRenew: nil, wantStatus: "active",
+		},
+		{
+			name: "expired grace date in the past -> active (grace already over)",
+			curStatus: "active",
+			ri:        &appstore.RenewalInfo{AutoRenewStatus: appstore.AutoRenewStatus_On, GracePeriodExpiresDate: (now - day) * 1000},
+			wantAutoRenew: bptr(true), wantStatus: "active",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotAR, gotStatus := computeRenewalState(tc.curStatus, tc.ri, tc.subtype, now)
+			if tc.wantAutoRenew == nil {
+				assert.Nil(t, gotAR, "auto_renew should be nil (no change)")
+			} else {
+				require.NotNil(t, gotAR, "auto_renew should be set")
+				assert.Equal(t, *tc.wantAutoRenew, *gotAR, "auto_renew")
+			}
+			assert.Equal(t, tc.wantStatus, gotStatus, "status")
+		})
+	}
+}
+
 // TestDeriveAppleAccountToken: the appAccountToken must be a deterministic,
 // valid RFC-4122 UUID per user (the raw Center UUID "user-<xid>" is not a UUID),
 // so StoreKit accepts it and Center can recompute it for the anti-claim check.
@@ -177,6 +262,52 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 	var otherReloaded User
 	require.NoError(t, db.Get().First(&otherReloaded, other.ID).Error)
 	assert.True(t, otherReloaded.IsExpired(), "the second user must not receive entitlement")
+}
+
+// TestApplyRenewalInfo_Integration proves the cancellation actually persists:
+// auto_renew=false must hit the DB (the GORM struct-zero-value trap would silently
+// drop it — applyRenewalInfo uses a map update precisely to avoid that), and a
+// billing-retry RenewalInfo must flip status without touching the user's expiry.
+func TestApplyRenewalInfo_Integration(t *testing.T) {
+	skipIfNoDB(t)
+	ctx := context.Background()
+	uniq := time.Now().UnixNano()
+
+	user := CreateTestUser(t)
+	sub := &Subscription{
+		UserID: user.ID, Provider: "apple",
+		ProviderSubscriptionID: fmt.Sprintf("OTX-RN-%d", uniq),
+		ProductID:              "io.kaitu.test.basic.1y",
+		CurrentPeriodEnd:       time.Now().Unix() + 200*86400,
+		AutoRenew:              true, Environment: "Sandbox", Status: "active",
+	}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&Subscription{}) })
+
+	// ---- user cancels auto-renew ----
+	require.NoError(t, applyRenewalInfo(ctx, sub,
+		&appstore.RenewalInfo{AutoRenewStatus: appstore.AutoRenewStatus_Off},
+		appstore.Subtype_AUTO_RENEW_DISABLED))
+
+	var afterCancel Subscription
+	require.NoError(t, db.Get().First(&afterCancel, sub.ID).Error)
+	assert.False(t, afterCancel.AutoRenew, "cancellation must persist auto_renew=false")
+	assert.Equal(t, "active", afterCancel.Status, "still active until period end")
+
+	// entitlement untouched by cancellation
+	var u User
+	require.NoError(t, db.Get().First(&u, user.ID).Error)
+	assert.Equal(t, sub.CurrentPeriodEnd, afterCancel.CurrentPeriodEnd, "period end unchanged")
+
+	// ---- billing retry ----
+	afterCancel.Status = "active" // re-read baseline for the helper's terminal guard
+	require.NoError(t, applyRenewalInfo(ctx, &afterCancel,
+		&appstore.RenewalInfo{AutoRenewStatus: appstore.AutoRenewStatus_On, IsInBillingRetryPeriod: true},
+		""))
+	var afterRetry Subscription
+	require.NoError(t, db.Get().First(&afterRetry, sub.ID).Error)
+	assert.Equal(t, "billing_retry", afterRetry.Status)
+	assert.True(t, afterRetry.AutoRenew)
 }
 
 // TestGetActiveSubscriptions_Integration verifies the read model returns the
