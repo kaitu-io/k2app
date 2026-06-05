@@ -34,19 +34,19 @@ func deriveAppleAccountToken(userUUID string) string {
 	return uuid.NewSHA1(appleAccountNS, []byte(userUUID)).String()
 }
 
-// computeAppleEntitlement 纯函数：给定用户当前到期(unix 秒)、Apple 绝对到期(unix 秒)、
-// now(unix 秒)，返回新的到期时间、用于审计的净增天数、是否推进。
-// Apple 自动续订订阅以绝对 expiresDate 为真相之源：只抬升、绝不缩短（幂等）。
-func computeAppleEntitlement(currentExpiredAt, appleExpiresSec, nowSec int64) (newExpiredAt int64, auditDays int, advanced bool) {
-	if appleExpiresSec <= currentExpiredAt {
+// computeRecurringEntitlement 纯函数：给定用户当前到期(unix 秒)、续订周期绝对到期(unix 秒)、
+// now(unix 秒)，返回新到期、审计净增天数、是否推进。续订型以绝对周期到期为真相源：
+// 只抬升、绝不缩短（幂等）。provider 无关。
+func computeRecurringEntitlement(currentExpiredAt, periodEndSec, nowSec int64) (newExpiredAt int64, auditDays int, advanced bool) {
+	if periodEndSec <= currentExpiredAt {
 		return currentExpiredAt, 0, false
 	}
 	base := currentExpiredAt
 	if base < nowSec {
 		base = nowSec
 	}
-	days := int((appleExpiresSec - base) / 86400)
-	return appleExpiresSec, days, true
+	days := int((periodEndSec - base) / 86400)
+	return periodEndSec, days, true
 }
 
 // planByAppleProductID 按 Apple 商品ID 查套餐；找不到即拒绝入账（未知商品）。
@@ -58,21 +58,21 @@ func planByAppleProductID(ctx context.Context, tx *gorm.DB, productID string) (*
 	return &plan, nil
 }
 
-// upsertAppleSubscription 按 originalTransactionId upsert 订阅行。
-// 关键安全约束：已存在时绝不修改 UserID（first-write-wins），防止伪造/重放事件改归属。
-// 在事务内调用，对订阅行加 FOR UPDATE。
-func upsertAppleSubscription(ctx context.Context, tx *gorm.DB, in *AppleSubscription) (*AppleSubscription, error) {
-	var existing AppleSubscription
+// upsertSubscription 按 (provider, provider_subscription_id) upsert 订阅行。
+// 关键安全约束：已存在时绝不修改 UserID（first-write-wins），防伪造/重放改归属。
+// 事务内调用，对订阅行加 FOR UPDATE。
+func upsertSubscription(ctx context.Context, tx *gorm.DB, in *Subscription) (*Subscription, error) {
+	var existing Subscription
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(&AppleSubscription{OriginalTransactionID: in.OriginalTransactionID}).
+		Where(&Subscription{Provider: in.Provider, ProviderSubscriptionID: in.ProviderSubscriptionID}).
 		First(&existing).Error
 	if err == nil {
 		existing.ProductID = in.ProductID
-		existing.LastTransactionID = in.LastTransactionID
-		if in.ExpiresDate > existing.ExpiresDate {
-			existing.ExpiresDate = in.ExpiresDate
+		existing.ProviderLatestRef = in.ProviderLatestRef
+		if in.CurrentPeriodEnd > existing.CurrentPeriodEnd {
+			existing.CurrentPeriodEnd = in.CurrentPeriodEnd
 		}
-		existing.AutoRenewStatus = in.AutoRenewStatus
+		existing.AutoRenew = in.AutoRenew
 		existing.Environment = in.Environment
 		if in.Status != "" {
 			existing.Status = in.Status
@@ -94,31 +94,28 @@ func upsertAppleSubscription(ctx context.Context, tx *gorm.DB, in *AppleSubscrip
 	return in, nil
 }
 
-// applyAppleSubscription 用 Apple 绝对 expiresDate 抬升用户权益（max 语义，幂等）。
-// 在事务内调用，对用户行加 FOR UPDATE。
-func applyAppleSubscription(ctx context.Context, tx *gorm.DB, sub *AppleSubscription) error {
+// applyRecurringSubscription 用续订周期绝对到期抬升用户权益（max 语义，幂等）。
+// 事务内调用，对用户行加 FOR UPDATE。
+func applyRecurringSubscription(ctx context.Context, tx *gorm.DB, sub *Subscription) error {
 	var user User
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, sub.UserID).Error; err != nil {
 		return fmt.Errorf("lock user %d: %w", sub.UserID, err)
 	}
 
-	appleExpiry := sub.ExpiresDate / 1000 // ms → s
-	newExpiry, auditDays, advanced := computeAppleEntitlement(user.ExpiredAt, appleExpiry, time.Now().Unix())
+	newExpiry, auditDays, advanced := computeRecurringEntitlement(user.ExpiredAt, sub.CurrentPeriodEnd, time.Now().Unix())
 	if !advanced {
-		log.Debugf(ctx, "[applyAppleSubscription] user %d no advance (apple=%d <= current=%d)",
-			user.ID, appleExpiry, user.ExpiredAt)
+		log.Debugf(ctx, "[applyRecurringSubscription] user %d no advance (periodEnd=%d <= current=%d)",
+			user.ID, sub.CurrentPeriodEnd, user.ExpiredAt)
 		return nil
 	}
 
 	user.ExpiredAt = newExpiry
-	// 首单：写 tier
 	if user.IsFirstOrderDone == nil || !*user.IsFirstOrderDone {
 		if plan, _ := planByAppleProductID(ctx, tx, sub.ProductID); plan != nil && plan.Tier != "" {
 			user.Tier = plan.Tier
 		}
 		user.IsFirstOrderDone = BoolPtr(true)
 	}
-	// 付费自动激活
 	if user.IsActivated == nil || !*user.IsActivated {
 		user.IsActivated = BoolPtr(true)
 		user.ActivatedAt = time.Now().Unix()
@@ -132,14 +129,14 @@ func applyAppleSubscription(ctx context.Context, tx *gorm.DB, sub *AppleSubscrip
 		Type:        VipAppleSub,
 		ReferenceID: sub.ID,
 		Days:        auditDays,
-		Reason:      fmt.Sprintf("Apple 订阅入账 - %s", sub.OriginalTransactionID),
+		Reason:      fmt.Sprintf("%s 订阅入账 - %s", sub.Provider, sub.ProviderSubscriptionID),
 	}
 	if err := tx.Create(history).Error; err != nil {
 		return fmt.Errorf("write pro history: %w", err)
 	}
 
-	log.Infof(ctx, "[applyAppleSubscription] user %d expiry → %s (+%dd) via apple sub %s",
-		user.ID, time.Unix(newExpiry, 0).Format("2006-01-02"), auditDays, sub.OriginalTransactionID)
+	log.Infof(ctx, "[applyRecurringSubscription] user %d expiry → %s (+%dd) via %s sub %s",
+		user.ID, time.Unix(newExpiry, 0).Format("2006-01-02"), auditDays, sub.Provider, sub.ProviderSubscriptionID)
 	return nil
 }
 
@@ -171,38 +168,38 @@ func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID
 	}
 
 	return withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
-		// 必须能映射到套餐（拒绝未知商品）
 		if _, err := planByAppleProductID(ctx, tx, info.ProductId); err != nil {
 			return err
 		}
-		sub, err := upsertAppleSubscription(ctx, tx, &AppleSubscription{
-			UserID:                userID,
-			OriginalTransactionID: info.OriginalTransactionId,
-			ProductID:             info.ProductId,
-			LastTransactionID:     info.TransactionId,
-			ExpiresDate:           info.ExpiresDate,
-			Environment:           info.Environment,
-			Status:                "active",
+		sub, err := upsertSubscription(ctx, tx, &Subscription{
+			UserID:                 userID,
+			Provider:               "apple",
+			ProviderSubscriptionID: info.OriginalTransactionId,
+			ProductID:              info.ProductId,
+			ProviderLatestRef:      info.TransactionId,
+			CurrentPeriodEnd:       info.ExpiresDate / 1000, // Apple ms → s 归一
+			AutoRenew:              true,                     // 入账即自动续订（best-effort；DID_CHANGE_RENEWAL_STATUS 后续修正）
+			Environment:            info.Environment,
+			Status:                 "active",
 		})
 		if err != nil {
 			return err
 		}
-		return applyAppleSubscription(ctx, tx, sub)
+		return applyRecurringSubscription(ctx, tx, sub)
 	})
 }
 
-// revokeAppleSubscription 处理 REFUND/REVOKE：撤销 Apple 授予的权益。
-// 保守回收：仅当用户当前到期落在本订阅的 Apple 到期窗口内（即由本订阅"撑着"）时才扣到 now，
-// 避免误伤 WordGate 叠加的时长。已知简化：双源重叠时不做精确分账（v1 接受，见 plan）。
-func revokeAppleSubscription(ctx context.Context, sub *AppleSubscription) error {
+// revokeSubscription 处理 REFUND/REVOKE：撤销续订授予的权益。保守回收：仅当用户当前到期
+// 落在本订阅周期窗口内（由本订阅"撑着"）时才扣到 now，避免误伤叠加的一次性时长。
+// 已知简化：双源重叠时不做精确分账（v1 接受，见 spec §9）。
+func revokeSubscription(ctx context.Context, sub *Subscription) error {
 	return getDB().Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, sub.UserID).Error; err != nil {
 			return err
 		}
 		now := time.Now().Unix()
-		appleExpiry := sub.ExpiresDate / 1000
-		if user.ExpiredAt > now && user.ExpiredAt <= appleExpiry {
+		if user.ExpiredAt > now && user.ExpiredAt <= sub.CurrentPeriodEnd {
 			cutDays := int((user.ExpiredAt - now) / 86400)
 			user.ExpiredAt = now
 			if err := tx.Model(&user).Select("ExpiredAt").Updates(&user).Error; err != nil {
@@ -213,13 +210,13 @@ func revokeAppleSubscription(ctx context.Context, sub *AppleSubscription) error 
 				Type:        VipRefund,
 				ReferenceID: sub.ID,
 				Days:        -cutDays,
-				Reason:      fmt.Sprintf("Apple 退款/撤销 - %s", sub.OriginalTransactionID),
+				Reason:      fmt.Sprintf("%s 退款/撤销 - %s", sub.Provider, sub.ProviderSubscriptionID),
 			}).Error; err != nil {
 				return err
 			}
-			log.Infof(ctx, "[revokeAppleSubscription] user %d entitlement clawed back (-%dd) for apple sub %s",
-				user.ID, cutDays, sub.OriginalTransactionID)
+			log.Infof(ctx, "[revokeSubscription] user %d entitlement clawed back (-%dd) for %s sub %s",
+				user.ID, cutDays, sub.Provider, sub.ProviderSubscriptionID)
 		}
-		return tx.Model(&AppleSubscription{}).Where("id = ?", sub.ID).Update("status", "revoked").Error
+		return tx.Model(&Subscription{}).Where("id = ?", sub.ID).Update("status", "revoked").Error
 	})
 }

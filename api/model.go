@@ -642,22 +642,27 @@ type Plan struct {
 	AppleProductID string `gorm:"column:apple_product_id;type:varchar(255);index" json:"appleProductId,omitempty"`
 }
 
-// AppleSubscription 记录一条 Apple 自动续订订阅链（按 originalTransactionId 唯一）。
-// user_id 在首次（已鉴权的）verify 时绑定，之后不变（first-write-wins，防伪造改归属）。
-// 权益由 ExpiresDate 驱动（绝对到期，毫秒）。LastNotificationUUID 提供 webhook 幂等。
-type AppleSubscription struct {
-	ID                    uint64    `gorm:"primarykey" json:"id"`
-	CreatedAt             time.Time `json:"createdAt"`
-	UpdatedAt             time.Time `json:"updatedAt"`
-	UserID                uint64    `gorm:"column:user_id;not null;index" json:"userId"`
-	OriginalTransactionID string    `gorm:"column:original_transaction_id;type:varchar(64);not null;uniqueIndex" json:"originalTransactionId"`
-	ProductID             string    `gorm:"column:product_id;type:varchar(255);not null" json:"productId"`
-	LastTransactionID     string    `gorm:"column:last_transaction_id;type:varchar(64)" json:"lastTransactionId"`
-	ExpiresDate           int64     `gorm:"column:expires_date" json:"expiresDate"` // Apple 绝对到期时间（unix 毫秒）
-	AutoRenewStatus       int32     `gorm:"column:auto_renew_status" json:"autoRenewStatus"`
-	Environment           string    `gorm:"column:environment;type:varchar(16)" json:"environment"`
-	Status                string    `gorm:"column:status;type:varchar(24)" json:"status"` // active|expired|revoked
-	LastNotificationUUID  string    `gorm:"column:last_notification_uuid;type:varchar(64)" json:"-"`
+// Subscription 是 provider 中立的"续订型"订阅记录（Apple IAP 今天；Stripe/Google 将来）。
+// 续订型语义统一，故单表 + provider 区分。叠加型一次性付款不在此表（仅体现在 user.ExpiredAt）。
+type Subscription struct {
+	ID        uint64    `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	UserID    uint64    `gorm:"column:user_id;not null;index" json:"userId"`
+	// Provider 标识续订来源：'apple' | 'stripe' | 'google' ...
+	Provider string `gorm:"column:provider;type:varchar(16);not null;default:'apple';uniqueIndex:uniq_provider_sub" json:"provider"`
+	// ProviderSubscriptionID 是该 provider 下稳定的订阅标识（Apple: originalTransactionId）。
+	ProviderSubscriptionID string `gorm:"column:provider_subscription_id;type:varchar(64);not null;uniqueIndex:uniq_provider_sub" json:"providerSubscriptionId"`
+	ProductID              string `gorm:"column:product_id;type:varchar(255);not null" json:"productId"`
+	// ProviderLatestRef 最近一笔交易/事件引用（Apple: transactionId）。
+	ProviderLatestRef string `gorm:"column:provider_latest_ref;type:varchar(64)" json:"providerLatestRef"`
+	// CurrentPeriodEnd 当前周期绝对到期时间（unix 秒，已归一；Apple ms 在适配器除以 1000）。
+	CurrentPeriodEnd int64  `gorm:"column:current_period_end" json:"currentPeriodEnd"`
+	AutoRenew        bool   `gorm:"column:auto_renew" json:"autoRenew"`
+	Environment      string `gorm:"column:environment;type:varchar(16)" json:"environment"`
+	Status           string `gorm:"column:status;type:varchar(24)" json:"status"` // active|grace|billing_retry|expired|revoked
+	// LastEventID webhook 幂等（Apple: notificationUUID；Stripe: event id）。
+	LastEventID string `gorm:"column:last_event_id;type:varchar(64)" json:"-"`
 }
 
 // EmailMarketingTemplate EDM多语言邮件模板模型
