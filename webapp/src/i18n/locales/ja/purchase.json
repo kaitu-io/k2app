@@ -4,6 +4,7 @@
       "title": "サブスクリプション",
       "autoRenewalDisclosure": "サブスクリプションは自動更新されます。購入時に Apple ID へ課金され、解約しない限り各期間終了の 24 時間前までに同額で自動更新されます。App Store のアカウント設定からいつでも管理・解約できます。",
       "subscribeNow": "今すぐ登録",
+      "loginToSubscribe": "ログインして登録",
       "subscribe": "登録中…",
       "restorePurchases": "購入を復元",
       "restoring": "復元中…",

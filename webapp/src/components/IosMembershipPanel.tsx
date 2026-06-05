@@ -22,7 +22,7 @@ const APPLE_SUBS_URL = 'itms-apps://apps.apple.com/account/subscriptions';
  * 绝不出现购买/外链支付（满足 Apple 3.1.1）。
  *
  * Restore Purchases 在两种模式下都常驻：Apple 要求恢复购买入口始终可达，且与
- * affordance 无关（re-verify 幂等、绝不双扣）。本面板早返替代了 IapPurchaseSheet，
+ * affordance 无关（re-verify 幂等、绝不双扣）。本面板（manage/status）与 IosSubscribePanel（subscribe）一起取代了旧购买弹窗，
  * 故 restore 必须在此自带，否则 manage/status 模式下用户无从恢复购买（再次拒审风险）。
  */
 export default function IosMembershipPanel({ mode, expiredAt, manageSurface }: IosMembershipPanelProps) {

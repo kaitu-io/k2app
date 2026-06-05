@@ -9,18 +9,6 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// Mock MUI Dialog to avoid ModalManager jsdom incompatibility.
-vi.mock('@mui/material', async () => {
-  const actual = await vi.importActual<typeof import('@mui/material')>('@mui/material');
-  return {
-    ...actual,
-    Dialog: ({ open, children }: any) => (open ? <div role="dialog">{children}</div> : null),
-    DialogTitle: ({ children }: any) => <div>{children}</div>,
-    DialogContent: ({ children }: any) => <div>{children}</div>,
-    DialogActions: ({ children }: any) => <div>{children}</div>,
-  };
-});
-
 vi.mock('../../hooks/useAppLinks', () => ({
   useAppLinks: () => ({
     links: {
@@ -36,6 +24,20 @@ vi.mock('../../hooks/useAppLinks', () => ({
 const mockShowAlert = vi.fn();
 vi.mock('../../stores/alert.store', () => ({
   useAlert: () => ({ showAlert: mockShowAlert }),
+}));
+
+const mockFetchUser = vi.fn();
+vi.mock('../../hooks/useUser', () => ({
+  useUser: () => ({ fetchUser: mockFetchUser }),
+}));
+
+// Stub child components — irrelevant to subscribe-flow assertions, and they pull
+// in heavy stores (EmailLoginForm) / icons (MembershipBenefits).
+vi.mock('../MembershipBenefits', () => ({
+  default: () => <div data-testid="membership-benefits" />,
+}));
+vi.mock('../EmailLoginForm', () => ({
+  default: () => <div data-testid="email-login-form" />,
 }));
 
 const mockRestore = vi.fn();
@@ -61,7 +63,7 @@ function makeProduct() {
   };
 }
 
-import IapPurchaseSheet from '../IapPurchaseSheet';
+import IosSubscribePanel from '../IosSubscribePanel';
 
 function defaultHookState() {
   return {
@@ -78,7 +80,19 @@ function defaultHookState() {
   };
 }
 
-describe('IapPurchaseSheet', () => {
+function renderPanel(props: Partial<React.ComponentProps<typeof IosSubscribePanel>> = {}) {
+  return render(
+    <IosSubscribePanel
+      isAuthenticated
+      accountToken="tok"
+      isMembership
+      isExpired={false}
+      {...props}
+    />,
+  );
+}
+
+describe('IosSubscribePanel', () => {
   let originalPlatform: any;
 
   beforeEach(() => {
@@ -88,6 +102,7 @@ describe('IapPurchaseSheet', () => {
     mockPurchase.mockReset();
     mockLoadProducts.mockReset();
     mockShowAlert.mockReset();
+    mockFetchUser.mockReset();
     hookState = defaultHookState();
   });
 
@@ -96,42 +111,38 @@ describe('IapPurchaseSheet', () => {
     vi.clearAllMocks();
   });
 
-  it('renders when open', () => {
-    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
-    expect(screen.getByRole('dialog')).toBeDefined();
-  });
-
-  it('not rendered when open=false', () => {
-    render(<IapPurchaseSheet open={false} onClose={vi.fn()} accountToken="tok" />);
+  it('renders inline (no dialog) and loads products on mount', () => {
+    renderPanel();
+    expect(screen.getByTestId('ios-subscribe-panel')).toBeDefined();
     expect(screen.queryByRole('dialog')).toBeNull();
+    expect(mockLoadProducts).toHaveBeenCalled();
   });
 
-  it('Restore Purchases button present and calls restore', () => {
-    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
-    const btn = screen.getByText('purchase:purchase.iap.restorePurchases');
-    fireEvent.click(btn);
+  it('Restore Purchases present and calls restore', () => {
+    renderPanel();
+    fireEvent.click(screen.getByText('purchase:purchase.iap.restorePurchases'));
     expect(mockRestore).toHaveBeenCalled();
   });
 
-  it('ToS + Privacy links present (mandate guard)', () => {
-    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
+  it('ToS + Privacy links present (Apple mandate guard)', () => {
+    renderPanel();
     expect(screen.getByText('purchase:purchase.iap.terms')).toBeDefined();
     expect(screen.getByText('purchase:purchase.iap.privacy')).toBeDefined();
   });
 
-  it('auto-renewal disclosure present (mandate guard)', () => {
-    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
+  it('auto-renewal disclosure present (Apple mandate guard)', () => {
+    renderPanel();
     expect(screen.getByTestId('iap-auto-renewal-disclosure')).toBeDefined();
   });
 
   it('Manage Subscription present', () => {
-    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
+    renderPanel();
     expect(screen.getByText('purchase:purchase.iap.manageSubscription')).toBeDefined();
   });
 
   it('does not use window.confirm', () => {
     const confirmSpy = vi.spyOn(window, 'confirm');
-    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
+    renderPanel();
     fireEvent.click(screen.getByText('purchase:purchase.iap.restorePurchases'));
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
@@ -139,8 +150,7 @@ describe('IapPurchaseSheet', () => {
 
   it('renders a single product row driven by the StoreKit product', () => {
     hookState = { ...defaultHookState(), products: [makeProduct()] };
-    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
-    // Exactly one product row, identified by the single product id.
+    renderPanel();
     const rows = screen.getAllByTestId(/^iap-product-/);
     expect(rows).toHaveLength(1);
     expect(screen.getByTestId(`iap-product-${BASIC_1Y}`)).toBeDefined();
@@ -151,16 +161,39 @@ describe('IapPurchaseSheet', () => {
 
   it('falls back to a single placeholder row when products are empty', () => {
     hookState = { ...defaultHookState(), products: [] };
-    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
+    renderPanel();
     const rows = screen.getAllByTestId(/^iap-product-/);
     expect(rows).toHaveLength(1);
     expect(screen.getByTestId(`iap-product-${BASIC_1Y}`)).toBeDefined();
   });
 
-  it('Subscribe purchases the single basic.1y product', () => {
+  it('Subscribe purchases the single basic.1y product with the account token', () => {
     hookState = { ...defaultHookState(), products: [makeProduct()] };
-    render(<IapPurchaseSheet open onClose={vi.fn()} accountToken="tok" />);
-    fireEvent.click(screen.getByText('purchase:purchase.iap.subscribeNow'));
+    renderPanel();
+    fireEvent.click(screen.getByTestId('iap-subscribe-btn'));
     expect(mockPurchase).toHaveBeenCalledWith(BASIC_1Y, 'tok');
+  });
+
+  it('does NOT show the multi-plan / WordGate list (single product only)', () => {
+    hookState = { ...defaultHookState(), products: [makeProduct()] };
+    renderPanel();
+    // Center plan rows are testid-less Cards with promo/total fields; the IAP
+    // panel exposes exactly one product row and no "select plan" affordance.
+    expect(screen.getAllByTestId(/^iap-product-/)).toHaveLength(1);
+    expect(screen.queryByText('purchase:purchase.selectPlan')).toBeNull();
+  });
+
+  describe('unauthenticated prospect (subscribe mode, no account)', () => {
+    it('shows the inline login form and gates the subscribe button', () => {
+      hookState = { ...defaultHookState(), products: [makeProduct()] };
+      renderPanel({ isAuthenticated: false, accountToken: '' });
+      // Login form is shown inline (no dialog, no redirect).
+      expect(screen.getByTestId('email-login-form')).toBeDefined();
+      // Button shows the login-first label and does not trigger a purchase.
+      const btn = screen.getByTestId('iap-subscribe-btn');
+      expect(screen.getByText('purchase:purchase.iap.loginToSubscribe')).toBeDefined();
+      fireEvent.click(btn);
+      expect(mockPurchase).not.toHaveBeenCalled();
+    });
   });
 });

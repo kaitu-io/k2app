@@ -4,6 +4,7 @@
       "title": "订阅会员",
       "autoRenewalDisclosure": "订阅为自动续订。购买后将通过你的 Apple ID 收费，并在每个订阅周期结束前 24 小时内按相同价格自动续订，除非提前取消。你可随时在 App Store 账户设置中管理或取消订阅。",
       "subscribeNow": "立即订阅",
+      "loginToSubscribe": "登录后订阅",
       "subscribe": "订阅中…",
       "restorePurchases": "恢复购买",
       "restoring": "恢复中…",

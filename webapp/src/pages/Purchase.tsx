@@ -28,7 +28,7 @@ import { ERROR_CODES, getErrorMessage } from "../utils/errorCode";
 import { LoadingState, EmptyPlans } from '../components/LoadingAndEmpty';
 import MembershipBenefits from '../components/MembershipBenefits';
 import EmailLoginForm from '../components/EmailLoginForm';
-import IapPurchaseSheet from '../components/IapPurchaseSheet';
+import IosSubscribePanel from '../components/IosSubscribePanel';
 import IosMembershipPanel from '../components/IosMembershipPanel';
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import {
@@ -551,9 +551,10 @@ export default function Purchase() {
   const [isLoading, setIsLoading] = useState(false);
   const [campaignError, setCampaignError] = useState<string>("");
   const [payDialogOpen, setPayDialogOpen] = useState(false);
-  // iOS StoreKit IAP: when present, purchase routes to the native sheet instead
-  // of the external WordGate link (Apple 3.1.1 — no external payment on iOS).
-  const [iapSheetOpen, setIapSheetOpen] = useState(false);
+  // iOS StoreKit IAP: when present, the whole purchase screen is replaced by the
+  // inline IosSubscribePanel / IosMembershipPanel (Apple 3.1.1 — no external
+  // payment, single auto-renewable product, no multi-plan list). The WordGate
+  // order/preview flow below never runs on iOS.
   const iap = window._platform?.iap;
   const affordance = useSubscriptionAffordance();
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
@@ -639,16 +640,11 @@ export default function Purchase() {
         setOrderData(order);
         setCampaignError(""); // 清除之前的错误
         
-        // 只有非预览模式才进行支付相关操作
-        // 能力门控：iOS 注入了 iap → 走原生 StoreKit 面板，绝不开外链（Apple 3.1.1）。
-        // 其余平台（web / desktop / Android）保持原有 WordGate 外链路径不变。
-        if (!preview) {
-          if (iap) {
-            setIapSheetOpen(true);
-          } else if (payUrl) {
-            setPayDialogOpen(true);
-            window._platform!.openExternal?.(payUrl);
-          }
+        // 只有非预览模式才进行支付相关操作。iOS 不会走到这里（整页被 IAP 面板替代），
+        // 其余平台（web / desktop / Android）保持原有 WordGate 外链路径。
+        if (!preview && payUrl) {
+          setPayDialogOpen(true);
+          window._platform!.openExternal?.(payUrl);
         }
       } else {
         // 统一错误处理逻辑
@@ -700,7 +696,7 @@ export default function Purchase() {
     } finally {
       setIsLoading(false);
     }
-  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog, user, iap]);
+  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog, user]);
 
   // 用于标记是否已选择过默认套餐（避免 plan 变化触发重新获取套餐列表）
   const defaultPlanSelectedRef = useRef(false);
@@ -848,14 +844,33 @@ export default function Purchase() {
     navigate('/pro-histories?type=recharge&from=/purchase');
   };
 
-  // iOS 订阅轨：manage/status 模式不进入购买流（不建 WordGate 订单），直接给会员面板。
-  // subscribe 模式（含未登录潜客）继续走下方正常套餐/购买 UI。
-  if (iap && affordance.mode !== 'subscribe') {
+  // iOS 订阅轨完全绕开 WordGate 多套餐购买流（单一自动续订商品，Apple 3.1.1）。
+  //   - manage/status → 会员面板（管理订阅 / 显示到期）。
+  //   - subscribe（含未登录潜客）→ 内联订阅面板：权益 + 单一商品 + 订阅按钮，无弹窗。
+  if (iap) {
+    if (affordance.mode !== 'subscribe') {
+      return (
+        <IosMembershipPanel
+          mode={affordance.mode as 'manage' | 'status'}
+          expiredAt={user?.expiredAt ?? 0}
+          manageSurface={affordance.activeSub?.manage}
+        />
+      );
+    }
+    // 单一 basic 商品的权益上限（各时长一致）；缺数据时 MembershipBenefits 走默认值。
+    const iapPlan =
+      plans.find((p) => p.tier === 'basic') ??
+      plans.find((p) => p.pid === plan) ??
+      plans[0];
     return (
-      <IosMembershipPanel
-        mode={affordance.mode as 'manage' | 'status'}
-        expiredAt={user?.expiredAt ?? 0}
-        manageSurface={affordance.activeSub?.manage}
+      <IosSubscribePanel
+        isAuthenticated={isAuthenticated}
+        accountToken={user?.appleAccountToken ?? ''}
+        isMembership={isMembership}
+        isExpired={isExpired}
+        maxDevice={iapPlan?.maxDevice}
+        maxRouterDevice={iapPlan?.maxRouterDevice}
+        maxLanClient={iapPlan?.maxLanClient}
       />
     );
   }
@@ -1157,15 +1172,6 @@ export default function Purchase() {
           onSuccess={handlePaySuccess}
           onFail={handlePayFail}
         />
-
-        {/* iOS StoreKit IAP 面板（仅 iap 存在时渲染） */}
-        {iap && (
-          <IapPurchaseSheet
-            open={iapSheetOpen}
-            onClose={() => setIapSheetOpen(false)}
-            accountToken={user?.appleAccountToken ?? ''}
-          />
-        )}
       </Stack>
     </Box>
   );
