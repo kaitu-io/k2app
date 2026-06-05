@@ -58,8 +58,11 @@ function AppRoutes() {
           {window._platform?.platformType === 'gateway' && <Route path="router" element={null} />}
 
           {/* Non-Tab routes */}
-          {/* Purchase 移出 keep-alive，每次访问重新渲染（避免与 LoginRequiredGuard 冲突） */}
-          {window._platform?.os !== 'ios' && (
+          {/* Purchase 移出 keep-alive，每次访问重新渲染（避免与 LoginRequiredGuard 冲突）。
+              iOS 仅在原生 StoreKit IAP 能力缺失时不注册此路由（与 Bottom/SideNavigation
+              的入口门控一致）；IAP 已注入 → 注册路由，Purchase 页走 IapPurchaseSheet。
+              注意：必须与 nav 入口同条件，否则入口可见但路由未注册 → 空 Outlet 黑屏。 */}
+          {!(window._platform?.os === 'ios' && !window._platform?.iap) && (
             <Route path="purchase" element={<Purchase />} />
           )}
           <Route path="tunnels" element={<Tunnels />} />
