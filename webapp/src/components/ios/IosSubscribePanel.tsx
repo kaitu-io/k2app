@@ -34,13 +34,13 @@ import {
   Warning as WarningIcon,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import { useIapPurchase, IAP_PRODUCT_IDS } from '../hooks/useIapPurchase';
-import { useAppLinks } from '../hooks/useAppLinks';
-import { useUser } from '../hooks/useUser';
-import { useAlert } from '../stores/alert.store';
-import { getThemeColors } from '../theme/colors';
-import MembershipBenefits from './MembershipBenefits';
-import EmailLoginForm from './EmailLoginForm';
+import { useIapPurchase, IAP_PRODUCT_IDS } from '../../hooks/useIapPurchase';
+import { useAppLinks } from '../../hooks/useAppLinks';
+import { useUser } from '../../hooks/useUser';
+import { useAlert } from '../../stores/alert.store';
+import { getThemeColors } from '../../theme/colors';
+import MembershipBenefits from '../MembershipBenefits';
+import EmailLoginForm from '../EmailLoginForm';
 
 interface IosSubscribePanelProps {
   /** 是否已登录（决定先登录还是可直接订阅）。 */

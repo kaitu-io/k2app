@@ -28,8 +28,7 @@ import { ERROR_CODES, getErrorMessage } from "../utils/errorCode";
 import { LoadingState, EmptyPlans } from '../components/LoadingAndEmpty';
 import MembershipBenefits from '../components/MembershipBenefits';
 import EmailLoginForm from '../components/EmailLoginForm';
-import IosSubscribePanel from '../components/IosSubscribePanel';
-import IosMembershipPanel from '../components/IosMembershipPanel';
+import { IosSubscribePanel, IosMembershipPanel } from '../components/ios';
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import {
   Warning as WarningIcon,
@@ -852,8 +851,7 @@ export default function Purchase() {
       return (
         <IosMembershipPanel
           mode={affordance.mode as 'manage' | 'status'}
-          expiredAt={user?.expiredAt ?? 0}
-          manageSurface={affordance.activeSub?.manage}
+          activeSub={affordance.activeSub}
         />
       );
     }

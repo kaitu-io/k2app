@@ -9,7 +9,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../../hooks/useAppLinks', () => ({
+vi.mock('../../../hooks/useAppLinks', () => ({
   useAppLinks: () => ({
     links: {
       termsOfServiceUrl: 'https://kaitu.io/terms',
@@ -22,21 +22,21 @@ vi.mock('../../hooks/useAppLinks', () => ({
 }));
 
 const mockShowAlert = vi.fn();
-vi.mock('../../stores/alert.store', () => ({
+vi.mock('../../../stores/alert.store', () => ({
   useAlert: () => ({ showAlert: mockShowAlert }),
 }));
 
 const mockFetchUser = vi.fn();
-vi.mock('../../hooks/useUser', () => ({
+vi.mock('../../../hooks/useUser', () => ({
   useUser: () => ({ fetchUser: mockFetchUser }),
 }));
 
 // Stub child components — irrelevant to subscribe-flow assertions, and they pull
 // in heavy stores (EmailLoginForm) / icons (MembershipBenefits).
-vi.mock('../MembershipBenefits', () => ({
+vi.mock('../../MembershipBenefits', () => ({
   default: () => <div data-testid="membership-benefits" />,
 }));
-vi.mock('../EmailLoginForm', () => ({
+vi.mock('../../EmailLoginForm', () => ({
   default: () => <div data-testid="email-login-form" />,
 }));
 
@@ -44,7 +44,7 @@ const mockRestore = vi.fn();
 const mockPurchase = vi.fn();
 const mockLoadProducts = vi.fn();
 let hookState: any;
-vi.mock('../../hooks/useIapPurchase', () => ({
+vi.mock('../../../hooks/useIapPurchase', () => ({
   IAP_PRODUCT_IDS: ['io.kaitu.sub.basic.1y'],
   useIapPurchase: () => hookState,
 }));
