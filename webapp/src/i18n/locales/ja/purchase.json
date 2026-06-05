@@ -15,7 +15,12 @@
       "purchaseFailed": "購入に失敗しました。もう一度お試しください。",
       "verifyFailed": "購入を確認できませんでした。もう一度お試しください。",
       "restoreFailed": "購入の復元に失敗しました。もう一度お試しください。",
-      "nothingToRestore": "復元できる購入はありません。"
+      "nothingToRestore": "復元できる購入はありません。",
+      "manageTitle": "サブスクリプションの管理",
+      "manageBody": "サブスクリプションは App Store で管理されています。更新日の確認や解約は設定から行えます。",
+      "statusTitle": "メンバーシップ",
+      "statusBody": "メンバーシップは {{date}} まで有効です。",
+      "openManage": "管理する"
     },
     "title": "プランを購入",
     "memberBenefits": "会員特典",

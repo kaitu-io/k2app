@@ -15,7 +15,12 @@
       "purchaseFailed": "购买失败，请稍后重试。",
       "verifyFailed": "无法验证你的购买，请稍后重试。",
       "restoreFailed": "恢复购买失败，请稍后重试。",
-      "nothingToRestore": "没有可恢复的购买。"
+      "nothingToRestore": "没有可恢复的购买。",
+      "manageTitle": "管理订阅",
+      "manageBody": "您的订阅由 App Store 管理。可在系统设置中查看续订日期或取消。",
+      "statusTitle": "会员有效期",
+      "statusBody": "您的会员有效期至 {{date}}。",
+      "openManage": "前往管理"
     },
     "title": "购买套餐",
     "memberBenefits": "会员权益",

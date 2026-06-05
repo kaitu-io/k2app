@@ -15,7 +15,12 @@
       "purchaseFailed": "Purchase failed, please try again.",
       "verifyFailed": "Could not verify your purchase, please try again.",
       "restoreFailed": "Could not restore purchases, please try again.",
-      "nothingToRestore": "No purchases to restore."
+      "nothingToRestore": "No purchases to restore.",
+      "manageTitle": "Manage Subscription",
+      "manageBody": "Your subscription is managed by the App Store. View the renewal date or cancel in Settings.",
+      "statusTitle": "Membership",
+      "statusBody": "Your membership is active until {{date}}.",
+      "openManage": "Manage"
     },
     "title": "Purchase Plan",
     "memberBenefits": "Membership Benefits",
