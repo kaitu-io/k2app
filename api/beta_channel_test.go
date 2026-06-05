@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // =====================================================================
@@ -50,7 +51,15 @@ func TestBetaChannel_UserModel_Defaults(t *testing.T) {
 }
 
 func TestBetaChannel_DataUser_BetaOptedIn(t *testing.T) {
+	// Swap getDB so GetActiveSubscriptions (called inside buildDataUserWithDevice)
+	// does not panic when the real db.Get() is unavailable in unit-test context.
+	m := SetupMockDB(t)
+	orig := getDB
+	getDB = func() *gorm.DB { return m.DB }
+	t.Cleanup(func() { getDB = orig })
+
 	t.Run("buildDataUserWithDevice sets betaOptedIn=true when opted in", func(t *testing.T) {
+		m.Mock.ExpectQuery(`SELECT`).WillReturnRows(m.Mock.NewRows(nil))
 		user := User{
 			ID:          1,
 			UUID:        "test-uuid",
@@ -63,6 +72,7 @@ func TestBetaChannel_DataUser_BetaOptedIn(t *testing.T) {
 	})
 
 	t.Run("buildDataUserWithDevice sets betaOptedIn=false when opted out", func(t *testing.T) {
+		m.Mock.ExpectQuery(`SELECT`).WillReturnRows(m.Mock.NewRows(nil))
 		user := User{
 			ID:          2,
 			UUID:        "test-uuid-2",
@@ -75,6 +85,7 @@ func TestBetaChannel_DataUser_BetaOptedIn(t *testing.T) {
 	})
 
 	t.Run("buildDataUserWithDevice sets betaOptedIn=false when nil", func(t *testing.T) {
+		m.Mock.ExpectQuery(`SELECT`).WillReturnRows(m.Mock.NewRows(nil))
 		user := User{
 			ID:       3,
 			UUID:     "test-uuid-3",
