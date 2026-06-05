@@ -51,10 +51,15 @@ export default function RenewalStatusCard({
   const days = daysRemaining(effectiveEnd, now);
   const urgency = expiryUrgency(days);
   const dateStr = formatExpiryDate(effectiveEnd);
-  const daysColor = `${urgencyColor(urgency)}.main`;
 
   // 续订关闭 = 最强流失信号：醒目警示 + 主 CTA。
   const renewalOff = mode === 'manage' && autoRenew === false;
+
+  // 续订健康（自动续订开启的订阅）：周期末只是下次扣费日，不是断服日，故不施加
+  // 紧迫度配色——否则会对"将自动续费"的用户误报红色告警（剩 2 天却仍正常续订）。
+  // 仅续订关闭 / 一次性会员（真会断服）才用紧迫度红橙配色。
+  const renewalHealthy = mode === 'manage' && autoRenew !== false;
+  const daysColor = renewalHealthy ? 'text.secondary' : `${urgencyColor(urgency)}.main`;
 
   const accent = renewalOff
     ? 'warning.main'
