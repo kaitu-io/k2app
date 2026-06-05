@@ -148,15 +148,19 @@ describe('IosSubscribePanel', () => {
     confirmSpy.mockRestore();
   });
 
-  it('renders a single product row driven by the StoreKit product', () => {
+  it('shows our i18n plan name + StoreKit price, NOT the ASC brand displayName', () => {
     hookState = { ...defaultHookState(), products: [makeProduct()] };
     renderPanel();
     const rows = screen.getAllByTestId(/^iap-product-/);
     expect(rows).toHaveLength(1);
     expect(screen.getByTestId(`iap-product-${BASIC_1Y}`)).toBeDefined();
-    // Apple-authoritative displayName + displayPrice are shown (not hardcoded).
-    expect(screen.getByText('Basic Yearly')).toBeDefined();
+    // Price stays StoreKit-authoritative (never hardcoded)…
     expect(screen.getByText('US$49.00')).toBeDefined();
+    // …but the name is our brand-neutral i18n string — the StoreKit displayName
+    // ("Basic Yearly", which in prod carries the ASC brand "Kaitu Annual") must
+    // never surface in-app.
+    expect(screen.getByText('purchase:purchase.iap.planName')).toBeDefined();
+    expect(screen.queryByText('Basic Yearly')).toBeNull();
   });
 
   it('falls back to a single placeholder row when products are empty', () => {

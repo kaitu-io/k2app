@@ -102,12 +102,15 @@ export default function IosSubscribePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastGrantedUser]);
 
-  // Single product row — StoreKit-authoritative displayName + displayPrice.
+  // Single product row. Price stays StoreKit-authoritative (never hardcode), but
+  // the NAME comes from our i18n — StoreKit's displayName carries the ASC brand
+  // string ("Kaitu Annual"), which must not surface in-app (brand rule: 开途, never
+  // Kaitu, in Chinese contexts). planName is brand-neutral across all locales.
   const row = useMemo(() => {
     const meta = products.find((p) => p.id === DEFAULT_SELECTED) ?? products[0];
     return {
       id: meta?.id ?? DEFAULT_SELECTED,
-      displayName: meta?.displayName || t('purchase:purchase.iap.title'),
+      displayName: t('purchase:purchase.iap.planName'),
       displayPrice: meta?.displayPrice || '—',
     };
   }, [products, t]);
