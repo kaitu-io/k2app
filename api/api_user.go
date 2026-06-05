@@ -491,6 +491,7 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 	return &DataUser{
 		UUID:              user.UUID,
 		AppleAccountToken: deriveAppleAccountToken(user.UUID),
+		Subscriptions:     GetActiveSubscriptions(user.ID),
 		ExpiredAt:         user.ExpiredAt,
 		IsFirstOrderDone: user.IsFirstOrderDone != nil && *user.IsFirstOrderDone,
 		InvitedByCode:    inviteCode,

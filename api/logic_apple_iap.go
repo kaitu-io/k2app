@@ -220,3 +220,43 @@ func revokeSubscription(ctx context.Context, sub *Subscription) error {
 		return tx.Model(&Subscription{}).Where("id = ?", sub.ID).Update("status", "revoked").Error
 	})
 }
+
+// activeSubStatuses 视为"活跃"的状态：grace/billing_retry 也算活跃，避免在 Apple 仍在
+// 重试扣费时向用户兜售第二份订阅（防双扣）。
+var activeSubStatuses = []string{"active", "grace", "billing_retry"}
+
+// appleManageSurface 是 Apple 订阅的系统管理面（iOS 设置内订阅页）。
+func appleManageSurface() ManageSurface {
+	return ManageSurface{Kind: "apple_settings"}
+}
+
+// GetActiveSubscriptions 返回用户当前活跃的续订订阅读模型（provider 中立）。
+// 容错：任何查询错误返回 nil（不让 user-info 因附带读模型失败而 500；mock-DB 测试
+// 未 mock 此查询时也优雅降级为空列表）。
+func GetActiveSubscriptions(userID uint64) []DataSubscription {
+	var subs []Subscription
+	if err := getDB().Where("user_id = ? AND status IN ?", userID, activeSubStatuses).
+		Find(&subs).Error; err != nil {
+		return nil
+	}
+	out := make([]DataSubscription, 0, len(subs))
+	for i := range subs {
+		s := &subs[i]
+		tier := ""
+		if plan, _ := planByAppleProductID(context.Background(), getDB(), s.ProductID); plan != nil {
+			tier = plan.Tier
+		}
+		manage := ManageSurface{Kind: "url"} // 默认；下方按 provider 覆写
+		if s.Provider == "apple" {
+			manage = appleManageSurface()
+		}
+		out = append(out, DataSubscription{
+			Provider:         s.Provider,
+			Tier:             tier,
+			CurrentPeriodEnd: s.CurrentPeriodEnd,
+			AutoRenew:        s.AutoRenew,
+			Manage:           manage,
+		})
+	}
+	return out
+}
