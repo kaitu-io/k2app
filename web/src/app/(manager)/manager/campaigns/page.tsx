@@ -105,8 +105,8 @@ export default function CampaignsPage() {
   ];
 
   const matcherTypes = [
-    { value: "first_order", label: "首单用户" },
-    { value: "vip", label: "VIP用户" },
+    { value: "first_order", label: "新客（未完成首单）" },
+    { value: "vip", label: "老客（VIP / 已付费）" },
     { value: "all", label: "所有用户" },
     { value: "paid_before", label: "指定日期前首次付款" },
     { value: "paid_before_active", label: "指定日期前首次付款且套餐有效" },

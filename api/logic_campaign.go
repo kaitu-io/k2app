@@ -52,12 +52,17 @@ type campaignMatcherParams struct {
 func getCampaignMatcherWithDB(gdb *gormdb.DB, matcherType, params string) func(ctx context.Context, user *User, order *Order) bool {
 	switch matcherType {
 	case "first_order":
+		// 新客匹配器：尚未完成首单的用户（!IsFirstOrderDone，nil 视为新客）。
+		// 用于首单优惠、弃单召回等只发新客的活动。已付费老客由 "vip" 匹配器负责，
+		// 二者互为镜像，切勿混用。（admin UI 标签："新客（未完成首单）"）
 		return func(ctx context.Context, user *User, order *Order) bool {
-			return user.IsFirstOrderDone != nil && *user.IsFirstOrderDone
+			isNew := user.IsFirstOrderDone == nil || !*user.IsFirstOrderDone
+			log.Debugf(ctx, "checking first_order (new customer) campaign for user %d, isNew: %v", user.ID, isNew)
+			return isNew
 		}
 	case "vip":
 		return func(ctx context.Context, user *User, order *Order) bool {
-			// VIP定义：只要完成过首单就算VIP（不管是否过期）
+			// VIP定义：只要完成过首单就算VIP（不管是否过期），即已付费老客
 			isVip := user.IsVip()
 			log.Debugf(ctx, "checking VIP campaign for user %d, isVip: %v", user.ID, isVip)
 			return isVip

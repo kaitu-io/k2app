@@ -800,7 +800,7 @@ type Campaign struct {
 	IsActive    *bool  `gorm:"default:true" json:"isActive"`                      // 是否启用
 
 	// 匹配条件类型（预定义）
-	MatcherType string `gorm:"type:varchar(50)" json:"matcherType"` // first_order, vip, all
+	MatcherType string `gorm:"type:varchar(50)" json:"matcherType"` // first_order=新客(未完成首单), vip=老客(已付费), all, paid_before, paid_before_active
 
 	MatcherParams string `gorm:"type:varchar(500)" json:"matcherParams"`
 

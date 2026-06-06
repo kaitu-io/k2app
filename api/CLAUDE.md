@@ -177,6 +177,20 @@ Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, lice
 - **Concurrency**: Atomic `UPDATE WHERE status='pending'` + `RowsAffected` check prevents double-approve
 - **Notifications**: Slack DM via `qtoolkit/slack.SendDM(email, message)` — best-effort, never blocks main flow
 
+## Campaign Matcher Semantics (single source of truth)
+
+Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampaignMatcherWithDB`). The names are **audience labels, not order-state checks** — read them as "who is this code for":
+
+| matcherType | matches | use for |
+|-------------|---------|---------|
+| `first_order` | 新客 — `!IsFirstOrderDone` (nil = new) | 首单优惠、弃单召回（只发新客） |
+| `vip` | 老客 — `IsFirstOrderDone == true` (= `IsVip()`) | 续费 / 召回老客 |
+| `all` | anyone | 通用码 |
+| `paid_before` | first paid before `matcherParams.beforeDate` | 时间窗定向 |
+| `paid_before_active` | `paid_before` AND membership still active | 时间窗定向且在期 |
+
+`first_order` and `vip` are exact mirrors and must never collapse into the same meaning — `logic_campaign_matcher_test.go` pins both. **History (do not repeat):** `first_order` once meant "已付费" (duplicating `vip`) while every campaign author read the name/label as "new customer" — all 5 `first_order` campaigns (FIRST_ORDER_20, READY4U, STAYFREE, SMOOTHDAY, KEEPGOING) silently rejected 100% of recipients with `ErrorInvalidCampaignCode`. Fixed 2026-06-06 by aligning the code to the name. When adding a matcher, keep the name describing the **audience**, and mirror the admin UI label in `web/.../manager/campaigns/page.tsx`.
+
 ## Local Development
 
 ```bash

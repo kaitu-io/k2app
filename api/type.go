@@ -614,7 +614,7 @@ type CampaignRequest struct {
 	EndAt         int64  `json:"endAt" binding:"required"`                       // 结束时间
 	Description   string `json:"description"`                                     // 活动描述
 	IsActive      bool   `json:"isActive"`                                        // 是否启用
-	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order, vip, all
+	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order=新客(未完成首单), vip=老客(已付费), all, paid_before, paid_before_active
 	MaxUsage      int64  `json:"maxUsage"`                                        // 最大使用次数（0=无限制）
 	MatcherParams string `json:"matcherParams"`
 }
