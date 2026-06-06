@@ -72,3 +72,4 @@ test/live/
 
 # UAT build artifacts
 test/k2r-uat/.build/
+rule/embed/krs.tar.gz
