@@ -1419,3 +1419,77 @@ describe('Connection Store - Disconnect Feedback Gating', () => {
     expect(useConnectionStore.getState().feedbackRequested).toBe(false);
   });
 });
+
+// ==================== Cloud Access Revocation (402) Tests ====================
+
+describe('Connection Store - cloud access revocation (402)', () => {
+  it('defaults to cloudAccessRevoked=false', async () => {
+    const { useConnectionStore } = await getStores();
+    expect(useConnectionStore.getState().cloudAccessRevoked).toBe(false);
+  });
+
+  it('setCloudAccess(false) revokes: sets flag, clears selection, deletes tunnel cache', async () => {
+    const { useConnectionStore } = await getStores();
+    const { cacheStore } = await import('../../services/cache-store');
+    cacheStore.set('api:tunnels', { items: [{ id: 1 }], echConfigList: undefined } as any);
+
+    useConnectionStore.setState({
+      selectedCloudTunnel: { domain: 'tokyo.example.com', serverUrl: 'https://x' } as any,
+      activeTunnel: { source: 'cloud', domain: 'tokyo.example.com' } as any,
+      cloudAccessRevoked: false,
+    });
+
+    useConnectionStore.getState().setCloudAccess(false);
+
+    const s = useConnectionStore.getState();
+    expect(s.cloudAccessRevoked).toBe(true);
+    expect(s.selectedCloudTunnel).toBeNull();
+    expect(s.activeTunnel).toBeNull();
+    expect(cacheStore.get('api:tunnels')).toBeNull();
+  });
+
+  it('setCloudAccess(true) clears the revoked flag (membership restored)', async () => {
+    const { useConnectionStore } = await getStores();
+    useConnectionStore.setState({ cloudAccessRevoked: true });
+
+    useConnectionStore.getState().setCloudAccess(true);
+
+    expect(useConnectionStore.getState().cloudAccessRevoked).toBe(false);
+  });
+
+  it('hasConnectableSelection: manual + revoked → false (connect button disabled)', async () => {
+    const { hasConnectableSelection } = await getStores();
+    expect(
+      hasConnectableSelection({
+        serverMode: 'manual',
+        activeTunnel: null,
+        selectedCloudTunnel: null,
+        cloudAccessRevoked: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('hasConnectableSelection: manual + not revoked → Auto still connectable', async () => {
+    const { hasConnectableSelection } = await getStores();
+    expect(
+      hasConnectableSelection({
+        serverMode: 'manual',
+        activeTunnel: null,
+        selectedCloudTunnel: null,
+        cloudAccessRevoked: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('hasConnectableSelection: self_hosted unaffected by revoked flag', async () => {
+    const { hasConnectableSelection } = await getStores();
+    expect(
+      hasConnectableSelection({
+        serverMode: 'self_hosted',
+        activeTunnel: { source: 'self_hosted', domain: 'x' } as any,
+        selectedCloudTunnel: null,
+        cloudAccessRevoked: true,
+      }),
+    ).toBe(true);
+  });
+});

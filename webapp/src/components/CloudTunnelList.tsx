@@ -15,6 +15,7 @@ import {
   Skeleton,
 } from '@mui/material';
 import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
@@ -25,7 +26,8 @@ import { cacheStore } from '../services/cache-store';
 import { useAuthStore } from '../stores/auth.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
-import { AUTO_TUNNEL_SENTINEL, AUTO_TUNNEL_DOMAIN } from '../stores/connection.store';
+import { AUTO_TUNNEL_SENTINEL, AUTO_TUNNEL_DOMAIN, useConnectionStore } from '../stores/connection.store';
+import { ERROR_CODES } from '../utils/errorCode';
 
 interface CloudTunnelListProps {
   selectedDomain: string | null;
@@ -56,9 +58,15 @@ export interface CloudTunnelListHandle {
 export const CloudTunnelList = forwardRef<CloudTunnelListHandle, CloudTunnelListProps>(
 function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, hideHeader }, ref) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const colors = getThemeColors(isDark);
+
+  // Live entitlement signal: when the tunnel endpoint last returned 402, the
+  // cloud list is emptied and this renders the renew prompt. Source of truth
+  // is the connection store (also gates the connect button).
+  const cloudAccessRevoked = useConnectionStore((s) => s.cloudAccessRevoked);
 
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [echConfigList, setEchConfigList] = useState<string | undefined>(undefined);
@@ -90,6 +98,23 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 402 (membership expired) is terminal, not transient: empty the list, cancel
+  // any pending backoff, and hand the entitlement truth to the store, which
+  // purges the tunnel cache + selection and disables the connect button.
+  const applyMembershipRevoked = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    retryCountRef.current = 0;
+    setTunnels([]);
+    setEchConfigList(undefined);
+    setError(null);
+    setLoading(false);
+    setRefreshing(false);
+    useConnectionStore.getState().setCloudAccess(false);
+  }, []);
+
   const refresh = useCallback(async (opts?: { force?: boolean }): Promise<void> => {
     const force = opts?.force === true;
 
@@ -115,11 +140,17 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         onTunnelsLoadedRef.current?.(loadedTunnels);
         // Background revalidate — fire and forget, no state throw.
         cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
+          if (res.code === ERROR_CODES.PAYMENT_REQUIRED) {
+            console.warn('[CloudTunnelList] 402 membership expired (background) — clearing cloud tunnels');
+            applyMembershipRevoked();
+            return;
+          }
           if (res.code === 0 && res.data) {
             cacheStore.set('api:tunnels', res.data);
             setTunnels(res.data.items || []);
             setEchConfigList(res.data.echConfigList);
             onTunnelsLoadedRef.current?.(res.data.items || []);
+            useConnectionStore.getState().setCloudAccess(true);
           } else {
             console.warn('[CloudTunnelList] Background refresh failed (code=%d), keeping cached tunnels (%d items)', res.code, cached.items?.length ?? 0);
           }
@@ -136,6 +167,14 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
     try {
       const response = await cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4');
 
+      // 402 = membership expired. Terminal: clear the list + cache + selection
+      // and surface the renew prompt. Never retry, never rethrow on force.
+      if (response.code === ERROR_CODES.PAYMENT_REQUIRED) {
+        console.warn('[CloudTunnelList] 402 membership expired — clearing cloud tunnels');
+        applyMembershipRevoked();
+        return;
+      }
+
       if (response.code === 0 && response.data) {
         const loadedTunnels = response.data.items || [];
         setTunnels(loadedTunnels);
@@ -144,6 +183,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         console.debug('[CloudTunnelList] ECH config from API:', response.data.echConfigList ? `present (len=${response.data.echConfigList.length})` : 'empty');
         retryCountRef.current = 0;
         onTunnelsLoadedRef.current?.(loadedTunnels);
+        useConnectionStore.getState().setCloudAccess(true);
       } else {
         // Skip noisy log for 401 (user not logged in yet).
         if (response.code !== 401) {
@@ -173,7 +213,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
       setRefreshing(false);
       setLoading(false);
     }
-  }, []);
+  }, [applyMembershipRevoked]);
 
   useImperativeHandle(ref, () => ({ refresh }), [refresh]);
 
@@ -217,6 +257,36 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
       refresh();
     }
   }, [serviceConnected, refresh]);
+
+  // Membership expired (live 402) takes priority over every other list state —
+  // the cloud list is empty by definition and the only useful action is renew.
+  if (cloudAccessRevoked) {
+    return (
+      <Box sx={{ px: 2, py: 2 }}>
+        <EmptyState
+          icon={<CloudOffIcon sx={{ fontSize: 48, color: 'text.disabled' }} />}
+          title={t('dashboard:dashboard.membershipExpiredTitle')}
+          description={t('dashboard:dashboard.membershipExpiredHint')}
+          action={
+            // iOS must not route to /purchase — that route is unregistered on
+            // iOS (Apple 3.1.1, see App.tsx) so navigating there is a dead end.
+            // Match the app-wide gating: hide the renew CTA on iOS; the hint's
+            // "switch to Self-hosted" path stays actionable.
+            window._platform?.os !== 'ios' ? (
+              <Button
+                onClick={() => navigate('/purchase')}
+                variant="contained"
+                size="small"
+              >
+                {t('dashboard:dashboard.renewMembership')}
+              </Button>
+            ) : undefined
+          }
+          minHeight={150}
+        />
+      </Box>
+    );
+  }
 
   if (loading && tunnels.length === 0) {
     return (

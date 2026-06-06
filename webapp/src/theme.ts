@@ -44,6 +44,33 @@ const sharedThemeConfig: ThemeOptions = {
         },
       },
     },
+    // Top-anchored Snackbars render in a Portal at document.body with
+    // `position: fixed`, so they sit in viewport space — outside the Layout
+    // container that carries `paddingTop: env(safe-area-inset-top)`. Offset
+    // them here so toasts never paint over the iOS status bar / notch. On
+    // desktop & web `env()` resolves to 0, preserving MUI's 8px/24px defaults.
+    MuiSnackbar: {
+      styleOverrides: {
+        anchorOriginTopCenter: {
+          top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+          '@media (min-width:600px)': {
+            top: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+          },
+        },
+        anchorOriginTopLeft: {
+          top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+          '@media (min-width:600px)': {
+            top: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+          },
+        },
+        anchorOriginTopRight: {
+          top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+          '@media (min-width:600px)': {
+            top: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+          },
+        },
+      },
+    },
   },
 };
 

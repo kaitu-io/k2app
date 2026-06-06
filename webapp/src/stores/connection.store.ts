@@ -77,6 +77,14 @@ interface ConnectionState {
   subsCountry: string | null;
   /** True once persisted subsCountry has been loaded from storage. */
   subsCountryLoaded: boolean;
+  /**
+   * True when the cloud tunnel endpoint last reported 402 (membership expired).
+   * This is the live entitlement signal — fresher than `useUser().isExpired` —
+   * and the single source of truth that empties the cloud list and disables the
+   * connect button in manual mode. Cleared automatically on the next successful
+   * tunnel load (membership renewed). Set via `setCloudAccess()`.
+   */
+  cloudAccessRevoked: boolean;
 }
 
 // Persisted last-used server URL. Kept separate from config.store because
@@ -196,6 +204,14 @@ interface ConnectionActions {
   selectCloudTunnel: (tunnel: Tunnel) => void;
   clearCloudSelection: () => void;
   reconcileSelection: (tunnels: Tunnel[]) => void;
+  /**
+   * Reflect cloud-tunnel entitlement from a tunnel-list fetch outcome.
+   * - `false` (402 / membership expired): purge the tunnel cache, drop any
+   *   cloud selection, and raise `cloudAccessRevoked` so the connect button
+   *   goes inert in manual mode. Idempotent.
+   * - `true` (a fetch returned tunnels): lower the flag if it was set.
+   */
+  setCloudAccess: (available: boolean) => void;
   selectSelfHosted: () => void;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
@@ -268,6 +284,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   serverModeLoaded: false,
   subsCountry: null,
   subsCountryLoaded: false,
+  cloudAccessRevoked: false,
 
   // Actions
   selectCloudTunnel: (tunnel) => {
@@ -300,6 +317,22 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         + ' offline, falling back to Auto');
       set({ selectedCloudTunnel: null, activeTunnel: null });
     }
+  },
+
+  setCloudAccess: (available) => {
+    if (available) {
+      // Membership active — lower the flag if it was raised. Cheap no-op otherwise.
+      if (get().cloudAccessRevoked) {
+        console.info('[Connection] cloud access restored');
+        set({ cloudAccessRevoked: false });
+      }
+      return;
+    }
+    // Membership expired (402). Idempotent — only act on the first observation.
+    if (get().cloudAccessRevoked) return;
+    console.warn('[Connection] cloud access revoked (402) — clearing cloud selection + tunnel cache');
+    cacheStore.delete('api:tunnels');
+    set({ selectedCloudTunnel: null, activeTunnel: null, cloudAccessRevoked: true });
   },
 
   selectSelfHosted: () => {
@@ -811,10 +844,13 @@ export function useEffectiveCloudSelection(): Tunnel | null {
  *     resolves the k2subs:// URL on connect, so the UI is always ready.
  */
 export function hasConnectableSelection(
-  s: Pick<ConnectionState, 'serverMode' | 'activeTunnel' | 'selectedCloudTunnel'>,
+  s: Pick<ConnectionState, 'serverMode' | 'activeTunnel' | 'selectedCloudTunnel' | 'cloudAccessRevoked'>,
 ): boolean {
   if (s.serverMode === 'self_hosted') return !!s.activeTunnel;
   if (s.serverMode === 'k2sub') return true;
+  // Manual mode draws on cloud tunnels — if membership lapsed (402), there is
+  // nothing to connect to, so the Auto fallback is no longer connectable.
+  if (s.cloudAccessRevoked) return false;
   return !!s.activeTunnel || s.selectedCloudTunnel === null;
 }
 

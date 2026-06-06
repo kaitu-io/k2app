@@ -3,7 +3,7 @@ import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../../test/utils/render';
 import { CloudTunnelList, type CloudTunnelListHandle } from '../CloudTunnelList';
 import type { TunnelListResponse } from '../../services/api-types';
-import { AUTO_TUNNEL_DOMAIN, AUTO_TUNNEL_SENTINEL } from '../../stores/connection.store';
+import { AUTO_TUNNEL_DOMAIN, AUTO_TUNNEL_SENTINEL, useConnectionStore } from '../../stores/connection.store';
 
 // --- Mock state objects ---
 
@@ -22,10 +22,12 @@ vi.mock('../../stores/vpn-machine.store', () => ({
 
 const mockCacheGet = vi.fn();
 const mockCacheSet = vi.fn();
+const mockCacheDelete = vi.fn();
 vi.mock('../../services/cache-store', () => ({
   cacheStore: {
     get: (...args: unknown[]) => mockCacheGet(...args),
     set: (...args: unknown[]) => mockCacheSet(...args),
+    delete: (...args: unknown[]) => mockCacheDelete(...args),
   },
 }));
 
@@ -88,6 +90,9 @@ describe('CloudTunnelList', () => {
     mockVPNState.state = 'idle';
     mockCacheGet.mockReturnValue(null);
     mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
+    // Reset shared (real) connection store flag so a 402 test doesn't bleed
+    // its revoked state into the success-path tests.
+    useConnectionStore.setState({ cloudAccessRevoked: false });
   });
 
   describe('SWR: cache hit → immediate render', () => {
@@ -331,6 +336,57 @@ describe('CloudTunnelList', () => {
       expect(tunnelArg.domain).toBe(AUTO_TUNNEL_DOMAIN);
       // sentinel identity
       expect(tunnelArg).toBe(AUTO_TUNNEL_SENTINEL);
+    });
+  });
+
+  describe('402 membership expired → clear tunnels + revoke cloud access', () => {
+    it('revokes cloud access and renders the renew CTA, without scheduling a retry', async () => {
+      mockCacheGet.mockReturnValue(null); // no cache → blocking fetch path
+      mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+      const onTunnelsLoaded = vi.fn();
+      render(<CloudTunnelList {...defaultProps} onTunnelsLoaded={onTunnelsLoaded} />);
+
+      await waitFor(() => {
+        expect(useConnectionStore.getState().cloudAccessRevoked).toBe(true);
+      });
+
+      // Tunnel cache must be purged so Auto-pick can't connect to a revoked node.
+      expect(mockCacheDelete).toHaveBeenCalledWith('api:tunnels');
+      // No stale tunnels rendered.
+      expect(screen.queryByText('Tokyo-01')).not.toBeInTheDocument();
+      // Membership-expired empty state is shown (unique title) with a renew CTA.
+      expect(screen.getByText(/会员已过期|Membership expired/i)).toBeInTheDocument();
+      expect(screen.getByText(/续费会员|Renew membership/i)).toBeInTheDocument();
+    });
+
+    it('on iOS, shows the expired state WITHOUT a renew CTA (Apple 3.1.1: /purchase unregistered on iOS)', async () => {
+      (window as any)._platform = { os: 'ios' };
+      try {
+        mockCacheGet.mockReturnValue(null);
+        mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+        render(<CloudTunnelList {...defaultProps} />);
+
+        await waitFor(() => {
+          expect(screen.getByText(/会员已过期|Membership expired/i)).toBeInTheDocument();
+        });
+        // The renew button must not exist on iOS — it would navigate to a dead route.
+        expect(screen.queryByText(/续费会员|Renew membership/i)).not.toBeInTheDocument();
+      } finally {
+        delete (window as any)._platform;
+      }
+    });
+
+    it('clears the revoked flag when a later refresh succeeds (membership restored)', async () => {
+      useConnectionStore.setState({ cloudAccessRevoked: true });
+      mockCacheGet.mockReturnValue(null);
+      mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
+
+      render(<CloudTunnelList {...defaultProps} />);
+
+      await waitFor(() => expect(screen.getByText('Tokyo-01')).toBeInTheDocument());
+      expect(useConnectionStore.getState().cloudAccessRevoked).toBe(false);
     });
   });
 });
