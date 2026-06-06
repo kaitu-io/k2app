@@ -37,8 +37,9 @@ export const campaignTools: ToolRegistration[] = [
       end_at: z.number().optional().describe('End time (unix timestamp)'),
       description: z.string().optional().describe('Campaign description'),
       is_active: z.boolean().optional().describe('Whether campaign is active'),
-      matcher_type: z.string().optional().describe('Matcher type (e.g. "first_order", "vip", "all")'),
-      matcher_params: z.string().optional().describe('Matcher params JSON'),
+      matcher_type: z.string().optional().describe('Audience matcher: "first_order" = 新客 (not yet paid), "vip" = 老客 (already paid), "all" = anyone, "paid_before"/"paid_before_active" = time-windowed'),
+      matcher_params: z.string().optional().describe('Matcher params JSON (e.g. {"beforeDate": 1735689600} for paid_before*)'),
+      max_usage: z.number().optional().describe('Max total redemptions (0 or omitted = unlimited)'),
     },
     path: '/app/campaigns',
     mapBody: (p) => ({
@@ -46,12 +47,13 @@ export const campaignTools: ToolRegistration[] = [
       startAt: p.start_at, endAt: p.end_at,
       description: p.description, isActive: p.is_active,
       matcherType: p.matcher_type, matcherParams: p.matcher_params,
+      maxUsage: p.max_usage,
     }),
   }),
 
   defineApiTool({
     name: 'update_campaign',
-    description: 'Update an existing campaign. The backend replaces the whole record, so code/name/type/value/start_at/end_at are all required (fetch current values via get_campaign first).',
+    description: 'Update an existing campaign. The backend replaces the whole record, so code/name/type/value/start_at/end_at are all required AND any omitted optional field (description/is_active/matcher_params/max_usage) is reset to its zero value — fetch current values via get_campaign first and pass them all through to avoid wiping them.',
     group: 'campaigns.write',
     method: 'PUT',
     params: {
@@ -66,6 +68,7 @@ export const campaignTools: ToolRegistration[] = [
       is_active: z.boolean().optional().describe('Whether campaign is active'),
       matcher_type: z.string().describe('Audience matcher (required by backend): "first_order" = 新客 (not yet paid), "vip" = 老客 (already paid), "all" = anyone, "paid_before"/"paid_before_active" = time-windowed'),
       matcher_params: z.string().optional().describe('Matcher params JSON (e.g. {"beforeDate": 1735689600} for paid_before*)'),
+      max_usage: z.number().optional().describe('Max total redemptions (0 = unlimited). Omitting resets to 0 — pass the current value from get_campaign to preserve it.'),
     },
     path: (p) => `/app/campaigns/${p.id}`,
     mapBody: (p) => ({
@@ -73,6 +76,7 @@ export const campaignTools: ToolRegistration[] = [
       startAt: p.start_at, endAt: p.end_at,
       description: p.description, isActive: p.is_active,
       matcherType: p.matcher_type, matcherParams: p.matcher_params,
+      maxUsage: p.max_usage,
     }),
   }),
 
