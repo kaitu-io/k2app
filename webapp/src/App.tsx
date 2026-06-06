@@ -81,7 +81,8 @@ function AppRoutes() {
             <Route path="invite-codes" element={<LoginRequiredGuard pagePath="/invite-codes"><MyInviteCodeList /></LoginRequiredGuard>} />
           )}
 
-          {appConfig.features.delegate && (
+          {/* /delegate 是第三方代付（IAP 以外支付）—— iOS 不注册该路由，防直达 (Apple 3.1.1) */}
+          {appConfig.features.delegate && window._platform?.os !== 'ios' && (
             <Route path="delegate" element={<LoginRequiredGuard pagePath="/delegate"><Delegate /></LoginRequiredGuard>} />
           )}
 

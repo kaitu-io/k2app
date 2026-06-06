@@ -206,7 +206,9 @@ export default function Account() {
       py: 0.5,
       backgroundColor: "transparent"
     }}>
-      {/* Brand Banner */}
+      {/* Brand Banner — on iOS the external kaitu.io link is removed (Apple 3.1.1:
+          the app must not route to an external site that sells membership). The
+          banner stays as a static brand header; other platforms keep the link. */}
       <Card
         sx={{
           mb: 2,
@@ -214,14 +216,20 @@ export default function Account() {
             ? `linear-gradient(135deg, #1a237e 0%, #283593 100%)`
             : `linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)`,
           border: 'none',
-          cursor: 'pointer',
-          transition: 'all 0.3s ease',
-          '&:hover': {
-            transform: 'translateY(-2px)',
-            boxShadow: 3,
-          }
+          ...(window._platform?.os !== 'ios' && {
+            cursor: 'pointer',
+            transition: 'all 0.3s ease',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: 3,
+            },
+          }),
         }}
-        onClick={() => window._platform!.openExternal?.('https://www.kaitu.io')}
+        onClick={
+          window._platform?.os === 'ios'
+            ? undefined
+            : () => window._platform!.openExternal?.('https://www.kaitu.io')
+        }
       >
         <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 }, textAlign: 'center' }}>
           <Typography
@@ -582,6 +590,8 @@ export default function Account() {
               </ListItemSecondaryAction>
             </ListItem>
 
+            {/* 代付人设置（第三方代付）— iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付路径 */}
+            {window._platform?.os !== 'ios' && (<>
             <Divider />
 
             <ListItem
@@ -608,6 +618,7 @@ export default function Account() {
                 <ChevronRightIcon color="action" />
               </ListItemSecondaryAction>
             </ListItem>
+            </>)}
 
             <Divider />
 
@@ -634,6 +645,8 @@ export default function Account() {
               />
             </ListItem>
 
+            {/* 我的钱包（外部钱包/储值）— iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付/充值路径 */}
+            {window._platform?.os !== 'ios' && (<>
             <Divider />
 
             {/* Wallet */}
@@ -659,6 +672,7 @@ export default function Account() {
                 }
               />
             </ListItem>
+            </>)}
 
             <Divider />
 

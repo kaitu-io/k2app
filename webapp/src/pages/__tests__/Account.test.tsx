@@ -260,6 +260,47 @@ describe('Account', () => {
     });
   });
 
+  // ============ iOS 外部支付导线屏蔽 (Apple 3.1.1) ============
+  describe('iOS 外部支付导线屏蔽 (3.1.1)', () => {
+    const WALLET = '我的钱包';
+    const DELEGATE = '代付人设置';
+    const BANNER = 'Kaitu.io 开途';
+    const KAITU_URL = 'https://www.kaitu.io';
+
+    it('非 iOS 平台应显示我的钱包和代付人设置', () => {
+      (window as any)._platform.os = 'macos';
+      render(<Account />);
+      expect(screen.getByText(WALLET)).toBeTruthy();
+      expect(screen.getByText(DELEGATE)).toBeTruthy();
+    });
+
+    it('iOS 平台不应显示我的钱包（外部钱包/支付）', () => {
+      (window as any)._platform.os = 'ios';
+      render(<Account />);
+      expect(screen.queryByText(WALLET)).toBeNull();
+    });
+
+    it('iOS 平台不应显示代付人设置（第三方代付）', () => {
+      (window as any)._platform.os = 'ios';
+      render(<Account />);
+      expect(screen.queryByText(DELEGATE)).toBeNull();
+    });
+
+    it('非 iOS 平台品牌横幅点击应打开 kaitu.io', () => {
+      (window as any)._platform.os = 'macos';
+      render(<Account />);
+      fireEvent.click(screen.getByText(BANNER));
+      expect((window as any)._platform.openExternal).toHaveBeenCalledWith(KAITU_URL);
+    });
+
+    it('iOS 平台品牌横幅不应外链到 kaitu.io（Apple 点名 URL）', () => {
+      (window as any)._platform.os = 'ios';
+      render(<Account />);
+      fireEvent.click(screen.getByText(BANNER));
+      expect((window as any)._platform.openExternal).not.toHaveBeenCalledWith(KAITU_URL);
+    });
+  });
+
   // ==================== Task 3: Slogan 延迟显示 ====================
   describe('Slogan 延迟显示', () => {
     // Slogan text from zh-CN common.json brand.slogan
