@@ -88,6 +88,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
 		return fmt.Errorf("lock user %d: %w", userID, err)
 	}
+	now := time.Now().Unix()
 
 	// 账号绑定（INV9，§8.0）：仅在首笔（绑定）交易上强校验 appAccountToken。空 token 硬拒，
 	// 杜绝"在他人订阅过的设备上 restore 白嫖"；生产无历史遗留购买，每笔首购都带 token。
@@ -123,7 +124,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	}
 	sub.AutoRenew = true
 	sub.Environment = info.Environment
-	sub.Status = deriveVerifiedStatus(sub.CurrentPeriodEnd, sub.Status, time.Now().Unix())
+	sub.Status = deriveVerifiedStatus(sub.CurrentPeriodEnd, sub.Status, now)
 	if err := tx.Save(&sub).Error; err != nil {
 		return err
 	}
@@ -133,7 +134,6 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	}
 
 	// Compute the additive credit.
-	now := time.Now().Unix()
 	var creditSeconds int64
 	var kind string
 	if isFirst {
@@ -144,6 +144,10 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		creditSeconds = newPeriodEnd - (info.PurchaseDate / 1000)
 		if creditSeconds < 0 {
 			creditSeconds = 0
+		}
+		if now-info.PurchaseDate/1000 > 86400 {
+			log.Warnf(ctx, "[creditAppleTransaction] first-bind txn %s has old purchaseDate (%ds ago); crediting %ds from now may exceed Apple's remaining coverage (Phase-2 reconciliation cap pending)",
+				info.TransactionId, now-info.PurchaseDate/1000, creditSeconds)
 		}
 		newExpiry := applyGiftCredit(user.ExpiredAt, creditSeconds, now)
 		creditSeconds = newExpiry - max(user.ExpiredAt, now) // audited net add (Go 1.21+ builtin max)
@@ -186,6 +190,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		UserID:      userID,
 		Type:        VipAppleSub,
 		ReferenceID: sub.ID,
+		// Days is floored display-only audit; CreditedSeconds (above) is the precise value.
 		Days:        int(creditSeconds / 86400),
 		Reason:      fmt.Sprintf("apple 订阅入账(%s) - %s", kind, info.TransactionId),
 	}).Error
