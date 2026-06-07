@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wordgate/qtoolkit/appstore"
 	db "github.com/wordgate/qtoolkit/db"
+	"gorm.io/gorm"
 )
 
 // TestComputeRenewalState covers the cancellation / billing-status decision used by
@@ -299,4 +300,137 @@ func TestGetActiveSubscriptions_Integration(t *testing.T) {
 	assert.Equal(t, "basic", got[0].Tier)
 	assert.True(t, got[0].AutoRenew)
 	assert.Equal(t, "apple_settings", got[0].Manage.Kind)
+}
+
+func TestCreditAppleTransaction_NoAbsorption_Idempotent(t *testing.T) {
+	skipIfNoDB(t)
+	uniq := time.Now().UnixNano()
+	productID := fmt.Sprintf("io.kaitu.test.1y.%d", uniq)
+	plan := &Plan{PID: fmt.Sprintf("tcat%d", uniq), Label: "X", Price: 1000, OriginPrice: 1000, Month: 12, Tier: "basic", AppleProductID: productID}
+	require.NoError(t, db.Get().Create(plan).Error)
+	t.Cleanup(func() { db.Get().Delete(plan) })
+
+	user := CreateTestUser(t)
+	day := int64(86400)
+	t0 := time.Now().Unix()
+	orig := fmt.Sprintf("OTX-%d", uniq)
+
+	token := deriveAppleAccountToken(user.UUID) // first (binding) txn must carry it (INV9)
+	credit := func(txnID string, purchaseMs, expiresMs int64) error {
+		return db.Get().Transaction(func(tx *gorm.DB) error {
+			return creditAppleTransaction(context.Background(), tx, user.ID, &appstore.TransactionInfo{
+				OriginalTransactionId: orig, TransactionId: txnID, ProductId: productID,
+				AppAccountToken: token,
+				Environment:     "Sandbox", PurchaseDate: purchaseMs, ExpiresDate: expiresMs,
+			})
+		})
+	}
+	t.Cleanup(func() {
+		db.Get().Where("user_id = ?", user.ID).Delete(&SubscriptionCredit{})
+		db.Get().Where("user_id = ?", user.ID).Delete(&Subscription{})
+	})
+
+	// First purchase: 1 year.
+	require.NoError(t, credit("T1", t0*1000, (t0+365*day)*1000))
+	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	assert.InDelta(t, t0+365*day, user.ExpiredAt, float64(2*day))
+
+	// Gift +7 days (own clock).
+	require.NoError(t, db.Get().Transaction(func(tx *gorm.DB) error {
+		_, e := addProExpiredDays(context.Background(), tx, user, VipSystemGrant, 0, 7, "test gift")
+		return e
+	}))
+	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	giftedExpiry := user.ExpiredAt
+
+	// Renewal: +1 year. Gift must NOT be absorbed (INV3).
+	require.NoError(t, credit("T2", (t0+365*day)*1000, (t0+730*day)*1000))
+	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	assert.Equal(t, giftedExpiry+365*day, user.ExpiredAt, "renewal stacks on gift, no absorption")
+
+	// Replay T2: idempotent (INV1) — expiry unchanged.
+	require.NoError(t, credit("T2", (t0+365*day)*1000, (t0+730*day)*1000))
+	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	assert.Equal(t, giftedExpiry+365*day, user.ExpiredAt, "replayed transaction credits nothing")
+
+	var n int64
+	db.Get().Model(&SubscriptionCredit{}).Where("user_id = ?", user.ID).Count(&n)
+	assert.Equal(t, int64(2), n, "two distinct transactions credited once each")
+}
+
+// INV9: a subscription bound to user A is never re-bound/credited to user B.
+func TestCreditAppleTransaction_BindingIsPermanent(t *testing.T) {
+	skipIfNoDB(t)
+	uniq := time.Now().UnixNano()
+	productID := fmt.Sprintf("io.kaitu.test.bind.%d", uniq)
+	plan := &Plan{PID: fmt.Sprintf("tbind%d", uniq), Label: "X", Price: 1000, OriginPrice: 1000, Month: 12, Tier: "basic", AppleProductID: productID}
+	require.NoError(t, db.Get().Create(plan).Error)
+	t.Cleanup(func() { db.Get().Delete(plan) })
+
+	userA := CreateTestUser(t)
+	userB := CreateTestUser(t)
+	orig := fmt.Sprintf("OTX-bind-%d", uniq)
+	day := int64(86400)
+	t0 := time.Now().Unix()
+	t.Cleanup(func() { db.Get().Where("provider_subscription_id = ?", orig).Delete(&Subscription{}) })
+
+	// First credit binds to userA (binding txn carries userA's token, INV9).
+	require.NoError(t, db.Get().Transaction(func(tx *gorm.DB) error {
+		return creditAppleTransaction(context.Background(), tx, userA.ID, &appstore.TransactionInfo{
+			OriginalTransactionId: orig, TransactionId: "B1", ProductId: productID,
+			AppAccountToken: deriveAppleAccountToken(userA.UUID),
+			Environment:     "Sandbox", PurchaseDate: t0 * 1000, ExpiresDate: (t0 + 365*day) * 1000,
+		})
+	}))
+
+	// userB attempting the same original_transaction_id must be rejected (INV9).
+	err := db.Get().Transaction(func(tx *gorm.DB) error {
+		return creditAppleTransaction(context.Background(), tx, userB.ID, &appstore.TransactionInfo{
+			OriginalTransactionId: orig, TransactionId: "B2", ProductId: productID,
+			Environment: "Sandbox", PurchaseDate: t0 * 1000, ExpiresDate: (t0 + 730*day) * 1000,
+		})
+	})
+	require.Error(t, err, "binding to a different user must be rejected")
+}
+
+// INV9 (binding-path token): a FIRST/binding transaction missing appAccountToken is hard-rejected.
+func TestVerifyAndGrantTransaction_EmptyTokenRejected(t *testing.T) {
+	skipIfNoDB(t)
+	ctx := context.Background()
+	viper.Set("appstore.bundleId", "io.kaitu.test")
+	t.Cleanup(func() { viper.Set("appstore.bundleId", "") })
+
+	uniq := time.Now().UnixNano()
+	productID := fmt.Sprintf("io.kaitu.test.empty.%d", uniq)
+	plan := &Plan{PID: fmt.Sprintf("temp%d", uniq), Label: "X", Price: 1000, OriginPrice: 1000, Month: 12, Tier: "basic", AppleProductID: productID}
+	require.NoError(t, db.Get().Create(plan).Error)
+	t.Cleanup(func() { db.Get().Delete(plan) })
+
+	user := CreateTestUser(t)
+	otx := "OTX-empty-" + generateId("otx")
+
+	old := fetchAppleTransaction
+	fetchAppleTransaction = func(ctx context.Context, bundleId, transactionID string) (*appstore.TransactionInfo, error) {
+		return &appstore.TransactionInfo{
+			BundleId:              appleBundleID(),
+			ProductId:             productID,
+			OriginalTransactionId: otx,
+			TransactionId:         transactionID,
+			AppAccountToken:       "", // missing — must be hard-rejected on first bind
+			PurchaseDate:          time.Now().Unix() * 1000,
+			ExpiresDate:           (time.Now().Unix() + 365*86400) * 1000,
+			InAppOwnershipType:    appstore.OwnershipType_PURCHASED,
+			Environment:           "Sandbox",
+		}, nil
+	}
+	t.Cleanup(func() { fetchAppleTransaction = old })
+	t.Cleanup(func() {
+		db.Get().Where("provider_subscription_id = ?", otx).Delete(&Subscription{})
+		db.Get().Where("user_id = ?", user.ID).Delete(&SubscriptionCredit{})
+	})
+
+	err := verifyAndGrantTransaction(ctx, user.ID, "ETXN1")
+	require.Error(t, err, "first-bind transaction without appAccountToken must be rejected")
+	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	assert.True(t, user.IsExpired(), "no entitlement granted when token missing")
 }
