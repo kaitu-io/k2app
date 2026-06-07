@@ -332,7 +332,7 @@ func TestCreditAppleTransaction_NoAbsorption_Idempotent(t *testing.T) {
 
 	// First purchase: 1 year.
 	require.NoError(t, credit("T1", t0*1000, (t0+365*day)*1000))
-	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	require.NoError(t, db.Get().First(user, user.ID).Error)
 	assert.InDelta(t, t0+365*day, user.ExpiredAt, float64(2*day))
 
 	// Gift +7 days (own clock).
@@ -340,17 +340,17 @@ func TestCreditAppleTransaction_NoAbsorption_Idempotent(t *testing.T) {
 		_, e := addProExpiredDays(context.Background(), tx, user, VipSystemGrant, 0, 7, "test gift")
 		return e
 	}))
-	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	require.NoError(t, db.Get().First(user, user.ID).Error)
 	giftedExpiry := user.ExpiredAt
 
 	// Renewal: +1 year. Gift must NOT be absorbed (INV3).
 	require.NoError(t, credit("T2", (t0+365*day)*1000, (t0+730*day)*1000))
-	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	require.NoError(t, db.Get().First(user, user.ID).Error)
 	assert.Equal(t, giftedExpiry+365*day, user.ExpiredAt, "renewal stacks on gift, no absorption")
 
 	// Replay T2: idempotent (INV1) — expiry unchanged.
 	require.NoError(t, credit("T2", (t0+365*day)*1000, (t0+730*day)*1000))
-	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	require.NoError(t, db.Get().First(user, user.ID).Error)
 	assert.Equal(t, giftedExpiry+365*day, user.ExpiredAt, "replayed transaction credits nothing")
 
 	var n int64
@@ -431,6 +431,6 @@ func TestVerifyAndGrantTransaction_EmptyTokenRejected(t *testing.T) {
 
 	err := verifyAndGrantTransaction(ctx, user.ID, "ETXN1")
 	require.Error(t, err, "first-bind transaction without appAccountToken must be rejected")
-	require.NoError(t, db.Get().First(&user, user.ID).Error)
+	require.NoError(t, db.Get().First(user, user.ID).Error)
 	assert.True(t, user.IsExpired(), "no entitlement granted when token missing")
 }

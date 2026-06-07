@@ -174,22 +174,26 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		return fmt.Errorf("save user %d: %w", userID, err)
 	}
 
-	// Dedup ledger row (INV1).
-	if err := tx.Create(&SubscriptionCredit{
+	// Dedup ledger row (INV1). Its auto-increment ID is unique per transaction and
+	// becomes the audit reference below — UserProHistory has a UNIQUE(user_id,
+	// reference_id, type) index, so referencing sub.ID would collide across renewals
+	// of the same subscription. The credit row is the canonical per-transaction record.
+	creditRow := &SubscriptionCredit{
 		UserID:                userID,
 		Provider:              provider,
 		TransactionID:         info.TransactionId,
 		OriginalTransactionID: info.OriginalTransactionId,
 		CreditedSeconds:       creditSeconds,
 		Kind:                  kind,
-	}).Error; err != nil {
+	}
+	if err := tx.Create(creditRow).Error; err != nil {
 		return err
 	}
-	// Human audit (INV8).
+	// Human audit (INV8). ReferenceID = per-transaction credit row id (unique).
 	return tx.Create(&UserProHistory{
 		UserID:      userID,
 		Type:        VipAppleSub,
-		ReferenceID: sub.ID,
+		ReferenceID: creditRow.ID,
 		// Days is floored display-only audit; CreditedSeconds (above) is the precise value.
 		Days:        int(creditSeconds / 86400),
 		Reason:      fmt.Sprintf("apple 订阅入账(%s) - %s", kind, info.TransactionId),
