@@ -143,9 +143,31 @@ contradiction.
 
 ## 8. Attack surface / product constraints (zero attackable points on existing payment)
 
+### 8.0 Account binding — entitlement follows OUR account, never the device/Apple ID
+
+Entitlement is granted to **our email-based user account**, never to whoever holds the device or
+the Apple ID. The Apple subscription is cryptographically bound to the purchasing our-user via
+`appAccountToken = uuidv5(NS, user.uuid)`:
+
+- **At purchase:** the client passes the logged-in user's `appAccountToken`; the native bridge
+  refuses to purchase without a valid UUID, so **every** transaction carries it.
+- **At verify AND restore** (both go through the same `/api/user/apple-iap/verify`): grant only
+  if `tx.appAccountToken == derive(currentUser.uuid)`; otherwise reject ("bound to a different
+  account"). The check is stateless (token re-derived from the user UUID).
+- **Hardening (decision):** **hard-reject transactions with an empty `appAccountToken` in
+  production.** We have zero legacy purchases (IAP just launched; every purchase goes through our
+  app and always carries the token), so this removes the current `first-write-wins` fallback —
+  closing the only path by which an unpaid user, on a device whose Apple ID previously subscribed,
+  could pick up entitlement via Restore.
+
+Correct-by-design consequences: the sub belongs to the our-account that bought it and does **not**
+follow the user to a different our-account; an unauthorized our-user on a device whose Apple ID
+already subscribed can neither claim it (token mismatch) nor buy a second (Apple dedupes per
+Apple ID).
+
 | # | Threat | Constraint / defense |
 |---|---|---|
-| T1 | Steal another user's `transactionId` to claim entitlement | `appAccountToken` binding (verify checks `tx.appAccountToken == derive(user.uuid)`) + subscription-row `UserID` first-write-wins (existing) |
+| T1 | Steal another user's `transactionId`, OR pick up a device's existing Apple sub via Restore on a different/unpaid our-account | `appAccountToken` binding enforced at verify **and** restore (§8.0); **hard-reject empty token in production**; subscription-row `UserID` first-write-wins as backstop |
 | T2 | Double-credit one Apple transaction (webhook + verify, or replay) | `(provider, transaction_id)` unique dedup; credit only if absent; row lock (INV1) |
 | T3 | **Active sub + one-time payment → user double-charged** | **Server** rejects a one-time order when the user has an `isSubscriptionLive` plan + client hides the entry. **Two layers.** (INV6) |
 | T4 | Keep entitlement after refund | REFUND/REVOKE webhook → subtract the credited days (INV2) |
@@ -185,8 +207,8 @@ correct). Apple positions this API for goodwill/compensation; keep volume sane.
   `deriveVerifiedStatus`; `GetActiveSubscriptions` gate; drop hardcoded `active`. 15 Go subtests
   + webapp button regression test green. **Independently unblocks App Store review — ship first.**
 - **Phase 1.** Make Apple additive: rewrite `applyRecurringSubscription` to credit via the
-  accumulator + transaction dedup (INV1); delete `computeRecurringEntitlement`. Tests pin
-  INV1–INV5.
+  accumulator + transaction dedup (INV1); delete `computeRecurringEntitlement`; **hard-reject
+  empty `appAccountToken`** (§8.0). Tests pin INV1–INV5.
 - **Phase 2.** Reconciliation / self-healing against Apple history (INV7) + lapsed-row cleanup.
 - **Phase 3.** T3 server-side one-time-order block for active recurring plans (INV6); confirm
   client UI hiding (largely done).
