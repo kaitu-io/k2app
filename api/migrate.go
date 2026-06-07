@@ -39,6 +39,7 @@ func Migrate() error {
 		&Order{},
 		&UserProHistory{},
 		&Subscription{},
+		&SubscriptionCredit{},
 		&Message{},
 		&Secret{},
 		&SlaveNode{},
