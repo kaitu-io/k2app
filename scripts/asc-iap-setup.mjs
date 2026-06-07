@@ -138,13 +138,13 @@ async function ensureSubscription(groupId, prod) {
   return sub;
 }
 
-// Phase B — CHN base price + equalize to all territories.
+// Phase B — USA base price (BASE_TERRITORY) + equalize to all territories.
 async function ensurePrice(sub, prod) {
   const target = PRICES[prod.productId];
   if (!target || target <= 0) { console.log(`  ! no price set for ${prod.productId} (PRICES map is 0) — skipping`); return; }
-  if (!APPLY || sub.id.startsWith('<')) { console.log(`  [DRY-RUN] would set ${prod.productId} CHN ¥${target} + equalize`); return; }
+  if (!APPLY || sub.id.startsWith('<')) { console.log(`  [DRY-RUN] would set ${prod.productId} ${BASE_TERRITORY} $${target} + equalize`); return; }
 
-  // 1. find the CHN price point whose customerPrice == target (nearest if exact missing)
+  // 1. find the BASE_TERRITORY price point whose customerPrice == target (nearest if exact missing)
   let url = `/v1/subscriptions/${sub.id}/pricePoints?filter[territory]=${BASE_TERRITORY}&limit=200`;
   const points = [];
   while (url) {
@@ -155,7 +155,7 @@ async function ensurePrice(sub, prod) {
   const byPrice = points.map((p) => ({ id: p.id, price: parseFloat(p.attributes.customerPrice) }))
     .sort((a, b) => Math.abs(a.price - target) - Math.abs(b.price - target));
   const pick = byPrice[0];
-  if (!pick) { console.log(`  ! no CHN price points for ${prod.productId}`); return; }
+  if (!pick) { console.log(`  ! no ${BASE_TERRITORY} price points for ${prod.productId}`); return; }
   if (pick.price !== target) console.log(`  ~ ${prod.productId}: no exact ¥${target}, nearest ¥${pick.price}`);
 
   // 2. existing price already set?
