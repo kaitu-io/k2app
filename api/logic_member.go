@@ -31,20 +31,11 @@ func addProExpiredDays(ctx context.Context, tx *gorm.DB, user *User, vipType Vip
 	}
 	log.Debugf(ctx, "[addProExpiredDays] created pro history record %d", history.ID)
 
-	// 计算新的过期时间
-	now := time.Now()
-
-	// 如果用户已过期，从当前时间开始计算
-	if user.ExpiredAt < now.Unix() {
-		user.ExpiredAt = now.AddDate(0, 0, days).Unix()
-		log.Debugf(ctx, "[addProExpiredDays] user %d was expired, new expiry from current time: %s",
-			user.ID, time.Unix(user.ExpiredAt, 0).Format("2006-01-02 15:04:05"))
-	} else {
-		// 如果用户未过期，在现有时间基础上增加天数
-		user.ExpiredAt = time.Unix(user.ExpiredAt, 0).AddDate(0, 0, days).Unix()
-		log.Debugf(ctx, "[addProExpiredDays] user %d extended from existing time: %s",
-			user.ID, time.Unix(user.ExpiredAt, 0).Format("2006-01-02 15:04:05"))
-	}
+	// 计算新的过期时间 —— 统一走 applyGiftCredit（单一权益模块）
+	nowUnix := time.Now().Unix()
+	user.ExpiredAt = applyGiftCredit(user.ExpiredAt, int64(days)*86400, nowUnix)
+	log.Debugf(ctx, "[addProExpiredDays] user %d new expiry: %s",
+		user.ID, time.Unix(user.ExpiredAt, 0).Format("2006-01-02 15:04:05"))
 
 	// 如果这是用户的第一笔订单（只有真正的订单支付才标记，奖励不标记）
 	if vipType == VipPurchase {
