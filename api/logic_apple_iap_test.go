@@ -14,65 +14,6 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 )
 
-// TestComputeRecurringEntitlement covers the load-bearing entitlement math: Apple's
-// absolute expiresDate only ever raises the user's expiry (never shortens), and
-// re-delivery of the same expiry is a no-op (idempotent).
-func TestComputeRecurringEntitlement(t *testing.T) {
-	const day = int64(86400)
-	now := int64(1_700_000_000)
-
-	cases := []struct {
-		name         string
-		current      int64
-		appleExpires int64
-		wantExpiry   int64
-		wantDays     int
-		wantAdvanced bool
-	}{
-		{
-			name:         "expired user, fresh 1y from now",
-			current:      now - 10*day,
-			appleExpires: now + 365*day,
-			wantExpiry:   now + 365*day,
-			wantDays:     365,
-			wantAdvanced: true,
-		},
-		{
-			name:         "active user extended from existing expiry",
-			current:      now + 30*day,
-			appleExpires: now + 395*day,
-			wantExpiry:   now + 395*day,
-			wantDays:     365, // delta over the existing 30d, not from now
-			wantAdvanced: true,
-		},
-		{
-			name:         "apple expiry equals current -> idempotent no-op",
-			current:      now + 100*day,
-			appleExpires: now + 100*day,
-			wantExpiry:   now + 100*day,
-			wantDays:     0,
-			wantAdvanced: false,
-		},
-		{
-			name:         "apple expiry behind current -> never shorten",
-			current:      now + 200*day,
-			appleExpires: now + 100*day,
-			wantExpiry:   now + 200*day,
-			wantDays:     0,
-			wantAdvanced: false,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			gotExpiry, gotDays, gotAdvanced := computeRecurringEntitlement(tc.current, tc.appleExpires, now)
-			assert.Equal(t, tc.wantExpiry, gotExpiry, "expiry")
-			assert.Equal(t, tc.wantDays, gotDays, "days")
-			assert.Equal(t, tc.wantAdvanced, gotAdvanced, "advanced")
-		})
-	}
-}
-
 // TestComputeRenewalState covers the cancellation / billing-status decision used by
 // the DID_CHANGE_RENEWAL_STATUS + DID_FAIL_TO_RENEW webhook paths. The load-bearing
 // invariant: a user cancelling auto-renew must flip auto_renew → false (the old code
@@ -176,9 +117,11 @@ func TestDeriveAppleAccountToken(t *testing.T) {
 	assert.Equal(t, uuid.Version(5), parsed.Version())
 }
 
-// TestVerifyAndGrantTransaction_Integration exercises the full DB grant path
-// against real MySQL with a stubbed Apple fetch: first grant, idempotent
-// re-delivery, and first-write-wins user binding. Skips without a DB.
+// TestVerifyAndGrantTransaction_Integration exercises the full DB grant path against
+// real MySQL with a stubbed Apple fetch under the additive-ledger model: first grant
+// credits one period from-now, the appAccountToken binds the sub to the user, an
+// idempotent re-delivery credits nothing, and a different user attempting the same
+// original_transaction_id is rejected (INV9). Skips without a DB.
 func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
@@ -186,7 +129,6 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 	viper.Set("appstore.bundleId", "io.kaitu.test")
 	t.Cleanup(func() { viper.Set("appstore.bundleId", "") })
 
-	// Seed a plan mapped to an Apple product id. PID is varchar(30) — keep it short.
 	uniq := time.Now().UnixNano()
 	productID := fmt.Sprintf("io.kaitu.test.family.1y.%d", uniq)
 	plan := &Plan{
@@ -205,7 +147,11 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 	require.True(t, user.IsExpired(), "fresh test user should start expired")
 
 	otx := "OTX-" + generateId("otx")
-	appleExpiresMs := (time.Now().Unix() + 365*86400) * 1000
+	nowSec := time.Now().Unix()
+	purchaseMs := nowSec * 1000
+	appleExpiresMs := (nowSec + 365*86400) * 1000
+	// The binding (first) transaction must carry the buyer's derived appAccountToken.
+	token := deriveAppleAccountToken(user.UUID)
 
 	old := fetchAppleTransaction
 	fetchAppleTransaction = func(ctx context.Context, bundleId, transactionID string) (*appstore.TransactionInfo, error) {
@@ -214,6 +160,8 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 			ProductId:             productID,
 			OriginalTransactionId: otx,
 			TransactionId:         transactionID,
+			AppAccountToken:       token,
+			PurchaseDate:          purchaseMs,
 			ExpiresDate:           appleExpiresMs,
 			InAppOwnershipType:    appstore.OwnershipType_PURCHASED,
 			Environment:           "Sandbox",
@@ -222,16 +170,17 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 	t.Cleanup(func() { fetchAppleTransaction = old })
 	t.Cleanup(func() {
 		db.Get().Where("provider = ? AND provider_subscription_id = ?", "apple", otx).Delete(&Subscription{})
+		db.Get().Where("user_id = ?", user.ID).Delete(&SubscriptionCredit{})
 		db.Get().Where("user_id = ? AND type = ?", user.ID, VipAppleSub).Delete(&UserProHistory{})
 	})
 
-	// ---- first grant ----
+	// ---- first grant: credits one period from now, binds to user ----
 	require.NoError(t, verifyAndGrantTransaction(ctx, user.ID, "TXN1"))
 
 	var u1 User
 	require.NoError(t, db.Get().First(&u1, user.ID).Error)
 	assert.False(t, u1.IsExpired(), "user should be a member after grant")
-	assert.InDelta(t, appleExpiresMs/1000, u1.ExpiredAt, 2, "expiry should equal apple expiresDate (sec)")
+	assert.InDelta(t, nowSec+365*86400, u1.ExpiredAt, 5, "≈ one year from now (additive, from-now-if-expired)")
 	assert.Equal(t, "family", u1.Tier, "tier set from plan on first order")
 
 	var sub Subscription
@@ -244,7 +193,7 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 		Where("user_id = ? AND type = ?", user.ID, VipAppleSub).Count(&histCount)
 	assert.Equal(t, int64(1), histCount, "exactly one grant history")
 
-	// ---- idempotent re-delivery (same txn/expiry) ----
+	// ---- idempotent re-delivery (same txn id) credits nothing ----
 	require.NoError(t, verifyAndGrantTransaction(ctx, user.ID, "TXN1"))
 	var u2 User
 	require.NoError(t, db.Get().First(&u2, user.ID).Error)
@@ -253,9 +202,10 @@ func TestVerifyAndGrantTransaction_Integration(t *testing.T) {
 		Where("user_id = ? AND type = ?", user.ID, VipAppleSub).Count(&histCount)
 	assert.Equal(t, int64(1), histCount, "idempotent: no second history row")
 
-	// ---- first-write-wins: a different user cannot rebind the same subscription ----
+	// ---- INV9: a different user cannot rebind/credit the same subscription ----
 	other := CreateTestUser(t)
-	require.NoError(t, verifyAndGrantTransaction(ctx, other.ID, "TXN1"))
+	err := verifyAndGrantTransaction(ctx, other.ID, "TXN2")
+	require.Error(t, err, "rebinding to a different user must be rejected")
 	var subAfter Subscription
 	require.NoError(t, db.Get().Where("provider = ? AND provider_subscription_id = ?", "apple", otx).First(&subAfter).Error)
 	assert.Equal(t, user.ID, subAfter.UserID, "subscription stays bound to the first user")

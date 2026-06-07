@@ -34,21 +34,6 @@ func deriveAppleAccountToken(userUUID string) string {
 	return uuid.NewSHA1(appleAccountNS, []byte(userUUID)).String()
 }
 
-// computeRecurringEntitlement 纯函数：给定用户当前到期(unix 秒)、续订周期绝对到期(unix 秒)、
-// now(unix 秒)，返回新到期、审计净增天数、是否推进。续订型以绝对周期到期为真相源：
-// 只抬升、绝不缩短（幂等）。provider 无关。
-func computeRecurringEntitlement(currentExpiredAt, periodEndSec, nowSec int64) (newExpiredAt int64, auditDays int, advanced bool) {
-	if periodEndSec <= currentExpiredAt {
-		return currentExpiredAt, 0, false
-	}
-	base := currentExpiredAt
-	if base < nowSec {
-		base = nowSec
-	}
-	days := int((periodEndSec - base) / 86400)
-	return periodEndSec, days, true
-}
-
 // planByAppleProductID 按 Apple 商品ID 查套餐；找不到即拒绝入账（未知商品）。
 func planByAppleProductID(ctx context.Context, tx *gorm.DB, productID string) (*Plan, error) {
 	var plan Plan
@@ -72,84 +57,138 @@ func deriveVerifiedStatus(effectivePeriodEnd int64, existingStatus string, now i
 	return "expired"
 }
 
-// upsertSubscription 按 (provider, provider_subscription_id) upsert 订阅行。
-// 关键安全约束：已存在时绝不修改 UserID（first-write-wins），防伪造/重放改归属。
-// status 一律由合并后的绝对周期到期推导(deriveVerifiedStatus)，不信任入参 status。
-// 事务内调用，对订阅行加 FOR UPDATE。
-func upsertSubscription(ctx context.Context, tx *gorm.DB, in *Subscription) (*Subscription, error) {
-	now := time.Now().Unix()
-	var existing Subscription
+// creditAppleTransaction is the single Apple→ledger entry point. It (1) enforces
+// permanent binding (INV9): the binding (first) transaction must carry the caller's
+// appAccountToken; an existing subscription row's UserID is then authoritative for all
+// later transactions; (2) dedups by (provider, transaction_id) so each transaction
+// credits expired_at at most once (INV1); (3) credits the forward period delta
+// additively so gifts are never absorbed (INV3); and (4) keeps the subscriptions row's
+// plan-state current. Must run inside a tx; locks the subscription + user rows.
+func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, info *appstore.TransactionInfo) error {
+	const provider = "apple"
+	newPeriodEnd := info.ExpiresDate / 1000
+
+	// Load-or-create the subscription row (binding key = OriginalTransactionId).
+	var sub Subscription
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(&Subscription{Provider: in.Provider, ProviderSubscriptionID: in.ProviderSubscriptionID}).
-		First(&existing).Error
-	if err == nil {
-		existing.ProductID = in.ProductID
-		existing.ProviderLatestRef = in.ProviderLatestRef
-		if in.CurrentPeriodEnd > existing.CurrentPeriodEnd {
-			existing.CurrentPeriodEnd = in.CurrentPeriodEnd
-		}
-		existing.AutoRenew = in.AutoRenew
-		existing.Environment = in.Environment
-		existing.Status = deriveVerifiedStatus(existing.CurrentPeriodEnd, existing.Status, now)
-		if err := tx.Save(&existing).Error; err != nil {
-			return nil, err
-		}
-		return &existing, nil
+		Where(&Subscription{Provider: provider, ProviderSubscriptionID: info.OriginalTransactionId}).
+		First(&sub).Error
+	isFirst := errors.Is(err, gorm.ErrRecordNotFound)
+	if err != nil && !isFirst {
+		return err
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+	if !isFirst && sub.UserID != userID {
+		// INV9: never re-bind an existing subscription to a different user.
+		return fmt.Errorf("subscription %s already bound to user %d", info.OriginalTransactionId, sub.UserID)
 	}
-	in.Status = deriveVerifiedStatus(in.CurrentPeriodEnd, "", now)
-	if err := tx.Create(in).Error; err != nil {
-		return nil, err
-	}
-	return in, nil
-}
 
-// applyRecurringSubscription 用续订周期绝对到期抬升用户权益（max 语义，幂等）。
-// 事务内调用，对用户行加 FOR UPDATE。
-func applyRecurringSubscription(ctx context.Context, tx *gorm.DB, sub *Subscription) error {
+	// Lock the crediting user (needed for the additive credit and, on first bind, the
+	// appAccountToken check).
 	var user User
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, sub.UserID).Error; err != nil {
-		return fmt.Errorf("lock user %d: %w", sub.UserID, err)
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+		return fmt.Errorf("lock user %d: %w", userID, err)
 	}
 
-	newExpiry, auditDays, advanced := computeRecurringEntitlement(user.ExpiredAt, sub.CurrentPeriodEnd, time.Now().Unix())
-	if !advanced {
-		log.Debugf(ctx, "[applyRecurringSubscription] user %d no advance (periodEnd=%d <= current=%d)",
-			user.ID, sub.CurrentPeriodEnd, user.ExpiredAt)
-		return nil
+	// 账号绑定（INV9，§8.0）：仅在首笔（绑定）交易上强校验 appAccountToken。空 token 硬拒，
+	// 杜绝"在他人订阅过的设备上 restore 白嫖"；生产无历史遗留购买，每笔首购都带 token。
+	// 续订/对账（isFirst=false）不再校验 token——绑定已永久确立，且 Apple 续订交易常省略
+	// appAccountToken；此时归属由上面的 sub.UserID 守卫（webhook 永远传已绑定 user）。
+	if isFirst {
+		if info.AppAccountToken == "" {
+			return fmt.Errorf("missing appAccountToken: refusing to bind subscription")
+		}
+		if want := deriveAppleAccountToken(user.UUID); !strings.EqualFold(info.AppAccountToken, want) {
+			return fmt.Errorf("appAccountToken mismatch: transaction bound to a different account")
+		}
 	}
 
-	user.ExpiredAt = newExpiry
+	priorPeriodEnd := sub.CurrentPeriodEnd // 0 when first
+
+	// Dedup (INV1): credit each transaction id once.
+	var existing SubscriptionCredit
+	dErr := tx.Where(&SubscriptionCredit{Provider: provider, TransactionID: info.TransactionId}).First(&existing).Error
+	alreadyCredited := dErr == nil
+	if dErr != nil && !errors.Is(dErr, gorm.ErrRecordNotFound) {
+		return dErr
+	}
+
+	// Upsert plan-state on the subscription row (status derived, never hardcoded).
+	sub.UserID = userID
+	sub.Provider = provider
+	sub.ProviderSubscriptionID = info.OriginalTransactionId
+	sub.ProductID = info.ProductId
+	sub.ProviderLatestRef = info.TransactionId
+	if newPeriodEnd > sub.CurrentPeriodEnd {
+		sub.CurrentPeriodEnd = newPeriodEnd
+	}
+	sub.AutoRenew = true
+	sub.Environment = info.Environment
+	sub.Status = deriveVerifiedStatus(sub.CurrentPeriodEnd, sub.Status, time.Now().Unix())
+	if err := tx.Save(&sub).Error; err != nil {
+		return err
+	}
+
+	if alreadyCredited {
+		return nil // idempotent: plan-state refreshed, no double credit
+	}
+
+	// Compute the additive credit.
+	now := time.Now().Unix()
+	var creditSeconds int64
+	var kind string
+	if isFirst {
+		// First transaction: credit the period this transaction covers, from-now-if-expired.
+		// Front-line first purchases have purchaseDate≈now, so this ≈ one period. (Late
+		// reconciliation of an OLD missed first transaction could over-credit beyond Apple's
+		// actual remaining coverage — capped in Phase 2 reconciliation.)
+		creditSeconds = newPeriodEnd - (info.PurchaseDate / 1000)
+		if creditSeconds < 0 {
+			creditSeconds = 0
+		}
+		newExpiry := applyGiftCredit(user.ExpiredAt, creditSeconds, now)
+		creditSeconds = newExpiry - max(user.ExpiredAt, now) // audited net add (Go 1.21+ builtin max)
+		user.ExpiredAt = newExpiry
+		kind = "purchase"
+	} else {
+		newExpiry := applyRenewalCredit(user.ExpiredAt, priorPeriodEnd, newPeriodEnd)
+		creditSeconds = newExpiry - user.ExpiredAt
+		user.ExpiredAt = newExpiry
+		kind = "renewal"
+	}
+
+	if user.IsActivated == nil || !*user.IsActivated {
+		user.IsActivated = BoolPtr(true)
+		user.ActivatedAt = now
+	}
 	if user.IsFirstOrderDone == nil || !*user.IsFirstOrderDone {
-		if plan, _ := planByAppleProductID(ctx, tx, sub.ProductID); plan != nil && plan.Tier != "" {
+		if plan, _ := planByAppleProductID(ctx, tx, info.ProductId); plan != nil && plan.Tier != "" {
 			user.Tier = plan.Tier
 		}
 		user.IsFirstOrderDone = BoolPtr(true)
 	}
-	if user.IsActivated == nil || !*user.IsActivated {
-		user.IsActivated = BoolPtr(true)
-		user.ActivatedAt = time.Now().Unix()
-	}
 	if err := tx.Save(&user).Error; err != nil {
-		return fmt.Errorf("save user %d: %w", user.ID, err)
+		return fmt.Errorf("save user %d: %w", userID, err)
 	}
 
-	history := &UserProHistory{
-		UserID:      user.ID,
+	// Dedup ledger row (INV1).
+	if err := tx.Create(&SubscriptionCredit{
+		UserID:                userID,
+		Provider:              provider,
+		TransactionID:         info.TransactionId,
+		OriginalTransactionID: info.OriginalTransactionId,
+		CreditedSeconds:       creditSeconds,
+		Kind:                  kind,
+	}).Error; err != nil {
+		return err
+	}
+	// Human audit (INV8).
+	return tx.Create(&UserProHistory{
+		UserID:      userID,
 		Type:        VipAppleSub,
 		ReferenceID: sub.ID,
-		Days:        auditDays,
-		Reason:      fmt.Sprintf("%s 订阅入账 - %s", sub.Provider, sub.ProviderSubscriptionID),
-	}
-	if err := tx.Create(history).Error; err != nil {
-		return fmt.Errorf("write pro history: %w", err)
-	}
-
-	log.Infof(ctx, "[applyRecurringSubscription] user %d expiry → %s (+%dd) via %s sub %s",
-		user.ID, time.Unix(newExpiry, 0).Format("2006-01-02"), auditDays, sub.Provider, sub.ProviderSubscriptionID)
-	return nil
+		Days:        int(creditSeconds / 86400),
+		Reason:      fmt.Sprintf("apple 订阅入账(%s) - %s", kind, info.TransactionId),
+	}).Error
 }
 
 // verifyAndGrantTransaction 信任锚点：向 Apple 复核 transactionId，校验通过后入账。
@@ -166,38 +205,11 @@ func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID
 		return fmt.Errorf("family-shared ownership not entitled")
 	}
 
-	// 防盗用（defense-in-depth）：交易若携带 appAccountToken，必须等于本用户派生值。
-	// 阻断"偷到他人 transactionId 用自己会话冒领"——购买时 token 绑的是受害者账号。
-	// token 为空（旧客户端/边缘）时退回 first-write-wins 单一保护，不强拒。
-	if info.AppAccountToken != "" {
-		var u User
-		if err := getDB().Select("uuid").First(&u, userID).Error; err != nil {
-			return fmt.Errorf("load user for appAccountToken check: %w", err)
-		}
-		if want := deriveAppleAccountToken(u.UUID); !strings.EqualFold(info.AppAccountToken, want) {
-			return fmt.Errorf("appAccountToken mismatch: transaction bound to a different account")
-		}
-	}
-
 	return withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
 		if _, err := planByAppleProductID(ctx, tx, info.ProductId); err != nil {
 			return err
 		}
-		sub, err := upsertSubscription(ctx, tx, &Subscription{
-			UserID:                 userID,
-			Provider:               "apple",
-			ProviderSubscriptionID: info.OriginalTransactionId,
-			ProductID:              info.ProductId,
-			ProviderLatestRef:      info.TransactionId,
-			CurrentPeriodEnd:       info.ExpiresDate / 1000, // Apple ms → s 归一
-			AutoRenew:              true,                     // 入账即自动续订（best-effort；用户取消后由 DID_CHANGE_RENEWAL_STATUS → applyRenewalInfo 修正为 false）
-			Environment:            info.Environment,
-			// Status 由 upsertSubscription 从合并后周期到期推导(deriveVerifiedStatus)，不在此硬编码
-		})
-		if err != nil {
-			return err
-		}
-		return applyRecurringSubscription(ctx, tx, sub)
+		return creditAppleTransaction(ctx, tx, userID, info)
 	})
 }
 
