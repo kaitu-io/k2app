@@ -32,6 +32,8 @@ func SetupRouter() *gin.Engine {
 	})
 	// Webhook 相关路由
 	r.POST("/webhook/wordgate", log.MiddlewareRequestLog(true), MiddleRecovery(), api_wordgate_webhook)
+	// Apple App Store Server Notifications V2（自动续订订阅续费/退款/撤销）
+	r.POST("/webhook/appstore", log.MiddlewareRequestLog(true), MiddleRecovery(), api_apple_webhook)
 
 	// Chatwoot → FastGPT AI bridge
 	chatwootWebhook := r.Group("/webhook")
@@ -135,6 +137,8 @@ func SetupRouter() *gin.Engine {
 			user.GET("/devices", AuthRequired(), EnforceDeviceClass(), api_get_devices)
 			// 创建订单
 			user.POST("/orders", AuthRequired(), EnforceDeviceClass(), api_create_order)
+			// iOS StoreKit IAP：客户端购买完成后上报 transactionId，服务端复核入账
+			user.POST("/apple-iap/verify", AuthRequired(), EnforceDeviceClass(), api_apple_iap_verify)
 			// 通知代付人付款（给当前用户的 delegate 发支付邀请邮件）
 			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), EnforceDeviceClass(), api_order_notify_delegate)
 			// 获取授权变更历史

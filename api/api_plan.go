@@ -34,6 +34,7 @@ func api_get_plans(c *gin.Context) {
 			MaxDevice:       q.MaxDevice,
 			MaxRouterDevice: q.MaxRouterDevice,
 			MaxLanClient:    q.MaxLanClient,
+			AppleProductID:  plan.AppleProductID,
 		})
 	}
 	log.Infof(c, "successfully loaded %d plans", len(items))

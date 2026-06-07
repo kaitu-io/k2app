@@ -360,7 +360,7 @@ describe('CloudTunnelList', () => {
       expect(screen.getByText(/续费会员|Renew membership/i)).toBeInTheDocument();
     });
 
-    it('on iOS, shows the expired state WITHOUT a renew CTA (Apple 3.1.1: /purchase unregistered on iOS)', async () => {
+    it('on iOS WITHOUT IAP, shows the expired state WITHOUT a renew CTA (Apple 3.1.1: /purchase unregistered)', async () => {
       (window as any)._platform = { os: 'ios' };
       try {
         mockCacheGet.mockReturnValue(null);
@@ -371,8 +371,28 @@ describe('CloudTunnelList', () => {
         await waitFor(() => {
           expect(screen.getByText(/会员已过期|Membership expired/i)).toBeInTheDocument();
         });
-        // The renew button must not exist on iOS — it would navigate to a dead route.
+        // The renew button must not exist on iOS without IAP — it would navigate to a dead route.
         expect(screen.queryByText(/续费会员|Renew membership/i)).not.toBeInTheDocument();
+      } finally {
+        delete (window as any)._platform;
+      }
+    });
+
+    it('on iOS WITH StoreKit IAP, DOES show the renew CTA (/purchase registered → IAP panel)', async () => {
+      // After the IAP merge, /purchase is registered on iOS when the native
+      // StoreKit bridge is injected, so renew is a live path (→ IosSubscribePanel),
+      // not a dead route. Gating must match App.tsx/SideNavigation: !(ios && !iap).
+      (window as any)._platform = { os: 'ios', iap: {} };
+      try {
+        mockCacheGet.mockReturnValue(null);
+        mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+        render(<CloudTunnelList {...defaultProps} />);
+
+        await waitFor(() => {
+          expect(screen.getByText(/会员已过期|Membership expired/i)).toBeInTheDocument();
+        });
+        expect(screen.getByText(/续费会员|Renew membership/i)).toBeInTheDocument();
       } finally {
         delete (window as any)._platform;
       }

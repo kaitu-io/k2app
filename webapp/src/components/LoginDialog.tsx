@@ -45,11 +45,13 @@ import { getDeviceUdid } from '../services/device-udid';
 import { cacheStore } from '../services/cache-store';
 import type { AuthResult } from '../services/api-types';
 import { delayedFocus } from '../utils/ui';
+import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 
 export default function LoginDialog() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { links } = useAppLinks();
+  const affordance = useSubscriptionAffordance();
 
   // Dialog state from store
   const { isOpen, message, trigger, close } = useLoginDialogStore();
@@ -420,7 +422,7 @@ export default function LoginDialog() {
               {t("auth:auth.sendCode")}
             </Button>
 
-            {window._platform?.os !== 'ios' && (
+            {(window._platform?.os !== 'ios' || affordance.mode === 'subscribe') && (
               <>
                 <Divider sx={{ my: 1 }}>
                   <Typography variant="caption" color="text.secondary">

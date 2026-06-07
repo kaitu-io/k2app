@@ -364,6 +364,21 @@ export interface DataInviteCode {
   link: string;
 }
 
+/** 告诉客户端如何管理/取消订阅（与 Go `ManageSurface`）。 */
+export interface ManageSurface {
+  kind: 'apple_settings' | 'url';
+  url?: string;
+}
+
+/** Provider 中立的活跃续订订阅（与 Go `DataSubscription`）。一次性叠加付款不在此列。 */
+export interface DataSubscription {
+  provider: string; // 'apple' | 'stripe' | ...
+  tier: string;
+  currentPeriodEnd: number; // unix 秒
+  autoRenew: boolean;
+  manage: ManageSurface;
+}
+
 export interface DataUser {
   uuid: string; // 使用 UUID 而不是 id
   expiredAt: number;
@@ -388,6 +403,11 @@ export interface DataUser {
   currentCountry?: string; // 2-letter ISO country code detected from request IP, or ""
   registrationCountry?: string; // 2-letter ISO country code of signup, or ""
   suggestedProfile?: string; // e.g. "cnroute" | "iroute" | ... | "global"
+  // StoreKit appAccountToken (uuidv5-derived). iOS purchase only — `omitempty`
+  // in Go `api/type.go`, so optional. Bound to the Apple purchase for S2S verify.
+  appleAccountToken?: string;
+  /** 当前活跃的续订订阅（0..N）。驱动 iOS 购买入口决策；跨 provider，防永久双扣。 */
+  subscriptions?: DataSubscription[];
 }
 
 // 分销商配置更新请求

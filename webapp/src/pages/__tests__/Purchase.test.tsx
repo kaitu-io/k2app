@@ -34,3 +34,46 @@ describe('Purchase page: proxy-purchase removal regression', () => {
     expect(source).not.toMatch(/forUsers\s*:/);
   });
 });
+
+/**
+ * iOS StoreKit IAP wiring guard. Source-level checks (consistent with the
+ * existing regression style above): when `window._platform.iap` is present the
+ * ENTIRE purchase screen is replaced by the inline iOS panels — IosMembershipPanel
+ * (manage/status) or IosSubscribePanel (subscribe) — never the WordGate multi-plan
+ * list and never a popup sheet. The WordGate `openExternal(payUrl)` path is
+ * preserved only for platforms without `iap`.
+ *
+ * Plan: docs/superpowers/plans/2026-06-04-ios-storekit-iap.md (webapp phase).
+ */
+describe('Purchase page: iOS IAP capability gating', () => {
+  const source = readFileSync(
+    resolve(__dirname, '..', 'Purchase.tsx'),
+    'utf8',
+  );
+
+  it('reads the iap capability from window._platform', () => {
+    expect(source).toMatch(/window\._platform\?\.iap/);
+  });
+
+  it('replaces the whole screen with inline iOS panels gated on iap', () => {
+    // A single `if (iap) { ... }` early-return owns the entire iOS path.
+    expect(source).toMatch(/if\s*\(iap\)\s*\{/);
+    expect(source).toMatch(/<IosSubscribePanel/);
+    expect(source).toMatch(/<IosMembershipPanel/);
+  });
+
+  it('no popup sheet on iOS — IapPurchaseSheet fully removed', () => {
+    expect(source).not.toMatch(/IapPurchaseSheet/);
+    expect(source).not.toMatch(/iapSheetOpen/);
+  });
+
+  it('iap-absent path preserves the existing WordGate openExternal(payUrl)', () => {
+    // The WordGate fallback remains for platforms without iap.
+    expect(source).toMatch(/if\s*\(!preview\s*&&\s*payUrl\)/);
+    expect(source).toMatch(/openExternal\?\.\(payUrl\)/);
+  });
+
+  it('passes the user appleAccountToken to the subscribe panel', () => {
+    expect(source).toMatch(/accountToken=\{user\?\.appleAccountToken/);
+  });
+});

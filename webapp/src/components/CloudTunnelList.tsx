@@ -268,11 +268,13 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           title={t('dashboard:dashboard.membershipExpiredTitle')}
           description={t('dashboard:dashboard.membershipExpiredHint')}
           action={
-            // iOS must not route to /purchase — that route is unregistered on
-            // iOS (Apple 3.1.1, see App.tsx) so navigating there is a dead end.
-            // Match the app-wide gating: hide the renew CTA on iOS; the hint's
-            // "switch to Self-hosted" path stays actionable.
-            window._platform?.os !== 'ios' ? (
+            // Renew routes to /purchase. On iOS that route only exists when the
+            // native StoreKit IAP bridge is present (App.tsx / SideNavigation gate
+            // on `_platform.iap`); without it /purchase is unregistered and the
+            // CTA would dead-end (Apple 3.1.1). Match that exact gating: show the
+            // renew CTA everywhere except iOS-without-IAP. The hint's "switch to
+            // Self-hosted" path stays actionable regardless.
+            !(window._platform?.os === 'ios' && !window._platform?.iap) ? (
               <Button
                 onClick={() => navigate('/purchase')}
                 variant="contained"

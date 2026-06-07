@@ -1,0 +1,48 @@
+{
+  "identifier" : "KAITU01",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_applicationInternalID" : "6448744655",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "20001",
+      "localizations" : [],
+      "name" : "Kaitu Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "49.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "30002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Kaitu Basic — billed yearly",
+              "displayName" : "Basic Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "io.kaitu.sub.basic.1y",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Basic Yearly",
+          "subscriptionGroupID" : "20001",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

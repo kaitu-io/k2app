@@ -95,9 +95,28 @@ type ContactInfo struct {
 	Label string `json:"label,omitempty"` // 自定义标签（type=other时使用）
 }
 
+// ManageSurface 告诉客户端如何让用户管理/取消订阅。
+type ManageSurface struct {
+	Kind string `json:"kind"`          // 'apple_settings' | 'url'
+	URL  string `json:"url,omitempty"` // kind='url' 时的目标
+}
+
+// DataSubscription 是 provider 中立的活跃续订订阅读模型（一次性叠加付款不在此列）。
+type DataSubscription struct {
+	Provider         string        `json:"provider"`
+	Tier             string        `json:"tier"`
+	CurrentPeriodEnd int64         `json:"currentPeriodEnd"` // unix 秒
+	AutoRenew        bool          `json:"autoRenew"`
+	Manage           ManageSurface `json:"manage"`
+}
+
 // DataUser API 用户数据结构
 type DataUser struct {
 	UUID             string               `json:"uuid"`
+	AppleAccountToken string              `json:"appleAccountToken,omitempty"` // StoreKit appAccountToken（uuidv5 派生），iOS 购买时下发以绑定账号
+	// Subscriptions 是用户当前活跃的续订型订阅（0..N）。驱动 iOS 购买入口决策；
+	// 跨 provider 列表，防止"多续订源永久双扣"。一次性叠加权益仅由 ExpiredAt 体现。
+	Subscriptions []DataSubscription `json:"subscriptions,omitempty"`
 	ExpiredAt        int64                `json:"expiredAt"`
 	IsFirstOrderDone bool                 `json:"isFirstOrderDone"`
 	InvitedByCode    *DataInviteCode      `json:"inviteCode"`
@@ -542,6 +561,8 @@ type DataPlan struct {
 	MaxDevice       int    `json:"maxDevice"`
 	MaxRouterDevice int    `json:"maxRouterDevice"`
 	MaxLanClient    int    `json:"maxLanClient"`
+	// Apple App Store 商品ID（仅 iOS IAP）：非空才在 iOS 购买面板出现，webapp 据此向 StoreKit 取商品。
+	AppleProductID string `json:"appleProductId,omitempty"`
 }
 
 // Response_SlaveDeviceCheckAuthResult 节点设备认证结果响应

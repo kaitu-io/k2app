@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestSuggestedProfileForCountry(t *testing.T) {
@@ -44,6 +45,14 @@ func TestCountryFromGinContext_NilSafe(t *testing.T) {
 }
 
 func TestBuildDataUser_IncludesCountryAndProfile(t *testing.T) {
+	// Swap getDB so GetActiveSubscriptions (called inside buildDataUserWithDevice)
+	// does not panic when the real db.Get() is unavailable in unit-test context.
+	m := SetupMockDB(t)
+	orig := getDB
+	getDB = func() *gorm.DB { return m.DB }
+	t.Cleanup(func() { getDB = orig })
+
+	m.Mock.ExpectQuery(`SELECT`).WillReturnRows(m.Mock.NewRows(nil))
 	u := &User{
 		ID:                  42,
 		UUID:                "user-42",
@@ -58,6 +67,7 @@ func TestBuildDataUser_IncludesCountryAndProfile(t *testing.T) {
 	assert.Equal(t, "iroute", data.SuggestedProfile)
 
 	// User with empty country gets global fallback
+	m.Mock.ExpectQuery(`SELECT`).WillReturnRows(m.Mock.NewRows(nil))
 	u2 := &User{ID: 43, UUID: "user-43", Language: "en-US"}
 	data2 := buildDataUserWithDevice(u2, nil)
 	assert.Equal(t, "", data2.CurrentCountry)

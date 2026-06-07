@@ -41,6 +41,10 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "storageGet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "storageSet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "storageRemove", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "iapGetProducts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "iapPurchase", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "iapRestore", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "iapFinishTransaction", returnType: CAPPluginReturnPromise),
     ]
 
     private var vpnManager: NETunnelProviderManager?
@@ -110,6 +114,10 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         loadVPNManager()
+
+        // Start the StoreKit Transaction.updates listener so background renewals,
+        // interrupted purchases, and Ask-to-Buy approvals reach the webapp.
+        startIapListenerIfAvailable()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             self?.performAutoUpdateCheck()

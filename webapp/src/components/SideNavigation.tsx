@@ -140,8 +140,10 @@ function SideNavigation() {
       (item) => item.feature === null || (appConfig.features as Record<string, unknown>)[item.feature]
     );
 
-    // iOS: hide purchase entry (App Store policy)
-    if (window._platform?.os === 'ios') {
+    // iOS: 仅当原生 StoreKit IAP 能力缺失时隐藏 purchase 入口。
+    // IAP 已注入（capacitor-k2 在 iOS 注入 _platform.iap）→ 显示入口，
+    // Purchase 页走 IAP 内联面板，绝不开外链，满足 Apple 3.1.1。
+    if (window._platform?.os === 'ios' && !window._platform?.iap) {
       return filtered.filter(item => item.path !== '/purchase');
     }
 

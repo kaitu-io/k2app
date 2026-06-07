@@ -122,6 +122,49 @@ export interface ISecureStorage {
   keys(): Promise<string[]>;
 }
 
+// ==================== IAP (iOS StoreKit) ====================
+
+/** StoreKit 商品（已本地化价格） */
+export interface IapProduct {
+  id: string;
+  displayName: string;
+  description: string;
+  /** 本地化价格串，如 "US$9.99" — 直接展示，勿自行格式化 */
+  displayPrice: string;
+  /** 数值价格（当地货币），仅用于排序/比较 */
+  price: number;
+  periodUnit?: 'day' | 'week' | 'month' | 'year' | 'unknown';
+  periodValue?: number;
+}
+
+/** 购买结果。result='success' 时携带 transactionId 供 Center 复核 */
+export interface IapPurchaseResult {
+  result: 'success' | 'cancelled' | 'pending';
+  transactionId?: string;
+  originalTransactionId?: string;
+  productId?: string;
+}
+
+/**
+ * IIap — iOS StoreKit 2 IAP 能力（仅 iOS 注入；其余平台 undefined）。
+ *
+ * 信任模型：native 永不发放权益。purchase/restore 返回 transactionId，
+ * 由 webapp 调 Center `/api/user/apple-iap/verify`（cloudApi 带鉴权）复核入账，
+ * 入账成功后再 `finishTransaction`。app 中途被杀 → `onTransactionUpdate` 重投补单。
+ */
+export interface IIap {
+  /** 拉取商品（本地化价格/标题） */
+  getProducts(productIds: string[]): Promise<IapProduct[]>;
+  /** 发起购买。accountToken = Center 派生的 RFC UUID（绑定开途账号） */
+  purchase(productId: string, accountToken: string): Promise<IapPurchaseResult>;
+  /** 恢复购买（Apple 强制要件）→ 当前权益交易，逐笔交 Center 复核 */
+  restore(): Promise<Array<{ transactionId: string; productId: string }>>;
+  /** Center 入账成功后调用，标记交易完成 */
+  finishTransaction(transactionId: string): Promise<void>;
+  /** 后台续订/中断补单/Ask-to-Buy 批准的交易更新。返回取消订阅函数 */
+  onTransactionUpdate(cb: (data: { transactionId: string; productId: string }) => void): () => void;
+}
+
 /**
  * 平台能力接口
  *
@@ -200,6 +243,11 @@ export interface IPlatform {
   // ====== App List（可选）======
 
   appList?: IAppListProvider;
+
+  // ====== IAP（iOS StoreKit，可选）======
+
+  /** 仅 iOS 注入。其余平台 undefined → 走外链 WordGate 支付 */
+  iap?: IIap;
 }
 
 // ==================== App List ====================

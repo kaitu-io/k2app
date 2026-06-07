@@ -49,6 +49,8 @@ type AdminCreatePlanRequest struct {
 	Month       int    `json:"month" binding:"required" example:"1"`           // 月数
 	Highlight   bool   `json:"highlight" example:"true"`                       // 是否高亮显示
 	IsActive    bool   `json:"isActive" example:"true"`                        // 是否激活
+	// Apple App Store 商品ID（仅 iOS IAP）：如 io.kaitu.sub.family.1y。非空才在 iOS 购买面板出现。
+	AppleProductID string `json:"appleProductId" example:"io.kaitu.sub.family.1y"`
 }
 
 func api_admin_create_plan(c *gin.Context) {
@@ -87,8 +89,9 @@ func api_admin_create_plan(c *gin.Context) {
 			Price:       req.Price,
 			OriginPrice: req.OriginPrice,
 			Month:       req.Month,
-			Highlight:   BoolPtr(req.Highlight),
-			IsActive:    BoolPtr(req.IsActive),
+			Highlight:      BoolPtr(req.Highlight),
+			IsActive:       BoolPtr(req.IsActive),
+			AppleProductID: req.AppleProductID,
 		}
 
 		if err := tx.Create(&plan).Error; err != nil {

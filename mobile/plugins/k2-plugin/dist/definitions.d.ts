@@ -116,6 +116,42 @@ export interface K2PluginInterface {
             hit_pattern?: string;
         }>;
     }>;
+    /**
+     * StoreKit 2 IAP (iOS only). Android/web reject as unimplemented.
+     * Trust model: native NEVER grants entitlement — it returns transactionId,
+     * the webapp calls Center verify, then calls iapFinishTransaction.
+     */
+    iapGetProducts(options: {
+        productIds: string[];
+    }): Promise<{
+        products: Array<{
+            id: string;
+            displayName: string;
+            description: string;
+            displayPrice: string;
+            price: number;
+            periodUnit?: 'day' | 'week' | 'month' | 'year' | 'unknown';
+            periodValue?: number;
+        }>;
+    }>;
+    iapPurchase(options: {
+        productId: string;
+        accountToken: string;
+    }): Promise<{
+        result: 'success' | 'cancelled' | 'pending';
+        transactionId?: string;
+        originalTransactionId?: string;
+        productId?: string;
+    }>;
+    iapRestore(): Promise<{
+        transactions: Array<{
+            transactionId: string;
+            productId: string;
+        }>;
+    }>;
+    iapFinishTransaction(options: {
+        transactionId: string;
+    }): Promise<void>;
     addListener(eventName: 'vpnStateChange', handler: (data: {
         state: string;
     }) => void): Promise<PluginListenerHandle>;
@@ -126,5 +162,9 @@ export interface K2PluginInterface {
         version: string;
         url?: string;
         appStoreUrl?: string;
+    }) => void): Promise<PluginListenerHandle>;
+    addListener(eventName: 'iapTransactionUpdate', handler: (data: {
+        transactionId: string;
+        productId: string;
     }) => void): Promise<PluginListenerHandle>;
 }

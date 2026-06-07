@@ -10,6 +10,7 @@ import { Link } from '@/i18n/routing'
 import { routing } from '@/i18n/routing'
 import { getBrand } from '@/lib/brand-server'
 import { brandById, type BrandId } from '@/lib/brands'
+import { generateMetadata as generatePageMetadata } from '../metadata'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import {
@@ -146,14 +147,24 @@ function PostDetailPage({ post, locale }: { post: PostDoc; locale: string }) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { locale, slug } = await params
   const brand = await getBrand()
+  // Path without the locale prefix — the shared helper re-adds `/{locale}`.
+  const pathname = `/${slug.join('/')}`
 
   if (slug.length === 1) {
     const category = await getCategory(locale as Locale, slug[0])
     if (!category) return {}
-    return {
-      title: `${category.name} | ${brand.displayName}`,
-      description: category.description ?? undefined,
-    }
+    // Route through the shared helper so category pages get their own
+    // openGraph/twitter/hreflang instead of inheriting the homepage defaults
+    // via Next.js shallow metadata merge.
+    return generatePageMetadata(
+      locale,
+      pathname,
+      {
+        title: `${category.name} | ${brand.displayName}`,
+        description: category.description ?? undefined,
+      },
+      brand,
+    )
   }
 
   if (slug.length === 2) {
@@ -170,10 +181,34 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     )
     const canonicalUrl = `${brandById(canonicalBrandId).baseUrl}/${locale}/${category.slug}/${post.slug}`
 
+    // coverImage is populated to a media doc (absolute CDN url) at depth>=1.
+    const cover =
+      post.coverImage && typeof post.coverImage === 'object'
+        ? post.coverImage.url ?? undefined
+        : undefined
+
+    const meta = generatePageMetadata(
+      locale,
+      pathname,
+      {
+        title: `${post.title} | ${brand.displayName}`,
+        description: post.excerpt,
+        ogType: 'article',
+        ogImage: cover,
+        article: {
+          publishedTime: post.publishedAt,
+          section: category.name,
+        },
+      },
+      brand,
+    )
+
+    // Preserve the cross-brand canonical (an Overleap-only post canonicalises
+    // to overleap.io) while keeping the helper's hreflang language alternates.
     return {
-      title: `${post.title} | ${brand.displayName}`,
-      description: post.excerpt,
+      ...meta,
       alternates: {
+        ...meta.alternates,
         canonical: canonicalUrl,
       },
     }
