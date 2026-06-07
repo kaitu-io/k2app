@@ -2,142 +2,155 @@
 
 **Date:** 2026-06-07
 **Status:** Approved (brainstorming → spec). Next: writing-plans.
-**Area:** `api/` (Center), `webapp/` (iOS subscribe UX)
-**Supersedes:** `docs/superpowers/plans/2026-06-07-subscription-entitlement-dual-clock.md` (the earlier dual-clock model — replaced by the simpler additive single-ledger model below).
+**Area:** `api/` (Center), `webapp/` (iOS subscribe UX), `mobile/` (StoreKit bridge)
+**Supersedes:** the earlier dual-clock plan (replaced by the additive single-ledger model below).
 
 ---
 
 ## 1. Problem
 
-iOS Apple IAP shipped, but the subscription state is wrong in two ways:
+iOS Apple IAP shipped, but subscription state is wrong in two ways:
 
-1. **Two views contradict each other.** Purchase page shows "已订阅" while the Account
-   membership card shows "已过期", for the same account on the same refresh.
-2. **Latent dual-source-of-truth.** `users.expired_at` is written by two *incompatible*
-   semantics: Apple uses **absolute/max** (`computeRecurringEntitlement` — set expiry to the
-   Apple period end), while the other six grant sources use **additive** (`addProExpiredDays`
-   — +N days). A gift given to a user with an active auto-renewing Apple sub gets **absorbed**
-   by the next renewal.
+1. **Two views contradict.** Purchase page shows "已订阅" while the Account card shows "已过期",
+   same account, same refresh.
+2. **Latent dual-source-of-truth.** `users.expired_at` is written by two *incompatible* semantics:
+   Apple uses **absolute/max** (`computeRecurringEntitlement`), the other six grant sources use
+   **additive** (`addProExpiredDays`). A gift to an active auto-renew Apple subscriber gets
+   **absorbed** by the next renewal.
 
 ### Confirmed root cause (prod, user 7977 sandbox)
 
-- `users.expired_at = 2026-06-05 16:50` (past) → Account card correctly shows expired.
-- `subscriptions[id=1].status='active'`, `current_period_end=2026-06-05 16:50` (**past**) →
-  purchase page incorrectly shows subscribed.
-- `verifyAndGrantTransaction` hardcoded `status:"active"` even though the transaction's
-  `ExpiresDate` was already past (sandbox accelerated cycle) → **born-stale** row.
-- `GetActiveSubscriptions` filtered by `status` only, **no `current_period_end > now`** check →
-  the stale row read as live.
-- No Apple S2S `EXPIRED` notification arrives in sandbox (`/webhook/appstore` zero hits) → the
-  stale `active` is permanent.
+`expired_at = 2026-06-05 16:50` (past, correct). `subscriptions[id=1].status='active'`,
+`current_period_end=2026-06-05 16:50` (past) → purchase page wrongly shows subscribed.
+`verifyAndGrantTransaction` hardcoded `status:"active"` (born-stale). `GetActiveSubscriptions`
+filtered by `status` only (no `current_period_end > now`). No S2S `EXPIRED` arrives in sandbox.
 
-The Apple side already works end-to-end otherwise: the deployed Center (commit `9114c343`,
-2026-06-07) has the verify endpoint, the `.p8` App Store Server key is configured, and the prod
-row holds real Apple data. The only defect is how state is **stored and read**.
+Apple otherwise works end-to-end (deployed Center `9114c343`; `.p8` configured; prod row holds
+real Apple data). The only defect is how state is **stored and read**.
 
 ---
 
-## 2. Core principle — ONE source of truth
+## 2. Core principle — ONE source of truth, ONE writer
 
-> **`users.expired_at` (our own ledger) is the single source of truth for entitlement.
-> Exactly one accumulator writes it. Every source — Apple, one-time web payment, invite/bug/
-> survey rewards, system grants — only *adds days* to this ledger, each credited *once* by a
-> unique reference. There is no second clock, no overwrite, no max/absolute path.**
+> **`users.expired_at` (our own ledger) is the single source of truth for entitlement. A single
+> entitlement module is the *only* code that mutates it. Every source — Apple, one-time web
+> payment, invite/bug/survey rewards, system grants — only *adds time* to this ledger, each
+> credited *once* by a unique reference. No second clock, no overwrite, no max/absolute path.**
 
 Apple stops being a "truth": it becomes **a payment source that credits the ledger** (each paid
-transaction = one period added, deduped by transaction id), plus a **best-effort** "delay the
-next charge" perk (Extend API, optional). When a user cancels auto-renew, Apple simply stops
-adding days; the days already credited keep counting down — the user retains exactly what was
-paid for, identical to how a one-time purchase already behaves.
+transaction = one period added, deduped by transaction id) plus a **best-effort** "delay the next
+charge" perk (Extend API, optional). After cancel, Apple stops adding; credited days keep counting
+down — identical to a one-time purchase.
+
+**Architectural boundary:** all three mutation operations — `credit` (purchase/renewal/gift/
+grace), `clawback` (refund/revoke), `coverThrough` (grace window) — live in ONE entitlement
+module. No handler, webhook, or worker touches `expired_at` directly. This is the isolation that
+makes the system auditable and testable.
 
 This is the *minimal, consistent* change: the system is **already additive** for its six other
-grant sources. The only thing that broke the model was Apple using absolute/max. We make Apple
-additive like everything else, and the whole class of contradictions disappears.
+sources. Only Apple used absolute/max. Make Apple additive like the rest, and the whole class of
+contradictions disappears.
 
 ---
 
-## 3. Invariants (the testable backbone)
+## 3. Invariants (testable backbone)
 
-- **INV1 — Idempotent credit.** Each `(provider, transaction_id)` (and each gift `reference_id`)
-  is credited **at most once**, even if a webhook and a client verify both report it, or it
-  replays.
-- **INV2 — Monotonic entitlement.** `expired_at` only increases from credits; it decreases only
-  via an explicit refund/revoke clawback.
-- **INV3 — No absorption.** A gift is never eaten by a subsequent recurring renewal (guaranteed
-  by additivity — both add).
-- **INV4 — Cancel keeps paid time.** After auto-renew is cancelled, `expired_at` retains all
-  credited time and counts down normally.
-- **INV5 — Entitlement ⟂ status.** "Is the user a member right now" is derived **only** from
-  `expired_at > now`, never from `subscriptions.status`.
-- **INV6 — No double-pay.** A user with an active recurring plan cannot create a one-time order
-  (server-enforced, not just hidden in the UI).
-- **INV7 — Self-healing.** If a renewal notification is missed, reconciliation against Apple's
-  transaction history credits the un-credited transactions, so a paying user is never locked out.
+- **INV1 — Idempotent credit.** Each `(provider, transaction_id)` and each gift `reference_id` is
+  credited **at most once**, even if webhook + verify both report it, or it replays.
+- **INV2 — Monotonic + floored clawback.** `expired_at` only rises from credits; it falls only via
+  explicit refund/revoke clawback, and clawback never pushes it **below `now`**.
+- **INV3 — No absorption.** A gift is never eaten by a subsequent renewal (both add).
+- **INV4 — Cancel keeps paid time.** After auto-renew cancel, `expired_at` retains all credited
+  time and counts down normally.
+- **INV5 — Entitlement ⟂ status.** "Member right now" is derived ONLY from `expired_at > now`,
+  never from `subscriptions.status`.
+- **INV6 — No double-charge.** A user with a **live, auto-renewing** Apple plan cannot create a
+  one-time order (server-enforced). A *cancelled-but-still-covered* user MAY (legit switch).
+- **INV7 — Capture guarantee.** A purchased transaction is **never `finish()`-ed until Center
+  confirms the credit**; StoreKit re-delivers unfinished transactions, so a paid transaction is
+  eventually captured even if a network call drops. Reconciliation is the backstop, not the
+  front line.
+- **INV8 — Every mutation audited.** Every `expired_at` change writes a `UserProHistory` row
+  (source, reference, signed delta, reason). The ledger is fully reconstructable.
+- **INV9 — Binding is permanent.** An Apple subscription binds to exactly one our-user at first
+  verify (via `appAccountToken`); all later transactions for that `original_transaction_id` credit
+  that bound user only.
 
 ---
 
 ## 4. Data model
 
-- `users.expired_at int64` — the single truth. **No structural change.**
-- `subscriptions` table — **demoted** to "recurring-plan state": `status`
-  (active/grace/billing_retry/expired/revoked), `current_period_end`, `auto_renew`,
-  `provider`, `provider_subscription_id`, `provider_latest_ref`, `environment`. Used ONLY for:
-  (a) UI subscribe-vs-manage, (b) double-sell block, (c) Extend target, (d) transaction dedup.
-  **It no longer determines entitlement.**
-- **Credit dedup** — a unique key guaranteeing INV1. Either:
-  - a unique index on `user_pro_histories (type, reference_id)` where `reference_id` carries the
-    Apple `transaction_id` (preferred — reuses the existing audit ledger), **or**
-  - a dedicated `subscription_credits(provider, transaction_id UNIQUE, …)` table.
-  Decision deferred to writing-plans; both satisfy INV1. The audit row already records
-  `Type=VipAppleSub`, `ReferenceID`, `Days`, `Reason`.
+- `users.expired_at int64` — the single truth. No structural change.
+- `subscriptions` — **demoted** to recurring-plan state: `status`
+  (active/grace/billing_retry/expired/revoked), `current_period_end`, `auto_renew`, `provider`,
+  `provider_subscription_id` (= Apple `original_transaction_id`, the binding key),
+  `provider_latest_ref`, `environment`, `user_id`. Used ONLY for: subscribe-vs-manage UI,
+  double-sell block, Extend target, binding. **Not** entitlement.
+- **Credit dedup (resolves former open-question #1).** Apple `transaction_id` is a **string** and
+  does not fit `UserProHistory.ReferenceID uint64`. Decision: **add a dedicated
+  `subscription_credits` table** — `(provider, transaction_id VARCHAR)` **UNIQUE**,
+  `original_transaction_id VARCHAR`, `user_id`, `credited_seconds int64`,
+  `kind ENUM(purchase|renewal|grace)`, `created_at`. This is the machine idempotency key (INV1).
+  `UserProHistory` remains the human-readable audit (INV8). The entitlement module writes both in
+  one transaction.
 
 ---
 
-## 5. Write paths (all additive)
+## 5. Write paths (all additive, one module)
 
-- **Apple first purchase / each renewal** → credit the period via the additive accumulator
-  (`addProExpiredDays`-style), keyed by `transaction_id`, **after a dedup check**; already
-  credited → skip (INV1). Credit amount = the period this transaction paid for (the
-  `expiresDate` delta; exact day-arithmetic — delta vs fixed plan period, and the "expired ⇒
-  from now" branch on late reconciliation — pinned with tests in the plan).
-- **Delete `computeRecurringEntitlement`** (the absolute/max path — the absorption + born-stale
-  root). `applyRecurringSubscription` is rewritten to credit additively + update the
-  `subscriptions` row's plan-state (`current_period_end`, `auto_renew`, `status` via
-  `deriveVerifiedStatus`).
-- **One-time / invite / survey / system grant / invited** → unchanged (already additive via
-  `addProExpiredDays`).
-- **Refund / revoke** (`revokeSubscription`) → subtract the refunded transaction's credited days
-  from the ledger (clawback, INV2), and mark the `subscriptions` row `revoked`.
+- **Apple first purchase / renewal** → entitlement module `credit`: dedup-check
+  `subscription_credits(provider, transaction_id)`; if absent, insert + add time to `expired_at` +
+  write `UserProHistory`. If present, **no-op** (INV1).
+- **Credit amount = exact `expiresDate` delta** (`thisExpiresDate − priorExpiresDate` for the
+  binding, in seconds), NOT a calendar-day approximation — keeps the ledger's Apple portion exactly
+  aligned with Apple cumulatively while gifts stack on top. First purchase from an expired state
+  bases from `max(expired_at, now)` (the existing `addProExpiredDays` "from now if expired" rule).
+- **Delete `computeRecurringEntitlement`** (the absolute/max path — absorption + born-stale root).
+- **Non-Apple sources** (one-time/invite/survey/system grant) → unchanged additive credits, now
+  routed through the same entitlement-module `credit` (day-based).
+- **Refund / revoke** → entitlement module `clawback`: reduce `expired_at` by the refunded
+  transaction's `credited_seconds`, floored at `now` (INV2); mark `subscriptions` row `revoked`;
+  audit row with negative delta.
 
----
+### 5.1 Grace / billing-retry coverage (product-case fix)
 
-## 6. Reconciliation (self-healing, INV7)
-
-- A scheduled job + on-demand (App open / verify) reads Apple `Get All Subscription Statuses` /
-  transaction history for the user's `original_transaction_id`, and **credits any transaction
-  not yet in the dedup ledger**.
-- Closes the "missed webhook → paying user locked out" hole. Also flips lapsed `subscriptions`
-  rows to `expired` (cleanup), independent of S2S delivery.
-- Requires the App Store Server API client. **Verify whether `qtoolkit/appstore` exposes the
-  needed history/status calls; if not, add them** (documented endpoints, JWT-signed).
+When Apple sends `DID_FAIL_TO_RENEW` with a grace period (or `billing_retry`), the user is still
+entitled per Apple even though no new payment posted. The entitlement module `coverThrough`:
+`expired_at = max(expired_at, gracePeriodExpiresDate)` (a provisional cover, audited as
+`kind=grace`). If the retry later succeeds → the renewal credit extends further (idempotent). If it
+finally fails → grace already lapsed naturally; no clawback needed. This keeps `expired_at` the
+single truth **without** ever reading `status` for entitlement (INV5 preserved).
 
 ---
 
-## 7. Read model (= Phase 0, already implemented)
+## 6. Capture + reconciliation (self-healing, INV7)
 
-Two *different* questions, each answered from the right place — they can never contradict:
+- **Front line — finish-gating:** the StoreKit bridge calls `finish()` on a transaction **only
+  after** Center returns a successful verify+credit. Until then StoreKit keeps re-delivering it
+  (`Transaction.updates` / on next launch). This guarantees first-purchase capture even if a
+  network call drops — without any server polling.
+- **Backstop — reconciliation:** a scheduled job + on-app-open reads Apple `Get All Subscription
+  Statuses` / transaction history for each **known** `original_transaction_id` and credits any
+  transaction missing from `subscription_credits` (INV1 makes this safe). Also flips lapsed
+  `subscriptions` rows to `expired`. Cadence: hourly job + on app foreground.
+- A subscription we have **never** seen (no row, no original_transaction_id) is captured by the
+  front line (client always verifies post-purchase); reconciliation only heals **known** subs.
+- Requires App Store Server API history/status calls — **verify `qtoolkit/appstore` exposes them;
+  add if missing** (documented, JWT-signed endpoints).
 
-- **"Is there an active recurring plan?"** (subscribe vs manage; double-sell) →
-  `isSubscriptionLive(sub, now)`: `active` requires `current_period_end > now`;
-  `grace`/`billing_retry` count regardless; terminal never counts.
-- **"Is the user a member right now?"** → `expired_at > now` (INV5).
+---
 
-A user with `expired_at` in the future but no active plan (paid once / cancelled but still
-covered) correctly shows "member" on Account and "subscribe/start a plan" on Purchase — not a
-contradiction.
+## 7. Read model (= Phase 0, implemented)
 
-`GetActiveSubscriptions` filters via `isSubscriptionLive`; `verifyAndGrantTransaction` /
-`upsertSubscription` derive `status` via `deriveVerifiedStatus` (never hardcode `active`).
+Two different questions, each from the right place — can never contradict:
+
+- **"Active recurring plan?"** (subscribe vs manage; double-sell) → `isSubscriptionLive(sub, now)`:
+  `active` requires `current_period_end > now`; `grace`/`billing_retry` count regardless; terminal
+  never counts.
+- **"Member right now?"** → `expired_at > now` (INV5).
+
+`GetActiveSubscriptions` filters via `isSubscriptionLive`; verify/`upsertSubscription` derive
+`status` via `deriveVerifiedStatus` (never hardcode `active`).
 
 ---
 
@@ -145,95 +158,102 @@ contradiction.
 
 ### 8.0 Account binding — entitlement follows OUR account, never the device/Apple ID
 
-Entitlement is granted to **our email-based user account**, never to whoever holds the device or
-the Apple ID. The Apple subscription is cryptographically bound to the purchasing our-user via
-`appAccountToken = uuidv5(NS, user.uuid)`:
+Entitlement is granted to our **email-based user account**, never to the device or Apple ID. The
+sub binds to the purchasing our-user via `appAccountToken = uuidv5(NS, user.uuid)`:
 
-- **At purchase:** the client passes the logged-in user's `appAccountToken`; the native bridge
-  refuses to purchase without a valid UUID, so **every** transaction carries it.
-- **At verify AND restore** (both go through the same `/api/user/apple-iap/verify`): grant only
-  if `tx.appAccountToken == derive(currentUser.uuid)`; otherwise reject ("bound to a different
-  account"). The check is stateless (token re-derived from the user UUID).
-- **Hardening (decision):** **hard-reject transactions with an empty `appAccountToken` in
-  production.** We have zero legacy purchases (IAP just launched; every purchase goes through our
-  app and always carries the token), so this removes the current `first-write-wins` fallback —
-  closing the only path by which an unpaid user, on a device whose Apple ID previously subscribed,
-  could pick up entitlement via Restore.
+- **At purchase:** client passes the logged-in user's `appAccountToken`; the native bridge refuses
+  to purchase without a valid UUID → **every** transaction carries it.
+- **At first verify (binding):** grant only if `tx.appAccountToken == derive(currentUser.uuid)`;
+  else reject. **Hard-reject empty `appAccountToken` in production** (zero legacy purchases; every
+  purchase carries it) — closes the Restore free-ride path. Binding (`original_transaction_id →
+  user_id`) is recorded once (INV9).
+- **At renewal / reconciliation:** later transactions for an already-bound `original_transaction_id`
+  credit the bound user directly (binding is permanent; no re-check needed even if a renewal's
+  token were absent). Restore on a *different* our-account hits the token mismatch → reject.
 
-Correct-by-design consequences: the sub belongs to the our-account that bought it and does **not**
-follow the user to a different our-account; an unauthorized our-user on a device whose Apple ID
-already subscribed can neither claim it (token mismatch) nor buy a second (Apple dedupes per
-Apple ID).
+Correct-by-design: the sub belongs to the our-account that bought it and does not follow the user
+to a different account; an unauthorized user on a device whose Apple ID already subscribed can
+neither claim it (token mismatch) nor buy a second (Apple dedupes per Apple ID).
 
 | # | Threat | Constraint / defense |
 |---|---|---|
-| T1 | Steal another user's `transactionId`, OR pick up a device's existing Apple sub via Restore on a different/unpaid our-account | `appAccountToken` binding enforced at verify **and** restore (§8.0); **hard-reject empty token in production**; subscription-row `UserID` first-write-wins as backstop |
-| T2 | Double-credit one Apple transaction (webhook + verify, or replay) | `(provider, transaction_id)` unique dedup; credit only if absent; row lock (INV1) |
-| T3 | **Active sub + one-time payment → user double-charged** | **Server** rejects a one-time order when the user has an `isSubscriptionLive` plan + client hides the entry. **Two layers.** (INV6) |
-| T4 | Keep entitlement after refund | REFUND/REVOKE webhook → subtract the credited days (INV2) |
-| T5 | Reward farming | each `reference_id` credited once (INV1) + per-source business caps (not worsened here) |
-| T6 | Under-credit (missed notification) → paying user locked out | reconciliation self-heals (INV7) |
-| T7 | Concurrency race (parallel notifications) lost-update / double | user row `FOR UPDATE` + dedup unique key + txn (existing `withDeadlockRetry`) |
-| T8 | Client lies about sub-state / forges ownership | sub-state always derived server-side from DB; ownership always re-verified with Apple |
-| T9 | Tier escalation via a cheap product | tier derived from the plan mapped to the actual `product_id`; never client-set |
-
-T3 is the new core constraint and its point is to **protect the user from double-paying** (Apple
-keeps charging *and* they paid one-time) — the "no attackable point on existing payment" bar.
+| T1 | Steal a `transactionId`, or pick up a device's sub via Restore on a different/unpaid our-account | `appAccountToken` bind at verify + restore (§8.0); **hard-reject empty token in prod**; binding permanent (INV9) |
+| T2 | Double-credit one transaction (webhook + verify, replay) | `subscription_credits(provider, transaction_id)` UNIQUE; credit only if absent; row lock (INV1) |
+| T3 | **Active auto-renew sub + one-time payment → user double-charged** | server rejects one-time order when user has a **live auto-renewing** plan + client hides entry (INV6). Cancelled-but-covered users allowed (legit switch). |
+| T4 | Keep entitlement after refund | REFUND/REVOKE → clawback credited seconds, floored at now (INV2) |
+| T5 | Reward farming | each `reference_id` credited once (INV1) + per-source business caps |
+| T6 | Under-credit (missed notification) → paying user locked out | finish-gating front line + reconciliation backstop (INV7) |
+| T7 | Concurrency race (parallel notifications) | user row `FOR UPDATE` + dedup UNIQUE + txn (`withDeadlockRetry`) |
+| T8 | Client lies about sub-state / forges ownership | sub-state derived server-side; ownership re-verified with Apple |
+| T9 | Tier escalation via a cheap product | tier derived from the plan mapped to the real `product_id`; never client-set |
+| **T10** | **Forged S2S webhook injects a fake transaction/grant** | webhook payload is a signed JWS — **verify Apple's signature (x5c chain to Apple root)**; and the webhook **never grants on its own data** — it only triggers a server-to-server `GetTransaction` (the trust anchor) which carries the real, Apple-authenticated data. Confirm `qtoolkit/appstore` does x5c verification; if it "skips verification C", add it. |
 
 ### Cross-cutting decisions
-- **Purchase block is platform-agnostic and server-enforced** (the order API rejects), with the
-  client UI hiding the entry as UX. Not iOS-only.
-- **Reverse direction** (active one-time membership, then Apple subscribe) is **allowed** — it is
-  not double-pay, just two sequential additive credits. We cannot (and need not) block StoreKit.
-- **Tier** is orthogonal to expiry: set on purchase from the product's plan, keep the highest
-  active; never downgraded by a lower-tier Apple `basic` while a higher one-time tier is active.
+- **Block is server-enforced + platform-agnostic** (order API rejects), client UI hides as UX.
+- **Reverse direction** (active one-time membership, then Apple subscribe) is allowed — sequential
+  additive credits, not double-pay; can't block StoreKit anyway.
+- **Tier** orthogonal to expiry: set from the product's plan, keep the highest active; never
+  downgraded by a lower-tier Apple `basic` while a higher one-time tier is active. v1 ships a
+  **single product** (`io.kaitu.sub.basic.1y`); multi-tier + Apple upgrade/downgrade proration is
+  deferred (future spec).
 
 ---
 
 ## 9. Extend API — optional best-effort (后置)
 
-When gifting to a user with an active Apple sub, **additionally** best-effort call App Store
-Server "Extend a Subscription Renewal Date" to push the next charge out by the gift days, so the
-user pays later. **Not required for correctness** — the additive ledger already grants the days
-regardless. Constraints if/when built: ≤90 days/call (chunk larger), idempotent
-`requestIdentifier`, Apple's own cumulative caps → on rejection just skip (ledger already
-correct). Apple positions this API for goodwill/compensation; keep volume sane.
+When gifting to a live Apple subscriber, **additionally** best-effort call App Store Server "Extend
+a Subscription Renewal Date" to push the next charge out by the gift days. **Not required for
+correctness** — the additive ledger already grants the days. Constraints: ≤90 days/call (chunk
+larger), idempotent `requestIdentifier`, Apple's own cumulative caps → on rejection just skip
+(ledger already correct). Apple positions it for goodwill/compensation; keep volume sane.
 
 ---
 
-## 10. Phasing
+## 10. Migration
 
-- **Phase 0 — DONE (uncommitted on `main`).** Read-consistency fix: `isSubscriptionLive` +
-  `deriveVerifiedStatus`; `GetActiveSubscriptions` gate; drop hardcoded `active`. 15 Go subtests
-  + webapp button regression test green. **Independently unblocks App Store review — ship first.**
-- **Phase 1.** Make Apple additive: rewrite `applyRecurringSubscription` to credit via the
-  accumulator + transaction dedup (INV1); delete `computeRecurringEntitlement`; **hard-reject
-  empty `appAccountToken`** (§8.0). Tests pin INV1–INV5.
-- **Phase 2.** Reconciliation / self-healing against Apple history (INV7) + lapsed-row cleanup.
-- **Phase 3.** T3 server-side one-time-order block for active recurring plans (INV6); confirm
-  client UI hiding (largely done).
+**No production Apple subscribers exist** (IAP not yet released to production). The only existing
+`subscriptions` row is sandbox test data (user 7977). Therefore **no entitlement migration is
+needed** — the six existing additive sources already use `expired_at` correctly, and switching
+Apple from absolute→additive affects no real production entitlement. New tables/columns
+(`subscription_credits`) start empty.
+
+---
+
+## 11. Phasing
+
+- **Phase 0 — DONE (uncommitted on `main`).** Read-consistency: `isSubscriptionLive` +
+  `deriveVerifiedStatus`; `GetActiveSubscriptions` gate; drop hardcoded `active`. 15 Go subtests +
+  webapp button regression green. **Independently unblocks App Store review — ship first.**
+- **Phase 1.** Entitlement module + `subscription_credits` table; Apple → additive credit by
+  `expiresDate` delta with dedup (INV1); delete `computeRecurringEntitlement`; hard-reject empty
+  `appAccountToken` (§8.0); permanent binding (INV9). Tests pin INV1–INV5, INV8, INV9.
+- **Phase 2.** Grace/billing-retry `coverThrough` (§5.1); reconciliation + finish-gating
+  verification (INV7); webhook JWS x5c signature verification (T10); lapsed-row cleanup.
+- **Phase 3.** Server-side one-time-order block for live auto-renewing plans (INV6, T3); confirm
+  client UI hiding.
 - **Phase 4 (optional).** Extend best-effort "delay the charge".
 
 ---
 
-## 11. Test strategy
+## 12. Test strategy
 
-- **Pure unit (no DB):** `isSubscriptionLive`, `deriveVerifiedStatus` (done); the additive
-  credit + dedup decision function; refund clawback math.
-- **Mock-DB:** order/verify handlers reject when active plan (INV6); dedup blocks double credit.
-- **Integration (real dev MySQL, `skipIfNoConfig`):** Apple purchase + renewal + gift interplay
-  asserting no absorption (INV3), idempotent re-verify (INV1), cancel keeps time (INV4),
-  refund clawback (INV2), reconciliation credits a missed transaction (INV7).
-- **webapp vitest:** purchase page vs Account agree; subscribe button in-flight guard (done).
+- **Pure unit (no DB):** `isSubscriptionLive`, `deriveVerifiedStatus` (done); additive-credit +
+  dedup decision; clawback math (floor-at-now); `expiresDate`-delta computation; grace
+  `coverThrough`.
+- **Mock-DB:** order/verify handlers reject when live auto-renewing plan (INV6); dedup blocks
+  double credit (INV1); hard-reject empty `appAccountToken`; binding mismatch rejects (INV9).
+- **Integration (real dev MySQL, `skipIfNoConfig`):** purchase + renewal + gift → no absorption
+  (INV3); idempotent re-verify (INV1); cancel keeps time (INV4); refund clawback floored (INV2);
+  reconciliation credits a missed transaction (INV7); grace covers the window (§5.1).
+- **Webhook:** forged/unsigned payload rejected (T10); valid notification triggers GetTransaction.
+- **webapp vitest:** purchase vs Account agree; subscribe button in-flight guard (done).
 - **Release confidence:** functional/money change capped 6–7/10 until real-device sandbox smoke;
-  desk-verified pure logic 9–9.5/10 (per release-confidence framework).
+  desk-verified pure logic 9–9.5/10.
 
 ---
 
-## 12. Open questions
+## 13. Open questions
 
-None blocking. Two implementation-level choices deferred to writing-plans:
-1. Dedup storage: unique index on `user_pro_histories(type, reference_id)` vs a dedicated
-   `subscription_credits` table.
-2. Exact Apple credit day-arithmetic (expiresDate delta vs fixed plan period; late-reconciliation
-   "from now" handling) — pinned with tests.
+None blocking. One implementation nuance pinned with tests in writing-plans: the exact
+`expiresDate`-delta vs first-purchase-from-now arithmetic on late reconciliation of an old missed
+transaction (must not over-credit beyond Apple's actual coverage).
