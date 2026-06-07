@@ -58,10 +58,26 @@ func planByAppleProductID(ctx context.Context, tx *gorm.DB, productID string) (*
 	return &plan, nil
 }
 
+// deriveVerifiedStatus 返回一次成功 Apple verify 后的订阅状态：由合并后(取最大)的
+// 绝对周期到期推导——绝不写出"period 已过去却 status=active"的出生即过期行(线上 bug 根因)。
+// 已退款(revoked)的订阅绝不因重放交易复活。grace/billing_retry 由 applyRenewalInfo 单独落地，
+// 不经此函数(upsert 仅服务 verify/grant 路径)。
+func deriveVerifiedStatus(effectivePeriodEnd int64, existingStatus string, now int64) string {
+	if existingStatus == "revoked" {
+		return "revoked"
+	}
+	if effectivePeriodEnd > now {
+		return "active"
+	}
+	return "expired"
+}
+
 // upsertSubscription 按 (provider, provider_subscription_id) upsert 订阅行。
 // 关键安全约束：已存在时绝不修改 UserID（first-write-wins），防伪造/重放改归属。
+// status 一律由合并后的绝对周期到期推导(deriveVerifiedStatus)，不信任入参 status。
 // 事务内调用，对订阅行加 FOR UPDATE。
 func upsertSubscription(ctx context.Context, tx *gorm.DB, in *Subscription) (*Subscription, error) {
+	now := time.Now().Unix()
 	var existing Subscription
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where(&Subscription{Provider: in.Provider, ProviderSubscriptionID: in.ProviderSubscriptionID}).
@@ -74,9 +90,7 @@ func upsertSubscription(ctx context.Context, tx *gorm.DB, in *Subscription) (*Su
 		}
 		existing.AutoRenew = in.AutoRenew
 		existing.Environment = in.Environment
-		if in.Status != "" {
-			existing.Status = in.Status
-		}
+		existing.Status = deriveVerifiedStatus(existing.CurrentPeriodEnd, existing.Status, now)
 		if err := tx.Save(&existing).Error; err != nil {
 			return nil, err
 		}
@@ -85,9 +99,7 @@ func upsertSubscription(ctx context.Context, tx *gorm.DB, in *Subscription) (*Su
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	if in.Status == "" {
-		in.Status = "active"
-	}
+	in.Status = deriveVerifiedStatus(in.CurrentPeriodEnd, "", now)
 	if err := tx.Create(in).Error; err != nil {
 		return nil, err
 	}
@@ -180,7 +192,7 @@ func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID
 			CurrentPeriodEnd:       info.ExpiresDate / 1000, // Apple ms → s 归一
 			AutoRenew:              true,                     // 入账即自动续订（best-effort；用户取消后由 DID_CHANGE_RENEWAL_STATUS → applyRenewalInfo 修正为 false）
 			Environment:            info.Environment,
-			Status:                 "active",
+			// Status 由 upsertSubscription 从合并后周期到期推导(deriveVerifiedStatus)，不在此硬编码
 		})
 		if err != nil {
 			return err
@@ -284,8 +296,23 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 }
 
 // activeSubStatuses 视为"活跃"的状态：grace/billing_retry 也算活跃，避免在 Apple 仍在
-// 重试扣费时向用户兜售第二份订阅（防双扣）。
+// 重试扣费时向用户兜售第二份订阅（防双扣）。粗筛用，精筛见 isSubscriptionLive。
 var activeSubStatuses = []string{"active", "grace", "billing_retry"}
+
+// isSubscriptionLive 读模型的唯一判据：订阅当前是否真的覆盖用户(→ 显示"管理"/防双卖)。
+// active 必须 current_period_end 仍在未来；grace/billing_retry 无视周期都算活跃(Apple 仍在
+// 宽限/重试扣费)；terminal(expired/revoked/未知)一律不算。这样一行 status=active 但 period 已过
+// 的陈旧行(线上 bug)永远不会被读成活跃——与 user.expired_at 这个真相源保持一致。
+func isSubscriptionLive(s *Subscription, now int64) bool {
+	switch s.Status {
+	case "active":
+		return s.CurrentPeriodEnd > now
+	case "grace", "billing_retry":
+		return true
+	default:
+		return false
+	}
+}
 
 // appleManageSurface 是 Apple 订阅的系统管理面（iOS 设置内订阅页）。
 func appleManageSurface() ManageSurface {
@@ -301,9 +328,13 @@ func GetActiveSubscriptions(userID uint64) []DataSubscription {
 		Find(&subs).Error; err != nil {
 		return nil
 	}
+	now := time.Now().Unix()
 	out := make([]DataSubscription, 0, len(subs))
 	for i := range subs {
 		s := &subs[i]
+		if !isSubscriptionLive(s, now) {
+			continue // 防陈旧 active 行(period 已过)被读成订阅中
+		}
 		tier := ""
 		if plan, _ := planByAppleProductID(context.Background(), getDB(), s.ProductID); plan != nil {
 			tier = plan.Tier
