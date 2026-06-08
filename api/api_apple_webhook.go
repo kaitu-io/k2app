@@ -2,12 +2,15 @@ package center
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"strings"
 	"time"
 
@@ -136,11 +139,19 @@ func recordSubEventID(ctx context.Context, id uint64, eventID string) error {
 	return db.Get().Model(&Subscription{}).Where("id = ?", id).Update("last_event_id", eventID).Error
 }
 
-// verifyAppleJWS validates the x5c certificate chain embedded in an Apple JWS
-// signed payload. Apple's JWS header carries x5c:[leaf, intermediate]; we verify
-// leaf→intermediate→Apple Root CA G3 (embedded in qtoolkit). Returns nil only if
-// the chain is valid and roots at Apple's CA — any forgery or self-signed cert fails.
+// verifyAppleJWS validates an Apple JWS signed payload against the embedded
+// Apple Root CA G3. Delegates to verifyAppleJWSWithRoot.
 func verifyAppleJWS(payload string) error {
+	return verifyAppleJWSWithRoot(payload, appstore.AppleRootCAPEM)
+}
+
+// verifyAppleJWSWithRoot performs full two-stage JWS verification:
+//  1. Certificate chain: x5c[leaf]→x5c[intermediate]→rootPEM (Apple Root CA G3 in prod).
+//  2. Signature: ES256 (ECDSA P-256 + SHA-256) over header.payload using the leaf key.
+//     Apple uses RFC 7518 §3.4 raw R||S encoding (64 bytes), not ASN.1 DER.
+//
+// rootPEM is injectable so tests can use a synthetic CA without real Apple credentials.
+func verifyAppleJWSWithRoot(payload string, rootPEM []byte) error {
 	parts := strings.Split(payload, ".")
 	if len(parts) < 3 {
 		return errors.New("invalid JWS: expected header.payload.signature")
@@ -150,10 +161,14 @@ func verifyAppleJWS(payload string) error {
 		return fmt.Errorf("decode JWS header: %w", err)
 	}
 	var header struct {
+		Alg string   `json:"alg"`
 		X5c []string `json:"x5c"`
 	}
 	if err := json.Unmarshal(headerBytes, &header); err != nil {
 		return fmt.Errorf("parse JWS header: %w", err)
+	}
+	if header.Alg != "ES256" {
+		return fmt.Errorf("unexpected JWS algorithm %q; only ES256 accepted", header.Alg)
 	}
 	if len(header.X5c) < 2 {
 		return fmt.Errorf("x5c chain has %d cert(s); leaf + intermediate required", len(header.X5c))
@@ -174,9 +189,11 @@ func verifyAppleJWS(payload string) error {
 	if err != nil {
 		return fmt.Errorf("parse intermediate cert: %w", err)
 	}
+
+	// Stage 1: certificate chain must root at the injected trust anchor.
 	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(appstore.AppleRootCAPEM) {
-		return errors.New("load Apple root CA: PEM parse failed")
+	if !roots.AppendCertsFromPEM(rootPEM) {
+		return errors.New("load root CA: PEM parse failed")
 	}
 	intermediates := x509.NewCertPool()
 	intermediates.AddCert(intermediate)
@@ -186,6 +203,26 @@ func verifyAppleJWS(payload string) error {
 		CurrentTime:   time.Now(),
 	}); err != nil {
 		return fmt.Errorf("chain: %w", err)
+	}
+
+	// Stage 2: ECDSA signature over header.payload using the leaf's public key.
+	// Apple follows RFC 7518 §3.4: signature = R || S (32 bytes each for P-256).
+	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return fmt.Errorf("decode JWS signature: %w", err)
+	}
+	if len(sigBytes) != 64 {
+		return fmt.Errorf("ES256 signature must be 64 bytes, got %d", len(sigBytes))
+	}
+	ecKey, ok := leaf.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return errors.New("leaf cert: expected ECDSA public key")
+	}
+	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	r := new(big.Int).SetBytes(sigBytes[:32])
+	s := new(big.Int).SetBytes(sigBytes[32:])
+	if !ecdsa.Verify(ecKey, digest[:], r, s) {
+		return errors.New("JWS signature verification failed")
 	}
 	return nil
 }
