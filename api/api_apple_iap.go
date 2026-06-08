@@ -25,10 +25,11 @@ func api_apple_iap_verify(c *gin.Context) {
 	}
 
 	if err := verifyAndGrantTransaction(c, userID, req.TransactionID); err != nil {
-		log.Errorf(c, "apple iap verify failed (user %d, txn %s): %v", userID, req.TransactionID, err)
+		log.Errorf(c, "[AppleIAP] verify failed user=%d txn=%s: %v", userID, req.TransactionID, err)
 		Error(c, ErrorInvalidOperation, "verification failed")
 		return
 	}
+	log.Infof(c, "[AppleIAP] verify ok user=%d txn=%s", userID, req.TransactionID)
 
 	// 返回刷新后的用户信息（与 /api/user/info 一致的序列化）
 	var user User

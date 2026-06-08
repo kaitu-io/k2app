@@ -146,8 +146,8 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 			creditSeconds = 0
 		}
 		if now-info.PurchaseDate/1000 > 86400 {
-			log.Warnf(ctx, "[creditAppleTransaction] first-bind txn %s has old purchaseDate (%ds ago); crediting %ds from now may exceed Apple's remaining coverage (Phase-2 reconciliation cap pending)",
-				info.TransactionId, now-info.PurchaseDate/1000, creditSeconds)
+			log.Warnf(ctx, "[creditAppleTransaction] txn %s is %dd old at first-bind; credited %ds forward from now — may exceed Apple's remaining coverage, Phase 2 reconciliation will cap",
+				info.TransactionId, (now-info.PurchaseDate/1000)/86400, creditSeconds)
 		}
 		newExpiry := applyGiftCredit(user.ExpiredAt, creditSeconds, now)
 		creditSeconds = newExpiry - max(user.ExpiredAt, now) // audited net add (Go 1.21+ builtin max)
@@ -190,14 +190,20 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		return err
 	}
 	// Human audit (INV8). ReferenceID = per-transaction credit row id (unique).
-	return tx.Create(&UserProHistory{
+	if err := tx.Create(&UserProHistory{
 		UserID:      userID,
 		Type:        VipAppleSub,
 		ReferenceID: creditRow.ID,
 		// Days is floored display-only audit; CreditedSeconds (above) is the precise value.
 		Days:        int(creditSeconds / 86400),
 		Reason:      fmt.Sprintf("apple 订阅入账(%s) - %s", kind, info.TransactionId),
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	log.Infof(ctx, "[creditAppleTransaction] user %d credited +%dd (%s) txn=%s expiry→%s",
+		userID, int(creditSeconds/86400), kind, info.TransactionId,
+		time.Unix(user.ExpiredAt, 0).Format("2006-01-02"))
+	return nil
 }
 
 // verifyAndGrantTransaction 信任锚点：向 Apple 复核 transactionId，校验通过后入账。
@@ -247,8 +253,14 @@ func revokeSubscription(ctx context.Context, sub *Subscription) error {
 			}).Error; err != nil {
 				return err
 			}
-			log.Infof(ctx, "[revokeSubscription] user %d entitlement clawed back (-%dd) for %s sub %s",
+			log.Infof(ctx, "[revokeSubscription] user %d clawed back -%dd for %s sub %s",
 				user.ID, cutDays, sub.Provider, sub.ProviderSubscriptionID)
+		} else {
+			// Entitlement not clawed back: either already expired (expiredAt≤now) or
+			// user has additional time beyond this subscription's period (e.g. from gifts
+			// or other sources). Sub is revoked but paid time is preserved.
+			log.Infof(ctx, "[revokeSubscription] user %d no clawback (expiredAt=%d periodEnd=%d now=%d); sub marked revoked",
+				user.ID, user.ExpiredAt, sub.CurrentPeriodEnd, now)
 		}
 		return tx.Model(&Subscription{}).Where("id = ?", sub.ID).Update("status", "revoked").Error
 	})
@@ -306,6 +318,8 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 		updates["status"] = status
 	}
 	if len(updates) == 0 {
+		log.Infof(ctx, "[applyRenewalInfo] sub %s no state change (subtype=%s currentStatus=%s)",
+			sub.ProviderSubscriptionID, subtype, sub.Status)
 		return nil
 	}
 	if err := getDB().Model(&Subscription{}).Where("id = ?", sub.ID).Updates(updates).Error; err != nil {

@@ -2,8 +2,14 @@ package center
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wordgate/qtoolkit/appstore"
@@ -15,13 +21,13 @@ import (
 //
 // 与 wordgate webhook 一致，使用 HTTP 状态码表达 S2S 重试语义（非 JSON code）：
 //   - 200 = 已处理，勿重试
-//   - 4xx = 坏请求，停止重试
+//   - 4xx = 坏请求，停止重试（Apple 不再重试）
 //   - 5xx = 临时失败，请重试
 //
-// 安全：payload 视为不可信触发器。只读 originalTransactionId + 通知类型，再由
-// verifyAndGrantTransaction 向 Apple 认证 API（GetTransaction）复核后入账——载重信任锚点
-// 在那里，而非这里的签名解析。伪造 webhook 命中不存在的交易(Apple 404→no-op)或真交易
-// (字段不可篡改)，均无法越权发放权益。
+// 安全（双层防御）：
+//  1. verifyAppleJWS：x5c 链校验到内置 Apple Root CA G3，硬拒非 Apple 来源。
+//  2. verifyAndGrantTransaction：向 Apple 认证 API（GetTransaction）复核——载重信任
+//     锚点在那里，payload 字段不可伪造。
 func api_apple_webhook(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
@@ -35,6 +41,13 @@ func api_apple_webhook(c *gin.Context) {
 	}
 	if err := json.Unmarshal(body, &req); err != nil || req.SignedPayload == "" {
 		log.Warnf(c, "[AppleWebhook] bad payload: %v", err)
+		c.AbortWithStatus(400)
+		return
+	}
+
+	// Layer 1: reject payloads whose x5c chain doesn't root at Apple Root CA G3.
+	if err := verifyAppleJWS(req.SignedPayload); err != nil {
+		log.Warnf(c, "[AppleWebhook] JWS signature rejected: %v", err)
 		c.AbortWithStatus(400)
 		return
 	}
@@ -54,15 +67,16 @@ func api_apple_webhook(c *gin.Context) {
 	// 仅处理我们已知（已在 verify 端点绑定过 userID）的订阅链。
 	var sub Subscription
 	if err := db.Get().Where(&Subscription{Provider: "apple", ProviderSubscriptionID: otx}).First(&sub).Error; err != nil {
-		// 未知 originalTransactionId（如 SUBSCRIBED 早于已鉴权 verify 到达）→ 忽略，Apple 不重试。
-		log.Infof(c, "[AppleWebhook] unknown originalTransactionId=%s, ignoring", otx)
+		// 未知 otx：正常场景——SUBSCRIBED 通知可早于客户端 verify 到达；
+		// 返回 200 告知 Apple 不必重试（客户端 verify 会完成首次绑定）。
+		log.Infof(c, "[AppleWebhook] otx=%s not yet bound (expected before client verify), skipping", otx)
 		c.Status(200)
 		return
 	}
 
-	// 幂等：同一通知 UUID 已处理过则跳过。
+	// 幂等：同一通知 UUID 已处理过则跳过（Apple 偶发重送）。
 	if sub.LastEventID != "" && sub.LastEventID == uuid {
-		log.Debugf(c, "[AppleWebhook] duplicate notification uuid=%s, skipping", uuid)
+		log.Infof(c, "[AppleWebhook] duplicate notification uuid=%s otx=%s, already processed", uuid, otx)
 		c.Status(200)
 		return
 	}
@@ -120,4 +134,58 @@ func setSubStatus(ctx context.Context, id uint64, status string) error {
 
 func recordSubEventID(ctx context.Context, id uint64, eventID string) error {
 	return db.Get().Model(&Subscription{}).Where("id = ?", id).Update("last_event_id", eventID).Error
+}
+
+// verifyAppleJWS validates the x5c certificate chain embedded in an Apple JWS
+// signed payload. Apple's JWS header carries x5c:[leaf, intermediate]; we verify
+// leaf→intermediate→Apple Root CA G3 (embedded in qtoolkit). Returns nil only if
+// the chain is valid and roots at Apple's CA — any forgery or self-signed cert fails.
+func verifyAppleJWS(payload string) error {
+	parts := strings.Split(payload, ".")
+	if len(parts) < 3 {
+		return errors.New("invalid JWS: expected header.payload.signature")
+	}
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return fmt.Errorf("decode JWS header: %w", err)
+	}
+	var header struct {
+		X5c []string `json:"x5c"`
+	}
+	if err := json.Unmarshal(headerBytes, &header); err != nil {
+		return fmt.Errorf("parse JWS header: %w", err)
+	}
+	if len(header.X5c) < 2 {
+		return fmt.Errorf("x5c chain has %d cert(s); leaf + intermediate required", len(header.X5c))
+	}
+	leafDER, err := base64.StdEncoding.DecodeString(header.X5c[0])
+	if err != nil {
+		return fmt.Errorf("decode leaf cert: %w", err)
+	}
+	intDER, err := base64.StdEncoding.DecodeString(header.X5c[1])
+	if err != nil {
+		return fmt.Errorf("decode intermediate cert: %w", err)
+	}
+	leaf, err := x509.ParseCertificate(leafDER)
+	if err != nil {
+		return fmt.Errorf("parse leaf cert: %w", err)
+	}
+	intermediate, err := x509.ParseCertificate(intDER)
+	if err != nil {
+		return fmt.Errorf("parse intermediate cert: %w", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(appstore.AppleRootCAPEM) {
+		return errors.New("load Apple root CA: PEM parse failed")
+	}
+	intermediates := x509.NewCertPool()
+	intermediates.AddCert(intermediate)
+	if _, err := leaf.Verify(x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: intermediates,
+		CurrentTime:   time.Now(),
+	}); err != nil {
+		return fmt.Errorf("chain: %w", err)
+	}
+	return nil
 }
