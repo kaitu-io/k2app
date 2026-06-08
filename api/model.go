@@ -665,6 +665,22 @@ type Subscription struct {
 	LastEventID string `gorm:"column:last_event_id;type:varchar(64)" json:"-"`
 }
 
+// SubscriptionCredit is the idempotency ledger for recurring-provider credits.
+// One row per provider transaction; UNIQUE(provider, transaction_id) guarantees a
+// transaction is credited to expired_at at most once (INV1). transaction_id is a
+// STRING (Apple transactionId is not a uint64). UserProHistory remains the human
+// audit (INV8); this table is the machine dedup key.
+type SubscriptionCredit struct {
+	ID                    uint64    `gorm:"primarykey" json:"id"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UserID                uint64    `gorm:"column:user_id;not null;index" json:"userId"`
+	Provider              string    `gorm:"column:provider;type:varchar(16);not null;uniqueIndex:uniq_provider_txn" json:"provider"`
+	TransactionID         string    `gorm:"column:transaction_id;type:varchar(64);not null;uniqueIndex:uniq_provider_txn" json:"transactionId"`
+	OriginalTransactionID string    `gorm:"column:original_transaction_id;type:varchar(64);not null;index" json:"originalTransactionId"`
+	CreditedSeconds       int64     `gorm:"column:credited_seconds;not null" json:"creditedSeconds"`
+	Kind                  string    `gorm:"column:kind;type:varchar(16);not null" json:"kind"` // purchase|renewal|grace
+}
+
 // EmailMarketingTemplate EDM多语言邮件模板模型
 type EmailMarketingTemplate struct {
 	ID        uint64         `gorm:"primarykey" json:"id"`
