@@ -175,9 +175,9 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	}
 
 	// Dedup ledger row (INV1). Its auto-increment ID is unique per transaction and
-	// becomes the audit reference below — UserProHistory has a UNIQUE(user_id,
-	// reference_id, type) index, so referencing sub.ID would collide across renewals
-	// of the same subscription. The credit row is the canonical per-transaction record.
+	// becomes the audit reference — using sub.ID would make all renewals of one
+	// subscription share the same reference_id, losing per-transaction traceability.
+	// The credit row is the canonical per-transaction record.
 	creditRow := &SubscriptionCredit{
 		UserID:                userID,
 		Provider:              provider,
