@@ -394,11 +394,11 @@ func handleProvisionPrivateNodeTask(ctx, payload) error {
 
 **铁律**：专属节点**只能**跑在流量固定计费的供应商上（Phase 1 = AWS Lightsail，含固定流量包）。**禁止**用计量 egress 的标准云实例。
 
-### 9.1 2TB 配额 + 95% 断流
+### 9.1 2TB 配额 + 95% 断流（Center 集中裁决）
 
 - 购买页明示流量配额（如 **2TB/月**），写入 `PrivateNodePlanSpec.TrafficTotalBytes` → `CloudInstance.TrafficTotalBytes`。
-- **复用现有流量同步基础设施**：`sync_cloud_instances` 循环已从 provider（Lightsail `GetInstanceStatus`）同步 `TrafficUsedBytes`。
-- 当 `TrafficUsedBytes / TrafficTotalBytes ≥ 95%`：**停止该节点的访问**（k2s 拒绝新连接 / Center 在 resolve 返回不可服务），并推送+EDM 通知用户。
+- **断流裁决集中在 Center**（便于统一控制、调阈值、灰度），但裁决依赖 k2s 提供低延迟可靠的流量计量（§9.3）。
+- 当 `TrafficUsedBytes / TrafficTotalBytes ≥ 95%`：Center 标记节点不可服务，并通过 usage heartbeat 响应令 k2s **拒绝新连接**；同时推送+EDM 通知用户。
 - `TrafficResetAt` 到期重置周期。
 
 ### 9.2 断流的用户体验
@@ -406,6 +406,55 @@ func handleProvisionPrivateNodeTask(ctx, payload) error {
 - 95% 触发：提前通知"本月流量即将用尽"。
 - 100% 或断流后：路由器侧明确提示"本月流量已用尽"，而非静默失败（避免用户误判产品故障）。
 - 重置或升级套餐后恢复。
+
+### 9.3 k2s 流量计量与上报方案（断流可靠性的根基）
+
+**为什么不能只靠 provider API**：Lightsail `GetInstanceStatus` 的流量计数**滞后数小时**，且统计的是**整机流量**（含 OS 更新等非 VPN 流量），无法支撑低延迟、精确到 VPN 隧道的断流。因此 k2s 必须自带计量。
+
+#### 计量点（metering）
+
+- 在 k2s 会话层累加每条连接的 rx+tx 字节到**节点级原子计数器**（一台 VPS = 一个专属节点 = 一个计量主体）。
+- 热路径只做 `atomic.AddInt64`，无 syscall、无锁，零额外开销。
+- 计量对象是**实际中转的代理字节**，即真实 VPN 吞吐，比 provider 的整机口径更准。
+- > 集成点：确认 k2s 现有连接级字节计数（K2CC metrics / k2s.log 已有吞吐统计，应可直接接入），plan 阶段锁定。
+
+#### 上报：累计值 + 单一 heartbeat 通道
+
+**累计而非增量**：上报"自 epoch 起的累计字节"，Center 存 `max(已见)`。幂等，对丢包/重复/乱序天然鲁棒（增量模型丢一条 = 永久少算，重复 = 双算，脆弱）。
+
+**Usage heartbeat**（一个通道承载计量 + 断流执行 + epoch 重置 + 节点存活）：
+
+```
+k2s ──POST /api/node/usage──> Center
+  请求: { node_id, epoch_id, cumulative_bytes, seq, ts }   // node_secret 鉴权（§8）
+  响应: { verdict: serve|throttle|stop, epoch_id, quota_total, quota_used }
+
+  触发: max(60s 周期, 累计增量 ≥ 500MB) 混合触发
+  k2s 据 verdict 执行: stop=拒绝新连接(可选 drain 现有), throttle=限速(预留), serve=正常
+```
+
+- Center 收到上报 → 更新 `CloudInstance.TrafficUsedBytes` → 算 95% → 回 verdict。断流延迟 ≤ 一个 heartbeat 周期（≤60s）。
+- **超冲分析**：60s 内即便 100Mbps 满速也仅 ~750MB，对 2TB 配额 95% 阈值占比 0.04%，可忽略。
+
+#### 持久化（抗重启）
+
+- k2s 每 10s / 优雅退出时把累计值（含 `epoch_id`）落本地盘。
+- 重启后同 epoch 内从落盘值**续累计**，不清零。
+- 本地盘丢失时，heartbeat 首次响应携带 Center 侧 `quota_used` 作 baseline 恢复。
+
+#### Epoch / 月度重置
+
+- `TrafficResetAt` 到期：Center bump `epoch_id` + 清零 `TrafficUsedBytes`，下一个 heartbeat 响应带**新 epoch_id** → k2s 清零本地计数并续计。`epoch_id` 防止跨周期的旧上报污染新周期。
+
+#### 双信号 defense-in-depth
+
+| 信号 | 角色 | 特性 |
+|------|------|------|
+| **k2s heartbeat** | 主信号 | 低延迟、精确到 VPN 流量；但用户对自有 VPS 有 root，理论可篡改 k2s 少报 |
+| **provider API**（`sync_cloud_instances`） | 兜底 | 滞后、整机口径；但抗篡改、是计费真相 |
+
+- Center 断流 = `min(k2s_reported, provider_reported)` 任一先到 95%。
+- 篡改的真实风险很低：用户少报只是多用 **ta 自己付费的固定带宽**，真正硬顶是 Lightsail 流量包 + provider overage 计费，兜底信号守住资金风险。
 
 ---
 
@@ -463,7 +512,8 @@ SSID "Japan"    → br-jp → VLAN 20 → TPROXY → k2v5://jp-node
 - **Q1 — tier 复用**：专属节点是否复用现有 `Plan.Tier`（`family`/`business` 已带 `MaxRouterDevice` 配额），还是完全走 `Kind=private_node` 旁路？倾向旁路（解耦），但需确认与现有 tier 配额展示是否冲突。
 - **Q2 — k2s↔Center 鉴权回调机制**：现有 k2v5 的 k2s 如何向 Center 校验用户？`AuthorizeNodeAccess` 的确切接线点需在 plan 阶段读 k2s 源码锁定。
 - **Q3 — 弹性 IP**：Lightsail 静态 IP（static IP）在实例停机/替换后保持，确切 API 与配额（Phase 2 起需要）。
-- **Q4 — 断流落点**：95% 断流由 k2s 本地执行（更快）还是 Center resolve 拒绝（更集中）？倾向双层：Center 标记 + k2s 本地兜底。
+- ~~**Q4 — 断流落点**~~ ✅ **已定**：Center 集中裁决，k2s 提供 usage heartbeat 计量+执行（§9.3）。剩余子项 → Q6。
+- **Q6 — k2s 字节计数接入点**：确认 k2s 现有连接级 rx/tx 计数器（K2CC/k2s.log 吞吐统计）能否直接累加到节点级 epoch 计数器，plan 阶段读 k2s 源码锁定。
 - **Q5 — 镜像构建管线**：含 k2s 的预构建镜像如何随版本更新、各 provider/region 如何分发。
 
 ---
@@ -473,7 +523,7 @@ SSID "Japan"    → br-jp → VLAN 20 → TPROXY → k2v5://jp-node
 | 模块 | 现状 | 新增 |
 |------|------|------|
 | cloudprovider 创建/删除/状态/换IP | ✅ 已有（Lightsail/Bandwagon/Aliyun/Tencent） | provider 健壮化；Phase 2 住宅 provider |
-| 流量同步（TrafficUsed/Total/Reset） | ✅ `sync_cloud_instances` + CloudInstance 字段 | 95% 断流判定 + 通知 |
+| 流量同步（TrafficUsed/Total/Reset） | ✅ `sync_cloud_instances` + CloudInstance 字段（兜底信号） | k2s usage heartbeat 主信号 + `/api/node/usage` 端点 + 95% 断流判定 + 通知 |
 | Asynq 任务队列 + cron | ✅ 已有（含 RenewalReminder） | Provision/Deprovision 任务；专属节点续费提醒 |
 | 支付 webhook | ✅ WordGate → MarkOrderAsPaid | 按 `Plan.Kind` 分流到专属节点开通 |
 | k2subs 凭证（device-bound/可吊销/持久化） | ✅ 已运行（k2r 已用） | token 滚动续期 + gateway 宽限期 |
