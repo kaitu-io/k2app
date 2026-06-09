@@ -25,23 +25,24 @@ type PrivateNodeSubscription struct {
 	UpdatedAt int64  `gorm:"autoUpdateTime" json:"updatedAt"`
 
 	// 归属
-	UserID  uint64 `gorm:"not null;index" json:"userId"`  // 主人
-	PlanID  uint64 `gorm:"not null;index" json:"planId"`  // 专属节点套餐（Plan.Kind=private_node）
-	OrderID uint64 `gorm:"index" json:"orderId"`          // 触发开通的订单
+	UserID  uint64 `gorm:"not null;index" json:"userId"` // 主人
+	PlanID  uint64 `gorm:"not null;index" json:"planId"` // 专属节点套餐（Plan.Kind=private_node）
+	OrderID uint64 `gorm:"index" json:"orderId"`         // 触发开通的订单
 
 	// 基础设施绑定（开通后回填）
 	CloudInstanceID *uint64 `gorm:"index" json:"cloudInstanceId,omitempty"` // → CloudInstance.ID
 	SlaveNodeID     *uint64 `gorm:"index" json:"slaveNodeId,omitempty"`     // → SlaveNode.ID
 
 	// 套餐属性 / 购买时选择
+	// 购买时快照（与 PlanSpec 解耦，套餐日后可改不影响已购）
 	Region            string `gorm:"type:varchar(50);not null" json:"region"`
-	IPType            string `gorm:"type:varchar(20);not null" json:"ipType"`   // residential | non_residential
-	TrafficTotalBytes int64  `gorm:"not null" json:"trafficTotalBytes"`         // 流量配额，如 2TB
+	IPType            string `gorm:"type:varchar(20);not null" json:"ipType"` // residential | non_residential
+	TrafficTotalBytes int64  `gorm:"not null" json:"trafficTotalBytes"`       // 流量配额，如 2TB
 
 	// 生命周期（独立时钟，不碰 User.ExpiredAt）
 	Status       string `gorm:"type:varchar(20);not null;index" json:"status"`
 	PurchasedAt  int64  `gorm:"not null" json:"purchasedAt"`
-	ExpiresAt    int64  `gorm:"not null;index" json:"expiresAt"`    // 订阅期满（Unix 秒）
+	ExpiresAt    int64  `gorm:"not null;index" json:"expiresAt"` // 订阅期满（Unix 秒）
 	GraceUntil   int64  `gorm:"not null;default:0" json:"graceUntil"`
 	SuspendUntil int64  `gorm:"not null;default:0" json:"suspendUntil"`
 
@@ -65,10 +66,10 @@ func (s *PrivateNodeSubscription) IsServiceable(now int64) bool {
 // PrivateNodePlanSpec 专属节点套餐的开通参数，与通用 Plan 解耦。
 type PrivateNodePlanSpec struct {
 	ID                uint64 `gorm:"primarykey" json:"id"`
-	PlanID            uint64 `gorm:"uniqueIndex;not null" json:"planId"` // → Plan.ID (Kind=private_node)
+	PlanID            uint64 `gorm:"uniqueIndex;not null" json:"planId"`        // → Plan.ID (Kind=private_node)
 	Provider          string `gorm:"type:varchar(30);not null" json:"provider"` // aws_lightsail | ...
 	IPType            string `gorm:"type:varchar(20);not null" json:"ipType"`
-	AllowedRegions    string `gorm:"type:text" json:"allowedRegions"` // JSON 数组：可选地区
+	AllowedRegions    string `gorm:"type:text" json:"allowedRegions"`   // JSON 数组：可选地区
 	ImageID           string `gorm:"type:varchar(100)" json:"imageId"`  // 预构建镜像（含 k2s）
 	BundleID          string `gorm:"type:varchar(100)" json:"bundleId"` // provider 实例规格
 	TrafficTotalBytes int64  `gorm:"not null" json:"trafficTotalBytes"` // 流量配额
