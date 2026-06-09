@@ -183,7 +183,9 @@ type PrivateNodePlanSpec struct {
 }
 ```
 
-> **复用注意**：`Plan.Tier` 已有 `family`/`business` 且 `MaxRouterDevice` 配额已存在。专属节点是否复用 tier 配额，还是完全走 `Kind=private_node` 旁路，见 §13 待决问题 Q1。
+> **与现有 tier 体系的关系（已定）**：两个产品完全独立，plan 自然完全独立。专属节点 plan 就是 `Kind=private_node` 的独立 plan 行，**不参与共享池的 `Tier` 配额体系**（`Tier`/`MaxRouterDevice` 是共享池概念）。同名"tier/plan"只是词汇巧合，不共享任何逻辑。
+>
+> 旁注：现有共享池 tier `family`/`business` 带的 `MaxRouterDevice>0` 是新模型之前的遗留（曾设想共享池也能挂路由器）。新能力矩阵下「路由器只用专属节点」，该遗留配额与新模型正交，是否废弃留作独立清理项，不影响本设计。
 
 ---
 
@@ -522,7 +524,7 @@ SSID "Japan"    → br-jp → VLAN 20 → TPROXY → k2v5://jp-node
 
 ## 13. 待决问题（plan 阶段前需锁定）
 
-- **Q1 — tier 复用**：专属节点是否复用现有 `Plan.Tier`（`family`/`business` 已带 `MaxRouterDevice` 配额），还是完全走 `Kind=private_node` 旁路？倾向旁路（解耦），但需确认与现有 tier 配额展示是否冲突。
+- ~~**Q1 — tier 复用**~~ ✅ **已定**：完全独立。专属节点走 `Kind=private_node` 旁路，不碰共享池 `Tier` 体系（见 §4.4）。
 - **Q2 — k2s↔Center 鉴权回调机制**：现有 k2v5 的 k2s 如何向 Center 校验用户？`AuthorizeNodeAccess` 的确切接线点需在 plan 阶段读 k2s 源码锁定。
 - **Q3 — 弹性 IP**：Lightsail 静态 IP（static IP）在实例停机/替换后保持，确切 API 与配额（Phase 2 起需要）。
 - ~~**Q4 — 断流落点**~~ ✅ **已定**：Center 集中裁决，k2s 提供 usage heartbeat 计量+执行（§9.3）。剩余子项 → Q6。
