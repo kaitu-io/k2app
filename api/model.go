@@ -624,6 +624,11 @@ type AdminApproval struct {
 	ExecError  *string    `gorm:"type:text" json:"execError,omitempty"`
 }
 
+const (
+	PlanKindShared      = "shared_subscription" // App 订阅（共享池），默认
+	PlanKindPrivateNode = "private_node"        // 专属节点（路由器）
+)
+
 type Plan struct {
 	ID          uint64    `gorm:"primarykey" json:"id"`
 	CreatedAt   time.Time `json:"createdAt"`
@@ -640,6 +645,8 @@ type Plan struct {
 
 	// Apple App Store 商品ID（如 io.kaitu.sub.family.1y）。仅 iOS IAP 用：非空才在 iOS 购买面板出现。
 	AppleProductID string `gorm:"column:apple_product_id;type:varchar(255);index" json:"appleProductId,omitempty"`
+
+	Kind string `gorm:"type:varchar(20);not null;default:'shared_subscription';index" json:"kind"` // shared_subscription | private_node
 }
 
 // Subscription 是 provider 中立的"续订型"订阅记录（Apple IAP 今天；Stripe/Google 将来）。
