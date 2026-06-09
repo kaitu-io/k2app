@@ -1,6 +1,8 @@
 package center
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
@@ -66,17 +68,47 @@ func handleSlaveJWTAuth(c *gin.Context, udid, token string) {
 		return
 	}
 
-	// 5. 检查会员是否过期（402 如果过期）
-	if user.IsExpired() {
-		log.Warnf(c, "membership expired for user %d (expired at %d)", user.ID, user.ExpiredAt)
-		ErrorE(c, ErrMembershipExpired) // 返回 402
+	// 5. 节点访问授权（能力矩阵授权侧，集中在 AuthorizeNodeAccess）。
+	//    node 由 SlaveAuthRequired() 注入（device-check-auth 路由必经该中间件）；
+	//    专属节点需额外加载其订阅。共享节点 pnSub=nil，按 user.ExpiredAt 判定。
+	node := ReqSlaveNode(c)
+	if node == nil {
+		log.Warnf(c, "device check auth: missing authenticated node")
+		Error(c, ErrorNotLogin, "node context required")
 		return
 	}
 
-	// 返回认证成功结果（UDID 从 token 中获取）
+	var pnSub *PrivateNodeSubscription
+	if node.Class == NodeClassPrivate {
+		if node.PrivateSubID == nil {
+			log.Warnf(c, "private node %s missing PrivateSubID", node.Ipv4)
+			ErrorE(c, ErrMembershipExpired)
+			return
+		}
+		var s PrivateNodeSubscription
+		if err := db.Get().First(&s, *node.PrivateSubID).Error; err != nil {
+			log.Errorf(c, "failed to load private sub %d: %v", *node.PrivateSubID, err)
+			ErrorE(c, ErrMembershipExpired)
+			return
+		}
+		pnSub = &s
+	}
+
+	if !AuthorizeNodeAccess(&user, node, pnSub, time.Now().Unix()) {
+		log.Warnf(c, "node access denied: user=%d node=%s class=%s", user.ID, node.Ipv4, node.Class)
+		ErrorE(c, ErrMembershipExpired) // 402
+		return
+	}
+
+	// 6. 返回认证成功。专属节点的服务到期取其专属订阅 ExpiresAt（独立时钟），
+	//    共享节点取 user.ExpiredAt（共享池会员时钟）。
+	serviceExpiredAt := user.ExpiredAt
+	if node.Class == NodeClassPrivate && pnSub != nil {
+		serviceExpiredAt = pnSub.ExpiresAt
+	}
 	Success(c, &SlaveDeviceCheckAuthResult{
 		UserID:           claims.UserID,
 		UDID:             claims.DeviceID,
-		ServiceExpiredAt: user.ExpiredAt,
+		ServiceExpiredAt: serviceExpiredAt,
 	})
 }
