@@ -45,6 +45,8 @@ func Migrate() error {
 		&SlaveNode{},
 		&SlaveTunnel{},
 		&SlaveNodeLoad{},
+		&PrivateNodeSubscription{},
+		&PrivateNodePlanSpec{},
 		&SessionAcct{},
 		&Campaign{},
 		&LicenseKeyBatch{},
