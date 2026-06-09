@@ -427,14 +427,27 @@ func handleProvisionPrivateNodeTask(ctx, payload) error {
 ```
 k2s ──POST /api/node/usage──> Center
   请求: { node_id, epoch_id, cumulative_bytes, seq, ts }   // node_secret 鉴权（§8）
-  响应: { verdict: serve|throttle|stop, epoch_id, quota_total, quota_used }
+  响应: { verdict: serve|throttle|stop, epoch_id, quota_total, quota_used,
+          epoch_hard_ceiling_bytes, next_report_interval }
 
-  触发: max(60s 周期, 累计增量 ≥ 500MB) 混合触发
+  触发: max(next_report_interval(默认60s), 累计增量 ≥ 500MB) 混合触发
   k2s 据 verdict 执行: stop=拒绝新连接(可选 drain 现有), throttle=限速(预留), serve=正常
 ```
 
 - Center 收到上报 → 更新 `CloudInstance.TrafficUsedBytes` → 算 95% → 回 verdict。断流延迟 ≤ 一个 heartbeat 周期（≤60s）。
 - **超冲分析**：60s 内即便 100Mbps 满速也仅 ~750MB，对 2TB 配额 95% 阈值占比 0.04%，可忽略。
+
+#### 计费周期完全由 Center 控制（策略集中）
+
+**Center 是配额/计费周期的唯一权威；k2s 不持有任何策略**——只持有「当前 `epoch_id` + 该 epoch 累计字节」两个状态。
+
+| 谁掌握 | 内容 |
+|--------|------|
+| **Center** | 配额总量、计费周期与重置时点（`TrafficResetAt` → bump `epoch_id`）、95% 阈值、serve/throttle/stop 裁决、epoch 身份、上报节奏（`next_report_interval`） |
+| **k2s** | 诚实计数、上报累计、执行裁决；收到新 `epoch_id` 即清零续计 |
+
+- **重置由 Center 驱动**：k2s 永不按自己时钟重置，只在 heartbeat 响应带新 `epoch_id` 时清零 → 杜绝时钟漂移/重启错位。改周期/配额/阈值/灰度全在 Center，k2s 零改动零感知。
+- **分区时 Center 仍控得住**：k2s 连不上 Center 时沿用最后一次 verdict 继续服务+累计；verdict 额外携带 `epoch_hard_ceiling_bytes`，k2s 即便离线也本地强制执行此上限。策略值（上限）仍由 Center 下发，k2s 只是离线执行——控制权不旁落，且 provider API 兜底守住资金硬顶。
 
 #### 持久化（抗重启）
 
