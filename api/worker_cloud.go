@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -181,8 +182,18 @@ func syncSSHStandalone(ctx context.Context, database *gorm.DB) error {
 
 	log.Infof(ctx, "[CLOUD] Found %d orphan SlaveNodes for ssh_standalone", len(instances))
 
-	// Track synced instance IDs for orphan detection
-	syncedIDs := make(map[string]bool)
+	// Build syncedIDs from ALL active SlaveNode IPs, not just orphans.
+	// ssh_standalone uses IPv4 as instance_id. Without this, markOrphanedInstances
+	// would delete records for nodes that have an active CloudInstance (those nodes
+	// are excluded from ListInstances and would never appear in syncedIDs).
+	var allNodes []SlaveNode
+	if err := database.Select("ipv4").Where("deleted_at IS NULL").Find(&allNodes).Error; err != nil {
+		log.Errorf(ctx, "[CLOUD] Failed to list all slave nodes for orphan detection: %v", err)
+	}
+	syncedIDs := make(map[string]bool, len(allNodes))
+	for _, node := range allNodes {
+		syncedIDs[node.Ipv4] = true
+	}
 
 	for _, inst := range instances {
 		if err := upsertCloudInstance(ctx, CloudInstanceAccount{
@@ -191,10 +202,9 @@ func syncSSHStandalone(ctx context.Context, database *gorm.DB) error {
 		}, inst); err != nil {
 			log.Errorf(ctx, "[CLOUD] Failed to upsert instance %s: %v", inst.InstanceID, err)
 		}
-		syncedIDs[inst.InstanceID] = true
 	}
 
-	// Orphan detection: mark instances that no longer exist as deleted
+	// Orphan detection: mark instances whose SlaveNode no longer exists
 	if err := markOrphanedInstances(ctx, CloudInstanceAccount{
 		Provider: cloudprovider.ProviderSSHStandalone,
 		Name:     "ssh_standalone",
@@ -291,39 +301,53 @@ func markOrphanedInstances(ctx context.Context, account CloudInstanceAccount, sy
 func upsertCloudInstance(ctx context.Context, account CloudInstanceAccount, status *cloudprovider.InstanceStatus) error {
 	now := time.Now().Unix()
 
-	instance := CloudInstance{
-		Provider:          account.Provider,
-		AccountName:       account.Name,
-		InstanceID:        status.InstanceID,
-		Name:              status.Name,
-		IPAddress:         status.IPAddress,
-		IPv6Address:       status.IPv6Address,
-		Region:            status.Region,
-		TrafficUsedBytes:  status.TrafficUsedBytes,
-		TrafficTotalBytes: status.TrafficTotalBytes,
-		TrafficResetAt:    status.TrafficResetAt.Unix(),
-		ExpiresAt:         status.ExpiresAt.Unix(),
-		LastSyncedAt:      now,
-		SyncError:         "",
+	updates := map[string]any{
+		"account_name":        account.Name,
+		"name":                status.Name,
+		"ip_address":          status.IPAddress,
+		"ipv6_address":        status.IPv6Address,
+		"region":              status.Region,
+		"traffic_used_bytes":  status.TrafficUsedBytes,
+		"traffic_total_bytes": status.TrafficTotalBytes,
+		"traffic_reset_at":    status.TrafficResetAt.Unix(),
+		"expires_at":          status.ExpiresAt.Unix(),
+		"last_synced_at":      now,
+		"sync_error":          "",
+		"deleted_at":          gorm.Expr("NULL"), // restore if soft-deleted
 	}
 
-	// Upsert using provider + instance_id as unique key
-	err := db.Get().Where("provider = ? AND instance_id = ?", account.Provider, status.InstanceID).
-		Assign(map[string]any{
-			"account_name":        instance.AccountName,
-			"name":                instance.Name,
-			"ip_address":          instance.IPAddress,
-			"ipv6_address":        instance.IPv6Address,
-			"region":              instance.Region,
-			"traffic_used_bytes":  instance.TrafficUsedBytes,
-			"traffic_total_bytes": instance.TrafficTotalBytes,
-			"traffic_reset_at":    instance.TrafficResetAt,
-			"expires_at":          instance.ExpiresAt,
-			"last_synced_at":      instance.LastSyncedAt,
-			"sync_error":          "",
-		}).FirstOrCreate(&instance).Error
+	// Use Unscoped so soft-deleted records are visible. Without this, FirstOrCreate
+	// would miss a soft-deleted row and INSERT would fail with UNIQUE constraint.
+	var instance CloudInstance
+	err := db.Get().Unscoped().
+		Where("provider = ? AND instance_id = ?", account.Provider, status.InstanceID).
+		First(&instance).Error
 
-	if err != nil {
+	if err == nil {
+		// Record found (possibly soft-deleted) — restore and update in place
+		if err := db.Get().Unscoped().Model(&instance).Updates(updates).Error; err != nil {
+			return err
+		}
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Truly new — create
+		if err := db.Get().Create(&CloudInstance{
+			Provider:          account.Provider,
+			AccountName:       account.Name,
+			InstanceID:        status.InstanceID,
+			Name:              status.Name,
+			IPAddress:         status.IPAddress,
+			IPv6Address:       status.IPv6Address,
+			Region:            status.Region,
+			TrafficUsedBytes:  status.TrafficUsedBytes,
+			TrafficTotalBytes: status.TrafficTotalBytes,
+			TrafficResetAt:    status.TrafficResetAt.Unix(),
+			ExpiresAt:         status.ExpiresAt.Unix(),
+			LastSyncedAt:      now,
+			SyncError:         "",
+		}).Error; err != nil {
+			return err
+		}
+	} else {
 		return err
 	}
 

@@ -154,7 +154,7 @@ export function filterNodes(rawResponse: unknown, filters: NodeFilters): NodeInf
 
   if (filters.country !== undefined) {
     const country = filters.country
-    nodes = nodes.filter((node) => node.country === country)
+    nodes = nodes.filter((node) => node.country.toUpperCase() === country.toUpperCase())
   }
 
   if (filters.name !== undefined) {
