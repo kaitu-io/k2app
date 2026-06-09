@@ -81,14 +81,16 @@ func handleSlaveJWTAuth(c *gin.Context, udid, token string) {
 	var pnSub *PrivateNodeSubscription
 	if node.Class == NodeClassPrivate {
 		if node.PrivateSubID == nil {
-			log.Warnf(c, "private node %s missing PrivateSubID", node.Ipv4)
-			ErrorE(c, ErrMembershipExpired)
+			// 数据完整性问题：专属节点必有订阅。500 而非 402，避免伪装成"会员过期"并触发告警。
+			log.Errorf(c, "private node %s missing PrivateSubID (data integrity)", node.Ipv4)
+			Error(c, ErrorSystemError, "private node misconfigured")
 			return
 		}
 		var s PrivateNodeSubscription
 		if err := db.Get().First(&s, *node.PrivateSubID).Error; err != nil {
+			// DB 加载失败（dangling 指针或基础设施故障）都是服务端问题 → 500。
 			log.Errorf(c, "failed to load private sub %d: %v", *node.PrivateSubID, err)
-			ErrorE(c, ErrMembershipExpired)
+			Error(c, ErrorSystemError, "failed to load private node subscription")
 			return
 		}
 		pnSub = &s
@@ -96,7 +98,7 @@ func handleSlaveJWTAuth(c *gin.Context, udid, token string) {
 
 	if !AuthorizeNodeAccess(&user, node, pnSub, time.Now().Unix()) {
 		log.Warnf(c, "node access denied: user=%d node=%s class=%s", user.ID, node.Ipv4, node.Class)
-		ErrorE(c, ErrMembershipExpired) // 402
+		ErrorE(c, ErrMembershipExpired) // 402 — 真正的授权拒绝
 		return
 	}
 
