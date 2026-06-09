@@ -99,3 +99,17 @@ func TestResolveGatewayPrivateTunnels(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, gated, 0, "唯一订阅不可服务（grace 过期）应返回空")
 }
+
+func TestBuildPrivateSubsTunnels(t *testing.T) {
+	node := &SlaveNode{ID: 1, Ipv4: "10.99.7.1", Country: "JP", Class: NodeClassPrivate}
+	tunnels := []SlaveTunnel{
+		{ID: 1, NodeID: 1, Node: node, ServerURL: "k2v5://priv-jp.example:443"},
+		{ID: 2, NodeID: 1, Node: node, ServerURL: ""},      // 空 URL 应跳过
+		{ID: 3, NodeID: 1, Node: nil, ServerURL: "k2v5://x"}, // Node nil 应跳过
+	}
+	items := buildPrivateSubsTunnels(tunnels, "udid-x", "tok-y")
+	require.Len(t, items, 1, "只有 1 条有效隧道")
+	assert.Equal(t, 0.5, items[0].RecommendScore)
+	assert.Equal(t, 50, items[0].Weight) // round(0.5 * 100)
+	assert.Contains(t, items[0].URL, "udid-x:tok-y@")
+}

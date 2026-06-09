@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wordgate/qtoolkit/log"
 
@@ -148,6 +149,26 @@ func api_subs(c *gin.Context) {
 	// Admin bypass for test tunnels — mirrors api_k2_tunnels:44,67-71.
 	isAdmin := authCtx.User.IsAdmin != nil && *authCtx.User.IsAdmin
 
+	// 能力矩阵：路由器（gateway）只用专属节点；App/桌面用共享池。k2r 未发布，
+	// 此处硬切，无存量路由器回落需求。
+	if authCtx.Device.IsGateway {
+		privTunnels, err := ResolveGatewayPrivateTunnels(c, authCtx.User.ID, time.Now().Unix())
+		if err != nil {
+			log.Errorf(c, "subs: resolve private tunnels failed: %v", err)
+			subsError(c, http.StatusInternalServerError, "failed to load private nodes")
+			return
+		}
+		items := buildPrivateSubsTunnels(privTunnels, udid, token)
+		if len(items) == 0 {
+			log.Infof(c, "subs: gateway user %d has no serviceable private node", authCtx.User.ID)
+			subsError(c, http.StatusPaymentRequired, "no private node entitlement")
+			return
+		}
+		log.Infof(c, "subs: gateway user=%d returning %d private tunnels", authCtx.User.ID, len(items))
+		writeSubsOK(c, SubsResponse{Tunnels: items, Refresh: 1800})
+		return
+	}
+
 	tunnels, err := fetchK2V5Tunnels(c, isAdmin)
 	if err != nil {
 		log.Errorf(c, "subs: DB query failed: %v", err)
@@ -235,4 +256,23 @@ func writeSubsOK(c *gin.Context, resp SubsResponse) {
 	c.Header("Cache-Control", "no-store, private")
 	// RAW JSON — see the wire-protocol note at the top of this file.
 	c.JSON(http.StatusOK, resp)
+}
+
+// buildPrivateSubsTunnels 把专属节点隧道列表转为 subs 响应项，与共享池同构。
+// 专属节点为单一主人独占、确定性使用，不参与共享池的 ComputeRecommendScore，
+// 统一取中性推荐分 0.5；URL 复用 injectSubsCreds 注入用户凭证。
+func buildPrivateSubsTunnels(tunnels []SlaveTunnel, udid, token string) []SubsTunnel {
+	items := make([]SubsTunnel, 0, len(tunnels))
+	for _, t := range tunnels {
+		if t.Node == nil || t.Node.ID == 0 || t.ServerURL == "" {
+			continue
+		}
+		const neutralScore = 0.5
+		items = append(items, SubsTunnel{
+			URL:            injectSubsCreds(t.ServerURL, udid, token),
+			Weight:         int(math.Round(neutralScore * subsLegacyWeightScale)),
+			RecommendScore: neutralScore,
+		})
+	}
+	return items
 }
