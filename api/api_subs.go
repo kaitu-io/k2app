@@ -139,18 +139,18 @@ func api_subs(c *gin.Context) {
 		return
 	}
 
-	// Check membership (mirrors ProRequired middleware logic exactly).
-	if authCtx.User.IsExpired() {
-		log.Infof(c, "subs: user %d membership expired", authCtx.User.ID)
-		subsError(c, http.StatusPaymentRequired, "membership expired")
-		return
-	}
-
-	// Admin bypass for test tunnels — mirrors api_k2_tunnels:44,67-71.
-	isAdmin := authCtx.User.IsAdmin != nil && *authCtx.User.IsAdmin
-
 	// 能力矩阵：路由器（gateway）只用专属节点；App/桌面用共享池。k2r 未发布，
 	// 此处硬切，无存量路由器回落需求。
+	//
+	// ORDERING (load-bearing): this gateway branch MUST run BEFORE the shared-
+	// membership IsExpired() gate below. Private nodes use an independent clock
+	// (per-node PrivateNodeSubscription) and do NOT depend on shared membership —
+	// a router owner whose shared membership has lapsed but who holds an active/
+	// grace private-node subscription must still get their private tunnels.
+	// Gating gateway users by User.ExpiredAt would break the capability matrix
+	// (see ResolveGatewayPrivateTunnels + its test, which deliberately use an
+	// expired-shared-membership owner). The branch returns in ALL paths, so a
+	// non-gateway device falls straight through to the unchanged shared-pool flow.
 	if authCtx.Device.IsGateway {
 		privTunnels, err := ResolveGatewayPrivateTunnels(c, authCtx.User.ID, time.Now().Unix())
 		if err != nil {
@@ -168,6 +168,17 @@ func api_subs(c *gin.Context) {
 		writeSubsOK(c, SubsResponse{Tunnels: items, Refresh: 1800})
 		return
 	}
+
+	// Check membership (mirrors ProRequired middleware logic exactly).
+	// Non-gateway (App/desktop) devices only — gateway devices returned above.
+	if authCtx.User.IsExpired() {
+		log.Infof(c, "subs: user %d membership expired", authCtx.User.ID)
+		subsError(c, http.StatusPaymentRequired, "membership expired")
+		return
+	}
+
+	// Admin bypass for test tunnels — mirrors api_k2_tunnels:44,67-71.
+	isAdmin := authCtx.User.IsAdmin != nil && *authCtx.User.IsAdmin
 
 	tunnels, err := fetchK2V5Tunnels(c, isAdmin)
 	if err != nil {
