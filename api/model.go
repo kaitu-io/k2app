@@ -436,6 +436,11 @@ const (
 // SlaveNode 物理节点模型
 // Note: Only active nodes exist in the database. When a node goes offline,
 // it should be deleted along with its associated tunnels.
+const (
+	NodeClassShared  = "shared"  // 共享池节点（默认）
+	NodeClassPrivate = "private" // 专属节点（单一主人）
+)
+
 type SlaveNode struct {
 	ID        uint64 `gorm:"primarykey"`
 	CreatedAt time.Time
@@ -450,6 +455,11 @@ type SlaveNode struct {
 	Name        string `gorm:"type:varchar(255);not null"`            // 节点名称
 	Ipv6        string `gorm:"type:varchar(50)"`                      // 节点IPv6地址（可选）
 	Meta        string `gorm:"type:json;default:null"`                // 节点元数据（JSON，如架构类型）
+
+	// 节点分类与归属（专属节点产品）。现有节点默认 shared，零迁移影响。
+	Class              string  `gorm:"type:varchar(20);not null;default:'shared';index" json:"class"` // shared | private
+	PrivateOwnerUserID *uint64 `gorm:"index" json:"privateOwnerUserId,omitempty"`                     // class=private 时 = 主人 UserID
+	PrivateSubID       *uint64 `gorm:"index" json:"privateSubId,omitempty"`                           // → PrivateNodeSubscription.ID
 
 	// 关联
 	Tunnels []SlaveTunnel `gorm:"foreignKey:NodeID"` // 该物理节点上的隧道
