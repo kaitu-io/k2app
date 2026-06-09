@@ -62,4 +62,40 @@ func TestResolveGatewayPrivateTunnels(t *testing.T) {
 	empty, err := ResolveGatewayPrivateTunnels(context.Background(), other.ID, now)
 	require.NoError(t, err)
 	assert.Len(t, empty, 0, "无专属订阅应返回空")
+
+	// 状态门控：拥有专属节点+隧道，但唯一一条订阅不可服务（grace 已过期），应返回空。
+	suspendedOwner := User{UUID: "usr-pn-susp-" + uniq, ExpiredAt: now + 86400}
+	require.NoError(t, db.Get().Create(&suspendedOwner).Error)
+
+	suspPriv := SlaveNode{
+		Ipv4: "10.99.7.2", SecretToken: "s8", Country: "JP", Region: "japan",
+		Name: "priv-jp-susp", Class: NodeClassPrivate, PrivateOwnerUserID: &suspendedOwner.ID,
+	}
+	require.NoError(t, db.Get().Create(&suspPriv).Error)
+
+	suspTun := SlaveTunnel{
+		Domain: "priv-jp-susp.example", SecretToken: "tt8", Name: "priv-jp-susp-tun",
+		Protocol: TunnelProtocolK2V5, Port: 443, NodeID: suspPriv.ID,
+		IsTest: BoolPtr(false), ServerURL: "k2v5://priv-jp-susp.example:443",
+	}
+	require.NoError(t, db.Get().Create(&suspTun).Error)
+
+	// grace 状态但 GraceUntil 已过去 => IsServiceable(now) == false。
+	suspSub := PrivateNodeSubscription{
+		UserID: suspendedOwner.ID, Status: PNStatusGrace, Region: "japan",
+		IPType: IPTypeNonResidential, SlaveNodeID: &suspPriv.ID,
+		PurchasedAt: now - 172800, ExpiresAt: now - 86400, GraceUntil: now - 1,
+	}
+	require.NoError(t, db.Get().Create(&suspSub).Error)
+
+	t.Cleanup(func() {
+		db.Get().Unscoped().Delete(&suspSub)
+		db.Get().Unscoped().Delete(&suspTun)
+		db.Get().Unscoped().Delete(&suspPriv)
+		db.Get().Unscoped().Delete(&suspendedOwner)
+	})
+
+	gated, err := ResolveGatewayPrivateTunnels(context.Background(), suspendedOwner.ID, now)
+	require.NoError(t, err)
+	assert.Len(t, gated, 0, "唯一订阅不可服务（grace 过期）应返回空")
 }
