@@ -22,8 +22,9 @@ type SlaveNodeUpsertRequest struct {
 	Name        string              `json:"name" binding:"required" example:"US West Node 1"`   // 节点名称
 	IPv6        string              `json:"ipv6" example:"2001:db8::1"`                         // 节点IPv6地址
 	SecretToken string              `json:"secretToken" binding:"required" example:"abc123..."` // 节点认证令牌（必需，客户端持久化保存）
-	Tunnels     []TunnelConfigInput `json:"tunnels"`                                            // 隧道配置列表（可选，支持批量注册）
-	Meta        json.RawMessage     `json:"meta,omitempty"`                                     // 节点元数据（可选JSON，如架构类型）
+	Tunnels      []TunnelConfigInput `json:"tunnels"`                                            // 隧道配置列表（可选，支持批量注册）
+	Meta         json.RawMessage     `json:"meta,omitempty"`                                     // 节点元数据（可选JSON，如架构类型）
+	PrivateClaim string              `json:"privateClaim,omitempty"`                             // 专属节点认领令牌（cloud-init 注入，sidecar 回传）
 }
 
 // TunnelConfigInput 隧道配置输入
@@ -104,6 +105,12 @@ func api_slave_node_upsert(c *gin.Context) {
 			return
 		}
 
+		// 保全专属归属：sidecar 重注册不发 Class，捕获旧值在重建时带过去，
+		// 否则专属节点重启后会被重置成 shared。
+		preservedClass := existingNode.Class
+		preservedOwner := existingNode.PrivateOwnerUserID
+		preservedSubID := existingNode.PrivateSubID
+
 		// Delete existing node and its tunnels, then create new
 		tx := db.Get().Begin()
 		defer func() {
@@ -128,15 +135,18 @@ func api_slave_node_upsert(c *gin.Context) {
 			return
 		}
 
-		// Create new node
+		// Create new node（带过保全的专属归属字段）
 		node = SlaveNode{
-			Ipv4:        ipv4Param,
-			SecretToken: req.SecretToken,
-			Country:     req.Country,
-			Region:      region,
-			Name:        req.Name,
-			Ipv6:        req.IPv6,
-			Meta:        string(req.Meta),
+			Ipv4:               ipv4Param,
+			SecretToken:        req.SecretToken,
+			Country:            req.Country,
+			Region:             region,
+			Name:               req.Name,
+			Ipv6:               req.IPv6,
+			Meta:               string(req.Meta),
+			Class:              preservedClass,
+			PrivateOwnerUserID: preservedOwner,
+			PrivateSubID:       preservedSubID,
 		}
 		if err := tx.Create(&node).Error; err != nil {
 			tx.Rollback()
@@ -198,6 +208,29 @@ func api_slave_node_upsert(c *gin.Context) {
 			tunnelOutputs = append(tunnelOutputs, *tunnelOutput)
 		}
 		log.Infof(c, "successfully registered %d tunnels for node: %s", len(tunnelOutputs), ipv4Param)
+	}
+
+	// 专属节点认领（spec §7.4）：cloud-init 注入的 claim token 由 sidecar 回传，
+	// 命中可认领订阅则将节点归属置 private 并激活订阅。缺省/不匹配/订阅非可认领态
+	// 一律按 shared 处理、不报错（防探测）。
+	if req.PrivateClaim != "" {
+		var pnSub PrivateNodeSubscription
+		if err := db.Get().Where(&PrivateNodeSubscription{ProvisionClaimToken: req.PrivateClaim}).First(&pnSub).Error; err == nil &&
+			(pnSub.Status == PNStatusPending || pnSub.Status == PNStatusProvisioning || pnSub.Status == PNStatusActive) {
+			// 认领：节点归属置 private（列定向 Update，勿全量 Save）
+			db.Get().Model(&SlaveNode{}).Where("id = ?", node.ID).Updates(map[string]any{
+				"class": NodeClassPrivate, "private_owner_user_id": pnSub.UserID, "private_sub_id": pnSub.ID,
+			})
+			// 激活订阅 + 回填 SlaveNodeID
+			db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", pnSub.ID).Updates(map[string]any{
+				"status": PNStatusActive, "slave_node_id": node.ID,
+			})
+			// 同步内存 node 字段，避免响应序列化用旧值
+			node.Class = NodeClassPrivate
+			node.PrivateOwnerUserID = &pnSub.UserID
+			node.PrivateSubID = &pnSub.ID
+			log.Infof(c, "node %s claimed as private by sub %d (owner %d)", node.Ipv4, pnSub.ID, pnSub.UserID)
+		}
 	}
 
 	Success(c, &SlaveNodeUpsertResponse{
