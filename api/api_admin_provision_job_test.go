@@ -177,15 +177,30 @@ func TestAdminProvisionJob_Report(t *testing.T) {
 	assert.Equal(t, "i-x", reloaded.InstanceID)
 	assert.Equal(t, "1.2.3.4", reloaded.IPv4)
 
-	// Invalid status → ErrorInvalidArgument.
-	bad, _ := json.Marshal(map[string]any{"status": "bogus"})
-	reqBad := httptest.NewRequest(http.MethodPost,
-		"/app/provision-jobs/"+strconv.FormatUint(job.ID, 10)+"/report", bytes.NewReader(bad))
-	reqBad.Header.Set("Content-Type", "application/json")
-	wBad := httptest.NewRecorder()
-	r.ServeHTTP(wBad, reqBad)
+	reportStatus := func(status string) float64 {
+		b, _ := json.Marshal(map[string]any{"status": status})
+		rq := httptest.NewRequest(http.MethodPost,
+			"/app/provision-jobs/"+strconv.FormatUint(job.ID, 10)+"/report", bytes.NewReader(b))
+		rq.Header.Set("Content-Type", "application/json")
+		ww := httptest.NewRecorder()
+		r.ServeHTTP(ww, rq)
+		require.Equal(t, http.StatusOK, ww.Code)
+		code, _ := parseJobResponse(t, ww.Body.Bytes())
+		return code
+	}
 
-	require.Equal(t, http.StatusOK, wBad.Code)
-	codeBad, _ := parseJobResponse(t, wBad.Body.Bytes())
-	assert.Equal(t, float64(ErrorInvalidArgument), codeBad, "body: %s", wBad.Body.String())
+	// Invalid status → ErrorInvalidArgument.
+	assert.Equal(t, float64(ErrorInvalidArgument), reportStatus("bogus"))
+
+	// succeeded is NOT agent-reportable: it is the authoritative terminal state
+	// produced only by the node self-register/activation path.
+	assert.Equal(t, float64(ErrorInvalidArgument), reportStatus(NPJStatusSucceeded),
+		"agent must not be able to report succeeded")
+
+	// failed is still a valid agent report.
+	assert.Equal(t, float64(0), reportStatus(NPJStatusFailed),
+		"agent must be able to report failed")
+	var afterFail NodeProvisionJob
+	require.NoError(t, db.Get().First(&afterFail, job.ID).Error)
+	assert.Equal(t, NPJStatusFailed, afterFail.Status)
 }

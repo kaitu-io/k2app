@@ -227,7 +227,8 @@ func api_slave_node_upsert(c *gin.Context) {
 			})
 			// 回填 CloudInstance（agent 经 create_cloud_instance 已落库，按 IP 匹配）。best-effort。
 			var ci CloudInstance
-			if err := db.Get().Where("ip_address = ?", node.Ipv4).First(&ci).Error; err == nil {
+			// ip_address 有索引但非唯一：IP 回收后可能存在多条历史行，取最新一条（id DESC）避免撞陈旧记录。
+			if err := db.Get().Where("ip_address = ?", node.Ipv4).Order("id DESC").First(&ci).Error; err == nil {
 				if e := db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", pnSub.ID).
 					Update("cloud_instance_id", ci.ID).Error; e != nil {
 					log.Errorf(c, "link cloud instance to sub=%d: %v", pnSub.ID, e)

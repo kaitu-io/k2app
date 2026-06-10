@@ -28,13 +28,20 @@ func adminListProvisionJobs(c *gin.Context) {
 		query = query.Where("status = ?", status)
 	}
 
+	pagination := PaginationFromRequest(c)
+	if err := query.Count(&pagination.Total).Error; err != nil {
+		log.Errorf(c, "failed to count provision jobs: %v", err)
+		Error(c, ErrorSystemError, "failed to count provision jobs")
+		return
+	}
+
 	var jobs []NodeProvisionJob
-	if err := query.Order("created_at DESC").Find(&jobs).Error; err != nil {
+	if err := query.Order("created_at DESC").Offset(pagination.Offset()).Limit(pagination.PageSize).Find(&jobs).Error; err != nil {
 		log.Errorf(c, "failed to list provision jobs: %v", err)
 		Error(c, ErrorSystemError, "failed to list provision jobs")
 		return
 	}
-	ItemsAll(c, jobs)
+	ListWithData(c, jobs, pagination)
 }
 
 // AdminClaimProvisionJobRequest is the agent's lease-claim body.
@@ -132,11 +139,14 @@ func adminReportProvisionJob(c *gin.Context) {
 		return
 	}
 
+	// agent 只能上报进行中/失败。succeeded 是权威终态，只能由节点自注册路径产生
+	// （该路径同时激活订阅）；允许 agent 直接报 succeeded 会让 job=succeeded 而 sub
+	// 仍停在 provisioning，制造状态分裂。
 	switch body.Status {
-	case NPJStatusProvisioning, NPJStatusSucceeded, NPJStatusFailed:
+	case NPJStatusProvisioning, NPJStatusFailed:
 		// allowed
 	default:
-		Error(c, ErrorInvalidArgument, "status must be provisioning, succeeded, or failed")
+		Error(c, ErrorInvalidArgument, "status must be provisioning or failed")
 		return
 	}
 

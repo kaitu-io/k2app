@@ -17,7 +17,9 @@ const TaskTypeProvisionPrivateNode = "private_node:provision"
 const TaskTypeProvisionTimeoutSweep = "private_node:provision_timeout"
 
 // provisionTimeoutSeconds：provisioning 状态超过此秒数仍未被节点自注册激活，判定开通失败。
-const provisionTimeoutSeconds int64 = 15 * 60
+// agent 驱动流程整链耗时较长（建实例 + SSH + provision-node.sh 装 Docker + 拉镜像 +
+// compose up + 启动 + 自注册），给 30 分钟容忍窗口，避免误杀慢但正常的开通。
+const provisionTimeoutSeconds int64 = 30 * 60
 
 type ProvisionPayload struct {
 	SubID uint64 `json:"subId"`
@@ -62,6 +64,13 @@ func handleProvisionTimeoutSweep(ctx context.Context, payload []byte) error {
 			Updates(map[string]any{"status": PNStatusFailed, "last_provision_error": "provisioning timed out: node never self-registered"}).Error; err != nil {
 			log.Errorf(ctx, "timeout sweep: mark failed sub=%d: %v", s.ID, err)
 			continue
+		}
+		// 孤儿 job 同步置 failed：否则它仍停在 queued/claimed/provisioning，agent 会
+		// 认领一个对应 sub 已失败的 job、白白建一台 VPS。best-effort，不阻断清扫。
+		if err := db.Get().Model(&NodeProvisionJob{}).
+			Where("sub_id = ? AND status NOT IN ?", s.ID, []string{NPJStatusSucceeded, NPJStatusFailed}).
+			Updates(map[string]any{"status": NPJStatusFailed, "last_error": "subscription provisioning timed out"}).Error; err != nil {
+			log.Errorf(ctx, "timeout sweep: fail orphan job sub=%d: %v", s.ID, err)
 		}
 		sendCloudSlackNotification(ctx, "Private Node Provision Timeout",
 			fmt.Sprintf("sub=%d order=%d stuck in provisioning > %ds → failed", s.ID, s.OrderID, provisionTimeoutSeconds))
