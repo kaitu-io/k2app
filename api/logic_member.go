@@ -79,6 +79,19 @@ func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order) error {
 		return fmt.Errorf("plan not found for order %d", order.ID)
 	}
 
+	// 专属节点产品：独立时钟，不碰 User.ExpiredAt。建 pending 订阅 + 异步开通。
+	if plan.Kind == PlanKindPrivateNode {
+		sub, err := createPrivateNodeSubscription(ctx, tx, order, plan, time.Now().Unix())
+		if err != nil {
+			return fmt.Errorf("create private node subscription: %w", err)
+		}
+		if err := enqueueProvision(ctx, sub.ID); err != nil {
+			return fmt.Errorf("enqueue provision: %w", err)
+		}
+		log.Infof(ctx, "private node sub %d created for order %d (pending provision)", sub.ID, order.ID)
+		return nil
+	}
+
 	var buyer User
 	if err := tx.First(&buyer, order.UserID).Error; err != nil {
 		return fmt.Errorf("buyer not found: %v", err)

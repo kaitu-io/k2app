@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+	asynq "github.com/wordgate/qtoolkit/asynq"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
@@ -191,4 +192,10 @@ func provisionPrivateNode(ctx context.Context, sub *PrivateNodeSubscription, spe
 	log.Infof(ctx, "private node sub=%d provisioned: instance=%s ip=%s ci=%d (awaiting self-register)",
 		sub.ID, inst.InstanceID, inst.IPAddress, ci.ID)
 	return nil
+}
+
+// enqueueProvision 入队开通任务。MaxRetry(3)：spec §7.5 要求重试 3 次（Asynq 默认 25）。
+func enqueueProvision(ctx context.Context, subID uint64) error {
+	_, err := asynq.Enqueue(TaskTypeProvisionPrivateNode, ProvisionPayload{SubID: subID}, asynq.MaxRetry(3))
+	return err
 }
