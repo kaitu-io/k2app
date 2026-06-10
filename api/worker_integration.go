@@ -45,6 +45,8 @@ func InitWorker() {
 	asynq.Handle(TaskTypeAbandonedOrderDaily, handleAbandonedOrderDailyTask)
 	asynq.Handle(TaskTypeRetailerFollowup, handleRetailerFollowupTask)
 	asynq.Handle(TaskTypeTicketNotify, handleTicketNotify)
+	asynq.Handle(TaskTypeProvisionPrivateNode, handleProvisionPrivateNode)
+	asynq.Handle(TaskTypeProvisionTimeoutSweep, handleProvisionTimeoutSweep)
 
 	// 注册续费提醒 Cron 任务
 	// 每天北京时间 10:30 执行（UTC 02:30）
@@ -62,6 +64,11 @@ func InitWorker() {
 	// 每分钟检查一次，发送到期的 Slack 提醒
 	// Unique(2min) 防止重复执行
 	asynq.Cron("* * * * *", TaskTypeRetailerFollowup, nil, hibikenAsynq.Unique(2*time.Minute))
+
+	// 注册专属节点开通超时清扫 Cron 任务
+	// 每 10 分钟扫描卡在 provisioning 超时（节点始终未自注册）的订阅，置 failed
+	// Unique(11min) 防止多实例重复入队
+	asynq.Cron("*/10 * * * *", TaskTypeProvisionTimeoutSweep, nil, hibikenAsynq.Unique(11*time.Minute))
 
 	// 注册 ECH 相关的 worker
 	RegisterECHWorker()

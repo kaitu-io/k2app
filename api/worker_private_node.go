@@ -3,6 +3,7 @@ package center
 import (
 	"context"
 	"fmt"
+	"time"
 
 	hibikenAsynq "github.com/hibiken/asynq"
 	asynq "github.com/wordgate/qtoolkit/asynq"
@@ -14,6 +15,11 @@ import (
 )
 
 const TaskTypeProvisionPrivateNode = "private_node:provision"
+
+const TaskTypeProvisionTimeoutSweep = "private_node:provision_timeout"
+
+// provisionTimeoutSeconds：provisioning 状态超过此秒数仍未被节点自注册激活，判定开通失败。
+const provisionTimeoutSeconds int64 = 15 * 60
 
 type ProvisionPayload struct {
 	SubID uint64 `json:"subId"`
@@ -48,6 +54,26 @@ func handleProvisionPrivateNode(ctx context.Context, payload []byte) error {
 			return markProvisionFailed(ctx, &sub, err)
 		}
 		return err
+	}
+	return nil
+}
+
+// handleProvisionTimeoutSweep 把卡在 provisioning 超时的订阅置 failed（节点始终未到场）。
+func handleProvisionTimeoutSweep(ctx context.Context, payload []byte) error {
+	cutoff := time.Now().Unix() - provisionTimeoutSeconds
+	var stale []PrivateNodeSubscription
+	if err := db.Get().Where("status = ? AND updated_at < ?", PNStatusProvisioning, cutoff).Find(&stale).Error; err != nil {
+		return fmt.Errorf("query stale provisioning subs: %w", err)
+	}
+	for i := range stale {
+		s := &stale[i]
+		if err := db.Get().Model(&PrivateNodeSubscription{}).Where("id = ? AND status = ?", s.ID, PNStatusProvisioning).
+			Updates(map[string]any{"status": PNStatusFailed, "last_provision_error": "provisioning timed out: node never self-registered"}).Error; err != nil {
+			log.Errorf(ctx, "timeout sweep: mark failed sub=%d: %v", s.ID, err)
+			continue
+		}
+		sendCloudSlackNotification(ctx, "Private Node Provision Timeout",
+			fmt.Sprintf("sub=%d order=%d stuck in provisioning > %ds → failed", s.ID, s.OrderID, provisionTimeoutSeconds))
 	}
 	return nil
 }
