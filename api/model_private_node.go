@@ -27,7 +27,7 @@ type PrivateNodeSubscription struct {
 	// 归属
 	UserID  uint64 `gorm:"not null;index" json:"userId"` // 主人
 	PlanID  uint64 `gorm:"not null;index" json:"planId"` // 专属节点套餐（Plan.Kind=private_node）
-	OrderID uint64 `gorm:"index" json:"orderId"`         // 触发开通的订单
+	OrderID uint64 `gorm:"uniqueIndex" json:"orderId"`    // 触发开通的订单（一单一 sub，幂等）
 
 	// 基础设施绑定（开通后回填）
 	CloudInstanceID *uint64 `gorm:"index" json:"cloudInstanceId,omitempty"` // → CloudInstance.ID
@@ -49,6 +49,9 @@ type PrivateNodeSubscription struct {
 	// 开通可观测
 	ProvisionAttempts  int    `gorm:"not null;default:0" json:"provisionAttempts"`
 	LastProvisionError string `gorm:"type:text" json:"-"`
+
+	// 开通声明令牌：注入 VPS cloud-init，节点自注册时回传以认领归属（见 spec §7.4）。
+	ProvisionClaimToken string `gorm:"type:varchar(64);index" json:"-"`
 }
 
 // IsServiceable 判定订阅当前是否应提供服务（active 或 宽限期内）。
