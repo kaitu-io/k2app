@@ -311,66 +311,77 @@ pending → provisioning → active ──期满──> grace ──未续──
 
 ## 7. 自动开通编排（架构 + 安全）
 
-### 7.1 支付与开通异步解耦
+> **2026-06-10 重大修订**：原 §7 假设「worker 直接注册 SlaveNode」与代码现实不符。探查确认：**节点经 sidecar 自注册**（`PUT /slave/nodes/:ipv4`，自带 `K2_NODE_SECRET`），Center 从不主动建节点行；CloudInstance 仅由 sync worker 落库；`CreateInstanceOptions` 无 user-data 字段；每次重启 sidecar delete+recreate 节点行（会重置 `Class`）。现有 `handleCloudCreate` 只起**裸机** + 人工收尾（SSH + `provision-node.sh` + 手写 `.env`），**无任何自动管线可复用**。下述设计据此重写，最大化复用现有原语。
 
-VPS 开通需 30s–5min，**不能阻塞支付回调**。复用现有 WordGate webhook → 订单 → Asynq。
+### 7.1 设计原则：复用原语 + claim-token + 事件驱动激活
+
+把开通拆成「worker 起机器」与「节点到场即激活」两段——后者由**节点自注册这一真实事件**触发，而非 worker 长轮询（避免撞 Asynq 30m timeout）。
+
+**复用映射**：
+
+| 步骤 | 复用现有 | 新增/改进 |
+|------|---------|----------|
+| 起机器 | `provider.CreateInstance` + `accountToProviderConfig` + `NewProvider` | `CreateInstanceOptions` 加 `UserData` 字段（spec 已否决 SSH bootstrap，cloud-init 是正当改进） |
+| 节点初始化 | **直接复用 `docker/` 部署链**：cloud-init user-data = 脚本化今天的人工步骤（跑 `provision-node.sh` + 写 `.env`(注入 secret+claim+center_url) + `docker-compose up`） | 一个 cloud-init 模板（**首版不做自定义镜像**——预构建镜像/Q5 留作提速优化，不阻塞） |
+| 节点上线 | sidecar 自注册 `PUT /slave/nodes/:ipv4`（零改协议） | sidecar 多发 `K2_PRIVATE_CLAIM` 字段 |
+| CloudInstance 落库 | `upsertCloudInstance`（按 provider+instance_id 幂等 upsert） | worker 起机后按 IP 直接 upsert 一次（设 `TrafficTotalBytes`，供 §9 断流） |
+| 失败告警 | `sendCloudSlackNotification` | 仅终败告警（查 `asynq.GetRetryCount` vs `GetMaxRetry`） |
+| 异步任务 | Asynq `Handle`/`Enqueue` 模式 | 专用**薄** provision task（立即执行 + `MaxRetry(3)` + 跑状态机）；**不复用** `handleCloudCreate`（它批处理到 2AM 且无状态机） |
+
+### 7.2 流程
 
 ```
-用户支付成功
-  → WordGate webhook (/api/webhook → handleWordgateOrderPaidEvent)
-  → MarkOrderAsPaid 事务内：识别 Plan.Kind
-       ├─ shared_subscription → applyOrderToBuyer（现有，扩 User.ExpiredAt）
-       └─ private_node        → 创建 PrivateNodeSubscription(status=pending)
-                                + Asynq.Enqueue(TaskTypeProvisionPrivateNode)
-  → (异步 Worker) handleProvisionPrivateNodeTask
+① 支付成功 → WordGate webhook → MarkOrderAsPaid 事务内 → applyOrderToBuyer 按 Plan.Kind 分流
+     ├─ shared_subscription → 现有 addProExpiredDays（扩 User.ExpiredAt）
+     └─ private_node        → 建 PrivateNodeSubscription(status=pending,
+                                生成唯一 ProvisionClaimToken, 从 PrivateNodePlanSpec 快照 region/ip_type/traffic)
+                              + asynq.Enqueue(TaskTypeProvisionPrivateNode, {SubID}, MaxRetry(3))
+        幂等：sub 表对 OrderID 建 uniqueIndex（webhook 重复触发只建一条）
+
+② handleProvisionPrivateNodeTask（provider 可注入 → fake 可测）
+     1. 原子状态门：UPDATE ... SET status=provisioning WHERE id=? AND status=pending；RowsAffected==0 即已处理，return nil
+     2. 载 PrivateNodePlanSpec(by PlanID) → 拼 cloud-init UserData(注入 node_secret + claim_token + center_url + domain)
+     3. provider.CreateInstance(Region/ImageID(OS blueprint)/BundleID/Name/UserData)
+     4. 轮询 GetInstanceStatus 到 running+IP（带 timeout）
+     5. upsertCloudInstance(provider, instance_id, IP, TrafficTotalBytes=spec)；sub.CloudInstanceID 回填
+     6. status 仍 provisioning（worker 结束）；激活交给 ③
+     失败：return err → Asynq 重试；终败(GetRetryCount>=GetMaxRetry) → status=failed + Slack
+
+③ 节点启动 → sidecar 注册 `PUT /slave/nodes/:ipv4` 带 K2_PRIVATE_CLAIM
+     → 注册端点：claim 非空且匹配 pending/provisioning 的 sub（按 ProvisionClaimToken）
+         → 置 node.Class=private + PrivateOwnerUserID=sub.UserID + PrivateSubID=sub.ID
+         → sub.SlaveNodeID 回填, status→active
+     → **preserve 规则**：节点已存在(secret 匹配)的 delete+recreate 路径，必须保留 Class/owner/PrivateSubID
+        （否则每次重启 sidecar 重注册会把节点打回 shared）
+     → claim 缺省 → shared（现有行为零改动）
+
+④ 超时清扫 cron：provisioning 超过 T 分钟仍无节点到场 → status=failed + Slack（admin 手动重试/退款）
 ```
 
-### 7.2 开通 Worker（新 Asynq 任务，匹配现有 pattern）
-
-```go
-const TaskTypeProvisionPrivateNode = "private_node:provision"
-const TaskTypeDeprovisionPrivateNode = "private_node:deprovision"
-
-func handleProvisionPrivateNodeTask(ctx, payload) error {
-    sub := loadSub(payload.SubID)
-
-    // 1. 幂等锁 + 状态门：仅 pending 可进入（防 webhook 重复触发）
-    if !sub.transitionTo(StatusProvisioning) { return nil /* 已处理，忽略 */ }
-
-    // 2. 调 cloudprovider.CreateInstance（现有接口）
-    //    opts: provider/region/imageID(预构建含k2s)/bundleID
-    res, err := provider.CreateInstance(ctx, opts)
-    if err != nil { return retryOrFail(sub, err) }  // Asynq 重试×3 指数退避
-
-    // 3. 轮询实例 Ready（GetInstanceStatus，带 timeout）
-    inst := waitReady(res.InstanceID, timeout=5min)
-
-    // 4. 写 CloudInstance（含 TrafficTotalBytes=2TB）+ 注册 SlaveNode(Class=private, owner)
-    //    cloud-init 已在镜像内注入 k2s + node 身份（node_id/host_id/node_secret），无需现场安装
-    bindInstance(sub, inst); registerPrivateSlaveNode(sub, inst)
-
-    // 5. status → active；推送 + EDM 通知用户"专属节点已就绪"
-    sub.transitionTo(StatusActive); notifyReady(sub)
-    return nil
-}
-```
-
-### 7.3 VPS 初始化：预构建镜像（非现场安装）
+### 7.3 节点初始化：cloud-init 复用现有部署链（首版）
 
 | 方式 | 速度 | 可靠性 | 选用 |
 |------|------|--------|------|
 | 现场 apt install k2s | 3–5min | 依赖外部下载，易失败 | ❌ |
-| SSH bootstrap | 中 | 需开放 SSH | ❌ |
-| **预构建镜像 + cloud-init 注入身份** | 30–60s | 无外部依赖 | ✅ |
+| SSH bootstrap | 中 | 需开放 SSH（违 §8） | ❌ |
+| **cloud-init 跑现有 `docker/` 部署链** | 1–3min | 复用经过验证的 `provision-node.sh`+`docker-compose` | ✅ **首版** |
+| 预构建镜像（含 k2s）+ cloud-init 只注身份 | 30–60s | 无外部依赖 | 🔜 Q5 提速优化 |
 
-镜像内预装 k2s，cloud-init 只注入一个 config（含 `node_id/host_id/node_secret` + Center 回调地址）。复用现有 `list_cloud_images` / `ImageID`。
+首版 user-data = 把运维今天手工做的事原样脚本化：拉 `docker/` 部署物 → 跑 `provision-node.sh` → 写 `/apps/kaitu-slave/.env`（注入 `K2_NODE_SECRET`(随机,存 sub) + `K2_CENTER_URL` + `K2_DOMAIN` + 新增 `K2_PRIVATE_CLAIM`) → `docker-compose up`。`ImageID` 仍是 OS blueprint（无自定义镜像）。
 
-### 7.4 开通失败处理
+### 7.4 claim-token 安全
+
+- `ProvisionClaimToken` = 每个 sub 一个 32 字节随机串，仅 Center（存 sub 行）+ 注入到那一台 VPS 的 cloud-init 知道。
+- 客户对自有 VPS 有 root 能读自己的 claim——但只能认领**自己那台**（每台唯一 claim），无法认领他人节点，与 §9.3「篡改只影响自己付费带宽」同款逻辑。
+- 注册端点对 claim 缺省/不匹配一律按 shared 处理，不报错（防探测）。
+- 激活后 claim 仍可复用（重启走 preserve，不必重验）——简化重注册路径。
+
+### 7.5 开通失败处理
 
 ```
-失败原因：云 API 错误 / 容量不足 / 超时
-  ├─ Asynq 自动重试 3 次（指数退避）
-  ├─ 3 次仍失败 → status=failed → 告警 admin（Slack）
+失败原因：云 API 错误 / 容量不足 / 起机超时 / 节点超时未到场
+  ├─ Asynq 重试 3 次（MaxRetry(3) 显式设置；默认是 25）
+  ├─ 终败(GetRetryCount>=GetMaxRetry 或 SkipRetry) → status=failed → Slack 告警
   └─ admin：手动重试 或 触发退款流程
 ```
 
