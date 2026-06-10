@@ -311,67 +311,80 @@ pending → provisioning → active ──期满──> grace ──未续──
 
 ## 7. 自动开通编排（架构 + 安全）
 
-> **2026-06-10 重大修订**：原 §7 假设「worker 直接注册 SlaveNode」与代码现实不符。探查确认：**节点经 sidecar 自注册**（`PUT /slave/nodes/:ipv4`，自带 `K2_NODE_SECRET`），Center 从不主动建节点行；CloudInstance 仅由 sync worker 落库；`CreateInstanceOptions` 无 user-data 字段；每次重启 sidecar delete+recreate 节点行（会重置 `Class`）。现有 `handleCloudCreate` 只起**裸机** + 人工收尾（SSH + `provision-node.sh` + 手写 `.env`），**无任何自动管线可复用**。下述设计据此重写，最大化复用现有原语。
+> **2026-06-11 重大修订**：开通的「建机 + 部署」整体**解耦给一个外部 AI agent**（挂 `kaitu-center` MCP 的 Claude Code 实例），由独立 spec `2026-06-11-private-node-agent-provisioning.md` 定义。Center 本模块**只发出运维意图**（一条 `ProvisioningIntent`），对 docker / `provision-node.sh` / compose / SSH **零认知**。Center 的职责到「发出意图」即止。
+>
+> **历史**（已被本次取代）：① 最初设想「worker 直接注册 SlaveNode」——与代码现实不符（节点经 sidecar 自注册）。② 2026-06-10 改为「provision worker 直接 `CreateInstance` + cloud-init user-data 跑 `docker/` 部署链」——代码实现并 review 过，但 deployment 层不该住在 Center（把云生命周期耦合进了本模块），故塌缩。**节点自注册这一真实事件**始终是激活的权威触发，三版不变。
 
-### 7.1 设计原则：复用原语 + claim-token + 事件驱动激活
+### 7.1 设计原则：Center 发意图 + MCP 队列 + agent 管理 + 事件驱动激活
 
-把开通拆成「worker 起机器」与「节点到场即激活」两段——后者由**节点自注册这一真实事件**触发，而非 worker 长轮询（避免撞 Asynq 30m timeout）。
+三方解耦，各自一等公民：
 
-**复用映射**：
+- **Center（producer）**：付费 → 建 sub(pending) + 生成 claim → 发 `ProvisioningIntent`(queued)。随即撒手，不碰云。
+- **AI agent（consumer，独立 spec）**：认领意图 → 建 VPS + SSH 部署 + 注入身份 → 上报。
+- **激活（事件驱动）**：节点 sidecar 自注册带 claim → Center 注册端点匹配 → 激活 sub。**自注册是开通成功的唯一权威**；意图 status 只作运维可见性，agent 掉线也不会让 sub 永久卡住（§step⑤ 超时清扫兜底）。
 
-| 步骤 | 复用现有 | 新增/改进 |
-|------|---------|----------|
-| 起机器 | `provider.CreateInstance` + `accountToProviderConfig` + `NewProvider` | `CreateInstanceOptions` 加 `UserData` 字段（spec 已否决 SSH bootstrap，cloud-init 是正当改进） |
-| 节点初始化 | **直接复用 `docker/` 部署链**：cloud-init user-data = 脚本化今天的人工步骤（跑 `provision-node.sh` + 写 `.env`(注入 secret+claim+center_url) + `docker-compose up`） | 一个 cloud-init 模板（**首版不做自定义镜像**——预构建镜像/Q5 留作提速优化，不阻塞） |
-| 节点上线 | sidecar 自注册 `PUT /slave/nodes/:ipv4`（零改协议） | sidecar 多发 `K2_PRIVATE_CLAIM` 字段 |
-| CloudInstance 落库 | `upsertCloudInstance`（按 provider+instance_id 幂等 upsert） | worker 起机后按 IP 直接 upsert 一次（设 `TrafficTotalBytes`，供 §9 断流） |
-| 失败告警 | `sendCloudSlackNotification` | 仅终败告警（查 `asynq.GetRetryCount` vs `GetMaxRetry`） |
-| 异步任务 | Asynq `Handle`/`Enqueue` 模式 | 专用**薄** provision task（立即执行 + `MaxRetry(3)` + 跑状态机）；**不复用** `handleCloudCreate`（它批处理到 2AM 且无状态机） |
+| 关注点 | 谁 | 机制 |
+|--------|-----|------|
+| 建 sub + claim | Center | 已实现 |
+| 发意图 | Center | `ProvisioningIntent` 表 + `emitProvisioningIntent`（替代旧 `CreateInstance` 路径） |
+| 队列递交 | Center↔agent | 3 个 MCP 工具：`list_provisioning_intents` / `claim_provisioning_intent`(原子租约) / `report_provisioning` |
+| 建机 | agent | 复用现有 `create_cloud_instance` MCP（CloudInstance 仍 Center 托管） |
+| 部署 | agent | 独立 spec：`exec_on_node` SSH 跑 `provision-node.sh` + 专属 compose + 注入 `.env` |
+| 激活 | Center | claim 自注册匹配（已实现 §5/Task 7） |
+| 超时清扫 | Center | provisioning > T 分钟无节点到场 → failed + Slack（已实现） |
 
 ### 7.2 流程
 
 ```
-① 支付成功 → WordGate webhook → MarkOrderAsPaid 事务内 → applyOrderToBuyer 按 Plan.Kind 分流
+① 支付成功 → webhook → applyOrderToBuyer 按 Plan.Kind 分流
      ├─ shared_subscription → 现有 addProExpiredDays（扩 User.ExpiredAt）
      └─ private_node        → 建 PrivateNodeSubscription(status=pending,
-                                生成唯一 ProvisionClaimToken, 从 PrivateNodePlanSpec 快照 region/ip_type/traffic)
-                              + asynq.Enqueue(TaskTypeProvisionPrivateNode, {SubID}, MaxRetry(3))
-        幂等：sub 表对 OrderID 建 uniqueIndex（webhook 重复触发只建一条）
+                                生成 ProvisionClaimToken, 从 spec 快照 region/ip_type/traffic)
+                              + enqueue
+        幂等：OrderID uniqueIndex（webhook 重复只建一条）
 
-② handleProvisionPrivateNodeTask（provider 可注入 → fake 可测）
-     1. 原子状态门：UPDATE ... SET status=provisioning WHERE id=? AND status=pending；RowsAffected==0 即已处理，return nil
-     2. 载 PrivateNodePlanSpec(by PlanID) → 拼 cloud-init UserData(注入 node_secret + claim_token + center_url + domain)
-     3. provider.CreateInstance(Region/ImageID(OS blueprint)/BundleID/Name/UserData)
-     4. 轮询 GetInstanceStatus 到 running+IP（带 timeout）
-     5. upsertCloudInstance(provider, instance_id, IP, TrafficTotalBytes=spec)；sub.CloudInstanceID 回填
-     6. status 仍 provisioning（worker 结束）；激活交给 ③
-     失败：return err → Asynq 重试；终败(GetRetryCount>=GetMaxRetry) → status=failed + Slack
+② handleProvisionPrivateNode（薄；不碰云）
+     1. 原子门：UPDATE ... SET status=provisioning WHERE id=? AND status IN(pending,provisioning)
+     2. emitProvisioningIntent(sub, spec)：写一条 ProvisioningIntent(status=queued)，携带
+          spec(region/bundle_id/image_id/compose_variant/k2_version/traffic/ip_type)
+        + identity(claim_token/center_url/domain)
+        幂等：intent 表对 sub_id 建 uniqueIndex（重试只一条 open 意图）
+     3. 返回；sub.status 停 provisioning。激活交给 ④
 
-③ 节点启动 → sidecar 注册 `PUT /slave/nodes/:ipv4` 带 K2_PRIVATE_CLAIM
+③ AI agent（独立 spec，挂 kaitu-center MCP）
+     a. claim_provisioning_intent → 原子租约(queued→claimed)，拿 spec+identity
+     b. create_cloud_instance（现有 MCP）起机 → report_provisioning(instance_id, ipv4)
+     c. exec_on_node SSH：provision-node.sh + 专属节点版 compose，写 .env
+          (node_secret 由 agent 生成；K2_PRIVATE_CLAIM=claim_token)
+     d. 验 k2v5 起 → 等节点自注册
+
+④ 节点启动 → sidecar 注册 `PUT /slave/nodes/:ipv4` 带 K2_PRIVATE_CLAIM
      → 注册端点：claim 非空且匹配 pending/provisioning 的 sub（按 ProvisionClaimToken）
          → 置 node.Class=private + PrivateOwnerUserID=sub.UserID + PrivateSubID=sub.ID
          → sub.SlaveNodeID 回填, status→active
+         → 按 IP 匹配 CloudInstance 回填 sub.CloudInstanceID；intent→succeeded
      → **preserve 规则**：节点已存在(secret 匹配)的 delete+recreate 路径，必须保留 Class/owner/PrivateSubID
         （否则每次重启 sidecar 重注册会把节点打回 shared）
      → claim 缺省 → shared（现有行为零改动）
 
-④ 超时清扫 cron：provisioning 超过 T 分钟仍无节点到场 → status=failed + Slack（admin 手动重试/退款）
+⑤ 超时清扫 cron：provisioning 超过 T 分钟仍无节点到场 → status=failed + Slack；intent 同步 failed（admin 手动重试/退款）
 ```
 
-### 7.3 节点初始化：cloud-init 复用现有部署链（首版）
+### 7.3 部署层：独立 spec，agent 驱动
 
-| 方式 | 速度 | 可靠性 | 选用 |
-|------|------|--------|------|
-| 现场 apt install k2s | 3–5min | 依赖外部下载，易失败 | ❌ |
-| SSH bootstrap | 中 | 需开放 SSH（违 §8） | ❌ |
-| **cloud-init 跑现有 `docker/` 部署链** | 1–3min | 复用经过验证的 `provision-node.sh`+`docker-compose` | ✅ **首版** |
-| 预构建镜像（含 k2s）+ cloud-init 只注身份 | 30–60s | 无外部依赖 | 🔜 Q5 提速优化 |
+部署（建机后把 k2s 服务装上）**不在本模块**——Center 发出 `ProvisioningIntent` 即完成职责。agent 侧手册见独立 spec `2026-06-11-private-node-agent-provisioning.md`，要点：
 
-首版 user-data = 把运维今天手工做的事原样脚本化：拉 `docker/` 部署物 → 跑 `provision-node.sh` → 写 `/apps/kaitu-slave/.env`（注入 `K2_NODE_SECRET`(随机,存 sub) + `K2_CENTER_URL` + `K2_DOMAIN` + 新增 `K2_PRIVATE_CLAIM`) → `docker-compose up`。`ImageID` 仍是 OS blueprint（无自定义镜像）。
+- agent = 挂 `kaitu-center` MCP 的 Claude Code，循环认领 `queued` 意图。
+- 建机复用现有 `create_cloud_instance` MCP；部署用 `exec_on_node` SSH 跑 `provision-node.sh` + **专属节点版 compose**（带 §9.3 流量计量断流 sidecar 配置，区别于共享池 compose）。
+- 注入 `/apps/kaitu-slave/.env`：`K2_NODE_SECRET`(agent 生成) + `K2_PRIVATE_CLAIM`(=intent.claim_token) + `K2_CENTER_URL` + `K2_DOMAIN`。
+- SSH 凭据：agent 凭 `instance_id` 通过云 API 取（如 Lightsail 默认 key），**不经 intent 传输**。
+- 失败经 `report_provisioning(error)` 回流；语义见 §7.5。
+
+> 为什么 agent 而非 cloud-init：cloud-init 是「一次性盲注脚本」，失败无重试/无观测/无补救；AI agent 能读 `exec_on_node` 输出、判断失败、重跑、按需调整——开通是低频高价值操作，agent 的可观测与自愈优于固化脚本。预构建镜像（30–60s 冷启动）仍可作 Q5 提速优化，与本架构正交。
 
 ### 7.4 claim-token 安全
 
-- `ProvisionClaimToken` = 每个 sub 一个 32 字节随机串，仅 Center（存 sub 行）+ 注入到那一台 VPS 的 cloud-init 知道。
+- `ProvisionClaimToken` = 每个 sub 一个 32 字节随机串，仅 Center（存 sub 行）+ agent（从认领的 intent 读）+ 注入到那一台 VPS 的 `.env` 知道。
 - 客户对自有 VPS 有 root 能读自己的 claim——但只能认领**自己那台**（每台唯一 claim），无法认领他人节点，与 §9.3「篡改只影响自己付费带宽」同款逻辑。
 - 注册端点对 claim 缺省/不匹配一律按 shared 处理，不报错（防探测）。
 - 激活后 claim 仍可复用（重启走 preserve，不必重验）——简化重注册路径。
@@ -379,10 +392,11 @@ pending → provisioning → active ──期满──> grace ──未续──
 ### 7.5 开通失败处理
 
 ```
-失败原因：云 API 错误 / 容量不足 / 起机超时 / 节点超时未到场
-  ├─ Asynq 重试 3 次（MaxRetry(3) 显式设置；默认是 25）
-  ├─ 终败(GetRetryCount>=GetMaxRetry 或 SkipRetry) → status=failed → Slack 告警
-  └─ admin：手动重试 或 触发退款流程
+失败原因：意图无人认领(agent 离线) / 建机失败 / 部署失败 / 节点超时未到场
+  ├─ agent 侧瞬时错 → agent 自重试 或 report_provisioning(failed)
+  ├─ intent 租约超时未 report → 回 queued 供再认领（lease deadline）
+  ├─ sub provisioning > T 分钟无节点到场 → 超时清扫置 failed + Slack（权威闸门，不依赖 agent 自报）
+  └─ admin：手动重试（重置 sub→pending 重 enqueue）或 触发退款流程
 ```
 
 ---
