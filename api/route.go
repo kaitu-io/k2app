@@ -418,6 +418,11 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.POST("/cloud/instances",                     RoleRequired(RoleDevopsEditor), api_admin_create_cloud_instance)
 		opsAdmin.DELETE("/cloud/instances/:id",               RoleRequired(RoleDevopsEditor), api_admin_delete_cloud_instance)
 
+		// 专属节点开通队列（外部 AI agent 消费）
+		opsAdmin.GET("/provision-jobs",            RoleRequired(viewOrEdit),       adminListProvisionJobs)
+		opsAdmin.POST("/provision-jobs/:id/claim", RoleRequired(RoleDevopsEditor), adminClaimProvisionJob)
+		opsAdmin.POST("/provision-jobs/:id/report", RoleRequired(RoleDevopsEditor), adminReportProvisionJob)
+
 		// 用户查看（只读）— DevOps + Support + Marketing 均可访问
 		readRoles := viewOrEdit | RoleSupport | RoleMarketing
 		opsAdmin.GET("/users",               RoleRequired(readRoles), api_admin_list_users)
