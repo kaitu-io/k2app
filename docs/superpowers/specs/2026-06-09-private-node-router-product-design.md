@@ -388,6 +388,7 @@ pending → provisioning → active ──期满──> grace ──未续──
 - 客户对自有 VPS 有 root 能读自己的 claim——但只能认领**自己那台**（每台唯一 claim），无法认领他人节点，与 §9.3「篡改只影响自己付费带宽」同款逻辑。
 - 注册端点对 claim 缺省/不匹配一律按 shared 处理，不报错（防探测）。
 - 激活后 claim 仍可复用（重启走 preserve，不必重验）——简化重注册路径。
+- **已知风险（接受）**：`PUT /slave/nodes/:ipv4` 自注册端点无鉴权（节点首注册时尚无 secret，bootstrap 必需），claim token 经此端点 body 回传。token 为 256-bit 随机、每节点唯一、客户只能认领自己那台——暴力不可行。残余风险=token 泄漏后被抢注册（与现有节点 bootstrap 同威胁模型）。**后续硬化项**：对该端点按源 IP 限流。`succeeded` 只能由自注册激活路径产生（report 端点禁止外部直接报），防 job/sub 状态分裂。
 
 ### 7.5 开通失败处理
 
@@ -395,9 +396,12 @@ pending → provisioning → active ──期满──> grace ──未续──
 失败原因：意图无人认领(agent 离线) / 建机失败 / 部署失败 / 节点超时未到场
   ├─ agent 侧瞬时错 → agent 自重试 或 report_provisioning(failed)
   ├─ intent 租约超时未 report → 回 queued 供再认领（lease deadline）
-  ├─ sub provisioning > T 分钟无节点到场 → 超时清扫置 failed + Slack（权威闸门，不依赖 agent 自报）
+  ├─ sub provisioning > 30 分钟无节点到场 → 超时清扫置 sub=failed + **同步把 job=failed** + Slack
+  │    （权威闸门，不依赖 agent 自报；job 同步 failed 防孤儿 job 被再认领浪费 VPS）
   └─ admin：手动重试（重置 sub→pending 重 enqueue）或 触发退款流程
 ```
+
+> 超时阈值 30 分钟（非旧 15 分钟）——适配 agent 建机 + SSH + `provision-node.sh`(Docker 安装) + 镜像拉取 + compose up + 启动 + 自注册的真实耗时链。
 
 ---
 
