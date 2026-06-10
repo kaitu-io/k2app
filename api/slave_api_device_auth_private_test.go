@@ -52,7 +52,7 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 
 		subExpires := now + 86400
 		sub := PrivateNodeSubscription{
-			UserID: owner.ID, Status: PNStatusActive, Region: "hongkong",
+			UserID: owner.ID, OrderID: owner.ID, Status: PNStatusActive, Region: "hongkong",
 			IPType: IPTypeNonResidential, SlaveNodeID: &node.ID,
 			PurchasedAt: now, ExpiresAt: subExpires,
 		}
@@ -106,7 +106,7 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 		require.NoError(t, db.Get().Create(&node).Error)
 
 		sub := PrivateNodeSubscription{
-			UserID: owner.ID, Status: PNStatusActive, Region: "hongkong",
+			UserID: owner.ID, OrderID: owner.ID, Status: PNStatusActive, Region: "hongkong",
 			IPType: IPTypeNonResidential, SlaveNodeID: &node.ID,
 			PurchasedAt: now, ExpiresAt: now + 86400,
 		}

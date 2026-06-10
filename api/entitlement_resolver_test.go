@@ -17,6 +17,17 @@ func TestResolveGatewayPrivateTunnels(t *testing.T) {
 
 	now := time.Now().Unix()
 	uniq := time.Now().Format("20060102150405.000000")
+
+	// 自愈：清理上次中断运行残留的固定 IPv4 节点/隧道（idx_slave_nodes_ipv4 + slave_tunnels.domain 唯一索引）。
+	for _, ip := range []string{"10.99.7.1", "10.99.7.2"} {
+		db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+	}
+	for _, d := range []string{"priv-jp.example", "priv-jp-susp.example"} {
+		db.Get().Unscoped().Where("domain = ?", d).Delete(&SlaveTunnel{})
+	}
+	// 清理历史 order_id=0 的孤儿订阅：order_id 现为唯一索引，order_id=0 的残留会撞唯一键。
+	db.Get().Unscoped().Where("order_id = 0").Delete(&PrivateNodeSubscription{})
+
 	owner := User{UUID: "usr-pn-owner-" + uniq, ExpiredAt: now - 99999} // 故意过期：专属节点不看共享会员
 	require.NoError(t, db.Get().Create(&owner).Error)
 
@@ -34,7 +45,7 @@ func TestResolveGatewayPrivateTunnels(t *testing.T) {
 	require.NoError(t, db.Get().Create(&tun).Error)
 
 	sub := PrivateNodeSubscription{
-		UserID: owner.ID, Status: PNStatusActive, Region: "japan",
+		UserID: owner.ID, OrderID: owner.ID, Status: PNStatusActive, Region: "japan",
 		IPType: IPTypeNonResidential, SlaveNodeID: &priv.ID,
 		PurchasedAt: now, ExpiresAt: now + 86400,
 	}
@@ -82,7 +93,7 @@ func TestResolveGatewayPrivateTunnels(t *testing.T) {
 
 	// grace 状态但 GraceUntil 已过去 => IsServiceable(now) == false。
 	suspSub := PrivateNodeSubscription{
-		UserID: suspendedOwner.ID, Status: PNStatusGrace, Region: "japan",
+		UserID: suspendedOwner.ID, OrderID: suspendedOwner.ID, Status: PNStatusGrace, Region: "japan",
 		IPType: IPTypeNonResidential, SlaveNodeID: &suspPriv.ID,
 		PurchasedAt: now - 172800, ExpiresAt: now - 86400, GraceUntil: now - 1,
 	}

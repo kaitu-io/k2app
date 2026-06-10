@@ -352,7 +352,7 @@ func TestApiSubs_GatewayBranch_PrecedesSharedMembershipGate(t *testing.T) {
 
 	// --- Path 1: ACTIVE private sub + EXPIRED shared membership → HTTP 200 ---
 	sub := PrivateNodeSubscription{
-		UserID: owner.ID, Status: PNStatusActive, Region: "japan",
+		UserID: owner.ID, OrderID: owner.ID, Status: PNStatusActive, Region: "japan",
 		IPType: IPTypeNonResidential, SlaveNodeID: &priv.ID,
 		PurchasedAt: now, ExpiresAt: now + 86400,
 	}
