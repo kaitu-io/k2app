@@ -6,7 +6,18 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spf13/viper"
+	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
+
+	"github.com/kaitu-io/k2app/api/cloudprovider"
+)
+
+// 开通就绪轮询参数：每 2s 轮询一次，最多 ~5 分钟。
+const (
+	provisionPollInterval  = 2 * time.Second
+	provisionReadyMaxPolls = 150
 )
 
 // provisionParams 注入 VPS cloud-init 的身份与回调信息。
@@ -78,4 +89,87 @@ func createPrivateNodeSubscription(ctx context.Context, tx *gorm.DB, order *Orde
 		return nil, err
 	}
 	return sub, nil
+}
+
+// centerCallbackURL 返回 Center 自身的回调基址（节点自注册回传用）。
+func centerCallbackURL() string {
+	return "https://" + viper.GetString("server.domain")
+}
+
+// waitInstanceReady 轮询 provider 直到实例 running 且拿到 IPv4，或超时。
+func waitInstanceReady(ctx context.Context, provider cloudprovider.Provider, name string) (*cloudprovider.InstanceStatus, error) {
+	for i := 0; i < provisionReadyMaxPolls; i++ {
+		st, err := provider.GetInstanceStatus(ctx, name)
+		if err == nil && st != nil && st.State == "running" && st.IPAddress != "" {
+			return st, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(provisionPollInterval):
+		}
+	}
+	return nil, fmt.Errorf("instance %s not ready after %d polls", name, provisionReadyMaxPolls)
+}
+
+// provisionPrivateNode 执行一次开通：原子门控 → 建实例 → 等就绪 → upsert CloudInstance → 回填 sub。
+// 状态停在 provisioning（NOT active）——节点 cloud-init 自注册回传 claim 后才转 active（Plan 4）。
+func provisionPrivateNode(ctx context.Context, sub *PrivateNodeSubscription, spec *PrivateNodePlanSpec, account CloudInstanceAccount, provider cloudprovider.Provider) error {
+	// 1. 原子门控：只允许从 pending → provisioning。RowsAffected==0 说明已被其它 worker 抢占或非 pending。
+	gate := db.Get().Model(&PrivateNodeSubscription{}).
+		Where("id = ? AND status = ?", sub.ID, PNStatusPending).
+		Update("status", PNStatusProvisioning)
+	if gate.Error != nil {
+		return gate.Error
+	}
+	if gate.RowsAffected == 0 {
+		log.Debugf(ctx, "private node sub=%d not pending, skipping provision", sub.ID)
+		return nil
+	}
+
+	// 2. 身份 + cloud-init。
+	nodeSecret := generateSecret()
+	userData := renderProvisionUserData(provisionParams{
+		NodeSecret: nodeSecret,
+		ClaimToken: sub.ProvisionClaimToken,
+		CenterURL:  centerCallbackURL(),
+		Domain:     "",
+	})
+
+	// 3. 建实例。
+	name := fmt.Sprintf("pn-%d", sub.ID)
+	if _, err := provider.CreateInstance(ctx, cloudprovider.CreateInstanceOptions{
+		Region:   sub.Region,
+		Plan:     spec.BundleID,
+		ImageID:  spec.ImageID,
+		Name:     name,
+		UserData: userData,
+	}); err != nil {
+		return fmt.Errorf("create instance: %w", err)
+	}
+
+	// 4. 等就绪，回填配额。
+	inst, err := waitInstanceReady(ctx, provider, name)
+	if err != nil {
+		return err
+	}
+	inst.TrafficTotalBytes = spec.TrafficTotalBytes
+
+	// 5. upsert + reload。
+	if err := upsertCloudInstance(ctx, account, inst); err != nil {
+		return fmt.Errorf("upsert cloud instance: %w", err)
+	}
+	var ci CloudInstance
+	if err := db.Get().Where("provider = ? AND instance_id = ?", account.Provider, inst.InstanceID).First(&ci).Error; err != nil {
+		return fmt.Errorf("reload cloud instance: %w", err)
+	}
+
+	// 6. 回填 sub.cloud_instance_id；状态仍停在 provisioning。
+	if err := db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", sub.ID).
+		Update("cloud_instance_id", ci.ID).Error; err != nil {
+		return fmt.Errorf("link cloud instance to sub: %w", err)
+	}
+	log.Infof(ctx, "private node sub=%d provisioned: instance=%s ip=%s ci=%d (awaiting self-register)",
+		sub.ID, inst.InstanceID, inst.IPAddress, ci.ID)
+	return nil
 }

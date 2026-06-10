@@ -10,7 +10,59 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kaitu-io/k2app/api/cloudprovider"
 )
+
+// fakeProvider implements cloudprovider.Provider for provision tests.
+// It records the UserData passed to CreateInstance and reports a running
+// instance with an IP from GetInstanceStatus.
+type fakeProvider struct {
+	name         string
+	instanceID   string
+	ipAddress    string
+	lastUserData string
+}
+
+func (f *fakeProvider) Name() string { return f.name }
+
+func (f *fakeProvider) GetInstanceStatus(ctx context.Context, instanceID string) (*cloudprovider.InstanceStatus, error) {
+	return &cloudprovider.InstanceStatus{
+		InstanceID: f.instanceID,
+		Name:       instanceID,
+		IPAddress:  f.ipAddress,
+		State:      "running",
+	}, nil
+}
+
+func (f *fakeProvider) ListInstances(ctx context.Context) ([]*cloudprovider.InstanceStatus, error) {
+	return nil, nil
+}
+
+func (f *fakeProvider) ChangeIP(ctx context.Context, instanceID string, opts cloudprovider.ChangeIPOptions) (*cloudprovider.OperationResult, error) {
+	return nil, &cloudprovider.NotSupportedError{Provider: f.name, Operation: "ChangeIP"}
+}
+
+func (f *fakeProvider) CreateInstance(ctx context.Context, opts cloudprovider.CreateInstanceOptions) (*cloudprovider.OperationResult, error) {
+	f.lastUserData = opts.UserData
+	return &cloudprovider.OperationResult{Success: true, Data: map[string]interface{}{"instance_id": f.instanceID}}, nil
+}
+
+func (f *fakeProvider) DeleteInstance(ctx context.Context, instanceID string) (*cloudprovider.OperationResult, error) {
+	return &cloudprovider.OperationResult{Success: true}, nil
+}
+
+func (f *fakeProvider) ListRegions(ctx context.Context) ([]cloudprovider.RegionInfo, error) {
+	return nil, nil
+}
+
+func (f *fakeProvider) ListPlans(ctx context.Context, region string) ([]cloudprovider.PlanInfo, error) {
+	return nil, nil
+}
+
+func (f *fakeProvider) ListImages(ctx context.Context, region string) ([]cloudprovider.ImageInfo, error) {
+	return nil, nil
+}
 
 func TestRenderProvisionUserData(t *testing.T) {
 	ud := renderProvisionUserData(provisionParams{
@@ -65,4 +117,59 @@ func TestCreatePrivateNodeSubscription(t *testing.T) {
 	assert.Equal(t, spec.TrafficTotalBytes, sub.TrafficTotalBytes)
 	assert.NotEmpty(t, sub.ProvisionClaimToken)
 	assert.Greater(t, sub.ExpiresAt, now)
+}
+
+func TestProvisionPrivateNode_HappyPath(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	now := time.Now().Unix()
+	stamp := time.Now().Format("20060102150405.000000")
+
+	owner := User{UUID: "usr-pn-prov-" + stamp}
+	require.NoError(t, db.Get().Create(&owner).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&owner) })
+
+	plan := Plan{PID: "pn-prov-" + stamp, Kind: PlanKindPrivateNode, Month: 12}
+	require.NoError(t, db.Get().Create(&plan).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
+
+	spec := PrivateNodePlanSpec{
+		PlanID: plan.ID, Provider: "aws_lightsail", IPType: IPTypeNonResidential,
+		AllowedRegions: `["japan"]`, ImageID: "ubuntu_22_04", BundleID: "nano_3_0",
+		TrafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024,
+	}
+	require.NoError(t, db.Get().Create(&spec).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
+
+	order := Order{UUID: "ord-pn-prov-" + stamp, UserID: owner.ID, Meta: "{}"}
+	require.NoError(t, db.Get().Create(&order).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&order) })
+
+	sub, err := createPrivateNodeSubscription(ctx, db.Get(), &order, &plan, now)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(sub) })
+
+	account := CloudInstanceAccount{Name: "aws_lightsail", Provider: "aws_lightsail"}
+	instID := "pn-prov-inst-" + stamp
+	fake := &fakeProvider{name: "aws_lightsail", instanceID: instID, ipAddress: "203.0.113.7"}
+	t.Cleanup(func() {
+		db.Get().Unscoped().Where("provider = ? AND instance_id = ?", account.Provider, instID).Delete(&CloudInstance{})
+	})
+
+	require.NoError(t, provisionPrivateNode(ctx, sub, &spec, account, fake))
+
+	// status stays provisioning (NOT active) — node self-registers later
+	var reloaded PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&reloaded, sub.ID).Error)
+	assert.Equal(t, PNStatusProvisioning, reloaded.Status)
+	require.NotNil(t, reloaded.CloudInstanceID)
+
+	var ci CloudInstance
+	require.NoError(t, db.Get().Where("provider = ? AND instance_id = ?", account.Provider, instID).First(&ci).Error)
+	assert.Equal(t, spec.TrafficTotalBytes, ci.TrafficTotalBytes)
+	assert.Equal(t, *reloaded.CloudInstanceID, ci.ID)
+
+	assert.Contains(t, fake.lastUserData, sub.ProvisionClaimToken)
+	assert.Contains(t, fake.lastUserData, "K2_NODE_SECRET=")
 }
