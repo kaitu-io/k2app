@@ -8,6 +8,7 @@ import (
 	asynq "github.com/wordgate/qtoolkit/asynq"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 
 	"github.com/kaitu-io/k2app/api/cloudprovider"
 )
@@ -27,6 +28,9 @@ func handleProvisionPrivateNode(ctx context.Context, payload []byte) error {
 	if err := db.Get().First(&sub, p.SubID).Error; err != nil {
 		return fmt.Errorf("load sub %d: %w", p.SubID, err)
 	}
+	// 递增尝试计数（含重试），让 ops 能在卡住的 sub 上看到尝试次数。
+	db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", p.SubID).
+		UpdateColumn("provision_attempts", gorm.Expr("provision_attempts + 1"))
 	spec, err := loadPrivateNodePlanSpec(db.Get(), sub.PlanID)
 	if err != nil {
 		return markProvisionFailed(ctx, &sub, err)
@@ -51,13 +55,20 @@ func handleProvisionPrivateNode(ctx context.Context, payload []byte) error {
 func isLastAttempt(ctx context.Context) bool {
 	n, ok1 := hibikenAsynq.GetRetryCount(ctx)
 	maxN, ok2 := hibikenAsynq.GetMaxRetry(ctx)
-	return ok1 && ok2 && n >= maxN
+	// fail-safe：拿不到重试元数据时当作最后一次尝试，宁可快速 markProvisionFailed，
+	// 也不要无限重试卡死。
+	if !ok1 || !ok2 {
+		return true
+	}
+	return n >= maxN
 }
 
 func markProvisionFailed(ctx context.Context, sub *PrivateNodeSubscription, cause error) error {
 	log.Errorf(ctx, "private node provision failed sub=%d: %v", sub.ID, cause)
-	db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", sub.ID).
-		Updates(map[string]any{"status": PNStatusFailed, "last_provision_error": cause.Error()})
+	if err := db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", sub.ID).
+		Updates(map[string]any{"status": PNStatusFailed, "last_provision_error": cause.Error()}).Error; err != nil {
+		log.Errorf(ctx, "mark provision failed: DB write sub=%d: %v", sub.ID, err)
+	}
 	sendCloudSlackNotification(ctx, "Private Node Provision Failed",
 		fmt.Sprintf("sub=%d order=%d: %v", sub.ID, sub.OrderID, cause))
 	return nil

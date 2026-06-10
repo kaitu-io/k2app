@@ -115,19 +115,33 @@ func waitInstanceReady(ctx context.Context, provider cloudprovider.Provider, nam
 // provisionPrivateNode 执行一次开通：原子门控 → 建实例 → 等就绪 → upsert CloudInstance → 回填 sub。
 // 状态停在 provisioning（NOT active）——节点 cloud-init 自注册回传 claim 后才转 active（Plan 4）。
 func provisionPrivateNode(ctx context.Context, sub *PrivateNodeSubscription, spec *PrivateNodePlanSpec, account CloudInstanceAccount, provider cloudprovider.Provider) error {
-	// 1. 原子门控：只允许从 pending → provisioning。RowsAffected==0 说明已被其它 worker 抢占或非 pending。
-	gate := db.Get().Model(&PrivateNodeSubscription{}).
-		Where("id = ? AND status = ?", sub.ID, PNStatusPending).
+	// 1. 原子门控：允许从 pending 或 provisioning 进入 provisioning。
+	// 接纳 provisioning 是为了重试幂等：CreateInstance 成功但后续步骤失败 → Asynq 重试时
+	// 状态已是 provisioning，必须能再次进入恢复，否则 sub 永久卡死且 VPS 成孤儿。
+	// RowsAffected==0 说明 sub 已到达终态/其它状态（active/failed/...）→ 真正完成或放弃，直接返回。
+	// 注意：DSN 未设 clientFoundRows，MySQL 按"实际改动行"计数 RowsAffected——
+	// provisioning→provisioning 是同值写、改动 0 行。故先排除 sub 已被推进到非门控状态，
+	// 再用 UPDATE 仅锁定 pending→provisioning 的并发抢占（RowsAffected==0 在 pending 时才表示被抢）。
+	res := db.Get().Model(&PrivateNodeSubscription{}).
+		Where("id = ? AND status IN ?", sub.ID, []string{PNStatusPending, PNStatusProvisioning}).
 		Update("status", PNStatusProvisioning)
-	if gate.Error != nil {
-		return gate.Error
+	if res.Error != nil {
+		return res.Error
 	}
-	if gate.RowsAffected == 0 {
-		log.Debugf(ctx, "private node sub=%d not pending, skipping provision", sub.ID)
+	var gated PrivateNodeSubscription
+	if err := db.Get().Select("id", "status", "cloud_instance_id", "provision_claim_token").
+		First(&gated, sub.ID).Error; err != nil {
+		return fmt.Errorf("reload sub for gate: %w", err)
+	}
+	if gated.Status != PNStatusProvisioning {
+		log.Debugf(ctx, "private node sub=%d in %s (not pending/provisioning), skipping provision", sub.ID, gated.Status)
 		return nil
 	}
+	sub.ProvisionClaimToken = gated.ProvisionClaimToken
 
 	// 2. 身份 + cloud-init。
+	// nodeSecret 不落 Center 库：节点自注册时（PUT /slave/nodes/:ipv4）带着它作为 SecretToken，
+	// 新 IP 首次注册接受任意 secret 并存到 SlaveNode 行 → Center 在注册那一刻才学到它（见 spec §7）。
 	nodeSecret := generateSecret()
 	userData := renderProvisionUserData(provisionParams{
 		NodeSecret: nodeSecret,
@@ -136,16 +150,21 @@ func provisionPrivateNode(ctx context.Context, sub *PrivateNodeSubscription, spe
 		Domain:     "",
 	})
 
-	// 3. 建实例。
+	// 3. 建实例。实例名确定（pn-<subID>）→ 重试前先探测是否已存在，避免重复创建孤儿 VPS。
 	name := fmt.Sprintf("pn-%d", sub.ID)
-	if _, err := provider.CreateInstance(ctx, cloudprovider.CreateInstanceOptions{
-		Region:   sub.Region,
-		Plan:     spec.BundleID,
-		ImageID:  spec.ImageID,
-		Name:     name,
-		UserData: userData,
-	}); err != nil {
-		return fmt.Errorf("create instance: %w", err)
+	if existing, err := provider.GetInstanceStatus(ctx, name); err == nil && existing != nil && existing.InstanceID != "" {
+		// 重试场景：实例已在上次尝试创建，跳过 CreateInstance，直接进入轮询。
+		log.Infof(ctx, "instance %s already exists (retry), skip create", name)
+	} else {
+		if _, err := provider.CreateInstance(ctx, cloudprovider.CreateInstanceOptions{
+			Region:   sub.Region,
+			Plan:     spec.BundleID,
+			ImageID:  spec.ImageID,
+			Name:     name,
+			UserData: userData,
+		}); err != nil {
+			return fmt.Errorf("create instance: %w", err)
+		}
 	}
 
 	// 4. 等就绪，回填配额。
