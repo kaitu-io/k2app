@@ -215,6 +215,15 @@ func api_subs(c *gin.Context) {
 		if t.Node == nil || t.Node.ID == 0 {
 			continue
 		}
+		// Capability matrix (App→private ❌): private nodes belong to a single
+		// owner and are delivered ONLY via the gateway branch above. They must
+		// never appear in the shared pool, or one user's dedicated VPS would leak
+		// into every App user's server list. fetchK2V5Tunnels intentionally does
+		// not filter by class (its doc: "capability filtering belongs in the
+		// caller") — this is that filter.
+		if t.Node.Class == NodeClassPrivate {
+			continue
+		}
 		if t.ServerURL == "" {
 			continue
 		}

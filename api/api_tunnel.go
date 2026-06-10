@@ -117,6 +117,16 @@ func api_k2_tunnels(c *gin.Context) {
 			continue
 		}
 
+		// Capability matrix (App→private ❌): private nodes are single-owner and
+		// reachable only through the gateway /api/subs path. They must never
+		// surface in the shared-pool /api/tunnels list, or one user's dedicated
+		// VPS (IP, country) would leak to every App user. This query does not
+		// filter by class at the DB layer (the slave_nodes JOIN aliasing trap,
+		// see 3e20b8e), so exclude in-memory here.
+		if tunnel.Node.Class == NodeClassPrivate {
+			continue
+		}
+
 		// Get load details from batch query result
 		details := NodeLoadDetails{Load: 100} // Default full load
 		if d, exists := nodeLoadDetails[tunnel.Node.ID]; exists {

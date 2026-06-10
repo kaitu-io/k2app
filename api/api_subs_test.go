@@ -388,6 +388,80 @@ func TestApiSubs_GatewayBranch_PrecedesSharedMembershipGate(t *testing.T) {
 		"402 must come from the gateway no-entitlement path, not the shared-membership gate")
 }
 
+// =====================================================================
+// TestApiSubs_SharedPool_ExcludesPrivateNodes — CAPABILITY MATRIX (App→private ❌)
+//
+// A non-gateway (App/desktop) user must NEVER see private nodes in their shared
+// pool. Private nodes belong to a single owner and are reachable only through the
+// gateway branch (ResolveGatewayPrivateTunnels). If the shared-pool path failed
+// to exclude Class=private nodes, one user's dedicated VPS (IP, country) would
+// leak into every App user's server list — breaking the matrix and privacy.
+//
+// Drives the real route handler over HTTP Basic Auth with a non-gateway device.
+// Needs dev MySQL.
+// =====================================================================
+
+func TestApiSubs_SharedPool_ExcludesPrivateNodes(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	now := time.Now().Unix()
+	uniq := time.Now().Format("20060102150405.000000")
+
+	// Non-gateway App user with VALID shared membership.
+	user := User{UUID: "usr-subs-app-" + uniq, ExpiredAt: now + 86400}
+	require.NoError(t, db.Get().Create(&user).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	udid := "udid-subs-app-" + uniq
+	device := Device{
+		UDID:         udid,
+		UserID:       user.ID,
+		Remark:       "Test App Device",
+		IsGateway:    false, // App/desktop, NOT a router
+		TokenIssueAt: now,
+	}
+	require.NoError(t, db.Get().Create(&device).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&device) })
+
+	token := GenerateTestToken(user.ID, udid, time.Hour)
+	require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", device.ID).
+		Update("token_issue_at", tokenIssueAtOf(t, token)).Error)
+
+	// A private node (owned by this same user — even self-owned private nodes must
+	// not appear in the shared pool) + a k2v5 tunnel on it with a unique domain.
+	privDomain := "leak-priv-" + uniq + ".example"
+	priv := SlaveNode{
+		Ipv4: "10.99.9.1", SecretToken: "leak-s1", Country: "JP", Region: "japan",
+		Name: "leak-priv-jp-" + uniq, Class: NodeClassPrivate, PrivateOwnerUserID: &user.ID,
+	}
+	require.NoError(t, db.Get().Create(&priv).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&priv) })
+
+	tun := SlaveTunnel{
+		Domain: privDomain, SecretToken: "leak-tt1", Name: "leak-priv-jp-tun-" + uniq,
+		Protocol: TunnelProtocolK2V5, Port: 443, NodeID: priv.ID,
+		IsTest: BoolPtr(false), ServerURL: "k2v5://" + privDomain + ":443",
+	}
+	require.NoError(t, db.Get().Create(&tun).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&tun) })
+
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(udid+":"+token))
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code,
+		"non-gateway user with valid membership must get 200, body=%s", w.Body.String())
+	assert.NotContains(t, w.Body.String(), privDomain,
+		"shared pool must NOT leak the private node (App→private ❌)")
+}
+
 // tokenIssueAtOf decodes the JWT (without verification) and returns its
 // TokenIssueAt claim, so the seeded Device row can match handleJWTAuth's check
 // regardless of any second-rollover between minting and device creation.
