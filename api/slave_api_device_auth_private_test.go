@@ -24,6 +24,12 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 
 	now := time.Now().Unix()
 
+	// 自愈：清理上次中断运行残留的固定 IPv4 节点。共享 dev MySQL 上 idx_slave_nodes_ipv4
+	// 是唯一索引，若上一轮在 Create 之后、Cleanup 之前崩溃，残留行会让本轮 Create 撞 1062。
+	for _, ip := range []string{"10.99.0.10", "10.99.0.11", "10.99.0.12"} {
+		db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+	}
+
 	t.Run("OwnerWithActiveSub_200_PrivateClock", func(t *testing.T) {
 		owner := CreateTestUser(t)
 		// 故意让 user.ExpiredAt 与订阅 ExpiresAt 不同，以分辨返回的是哪条时钟。
@@ -51,8 +57,10 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 			PurchasedAt: now, ExpiresAt: subExpires,
 		}
 		require.NoError(t, db.Get().Create(&sub).Error)
+		// 列定向更新（不用 Save）：SlaveNode.Meta 是 type:json 列，全量 Save 会写
+		// meta='' 触发 MariaDB json_valid CHECK 失败。只更新 private_sub_id 即可。
+		require.NoError(t, db.Get().Model(&node).Update("private_sub_id", sub.ID).Error)
 		node.PrivateSubID = &sub.ID
-		require.NoError(t, db.Get().Save(&node).Error)
 
 		t.Cleanup(func() {
 			db.Get().Unscoped().Delete(&sub)
@@ -103,8 +111,10 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 			PurchasedAt: now, ExpiresAt: now + 86400,
 		}
 		require.NoError(t, db.Get().Create(&sub).Error)
+		// 列定向更新（不用 Save）：SlaveNode.Meta 是 type:json 列，全量 Save 会写
+		// meta='' 触发 MariaDB json_valid CHECK 失败。只更新 private_sub_id 即可。
+		require.NoError(t, db.Get().Model(&node).Update("private_sub_id", sub.ID).Error)
 		node.PrivateSubID = &sub.ID
-		require.NoError(t, db.Get().Save(&node).Error)
 
 		t.Cleanup(func() {
 			db.Get().Unscoped().Delete(&sub)
