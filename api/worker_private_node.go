@@ -10,8 +10,6 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
-
-	"github.com/kaitu-io/k2app/api/cloudprovider"
 )
 
 const TaskTypeProvisionPrivateNode = "private_node:provision"
@@ -41,15 +39,8 @@ func handleProvisionPrivateNode(ctx context.Context, payload []byte) error {
 	if err != nil {
 		return markProvisionFailed(ctx, &sub, err)
 	}
-	account := ConfigCloudInstanceAccountByName(spec.Provider)
-	if account == nil {
-		return markProvisionFailed(ctx, &sub, fmt.Errorf("cloud account not found for provider %s", spec.Provider))
-	}
-	provider, err := cloudprovider.NewProvider(accountToProviderConfig(account))
-	if err != nil {
-		return markProvisionFailed(ctx, &sub, fmt.Errorf("build provider: %w", err))
-	}
-	if err := provisionPrivateNode(ctx, &sub, spec, *account, provider); err != nil {
+	// Center 不再直接建机：只写 NodeProvisionJob(queued) 队列行，交外部 AI agent 认领。
+	if err := emitNodeProvisionJob(ctx, &sub, spec); err != nil {
 		if isLastAttempt(ctx) {
 			return markProvisionFailed(ctx, &sub, err)
 		}

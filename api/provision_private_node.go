@@ -3,48 +3,18 @@ package center
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/spf13/viper"
 	asynq "github.com/wordgate/qtoolkit/asynq"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
-
-	"github.com/kaitu-io/k2app/api/cloudprovider"
 )
-
-// 开通就绪轮询参数：每 2s 轮询一次，最多 ~5 分钟。
-const (
-	provisionPollInterval  = 2 * time.Second
-	provisionReadyMaxPolls = 150
-)
-
-// provisionParams 注入 VPS cloud-init 的身份与回调信息。
-type provisionParams struct {
-	NodeSecret string // 节点 SecretToken（随机，存 sub；sidecar 注册用作 Basic Auth 密码）
-	ClaimToken string // 认领令牌（节点自注册回传，Center 据此置 Class=private+owner）
-	CenterURL  string // Center 回调地址
-	Domain     string // 隧道域名（空则 sidecar 用 sslip.io 自生成）
-}
-
-// renderProvisionUserData 生成 VPS 首启 cloud-init 脚本：写 /apps/kaitu-slave/.env
-// 注入身份 + claim，然后跑现有 docker/ 部署链。首版复用 provision-node.sh + docker-compose，
-// 不做自定义镜像（见 spec §7.3）。具体拉取部署物的步骤在发布前真机 smoke 阶段对齐。
-func renderProvisionUserData(p provisionParams) string {
-	return fmt.Sprintf(`#!/bin/bash
-set -euo pipefail
-mkdir -p /apps/kaitu-slave
-cat > /apps/kaitu-slave/.env <<'ENVEOF'
-K2_NODE_SECRET=%s
-K2_PRIVATE_CLAIM=%s
-K2_CENTER_URL=%s
-K2_DOMAIN=%s
-ENVEOF
-# 复用现有部署链（provision-node.sh + docker-compose）。具体拉取在真机 smoke 对齐。
-`, p.NodeSecret, p.ClaimToken, p.CenterURL, p.Domain)
-}
 
 // loadPrivateNodePlanSpec 按 PlanID 取开通参数。
 func loadPrivateNodePlanSpec(tx *gorm.DB, planID uint64) (*PrivateNodePlanSpec, error) {
@@ -97,28 +67,24 @@ func centerCallbackURL() string {
 	return "https://" + viper.GetString("server.domain")
 }
 
-// waitInstanceReady 轮询 provider 直到实例 running 且拿到 IPv4，或超时。
-func waitInstanceReady(ctx context.Context, provider cloudprovider.Provider, name string) (*cloudprovider.InstanceStatus, error) {
-	for i := 0; i < provisionReadyMaxPolls; i++ {
-		st, err := provider.GetInstanceStatus(ctx, name)
-		if err == nil && st != nil && st.State == "running" && st.IPAddress != "" {
-			return st, nil
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(provisionPollInterval):
-		}
+// isDuplicateKeyErr 识别 MySQL 唯一键冲突（错误号 1062）。GORM 的 ErrDuplicatedKey 翻译
+// 依赖 dialector 配置，不一定可靠，故对 *mysql.MySQLError 直接断言 Number==1062，
+// 并保留字符串兜底以防驱动包装。
+func isDuplicateKeyErr(err error) bool {
+	var me *mysqlDriver.MySQLError
+	if errors.As(err, &me) {
+		return me.Number == 1062
 	}
-	return nil, fmt.Errorf("instance %s not ready after %d polls", name, provisionReadyMaxPolls)
+	return strings.Contains(err.Error(), "1062") || strings.Contains(err.Error(), "Duplicate entry")
 }
 
-// provisionPrivateNode 执行一次开通：原子门控 → 建实例 → 等就绪 → upsert CloudInstance → 回填 sub。
-// 状态停在 provisioning（NOT active）——节点 cloud-init 自注册回传 claim 后才转 active（Plan 4）。
-func provisionPrivateNode(ctx context.Context, sub *PrivateNodeSubscription, spec *PrivateNodePlanSpec, account CloudInstanceAccount, provider cloudprovider.Provider) error {
+// emitNodeProvisionJob 写一条 NodeProvisionJob(queued) 队列行，交外部 AI agent 认领建机+部署。
+// Center 不再直接 CreateInstance/cloud-init；激活仍由节点自注册带 claim 驱动（Plan 4）。
+// 状态停在 provisioning（NOT active）——node 自注册回传 claim 后才转 active。
+func emitNodeProvisionJob(ctx context.Context, sub *PrivateNodeSubscription, spec *PrivateNodePlanSpec) error {
 	// 1. 原子门控：允许从 pending 或 provisioning 进入 provisioning。
-	// 接纳 provisioning 是为了重试幂等：CreateInstance 成功但后续步骤失败 → Asynq 重试时
-	// 状态已是 provisioning，必须能再次进入恢复，否则 sub 永久卡死且 VPS 成孤儿。
+	// 接纳 provisioning 是为了重试幂等：job 已写但后续步骤失败 → Asynq 重试时
+	// 状态已是 provisioning，必须能再次进入恢复，否则 sub 永久卡死。
 	// RowsAffected==0 说明 sub 已到达终态/其它状态（active/failed/...）→ 真正完成或放弃，直接返回。
 	// 注意：DSN 未设 clientFoundRows，MySQL 按"实际改动行"计数 RowsAffected——
 	// provisioning→provisioning 是同值写、改动 0 行。故先排除 sub 已被推进到非门控状态，
@@ -130,67 +96,30 @@ func provisionPrivateNode(ctx context.Context, sub *PrivateNodeSubscription, spe
 		return res.Error
 	}
 	var gated PrivateNodeSubscription
-	if err := db.Get().Select("id", "status", "cloud_instance_id", "provision_claim_token").
-		First(&gated, sub.ID).Error; err != nil {
+	if err := db.Get().Select("id", "status").First(&gated, sub.ID).Error; err != nil {
 		return fmt.Errorf("reload sub for gate: %w", err)
 	}
 	if gated.Status != PNStatusProvisioning {
-		log.Debugf(ctx, "private node sub=%d in %s (not pending/provisioning), skipping provision", sub.ID, gated.Status)
+		log.Debugf(ctx, "private node sub=%d in %s (not pending/provisioning), skip emit", sub.ID, gated.Status)
 		return nil
 	}
-	sub.ProvisionClaimToken = gated.ProvisionClaimToken
 
-	// 2. 身份 + cloud-init。
-	// nodeSecret 不落 Center 库：节点自注册时（PUT /slave/nodes/:ipv4）带着它作为 SecretToken，
-	// 新 IP 首次注册接受任意 secret 并存到 SlaveNode 行 → Center 在注册那一刻才学到它（见 spec §7）。
-	nodeSecret := generateSecret()
-	userData := renderProvisionUserData(provisionParams{
-		NodeSecret: nodeSecret,
-		ClaimToken: sub.ProvisionClaimToken,
-		CenterURL:  centerCallbackURL(),
-		Domain:     "",
-	})
-
-	// 3. 建实例。实例名确定（pn-<subID>）→ 重试前先探测是否已存在，避免重复创建孤儿 VPS。
-	name := fmt.Sprintf("pn-%d", sub.ID)
-	if existing, err := provider.GetInstanceStatus(ctx, name); err == nil && existing != nil && existing.InstanceID != "" {
-		// 重试场景：实例已在上次尝试创建，跳过 CreateInstance，直接进入轮询。
-		log.Infof(ctx, "instance %s already exists (retry), skip create", name)
-	} else {
-		if _, err := provider.CreateInstance(ctx, cloudprovider.CreateInstanceOptions{
-			Region:   sub.Region,
-			Plan:     spec.BundleID,
-			ImageID:  spec.ImageID,
-			Name:     name,
-			UserData: userData,
-		}); err != nil {
-			return fmt.Errorf("create instance: %w", err)
+	// 2. 幂等写入 job 行（SubID uniqueIndex）。
+	job := &NodeProvisionJob{
+		SubID: sub.ID, Status: NPJStatusQueued,
+		Region: sub.Region, BundleID: spec.BundleID, ImageID: spec.ImageID,
+		ComposeVariant: "private", TrafficTotalBytes: sub.TrafficTotalBytes,
+		IPType: sub.IPType, Domain: "",
+		// K2Version left empty for now (pinned at deploy spec maturity)
+	}
+	if err := db.Get().Create(job).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) || isDuplicateKeyErr(err) {
+			log.Debugf(ctx, "node provision job for sub=%d already exists, idempotent skip", sub.ID)
+			return nil
 		}
+		return fmt.Errorf("create node provision job: %w", err)
 	}
-
-	// 4. 等就绪，回填配额。
-	inst, err := waitInstanceReady(ctx, provider, name)
-	if err != nil {
-		return err
-	}
-	inst.TrafficTotalBytes = spec.TrafficTotalBytes
-
-	// 5. upsert + reload。
-	if err := upsertCloudInstance(ctx, account, inst); err != nil {
-		return fmt.Errorf("upsert cloud instance: %w", err)
-	}
-	var ci CloudInstance
-	if err := db.Get().Where("provider = ? AND instance_id = ?", account.Provider, inst.InstanceID).First(&ci).Error; err != nil {
-		return fmt.Errorf("reload cloud instance: %w", err)
-	}
-
-	// 6. 回填 sub.cloud_instance_id；状态仍停在 provisioning。
-	if err := db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", sub.ID).
-		Update("cloud_instance_id", ci.ID).Error; err != nil {
-		return fmt.Errorf("link cloud instance to sub: %w", err)
-	}
-	log.Infof(ctx, "private node sub=%d provisioned: instance=%s ip=%s ci=%d (awaiting self-register)",
-		sub.ID, inst.InstanceID, inst.IPAddress, ci.ID)
+	log.Infof(ctx, "emitted node provision job=%d for sub=%d (queued for agent)", job.ID, sub.ID)
 	return nil
 }
 
