@@ -225,6 +225,21 @@ func api_slave_node_upsert(c *gin.Context) {
 			db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", pnSub.ID).Updates(map[string]any{
 				"status": PNStatusActive, "slave_node_id": node.ID,
 			})
+			// 回填 CloudInstance（agent 经 create_cloud_instance 已落库，按 IP 匹配）。best-effort。
+			var ci CloudInstance
+			if err := db.Get().Where("ip_address = ?", node.Ipv4).First(&ci).Error; err == nil {
+				if e := db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", pnSub.ID).
+					Update("cloud_instance_id", ci.ID).Error; e != nil {
+					log.Errorf(c, "link cloud instance to sub=%d: %v", pnSub.ID, e)
+				}
+			} else {
+				log.Debugf(c, "no cloud instance found for ip=%s (sub=%d), skip link", node.Ipv4, pnSub.ID)
+			}
+			// 翻开通 job → succeeded。best-effort。
+			if e := db.Get().Model(&NodeProvisionJob{}).Where("sub_id = ?", pnSub.ID).
+				Update("status", NPJStatusSucceeded).Error; e != nil {
+				log.Errorf(c, "mark provision job succeeded sub=%d: %v", pnSub.ID, e)
+			}
 			// 同步内存 node 字段，避免响应序列化用旧值
 			node.Class = NodeClassPrivate
 			node.PrivateOwnerUserID = &pnSub.UserID
