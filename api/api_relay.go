@@ -61,6 +61,12 @@ func api_k2_relays(c *gin.Context) {
 		if tunnel.Node == nil || tunnel.Node.ID == 0 {
 			continue
 		}
+		// Capability matrix (App→private ❌): private nodes are single-owner and
+		// must never surface in the shared relay list, or one user's dedicated VPS
+		// IP/IPv6 would leak to every App user. Mirrors api_subs.go / api_tunnel.go.
+		if tunnel.Node.Class == NodeClassPrivate {
+			continue
+		}
 
 		relay := DataRelay{
 			ID:         fmt.Sprintf("relay-%s-%d", tunnel.Node.Region, tunnel.ID),
