@@ -91,11 +91,11 @@ func TestResolveGatewayPrivateTunnels(t *testing.T) {
 	}
 	require.NoError(t, db.Get().Create(&suspTun).Error)
 
-	// grace 状态但 GraceUntil 已过去 => IsServiceable(now) == false。
+	// grace 状态但已超 ExpiresAt+7d 宽限期 => IsServiceable(now) == false（时间戳权威）。
 	suspSub := PrivateNodeSubscription{
 		UserID: suspendedOwner.ID, OrderID: suspendedOwner.ID, Status: PNStatusGrace, Region: "japan",
 		IPType: IPTypeNonResidential, SlaveNodeID: &suspPriv.ID,
-		PurchasedAt: now - 172800, ExpiresAt: now - 86400, GraceUntil: now - 1,
+		PurchasedAt: now - 10*86400, ExpiresAt: now - 8*86400,
 	}
 	require.NoError(t, db.Get().Create(&suspSub).Error)
 

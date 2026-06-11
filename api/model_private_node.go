@@ -11,6 +11,13 @@ const (
 	PNStatusFailed        = "failed"        // 开通失败
 )
 
+// 生命周期窗口（秒）。服务硬切点 = ExpiresAt + privateNodeGraceSeconds，由时间戳派生，
+// 不依赖 cron 是否及时重贴标签 —— cron 停摆也不会泄漏永久免费服务。
+const (
+	privateNodeGraceSeconds   int64 = 7 * 86400  // 期满后宽限期：路由器仍可用，每日提醒
+	privateNodeSuspendSeconds int64 = 14 * 86400 // 宽限结束后停机保 IP 期：路由器断连
+)
+
 // IP 类型
 const (
 	IPTypeResidential    = "residential"
@@ -54,14 +61,14 @@ type PrivateNodeSubscription struct {
 	ProvisionClaimToken string `gorm:"type:varchar(64);index" json:"-"`
 }
 
-// IsServiceable 判定订阅当前是否应提供服务（active 或 宽限期内）。
-// now 为 Unix 秒；显式传入便于纯函数测试。
+// IsServiceable 判定订阅当前是否应提供服务。
+// 服务可用性以时间戳为权威：active/grace 均服务到 ExpiresAt+宽限期为止，与 cron 是否
+// 已把 active 重贴为 grace 无关（cron 漏跑也不会泄漏永久免费服务）。suspended/
+// deprovisioned/failed/pending/provisioning 一律不可服务。now 为 Unix 秒。
 func (s *PrivateNodeSubscription) IsServiceable(now int64) bool {
 	switch s.Status {
-	case PNStatusActive:
-		return true
-	case PNStatusGrace:
-		return now < s.GraceUntil
+	case PNStatusActive, PNStatusGrace:
+		return now < s.ExpiresAt+privateNodeGraceSeconds
 	}
 	return false
 }
