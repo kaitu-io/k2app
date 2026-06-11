@@ -21,13 +21,13 @@ func TestPrivateNodeLifecycleSweep(t *testing.T) {
 
 	now := time.Now().Unix()
 
-	// Fixed OrderID band 9_600_001..9_600_010 — pre-purge any leftovers
+	// Fixed OrderID band 9_600_001..9_600_012 — pre-purge any leftovers
 	// (uniqueIndex on order_id makes stale rows fatal on rerun).
-	for oid := uint64(9_600_001); oid <= 9_600_010; oid++ {
+	for oid := uint64(9_600_001); oid <= 9_600_012; oid++ {
 		db.Get().Unscoped().Where("order_id = ?", oid).Delete(&PrivateNodeSubscription{})
 	}
 	t.Cleanup(func() {
-		for oid := uint64(9_600_001); oid <= 9_600_010; oid++ {
+		for oid := uint64(9_600_001); oid <= 9_600_012; oid++ {
 			db.Get().Unscoped().Where("order_id = ?", oid).Delete(&PrivateNodeSubscription{})
 		}
 	})
@@ -62,6 +62,9 @@ func TestPrivateNodeLifecycleSweep(t *testing.T) {
 	//    step this sweep (active→grace), NOT cascade straight to deprovisioned.
 	//    Pins the single-step-per-sweep guarantee.
 	subF := mk(9_600_006, PNStatusActive, now-22*86400)
+	// G: suspended but renewed (now < ExpiresAt) → active, windows zeroed.
+	//    Mirrors D for the suspended branch of the renewal-recovery cohort.
+	subG := mk(9_600_007, PNStatusSuspended, now+5*86400)
 
 	require.NoError(t, handlePrivateNodeLifecycleSweep(context.Background(), nil))
 
@@ -94,4 +97,9 @@ func TestPrivateNodeLifecycleSweep(t *testing.T) {
 	assert.Equal(t, PNStatusGrace, rF.Status,
 		"F: active 22d-past-expiry must advance ONE step (active→grace), not cascade to deprovisioned")
 	assert.Equal(t, subF.ExpiresAt+privateNodeGraceSeconds, rF.GraceUntil, "F grace_until")
+
+	rG := reload(subG.ID)
+	assert.Equal(t, PNStatusActive, rG.Status, "G: renewed suspended → active")
+	assert.Equal(t, int64(0), rG.GraceUntil, "G grace_until zeroed")
+	assert.Equal(t, int64(0), rG.SuspendUntil, "G suspend_until zeroed")
 }

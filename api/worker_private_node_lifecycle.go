@@ -43,7 +43,7 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 	if err := db.Get().Model(&PrivateNodeSubscription{}).
 		Where("status IN ? AND expires_at > ?", []string{PNStatusGrace, PNStatusSuspended}, now).
 		Updates(map[string]any{"status": PNStatusActive, "grace_until": 0, "suspend_until": 0}).Error; err != nil {
-		log.Errorf(ctx, "lifecycle sweep: recover renewed subs: %v", err)
+		return fmt.Errorf("lifecycle sweep: recover renewed subs: %w", err)
 	}
 
 	// 2. 期满：active 且 now >= ExpiresAt → grace。
@@ -53,7 +53,7 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 		if err := db.Get().Model(&PrivateNodeSubscription{}).
 			Where("id = ? AND status = ?", s.ID, PNStatusActive).
 			Updates(map[string]any{"status": PNStatusGrace, "grace_until": graceUntil}).Error; err != nil {
-			log.Errorf(ctx, "lifecycle sweep: active->grace sub=%d: %v", s.ID, err)
+			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] active->grace sub=%d: %v", s.ID, err)
 		}
 	}
 
@@ -64,7 +64,7 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 		if err := db.Get().Model(&PrivateNodeSubscription{}).
 			Where("id = ? AND status = ?", s.ID, PNStatusGrace).
 			Updates(map[string]any{"status": PNStatusSuspended, "suspend_until": suspendUntil}).Error; err != nil {
-			log.Errorf(ctx, "lifecycle sweep: grace->suspended sub=%d: %v", s.ID, err)
+			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] grace->suspended sub=%d: %v", s.ID, err)
 			continue
 		}
 		sendCloudSlackNotification(ctx, "Private Node Suspended",
@@ -77,7 +77,7 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 		if err := db.Get().Model(&PrivateNodeSubscription{}).
 			Where("id = ? AND status = ?", s.ID, PNStatusSuspended).
 			Updates(map[string]any{"status": PNStatusDeprovisioned}).Error; err != nil {
-			log.Errorf(ctx, "lifecycle sweep: suspended->deprovisioned sub=%d: %v", s.ID, err)
+			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] suspended->deprovisioned sub=%d: %v", s.ID, err)
 			continue
 		}
 		sendCloudSlackNotification(ctx, "Private Node Deprovisioned",
