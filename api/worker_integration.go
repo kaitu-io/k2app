@@ -47,6 +47,7 @@ func InitWorker() {
 	asynq.Handle(TaskTypeTicketNotify, handleTicketNotify)
 	asynq.Handle(TaskTypeProvisionPrivateNode, handleProvisionPrivateNode)
 	asynq.Handle(TaskTypeProvisionTimeoutSweep, handleProvisionTimeoutSweep)
+	asynq.Handle(TaskTypePrivateNodeLifecycleSweep, handlePrivateNodeLifecycleSweep)
 
 	// 注册续费提醒 Cron 任务
 	// 每天北京时间 10:30 执行（UTC 02:30）
@@ -69,6 +70,12 @@ func InitWorker() {
 	// 每 10 分钟扫描卡在 provisioning 超时（节点始终未自注册）的订阅，置 failed
 	// Unique(11min) 防止多实例重复入队
 	asynq.Cron("*/10 * * * *", TaskTypeProvisionTimeoutSweep, nil, hibikenAsynq.Unique(11*time.Minute))
+
+	// 注册专属节点生命周期推进 Cron 任务
+	// 每天北京时间 03:00（UTC 19:00 前一日）推进 active→grace→suspended→deprovisioned
+	// 标签 + 续费回收。服务可用性以 IsServiceable 时间戳为权威，此 cron 只重贴标签。
+	// Unique(25h) 防止多实例重复入队
+	asynq.Cron("0 19 * * *", TaskTypePrivateNodeLifecycleSweep, nil, hibikenAsynq.Unique(25*time.Hour))
 
 	// 注册 ECH 相关的 worker
 	RegisterECHWorker()
