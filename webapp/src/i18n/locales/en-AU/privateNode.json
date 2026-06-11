@@ -28,6 +28,8 @@
     "suspendedHint": "The node is suspended but its IP is retained. It will resume after renewal.",
     "nodeIp": "Node IP",
     "provisioningHint": "Your node is being provisioned. This usually takes a few minutes, please wait.",
-    "empty": "You don't have any dedicated nodes yet"
+    "empty": "You don't have any dedicated nodes yet",
+    "renew": "Renew",
+    "percentUsed": "{{percent}}% used"
   }
 }

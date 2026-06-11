@@ -28,6 +28,8 @@
     "suspendedHint": "節點已停機保留 IP，續費後恢復",
     "nodeIp": "節點 IP",
     "provisioningHint": "節點正在開通，通常需要幾分鐘，請稍候",
-    "empty": "你還沒有專屬節點"
+    "empty": "你還沒有專屬節點",
+    "renew": "續費",
+    "percentUsed": "已用 {{percent}}%"
   }
 }

@@ -46,6 +46,8 @@ export interface AppConfig {
     chatwoot?: boolean;
     /** App bypass (per-app VPN exclusion) */
     appBypass?: boolean;
+    /** Private (dedicated) node management page */
+    privateNode?: boolean;
   };
 
   /** Branding configuration */
@@ -86,6 +88,7 @@ const KAITU_CONFIG: AppConfig = {
     },
     chatwoot: true,               // Enable Chatwoot chat widget
     appBypass: true,               // Plan C: redesigned page
+    privateNode: true,             // Plan 5: dedicated node management
   },
   branding: {
     primaryColor: '#1976d2',

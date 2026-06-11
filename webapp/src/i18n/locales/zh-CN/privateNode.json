@@ -28,6 +28,8 @@
     "suspendedHint": "节点已停机保留 IP，续费后恢复",
     "nodeIp": "节点 IP",
     "provisioningHint": "节点正在开通，通常需要几分钟，请稍候",
-    "empty": "你还没有专属节点"
+    "empty": "你还没有专属节点",
+    "renew": "续费",
+    "percentUsed": "已用 {{percent}}%"
   }
 }

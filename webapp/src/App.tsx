@@ -36,6 +36,7 @@ import Changelog from "./pages/Changelog";
 import { getCurrentAppConfig } from "./config/apps";
 
 const AppBypass = lazy(() => import('./pages/AppBypass'));
+const PrivateNodeManagement = lazy(() => import('./pages/PrivateNodeManagement'));
 
 // 应用路由组件
 function AppRoutes() {
@@ -78,6 +79,18 @@ function AppRoutes() {
           {/* App bypass / per-app routing — local setting, no login guard */}
           {appConfig.features.appBypass && (
             <Route path="app-bypass" element={<Suspense fallback={null}><AppBypass /></Suspense>} />
+          )}
+
+          {/* 专属节点管理（登录可见） */}
+          {appConfig.features.privateNode && (
+            <Route
+              path="private-node"
+              element={
+                <LoginRequiredGuard pagePath="/private-node">
+                  <Suspense fallback={null}><PrivateNodeManagement /></Suspense>
+                </LoginRequiredGuard>
+              }
+            />
           )}
 
           {appConfig.features.invite && (

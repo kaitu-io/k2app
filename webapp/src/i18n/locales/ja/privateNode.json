@@ -28,6 +28,8 @@
     "suspendedHint": "ノードは停止していますが IP は保持されています。更新後に再開します。",
     "nodeIp": "ノード IP",
     "provisioningHint": "ノードを開設中です。通常は数分かかります。しばらくお待ちください。",
-    "empty": "専用ノードはまだありません"
+    "empty": "専用ノードはまだありません",
+    "renew": "更新",
+    "percentUsed": "{{percent}}% 使用済み"
   }
 }
