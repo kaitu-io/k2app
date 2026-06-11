@@ -56,8 +56,13 @@ type Engine struct {
 	tmp      map[netip.Addr]Target
 	routes   []RouteEntry
 	fallback Target
-	allProxy bool      // match:all mode (disables sniffing)
-	bundles  []*krs.Bundle // heap lifecycle: GC'd on Close (no explicit free)
+	// disableSniff: the bulk of traffic is proxied (a match:all proxy catch-all),
+	// so BT/SNI sniffing is turned off. ⚠️ This is NOT "everything proxies, no
+	// exceptions" — a direct/reject exception route can precede the catch-all and
+	// still leave this true. To test for the presence of exception routes, use
+	// len(routes), never this flag. See DisableSniff.
+	disableSniff bool
+	bundles      []*krs.Bundle // heap lifecycle: GC'd on Close (no explicit free)
 
 	// closers releases non-GC resources held by the current rule set —
 	// specifically mmap unmaps for the disk-backed reader (krs.DiskBundle.Close).
@@ -81,20 +86,22 @@ type Engine struct {
 // value (atomic.Pointer[MissReporter] would lose identity on nil).
 type reporterSlot struct{ r MissReporter }
 
-// NewEngine creates a routing engine.
-func NewEngine(routes []RouteEntry, fallback Target, bundles []*krs.Bundle, allProxy bool) *Engine {
+// NewEngine creates a routing engine. disableSniff turns off BT/SNI sniffing for
+// bulk-proxied configs (see the Engine.disableSniff field doc) — it does not gate
+// DNS-pin learning, which keys off route presence (see SetTmpRule).
+func NewEngine(routes []RouteEntry, fallback Target, bundles []*krs.Bundle, disableSniff bool) *Engine {
 	return &Engine{
-		tmp:      make(map[netip.Addr]Target),
-		routes:   routes,
-		fallback: fallback,
-		bundles:  bundles,
-		allProxy: allProxy,
+		tmp:          make(map[netip.Addr]Target),
+		routes:       routes,
+		fallback:     fallback,
+		bundles:      bundles,
+		disableSniff: disableSniff,
 	}
 }
 
 // NewEngineNamed creates an engine from NamedBundles. Thin wrapper over
 // NewEngine that flattens []NamedBundle to the []*krs.Bundle lifecycle slice.
-func NewEngineNamed(routes []RouteEntry, fallback Target, named []NamedBundle, allProxy bool) *Engine {
+func NewEngineNamed(routes []RouteEntry, fallback Target, named []NamedBundle, disableSniff bool) *Engine {
 	bundles := make([]*krs.Bundle, 0, len(named))
 	for _, nb := range named {
 		if nb.Bundle == nil {
@@ -102,15 +109,15 @@ func NewEngineNamed(routes []RouteEntry, fallback Target, named []NamedBundle, a
 		}
 		bundles = append(bundles, nb.Bundle)
 	}
-	return NewEngine(routes, fallback, bundles, allProxy)
+	return NewEngine(routes, fallback, bundles, disableSniff)
 }
 
 // NewEngineWithClosers creates an engine whose rule sets are backed by
 // resources requiring explicit release (mmap unmaps). closers are run by Close
 // / reload outside the state lock. Used by the disk-backed (NE) loader; the
 // matchers themselves live in routes[].Sets as krs.Matcher (mmap *diskSet).
-func NewEngineWithClosers(routes []RouteEntry, fallback Target, closers []func() error, allProxy bool) *Engine {
-	e := NewEngine(routes, fallback, nil, allProxy)
+func NewEngineWithClosers(routes []RouteEntry, fallback Target, closers []func() error, disableSniff bool) *Engine {
+	e := NewEngine(routes, fallback, nil, disableSniff)
 	e.closers = closers
 	return e
 }
@@ -434,10 +441,15 @@ func (e *Engine) SetTmpRule(ip string, target Target) {
 		e.mu.Unlock()
 		return
 	}
-	// allProxy has no routes — every host already takes the fallback, so a DNS
-	// pin changes nothing yet grows unbounded for the tunnel's lifetime. Skip it
-	// (constitution: bound the loaded-engine dirty heap).
-	if e.allProxy {
+	// No exception routes → every host takes the fallback, so a per-IP pin can
+	// never change a routing decision. Skip it purely to bound the loaded-engine
+	// dirty heap (constitution). When exception routes DO exist (e.g. a
+	// control-plane domain→direct route prepended to a global config), DNS-learned
+	// pins are the ONLY bridge from the DNS-time domain decision
+	// (`Match(domain)`→direct) to the IP-routed connection (`Match(ip)`), so they
+	// must be kept — even when the fallback is a proxy. Gated on route presence,
+	// NOT the sniff flag: those answer different questions (see DisableSniff).
+	if len(e.routes) == 0 {
 		e.mu.Unlock()
 		return
 	}
@@ -480,9 +492,18 @@ func (e *Engine) tmpLen() int {
 	return len(e.tmp)
 }
 
-// IsAllProxy returns true if engine is in match-all proxy mode.
-func (e *Engine) IsAllProxy() bool {
-	return e.allProxy
+// DisableSniff reports whether BT/SNI sniffing should be off because the bulk of
+// traffic is proxied. Sniffing only refines routing (BT→direct, SNI direct→proxy
+// upgrade); it is wasted hot-path work when most traffic tunnels, and enabling it
+// in global mode would force BitTorrent direct (tunnel leak).
+//
+// ⚠️ This does NOT mean "no exception routes exist." A direct/reject exception
+// (e.g. a control-plane domain→direct route) can precede the proxy catch-all and
+// still leave this true. To test for exceptions, inspect the route entries — never
+// this flag. Conflating the two is what silently dropped DNS-learned pins for
+// exception routes (see SetTmpRule).
+func (e *Engine) DisableSniff() bool {
+	return e.disableSniff
 }
 
 // HasMetaCriteria reports whether any loaded route matches on connection

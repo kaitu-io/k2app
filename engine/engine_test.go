@@ -412,8 +412,8 @@ func TestBuildRuleEngine_Default(t *testing.T) {
 	}
 	re := buildRuleEngine(client, buildOutboundMap(client.Routes), false)
 	defer re.Close()
-	if re.IsAllProxy() {
-		t.Fatal("expected IsAllProxy false when no routes set")
+	if re.DisableSniff() {
+		t.Fatal("expected DisableSniff false when no routes set")
 	}
 	// Default fallback is direct.
 	if got := re.Match("example.com"); got != rule.Target(0) {
@@ -425,8 +425,8 @@ func TestBuildRuleEngine_AllProxy(t *testing.T) {
 	client := config.ClientFromURL("k2v5://udid:tok@host:443")
 	re := buildRuleEngine(client, buildOutboundMap(client.Routes), false)
 	defer re.Close()
-	if !re.IsAllProxy() {
-		t.Fatal("expected IsAllProxy true for ClientFromURL")
+	if !re.DisableSniff() {
+		t.Fatal("expected DisableSniff true for ClientFromURL")
 	}
 	if got := re.Match("example.com"); got != rule.Target(2) {
 		t.Fatalf("Match = %v, want Target(2)", got)

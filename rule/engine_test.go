@@ -402,17 +402,17 @@ func TestEngineMatch_IgnoresMetaOnlyRoutes(t *testing.T) {
 	}
 }
 
-func TestEngineIsAllProxy(t *testing.T) {
+func TestEngineDisableSniff(t *testing.T) {
 	eng := NewEngine(nil, Target(2), nil, true)
 	defer eng.Close()
-	if !eng.IsAllProxy() {
-		t.Error("IsAllProxy() = false, want true")
+	if !eng.DisableSniff() {
+		t.Error("DisableSniff() = false, want true")
 	}
 
 	eng2 := NewEngine(nil, Target(0), nil, false)
 	defer eng2.Close()
-	if eng2.IsAllProxy() {
-		t.Error("IsAllProxy() = true, want false")
+	if eng2.DisableSniff() {
+		t.Error("DisableSniff() = true, want false")
 	}
 }
 
@@ -552,7 +552,9 @@ func TestEngineReload_Concurrent(t *testing.T) {
 
 func TestEngineSetTmpRule_DIAGNewPin(t *testing.T) {
 	buf := captureSlog(t)
-	eng := NewEngine(nil, Target(0), nil, false)
+	// ≥1 route so SetTmpRule pins — no-route engines skip pinning (a pin can
+	// never change a decision when every host takes the fallback).
+	eng := NewEngine([]RouteEntry{{Target: Target(0)}}, Target(0), nil, false)
 	defer eng.Close()
 
 	eng.SetTmpRule("8.8.8.8", Target(2))
@@ -576,7 +578,7 @@ func TestEngineSetTmpRule_DIAGDuplicateSuppressed(t *testing.T) {
 	// Same ip + same target called twice. Second call must NOT emit a log —
 	// DNS pipeline re-pins on every cache hit and we don't want a flood.
 	buf := captureSlog(t)
-	eng := NewEngine(nil, Target(0), nil, false)
+	eng := NewEngine([]RouteEntry{{Target: Target(0)}}, Target(0), nil, false) // ≥1 route so pins activate
 	defer eng.Close()
 
 	eng.SetTmpRule("8.8.8.8", Target(2))
@@ -592,7 +594,7 @@ func TestEngineSetTmpRule_DIAGDuplicateSuppressed(t *testing.T) {
 
 func TestEngineSetTmpRule_DIAGTargetChange(t *testing.T) {
 	buf := captureSlog(t)
-	eng := NewEngine(nil, Target(0), nil, false)
+	eng := NewEngine([]RouteEntry{{Target: Target(0)}}, Target(0), nil, false) // ≥1 route so pins activate
 	defer eng.Close()
 
 	eng.SetTmpRule("8.8.8.8", Target(2)) // initial pin
@@ -626,7 +628,7 @@ func TestEngineSetTmpRule_DIAGInvalidIPSilent(t *testing.T) {
 
 func TestEngineReload_DIAGEmitsCleared(t *testing.T) {
 	buf := captureSlog(t)
-	eng := NewEngine(nil, Target(0), nil, false)
+	eng := NewEngine([]RouteEntry{{Target: Target(0)}}, Target(0), nil, false) // ≥1 route so pins activate
 	defer eng.Close()
 
 	eng.SetTmpRule("1.1.1.1", Target(2))
@@ -824,11 +826,27 @@ func TestEngine_Closers_RunOnReloadNotTwice(t *testing.T) {
 	}
 }
 
-func TestSetTmpRule_SkipsUnderAllProxy(t *testing.T) {
-	e := NewEngine(nil, Target(2), nil, true) // allProxy
+func TestSetTmpRule_SkipsWhenNoRoutes(t *testing.T) {
+	// No exception routes → every host takes the fallback, so a per-IP pin can
+	// never change a decision. Skip purely to bound the heap, regardless of the
+	// sniff flag (true here) or fallback direction.
+	e := NewEngine(nil, Target(2), nil, true)
 	e.SetTmpRule("1.2.3.4", Target(0))
 	if n := e.tmpLen(); n != 0 {
-		t.Fatalf("allProxy must not pin DNS rules; tmpLen=%d", n)
+		t.Fatalf("no routes must not pin DNS rules; tmpLen=%d", n)
+	}
+}
+
+func TestSetTmpRule_PinsWhenRoutesExist(t *testing.T) {
+	// With an exception route present, DNS-learned pins are the only bridge from a
+	// DNS-time domain decision to an IP-routed connection — they must be kept even
+	// when the fallback is a proxy and sniffing is disabled (formerly the allProxy
+	// skip dropped them, silently breaking control-plane / region domain routes).
+	routes := []RouteEntry{{Target: Target(0)}} // one exception route → len(routes) > 0
+	e := NewEngine(routes, Target(2), nil, true) // proxy fallback + disableSniff
+	e.SetTmpRule("1.2.3.4", Target(0))
+	if n := e.tmpLen(); n != 1 {
+		t.Fatalf("routes present must pin DNS rules; tmpLen=%d", n)
 	}
 }
 

@@ -243,7 +243,7 @@ func (e *Engine) Start(cfg Config) error {
 	slog.Info("engine: start",
 		"server", extractServerHost(client.Server),
 		"mode", client.Mode,
-		"allProxy", ruleEngine.IsAllProxy(),
+		"disableSniff", ruleEngine.DisableSniff(),
 		"dnsDirect", client.DNS.Direct,
 		"dnsProxy", client.DNS.Proxy,
 		"fd", cfg.FileDescriptor,
@@ -433,8 +433,8 @@ func (e *Engine) Start(cfg Config) error {
 		DefaultTarget:   outboundDirect, // router is always set; fallback for tests
 		Router:          router,
 		ProcessSearcher: processSearcher,
-		SniffBT:   !ruleEngine.IsAllProxy(), // sniff BT in smart mode only
-		SniffSNI:  !ruleEngine.IsAllProxy(), // sniff TLS/QUIC SNI in smart mode only
+		SniffBT:   !ruleEngine.DisableSniff(), // sniff BT in smart mode only
+		SniffSNI:  !ruleEngine.DisableSniff(), // sniff TLS/QUIC SNI in smart mode only
 		BlockQUIC: client.BlockQUIC,
 	}
 	tunnel := core.NewClientTunnel(tunnelCfg)
@@ -604,7 +604,7 @@ func (e *Engine) Start(cfg Config) error {
 	slog.Info("DIAG: connected",
 		"server", extractServerHost(client.Server),
 		"mode", client.Mode,
-		"allProxy", ruleEngine.IsAllProxy(),
+		"disableSniff", ruleEngine.DisableSniff(),
 		"dialMs", time.Since(startTime).Milliseconds(),
 		"dnsTransport", "tcpws",
 	)
@@ -1163,7 +1163,7 @@ func (e *Engine) fail(err error) error {
 // outboundMap maps via URL → rule.Target for wire outbounds.
 // Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
 // ensures both always produce identical routing tables from the same config+bundles.
-func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, outboundMap map[string]rule.Target, expandRegion func(region string, target rule.Target) []rule.RouteEntry) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
+func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, outboundMap map[string]rule.Target, expandRegion func(region string, target rule.Target) []rule.RouteEntry) (entries []rule.RouteEntry, fallback rule.Target, disableSniff bool) {
 	fallback = outboundDirect
 
 	for i, route := range routes {
@@ -1182,7 +1182,11 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 		}
 
 		if route.Match.All {
-			allProxy = (target != outboundDirect && target != outboundReject)
+			// Bulk traffic proxies → disable sniffing. This intentionally stays
+			// true even if exception routes were accumulated above (those are in
+			// `entries`); the sniff decision is about the catch-all, not whether
+			// exceptions exist. DNS-pin learning keys off route presence, not this.
+			disableSniff = (target != outboundDirect && target != outboundReject)
 			fallback = target
 			break
 		}
@@ -1257,7 +1261,7 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 			fallback = target
 		}
 	}
-	return entries, fallback, allProxy
+	return entries, fallback, disableSniff
 }
 
 // buildOutboundMap assigns Target indices to each unique outbound URL in routes.
@@ -1461,10 +1465,10 @@ func buildRuleEngine(
 		}
 	}
 	idx := matcherIndex(krs.Index(bundles))
-	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap, heapRegionExpander(regionBundles))
+	entries, fallback, disableSniff := buildRouteEntries(finalRoutes, idx, outboundMap, heapRegionExpander(regionBundles))
 
 	logRuleEngineState(client.CacheDir, len(bundles) > 0, entries, fallback)
-	return rule.NewEngineNamed(entries, fallback, named, allProxy)
+	return rule.NewEngineNamed(entries, fallback, named, disableSniff)
 }
 
 // buildRuleEngineDisk is the NetworkExtension (iOS NE) variant of
@@ -1485,10 +1489,10 @@ func buildRuleEngineDisk(client *config.ClientConfig, finalRoutes []config.Route
 			regionDisk[nb.Region] = nb.Bundle
 		}
 	}
-	entries, fallback, allProxy := buildRouteEntries(finalRoutes, idx, outboundMap, diskRegionExpander(regionDisk))
+	entries, fallback, disableSniff := buildRouteEntries(finalRoutes, idx, outboundMap, diskRegionExpander(regionDisk))
 
 	logRuleEngineState(client.CacheDir, len(named) > 0, entries, fallback)
-	return rule.NewEngineWithClosers(entries, fallback, closers, allProxy)
+	return rule.NewEngineWithClosers(entries, fallback, closers, disableSniff)
 }
 
 // logRuleEngineState emits the "rule engine loaded" / "fallback only" line,
