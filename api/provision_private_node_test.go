@@ -113,3 +113,63 @@ func TestEmitNodeProvisionJob(t *testing.T) {
 	require.NoError(t, db.Get().Where("sub_id = ?", sub.ID).Find(&jobsAgain).Error)
 	require.Len(t, jobsAgain, 1, "idempotent re-emit must NOT create a second job")
 }
+
+// TestEmitNodeProvisionJob_FailsClosedOnQuotaInvariant proves the provision-time
+// backstop: a legacy spec row with BundleTransferBytes==0 (created before the
+// BeforeSave hook existed) must NOT emit a provision job. Instead the sub is
+// marked failed and no job is written. Fail-closed returns nil (not an error).
+func TestEmitNodeProvisionJob_FailsClosedOnQuotaInvariant(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	now := time.Now().Unix()
+	stamp := time.Now().Format("20060102150405.000000")
+
+	owner := User{UUID: "usr-pn-quota-" + stamp}
+	require.NoError(t, db.Get().Create(&owner).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&owner) })
+
+	plan := Plan{PID: "pn-quota-" + stamp, Kind: PlanKindPrivateNode, Month: 12}
+	require.NoError(t, db.Get().Create(&plan).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
+
+	// Insert a valid spec (hook passes), then force a legacy-shaped row by
+	// raw-writing bundle_transfer_bytes=0 (UpdateColumn bypasses BeforeSave).
+	spec := PrivateNodePlanSpec{
+		PlanID: plan.ID, Provider: "aws_lightsail", IPType: IPTypeNonResidential,
+		AllowedRegions: `["japan"]`, ImageID: "ubuntu_22_04", BundleID: "nano_3_0",
+		TrafficTotalBytes:   2 * 1024 * 1024 * 1024 * 1024,
+		BundleTransferBytes: 3 * 1024 * 1024 * 1024 * 1024,
+	}
+	require.NoError(t, db.Get().Create(&spec).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
+	require.NoError(t, db.Get().Model(&PrivateNodePlanSpec{}).
+		Where("plan_id = ?", plan.ID).
+		UpdateColumn("bundle_transfer_bytes", int64(0)).Error)
+
+	legacySpec, err := loadPrivateNodePlanSpec(db.Get(), plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), legacySpec.BundleTransferBytes)
+
+	order := Order{UUID: "ord-pn-quota-" + stamp, UserID: owner.ID, Meta: "{}"}
+	require.NoError(t, db.Get().Create(&order).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&order) })
+
+	// createPrivateNodeSubscription snapshots TrafficTotalBytes from the (now legacy)
+	// spec; the backstop re-asserts the invariant on the loaded spec.
+	sub, err := createPrivateNodeSubscription(ctx, db.Get(), &order, &plan, now)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(sub) })
+	t.Cleanup(func() { db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeProvisionJob{}) })
+
+	// Fail-closed: not an error return; it transitions to failed + skips job emit.
+	require.NoError(t, emitNodeProvisionJob(ctx, sub, legacySpec))
+
+	var reloaded PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&reloaded, sub.ID).Error)
+	assert.Equal(t, PNStatusFailed, reloaded.Status, "sub must be marked failed")
+
+	var jobCount int64
+	db.Get().Model(&NodeProvisionJob{}).Where("sub_id = ?", sub.ID).Count(&jobCount)
+	assert.Equal(t, int64(0), jobCount, "no provision job may be emitted")
+}

@@ -88,6 +88,17 @@ func isDuplicateKeyErr(err error) bool {
 // Center 不再直接 CreateInstance/cloud-init；激活仍由节点自注册带 claim 驱动（Plan 4）。
 // 状态停在 provisioning（NOT active）——node 自注册回传 claim 后才转 active。
 func emitNodeProvisionJob(ctx context.Context, sub *PrivateNodeSubscription, spec *PrivateNodePlanSpec) error {
+	// G1 backstop：再次校验成本不变式（覆盖 hook 之前创建的 legacy spec，其
+	// BundleTransferBytes=0）。纯算术，无 cloud 调用。违反 → 标 failed，不开机。
+	if err := validatePrivateNodeQuotaInvariant(spec.TrafficTotalBytes, spec.BundleTransferBytes); err != nil {
+		log.Errorf(ctx, "[QUOTA] sub=%d provision blocked, invariant violated: %v", sub.ID, err)
+		db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", sub.ID).Updates(map[string]any{
+			"status":               PNStatusFailed,
+			"last_provision_error": err.Error(),
+		})
+		return nil
+	}
+
 	// 1. 原子门控：允许从 pending 或 provisioning 进入 provisioning。
 	// 接纳 provisioning 是为了重试幂等：job 已写但后续步骤失败 → Asynq 重试时
 	// 状态已是 provisioning，必须能再次进入恢复，否则 sub 永久卡死。
