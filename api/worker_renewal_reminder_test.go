@@ -1,9 +1,12 @@
 package center
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
+
+	db "github.com/wordgate/qtoolkit/db"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -204,6 +207,73 @@ func TestGetUserEmailFromIdentifies(t *testing.T) {
 	// 没有 LoginIdentifies 时返回空
 	user := User{}
 	assert.Equal(t, "", getUserEmailFromIdentifies(&user))
+}
+
+// TestProcessPrivateNodeRenewalReminders 验证专属节点续费提醒：必须找到 ExpiresAt
+// 落在 now+daysBefore 的 Asia/Shanghai 当日窗口内的 active 订阅，从 LoginIdentifies
+// 解析主人邮箱，并经 SendTemplatedEmails 路由。是否真实发送取决于 dev 是否存在 EDM 模板
+// private-node-renewal-7d；无论如何 query + email-resolve 路径都要跑通，订阅必须被计入
+// (sent+skipped >= 1) 且不 panic。集成测试，跑真实 dev MySQL。
+func TestProcessPrivateNodeRenewalReminders(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	nowSh := time.Now().In(loc)
+	// startOfDay(now+7d in Shanghai) + 12h → 稳落在当日窗口内。
+	target := time.Date(nowSh.Year(), nowSh.Month(), nowSh.Day(), 0, 0, 0, 0, loc).
+		AddDate(0, 0, 7).Add(12 * time.Hour)
+	expiresAt := target.Unix()
+
+	// 固定 OrderID 段 9_601_001..9_601_003 — 预清残留
+	// (order_id uniqueIndex，陈旧行会让重跑致命)。
+	for oid := uint64(9_601_001); oid <= 9_601_003; oid++ {
+		db.Get().Unscoped().Where("order_id = ?", oid).Delete(&PrivateNodeSubscription{})
+	}
+
+	// 建一个带 email login_identify 的真实用户。
+	user := User{
+		UUID:     "usr-pn-renewal-" + nowSh.Format("20060102150405.000000"),
+		Language: "zh-CN",
+	}
+	require.NoError(t, db.Get().Create(&user).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	// secretDecryptString 当前是 TODO identity stub，明文直接放 EncryptedValue
+	// (镜像 password 测试的 seeding 模式)。
+	email := "pn-renewal-" + nowSh.Format("150405.000000") + "@example.com"
+	identify := LoginIdentify{
+		UserID:         user.ID,
+		Type:           "email",
+		IndexID:        email + "-idx",
+		EncryptedValue: email,
+	}
+	require.NoError(t, db.Get().Create(&identify).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&identify) })
+
+	sub := &PrivateNodeSubscription{
+		UserID:            user.ID,
+		PlanID:            961000,
+		OrderID:           9_601_001,
+		Region:            "us-east-1",
+		IPType:            IPTypeNonResidential,
+		TrafficTotalBytes: 2 << 40,
+		Status:            PNStatusActive,
+		PurchasedAt:       nowSh.Unix(),
+		ExpiresAt:         expiresAt,
+	}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() {
+		db.Get().Unscoped().Where("order_id = ?", sub.OrderID).Delete(&PrivateNodeSubscription{})
+	})
+
+	sent, skipped, failed := processPrivateNodeRenewalReminders(context.Background(), 7)
+
+	// 要点：query + email-resolve 路径跑通且把我们的 sub 计入。真实发送取决于 dev 模板
+	// 是否存在；不存在则降级为 skipped —— 无论如何 sent+skipped >= 1。
+	assert.GreaterOrEqual(t, sent+skipped, 1,
+		"窗口内的 sub 必须 sent 或 skipped (sent=%d skipped=%d failed=%d)",
+		sent, skipped, failed)
 }
 
 // TestHandlerDispatch 验证 handleRenewalReminderTask 的分发逻辑

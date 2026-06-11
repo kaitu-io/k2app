@@ -37,6 +37,12 @@ func handleRenewalReminderTask(ctx context.Context, _ []byte) error {
 		var sent, skipped, failed int
 		if days > 0 {
 			sent, skipped, failed = processRenewalReminders(ctx, days)
+			// 专属节点订阅独立时钟（PrivateNodeSubscription.ExpiresAt），
+			// 与共享池 User.ExpiredAt 解耦，需并行提醒。仅到期前（days>0）。
+			pnSent, pnSkipped, pnFailed := processPrivateNodeRenewalReminders(ctx, days)
+			sent += pnSent
+			skipped += pnSkipped
+			failed += pnFailed
 		} else {
 			sent, skipped, failed = processWinback(ctx, -days)
 		}
@@ -113,6 +119,91 @@ func processRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped
 	})
 	if err != nil {
 		log.Errorf(ctx, "[RENEWAL] SendTemplatedEmails failed: %v", err)
+		return 0, skipped, len(items)
+	}
+
+	return result.Sent, skipped + result.Skipped, result.Failed
+}
+
+// =====================================================================
+// 专属节点续费提醒（到期前，独立时钟）
+// =====================================================================
+
+// processPrivateNodeRenewalReminders 处理专属节点订阅的续费提醒。
+// 与共享池 processRenewalReminders 平行：用同一 Asia/Shanghai 当日窗口
+// [dayStart, dayEnd) 命中 now+daysBefore 到期的订阅，但查 PrivateNodeSubscription
+// （独立时钟 ExpiresAt，不碰 User.ExpiredAt），从主人 LoginIdentifies 解析邮箱，
+// 经 SendTemplatedEmails 用模板 slug private-node-renewal-{N}d 发送。
+func processPrivateNodeRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped, failed int) {
+	log.Infof(ctx, "[PN-RENEWAL] Processing %d-day private-node reminders", daysBefore)
+
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	nowSh := time.Now().In(loc)
+	todayStr := nowSh.Format("2006-01-02")
+	dayStart := time.Date(nowSh.Year(), nowSh.Month(), nowSh.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, daysBefore)
+	dayEnd := dayStart.AddDate(0, 0, 1)
+
+	batchID := fmt.Sprintf("pn-renewal-%dd-%s", daysBefore, todayStr)
+	slug := fmt.Sprintf("private-node-renewal-%dd", daysBefore)
+
+	var subs []PrivateNodeSubscription
+	err := db.Get().Model(&PrivateNodeSubscription{}).
+		Where("status IN ?", []string{PNStatusActive, PNStatusGrace}).
+		Where("expires_at >= ? AND expires_at < ?", dayStart.Unix(), dayEnd.Unix()).
+		Find(&subs).Error
+	if err != nil {
+		log.Errorf(ctx, "[PN-RENEWAL] Failed to query subscriptions: %v", err)
+		return 0, 0, 1
+	}
+
+	log.Infof(ctx, "[PN-RENEWAL] Found %d private-node subs expiring in %d days", len(subs), daysBefore)
+
+	if len(subs) == 0 {
+		return 0, 0, 0
+	}
+
+	items := make([]SendEmailItem, 0, len(subs))
+	for _, sub := range subs {
+		var user User
+		if err := db.Get().Model(&User{}).
+			Preload("LoginIdentifies").
+			First(&user, sub.UserID).Error; err != nil {
+			log.Warnf(ctx, "[PN-RENEWAL] Failed to load user %d for sub %d: %v", sub.UserID, sub.ID, err)
+			skipped++
+			continue
+		}
+		email := getUserEmailFromIdentifies(&user)
+		if email == "" {
+			skipped++
+			continue
+		}
+		items = append(items, SendEmailItem{
+			Email:  email,
+			UserID: user.ID,
+			Slug:   slug,
+			Vars:   map[string]string{},
+		})
+	}
+
+	if len(items) == 0 {
+		return 0, skipped, 0
+	}
+
+	// 模板缺失时降级为 skipped（不报 failed），与共享路径同语义：运营侧未配模板
+	// 不应让 cron 视作发送失败。模板内容由运营侧 provision。
+	if !templateSlugExists(slug) {
+		alertMsg := fmt.Sprintf("[EMAIL-LIFECYCLE] 模板 slug=%q 不存在，跳过 %d 天专属节点续费提醒。请在管理后台创建该模板。", slug, daysBefore)
+		log.Errorf(ctx, "%s", alertMsg)
+		slack.Send("alert", alertMsg)
+		return 0, skipped + len(items), 0
+	}
+
+	result, err := SendTemplatedEmails(ctx, &SendEmailsRequest{
+		BatchID: batchID,
+		Items:   items,
+	})
+	if err != nil {
+		log.Errorf(ctx, "[PN-RENEWAL] SendTemplatedEmails failed: %v", err)
 		return 0, skipped, len(items)
 	}
 
