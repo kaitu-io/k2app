@@ -155,6 +155,25 @@ export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
             </Box>
           )}
 
+          {/* Quota exhausted — orthogonal to lifecycle status; only when provisioned */}
+          {!isProvisioning && node.quotaExhausted && (
+            <Alert
+              severity="error"
+              variant="filled"
+              data-testid="private-node-quota-exhausted"
+              sx={{ borderRadius: 1.5, py: 0.5 }}
+            >
+              <Typography variant="body2" fontWeight={700} sx={{ fontSize: '0.85rem' }}>
+                {t('privateNode:privateNode.quotaExhausted.title')}
+              </Typography>
+              <Typography variant="caption">
+                {node.quotaResetAt && node.quotaResetAt > 0
+                  ? t('privateNode:privateNode.quotaExhausted.resetHint', { date: formatDate(node.quotaResetAt) })
+                  : t('privateNode:privateNode.quotaExhausted.resetUnknown')}
+              </Typography>
+            </Alert>
+          )}
+
           {/* Expiry */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="caption" color="text.secondary">
