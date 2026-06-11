@@ -1,8 +1,10 @@
 package center
 
 import (
-	db "github.com/wordgate/qtoolkit/db"
+	"encoding/json"
+
 	"github.com/gin-gonic/gin"
+	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
 
@@ -22,7 +24,7 @@ func api_get_plans(c *gin.Context) {
 	}
 	for _, plan := range plans {
 		q := plan.Quota()
-		items = append(items, DataPlan{
+		dp := DataPlan{
 			PID:             plan.PID,
 			Tier:            plan.Tier,
 			Label:           plan.Label,
@@ -35,7 +37,24 @@ func api_get_plans(c *gin.Context) {
 			MaxRouterDevice: q.MaxRouterDevice,
 			MaxLanClient:    q.MaxLanClient,
 			AppleProductID:  plan.AppleProductID,
-		})
+			Kind:            plan.Kind,
+		}
+		if plan.Kind == PlanKindPrivateNode {
+			var spec PrivateNodePlanSpec
+			if err := db.Get().Where(&PrivateNodePlanSpec{PlanID: plan.ID}).First(&spec).Error; err == nil {
+				var regions []string
+				_ = json.Unmarshal([]byte(spec.AllowedRegions), &regions)
+				dp.PrivateNode = &DataPrivateNodePlanSpec{
+					Provider:          spec.Provider,
+					IPType:            spec.IPType,
+					AllowedRegions:    regions,
+					TrafficTotalBytes: spec.TrafficTotalBytes,
+				}
+			} else {
+				log.Warnf(c, "private_node plan %s (id=%d) has no PrivateNodePlanSpec: %v", plan.PID, plan.ID, err)
+			}
+		}
+		items = append(items, dp)
 	}
 	log.Infof(c, "successfully loaded %d plans", len(items))
 	ItemsAll(c, items)
