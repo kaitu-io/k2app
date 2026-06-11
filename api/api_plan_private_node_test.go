@@ -33,6 +33,13 @@ func TestGetPlans_IncludesKindAndPrivateNodeSpec(t *testing.T) {
 	require.NoError(t, db.Get().Create(&spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
 
+	// seed a controlled shared plan so the shared-kind assertion is deterministic
+	// even when the integration DB has no other shared plans.
+	sharedPlan := Plan{PID: "test-shared-1m", Label: "共享订阅测试", Price: 1900, Month: 1,
+		Tier: "basic", Kind: PlanKindShared, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
+	require.NoError(t, db.Get().Create(&sharedPlan).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&sharedPlan) })
+
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/plans", nil)
 	r.ServeHTTP(w, req)
@@ -61,4 +68,26 @@ func TestGetPlans_IncludesKindAndPrivateNodeSpec(t *testing.T) {
 	regions, ok := pn["allowedRegions"].([]any)
 	require.True(t, ok)
 	require.Len(t, regions, 2)
+
+	// Every non-private-node item must be a shared_subscription with NO privateNode block.
+	for _, it := range resp.Data.Items {
+		if it["pid"] == "test-pn-1m" {
+			continue
+		}
+		require.Equal(t, "shared_subscription", it["kind"],
+			"non-private-node plan %v must emit shared_subscription kind", it["pid"])
+		require.Nil(t, it["privateNode"],
+			"shared_subscription plan %v must not emit a privateNode block", it["pid"])
+	}
+
+	// The seeded shared plan must specifically appear with the shared kind and no privateNode.
+	var foundShared map[string]any
+	for _, it := range resp.Data.Items {
+		if it["pid"] == "test-shared-1m" {
+			foundShared = it
+		}
+	}
+	require.NotNil(t, foundShared, "seeded shared plan must appear")
+	require.Equal(t, "shared_subscription", foundShared["kind"])
+	require.Nil(t, foundShared["privateNode"], "shared plan must not emit a privateNode block")
 }

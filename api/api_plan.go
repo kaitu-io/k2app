@@ -44,6 +44,9 @@ func api_get_plans(c *gin.Context) {
 			if err := db.Get().Where(&PrivateNodePlanSpec{PlanID: plan.ID}).First(&spec).Error; err == nil {
 				var regions []string
 				_ = json.Unmarshal([]byte(spec.AllowedRegions), &regions)
+				if regions == nil {
+					regions = []string{}
+				}
 				dp.PrivateNode = &DataPrivateNodePlanSpec{
 					Provider:          spec.Provider,
 					IPType:            spec.IPType,
