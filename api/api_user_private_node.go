@@ -52,6 +52,12 @@ func api_get_user_private_nodes(c *gin.Context) {
 			if err := db.Get().First(&ci, *s.CloudInstanceID).Error; err == nil {
 				d.TrafficUsedBytes = ci.TrafficUsedBytes
 				d.Node = &DataPrivateNodeNode{IP: ci.IPAddress, Region: ci.Region}
+				d.QuotaResetAt = ci.TrafficResetAt
+				// 同 slave_api_usage.go 的整数阈值（同包常量），避免漂移。
+				if ci.TrafficTotalBytes > 0 &&
+					ci.TrafficUsedBytes*trafficStopThresholdDen >= ci.TrafficTotalBytes*trafficStopThresholdNum {
+					d.QuotaExhausted = true
+				}
 			} else {
 				log.Warnf(c, "private sub %d references missing CloudInstance %d: %v", s.ID, *s.CloudInstanceID, err)
 			}

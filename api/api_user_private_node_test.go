@@ -138,6 +138,66 @@ func TestGetUserPrivateNodes(t *testing.T) {
 	require.False(t, gotPending.IsServiceable, "pending sub is not serviceable")
 }
 
+// TestGetUserPrivateNodes_QuotaExhaustedField asserts the orthogonal quota
+// signal: a provisioned sub whose bound instance is at >= 95% usage surfaces
+// quotaExhausted=true (matching the runtime cutoff in slave_api_usage.go) and
+// quotaResetAt mirrors the instance's TrafficResetAt.
+func TestGetUserPrivateNodes_QuotaExhaustedField(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	router := setupPrivateNodeTestRouter()
+
+	plan := Plan{PID: "test-pn-quota-1m", Label: "专属节点额度测试", Price: 9900, Month: 1,
+		Tier: "basic", Kind: PlanKindPrivateNode, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
+	require.NoError(t, db.Get().Create(&plan).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
+
+	user := CreateTestUser(t)
+	token := GenerateTestToken(user.ID, "", time.Hour)
+
+	now := time.Now().Unix()
+
+	// Bound instance at 96% usage (960/1000 >= 95%) with a known reset time.
+	ci := CloudInstance{
+		Provider: "aws_lightsail", AccountName: "test-acct",
+		InstanceID:        generateId("test-ci-quota"),
+		IPAddress:         "203.0.113.7",
+		Region:            "ap-northeast-1",
+		TrafficTotalBytes: 1000,
+		TrafficUsedBytes:  960,
+		TrafficResetAt:    1893456000,
+	}
+	require.NoError(t, db.Get().Create(&ci).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&ci) })
+
+	sub := PrivateNodeSubscription{
+		UserID: user.ID, PlanID: plan.ID, OrderID: uint64(time.Now().UnixNano()),
+		CloudInstanceID:   &ci.ID,
+		Region:            "ap-northeast-1",
+		IPType:            IPTypeNonResidential,
+		TrafficTotalBytes: 1000,
+		Status:            PNStatusActive,
+		PurchasedAt:       now - 3600,
+		ExpiresAt:         now + 30*86400,
+	}
+	require.NoError(t, db.Get().Create(&sub).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&sub) })
+
+	w := NewTestRequest(http.MethodGet, "/api/user/private-nodes").
+		WithBearerToken(token).
+		Execute(router)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	data, err := ParseResponseData[DataPrivateNodeList](w)
+	require.NoError(t, err)
+	require.Len(t, data.Items, 1)
+
+	got := data.Items[0]
+	require.True(t, got.QuotaExhausted, "96%% usage must be quotaExhausted")
+	require.Equal(t, int64(1893456000), got.QuotaResetAt)
+}
+
 // TestGetUserPrivateNodes_Empty asserts a user with no subs gets a non-null
 // empty items array (not JSON null).
 func TestGetUserPrivateNodes_Empty(t *testing.T) {

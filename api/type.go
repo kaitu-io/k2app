@@ -598,6 +598,11 @@ type DataPrivateNodeSubscription struct {
 	SuspendUntil      int64                `json:"suspendUntil"`
 	PlanLabel         string               `json:"planLabel"`
 	Node              *DataPrivateNodeNode `json:"node,omitempty"` // 已开通才有
+	// 额度用尽（与 IsServiceable 正交）：used/total >= 95%（同运行时断流阈值）。
+	// 让 App 把"本月额度用尽"与"到期"/"坏了"区分开。未开通(total=0)恒 false。
+	QuotaExhausted bool `json:"quotaExhausted"`
+	// 配额重置时刻（Unix 秒，来自绑定实例 TrafficResetAt；未知=0）。供 App 显示"X 号重置"。
+	QuotaResetAt int64 `json:"quotaResetAt"`
 }
 
 // DataPrivateNodeList 专属节点订阅列表（owner-scoped）。
