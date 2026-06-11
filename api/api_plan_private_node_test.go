@@ -29,7 +29,7 @@ func TestGetPlans_IncludesKindAndPrivateNodeSpec(t *testing.T) {
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
 
 	spec := PrivateNodePlanSpec{PlanID: plan.ID, Provider: "aws_lightsail", IPType: IPTypeNonResidential,
-		AllowedRegions: `["us-east-1","ap-northeast-1"]`, ImageID: "img-x", BundleID: "nano_2_0", TrafficTotalBytes: 2 << 40}
+		AllowedRegions: `["us-east-1","ap-northeast-1"]`, ImageID: "img-x", BundleID: "nano_2_0", TrafficTotalBytes: 2 << 40, BundleTransferBytes: 3 << 40}
 	require.NoError(t, db.Get().Create(&spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
 

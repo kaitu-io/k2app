@@ -47,7 +47,8 @@ func TestApplyOrderToBuyer_PrivateNode(t *testing.T) {
 		AllowedRegions:    `["japan"]`,
 		ImageID:           "img-test",
 		BundleID:          "nano_2_0",
-		TrafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024, // 2TB
+		TrafficTotalBytes:   2 * 1024 * 1024 * 1024 * 1024, // 2TB
+		BundleTransferBytes: 3 * 1024 * 1024 * 1024 * 1024, // bundle allowance strictly above sold quota
 	}
 	require.NoError(t, db.Get().Create(&spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
@@ -148,7 +149,8 @@ func TestApplyOrderToBuyer_PrivateNode_SetsActivationFlags(t *testing.T) {
 		AllowedRegions:    `["japan"]`,
 		ImageID:           "img-test",
 		BundleID:          "nano_2_0",
-		TrafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024,
+		TrafficTotalBytes:   2 * 1024 * 1024 * 1024 * 1024,
+		BundleTransferBytes: 3 * 1024 * 1024 * 1024 * 1024, // bundle allowance strictly above sold quota
 	}
 	require.NoError(t, db.Get().Create(&spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })

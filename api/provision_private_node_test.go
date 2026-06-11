@@ -27,7 +27,8 @@ func TestCreatePrivateNodeSubscription(t *testing.T) {
 	spec := PrivateNodePlanSpec{
 		PlanID: plan.ID, Provider: "aws_lightsail", IPType: IPTypeNonResidential,
 		AllowedRegions: `["japan"]`, ImageID: "ubuntu_22_04", BundleID: "nano_3_0",
-		TrafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024,
+		TrafficTotalBytes:   2 * 1024 * 1024 * 1024 * 1024,
+		BundleTransferBytes: 3 * 1024 * 1024 * 1024 * 1024,
 	}
 	require.NoError(t, db.Get().Create(&spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
@@ -71,7 +72,8 @@ func TestEmitNodeProvisionJob(t *testing.T) {
 	spec := PrivateNodePlanSpec{
 		PlanID: plan.ID, Provider: "aws_lightsail", IPType: IPTypeNonResidential,
 		AllowedRegions: `["japan"]`, ImageID: "ubuntu_22_04", BundleID: "nano_3_0",
-		TrafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024,
+		TrafficTotalBytes:   2 * 1024 * 1024 * 1024 * 1024,
+		BundleTransferBytes: 3 * 1024 * 1024 * 1024 * 1024,
 	}
 	require.NoError(t, db.Get().Create(&spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })

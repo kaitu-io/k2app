@@ -36,7 +36,7 @@ func seedPrivateNodePlan(t *testing.T, pid, allowedRegionsJSON string) *Plan {
 	t.Cleanup(func() { db.Get().Unscoped().Delete(plan) })
 
 	spec := &PrivateNodePlanSpec{PlanID: plan.ID, Provider: "aws_lightsail", IPType: IPTypeNonResidential,
-		AllowedRegions: allowedRegionsJSON, ImageID: "img-x", BundleID: "nano_2_0", TrafficTotalBytes: 2 << 40}
+		AllowedRegions: allowedRegionsJSON, ImageID: "img-x", BundleID: "nano_2_0", TrafficTotalBytes: 2 << 40, BundleTransferBytes: 3 << 40}
 	require.NoError(t, db.Get().Create(spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(spec) })
 	return plan
