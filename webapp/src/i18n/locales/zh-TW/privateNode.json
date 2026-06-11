@@ -30,6 +30,12 @@
     "provisioningHint": "節點正在開通，通常需要幾分鐘，請稍候",
     "empty": "你還沒有專屬節點",
     "renew": "續費",
-    "percentUsed": "已用 {{percent}}%"
+    "percentUsed": "已用 {{percent}}%",
+    "quotaExhausted": {
+      "title": "本月流量額度已用盡",
+      "resetHint": "將於 {{date}} 重置",
+      "resetUnknown": "將於下個週期開始時重置",
+      "cta": "續費 / 升級額度"
+    }
   }
 }

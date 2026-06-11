@@ -177,6 +177,8 @@ export interface PrivateNodeSubscriptionView {
   graceUntil: number;
   suspendUntil: number;
   planLabel: string;
+  quotaExhausted: boolean; // 本月额度用尽（与 isServiceable 正交）
+  quotaResetAt?: number; // 配额重置时刻（Unix 秒，未知=0/缺省）
   node?: PrivateNodeNode; // 已开通才有
 }
 

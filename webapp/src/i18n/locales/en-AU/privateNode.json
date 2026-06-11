@@ -30,6 +30,12 @@
     "provisioningHint": "Your node is being provisioned. This usually takes a few minutes, please wait.",
     "empty": "You don't have any dedicated nodes yet",
     "renew": "Renew",
-    "percentUsed": "{{percent}}% used"
+    "percentUsed": "{{percent}}% used",
+    "quotaExhausted": {
+      "title": "Monthly traffic quota used up",
+      "resetHint": "Resets on {{date}}",
+      "resetUnknown": "Resets at the start of the next cycle",
+      "cta": "Renew / Upgrade quota"
+    }
   }
 }

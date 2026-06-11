@@ -30,6 +30,12 @@
     "provisioningHint": "ノードを開設中です。通常は数分かかります。しばらくお待ちください。",
     "empty": "専用ノードはまだありません",
     "renew": "更新",
-    "percentUsed": "{{percent}}% 使用済み"
+    "percentUsed": "{{percent}}% 使用済み",
+    "quotaExhausted": {
+      "title": "今月の通信量上限に達しました",
+      "resetHint": "{{date}} にリセットされます",
+      "resetUnknown": "次の周期の開始時にリセットされます",
+      "cta": "更新 / 上限アップグレード"
+    }
   }
 }
