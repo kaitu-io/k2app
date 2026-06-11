@@ -512,6 +512,9 @@ func SetupRouter() *gin.Engine {
 		// 节点状态上报
 		slaveManage.POST("/report/status", SlaveAuthRequired(), api_slave_report_status)
 
+		// 流量计量心跳（节点上报累计流量，Center 回 serve/stop 裁决 + epoch 身份）
+		slaveManage.POST("/usage", SlaveAuthRequired(), api_slave_node_report_usage)
+
 		// 设备认证（自动识别 JWT token 或密码）
 		slaveManage.POST("/device-check-auth", SlaveAuthRequired(), api_slave_device_check_auth)
 
