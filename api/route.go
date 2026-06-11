@@ -141,6 +141,8 @@ func SetupRouter() *gin.Engine {
 			user.POST("/apple-iap/verify", AuthRequired(), EnforceDeviceClass(), api_apple_iap_verify)
 			// 通知代付人付款（给当前用户的 delegate 发支付邀请邮件）
 			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), EnforceDeviceClass(), api_order_notify_delegate)
+			// 专属节点订阅只读列表（owner-scoped）
+			user.GET("/private-nodes", AuthRequired(), EnforceDeviceClass(), api_get_user_private_nodes)
 			// 获取授权变更历史
 			user.GET("/pro-histories", AuthRequired(), EnforceDeviceClass(), api_get_pro_histories)
 			// 发送绑定邮箱验证码

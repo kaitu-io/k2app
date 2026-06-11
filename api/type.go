@@ -577,6 +577,34 @@ type DataPrivateNodePlanSpec struct {
 	TrafficTotalBytes int64    `json:"trafficTotalBytes"` // 流量配额
 }
 
+// DataPrivateNodeNode 已开通节点的连接可见信息（未开通时为 nil）。
+type DataPrivateNodeNode struct {
+	IP     string `json:"ip"`
+	Region string `json:"region"`
+}
+
+// DataPrivateNodeSubscription 用户视角的专属节点订阅只读视图。
+type DataPrivateNodeSubscription struct {
+	ID                uint64               `json:"id"`
+	Status            string               `json:"status"`            // pending|provisioning|active|grace|suspended|deprovisioned|failed
+	IsServiceable     bool                 `json:"isServiceable"`     // 当前是否在服务（含宽限期）
+	Region            string               `json:"region"`            // 选定地区（开通前即知）
+	IPType            string               `json:"ipType"`
+	TrafficTotalBytes int64                `json:"trafficTotalBytes"` // 配额（订阅快照）
+	TrafficUsedBytes  int64                `json:"trafficUsedBytes"`  // 已用（来自 CloudInstance，未开通=0）
+	PurchasedAt       int64                `json:"purchasedAt"`
+	ExpiresAt         int64                `json:"expiresAt"`
+	GraceUntil        int64                `json:"graceUntil"`
+	SuspendUntil      int64                `json:"suspendUntil"`
+	PlanLabel         string               `json:"planLabel"`
+	Node              *DataPrivateNodeNode `json:"node,omitempty"` // 已开通才有
+}
+
+// DataPrivateNodeList 专属节点订阅列表（owner-scoped）。
+type DataPrivateNodeList struct {
+	Items []DataPrivateNodeSubscription `json:"items"`
+}
+
 // Response_SlaveDeviceCheckAuthResult 节点设备认证结果响应
 type Response_SlaveDeviceCheckAuthResult struct {
 	Code int                        `json:"code" example:"200"`        // 响应码
