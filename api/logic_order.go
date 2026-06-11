@@ -27,7 +27,12 @@ var getDB = func() *gorm.DB { return db.Get() }
 //
 // 原子性保证：所有步骤必须全部成功，任何一步失败都会导致整个事务回滚
 // 这确保用户不会出现"付了款但没拿到应得奖励"的情况
-func MarkOrderAsPaid(ctx context.Context, tx *gorm.DB, order *Order) error {
+//
+// provisionSubIDs（可空）收集需要异步开通的专属节点订阅 ID。这些任务**不能**在
+// 事务内 enqueue —— 若事务随后回滚，订阅行没了但 Redis 任务还在 → worker 拿不到
+// sub 进死队列（Bug #4）。调用方必须在 tx 成功提交后，对收集到的每个 ID 调用
+// enqueueProvision。
+func MarkOrderAsPaid(ctx context.Context, tx *gorm.DB, order *Order, provisionSubIDs *[]uint64) error {
 	log.Infof(ctx, "[MarkOrderAsPaid] processing payment for order %d", order.ID)
 
 	// 如果订单已经标记为已支付，直接返回
@@ -64,7 +69,7 @@ func MarkOrderAsPaid(ctx context.Context, tx *gorm.DB, order *Order) error {
 	}
 
 	// 第三步：为购买用户增加 Pro 授权
-	if err := applyOrderToBuyer(ctx, tx, order); err != nil {
+	if err := applyOrderToBuyer(ctx, tx, order, provisionSubIDs); err != nil {
 		log.Errorf(ctx, "[MarkOrderAsPaid] failed to apply order to target users: %v", err)
 		return fmt.Errorf("给用户增加授权失败: %v", err)
 	}

@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,6 +33,15 @@ func handleProvisionPrivateNode(ctx context.Context, payload []byte) error {
 	}
 	var sub PrivateNodeSubscription
 	if err := db.Get().First(&sub, p.SubID).Error; err != nil {
+		// sub 不存在 = 孤儿任务（订单事务在 enqueue 后回滚，或人工删了订阅）。
+		// 普通 error 会被 Asynq 重试 3 次后静默进死队列 → 付费用户拿不到东西且无人察觉。
+		// 改为：记错误 + Slack 告警 + 返回 SkipRetry（不再重试），把静默死队列变成响亮告警。
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Errorf(ctx, "provision task references missing sub %d (orphaned task — order tx rolled back after enqueue?)", p.SubID)
+			sendCloudSlackNotification(ctx, "Private Node Provision Orphaned Task",
+				fmt.Sprintf("provision sub %d not found — orphaned Asynq task, skipping retry. Check if order tx rolled back after enqueue.", p.SubID))
+			return fmt.Errorf("provision sub %d not found (orphaned task?): %w", p.SubID, hibikenAsynq.SkipRetry)
+		}
 		return fmt.Errorf("load sub %d: %w", p.SubID, err)
 	}
 	// 递增尝试计数（含重试），让 ops 能在卡住的 sub 上看到尝试次数。

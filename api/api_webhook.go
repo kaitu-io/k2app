@@ -133,7 +133,13 @@ func handleWordgateOrderPaidEvent(c *gin.Context, webhookEvent *wordgate.Webhook
 
 	// 使用带死锁重试的事务处理整个流程
 	// 死锁可能发生在：两个并发订单涉及相同的邀请人时
-	return withDeadlockRetry(c, 3, func(tx *gorm.DB) error {
+	//
+	// 专属节点开通任务（Asynq）严禁在事务内入队：若事务回滚，订阅行没了但 Redis
+	// 任务仍在 → worker "record not found" 进死队列（Bug #4）。改为收集 sub ID，
+	// 仅在事务成功提交后入队。collector 在每次重试的闭包内重置，避免重试时累积旧 ID。
+	var provisionSubIDs []uint64
+	if err := withDeadlockRetry(c, 3, func(tx *gorm.DB) error {
+		provisionSubIDs = nil // 重置：死锁重试会重跑闭包，旧 ID 必须丢弃
 		// 根据 wordgate 订单号查找本地订单，使用结构体字段确保编译时类型安全
 		// FOR UPDATE 序列化同一订单的重复 webhook：TX2 解除阻塞后读到 is_paid=true → 跳过
 		var order Order
@@ -151,7 +157,7 @@ func handleWordgateOrderPaidEvent(c *gin.Context, webhookEvent *wordgate.Webhook
 			log.Infof(c, "[Webhook] processing payment for order %s", order.UUID)
 
 			// 调用 MarkOrderAsPaid 处理完整的支付流程（授权 + 返现 + 邀请奖励）
-			if err := MarkOrderAsPaid(c, tx, &order); err != nil {
+			if err := MarkOrderAsPaid(c, tx, &order, &provisionSubIDs); err != nil {
 				return fmt.Errorf("处理订单支付失败: %v", err)
 			}
 
@@ -164,7 +170,19 @@ func handleWordgateOrderPaidEvent(c *gin.Context, webhookEvent *wordgate.Webhook
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	// 事务已提交：现在才入队专属节点开通任务（Bug #4 — 回滚后绝不会留下孤儿任务）。
+	// 入队失败不回滚已提交的订单：timeout sweep / 手工补单可兜底；只记错误告警。
+	for _, subID := range provisionSubIDs {
+		if err := enqueueProvision(c, subID); err != nil {
+			log.Errorf(c, "[Webhook] failed to enqueue provision for sub %d (order committed; needs manual retry): %v", subID, err)
+		}
+	}
+
+	return nil
 }
 
 // handleWordgateOrderCancelledEvent 处理 wordgate 订单取消事件

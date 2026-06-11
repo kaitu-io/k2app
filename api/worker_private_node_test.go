@@ -2,15 +2,40 @@ package center
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	hibikenAsynq "github.com/hibiken/asynq"
 	db "github.com/wordgate/qtoolkit/db"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestHandleProvisionPrivateNode_OrphanedTaskSkipsRetry verifies that when the
+// provision task references a sub that does not exist (orphaned task — e.g. the
+// order tx rolled back after enqueue), the worker does NOT plain-error (which
+// Asynq would retry then dead-queue). Instead it returns an error wrapping
+// asynq.SkipRetry so the task is dropped loudly (Slack alert) without retries.
+func TestHandleProvisionPrivateNode_OrphanedTaskSkipsRetry(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	// Pick a sub id that cannot exist.
+	missingID := uint64(999000111)
+	db.Get().Unscoped().Delete(&PrivateNodeSubscription{}, missingID)
+
+	payload, err := json.Marshal(ProvisionPayload{SubID: missingID})
+	require.NoError(t, err)
+
+	err = handleProvisionPrivateNode(context.Background(), payload)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, hibikenAsynq.SkipRetry),
+		"orphaned-task error must wrap SkipRetry, got %v", err)
+}
 
 // TestHandleProvisionTimeoutSweep verifies that a subscription stuck in
 // provisioning past the timeout cutoff is marked failed, while a fresh
