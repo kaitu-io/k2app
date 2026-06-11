@@ -12,6 +12,7 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/util"
+	"gorm.io/gorm"
 )
 
 // SlaveNodeUpsertRequest 物理节点注册/更新请求结构体
@@ -214,38 +215,59 @@ func api_slave_node_upsert(c *gin.Context) {
 	// 命中可认领订阅则将节点归属置 private 并激活订阅。缺省/不匹配/订阅非可认领态
 	// 一律按 shared 处理、不报错（防探测）。
 	if req.PrivateClaim != "" {
+		// 先取 sub 拿 UserID/ID（仅用于后续 node 归属写入）；真正的门是下面的原子 CAS。
 		var pnSub PrivateNodeSubscription
-		if err := db.Get().Where(&PrivateNodeSubscription{ProvisionClaimToken: req.PrivateClaim}).First(&pnSub).Error; err == nil &&
-			(pnSub.Status == PNStatusPending || pnSub.Status == PNStatusProvisioning || pnSub.Status == PNStatusActive) {
-			// 认领：节点归属置 private（列定向 Update，勿全量 Save）
-			db.Get().Model(&SlaveNode{}).Where("id = ?", node.ID).Updates(map[string]any{
-				"class": NodeClassPrivate, "private_owner_user_id": pnSub.UserID, "private_sub_id": pnSub.ID,
-			})
-			// 激活订阅 + 回填 SlaveNodeID
-			db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", pnSub.ID).Updates(map[string]any{
-				"status": PNStatusActive, "slave_node_id": node.ID,
-			})
-			// 回填 CloudInstance（agent 经 create_cloud_instance 已落库，按 IP 匹配）。best-effort。
-			var ci CloudInstance
-			// ip_address 有索引但非唯一：IP 回收后可能存在多条历史行，取最新一条（id DESC）避免撞陈旧记录。
-			if err := db.Get().Where("ip_address = ?", node.Ipv4).Order("id DESC").First(&ci).Error; err == nil {
-				if e := db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", pnSub.ID).
-					Update("cloud_instance_id", ci.ID).Error; e != nil {
-					log.Errorf(c, "link cloud instance to sub=%d: %v", pnSub.ID, e)
+		if err := db.Get().Where(&PrivateNodeSubscription{ProvisionClaimToken: req.PrivateClaim}).First(&pnSub).Error; err == nil {
+			err := db.Get().Transaction(func(tx *gorm.DB) error {
+				// 原子认领：仅当仍 pending/provisioning 且 token 未被消费时成功；同时置空 token
+				// 防重放。active 不在白名单（防持 token 重注册劫持 owner 流量）；failed 不在
+				// 白名单（防被 sweep 置 failed 的 sub 被注册侧 activation 复活）。
+				res := tx.Model(&PrivateNodeSubscription{}).
+					Where("id = ? AND provision_claim_token = ? AND status IN ?",
+						pnSub.ID, req.PrivateClaim, []string{PNStatusPending, PNStatusProvisioning}).
+					Updates(map[string]any{
+						"status": PNStatusActive, "slave_node_id": node.ID, "provision_claim_token": "",
+					})
+				if res.Error != nil {
+					return res.Error
 				}
-			} else {
-				log.Debugf(c, "no cloud instance found for ip=%s (sub=%d), skip link", node.Ipv4, pnSub.ID)
+				if res.RowsAffected == 0 {
+					// 已被认领 / 已失败 / token 失效 → 按 shared 处理，不报错（防探测）。
+					return nil
+				}
+				// 认领成功：节点归属置 private（列定向 Update，勿全量 Save）。
+				if err := tx.Model(&SlaveNode{}).Where("id = ?", node.ID).Updates(map[string]any{
+					"class": NodeClassPrivate, "private_owner_user_id": pnSub.UserID, "private_sub_id": pnSub.ID,
+				}).Error; err != nil {
+					return err
+				}
+				// 回填 CloudInstance（agent 经 create_cloud_instance 已落库，按 IP 匹配）。best-effort。
+				// ip_address 有索引但非唯一：IP 回收后可能存在多条历史行，取最新一条（id DESC）避免撞陈旧记录。
+				var ci CloudInstance
+				if e := tx.Where("ip_address = ?", node.Ipv4).Order("id DESC").First(&ci).Error; e == nil {
+					if e := tx.Model(&PrivateNodeSubscription{}).Where("id = ?", pnSub.ID).
+						Update("cloud_instance_id", ci.ID).Error; e != nil {
+						log.Errorf(c, "link cloud instance to sub=%d: %v", pnSub.ID, e)
+					}
+				} else {
+					log.Debugf(c, "no cloud instance found for ip=%s (sub=%d), skip link", node.Ipv4, pnSub.ID)
+				}
+				// 翻开通 job → succeeded。best-effort。
+				if e := tx.Model(&NodeProvisionJob{}).Where("sub_id = ?", pnSub.ID).
+					Update("status", NPJStatusSucceeded).Error; e != nil {
+					log.Errorf(c, "mark provision job succeeded sub=%d: %v", pnSub.ID, e)
+				}
+				// 同步内存 node 字段，避免响应序列化用旧值。
+				node.Class = NodeClassPrivate
+				node.PrivateOwnerUserID = &pnSub.UserID
+				node.PrivateSubID = &pnSub.ID
+				log.Infof(c, "node %s claimed as private by sub %d (owner %d)", node.Ipv4, pnSub.ID, pnSub.UserID)
+				return nil
+			})
+			// best-effort：claim 事务出错只记日志，绝不阻塞注册响应。
+			if err != nil {
+				log.Errorf(c, "private claim tx for sub=%d: %v", pnSub.ID, err)
 			}
-			// 翻开通 job → succeeded。best-effort。
-			if e := db.Get().Model(&NodeProvisionJob{}).Where("sub_id = ?", pnSub.ID).
-				Update("status", NPJStatusSucceeded).Error; e != nil {
-				log.Errorf(c, "mark provision job succeeded sub=%d: %v", pnSub.ID, e)
-			}
-			// 同步内存 node 字段，避免响应序列化用旧值
-			node.Class = NodeClassPrivate
-			node.PrivateOwnerUserID = &pnSub.UserID
-			node.PrivateSubID = &pnSub.ID
-			log.Infof(c, "node %s claimed as private by sub %d (owner %d)", node.Ipv4, pnSub.ID, pnSub.UserID)
 		}
 	}
 

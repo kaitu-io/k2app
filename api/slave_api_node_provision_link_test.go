@@ -116,3 +116,177 @@ func TestSelfRegister_LinksCloudInstanceAndCompletesJob(t *testing.T) {
 	require.NoError(t, db.Get().Where("id = ?", job.ID).First(&reloadedJob).Error)
 	require.Equal(t, NPJStatusSucceeded, reloadedJob.Status, "provision job 应翻 succeeded")
 }
+
+// driveSlaveUpsert 复用：用 gin 测试 context 调 handler（PUT /slave/nodes/:ipv4）。
+func driveSlaveUpsert(t *testing.T, ip string, req SlaveNodeUpsertRequest) *TestResponse {
+	t.Helper()
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "ipv4", Value: ip}}
+	c.Request = httptest.NewRequest("PUT", "/slave/nodes/"+ip, bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	api_slave_node_upsert(c)
+
+	resp, err := ParseResponse(w)
+	require.NoError(t, err)
+	return resp
+}
+
+// TestSelfRegister_ClaimSecurity 验证原子认领 CAS 的三条安全不变量：
+//   - failed 态订阅不被注册侧 activation 复活（resurrection guard）。
+//   - active 态订阅不可被持 token 的不同 IP 重认领（MITM/owner 劫持 guard）。
+//   - 认领成功即置空 token，杜绝重放；二次同 token 注册为幂等 no-op。
+func TestSelfRegister_ClaimSecurity(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	now := time.Now().Unix()
+
+	t.Run("FailedSubNotResurrected", func(t *testing.T) {
+		const ip = "10.99.8.11"
+		const claimToken = "claim-failed-resurrect"
+		db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+
+		owner := CreateTestUser(t)
+		sub := PrivateNodeSubscription{
+			UserID: owner.ID, OrderID: owner.ID, Status: PNStatusFailed,
+			Region: "hongkong", IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40,
+			PurchasedAt: now, ExpiresAt: now + 86400, ProvisionClaimToken: claimToken,
+		}
+		require.NoError(t, db.Get().Create(&sub).Error)
+
+		db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeProvisionJob{})
+		job := NodeProvisionJob{
+			SubID: sub.ID, Status: NPJStatusFailed, Region: "hongkong",
+			ComposeVariant: "private", TrafficTotalBytes: 2 << 40, IPType: IPTypeNonResidential,
+		}
+		require.NoError(t, db.Get().Create(&job).Error)
+
+		t.Cleanup(func() {
+			db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+			db.Get().Unscoped().Delete(&job)
+			db.Get().Unscoped().Delete(&sub)
+			db.Get().Unscoped().Delete(owner)
+		})
+
+		resp := driveSlaveUpsert(t, ip, SlaveNodeUpsertRequest{
+			Country: "HK", Region: "hongkong", Name: "failed-resurrect",
+			SecretToken: "secret-failed", PrivateClaim: claimToken,
+		})
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "注册仍应成功（claim best-effort）: %s", resp.Message)
+
+		// sub 必须仍 failed（不被复活）。
+		var reloadedSub PrivateNodeSubscription
+		require.NoError(t, db.Get().First(&reloadedSub, sub.ID).Error)
+		require.Equal(t, PNStatusFailed, reloadedSub.Status, "failed 订阅不应被注册侧复活")
+
+		// 节点必须仍非 private。
+		var node SlaveNode
+		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&node).Error)
+		require.NotEqual(t, NodeClassPrivate, node.Class, "failed claim 不应把节点置 private")
+
+		// job 不应被翻 succeeded。
+		var reloadedJob NodeProvisionJob
+		require.NoError(t, db.Get().First(&reloadedJob, job.ID).Error)
+		require.NotEqual(t, NPJStatusSucceeded, reloadedJob.Status, "failed claim 不应翻 job succeeded")
+	})
+
+	t.Run("ActiveSubNotReClaimable", func(t *testing.T) {
+		const ipA = "10.99.8.12"
+		const ipB = "10.99.8.13"
+		const claimToken = "claim-active-mitm"
+		db.Get().Unscoped().Where("ipv4 IN ?", []string{ipA, ipB}).Delete(&SlaveNode{})
+
+		owner := CreateTestUser(t)
+
+		// 已存在的合法 node A。
+		nodeA := SlaveNode{
+			Ipv4: ipA, Country: "HK", Name: "legit-node-A", SecretToken: "secret-A",
+			Class: NodeClassPrivate, PrivateOwnerUserID: &owner.ID,
+		}
+		require.NoError(t, db.Get().Create(&nodeA).Error)
+
+		// active 订阅，已绑定 node A，token 仍非空（模拟泄漏/未清）。
+		sub := PrivateNodeSubscription{
+			UserID: owner.ID, OrderID: owner.ID, Status: PNStatusActive,
+			Region: "hongkong", IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40,
+			PurchasedAt: now, ExpiresAt: now + 86400, ProvisionClaimToken: claimToken,
+			SlaveNodeID: &nodeA.ID,
+		}
+		require.NoError(t, db.Get().Create(&sub).Error)
+		// 回填 node A 的 private_sub_id。
+		require.NoError(t, db.Get().Model(&SlaveNode{}).Where("id = ?", nodeA.ID).
+			Update("private_sub_id", sub.ID).Error)
+
+		t.Cleanup(func() {
+			db.Get().Unscoped().Where("ipv4 IN ?", []string{ipA, ipB}).Delete(&SlaveNode{})
+			db.Get().Unscoped().Delete(&sub)
+			db.Get().Unscoped().Delete(owner)
+		})
+
+		// 攻击者用同 token 注册不同 IP 的 node B。
+		resp := driveSlaveUpsert(t, ipB, SlaveNodeUpsertRequest{
+			Country: "HK", Region: "hongkong", Name: "attacker-node-B",
+			SecretToken: "secret-B", PrivateClaim: claimToken,
+		})
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "注册不报错（防探测）: %s", resp.Message)
+
+		// sub 仍指向 node A（未被重定向到 node B）。
+		var reloadedSub PrivateNodeSubscription
+		require.NoError(t, db.Get().First(&reloadedSub, sub.ID).Error)
+		require.NotNil(t, reloadedSub.SlaveNodeID)
+		require.Equal(t, nodeA.ID, *reloadedSub.SlaveNodeID, "active 订阅不应被重指向攻击者节点")
+
+		// node B 仍非 private。
+		var nodeB SlaveNode
+		require.NoError(t, db.Get().Where("ipv4 = ?", ipB).First(&nodeB).Error)
+		require.NotEqual(t, NodeClassPrivate, nodeB.Class, "攻击者节点不应被认领为 private")
+	})
+
+	t.Run("TokenInvalidatedAfterClaim", func(t *testing.T) {
+		const ip = "10.99.8.14"
+		const claimToken = "claim-invalidate-once"
+		db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+
+		owner := CreateTestUser(t)
+		sub := PrivateNodeSubscription{
+			UserID: owner.ID, OrderID: owner.ID, Status: PNStatusProvisioning,
+			Region: "hongkong", IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40,
+			PurchasedAt: now, ExpiresAt: now + 86400, ProvisionClaimToken: claimToken,
+		}
+		require.NoError(t, db.Get().Create(&sub).Error)
+
+		t.Cleanup(func() {
+			db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+			db.Get().Unscoped().Delete(&sub)
+			db.Get().Unscoped().Delete(owner)
+		})
+
+		// 首次：claim 成功，sub active。
+		resp := driveSlaveUpsert(t, ip, SlaveNodeUpsertRequest{
+			Country: "HK", Region: "hongkong", Name: "invalidate-token",
+			SecretToken: "secret-inv", PrivateClaim: claimToken,
+		})
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "首次注册应成功: %s", resp.Message)
+
+		var afterClaim PrivateNodeSubscription
+		require.NoError(t, db.Get().First(&afterClaim, sub.ID).Error)
+		require.Equal(t, PNStatusActive, afterClaim.Status, "首次认领应激活订阅")
+		require.Equal(t, "", afterClaim.ProvisionClaimToken, "认领成功后 token 必须被置空（防重放）")
+
+		// 二次：同 token 同节点再注册 → 幂等 no-op，不报错，sub 仍 active。
+		resp = driveSlaveUpsert(t, ip, SlaveNodeUpsertRequest{
+			Country: "HK", Region: "hongkong", Name: "invalidate-token",
+			SecretToken: "secret-inv", PrivateClaim: claimToken,
+		})
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "二次注册应成功（幂等）: %s", resp.Message)
+
+		var afterReplay PrivateNodeSubscription
+		require.NoError(t, db.Get().First(&afterReplay, sub.ID).Error)
+		require.Equal(t, PNStatusActive, afterReplay.Status, "二次注册 sub 仍 active")
+	})
+}
