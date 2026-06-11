@@ -15,12 +15,13 @@ import (
 )
 
 // orderRegionTestRouter wires POST /api/user/orders behind real auth, mirroring
-// the production route (AuthRequired). Used by the private-node region tests.
+// the production route (AuthRequired + EnforceDeviceClass). Used by the
+// private-node region tests.
 func orderRegionTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-	user := r.Group("/api/user", AuthRequired())
+	user := r.Group("/api/user", AuthRequired(), EnforceDeviceClass())
 	user.POST("/orders", api_create_order)
 	return r
 }
