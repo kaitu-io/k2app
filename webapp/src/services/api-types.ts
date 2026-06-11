@@ -188,6 +188,7 @@ export interface CreateOrderRequest {
   preview: boolean; // 是否预览
   plan: string; // 套餐ID
   campaignCode?: string; // 优惠码（可选）
+  region?: string; // 专属节点购买时选定地区（仅 private_node 套餐，shared 留空）
 }
 
 // 物理节点信息

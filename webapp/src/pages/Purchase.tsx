@@ -14,6 +14,10 @@ import {
   DialogContent,
   DialogActions,
   Card,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
   useTheme,
 } from "@mui/material";
 import { Add as AddIcon, EmojiEvents as EmojiEventsIcon, Error as ErrorIcon } from "@mui/icons-material";
@@ -37,6 +41,7 @@ import {
 import { getThemeColors } from '../theme/colors';
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
+import { formatBytes } from '../utils/ui';
 
 // 斜角彩带组件
 function Ribbon({ text }: { text: string }) {
@@ -542,6 +547,8 @@ export default function Purchase() {
   const openLoginDialog = useLoginDialogStore((s) => s.open);
 
   const [plan, setPlan] = useState("");
+  // 专属节点购买时选定的地区（仅 private_node 套餐使用；shared 套餐留空）。
+  const [selectedRegion, setSelectedRegion] = useState("");
   const [showCampaign, setShowCampaign] = useState(false);
   const [campaignCode, setCampaignCode] = useState("");
   const [orderData, setOrderData] = useState<Order | null>(null);
@@ -612,6 +619,29 @@ export default function Purchase() {
     setPlan(highlighted?.pid || filteredPlans[0].pid);
   }, [filteredPlans, plan]);
 
+  // 当前选中的套餐对象（用于专属节点的地区/IP/流量展示）。
+  const selectedPlanObj = useMemo(
+    () => plans.find(p => p.pid === plan) ?? null,
+    [plans, plan],
+  );
+  const isPrivateNode = selectedPlanObj?.kind === 'private_node';
+  const allowedRegions = selectedPlanObj?.privateNode?.allowedRegions ?? [];
+
+  // 选中专属节点套餐时，默认选第一个可选地区；切回共享套餐时清空。
+  useEffect(() => {
+    if (!isPrivateNode) {
+      if (selectedRegion) setSelectedRegion("");
+      return;
+    }
+    if (allowedRegions.length === 0) {
+      setSelectedRegion("");
+      return;
+    }
+    if (!allowedRegions.includes(selectedRegion)) {
+      setSelectedRegion(allowedRegions[0]);
+    }
+  }, [isPrivateNode, allowedRegions, selectedRegion]);
+
   // 处理订单创建（使用 useCallback 避免不必要的重新渲染）
   const handleOrder = useCallback(async ({preview = false}: {preview?: boolean}) => {
     // 非预览模式需要登录才能创建订单
@@ -625,11 +655,14 @@ export default function Purchase() {
 
     setIsLoading(true);
     try {
-      console.info('[Purchase] 创建订单请求: ' + JSON.stringify({ preview, plan, campaignCode }));
+      // 专属节点套餐需带上选定地区；共享套餐留空（Center 忽略）。
+      const region = isPrivateNode ? (selectedRegion || undefined) : undefined;
+      console.info('[Purchase] 创建订单请求: ' + JSON.stringify({ preview, plan, campaignCode, region }));
       const response = await cloudApi.post<{ order: Order; payUrl?: string }>('/api/user/orders', {
         preview,
         plan,
         campaignCode: campaignCode || undefined,
+        region,
       });
       console.info('[Purchase] 创建订单响应: ' + JSON.stringify(response));
       
@@ -672,6 +705,14 @@ export default function Purchase() {
             setOrderData(null);
             showAlert(getErrorMessage(response.code, response.message, t), 'error');
           }
+        } else if (response.code === ERROR_CODES.INVALID_ARGUMENT) {
+          // 专属节点地区非法等参数错误（Center 返回 422 ErrorInvalidArgument）。
+          console.warn('[Purchase] Invalid argument:', response.code, response.message);
+          if (!preview) {
+            setCampaignError("");
+            setOrderData(null);
+            showAlert(getErrorMessage(response.code, response.message, t), 'error');
+          }
         } else {
           // 只在非预览模式下清除状态和显示错误提示
           if (!preview) {
@@ -695,7 +736,7 @@ export default function Purchase() {
     } finally {
       setIsLoading(false);
     }
-  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog, user]);
+  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog, user, isPrivateNode, selectedRegion]);
 
   // 用于标记是否已选择过默认套餐（避免 plan 变化触发重新获取套餐列表）
   const defaultPlanSelectedRef = useRef(false);
@@ -1005,6 +1046,66 @@ export default function Purchase() {
             />
           )}
         </Box>
+
+        {/* 专属节点：地区选择 + IP 类型 + 流量配额 */}
+        {!plansLoading && isPrivateNode && selectedPlanObj?.privateNode && (
+          <Box>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '1rem' }} component="span">
+              {t('privateNode:privateNode.title')}
+            </Typography>
+            <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+              <Stack spacing={2}>
+                {/* 地区选择：多地区用 Select，单地区只读展示 */}
+                {allowedRegions.length > 1 ? (
+                  <FormControl fullWidth size="small">
+                    <InputLabel id="private-node-region-label">
+                      {t('privateNode:privateNode.selectRegion')}
+                    </InputLabel>
+                    <Select
+                      labelId="private-node-region-label"
+                      label={t('privateNode:privateNode.selectRegion')}
+                      value={selectedRegion}
+                      onChange={(e) => setSelectedRegion(e.target.value)}
+                    >
+                      {allowedRegions.map((r) => (
+                        <MenuItem key={r} value={r}>{r}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                ) : (
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Typography variant="body2" color="text.secondary" component="span">
+                      {t('privateNode:privateNode.region')}
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600} component="span">
+                      {allowedRegions[0] ?? ''}
+                    </Typography>
+                  </Stack>
+                )}
+
+                {/* IP 类型 */}
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="body2" color="text.secondary" component="span">
+                    {t('privateNode:privateNode.ipTypeLabel')}
+                  </Typography>
+                  <Typography variant="body2" fontWeight={600} component="span">
+                    {t(`privateNode:privateNode.ipType.${selectedPlanObj.privateNode.ipType}`)}
+                  </Typography>
+                </Stack>
+
+                {/* 流量配额 */}
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="body2" color="text.secondary" component="span">
+                    {t('privateNode:privateNode.quota')}
+                  </Typography>
+                  <Typography variant="body2" fontWeight={600} component="span">
+                    {formatBytes(selectedPlanObj.privateNode.trafficTotalBytes)}
+                  </Typography>
+                </Stack>
+              </Stack>
+            </Card>
+          </Box>
+        )}
 
         {/* 总价展示 - 只有在有套餐数据时才显示 */}
         {!plansLoading && plans.length > 0 && (
