@@ -419,6 +419,12 @@ func (s *Server) acceptTCPLoop(ctx context.Context, ln wire.Listener) {
 			}
 		}
 		slog.Debug("server: AcceptTCP got stream", "addr", addr, "remote", conn.RemoteAddr())
+		// Accepting gate (Plan 3-k2s, A2): refuse NEW streams on a Center
+		// stop verdict. Established connections are not force-killed.
+		if !s.handler.Accepting() {
+			conn.Close()
+			continue
+		}
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -444,6 +450,12 @@ func (s *Server) tcpListenLoop(ctx context.Context, ln net.Listener) {
 				slog.Error("server: TCP accept", "err", err)
 				return
 			}
+		}
+		// Accepting gate (Plan 3-k2s, A2): refuse NEW raw TCP connections on
+		// a Center stop verdict. Established connections are not force-killed.
+		if !s.handler.Accepting() {
+			conn.Close()
+			continue
 		}
 		go func() {
 			defer func() {

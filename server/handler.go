@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	k2dns "github.com/kaitu-io/k2/core/dns"
@@ -118,7 +119,32 @@ type ProxyHandler struct {
 	dnsCache       *k2dns.DNSCache // shared DNS cache for port-53 UDP
 	resolver       *Resolver       // racing upstream resolver (defaultResolverServers or K2_DNS_SERVERS)
 	dnsMaxInflight int             // per-session in-flight DNS query cap for handleDNSUDP
+
+	// Node-level traffic metering (Plan 3-k2s, A1). Cumulative across all
+	// sessions since process start or the last ResetTraffic(). Direction
+	// convention: rx = uplink read from the client; tx = downlink read from
+	// the target. The Center quota uses rx+tx, so exact labeling isn't
+	// critical, but the convention is kept consistent across TCP and UDP.
+	rxBytes atomic.Int64
+	txBytes atomic.Int64
+
+	// Accepting gate (Plan 3-k2s, A2). false = refuse NEW connections
+	// (Center verdict=stop). MUST default true — see NewProxyHandler.
+	// Established connections are never force-killed; stop = refuse new only.
+	accepting atomic.Bool
 }
+
+// TrafficBytes returns node-level cumulative rx/tx since process start or last reset.
+func (h *ProxyHandler) TrafficBytes() (rx, tx int64) { return h.rxBytes.Load(), h.txBytes.Load() }
+
+// ResetTraffic zeroes the counters (sidecar triggers on a new Center epoch).
+func (h *ProxyHandler) ResetTraffic() { h.rxBytes.Store(0); h.txBytes.Store(0) }
+
+// SetAccepting toggles whether the node accepts NEW connections.
+func (h *ProxyHandler) SetAccepting(v bool) { h.accepting.Store(v) }
+
+// Accepting reports whether the node currently accepts NEW connections.
+func (h *ProxyHandler) Accepting() bool { return h.accepting.Load() }
 
 // Default DNS upstream servers for server-side resolution.
 // 3 providers × 2 servers, covering all node regions (HK, JP, SG, US, CA, AU, KR).
@@ -172,13 +198,16 @@ func NewProxyHandler() *ProxyHandler {
 		}
 	}
 
-	return &ProxyHandler{
+	h := &ProxyHandler{
 		DialTimeout:    5 * time.Second,
 		conns:          connTracker{conns: make(map[io.Closer]struct{})},
 		dnsCache:       cache,
 		resolver:       NewResolver(cache, k2dns.NewDirectDNSClient(servers)),
 		dnsMaxInflight: 32,
 	}
+	// Default must SERVE: accept new connections until a Center stop verdict.
+	h.accepting.Store(true)
+	return h
 }
 
 // isDNSPort returns true if addr targets port 53.
@@ -236,12 +265,19 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	}
 
 	log.Debug("server: HandleTCP piping")
-	pipe(conn, target)
+	h.pipe(conn, target)
 }
 
 // HandleUDP proxies a UDP session to the target address.
 // Implements wire.UDPHandler.
 func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
+	// Accepting gate (A2): refuse a NEW UDP session on a Center stop verdict.
+	// Established sessions are not force-killed.
+	if !h.accepting.Load() {
+		conn.Close()
+		return
+	}
+
 	startTime := time.Now()
 
 	// Use scoped logger from wire layer (carries remote + sid + addr).
@@ -306,6 +342,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 				log.Debug("server: HandleUDP client->target ReadFrom done", "err", err)
 				break
 			}
+			h.rxBytes.Add(int64(n)) // uplink read from client (rx)
 			log.Debug("server: HandleUDP client->target forwarding", "len", n)
 			if _, err := target.Write(buf[:n]); err != nil {
 				log.Warn("server: HandleUDP client->target Write failed", "err", err)
@@ -331,6 +368,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 			log.Debug("server: HandleUDP target->client Read done", "err", err)
 			break
 		}
+		h.txBytes.Add(int64(n)) // downlink read from target (tx)
 		log.Debug("server: HandleUDP target->client forwarding", "len", n)
 		if _, err := conn.WriteTo(buf[:n], nil); err != nil {
 			exitReason = "writeto-fail"
@@ -486,12 +524,17 @@ type closeWriter interface {
 // pipe copies data bidirectionally between two connections.
 // Each direction uses CloseWrite (half-close) to send FIN without killing
 // the other direction. Full close is the caller's responsibility via defer.
-func pipe(a, b net.Conn) {
+//
+// Direction convention for node-level metering: a is the client side, b is
+// the target side. a->b (uplink read from the client) counts as rx; b->a
+// (downlink read from the target) counts as tx.
+func (h *ProxyHandler) pipe(a, b net.Conn) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		bp := tcpBufPool.Get().(*[]byte)
-		io.CopyBuffer(b, a, *bp)
+		n, _ := io.CopyBuffer(b, a, *bp) // a->b: uplink (rx)
+		h.rxBytes.Add(n)
 		tcpBufPool.Put(bp)
 		if cw, ok := b.(closeWriter); ok {
 			cw.CloseWrite()
@@ -500,7 +543,8 @@ func pipe(a, b net.Conn) {
 		}
 	}()
 	bp := tcpBufPool.Get().(*[]byte)
-	io.CopyBuffer(a, b, *bp)
+	n, _ := io.CopyBuffer(a, b, *bp) // b->a: downlink (tx)
+	h.txBytes.Add(n)
 	tcpBufPool.Put(bp)
 	if cw, ok := a.(closeWriter); ok {
 		cw.CloseWrite()
