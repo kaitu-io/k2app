@@ -44,11 +44,17 @@ func createPrivateNodeSubscription(ctx context.Context, tx *gorm.DB, order *Orde
 		return nil, err
 	}
 	expiresAt := time.Unix(now, 0).AddDate(0, plan.Month, 0).Unix()
+	// 优先用下单时选定的 region（持久化在 Order 上，跨越下单→支付回调的时间差）；
+	// 为空时回退到允许列表首项（兼容本改动之前创建的订单）。
+	region := order.PrivateNodeRegion
+	if region == "" {
+		region = firstAllowedRegion(spec.AllowedRegions)
+	}
 	sub := &PrivateNodeSubscription{
 		UserID:              order.UserID,
 		PlanID:              plan.ID,
 		OrderID:             order.ID,
-		Region:              firstAllowedRegion(spec.AllowedRegions),
+		Region:              region,
 		IPType:              spec.IPType,
 		TrafficTotalBytes:   spec.TrafficTotalBytes,
 		Status:              PNStatusPending,

@@ -251,6 +251,10 @@ type Order struct {
 	CampaignCode    *string   `gorm:"type:varchar(50);index"`                  // 使用的优惠活动代码
 	Campaign        *Campaign `gorm:"foreignKey:CampaignCode;references:Code"` // 通过Code关联Campaign
 	Meta            string    `gorm:"type:json"`                               // 存储 Plan、forUserUUIDs、forMyself、payUrl 信息
+	// 专属节点购买时选定的地区（仅 Kind=private_node 订单写入）。异步入账时由
+	// createPrivateNodeSubscription 读取，跨越"下单→支付回调"的时间差。AutoMigrate
+	// 自动新增此可空列（additive，无需手动迁移）。
+	PrivateNodeRegion string `gorm:"type:varchar(50)" json:"privateNodeRegion,omitempty"`
 }
 
 // GetPlan 获取订单的计划信息
