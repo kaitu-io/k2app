@@ -125,6 +125,7 @@ func TestGetUserPrivateNodes(t *testing.T) {
 	require.Equal(t, "203.0.113.7", gotActive.Node.IP)
 	require.Equal(t, "ap-northeast-1", gotActive.Node.Region)
 	require.Equal(t, int64(123456789), gotActive.TrafficUsedBytes)
+	require.False(t, gotActive.QuotaExhausted, "well-under-quota sub must not be exhausted")
 	require.Equal(t, "专属节点列表测试", gotActive.PlanLabel)
 	require.Equal(t, subActive.IsServiceable(now), gotActive.IsServiceable)
 	require.True(t, gotActive.IsServiceable, "active sub within period is serviceable")
@@ -134,6 +135,8 @@ func TestGetUserPrivateNodes(t *testing.T) {
 	require.Equal(t, PNStatusPending, gotPending.Status)
 	require.Nil(t, gotPending.Node, "pending sub has no node yet")
 	require.Equal(t, int64(0), gotPending.TrafficUsedBytes, "pending sub has no usage")
+	require.False(t, gotPending.QuotaExhausted, "unprovisioned sub has no quota to exhaust")
+	require.Equal(t, int64(0), gotPending.QuotaResetAt, "unprovisioned sub has no reset time")
 	require.Equal(t, subPending.IsServiceable(now), gotPending.IsServiceable)
 	require.False(t, gotPending.IsServiceable, "pending sub is not serviceable")
 }
