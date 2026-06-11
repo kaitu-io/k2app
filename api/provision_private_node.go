@@ -91,12 +91,9 @@ func emitNodeProvisionJob(ctx context.Context, sub *PrivateNodeSubscription, spe
 	// G1 backstop：再次校验成本不变式（覆盖 hook 之前创建的 legacy spec，其
 	// BundleTransferBytes=0）。纯算术，无 cloud 调用。违反 → 标 failed，不开机。
 	if err := validatePrivateNodeQuotaInvariant(spec.TrafficTotalBytes, spec.BundleTransferBytes); err != nil {
-		log.Errorf(ctx, "[QUOTA] sub=%d provision blocked, invariant violated: %v", sub.ID, err)
-		db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", sub.ID).Updates(map[string]any{
-			"status":               PNStatusFailed,
-			"last_provision_error": err.Error(),
-		})
-		return nil
+		// 复用单一 failed-marking 路径：标 failed + checked write + 日志 + Slack ops 通知。
+		// 返回 nil 停止 Asynq 重试是刻意的——配额不变式违反不可重试。
+		return markProvisionFailed(ctx, sub, fmt.Errorf("provision blocked, quota invariant violated: %w", err))
 	}
 
 	// 1. 原子门控：允许从 pending 或 provisioning 进入 provisioning。

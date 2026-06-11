@@ -168,6 +168,8 @@ func TestEmitNodeProvisionJob_FailsClosedOnQuotaInvariant(t *testing.T) {
 	var reloaded PrivateNodeSubscription
 	require.NoError(t, db.Get().First(&reloaded, sub.ID).Error)
 	assert.Equal(t, PNStatusFailed, reloaded.Status, "sub must be marked failed")
+	// gorm:"...";json:"-" — read the field off the struct, not JSON.
+	assert.NotEmpty(t, reloaded.LastProvisionError, "failure reason must be recorded")
 
 	var jobCount int64
 	db.Get().Model(&NodeProvisionJob{}).Where("sub_id = ?", sub.ID).Count(&jobCount)
