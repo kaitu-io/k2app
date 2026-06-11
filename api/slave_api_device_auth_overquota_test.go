@@ -21,11 +21,14 @@ func TestSlaveJWTAuth_PrivateNodeOverQuota(t *testing.T) {
 	now := time.Now().Unix()
 
 	// 自愈：清理上次中断运行残留的固定 IPv4 节点（idx_slave_nodes_ipv4 唯一）。
-	for _, ip := range []string{"10.99.0.20", "10.99.0.21"} {
+	for _, ip := range []string{"10.99.0.20", "10.99.0.21", "10.99.0.22", "10.99.0.23", "10.99.0.24"} {
 		db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
 	}
 	// 自愈：残留 CloudInstance（idx_provider_instance 唯一）。
-	for _, iid := range []string{"i-overquota-ci-95", "i-overquota-ci-50"} {
+	for _, iid := range []string{
+		"i-overquota-ci-95", "i-overquota-ci-50",
+		"i-overquota-ci-950", "i-overquota-ci-949", "i-overquota-ci-zerototal",
+	} {
 		db.Get().Unscoped().Where("instance_id = ?", iid).Delete(&CloudInstance{})
 	}
 
@@ -113,5 +116,53 @@ func TestSlaveJWTAuth_PrivateNodeOverQuota(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "未超配额应放行: %s", resp.Message)
+	})
+
+	t.Run("ExactBoundary950_Rejected402", func(t *testing.T) {
+		// used=950, total=1000 → 95% >= 95%（边界含等号）→ 拒绝。
+		device, token, node := buildPrivateNode(t, "10.99.0.22", "secret-oq-950", "i-overquota-ci-950", 950, 1000)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/slave/device-check-auth", nil)
+		c.Set("i_am_the_node", node)
+
+		handleSlaveJWTAuth(c, device.UDID, token)
+
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		require.Equal(t, ErrorPaymentRequired, ErrorCode(resp.Code), "950/1000 == 95% 应 402: %s", resp.Message)
+	})
+
+	t.Run("ExactBoundary949_Allowed", func(t *testing.T) {
+		// used=949, total=1000 → < 95% → 放行。
+		device, token, node := buildPrivateNode(t, "10.99.0.23", "secret-oq-949", "i-overquota-ci-949", 949, 1000)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/slave/device-check-auth", nil)
+		c.Set("i_am_the_node", node)
+
+		handleSlaveJWTAuth(c, device.UDID, token)
+
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "949/1000 < 95% 应放行: %s", resp.Message)
+	})
+
+	t.Run("ZeroTotalNeverThrottles_Allowed", func(t *testing.T) {
+		// TrafficTotalBytes=0（未配额）即便高用量也永不限流 → 放行。
+		device, token, node := buildPrivateNode(t, "10.99.0.24", "secret-oq-zero", "i-overquota-ci-zerototal", 999999, 0)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/slave/device-check-auth", nil)
+		c.Set("i_am_the_node", node)
+
+		handleSlaveJWTAuth(c, device.UDID, token)
+
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "未配额（total=0）应放行: %s", resp.Message)
 	})
 }

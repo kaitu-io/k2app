@@ -151,4 +151,75 @@ func TestSlaveUsageHeartbeat(t *testing.T) {
 		r := driveUsage(t, &node, NodeUsageRequest{EpochID: 0, CumulativeBytes: 9999, Seq: 1, Ts: now})
 		require.Equal(t, "serve", r.Verdict)
 	})
+
+	t.Run("ExactBoundary95", func(t *testing.T) {
+		// 950/1000 == 95% → stop（含等号边界）。
+		// 949/1000 < 95% → serve。用独立 CloudInstance 行避免 max 归并把 949 顶到已存更高值。
+		buildNode := func(t *testing.T, ip, secret, instanceID string) *SlaveNode {
+			t.Helper()
+			db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+			db.Get().Unscoped().Where("ip_address = ?", ip).Delete(&CloudInstance{})
+
+			node := SlaveNode{
+				Ipv4: ip, SecretToken: secret,
+				Country: "US", Region: "us-west", Name: "usage-bound-node-" + instanceID,
+			}
+			require.NoError(t, db.Get().Create(&node).Error)
+
+			ci := CloudInstance{
+				Provider: "ssh_standalone", AccountName: "usage-test", InstanceID: instanceID,
+				Region: "us-west", IPAddress: ip,
+				TrafficTotalBytes: 1000, TrafficUsedBytes: 0, TrafficEpoch: 0,
+				TrafficResetAt: now + 30*86400,
+			}
+			require.NoError(t, db.Get().Create(&ci).Error)
+
+			t.Cleanup(func() {
+				db.Get().Unscoped().Delete(&node)
+				db.Get().Unscoped().Delete(&ci)
+			})
+			return &node
+		}
+
+		// 950 == 95% → stop（边界含等号）。
+		nodeStop := buildNode(t, "203.0.113.64", "usage-bound-950", "usage-ci-bound-950")
+		r := driveUsage(t, nodeStop, NodeUsageRequest{EpochID: 0, CumulativeBytes: 950, Seq: 1, Ts: now})
+		require.Equal(t, "stop", r.Verdict, "950/1000 == 95% 应 stop")
+		require.Equal(t, int64(950), r.QuotaUsed)
+
+		// 949 < 95% → serve（独立行，无残留 max 拉高）。
+		nodeServe := buildNode(t, "203.0.113.65", "usage-bound-949", "usage-ci-bound-949")
+		r = driveUsage(t, nodeServe, NodeUsageRequest{EpochID: 0, CumulativeBytes: 949, Seq: 1, Ts: now})
+		require.Equal(t, "serve", r.Verdict, "949/1000 < 95% 应 serve")
+		require.Equal(t, int64(949), r.QuotaUsed)
+	})
+
+	t.Run("ZeroTotalNeverThrottles", func(t *testing.T) {
+		ip := "203.0.113.66"
+		db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+		db.Get().Unscoped().Where("ip_address = ?", ip).Delete(&CloudInstance{})
+
+		node := SlaveNode{
+			Ipv4: ip, SecretToken: "usage-zerototal-secret",
+			Country: "US", Region: "us-west", Name: "usage-zerototal-node",
+		}
+		require.NoError(t, db.Get().Create(&node).Error)
+
+		// 未配额（TrafficTotalBytes=0）即便高用量也永不限流。
+		ci := CloudInstance{
+			Provider: "ssh_standalone", AccountName: "usage-test", InstanceID: "usage-ci-zerototal",
+			Region: "us-west", IPAddress: ip,
+			TrafficTotalBytes: 0, TrafficUsedBytes: 999, TrafficEpoch: 0,
+			TrafficResetAt: now + 30*86400,
+		}
+		require.NoError(t, db.Get().Create(&ci).Error)
+
+		t.Cleanup(func() {
+			db.Get().Unscoped().Delete(&node)
+			db.Get().Unscoped().Delete(&ci)
+		})
+
+		r := driveUsage(t, &node, NodeUsageRequest{EpochID: 0, CumulativeBytes: 999, Seq: 1, Ts: now})
+		require.Equal(t, "serve", r.Verdict, "TrafficTotalBytes=0（未配额）应永不限流")
+	})
 }
