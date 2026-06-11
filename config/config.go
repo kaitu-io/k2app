@@ -169,6 +169,11 @@ type ServerConfig struct {
 	PIDFile     string            `yaml:"pid_file"` // path to PID file (empty = no PID file)
 	HopStart    int               `yaml:"hop_start"` // hop port range start (0 = no hop)
 	HopEnd      int               `yaml:"hop_end"`   // hop port range end (0 = no hop)
+
+	// UsageAPIListen is the loopback usage API addr (Plan 3-k2s, A3).
+	// Default 127.0.0.1:9099; empty string disables the API.
+	// Overridable at runtime via K2_USAGE_API_LISTEN.
+	UsageAPIListen string `yaml:"usage_api_listen"`
 }
 
 // DNSConfig contains DNS resolver configuration.
@@ -354,5 +359,12 @@ func setServerDefaults(cfg *ServerConfig) {
 	}
 	if cfg.Log.Output == "" {
 		cfg.Log.Output = "stderr"
+	}
+	if cfg.UsageAPIListen == "" {
+		cfg.UsageAPIListen = "127.0.0.1:9099"
+	}
+	// Runtime env override wins (operators can repoint or disable via "").
+	if v, ok := os.LookupEnv("K2_USAGE_API_LISTEN"); ok {
+		cfg.UsageAPIListen = v
 	}
 }

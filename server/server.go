@@ -391,8 +391,28 @@ func (s *Server) Run(ctx context.Context) error {
 
 	slog.Info("k2s server ready", "listen", s.cfg.Listen)
 
+	// Loopback usage API for the sidecar (Plan 3-k2s, A3). Disabled when empty.
+	var usageSrv *http.Server
+	if s.cfg.UsageAPIListen != "" {
+		usageSrv = newUsageAPI(s.handler, s.cfg.UsageAPIListen)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := usageSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Warn("usage API server exited", "listen", s.cfg.UsageAPIListen, "err", err)
+			}
+		}()
+		slog.Info("k2s usage API listening", "listen", s.cfg.UsageAPIListen)
+	}
+
 	<-ctx.Done()
 	slog.Info("k2s server shutting down")
+
+	if usageSrv != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = usageSrv.Shutdown(shutdownCtx)
+		cancel()
+	}
 
 	close(s.done)
 	s.handler.Close() // force-close all active proxy connections
