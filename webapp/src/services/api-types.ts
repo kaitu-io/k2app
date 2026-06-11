@@ -130,6 +130,17 @@ export interface UpdateInviteCodeRemarkRequest {
   remark: string; // 新的备注
 }
 
+// 套餐种类: 共享订阅 vs 专属节点
+export type PlanKind = 'shared_subscription' | 'private_node';
+
+// 专属节点套餐的购买可见参数（仅 kind=private_node 的套餐附带）
+export interface PrivateNodePlanSpec {
+  provider: string; // 云厂商，如 "aws_lightsail"
+  ipType: 'residential' | 'non_residential'; // IP 类型
+  allowedRegions: string[]; // 购买时可选地区
+  trafficTotalBytes: number; // 流量配额
+}
+
 // 套餐信息
 export interface Plan {
   pid: string; // 套餐ID，如 "family-1y", "family-2y"
@@ -142,6 +153,35 @@ export interface Plan {
   maxDevice: number; // app 设备上限 (0=default 5)
   maxRouterDevice: number; // 路由器登录上限 (0=不支持, 1=支持)
   maxLanClient: number; // LAN 接入上限 (0=不支持, -1=无限, >0=精确值)
+  kind: PlanKind; // 套餐种类，Center 始终下发
+  privateNode?: PrivateNodePlanSpec; // 仅 private_node 套餐附带
+}
+
+// 专属节点已开通节点的连接可见信息（未开通时缺省）
+export interface PrivateNodeNode {
+  ip: string; // 节点 IP
+  region: string; // 节点地区
+}
+
+// 用户视角的专属节点订阅只读视图（GET /api/user/private-nodes）
+export interface PrivateNodeSubscriptionView {
+  id: number;
+  status: 'pending' | 'provisioning' | 'active' | 'grace' | 'suspended' | 'deprovisioned' | 'failed';
+  isServiceable: boolean; // 当前是否在服务（含宽限期）
+  region: string; // 选定地区（开通前即知）
+  ipType: string;
+  trafficTotalBytes: number; // 配额（订阅快照）
+  trafficUsedBytes: number; // 已用（来自 CloudInstance，未开通=0）
+  purchasedAt: number;
+  expiresAt: number;
+  graceUntil: number;
+  suspendUntil: number;
+  planLabel: string;
+  node?: PrivateNodeNode; // 已开通才有
+}
+
+export interface PrivateNodeListResponse {
+  items: PrivateNodeSubscriptionView[];
 }
 
 export interface CreateOrderRequest {

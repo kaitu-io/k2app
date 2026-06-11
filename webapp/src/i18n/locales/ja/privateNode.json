@@ -1,0 +1,29 @@
+{
+  "privateNode": {
+    "title": "専用ノード",
+    "manage": "専用ノードを管理",
+    "buy": "専用ノードを開設",
+    "region": "ノードの地域",
+    "selectRegion": "地域を選択",
+    "ipType": "IP タイプ",
+    "ipType.residential": "住宅用 IP",
+    "ipType.non_residential": "データセンター IP",
+    "traffic": "トラフィック",
+    "trafficUsed": "使用済み {{used}} / {{total}}",
+    "quota": "トラフィック上限",
+    "status.title": "ステータス",
+    "status.pending": "開設待ち",
+    "status.provisioning": "開設中",
+    "status.active": "稼働中",
+    "status.grace": "猶予期間",
+    "status.suspended": "停止中",
+    "status.deprovisioned": "解約済み",
+    "status.failed": "開設失敗",
+    "expiresAt": "有効期限",
+    "graceHint": "猶予期間に入っています。停止を避けるため、お早めに更新してください。",
+    "suspendedHint": "ノードは停止していますが IP は保持されています。更新後に再開します。",
+    "nodeIp": "ノード IP",
+    "provisioningHint": "ノードを開設中です。通常は数分かかります。しばらくお待ちください。",
+    "empty": "専用ノードはまだありません"
+  }
+}

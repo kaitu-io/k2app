@@ -1,0 +1,29 @@
+{
+  "privateNode": {
+    "title": "Dedicated Node",
+    "manage": "Manage Dedicated Node",
+    "buy": "Get a Dedicated Node",
+    "region": "Node Region",
+    "selectRegion": "Select Region",
+    "ipType": "IP Type",
+    "ipType.residential": "Residential IP",
+    "ipType.non_residential": "Data Center IP",
+    "traffic": "Traffic",
+    "trafficUsed": "{{used}} / {{total}} used",
+    "quota": "Traffic Quota",
+    "status.title": "Status",
+    "status.pending": "Pending",
+    "status.provisioning": "Provisioning",
+    "status.active": "Active",
+    "status.grace": "Grace Period",
+    "status.suspended": "Suspended",
+    "status.deprovisioned": "Deprovisioned",
+    "status.failed": "Provisioning Failed",
+    "expiresAt": "Expires",
+    "graceHint": "Your node is in its grace period. Please renew soon to avoid suspension.",
+    "suspendedHint": "The node is suspended but its IP is retained. It will resume after renewal.",
+    "nodeIp": "Node IP",
+    "provisioningHint": "Your node is being provisioned. This usually takes a few minutes, please wait.",
+    "empty": "You don't have any dedicated nodes yet"
+  }
+}

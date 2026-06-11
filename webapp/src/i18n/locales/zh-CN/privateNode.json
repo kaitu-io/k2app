@@ -1,0 +1,29 @@
+{
+  "privateNode": {
+    "title": "专属节点",
+    "manage": "管理专属节点",
+    "buy": "开通专属节点",
+    "region": "节点地区",
+    "selectRegion": "选择地区",
+    "ipType": "IP 类型",
+    "ipType.residential": "住宅 IP",
+    "ipType.non_residential": "数据中心 IP",
+    "traffic": "流量",
+    "trafficUsed": "已用 {{used}} / {{total}}",
+    "quota": "流量配额",
+    "status.title": "状态",
+    "status.pending": "待开通",
+    "status.provisioning": "开通中",
+    "status.active": "服务中",
+    "status.grace": "宽限期",
+    "status.suspended": "已停机",
+    "status.deprovisioned": "已注销",
+    "status.failed": "开通失败",
+    "expiresAt": "到期时间",
+    "graceHint": "已进入宽限期，请尽快续费以免停机",
+    "suspendedHint": "节点已停机保留 IP，续费后恢复",
+    "nodeIp": "节点 IP",
+    "provisioningHint": "节点正在开通，通常需要几分钟，请稍候",
+    "empty": "你还没有专属节点"
+  }
+}

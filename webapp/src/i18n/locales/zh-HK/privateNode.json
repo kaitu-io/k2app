@@ -1,0 +1,29 @@
+{
+  "privateNode": {
+    "title": "專屬節點",
+    "manage": "管理專屬節點",
+    "buy": "開通專屬節點",
+    "region": "節點地區",
+    "selectRegion": "選擇地區",
+    "ipType": "IP 類型",
+    "ipType.residential": "住宅 IP",
+    "ipType.non_residential": "資料中心 IP",
+    "traffic": "流量",
+    "trafficUsed": "已用 {{used}} / {{total}}",
+    "quota": "流量配額",
+    "status.title": "狀態",
+    "status.pending": "待開通",
+    "status.provisioning": "開通中",
+    "status.active": "服務中",
+    "status.grace": "寬限期",
+    "status.suspended": "已停機",
+    "status.deprovisioned": "已註銷",
+    "status.failed": "開通失敗",
+    "expiresAt": "到期時間",
+    "graceHint": "已進入寬限期，請盡快續費以免停機",
+    "suspendedHint": "節點已停機保留 IP，續費後恢復",
+    "nodeIp": "節點 IP",
+    "provisioningHint": "節點正在開通，通常需要幾分鐘，請稍候",
+    "empty": "你還沒有專屬節點"
+  }
+}
