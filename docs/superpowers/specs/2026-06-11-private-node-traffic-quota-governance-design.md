@@ -14,11 +14,13 @@
 
 ## 2. The Invariant That Makes Model A Airtight
 
-> **soldQuota × cutoffRatio(0.95) < providerIncludedQuota(bundle.TransferTB)**
+> **soldQuota (`TrafficTotalBytes`) < providerIncludedQuota (`BundleTransferBytes`)**
 
-We buy a *metered* VPS whose tier includes a fixed traffic allowance and charges overage only beyond it. As long as the user's cutoff point sits strictly below the provider's included allowance, **the user is cut on our side before the machine ever crosses the provider's overage line.** Our cost = machine monthly fee (fixed) + margin, independent of how much the user streams. Operating rule: **always provision a bundle one tier above the sold quota** so the safety margin is large (e.g. sell 1 TB, provision a 2 TB bundle, cut at 950 GB).
+We buy a *metered* VPS whose tier includes a fixed traffic allowance and charges overage only beyond it. As long as the sold quota sits strictly below the provider's included allowance, **the user is cut on our side before the machine ever crosses the provider's overage line.** Our cost = machine monthly fee (fixed) + margin, independent of how much the user streams. Operating rule: **always provision a bundle one tier above the sold quota** so the safety margin is large (e.g. sell 1 TB, provision a 2 TB bundle).
 
-This invariant is currently **NOT enforced anywhere** — Center stores its own `TrafficTotalBytes` snapshot and never compares it to the provider bundle's `TransferTB`. A misconfigured plan (sold quota ≥ bundle allowance) would silently expose us to overage. G1 closes this.
+**Why the hard ceiling is 100% of sold quota, not 95%.** The runtime cut at 95% is the *online soft-stop* (heartbeat `verdict=stop`). But `EpochHardCeilingBytes = TrafficTotalBytes` (`slave_api_usage.go:98`) — when a node can't reach Center it enforces *locally up to 100%* of sold quota. So the worst-case consumption before any hard stop is `soldQuota`, and the invariant must guard against that: `soldQuota < includedQuota` (strict). The 95% margin is a bonus on the online path, not the floor.
+
+**Enforcement mechanism (revised after recon).** `TransferTB` is only obtainable via a *live cloud `ListPlans` call*, and `PrivateNodePlanSpec` has **no creation handler** — rows are inserted directly via DB/scripts/tests, and there is no provider-name→account resolution. Putting a live cloud call in a DB hook or the deliberately cloud-decoupled provision path is bad engineering (network coupling, breaks offline tests). Instead we make the invariant a **pure, self-contained property of the plan-spec row**: add an explicit `BundleTransferBytes int64` field (the bundle's known included allowance — whoever sets the sold quota already had to know the bundle to set it responsibly), and enforce `soldQuota < BundleTransferBytes` with **integer arithmetic, no external dependency**. This invariant is currently **NOT enforced anywhere**; G1 closes it.
 
 ## 3. Verified Current State (2026-06-11)
 
@@ -52,25 +54,36 @@ Non-goals for this spec: changing the cutoff ratio/mechanism (already correct); 
 
 ## 5. Design
 
-### G1 — Provision-time quota invariant guard
+### G1 — Plan-spec invariant guard (explicit field + DB hook + provision backstop)
 
-**Where:** `provision_private_node.go`, in the provisioning path that selects the cloud bundle (before the VPS is actually created / before `emitNodeProvisionJob`).
+**Data:** add `BundleTransferBytes int64` to `PrivateNodePlanSpec` (`model_private_node.go`) — the provider bundle's monthly included transfer, in bytes (e.g. a Lightsail 2 TB tier → `2 * 1e12`). Additive column; AutoMigrate adds it. This is the local, authoritative record of the bundle allowance, set by whoever configures the plan (they had to know the bundle to choose `BundleID` + a responsible quota anyway).
 
-**What:** Before provisioning, resolve the target bundle's included allowance via the cloudprovider `PlanInfo.TransferTB` for the chosen provider/bundle/region, convert to bytes, and assert:
+**Primary guard — GORM `BeforeSave` hook on `PrivateNodePlanSpec`:**
 
-```
-soldQuotaBytes := sub.TrafficTotalBytes          // snapshot already on the subscription
-includedBytes  := int64(bundle.TransferTB * 1e12) // TB → bytes (decimal TB, matches provider billing)
-cutoffBytes    := soldQuotaBytes * 95 / 100        // mirror the runtime cutoff ratio
-if includedBytes <= 0 || cutoffBytes >= includedBytes {
-    // fail-closed: do NOT provision; mark failed + alert
+```go
+func (s *PrivateNodePlanSpec) BeforeSave(tx *gorm.DB) error {
+    if s.TrafficTotalBytes <= 0 {
+        return fmt.Errorf("private node plan spec: trafficTotalBytes must be > 0")
+    }
+    if s.BundleTransferBytes <= 0 {
+        return fmt.Errorf("private node plan spec: bundleTransferBytes must be > 0 (record the provider bundle's included allowance)")
+    }
+    if s.TrafficTotalBytes >= s.BundleTransferBytes {
+        return fmt.Errorf("private node plan spec: sold quota %d >= bundle allowance %d — would expose us to provider overage; provision a larger bundle",
+            s.TrafficTotalBytes, s.BundleTransferBytes)
+    }
+    return nil
 }
 ```
 
-- **Fail-closed**, not fail-open: a plan whose sold quota's cutoff point is not strictly below the provider allowance must **not** provision. Transition the subscription to `PNStatusFailed` with a distinct internal reason (e.g. `quota_exceeds_bundle`) and emit an admin-facing log/alert. Rationale: silently provisioning an under-margined box is the exact overage trap this product exists to avoid.
-- **Cutoff ratio is a single shared constant.** The `95/100` here MUST come from the same threshold constants as `slave_api_usage.go` (`trafficStopThresholdNum/Den`) — extract/reference them so the guard and the runtime cutoff can never drift apart.
-- **TB conversion:** provider `TransferTB` is billed in decimal TB (10^12 bytes), so use `1e12`, not 2^40. Document this at the call site.
-- This is a guard, not a new data model — no migration.
+- Fires on **every** insert/update path — direct DB `Create`, scripts, and tests — because there is no handler to hook. Pure integer arithmetic, **no cloud call, no external dependency**, works offline.
+- Strict `>=`: sold quota must be **strictly** below the bundle allowance (the hard ceiling is 100% of sold quota, §2).
+
+**Backstop guard — provision time (`emitNodeProvisionJob`, `provision_private_node.go`):** the spec is already loaded there. Before emitting the job, re-assert the same invariant on the loaded `spec`; on violation, transition the subscription to `PNStatusFailed` (set `LastProvisionError`), log an admin-facing error, and **do not** emit the provision job. Pure arithmetic on the in-memory spec — no cloud call. This catches legacy rows created before the hook existed (whose `BundleTransferBytes` defaults to 0 → fails closed).
+
+- Extract the comparison into one helper (e.g. `validatePrivateNodeQuotaInvariant(trafficTotal, bundleTransfer int64) error`) called by both the hook and the backstop, so they can never drift.
+- **Deploy note:** before deploying, backfill `BundleTransferBytes` on any existing `PrivateNodePlanSpec` row (product is pre-launch, so likely zero/test rows) — otherwise their next provision fails closed. Existing test fixtures that create specs must set `BundleTransferBytes` (> their `TrafficTotalBytes`).
+- **No live-cloud cross-check here.** Verifying `BundleTransferBytes` actually matches the provider's current `ListPlans().TransferTB` is a *separate, optional admin report* (future, out of scope) — it must never block provision.
 
 ### G2 — Surface "quota exhausted" as a first-class state
 
@@ -97,7 +110,9 @@ Sketch only (not built this spec): a periodic Center sweep (alongside `worker_pr
 
 ## 6. Testing Strategy
 
-- **G1:** Go integration tests against the real dev MySQL (pattern: `testInitConfig(); skipIfNoConfig(t)`). Cases: (a) sold quota cutoff < bundle allowance → provisions normally; (b) sold quota cutoff ≥ bundle allowance → fails closed with `PNStatusFailed` + reason, no VPS job emitted; (c) bundle allowance unknown/zero → fails closed; (d) boundary equality. Assert the guard uses the shared threshold constant (changing the const moves the boundary in lockstep — a test that pins this).
+- **G1 hook:** unit-level (no DB needed for the pure helper) + integration. `validatePrivateNodeQuotaInvariant`: sold < bundle → nil; sold == bundle → error; sold > bundle → error; bundle ≤ 0 → error; sold ≤ 0 → error. Integration: `db.Get().Create(&PrivateNodePlanSpec{...})` with sold ≥ bundle → `BeforeSave` rejects the insert; with sold < bundle → succeeds.
+- **G1 backstop:** Go integration (real dev MySQL, `testInitConfig(); skipIfNoConfig(t)`): a subscription whose spec violates the invariant (simulating a legacy row, e.g. `BundleTransferBytes=0`) → `emitNodeProvisionJob` transitions sub to `PNStatusFailed`, sets `LastProvisionError`, emits **no** `NodeProvisionJob` row. Valid spec → job emitted as before (regression).
+- Update the four existing fixtures (`api_plan_private_node_test.go:31`, `api_order_region_test.go:31`, `provision_private_node_test.go:27`, `logic_member_private_test.go:43`) to set `BundleTransferBytes` strictly above their `TrafficTotalBytes` (e.g. `3 * 1e12` when traffic is `2<<40`).
 - **G2 Center:** test `api_get_user_private_nodes` returns `quotaExhausted=true` at/above threshold, `false` below, `false` when `TrafficTotalBytes==0`; `quotaResetAt` mirrors the linked instance.
 - **G2 webapp:** vitest on `PrivateNodePanel` — exhausted state renders the worded panel (not the generic bar), shows reset hint, exposes the CTA; brand-grep the rendered copy for zero "Kaitu".
 - Regression: full Center `go test ./...` (note 7 pre-existing unrelated auth/CSRF failures), webapp `vitest` + `tsc` + `build`.
