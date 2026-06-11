@@ -1193,6 +1193,7 @@ type CloudInstance struct {
 	TrafficUsedBytes  int64 `gorm:"not null;default:0"` // Used traffic in current cycle
 	TrafficTotalBytes int64 `gorm:"not null;default:0"` // Total traffic allowance
 	TrafficResetAt    int64 `gorm:"not null;default:0"` // Next traffic reset (Unix timestamp)
+	TrafficEpoch      int64 `gorm:"not null;default:0"` // Center 权威计费周期身份；重置 +1，心跳响应下发令节点清零续计
 	ExpiresAt         int64 `gorm:"not null;default:0"` // Instance expiration (Unix timestamp, 0=auto-renew)
 
 	// Sync status
