@@ -1,5 +1,11 @@
 package center
 
+import (
+	"fmt"
+
+	"gorm.io/gorm"
+)
+
 // 专属节点订阅生命周期状态（见 spec §6.1 状态机）
 const (
 	PNStatusPending       = "pending"       // 订单已付，待开通入队
@@ -83,4 +89,29 @@ type PrivateNodePlanSpec struct {
 	ImageID           string `gorm:"type:varchar(100)" json:"imageId"`  // 预构建镜像（含 k2s）
 	BundleID          string `gorm:"type:varchar(100)" json:"bundleId"` // provider 实例规格
 	TrafficTotalBytes int64  `gorm:"not null" json:"trafficTotalBytes"` // 流量配额
+	// 所选 provider bundle 的月度自带流量（字节）。Model A 不变式的对照基准：
+	// 卖出额度必须严格小于它，否则用户跑满会让我们吃 provider overage。
+	BundleTransferBytes int64 `gorm:"not null;default:0" json:"bundleTransferBytes"`
+}
+
+// validatePrivateNodeQuotaInvariant 校验 Model A 成本安全不变式：卖出额度必须严格
+// 小于 provider bundle 自带额度。硬上限是卖出额度的 100%（节点离线时 EpochHardCeilingBytes
+// = TrafficTotalBytes），故用 >= 而非 95%。纯整数算术，无外部依赖。
+func validatePrivateNodeQuotaInvariant(trafficTotalBytes, bundleTransferBytes int64) error {
+	if trafficTotalBytes <= 0 {
+		return fmt.Errorf("private node plan spec: trafficTotalBytes must be > 0, got %d", trafficTotalBytes)
+	}
+	if bundleTransferBytes <= 0 {
+		return fmt.Errorf("private node plan spec: bundleTransferBytes must be > 0 (record the provider bundle's included allowance), got %d", bundleTransferBytes)
+	}
+	if trafficTotalBytes >= bundleTransferBytes {
+		return fmt.Errorf("private node plan spec: sold quota %d >= bundle allowance %d — would expose us to provider overage; provision a larger bundle", trafficTotalBytes, bundleTransferBytes)
+	}
+	return nil
+}
+
+// BeforeSave 在每次 insert/update 前强制不变式。PrivateNodePlanSpec 无创建 handler，
+// 仅靠直插 DB / 脚本 / 测试创建，故 hook 是唯一能覆盖所有路径的守卫点。
+func (s *PrivateNodePlanSpec) BeforeSave(tx *gorm.DB) error {
+	return validatePrivateNodeQuotaInvariant(s.TrafficTotalBytes, s.BundleTransferBytes)
 }
