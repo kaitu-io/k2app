@@ -20,6 +20,7 @@ import type { ClientConfig, RouteConfig } from '../types/client-config';
 import { CLIENT_CONFIG_DEFAULTS } from '../types/client-config';
 import { countryToProfile, PROFILE_TO_PRESET } from '../utils/routes';
 import { cloudApi } from '../services/cloud-api';
+import { controlPlaneHosts } from '../services/antiblock';
 /** Build-time log level from K2_BUILD_LOG_LEVEL env var (default: 'debug'). Injected by Vite define. */
 declare const __K2_BUILD_LOG_LEVEL__: string;
 
@@ -109,19 +110,33 @@ function gatewayPrefix(): RouteConfig[] {
   return [];
 }
 
+/**
+ * Keep the Kaitu control-plane API on a direct route so the app's own requests
+ * never egress the tunnel. A tunneled API request carries the exit node's IP, which
+ * poisons Center's IP-based geo detection (China user via JP exit → "jp" →
+ * match.region=jp → missing jp.krs → 504). Applies on every platform/preset.
+ */
+function controlPlanePrefix(): RouteConfig[] {
+  const hosts = controlPlaneHosts();
+  return hosts.length > 0 ? [{ via: 'direct', match: { domain_suffix: hosts } }] : [];
+}
+
 function buildRoutes(
   defaultVia: 'proxy' | 'direct',
   countryVia: 'direct' | 'k2p' | null,
   country: string | null,
   serverUrl: string | undefined,
 ): RouteConfig[] {
-  const prefix = gatewayPrefix();
   if (!serverUrl) {
     // Defense in depth. connection.store.connect() guards against this with a user-visible
     // error, so reaching this branch means a caller bypassed the guard — log loudly.
     console.error('[ConfigStore] buildRoutes: serverUrl is empty — this should have been caught by connect() guard');
-    return prefix;
+    return gatewayPrefix();
   }
+
+  // Prefix prepended to every mode: gateway egress probe (router only) + control-plane
+  // direct route (all platforms). Gateway first so the router's ipinfo.io probe stays routes[0].
+  const prefix = [...gatewayPrefix(), ...controlPlanePrefix()];
 
   // Global: everything through proxy
   if (countryVia === null) {

@@ -205,3 +205,37 @@ export async function resolveEntry(): Promise<string> {
 function refreshEntryInBackground(): void {
   fetchEntryFromCDN().catch(() => {});
 }
+
+/**
+ * Hostnames that serve the Kaitu control-plane API (the `resolveEntry()` target +
+ * the default fallback). Used to pin the control plane to a `direct` route so the
+ * app's own API requests never egress the VPN tunnel.
+ *
+ * Why: when connected, a tunneled API request carries the exit node's IP, so
+ * Center's IP-based geo detection mis-reads the user's country (e.g. a China user
+ * via a JP exit → "jp" → match.region=jp → missing jp.krs → 504). Keeping the API
+ * direct means geo always sees the user's real IP.
+ *
+ * Synchronous on purpose: `buildConnectConfig` is synchronous, and the active entry
+ * is cached in `localStorage` (a synchronous read). Resilient to a missing
+ * `localStorage` (non-browser env) — degrades to just the default host.
+ */
+export function controlPlaneHosts(): string[] {
+  const hosts = new Set<string>();
+  const add = (url: string | null | undefined): void => {
+    if (!url) return;
+    try {
+      const h = new URL(url).hostname;
+      if (h) hosts.add(h);
+    } catch {
+      // malformed URL — skip
+    }
+  };
+  try {
+    add(localStorage.getItem(STORAGE_KEY));
+  } catch {
+    // localStorage unavailable — fall back to the default host only
+  }
+  add(DEFAULT_ENTRY);
+  return [...hosts];
+}

@@ -7,6 +7,7 @@ import {
   DECRYPTION_KEY,
   CDN_SOURCES,
   DEFAULT_ENTRY,
+  controlPlaneHosts,
 } from '../antiblock';
 
 // ---------------------------------------------------------------------------
@@ -209,5 +210,44 @@ describe('antiblock — AES-256-GCM decryption', () => {
 
   it('test_default_entry_is_plain_url', () => {
     expect(DEFAULT_ENTRY.startsWith('https://')).toBe(true);
+  });
+});
+
+describe('controlPlaneHosts', () => {
+  const defaultHost = new URL(DEFAULT_ENTRY).hostname;
+
+  let mockLocalStorage: { getItem: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    mockLocalStorage = { getItem: vi.fn().mockReturnValue(null) };
+    vi.stubGlobal('localStorage', mockLocalStorage);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('always includes the DEFAULT_ENTRY host', () => {
+    expect(controlPlaneHosts()).toEqual([defaultHost]);
+  });
+
+  it('includes the cached entry host ahead of the default', () => {
+    mockLocalStorage.getItem.mockReturnValue('https://d1l0lk9fcyd6r8.cloudfront.net');
+    expect(controlPlaneHosts()).toEqual(['d1l0lk9fcyd6r8.cloudfront.net', defaultHost]);
+  });
+
+  it('dedups when the cached entry equals the default', () => {
+    mockLocalStorage.getItem.mockReturnValue(DEFAULT_ENTRY);
+    expect(controlPlaneHosts()).toEqual([defaultHost]);
+  });
+
+  it('ignores a malformed cached entry', () => {
+    mockLocalStorage.getItem.mockReturnValue('not a url');
+    expect(controlPlaneHosts()).toEqual([defaultHost]);
+  });
+
+  it('degrades to the default host when localStorage throws', () => {
+    mockLocalStorage.getItem.mockImplementation(() => { throw new Error('unavailable'); });
+    expect(controlPlaneHosts()).toEqual([defaultHost]);
   });
 });
