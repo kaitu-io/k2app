@@ -130,21 +130,30 @@ func processRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped
 // =====================================================================
 
 // processPrivateNodeRenewalReminders 处理专属节点订阅的续费提醒。
-// 与共享池 processRenewalReminders 平行：用同一 Asia/Shanghai 当日窗口
+// 与共享池 processRenewalReminders 平行：用同一 UTC 当日窗口
 // [dayStart, dayEnd) 命中 now+daysBefore 到期的订阅，但查 PrivateNodeSubscription
 // （独立时钟 ExpiresAt，不碰 User.ExpiredAt），从主人 LoginIdentifies 解析邮箱，
 // 经 SendTemplatedEmails 用模板 slug private-node-renewal-{N}d 发送。
 func processPrivateNodeRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped, failed int) {
 	log.Infof(ctx, "[PN-RENEWAL] Processing %d-day private-node reminders", daysBefore)
 
-	loc, _ := time.LoadLocation("Asia/Shanghai")
-	nowSh := time.Now().In(loc)
-	todayStr := nowSh.Format("2006-01-02")
-	dayStart := time.Date(nowSh.Year(), nowSh.Month(), nowSh.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, daysBefore)
+	now := time.Now().UTC()
+	todayStr := now.Format("2006-01-02")
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, daysBefore)
 	dayEnd := dayStart.AddDate(0, 0, 1)
 
 	batchID := fmt.Sprintf("pn-renewal-%dd-%s", daysBefore, todayStr)
 	slug := fmt.Sprintf("private-node-renewal-%dd", daysBefore)
+
+	// 模板缺失时降级跳过（不报 failed），与共享路径同语义：运营侧未配模板不应让 cron
+	// 视作发送失败。早返：在任何 DB 扫描 + N 次 user preload 之前守卫，避免模板尚未
+	// provision 时每日 cron 全表扫订阅 + 逐订阅查 user。模板内容由运营侧 provision。
+	if !templateSlugExists(slug) {
+		alertMsg := fmt.Sprintf("[EMAIL-LIFECYCLE] 模板 slug=%q 不存在，跳过 %d 天专属节点续费提醒。请在管理后台创建该模板。", slug, daysBefore)
+		log.Errorf(ctx, "%s", alertMsg)
+		slack.Send("alert", alertMsg)
+		return 0, 0, 0
+	}
 
 	var subs []PrivateNodeSubscription
 	err := db.Get().Model(&PrivateNodeSubscription{}).
@@ -187,15 +196,6 @@ func processPrivateNodeRenewalReminders(ctx context.Context, daysBefore int) (se
 
 	if len(items) == 0 {
 		return 0, skipped, 0
-	}
-
-	// 模板缺失时降级为 skipped（不报 failed），与共享路径同语义：运营侧未配模板
-	// 不应让 cron 视作发送失败。模板内容由运营侧 provision。
-	if !templateSlugExists(slug) {
-		alertMsg := fmt.Sprintf("[EMAIL-LIFECYCLE] 模板 slug=%q 不存在，跳过 %d 天专属节点续费提醒。请在管理后台创建该模板。", slug, daysBefore)
-		log.Errorf(ctx, "%s", alertMsg)
-		slack.Send("alert", alertMsg)
-		return 0, skipped + len(items), 0
 	}
 
 	result, err := SendTemplatedEmails(ctx, &SendEmailsRequest{

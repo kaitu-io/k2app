@@ -72,7 +72,7 @@ func InitWorker() {
 	asynq.Cron("*/10 * * * *", TaskTypeProvisionTimeoutSweep, nil, hibikenAsynq.Unique(11*time.Minute))
 
 	// 注册专属节点生命周期推进 Cron 任务
-	// 每天北京时间 03:00（UTC 19:00 前一日）推进 active→grace→suspended→deprovisioned
+	// 每天北京时间 03:00（UTC 19:00 次日）推进 active→grace→suspended→deprovisioned
 	// 标签 + 续费回收。服务可用性以 IsServiceable 时间戳为权威，此 cron 只重贴标签。
 	// Unique(25h) 防止多实例重复入队
 	asynq.Cron("0 19 * * *", TaskTypePrivateNodeLifecycleSweep, nil, hibikenAsynq.Unique(25*time.Hour))
