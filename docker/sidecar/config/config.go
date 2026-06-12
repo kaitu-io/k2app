@@ -25,6 +25,12 @@ type K2CenterConfig struct {
 	// Empty for shared-pool nodes.
 	PrivateClaim string `yaml:"private_claim"`
 
+	// UsageAPIURL is the loopback k2s usage API base (K2_USAGE_API_URL,
+	// e.g. http://127.0.0.1:9099). When non-empty, the sidecar runs the
+	// usage-heartbeat loop that bridges k2s byte counters ↔ Center's serve/stop
+	// verdict. Empty for shared-pool nodes → loop never starts (byte-identical).
+	UsageAPIURL string `yaml:"usage_api_url"`
+
 	// Metrics reporting (used by sidecar)
 	ReportInterval   string `yaml:"report_interval" default:"120s"`
 	BillingStartDate string `yaml:"billing_start_date"`
