@@ -107,11 +107,14 @@ func newUsageReporter(ctl trafficController, centerURL, ipv4, secret string) *us
 	}
 }
 
-// Run drives the loop until ctx is cancelled. It sleeps between cycles for the
-// interval runOnce returns (a short backoff after a failure).
+// Run drives the loop until ctx is cancelled. The first cycle fires immediately
+// (zero initial delay) so a node re-deployed mid-epoch already over quota gets
+// its first Center enforcement check at once, closing the startup blind spot.
+// Subsequent cycles sleep for the interval runOnce returns (a short backoff
+// after a failure).
 func (r *usageReporter) Run(ctx context.Context) {
 	slog.Info("DIAG: usage-reporter-start", "center", r.centerURL, "ipv4", r.ipv4)
-	sleep := usageReportDefaultInterval
+	sleep := time.Duration(0) // fire the first cycle immediately
 	for {
 		select {
 		case <-ctx.Done():
@@ -119,13 +122,10 @@ func (r *usageReporter) Run(ctx context.Context) {
 			return
 		case <-time.After(sleep):
 		}
-		next, err := r.runOnce(ctx)
+		// runOnce returns the next interval (normal interval on success, short
+		// backoff on error) and already logs any failure internally.
+		next, _ := r.runOnce(ctx)
 		sleep = next
-		if err != nil {
-			// runOnce already logged the failure; loop keeps going with the
-			// backoff sleep it returned.
-			continue
-		}
 	}
 }
 

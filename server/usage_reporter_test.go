@@ -129,6 +129,12 @@ func (s *centerStub) auth() string {
 	return s.capturedAuth
 }
 
+func (s *centerStub) hitCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hits
+}
+
 func (s *centerStub) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/slave/usage", func(w http.ResponseWriter, r *http.Request) {
@@ -439,6 +445,44 @@ func TestUsageReporterDefaultInterval(t *testing.T) {
 	}
 	if sleep != 60*time.Second {
 		t.Fatalf("interval 0 want 60s fallback, got %v", sleep)
+	}
+}
+
+// TestUsageReporterRunFiresFirstCycleImmediately pins the startup contract: the
+// very first report must fire promptly on Run() start, NOT after the default
+// 60s interval. A node re-deployed mid-epoch already over quota would otherwise
+// serve traffic for up to 60s before its first Center enforcement check.
+//
+// The test runs Run() in a goroutine with a ctx cancelled after a short window
+// (200ms, << the 60s default interval) and asserts Center received at least one
+// POST inside that window. Under the old "sleep-first" loop this hangs until
+// cancel with zero hits and fails; only the immediate-first-cycle fix passes.
+func TestUsageReporterRunFiresFirstCycleImmediately(t *testing.T) {
+	stub, srv := newStubServer(t)
+	fake := &fakeController{rx: 1, tx: 1}
+	r := newUsageReporter(fake, srv.URL, "1.2.3.4", "pw")
+	// Center asks for a long interval so a SECOND cycle cannot account for the
+	// hit — any request observed must be the immediate first cycle.
+	stub.setResp(NodeUsageResponse{Verdict: "serve", NextReportInterval: 3600})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		r.Run(ctx)
+		close(done)
+	}()
+
+	// Poll for the first hit well inside the 200ms window.
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for stub.hitCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	hits := stub.hitCount()
+	cancel()
+	<-done
+
+	if hits < 1 {
+		t.Fatalf("Run must fire the first report immediately; got %d hits within 200ms (default interval is %v)", hits, usageReportDefaultInterval)
 	}
 }
 
