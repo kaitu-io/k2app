@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
@@ -38,6 +39,23 @@ func LoadGateway(path string) (*GatewayConfig, error) {
 	}
 	SetGatewayDefaults(&cfg)
 	return &cfg, nil
+}
+
+// PersistConfig writes the gateway config to the source config file k2r.yml,
+// rooted at stateDir() (production: /etc/k2r, tests override via
+// stateDirOverride). Both `k2r setup` (cmdSetup) and the panel set-credential
+// action share this single path — there is exactly one source-of-truth file
+// the `k2r run` restart path reads back (Cleanup #1: no second persistence
+// path that the full restart would silently ignore).
+func PersistConfig(cfg *GatewayConfig) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(stateDir(), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(stateDir(), "k2r.yml"), data, 0600)
 }
 
 func GatewayFromURL(wireURL string) *GatewayConfig {

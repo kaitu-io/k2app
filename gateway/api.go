@@ -4,8 +4,11 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
@@ -49,6 +52,8 @@ func (g *Gateway) handleCore(w http.ResponseWriter, r *http.Request) {
 		g.handleDown(w)
 	case "status":
 		g.handleStatus(w)
+	case "set-credential":
+		g.handleSetCredential(w, req.Params)
 	case "version":
 		writeJSON(w, Response{Code: 0, Data: map[string]string{
 			"version": g.version,
@@ -83,6 +88,49 @@ func (g *Gateway) handleUp(w http.ResponseWriter, params map[string]any) {
 		}
 	})
 	writeJSON(w, Response{Code: 0, Message: "connecting"})
+}
+
+// applyCredential parses a freshly-minted subscription/wire URL pasted into the
+// panel and persists it to BOTH the source config (k2r.yml) and the reconnect
+// cache (state.json), then returns the parsed config. It does NOT touch the
+// network — the HTTP handler launches doUp asynchronously. Keeping this a pure
+// parse+persist function makes it unit-testable without a live Gateway.
+func (g *Gateway) applyCredential(rawURL string) (*GatewayConfig, error) {
+	cfg := GatewayFromURL(rawURL)
+	// GatewayFromURL never returns nil and never errors on garbage; a bad URL
+	// simply yields a route whose Via is not a wire outbound. Validate the
+	// route scheme (k2v5/k2p/k2subs) so "not-a-url"/"direct" is rejected.
+	if cfg == nil || len(cfg.Routes) == 0 || !config.IsOutboundURL(cfg.Routes[0].Via) {
+		return nil, fmt.Errorf("invalid credential url")
+	}
+	if err := PersistConfig(cfg); err != nil {
+		return nil, err
+	}
+	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
+	return cfg, nil
+}
+
+// handleSetCredential implements the /api/core "set-credential" action: the
+// user pastes a minted k2subs:// URL into the panel, k2r persists it (k2r.yml
+// + state.json) and connects asynchronously. The raw URL contains the bearer
+// token and is never logged.
+func (g *Gateway) handleSetCredential(w http.ResponseWriter, params map[string]any) {
+	rawURL, _ := params["url"].(string)
+	if strings.TrimSpace(rawURL) == "" {
+		writeJSON(w, Response{Code: 1, Message: "missing url"})
+		return
+	}
+	cfg, err := g.applyCredential(rawURL)
+	if err != nil {
+		writeJSON(w, Response{Code: 1, Message: "invalid credential"})
+		return
+	}
+	safego.Go(func() {
+		if err := g.doUp(cfg); err != nil {
+			slog.Warn("gateway: set-credential doUp failed", "err", err)
+		}
+	})
+	writeJSON(w, Response{Code: 0, Message: "ok"})
 }
 
 func (g *Gateway) handleDown(w http.ResponseWriter) {

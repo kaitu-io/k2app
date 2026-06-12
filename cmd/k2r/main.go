@@ -12,7 +12,6 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/gateway"
-	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -166,9 +165,9 @@ Flags:
 		os.Exit(1)
 	}
 
-	os.MkdirAll("/etc/k2r", 0755)
-	data, _ := yaml.Marshal(cfg)
-	if err := os.WriteFile("/etc/k2r/k2r.yml", data, 0600); err != nil {
+	// Shared persistence path with the panel set-credential action (Cleanup
+	// #1): one source-of-truth k2r.yml that `k2r run` reads back on restart.
+	if err := gateway.PersistConfig(cfg); err != nil {
 		out.fail("WRITE_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
