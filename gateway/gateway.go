@@ -195,6 +195,10 @@ func (g *Gateway) Run(addr string) error {
 		return fmt.Errorf("gateway: no panel listener could bind (tried %v)", binds)
 	}
 
+	// mDNS responder: answer k2.local A queries with the LAN IP so users can
+	// reach the panel at http://k2.local:<port> without knowing the IP.
+	g.startMDNS()
+
 	select {
 	case <-g.ctx.Done():
 		// Daemon-internal shutdown (procd SIGTERM, systemctl restart, etc.).
