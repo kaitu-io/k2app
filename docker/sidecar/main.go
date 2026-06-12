@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -22,8 +21,6 @@ type Sidecar struct {
 	config       *config.Config
 	nodeInstance *sidecar.Node
 	collector    *sidecar.Collector
-	heartbeat    *sidecar.UsageHeartbeat
-	cancel       context.CancelFunc
 	shutdownChan chan os.Signal
 }
 
@@ -162,13 +159,6 @@ func (s *Sidecar) Start() error {
 			slog.Error("Metrics collector error", "component", "sidecar", "err", err)
 		}
 	}()
-
-	// Step 4a: Start usage-heartbeat loop (private nodes only — no-op when
-	// K2_USAGE_API_URL is unset, so shared-pool nodes are unaffected).
-	ctx, cancel := context.WithCancel(context.Background())
-	s.cancel = cancel
-	s.heartbeat = sidecar.NewUsageHeartbeat(s.nodeInstance, s.config.K2Center.UsageAPIURL)
-	go s.heartbeat.Run(ctx)
 
 	// Setup signal handling
 	signal.Notify(s.shutdownChan, syscall.SIGINT, syscall.SIGTERM)
@@ -518,11 +508,6 @@ func (s *Sidecar) generateConfigFromTemplate(name, tmplStr, outputPath string, d
 // shutdown gracefully shuts down the sidecar
 func (s *Sidecar) shutdown() error {
 	slog.Info("Shutting down...", "component", "sidecar")
-
-	// Stop background loops (usage heartbeat) before unregistering.
-	if s.cancel != nil {
-		s.cancel()
-	}
 
 	if err := s.nodeInstance.Unregister(); err != nil {
 		slog.Warn("Failed to unregister node", "component", "sidecar", "err", err)
