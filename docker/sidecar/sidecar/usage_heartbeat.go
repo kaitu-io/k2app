@@ -147,7 +147,7 @@ func (h *UsageHeartbeat) runOnce(ctx context.Context) (time.Duration, error) {
 		Seq:             h.seq,
 		Ts:              time.Now().Unix(),
 	}
-	resp, err := h.reportToCenter(report)
+	resp, err := h.reportToCenter(ctx, report)
 	if err != nil {
 		// 3a. Offline fallback: keep last verdict but enforce the last-seen hard
 		// ceiling locally so a disconnected node still cuts off at 100% of sold
@@ -162,14 +162,21 @@ func (h *UsageHeartbeat) runOnce(ctx context.Context) (time.Duration, error) {
 		return min(usageHeartbeatMaxBackoff, h.intervalOr(0)), fmt.Errorf("report to Center: %w", err)
 	}
 
-	// 3b. Epoch change → reset k2s counters and adopt the new epoch.
+	// 3b. Epoch change → reset k2s counters, then adopt the new epoch ONLY if the
+	// reset succeeded (otherwise retry next cycle).
 	if resp.EpochID != h.epochID {
 		slog.Info("Usage epoch changed — resetting k2s counters",
 			"component", "usage", "from", h.epochID, "to", resp.EpochID)
 		if rerr := h.resetK2s(ctx); rerr != nil {
-			slog.Warn("Failed to reset k2s counters", "component", "usage", "err", rerr)
+			slog.Warn("Failed to reset k2s counters — keeping old epoch, will retry next cycle",
+				"component", "usage", "from", h.epochID, "to", resp.EpochID, "err", rerr)
+			// Do NOT adopt the epoch: if /reset failed, the counters were never
+			// zeroed. Adopting would make the next report carry the NEW epoch_id
+			// with pre-boundary traffic, which Center max-merges into a premature
+			// cutoff. Keeping the old epoch makes the next cycle retry the reset.
+		} else {
+			h.epochID = resp.EpochID
 		}
-		h.epochID = resp.EpochID
 	}
 
 	// Remember last-seen values for the offline guard.
@@ -267,14 +274,14 @@ func (h *UsageHeartbeat) postK2s(ctx context.Context, path string, body any) err
 // and parses the verdict response. Mirrors node.requestWithAuth's auth scheme
 // without reusing it directly so we keep a context-aware client and avoid the
 // shared 10s timeout; the credential never leaves this function.
-func (h *UsageHeartbeat) reportToCenter(report NodeUsageRequest) (NodeUsageResponse, error) {
+func (h *UsageHeartbeat) reportToCenter(ctx context.Context, report NodeUsageRequest) (NodeUsageResponse, error) {
 	var out NodeUsageResponse
 
 	body, err := json.Marshal(report)
 	if err != nil {
 		return out, err
 	}
-	req, err := http.NewRequest(http.MethodPost, h.node.CenterURL+"/slave/usage", bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.node.CenterURL+"/slave/usage", bytes.NewBuffer(body))
 	if err != nil {
 		return out, err
 	}

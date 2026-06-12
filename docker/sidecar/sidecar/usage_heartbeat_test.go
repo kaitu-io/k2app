@@ -3,6 +3,7 @@ package sidecar
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -29,7 +30,8 @@ type k2sStub struct {
 
 	total int64 // current cumulative bytes returned by GET /usage
 
-	resetCount   int
+	resetFail    bool // when true, /reset returns HTTP 500 (and does NOT zero total)
+	resetCount   int  // number of /reset requests received (incl. failed ones)
 	verdictBody  []verdictRecord // every /verdict push, in order
 	server       *httptest.Server
 }
@@ -56,8 +58,15 @@ func newK2sStub(total int64) *k2sStub {
 	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		s.resetCount++
-		s.total = 0
+		fail := s.resetFail
+		if !fail {
+			s.total = 0
+		}
 		s.mu.Unlock()
+		if fail {
+			http.Error(w, "reset boom", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
@@ -80,6 +89,12 @@ func (s *k2sStub) Close()      { s.server.Close() }
 func (s *k2sStub) setTotal(v int64) {
 	s.mu.Lock()
 	s.total = v
+	s.mu.Unlock()
+}
+
+func (s *k2sStub) setResetFail(v bool) {
+	s.mu.Lock()
+	s.resetFail = v
 	s.mu.Unlock()
 }
 
@@ -254,6 +269,103 @@ func TestUsageHeartbeat_EpochChangeTriggersReset(t *testing.T) {
 	}
 	if reqs[2].EpochID != 7 {
 		t.Fatalf("third report must carry adopted epoch 7, got %d", reqs[2].EpochID)
+	}
+}
+
+// TestUsageHeartbeat_EpochNotAdoptedWhenResetFails pins Issue 2: when Center
+// sends a new epoch_id but the k2s /reset call fails, the sidecar must NOT adopt
+// the epoch (keeping the old one so the next cycle retries). Only after a
+// successful reset may the new epoch be adopted.
+func TestUsageHeartbeat_EpochNotAdoptedWhenResetFails(t *testing.T) {
+	k2s := newK2sStub(5000)
+	defer k2s.Close()
+	// Cycle 0 stays on epoch 0; cycles 1+ advertise epoch 9.
+	center := newCenterStub(func(n int, req NodeUsageRequest) (NodeUsageResponse, bool) {
+		if n == 0 {
+			return NodeUsageResponse{Verdict: "serve", EpochID: 0, NextReportInterval: 60}, false
+		}
+		return NodeUsageResponse{Verdict: "serve", EpochID: 9, NextReportInterval: 60}, false
+	})
+	defer center.Close()
+
+	hb := newTestHeartbeat(k2s.URL(), center)
+
+	// Cycle 1: establish epoch 0.
+	if _, err := hb.runOnce(context.Background()); err != nil {
+		t.Fatalf("runOnce 1: %v", err)
+	}
+
+	// Cycle 2: Center advertises epoch 9 but /reset FAILS.
+	k2s.setResetFail(true)
+	if _, err := hb.runOnce(context.Background()); err != nil {
+		t.Fatalf("runOnce 2: %v", err)
+	}
+	if k2s.resets() != 1 {
+		t.Fatalf("epoch changed: expected exactly 1 reset attempt, got %d", k2s.resets())
+	}
+	if hb.epochID != 0 {
+		t.Fatalf("reset failed: epoch must NOT be adopted, want 0, got %d", hb.epochID)
+	}
+
+	// The report sent on cycle 3 must still carry the OLD epoch 0 (proving the
+	// failed reset did not let the new epoch leak into a report with un-zeroed
+	// counters).
+	reqs := center.requests()
+	if len(reqs) < 2 {
+		t.Fatalf("expected >=2 reports, got %d", len(reqs))
+	}
+
+	// Cycle 3: /reset now succeeds → epoch 9 must finally be adopted and counters zeroed.
+	k2s.setResetFail(false)
+	if _, err := hb.runOnce(context.Background()); err != nil {
+		t.Fatalf("runOnce 3: %v", err)
+	}
+	if k2s.resets() != 2 {
+		t.Fatalf("retry cycle: expected a second reset attempt (total 2), got %d", k2s.resets())
+	}
+	if hb.epochID != 9 {
+		t.Fatalf("reset succeeded: epoch must now be adopted, want 9, got %d", hb.epochID)
+	}
+
+	// Cycle 4: report must finally carry the adopted epoch 9.
+	if _, err := hb.runOnce(context.Background()); err != nil {
+		t.Fatalf("runOnce 4: %v", err)
+	}
+	reqs = center.requests()
+	last := reqs[len(reqs)-1]
+	if last.EpochID != 9 {
+		t.Fatalf("after successful reset, report must carry epoch 9, got %d", last.EpochID)
+	}
+}
+
+// TestUsageHeartbeat_ReportToCenterHonorsContext pins Issue 1: reportToCenter
+// must build its request with the passed context, so a cancelled context aborts
+// the Center POST promptly instead of waiting the full HTTP timeout.
+func TestUsageHeartbeat_ReportToCenterHonorsContext(t *testing.T) {
+	k2s := newK2sStub(1000)
+	defer k2s.Close()
+	center := newCenterStub(func(n int, req NodeUsageRequest) (NodeUsageResponse, bool) {
+		return NodeUsageResponse{Verdict: "serve", EpochID: 0, NextReportInterval: 60}, false
+	})
+	defer center.Close()
+
+	hb := newTestHeartbeat(k2s.URL(), center)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled
+
+	start := time.Now()
+	_, err := hb.reportToCenter(ctx, NodeUsageRequest{EpochID: 0, CumulativeBytes: 1000, Seq: 1, Ts: time.Now().Unix()})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("reportToCenter with a cancelled context must return an error")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("cancelled context should abort promptly, took %v (>2s) — request not context-aware", elapsed)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error must wrap context.Canceled, got %v", err)
 	}
 }
 
