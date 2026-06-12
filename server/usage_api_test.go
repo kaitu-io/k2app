@@ -1,11 +1,9 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -45,54 +43,6 @@ func TestUsageAPI(t *testing.T) {
 			t.Fatalf("usage ts should be nonzero unix time, got 0")
 		}
 	}
-
-	// POST /verdict {"accepting":false} flips the gate off.
-	{
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/verdict", strings.NewReader(`{"accepting":false}`))
-		req.RemoteAddr = "127.0.0.1:54321"
-		mux.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("POST /verdict false: code=%d body=%s", rec.Code, rec.Body.String())
-		}
-		if h.Accepting() {
-			t.Fatalf("after verdict false, Accepting() should be false")
-		}
-	}
-
-	// POST /verdict {"accepting":true} flips it back on.
-	{
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/verdict", strings.NewReader(`{"accepting":true}`))
-		req.RemoteAddr = "127.0.0.1:54321"
-		mux.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("POST /verdict true: code=%d body=%s", rec.Code, rec.Body.String())
-		}
-		if !h.Accepting() {
-			t.Fatalf("after verdict true, Accepting() should be true")
-		}
-	}
-
-	// POST /reset zeroes the counters.
-	{
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/reset", nil)
-		req.RemoteAddr = "127.0.0.1:54321"
-		mux.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("POST /reset: code=%d body=%s", rec.Code, rec.Body.String())
-		}
-		var ok struct {
-			OK bool `json:"ok"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &ok); err != nil || !ok.OK {
-			t.Fatalf("reset response = %s err=%v", rec.Body.String(), err)
-		}
-		if rx, tx := h.TrafficBytes(); rx != 0 || tx != 0 {
-			t.Fatalf("after reset, traffic = %d/%d, want 0/0", rx, tx)
-		}
-	}
 }
 
 // TestUsageAPILoopbackGuard checks the isLoopback helper and that a request
@@ -129,17 +79,33 @@ func TestUsageAPILoopbackGuard(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("non-loopback GET /usage: code=%d, want 403", rec.Code)
 	}
+}
 
-	// Verify a verdict from a non-loopback addr does NOT mutate the gate.
-	before := h.Accepting()
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/verdict", bytes.NewReader([]byte(`{"accepting":false}`)))
-	req.RemoteAddr = "203.0.113.7:55555"
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("non-loopback POST /verdict: code=%d, want 403", rec.Code)
+// TestUsageAPIMutatingEndpointsRemoved asserts the Option D trim: the old
+// mutating loopback endpoints (POST /reset, POST /verdict) no longer exist, so
+// even a loopback caller gets 404 (route unregistered) — the only way to flip
+// the gate / reset counters is now the in-process reporter.
+func TestUsageAPIMutatingEndpointsRemoved(t *testing.T) {
+	h := NewProxyHandler()
+	h.rxBytes.Store(1234)
+	srv := newUsageAPI(h, "127.0.0.1:0")
+	mux := srv.Handler
+
+	for _, path := range []string{"/reset", "/verdict"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "127.0.0.1:54321"
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("POST %s: code=%d, want 404 (endpoint removed under Option D)", path, rec.Code)
+		}
 	}
-	if h.Accepting() != before {
-		t.Fatalf("non-loopback verdict mutated the gate")
+
+	// Counters/gate untouched by the (now-absent) mutating routes.
+	if rx, _ := h.TrafficBytes(); rx != 1234 {
+		t.Errorf("rx mutated unexpectedly = %d, want 1234", rx)
+	}
+	if !h.Accepting() {
+		t.Errorf("accept gate should still be its default (true)")
 	}
 }

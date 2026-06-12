@@ -174,6 +174,14 @@ type ServerConfig struct {
 	// Default 127.0.0.1:9099; empty string disables the API.
 	// Overridable at runtime via K2_USAGE_API_LISTEN.
 	UsageAPIListen string `yaml:"usage_api_listen"`
+
+	// Usage reporter (Plan 3-k2s Phase B, Option D). The reporter runs the
+	// per-node traffic-cutoff loop in-process; it is gated on both
+	// UsageReportURL and NodeSecret being non-empty (shared-pool nodes set
+	// neither → reporter never starts → zero behavior change).
+	UsageReportURL string `yaml:"usage_report_url"` // Center base URL for usage reporting; "" disables. env K2_USAGE_REPORT_URL
+	NodeSecret     string `yaml:"-"`                // K2_NODE_SECRET (Basic auth pw). Secret — never serialized.
+	NodeIPv4       string `yaml:"-"`                // node public IPv4 (Basic auth user); "" => ProbePublicIP fallback at runtime
 }
 
 // DNSConfig contains DNS resolver configuration.
@@ -366,5 +374,16 @@ func setServerDefaults(cfg *ServerConfig) {
 	// Runtime env override wins (operators can repoint or disable via "").
 	if v, ok := os.LookupEnv("K2_USAGE_API_LISTEN"); ok {
 		cfg.UsageAPIListen = v
+	}
+	// Usage reporter env (Plan 3-k2s Phase B, Option D). Secret/IPv4 are env-only
+	// (yaml:"-") so they never land in a config file.
+	if v, ok := os.LookupEnv("K2_USAGE_REPORT_URL"); ok {
+		cfg.UsageReportURL = v
+	}
+	if v, ok := os.LookupEnv("K2_NODE_SECRET"); ok {
+		cfg.NodeSecret = v
+	}
+	if v, ok := os.LookupEnv("K2_NODE_IPV4"); ok {
+		cfg.NodeIPv4 = v
 	}
 }

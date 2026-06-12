@@ -8,10 +8,17 @@ import (
 	"time"
 )
 
-// usage_api.go exposes a loopback-only HTTP control surface so the sidecar
-// (which holds K2_NODE_SECRET) can poll node traffic counters and push
-// Center's serve/stop verdict — without k2s ever knowing the node secret or
-// talking to Center directly (Plan 3-k2s, A3).
+// usage_api.go exposes a loopback-only, READ-ONLY observability surface:
+//   GET /usage → live node traffic counters {rx,tx,total,ts}
+// for ops/smoke (`curl 127.0.0.1:9099/usage`).
+//
+// History: under the retired sidecar split this API also had mutating
+// POST /reset and POST /verdict endpoints, polled/pushed by the sidecar that
+// held K2_NODE_SECRET. Under Option D (Plan 3-k2s Phase B) the usage-cutoff
+// loop moved IN-PROCESS (server/usage_reporter.go): k2s itself reads its
+// counters, POSTs Center, and applies the verdict/epoch-reset via direct method
+// calls on the ProxyHandler. With no external poller, /reset and /verdict have
+// no caller and were removed; only the read-only /usage endpoint remains.
 //
 // Design: bind to loopback (default 127.0.0.1:9099). A loopback guard on every
 // handler is defense-in-depth even though the listen address is already
@@ -50,10 +57,11 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 // newUsageAPI builds the loopback usage API server bound to listen.
-// Routes (all loopback-guarded):
-//   GET  /usage   → {"rx","tx","total","ts"}
-//   POST /reset   → {"ok":true} (zeroes counters)
-//   POST /verdict → body {"accepting":bool} → {"ok":true} (toggles accept gate)
+// Routes (loopback-guarded, read-only):
+//   GET /usage → {"rx","tx","total","ts"}
+//
+// Mutating endpoints (POST /reset, POST /verdict) were removed under Option D —
+// the usage-cutoff loop is now in-process (see usage_reporter.go).
 func newUsageAPI(h *ProxyHandler, listen string) *http.Server {
 	mux := http.NewServeMux()
 
@@ -69,31 +77,6 @@ func newUsageAPI(h *ProxyHandler, listen string) *http.Server {
 			"total": rx + tx,
 			"ts":    time.Now().Unix(),
 		})
-	}))
-
-	mux.HandleFunc("/reset", loopbackOnly(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h.ResetTraffic()
-		writeJSON(w, map[string]bool{"ok": true})
-	}))
-
-	mux.HandleFunc("/verdict", loopbackOnly(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var body struct {
-			Accepting bool `json:"accepting"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		h.SetAccepting(body.Accepting)
-		writeJSON(w, map[string]bool{"ok": true})
 	}))
 
 	return &http.Server{
