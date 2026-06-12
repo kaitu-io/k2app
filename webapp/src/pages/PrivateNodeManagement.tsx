@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { Box, Typography, CircularProgress } from '@mui/material';
 import { usePrivateNodes } from '../hooks/usePrivateNodes';
 import PrivateNodePanel from '../components/PrivateNodePanel';
+import { AddRouterCard } from '../components/AddRouterCard';
 
 export default function PrivateNodeManagement() {
   const { t } = useTranslation();
@@ -36,6 +37,8 @@ export default function PrivateNodeManagement() {
       ) : (
         nodes.map((node) => <PrivateNodePanel key={node.id} node={node} />)
       )}
+
+      <AddRouterCard />
     </Box>
   );
 }
