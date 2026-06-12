@@ -51,7 +51,7 @@ func TestGateway_DoUp_ResolvesK2subs(t *testing.T) {
 		},
 	}
 
-	g := New("test", "test", "linux/amd64")
+	g := New("test", "test", "linux/amd64", "")
 	if g.subsMgr == nil {
 		t.Fatal("New() did not initialize subsMgr")
 	}
@@ -82,7 +82,7 @@ func TestGateway_DoUp_ResolvesK2subs(t *testing.T) {
 // hands its subsMgr to engine.Config.OutboundProvider so the engine's
 // outboundReplaceLoop can drive hot-swap.
 func TestGateway_EngineConfig_HasOutboundProvider(t *testing.T) {
-	g := New("test", "test", "linux/amd64")
+	g := New("test", "test", "linux/amd64", "")
 	cfg := &GatewayConfig{ClientConfig: config.ClientConfig{}}
 
 	ecfg := engineConfig(&cfg.ClientConfig, nil, nil, g.subsMgr)
@@ -110,7 +110,7 @@ func TestGateway_DoDown_ClosesSubscriptionSessions(t *testing.T) {
 	}))
 	defer subsServer.Close()
 
-	g := New("test", "test", "linux/amd64")
+	g := New("test", "test", "linux/amd64", "")
 	g.subsMgr = subscription.NewManager(t.TempDir(), subsServer.Client(), nil)
 
 	subsURL := "k2subs://u:t@" + strings.TrimPrefix(subsServer.URL, "https://") + "/"
@@ -177,7 +177,7 @@ func TestGateway_StartRefresh_RuntimeBehavior(t *testing.T) {
 		Routes: []config.RouteConfig{{Via: subsURL, Match: rule.MatchConfig{All: true}}},
 	}
 
-	g := New("test", "test", "linux/amd64")
+	g := New("test", "test", "linux/amd64", "")
 	g.subsMgr = subscription.NewManager(t.TempDir(), subsServer.Client(), nil)
 
 	subs, _, err := g.subsMgr.Resolve(cfg)

@@ -58,6 +58,7 @@ type Gateway struct {
 	version         string
 	commit          string
 	arch            string
+	beaconBase      string // Center base URL for public-IP discovery beacon ("" disables)
 	routerDeviceMgr *RouterDeviceManager
 	updater         *webui.Upgrader
 
@@ -91,8 +92,9 @@ func newK2rUpgrader(version string) *webui.Upgrader {
 	})
 }
 
-// New creates a Gateway ready to Run.
-func New(version, commit, arch string) *Gateway {
+// New creates a Gateway ready to Run. beaconBase is the Center base URL the
+// public-IP discovery beacon POSTs to ("" disables the beacon).
+func New(version, commit, arch, beaconBase string) *Gateway {
 	ctx, cancel := context.WithCancel(context.Background())
 	g := &Gateway{
 		ctx:        ctx,
@@ -103,6 +105,7 @@ func New(version, commit, arch string) *Gateway {
 		version:    version,
 		commit:     commit,
 		arch:       arch,
+		beaconBase: beaconBase,
 		updater:    newK2rUpgrader(version),
 	}
 	g.subsMgr = subscription.NewManager(
@@ -198,6 +201,11 @@ func (g *Gateway) Run(addr string) error {
 	// mDNS responder: answer k2.local A queries with the LAN IP so users can
 	// reach the panel at http://k2.local:<port> without knowing the IP.
 	g.startMDNS()
+
+	// Public-IP discovery beacon: periodically report our LAN IP to Center so
+	// webapp can find the router under the same public egress. Unconditional —
+	// fires even without configured credentials (discovery is the whole point).
+	g.startBeacon(g.beaconBase)
 
 	select {
 	case <-g.ctx.Done():

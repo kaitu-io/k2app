@@ -150,7 +150,7 @@ func TestDoDown_UserInitiated_ClearsConfig(t *testing.T) {
 	cfg := &GatewayConfig{ListenPort: 12345}
 	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
 
-	g := New("test", "test", "amd64")
+	g := New("test", "test", "amd64", "")
 	g.doDown(true) // user-initiated via `k2r down`
 
 	loaded := loadState()
@@ -175,7 +175,7 @@ func TestDoDown_Shutdown_PreservesAutoReconnect(t *testing.T) {
 	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
 	original := loadState()
 
-	g := New("test", "test", "amd64")
+	g := New("test", "test", "amd64", "")
 	g.doDown(false) // daemon-internal shutdown (NOT user-initiated)
 
 	loaded := loadState()
@@ -205,7 +205,7 @@ func TestPersistedState_SurvivesShutdownRoundtrip(t *testing.T) {
 	cfg := &GatewayConfig{ListenPort: 12345}
 	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
 
-	g := New("test", "test", "amd64")
+	g := New("test", "test", "amd64", "")
 	g.doDown(false) // shutdown
 
 	st := loadState()
@@ -235,7 +235,7 @@ func TestRunAutoReconnectLoop_NoConfigBails(t *testing.T) {
 		calls.Add(1)
 		return nil
 	}
-	g := New("test", "test", "amd64")
+	g := New("test", "test", "amd64", "")
 	g.runAutoReconnectLoop(context.Background(), attempt, []time.Duration{time.Millisecond})
 
 	if got := calls.Load(); got != 0 {
@@ -257,7 +257,7 @@ func TestRunAutoReconnectLoop_SucceedsOnFirstTry(t *testing.T) {
 		calls.Add(1)
 		return nil
 	}
-	g := New("test", "test", "amd64")
+	g := New("test", "test", "amd64", "")
 	g.runAutoReconnectLoop(context.Background(), attempt, []time.Duration{time.Millisecond, time.Millisecond})
 
 	if got := calls.Load(); got != 1 {
@@ -283,7 +283,7 @@ func TestRunAutoReconnectLoop_RetriesAfterFailure(t *testing.T) {
 		}
 		return nil
 	}
-	g := New("test", "test", "amd64")
+	g := New("test", "test", "amd64", "")
 	g.runAutoReconnectLoop(context.Background(), attempt, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond})
 
 	if got := calls.Load(); got != 3 {
@@ -308,7 +308,7 @@ func TestRunAutoReconnectLoop_RespectsCtxCancel(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	g := New("test", "test", "amd64")
+	g := New("test", "test", "amd64", "")
 
 	// Cancel after the first attempt observes (it always fails).
 	go func() {

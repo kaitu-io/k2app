@@ -27,7 +27,7 @@ func TestGateway_StartupRecovery_PreservesPreExistingRules(t *testing.T) {
 	f.seedChain("iptables", "mangle", "K2R", 2)
 	f.install(t)
 
-	g := New("test", "test", "amd64")
+	g := New("test", "test", "amd64", "")
 	g.startupRecovery()
 
 	if !f.chains["iptables:mangle:K2R"] {

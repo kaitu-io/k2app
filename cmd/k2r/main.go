@@ -17,6 +17,11 @@ import (
 var (
 	version = "dev"
 	commit  = "unknown"
+
+	// centerBeaconBase is the Center base URL the gateway's public-IP discovery
+	// beacon POSTs to. Compile-time overridable via ldflags
+	// -X main.centerBeaconBase=...
+	centerBeaconBase = "https://kaitu.io"
 )
 
 func main() {
@@ -127,7 +132,7 @@ func cmdRun(args []string) {
 	}
 	defer closer()
 
-	g := gateway.New(version, commit, runtime.GOARCH)
+	g := gateway.New(version, commit, runtime.GOARCH, centerBeaconBase)
 	if err := g.Run(cfg.Listen); err != nil {
 		out.fail("GATEWAY_FAILED", err.Error(), "")
 		os.Exit(1)
