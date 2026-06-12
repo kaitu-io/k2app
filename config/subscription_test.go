@@ -143,6 +143,49 @@ func TestSubscription_Fetch(t *testing.T) {
 	}
 }
 
+func TestSubscriptionFetchSendsClientHeader(t *testing.T) {
+	var gotHeader string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-K2-Client")
+		// Fetch parses a JSON subsResponse — return a minimal valid body.
+		json.NewEncoder(w).Encode(subsResponse{
+			Tunnels: []Tunnel{{URL: "k2v5://h:443", Weight: 1}},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Subscription{
+		endpoint:     srv.URL,
+		creds:        "udid:tok",
+		clientHeader: "kaitu-router/0.4.5 (linux; arm64)",
+	}
+	if err := s.Fetch(context.Background(), srv.Client()); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if gotHeader != "kaitu-router/0.4.5 (linux; arm64)" {
+		t.Fatalf("header not sent, got %q", gotHeader)
+	}
+}
+
+func TestSubscriptionFetchOmitsEmptyClientHeader(t *testing.T) {
+	var seen bool
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, seen = r.Header["X-K2-Client"]
+		json.NewEncoder(w).Encode(subsResponse{
+			Tunnels: []Tunnel{{URL: "k2v5://h:443", Weight: 1}},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Subscription{endpoint: srv.URL, creds: "udid:tok"}
+	if err := s.Fetch(context.Background(), srv.Client()); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if seen {
+		t.Fatal("X-K2-Client header sent despite empty clientHeader")
+	}
+}
+
 func TestSubscription_FetchServerRefreshOverride(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		refresh := 300

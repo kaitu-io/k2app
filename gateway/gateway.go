@@ -341,9 +341,14 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	// client built in subsMgr.Resolve so refresh fetches go through the
 	// same Transport (connection pool) that Session.Close will later
 	// release via CloseIdleConnections. Mirrors daemon.go.
+	clientHeader := fmt.Sprintf("kaitu-router/%s (linux; %s)", g.version, g.arch)
 	for _, sess := range subs {
 		client := sess.HTTPClient()
-		sess.Subscription().StartRefresh(engineCtx, func() *http.Client { return client })
+		sub := sess.Subscription()
+		// Identify as a k2r router so Center's /api/subs routes to the gateway
+		// branch on every refresh fetch.
+		sub.SetClientHeader(clientHeader)
+		sub.StartRefresh(engineCtx, func() *http.Client { return client })
 	}
 
 	g.mu.Lock()

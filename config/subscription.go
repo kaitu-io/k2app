@@ -31,6 +31,12 @@ type Subscription struct {
 	refresh   time.Duration // client-side fallback refresh interval
 	cacheFile string        // disk cache path ("" = no disk cache)
 
+	// clientHeader, when non-empty, is sent as the X-K2-Client request header
+	// on every Fetch (e.g. "kaitu-router/0.4.5 (linux; arm64)"). Lets Center's
+	// /api/subs identify a k2r router and route to the gateway branch. Empty =
+	// header omitted.
+	clientHeader string
+
 	// State (mu-protected).
 	mu          deadlock.Mutex
 	tunnels     []Tunnel
@@ -173,6 +179,15 @@ func (s *Subscription) SetScoreSource(src ScoreSource) {
 	s.mu.Unlock()
 }
 
+// SetClientHeader sets the X-K2-Client request header sent on every Fetch
+// (lets k2r identify itself as a router so Center routes to the gateway
+// branch). Set once before StartRefresh; mu-guarded for the refresh goroutine.
+func (s *Subscription) SetClientHeader(h string) {
+	s.mu.Lock()
+	s.clientHeader = h
+	s.mu.Unlock()
+}
+
 // SetTunnelsForTest replaces the current tunnel list. Tests only.
 func (s *Subscription) SetTunnelsForTest(tunnels []Tunnel) {
 	s.mu.Lock()
@@ -191,6 +206,13 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 
 	user, pass, _ := strings.Cut(s.creds, ":")
 	req.SetBasicAuth(user, pass)
+
+	s.mu.Lock()
+	clientHeader := s.clientHeader
+	s.mu.Unlock()
+	if clientHeader != "" {
+		req.Header.Set("X-K2-Client", clientHeader)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
