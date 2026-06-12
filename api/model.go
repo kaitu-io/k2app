@@ -1200,6 +1200,10 @@ type CloudInstance struct {
 	TrafficEpoch      int64 `gorm:"not null;default:0"` // Center 权威计费周期身份；重置 +1，心跳响应下发令节点清零续计
 	ExpiresAt         int64 `gorm:"not null;default:0"` // Instance expiration (Unix timestamp, 0=auto-renew)
 
+	// 流量预警去重(与 TrafficEpoch 比对;!= 才发,发后置当前 epoch)
+	Warn80SentEpoch int64 `gorm:"not null;default:0"`
+	Warn95SentEpoch int64 `gorm:"not null;default:0"`
+
 	// Sync status
 	// Note: Instance online status is determined by associated SlaveNode existence
 	LastSyncedAt int64  `gorm:"not null;default:0"` // Last successful sync (Unix timestamp)
