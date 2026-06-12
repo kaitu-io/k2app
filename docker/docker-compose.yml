@@ -36,6 +36,7 @@ services:
     environment:
       - TZ=Asia/Singapore
       - K2_NODE_SECRET=${K2_NODE_SECRET}
+      - K2_PRIVATE_CLAIM=${K2_PRIVATE_CLAIM:-}
       - K2_CENTER_URL=${K2_CENTER_URL:-https://k2.52j.me}
       - K2_DOMAIN=${K2_DOMAIN:-}
       - K2V4_HOST=k2v4-slave

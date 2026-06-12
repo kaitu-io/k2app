@@ -90,6 +90,9 @@ type NodeUpsertRequest struct {
 	SecretToken string                 `json:"secretToken,omitempty"`
 	Tunnels     []TunnelConfig         `json:"tunnels,omitempty"` // Batch tunnel configuration
 	Meta        map[string]interface{} `json:"meta,omitempty"`    // Node metadata (e.g., architecture type)
+	// PrivateClaim 专属节点认领令牌（cloud-init 注入，sidecar 回传）。
+	// omitempty: shared-pool nodes send no claim → byte-identical to before.
+	PrivateClaim string `json:"privateClaim,omitempty"`
 }
 
 // NodeUpsertResponse node registration/update response (with tunnel certificates)
@@ -199,6 +202,25 @@ type Node struct {
 	Country   string // Country code (auto-detected)
 	Region    string // Region (optional, defaults to Country)
 	Name      string // Node name (optional, defaults to IPv4)
+
+	// PrivateClaim 专属节点认领令牌（K2_PRIVATE_CLAIM，cloud-init 注入）。
+	// Echoed back to Center on registration; empty for shared-pool nodes.
+	PrivateClaim string
+}
+
+// buildNodeUpsertRequest assembles the node upsert request body from the Node's
+// identity fields plus the optional tunnel batch. Extracted so the request
+// shape (including the private-node claim) is testable without HTTP.
+func (n *Node) buildNodeUpsertRequest(tunnels []TunnelConfig) NodeUpsertRequest {
+	return NodeUpsertRequest{
+		Country:      n.Country,
+		Region:       n.Region,
+		Name:         n.Name,
+		SecretToken:  n.Secret,
+		Tunnels:      tunnels,
+		Meta:         buildNodeMeta(),
+		PrivateClaim: n.PrivateClaim,
+	}
 }
 
 // buildNodeMeta returns node metadata from environment variables.
@@ -312,13 +334,7 @@ func (n *Node) RegisterNode() (string, error) {
 
 	slog.Info("Registering node", "component", "node", "ipv4", n.IPv4, "country", n.Country, "name", n.Name)
 
-	nodeReq := NodeUpsertRequest{
-		Country:     n.Country,
-		Region:      n.Region,
-		Name:        n.Name,
-		SecretToken: n.Secret,
-		Meta:        buildNodeMeta(),
-	}
+	nodeReq := n.buildNodeUpsertRequest(nil)
 
 	nodePath := fmt.Sprintf("/slave/nodes/%s", n.IPv4)
 	nodeBody, err := n.requestWithAuth("PUT", nodePath, nodeReq)
@@ -356,14 +372,7 @@ func (n *Node) Register(tunnels []TunnelConfig) (*RegisterResult, error) {
 	slog.Info("Registering node with tunnels", "component", "node", "tunnels", len(tunnels), "ipv4", n.IPv4, "country", n.Country)
 
 	// Build request
-	nodeReq := NodeUpsertRequest{
-		Country:     n.Country,
-		Region:      n.Region,
-		Name:        n.Name,
-		SecretToken: n.Secret,
-		Tunnels:     tunnels,
-		Meta:        buildNodeMeta(),
-	}
+	nodeReq := n.buildNodeUpsertRequest(tunnels)
 
 	nodePath := fmt.Sprintf("/slave/nodes/%s", n.IPv4)
 	nodeBody, err := n.requestWithAuth("PUT", nodePath, nodeReq)

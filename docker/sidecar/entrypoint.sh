@@ -12,6 +12,7 @@ k2_center:
   base_url: "${K2_CENTER_URL:-https://k2.52j.me}"
   timeout: "10s"
   secret: "${K2_NODE_SECRET}"
+  private_claim: "${K2_PRIVATE_CLAIM:-}"
   report_interval: "${REPORT_INTERVAL:-120s}"
   billing_start_date: "${K2_NODE_BILLING_START_DATE:-}"
   traffic_limit_gb: ${K2_NODE_TRAFFIC_LIMIT_GB:-0}

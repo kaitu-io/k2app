@@ -20,6 +20,11 @@ type K2CenterConfig struct {
 	Timeout string `yaml:"timeout" default:"10s"`
 	Secret  string `yaml:"secret"` // Node authentication secret (required)
 
+	// PrivateClaim is the one-time private-node activation token (K2_PRIVATE_CLAIM),
+	// injected via cloud-init and echoed back to Center on node registration.
+	// Empty for shared-pool nodes.
+	PrivateClaim string `yaml:"private_claim"`
+
 	// Metrics reporting (used by sidecar)
 	ReportInterval   string `yaml:"report_interval" default:"120s"`
 	BillingStartDate string `yaml:"billing_start_date"`

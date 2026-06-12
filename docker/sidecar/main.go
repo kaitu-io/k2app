@@ -69,6 +69,9 @@ func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 	if cfg.Node.Region != "" {
 		n.Region = cfg.Node.Region
 	}
+	// Private-node activation: echo the one-time claim token back to Center on
+	// registration. Empty for shared-pool nodes (omitempty → no wire change).
+	n.PrivateClaim = cfg.K2Center.PrivateClaim
 
 	// Auto-generate Tunnel.Domain using sslip.io if not configured
 	if cfg.Tunnel.Domain == "" && n.GetIPv4() != "" {
