@@ -17,8 +17,9 @@ import (
 
 // 任务类型常量
 const (
-	TaskTypePushSend           = "push:send"
-	TaskTypeTemplatedEmailSend = "edm:send-templated"
+	TaskTypePushSend               = "push:send"
+	TaskTypeTemplatedEmailSend     = "edm:send-templated"
+	TaskTypePrivateNodeTrafficWarn = "private_node:traffic-warn"
 )
 
 // TemplatedEmailTaskPayload 通用邮件发送任务载荷
@@ -48,6 +49,7 @@ func InitWorker() {
 	asynq.Handle(TaskTypeProvisionPrivateNode, handleProvisionPrivateNode)
 	asynq.Handle(TaskTypeProvisionTimeoutSweep, handleProvisionTimeoutSweep)
 	asynq.Handle(TaskTypePrivateNodeLifecycleSweep, handlePrivateNodeLifecycleSweep)
+	asynq.Handle(TaskTypePrivateNodeTrafficWarn, handlePrivateNodeTrafficWarn)
 
 	// 注册续费提醒 Cron 任务
 	// 每天北京时间 10:30 执行（UTC 02:30）
@@ -76,6 +78,11 @@ func InitWorker() {
 	// 标签 + 续费回收。服务可用性以 IsServiceable 时间戳为权威，此 cron 只重贴标签。
 	// Unique(25h) 防止多实例重复入队
 	asynq.Cron("0 19 * * *", TaskTypePrivateNodeLifecycleSweep, nil, hibikenAsynq.Unique(25*time.Hour))
+
+	// 注册专属线路流量预警 Cron 任务
+	// 每 30 分钟扫描 active 专属线路,跨 80%/95% 阈值各发一封,按 TrafficEpoch 去重
+	// Unique(31min) 防止多实例重复入队
+	asynq.Cron("*/30 * * * *", TaskTypePrivateNodeTrafficWarn, nil, hibikenAsynq.Unique(31*time.Minute))
 
 	// 注册 ECH 相关的 worker
 	RegisterECHWorker()
