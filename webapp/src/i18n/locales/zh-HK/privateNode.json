@@ -32,10 +32,10 @@
     "renew": "續費",
     "percentUsed": "已用 {{percent}}%",
     "quotaExhausted": {
-      "title": "本月流量额度已用尽",
-      "resetHint": "将于 {{date}} 重置",
-      "resetUnknown": "将于下个周期开始时重置",
-      "cta": "续费 / 升级额度"
+      "title": "本月流量額度已用盡",
+      "resetHint": "將於 {{date}} 重置",
+      "resetUnknown": "將於下個週期開始時重置",
+      "cta": "續費 / 升級額度"
     }
   }
 }

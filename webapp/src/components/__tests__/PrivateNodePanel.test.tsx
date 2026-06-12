@@ -23,6 +23,7 @@ function makeNode(overrides: Partial<PrivateNodeSubscriptionView>): PrivateNodeS
     graceUntil: 0,
     suspendUntil: 0,
     planLabel: '专属节点测试',
+    quotaExhausted: false,
     node: { ip: '1.2.3.4', region: 'ap-northeast-1' },
     ...overrides,
   };
@@ -84,5 +85,36 @@ describe('PrivateNodePanel', () => {
     );
     const bar = screen.getByTestId('private-node-traffic-bar');
     expect(bar.getAttribute('data-color')).toBe('error');
+  });
+
+  it('quotaExhausted: renders worded exhausted alert + reset date + CTA', () => {
+    render(<PrivateNodePanel node={makeNode({ quotaExhausted: true, quotaResetAt: 1_800_000_000 })} />);
+    const alert = screen.getByTestId('private-node-quota-exhausted');
+    expect(alert).toBeInTheDocument();
+    // worded title (not the generic bar) — real i18n resolves zh-CN
+    expect(within(alert).getByText('本月流量额度已用尽')).toBeInTheDocument();
+    // CTA inside the alert
+    expect(within(alert).getByTestId('private-node-quota-exhausted-cta')).toBeInTheDocument();
+  });
+
+  it('quotaExhausted false: no exhausted alert', () => {
+    render(<PrivateNodePanel node={makeNode({ quotaExhausted: false })} />);
+    expect(screen.queryByTestId('private-node-quota-exhausted')).not.toBeInTheDocument();
+  });
+
+  it('quotaExhausted suppressed while provisioning (no instance yet)', () => {
+    render(
+      <PrivateNodePanel
+        node={makeNode({ status: 'provisioning', quotaExhausted: false, node: undefined })}
+      />
+    );
+    expect(screen.queryByTestId('private-node-quota-exhausted')).not.toBeInTheDocument();
+  });
+
+  it('quotaExhausted CTA navigates to /purchase', () => {
+    navigateMock.mockClear();
+    render(<PrivateNodePanel node={makeNode({ quotaExhausted: true })} />);
+    screen.getByTestId('private-node-quota-exhausted-cta').click();
+    expect(navigateMock).toHaveBeenCalledWith('/purchase');
   });
 });

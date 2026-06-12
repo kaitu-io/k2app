@@ -166,11 +166,21 @@ export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
               <Typography variant="body2" fontWeight={700} sx={{ fontSize: '0.85rem' }}>
                 {t('privateNode:privateNode.quotaExhausted.title')}
               </Typography>
-              <Typography variant="caption">
+              <Typography variant="caption" sx={{ display: 'block', mb: 0.75 }}>
                 {node.quotaResetAt && node.quotaResetAt > 0
                   ? t('privateNode:privateNode.quotaExhausted.resetHint', { date: formatDate(node.quotaResetAt) })
                   : t('privateNode:privateNode.quotaExhausted.resetUnknown')}
               </Typography>
+              <Button
+                variant="outlined"
+                color="inherit"
+                size="small"
+                onClick={() => navigate('/purchase')}
+                data-testid="private-node-quota-exhausted-cta"
+                sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600 }}
+              >
+                {t('privateNode:privateNode.quotaExhausted.cta')}
+              </Button>
             </Alert>
           )}
 
