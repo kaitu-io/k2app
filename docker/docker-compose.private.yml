@@ -1,0 +1,28 @@
+# Kaitu 专属节点(private node)compose override — Option D 计量自上报
+#
+# 用法(专属节点):
+#   docker compose -f docker-compose.yml -f docker-compose.private.yml up -d
+#
+# 这是一个【override】,叠在 docker-compose.yml 之上,只给 k2v5 容器追加
+# 三个 env,让 k2s 进程内自上报用量到 Center 并自行断流(spec
+# 2026-06-12-private-node-usage-reporting-in-k2s-design.md / Option D)。
+#
+# 为什么是 override 而非整文件:
+#   - 共享池节点【只用】base docker-compose.yml → 其 k2v5 永不拿到
+#     K2_NODE_SECRET,k2s 不持密钥、不联系 Center、reporter 不启动
+#     (k2s 双门:UsageReportURL!="" && NodeSecret!="")。专属节点才叠这层。
+#   - 避免与 base compose 的双文件漂移:base 怎么变,private 自动继承。
+#
+# .env 需提供(专属节点,由开通 agent 注入):
+#   K2_NODE_SECRET       已有(sidecar 注册也用)——这里同时给 k2s 做 Center Basic auth
+#   K2_USAGE_REPORT_URL  Center 基址(默认 https://k2.52j.me,与 K2_CENTER_URL 对齐)
+#   K2_NODE_IPV4         本节点公网 IPv4(Basic auth 用户名,须 = 注册时的节点 IPv4;
+#                        agent 建实例后即知;空则 k2s 用 ProbePublicIP 兜底)
+
+services:
+  k2v5:
+    environment:
+      # k2s 自上报需要的三件套(只在专属节点经本 override 注入)。
+      - K2_NODE_SECRET=${K2_NODE_SECRET}
+      - K2_USAGE_REPORT_URL=${K2_USAGE_REPORT_URL:-https://k2.52j.me}
+      - K2_NODE_IPV4=${K2_NODE_IPV4:-}
