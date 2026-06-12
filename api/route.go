@@ -257,6 +257,17 @@ func SetupRouter() *gin.Engine {
 			authed.POST("/batch", api_strategy_telemetry_batch)
 		}
 
+		// Pairing beacon / discover (Plan 5b) — BYO router LAN discovery scoped
+		// by public source IP. Beacon is unauthenticated (an unconfigured k2r
+		// router has no credentials yet); discover requires a logged-in user.
+		// No credentials cross the public-IP boundary — see api_pair_beacon.go.
+		pair := api.Group("/pair")
+		log.Debugf(ctx, "registering /api/pair group")
+		{
+			pair.POST("/beacon", api_pair_beacon)
+			pair.GET("/discover", AuthRequired(), api_pair_discover)
+		}
+
 		// Route diagnosis routes (requires device auth)
 		diagnosis := api.Group("/diagnosis")
 		log.Debugf(ctx, "registering /api/diagnosis group")
