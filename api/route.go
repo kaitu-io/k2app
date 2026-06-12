@@ -143,6 +143,9 @@ func SetupRouter() *gin.Engine {
 			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), EnforceDeviceClass(), api_order_notify_delegate)
 			// 专属节点订阅只读列表（owner-scoped）
 			user.GET("/private-nodes", AuthRequired(), EnforceDeviceClass(), api_get_user_private_nodes)
+			// 铸造专属线路路由器凭证（k2subs:// URL）。调用方是普通 app/web 设备，
+			// 故不加 EnforceDeviceClass；铸造的是 router 设备（is_gateway=true）。
+			user.POST("/gateway-credential", AuthRequired(), api_gateway_credential)
 			// 获取授权变更历史
 			user.GET("/pro-histories", AuthRequired(), EnforceDeviceClass(), api_get_pro_histories)
 			// 发送绑定邮箱验证码
