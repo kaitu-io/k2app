@@ -205,7 +205,7 @@ func (g *Gateway) Run(addr string) error {
 	// Public-IP discovery beacon: periodically report our LAN IP to Center so
 	// webapp can find the router under the same public egress. Unconditional —
 	// fires even without configured credentials (discovery is the whole point).
-	g.startBeacon(g.beaconBase)
+	g.startBeacon(g.beaconBase, port)
 
 	select {
 	case <-g.ctx.Done():

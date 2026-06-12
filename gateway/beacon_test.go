@@ -3,6 +3,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -19,7 +20,7 @@ func TestPostBeaconSendsLanIPAndPort(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := postBeacon(srv.Client(), srv.URL, "192.168.8.1", 1779)
+	err := postBeacon(context.Background(), srv.Client(), srv.URL, "192.168.8.1", 1779)
 	if err != nil {
 		t.Fatalf("postBeacon: %v", err)
 	}

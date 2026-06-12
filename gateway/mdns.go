@@ -5,6 +5,7 @@ package gateway
 import (
 	"log/slog"
 	"net"
+	"strings"
 
 	"github.com/kaitu-io/k2/safego"
 	"github.com/miekg/dns"
@@ -71,7 +72,7 @@ func (g *Gateway) startMDNS() {
 				continue
 			}
 			for _, q := range msg.Question {
-				if q.Qtype == dns.TypeA && q.Name == mdnsName {
+				if q.Qtype == dns.TypeA && strings.EqualFold(q.Name, mdnsName) {
 					resp := new(dns.Msg)
 					resp.SetReply(&msg)
 					resp.Answer = append(resp.Answer, &dns.A{
