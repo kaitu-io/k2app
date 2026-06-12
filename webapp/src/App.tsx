@@ -37,6 +37,7 @@ import { getCurrentAppConfig } from "./config/apps";
 
 const AppBypass = lazy(() => import('./pages/AppBypass'));
 const PrivateNodeManagement = lazy(() => import('./pages/PrivateNodeManagement'));
+const GatewaySetup = lazy(() => import('./pages/GatewaySetup'));
 
 // 应用路由组件
 function AppRoutes() {
@@ -57,6 +58,10 @@ function AppRoutes() {
           <Route path="account" element={null} />
           {/* Gateway-only: Router tab */}
           {window._platform?.platformType === 'gateway' && <Route path="router" element={null} />}
+          {/* Gateway-only: 路由器连接设置页（粘贴 k2subs 地址） */}
+          {window._platform?.platformType === 'gateway' && (
+            <Route path="setup" element={<Suspense fallback={null}><GatewaySetup /></Suspense>} />
+          )}
 
           {/* Non-Tab routes */}
           {/* Purchase 移出 keep-alive，每次访问重新渲染（避免与 LoginRequiredGuard 冲突）。

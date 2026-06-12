@@ -11,6 +11,7 @@ import {
   Explore as DiscoverIcon,
   AccountCircle as AccountIcon,
   Router as RouterIcon,
+  Settings as SetupIcon,
 } from "@mui/icons-material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -119,6 +120,11 @@ function BottomNavigation() {
         label: t("nav:navigation.router"),
         icon: <RouterIcon />,
         path: "/router",
+        feature: null,
+      }, {
+        label: t("nav:navigation.setup"),
+        icon: <SetupIcon />,
+        path: "/setup",
         feature: null,
       }] : []),
       {
