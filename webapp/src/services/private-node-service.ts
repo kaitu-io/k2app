@@ -12,3 +12,34 @@ export async function getPrivateNodes(): Promise<PrivateNodeListResponse> {
   const resp = await cloudApi.get<PrivateNodeListResponse>('/api/user/private-nodes');
   return resp.data ?? { items: [] };
 }
+
+/** A router candidate discovered on the local network for BYO onboarding. */
+export interface RouterCandidate {
+  lanIP: string;
+  port: number;
+}
+
+/**
+ * Mint a gateway k2subs credential for the current user
+ * (POST /api/user/gateway-credential).
+ *
+ * Returns the `k2subs://` URL the router (k2r gateway) uses to fetch its
+ * subscription. Empty string on any non-success / empty-data response so
+ * callers can treat it as "no credential yet" without unwrapping SResponse.
+ */
+export async function mintGatewayCredential(): Promise<string> {
+  const resp = await cloudApi.post<{ url: string }>('/api/user/gateway-credential', {});
+  return resp.data?.url ?? '';
+}
+
+/**
+ * Discover candidate routers on the local network for BYO onboarding
+ * (GET /api/pair/discover).
+ *
+ * Returns the candidate list (LAN IP + port), or an empty array on any
+ * non-success / empty-data response.
+ */
+export async function discoverRouter(): Promise<RouterCandidate[]> {
+  const resp = await cloudApi.get<{ candidates: RouterCandidate[] }>('/api/pair/discover');
+  return resp.data?.candidates ?? [];
+}
