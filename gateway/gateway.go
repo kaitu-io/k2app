@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/kaitu-io/k2/config"
@@ -156,18 +158,42 @@ func (g *Gateway) Run(addr string) error {
 	}
 
 	g.httpServer = &http.Server{
-		Addr:    addr,
 		Handler: mux,
 	}
 
 	safego.Go(g.tryAutoReconnect)
 
-	slog.Info("gateway: HTTP API listening", "addr", addr)
+	// Bind loopback + every private/LAN interface IP so LAN devices can reach
+	// the panel — WAN/public IPs are excluded (control plane never exposed to
+	// the internet). Port is parsed from addr (default cfg.Listen → :1779).
+	_, portStr, _ := net.SplitHostPort(addr)
+	port, _ := strconv.Atoi(portStr)
+	if port == 0 {
+		port = 1779
+	}
+	binds := resolveLANBindAddrs(enumerateIfaceAddrs(), port)
+	slog.Info("gateway: HTTP API binding", "addrs", binds)
 
-	errCh := make(chan error, 1)
-	safego.Go(func() {
-		errCh <- g.httpServer.ListenAndServe()
-	})
+	// One shared http.Server serves every listener (http.Server.Serve is safe
+	// to call concurrently for multiple listeners). A bind failure on a single
+	// interface is logged and skipped — loopback always remains.
+	// Buffer one slot per bind: on Shutdown, net/http closes every listener this
+	// server is serving, so all Serve goroutines return at once and must each be
+	// able to send without blocking (else bound-1 goroutines leak at shutdown).
+	errCh := make(chan error, len(binds))
+	bound := 0
+	for _, b := range binds {
+		ln, err := net.Listen("tcp", b)
+		if err != nil {
+			slog.Warn("gateway: bind failed", "addr", b, "err", err)
+			continue
+		}
+		bound++
+		safego.Go(func() { errCh <- g.httpServer.Serve(ln) })
+	}
+	if bound == 0 {
+		return fmt.Errorf("gateway: no panel listener could bind (tried %v)", binds)
+	}
 
 	select {
 	case <-g.ctx.Done():
