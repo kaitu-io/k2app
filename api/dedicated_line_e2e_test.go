@@ -1,0 +1,382 @@
+package center
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+	db "github.com/wordgate/qtoolkit/db"
+
+	"github.com/kaitu-io/k2app/api/cloudprovider"
+)
+
+// driveSlaveUsage drives the real api_slave_node_report_usage handler (POST
+// /slave/usage) with the node already injected as context, exactly as
+// SlaveAuthRequired would after Basic Auth. Mirrors slave_api_usage_test.go's
+// driveUsage helper.
+func driveSlaveUsage(t *testing.T, node *SlaveNode, req NodeUsageRequest) *NodeUsageResponse {
+	t.Helper()
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/slave/usage", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("i_am_the_node", node)
+
+	api_slave_node_report_usage(c)
+
+	resp, err := ParseResponse(w)
+	require.NoError(t, err)
+	require.Equal(t, ErrorNone, ErrorCode(resp.Code), "usage 心跳应成功: %s", resp.Message)
+
+	data, err := ParseResponseData[NodeUsageResponse](w)
+	require.NoError(t, err)
+	return data
+}
+
+// TestDedicatedLine_SoldQuotaGovernsCutoff_SurvivesProviderSync is the
+// highest-value regression: it ties the quota-fix (commits 62913d56/782f8f53)
+// to the actual /slave/usage cutoff handler end-to-end.
+//
+// Sequence:
+//  1. A private line sells 2TB. CloudInstance carries that sold quota.
+//  2. Node heartbeats cumulative 1.95TB (>=95% of 2TB) → verdict "stop",
+//     QuotaTotal == 2TB, EpochHardCeilingBytes == 2TB.
+//  3. A provider sync arrives reporting the raw 6TB VPS BUNDLE.
+//  4. Node heartbeats 1.95TB AGAIN → verdict MUST STILL be "stop" and
+//     QuotaTotal MUST STILL be 2TB.
+//
+// Without the sync-skip fix, step 3 would clobber TrafficTotalBytes to 6TB and
+// step 4 would flip to "serve" (1.95TB < 95% of 6TB) — letting an exhausted
+// line keep serving and triggering real AWS overage billing. This proves the
+// sold quota stays authoritative through a provider sync, at the cutoff
+// handler that actually decides serve/stop.
+func TestDedicatedLine_SoldQuotaGovernsCutoff_SurvivesProviderSync(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	now := time.Now().Unix()
+	const fixedIP = "203.0.114.71"
+	const soldQuota = int64(2) << 40 // 2TB sold
+	const bundle = int64(6) << 40    // 6TB provider bundle
+	const report = int64(1995) << 30 // 1.95TB cumulative (>=95% of 2TB, <95% of 6TB)
+	instanceID := "dedline-cutoff-" + time.Now().Format("20060102150405.000000")
+
+	// Self-heal residue from a prior interrupted run (shared dev MySQL).
+	db.Get().Unscoped().Where("ipv4 = ?", fixedIP).Delete(&SlaveNode{})
+	db.Get().Unscoped().Where("ip_address = ?", fixedIP).Delete(&CloudInstance{})
+
+	owner := CreateTestUser(t)
+
+	node := SlaveNode{
+		Ipv4: fixedIP, SecretToken: "dedline-cutoff-secret",
+		Country: "JP", Region: "jp", Name: "dedline-cutoff-node",
+		Class: NodeClassPrivate, PrivateOwnerUserID: &owner.ID,
+	}
+	require.NoError(t, db.Get().Create(&node).Error)
+
+	// CloudInstance carries the SOLD quota (2TB), not the bundle. resetAt in the
+	// future so no lazy epoch reset fires during the test.
+	ci := CloudInstance{
+		Provider: "aws_lightsail", AccountName: "test-account", InstanceID: instanceID,
+		Name: "dedline-cutoff", IPAddress: fixedIP, Region: "jp",
+		TrafficTotalBytes: soldQuota, TrafficUsedBytes: 0, TrafficEpoch: 0,
+		TrafficResetAt: now + 30*86400,
+	}
+	require.NoError(t, db.Get().Create(&ci).Error)
+
+	ciID := ci.ID
+	sub := PrivateNodeSubscription{
+		UserID: owner.ID, OrderID: owner.ID, Status: PNStatusActive,
+		Region: "jp", IPType: IPTypeNonResidential, TrafficTotalBytes: soldQuota,
+		PurchasedAt: now, ExpiresAt: now + 86400,
+		CloudInstanceID: &ciID, SlaveNodeID: &node.ID,
+	}
+	require.NoError(t, db.Get().Create(&sub).Error)
+
+	t.Cleanup(func() {
+		db.Get().Unscoped().Delete(&sub)
+		db.Get().Unscoped().Delete(&ci)
+		db.Get().Unscoped().Delete(&node)
+		db.Get().Unscoped().Delete(owner)
+	})
+
+	// Step 2: heartbeat 1.95TB → stop, quota still 2TB.
+	r := driveSlaveUsage(t, &node, NodeUsageRequest{EpochID: 0, CumulativeBytes: report, Seq: 1, Ts: now})
+	require.Equal(t, "stop", r.Verdict, "1.95TB >= 95% of 2TB sold quota 应 stop")
+	require.Equal(t, soldQuota, r.QuotaTotal, "QuotaTotal 应为卖出配额 2TB")
+	require.Equal(t, soldQuota, r.EpochHardCeilingBytes, "离线硬上限应为卖出配额 2TB")
+	require.Equal(t, report, r.QuotaUsed, "已用应记 1.95TB")
+
+	// Step 3: provider sync reports the 6TB BUNDLE with 0 used. The sync-skip
+	// guard must leave the sold quota / metered usage / epoch untouched.
+	status := &cloudprovider.InstanceStatus{
+		InstanceID:        instanceID,
+		Name:              "dedline-cutoff-synced",
+		IPAddress:         fixedIP,
+		Region:            "jp",
+		TrafficUsedBytes:  0,
+		TrafficTotalBytes: bundle,
+		TrafficResetAt:    time.Unix(now+99999, 0),
+	}
+	account := CloudInstanceAccount{Name: "test-account", Provider: "aws_lightsail"}
+	require.NoError(t, upsertCloudInstance(context.Background(), account, status))
+
+	// Confirm the DB row was NOT clobbered by the bundle.
+	var reloaded CloudInstance
+	require.NoError(t, db.Get().Unscoped().First(&reloaded, ci.ID).Error)
+	require.Equal(t, soldQuota, reloaded.TrafficTotalBytes, "provider sync 不应把卖出配额覆盖为 bundle")
+	require.Equal(t, report, reloaded.TrafficUsedBytes, "provider sync 不应清零自计量用量")
+	// Non-traffic field DID update (proves sync ran, not a no-op).
+	require.Equal(t, "dedline-cutoff-synced", reloaded.Name, "非 traffic 字段应被 provider 更新（证明 sync 真跑了）")
+
+	// Step 4: heartbeat 1.95TB AGAIN → MUST still be "stop", quota still 2TB.
+	// This is the regression proof: without the fix, total would be 6TB → serve.
+	r = driveSlaveUsage(t, &node, NodeUsageRequest{EpochID: 0, CumulativeBytes: report, Seq: 2, Ts: now})
+	require.Equal(t, "stop", r.Verdict, "provider sync 后仍应 stop（卖出配额权威，非 bundle）")
+	require.Equal(t, soldQuota, r.QuotaTotal, "provider sync 后 QuotaTotal 仍为 2TB")
+	require.Equal(t, soldQuota, r.EpochHardCeilingBytes, "provider sync 后硬上限仍为 2TB")
+}
+
+// dedLineUser creates a user at the given app tier with the given shared
+// membership expiry, registering cleanup of the user, its devices, and any
+// private subs it accrues.
+func dedLineUser(t *testing.T, tier string, sharedExpiredAt int64) *User {
+	t.Helper()
+	u := &User{UUID: "dedline-" + time.Now().Format("150405.000000000"), Tier: tier, ExpiredAt: sharedExpiredAt}
+	require.NoError(t, db.Get().Create(u).Error)
+	t.Cleanup(func() {
+		db.Get().Unscoped().Where("user_id = ?", u.ID).Delete(&Device{})
+		db.Get().Unscoped().Where("user_id = ?", u.ID).Delete(&PrivateNodeSubscription{})
+		db.Get().Unscoped().Delete(u)
+	})
+	return u
+}
+
+// TestDedicatedLine_EntitlementDecouple_FullPath proves the router-gating path
+// is governed by active-line ownership, NOT app tier. It exercises the real
+// gin middleware chain (RouterRequired) plus the real mint handler.
+//
+// Positive: a LITE-tier user (TierQuotas[lite].MaxRouterDevice == 0 under the
+// old coupling) who owns an active private line:
+//   - mints a gateway credential successfully (no ErrorPlanNoRouter), and
+//   - passes RouterRequired and gets MaxRouterDevice==1, MaxLanClient==-1 from
+//     /api/router/quota.
+//
+// Negation: a lite-tier user with NO active line is rejected with the exact
+// ErrorPlanNoRouter code at both the middleware and the mint handler.
+func TestDedicatedLine_EntitlementDecouple_FullPath(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	// Sanity: lite is the lowest tier and grants zero routers under the OLD
+	// tier-coupled model. If this assumption breaks, the test loses its point.
+	require.Equal(t, 0, TierQuotas[TierLite].MaxRouterDevice,
+		"前提：lite 档旧耦合下 MaxRouterDevice==0，持线脱钩才有意义")
+
+	// runRouterChain runs RouterRequired() then api_router_quota over a gin
+	// context carrying the user as the authenticated principal — the real
+	// middleware + handler, in order.
+	runRouterChain := func(t *testing.T, user *User) (*httptest.ResponseRecorder, *gin.Context) {
+		t.Helper()
+		gin.SetMode(gin.TestMode)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/router/quota", nil)
+		c.Set("authContext", &authContext{User: user, UserID: user.ID})
+		RouterRequired()(c)
+		if !c.IsAborted() {
+			api_router_quota(c)
+		}
+		return w, c
+	}
+
+	t.Run("LiteTierWithActiveLine_Allowed", func(t *testing.T) {
+		// lite + shared membership long expired — only the line should matter.
+		u := dedLineUser(t, TierLite, time.Now().Add(-72*time.Hour).Unix())
+		createActivePrivateNodeSub(t, u.ID)
+
+		// (a) mint gateway credential succeeds.
+		mc, mw := gatewayCredentialContext(t, u)
+		api_gateway_credential(mc)
+		require.Equal(t, http.StatusOK, mw.Code, "body=%s", mw.Body.String())
+		code, data := parseJobResponse(t, mw.Body.Bytes())
+		require.Equal(t, float64(0), code, "lite 档持线应铸造成功（非 ErrorPlanNoRouter/PaymentRequired）; body=%s", mw.Body.String())
+		require.NotNil(t, data)
+		url, _ := data["url"].(string)
+		require.Contains(t, url, "k2subs://", "应返回 k2subs 凭证")
+
+		// (b) /api/router/quota passes RouterRequired and returns the quota.
+		w, c := runRouterChain(t, u)
+		require.False(t, c.IsAborted(), "lite 持线应通过 RouterRequired; body=%s", w.Body.String())
+		quota, err := ParseResponseData[routerQuotaResponse](w)
+		require.NoError(t, err, "body=%s", w.Body.String())
+		require.Equal(t, 1, quota.MaxRouterDevice, "一账号一路由器")
+		require.Equal(t, -1, quota.MaxLanClient, "LAN 客户端无限")
+	})
+
+	t.Run("LiteTierNoLine_Rejected", func(t *testing.T) {
+		u := dedLineUser(t, TierLite, time.Now().Add(30*24*time.Hour).Unix()) // 共享会员在期但无线
+
+		// (a) mint rejected with ErrorPlanNoRouter.
+		mc, mw := gatewayCredentialContext(t, u)
+		api_gateway_credential(mc)
+		code, _ := parseJobResponse(t, mw.Body.Bytes())
+		require.Equal(t, float64(ErrorPlanNoRouter), code, "无线应被 ErrorPlanNoRouter 拒; body=%s", mw.Body.String())
+		var minted int64
+		db.Get().Model(&Device{}).Where("user_id = ? AND is_gateway = true", u.ID).Count(&minted)
+		require.Equal(t, int64(0), minted, "拒绝时不应铸造路由器设备")
+
+		// (b) RouterRequired aborts with the same exact code, quota handler never runs.
+		w, c := runRouterChain(t, u)
+		require.True(t, c.IsAborted(), "无线应在 RouterRequired 被拦截")
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		require.Equal(t, ErrorPlanNoRouter, ErrorCode(resp.Code), "RouterRequired 应返回 ErrorPlanNoRouter; body=%s", w.Body.String())
+	})
+}
+
+// makeGatewaySubsRequest builds an authenticated GET /api/subs gin context for a
+// real gateway device, using HTTP Basic Auth (udid:access_token) exactly as k2r
+// would. The device token is minted via generateTokens and the Device row's
+// TokenIssueAt is aligned to the JWT so handleJWTAuth resolves it.
+func makeGatewaySubsRequest(t *testing.T, user *User, udid string) *httptest.ResponseRecorder {
+	t.Helper()
+	tokens, issuedAt, err := generateTokens(context.Background(), user.ID, udid, user.Roles)
+	require.NoError(t, err)
+
+	dev := Device{
+		UDID:            udid,
+		UserID:          user.ID,
+		IsGateway:       true,
+		AppPlatform:     "router",
+		TokenIssueAt:    issuedAt.Unix(),
+		TokenLastUsedAt: issuedAt.Unix(),
+	}
+	require.NoError(t, db.Get().Create(&dev).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&dev) })
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/subs", nil)
+	cred := base64.StdEncoding.EncodeToString([]byte(udid + ":" + tokens.AccessToken))
+	c.Request.Header.Set("Authorization", "Basic "+cred)
+
+	api_subs(c)
+	return w
+}
+
+// makePrivateLine creates a private SlaveNode + a k2v5 SlaveTunnel on it + a
+// CloudInstance (with the given used/total quota) + an active
+// PrivateNodeSubscription linking owner→instance→node. Returns the node so the
+// caller can assert on which tunnels appear. linkCI=false leaves the sub's
+// CloudInstanceID nil (the "missing CloudInstance stays visible" case).
+func makePrivateLine(t *testing.T, owner *User, ip, label string, used, total int64, linkCI bool) *SlaveNode {
+	t.Helper()
+	now := time.Now().Unix()
+	db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+	db.Get().Unscoped().Where("ip_address = ?", ip).Delete(&CloudInstance{})
+
+	node := SlaveNode{
+		Ipv4: ip, SecretToken: "dedline-subs-" + label,
+		Country: "JP", Region: "jp", Name: "dedline-subs-" + label,
+		Class: NodeClassPrivate, PrivateOwnerUserID: &owner.ID,
+	}
+	require.NoError(t, db.Get().Create(&node).Error)
+
+	tunnel := SlaveTunnel{
+		Domain:    "dedline-" + label + "-" + time.Now().Format("150405.000000000") + ".example.com",
+		Name:      "dedline-tunnel-" + label,
+		Protocol:  TunnelProtocolK2V5,
+		Port:      443,
+		NodeID:    node.ID,
+		IsTest:    BoolPtr(false),
+		ServerURL: "k2v5://dedline-" + label + ".example.com:443?ech=x",
+	}
+	require.NoError(t, db.Get().Create(&tunnel).Error)
+
+	ci := CloudInstance{
+		Provider: "aws_lightsail", AccountName: "test-account",
+		InstanceID: "dedline-subs-ci-" + label + "-" + time.Now().Format("150405.000000000"),
+		Name:       "dedline-subs-ci-" + label, IPAddress: ip, Region: "jp",
+		TrafficUsedBytes: used, TrafficTotalBytes: total, TrafficResetAt: now + 30*86400,
+	}
+	require.NoError(t, db.Get().Create(&ci).Error)
+
+	sub := PrivateNodeSubscription{
+		UserID: owner.ID, OrderID: owner.ID*1000 + uint64(now%1000) + uint64(node.ID),
+		Status: PNStatusActive, Region: "jp", IPType: IPTypeNonResidential,
+		TrafficTotalBytes: total, PurchasedAt: now, ExpiresAt: now + 86400,
+		SlaveNodeID: &node.ID,
+	}
+	if linkCI {
+		ciID := ci.ID
+		sub.CloudInstanceID = &ciID
+	}
+	require.NoError(t, db.Get().Create(&sub).Error)
+
+	t.Cleanup(func() {
+		db.Get().Unscoped().Delete(&sub)
+		db.Get().Unscoped().Delete(&ci)
+		db.Get().Unscoped().Delete(&tunnel)
+		db.Get().Unscoped().Delete(&node)
+	})
+	return &node
+}
+
+// TestDedicatedLine_SubsExcludesOverQuotaLine drives the real GET /api/subs
+// gateway path (Basic Auth → handleJWTAuth → IsGateway branch →
+// ResolveGatewayPrivateTunnels) and asserts the handler's actual JSON output:
+//   - the over-quota line's tunnel is EXCLUDED, and
+//   - the healthy line's tunnel IS present, and
+//   - a line whose sub has a nil CloudInstance stays visible (no quota = no
+//     exclusion, per the Task 2 spec).
+func TestDedicatedLine_SubsExcludesOverQuotaLine(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	owner := CreateTestUser(t)
+
+	const total = int64(2) << 40
+	// Healthy: 10% used. Over-quota: 96% used (>=95%). NoCI: linkCI=false.
+	healthy := makePrivateLine(t, owner, "203.0.114.81", "healthy", int64(200)<<30, total, true)
+	over := makePrivateLine(t, owner, "203.0.114.82", "over", int64(1968)<<30, total, true)
+	noci := makePrivateLine(t, owner, "203.0.114.83", "noci", int64(1968)<<30, total, false)
+
+	w := makeGatewaySubsRequest(t, owner, "router-dedline-subs")
+	require.Equal(t, http.StatusOK, w.Code, "gateway subs 应 200; body=%s", w.Body.String())
+
+	var resp SubsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp), "body=%s", w.Body.String())
+
+	// Collect the server URLs present (creds are injected, so match on the
+	// stable domain substring).
+	present := func(domainFrag string) bool {
+		for _, tn := range resp.Tunnels {
+			if bytes.Contains([]byte(tn.URL), []byte(domainFrag)) {
+				return true
+			}
+		}
+		return false
+	}
+
+	require.True(t, present("dedline-healthy.example.com"), "健康线应出现; tunnels=%+v", resp.Tunnels)
+	require.False(t, present("dedline-over.example.com"), "超配额线应被剔除; tunnels=%+v", resp.Tunnels)
+	require.True(t, present("dedline-noci.example.com"), "无 CloudInstance 的线应可见（无配额=不剔除）; tunnels=%+v", resp.Tunnels)
+	require.Equal(t, 2, len(resp.Tunnels), "应只剩健康线 + 无配额线两条; tunnels=%+v", resp.Tunnels)
+
+	// Silence unused warnings for the returned nodes (kept for readability).
+	_ = healthy
+	_ = over
+	_ = noci
+}
