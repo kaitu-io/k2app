@@ -111,6 +111,74 @@ func TestResolveGatewayPrivateTunnels(t *testing.T) {
 	assert.Len(t, gated, 0, "唯一订阅不可服务（grace 过期）应返回空")
 }
 
+func TestHasActivePrivateLines(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	now := time.Now().Unix()
+	uniq := time.Now().Format("20060102150405.000000")
+	db.Get().Unscoped().Where("order_id = 0").Delete(&PrivateNodeSubscription{})
+
+	// 无任何订阅 → false
+	noneOwner := User{UUID: "usr-hapl-none-" + uniq}
+	require.NoError(t, db.Get().Create(&noneOwner).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&noneOwner) })
+	has, err := HasActivePrivateLines(context.Background(), db.Get(), noneOwner.ID, now)
+	require.NoError(t, err)
+	assert.False(t, has, "无订阅应为 false")
+
+	// active 未过期 → true
+	activeOwner := User{UUID: "usr-hapl-active-" + uniq}
+	require.NoError(t, db.Get().Create(&activeOwner).Error)
+	activeSub := PrivateNodeSubscription{
+		UserID: activeOwner.ID, OrderID: activeOwner.ID, Status: PNStatusActive,
+		Region: "japan", IPType: IPTypeNonResidential,
+		PurchasedAt: now, ExpiresAt: now + 86400,
+	}
+	require.NoError(t, db.Get().Create(&activeSub).Error)
+	t.Cleanup(func() {
+		db.Get().Unscoped().Delete(&activeSub)
+		db.Get().Unscoped().Delete(&activeOwner)
+	})
+	has, err = HasActivePrivateLines(context.Background(), db.Get(), activeOwner.ID, now)
+	require.NoError(t, err)
+	assert.True(t, has, "active 未过期应为 true")
+
+	// grace 在 7d 宽限内 → true
+	graceOwner := User{UUID: "usr-hapl-grace-" + uniq}
+	require.NoError(t, db.Get().Create(&graceOwner).Error)
+	graceSub := PrivateNodeSubscription{
+		UserID: graceOwner.ID, OrderID: graceOwner.ID, Status: PNStatusGrace,
+		Region: "japan", IPType: IPTypeNonResidential,
+		PurchasedAt: now - 10*86400, ExpiresAt: now - 86400,
+	}
+	require.NoError(t, db.Get().Create(&graceSub).Error)
+	t.Cleanup(func() {
+		db.Get().Unscoped().Delete(&graceSub)
+		db.Get().Unscoped().Delete(&graceOwner)
+	})
+	has, err = HasActivePrivateLines(context.Background(), db.Get(), graceOwner.ID, now)
+	require.NoError(t, err)
+	assert.True(t, has, "grace 宽限内应为 true")
+
+	// grace 超过 7d 宽限 → false
+	expiredOwner := User{UUID: "usr-hapl-exp-" + uniq}
+	require.NoError(t, db.Get().Create(&expiredOwner).Error)
+	expiredSub := PrivateNodeSubscription{
+		UserID: expiredOwner.ID, OrderID: expiredOwner.ID, Status: PNStatusGrace,
+		Region: "japan", IPType: IPTypeNonResidential,
+		PurchasedAt: now - 20*86400, ExpiresAt: now - 8*86400,
+	}
+	require.NoError(t, db.Get().Create(&expiredSub).Error)
+	t.Cleanup(func() {
+		db.Get().Unscoped().Delete(&expiredSub)
+		db.Get().Unscoped().Delete(&expiredOwner)
+	})
+	has, err = HasActivePrivateLines(context.Background(), db.Get(), expiredOwner.ID, now)
+	require.NoError(t, err)
+	assert.False(t, has, "超宽限应为 false")
+}
+
 func TestBuildPrivateSubsTunnels(t *testing.T) {
 	node := &SlaveNode{ID: 1, Ipv4: "10.99.7.1", Country: "JP", Class: NodeClassPrivate}
 	tunnels := []SlaveTunnel{

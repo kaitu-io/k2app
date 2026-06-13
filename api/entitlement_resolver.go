@@ -5,7 +5,27 @@ import (
 
 	db "github.com/wordgate/qtoolkit/db"
 	log "github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
+
+// HasActivePrivateLines 报告该用户是否拥有至少一条当前可服务的专属线路
+// （active/grace 且在宽限窗口内）。这是路由器（网关）准入的**单一**信号 ——
+// 取代旧的 App tier MaxRouterDevice 闸门。语义与 ResolveGatewayPrivateTunnels
+// 一致（active+grace 经 IsServiceable 过滤）。now 为 Unix 秒。tx 透传调用方事务。
+func HasActivePrivateLines(ctx context.Context, tx *gorm.DB, userID uint64, now int64) (bool, error) {
+	var subs []PrivateNodeSubscription
+	if err := tx.WithContext(ctx).
+		Where("user_id = ? AND status IN ?", userID, []string{PNStatusActive, PNStatusGrace}).
+		Find(&subs).Error; err != nil {
+		return false, err
+	}
+	for i := range subs {
+		if subs[i].IsServiceable(now) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
 // ResolveGatewayPrivateTunnels 返回 gateway（路由器）用户**可服务**的专属节点隧道。
 // 能力矩阵访问侧：路由器只能访问自己拥有、且专属订阅处于可服务态（active/宽限期内）

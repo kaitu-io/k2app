@@ -681,6 +681,7 @@ func TestLoginFlow_RouterFullCycle(t *testing.T) {
 		"tier":       TierFamily,
 		"expired_at": time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}).Error)
+	createActivePrivateNodeSub(t, user.ID)
 
 	// Step C: send a fresh OTP for the router login.
 	w = NewTestRequest("POST", "/api/auth/code").
@@ -787,6 +788,7 @@ func TestLoginFlow_PlanDowngrade(t *testing.T) {
 		"tier":       TierFamily,
 		"expired_at": time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}).Error)
+	createActivePrivateNodeSub(t, user.ID)
 
 	// Send fresh OTP for router login.
 	w = NewTestRequest("POST", "/api/auth/code").

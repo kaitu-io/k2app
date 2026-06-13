@@ -18,7 +18,7 @@ func gatewayCredentialTestUser(t *testing.T) *User {
 	t.Helper()
 	user := &User{
 		UUID: "gwcred-user-" + time.Now().Format("150405.000000000"),
-		Tier: TierFamily, // family tier carries MaxRouterDevice=1
+		Tier: TierFamily, // arbitrary; tier no longer gates routers — an active private line does
 	}
 	require.NoError(t, db.Get().Create(user).Error)
 	t.Cleanup(func() {
@@ -93,20 +93,17 @@ func TestGatewayCredentialNoSubRejected(t *testing.T) {
 	api_gateway_credential(c)
 
 	code, _ := parseJobResponse(t, w.Body.Bytes())
-	if code == 0 {
-		t.Fatalf("want non-zero error code for user without active line, got 0; body=%s", w.Body.String())
-	}
+	require.Equal(t, float64(ErrorPlanNoRouter), code, "无线应被 ErrorPlanNoRouter 拒; body=%s", w.Body.String())
 }
 
-// A user whose tier lacks router quota (basic) must be rejected with the
-// business error code from checkDeviceLimitOrKick, surfaced via ErrorE.
-func TestGatewayCredentialNoRouterTierRejected(t *testing.T) {
+// 拆割裂后：basic 档（旧 MaxRouterDevice=0）但持有 active 专属线，必须放行。
+func TestGatewayCredentialBasicTierWithLineAllowed(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
 
 	user := &User{
 		UUID: "gwcred-basic-" + time.Now().Format("150405.000000000"),
-		Tier: TierBasic, // MaxRouterDevice=0
+		Tier: TierBasic,
 	}
 	require.NoError(t, db.Get().Create(user).Error)
 	t.Cleanup(func() {
@@ -118,12 +115,34 @@ func TestGatewayCredentialNoRouterTierRejected(t *testing.T) {
 	c, w := gatewayCredentialContext(t, user)
 	api_gateway_credential(c)
 
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	code, data := parseJobResponse(t, w.Body.Bytes())
+	require.Equal(t, float64(0), code, "basic 档持线应放行; body=%s", w.Body.String())
+	require.NotNil(t, data)
+	url, _ := data["url"].(string)
+	if !strings.HasPrefix(url, "k2subs://") {
+		t.Fatalf("bad url: %s", url)
+	}
+	var got int64
+	db.Get().Model(&Device{}).Where("user_id = ? AND is_gateway = true", user.ID).Count(&got)
+	require.Equal(t, int64(1), got, "应铸造 1 台路由器设备")
+}
+
+// 纯 tier 不再授予路由器：family 档但无任何 active 专属线 → ErrorPlanNoRouter。
+func TestGatewayCredentialFamilyTierNoLineRejected(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	user := gatewayCredentialTestUser(t) // TierFamily，但故意不建线
+	c, w := gatewayCredentialContext(t, user)
+	api_gateway_credential(c)
+
 	code, _ := parseJobResponse(t, w.Body.Bytes())
-	require.Equal(t, float64(ErrorPlanNoRouter), code, "body=%s", w.Body.String())
+	require.Equal(t, float64(ErrorPlanNoRouter), code, "family 无线应被拒; body=%s", w.Body.String())
 
 	var got int64
 	db.Get().Model(&Device{}).Where("user_id = ? AND is_gateway = true", user.ID).Count(&got)
-	require.Equal(t, int64(0), got, "no router device should be created on rejection")
+	require.Equal(t, int64(0), got, "拒绝时不应建路由器设备")
 }
 
 func TestGatewayCredentialDoesNotKickAppDevice(t *testing.T) {

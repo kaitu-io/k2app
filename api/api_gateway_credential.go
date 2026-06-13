@@ -50,20 +50,6 @@ func api_gateway_credential(c *gin.Context) {
 		return
 	}
 
-	var count int64
-	if err := db.Get().Model(&PrivateNodeSubscription{}).
-		Where("user_id = ? AND status = ?", user.ID, PNStatusActive).
-		Count(&count).Error; err != nil {
-		log.Errorf(c, "gateway-credential: failed to count active private lines for user %d: %v", user.ID, err)
-		Error(c, ErrorSystemError, "query subscription failed")
-		return
-	}
-	if count == 0 {
-		log.Warnf(c, "gateway-credential: user %d has no active private line", user.ID)
-		Error(c, ErrorPaymentRequired, "no active private line")
-		return
-	}
-
 	udid := newRouterUDID()
 	var accessToken string
 	err := db.Get().Transaction(func(tx *gorm.DB) error {
