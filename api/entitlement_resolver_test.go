@@ -179,6 +179,91 @@ func TestHasActivePrivateLines(t *testing.T) {
 	assert.False(t, has, "超宽限应为 false")
 }
 
+func TestResolveGatewayPrivateTunnelsExcludesOverQuota(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	now := time.Now().Unix()
+	uniq := time.Now().Format("20060102150405.000000")
+	for _, ip := range []string{"10.99.8.1", "10.99.8.2"} {
+		db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})
+	}
+	for _, d := range []string{"priv-oq-exhausted.example", "priv-oq-healthy.example"} {
+		db.Get().Unscoped().Where("domain = ?", d).Delete(&SlaveTunnel{})
+	}
+	db.Get().Unscoped().Where("order_id = 0").Delete(&PrivateNodeSubscription{})
+
+	owner := User{UUID: "usr-oq-owner-" + uniq}
+	require.NoError(t, db.Get().Create(&owner).Error)
+
+	exhaustedCI := CloudInstance{
+		Provider: "aws_lightsail", AccountName: "test", InstanceID: "i-oq-exhausted-" + uniq,
+		IPAddress: "10.99.8.1", Region: "japan",
+		TrafficTotalBytes: 100, TrafficUsedBytes: 96,
+	}
+	require.NoError(t, db.Get().Create(&exhaustedCI).Error)
+	healthyCI := CloudInstance{
+		Provider: "aws_lightsail", AccountName: "test", InstanceID: "i-oq-healthy-" + uniq,
+		IPAddress: "10.99.8.2", Region: "japan",
+		TrafficTotalBytes: 100, TrafficUsedBytes: 10,
+	}
+	require.NoError(t, db.Get().Create(&healthyCI).Error)
+
+	exhaustedNode := SlaveNode{
+		Ipv4: "10.99.8.1", SecretToken: "soq1", Country: "JP", Region: "japan",
+		Name: "priv-oq-exhausted", Class: NodeClassPrivate, PrivateOwnerUserID: &owner.ID,
+	}
+	require.NoError(t, db.Get().Create(&exhaustedNode).Error)
+	healthyNode := SlaveNode{
+		Ipv4: "10.99.8.2", SecretToken: "soq2", Country: "JP", Region: "japan",
+		Name: "priv-oq-healthy", Class: NodeClassPrivate, PrivateOwnerUserID: &owner.ID,
+	}
+	require.NoError(t, db.Get().Create(&healthyNode).Error)
+
+	exhaustedTun := SlaveTunnel{
+		Domain: "priv-oq-exhausted.example", SecretToken: "ttoq1", Name: "priv-oq-exhausted-tun",
+		Protocol: TunnelProtocolK2V5, Port: 443, NodeID: exhaustedNode.ID,
+		IsTest: BoolPtr(false), ServerURL: "k2v5://priv-oq-exhausted.example:443",
+	}
+	require.NoError(t, db.Get().Create(&exhaustedTun).Error)
+	healthyTun := SlaveTunnel{
+		Domain: "priv-oq-healthy.example", SecretToken: "ttoq2", Name: "priv-oq-healthy-tun",
+		Protocol: TunnelProtocolK2V5, Port: 443, NodeID: healthyNode.ID,
+		IsTest: BoolPtr(false), ServerURL: "k2v5://priv-oq-healthy.example:443",
+	}
+	require.NoError(t, db.Get().Create(&healthyTun).Error)
+
+	exhaustedSub := PrivateNodeSubscription{
+		UserID: owner.ID, OrderID: owner.ID*100 + 1, Status: PNStatusActive, Region: "japan",
+		IPType: IPTypeNonResidential, SlaveNodeID: &exhaustedNode.ID, CloudInstanceID: &exhaustedCI.ID,
+		PurchasedAt: now, ExpiresAt: now + 86400,
+	}
+	require.NoError(t, db.Get().Create(&exhaustedSub).Error)
+	healthySub := PrivateNodeSubscription{
+		UserID: owner.ID, OrderID: owner.ID*100 + 2, Status: PNStatusActive, Region: "japan",
+		IPType: IPTypeNonResidential, SlaveNodeID: &healthyNode.ID, CloudInstanceID: &healthyCI.ID,
+		PurchasedAt: now, ExpiresAt: now + 86400,
+	}
+	require.NoError(t, db.Get().Create(&healthySub).Error)
+
+	t.Cleanup(func() {
+		db.Get().Unscoped().Delete(&exhaustedSub)
+		db.Get().Unscoped().Delete(&healthySub)
+		db.Get().Unscoped().Delete(&exhaustedTun)
+		db.Get().Unscoped().Delete(&healthyTun)
+		db.Get().Unscoped().Delete(&exhaustedNode)
+		db.Get().Unscoped().Delete(&healthyNode)
+		db.Get().Unscoped().Delete(&exhaustedCI)
+		db.Get().Unscoped().Delete(&healthyCI)
+		db.Get().Unscoped().Delete(&owner)
+	})
+
+	tunnels, err := ResolveGatewayPrivateTunnels(context.Background(), owner.ID, now)
+	require.NoError(t, err)
+	require.Len(t, tunnels, 1, "耗尽线应被剔除，只返回健康线")
+	assert.Equal(t, healthyTun.ID, tunnels[0].ID)
+}
+
 func TestBuildPrivateSubsTunnels(t *testing.T) {
 	node := &SlaveNode{ID: 1, Ipv4: "10.99.7.1", Country: "JP", Class: NodeClassPrivate}
 	tunnels := []SlaveTunnel{

@@ -39,11 +39,46 @@ func ResolveGatewayPrivateTunnels(ctx context.Context, userID uint64, now int64)
 		return nil, err
 	}
 
-	nodeIDs := make([]uint64, 0, len(subs))
+	// 可服务且已绑节点的 sub。收集其 CloudInstance ID，批量判定流量是否耗尽，
+	// 把 over-quota 的线从池中剔除 —— 耗尽线必须消失，路由器 Pick 才会切到健康线
+	// （服务端此时也已停止 accepting 新连接，两侧对齐 95% 阈值）。
+	type boundNode struct {
+		nodeID     uint64
+		instanceID *uint64
+	}
+	bounds := make([]boundNode, 0, len(subs))
+	ciIDs := make([]uint64, 0, len(subs))
 	for i := range subs {
 		if subs[i].IsServiceable(now) && subs[i].SlaveNodeID != nil {
-			nodeIDs = append(nodeIDs, *subs[i].SlaveNodeID)
+			bounds = append(bounds, boundNode{nodeID: *subs[i].SlaveNodeID, instanceID: subs[i].CloudInstanceID})
+			if subs[i].CloudInstanceID != nil {
+				ciIDs = append(ciIDs, *subs[i].CloudInstanceID)
+			}
 		}
+	}
+	if len(bounds) == 0 {
+		return []SlaveTunnel{}, nil
+	}
+
+	overQuota := make(map[uint64]bool, len(ciIDs))
+	if len(ciIDs) > 0 {
+		var instances []CloudInstance
+		if err := db.Get().WithContext(ctx).Where("id IN ?", ciIDs).Find(&instances).Error; err != nil {
+			return nil, err
+		}
+		for i := range instances {
+			if isTunnelOverQuota(&instances[i]) {
+				overQuota[instances[i].ID] = true
+			}
+		}
+	}
+
+	nodeIDs := make([]uint64, 0, len(bounds))
+	for _, b := range bounds {
+		if b.instanceID != nil && overQuota[*b.instanceID] {
+			continue // 耗尽线：剔出池，触发路由器切线
+		}
+		nodeIDs = append(nodeIDs, b.nodeID)
 	}
 	if len(nodeIDs) == 0 {
 		return []SlaveTunnel{}, nil
