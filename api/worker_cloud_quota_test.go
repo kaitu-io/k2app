@@ -132,3 +132,73 @@ func TestUpsertCloudInstance_SharedOverwritesTrafficFields(t *testing.T) {
 	require.Equal(t, int64(2)<<40, reloaded.TrafficUsedBytes, "共享实例 traffic_used 应被 provider 覆盖")
 	require.Equal(t, newReset, reloaded.TrafficResetAt, "共享实例 traffic_reset 应被 provider 覆盖")
 }
+
+// TestUpsertCloudInstance_DeprovisionedLinkOverwritesTrafficFields 是 Fix A 的回归守卫：
+// deprovision 转换会把订阅置为终态 deprovisioned 但从不清空 cloud_instance_id，所以一条
+// 终态线的 link 永久残留。若该实例被回收进共享池，同步必须重新按 provider 覆盖 traffic
+// 字段——只有非终态（仍拥有实例）的订阅才触发跳过。本测试构造一个仅被 DEPROVISIONED
+// 订阅指向的实例，验证它被当作非私有处理（traffic 字段被 provider 覆盖）。
+func TestUpsertCloudInstance_DeprovisionedLinkOverwritesTrafficFields(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	const bundle = int64(6) << 40
+	instanceID := "test-deprov-recycle-" + time.Now().Format("20060102150405.000000")
+
+	ci := CloudInstance{
+		Provider:          "aws_lightsail",
+		AccountName:       "test-account",
+		InstanceID:        instanceID,
+		Name:              "old-name",
+		IPAddress:         "10.52.0.1",
+		Region:            "ap-northeast-1",
+		TrafficUsedBytes:  int64(100) << 30,
+		TrafficTotalBytes: int64(1) << 40, // 残留的旧卖出配额
+		TrafficResetAt:    time.Now().Unix(),
+	}
+	require.NoError(t, db.Get().Create(&ci).Error)
+
+	owner := CreateTestUser(t)
+	ciID := ci.ID
+	// 终态订阅：link 残留但已不拥有实例。
+	sub := PrivateNodeSubscription{
+		UserID:            owner.ID,
+		OrderID:           owner.ID,
+		Status:            PNStatusDeprovisioned,
+		Region:            "hongkong",
+		IPType:            IPTypeNonResidential,
+		TrafficTotalBytes: int64(2) << 40,
+		PurchasedAt:       time.Now().Unix(),
+		ExpiresAt:         time.Now().Unix() - 86400,
+		CloudInstanceID:   &ciID,
+	}
+	require.NoError(t, db.Get().Create(&sub).Error)
+
+	t.Cleanup(func() {
+		db.Get().Unscoped().Delete(&sub)
+		db.Get().Unscoped().Delete(&ci)
+		db.Get().Unscoped().Delete(owner)
+	})
+
+	newReset := time.Now().Unix() + 77777
+	status := &cloudprovider.InstanceStatus{
+		InstanceID:        instanceID,
+		Name:              "new-name",
+		IPAddress:         "10.52.0.2",
+		Region:            "us-east-1",
+		TrafficUsedBytes:  int64(3) << 40,
+		TrafficTotalBytes: bundle,
+		TrafficResetAt:    time.Unix(newReset, 0),
+	}
+
+	account := CloudInstanceAccount{Name: "test-account", Provider: "aws_lightsail"}
+	require.NoError(t, upsertCloudInstance(context.Background(), account, status))
+
+	var reloaded CloudInstance
+	require.NoError(t, db.Get().Unscoped().First(&reloaded, ci.ID).Error)
+
+	// 仅被终态订阅指向 = 非私有：traffic 字段必须被 provider 覆盖。
+	require.Equal(t, bundle, reloaded.TrafficTotalBytes, "终态 link 不应再保护 traffic_total")
+	require.Equal(t, int64(3)<<40, reloaded.TrafficUsedBytes, "终态 link 不应再保护 traffic_used")
+	require.Equal(t, newReset, reloaded.TrafficResetAt, "终态 link 不应再保护 traffic_reset")
+}

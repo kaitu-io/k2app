@@ -372,9 +372,31 @@ func isPrivateCloudInstance(ciID uint64) bool {
 	if ciID == 0 {
 		return false
 	}
+	// Only count subscriptions whose status still implies ownership of the
+	// instance. The deprovision transition sets status to deprovisioned but
+	// never clears cloud_instance_id, so a terminal (deprovisioned/failed)
+	// line's link lingers forever — if the instance is later recycled to the
+	// shared pool we must NOT keep skipping its traffic fields. Exclude
+	// terminal statuses so a recycled instance gets provider data again.
+	owningStatuses := []string{
+		PNStatusPending,
+		PNStatusProvisioning,
+		PNStatusActive,
+		PNStatusGrace,
+		PNStatusSuspended,
+	}
 	var count int64
-	db.Get().Model(&PrivateNodeSubscription{}).
-		Where("cloud_instance_id = ?", ciID).Count(&count)
+	if err := db.Get().Model(&PrivateNodeSubscription{}).
+		Where("cloud_instance_id = ? AND status IN ?", ciID, owningStatuses).
+		Count(&count).Error; err != nil {
+		// Fail closed: on a DB error we cannot prove the instance is NOT
+		// private, so assume it is and skip provider traffic sync. Overwriting
+		// a private node's sold quota with the raw VPS bundle figures is the
+		// bug this guard exists to prevent, so the conservative choice is to
+		// protect rather than risk clobbering it.
+		log.Errorf(context.Background(), "isPrivateCloudInstance count failed for ci=%d: %v", ciID, err)
+		return true
+	}
 	return count > 0
 }
 
