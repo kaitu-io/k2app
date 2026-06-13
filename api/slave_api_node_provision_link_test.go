@@ -117,6 +117,78 @@ func TestSelfRegister_LinksCloudInstanceAndCompletesJob(t *testing.T) {
 	require.Equal(t, NPJStatusSucceeded, reloadedJob.Status, "provision job 应翻 succeeded")
 }
 
+// TestProvisionLink_WritesSoldQuotaToCloudInstance 验证 Part 1：私有节点自注册认领时，把
+// 卖出配额 (sub.TrafficTotalBytes) 写到链接的 CloudInstance.TrafficTotalBytes 并初始化计费
+// 周期 (traffic_reset_at)。预置 CloudInstance 带 provider bundle (6TB) + resetAt=0，证明认领
+// 用卖出配额 (2TB) 覆盖 bundle 并初始化 reset。
+func TestProvisionLink_WritesSoldQuotaToCloudInstance(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	now := time.Now().Unix()
+	const fixedIP = "10.99.8.21"
+	const claimToken = "claim-sold-quota-test"
+	const soldQuota = int64(2) << 40 // 2TB 卖出配额
+	const bundle = int64(6) << 40    // 6TB provider bundle（预置在 CloudInstance）
+
+	db.Get().Unscoped().Where("ipv4 = ?", fixedIP).Delete(&SlaveNode{})
+	db.Get().Unscoped().Where("ip_address = ?", fixedIP).Delete(&CloudInstance{})
+
+	owner := CreateTestUser(t)
+
+	sub := PrivateNodeSubscription{
+		UserID:              owner.ID,
+		OrderID:             owner.ID,
+		Status:              PNStatusProvisioning,
+		Region:              "hongkong",
+		IPType:              IPTypeNonResidential,
+		TrafficTotalBytes:   soldQuota,
+		PurchasedAt:         now,
+		ExpiresAt:           now + 86400,
+		ProvisionClaimToken: claimToken,
+	}
+	require.NoError(t, db.Get().Create(&sub).Error)
+
+	// 预置 CloudInstance：带 provider bundle 6TB、resetAt=0（未初始化周期）。
+	ci := CloudInstance{
+		Provider:          "aws_lightsail",
+		AccountName:       "test-account",
+		InstanceID:        "test-sold-quota-" + fixedIP,
+		Name:              "test-private-node",
+		IPAddress:         fixedIP,
+		Region:            "hongkong",
+		TrafficTotalBytes: bundle,
+		TrafficResetAt:    0,
+	}
+	require.NoError(t, db.Get().Create(&ci).Error)
+
+	t.Cleanup(func() {
+		db.Get().Unscoped().Where("ipv4 = ?", fixedIP).Delete(&SlaveNode{})
+		db.Get().Unscoped().Delete(&ci)
+		db.Get().Unscoped().Delete(&sub)
+		db.Get().Unscoped().Delete(owner)
+	})
+
+	resp := driveSlaveUpsert(t, fixedIP, SlaveNodeUpsertRequest{
+		Country: "HK", Region: "hongkong", Name: "sold-quota-node",
+		SecretToken: "secret-sold-quota", PrivateClaim: claimToken,
+	})
+	require.Equal(t, ErrorNone, ErrorCode(resp.Code), "注册应成功: %s", resp.Message)
+
+	// sub 应 active 且回填 cloud_instance_id。
+	var reloadedSub PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&reloadedSub, sub.ID).Error)
+	require.Equal(t, PNStatusActive, reloadedSub.Status, "订阅应被激活")
+	require.NotNil(t, reloadedSub.CloudInstanceID, "应回填 cloud_instance_id")
+	require.Equal(t, ci.ID, *reloadedSub.CloudInstanceID)
+
+	// CloudInstance 的卖出配额应被写为 sub.TrafficTotalBytes（覆盖 bundle），周期被初始化。
+	var reloadedCI CloudInstance
+	require.NoError(t, db.Get().First(&reloadedCI, ci.ID).Error)
+	require.Equal(t, soldQuota, reloadedCI.TrafficTotalBytes, "CloudInstance 应写卖出配额而非 provider bundle")
+	require.Greater(t, reloadedCI.TrafficResetAt, int64(0), "计费周期应被初始化")
+}
+
 // driveSlaveUpsert 复用：用 gin 测试 context 调 handler（PUT /slave/nodes/:ipv4）。
 func driveSlaveUpsert(t *testing.T, ip string, req SlaveNodeUpsertRequest) *TestResponse {
 	t.Helper()

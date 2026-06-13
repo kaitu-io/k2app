@@ -7,6 +7,7 @@ import (
 	"fmt"
 	mathrand "math/rand"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
@@ -248,6 +249,15 @@ func api_slave_node_upsert(c *gin.Context) {
 					if e := tx.Model(&PrivateNodeSubscription{}).Where("id = ?", pnSub.ID).
 						Update("cloud_instance_id", ci.ID).Error; e != nil {
 						log.Errorf(c, "link cloud instance to sub=%d: %v", pnSub.ID, e)
+					}
+					// 把卖出配额写到 CloudInstance —— 计量/断流/预警均读此字段。provider sync 报的是 VPS
+					// bundle，绝不可当卖出额（upsertCloudInstance 对 private 已跳过 traffic 覆盖）。
+					ciUpdates := map[string]any{"traffic_total_bytes": pnSub.TrafficTotalBytes}
+					if ci.TrafficResetAt == 0 {
+						ciUpdates["traffic_reset_at"] = time.Now().Unix() + trafficEpochPeriodSec
+					}
+					if e := tx.Model(&CloudInstance{}).Where("id = ?", ci.ID).Updates(ciUpdates).Error; e != nil {
+						log.Errorf(c, "write sold quota to cloud instance %d (sub=%d): %v", ci.ID, pnSub.ID, e)
 					}
 				} else {
 					log.Debugf(c, "no cloud instance found for ip=%s (sub=%d), skip link", node.Ipv4, pnSub.ID)

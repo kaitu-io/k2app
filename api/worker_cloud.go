@@ -324,7 +324,14 @@ func upsertCloudInstance(ctx context.Context, account CloudInstanceAccount, stat
 		First(&instance).Error
 
 	if err == nil {
-		// Record found (possibly soft-deleted) — restore and update in place
+		// Record found (possibly soft-deleted) — restore and update in place.
+		// 私有节点：卖出配额 + 自计量用量 + Center epoch 周期为权威，provider 报的是 VPS
+		// bundle，traffic 字段全部跳过。只有已存在的记录可能 private（新 INSERT 无链接）。
+		if isPrivateCloudInstance(instance.ID) {
+			delete(updates, "traffic_total_bytes")
+			delete(updates, "traffic_used_bytes")
+			delete(updates, "traffic_reset_at")
+		}
 		if err := db.Get().Unscoped().Model(&instance).Updates(updates).Error; err != nil {
 			return err
 		}
@@ -356,6 +363,19 @@ func upsertCloudInstance(ctx context.Context, account CloudInstanceAccount, stat
 		status.TrafficUsedBytes, status.TrafficTotalBytes)
 
 	return nil
+}
+
+// isPrivateCloudInstance reports whether a CloudInstance is owned by a dedicated-line
+// subscription. Private nodes self-meter usage and carry a sold quota; provider sync
+// reports only the VPS bundle, so its traffic figures must never overwrite theirs.
+func isPrivateCloudInstance(ciID uint64) bool {
+	if ciID == 0 {
+		return false
+	}
+	var count int64
+	db.Get().Model(&PrivateNodeSubscription{}).
+		Where("cloud_instance_id = ?", ciID).Count(&count)
+	return count > 0
 }
 
 func handleCloudChangeIP(ctx context.Context, payload []byte) error {
