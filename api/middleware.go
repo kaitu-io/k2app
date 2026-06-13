@@ -459,9 +459,11 @@ func ProRequired() gin.HandlerFunc {
 	}
 }
 
-// RouterRequired 检查用户是否有路由器权限 (Quota().MaxRouterDevice > 0 或 == -1)
-// 需要先经过 AuthRequired + ProRequired
-// Pre-built for upcoming k2r router-specific API endpoints (not yet wired in route.go).
+// RouterRequired gates router-only endpoints on ownership of an active 专属线路
+// (private line) — NOT on app subscription tier or shared membership. Any line
+// owner gets router access; private lines run on an independent clock, so a
+// lapsed shared membership or a non-router tier is irrelevant. Requires
+// AuthRequired + EnforceDeviceClass upstream.
 func RouterRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := ReqUser(c)
@@ -470,14 +472,16 @@ func RouterRequired() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if user.IsExpired() {
-			Error(c, ErrorPaymentRequired, "membership expired")
+		hasLine, err := HasActivePrivateLines(c.Request.Context(), db.Get(), user.ID, time.Now().Unix())
+		if err != nil {
+			log.Errorf(c, "router-required: failed to check active private lines for user %d: %v", user.ID, err)
+			Error(c, ErrorSystemError, "query subscription failed")
 			c.Abort()
 			return
 		}
-		if user.Quota().MaxRouterDevice == 0 {
-			log.Infof(c, "plan no router: user=%d tier=%s remote=%s", user.ID, user.Tier, c.ClientIP())
-			Error(c, ErrorPlanNoRouter, "plan does not support router")
+		if !hasLine {
+			log.Infof(c, "router-required: user %d has no active private line, deny; remote=%s", user.ID, c.ClientIP())
+			Error(c, ErrorPlanNoRouter, "no active private line")
 			c.Abort()
 			return
 		}

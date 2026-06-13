@@ -735,9 +735,9 @@ func TestLoginFlow_RouterFullCycle(t *testing.T) {
 		"router token + service header must return 403002; got %d: %s", resp.Code, resp.Message)
 }
 
-// TestLoginFlow_PlanDowngrade: family user registers router, then tier is
-// downgraded to basic. Class check still passes (Device.IsGateway=true,
-// header=router) but RouterRequired-gated endpoints return 402001.
+// TestLoginFlow_PlanDowngrade: family user registers router with an active private
+// line, then tier is downgraded to basic. Router access follows the LINE, not the
+// tier — a tier downgrade does not revoke it; removing the line does.
 func TestLoginFlow_PlanDowngrade(t *testing.T) {
 	skipIfNoDB(t)
 	r := SetupDeviceClassTestRouter()
@@ -818,15 +818,16 @@ func TestLoginFlow_PlanDowngrade(t *testing.T) {
 	// Tier downgrade — no admin API helper exists; mutate DB directly.
 	require.NoError(t, db.Get().Model(&user).Update("tier", TierBasic).Error)
 
-	// /api/router/quota should return 402001 (RouterRequired denies basic tier).
+	// Router access follows the LINE, not tier: /api/router/quota still succeeds
+	// after the tier downgrade because the private line is still active.
 	w = NewTestRequest("GET", "/api/router/quota").
 		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
 		WithHeader("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)").
 		Execute(r)
 	resp, err = ParseResponse(w)
 	require.NoError(t, err)
-	assert.Equal(t, int(ErrorPlanNoRouter), resp.Code,
-		"/api/router/quota must return 402001 after downgrade; got %d: %s", resp.Code, resp.Message)
+	assert.Equal(t, 0, resp.Code,
+		"/api/router/quota must still succeed after tier downgrade (line active); got %d: %s", resp.Code, resp.Message)
 
 	// /api/tunnels should still serve — ProRequired passes (ExpiredAt still in future),
 	// EnforceDeviceClass passes (IsGateway=true, header=router).
@@ -837,6 +838,18 @@ func TestLoginFlow_PlanDowngrade(t *testing.T) {
 	resp, err = ParseResponse(w)
 	require.NoError(t, err)
 	assert.Equal(t, 0, resp.Code, "tunnel listing must remain accessible after downgrade: %s", resp.Message)
+
+	// Remove the private line → router access is revoked (402001), proving the
+	// line — not the tier — is the gate.
+	require.NoError(t, db.Get().Unscoped().Where("user_id = ?", user.ID).Delete(&PrivateNodeSubscription{}).Error)
+	w = NewTestRequest("GET", "/api/router/quota").
+		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
+		WithHeader("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)").
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	assert.Equal(t, int(ErrorPlanNoRouter), resp.Code,
+		"/api/router/quota must return 402001 once the line is gone; got %d: %s", resp.Code, resp.Message)
 }
 
 // TestLoginFlow_NoHeaderLegacyApp locks the backward-compat invariant:

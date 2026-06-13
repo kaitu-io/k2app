@@ -234,10 +234,11 @@ func SetupRouter() *gin.Engine {
 			strategy.GET("/rules", api_strategy_get_rules)
 		}
 
-		// Router-only endpoints (require family-tier or above)
+		// Router-only endpoints — gated on an active 专属线路 (any app tier; private
+		// lines run on an independent clock, so shared membership is not required).
 		router := api.Group("/router")
 		log.Debugf(ctx, "registering /api/router group")
-		router.Use(AuthRequired(), EnforceDeviceClass(), ProRequired(), RouterRequired())
+		router.Use(AuthRequired(), EnforceDeviceClass(), RouterRequired())
 		{
 			router.GET("/quota", api_router_quota)
 		}
