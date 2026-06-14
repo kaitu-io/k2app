@@ -1402,6 +1402,16 @@ func buildDNSRouter(outboundMap map[string]rule.Target) func(rule.Target) bool {
 	}
 }
 
+// fallbackRegion is the region bundle substituted when a configured match.region
+// route has no bundle of its own on disk. cn.krs is always embedded in the binary
+// (rule/embed), so it is the one region guaranteed loadable even before any CDN
+// refresh succeeds. The region expanders (heapRegionExpander / diskRegionExpander)
+// serve cn's data for the missing region, and missingConfiguredRegions treats the
+// region as satisfied — so an abroad user connects on cn rules until their own
+// bundle downloads. The original all-proxy disaster guard survives: if cn itself
+// is absent (corrupt embed), the missing region is still flagged and Start 504s.
+const fallbackRegion = "cn"
+
 // missingConfiguredRegions returns the names of match.region routes whose bundle
 // is not usable in cacheDir — either absent or present-but-unparseable (LoadNamed
 // skips bundles that fail to parse). A non-empty result for a split-tunnel config
@@ -1425,7 +1435,10 @@ func missingConfiguredRegions(routes []config.RouteConfig, cacheDir string) []st
 
 	var missing []string
 	for _, region := range want {
-		if !have[region] {
+		// Satisfied if the region's own bundle is present, or — for a non-cn
+		// region — the cn fallback bundle is present. A missing cn route (region
+		// == fallbackRegion with cn absent) still flags, preserving the guard.
+		if !have[region] && !have[fallbackRegion] {
 			missing = append(missing, region)
 		}
 	}
@@ -1535,7 +1548,16 @@ func heapRegionExpander(regionBundles map[string]*krs.Bundle) func(string, rule.
 	return func(region string, target rule.Target) []rule.RouteEntry {
 		b, ok := regionBundles[region]
 		if !ok || b == nil {
-			return nil
+			// cn fallback: serve the always-embedded cn bundle for a region whose
+			// own bundle hasn't loaded yet (see fallbackRegion). rebuildFn re-runs
+			// this closure after the updater fetches the real bundle, hot-swapping
+			// to correct data without a reconnect.
+			if region != fallbackRegion {
+				b, ok = regionBundles[fallbackRegion]
+			}
+			if !ok || b == nil {
+				return nil
+			}
 		}
 		host, meta := expandRegionRoute(b, target)
 		var out []rule.RouteEntry
@@ -1555,7 +1577,16 @@ func diskRegionExpander(regionDisk map[string]*krs.DiskBundle) func(string, rule
 	return func(region string, target rule.Target) []rule.RouteEntry {
 		db, ok := regionDisk[region]
 		if !ok || db == nil {
-			return nil
+			// cn fallback (see fallbackRegion) — NE/mmap path. Unlike the heap path,
+			// iOS NE skips the background updater (engine.go), so this does NOT
+			// hot-swap mid-session: the fallback holds until the next cold start
+			// re-opens the cache after EnsureBundles fetches the real bundle.
+			if region != fallbackRegion {
+				db, ok = regionDisk[fallbackRegion]
+			}
+			if !ok || db == nil {
+				return nil
+			}
 		}
 		if host := expandRegionRouteDisk(db, target); host != nil {
 			return []rule.RouteEntry{*host}

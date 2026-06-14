@@ -2038,6 +2038,35 @@ func TestMissingConfiguredRegions(t *testing.T) {
 	}
 }
 
+// TestMissingConfiguredRegions_CNFallback verifies that a non-cn region route is
+// NOT flagged missing when cn.krs is present: the engine falls back to the
+// always-embedded cn bundle (see heapRegionExpander) instead of 504-failing, so
+// an abroad user (region=my) whose own bundle hasn't downloaded yet can still
+// connect. With nothing to fall back to (empty cache), the region IS missing.
+func TestMissingConfiguredRegions_CNFallback(t *testing.T) {
+	dir := t.TempDir()
+	var buf bytes.Buffer
+	if err := krs.WriteBundle(&buf, &krs.Bundle{Sets: []krs.NamedSet{
+		{Name: "geoip-cn", DomainSuffixes: []string{"example.cn"}},
+	}}); err != nil {
+		t.Fatalf("WriteBundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cn.krs"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	myRoutes := []config.RouteConfig{
+		{Via: "direct", Match: rule.MatchConfig{Region: "my"}},
+		{Via: "k2v5://x", Match: rule.MatchConfig{All: true}},
+	}
+	if miss := missingConfiguredRegions(myRoutes, dir); len(miss) != 0 {
+		t.Errorf("region 'my' with cn.krs present: want no missing (cn fallback), got %v", miss)
+	}
+	if miss := missingConfiguredRegions(myRoutes, t.TempDir()); len(miss) != 1 || miss[0] != "my" {
+		t.Errorf("empty cache: want [my] missing (nothing to fall back to), got %v", miss)
+	}
+}
+
 // ==========================================================================
 // Test helpers
 // ==========================================================================

@@ -410,3 +410,125 @@ func TestBuildRouteEntries_ExpandsMatchApps(t *testing.T) {
 		t.Errorf("ProcessNamePrefixes = %v, want contains firefox", entries[0].ProcessNamePrefixes)
 	}
 }
+
+// TestBuildRuleEngine_CNFallbackForMissingRegion is the composition proof: with
+// only cn.krs on disk and a route requiring region=my, both the heap (desktop/
+// Android) and disk (iOS NE) builders must wire cn's data into the my-region
+// direct route — yielding a working split-tunnel engine instead of dropping the
+// route (all-proxy) or 504-failing. CN traffic routes direct via the fallback;
+// everything else falls through to the all-proxy catch-all.
+func TestBuildRuleEngine_CNFallbackForMissingRegion(t *testing.T) {
+	const directTarget = rule.Target(0) // buildOutboundMap: 0=direct
+	for _, useDisk := range []bool{false, true} {
+		name := "heap"
+		if useDisk {
+			name = "disk"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeDiskKRS(t, dir, "cn.krs", &krs.Bundle{Sets: []krs.NamedSet{
+				{Name: "cn", DomainSuffixes: []string{"qq.com"}},
+			}}) // no my.krs
+
+			client := &config.ClientConfig{
+				CacheDir: dir,
+				Routes: []config.RouteConfig{
+					{Via: "direct", Match: rule.MatchConfig{Region: "my"}},
+					{Via: "k2v5://x", Match: rule.MatchConfig{All: true}},
+				},
+			}
+			outboundMap := buildOutboundMap(client.Routes)
+			proxy := outboundMap["k2v5://x"]
+
+			re := buildRuleEngine(client, outboundMap, useDisk)
+			if re == nil {
+				t.Fatal("nil engine")
+			}
+			defer re.Close()
+
+			if got := re.Match("www.qq.com"); got != directTarget {
+				t.Fatalf("cn domain via cn-fallback → direct(%v), got %v", directTarget, got)
+			}
+			if got := re.Match("google.com"); got != proxy {
+				t.Fatalf("non-cn domain → proxy(%v), got %v", proxy, got)
+			}
+		})
+	}
+}
+
+// TestBuildRuleEngine_RealBundleWinsOverCNFallback proves the cn fallback is
+// transient: once the region's own bundle is present (as the desktop/Android
+// updater's rebuildFn produces after downloading it over the tunnel), the region
+// route uses ITS data, not cn's. my-domains route direct via the real my bundle;
+// cn-domains no longer get the fallback's direct treatment and fall through to the
+// catch-all proxy. This is the deterministic stand-in for the self-heal hot-swap.
+func TestBuildRuleEngine_RealBundleWinsOverCNFallback(t *testing.T) {
+	const directTarget = rule.Target(0)
+	for _, useDisk := range []bool{false, true} {
+		name := "heap"
+		if useDisk {
+			name = "disk"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeDiskKRS(t, dir, "cn.krs", &krs.Bundle{Sets: []krs.NamedSet{
+				{Name: "cn", DomainSuffixes: []string{"qq.com"}},
+			}})
+			writeDiskKRS(t, dir, "my.krs", &krs.Bundle{Sets: []krs.NamedSet{
+				{Name: "my", DomainSuffixes: []string{"astro.com.my"}},
+			}}) // real region bundle now present
+
+			client := &config.ClientConfig{
+				CacheDir: dir,
+				Routes: []config.RouteConfig{
+					{Via: "direct", Match: rule.MatchConfig{Region: "my"}},
+					{Via: "k2v5://x", Match: rule.MatchConfig{All: true}},
+				},
+			}
+			outboundMap := buildOutboundMap(client.Routes)
+			proxy := outboundMap["k2v5://x"]
+
+			re := buildRuleEngine(client, outboundMap, useDisk)
+			if re == nil {
+				t.Fatal("nil engine")
+			}
+			defer re.Close()
+
+			if got := re.Match("astro.com.my"); got != directTarget {
+				t.Fatalf("my domain via real my bundle → direct(%v), got %v", directTarget, got)
+			}
+			if got := re.Match("www.qq.com"); got != proxy {
+				t.Fatalf("cn domain must NOT get fallback-direct once my present → proxy(%v), got %v", proxy, got)
+			}
+		})
+	}
+}
+
+// TestHeapRegionExpander_CNFallbackForMissingRegion verifies the cn-fallback
+// safety net: when a non-cn region route has no bundle on disk, the expander
+// substitutes the always-embedded cn bundle instead of dropping the route. This
+// lets an abroad user (e.g. region=my) connect on the embedded cn.krs until the
+// background updater downloads their real region bundle, after which rebuildFn
+// re-runs buildRouteEntries and hot-swaps to the correct data — no reconnect.
+func TestHeapRegionExpander_CNFallbackForMissingRegion(t *testing.T) {
+	cnBundle := fakeBundle("geoip-cn", nil, nil, nil, nil)
+	regionMap := map[string]*krs.Bundle{"cn": cnBundle} // no "my"
+
+	entries := heapRegionExpander(regionMap)("my", rule.Target(2))
+	if len(entries) == 0 {
+		t.Fatal("missing region 'my' must fall back to cn bundle, got 0 entries")
+	}
+	if ns, ok := entries[0].Sets[0].(*krs.NamedSet); !ok || ns.Name != "geoip-cn" {
+		t.Errorf("fallback host set = %+v, want geoip-cn", entries[0].Sets)
+	}
+}
+
+// TestHeapRegionExpander_NoCNNoFallback verifies that with neither the requested
+// region nor cn present, the expander yields nil (route drops). In production
+// missingConfiguredRegions has already 504'd before reaching here, preserving the
+// original all-proxy disaster guard.
+func TestHeapRegionExpander_NoCNNoFallback(t *testing.T) {
+	if entries := heapRegionExpander(map[string]*krs.Bundle{})("my", rule.Target(2)); entries != nil {
+		t.Errorf("no cn fallback available must yield nil; got %+v", entries)
+	}
+}
