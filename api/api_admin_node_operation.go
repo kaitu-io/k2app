@@ -167,7 +167,7 @@ func adminClaimNodeOperation(c *gin.Context) {
 			"domain":     "",
 		}
 	}
-	log.Infof(c, "node operation %d (%s) claimed by %q", id, op.Action, body.Holder)
+	log.Infof(c, "node operation %d (%s) claimed by %q", id, op.Action, holder)
 	Success(c, &resp)
 }
 

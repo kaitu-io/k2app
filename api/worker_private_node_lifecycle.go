@@ -103,6 +103,10 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 		}
 		sendCloudSlackNotification(ctx, "Private Node Deprovisioned",
 			fmt.Sprintf("sub=%d user=%d order=%d suspend ended → deprovisioned (destroy VPS, release IP)", s.ID, s.UserID, s.OrderID))
+		// 进入终态前取消尚未执行的 stop:实例即将销毁,stop 工单已无意义,避免操作员看到 stop+destroy 双开任务。
+		if err := cancelOpenNodeOperations(db.Get(), []uint64{s.ID}, []string{NodeOpStop}); err != nil {
+			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] cancel open stop before destroy sub=%d: %v", s.ID, err)
+		}
 		if err := dispatchNodeOperation(ctx, s.ID, s.CloudInstanceID, NodeOpDestroy, "system:lifecycle", DestroyParams{Reason: "suspend ended"}); err != nil {
 			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] dispatch destroy sub=%d: %v", s.ID, err)
 		}
