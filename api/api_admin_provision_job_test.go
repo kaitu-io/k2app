@@ -27,8 +27,9 @@ func provisionJobTestRouter() *gin.Engine {
 }
 
 // seedProvisionJobFixture creates a PrivateNodeSubscription with a known claim
-// token plus a queued NodeProvisionJob for it. Cleanup is registered on t.
-func seedProvisionJobFixture(t *testing.T, claimToken, domain string) (sub *PrivateNodeSubscription, job *NodeProvisionJob) {
+// token plus a queued NodeOperation(action=provision) for it. Cleanup is
+// registered on t.
+func seedProvisionJobFixture(t *testing.T, claimToken, domain string) (sub *PrivateNodeSubscription, job *NodeOperation) {
 	t.Helper()
 	now := time.Now().Unix()
 
@@ -46,16 +47,20 @@ func seedProvisionJobFixture(t *testing.T, claimToken, domain string) (sub *Priv
 	require.NoError(t, db.Get().Create(sub).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(sub) })
 
-	job = &NodeProvisionJob{
-		SubID:             sub.ID,
-		Status:            NPJStatusQueued,
-		Region:            sub.Region,
-		BundleID:          "nano_3_0",
-		ImageID:           "ubuntu_22_04",
-		ComposeVariant:    "private",
-		TrafficTotalBytes: sub.TrafficTotalBytes,
-		IPType:            sub.IPType,
-		Domain:            domain,
+	job = &NodeOperation{
+		Action:    NodeOpProvision,
+		SubID:     sub.ID,
+		Status:    NodeOpQueued,
+		CreatedBy: "system:order",
+		Params: mustJSON(ProvisionParams{
+			Region:            sub.Region,
+			BundleID:          "nano_3_0",
+			ImageID:           "ubuntu_22_04",
+			ComposeVariant:    "private",
+			TrafficTotalBytes: sub.TrafficTotalBytes,
+			IPType:            sub.IPType,
+			Domain:            domain,
+		}),
 	}
 	require.NoError(t, db.Get().Create(job).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(job) })
@@ -93,7 +98,7 @@ func TestAdminProvisionJob_List(t *testing.T) {
 		m, _ := it.(map[string]any)
 		if id, ok := m["id"].(float64); ok && uint64(id) == job.ID {
 			found = true
-			assert.Equal(t, NPJStatusQueued, m["status"])
+			assert.Equal(t, NodeOpQueued, m["status"])
 		}
 	}
 	assert.True(t, found, "queued job %d should appear in status=queued list", job.ID)
@@ -131,13 +136,13 @@ func TestAdminProvisionJob_ClaimAtomicity(t *testing.T) {
 
 	jobObj, _ := data["job"].(map[string]any)
 	require.NotNil(t, jobObj)
-	assert.Equal(t, NPJStatusClaimed, jobObj["status"])
+	assert.Equal(t, NodeOpClaimed, jobObj["status"])
 	assert.Equal(t, "agent-A", jobObj["holder"])
 
 	// DB reflects claim.
-	var reloaded NodeProvisionJob
+	var reloaded NodeOperation
 	require.NoError(t, db.Get().First(&reloaded, job.ID).Error)
-	assert.Equal(t, NPJStatusClaimed, reloaded.Status)
+	assert.Equal(t, NodeOpClaimed, reloaded.Status)
 	assert.Equal(t, "agent-A", reloaded.Holder)
 	_ = sub
 
@@ -157,7 +162,7 @@ func TestAdminProvisionJob_Report(t *testing.T) {
 
 	// Valid report: provisioning + instance + ipv4.
 	body, _ := json.Marshal(map[string]any{
-		"status":     NPJStatusProvisioning,
+		"status":     NodeOpInProgress,
 		"instanceId": "i-x",
 		"ipv4":       "1.2.3.4",
 	})
@@ -171,11 +176,17 @@ func TestAdminProvisionJob_Report(t *testing.T) {
 	code, _ := parseJobResponse(t, w.Body.Bytes())
 	require.Equal(t, float64(0), code, "body: %s", w.Body.String())
 
-	var reloaded NodeProvisionJob
+	var reloaded NodeOperation
 	require.NoError(t, db.Get().First(&reloaded, job.ID).Error)
-	assert.Equal(t, NPJStatusProvisioning, reloaded.Status)
-	assert.Equal(t, "i-x", reloaded.InstanceID)
-	assert.Equal(t, "1.2.3.4", reloaded.IPv4)
+	assert.Equal(t, NodeOpInProgress, reloaded.Status)
+	// instanceId/ipv4 now live in the Result JSON blob.
+	var result struct {
+		InstanceID string `json:"instanceId"`
+		IPv4       string `json:"ipv4"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(reloaded.Result), &result))
+	assert.Equal(t, "i-x", result.InstanceID)
+	assert.Equal(t, "1.2.3.4", result.IPv4)
 
 	reportStatus := func(status string) float64 {
 		b, _ := json.Marshal(map[string]any{"status": status})
@@ -192,15 +203,15 @@ func TestAdminProvisionJob_Report(t *testing.T) {
 	// Invalid status → ErrorInvalidArgument.
 	assert.Equal(t, float64(ErrorInvalidArgument), reportStatus("bogus"))
 
-	// succeeded is NOT agent-reportable: it is the authoritative terminal state
+	// done is NOT agent-reportable: it is the authoritative terminal state
 	// produced only by the node self-register/activation path.
-	assert.Equal(t, float64(ErrorInvalidArgument), reportStatus(NPJStatusSucceeded),
-		"agent must not be able to report succeeded")
+	assert.Equal(t, float64(ErrorInvalidArgument), reportStatus(NodeOpDone),
+		"agent must not be able to report done")
 
 	// failed is still a valid agent report.
-	assert.Equal(t, float64(0), reportStatus(NPJStatusFailed),
+	assert.Equal(t, float64(0), reportStatus(NodeOpFailed),
 		"agent must be able to report failed")
-	var afterFail NodeProvisionJob
+	var afterFail NodeOperation
 	require.NoError(t, db.Get().First(&afterFail, job.ID).Error)
-	assert.Equal(t, NPJStatusFailed, afterFail.Status)
+	assert.Equal(t, NodeOpFailed, afterFail.Status)
 }

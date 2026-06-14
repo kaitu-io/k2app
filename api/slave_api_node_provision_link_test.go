@@ -15,7 +15,7 @@ import (
 // TestSelfRegister_LinksCloudInstanceAndCompletesJob 驱动真实的节点自注册 handler
 // (api_slave_node_upsert)，验证带 claim 的私有节点自注册激活订阅后，两步 best-effort：
 //   - 按 IP 匹配 CloudInstance，回填 sub.cloud_instance_id
-//   - 把对应 NodeProvisionJob 翻 succeeded
+//   - 把对应 provision NodeOperation 翻 done
 //
 // 注册响应本身不应被这两步影响（best-effort），且节点应被置 private。
 func TestSelfRegister_LinksCloudInstanceAndCompletesJob(t *testing.T) {
@@ -45,16 +45,20 @@ func TestSelfRegister_LinksCloudInstanceAndCompletesJob(t *testing.T) {
 	}
 	require.NoError(t, db.Get().Create(&sub).Error)
 
-	// 预清理同 sub_id 的残留 job（sub_id uniqueIndex）。
-	db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeProvisionJob{})
+	// 预清理同 sub_id 的残留 op。
+	db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeOperation{})
 
-	job := NodeProvisionJob{
-		SubID:             sub.ID,
-		Status:            NPJStatusClaimed,
-		Region:            "hongkong",
-		ComposeVariant:    "private",
-		TrafficTotalBytes: 2 << 40,
-		IPType:            IPTypeNonResidential,
+	job := NodeOperation{
+		Action:    NodeOpProvision,
+		SubID:     sub.ID,
+		Status:    NodeOpClaimed,
+		CreatedBy: "system:order",
+		Params: mustJSON(ProvisionParams{
+			Region:            "hongkong",
+			ComposeVariant:    "private",
+			TrafficTotalBytes: 2 << 40,
+			IPType:            IPTypeNonResidential,
+		}),
 	}
 	require.NoError(t, db.Get().Create(&job).Error)
 
@@ -111,10 +115,10 @@ func TestSelfRegister_LinksCloudInstanceAndCompletesJob(t *testing.T) {
 	require.NotNil(t, reloadedSub.CloudInstanceID, "应回填 cloud_instance_id")
 	require.Equal(t, ci.ID, *reloadedSub.CloudInstanceID, "cloud_instance_id 应指向匹配 IP 的 CloudInstance")
 
-	// job 应翻 succeeded。
-	var reloadedJob NodeProvisionJob
+	// op 应翻 done。
+	var reloadedJob NodeOperation
 	require.NoError(t, db.Get().Where("id = ?", job.ID).First(&reloadedJob).Error)
-	require.Equal(t, NPJStatusSucceeded, reloadedJob.Status, "provision job 应翻 succeeded")
+	require.Equal(t, NodeOpDone, reloadedJob.Status, "provision operation 应翻 done")
 }
 
 // TestProvisionLink_WritesSoldQuotaToCloudInstance 验证 Part 1：私有节点自注册认领时，把
@@ -231,10 +235,13 @@ func TestSelfRegister_ClaimSecurity(t *testing.T) {
 		}
 		require.NoError(t, db.Get().Create(&sub).Error)
 
-		db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeProvisionJob{})
-		job := NodeProvisionJob{
-			SubID: sub.ID, Status: NPJStatusFailed, Region: "hongkong",
-			ComposeVariant: "private", TrafficTotalBytes: 2 << 40, IPType: IPTypeNonResidential,
+		db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeOperation{})
+		job := NodeOperation{
+			Action: NodeOpProvision, SubID: sub.ID, Status: NodeOpFailed, CreatedBy: "system:order",
+			Params: mustJSON(ProvisionParams{
+				Region: "hongkong", ComposeVariant: "private",
+				TrafficTotalBytes: 2 << 40, IPType: IPTypeNonResidential,
+			}),
 		}
 		require.NoError(t, db.Get().Create(&job).Error)
 
@@ -261,10 +268,10 @@ func TestSelfRegister_ClaimSecurity(t *testing.T) {
 		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&node).Error)
 		require.NotEqual(t, NodeClassPrivate, node.Class, "failed claim 不应把节点置 private")
 
-		// job 不应被翻 succeeded。
-		var reloadedJob NodeProvisionJob
+		// op 不应被翻 done。
+		var reloadedJob NodeOperation
 		require.NoError(t, db.Get().First(&reloadedJob, job.ID).Error)
-		require.NotEqual(t, NPJStatusSucceeded, reloadedJob.Status, "failed claim 不应翻 job succeeded")
+		require.NotEqual(t, NodeOpDone, reloadedJob.Status, "failed claim 不应翻 operation done")
 	})
 
 	t.Run("ActiveSubNotReClaimable", func(t *testing.T) {

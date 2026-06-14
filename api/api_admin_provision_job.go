@@ -1,6 +1,7 @@
 package center
 
 import (
+	"encoding/json"
 	"strconv"
 	"time"
 
@@ -20,10 +21,10 @@ func parseProvisionJobID(c *gin.Context) (uint64, bool) {
 	return id, true
 }
 
-// adminListProvisionJobs lists NodeProvisionJob rows for the external AI agent to
+// adminListProvisionJobs lists NodeOperation rows for the external AI agent to
 // poll the provisioning queue. Optional ?status= filter; newest first.
 func adminListProvisionJobs(c *gin.Context) {
-	query := db.Get().Model(&NodeProvisionJob{})
+	query := db.Get().Model(&NodeOperation{})
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
 	}
@@ -35,7 +36,7 @@ func adminListProvisionJobs(c *gin.Context) {
 		return
 	}
 
-	var jobs []NodeProvisionJob
+	var jobs []NodeOperation
 	if err := query.Order("created_at DESC").Offset(pagination.Offset()).Limit(pagination.PageSize).Find(&jobs).Error; err != nil {
 		log.Errorf(c, "failed to list provision jobs: %v", err)
 		Error(c, ErrorSystemError, "failed to list provision jobs")
@@ -74,10 +75,10 @@ func adminClaimProvisionJob(c *gin.Context) {
 
 	// Atomic claim: only a still-queued row flips to claimed. RowsAffected is
 	// reliable here because status + holder are real value changes.
-	res := db.Get().Model(&NodeProvisionJob{}).
-		Where("id = ? AND status = ?", id, NPJStatusQueued).
+	res := db.Get().Model(&NodeOperation{}).
+		Where("id = ? AND status = ?", id, NodeOpQueued).
 		Updates(map[string]any{
-			"status":         NPJStatusClaimed,
+			"status":         NodeOpClaimed,
 			"holder":         body.Holder,
 			"leased_at":      now,
 			"lease_deadline": deadline,
@@ -92,7 +93,7 @@ func adminClaimProvisionJob(c *gin.Context) {
 		return
 	}
 
-	var job NodeProvisionJob
+	var job NodeOperation
 	if err := db.Get().First(&job, id).Error; err != nil {
 		log.Errorf(c, "failed to reload claimed job %d: %v", id, err)
 		Error(c, ErrorSystemError, "failed to reload job")
@@ -106,13 +107,17 @@ func adminClaimProvisionJob(c *gin.Context) {
 		return
 	}
 
+	// domain 现存于 Params JSON（provision 动作快照），从中解出以保持响应不变。
+	var params ProvisionParams
+	_ = json.Unmarshal([]byte(job.Params), &params)
+
 	log.Infof(c, "provision job %d claimed by %q (lease %ds)", id, body.Holder, leaseSeconds)
 	Success(c, &gin.H{
 		"job": job,
 		"identity": gin.H{
 			"claimToken": sub.ProvisionClaimToken,
 			"centerUrl":  centerCallbackURL(),
-			"domain":     job.Domain,
+			"domain":     params.Domain,
 		},
 	})
 }
@@ -143,10 +148,10 @@ func adminReportProvisionJob(c *gin.Context) {
 	// （该路径同时激活订阅）；允许 agent 直接报 succeeded 会让 job=succeeded 而 sub
 	// 仍停在 provisioning，制造状态分裂。
 	switch body.Status {
-	case NPJStatusProvisioning, NPJStatusFailed:
+	case NodeOpInProgress, NodeOpFailed:
 		// allowed
 	default:
-		Error(c, ErrorInvalidArgument, "status must be provisioning or failed")
+		Error(c, ErrorInvalidArgument, "status must be in_progress or failed")
 		return
 	}
 
@@ -154,14 +159,15 @@ func adminReportProvisionJob(c *gin.Context) {
 		"status":     body.Status,
 		"last_error": body.Error,
 	}
-	if body.InstanceID != "" {
-		updates["instance_id"] = body.InstanceID
-	}
-	if body.IPv4 != "" {
-		updates["ipv4"] = body.IPv4
+	// instance_id/ipv4 现并入 Result JSON（动作专属结果）。仅在 agent 上报时写入。
+	if body.InstanceID != "" || body.IPv4 != "" {
+		updates["result"] = mustJSON(map[string]any{
+			"instanceId": body.InstanceID,
+			"ipv4":       body.IPv4,
+		})
 	}
 
-	res := db.Get().Model(&NodeProvisionJob{}).Where("id = ?", id).Updates(updates)
+	res := db.Get().Model(&NodeOperation{}).Where("id = ?", id).Updates(updates)
 	if res.Error != nil {
 		log.Errorf(c, "failed to report provision job %d: %v", id, res.Error)
 		Error(c, ErrorSystemError, "failed to update job")
@@ -169,7 +175,7 @@ func adminReportProvisionJob(c *gin.Context) {
 	}
 	if res.RowsAffected == 0 {
 		// No row changed: either job missing or values identical. Disambiguate.
-		var exists NodeProvisionJob
+		var exists NodeOperation
 		if err := db.Get().Select("id").First(&exists, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				Error(c, ErrorNotFound, "job not found")

@@ -98,8 +98,8 @@ func TestHandleProvisionTimeoutSweep(t *testing.T) {
 }
 
 // TestProvisionTimeoutSweep_FailsOrphanJob verifies the sweep also fails the
-// orphan NodeProvisionJob when it times out the owning subscription — otherwise
-// the job stays claimable and an agent burns a VPS on a dead sub.
+// orphan provision NodeOperation when it times out the owning subscription —
+// otherwise the op stays claimable and an agent burns a VPS on a dead sub.
 func TestProvisionTimeoutSweep_FailsOrphanJob(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
@@ -124,19 +124,23 @@ func TestProvisionTimeoutSweep_FailsOrphanJob(t *testing.T) {
 		db.Get().Unscoped().Delete(&PrivateNodeSubscription{}, sub.ID)
 	})
 
-	job := NodeProvisionJob{
-		SubID:             sub.ID,
-		Status:            NPJStatusQueued,
-		Region:            sub.Region,
-		BundleID:          "nano_3_0",
-		ImageID:           "ubuntu_22_04",
-		ComposeVariant:    "private",
-		TrafficTotalBytes: sub.TrafficTotalBytes,
-		IPType:            sub.IPType,
+	job := NodeOperation{
+		Action:    NodeOpProvision,
+		SubID:     sub.ID,
+		Status:    NodeOpQueued,
+		CreatedBy: "system:order",
+		Params: mustJSON(ProvisionParams{
+			Region:            sub.Region,
+			BundleID:          "nano_3_0",
+			ImageID:           "ubuntu_22_04",
+			ComposeVariant:    "private",
+			TrafficTotalBytes: sub.TrafficTotalBytes,
+			IPType:            sub.IPType,
+		}),
 	}
 	require.NoError(t, db.Get().Create(&job).Error)
 	t.Cleanup(func() {
-		db.Get().Unscoped().Delete(&NodeProvisionJob{}, job.ID)
+		db.Get().Unscoped().Delete(&NodeOperation{}, job.ID)
 	})
 
 	// Force updated_at older than the cutoff AFTER create (autoUpdateTime fights us).
@@ -150,9 +154,9 @@ func TestProvisionTimeoutSweep_FailsOrphanJob(t *testing.T) {
 	require.NoError(t, db.Get().First(&reloadedSub, sub.ID).Error)
 	assert.Equal(t, PNStatusFailed, reloadedSub.Status, "stale sub must be failed")
 
-	var reloadedJob NodeProvisionJob
+	var reloadedJob NodeOperation
 	require.NoError(t, db.Get().First(&reloadedJob, job.ID).Error)
-	assert.Equal(t, NPJStatusFailed, reloadedJob.Status, "orphan job must be failed")
+	assert.Equal(t, NodeOpFailed, reloadedJob.Status, "orphan op must be failed")
 	assert.True(t, strings.Contains(reloadedJob.LastError, "timed out"),
 		"expected timeout error on job, got %q", reloadedJob.LastError)
 }
