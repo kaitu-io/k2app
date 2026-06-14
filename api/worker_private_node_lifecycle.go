@@ -37,13 +37,31 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 		return fmt.Errorf("query suspend-ended subs: %w", err)
 	}
 
-	// 1. 续费回收：grace/suspended 但已续费（now < ExpiresAt）→ active。放最前，
-	//    避免后续步骤把刚续费的订阅误推进到下一级。（cohort 查询用 expires_at <= cutoff，
-	//    续费过的订阅 expires_at 已未来，本就不会入选 graceEnded/suspendEnded。）
-	if err := db.Get().Model(&PrivateNodeSubscription{}).
+	// 1. 续费回收:grace/suspended 但已续费(now < ExpiresAt)→ active,并取消其未结
+	//    stop/destroy(防已续费机器被操作员照单停机/销毁)。放最前,避免后续步骤把刚续费的
+	//    订阅误推进到下一级。(cohort 查询用 expires_at <= cutoff,续费过的订阅 expires_at
+	//    已未来,本就不会入选 graceEnded/suspendEnded。)
+	var recovered []PrivateNodeSubscription
+	if err := db.Get().Select("id").
 		Where("status IN ? AND expires_at > ?", []string{PNStatusGrace, PNStatusSuspended}, now).
-		Updates(map[string]any{"status": PNStatusActive, "grace_until": 0, "suspend_until": 0}).Error; err != nil {
-		return fmt.Errorf("lifecycle sweep: recover renewed subs: %w", err)
+		Find(&recovered).Error; err != nil {
+		return fmt.Errorf("lifecycle sweep: query renewed subs: %w", err)
+	}
+	if len(recovered) > 0 {
+		recoveredIDs := make([]uint64, len(recovered))
+		for i := range recovered {
+			recoveredIDs[i] = recovered[i].ID
+		}
+		// status 守卫与 cohort 循环对称:仅更新仍处 grace/suspended 的行,避免快照与更新
+		// 之间被其它写者改状态时误覆盖(单 cron 写者下基本不可达,守卫纯为防御)。
+		if err := db.Get().Model(&PrivateNodeSubscription{}).
+			Where("id IN ? AND status IN ?", recoveredIDs, []string{PNStatusGrace, PNStatusSuspended}).
+			Updates(map[string]any{"status": PNStatusActive, "grace_until": 0, "suspend_until": 0}).Error; err != nil {
+			return fmt.Errorf("lifecycle sweep: recover renewed subs: %w", err)
+		}
+		if err := cancelOpenNodeOperations(db.Get(), recoveredIDs, []string{NodeOpStop, NodeOpDestroy}); err != nil {
+			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] cancel open stop/destroy for renewed subs: %v", err)
+		}
 	}
 
 	// 2. 期满：active 且 now >= ExpiresAt → grace。
@@ -69,6 +87,9 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 		}
 		sendCloudSlackNotification(ctx, "Private Node Suspended",
 			fmt.Sprintf("sub=%d user=%d order=%d grace ended → suspended (stop VPS, keep IP)", s.ID, s.UserID, s.OrderID))
+		if err := dispatchNodeOperation(ctx, s.ID, s.CloudInstanceID, NodeOpStop, "system:lifecycle", StopParams{Reason: "grace ended"}); err != nil {
+			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] dispatch stop sub=%d: %v", s.ID, err)
+		}
 	}
 
 	// 4. 停机结束：suspended 且 now >= ExpiresAt+grace+suspend → deprovisioned（终态）。
@@ -82,6 +103,9 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 		}
 		sendCloudSlackNotification(ctx, "Private Node Deprovisioned",
 			fmt.Sprintf("sub=%d user=%d order=%d suspend ended → deprovisioned (destroy VPS, release IP)", s.ID, s.UserID, s.OrderID))
+		if err := dispatchNodeOperation(ctx, s.ID, s.CloudInstanceID, NodeOpDestroy, "system:lifecycle", DestroyParams{Reason: "suspend ended"}); err != nil {
+			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] dispatch destroy sub=%d: %v", s.ID, err)
+		}
 	}
 
 	return nil
