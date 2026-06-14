@@ -64,6 +64,36 @@ func dispatchNodeOperation(ctx context.Context, subID uint64, cloudInstanceID *u
 	})
 }
 
+// createNodeOperationChecked 给 admin 手动创建用:open 已存在返回 (nil,nil) 让上层报 conflict;
+// 否则建并返回。与 dispatchNodeOperation 同锁同去重(FOR UPDATE sub 行),但向上层暴露
+// "已存在"以给操作员反馈。
+func createNodeOperationChecked(ctx context.Context, subID uint64, cloudInstanceID *uint64, action, createdBy string, params any) (*NodeOperation, error) {
+	var created *NodeOperation
+	err := db.Get().Transaction(func(tx *gorm.DB) error {
+		var sub PrivateNodeSubscription
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&sub, subID).Error; err != nil {
+			return err
+		}
+		open, err := hasOpenNodeOperation(tx, subID, action)
+		if err != nil {
+			return err
+		}
+		if open {
+			return nil
+		}
+		op := &NodeOperation{
+			Action: action, SubID: subID, CloudInstanceID: cloudInstanceID,
+			Status: NodeOpQueued, CreatedBy: createdBy, Params: mustJSON(params),
+		}
+		if err := tx.Create(op).Error; err != nil {
+			return err
+		}
+		created = op
+		return nil
+	})
+	return created, err
+}
+
 // cancelOpenNodeOperations 把指定 sub 集合下、指定动作的未结任务批量置 canceled。
 // 用于续费回收:已续费的 sub 不该再被执行 stop/destroy。
 func cancelOpenNodeOperations(tx *gorm.DB, subIDs []uint64, actions []string) error {
