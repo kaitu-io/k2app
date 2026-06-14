@@ -125,11 +125,17 @@ func adminClaimNodeOperation(c *gin.Context) {
 	if leaseSeconds <= 0 {
 		leaseSeconds = 600
 	}
+	// holder:agent 自报身份(如 agent-xyz);人工 admin 面板留空 → 服务端用真实 admin 身份,
+	// 让多操作员队列的"认领人"列可信(与 createdBy 同源,不可伪造)。
+	holder := body.Holder
+	if holder == "" {
+		holder = adminActorTag(c)
+	}
 	now := time.Now().Unix()
 	res := db.Get().Model(&NodeOperation{}).
 		Where("id = ? AND status = ?", id, NodeOpQueued).
 		Updates(map[string]any{
-			"status": NodeOpClaimed, "holder": body.Holder,
+			"status": NodeOpClaimed, "holder": holder,
 			"leased_at": now, "lease_deadline": now + int64(leaseSeconds),
 		})
 	if res.Error != nil {

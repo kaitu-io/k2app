@@ -2154,6 +2154,57 @@ export const api = {
     });
   },
 
+  // ========================= Node Operation Queue APIs =========================
+
+  // List node operations (filter by action/status; latest first)
+  async listNodeOperations(params: {
+    page?: number;
+    pageSize?: number;
+    action?: string;
+    status?: string;
+  } = {}): Promise<ListResult<NodeOperation>> {
+    const queryParams = new URLSearchParams();
+    if (params.page !== undefined) queryParams.set('page', params.page.toString());
+    if (params.pageSize !== undefined) queryParams.set('pageSize', params.pageSize.toString());
+    if (params.action) queryParams.set('action', params.action);
+    if (params.status) queryParams.set('status', params.status);
+    const query = queryParams.toString();
+    return this.request<ListResult<NodeOperation>>(`/app/node-operations${query ? '?' + query : ''}`);
+  },
+
+  // Create an ad-hoc node operation (change_ip / stop / destroy — provision is order-triggered)
+  async createNodeOperation(body: {
+    subId: number;
+    action: 'change_ip' | 'stop' | 'destroy';
+    params?: Record<string, unknown>;
+  }): Promise<NodeOperation> {
+    return this.request<NodeOperation>('/app/node-operations', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  // Atomically claim a queued operation
+  // holder 留空时由 Center 用真实 admin 身份戳记(与 createdBy 同源);agent 调用方可显式传 holder。
+  async claimNodeOperation(id: number, holder = ""): Promise<NodeOperationClaimResponse> {
+    return this.request<NodeOperationClaimResponse>(`/app/node-operations/${id}/claim`, {
+      method: 'POST',
+      body: JSON.stringify({ holder }),
+    });
+  },
+
+  // Report progress / completion / failure / cancellation
+  async updateNodeOperation(id: number, body: {
+    status: string;
+    result?: Record<string, unknown>;
+    error?: string;
+  }): Promise<void> {
+    return this.request<void>(`/app/node-operations/${id}/update`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
   // ========================= Slave Node Management APIs =========================
 
   // List slave nodes (with tunnels)
@@ -2373,6 +2424,36 @@ export type CloudInstanceDetailResponse = CloudInstance;
 
 export interface CloudChangeIPResponse {
   task_id: string;
+}
+
+// Node operation queue — matches Center NodeOperation (api/model_node_operation.go).
+// action ∈ provision|change_ip|stop|destroy; status ∈ queued|claimed|in_progress|done|failed|canceled.
+export interface NodeOperation {
+  id: number;
+  createdAt: number;
+  updatedAt: number;
+  action: string;
+  subId: number;
+  cloudInstanceId: number | null;
+  status: string;
+  holder: string;
+  leasedAt: number;
+  leaseDeadline: number;
+  params: string;   // JSON string
+  result: string;   // JSON string
+  lastError?: string;
+  createdBy: string;
+  completedAt: number;
+}
+
+// Claim response: operation plus an optional node identity (provision only).
+export interface NodeOperationClaimResponse {
+  operation: NodeOperation;
+  identity?: {
+    claimToken: string;
+    centerUrl: string;
+    domain: string;
+  };
 }
 
 // Matches backend DataCloudAccount struct
