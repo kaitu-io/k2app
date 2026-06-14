@@ -180,6 +180,8 @@ func handleWordgateOrderPaidEvent(c *gin.Context, webhookEvent *wordgate.Webhook
 		if err := enqueueProvision(c, subID); err != nil {
 			log.Errorf(c, "[Webhook] failed to enqueue provision for sub %d (order committed; needs manual retry): %v", subID, err)
 		}
+		// 白手套 onboarding:装机工单 + Slack + 欢迎邮件。best-effort,不阻断。
+		onPrivateNodeOrderOnboarding(c, subID)
 	}
 
 	return nil
