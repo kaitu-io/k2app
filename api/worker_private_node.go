@@ -51,7 +51,7 @@ func handleProvisionPrivateNode(ctx context.Context, payload []byte) error {
 	if err != nil {
 		return markProvisionFailed(ctx, &sub, err)
 	}
-	// Center 不再直接建机：只写 NodeProvisionJob(queued) 队列行，交外部 AI agent 认领。
+	// Center 不再直接建机：只写 NodeOperation(action=provision, queued) 队列行，交外部 AI agent 认领。
 	if err := emitNodeProvisionJob(ctx, &sub, spec); err != nil {
 		if isLastAttempt(ctx) {
 			return markProvisionFailed(ctx, &sub, err)
@@ -75,12 +75,12 @@ func handleProvisionTimeoutSweep(ctx context.Context, payload []byte) error {
 			log.Errorf(ctx, "timeout sweep: mark failed sub=%d: %v", s.ID, err)
 			continue
 		}
-		// 孤儿 job 同步置 failed：否则它仍停在 queued/claimed/provisioning，agent 会
-		// 认领一个对应 sub 已失败的 job、白白建一台 VPS。best-effort，不阻断清扫。
-		if err := db.Get().Model(&NodeProvisionJob{}).
-			Where("sub_id = ? AND status NOT IN ?", s.ID, []string{NPJStatusSucceeded, NPJStatusFailed}).
-			Updates(map[string]any{"status": NPJStatusFailed, "last_error": "subscription provisioning timed out"}).Error; err != nil {
-			log.Errorf(ctx, "timeout sweep: fail orphan job sub=%d: %v", s.ID, err)
+		// provision 运维任务同步置 failed:否则它仍停在未结状态,agent/人工会认领一个
+		// 对应 sub 已失败的任务、白白建一台 VPS。best-effort,不阻断清扫。
+		if err := db.Get().Model(&NodeOperation{}).
+			Where("sub_id = ? AND action = ? AND status IN ?", s.ID, NodeOpProvision, nodeOpOpenStatuses).
+			Updates(map[string]any{"status": NodeOpFailed, "last_error": "subscription provisioning timed out"}).Error; err != nil {
+			log.Errorf(ctx, "timeout sweep: fail orphan provision op sub=%d: %v", s.ID, err)
 		}
 		sendCloudSlackNotification(ctx, "Private Node Provision Timeout",
 			fmt.Sprintf("sub=%d order=%d stuck in provisioning > %ds → failed", s.ID, s.OrderID, provisionTimeoutSeconds))

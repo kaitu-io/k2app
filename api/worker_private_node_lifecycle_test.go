@@ -103,3 +103,59 @@ func TestPrivateNodeLifecycleSweep(t *testing.T) {
 	assert.Equal(t, int64(0), rG.GraceUntil, "G grace_until zeroed")
 	assert.Equal(t, int64(0), rG.SuspendUntil, "G suspend_until zeroed")
 }
+
+func TestLifecycleSweep_DispatchesStopOnSuspend(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	now := time.Now().Unix()
+	ciID := uint64(999100)
+	const orderID = uint64(9_600_101) // 专属 OrderID 段,pre-purge 防 uniqueIndex 残留
+	db.Get().Unscoped().Where("order_id = ?", orderID).Delete(&PrivateNodeSubscription{})
+	sub := &PrivateNodeSubscription{
+		UserID: 990001, PlanID: 1, OrderID: orderID, Status: PNStatusGrace,
+		ExpiresAt: now - privateNodeGraceSeconds - 10, CloudInstanceID: &ciID,
+		Region: "ap-northeast-1", IPType: "non_residential", TrafficTotalBytes: 1,
+	}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() {
+		db.Get().Where("sub_id = ?", sub.ID).Delete(&NodeOperation{})
+		db.Get().Unscoped().Where("order_id = ?", orderID).Delete(&PrivateNodeSubscription{})
+	})
+
+	require.NoError(t, handlePrivateNodeLifecycleSweep(ctx, nil))
+
+	var op NodeOperation
+	require.NoError(t, db.Get().Where("sub_id = ? AND action = ?", sub.ID, NodeOpStop).First(&op).Error)
+	assert.Equal(t, NodeOpQueued, op.Status)
+	assert.Equal(t, "system:lifecycle", op.CreatedBy)
+}
+
+func TestLifecycleSweep_RenewalCancelsOpenStop(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	now := time.Now().Unix()
+	ciID := uint64(999101)
+	const orderID = uint64(9_600_102) // 专属 OrderID 段,pre-purge 防 uniqueIndex 残留
+	db.Get().Unscoped().Where("order_id = ?", orderID).Delete(&PrivateNodeSubscription{})
+	sub := &PrivateNodeSubscription{
+		UserID: 990002, PlanID: 1, OrderID: orderID, Status: PNStatusSuspended,
+		ExpiresAt: now + 30*86400, CloudInstanceID: &ciID,
+		Region: "ap-northeast-1", IPType: "non_residential", TrafficTotalBytes: 1,
+	}
+	require.NoError(t, db.Get().Create(sub).Error)
+	stop := &NodeOperation{Action: NodeOpStop, SubID: sub.ID, Status: NodeOpQueued, CreatedBy: "system:lifecycle", CloudInstanceID: &ciID}
+	require.NoError(t, db.Get().Create(stop).Error)
+	t.Cleanup(func() {
+		db.Get().Where("sub_id = ?", sub.ID).Delete(&NodeOperation{})
+		db.Get().Unscoped().Where("order_id = ?", orderID).Delete(&PrivateNodeSubscription{})
+	})
+
+	require.NoError(t, handlePrivateNodeLifecycleSweep(ctx, nil))
+
+	var gotSub PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&gotSub, sub.ID).Error)
+	assert.Equal(t, PNStatusActive, gotSub.Status)
+	var gotOp NodeOperation
+	require.NoError(t, db.Get().First(&gotOp, stop.ID).Error)
+	assert.Equal(t, NodeOpCanceled, gotOp.Status, "renewed sub's open stop must be canceled")
+}

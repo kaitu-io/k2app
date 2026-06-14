@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -52,8 +53,11 @@ func TestCreatePrivateNodeSubscription(t *testing.T) {
 }
 
 // TestEmitNodeProvisionJob proves the collapsed worker path: emitNodeProvisionJob
-// gates the sub pending→provisioning and inserts exactly one queued NodeProvisionJob
-// for an external agent to claim. Re-running is idempotent (one job row, no error).
+// gates the sub pending→provisioning and inserts exactly one queued NodeOperation
+// (action=provision) for an external agent to claim. Re-running is now idempotent —
+// dispatchNodeOperation dedups on the open (sub,provision) slot, so a second emit
+// does NOT create a second row. Assertion below pins the gate + first-emit shape +
+// restored idempotency.
 func TestEmitNodeProvisionJob(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
@@ -85,33 +89,40 @@ func TestEmitNodeProvisionJob(t *testing.T) {
 	sub, err := createPrivateNodeSubscription(ctx, db.Get(), &order, &plan, now)
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(sub) })
-	t.Cleanup(func() { db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeProvisionJob{}) })
+	t.Cleanup(func() { db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeOperation{}) })
 
-	// First emit: pending → provisioning, exactly one queued job.
+	// First emit: pending → provisioning, exactly one queued provision operation.
 	require.NoError(t, emitNodeProvisionJob(ctx, sub, &spec))
 
 	var reloaded PrivateNodeSubscription
 	require.NoError(t, db.Get().First(&reloaded, sub.ID).Error)
 	assert.Equal(t, PNStatusProvisioning, reloaded.Status)
 
-	var jobs []NodeProvisionJob
-	require.NoError(t, db.Get().Where("sub_id = ?", sub.ID).Find(&jobs).Error)
-	require.Len(t, jobs, 1, "exactly one provision job after first emit")
-	assert.Equal(t, NPJStatusQueued, jobs[0].Status)
-	assert.Equal(t, sub.ID, jobs[0].SubID)
-	assert.Equal(t, spec.BundleID, jobs[0].BundleID)
-	assert.Equal(t, spec.ImageID, jobs[0].ImageID)
-	assert.Equal(t, "private", jobs[0].ComposeVariant)
-	assert.Equal(t, sub.Region, jobs[0].Region)
-	assert.Equal(t, sub.IPType, jobs[0].IPType)
-	assert.Equal(t, sub.TrafficTotalBytes, jobs[0].TrafficTotalBytes)
+	var ops []NodeOperation
+	require.NoError(t, db.Get().Where("sub_id = ?", sub.ID).Find(&ops).Error)
+	require.Len(t, ops, 1, "exactly one provision operation after first emit")
+	assert.Equal(t, NodeOpProvision, ops[0].Action)
+	assert.Equal(t, NodeOpQueued, ops[0].Status)
+	assert.Equal(t, sub.ID, ops[0].SubID)
+	assert.Equal(t, "system:order", ops[0].CreatedBy)
 
-	// Second emit on the same sub: idempotent, still exactly one job, no error.
+	var params ProvisionParams
+	require.NoError(t, json.Unmarshal([]byte(ops[0].Params), &params))
+	assert.Equal(t, spec.BundleID, params.BundleID)
+	assert.Equal(t, spec.ImageID, params.ImageID)
+	assert.Equal(t, "private", params.ComposeVariant)
+	assert.Equal(t, sub.Region, params.Region)
+	assert.Equal(t, sub.IPType, params.IPType)
+	assert.Equal(t, sub.TrafficTotalBytes, params.TrafficTotalBytes)
+
+	// Second emit on the same sub: dispatchNodeOperation dedups on the open
+	// (sub,provision) slot, so the re-emit is a no-op — still exactly one queued op.
 	require.NoError(t, emitNodeProvisionJob(ctx, sub, &spec))
 
-	var jobsAgain []NodeProvisionJob
-	require.NoError(t, db.Get().Where("sub_id = ?", sub.ID).Find(&jobsAgain).Error)
-	require.Len(t, jobsAgain, 1, "idempotent re-emit must NOT create a second job")
+	var opsAgain []NodeOperation
+	require.NoError(t, db.Get().Where("sub_id = ?", sub.ID).Find(&opsAgain).Error)
+	require.Len(t, opsAgain, 1, "re-emit deduped on open (sub,provision) slot")
+	assert.Equal(t, NodeOpQueued, opsAgain[0].Status, "the single op stays queued")
 }
 
 // TestEmitNodeProvisionJob_FailsClosedOnQuotaInvariant proves the provision-time
@@ -160,7 +171,7 @@ func TestEmitNodeProvisionJob_FailsClosedOnQuotaInvariant(t *testing.T) {
 	sub, err := createPrivateNodeSubscription(ctx, db.Get(), &order, &plan, now)
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(sub) })
-	t.Cleanup(func() { db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeProvisionJob{}) })
+	t.Cleanup(func() { db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeOperation{}) })
 
 	// Fail-closed: not an error return; it transitions to failed + skips job emit.
 	require.NoError(t, emitNodeProvisionJob(ctx, sub, legacySpec))
@@ -172,6 +183,6 @@ func TestEmitNodeProvisionJob_FailsClosedOnQuotaInvariant(t *testing.T) {
 	assert.NotEmpty(t, reloaded.LastProvisionError, "failure reason must be recorded")
 
 	var jobCount int64
-	db.Get().Model(&NodeProvisionJob{}).Where("sub_id = ?", sub.ID).Count(&jobCount)
-	assert.Equal(t, int64(0), jobCount, "no provision job may be emitted")
+	db.Get().Model(&NodeOperation{}).Where("sub_id = ?", sub.ID).Count(&jobCount)
+	assert.Equal(t, int64(0), jobCount, "no provision operation may be emitted")
 }

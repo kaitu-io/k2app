@@ -262,10 +262,15 @@ func api_slave_node_upsert(c *gin.Context) {
 				} else {
 					log.Debugf(c, "no cloud instance found for ip=%s (sub=%d), skip link", node.Ipv4, pnSub.ID)
 				}
-				// 翻开通 job → succeeded。best-effort。
-				if e := tx.Model(&NodeProvisionJob{}).Where("sub_id = ?", pnSub.ID).
-					Update("status", NPJStatusSucceeded).Error; e != nil {
-					log.Errorf(c, "mark provision job succeeded sub=%d: %v", pnSub.ID, e)
+				// 翻 provision 运维任务 → done(权威完成只走自注册)。best-effort。
+				if e := tx.Model(&NodeOperation{}).
+					Where("sub_id = ? AND action = ?", pnSub.ID, NodeOpProvision).
+					Updates(map[string]any{
+						"status":       NodeOpDone,
+						"completed_at": time.Now().Unix(),
+						"result":       mustJSON(map[string]any{"ipv4": node.Ipv4}),
+					}).Error; e != nil {
+					log.Errorf(c, "mark provision operation done sub=%d: %v", pnSub.ID, e)
 				}
 				// 同步内存 node 字段，避免响应序列化用旧值。
 				node.Class = NodeClassPrivate

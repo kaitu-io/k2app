@@ -84,7 +84,7 @@ func isDuplicateKeyErr(err error) bool {
 	return strings.Contains(err.Error(), "1062") || strings.Contains(err.Error(), "Duplicate entry")
 }
 
-// emitNodeProvisionJob 写一条 NodeProvisionJob(queued) 队列行，交外部 AI agent 认领建机+部署。
+// emitNodeProvisionJob 写一条 NodeOperation(action=provision, queued) 队列行，交外部 AI agent 认领建机+部署。
 // Center 不再直接 CreateInstance/cloud-init；激活仍由节点自注册带 claim 驱动（Plan 4）。
 // 状态停在 provisioning（NOT active）——node 自注册回传 claim 后才转 active。
 func emitNodeProvisionJob(ctx context.Context, sub *PrivateNodeSubscription, spec *PrivateNodePlanSpec) error {
@@ -118,23 +118,14 @@ func emitNodeProvisionJob(ctx context.Context, sub *PrivateNodeSubscription, spe
 		return nil
 	}
 
-	// 2. 幂等写入 job 行（SubID uniqueIndex）。
-	job := &NodeProvisionJob{
-		SubID: sub.ID, Status: NPJStatusQueued,
+	// 2. 经 dispatchNodeOperation 派发 provision 运维任务,带 (sub,action) open 去重——
+	//    Asynq 重试或重复 emit 不会再叠出第二条未结 provision 行。sub 状态原子门控
+	//    与此去重各自独立守护幂等。
+	return dispatchNodeOperation(ctx, sub.ID, nil, NodeOpProvision, "system:order", ProvisionParams{
 		Region: sub.Region, BundleID: spec.BundleID, ImageID: spec.ImageID,
-		ComposeVariant: "private", TrafficTotalBytes: sub.TrafficTotalBytes,
-		IPType: sub.IPType, Domain: "",
-		// K2Version left empty for now (pinned at deploy spec maturity)
-	}
-	if err := db.Get().Create(job).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) || isDuplicateKeyErr(err) {
-			log.Debugf(ctx, "node provision job for sub=%d already exists, idempotent skip", sub.ID)
-			return nil
-		}
-		return fmt.Errorf("create node provision job: %w", err)
-	}
-	log.Infof(ctx, "emitted node provision job=%d for sub=%d (queued for agent)", job.ID, sub.ID)
-	return nil
+		ComposeVariant: "private", K2Version: "",
+		TrafficTotalBytes: sub.TrafficTotalBytes, IPType: sub.IPType, Domain: "",
+	})
 }
 
 // enqueueProvision 入队开通任务。MaxRetry(3)：spec §7.5 要求重试 3 次（Asynq 默认 25）。
