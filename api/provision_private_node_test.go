@@ -54,8 +54,10 @@ func TestCreatePrivateNodeSubscription(t *testing.T) {
 
 // TestEmitNodeProvisionJob proves the collapsed worker path: emitNodeProvisionJob
 // gates the sub pending→provisioning and inserts exactly one queued NodeOperation
-// (action=provision) for an external agent to claim. Re-running creates another row
-// (dedup moves to Task 2); assertion below pins the gate + first-emit shape.
+// (action=provision) for an external agent to claim. Re-running is now idempotent —
+// dispatchNodeOperation dedups on the open (sub,provision) slot, so a second emit
+// does NOT create a second row. Assertion below pins the gate + first-emit shape +
+// restored idempotency.
 func TestEmitNodeProvisionJob(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
@@ -113,14 +115,14 @@ func TestEmitNodeProvisionJob(t *testing.T) {
 	assert.Equal(t, sub.IPType, params.IPType)
 	assert.Equal(t, sub.TrafficTotalBytes, params.TrafficTotalBytes)
 
-	// Second emit on the same sub: (sub,action) dedup now lives in Task 2's
-	// dispatchNodeOperation. This bare-create path inserts a second row; pin that
-	// so the dedup regression test in Task 2 has a clear before/after.
+	// Second emit on the same sub: dispatchNodeOperation dedups on the open
+	// (sub,provision) slot, so the re-emit is a no-op — still exactly one queued op.
 	require.NoError(t, emitNodeProvisionJob(ctx, sub, &spec))
 
 	var opsAgain []NodeOperation
 	require.NoError(t, db.Get().Where("sub_id = ?", sub.ID).Find(&opsAgain).Error)
-	require.Len(t, opsAgain, 2, "bare-create re-emit makes a second op (dedup is Task 2)")
+	require.Len(t, opsAgain, 1, "re-emit deduped on open (sub,provision) slot")
+	assert.Equal(t, NodeOpQueued, opsAgain[0].Status, "the single op stays queued")
 }
 
 // TestEmitNodeProvisionJob_FailsClosedOnQuotaInvariant proves the provision-time

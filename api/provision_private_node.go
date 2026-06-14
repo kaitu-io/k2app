@@ -118,22 +118,14 @@ func emitNodeProvisionJob(ctx context.Context, sub *PrivateNodeSubscription, spe
 		return nil
 	}
 
-	// 2. 直接写入 provision 运维任务行。(sub,action) 去重移至 Task 2 dispatchNodeOperation;
-	//    本步先无条件建,sub 状态原子门控已保证一次正常开通流程只到这一次。
-	op := &NodeOperation{
-		Action: NodeOpProvision, SubID: sub.ID, Status: NodeOpQueued,
-		CreatedBy: "system:order",
-		Params: mustJSON(ProvisionParams{
-			Region: sub.Region, BundleID: spec.BundleID, ImageID: spec.ImageID,
-			ComposeVariant: "private", K2Version: "",
-			TrafficTotalBytes: sub.TrafficTotalBytes, IPType: sub.IPType, Domain: "",
-		}),
-	}
-	if err := db.Get().Create(op).Error; err != nil {
-		return fmt.Errorf("create node provision operation: %w", err)
-	}
-	log.Infof(ctx, "emitted provision operation=%d for sub=%d (queued)", op.ID, sub.ID)
-	return nil
+	// 2. 经 dispatchNodeOperation 派发 provision 运维任务,带 (sub,action) open 去重——
+	//    Asynq 重试或重复 emit 不会再叠出第二条未结 provision 行。sub 状态原子门控
+	//    与此去重各自独立守护幂等。
+	return dispatchNodeOperation(ctx, sub.ID, nil, NodeOpProvision, "system:order", ProvisionParams{
+		Region: sub.Region, BundleID: spec.BundleID, ImageID: spec.ImageID,
+		ComposeVariant: "private", K2Version: "",
+		TrafficTotalBytes: sub.TrafficTotalBytes, IPType: sub.IPType, Domain: "",
+	})
 }
 
 // enqueueProvision 入队开通任务。MaxRetry(3)：spec §7.5 要求重试 3 次（Asynq 默认 25）。

@@ -31,6 +31,11 @@ var nodeOpOpenStatuses = []string{NodeOpQueued, NodeOpClaimed, NodeOpInProgress}
 // NodeOperation 专属节点运维任务:Center 派发,人工(未来 agent)认领并外部执行后回上报。
 // 执行是外部人工动作(console/SSH);本表只记录意图 + 进度 + 结果(运维可见性)。
 // sub.status 仍是订阅生命周期的权威视图,与本表 status 解耦。
+//
+// 去重不变式:同一 (sub_id, action) 至多一条未结(nodeOpOpenStatuses)记录。idx_op_sub_action_status
+// 是非唯一索引(MariaDB 无便捷的 partial-unique),去重靠应用层 FOR UPDATE 锁 sub 行后 check-before-insert
+// (见 dispatchNodeOperation / createNodeOperationChecked)。**任何新增的写入路径都必须经此锁**,否则
+// 绕过去重会叠出并发重复任务。
 type NodeOperation struct {
 	ID        uint64 `gorm:"primarykey" json:"id"`
 	CreatedAt int64  `gorm:"autoCreateTime" json:"createdAt"`
