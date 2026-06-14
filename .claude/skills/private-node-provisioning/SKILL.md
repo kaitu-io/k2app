@@ -41,37 +41,37 @@ That env-gating is *why* the private node deploys with **two** compose files: th
 Before the loop:
 
 - The agent runs the `kaitu-center` MCP with the `cloud` **and** `cloud.write` permission groups (claim/report and instance creation are `cloud.write`; list/get are `cloud`).
-- SSH access to the new VPS uses the **cloud account's default keypair**. The agent must be able to reach the new instance over SSH (port 22 initially, 1022 after hardening — see Step 4). **⚠ Open question (agent-provisioning spec §8):** multi-provider SSH-key acquisition is only solved for providers with a default-keypair API (e.g. Lightsail). For residential-IP / other providers the SSH access path is **TBD** — if the job's provider has no known key path, `report_provisioning(failed)` and escalate.
-- `claimToken` and `K2_NODE_SECRET` are **machine secrets**: never echo them to logs, the conversation, or any `report_provisioning` call. Write them to `.env` via heredoc only (Step 5).
+- SSH access to the new VPS uses the **cloud account's default keypair**. The agent must be able to reach the new instance over SSH (port 22 initially, 1022 after hardening — see Step 4). **⚠ Open question (agent-provisioning spec §8):** multi-provider SSH-key acquisition is only solved for providers with a default-keypair API (e.g. Lightsail). For residential-IP / other providers the SSH access path is **TBD** — if the operation's provider has no known key path, `update_node_operation(status=failed)` and escalate.
+- `claimToken` and `K2_NODE_SECRET` are **machine secrets**: never echo them to logs, the conversation, or any `update_node_operation` call. Write them to `.env` via heredoc only (Step 5).
 
 ## Step 1: Claim an intent
 
 ```
-list_provisioning_intents(status=queued)
+list_node_operations(action=provision, status=queued)
 ```
 
-Returns `data.items[]` (paginated via `page` / `pageSize`). Pick one job, then atomically lease it:
+Returns `data.items[]` (paginated via `page` / `pageSize`). Pick one operation, then atomically lease it:
 
 ```
-claim_provisioning_intent(id=<jobId>, holder=<agent-id>, leaseSeconds=600?)
+claim_node_operation(id=<operationId>, holder=<agent-id>, leaseSeconds=600?)
 ```
 
-`leaseSeconds` defaults to **600** if omitted. The response is `{ data.job, data.identity }`. Capture:
+`leaseSeconds` defaults to **600** if omitted. The response is `{ data.operation, data.identity }` (`data.identity` is present only for `action=provision`). The provision spec fields below live on `data.operation.params.*`. Capture:
 
 | From claim response | Goes to | Notes |
 |---------------------|---------|-------|
 | `data.identity.claimToken` | `.env` `K2_PRIVATE_CLAIM` | **ONE-TIME** — only ever returned by this call, never shown again. Bake into `.env` immediately; never log it. |
 | `data.identity.centerUrl` | `.env` `K2_CENTER_URL` + `K2_USAGE_REPORT_URL` | Center base URL. |
 | `data.identity.domain` | `.env` `K2_DOMAIN` | Empty → leave empty, sidecar auto-derives `{ipv4-with-dashes}.sslip.io`. |
-| `data.job.region` | `create_cloud_instance region` + `.env` `K2_NODE_REGION` | Map to the provider's region identifier (Step 2). |
-| `data.job.bundleId` | `create_cloud_instance plan` | Map bundle → plan (Step 2). |
-| `data.job.imageId` | `create_cloud_instance image_id` | OS image. |
-| `data.job.k2Version` | `.env` `K2_VERSION` | Pin the version — do **not** use `:latest`. |
-| `data.job.trafficTotalBytes` | `.env` `K2_NODE_TRAFFIC_LIMIT_GB` | Derive GB = `trafficTotalBytes / (1024^3)`. |
-| `data.job.ipType` | provider selection / notes | residential vs non-residential. |
-| `data.job.subId` | instance `name = pn-<subId>` + `.env` `K2_NODE_NAME` | Deterministic naming → idempotency root. |
+| `data.operation.params.region` | `create_cloud_instance region` + `.env` `K2_NODE_REGION` | Map to the provider's region identifier (Step 2). |
+| `data.operation.params.bundleId` | `create_cloud_instance plan` | Map bundle → plan (Step 2). |
+| `data.operation.params.imageId` | `create_cloud_instance image_id` | OS image. |
+| `data.operation.params.k2Version` | `.env` `K2_VERSION` | Pin the version — do **not** use `:latest`. |
+| `data.operation.params.trafficTotalBytes` | `.env` `K2_NODE_TRAFFIC_LIMIT_GB` | Derive GB = `trafficTotalBytes / (1024^3)`. |
+| `data.operation.params.ipType` | provider selection / notes | residential vs non-residential. |
+| `data.operation.subId` | instance `name = pn-<subId>` + `.env` `K2_NODE_NAME` | Deterministic naming → idempotency root. |
 
-**If claim returns an error envelope (409-ish: already claimed / not found):** do **not** retry blindly. Re-run `list_provisioning_intents(status=queued)` — someone else took it — and pick another, or exit if the queue is empty.
+**If claim returns an error envelope (409-ish: already claimed / not found):** do **not** retry blindly. Re-run `list_node_operations(action=provision, status=queued)` — someone else took it — and pick another, or exit if the queue is empty.
 
 **Idempotent re-entry:** before creating, probe `list_cloud_instances` for an instance already named `pn-<subId>`. If one exists and is running, **reuse it** (a prior run was interrupted) — skip Step 3's create and resume at Step 4. This is the guard against orphan VPSes.
 
@@ -98,13 +98,13 @@ create_cloud_instance(
 )
 ```
 
-As soon as the instance ID and public IPv4 are known, report progress so Center sees the work advancing:
+As soon as the instance ID and public IPv4 are known, report progress so Center sees the work advancing (pass them inside `result`):
 
 ```
-report_provisioning(id=<jobId>, status=provisioning, instanceId=<...>, ipv4=<publicIPv4>)
+update_node_operation(id=<operationId>, status=in_progress, result={ instanceId: <...>, ipv4: <publicIPv4> })
 ```
 
-> `report_provisioning` accepts only `provisioning` or `failed`. **`succeeded` is NOT accepted here** — Center rejects it. The terminal `succeeded` status is set by the node itself at self-registration (Step 7).
+> For `action=provision`, `update_node_operation` accepts `in_progress` or `failed`. **`done` is REJECTED here** — Center rejects it. The terminal completion (`done`) is set by the node itself at self-registration (Step 7).
 
 ## Step 4: OS provision
 
@@ -171,24 +171,24 @@ Run the `kaitu-node-ops` post-deployment checklist (containers Up, sidecar healt
 | Usage reporter started | `docker logs --tail 50 k2v5 \| grep -i "usage report"` | reporter start line present (only logs on verdict change / error — absence of errors is OK) |
 | Live counters readable | `curl -s 127.0.0.1:9099/usage` | JSON counters (loopback-only, **read-only** — the sole usage endpoint after the Option D trim; `/reset` + `/verdict` were removed) |
 | Node visible in Center | `list_nodes(name=pn-<subId>)` | one `tunnels` entry with the sslip.io domain |
-| Job flipped to succeeded | `list_provisioning_intents(status=succeeded)` (or check the job) | job is `succeeded` — **set by node self-registration, NOT by `report_provisioning`** |
+| Operation flipped to done | `list_node_operations(action=provision, status=done)` (or check the operation) | operation is `done` — **set by node self-registration, NOT by `update_node_operation`** |
 
 If the usage reporter line is absent **and** `127.0.0.1:9099/usage` errors, re-check that `K2_USAGE_REPORT_URL` + `K2_NODE_SECRET` are present in `.env` and that the stack was brought up with **both** compose files (the override is what injects them).
 
 ## Step 8: On failure
 
-Any step failing → mark the job failed so Center frees / alerts on it:
+Any step failing → mark the operation failed so Center frees / alerts on it:
 
 ```
-report_provisioning(id=<jobId>, status=failed, error=<concise reason — NEVER include claimToken or K2_NODE_SECRET>)
+update_node_operation(id=<operationId>, status=failed, error=<concise reason — NEVER include claimToken or K2_NODE_SECRET>)
 ```
 
 - Deploy steps are idempotent — within the lease you may self-retry (re-run `provision-node.sh` / re-`up -d`) before giving up.
-- **Never report `succeeded`** — Center rejects it; only the node's self-registration sets the terminal success. If the node never self-registers, Center's timeout-sweep cron marks the sub failed (the authoritative gate, independent of the agent). An agent crash at any point never wedges the sub permanently.
+- **Never report `done` for provision** — Center rejects it; only the node's self-registration sets the terminal success. If the node never self-registers, Center's timeout-sweep cron marks the sub failed (the authoritative gate, independent of the agent). An agent crash at any point never wedges the sub permanently.
 
 ## Step 9: Guardrails (mirror kaitu-node-ops)
 
-1. **`claimToken` + `K2_NODE_SECRET` are untouchable** — never echo to logs, the conversation, or any `report_provisioning` call. Write only via heredoc (Step 5); never pass on the command line.
+1. **`claimToken` + `K2_NODE_SECRET` are untouchable** — never echo to logs, the conversation, or any `update_node_operation` call. Write only via heredoc (Step 5); never pass on the command line.
 2. **Deterministic naming `pn-<subId>` = idempotency root** — always probe `list_cloud_instances` before creating; reuse a running match instead of spawning an orphan.
 3. **Re-runs are idempotent** — `provision-node.sh`, `.env` write, and `up -d` are all safe to repeat.
 4. **`pull + up -d`, never `down`** — including both `-f` files on updates.
