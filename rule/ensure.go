@@ -109,37 +109,43 @@ func ensureOnce(ctx context.Context, cacheDir string, sources []string, force bo
 		}
 		slog.Warn("DIAG: rule-manifest-unreachable", "err", mErr.Error(), "dir", cacheDir)
 		// No manifest winner → no pin. Race all sources (Happy Eyeballs).
-		return downloadExtractSwap(ctx, cacheDir, sources, "", "", nil)
+		return downloadExtractSwap(ctx, cacheDir, sources, "", "")
 	}
 
 	localVer := readLocalManifestVersion(cacheDir)
-	if !force && !remoteNewer(remote.Version, localVer) && localMatchesManifest(cacheDir, remote) {
-		// Same-or-older remote and local shas already match → fresh. Touch the
-		// version file so shortTTL resets and we don't re-fetch the manifest
-		// every connect for the next hour.
+	if !force && !remoteNewer(remote.Version, localVer) {
+		// Local version is current or newer than the remote manifest → nothing to
+		// download. We no longer byte-verify the local bundles against the manifest
+		// sha (HTTPS + version identity are trusted); a valid-but-stale local
+		// bundle stays put. Touch the version file so shortTTL resets and we don't
+		// re-fetch the manifest every connect for the next hour.
 		_ = touchVersionFile(cacheDir)
 		return nil
 	}
 
-	// Pin the tarball download to the manifest's winning source: that mirror's
-	// shas are what we'll verify against, so racing other (possibly stale)
-	// mirrors only risks handing us a mismatched tarball. downloadExtractSwap →
-	// downloadRaceTarball fetches the pinned mirror alone first, then races the
-	// remaining sources as fallbacks (order-independent), so no pre-ordering of
-	// sources is needed here. (H3)
-	return downloadExtractSwap(ctx, cacheDir, sources, srcURL, remote.Version, remote)
+	// Pin the tarball download to the manifest's winning source: it served the
+	// newest manifest version, so its tarball is the most likely to be fresh.
+	// downloadExtractSwap → downloadRaceTarball fetches the pinned mirror alone
+	// first, then races the remaining sources as fallbacks (order-independent),
+	// so no pre-ordering of sources is needed here. (H3)
+	return downloadExtractSwap(ctx, cacheDir, sources, srcURL, remote.Version)
 }
 
 // downloadExtractSwap downloads the tarball, extracts to a temp dir, rejects an
-// empty extraction, verifies against the manifest (when non-nil), atomic-swaps,
-// and records manifestVersion. A verify failure keeps the prior cache.
+// empty extraction (structural guard), atomic-swaps, and records
+// manifestVersion. The downloaded bytes are NOT verified against the manifest
+// sha — HTTPS is trusted, and a valid-but-stale bundle is accepted rather than
+// rejected: rejecting it left clients on an older/empty cache and degraded them
+// to all-proxy (the 2026-06 CDN per-file staleness outage). A 1-day-old rule
+// bundle is fine; structural guards (empty-reject, gzip/tar decode, load-time
+// parse) still keep a corrupt download out.
 //
 // pinnedSrc selects the download strategy: when non-empty (manifest path), the
-// pinned mirror is fetched in isolation first and the rest of sources are only
-// raced as fallbacks if the pin fails — so the happy path contacts exactly the
-// mirror whose manifest we'll verify against. When empty (manifest-unreachable
-// legacy path), all sources race via Happy Eyeballs.
-func downloadExtractSwap(ctx context.Context, cacheDir string, sources []string, pinnedSrc, manifestVersion string, m *Manifest) error {
+// pinned mirror — the one that served the newest manifest version — is fetched
+// in isolation first and the rest are raced only as fallbacks, so the happy
+// path contacts the freshest mirror. When empty (manifest-unreachable legacy
+// path), all sources race via Happy Eyeballs.
+func downloadExtractSwap(ctx context.Context, cacheDir string, sources []string, pinnedSrc, manifestVersion string) error {
 	tmpDir := filepath.Join(cacheDir, ".tmp")
 	_ = os.RemoveAll(tmpDir) // clear stale crash leftover
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
@@ -171,36 +177,10 @@ func downloadExtractSwap(ctx context.Context, cacheDir string, sources []string,
 		return errors.New("rule: tarball contained 0 .krs bundles (stale mirror or format skew)")
 	}
 
-	if m != nil {
-		if err := verifyAgainstManifest(newDir, m); err != nil {
-			// Mirror mid-propagation / corruption: keep the prior cache.
-			return fmt.Errorf("rule: manifest verify failed, keeping prior cache: %w", err)
-		}
-	}
-
 	if err := atomicSwap(cacheDir, newDir); err != nil {
 		return fmt.Errorf("rule: atomic swap: %w", err)
 	}
 	return writeLocalVersion(cacheDir, manifestVersion, false)
-}
-
-// localMatchesManifest reports whether every region the manifest covers AND
-// that exists locally has a matching sha. Missing-local regions don't block
-// (they'd be picked up at connect) — see engine.Start's 504 missing-region gate
-// (DIAG: rule-bundle-missing-region). Used to decide "no download needed".
-func localMatchesManifest(cacheDir string, m *Manifest) bool {
-	for region, mb := range m.Bundles {
-		p := filepath.Join(cacheDir, region+".krs")
-		data, err := os.ReadFile(p)
-		if err != nil {
-			continue // not present locally — not a mismatch here
-		}
-		sum := sha256.Sum256(data)
-		if hex.EncodeToString(sum[:]) != mb.SHA256 {
-			return false
-		}
-	}
-	return true
 }
 
 // touchVersionFile resets bundles.version mtime so the shortTTL fast path holds

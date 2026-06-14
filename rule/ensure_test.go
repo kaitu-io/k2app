@@ -642,11 +642,17 @@ func TestEnsureBundles_ManifestUnreachable_FallsBackToLegacy(t *testing.T) {
 	}
 }
 
-func TestEnsureBundles_ShaMismatch_KeepsPriorCache(t *testing.T) {
+// We no longer verify the downloaded bundle bytes against the manifest sha
+// (HTTPS is trusted; the sha-vs-manifest check only ever detected CDN per-file
+// staleness and then BRICKED by rejecting a valid-but-stale bundle and sitting
+// on an older/empty cache — the 2026-06 all-proxy outage). A non-empty download
+// is now accepted: a 1-day-old rule bundle is fine, far better than degrading to
+// all-proxy. Only structural guards remain (countKRS==0, gzip/tar decode).
+func TestEnsureBundles_ShaMismatch_AcceptsDownload(t *testing.T) {
 	dir := t.TempDir()
-	// Pre-populate a known-good cn.krs + recorded older version.
-	goodCN := []byte("good-cn-bytes")
-	if err := os.WriteFile(filepath.Join(dir, "cn.krs"), goodCN, 0o644); err != nil {
+	// Pre-populate an older cn.krs + recorded older version.
+	priorCN := []byte("prior-cn-bytes")
+	if err := os.WriteFile(filepath.Join(dir, "cn.krs"), priorCN, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeLocalVersion(dir, "2026-06-01T00:00:00Z", false); err != nil {
@@ -655,29 +661,31 @@ func TestEnsureBundles_ShaMismatch_KeepsPriorCache(t *testing.T) {
 	old := time.Now().Add(-2 * time.Hour)
 	_ = os.Chtimes(filepath.Join(dir, "bundles.version"), old, old)
 
-	// Server: manifest advertises a NEW version with a sha that does NOT match
-	// the tarball it serves (a stale mirror mid-propagation). Verify must fail
-	// and the prior good cn.krs must survive untouched.
+	// Server: manifest advertises a NEW version whose declared sha does NOT match
+	// the tarball it serves. Under the no-verify model the download is accepted.
+	downloadedCN := []byte("downloaded-cn-bytes")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "manifest.json") {
 			_, _ = w.Write([]byte(`{"schemaVersion":2,"version":"2026-06-02T00:00:00Z","bundles":{"cn":{"sha256":"deadbeefmismatch","size":1,"ruleCount":9}}}`))
 			return
 		}
-		// Tarball contains a DIFFERENT cn.krs than the manifest sha claims.
-		makeTarballHandler(t, map[string][]byte{"cn.krs": []byte("stale-different-bytes")})(w, r)
+		makeTarballHandler(t, map[string][]byte{"cn.krs": downloadedCN})(w, r)
 	}))
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := EnsureBundles(ctx, dir, []string{srv.URL + "/"})
-	if err == nil {
-		t.Fatal("expected verify failure on sha mismatch")
+	if err := EnsureBundles(ctx, dir, []string{srv.URL + "/"}); err != nil {
+		t.Fatalf("download must be accepted without sha verification: %v", err)
 	}
-	// Prior cache must be intact (not poisoned by the mismatched download).
+	// The downloaded (sha-mismatched) bundle replaced the prior cache.
 	got, _ := os.ReadFile(filepath.Join(dir, "cn.krs"))
-	if !bytes.Equal(got, goodCN) {
-		t.Errorf("prior cn.krs was clobbered by a mismatched download — cache poisoned")
+	if !bytes.Equal(got, downloadedCN) {
+		t.Errorf("cn.krs = %q, want the downloaded bytes %q (download not swapped in)", got, downloadedCN)
+	}
+	// Version advanced to the manifest's new version.
+	if v := readLocalManifestVersion(dir); v != "2026-06-02T00:00:00Z" {
+		t.Errorf("recorded version = %q, want the new manifest version", v)
 	}
 }
 

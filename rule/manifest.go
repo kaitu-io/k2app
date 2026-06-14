@@ -2,12 +2,9 @@ package rule
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -161,40 +158,3 @@ func raceManifest(ctx context.Context, sources []string) (*Manifest, string, err
 	return best, bestSrc, nil
 }
 
-// verifyAgainstManifest checks every *.krs in dir against m: its sha256 must
-// equal the manifest entry, and the manifest's ruleCount for that region must
-// be > 0. A .krs with no manifest entry is allowed (manifest may legitimately
-// not cover a locally-present region). Returns the first mismatch — the caller
-// treats any error as "this download doesn't match the chosen manifest (stale
-// mirror / corruption)" and keeps the prior cache.
-func verifyAgainstManifest(dir string, m *Manifest) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".krs") {
-			continue
-		}
-		region := strings.TrimSuffix(name, ".krs")
-		mb, ok := m.Bundles[region]
-		if !ok {
-			continue
-		}
-		if mb.RuleCount == 0 {
-			return fmt.Errorf("rule: manifest ruleCount=0 for region %q (empty bundle)", region)
-		}
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			return err
-		}
-		sum := sha256.Sum256(data)
-		if got := hex.EncodeToString(sum[:]); got != mb.SHA256 {
-			slog.Warn("DIAG: rule-manifest-sha-mismatch", "region", region,
-				"want", mb.SHA256, "got", got)
-			return fmt.Errorf("rule: sha mismatch for region %q (mirror mid-propagation?)", region)
-		}
-	}
-	return nil
-}

@@ -2,12 +2,8 @@ package rule
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -93,35 +89,6 @@ func TestRaceManifest_RespectsInternalBound(t *testing.T) {
 	}
 }
 
-func TestVerifyAgainstManifest(t *testing.T) {
-	dir := t.TempDir()
-	content := []byte("hello-krs")
-	if err := os.WriteFile(filepath.Join(dir, "cn.krs"), content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256(content)
-	good := &Manifest{Bundles: map[string]ManifestBundle{
-		"cn": {SHA256: hex.EncodeToString(sum[:]), RuleCount: 10},
-	}}
-	if err := verifyAgainstManifest(dir, good); err != nil {
-		t.Errorf("matching sha should verify: %v", err)
-	}
-
-	bad := &Manifest{Bundles: map[string]ManifestBundle{
-		"cn": {SHA256: "deadbeef", RuleCount: 10},
-	}}
-	if err := verifyAgainstManifest(dir, bad); err == nil {
-		t.Error("mismatched sha must fail verification")
-	}
-
-	zero := &Manifest{Bundles: map[string]ManifestBundle{
-		"cn": {SHA256: hex.EncodeToString(sum[:]), RuleCount: 0},
-	}}
-	if err := verifyAgainstManifest(dir, zero); err == nil {
-		t.Error("zero ruleCount must fail verification")
-	}
-}
-
 func TestLocalManifestVersionRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	if err := writeLocalVersion(dir, "2026-06-02T00:31:05Z", false); err != nil {
@@ -162,29 +129,3 @@ func TestEmbedSeedAlwaysUpgrades(t *testing.T) {
 	}
 }
 
-func TestVerifyAgainstManifest_BoundaryRegions(t *testing.T) {
-	dir := t.TempDir()
-	content := []byte("cn-bytes")
-	if err := os.WriteFile(filepath.Join(dir, "cn.krs"), content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256(content)
-
-	// Manifest covers cn (matching) AND a region "us" with no local file.
-	// Missing-local regions are allowed (caught later by missingConfiguredRegions).
-	m := &Manifest{Bundles: map[string]ManifestBundle{
-		"cn": {SHA256: hex.EncodeToString(sum[:]), RuleCount: 5},
-		"us": {SHA256: "whatever", RuleCount: 5},
-	}}
-	if err := verifyAgainstManifest(dir, m); err != nil {
-		t.Errorf("manifest covering a not-locally-present region must not fail: %v", err)
-	}
-
-	// Local region with NO manifest entry is allowed (manifest may not cover it).
-	if err := os.WriteFile(filepath.Join(dir, "local-only.krs"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := verifyAgainstManifest(dir, m); err != nil {
-		t.Errorf("locally-present region absent from manifest must not fail: %v", err)
-	}
-}
