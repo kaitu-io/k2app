@@ -48,13 +48,13 @@ describe('PrivateNodeManagement', () => {
     expect(screen.getByText('你还没有专属节点')).toBeInTheDocument();
   });
 
-  it('buy-line CTA navigates to /purchase?kind=private_node', () => {
+  it('buy-line CTA navigates to /purchase?product=private_node', () => {
     usePrivateNodesMock.mockReturnValue({ nodes: [], loading: false, error: null, refresh: vi.fn() });
     render(<PrivateNodeManagement />);
     const cta = screen.getByText('购买专属线路');
     expect(cta).toBeInTheDocument();
     fireEvent.click(cta);
-    expect(navigateMock).toHaveBeenCalledWith('/purchase?kind=private_node');
+    expect(navigateMock).toHaveBeenCalledWith('/purchase?product=private_node');
   });
 
   it('non-empty → one panel per node', () => {

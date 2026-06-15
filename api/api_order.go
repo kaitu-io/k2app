@@ -100,7 +100,7 @@ func api_create_order(c *gin.Context) {
 	// 专属节点套餐：校验选定地区在允许列表内。空 region 允许（开通时由
 	// createPrivateNodeSubscription 回退到 firstAllowedRegion）。校验对 preview 与
 	// 真实创建都执行，让购买 UI 能尽早拿到反馈；preview 不落库订单。
-	if plan.Kind == PlanKindPrivateNode && req.Region != "" {
+	if plan.Product == ProductPrivateNode && req.Region != "" {
 		spec, err := loadPrivateNodePlanSpec(db.Get(), plan.ID)
 		if err != nil {
 			log.Errorf(c, "failed to load private node plan spec for plan %d: %v", plan.ID, err)
@@ -132,7 +132,7 @@ func api_create_order(c *gin.Context) {
 		UserID:               user.ID,
 	}
 	// 仅专属节点订单写入 region；共享套餐忽略 req.Region（持久化为空）。
-	if plan.Kind == PlanKindPrivateNode {
+	if plan.Product == ProductPrivateNode {
 		order.PrivateNodeRegion = req.Region
 	}
 	log.Debugf(c, "order object created: Title=%s, OriginAmount=%d, PayAmount=%d", order.Title, order.OriginAmount, order.PayAmount)

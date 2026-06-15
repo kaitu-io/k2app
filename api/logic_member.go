@@ -86,7 +86,7 @@ func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order, provision
 	}
 
 	// 专属节点产品：独立时钟，不碰 User.ExpiredAt。建 pending 订阅 + 异步开通。
-	if plan.Kind == PlanKindPrivateNode {
+	if plan.Product == ProductPrivateNode {
 		sub, err := createPrivateNodeSubscription(ctx, tx, order, plan, time.Now().Unix())
 		if err != nil {
 			return fmt.Errorf("create private node subscription: %w", err)

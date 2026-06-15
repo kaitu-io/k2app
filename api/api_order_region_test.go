@@ -31,7 +31,7 @@ func orderRegionTestRouter() *gin.Engine {
 func seedPrivateNodePlan(t *testing.T, pid, allowedRegionsJSON string) *Plan {
 	t.Helper()
 	plan := &Plan{PID: pid, Label: "专属节点测试", Price: 9900, Month: 1,
-		Tier: TierBasic, Kind: PlanKindPrivateNode, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
+		Tier: TierBasic, Product: ProductPrivateNode, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
 	require.NoError(t, db.Get().Create(plan).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(plan) })
 
@@ -140,7 +140,7 @@ func TestCreateOrder_PrivateNodeRegion(t *testing.T) {
 	t.Run("shared plan ignores region", func(t *testing.T) {
 		user := CreateTestUser(t)
 		sharedPlan := &Plan{PID: "test-shared-region", Label: "共享订阅测试", Price: 1900, Month: 1,
-			Tier: TierBasic, Kind: PlanKindShared, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
+			Tier: TierBasic, Product: ProductApp, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
 		require.NoError(t, db.Get().Create(sharedPlan).Error)
 		t.Cleanup(func() { db.Get().Unscoped().Delete(sharedPlan) })
 		t.Cleanup(func() { db.Get().Unscoped().Where(&Order{UserID: user.ID}).Delete(&Order{}) })

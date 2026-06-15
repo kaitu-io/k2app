@@ -21,7 +21,7 @@ func TestCreatePrivateNodeSubscription(t *testing.T) {
 	require.NoError(t, db.Get().Create(&owner).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&owner) })
 
-	plan := Plan{PID: "pn-test-" + time.Now().Format("150405.000000"), Kind: PlanKindPrivateNode, Month: 12}
+	plan := Plan{PID: "pn-test-" + time.Now().Format("150405.000000"), Product: ProductPrivateNode, Month: 12}
 	require.NoError(t, db.Get().Create(&plan).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
 
@@ -69,7 +69,7 @@ func TestEmitNodeProvisionJob(t *testing.T) {
 	require.NoError(t, db.Get().Create(&owner).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&owner) })
 
-	plan := Plan{PID: "pn-emit-" + stamp, Kind: PlanKindPrivateNode, Month: 12}
+	plan := Plan{PID: "pn-emit-" + stamp, Product: ProductPrivateNode, Month: 12}
 	require.NoError(t, db.Get().Create(&plan).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
 
@@ -140,7 +140,7 @@ func TestEmitNodeProvisionJob_FailsClosedOnQuotaInvariant(t *testing.T) {
 	require.NoError(t, db.Get().Create(&owner).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&owner) })
 
-	plan := Plan{PID: "pn-quota-" + stamp, Kind: PlanKindPrivateNode, Month: 12}
+	plan := Plan{PID: "pn-quota-" + stamp, Product: ProductPrivateNode, Month: 12}
 	require.NoError(t, db.Get().Create(&plan).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
 

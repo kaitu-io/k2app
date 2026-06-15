@@ -131,9 +131,9 @@ export interface UpdateInviteCodeRemarkRequest {
 }
 
 // 套餐种类: 共享订阅 vs 专属节点
-export type PlanKind = 'shared_subscription' | 'private_node';
+export type PlanProduct = 'app' | 'private_node';
 
-// 专属节点套餐的购买可见参数（仅 kind=private_node 的套餐附带）
+// 专属节点套餐的购买可见参数（仅 product=private_node 的套餐附带）
 export interface PrivateNodePlanSpec {
   provider: string; // 云厂商，如 "aws_lightsail"
   ipType: 'residential' | 'non_residential'; // IP 类型
@@ -153,7 +153,7 @@ export interface Plan {
   maxDevice: number; // app 设备上限 (0=default 5)
   maxRouterDevice: number; // 路由器登录上限 (0=不支持, 1=支持)
   maxLanClient: number; // LAN 接入上限 (0=不支持, -1=无限, >0=精确值)
-  kind: PlanKind; // 套餐种类，Center 始终下发
+  product: PlanProduct; // 套餐所属产品线，Center 始终下发
   privateNode?: PrivateNodePlanSpec; // 仅 private_node 套餐附带
 }
 

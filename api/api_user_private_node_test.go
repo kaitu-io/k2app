@@ -35,7 +35,7 @@ func TestGetUserPrivateNodes(t *testing.T) {
 
 	// ---- seed plan for label lookup ----
 	plan := Plan{PID: "test-pn-list-1m", Label: "专属节点列表测试", Price: 9900, Month: 1,
-		Tier: "basic", Kind: PlanKindPrivateNode, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
+		Tier: "basic", Product: ProductPrivateNode, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
 	require.NoError(t, db.Get().Create(&plan).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
 
@@ -152,7 +152,7 @@ func TestGetUserPrivateNodes_QuotaExhaustedField(t *testing.T) {
 	router := setupPrivateNodeTestRouter()
 
 	plan := Plan{PID: "test-pn-quota-1m", Label: "专属节点额度测试", Price: 9900, Month: 1,
-		Tier: "basic", Kind: PlanKindPrivateNode, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
+		Tier: "basic", Product: ProductPrivateNode, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
 	require.NoError(t, db.Get().Create(&plan).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
 

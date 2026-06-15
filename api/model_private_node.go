@@ -39,7 +39,7 @@ type PrivateNodeSubscription struct {
 
 	// 归属
 	UserID  uint64 `gorm:"not null;index" json:"userId"` // 主人
-	PlanID  uint64 `gorm:"not null;index" json:"planId"` // 专属节点套餐（Plan.Kind=private_node）
+	PlanID  uint64 `gorm:"not null;index" json:"planId"` // 专属节点套餐（Plan.Product=private_node）
 	OrderID uint64 `gorm:"uniqueIndex" json:"orderId"`    // 触发开通的订单（一单一 sub，幂等）
 
 	// 基础设施绑定（开通后回填）

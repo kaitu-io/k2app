@@ -89,7 +89,7 @@ const PRIVATE_NODE_PLAN: Plan = {
   maxDevice: 5,
   maxRouterDevice: 1,
   maxLanClient: -1,
-  kind: 'private_node',
+  product: 'private_node',
   privateNode: {
     provider: 'aws_lightsail',
     ipType: 'non_residential',
@@ -98,10 +98,15 @@ const PRIVATE_NODE_PLAN: Plan = {
   },
 };
 
-function mockPlansResponse(plans: Plan[]) {
+// The product endpoints are the server-side boundary: /api/plans is app-only
+// (legacy/frozen), /api/products/private_node/plans serves dedicated lines.
+function mockEndpoints({ app = [], privateNode = [] }: { app?: Plan[]; privateNode?: Plan[] }) {
   (cloudApi.get as any).mockImplementation((path: string) => {
     if (path === '/api/plans') {
-      return Promise.resolve({ code: 0, data: { items: plans } });
+      return Promise.resolve({ code: 0, data: { items: app } });
+    }
+    if (path === '/api/products/private_node/plans') {
+      return Promise.resolve({ code: 0, data: { items: privateNode } });
     }
     if (path === '/api/app/config') {
       return Promise.resolve({ code: 0, data: { features: {} } });
@@ -110,7 +115,7 @@ function mockPlansResponse(plans: Plan[]) {
   });
 }
 
-function renderPurchase(initialEntries: string[] = ['/?kind=private_node']) {
+function renderPurchase(initialEntries: string[] = ['/?product=private_node']) {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
       <I18nextProvider i18n={i18n}>
@@ -131,14 +136,14 @@ const SHARED_PLAN: Plan = {
   maxDevice: 5,
   maxRouterDevice: 0,
   maxLanClient: 0,
-  kind: 'shared_subscription',
+  product: 'app',
 };
 
 describe('Purchase — private node region selection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     showAlert.mockReset();
-    mockPlansResponse([PRIVATE_NODE_PLAN]);
+    mockEndpoints({ privateNode: [PRIVATE_NODE_PLAN] });
     (cloudApi.post as any).mockResolvedValue({
       code: 0,
       data: { order: { uuid: 'order-1', payAmount: 9900 }, payUrl: 'https://pay.example/x' },
@@ -205,7 +210,7 @@ describe('Purchase — kind scoping', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     showAlert.mockReset();
-    mockPlansResponse([SHARED_PLAN, PRIVATE_NODE_PLAN]);
+    mockEndpoints({ app: [SHARED_PLAN], privateNode: [PRIVATE_NODE_PLAN] });
     // payAmount deliberately matches NEITHER card price ($19.00 / $99.00) so the
     // order-summary amount can't be mistaken for a plan card in the assertions.
     (cloudApi.post as any).mockResolvedValue({
@@ -230,8 +235,8 @@ describe('Purchase — kind scoping', () => {
     expect(screen.queryByRole('combobox')).toBeNull();
   });
 
-  it('/purchase?kind=private_node shows only private_node plans — region picker, no shared card', async () => {
-    renderPurchase(['/?kind=private_node']);
+  it('/purchase?product=private_node shows only private_node plans — region picker, no shared card', async () => {
+    renderPurchase(['/?product=private_node']);
 
     // Region picker confirms a private_node plan is selected.
     await screen.findByRole('combobox');

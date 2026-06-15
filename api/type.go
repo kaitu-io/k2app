@@ -563,9 +563,9 @@ type DataPlan struct {
 	MaxLanClient    int    `json:"maxLanClient"`
 	// Apple App Store 商品ID（仅 iOS IAP）：非空才在 iOS 购买面板出现，webapp 据此向 StoreKit 取商品。
 	AppleProductID string `json:"appleProductId,omitempty"`
-	// 套餐类型：shared_subscription（共享池订阅）| private_node（专属节点）。Center 始终发送。
-	Kind string `json:"kind"`
-	// 专属节点套餐的购买可见参数（仅 Kind=private_node 套餐附带）。
+	// 产品线：app（共享池订阅）| private_node（专属节点）。Center 始终发送。
+	Product string `json:"product"`
+	// 专属节点套餐的购买可见参数（仅 Product=private_node 套餐附带）。
 	PrivateNode *DataPrivateNodePlanSpec `json:"privateNode,omitempty"`
 }
 

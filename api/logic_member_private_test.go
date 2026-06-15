@@ -34,7 +34,7 @@ func TestApplyOrderToBuyer_PrivateNode(t *testing.T) {
 		Label: "Test Private Node",
 		Price: 9900,
 		Month: 12,
-		Kind:  PlanKindPrivateNode,
+		Product: ProductPrivateNode,
 		Tier:  TierBasic,
 	}
 	require.NoError(t, db.Get().Create(&plan).Error)
@@ -136,7 +136,7 @@ func TestApplyOrderToBuyer_PrivateNode_SetsActivationFlags(t *testing.T) {
 		Label: "Test Private Node Flags",
 		Price: 9900,
 		Month: 12,
-		Kind:  PlanKindPrivateNode,
+		Product: ProductPrivateNode,
 		Tier:  TierBasic,
 	}
 	require.NoError(t, db.Get().Create(&plan).Error)

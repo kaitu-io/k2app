@@ -106,8 +106,10 @@ func SetupRouter() *gin.Engine {
 		api.GET("/subs", api_subs)
 		// Get relay list (nodes with has_relay=true)
 		api.GET("/relays", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
-		// Get plans
+		// Get plans (legacy, frozen — app-only)
 		api.GET("/plans", api_get_plans)
+		// Get plans by product line (new, product-aware)
+		api.GET("/products/:product/plans", api_get_product_plans)
 		// Get tiers (public — returns all 4 tiers with their active plans)
 		api.GET("/tiers", GetTiers)
 		// GeoIP country detection (anonymous, no auth)

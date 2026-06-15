@@ -6,11 +6,15 @@ package center
 // at the router level).
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	db "github.com/wordgate/qtoolkit/db"
 )
 
 // TestBuildTierInfos_ReturnsAll4TiersInRankOrder verifies the pure assembly
@@ -53,4 +57,54 @@ func TestBuildTierInfos_ReturnsAll4TiersInRankOrder(t *testing.T) {
 func TestGetAdminTiers_HandlerExists(t *testing.T) {
 	var _ gin.HandlerFunc = GetAdminTiers
 	var _ gin.HandlerFunc = GetTiers
+}
+
+// TestGetTiers_ExcludesPrivateNode verifies the public /api/tiers endpoint does
+// NOT surface private_node plans, even though they reuse tier names (e.g.
+// basic). Tiers are an app-product concept; dedicated lines live behind
+// /api/products/private_node/plans only.
+func TestGetTiers_ExcludesPrivateNode(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/tiers", GetTiers)
+
+	app := Plan{PID: "tier-app-basic", Label: "App 基础", Price: 1900, Month: 1,
+		Tier: "basic", Product: ProductApp, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
+	require.NoError(t, db.Get().Create(&app).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&app) })
+
+	pn := Plan{PID: "tier-pn-basic", Label: "专属线路", Price: 19900, Month: 12,
+		Tier: "basic", Product: ProductPrivateNode, IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
+	require.NoError(t, db.Get().Create(&pn).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&pn) })
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/tiers", nil)
+	r.ServeHTTP(w, req)
+	require.Equal(t, 200, w.Code)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			Tiers []struct {
+				Plans []map[string]any `json:"plans"`
+			} `json:"tiers"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+
+	var pids []string
+	for _, ti := range resp.Data.Tiers {
+		for _, p := range ti.Plans {
+			if pid, ok := p["pid"].(string); ok {
+				pids = append(pids, pid)
+			}
+		}
+	}
+	assert.Contains(t, pids, "tier-app-basic", "app plan must appear under its tier")
+	assert.NotContains(t, pids, "tier-pn-basic", "private_node plan must NOT leak into /api/tiers")
 }

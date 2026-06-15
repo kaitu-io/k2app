@@ -30,6 +30,32 @@ func Migrate() error {
 		}
 	}
 
+	// Plan discriminator rename: kind → product. AutoMigrate cannot rename
+	// columns, so do it explicitly here (idempotent). The legacy value
+	// "shared_subscription" is remapped to "app". Index rename is best-effort —
+	// AutoMigrate recreates idx_plans_product from the model tag if absent.
+	if database := db.Get(); database != nil {
+		m := database.Migrator()
+		if m.HasColumn(&Plan{}, "kind") && !m.HasColumn(&Plan{}, "product") {
+			if err := m.RenameColumn(&Plan{}, "kind", "Product"); err != nil {
+				log.Errorf(ctx, "failed to rename plans.kind→product: %v", err)
+				return err
+			}
+		}
+		if m.HasIndex(&Plan{}, "idx_plans_kind") && !m.HasIndex(&Plan{}, "idx_plans_product") {
+			_ = m.RenameIndex(&Plan{}, "idx_plans_kind", "idx_plans_product")
+		}
+		// Remap the legacy value only when the column already exists. On a fresh
+		// DB the plans table is created by AutoMigrate below (with default 'app'),
+		// so this UPDATE must be skipped to avoid "table doesn't exist".
+		if m.HasColumn(&Plan{}, "product") {
+			if r := database.Exec("UPDATE plans SET product = 'app' WHERE product = 'shared_subscription'"); r.Error != nil {
+				log.Errorf(ctx, "failed to remap plan product value: %v", r.Error)
+				return r.Error
+			}
+		}
+	}
+
 	err := db.Get().AutoMigrate(
 		&Plan{},
 		&User{},

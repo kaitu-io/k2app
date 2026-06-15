@@ -26,12 +26,12 @@ export default function PrivateNodeManagement() {
         {t('privateNode:privateNode.manage')}
       </Typography>
 
-      {/* 购买专属线路入口 — 专属线路套餐只在 /purchase?kind=private_node 售卖，
-          绝不混入默认购买页（见 Purchase.tsx scopedPlans）。 */}
+      {/* 购买专属线路入口 — 专属线路套餐只在 product=private_node 端点售卖，
+          绝不混入默认购买页（/api/plans 冻结为 app-only）。 */}
       <Button
         variant="contained"
         fullWidth
-        onClick={() => navigate('/purchase?kind=private_node')}
+        onClick={() => navigate('/purchase?product=private_node')}
         sx={{ mb: 2, borderRadius: 2, fontWeight: 700 }}
       >
         {t('privateNode:privateNode.buyLine')}
