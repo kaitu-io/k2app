@@ -81,8 +81,10 @@ MCP: list_edm_templates  → 确认 slug = "private-node-welcome" 存在
 > `bundle_transfer_bytes` 须 > `traffic_total_bytes`（成本不变式），按真实 bundle 的 transfer 上限填。
 
 ```sql
--- ============ 3 档 Plan（kind=private_node, 年付 month=12）============
-INSERT INTO plans (created_at, updated_at, pid, label, price, origin_price, month, highlight, is_active, tier, kind)
+-- 注：plans 判别列已由 kind 重命名为 product（值 app|private_node）。Center 的
+-- migrate 会自动改名 + 把 shared_subscription 值迁成 app；本 SQL 用新列名 product。
+-- ============ 3 档 Plan（product=private_node, 年付 month=12）============
+INSERT INTO plans (created_at, updated_at, pid, label, price, origin_price, month, highlight, is_active, tier, product)
 VALUES
   (NOW(3), NOW(3), 'pn-1t', '专属线路 1T', 19900, 19900, 12, 0, 1, 'basic', 'private_node'),
   (NOW(3), NOW(3), 'pn-2t', '专属线路 2T', 39800, 39800, 12, 0, 1, 'basic', 'private_node'),
@@ -90,7 +92,7 @@ VALUES
 ON DUPLICATE KEY UPDATE
   label=VALUES(label), price=VALUES(price), origin_price=VALUES(origin_price),
   month=VALUES(month), is_active=VALUES(is_active), tier=VALUES(tier),
-  kind=VALUES(kind), updated_at=NOW(3);
+  product=VALUES(product), updated_at=NOW(3);
 
 -- ============ 3 档 Spec（按 pid 反查 plan_id，幂等 on plan_id）============
 -- pn-1t：售卖 1 TB，节点上限 2 TB
@@ -133,7 +135,7 @@ ON DUPLICATE KEY UPDATE
 ### 3.1 SQL 后置校验
 
 ```sql
-SELECT p.pid, p.label, p.price, p.kind, p.is_active,
+SELECT p.pid, p.label, p.price, p.product, p.is_active,
        s.provider, s.ip_type, s.bundle_id,
        s.traffic_total_bytes, s.bundle_transfer_bytes,
        (s.traffic_total_bytes < s.bundle_transfer_bytes) AS invariant_ok
