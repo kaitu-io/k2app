@@ -2,6 +2,7 @@
   "privateNode": {
     "title": "専用ノード",
     "manage": "専用ノードを管理",
+    "buyLine": "専用回線を購入",
     "buy": "専用ノードを開設",
     "region": "ノードの地域",
     "selectRegion": "地域を選択",

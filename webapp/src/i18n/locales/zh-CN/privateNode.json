@@ -2,6 +2,7 @@
   "privateNode": {
     "title": "专属节点",
     "manage": "管理专属节点",
+    "buyLine": "购买专属线路",
     "buy": "开通专属节点",
     "region": "节点地区",
     "selectRegion": "选择地区",

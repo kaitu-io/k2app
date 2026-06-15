@@ -2,6 +2,7 @@
   "privateNode": {
     "title": "Dedicated Node",
     "manage": "Manage Dedicated Node",
+    "buyLine": "Buy a Dedicated Line",
     "buy": "Get a Dedicated Node",
     "region": "Node Region",
     "selectRegion": "Select Region",

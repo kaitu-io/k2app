@@ -110,15 +110,29 @@ function mockPlansResponse(plans: Plan[]) {
   });
 }
 
-function renderPurchase() {
+function renderPurchase(initialEntries: string[] = ['/?kind=private_node']) {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <I18nextProvider i18n={i18n}>
         <Purchase />
       </I18nextProvider>
     </MemoryRouter>,
   );
 }
+
+const SHARED_PLAN: Plan = {
+  pid: 'shared-1m',
+  tier: 'basic',
+  label: '共享订阅 1 个月',
+  price: 1900,
+  originPrice: 1900,
+  month: 1,
+  highlight: true,
+  maxDevice: 5,
+  maxRouterDevice: 0,
+  maxLanClient: 0,
+  kind: 'shared_subscription',
+};
 
 describe('Purchase — private node region selection', () => {
   beforeEach(() => {
@@ -184,5 +198,45 @@ describe('Purchase — private node region selection', () => {
       expect(realPost).toBeTruthy();
       expect(realPost[1].region).toBe('ap-northeast-1');
     });
+  });
+});
+
+describe('Purchase — kind scoping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    showAlert.mockReset();
+    mockPlansResponse([SHARED_PLAN, PRIVATE_NODE_PLAN]);
+    // payAmount deliberately matches NEITHER card price ($19.00 / $99.00) so the
+    // order-summary amount can't be mistaken for a plan card in the assertions.
+    (cloudApi.post as any).mockResolvedValue({
+      code: 0,
+      data: { order: { uuid: 'order-1', payAmount: 5000 }, payUrl: 'https://pay.example/x' },
+    });
+  });
+
+  // Cards render their price regardless of selection state (the selected card
+  // swaps the radio for a check icon, so price text is the stable presence
+  // signal). SHARED = $19.00, PRIVATE = $99.00 — deliberately distinct.
+  it('default /purchase hides private_node plans — shows shared card, no region picker', async () => {
+    renderPurchase(['/']);
+
+    // Shared plan card renders.
+    await waitFor(() => {
+      expect(screen.getAllByText('$19.00').length).toBeGreaterThan(0);
+    });
+    // Private-node plan must NOT leak into the default purchase list.
+    expect(screen.queryAllByText('$99.00').length).toBe(0);
+    // No region picker in shared scope.
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('/purchase?kind=private_node shows only private_node plans — region picker, no shared card', async () => {
+    renderPurchase(['/?kind=private_node']);
+
+    // Region picker confirms a private_node plan is selected.
+    await screen.findByRole('combobox');
+    expect(screen.getAllByText('$99.00').length).toBeGreaterThan(0);
+    // Shared subscription must NOT appear in the dedicated-line scope.
+    expect(screen.queryAllByText('$19.00').length).toBe(0);
   });
 });

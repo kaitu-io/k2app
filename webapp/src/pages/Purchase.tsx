@@ -21,7 +21,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { Add as AddIcon, EmojiEvents as EmojiEventsIcon, Error as ErrorIcon } from "@mui/icons-material";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAlert, useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
@@ -546,6 +546,15 @@ export default function Purchase() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const openLoginDialog = useLoginDialogStore((s) => s.open);
 
+  // Purchase scope. The default /purchase page sells shared subscriptions only;
+  // /purchase?kind=private_node sells dedicated lines only (with a region
+  // picker). Private-node plans must never leak into the default list — they are
+  // high-priced, router-bound products that would confuse/mis-sell on the main
+  // purchase screen. Entry to the dedicated-line scope is the "buy a line" CTA
+  // on /private-node.
+  const [searchParams] = useSearchParams();
+  const wantsPrivateNode = searchParams.get('kind') === 'private_node';
+
   const [plan, setPlan] = useState("");
   // 专属节点购买时选定的地区（仅 private_node 套餐使用；shared 套餐留空）。
   const [selectedRegion, setSelectedRegion] = useState("");
@@ -573,15 +582,23 @@ export default function Purchase() {
   // selector visibility.
   const [selectedTier, setSelectedTier] = useState('');
 
+  // Scope the plan universe to the active purchase kind before any tier/selection
+  // logic runs. Everything downstream (tier groups, default selection, region
+  // picker, guards, summary) derives from scopedPlans, never the raw fetched list.
+  const scopedPlans = useMemo(
+    () => plans.filter(p => (p.kind === 'private_node') === wantsPrivateNode),
+    [plans, wantsPrivateNode],
+  );
+
   const tierGroups = useMemo(() => {
     const groups = new Map<string, Plan[]>();
-    for (const p of plans) {
+    for (const p of scopedPlans) {
       const tier = p.tier || 'basic';
       if (!groups.has(tier)) groups.set(tier, []);
       groups.get(tier)!.push(p);
     }
     return groups;
-  }, [plans]);
+  }, [scopedPlans]);
 
   const tiers = useMemo(() => [...tierGroups.keys()], [tierGroups]);
   // Manual tier picker not yet released — repeat buyers are auto-filtered to
@@ -592,9 +609,9 @@ export default function Purchase() {
   useEffect(() => {
     if (!tiers.length) return;
     if (selectedTier && tiers.includes(selectedTier)) return;
-    const highlightedPlan = plans.find(p => p.highlight);
+    const highlightedPlan = scopedPlans.find(p => p.highlight);
     setSelectedTier(highlightedPlan?.tier || tiers[0]);
-  }, [tiers, plans, selectedTier]);
+  }, [tiers, scopedPlans, selectedTier]);
 
   // Filter plans by user tier (Plan A):
   //   - First-time buyer (or unauthenticated browse): show every plan.
@@ -602,13 +619,13 @@ export default function Purchase() {
   //     the same rule and returns TIER_MISMATCH (422001) on violation.
   const filteredPlans = useMemo(() => {
     if (showTierSelector) {
-      return tierGroups.get(selectedTier) || plans;
+      return tierGroups.get(selectedTier) || scopedPlans;
     }
     if (!user?.isFirstOrderDone) {
-      return plans;
+      return scopedPlans;
     }
-    return plans.filter(p => p.tier === user.tier);
-  }, [showTierSelector, selectedTier, tierGroups, plans, user]);
+    return scopedPlans.filter(p => p.tier === user.tier);
+  }, [showTierSelector, selectedTier, tierGroups, scopedPlans, user]);
 
   // When tier changes, ensure selected plan is valid in the new tier
   useEffect(() => {
@@ -621,8 +638,8 @@ export default function Purchase() {
 
   // 当前选中的套餐对象（用于专属节点的地区/IP/流量展示）。
   const selectedPlanObj = useMemo(
-    () => plans.find(p => p.pid === plan) ?? null,
-    [plans, plan],
+    () => scopedPlans.find(p => p.pid === plan) ?? null,
+    [scopedPlans, plan],
   );
   const isPrivateNode = selectedPlanObj?.kind === 'private_node';
   const allowedRegions = selectedPlanObj?.privateNode?.allowedRegions ?? [];
@@ -744,10 +761,13 @@ export default function Purchase() {
   // 获取套餐列表：使用 k2api 缓存（SWR 模式 + 过期缓存 fallback）
   useEffect(() => {
     const selectDefaultPlan = (planList: Plan[]) => {
-      if (planList.length > 0 && !defaultPlanSelectedRef.current) {
+      // Pick the default only from plans in the active purchase scope, so a
+      // private-node deep-link never defaults to a shared plan (and vice versa).
+      const scoped = planList.filter(p => (p.kind === 'private_node') === wantsPrivateNode);
+      if (scoped.length > 0 && !defaultPlanSelectedRef.current) {
         defaultPlanSelectedRef.current = true;
-        const highlightedPlan = planList.find((p: { highlight?: boolean }) => p.highlight);
-        const defaultPlan = highlightedPlan ? highlightedPlan.pid : planList[0].pid;
+        const highlightedPlan = scoped.find((p: { highlight?: boolean }) => p.highlight);
+        const defaultPlan = highlightedPlan ? highlightedPlan.pid : scoped[0].pid;
         console.info('[Purchase] 选择默认套餐:', defaultPlan, highlightedPlan ? '(热门)' : '(第一个)');
         setPlan(defaultPlan);
       }
@@ -801,7 +821,7 @@ export default function Purchase() {
     };
 
     fetchPlans();
-  }, [showAlert, t, isAuthenticated]); // 登录后重新加载套餐列表
+  }, [showAlert, t, isAuthenticated, wantsPrivateNode]); // 登录后 / 购买范围变化时重新加载套餐列表
 
   // 获取 App 配置（邀请奖励信息）
   useEffect(() => {
@@ -898,9 +918,9 @@ export default function Purchase() {
     }
     // 单一 basic 商品的权益上限（各时长一致）；缺数据时 MembershipBenefits 走默认值。
     const iapPlan =
-      plans.find((p) => p.tier === 'basic') ??
-      plans.find((p) => p.pid === plan) ??
-      plans[0];
+      scopedPlans.find((p) => p.tier === 'basic') ??
+      scopedPlans.find((p) => p.pid === plan) ??
+      scopedPlans[0];
     return (
       <IosSubscribePanel
         isAuthenticated={isAuthenticated}
@@ -968,9 +988,9 @@ export default function Purchase() {
 
         {/* 会员权益 — 先展示价值，再要求行动 */}
         <MembershipBenefits
-          maxDevice={plans.find(p => p.pid === plan)?.maxDevice}
-          maxRouterDevice={plans.find(p => p.pid === plan)?.maxRouterDevice}
-          maxLanClient={plans.find(p => p.pid === plan)?.maxLanClient}
+          maxDevice={scopedPlans.find(p => p.pid === plan)?.maxDevice}
+          maxRouterDevice={scopedPlans.find(p => p.pid === plan)?.maxRouterDevice}
+          maxLanClient={scopedPlans.find(p => p.pid === plan)?.maxLanClient}
         />
 
         {/* 登录/注册 */}
@@ -1024,7 +1044,7 @@ export default function Purchase() {
             <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
               <LoadingState message={t('purchase:purchase.loading')} minHeight={200} />
             </Card>
-          ) : plans.length === 0 ? (
+          ) : scopedPlans.length === 0 ? (
             <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
               <EmptyPlans />
             </Card>
@@ -1108,7 +1128,7 @@ export default function Purchase() {
         )}
 
         {/* 总价展示 - 只有在有套餐数据时才显示 */}
-        {!plansLoading && plans.length > 0 && (
+        {!plansLoading && scopedPlans.length > 0 && (
           <Box sx={{
             mt: 2,
             p: 2.5,
@@ -1125,7 +1145,7 @@ export default function Purchase() {
                 </Typography>
                 <Typography variant="body2" color="primary" sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }} component="span" >
                   {(() => {
-                    const planMonths = plans.find(p => p.pid === plan)?.month || 0;
+                    const planMonths = scopedPlans.find(p => p.pid === plan)?.month || 0;
                     return t('purchase:purchase.memberAuthorization', { months: planMonths });
                   })()}
                   {user?.inviteCode && appConfig?.inviteReward && (
@@ -1217,7 +1237,7 @@ export default function Purchase() {
                   </Typography>
                 )}
                 <Typography variant="h5" color="error" fontWeight="bold" component="span">
-                  ${ ((orderData?.payAmount ?? plans.find(p => p.pid === plan)?.price ?? 0) / 100).toFixed(2) }
+                  ${ ((orderData?.payAmount ?? scopedPlans.find(p => p.pid === plan)?.price ?? 0) / 100).toFixed(2) }
                 </Typography>
                 <Typography variant="body2" color="text.secondary" component="span">
                   {t('purchase:purchase.includingTax')}
@@ -1233,7 +1253,7 @@ export default function Purchase() {
           size="large"
           fullWidth
           onClick={() => handleOrder({ preview: false })}
-          disabled={plansLoading || plans.length === 0 || filteredPlans.length === 0 || !plan || isLoading || !isAuthenticated}
+          disabled={plansLoading || scopedPlans.length === 0 || filteredPlans.length === 0 || !plan || isLoading || !isAuthenticated}
           sx={{
             fontWeight: 700,
             fontSize: 18,
@@ -1259,7 +1279,7 @@ export default function Purchase() {
           }}
         >
           {plansLoading || isLoading ? t('purchase:purchase.loadingPlans') :
-           plans.length === 0 ? t('purchase:purchase.noPlans') :
+           scopedPlans.length === 0 ? t('purchase:purchase.noPlans') :
            !isAuthenticated ? t('purchase:purchase.bindEmailToPayNow') :
            t('purchase:purchase.payNow')}
         </Button>

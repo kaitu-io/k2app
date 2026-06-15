@@ -2,6 +2,7 @@
   "privateNode": {
     "title": "專屬節點",
     "manage": "管理專屬節點",
+    "buyLine": "購買專屬線路",
     "buy": "開通專屬節點",
     "region": "節點地區",
     "selectRegion": "選擇地區",

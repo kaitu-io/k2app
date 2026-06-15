@@ -9,13 +9,15 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import { Box, Typography, CircularProgress } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { Box, Typography, CircularProgress, Button } from '@mui/material';
 import { usePrivateNodes } from '../hooks/usePrivateNodes';
 import PrivateNodePanel from '../components/PrivateNodePanel';
 import { AddRouterCard } from '../components/AddRouterCard';
 
 export default function PrivateNodeManagement() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { nodes, loading } = usePrivateNodes();
 
   return (
@@ -23,6 +25,17 @@ export default function PrivateNodeManagement() {
       <Typography variant="h6" fontWeight={700} sx={{ mb: 2, fontSize: '1.05rem' }}>
         {t('privateNode:privateNode.manage')}
       </Typography>
+
+      {/* 购买专属线路入口 — 专属线路套餐只在 /purchase?kind=private_node 售卖，
+          绝不混入默认购买页（见 Purchase.tsx scopedPlans）。 */}
+      <Button
+        variant="contained"
+        fullWidth
+        onClick={() => navigate('/purchase?kind=private_node')}
+        sx={{ mb: 2, borderRadius: 2, fontWeight: 700 }}
+      >
+        {t('privateNode:privateNode.buyLine')}
+      </Button>
 
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
