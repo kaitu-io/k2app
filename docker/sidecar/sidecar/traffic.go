@@ -20,6 +20,7 @@ type TrafficMonitor struct {
 	cycleStartBytes  uint64   // cumulative traffic at start of current billing cycle
 	primaryInterface string   // primary network interface name
 	lastDetectedAt   time.Time // last time interface was detected
+	procPath         string    // proc mount for NIC reads ("/host/proc" in prod)
 }
 
 // NewTrafficMonitor creates a traffic monitor
@@ -38,6 +39,7 @@ func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64) (*TrafficM
 	tm := &TrafficMonitor{
 		billingStartDate: billingStartDate,
 		trafficLimitGB:   trafficLimitGB,
+		procPath:         hostProcPath(),
 	}
 
 	// Auto-detect primary network interface
@@ -69,7 +71,7 @@ func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64) (*TrafficM
 // detectPrimaryInterface auto-detects primary network interface
 // Selects the interface with the most traffic (excluding lo/veth/docker interfaces)
 func (tm *TrafficMonitor) detectPrimaryInterface() error {
-	data, err := os.ReadFile("/proc/net/dev")
+	data, err := os.ReadFile(tm.procPath + "/net/dev")
 	if err != nil {
 		return fmt.Errorf("failed to read /proc/net/dev: %w", err)
 	}
@@ -124,7 +126,7 @@ func (tm *TrafficMonitor) readInterfaceBytes() (uint64, error) {
 		}
 	}
 
-	data, err := os.ReadFile("/proc/net/dev")
+	data, err := os.ReadFile(tm.procPath + "/net/dev")
 	if err != nil {
 		return 0, fmt.Errorf("failed to read /proc/net/dev: %w", err)
 	}
