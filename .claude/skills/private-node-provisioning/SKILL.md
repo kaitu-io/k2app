@@ -1,6 +1,6 @@
 ---
 name: private-node-provisioning
-description: End-to-end runbook for an AI agent to provision a dedicated private node (专属节点) VPS — claim a provisioning intent from Center, stand up the VPS, deploy the k2s tunnel stack with Option D self-metering, and let the node self-register so Center activates the owner's subscription.
+description: End-to-end runbook for an AI agent to provision a dedicated private node (专属节点) VPS — claim a provisioning intent from Center, stand up the VPS, deploy the k2s tunnel stack (single compose file), and let the node self-register so Center activates the owner's subscription. The sidecar self-meters host-NIC usage to Center.
 triggers:
   - private node
   - 专属节点
@@ -11,12 +11,11 @@ triggers:
   - private node deploy
   - dedicated node
   - K2_PRIVATE_CLAIM
-  - docker-compose.private
 ---
 
 # Private Node Provisioning (专属节点 开通)
 
-Use this skill when an external Claude Code agent (holding the `kaitu-center` MCP) provisions a **dedicated private node** end-to-end: claim a provisioning intent from Center, create a VPS, OS-prep it, deploy the k2s tunnel stack with the Option D self-metering override, and verify the node self-registers so Center flips the owner's subscription to active.
+Use this skill when an external Claude Code agent (holding the `kaitu-center` MCP) provisions a **dedicated private node** end-to-end: claim a provisioning intent from Center, create a VPS, OS-prep it, deploy the k2s tunnel stack, and verify the node self-registers so Center flips the owner's subscription to active. The node's **sidecar** self-meters host-NIC usage to Center.
 
 This is a **sibling** of `kaitu-node-ops`. Where that skill operates *existing* shared-pool nodes, this one *creates* a private node from a Center work item. All the safety guardrails, architecture identification, `exec_on_node` script-pipe rules, and post-deployment verification from `kaitu-node-ops` apply verbatim — read it for any operation not covered here. **Never** read/display/modify another node's `K2_NODE_SECRET`; use `pull + up -d`, never `down`.
 
@@ -29,12 +28,12 @@ This is a **sibling** of `kaitu-node-ops`. Where that skill operates *existing* 
 | App (iOS / Android / desktop) | **shared pool** (k2subs picks) | per-node, no cutoff |
 | Customer router / dedicated VPS | **private node** (single-tenant) | self-metered, owner quota cutoff |
 
-A private node is the **same** `k2v5 + k2-sidecar + k2v4-slave` stack as a shared node (see `kaitu-node-ops` Step 2), with **two** additions, both env-driven:
+A private node is the **exact same** `k2v5 + k2-sidecar + k2v4-slave` stack as a shared node (see `kaitu-node-ops` Step 2), deployed from the **same single** `docker-compose.yml`. The only difference is one `.env` variable — `K2_PRIVATE_CLAIM` — which the sidecar reads and which switches on two behaviors, both inside the sidecar:
 
 1. **Claim carriage (activation)** — the sidecar carries `K2_PRIVATE_CLAIM` on registration. Center flips that node's `Class=private`, binds the owner, and activates the owner's subscription. Activation is **not** in the agent's hands.
-2. **Option D self-metering (cost gate)** — under spec `2026-06-12-private-node-usage-reporting-in-k2s-design.md`, the **k2s process itself** runs the metering loop: it reads its own counters, `POST`s `{centerURL}/slave/usage`, and applies the verdict to its own `accepting` gate (cuts new connections at 95% / 100%). No separate metering sidecar wiring, no cross-container IPC. The loop is **gated on env presence** — k2s only starts the reporter when `K2_USAGE_REPORT_URL != "" && K2_NODE_SECRET != ""`. Shared-pool k2s never gets those env vars → reporter never starts → byte-for-byte identical to today.
+2. **Host-NIC self-metering (cost gate)** — when `K2_PRIVATE_CLAIM` is set, the **sidecar** runs a metering loop: it reads the **host** NIC byte counters (`/host/proc/net/dev`, already mounted) and `POST`s cumulative bytes to `{centerURL}/slave/usage` (Basic auth `base64(ipv4:secret)`, same node credentials it registers with). Center records the usage into the owner's quota ledger. **Enforcement is Center-side and automatic**: at ≥95% of sold quota Center rejects new device auth (402) and hides the node from `/api/tunnels` + `/api/subs` — no client lands on an over-quota node. The k2s data-plane is **not** involved in metering. Shared-pool nodes (no `K2_PRIVATE_CLAIM`) never start the reporter → byte-for-byte identical to today.
 
-That env-gating is *why* the private node deploys with **two** compose files: the base `docker-compose.yml` (shared by all nodes) plus the `docker-compose.private.yml` override that injects the three metering env vars onto the `k2v5` container. Shared nodes simply omit the override.
+> **Why host-NIC, not k2s app-bytes:** the NIC counter is the number the provider actually bills, is provider-agnostic (works where the provider has no traffic API), and keeps the tunnel data-plane decoupled from billing. (This supersedes the retired "Option D" in-k2s reporter — there is no longer a `docker-compose.private.yml` override.)
 
 ## Step 0: Preconditions / identity
 
@@ -61,15 +60,14 @@ claim_node_operation(id=<operationId>, holder=<agent-id>, leaseSeconds=600?)
 | From claim response | Goes to | Notes |
 |---------------------|---------|-------|
 | `data.identity.claimToken` | `.env` `K2_PRIVATE_CLAIM` | **ONE-TIME** — only ever returned by this call, never shown again. Bake into `.env` immediately; never log it. |
-| `data.identity.centerUrl` | `.env` `K2_CENTER_URL` + `K2_USAGE_REPORT_URL` | Center base URL. |
+| `data.identity.centerUrl` | `.env` `K2_CENTER_URL` | Center base URL (the sidecar uses it for both registration and usage reporting). |
 | `data.identity.domain` | `.env` `K2_DOMAIN` | Empty → leave empty, sidecar auto-derives `{ipv4-with-dashes}.sslip.io`. |
 | `data.operation.params.region` | `create_cloud_instance region` + `.env` `K2_NODE_REGION` | Map to the provider's region identifier (Step 2). |
-| `data.operation.params.bundleId` | `create_cloud_instance plan` | Map bundle → plan (Step 2). |
-| `data.operation.params.imageId` | `create_cloud_instance image_id` | OS image. |
-| `data.operation.params.k2Version` | `.env` `K2_VERSION` | Pin the version — do **not** use `:latest`. |
-| `data.operation.params.trafficTotalBytes` | `.env` `K2_NODE_TRAFFIC_LIMIT_GB` | Derive GB = `trafficTotalBytes / (1024^3)`. |
-| `data.operation.params.ipType` | provider selection / notes | residential vs non-residential. |
+| `data.operation.params.trafficTotalBytes` | `.env` `K2_NODE_TRAFFIC_LIMIT_GB` | Derive GB = `trafficTotalBytes / (1024^3)`. The **sold** quota (e.g. 950G on a 1T bundle). |
+| `data.operation.params.ipType` | provider / bundle selection (Step 2) | residential vs non-residential. |
 | `data.operation.subId` | instance `name = pn-<subId>` + `.env` `K2_NODE_NAME` | Deterministic naming → idempotency root. |
+
+> **Note (post-decoupling):** the deploy task carries only business inputs (`region`, `trafficTotalBytes`, `ipType`). Whoever provisions chooses the concrete `provider` / `bundle` / `image` / `k2Version` that satisfies them (Step 2) — pick a bundle whose included transfer comfortably exceeds the sold `trafficTotalBytes` so provider overage never triggers.
 
 **If claim returns an error envelope (409-ish: already claimed / not found):** do **not** retry blindly. Re-run `list_node_operations(action=provision, status=queued)` — someone else took it — and pick another, or exit if the queue is empty.
 
@@ -77,13 +75,13 @@ claim_node_operation(id=<operationId>, holder=<agent-id>, leaseSeconds=600?)
 
 ## Step 2: Discover account / region / plan / image
 
-Map the job's abstract spec fields to concrete provider arguments:
+Map the job's abstract spec fields to concrete provider arguments. **You** choose the bundle/image (the task does not dictate them) — pick a bundle whose included transfer ≥ the sold `trafficTotalBytes` with headroom, and pin a known-good `k2Version` (not `:latest`):
 
 ```
-list_cloud_accounts   → pick account_name for the job's provider
+list_cloud_accounts   → pick account_name for the chosen provider
 list_cloud_regions    → map job.region → create_cloud_instance region
-list_cloud_plans      → map job.bundleId → create_cloud_instance plan
-list_cloud_images     → map job.imageId → create_cloud_instance image_id (Ubuntu 20/22/24 — provision-node.sh is Ubuntu-only)
+list_cloud_plans      → choose a plan/bundle whose transfer ≥ sold quota → create_cloud_instance plan
+list_cloud_images     → choose an Ubuntu 20/22/24 image → create_cloud_instance image_id (provision-node.sh is Ubuntu-only)
 ```
 
 ## Step 3: Create the VPS
@@ -92,8 +90,8 @@ list_cloud_images     → map job.imageId → create_cloud_instance image_id (Ub
 create_cloud_instance(
   account_name=<from list_cloud_accounts>,
   region=<mapped>,
-  plan=<mapped from bundleId>,
-  image_id=<mapped from imageId>,
+  plan=<chosen bundle>,
+  image_id=<chosen image>,
   name=pn-<subId>
 )
 ```
@@ -129,36 +127,34 @@ Exact variables and their sources:
 
 | `.env` variable | Value / source | Consumer | Secret? |
 |-----------------|----------------|----------|---------|
-| `K2_NODE_SECRET` | **agent-generated** `openssl rand -hex 32` | sidecar (registration) **and** k2s (Center Basic-auth for usage reporting under Option D) | **YES — never log** |
-| `K2_PRIVATE_CLAIM` | `identity.claimToken` from Step 1 | **sidecar** — carried on registration → Center flips `Class=private` + owner + activates sub | **YES — one-time, never log** |
-| `K2_USAGE_REPORT_URL` | `identity.centerUrl` | **k2s** (private override) — enables the self-report/cutoff loop | no |
-| `K2_NODE_IPV4` | the instance's public IPv4 | **k2s** (private override) — Basic-auth **username**; MUST equal the registered node IPv4 (empty → k2s `ProbePublicIP` fallback) | no |
-| `K2_CENTER_URL` | `identity.centerUrl` | sidecar + k2v4-slave | no |
+| `K2_NODE_SECRET` | **agent-generated** `openssl rand -hex 32` | **sidecar** — registration **and** the Center Basic-auth (`ipv4:secret`) for usage reporting | **YES — never log** |
+| `K2_PRIVATE_CLAIM` | `identity.claimToken` from Step 1 | **sidecar** — carried on registration → Center flips `Class=private` + owner + activates sub; also switches on host-NIC self-metering | **YES — one-time, never log** |
+| `K2_CENTER_URL` | `identity.centerUrl` | sidecar (registration + `/slave/usage`) + k2v4-slave | no |
 | `K2_DOMAIN` | `identity.domain`, or **empty** | sidecar (empty → auto `{ipv4-with-dashes}.sslip.io`) | no |
-| `K2_VERSION` | `job.k2Version` (pin, not `:latest`) | image tags | no |
-| `K2_NODE_TRAFFIC_LIMIT_GB` | `job.trafficTotalBytes / 1024^3` | traffic gate | no |
+| `K2_VERSION` | chosen pin (not `:latest`) | image tags | no |
+| `K2_NODE_TRAFFIC_LIMIT_GB` | `job.trafficTotalBytes / 1024^3` | display/load reporting | no |
 | `K2_NODE_NAME` | `pn-<subId>` | registration meta | no |
 | `K2_NODE_REGION` | `job.region` | registration meta | no |
 
-**The env split (Option D):**
-- `K2_PRIVATE_CLAIM` → the **sidecar** (base compose passes `K2_PRIVATE_CLAIM=${K2_PRIVATE_CLAIM:-}`). The sidecar registers and carries the claim; Center does the activation.
-- `K2_USAGE_REPORT_URL` + `K2_NODE_SECRET` + `K2_NODE_IPV4` → **k2s**, injected by `docker-compose.private.yml` onto the `k2v5` container. k2s self-meters: counts bytes → `POST {centerURL}/slave/usage` (Basic auth `base64(ipv4:secret)`) → applies verdict to its own `accepting` gate. The reporter is **double-gated** (`UsageReportURL != "" && NodeSecret != ""`); shared nodes that never get this override stay dumb and hold no secret.
+**How the private node differs (all in the sidecar, base compose only):**
+- `K2_PRIVATE_CLAIM` → the **sidecar** (base compose passes `K2_PRIVATE_CLAIM=${K2_PRIVATE_CLAIM:-}`). The sidecar registers and carries the claim (Center activates), **and** — because the claim is non-empty — starts the host-NIC usage reporter.
+- The sidecar already holds `K2_NODE_SECRET` and `K2_CENTER_URL` (base compose) and auto-detects its public IPv4 at registration, so it needs **no extra env** to report usage. There is no k2s-side metering and no compose override.
 
-## Step 6: Deploy the stack (two compose files)
+## Step 6: Deploy the stack (single compose file)
 
-SCP the canonical files to `/apps/kaitu-slave/`, then bring up with **both** compose files:
+SCP the canonical base file to `/apps/kaitu-slave/`, then bring up:
 
-1. SCP **both** `docker/docker-compose.yml` **and** `docker/docker-compose.private.yml` to `/apps/kaitu-slave/` (use the `scriptPath` upload form per `kaitu-node-ops`, e.g. `exec_on_node(ip, "sudo tee /apps/kaitu-slave/docker-compose.private.yml > /dev/null", { scriptPath: "docker/docker-compose.private.yml" })`).
+1. SCP `docker/docker-compose.yml` to `/apps/kaitu-slave/` (use the `scriptPath` upload form per `kaitu-node-ops`, e.g. `exec_on_node(ip, "sudo tee /apps/kaitu-slave/docker-compose.yml > /dev/null", { scriptPath: "docker/docker-compose.yml" })`).
 2. Also deploy `users` (empty → pure remote auth), `auto-update.sh`, and `k2v5-crash-monitor.sh` per `kaitu-node-ops` Step 5 (the crash-monitor + cron steps of `provision-node.sh` look for these in `/apps/kaitu-slave/`).
 3. Bring up:
 
 ```
-exec_on_node(ip=<ipv4>, "cd /apps/kaitu-slave && docker compose -f docker-compose.yml -f docker-compose.private.yml up -d")
+exec_on_node(ip=<ipv4>, "cd /apps/kaitu-slave && docker compose -f docker-compose.yml up -d")
 ```
 
-**Why both files:** the private override is a thin layer that only adds the three k2s metering env vars (`K2_NODE_SECRET`, `K2_USAGE_REPORT_URL`, `K2_NODE_IPV4`) onto `k2v5`. It is an override, not a replacement, so any change to the base compose is inherited automatically (no two-file drift). A shared-pool node would bring up with the base file **only** — its k2v5 never receives `K2_NODE_SECRET` → reporter never starts → it holds no Center secret and never contacts Center for usage. Omitting the override is what makes the node shared; including it is what makes it private-metering.
+**Private vs shared is the `.env`, not the compose:** the same `docker-compose.yml` deploys both. A node is private iff its `.env` carries `K2_PRIVATE_CLAIM` — the sidecar then registers the claim (Center activates) and self-meters. A shared-pool node omits `K2_PRIVATE_CLAIM` → the sidecar registers normally and never calls `/slave/usage`. There is no separate override file.
 
-> Updates use `pull + up -d` (with both `-f` files), **never** `down`.
+> Updates use `pull + up -d`, **never** `down`.
 
 ## Step 7: Verify
 
@@ -168,12 +164,12 @@ Run the `kaitu-node-ops` post-deployment checklist (containers Up, sidecar healt
 |-------|---------|----------|
 | k2v5 healthy + tunnel ready | `docker logs --tail 20 k2v5 \| grep "server ready"` | `k2s server ready listen=:443` |
 | Sidecar registered (carried claim) | `docker logs --tail 30 k2-sidecar \| grep "Registration completed"` | `tunnels=1` |
-| Usage reporter started | `docker logs --tail 50 k2v5 \| grep -i "usage report"` | reporter start line present (only logs on verdict change / error — absence of errors is OK) |
-| Live counters readable | `curl -s 127.0.0.1:9099/usage` | JSON counters (loopback-only, **read-only** — the sole usage endpoint after the Option D trim; `/reset` + `/verdict` were removed) |
+| Usage reporter started | `docker logs --tail 80 k2-sidecar \| grep "usage-reporter"` | `DIAG: usage-reporter-start` (and periodic `usage-reporter-cycle-ok`) |
 | Node visible in Center | `list_nodes(name=pn-<subId>)` | one `tunnels` entry with the sslip.io domain |
+| Usage recorded in Center | `get_cloud_instance` for the node (or admin cloud list) | `trafficUsedBytes` advancing after some traffic |
 | Operation flipped to done | `list_node_operations(action=provision, status=done)` (or check the operation) | operation is `done` — **set by node self-registration, NOT by `update_node_operation`** |
 
-If the usage reporter line is absent **and** `127.0.0.1:9099/usage` errors, re-check that `K2_USAGE_REPORT_URL` + `K2_NODE_SECRET` are present in `.env` and that the stack was brought up with **both** compose files (the override is what injects them).
+If the usage-reporter line is absent, re-check that `K2_PRIVATE_CLAIM` and `K2_NODE_SECRET` are present in `.env` and that the sidecar registered (the reporter only starts when `PrivateClaim != ""`). The sidecar logs `Usage reporter disabled (not a private node)` when the claim is empty.
 
 ## Step 8: On failure
 
@@ -191,6 +187,7 @@ update_node_operation(id=<operationId>, status=failed, error=<concise reason —
 1. **`claimToken` + `K2_NODE_SECRET` are untouchable** — never echo to logs, the conversation, or any `update_node_operation` call. Write only via heredoc (Step 5); never pass on the command line.
 2. **Deterministic naming `pn-<subId>` = idempotency root** — always probe `list_cloud_instances` before creating; reuse a running match instead of spawning an orphan.
 3. **Re-runs are idempotent** — `provision-node.sh`, `.env` write, and `up -d` are all safe to repeat.
-4. **`pull + up -d`, never `down`** — including both `-f` files on updates.
+4. **`pull + up -d`, never `down`.**
 5. **Don't touch other nodes** — this runbook only ever operates on the instance it just created (`pn-<subId>`). Never read/modify the `K2_NODE_SECRET` or config of any existing node.
 6. **`K2_DOMAIN` stays empty** unless the job supplies a domain — the sidecar auto-derives a globally-unique `{ipv4-with-dashes}.sslip.io`.
+7. **Pick a big-enough bundle** — the cost guardrail is bundle sizing: choose a VPS bundle whose included transfer exceeds the sold `trafficTotalBytes` so the sidecar's quota cutoff trips before provider overage billing.

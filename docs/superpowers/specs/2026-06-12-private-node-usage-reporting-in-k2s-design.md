@@ -1,5 +1,7 @@
 # 专属节点流量上报合并进 k2s（Option D）Design
 
+> ⚠️ **已被取代 (SUPERSEDED 2026-06-15)** —— 见 `docs/superpowers/plans/2026-06-15-private-node-nic-self-metering.md`（Part 2）。计量已从 k2s 进程**搬回 sidecar**，且改为读**宿主机 NIC 字节**（运营商真实计费数，provider 无关）而非 k2s 应用层字节。`docker-compose.private.yml` override 与 k2s 的三件套 env（`K2_USAGE_REPORT_URL`/`K2_NODE_IPV4`/k2s 侧 `K2_NODE_SECRET`）**已移除**；专属节点仅靠 `.env` 的 `K2_PRIVATE_CLAIM` 区分，sidecar 自己上报到 `/slave/usage`。k2s 代码未改（其 reporter 拿不到 env 即不启动）。本文以下内容仅作历史决策记录。
+
 > 决策日期 2026-06-12。本文是**架构反转的决策记录**：把 Plan 3-k2s Phase B 原本放在 **sidecar** 的「用量上报心跳」**合并进 k2s 进程内**。supersede 了 `2026-06-11-private-node-plan3-k2s-metering.md` 的 Phase B（sidecar 心跳）一节。
 
 ## 1. 背景与问题
