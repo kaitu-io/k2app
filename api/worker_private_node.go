@@ -47,12 +47,9 @@ func handleProvisionPrivateNode(ctx context.Context, payload []byte) error {
 	// 递增尝试计数（含重试），让 ops 能在卡住的 sub 上看到尝试次数。
 	db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", p.SubID).
 		UpdateColumn("provision_attempts", gorm.Expr("provision_attempts + 1"))
-	spec, err := loadPrivateNodePlanSpec(db.Get(), sub.PlanID)
-	if err != nil {
-		return markProvisionFailed(ctx, &sub, err)
-	}
 	// Center 不再直接建机：只写 NodeOperation(action=provision, queued) 队列行，交外部 AI agent 认领。
-	if err := emitNodeProvisionJob(ctx, &sub, spec); err != nil {
+	// 任务只带业务意图（sub 已快照 region/流量/住宅?）；provider/bundle/image 由认领者决定。
+	if err := emitNodeProvisionJob(ctx, &sub); err != nil {
 		if isLastAttempt(ctx) {
 			return markProvisionFailed(ctx, &sub, err)
 		}

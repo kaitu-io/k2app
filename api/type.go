@@ -571,7 +571,6 @@ type DataPlan struct {
 
 // DataPrivateNodePlanSpec 专属节点套餐的购买可见参数（仅 Product=private_node 的套餐附带）。
 type DataPrivateNodePlanSpec struct {
-	Provider          string   `json:"provider"`
 	IPType            string   `json:"ipType"`            // residential | non_residential
 	AllowedRegions    []string `json:"allowedRegions"`    // 购买时可选地区
 	TrafficTotalBytes int64    `json:"trafficTotalBytes"` // 流量配额

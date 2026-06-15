@@ -55,7 +55,6 @@ func TestSelfRegister_LinksCloudInstanceAndCompletesJob(t *testing.T) {
 		CreatedBy: "system:order",
 		Params: mustJSON(ProvisionParams{
 			Region:            "hongkong",
-			ComposeVariant:    "private",
 			TrafficTotalBytes: 2 << 40,
 			IPType:            IPTypeNonResidential,
 		}),
@@ -239,7 +238,7 @@ func TestSelfRegister_ClaimSecurity(t *testing.T) {
 		job := NodeOperation{
 			Action: NodeOpProvision, SubID: sub.ID, Status: NodeOpFailed, CreatedBy: "system:order",
 			Params: mustJSON(ProvisionParams{
-				Region: "hongkong", ComposeVariant: "private",
+				Region:            "hongkong",
 				TrafficTotalBytes: 2 << 40, IPType: IPTypeNonResidential,
 			}),
 		}

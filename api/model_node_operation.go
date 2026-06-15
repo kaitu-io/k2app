@@ -74,14 +74,9 @@ func (op *NodeOperation) BeforeSave(*gorm.DB) error {
 
 // ProvisionParams 是 action=provision 的 Params JSON(原 NodeProvisionJob 的 spec 快照)。
 type ProvisionParams struct {
-	Region            string `json:"region"`
-	BundleID          string `json:"bundleId"`
-	ImageID           string `json:"imageId"`
-	ComposeVariant    string `json:"composeVariant"`
-	K2Version         string `json:"k2Version"`
-	TrafficTotalBytes int64  `json:"trafficTotalBytes"`
-	IPType            string `json:"ipType"`
-	Domain            string `json:"domain"`
+	Region            string `json:"region"`            // 服务区域
+	TrafficTotalBytes int64  `json:"trafficTotalBytes"` // 卖出流量配额(1T/2T/4T)
+	IPType            string `json:"ipType"`            // residential | non_residential
 }
 
 // mustJSON marshal 任意 payload 为字符串(失败返 "{}",不 panic)。

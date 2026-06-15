@@ -87,15 +87,9 @@ func isDuplicateKeyErr(err error) bool {
 // emitNodeProvisionJob 写一条 NodeOperation(action=provision, queued) 队列行，交外部 AI agent 认领建机+部署。
 // Center 不再直接 CreateInstance/cloud-init；激活仍由节点自注册带 claim 驱动（Plan 4）。
 // 状态停在 provisioning（NOT active）——node 自注册回传 claim 后才转 active。
-func emitNodeProvisionJob(ctx context.Context, sub *PrivateNodeSubscription, spec *PrivateNodePlanSpec) error {
-	// G1 backstop：再次校验成本不变式（覆盖 hook 之前创建的 legacy spec，其
-	// BundleTransferBytes=0）。纯算术，无 cloud 调用。违反 → 标 failed，不开机。
-	if err := validatePrivateNodeQuotaInvariant(spec.TrafficTotalBytes, spec.BundleTransferBytes); err != nil {
-		// 复用单一 failed-marking 路径：标 failed + checked write + 日志 + Slack ops 通知。
-		// 返回 nil 停止 Asynq 重试是刻意的——配额不变式违反不可重试。
-		return markProvisionFailed(ctx, sub, fmt.Errorf("provision blocked, quota invariant violated: %w", err))
-	}
-
+// 任务只带业务意图 {region, 卖出流量, 住宅?}；provider/bundle/image 由认领者部署时自定，
+// 成本安全护栏（bundle 须够大）归属运维/主机，代码不再校验。
+func emitNodeProvisionJob(ctx context.Context, sub *PrivateNodeSubscription) error {
 	// 1. 原子门控：允许从 pending 或 provisioning 进入 provisioning。
 	// 接纳 provisioning 是为了重试幂等：job 已写但后续步骤失败 → Asynq 重试时
 	// 状态已是 provisioning，必须能再次进入恢复，否则 sub 永久卡死。
@@ -122,9 +116,9 @@ func emitNodeProvisionJob(ctx context.Context, sub *PrivateNodeSubscription, spe
 	//    Asynq 重试或重复 emit 不会再叠出第二条未结 provision 行。sub 状态原子门控
 	//    与此去重各自独立守护幂等。
 	return dispatchNodeOperation(ctx, sub.ID, nil, NodeOpProvision, "system:order", ProvisionParams{
-		Region: sub.Region, BundleID: spec.BundleID, ImageID: spec.ImageID,
-		ComposeVariant: "private", K2Version: "",
-		TrafficTotalBytes: sub.TrafficTotalBytes, IPType: sub.IPType, Domain: "",
+		Region:            sub.Region,
+		TrafficTotalBytes: sub.TrafficTotalBytes,
+		IPType:            sub.IPType,
 	})
 }
 

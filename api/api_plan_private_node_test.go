@@ -25,8 +25,8 @@ func seedPlanFixtures(t *testing.T) {
 	require.NoError(t, db.Get().Create(&plan).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
 
-	spec := PrivateNodePlanSpec{PlanID: plan.ID, Provider: "aws_lightsail", IPType: IPTypeNonResidential,
-		AllowedRegions: `["us-east-1","ap-northeast-1"]`, ImageID: "img-x", BundleID: "nano_2_0", TrafficTotalBytes: 2 << 40, BundleTransferBytes: 3 << 40}
+	spec := PrivateNodePlanSpec{PlanID: plan.ID, IPType: IPTypeNonResidential,
+		AllowedRegions: `["us-east-1","ap-northeast-1"]`, TrafficTotalBytes: 2 << 40}
 	require.NoError(t, db.Get().Create(&spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
 
@@ -116,7 +116,6 @@ func TestGetProductPlans_PrivateNode(t *testing.T) {
 	require.Equal(t, "private_node", found["product"])
 	pn, ok := found["privateNode"].(map[string]any)
 	require.True(t, ok, "privateNode spec must be present for private_node plans")
-	require.Equal(t, "aws_lightsail", pn["provider"])
 	require.Equal(t, "non_residential", pn["ipType"])
 	regions, ok := pn["allowedRegions"].([]any)
 	require.True(t, ok)

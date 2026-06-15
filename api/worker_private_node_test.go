@@ -131,9 +131,6 @@ func TestProvisionTimeoutSweep_FailsOrphanJob(t *testing.T) {
 		CreatedBy: "system:order",
 		Params: mustJSON(ProvisionParams{
 			Region:            sub.Region,
-			BundleID:          "nano_3_0",
-			ImageID:           "ubuntu_22_04",
-			ComposeVariant:    "private",
 			TrafficTotalBytes: sub.TrafficTotalBytes,
 			IPType:            sub.IPType,
 		}),

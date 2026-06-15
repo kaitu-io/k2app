@@ -36,7 +36,6 @@ func buildPlanDTO(c *gin.Context, plan Plan) DataPlan {
 				regions = []string{}
 			}
 			dp.PrivateNode = &DataPrivateNodePlanSpec{
-				Provider:          spec.Provider,
 				IPType:            spec.IPType,
 				AllowedRegions:    regions,
 				TrafficTotalBytes: spec.TrafficTotalBytes,

@@ -42,13 +42,9 @@ func TestApplyOrderToBuyer_PrivateNode(t *testing.T) {
 
 	spec := PrivateNodePlanSpec{
 		PlanID:            plan.ID,
-		Provider:          "aws_lightsail",
 		IPType:            IPTypeNonResidential,
 		AllowedRegions:    `["japan"]`,
-		ImageID:           "img-test",
-		BundleID:          "nano_2_0",
-		TrafficTotalBytes:   2 * 1024 * 1024 * 1024 * 1024, // 2TB
-		BundleTransferBytes: 3 * 1024 * 1024 * 1024 * 1024, // bundle allowance strictly above sold quota
+		TrafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024, // 2TB
 	}
 	require.NoError(t, db.Get().Create(&spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
@@ -144,13 +140,9 @@ func TestApplyOrderToBuyer_PrivateNode_SetsActivationFlags(t *testing.T) {
 
 	spec := PrivateNodePlanSpec{
 		PlanID:            plan.ID,
-		Provider:          "aws_lightsail",
 		IPType:            IPTypeNonResidential,
 		AllowedRegions:    `["japan"]`,
-		ImageID:           "img-test",
-		BundleID:          "nano_2_0",
-		TrafficTotalBytes:   2 * 1024 * 1024 * 1024 * 1024,
-		BundleTransferBytes: 3 * 1024 * 1024 * 1024 * 1024, // bundle allowance strictly above sold quota
+		TrafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024,
 	}
 	require.NoError(t, db.Get().Create(&spec).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
