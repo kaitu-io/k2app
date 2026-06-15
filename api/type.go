@@ -569,7 +569,7 @@ type DataPlan struct {
 	PrivateNode *DataPrivateNodePlanSpec `json:"privateNode,omitempty"`
 }
 
-// DataPrivateNodePlanSpec 专属节点套餐的购买可见参数（仅 Kind=private_node 的套餐附带）。
+// DataPrivateNodePlanSpec 专属节点套餐的购买可见参数（仅 Product=private_node 的套餐附带）。
 type DataPrivateNodePlanSpec struct {
 	Provider          string   `json:"provider"`
 	IPType            string   `json:"ipType"`            // residential | non_residential

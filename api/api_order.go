@@ -35,7 +35,7 @@ type CreateOrderRequest struct {
 	Preview      bool   `json:"preview" example:"false"`                     // 是否预览模式
 	Plan         string `json:"plan" binding:"required" example:"pro_month"` // 套餐ID
 	CampaignCode string `json:"campaignCode" example:"SAVE20"`               // 优惠码（可选）
-	Region       string `json:"region" example:"ap-northeast-1"`             // 专属节点购买时选定的地区（仅 Kind=private_node 套餐有效）
+	Region       string `json:"region" example:"ap-northeast-1"`             // 专属节点购买时选定的地区（仅 Product=private_node 套餐有效）
 
 	// Deprecated 2026-04-20: 代付功能已下线，下列字段仅用于检测旧客户端并拒绝其请求，不再写入 Order。
 	// 详见 docs/superpowers/specs/2026-04-20-proxy-purchase-users.md
