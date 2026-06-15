@@ -81,8 +81,9 @@ MCP: list_edm_templates  → 确认 slug = "private-node-welcome" 存在
 > `bundle_transfer_bytes` 须 > `traffic_total_bytes`（成本不变式），按真实 bundle 的 transfer 上限填。
 
 ```sql
--- 注：plans 判别列已由 kind 重命名为 product（值 app|private_node）。Center 的
--- migrate 会自动改名 + 把 shared_subscription 值迁成 app；本 SQL 用新列名 product。
+-- 注：plans 用 product 列做产品判别（值 app|private_node）。kind 从未上线（仅存在于
+-- 未推送的本地提交），prod 无该列；Center 的 migrate 用 AutoMigrate 新建 product 列
+-- （not null default 'app'，自动回填老 app 套餐），无需改名/值迁移。
 -- ============ 3 档 Plan（product=private_node, 年付 month=12）============
 INSERT INTO plans (created_at, updated_at, pid, label, price, origin_price, month, highlight, is_active, tier, product)
 VALUES
