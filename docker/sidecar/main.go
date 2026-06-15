@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -159,6 +160,25 @@ func (s *Sidecar) Start() error {
 			slog.Error("Metrics collector error", "component", "sidecar", "err", err)
 		}
 	}()
+
+	// Step 4.5: Private nodes self-meter HOST-NIC usage to Center's quota
+	// ledger (Part 2). The sidecar is the single usage reporter — k2s's
+	// in-process reporter is retired. Online enforcement is Center-side
+	// (device-auth + tunnel-hide gates read the CloudInstance.TrafficUsedBytes
+	// this reporter feeds). Gate on the private claim so shared-pool nodes never
+	// call /slave/usage (byte-identical to before).
+	if s.nodeInstance.PrivateClaim != "" {
+		usageReporter := sidecar.NewUsageReporter(
+			sidecar.NewHostNICMeter(),
+			s.config.K2Center.BaseURL,
+			s.nodeInstance.IPv4,
+			s.nodeInstance.Secret,
+		)
+		go usageReporter.Run(context.Background())
+		slog.Info("Private-node usage reporter started", "component", "sidecar", "ipv4", s.nodeInstance.IPv4)
+	} else {
+		slog.Info("Usage reporter disabled (not a private node)", "component", "sidecar")
+	}
 
 	// Setup signal handling
 	signal.Notify(s.shutdownChan, syscall.SIGINT, syscall.SIGTERM)
