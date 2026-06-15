@@ -82,7 +82,7 @@ func (s *PrivateNodeSubscription) IsServiceable(now int64) bool {
 // PrivateNodePlanSpec 专属节点套餐的开通参数，与通用 Plan 解耦。
 type PrivateNodePlanSpec struct {
 	ID                uint64 `gorm:"primarykey" json:"id"`
-	PlanID            uint64 `gorm:"uniqueIndex;not null" json:"planId"`        // → Plan.ID (Kind=private_node)
+	PlanID            uint64 `gorm:"uniqueIndex;not null" json:"planId"`        // → Plan.ID (Product=private_node)
 	Provider          string `gorm:"type:varchar(30);not null" json:"provider"` // aws_lightsail | ...
 	IPType            string `gorm:"type:varchar(20);not null" json:"ipType"`
 	AllowedRegions    string `gorm:"type:text" json:"allowedRegions"`   // JSON 数组：可选地区
