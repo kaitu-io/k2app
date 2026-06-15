@@ -1,7 +1,19 @@
 # 专属线路 (Private Node) 精简 MVP — V1 生产部署运维手册
 
-> 状态：**待部署**。代码在 `main`（领先 `origin/main` 10 commit，未推）。本手册是 ops 在
+> 状态：**待部署**。代码在 `main`（领先 `origin/main` 15 commit，未推）。本手册是 ops 在
 > 用户 `git push` 后执行的一站式清单。承接 task #20 (伞) / #41 (V0 数据门) / #42 (V2 keystone)。
+
+## 部署前外部依赖（V0 门收敛后，仅剩这些非代码输入）
+
+代码与数据门已就绪（详见 §1 的 2026-06-15 prod 复核）。上线前需要**人来定/填**的，只剩：
+
+| # | 依赖 | 谁 | 硬阻断时点 | 现状 |
+|---|------|----|-----------|------|
+| 1 | 真实 Lightsail `bundle_id` + `image_id`（替换 §3 占位 `lightsail_*tb`/`k2s_base`） | ops | **首个订单 provision 时**（catalog 可先带占位发布，但开机前必须是真值） | ⏳ 待填 |
+| 2 | 确认/补建 EDM `private-node-welcome` 模板（§1.2） | ops | 首单欢迎邮件（best-effort，不阻断下单） | ⚠️ 未坐实 |
+
+> 定价已定稿（$199/$398/$796），售卖配额/成本不变式已定稿 —— **不需要再做产品决策**。
+> 一切代码改动已在 `main`、静态全绿、双审。剩余风险集中在 §4 的真支付/真机 smoke（task #42/#20），与本数据门无关。
 
 ## 0. 产品形态（部署前必读）
 
@@ -25,10 +37,16 @@ ops 在 NodeOperation 队列里的人工决定，对代码/数据模型不可见
 
 ## 1. 部署前数据门 (V0 — task #41)
 
+> **2026-06-15 prod 只读复核结果**（MCP，无写操作）：
+> - §1.1 孤儿检查 **PASS（按缺失）** — `list_provisioning_intents` 命中 `/app/provision-jobs` 返 **HTTP 404**：provisioning 功能从未部署，`node_provision_jobs` 表不存在，在途行=0。
+> - §1.3 目录洁净 **PASS** — `list_admin_plans` 返 prod 仅 4 档（`1y/2y/3y/5y`，全 `tier:basic`），无 `pn-*`，响应**无 `product` 字段**（再证 kind/product 从未上线）。catalog SQL 为纯 INSERT。
+> - §1.2 EDM **未能确认** — `list_edm_templates` 仅返 19 条中的前 10 条（工具无分页参数），`private-node-welcome` 不在前 10。须 ops 在 DB 侧或分页确认（详见下）。
+
 ### 1.1 旧表孤儿检查（必须为 0 才能继续）
 
 `migrate` 只 `AutoMigrate` 新建 `node_operations`，**不改名**旧表 `node_provision_jobs`。
-产品未上线，旧表应不存在或在途行=0：
+产品未上线，旧表应不存在或在途行=0。✅ **已复核：prod `/app/provision-jobs` 404 = 表不存在 = PASS。**
+如未来重查：
 
 ```sql
 -- 若表不存在 = OK（产品从未上线）。若存在，open 行必须为 0：
@@ -38,14 +56,26 @@ WHERE status IN ('pending','running','open','provisioning');  -- 按实际枚举
 
 > 期望：表不存在 **或** `open_jobs = 0`。非 0 = 停止，先人工处理在途任务。
 
-### 1.2 EDM 模板存在性
+### 1.2 EDM 模板存在性（⚠️ 部署前唯一须人工确认的数据门）
 
 欢迎邮件模板 `private-node-welcome` 必须存在（缺失则欢迎邮件 graceful skip，不报错但用户收不到）。
-**dev/prod 均已通过 MCP `create_edm_template` 创建（prod id=32, zh-CN）。** 部署前复核：
+历史记录称已建（prod id=32, zh-CN），但 **2026-06-15 MCP 复核因 `list_edm_templates` 无分页、仅见前 10 条而未能坐实**。部署前 ops 二选一确认：
+
+```sql
+-- 方式 A（DB 直查，最可靠）：
+SELECT id, slug, language, is_active FROM email_marketing_templates WHERE slug = 'private-node-welcome';
+```
 
 ```
-MCP: list_edm_templates  → 确认 slug = "private-node-welcome" 存在
+方式 B（MCP）：list_edm_templates 翻到含 id=32 的页，确认 slug='private-node-welcome'
 ```
+
+> 若不存在：用 MCP `create_edm_template` 建 `slug=private-node-welcome`（zh-CN 起底，其余语言懒翻译）。
+> 缺失不阻断下单（欢迎邮件 best-effort），但属可见体验缺口，应在首单前补齐。
+
+### 1.3 目录洁净（catalog 为纯新增）
+
+✅ **已复核：prod 仅 4 档存量 plan，无 `pn-1t/pn-2t/pn-4t`，§3 的 catalog SQL 为干净 INSERT。**
 
 ---
 
