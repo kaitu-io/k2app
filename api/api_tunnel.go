@@ -12,10 +12,10 @@ import (
 )
 
 // tunnelProtocolsForQuery returns the set of DB protocols to query for a given
-// requested protocol. k2v5 front-door forwards ALL non-ECH traffic to the
-// appropriate backend (k2v4-slave) via local_routes SNI matching.
-// Therefore any k2-family client (k2, k2v4, k2wss) can connect through a
-// k2v5 node, and queries for those protocols must also return k2v5 tunnels.
+// requested protocol. k2v5 is the sole backend; it handles ECH traffic natively
+// and all unknown-SNI connections via the camouflage reverse proxy.
+// Legacy k2-family clients (k2, k2v4, k2wss) can connect through a k2v5 node,
+// so queries for those protocols must also return k2v5 tunnels.
 //
 // Rules:
 //   - k2, k2v4, k2wss → also include k2v5 tunnels

@@ -34,7 +34,6 @@ relay:
 
 test_node: ${K2_TEST_NODE:-false}
 config_dir: "${K2_CONFIG_DIR:-/etc/kaitu}"
-k2v4_port: "${K2V4_PORT:-8443}"
 EOF
 
 echo "[entrypoint] Generated config: $CONFIG_FILE"
