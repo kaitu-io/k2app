@@ -168,13 +168,27 @@ func (s *Sidecar) Start() error {
 	// this reporter feeds). Gate on the private claim so shared-pool nodes never
 	// call /slave/usage (byte-identical to before).
 	if s.nodeInstance.PrivateClaim != "" {
-		usageReporter := sidecar.NewUsageReporter(
-			sidecar.NewHostNICMeter(),
+		meter := sidecar.NewHostNICMeter() // single meter shared by reporter + enforcer
+		reporter := sidecar.NewUsageReporter(
+			meter,
 			s.config.K2Center.BaseURL,
 			s.nodeInstance.IPv4,
 			s.nodeInstance.Secret,
 		)
-		go usageReporter.Run(context.Background())
+
+		// Node-side cutoff: the enforcer's 5s local loop pauses data-plane
+		// containers when usage reaches 100% of quota. If the docker client can't
+		// be created, keep reporting but skip node-side cutoff (degraded, logged).
+		if enf, err := sidecar.NewEnforcer(meter); err != nil {
+			slog.Error("Cutoff enforcer init failed; reporting continues without node-side cutoff",
+				"component", "sidecar", "err", err)
+		} else {
+			reporter.SetSink(enf)
+			go enf.Run(context.Background())
+			slog.Info("Private-node traffic cutoff enforcer started", "component", "sidecar")
+		}
+
+		go reporter.Run(context.Background())
 		slog.Info("Private-node usage reporter started", "component", "sidecar", "ipv4", s.nodeInstance.IPv4)
 	} else {
 		slog.Info("Usage reporter disabled (not a private node)", "component", "sidecar")
