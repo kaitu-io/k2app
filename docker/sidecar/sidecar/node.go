@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -56,21 +55,21 @@ type CenterResponse[T any] struct {
 
 // TunnelConfig tunnel configuration (for batch registration)
 type TunnelConfig struct {
-	Domain        string `json:"domain"`
-	Protocol      string `json:"protocol,omitempty"`      // Protocol: k2v5, k2v4, k2wss
-	Port          int    `json:"port"`
-	HopPortStart  int    `json:"hopPortStart,omitempty"`  // Port hopping start (0 = disabled)
-	HopPortEnd    int    `json:"hopPortEnd,omitempty"`    // Port hopping end
-	IsTest        bool   `json:"isTest,omitempty"`        // Whether this is a test node
-	HasRelay      bool   `json:"hasRelay,omitempty"`      // Whether this tunnel provides relay/forwarding capability
-	HasTunnel     bool   `json:"hasTunnel,omitempty"`     // Whether this tunnel provides direct tunnel capability
-	ServerURL string `json:"serverUrl,omitempty"` // k2v5 connection URL (built from connect-url.txt)
+	Domain       string `json:"domain"`
+	Protocol     string `json:"protocol,omitempty"` // Protocol: k2v5, k2v4, k2wss
+	Port         int    `json:"port"`
+	HopPortStart int    `json:"hopPortStart,omitempty"` // Port hopping start (0 = disabled)
+	HopPortEnd   int    `json:"hopPortEnd,omitempty"`   // Port hopping end
+	IsTest       bool   `json:"isTest,omitempty"`       // Whether this is a test node
+	HasRelay     bool   `json:"hasRelay,omitempty"`     // Whether this tunnel provides relay/forwarding capability
+	HasTunnel    bool   `json:"hasTunnel,omitempty"`    // Whether this tunnel provides direct tunnel capability
+	ServerURL    string `json:"serverUrl,omitempty"`    // k2v5 connection URL (built from connect-url.txt)
 }
 
 // TunnelResult tunnel registration result (with certificate)
 type TunnelResult struct {
 	Domain       string `json:"domain"`
-	Protocol     string `json:"protocol"`     // Protocol: k2v5, k2v4, k2wss
+	Protocol     string `json:"protocol"` // Protocol: k2v5, k2v4, k2wss
 	Port         int    `json:"port"`
 	HopPortStart int    `json:"hopPortStart"` // Port hopping start
 	HopPortEnd   int    `json:"hopPortEnd"`   // Port hopping end
@@ -115,9 +114,9 @@ type TunnelUpsertRequest struct {
 	Name         string `json:"name"`
 	Protocol     string `json:"protocol,omitempty"`
 	Port         int    `json:"port"`
-	Version      int    `json:"version"`       // K2 protocol version
-	HopPortStart int    `json:"hopPortStart"`  // Port hopping start
-	HopPortEnd   int    `json:"hopPortEnd"`    // Port hopping end
+	Version      int    `json:"version"`      // K2 protocol version
+	HopPortStart int    `json:"hopPortStart"` // Port hopping start
+	HopPortEnd   int    `json:"hopPortEnd"`   // Port hopping end
 }
 
 // TunnelUpsertResponse tunnel registration/update response (single tunnel, backward compatible)
@@ -234,27 +233,6 @@ func buildNodeMeta() map[string]interface{} {
 		return nil
 	}
 	return meta
-}
-
-// Global auth cache (30 minute validity)
-var (
-	globalAuthCache   *AuthCache
-	authCacheDuration = 30 * time.Minute
-	initAuthCacheOnce sync.Once
-	authCacheEnabled  = os.Getenv("K2_AUTH_CACHE_ENABLED") == "true" // Default off, set to "true" to enable
-)
-
-// getAuthCache returns the global auth cache (lazy initialization)
-func getAuthCache() *AuthCache {
-	initAuthCacheOnce.Do(func() {
-		globalAuthCache = NewAuthCache()
-		if authCacheEnabled {
-			slog.Info("Auth cache ENABLED", "component", "auth", "ttl", authCacheDuration)
-		} else {
-			slog.Info("Auth cache DISABLED (set K2_AUTH_CACHE_ENABLED=true to enable)", "component", "auth")
-		}
-	})
-	return globalAuthCache
 }
 
 // NewNode creates a new Node instance
@@ -591,128 +569,6 @@ func (n *Node) ReportStatus(health Health) error {
 	return nil
 }
 
-// AuthErrorCode authentication error code (aligned with Center)
-type AuthErrorCode int
-
-const (
-	AuthErrorNone              AuthErrorCode = 0   // Authentication successful
-	AuthErrorInvalidToken      AuthErrorCode = 401 // Token invalid or expired
-	AuthErrorMembershipExpired AuthErrorCode = 402 // Membership expired
-	AuthErrorUnknown           AuthErrorCode = 500 // Unknown error
-)
-
-// AuthCache authentication cache (keyed by UDID)
-type AuthCache struct {
-	mu    sync.RWMutex
-	items map[string]*AuthCacheItem
-}
-
-// AuthCacheItem cache item (supports positive and negative caching)
-type AuthCacheItem struct {
-	token     string
-	expiredAt time.Time
-	isValid   bool          // true=auth successful, false=auth failed
-	errorCode AuthErrorCode // error code when failed
-}
-
-// AuthCacheResult cache lookup result
-type AuthCacheResult struct {
-	Found     bool          // Whether cache was hit
-	IsValid   bool          // Whether auth is valid
-	ErrorCode AuthErrorCode // Error code (only meaningful when IsValid=false)
-}
-
-// NewAuthCache creates an auth cache
-func NewAuthCache() *AuthCache {
-	cache := &AuthCache{
-		items: make(map[string]*AuthCacheItem),
-	}
-
-	// Start cleanup goroutine
-	go cache.cleanup()
-
-	return cache
-}
-
-// SetSuccess sets a successful cache entry (keyed by UDID)
-func (c *AuthCache) SetSuccess(udid, token string, duration time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.items[udid] = &AuthCacheItem{
-		token:     token,
-		expiredAt: time.Now().Add(duration),
-		isValid:   true,
-		errorCode: AuthErrorNone,
-	}
-}
-
-// SetFailure sets a failure cache entry (negative cache, shorter duration)
-func (c *AuthCache) SetFailure(udid, token string, duration time.Duration, errorCode AuthErrorCode) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.items[udid] = &AuthCacheItem{
-		token:     token,
-		expiredAt: time.Now().Add(duration),
-		isValid:   false,
-		errorCode: errorCode,
-	}
-}
-
-// Set sets a cache entry (backward compatible interface, defaults to success cache)
-func (c *AuthCache) Set(udid, token string, duration time.Duration) {
-	c.SetSuccess(udid, token, duration)
-}
-
-// GetResult gets cache result (returns detailed info)
-func (c *AuthCache) GetResult(udid, token string) AuthCacheResult {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	item, exists := c.items[udid]
-	if !exists {
-		return AuthCacheResult{Found: false}
-	}
-
-	if time.Now().After(item.expiredAt) {
-		return AuthCacheResult{Found: false}
-	}
-
-	if item.token != token {
-		return AuthCacheResult{Found: false}
-	}
-
-	return AuthCacheResult{
-		Found:     true,
-		IsValid:   item.isValid,
-		ErrorCode: item.errorCode,
-	}
-}
-
-// Get gets cache (backward compatible interface, returns only successful caches)
-func (c *AuthCache) Get(udid, token string) bool {
-	result := c.GetResult(udid, token)
-	return result.Found && result.IsValid
-}
-
-// cleanup periodically cleans up expired cache entries
-func (c *AuthCache) cleanup() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		c.mu.Lock()
-		now := time.Now()
-		for udid, item := range c.items {
-			if now.After(item.expiredAt) {
-				delete(c.items, udid)
-			}
-		}
-		c.mu.Unlock()
-	}
-}
-
 // Health health metrics
 type Health struct {
 	CPUUsage    float64 `json:"cpuUsage"`
@@ -739,216 +595,6 @@ type Health struct {
 type ReportRequest struct {
 	UpdatedAt int64  `json:"updatedAt"`
 	Health    Health `json:"health"`
-}
-
-// DeviceCheckAuthRequest device auth request
-type DeviceCheckAuthRequest struct {
-	UDID  string `json:"udid,omitempty"` // Optional, extracted from JWT when token auth is used
-	Token string `json:"token"`
-}
-
-// TokenAuthRequest pure token auth request
-type TokenAuthRequest struct {
-	Token string `json:"token"`
-}
-
-// DeviceCheckAuthResponse device auth response
-type DeviceCheckAuthResponse struct {
-	UserID           uint64 `json:"userID"`
-	UDID             string `json:"udid"`
-	TokenExpiredAt   int64  `json:"tokenExpiredAt"`
-	ServiceExpiredAt int64  `json:"serviceExpiredAt"`
-}
-
-// AuthResult authentication result
-type AuthResult struct {
-	Success   bool          // Whether authentication was successful
-	ErrorCode AuthErrorCode // Error code (0=success, 401=token invalid, 402=membership expired)
-	Message   string        // Error message
-}
-
-// CheckDeviceAuth checks device authentication (for SOCKS5 and similar scenarios)
-//
-// Auth layer description:
-// 1. Basic Auth (node auth): added via requestWithAuth, proves caller is a legitimate slave node
-//   - Uses IPv4:Secret for authentication
-//   - Ensures only registered nodes can call Center API
-//
-// 2. Device Auth (device auth): this method's business logic, validates user device UDID and Token
-//   - Used to verify user devices are valid and not expired
-//   - Used for SOCKS5 proxy and similar user auth scenarios
-//
-// Parameters:
-// - udid: device UDID
-// - token: device token
-//
-// Returns:
-// - AuthResult: contains success status, error code and error message
-//
-// Error codes:
-// - 0: auth successful
-// - 401: token invalid or expired (need to re-login)
-// - 402: membership expired (need to renew)
-// - 500: unknown error (network issues, etc.)
-func (n *Node) CheckDeviceAuth(udid, token string) AuthResult {
-	startTime := time.Now()
-
-	req := DeviceCheckAuthRequest{
-		UDID:  udid,
-		Token: token,
-	}
-
-	// Use requestWithAuth to send request (requires Basic Auth node authentication)
-	respBody, err := n.requestWithAuth("POST", "/slave/device-check-auth", req)
-	elapsed := time.Since(startTime)
-
-	if err != nil {
-		slog.Error("Auth failed", "component", "node", "udid", udid, "elapsed", elapsed, "err", err)
-		return AuthResult{
-			Success:   false,
-			ErrorCode: AuthErrorUnknown,
-			Message:   fmt.Sprintf("API request failed: %v", err),
-		}
-	}
-
-	var apiResp CenterResponse[DeviceCheckAuthResponse]
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		slog.Error("Auth failed: parse error", "component", "node", "udid", udid, "elapsed", elapsed, "body", string(respBody))
-		return AuthResult{
-			Success:   false,
-			ErrorCode: AuthErrorUnknown,
-			Message:   fmt.Sprintf("failed to parse response: %v", err),
-		}
-	}
-
-	// Check Center returned error code
-	if apiResp.Code != 0 {
-		errorCode := AuthErrorCode(apiResp.Code)
-		// Only cache clear business error codes (401, 402), treat others as unknown errors
-		if errorCode != AuthErrorInvalidToken && errorCode != AuthErrorMembershipExpired {
-			errorCode = AuthErrorUnknown
-		}
-		slog.Warn("Auth failed", "component", "node", "udid", udid, "elapsed", elapsed, "code", apiResp.Code, "message", apiResp.Message)
-		return AuthResult{
-			Success:   false,
-			ErrorCode: errorCode,
-			Message:   apiResp.Message,
-		}
-	}
-
-	if apiResp.Data == nil {
-		slog.Error("Auth failed: nil data", "component", "node", "udid", udid, "elapsed", elapsed)
-		return AuthResult{
-			Success:   false,
-			ErrorCode: AuthErrorUnknown,
-			Message:   "nil response data",
-		}
-	}
-
-	// Check UDID match
-	if apiResp.Data.UDID != udid {
-		slog.Error("Auth failed: UDID mismatch", "component", "node", "udid", udid, "elapsed", elapsed, "expected", udid, "got", apiResp.Data.UDID)
-		return AuthResult{
-			Success:   false,
-			ErrorCode: AuthErrorInvalidToken,
-			Message:   fmt.Sprintf("UDID mismatch: expected=%s, got=%s", udid, apiResp.Data.UDID),
-		}
-	}
-
-	slog.Info("Auth success", "component", "node", "udid", udid, "userID", apiResp.Data.UserID, "elapsed", elapsed)
-	return AuthResult{
-		Success:   true,
-		ErrorCode: AuthErrorNone,
-		Message:   "",
-	}
-}
-
-// ValidateCredentialFormat defensive auth filter: validates credential format
-// If format doesn't match rules, directly rejects the auth request to avoid invalid API calls
-func ValidateCredentialFormat(udid, token string) bool {
-	if udid == "" || token == "" {
-		slog.Warn("Format validation failed: empty credentials", "component", "auth", "udid", udid)
-		return false
-	}
-
-	return true
-}
-
-// negativeCacheDuration negative cache duration (shorter than positive cache, gives users chance to refresh token)
-const negativeCacheDuration = 5 * time.Minute
-
-// CheckAuth checks device auth with caching
-// udid: device UDID
-// token: device token
-// Returns: whether auth was successful
-//
-// Uses global cache with 30 minute validity, includes defensive format validation
-// Supports negative caching: only caches 401 errors (token invalid, 5 minutes)
-// Does not cache 402 errors (membership expired), because users may renew at any time
-func (n *Node) CheckAuth(udid, token string) bool {
-	result := n.CheckAuthWithResult(udid, token)
-	return result.Success
-}
-
-// CheckAuthWithResult checks device auth with caching (returns detailed result)
-// udid: device UDID
-// token: device token
-// Returns: AuthResult containing success status, error code and error message
-//
-// Error code description:
-// - 0: auth successful
-// - 401: token invalid or expired (need to re-login) - negatively cached for 5 minutes
-// - 402: membership expired (need to renew) - not cached, user may renew at any time
-// - 500: unknown error (network issues, etc.) - not cached, will retry next request
-//
-// Environment variable: K2_AUTH_CACHE_ENABLED=true enables caching (default: off)
-func (n *Node) CheckAuthWithResult(udid, token string) AuthResult {
-	// 1. Defensive filter: validate format first
-	if !ValidateCredentialFormat(udid, token) {
-		return AuthResult{
-			Success:   false,
-			ErrorCode: AuthErrorInvalidToken,
-			Message:   "invalid credential format",
-		}
-	}
-
-	// 2. Check cache (includes negative cache) - only use when enabled
-	if authCacheEnabled {
-		cache := getAuthCache()
-		cacheResult := cache.GetResult(udid, token)
-		if cacheResult.Found {
-			if cacheResult.IsValid {
-				return AuthResult{Success: true, ErrorCode: AuthErrorNone}
-			}
-			// Hit negative cache
-			slog.Warn("Cached auth failure", "component", "auth", "udid", udid, "code", cacheResult.ErrorCode)
-			return AuthResult{
-				Success:   false,
-				ErrorCode: cacheResult.ErrorCode,
-				Message:   "cached auth failure",
-			}
-		}
-	}
-
-	// 3. Call Center API to validate
-	result := n.CheckDeviceAuth(udid, token)
-
-	// 4. Cache result - only when enabled
-	if authCacheEnabled {
-		cache := getAuthCache()
-		if result.Success {
-			// Success cache (30 minutes)
-			cache.SetSuccess(udid, token, authCacheDuration)
-		} else if result.ErrorCode == AuthErrorInvalidToken {
-			// Negative cache (5 minutes) - only cache 401 errors (token invalid)
-			// Don't cache 402 (membership expired), because user may renew at any time
-			cache.SetFailure(udid, token, negativeCacheDuration, result.ErrorCode)
-			slog.Info("Negative cache set", "component", "auth", "udid", udid, "code", result.ErrorCode, "duration", negativeCacheDuration)
-		}
-	}
-	// Note: AuthErrorMembershipExpired (402) and AuthErrorUnknown (500) are not cached
-
-	return result
 }
 
 // Helper functions for IP detection
