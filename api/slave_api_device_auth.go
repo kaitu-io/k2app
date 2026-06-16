@@ -102,23 +102,6 @@ func handleSlaveJWTAuth(c *gin.Context, udid, token string) {
 		return
 	}
 
-	// Center 侧断流闸门：专属节点已达 95% 配额 → 拒绝新连接（与心跳 verdict=stop 互为
-	// defense-in-depth；心跳实时挡存量连接，此处挡新建连接的鉴权）。
-	if node.Class == NodeClassPrivate && pnSub != nil && pnSub.CloudInstanceID != nil {
-		var ci CloudInstance
-		if err := db.Get().First(&ci, *pnSub.CloudInstanceID).Error; err != nil {
-			// 加载失败 → fail-open（放行）。记 warn：DB 故障期间的配额绕过否则不可见。
-			log.Warnf(c, "[USAGE] quota gate: failed to load ci=%d for sub=%d, failing open: %v",
-				*pnSub.CloudInstanceID, pnSub.ID, err)
-		} else if ci.TrafficTotalBytes > 0 &&
-			ci.TrafficUsedBytes*trafficStopThresholdDen >= ci.TrafficTotalBytes*trafficStopThresholdNum {
-			log.Warnf(c, "[USAGE] private node over quota: user=%d node=%s used=%d total=%d",
-				user.ID, node.Ipv4, ci.TrafficUsedBytes, ci.TrafficTotalBytes)
-			ErrorE(c, ErrMembershipExpired) // 402；客户端提示"本月流量已用尽"
-			return
-		}
-	}
-
 	// 6. 返回认证成功。专属节点的服务到期取其专属订阅 ExpiresAt（独立时钟），
 	//    共享节点取 user.ExpiredAt（共享池会员时钟）。
 	serviceExpiredAt := user.ExpiredAt

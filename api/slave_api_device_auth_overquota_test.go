@@ -10,11 +10,10 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 )
 
-// TestSlaveJWTAuth_PrivateNodeOverQuota 验证 device-check-auth 的 Center 侧超配额闸门：
-// 专属节点关联的 CloudInstance 流量达 95% 配额 → 即便订阅 active 且用户是主人，也拒绝
-// 新连接鉴权（402）。配额降到 50% → 放行。与 /slave/usage 心跳 verdict=stop 互为
-// defense-in-depth（心跳挡存量连接，此处挡新建连接的鉴权）。
-func TestSlaveJWTAuth_PrivateNodeOverQuota(t *testing.T) {
+// TestSlaveJWTAuth_PrivateNodeUsage 验证 device-check-auth 在专属节点不同流量使用率下的行为。
+// Center 侧 95% 新连接闸门已移除：节点侧 sidecar enforcer 是流量掐断的单一权威。
+// 用户在订阅有效期内，无论 CloudInstance 流量使用率如何，device-check-auth 均应放行。
+func TestSlaveJWTAuth_PrivateNodeUsage(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
 
@@ -37,7 +36,7 @@ func TestSlaveJWTAuth_PrivateNodeOverQuota(t *testing.T) {
 	buildPrivateNode := func(t *testing.T, ip, secret, instanceID string, used, total int64) (device *Device, token string, node *SlaveNode) {
 		t.Helper()
 		owner := CreateTestUser(t)
-		owner.ExpiredAt = now + 86400 // 会员有效；拒绝必须来自配额而非会员过期
+		owner.ExpiredAt = now + 86400 // 会员有效
 		require.NoError(t, db.Get().Save(owner).Error)
 
 		device = CreateTestDevice(t, owner.ID, "udid-"+instanceID)
@@ -86,8 +85,11 @@ func TestSlaveJWTAuth_PrivateNodeOverQuota(t *testing.T) {
 		return device, token, &n
 	}
 
-	t.Run("OverQuota95_Rejected402", func(t *testing.T) {
-		// used=960, total=1000 → 96% >= 95% → 拒绝。
+	// 以下所有场景：Center 侧无配额闸门，订阅有效 → 均应放行（ErrorNone）。
+	// 节点侧 sidecar enforcer 负责在 100% 时掐断流量（单一权威）。
+
+	t.Run("HighUsage96pct_Allowed", func(t *testing.T) {
+		// used=960, total=1000 → 96%；Center 侧不再拒绝 → 放行。
 		device, token, node := buildPrivateNode(t, "10.99.0.20", "secret-oq-95", "i-overquota-ci-95", 960, 1000)
 
 		w := httptest.NewRecorder()
@@ -99,11 +101,11 @@ func TestSlaveJWTAuth_PrivateNodeOverQuota(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorPaymentRequired, ErrorCode(resp.Code), "超配额应 402: %s", resp.Message)
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "96%% 使用率应放行（Center 侧闸门已移除）: %s", resp.Message)
 	})
 
 	t.Run("UnderQuota50_Allowed", func(t *testing.T) {
-		// used=500, total=1000 → 50% < 95% → 放行。
+		// used=500, total=1000 → 50% → 放行。
 		device, token, node := buildPrivateNode(t, "10.99.0.21", "secret-oq-50", "i-overquota-ci-50", 500, 1000)
 
 		w := httptest.NewRecorder()
@@ -115,11 +117,11 @@ func TestSlaveJWTAuth_PrivateNodeOverQuota(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "未超配额应放行: %s", resp.Message)
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "50%% 使用率应放行: %s", resp.Message)
 	})
 
-	t.Run("ExactBoundary950_Rejected402", func(t *testing.T) {
-		// used=950, total=1000 → 95% >= 95%（边界含等号）→ 拒绝。
+	t.Run("ExactBoundary95pct_Allowed", func(t *testing.T) {
+		// used=950, total=1000 → 95%；Center 侧不再拒绝 → 放行。
 		device, token, node := buildPrivateNode(t, "10.99.0.22", "secret-oq-950", "i-overquota-ci-950", 950, 1000)
 
 		w := httptest.NewRecorder()
@@ -131,7 +133,7 @@ func TestSlaveJWTAuth_PrivateNodeOverQuota(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorPaymentRequired, ErrorCode(resp.Code), "950/1000 == 95% 应 402: %s", resp.Message)
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "950/1000 == 95%% 应放行（Center 侧闸门已移除）: %s", resp.Message)
 	})
 
 	t.Run("ExactBoundary949_Allowed", func(t *testing.T) {
@@ -147,7 +149,7 @@ func TestSlaveJWTAuth_PrivateNodeOverQuota(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "949/1000 < 95% 应放行: %s", resp.Message)
+		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "949/1000 < 95%% 应放行: %s", resp.Message)
 	})
 
 	t.Run("ZeroTotalNeverThrottles_Allowed", func(t *testing.T) {
