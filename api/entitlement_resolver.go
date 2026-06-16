@@ -40,8 +40,8 @@ func ResolveGatewayPrivateTunnels(ctx context.Context, userID uint64, now int64)
 	}
 
 	// 可服务且已绑节点的 sub。收集其 CloudInstance ID，批量判定流量是否耗尽，
-	// 把 over-quota 的线从池中剔除 —— 耗尽线必须消失，路由器 Pick 才会切到健康线
-	// （服务端此时也已停止 accepting 新连接，两侧对齐 95% 阈值）。
+	// 把耗尽线从池中剔除 —— 耗尽线必须消失，路由器 Pick 才会切到健康线
+	// （服务端在 100% 时硬掐；专属线路在客户端侧同样以 100% 为可见性阈值，不用共享池的 95%）。
 	type boundNode struct {
 		nodeID     uint64
 		instanceID *uint64
@@ -67,7 +67,7 @@ func ResolveGatewayPrivateTunnels(ctx context.Context, userID uint64, now int64)
 			return nil, err
 		}
 		for i := range instances {
-			if isTunnelOverQuota(&instances[i]) {
+			if isPrivateTunnelExhausted(&instances[i]) {
 				overQuota[instances[i].ID] = true
 			}
 		}

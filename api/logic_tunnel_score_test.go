@@ -183,3 +183,18 @@ func TestShouldHideTunnelForUser_AdminUnderQuota(t *testing.T) {
 	}
 	assert.False(t, shouldHideTunnelForUser(underUsed, true))
 }
+
+func TestIsPrivateTunnelExhausted_BelowFull(t *testing.T) {
+	inst := &CloudInstance{TrafficTotalBytes: 1000, TrafficUsedBytes: 960}
+	assert.False(t, isPrivateTunnelExhausted(inst), "96% 未耗尽,专属线路保持可见")
+}
+
+func TestIsPrivateTunnelExhausted_Full(t *testing.T) {
+	inst := &CloudInstance{TrafficTotalBytes: 1000, TrafficUsedBytes: 1000}
+	assert.True(t, isPrivateTunnelExhausted(inst))
+}
+
+func TestIsPrivateTunnelExhausted_NilOrZero(t *testing.T) {
+	assert.False(t, isPrivateTunnelExhausted(nil))
+	assert.False(t, isPrivateTunnelExhausted(&CloudInstance{TrafficTotalBytes: 0, TrafficUsedBytes: 999}))
+}

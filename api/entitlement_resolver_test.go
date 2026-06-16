@@ -199,7 +199,7 @@ func TestResolveGatewayPrivateTunnelsExcludesOverQuota(t *testing.T) {
 	exhaustedCI := CloudInstance{
 		Provider: "aws_lightsail", AccountName: "test", InstanceID: "i-oq-exhausted-" + uniq,
 		IPAddress: "10.99.8.1", Region: "japan",
-		TrafficTotalBytes: 100, TrafficUsedBytes: 96,
+		TrafficTotalBytes: 100, TrafficUsedBytes: 100, // 100% = node-side hard-cut; private lines excluded at 100% not 95%
 	}
 	require.NoError(t, db.Get().Create(&exhaustedCI).Error)
 	healthyCI := CloudInstance{

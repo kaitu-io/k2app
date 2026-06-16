@@ -94,6 +94,16 @@ func isTunnelOverQuota(inst *CloudInstance) bool {
 	return float64(inst.TrafficUsedBytes) >= threshold
 }
 
+// isPrivateTunnelExhausted reports whether a private line is 100% spent (= the
+// node-side hard-cut point). Private lines stay visible+usable until the real
+// cut, so this uses 100% — unlike the shared-pool 95% hide (isTunnelOverQuota).
+func isPrivateTunnelExhausted(inst *CloudInstance) bool {
+	if inst == nil || inst.TrafficTotalBytes <= 0 {
+		return false
+	}
+	return inst.TrafficUsedBytes >= inst.TrafficTotalBytes
+}
+
 // shouldHideTunnelForUser is the single decision point used by /api/tunnels
 // and /api/subs to filter tunnels out of the response. Admins always see
 // every tunnel (debugging / over-quota investigation path); non-admins are

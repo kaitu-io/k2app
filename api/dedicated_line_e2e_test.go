@@ -348,9 +348,9 @@ func TestDedicatedLine_SubsExcludesOverQuotaLine(t *testing.T) {
 	owner := CreateTestUser(t)
 
 	const total = int64(2) << 40
-	// Healthy: 10% used. Over-quota: 96% used (>=95%). NoCI: linkCI=false.
+	// Healthy: 10% used. Over-quota: 100% used (= node hard-cut point). NoCI: linkCI=false.
 	healthy := makePrivateLine(t, owner, "203.0.114.81", "healthy", int64(200)<<30, total, true)
-	over := makePrivateLine(t, owner, "203.0.114.82", "over", int64(1968)<<30, total, true)
+	over := makePrivateLine(t, owner, "203.0.114.82", "over", total, total, true) // 100% exhausted
 	noci := makePrivateLine(t, owner, "203.0.114.83", "noci", int64(1968)<<30, total, false)
 
 	w := makeGatewaySubsRequest(t, owner, "router-dedline-subs")
