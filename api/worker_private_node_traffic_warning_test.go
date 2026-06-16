@@ -4,9 +4,23 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
 )
+
+func TestPickTrafficTier(t *testing.T) {
+	cases := []struct {
+		used, total int64
+		want        int
+	}{
+		{65, 100, 0}, {72, 100, 70}, {85, 100, 80}, {95, 100, 90},
+		{100, 100, 100}, {120, 100, 100}, {0, 0, 0},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, pickTrafficTier(c.used, c.total), "used=%d total=%d", c.used, c.total)
+	}
+}
 
 func TestTrafficWarningCrosses80SendsOnceThenDedups(t *testing.T) {
 	skipIfNoConfig(t)

@@ -1201,8 +1201,10 @@ type CloudInstance struct {
 	ExpiresAt         int64 `gorm:"not null;default:0"` // Instance expiration (Unix timestamp, 0=auto-renew)
 
 	// 流量预警去重(与 TrafficEpoch 比对;!= 才发,发后置当前 epoch)
-	Warn80SentEpoch int64 `gorm:"not null;default:0"`
-	Warn95SentEpoch int64 `gorm:"not null;default:0"`
+	Warn70SentEpoch       int64 `gorm:"not null;default:0"`
+	Warn80SentEpoch       int64 `gorm:"not null;default:0"`
+	Warn90SentEpoch       int64 `gorm:"not null;default:0"`
+	Exhausted100SentEpoch int64 `gorm:"not null;default:0"`
 
 	// Sync status
 	// Note: Instance online status is determined by associated SlaveNode existence
