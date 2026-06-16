@@ -28,13 +28,15 @@ Part 2 Phase A 已让 Center 在 95% 拦掉**新连接**(`slave_api_device_auth.
 - **反应及时即可,擦着 100% 过一点点、多花几分钱可接受。** 因此掐点定在 100%,不需要保守缓冲;反应速度由"sidecar 多久看一眼网卡"决定,而非 60 秒的 Center 上报周期。
 - **掐断(硬切),不限速。** 对花钱买专属线路的用户,降速体验也差,且实现复杂;直接掐 + 提前三档邮件预警是更清晰的契约。
 - **下个计费周期自动恢复。**
-- **掐断后无"用户自助加量续命"入口**(等下月 / 找客服 / 再买线),与既有生命周期一致。
+- **掐断后无"用户自助加量续命"入口**(等下月 / 找客服 / 再买线),与既有生命周期一致;耗尽邮件附升级/购买引导。
+- **单租户**:专属节点 = 单账号单线路;掐断切掉该账号**所有设备**(含路由器 LAN 后的全部设备)= 预期行为。
+- **邮件是尽力而为的预警,非保证**:70/80/90 邮件靠 Center 定时任务扫描,突发流量可能跨档过快导致漏发某档;**5 秒的节点掐断才是硬保证**,邮件只是提前提醒 + 耗尽后引导。
 
 ## 4. 职责分工 (Responsibility Split)
 
 | 层 | 职责 | 变更 |
 |---|---|---|
-| **sidecar**(本仓 docker/sidecar) | 真相源 + **防御执行者**:高频读真实网卡用量、到顶掐断数据面、下月自动恢复 | **新增** enforcer + 快速本地循环 + docker 控制 |
+| **sidecar**(本仓 docker/sidecar) | 真相源 + **防御执行者**:高频读真实网卡用量、到顶掐断数据面、下月自动恢复、**持久化掐断状态**(重启不漏) | **新增** enforcer + 快速本地循环 + docker 控制 + 状态文件 |
 | **Center**(api/) | 纯记账 + 通知:记录用量、在 70/80/90 发预警邮件 | 邮件阈值 80/95 → **70/80/90** |
 | **k2s / k2v5**(k2 子模块,只读核心) | 跑数据面;被 sidecar 暂停/恢复 | **一字不改** |
 
@@ -58,7 +60,7 @@ Part 2 Phase A 已让 Center 在 95% 拦掉**新连接**(`slave_api_device_auth.
             │                     └─> enforcer ─每5s─> 比对 │
             │                              │  用量 >= 配额?   │
             │                              v                 │
-  docker.sock<──── pause/unpause k2v5 (对账循环,自愈) ──────┘
+  docker.sock<──── pause/unpause 数据面容器 (对账循环,自愈) ────┘
 ```
 
 - **enforcer 持有**:docker 客户端、当前 `quotaTotalBytes`、当前 `epochID`、`meter` 引用、内部"是否已由我掐断"状态。
@@ -66,8 +68,10 @@ Part 2 Phase A 已让 Center 在 95% 拦掉**新连接**(`slave_api_device_auth.
 - **快速循环**(默认 **5 秒**,env 可调):
   1. `used = meter.CumulativeBytes()`(读 `/host/proc/net/dev`,便宜)
   2. 若 `quotaTotal > 0 && used >= quotaTotal` → **应掐**;否则 → **应通**。
-  3. **对账(reconcile,自愈)**:应掐且 k2v5 在跑 → `docker pause k2v5`;应通且 k2v5 被我暂停 → `docker unpause k2v5`。每个 tick 都对账,即使 docker 守护重启把容器弄活了,下一 tick 会再掐。
+  3. **对账(reconcile,自愈)**:应掐 → `docker pause` **所有数据面容器**(`k2v5`,以及存在时的 `k2v4-slave`);应通且容器被我暂停 → `docker unpause`。每个 tick 都对账,即使 docker 守护重启把容器弄活了,下一 tick 会再掐。
+  4. **持久化**:每次掐/松把状态写入 `/etc/kaitu/cutoff.state`(sidecar 的 config 卷可写,见 §8),记 `{epochID, cut}`。
 - **epoch 变更(下月)**:reporter 已 rebaseline meter(used 归零)。下一 tick `used(≈0) < quotaTotal` → 自动 unpause,线路恢复。**无需独立"恢复"逻辑,对账循环天然处理。**
+- **sidecar 重启**:启动时**先读 `/etc/kaitu/cutoff.state`**,若记录为已掐且 epoch 未变 → **立即重新 pause**(在联系 Center 之前,零泄漏窗口),随后等首个 Center 配额回来再 reconcile。
 
 ### 5.3 掐断机制选型(关键决定)
 
@@ -79,14 +83,24 @@ Part 2 Phase A 已让 Center 在 95% 拦掉**新连接**(`slave_api_device_auth.
 
 代价:sidecar 需挂载 `/var/run/docker.sock`(宿主机 root 等价权限)。对我们自管的单一用途专属节点可接受;见 §8 安全。
 
-## 6. Center 侧改动(仅邮件阈值)
+> **为什么不需要 check iptables 跨 Linux 版本**:docker pause 底层用内核 freezer cgroup,**cgroup v1/v2 差异由 Docker 守护进程抹平**,我们只调 Docker API、不直接碰内核——比 iptables(iptables-legacy vs nftables 后端 / firewalld 冲突 / 内核模块差异)统一得多。要 check 的只有 Docker 侧三件事(且主要在真机 smoke):docker.sock 在否 + API 版本协商(SDK 自动协商,不写死)、pause 是否真把 QUIC+TCP-WS 流量都摁停、cgroup v2 行为一致性。**不做 iptables 兜底**(YAGNI,会把刚甩掉的跨发行版麻烦请回来)。
 
-`api/worker_private_node_traffic_warning.go`:`warnThreshold80/95` → **70/80/90 三档**。
-- 模型 `CloudInstance`:`Warn80SentEpoch`/`Warn95SentEpoch` → `Warn70SentEpoch`/`Warn80SentEpoch`/`Warn90SentEpoch`(按 epoch 去重,新增 Warn70/Warn90 列,弃 Warn95 列)。
-- 去重逻辑:同一轮从高到低判定(90>80>70),只发一封。
-- EDM 模板 `private-node-traffic-warn` 文案适配三档(已有模板,改 percent 取值范围措辞)。
+> **k2v4 下架(并行任务)**:`k2v4-slave` 是 pre-v0.4.0 老客户端的服务端兼容后端;当代客户端(v0.4.0+,wire 层 k2v5-only,当前 0.4.6)不需要它。团队将单独删除 k2v4-slave(影响所有节点,非本 spec 范围)。enforcer 按"**所有数据面容器**"通用处理,删除前后都正确:k2v4-slave 在则一并 pause,不在则只 pause k2v5。
 
-**Center 不做掐断判定**(verdict=stop 的真执行交节点)。既有 95% 新连接闸门(`slave_api_device_auth.go`)保留作纵深防御,不冲突。
+## 6. Center 侧改动
+
+### 6.1 预警邮件 70/80/90 + 耗尽邮件(100%)
+`api/worker_private_node_traffic_warning.go`:阈值 `80/95` → **70 / 80 / 90 三档预警 + 100% 耗尽**。
+- 模型 `CloudInstance`:`Warn80SentEpoch`/`Warn95SentEpoch` → `Warn70SentEpoch`/`Warn80SentEpoch`/`Warn90SentEpoch`/`Exhausted100SentEpoch`(按 epoch 去重)。
+- 去重逻辑:同一轮从高到低判定(100>90>80>70),只发一封。
+- EDM 模板:`private-node-traffic-warn`(70/80/90 预警)沿用改文案;**新增 `private-node-traffic-exhausted`**:告知"线路已暂停(本月流量用尽)"+ **升级/购买引导**(续费 / 加量 / 再购线路入口)。
+
+### 6.2 移除 95% 新连接闸门(用户:95% 没必要)
+- 删除 `slave_api_device_auth.go` 中专属节点 95% 配额拒绝新连接的 `if` 块(行 ~105-120)。**节点 100% 掐断是单一权威**,Center 不再在 95% 拦连接。
+- `slave_api_usage.go` 的 `verdict=stop`(95%)已不被 sidecar 使用(reporter 无 SetAccepting),保留为信息字段,不影响行为。
+- **`isTunnelOverQuota`(列表隐藏,`overQuotaThreshold=0.95`)服务共享池 overage 保护,共享池路径保持 95% 不动**;但**专属节点路径**(`entitlement_resolver.go` `ResolveGatewayPrivateTunnels`)的隐藏阈值**对齐到 100%**——让专属线路在真掐断前保持可用+可见,与"单一 100% 事件"一致。
+
+**Center 不做掐断判定**,只记账 + 发邮件。
 
 ## 7. 阈值与时序决定
 
@@ -99,6 +113,7 @@ Part 2 Phase A 已让 Center 在 95% 拦掉**新连接**(`slave_api_device_auth.
 `k2-sidecar` 服务新增:
 - `volumes: - /var/run/docker.sock:/var/run/docker.sock`(掐断需要)
 - 新 env:`K2_CUTOFF_ENABLED`(默认随 `K2_PRIVATE_CLAIM` 派生)、`K2_CUTOFF_POLL_INTERVAL`(默认 5s)。
+- **持久化**:掐断状态写 `/etc/kaitu/cutoff.state`,复用既有可写卷 `config:/etc/kaitu`(sidecar 已 rw 挂载;k2v5/k2v4-slave 是 `:ro`)——**无需新卷**。
 
 **安全**:docker.sock = 宿主机 root 等价。仅在专属节点镜像启用;不记录任何凭据;enforcer 只对固定容器名 `k2v5` 执行 pause/unpause,不接受外部指令。共享池节点不挂 socket、不启 enforcer(见 §9)。
 
@@ -111,10 +126,11 @@ enforcer 与 reporter 同一开关:**仅当 `PrivateClaim != ""` 时在 main.go 
 | 情况 | 行为 |
 |---|---|
 | Center 不可达(刷不到新配额) | enforcer **保留上次已知 quotaTotal 继续执行**;不会因 Center 抖动误放行 |
-| 从未拿到 Center 响应(全新节点) | `quotaTotal==0` → 不掐(全新节点用量≈0,无超额风险);拿到首个响应后开始 |
+| `quotaTotal` 未知(全新节点 / 重启后未拿到首个响应) | **no-op:既不 pause 也不 unpause**(不盲目放开可能已被合法掐断的节点);拿到首个配额后再 reconcile |
+| sidecar 重启(曾掐断) | 启动读 `cutoff.state`,epoch 未变则**立即重新 pause**,零泄漏窗口 |
 | 读网卡失败(meter err) | **该 tick 不改变掐断状态**(fail-safe:不因读取错误误掐已通的线) |
 | docker.sock 不可用 / pause 失败 | 记 `DIAG` 错误日志(可被监控捕获),无法掐断=已知降级;不 panic |
-| docker 守护重启复活 k2v5 | 下一 tick 对账重新 pause(自愈) |
+| docker 守护重启复活数据面容器 | 下一 tick 对账重新 pause(自愈) |
 
 ## 11. 真机验证计划 (Real-Machine Smoke — 不可省)
 
@@ -137,14 +153,15 @@ enforcer 与 reporter 同一开关:**仅当 `PrivateClaim != ""` 时在 main.go 
 - 用户自助加量/续命入口。
 - 多节点订阅 / 平滑升级(task #18)。
 - iptables/tc 宿主机级管控(本设计用 docker 控制替代)。
+- **k2v4-slave 下架**(单独并行任务,影响所有节点;本 spec 仅保证 enforcer 对其存在与否都正确)。
 
 ---
 
 ## 实现任务拆分(预览,详见后续 plan)
 
-1. **sidecar enforcer + 快速对账循环**(docker client、SetQuota、reconcile、fail-safe)— 单元测注入 fake docker/meter。
+1. **sidecar enforcer + 快速对账循环**(docker client、SetQuota、reconcile、fail-safe、**cutoff.state 持久化 + 重启恢复**)— 单元测注入 fake docker/meter/fs。
 2. **reporter → enforcer 接线**(每周期 SetQuota;meter 加锁因多 goroutine)。
 3. **main.go 接线**(PrivateClaim 门控构造 enforcer + 启快速循环)。
-4. **compose**:挂 docker.sock + 新 env。
-5. **Center 邮件三档**(worker 70/80/90 + 模型列 + EDM 文案)— mock DB 测。
+4. **compose**:挂 docker.sock + 新 env(state 复用既有 config 卷)。
+5. **Center**:邮件 70/80/90 + 100% 耗尽邮件(含升级购买引导)+ **移除 95% 新连接闸门** + 专属节点 over-quota 可见性对齐 100% — mock DB 测。
 6. **真机 smoke**(task #57,封顶 6-7)。
