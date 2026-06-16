@@ -1,13 +1,13 @@
-# Kaitu k2v5 Docker Compose
+# Kaitu k2s Docker Compose
 # Architecture:
 # - k2-sidecar: registration, config generation (bridge network)
-# - k2v5: Go k2v5 tunnel with ECH front door (bridge network, Docker port mapping)
+# - k2s: Go k2s tunnel with ECH front door (bridge network, Docker port mapping)
 #
 # Traffic Flow:
-# - Internet :443 (TCP+UDP) -> Docker port mapping -> k2v5:443
-#   - ECH present -> k2v5 handler (in-process QUIC+TCP-WS with ECH camouflage)
+# - Internet :443 (TCP+UDP) -> Docker port mapping -> k2s:443
+#   - ECH present -> k2s handler (in-process QUIC+TCP-WS with ECH camouflage)
 #   - Unknown SNI -> camouflage reverse proxy to real site
-# - Internet :40000-40019 (UDP hop ports) -> Docker port mapping -> k2v5:443
+# - Internet :40000-40019 (UDP hop ports) -> Docker port mapping -> k2s:443
 
 networks:
   k2-internal:
@@ -57,14 +57,14 @@ services:
       retries: 60
       start_period: 5s
 
-  # K2v5 - Go k2v5 tunnel with ECH front door (bridge network)
+  # k2s - Go k2s tunnel with ECH front door (bridge network)
   # Docker port mapping handles: 443 TCP+UDP + hop ports 40000-40019 UDP -> container 443
   # Routes based on ECH and SNI:
-  # - ECH present: k2v5 protocol handled locally (QUIC on UDP 443, TCP-WS on TCP 443)
+  # - ECH present: k2s protocol handled locally (QUIC on UDP 443, TCP-WS on TCP 443)
   # - Unknown SNI: camouflage reverse proxy to real site
-  k2v5:
-    image: public.ecr.aws/d6n9t2r2/k2v5:${K2_VERSION:-latest}
-    container_name: k2v5
+  k2s:
+    image: public.ecr.aws/d6n9t2r2/k2s:${K2_VERSION:-latest}
+    container_name: k2s
     restart: unless-stopped
     networks:
       - k2-internal
@@ -105,5 +105,5 @@ services:
     logging:
       driver: journald
       options:
-        tag: k2v5
+        tag: k2s
 

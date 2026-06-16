@@ -14,7 +14,7 @@ triggers:
   - node update
   - node logs
   - docker compose
-  - k2v5
+  - k2s
   - k2-slave
 ---
 
@@ -31,34 +31,31 @@ Before ANY operation on a node, determine which architecture it runs:
 exec_on_node(ip, "docker ps --format '{{.Names}}'")
 ```
 
-**If output contains `k2v5`** → New architecture (k2v5 front door)
+**If output contains `k2s`** → New architecture (k2s tunnel container)
 **If output contains `k2-slave`** → Old architecture (k2-slave SNI router)
 
 ## Step 2: Understand the Architecture
 
-### New Architecture (k2v5 front door)
+### New Architecture (k2s tunnel container)
 
 Deployment path: `/apps/kaitu-slave/`
 
-3 containers with strict dependency chain:
+2 containers with strict dependency chain:
 
 ```
 k2-sidecar (bridge network)
-  ├── healthy ──→ k2v5 (bridge network, Docker port mapping :443 TCP+UDP + 40000-40019 UDP)
-  └── healthy ──→ k2v4-slave (bridge, :8443 mapped to container :443)
+  └── healthy ──→ k2s (bridge network, Docker port mapping :443 TCP+UDP + 40000-40019 UDP)
 ```
 
 | Container | Role | Network | Image |
 |-----------|------|---------|-------|
 | k2-sidecar | Registration, config generation, health reporting | bridge (k2-internal) | k2-sidecar:latest |
-| k2v5 | ECH front door. Owns port 443. ECH traffic → in-process; non-ECH → SNI route to k2v4 | bridge (k2-internal) | k2v5:latest |
-| k2v4-slave | Legacy TCP-WS tunnel, receives forwarded non-ECH traffic from k2v5 | bridge (k2-internal) | k2-slave:latest |
+| k2s | ECH front door. Owns port 443. ECH traffic → in-process QUIC+TCP-WS with ECH camouflage | bridge (k2-internal) | k2s:latest |
 
 Key details:
 - k2-sidecar writes `/etc/kaitu/.ready` when config generation is complete
 - All other containers wait for sidecar healthcheck before starting
-- All 3 containers use bridge network (k2-internal). k2v5 uses Docker port mapping: 443/tcp + 443/udp + 40000-40019/udp → container 443
-- k2v5→k2v4-slave communication uses Docker internal DNS (container names), not host ports
+- Both containers use bridge network (k2-internal). k2s uses Docker port mapping: 443/tcp + 443/udp + 40000-40019/udp → container 443
 - No iptables management, no NET_ADMIN, no wrapper scripts
 - Images from `public.ecr.aws/d6n9t2r2/`
 - **k2-oc (OpenConnect) was retired 2026-04-30**. Compose no longer passes `K2OC_DOMAIN` to the sidecar, so even old sidecar images skip OC registration (gated by `s.config.OC.Domain != ""`). New sidecar source has no OC code path at all. If you find a node still running `k2-oc`, push the latest compose and run `docker compose up -d --remove-orphans`.
@@ -75,7 +72,7 @@ Deployment path: `/apps/kaitu-slave/` (same)
 | k2-slave | SNI router (no ECH), host network, port 443 | host | k2-slave:latest |
 
 Differences from new architecture:
-- Container names: `k2-sidecar` (same name, same image), `k2-slave` instead of `k2v5`
+- Container names: `k2-sidecar` (same name, same image), `k2-slave` instead of `k2s`
 - No k2v4-slave container (k2-slave IS the tunnel, not a front door)
 - k2-slave does SNI routing without ECH support
 - All operational commands are the same — just substitute container names
@@ -94,7 +91,7 @@ The `.env` file is at `/apps/kaitu-slave/.env`. Core variables:
 | `K2_LOG_LEVEL` | Log level | `debug`, `info`, `warn`, `error` |
 | `K2_NODE_NAME` | Human-readable node name | Format: `{region}.{provider}.wm{NN}` e.g. `jp-tokyo.aws.wm04` |
 | `K2_NODE_REGION` | Node region identifier | e.g. `jp-tokyo.aws`, `hk.aliyun` |
-| `K2_NODE_ARCH` | Node architecture identifier | Default `k2v5`. Reported in registration meta. |
+| `K2_NODE_ARCH` | Node architecture identifier | Default `k2v5` (protocol arch tag). Reported in registration meta. |
 | `K2_NODE_BILLING_START_DATE` | Traffic billing start | Format: `YYYY-MM-DD` |
 | `K2_NODE_TRAFFIC_LIMIT_GB` | Traffic limit in GB | `0` = unlimited |
 
@@ -102,7 +99,7 @@ The `.env` file is at `/apps/kaitu-slave/.env`. Core variables:
 
 Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tunnel}` with the correct container names based on architecture identification:
 
-- **New arch**: `{sidecar}` = `k2-sidecar`, `{tunnel}` = `k2v5`
+- **New arch**: `{sidecar}` = `k2-sidecar`, `{tunnel}` = `k2s`
 - **Old arch**: `{sidecar}` = `k2-sidecar`, `{tunnel}` = `k2-slave`
 
 | Operation | Command |
@@ -117,7 +114,7 @@ Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tu
 | Disk/memory/CPU | `df -h && free -h && top -bn1 \| head -5` |
 | Network connections | `ss -s` |
 | IPv6 status | `ip -6 addr show scope global` |
-| Check hop port mapping | `docker port k2v5` |
+| Check hop port mapping | `docker port k2s` |
 | BBR status | `sysctl net.ipv4.tcp_congestion_control` |
 | Auto-update log | `tail -50 /apps/kaitu-slave/auto-update.log` |
 | Cron entries | `crontab -l` |
@@ -127,9 +124,9 @@ Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tu
 | Deploy compose to single node | `exec_on_node(ip, "sudo tee /apps/kaitu-slave/docker-compose.yml > /dev/null", { scriptPath: "docker/docker-compose.yml" })` |
 | Fix cron (single node) | `(sudo crontab -l 2>/dev/null \| grep -v 'auto-update'; echo '0 4 * * * /apps/kaitu-slave/auto-update.sh >> /apps/kaitu-slave/auto-update.log 2>&1') \| sudo crontab -` |
 
-### User Management (k2v5 auth)
+### User Management (k2s auth)
 
-k2v5 supports two auth modes (checked in order, first match wins):
+k2s supports two auth modes (checked in order, first match wins):
 1. **users_file**: `/apps/kaitu-slave/users` on host → bind-mounted to `/etc/k2v5/users` in container
 2. **remote_url**: Center API at `/slave/device-check-auth` (fallback when file is empty)
 
@@ -147,7 +144,7 @@ e5f6g7h8:abcdef0123456789abcdef0123456789
 | Add user | `echo "udid:token" >> /apps/kaitu-slave/users` |
 | Remove user | `sed -i "/^UDID:/d" /apps/kaitu-slave/users` |
 | Clear all (remote only) | `truncate -s 0 /apps/kaitu-slave/users` |
-| Check auth config | `docker exec k2v5 grep -E 'users_file\|remote_url' /etc/kaitu/k2v5-config.yaml` |
+| Check auth config | `docker exec k2s grep -E 'users_file\|remote_url' /etc/kaitu/k2v5-config.yaml` |
 
 ## Step 5: Post-Provisioning Checklist
 
@@ -161,7 +158,7 @@ After provisioning a new node (or reinstalling OS), ensure these are all done:
 6. **auto-update.sh + cron**: Deploy via `deploy-auto-update.sh --node=IP`.
 7. **Containers up**: `docker compose up -d` and verify sidecar healthy.
 8. **BBR active**: `sysctl net.ipv4.tcp_congestion_control` should show `bbr`. Included in provision-node.sh step 8.
-9. **Port mapping**: After containers up, verify: `docker port k2v5` should show 443/tcp + 443/udp + 40000-40019/udp (22 mappings total).
+9. **Port mapping**: After containers up, verify: `docker port k2s` should show 443/tcp + 443/udp + 40000-40019/udp (22 mappings total).
 10. **Container network**: Verify container outbound: `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org`. If timeout → check `iptables --version`. If `(nf_tables)` → fix with `update-alternatives --set iptables /usr/sbin/iptables-legacy` + restart Docker.
 
 ### BBR Congestion Control
@@ -193,7 +190,7 @@ These are best-practice guardrails to prevent accidental damage during operation
 
 5. **Never touch /etc/kaitu/ directly** — This is auto-generated config from sidecar. Manual changes will be overwritten on next sidecar restart.
 
-6. **Port mapping is Docker-managed** — k2v5 hop port mapping (40000-40019 UDP) is handled by Docker port mapping in docker-compose.yml. No manual iptables rules needed. Do not add custom iptables DNAT rules.
+6. **Port mapping is Docker-managed** — k2s hop port mapping (40000-40019 UDP) is handled by Docker port mapping in docker-compose.yml. No manual iptables rules needed. Do not add custom iptables DNAT rules.
 
 7. **Update = pull + up, never down** — To update containers: `docker compose pull && docker compose up -d`. Never use `docker compose down` — it removes containers and causes service interruption. The `up -d` command recreates only changed containers.
 
@@ -220,7 +217,7 @@ All batch scripts live in this skill directory (`.claude/skills/kaitu-node-ops/`
 
 ### Deploy docker-compose.yml to All Nodes
 
-The canonical k2v5 compose file lives at `docker/docker-compose.yml` in the repo.
+The canonical k2s compose file lives at `docker/docker-compose.yml` in the repo.
 
 ```bash
 # Active nodes only (tunnelCount > 0) — recommended
@@ -414,10 +411,10 @@ Note: `provision-node.sh` step 2 handles this for new provisions. This fix is fo
 | 1 | Containers running | `cd /apps/kaitu-slave && docker compose ps` | All 3 containers Up, sidecar (healthy), no `k2-oc` orphan |
 | 2 | Sidecar registered | `docker logs --tail 30 k2-sidecar \| grep "Registration completed"` | `tunnels=1` |
 | 3 | Tunnel domain derived | `docker logs --tail 30 k2-sidecar \| grep "Tunnel registered"` | `{ipv4-with-dashes}.sslip.io`, `created=true` |
-| 4 | k2v5 started | `docker logs --tail 20 k2v5 \| grep "server ready"` | `k2s server ready listen=:443` |
+| 4 | k2s started | `docker logs --tail 20 k2s \| grep "server ready"` | `k2s server ready listen=:443` |
 | 5 | Container network | `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org` | Returns node's public IP |
-| 6 | MCP cross-check | `list_nodes(name=NODE_NAME)` | `tunnels` array has 1 entry (k2v5) with the sslip.io domain |
-| 7 | Port mapping | `docker port k2v5` | 22 mappings: 443/tcp + 443/udp + 40000-40019/udp |
+| 6 | MCP cross-check | `list_nodes(name=NODE_NAME)` | `tunnels` array has 1 entry (k2s) with the sslip.io domain |
+| 7 | Port mapping | `docker port k2s` | 22 mappings: 443/tcp + 443/udp + 40000-40019/udp |
 
 **If any check fails**, investigate before proceeding:
 - Container network timeout → iptables-nft issue (Step 9)

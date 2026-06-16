@@ -5,7 +5,7 @@
 # Usage: make publish-docker
 #
 # Images (each with :latest + :vX.Y.Z-<commit>):
-#   - public.ecr.aws/d6n9t2r2/k2v5
+#   - public.ecr.aws/d6n9t2r2/k2s
 #   - public.ecr.aws/d6n9t2r2/k2-sidecar
 #
 set -e
@@ -17,7 +17,7 @@ VERSION=$(node -p "require('./package.json').version")
 COMMIT=$(git rev-parse --short=8 HEAD)
 TAG="v${VERSION}-${COMMIT}"
 
-K2V5_IMAGE="${ECR_REGISTRY}/k2v5"
+K2V5_IMAGE="${ECR_REGISTRY}/k2s"
 SIDECAR_IMAGE="${ECR_REGISTRY}/k2-sidecar"
 
 echo "================================================"

@@ -73,7 +73,7 @@ fi
 # --- Compare running container image IDs vs pulled :latest IDs ---
 # If any container uses an outdated image, trigger restart.
 NEEDS_RESTART=0
-for SVC_CONTAINER in "k2-sidecar:k2-sidecar" "k2v5:k2v5"; do
+for SVC_CONTAINER in "k2-sidecar:k2-sidecar" "k2s:k2s"; do
     CONTAINER="${SVC_CONTAINER%%:*}"
     IMAGE="${SVC_CONTAINER##*:}"
     RUNNING_ID=$(docker inspect --format='{{.Image}}' "$CONTAINER" 2>/dev/null | cut -c8-19)
@@ -98,9 +98,9 @@ fi
 
 echo "Restarting containers..."
 
-# --- Snapshot k2v5 logs before destroying containers ---
-echo "--- Snapshotting k2v5 logs before down ---"
-SNAPSHOT_DIR="/var/log/k2v5-crashes"
+# --- Snapshot k2s logs before destroying containers ---
+echo "--- Snapshotting k2s logs before down ---"
+SNAPSHOT_DIR="/var/log/k2s-crashes"
 mkdir -p "$SNAPSHOT_DIR"
 SNAPSHOT_TS=$(date -u '+%Y%m%d-%H%M%S')
 SNAPSHOT_FILE="${SNAPSHOT_DIR}/snapshot-${SNAPSHOT_TS}.log"
@@ -109,11 +109,11 @@ SNAPSHOT_FILE="${SNAPSHOT_DIR}/snapshot-${SNAPSHOT_TS}.log"
     echo "Node: ${NODE_NAME}"
     echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo ""
-    echo "=== k2v5 container state ==="
-    docker inspect --format='ExitCode={{.State.ExitCode}} Status={{.State.Status}} StartedAt={{.State.StartedAt}} OOMKilled={{.State.OOMKilled}} RestartCount={{.RestartCount}}' k2v5 2>/dev/null || echo "(not running)"
+    echo "=== k2s container state ==="
+    docker inspect --format='ExitCode={{.State.ExitCode}} Status={{.State.Status}} StartedAt={{.State.StartedAt}} OOMKilled={{.State.OOMKilled}} RestartCount={{.RestartCount}}' k2s 2>/dev/null || echo "(not running)"
     echo ""
-    echo "=== k2v5 last 500 log lines ==="
-    docker logs --tail 500 --timestamps k2v5 2>&1 || echo "(no logs)"
+    echo "=== k2s last 500 log lines ==="
+    docker logs --tail 500 --timestamps k2s 2>&1 || echo "(no logs)"
 } > "$SNAPSHOT_FILE" 2>&1
 echo "Saved to $SNAPSHOT_FILE"
 

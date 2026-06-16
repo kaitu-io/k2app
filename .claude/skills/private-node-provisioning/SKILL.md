@@ -28,7 +28,7 @@ This is a **sibling** of `kaitu-node-ops`. Where that skill operates *existing* 
 | App (iOS / Android / desktop) | **shared pool** (k2subs picks) | per-node, no cutoff |
 | Customer router / dedicated VPS | **private node** (single-tenant) | self-metered, owner quota cutoff |
 
-A private node is the **exact same** `k2v5 + k2-sidecar + k2v4-slave` stack as a shared node (see `kaitu-node-ops` Step 2), deployed from the **same single** `docker-compose.yml`. The only difference is one `.env` variable — `K2_PRIVATE_CLAIM` — which the sidecar reads and which switches on two behaviors, both inside the sidecar:
+A private node is the **exact same** `k2s + k2-sidecar` stack as a shared node (see `kaitu-node-ops` Step 2), deployed from the **same single** `docker-compose.yml`. The only difference is one `.env` variable — `K2_PRIVATE_CLAIM` — which the sidecar reads and which switches on two behaviors, both inside the sidecar:
 
 1. **Claim carriage (activation)** — the sidecar carries `K2_PRIVATE_CLAIM` on registration. Center flips that node's `Class=private`, binds the owner, and activates the owner's subscription. Activation is **not** in the agent's hands.
 2. **Host-NIC self-metering (cost gate)** — when `K2_PRIVATE_CLAIM` is set, the **sidecar** runs a metering loop: it reads the **host** NIC byte counters (`/host/proc/net/dev`, already mounted) and `POST`s cumulative bytes to `{centerURL}/slave/usage` (Basic auth `base64(ipv4:secret)`, same node credentials it registers with). Center records the usage into the owner's quota ledger. **Enforcement is Center-side and automatic**: at ≥95% of sold quota Center rejects new device auth (402) and hides the node from `/api/tunnels` + `/api/subs` — no client lands on an over-quota node. The k2s data-plane is **not** involved in metering. Shared-pool nodes (no `K2_PRIVATE_CLAIM`) never start the reporter → byte-for-byte identical to today.
@@ -145,7 +145,7 @@ Exact variables and their sources:
 SCP the canonical base file to `/apps/kaitu-slave/`, then bring up:
 
 1. SCP `docker/docker-compose.yml` to `/apps/kaitu-slave/` (use the `scriptPath` upload form per `kaitu-node-ops`, e.g. `exec_on_node(ip, "sudo tee /apps/kaitu-slave/docker-compose.yml > /dev/null", { scriptPath: "docker/docker-compose.yml" })`).
-2. Also deploy `users` (empty → pure remote auth), `auto-update.sh`, and `k2v5-crash-monitor.sh` per `kaitu-node-ops` Step 5 (the crash-monitor + cron steps of `provision-node.sh` look for these in `/apps/kaitu-slave/`).
+2. Also deploy `users` (empty → pure remote auth), `auto-update.sh`, and `k2s-crash-monitor.sh` per `kaitu-node-ops` Step 5 (the crash-monitor + cron steps of `provision-node.sh` look for these in `/apps/kaitu-slave/`).
 3. Bring up:
 
 ```
@@ -162,7 +162,7 @@ Run the `kaitu-node-ops` post-deployment checklist (containers Up, sidecar healt
 
 | Check | Command | Expected |
 |-------|---------|----------|
-| k2v5 healthy + tunnel ready | `docker logs --tail 20 k2v5 \| grep "server ready"` | `k2s server ready listen=:443` |
+| k2s healthy + tunnel ready | `docker logs --tail 20 k2s \| grep "server ready"` | `k2s server ready listen=:443` |
 | Sidecar registered (carried claim) | `docker logs --tail 30 k2-sidecar \| grep "Registration completed"` | `tunnels=1` |
 | Usage reporter started | `docker logs --tail 80 k2-sidecar \| grep "usage-reporter"` | `DIAG: usage-reporter-start` (and periodic `usage-reporter-cycle-ok`) |
 | Node visible in Center | `list_nodes(name=pn-<subId>)` | one `tunnels` entry with the sslip.io domain |

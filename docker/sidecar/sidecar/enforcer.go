@@ -57,7 +57,7 @@ func NewEnforcer(meter nicMeter) (*enforcer, error) {
 			interval = d
 		}
 	}
-	return newEnforcer(meter, docker, "/etc/kaitu/cutoff.state", []string{"k2v5", "k2v4-slave"}, interval), nil
+	return newEnforcer(meter, docker, "/etc/kaitu/cutoff.state", []string{"k2s"}, interval), nil
 }
 
 // SetQuota is called by the usage reporter each successful cycle: records Center's
