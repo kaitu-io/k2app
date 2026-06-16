@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // fakeMeter is a scripted nicMeter for the reporter tests.
@@ -119,4 +121,32 @@ func TestUsageReporter_PayloadTagsMatchCenter(t *testing.T) {
 			t.Fatalf("NodeUsageRequest missing JSON key %q (got %v)", k, m)
 		}
 	}
+}
+
+type fakeSink struct {
+	mu                 sync.Mutex
+	epoch, total, used int64
+	calls              int
+}
+
+func (s *fakeSink) SetQuota(epochID, quotaTotal, quotaUsed int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.epoch, s.total, s.used, s.calls = epochID, quotaTotal, quotaUsed, s.calls+1
+}
+
+func TestReporter_FeedsQuotaToSink(t *testing.T) {
+	us := &usageServer{resp: NodeUsageResponse{Verdict: "serve", EpochID: 3, QuotaTotal: 2000, QuotaUsed: 1500, NextReportInterval: 60}, wantUser: "1.2.3.4"}
+	srv := httptest.NewServer(us.handler())
+	defer srv.Close()
+	r := NewUsageReporter(&fakeMeter{value: 1500}, srv.URL, "1.2.3.4", "secret")
+	sink := &fakeSink{}
+	r.SetSink(sink)
+	r.runOnce(context.Background())
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	assert.Equal(t, 1, sink.calls)
+	assert.Equal(t, int64(3), sink.epoch)
+	assert.Equal(t, int64(2000), sink.total)
+	assert.Equal(t, int64(1500), sink.used)
 }

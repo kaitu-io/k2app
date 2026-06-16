@@ -68,6 +68,11 @@ type nicMeter interface {
 	Rebaseline()
 }
 
+// quotaSink receives each cycle's Center quota, for the node-side cutoff enforcer.
+type quotaSink interface {
+	SetQuota(epochID, quotaTotal, quotaUsed int64)
+}
+
 // usageReporter owns its loop state. A single goroutine (Run) touches epochID /
 // seq, so there is no mutex.
 type usageReporter struct {
@@ -76,6 +81,7 @@ type usageReporter struct {
 	ipv4       string // node public IPv4 (Basic-auth username)
 	secret     string // node secret (Basic-auth password) — NEVER log
 	httpClient *http.Client
+	sink       quotaSink
 
 	epochID int64
 	seq     int64
@@ -92,6 +98,10 @@ func NewUsageReporter(meter nicMeter, centerURL, ipv4, secret string) *usageRepo
 		httpClient: &http.Client{Timeout: usageReportHTTPTimeout},
 	}
 }
+
+// SetSink attaches a quota consumer (the cutoff enforcer). Optional: with no sink
+// the reporter only does accounting.
+func (r *usageReporter) SetSink(s quotaSink) { r.sink = s }
 
 // Run drives the loop until ctx is cancelled. The first cycle fires immediately
 // so a node re-deployed mid-epoch already over quota reports at once.
@@ -128,6 +138,10 @@ func (r *usageReporter) runOnce(ctx context.Context) time.Duration {
 		slog.Info("DIAG: usage-reporter-epoch-change", "component", "usage", "from", r.epochID, "to", resp.EpochID)
 		r.meter.Rebaseline()
 		r.epochID = resp.EpochID
+	}
+
+	if r.sink != nil {
+		r.sink.SetQuota(r.epochID, resp.QuotaTotal, resp.QuotaUsed)
 	}
 
 	slog.Info("DIAG: usage-reporter-cycle-ok", "component", "usage",
