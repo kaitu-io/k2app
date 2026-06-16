@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // host_nic.go reads cumulative byte counters from the HOST network interface,
@@ -57,8 +58,10 @@ func readNICBytes(procPath string) (int64, error) {
 // host-NIC bytes minus a baseline that resets on each Center epoch, so the value
 // POSTed as cumulative_bytes restarts from 0 at every epoch — matching Center's
 // per-epoch ledger semantics (api/slave_api_usage.go). A single goroutine (the
-// reporter's Run loop) touches baseline, so no lock is needed.
+// reporter's Run loop and the cutoff enforcer may call concurrently, so
+// baseline is guarded by mu.
 type hostNICMeter struct {
+	mu       sync.Mutex
 	procPath string
 	baseline int64
 }
@@ -78,6 +81,8 @@ func NewHostNICMeter() *hostNICMeter {
 // rebaselines to the current reading and returns 0 — never a negative or
 // absurdly large delta.
 func (m *hostNICMeter) CumulativeBytes() (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	raw, err := readNICBytes(m.procPath)
 	if err != nil {
 		return 0, err
@@ -92,6 +97,8 @@ func (m *hostNICMeter) CumulativeBytes() (int64, error) {
 // Rebaseline sets the baseline to the current reading (called on a Center epoch
 // change so the next cumulative_bytes restarts from 0).
 func (m *hostNICMeter) Rebaseline() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if b, err := readNICBytes(m.procPath); err == nil {
 		m.baseline = b
 	}

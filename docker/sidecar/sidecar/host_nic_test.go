@@ -3,6 +3,7 @@ package sidecar
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -66,6 +67,18 @@ func TestHostNICMeter_RebaselineRestartsFromZero(t *testing.T) {
 	if got != 0 {
 		t.Fatalf("CumulativeBytes after rebaseline = %d, want 0", got)
 	}
+}
+
+func TestHostNICMeter_ConcurrentReadRebaseline(t *testing.T) {
+	root := writeProcNetDev(t, sampleNetDev)
+	m := &hostNICMeter{procPath: root}
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(2)
+		go func() { defer wg.Done(); _, _ = m.CumulativeBytes() }()
+		go func() { defer wg.Done(); m.Rebaseline() }()
+	}
+	wg.Wait()
 }
 
 func TestHostNICMeter_CounterWrapRebaselines(t *testing.T) {
