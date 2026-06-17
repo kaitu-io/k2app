@@ -64,6 +64,15 @@
 
 **v1 弃用判据**:`/api/tunnels` 加 deprecation 计数(日志/metric);靠 `X-K2-Client` 遥测显示旧客户端流量 ≈ 0 后删除整条 route。
 
+## 强约束(实现期必须遵守,非建议)
+
+这些是产品契约,不是风格偏好——实现偏离即视为 bug:
+
+- **C1 — ip_type 枚举封闭 + 全入口归一化**:`ip_type` 取值**只能** ∈ {`residential`, `non_residential`, `unknown`}。新增单一函数 `NormalizeIPType(s string) string`(未知/空/非法 → `unknown`)。**所有写入口都过它**:sidecar upsert(`api/slave_api_node.go`)+ admin update(`api/api_admin_node.go`)。配合 last-writer-wins:任何一方写脏值也只会落 `unknown`,DB 永不存非法值。
+- **C2 — `k2s` 是纯显示标签,DB/wire 永远 `k2v5`**:**不新增** `TunnelProtocol` 常量、**不改** DB 值、**不改** `serverUrl` 的 `k2v5://`。新增单一函数 `ProtocolDisplay(p TunnelProtocol) string`(`k2v5` → `"k2s"`,其余原样),**唯一**映射点,供 `/api/v20260717/tunnels` handler、admin 输出、MCP `list_*` 三处共用。禁止在各处散写字符串替换。
+- **C3 — 新端点无 `:protocol` 参数**:`/api/v20260717/tunnels` 返回全部可服务隧道(现实里 wire 只有 `k2v5` 一种),`serverUrl` 必填、`protocol` 字段经 `ProtocolDisplay` 吐 `"k2s"`。**不复刻**旧 `/api/tunnels/:protocol` 的 legacy 协议路由分叉,也不带 `echConfigList`(k2v4 遗留字段)。
+- **C4 — admin/MCP 过滤器按 wire 值,显示按 display**:`/app/tunnels` 及 MCP `list_tunnels` 的 protocol **过滤入参仍是 `k2v5`**(DB 查询用),但**接受 `k2s` 作为别名**(入口归一化 `k2s`→`k2v5` 再查);**输出展示**经 `ProtocolDisplay` 显示 `k2s`。过滤与显示解耦,避免"显示 k2s 却过滤不到"。
+
 ## 详细设计
 
 ### 1. 数据模型
@@ -72,7 +81,8 @@
 
 ```go
 // IP 类型(节点的实际出口 IP 性质),由 sidecar 上报或运维覆盖
-IPType string `gorm:"column:ip_type;type:varchar(20);not null;default:'unknown';index"`
+// 不加 index:低基数(3 值)索引近乎无用,且当前无 filter-by-ip_type 查询
+IPType string `gorm:"column:ip_type;type:varchar(20);not null;default:'unknown'"`
 ```
 
 `api/model_private_node.go` — 补常量:
@@ -100,7 +110,7 @@ const (
 
 **Center 接收** `api/slave_api_node.go`:
 - `SlaveNodeUpsertRequest` 加 `IPType string` `json:"ipType"`。
-- 写库逻辑(create 分支 line 141-152 / update 分支):**无条件写入** `req.IPType` 到 `SlaveNode.ip_type`(空值按 `unknown` 处理)。
+- 写库逻辑(create 分支 line 141-152 / update 分支):**无条件写入** `NormalizeIPType(req.IPType)` 到 `SlaveNode.ip_type`(见 C1,空/非法 → `unknown`)。
 
 **同权同变更语义(last-writer-wins,关键正确性点)**:
 - sidecar 与运维(MCP/后台)对 `ip_type` **平权**,谁后写谁生效,无任何一方被特殊保护。
@@ -117,12 +127,13 @@ const (
 
 **后台端点** `api/api_admin_node.go`:
 - `AdminUpdateNodeRequest`(line 84-90)加 `IPType *string`。
-- `api_admin_update_node` 校验值 ∈ {residential, non_residential, unknown},写入 `updateData["ip_type"]`。
+- `api_admin_update_node` 经 `NormalizeIPType`(C1)写入 `updateData["ip_type"]`。
 - 路由 `PUT /app/nodes/:ipv4` 已存在(route.go:421),无需新增。
+- `list_tunnels`/`/app/tunnels` 的 protocol 过滤入参经归一化别名 `k2s`→`k2v5`(C4)。
 
 **MCP 工具** `tools/kaitu-center/src/tools/`:
 - **新增 `update_node`**(`group: 'nodes.write'`,`method: 'PUT'`,`path: /app/nodes/${ipv4}`),参数 `ipv4` + 可选 `name`/`country`/`ipv6`/`ipType`。现状只有 `update_tunnel`(admin-tunnels.ts),没有 update_node。
-- `list-nodes.ts`:`NodeInfo` 加 `ipType`;`TunnelInfo.protocol` 显示层 `k2v5 → k2s` 映射(保留 `url` 的 `k2v5://`)。
+- `list-nodes.ts`:`NodeInfo` 加 `ipType`;`TunnelInfo.protocol` 经 `ProtocolDisplay`(C2)显示 `k2s`(保留 `url` 的 `k2v5://`)。
 
 ### 4. 客户端接口 `/api/v20260717/tunnels`
 
@@ -134,10 +145,12 @@ v20260717.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), D
 
 **新 handler**(独立方法,自包含):
 - 复用 `api_k2_tunnels` 的查询/打分逻辑,但响应结构改为干净形态。
+- 无 `:protocol` 参数,返回全部可服务隧道,`serverUrl` 必填(见 C3)。
 - `DataSlaveTunnelV20260717`(新结构,不复用旧 `DataSlaveTunnel`):
-  - `protocol` 字段值映射 `k2v5 → k2s`(显示层)。
+  - `protocol` 经 `ProtocolDisplay`(C2)吐 `"k2s"`。
   - 加 `ipType string`(取自 `SlaveNode.ip_type`)。
   - `serverUrl` **保留 `k2v5://`**(客户端连接解析)。
+  - 不带 `echConfigList`(k2v4 遗留字段,C3)。
 
 **旧 `/api/tunnels` 冻结**:不改响应;加 deprecation 计数(日志带 `X-K2-Client`)。
 
@@ -167,7 +180,10 @@ v20260717.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), D
 | admin/MCP `update_node` | 运维纠错写入 | PUT 端点 | ✅ 集成测 |
 | `/api/v20260717/tunnels` handler | 干净形态 + ipType | 查询逻辑 | ✅ handler 测 |
 | `/api/subs` ipType 增量 | 暴露 ip_type | Node preload | ✅ handler 测 |
+| `NormalizeIPType` / `ProtocolDisplay` | 归一化/显示映射(C1/C2) | 无 | ✅ 纯函数表驱动测 |
 | webapp chip | 住宅IP 显示 | api-types | ✅ vitest |
+
+**测试约定**:Center 侧改动(upsert 归一化、admin update、v20260717 handler、subs 增量)按项目惯例补**真 dev MySQL 集成测**;`NormalizeIPType`/`ProtocolDisplay` 走纯函数表驱动单测(含非法值→unknown、k2s↔k2v5 别名两路)。
 
 ## 部署顺序
 
