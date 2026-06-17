@@ -15,12 +15,17 @@ import (
 // single source of host-NIC truth used by both the billing usage reporter and
 // the display traffic monitor.
 
-// hostProcPath returns the proc mount to read NIC counters from: /host/proc when
-// the host's /proc is mounted (production container), else /proc (dev / older
-// deploys without the mount).
+// hostProcPath returns the proc mount to read NIC counters from.
+//
+// CRITICAL: /proc/net/* is network-namespace-relative. A bridge-network
+// container reading the bind-mounted /host/proc/net/dev still resolves to its
+// OWN netns (its veth, ≈0 billed traffic), NOT the host NIC — which silently
+// zeroed host-NIC billing and meant the quota cutoff never tripped on real
+// traffic. PID 1 always lives in the host net namespace, so /host/proc/1/net/dev
+// is the real host NIC counter. Prefer it; fall back to /proc (dev / no mount).
 func hostProcPath() string {
-	if _, err := os.Stat("/host/proc/net/dev"); err == nil {
-		return "/host/proc"
+	if _, err := os.Stat("/host/proc/1/net/dev"); err == nil {
+		return "/host/proc/1"
 	}
 	return "/proc"
 }
