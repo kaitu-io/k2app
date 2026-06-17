@@ -110,3 +110,56 @@ func TestV20260717TunnelsShape(t *testing.T) {
 		t.Error("v20260717 must not carry echConfigList")
 	}
 }
+
+// TestV20260717ExcludesPrivateNodes pins the highest-consequence invariant of
+// the whole endpoint: a private (single-owner dedicated-VPS) node must NEVER
+// surface in the shared-pool v20260717 list. If it did, one user's dedicated
+// line — its IP, country, server URL — would leak to every App user. v1 guards
+// this in-memory (Class == NodeClassPrivate → skip); v2 is a parallel handler
+// that must replicate the guard. This test fails loudly if the guard is ever
+// dropped from api_v20260717_tunnels. Drives the real handler against dev MySQL.
+func TestV20260717ExcludesPrivateNodes(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	uniq := time.Now().Format("20060102150405.000000")
+
+	priv := SlaveNode{
+		Ipv4:        "10.97.17." + uniq[len(uniq)-2:],
+		SecretToken: "v2-priv-node-" + uniq,
+		Country:     "JP",
+		Region:      "japan",
+		Name:        "v2-priv-node-" + uniq,
+		Class:       NodeClassPrivate,
+		IPType:      IPTypeResidential,
+	}
+	require.NoError(t, db.Get().Create(&priv).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&priv) })
+
+	privURL := "k2v5://v2-priv-" + uniq + ".example:443?pin=sha256:abc"
+	privTun := SlaveTunnel{
+		Domain:      "v2-priv-" + uniq + ".example",
+		SecretToken: "v2-priv-tun-" + uniq,
+		Name:        "v2-priv-tun-" + uniq,
+		Protocol:    TunnelProtocolK2V5,
+		Port:        443,
+		NodeID:      priv.ID,
+		IsTest:      BoolPtr(false),
+		HasRelay:    BoolPtr(false),
+		ServerURL:   privURL,
+	}
+	require.NoError(t, db.Get().Create(&privTun).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&privTun) })
+
+	r := tunnelV20260717TestRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v20260717/tunnels", nil)
+	r.ServeHTTP(w, req)
+	require.Equal(t, 200, w.Code, "body=%s", w.Body.String())
+
+	// The private node's unique server URL must not appear anywhere in the
+	// shared-pool response — neither as a top-level item nor in any node object.
+	require.NotContains(t, w.Body.String(), uniq,
+		"private node must never surface in shared-pool /api/v20260717/tunnels")
+}
