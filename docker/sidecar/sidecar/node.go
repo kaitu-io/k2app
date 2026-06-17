@@ -86,7 +86,7 @@ type NodeUpsertRequest struct {
 	Region      string                 `json:"region,omitempty"`
 	Name        string                 `json:"name"`
 	IPv6        string                 `json:"ipv6,omitempty"`
-	IPType      string                 `json:"ipType"`            // IP type: residential, datacenter, unknown
+	IPType      string                 `json:"ipType"`            // IP type: residential, non_residential, unknown
 	SecretToken string                 `json:"secretToken,omitempty"`
 	Tunnels     []TunnelConfig         `json:"tunnels,omitempty"` // Batch tunnel configuration
 	Meta        map[string]interface{} `json:"meta,omitempty"`    // Node metadata (e.g., architecture type)
@@ -202,7 +202,7 @@ type Node struct {
 	Country   string // Country code (auto-detected)
 	Region    string // Region (optional, defaults to Country)
 	Name      string // Node name (optional, defaults to IPv4)
-	IPType    string // IP type: residential, datacenter, unknown (default)
+	IPType    string // IP type: residential, non_residential, unknown (default)
 
 	// PrivateClaim 专属节点认领令牌（K2_PRIVATE_CLAIM，cloud-init 注入）。
 	// Echoed back to Center on registration; empty for shared-pool nodes.

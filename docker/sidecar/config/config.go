@@ -49,7 +49,7 @@ type NodeSectionConfig struct {
 	Name    string `yaml:"name"`                          // Node display name (optional, defaults to IPv4)
 	Country string `yaml:"country" default:"US"`          // Country code (optional, auto-detected)
 	Region  string `yaml:"region"`                        // Server region/datacenter (optional, defaults to country)
-	IPType  string `yaml:"ip_type" default:"unknown"`     // IP type: residential, datacenter, unknown
+	IPType  string `yaml:"ip_type" default:"unknown"`     // IP type: residential, non_residential, unknown
 }
 
 // RelaySectionConfig holds relay-specific configuration
