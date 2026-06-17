@@ -86,6 +86,7 @@ type AdminUpdateNodeRequest struct {
 	Name    *string `json:"name" example:"US-Node-01"`
 	Country *string `json:"country" example:"US"`
 	Ipv6    *string `json:"ipv6" example:"2001:db8::1"`
+	IPType  *string `json:"ipType" example:"residential"`
 }
 
 func api_admin_update_node(c *gin.Context) {
@@ -121,6 +122,9 @@ func api_admin_update_node(c *gin.Context) {
 	if req.Ipv6 != nil {
 		updateData["ipv6"] = *req.Ipv6
 	}
+	if req.IPType != nil {
+		updateData["ip_type"] = NormalizeIPType(*req.IPType)
+	}
 
 	if len(updateData) > 0 {
 		if err := db.Get().Model(&node).Updates(updateData).Error; err != nil {
@@ -128,6 +132,13 @@ func api_admin_update_node(c *gin.Context) {
 			Error(c, ErrorSystemError, "failed to update node")
 			return
 		}
+	}
+
+	// Reload to reflect all updated fields (including ip_type).
+	if err := db.Get().Where("ipv4 = ?", nodeIPv4).First(&node).Error; err != nil {
+		log.Errorf(c, "failed to reload node %s after update: %v", nodeIPv4, err)
+		Error(c, ErrorSystemError, "failed to reload node")
+		return
 	}
 
 	log.Infof(c, "successfully updated node %s", nodeIPv4)
@@ -139,6 +150,7 @@ func api_admin_update_node(c *gin.Context) {
 		Region:    node.Region,
 		Ipv4:      node.Ipv4,
 		Ipv6:      node.Ipv6,
+		IPType:    node.IPType,
 		Load:      0,
 		UpdatedAt: node.UpdatedAt.Unix(),
 	}

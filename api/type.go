@@ -315,6 +315,7 @@ type DataSlaveNode struct {
 	Region    string `json:"region"`    // 服务器区域
 	Ipv4      string `json:"ipv4"`      // IPv4地址
 	Ipv6      string `json:"ipv6"`      // IPv6地址
+	IPType    string `json:"ipType"`    // residential|non_residential|unknown
 	Load      int    `json:"load"`      // Deprecated: to be removed. Use DataTunnelInstance.BudgetScore instead.
 	UpdatedAt int64  `json:"updatedAt"` // 最后更新时间（Unix 秒）
 
