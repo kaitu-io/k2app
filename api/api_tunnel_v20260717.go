@@ -81,17 +81,8 @@ func api_v20260717_tunnels(c *gin.Context) {
 			details = d
 		}
 
-		nodeData := DataSlaveNode{
-			Name:                  tunnel.Node.Name,
-			Country:               tunnel.Node.Country,
-			Region:                tunnel.Node.Region,
-			Ipv4:                  tunnel.Node.Ipv4,
-			Ipv6:                  tunnel.Node.Ipv6,
-			IPType:                tunnel.Node.IPType,
-			Load:                  details.Load,
-			TrafficUsagePercent:   details.TrafficUsagePercent,
-			BandwidthUsagePercent: details.BandwidthUsagePercent,
-		}
+		nodeData := buildDataSlaveNode(tunnel.Node, details)
+		nodeData.IPType = tunnel.Node.IPType
 
 		item := DataSlaveTunnelV20260717{
 			ID:             tunnel.ID,
