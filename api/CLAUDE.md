@@ -61,6 +61,17 @@ templates/           Embedded templates (docker-compose, init-node.sh)
 
 All handlers, logic, and models live in the root `center` package. No internal subdirectories for domain entities. Convention is enforced by file naming, not directory structure.
 
+## Dedicated Line (专属线路): entitlement ↔ node ↔ k2subs
+
+**A `PrivateNodeSubscription` is an entitlement, not a node topology.** It models tier / quota (`TrafficTotalBytes`) / independent clock (`ExpiresAt`) — **not** "how many nodes" or "which nodes". Provisioning, binding, count, and lifecycle of the backing VPS nodes are an **ops responsibility** (NodeOperation queue + provisioning agent), invisible to the subscription and pricing model.
+
+**A router consumes its line(s) through the k2subs URL — not through any node binding on the subscription.** `/api/subs` → `ResolveGatewayPrivateTunnels` (`entitlement_resolver.go`) gathers all of a user's *serviceable* private subscriptions and resolves them into a list of `k2v5://` tunnels. **Multi-node = multiple tunnels in that list**; the router Picks/switches among them. There is no "one subscription → N nodes" schema — multiple nodes surface as multiple k2subs tunnels.
+
+Implications:
+- A tier like "4T = 2×2T (two nodes, two IPs)" is purely an **ops provisioning choice** (provision N nodes for the user). It needs **no** subscription-model or schema change — the extra node just appears as another k2subs tunnel. Do not conflate it with the deferred "multi-node subscription" work — k2subs already delivers multi-node.
+- `PrivateNodeSubscription.SlaveNodeID` / `CloudInstanceID` (1:1, nullable) are the **per-line metering/quota anchor** (the node self-meters to `/slave/usage` by IP; `isPrivateTunnelExhausted` drops the line from `/api/subs` at 100%), **not** the multi-node mechanism.
+- Router admission gate = `HasActivePrivateLines` (owning ≥1 serviceable private line), fully decoupled from App `tier`/`MaxRouterDevice`.
+
 ## API Response Format
 
 ```go
