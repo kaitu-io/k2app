@@ -24,6 +24,10 @@ func api_admin_list_tunnels(c *gin.Context) {
 		// - 统一转换为新标准 k2wss
 		protocol = strings.ReplaceAll(protocol, "+", "")
 		protocol = strings.ReplaceAll(protocol, " ", "")
+		// C4: 接受 "k2s" 作为 "k2v5" 的显示别名（admin UI 发送 k2s，DB 存 k2v5）
+		if protocol == "k2s" {
+			protocol = string(TunnelProtocolK2V5)
+		}
 		log.Debugf(c, "filtering tunnels by protocol: %s (normalized)", protocol)
 	}
 
@@ -55,7 +59,7 @@ func api_admin_list_tunnels(c *gin.Context) {
 	// 收集所有节点ID，用于批量查询负载
 	nodeIDs := make([]uint64, 0, len(tunnels))
 	for _, tunnel := range tunnels {
-		if tunnel.Node.ID != 0 {
+		if tunnel.Node != nil && tunnel.Node.ID != 0 {
 			nodeIDs = append(nodeIDs, tunnel.Node.ID)
 		}
 	}
@@ -66,28 +70,34 @@ func api_admin_list_tunnels(c *gin.Context) {
 	// 转换为API响应格式
 	items := make([]DataSlaveTunnel, 0, len(tunnels))
 	for _, tunnel := range tunnels {
-		// 从批量查询结果中获取负载
-		load := 100 // 默认满载
-		if l, exists := nodeLoads[tunnel.Node.ID]; exists {
-			load = l
+		// 从批量查询结果中获取负载（nil node 用默认值）
+		var nodeData DataSlaveNode
+		var tunnelIPType string
+		if tunnel.Node != nil {
+			load := 100 // 默认满载
+			if l, exists := nodeLoads[tunnel.Node.ID]; exists {
+				load = l
+			}
+			nodeData = DataSlaveNode{
+				Name:    tunnel.Node.Name,
+				Country: tunnel.Node.Country,
+				Region:  tunnel.Node.Region,
+				Ipv4:    tunnel.Node.Ipv4,
+				Ipv6:    tunnel.Node.Ipv6,
+				Load:    load,
+			}
+			tunnelIPType = tunnel.Node.IPType
 		}
 
-		nodeData := DataSlaveNode{
-			Name:    tunnel.Node.Name,
-			Country: tunnel.Node.Country,
-			Region:  tunnel.Node.Region,
-			Ipv4:    tunnel.Node.Ipv4,
-			Ipv6:    tunnel.Node.Ipv6,
-			Load:    load, // 使用真实的负载值
-		}
-
+		// C2: display k2v5 as "k2s" in admin output; v1 handler is untouched.
 		item := DataSlaveTunnel{
 			ID:        tunnel.ID,
 			Domain:    tunnel.Domain,
 			Name:      tunnel.Name,
-			Protocol:  tunnel.Protocol,
+			Protocol:  TunnelProtocol(ProtocolDisplay(tunnel.Protocol)),
 			Port:      tunnel.Port,
 			ServerUrl: tunnel.ServerURL,
+			IPType:    tunnelIPType,
 			Node:      nodeData,
 		}
 		items = append(items, item)

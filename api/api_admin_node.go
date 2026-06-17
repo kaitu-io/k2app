@@ -25,6 +25,7 @@ type AdminNodeItem struct {
 	Region    string            `json:"region"`
 	Ipv4      string            `json:"ipv4"`
 	Ipv6      string            `json:"ipv6"`
+	IPType    string            `json:"ipType,omitempty"` // residential|non_residential|unknown (C2)
 	UpdatedAt int64             `json:"updatedAt"`
 	Tunnels   []AdminNodeTunnel `json:"tunnels"`
 }
@@ -59,7 +60,7 @@ func api_admin_list_nodes(c *gin.Context) {
 				ID:        t.ID,
 				Name:      t.Name,
 				Domain:    t.Domain,
-				Protocol:  string(t.Protocol),
+				Protocol:  ProtocolDisplay(t.Protocol), // C2: k2v5 → "k2s"
 				Port:      t.Port,
 				ServerURL: t.ServerURL,
 			})
@@ -72,6 +73,7 @@ func api_admin_list_nodes(c *gin.Context) {
 			Region:    node.Region,
 			Ipv4:      node.Ipv4,
 			Ipv6:      node.Ipv6,
+			IPType:    node.IPType, // C2: expose ip_type on admin node list
 			UpdatedAt: node.UpdatedAt.Unix(),
 			Tunnels:   tunnels,
 		})

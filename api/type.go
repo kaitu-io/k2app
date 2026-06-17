@@ -344,6 +344,7 @@ type DataSlaveTunnel struct {
 	Port           int64               `json:"port"`                  // Tunnel port
 	HopPortStart   int64               `json:"hopPortStart"`          // Port hopping range start (0 = disabled)
 	HopPortEnd     int64               `json:"hopPortEnd"`            // Port hopping range end (0 = disabled)
+	IPType         string              `json:"ipType,omitempty"`      // residential|non_residential|unknown (admin/新接口填充; v1 不填, omitempty 保持冻结)
 	Node           DataSlaveNode       `json:"node"`                  // Associated physical node
 	Instance       *DataTunnelInstance `json:"instance,omitempty"`    // Cloud instance data (if linked via IP)
 	RecommendScore float64             `json:"recommendScore"`        // Canonical [0,1] recommendation signal — present for both cloud and non-cloud (default 0.5) nodes, so consumers don't need instance-level null checks.
