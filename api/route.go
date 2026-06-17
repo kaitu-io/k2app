@@ -101,6 +101,9 @@ func SetupRouter() *gin.Engine {
 		// Get tunnel list
 		api.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
 		api.GET("/tunnels/:protocol", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
+		// v20260717: clean tunnels endpoint — protocol="k2s", ipType, serverUrl=k2v5://, no echConfigList
+		v20260717 := api.Group("/v20260717")
+		v20260717.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_v20260717_tunnels)
 		// k2subs subscription endpoint — Basic Auth (udid:token) validated inside handler,
 		// because k2 engine sends Basic Auth, not the Bearer token the middleware chain expects.
 		api.GET("/subs", api_subs)
