@@ -208,6 +208,7 @@
     "title": "节点管理",
     "description": "管理您的本地节点配置。添加自定义节点或登录同步云端节点。",
     "addTunnel": "添加节点",
+    "residentialIp": "住宅IP",
     "syncCloud": "登录获取",
     "loginHint": "登录后可同步云端节点配置",
     "loginToSync": "登录后可获取云端节点",

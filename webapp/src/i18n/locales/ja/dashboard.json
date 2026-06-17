@@ -172,6 +172,7 @@
     "title": "ノード管理",
     "description": "ローカルノード設定を管理。カスタムノードを追加するか、ログインしてクラウドノードを同期。",
     "addTunnel": "ノードを追加",
+    "residentialIp": "Residential IP",
     "syncCloud": "ログインして取得",
     "loginHint": "ログインしてクラウドノード設定を同期",
     "loginToSync": "ログインしてクラウドノードを取得",

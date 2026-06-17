@@ -172,6 +172,7 @@
     "title": "節點管理",
     "description": "管理您的本機節點設定。新增自訂節點或登入同步雲端節點。",
     "addTunnel": "新增節點",
+    "residentialIp": "住宅IP",
     "syncCloud": "登入取得",
     "loginHint": "登入後可同步雲端節點設定",
     "loginToSync": "登入後可取得雲端節點",
