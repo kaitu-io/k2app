@@ -26,6 +26,7 @@ type SlaveNodeUpsertRequest struct {
 	SecretToken string              `json:"secretToken" binding:"required" example:"abc123..."` // 节点认证令牌（必需，客户端持久化保存）
 	Tunnels      []TunnelConfigInput `json:"tunnels"`                                            // 隧道配置列表（可选，支持批量注册）
 	Meta         json.RawMessage     `json:"meta,omitempty"`                                     // 节点元数据（可选JSON，如架构类型）
+	IPType       string              `json:"ipType"`                                             // residential|non_residential|unknown，sidecar 始终上报（未配置=unknown）
 	PrivateClaim string              `json:"privateClaim,omitempty"`                             // 专属节点认领令牌（cloud-init 注入，sidecar 回传）
 }
 
@@ -146,6 +147,7 @@ func api_slave_node_upsert(c *gin.Context) {
 			Name:               req.Name,
 			Ipv6:               req.IPv6,
 			Meta:               string(req.Meta),
+			IPType:             NormalizeIPType(req.IPType),
 			Class:              preservedClass,
 			PrivateOwnerUserID: preservedOwner,
 			PrivateSubID:       preservedSubID,
@@ -174,6 +176,7 @@ func api_slave_node_upsert(c *gin.Context) {
 			Name:        req.Name,
 			Ipv6:        req.IPv6,
 			Meta:        string(req.Meta),
+			IPType:      NormalizeIPType(req.IPType),
 		}
 		if err := db.Get().Create(&node).Error; err != nil {
 			log.Errorf(c, "failed to create node: %v", err)
