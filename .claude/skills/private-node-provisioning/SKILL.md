@@ -64,7 +64,7 @@ claim_node_operation(id=<operationId>, holder=<agent-id>, leaseSeconds=600?)
 | `data.identity.domain` | `.env` `K2_DOMAIN` | Empty → leave empty, sidecar auto-derives `{ipv4-with-dashes}.sslip.io`. |
 | `data.operation.params.region` | `create_cloud_instance region` + `.env` `K2_NODE_REGION` | Map to the provider's region identifier (Step 2). |
 | `data.operation.params.trafficTotalBytes` | `.env` `K2_NODE_TRAFFIC_LIMIT_GB` | Derive GB = `trafficTotalBytes / (1024^3)`. The **sold** quota (e.g. 950G on a 1T bundle). |
-| `data.operation.params.ipType` | provider / bundle selection (Step 2) | residential vs non-residential. |
+| `data.operation.params.ipType` | provider / bundle selection (Step 2) **and** `.env` `K2_IP_TYPE` | residential vs non-residential. Pass it through verbatim — the sidecar reports it to Center so the node is flagged as a 住宅IP / residential exit. Center normalizes any unexpected value to `unknown`, so use exactly `residential` / `non_residential` / `unknown`. |
 | `data.operation.subId` | instance `name = pn-<subId>` + `.env` `K2_NODE_NAME` | Deterministic naming → idempotency root. |
 
 > **Note (post-decoupling):** the deploy task carries only business inputs (`region`, `trafficTotalBytes`, `ipType`). Whoever provisions chooses the concrete `provider` / `bundle` / `image` / `k2Version` that satisfies them (Step 2) — pick a bundle whose included transfer comfortably exceeds the sold `trafficTotalBytes` so provider overage never triggers.
@@ -135,6 +135,7 @@ Exact variables and their sources:
 | `K2_NODE_TRAFFIC_LIMIT_GB` | `job.trafficTotalBytes / 1024^3` | display/load reporting | no |
 | `K2_NODE_NAME` | `pn-<subId>` | registration meta | no |
 | `K2_NODE_REGION` | `job.region` | registration meta | no |
+| `K2_IP_TYPE` | `job.ipType` (`residential` / `non_residential`; omit → `unknown`) | **sidecar** — reported on registration → Center records `SlaveNode.ip_type` (drives 住宅IP visibility in `/api/v20260717/tunnels` + admin/MCP). Last-writer-wins with ops `update_node`. | no |
 
 **How the private node differs (all in the sidecar, base compose only):**
 - `K2_PRIVATE_CLAIM` → the **sidecar** (base compose passes `K2_PRIVATE_CLAIM=${K2_PRIVATE_CLAIM:-}`). The sidecar registers and carries the claim (Center activates), **and** — because the claim is non-empty — starts the host-NIC usage reporter.

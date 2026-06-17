@@ -52,6 +52,11 @@ type SubsTunnel struct {
 	// ComputeRecommendScore. Higher = better. New daemon/webapp clients prefer
 	// this over Weight.
 	RecommendScore float64 `json:"recommendScore"`
+	// IPType is the exit-IP nature of the backing node
+	// (residential|non_residential|unknown). Additive field — old daemons ignore
+	// unknown JSON keys. New daemon Pick logic can prefer residential IPs.
+	// omitempty: omits the field when empty (unknown nodes from older schema rows).
+	IPType string `json:"ipType,omitempty"`
 }
 
 // SubsResponse is the k2subs subscription endpoint response body (raw, no envelope).
@@ -257,6 +262,7 @@ func api_subs(c *gin.Context) {
 			URL:            injectSubsCreds(t.ServerURL, udid, token),
 			Weight:         int(math.Round(score * subsLegacyWeightScale)),
 			RecommendScore: score,
+			IPType:         t.Node.IPType,
 		})
 	}
 
@@ -292,6 +298,7 @@ func buildPrivateSubsTunnels(tunnels []SlaveTunnel, udid, token string) []SubsTu
 			URL:            injectSubsCreds(t.ServerURL, udid, token),
 			Weight:         int(math.Round(neutralScore * subsLegacyWeightScale)),
 			RecommendScore: neutralScore,
+			IPType:         t.Node.IPType,
 		})
 	}
 	return items

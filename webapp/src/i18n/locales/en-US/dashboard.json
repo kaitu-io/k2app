@@ -172,6 +172,7 @@
     "title": "Node Management",
     "description": "Manage your local node configurations. Add custom nodes or login to sync cloud nodes.",
     "addTunnel": "Add Node",
+    "residentialIp": "Residential IP",
     "syncCloud": "Login to Get",
     "loginHint": "Login to sync cloud node configurations",
     "loginToSync": "Login to get cloud nodes",

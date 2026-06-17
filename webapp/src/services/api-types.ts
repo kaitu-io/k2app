@@ -228,9 +228,9 @@ export interface Tunnel {
   id: number; // 隧道ID
   domain: string; // 隧道域名（仅用于 SNI/TLS）
   name: string; // 隧道名称
-  protocol: string; // 隧道协议 (k2v4, k2v5)
+  protocol: string; // 隧道协议 (k2s, k2v4, k2v5)
   port: number; // 隧道端口
-  serverUrl?: string; // k2v5 connection URL (only present for k2v5 tunnels)
+  serverUrl?: string; // k2v5 connection URL (only present for k2v5/k2s tunnels)
   node: SlaveNode; // 关联的物理节点
   instance?: TunnelInstance; // Cloud instance data (only for cloud-managed nodes)
   /**
@@ -240,6 +240,8 @@ export interface Tunnel {
    * budgetScore; this field is the single source of truth.
    */
   recommendScore: number;
+  /** IP type of the underlying node. 'residential' triggers the 住宅IP chip in CloudTunnelList. */
+  ipType?: string; // 'residential' | 'non_residential' | 'unknown'
 }
 
 // 隧道列表响应

@@ -22,6 +22,7 @@ const (
 const (
 	IPTypeResidential    = "residential"
 	IPTypeNonResidential = "non_residential"
+	IPTypeUnknown        = "unknown" // 尚未上报/未知/非法归一化目标
 )
 
 // PrivateNodeSubscription 专属节点订阅（商业对象）。

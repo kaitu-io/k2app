@@ -150,16 +150,7 @@ func api_k2_tunnels(c *gin.Context) {
 			continue
 		}
 
-		nodeData := DataSlaveNode{
-			Name:                  tunnel.Node.Name,
-			Country:               tunnel.Node.Country,
-			Region:                tunnel.Node.Region,
-			Ipv4:                  tunnel.Node.Ipv4,
-			Ipv6:                  tunnel.Node.Ipv6,
-			Load:                  details.Load,
-			TrafficUsagePercent:   details.TrafficUsagePercent,
-			BandwidthUsagePercent: details.BandwidthUsagePercent,
-		}
+		nodeData := buildDataSlaveNode(tunnel.Node, details)
 
 		// Determine protocol for response
 		// Legacy API (/tunnels): always return "k2wss" for backward compatibility
@@ -279,6 +270,23 @@ func buildTunnelInstanceData(inst *CloudInstance) *DataTunnelInstance {
 	}
 	d.RecommendScore = ComputeRecommendScore(d)
 	return d
+}
+
+// buildDataSlaveNode constructs the 8 common fields shared between the v1 and v2
+// tunnel response shapes. It intentionally does NOT set IPType — callers that want
+// it (v2, admin) set it explicitly after calling this helper. This keeps IPType
+// absent from v1 responses (omitempty on the field suppresses the zero value).
+func buildDataSlaveNode(node *SlaveNode, details NodeLoadDetails) DataSlaveNode {
+	return DataSlaveNode{
+		Name:                  node.Name,
+		Country:               node.Country,
+		Region:                node.Region,
+		Ipv4:                  node.Ipv4,
+		Ipv6:                  node.Ipv6,
+		Load:                  details.Load,
+		TrafficUsagePercent:   details.TrafficUsagePercent,
+		BandwidthUsagePercent: details.BandwidthUsagePercent,
+	}
 }
 
 // calculateTimeRatio calculates elapsed time ratio for a billing cycle

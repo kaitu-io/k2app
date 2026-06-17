@@ -156,7 +156,7 @@ export function refreshTunnelsCacheAfterAutoPick(
   const attempt = (): void => {
     const state = useVPNMachineStore.getState().state;
     if (STABLE_STATES.has(state)) {
-      cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
+      cloudApi.get<TunnelListResponse>('/api/v20260717/tunnels').then(res => {
         if (res.code === 0 && res.data) {
           cacheStore.set('api:tunnels', res.data);
           console.debug('[Connection] auto-pick: tunnel cache refreshed ('

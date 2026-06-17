@@ -465,6 +465,10 @@ type SlaveNode struct {
 	PrivateOwnerUserID *uint64 `gorm:"index" json:"privateOwnerUserId,omitempty"`                     // class=private 时 = 主人 UserID
 	PrivateSubID       *uint64 `gorm:"index" json:"privateSubId,omitempty"`                           // → PrivateNodeSubscription.ID
 
+	// IP 类型(节点实际出口 IP 性质),sidecar 上报或运维覆盖,last-writer-wins。
+	// 不加 index:低基数(3 值)索引近乎无用,且无 filter-by-ip_type 查询。
+	IPType string `gorm:"column:ip_type;type:varchar(20);not null;default:'unknown'" json:"ipType"`
+
 	// 关联
 	Tunnels []SlaveTunnel `gorm:"foreignKey:NodeID"` // 该物理节点上的隧道
 }

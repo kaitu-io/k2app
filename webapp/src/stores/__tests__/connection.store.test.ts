@@ -1016,7 +1016,7 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
       vpn.useVPNMachineStore.setState({ state: 'connected' });
       await vi.advanceTimersByTimeAsync(1000);
 
-      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/tunnels/k2v4');
+      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/v20260717/tunnels');
       const refreshed = cacheStore.get<any>('api:tunnels');
       expect(refreshed?.items?.[0]?.recommendScore).toBe(0.95);
     } finally {
@@ -1046,7 +1046,7 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
       vpn.useVPNMachineStore.setState({ state: 'idle' });
       await vi.advanceTimersByTimeAsync(1000);
 
-      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/tunnels/k2v4');
+      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/v20260717/tunnels');
     } finally {
       vi.useRealTimers();
     }

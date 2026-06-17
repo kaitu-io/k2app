@@ -315,6 +315,7 @@ type DataSlaveNode struct {
 	Region    string `json:"region"`    // 服务器区域
 	Ipv4      string `json:"ipv4"`      // IPv4地址
 	Ipv6      string `json:"ipv6"`      // IPv6地址
+	IPType    string `json:"ipType,omitempty"` // residential|non_residential|unknown
 	Load      int    `json:"load"`      // Deprecated: to be removed. Use DataTunnelInstance.BudgetScore instead.
 	UpdatedAt int64  `json:"updatedAt"` // 最后更新时间（Unix 秒）
 
@@ -343,6 +344,7 @@ type DataSlaveTunnel struct {
 	Port           int64               `json:"port"`                  // Tunnel port
 	HopPortStart   int64               `json:"hopPortStart"`          // Port hopping range start (0 = disabled)
 	HopPortEnd     int64               `json:"hopPortEnd"`            // Port hopping range end (0 = disabled)
+	IPType         string              `json:"ipType,omitempty"`      // residential|non_residential|unknown (admin/新接口填充; v1 不填, omitempty 保持冻结)
 	Node           DataSlaveNode       `json:"node"`                  // Associated physical node
 	Instance       *DataTunnelInstance `json:"instance,omitempty"`    // Cloud instance data (if linked via IP)
 	RecommendScore float64             `json:"recommendScore"`        // Canonical [0,1] recommendation signal — present for both cloud and non-cloud (default 0.5) nodes, so consumers don't need instance-level null checks.

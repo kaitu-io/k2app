@@ -245,7 +245,7 @@ describe('CloudTunnelList', () => {
       await handle!.refresh({ force: true });
 
       // Forced call goes through cloudApi even though cache is available.
-      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/tunnels/k2v4');
+      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/v20260717/tunnels');
     });
 
     it('force=true rethrows on non-zero response code', async () => {

@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState, useMemo, useRef } from 'react';
 import {
   Box,
+  Chip,
   Typography,
   List,
   ListItem,
@@ -139,7 +140,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         retryCountRef.current = 0;
         onTunnelsLoadedRef.current?.(loadedTunnels);
         // Background revalidate — fire and forget, no state throw.
-        cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
+        cloudApi.get<TunnelListResponse>('/api/v20260717/tunnels').then(res => {
           if (res.code === ERROR_CODES.PAYMENT_REQUIRED) {
             console.warn('[CloudTunnelList] 402 membership expired (background) — clearing cloud tunnels');
             applyMembershipRevoked();
@@ -165,7 +166,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
 
     // Blocking fetch — either no cache or force=true.
     try {
-      const response = await cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4');
+      const response = await cloudApi.get<TunnelListResponse>('/api/v20260717/tunnels');
 
       // 402 = membership expired. Terminal: clear the list + cache + selection
       // and surface the renew prompt. Never retry, never rethrow on force.
@@ -508,6 +509,15 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
                 primary={
                   <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {tunnel.name || tunnel.domain}
+                    {tunnel.ipType === 'residential' && (
+                      <Chip
+                        label={t('dashboard:tunnels.residentialIp')}
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600 }}
+                      />
+                    )}
                   </Box>
                 }
                 secondary={getCountryName(tunnel.node.country)}
