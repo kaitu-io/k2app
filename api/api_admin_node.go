@@ -132,13 +132,12 @@ func api_admin_update_node(c *gin.Context) {
 			Error(c, ErrorSystemError, "failed to update node")
 			return
 		}
-	}
-
-	// Reload to reflect all updated fields (including ip_type).
-	if err := db.Get().Where("ipv4 = ?", nodeIPv4).First(&node).Error; err != nil {
-		log.Errorf(c, "failed to reload node %s after update: %v", nodeIPv4, err)
-		Error(c, ErrorSystemError, "failed to reload node")
-		return
+		// Reload to reflect all updated fields (including ip_type).
+		if err := db.Get().Where("ipv4 = ?", nodeIPv4).First(&node).Error; err != nil {
+			log.Errorf(c, "failed to reload node %s after update: %v", nodeIPv4, err)
+			Error(c, ErrorSystemError, "failed to reload node")
+			return
+		}
 	}
 
 	log.Infof(c, "successfully updated node %s", nodeIPv4)

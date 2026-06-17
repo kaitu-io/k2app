@@ -90,13 +90,13 @@ func TestAdminUpdateNodeIPType(t *testing.T) {
 
 	// Valid value must land as-is.
 	adminUpdateNodeForTest(t, r, ipv4, AdminUpdateNodeRequest{IPType: strptr("non_residential")})
-	if got := reloadNode(t, ipv4).IPType; got != "non_residential" {
-		t.Fatalf("ip_type=%q want non_residential", got)
-	}
+	require.Equal(t, "non_residential", reloadNode(t, ipv4).IPType)
 
 	// Invalid value must normalise to "unknown" (C1).
 	adminUpdateNodeForTest(t, r, ipv4, AdminUpdateNodeRequest{IPType: strptr("garbage")})
-	if got := reloadNode(t, ipv4).IPType; got != "unknown" {
-		t.Fatalf("ip_type=%q want unknown", got)
-	}
+	require.Equal(t, "unknown", reloadNode(t, ipv4).IPType)
+
+	// Nil IPType must not touch ip_type (nil-guard: only Name changes).
+	adminUpdateNodeForTest(t, r, ipv4, AdminUpdateNodeRequest{Name: strptr("renamed-node")})
+	require.Equal(t, "unknown", reloadNode(t, ipv4).IPType)
 }
