@@ -44,11 +44,12 @@ type TunnelSectionConfig struct {
 
 // NodeSectionConfig holds node identity configuration
 type NodeSectionConfig struct {
-	IPv4    string `yaml:"ipv4"`                 // Node IPv4 address (optional, auto-detected)
-	IPv6    string `yaml:"ipv6"`                 // Node IPv6 address (optional, auto-detected)
-	Name    string `yaml:"name"`                 // Node display name (optional, defaults to IPv4)
-	Country string `yaml:"country" default:"US"` // Country code (optional, auto-detected)
-	Region  string `yaml:"region"`               // Server region/datacenter (optional, defaults to country)
+	IPv4    string `yaml:"ipv4"`                          // Node IPv4 address (optional, auto-detected)
+	IPv6    string `yaml:"ipv6"`                          // Node IPv6 address (optional, auto-detected)
+	Name    string `yaml:"name"`                          // Node display name (optional, defaults to IPv4)
+	Country string `yaml:"country" default:"US"`          // Country code (optional, auto-detected)
+	Region  string `yaml:"region"`                        // Server region/datacenter (optional, defaults to country)
+	IPType  string `yaml:"ip_type" default:"unknown"`     // IP type: residential, datacenter, unknown
 }
 
 // RelaySectionConfig holds relay-specific configuration
@@ -179,6 +180,10 @@ func loadConfig() *Config {
 				cfg.Tunnel.HopPortEnd = port
 				slog.Info("Read hop_port_end from env", "component", "config", "port", cfg.Tunnel.HopPortEnd)
 			}
+		}
+		if v := os.Getenv("K2_IP_TYPE"); v != "" {
+			cfg.Node.IPType = v
+			slog.Info("Read ip_type from env", "component", "config", "ip_type", v)
 		}
 
 		var ipData sidecar.IPData

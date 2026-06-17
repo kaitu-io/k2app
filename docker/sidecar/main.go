@@ -73,6 +73,15 @@ func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 	// Private-node activation: echo the one-time claim token back to Center on
 	// registration. Empty for shared-pool nodes (omitempty → no wire change).
 	n.PrivateClaim = cfg.K2Center.PrivateClaim
+	// IP type: always send a value (last-writer-wins contract with Center).
+	// K2_IP_TYPE env overrides; struct tag default:"unknown" ensures the config
+	// field is never empty after defaults.Set(); the fallback here is a belt-and-
+	// suspenders guard for any future path that bypasses config loading.
+	if cfg.Node.IPType != "" {
+		n.IPType = cfg.Node.IPType
+	} else {
+		n.IPType = "unknown"
+	}
 
 	// Auto-generate Tunnel.Domain using sslip.io if not configured
 	if cfg.Tunnel.Domain == "" && n.GetIPv4() != "" {
