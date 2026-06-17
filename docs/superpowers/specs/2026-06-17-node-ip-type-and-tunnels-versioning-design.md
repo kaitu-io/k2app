@@ -9,7 +9,7 @@
 两个看似独立的需求,追查后绑在同一个真实数据缺口上:
 
 1. **tunnels 列表接口不要暴露 `k2v5` 这类内容**。
-2. **接口加一个反馈字段:该节点是否为「家庭IP」(residential)**。
+2. **接口加一个反馈字段:该节点是否为「住宅IP」(residential)**。
 
 ### 现状追查结论
 
@@ -26,17 +26,17 @@
 | `/api/tunnels`、`/api/subs`、`/app/tunnels`、MCP `list_tunnels` | ❌ 读不到 | — |
 | `/api/user/private-nodes`(唯一例外) | ✅ | 直接查 subscription |
 
-根因:当初"代码只表达业务意图、部署细节交给 agent"(commit `569673e0`)时,**业务意图→节点的反向回报这一跳被漏掉了**。结果除了用户自己的订阅详情页,任何节点/隧道维度都看不到家庭 IP。
+根因:当初"代码只表达业务意图、部署细节交给 agent"(commit `569673e0`)时,**业务意图→节点的反向回报这一跳被漏掉了**。结果除了用户自己的订阅详情页,任何节点/隧道维度都看不到住宅 IP。
 
-**关键观察:`Country` / `Region` / `IPv6` 本来就是 sidecar 上报、写进 `SlaveNode` 的**(`api/slave_api_node.go:144-145`)。家庭IP 是同一类节点事实,因此有现成、统一的落地路径——**共享池和私有节点走同一套,不分叉**。
+**关键观察:`Country` / `Region` / `IPv6` 本来就是 sidecar 上报、写进 `SlaveNode` 的**(`api/slave_api_node.go:144-145`)。住宅IP 是同一类节点事实,因此有现成、统一的落地路径——**共享池和私有节点走同一套,不分叉**。
 
-**第二个观察:共享云节点同样需要家庭IP 标记**,而现状对共享池完全没设计(`IPType` 只活在私有节点订阅流)。sidecar 上报路径天然覆盖共享池。
+**第二个观察:共享云节点同样需要住宅IP 标记**,而现状对共享池完全没设计(`IPType` 只活在私有节点订阅流)。sidecar 上报路径天然覆盖共享池。
 
 ## 设计原则
 
 - **ip_type 是节点的一等属性**,归属与 Country/Region 完全同构:sidecar config/env → `SlaveNodeUpsertRequest` → `SlaveNode` 列。
 - **业务意图闭环**:装机 agent 把意图(residential)烤进 k2s docker compose 的 `K2_IP_TYPE` env,sidecar 注册时回报,闭上断掉的环。
-- **运维可纠错**:MCP / 后台可覆盖写入,作为权威纠正。
+- **运维可改**:MCP / 后台可覆盖写入,与 sidecar **平权**(last-writer-wins),不互相特殊保护。
 - **保兼容**:`k2v5://` wire scheme **保留不动**(客户端 k2 core 要解析它,换 scheme 会 brick 老客户端)。"不要用 k2v5" 仅作用在**显示/元数据层**(`protocol` 标签 `k2v5 → k2s`)。
 - **版本化只给滞留旧装机的消费者**(客户端);自己完全控制的消费者(admin/MCP)原地改。
 
@@ -47,7 +47,7 @@
 | admin `/app/tunnels`、MCP `list_nodes`/`list_tunnels` | 完全控制(自己发版) | **原地改**:加 `ipType`、protocol 标签 → `k2s` |
 | 客户端 `/api/tunnels` | 旧装机滞留数月 | **冻结 v1** + 新建 `/api/v20260717/tunnels` |
 | daemon `/api/subs` | 旧装机滞留 | **增量加** `ipType` 字段(老 daemon 忽略未知字段,不升版本) |
-| webapp 隧道列表 | 新 bundle 控制 / 旧装机滞留 | 切到 `/api/v20260717/tunnels`,加「家庭IP」chip |
+| webapp 隧道列表 | 新 bundle 控制 / 旧装机滞留 | 切到 `/api/v20260717/tunnels`,加「住宅IP」chip |
 
 ## 版本化方案:日期标记路径版本
 
@@ -90,23 +90,24 @@ const (
 ### 2. 上报路径(sidecar → Center,与 Country/Region 同构)
 
 **sidecar 配置** `docker/sidecar/config/config.go`:
-- `NodeSectionConfig` 加 `IPType string` `yaml:"ip_type"`(**无默认值**,缺省即不上报)。
+- `NodeSectionConfig` 加 `IPType string` `yaml:"ip_type"`(**默认 `unknown`**,始终上报)。
 - 加环境变量读取 `K2_IP_TYPE`,照 `K2_JUMP_PORT_MIN`(config.go:170-182)的模式注入。
 
 **sidecar 注册请求** `docker/sidecar/sidecar/node.go`:
 - `Node` 加 `IPType` 字段;`main.go NewSidecar` 从 cfg 拷贝(参照 Region,main.go:72-74)。
-- `buildNodeUpsertRequest`(node.go:213-223)带上 `IPType`。
-- `NodeUpsertRequest` 结构加 `IPType string` `json:"ipType,omitempty"`。
+- `buildNodeUpsertRequest`(node.go:213-223)带上 `IPType`(始终带,未配置则为 `unknown`)。
+- `NodeUpsertRequest` 结构加 `IPType string` `json:"ipType"`。
 
 **Center 接收** `api/slave_api_node.go`:
-- `SlaveNodeUpsertRequest` 加 `IPType string` `json:"ipType,omitempty"`(可选)。
-- 写库逻辑(create 分支 line 141-152 / update 分支):
-  - **防误覆盖规则**:仅当 `req.IPType != ""` 时写入 `SlaveNode.ip_type`;为空则**保留现有值**(参照 class/owner 的 preserve 模式 line 158-177)。
+- `SlaveNodeUpsertRequest` 加 `IPType string` `json:"ipType"`。
+- 写库逻辑(create 分支 line 141-152 / update 分支):**无条件写入** `req.IPType` 到 `SlaveNode.ip_type`(空值按 `unknown` 处理)。
 
-**防误覆盖语义**(关键正确性点):
-- 私有节点:compose 设 `K2_IP_TYPE=residential` → sidecar 每次注册稳定断言 → 一致。
-- 共享节点:compose 不设 env → sidecar 省略字段 → 运维经 MCP/后台设的值**永不被注册覆盖**。
-- 若私有节点真换了 IP 性质:运维改 compose env(并经 MCP 同步纠正),re-register 生效。
+**同权同变更语义(last-writer-wins,关键正确性点)**:
+- sidecar 与运维(MCP/后台)对 `ip_type` **平权**,谁后写谁生效,无任何一方被特殊保护。
+- sidecar 每次注册都按自己当前值写,**可覆盖运维改动**;运维经 MCP/后台改也可覆盖当前值——直到下次 register。
+- **持久真值源 = sidecar 的 `K2_IP_TYPE` env**:私有节点装机烤入 `residential` → 每次注册稳定断言;共享节点由运维在 compose 设 env 或经 MCP 改。
+- MCP/后台修改是**即时生效**手段;若要跨 register 持久,需同步更新节点的 `K2_IP_TYPE` env(runbook 说明)。
+- 私有节点真换了 IP 性质:改 compose env,re-register 生效。
 
 **k2s docker compose** `api/docker-compose.yml`:
 - sidecar service 加 `K2_IP_TYPE` env(私有节点由装机 cloud-init 注入,值取自 `ProvisionParams.IPType`)。
@@ -153,7 +154,7 @@ v20260717.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), D
 `webapp/`:
 - 隧道列表 fetch 改打 `/api/v20260717/tunnels`。
 - `webapp/src/services/api-types.ts` `SlaveTunnel` 加 `ipType?: string`。
-- 列表/卡片组件:`ipType === 'residential'` 时渲染「家庭IP」label chip(沿用 Dashboard 既有 chip 视觉)。
+- 列表/卡片组件:`ipType === 'residential'` 时渲染「住宅IP」label chip(沿用 Dashboard 既有 chip 视觉)。
 - 老装机跑老 bundle 打 v1 → 无 `ipType` → 无标签(纯增量,无害)。
 
 ## 单元边界
@@ -162,11 +163,11 @@ v20260717.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), D
 |------|------|------|-----------|
 | `SlaveNode.ip_type` 列 + 常量 | 存储节点 IP 类型 | GORM 迁移 | ✅ 迁移测 |
 | sidecar `K2_IP_TYPE` → upsert | 上报 IP 类型 | config/env | ✅ sidecar 单测 |
-| Center upsert 防误覆盖 | 写入/保留 ip_type | 请求字段 | ✅ handler 测(present/absent 两路) |
+| Center upsert 写 ip_type | 无条件写入(last-writer-wins) | 请求字段 | ✅ handler 测(覆盖既有值) |
 | admin/MCP `update_node` | 运维纠错写入 | PUT 端点 | ✅ 集成测 |
 | `/api/v20260717/tunnels` handler | 干净形态 + ipType | 查询逻辑 | ✅ handler 测 |
 | `/api/subs` ipType 增量 | 暴露 ip_type | Node preload | ✅ handler 测 |
-| webapp chip | 家庭IP 显示 | api-types | ✅ vitest |
+| webapp chip | 住宅IP 显示 | api-types | ✅ vitest |
 
 ## 部署顺序
 
@@ -174,7 +175,7 @@ v20260717.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), D
 2. **Center 上线**:新端点 `/api/v20260717/tunnels` + admin `IPType` 字段 + `/api/subs` 增量 + upsert 接收逻辑。
 3. **MCP build**:`update_node` 工具 + `list_nodes`/`list_tunnels` ipType/k2s 标签。
 4. **sidecar / k2s**:compose 加 `K2_IP_TYPE` env + `private-node-provisioning` runbook 更新。
-5. **webapp bundle**:切 v20260717 + 家庭IP chip(进 desktop/mobile 发版)。
+5. **webapp bundle**:切 v20260717 + 住宅IP chip(进 desktop/mobile 发版)。
 
 ## 不做(YAGNI)
 
