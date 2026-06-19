@@ -537,6 +537,34 @@ type SlaveNodeLoad struct {
 	UsedTrafficBytes         int64 `gorm:"not null;default:0"` // 当前计费周期已使用流量（字节）
 }
 
+// NodeUsage is the runtime traffic-metering MIRROR of a node (1:1 SlaveNode).
+// The NODE is the single authority for quota + cutoff (self-meters host NIC,
+// hard-cuts locally); this table is only Center's node-sourced reflection for
+// display / warnings / visibility / offline derivation — it NEVER drives the
+// node-side cut. Covers all nodes (shared + private). Keyed by NodeID because
+// usage is a property of "what this node's NIC did", orthogonal to which sub
+// owns it. On unregister→recreate (new NodeID) the mirror briefly resets, but
+// the node holds the real counter (persisted baseline) and re-reports next
+// cycle — display-layer cosmetic only. See spec §3.1.
+type NodeUsage struct {
+	ID        uint64 `gorm:"primarykey" json:"id"`
+	CreatedAt int64  `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt int64  `gorm:"autoUpdateTime" json:"updatedAt"`
+
+	NodeID uint64 `gorm:"uniqueIndex;not null" json:"nodeId"` // → SlaveNode.ID (1:1)
+
+	Epoch           int64 `gorm:"not null;default:0" json:"epoch"`              // = node BillingCycleEndAt (node owns; Center follows)
+	UsedBytes       int64 `gorm:"not null;default:0" json:"usedBytes"`          // used in current epoch (max, idempotent)
+	QuotaTotalBytes int64 `gorm:"not null;default:0" json:"quotaTotalBytes"`    // node-reported limit (from .env; 0 = unlimited)
+	LastReportAt    int64 `gorm:"not null;default:0;index" json:"lastReportAt"` // last successful report (Unix sec); offline derivation
+
+	// per-tier warning dedup (compared to Epoch); private lines only
+	Warn70SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
+	Warn80SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
+	Warn90SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
+	Exhausted100SentEpoch int64 `gorm:"not null;default:0" json:"-"`
+}
+
 // GetTrafficUsagePercent 获取流量使用率百分比 (0-100)
 func (l *SlaveNodeLoad) GetTrafficUsagePercent() float64 {
 	if l.MonthlyTrafficLimitBytes == 0 {
