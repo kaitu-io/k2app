@@ -13,139 +13,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
-
-	"github.com/kaitu-io/k2app/api/cloudprovider"
 )
 
-// driveSlaveUsage drives the real api_slave_node_report_usage handler (POST
-// /slave/usage) with the node already injected as context, exactly as
-// SlaveAuthRequired would after Basic Auth. Mirrors slave_api_usage_test.go's
-// driveUsage helper.
-func driveSlaveUsage(t *testing.T, node *SlaveNode, req NodeUsageRequest) *NodeUsageResponse {
-	t.Helper()
-	body, err := json.Marshal(req)
-	require.NoError(t, err)
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/slave/usage", bytes.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("i_am_the_node", node)
-
-	api_slave_node_report_usage(c)
-
-	resp, err := ParseResponse(w)
-	require.NoError(t, err)
-	require.Equal(t, ErrorNone, ErrorCode(resp.Code), "usage 心跳应成功: %s", resp.Message)
-
-	data, err := ParseResponseData[NodeUsageResponse](w)
-	require.NoError(t, err)
-	return data
-}
-
-// TestDedicatedLine_SoldQuotaGovernsCutoff_SurvivesProviderSync is the
-// highest-value regression: it ties the quota-fix (commits 62913d56/782f8f53)
-// to the actual /slave/usage cutoff handler end-to-end.
-//
-// Sequence:
-//  1. A private line sells 2TB. CloudInstance carries that sold quota.
-//  2. Node heartbeats cumulative 1.95TB (>=95% of 2TB) → verdict "stop",
-//     QuotaTotal == 2TB, EpochHardCeilingBytes == 2TB.
-//  3. A provider sync arrives reporting the raw 6TB VPS BUNDLE.
-//  4. Node heartbeats 1.95TB AGAIN → verdict MUST STILL be "stop" and
-//     QuotaTotal MUST STILL be 2TB.
-//
-// Without the sync-skip fix, step 3 would clobber TrafficTotalBytes to 6TB and
-// step 4 would flip to "serve" (1.95TB < 95% of 6TB) — letting an exhausted
-// line keep serving and triggering real AWS overage billing. This proves the
-// sold quota stays authoritative through a provider sync, at the cutoff
-// handler that actually decides serve/stop.
-func TestDedicatedLine_SoldQuotaGovernsCutoff_SurvivesProviderSync(t *testing.T) {
-	testInitConfig()
-	skipIfNoConfig(t)
-
-	now := time.Now().Unix()
-	const fixedIP = "203.0.114.71"
-	const soldQuota = int64(2) << 40 // 2TB sold
-	const bundle = int64(6) << 40    // 6TB provider bundle
-	const report = int64(1995) << 30 // 1.95TB cumulative (>=95% of 2TB, <95% of 6TB)
-	instanceID := "dedline-cutoff-" + time.Now().Format("20060102150405.000000")
-
-	// Self-heal residue from a prior interrupted run (shared dev MySQL).
-	db.Get().Unscoped().Where("ipv4 = ?", fixedIP).Delete(&SlaveNode{})
-	db.Get().Unscoped().Where("ip_address = ?", fixedIP).Delete(&CloudInstance{})
-
-	owner := CreateTestUser(t)
-
-	node := SlaveNode{
-		Ipv4: fixedIP, SecretToken: "dedline-cutoff-secret",
-		Country: "JP", Region: "jp", Name: "dedline-cutoff-node",
-		Class: NodeClassPrivate, PrivateOwnerUserID: &owner.ID,
-	}
-	require.NoError(t, db.Get().Create(&node).Error)
-
-	// CloudInstance carries the SOLD quota (2TB), not the bundle. resetAt in the
-	// future so no lazy epoch reset fires during the test.
-	ci := CloudInstance{
-		Provider: "aws_lightsail", AccountName: "test-account", InstanceID: instanceID,
-		Name: "dedline-cutoff", IPAddress: fixedIP, Region: "jp",
-		TrafficTotalBytes: soldQuota, TrafficUsedBytes: 0, TrafficEpoch: 0,
-		TrafficResetAt: now + 30*86400,
-	}
-	require.NoError(t, db.Get().Create(&ci).Error)
-
-	ciID := ci.ID
-	sub := PrivateNodeSubscription{
-		UserID: owner.ID, OrderID: owner.ID, Status: PNStatusActive,
-		Region: "jp", IPType: IPTypeNonResidential, TrafficTotalBytes: soldQuota,
-		PurchasedAt: now, ExpiresAt: now + 86400,
-		CloudInstanceID: &ciID, SlaveNodeID: &node.ID,
-	}
-	require.NoError(t, db.Get().Create(&sub).Error)
-
-	t.Cleanup(func() {
-		db.Get().Unscoped().Delete(&sub)
-		db.Get().Unscoped().Delete(&ci)
-		db.Get().Unscoped().Delete(&node)
-		db.Get().Unscoped().Delete(owner)
-	})
-
-	// Step 2: heartbeat 1.95TB → stop, quota still 2TB.
-	r := driveSlaveUsage(t, &node, NodeUsageRequest{EpochID: 0, CumulativeBytes: report, Seq: 1, Ts: now})
-	require.Equal(t, "stop", r.Verdict, "1.95TB >= 95% of 2TB sold quota 应 stop")
-	require.Equal(t, soldQuota, r.QuotaTotal, "QuotaTotal 应为卖出配额 2TB")
-	require.Equal(t, soldQuota, r.EpochHardCeilingBytes, "离线硬上限应为卖出配额 2TB")
-	require.Equal(t, report, r.QuotaUsed, "已用应记 1.95TB")
-
-	// Step 3: provider sync reports the 6TB BUNDLE with 0 used. The sync-skip
-	// guard must leave the sold quota / metered usage / epoch untouched.
-	status := &cloudprovider.InstanceStatus{
-		InstanceID:        instanceID,
-		Name:              "dedline-cutoff-synced",
-		IPAddress:         fixedIP,
-		Region:            "jp",
-		TrafficUsedBytes:  0,
-		TrafficTotalBytes: bundle,
-		TrafficResetAt:    time.Unix(now+99999, 0),
-	}
-	account := CloudInstanceAccount{Name: "test-account", Provider: "aws_lightsail"}
-	require.NoError(t, upsertCloudInstance(context.Background(), account, status))
-
-	// Confirm the DB row was NOT clobbered by the bundle.
-	var reloaded CloudInstance
-	require.NoError(t, db.Get().Unscoped().First(&reloaded, ci.ID).Error)
-	require.Equal(t, soldQuota, reloaded.TrafficTotalBytes, "provider sync 不应把卖出配额覆盖为 bundle")
-	require.Equal(t, report, reloaded.TrafficUsedBytes, "provider sync 不应清零自计量用量")
-	// Non-traffic field DID update (proves sync ran, not a no-op).
-	require.Equal(t, "dedline-cutoff-synced", reloaded.Name, "非 traffic 字段应被 provider 更新（证明 sync 真跑了）")
-
-	// Step 4: heartbeat 1.95TB AGAIN → MUST still be "stop", quota still 2TB.
-	// This is the regression proof: without the fix, total would be 6TB → serve.
-	r = driveSlaveUsage(t, &node, NodeUsageRequest{EpochID: 0, CumulativeBytes: report, Seq: 2, Ts: now})
-	require.Equal(t, "stop", r.Verdict, "provider sync 后仍应 stop（卖出配额权威，非 bundle）")
-	require.Equal(t, soldQuota, r.QuotaTotal, "provider sync 后 QuotaTotal 仍为 2TB")
-	require.Equal(t, soldQuota, r.EpochHardCeilingBytes, "provider sync 后硬上限仍为 2TB")
-}
+// NOTE (A3): The former TestDedicatedLine_SoldQuotaGovernsCutoff_SurvivesProviderSync
+// and its driveSlaveUsage helper were removed here. They asserted the OLD
+// verdict-based /slave/usage cutoff (Center deciding serve/stop from CloudInstance
+// quota), a model A3 deletes: /slave/usage is now a pure recorder writing NodeUsage
+// and the node itself is the cutoff authority. The provider-sync-skip guard those
+// steps exercised is independently covered by upsertCloudInstance tests. A4/A5
+// re-establish the over-quota exclusion regression against NodeUsage at the
+// /api/tunnels and /api/subs read paths.
 
 // dedLineUser creates a user at the given app tier with the given shared
 // membership expiry, registering cleanup of the user, its devices, and any

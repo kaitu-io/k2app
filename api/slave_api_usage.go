@@ -8,36 +8,42 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 )
 
+// usageReportIntervalSec + the offline-window constants live in logic_node_usage.go
+// (same package) — single source of truth for the report cadence. Do NOT redeclare
+// it here; the response below returns that constant verbatim.
+
+// Deprecated: these three constants belong to the OLD CloudInstance-based metering
+// and still have live consumers this task does NOT touch (api_user_private_node.go
+// 95% display calc; slave_api_node.go linkCloudInstanceQuota writes TrafficResetAt;
+// two tests seed CloudInstance.TrafficResetAt). KEEP them here so every commit
+// through A4/A5 stays compilable. A6 repoints/degrades the consumers; A7 deletes
+// these. Do NOT delete in A3.
 const (
-	trafficStopThresholdNum = 95 // 95% → stop（整数百分比避免浮点）
+	trafficStopThresholdNum = 95
 	trafficStopThresholdDen = 100
-	// usageReportIntervalSec is defined in logic_node_usage.go as the single
-	// source of truth for report cadence (A2). A3 rewrites this endpoint to
-	// the pure recorder and must not redeclare it.
-	trafficEpochPeriodSec = 30 * 86400 // MVP 月度周期；TrafficResetAt 由 Center 推进
+	trafficEpochPeriodSec   = 30 * 86400
 )
 
-// NodeUsageRequest 节点累计流量上报（非增量，对丢包/重复/乱序鲁棒）。
+// NodeUsageRequest — node-reported cumulative usage (robust to loss/dup/reorder).
+// JSON tags MUST match docker/sidecar NodeUsageRequest exactly.
 type NodeUsageRequest struct {
-	EpochID         int64 `json:"epoch_id"`
-	CumulativeBytes int64 `json:"cumulative_bytes"`
+	EpochID         int64 `json:"epoch_id"`          // node BillingCycleEndAt (node owns)
+	CumulativeBytes int64 `json:"cumulative_bytes"`  // used in current epoch
+	QuotaTotalBytes int64 `json:"quota_total_bytes"` // node .env limit (0 = unlimited)
 	Seq             int64 `json:"seq"`
 	Ts              int64 `json:"ts"`
 }
 
-// NodeUsageResponse Center 裁决 + epoch 身份下发。
+// NodeUsageResponse — Center is a pure recorder now: ack only. No verdict /
+// quota / epoch downstream (the node is the authority).
 type NodeUsageResponse struct {
-	Verdict               string `json:"verdict"` // serve | stop
-	EpochID               int64  `json:"epoch_id"`
-	QuotaTotal            int64  `json:"quota_total"`
-	QuotaUsed             int64  `json:"quota_used"`
-	EpochHardCeilingBytes int64  `json:"epoch_hard_ceiling_bytes"` // 节点离线时本地强制上限
-	NextReportInterval    int64  `json:"next_report_interval"`
+	NextReportInterval int64 `json:"next_report_interval"`
 }
 
-// api_slave_node_report_usage 处理 POST /slave/usage：节点上报累计流量，Center 存
-// max(已见) + 算 95% 阈值 + 回 serve/stop 裁决 + epoch 身份。lazy epoch reset on
-// heartbeat（无需额外 cron）。
+// api_slave_node_report_usage records POST /slave/usage into NodeUsage (keyed by
+// NodeID). Pure recorder: follow node epoch, max used within epoch, adopt
+// node-sourced quota, stamp last_report_at. No cutoff verdict (node-side
+// authority). All nodes report; no private gate.
 func api_slave_node_report_usage(c *gin.Context) {
 	node := ReqSlaveNode(c)
 	if node == nil {
@@ -50,54 +56,31 @@ func api_slave_node_report_usage(c *gin.Context) {
 		return
 	}
 
-	// 找该节点的 CloudInstance（IP 撞回收取最新行）。
-	var ci CloudInstance
-	err := db.Get().Where("ip_address = ?", node.Ipv4).Order("id DESC").First(&ci).Error
+	now := time.Now().Unix()
+	var u NodeUsage
+	err := db.Get().Where("node_id = ?", node.ID).First(&u).Error
 	if err != nil {
-		// 无 CloudInstance（如共享节点或尚未 sync）→ 不计量，放行。
-		Success(c, &NodeUsageResponse{Verdict: "serve", NextReportInterval: usageReportIntervalSec})
+		// First report for this node → create.
+		u = NodeUsage{NodeID: node.ID, Epoch: req.EpochID, UsedBytes: req.CumulativeBytes,
+			QuotaTotalBytes: req.QuotaTotalBytes, LastReportAt: now}
+		if cerr := db.Get().Create(&u).Error; cerr != nil {
+			log.Errorf(c, "[USAGE] create node_usage node=%d: %v", node.ID, cerr)
+		}
+		Success(c, &NodeUsageResponse{NextReportInterval: usageReportIntervalSec})
 		return
 	}
 
-	now := time.Now().Unix()
-	updates := map[string]any{}
-
-	// 1. lazy epoch reset：到期 → Center bump epoch + 清零 used + 推进 TrafficResetAt。
-	if ci.TrafficResetAt > 0 && now >= ci.TrafficResetAt {
-		ci.TrafficEpoch++
-		ci.TrafficUsedBytes = 0
-		ci.TrafficResetAt = now + trafficEpochPeriodSec
-		updates["traffic_epoch"] = ci.TrafficEpoch
-		updates["traffic_used_bytes"] = int64(0)
-		updates["traffic_reset_at"] = ci.TrafficResetAt
+	updates := map[string]any{"quota_total_bytes": req.QuotaTotalBytes, "last_report_at": now}
+	switch {
+	case req.EpochID > u.Epoch: // node entered a new billing cycle → follow + reset
+		updates["epoch"] = req.EpochID
+		updates["used_bytes"] = req.CumulativeBytes
+	case req.EpochID == u.Epoch && req.CumulativeBytes > u.UsedBytes: // same epoch → max
+		updates["used_bytes"] = req.CumulativeBytes
+	} // req.EpochID < u.Epoch (stale/reorder): leave used untouched
+	if uerr := db.Get().Model(&NodeUsage{}).Where("node_id = ?", node.ID).Updates(updates).Error; uerr != nil {
+		log.Errorf(c, "[USAGE] update node_usage node=%d: %v", node.ID, uerr)
 	}
 
-	// 2. 上报归并：仅当节点 epoch == 当前 epoch 才采纳累计值（取 max，幂等抗乱序/重复）。
-	//    epoch 不符（节点落后于刚 reset）→ 不采纳其 cumulative，只把当前 epoch 回给节点令其清零。
-	if req.EpochID == ci.TrafficEpoch && req.CumulativeBytes > ci.TrafficUsedBytes {
-		ci.TrafficUsedBytes = req.CumulativeBytes
-		updates["traffic_used_bytes"] = ci.TrafficUsedBytes
-	}
-
-	if len(updates) > 0 {
-		if err := db.Get().Model(&CloudInstance{}).Where("id = ?", ci.ID).Updates(updates).Error; err != nil {
-			log.Errorf(c, "[USAGE] persist ci=%d: %v", ci.ID, err)
-		}
-	}
-
-	// 3. 裁决：used/total >= 95% → stop。total==0（未配额）→ serve。
-	//    int64 整数算术：2TB*100 不溢出 int64。
-	verdict := "serve"
-	if ci.TrafficTotalBytes > 0 &&
-		ci.TrafficUsedBytes*trafficStopThresholdDen >= ci.TrafficTotalBytes*trafficStopThresholdNum {
-		verdict = "stop"
-	}
-	Success(c, &NodeUsageResponse{
-		Verdict:               verdict,
-		EpochID:               ci.TrafficEpoch,
-		QuotaTotal:            ci.TrafficTotalBytes,
-		QuotaUsed:             ci.TrafficUsedBytes,
-		EpochHardCeilingBytes: ci.TrafficTotalBytes,
-		NextReportInterval:    usageReportIntervalSec,
-	})
+	Success(c, &NodeUsageResponse{NextReportInterval: usageReportIntervalSec})
 }
