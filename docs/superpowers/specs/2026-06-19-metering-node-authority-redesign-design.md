@@ -1,103 +1,101 @@
-# 计量职责重划：节点单一权威 + Center 记录器 + PrivateNodeUsage 表
+# 计量职责重划：节点单一权威 + Center 记录器 + 统一 NodeUsage（全节点）
 
-**状态：** 设计已与产品对齐（2026-06-19），待 review → 进 writing-plans。
+**状态：** 设计已与产品对齐（2026-06-19，含"共享池也统一为自量+硬断"的决策），待 review → 进 writing-plans。
 
-**Goal（一句话）：** 把专属线路的流量配额与掐断权威从 Center 搬到节点（sidecar），Center 退化为被动记录器 + 离线探测器；并把"计量镜像"从 provider 专属的 `CloudInstance` 抽离到 private-only 的 1:1 `PrivateNodeUsage` 表。
+**Goal（一句话）：** 把**所有节点**（共享 + 私有）的流量计量与超额掐断统一为"节点单一权威"：节点自己量宿主 NIC、按 `.env` 限额本地硬断、定期上报；Center 退化为被动记录器 + 离线/超额派生。计量统一进一张 `NodeUsage` 表（按 NodeID 1:1），退休"provider 账单同步当计量源 + CloudInstance 当计量家 + SlaveNodeLoad 夹带流量"的三处散乱。
 
-**Architecture（2-3 句）：** 节点 sidecar 持有自己的配额（来自 `.env`，运维管）、本地拥有月度重置时钟、本地读宿主 NIC 计量、超额即本地 `docker pause k2s`。sidecar 继续定期向 Center 上报"累计字节 + 自己的配额总量 + 节点本地 epoch"。Center 不再裁决、不再 lazy-reset、不再持有权威配额，只把上报写进 `PrivateNodeUsage`（按 SubID）并记录最后上报时间用于离线派生。
+**Architecture（2-3 句）：** 节点 sidecar 复用既有 `TrafficMonitor`（`.env` `K2_NODE_BILLING_START_DATE` 月度时钟 + `K2_NODE_TRAFFIC_LIMIT_GB` 限额）作为本地唯一权威，enforcer 据此到 100% 即 `pause k2s`；reporter 定期把"已用 + 限额 + 周期"上报 Center。Center 不裁决、不下发配额，只把上报写进 `NodeUsage`（按 NodeID）并记 `last_report_at`；可见性按节点类型派生（共享 ≥95% 隐藏，私有 =100% 隐藏）。
 
 **Tech Stack：** Go（`docker/sidecar/` 独立 module + `api/` Center）、GORM/MariaDB。**不涉及 k2 submodule。**
+
+> ⚠️ **影响面提示**：本方案从"只碰私有"扩大到"碰全体共享池（所有 App 用户的服务节点）"。决策理由 = 简化部署 + 简化 Center 排查（见 §1.3）。代价 = 更大的回归/灰度面（§8）。
 
 ---
 
 ## 1. 背景与动机
 
-### 现状（已读代码确认 2026-06-19）
+### 1.1 现状（已读代码核实 2026-06-19）
 
-- **节点侧** `docker/sidecar/sidecar/enforcer.go` 已经在本地掐断（超额 `docker pause k2s`，持久化 cutoff 状态，重启自愈）。✅
-- **但权威在 Center**：enforcer 的 `quotaTotal/quotaUsed/epochID` 来自 `usage_reporter` 的 `SetQuota`，而那是 Center `/slave/usage` 响应回的 `CloudInstance.TrafficTotalBytes / TrafficUsedBytes / TrafficEpoch`。节点 `.env` 的 `K2_NODE_TRAFFIC_LIMIT_GB` 当前只用于显示，不参与掐断。
-- **Center** `slave_api_usage.go` 是"裁判 + lazy epoch reset"：按 IP 撞 `CloudInstance`，算 95% verdict，bump epoch，下发配额。无 cron（lazy reset on heartbeat）。
+- **节点侧 `TrafficMonitor`（`traffic.go`/`collector.go`）已是所有节点共用代码**（`main.go:159` 无条件启 Collector）：吃 `K2_NODE_BILLING_START_DATE` + `K2_NODE_TRAFFIC_LIMIT_GB`，`calculateNextCycleEnd/checkAndResetCycle` 已做按 day-of-month 的月度重置，`GetTrafficStats()` 已返回 `{BillingCycleEndAt, MonthlyTrafficLimitBytes, UsedTrafficBytes}`。**当前仅喂 health 上报，不掐断。**
+- **私有掐断**（`enforcer.go`+`usage_reporter.go`，`PrivateClaim!=""` 才启）：enforcer 靠 Center `SetQuota` 下发配额硬断，另开了第二个 NIC 读取器（`host_nic.go`）。
+- **Center 计量散在三处**：
+  1. 共享池超额（`isTunnelOverQuota` 95% 隐藏）读 `CloudInstance.TrafficUsedBytes` ← **provider 账单同步**（`worker_cloud.go`，曾出 netns 读错 bug）。
+  2. 节点自报用量 → `SlaveNodeLoad`（仅负载评分用，`slave_api_report.go`）。
+  3. 私有 `/slave/usage` → 写 `CloudInstance`（裁决 + lazy epoch reset）。
 
-### 三个结构性硬伤
+### 1.2 三个结构性硬伤
 
-1. **计量寄生在 provider 专属的 `CloudInstance` 上。** `/slave/usage` 明确写：`无 CloudInstance（共享节点 / 未 sync）→ 不计量放行`。产品方向是任意 VPS / 搬瓦工 / 住宅 IP / BYO，这些可能**没有 CloudInstance 行** → 私有节点计量裸奔。
-2. **IP 匹配脆弱**：`WHERE ip_address = node.Ipv4 ORDER BY id DESC` 是 IP 回收/撞行的老雷（P0 同类）。而上报本来带认证（`ipv4:secret` → 直接是某 `SlaveNode`），绕去按 IP 撞 CloudInstance 既脆又多余。
-3. **配额总量三份**：`sub.TrafficTotalBytes`（售出）/ `CloudInstance.TrafficTotalBytes`（执行）/ 节点 `.env`（将成权威）。三份漂移 = #16 reconciler 要对账的根。
+1. **计量寄生在 provider 专属的 `CloudInstance` 上**：无 CloudInstance 的节点（住宅/SSH-standalone/BYO）计量裸奔。
+2. **IP 匹配脆弱**：`/slave/usage` 按 `ip_address` 撞 `CloudInstance`（IP 回收/撞行，P0 同类雷）。
+3. **数据散三处**：排查一个"用量/超额"问题要对三张表三条路 —— 正是运维痛点。
 
-### 产品决策（2026-06-19 与用户确认）
+### 1.3 产品决策（2026-06-19 与用户确认）
 
-1. **月度重置时钟归节点，且属于运维人员的工作**（Center 完全不碰 epoch，只跟随节点上报的 epoch）。
-2. **节点必须确保上报已用字节**；Center 记录最后上报时间，超过阈值即判该节点 offline。
-3. **流量处理 + 掐断完全是 sidecar 的责任**，超了直接掐，且仍定期上报 Center。
-4. 计量镜像**从 `CloudInstance` 挪到独立 1:1 `PrivateNodeUsage` 表**（按变化频率 + 职责分离：sub 是慢变业务快照，usage 是 60s 高频运行时反射）。
+1. **月度重置时钟归节点 + 运维管**（Center 不碰 epoch，只跟随节点上报）。
+2. **节点必须定期上报已用字节**；Center 记 `last_report_at`，静默超阈值判 offline。
+3. **流量处理 + 掐断是节点（sidecar）的责任**，超了直接掐，且仍定期上报。
+4. 计量从 `CloudInstance` 抽到独立表（按变化频率 + 职责分离）。
+5. **共享池也统一为"自量 + 硬断"**。理由（用户原话）：**简化部署方案 + 简化 Center 问题排查**。
+   - 掐断时 sidecar 持续上报"已用≥限额"，Center 据此立即把节点从隧道列表隐藏 → 客户端刷新看不到 → 自动改挑别的。**与现在 95% 软隐藏同机制**，靠"已用≥限额"确定信号驱动（不依赖离线计时器），更可靠。
+   - 唯一增量：硬断会断掉该节点上的活动连接（vs 95% 软隐藏只挡新连接）。等同"节点宕机/重启"，客户端（桌面自动重挑 / 手机重连取刷新后列表）本就会处理；一次可恢复抖动。
 
 ---
 
-## 2. 最终职责划分
+## 2. 最终职责划分（适用所有节点）
 
-| 维度 | 节点 / sidecar（单一权威） | Center（被动记录 + 离线探测） |
+| 维度 | 节点 / sidecar（单一权威） | Center（被动记录 + 派生） |
 |---|---|---|
-| 配额数字 | **权威**，来自 `.env`（运维写入/管理） | 只存一份 node-sourced 拷贝（显示/预警/可见性，非权威） |
-| 月度重置时钟 | **节点本地拥有**，锚点在 `.env`（运维的工作） | 不参与，只跟随节点上报的 `epoch` |
-| 计量 | 读宿主 NIC | 不计量 |
-| 掐断决策 + 执行 | **节点本地判断 + `docker pause k2s`** | 不判断、不裁决 |
-| 上报 | 定期上报「累计字节 + 自己的配额总量 + epoch」 | 收下、按 epoch 取 max、记 `last_report_at` |
+| 配额数字 | **权威**，来自 `.env`（运维写入/管理；0 = 不限不掐） | 只存 node-sourced 拷贝（显示/预警/可见性，非权威） |
+| 月度重置时钟 | **节点本地拥有**，锚点 `K2_NODE_BILLING_START_DATE`（运维的工作） | 不参与，只跟随节点上报的 `epoch` |
+| 计量 | 读宿主 NIC（`TrafficMonitor`） | 不计量 |
+| 掐断决策 + 执行 | **节点本地判断 + `docker pause k2s`**（到 100%） | 不判断、不裁决 |
+| 上报 | 定期上报「已用 + 限额 + 周期标识」 | 收下、按 epoch 取 max、记 `last_report_at` |
+| 可见性 | —— | 按节点类型派生：**共享 ≥95% 隐藏**；**私有 =100% 隐藏**（私客该用满自己买的额度） |
 | 离线 | —— | `last_report_at` 静默超阈值 → 读时派生 offline（无 cron） |
-| 预警 70/80/90 + 客户端「流量耗尽」可见性 | —— | 基于 node-sourced 数字算，不影响真实掐断 |
+| 预警 70/80/90 | —— | 私有线路基于 node-sourced 数字算（共享池无客户预警） |
 
-### 三层配额所有权
+### 2.1 统一的好处（对应决策 1.3.5）
+
+- **一条上报路**：所有节点自报 → `/slave/usage` → 一张 `NodeUsage` 表。排查只看一处。
+- **一套部署**：所有节点同一 compose + 同一组 `.env`（限额 + billing date）。不再分"私有加 X、共享不加"。
+- **退休** provider 账单同步当计量源（连带其 netns bug 类）、`CloudInstance` 当计量家、`SlaveNodeLoad` 夹带流量。
+- 节点侧 `TrafficMonitor` 本就共用 → 只需把 enforcer + reporter 的"私有 gate"去掉，让它们在所有节点运行。
+
+### 2.2 三层配额所有权
 
 | 角色 | 住哪 | 性质 |
 |---|---|---|
-| 售出业务量（如 2TB，不可变快照） | `PrivateNodeSubscription.TrafficTotalBytes`（已有，不动） | 业务事实 |
-| 运营权威（节点据此掐断） | 节点 `.env` `K2_NODE_TRAFFIC_LIMIT_GB`（运维管） | 单一权威 |
-| Center 镜像（显示/预警/可见性/离线） | **新 `PrivateNodeUsage`（SubID 1:1）** | node-sourced，非权威 |
+| 售出业务量（私有线路，如 2TB 不可变快照） | `PrivateNodeSubscription.TrafficTotalBytes`（已有，不动） | 业务事实（仅私有） |
+| 运营权威（节点据此掐断，所有节点） | 节点 `.env` `K2_NODE_TRAFFIC_LIMIT_GB`（运维管） | 单一权威 |
+| Center 镜像（显示/预警/可见性/离线，所有节点） | **新 `NodeUsage`（NodeID 1:1）** | node-sourced，非权威 |
 
 ---
 
-## 2.3 共享节点 vs 私有节点：为什么不合并（已读代码核实 2026-06-19）
-
-直觉上"共享也记流量、也处理超额，应该统一"——核实后**只有节点侧的计量代码是共用的，超额处理两者本质不同**，强行合并会把"软降权"与"硬掐断"两种语义搅在一起。
-
-| 维度 | 共享池 | 私有线路 |
-|---|---|---|
-| 超额动作 | **软**：≥95% 从 `/api/tunnels` 隐藏（不再分新连接），老连接不动 | **硬**：=100% 节点 sidecar `pause k2s` |
-| 用量来源 | **provider 账单同步**（`worker_cloud.go` 从云 API 拉 → 写 `CloudInstance.TrafficUsedBytes`） | **节点自量宿主 NIC 自报**（→ `PrivateNodeUsage`） |
-| 判据函数 | `isTunnelOverQuota(*CloudInstance)`（95%，**本次不动**） | `isPrivateTunnelExhausted` 改读 `*PrivateNodeUsage`（100%） |
-| 服务对象 | 我们自有机群，负载均衡，保 provider 不超量计费 | 单客户一条专线，保售出额度不被超用 |
-
-**已核实的关键事实：**
-- **节点侧 `TrafficMonitor` 是所有节点共用的同一份代码**（`main.go:159` 无条件启 Collector）——计量本就 common，无重复可消除。差别仅在私有节点**额外**跑 enforcer（硬掐）。
-- **节点状态上报**（`/slave report_status` → `SlaveNodeLoad`）写的是**负载评分时序**，含 `UsedTrafficBytes` 但**不写** `CloudInstance.TrafficUsedBytes`。
-- 共享池 95% 门读的 `CloudInstance.TrafficUsedBytes` 来自 **provider 同步**（`worker_cloud.go`），**不是**节点自报，也**不经** `/slave/usage`（私有专属）。
-
-**边界结论：** 本次改动**完全不触碰共享路径**。`/slave/usage` 私有专属（按节点 `PrivateSubID` 解析，shared 节点根本不调它）；`isTunnelOverQuota` + `worker_cloud` provider 同步保持原样；`CloudInstance` traffic 列保留，部分正是给共享池用。私有计量搬到 `PrivateNodeUsage`，共享计量留在 `CloudInstance`——两套各管各的，不是遗漏。
-
-**显式非目标（future，不在本次）：** 让共享池也改成"节点自量 + 硬断"。共享是自有机群、软降权已够用，且自量比 provider 账单多一层（住宅/无 API 的 provider 才有意义）。私有线路产品**不需要**它，YAGNI，留待真有需求再做（关联 [[#18]] 思路）。
-
 ## 3. 数据模型
 
-### 3.1 新表 `PrivateNodeUsage`（`api/model_private_node.go`）
+### 3.1 新表 `NodeUsage`（`api/model.go`，按 NodeID 1:1）
 
 ```go
-// PrivateNodeUsage 是专属线路的运行时计量镜像（1:1 PrivateNodeSubscription）。
-// 节点是配额与掐断的单一权威；本表只是 Center 侧的 node-sourced 反射，供显示、
-// 预警、客户端「流量耗尽」可见性、离线派生使用 —— 绝不参与节点掐断决策。
-// 从 CloudInstance 抽离的动机见 spec §1：计量不该寄生在 provider 专属概念上。
-type PrivateNodeUsage struct {
+// NodeUsage 是节点流量的运行时计量镜像（1:1 SlaveNode）。节点是配额与掐断的单一
+// 权威；本表只是 Center 侧的 node-sourced 反射，供显示、预警、隐藏/可见性、离线
+// 派生 —— 绝不参与节点掐断决策。覆盖所有节点（共享 + 私有）；从 CloudInstance
+// 抽离的动机见 §1.2。按 NodeID 键：用量是"这台节点的 NIC 做了多少"的属性，与
+// 它属于谁（私有 sub）正交。节点 unregister→recreate 换 NodeID 时镜像会短暂重置，
+// 但节点持有真实计数（持久化基线 §4.4），下个上报周期即补齐 —— 纯显示层 cosmetic。
+type NodeUsage struct {
 	ID        uint64 `gorm:"primarykey" json:"id"`
 	CreatedAt int64  `gorm:"autoCreateTime" json:"createdAt"`
 	UpdatedAt int64  `gorm:"autoUpdateTime" json:"updatedAt"`
 
-	SubID uint64 `gorm:"uniqueIndex;not null" json:"subId"` // → PrivateNodeSubscription.ID（1:1）
+	NodeID uint64 `gorm:"uniqueIndex;not null" json:"nodeId"` // → SlaveNode.ID（1:1）
 
 	// node-sourced 反射（节点权威，Center 只记录）
-	Epoch           int64 `gorm:"not null;default:0" json:"epoch"`           // 节点上报的计费周期身份（节点拥有，Center 跟随）
-	UsedBytes       int64 `gorm:"not null;default:0" json:"usedBytes"`       // 当前 epoch 内累计已用（取 max，幂等抗乱序/重复）
-	QuotaTotalBytes int64 `gorm:"not null;default:0" json:"quotaTotalBytes"` // 节点上报的配额总量（来自节点 .env，显示/预警用）
+	Epoch           int64 `gorm:"not null;default:0" json:"epoch"`              // = 节点 BillingCycleEndAt（节点拥有，Center 跟随）
+	UsedBytes       int64 `gorm:"not null;default:0" json:"usedBytes"`          // 当前 epoch 内累计已用（取 max，幂等抗乱序/重复）
+	QuotaTotalBytes int64 `gorm:"not null;default:0" json:"quotaTotalBytes"`    // 节点上报的限额（来自 .env；0=不限）
 	LastReportAt    int64 `gorm:"not null;default:0;index" json:"lastReportAt"` // 最后一次成功上报 Unix 秒（离线派生）
 
-	// 预警去重（与 Epoch 比对；!= 才发，发后置当前 epoch）
+	// 预警去重（与 Epoch 比对；!= 才发，发后置当前 epoch）—— 私有线路用
 	Warn70SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
 	Warn80SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
 	Warn90SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
@@ -105,71 +103,65 @@ type PrivateNodeUsage struct {
 }
 ```
 
-### 3.2 `CloudInstance`（回归本职）
+### 3.2 `CloudInstance` / `SlaveNodeLoad`（计量退役）
 
-- `TrafficUsedBytes / TrafficTotalBytes / TrafficResetAt / TrafficEpoch / Warn*SentEpoch` 字段**保留不删**（避免破坏性迁移；provider sync `worker_cloud.go` 仍写它们用于 admin cloud 视图 / provider 账单参考）。
-- 这些字段对**专属线路的计量与掐断不再有任何权威性** —— 它们对私有节点降级为"provider 同步来的参考值"。一次性清理（删列）留待后续迁移，不在本次范围。
+- `CloudInstance` 的 `TrafficUsedBytes/TrafficTotalBytes/TrafficResetAt/TrafficEpoch/Warn*SentEpoch` **保留不删**（避免破坏性迁移），但**不再是任何节点计量/掐断/可见性的权威源**。`worker_cloud.go` provider 同步可继续写它们供 admin cloud 视图当 provider 账单参考，或后续清理。
+- `SlaveNodeLoad` 的 `UsedTrafficBytes/MonthlyTrafficLimitBytes/BillingCycleEndAt` 不再被超额/可见性消费（负载评分本身不依赖它们）；可保留为历史或后续清理。
+- 一次性删列留待后续迁移，不在本次范围。
 
 ### 3.3 不变量
 
-- **I-Quota**：节点 `.env` 配额是掐断唯一权威；Center 的任何拷贝（PrivateNodeUsage / CloudInstance）都不参与掐断。
-- **I-Bundle**（成本天花板，沿用 provisioning 铁律#7）：VPS bundle 含量 ≥ 卖出配额 + headroom。即使 sidecar 整个失效、k2s 裸奔，最坏只是超卖亏毛利，不爆 provider 账单。
-- **I-Report**：节点掐断后**仍持续上报**（sidecar 与 k2s 是不同容器，pause k2s 不影响 sidecar 心跳）→ Center 不会把"被掐的活节点"误判 offline。
+- **I-Quota**：节点 `.env` 限额是掐断唯一权威；Center 任何拷贝都不参与掐断。
+- **I-Bundle**（成本天花板，沿用 provisioning 铁律#7）：VPS bundle 含量 ≥ 限额 + headroom。即使 sidecar 整个失效、k2s 裸奔，最坏只是超量服务亏点，不爆 provider 账单。
+- **I-Report**：节点掐断后**仍持续上报**（sidecar 与 k2s 是不同容器，pause k2s 不影响 sidecar）→ Center 立即据"已用≥限额"隐藏节点；不依赖离线计时器。
+- **I-Hide-on-Exhaust**：节点从列表消失由"已用≥限额"确定信号驱动（≠ offline 派生）。offline 是另一条独立信号（节点没上报了）。
 
 ---
 
 ## 4. 节点侧改动（`docker/sidecar/`）
 
-> **关键事实（已读代码 2026-06-19）：节点本地的配额 + 月度时钟早已存在，不要重新发明。**
-> sidecar 现在有**两条并行计量路径**，都读宿主 NIC：
-> 1. **`Collector` + `TrafficMonitor`**（`collector.go`/`traffic.go`，`main.go:159` **所有节点无条件**启动）：吃 `K2_NODE_BILLING_START_DATE`（yyyy-MM-dd，运维已可设，已接进 compose/entrypoint/demo.env）+ `K2_NODE_TRAFFIC_LIMIT_GB`。`TrafficMonitor.calculateNextCycleEnd/checkAndResetCycle` **已经做按 day-of-month 的月度周期重置**，`GetTrafficStats()` 已返回 `{BillingCycleEndAt, MonthlyTrafficLimitBytes, UsedTrafficBytes}`。当前仅用于 health 上报，**不参与掐断**。
-> 2. **`UsageReporter` + `Enforcer` + `HostNICMeter`**（私有节点 `PrivateClaim!=""` 才启）：较新的掐断路径，enforcer 靠 Center `SetQuota` 下发配额。**独立的第二个 NIC 读取器。**
->
-> 所以本次节点侧改动的本质是 **统一 + 权威翻转**：让 enforcer 的掐断从已存在的 `TrafficMonitor` 本地配额/周期出发（而不是 Center），并消除两条路径的 NIC 读取重复。**不新增任何 epoch-anchor env。**
+> 节点本地配额 + 月度时钟已存在（`TrafficMonitor` + `K2_NODE_BILLING_START_DATE` + `K2_NODE_TRAFFIC_LIMIT_GB`，已接进 compose/entrypoint/demo.env）。本次是**统一 + 权威翻转 + 去私有 gate**，不新增 epoch-anchor env。
 
-### 4.1 enforcer 改吃本地 `TrafficMonitor`（权威翻转）
+### 4.1 enforcer 改吃本地 `TrafficMonitor`，且在所有节点运行
 
-- `enforcer` 不再消费 Center 回包的 `QuotaTotal/QuotaUsed/EpochID`，也不再需要独立的 `HostNICMeter`。
-- 掐断判据改为读 `TrafficMonitor.GetTrafficStats()`：`MonthlyTrafficLimitBytes > 0 && UsedTrafficBytes >= MonthlyTrafficLimitBytes` → `docker pause k2s`；反之 unpause。沿用现有 5s reconcile + `cutoff.state` 持久化（重启重放掐断）。
-- 删除 `usage_reporter → enforcer` 的 `SetQuota`/`quotaSink` 链路。让 private 节点的 enforcer + reporter **共用 Collector 已建的同一个 `TrafficMonitor` 实例**（单一 NIC 读取源，杜绝"enforcer 看到的"与"上报的"漂移）。
+- `main.go` 去掉 `PrivateClaim != ""` 这道 gate：**所有节点**都启 reporter + enforcer。
+- enforcer 不再消费 Center 回包的 `QuotaTotal/QuotaUsed/EpochID`，也不再需要独立 `HostNICMeter`。
+- 掐断判据读 `TrafficMonitor.GetTrafficStats()`：`MonthlyTrafficLimitBytes > 0 && UsedTrafficBytes >= MonthlyTrafficLimitBytes` → `docker pause k2s`；反之 unpause。**限额 0 = 不限不掐**（未设限额的老共享节点行为不变）。沿用 5s reconcile + `cutoff.state` 持久化。
+- 删 `usage_reporter → enforcer` 的 `SetQuota`/`quotaSink`；让 enforcer + reporter **共用 Collector 已建的同一个 `TrafficMonitor`**（单一 NIC 读取源，杜绝漂移）。
 
-### 4.2 月度重置时钟 = 复用现成的 `K2_NODE_BILLING_START_DATE`
+### 4.2 月度时钟 = 复用 `K2_NODE_BILLING_START_DATE`
 
-- **不新增 env。** 节点本地月度周期已由 `TrafficMonitor`（`billing_start_date` 锚点 + day-of-month 重置）拥有，运维通过 `K2_NODE_BILLING_START_DATE` 管理 —— 正是用户说的"时钟归节点 + 运维的工作"。
-- epoch 身份 = 计费周期标识，直接用 `BillingCycleEndAt`（Unix 秒，跨周期单调递增）当 epoch id 上报；Center 见更大值即采纳为新 epoch 并清零（§5.1）。周期切换时 `TrafficMonitor` 已自动 rebaseline（`checkAndResetCycle`）。
-- **provisioning 须确保写入 `K2_NODE_BILLING_START_DATE`**（当前 skill 只必写 `K2_NODE_TRAFFIC_LIMIT_GB`；缺 billing date 时 `TrafficMonitor` 会报错不启用——见 §8 边界）。
+- **不新增 env**。epoch 身份 = `BillingCycleEndAt`（跨周期单调递增）上报；Center 见更大值即采纳新 epoch 并清零（§5.1）。周期切换由 `TrafficMonitor.checkAndResetCycle` 自动 rebaseline。
+- **部署须确保所有节点 `.env` 写 `K2_NODE_BILLING_START_DATE`**（缺它 `NewTrafficMonitor` 报错不启用 → 该节点不计量不掐断，仅 I-Bundle 兜底，见 §8）。
 
 ### 4.3 上报体扩字段
 
-`usage_reporter` 上报 `NodeUsageRequest` 增加 `quota_total_bytes`，并用 `TrafficMonitor` 的周期标识填 `epoch_id`：
-
 ```go
 type NodeUsageRequest struct {
-	EpochID         int64 `json:"epoch_id"`          // = TrafficMonitor.BillingCycleEndAt（节点本地周期标识）
-	CumulativeBytes int64 `json:"cumulative_bytes"`  // = TrafficMonitor.UsedTrafficBytes（当前周期内已用）
+	EpochID         int64 `json:"epoch_id"`          // = TrafficMonitor.BillingCycleEndAt
+	CumulativeBytes int64 `json:"cumulative_bytes"`  // = TrafficMonitor.UsedTrafficBytes
 	QuotaTotalBytes int64 `json:"quota_total_bytes"` // = TrafficMonitor.MonthlyTrafficLimitBytes（新增）
 	Seq             int64 `json:"seq"`
 	Ts              int64 `json:"ts"`
 }
 ```
 
-- 响应只需 ack（`next_report_interval`），reporter 不再依赖响应里的配额/裁决/epoch。
-- 注意：JSON tag 必须与 Center `NodeUsageRequest` 逐字一致（CLAUDE.md 跨层约定）。
+- 响应只需 ack（`next_report_interval`），reporter 不再依赖回包的配额/裁决/epoch。
+- JSON tag 必须与 Center `NodeUsageRequest` 逐字一致（CLAUDE.md 跨层约定）。
 
-### 4.4 重启不丢周期内用量（已存在的隐患，须一并修）
+### 4.4 重启不丢周期内用量（既有隐患，须一并修）
 
-`TrafficMonitor` 启动时把 `cycleStartBytes` 重锚到"当前 NIC 累计"（`traffic.go:55-56`）→ **容器重启会把本周期已用清零**（宿主 NIC 计数虽持久，但 cycleStartBytes 被重置）。一旦 enforcer 以它为权威掐断，这个重启清零会让"已用"缩水、掐断点漂移。须把 `cycleStartBytes` + 当前周期标识持久化（与 `cutoff.state` 同机制），重启时恢复而非重锚。**这是把 TrafficMonitor 提升为掐断权威的前置修复。**
+`TrafficMonitor` 启动把 `cycleStartBytes` 重锚到当前 NIC（`traffic.go:55-56`）→ 容器重启会把本周期已用清零。今天只喂 health 无所谓，一旦升为掐断权威会让掐断点漂移。须把 `cycleStartBytes` + 当前周期标识持久化（与 `cutoff.state` 同机制），重启恢复而非重锚。**这是把 TrafficMonitor 提为掐断权威的前置修复。**
 
 ---
 
 ## 5. Center 侧改动（`api/`）
 
-### 5.1 `slave_api_usage.go` → 纯记录器
+### 5.1 `slave_api_usage.go` → 纯记录器（所有节点）
 
 ```
-node := ReqSlaveNode(c)                       // 已认证（ipv4:secret）
-subID := node.PrivateSubID                    // nil（shared / private-unowned）→ ack serve，不计量
-upsert PrivateNodeUsage by SubID:
+node := ReqSlaveNode(c)                       // 已认证（ipv4:secret）→ NodeID
+upsert NodeUsage by NodeID:
   if req.EpochID > usage.Epoch:               // 节点进入新周期 → 跟随
       usage.Epoch = req.EpochID; usage.UsedBytes = req.CumulativeBytes
   else if req.EpochID == usage.Epoch:
@@ -180,51 +172,49 @@ upsert PrivateNodeUsage by SubID:
 响应：{ next_report_interval }                 // 不再回 verdict / quota / epoch
 ```
 
-**删除**：verdict 计算、lazy epoch reset（Center 不再 author reset）、`trafficStopThreshold*` 常量、Center bump epoch、按 IP 撞 `CloudInstance` 的整段。`NodeUsageResponse` 瘦身为 ack（保留 envelope 形状）。
+**删除**：verdict 计算、lazy epoch reset、`trafficStopThreshold*` 常量、Center bump epoch、按 IP 撞 `CloudInstance`。`NodeUsageResponse` 瘦身为 ack（保留 envelope 形状）。**端点不再私有专属**（所有节点都调）。
 
-### 5.2 可见性 / 耗尽派生改读 `PrivateNodeUsage`
+### 5.2 可见性 / 超额 / 离线派生改读 `NodeUsage`，阈值按类型
 
-- `logic_tunnel_score.go isPrivateTunnelExhausted` 签名从 `(*CloudInstance)` 改为 `(*PrivateNodeUsage)`（或新增按 SubID 解析的 helper），判据 `UsedBytes >= QuotaTotalBytes`。
-- 新增 `isPrivateNodeOffline(usage, now)`：`now - LastReportAt > offlineThreshold`（建议 300s，常量可调）。
-- `entitlement_resolver.go:70`：解析私有线路时，按 sub 取其 `PrivateNodeUsage`，耗尽**或** offline → 从 `/api/subs` 剔除/标注。
+- 单一派生函数（按 `SlaveNode.Class` 取阈值）：
+  - 共享：`UsedBytes >= 0.95 * QuotaTotalBytes`（`QuotaTotalBytes>0`）→ 从 `/api/tunnels` 隐藏。
+  - 私有：`UsedBytes >= QuotaTotalBytes`（100%）→ 从 `/api/subs` 隐藏（`entitlement_resolver`）。
+- `isTunnelOverQuota` / `isPrivateTunnelExhausted` 签名从 `(*CloudInstance)` 改为读该节点 `NodeUsage`（或新 helper 按 NodeID 解析）。
+- 新增 `isNodeOffline(usage, now)`：`now - LastReportAt > offlineThreshold`（建议 300s）。隐藏判定 = 超额 **或** 离线。
 
-### 5.3 预警 worker 改读 `PrivateNodeUsage`
+### 5.3 预警 worker 改读 `NodeUsage`
 
-- `worker_private_node_traffic_warning.go`：扫 active 线路，读其 `PrivateNodeUsage`（`UsedBytes/QuotaTotalBytes` + `Warn*SentEpoch`，去重键 = `Epoch`）。`worker_integration.go` cron 不变（这是发邮件，不是判掐断）。
+- `worker_private_node_traffic_warning.go`：扫 active 私有线路，经 `sub.SlaveNodeID → NodeUsage` 读用量 + `Warn*SentEpoch`，去重键 = `Epoch`。cron 不变。
 
 ### 5.4 用户面板 / DTO
 
-- `api_user_private_node.go`：`TrafficUsedBytes` 改取 `PrivateNodeUsage.UsedBytes`；耗尽判断改 `UsedBytes >= QuotaTotalBytes`（去掉 95% 常量依赖）。
-- `type.go:594-595` DataPrivateNodeSub 注释「来自 CloudInstance」→「来自 PrivateNodeUsage」。
+- `api_user_private_node.go`：`TrafficUsedBytes` 改取该线路节点的 `NodeUsage.UsedBytes`；耗尽判断 `UsedBytes >= QuotaTotalBytes`（去 95% 常量）。
+- `type.go` DataPrivateNodeSub 注释来源「CloudInstance」→「NodeUsage」。
 
-### 5.5 provisioning 链路
+### 5.5 provisioning / provider 同步
 
-- `slave_api_node.go linkCloudInstanceQuota`（写 sold quota 到 CloudInstance）**不再为掐断服务**，可保留为 informational 或删除；其 best-effort 失败已无成本后果（#16 reconciler 因此消亡）。卖出配额经 NodeOperation `params.trafficTotalBytes` → provisioning agent 写入节点 `.env`（已是 skill 既定流程）。
-
-### 5.6 admin cloud 视图
-
-- `api_admin_cloud.go` 保持读 `CloudInstance`（provider 同步视图，shared+private 通用）。专属线路的权威用量经 `PrivateNodeUsage`（user 面板 / 专属 admin 视图）呈现。**边界明确：admin cloud = provider 视角；PrivateNodeUsage = 节点权威视角。** 不在本次合并两者。
+- 卖出配额经 NodeOperation `params.trafficTotalBytes` → provisioning agent 写节点 `.env`（既定流程）。`slave_api_node.go linkCloudInstanceQuota` 不再为掐断服务，可删/降级为 informational（#16 reconciler 因此消亡）。
+- `worker_cloud.go` provider 同步**不再是计量权威**；保留与否取决于 admin cloud 视图是否仍要 provider 账单参考（§3.2）。
 
 ---
 
-## 6. 迁移
+## 6. 迁移与部署
 
-1. `AutoMigrate` 建 `private_node_usages` 表（纯增量，无破坏）。
-2. **无需 backfill**：节点是配额 + epoch 权威，下一个上报周期（≤60s）即自动写满镜像。可选一次性从 CloudInstance 拷 `Warn*SentEpoch` 以避免重发预警（cosmetic，非必须）。
-3. `CloudInstance` traffic 列保留（§3.2）。
-4. 部署序：Center 先上（能收新字段、建表、纯记录器对旧 sidecar 仍兼容——旧 sidecar 不发 `quota_total_bytes` 时镜像 QuotaTotalBytes=0 → 不耗尽、不误掐，安全）→ 再铺新 sidecar（#76）。
-
-### 旧/新 sidecar 兼容
-
-- **旧 sidecar + 新 Center**：旧 sidecar 仍按 Center 回包掐断，但新 Center 回包不再带配额 → 旧 enforcer `haveQuota` 永不为真 → **旧节点不掐断**。⚠️ 因此新 Center 上线后，私有节点掐断依赖新 sidecar 铺开（#76）。过渡期成本由 I-Bundle 兜底。**部署 runbook 必须显式写明这一过渡窗口。**
-- **新 sidecar + 旧 Center**：新 sidecar 本地掐断（不依赖 Center），上报多带的 `quota_total_bytes` 被旧 Center 忽略 → 安全。
+1. `AutoMigrate` 建 `node_usages`（纯增量）。
+2. **无需 backfill**：节点是配额+epoch 权威，下一个上报周期（≤报告间隔）自动写满镜像。可选从 CloudInstance 拷 `Warn*SentEpoch` 避免私有重发预警（cosmetic）。
+3. `CloudInstance`/`SlaveNodeLoad` 流量列保留（§3.2）。
+4. **部署迁移（共享池，新增工作量）**：给所有共享节点 `.env` 写 `K2_NODE_TRAFFIC_LIMIT_GB`（= bundle 含量或安全分数）+ `K2_NODE_BILLING_START_DATE`。**未设限额（=0）的节点：不掐断、不隐藏**（行为同今日"无限"，安全回退）。
+5. **部署序 + 兼容**：
+   - 新 Center 先上：对**旧 sidecar** 安全 —— 旧私有 sidecar 靠 Center 回包配额掐断，新 Center 回包瘦身 → 旧私有节点过渡期**不硬断**（靠 I-Bundle 兜底）；旧共享 sidecar 本就不调 `/slave/usage`，无影响。
+   - 新 sidecar 后铺（#76，现在 gate 整个池）：本地掐断不依赖 Center，多带的 `quota_total_bytes` 旧 Center 忽略 → 安全。
+   - **runbook 必须写明过渡窗口**：新 Center 上线后到新 sidecar 全量铺开前，硬断依赖 I-Bundle，不依赖软件。
 
 ---
 
 ## 7. #16 处置
 
 - **reconciler/告警半 → 关闭（设计上消亡）**：Center 不再持有权威配额，无漂移可对账。
-- **deprovision 清 `bound_ipv4`/绑定半 → 已完成**（main `c6c40780`），归属 P0 身份单一权威（#77），保留。
+- **deprovision 清 `bound_ipv4`/绑定半 → 已完成**（main `c6c40780`），归 P0 身份单一权威（#77），保留。
 - 任务板：#16 标记 closed（superseded by 本 spec）。
 
 ---
@@ -233,24 +223,26 @@ upsert PrivateNodeUsage by SubID:
 
 | 场景 | 行为 | 兜底 |
 |---|---|---|
-| sidecar 单独挂、k2s 没挂 | 路由器直连 k2s:443 仍可用，但**无掐断**；Center 无上报 → 读时判 offline（但节点其实在服务） | I-Bundle：超卖亏毛利，不爆账单。自计量固有代价，用户已接受 node-authority |
-| 节点上报中断（网络/Center 抖） | 节点本地继续掐断（不依赖 Center）；Center 镜像陈旧 → 可能误判 offline | offline 仅影响可见性提示，不影响节点真实服务；恢复上报即自愈 |
+| **共享节点硬断（到 100%）** | 该节点活动连接被断（vs 95% 软隐藏只挡新连接）；节点已在 95% 起从列表隐藏、新连接早转走 | 等同节点宕机：桌面自动重挑 / 手机重连取刷新列表；硬断极少真触发（95% 已开始排空），触发时防 provider 超量 |
+| sidecar 单独挂、k2s 没挂 | 无掐断；Center 无上报 → 读时判 offline（但节点其实在服务） | I-Bundle 兜底；恢复上报即自愈 |
+| 节点上报中断 | 节点本地继续掐断（不依赖 Center）；镜像陈旧 → 可能误判 offline | offline 仅影响可见性，不影响真实服务 |
 | 上报乱序/重复 | epoch 内取 max，跨 epoch 跟随更大 epoch | 幂等 |
-| 时钟漂移（节点本地月界 vs 计费周期） | 节点按 `K2_NODE_BILLING_START_DATE` 算，运维负责锚点正确 | 运维职责；锚点错只影响重置时点，不影响总量掐断 |
-| 缺 `K2_NODE_BILLING_START_DATE` | `NewTrafficMonitor` 报错（`billingStartDate is required`）→ Collector 计量不启用 → enforcer 无本地权威 → **私有节点不掐断** | provisioning 必写该 env（§4.2）；部署前校验。否则退化成 I-Bundle 兜底 |
-| 配额改档（升/降级线路） | 节点 `.env` 配额固定；MVP 不支持原地升级（[[#18]] defer） | 改档 = 重开线/客服改 `.env` 重启，与既定 MVP 一致 |
+| 缺 `K2_NODE_BILLING_START_DATE` | `TrafficMonitor` 不启用 → 该节点不计量不掐断 | provisioning/部署必写；否则退化 I-Bundle 兜底 |
+| 限额未设（=0） | 不限不掐不隐藏（同今日无限节点） | 安全回退；上限额前靠 I-Bundle |
+| **影响面（决策 1.3.5 的代价）** | 改动触及全体共享池 = 所有 App 用户服务节点 | 更狠的回归测 + 更慢灰度（#46）；新 sidecar 全量铺开是硬门 |
+| 配额改档（升/降级私有线路） | 节点 `.env` 限额固定；MVP 不支持原地升级 | 改档 = 重开线/客服改 `.env` 重启（[[#18]] defer） |
 
 ---
 
 ## 9. 测试策略（TDD）
 
-- **节点侧**（`docker/sidecar` 单元）：enforcer 读 `TrafficMonitor` 掐断（`used>=limit`，不再依赖 Center）；周期切换触发 rebaseline；**重启恢复 `cycleStartBytes` 不清零**（§4.4 回归测）；上报体含 `quota_total_bytes` + 周期标识 epoch。
+- **节点侧**（`docker/sidecar` 单元）：enforcer 读 `TrafficMonitor` 掐断（`used>=limit`，限额 0 不掐）；周期切换 rebaseline；**重启恢复 `cycleStartBytes` 不清零**（§4.4 回归测）；上报体含 `quota_total_bytes` + 周期 epoch；所有节点（去私有 gate）都启 reporter+enforcer。
 - **Center 侧**（集成，真 dev MySQL，`skipIfNoConfig`）：
-  - `/slave/usage`：private 节点 upsert PrivateNodeUsage（epoch 取 max / 跟随新 epoch / 采纳 quota_total / 记 last_report_at）；shared/private-unowned → ack 不计量。
-  - `isPrivateTunnelExhausted(PrivateNodeUsage)` + `isPrivateNodeOffline`：耗尽/离线派生。
-  - `entitlement_resolver`：耗尽或离线 → 剔除/标注。
-  - 预警 worker：读 PrivateNodeUsage，去重键 = Epoch。
-  - 旧 sidecar 兼容：不带 quota_total_bytes → QuotaTotalBytes=0 → 不耗尽不误掐。
+  - `/slave/usage`：任意节点 upsert `NodeUsage`（epoch 取 max / 跟随新 epoch / 采纳 quota_total / 记 last_report_at）。
+  - 可见性派生：共享 95% 隐藏 / 私有 100% 隐藏 / offline 隐藏（按 `Class` 取阈值）。
+  - `entitlement_resolver`：私有耗尽或离线 → 剔除。
+  - 预警 worker：经 `SlaveNodeID → NodeUsage`，去重键 = Epoch。
+  - 旧 sidecar 兼容：共享旧 sidecar 不调 `/slave/usage` → 无 NodeUsage 行 → 不隐藏（同今日）。
 - 整数算术（字节 * 百分比不溢出 int64）沿用现有约定。
 
 ---
@@ -258,13 +250,14 @@ upsert PrivateNodeUsage by SubID:
 ## 10. 文件清单
 
 **节点侧** `docker/sidecar/`
-- 改：`sidecar/enforcer.go`（改吃 `TrafficMonitor` 本地配额/周期，删 `SetQuota`/`HostNICMeter` 依赖）、`sidecar/usage_reporter.go`（上报扩 `quota_total_bytes` + 用周期标识填 epoch、不消费回包配额）、`sidecar/traffic.go`（持久化 `cycleStartBytes`+周期标识，重启恢复——§4.4）、`main.go`（让 private 节点 enforcer+reporter 共用 Collector 的 `TrafficMonitor` 实例）。
-- **不新增 env**（复用 `K2_NODE_BILLING_START_DATE` + `K2_NODE_TRAFFIC_LIMIT_GB`）。可能删：`sidecar/host_nic.go`（若 NIC 读取统一到 `TrafficMonitor`）、reporter 的 `quotaSink` 接口。
-- provisioning skill：确保 `.env` 必写 `K2_NODE_BILLING_START_DATE`（§4.2）。
+- 改：`main.go`（去 `PrivateClaim` gate，所有节点启 reporter+enforcer 并共用 Collector 的 `TrafficMonitor`）、`sidecar/enforcer.go`（改吃 `TrafficMonitor`，删 `SetQuota`/`HostNICMeter`）、`sidecar/usage_reporter.go`（上报扩字段 + 用周期标识填 epoch、不消费回包）、`sidecar/traffic.go`（持久化 `cycleStartBytes`+周期标识，重启恢复 §4.4）。
+- **不新增 env**（复用 `K2_NODE_BILLING_START_DATE` + `K2_NODE_TRAFFIC_LIMIT_GB`）。可能删：`sidecar/host_nic.go`（NIC 读取统一到 `TrafficMonitor`）、reporter 的 `quotaSink`。
 
 **Center 侧** `api/`
-- 建：`model_private_node.go`（+`PrivateNodeUsage`）。
-- 改：`slave_api_usage.go`（纯记录器）、`logic_tunnel_score.go`（耗尽/离线改读 usage）、`entitlement_resolver.go`、`worker_private_node_traffic_warning.go`、`api_user_private_node.go`、`type.go`（注释/来源）、`slave_api_node.go`（linkCloudInstanceQuota 降级，可选）。
-- 迁移：`AutoMigrate` 注册 `PrivateNodeUsage`。
+- 建：`model.go`（+`NodeUsage`）。
+- 改：`slave_api_usage.go`（纯记录器，全节点）、`logic_tunnel_score.go`（超额/离线改读 NodeUsage、阈值按 Class）、`entitlement_resolver.go`、`api_tunnel.go`（共享池隐藏读 NodeUsage）、`worker_private_node_traffic_warning.go`、`api_user_private_node.go`、`type.go`、`slave_api_node.go`（linkCloudInstanceQuota 降级/删）。
+- 迁移：`AutoMigrate` 注册 `NodeUsage`。
 
-**不动**：k2 submodule；`CloudInstance` 结构（列保留）；`worker_cloud.go` provider sync；`api_admin_cloud.go`。
+**部署**：所有共享节点 `.env` 补 `K2_NODE_TRAFFIC_LIMIT_GB` + `K2_NODE_BILLING_START_DATE`；新 sidecar 全量铺开（#76）。
+
+**不动**：k2 submodule；`CloudInstance`/`SlaveNodeLoad` 结构（列保留）；`worker_cloud.go` provider 同步（降为 informational）；`api_admin_cloud.go`（provider 视图）。
