@@ -292,8 +292,14 @@ func TestNftRuleGeneration_DNSRedirect(t *testing.T) {
 	if !strings.Contains(script, "add chain inet k2r dnsredir { type nat hook prerouting priority dstnat") {
 		t.Error("DNS redirect should use a NAT chain, not filter chain")
 	}
-	if strings.Contains(script, "add rule inet k2r prerouting") && strings.Contains(script, "redirect") {
-		t.Error("redirect rules should NOT be in the filter chain")
+	// redirect must live ONLY in the dnsredir/dnsredir_out NAT chains, never in the
+	// filter `prerouting` chain. Scan per-line: the crude whole-script Contains&&Contains
+	// false-positives because the script legitimately has both a `prerouting` filter chain
+	// (TPROXY rules) and a `redirect` (in the separate dnsredir NAT chain).
+	for _, line := range strings.Split(script, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "add rule inet k2r prerouting") && strings.Contains(line, "redirect") {
+			t.Errorf("redirect rule must not be in the filter (prerouting) chain: %q", line)
+		}
 	}
 }
 
