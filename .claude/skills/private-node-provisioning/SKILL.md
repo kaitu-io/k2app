@@ -31,7 +31,7 @@ This is a **sibling** of `kaitu-node-ops`. Where that skill operates *existing* 
 A private node is the **exact same** `k2s + k2-sidecar` stack as a shared node (see `kaitu-node-ops` Step 2), deployed from the **same single** `docker-compose.yml`. The only difference is one `.env` variable — `K2_PRIVATE_CLAIM` — which the sidecar reads and which switches on two behaviors, both inside the sidecar:
 
 1. **Claim carriage (activation)** — the sidecar carries `K2_PRIVATE_CLAIM` on registration. Center flips that node's `Class=private`, binds the owner, and activates the owner's subscription. Activation is **not** in the agent's hands.
-2. **Host-NIC self-metering (cost gate)** — when `K2_PRIVATE_CLAIM` is set, the **sidecar** runs a metering loop: it reads the **host** NIC byte counters (`/host/proc/net/dev`, already mounted) and `POST`s cumulative bytes to `{centerURL}/slave/usage` (Basic auth `base64(ipv4:secret)`, same node credentials it registers with). Center records the usage into the owner's quota ledger. **Enforcement is Center-side and automatic**: at ≥95% of sold quota Center rejects new device auth (402) and hides the node from `/api/tunnels` + `/api/subs` — no client lands on an over-quota node. The k2s data-plane is **not** involved in metering. Shared-pool nodes (no `K2_PRIVATE_CLAIM`) never start the reporter → byte-for-byte identical to today.
+2. **Host-NIC self-metering + node-side cutoff (cost gate)** — the **sidecar** `TrafficMonitor` reads the **host** NIC byte counters (`/host/proc/net/dev`, already mounted) against a monthly cycle (`K2_NODE_BILLING_START_DATE`) and a limit (`K2_NODE_TRAFFIC_LIMIT_GB`). **The node is the single authority**: it hard-cuts k2s locally (pauses the container) when `used ≥ limit − 500MB`, and fail-closes (self-pauses) if metering breaks for 3 cycles. It also `POST`s usage to `{centerURL}/slave/usage` (Basic auth `base64(ipv4:secret)`); Center mirrors it into `NodeUsage` and, derived from that, hides over-quota/offline nodes from `/api/tunnels` + `/api/subs` so no client lands on a dead/overage node. **Center does NOT decide the cutoff.** Metering runs on **every** node that has a billing date set (shared + private); `K2_PRIVATE_CLAIM` controls only identity/activation, not metering.
 
 > **Why host-NIC, not k2s app-bytes:** the NIC counter is the number the provider actually bills, is provider-agnostic (works where the provider has no traffic API), and keeps the tunnel data-plane decoupled from billing. (This supersedes the retired "Option D" in-k2s reporter — there is no longer a `docker-compose.private.yml` override.)
 
@@ -132,14 +132,15 @@ Exact variables and their sources:
 | `K2_CENTER_URL` | `identity.centerUrl` | sidecar (registration + `/slave/usage`) + k2v4-slave | no |
 | `K2_DOMAIN` | `identity.domain`, or **empty** | sidecar (empty → auto `{ipv4-with-dashes}.sslip.io`) | no |
 | `K2_VERSION` | chosen pin (not `:latest`) | image tags | no |
-| `K2_NODE_TRAFFIC_LIMIT_GB` | `job.trafficTotalBytes / 1024^3` | display/load reporting | no |
+| `K2_NODE_BILLING_START_DATE` | provisioning date `yyyy-MM-dd` (today) | **sidecar `TrafficMonitor`** — monthly-cycle anchor. **REQUIRED for metering + cutoff**: omit it and the node runs UNCAPPED (no quota cutoff, no usage reports). | no |
+| `K2_NODE_TRAFFIC_LIMIT_GB` | `job.trafficTotalBytes / 1024^3` | **sidecar — the hard cutoff limit**: node pauses k2s when used ≥ limit − 500MB; also reported to Center for display/score. `0` = unlimited | no |
 | `K2_NODE_NAME` | `pn-<subId>` | registration meta | no |
 | `K2_NODE_REGION` | `job.region` | registration meta | no |
 | `K2_IP_TYPE` | `job.ipType` (`residential` / `non_residential`; omit → `unknown`) | **sidecar** — reported on registration → Center records `SlaveNode.ip_type` (drives 住宅IP visibility in `/api/v20260717/tunnels` + admin/MCP). Last-writer-wins with ops `update_node`. | no |
 
 **How the private node differs (all in the sidecar, base compose only):**
-- `K2_PRIVATE_CLAIM` → the **sidecar** (base compose passes `K2_PRIVATE_CLAIM=${K2_PRIVATE_CLAIM:-}`). The sidecar registers and carries the claim (Center activates), **and** — because the claim is non-empty — starts the host-NIC usage reporter.
-- The sidecar already holds `K2_NODE_SECRET` and `K2_CENTER_URL` (base compose) and auto-detects its public IPv4 at registration, so it needs **no extra env** to report usage. There is no k2s-side metering and no compose override.
+- `K2_PRIVATE_CLAIM` → the **sidecar** (base compose passes `K2_PRIVATE_CLAIM=${K2_PRIVATE_CLAIM:-}`). The sidecar registers and carries the claim → Center flips `Class=private`, binds the owner, and activates the sub. The claim is about **identity/activation only**.
+- **Metering + cutoff are independent of the claim and run on every node.** The sidecar's `TrafficMonitor` self-meters the host NIC, hard-cuts k2s locally when `used ≥ limit − 500MB`, and reports usage to Center (mirrored into `NodeUsage`). This requires **`K2_NODE_BILLING_START_DATE`** (cycle anchor) + **`K2_NODE_TRAFFIC_LIMIT_GB`** (the limit) — omit the billing date and the node runs uncapped. The sidecar already holds `K2_NODE_SECRET`/`K2_CENTER_URL` and auto-detects its IPv4, so it needs **no extra env** to report. No k2s-side metering, no compose override.
 
 ## Step 6: Deploy the stack (single compose file)
 
@@ -153,7 +154,7 @@ SCP the canonical base file to `/apps/kaitu-slave/`, then bring up:
 exec_on_node(ip=<ipv4>, "cd /apps/kaitu-slave && docker compose -f docker-compose.yml up -d")
 ```
 
-**Private vs shared is the `.env`, not the compose:** the same `docker-compose.yml` deploys both. A node is private iff its `.env` carries `K2_PRIVATE_CLAIM` — the sidecar then registers the claim (Center activates) and self-meters. A shared-pool node omits `K2_PRIVATE_CLAIM` → the sidecar registers normally and never calls `/slave/usage`. There is no separate override file.
+**Private vs shared is the `.env`, not the compose:** the same `docker-compose.yml` deploys both. A node is private iff its `.env` carries `K2_PRIVATE_CLAIM` — the sidecar registers the claim and Center activates the owner's sub. **Metering/cutoff is NOT tied to the claim** — every node with `K2_NODE_BILLING_START_DATE` set self-meters and reports to `/slave/usage` (shared nodes included). There is no separate override file.
 
 > Updates use `pull + up -d`, **never** `down`.
 
@@ -167,10 +168,10 @@ Run the `kaitu-node-ops` post-deployment checklist (containers Up, sidecar healt
 | Sidecar registered (carried claim) | `docker logs --tail 30 k2-sidecar \| grep "Registration completed"` | `tunnels=1` |
 | Usage reporter started | `docker logs --tail 80 k2-sidecar \| grep "usage-reporter"` | `DIAG: usage-reporter-start` (and periodic `usage-reporter-cycle-ok`) |
 | Node visible in Center | `list_nodes(name=pn-<subId>)` | one `tunnels` entry with the sslip.io domain |
-| Usage recorded in Center | `get_cloud_instance` for the node (or admin cloud list) | `trafficUsedBytes` advancing after some traffic |
+| Metering active (self-meter + report) | `docker logs --tail 80 k2-sidecar \| grep "usage-reporter-cycle-ok"` | periodic lines with advancing `cumulative` host-NIC bytes (usage is mirrored into Center `NodeUsage`, not `CloudInstance`) |
 | Operation flipped to done | `list_node_operations(action=provision, status=done)` (or check the operation) | operation is `done` — **set by node self-registration, NOT by `update_node_operation`** |
 
-If the usage-reporter line is absent, re-check that `K2_PRIVATE_CLAIM` and `K2_NODE_SECRET` are present in `.env` and that the sidecar registered (the reporter only starts when `PrivateClaim != ""`). The sidecar logs `Usage reporter disabled (not a private node)` when the claim is empty.
+If the usage-reporter line is absent, re-check that **`K2_NODE_BILLING_START_DATE`** (+ `K2_NODE_TRAFFIC_LIMIT_GB`) and `K2_NODE_SECRET` are present in `.env`. The reporter + cutoff enforcer start only when the `TrafficMonitor` initialized (billing date set); otherwise the sidecar logs `Metering disabled: no billing date` and runs **uncapped**.
 
 ## Step 8: On failure
 
