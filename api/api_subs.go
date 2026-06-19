@@ -199,17 +199,18 @@ func api_subs(c *gin.Context) {
 	// wrong (see 3e20b8e postmortem), and the tunnel set is tiny (<100).
 	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
 
-	// Batch-fetch CloudInstance rows by node IPv4 so we can compute per-tunnel
-	// RecommendScore via the same code path /api/tunnels uses. Non-cloud nodes
-	// fall through to ComputeRecommendScore(nil) → 0.5 (neutral), keeping them
-	// eligible in pickWeighted without being favored.
-	nodeIPs := make([]string, 0, len(tunnels))
+	// Batch-fetch NodeUsage rows by NodeID (node-authority metering mirror) so we
+	// can compute per-tunnel RecommendScore via the same code path /api/tunnels
+	// uses. Non-metered nodes fall through to ComputeRecommendScore(nil) → 0.5
+	// (neutral), keeping them eligible in pickWeighted without being favored.
+	nodeIDs := make([]uint64, 0, len(tunnels))
 	for _, t := range tunnels {
-		if t.Node != nil && t.Node.Ipv4 != "" {
-			nodeIPs = append(nodeIPs, t.Node.Ipv4)
+		if t.Node != nil && t.Node.ID != 0 {
+			nodeIDs = append(nodeIDs, t.Node.ID)
 		}
 	}
-	instanceMap := getCloudInstancesByIPs(nodeIPs)
+	usageMap := getNodeUsagesByNodeIDs(nodeIDs)
+	now := time.Now().Unix()
 
 	items := make([]SubsTunnel, 0, len(tunnels))
 	for _, t := range tunnels {
@@ -236,27 +237,18 @@ func api_subs(c *gin.Context) {
 			continue
 		}
 
-		// Same over-quota hard-exclude as /api/tunnels. Subscription clients
-		// run weighted-pick over this list — once AWS billing tips into
+		// Same over-quota/offline hard-exclude as /api/tunnels. Subscription
+		// clients run weighted-pick over this list — once billing tips into
 		// overage every byte costs real money, so even a low score is not
 		// safe enough. Admin bypass keeps the path open for triage.
-		inst, hasInst := instanceMap[t.Node.Ipv4]
-		var instPtr *CloudInstance
-		if hasInst {
-			instPtr = &inst
-		}
-		if shouldHideTunnelForUser(instPtr, isAdmin) {
-			log.Warnf(c, "subs: tunnel %d (node=%s, ip=%s) over quota, hiding from non-admin: used=%dB total=%dB",
-				t.ID, t.Node.Name, t.Node.Ipv4,
-				inst.TrafficUsedBytes, inst.TrafficTotalBytes)
+		u := usageMap[t.Node.ID] // nil if no usage row yet
+		if shouldHideTunnelForUser(u, isAdmin, now) {
+			log.Warnf(c, "subs: tunnel %d (node=%s, ip=%s) hidden from non-admin (over-quota/offline)",
+				t.ID, t.Node.Name, t.Node.Ipv4)
 			continue
 		}
 
-		var instData *DataTunnelInstance
-		if hasInst {
-			instData = buildTunnelInstanceData(instPtr)
-		}
-		score := ComputeRecommendScore(instData)
+		score := ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u))
 
 		items = append(items, SubsTunnel{
 			URL:            injectSubsCreds(t.ServerURL, udid, token),

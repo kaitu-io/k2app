@@ -179,7 +179,12 @@ func TestHasActivePrivateLines(t *testing.T) {
 	assert.False(t, has, "超宽限应为 false")
 }
 
-func TestResolveGatewayPrivateTunnelsExcludesOverQuota(t *testing.T) {
+// TestResolveGateway_ExhaustedDroppedViaUsage pins that the resolver now drops a
+// private line whose NodeUsage is over the unified 500MB cutoff reserve — sourced
+// from NodeUsage-by-NodeID, no CloudInstance. The healthy line stays so the router
+// has a target. (G3: offline is NOT exercised here; offline is alarm-only, never
+// hidden in the resolver.)
+func TestResolveGateway_ExhaustedDroppedViaUsage(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
 
@@ -196,19 +201,6 @@ func TestResolveGatewayPrivateTunnelsExcludesOverQuota(t *testing.T) {
 	owner := User{UUID: "usr-oq-owner-" + uniq}
 	require.NoError(t, db.Get().Create(&owner).Error)
 
-	exhaustedCI := CloudInstance{
-		Provider: "aws_lightsail", AccountName: "test", InstanceID: "i-oq-exhausted-" + uniq,
-		IPAddress: "10.99.8.1", Region: "japan",
-		TrafficTotalBytes: 100, TrafficUsedBytes: 100, // 100% = node-side hard-cut; private lines excluded at 100% not 95%
-	}
-	require.NoError(t, db.Get().Create(&exhaustedCI).Error)
-	healthyCI := CloudInstance{
-		Provider: "aws_lightsail", AccountName: "test", InstanceID: "i-oq-healthy-" + uniq,
-		IPAddress: "10.99.8.2", Region: "japan",
-		TrafficTotalBytes: 100, TrafficUsedBytes: 10,
-	}
-	require.NoError(t, db.Get().Create(&healthyCI).Error)
-
 	exhaustedNode := SlaveNode{
 		Ipv4: "10.99.8.1", SecretToken: "soq1", Country: "JP", Region: "japan",
 		Name: "priv-oq-exhausted", Class: NodeClassPrivate, PrivateOwnerUserID: &owner.ID,
@@ -219,6 +211,22 @@ func TestResolveGatewayPrivateTunnelsExcludesOverQuota(t *testing.T) {
 		Name: "priv-oq-healthy", Class: NodeClassPrivate, PrivateOwnerUserID: &owner.ID,
 	}
 	require.NoError(t, db.Get().Create(&healthyNode).Error)
+
+	// NodeUsage keyed by NodeID: exhausted node is over the 500MB reserve
+	// (2T - 100MB used > 2T - 500MB cutoff), healthy node well under.
+	for _, ip := range []uint64{exhaustedNode.ID, healthyNode.ID} {
+		db.Get().Unscoped().Where("node_id = ?", ip).Delete(&NodeUsage{})
+	}
+	exhaustedUsage := NodeUsage{
+		NodeID: exhaustedNode.ID, QuotaTotalBytes: 2 << 40,
+		UsedBytes: (2 << 40) - (100 << 20), Epoch: now + 15*86400, LastReportAt: now,
+	}
+	require.NoError(t, db.Get().Create(&exhaustedUsage).Error)
+	healthyUsage := NodeUsage{
+		NodeID: healthyNode.ID, QuotaTotalBytes: 2 << 40,
+		UsedBytes: 1 << 30, Epoch: now + 15*86400, LastReportAt: now,
+	}
+	require.NoError(t, db.Get().Create(&healthyUsage).Error)
 
 	exhaustedTun := SlaveTunnel{
 		Domain: "priv-oq-exhausted.example", SecretToken: "ttoq1", Name: "priv-oq-exhausted-tun",
@@ -235,13 +243,13 @@ func TestResolveGatewayPrivateTunnelsExcludesOverQuota(t *testing.T) {
 
 	exhaustedSub := PrivateNodeSubscription{
 		UserID: owner.ID, OrderID: owner.ID*100 + 1, Status: PNStatusActive, Region: "japan",
-		IPType: IPTypeNonResidential, SlaveNodeID: &exhaustedNode.ID, CloudInstanceID: &exhaustedCI.ID,
+		IPType: IPTypeNonResidential, SlaveNodeID: &exhaustedNode.ID,
 		PurchasedAt: now, ExpiresAt: now + 86400,
 	}
 	require.NoError(t, db.Get().Create(&exhaustedSub).Error)
 	healthySub := PrivateNodeSubscription{
 		UserID: owner.ID, OrderID: owner.ID*100 + 2, Status: PNStatusActive, Region: "japan",
-		IPType: IPTypeNonResidential, SlaveNodeID: &healthyNode.ID, CloudInstanceID: &healthyCI.ID,
+		IPType: IPTypeNonResidential, SlaveNodeID: &healthyNode.ID,
 		PurchasedAt: now, ExpiresAt: now + 86400,
 	}
 	require.NoError(t, db.Get().Create(&healthySub).Error)
@@ -251,10 +259,10 @@ func TestResolveGatewayPrivateTunnelsExcludesOverQuota(t *testing.T) {
 		db.Get().Unscoped().Delete(&healthySub)
 		db.Get().Unscoped().Delete(&exhaustedTun)
 		db.Get().Unscoped().Delete(&healthyTun)
+		db.Get().Unscoped().Delete(&exhaustedUsage)
+		db.Get().Unscoped().Delete(&healthyUsage)
 		db.Get().Unscoped().Delete(&exhaustedNode)
 		db.Get().Unscoped().Delete(&healthyNode)
-		db.Get().Unscoped().Delete(&exhaustedCI)
-		db.Get().Unscoped().Delete(&healthyCI)
 		db.Get().Unscoped().Delete(&owner)
 	})
 

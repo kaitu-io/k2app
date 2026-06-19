@@ -1,6 +1,8 @@
 package center
 
 import (
+	"time"
+
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 
@@ -42,20 +44,17 @@ func api_v20260717_tunnels(c *gin.Context) {
 		return
 	}
 
-	// Collect node IPs for batch CloudInstance lookup (same as api_k2_tunnels).
-	nodeIPs := make([]string, 0, len(tunnels))
+	// Collect node IDs for batch NodeUsage lookup (same as api_k2_tunnels).
 	nodeIDs := make([]uint64, 0, len(tunnels))
 	for _, tunnel := range tunnels {
 		if tunnel.Node != nil && tunnel.Node.ID != 0 {
 			nodeIDs = append(nodeIDs, tunnel.Node.ID)
-			if tunnel.Node.Ipv4 != "" {
-				nodeIPs = append(nodeIPs, tunnel.Node.Ipv4)
-			}
 		}
 	}
 
 	nodeLoadDetails := GetNodeLoadDetails(c, nodeIDs)
-	instanceMap := getCloudInstancesByIPs(nodeIPs)
+	usageMap := getNodeUsagesByNodeIDs(nodeIDs)
+	now := time.Now().Unix()
 
 	items := make([]DataSlaveTunnelV20260717, 0, len(tunnels))
 	for _, tunnel := range tunnels {
@@ -67,12 +66,8 @@ func api_v20260717_tunnels(c *gin.Context) {
 			continue
 		}
 
-		instForFilter, hasInst := instanceMap[tunnel.Node.Ipv4]
-		var instPtr *CloudInstance
-		if hasInst {
-			instPtr = &instForFilter
-		}
-		if shouldHideTunnelForUser(instPtr, false) {
+		u := usageMap[tunnel.Node.ID] // nil if no usage row yet
+		if shouldHideTunnelForUser(u, false, now) {
 			continue
 		}
 
@@ -94,7 +89,7 @@ func api_v20260717_tunnels(c *gin.Context) {
 			HopPortEnd:     tunnel.HopPortEnd,
 			Node:           nodeData,
 			IPType:         tunnel.Node.IPType,
-			RecommendScore: ComputeRecommendScore(buildTunnelInstanceData(instPtr)),
+			RecommendScore: ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u)),
 			ServerUrl:      tunnel.ServerURL,
 		}
 		items = append(items, item)

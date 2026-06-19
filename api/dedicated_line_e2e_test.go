@@ -190,6 +190,15 @@ func makePrivateLine(t *testing.T, owner *User, ip, label string, used, total in
 	}
 	require.NoError(t, db.Get().Create(&ci).Error)
 
+	// NodeUsage is the authority the resolver/subs read for over-quota (keyed by
+	// NodeID, unified 500MB reserve). Seed it to match used/total.
+	db.Get().Unscoped().Where("node_id = ?", node.ID).Delete(&NodeUsage{})
+	usage := NodeUsage{
+		NodeID: node.ID, QuotaTotalBytes: total, UsedBytes: used,
+		Epoch: now + 30*86400, LastReportAt: now,
+	}
+	require.NoError(t, db.Get().Create(&usage).Error)
+
 	sub := PrivateNodeSubscription{
 		UserID: owner.ID, OrderID: owner.ID*1000 + uint64(now%1000) + uint64(node.ID),
 		Status: PNStatusActive, Region: "jp", IPType: IPTypeNonResidential,
@@ -205,6 +214,7 @@ func makePrivateLine(t *testing.T, owner *User, ip, label string, used, total in
 	t.Cleanup(func() {
 		db.Get().Unscoped().Delete(&sub)
 		db.Get().Unscoped().Delete(&ci)
+		db.Get().Unscoped().Delete(&usage)
 		db.Get().Unscoped().Delete(&tunnel)
 		db.Get().Unscoped().Delete(&node)
 	})
@@ -213,11 +223,13 @@ func makePrivateLine(t *testing.T, owner *User, ip, label string, used, total in
 
 // TestDedicatedLine_SubsExcludesOverQuotaLine drives the real GET /api/subs
 // gateway path (Basic Auth → handleJWTAuth → IsGateway branch →
-// ResolveGatewayPrivateTunnels) and asserts the handler's actual JSON output:
-//   - the over-quota line's tunnel is EXCLUDED, and
-//   - the healthy line's tunnel IS present, and
-//   - a line whose sub has a nil CloudInstance stays visible (no quota = no
-//     exclusion, per the Task 2 spec).
+// ResolveGatewayPrivateTunnels) and asserts the handler's actual JSON output.
+// Over-quota is now sourced from NodeUsage (unified 500MB reserve, keyed by
+// NodeID — no CloudInstance):
+//   - the over-quota line's tunnel (used == total, over reserve) is EXCLUDED,
+//   - the healthy line's tunnel (10% used) IS present, and
+//   - a line whose usage is under the reserve stays visible (the linkCI=false
+//     case: CloudInstance link is irrelevant now; usage is under reserve).
 func TestDedicatedLine_SubsExcludesOverQuotaLine(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
@@ -249,7 +261,7 @@ func TestDedicatedLine_SubsExcludesOverQuotaLine(t *testing.T) {
 
 	require.True(t, present("dedline-healthy.example.com"), "健康线应出现; tunnels=%+v", resp.Tunnels)
 	require.False(t, present("dedline-over.example.com"), "超配额线应被剔除; tunnels=%+v", resp.Tunnels)
-	require.True(t, present("dedline-noci.example.com"), "无 CloudInstance 的线应可见（无配额=不剔除）; tunnels=%+v", resp.Tunnels)
+	require.True(t, present("dedline-noci.example.com"), "用量低于 reserve 的线应可见（NodeUsage 未超）; tunnels=%+v", resp.Tunnels)
 	require.Equal(t, 2, len(resp.Tunnels), "应只剩健康线 + 无配额线两条; tunnels=%+v", resp.Tunnels)
 
 	// Silence unused warnings for the returned nodes (kept for readability).

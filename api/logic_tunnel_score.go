@@ -73,45 +73,40 @@ func ComputeRecommendScore(inst *DataTunnelInstance) float64 {
 	return score
 }
 
-// overQuotaThreshold is the fraction of a node's monthly traffic budget at
-// which the node is hard-excluded from /api/tunnels and /api/subs responses
-// for non-admin users. The 5% buffer absorbs worker_cloud sync lag
-// (asynq cron, ~25 min unique lock) — by the time a snapshot says 95% the
-// real usage may already be 100%+ and AWS overage billing has begun.
-const overQuotaThreshold = 0.95
-
-// isTunnelOverQuota reports whether a CloudInstance has consumed enough of
-// its monthly traffic budget to be hidden from non-admin tunnel lists.
-//
-// nil instance / zero TrafficTotalBytes return false: we only filter nodes
-// with known finite quotas. This keeps non-cloud nodes (no CloudInstance row)
-// and unlimited/unconfigured instances visible.
-func isTunnelOverQuota(inst *CloudInstance) bool {
-	if inst == nil || inst.TrafficTotalBytes <= 0 {
-		return false
-	}
-	threshold := float64(inst.TrafficTotalBytes) * overQuotaThreshold
-	return float64(inst.TrafficUsedBytes) >= threshold
-}
-
-// isPrivateTunnelExhausted reports whether a private line is 100% spent (= the
-// node-side hard-cut point). Private lines stay visible+usable until the real
-// cut, so this uses 100% — unlike the shared-pool 95% hide (isTunnelOverQuota).
-func isPrivateTunnelExhausted(inst *CloudInstance) bool {
-	if inst == nil || inst.TrafficTotalBytes <= 0 {
-		return false
-	}
-	return inst.TrafficUsedBytes >= inst.TrafficTotalBytes
-}
-
-// shouldHideTunnelForUser is the single decision point used by /api/tunnels
-// and /api/subs to filter tunnels out of the response. Admins always see
-// every tunnel (debugging / over-quota investigation path); non-admins are
-// shielded from over-quota nodes so client weighted-pick never lands on an
-// AWS-overage-billing target.
-func shouldHideTunnelForUser(inst *CloudInstance, isAdmin bool) bool {
+// shouldHideTunnelForUser is the single hide decision for /api/tunnels and
+// /api/subs. Admins see everything (triage); non-admins are shielded from
+// over-quota or offline nodes so weighted-pick never lands on a dead/overage
+// target. `now` is Unix seconds.
+func shouldHideTunnelForUser(u *NodeUsage, isAdmin bool, now int64) bool {
 	if isAdmin {
 		return false
 	}
-	return isTunnelOverQuota(inst)
+	return isNodeOverQuota(u) || isNodeOffline(u, now)
+}
+
+// buildTunnelInstanceDataFromUsage builds the scoring DTO from NodeUsage.
+// nil usage → nil (ComputeRecommendScore(nil)=0.5 neutral). TimeRatio uses the
+// node-reported billing-cycle end (Epoch). Mirrors the old buildTunnelInstanceData
+// by also stamping the DTO's own RecommendScore.
+func buildTunnelInstanceDataFromUsage(u *NodeUsage) *DataTunnelInstance {
+	if u == nil {
+		return nil
+	}
+	trafficRatio := 0.0
+	if u.QuotaTotalBytes > 0 {
+		trafficRatio = float64(u.UsedBytes) / float64(u.QuotaTotalBytes)
+		if trafficRatio > 1 {
+			trafficRatio = 1
+		}
+	}
+	timeRatio := calculateTimeRatio(u.Epoch)
+	d := &DataTunnelInstance{
+		TrafficTotalBytes: u.QuotaTotalBytes,
+		TrafficRatio:      trafficRatio,
+		BillingCycleEndAt: u.Epoch,
+		TimeRatio:         timeRatio,
+		BudgetScore:       trafficRatio - timeRatio,
+	}
+	d.RecommendScore = ComputeRecommendScore(d)
+	return d
 }

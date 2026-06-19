@@ -39,50 +39,30 @@ func ResolveGatewayPrivateTunnels(ctx context.Context, userID uint64, now int64)
 		return nil, err
 	}
 
-	// 可服务且已绑节点的 sub。收集其 CloudInstance ID，批量判定流量是否耗尽，
-	// 把耗尽线从池中剔除 —— 耗尽线必须消失，路由器 Pick 才会切到健康线
-	// （服务端在 100% 时硬掐；专属线路在客户端侧同样以 100% 为可见性阈值，不用共享池的 95%）。
-	type boundNode struct {
-		nodeID     uint64
-		instanceID *uint64
-	}
-	bounds := make([]boundNode, 0, len(subs))
-	ciIDs := make([]uint64, 0, len(subs))
+	// Collect serviceable, node-bound subs; drop lines whose node usage is over
+	// the cutoff reserve (exhausted) so the router Picks a healthy line. Source =
+	// NodeUsage (node-authority mirror), keyed by NodeID — no CloudInstance/IP.
+	nodeIDs := make([]uint64, 0, len(subs))
 	for i := range subs {
 		if subs[i].IsServiceable(now) && subs[i].SlaveNodeID != nil {
-			bounds = append(bounds, boundNode{nodeID: *subs[i].SlaveNodeID, instanceID: subs[i].CloudInstanceID})
-			if subs[i].CloudInstanceID != nil {
-				ciIDs = append(ciIDs, *subs[i].CloudInstanceID)
-			}
+			nodeIDs = append(nodeIDs, *subs[i].SlaveNodeID)
 		}
-	}
-	if len(bounds) == 0 {
-		return []SlaveTunnel{}, nil
-	}
-
-	overQuota := make(map[uint64]bool, len(ciIDs))
-	if len(ciIDs) > 0 {
-		var instances []CloudInstance
-		if err := db.Get().WithContext(ctx).Where("id IN ?", ciIDs).Find(&instances).Error; err != nil {
-			return nil, err
-		}
-		for i := range instances {
-			if isPrivateTunnelExhausted(&instances[i]) {
-				overQuota[instances[i].ID] = true
-			}
-		}
-	}
-
-	nodeIDs := make([]uint64, 0, len(bounds))
-	for _, b := range bounds {
-		if b.instanceID != nil && overQuota[*b.instanceID] {
-			continue // 耗尽线：剔出池，触发路由器切线
-		}
-		nodeIDs = append(nodeIDs, b.nodeID)
 	}
 	if len(nodeIDs) == 0 {
 		return []SlaveTunnel{}, nil
 	}
+	usageMap := getNodeUsagesByNodeIDs(nodeIDs)
+	healthyNodeIDs := make([]uint64, 0, len(nodeIDs))
+	for _, id := range nodeIDs {
+		if isNodeOverQuota(usageMap[id]) {
+			continue // exhausted → drop from pool, triggers router switch
+		}
+		healthyNodeIDs = append(healthyNodeIDs, id)
+	}
+	if len(healthyNodeIDs) == 0 {
+		return []SlaveTunnel{}, nil
+	}
+	nodeIDs = healthyNodeIDs
 
 	// 两段查询（不用 Joins("Node")）：与 fetchK2V5Tunnels 一致，规避 commit 3e20b8e 的
 	// Join 别名陷阱（曾 500 每个 /api/subs?country=XX）。私有节点数量极小，两段查询无开销。

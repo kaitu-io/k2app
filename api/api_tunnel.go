@@ -89,15 +89,11 @@ func api_k2_tunnels(c *gin.Context) {
 
 	log.Debugf(c, "found %d tunnels from database before filtering", len(tunnels))
 
-	// Collect all node IDs and IPs for batch queries
+	// Collect all node IDs for batch queries
 	nodeIDs := make([]uint64, 0, len(tunnels))
-	nodeIPs := make([]string, 0, len(tunnels))
 	for _, tunnel := range tunnels {
 		if tunnel.Node != nil && tunnel.Node.ID != 0 {
 			nodeIDs = append(nodeIDs, tunnel.Node.ID)
-			if tunnel.Node.Ipv4 != "" {
-				nodeIPs = append(nodeIPs, tunnel.Node.Ipv4)
-			}
 		}
 	}
 
@@ -105,8 +101,10 @@ func api_k2_tunnels(c *gin.Context) {
 	// Returns detailed metrics for evaluation (traffic, bandwidth, cloud tunnel status)
 	nodeLoadDetails := GetNodeLoadDetails(c, nodeIDs)
 
-	// Batch query CloudInstances by IP to get billing/traffic info
-	instanceMap := getCloudInstancesByIPs(nodeIPs)
+	// Batch query NodeUsage by NodeID (node-authority metering mirror) for
+	// over-quota/offline hide + recommend-score source.
+	usageMap := getNodeUsagesByNodeIDs(nodeIDs)
+	now := time.Now().Unix()
 
 	// Convert to API response format, filter out tunnels without nodes
 	items := make([]DataSlaveTunnel, 0, len(tunnels))
@@ -133,20 +131,15 @@ func api_k2_tunnels(c *gin.Context) {
 			details = d
 		}
 
-		// Hard-exclude over-quota cloud instances for non-admin users.
+		// Hard-exclude over-quota / offline nodes for non-admin users.
 		// Scoring already penalizes them, but pickWeighted can still land on
-		// a low-score node — and once AWS billing has tipped into overage
-		// every additional byte costs real money. Admin path stays open so
-		// over-quota nodes remain visible for triage.
-		instForFilter, hasInst := instanceMap[tunnel.Node.Ipv4]
-		var instPtr *CloudInstance
-		if hasInst {
-			instPtr = &instForFilter
-		}
-		if shouldHideTunnelForUser(instPtr, isAdmin) {
-			log.Warnf(c, "tunnel %d (node=%s, ip=%s) over quota, hiding from non-admin: used=%dB total=%dB",
-				tunnel.ID, tunnel.Node.Name, tunnel.Node.Ipv4,
-				instForFilter.TrafficUsedBytes, instForFilter.TrafficTotalBytes)
+		// a low-score node — and once billing has tipped into overage every
+		// additional byte costs real money. Admin path stays open so such
+		// nodes remain visible for triage.
+		u := usageMap[tunnel.Node.ID] // nil if no usage row yet
+		if shouldHideTunnelForUser(u, isAdmin, now) {
+			log.Warnf(c, "tunnel %d (node=%s, ip=%s) hidden from non-admin (over-quota/offline)",
+				tunnel.ID, tunnel.Node.Name, tunnel.Node.Ipv4)
 			continue
 		}
 
@@ -171,10 +164,8 @@ func api_k2_tunnels(c *gin.Context) {
 			Node:         nodeData,
 		}
 
-		// Add instance data if CloudInstance found by IP
-		if hasInst {
-			item.Instance = buildTunnelInstanceData(instPtr)
-		}
+		// Instance scoring DTO from NodeUsage (nil usage → nil → neutral 0.5).
+		item.Instance = buildTunnelInstanceDataFromUsage(u)
 
 		// Top-level recommendScore — non-cloud nodes get the neutral 0.5 default
 		// from ComputeRecommendScore(nil), so UI doesn't need instance null checks.
@@ -218,58 +209,6 @@ func getECHConfigForTunnelResponse(ctx context.Context) string {
 
 	echConfigList := buildECHConfigList([][]byte{echConfig})
 	return base64.StdEncoding.EncodeToString(echConfigList)
-}
-
-// getCloudInstancesByIPs batch queries CloudInstances by IP addresses
-func getCloudInstancesByIPs(ips []string) map[string]CloudInstance {
-	result := make(map[string]CloudInstance)
-	if len(ips) == 0 {
-		return result
-	}
-
-	var instances []CloudInstance
-	if err := db.Get().Where("ip_address IN ?", ips).Find(&instances).Error; err != nil {
-		return result
-	}
-
-	for _, inst := range instances {
-		result[inst.IPAddress] = inst
-	}
-	return result
-}
-
-// buildTunnelInstanceData constructs DataTunnelInstance from CloudInstance
-func buildTunnelInstanceData(inst *CloudInstance) *DataTunnelInstance {
-	if inst == nil {
-		return nil
-	}
-
-	// Calculate traffic ratio (0-1)
-	trafficRatio := 0.0
-	if inst.TrafficTotalBytes > 0 {
-		trafficRatio = float64(inst.TrafficUsedBytes) / float64(inst.TrafficTotalBytes)
-		if trafficRatio > 1 {
-			trafficRatio = 1
-		}
-	}
-
-	// Determine billing cycle end and calculate time ratio
-	billingCycleEndAt := inst.TrafficResetAt
-	if billingCycleEndAt == 0 {
-		billingCycleEndAt = inst.ExpiresAt
-	}
-
-	timeRatio := calculateTimeRatio(billingCycleEndAt)
-
-	d := &DataTunnelInstance{
-		TrafficTotalBytes: inst.TrafficTotalBytes,
-		TrafficRatio:      trafficRatio,
-		BillingCycleEndAt: billingCycleEndAt,
-		TimeRatio:         timeRatio,
-		BudgetScore:       trafficRatio - timeRatio,
-	}
-	d.RecommendScore = ComputeRecommendScore(d)
-	return d
 }
 
 // buildDataSlaveNode constructs the 8 common fields shared between the v1 and v2
