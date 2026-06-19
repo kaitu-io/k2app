@@ -40,6 +40,10 @@
    - 掐断时 sidecar 持续上报"已用 ≥ 限额−500MB"，Center 据此立即把节点从隧道列表隐藏 → 客户端刷新看不到 → 自动改挑别的。靠确定信号驱动（不依赖离线计时器），同一个数字同时驱动"节点拉闸"与"Center 隐藏"。
    - 取消软隐藏的增量：硬断会断掉该节点上的活动连接（旧 95% 软隐藏只挡新连接）。等同"节点宕机/重启"，客户端（桌面自动重挑 / 手机重连取刷新后列表）本就会处理；一次可恢复抖动。用户已接受。
    - **守卫**：`限额 = 0`（不限量）永不掐 —— 否则 `已用 ≥ 0 − 500MB` 恒真会误掐。绝对 500MB 对 TB 级限额=贴满额留缓冲；仅当限额 < 500MB 才会显得过早（产品无此场景）。
+7. **失败即关闭（fail-closed），统一替代 provider 交叉校验**（用户 2026-06-19）：不为对抗"自量测错"特殊保留 provider 同步；改用统一机制 —— sidecar 计量**原子化**：读不到/读错宿主网卡 → **报错、不上报**（绝不退而报 0/垃圾）。于是"测错"塌缩进"离线"这一条统一通道。两层动作（物理事实：Center 够不到节点物理拉闸）：
+   - **节点自停（真正停流量）**：`限额>0` 且 enforcer 连续 N 次读网卡失败 → 节点**自己 pause k2s**（fail-closed）。仅在"计量本身坏了"时触发；计量正常、只是连不上 Center → 节点**照常本地执行配额、不停**（它自己知道用量，不需要 Center）。
+   - **Center 判离线（摘出列表 + 告警）**：连续 N 个上报周期收不到 → 判离线 → 从隧道列表隐藏（挡新连接）。Center 无法远程 pause k2s，故 Center 的"掐断"=摘出服务面。
+   - **N = 3**（两个时钟，理由见 §8.5 G1）。覆盖所有节点类型，无需 provider API。
 
 ---
 
@@ -107,13 +111,15 @@ type NodeUsage struct {
 
 ### 3.2 `CloudInstance` / `SlaveNodeLoad`（计量退役）
 
-- `CloudInstance` 的 `TrafficUsedBytes/TrafficTotalBytes/TrafficResetAt/TrafficEpoch/Warn*SentEpoch` **保留不删**（避免破坏性迁移），但**不再是任何节点计量/掐断/可见性的权威源**。`worker_cloud.go` provider 同步**继续运行**——其角色从"计量权威"转为"**独立看门狗**"：云节点的 provider-billed 用量是节点自量的独立交叉校验，喂 §8.5 G1 的一致性告警（这是对抗"自量测错永不掐"netns 类 bug 的关键，且只有它能提供独立信号）。
+- `CloudInstance` 的 `TrafficUsedBytes/TrafficTotalBytes/TrafficResetAt/TrafficEpoch/Warn*SentEpoch` **保留不删**（避免破坏性迁移），但**不再是任何节点计量/掐断/可见性的权威源**。
+- **`worker_cloud.go` provider 同步的"流量计量"角色彻底退休**（统一为 fail-closed，决策 1.3.7）：不再当计量权威、也不当交叉校验看门狗。worker_cloud 仅保留实例元数据/生命周期/IP 同步等非计量职责。"自量测错"由 fail-closed 原子化 + 离线掐断接管（§8.5 G1），不依赖 provider API、覆盖所有节点类型。
 - `SlaveNodeLoad` 的 `UsedTrafficBytes/MonthlyTrafficLimitBytes/BillingCycleEndAt` 不再被超额/可见性消费（负载评分本身不依赖它们）；可保留为历史或后续清理。
 - 一次性删列留待后续迁移，不在本次范围。
 
 ### 3.3 不变量
 
 - **I-Cutoff-Rule**：唯一掐断/隐藏规则 = `QuotaTotalBytes > 0 && UsedBytes >= QuotaTotalBytes - quotaCutoffReserveBytes`，其中 `quotaCutoffReserveBytes = 500 << 20`（500 MiB）。节点与 Center 用同一常量；`限额=0` 永不掐（不限量）。
+- **I-FailClosed**：计量原子化——读不到/读错宿主网卡 → 不上报（绝不报 0/垃圾）。`限额>0` 且连续 N=3 次读网卡失败 → 节点自停 k2s。沉默（测错/卡死/断网）一律塌缩为"离线"，统一处理；不依赖 provider 交叉校验。仅"计量坏了"才自停，"连不上 Center 但计量正常"继续本地执行不停。
 - **I-Quota**：节点 `.env` 限额是掐断唯一权威；Center 任何拷贝都不参与掐断。
 - **I-Bundle**（成本天花板，沿用 provisioning 铁律#7）：VPS bundle 含量 ≥ 限额 + headroom。即使 sidecar 整个失效、k2s 裸奔，最坏只是超量服务亏点，不爆 provider 账单。
 - **I-Report**：节点掐断后**仍持续上报**（sidecar 与 k2s 是不同容器，pause k2s 不影响 sidecar）→ Center 立即据"已用≥限额"隐藏节点；不依赖离线计时器。
@@ -130,6 +136,8 @@ type NodeUsage struct {
 - `main.go` 去掉 `PrivateClaim != ""` 这道 gate：**所有节点**都启 reporter + enforcer。
 - enforcer 不再消费 Center 回包的 `QuotaTotal/QuotaUsed/EpochID`，也不再需要独立 `HostNICMeter`。
 - 掐断判据读 `TrafficMonitor.GetTrafficStats()`，套用 I-Cutoff-Rule：`MonthlyTrafficLimitBytes > 0 && UsedTrafficBytes >= MonthlyTrafficLimitBytes - quotaCutoffReserveBytes` → `docker pause k2s`；反之 unpause。**限额 0 = 不限不掐**（未设限额的老共享节点行为不变）。沿用 5s reconcile + `cutoff.state` 持久化。
+- **fail-closed（决策 1.3.7 / I-FailClosed）**：现 `reconcile` 在 meter 读失败时"hold 当前状态"（fail-open）。改为：`限额>0` 且连续 `failClosedThreshold=3` 次 meter 失败 → desired=pause（fail-closed 自停），meter 恢复即解除。`限额=0`（不限量）忽略 meter 失败（无可执行）。计数器在一次成功读后清零。
+- **计量原子化（`traffic.go`）**：`TrafficMonitor` 必须硬要求 `/host/proc` 宿主网卡可读且选中真实宿主网卡（排除 lo/veth/docker 后非空）；否则**返回 error**（不静默回退报 0）。`readInterfaceBytes`/`GetTrafficStats` 的 error 一路上抛：reporter 见 error 不上报（`last_report_at` 不前进 → Center 离线派生），enforcer 见 error 计入 fail-closed 计数。这把"读错网卡 netns 类 bug"从"成功报 0、永不掐"转为"报错→不上报→节点自停 + Center 离线"。
 - 删 `usage_reporter → enforcer` 的 `SetQuota`/`quotaSink`；让 enforcer + reporter **共用 Collector 已建的同一个 `TrafficMonitor`**（单一 NIC 读取源，杜绝漂移）。
 
 ### 4.2 月度时钟 = 复用 `K2_NODE_BILLING_START_DATE`
@@ -181,7 +189,7 @@ upsert NodeUsage by NodeID:
 
 - **单一派生函数**（无 Class 分支，套 I-Cutoff-Rule）：`isNodeOverQuota(usage)` = `QuotaTotalBytes > 0 && UsedBytes >= QuotaTotalBytes - quotaCutoffReserveBytes`。共享池（`/api/tunnels`）与私有（`/api/subs` via `entitlement_resolver`）都用它隐藏。
 - 现有 `isTunnelOverQuota` / `isPrivateTunnelExhausted` 两个函数（签名 `(*CloudInstance)`、阈值 95%/100%）**合并为一个** `isNodeOverQuota`（读该节点 `NodeUsage`，按 NodeID 解析），调用点统一切过去。
-- 新增 `isNodeOffline(usage, now)`：`now - LastReportAt > offlineThreshold`（建议 300s）。**离线处理按类型分（G3）**：
+- 新增 `isNodeOffline(usage, now)`：`now - LastReportAt > N × reportInterval`，**N=3**、reportInterval 标准化为 60s → ≈180s（决策 1.3.7）。Center 无法远程 pause k2s（够不到节点）；真正停流量靠节点 fail-closed 自停（§4.1）。Center 端"离线"= 摘出服务面 + 告警。**离线处理按类型分（G3）**：
   - **共享**：离线 → 从 `/api/tunnels` 隐藏（别把用户导到死节点）。隐藏判定 = 超额 **或** 离线。
   - **私有**：离线 **只告警、不隐藏**。路由器直连 k2s，节点真死它自己会失败/重连；若只是节点↔Center 网络抖动而 k2s 健在，隐藏反而**错杀一条还能用的付费线**（且违背"专属线路 100% 前一直可见" commit f831012d）。私有线路的可见性只由超额（I-Cutoff-Rule）驱动。
 
@@ -232,7 +240,7 @@ upsert NodeUsage by NodeID:
 | 上报乱序/重复 | epoch 内取 max，跨 epoch 跟随更大 epoch | 幂等 |
 | 缺 `K2_NODE_BILLING_START_DATE` | `TrafficMonitor` 不启用 → 该节点不计量不掐断 | provisioning/部署必写；否则退化 I-Bundle 兜底 |
 | 限额未设（=0） | 不限不掐不隐藏（同今日无限节点） | G2 告警（在役却 0 限额）+ 部署门校验；安全回退靠 I-Bundle |
-| 自量测错（读错网卡等） | 用量长期偏低 → 永不掐 → 静默超卖 | G1 provider 交叉校验告警（仅云节点）；非云节点无独立源，靠 I-Bundle |
+| 自量测错（读错网卡等） | 计量原子化 → 报错不上报（不再"成功报 0"） → 节点自停 + Center 离线 | G1 fail-closed（决策 1.3.7）；统一通道，无 provider 依赖 |
 | **影响面（决策 1.3.5 的代价）** | 改动触及全体共享池 = 所有 App 用户服务节点 | 更狠的回归测 + 更慢灰度（#46）；新 sidecar 全量铺开是硬门 |
 | 配额改档（升/降级私有线路） | 节点 `.env` 限额固定；MVP 不支持原地升级 | 改档 = 重开线/客服改 `.env` 重启（[[#18]] defer） |
 
@@ -244,12 +252,12 @@ upsert NodeUsage by NodeID:
 
 | ID | 守的漏洞 | 措施 | 类型 |
 |----|----------|------|------|
-| **G1** | 🔴 自量测错永不掐（netns 读错网卡类 bug 历史真发生过） | Center 拿 provider-sync 用量（云节点，§3.2 看门狗）与节点自报 `UsedBytes` **交叉校验**：偏离超过阈值（如自报 < provider 的 50% 且 provider 已过半配额）→ Slack 告警 `sendCloudSlackNotification`。**这是对抗 netns 类 bug 的唯一独立信号。** 非云节点（BYO/住宅）无独立源 → 文档明确"该类节点自量无交叉校验，靠 I-Bundle 兜底"。 | 告警 |
+| **G1** | 🔴 自量测错永不掐（netns 读错网卡类 bug 历史真发生过） | **fail-closed 统一机制（决策 1.3.7，替代原 provider 交叉校验）**：计量原子化——读错/读不到宿主网卡 → 报错、不上报（绝不报 0）。`限额>0` 连续 N=3 次（节点端 5s/次≈15s）读失败 → 节点自停 k2s；Center 连续 N=3 个上报周期（60s/次≈3min）收不到 → 判离线。"测错"塌缩为"沉默→离线→掐"。**两个 N 的取值理由**：节点端 15s（安全方向、躲单次 proc 读竞争）；Center 端 3min（1 次丢失常是网络抖、连 3 次=真没了、误判率低、漏量被 I-Bundle 兜）。覆盖所有节点类型，无 provider API 依赖。 | 硬约束（自停）+ 离线 |
 | **G2** | 🔴 节点没设限额=静默裸跑 | Center 收到 `QuotaTotalBytes == 0` 但节点**在服务**（有隧道/有连接）→ 标记"未设限额"并告警。把"漏写 .env"从静默变可见。部署门（#51/#41 风格）再加一道：放量前校验所有在役节点 `QuotaTotalBytes > 0`。 | 告警 + 部署门 |
 | **G3** | 🟠 私有线路被离线误藏（错杀付费客户） | 见 §5.2：私有离线**只告警不隐藏**；共享离线才隐藏。 | 已落 §5.2 |
 | **G4** | 🟠 sidecar 死 / k2s 裸跑 / 快链路 overshoot | (a) sidecar 容器 `restart: unless-stopped` + healthcheck，崩溃即拉起恢复 enforcer；(b) **明确记账：provider 超量的真兜底是 I-Bundle**（bundle 含量 ≥ 限额 + 链路 overshoot headroom），500MB 与 5s reconcile 只是尽量贴卖出量掐，快链路单 tick 可 overshoot `带宽×5s`（1Gbps≈625MB / 10Gbps≈6GB），这部分是"少赚点毛利"由 I-Bundle 吸收，**不是事故**；(c) `quotaCutoffReserveBytes` 与 reconcile 间隔做成可调常量，便于按链路调。dead-man's switch（k2s 听不到 enforcer 心跳就自停）列 future，不在本次。 | 部署要求 + 文档 + 可调 |
 
-**I-Bundle 升格为一等不变量**：bundle 含量 ≥ `限额 + overshoot headroom`，是所有上述故障（G1 漏检、G4 裸跑）的最终成本天花板。provisioning 选型铁律#7 必须显式包含 overshoot headroom，不只是"≥限额"。
+**I-Bundle 升格为一等不变量**：bundle 含量 ≥ `限额 + overshoot headroom`，是所有残留故障（G4 sidecar 进程整个死掉无法自停、快链路 overshoot）的最终成本天花板。provisioning 选型铁律#7 必须显式包含 overshoot headroom，不只是"≥限额"。
 
 ## 9. 测试策略（TDD）
 
@@ -260,7 +268,7 @@ upsert NodeUsage by NodeID:
   - `entitlement_resolver`：私有耗尽或离线 → 剔除。
   - 预警 worker：经 `SlaveNodeID → NodeUsage`，去重键 = Epoch。
   - 旧 sidecar 兼容：共享旧 sidecar 不调 `/slave/usage` → 无 NodeUsage 行 → 不隐藏（同今日）。
-  - **守卫（§8.5）**：G1 自报 vs provider 偏离 → 告警触发；G2 `QuotaTotalBytes==0` 且在役 → 告警；G3 私有离线**不**隐藏、共享离线隐藏。
+  - **守卫（§8.5）**：G1 fail-closed —— meter 读失败 → reporter 不上报（last_report_at 不前进）+ enforcer 连续 3 次失败自停（限额>0）/ 限额=0 不自停；G2 `QuotaTotalBytes==0` 且在役 → 告警；G3 私有离线**不**隐藏、共享离线隐藏。
 - 整数算术（字节 * 百分比不溢出 int64）沿用现有约定。
 
 ---
@@ -268,14 +276,14 @@ upsert NodeUsage by NodeID:
 ## 10. 文件清单
 
 **节点侧** `docker/sidecar/`
-- 改：`main.go`（去 `PrivateClaim` gate，所有节点启 reporter+enforcer 并共用 Collector 的 `TrafficMonitor`）、`sidecar/enforcer.go`（改吃 `TrafficMonitor`，删 `SetQuota`/`HostNICMeter`）、`sidecar/usage_reporter.go`（上报扩字段 + 用周期标识填 epoch、不消费回包）、`sidecar/traffic.go`（持久化 `cycleStartBytes`+周期标识，重启恢复 §4.4）。
+- 改：`main.go`（去 `PrivateClaim` gate，所有节点启 reporter+enforcer 并共用 Collector 的 `TrafficMonitor`）、`sidecar/enforcer.go`（改吃 `TrafficMonitor`，删 `SetQuota`/`HostNICMeter`；**fail-closed**：限额>0 连续 3 次 meter 失败 → 自停，§4.1）、`sidecar/usage_reporter.go`（上报扩字段 + 用周期标识填 epoch、不消费回包；**meter error → 不上报**）、`sidecar/traffic.go`（持久化 `cycleStartBytes`+周期标识重启恢复 §4.4；**计量原子化**：宿主网卡读不到/读错 → 返回 error 不回退报 0）。
 - **不新增 env**（复用 `K2_NODE_BILLING_START_DATE` + `K2_NODE_TRAFFIC_LIMIT_GB`）。可能删：`sidecar/host_nic.go`（NIC 读取统一到 `TrafficMonitor`）、reporter 的 `quotaSink`。
 
 **Center 侧** `api/`
 - 建：`model.go`（+`NodeUsage`）。
 - 改：`slave_api_usage.go`（纯记录器，全节点）、`logic_tunnel_score.go`（合并 `isTunnelOverQuota`+`isPrivateTunnelExhausted`→单一 `isNodeOverQuota` 读 NodeUsage + `isNodeOffline` + `quotaCutoffReserveBytes` 常量）、`entitlement_resolver.go`、`api_tunnel.go`（共享池隐藏读 NodeUsage）、`worker_private_node_traffic_warning.go`、`api_user_private_node.go`、`type.go`、`slave_api_node.go`（linkCloudInstanceQuota 降级/删）。
 - 迁移：`AutoMigrate` 注册 `NodeUsage`。
-- 守卫（§8.5）：`/slave/usage` 记录器内或 `worker_cloud.go` 加 G1 自报-vs-provider 一致性告警 + G2 未设限额告警（`sendCloudSlackNotification`）。
+- 守卫（§8.5）：G1 fail-closed 落在节点侧（`traffic.go` 原子化 + `enforcer.go` 自停）；Center 侧加 G2 未设限额告警（在役却 `QuotaTotalBytes==0` → `sendCloudSlackNotification`）。
 
 **部署**：所有共享节点 `.env` 补 `K2_NODE_TRAFFIC_LIMIT_GB` + `K2_NODE_BILLING_START_DATE`；放量前部署门校验在役节点 `QuotaTotalBytes>0`（G2）；sidecar 容器 `restart: unless-stopped` + healthcheck（G4）；新 sidecar 全量铺开（#76）。provisioning 选型铁律#7 加 overshoot headroom（I-Bundle）。
 
