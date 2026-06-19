@@ -170,37 +170,25 @@ func (s *Sidecar) Start() error {
 		}
 	}()
 
-	// Step 4.5: Private nodes self-meter HOST-NIC usage to Center's quota
-	// ledger (Part 2). The sidecar is the single usage reporter — k2s's
-	// in-process reporter is retired. Online enforcement is Center-side
-	// (device-auth + tunnel-hide gates read the CloudInstance.TrafficUsedBytes
-	// this reporter feeds). Gate on the private claim so shared-pool nodes never
-	// call /slave/usage (byte-identical to before).
-	if s.nodeInstance.PrivateClaim != "" {
-		meter := sidecar.NewHostNICMeter() // single meter shared by reporter + enforcer
-		reporter := sidecar.NewUsageReporter(
-			meter,
-			s.config.K2Center.BaseURL,
-			s.nodeInstance.IPv4,
-			s.nodeInstance.Secret,
-		)
-
-		// Node-side cutoff: the enforcer's 5s local loop pauses data-plane
-		// containers when usage reaches 100% of quota. If the docker client can't
-		// be created, keep reporting but skip node-side cutoff (degraded, logged).
-		if enf, err := sidecar.NewEnforcer(meter); err != nil {
-			slog.Error("Cutoff enforcer init failed; reporting continues without node-side cutoff",
-				"component", "sidecar", "err", err)
-		} else {
-			reporter.SetSink(enf)
-			go enf.Run(context.Background())
-			slog.Info("Private-node traffic cutoff enforcer started", "component", "sidecar")
-		}
-
-		go reporter.Run(context.Background())
-		slog.Info("Private-node usage reporter started", "component", "sidecar", "ipv4", s.nodeInstance.IPv4)
+	// Step 4.5: Metering + cutoff for ALL nodes (node is the single metering/
+	// cutoff authority). The shared TrafficMonitor self-meters the host NIC and
+	// owns the monthly cycle; the enforcer reads it and pauses data-plane
+	// containers at used >= limit - reserve; the reporter POSTs its stats to
+	// Center as a pure record. Requires a TrafficMonitor (K2_NODE_BILLING_START_DATE
+	// set); without it we cannot meter → no reporter/enforcer (node runs uncapped,
+	// bounded by the provider bundle).
+	if tm := s.collector.TrafficMonitor(); tm == nil {
+		slog.Warn("Metering disabled: no billing date (K2_NODE_BILLING_START_DATE) — node runs uncapped", "component", "sidecar")
 	} else {
-		slog.Info("Usage reporter disabled (not a private node)", "component", "sidecar")
+		reporter := sidecar.NewUsageReporter(tm, s.config.K2Center.BaseURL, s.nodeInstance.IPv4, s.nodeInstance.Secret)
+		if enf, err := sidecar.NewEnforcer(tm); err != nil {
+			slog.Error("Cutoff enforcer init failed; reporting continues without node-side cutoff", "component", "sidecar", "err", err)
+		} else {
+			go enf.Run(context.Background())
+			slog.Info("Traffic cutoff enforcer started (all-node)", "component", "sidecar")
+		}
+		go reporter.Run(context.Background())
+		slog.Info("Usage reporter started (all-node)", "component", "sidecar", "ipv4", s.nodeInstance.IPv4)
 	}
 
 	// Setup signal handling

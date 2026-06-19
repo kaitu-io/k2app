@@ -5,15 +5,15 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // host_nic.go reads cumulative byte counters from the HOST network interface,
 // not the sidecar container's own netns. A bridge-network container reading
 // /proc/net/dev sees its veth (≈0 billed traffic); the compose mounts the
-// host's /proc at /host/proc so we can read the actually-billed NIC. This is the
-// single source of host-NIC truth used by both the billing usage reporter and
-// the display traffic monitor.
+// host's /proc at /host/proc so we can read the actually-billed NIC. These
+// helpers (hostProcPath + readNICBytes) are the single source of host-NIC truth
+// used by the TrafficMonitor (the metering authority read by both the enforcer
+// and the usage reporter).
 
 // hostProcPath returns the proc mount to read NIC counters from.
 //
@@ -57,54 +57,4 @@ func readNICBytes(procPath string) (int64, error) {
 		total += int64(rx + tx)
 	}
 	return total, nil
-}
-
-// hostNICMeter implements nicMeter (usage_reporter.go). It returns cumulative
-// host-NIC bytes minus a baseline that resets on each Center epoch, so the value
-// POSTed as cumulative_bytes restarts from 0 at every epoch — matching Center's
-// per-epoch ledger semantics (api/slave_api_usage.go). A single goroutine (the
-// reporter's Run loop and the cutoff enforcer may call concurrently, so
-// baseline is guarded by mu.
-type hostNICMeter struct {
-	mu       sync.Mutex
-	procPath string
-	baseline int64
-}
-
-// NewHostNICMeter constructs a meter rooted at the host proc mount and seeds its
-// baseline to the current reading (so cumulative starts near 0 on a fresh boot).
-func NewHostNICMeter() *hostNICMeter {
-	m := &hostNICMeter{procPath: hostProcPath()}
-	if b, err := readNICBytes(m.procPath); err == nil {
-		m.baseline = b
-	}
-	return m
-}
-
-// CumulativeBytes returns host-NIC bytes consumed since the last Rebaseline. If
-// the raw reading dropped below the baseline (reboot / counter wrap) it
-// rebaselines to the current reading and returns 0 — never a negative or
-// absurdly large delta.
-func (m *hostNICMeter) CumulativeBytes() (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	raw, err := readNICBytes(m.procPath)
-	if err != nil {
-		return 0, err
-	}
-	if raw < m.baseline {
-		m.baseline = raw
-		return 0, nil
-	}
-	return raw - m.baseline, nil
-}
-
-// Rebaseline sets the baseline to the current reading (called on a Center epoch
-// change so the next cumulative_bytes restarts from 0).
-func (m *hostNICMeter) Rebaseline() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if b, err := readNICBytes(m.procPath); err == nil {
-		m.baseline = b
-	}
 }

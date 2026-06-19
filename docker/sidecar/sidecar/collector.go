@@ -51,6 +51,10 @@ func NewCollector(node *Node, reportInterval time.Duration, billingStartDate str
 	return c
 }
 
+// TrafficMonitor returns the collector's monitor (nil if billing date unset) so
+// the enforcer + usage reporter share the single NIC-reading authority.
+func (c *Collector) TrafficMonitor() *TrafficMonitor { return c.trafficMonitor }
+
 // Run runs the metrics collection loop
 func (c *Collector) Run() error {
 	// Start periodic reporting

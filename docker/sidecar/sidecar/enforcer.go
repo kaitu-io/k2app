@@ -10,43 +10,57 @@ import (
 
 const cutoffDefaultPollInterval = 5 * time.Second
 
+const (
+	// quotaCutoffReserveBytes is the headroom kept below the monthly limit: the
+	// node cuts at used >= limit - reserve. MUST match Center's value in
+	// api/logic_node_usage.go so node-side and Center-side cutoffs agree.
+	quotaCutoffReserveBytes int64 = 500 << 20 // 500 MiB
+	// failClosedThreshold is the number of consecutive meter-read errors (with a
+	// known limit > 0) after which the enforcer fails closed and pauses traffic.
+	failClosedThreshold = 3
+)
+
+// statsSource is the shared TrafficMonitor read each cycle by both the enforcer
+// and the usage reporter (the single host-NIC metering authority).
+type statsSource interface {
+	GetTrafficStats() (TrafficStats, error)
+}
+
 // enforcer is the sidecar's node-side traffic-cutoff authority. A fast local loop
-// reads host-NIC usage and pauses all data-plane containers when the epoch quota
-// is reached; the next epoch (quota reset) unpauses. State is persisted so a
-// restart re-applies an in-effect cut before the first Center quota.
+// reads the shared TrafficMonitor (the single host-NIC metering source) and
+// pauses all data-plane containers when used >= limit - reserve. The node is the
+// authority — no Center quota verdict is involved. State is persisted so a restart
+// re-applies an in-effect cut before the first successful meter read.
 type enforcer struct {
-	meter        nicMeter
+	src          statsSource
 	docker       dockerController
 	statePath    string
 	containers   []string
 	pollInterval time.Duration
 
-	mu            sync.Mutex
-	epochID       int64
-	quotaTotal    int64
-	quotaUsedBase int64 // Center authoritative used at SetQuota
-	meterAtReport int64 // local meter snapshot at SetQuota
-	haveQuota     bool
-	cut           bool
+	mu         sync.Mutex
+	cut        bool
+	meterFails int
+	lastLimit  int64 // last successfully-read limit; fail-closed only when >0
 }
 
-// newEnforcer is the testable constructor (inject docker/path/containers). It
-// loads persisted state so a restart mid-cut re-applies it.
-func newEnforcer(meter nicMeter, docker dockerController, statePath string, containers []string, interval time.Duration) *enforcer {
+// newEnforcerFromStats is the testable constructor (inject src/docker/path/
+// containers). It loads persisted state so a restart mid-cut re-applies it.
+func newEnforcerFromStats(src statsSource, docker dockerController, statePath string, containers []string, interval time.Duration) *enforcer {
 	if interval <= 0 {
 		interval = cutoffDefaultPollInterval
 	}
 	st := loadCutoffState(statePath)
 	return &enforcer{
-		meter: meter, docker: docker, statePath: statePath,
+		src: src, docker: docker, statePath: statePath,
 		containers: containers, pollInterval: interval,
-		epochID: st.EpochID, cut: st.Cut,
+		cut: st.Cut,
 	}
 }
 
 // NewEnforcer is the production constructor: builds the real docker client + reads
 // env. Returns an error if the docker client cannot be created (caller degrades).
-func NewEnforcer(meter nicMeter) (*enforcer, error) {
+func NewEnforcer(tm *TrafficMonitor) (*enforcer, error) {
 	docker, err := newRealDocker()
 	if err != nil {
 		return nil, err
@@ -57,33 +71,14 @@ func NewEnforcer(meter nicMeter) (*enforcer, error) {
 			interval = d
 		}
 	}
-	return newEnforcer(meter, docker, "/etc/kaitu/cutoff.state", []string{"k2s"}, interval), nil
-}
-
-// SetQuota is called by the usage reporter each successful cycle: records Center's
-// authoritative quota + used, and snapshots the current meter. On a new epoch the
-// reporter has already rebaselined the meter (used≈0) → next reconcile unpauses.
-func (e *enforcer) SetQuota(epochID, quotaTotal, quotaUsed int64) {
-	// Snapshot the meter BEFORE taking e.mu. CumulativeBytes acquires
-	// hostNICMeter.mu; reconcile takes hostNICMeter.mu then e.mu, so reading the
-	// meter while holding e.mu here would be a lock-order inversion (ABBA deadlock).
-	cur, curErr := e.meter.CumulativeBytes()
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.epochID = epochID
-	e.quotaTotal = quotaTotal
-	e.quotaUsedBase = quotaUsed
-	if curErr == nil {
-		e.meterAtReport = cur
-	}
-	e.haveQuota = true
+	return newEnforcerFromStats(tm, docker, "/etc/kaitu/cutoff.state", []string{"k2s"}, interval), nil
 }
 
 // Run drives the fast reconcile loop until ctx is cancelled. The first reconcile
 // fires immediately so a restart re-applies a persisted cut at once.
 func (e *enforcer) Run(ctx context.Context) {
 	slog.Info("DIAG: cutoff-enforcer-start", "component", "cutoff", "interval", e.pollInterval, "containers", e.containers)
-	e.reconcile(ctx)
+	e.reconcileOnce()
 	t := time.NewTicker(e.pollInterval)
 	defer t.Stop()
 	for {
@@ -92,37 +87,53 @@ func (e *enforcer) Run(ctx context.Context) {
 			slog.Info("DIAG: cutoff-enforcer-stop", "component", "cutoff")
 			return
 		case <-t.C:
-			e.reconcile(ctx)
+			e.reconcileOnce()
 		}
 	}
 }
 
-// reconcile reads usage, computes the desired cut state, and drives every
-// data-plane container toward it (self-healing — re-applies if Docker resurrected
-// a container). Fail-safe: a meter read error changes nothing.
-func (e *enforcer) reconcile(ctx context.Context) {
-	cur, err := e.meter.CumulativeBytes()
-	if err != nil {
-		slog.Warn("DIAG: cutoff-meter-fail", "component", "cutoff", "err", err)
-		return
-	}
+// reconcileOnce reads the shared TrafficMonitor, computes the desired cut state,
+// and drives every data-plane container toward it. The node is the metering
+// authority: cut when used >= limit - reserve; an unlimited node (limit==0) never
+// cuts; consecutive meter-read errors fail closed (only when a limit is known).
+func (e *enforcer) reconcileOnce() {
+	stats, err := e.src.GetTrafficStats()
 
 	e.mu.Lock()
-	desired := e.cut // no quota yet (or anchor stale): hold current state
-	var effective int64
-	// cur < meterAtReport means the meter was rebaselined (epoch rolled over) but
-	// the matching SetQuota hasn't arrived yet — the anchor is stale, so hold the
-	// current state rather than computing a verdict on it. Normal intra-epoch reads
-	// are monotonic (cur >= meterAtReport).
-	if e.haveQuota && cur >= e.meterAtReport {
-		effective = e.quotaUsedBase + (cur - e.meterAtReport)
-		desired = e.quotaTotal > 0 && effective >= e.quotaTotal
+	desired := e.cut
+	switch {
+	case err != nil:
+		e.meterFails++
+		// Fail-closed only when there IS a limit to protect; an unlimited node
+		// has nothing to cut, so meter errors there change nothing.
+		if e.meterFails >= failClosedThreshold && e.lastLimit > 0 {
+			desired = true
+		}
+	default:
+		e.meterFails = 0
+		if stats.MonthlyTrafficLimitBytes > 0 {
+			e.lastLimit = stats.MonthlyTrafficLimitBytes
+			desired = stats.UsedTrafficBytes >= stats.MonthlyTrafficLimitBytes-quotaCutoffReserveBytes
+		} else {
+			desired = false // unlimited → never cut
+		}
 	}
-	epoch := e.epochID
 	changed := desired != e.cut
 	e.cut = desired
 	e.mu.Unlock()
 
+	e.apply(desired, stats.UsedTrafficBytes)
+	if changed {
+		if serr := saveCutoffState(e.statePath, cutoffState{Cut: desired}); serr != nil {
+			slog.Error("DIAG: cutoff-state-persist-fail", "component", "cutoff", "err", serr)
+		}
+	}
+}
+
+// apply drives every data-plane container toward the desired pause state
+// (self-healing — re-applies if Docker resurrected a container).
+func (e *enforcer) apply(desired bool, usedBytes int64) {
+	ctx := context.Background()
 	for _, name := range e.containers {
 		paused, exists, derr := e.docker.State(ctx, name)
 		if derr != nil {
@@ -137,7 +148,7 @@ func (e *enforcer) reconcile(ctx context.Context) {
 			if perr := e.docker.Pause(ctx, name); perr != nil {
 				slog.Error("DIAG: cutoff-pause-fail", "component", "cutoff", "container", name, "err", perr)
 			} else {
-				slog.Warn("DIAG: cutoff-paused", "component", "cutoff", "container", name, "effectiveUsed", effective)
+				slog.Warn("DIAG: cutoff-paused", "component", "cutoff", "container", name, "usedBytes", usedBytes)
 			}
 		case !desired && paused:
 			if uerr := e.docker.Unpause(ctx, name); uerr != nil {
@@ -145,12 +156,6 @@ func (e *enforcer) reconcile(ctx context.Context) {
 			} else {
 				slog.Info("DIAG: cutoff-unpaused", "component", "cutoff", "container", name)
 			}
-		}
-	}
-
-	if changed {
-		if serr := saveCutoffState(e.statePath, cutoffState{EpochID: epoch, Cut: desired}); serr != nil {
-			slog.Error("DIAG: cutoff-state-persist-fail", "component", "cutoff", "err", serr)
 		}
 	}
 }

@@ -3,7 +3,6 @@ package sidecar
 import (
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 )
 
@@ -43,58 +42,5 @@ func TestReadNICBytes_SumsPhysicalSkipsVirtual(t *testing.T) {
 func TestReadNICBytes_MissingFile(t *testing.T) {
 	if _, err := readNICBytes(t.TempDir()); err == nil {
 		t.Fatal("expected error for missing net/dev")
-	}
-}
-
-func TestHostNICMeter_RebaselineRestartsFromZero(t *testing.T) {
-	root := writeProcNetDev(t, sampleNetDev) // eth0 = 1500000
-	m := &hostNICMeter{procPath: root}
-	m.baseline = 1000000 // pretend epoch started at 1,000,000
-
-	got, err := m.CumulativeBytes()
-	if err != nil {
-		t.Fatalf("CumulativeBytes: %v", err)
-	}
-	if want := int64(500000); got != want { // 1500000 - 1000000
-		t.Fatalf("CumulativeBytes = %d, want %d", got, want)
-	}
-
-	m.Rebaseline() // baseline := 1500000
-	got, err = m.CumulativeBytes()
-	if err != nil {
-		t.Fatalf("CumulativeBytes after rebaseline: %v", err)
-	}
-	if got != 0 {
-		t.Fatalf("CumulativeBytes after rebaseline = %d, want 0", got)
-	}
-}
-
-func TestHostNICMeter_ConcurrentReadRebaseline(t *testing.T) {
-	root := writeProcNetDev(t, sampleNetDev)
-	m := &hostNICMeter{procPath: root}
-	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(2)
-		go func() { defer wg.Done(); _, _ = m.CumulativeBytes() }()
-		go func() { defer wg.Done(); m.Rebaseline() }()
-	}
-	wg.Wait()
-}
-
-func TestHostNICMeter_CounterWrapRebaselines(t *testing.T) {
-	root := writeProcNetDev(t, sampleNetDev) // eth0 = 1500000
-	m := &hostNICMeter{procPath: root}
-	m.baseline = 2000000 // baseline above current reading (reboot/wrap)
-
-	got, err := m.CumulativeBytes()
-	if err != nil {
-		t.Fatalf("CumulativeBytes: %v", err)
-	}
-	// raw(1500000) < baseline(2000000) → rebaseline to raw, return 0.
-	if got != 0 {
-		t.Fatalf("CumulativeBytes on wrap = %d, want 0", got)
-	}
-	if m.baseline != 1500000 {
-		t.Fatalf("baseline after wrap = %d, want 1500000", m.baseline)
 	}
 }

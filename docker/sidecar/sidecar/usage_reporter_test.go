@@ -3,6 +3,7 @@ package sidecar
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -12,24 +13,28 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// fakeMeter is a scripted nicMeter for the reporter tests.
-type fakeMeter struct {
-	mu          sync.Mutex
-	value       int64
-	rebaselines int
+// fakeStats is a scripted statsSource shared by the enforcer + reporter tests.
+// Both stats and err are guarded so tests can flip them between reconcile calls
+// under -race.
+type fakeStats struct {
+	mu    sync.Mutex
+	stats TrafficStats
+	err   error
 }
 
-func (f *fakeMeter) CumulativeBytes() (int64, error) {
+func (f *fakeStats) GetTrafficStats() (TrafficStats, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.value, nil
+	return f.stats, f.err
 }
-func (f *fakeMeter) Rebaseline() {
+
+func (f *fakeStats) set(stats TrafficStats, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.rebaselines++
-	f.value = 0
+	f.stats, f.err = stats, err
 }
+
+var errMeter = errors.New("meter fail")
 
 // usageServer is a fake Center /slave/usage returning a scripted response and
 // capturing the last request body.
@@ -38,6 +43,7 @@ type usageServer struct {
 	lastReq  NodeUsageRequest
 	resp     NodeUsageResponse
 	hits     int
+	status   int    // override response status (0 = 200)
 	wantUser string // expected Basic-auth username (ipv4)
 }
 
@@ -51,102 +57,94 @@ func (s *usageServer) handler() http.HandlerFunc {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		if s.status != 0 {
+			w.WriteHeader(s.status)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(usageEnvelope{Code: 0, Data: &s.resp})
 	}
 }
 
-func TestUsageReporter_ReportsCumulativeWithAuth(t *testing.T) {
-	us := &usageServer{resp: NodeUsageResponse{Verdict: "serve", EpochID: 0, NextReportInterval: 60}, wantUser: "1.2.3.4"}
+func (s *usageServer) hitCount() int { s.mu.Lock(); defer s.mu.Unlock(); return s.hits }
+
+func TestReporter_ReportsTrafficMonitorStats(t *testing.T) {
+	us := &usageServer{resp: NodeUsageResponse{NextReportInterval: 60}, wantUser: "1.2.3.4"}
 	srv := httptest.NewServer(us.handler())
 	defer srv.Close()
 
-	meter := &fakeMeter{value: 4242}
-	r := NewUsageReporter(meter, srv.URL, "1.2.3.4", "secret-xyz")
+	src := &fakeStats{stats: TrafficStats{
+		BillingCycleEndAt:        1700000000,
+		MonthlyTrafficLimitBytes: 2 << 40,
+		UsedTrafficBytes:         3 << 30,
+	}}
+	r := NewUsageReporter(src, srv.URL, "1.2.3.4", "secret-xyz")
 
-	sleep := r.runOnce(context.Background())
+	r.runOnce(context.Background())
 
 	us.mu.Lock()
 	defer us.mu.Unlock()
-	if us.hits != 1 {
-		t.Fatalf("hits = %d, want 1", us.hits)
-	}
-	if us.lastReq.CumulativeBytes != 4242 {
-		t.Fatalf("CumulativeBytes = %d, want 4242", us.lastReq.CumulativeBytes)
-	}
-	if sleep != 60*time.Second {
-		t.Fatalf("sleep = %v, want 60s", sleep)
-	}
+	assert.Equal(t, 1, us.hits)
+	assert.Equal(t, int64(1700000000), us.lastReq.EpochID)
+	assert.Equal(t, int64(3<<30), us.lastReq.CumulativeBytes)
+	assert.Equal(t, int64(2<<40), us.lastReq.QuotaTotalBytes)
 }
 
-func TestUsageReporter_EpochChangeRebaselines(t *testing.T) {
-	us := &usageServer{resp: NodeUsageResponse{Verdict: "serve", EpochID: 7, NextReportInterval: 30}}
+func TestReporter_NoReportOnMeterError(t *testing.T) {
+	us := &usageServer{resp: NodeUsageResponse{NextReportInterval: 60}}
 	srv := httptest.NewServer(us.handler())
 	defer srv.Close()
 
-	meter := &fakeMeter{value: 999}
-	r := NewUsageReporter(meter, srv.URL, "1.2.3.4", "s")
+	src := &fakeStats{err: errMeter}
+	r := NewUsageReporter(src, srv.URL, "1.2.3.4", "secret")
 
-	r.runOnce(context.Background()) // adopts epoch 7 → rebaseline
+	sleep := r.runOnce(context.Background())
 
-	meter.mu.Lock()
-	defer meter.mu.Unlock()
-	if meter.rebaselines != 1 {
-		t.Fatalf("rebaselines = %d, want 1 (epoch 0→7)", meter.rebaselines)
-	}
+	assert.Equal(t, 0, us.hitCount(), "must NOT POST on meter error")
+	assert.Equal(t, usageReportMaxBackoff, sleep)
+}
+
+func TestReporter_HonorsNextReportInterval(t *testing.T) {
+	us := &usageServer{resp: NodeUsageResponse{NextReportInterval: 120}, wantUser: "1.2.3.4"}
+	srv := httptest.NewServer(us.handler())
+	defer srv.Close()
+
+	src := &fakeStats{stats: TrafficStats{MonthlyTrafficLimitBytes: 2 << 40, UsedTrafficBytes: 1 << 30}}
+	r := NewUsageReporter(src, srv.URL, "1.2.3.4", "secret")
+
+	assert.Equal(t, 120*time.Second, r.runOnce(context.Background()))
+}
+
+func TestReporter_FloorsZeroInterval(t *testing.T) {
+	us := &usageServer{resp: NodeUsageResponse{NextReportInterval: 0}, wantUser: "1.2.3.4"}
+	srv := httptest.NewServer(us.handler())
+	defer srv.Close()
+
+	src := &fakeStats{stats: TrafficStats{MonthlyTrafficLimitBytes: 2 << 40, UsedTrafficBytes: 1 << 30}}
+	r := NewUsageReporter(src, srv.URL, "1.2.3.4", "secret")
+
+	assert.Equal(t, usageReportDefaultInterval, r.runOnce(context.Background()))
 }
 
 func TestUsageReporter_CenterFailureBacksOff(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
+	us := &usageServer{status: http.StatusInternalServerError}
+	srv := httptest.NewServer(us.handler())
 	defer srv.Close()
 
-	meter := &fakeMeter{value: 100}
-	r := NewUsageReporter(meter, srv.URL, "1.2.3.4", "s")
+	src := &fakeStats{stats: TrafficStats{MonthlyTrafficLimitBytes: 2 << 40, UsedTrafficBytes: 1 << 30}}
+	r := NewUsageReporter(src, srv.URL, "1.2.3.4", "secret")
 
-	sleep := r.runOnce(context.Background())
-	if sleep != usageReportMaxBackoff {
-		t.Fatalf("sleep on failure = %v, want %v", sleep, usageReportMaxBackoff)
-	}
+	assert.Equal(t, usageReportMaxBackoff, r.runOnce(context.Background()))
 }
 
 func TestUsageReporter_PayloadTagsMatchCenter(t *testing.T) {
 	// Guard: the JSON tags must match center.NodeUsageRequest exactly, else
 	// metering silently breaks. Marshal and assert the wire keys.
-	b, _ := json.Marshal(NodeUsageRequest{EpochID: 1, CumulativeBytes: 2, Seq: 3, Ts: 4})
+	b, _ := json.Marshal(NodeUsageRequest{EpochID: 1, CumulativeBytes: 2, QuotaTotalBytes: 3, Seq: 4, Ts: 5})
 	var m map[string]any
 	_ = json.Unmarshal(b, &m)
-	for _, k := range []string{"epoch_id", "cumulative_bytes", "seq", "ts"} {
+	for _, k := range []string{"epoch_id", "cumulative_bytes", "quota_total_bytes", "seq", "ts"} {
 		if _, ok := m[k]; !ok {
 			t.Fatalf("NodeUsageRequest missing JSON key %q (got %v)", k, m)
 		}
 	}
-}
-
-type fakeSink struct {
-	mu                 sync.Mutex
-	epoch, total, used int64
-	calls              int
-}
-
-func (s *fakeSink) SetQuota(epochID, quotaTotal, quotaUsed int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.epoch, s.total, s.used, s.calls = epochID, quotaTotal, quotaUsed, s.calls+1
-}
-
-func TestReporter_FeedsQuotaToSink(t *testing.T) {
-	us := &usageServer{resp: NodeUsageResponse{Verdict: "serve", EpochID: 3, QuotaTotal: 2000, QuotaUsed: 1500, NextReportInterval: 60}, wantUser: "1.2.3.4"}
-	srv := httptest.NewServer(us.handler())
-	defer srv.Close()
-	r := NewUsageReporter(&fakeMeter{value: 1500}, srv.URL, "1.2.3.4", "secret")
-	sink := &fakeSink{}
-	r.SetSink(sink)
-	r.runOnce(context.Background())
-	sink.mu.Lock()
-	defer sink.mu.Unlock()
-	assert.Equal(t, 1, sink.calls)
-	assert.Equal(t, int64(3), sink.epoch)
-	assert.Equal(t, int64(2000), sink.total)
-	assert.Equal(t, int64(1500), sink.used)
 }
