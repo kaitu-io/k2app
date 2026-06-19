@@ -11,8 +11,10 @@ import (
 const (
 	trafficStopThresholdNum = 95 // 95% → stop（整数百分比避免浮点）
 	trafficStopThresholdDen = 100
-	usageReportIntervalSec  = 60
-	trafficEpochPeriodSec   = 30 * 86400 // MVP 月度周期；TrafficResetAt 由 Center 推进
+	// usageReportIntervalSec is defined in logic_node_usage.go as the single
+	// source of truth for report cadence (A2). A3 rewrites this endpoint to
+	// the pure recorder and must not redeclare it.
+	trafficEpochPeriodSec = 30 * 86400 // MVP 月度周期；TrafficResetAt 由 Center 推进
 )
 
 // NodeUsageRequest 节点累计流量上报（非增量，对丢包/重复/乱序鲁棒）。
