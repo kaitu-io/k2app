@@ -69,7 +69,7 @@ All handlers, logic, and models live in the root `center` package. No internal s
 
 Implications:
 - A tier like "4T = 2×2T (two nodes, two IPs)" is purely an **ops provisioning choice** (provision N nodes for the user). It needs **no** subscription-model or schema change — the extra node just appears as another k2subs tunnel. Do not conflate it with the deferred "multi-node subscription" work — k2subs already delivers multi-node.
-- `PrivateNodeSubscription.SlaveNodeID` / `CloudInstanceID` (1:1, nullable) are the **per-line metering/quota anchor** (the node self-meters to `/slave/usage` by IP; `isPrivateTunnelExhausted` drops the line from `/api/subs` at 100%), **not** the multi-node mechanism.
+- `PrivateNodeSubscription.SlaveNodeID` is the **per-line metering/quota anchor**: the node self-meters to `/slave/usage`, Center mirrors it into `NodeUsage` (1:1 by `NodeID`), and `isNodeOverQuota` (剩余 ≤ 500MB) drops the line from `/api/subs`. `CloudInstanceID` (nullable) is now display-only (IP/Region). Neither is the multi-node mechanism.
 - Router admission gate = `HasActivePrivateLines` (owning ≥1 serviceable private line), fully decoupled from App `tier`/`MaxRouterDevice`.
 
 ## API Response Format

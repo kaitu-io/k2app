@@ -13,18 +13,6 @@ import (
 // (same package) — single source of truth for the report cadence. Do NOT redeclare
 // it here; the response below returns that constant verbatim.
 
-// Deprecated: these three constants belong to the OLD CloudInstance-based metering
-// and still have live consumers this task does NOT touch (api_user_private_node.go
-// 95% display calc; slave_api_node.go linkCloudInstanceQuota writes TrafficResetAt;
-// two tests seed CloudInstance.TrafficResetAt). KEEP them here so every commit
-// through A4/A5 stays compilable. A6 repoints/degrades the consumers; A7 deletes
-// these. Do NOT delete in A3.
-const (
-	trafficStopThresholdNum = 95
-	trafficStopThresholdDen = 100
-	trafficEpochPeriodSec   = 30 * 86400
-)
-
 // NodeUsageRequest — node-reported cumulative usage (robust to loss/dup/reorder).
 // JSON tags MUST match docker/sidecar NodeUsageRequest exactly.
 type NodeUsageRequest struct {

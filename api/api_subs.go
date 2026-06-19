@@ -265,11 +265,11 @@ func api_subs(c *gin.Context) {
 }
 
 // writeSubsOK emits the raw /api/subs success response. RecommendScore is
-// derived from CloudInstance billing data which updates on the order of
-// minutes (via worker_cloud sync), so end-to-end caching by CloudFront could
-// freeze a stale view for hours. The Cache-Control header is the client-side
-// half of that contract; CloudFront Behavior for /api/subs must also set
-// Minimum TTL = 0 for the header to be respected.
+// derived from NodeUsage (node-reported metering, updated each report cycle),
+// so end-to-end caching by CloudFront could freeze a stale view for hours. The
+// Cache-Control header is the client-side half of that contract; CloudFront
+// Behavior for /api/subs must also set Minimum TTL = 0 for the header to be
+// respected.
 func writeSubsOK(c *gin.Context, resp SubsResponse) {
 	c.Header("Cache-Control", "no-store, private")
 	// RAW JSON — see the wire-protocol note at the top of this file.
