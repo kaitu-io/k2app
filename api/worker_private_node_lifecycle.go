@@ -110,6 +110,14 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 		if err := dispatchNodeOperation(ctx, s.ID, s.CloudInstanceID, NodeOpDestroy, "system:lifecycle", DestroyParams{Reason: "suspend ended"}); err != nil {
 			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] dispatch destroy sub=%d: %v", s.ID, err)
 		}
+		// 释放基础设施绑定（在 destroy 工单已捕获 cloud_instance_id 之后）：VPS 即将销毁、IP
+		// 即将被云厂商回收 → 清空 slave_node_id / cloud_instance_id / bound_ipv4，否则回收 IP 上
+		// 的新节点注册时会按陈旧 bound_ipv4 误绑到此已终态订阅（配合注册侧 reconcilePrivateIdentity
+		// 的按 IP 重认领，#16 + P0 单一权威源防御纵深）。
+		if err := db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", s.ID).
+			Updates(map[string]any{"slave_node_id": nil, "cloud_instance_id": nil, "bound_ipv4": ""}).Error; err != nil {
+			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] clear infra bindings sub=%d: %v", s.ID, err)
+		}
 	}
 
 	return nil

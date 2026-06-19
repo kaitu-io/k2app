@@ -159,3 +159,47 @@ func TestLifecycleSweep_RenewalCancelsOpenStop(t *testing.T) {
 	require.NoError(t, db.Get().First(&gotOp, stop.ID).Error)
 	assert.Equal(t, NodeOpCanceled, gotOp.Status, "renewed sub's open stop must be canceled")
 }
+
+// TestLifecycleSweep_DeprovisionClearsBindings 验证终态(deprovisioned)释放基础设施绑定：
+// VPS 即将销毁、IP 即将被云厂商回收 → 清空 slave_node_id / cloud_instance_id / bound_ipv4，
+// 否则回收 IP 上的新节点注册时会按陈旧 bound_ipv4 误绑到这条已终态订阅（配合注册侧
+// reconcilePrivateIdentity 的 BoundIpv4 重认领，#16 + P0 单一权威源防御纵深）。
+// destroy 工单仍须被派发（用清空前的 cloud_instance_id）。
+func TestLifecycleSweep_DeprovisionClearsBindings(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	now := time.Now().Unix()
+
+	ciID := uint64(999102)
+	nodeID := uint64(999103)
+	const orderID = uint64(9_600_103) // 专属 OrderID 段，pre-purge 防 uniqueIndex 残留
+	db.Get().Unscoped().Where("order_id = ?", orderID).Delete(&PrivateNodeSubscription{})
+	sub := &PrivateNodeSubscription{
+		UserID: 990003, PlanID: 1, OrderID: orderID, Status: PNStatusSuspended,
+		ExpiresAt:   now - privateNodeGraceSeconds - privateNodeSuspendSeconds - 10, // 过停机期 → deprovisioned
+		CloudInstanceID: &ciID, SlaveNodeID: &nodeID, BoundIpv4: "203.0.113.77",
+		Region: "ap-northeast-1", IPType: IPTypeNonResidential, TrafficTotalBytes: 1,
+	}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() {
+		db.Get().Where("sub_id = ?", sub.ID).Delete(&NodeOperation{})
+		db.Get().Unscoped().Where("order_id = ?", orderID).Delete(&PrivateNodeSubscription{})
+	})
+
+	require.NoError(t, handlePrivateNodeLifecycleSweep(ctx, nil))
+
+	var got PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&got, sub.ID).Error)
+	assert.Equal(t, PNStatusDeprovisioned, got.Status, "suspend ended → deprovisioned")
+	assert.Nil(t, got.SlaveNodeID, "deprovision 必须清空 slave_node_id")
+	assert.Nil(t, got.CloudInstanceID, "deprovision 必须清空 cloud_instance_id")
+	assert.Equal(t, "", got.BoundIpv4, "deprovision 必须清空 bound_ipv4（防回收 IP 误绑，配合注册侧重认领）")
+
+	// destroy 工单仍须派发（用清空前捕获的 cloud_instance_id）。
+	var op NodeOperation
+	require.NoError(t, db.Get().Where("sub_id = ? AND action = ?", sub.ID, NodeOpDestroy).First(&op).Error)
+	assert.Equal(t, NodeOpQueued, op.Status, "destroy 工单应派发")
+	require.NotNil(t, op.CloudInstanceID, "destroy 工单应带上销毁前的 cloud_instance_id")
+	assert.Equal(t, ciID, *op.CloudInstanceID)
+}
