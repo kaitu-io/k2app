@@ -1,6 +1,7 @@
 package sidecar
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,6 +10,39 @@ import (
 	"sync"
 	"time"
 )
+
+// trafficState persists the cycle baseline so a restart resumes in-cycle usage
+// instead of re-anchoring to the current NIC counter (which would zero usage).
+type trafficState struct {
+	BillingCycleEndAt int64  `json:"billing_cycle_end_at"`
+	CycleStartBytes   uint64 `json:"cycle_start_bytes"`
+}
+
+// loadTrafficState reads the persisted baseline. A missing or corrupt file is
+// treated as the zero value — never an error that would block startup.
+func loadTrafficState(path string) trafficState {
+	var st trafficState
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return trafficState{}
+	}
+	_ = json.Unmarshal(data, &st)
+	return st
+}
+
+// saveTrafficState persists the baseline atomically (write temp + rename) so a
+// crash mid-write never leaves a half-written file.
+func saveTrafficState(path string, st trafficState) error {
+	data, err := json.Marshal(st)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
 
 // TrafficMonitor traffic monitor
 type TrafficMonitor struct {
@@ -21,6 +55,7 @@ type TrafficMonitor struct {
 	primaryInterface string   // primary network interface name
 	lastDetectedAt   time.Time // last time interface was detected
 	procPath         string    // proc mount for NIC reads ("/host/proc" in prod)
+	statePath        string    // persisted cycle baseline path (default /etc/kaitu/traffic.state)
 }
 
 // NewTrafficMonitor creates a traffic monitor
@@ -57,6 +92,17 @@ func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64) (*TrafficM
 
 	// Calculate current billing cycle end time
 	tm.billingCycleEndAt = tm.calculateNextCycleEnd(time.Now()).Unix()
+
+	// Restore the cycle baseline across restarts IF the persisted cycle still
+	// matches the current one — otherwise a restart re-anchors the baseline to
+	// the current NIC counter and silently resets in-cycle usage to ~0.
+	tm.statePath = "/etc/kaitu/traffic.state"
+	if st := loadTrafficState(tm.statePath); st.BillingCycleEndAt == tm.billingCycleEndAt && st.CycleStartBytes > 0 {
+		tm.cycleStartBytes = st.CycleStartBytes // resume in-cycle usage across restart
+		slog.Info("Traffic cycle baseline restored from state", "component", "traffic", "cycleStartBytes", tm.cycleStartBytes)
+	} else {
+		_ = saveTrafficState(tm.statePath, trafficState{BillingCycleEndAt: tm.billingCycleEndAt, CycleStartBytes: tm.cycleStartBytes})
+	}
 
 	slog.Info("Traffic monitor initialized",
 		"component", "traffic",
@@ -196,6 +242,9 @@ func (tm *TrafficMonitor) checkAndResetCycle() error {
 	oldCycleEnd := time.Unix(tm.billingCycleEndAt, 0)
 	tm.cycleStartBytes = currentBytes
 	tm.billingCycleEndAt = tm.calculateNextCycleEnd(now).Unix()
+
+	// Persist the new baseline so a restart in the new cycle resumes from here.
+	_ = saveTrafficState(tm.statePath, trafficState{BillingCycleEndAt: tm.billingCycleEndAt, CycleStartBytes: tm.cycleStartBytes})
 
 	slog.Info("Billing cycle reset",
 		"component", "traffic",
