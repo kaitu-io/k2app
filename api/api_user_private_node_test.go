@@ -46,20 +46,33 @@ func TestGetUserPrivateNodes(t *testing.T) {
 
 	now := time.Now().Unix()
 
-	// ---- cloud instance bound to user A's active sub ----
+	// ---- cloud instance bound to user A's active sub (IP/Region display only) ----
 	ci := CloudInstance{
 		Provider: "aws_lightsail", AccountName: "test-acct",
-		InstanceID:       generateId("test-ci"),
-		IPAddress:        "203.0.113.7",
-		Region:           "ap-northeast-1",
-		TrafficUsedBytes: 123456789,
+		InstanceID: generateId("test-ci"),
+		IPAddress:  "203.0.113.7",
+		Region:     "ap-northeast-1",
 	}
 	require.NoError(t, db.Get().Create(&ci).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&ci) })
 
-	// active sub for user A, bound to the cloud instance
+	// backing private node + its NodeUsage authority mirror (usage/exhaust source)
+	nodeA := SlaveNode{
+		Ipv4: "203.0.113.7", SecretToken: "secret-pn-list", Country: "JP",
+		Region: "ap-northeast-1", Name: "private-pn-list", Class: NodeClassPrivate,
+		PrivateOwnerUserID: &userA.ID,
+	}
+	require.NoError(t, db.Get().Create(&nodeA).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&nodeA) })
+	usageA := NodeUsage{NodeID: nodeA.ID, Epoch: 0, QuotaTotalBytes: 2 << 40,
+		UsedBytes: 123456789, LastReportAt: now}
+	require.NoError(t, db.Get().Create(&usageA).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Where("node_id = ?", nodeA.ID).Delete(&NodeUsage{}) })
+
+	// active sub for user A, bound to the node (usage) + cloud instance (display)
 	subActive := PrivateNodeSubscription{
 		UserID: userA.ID, PlanID: plan.ID, OrderID: uint64(now),
+		SlaveNodeID:       &nodeA.ID,
 		CloudInstanceID:   &ci.ID,
 		Region:            "ap-northeast-1",
 		IPType:            IPTypeNonResidential,
@@ -142,9 +155,9 @@ func TestGetUserPrivateNodes(t *testing.T) {
 }
 
 // TestGetUserPrivateNodes_QuotaExhaustedField asserts the orthogonal quota
-// signal: a provisioned sub whose bound instance is at >= 95% usage surfaces
-// quotaExhausted=true (matching the runtime cutoff in slave_api_usage.go) and
-// quotaResetAt mirrors the instance's TrafficResetAt.
+// signal: a provisioned sub whose bound node's NodeUsage is over quota surfaces
+// quotaExhausted=true (matching isNodeOverQuota) and quotaResetAt mirrors the
+// NodeUsage Epoch (cycle-end Unix sec).
 func TestGetUserPrivateNodes_QuotaExhaustedField(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
@@ -161,25 +174,38 @@ func TestGetUserPrivateNodes_QuotaExhaustedField(t *testing.T) {
 
 	now := time.Now().Unix()
 
-	// Bound instance at 96% usage (960/1000 >= 95%) with a known reset time.
+	// CloudInstance for IP/Region display only.
 	ci := CloudInstance{
 		Provider: "aws_lightsail", AccountName: "test-acct",
-		InstanceID:        generateId("test-ci-quota"),
-		IPAddress:         "203.0.113.7",
-		Region:            "ap-northeast-1",
-		TrafficTotalBytes: 1000,
-		TrafficUsedBytes:  960,
-		TrafficResetAt:    1893456000,
+		InstanceID: generateId("test-ci-quota"),
+		IPAddress:  "203.0.113.7",
+		Region:     "ap-northeast-1",
 	}
 	require.NoError(t, db.Get().Create(&ci).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&ci) })
 
+	// Backing node + NodeUsage over quota: used within 500MiB reserve of a 2GiB
+	// limit → isNodeOverQuota true. Epoch is the cycle-end Unix sec the panel
+	// surfaces as quotaResetAt.
+	node := SlaveNode{
+		Ipv4: "203.0.113.7", SecretToken: "secret-pn-quota", Country: "JP",
+		Region: "ap-northeast-1", Name: "private-pn-quota", Class: NodeClassPrivate,
+		PrivateOwnerUserID: &user.ID,
+	}
+	require.NoError(t, db.Get().Create(&node).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&node) })
+	usage := NodeUsage{NodeID: node.ID, Epoch: 1893456000,
+		QuotaTotalBytes: 2 << 30, UsedBytes: 2 << 30, LastReportAt: now}
+	require.NoError(t, db.Get().Create(&usage).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Where("node_id = ?", node.ID).Delete(&NodeUsage{}) })
+
 	sub := PrivateNodeSubscription{
 		UserID: user.ID, PlanID: plan.ID, OrderID: uint64(time.Now().UnixNano()),
+		SlaveNodeID:       &node.ID,
 		CloudInstanceID:   &ci.ID,
 		Region:            "ap-northeast-1",
 		IPType:            IPTypeNonResidential,
-		TrafficTotalBytes: 1000,
+		TrafficTotalBytes: 2 << 30,
 		Status:            PNStatusActive,
 		PurchasedAt:       now - 3600,
 		ExpiresAt:         now + 30*86400,

@@ -22,64 +22,91 @@ func TestPickTrafficTier(t *testing.T) {
 	}
 }
 
-func TestTrafficWarningCrosses80SendsOnceThenDedups(t *testing.T) {
-	skipIfNoConfig(t)
-	ctx := context.Background()
-	ci := &CloudInstance{
-		Provider: "test", AccountName: "a", InstanceID: "i-w80",
-		IPAddress: "1.2.3.4", Region: "jp",
-		TrafficUsedBytes: 85, TrafficTotalBytes: 100, TrafficEpoch: 3,
-	}
-	require.NoError(t, db.Get().Create(ci).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Where("instance_id = ?", "i-w80").Delete(&CloudInstance{}) })
-	sub := &PrivateNodeSubscription{
-		UserID: 9990001, PlanID: 1, OrderID: 59990001, Region: "jp",
-		IPType: IPTypeNonResidential, TrafficTotalBytes: 100,
-		Status: PNStatusActive, PurchasedAt: 1, ExpiresAt: 1 << 40,
-		CloudInstanceID: &ci.ID,
-	}
-	require.NoError(t, db.Get().Create(sub).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Where("order_id = ?", 59990001).Delete(&PrivateNodeSubscription{}) })
+// seedActivePrivateLineWithUsage stands up an owner + private SlaveNode + active
+// PrivateNodeSubscription (SlaveNodeID set) + a NodeUsage row keyed by that node
+// at `pct`% of `total`. The NodeUsage is the metering authority the worker reads.
+// Cleanup removes all rows. Returns the sub + node for assertions.
+func seedActivePrivateLineWithUsage(t *testing.T, total int64, pct int) (*PrivateNodeSubscription, *SlaveNode) {
+	t.Helper()
+	const epoch int64 = 3
+	owner := CreateTestUser(t)
 
-	var sent []int
-	sendWarnHook = func(percent int, userID uint64) { sent = append(sent, percent) }
+	node := SlaveNode{
+		Ipv4:               "10.77.0.1",
+		SecretToken:        "secret-nu-warn",
+		Country:            "JP",
+		Region:             "jp",
+		Name:               "private-jp-nu-warn",
+		Class:              NodeClassPrivate,
+		PrivateOwnerUserID: &owner.ID,
+	}
+	require.NoError(t, db.Get().Create(&node).Error)
+
+	sub := PrivateNodeSubscription{
+		UserID: owner.ID, PlanID: 1, OrderID: node.ID, Region: "jp",
+		IPType: IPTypeNonResidential, TrafficTotalBytes: total,
+		Status: PNStatusActive, PurchasedAt: 1, ExpiresAt: 1 << 40,
+		SlaveNodeID: &node.ID,
+	}
+	require.NoError(t, db.Get().Create(&sub).Error)
+	require.NoError(t, db.Get().Model(&node).Update("private_sub_id", sub.ID).Error)
+
+	// +1% headroom so integer truncation in pickTrafficTier's used*100/total can't
+	// drop us below the requested tier boundary (matters for large `total`).
+	used := total * int64(pct) / 100
+	if pct < 100 {
+		used += total / 100
+	}
+	u := NodeUsage{
+		NodeID:          node.ID,
+		Epoch:           epoch,
+		QuotaTotalBytes: total,
+		UsedBytes:       used,
+		LastReportAt:    1,
+	}
+	require.NoError(t, db.Get().Create(&u).Error)
+
+	t.Cleanup(func() {
+		db.Get().Unscoped().Where("node_id = ?", node.ID).Delete(&NodeUsage{})
+		db.Get().Unscoped().Delete(&sub)
+		db.Get().Unscoped().Delete(&node)
+	})
+	return &sub, &node
+}
+
+func TestTrafficWarn_FromNodeUsage(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	var fired []int
+	sendWarnHook = func(percent int, userID uint64) { fired = append(fired, percent) }
 	t.Cleanup(func() { sendWarnHook = nil })
 
-	require.NoError(t, runPrivateNodeTrafficWarning(ctx))
-	require.Equal(t, []int{80}, sent)
-
-	sent = nil
-	require.NoError(t, runPrivateNodeTrafficWarning(ctx))
-	require.Empty(t, sent) // 同 epoch 已发,不重发
+	sub, node := seedActivePrivateLineWithUsage(t, 1<<40, 80)
+	_ = node
+	require.NoError(t, runPrivateNodeTrafficWarning(context.Background()))
+	require.NoError(t, runPrivateNodeTrafficWarning(context.Background()))
+	assert.Equal(t, []int{80}, fired, "fire once, dedup by epoch")
+	_ = sub
 }
 
 func TestTrafficWarningEpochResetReSends(t *testing.T) {
 	skipIfNoConfig(t)
 	ctx := context.Background()
-	ci := &CloudInstance{
-		Provider: "test", AccountName: "a", InstanceID: "i-wep",
-		IPAddress: "1.2.3.4", Region: "jp",
-		TrafficUsedBytes: 85, TrafficTotalBytes: 100, TrafficEpoch: 3,
-		Warn80SentEpoch: 3,
-	}
-	require.NoError(t, db.Get().Create(ci).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Where("instance_id = ?", "i-wep").Delete(&CloudInstance{}) })
-	sub := &PrivateNodeSubscription{
-		UserID: 9990002, PlanID: 1, OrderID: 59990002, Region: "jp",
-		IPType: IPTypeNonResidential, TrafficTotalBytes: 100,
-		Status: PNStatusActive, PurchasedAt: 1, ExpiresAt: 1 << 40,
-		CloudInstanceID: &ci.ID,
-	}
-	require.NoError(t, db.Get().Create(sub).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Where("order_id = ?", 59990002).Delete(&PrivateNodeSubscription{}) })
-
-	// epoch 推进到 4,used 重置后又涨过 80
-	require.NoError(t, db.Get().Model(&CloudInstance{}).Where("id = ?", ci.ID).
-		Updates(map[string]any{"traffic_epoch": 4, "traffic_used_bytes": 81}).Error)
-
 	var sent []int
 	sendWarnHook = func(percent int, userID uint64) { sent = append(sent, percent) }
 	t.Cleanup(func() { sendWarnHook = nil })
+
+	_, node := seedActivePrivateLineWithUsage(t, 100, 85)
+
+	// 标记本 epoch(3) 已发 80 档 → 同 epoch 不重发。
+	require.NoError(t, db.Get().Model(&NodeUsage{}).Where("node_id = ?", node.ID).
+		Update("warn80_sent_epoch", 3).Error)
+	require.NoError(t, runPrivateNodeTrafficWarning(ctx))
+	require.Empty(t, sent, "同 epoch 已发,不重发")
+
+	// epoch 推进到 4,used 重置后又涨过 80 → 重新发。
+	require.NoError(t, db.Get().Model(&NodeUsage{}).Where("node_id = ?", node.ID).
+		Updates(map[string]any{"epoch": 4, "used_bytes": 81}).Error)
 	require.NoError(t, runPrivateNodeTrafficWarning(ctx))
 	require.Equal(t, []int{80}, sent)
 }

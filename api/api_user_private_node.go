@@ -9,7 +9,8 @@ import (
 )
 
 // api_get_user_private_nodes 返回当前用户拥有的专属节点订阅（只读视图）。
-// 严格 owner 隔离：只查 user_id = 当前用户。流量已用量来自绑定的 CloudInstance。
+// 严格 owner 隔离：只查 user_id = 当前用户。流量已用量来自节点权威镜像 NodeUsage（按
+// SlaveNodeID）；CloudInstance 仅用于展示 IP/Region。
 func api_get_user_private_nodes(c *gin.Context) {
 	userID := ReqUserID(c)
 
@@ -46,20 +47,20 @@ func api_get_user_private_nodes(c *gin.Context) {
 			log.Warnf(c, "private sub %d references missing Plan %d: %v", s.ID, s.PlanID, err)
 		}
 
-		// 绑定实例 → 流量已用 + 节点连接信息（仅开通后存在）
+		// 流量已用 + 耗尽：来自节点权威镜像 NodeUsage（按 SlaveNodeID）。
+		if s.SlaveNodeID != nil {
+			var u NodeUsage
+			if err := db.Get().Where("node_id = ?", *s.SlaveNodeID).First(&u).Error; err == nil {
+				d.TrafficUsedBytes = u.UsedBytes
+				d.QuotaResetAt = u.Epoch
+				d.QuotaExhausted = isNodeOverQuota(&u)
+			}
+		}
+		// 节点连接信息（IP/Region）仍取自 CloudInstance（仅展示用）。
 		if s.CloudInstanceID != nil {
 			var ci CloudInstance
-			if err := db.Get().First(&ci, *s.CloudInstanceID).Error; err == nil {
-				d.TrafficUsedBytes = ci.TrafficUsedBytes
+			if err := db.Get().Select("ip_address", "region").First(&ci, *s.CloudInstanceID).Error; err == nil {
 				d.Node = &DataPrivateNodeNode{IP: ci.IPAddress, Region: ci.Region}
-				d.QuotaResetAt = ci.TrafficResetAt
-				// 同 slave_api_usage.go 的整数阈值（同包常量），避免漂移。
-				if ci.TrafficTotalBytes > 0 &&
-					ci.TrafficUsedBytes*trafficStopThresholdDen >= ci.TrafficTotalBytes*trafficStopThresholdNum {
-					d.QuotaExhausted = true
-				}
-			} else {
-				log.Warnf(c, "private sub %d references missing CloudInstance %d: %v", s.ID, *s.CloudInstanceID, err)
 			}
 		}
 

@@ -51,7 +51,7 @@ func TestSlaveJWTAuth_PrivateNodeUsage(t *testing.T) {
 			Region:            "hongkong",
 			TrafficUsedBytes:  used,
 			TrafficTotalBytes: total,
-			TrafficResetAt:    now + trafficEpochPeriodSec,
+			TrafficResetAt:    now + 30*86400,
 		}
 		require.NoError(t, db.Get().Create(&ci).Error)
 

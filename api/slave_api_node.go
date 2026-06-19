@@ -165,9 +165,9 @@ func bindNodePrivate(tx *gorm.DB, node *SlaveNode, sub *PrivateNodeSubscription)
 	return nil
 }
 
-// linkCloudInstanceQuota 回填 CloudInstance 链路 + 写卖出配额（首次激活专用，best-effort）。
-// provider sync 报的是 VPS bundle，绝不可当卖出额（upsertCloudInstance 对 private 已跳过覆盖）。
-// ip_address 非唯一：IP 回收后可能有多条历史行，取最新一条（id DESC）。
+// linkCloudInstanceQuota 回填 CloudInstance 链路（首次激活专用，best-effort）。
+// 计量已迁出 CloudInstance → NodeUsage（节点自报配额），故不再向 CloudInstance 写卖出额/
+// 周期；仅保留 cloud_instance_id 关联供面板显示 IP/Region。ip_address 非唯一：取最新一条。
 func linkCloudInstanceQuota(c *gin.Context, tx *gorm.DB, node *SlaveNode, sub *PrivateNodeSubscription) {
 	var ci CloudInstance
 	if e := tx.Where("ip_address = ?", node.Ipv4).Order("id DESC").First(&ci).Error; e != nil {
@@ -177,13 +177,6 @@ func linkCloudInstanceQuota(c *gin.Context, tx *gorm.DB, node *SlaveNode, sub *P
 	if e := tx.Model(&PrivateNodeSubscription{}).Where("id = ?", sub.ID).
 		Update("cloud_instance_id", ci.ID).Error; e != nil {
 		log.Errorf(c, "link cloud instance to sub=%d: %v", sub.ID, e)
-	}
-	ciUpdates := map[string]any{"traffic_total_bytes": sub.TrafficTotalBytes}
-	if ci.TrafficResetAt == 0 {
-		ciUpdates["traffic_reset_at"] = time.Now().Unix() + trafficEpochPeriodSec
-	}
-	if e := tx.Model(&CloudInstance{}).Where("id = ?", ci.ID).Updates(ciUpdates).Error; e != nil {
-		log.Errorf(c, "write sold quota to cloud instance %d (sub=%d): %v", ci.ID, sub.ID, e)
 	}
 }
 

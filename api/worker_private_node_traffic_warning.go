@@ -40,16 +40,16 @@ func pickTrafficTier(used, total int64) int {
 }
 
 // sentEpochFor 返回某档位的去重列指针。
-func sentEpochFor(ci *CloudInstance, tier int) *int64 {
+func sentEpochFor(u *NodeUsage, tier int) *int64 {
 	switch tier {
 	case exhaustThreshold:
-		return &ci.Exhausted100SentEpoch
+		return &u.Exhausted100SentEpoch
 	case warnThreshold90:
-		return &ci.Warn90SentEpoch
+		return &u.Warn90SentEpoch
 	case warnThreshold80:
-		return &ci.Warn80SentEpoch
+		return &u.Warn80SentEpoch
 	case warnThreshold70:
-		return &ci.Warn70SentEpoch
+		return &u.Warn70SentEpoch
 	}
 	return nil
 }
@@ -60,56 +60,56 @@ func handlePrivateNodeTrafficWarn(ctx context.Context, _ []byte) error {
 }
 
 // runPrivateNodeTrafficWarning 扫 active 专属线路,跨 70/80/90/100% 阈值发预警,按 epoch 去重。
-// 每条 active 订阅绑定的 CloudInstance 持有配额计数;跨阈值发一次,去重键 = TrafficEpoch
-// (重置 epoch +1 即重新允许发信)。同一轮取最高档位,只发一封。
+// 配额计数来自节点权威镜像 NodeUsage(按 sub.SlaveNodeID);跨阈值发一次,去重键 = NodeUsage.Epoch
+// (节点进入新计费周期 epoch 推进即重新允许发信)。同一轮取最高档位,只发一封。
 func runPrivateNodeTrafficWarning(ctx context.Context) error {
 	var subs []PrivateNodeSubscription
-	if err := db.Get().Where("status = ? AND cloud_instance_id IS NOT NULL", PNStatusActive).
+	if err := db.Get().Where("status = ? AND slave_node_id IS NOT NULL", PNStatusActive).
 		Find(&subs).Error; err != nil {
 		return fmt.Errorf("scan active subs: %w", err)
 	}
 	for i := range subs {
 		sub := &subs[i]
-		var ci CloudInstance
-		if err := db.Get().First(&ci, *sub.CloudInstanceID).Error; err != nil {
-			log.Warnf(ctx, "traffic-warn: sub %d cloud instance missing: %v", sub.ID, err)
+		var u NodeUsage
+		if err := db.Get().Where("node_id = ?", *sub.SlaveNodeID).First(&u).Error; err != nil {
+			log.Warnf(ctx, "traffic-warn: sub %d node usage missing (node=%d): %v", sub.ID, *sub.SlaveNodeID, err)
 			continue
 		}
 
-		tier := pickTrafficTier(ci.TrafficUsedBytes, ci.TrafficTotalBytes)
+		tier := pickTrafficTier(u.UsedBytes, u.QuotaTotalBytes)
 		if tier == 0 {
 			continue
 		}
-		marker := sentEpochFor(&ci, tier)
-		if marker == nil || *marker == ci.TrafficEpoch {
+		marker := sentEpochFor(&u, tier)
+		if marker == nil || *marker == u.Epoch {
 			continue // 该档本 epoch 已发
 		}
-		fireTrafficWarn(ctx, sub, &ci, tier)
+		fireTrafficWarn(ctx, sub, &u, tier)
 		col := map[int]string{
 			warnThreshold70:  "warn70_sent_epoch",
 			warnThreshold80:  "warn80_sent_epoch",
 			warnThreshold90:  "warn90_sent_epoch",
 			exhaustThreshold: "exhausted100_sent_epoch",
 		}[tier]
-		if err := db.Get().Model(&CloudInstance{}).Where("id = ?", ci.ID).
-			Update(col, ci.TrafficEpoch).Error; err != nil {
-			log.Errorf(ctx, "traffic-warn: persist %s for instance %d failed: %v", col, ci.ID, err)
+		if err := db.Get().Model(&NodeUsage{}).Where("node_id = ?", u.NodeID).
+			Update(col, u.Epoch).Error; err != nil {
+			log.Errorf(ctx, "traffic-warn: persist %s for node %d failed: %v", col, u.NodeID, err)
 		}
 	}
 	return nil
 }
 
-func fireTrafficWarn(ctx context.Context, sub *PrivateNodeSubscription, ci *CloudInstance, percent int) {
+func fireTrafficWarn(ctx context.Context, sub *PrivateNodeSubscription, u *NodeUsage, percent int) {
 	if sendWarnHook != nil {
 		sendWarnHook(percent, sub.UserID)
 		return
 	}
 	meta := PrivateNodeTrafficWarnMeta{
 		Percent:   percent,
-		UsedGB:    formatGB(ci.TrafficUsedBytes),
-		TotalGB:   formatGB(ci.TrafficTotalBytes),
+		UsedGB:    formatGB(u.UsedBytes),
+		TotalGB:   formatGB(u.QuotaTotalBytes),
 		Region:    sub.Region,
-		ResetDate: formatResetDate(ci.TrafficResetAt),
+		ResetDate: formatResetDate(u.Epoch),
 	}
 	tmpl := privateNodeTrafficWarnTemplate
 	if percent >= exhaustThreshold {

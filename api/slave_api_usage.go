@@ -1,6 +1,7 @@
 package center
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -65,6 +66,13 @@ func api_slave_node_report_usage(c *gin.Context) {
 			QuotaTotalBytes: req.QuotaTotalBytes, LastReportAt: now}
 		if cerr := db.Get().Create(&u).Error; cerr != nil {
 			log.Errorf(c, "[USAGE] create node_usage node=%d: %v", node.ID, cerr)
+		}
+		// G2 (spec §8.5): a node serving with no cap is a silent cost risk. Fires
+		// once per fresh node (this create branch runs once per NodeID).
+		if req.QuotaTotalBytes == 0 {
+			log.Warnf(c, "[USAGE] node=%d ip=%s reporting with NO quota limit (uncapped)", node.ID, node.Ipv4)
+			go sendCloudSlackNotification(c.Request.Context(), "Node Uncapped",
+				fmt.Sprintf("node=%d ip=%s first report has QuotaTotalBytes=0 (no cap set)", node.ID, node.Ipv4))
 		}
 		Success(c, &NodeUsageResponse{NextReportInterval: usageReportIntervalSec})
 		return
