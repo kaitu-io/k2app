@@ -55,6 +55,26 @@
 
 ---
 
+## 2.3 共享节点 vs 私有节点：为什么不合并（已读代码核实 2026-06-19）
+
+直觉上"共享也记流量、也处理超额，应该统一"——核实后**只有节点侧的计量代码是共用的，超额处理两者本质不同**，强行合并会把"软降权"与"硬掐断"两种语义搅在一起。
+
+| 维度 | 共享池 | 私有线路 |
+|---|---|---|
+| 超额动作 | **软**：≥95% 从 `/api/tunnels` 隐藏（不再分新连接），老连接不动 | **硬**：=100% 节点 sidecar `pause k2s` |
+| 用量来源 | **provider 账单同步**（`worker_cloud.go` 从云 API 拉 → 写 `CloudInstance.TrafficUsedBytes`） | **节点自量宿主 NIC 自报**（→ `PrivateNodeUsage`） |
+| 判据函数 | `isTunnelOverQuota(*CloudInstance)`（95%，**本次不动**） | `isPrivateTunnelExhausted` 改读 `*PrivateNodeUsage`（100%） |
+| 服务对象 | 我们自有机群，负载均衡，保 provider 不超量计费 | 单客户一条专线，保售出额度不被超用 |
+
+**已核实的关键事实：**
+- **节点侧 `TrafficMonitor` 是所有节点共用的同一份代码**（`main.go:159` 无条件启 Collector）——计量本就 common，无重复可消除。差别仅在私有节点**额外**跑 enforcer（硬掐）。
+- **节点状态上报**（`/slave report_status` → `SlaveNodeLoad`）写的是**负载评分时序**，含 `UsedTrafficBytes` 但**不写** `CloudInstance.TrafficUsedBytes`。
+- 共享池 95% 门读的 `CloudInstance.TrafficUsedBytes` 来自 **provider 同步**（`worker_cloud.go`），**不是**节点自报，也**不经** `/slave/usage`（私有专属）。
+
+**边界结论：** 本次改动**完全不触碰共享路径**。`/slave/usage` 私有专属（按节点 `PrivateSubID` 解析，shared 节点根本不调它）；`isTunnelOverQuota` + `worker_cloud` provider 同步保持原样；`CloudInstance` traffic 列保留，部分正是给共享池用。私有计量搬到 `PrivateNodeUsage`，共享计量留在 `CloudInstance`——两套各管各的，不是遗漏。
+
+**显式非目标（future，不在本次）：** 让共享池也改成"节点自量 + 硬断"。共享是自有机群、软降权已够用，且自量比 provider 账单多一层（住宅/无 API 的 provider 才有意义）。私有线路产品**不需要**它，YAGNI，留待真有需求再做（关联 [[#18]] 思路）。
+
 ## 3. 数据模型
 
 ### 3.1 新表 `PrivateNodeUsage`（`api/model_private_node.go`）
