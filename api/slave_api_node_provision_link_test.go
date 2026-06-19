@@ -211,10 +211,15 @@ func driveSlaveUpsert(t *testing.T, ip string, req SlaveNodeUpsertRequest) *Test
 	return resp
 }
 
-// TestSelfRegister_ClaimSecurity 验证原子认领 CAS 的三条安全不变量：
+// TestSelfRegister_ClaimSecurity 验证认领的安全不变量（单一权威源重构后）：
 //   - failed 态订阅不被注册侧 activation 复活（resurrection guard）。
 //   - active 态订阅不可被持 token 的不同 IP 重认领（MITM/owner 劫持 guard）。
 //   - 认领成功即置空 token，杜绝重放；二次同 token 注册为幂等 no-op。
+//
+// 注意（Invariant 1）：携带 claim 的节点永不进共享池 —— 认领失败时落 private-unowned
+// （class=private 但 PrivateSubID=nil，被共享池排除且 device-auth 拒绝 = 谁都不服务），
+// 比旧的"按 shared 处理"更安全（旧行为正是泄漏的根因）。安全断言因此从"node 非 private"
+// 改为"node 未绑定到任何订阅（无复活/无劫持）"。
 func TestSelfRegister_ClaimSecurity(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
@@ -262,10 +267,12 @@ func TestSelfRegister_ClaimSecurity(t *testing.T) {
 		require.NoError(t, db.Get().First(&reloadedSub, sub.ID).Error)
 		require.Equal(t, PNStatusFailed, reloadedSub.Status, "failed 订阅不应被注册侧复活")
 
-		// 节点必须仍非 private。
+		// 节点落 private-unowned：携带 claim 永不进共享池，但 failed 订阅不复活 → 未绑定。
 		var node SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&node).Error)
-		require.NotEqual(t, NodeClassPrivate, node.Class, "failed claim 不应把节点置 private")
+		require.Equal(t, NodeClassPrivate, node.Class, "claim-carrying 节点永不 shared（防泄漏）")
+		require.Nil(t, node.PrivateSubID, "failed 订阅不应被复活并绑定")
+		require.Nil(t, node.PrivateOwnerUserID, "failed claim 不应回填归属")
 
 		// op 不应被翻 done。
 		var reloadedJob NodeOperation
@@ -319,10 +326,11 @@ func TestSelfRegister_ClaimSecurity(t *testing.T) {
 		require.NotNil(t, reloadedSub.SlaveNodeID)
 		require.Equal(t, nodeA.ID, *reloadedSub.SlaveNodeID, "active 订阅不应被重指向攻击者节点")
 
-		// node B 仍非 private。
+		// 攻击者节点携带 claim → private(Inv1)，但绝不能绑定到受害者订阅（无劫持）：未回填归属。
 		var nodeB SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", ipB).First(&nodeB).Error)
-		require.NotEqual(t, NodeClassPrivate, nodeB.Class, "攻击者节点不应被认领为 private")
+		require.Nil(t, nodeB.PrivateSubID, "攻击者节点不应被绑定到受害者订阅")
+		require.Nil(t, nodeB.PrivateOwnerUserID, "攻击者节点不应获得归属")
 	})
 
 	t.Run("TokenInvalidatedAfterClaim", func(t *testing.T) {

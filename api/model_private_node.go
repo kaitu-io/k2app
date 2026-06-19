@@ -35,11 +35,16 @@ type PrivateNodeSubscription struct {
 	// 归属
 	UserID  uint64 `gorm:"not null;index" json:"userId"` // 主人
 	PlanID  uint64 `gorm:"not null;index" json:"planId"` // 专属节点套餐（Plan.Product=private_node）
-	OrderID uint64 `gorm:"uniqueIndex" json:"orderId"`    // 触发开通的订单（一单一 sub，幂等）
+	OrderID uint64 `gorm:"uniqueIndex" json:"orderId"`   // 触发开通的订单（一单一 sub，幂等）
 
 	// 基础设施绑定（开通后回填）
 	CloudInstanceID *uint64 `gorm:"index" json:"cloudInstanceId,omitempty"` // → CloudInstance.ID
 	SlaveNodeID     *uint64 `gorm:"index" json:"slaveNodeId,omitempty"`     // → SlaveNode.ID
+	// BoundIpv4 是节点身份的**持久连接键**：首次认领时记录该节点的 IPv4。节点重启走
+	// create 路径(unregister 硬删行后)且一次性 token 已消费时，按此 IP 重新认领归属
+	// —— 它是唯一能扛过 delete/recreate 的标识。IP 同时充当防劫持闸：别的 IP 持偷来的
+	// token 也对不上。deprovision 时须清空(连同 SlaveNodeID/CloudInstanceID)，防 IP 回收误绑。
+	BoundIpv4 string `gorm:"type:varchar(45);index" json:"boundIpv4,omitempty"`
 
 	// 套餐属性 / 购买时选择
 	// 购买时快照（与 PlanSpec 解耦，套餐日后可改不影响已购）
