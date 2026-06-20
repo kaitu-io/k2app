@@ -203,13 +203,13 @@ func api_subs(c *gin.Context) {
 	// can compute per-tunnel RecommendScore via the same code path /api/tunnels
 	// uses. Non-metered nodes fall through to ComputeRecommendScore(nil) → 0.5
 	// (neutral), keeping them eligible in pickWeighted without being favored.
-	nodeIDs := make([]uint64, 0, len(tunnels))
+	nodeIPs := make([]string, 0, len(tunnels))
 	for _, t := range tunnels {
 		if t.Node != nil && t.Node.ID != 0 {
-			nodeIDs = append(nodeIDs, t.Node.ID)
+			nodeIPs = append(nodeIPs, t.Node.Ipv4)
 		}
 	}
-	usageMap := getNodeUsagesByNodeIDs(nodeIDs)
+	usageMap := getNodeUsagesByIPs(nodeIPs)
 	now := time.Now().Unix()
 
 	items := make([]SubsTunnel, 0, len(tunnels))
@@ -241,7 +241,7 @@ func api_subs(c *gin.Context) {
 		// clients run weighted-pick over this list — once billing tips into
 		// overage every byte costs real money, so even a low score is not
 		// safe enough. Admin bypass keeps the path open for triage.
-		u := usageMap[t.Node.ID] // nil if no usage row yet
+		u := usageMap[t.Node.Ipv4] // nil if no usage row yet
 		if shouldHideTunnelForUser(u, isAdmin, now) {
 			log.Warnf(c, "subs: tunnel %d (node=%s, ip=%s) hidden from non-admin (over-quota/offline)",
 				t.ID, t.Node.Name, t.Node.Ipv4)

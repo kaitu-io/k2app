@@ -89,11 +89,13 @@ func api_k2_tunnels(c *gin.Context) {
 
 	log.Debugf(c, "found %d tunnels from database before filtering", len(tunnels))
 
-	// Collect all node IDs for batch queries
+	// Collect node IDs (load details) and node IPs (usage mirror, keyed by ipv4).
 	nodeIDs := make([]uint64, 0, len(tunnels))
+	nodeIPs := make([]string, 0, len(tunnels))
 	for _, tunnel := range tunnels {
 		if tunnel.Node != nil && tunnel.Node.ID != 0 {
 			nodeIDs = append(nodeIDs, tunnel.Node.ID)
+			nodeIPs = append(nodeIPs, tunnel.Node.Ipv4)
 		}
 	}
 
@@ -101,9 +103,9 @@ func api_k2_tunnels(c *gin.Context) {
 	// Returns detailed metrics for evaluation (traffic, bandwidth, cloud tunnel status)
 	nodeLoadDetails := GetNodeLoadDetails(c, nodeIDs)
 
-	// Batch query NodeUsage by NodeID (node-authority metering mirror) for
+	// Batch query NodeUsage by ipv4 (node-authority metering mirror) for
 	// over-quota/offline hide + recommend-score source.
-	usageMap := getNodeUsagesByNodeIDs(nodeIDs)
+	usageMap := getNodeUsagesByIPs(nodeIPs)
 	now := time.Now().Unix()
 
 	// Convert to API response format, filter out tunnels without nodes
@@ -136,7 +138,7 @@ func api_k2_tunnels(c *gin.Context) {
 		// a low-score node — and once billing has tipped into overage every
 		// additional byte costs real money. Admin path stays open so such
 		// nodes remain visible for triage.
-		u := usageMap[tunnel.Node.ID] // nil if no usage row yet
+		u := usageMap[tunnel.Node.Ipv4] // nil if no usage row yet
 		if shouldHideTunnelForUser(u, isAdmin, now) {
 			log.Warnf(c, "tunnel %d (node=%s, ip=%s) hidden from non-admin (over-quota/offline)",
 				tunnel.ID, tunnel.Node.Name, tunnel.Node.Ipv4)

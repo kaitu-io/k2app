@@ -44,16 +44,18 @@ func api_v20260717_tunnels(c *gin.Context) {
 		return
 	}
 
-	// Collect node IDs for batch NodeUsage lookup (same as api_k2_tunnels).
+	// Collect node IDs (load details) and node IPs (usage mirror, keyed by ipv4).
 	nodeIDs := make([]uint64, 0, len(tunnels))
+	nodeIPs := make([]string, 0, len(tunnels))
 	for _, tunnel := range tunnels {
 		if tunnel.Node != nil && tunnel.Node.ID != 0 {
 			nodeIDs = append(nodeIDs, tunnel.Node.ID)
+			nodeIPs = append(nodeIPs, tunnel.Node.Ipv4)
 		}
 	}
 
 	nodeLoadDetails := GetNodeLoadDetails(c, nodeIDs)
-	usageMap := getNodeUsagesByNodeIDs(nodeIDs)
+	usageMap := getNodeUsagesByIPs(nodeIPs)
 	now := time.Now().Unix()
 
 	items := make([]DataSlaveTunnelV20260717, 0, len(tunnels))
@@ -66,7 +68,7 @@ func api_v20260717_tunnels(c *gin.Context) {
 			continue
 		}
 
-		u := usageMap[tunnel.Node.ID] // nil if no usage row yet
+		u := usageMap[tunnel.Node.Ipv4] // nil if no usage row yet
 		if shouldHideTunnelForUser(u, false, now) {
 			continue
 		}
