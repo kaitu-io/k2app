@@ -64,15 +64,15 @@ func handlePrivateNodeTrafficWarn(ctx context.Context, _ []byte) error {
 // (节点进入新计费周期 epoch 推进即重新允许发信)。同一轮取最高档位,只发一封。
 func runPrivateNodeTrafficWarning(ctx context.Context) error {
 	var subs []PrivateNodeSubscription
-	if err := db.Get().Where("status = ? AND slave_node_id IS NOT NULL", PNStatusActive).
+	if err := db.Get().Where("status = ? AND slave_node_id IS NOT NULL AND bound_ipv4 <> ''", PNStatusActive).
 		Find(&subs).Error; err != nil {
 		return fmt.Errorf("scan active subs: %w", err)
 	}
 	for i := range subs {
 		sub := &subs[i]
 		var u NodeUsage
-		if err := db.Get().Where("node_id = ?", *sub.SlaveNodeID).First(&u).Error; err != nil {
-			log.Warnf(ctx, "traffic-warn: sub %d node usage missing (node=%d): %v", sub.ID, *sub.SlaveNodeID, err)
+		if err := db.Get().Where("ipv4 = ?", sub.BoundIpv4).First(&u).Error; err != nil {
+			log.Warnf(ctx, "traffic-warn: sub %d node usage missing (ip=%s): %v", sub.ID, sub.BoundIpv4, err)
 			continue
 		}
 
@@ -91,9 +91,9 @@ func runPrivateNodeTrafficWarning(ctx context.Context) error {
 			warnThreshold90:  "warn90_sent_epoch",
 			exhaustThreshold: "exhausted100_sent_epoch",
 		}[tier]
-		if err := db.Get().Model(&NodeUsage{}).Where("node_id = ?", u.NodeID).
+		if err := db.Get().Model(&NodeUsage{}).Where("ipv4 = ?", u.Ipv4).
 			Update(col, u.Epoch).Error; err != nil {
-			log.Errorf(ctx, "traffic-warn: persist %s for node %d failed: %v", col, u.NodeID, err)
+			log.Errorf(ctx, "traffic-warn: persist %s for ip %s failed: %v", col, u.Ipv4, err)
 		}
 	}
 	return nil

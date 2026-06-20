@@ -39,22 +39,28 @@ func ResolveGatewayPrivateTunnels(ctx context.Context, userID uint64, now int64)
 		return nil, err
 	}
 
-	// Collect serviceable, node-bound subs; drop lines whose node usage is over
-	// the cutoff reserve (exhausted) so the router Picks a healthy line. Source =
-	// NodeUsage (node-authority mirror), keyed by NodeID — no CloudInstance/IP.
+	// Collect serviceable, node-bound subs. Tunnel fetch keys by SlaveNodeID
+	// (the FK on SlaveTunnel); usage/exhaustion keys by BoundIpv4 (durable —
+	// SlaveNode.ID churns on re-registration, see NodeUsage ipv4 re-key).
 	nodeIDs := make([]uint64, 0, len(subs))
+	idToIP := make(map[uint64]string, len(subs))
+	nodeIPs := make([]string, 0, len(subs))
 	for i := range subs {
 		if subs[i].IsServiceable(now) && subs[i].SlaveNodeID != nil {
 			nodeIDs = append(nodeIDs, *subs[i].SlaveNodeID)
+			idToIP[*subs[i].SlaveNodeID] = subs[i].BoundIpv4
+			if subs[i].BoundIpv4 != "" {
+				nodeIPs = append(nodeIPs, subs[i].BoundIpv4)
+			}
 		}
 	}
 	if len(nodeIDs) == 0 {
 		return []SlaveTunnel{}, nil
 	}
-	usageMap := getNodeUsagesByNodeIDs(nodeIDs)
+	usageMap := getNodeUsagesByIPs(nodeIPs)
 	healthyNodeIDs := make([]uint64, 0, len(nodeIDs))
 	for _, id := range nodeIDs {
-		if isNodeOverQuota(usageMap[id]) {
+		if isNodeOverQuota(usageMap[idToIP[id]]) {
 			continue // exhausted → drop from pool, triggers router switch
 		}
 		healthyNodeIDs = append(healthyNodeIDs, id)
