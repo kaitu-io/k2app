@@ -47,19 +47,21 @@ func isNodeOffline(u *NodeUsage, now int64) bool {
 	return now-u.LastReportAt > nodeOfflineSeconds
 }
 
-// getNodeUsagesByNodeIDs batch-loads NodeUsage rows keyed by NodeID. Missing
-// rows simply absent from the map (caller treats absent as "no usage data").
-func getNodeUsagesByNodeIDs(nodeIDs []uint64) map[uint64]*NodeUsage {
-	out := make(map[uint64]*NodeUsage, len(nodeIDs))
-	if len(nodeIDs) == 0 {
+// getNodeUsagesByIPs batch-loads NodeUsage rows keyed by the durable ipv4 key.
+// Missing rows are simply absent from the map (caller treats absent as "no usage
+// data" → neutral 0.5 / not hidden). Keyed by ipv4 (not SlaveNode.ID) so a node
+// re-registering with a new id keeps its usage row matched.
+func getNodeUsagesByIPs(ips []string) map[string]*NodeUsage {
+	out := make(map[string]*NodeUsage, len(ips))
+	if len(ips) == 0 {
 		return out
 	}
 	var rows []NodeUsage
-	if err := db.Get().Where("node_id IN ?", nodeIDs).Find(&rows).Error; err != nil {
+	if err := db.Get().Where("ipv4 IN ?", ips).Find(&rows).Error; err != nil {
 		return out
 	}
 	for i := range rows {
-		out[rows[i].NodeID] = &rows[i]
+		out[rows[i].Ipv4] = &rows[i]
 	}
 	return out
 }
