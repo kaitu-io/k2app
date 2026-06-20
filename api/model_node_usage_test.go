@@ -10,24 +10,25 @@ import (
 )
 
 // TestNodeUsage_CRUD verifies the table exists post-migrate and the unique
-// NodeID constraint holds (1:1 with SlaveNode). Integration: real dev MySQL.
+// Ipv4 constraint holds (the durable node key). Integration: real dev MySQL.
 func TestNodeUsage_CRUD(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
 
 	const nodeID = uint64(9_700_001)
-	db.Get().Unscoped().Where("node_id = ?", nodeID).Delete(&NodeUsage{})
-	t.Cleanup(func() { db.Get().Unscoped().Where("node_id = ?", nodeID).Delete(&NodeUsage{}) })
+	const ip = "203.0.113.201"
+	db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&NodeUsage{})
+	t.Cleanup(func() { db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&NodeUsage{}) })
 
-	u := &NodeUsage{NodeID: nodeID, Epoch: 100, UsedBytes: 2048, QuotaTotalBytes: 4096, LastReportAt: 1700000000}
+	u := &NodeUsage{NodeID: nodeID, Ipv4: ip, Epoch: 100, UsedBytes: 2048, QuotaTotalBytes: 4096, LastReportAt: 1700000000}
 	require.NoError(t, db.Get().Create(u).Error)
 
 	var got NodeUsage
-	require.NoError(t, db.Get().Where("node_id = ?", nodeID).First(&got).Error)
+	require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&got).Error)
 	assert.Equal(t, int64(2048), got.UsedBytes)
 	assert.Equal(t, int64(4096), got.QuotaTotalBytes)
 
-	// Unique NodeID: a second row for the same node must fail.
-	dup := &NodeUsage{NodeID: nodeID, Epoch: 1}
-	assert.Error(t, db.Get().Create(dup).Error, "node_id uniqueIndex must reject a duplicate")
+	// Unique Ipv4: a second row for the same ip must fail (even with a new node id).
+	dup := &NodeUsage{NodeID: nodeID + 1, Ipv4: ip, Epoch: 1}
+	assert.Error(t, db.Get().Create(dup).Error, "ipv4 uniqueIndex must reject a duplicate")
 }

@@ -31,6 +31,7 @@ func seedActivePrivateLineWithUsage(t *testing.T, total int64, pct int) (*Privat
 	const epoch int64 = 3
 	owner := CreateTestUser(t)
 
+	db.Get().Unscoped().Where("ipv4 = ?", "10.77.0.1").Delete(&SlaveNode{})
 	node := SlaveNode{
 		Ipv4:               "10.77.0.1",
 		SecretToken:        "secret-nu-warn",
@@ -46,7 +47,7 @@ func seedActivePrivateLineWithUsage(t *testing.T, total int64, pct int) (*Privat
 		UserID: owner.ID, PlanID: 1, OrderID: node.ID, Region: "jp",
 		IPType: IPTypeNonResidential, TrafficTotalBytes: total,
 		Status: PNStatusActive, PurchasedAt: 1, ExpiresAt: 1 << 40,
-		SlaveNodeID: &node.ID,
+		SlaveNodeID: &node.ID, BoundIpv4: node.Ipv4,
 	}
 	require.NoError(t, db.Get().Create(&sub).Error)
 	require.NoError(t, db.Get().Model(&node).Update("private_sub_id", sub.ID).Error)
@@ -59,6 +60,7 @@ func seedActivePrivateLineWithUsage(t *testing.T, total int64, pct int) (*Privat
 	}
 	u := NodeUsage{
 		NodeID:          node.ID,
+		Ipv4:            node.Ipv4,
 		Epoch:           epoch,
 		QuotaTotalBytes: total,
 		UsedBytes:       used,
@@ -67,7 +69,7 @@ func seedActivePrivateLineWithUsage(t *testing.T, total int64, pct int) (*Privat
 	require.NoError(t, db.Get().Create(&u).Error)
 
 	t.Cleanup(func() {
-		db.Get().Unscoped().Where("node_id = ?", node.ID).Delete(&NodeUsage{})
+		db.Get().Unscoped().Where("ipv4 = ?", node.Ipv4).Delete(&NodeUsage{})
 		db.Get().Unscoped().Delete(&sub)
 		db.Get().Unscoped().Delete(&node)
 	})

@@ -64,15 +64,16 @@ func TestGetUserPrivateNodes(t *testing.T) {
 	}
 	require.NoError(t, db.Get().Create(&nodeA).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&nodeA) })
-	usageA := NodeUsage{NodeID: nodeA.ID, Epoch: 0, QuotaTotalBytes: 2 << 40,
+	usageA := NodeUsage{NodeID: nodeA.ID, Ipv4: nodeA.Ipv4, Epoch: 0, QuotaTotalBytes: 2 << 40,
 		UsedBytes: 123456789, LastReportAt: now}
 	require.NoError(t, db.Get().Create(&usageA).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Where("node_id = ?", nodeA.ID).Delete(&NodeUsage{}) })
+	t.Cleanup(func() { db.Get().Unscoped().Where("ipv4 = ?", nodeA.Ipv4).Delete(&NodeUsage{}) })
 
 	// active sub for user A, bound to the node (usage) + cloud instance (display)
 	subActive := PrivateNodeSubscription{
 		UserID: userA.ID, PlanID: plan.ID, OrderID: uint64(now),
 		SlaveNodeID:       &nodeA.ID,
+		BoundIpv4:         nodeA.Ipv4,
 		CloudInstanceID:   &ci.ID,
 		Region:            "ap-northeast-1",
 		IPType:            IPTypeNonResidential,
@@ -194,14 +195,15 @@ func TestGetUserPrivateNodes_QuotaExhaustedField(t *testing.T) {
 	}
 	require.NoError(t, db.Get().Create(&node).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&node) })
-	usage := NodeUsage{NodeID: node.ID, Epoch: 1893456000,
+	usage := NodeUsage{NodeID: node.ID, Ipv4: node.Ipv4, Epoch: 1893456000,
 		QuotaTotalBytes: 2 << 30, UsedBytes: 2 << 30, LastReportAt: now}
 	require.NoError(t, db.Get().Create(&usage).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Where("node_id = ?", node.ID).Delete(&NodeUsage{}) })
+	t.Cleanup(func() { db.Get().Unscoped().Where("ipv4 = ?", node.Ipv4).Delete(&NodeUsage{}) })
 
 	sub := PrivateNodeSubscription{
 		UserID: user.ID, PlanID: plan.ID, OrderID: uint64(time.Now().UnixNano()),
 		SlaveNodeID:       &node.ID,
+		BoundIpv4:         node.Ipv4,
 		CloudInstanceID:   &ci.ID,
 		Region:            "ap-northeast-1",
 		IPType:            IPTypeNonResidential,

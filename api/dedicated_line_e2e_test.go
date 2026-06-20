@@ -191,10 +191,10 @@ func makePrivateLine(t *testing.T, owner *User, ip, label string, used, total in
 	require.NoError(t, db.Get().Create(&ci).Error)
 
 	// NodeUsage is the authority the resolver/subs read for over-quota (keyed by
-	// NodeID, unified 500MB reserve). Seed it to match used/total.
-	db.Get().Unscoped().Where("node_id = ?", node.ID).Delete(&NodeUsage{})
+	// ipv4, unified 500MB reserve). Seed it to match used/total.
+	db.Get().Unscoped().Where("ipv4 = ?", node.Ipv4).Delete(&NodeUsage{})
 	usage := NodeUsage{
-		NodeID: node.ID, QuotaTotalBytes: total, UsedBytes: used,
+		NodeID: node.ID, Ipv4: node.Ipv4, QuotaTotalBytes: total, UsedBytes: used,
 		Epoch: now + 30*86400, LastReportAt: now,
 	}
 	require.NoError(t, db.Get().Create(&usage).Error)
@@ -203,7 +203,7 @@ func makePrivateLine(t *testing.T, owner *User, ip, label string, used, total in
 		UserID: owner.ID, OrderID: owner.ID*1000 + uint64(now%1000) + uint64(node.ID),
 		Status: PNStatusActive, Region: "jp", IPType: IPTypeNonResidential,
 		TrafficTotalBytes: total, PurchasedAt: now, ExpiresAt: now + 86400,
-		SlaveNodeID: &node.ID,
+		SlaveNodeID: &node.ID, BoundIpv4: node.Ipv4,
 	}
 	if linkCI {
 		ciID := ci.ID

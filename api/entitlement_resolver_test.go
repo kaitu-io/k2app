@@ -212,18 +212,18 @@ func TestResolveGateway_ExhaustedDroppedViaUsage(t *testing.T) {
 	}
 	require.NoError(t, db.Get().Create(&healthyNode).Error)
 
-	// NodeUsage keyed by NodeID: exhausted node is over the 500MB reserve
+	// NodeUsage keyed by ipv4: exhausted node is over the 500MB reserve
 	// (2T - 100MB used > 2T - 500MB cutoff), healthy node well under.
-	for _, ip := range []uint64{exhaustedNode.ID, healthyNode.ID} {
-		db.Get().Unscoped().Where("node_id = ?", ip).Delete(&NodeUsage{})
+	for _, ip := range []string{exhaustedNode.Ipv4, healthyNode.Ipv4} {
+		db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&NodeUsage{})
 	}
 	exhaustedUsage := NodeUsage{
-		NodeID: exhaustedNode.ID, QuotaTotalBytes: 2 << 40,
+		NodeID: exhaustedNode.ID, Ipv4: exhaustedNode.Ipv4, QuotaTotalBytes: 2 << 40,
 		UsedBytes: (2 << 40) - (100 << 20), Epoch: now + 15*86400, LastReportAt: now,
 	}
 	require.NoError(t, db.Get().Create(&exhaustedUsage).Error)
 	healthyUsage := NodeUsage{
-		NodeID: healthyNode.ID, QuotaTotalBytes: 2 << 40,
+		NodeID: healthyNode.ID, Ipv4: healthyNode.Ipv4, QuotaTotalBytes: 2 << 40,
 		UsedBytes: 1 << 30, Epoch: now + 15*86400, LastReportAt: now,
 	}
 	require.NoError(t, db.Get().Create(&healthyUsage).Error)
@@ -243,13 +243,13 @@ func TestResolveGateway_ExhaustedDroppedViaUsage(t *testing.T) {
 
 	exhaustedSub := PrivateNodeSubscription{
 		UserID: owner.ID, OrderID: owner.ID*100 + 1, Status: PNStatusActive, Region: "japan",
-		IPType: IPTypeNonResidential, SlaveNodeID: &exhaustedNode.ID,
+		IPType: IPTypeNonResidential, SlaveNodeID: &exhaustedNode.ID, BoundIpv4: exhaustedNode.Ipv4,
 		PurchasedAt: now, ExpiresAt: now + 86400,
 	}
 	require.NoError(t, db.Get().Create(&exhaustedSub).Error)
 	healthySub := PrivateNodeSubscription{
 		UserID: owner.ID, OrderID: owner.ID*100 + 2, Status: PNStatusActive, Region: "japan",
-		IPType: IPTypeNonResidential, SlaveNodeID: &healthyNode.ID,
+		IPType: IPTypeNonResidential, SlaveNodeID: &healthyNode.ID, BoundIpv4: healthyNode.Ipv4,
 		PurchasedAt: now, ExpiresAt: now + 86400,
 	}
 	require.NoError(t, db.Get().Create(&healthySub).Error)
