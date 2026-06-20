@@ -43,6 +43,8 @@ func ResolveGatewayPrivateTunnels(ctx context.Context, userID uint64, now int64)
 	// (the FK on SlaveTunnel); usage/exhaustion keys by BoundIpv4 (durable —
 	// SlaveNode.ID churns on re-registration, see NodeUsage ipv4 re-key).
 	nodeIDs := make([]uint64, 0, len(subs))
+	// node↔sub is 1:1, so a duplicate SlaveNodeID can't occur here; last-write-wins
+	// on this map is a non-issue.
 	idToIP := make(map[uint64]string, len(subs))
 	nodeIPs := make([]string, 0, len(subs))
 	for i := range subs {

@@ -30,7 +30,7 @@ type NodeUsageResponse struct {
 }
 
 // api_slave_node_report_usage records POST /slave/usage into NodeUsage (keyed by
-// NodeID). Pure recorder: follow node epoch, max used within epoch, adopt
+// ipv4, the durable key). Pure recorder: follow node epoch, max used within epoch, adopt
 // node-sourced quota, stamp last_report_at. No cutoff verdict (node-side
 // authority). All nodes report; no private gate.
 func api_slave_node_report_usage(c *gin.Context) {
@@ -62,20 +62,26 @@ func api_slave_node_report_usage(c *gin.Context) {
 	var u NodeUsage
 	err := db.Get().Where("ipv4 = ?", node.Ipv4).First(&u).Error
 	if err != nil {
-		// First report for this node IP → create.
-		u = NodeUsage{Ipv4: node.Ipv4, NodeID: node.ID, Epoch: req.EpochID,
+		// First report for this node IP → try create.
+		created := NodeUsage{Ipv4: node.Ipv4, NodeID: node.ID, Epoch: req.EpochID,
 			UsedBytes: req.CumulativeBytes, QuotaTotalBytes: req.QuotaTotalBytes, LastReportAt: now}
-		if cerr := db.Get().Create(&u).Error; cerr != nil {
-			log.Errorf(c, "[USAGE] create node_usage ip=%s: %v", node.Ipv4, cerr)
+		if cerr := db.Get().Create(&created).Error; cerr == nil {
+			// Genuine first report. G2 (spec §8.5): serving with no cap = silent cost risk.
+			if req.QuotaTotalBytes == 0 {
+				log.Warnf(c, "[USAGE] node=%d ip=%s reporting with NO quota limit (uncapped)", node.ID, node.Ipv4)
+				go sendCloudSlackNotification(c.Request.Context(), "Node Uncapped",
+					fmt.Sprintf("node=%d ip=%s first report has QuotaTotalBytes=0 (no cap set)", node.ID, node.Ipv4))
+			}
+			Success(c, &NodeUsageResponse{NextReportInterval: usageReportIntervalSec})
+			return
 		}
-		// G2 (spec §8.5): a node serving with no cap is a silent cost risk.
-		if req.QuotaTotalBytes == 0 {
-			log.Warnf(c, "[USAGE] node=%d ip=%s reporting with NO quota limit (uncapped)", node.ID, node.Ipv4)
-			go sendCloudSlackNotification(c.Request.Context(), "Node Uncapped",
-				fmt.Sprintf("node=%d ip=%s first report has QuotaTotalBytes=0 (no cap set)", node.ID, node.Ipv4))
+		// Lost the create race with a concurrent first report (unique ipv4). Re-read
+		// and fall through to the update path so this report's bytes aren't dropped.
+		if rerr := db.Get().Where("ipv4 = ?", node.Ipv4).First(&u).Error; rerr != nil {
+			log.Errorf(c, "[USAGE] create+reread node_usage ip=%s: %v", node.Ipv4, rerr)
+			Success(c, &NodeUsageResponse{NextReportInterval: usageReportIntervalSec})
+			return
 		}
-		Success(c, &NodeUsageResponse{NextReportInterval: usageReportIntervalSec})
-		return
 	}
 
 	updates := map[string]any{"quota_total_bytes": req.QuotaTotalBytes, "last_report_at": now, "node_id": node.ID}

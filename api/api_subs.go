@@ -199,7 +199,7 @@ func api_subs(c *gin.Context) {
 	// wrong (see 3e20b8e postmortem), and the tunnel set is tiny (<100).
 	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
 
-	// Batch-fetch NodeUsage rows by NodeID (node-authority metering mirror) so we
+	// Batch-fetch NodeUsage rows by ipv4 (durable key, node-authority metering mirror) so we
 	// can compute per-tunnel RecommendScore via the same code path /api/tunnels
 	// uses. Non-metered nodes fall through to ComputeRecommendScore(nil) → 0.5
 	// (neutral), keeping them eligible in pickWeighted without being favored.

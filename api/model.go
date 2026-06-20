@@ -541,11 +541,12 @@ type SlaveNodeLoad struct {
 // The NODE is the single authority for quota + cutoff (self-meters host NIC,
 // hard-cuts locally); this table is only Center's node-sourced reflection for
 // display / warnings / visibility / offline derivation — it NEVER drives the
-// node-side cut. Covers all nodes (shared + private). Keyed by NodeID because
-// usage is a property of "what this node's NIC did", orthogonal to which sub
-// owns it. On unregister→recreate (new NodeID) the mirror briefly resets, but
-// the node holds the real counter (persisted baseline) and re-reports next
-// cycle — display-layer cosmetic only. See spec §3.1.
+// node-side cut. Covers all nodes (shared + private). Keyed by Ipv4 (durable),
+// not NodeID: usage is a property of "what this node's NIC did", and a node
+// re-registers (hard delete + recreate) with a fresh NodeID on every restart,
+// so NodeID is not stable. The node holds the real counter (persisted baseline)
+// and re-reports each cycle, so any transient mirror gap is display-layer
+// cosmetic only. See spec §3.1.
 type NodeUsage struct {
 	ID        uint64 `gorm:"primarykey" json:"id"`
 	CreatedAt int64  `gorm:"autoCreateTime" json:"createdAt"`

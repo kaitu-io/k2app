@@ -60,7 +60,7 @@ func handlePrivateNodeTrafficWarn(ctx context.Context, _ []byte) error {
 }
 
 // runPrivateNodeTrafficWarning 扫 active 专属线路,跨 70/80/90/100% 阈值发预警,按 epoch 去重。
-// 配额计数来自节点权威镜像 NodeUsage(按 sub.SlaveNodeID);跨阈值发一次,去重键 = NodeUsage.Epoch
+// 配额计数来自节点权威镜像 NodeUsage(按 sub.BoundIpv4);跨阈值发一次,去重键 = NodeUsage.Epoch
 // (节点进入新计费周期 epoch 推进即重新允许发信)。同一轮取最高档位,只发一封。
 func runPrivateNodeTrafficWarning(ctx context.Context) error {
 	var subs []PrivateNodeSubscription
