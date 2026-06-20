@@ -551,7 +551,15 @@ type NodeUsage struct {
 	CreatedAt int64  `gorm:"autoCreateTime" json:"createdAt"`
 	UpdatedAt int64  `gorm:"autoUpdateTime" json:"updatedAt"`
 
-	NodeID uint64 `gorm:"uniqueIndex;not null" json:"nodeId"` // → SlaveNode.ID (1:1)
+	// NodeID is the CURRENT SlaveNode.ID — kept for debugging/joins only. It is
+	// NOT the key: a node re-registers on every restart (hard delete + recreate,
+	// slave_api_node.go:259) and gets a new id, which orphaned the old NodeUsage
+	// row and reset score/hide to neutral. Ipv4 is the durable key instead.
+	NodeID uint64 `gorm:"index;not null" json:"nodeId"`
+
+	// Ipv4 is the durable node key (same anti-hijack key used by SlaveAuthRequired
+	// and PrivateNodeSubscription.BoundIpv4). Survives re-registration id churn.
+	Ipv4 string `gorm:"uniqueIndex;not null" json:"ipv4"`
 
 	Epoch           int64 `gorm:"not null;default:0" json:"epoch"`              // = node BillingCycleEndAt (node owns; Center follows)
 	UsedBytes       int64 `gorm:"not null;default:0" json:"usedBytes"`          // used in current epoch (max, idempotent)

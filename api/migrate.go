@@ -30,6 +30,20 @@ func Migrate() error {
 		}
 	}
 
+	// NodeUsage NodeID→Ipv4 re-key (one-time, idempotent). The table is a
+	// disposable mirror — every node repopulates it within one report interval
+	// from its durable traffic.state — so drop+recreate beats backfilling. Guard
+	// fires only before the ipv4 column exists, so reruns/fresh DBs are no-ops.
+	if database := db.Get(); database != nil {
+		if database.Migrator().HasTable(&NodeUsage{}) && !database.Migrator().HasColumn(&NodeUsage{}, "ipv4") {
+			if err := database.Migrator().DropTable(&NodeUsage{}); err != nil {
+				log.Errorf(ctx, "failed to drop node_usages for ipv4 re-key: %v", err)
+				return err
+			}
+			log.Infof(ctx, "dropped node_usages for NodeID→Ipv4 re-key (mirror repopulates from nodes)")
+		}
+	}
+
 	err := db.Get().AutoMigrate(
 		&Plan{},
 		&User{},
