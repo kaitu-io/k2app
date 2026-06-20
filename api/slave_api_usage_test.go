@@ -42,6 +42,31 @@ func TestUsageRecorder_UpsertByNodeID(t *testing.T) {
 	assert.Equal(t, int64(5<<20), u.UsedBytes, "new epoch resets used to reported")
 }
 
+// TestReportUsage_KeyedByIpv4_SurvivesNodeIDChurn verifies that when a node
+// re-registers (new SlaveNode.ID, SAME ipv4) the usage row is updated in place
+// by ipv4 — not orphaned — so a single row carries the cumulative across churn.
+func TestReportUsage_KeyedByIpv4_SurvivesNodeIDChurn(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	ip := "203.0.113.77"
+	db.Get().Where("ipv4 = ?", ip).Delete(&NodeUsage{})
+	t.Cleanup(func() { db.Get().Where("ipv4 = ?", ip).Delete(&NodeUsage{}) })
+
+	// First report under node id 1001, then re-registered: new id, same ip.
+	post := func(nodeID uint64, used, quota int64) {
+		callUsageHandler(t, &SlaveNode{ID: nodeID, Ipv4: ip, SecretToken: "x"},
+			NodeUsageRequest{EpochID: 2000, CumulativeBytes: used, QuotaTotalBytes: quota})
+	}
+	post(1001, 100, 1000)
+	post(1002, 200, 1000) // re-registered: new id, same ip, higher cumulative
+
+	var rows []NodeUsage
+	require.NoError(t, db.Get().Where("ipv4 = ?", ip).Find(&rows).Error)
+	require.Len(t, rows, 1, "exactly one row per ipv4 — no orphan from id churn")
+	assert.Equal(t, int64(200), rows[0].UsedBytes)
+	assert.Equal(t, uint64(1002), rows[0].NodeID, "NodeID tracks the current registration")
+}
+
 func seedSlaveNodeForUsageTest(t *testing.T, ip string) *SlaveNode {
 	t.Helper()
 	db.Get().Unscoped().Where("ipv4 = ?", ip).Delete(&SlaveNode{})

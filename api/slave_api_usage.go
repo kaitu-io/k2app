@@ -46,17 +46,29 @@ func api_slave_node_report_usage(c *gin.Context) {
 	}
 
 	now := time.Now().Unix()
+
+	// Fail-safe: a node with no ipv4 (e.g. a future IPv6-only node) must NOT
+	// write a row — an empty key collides on the unique index across all such
+	// nodes. IPv6-only is unsupported stack-wide today (auth + registration also
+	// key by ipv4); until that cross-cutting rework, skip + alarm here.
+	if node.Ipv4 == "" {
+		log.Warnf(c, "[USAGE] node=%d has empty ipv4; skipping usage write (IPv6-only unsupported)", node.ID)
+		go sendCloudSlackNotification(c.Request.Context(), "Node Missing IPv4",
+			fmt.Sprintf("node=%d reported usage with empty ipv4 — usage not recorded", node.ID))
+		Success(c, &NodeUsageResponse{NextReportInterval: usageReportIntervalSec})
+		return
+	}
+
 	var u NodeUsage
-	err := db.Get().Where("node_id = ?", node.ID).First(&u).Error
+	err := db.Get().Where("ipv4 = ?", node.Ipv4).First(&u).Error
 	if err != nil {
-		// First report for this node → create.
-		u = NodeUsage{NodeID: node.ID, Epoch: req.EpochID, UsedBytes: req.CumulativeBytes,
-			QuotaTotalBytes: req.QuotaTotalBytes, LastReportAt: now}
+		// First report for this node IP → create.
+		u = NodeUsage{Ipv4: node.Ipv4, NodeID: node.ID, Epoch: req.EpochID,
+			UsedBytes: req.CumulativeBytes, QuotaTotalBytes: req.QuotaTotalBytes, LastReportAt: now}
 		if cerr := db.Get().Create(&u).Error; cerr != nil {
-			log.Errorf(c, "[USAGE] create node_usage node=%d: %v", node.ID, cerr)
+			log.Errorf(c, "[USAGE] create node_usage ip=%s: %v", node.Ipv4, cerr)
 		}
-		// G2 (spec §8.5): a node serving with no cap is a silent cost risk. Fires
-		// once per fresh node (this create branch runs once per NodeID).
+		// G2 (spec §8.5): a node serving with no cap is a silent cost risk.
 		if req.QuotaTotalBytes == 0 {
 			log.Warnf(c, "[USAGE] node=%d ip=%s reporting with NO quota limit (uncapped)", node.ID, node.Ipv4)
 			go sendCloudSlackNotification(c.Request.Context(), "Node Uncapped",
@@ -66,7 +78,7 @@ func api_slave_node_report_usage(c *gin.Context) {
 		return
 	}
 
-	updates := map[string]any{"quota_total_bytes": req.QuotaTotalBytes, "last_report_at": now}
+	updates := map[string]any{"quota_total_bytes": req.QuotaTotalBytes, "last_report_at": now, "node_id": node.ID}
 	switch {
 	case req.EpochID > u.Epoch: // node entered a new billing cycle → follow + reset
 		updates["epoch"] = req.EpochID
@@ -74,8 +86,8 @@ func api_slave_node_report_usage(c *gin.Context) {
 	case req.EpochID == u.Epoch && req.CumulativeBytes > u.UsedBytes: // same epoch → max
 		updates["used_bytes"] = req.CumulativeBytes
 	} // req.EpochID < u.Epoch (stale/reorder): leave used untouched
-	if uerr := db.Get().Model(&NodeUsage{}).Where("node_id = ?", node.ID).Updates(updates).Error; uerr != nil {
-		log.Errorf(c, "[USAGE] update node_usage node=%d: %v", node.ID, uerr)
+	if uerr := db.Get().Model(&NodeUsage{}).Where("ipv4 = ?", node.Ipv4).Updates(updates).Error; uerr != nil {
+		log.Errorf(c, "[USAGE] update node_usage ip=%s: %v", node.Ipv4, uerr)
 	}
 
 	Success(c, &NodeUsageResponse{NextReportInterval: usageReportIntervalSec})
