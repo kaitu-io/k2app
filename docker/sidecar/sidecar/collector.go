@@ -28,7 +28,8 @@ type Collector struct {
 // NewCollector creates a metrics collector
 // billingStartDate: billing start date (yyyy-MM-dd), e.g., "2025-01-15"; if empty, traffic tracking is disabled
 // trafficLimitGB: monthly traffic limit (GB), 0 = unlimited
-func NewCollector(node *Node, reportInterval time.Duration, billingStartDate string, trafficLimitGB int64) *Collector {
+// initialUsedGB: declared already-used traffic (GB) to seed the baseline on first boot (mid-cycle onboarding); 0 = none
+func NewCollector(node *Node, reportInterval time.Duration, billingStartDate string, trafficLimitGB int64, initialUsedGB int64) *Collector {
 	c := &Collector{
 		node:           node,
 		reportInterval: reportInterval,
@@ -37,7 +38,7 @@ func NewCollector(node *Node, reportInterval time.Duration, billingStartDate str
 
 	// If billing date is provided, initialize traffic monitor
 	if billingStartDate != "" {
-		monitor, err := NewTrafficMonitor(billingStartDate, trafficLimitGB)
+		monitor, err := NewTrafficMonitor(billingStartDate, trafficLimitGB, initialUsedGB)
 		if err != nil {
 			slog.Warn("Failed to initialize traffic monitor", "component", "collector", "err", err)
 		} else {

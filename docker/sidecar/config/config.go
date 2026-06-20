@@ -29,6 +29,10 @@ type K2CenterConfig struct {
 	ReportInterval   string `yaml:"report_interval" default:"120s"`
 	BillingStartDate string `yaml:"billing_start_date"`
 	TrafficLimitGB   int64  `yaml:"traffic_limit_gb"`
+	// TrafficUsedGB seeds the cycle baseline on first boot (mid-cycle onboarding):
+	// declares how much was already used so the meter doesn't start at 0. Applied
+	// once when no persisted state exists; adjust later via `k2-sidecar set-usage`.
+	TrafficUsedGB int64 `yaml:"traffic_used_gb"`
 }
 
 // TunnelSectionConfig holds tunnel-specific configuration

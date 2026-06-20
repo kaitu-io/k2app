@@ -15,10 +15,11 @@ func TestTrafficState_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "traffic.state")
 
-	require.NoError(t, saveTrafficState(path, trafficState{BillingCycleEndAt: 1700000000, CycleStartBytes: 12345}))
+	require.NoError(t, saveTrafficState(path, trafficState{BillingCycleEndAt: 1700000000, CycleStartRx: 12345, CycleStartTx: 67890}))
 	st := loadTrafficState(path)
 	assert.Equal(t, int64(1700000000), st.BillingCycleEndAt)
-	assert.Equal(t, uint64(12345), st.CycleStartBytes)
+	assert.Equal(t, uint64(12345), st.CycleStartRx)
+	assert.Equal(t, uint64(67890), st.CycleStartTx)
 
 	// missing file → zero value, no panic
 	assert.Equal(t, trafficState{}, loadTrafficState(filepath.Join(dir, "nope.state")))

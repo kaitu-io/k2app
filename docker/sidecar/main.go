@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/template"
@@ -31,6 +32,31 @@ func init() {
 	flag.StringVar(&configFile, "c", "", "Path to config file (required)")
 }
 
+// runSetUsage handles the `set-usage <GB>` subcommand: it builds a TrafficMonitor
+// (which reads the host NIC + current cycle) and rewrites the persisted baseline
+// so usage reads <GB>. Exits non-zero on bad input so ops scripts can detect it.
+func runSetUsage(cfg *config.Config, gbArg string) {
+	if cfg.K2Center.BillingStartDate == "" {
+		slog.Error("set-usage requires K2_NODE_BILLING_START_DATE (billing_start_date)", "component", "sidecar")
+		os.Exit(1)
+	}
+	gb, err := strconv.ParseInt(gbArg, 10, 64)
+	if err != nil || gb < 0 {
+		slog.Error("set-usage needs a non-negative integer GB. Usage: k2-sidecar -c <cfg> set-usage <GB>", "component", "sidecar", "arg", gbArg)
+		os.Exit(1)
+	}
+	tm, err := sidecar.NewTrafficMonitor(cfg.K2Center.BillingStartDate, cfg.K2Center.TrafficLimitGB, 0)
+	if err != nil {
+		slog.Error("set-usage: failed to init traffic monitor", "component", "sidecar", "err", err)
+		os.Exit(1)
+	}
+	if err := tm.SetUsage(gb); err != nil {
+		slog.Error("set-usage failed", "component", "sidecar", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("set-usage applied — RESTART the sidecar to load it (docker compose restart k2-sidecar)", "component", "sidecar", "usedGB", gb)
+}
+
 func main() {
 	flag.Parse()
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -44,6 +70,14 @@ func main() {
 	// Use config package's config loading
 	config.SetConfigFile(configFile)
 	cfg := config.GetConfig()
+
+	// Subcommand: `k2-sidecar -c <cfg> set-usage <GB>` rewrites the persisted
+	// traffic baseline so the meter reports <GB> already used (mid-cycle
+	// onboarding / manual correction). Restart the sidecar afterwards to load it.
+	if flag.Arg(0) == "set-usage" {
+		runSetUsage(&cfg, flag.Arg(1))
+		return
+	}
 
 	s, err := NewSidecar(&cfg)
 	if err != nil {
@@ -161,6 +195,7 @@ func (s *Sidecar) Start() error {
 		reportInterval,
 		s.config.K2Center.BillingStartDate,
 		s.config.K2Center.TrafficLimitGB,
+		s.config.K2Center.TrafficUsedGB,
 	)
 
 	// Start metrics collection in background
