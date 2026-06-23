@@ -112,7 +112,7 @@ for entry in "${UPDATE_LIST[@]}"; do
   # Step 0: Update K2_VERSION in .env (if --version specified)
   if [ -n "$K2_VERSION" ]; then
     echo "  [0/4] Updating K2_VERSION to $K2_VERSION..."
-    if ! ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/kaitu-slave && sudo sed -i 's/^K2_VERSION=.*/K2_VERSION=$K2_VERSION/' .env 2>&1"; then
+    if ! ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/k2s && sudo sed -i 's/^K2_VERSION=.*/K2_VERSION=$K2_VERSION/' .env 2>&1"; then
       echo "  FAILED to update .env"
       FAILED=$((FAILED + 1))
       echo ""
@@ -124,14 +124,14 @@ for entry in "${UPDATE_LIST[@]}"; do
   STEPS=$( [ -n "$K2_VERSION" ] && echo 4 || echo 3 )
   echo "  [1/$STEPS] docker compose pull..."
   PULL_RC=0
-  ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/kaitu-slave && docker compose pull -q 2>&1" || PULL_RC=$?
+  ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/k2s && docker compose pull -q 2>&1" || PULL_RC=$?
   if [ $PULL_RC -ne 0 ]; then
     echo "  WARNING: pull failed (rate limit?), continuing with up -d..."
   fi
 
   # Step 2: Restart with new images
   echo "  [2/$STEPS] docker compose up -d..."
-  if ! ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/kaitu-slave && docker compose up -d 2>&1"; then
+  if ! ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/k2s && docker compose up -d 2>&1"; then
     echo "  FAILED"
     FAILED=$((FAILED + 1))
     echo ""

@@ -8,7 +8,7 @@
 #   .claude/skills/kaitu-node-ops/deploy-auto-update.sh --node=1.2.3.4  # Single node
 #
 # Deploys:
-#   1. docker/scripts/auto-update.sh → /apps/kaitu-slave/auto-update.sh
+#   1. docker/scripts/auto-update.sh → /apps/k2s/auto-update.sh
 #   2. Cron entry: 0 4 * * * ... >> auto-update.log 2>&1 (04:00 Beijing time, requires Asia/Singapore timezone)
 #
 # Requires:
@@ -20,8 +20,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
 AUTO_UPDATE_SCRIPT="$PROJECT_DIR/docker/scripts/auto-update.sh"
-DEPLOY_DIR="/apps/kaitu-slave"
-CRON_ENTRY="0 4 * * * /apps/kaitu-slave/auto-update.sh >> /apps/kaitu-slave/auto-update.log 2>&1"
+DEPLOY_DIR="/apps/k2s"
+CRON_ENTRY="0 4 * * * /apps/k2s/auto-update.sh >> /apps/k2s/auto-update.log 2>&1"
 
 SSH_USER="${KAITU_SSH_USER:-ubuntu}"
 SSH_PORT="${KAITU_SSH_PORT:-1022}"

@@ -70,12 +70,12 @@ Wait for SSH (port 22 first). Then the mandatory script-pipe form (hub §4):
 exec_on_node(ip, "sudo bash -s", { scriptPath: "docker/scripts/provision-node.sh", timeout: 300 })
 ```
 
-`provision-node.sh` hardens SSH to **1022** — all later `exec_on_node` use 1022. It prepares `/apps/kaitu-slave/`.
+`provision-node.sh` hardens SSH to **1022** — all later `exec_on_node` use 1022. It prepares `/apps/k2s/`.
 
 ## Step 5 — Write `.env` (heredoc)
 
 ```
-exec_on_node(ip, "sudo tee /apps/kaitu-slave/.env > /dev/null <<'ENVEOF'\n<contents>\nENVEOF")
+exec_on_node(ip, "sudo tee /apps/k2s/.env > /dev/null <<'ENVEOF'\n<contents>\nENVEOF")
 ```
 
 Variables + sources are the hub §2 master table. Private-node essentials:
@@ -89,9 +89,9 @@ Variables + sources are the hub §2 master table. Private-node essentials:
 
 ```
 # SCP canonical compose + helper files (hub §4)
-exec_on_node(ip, "sudo tee /apps/kaitu-slave/docker-compose.yml > /dev/null", { scriptPath: "docker/docker-compose.yml" })
+exec_on_node(ip, "sudo tee /apps/k2s/docker-compose.yml > /dev/null", { scriptPath: "docker/docker-compose.yml" })
 # also: users (empty → pure remote auth), auto-update.sh, k2s-crash-monitor.sh
-exec_on_node(ip, "cd /apps/kaitu-slave && sudo docker compose up -d")
+exec_on_node(ip, "cd /apps/k2s && sudo docker compose up -d")
 ```
 
 **Private vs shared is the `.env`, not the compose** — same file deploys both. Private iff `.env` carries `K2_PRIVATE_CLAIM`. Updates = `pull + up -d`, never `down`.

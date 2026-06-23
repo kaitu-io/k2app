@@ -172,7 +172,7 @@ exec_on_node(ip, "bash -s", { scriptPath: "docker/scripts/provision-node.sh" })
 .claude/skills/kaitu-node-ops/deploy-compose.sh --node=IP
 
 # 3. Start services
-exec_on_node(ip, "cd /apps/kaitu-slave && docker compose up -d")`;
+exec_on_node(ip, "cd /apps/k2s && docker compose up -d")`;
 
   const handleCopyCommand = async () => {
     try {

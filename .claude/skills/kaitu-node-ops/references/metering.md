@@ -52,7 +52,7 @@ Limit + billing date = `.env` + `up -d`. The interesting case is a node onboarde
 
 ```bash
 $SSH 'sudo docker exec k2-sidecar k2-sidecar -c /tmp/sidecar-config.yaml set-usage 920'   # declare 920 GB used
-$SSH 'cd /apps/kaitu-slave && sudo docker compose restart k2-sidecar'                      # running proc loads it
+$SSH 'cd /apps/k2s && sudo docker compose restart k2-sidecar'                      # running proc loads it
 ```
 
 - `set-usage <GB>` reads current NIC counters, sets per-direction baselines so the meter immediately reports `<GB>` (clamps a direction below `<GB>` to 0; dominant direction carries it). **Persists** → survives restart.
@@ -100,10 +100,10 @@ Every 5s the enforcer reads the shared TrafficMonitor; at `used ≥ limit − 50
 
 ```bash
 # Trigger: set limit at/below current used → pause within 5s
-$SSH 'sudo sed -i "s/^K2_NODE_TRAFFIC_LIMIT_GB=.*/K2_NODE_TRAFFIC_LIMIT_GB=<≈used>/" /apps/kaitu-slave/.env; cd /apps/kaitu-slave && sudo docker compose up -d k2-sidecar'
+$SSH 'sudo sed -i "s/^K2_NODE_TRAFFIC_LIMIT_GB=.*/K2_NODE_TRAFFIC_LIMIT_GB=<≈used>/" /apps/k2s/.env; cd /apps/k2s && sudo docker compose up -d k2-sidecar'
 $SSH 'sleep 8; sudo docker logs --tail 5 k2-sidecar 2>&1 | grep cutoff-paused; sudo docker inspect -f "paused={{.State.Paused}}" k2s'
 # Recover: raise the limit → unpause
-$SSH 'sudo sed -i "s/^K2_NODE_TRAFFIC_LIMIT_GB=.*/K2_NODE_TRAFFIC_LIMIT_GB=2048/" /apps/kaitu-slave/.env; cd /apps/kaitu-slave && sudo docker compose up -d k2-sidecar'
+$SSH 'sudo sed -i "s/^K2_NODE_TRAFFIC_LIMIT_GB=.*/K2_NODE_TRAFFIC_LIMIT_GB=2048/" /apps/k2s/.env; cd /apps/k2s && sudo docker compose up -d k2-sidecar'
 $SSH 'sleep 8; sudo docker logs --tail 5 k2-sidecar 2>&1 | grep cutoff-unpaused; sudo docker inspect -f "paused={{.State.Paused}}" k2s'
 ```
 

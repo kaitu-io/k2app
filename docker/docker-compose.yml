@@ -10,10 +10,10 @@
 # - Internet :40000-40019 (UDP hop ports) -> Docker port mapping -> k2s:443
 
 # Project name — pins the compose project identity to "k2s" independent of the
-# host deploy directory. Without this, the project name defaults to the dir
-# basename (/apps/k2s -> k2s, /apps/kaitu-slave -> kaitu-slave), so renaming the
-# dir would orphan the named volumes (k2s_config / k2s_k2v5-data) and collide on
-# container_name. Pinning it here decouples project identity from the directory.
+# host deploy directory. Without this, the project name defaults to the deploy
+# dir basename (e.g. /apps/k2s -> project k2s), so renaming the dir would orphan
+# the named volumes (k2s_config / k2s_k2v5-data) and collide on container_name.
+# Pinning it here decouples project identity from the directory.
 name: k2s
 
 networks:
