@@ -44,6 +44,41 @@ Deploy/upgrade onto a node = hub `SKILL.md` §4 (push compose, edit `.env`, `pul
 
 ---
 
+## Part B — Per-provider quota index
+
+The three quota knobs are provider-specific **facts**, not guesses. Don't hand-pick a `LIMIT_GB` and a `01` reset day for every node — **derive them per provider** from the provider's own panel/API at provision time, then write into `.env` (vars in hub `SKILL.md` §2). This is the "deduct from actual usage" model: seed the meter to the provider's real current-cycle usage instead of anchoring fresh to 0.
+
+**Reset-shape constraint (the correctness hinge):** the cutoff code models exactly **one** reset shape — *monthly, on the day-of-month of `K2_NODE_BILLING_START_DATE`, 00:00 UTC* (`traffic.go calculateNextCycleEnd`). Any provider whose reset is monthly-on-a-fixed-day fits (just set the right day). A provider with **30-day-rolling / weekly / non-fixed** reset **cannot** be metered correctly → see fallback.
+
+Three knobs per node:
+
+| `.env` var | Source (per provider, below) | Notes |
+|------------|------------------------------|-------|
+| `K2_NODE_BILLING_START_DATE` | provider's cycle reset date | **only the day-of-month matters**; pins the monthly reset day |
+| `K2_NODE_TRAFFIC_LIMIT_GB` | bundle transfer allowance − headroom | cut trips below provider overage; meter bills `max(rx,tx)` |
+| `K2_NODE_TRAFFIC_USED_GB` | provider's **current-cycle used** (seed once) | mid-cycle onboarding / existing-node migration; `0` on a fresh instance. Or `set-usage` live (Part C). |
+
+### AWS Lightsail
+- **Reset:** calendar month, **1st 00:00 UTC** → `BILLING_START_DATE` day = `01` (verified 2026-06-22: node epoch == `aws lightsail` reset).
+- **Accounting:** `max(inbound, outbound)` per month — **matches the meter exactly**.
+- **Bundles (`ap-southeast-2`):** `micro_3_2`=1024 GB/$7 · `small_3_2`=1536 GB/$12 · `medium_3_2`=2048 GB/$24. Set `LIMIT_GB < bundle` (≥1 GB over the 500 MiB reserve).
+- **Creation month:** prorate `LIMIT_GB` (Part C) — **only** that month; full limit from the next 1st.
+- **Already-used:** `aws lightsail get-instance-metric-data` (NetworkOut usually binding) → seed `TRAFFIC_USED_GB`. Fresh instance ≈ 0.
+
+### Bandwagon (搬瓦工 / KiwiVM)
+- **Reset:** monthly on the **plan's** reset day — **NOT the 1st**. Read the exact "Next reset" date from the KiwiVM panel (or `getServiceInfo` / `getRawUsageStats` API) → set `BILLING_START_DATE` day = that date's day-of-month. It is monthly-on-a-day → fits the meter.
+- **Accounting — VERIFY before sizing:** confirm from the KiwiVM plan whether bandwidth counts `max(in,out)`, **in+out sum**, or outbound-only. The meter uses `max(rx,tx)`; if the plan **sums** in+out, the meter under-counts ~2× → set `LIMIT_GB ≈ allowance/2` headroom (or accept the divergence and document it on the node).
+- **Allowance:** the plan's "Monthly Data Transfer" → `LIMIT_GB <` that.
+- **Already-used:** KiwiVM "used / total" (or API `data_counter`) → seed `TRAFFIC_USED_GB`. **Essential** when migrating an existing 搬瓦工 box mid-cycle — without it the meter starts at 0 and never aligns to the panel.
+
+### Any other provider (fallback)
+- Read the provider's stated **reset date + allowance + accounting model** from its console/API.
+- **Monthly on a fixed day** → set `BILLING_START_DATE` to that day; done.
+- **30-day-rolling / weekly / non-fixed** → the meter can't model it. Either (a) leave `K2_NODE_BILLING_START_DATE` **unset** → node runs **uncapped** (bundle-only, provider overage possible — see facts §17), or (b) accept a calendar-month approximation and size `LIMIT_GB` conservatively. **Record the choice** on the node.
+- Always confirm accounting (`max` vs sum vs outbound) and seed `TRAFFIC_USED_GB` from the provider's current-cycle figure.
+
+---
+
 ## Part C — Configure quota & seed mid-cycle usage
 
 Limit + billing date = `.env` + `up -d`. The interesting case is a node onboarded mid-cycle that already used N GB (meter would start at 0).
@@ -114,4 +149,4 @@ The limit is read at TrafficMonitor construction → changing `K2_NODE_TRAFFIC_L
 ## Metering guardrails (on top of hub §0)
 
 - **Reserve constant parity:** the 500 MiB cutoff reserve is duplicated in `docker/sidecar/sidecar/enforcer.go` and Center `api/logic_node_usage.go` — change one, change both.
-- **Cost = bundle sizing:** pick a bundle whose included transfer exceeds the configured quota so the node-side cutoff trips before provider overage. Lightsail `ap-southeast-2`: `micro_3_2`=1024 GB/$7, `small_3_2`=1536 GB/$12, `medium_3_2`=2048 GB/$24.
+- **Cost = bundle sizing:** pick a bundle whose included transfer exceeds the configured quota so the node-side cutoff trips before provider overage. Per-provider bundle/allowance + the correct reset day + already-used seeding are in **Part B** (don't hardcode `01` / a guessed `LIMIT_GB` — derive per provider).
