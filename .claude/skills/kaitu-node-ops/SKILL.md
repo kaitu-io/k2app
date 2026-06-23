@@ -227,6 +227,8 @@ Local scripts in this skill dir (`.claude/skills/kaitu-node-ops/`). Need `KAITU_
 | `update-compose.sh` | `pull` + `up -d` across active nodes, rolling | `--sleep=N`, `--node=IP`, `--dry-run` |
 | `deploy-auto-update.sh` | SCP `auto-update.sh` + install daily cron (idempotent) | `--all`, `--node=IP`, `--dry-run` |
 
+> **⚠ DIR-MIGRATION GUARD (active until the whole fleet is on `/apps/k2s`):** the canonical compose now carries `name: k2s`. Do **NOT** run `deploy-compose.sh` / `update-compose.sh` / `deploy-auto-update.sh` against the **full fleet** while any node is still at `/apps/kaitu-slave`. Pushing the `name: k2s` compose to an un-migrated node makes its next `up -d` / nightly `auto-update` resolve project `k2s` → **empty `k2s_*` volumes (cert + metering state lost) + `container_name` collision**. During the migration window use `--node=<already-migrated-IP>` only, or run fleet-wide **after** the sweep completes. Remove this note once all nodes are on `/apps/k2s`. (Background: spec `2026-06-23-node-deploy-dir-k2s-migration-design.md`.)
+
 **Node activity heuristic** (no explicit status field): active = `tunnelCount > 0` **and** a real name (`hk.aliyun.wm01`, not IP-as-name) **and** SSH on :1022. `tunnelCount==0` + IP-name = decommissioned; scripts skip them by default (`--all` includes them).
 
 **MCP tools:** `list_nodes(country?,name?)`, `exec_on_node(ip,command,timeout?=60,scriptPath?)`, `ping_node(ip)`, `delete_node(ip)`. `exec_on_node` returns `status` (`success`/`ssh_error`/`timeout`); check `exitCode` for pass/fail; stdout capped 10k, stderr 2k, both secret-redacted.

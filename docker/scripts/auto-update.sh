@@ -1,7 +1,7 @@
 #!/bin/bash
 # Auto-update k2 containers daily
-# Deployed via cron: 0 20 * * * /apps/k2s/auto-update.sh
-# 20:00 UTC = 04:00 Beijing time
+# Deployed via cron: 0 4 * * * /apps/k2s/auto-update.sh
+# 04:00 Beijing time (host TZ Asia/Singapore = UTC+8)
 #
 # What it does:
 #   1. Random delay 0-10 minutes (stagger across nodes)
