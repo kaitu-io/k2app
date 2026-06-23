@@ -504,8 +504,8 @@ systemd-tmpfiles --create --prefix /var/log/journal 2>/dev/null || true
 systemctl restart systemd-journald 2>/dev/null || true
 
 # Install crash monitor systemd service
-if [ -f /apps/kaitu-slave/k2s-crash-monitor.sh ]; then
-    chmod +x /apps/kaitu-slave/k2s-crash-monitor.sh
+if [ -f /apps/k2s/k2s-crash-monitor.sh ]; then
+    chmod +x /apps/k2s/k2s-crash-monitor.sh
     cat > /etc/systemd/system/k2s-crash-monitor.service <<'SEOF'
 [Unit]
 Description=k2s crash monitor
@@ -514,7 +514,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=/apps/kaitu-slave/k2s-crash-monitor.sh
+ExecStart=/apps/k2s/k2s-crash-monitor.sh
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -534,7 +534,7 @@ SEOF
         warn "Crash monitor installed but not active (Docker may not be running yet)."
     fi
 else
-    warn "k2s-crash-monitor.sh not found. Deploy it to /apps/kaitu-slave/ after provisioning."
+    warn "k2s-crash-monitor.sh not found. Deploy it to /apps/k2s/ after provisioning."
 fi
 
 # ===================================================================
@@ -545,10 +545,10 @@ echo -e "${YELLOW}[15/16] Deploying auto-update cron...${NC}"
 
 which crontab >/dev/null 2>&1 || apt-get install -y cron >/dev/null 2>&1 || true
 
-if [ -f /apps/kaitu-slave/auto-update.sh ]; then
+if [ -f /apps/k2s/auto-update.sh ]; then
     CRON_EXISTS=$(crontab -l 2>/dev/null | grep -c 'auto-update.sh' || true)
     if [ "$CRON_EXISTS" = "0" ]; then
-        (crontab -l 2>/dev/null; echo "0 4 * * * /apps/kaitu-slave/auto-update.sh >> /apps/kaitu-slave/auto-update.log 2>&1") | crontab -
+        (crontab -l 2>/dev/null; echo "0 4 * * * /apps/k2s/auto-update.sh >> /apps/k2s/auto-update.log 2>&1") | crontab -
         ok "Cron entry added (04:00 Beijing time)."
     else
         ok "Cron entry already exists."
@@ -601,8 +601,8 @@ fi
 echo -e "${BLUE}==================================================${NC}"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
-echo -e "  1. Deploy docker-compose.yml + .env to /apps/kaitu-slave/"
-echo -e "  2. Ensure users file exists: touch /apps/kaitu-slave/users"
+echo -e "  1. Deploy docker-compose.yml + .env to /apps/k2s/"
+echo -e "  2. Ensure users file exists: touch /apps/k2s/users"
 echo -e "  3. Deploy auto-update.sh via deploy-auto-update.sh"
 echo -e "  4. docker compose up -d && verify sidecar healthy"
 echo -e "  5. Verify hop port DNAT: iptables -t nat -L PREROUTING -n | grep REDIRECT"

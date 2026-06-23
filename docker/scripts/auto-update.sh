@@ -1,6 +1,6 @@
 #!/bin/bash
 # Auto-update k2 containers daily
-# Deployed via cron: 0 20 * * * /apps/kaitu-slave/auto-update.sh
+# Deployed via cron: 0 20 * * * /apps/k2s/auto-update.sh
 # 20:00 UTC = 04:00 Beijing time
 #
 # What it does:
@@ -13,7 +13,7 @@
 #   7. Verify sidecar healthy
 #   8. Slack notification on update or error (silent when no changes)
 
-COMPOSE_DIR="/apps/kaitu-slave"
+COMPOSE_DIR="/apps/k2s"
 LOG_FILE="${COMPOSE_DIR}/auto-update.log"
 MAX_LOG_SIZE=1048576  # 1MB
 SLACK_WEBHOOK="https://hooks.slack.com/services/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"

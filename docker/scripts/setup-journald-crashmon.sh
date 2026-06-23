@@ -6,7 +6,7 @@
 #   1. Configure journald for persistent storage (500M/30d)
 #   2. Install k2s-crash-monitor.sh as a systemd service
 #
-# Prereq: k2s-crash-monitor.sh must already be at /apps/kaitu-slave/
+# Prereq: k2s-crash-monitor.sh must already be at /apps/k2s/
 
 set -euo pipefail
 
@@ -43,7 +43,7 @@ echo "  OK: journald persistent (500M/30d)."
 echo ""
 echo "[2/2] Installing crash monitor service..."
 
-SCRIPT="/apps/kaitu-slave/k2s-crash-monitor.sh"
+SCRIPT="/apps/k2s/k2s-crash-monitor.sh"
 if [ ! -f "$SCRIPT" ]; then
     echo "  ERROR: $SCRIPT not found. Deploy it first."
     exit 1
@@ -59,7 +59,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=/apps/kaitu-slave/k2s-crash-monitor.sh
+ExecStart=/apps/k2s/k2s-crash-monitor.sh
 Restart=always
 RestartSec=5
 StandardOutput=journal

@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-COMPOSE_DIR="/apps/kaitu-slave"
+COMPOSE_DIR="/apps/k2s"
 SLACK_WEBHOOK="https://hooks.slack.com/services/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"
 
 NODE_NAME=$(grep -oP '^K2_NODE_NAME=\K.*' "${COMPOSE_DIR}/.env" 2>/dev/null || hostname)

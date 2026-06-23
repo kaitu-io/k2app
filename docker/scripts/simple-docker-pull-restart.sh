@@ -1,1 +1,1 @@
-cd /apps/kaitu-slave && docker compose pull && docker compose up -d
+cd /apps/k2s && docker compose pull && docker compose up -d
