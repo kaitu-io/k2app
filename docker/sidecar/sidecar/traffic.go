@@ -19,12 +19,21 @@ type trafficState struct {
 	BillingCycleEndAt int64  `json:"billing_cycle_end_at"`
 	CycleStartRx      uint64 `json:"cycle_start_rx"`
 	CycleStartTx      uint64 `json:"cycle_start_tx"`
+	// PriorUsedBytes is usage already consumed THIS cycle before the local NIC
+	// anchor (mid-cycle onboarding seed). Billable usage = PriorUsedBytes +
+	// max(rx,tx) delta, so a fresh node can declare more than its NIC has ever
+	// seen. Absent in legacy files → 0 → identical to the old delta-only math.
+	// Zeroed on cycle rollover (never carried into the next month).
+	PriorUsedBytes uint64 `json:"prior_used_bytes"`
 }
 
-// hasBaseline reports whether the persisted state carries a usable per-direction
-// baseline. Legacy state files (pre per-direction) leave both zero and are
-// treated as absent → the node re-anchors once on upgrade.
-func (s trafficState) hasBaseline() bool { return s.CycleStartRx > 0 || s.CycleStartTx > 0 }
+// hasBaseline reports whether the persisted state carries a usable baseline.
+// Legacy state files (pre per-direction) leave the counters zero and are treated
+// as absent → the node re-anchors once on upgrade. A pure seed (prior>0 with both
+// counters 0, e.g. a fresh node whose NIC reads 0) still counts as a baseline.
+func (s trafficState) hasBaseline() bool {
+	return s.CycleStartRx > 0 || s.CycleStartTx > 0 || s.PriorUsedBytes > 0
+}
 
 // loadTrafficState reads the persisted baseline. A missing or corrupt file is
 // treated as the zero value — never an error that would block startup.
@@ -60,6 +69,7 @@ type TrafficMonitor struct {
 	trafficLimitGB    int64     // monthly traffic limit (GB), 0 = unlimited
 	cycleStartRx      uint64    // RX counter at start of current billing cycle
 	cycleStartTx      uint64    // TX counter at start of current billing cycle
+	priorUsedBytes    uint64    // usage already consumed this cycle before the NIC anchor (onboarding seed)
 	primaryInterface  string    // primary network interface name
 	lastDetectedAt    time.Time // last time interface was detected
 	procPath          string    // proc mount for NIC reads ("/host/proc" in prod)
@@ -115,8 +125,9 @@ func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64, initialUse
 	case st.BillingCycleEndAt == tm.billingCycleEndAt && st.hasBaseline():
 		tm.cycleStartRx = st.CycleStartRx
 		tm.cycleStartTx = st.CycleStartTx
+		tm.priorUsedBytes = st.PriorUsedBytes
 		slog.Info("Traffic cycle baseline restored from state", "component", "traffic",
-			"cycleStartRx", tm.cycleStartRx, "cycleStartTx", tm.cycleStartTx)
+			"cycleStartRx", tm.cycleStartRx, "cycleStartTx", tm.cycleStartTx, "priorUsedBytes", tm.priorUsedBytes)
 	case st.BillingCycleEndAt == 0 && initialUsedGB > 0:
 		tm.applyUsageBaseline(rx, tx, initialUsedGB)
 		_ = saveTrafficState(tm.statePath, tm.snapshotState())
@@ -145,25 +156,19 @@ func (tm *TrafficMonitor) snapshotState() trafficState {
 		BillingCycleEndAt: tm.billingCycleEndAt,
 		CycleStartRx:      tm.cycleStartRx,
 		CycleStartTx:      tm.cycleStartTx,
+		PriorUsedBytes:    tm.priorUsedBytes,
 	}
 }
 
-// applyUsageBaseline sets the per-direction baseline so that the current usage
-// (max of the two deltas) equals usedGB. A direction whose counter is below the
-// declared usage clamps to 0 (its delta then reads the full counter, but the
-// dominant direction — from which the declared usage was derived — carries it).
+// applyUsageBaseline records usedGB as the cycle's prior-used floor and anchors
+// the per-direction baseline at the CURRENT NIC counters (so the live delta
+// starts at 0). Billable usage then reads priorUsedBytes + max(rx,tx) delta, which
+// — unlike the old "baseline = NIC − used" math — works even when the declared
+// usage exceeds what this node's NIC has ever seen (a fresh mid-cycle node).
 func (tm *TrafficMonitor) applyUsageBaseline(rx, tx uint64, usedGB int64) {
-	used := uint64(usedGB) * uint64(bytesPerGiB)
-	if rx >= used {
-		tm.cycleStartRx = rx - used
-	} else {
-		tm.cycleStartRx = 0
-	}
-	if tx >= used {
-		tm.cycleStartTx = tx - used
-	} else {
-		tm.cycleStartTx = 0
-	}
+	tm.priorUsedBytes = uint64(usedGB) * uint64(bytesPerGiB)
+	tm.cycleStartRx = rx
+	tm.cycleStartTx = tx
 }
 
 // SetUsage rewrites the persisted baseline so the meter reports usedGB right now,
@@ -315,6 +320,7 @@ func (tm *TrafficMonitor) checkAndResetCycle() error {
 	oldCycleEnd := time.Unix(tm.billingCycleEndAt, 0)
 	tm.cycleStartRx = rx
 	tm.cycleStartTx = tx
+	tm.priorUsedBytes = 0 // new cycle starts fresh; the onboarding seed never carries forward
 	tm.billingCycleEndAt = tm.calculateNextCycleEnd(now).Unix()
 
 	// Persist the new baseline so a restart in the new cycle resumes from here.
@@ -359,6 +365,8 @@ func (tm *TrafficMonitor) GetTrafficStats() (TrafficStats, error) {
 	if txDelta > usedBytes {
 		usedBytes = txDelta
 	}
+	// Add usage carried in at onboarding (mid-cycle seed). Zero on a normal node.
+	usedBytes += int64(tm.priorUsedBytes)
 
 	return TrafficStats{
 		BillingCycleEndAt:        tm.billingCycleEndAt,

@@ -15,11 +15,17 @@ func TestTrafficState_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "traffic.state")
 
-	require.NoError(t, saveTrafficState(path, trafficState{BillingCycleEndAt: 1700000000, CycleStartRx: 12345, CycleStartTx: 67890}))
+	require.NoError(t, saveTrafficState(path, trafficState{BillingCycleEndAt: 1700000000, CycleStartRx: 12345, CycleStartTx: 67890, PriorUsedBytes: 999}))
 	st := loadTrafficState(path)
 	assert.Equal(t, int64(1700000000), st.BillingCycleEndAt)
 	assert.Equal(t, uint64(12345), st.CycleStartRx)
 	assert.Equal(t, uint64(67890), st.CycleStartTx)
+	assert.Equal(t, uint64(999), st.PriorUsedBytes)
+
+	// legacy state file (no prior_used_bytes) → field defaults to 0 (old behavior)
+	require.NoError(t, os.WriteFile(path, []byte(`{"billing_cycle_end_at":1700000000,"cycle_start_rx":1,"cycle_start_tx":2}`), 0o600))
+	legacy := loadTrafficState(path)
+	assert.Equal(t, uint64(0), legacy.PriorUsedBytes)
 
 	// missing file → zero value, no panic
 	assert.Equal(t, trafficState{}, loadTrafficState(filepath.Join(dir, "nope.state")))

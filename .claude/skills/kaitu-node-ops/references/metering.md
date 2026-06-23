@@ -90,9 +90,11 @@ $SSH 'sudo docker exec k2-sidecar k2-sidecar -c /tmp/sidecar-config.yaml set-usa
 $SSH 'cd /apps/k2s && sudo docker compose restart k2-sidecar'                      # running proc loads it
 ```
 
-- `set-usage <GB>` reads current NIC counters, sets per-direction baselines so the meter immediately reports `<GB>` (clamps a direction below `<GB>` to 0; dominant direction carries it). **Persists** → survives restart.
-- For provisioning instead, set `K2_NODE_TRAFFIC_USED_GB=<GB>` before first boot (seeds once).
-- `traffic.state` = `{"billing_cycle_end_at":<unix>,"cycle_start_rx":<bytes>,"cycle_start_tx":<bytes>}`.
+- `set-usage <GB>` records `<GB>` as the cycle's **prior-used floor** (`prior_used_bytes`) and anchors the per-direction baseline at the **current** NIC (live delta starts at 0). Billable `used = prior_used_bytes + max(rxΔ, txΔ)`. **Persists** → survives restart; **zeroed on cycle rollover** (the seed never carries into next month).
+- **Works on a fresh node where `<GB>` exceeds the NIC counter** — this is the key fix (`prior_used_bytes`, 2026-06-23). A node created mid-cycle (NIC ~1 GiB) can still declare e.g. `set-usage 751`. The old "baseline = NIC − used" math clamped to 0 and the seed silently evaporated on such nodes.
+- **Mid-cycle join → set the FULL-month LIMIT, not the prorated remainder.** AWS prorates the first month; the proration-clean way to model it is `K2_NODE_TRAFFIC_LIMIT_GB=<full month>` + seed the consumed/phantom portion so the remaining month = `limit − seed`. At the 1st-of-month rollover the seed clears and the node opens to the full month automatically — no manual limit bump. Example: 1000 GB/mo bundle joined on the 23rd → `LIMIT_GB=1000` + `set-usage 751` → ~250 GB this month, full 1000 in the next.
+- For provisioning instead, set `K2_NODE_TRAFFIC_USED_GB=<GB>` before first boot (seeds once, same prior-used model).
+- `traffic.state` = `{"billing_cycle_end_at":<unix>,"cycle_start_rx":<bytes>,"cycle_start_tx":<bytes>,"prior_used_bytes":<bytes>}` (legacy files without `prior_used_bytes` → 0 → old delta-only behavior).
 
 ### First-month proration (AWS Lightsail) — calculation method
 
