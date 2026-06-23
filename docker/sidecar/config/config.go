@@ -278,8 +278,8 @@ func findConfigFile() string {
 	configNames := []string{
 		"config.yml",
 		"config.yaml",
-		"kaitu-slave.yml",
-		"kaitu-slave.yaml",
+		"k2s.yml",
+		"k2s.yaml",
 	}
 
 	for _, name := range configNames {

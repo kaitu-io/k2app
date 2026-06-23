@@ -43,8 +43,8 @@ func TestGenerateSelfSignedCert(t *testing.T) {
 	}
 
 	// Check defaults
-	if x509Cert.Subject.CommonName != "kaitu-slave" {
-		t.Errorf("Expected CN 'kaitu-slave', got '%s'", x509Cert.Subject.CommonName)
+	if x509Cert.Subject.CommonName != "k2s" {
+		t.Errorf("Expected CN 'k2s', got '%s'", x509Cert.Subject.CommonName)
 	}
 	if len(x509Cert.Subject.Organization) != 1 || x509Cert.Subject.Organization[0] != "Kaitu Self-Hosted" {
 		t.Errorf("Expected Organization 'Kaitu Self-Hosted', got %v", x509Cert.Subject.Organization)
