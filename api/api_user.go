@@ -10,6 +10,7 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/slack"
 	"github.com/wordgate/qtoolkit/util"
+	"gorm.io/gorm"
 )
 
 // api_get_user_info 获取用户信息
@@ -250,7 +251,8 @@ func api_send_bind_email_verification(c *gin.Context) {
 	SuccessEmpty(c)
 }
 
-// api_delete_user_account 删除用户账号（软删除）
+// api_delete_user_account 删除用户账号：硬删除登录标识 + 设备（释放邮箱与设备绑定），
+// 用户行本身软删除（保留订单 / 钱包 / 历史以备审计）。
 //
 func api_delete_user_account(c *gin.Context) {
 	userID := ReqUserID(c)
@@ -264,14 +266,27 @@ func api_delete_user_account(c *gin.Context) {
 		return
 	}
 
-	// 执行软删除
-	if err := db.Get().Delete(&user).Error; err != nil {
+	// 释放邮箱后软删除：必须硬删除登录标识，否则它会指向软删的用户，
+	// 用户重新登录时 api_login 的 tx.First(&user) 因 deleted_at 过滤返回
+	// record not found → 500 "server error"，账号永久卡死（既登不进也无法用
+	// 同邮箱重新注册，因为 (type,index_id) 唯一索引仍被占用）。
+	// LoginIdentify / Device 均无 DeletedAt，Delete 即硬删，释放唯一索引；
+	// 订单 / 钱包 / 历史保留在软删用户名下以备审计。
+	if err := db.Get().Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&LoginIdentify{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&Device{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&user).Error
+	}); err != nil {
 		log.Errorf(c, "failed to delete user %d: %v", userID, err)
 		Error(c, ErrorSystemError, "failed to delete account")
 		return
 	}
 
-	log.Infof(c, "successfully deleted user account %d", userID)
+	log.Infof(c, "successfully deleted user account %d (freed email, removed devices)", userID)
 	SuccessEmpty(c)
 }
 
