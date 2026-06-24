@@ -212,6 +212,52 @@ jobs:
         run: go test ./...
         working-directory: api
 
+  # --- Gateway (k2r) soft-router UAT — no hardware, runs in CI (Tier 3a) ---
+  # The k2/test/k2r-uat Docker harness (lan-client → k2r TPROXY → k2s) exercises
+  # the full router data path with no physical router. A real Linux runner has the
+  # TPROXY kernel modules Docker Desktop lacks, so K2R_UAT_REQUIRE_DATAPLANE=1
+  # turns a missing data plane into a hard failure instead of a silent skip.
+  # Also runs the gateway unit tests, which are //go:build linux and therefore
+  # run on NO other job (test-macos is darwin → they compile out).
+  test-gateway-uat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for private submodule
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+
+      - name: Init k2 submodule
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: k2/go.sum
+
+      - name: Load TPROXY kernel modules
+        run: |
+          sudo modprobe nf_tables || true
+          sudo modprobe nft_tproxy || true
+          sudo modprobe xt_TPROXY || true
+          sudo modprobe iptable_mangle || true
+          sudo modprobe ip6table_mangle || true
+          echo "Loaded netfilter/tproxy modules:"
+          lsmod | grep -iE 'tproxy|nf_tables|mangle' || echo "(none visible — may be builtin)"
+
+      - name: Gateway unit tests (Linux build tag — run on no other job)
+        run: go test ./gateway/... -count=1
+        working-directory: k2
+
+      - name: Gateway soft-router UAT (data plane required)
+        run: K2R_UAT_REQUIRE_DATAPLANE=1 make gateway-uat
+        working-directory: k2
+
   # --- Platform-dependent tests (Windows) ---
   test-windows:
     runs-on: windows-latest
