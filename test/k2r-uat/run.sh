@@ -14,11 +14,17 @@
 #   - Auto-reconnect (persisted state, restart recovery, LAN traffic restoration)
 #   - Crash recovery (kill -9, stale rule cleanup, auto-reconnect post-crash)
 #   - API completeness (status fields, SSE events, log-level, error handling)
+#   - Node cutoff (quota-pause simulation: freeze k2s → LAN flow fails → recovers)
 #
 # Usage:
-#   ./run.sh                   # full UAT
-#   ./run.sh --phase rules     # single phase
-#   ./run.sh --keep            # keep containers after test for debugging
+#   ./run.sh                       # full UAT
+#   ./run.sh --phase rules         # single phase
+#   ./run.sh --phase node-cutoff   # quota-cutoff phase only
+#   ./run.sh --keep                # keep containers after test for debugging
+#
+# Env:
+#   K2R_UAT_REQUIRE_DATAPLANE=1    # CI: make a missing TPROXY data plane a hard
+#                                  # failure instead of a graceful skip
 #
 # Prerequisites: docker, jq, curl, go
 set -euo pipefail
@@ -29,7 +35,7 @@ COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 
 # ── Tunable parameters ────────────────────────────────────────────
 : "${CONNECT_TIMEOUT:=90}"   # max wait for k2r to connect (seconds)
-: "${PHASE:=all}"            # all | rules | tunnel | lan-tcp | lan-dns | cleanup | reconnect | auto | crash | api
+: "${PHASE:=all}"            # all | rules | tunnel | lan-tcp | lan-dns | cleanup | reconnect | auto | crash | api | node-cutoff
 : "${KEEP:=false}"           # keep containers after test
 
 # ── Parse args ────────────────────────────────────────────────────
@@ -206,10 +212,20 @@ probe_tproxy_dataplane() {
 }
 
 # Skip LAN test if TPROXY data plane doesn't work.
+#
+# In CI on a real Linux host (TPROXY modules present) we want a missing data
+# plane to be a HARD FAILURE, not a silent skip — otherwise the job goes green
+# while exercising nothing of value. Set K2R_UAT_REQUIRE_DATAPLANE=1 to convert
+# every data-plane skip into a failure. Locally (Docker Desktop / LinuxKit) leave
+# it unset so the suite still runs and degrades gracefully.
 require_tproxy_dataplane() {
     local desc="$1"
     if [[ "$TPROXY_DATAPLANE" == "no" ]]; then
-        log_skip "$desc (TPROXY data plane unavailable)"
+        if [[ "${K2R_UAT_REQUIRE_DATAPLANE:-}" == "1" ]]; then
+            log_fail "$desc (TPROXY data plane REQUIRED but unavailable — load nft_tproxy/xt_TPROXY)"
+        else
+            log_skip "$desc (TPROXY data plane unavailable)"
+        fi
         return 1
     fi
     return 0
@@ -938,6 +954,79 @@ test_api() {
         -d '{"level":"debug"}' >/dev/null 2>&1 || true
 }
 
+# ── Phase 11: Upstream node cutoff (quota-pause simulation) ──────
+# Mirrors the production over-quota cutoff: the node sidecar `docker pause`s the
+# k2s container when the line hits quota − 500MiB. From the router's vantage the
+# upstream node simply stops serving — new flows stall and time out. This proves
+# the LAN-visible effect of a quota cutoff (the resource-loss guard) and that the
+# gateway recovers once the node is restored. The Center-side hide
+# (ResolveGatewayPrivateTunnels dropping the over-quota line from /api/subs) is
+# covered separately by the Go entitlement-resolver tests.
+test_node_cutoff() {
+    log_phase "11 — Upstream node cutoff (quota-pause simulation)"
+
+    ensure_connected || {
+        log_fail "11: Cannot test node cutoff (not connected)"
+        return
+    }
+    setup_lan_route
+
+    if [[ "$TPROXY_DATAPLANE" == "unknown" ]]; then
+        probe_tproxy_dataplane
+    fi
+
+    # The whole phase observes LAN data-plane behavior — without it there is
+    # nothing to assert. Under K2R_UAT_REQUIRE_DATAPLANE this skip becomes a fail.
+    require_tproxy_dataplane "11 node-cutoff phase" || return
+
+    # lan_flow_ok [timeout]: 0 if a LAN client request completes through the tunnel.
+    lan_flow_ok() {
+        local out
+        out=$(lan_exec curl -sf --max-time "${1:-8}" "http://example.com" 2>&1 || true)
+        echo "$out" | grep -qi "example"
+    }
+
+    # 11.1 Baseline: LAN flow works before the cutoff.
+    if lan_flow_ok 15; then
+        log_ok "11.1 Baseline LAN flow works (pre-cutoff)"
+    else
+        log_fail "11.1 Baseline LAN flow failed — cannot test cutoff"
+        return
+    fi
+
+    # 11.2 Cut the upstream node off (freeze k2s, exactly like the enforcer's
+    # `docker pause`). New LAN flows must now fail — this is the keystone guard.
+    log_info "Pausing k2s (simulating quota cutoff / enforcer docker pause)..."
+    docker compose -f "$COMPOSE_FILE" pause k2s >/dev/null 2>&1 || true
+    sleep 2
+    if lan_flow_ok 8; then
+        log_fail "11.2 LAN flow STILL works after node cutoff (over-use not contained!)"
+    else
+        log_ok "11.2 LAN flow fails while node is cut off (expected — over-use contained)"
+    fi
+
+    # 11.3 Restore the node (enforcer unpause once usage drops). The gateway must
+    # recover within budget (QUIC resume or health-monitor re-race + reconnect).
+    log_info "Unpausing k2s (simulating usage drop / enforcer unpause)..."
+    docker compose -f "$COMPOSE_FILE" unpause k2s >/dev/null 2>&1 || true
+
+    # Generous budget: recovery waits on QUIC idle-timeout → health-monitor
+    # re-race → reconnect, whose cadence we don't control. 120s never flakes.
+    local deadline=$((SECONDS + 120)) recovered=false
+    while [[ $SECONDS -lt $deadline ]]; do
+        if lan_flow_ok 8; then
+            recovered=true
+            break
+        fi
+        sleep 3
+    done
+    if $recovered; then
+        log_ok "11.3 LAN flow recovers after node restored"
+    else
+        log_fail "11.3 LAN flow did not recover within 120s after node restored"
+    fi
+}
+
 # ── Main ──────────────────────────────────────────────────────────
 main() {
     echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
@@ -960,17 +1049,19 @@ main() {
             test_auto_reconnect
             test_crash_recovery
             test_api
+            test_node_cutoff
             ;;
-        rules)     test_rules ;;
-        tunnel)    test_tunnel ;;
-        lan-tcp)   test_lan_tcp ;;
-        lan-dns)   test_lan_dns ;;
-        cleanup)   test_cleanup ;;
-        reconnect) test_reconnect ;;
-        auto)      test_auto_reconnect ;;
-        crash)     test_crash_recovery ;;
-        api)       test_api ;;
-        *)         echo "Unknown phase: $PHASE"; exit 1 ;;
+        rules)      test_rules ;;
+        tunnel)     test_tunnel ;;
+        lan-tcp)    test_lan_tcp ;;
+        lan-dns)    test_lan_dns ;;
+        cleanup)    test_cleanup ;;
+        reconnect)  test_reconnect ;;
+        auto)       test_auto_reconnect ;;
+        crash)      test_crash_recovery ;;
+        api)        test_api ;;
+        node-cutoff) test_node_cutoff ;;
+        *)          echo "Unknown phase: $PHASE"; exit 1 ;;
     esac
 }
 
