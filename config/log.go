@@ -126,9 +126,15 @@ func DefaultLogPath(name string) string {
 // The output field controls destination:
 //   - "stderr" → os.Stderr
 //   - "stdout" → os.Stdout
+//   - "" (empty) → DefaultLogPath(name): a rotating file, NOT stderr. For root
+//     this is /var/log/kaitu/{name}.log (e.g. k2r.log under procd); for non-root
+//     the platform user log dir. This is the default in production (k2/k2s/k2r all
+//     leave log.output empty), so stdout/journald/`docker logs`/`logread` show
+//     nothing — tail the file. See TestSetupLogging_DefaultCreatesFile.
 //   - any other value → treated as a file path; lumberjack is used for rotation
 //
-// If output is empty, cfg.Output is used as-is; if still empty, "stderr" is the default.
+// For file destinations, os.Stderr is also redirected into the same file so Go
+// runtime panics and CGo crashes land inline.
 // The level is set on the package-level LogLevel var, which can be changed at runtime
 // via SetLogLevel without recreating the handler.
 // Returns a cleanup function that restores the previous slog default handler and closes
