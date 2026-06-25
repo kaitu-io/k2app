@@ -112,6 +112,8 @@ Reserved event names:
 | `DIAG: stream-killed-on-write-fail` | WARN | per-Write deadline (5s) exceeded or write error on UDP relay mux | transport, side, sessionID, len, writeMs, err |
 | `DIAG: rule-tmp-pin` | INFO | new IP pinned to tmp rule, or target changed for already-pinned IP (duplicates suppressed) | ip, target, action ("add"/"change"), prevTarget (change only), tmpSize |
 | `DIAG: rule-tmp-reload` | INFO | rule engine reload cleared the DNS-learned tmp cache | cleared, routes, bundles |
+| `DIAG: control-plane-relay` | INFO | on node relay response | origin, method, path, status, bytes |
+| `DIAG: control-plane-relay-fail` | WARN | on node relay error | origin, path, err |
 | `DIAG: relay-fetch` | INFO | on relay response | centerHost, method, path, status, nodeIP |
 | `DIAG: relay-fetch-fail` | WARN | on relay dial/roundtrip error | centerHost, path, nodeIP, err |
 
