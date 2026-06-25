@@ -5,6 +5,17 @@ import (
 	"net"
 )
 
+// matchControlPlaneRoute returns the Center origin for an ECH-decrypted inner
+// SNI, if it is an exact match in control_plane_routes. Exact-match only (no
+// wildcard) — the control-plane allowlist must be tight.
+func (s *Server) matchControlPlaneRoute(sni string) (string, bool) {
+	if sni == "" || len(s.cfg.ControlPlaneRoutes) == 0 {
+		return "", false
+	}
+	origin, ok := s.cfg.ControlPlaneRoutes[sni]
+	return origin, ok
+}
+
 // validateControlPlaneRoutes rejects malformed or unsafe control-plane routes.
 // Origins must be host:port. IP-literal origins that are loopback, private,
 // link-local, or unspecified are rejected to prevent a poisoned config from

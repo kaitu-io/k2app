@@ -1,6 +1,10 @@
 package server
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/kaitu-io/k2/config"
+)
 
 func TestValidateControlPlaneRoutes(t *testing.T) {
 	cases := []struct {
@@ -26,5 +30,24 @@ func TestValidateControlPlaneRoutes(t *testing.T) {
 				t.Fatalf("validateControlPlaneRoutes(%v) err=%v, wantErr=%v", c.routes, err, c.wantErr)
 			}
 		})
+	}
+}
+
+func TestMatchControlPlaneRoute(t *testing.T) {
+	s := &Server{cfg: &config.ServerConfig{
+		ControlPlaneRoutes: map[string]string{"k2.52j.me": "k2.52j.me:443"},
+	}}
+	if origin, ok := s.matchControlPlaneRoute("k2.52j.me"); !ok || origin != "k2.52j.me:443" {
+		t.Fatalf("exact match: got (%q,%v), want (k2.52j.me:443,true)", origin, ok)
+	}
+	if _, ok := s.matchControlPlaneRoute("evil.example.com"); ok {
+		t.Fatal("non-listed inner SNI must not match")
+	}
+	if _, ok := s.matchControlPlaneRoute(""); ok {
+		t.Fatal("empty inner SNI must not match")
+	}
+	empty := &Server{cfg: &config.ServerConfig{}}
+	if _, ok := empty.matchControlPlaneRoute("k2.52j.me"); ok {
+		t.Fatal("nil ControlPlaneRoutes must not match")
 	}
 }
