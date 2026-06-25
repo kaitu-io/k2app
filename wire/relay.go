@@ -44,7 +44,8 @@ type RelayResponse struct {
 // roundTripOverConn writes one HTTP/1.1 request over an already-established
 // connection (plaintext or TLS-terminated) and reads the response. Uses
 // Connection: close — one request per connection, no keep-alive. The caller
-// owns conn's lifecycle (close after this returns).
+// owns conn's lifecycle (close after this returns). The timeout is the TOTAL
+// round-trip budget (covers request write + full response read), not per-operation.
 func roundTripOverConn(conn net.Conn, req *RelayRequest, timeout time.Duration) (*RelayResponse, error) {
 	method := req.Method
 	if method == "" {
@@ -117,6 +118,9 @@ func relayDial(ctx context.Context, req *RelayRequest, override *tls.Config) (ne
 	if override != nil {
 		tlsCfg = override.Clone()
 	} else {
+		if req.Pin == "" {
+			return nil, fmt.Errorf("wire: relay requires a pin (refusing default-CA path through an untrusted node)")
+		}
 		var err error
 		tlsCfg, clientHelloID, err = BuildClientTLSConfig(Config{
 			Host:        req.CenterHost, // inner SNI

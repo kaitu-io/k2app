@@ -149,10 +149,22 @@ func TestRelayFetch_OverrideDial_EndToEnd(t *testing.T) {
 	}
 }
 
+// Production path requires a non-empty Pin — default-CA through untrusted node is forbidden.
+func TestRelayFetch_RequiresPin(t *testing.T) {
+	_, err := RelayFetch(context.Background(), &RelayRequest{
+		IP: "127.0.0.1", Port: 1, CenterHost: "k2.52j.me", Method: "GET", Path: "/",
+	}) // Pin empty
+	if err == nil || !strings.Contains(err.Error(), "pin") {
+		t.Fatalf("RelayFetch with empty Pin must error about the pin, got %v", err)
+	}
+}
+
 // Production path requires ECH → BuildClientTLSConfig errors without it.
+// Pin is set so the new pin guard is passed and the ECH check is reached.
 func TestRelayFetch_RequiresECH(t *testing.T) {
 	_, err := RelayFetch(context.Background(), &RelayRequest{
 		IP: "127.0.0.1", Port: 1, CenterHost: "k2.52j.me", Method: "GET", Path: "/",
+		Pin: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
 	})
 	if err == nil {
 		t.Fatal("RelayFetch without ECH must error (BuildClientTLSConfig requires ECH)")
