@@ -96,6 +96,9 @@ reach Center API through any reachable node when the direct path is GFW-blocked.
   audit logs (no body/token).
 - 做法一: the node terminates TLS and sees plaintext (accepted by design —
   the node already holds the device credential needed to connect).
+- Short request/response only: `reverseProxyHTTP` sets `ReadTimeout 30s` /
+  `WriteTimeout 60s`, so streaming, long-poll, and SSE endpoints are out of
+  scope and will be cut off — relay is intended for Center API calls only.
 
 Sample node config:
 ```yaml

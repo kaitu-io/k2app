@@ -68,6 +68,9 @@ const (
 
 // New creates a server from config.
 func New(cfg *config.ServerConfig) (*Server, error) {
+	if err := validateControlPlaneRoutes(cfg.ControlPlaneRoutes); err != nil {
+		return nil, fmt.Errorf("control_plane_routes: %w", err)
+	}
 	store := wire.NewTicketStore()
 
 	s := &Server{

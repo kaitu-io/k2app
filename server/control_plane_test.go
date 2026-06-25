@@ -188,6 +188,15 @@ func TestHandleK2V5_ControlPlaneBranch(t *testing.T) {
 	}
 }
 
+func TestNew_RejectsUnsafeControlPlaneRoute(t *testing.T) {
+	_, err := New(&config.ServerConfig{
+		ControlPlaneRoutes: map[string]string{"k2.52j.me": "169.254.169.254:80"},
+	})
+	if err == nil {
+		t.Fatal("New must reject a private/link-local control-plane origin (open-proxy gate)")
+	}
+}
+
 func TestHandleK2V5_NonMatchingInnerSNIFallsThrough(t *testing.T) {
 	hit := make(chan struct{}, 1)
 	center := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
