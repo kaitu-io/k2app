@@ -2,7 +2,14 @@ package server
 
 import (
 	"bufio"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -109,5 +116,125 @@ func TestReverseProxyHTTP(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("reverseProxyHTTP did not return after client close (goroutine leak)")
+	}
+}
+
+// selfSignedTLSConfig builds a minimal server tls.Config with one EC cert.
+func selfSignedTLSConfig(t *testing.T) *tls.Config {
+	t.Helper()
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "k2s-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("cert: %v", err)
+	}
+	return &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
+}
+
+func TestHandleK2V5_ControlPlaneBranch(t *testing.T) {
+	center := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "centerhit:"+r.URL.Path)
+	}))
+	defer center.Close()
+	originURL, _ := url.Parse(center.URL)
+
+	s := &Server{
+		cfg: &config.ServerConfig{
+			ControlPlaneRoutes: map[string]string{"cp.test": originURL.Host},
+		},
+		controlPlaneTransport: center.Client().Transport,
+		proxySem:              make(chan struct{}, 8),
+		TLSConfig:             selfSignedTLSConfig(t),
+	}
+	t.Cleanup(func() {
+		if tr, ok := s.controlPlaneTransport.(*http.Transport); ok {
+			tr.CloseIdleConnections() // goleak: drain node→Center idle conns
+		}
+	})
+
+	clientRaw, serverRaw := net.Pipe()
+	done := make(chan struct{})
+	go func() { s.handleK2V5(serverRaw, "cloudflare-ech.com"); close(done) }() // goleak: joined below
+
+	// Client side: TLS with inner-routing SNI = cp.test, then plain HTTP.
+	tlsClient := tls.Client(clientRaw, &tls.Config{ServerName: "cp.test", InsecureSkipVerify: true})
+	if err := tlsClient.Handshake(); err != nil {
+		t.Fatalf("client handshake: %v", err)
+	}
+	req, _ := http.NewRequest("GET", "https://cp.test/api/tunnels/k2v4", nil)
+	if err := req.Write(tlsClient); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	tlsClient.SetReadDeadline(time.Now().Add(5 * time.Second))
+	resp, err := http.ReadResponse(bufio.NewReader(tlsClient), req)
+	if err != nil {
+		t.Fatalf("read resp: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(body) != "centerhit:/api/tunnels/k2v4" {
+		t.Fatalf("body=%q, want centerhit:/api/tunnels/k2v4", string(body))
+	}
+	tlsClient.Close() // makes handleK2V5's relay return
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleK2V5 did not return after client close (goroutine leak)")
+	}
+}
+
+func TestHandleK2V5_NonMatchingInnerSNIFallsThrough(t *testing.T) {
+	hit := make(chan struct{}, 1)
+	center := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit <- struct{}{}
+	}))
+	defer center.Close()
+	originURL, _ := url.Parse(center.URL)
+
+	// tcpwsSrv is intentionally nil: the fall-through path (s.tcpwsSrv.HandleConn)
+	// does not deref the receiver before spawning its own recover()-guarded
+	// goroutine, so a nil tcpwsSrv cannot crash the process here. We only assert
+	// Center is never hit. (Verified against wire/tcpws.go:627 HandleConn.)
+	s := &Server{
+		cfg: &config.ServerConfig{
+			ControlPlaneRoutes: map[string]string{"cp.test": originURL.Host},
+		},
+		controlPlaneTransport: center.Client().Transport,
+		proxySem:              make(chan struct{}, 8),
+		TLSConfig:             selfSignedTLSConfig(t),
+	}
+	t.Cleanup(func() {
+		if tr, ok := s.controlPlaneTransport.(*http.Transport); ok {
+			tr.CloseIdleConnections()
+		}
+	})
+
+	clientRaw, serverRaw := net.Pipe()
+	done := make(chan struct{})
+	go func() { s.handleK2V5(serverRaw, "cloudflare-ech.com"); close(done) }()
+
+	// Inner SNI NOT in control_plane_routes → must NOT relay to Center.
+	tlsClient := tls.Client(clientRaw, &tls.Config{ServerName: "not-control.test", InsecureSkipVerify: true})
+	_ = tlsClient.Handshake()
+	// Send a tiny smux-ish blob; we only assert Center was never hit.
+	tlsClient.SetWriteDeadline(time.Now().Add(time.Second))
+	_, _ = tlsClient.Write([]byte{0x00, 0x01, 0x02, 0x03})
+	tlsClient.Close()
+
+	select {
+	case <-hit:
+		t.Fatal("non-matching inner SNI was wrongly relayed to Center")
+	case <-time.After(500 * time.Millisecond):
+		// good: fell through to existing k2v5 dispatch, Center untouched
+	}
+	select { // goleak: handleK2V5 returns once the closed pipe propagates
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleK2V5 did not return after client close (goroutine leak)")
 	}
 }

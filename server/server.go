@@ -677,6 +677,25 @@ func (s *Server) handleK2V5(conn net.Conn, outerSNI string) {
 		s.learnOuterSNI(outerSNI)
 	}
 
+	// Control-plane relay (antiblock Phase 1): if the ECH-decrypted inner SNI
+	// matches a configured control_plane_route, HTTP-reverse-proxy this
+	// connection to Center instead of treating it as a k2v5 tunnel.
+	// handleK2V5 is only reached for HasECH connections (handleRawTCP:539,574-576),
+	// so a plaintext-SNI probe can never hit this branch — ConnectionState().ServerName
+	// here is always the ECH-decrypted inner SNI.
+	if origin, ok := s.matchControlPlaneRoute(tlsConn.ConnectionState().ServerName); ok {
+		select {
+		case s.proxySem <- struct{}{}:
+			defer func() { <-s.proxySem }()
+		default:
+			slog.Warn("server: control-plane proxy at capacity", "sni", tlsConn.ConnectionState().ServerName)
+			tlsConn.Close()
+			return
+		}
+		s.reverseProxyHTTP(tlsConn, origin)
+		return
+	}
+
 	// Peek first bytes to distinguish HTTP (auth/WS) from smux (tunnel).
 	br := bufio.NewReaderSize(tlsConn, 512)
 	first, err := br.Peek(4)
