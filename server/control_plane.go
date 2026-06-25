@@ -22,7 +22,7 @@ func validateControlPlaneRoutes(routes map[string]string) error {
 			return fmt.Errorf("control_plane_routes[%s]: origin missing host or port: %q", sni, origin)
 		}
 		if ip := net.ParseIP(host); ip != nil {
-			if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsLinkLocalMulticast() {
 				return fmt.Errorf("control_plane_routes[%s]: origin IP %s not allowed (loopback/private/link-local)", sni, host)
 			}
 		}

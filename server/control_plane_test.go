@@ -16,6 +16,8 @@ func TestValidateControlPlaneRoutes(t *testing.T) {
 		{"loopback origin rejected", map[string]string{"k2.52j.me": "127.0.0.1:443"}, true},
 		{"private origin rejected", map[string]string{"k2.52j.me": "10.0.0.5:443"}, true},
 		{"unspecified origin rejected", map[string]string{"k2.52j.me": "0.0.0.0:443"}, true},
+		{"link-local unicast rejected", map[string]string{"k2.52j.me": "169.254.0.1:443"}, true},
+		{"link-local multicast rejected", map[string]string{"k2.52j.me": "224.0.0.1:443"}, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
