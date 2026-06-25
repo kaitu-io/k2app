@@ -38,6 +38,18 @@ detect_platform() {
         x86_64|amd64)   ARCH="amd64" ;;
         aarch64|arm64)  ARCH="arm64" ;;
         armv7l)         ARCH="armv7" ;;
+        mips*)
+            # uname -m can't tell MIPS endianness; read the ELF EI_DATA byte
+            # (offset 5) of a known local binary. 0x01 = little-endian (mipsle),
+            # 0x02 = big-endian (mips). Uses only head/tail (busybox lacks od on
+            # minimal images like GL.iNet ath79).
+            _elf="/bin/busybox"; [ -r "$_elf" ] || _elf="/bin/sh"
+            if [ "$(head -c6 "$_elf" 2>/dev/null | tail -c1)" = "$(printf '\001')" ]; then
+                ARCH="mipsle"
+            else
+                ARCH="mips"
+            fi
+            ;;
         *)              die "unsupported architecture: $ARCH" ;;
     esac
 }
