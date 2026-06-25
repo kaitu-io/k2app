@@ -46,13 +46,15 @@ auth:
   cache_ttl: 5m
 log:
   level: info
+control_plane_routes:            # optional; antiblock Phase 1 relay
+  k2.52j.me: "k2.52j.me:443"   # inner SNI → Center origin (host:port)
 ```
 
 ## Types
 
 - `ClientConfig` — Server, Mode, Tun, Proxy, DNS, Rule, Log, Listen, PIDFile, BlockQUIC
   - Sub-types: `TunConfig`, `ProxyConfig`, `DNSConfig`, `RuleConfig`, `LogConfig`
-- `ServerConfig` — Listen, Host, TLS, ECH, CertDir, PCC, Rate, Auth, Log
+- `ServerConfig` — Listen, Host, TLS, ECH, CertDir, PCC, Rate, Auth, Log, ControlPlaneRoutes
 - `LoadClient(path)` / `LoadServer(path)` — YAML loaders
 - `ClientFromURL(wireURL)` — creates ClientConfig from k2v5:// URL
 - `DefaultServerConfig()` — fully-defaulted config for zero-config mode

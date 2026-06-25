@@ -82,8 +82,30 @@ Note: `wire.ReverseProxy` is a function (not a type) — called for non-ECH SNIs
 5. k2v5 handler: auth → QUIC/TCP-WS listeners → TCP/UDP proxy
 6. `Close()` → graceful shutdown with connection draining
 
+## Control-Plane Relay (antiblock Phase 1)
+
+When an ECH connection's **inner SNI** matches `control_plane_routes`
+(`config.ServerConfig`, exact match), `handleK2V5` HTTP-reverse-proxies it to
+the configured Center origin over a fresh HTTPS connection (system CA validates
+Center's real cert) instead of running the k2v5 tunnel path. This lets clients
+reach Center API through any reachable node when the direct path is GFW-blocked.
+
+- Allowlist-only (`matchControlPlaneRoute`, exact match); non-matching inner SNI
+  falls through to the existing k2v5 dispatch (backward compatible).
+- Reuses `proxySem` for concurrency limiting; emits `DIAG: control-plane-relay`
+  audit logs (no body/token).
+- 做法一: the node terminates TLS and sees plaintext (accepted by design —
+  the node already holds the device credential needed to connect).
+
+Sample node config:
+```yaml
+control_plane_routes:
+  k2.52j.me: "k2.52j.me:443"
+```
+
 ## Testing
 
 - `server_test.go` — TLS peek routing, ECH vs non-ECH, auto-provisioning
 - `handler_test.go` — TCP/UDP proxy with mock targets
+- `control_plane_test.go` — relay routing, reverse-proxy, private-IP rejection
 - `test/e2e_test.go` — full integration with real client
