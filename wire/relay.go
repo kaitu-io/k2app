@@ -2,11 +2,18 @@ package wire
 
 import (
 	"bufio"
+	"context"
+	"crypto/tls"
+	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+
+	utls "github.com/metacubex/utls"
 )
 
 // RelayRequest is a single control-plane HTTP request to be sent to Center
@@ -67,6 +74,84 @@ func roundTripOverConn(conn net.Conn, req *RelayRequest, timeout time.Duration) 
 		return nil, err
 	}
 	return captureResponse(resp)
+}
+
+// RelayFetch sends one control-plane HTTP request to Center through a node
+// (camouflage entry): TCP → uTLS(ECH + pin) → HTTP/1.1 round-trip. The node
+// terminates TLS and reverse-proxies to Center (Phase 1). ECH is required
+// (BuildClientTLSConfig errors otherwise) — it must travel in the descriptor.
+func RelayFetch(ctx context.Context, req *RelayRequest) (*RelayResponse, error) {
+	return relayFetchWithOverride(ctx, req, nil)
+}
+
+func relayFetchWithOverride(ctx context.Context, req *RelayRequest, override *tls.Config) (*RelayResponse, error) {
+	conn, err := relayDial(ctx, req, override)
+	if err != nil {
+		slog.Warn("DIAG: relay-fetch-fail", "centerHost", req.CenterHost, "path", req.Path, "nodeIP", req.IP, "err", err)
+		return nil, err
+	}
+	defer conn.Close()
+	resp, err := roundTripOverConn(conn, req, 15*time.Second)
+	if err != nil {
+		slog.Warn("DIAG: relay-fetch-fail", "centerHost", req.CenterHost, "path", req.Path, "nodeIP", req.IP, "err", err)
+		return nil, err
+	}
+	slog.Info("DIAG: relay-fetch", "centerHost", req.CenterHost, "method", req.Method, "path", req.Path, "status", resp.Status, "nodeIP", req.IP)
+	return resp, nil
+}
+
+// relayDial dials the node and completes the camouflage uTLS handshake.
+// override != nil → use it directly (test / self-signed, skips ECH), mirroring
+// tcpws.go:327 / probe.go:149. Production: build from BuildClientTLSConfig and
+// ENFORCE pin via VerifyPeerCertificate (tcpws template omits this — see header).
+func relayDial(ctx context.Context, req *RelayRequest, override *tls.Config) (net.Conn, error) {
+	port := req.Port
+	if port == 0 {
+		port = 443
+	}
+	dialAddr := net.JoinHostPort(req.IP, strconv.Itoa(port))
+
+	var tlsCfg *tls.Config
+	clientHelloID := utls.HelloChrome_120_PQ
+	if override != nil {
+		tlsCfg = override.Clone()
+	} else {
+		var err error
+		tlsCfg, clientHelloID, err = BuildClientTLSConfig(Config{
+			Host:        req.CenterHost, // inner SNI
+			ECH:         req.ECH,
+			Pin:         req.Pin,
+			Fingerprint: "chrome",
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	d := &net.Dialer{}
+	conn, err := d.DialContext(ctx, "tcp", dialAddr)
+	if err != nil {
+		return nil, fmt.Errorf("wire: relay TCP dial %s: %w", dialAddr, err)
+	}
+
+	utlsCfg := &utls.Config{
+		ServerName:                     tlsCfg.ServerName,
+		InsecureSkipVerify:             tlsCfg.InsecureSkipVerify,
+		MinVersion:                     tlsCfg.MinVersion,
+		MaxVersion:                     tlsCfg.MaxVersion,
+		EncryptedClientHelloConfigList: tlsCfg.EncryptedClientHelloConfigList,
+		// SECURITY: enforce pin/CA — tcpws.go:341 omits these, leaving pinned
+		// connections unverified. Relay carries tokens/passwords through
+		// third-party nodes, so the pin MUST actually run.
+		RootCAs:               tlsCfg.RootCAs,
+		VerifyPeerCertificate: tlsCfg.VerifyPeerCertificate,
+	}
+	uconn := utls.UClient(conn, utlsCfg, clientHelloID)
+	if err := uconn.HandshakeContext(ctx); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("wire: relay uTLS handshake: %w", err)
+	}
+	return uconn, nil
 }
 
 // captureResponse drains an HTTP response into a RelayResponse and closes the body.

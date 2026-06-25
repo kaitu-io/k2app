@@ -1,9 +1,18 @@
 package wire
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -85,5 +94,67 @@ func TestCaptureResponse(t *testing.T) {
 	}
 	if got.Headers["Content-Type"][0] != "application/json" {
 		t.Fatalf("headers=%v", got.Headers)
+	}
+}
+
+// selfSignedServerTLS builds a server tls.Config with one EC cert (no ECH —
+// the override path skips BuildClientTLSConfig, exercising dial+handshake+HTTP).
+func selfSignedServerTLS(t *testing.T) *tls.Config {
+	t.Helper()
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "node-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, _ := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	return &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
+}
+
+func TestRelayFetch_OverrideDial_EndToEnd(t *testing.T) {
+	// Real TCP "node" that terminates TLS and serves HTTP (stands in for a
+	// Phase-1 node whose reverseProxyHTTP already relayed to Center).
+	lc, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer lc.Close()
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "centerhit:"+r.URL.Path)
+		}),
+		// Disable HTTP/2: our relay client sends HTTP/1.1 over the uTLS conn.
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+	}
+	// Set TLSConfig BEFORE starting the goroutine to avoid the data race where
+	// ServeTLS reads srv.TLSConfig concurrently with the main goroutine writing it.
+	srv.TLSConfig = selfSignedServerTLS(t)
+	srvDone := make(chan struct{})
+	go func() { _ = srv.ServeTLS(lc, "", ""); close(srvDone) }()
+	t.Cleanup(func() { _ = srv.Close(); <-srvDone })
+
+	host, portStr, _ := net.SplitHostPort(lc.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+
+	resp, err := relayFetchWithOverride(context.Background(), &RelayRequest{
+		IP: host, Port: port, CenterHost: "k2.52j.me",
+		Method: "GET", Path: "/api/tunnels/k2v4",
+	}, &tls.Config{InsecureSkipVerify: true, ServerName: "k2.52j.me"})
+	if err != nil {
+		t.Fatalf("relayFetch: %v", err)
+	}
+	if resp.Status != 200 || resp.Body != "centerhit:/api/tunnels/k2v4" {
+		t.Fatalf("status=%d body=%q", resp.Status, resp.Body)
+	}
+}
+
+// Production path requires ECH → BuildClientTLSConfig errors without it.
+func TestRelayFetch_RequiresECH(t *testing.T) {
+	_, err := RelayFetch(context.Background(), &RelayRequest{
+		IP: "127.0.0.1", Port: 1, CenterHost: "k2.52j.me", Method: "GET", Path: "/",
+	})
+	if err == nil {
+		t.Fatal("RelayFetch without ECH must error (BuildClientTLSConfig requires ECH)")
 	}
 }
