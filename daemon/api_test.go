@@ -382,8 +382,8 @@ func TestHandleCore_RelayFetch(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Code == 0 {
-		t.Fatalf("missing fields must yield non-zero code, got %+v", resp)
+	if resp.Code != 502 {
+		t.Fatalf("relay-fetch with missing ECH should route to handleRelay and yield wire code 502, got %d (msg=%q)", resp.Code, resp.Message)
 	}
 }
 
