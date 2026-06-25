@@ -10,6 +10,7 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/wire"
 )
 
 // Request is the JSON request body for POST /api/core.
@@ -73,6 +74,8 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		d.handleProbe(w, req.Params)
 	case "classify-apps":
 		d.classifyApps(w, req.Params)
+	case "relay-fetch":
+		d.handleRelay(w, req.Params)
 	case "get-presets":
 		d.getPresets(w, req.Params)
 	default:
@@ -177,6 +180,22 @@ func (d *Daemon) handleLogLevel(w http.ResponseWriter, r *http.Request) {
 	config.SetLogLevel(req.Level)
 	slog.Info("log level changed", "level", req.Level)
 	writeJSON(w, Response{Code: 0, Message: "ok"})
+}
+
+// handleRelay relays one control-plane HTTP request to Center through a node
+// (antiblock Phase 2). Params is a wire.RelayRequest. Stateless — independent
+// of VPN/engine state, so logout/expired/quota'd users can still reach Center.
+func (d *Daemon) handleRelay(w http.ResponseWriter, params map[string]any) {
+	reqJSON, err := json.Marshal(params)
+	if err != nil {
+		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("bad relay params: %v", err)})
+		return
+	}
+	// wire returns a full {code,message,data} envelope as a JSON string; pass it
+	// through verbatim so the response shape matches the rest of /api/core.
+	out := wire.RelayFetchJSON(string(reqJSON))
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(out))
 }
 
 func writeJSON(w http.ResponseWriter, resp Response) {

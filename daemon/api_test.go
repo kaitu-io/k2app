@@ -371,6 +371,22 @@ func TestDoUpFromError(t *testing.T) {
 	}
 }
 
+func TestHandleCore_RelayFetch(t *testing.T) {
+	d := &Daemon{} // handleRelay must not touch engine state
+	body := `{"action":"relay-fetch","params":{"method":"GET"}}` // no ip/centerHost → error envelope
+	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
+	w := httptest.NewRecorder()
+	d.handleCore(w, req)
+
+	var resp Response
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Code == 0 {
+		t.Fatalf("missing fields must yield non-zero code, got %+v", resp)
+	}
+}
+
 func TestConcurrentDoUp(t *testing.T) {
 	// Track how many engines are created to verify serialization.
 	var created atomic.Int32
