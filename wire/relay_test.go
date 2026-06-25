@@ -158,3 +158,17 @@ func TestRelayFetch_RequiresECH(t *testing.T) {
 		t.Fatal("RelayFetch without ECH must error (BuildClientTLSConfig requires ECH)")
 	}
 }
+
+func TestRelayFetchJSON_BadInput(t *testing.T) {
+	out := RelayFetchJSON("not json")
+	if !strings.Contains(out, `"code"`) || strings.Contains(out, `"code":0`) {
+		t.Fatalf("bad input must return non-zero code envelope, got %q", out)
+	}
+}
+
+func TestRelayFetchJSON_MissingFields(t *testing.T) {
+	out := RelayFetchJSON(`{"method":"GET"}`) // no ip/centerHost → dial/build fails
+	if !strings.Contains(out, `"code"`) || strings.Contains(out, `"code":0`) {
+		t.Fatalf("missing fields must return error envelope, got %q", out)
+	}
+}

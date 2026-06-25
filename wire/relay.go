@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -166,4 +167,34 @@ func captureResponse(resp *http.Response) (*RelayResponse, error) {
 		Headers: map[string][]string(resp.Header),
 		Body:    string(body),
 	}, nil
+}
+
+// relayEnvelope mirrors the daemon/webapp {code,message,data} contract so the
+// string boundary (gomobile appext + daemon) is uniform.
+type relayEnvelope struct {
+	Code    int            `json:"code"`
+	Message string         `json:"message"`
+	Data    *RelayResponse `json:"data,omitempty"`
+}
+
+// RelayFetchJSON is the string-in/string-out wrapper for the gomobile (appext)
+// and daemon boundaries. It never panics and never returns an empty string.
+func RelayFetchJSON(reqJSON string) string {
+	var req RelayRequest
+	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
+		return marshalEnvelope(relayEnvelope{Code: -1, Message: "bad relay request: " + err.Error()})
+	}
+	resp, err := RelayFetch(context.Background(), &req)
+	if err != nil {
+		return marshalEnvelope(relayEnvelope{Code: 502, Message: err.Error()})
+	}
+	return marshalEnvelope(relayEnvelope{Code: 0, Message: "ok", Data: resp})
+}
+
+func marshalEnvelope(e relayEnvelope) string {
+	b, err := json.Marshal(e)
+	if err != nil {
+		return `{"code":-1,"message":"relay marshal error"}`
+	}
+	return string(b)
 }
