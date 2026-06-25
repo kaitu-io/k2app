@@ -54,6 +54,10 @@ type Server struct {
 	// proxySem limits concurrent reverse proxy connections.
 	proxySem chan struct{}
 
+	// controlPlaneTransport is the HTTPS round-tripper used to relay
+	// control-plane requests to Center (system CA validates Center's cert).
+	controlPlaneTransport http.RoundTripper
+
 	done chan struct{}
 }
 
@@ -75,6 +79,14 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		trustedSNIs: make(map[string]time.Time),
 		proxySem:    make(chan struct{}, 128),
 		done:        make(chan struct{}),
+	}
+	s.controlPlaneTransport = &http.Transport{
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          32,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
 	}
 
 	// Auto-provisioning: unified cert + ECH + auth setup when cert_dir is set.

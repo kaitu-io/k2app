@@ -2,7 +2,12 @@ package server
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"time"
 )
 
 // matchControlPlaneRoute returns the Center origin for an ECH-decrypted inner
@@ -14,6 +19,49 @@ func (s *Server) matchControlPlaneRoute(sni string) (string, bool) {
 	}
 	origin, ok := s.cfg.ControlPlaneRoutes[sni]
 	return origin, ok
+}
+
+// reverseProxyHTTP serves an already-TLS-terminated client connection as an
+// HTTP reverse proxy to origin (Center, host:port). The client speaks plain
+// HTTP over the node-terminated TLS; the node re-originates HTTPS to origin and
+// validates origin's real certificate via controlPlaneTransport. Per-request
+// audit log is emitted (no body/token/headers). 做法一: the node sees plaintext
+// (accepted, spec D2). Returns when the client connection closes.
+func (s *Server) reverseProxyHTTP(conn net.Conn, origin string) {
+	target := &url.URL{Scheme: "https", Host: origin}
+	// Host header must be the bare hostname (no :443) so CloudFront/ALB
+	// host-header routing matches; dialing still uses target.Host (host:port).
+	hostHeader := origin
+	if h, _, err := net.SplitHostPort(origin); err == nil {
+		hostHeader = h
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Transport = s.controlPlaneTransport
+	baseDirector := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		baseDirector(r)
+		r.Host = hostHeader // Host header = bare Center hostname (SNI from target.Host)
+	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		slog.Info("DIAG: control-plane-relay",
+			"origin", origin,
+			"method", resp.Request.Method,
+			"path", resp.Request.URL.Path,
+			"status", resp.StatusCode,
+			"bytes", resp.ContentLength) // -1 if unknown/chunked
+		return nil
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		slog.Warn("DIAG: control-plane-relay-fail", "origin", origin, "path", r.URL.Path, "err", err)
+		w.WriteHeader(http.StatusBadGateway)
+	}
+	ln := newSingleConnListener(conn)
+	srv := &http.Server{
+		Handler:      proxy,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+	}
+	_ = srv.Serve(ln) // returns when the single conn closes
 }
 
 // validateControlPlaneRoutes rejects malformed or unsafe control-plane routes.
