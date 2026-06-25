@@ -1,8 +1,12 @@
 package wire
 
 import (
+	"bufio"
 	"io"
+	"net"
 	"net/http"
+	"strings"
+	"time"
 )
 
 // RelayRequest is a single control-plane HTTP request to be sent to Center
@@ -27,6 +31,42 @@ type RelayResponse struct {
 	Status  int                 `json:"status"`
 	Headers map[string][]string `json:"headers,omitempty"`
 	Body    string              `json:"body"`
+}
+
+// roundTripOverConn writes one HTTP/1.1 request over an already-established
+// connection (plaintext or TLS-terminated) and reads the response. Uses
+// Connection: close — one request per connection, no keep-alive. The caller
+// owns conn's lifecycle (close after this returns).
+func roundTripOverConn(conn net.Conn, req *RelayRequest, timeout time.Duration) (*RelayResponse, error) {
+	method := req.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+	var body io.Reader
+	if req.Body != "" {
+		body = strings.NewReader(req.Body)
+	}
+	hreq, err := http.NewRequest(method, "https://"+req.CenterHost+req.Path, body)
+	if err != nil {
+		return nil, err
+	}
+	hreq.Host = req.CenterHost
+	hreq.Close = true // Connection: close
+	for k, v := range req.Headers {
+		hreq.Header.Set(k, v)
+	}
+
+	if timeout > 0 {
+		_ = conn.SetDeadline(time.Now().Add(timeout))
+	}
+	if err := hreq.Write(conn); err != nil {
+		return nil, err
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), hreq)
+	if err != nil {
+		return nil, err
+	}
+	return captureResponse(resp)
 }
 
 // captureResponse drains an HTTP response into a RelayResponse and closes the body.
