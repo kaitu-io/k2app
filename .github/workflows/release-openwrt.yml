@@ -68,9 +68,9 @@ jobs:
           mkdir -p build
 
           build_one() {
-            arch="$1"; goarm="$2"; name="$3"
-            echo "  k2r-linux-${name} (GOARCH=${arch}${goarm:+ GOARM=${goarm}})"
-            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM="$goarm" \
+            arch="$1"; goarm="$2"; gomips="$3"; name="$4"
+            echo "  k2r-linux-${name} (GOARCH=${arch}${goarm:+ GOARM=${goarm}}${gomips:+ GOMIPS=${gomips}})"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM="$goarm" GOMIPS="$gomips" \
               go build -C k2 \
                 -tags release \
                 -ldflags "$LDFLAGS" \
@@ -78,13 +78,17 @@ jobs:
                 ./cmd/k2r
           }
 
-          build_one arm64 ""  arm64
-          build_one amd64 ""  amd64
-          build_one arm   "7" armv7
+          build_one arm64  ""  ""         arm64
+          build_one amd64  ""  ""         amd64
+          build_one arm    "7" ""         armv7
+          # MIPS OpenWrt routers (GL.iNet ath79 = big-endian mips_24kc; ramips/mt7621 = little-endian).
+          # GOMIPS=softfloat → runs on FPU-less SoCs (the common case) and FPU ones alike.
+          build_one mips   ""  softfloat  mips
+          build_one mipsle ""  softfloat  mipsle
 
       - name: Verify binary architectures
         run: |
-          for arch in arm64 amd64 armv7; do
+          for arch in arm64 amd64 armv7 mips mipsle; do
             file "build/k2r-linux-${arch}"
           done
 
@@ -92,6 +96,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-user-static binfmt-support
+          # mips/mipsle are intentionally NOT qemu-smoked: qemu-user + the Go runtime
+          # is unreliable on 32-bit MIPS (spurious fatals), which would flake the release.
+          # Their correctness is verified by `file` above + real-hardware runs.
           for arch in arm64 amd64 armv7; do
             echo "  k2r-linux-${arch}:"
             "build/k2r-linux-${arch}" version
@@ -151,7 +158,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
-            --platforms "k2r-arm64,k2r-amd64,k2r-armv7"
+            --platforms "k2r-arm64,k2r-amd64,k2r-armv7,k2r-mips,k2r-mipsle"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
