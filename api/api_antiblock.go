@@ -55,7 +55,7 @@ type seedNodeDescriptor struct {
 // documented webhook-style exception to the project's "HTTP always 200" rule.
 // See api_webhook.go for the same pattern.
 //
-//   - HTTP 503 — ANTIBLOCK_SEED_KEY env var is not set or empty.
+//   - HTTP 503 — ANTIBLOCK_SEED_KEY not configured, or database query fails.
 //   - HTTP 401 — X-Antiblock-Seed-Key header is missing or does not match env value.
 //   - HTTP 200 — success payload via Success() helper.
 func handleAntiblockSeed(c *gin.Context) {
@@ -82,7 +82,6 @@ func handleAntiblockSeed(c *gin.Context) {
 	var tunnels []SlaveTunnel
 	if err := db.Get().Model(&SlaveTunnel{}).
 		Preload("Node").
-		Where("node_id IS NOT NULL").
 		Where(&SlaveTunnel{Protocol: TunnelProtocolK2V5, IsTest: BoolPtr(false)}).
 		Find(&tunnels).Error; err != nil {
 		log.Errorf(c, "[AntiblockSeed] failed to query tunnels: %v", err)
