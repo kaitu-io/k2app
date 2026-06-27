@@ -125,6 +125,41 @@ function runTests() {
     assert(Array.isArray(parsed.nodes) && parsed.nodes.length === 0, 'nodes must be empty array');
   }));
 
+  // test_decryptSeed_is_true_inverse_of_encrypt: chain the REAL publisher
+  // encrypt() into decryptSeed() into emitEmbeddedTs(). Previously decryptSeed
+  // was an eyeballed inverse with no executed proof; this pins the full
+  // publish→bake contract so a byte-layout change on either side breaks here.
+  results.push(runTest('test_decryptSeed_is_true_inverse_of_encrypt', () => {
+    const { encrypt } = require('./antiblock-encrypt.js');
+    const KEY = DEFAULT_KEY;
+    const payload = {
+      entries: ['https://k2.52j.me'],
+      nodes: [{ ip: '13.54.164.215', pin: 'sha256:abc+/==', ech: 'AEX/plus+slash' }],
+    };
+    const jsonp = encrypt(payload, KEY, '__k2sd');
+    const data = JSON.parse(jsonp.match(/=(\{.*\});$/)[1]).data;
+    const plain = decryptSeed(data, KEY);
+    assert(plain.entries[0] === 'https://k2.52j.me', 'entry must survive encrypt→decryptSeed');
+    assert(plain.nodes[0].ip === '13.54.164.215', 'ip must survive');
+    assert(plain.nodes[0].ech === 'AEX/plus+slash', 'ech with +/ must survive');
+    // and the decrypted payload bakes into a re-parseable TS literal
+    const ts = emitEmbeddedTs({ cursor: 7, entries: plain.entries, nodes: plain.nodes });
+    const reparsed = JSON.parse(ts.match(/export const EMBEDDED_SEED[^=]+=\s*(\{[\s\S]*\});\s*$/)[1]);
+    assert(reparsed.cursor === 7 && reparsed.nodes[0].ip === '13.54.164.215', 'baked TS must round-trip');
+  }));
+
+  // test_decryptSeed_rejects_tamper: GCM auth tag must reject mutation.
+  results.push(runTest('test_decryptSeed_rejects_tamper', () => {
+    const { encrypt } = require('./antiblock-encrypt.js');
+    const jsonp = encrypt({ entries: ['https://x'], nodes: [] }, DEFAULT_KEY, '__k2sd');
+    const data = JSON.parse(jsonp.match(/=(\{.*\});$/)[1]).data;
+    const raw = Buffer.from(data, 'base64');
+    raw[20] ^= 0xff;
+    let threw = false;
+    try { decryptSeed(raw.toString('base64'), DEFAULT_KEY); } catch { threw = true; }
+    assert(threw, 'decryptSeed MUST throw on tampered ciphertext (not silently return garbage)');
+  }));
+
   // ---- Report ----
   console.log('\n--- gen-embedded-seed self-tests ---\n');
   let passed = 0;

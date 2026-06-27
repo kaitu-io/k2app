@@ -60,16 +60,9 @@ jobs:
               git reset --hard origin/dist
             fi
 
-            # Compute CURSOR: numeric max of existing v/<n>.js filenames + 1 (default 1 when none)
-            CURSOR=1
-            if [ -d "$WORK_DIR/v" ]; then
-              MAX_N=$(find "$WORK_DIR/v" -maxdepth 1 -name '*.js' \
-                | sed 's|.*/||; s/\.js$//' \
-                | grep -E '^[0-9]+$' \
-                | sort -n \
-                | tail -1 || true)
-              [ -n "$MAX_N" ] && CURSOR=$((MAX_N + 1))
-            fi
+            # Compute CURSOR via the shared, unit-tested helper (numeric max + 1,
+            # default 1). Single source of truth with scripts/antiblock-cursor.test.sh.
+            CURSOR=$(bash "$GITHUB_WORKSPACE/scripts/antiblock-cursor.sh" "$WORK_DIR")
             echo "[antiblock-seed] Attempt $ATTEMPT: CURSOR=$CURSOR"
 
             # Generate config.js (legacy) and v/<CURSOR>.js (versioned seed)

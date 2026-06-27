@@ -46,10 +46,13 @@ const DEFAULT_ENTRIES = ['https://d1l0lk9fcyd6r8.cloudfront.net', 'https://k2.52
 // ---------------------------------------------------------------------------
 
 if (process.argv.includes('--test')) {
-  runTests();
+  runTests().catch((err) => {
+    console.error('test harness crashed:', err);
+    process.exit(1);
+  });
 }
 
-function runTests() {
+async function runTests() {
   const results = [];
   const testConfig = { entries: ['https://example.com/api', 'https://fallback.example.com/api'] };
   const testKey = 'a'.repeat(64); // 64-char hex (32 bytes)
@@ -149,6 +152,39 @@ function runTests() {
     assert(!JSON.stringify(decrypted).includes('"ip"'), 'legacy config must not contain ip key');
   }));
 
+  // ---- test_webcrypto_decrypts_node_gcm ----
+  // CROSS-RUNTIME CONTRACT: bytes produced by Node `crypto.createCipheriv`
+  // (this script, the CDN publisher) MUST decode under the webapp consumer's
+  // Web Crypto `subtle.decrypt`. The webapp slices iv(12) off the front and
+  // hands `ciphertext||tag` to subtle.decrypt — proven here against the live
+  // encrypt() output (not a static fixture, so drift on EITHER side breaks it).
+  results.push(await runAsyncTest('test_webcrypto_decrypts_node_gcm', async () => {
+    const payload = { entries: ['https://k2.52j.me'], nodes: [{ ip: '13.54.164.215', pin: 'sha256:abc+/==', ech: 'AEX+ech/x' }] };
+    // Random IV each run; loop to exercise all base64 padding alignments.
+    for (let i = 0; i < 32; i++) {
+      const out = encrypt(payload, DEFAULT_KEY, '__k2sd');
+      const { data } = JSON.parse(extractJson(out));
+      const plain = await webCryptoDecrypt(data, DEFAULT_KEY);
+      assert(plain !== null, `web crypto must decrypt node-gcm output (iter ${i})`);
+      const parsed = JSON.parse(plain);
+      assert(parsed.nodes[0].ip === '13.54.164.215', `ip must survive (iter ${i})`);
+      assert(parsed.nodes[0].ech === 'AEX+ech/x', `ech with +/ must survive (iter ${i})`);
+    }
+  }));
+
+  // ---- test_webcrypto_rejects_tamper ----
+  // GCM auth tag must reject a single-byte mutation — the mirror-poisoning
+  // defense (key-embedded obfuscation accepts that mirrors see ciphertext; the
+  // tag is what stops a malicious mirror from injecting forged nodes).
+  results.push(await runAsyncTest('test_webcrypto_rejects_tamper', async () => {
+    const out = encrypt({ entries: ['https://x'], nodes: [] }, DEFAULT_KEY, '__k2sd');
+    const { data } = JSON.parse(extractJson(out));
+    const raw = Buffer.from(data, 'base64');
+    raw[20] ^= 0xff; // flip a byte in the ciphertext region
+    const plain = await webCryptoDecrypt(raw.toString('base64'), DEFAULT_KEY);
+    assert(plain === null, 'tampered ciphertext must NOT decrypt under GCM');
+  }));
+
   // ---- Report ----
   console.log('\n--- Antiblock Encrypt Tests ---\n');
   let passed = 0;
@@ -174,6 +210,36 @@ function runTest(name, fn) {
     return { name, passed: true, error: null };
   } catch (err) {
     return { name, passed: false, error: err.message };
+  }
+}
+
+async function runAsyncTest(name, fn) {
+  try {
+    await fn();
+    return { name, passed: true, error: null };
+  } catch (err) {
+    return { name, passed: false, error: err.message };
+  }
+}
+
+/**
+ * Decrypt VERBATIM as the webapp consumer does (antiblock-crypto.ts decrypt):
+ * base64 → iv(12) | rest; hand `ciphertext||tag` straight to Web Crypto
+ * subtle.decrypt. Returns the plaintext string, or null on any failure (incl.
+ * GCM auth-tag rejection). Uses globalThis.crypto.subtle — the SAME WebCrypto
+ * primitive the browser/vitest runtime uses.
+ */
+async function webCryptoDecrypt(dataBase64, keyHex) {
+  try {
+    const data = Buffer.from(dataBase64, 'base64');
+    const iv = data.subarray(0, 12);
+    const ciphertext = data.subarray(12); // ct || tag — what AES-GCM expects
+    const rawKey = Buffer.from(keyHex, 'hex');
+    const key = await globalThis.crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['decrypt']);
+    const plain = await globalThis.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+    return Buffer.from(plain).toString('utf8');
+  } catch {
+    return null;
   }
 }
 
