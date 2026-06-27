@@ -62,6 +62,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `tlspad/` — TLS record padding (probe target cert length, pad server cert to match)
 - `k2cc/` — K2CC (PCC Vivace) congestion control for QUIC
 - `VOCABULARY.md` — Three-layer vocabulary convention (Wire/Relay/Tunnel)
+- `relay.go` — `RelayFetch` antiblock control-plane relay: TCP→uTLS(ECH+enforced pin)→one HTTP/1.1 round-trip to Center through a node. `RelayFetchJSON` = gomobile/daemon string boundary. Enforces pin via `VerifyPeerCertificate` (unlike the tcpws dial template).
 - `contract_test.go` — 11 transport behavior contract tests (startup, fallback, recovery, datagram degradation, network switch, slow upstream, proxy error, stream rejection, read-response timeout)
 - `testmain_test.go` — goleak `TestMain` with quic-go and smux ignore patterns
 

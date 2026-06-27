@@ -162,6 +162,11 @@ type ServerConfig struct {
 	ECH         ECHConfig         `yaml:"ech"`
 	CertDir     string            `yaml:"cert_dir"`     // directory for auto-generated dual keypair (RSA+EC)
 	LocalRoutes map[string]string `yaml:"local_routes"` // SNI -> target address for non-ECH TCP relay
+	// ControlPlaneRoutes maps an ECH-decrypted INNER SNI to a Center origin
+	// (host:port). When a k2v5 TLS connection's inner SNI matches, the node
+	// HTTP-reverse-proxies it to the origin instead of treating it as a tunnel.
+	// Used by the antiblock control-plane relay (Phase 1). Empty = disabled.
+	ControlPlaneRoutes map[string]string `yaml:"control_plane_routes"`
 	PCC         string            `yaml:"pcc"`
 	Rate        int64             `yaml:"rate"`
 	Auth        AuthConfig        `yaml:"auth"`

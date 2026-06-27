@@ -41,6 +41,7 @@ Installed/uninstalled alongside daemon service by `k2 service install/uninstall`
 | `down` | — | Disconnect |
 | `status` | — | State + structured error + active config |
 | `version` | — | Version info |
+| `relay-fetch` | `RelayRequest`(ip/pin/ech/centerHost/method/path/headers/body)| Relay one control-plane HTTP request to Center through a node (antiblock Phase 2). Stateless — works without an active tunnel. |
 
 ### GET /api/events — SSE
 

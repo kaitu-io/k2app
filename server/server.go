@@ -54,6 +54,10 @@ type Server struct {
 	// proxySem limits concurrent reverse proxy connections.
 	proxySem chan struct{}
 
+	// controlPlaneTransport is the HTTPS round-tripper used to relay
+	// control-plane requests to Center (system CA validates Center's cert).
+	controlPlaneTransport http.RoundTripper
+
 	done chan struct{}
 }
 
@@ -64,6 +68,9 @@ const (
 
 // New creates a server from config.
 func New(cfg *config.ServerConfig) (*Server, error) {
+	if err := validateControlPlaneRoutes(cfg.ControlPlaneRoutes); err != nil {
+		return nil, fmt.Errorf("control_plane_routes: %w", err)
+	}
 	store := wire.NewTicketStore()
 
 	s := &Server{
@@ -75,6 +82,14 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		trustedSNIs: make(map[string]time.Time),
 		proxySem:    make(chan struct{}, 128),
 		done:        make(chan struct{}),
+	}
+	s.controlPlaneTransport = &http.Transport{
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          32,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
 	}
 
 	// Auto-provisioning: unified cert + ECH + auth setup when cert_dir is set.
@@ -663,6 +678,25 @@ func (s *Server) handleK2V5(conn net.Conn, outerSNI string) {
 	// Learn outer SNI from successful ECH connections for camouflage whitelist.
 	if tlsConn.ConnectionState().ECHAccepted {
 		s.learnOuterSNI(outerSNI)
+	}
+
+	// Control-plane relay (antiblock Phase 1): if the ECH-decrypted inner SNI
+	// matches a configured control_plane_route, HTTP-reverse-proxy this
+	// connection to Center instead of treating it as a k2v5 tunnel.
+	// handleK2V5 is only reached for HasECH connections (handleRawTCP:539,574-576),
+	// so a plaintext-SNI probe can never hit this branch — ConnectionState().ServerName
+	// here is always the ECH-decrypted inner SNI.
+	if origin, ok := s.matchControlPlaneRoute(tlsConn.ConnectionState().ServerName); ok {
+		select {
+		case s.proxySem <- struct{}{}:
+			defer func() { <-s.proxySem }()
+		default:
+			slog.Warn("server: control-plane proxy at capacity", "sni", tlsConn.ConnectionState().ServerName)
+			tlsConn.Close()
+			return
+		}
+		s.reverseProxyHTTP(tlsConn, origin)
+		return
 	}
 
 	// Peek first bytes to distinguish HTTP (auth/WS) from smux (tunnel).
