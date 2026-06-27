@@ -752,6 +752,32 @@ describe('Cloud API Client', () => {
     });
   });
 
+  // ==================== Total request timeout ====================
+
+  describe('total request timeout', () => {
+    it('returns { code: -1, message: "Request timeout" } when resolveAndFetch never settles after 15s', async () => {
+      // Part B timeout test (RED before fix, GREEN after withTimeout added to request())
+      vi.useFakeTimers();
+      try {
+        mockedAuthService.getToken.mockResolvedValue('tok');
+        mockedAuthService.getTokenEpoch.mockReturnValue(0);
+        // resolveAndFetch returns a promise that NEVER resolves
+        mockedResolveAndFetch.mockReturnValue(new Promise<never>(() => {}));
+
+        const resPromise = cloudApi.get('/api/x');
+
+        // Advance past 15s timeout
+        await vi.advanceTimersByTimeAsync(15000);
+
+        const res = await resPromise;
+        expect(res.code).toBe(-1);
+        expect(res.message).toBe('Request timeout');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   // ==================== Cloud API Client — antiblock relay transport ====================
 
   describe('Cloud API Client — antiblock relay transport', () => {

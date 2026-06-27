@@ -84,4 +84,28 @@ describe('resolveAndFetch', () => {
     expect(res.transport).toBe('fail');
     expect((window as any)._k2.run).not.toHaveBeenCalled();
   });
+
+  it('relay node that never resolves times out after 15s and yields transport:fail', async () => {
+    // Part A timeout test (RED before fix, GREEN after per-relay timeout added to relayOne)
+    vi.useFakeTimers();
+    try {
+      // Direct is blocked so we go straight to relay
+      pool.markDirectBlocked();
+      pool.addNodes([N('3.3.3.3')]);
+      // _k2.run returns a promise that NEVER settles — simulates hung IPC/daemon
+      (window as any)._k2.run = vi.fn().mockReturnValue(new Promise<never>(() => {}));
+
+      const resPromise = resolveAndFetch({ method: 'GET', path: '/api/x', headers: {} });
+
+      // Advance to just before timeout — still pending
+      await vi.advanceTimersByTimeAsync(14999);
+      // Advance past the timeout
+      await vi.advanceTimersByTimeAsync(1);
+
+      const res = await resPromise;
+      expect(res.transport).toBe('fail');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

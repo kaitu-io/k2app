@@ -49,8 +49,27 @@ const AUTH_TOKEN_PATHS = [
 /** Auth path where tokens + cache should be cleared on success */
 const AUTH_LOGOUT_PATH = '/api/auth/logout';
 
+/** Total request timeout in milliseconds — restores the original 15s AbortController semantics. */
+const REQUEST_TIMEOUT_MS = 15000;
+
 /** Module-level refresh promise for concurrent 401 dedup */
 let _refreshPromise: Promise<boolean> | null = null;
+
+/** Sentinel value returned by withTimeout when the deadline is exceeded. */
+const TIMEOUT_SENTINEL = Symbol('timeout');
+
+/**
+ * Race a promise against a deadline. Resolves with TIMEOUT_SENTINEL if the
+ * deadline fires first; otherwise resolves/rejects as the original promise does.
+ * Clears the timer on settle to avoid leaked timers.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMEOUT_SENTINEL> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
+    timer = setTimeout(() => resolve(TIMEOUT_SENTINEL), ms);
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer!));
+}
 
 /**
  * Cloud API client for direct HTTP communication with the cloud API.
@@ -94,7 +113,15 @@ export const cloudApi = {
       const bodyString = body !== undefined ? JSON.stringify(body) : undefined;
 
       // 4. Resolve transport (direct → camouflage-node relay) and perform the request.
-      const result = await resolveAndFetch({ method, path, headers, body: bodyString });
+      // Wrap in withTimeout to preserve the original 15s total-request cap (§5.3 #5 c).
+      const resultOrTimeout = await withTimeout(
+        resolveAndFetch({ method, path, headers, body: bodyString }),
+        REQUEST_TIMEOUT_MS
+      );
+      if (resultOrTimeout === TIMEOUT_SENTINEL) {
+        return { code: -1, message: 'Request timeout' };
+      }
+      const result = resultOrTimeout;
       if (result.transport === 'fail') {
         console.error('[CloudAPI] transport failed (direct + relay):', method, path);
         return { code: -1, message: 'Network error' };
@@ -261,17 +288,21 @@ export const cloudApi = {
       if (clientHeader) {
         refreshHeaders['X-K2-Client'] = clientHeader;
       }
-      const result = await resolveAndFetch({
-        method: 'POST',
-        path: '/api/auth/refresh',
-        headers: refreshHeaders,
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (result.transport === 'fail') {
+      const resultOrTimeout = await withTimeout(
+        resolveAndFetch({
+          method: 'POST',
+          path: '/api/auth/refresh',
+          headers: refreshHeaders,
+          body: JSON.stringify({ refreshToken }),
+        }),
+        REQUEST_TIMEOUT_MS
+      );
+      if (resultOrTimeout === TIMEOUT_SENTINEL || resultOrTimeout.transport === 'fail') {
         await authService.clearTokens();
         useAuthStore.setState({ isAuthenticated: false });
         return false;
       }
+      const result = resultOrTimeout;
       const refreshJson = await result.json() as SResponse<{ token: string; refreshToken: string }>;
       if (refreshJson.code !== 0 || result.status >= 400) {
         await authService.clearTokens();

@@ -7,6 +7,7 @@ import type { RelayRequest, RelayResponse, SResponse } from '../types/kaitu-core
 export const CONTROL_PLANE_HOST = 'k2.52j.me';
 
 const DIRECT_PROBE_TIMEOUT_MS = 5000;
+const RELAY_TIMEOUT_MS = 15000;
 const RELAY_FANOUT = 6;
 
 export type TransportResult =
@@ -65,7 +66,22 @@ async function relayOne(node: NodeEntry, req: RelayReq): Promise<{ status: numbe
     headers: req.headers,
     body: req.body,
   };
-  const resp = await k2.run('relay-fetch', relayReq);
+  // Race the IPC call against a per-relay timeout so a stalled node/daemon
+  // never keeps firstResolved pending indefinitely (§5.3 review #5 c).
+  const ipcPromise = k2.run('relay-fetch', relayReq);
+  let timer: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      pool.recordFailure(node.ip);
+      reject(new Error('relay timeout'));
+    }, RELAY_TIMEOUT_MS);
+  });
+  let resp: SResponse<RelayResponse>;
+  try {
+    resp = await Promise.race([ipcPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer!);
+  }
   if (resp.code === 0 && resp.data) {
     pool.recordSuccess(node.ip);
     return { status: resp.data.status, body: resp.data.body };
