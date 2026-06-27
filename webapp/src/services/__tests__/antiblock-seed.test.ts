@@ -205,6 +205,16 @@ describe('findFrontier', () => {
     expect(res!.cursor).toBe(202);
   });
 
+  it('bridges a CI gap (valid n=200,202, n=201 missing, floor=199) → cursor 202', async () => {
+    // Simulates a CDN publish gap: v/200.js exists, v/201.js was never published
+    // (CI gap), v/202.js exists, nothing above. Gallop hits 200, misses 201 →
+    // binary gives best=200. Gap-confirm must bridge the hole and return 202.
+    mockExistsBy((n) => n === 200 || n === 202);
+    const res = await findFrontier(199);
+    expect(res).not.toBeNull();
+    expect(res!.cursor).toBe(202);
+  });
+
   it('returns null when nothing exists above floor', async () => {
     mockExistsBy(() => false);
     const res = await findFrontier(5);

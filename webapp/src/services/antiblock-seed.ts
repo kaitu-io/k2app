@@ -156,12 +156,18 @@ export async function findFrontier(
     }
   }
 
-  // --- Linear gap-confirm: advance past contiguous hits, bounded. ---
-  for (let k = 0; k < GAP_CONFIRM; k++) {
-    const payload = await exists(best + 1);
-    if (!payload) break;
-    best += 1;
-    bestPayload = payload;
+  // --- Gap-confirm: bounded hole-bridging scan.
+  //     Advances `best` past up to GAP_CONFIRM-1 consecutive missing versions
+  //     (CI publish gaps), stopping only after GAP_CONFIRM consecutive misses.
+  //     On any hit, best advances and the consecutive-miss counter resets,
+  //     allowing the scan to keep climbing past sparse data. ---
+  let misses = 0;
+  let n = best + 1;
+  while (misses < GAP_CONFIRM) {
+    const p = await exists(n);
+    if (p) { best = n; bestPayload = p; misses = 0; }
+    else { misses++; }
+    n++;
   }
 
   return { cursor: best, payload: bestPayload };
