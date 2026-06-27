@@ -948,3 +948,12 @@ describe('capacitor-k2 run(classify-apps)', () => {
     expect(resp.code).toBe(-1);
   });
 });
+
+describe('capacitor-k2 relay-fetch placeholder', () => {
+  it('relay-fetch returns unsupported until Phase 2b', async () => {
+    const { __testCapacitorRun } = await import('../capacitor-k2');
+    const res = await __testCapacitorRun('relay-fetch', { ip: '1.2.3.4' });
+    expect(res.code).toBe(-1);
+    expect(res.message).toMatch(/unsupported/i);
+  });
+});

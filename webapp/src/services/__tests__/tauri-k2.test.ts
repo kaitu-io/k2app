@@ -204,6 +204,16 @@ describe('tauri-k2', () => {
       expect(mockInvoke).toHaveBeenCalledWith('get_pid');
       expect(pid).toBe(12345);
     });
+
+    it('passes relay-fetch through daemon_exec verbatim', async () => {
+      const req = { ip: '1.2.3.4', port: 443, pin: 'sha256:x', ech: 'AEX', centerHost: 'k2.52j.me', method: 'GET', path: '/api/tunnels/k2v4' };
+      const relayResp = { status: 200, headers: { 'Content-Type': ['application/json'] }, body: '{}' };
+      mockInvoke.mockResolvedValueOnce({ code: 0, message: 'ok', data: relayResp });
+      const res = await window._k2.run('relay-fetch', req);
+      expect(mockInvoke).toHaveBeenCalledWith('daemon_exec', { action: 'relay-fetch', params: req });
+      expect(res.code).toBe(0);
+      expect(res.data).toEqual(relayResp);
+    });
   });
 
   describe('transformStatus', () => {
