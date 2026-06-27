@@ -46,8 +46,10 @@ auth:
   cache_ttl: 5m
 log:
   level: info
-control_plane_routes:            # optional; antiblock Phase 1 relay
-  k2.52j.me: "k2.52j.me:443"   # inner SNI → Center origin (host:port)
+control_plane_routes:            # optional; antiblock Phase 1 relay.
+  k2.52j.me: "k2.52j.me:443"   # inner SNI → Center origin (host:port).
+                                 # Omit entirely → built-in default = this exact
+                                 # single route (Center address is permanent).
 ```
 
 ## Types

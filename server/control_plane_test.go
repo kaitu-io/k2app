@@ -247,3 +247,33 @@ func TestHandleK2V5_NonMatchingInnerSNIFallsThrough(t *testing.T) {
 		t.Fatal("handleK2V5 did not return after client close (goroutine leak)")
 	}
 }
+
+// New must bake in the single permanent control-plane route when no explicit
+// control_plane_routes config is present, so a node needs zero per-node config.
+func TestNew_DefaultsControlPlaneRouteWhenUnset(t *testing.T) {
+	s, err := New(&config.ServerConfig{}) // no CertDir → no provisioning; no routes
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	origin, ok := s.matchControlPlaneRoute("k2.52j.me")
+	if !ok || origin != "k2.52j.me:443" {
+		t.Fatalf("built-in default route: got (%q,%v), want (k2.52j.me:443,true)", origin, ok)
+	}
+}
+
+// An explicit control_plane_routes config replaces (does not merge with) the
+// built-in default.
+func TestNew_ExplicitControlPlaneRouteOverridesDefault(t *testing.T) {
+	s, err := New(&config.ServerConfig{
+		ControlPlaneRoutes: map[string]string{"cp.test": "cp.test:443"},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if origin, ok := s.matchControlPlaneRoute("cp.test"); !ok || origin != "cp.test:443" {
+		t.Fatalf("explicit route: got (%q,%v), want (cp.test:443,true)", origin, ok)
+	}
+	if _, ok := s.matchControlPlaneRoute("k2.52j.me"); ok {
+		t.Fatal("explicit config must replace, not merge with, the built-in default")
+	}
+}

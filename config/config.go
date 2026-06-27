@@ -165,7 +165,9 @@ type ServerConfig struct {
 	// ControlPlaneRoutes maps an ECH-decrypted INNER SNI to a Center origin
 	// (host:port). When a k2v5 TLS connection's inner SNI matches, the node
 	// HTTP-reverse-proxies it to the origin instead of treating it as a tunnel.
-	// Used by the antiblock control-plane relay (Phase 1). Empty = disabled.
+	// Used by the antiblock control-plane relay (Phase 1). Empty = built-in
+	// default (relays the single permanent inner SNI k2.52j.me to the Center
+	// address); set explicitly only to override that default.
 	ControlPlaneRoutes map[string]string `yaml:"control_plane_routes"`
 	PCC         string            `yaml:"pcc"`
 	Rate        int64             `yaml:"rate"`

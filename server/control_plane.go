@@ -10,6 +10,22 @@ import (
 	"time"
 )
 
+// controlPlaneHost / controlPlaneOrigin: Center's real address is permanent —
+// it is already designed to survive blocking, and antiblock relies on relaying
+// through the node fleet rather than swapping the address. There is therefore
+// exactly one, fixed control-plane route, baked in so a node needs no per-node
+// config. The :443 target is a fixed internal constant, not a config surface.
+const (
+	controlPlaneHost   = "k2.52j.me"
+	controlPlaneOrigin = "k2.52j.me:443"
+)
+
+// defaultControlPlaneRoutes is the built-in relay allowlist applied when a node
+// has no explicit control_plane_routes config. An explicit config replaces it.
+func defaultControlPlaneRoutes() map[string]string {
+	return map[string]string{controlPlaneHost: controlPlaneOrigin}
+}
+
 // matchControlPlaneRoute returns the Center origin for an ECH-decrypted inner
 // SNI, if it is an exact match in control_plane_routes. Exact-match only (no
 // wildcard) — the control-plane allowlist must be tight.

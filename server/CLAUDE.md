@@ -100,7 +100,10 @@ reach Center API through any reachable node when the direct path is GFW-blocked.
   `WriteTimeout 60s`, so streaming, long-poll, and SSE endpoints are out of
   scope and will be cut off — relay is intended for Center API calls only.
 
-Sample node config:
+The single control-plane route is **built in** — Center's address is permanent,
+so a node needs no per-node config: `New()` defaults `control_plane_routes` to
+`{k2.52j.me: k2.52j.me:443}` when unset. An explicit config replaces (does not
+merge with) that default. Sample explicit override:
 ```yaml
 control_plane_routes:
   k2.52j.me: "k2.52j.me:443"
