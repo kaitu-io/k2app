@@ -59,6 +59,81 @@ function buildIapBridge(): IIap {
 }
 
 /**
+ * Module-level capacitor run dispatcher.
+ * Extracted from injectCapacitorGlobals so it can be tested directly
+ * without going through the injected window._k2 global.
+ */
+export async function capacitorRun<T = any>(action: string, params?: any): Promise<SResponse<T>> {
+  try {
+    switch (action) {
+      case 'status': {
+        const raw = await K2Plugin.getStatus();
+        const data = transformStatus(raw);
+        return { code: 0, message: 'ok', data: data as unknown as T };
+      }
+
+      case 'up': {
+        if (!params || !params.config) {
+          return { code: -1, message: 'Config is required for connect' };
+        }
+        try {
+          await K2Plugin.connect({
+            config: JSON.stringify(params.config),
+            alwaysOn: params.alwaysOn === true,
+          });
+          return { code: 0, message: 'ok' };
+        } catch (connectErr) {
+          const msg = connectErr instanceof Error ? connectErr.message : String(connectErr);
+          // Detect VPN permission denial from native plugin rejection
+          const isPermissionDenied = /permission|denied|revoked|not granted/i.test(msg);
+          const code = isPermissionDenied ? 580 : -1;
+          console.warn('[K2:Capacitor] connect rejected:', code, msg);
+          return { code, message: msg };
+        }
+      }
+
+      case 'down': {
+        await K2Plugin.disconnect();
+        return { code: 0, message: 'ok' };
+      }
+
+      case 'version': {
+        const versionInfo = await K2Plugin.getVersion();
+        return { code: 0, message: 'ok', data: versionInfo as unknown as T };
+      }
+
+      case 'classify-apps': {
+        // App Bypass region-default badges. Forward {region, installed} to
+        // native (which runs the same krs.MatchInstalled codepath as the
+        // engine). installed is JSON-stringified for the gomobile boundary.
+        const region: string = params?.region ?? '';
+        const installed = Array.isArray(params?.installed) ? params.installed : [];
+        const res = await K2Plugin.classifyApps({
+          region,
+          installed: JSON.stringify(installed),
+        });
+        return { code: 0, message: 'ok', data: res as unknown as T };
+      }
+
+      case 'relay-fetch':
+        // Phase 2b: wire K2Plugin.relayFetch(). This build doesn't support native relay.
+        return { code: -1, message: 'relay unsupported on this build' };
+
+      default:
+        return { code: -1, message: `Unknown action: ${action}` };
+    }
+  } catch (error) {
+    return {
+      code: -1,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** Test alias — lets unit tests call the switch directly without injecting globals. */
+export const __testCapacitorRun = capacitorRun;
+
+/**
  * Inject Capacitor-specific _k2 and _platform globals.
  * Must be called before store initialization.
  */
@@ -78,68 +153,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
   // Build _k2: VPN control via K2Plugin
   const capacitorK2: IK2Vpn = {
-    run: async <T = any>(action: string, params?: any): Promise<SResponse<T>> => {
-      try {
-        switch (action) {
-          case 'status': {
-            const raw = await K2Plugin.getStatus();
-            const data = transformStatus(raw);
-            return { code: 0, message: 'ok', data: data as unknown as T };
-          }
-
-          case 'up': {
-            if (!params || !params.config) {
-              return { code: -1, message: 'Config is required for connect' };
-            }
-            try {
-              await K2Plugin.connect({
-                config: JSON.stringify(params.config),
-                alwaysOn: params.alwaysOn === true,
-              });
-              return { code: 0, message: 'ok' };
-            } catch (connectErr) {
-              const msg = connectErr instanceof Error ? connectErr.message : String(connectErr);
-              // Detect VPN permission denial from native plugin rejection
-              const isPermissionDenied = /permission|denied|revoked|not granted/i.test(msg);
-              const code = isPermissionDenied ? 580 : -1;
-              console.warn('[K2:Capacitor] connect rejected:', code, msg);
-              return { code, message: msg };
-            }
-          }
-
-          case 'down': {
-            await K2Plugin.disconnect();
-            return { code: 0, message: 'ok' };
-          }
-
-          case 'version': {
-            const versionInfo = await K2Plugin.getVersion();
-            return { code: 0, message: 'ok', data: versionInfo as unknown as T };
-          }
-
-          case 'classify-apps': {
-            // App Bypass region-default badges. Forward {region, installed} to
-            // native (which runs the same krs.MatchInstalled codepath as the
-            // engine). installed is JSON-stringified for the gomobile boundary.
-            const region: string = params?.region ?? '';
-            const installed = Array.isArray(params?.installed) ? params.installed : [];
-            const res = await K2Plugin.classifyApps({
-              region,
-              installed: JSON.stringify(installed),
-            });
-            return { code: 0, message: 'ok', data: res as unknown as T };
-          }
-
-          default:
-            return { code: -1, message: `Unknown action: ${action}` };
-        }
-      } catch (error) {
-        return {
-          code: -1,
-          message: error instanceof Error ? error.message : String(error),
-        };
-      }
-    },
+    run: capacitorRun,
 
     // Event-driven mode: wire native K2Plugin events to VPN machine store.
     // This prevents the 2s polling fallback which causes stale BACKEND_DISCONNECTED
