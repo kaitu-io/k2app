@@ -75,6 +75,38 @@ func TestHandleAntiblockSeed(t *testing.T) {
 	}
 	require.NoError(t, db.Get().Create(&healthyUsage).Error)
 
+	// ---- A second healthy shared node ----
+	// Guarantees ≥2 qualifying nodes exist regardless of the shared dev DB, so the
+	// cap-truncation subtest below is deterministic and non-vacuous.
+	healthyIP2 := fmt.Sprintf("10.88.%s.4", seg)
+	healthyNode2 := SlaveNode{
+		Ipv4:    healthyIP2,
+		Name:    "antiblock-seed-healthy2-" + uniq,
+		Country: "AU",
+		Class:   NodeClassShared,
+	}
+	require.NoError(t, db.Get().Create(&healthyNode2).Error)
+
+	healthyTunnel2 := SlaveTunnel{
+		NodeID:    healthyNode2.ID,
+		Protocol:  TunnelProtocolK2V5,
+		Name:      "ab-tun-healthy2-" + uniq,
+		Domain:    "ab-h2" + uniq + ".example.com",
+		Port:      10001,
+		IsTest:    BoolPtr(false),
+		ServerURL: fmt.Sprintf("k2v5://13-54-164-216.sslip.io:443?ech=AEX-abc2&pin=sha256:CCC=,sha256:DDD=&hop=40000-40019&ip=%s", healthyIP2),
+	}
+	require.NoError(t, db.Get().Create(&healthyTunnel2).Error)
+
+	healthyUsage2 := NodeUsage{
+		NodeID:          healthyNode2.ID,
+		Ipv4:            healthyIP2,
+		QuotaTotalBytes: 0, // unlimited
+		UsedBytes:       0,
+		LastReportAt:    time.Now().Unix(),
+	}
+	require.NoError(t, db.Get().Create(&healthyUsage2).Error)
+
 	// ---- Over-quota shared node (must be excluded) ----
 	overIP := fmt.Sprintf("10.88.%s.2", seg)
 	overNode := SlaveNode{
@@ -129,11 +161,14 @@ func TestHandleAntiblockSeed(t *testing.T) {
 
 	t.Cleanup(func() {
 		db.Get().Unscoped().Where("node_id = ?", healthyNode.ID).Delete(&SlaveTunnel{})
+		db.Get().Unscoped().Where("node_id = ?", healthyNode2.ID).Delete(&SlaveTunnel{})
 		db.Get().Unscoped().Where("node_id = ?", overNode.ID).Delete(&SlaveTunnel{})
 		db.Get().Unscoped().Where("node_id = ?", privateNode.ID).Delete(&SlaveTunnel{})
 		db.Get().Unscoped().Where("ipv4 = ?", healthyIP).Delete(&NodeUsage{})
+		db.Get().Unscoped().Where("ipv4 = ?", healthyIP2).Delete(&NodeUsage{})
 		db.Get().Unscoped().Where("ipv4 = ?", overIP).Delete(&NodeUsage{})
 		db.Get().Unscoped().Delete(&healthyNode)
+		db.Get().Unscoped().Delete(&healthyNode2)
 		db.Get().Unscoped().Delete(&overNode)
 		db.Get().Unscoped().Delete(&privateNode)
 	})
@@ -173,6 +208,12 @@ func TestHandleAntiblockSeed(t *testing.T) {
 
 	t.Run("correct_key_200", func(t *testing.T) {
 		viper.Set("antiblock.seed_key", "testkey")
+		// Raise the cap so filtering/shape assertions are independent of how many
+		// other shared nodes the dev DB holds (the real cap is exercised below).
+		prevTopN := antiblockSeedTopN
+		antiblockSeedTopN = 1000
+		t.Cleanup(func() { antiblockSeedTopN = prevTopN })
+
 		w := doReq(map[string]string{"X-Antiblock-Seed-Key": "testkey"})
 		require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
 
@@ -209,5 +250,38 @@ func TestHandleAntiblockSeed(t *testing.T) {
 			assert.NotEqual(t, overIP, n.IP, "over-quota node must not appear")
 			assert.NotEqual(t, privateIP, n.IP, "private node must not appear")
 		}
+	})
+
+	// The seed deliberately caps how many relay IPs it exposes (antiblockSeedTopN).
+	// Verify the cap truncates: with ≥2 qualifying nodes present (the two healthy
+	// nodes created above), a cap of 1 must return exactly 1.
+	t.Run("topN_cap_truncates", func(t *testing.T) {
+		viper.Set("antiblock.seed_key", "testkey")
+		prevTopN := antiblockSeedTopN
+
+		countNodes := func() int {
+			w := doReq(map[string]string{"X-Antiblock-Seed-Key": "testkey"})
+			require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+			var resp struct {
+				Data struct {
+					Nodes []struct {
+						IP string `json:"ip"`
+					} `json:"nodes"`
+				} `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			return len(resp.Data.Nodes)
+		}
+
+		antiblockSeedTopN = 1000
+		t.Cleanup(func() { antiblockSeedTopN = prevTopN })
+		uncapped := countNodes()
+		require.GreaterOrEqual(t, uncapped, 2, "≥2 qualifying healthy nodes must exist uncapped")
+
+		antiblockSeedTopN = 1
+		require.Equal(t, 1, countNodes(), "cap of 1 must truncate to exactly 1 node")
+
+		// Default cap is the small exposure-limiting value.
+		assert.Equal(t, 5, prevTopN, "default antiblockSeedTopN must be 5")
 	})
 }

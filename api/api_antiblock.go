@@ -45,6 +45,14 @@ type seedNodeDescriptor struct {
 	ECH string `json:"ech"`
 }
 
+// antiblockSeedTopN caps how many relay node IPs the seed exposes. Kept small on
+// purpose: the seed only needs to bootstrap the direct→relay fallback, and every
+// IP published to the public CDN seed widens the exposure of the shared relay
+// pool. Clients self-update their full pool from /api/tunnels once connected, so
+// a handful of bootstrap IPs is sufficient. Package var (not const) so tests can
+// override it to assert filtering independently of the cap.
+var antiblockSeedTopN = 5
+
 // handleAntiblockSeed returns a JSON seed payload of healthy shared relay nodes
 // and control-plane entries for anti-block cold-start bootstrap.
 //
@@ -149,9 +157,8 @@ func handleAntiblockSeed(c *gin.Context) {
 		return candidates[i].score > candidates[j].score
 	})
 
-	const topN = 16
-	if len(candidates) > topN {
-		candidates = candidates[:topN]
+	if len(candidates) > antiblockSeedTopN {
+		candidates = candidates[:antiblockSeedTopN]
 	}
 
 	nodes := make([]seedNodeDescriptor, 0, len(candidates))
