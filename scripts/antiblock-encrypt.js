@@ -11,17 +11,19 @@ const path = require('node:path');
 /**
  * Encrypt a config object into a JSONP string.
  *
- * Output format (JSONP — sets window.__k2ac for <script> tag loading):
- *   window.__k2ac={"v":1,"data":"<base64>"};
+ * Output format (JSONP — sets window.<globalName> for <script> tag loading):
+ *   window.__k2ac={"v":1,"data":"<base64>"};   (legacy default)
+ *   window.__k2sd={"v":1,"data":"<base64>"};   (versioned seed, globalName='__k2sd')
  *
- * Where `data` is AES-256-GCM encrypted, base64-encoded ciphertext
- * of the JSON-serialized config.
+ * Where `data` is AES-256-GCM encrypted, base64-encoded:
+ *   base64( iv(12 bytes) | ciphertext | GCM tag(16 bytes) )
  *
- * @param {object} config - The config object (e.g. { entries: ["https://..."] })
- * @param {string} keyHex - 64-char hex AES-256 key
+ * @param {object} config     - The config object (e.g. { entries: ["https://..."] })
+ * @param {string} keyHex     - 64-char hex AES-256 key
+ * @param {string} [globalName='__k2ac'] - JS global variable name to set
  * @returns {string} JSONP-wrapped encrypted config
  */
-function encrypt(config, keyHex) {
+function encrypt(config, keyHex, globalName = '__k2ac') {
   const key = Buffer.from(keyHex, 'hex');
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -29,8 +31,15 @@ function encrypt(config, keyHex) {
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   const data = Buffer.concat([iv, encrypted, tag]).toString('base64');
-  return `window.__k2ac={"v":1,"data":"${data}"};`;
+  return `window.${globalName}={"v":1,"data":"${data}"};`;
 }
+
+// ---------------------------------------------------------------------------
+// Defaults — hardcoded (same key as webapp/src/api/antiblock.ts DECRYPTION_KEY)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_KEY = '9e3573184d5e5b3034a087c33fa2cdb76bd0126238ed08f54d1de8c6ae0eb4ba';
+const DEFAULT_ENTRIES = ['https://d1l0lk9fcyd6r8.cloudfront.net', 'https://k2.52j.me'];
 
 // ---------------------------------------------------------------------------
 // Self-test mode: node scripts/antiblock-encrypt.js --test
@@ -106,6 +115,40 @@ function runTests() {
     assert(hexPattern.test(keyOutput), `keygen must output 64-char lowercase hex, got: ${truncate(keyOutput)}`);
   }));
 
+  // ---- test_encrypt_custom_global ----
+  results.push(runTest('test_encrypt_custom_global', () => {
+    const out = encrypt({ entries: ['x'] }, DEFAULT_KEY, '__k2sd');
+    assert(/^window\.__k2sd=\{/.test(out), `Must emit __k2sd global, got: ${truncate(out)}`);
+  }));
+
+  // ---- test_versioned_payload_roundtrips_nodes ----
+  results.push(runTest('test_versioned_payload_roundtrips_nodes', () => {
+    const payload = { entries: ['https://k2.52j.me'], nodes: [{ ip: '1.2.3.4', pin: 'sha256:AAA=', ech: 'AEX-x' }] };
+    const out = encrypt(payload, DEFAULT_KEY, '__k2sd');
+    assert(/^window\.__k2sd=/.test(out), `Must emit __k2sd global, got: ${truncate(out)}`);
+    const json = extractJson(out);
+    assert(json !== null, 'Must extract JSON from JSONP wrapper');
+    const { data } = JSON.parse(json);
+    const decrypted = decryptData(data, DEFAULT_KEY);
+    assert(Array.isArray(decrypted.entries), 'entries must survive roundtrip');
+    assert(decrypted.entries[0] === 'https://k2.52j.me', `entry[0] must match, got: ${decrypted.entries[0]}`);
+    assert(Array.isArray(decrypted.nodes), 'nodes must survive roundtrip');
+    assert(decrypted.nodes[0].ip === '1.2.3.4', `ip must match, got: ${decrypted.nodes[0].ip}`);
+    assert(decrypted.nodes[0].pin === 'sha256:AAA=', `pin must match, got: ${decrypted.nodes[0].pin}`);
+    assert(decrypted.nodes[0].ech === 'AEX-x', `ech must match, got: ${decrypted.nodes[0].ech}`);
+  }));
+
+  // ---- test_config_js_excludes_nodes ----
+  results.push(runTest('test_config_js_excludes_nodes', () => {
+    const out = encrypt({ entries: ['https://k2.52j.me'] }, DEFAULT_KEY);
+    const json = extractJson(out);
+    assert(json !== null, 'Must extract JSON from JSONP wrapper');
+    const { data } = JSON.parse(json);
+    const decrypted = decryptData(data, DEFAULT_KEY);
+    assert(decrypted.nodes === undefined, 'legacy config plaintext must not contain nodes key');
+    assert(!JSON.stringify(decrypted).includes('"ip"'), 'legacy config must not contain ip key');
+  }));
+
   // ---- Report ----
   console.log('\n--- Antiblock Encrypt Tests ---\n');
   let passed = 0;
@@ -145,24 +188,34 @@ function extractJson(jsonp) {
   return match ? match[1] : null;
 }
 
+/**
+ * Inverse of encrypt: base64-decode → split iv(12)|ct|tag(16) → AES-256-GCM decrypt → JSON.parse.
+ * Used only in self-tests.
+ */
+function decryptData(dataBase64, keyHex) {
+  const raw = Buffer.from(dataBase64, 'base64');
+  const iv = raw.slice(0, 12);
+  const tag = raw.slice(raw.length - 16);
+  const ct = raw.slice(12, raw.length - 16);
+  const key = Buffer.from(keyHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return JSON.parse(Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8'));
+}
+
 function truncate(str, len = 80) {
   if (typeof str !== 'string') return String(str);
   return str.length > len ? str.slice(0, len) + '...' : str;
 }
 
 // ---------------------------------------------------------------------------
-// Main (non-test): read config from stdin, key from env/arg, write JSONP to stdout
+// Main (non-test): read config from env, write JSONP files to cwd
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Defaults — hardcoded (same key as webapp/src/api/antiblock.ts DECRYPTION_KEY)
-// ---------------------------------------------------------------------------
-
-const DEFAULT_KEY = '9e3573184d5e5b3034a087c33fa2cdb76bd0126238ed08f54d1de8c6ae0eb4ba';
-const DEFAULT_ENTRIES = ['https://d1l0lk9fcyd6r8.cloudfront.net', 'https://k2.52j.me'];
 
 if (require.main === module && !process.argv.includes('--test')) {
   const entriesRaw = process.env.ENTRIES;
+  const nodesRaw = process.env.NODES;
+  const cursorRaw = process.env.CURSOR;
   const keyHex = process.env.ENCRYPTION_KEY || DEFAULT_KEY;
 
   if (!/^[0-9a-f]{64}$/i.test(keyHex)) {
@@ -186,11 +239,52 @@ if (require.main === module && !process.argv.includes('--test')) {
     entries = DEFAULT_ENTRIES;
   }
 
-  const config = { entries };
-  const jsonp = encrypt(config, keyHex);
+  let nodes = null;
+  if (nodesRaw) {
+    try {
+      nodes = JSON.parse(nodesRaw);
+    } catch {
+      console.error('Error: NODES must be valid JSON');
+      process.exit(1);
+    }
+    if (!Array.isArray(nodes)) {
+      console.error('Error: NODES must be a JSON array');
+      process.exit(1);
+    }
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (
+        !n ||
+        typeof n.ip !== 'string' || !n.ip ||
+        typeof n.pin !== 'string' || !n.pin ||
+        typeof n.ech !== 'string' || !n.ech
+      ) {
+        console.error(`Error: NODES[${i}] must have non-empty string fields: ip, pin, ech`);
+        process.exit(1);
+      }
+    }
+  }
+
+  // Always write config.js — legacy contract (entries only, __k2ac global). FROZEN.
+  const legacyJsonp = encrypt({ entries }, keyHex);
   const outPath = path.join(process.cwd(), 'config.js');
-  fs.writeFileSync(outPath, jsonp + '\n', 'utf8');
-  console.log(`Wrote ${outPath} (${Buffer.byteLength(jsonp + '\n')} bytes)`);
+  fs.writeFileSync(outPath, legacyJsonp + '\n', 'utf8');
+  console.log(`Wrote ${outPath} (${Buffer.byteLength(legacyJsonp + '\n')} bytes)`);
+
+  // Write v/<CURSOR>.js when CURSOR is provided — versioned seed (__k2sd global, includes nodes).
+  if (cursorRaw !== undefined && cursorRaw !== '') {
+    const cursor = parseInt(cursorRaw, 10);
+    if (!Number.isInteger(cursor) || isNaN(cursor) || cursor < 0) {
+      console.error('Error: CURSOR must be a non-negative integer');
+      process.exit(1);
+    }
+    const versionedJsonp = encrypt({ entries, nodes: nodes || [] }, keyHex, '__k2sd');
+    const vDir = path.join(process.cwd(), 'v');
+    fs.mkdirSync(vDir, { recursive: true });
+    const vPath = path.join(vDir, `${cursor}.js`);
+    fs.writeFileSync(vPath, versionedJsonp + '\n', 'utf8');
+    console.log(`Wrote ${vPath} (${Buffer.byteLength(versionedJsonp + '\n')} bytes)`);
+  }
 }
 
 module.exports = { encrypt };
