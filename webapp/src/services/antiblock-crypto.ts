@@ -82,7 +82,7 @@ export async function decrypt(
 // use distinct window globals without coupling.
 // ---------------------------------------------------------------------------
 
-interface JsonpConfig {
+export interface JsonpConfig {
   v: number;
   data: string;
 }
