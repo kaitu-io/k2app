@@ -123,6 +123,10 @@ func SetupRouter() *gin.Engine {
 		api.GET("/app/config", api_get_app_config)
 		// 获取 ECH 配置（公开接口，无需认证）
 		api.GET("/ech/config", api_fetch_ech_config)
+		// Antiblock relay seed — healthy shared-node list for CDN publish + cold-start bootstrap.
+		// Auth is an in-handler shared secret (ANTIBLOCK_SEED_KEY env); real HTTP codes (503/401)
+		// are returned intentionally so CI (curl -fsS) fails loudly. See handleAntiblockSeed.
+		api.GET("/antiblock/seed", handleAntiblockSeed)
 		// 获取礼品卡/授权码信息（公开接口，无需认证）
 		api.GET("/license-keys/code/:code", api_get_license_key)
 		// 预览授权码折扣信息（需登录，检查当前用户是否符合使用条件）
