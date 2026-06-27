@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/react";
 import App from "./App";
 import { i18nPromise } from "./i18n/i18n";
 import { initializeAllStores } from "./stores";
+import { bootstrapAntiblockSeed } from "./services/antiblock-seed";
 import {
   DESIGN_WIDTH,
   ViewportState,
@@ -125,6 +126,9 @@ async function main() {
   // Log source
   const { getK2Source } = await import('./services/standalone-k2');
   console.info(`[WebApp] K2 source: ${getK2Source()}`);
+
+  // Seed antiblock relay pool before first cloud request (fire-and-forget)
+  void bootstrapAntiblockSeed();
 
   // 初始化所有 Stores
   const cleanupStores = initializeAllStores();

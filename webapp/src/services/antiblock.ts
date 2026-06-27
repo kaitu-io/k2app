@@ -17,6 +17,7 @@ export const CDN_SOURCES = [
   'https://testingcf.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
   'https://gcore.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
   'https://cdn.jsdmirror.com/gh/kaitu-io/ui-theme@dist/config.js',
+  'https://cdn.jsdmirror.cn/gh/kaitu-io/ui-theme@dist/config.js',
   'https://jsd.onmicrosoft.cn/gh/kaitu-io/ui-theme@dist/config.js',
 ];
 
