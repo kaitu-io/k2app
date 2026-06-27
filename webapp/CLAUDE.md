@@ -148,11 +148,13 @@ Frontend uses two separate globals injected before app loads. They have distinct
 
 ### VPN Actions (via window._k2.run)
 
-`up`, `down`, `status`, `version`
+`up`, `down`, `status`, `version`, `classify-apps` (App Bypass), `relay-fetch` (antiblock control-plane relay through a camouflage node)
 
 ### API Calls (via cloudApi / k2api)
 
 Cloud API calls go through `cloudApi.request()` which handles auth headers and token refresh. The `k2api()` wrapper adds caching and SWR support. Auth success/failure/401/402 side effects are handled by k2api.
+
+**Antiblock relay transport (Phase 3):** `cloudApi.request()`/`_doRefresh()` resolve transport via `resolve-and-fetch.ts` — direct `fetch()` first (5s probe), and on a connection-level failure (GFW block) fall back to relaying the request through a camouflage VPN node via `_k2.run('relay-fetch')` (control-plane inner SNI fixed to `k2.52j.me`, must match node-side `control_plane_routes`). `entry-pool.ts` is a persistent, scored, node-only pool seeded from every successful `/api/tunnels` response (`node-descriptor.ts` extracts `{ip,pin,ech}` from each tunnel's `serverUrl`), plus a 5-min sticky "direct-blocked" marker so blocked networks skip the direct probe. 401 refresh atomicity stays in `cloud-api.ts` — the transport never handles 401. Mobile relay is unsupported until Phase 2b (capacitor returns `code:-1`).
 
 ---
 
