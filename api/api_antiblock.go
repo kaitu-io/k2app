@@ -3,11 +3,11 @@ package center
 import (
 	"crypto/subtle"
 	"net/url"
-	"os"
 	"sort"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
@@ -55,21 +55,24 @@ type seedNodeDescriptor struct {
 // documented webhook-style exception to the project's "HTTP always 200" rule.
 // See api_webhook.go for the same pattern.
 //
-//   - HTTP 503 — ANTIBLOCK_SEED_KEY not configured, or database query fails.
-//   - HTTP 401 — X-Antiblock-Seed-Key header is missing or does not match env value.
+//   - HTTP 503 — antiblock.seed_key not configured, or database query fails.
+//   - HTTP 401 — X-Antiblock-Seed-Key header is missing or does not match the configured value.
 //   - HTTP 200 — success payload via Success() helper.
 func handleAntiblockSeed(c *gin.Context) {
-	// Env gate: endpoint is inert when the key is not configured.
-	envKey := os.Getenv("ANTIBLOCK_SEED_KEY")
-	if envKey == "" {
-		log.Warnf(c, "[AntiblockSeed] ANTIBLOCK_SEED_KEY not configured")
+	// Config gate: endpoint is inert when the key is not configured. The key is
+	// read from config.yml (antiblock.seed_key) — the idiomatic Center config
+	// source, like chatwoot.api_token etc. (qtoolkit SetConfigFile does NOT
+	// enable AutomaticEnv, so this is config-file only, not an env var).
+	expectedKey := viper.GetString("antiblock.seed_key")
+	if expectedKey == "" {
+		log.Warnf(c, "[AntiblockSeed] antiblock.seed_key not configured")
 		c.AbortWithStatus(503)
 		return
 	}
 
 	// Constant-time compare guards against timing side-channels.
 	reqKey := c.GetHeader("X-Antiblock-Seed-Key")
-	if subtle.ConstantTimeCompare([]byte(reqKey), []byte(envKey)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(reqKey), []byte(expectedKey)) != 1 {
 		log.Warnf(c, "[AntiblockSeed] invalid or missing X-Antiblock-Seed-Key")
 		c.AbortWithStatus(401)
 		return

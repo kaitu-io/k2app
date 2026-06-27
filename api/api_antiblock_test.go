@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
@@ -151,20 +152,27 @@ func TestHandleAntiblockSeed(t *testing.T) {
 		return w
 	}
 
-	t.Run("env_unset_503", func(t *testing.T) {
-		t.Setenv("ANTIBLOCK_SEED_KEY", "") // empty = 503
+	// The seed key is read from config.yml via viper (antiblock.seed_key) — the
+	// idiomatic Center config source, NOT an env var (qtoolkit's SetConfigFile
+	// does not enable AutomaticEnv). viper is process-global, so restore the
+	// original value after this test to avoid leaking into sibling tests.
+	origSeedKey := viper.GetString("antiblock.seed_key")
+	t.Cleanup(func() { viper.Set("antiblock.seed_key", origSeedKey) })
+
+	t.Run("config_unset_503", func(t *testing.T) {
+		viper.Set("antiblock.seed_key", "") // empty = 503
 		w := doReq(nil)
 		require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	})
 
 	t.Run("wrong_key_401", func(t *testing.T) {
-		t.Setenv("ANTIBLOCK_SEED_KEY", "correct-key")
+		viper.Set("antiblock.seed_key", "correct-key")
 		w := doReq(map[string]string{"X-Antiblock-Seed-Key": "wrong-key"})
 		require.Equal(t, http.StatusUnauthorized, w.Code)
 	})
 
 	t.Run("correct_key_200", func(t *testing.T) {
-		t.Setenv("ANTIBLOCK_SEED_KEY", "testkey")
+		viper.Set("antiblock.seed_key", "testkey")
 		w := doReq(map[string]string{"X-Antiblock-Seed-Key": "testkey"})
 		require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
 
