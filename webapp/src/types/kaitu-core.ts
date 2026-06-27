@@ -314,6 +314,7 @@ export interface RelayResponse {
  *
  * Supported actions:
  * - up, down, status, version
+ * - classify-apps (App Bypass), relay-fetch (antiblock control-plane relay)
  */
 export interface IK2Vpn {
   /**
