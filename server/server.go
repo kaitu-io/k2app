@@ -68,6 +68,11 @@ const (
 
 // New creates a server from config.
 func New(cfg *config.ServerConfig) (*Server, error) {
+	if len(cfg.ControlPlaneRoutes) == 0 {
+		// Center's address is permanent; bake in the single relay route so a node
+		// needs no per-node config. An explicit config overrides this default.
+		cfg.ControlPlaneRoutes = defaultControlPlaneRoutes()
+	}
 	if err := validateControlPlaneRoutes(cfg.ControlPlaneRoutes); err != nil {
 		return nil, fmt.Errorf("control_plane_routes: %w", err)
 	}
