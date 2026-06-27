@@ -303,7 +303,7 @@ DoH(多解析器) 查指针 → "最新=v38"
 - **R7 冷启动可达性**:DNS 指针只解新鲜度不解可达性;已加内置稳定锚点兜底(§5.4 评审 #6)。残留:锚点 IP 也被封 + DoH/CDN 全灭 = 全新安装仍可能起不来(已是物理下限,blast radius 已最小化)。
 - **R8 锚点运维**:内置锚点 IP 须长期稳定,换 IP 需发版(kaitu-node-ops 维护清单)。
 - **R9【backlog,时机待定】老 antiblock"换域名"逻辑退役**:基于 R2 前提(Center 地址永久不变,抗封锁靠节点中继),`antiblock.ts` 的"从 CDN 取备用直连域名"(`fetchEntryFromCDN`/`entries[]`/JSONP 解密)是"换域名躲猫猫"旧策略,直连永远只试 `k2.52j.me`,该层可瘦身为常量。**但 CDN 通道本身保留**——它将承担冷启动向新装用户分发"节点种子清单 `{ip,pin,ech}`"(Phase 4)。属独立的老代码清理,不并入 Phase 1–3 分支。
-
+- **R10 节点侧 `control_plane_routes` 已内建(2026-06-27 已实现)**:基于 R2 前提(Center 地址永久、单一),节点的控制面白名单不再需要每台下发 —— `server.New()` 在配置为空时默认 `{k2.52j.me: k2.52j.me:443}`(`:443` 为固定内部常量,非配置面),显式配置则替换(不合并)该默认。开放代理闸门(`validateControlPlaneRoutes`)照旧对最终路由生效。后果:跑新 k2s 镜像的节点即为控制面中继(与"车队即入口"目标一致);canary 改由镜像版本而非配置控制。k2 `master` 已合(built-in default route)。
 ---
 
 ## 10. 受影响文件清单(预估)
