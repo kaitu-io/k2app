@@ -184,3 +184,130 @@ func TestRelayFetchJSON_MissingFields(t *testing.T) {
 		t.Fatalf("missing fields must return error envelope, got %q", out)
 	}
 }
+
+// --- antiblock relay contract tests -----------------------------------------
+// Crystallize the AU smoke (ECH→node→Center 200) into in-process CI regressions
+// for the contracts the webapp transport layer (resolve-and-fetch.ts) relies on
+// but that the 200-only OverrideDial e2e never exercised. All reuse the
+// self-signed override path (dial+handshake+HTTP/1.1, ECH/pin skipped).
+
+// startTLSNode serves handler over a self-signed TLS listener and returns its
+// dial host/port. Cleanup registered on t. Mirrors the harness in
+// TestRelayFetch_OverrideDial_EndToEnd (HTTP/1.1 only — no h2).
+func startTLSNode(t *testing.T, handler http.HandlerFunc) (string, int) {
+	t.Helper()
+	lc, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv := &http.Server{
+		Handler:      handler,
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+	}
+	srv.TLSConfig = selfSignedServerTLS(t)
+	srvDone := make(chan struct{})
+	go func() { _ = srv.ServeTLS(lc, "", ""); close(srvDone) }()
+	t.Cleanup(func() { _ = srv.Close(); <-srvDone })
+	host, portStr, _ := net.SplitHostPort(lc.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	return host, port
+}
+
+// nodeOverrideTLS is the client-side test override (self-signed node, skips ECH/pin).
+func nodeOverrideTLS() *tls.Config {
+	return &tls.Config{InsecureSkipVerify: true, ServerName: "k2.52j.me"}
+}
+
+// A non-2xx response from Center MUST come back as a normal RelayResponse (no
+// error) so the webapp returns the status verbatim and cloud-api owns the
+// 401→refresh decision. If RelayFetch ever treated non-2xx as a transport
+// failure, 401-over-relay would trigger node-failover instead of token refresh.
+func TestRelayFetch_NonOKStatusPassthrough(t *testing.T) {
+	for _, code := range []int{401, 500} {
+		host, port := startTLSNode(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+			io.WriteString(w, "body-for-"+strconv.Itoa(code))
+		})
+		resp, err := relayFetchWithOverride(context.Background(), &RelayRequest{
+			IP: host, Port: port, CenterHost: "k2.52j.me", Method: "GET", Path: "/api/x",
+		}, nodeOverrideTLS())
+		if err != nil {
+			t.Fatalf("status %d: relayFetch errored (must pass non-2xx through, not error): %v", code, err)
+		}
+		if resp.Status != code {
+			t.Fatalf("status passthrough: got %d want %d", resp.Status, code)
+		}
+		if resp.Body != "body-for-"+strconv.Itoa(code) {
+			t.Fatalf("status %d: body=%q", code, resp.Body)
+		}
+	}
+}
+
+// RelayResponse.Headers is map[string][]string specifically so multi-valued
+// headers (Set-Cookie) survive losslessly. Guard against a "simplification" to
+// map[string]string that would silently drop cookies.
+func TestRelayFetch_MultiValuedHeadersLossless(t *testing.T) {
+	host, port := startTLSNode(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Set-Cookie", "a=1")
+		w.Header().Add("Set-Cookie", "b=2")
+		w.WriteHeader(200)
+	})
+	resp, err := relayFetchWithOverride(context.Background(), &RelayRequest{
+		IP: host, Port: port, CenterHost: "k2.52j.me", Method: "GET", Path: "/",
+	}, nodeOverrideTLS())
+	if err != nil {
+		t.Fatalf("relayFetch: %v", err)
+	}
+	got := resp.Headers["Set-Cookie"]
+	if len(got) != 2 || got[0] != "a=1" || got[1] != "b=2" {
+		t.Fatalf("Set-Cookie not lossless: %v", got)
+	}
+}
+
+// Token refresh relays as a POST with a body + Authorization header. Verify
+// method, body, and custom request headers reach the node verbatim (the 200-only
+// e2e used GET with no body). Everything is observed via the response to stay
+// race-free under -race.
+func TestRelayFetch_PostBodyAndHeadersPropagated(t *testing.T) {
+	host, port := startTLSNode(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		io.WriteString(w, r.Method+"|"+r.Header.Get("Authorization")+"|"+string(b))
+	})
+	resp, err := relayFetchWithOverride(context.Background(), &RelayRequest{
+		IP: host, Port: port, CenterHost: "k2.52j.me",
+		Method:  "POST",
+		Path:    "/api/token/refresh",
+		Headers: map[string]string{"Authorization": "Bearer refresh-tok"},
+		Body:    `{"refresh":"r"}`,
+	}, nodeOverrideTLS())
+	if err != nil {
+		t.Fatalf("relayFetch: %v", err)
+	}
+	if want := `POST|Bearer refresh-tok|{"refresh":"r"}`; resp.Body != want {
+		t.Fatalf("propagation: body=%q want %q", resp.Body, want)
+	}
+}
+
+// A node that completes the TLS handshake but dies mid-round-trip (closes
+// without a valid HTTP response) must surface as an error — the webapp records a
+// node failure and fails over. All prior failure tests fail pre-dial.
+func TestRelayFetch_TransportFailsAfterTLS(t *testing.T) {
+	host, port := startTLSNode(t, func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Errorf("ResponseWriter is not a Hijacker")
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			return
+		}
+		_ = conn.Close() // close without writing any response → client ReadResponse fails
+	})
+	_, err := relayFetchWithOverride(context.Background(), &RelayRequest{
+		IP: host, Port: port, CenterHost: "k2.52j.me", Method: "GET", Path: "/",
+	}, nodeOverrideTLS())
+	if err == nil {
+		t.Fatal("node that dies mid-round-trip must surface as an error (webapp records node failure)")
+	}
+}
