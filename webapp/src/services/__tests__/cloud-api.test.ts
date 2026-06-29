@@ -2,7 +2,7 @@
  * Cloud API Client Tests
  *
  * Tests for the cloud-api module that routes requests through
- * resolveAndFetch (direct → camouflage-node relay transport).
+ * resolveAndFetch (camouflage-node relay → direct fallback transport).
  *
  * Run: cd webapp && npx vitest run --reporter=verbose src/services/__tests__/cloud-api.test.ts
  */

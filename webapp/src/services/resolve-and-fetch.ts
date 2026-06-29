@@ -7,7 +7,13 @@ import type { RelayRequest, RelayResponse, SResponse } from '../types/kaitu-core
 export const CONTROL_PLANE_HOST = 'k2.52j.me';
 
 const DIRECT_PROBE_TIMEOUT_MS = 5000;
-const RELAY_TIMEOUT_MS = 15000;
+// MUST stay < cloud-api REQUEST_TIMEOUT_MS (15s) minus DIRECT_PROBE_TIMEOUT_MS,
+// so that when relay-first abandons a hung node the direct FALLBACK still fits
+// inside the total request budget (9 + 5 = 14 < 15). If relay could consume the
+// whole 15s, the outer withTimeout would fire before direct ever runs, silently
+// defeating the fallback. (Dead nodes fail fast via 502; this guards the
+// black-hole/hang case — exactly the GFW scenario.)
+const RELAY_TIMEOUT_MS = 9000;
 const RELAY_FANOUT = 6;
 
 export type TransportResult =
@@ -86,6 +92,14 @@ async function relayOne(node: NodeEntry, req: RelayReq): Promise<{ status: numbe
     pool.recordSuccess(node.ip);
     return { status: resp.data.status, body: resp.data.body };
   }
+  if (resp.code === -1) {
+    // -1 = relay unsupported on this build/platform (capacitor / daemon-less
+    // standalone / daemon unreachable) — a CAPABILITY signal, not a node fault.
+    // Don't penalise the node's score; learn it so we stop trying relay this
+    // session and use direct. Node faults return 502, handled below.
+    pool.markRelayUnsupported();
+    throw new Error('relay unsupported');
+  }
   pool.recordFailure(node.ip);
   throw new Error('relay failed code=' + resp.code);
 }
@@ -102,14 +116,21 @@ async function tryRelay(req: RelayReq): Promise<TransportResult> {
 }
 
 /**
- * Resolve the best transport and perform one request: direct fetch first
- * (unless sticky-blocked), then camouflage-node relay fallback. NEVER handles
- * 401 — returns the status verbatim so cloud-api's _handle401 owns refresh.
+ * Resolve the best transport and perform one request: camouflage-node relay
+ * FIRST (when relay is supported), then direct fetch as the fallback. The relay
+ * path is identical for blocked and unblocked clients, so it is the primary
+ * transport — and exercising it from anywhere represents in-region behaviour.
+ * Direct is the safety net (permanent control-plane host, fleet-independent) and
+ * the only path on web/mobile, where relay is unsupported (learned via code:-1).
+ * NEVER handles 401 — returns the status verbatim so cloud-api's _handle401 owns
+ * refresh.
  */
 export async function resolveAndFetch(req: RelayReq): Promise<TransportResult> {
-  if (!pool.isDirectBlocked()) {
-    const direct = await tryDirect(req);
-    if (direct) return direct;
+  if (pool.isRelaySupported()) {
+    const relay = await tryRelay(req);
+    if (relay.transport === 'ok') return relay;
   }
-  return tryRelay(req);
+  const direct = await tryDirect(req);
+  if (direct) return direct;
+  return { transport: 'fail' };
 }

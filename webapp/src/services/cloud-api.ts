@@ -4,7 +4,7 @@
  * Replaces window._k2.api with direct HTTP fetch() calls.
  *
  * Responsibilities:
- * - Transport resolution: direct → camouflage-node relay (via resolveAndFetch)
+ * - Transport resolution: camouflage-node relay → direct fallback (via resolveAndFetch)
  * - Auth header injection: Bearer token from authService.getToken()
  * - 401 handling: refresh token, retry once, then logout
  * - Standard fetch() wrapper returning SResponse format
@@ -112,7 +112,7 @@ export const cloudApi = {
       // 3. Serialize body
       const bodyString = body !== undefined ? JSON.stringify(body) : undefined;
 
-      // 4. Resolve transport (direct → camouflage-node relay) and perform the request.
+      // 4. Resolve transport (camouflage-node relay → direct fallback) and perform the request.
       // Wrap in withTimeout to preserve the original 15s total-request cap (§5.3 #5 c).
       const resultOrTimeout = await withTimeout(
         resolveAndFetch({ method, path, headers, body: bodyString }),
@@ -123,7 +123,7 @@ export const cloudApi = {
       }
       const result = resultOrTimeout;
       if (result.transport === 'fail') {
-        console.error('[CloudAPI] transport failed (direct + relay):', method, path);
+        console.error('[CloudAPI] transport failed (relay + direct):', method, path);
         return { code: -1, message: 'Network error' };
       }
       const httpStatus = result.status;

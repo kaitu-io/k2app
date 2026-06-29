@@ -107,3 +107,25 @@ export function clearDirectBlocked(): void {
     /* best-effort */
   }
 }
+
+// --- Relay capability (session-scoped, in-memory) ---------------------------
+// Relay-first is the transport order, but relay is unsupported on web/mobile
+// (capacitor returns code:-1; a daemon-less standalone fetch also yields -1).
+// The first such -1 flips this flag so subsequent requests skip the doomed
+// relay attempt and go straight to direct. In-memory (not persisted) so a
+// transient daemon-down on desktop self-heals on the next app launch — never a
+// permanent "relay off".
+let relaySupported = true;
+
+export function isRelaySupported(): boolean {
+  return relaySupported;
+}
+
+export function markRelayUnsupported(): void {
+  relaySupported = false;
+}
+
+// Test-only: reset the session-scoped relay-capability flag between cases.
+export function __resetRelaySupportForTest(): void {
+  relaySupported = true;
+}
