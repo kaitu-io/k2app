@@ -101,7 +101,7 @@ func TestSelfRegister_LinksCloudInstanceAndCompletesJob(t *testing.T) {
 
 	resp, err := ParseResponse(w)
 	require.NoError(t, err)
-	require.Equal(t, ErrorNone, ErrorCode(resp.Code), "注册应成功（best-effort 步骤不应阻塞）: %s", resp.Message)
+	require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "注册应成功（best-effort 步骤不应阻塞）: %s", resp.Message)
 
 	// 节点应被置 private。
 	require.NoError(t, db.Get().Where("ipv4 = ?", fixedIP).First(&node).Error)
@@ -192,7 +192,7 @@ func TestSelfRegister_ClaimSecurity(t *testing.T) {
 			Country: "HK", Region: "hongkong", Name: "failed-resurrect",
 			SecretToken: "secret-failed", PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "注册仍应成功（claim best-effort）: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "注册仍应成功（claim best-effort）: %s", resp.Message)
 
 		// sub 必须仍 failed（不被复活）。
 		var reloadedSub PrivateNodeSubscription
@@ -250,7 +250,7 @@ func TestSelfRegister_ClaimSecurity(t *testing.T) {
 			Country: "HK", Region: "hongkong", Name: "attacker-node-B",
 			SecretToken: "secret-B", PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "注册不报错（防探测）: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "注册不报错（防探测）: %s", resp.Message)
 
 		// sub 仍指向 node A（未被重定向到 node B）。
 		var reloadedSub PrivateNodeSubscription
@@ -289,7 +289,7 @@ func TestSelfRegister_ClaimSecurity(t *testing.T) {
 			Country: "HK", Region: "hongkong", Name: "invalidate-token",
 			SecretToken: "secret-inv", PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "首次注册应成功: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "首次注册应成功: %s", resp.Message)
 
 		var afterClaim PrivateNodeSubscription
 		require.NoError(t, db.Get().First(&afterClaim, sub.ID).Error)
@@ -301,7 +301,7 @@ func TestSelfRegister_ClaimSecurity(t *testing.T) {
 			Country: "HK", Region: "hongkong", Name: "invalidate-token",
 			SecretToken: "secret-inv", PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "二次注册应成功（幂等）: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "二次注册应成功（幂等）: %s", resp.Message)
 
 		var afterReplay PrivateNodeSubscription
 		require.NoError(t, db.Get().First(&afterReplay, sub.ID).Error)

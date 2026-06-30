@@ -108,7 +108,7 @@ func callUsageHandler(t *testing.T, node *SlaveNode, req NodeUsageRequest) NodeU
 
 	resp, err := ParseResponse(w)
 	require.NoError(t, err)
-	require.Equal(t, ErrorNone, ErrorCode(resp.Code), "usage 应成功: %s", resp.Message)
+	require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "usage 应成功: %s", resp.Message)
 
 	data, err := ParseResponseData[NodeUsageResponse](w)
 	require.NoError(t, err)

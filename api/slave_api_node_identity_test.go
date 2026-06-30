@@ -77,7 +77,7 @@ func TestSlaveNodeUpsert_IdentitySingleSource(t *testing.T) {
 		resp := driveUpsert(t, ip, SlaveNodeUpsertRequest{
 			Country: "HK", Name: "T1", SecretToken: "secret-T1", PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "first register: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "first register: %s", resp.Message)
 
 		var first SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&first).Error)
@@ -91,7 +91,7 @@ func TestSlaveNodeUpsert_IdentitySingleSource(t *testing.T) {
 		resp = driveUpsert(t, ip, SlaveNodeUpsertRequest{
 			Country: "HK", Name: "T1", SecretToken: "secret-T1", PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "re-register: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "re-register: %s", resp.Message)
 
 		// MUST come back private (NOT shared) — this is the leak.
 		var reborn SlaveNode
@@ -151,7 +151,7 @@ func TestSlaveNodeUpsert_IdentitySingleSource(t *testing.T) {
 		resp := driveUpsert(t, ip, SlaveNodeUpsertRequest{
 			Country: "HK", Name: "T2", SecretToken: "secret-T2", PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "first register: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "first register: %s", resp.Message)
 		var n1 SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&n1).Error)
 		attachTunnel(n1.ID)
@@ -161,7 +161,7 @@ func TestSlaveNodeUpsert_IdentitySingleSource(t *testing.T) {
 		resp = driveUpsert(t, ip, SlaveNodeUpsertRequest{
 			Country: "HK", Name: "T2", SecretToken: "secret-T2", PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "re-register: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "re-register: %s", resp.Message)
 		var n2 SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&n2).Error)
 		attachTunnel(n2.ID)
@@ -182,7 +182,7 @@ func TestSlaveNodeUpsert_IdentitySingleSource(t *testing.T) {
 			Country: "US", Name: "T3", SecretToken: "secret-T3",
 			PrivateClaim: "id-tok-T3-nomatch-" + generateId("c"),
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "register: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "register: %s", resp.Message)
 
 		var node SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&node).Error)
@@ -212,7 +212,7 @@ func TestSlaveNodeUpsert_IdentitySingleSource(t *testing.T) {
 		resp := driveUpsert(t, ip, SlaveNodeUpsertRequest{
 			Country: "US", Name: "T4", SecretToken: "secret-T4",
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "register: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "register: %s", resp.Message)
 
 		var node SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&node).Error)
@@ -244,7 +244,7 @@ func TestSlaveNodeUpsert_IdentitySingleSource(t *testing.T) {
 			Country: "US", Name: "T5", SecretToken: "secret-T5",
 			PrivateClaim: "id-tok-T5-stolen-" + generateId("c"),
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "register: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "register: %s", resp.Message)
 
 		var node SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", attackerIP).First(&node).Error)

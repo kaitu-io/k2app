@@ -40,7 +40,7 @@ func TestStatsIngest_EmptyRequest(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp Response[DataAny]
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, ErrorNone, resp.Code)
+	assert.EqualValues(t, ErrorNone, resp.Code)
 }
 
 func TestStatsIngest_TooManyEvents(t *testing.T) {
@@ -68,5 +68,5 @@ func TestStatsIngest_TooManyEvents(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp Response[DataAny]
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, ErrorInvalidArgument, resp.Code)
+	assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 }

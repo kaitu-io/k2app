@@ -76,7 +76,7 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "owner+active 应成功: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "owner+active 应成功: %s", resp.Message)
 
 		data, err := ParseResponseData[SlaveDeviceCheckAuthResult](w)
 		require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorPaymentRequired, ErrorCode(resp.Code), "非主人应 402")
+		require.EqualValues(t, ErrorPaymentRequired, ErrorCode(resp.Code), "非主人应 402")
 	})
 
 	t.Run("NilPrivateSubID_500", func(t *testing.T) {
@@ -167,6 +167,6 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorSystemError, ErrorCode(resp.Code), "nil PrivateSubID 应 500（非 402）")
+		require.EqualValues(t, ErrorSystemError, ErrorCode(resp.Code), "nil PrivateSubID 应 500（非 402）")
 	})
 }

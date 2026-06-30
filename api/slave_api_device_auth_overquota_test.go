@@ -101,7 +101,7 @@ func TestSlaveJWTAuth_PrivateNodeUsage(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "96%% 使用率应放行（Center 侧闸门已移除）: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "96%% 使用率应放行（Center 侧闸门已移除）: %s", resp.Message)
 	})
 
 	t.Run("UnderQuota50_Allowed", func(t *testing.T) {
@@ -117,7 +117,7 @@ func TestSlaveJWTAuth_PrivateNodeUsage(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "50%% 使用率应放行: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "50%% 使用率应放行: %s", resp.Message)
 	})
 
 	t.Run("ExactBoundary95pct_Allowed", func(t *testing.T) {
@@ -133,7 +133,7 @@ func TestSlaveJWTAuth_PrivateNodeUsage(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "950/1000 == 95%% 应放行（Center 侧闸门已移除）: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "950/1000 == 95%% 应放行（Center 侧闸门已移除）: %s", resp.Message)
 	})
 
 	t.Run("ExactBoundary949_Allowed", func(t *testing.T) {
@@ -149,7 +149,7 @@ func TestSlaveJWTAuth_PrivateNodeUsage(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "949/1000 < 95%% 应放行: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "949/1000 < 95%% 应放行: %s", resp.Message)
 	})
 
 	t.Run("ZeroTotalNeverThrottles_Allowed", func(t *testing.T) {
@@ -165,6 +165,6 @@ func TestSlaveJWTAuth_PrivateNodeUsage(t *testing.T) {
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "未配额（total=0）应放行: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "未配额（total=0）应放行: %s", resp.Message)
 	})
 }

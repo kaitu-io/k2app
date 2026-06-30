@@ -118,7 +118,7 @@ func TestDedicatedLine_EntitlementDecouple_FullPath(t *testing.T) {
 		require.True(t, c.IsAborted(), "无线应在 RouterRequired 被拦截")
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		require.Equal(t, ErrorPlanNoRouter, ErrorCode(resp.Code), "RouterRequired 应返回 ErrorPlanNoRouter; body=%s", w.Body.String())
+		require.EqualValues(t, ErrorPlanNoRouter, ErrorCode(resp.Code), "RouterRequired 应返回 ErrorPlanNoRouter; body=%s", w.Body.String())
 	})
 }
 

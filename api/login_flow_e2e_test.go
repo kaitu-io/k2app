@@ -167,7 +167,7 @@ func TestE2E_WebLoginFlow_Complete(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"POST without CSRF token should be rejected")
 
 		t.Log("CSRF protection verified: POST without token rejected")
@@ -189,7 +189,7 @@ func TestE2E_WebLoginFlow_Complete(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"POST with wrong CSRF token should be rejected")
 
 		t.Log("CSRF protection verified: wrong token rejected")
@@ -238,9 +238,10 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		// Should return error code (422 = invalid argument)
-		assert.Equal(t, ErrorInvalidArgument, resp.Code,
-			"Wrong verification code should return 422")
+		// Wrong verification code returns the specific business code
+		// ErrorInvalidVerificationCode (400003), not the generic 422.
+		assert.EqualValues(t, ErrorInvalidVerificationCode, resp.Code,
+			"Wrong verification code should return ErrorInvalidVerificationCode")
 
 		t.Logf("Wrong code error: code=%d, message=%s", resp.Code, resp.Message)
 	})
@@ -256,7 +257,7 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"Expired token should return 401")
 
 		t.Log("Expired token correctly rejected")
@@ -271,7 +272,7 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"Invalid token should return 401")
 
 		t.Log("Invalid token correctly rejected")
@@ -284,7 +285,7 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"No auth should return 401")
 
 		t.Log("Missing auth correctly rejected")
@@ -302,7 +303,7 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"Tampered token should return 401")
 
 		t.Log("Tampered token correctly rejected")

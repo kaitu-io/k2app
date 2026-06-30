@@ -79,7 +79,7 @@ func TestRuleMiss_ValidBatch(t *testing.T) {
 	w := postRuleMiss(t, router, batch)
 	assert.Equal(t, http.StatusOK, w.Code)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorNone, resp.Code)
+	assert.EqualValues(t, ErrorNone, resp.Code)
 }
 
 func TestRuleMiss_EmptyRecords(t *testing.T) {
@@ -94,7 +94,7 @@ func TestRuleMiss_EmptyRecords(t *testing.T) {
 	}
 	w := postRuleMiss(t, router, batch)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorNone, resp.Code, "empty records is a valid no-op")
+	assert.EqualValues(t, ErrorNone, resp.Code, "empty records is a valid no-op")
 }
 
 func TestRuleMiss_TooManyRecords(t *testing.T) {
@@ -113,7 +113,7 @@ func TestRuleMiss_TooManyRecords(t *testing.T) {
 	}
 	w := postRuleMiss(t, router, batch)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorInvalidArgument, resp.Code)
+	assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 }
 
 func TestRuleMiss_BadSchemaVersion(t *testing.T) {
@@ -126,7 +126,7 @@ func TestRuleMiss_BadSchemaVersion(t *testing.T) {
 	}
 	w := postRuleMiss(t, router, batch)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorInvalidArgument, resp.Code)
+	assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 }
 
 func TestRuleMiss_InvalidHash(t *testing.T) {
@@ -141,7 +141,7 @@ func TestRuleMiss_InvalidHash(t *testing.T) {
 	}
 	w := postRuleMiss(t, router, batch)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorInvalidArgument, resp.Code)
+	assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 }
 
 func TestRuleMiss_InvalidCountry(t *testing.T) {
@@ -156,7 +156,7 @@ func TestRuleMiss_InvalidCountry(t *testing.T) {
 	}
 	w := postRuleMiss(t, router, batch)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorInvalidArgument, resp.Code)
+	assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 }
 
 func TestRuleMiss_InvalidWeekBucket(t *testing.T) {
@@ -171,7 +171,7 @@ func TestRuleMiss_InvalidWeekBucket(t *testing.T) {
 	}
 	w := postRuleMiss(t, router, batch)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorInvalidArgument, resp.Code)
+	assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 }
 
 func TestRuleMiss_RevealedRejectedInPhase1(t *testing.T) {
@@ -186,7 +186,7 @@ func TestRuleMiss_RevealedRejectedInPhase1(t *testing.T) {
 	}
 	w := postRuleMiss(t, router, batch)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorInvalidArgument, resp.Code)
+	assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 }
 
 // TestRuleMiss_NoAuthRequired verifies that the endpoint accepts
@@ -207,7 +207,7 @@ func TestRuleMiss_NoAuthRequired(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorNone, resp.Code)
+	assert.EqualValues(t, ErrorNone, resp.Code)
 }
 
 // TestRuleMiss_RateLimit fires 11 requests from the same client IP
@@ -239,5 +239,5 @@ func TestRuleMiss_RateLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	resp := decodeResp(t, w)
-	assert.Equal(t, ErrorTooManyRequests, resp.Code)
+	assert.EqualValues(t, ErrorTooManyRequests, resp.Code)
 }

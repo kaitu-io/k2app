@@ -73,7 +73,7 @@ func TestSlaveNodeUpsert_PrivateClaim(t *testing.T) {
 			Country: "HK", Name: "private-claim-A", SecretToken: "secret-A",
 			PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "注册应成功: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "注册应成功: %s", resp.Message)
 
 		// 重新加载节点：应已置 private + 归属回填。
 		var node SlaveNode
@@ -115,7 +115,7 @@ func TestSlaveNodeUpsert_PrivateClaim(t *testing.T) {
 			Country: "HK", Name: "private-claim-B", SecretToken: "secret-B",
 			PrivateClaim: claimToken,
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "首次注册应成功: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "首次注册应成功: %s", resp.Message)
 
 		var first SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&first).Error)
@@ -125,7 +125,7 @@ func TestSlaveNodeUpsert_PrivateClaim(t *testing.T) {
 		resp = driveUpsert(t, ip, SlaveNodeUpsertRequest{
 			Country: "HK", Name: "private-claim-B", SecretToken: "secret-B",
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "重注册应成功: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "重注册应成功: %s", resp.Message)
 
 		// 重新加载：class 应保全为 private，归属保全。
 		var node SlaveNode
@@ -147,7 +147,7 @@ func TestSlaveNodeUpsert_PrivateClaim(t *testing.T) {
 		resp := driveUpsert(t, ip, SlaveNodeUpsertRequest{
 			Country: "US", Name: "shared-node-C", SecretToken: "secret-C",
 		})
-		require.Equal(t, ErrorNone, ErrorCode(resp.Code), "无 claim 注册应成功: %s", resp.Message)
+		require.EqualValues(t, ErrorNone, ErrorCode(resp.Code), "无 claim 注册应成功: %s", resp.Message)
 
 		var node SlaveNode
 		require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&node).Error)

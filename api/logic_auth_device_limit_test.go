@@ -26,7 +26,7 @@ func TestCheckDeviceLimit_NoLineRejected(t *testing.T) {
 	require.Error(t, err)
 	var re rerr
 	require.True(t, errors.As(err, &re), "expected rerr, got %T: %v", err, err)
-	assert.Equal(t, ErrorPlanNoRouter, re.code)
+	assert.EqualValues(t, ErrorPlanNoRouter, re.code)
 }
 
 // TestCheckDeviceLimit_RouterSlotFull verifies that a user who owns an active
@@ -49,5 +49,5 @@ func TestCheckDeviceLimit_RouterSlotFull(t *testing.T) {
 	require.Error(t, err)
 	var re rerr
 	require.True(t, errors.As(err, &re), "expected rerr, got %T: %v", err, err)
-	assert.Equal(t, ErrorRouterDeviceLimit, re.code)
+	assert.EqualValues(t, ErrorRouterDeviceLimit, re.code)
 }

@@ -45,7 +45,7 @@ func TestGetStrategyRules_NoActiveRules(t *testing.T) {
 	var resp Response[StrategyRulesResponse]
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
-	assert.Equal(t, ErrorNone, resp.Code)
+	assert.EqualValues(t, ErrorNone, resp.Code)
 
 	// When no active rules, should return default rules
 	assert.NotNil(t, resp.Data)
@@ -165,7 +165,7 @@ func TestGetStrategyRules_ETagCaching(t *testing.T) {
 		var resp Response[StrategyRulesResponse]
 		err := json.Unmarshal(w.Body.Bytes(), &resp)
 		assert.NoError(t, err)
-		assert.Equal(t, ErrorNone, resp.Code)
+		assert.EqualValues(t, ErrorNone, resp.Code)
 		assert.NotNil(t, resp.Data)
 	})
 }
