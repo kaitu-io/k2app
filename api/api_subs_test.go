@@ -462,6 +462,132 @@ func TestApiSubs_SharedPool_ExcludesPrivateNodes(t *testing.T) {
 		"shared pool must NOT leak the private node (App→private ❌)")
 }
 
+// =====================================================================
+// TestApiSubs_DeviceClassCrossCheck_* — CAPABILITY MATRIX (router header × is_gateway)
+//
+// /api/subs must reject a self-identified router (X-K2-Client: kaitu-router)
+// riding an App-class credential (is_gateway=false). A stock k2r ALWAYS sends
+// kaitu-router; without this check a hand-crafted k2subs:// URL carrying an App
+// token routes an entire LAN through the App-only shared pool, bypassing the
+// dedicated-line gate. EnforceDeviceClass enforces this on /api/tunnels but is
+// NOT mounted on /api/subs (Basic auth happens inside the handler, so the
+// middleware has no auth context), hence the check is inlined in api_subs.
+// Needs dev MySQL.
+// =====================================================================
+
+// subsTestDevice seeds a user + device (gateway or app) with a matching token,
+// returning the udid and a valid Basic-auth header. Mirrors the inline setup in
+// the integration tests above. Needs dev MySQL.
+func subsTestDevice(t *testing.T, isGateway bool) (udid, authHeader string) {
+	t.Helper()
+	now := time.Now().Unix()
+	cls := "app"
+	if isGateway {
+		cls = "gw"
+	}
+	uniq := cls + "-" + time.Now().Format("20060102150405.000000")
+	user := User{UUID: "usr-subs-cc-" + uniq, ExpiredAt: now + 86400}
+	require.NoError(t, db.Get().Create(&user).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	udid = "udid-subs-cc-" + uniq
+	device := Device{UDID: udid, UserID: user.ID, Remark: "cc-test", IsGateway: isGateway, TokenIssueAt: now}
+	require.NoError(t, db.Get().Create(&device).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&device) })
+
+	token := GenerateTestToken(user.ID, udid, time.Hour)
+	require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", device.ID).
+		Update("token_issue_at", tokenIssueAtOf(t, token)).Error)
+	authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(udid+":"+token))
+	return udid, authHeader
+}
+
+const subsRouterHeader = "kaitu-router/0.4.5 (linux; mips; OpenWrt 19.07; gl-xe300)"
+
+// THE bypass this fix closes: App credential + router header → must be 403.
+func TestApiSubs_DeviceClassCrossCheck_RouterHeaderOnAppDevice_403(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	_, authHeader := subsTestDevice(t, false) // App/desktop device
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("X-K2-Client", subsRouterHeader)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"router header on App device must be 403 (shared pool is App-only), body=%s", w.Body.String())
+	assert.Contains(t, w.Body.String(), "device class mismatch")
+}
+
+// No regression: App device + service header → cross-check passes → 200.
+func TestApiSubs_DeviceClassCrossCheck_ServiceHeaderOnAppDevice_OK(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	_, authHeader := subsTestDevice(t, false)
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("X-K2-Client", "kaitu-service/0.4.5 (macos; arm64)")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code,
+		"service header on App device must pass the cross-check, body=%s", w.Body.String())
+}
+
+// A legitimate router (gateway device + router header) must NOT be blocked by
+// the cross-check — it proceeds to the gateway branch (402 here: no private node).
+func TestApiSubs_DeviceClassCrossCheck_RouterHeaderOnGatewayDevice_NotBlocked(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	_, authHeader := subsTestDevice(t, true) // Gateway device, no private node
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("X-K2-Client", subsRouterHeader)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusPaymentRequired, w.Code,
+		"matched router on gateway device must reach the gateway branch (402), body=%s", w.Body.String())
+	assert.NotContains(t, w.Body.String(), "device class mismatch")
+}
+
+// A present-but-malformed client header is rejected (mirrors EnforceDeviceClass).
+// A MISSING header still passes (backward compat for pre-header clients).
+func TestApiSubs_DeviceClassCrossCheck_MalformedHeader_400(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	_, authHeader := subsTestDevice(t, false)
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("X-K2-Client", "totally-not-valid")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code,
+		"malformed client header must be 400, body=%s", w.Body.String())
+}
+
 // tokenIssueAtOf decodes the JWT (without verification) and returns its
 // TokenIssueAt claim, so the seeded Device row can match handleJWTAuth's check
 // regardless of any second-rollover between minting and device creation.

@@ -144,6 +144,30 @@ func api_subs(c *gin.Context) {
 		return
 	}
 
+	// Device-class cross-check. This mirrors the EnforceDeviceClass middleware,
+	// which is mounted on /api/tunnels but NOT on /api/subs (this handler does
+	// its own Basic auth inside the body, so a middleware would have no auth
+	// context yet). A stock k2r ALWAYS sends X-K2-Client: kaitu-router; reject a
+	// self-identified router riding an App-class credential (IsGateway=false) —
+	// otherwise a hand-crafted k2subs:// URL carrying an App token would route a
+	// whole LAN through the App-only shared pool, bypassing the dedicated-line
+	// gate. A MISSING header still passes (backward compat for pre-header
+	// clients); only a present header is enforced.
+	if rawHeader := c.GetHeader("X-K2-Client"); rawHeader != "" {
+		info := parseClientHeader(rawHeader)
+		if info == nil {
+			log.Warnf(c, "subs: invalid X-K2-Client header, udid=%s", udid)
+			subsError(c, http.StatusBadRequest, "invalid client class")
+			return
+		}
+		if info.IsGateway() != authCtx.Device.IsGateway {
+			log.Warnf(c, "subs: device class mismatch udid=%s db_gateway=%v header_gateway=%v",
+				udid, authCtx.Device.IsGateway, info.IsGateway())
+			subsError(c, http.StatusForbidden, "device class mismatch")
+			return
+		}
+	}
+
 	// 能力矩阵：路由器（gateway）只用专属节点；App/桌面用共享池。k2r 未发布，
 	// 此处硬切，无存量路由器回落需求。
 	//
