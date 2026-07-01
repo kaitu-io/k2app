@@ -1,5 +1,10 @@
 # AppBypass 第三种模式：强制代理（Force Proxy）
 
+> **⛔ 已放弃（2026-07-01）** —— 不实施。
+> **原因**：核心承诺"整 app 全部流量走代理"只有桌面能兑现。**Android** 无 per-connection app 归因（sing-tun 的 Android 模型是 `BuildAndroidRules` package→uid→`IncludeUID/ExcludeUID` 的 **whole-app、配置期**内核路由；包进 TUN 后是裸 IP 流不带 app 身份；k2 唯一的 per-connection 归因 `LinuxProcessSearcher` 读 `/proc/net/tcp` 在 Android 10+ 被 SELinux 挡；全仓无 `getConnectionOwnerUid`）→ forceProxy 命中不了 `{apps,via:serverUrl}`，**退化成 = 智能**（境内目标仍按目的地可能直连）。**iOS** `expandAppsRoute` 返 nil，本就无 per-app。于是三态里「代理」与「智能」在 Android 不可区分、在 iOS 无效——功能名不副实，放弃。
+> **若将来要做**：先在 k2 实现 Android `getConnectionOwnerUid` 版 ProcessSearcher（sing-box 的做法）→ 复用 `PackageResolver.PackageForUID` 喂规则引擎，per-connection 命中后 forceProxy 才在 Android 名副其实；独立 k2 子模块工程 + 真机验证。
+> 下方原始设计仅作记录。
+
 **日期**：2026-07-01
 **范围**：webapp 前端 + i18n（无 store / config / Go 引擎 / 原生桥接改动）
 
