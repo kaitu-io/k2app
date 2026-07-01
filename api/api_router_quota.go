@@ -8,18 +8,17 @@ type routerQuotaResponse struct {
 	MaxLanClient    int `json:"maxLanClient"`
 }
 
-// GET /api/router/quota — returns the user's router-related quota for k2r to
-// enforce its LAN allowlist size locally.
+// GET /api/router/quota — returns the router's quota for k2r to enforce its LAN
+// allowlist size locally. Router access is one-account-one-router with unlimited
+// LAN clients (bounded by the line's traffic quota, not a device count), derived
+// from active-line ownership — independent of app tier.
 //
-// Auth chain (in route.go): AuthRequired → EnforceDeviceClass → ProRequired → RouterRequired.
-// Together these guarantee: token valid → device class matches header → membership
-// active → plan tier includes router entitlement (MaxRouterDevice > 0).
+// Auth chain (route.go): AuthRequired → EnforceDeviceClass → RouterRequired
+// (active private line). No tier or shared-membership dependency.
 func api_router_quota(c *gin.Context) {
-	user := ReqUser(c)
-	q := user.Quota()
 	resp := routerQuotaResponse{
-		MaxRouterDevice: q.MaxRouterDevice,
-		MaxLanClient:    q.MaxLanClient,
+		MaxRouterDevice: 1,
+		MaxLanClient:    -1,
 	}
 	Success(c, &resp)
 }

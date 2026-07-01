@@ -42,6 +42,7 @@ import {
   Error as ErrorIcon,
   AccountBalanceWallet as WalletIcon,
   Lock as LockIcon,
+  Dns as DnsIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -60,10 +61,16 @@ import VersionItem from "../components/VersionItem";
 import BetaChannelToggle from "../components/BetaChannelToggle";
 import PasswordDialog from "../components/PasswordDialog";
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
+import { usePrivateNodes } from '../hooks/usePrivateNodes';
+import { getCurrentAppConfig } from '../config/apps';
 
 export default function Account() {
   const { user, loading, isMembership, isExpired, fetchUser } = useUser();
   const affordance = useSubscriptionAffordance();
+  // 复用缓存的 hook（SWR），不给 Account 关键路径增加重 fetch。
+  const { nodes: privateNodes } = usePrivateNodes();
+  const showPrivateNodeEntry =
+    getCurrentAppConfig().features.privateNode === true || privateNodes.length > 0;
   const { isAuthenticated, setIsAuthenticated } = useAuth();
   const muiTheme = useMuiTheme();
   const colors = getThemeColors(muiTheme.palette.mode === 'dark');
@@ -208,7 +215,9 @@ export default function Account() {
       py: 0.5,
       backgroundColor: "transparent"
     }}>
-      {/* Brand Banner */}
+      {/* Brand Banner — on iOS the external kaitu.io link is removed (Apple 3.1.1:
+          the app must not route to an external site that sells membership). The
+          banner stays as a static brand header; other platforms keep the link. */}
       <Card
         sx={{
           mb: 2,
@@ -216,14 +225,20 @@ export default function Account() {
             ? `linear-gradient(135deg, #1a237e 0%, #283593 100%)`
             : `linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)`,
           border: 'none',
-          cursor: 'pointer',
-          transition: 'all 0.3s ease',
-          '&:hover': {
-            transform: 'translateY(-2px)',
-            boxShadow: 3,
-          }
+          ...(window._platform?.os !== 'ios' && {
+            cursor: 'pointer',
+            transition: 'all 0.3s ease',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: 3,
+            },
+          }),
         }}
-        onClick={() => window._platform!.openExternal?.('https://www.kaitu.io')}
+        onClick={
+          window._platform?.os === 'ios'
+            ? undefined
+            : () => window._platform!.openExternal?.('https://www.kaitu.io')
+        }
       >
         <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 }, textAlign: 'center' }}>
           <Typography
@@ -405,6 +420,47 @@ export default function Account() {
         </CardContent>
       </Card>
 
+      {/* 专属节点入口（轻量）：功能开启或已有节点时显示，详情在管理页 */}
+      {showPrivateNodeEntry && (
+        <Card sx={{ mb: 2 }}>
+          <List disablePadding>
+            <ListItem
+              button
+              onClick={() => navigate("/private-node")}
+              sx={{
+                py: 1.5,
+                cursor: 'pointer',
+                '&:hover': { backgroundColor: 'action.hover' },
+              }}
+            >
+              <ListItemIcon>
+                <DnsIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography component="span" variant="body2" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                      {t('privateNode:privateNode.title')}
+                    </Typography>
+                    {privateNodes.length > 0 && (
+                      <Chip
+                        label={privateNodes.length}
+                        color="primary"
+                        size="small"
+                        sx={{ height: 20, fontSize: '0.7rem', fontWeight: 600 }}
+                      />
+                    )}
+                  </Box>
+                }
+              />
+              <ListItemSecondaryAction>
+                <ChevronRightIcon color="action" />
+              </ListItemSecondaryAction>
+            </ListItem>
+          </List>
+        </Card>
+      )}
+
       <Box
         sx={(theme) => ({
           borderRadius: 2,
@@ -585,6 +641,8 @@ export default function Account() {
               </ListItemSecondaryAction>
             </ListItem>
 
+            {/* 代付人设置（第三方代付）— iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付路径 */}
+            {window._platform?.os !== 'ios' && (<>
             <Divider />
 
             <ListItem
@@ -611,6 +669,7 @@ export default function Account() {
                 <ChevronRightIcon color="action" />
               </ListItemSecondaryAction>
             </ListItem>
+            </>)}
 
             <Divider />
 
@@ -637,6 +696,8 @@ export default function Account() {
               />
             </ListItem>
 
+            {/* 我的钱包（外部钱包/储值）— iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付/充值路径 */}
+            {window._platform?.os !== 'ios' && (<>
             <Divider />
 
             {/* Wallet */}
@@ -662,6 +723,7 @@ export default function Account() {
                 }
               />
             </ListItem>
+            </>)}
 
             <Divider />
 

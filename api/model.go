@@ -82,9 +82,9 @@ type User struct {
 	BetaOptedAt int64 `gorm:"not null;default:0;index"` // 订阅时间戳（关闭时保留历史）
 
 	// Password authentication
-	PasswordHash           string `gorm:"type:varchar(255)"`    // bcrypt hashed password
-	PasswordFailedAttempts int    `gorm:"not null;default:0"`   // Failed login attempts counter
-	PasswordLockedUntil    int64  `gorm:"not null;default:0"`   // Unix timestamp when lock expires (0 = not locked)
+	PasswordHash           string `gorm:"type:varchar(255)"`  // bcrypt hashed password
+	PasswordFailedAttempts int    `gorm:"not null;default:0"` // Failed login attempts counter
+	PasswordLockedUntil    int64  `gorm:"not null;default:0"` // Unix timestamp when lock expires (0 = not locked)
 
 	// 地理位置（ISO 3166-1 alpha-2 小写，空字符串表示未知）
 	RegistrationCountry string `gorm:"column:registration_country;type:varchar(2);not null;default:''" json:"registrationCountry"` // 注册时（首次创建用户）检测到的国家
@@ -243,14 +243,18 @@ type Order struct {
 	IsPaid               *bool  `gorm:"default:false"`
 	PaidAt               *time.Time
 	// 退款字段（2026-04 引入）—— is_paid 保留历史事实；退款用独立字段跟踪
-	IsRefunded           *bool      `gorm:"default:false;index"`
-	RefundedAt           *time.Time
-	RefundAmount         uint64     `gorm:"not null;default:0"`
-	RefundReason         string     `gorm:"type:varchar(500)"`
-	WordgateOrderNo      string    `gorm:"type:varchar(255);index"`                 // 关联的 wordgate 订单号
-	CampaignCode         *string   `gorm:"type:varchar(50);index"`                  // 使用的优惠活动代码
-	Campaign             *Campaign `gorm:"foreignKey:CampaignCode;references:Code"` // 通过Code关联Campaign
-	Meta                 string    `gorm:"type:json"`                               // 存储 Plan、forUserUUIDs、forMyself、payUrl 信息
+	IsRefunded      *bool `gorm:"default:false;index"`
+	RefundedAt      *time.Time
+	RefundAmount    uint64    `gorm:"not null;default:0"`
+	RefundReason    string    `gorm:"type:varchar(500)"`
+	WordgateOrderNo string    `gorm:"type:varchar(255);index"`                 // 关联的 wordgate 订单号
+	CampaignCode    *string   `gorm:"type:varchar(50);index"`                  // 使用的优惠活动代码
+	Campaign        *Campaign `gorm:"foreignKey:CampaignCode;references:Code"` // 通过Code关联Campaign
+	Meta            string    `gorm:"type:json"`                               // 存储 Plan、forUserUUIDs、forMyself、payUrl 信息
+	// 专属节点购买时选定的地区（仅 Product=private_node 订单写入）。异步入账时由
+	// createPrivateNodeSubscription 读取，跨越"下单→支付回调"的时间差。AutoMigrate
+	// 自动新增此可空列（additive，无需手动迁移）。
+	PrivateNodeRegion string `gorm:"type:varchar(50)" json:"privateNodeRegion,omitempty"`
 }
 
 // GetPlan 获取订单的计划信息
@@ -433,6 +437,11 @@ const (
 	TunnelProtocolK2WSS TunnelProtocol = "k2wss" // K2WSS protocol (WebSocket, legacy)
 )
 
+const (
+	NodeClassShared  = "shared"  // 共享池节点（默认）
+	NodeClassPrivate = "private" // 专属节点（单一主人）
+)
+
 // SlaveNode 物理节点模型
 // Note: Only active nodes exist in the database. When a node goes offline,
 // it should be deleted along with its associated tunnels.
@@ -451,6 +460,15 @@ type SlaveNode struct {
 	Ipv6        string `gorm:"type:varchar(50)"`                      // 节点IPv6地址（可选）
 	Meta        string `gorm:"type:json;default:null"`                // 节点元数据（JSON，如架构类型）
 
+	// 节点分类与归属（专属节点产品）。现有节点默认 shared，零迁移影响。
+	Class              string  `gorm:"type:varchar(20);not null;default:'shared';index" json:"class"` // shared | private
+	PrivateOwnerUserID *uint64 `gorm:"index" json:"privateOwnerUserId,omitempty"`                     // class=private 时 = 主人 UserID
+	PrivateSubID       *uint64 `gorm:"index" json:"privateSubId,omitempty"`                           // → PrivateNodeSubscription.ID
+
+	// IP 类型(节点实际出口 IP 性质),sidecar 上报或运维覆盖,last-writer-wins。
+	// 不加 index:低基数(3 值)索引近乎无用,且无 filter-by-ip_type 查询。
+	IPType string `gorm:"column:ip_type;type:varchar(20);not null;default:'unknown'" json:"ipType"`
+
 	// 关联
 	Tunnels []SlaveTunnel `gorm:"foreignKey:NodeID"` // 该物理节点上的隧道
 }
@@ -466,12 +484,12 @@ type SlaveTunnel struct {
 	Domain string `gorm:"uniqueIndex;type:varchar(64);not null"` // Tunnel domain (unique index)
 	// Deprecated: Tunnel-level auth removed. Field kept for DB schema compatibility.
 	// Can be removed with a DB migration in a future version.
-	SecretToken string         `gorm:"type:varchar(64);not null"`
-	Name        string         `gorm:"type:varchar(255);not null"`            // Tunnel name
+	SecretToken  string         `gorm:"type:varchar(64);not null"`
+	Name         string         `gorm:"type:varchar(255);not null"`               // Tunnel name
 	Protocol     TunnelProtocol `gorm:"type:varchar(10);not null;default:'k2v4'"` // Tunnel protocol (k2v4, k2v5, k2wss)
-	Port         int64          `gorm:"not null;default:10001"`                 // Tunnel port
-	HopPortStart int64          `gorm:"not null;default:0"`                     // Port hopping range start (0 = disabled)
-	HopPortEnd   int64          `gorm:"not null;default:0"`                     // Port hopping range end (0 = disabled)
+	Port         int64          `gorm:"not null;default:10001"`                   // Tunnel port
+	HopPortStart int64          `gorm:"not null;default:0"`                       // Port hopping range start (0 = disabled)
+	HopPortEnd   int64          `gorm:"not null;default:0"`                       // Port hopping range end (0 = disabled)
 
 	// Associated physical node
 	NodeID uint64     `gorm:"not null;index"`    // Associated physical node ID
@@ -517,6 +535,43 @@ type SlaveNodeLoad struct {
 	BillingCycleEndAt        int64 `gorm:"not null;default:0"` // 计费周期截止时间戳（Unix秒）
 	MonthlyTrafficLimitBytes int64 `gorm:"not null;default:0"` // 月度流量限制（字节），0表示无限制
 	UsedTrafficBytes         int64 `gorm:"not null;default:0"` // 当前计费周期已使用流量（字节）
+}
+
+// NodeUsage is the runtime traffic-metering MIRROR of a node (1:1 SlaveNode).
+// The NODE is the single authority for quota + cutoff (self-meters host NIC,
+// hard-cuts locally); this table is only Center's node-sourced reflection for
+// display / warnings / visibility / offline derivation — it NEVER drives the
+// node-side cut. Covers all nodes (shared + private). Keyed by Ipv4 (durable),
+// not NodeID: usage is a property of "what this node's NIC did", and a node
+// re-registers (hard delete + recreate) with a fresh NodeID on every restart,
+// so NodeID is not stable. The node holds the real counter (persisted baseline)
+// and re-reports each cycle, so any transient mirror gap is display-layer
+// cosmetic only. See spec §3.1.
+type NodeUsage struct {
+	ID        uint64 `gorm:"primarykey" json:"id"`
+	CreatedAt int64  `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt int64  `gorm:"autoUpdateTime" json:"updatedAt"`
+
+	// NodeID is the CURRENT SlaveNode.ID — kept for debugging/joins only. It is
+	// NOT the key: a node re-registers on every restart (hard delete + recreate,
+	// slave_api_node.go:259) and gets a new id, which orphaned the old NodeUsage
+	// row and reset score/hide to neutral. Ipv4 is the durable key instead.
+	NodeID uint64 `gorm:"index;not null" json:"nodeId"`
+
+	// Ipv4 is the durable node key (same anti-hijack key used by SlaveAuthRequired
+	// and PrivateNodeSubscription.BoundIpv4). Survives re-registration id churn.
+	Ipv4 string `gorm:"uniqueIndex;not null" json:"ipv4"`
+
+	Epoch           int64 `gorm:"not null;default:0" json:"epoch"`              // = node BillingCycleEndAt (node owns; Center follows)
+	UsedBytes       int64 `gorm:"not null;default:0" json:"usedBytes"`          // used in current epoch (max, idempotent)
+	QuotaTotalBytes int64 `gorm:"not null;default:0" json:"quotaTotalBytes"`    // node-reported limit (from .env; 0 = unlimited)
+	LastReportAt    int64 `gorm:"not null;default:0;index" json:"lastReportAt"` // last successful report (Unix sec); offline derivation
+
+	// per-tier warning dedup (compared to Epoch); private lines only
+	Warn70SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
+	Warn80SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
+	Warn90SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
+	Exhausted100SentEpoch int64 `gorm:"not null;default:0" json:"-"`
 }
 
 // GetTrafficUsagePercent 获取流量使用率百分比 (0-100)
@@ -578,14 +633,14 @@ type Secret struct {
 
 // AdminAuditLog 管理员操作审计日志
 type AdminAuditLog struct {
-	ID         uint64    `gorm:"primarykey"`
+	ID         uint64 `gorm:"primarykey"`
 	CreatedAt  time.Time
-	ActorID    uint64    `gorm:"not null;index"`                  // 操作人 user ID
-	ActorUUID  string    `gorm:"type:varchar(255);not null;index"` // 操作人 UUID
-	Action     string    `gorm:"type:varchar(64);not null;index"`  // 操作类型：access_key_generate, access_key_revoke, etc.
-	TargetType string    `gorm:"type:varchar(64);not null;index"`  // 目标类型：user, node, order, etc.
-	TargetID   string    `gorm:"type:varchar(255);not null"`       // 目标标识（UUID or ID）
-	Detail     string    `gorm:"type:text"`                        // JSON 详情（可选）
+	ActorID    uint64 `gorm:"not null;index"`                   // 操作人 user ID
+	ActorUUID  string `gorm:"type:varchar(255);not null;index"` // 操作人 UUID
+	Action     string `gorm:"type:varchar(64);not null;index"`  // 操作类型：access_key_generate, access_key_revoke, etc.
+	TargetType string `gorm:"type:varchar(64);not null;index"`  // 目标类型：user, node, order, etc.
+	TargetID   string `gorm:"type:varchar(255);not null"`       // 目标标识（UUID or ID）
+	Detail     string `gorm:"type:text"`                        // JSON 详情（可选）
 }
 
 // AdminApproval 管理员操作审批记录
@@ -624,6 +679,11 @@ type AdminApproval struct {
 	ExecError  *string    `gorm:"type:text" json:"execError,omitempty"`
 }
 
+const (
+	ProductApp         = "app"          // App 订阅（共享池），默认
+	ProductPrivateNode = "private_node" // 专属节点（路由器）
+)
+
 type Plan struct {
 	ID          uint64    `gorm:"primarykey" json:"id"`
 	CreatedAt   time.Time `json:"createdAt"`
@@ -640,6 +700,8 @@ type Plan struct {
 
 	// Apple App Store 商品ID（如 io.kaitu.sub.family.1y）。仅 iOS IAP 用：非空才在 iOS 购买面板出现。
 	AppleProductID string `gorm:"column:apple_product_id;type:varchar(255);index" json:"appleProductId,omitempty"`
+
+	Product string `gorm:"type:varchar(20);not null;default:'app';index" json:"product"` // app | private_node
 }
 
 // Subscription 是 provider 中立的"续订型"订阅记录（Apple IAP 今天；Stripe/Google 将来）。
@@ -663,6 +725,22 @@ type Subscription struct {
 	Status           string `gorm:"column:status;type:varchar(24)" json:"status"` // active|grace|billing_retry|expired|revoked
 	// LastEventID webhook 幂等（Apple: notificationUUID；Stripe: event id）。
 	LastEventID string `gorm:"column:last_event_id;type:varchar(64)" json:"-"`
+}
+
+// SubscriptionCredit is the idempotency ledger for recurring-provider credits.
+// One row per provider transaction; UNIQUE(provider, transaction_id) guarantees a
+// transaction is credited to expired_at at most once (INV1). transaction_id is a
+// STRING (Apple transactionId is not a uint64). UserProHistory remains the human
+// audit (INV8); this table is the machine dedup key.
+type SubscriptionCredit struct {
+	ID                    uint64    `gorm:"primarykey" json:"id"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UserID                uint64    `gorm:"column:user_id;not null;index" json:"userId"`
+	Provider              string    `gorm:"column:provider;type:varchar(16);not null;uniqueIndex:uniq_provider_txn" json:"provider"`
+	TransactionID         string    `gorm:"column:transaction_id;type:varchar(64);not null;uniqueIndex:uniq_provider_txn" json:"transactionId"`
+	OriginalTransactionID string    `gorm:"column:original_transaction_id;type:varchar(64);not null;index" json:"originalTransactionId"`
+	CreditedSeconds       int64     `gorm:"column:credited_seconds;not null" json:"creditedSeconds"`
+	Kind                  string    `gorm:"column:kind;type:varchar(16);not null" json:"kind"` // purchase|renewal|grace
 }
 
 // EmailMarketingTemplate EDM多语言邮件模板模型
@@ -827,7 +905,7 @@ type Campaign struct {
 	IsActive    *bool  `gorm:"default:true" json:"isActive"`                      // 是否启用
 
 	// 匹配条件类型（预定义）
-	MatcherType string `gorm:"type:varchar(50)" json:"matcherType"` // first_order, vip, all
+	MatcherType string `gorm:"type:varchar(50)" json:"matcherType"` // first_order=新客(未完成首单), vip=老客(已付费), all, paid_before, paid_before_active
 
 	MatcherParams string `gorm:"type:varchar(500)" json:"matcherParams"`
 
@@ -850,16 +928,16 @@ type Announcement struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
-	Message   string `gorm:"type:varchar(500);not null" json:"message"`                        // 公告文字内容
-	LinkURL   string `gorm:"type:varchar(1024);not null;default:''" json:"linkUrl"`             // 点击跳转链接
-	LinkText  string `gorm:"type:varchar(100);not null;default:''" json:"linkText"`             // 链接文字
-	OpenMode  string `gorm:"type:varchar(20);not null;default:'external'" json:"openMode"`      // external | webview
-	AuthMode   string `gorm:"type:varchar(20);not null;default:'none'" json:"authMode"`          // none | ott
-	Priority   int    `gorm:"not null;default:0" json:"priority"`                               // 数字越大越优先
-	MinVersion string `gorm:"type:varchar(20);not null;default:''" json:"minVersion"`           // 最低版本（含），空=不限
-	MaxVersion string `gorm:"type:varchar(20);not null;default:''" json:"maxVersion"`           // 最高版本（含），空=不限
-	ExpiresAt  int64  `gorm:"not null;default:0" json:"expiresAt"`                              // Unix秒，0=不过期
-	IsActive   *bool  `gorm:"default:false;index:idx_announcement_active" json:"isActive"`      // 可多条同时为true
+	Message    string `gorm:"type:varchar(500);not null" json:"message"`                    // 公告文字内容
+	LinkURL    string `gorm:"type:varchar(1024);not null;default:''" json:"linkUrl"`        // 点击跳转链接
+	LinkText   string `gorm:"type:varchar(100);not null;default:''" json:"linkText"`        // 链接文字
+	OpenMode   string `gorm:"type:varchar(20);not null;default:'external'" json:"openMode"` // external | webview
+	AuthMode   string `gorm:"type:varchar(20);not null;default:'none'" json:"authMode"`     // none | ott
+	Priority   int    `gorm:"not null;default:0" json:"priority"`                           // 数字越大越优先
+	MinVersion string `gorm:"type:varchar(20);not null;default:''" json:"minVersion"`       // 最低版本（含），空=不限
+	MaxVersion string `gorm:"type:varchar(20);not null;default:''" json:"maxVersion"`       // 最高版本（含），空=不限
+	ExpiresAt  int64  `gorm:"not null;default:0" json:"expiresAt"`                          // Unix秒，0=不过期
+	IsActive   *bool  `gorm:"default:false;index:idx_announcement_active" json:"isActive"`  // 可多条同时为true
 }
 
 // ========================= EDM 邮件发送日志 =========================
@@ -935,25 +1013,25 @@ type ECHKey struct {
 	ConfigID uint8 `gorm:"not null;index" json:"configId"`
 
 	// 密钥材料（AES-256-GCM 加密存储）
-	PrivateKey string `gorm:"type:text;not null" json:"-"`          // Base64(AES-GCM(X25519PrivateKey))
-	PublicKey  string `gorm:"type:text;not null" json:"publicKey"`  // Base64(AES-GCM(X25519PublicKey))
-	ECHConfig  string `gorm:"type:text;not null" json:"echConfig"`  // Base64(AES-GCM(ECHConfig binary))
+	PrivateKey string `gorm:"type:text;not null" json:"-"`         // Base64(AES-GCM(X25519PrivateKey))
+	PublicKey  string `gorm:"type:text;not null" json:"publicKey"` // Base64(AES-GCM(X25519PublicKey))
+	ECHConfig  string `gorm:"type:text;not null" json:"echConfig"` // Base64(AES-GCM(ECHConfig binary))
 
 	// 密钥状态
 	Status ECHKeyStatus `gorm:"type:varchar(20);not null;index;default:'active'" json:"status"`
 
 	// 生命周期时间戳
-	ActivatedAt int64  `gorm:"not null" json:"activatedAt"`       // 激活时间（Unix timestamp）
-	ExpiresAt   int64  `gorm:"not null;index" json:"expiresAt"`   // 过期时间（进入 grace period）
-	RetiredAt   *int64 `gorm:"index" json:"retiredAt,omitempty"`  // 完全退役时间
+	ActivatedAt int64  `gorm:"not null" json:"activatedAt"`      // 激活时间（Unix timestamp）
+	ExpiresAt   int64  `gorm:"not null;index" json:"expiresAt"`  // 过期时间（进入 grace period）
+	RetiredAt   *int64 `gorm:"index" json:"retiredAt,omitempty"` // 完全退役时间
 
 	// 算法参数（便于未来扩展）
 	// KEM: 0x0020 = DHKEM(X25519, HKDF-SHA256)
 	// KDF: 0x0001 = HKDF-SHA256
 	// AEAD: 0x0001 = AES-128-GCM, 0x0003 = ChaCha20Poly1305
-	KEMId  uint16 `gorm:"not null;default:32" json:"kemId"`   // 0x0020
-	KDFId  uint16 `gorm:"not null;default:1" json:"kdfId"`    // 0x0001
-	AEADId uint16 `gorm:"not null;default:1" json:"aeadId"`   // 0x0001
+	KEMId  uint16 `gorm:"not null;default:32" json:"kemId"` // 0x0020
+	KDFId  uint16 `gorm:"not null;default:1" json:"kdfId"`  // 0x0001
+	AEADId uint16 `gorm:"not null;default:1" json:"aeadId"` // 0x0001
 }
 
 // ========================= Strategy System Models =========================
@@ -1095,8 +1173,8 @@ type FeedbackTicket struct {
 	ResolvedAt *time.Time     `json:"resolvedAt,omitempty"`
 	Meta       string         `gorm:"type:json" json:"meta,omitempty"` // {os,appVersion,channel,vpnState,language,source,...}
 
-	LastReplyAt *time.Time `gorm:"index" json:"lastReplyAt,omitempty"`
-	LastReplyBy string     `gorm:"type:varchar(16)" json:"lastReplyBy,omitempty"`
+	LastReplyAt   *time.Time `gorm:"index" json:"lastReplyAt,omitempty"`
+	LastReplyBy   string     `gorm:"type:varchar(16)" json:"lastReplyBy,omitempty"`
 	UserUnread    int        `gorm:"not null;default:0" json:"userUnread"`
 	AutoGenerated bool       `gorm:"not null;default:false" json:"autoGenerated"`
 }
@@ -1140,7 +1218,7 @@ type ConnectionRating struct {
 // CloudInstance represents a VPS instance from cloud providers
 // Linked to SlaveNode via ip_address field (no foreign key, query-time join)
 type CloudInstance struct {
-	ID        uint64         `gorm:"primarykey"`
+	ID        uint64 `gorm:"primarykey"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	DeletedAt gorm.DeletedAt `gorm:"index"`
@@ -1151,7 +1229,7 @@ type CloudInstance struct {
 	InstanceID  string `gorm:"type:varchar(100);not null;uniqueIndex:idx_provider_instance"` // Provider-specific instance ID
 
 	// Instance details
-	Name        string `gorm:"type:varchar(100)"`              // Instance name/hostname from provider
+	Name        string `gorm:"type:varchar(100)"`               // Instance name/hostname from provider
 	IPAddress   string `gorm:"type:varchar(45);not null;index"` // Current public IPv4 (for SlaveNode join)
 	IPv6Address string `gorm:"type:varchar(100)"`               // IPv6 address (if available)
 	Region      string `gorm:"type:varchar(50);not null"`       // Provider region/datacenter
@@ -1160,7 +1238,14 @@ type CloudInstance struct {
 	TrafficUsedBytes  int64 `gorm:"not null;default:0"` // Used traffic in current cycle
 	TrafficTotalBytes int64 `gorm:"not null;default:0"` // Total traffic allowance
 	TrafficResetAt    int64 `gorm:"not null;default:0"` // Next traffic reset (Unix timestamp)
+	TrafficEpoch      int64 `gorm:"not null;default:0"` // Center 权威计费周期身份；重置 +1，心跳响应下发令节点清零续计
 	ExpiresAt         int64 `gorm:"not null;default:0"` // Instance expiration (Unix timestamp, 0=auto-renew)
+
+	// 流量预警去重(与 TrafficEpoch 比对;!= 才发,发后置当前 epoch)
+	Warn70SentEpoch       int64 `gorm:"not null;default:0"`
+	Warn80SentEpoch       int64 `gorm:"not null;default:0"`
+	Warn90SentEpoch       int64 `gorm:"not null;default:0"`
+	Exhausted100SentEpoch int64 `gorm:"not null;default:0"`
 
 	// Sync status
 	// Note: Instance online status is determined by associated SlaveNode existence
@@ -1172,13 +1257,13 @@ type CloudInstance struct {
 type CloudOperationLog struct {
 	ID          uint64 `gorm:"primarykey;autoIncrement"`
 	CreatedAt   int64  `gorm:"autoCreateTime:milli"`
-	InstanceID  uint64 `gorm:"not null;index"`            // Associated cloud instance
-	Operation   string `gorm:"size:50;not null"`          // change_ip, delete, create, sync
-	Status      string `gorm:"size:20;not null;index"`    // pending, running, completed, failed
-	AsynqTaskID string `gorm:"type:varchar(128);index"`   // Asynq task ID
-	StartedAt   int64  `gorm:"not null"`                  // Operation start time
-	CompletedAt *int64                                    // Operation completion time
-	Error       string `gorm:"type:text"`                 // Error message if failed
+	InstanceID  uint64 `gorm:"not null;index"`          // Associated cloud instance
+	Operation   string `gorm:"size:50;not null"`        // change_ip, delete, create, sync
+	Status      string `gorm:"size:20;not null;index"`  // pending, running, completed, failed
+	AsynqTaskID string `gorm:"type:varchar(128);index"` // Asynq task ID
+	StartedAt   int64  `gorm:"not null"`                // Operation start time
+	CompletedAt *int64 // Operation completion time
+	Error       string `gorm:"type:text"` // Error message if failed
 }
 
 // LicenseKeyBatch 授权码批次（独立于活动码的分发单位）
@@ -1305,4 +1390,3 @@ func (u User) MarshalJSON() ([]byte, error) {
 		MaxLanClient:    q.MaxLanClient,
 	})
 }
-

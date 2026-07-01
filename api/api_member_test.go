@@ -43,7 +43,7 @@ func TestMemberAdd_Deprecated(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp Response[DataAny]
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, ErrorProxyMembersDeprecated, resp.Code)
+	assert.EqualValues(t, ErrorProxyMembersDeprecated, resp.Code)
 }
 
 func TestMemberRemove_Deprecated(t *testing.T) {
@@ -57,6 +57,6 @@ func TestMemberRemove_Deprecated(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp Response[DataAny]
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, ErrorProxyMembersDeprecated, resp.Code)
+	assert.EqualValues(t, ErrorProxyMembersDeprecated, resp.Code)
 }
 

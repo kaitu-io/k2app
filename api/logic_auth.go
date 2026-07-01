@@ -492,17 +492,26 @@ func isSecureRequest(proto, host string) bool {
 func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGateway bool) error {
 	quota := user.Quota()
 	if isGateway {
-		if quota.MaxRouterDevice == 0 {
-			log.Warnf(c, "user %d plan does not support router, rejecting gateway login", user.ID)
-			return e(ErrorPlanNoRouter, "plan does not support router")
+		// 路由器（网关）准入 = 持有 active 专属线路，与 App tier 无关：任意 tier 的
+		// 线路持有者可跑 1 台路由器；任意 tier 的非持有者都不行。（脱钩 MaxRouterDevice。）
+		hasLine, err := HasActivePrivateLines(c, tx, user.ID, time.Now().Unix())
+		if err != nil {
+			log.Errorf(c, "failed to check active private lines for user %d: %v", user.ID, err)
+			return err
 		}
+		if !hasLine {
+			log.Warnf(c, "user %d has no active private line, rejecting gateway login", user.ID)
+			return e(ErrorPlanNoRouter, "no active private line")
+		}
+		// 一账号一路由器：要更多路由器就开第二个账号。mint 的 rotation 会先删旧路由器
+		// 设备，故此处仅在并发 double-mint 竞态下触发。
 		var routerCount int64
 		if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = true", user.ID).Count(&routerCount).Error; err != nil {
 			log.Errorf(c, "failed to count router devices for user %d: %v", user.ID, err)
 			return err
 		}
-		if quota.MaxRouterDevice > 0 && routerCount >= int64(quota.MaxRouterDevice) {
-			log.Warnf(c, "router device limit reached for user %d (%d/%d)", user.ID, routerCount, quota.MaxRouterDevice)
+		if routerCount >= 1 {
+			log.Warnf(c, "router device limit reached for user %d (%d/1)", user.ID, routerCount)
 			return e(ErrorRouterDeviceLimit, "router device limit reached")
 		}
 		return nil

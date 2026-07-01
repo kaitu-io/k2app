@@ -36,6 +36,8 @@ import Changelog from "./pages/Changelog";
 import { getCurrentAppConfig } from "./config/apps";
 
 const AppBypass = lazy(() => import('./pages/AppBypass'));
+const PrivateNodeManagement = lazy(() => import('./pages/PrivateNodeManagement'));
+const GatewaySetup = lazy(() => import('./pages/GatewaySetup'));
 
 // 应用路由组件
 function AppRoutes() {
@@ -56,6 +58,10 @@ function AppRoutes() {
           <Route path="account" element={null} />
           {/* Gateway-only: Router tab */}
           {window._platform?.platformType === 'gateway' && <Route path="router" element={null} />}
+          {/* Gateway-only: 路由器连接设置页（粘贴 k2subs 地址） */}
+          {window._platform?.platformType === 'gateway' && (
+            <Route path="setup" element={<Suspense fallback={null}><GatewaySetup /></Suspense>} />
+          )}
 
           {/* Non-Tab routes */}
           {/* Purchase 移出 keep-alive，每次访问重新渲染（避免与 LoginRequiredGuard 冲突）。
@@ -80,11 +86,24 @@ function AppRoutes() {
             <Route path="app-bypass" element={<Suspense fallback={null}><AppBypass /></Suspense>} />
           )}
 
+          {/* 专属节点管理（登录可见） */}
+          {appConfig.features.privateNode && (
+            <Route
+              path="private-node"
+              element={
+                <LoginRequiredGuard pagePath="/private-node">
+                  <Suspense fallback={null}><PrivateNodeManagement /></Suspense>
+                </LoginRequiredGuard>
+              }
+            />
+          )}
+
           {appConfig.features.invite && (
             <Route path="invite-codes" element={<LoginRequiredGuard pagePath="/invite-codes"><MyInviteCodeList /></LoginRequiredGuard>} />
           )}
 
-          {appConfig.features.delegate && (
+          {/* /delegate 是第三方代付（IAP 以外支付）—— iOS 不注册该路由，防直达 (Apple 3.1.1) */}
+          {appConfig.features.delegate && window._platform?.os !== 'ios' && (
             <Route path="delegate" element={<LoginRequiredGuard pagePath="/delegate"><Delegate /></LoginRequiredGuard>} />
           )}
 

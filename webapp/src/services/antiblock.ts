@@ -1,7 +1,13 @@
+import { decrypt as _decrypt, loadJsonp } from './antiblock-crypto';
+
 const STORAGE_KEY = 'k2_entry_url';
 export const DEFAULT_ENTRY = 'https://k2.52j.me';
 export const DECRYPTION_KEY =
   '9e3573184d5e5b3034a087c33fa2cdb76bd0126238ed08f54d1de8c6ae0eb4ba';
+
+// Re-export decrypt so existing importers that pull it from antiblock.ts
+// continue to work without any change to their import paths.
+export { decrypt } from './antiblock-crypto';
 
 // jsdelivr mirrors — raced simultaneously (Happy Eyeballs)
 // Same repo path, different edge networks for redundancy in blocked regions
@@ -11,85 +17,12 @@ export const CDN_SOURCES = [
   'https://testingcf.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
   'https://gcore.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
   'https://cdn.jsdmirror.com/gh/kaitu-io/ui-theme@dist/config.js',
+  'https://cdn.jsdmirror.cn/gh/kaitu-io/ui-theme@dist/config.js',
   'https://jsd.onmicrosoft.cn/gh/kaitu-io/ui-theme@dist/config.js',
 ];
 
 // ---------------------------------------------------------------------------
-// Base64 decoder (no atob usage — required by project rules)
-// ---------------------------------------------------------------------------
-
-function base64ToBytes(b64: string): Uint8Array {
-  const chars =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const lookup = new Uint8Array(256);
-  for (let i = 0; i < chars.length; i++) {
-    lookup[chars.charCodeAt(i)] = i;
-  }
-
-  const len = b64.length;
-  const padLen = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
-  const byteLen = (len * 3) / 4 - padLen;
-  const bytes = new Uint8Array(byteLen);
-
-  let j = 0;
-  for (let i = 0; i < len; i += 4) {
-    const a = lookup[b64.charCodeAt(i)]!;
-    const b = lookup[b64.charCodeAt(i + 1)]!;
-    const c = lookup[b64.charCodeAt(i + 2)]!;
-    const d = lookup[b64.charCodeAt(i + 3)]!;
-    bytes[j++] = (a << 2) | (b >> 4);
-    if (j < byteLen) bytes[j++] = ((b & 0xf) << 4) | (c >> 2);
-    if (j < byteLen) bytes[j++] = ((c & 0x3) << 6) | d;
-  }
-  return bytes;
-}
-
-// ---------------------------------------------------------------------------
-// Hex decoder
-// ---------------------------------------------------------------------------
-
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-  }
-  return bytes;
-}
-
-// ---------------------------------------------------------------------------
-// AES-256-GCM decryption via Web Crypto API
-// ---------------------------------------------------------------------------
-
-export async function decrypt(
-  encoded: string,
-  keyHex: string,
-): Promise<string | null> {
-  try {
-    const data = base64ToBytes(encoded);
-    const iv = data.slice(0, 12);
-    const ciphertext = data.slice(12);
-    const rawKey = hexToBytes(keyHex);
-    const key = await crypto.subtle.importKey(
-      'raw',
-      rawKey,
-      'AES-GCM',
-      false,
-      ['decrypt'],
-    );
-    const plain = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      ciphertext,
-    );
-    return new TextDecoder().decode(plain);
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// JSONP loader — <script> tag injection (no CORS restrictions)
-// Config script sets window.__k2ac = { v: 1, data: "<base64 ciphertext>" }
+// JSONP global name used by the CDN config script
 // ---------------------------------------------------------------------------
 
 const JSONP_GLOBAL = '__k2ac';
@@ -99,47 +32,13 @@ interface AntiblockConfig {
   data: string;
 }
 
-function loadScript(url: string, timeoutMs = 5000): Promise<AntiblockConfig | null> {
-  return new Promise((resolve) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    delete w[JSONP_GLOBAL];
-
-    const script = document.createElement('script');
-    const timer = setTimeout(() => {
-      console.warn('[Antiblock] loadScript timeout:', url);
-      script.remove();
-      resolve(null);
-    }, timeoutMs);
-
-    script.onload = () => {
-      clearTimeout(timer);
-      const config = w[JSONP_GLOBAL] as AntiblockConfig | undefined;
-      delete w[JSONP_GLOBAL];
-      script.remove();
-      if (!config) {
-        console.warn('[Antiblock] loadScript: script loaded but no config found');
-      }
-      resolve(config ?? null);
-    };
-    script.onerror = (e) => {
-      clearTimeout(timer);
-      console.warn('[Antiblock] loadScript error:', url, e);
-      script.remove();
-      resolve(null);
-    };
-    script.src = url;
-    document.head.appendChild(script);
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Happy Eyeballs — race all CDN mirrors, first valid config wins
 // ---------------------------------------------------------------------------
 
 async function decryptConfig(config: AntiblockConfig): Promise<string | null> {
   if (!config || config.v !== 1 || typeof config.data !== 'string') return null;
-  const plaintext = await decrypt(config.data, DECRYPTION_KEY);
+  const plaintext = await _decrypt(config.data, DECRYPTION_KEY);
   if (!plaintext) return null;
   const parsed = JSON.parse(plaintext) as { entries?: string[] };
   if (parsed.entries && parsed.entries.length > 0) return parsed.entries[0]!;
@@ -164,7 +63,7 @@ function promiseAny<T>(promises: Promise<T>[]): Promise<T> {
 
 async function fetchEntryFromCDN(): Promise<string | null> {
   const candidates = CDN_SOURCES.map((url) =>
-    loadScript(url).then(async (config) => {
+    loadJsonp(url, JSONP_GLOBAL).then(async (config) => {
       if (!config) throw new Error(`no config from ${url}`);
       const entry = await decryptConfig(config);
       if (!entry) throw new Error(`decrypt failed from ${url}`);

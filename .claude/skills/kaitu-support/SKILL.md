@@ -133,16 +133,16 @@ From client log: connect time (`DIAG: connected` timestamp) and session end (`DI
 - Cross-match by DNS-fingerprint timing: pick a uniquely-timed DNS query from client log (e.g. a 02:14:23.451 lookup for a rare domain), grep `k2s.log` in the ±2s window for a matching incoming request. See memory `reference_udid_to_public_ip.md`.
 
 **8.3 — Pull the real k2s.log**
-Do NOT use `docker logs k2v5` — that's only the 5-line startup tail (see memory `reference_k2s_log_location.md`). Real log: `/apps/kaitu-slave/logs/k2s.log` on the node.
+Do NOT use `docker logs k2s` — that's only the 5-line startup tail (see memory `reference_k2s_log_location.md`). Real log: `/apps/k2s/logs/k2s.log` on the node.
 
 ```bash
 # Via kaitu-node-ops (exec_on_node):
 exec_on_node(
   ip=<node-ip>,
-  command="grep -E '<user-ip>' /apps/kaitu-slave/logs/k2s.log | awk '$0 >= \"<YYYY-MM-DDTHH:MM:SS>\" && $0 <= \"<YYYY-MM-DDTHH:MM:SS>\"' | head -200"
+  command="grep -E '<user-ip>' /apps/k2s/logs/k2s.log | awk '$0 >= \"<YYYY-MM-DDTHH:MM:SS>\" && $0 <= \"<YYYY-MM-DDTHH:MM:SS>\"' | head -200"
 )
 # For rotated days:
-exec_on_node(ip=<node-ip>, command="zgrep '<user-ip>' /apps/kaitu-slave/logs/k2s-*.log.gz | head -100")
+exec_on_node(ip=<node-ip>, command="zgrep '<user-ip>' /apps/k2s/logs/k2s-*.log.gz | head -100")
 ```
 
 **8.4 — Read what matters**

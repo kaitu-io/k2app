@@ -2,18 +2,20 @@ package center
 
 import "math"
 
-// warmupWindow is the fraction of the billing cycle treated as "early"
-// (the first 20% — about 6 days of a 30-day cycle). Inside this window the
-// trafficRatio − timeRatio projection is statistically noisy, so we attenuate
-// the over-pace penalty and add a headroom credit. After this point the score
-// matches the original formula exactly.
-const warmupWindow = 0.20
+// usageSensitivityFloor is the minimum usage-sensitivity weight w(t), applied
+// at the very start of a billing cycle (timeRatio == 0). A small non-zero floor
+// means a brand-new cycle is NOT completely blind to usage — a node that burns
+// most of its quota on day 1 still loses a little score (e.g. 100% used → 0.85)
+// — but the floor is low enough that early usage is largely forgiven. True
+// exhaustion is caught by the hard cutoff / hide path (isNodeOverQuota), not by
+// the score.
+const usageSensitivityFloor = 0.15
 
-// earlyHeadroomLift is the maximum lift applied to score from unused budget
-// during a brand-new cycle (timeRatio == 0). Decays linearly to 0 by
-// warmupWindow. With trafficRatio == 0 and timeRatio == 0 this contributes
-// 0.30, putting a fresh node solidly in the green band.
-const earlyHeadroomLift = 0.30
+// usageSensitivityGamma is the exponent on timeRatio in the weight ramp. γ=2
+// (quadratic) keeps the first half of the cycle generous and concentrates the
+// rise in sensitivity into the back half, so "越靠后越敏感" without punishing
+// healthy mid-cycle usage.
+const usageSensitivityGamma = 2.0
 
 // ComputeRecommendScore returns a unified "how recommendable is this tunnel
 // right now" signal in [0.0, 1.0]. Higher = better.
@@ -29,40 +31,42 @@ const earlyHeadroomLift = 0.30
 // pickWeighted (weight=0 is treated as disqualified unless all candidates are
 // 0).
 //
-// Formula:
+// Formula — time-gated usage sensitivity:
 //
-//   - budgetScore := trafficRatio − timeRatio                  // [-1, +1]
-//   - warmup       := min(1, timeRatio / warmupWindow)          // 0..1
-//   - In the warmup window, attenuate over-pace (positive budgetScore) by
-//     warmup; under-pace (negative budgetScore) keeps full strength because
-//     it is a positive signal that does not need dampening.
-//   - score        := (1 − adjustedBudget) / 2
-//   - Add an early-cycle headroom credit that decays to 0 by warmupWindow:
-//     (1 − warmup) × (1 − trafficRatio) × earlyHeadroomLift
-//   - Clamp to [0, 1].
+//	w(t) := usageSensitivityFloor + (1 − usageSensitivityFloor) · t^γ
+//	score := 1 − trafficRatio · w(timeRatio)
+//	clamp to [0, 1]
 //
-// Examples (30-day billing cycle):
+// w(t) is the weight given to usage. It rises from the floor (~0.15) at the
+// start of the cycle to 1.0 at the end. Two consequences, both intentional:
 //
-//	day 15, 60% used:  warmup=1.00 → score 0.45 (🟡, unchanged)
-//	day 30, 50% used:  warmup=1.00 → score 0.75 (🟢, unchanged)
-//	day 1,  20% used:  warmup=0.17, headroom +0.20 → score 0.69 (🟢)
-//	day 1,  0%  used:  warmup=0.17, headroom +0.25 → score 0.77 (🟢)
-//	day 3,  80% used:  warmup=0.50, headroom +0.03 → score 0.36 (🟡, softened)
+//   - ∂score/∂trafficRatio = −w(t): the score's sensitivity to usage GROWS as
+//     the cycle progresses. Late-cycle near-cap nodes are punished hard; early
+//     nodes are largely forgiven. ("时间越靠后，约束越敏感")
+//   - at fixed usage, score DECREASES as t rises: the further from the cycle
+//     end, the higher the score. ("离周期结束越久，推荐分数越高")
+//
+// This replaces the earlier pacing model (score = (1 − (trafficRatio −
+// timeRatio))/2 with a warmup window + headroom credit). The pacing model
+// penalized early heavy usage and — its blind spot — kept recommending a
+// near-cap node at month-end because it had "paced well". The new model is
+// generous early and steers load away from late near-cap nodes.
+//
+// Examples (30-day billing cycle, γ=2):
+//
+//	day 1,  0%  used:  w=0.151 → score 1.00 (🟢)
+//	day 1,  80% used:  w=0.151 → score 0.88 (🟢, forgiven — cutoff is the net)
+//	day 15, 60% used:  w=0.363 → score 0.78 (🟢)
+//	day 30, 50% used:  w=1.000 → score 0.50 (🟡)
+//	day 30, 90% used:  w=1.000 → score 0.10 (🔴, steered away)
 func ComputeRecommendScore(inst *DataTunnelInstance) float64 {
 	if inst == nil {
 		return 0.5
 	}
 
-	budgetScore := inst.TrafficRatio - inst.TimeRatio
-	warmup := math.Min(1.0, inst.TimeRatio/warmupWindow)
-
-	adj := budgetScore
-	if adj > 0 {
-		adj *= warmup
-	}
-
-	score := (1.0 - adj) / 2.0
-	score += (1.0 - warmup) * (1.0 - inst.TrafficRatio) * earlyHeadroomLift
+	t := inst.TimeRatio
+	w := usageSensitivityFloor + (1.0-usageSensitivityFloor)*math.Pow(t, usageSensitivityGamma)
+	score := 1.0 - inst.TrafficRatio*w
 
 	if score < 0 {
 		score = 0
@@ -73,35 +77,40 @@ func ComputeRecommendScore(inst *DataTunnelInstance) float64 {
 	return score
 }
 
-// overQuotaThreshold is the fraction of a node's monthly traffic budget at
-// which the node is hard-excluded from /api/tunnels and /api/subs responses
-// for non-admin users. The 5% buffer absorbs worker_cloud sync lag
-// (asynq cron, ~25 min unique lock) — by the time a snapshot says 95% the
-// real usage may already be 100%+ and AWS overage billing has begun.
-const overQuotaThreshold = 0.95
-
-// isTunnelOverQuota reports whether a CloudInstance has consumed enough of
-// its monthly traffic budget to be hidden from non-admin tunnel lists.
-//
-// nil instance / zero TrafficTotalBytes return false: we only filter nodes
-// with known finite quotas. This keeps non-cloud nodes (no CloudInstance row)
-// and unlimited/unconfigured instances visible.
-func isTunnelOverQuota(inst *CloudInstance) bool {
-	if inst == nil || inst.TrafficTotalBytes <= 0 {
-		return false
-	}
-	threshold := float64(inst.TrafficTotalBytes) * overQuotaThreshold
-	return float64(inst.TrafficUsedBytes) >= threshold
-}
-
-// shouldHideTunnelForUser is the single decision point used by /api/tunnels
-// and /api/subs to filter tunnels out of the response. Admins always see
-// every tunnel (debugging / over-quota investigation path); non-admins are
-// shielded from over-quota nodes so client weighted-pick never lands on an
-// AWS-overage-billing target.
-func shouldHideTunnelForUser(inst *CloudInstance, isAdmin bool) bool {
+// shouldHideTunnelForUser is the single hide decision for /api/tunnels and
+// /api/subs. Admins see everything (triage); non-admins are shielded from
+// over-quota or offline nodes so weighted-pick never lands on a dead/overage
+// target. `now` is Unix seconds.
+func shouldHideTunnelForUser(u *NodeUsage, isAdmin bool, now int64) bool {
 	if isAdmin {
 		return false
 	}
-	return isTunnelOverQuota(inst)
+	return isNodeOverQuota(u) || isNodeOffline(u, now)
+}
+
+// buildTunnelInstanceDataFromUsage builds the scoring DTO from NodeUsage.
+// nil usage → nil (ComputeRecommendScore(nil)=0.5 neutral). TimeRatio uses the
+// node-reported billing-cycle end (Epoch). Mirrors the old buildTunnelInstanceData
+// by also stamping the DTO's own RecommendScore.
+func buildTunnelInstanceDataFromUsage(u *NodeUsage) *DataTunnelInstance {
+	if u == nil {
+		return nil
+	}
+	trafficRatio := 0.0
+	if u.QuotaTotalBytes > 0 {
+		trafficRatio = float64(u.UsedBytes) / float64(u.QuotaTotalBytes)
+		if trafficRatio > 1 {
+			trafficRatio = 1
+		}
+	}
+	timeRatio := calculateTimeRatio(u.Epoch)
+	d := &DataTunnelInstance{
+		TrafficTotalBytes: u.QuotaTotalBytes,
+		TrafficRatio:      trafficRatio,
+		BillingCycleEndAt: u.Epoch,
+		TimeRatio:         timeRatio,
+		BudgetScore:       trafficRatio - timeRatio,
+	}
+	d.RecommendScore = ComputeRecommendScore(d)
+	return d
 }

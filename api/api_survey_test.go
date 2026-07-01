@@ -44,7 +44,7 @@ func TestSurveyStatus_MissingSurveyKey(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp Response[DataAny]
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, ErrorInvalidArgument, resp.Code)
+	assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 }
 
 // =====================================================================
@@ -107,7 +107,7 @@ func TestSurveySubmit_InvalidSurveyKey(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp Response[DataAny]
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, ErrorInvalidOperation, resp.Code)
+	assert.EqualValues(t, ErrorInvalidOperation, resp.Code)
 }
 
 func TestSurveySubmit_InvalidAnswersJSON(t *testing.T) {
@@ -126,7 +126,7 @@ func TestSurveySubmit_InvalidAnswersJSON(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp Response[DataAny]
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, ErrorInvalidArgument, resp.Code)
+	assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 }
 
 func TestSurveySubmit_MissingRequiredFields(t *testing.T) {
@@ -145,7 +145,7 @@ func TestSurveySubmit_MissingRequiredFields(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		var resp Response[DataAny]
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-		assert.Equal(t, ErrorInvalidArgument, resp.Code)
+		assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 	})
 
 	t.Run("missing answers", func(t *testing.T) {
@@ -160,7 +160,7 @@ func TestSurveySubmit_MissingRequiredFields(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		var resp Response[DataAny]
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-		assert.Equal(t, ErrorInvalidArgument, resp.Code)
+		assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 	})
 
 	t.Run("empty body", func(t *testing.T) {
@@ -172,7 +172,7 @@ func TestSurveySubmit_MissingRequiredFields(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		var resp Response[DataAny]
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-		assert.Equal(t, ErrorInvalidArgument, resp.Code)
+		assert.EqualValues(t, ErrorInvalidArgument, resp.Code)
 	})
 }
 

@@ -1,0 +1,58 @@
+{
+  "privateNode": {
+    "title": "専用ノード",
+    "manage": "専用ノードを管理",
+    "buyLine": "専用回線を購入",
+    "buy": "専用ノードを開設",
+    "region": "ノードの地域",
+    "selectRegion": "地域を選択",
+    "ipTypeLabel": "IP タイプ",
+    "ipType": {
+      "residential": "住宅用 IP",
+      "non_residential": "データセンター IP"
+    },
+    "traffic": "トラフィック",
+    "trafficUsed": "使用済み {{used}} / {{total}}",
+    "quota": "トラフィック上限",
+    "status": {
+      "title": "ステータス",
+      "pending": "開設待ち",
+      "provisioning": "開設中",
+      "active": "稼働中",
+      "grace": "猶予期間",
+      "suspended": "停止中",
+      "deprovisioned": "解約済み",
+      "failed": "開設失敗"
+    },
+    "expiresAt": "有効期限",
+    "graceHint": "猶予期間に入っています。停止を避けるため、お早めに更新してください。",
+    "suspendedHint": "ノードは停止していますが IP は保持されています。更新後に再開します。",
+    "nodeIp": "ノード IP",
+    "provisioningHint": "ノードを開設中です。通常は数分かかります。しばらくお待ちください。",
+    "empty": "専用ノードはまだありません",
+    "renew": "更新",
+    "percentUsed": "{{percent}}% 使用済み",
+    "quotaExhausted": {
+      "title": "今月の通信量上限に達しました",
+      "resetHint": "{{date}} にリセットされます",
+      "resetUnknown": "次の周期の開始時にリセットされます",
+      "cta": "更新 / 上限アップグレード"
+    },
+    "router": {
+      "title": "ルーターを追加",
+      "intro": "OpenWrt のルーターに k2r をインストールし、下記のアドレスで接続を完了してください。",
+      "detected": "ローカルネットワーク内で検出されたルーター：",
+      "open": "{{addr}} を開く",
+      "mint": "ルーター接続アドレスを生成",
+      "paste": "下記のアドレスをコピーし、ルーター管理画面の「設定」ページに貼り付けてください：",
+      "copy": "コピー"
+    },
+    "setup": {
+      "title": "専用回線に接続",
+      "hint": "アプリまたはウェブで生成したルーター接続アドレスを下記に貼り付け、「接続」をタップしてください。",
+      "connect": "接続",
+      "ok": "接続を開始しました。しばらくしてからステータスページで専用回線の接続状況をご確認ください。",
+      "err": "接続アドレスが無効です。完全なアドレスをコピーしたか確認してください。"
+    }
+  }
+}

@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wordgate/qtoolkit/log"
 
@@ -51,6 +52,11 @@ type SubsTunnel struct {
 	// ComputeRecommendScore. Higher = better. New daemon/webapp clients prefer
 	// this over Weight.
 	RecommendScore float64 `json:"recommendScore"`
+	// IPType is the exit-IP nature of the backing node
+	// (residential|non_residential|unknown). Additive field — old daemons ignore
+	// unknown JSON keys. New daemon Pick logic can prefer residential IPs.
+	// omitempty: omits the field when empty (unknown nodes from older schema rows).
+	IPType string `json:"ipType,omitempty"`
 }
 
 // SubsResponse is the k2subs subscription endpoint response body (raw, no envelope).
@@ -138,7 +144,62 @@ func api_subs(c *gin.Context) {
 		return
 	}
 
+	// Device-class cross-check. This mirrors the EnforceDeviceClass middleware,
+	// which is mounted on /api/tunnels but NOT on /api/subs (this handler does
+	// its own Basic auth inside the body, so a middleware would have no auth
+	// context yet). A stock k2r ALWAYS sends X-K2-Client: kaitu-router; reject a
+	// self-identified router riding an App-class credential (IsGateway=false) —
+	// otherwise a hand-crafted k2subs:// URL carrying an App token would route a
+	// whole LAN through the App-only shared pool, bypassing the dedicated-line
+	// gate. A MISSING header still passes (backward compat for pre-header
+	// clients); only a present header is enforced.
+	if rawHeader := c.GetHeader("X-K2-Client"); rawHeader != "" {
+		info := parseClientHeader(rawHeader)
+		if info == nil {
+			log.Warnf(c, "subs: invalid X-K2-Client header, udid=%s", udid)
+			subsError(c, http.StatusBadRequest, "invalid client class")
+			return
+		}
+		if info.IsGateway() != authCtx.Device.IsGateway {
+			log.Warnf(c, "subs: device class mismatch udid=%s db_gateway=%v header_gateway=%v",
+				udid, authCtx.Device.IsGateway, info.IsGateway())
+			subsError(c, http.StatusForbidden, "device class mismatch")
+			return
+		}
+	}
+
+	// 能力矩阵：路由器（gateway）只用专属节点；App/桌面用共享池。k2r 未发布，
+	// 此处硬切，无存量路由器回落需求。
+	//
+	// ORDERING (load-bearing): this gateway branch MUST run BEFORE the shared-
+	// membership IsExpired() gate below. Private nodes use an independent clock
+	// (per-node PrivateNodeSubscription) and do NOT depend on shared membership —
+	// a router owner whose shared membership has lapsed but who holds an active/
+	// grace private-node subscription must still get their private tunnels.
+	// Gating gateway users by User.ExpiredAt would break the capability matrix
+	// (see ResolveGatewayPrivateTunnels + its test, which deliberately use an
+	// expired-shared-membership owner). The branch returns in ALL paths, so a
+	// non-gateway device falls straight through to the unchanged shared-pool flow.
+	if authCtx.Device.IsGateway {
+		privTunnels, err := ResolveGatewayPrivateTunnels(c, authCtx.User.ID, time.Now().Unix())
+		if err != nil {
+			log.Errorf(c, "subs: resolve private tunnels failed: %v", err)
+			subsError(c, http.StatusInternalServerError, "failed to load private nodes")
+			return
+		}
+		items := buildPrivateSubsTunnels(privTunnels, udid, token)
+		if len(items) == 0 {
+			log.Infof(c, "subs: gateway user %d has no serviceable private node", authCtx.User.ID)
+			subsError(c, http.StatusPaymentRequired, "no private node entitlement")
+			return
+		}
+		log.Infof(c, "subs: gateway user=%d returning %d private tunnels", authCtx.User.ID, len(items))
+		writeSubsOK(c, SubsResponse{Tunnels: items, Refresh: 1800})
+		return
+	}
+
 	// Check membership (mirrors ProRequired middleware logic exactly).
+	// Non-gateway (App/desktop) devices only — gateway devices returned above.
 	if authCtx.User.IsExpired() {
 		log.Infof(c, "subs: user %d membership expired", authCtx.User.ID)
 		subsError(c, http.StatusPaymentRequired, "membership expired")
@@ -162,17 +223,18 @@ func api_subs(c *gin.Context) {
 	// wrong (see 3e20b8e postmortem), and the tunnel set is tiny (<100).
 	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
 
-	// Batch-fetch CloudInstance rows by node IPv4 so we can compute per-tunnel
-	// RecommendScore via the same code path /api/tunnels uses. Non-cloud nodes
-	// fall through to ComputeRecommendScore(nil) → 0.5 (neutral), keeping them
-	// eligible in pickWeighted without being favored.
+	// Batch-fetch NodeUsage rows by ipv4 (durable key, node-authority metering mirror) so we
+	// can compute per-tunnel RecommendScore via the same code path /api/tunnels
+	// uses. Non-metered nodes fall through to ComputeRecommendScore(nil) → 0.5
+	// (neutral), keeping them eligible in pickWeighted without being favored.
 	nodeIPs := make([]string, 0, len(tunnels))
 	for _, t := range tunnels {
-		if t.Node != nil && t.Node.Ipv4 != "" {
+		if t.Node != nil && t.Node.ID != 0 {
 			nodeIPs = append(nodeIPs, t.Node.Ipv4)
 		}
 	}
-	instanceMap := getCloudInstancesByIPs(nodeIPs)
+	usageMap := getNodeUsagesByIPs(nodeIPs)
+	now := time.Now().Unix()
 
 	items := make([]SubsTunnel, 0, len(tunnels))
 	for _, t := range tunnels {
@@ -183,6 +245,15 @@ func api_subs(c *gin.Context) {
 		if t.Node == nil || t.Node.ID == 0 {
 			continue
 		}
+		// Capability matrix (App→private ❌): private nodes belong to a single
+		// owner and are delivered ONLY via the gateway branch above. They must
+		// never appear in the shared pool, or one user's dedicated VPS would leak
+		// into every App user's server list. fetchK2V5Tunnels intentionally does
+		// not filter by class (its doc: "capability filtering belongs in the
+		// caller") — this is that filter.
+		if t.Node.Class == NodeClassPrivate {
+			continue
+		}
 		if t.ServerURL == "" {
 			continue
 		}
@@ -190,32 +261,24 @@ func api_subs(c *gin.Context) {
 			continue
 		}
 
-		// Same over-quota hard-exclude as /api/tunnels. Subscription clients
-		// run weighted-pick over this list — once AWS billing tips into
+		// Same over-quota/offline hard-exclude as /api/tunnels. Subscription
+		// clients run weighted-pick over this list — once billing tips into
 		// overage every byte costs real money, so even a low score is not
 		// safe enough. Admin bypass keeps the path open for triage.
-		inst, hasInst := instanceMap[t.Node.Ipv4]
-		var instPtr *CloudInstance
-		if hasInst {
-			instPtr = &inst
-		}
-		if shouldHideTunnelForUser(instPtr, isAdmin) {
-			log.Warnf(c, "subs: tunnel %d (node=%s, ip=%s) over quota, hiding from non-admin: used=%dB total=%dB",
-				t.ID, t.Node.Name, t.Node.Ipv4,
-				inst.TrafficUsedBytes, inst.TrafficTotalBytes)
+		u := usageMap[t.Node.Ipv4] // nil if no usage row yet
+		if shouldHideTunnelForUser(u, isAdmin, now) {
+			log.Warnf(c, "subs: tunnel %d (node=%s, ip=%s) hidden from non-admin (over-quota/offline)",
+				t.ID, t.Node.Name, t.Node.Ipv4)
 			continue
 		}
 
-		var instData *DataTunnelInstance
-		if hasInst {
-			instData = buildTunnelInstanceData(instPtr)
-		}
-		score := ComputeRecommendScore(instData)
+		score := ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u))
 
 		items = append(items, SubsTunnel{
 			URL:            injectSubsCreds(t.ServerURL, udid, token),
 			Weight:         int(math.Round(score * subsLegacyWeightScale)),
 			RecommendScore: score,
+			IPType:         t.Node.IPType,
 		})
 	}
 
@@ -226,13 +289,33 @@ func api_subs(c *gin.Context) {
 }
 
 // writeSubsOK emits the raw /api/subs success response. RecommendScore is
-// derived from CloudInstance billing data which updates on the order of
-// minutes (via worker_cloud sync), so end-to-end caching by CloudFront could
-// freeze a stale view for hours. The Cache-Control header is the client-side
-// half of that contract; CloudFront Behavior for /api/subs must also set
-// Minimum TTL = 0 for the header to be respected.
+// derived from NodeUsage (node-reported metering, updated each report cycle),
+// so end-to-end caching by CloudFront could freeze a stale view for hours. The
+// Cache-Control header is the client-side half of that contract; CloudFront
+// Behavior for /api/subs must also set Minimum TTL = 0 for the header to be
+// respected.
 func writeSubsOK(c *gin.Context, resp SubsResponse) {
 	c.Header("Cache-Control", "no-store, private")
 	// RAW JSON — see the wire-protocol note at the top of this file.
 	c.JSON(http.StatusOK, resp)
+}
+
+// buildPrivateSubsTunnels 把专属节点隧道列表转为 subs 响应项，与共享池同构。
+// 专属节点为单一主人独占、确定性使用，不参与共享池的 ComputeRecommendScore，
+// 统一取中性推荐分 0.5；URL 复用 injectSubsCreds 注入用户凭证。
+func buildPrivateSubsTunnels(tunnels []SlaveTunnel, udid, token string) []SubsTunnel {
+	items := make([]SubsTunnel, 0, len(tunnels))
+	for _, t := range tunnels {
+		if t.Node == nil || t.Node.ID == 0 || t.ServerURL == "" {
+			continue
+		}
+		const neutralScore = 0.5
+		items = append(items, SubsTunnel{
+			URL:            injectSubsCreds(t.ServerURL, udid, token),
+			Weight:         int(math.Round(neutralScore * subsLegacyWeightScale)),
+			RecommendScore: neutralScore,
+			IPType:         t.Node.IPType,
+		})
+	}
+	return items
 }

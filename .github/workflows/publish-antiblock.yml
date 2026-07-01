@@ -1,4 +1,5 @@
 name: Publish Antiblock Config
+
 on:
   workflow_dispatch:
     inputs:
@@ -6,34 +7,94 @@ on:
         description: 'Entry URLs as JSON array (leave empty for default)'
         required: false
         type: string
+  schedule:
+    - cron: '0 */6 * * *'
+
+concurrency:
+  group: publish-antiblock
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Encrypt config
-        run: node scripts/antiblock-encrypt.js
+
+      - name: Fetch node seed from Center
+        run: |
+          NODES=$(curl -fsS -H "X-Antiblock-Seed-Key: $SEED_KEY" "$CENTER/api/antiblock/seed" \
+            | jq -c '.data.nodes // []')
+          echo "NODES=$NODES" >> "$GITHUB_ENV"
         env:
-          ENTRIES: ${{ inputs.entries }}
+          CENTER: ${{ secrets.CENTER_BASE_URL }}
+          SEED_KEY: ${{ secrets.ANTIBLOCK_SEED_KEY }}
+
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.UI_THEME_DEPLOY_KEY }}
-      - name: Push to config repo
+
+      - name: Publish (compute cursor + generate + push with retry)
+        env:
+          ENTRIES: ${{ inputs.entries }}
         run: |
-          mkdir -p /tmp/config-repo && cd /tmp/config-repo
-          git clone --single-branch -b dist git@github.com:kaitu-io/ui-theme.git . || {
-            git init && git remote add origin git@github.com:kaitu-io/ui-theme.git
-            git checkout --orphan dist
-          }
-          cp $GITHUB_WORKSPACE/config.js .
-          git add config.js
+          WORK_DIR=$(mktemp -d)
+          git clone --single-branch -b dist git@github.com:kaitu-io/ui-theme.git "$WORK_DIR"
+          cd "$WORK_DIR"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "update $(date -u +%Y%m%d%H%M%S)" || true
-          git push origin dist
+
+          MAX_ATTEMPTS=3
+          ATTEMPT=0
+          FINAL_CURSOR=""
+
+          while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+
+            if [ "$ATTEMPT" -gt 1 ]; then
+              echo "[antiblock-seed] Attempt $ATTEMPT: re-fetching dist branch"
+              git fetch origin dist
+              git reset --hard origin/dist
+            fi
+
+            # Compute CURSOR via the shared, unit-tested helper (numeric max + 1,
+            # default 1). Single source of truth with scripts/antiblock-cursor.test.sh.
+            CURSOR=$(bash "$GITHUB_WORKSPACE/scripts/antiblock-cursor.sh" "$WORK_DIR")
+            echo "[antiblock-seed] Attempt $ATTEMPT: CURSOR=$CURSOR"
+
+            # Generate config.js (legacy) and v/<CURSOR>.js (versioned seed)
+            cd "$GITHUB_WORKSPACE"
+            CURSOR="$CURSOR" node scripts/antiblock-encrypt.js
+            cd "$WORK_DIR"
+
+            # Copy outputs — never delete existing v/*.js (append-only)
+            mkdir -p v
+            cp "$GITHUB_WORKSPACE/config.js" config.js
+            cp "$GITHUB_WORKSPACE/v/${CURSOR}.js" "v/${CURSOR}.js"
+
+            # Commit
+            git add config.js v/
+            git commit -m "seed v${CURSOR} $(date -u +%Y%m%d%H%M%S)"
+
+            # Push — break on success, retry on rejection
+            if git push origin dist; then
+              FINAL_CURSOR="$CURSOR"
+              break
+            fi
+            echo "[antiblock-seed] Push attempt $ATTEMPT failed, will retry"
+          done
+
+          if [ -z "$FINAL_CURSOR" ]; then
+            echo "[antiblock-seed] All $MAX_ATTEMPTS push attempts failed"
+            exit 1
+          fi
+
+          echo "PUBLISHED_CURSOR=$FINAL_CURSOR" >> "$GITHUB_ENV"
+
       - name: Purge CDN cache
         run: |
-          curl -s https://purge.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js
+          curl -s "https://purge.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js" || true
+          curl -s "https://purge.jsdelivr.net/gh/kaitu-io/ui-theme@dist/v/${PUBLISHED_CURSOR}.js" || true

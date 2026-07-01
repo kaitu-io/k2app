@@ -1,0 +1,58 @@
+{
+  "privateNode": {
+    "title": "专属节点",
+    "manage": "管理专属节点",
+    "buyLine": "购买专属线路",
+    "buy": "开通专属节点",
+    "region": "节点地区",
+    "selectRegion": "选择地区",
+    "ipTypeLabel": "IP 类型",
+    "ipType": {
+      "residential": "住宅 IP",
+      "non_residential": "数据中心 IP"
+    },
+    "traffic": "流量",
+    "trafficUsed": "已用 {{used}} / {{total}}",
+    "quota": "流量配额",
+    "status": {
+      "title": "状态",
+      "pending": "待开通",
+      "provisioning": "开通中",
+      "active": "服务中",
+      "grace": "宽限期",
+      "suspended": "已停机",
+      "deprovisioned": "已注销",
+      "failed": "开通失败"
+    },
+    "expiresAt": "到期时间",
+    "graceHint": "已进入宽限期，请尽快续费以免停机",
+    "suspendedHint": "节点已停机保留 IP，续费后恢复",
+    "nodeIp": "节点 IP",
+    "provisioningHint": "节点正在开通，通常需要几分钟，请稍候",
+    "empty": "你还没有专属节点",
+    "renew": "续费",
+    "percentUsed": "已用 {{percent}}%",
+    "quotaExhausted": {
+      "title": "本月流量额度已用尽",
+      "resetHint": "将于 {{date}} 重置",
+      "resetUnknown": "将于下个周期开始时重置",
+      "cta": "续费 / 升级额度"
+    },
+    "router": {
+      "title": "添加路由器",
+      "intro": "在已刷 OpenWrt 的路由器上安装 k2r 后，用下方地址完成连接。",
+      "detected": "检测到你局域网内的路由器：",
+      "open": "打开 {{addr}}",
+      "mint": "生成路由器连接地址",
+      "paste": "复制下面的地址，打开路由器面板的「设置」页粘贴：",
+      "copy": "复制"
+    },
+    "setup": {
+      "title": "连接专属线路",
+      "hint": "把在开途 App 或网页生成的路由器连接地址粘贴到下方，点击连接。",
+      "connect": "连接",
+      "ok": "已开始连接，稍候在状态页查看专属线路连接情况。",
+      "err": "连接地址无效，请确认已复制完整的地址。"
+    }
+  }
+}

@@ -196,7 +196,7 @@ func TestCookieAuth_ExpiredCookie_Returns401(t *testing.T) {
 		Execute(r)
 
 	resp, _ := ParseResponse(w)
-	assert.Equal(t, ErrorNotLogin, resp.Code,
+	assert.EqualValues(t, ErrorNotLogin, resp.Code,
 		"Expired Cookie should return 401")
 }
 
@@ -214,7 +214,7 @@ func TestCookieAuth_InvalidCookie_Returns401(t *testing.T) {
 		Execute(r)
 
 	resp, _ := ParseResponse(w)
-	assert.Equal(t, ErrorNotLogin, resp.Code,
+	assert.EqualValues(t, ErrorNotLogin, resp.Code,
 		"Tampered Cookie should return 401")
 }
 
@@ -228,7 +228,7 @@ func TestCookieAuth_NoCookie_Returns401(t *testing.T) {
 	w := NewTestRequest("GET", "/api/user/info").Execute(r)
 
 	resp, _ := ParseResponse(w)
-	assert.Equal(t, ErrorNotLogin, resp.Code,
+	assert.EqualValues(t, ErrorNotLogin, resp.Code,
 		"Request without authentication should return 401")
 }
 
@@ -269,7 +269,7 @@ func TestCSRF_POST_WithoutToken_Returns401(t *testing.T) {
 		Execute(r)
 
 	resp, _ := ParseResponse(w)
-	assert.Equal(t, ErrorNotLogin, resp.Code,
+	assert.EqualValues(t, ErrorNotLogin, resp.Code,
 		"SECURITY: POST without CSRF token should be rejected")
 }
 
@@ -306,7 +306,7 @@ func TestCSRF_POST_WithWrongToken_Returns401(t *testing.T) {
 		Execute(r)
 
 	resp, _ := ParseResponse(w)
-	assert.Equal(t, ErrorNotLogin, resp.Code,
+	assert.EqualValues(t, ErrorNotLogin, resp.Code,
 		"SECURITY: POST with wrong CSRF token should be rejected")
 }
 

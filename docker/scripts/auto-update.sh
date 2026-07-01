@@ -1,7 +1,7 @@
 #!/bin/bash
 # Auto-update k2 containers daily
-# Deployed via cron: 0 20 * * * /apps/kaitu-slave/auto-update.sh
-# 20:00 UTC = 04:00 Beijing time
+# Deployed via cron: 0 4 * * * /apps/k2s/auto-update.sh
+# 04:00 Beijing time (host TZ Asia/Singapore = UTC+8)
 #
 # What it does:
 #   1. Random delay 0-10 minutes (stagger across nodes)
@@ -13,7 +13,7 @@
 #   7. Verify sidecar healthy
 #   8. Slack notification on update or error (silent when no changes)
 
-COMPOSE_DIR="/apps/kaitu-slave"
+COMPOSE_DIR="/apps/k2s"
 LOG_FILE="${COMPOSE_DIR}/auto-update.log"
 MAX_LOG_SIZE=1048576  # 1MB
 SLACK_WEBHOOK="https://hooks.slack.com/services/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"
@@ -73,7 +73,7 @@ fi
 # --- Compare running container image IDs vs pulled :latest IDs ---
 # If any container uses an outdated image, trigger restart.
 NEEDS_RESTART=0
-for SVC_CONTAINER in "k2-sidecar:k2-sidecar" "k2v5:k2v5" "k2v4-slave:k2-slave"; do
+for SVC_CONTAINER in "k2-sidecar:k2-sidecar" "k2s:k2s"; do
     CONTAINER="${SVC_CONTAINER%%:*}"
     IMAGE="${SVC_CONTAINER##*:}"
     RUNNING_ID=$(docker inspect --format='{{.Image}}' "$CONTAINER" 2>/dev/null | cut -c8-19)
@@ -98,9 +98,9 @@ fi
 
 echo "Restarting containers..."
 
-# --- Snapshot k2v5 logs before destroying containers ---
-echo "--- Snapshotting k2v5 logs before down ---"
-SNAPSHOT_DIR="/var/log/k2v5-crashes"
+# --- Snapshot k2s logs before destroying containers ---
+echo "--- Snapshotting k2s logs before down ---"
+SNAPSHOT_DIR="/var/log/k2s-crashes"
 mkdir -p "$SNAPSHOT_DIR"
 SNAPSHOT_TS=$(date -u '+%Y%m%d-%H%M%S')
 SNAPSHOT_FILE="${SNAPSHOT_DIR}/snapshot-${SNAPSHOT_TS}.log"
@@ -109,11 +109,11 @@ SNAPSHOT_FILE="${SNAPSHOT_DIR}/snapshot-${SNAPSHOT_TS}.log"
     echo "Node: ${NODE_NAME}"
     echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo ""
-    echo "=== k2v5 container state ==="
-    docker inspect --format='ExitCode={{.State.ExitCode}} Status={{.State.Status}} StartedAt={{.State.StartedAt}} OOMKilled={{.State.OOMKilled}} RestartCount={{.RestartCount}}' k2v5 2>/dev/null || echo "(not running)"
+    echo "=== k2s container state ==="
+    docker inspect --format='ExitCode={{.State.ExitCode}} Status={{.State.Status}} StartedAt={{.State.StartedAt}} OOMKilled={{.State.OOMKilled}} RestartCount={{.RestartCount}}' k2s 2>/dev/null || echo "(not running)"
     echo ""
-    echo "=== k2v5 last 500 log lines ==="
-    docker logs --tail 500 --timestamps k2v5 2>&1 || echo "(no logs)"
+    echo "=== k2s last 500 log lines ==="
+    docker logs --tail 500 --timestamps k2s 2>&1 || echo "(no logs)"
 } > "$SNAPSHOT_FILE" 2>&1
 echo "Saved to $SNAPSHOT_FILE"
 

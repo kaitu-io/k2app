@@ -1,0 +1,58 @@
+{
+  "privateNode": {
+    "title": "Dedicated Node",
+    "manage": "Manage Dedicated Node",
+    "buyLine": "Buy a Dedicated Line",
+    "buy": "Get a Dedicated Node",
+    "region": "Node Region",
+    "selectRegion": "Select Region",
+    "ipTypeLabel": "IP Type",
+    "ipType": {
+      "residential": "Residential IP",
+      "non_residential": "Data Centre IP"
+    },
+    "traffic": "Traffic",
+    "trafficUsed": "{{used}} / {{total}} used",
+    "quota": "Traffic Quota",
+    "status": {
+      "title": "Status",
+      "pending": "Pending",
+      "provisioning": "Provisioning",
+      "active": "Active",
+      "grace": "Grace Period",
+      "suspended": "Suspended",
+      "deprovisioned": "Deprovisioned",
+      "failed": "Provisioning Failed"
+    },
+    "expiresAt": "Expires",
+    "graceHint": "Your node is in its grace period. Please renew soon to avoid suspension.",
+    "suspendedHint": "The node is suspended but its IP is retained. It will resume after renewal.",
+    "nodeIp": "Node IP",
+    "provisioningHint": "Your node is being provisioned. This usually takes a few minutes, please wait.",
+    "empty": "You don't have any dedicated nodes yet",
+    "renew": "Renew",
+    "percentUsed": "{{percent}}% used",
+    "quotaExhausted": {
+      "title": "Monthly traffic quota used up",
+      "resetHint": "Resets on {{date}}",
+      "resetUnknown": "Resets at the start of the next cycle",
+      "cta": "Renew / Upgrade quota"
+    },
+    "router": {
+      "title": "Add a Router",
+      "intro": "Install k2r on your OpenWrt router, then use the address below to finish connecting.",
+      "detected": "Routers detected on your local network:",
+      "open": "Open {{addr}}",
+      "mint": "Generate router connection address",
+      "paste": "Copy the address below and paste it into the Settings page of your router panel:",
+      "copy": "Copy"
+    },
+    "setup": {
+      "title": "Connect your private line",
+      "hint": "Paste the router connection address generated in the app or on the web below, then tap Connect.",
+      "connect": "Connect",
+      "ok": "Connecting started. Check the status page in a moment to see your private line.",
+      "err": "Invalid connection address. Please make sure you copied the full address."
+    }
+  }
+}

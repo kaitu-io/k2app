@@ -46,10 +46,11 @@ type ChangeIPOptions struct {
 
 // CreateInstanceOptions contains options for instance creation
 type CreateInstanceOptions struct {
-	Region  string
-	Plan    string // Instance plan/bundle ID
-	ImageID string // OS image ID
-	Name    string // Instance name
+	Region   string
+	Plan     string // Instance plan/bundle ID
+	ImageID  string // OS image ID
+	Name     string // Instance name
+	UserData string // cloud-init / 启动脚本（Lightsail 接受明文 UserData；其它 provider 忽略）
 }
 
 // RegionInfo describes an available region (returned by ListRegions)

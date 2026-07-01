@@ -12,10 +12,10 @@ import (
 )
 
 // tunnelProtocolsForQuery returns the set of DB protocols to query for a given
-// requested protocol. k2v5 front-door forwards ALL non-ECH traffic to the
-// appropriate backend (k2v4-slave) via local_routes SNI matching.
-// Therefore any k2-family client (k2, k2v4, k2wss) can connect through a
-// k2v5 node, and queries for those protocols must also return k2v5 tunnels.
+// requested protocol. k2v5 is the sole backend; it handles ECH traffic natively
+// and all unknown-SNI connections via the camouflage reverse proxy.
+// Legacy k2-family clients (k2, k2v4, k2wss) can connect through a k2v5 node,
+// so queries for those protocols must also return k2v5 tunnels.
 //
 // Rules:
 //   - k2, k2v4, k2wss → also include k2v5 tunnels
@@ -89,15 +89,13 @@ func api_k2_tunnels(c *gin.Context) {
 
 	log.Debugf(c, "found %d tunnels from database before filtering", len(tunnels))
 
-	// Collect all node IDs and IPs for batch queries
+	// Collect node IDs (load details) and node IPs (usage mirror, keyed by ipv4).
 	nodeIDs := make([]uint64, 0, len(tunnels))
 	nodeIPs := make([]string, 0, len(tunnels))
 	for _, tunnel := range tunnels {
 		if tunnel.Node != nil && tunnel.Node.ID != 0 {
 			nodeIDs = append(nodeIDs, tunnel.Node.ID)
-			if tunnel.Node.Ipv4 != "" {
-				nodeIPs = append(nodeIPs, tunnel.Node.Ipv4)
-			}
+			nodeIPs = append(nodeIPs, tunnel.Node.Ipv4)
 		}
 	}
 
@@ -105,8 +103,10 @@ func api_k2_tunnels(c *gin.Context) {
 	// Returns detailed metrics for evaluation (traffic, bandwidth, cloud tunnel status)
 	nodeLoadDetails := GetNodeLoadDetails(c, nodeIDs)
 
-	// Batch query CloudInstances by IP to get billing/traffic info
-	instanceMap := getCloudInstancesByIPs(nodeIPs)
+	// Batch query NodeUsage by ipv4 (node-authority metering mirror) for
+	// over-quota/offline hide + recommend-score source.
+	usageMap := getNodeUsagesByIPs(nodeIPs)
+	now := time.Now().Unix()
 
 	// Convert to API response format, filter out tunnels without nodes
 	items := make([]DataSlaveTunnel, 0, len(tunnels))
@@ -117,39 +117,35 @@ func api_k2_tunnels(c *gin.Context) {
 			continue
 		}
 
+		// Capability matrix (App→private ❌): private nodes are single-owner and
+		// reachable only through the gateway /api/subs path. They must never
+		// surface in the shared-pool /api/tunnels list, or one user's dedicated
+		// VPS (IP, country) would leak to every App user. This query does not
+		// filter by class at the DB layer (the slave_nodes JOIN aliasing trap,
+		// see 3e20b8e), so exclude in-memory here.
+		if tunnel.Node.Class == NodeClassPrivate {
+			continue
+		}
+
 		// Get load details from batch query result
 		details := NodeLoadDetails{Load: 100} // Default full load
 		if d, exists := nodeLoadDetails[tunnel.Node.ID]; exists {
 			details = d
 		}
 
-		// Hard-exclude over-quota cloud instances for non-admin users.
+		// Hard-exclude over-quota / offline nodes for non-admin users.
 		// Scoring already penalizes them, but pickWeighted can still land on
-		// a low-score node — and once AWS billing has tipped into overage
-		// every additional byte costs real money. Admin path stays open so
-		// over-quota nodes remain visible for triage.
-		instForFilter, hasInst := instanceMap[tunnel.Node.Ipv4]
-		var instPtr *CloudInstance
-		if hasInst {
-			instPtr = &instForFilter
-		}
-		if shouldHideTunnelForUser(instPtr, isAdmin) {
-			log.Warnf(c, "tunnel %d (node=%s, ip=%s) over quota, hiding from non-admin: used=%dB total=%dB",
-				tunnel.ID, tunnel.Node.Name, tunnel.Node.Ipv4,
-				instForFilter.TrafficUsedBytes, instForFilter.TrafficTotalBytes)
+		// a low-score node — and once billing has tipped into overage every
+		// additional byte costs real money. Admin path stays open so such
+		// nodes remain visible for triage.
+		u := usageMap[tunnel.Node.Ipv4] // nil if no usage row yet
+		if shouldHideTunnelForUser(u, isAdmin, now) {
+			log.Warnf(c, "tunnel %d (node=%s, ip=%s) hidden from non-admin (over-quota/offline)",
+				tunnel.ID, tunnel.Node.Name, tunnel.Node.Ipv4)
 			continue
 		}
 
-		nodeData := DataSlaveNode{
-			Name:                  tunnel.Node.Name,
-			Country:               tunnel.Node.Country,
-			Region:                tunnel.Node.Region,
-			Ipv4:                  tunnel.Node.Ipv4,
-			Ipv6:                  tunnel.Node.Ipv6,
-			Load:                  details.Load,
-			TrafficUsagePercent:   details.TrafficUsagePercent,
-			BandwidthUsagePercent: details.BandwidthUsagePercent,
-		}
+		nodeData := buildDataSlaveNode(tunnel.Node, details)
 
 		// Determine protocol for response
 		// Legacy API (/tunnels): always return "k2wss" for backward compatibility
@@ -170,10 +166,8 @@ func api_k2_tunnels(c *gin.Context) {
 			Node:         nodeData,
 		}
 
-		// Add instance data if CloudInstance found by IP
-		if hasInst {
-			item.Instance = buildTunnelInstanceData(instPtr)
-		}
+		// Instance scoring DTO from NodeUsage (nil usage → nil → neutral 0.5).
+		item.Instance = buildTunnelInstanceDataFromUsage(u)
 
 		// Top-level recommendScore — non-cloud nodes get the neutral 0.5 default
 		// from ComputeRecommendScore(nil), so UI doesn't need instance null checks.
@@ -219,56 +213,21 @@ func getECHConfigForTunnelResponse(ctx context.Context) string {
 	return base64.StdEncoding.EncodeToString(echConfigList)
 }
 
-// getCloudInstancesByIPs batch queries CloudInstances by IP addresses
-func getCloudInstancesByIPs(ips []string) map[string]CloudInstance {
-	result := make(map[string]CloudInstance)
-	if len(ips) == 0 {
-		return result
+// buildDataSlaveNode constructs the 8 common fields shared between the v1 and v2
+// tunnel response shapes. It intentionally does NOT set IPType — callers that want
+// it (v2, admin) set it explicitly after calling this helper. This keeps IPType
+// absent from v1 responses (omitempty on the field suppresses the zero value).
+func buildDataSlaveNode(node *SlaveNode, details NodeLoadDetails) DataSlaveNode {
+	return DataSlaveNode{
+		Name:                  node.Name,
+		Country:               node.Country,
+		Region:                node.Region,
+		Ipv4:                  node.Ipv4,
+		Ipv6:                  node.Ipv6,
+		Load:                  details.Load,
+		TrafficUsagePercent:   details.TrafficUsagePercent,
+		BandwidthUsagePercent: details.BandwidthUsagePercent,
 	}
-
-	var instances []CloudInstance
-	if err := db.Get().Where("ip_address IN ?", ips).Find(&instances).Error; err != nil {
-		return result
-	}
-
-	for _, inst := range instances {
-		result[inst.IPAddress] = inst
-	}
-	return result
-}
-
-// buildTunnelInstanceData constructs DataTunnelInstance from CloudInstance
-func buildTunnelInstanceData(inst *CloudInstance) *DataTunnelInstance {
-	if inst == nil {
-		return nil
-	}
-
-	// Calculate traffic ratio (0-1)
-	trafficRatio := 0.0
-	if inst.TrafficTotalBytes > 0 {
-		trafficRatio = float64(inst.TrafficUsedBytes) / float64(inst.TrafficTotalBytes)
-		if trafficRatio > 1 {
-			trafficRatio = 1
-		}
-	}
-
-	// Determine billing cycle end and calculate time ratio
-	billingCycleEndAt := inst.TrafficResetAt
-	if billingCycleEndAt == 0 {
-		billingCycleEndAt = inst.ExpiresAt
-	}
-
-	timeRatio := calculateTimeRatio(billingCycleEndAt)
-
-	d := &DataTunnelInstance{
-		TrafficTotalBytes: inst.TrafficTotalBytes,
-		TrafficRatio:      trafficRatio,
-		BillingCycleEndAt: billingCycleEndAt,
-		TimeRatio:         timeRatio,
-		BudgetScore:       trafficRatio - timeRatio,
-	}
-	d.RecommendScore = ComputeRecommendScore(d)
-	return d
 }
 
 // calculateTimeRatio calculates elapsed time ratio for a billing cycle

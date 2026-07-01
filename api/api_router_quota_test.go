@@ -22,48 +22,50 @@ func TestRouterQuotaHandlerExists(t *testing.T) {
 	var _ gin.HandlerFunc = api_router_quota
 }
 
-// TestRouterQuota_GatedByRouterRequired verifies that a basic-tier user (no router
-// entitlement) is rejected by RouterRequired before reaching the handler.
-//
-// Uses direct authContext injection before RouterRequired so this test exercises
-// the gate without a real DB or full auth chain. The handler itself (api_router_quota)
-// calls ReqUser + Quota() — those are tested separately via the DB-bound integration
-// tests in Task 11.
-func TestRouterQuota_GatedByRouterRequired(t *testing.T) {
+// 无线用户经 RouterRequired → ErrorPlanNoRouter（线路门控，与 tier 无关）。
+func TestRouterQuota_NoLineGated(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	u := routerReqTestUser(t, TierFamily, time.Now().Add(30*24*time.Hour).Unix()) // family 但无线
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-
-	// Inject a basic-tier user (MaxRouterDevice == 0 → no router entitlement).
-	// AuthRequired and ProRequired are skipped — we only need to verify
-	// RouterRequired blocks the request.
 	r.GET("/api/router/quota",
-		func(c *gin.Context) {
-			c.Set("authContext", &authContext{
-				UserID: 1,
-				// ExpiredAt set to future so IsExpired() returns false — we want to
-				// reach the MaxRouterDevice == 0 branch, not the expiry branch.
-				User: &User{ID: 1, Tier: TierBasic, ExpiredAt: time.Now().Add(30 * 24 * time.Hour).Unix()},
-			})
-			c.Next()
-		},
-		RouterRequired(),
-		api_router_quota,
-	)
-
+		func(c *gin.Context) { c.Set("authContext", &authContext{UserID: u.ID, User: u}); c.Next() },
+		RouterRequired(), api_router_quota)
 	w := httptest.NewRecorder()
-	req, err := http.NewRequest("GET", "/api/router/quota", nil)
-	require.NoError(t, err)
+	req, _ := http.NewRequest("GET", "/api/router/quota", nil)
 	r.ServeHTTP(w, req)
-
 	assert.Equal(t, http.StatusOK, w.Code)
-
 	var resp struct {
 		Code int `json:"code"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int(ErrorPlanNoRouter), resp.Code)
+}
 
-	// After Task 10, RouterRequired must emit ErrorPlanNoRouter (402001) for no-entitlement tier.
-	assert.Equal(t, int(ErrorPlanNoRouter), resp.Code,
-		"after Task 10, RouterRequired must emit ErrorPlanNoRouter (402001)")
+// 持线用户(即便 basic+共享过期) → 200 + 一账号一路由器 + 无限 LAN。
+func TestRouterQuota_LineOwnerUnlimitedLan(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	u := routerReqTestUser(t, TierBasic, time.Now().Add(-24*time.Hour).Unix())
+	createActivePrivateNodeSub(t, u.ID)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/api/router/quota",
+		func(c *gin.Context) { c.Set("authContext", &authContext{UserID: u.ID, User: u}); c.Next() },
+		RouterRequired(), api_router_quota)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/router/quota", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Code int                 `json:"code"`
+		Data routerQuotaResponse `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 0, resp.Code)
+	assert.Equal(t, 1, resp.Data.MaxRouterDevice)
+	assert.Equal(t, -1, resp.Data.MaxLanClient)
 }

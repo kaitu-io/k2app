@@ -25,6 +25,7 @@ type AdminNodeItem struct {
 	Region    string            `json:"region"`
 	Ipv4      string            `json:"ipv4"`
 	Ipv6      string            `json:"ipv6"`
+	IPType    string            `json:"ipType,omitempty"` // residential|non_residential|unknown (C2)
 	UpdatedAt int64             `json:"updatedAt"`
 	Tunnels   []AdminNodeTunnel `json:"tunnels"`
 }
@@ -59,7 +60,7 @@ func api_admin_list_nodes(c *gin.Context) {
 				ID:        t.ID,
 				Name:      t.Name,
 				Domain:    t.Domain,
-				Protocol:  string(t.Protocol),
+				Protocol:  ProtocolDisplay(t.Protocol), // C2: k2v5 → "k2s"
 				Port:      t.Port,
 				ServerURL: t.ServerURL,
 			})
@@ -72,6 +73,7 @@ func api_admin_list_nodes(c *gin.Context) {
 			Region:    node.Region,
 			Ipv4:      node.Ipv4,
 			Ipv6:      node.Ipv6,
+			IPType:    node.IPType, // C2: expose ip_type on admin node list
 			UpdatedAt: node.UpdatedAt.Unix(),
 			Tunnels:   tunnels,
 		})
@@ -86,6 +88,7 @@ type AdminUpdateNodeRequest struct {
 	Name    *string `json:"name" example:"US-Node-01"`
 	Country *string `json:"country" example:"US"`
 	Ipv6    *string `json:"ipv6" example:"2001:db8::1"`
+	IPType  *string `json:"ipType" example:"residential"`
 }
 
 func api_admin_update_node(c *gin.Context) {
@@ -121,11 +124,20 @@ func api_admin_update_node(c *gin.Context) {
 	if req.Ipv6 != nil {
 		updateData["ipv6"] = *req.Ipv6
 	}
+	if req.IPType != nil {
+		updateData["ip_type"] = NormalizeIPType(*req.IPType)
+	}
 
 	if len(updateData) > 0 {
 		if err := db.Get().Model(&node).Updates(updateData).Error; err != nil {
 			log.Errorf(c, "failed to update node %s: %v", nodeIPv4, err)
 			Error(c, ErrorSystemError, "failed to update node")
+			return
+		}
+		// Reload to reflect all updated fields (including ip_type).
+		if err := db.Get().Where("ipv4 = ?", nodeIPv4).First(&node).Error; err != nil {
+			log.Errorf(c, "failed to reload node %s after update: %v", nodeIPv4, err)
+			Error(c, ErrorSystemError, "failed to reload node")
 			return
 		}
 	}
@@ -139,6 +151,7 @@ func api_admin_update_node(c *gin.Context) {
 		Region:    node.Region,
 		Ipv4:      node.Ipv4,
 		Ipv6:      node.Ipv6,
+		IPType:    node.IPType,
 		Load:      0,
 		UpdatedAt: node.UpdatedAt.Unix(),
 	}

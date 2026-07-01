@@ -39,6 +39,9 @@ func loadTiersWithPlans(c *gin.Context, includeInactive bool) ([]TierWithPlans, 
 	q := db.Get().Where("tier IN ?", names)
 	if !includeInactive {
 		q = q.Where("is_active = ?", true)
+		// Tiers are an app-product concept. private_node plans reuse tier names
+		// but are a separate product — never surface them on the public endpoint.
+		q = q.Where("product = ?", ProductApp)
 	}
 
 	var plans []Plan

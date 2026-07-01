@@ -85,7 +85,11 @@ fetch-rules-embed:
 		echo "fetch-rules-embed: release embed verified full ($$sz bytes)"; \
 	fi
 
-pre-build: sync-version fetch-rules-embed
+.PHONY: fetch-embedded-seed
+fetch-embedded-seed:
+	@node scripts/gen-embedded-seed.js || echo "fetch-embedded-seed: skipped (CDN/dist unreachable) — using committed floor"
+
+pre-build: sync-version fetch-rules-embed fetch-embedded-seed
 	mkdir -p webapp/public
 	echo '{"version":"$(VERSION)","commit":"$(K2_COMMIT)"}' > webapp/public/version.json
 

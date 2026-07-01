@@ -264,15 +264,15 @@ func TestBuildECHConfigList(t *testing.T) {
 	})
 }
 
-func TestBuildTunnelInstanceData_BudgetScore(t *testing.T) {
+func TestBuildTunnelInstanceDataFromUsage_BudgetScore(t *testing.T) {
 	t.Run("computes budgetScore as trafficRatio minus timeRatio", func(t *testing.T) {
 		now := time.Now().Unix()
-		inst := &CloudInstance{
-			TrafficUsedBytes:  500,
-			TrafficTotalBytes: 1000,
-			TrafficResetAt:    now + 15*86400,
+		u := &NodeUsage{
+			UsedBytes:       500,
+			QuotaTotalBytes: 1000,
+			Epoch:           now + 15*86400,
 		}
-		result := buildTunnelInstanceData(inst)
+		result := buildTunnelInstanceDataFromUsage(u)
 		require.NotNil(t, result)
 
 		expected := result.TrafficRatio - result.TimeRatio
@@ -281,36 +281,36 @@ func TestBuildTunnelInstanceData_BudgetScore(t *testing.T) {
 	})
 
 	t.Run("returns nil for nil input", func(t *testing.T) {
-		result := buildTunnelInstanceData(nil)
+		result := buildTunnelInstanceDataFromUsage(nil)
 		assert.Nil(t, result)
 	})
 
 	t.Run("unlimited traffic has zero trafficRatio", func(t *testing.T) {
 		now := time.Now().Unix()
-		inst := &CloudInstance{
-			TrafficUsedBytes:  999,
-			TrafficTotalBytes: 0,
-			TrafficResetAt:    now + 15*86400,
+		u := &NodeUsage{
+			UsedBytes:       999,
+			QuotaTotalBytes: 0,
+			Epoch:           now + 15*86400,
 		}
-		result := buildTunnelInstanceData(inst)
+		result := buildTunnelInstanceDataFromUsage(u)
 		require.NotNil(t, result)
 		assert.Equal(t, 0.0, result.TrafficRatio)
 		assert.LessOrEqual(t, result.BudgetScore, 0.0)
 	})
 }
 
-// TestBuildTunnelInstanceData_PopulatesRecommendScore asserts the single-source
-// invariant: whatever BudgetScore the helper ends up with must be projected into
-// RecommendScore via ComputeRecommendScore in the same call. Callers (handlers,
-// batch builders) should never have to do this themselves.
-func TestBuildTunnelInstanceData_PopulatesRecommendScore(t *testing.T) {
+// TestBuildTunnelInstanceDataFromUsage_PopulatesRecommendScore asserts the
+// single-source invariant: whatever BudgetScore the helper ends up with must be
+// projected into RecommendScore via ComputeRecommendScore in the same call.
+// Callers (handlers, batch builders) should never have to do this themselves.
+func TestBuildTunnelInstanceDataFromUsage_PopulatesRecommendScore(t *testing.T) {
 	now := time.Now().Unix()
-	inst := &CloudInstance{
-		TrafficUsedBytes:  600,
-		TrafficTotalBytes: 1000,
-		TrafficResetAt:    now + 15*86400, // ~15 days into a 30-day cycle
+	u := &NodeUsage{
+		UsedBytes:       600,
+		QuotaTotalBytes: 1000,
+		Epoch:           now + 15*86400, // ~15 days into a 30-day cycle
 	}
-	result := buildTunnelInstanceData(inst)
+	result := buildTunnelInstanceDataFromUsage(u)
 	require.NotNil(t, result)
 
 	// RecommendScore must equal the canonical ComputeRecommendScore of the same

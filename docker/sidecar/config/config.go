@@ -20,10 +20,19 @@ type K2CenterConfig struct {
 	Timeout string `yaml:"timeout" default:"10s"`
 	Secret  string `yaml:"secret"` // Node authentication secret (required)
 
+	// PrivateClaim is the one-time private-node activation token (K2_PRIVATE_CLAIM),
+	// injected via cloud-init and echoed back to Center on node registration.
+	// Empty for shared-pool nodes.
+	PrivateClaim string `yaml:"private_claim"`
+
 	// Metrics reporting (used by sidecar)
 	ReportInterval   string `yaml:"report_interval" default:"120s"`
 	BillingStartDate string `yaml:"billing_start_date"`
 	TrafficLimitGB   int64  `yaml:"traffic_limit_gb"`
+	// TrafficUsedGB seeds the cycle baseline on first boot (mid-cycle onboarding):
+	// declares how much was already used so the meter doesn't start at 0. Applied
+	// once when no persisted state exists; adjust later via `k2-sidecar set-usage`.
+	TrafficUsedGB int64 `yaml:"traffic_used_gb"`
 }
 
 // TunnelSectionConfig holds tunnel-specific configuration
@@ -39,11 +48,12 @@ type TunnelSectionConfig struct {
 
 // NodeSectionConfig holds node identity configuration
 type NodeSectionConfig struct {
-	IPv4    string `yaml:"ipv4"`                 // Node IPv4 address (optional, auto-detected)
-	IPv6    string `yaml:"ipv6"`                 // Node IPv6 address (optional, auto-detected)
-	Name    string `yaml:"name"`                 // Node display name (optional, defaults to IPv4)
-	Country string `yaml:"country" default:"US"` // Country code (optional, auto-detected)
-	Region  string `yaml:"region"`               // Server region/datacenter (optional, defaults to country)
+	IPv4    string `yaml:"ipv4"`                          // Node IPv4 address (optional, auto-detected)
+	IPv6    string `yaml:"ipv6"`                          // Node IPv6 address (optional, auto-detected)
+	Name    string `yaml:"name"`                          // Node display name (optional, defaults to IPv4)
+	Country string `yaml:"country" default:"US"`          // Country code (optional, auto-detected)
+	Region  string `yaml:"region"`                        // Server region/datacenter (optional, defaults to country)
+	IPType  string `yaml:"ip_type" default:"unknown"`     // IP type: residential, non_residential, unknown
 }
 
 // RelaySectionConfig holds relay-specific configuration
@@ -88,20 +98,11 @@ type Config struct {
 	// Keys file is managed by sidecar, k2-slave only reads from it
 	ECH ECHSectionConfig `yaml:"ech"`
 
-	// SNI local routing rules (higher priority than Center lookup)
-	// Format: domain -> target (e.g., "*.example.com" -> "k2v4:443")
-	// Use "LOCAL" as target to indicate local handling
-	LocalRoutes map[string]string `yaml:"local_routes"`
-
 	// Test node flag (used by sidecar for tunnel registration)
 	TestNode bool `yaml:"test_node"`
 
-	// Config directory (sidecar writes certs here, k2-slave reads from here)
+	// Config directory (sidecar writes certs here, k2v5 reads from here)
 	ConfigDir string `yaml:"config_dir" default:"/etc/kaitu"`
-
-	// K2V4Port is the port k2v4 server listens on (default: "8443")
-	// Used in k2v5-config.yaml local_routes
-	K2V4Port string `yaml:"k2v4_port" default:"8443"`
 }
 
 var (
@@ -169,13 +170,7 @@ func loadConfig() *Config {
 		slog.Info("No config file found, using defaults", "component", "config")
 	}
 
-	// 3. Override K2V4Port from environment if set
-	if envPort := os.Getenv("K2V4_PORT"); envPort != "" {
-		cfg.K2V4Port = envPort
-		slog.Info("Read K2V4_PORT from env", "component", "config", "port", cfg.K2V4Port)
-	}
-
-	// 4. If K2 enabled, must get IPv4 address (from config or auto-detect)
+	// 3. If K2 enabled, must get IPv4 address (from config or auto-detect)
 	if cfg.K2Center.Enabled {
 		// Read jump port configuration from environment variables
 		if envHopPortStart := os.Getenv("K2_JUMP_PORT_MIN"); envHopPortStart != "" {
@@ -189,6 +184,10 @@ func loadConfig() *Config {
 				cfg.Tunnel.HopPortEnd = port
 				slog.Info("Read hop_port_end from env", "component", "config", "port", cfg.Tunnel.HopPortEnd)
 			}
+		}
+		if v := os.Getenv("K2_IP_TYPE"); v != "" {
+			cfg.Node.IPType = v
+			slog.Info("Read ip_type from env", "component", "config", "ip_type", v)
 		}
 
 		var ipData sidecar.IPData
@@ -279,8 +278,8 @@ func findConfigFile() string {
 	configNames := []string{
 		"config.yml",
 		"config.yaml",
-		"kaitu-slave.yml",
-		"kaitu-slave.yaml",
+		"k2s.yml",
+		"k2s.yaml",
 	}
 
 	for _, name := range configNames {

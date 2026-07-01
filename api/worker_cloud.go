@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -181,8 +182,18 @@ func syncSSHStandalone(ctx context.Context, database *gorm.DB) error {
 
 	log.Infof(ctx, "[CLOUD] Found %d orphan SlaveNodes for ssh_standalone", len(instances))
 
-	// Track synced instance IDs for orphan detection
-	syncedIDs := make(map[string]bool)
+	// Build syncedIDs from ALL active SlaveNode IPs, not just orphans.
+	// ssh_standalone uses IPv4 as instance_id. Without this, markOrphanedInstances
+	// would delete records for nodes that have an active CloudInstance (those nodes
+	// are excluded from ListInstances and would never appear in syncedIDs).
+	var allNodes []SlaveNode
+	if err := database.Select("ipv4").Where("deleted_at IS NULL").Find(&allNodes).Error; err != nil {
+		log.Errorf(ctx, "[CLOUD] Failed to list all slave nodes for orphan detection: %v", err)
+	}
+	syncedIDs := make(map[string]bool, len(allNodes))
+	for _, node := range allNodes {
+		syncedIDs[node.Ipv4] = true
+	}
 
 	for _, inst := range instances {
 		if err := upsertCloudInstance(ctx, CloudInstanceAccount{
@@ -191,10 +202,9 @@ func syncSSHStandalone(ctx context.Context, database *gorm.DB) error {
 		}, inst); err != nil {
 			log.Errorf(ctx, "[CLOUD] Failed to upsert instance %s: %v", inst.InstanceID, err)
 		}
-		syncedIDs[inst.InstanceID] = true
 	}
 
-	// Orphan detection: mark instances that no longer exist as deleted
+	// Orphan detection: mark instances whose SlaveNode no longer exists
 	if err := markOrphanedInstances(ctx, CloudInstanceAccount{
 		Provider: cloudprovider.ProviderSSHStandalone,
 		Name:     "ssh_standalone",
@@ -291,39 +301,60 @@ func markOrphanedInstances(ctx context.Context, account CloudInstanceAccount, sy
 func upsertCloudInstance(ctx context.Context, account CloudInstanceAccount, status *cloudprovider.InstanceStatus) error {
 	now := time.Now().Unix()
 
-	instance := CloudInstance{
-		Provider:          account.Provider,
-		AccountName:       account.Name,
-		InstanceID:        status.InstanceID,
-		Name:              status.Name,
-		IPAddress:         status.IPAddress,
-		IPv6Address:       status.IPv6Address,
-		Region:            status.Region,
-		TrafficUsedBytes:  status.TrafficUsedBytes,
-		TrafficTotalBytes: status.TrafficTotalBytes,
-		TrafficResetAt:    status.TrafficResetAt.Unix(),
-		ExpiresAt:         status.ExpiresAt.Unix(),
-		LastSyncedAt:      now,
-		SyncError:         "",
+	updates := map[string]any{
+		"account_name":        account.Name,
+		"name":                status.Name,
+		"ip_address":          status.IPAddress,
+		"ipv6_address":        status.IPv6Address,
+		"region":              status.Region,
+		"traffic_used_bytes":  status.TrafficUsedBytes,
+		"traffic_total_bytes": status.TrafficTotalBytes,
+		"traffic_reset_at":    status.TrafficResetAt.Unix(),
+		"expires_at":          status.ExpiresAt.Unix(),
+		"last_synced_at":      now,
+		"sync_error":          "",
+		"deleted_at":          gorm.Expr("NULL"), // restore if soft-deleted
 	}
 
-	// Upsert using provider + instance_id as unique key
-	err := db.Get().Where("provider = ? AND instance_id = ?", account.Provider, status.InstanceID).
-		Assign(map[string]any{
-			"account_name":        instance.AccountName,
-			"name":                instance.Name,
-			"ip_address":          instance.IPAddress,
-			"ipv6_address":        instance.IPv6Address,
-			"region":              instance.Region,
-			"traffic_used_bytes":  instance.TrafficUsedBytes,
-			"traffic_total_bytes": instance.TrafficTotalBytes,
-			"traffic_reset_at":    instance.TrafficResetAt,
-			"expires_at":          instance.ExpiresAt,
-			"last_synced_at":      instance.LastSyncedAt,
-			"sync_error":          "",
-		}).FirstOrCreate(&instance).Error
+	// Use Unscoped so soft-deleted records are visible. Without this, FirstOrCreate
+	// would miss a soft-deleted row and INSERT would fail with UNIQUE constraint.
+	var instance CloudInstance
+	err := db.Get().Unscoped().
+		Where("provider = ? AND instance_id = ?", account.Provider, status.InstanceID).
+		First(&instance).Error
 
-	if err != nil {
+	if err == nil {
+		// Record found (possibly soft-deleted) — restore and update in place.
+		// 私有节点：卖出配额 + 自计量用量 + Center epoch 周期为权威，provider 报的是 VPS
+		// bundle，traffic 字段全部跳过。只有已存在的记录可能 private（新 INSERT 无链接）。
+		if isPrivateCloudInstance(instance.ID) {
+			delete(updates, "traffic_total_bytes")
+			delete(updates, "traffic_used_bytes")
+			delete(updates, "traffic_reset_at")
+		}
+		if err := db.Get().Unscoped().Model(&instance).Updates(updates).Error; err != nil {
+			return err
+		}
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Truly new — create
+		if err := db.Get().Create(&CloudInstance{
+			Provider:          account.Provider,
+			AccountName:       account.Name,
+			InstanceID:        status.InstanceID,
+			Name:              status.Name,
+			IPAddress:         status.IPAddress,
+			IPv6Address:       status.IPv6Address,
+			Region:            status.Region,
+			TrafficUsedBytes:  status.TrafficUsedBytes,
+			TrafficTotalBytes: status.TrafficTotalBytes,
+			TrafficResetAt:    status.TrafficResetAt.Unix(),
+			ExpiresAt:         status.ExpiresAt.Unix(),
+			LastSyncedAt:      now,
+			SyncError:         "",
+		}).Error; err != nil {
+			return err
+		}
+	} else {
 		return err
 	}
 
@@ -332,6 +363,41 @@ func upsertCloudInstance(ctx context.Context, account CloudInstanceAccount, stat
 		status.TrafficUsedBytes, status.TrafficTotalBytes)
 
 	return nil
+}
+
+// isPrivateCloudInstance reports whether a CloudInstance is owned by a dedicated-line
+// subscription. Private nodes self-meter usage and carry a sold quota; provider sync
+// reports only the VPS bundle, so its traffic figures must never overwrite theirs.
+func isPrivateCloudInstance(ciID uint64) bool {
+	if ciID == 0 {
+		return false
+	}
+	// Only count subscriptions whose status still implies ownership of the
+	// instance. The deprovision transition sets status to deprovisioned but
+	// never clears cloud_instance_id, so a terminal (deprovisioned/failed)
+	// line's link lingers forever — if the instance is later recycled to the
+	// shared pool we must NOT keep skipping its traffic fields. Exclude
+	// terminal statuses so a recycled instance gets provider data again.
+	owningStatuses := []string{
+		PNStatusPending,
+		PNStatusProvisioning,
+		PNStatusActive,
+		PNStatusGrace,
+		PNStatusSuspended,
+	}
+	var count int64
+	if err := db.Get().Model(&PrivateNodeSubscription{}).
+		Where("cloud_instance_id = ? AND status IN ?", ciID, owningStatuses).
+		Count(&count).Error; err != nil {
+		// Fail closed: on a DB error we cannot prove the instance is NOT
+		// private, so assume it is and skip provider traffic sync. Overwriting
+		// a private node's sold quota with the raw VPS bundle figures is the
+		// bug this guard exists to prevent, so the conservative choice is to
+		// protect rather than risk clobbering it.
+		log.Errorf(context.Background(), "isPrivateCloudInstance count failed for ci=%d: %v", ciID, err)
+		return true
+	}
+	return count > 0
 }
 
 func handleCloudChangeIP(ctx context.Context, payload []byte) error {

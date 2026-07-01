@@ -18,7 +18,7 @@ import (
 
 // SelfSignedCertConfig holds configuration for generating self-signed certificates
 type SelfSignedCertConfig struct {
-	// CommonName is the CN for the certificate (e.g., "kaitu-slave")
+	// CommonName is the CN for the certificate (e.g., "k2s")
 	CommonName string
 	// Organization is the O for the certificate
 	Organization string
@@ -39,7 +39,7 @@ func GenerateSelfSignedCert(config *SelfSignedCertConfig) (*TunnelCertificate, e
 
 	// Set defaults
 	if config.CommonName == "" {
-		config.CommonName = "kaitu-slave"
+		config.CommonName = "k2s"
 	}
 	if config.Organization == "" {
 		config.Organization = "Kaitu Self-Hosted"
@@ -205,7 +205,7 @@ func isCertificateValid(cert *TunnelCertificate) bool {
 func GetDefaultCertDir() string {
 	exePath, err := os.Executable()
 	if err != nil {
-		return "/etc/kaitu-slave/certs"
+		return "/etc/k2s/certs"
 	}
 	return filepath.Join(filepath.Dir(exePath), "certs")
 }

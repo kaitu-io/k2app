@@ -285,6 +285,26 @@ export interface IAppListProvider {
 
 // ==================== 核心接口 ====================
 
+/** Antiblock 中继：节点描述符 + 要发往 Center 的 HTTP 请求
+ * (承接契约纪律 — 走 _k2.run，不放 _platform/新全局) */
+export interface RelayRequest {
+  ip: string;
+  port?: number;          // 默认 443
+  pin: string;            // sha256:<rsa>,sha256:<ec>
+  ech: string;            // base64 ECH 配置（必需）
+  centerHost: string;     // 内层 SNI + Host（如 k2.52j.me）
+  method: string;
+  path: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+export interface RelayResponse {
+  status: number;
+  headers?: Record<string, string[]>;
+  body: string;
+}
+
 /**
  * IK2Vpn - VPN-only global interface
  *
@@ -294,6 +314,7 @@ export interface IAppListProvider {
  *
  * Supported actions:
  * - up, down, status, version
+ * - classify-apps (App Bypass), relay-fetch (antiblock control-plane relay)
  */
 export interface IK2Vpn {
   /**
@@ -308,6 +329,9 @@ export interface IK2Vpn {
    * await window._k2.run('down')
    * await window._k2.run('status')
    */
+  // Antiblock relay: send one control-plane HTTP request through a camouflage node
+  run(action: 'relay-fetch', params: RelayRequest): Promise<SResponse<RelayResponse>>;
+  // Generic fallback (adb-* and other dynamic actions / progressive migration)
   run<T = any>(action: string, params?: any): Promise<SResponse<T>>;
 
   /**

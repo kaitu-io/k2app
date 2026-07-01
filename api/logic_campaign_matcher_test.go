@@ -52,6 +52,9 @@ func TestGetCampaignMatcherWithDB_All(t *testing.T) {
 	assert.True(t, matcher(context.Background(), &User{ID: 1}, nil), "'all' matcher should always return true")
 }
 
+// first_order matches NEW customers — users who have not yet completed a first
+// (paid) order. This is the meaning the name and the admin label ("新客") imply.
+// The already-paid case is served by the "vip" matcher (see mirror test below).
 func TestGetCampaignMatcherWithDB_FirstOrder(t *testing.T) {
 	matcher := getCampaignMatcherWithDB(nil, "first_order", "")
 	assert.NotNil(t, matcher)
@@ -59,7 +62,30 @@ func TestGetCampaignMatcherWithDB_FirstOrder(t *testing.T) {
 	done := true
 	notDone := false
 
-	assert.True(t, matcher(context.Background(), &User{IsFirstOrderDone: &done}, nil))
-	assert.False(t, matcher(context.Background(), &User{IsFirstOrderDone: &notDone}, nil))
-	assert.False(t, matcher(context.Background(), &User{IsFirstOrderDone: nil}, nil))
+	// New customer (first order not done, or never recorded) → matches.
+	assert.True(t, matcher(context.Background(), &User{IsFirstOrderDone: &notDone}, nil),
+		"first_order should match a user who has not completed their first order")
+	assert.True(t, matcher(context.Background(), &User{IsFirstOrderDone: nil}, nil),
+		"first_order should treat a nil flag as a new customer")
+	// Already-paid customer → does NOT match (that's what "vip" is for).
+	assert.False(t, matcher(context.Background(), &User{IsFirstOrderDone: &done}, nil),
+		"first_order should not match a user who already completed a first order")
+}
+
+// vip is the mirror of first_order: it matches already-paid customers and is used
+// for renewal / win-back campaigns. Kept as a regression guard so the two matchers
+// can never silently collapse into the same meaning again.
+func TestGetCampaignMatcherWithDB_Vip(t *testing.T) {
+	matcher := getCampaignMatcherWithDB(nil, "vip", "")
+	assert.NotNil(t, matcher)
+
+	done := true
+	notDone := false
+
+	assert.True(t, matcher(context.Background(), &User{IsFirstOrderDone: &done}, nil),
+		"vip should match a user who already completed a first order")
+	assert.False(t, matcher(context.Background(), &User{IsFirstOrderDone: &notDone}, nil),
+		"vip should not match a new customer")
+	assert.False(t, matcher(context.Background(), &User{IsFirstOrderDone: nil}, nil),
+		"vip should not match a user with a nil flag")
 }

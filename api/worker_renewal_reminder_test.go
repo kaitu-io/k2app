@@ -1,9 +1,12 @@
 package center
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
+
+	db "github.com/wordgate/qtoolkit/db"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -204,6 +207,95 @@ func TestGetUserEmailFromIdentifies(t *testing.T) {
 	// 没有 LoginIdentifies 时返回空
 	user := User{}
 	assert.Equal(t, "", getUserEmailFromIdentifies(&user))
+}
+
+// TestProcessPrivateNodeRenewalReminders 验证专属节点续费提醒：必须找到 ExpiresAt
+// 落在 now+daysBefore 的 UTC 当日窗口内的 active 订阅，从 LoginIdentifies
+// 解析主人邮箱，并经 SendTemplatedEmails 路由。是否真实发送取决于 dev 是否存在 EDM 模板
+// private-node-renewal-7d；无论如何 query + email-resolve 路径都要跑通，订阅必须被计入
+// (sent+skipped >= 1)、不 panic 且 failed == 0。集成测试，跑真实 dev MySQL。
+func TestProcessPrivateNodeRenewalReminders(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	nowUTC := time.Now().UTC()
+	// startOfUTCday(now+7d) + 12h（UTC 正午）→ 稳落在生产代码同款 UTC 当日窗口内，
+	// 不会随运行时刻漂过日界。
+	target := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC).
+		AddDate(0, 0, 7).Add(12 * time.Hour)
+	expiresAt := target.Unix()
+
+	// 生产代码在任何 DB 扫描前用 templateSlugExists(slug) 早返（镜像共享路径）。
+	// 要验证 query + email-resolve 路径，模板必须存在，否则函数在碰订阅前就 (0,0,0) 返回。
+	// slug 有 uniqueIndex：若 dev 已有真模板则复用、不删；仅当本测试自建时才清理。
+	const tplSlug = "private-node-renewal-7d"
+	if !templateSlugExists(tplSlug) {
+		active := true
+		tpl := &EmailMarketingTemplate{
+			Name:     "pn-renewal-7d-test",
+			Slug:     tplSlug,
+			Language: "zh-CN",
+			Subject:  "专属节点续费提醒",
+			Content:  "<p>test</p>",
+			IsActive: &active,
+		}
+		require.NoError(t, db.Get().Create(tpl).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(tpl) })
+	}
+
+	// 固定 OrderID 段 9_601_001..9_601_003 — 预清残留
+	// (order_id uniqueIndex，陈旧行会让重跑致命)。
+	for oid := uint64(9_601_001); oid <= 9_601_003; oid++ {
+		db.Get().Unscoped().Where("order_id = ?", oid).Delete(&PrivateNodeSubscription{})
+	}
+
+	// 建一个带 email login_identify 的真实用户。
+	user := User{
+		UUID:     "usr-pn-renewal-" + nowUTC.Format("20060102150405.000000"),
+		Language: "zh-CN",
+	}
+	require.NoError(t, db.Get().Create(&user).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	// secretDecryptString 当前是 TODO identity stub，明文直接放 EncryptedValue
+	// (镜像 password 测试的 seeding 模式)。
+	email := "pn-renewal-" + nowUTC.Format("150405.000000") + "@example.com"
+	identify := LoginIdentify{
+		UserID:         user.ID,
+		Type:           "email",
+		IndexID:        email + "-idx",
+		EncryptedValue: email,
+	}
+	require.NoError(t, db.Get().Create(&identify).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&identify) })
+
+	sub := &PrivateNodeSubscription{
+		UserID:            user.ID,
+		PlanID:            961000,
+		OrderID:           9_601_001,
+		Region:            "us-east-1",
+		IPType:            IPTypeNonResidential,
+		TrafficTotalBytes: 2 << 40,
+		Status:            PNStatusActive,
+		PurchasedAt:       nowUTC.Unix(),
+		ExpiresAt:         expiresAt,
+	}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() {
+		db.Get().Unscoped().Where("order_id = ?", sub.OrderID).Delete(&PrivateNodeSubscription{})
+	})
+
+	sent, skipped, failed := processPrivateNodeRenewalReminders(context.Background(), 7)
+
+	// 要点：query + email-resolve 路径跑通且把我们的 sub 计入。真实发送取决于 dev 模板
+	// 是否存在；不存在则降级为 skipped —— 无论如何 sent+skipped >= 1。
+	assert.GreaterOrEqual(t, sent+skipped, 1,
+		"窗口内的 sub 必须 sent 或 skipped (sent=%d skipped=%d failed=%d)",
+		sent, skipped, failed)
+	// failed 必须为 0：守住"每个 sub 都 email-resolve 失败"这类静默回归。
+	assert.Equal(t, 0, failed,
+		"email-resolve 路径不应失败 (sent=%d skipped=%d failed=%d)",
+		sent, skipped, failed)
 }
 
 // TestHandlerDispatch 验证 handleRenewalReminderTask 的分发逻辑

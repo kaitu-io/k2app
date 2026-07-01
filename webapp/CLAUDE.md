@@ -148,11 +148,13 @@ Frontend uses two separate globals injected before app loads. They have distinct
 
 ### VPN Actions (via window._k2.run)
 
-`up`, `down`, `status`, `version`
+`up`, `down`, `status`, `version`, `classify-apps` (App Bypass), `relay-fetch` (antiblock control-plane relay through a camouflage node)
 
 ### API Calls (via cloudApi / k2api)
 
 Cloud API calls go through `cloudApi.request()` which handles auth headers and token refresh. The `k2api()` wrapper adds caching and SWR support. Auth success/failure/401/402 side effects are handled by k2api.
+
+**Antiblock relay transport (Phase 3):** `cloudApi.request()`/`_doRefresh()` resolve transport via `resolve-and-fetch.ts` — **relay-first, direct-fallback**: it relays the request through a camouflage VPN node via `_k2.run('relay-fetch')` (control-plane inner SNI fixed to `k2.52j.me`, must match node-side `control_plane_routes`) and only on relay failure falls back to a direct `fetch()` (5s probe) to the control-plane host. Relay is primary because that path is identical for blocked and unblocked clients (so external testing represents in-region behaviour); direct is the safety net and the only path on web/mobile, where relay is unsupported — detected when `relay-fetch` returns `code:-1` (capacitor / daemon-less standalone / daemon down), which flips a session-scoped `isRelaySupported()` flag so subsequent requests skip the doomed relay attempt. Node faults return `code:502` and trigger node-failover (not capability-downgrade). `entry-pool.ts` is a persistent, scored, node-only pool seeded from every successful `/api/tunnels` response (`node-descriptor.ts` extracts `{ip,pin,ech}` from each tunnel's `serverUrl`) plus the antiblock cold-start seed (`antiblock-seed.ts` embedded floor + galloping CDN refresh). 401 refresh atomicity stays in `cloud-api.ts` — the transport never handles 401 (relay passes non-2xx through verbatim). Mobile relay is unsupported until Phase 2b.
 
 ---
 

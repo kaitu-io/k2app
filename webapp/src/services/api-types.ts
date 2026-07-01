@@ -130,6 +130,17 @@ export interface UpdateInviteCodeRemarkRequest {
   remark: string; // 新的备注
 }
 
+// 套餐种类: 共享订阅 vs 专属节点
+export type PlanProduct = 'app' | 'private_node';
+
+// 专属节点套餐的购买可见参数（仅 product=private_node 的套餐附带）
+export interface PrivateNodePlanSpec {
+  provider: string; // 云厂商，如 "aws_lightsail"
+  ipType: 'residential' | 'non_residential'; // IP 类型
+  allowedRegions: string[]; // 购买时可选地区
+  trafficTotalBytes: number; // 流量配额
+}
+
 // 套餐信息
 export interface Plan {
   pid: string; // 套餐ID，如 "family-1y", "family-2y"
@@ -142,12 +153,44 @@ export interface Plan {
   maxDevice: number; // app 设备上限 (0=default 5)
   maxRouterDevice: number; // 路由器登录上限 (0=不支持, 1=支持)
   maxLanClient: number; // LAN 接入上限 (0=不支持, -1=无限, >0=精确值)
+  product: PlanProduct; // 套餐所属产品线，Center 始终下发
+  privateNode?: PrivateNodePlanSpec; // 仅 private_node 套餐附带
+}
+
+// 专属节点已开通节点的连接可见信息（未开通时缺省）
+export interface PrivateNodeNode {
+  ip: string; // 节点 IP
+  region: string; // 节点地区
+}
+
+// 用户视角的专属节点订阅只读视图（GET /api/user/private-nodes）
+export interface PrivateNodeSubscriptionView {
+  id: number;
+  status: 'pending' | 'provisioning' | 'active' | 'grace' | 'suspended' | 'deprovisioned' | 'failed';
+  isServiceable: boolean; // 当前是否在服务（含宽限期）
+  region: string; // 选定地区（开通前即知）
+  ipType: string;
+  trafficTotalBytes: number; // 配额（订阅快照）
+  trafficUsedBytes: number; // 已用（来自 CloudInstance，未开通=0）
+  purchasedAt: number;
+  expiresAt: number;
+  graceUntil: number;
+  suspendUntil: number;
+  planLabel: string;
+  quotaExhausted: boolean; // 本月额度用尽（与 isServiceable 正交）
+  quotaResetAt?: number; // 配额重置时刻（Unix 秒，未知=0/缺省）
+  node?: PrivateNodeNode; // 已开通才有
+}
+
+export interface PrivateNodeListResponse {
+  items: PrivateNodeSubscriptionView[];
 }
 
 export interface CreateOrderRequest {
   preview: boolean; // 是否预览
   plan: string; // 套餐ID
   campaignCode?: string; // 优惠码（可选）
+  region?: string; // 专属节点购买时选定地区（仅 private_node 套餐，shared 留空）
 }
 
 // 物理节点信息
@@ -185,9 +228,9 @@ export interface Tunnel {
   id: number; // 隧道ID
   domain: string; // 隧道域名（仅用于 SNI/TLS）
   name: string; // 隧道名称
-  protocol: string; // 隧道协议 (k2v4, k2v5)
+  protocol: string; // 隧道协议 (k2s, k2v4, k2v5)
   port: number; // 隧道端口
-  serverUrl?: string; // k2v5 connection URL (only present for k2v5 tunnels)
+  serverUrl?: string; // k2v5 connection URL (only present for k2v5/k2s tunnels)
   node: SlaveNode; // 关联的物理节点
   instance?: TunnelInstance; // Cloud instance data (only for cloud-managed nodes)
   /**
@@ -197,6 +240,8 @@ export interface Tunnel {
    * budgetScore; this field is the single source of truth.
    */
   recommendScore: number;
+  /** IP type of the underlying node. 'residential' triggers the 住宅IP chip in CloudTunnelList. */
+  ipType?: string; // 'residential' | 'non_residential' | 'unknown'
 }
 
 // 隧道列表响应

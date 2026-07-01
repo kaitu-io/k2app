@@ -101,13 +101,18 @@ func SetupRouter() *gin.Engine {
 		// Get tunnel list
 		api.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
 		api.GET("/tunnels/:protocol", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
+		// v20260717: clean tunnels endpoint — protocol="k2s", ipType, serverUrl=k2v5://, no echConfigList
+		v20260717 := api.Group("/v20260717")
+		v20260717.GET("/tunnels", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_v20260717_tunnels)
 		// k2subs subscription endpoint — Basic Auth (udid:token) validated inside handler,
 		// because k2 engine sends Basic Auth, not the Bearer token the middleware chain expects.
 		api.GET("/subs", api_subs)
 		// Get relay list (nodes with has_relay=true)
 		api.GET("/relays", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
-		// Get plans
+		// Get plans (legacy, frozen — app-only)
 		api.GET("/plans", api_get_plans)
+		// Get plans by product line (new, product-aware)
+		api.GET("/products/:product/plans", api_get_product_plans)
 		// Get tiers (public — returns all 4 tiers with their active plans)
 		api.GET("/tiers", GetTiers)
 		// GeoIP country detection (anonymous, no auth)
@@ -118,6 +123,10 @@ func SetupRouter() *gin.Engine {
 		api.GET("/app/config", api_get_app_config)
 		// 获取 ECH 配置（公开接口，无需认证）
 		api.GET("/ech/config", api_fetch_ech_config)
+		// Antiblock relay seed — healthy shared-node list for CDN publish + cold-start bootstrap.
+		// Auth is an in-handler shared secret (config.yml antiblock.seed_key); real HTTP codes (503/401)
+		// are returned intentionally so CI (curl -fsS) fails loudly. See handleAntiblockSeed.
+		api.GET("/antiblock/seed", handleAntiblockSeed)
 		// 获取礼品卡/授权码信息（公开接口，无需认证）
 		api.GET("/license-keys/code/:code", api_get_license_key)
 		// 预览授权码折扣信息（需登录，检查当前用户是否符合使用条件）
@@ -141,6 +150,11 @@ func SetupRouter() *gin.Engine {
 			user.POST("/apple-iap/verify", AuthRequired(), EnforceDeviceClass(), api_apple_iap_verify)
 			// 通知代付人付款（给当前用户的 delegate 发支付邀请邮件）
 			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), EnforceDeviceClass(), api_order_notify_delegate)
+			// 专属节点订阅只读列表（owner-scoped）
+			user.GET("/private-nodes", AuthRequired(), EnforceDeviceClass(), api_get_user_private_nodes)
+			// 铸造专属线路路由器凭证（k2subs:// URL）。调用方是普通 app/web 设备，
+			// 故不加 EnforceDeviceClass；铸造的是 router 设备（is_gateway=true）。
+			user.POST("/gateway-credential", AuthRequired(), api_gateway_credential)
 			// 获取授权变更历史
 			user.GET("/pro-histories", AuthRequired(), EnforceDeviceClass(), api_get_pro_histories)
 			// 发送绑定邮箱验证码
@@ -229,10 +243,11 @@ func SetupRouter() *gin.Engine {
 			strategy.GET("/rules", api_strategy_get_rules)
 		}
 
-		// Router-only endpoints (require family-tier or above)
+		// Router-only endpoints — gated on an active 专属线路 (any app tier; private
+		// lines run on an independent clock, so shared membership is not required).
 		router := api.Group("/router")
 		log.Debugf(ctx, "registering /api/router group")
-		router.Use(AuthRequired(), EnforceDeviceClass(), ProRequired(), RouterRequired())
+		router.Use(AuthRequired(), EnforceDeviceClass(), RouterRequired())
 		{
 			router.GET("/quota", api_router_quota)
 		}
@@ -250,6 +265,17 @@ func SetupRouter() *gin.Engine {
 			authed := telemetry.Group("")
 			authed.Use(AuthRequired(), EnforceDeviceClass(), DeviceAuthRequired())
 			authed.POST("/batch", api_strategy_telemetry_batch)
+		}
+
+		// Pairing beacon / discover (Plan 5b) — BYO router LAN discovery scoped
+		// by public source IP. Beacon is unauthenticated (an unconfigured k2r
+		// router has no credentials yet); discover requires a logged-in user.
+		// No credentials cross the public-IP boundary — see api_pair_beacon.go.
+		pair := api.Group("/pair")
+		log.Debugf(ctx, "registering /api/pair group")
+		{
+			pair.POST("/beacon", api_pair_beacon)
+			pair.GET("/discover", AuthRequired(), api_pair_discover)
 		}
 
 		// Route diagnosis routes (requires device auth)
@@ -418,6 +444,12 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.POST("/cloud/instances",                     RoleRequired(RoleDevopsEditor), api_admin_create_cloud_instance)
 		opsAdmin.DELETE("/cloud/instances/:id",               RoleRequired(RoleDevopsEditor), api_admin_delete_cloud_instance)
 
+		// 专属节点运维任务队列（外部 AI agent / 运维消费）
+		opsAdmin.GET("/node-operations",             RoleRequired(viewOrEdit),       adminListNodeOperations)
+		opsAdmin.POST("/node-operations",            RoleRequired(RoleDevopsEditor), adminCreateNodeOperation)
+		opsAdmin.POST("/node-operations/:id/claim",  RoleRequired(RoleDevopsEditor), adminClaimNodeOperation)
+		opsAdmin.POST("/node-operations/:id/update", RoleRequired(RoleDevopsEditor), adminUpdateNodeOperation)
+
 		// 用户查看（只读）— DevOps + Support + Marketing 均可访问
 		readRoles := viewOrEdit | RoleSupport | RoleMarketing
 		opsAdmin.GET("/users",               RoleRequired(readRoles), api_admin_list_users)
@@ -506,6 +538,9 @@ func SetupRouter() *gin.Engine {
 
 		// 节点状态上报
 		slaveManage.POST("/report/status", SlaveAuthRequired(), api_slave_report_status)
+
+		// 流量计量心跳（节点上报累计流量，Center 回 serve/stop 裁决 + epoch 身份）
+		slaveManage.POST("/usage", SlaveAuthRequired(), api_slave_node_report_usage)
 
 		// 设备认证（自动识别 JWT token 或密码）
 		slaveManage.POST("/device-check-auth", SlaveAuthRequired(), api_slave_device_check_auth)

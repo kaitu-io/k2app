@@ -29,6 +29,12 @@ func api_slave_accelerate_tunnels(c *gin.Context) {
 	}
 	paths := []AcceleratePath{}
 	for _, tunnel := range tunnels {
+		// Capability matrix (App/mesh→private ❌): private nodes are single-owner and
+		// must never surface in the shared relay mesh, or one user's dedicated VPS IP
+		// would leak to every mesh peer / App user. Mirrors api_subs.go / api_tunnel.go / api_relay.go.
+		if tunnel.Node == nil || tunnel.Node.Class == NodeClassPrivate {
+			continue
+		}
 		paths = append(paths, AcceleratePath{
 			Domain:    tunnel.Domain,
 			Ip:        tunnel.Node.Ipv4,
@@ -72,6 +78,12 @@ func api_slave_resolve_domain(c *gin.Context) {
 	}
 
 	for _, tunnel := range tunnels {
+		// Capability matrix (App/mesh→private ❌): private nodes are single-owner and
+		// must never be resolvable in the shared relay mesh, or one user's dedicated
+		// VPS IP would leak. Mirrors api_subs.go / api_tunnel.go / api_relay.go.
+		if tunnel.Node == nil || tunnel.Node.Class == NodeClassPrivate {
+			continue
+		}
 		if matchDomainPattern(domain, tunnel.Domain) {
 			Success(c, &ResolveDomainResponse{
 				Found:     true,

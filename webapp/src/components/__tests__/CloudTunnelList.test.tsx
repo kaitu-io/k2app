@@ -3,7 +3,7 @@ import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../../test/utils/render';
 import { CloudTunnelList, type CloudTunnelListHandle } from '../CloudTunnelList';
 import type { TunnelListResponse } from '../../services/api-types';
-import { AUTO_TUNNEL_DOMAIN, AUTO_TUNNEL_SENTINEL } from '../../stores/connection.store';
+import { AUTO_TUNNEL_DOMAIN, AUTO_TUNNEL_SENTINEL, useConnectionStore } from '../../stores/connection.store';
 
 // --- Mock state objects ---
 
@@ -22,10 +22,12 @@ vi.mock('../../stores/vpn-machine.store', () => ({
 
 const mockCacheGet = vi.fn();
 const mockCacheSet = vi.fn();
+const mockCacheDelete = vi.fn();
 vi.mock('../../services/cache-store', () => ({
   cacheStore: {
     get: (...args: unknown[]) => mockCacheGet(...args),
     set: (...args: unknown[]) => mockCacheSet(...args),
+    delete: (...args: unknown[]) => mockCacheDelete(...args),
   },
 }));
 
@@ -88,6 +90,9 @@ describe('CloudTunnelList', () => {
     mockVPNState.state = 'idle';
     mockCacheGet.mockReturnValue(null);
     mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
+    // Reset shared (real) connection store flag so a 402 test doesn't bleed
+    // its revoked state into the success-path tests.
+    useConnectionStore.setState({ cloudAccessRevoked: false });
   });
 
   describe('SWR: cache hit → immediate render', () => {
@@ -193,28 +198,6 @@ describe('CloudTunnelList', () => {
     });
   });
 
-  describe('No cache + 402 membership-required → activation prompt (not a network error)', () => {
-    it('shows an activation CTA, not the "check network and retry" copy, and does not auto-retry', async () => {
-      mockCacheGet.mockReturnValue(null);
-      // ProRequired denies a non-activated/expired account with code 402.
-      mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
-
-      render(<CloudTunnelList {...defaultProps} />);
-
-      // Membership-required state — honest activation prompt.
-      expect(await screen.findByText('开通会员后解锁云端节点')).toBeInTheDocument();
-
-      // The misleading network-error copy must be gone…
-      expect(screen.queryByText('暂时无法获取云端节点')).not.toBeInTheDocument();
-      expect(screen.queryByText('重试加载')).not.toBeInTheDocument();
-
-      // …and 402 must NOT kick off the exponential-backoff auto-retry loop
-      // (retrying can never grant membership): exactly one fetch was issued,
-      // and the 402 branch schedules no setTimeout to re-fetch.
-      expect(mockCloudApiGet).toHaveBeenCalledTimes(1);
-    });
-  });
-
   describe('Tunnel ordering', () => {
     it('sorts tunnels alphabetically by country code', async () => {
       const tunnels: TunnelListResponse = {
@@ -262,7 +245,7 @@ describe('CloudTunnelList', () => {
       await handle!.refresh({ force: true });
 
       // Forced call goes through cloudApi even though cache is available.
-      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/tunnels/k2v4');
+      expect(mockCloudApiGet).toHaveBeenCalledWith('/api/v20260717/tunnels');
     });
 
     it('force=true rethrows on non-zero response code', async () => {
@@ -353,6 +336,77 @@ describe('CloudTunnelList', () => {
       expect(tunnelArg.domain).toBe(AUTO_TUNNEL_DOMAIN);
       // sentinel identity
       expect(tunnelArg).toBe(AUTO_TUNNEL_SENTINEL);
+    });
+  });
+
+  describe('402 membership expired → clear tunnels + revoke cloud access', () => {
+    it('revokes cloud access and renders the renew CTA, without scheduling a retry', async () => {
+      mockCacheGet.mockReturnValue(null); // no cache → blocking fetch path
+      mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+      const onTunnelsLoaded = vi.fn();
+      render(<CloudTunnelList {...defaultProps} onTunnelsLoaded={onTunnelsLoaded} />);
+
+      await waitFor(() => {
+        expect(useConnectionStore.getState().cloudAccessRevoked).toBe(true);
+      });
+
+      // Tunnel cache must be purged so Auto-pick can't connect to a revoked node.
+      expect(mockCacheDelete).toHaveBeenCalledWith('api:tunnels');
+      // No stale tunnels rendered.
+      expect(screen.queryByText('Tokyo-01')).not.toBeInTheDocument();
+      // Membership-expired empty state is shown (unique title) with a renew CTA.
+      expect(screen.getByText(/会员已过期|Membership expired/i)).toBeInTheDocument();
+      expect(screen.getByText(/续费会员|Renew membership/i)).toBeInTheDocument();
+    });
+
+    it('on iOS WITHOUT IAP, shows the expired state WITHOUT a renew CTA (Apple 3.1.1: /purchase unregistered)', async () => {
+      (window as any)._platform = { os: 'ios' };
+      try {
+        mockCacheGet.mockReturnValue(null);
+        mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+        render(<CloudTunnelList {...defaultProps} />);
+
+        await waitFor(() => {
+          expect(screen.getByText(/会员已过期|Membership expired/i)).toBeInTheDocument();
+        });
+        // The renew button must not exist on iOS without IAP — it would navigate to a dead route.
+        expect(screen.queryByText(/续费会员|Renew membership/i)).not.toBeInTheDocument();
+      } finally {
+        delete (window as any)._platform;
+      }
+    });
+
+    it('on iOS WITH StoreKit IAP, DOES show the renew CTA (/purchase registered → IAP panel)', async () => {
+      // After the IAP merge, /purchase is registered on iOS when the native
+      // StoreKit bridge is injected, so renew is a live path (→ IosSubscribePanel),
+      // not a dead route. Gating must match App.tsx/SideNavigation: !(ios && !iap).
+      (window as any)._platform = { os: 'ios', iap: {} };
+      try {
+        mockCacheGet.mockReturnValue(null);
+        mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+        render(<CloudTunnelList {...defaultProps} />);
+
+        await waitFor(() => {
+          expect(screen.getByText(/会员已过期|Membership expired/i)).toBeInTheDocument();
+        });
+        expect(screen.getByText(/续费会员|Renew membership/i)).toBeInTheDocument();
+      } finally {
+        delete (window as any)._platform;
+      }
+    });
+
+    it('clears the revoked flag when a later refresh succeeds (membership restored)', async () => {
+      useConnectionStore.setState({ cloudAccessRevoked: true });
+      mockCacheGet.mockReturnValue(null);
+      mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
+
+      render(<CloudTunnelList {...defaultProps} />);
+
+      await waitFor(() => expect(screen.getByText('Tokyo-01')).toBeInTheDocument());
+      expect(useConnectionStore.getState().cloudAccessRevoked).toBe(false);
     });
   });
 });

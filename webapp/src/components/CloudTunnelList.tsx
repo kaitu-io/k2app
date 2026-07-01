@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState, useMemo, useRef } from 'react';
 import {
   Box,
+  Chip,
   Typography,
   List,
   ListItem,
@@ -15,8 +16,8 @@ import {
   Skeleton,
 } from '@mui/material';
 import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon } from '@mui/icons-material';
-import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
 import { EmptyState } from './LoadingAndEmpty';
@@ -26,7 +27,8 @@ import { cacheStore } from '../services/cache-store';
 import { useAuthStore } from '../stores/auth.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
-import { AUTO_TUNNEL_SENTINEL, AUTO_TUNNEL_DOMAIN } from '../stores/connection.store';
+import { AUTO_TUNNEL_SENTINEL, AUTO_TUNNEL_DOMAIN, useConnectionStore } from '../stores/connection.store';
+import { ERROR_CODES } from '../utils/errorCode';
 
 interface CloudTunnelListProps {
   selectedDomain: string | null;
@@ -62,14 +64,16 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   const isDark = theme.palette.mode === 'dark';
   const colors = getThemeColors(isDark);
 
+  // Live entitlement signal: when the tunnel endpoint last returned 402, the
+  // cloud list is emptied and this renders the renew prompt. Source of truth
+  // is the connection store (also gates the connect button).
+  const cloudAccessRevoked = useConnectionStore((s) => s.cloudAccessRevoked);
+
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [echConfigList, setEchConfigList] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  // Distinct from `error`: a 402 means the account isn't an active member, which
-  // is an entitlement state (→ activation prompt), not a transient network fault.
-  const [membershipRequired, setMembershipRequired] = useState(false);
 
   // Stable ref for callback to avoid re-triggering effects
   const onTunnelsLoadedRef = useRef(onTunnelsLoaded);
@@ -95,6 +99,23 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 402 (membership expired) is terminal, not transient: empty the list, cancel
+  // any pending backoff, and hand the entitlement truth to the store, which
+  // purges the tunnel cache + selection and disables the connect button.
+  const applyMembershipRevoked = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    retryCountRef.current = 0;
+    setTunnels([]);
+    setEchConfigList(undefined);
+    setError(null);
+    setLoading(false);
+    setRefreshing(false);
+    useConnectionStore.getState().setCloudAccess(false);
+  }, []);
+
   const refresh = useCallback(async (opts?: { force?: boolean }): Promise<void> => {
     const force = opts?.force === true;
 
@@ -106,7 +127,6 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
 
     setRefreshing(true);
     setError(null);
-    setMembershipRequired(false);
 
     // SWR fast-path: return cached immediately, revalidate in background.
     // Skipped when caller explicitly requests a fresh fetch (force=true)
@@ -120,12 +140,18 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         retryCountRef.current = 0;
         onTunnelsLoadedRef.current?.(loadedTunnels);
         // Background revalidate — fire and forget, no state throw.
-        cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
+        cloudApi.get<TunnelListResponse>('/api/v20260717/tunnels').then(res => {
+          if (res.code === ERROR_CODES.PAYMENT_REQUIRED) {
+            console.warn('[CloudTunnelList] 402 membership expired (background) — clearing cloud tunnels');
+            applyMembershipRevoked();
+            return;
+          }
           if (res.code === 0 && res.data) {
             cacheStore.set('api:tunnels', res.data);
             setTunnels(res.data.items || []);
             setEchConfigList(res.data.echConfigList);
             onTunnelsLoadedRef.current?.(res.data.items || []);
+            useConnectionStore.getState().setCloudAccess(true);
           } else {
             console.warn('[CloudTunnelList] Background refresh failed (code=%d), keeping cached tunnels (%d items)', res.code, cached.items?.length ?? 0);
           }
@@ -140,7 +166,15 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
 
     // Blocking fetch — either no cache or force=true.
     try {
-      const response = await cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4');
+      const response = await cloudApi.get<TunnelListResponse>('/api/v20260717/tunnels');
+
+      // 402 = membership expired. Terminal: clear the list + cache + selection
+      // and surface the renew prompt. Never retry, never rethrow on force.
+      if (response.code === ERROR_CODES.PAYMENT_REQUIRED) {
+        console.warn('[CloudTunnelList] 402 membership expired — clearing cloud tunnels');
+        applyMembershipRevoked();
+        return;
+      }
 
       if (response.code === 0 && response.data) {
         const loadedTunnels = response.data.items || [];
@@ -150,13 +184,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         console.debug('[CloudTunnelList] ECH config from API:', response.data.echConfigList ? `present (len=${response.data.echConfigList.length})` : 'empty');
         retryCountRef.current = 0;
         onTunnelsLoadedRef.current?.(loadedTunnels);
-      } else if (response.code === 402) {
-        // Membership not active — cloud nodes are Pro-only. This is a known
-        // entitlement state, NOT a network failure: show an activation prompt,
-        // never set the "check network & retry" error, and never auto-retry
-        // (a retry can't grant membership). Self-hosted tunnels stay usable.
-        setMembershipRequired(true);
-        retryCountRef.current = 0;
+        useConnectionStore.getState().setCloudAccess(true);
       } else {
         // Skip noisy log for 401 (user not logged in yet).
         if (response.code !== 401) {
@@ -186,7 +214,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
       setRefreshing(false);
       setLoading(false);
     }
-  }, []);
+  }, [applyMembershipRevoked]);
 
   useImperativeHandle(ref, () => ({ refresh }), [refresh]);
 
@@ -231,6 +259,38 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
     }
   }, [serviceConnected, refresh]);
 
+  // Membership expired (live 402) takes priority over every other list state —
+  // the cloud list is empty by definition and the only useful action is renew.
+  if (cloudAccessRevoked) {
+    return (
+      <Box sx={{ px: 2, py: 2 }}>
+        <EmptyState
+          icon={<CloudOffIcon sx={{ fontSize: 48, color: 'text.disabled' }} />}
+          title={t('dashboard:dashboard.membershipExpiredTitle')}
+          description={t('dashboard:dashboard.membershipExpiredHint')}
+          action={
+            // Renew routes to /purchase. On iOS that route only exists when the
+            // native StoreKit IAP bridge is present (App.tsx / SideNavigation gate
+            // on `_platform.iap`); without it /purchase is unregistered and the
+            // CTA would dead-end (Apple 3.1.1). Match that exact gating: show the
+            // renew CTA everywhere except iOS-without-IAP. The hint's "switch to
+            // Self-hosted" path stays actionable regardless.
+            !(window._platform?.os === 'ios' && !window._platform?.iap) ? (
+              <Button
+                onClick={() => navigate('/purchase')}
+                variant="contained"
+                size="small"
+              >
+                {t('dashboard:dashboard.renewMembership')}
+              </Button>
+            ) : undefined
+          }
+          minHeight={150}
+        />
+      </Box>
+    );
+  }
+
   if (loading && tunnels.length === 0) {
     return (
       <Box>
@@ -257,26 +317,6 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
             </ListItem>
           ))}
         </List>
-      </Box>
-    );
-  }
-
-  // Membership-required state (402): cloud nodes are Pro-only. Show an honest
-  // activation prompt instead of the misleading "check network & retry" copy.
-  if (membershipRequired && tunnels.length === 0) {
-    return (
-      <Box sx={{ px: 2, py: 2 }}>
-        <EmptyState
-          icon={<CloudOffIcon sx={{ fontSize: 48, color: 'text.disabled' }} />}
-          title={t('dashboard:dashboard.cloudNodesMembershipRequired')}
-          description={t('dashboard:dashboard.cloudNodesMembershipRequiredHint')}
-          action={
-            <Button onClick={() => navigate('/purchase')} variant="contained" size="small">
-              {t('dashboard:dashboard.cloudNodesActivateCta')}
-            </Button>
-          }
-          minHeight={150}
-        />
       </Box>
     );
   }
@@ -469,6 +509,15 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
                 primary={
                   <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {tunnel.name || tunnel.domain}
+                    {tunnel.ipType === 'residential' && (
+                      <Chip
+                        label={t('dashboard:tunnels.residentialIp')}
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600 }}
+                      />
+                    )}
                   </Box>
                 }
                 secondary={getCountryName(tunnel.node.country)}

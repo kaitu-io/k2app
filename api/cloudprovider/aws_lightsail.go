@@ -249,12 +249,16 @@ func (p *AWSLightsailProvider) ChangeIP(ctx context.Context, instanceID string, 
 func (p *AWSLightsailProvider) CreateInstance(ctx context.Context, opts CreateInstanceOptions) (*OperationResult, error) {
 	log.Infof(ctx, "[AWS] Creating instance: name=%s, region=%s, plan=%s", opts.Name, opts.Region, opts.Plan)
 
-	result, err := p.client.CreateInstances(ctx, &lightsail.CreateInstancesInput{
+	in := &lightsail.CreateInstancesInput{
 		InstanceNames:    []string{opts.Name},
 		AvailabilityZone: aws.String(opts.Region),
 		BlueprintId:      aws.String(opts.ImageID),
 		BundleId:         aws.String(opts.Plan),
-	})
+	}
+	if opts.UserData != "" {
+		in.UserData = aws.String(opts.UserData)
+	}
+	result, err := p.client.CreateInstances(ctx, in)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create instance: %w", err)
 	}

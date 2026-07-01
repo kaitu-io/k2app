@@ -315,6 +315,7 @@ type DataSlaveNode struct {
 	Region    string `json:"region"`    // 服务器区域
 	Ipv4      string `json:"ipv4"`      // IPv4地址
 	Ipv6      string `json:"ipv6"`      // IPv6地址
+	IPType    string `json:"ipType,omitempty"` // residential|non_residential|unknown
 	Load      int    `json:"load"`      // Deprecated: to be removed. Use DataTunnelInstance.BudgetScore instead.
 	UpdatedAt int64  `json:"updatedAt"` // 最后更新时间（Unix 秒）
 
@@ -343,6 +344,7 @@ type DataSlaveTunnel struct {
 	Port           int64               `json:"port"`                  // Tunnel port
 	HopPortStart   int64               `json:"hopPortStart"`          // Port hopping range start (0 = disabled)
 	HopPortEnd     int64               `json:"hopPortEnd"`            // Port hopping range end (0 = disabled)
+	IPType         string              `json:"ipType,omitempty"`      // residential|non_residential|unknown (admin/新接口填充; v1 不填, omitempty 保持冻结)
 	Node           DataSlaveNode       `json:"node"`                  // Associated physical node
 	Instance       *DataTunnelInstance `json:"instance,omitempty"`    // Cloud instance data (if linked via IP)
 	RecommendScore float64             `json:"recommendScore"`        // Canonical [0,1] recommendation signal — present for both cloud and non-cloud (default 0.5) nodes, so consumers don't need instance-level null checks.
@@ -563,6 +565,50 @@ type DataPlan struct {
 	MaxLanClient    int    `json:"maxLanClient"`
 	// Apple App Store 商品ID（仅 iOS IAP）：非空才在 iOS 购买面板出现，webapp 据此向 StoreKit 取商品。
 	AppleProductID string `json:"appleProductId,omitempty"`
+	// 产品线：app（共享池订阅）| private_node（专属节点）。Center 始终发送。
+	Product string `json:"product"`
+	// 专属节点套餐的购买可见参数（仅 Product=private_node 套餐附带）。
+	PrivateNode *DataPrivateNodePlanSpec `json:"privateNode,omitempty"`
+}
+
+// DataPrivateNodePlanSpec 专属节点套餐的购买可见参数（仅 Product=private_node 的套餐附带）。
+type DataPrivateNodePlanSpec struct {
+	IPType            string   `json:"ipType"`            // residential | non_residential
+	AllowedRegions    []string `json:"allowedRegions"`    // 购买时可选地区
+	TrafficTotalBytes int64    `json:"trafficTotalBytes"` // 流量配额
+}
+
+// DataPrivateNodeNode 已开通节点的连接可见信息（未开通时为 nil）。
+type DataPrivateNodeNode struct {
+	IP     string `json:"ip"`
+	Region string `json:"region"`
+}
+
+// DataPrivateNodeSubscription 用户视角的专属节点订阅只读视图。
+type DataPrivateNodeSubscription struct {
+	ID                uint64               `json:"id"`
+	Status            string               `json:"status"`            // pending|provisioning|active|grace|suspended|deprovisioned|failed
+	IsServiceable     bool                 `json:"isServiceable"`     // 当前是否在服务（含宽限期）
+	Region            string               `json:"region"`            // 选定地区（开通前即知）
+	IPType            string               `json:"ipType"`
+	TrafficTotalBytes int64                `json:"trafficTotalBytes"` // 配额（订阅快照）
+	TrafficUsedBytes  int64                `json:"trafficUsedBytes"`  // 已用（来自 CloudInstance，未开通=0）
+	PurchasedAt       int64                `json:"purchasedAt"`
+	ExpiresAt         int64                `json:"expiresAt"`
+	GraceUntil        int64                `json:"graceUntil"`
+	SuspendUntil      int64                `json:"suspendUntil"`
+	PlanLabel         string               `json:"planLabel"`
+	Node              *DataPrivateNodeNode `json:"node,omitempty"` // 已开通才有
+	// 额度用尽（与 IsServiceable 正交）：used/total >= 95%（同运行时断流阈值）。
+	// 让 App 把"本月额度用尽"与"到期"/"坏了"区分开。未开通(total=0)恒 false。
+	QuotaExhausted bool `json:"quotaExhausted"`
+	// 配额重置时刻（Unix 秒，来自绑定实例 TrafficResetAt；未知=0）。供 App 显示"X 号重置"。
+	QuotaResetAt int64 `json:"quotaResetAt"`
+}
+
+// DataPrivateNodeList 专属节点订阅列表（owner-scoped）。
+type DataPrivateNodeList struct {
+	Items []DataPrivateNodeSubscription `json:"items"`
 }
 
 // Response_SlaveDeviceCheckAuthResult 节点设备认证结果响应
@@ -635,7 +681,7 @@ type CampaignRequest struct {
 	EndAt         int64  `json:"endAt" binding:"required"`                       // 结束时间
 	Description   string `json:"description"`                                     // 活动描述
 	IsActive      bool   `json:"isActive"`                                        // 是否启用
-	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order, vip, all
+	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order=新客(未完成首单), vip=老客(已付费), all, paid_before, paid_before_active
 	MaxUsage      int64  `json:"maxUsage"`                                        // 最大使用次数（0=无限制）
 	MatcherParams string `json:"matcherParams"`
 }

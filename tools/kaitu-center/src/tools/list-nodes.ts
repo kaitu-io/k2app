@@ -13,6 +13,7 @@ interface RawTunnel {
   protocol: string
   port: number
   serverUrl: string
+  ipType?: string
   [key: string]: unknown
 }
 
@@ -28,6 +29,7 @@ interface RawNode {
   region: string
   updatedAt: number
   tunnels: RawTunnel[]
+  ipType?: string
   [key: string]: unknown
 }
 
@@ -56,6 +58,7 @@ export interface TunnelInfo {
   protocol: string
   port: number
   url: string
+  ipType?: string
 }
 
 /**
@@ -69,6 +72,7 @@ export interface NodeInfo {
   country: string
   region: string
   tunnels: TunnelInfo[]
+  ipType?: string
   meta?: Record<string, unknown>
 }
 
@@ -102,7 +106,7 @@ function isNodesListResponse(value: unknown): value is NodesListResponse {
  * @returns A filtered TunnelInfo with only the safe fields
  */
 function mapTunnel(raw: RawTunnel, country: string): TunnelInfo {
-  return {
+  const tunnel: TunnelInfo = {
     name: raw.name,
     country,
     domain: raw.domain,
@@ -110,6 +114,10 @@ function mapTunnel(raw: RawTunnel, country: string): TunnelInfo {
     port: raw.port,
     url: raw.serverUrl,
   }
+  if (raw.ipType !== undefined) {
+    tunnel.ipType = raw.ipType
+  }
+  return tunnel
 }
 
 /**
@@ -127,6 +135,9 @@ function mapNode(raw: RawNode): NodeInfo {
     country: raw.country,
     region: raw.region,
     tunnels: raw.tunnels.map((t) => mapTunnel(t, raw.country)),
+  }
+  if (raw.ipType !== undefined) {
+    node.ipType = raw.ipType
   }
   // Pass through meta if present (added by sidecar registration)
   if (raw['meta'] != null && typeof raw['meta'] === 'object') {
@@ -154,7 +165,7 @@ export function filterNodes(rawResponse: unknown, filters: NodeFilters): NodeInf
 
   if (filters.country !== undefined) {
     const country = filters.country
-    nodes = nodes.filter((node) => node.country === country)
+    nodes = nodes.filter((node) => node.country.toUpperCase() === country.toUpperCase())
   }
 
   if (filters.name !== undefined) {

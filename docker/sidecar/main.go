@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/template"
@@ -30,6 +32,31 @@ func init() {
 	flag.StringVar(&configFile, "c", "", "Path to config file (required)")
 }
 
+// runSetUsage handles the `set-usage <GB>` subcommand: it builds a TrafficMonitor
+// (which reads the host NIC + current cycle) and rewrites the persisted baseline
+// so usage reads <GB>. Exits non-zero on bad input so ops scripts can detect it.
+func runSetUsage(cfg *config.Config, gbArg string) {
+	if cfg.K2Center.BillingStartDate == "" {
+		slog.Error("set-usage requires K2_NODE_BILLING_START_DATE (billing_start_date)", "component", "sidecar")
+		os.Exit(1)
+	}
+	gb, err := strconv.ParseInt(gbArg, 10, 64)
+	if err != nil || gb < 0 {
+		slog.Error("set-usage needs a non-negative integer GB. Usage: k2-sidecar -c <cfg> set-usage <GB>", "component", "sidecar", "arg", gbArg)
+		os.Exit(1)
+	}
+	tm, err := sidecar.NewTrafficMonitor(cfg.K2Center.BillingStartDate, cfg.K2Center.TrafficLimitGB, 0)
+	if err != nil {
+		slog.Error("set-usage: failed to init traffic monitor", "component", "sidecar", "err", err)
+		os.Exit(1)
+	}
+	if err := tm.SetUsage(gb); err != nil {
+		slog.Error("set-usage failed", "component", "sidecar", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("set-usage applied — RESTART the sidecar to load it (docker compose restart k2-sidecar)", "component", "sidecar", "usedGB", gb)
+}
+
 func main() {
 	flag.Parse()
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -43,6 +70,14 @@ func main() {
 	// Use config package's config loading
 	config.SetConfigFile(configFile)
 	cfg := config.GetConfig()
+
+	// Subcommand: `k2-sidecar -c <cfg> set-usage <GB>` rewrites the persisted
+	// traffic baseline so the meter reports <GB> already used (mid-cycle
+	// onboarding / manual correction). Restart the sidecar afterwards to load it.
+	if flag.Arg(0) == "set-usage" {
+		runSetUsage(&cfg, flag.Arg(1))
+		return
+	}
 
 	s, err := NewSidecar(&cfg)
 	if err != nil {
@@ -68,6 +103,18 @@ func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 	}
 	if cfg.Node.Region != "" {
 		n.Region = cfg.Node.Region
+	}
+	// Private-node activation: echo the one-time claim token back to Center on
+	// registration. Empty for shared-pool nodes (omitempty → no wire change).
+	n.PrivateClaim = cfg.K2Center.PrivateClaim
+	// IP type: always send a value (last-writer-wins contract with Center).
+	// K2_IP_TYPE env overrides; struct tag default:"unknown" ensures the config
+	// field is never empty after defaults.Set(); the fallback here is a belt-and-
+	// suspenders guard for any future path that bypasses config loading.
+	if cfg.Node.IPType != "" {
+		n.IPType = cfg.Node.IPType
+	} else {
+		n.IPType = "unknown"
 	}
 
 	// Auto-generate Tunnel.Domain using sslip.io if not configured
@@ -148,6 +195,7 @@ func (s *Sidecar) Start() error {
 		reportInterval,
 		s.config.K2Center.BillingStartDate,
 		s.config.K2Center.TrafficLimitGB,
+		s.config.K2Center.TrafficUsedGB,
 	)
 
 	// Start metrics collection in background
@@ -156,6 +204,27 @@ func (s *Sidecar) Start() error {
 			slog.Error("Metrics collector error", "component", "sidecar", "err", err)
 		}
 	}()
+
+	// Step 4.5: Metering + cutoff for ALL nodes (node is the single metering/
+	// cutoff authority). The shared TrafficMonitor self-meters the host NIC and
+	// owns the monthly cycle; the enforcer reads it and pauses data-plane
+	// containers at used >= limit - reserve; the reporter POSTs its stats to
+	// Center as a pure record. Requires a TrafficMonitor (K2_NODE_BILLING_START_DATE
+	// set); without it we cannot meter → no reporter/enforcer (node runs uncapped,
+	// bounded by the provider bundle).
+	if tm := s.collector.TrafficMonitor(); tm == nil {
+		slog.Warn("Metering disabled: no billing date (K2_NODE_BILLING_START_DATE) — node runs uncapped", "component", "sidecar")
+	} else {
+		reporter := sidecar.NewUsageReporter(tm, s.config.K2Center.BaseURL, s.nodeInstance.IPv4, s.nodeInstance.Secret)
+		if enf, err := sidecar.NewEnforcer(tm); err != nil {
+			slog.Error("Cutoff enforcer init failed; reporting continues without node-side cutoff", "component", "sidecar", "err", err)
+		} else {
+			go enf.Run(context.Background())
+			slog.Info("Traffic cutoff enforcer started (all-node)", "component", "sidecar")
+		}
+		go reporter.Run(context.Background())
+		slog.Info("Usage reporter started (all-node)", "component", "sidecar", "ipv4", s.nodeInstance.IPv4)
+	}
 
 	// Setup signal handling
 	signal.Notify(s.shutdownChan, syscall.SIGINT, syscall.SIGTERM)
@@ -289,7 +358,7 @@ func (s *Sidecar) pollAndRegisterK2V5ConnectURL() {
 }
 
 // saveCertificates saves tunnel certificates to required directories
-// Saves domain-specific certs and creates symlinks to fixed filenames for k2-slave
+// Saves domain-specific certs and creates symlinks to fixed filenames for k2v5
 func (s *Sidecar) saveCertificates(result *sidecar.RegisterResult) error {
 	// Primary cert directory for K2
 	kaituCertDir := fmt.Sprintf("%s/certs", s.config.ConfigDir)
@@ -364,13 +433,6 @@ func (s *Sidecar) generateConfigs(result *sidecar.RegisterResult) error {
 		}
 	}
 
-	// Generate k2v4-config.yaml (simplified — no ECH, no local_routes)
-	if s.config.Tunnel.Enabled && s.config.Tunnel.Domain != "" {
-		if err := s.generateK2V4Config(); err != nil {
-			return fmt.Errorf("failed to generate k2v4 config: %w", err)
-		}
-	}
-
 	return nil
 }
 
@@ -379,9 +441,6 @@ type K2V5ConfigData struct {
 	CertDir   string
 	CertPath  string
 	KeyPath   string
-	K2Domain  string
-	K2V4Host  string
-	K2V4Port  string
 	CenterURL string
 	LogLevel  string
 	UsersFile string
@@ -400,8 +459,6 @@ auth:
   users_file: "{{.UsersFile}}"
   remote_url: "{{.CenterURL}}/slave/device-check-auth"
   cache_ttl: 5m
-local_routes:
-  "{{.K2Domain}}": "{{.K2V4Host}}:{{.K2V4Port}}"
 log:
   level: "{{.LogLevel}}"
 {{- if and .HopStart .HopEnd}}
@@ -420,20 +477,12 @@ func (s *Sidecar) generateK2V5Config() error {
 		logLevel = "info"
 	}
 
-	k2v4Host := os.Getenv("K2V4_HOST")
-	if k2v4Host == "" {
-		k2v4Host = "127.0.0.1"
-	}
-
 	k2v5DataDir := "/etc/k2v5"
 
 	data := K2V5ConfigData{
 		CertDir:   k2v5DataDir,
 		CertPath:  fmt.Sprintf("%s/certs/server-cert.pem", configDir),
 		KeyPath:   fmt.Sprintf("%s/certs/server-key.pem", configDir),
-		K2Domain:  s.config.Tunnel.Domain,
-		K2V4Host:  k2v4Host,
-		K2V4Port:  s.config.K2V4Port,
 		CenterURL: s.config.K2Center.BaseURL,
 		LogLevel:  logLevel,
 		UsersFile: k2v5DataDir + "/users",
@@ -442,44 +491,6 @@ func (s *Sidecar) generateK2V5Config() error {
 	}
 
 	return s.generateConfigFromTemplate("k2v5-config.yaml", k2v5ConfigTemplate, outputPath, data)
-}
-
-// K2V4ConfigData holds template data for old-style config.yaml
-// The k2v4-slave binary (k2-slave) reads this format for cert paths and Center auth.
-type K2V4ConfigData struct {
-	CenterURL    string
-	CenterSecret string
-	Domain       string
-	ConfigDir    string
-}
-
-// Old-style config.yaml that k2-slave binary expects.
-// No local_routes or hop_port (k2v5 handles SNI routing and DNAT).
-const k2v4ConfigTemplate = `k2_center:
-  enabled: true
-  base_url: "{{.CenterURL}}"
-  timeout: "10s"
-  secret: "{{.CenterSecret}}"
-tunnel:
-  enabled: true
-  domain: "{{.Domain}}"
-  port: 443
-config_dir: "{{.ConfigDir}}"
-`
-
-// generateK2V4Config generates config.yaml in old k2-slave format
-func (s *Sidecar) generateK2V4Config() error {
-	configDir := s.config.ConfigDir
-	outputPath := fmt.Sprintf("%s/config.yaml", configDir)
-
-	data := K2V4ConfigData{
-		CenterURL:    s.config.K2Center.BaseURL,
-		CenterSecret: s.config.K2Center.Secret,
-		Domain:       s.config.Tunnel.Domain,
-		ConfigDir:    configDir,
-	}
-
-	return s.generateConfigFromTemplate("config.yaml", k2v4ConfigTemplate, outputPath, data)
 }
 
 func (s *Sidecar) generateConfigFromTemplate(name, tmplStr, outputPath string, data interface{}) error {

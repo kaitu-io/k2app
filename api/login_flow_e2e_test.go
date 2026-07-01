@@ -167,7 +167,7 @@ func TestE2E_WebLoginFlow_Complete(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"POST without CSRF token should be rejected")
 
 		t.Log("CSRF protection verified: POST without token rejected")
@@ -189,7 +189,7 @@ func TestE2E_WebLoginFlow_Complete(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"POST with wrong CSRF token should be rejected")
 
 		t.Log("CSRF protection verified: wrong token rejected")
@@ -238,9 +238,10 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		// Should return error code (422 = invalid argument)
-		assert.Equal(t, ErrorInvalidArgument, resp.Code,
-			"Wrong verification code should return 422")
+		// Wrong verification code returns the specific business code
+		// ErrorInvalidVerificationCode (400003), not the generic 422.
+		assert.EqualValues(t, ErrorInvalidVerificationCode, resp.Code,
+			"Wrong verification code should return ErrorInvalidVerificationCode")
 
 		t.Logf("Wrong code error: code=%d, message=%s", resp.Code, resp.Message)
 	})
@@ -256,7 +257,7 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"Expired token should return 401")
 
 		t.Log("Expired token correctly rejected")
@@ -271,7 +272,7 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"Invalid token should return 401")
 
 		t.Log("Invalid token correctly rejected")
@@ -284,7 +285,7 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"No auth should return 401")
 
 		t.Log("Missing auth correctly rejected")
@@ -302,7 +303,7 @@ func TestE2E_LoginFlow_ErrorScenarios(t *testing.T) {
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
 
-		assert.Equal(t, ErrorNotLogin, resp.Code,
+		assert.EqualValues(t, ErrorNotLogin, resp.Code,
 			"Tampered token should return 401")
 
 		t.Log("Tampered token correctly rejected")
@@ -681,6 +682,7 @@ func TestLoginFlow_RouterFullCycle(t *testing.T) {
 		"tier":       TierFamily,
 		"expired_at": time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}).Error)
+	createActivePrivateNodeSub(t, user.ID)
 
 	// Step C: send a fresh OTP for the router login.
 	w = NewTestRequest("POST", "/api/auth/code").
@@ -734,9 +736,9 @@ func TestLoginFlow_RouterFullCycle(t *testing.T) {
 		"router token + service header must return 403002; got %d: %s", resp.Code, resp.Message)
 }
 
-// TestLoginFlow_PlanDowngrade: family user registers router, then tier is
-// downgraded to basic. Class check still passes (Device.IsGateway=true,
-// header=router) but RouterRequired-gated endpoints return 402001.
+// TestLoginFlow_PlanDowngrade: family user registers router with an active private
+// line, then tier is downgraded to basic. Router access follows the LINE, not the
+// tier — a tier downgrade does not revoke it; removing the line does.
 func TestLoginFlow_PlanDowngrade(t *testing.T) {
 	skipIfNoDB(t)
 	r := SetupDeviceClassTestRouter()
@@ -787,6 +789,7 @@ func TestLoginFlow_PlanDowngrade(t *testing.T) {
 		"tier":       TierFamily,
 		"expired_at": time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}).Error)
+	createActivePrivateNodeSub(t, user.ID)
 
 	// Send fresh OTP for router login.
 	w = NewTestRequest("POST", "/api/auth/code").
@@ -816,15 +819,16 @@ func TestLoginFlow_PlanDowngrade(t *testing.T) {
 	// Tier downgrade — no admin API helper exists; mutate DB directly.
 	require.NoError(t, db.Get().Model(&user).Update("tier", TierBasic).Error)
 
-	// /api/router/quota should return 402001 (RouterRequired denies basic tier).
+	// Router access follows the LINE, not tier: /api/router/quota still succeeds
+	// after the tier downgrade because the private line is still active.
 	w = NewTestRequest("GET", "/api/router/quota").
 		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
 		WithHeader("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)").
 		Execute(r)
 	resp, err = ParseResponse(w)
 	require.NoError(t, err)
-	assert.Equal(t, int(ErrorPlanNoRouter), resp.Code,
-		"/api/router/quota must return 402001 after downgrade; got %d: %s", resp.Code, resp.Message)
+	assert.Equal(t, 0, resp.Code,
+		"/api/router/quota must still succeed after tier downgrade (line active); got %d: %s", resp.Code, resp.Message)
 
 	// /api/tunnels should still serve — ProRequired passes (ExpiredAt still in future),
 	// EnforceDeviceClass passes (IsGateway=true, header=router).
@@ -835,6 +839,18 @@ func TestLoginFlow_PlanDowngrade(t *testing.T) {
 	resp, err = ParseResponse(w)
 	require.NoError(t, err)
 	assert.Equal(t, 0, resp.Code, "tunnel listing must remain accessible after downgrade: %s", resp.Message)
+
+	// Remove the private line → router access is revoked (402001), proving the
+	// line — not the tier — is the gate.
+	require.NoError(t, db.Get().Unscoped().Where("user_id = ?", user.ID).Delete(&PrivateNodeSubscription{}).Error)
+	w = NewTestRequest("GET", "/api/router/quota").
+		WithHeader("Authorization", "Bearer "+loginData.AccessToken).
+		WithHeader("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64)").
+		Execute(r)
+	resp, err = ParseResponse(w)
+	require.NoError(t, err)
+	assert.Equal(t, int(ErrorPlanNoRouter), resp.Code,
+		"/api/router/quota must return 402001 once the line is gone; got %d: %s", resp.Code, resp.Message)
 }
 
 // TestLoginFlow_NoHeaderLegacyApp locks the backward-compat invariant:

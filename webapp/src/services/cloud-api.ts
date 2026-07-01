@@ -4,16 +4,19 @@
  * Replaces window._k2.api with direct HTTP fetch() calls.
  *
  * Responsibilities:
- * - Base URL resolution (relative URLs for now, antiblock later)
+ * - Transport resolution: camouflage-node relay → direct fallback (via resolveAndFetch)
  * - Auth header injection: Bearer token from authService.getToken()
  * - 401 handling: refresh token, retry once, then logout
  * - Standard fetch() wrapper returning SResponse format
+ * - Entry pool seeding: /api/tunnels responses populate relay node pool
  */
 
 import type { SResponse } from '../types/kaitu-core';
 import { authService } from './auth-service';
 import { useAuthStore } from '../stores/auth.store';
-import { resolveEntry } from './antiblock';
+import { resolveAndFetch } from './resolve-and-fetch';
+import { nodeEntriesFromTunnels } from './node-descriptor';
+import { addNodes } from './entry-pool';
 import { cacheStore } from './cache-store';
 import { useLoginDialogStore } from '../stores/login-dialog.store';
 import i18n from '../i18n/i18n';
@@ -46,8 +49,27 @@ const AUTH_TOKEN_PATHS = [
 /** Auth path where tokens + cache should be cleared on success */
 const AUTH_LOGOUT_PATH = '/api/auth/logout';
 
+/** Total request timeout in milliseconds — restores the original 15s AbortController semantics. */
+const REQUEST_TIMEOUT_MS = 15000;
+
 /** Module-level refresh promise for concurrent 401 dedup */
 let _refreshPromise: Promise<boolean> | null = null;
+
+/** Sentinel value returned by withTimeout when the deadline is exceeded. */
+const TIMEOUT_SENTINEL = Symbol('timeout');
+
+/**
+ * Race a promise against a deadline. Resolves with TIMEOUT_SENTINEL if the
+ * deadline fires first; otherwise resolves/rejects as the original promise does.
+ * Clears the timer on settle to avoid leaked timers.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMEOUT_SENTINEL> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
+    timer = setTimeout(() => resolve(TIMEOUT_SENTINEL), ms);
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer!));
+}
 
 /**
  * Cloud API client for direct HTTP communication with the cloud API.
@@ -87,36 +109,39 @@ export const cloudApi = {
         headers['X-K2-Client'] = clientHeader;
       }
 
-      // 3. Build fetch options with timeout.
-      // 15s timeout prevents indefinite hang when VPN routing breaks outbound connectivity.
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      const fetchOptions: RequestInit = {
-        method,
-        headers,
-        signal: controller.signal,
-      };
-      if (body !== undefined) {
-        fetchOptions.body = JSON.stringify(body);
+      // 3. Serialize body
+      const bodyString = body !== undefined ? JSON.stringify(body) : undefined;
+
+      // 4. Resolve transport (camouflage-node relay → direct fallback) and perform the request.
+      // Wrap in withTimeout to preserve the original 15s total-request cap (§5.3 #5 c).
+      const resultOrTimeout = await withTimeout(
+        resolveAndFetch({ method, path, headers, body: bodyString }),
+        REQUEST_TIMEOUT_MS
+      );
+      if (resultOrTimeout === TIMEOUT_SENTINEL) {
+        return { code: -1, message: 'Request timeout' };
       }
+      const result = resultOrTimeout;
+      if (result.transport === 'fail') {
+        console.error('[CloudAPI] transport failed (relay + direct):', method, path);
+        return { code: -1, message: 'Network error' };
+      }
+      const httpStatus = result.status;
 
-      // 4. Resolve entry URL via antiblock
-      const entry = await resolveEntry();
-      const fullUrl = entry + path;
-
-      // 5. Make the request
-      console.info('[CloudAPI]', method, fullUrl);
-      const httpResponse = await fetch(fullUrl, fetchOptions);
-      clearTimeout(timeoutId);
-
-      // 6. Parse the JSON response
-      const jsonResponse = await httpResponse.json() as SResponse<T>;
-      console.info('[CloudAPI] response:', method, path, 'status:', httpResponse.status, 'code:', jsonResponse.code);
+      // 5. Parse the JSON response
+      let jsonResponse: SResponse<T>;
+      try {
+        jsonResponse = await result.json() as SResponse<T>;
+      } catch {
+        console.error('[CloudAPI] bad json:', method, path);
+        return { code: -1, message: 'Network error' };
+      }
+      console.info('[CloudAPI] response:', method, path, 'status:', httpStatus, 'code:', jsonResponse.code);
       if (jsonResponse.code !== 0) {
         console.warn('[CloudAPI] response error:', method, path, 'code:', jsonResponse.code, 'msg:', jsonResponse.message);
       }
 
-      // 7. Handle 403002: server detected device class mismatch
+      // 6. Handle 403002: server detected device class mismatch
       // (e.g. phone token reused on a router). Clear session and open login dialog.
       // Mirrors the 401-with-no-refresh path: clearTokens + isAuthenticated=false
       // keeps UI gating consistent if the user dismisses the dialog.
@@ -131,25 +156,21 @@ export const cloudApi = {
         return jsonResponse;
       }
 
-      // 8. Handle 401: try token refresh (pass epoch to detect stale requests)
-      if (httpResponse.status === 401 || jsonResponse.code === 401) {
+      // 7. Handle 401: try token refresh (pass epoch to detect stale requests)
+      if (httpStatus === 401 || jsonResponse.code === 401) {
         return await this._handle401<T>(method, path, body, requestEpoch);
       }
 
-      // 9. Auto-handle auth paths on success
+      // 8. Auto-handle auth paths + seed entry pool on success
       if (jsonResponse.code === 0) {
         await this._handleAuthPath(path, jsonResponse);
+        this._seedEntryPool(path, jsonResponse);
       }
 
-      // 10. Return the response as SResponse
+      // 9. Return the response as SResponse
       return jsonResponse;
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        console.error('[CloudAPI] timeout (15s):', method, path);
-        return { code: -1, message: 'Request timeout' };
-      }
-      // Log raw error for debugging, but return generic message to prevent domain leakage
-      console.error('[CloudAPI] network error:', method, path, (error as Error).message || error);
+      console.error('[CloudAPI] unexpected error:', method, path, (error as Error).message || error);
       return { code: -1, message: 'Network error' };
     }
   },
@@ -188,6 +209,22 @@ export const cloudApi = {
     } else if (path === AUTH_LOGOUT_PATH) {
       await authService.clearTokens();
       cacheStore.clear();
+    }
+  },
+
+  /** Seed the antiblock entry pool with camouflage-node descriptors from a
+   *  successful tunnels response. Every tunnels fetch (even one that arrived via
+   *  relay) reinforces the pool, so a user who connects once always holds live
+   *  relay entries. */
+  _seedEntryPool<T>(path: string, response: SResponse<T>): void {
+    if (!path.includes('/tunnels')) return;
+    const data = response.data as { items?: unknown } | undefined;
+    if (!data || !Array.isArray(data.items)) return;
+    try {
+      const entries = nodeEntriesFromTunnels(data.items as any);
+      if (entries.length > 0) addNodes(entries);
+    } catch (e) {
+      console.warn('[CloudAPI] entry-pool seed failed', e);
     }
   },
 
@@ -246,29 +283,28 @@ export const cloudApi = {
    */
   async _doRefresh(refreshToken: string): Promise<boolean> {
     try {
-      const entry = await resolveEntry();
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const refreshHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
       const clientHeader = buildClientHeader();
       if (clientHeader) {
         refreshHeaders['X-K2-Client'] = clientHeader;
       }
-      const refreshResponse = await fetch(entry + '/api/auth/refresh', {
-        method: 'POST',
-        headers: refreshHeaders,
-        body: JSON.stringify({ refreshToken }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      const refreshJson = await refreshResponse.json() as SResponse<{
-        token: string;
-        refreshToken: string;
-      }>;
-
-      if (refreshJson.code !== 0 || !refreshResponse.ok) {
+      const resultOrTimeout = await withTimeout(
+        resolveAndFetch({
+          method: 'POST',
+          path: '/api/auth/refresh',
+          headers: refreshHeaders,
+          body: JSON.stringify({ refreshToken }),
+        }),
+        REQUEST_TIMEOUT_MS
+      );
+      if (resultOrTimeout === TIMEOUT_SENTINEL || resultOrTimeout.transport === 'fail') {
+        await authService.clearTokens();
+        useAuthStore.setState({ isAuthenticated: false });
+        return false;
+      }
+      const result = resultOrTimeout;
+      const refreshJson = await result.json() as SResponse<{ token: string; refreshToken: string }>;
+      if (refreshJson.code !== 0 || result.status >= 400) {
         await authService.clearTokens();
         useAuthStore.setState({ isAuthenticated: false });
         return false;

@@ -1,0 +1,122 @@
+package center
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	db "github.com/wordgate/qtoolkit/db"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestCreatePrivateNodeSubscription(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	now := time.Now().Unix()
+
+	owner := User{UUID: "usr-pn-create-" + time.Now().Format("20060102150405.000000")}
+	require.NoError(t, db.Get().Create(&owner).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&owner) })
+
+	plan := Plan{PID: "pn-test-" + time.Now().Format("150405.000000"), Product: ProductPrivateNode, Month: 12}
+	require.NoError(t, db.Get().Create(&plan).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
+
+	spec := PrivateNodePlanSpec{
+		PlanID: plan.ID, IPType: IPTypeNonResidential,
+		AllowedRegions:    `["japan"]`,
+		TrafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024,
+	}
+	require.NoError(t, db.Get().Create(&spec).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
+
+	order := Order{UUID: "ord-pn-" + time.Now().Format("150405.000000"), UserID: owner.ID, Meta: "{}"}
+	require.NoError(t, db.Get().Create(&order).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&order) })
+
+	sub, err := createPrivateNodeSubscription(context.Background(), db.Get(), &order, &plan, now)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(sub) })
+
+	assert.Equal(t, PNStatusPending, sub.Status)
+	assert.Equal(t, owner.ID, sub.UserID)
+	assert.Equal(t, order.ID, sub.OrderID)
+	assert.Equal(t, IPTypeNonResidential, sub.IPType)
+	assert.Equal(t, "japan", sub.Region)
+	assert.Equal(t, spec.TrafficTotalBytes, sub.TrafficTotalBytes)
+	assert.NotEmpty(t, sub.ProvisionClaimToken)
+	assert.Greater(t, sub.ExpiresAt, now)
+}
+
+// TestEmitNodeProvisionJob proves the collapsed worker path: emitNodeProvisionJob
+// gates the sub pending→provisioning and inserts exactly one queued NodeOperation
+// (action=provision) for an external agent to claim. Re-running is now idempotent —
+// dispatchNodeOperation dedups on the open (sub,provision) slot, so a second emit
+// does NOT create a second row. Assertion below pins the gate + first-emit shape +
+// restored idempotency.
+func TestEmitNodeProvisionJob(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	now := time.Now().Unix()
+	stamp := time.Now().Format("20060102150405.000000")
+
+	owner := User{UUID: "usr-pn-emit-" + stamp}
+	require.NoError(t, db.Get().Create(&owner).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&owner) })
+
+	plan := Plan{PID: "pn-emit-" + stamp, Product: ProductPrivateNode, Month: 12}
+	require.NoError(t, db.Get().Create(&plan).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&plan) })
+
+	spec := PrivateNodePlanSpec{
+		PlanID: plan.ID, IPType: IPTypeNonResidential,
+		AllowedRegions:    `["japan"]`,
+		TrafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024,
+	}
+	require.NoError(t, db.Get().Create(&spec).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&spec) })
+
+	order := Order{UUID: "ord-pn-emit-" + stamp, UserID: owner.ID, Meta: "{}"}
+	require.NoError(t, db.Get().Create(&order).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&order) })
+
+	sub, err := createPrivateNodeSubscription(ctx, db.Get(), &order, &plan, now)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(sub) })
+	t.Cleanup(func() { db.Get().Unscoped().Where("sub_id = ?", sub.ID).Delete(&NodeOperation{}) })
+
+	// First emit: pending → provisioning, exactly one queued provision operation.
+	require.NoError(t, emitNodeProvisionJob(ctx, sub))
+
+	var reloaded PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&reloaded, sub.ID).Error)
+	assert.Equal(t, PNStatusProvisioning, reloaded.Status)
+
+	var ops []NodeOperation
+	require.NoError(t, db.Get().Where("sub_id = ?", sub.ID).Find(&ops).Error)
+	require.Len(t, ops, 1, "exactly one provision operation after first emit")
+	assert.Equal(t, NodeOpProvision, ops[0].Action)
+	assert.Equal(t, NodeOpQueued, ops[0].Status)
+	assert.Equal(t, sub.ID, ops[0].SubID)
+	assert.Equal(t, "system:order", ops[0].CreatedBy)
+
+	// 任务只带业务意图 {region, 流量, 住宅?}——provider/bundle/image 不再进 params。
+	var params ProvisionParams
+	require.NoError(t, json.Unmarshal([]byte(ops[0].Params), &params))
+	assert.Equal(t, sub.Region, params.Region)
+	assert.Equal(t, sub.IPType, params.IPType)
+	assert.Equal(t, sub.TrafficTotalBytes, params.TrafficTotalBytes)
+
+	// Second emit on the same sub: dispatchNodeOperation dedups on the open
+	// (sub,provision) slot, so the re-emit is a no-op — still exactly one queued op.
+	require.NoError(t, emitNodeProvisionJob(ctx, sub))
+
+	var opsAgain []NodeOperation
+	require.NoError(t, db.Get().Where("sub_id = ?", sub.ID).Find(&opsAgain).Error)
+	require.Len(t, opsAgain, 1, "re-emit deduped on open (sub,provision) slot")
+	assert.Equal(t, NodeOpQueued, opsAgain[0].Status, "the single op stays queued")
+}

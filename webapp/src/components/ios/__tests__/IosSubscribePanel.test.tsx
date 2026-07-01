@@ -124,6 +124,18 @@ describe('IosSubscribePanel', () => {
     expect(mockRestore).toHaveBeenCalled();
   });
 
+  it('disables subscribe button + shows spinner while purchasing (double-tap guard)', () => {
+    hookState = { ...defaultHookState(), purchasing: true };
+    renderPanel();
+    const btn = screen.getByTestId('iap-subscribe-btn') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    // A second tap while in-flight must not re-fire the native purchase.
+    fireEvent.click(btn);
+    expect(mockPurchase).not.toHaveBeenCalled();
+    // Spinner (MUI CircularProgress renders an <svg>) is visible as feedback.
+    expect(btn.querySelector('svg')).not.toBeNull();
+  });
+
   it('ToS + Privacy links present (Apple mandate guard)', () => {
     renderPanel();
     expect(screen.getByText('purchase:purchase.iap.terms')).toBeDefined();

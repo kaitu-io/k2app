@@ -1,0 +1,58 @@
+{
+  "privateNode": {
+    "title": "專屬節點",
+    "manage": "管理專屬節點",
+    "buyLine": "購買專屬線路",
+    "buy": "開通專屬節點",
+    "region": "節點地區",
+    "selectRegion": "選擇地區",
+    "ipTypeLabel": "IP 類型",
+    "ipType": {
+      "residential": "住宅 IP",
+      "non_residential": "資料中心 IP"
+    },
+    "traffic": "流量",
+    "trafficUsed": "已用 {{used}} / {{total}}",
+    "quota": "流量配額",
+    "status": {
+      "title": "狀態",
+      "pending": "待開通",
+      "provisioning": "開通中",
+      "active": "服務中",
+      "grace": "寬限期",
+      "suspended": "已停機",
+      "deprovisioned": "已註銷",
+      "failed": "開通失敗"
+    },
+    "expiresAt": "到期時間",
+    "graceHint": "已進入寬限期，請盡快續費以免停機",
+    "suspendedHint": "節點已停機保留 IP，續費後恢復",
+    "nodeIp": "節點 IP",
+    "provisioningHint": "節點正在開通，通常需要幾分鐘，請稍候",
+    "empty": "你還沒有專屬節點",
+    "renew": "續費",
+    "percentUsed": "已用 {{percent}}%",
+    "quotaExhausted": {
+      "title": "本月流量額度已用盡",
+      "resetHint": "將於 {{date}} 重置",
+      "resetUnknown": "將於下個週期開始時重置",
+      "cta": "續費 / 升級額度"
+    },
+    "router": {
+      "title": "新增路由器",
+      "intro": "喺已刷 OpenWrt 嘅路由器上安裝 k2r 後，用下方位址完成連接。",
+      "detected": "偵測到你區域網路內嘅路由器：",
+      "open": "開啟 {{addr}}",
+      "mint": "產生路由器連線位址",
+      "paste": "複製下面嘅位址，開啟路由器面板嘅「設定」頁貼上：",
+      "copy": "複製"
+    },
+    "setup": {
+      "title": "連接專屬線路",
+      "hint": "將喺開途 App 或網頁產生嘅路由器連線位址貼到下方，撳連接。",
+      "connect": "連接",
+      "ok": "已開始連接，稍後喺狀態頁睇專屬線路連接情況。",
+      "err": "連線位址無效，請確認已複製完整嘅位址。"
+    }
+  }
+}

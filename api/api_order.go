@@ -1,7 +1,9 @@
 package center
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -33,6 +35,7 @@ type CreateOrderRequest struct {
 	Preview      bool   `json:"preview" example:"false"`                     // 是否预览模式
 	Plan         string `json:"plan" binding:"required" example:"pro_month"` // 套餐ID
 	CampaignCode string `json:"campaignCode" example:"SAVE20"`               // 优惠码（可选）
+	Region       string `json:"region" example:"ap-northeast-1"`             // 专属节点购买时选定的地区（仅 Product=private_node 套餐有效）
 
 	// Deprecated 2026-04-20: 代付功能已下线，下列字段仅用于检测旧客户端并拒绝其请求，不再写入 Order。
 	// 详见 docs/superpowers/specs/2026-04-20-proxy-purchase-users.md
@@ -94,6 +97,25 @@ func api_create_order(c *gin.Context) {
 		return
 	}
 
+	// 专属节点套餐：校验选定地区在允许列表内。空 region 允许（开通时由
+	// createPrivateNodeSubscription 回退到 firstAllowedRegion）。校验对 preview 与
+	// 真实创建都执行，让购买 UI 能尽早拿到反馈；preview 不落库订单。
+	if plan.Product == ProductPrivateNode && req.Region != "" {
+		spec, err := loadPrivateNodePlanSpec(db.Get(), plan.ID)
+		if err != nil {
+			log.Errorf(c, "failed to load private node plan spec for plan %d: %v", plan.ID, err)
+			Error(c, ErrorSystemError, "plan spec unavailable")
+			return
+		}
+		var allowed []string
+		_ = json.Unmarshal([]byte(spec.AllowedRegions), &allowed)
+		if !slices.Contains(allowed, req.Region) {
+			log.Warnf(c, "region %s not allowed for private node plan %s (user %d)", req.Region, plan.PID, user.ID)
+			Error(c, ErrorInvalidArgument, "region not allowed for this plan")
+			return
+		}
+	}
+
 	// 代付下线后每个订单都是 buyer 自己购买，quantity 恒为 1。
 	const quantity = 1
 
@@ -108,6 +130,10 @@ func api_create_order(c *gin.Context) {
 		PayAmount:            totalAmount,
 		CampaignReduceAmount: 0,
 		UserID:               user.ID,
+	}
+	// 仅专属节点订单写入 region；共享套餐忽略 req.Region（持久化为空）。
+	if plan.Product == ProductPrivateNode {
+		order.PrivateNodeRegion = req.Region
 	}
 	log.Debugf(c, "order object created: Title=%s, OriginAmount=%d, PayAmount=%d", order.Title, order.OriginAmount, order.PayAmount)
 

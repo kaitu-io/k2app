@@ -14,10 +14,14 @@ import {
   DialogContent,
   DialogActions,
   Card,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
   useTheme,
 } from "@mui/material";
 import { Add as AddIcon, EmojiEvents as EmojiEventsIcon, Error as ErrorIcon } from "@mui/icons-material";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAlert, useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
@@ -37,6 +41,7 @@ import {
 import { getThemeColors } from '../theme/colors';
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
+import { formatBytes } from '../utils/ui';
 
 // 斜角彩带组件
 function Ribbon({ text }: { text: string }) {
@@ -541,7 +546,22 @@ export default function Purchase() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const openLoginDialog = useLoginDialogStore((s) => s.open);
 
+  // Purchase scope, bound to a product line. The default /purchase page sells
+  // the app subscription; /purchase?product=private_node sells dedicated lines
+  // (with a region picker). The server is the boundary: each scope fetches its
+  // own product endpoint, so private_node plans can never reach the default
+  // page (incl. already-deployed old clients, which only ever call /api/plans).
+  // Entry to the dedicated-line scope is the "buy a line" CTA on /private-node.
+  const [searchParams] = useSearchParams();
+  const purchaseProduct = searchParams.get('product') === 'private_node' ? 'private_node' : 'app';
+  // /api/plans is frozen as the app-only legacy endpoint; new product scopes use
+  // the nested /api/products/:product/plans. Cache key is per product.
+  const plansPath = purchaseProduct === 'private_node' ? '/api/products/private_node/plans' : '/api/plans';
+  const plansCacheKey = purchaseProduct === 'private_node' ? 'api:products:private_node:plans' : 'api:plans';
+
   const [plan, setPlan] = useState("");
+  // 专属节点购买时选定的地区（仅 private_node 套餐使用；shared 套餐留空）。
+  const [selectedRegion, setSelectedRegion] = useState("");
   const [showCampaign, setShowCampaign] = useState(false);
   const [campaignCode, setCampaignCode] = useState("");
   const [orderData, setOrderData] = useState<Order | null>(null);
@@ -566,6 +586,8 @@ export default function Purchase() {
   // selector visibility.
   const [selectedTier, setSelectedTier] = useState('');
 
+  // `plans` already holds exactly the active product's plans — the server
+  // filters by endpoint, so no client-side product filter is needed here.
   const tierGroups = useMemo(() => {
     const groups = new Map<string, Plan[]>();
     for (const p of plans) {
@@ -612,6 +634,29 @@ export default function Purchase() {
     setPlan(highlighted?.pid || filteredPlans[0].pid);
   }, [filteredPlans, plan]);
 
+  // 当前选中的套餐对象（用于专属节点的地区/IP/流量展示）。
+  const selectedPlanObj = useMemo(
+    () => plans.find(p => p.pid === plan) ?? null,
+    [plans, plan],
+  );
+  const isPrivateNode = selectedPlanObj?.product === 'private_node';
+  const allowedRegions = selectedPlanObj?.privateNode?.allowedRegions ?? [];
+
+  // 选中专属节点套餐时，默认选第一个可选地区；切回共享套餐时清空。
+  useEffect(() => {
+    if (!isPrivateNode) {
+      if (selectedRegion) setSelectedRegion("");
+      return;
+    }
+    if (allowedRegions.length === 0) {
+      setSelectedRegion("");
+      return;
+    }
+    if (!allowedRegions.includes(selectedRegion)) {
+      setSelectedRegion(allowedRegions[0]);
+    }
+  }, [isPrivateNode, allowedRegions, selectedRegion]);
+
   // 处理订单创建（使用 useCallback 避免不必要的重新渲染）
   const handleOrder = useCallback(async ({preview = false}: {preview?: boolean}) => {
     // 非预览模式需要登录才能创建订单
@@ -625,11 +670,14 @@ export default function Purchase() {
 
     setIsLoading(true);
     try {
-      console.info('[Purchase] 创建订单请求: ' + JSON.stringify({ preview, plan, campaignCode }));
+      // 专属节点套餐需带上选定地区；共享套餐留空（Center 忽略）。
+      const region = isPrivateNode ? (selectedRegion || undefined) : undefined;
+      console.info('[Purchase] 创建订单请求: ' + JSON.stringify({ preview, plan, campaignCode, region }));
       const response = await cloudApi.post<{ order: Order; payUrl?: string }>('/api/user/orders', {
         preview,
         plan,
         campaignCode: campaignCode || undefined,
+        region,
       });
       console.info('[Purchase] 创建订单响应: ' + JSON.stringify(response));
       
@@ -672,6 +720,14 @@ export default function Purchase() {
             setOrderData(null);
             showAlert(getErrorMessage(response.code, response.message, t), 'error');
           }
+        } else if (response.code === ERROR_CODES.INVALID_ARGUMENT) {
+          // 专属节点地区非法等参数错误（Center 返回 422 ErrorInvalidArgument）。
+          console.warn('[Purchase] Invalid argument:', response.code, response.message);
+          if (!preview) {
+            setCampaignError("");
+            setOrderData(null);
+            showAlert(getErrorMessage(response.code, response.message, t), 'error');
+          }
         } else {
           // 只在非预览模式下清除状态和显示错误提示
           if (!preview) {
@@ -695,7 +751,7 @@ export default function Purchase() {
     } finally {
       setIsLoading(false);
     }
-  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog, user]);
+  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog, user, isPrivateNode, selectedRegion]);
 
   // 用于标记是否已选择过默认套餐（避免 plan 变化触发重新获取套餐列表）
   const defaultPlanSelectedRef = useRef(false);
@@ -703,6 +759,7 @@ export default function Purchase() {
   // 获取套餐列表：使用 k2api 缓存（SWR 模式 + 过期缓存 fallback）
   useEffect(() => {
     const selectDefaultPlan = (planList: Plan[]) => {
+      // planList is already scoped to the active product by the endpoint.
       if (planList.length > 0 && !defaultPlanSelectedRef.current) {
         defaultPlanSelectedRef.current = true;
         const highlightedPlan = planList.find((p: { highlight?: boolean }) => p.highlight);
@@ -722,16 +779,16 @@ export default function Purchase() {
         // - revalidate: SWR 模式，立即返回缓存同时后台刷新
         // - allowExpired: 网络失败时使用过期缓存
         // Check cache first (SWR: return cache immediately, refresh in background)
-        const cachedPlans = cacheStore.get<{ items: Plan[] }>('api:plans');
+        const cachedPlans = cacheStore.get<{ items: Plan[] }>(plansCacheKey);
         if (cachedPlans) {
           const fetchedPlans = cachedPlans.items || [];
           setPlans(fetchedPlans);
           selectDefaultPlan(fetchedPlans);
           setPlansLoading(false);
           // Background revalidate
-          cloudApi.get<{ items: Plan[] }>('/api/plans').then(res => {
+          cloudApi.get<{ items: Plan[] }>(plansPath).then(res => {
             if (res.code === 0 && res.data) {
-              cacheStore.set('api:plans', res.data, { ttl: 300 });
+              cacheStore.set(plansCacheKey, res.data, { ttl: 300 });
               const updatedPlans = res.data.items || [];
               setPlans(updatedPlans);
               selectDefaultPlan(updatedPlans);
@@ -740,10 +797,10 @@ export default function Purchase() {
           return;
         }
 
-        const response = await cloudApi.get<{ items: Plan[] }>('/api/plans');
+        const response = await cloudApi.get<{ items: Plan[] }>(plansPath);
 
         if (response.code === 0 && response.data) {
-          cacheStore.set('api:plans', response.data, { ttl: 300 });
+          cacheStore.set(plansCacheKey, response.data, { ttl: 300 });
           const fetchedPlans = response.data.items || [];
           setPlans(fetchedPlans);
           selectDefaultPlan(fetchedPlans);
@@ -760,7 +817,7 @@ export default function Purchase() {
     };
 
     fetchPlans();
-  }, [showAlert, t, isAuthenticated]); // 登录后重新加载套餐列表
+  }, [showAlert, t, isAuthenticated, plansPath, plansCacheKey]); // 登录后 / 购买范围(产品)变化时重新加载套餐列表
 
   // 获取 App 配置（邀请奖励信息）
   useEffect(() => {
@@ -1005,6 +1062,66 @@ export default function Purchase() {
             />
           )}
         </Box>
+
+        {/* 专属节点：地区选择 + IP 类型 + 流量配额 */}
+        {!plansLoading && isPrivateNode && selectedPlanObj?.privateNode && (
+          <Box>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '1rem' }} component="span">
+              {t('privateNode:privateNode.title')}
+            </Typography>
+            <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+              <Stack spacing={2}>
+                {/* 地区选择：多地区用 Select，单地区只读展示 */}
+                {allowedRegions.length > 1 ? (
+                  <FormControl fullWidth size="small">
+                    <InputLabel id="private-node-region-label">
+                      {t('privateNode:privateNode.selectRegion')}
+                    </InputLabel>
+                    <Select
+                      labelId="private-node-region-label"
+                      label={t('privateNode:privateNode.selectRegion')}
+                      value={selectedRegion}
+                      onChange={(e) => setSelectedRegion(e.target.value)}
+                    >
+                      {allowedRegions.map((r) => (
+                        <MenuItem key={r} value={r}>{r}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                ) : (
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Typography variant="body2" color="text.secondary" component="span">
+                      {t('privateNode:privateNode.region')}
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600} component="span">
+                      {allowedRegions[0] ?? ''}
+                    </Typography>
+                  </Stack>
+                )}
+
+                {/* IP 类型 */}
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="body2" color="text.secondary" component="span">
+                    {t('privateNode:privateNode.ipTypeLabel')}
+                  </Typography>
+                  <Typography variant="body2" fontWeight={600} component="span">
+                    {t(`privateNode:privateNode.ipType.${selectedPlanObj.privateNode.ipType}`)}
+                  </Typography>
+                </Stack>
+
+                {/* 流量配额 */}
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="body2" color="text.secondary" component="span">
+                    {t('privateNode:privateNode.quota')}
+                  </Typography>
+                  <Typography variant="body2" fontWeight={600} component="span">
+                    {formatBytes(selectedPlanObj.privateNode.trafficTotalBytes)}
+                  </Typography>
+                </Stack>
+              </Stack>
+            </Card>
+          </Box>
+        )}
 
         {/* 总价展示 - 只有在有套餐数据时才显示 */}
         {!plansLoading && plans.length > 0 && (

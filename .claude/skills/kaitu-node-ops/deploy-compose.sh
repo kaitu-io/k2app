@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
 COMPOSE_FILE="$PROJECT_DIR/docker/docker-compose.yml"
-DEPLOY_DIR="/apps/kaitu-slave"
+DEPLOY_DIR="/apps/k2s"
 
 SSH_USER="${KAITU_SSH_USER:-ubuntu}"
 SSH_PORT="${KAITU_SSH_PORT:-1022}"

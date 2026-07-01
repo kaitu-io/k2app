@@ -17,8 +17,6 @@ func TestK2V5ConfigTemplate_ContainsCertDir(t *testing.T) {
 		CertDir:   "/etc/k2v5",
 		CertPath:  "/etc/kaitu/certs/server-cert.pem",
 		KeyPath:   "/etc/kaitu/certs/server-key.pem",
-		K2Domain:  "test.example.com",
-		K2V4Port:  "8443",
 		CenterURL: "https://k2.52j.me",
 		LogLevel:  "info",
 	}
@@ -41,6 +39,10 @@ func TestK2V5ConfigTemplate_ContainsCertDir(t *testing.T) {
 		assert.Contains(t, output, "dormant",
 			"tls entries should be annotated as dormant")
 	}
+
+	// local_routes must not appear — k2v4-slave has been decommissioned
+	assert.NotContains(t, output, "local_routes",
+		"k2v5 config must not contain local_routes after k2v4-slave removal")
 }
 
 func TestReadConnectURL_FindsFileAndBuildsURL(t *testing.T) {

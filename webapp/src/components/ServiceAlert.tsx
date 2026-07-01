@@ -156,7 +156,10 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        // Fixed at viewport top — pad past the iOS status bar / notch so the
+        // banner text isn't drawn under it (env() = 0 on desktop & web).
         padding: '8px 16px',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
         backgroundColor: `var(--service-alert-bg, ${theme.bg})`,
         borderBottom: `1px solid var(--service-alert-border, ${theme.border})`,
         gap: '12px',

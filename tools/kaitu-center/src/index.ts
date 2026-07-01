@@ -30,7 +30,9 @@ import { campaignTools } from './tools/admin-campaigns.js'
 import { licenseKeyTools } from './tools/admin-license-keys.js'
 import { planTools } from './tools/admin-plans.js'
 import { cloudTools } from './tools/admin-cloud.js'
+import { nodeOperationTools } from './tools/admin-node-operations.js'
 import { tunnelTools } from './tools/admin-tunnels.js'
+import { nodeTools } from './tools/admin-nodes.js'
 import { statsTools } from './tools/admin-stats.js'
 import { approvalTools } from './tools/admin-approvals.js'
 import { walletTools } from './tools/admin-wallet.js'
@@ -57,6 +59,8 @@ const allFactoryTools: ToolRegistration[] = [
   ...licenseKeyTools,
   ...planTools,
   ...cloudTools,
+  ...nodeOperationTools,
+  ...nodeTools,
   ...tunnelTools,
   ...statsTools,
   ...approvalTools,

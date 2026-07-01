@@ -50,6 +50,7 @@ const menuGroups: MenuGroup[] = [
     title: "基础设施",
     items: [
       { href: "/manager/cloud", icon: Cloud, label: "节点部署" },
+      { href: "/manager/node-operations", icon: ClipboardList, label: "节点运维" },
       { href: "/manager/nodes", icon: Server, label: "节点管理" },
     ]
   },

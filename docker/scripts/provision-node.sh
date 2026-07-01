@@ -18,7 +18,7 @@
 #  11. Configure Docker daemon (IPv6 + log rotation)
 #  12. Install UFW-Docker security patch (if UFW active)
 #  13. Harden SSH: switch to port 1022 only (with rollback on failure)
-#  14. Configure journald persistence + k2v5 crash monitor
+#  14. Configure journald persistence + k2s crash monitor
 #  15. Deploy auto-update cron (daily 04:00 Beijing time)
 #  16. Verify everything works
 #
@@ -486,14 +486,14 @@ else
 fi
 
 # ===================================================================
-# [14/16] Deploy k2v5 crash monitor + journald persistence
+# [14/16] Deploy k2s crash monitor + journald persistence
 # ===================================================================
 
 echo -e "${YELLOW}[14/16] Configuring journald persistence + crash monitor...${NC}"
 
 # Journald persistent storage with retention limits
 mkdir -p /etc/systemd/journald.conf.d
-cat > /etc/systemd/journald.conf.d/k2v5.conf <<'JEOF'
+cat > /etc/systemd/journald.conf.d/k2s.conf <<'JEOF'
 [Journal]
 Storage=persistent
 SystemMaxUse=500M
@@ -504,37 +504,37 @@ systemd-tmpfiles --create --prefix /var/log/journal 2>/dev/null || true
 systemctl restart systemd-journald 2>/dev/null || true
 
 # Install crash monitor systemd service
-if [ -f /apps/kaitu-slave/k2v5-crash-monitor.sh ]; then
-    chmod +x /apps/kaitu-slave/k2v5-crash-monitor.sh
-    cat > /etc/systemd/system/k2v5-crash-monitor.service <<'SEOF'
+if [ -f /apps/k2s/k2s-crash-monitor.sh ]; then
+    chmod +x /apps/k2s/k2s-crash-monitor.sh
+    cat > /etc/systemd/system/k2s-crash-monitor.service <<'SEOF'
 [Unit]
-Description=k2v5 crash monitor
+Description=k2s crash monitor
 After=docker.service
 Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=/apps/kaitu-slave/k2v5-crash-monitor.sh
+ExecStart=/apps/k2s/k2s-crash-monitor.sh
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=k2v5-crash-monitor
+SyslogIdentifier=k2s-crash-monitor
 
 [Install]
 WantedBy=multi-user.target
 SEOF
     systemctl daemon-reload
-    systemctl enable k2v5-crash-monitor.service 2>/dev/null || true
-    systemctl restart k2v5-crash-monitor.service 2>/dev/null || true
+    systemctl enable k2s-crash-monitor.service 2>/dev/null || true
+    systemctl restart k2s-crash-monitor.service 2>/dev/null || true
 
-    if systemctl is-active --quiet k2v5-crash-monitor.service 2>/dev/null; then
+    if systemctl is-active --quiet k2s-crash-monitor.service 2>/dev/null; then
         ok "journald persistent + crash monitor active."
     else
         warn "Crash monitor installed but not active (Docker may not be running yet)."
     fi
 else
-    warn "k2v5-crash-monitor.sh not found. Deploy it to /apps/kaitu-slave/ after provisioning."
+    warn "k2s-crash-monitor.sh not found. Deploy it to /apps/k2s/ after provisioning."
 fi
 
 # ===================================================================
@@ -545,10 +545,10 @@ echo -e "${YELLOW}[15/16] Deploying auto-update cron...${NC}"
 
 which crontab >/dev/null 2>&1 || apt-get install -y cron >/dev/null 2>&1 || true
 
-if [ -f /apps/kaitu-slave/auto-update.sh ]; then
+if [ -f /apps/k2s/auto-update.sh ]; then
     CRON_EXISTS=$(crontab -l 2>/dev/null | grep -c 'auto-update.sh' || true)
     if [ "$CRON_EXISTS" = "0" ]; then
-        (crontab -l 2>/dev/null; echo "0 4 * * * /apps/kaitu-slave/auto-update.sh >> /apps/kaitu-slave/auto-update.log 2>&1") | crontab -
+        (crontab -l 2>/dev/null; echo "0 4 * * * /apps/k2s/auto-update.sh >> /apps/k2s/auto-update.log 2>&1") | crontab -
         ok "Cron entry added (04:00 Beijing time)."
     else
         ok "Cron entry already exists."
@@ -575,8 +575,8 @@ echo -e "Swap:        $(swapon --show=NAME,SIZE --noheadings 2>/dev/null || echo
 echo -e "Swappiness:  $(sysctl -n vm.swappiness 2>/dev/null || echo 'unknown')"
 echo -e "Snapd:       $(command -v snap >/dev/null 2>&1 && echo 'INSTALLED (unexpected)' || echo 'removed')"
 echo -e "Cron:        $(crontab -l 2>/dev/null | grep -c auto-update || echo 0) auto-update entry"
-echo -e "Journald:    $(test -f /etc/systemd/journald.conf.d/k2v5.conf && echo 'persistent (500M/30d)' || echo 'not configured')"
-echo -e "CrashMon:    $(systemctl is-active k2v5-crash-monitor 2>/dev/null || echo 'not installed')"
+echo -e "Journald:    $(test -f /etc/systemd/journald.conf.d/k2s.conf && echo 'persistent (500M/30d)' || echo 'not configured')"
+echo -e "CrashMon:    $(systemctl is-active k2s-crash-monitor 2>/dev/null || echo 'not installed')"
 
 IPV6_ADDR=$(ip -6 addr show scope global 2>/dev/null | grep inet6 | awk '{print $2}' | head -n 1)
 if [ -n "$IPV6_ADDR" ]; then
@@ -601,8 +601,8 @@ fi
 echo -e "${BLUE}==================================================${NC}"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
-echo -e "  1. Deploy docker-compose.yml + .env to /apps/kaitu-slave/"
-echo -e "  2. Ensure users file exists: touch /apps/kaitu-slave/users"
+echo -e "  1. Deploy docker-compose.yml + .env to /apps/k2s/"
+echo -e "  2. Ensure users file exists: touch /apps/k2s/users"
 echo -e "  3. Deploy auto-update.sh via deploy-auto-update.sh"
 echo -e "  4. docker compose up -d && verify sidecar healthy"
 echo -e "  5. Verify hop port DNAT: iptables -t nat -L PREROUTING -n | grep REDIRECT"
