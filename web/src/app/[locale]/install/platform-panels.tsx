@@ -223,9 +223,14 @@ export function IOSPanel({
       <VersionLabel t={t} version={version} isBeta={false} />
 
       {link && (
-        <Button size="lg" onClick={() => openDownloadInNewTab(link)}>
-          <ExternalLink className="w-5 h-5 mr-2" />
-          App Store
+        // Plain same-tab anchor (no window.open / target=_blank): on iOS this
+        // lets the system present the App Store natively (product-page card),
+        // instead of leaving a stray blank Safari tab behind.
+        <Button size="lg" asChild>
+          <a href={link}>
+            <ExternalLink className="w-5 h-5 mr-2" />
+            App Store
+          </a>
         </Button>
       )}
     </div>
