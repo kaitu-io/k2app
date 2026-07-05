@@ -24,10 +24,18 @@ import type { DataUser } from '../services/api-types';
 /**
  * Push Center-detected country + suggestedProfile into the config store.
  * When autoDetect is on, this also updates selectedCountry.
+ *
+ * TODO(country-ownership): 前端不应再依赖后端的 currentCountry / suggestedProfile。
+ *   后端按请求源 IP 判国家(api/geoip.go maybeUpdateUserCountry)会被 geo-via-tunnel
+ *   污染——全局代理下控制面请求走隧道,Center 拿到的是出口节点 IP,误判用户所在国
+ *   (本例:东京出口 → currentCountry=jp → 分流要 jp 规则包 → 缺包 504 无法连接)。
+ *   目标形态:country 的判定完全由前端自己完成(本地网络环境探测),后端 currentCountry
+ *   仅作辅助/参考,不再直接喂进 config store。届时移除本函数对 user.currentCountry /
+ *   user.suggestedProfile 的使用。当前先硬钉 cn 兜底。
  */
 function syncDetectedProfile(user: DataUser): void {
   useConfigStore.getState().setDetectedProfile({
-    country: user.currentCountry ?? null,
+    country: 'cn', // 强制 cn：cn.krs 内置,永不缺包 504;规避 geo-via-tunnel 污染(出口节点 IP 误判国家)
     profile: user.suggestedProfile ?? null,
   });
 }
