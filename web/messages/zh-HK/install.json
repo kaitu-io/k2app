@@ -23,12 +23,8 @@
     "windowsVersion": "Windows 10/11",
     "downloadExe": "Windows 電腦版",
     "macos": "蘋果電腦",
-    "macosVersion": "macOS 11+",
+    "macosVersion": "macOS 12+",
     "downloadDmg": "蘋果電腦版",
-    "macos11Notice": {
-      "title": "macOS 11 相容性說明",
-      "body": "你下載嘅版本支援 macOS 11+，可以正常安裝使用。但開途官方技術支援目前只覆蓋 macOS 12 同以上版本——若喺 macOS 11 上遇到問題，歡迎透過 App 內反饋聯絡我哋，我哋會盡力協助，但唔保證一定能解決。建議升級到 macOS 12 或更新版本以獲得完整支援。"
-    },
     "ios": "iPhone / iPad",
     "iosDevices": "iPhone 同 iPad",
     "android": "安卓",

@@ -141,53 +141,6 @@ export function getAlternativeDownloads(downloadLinks: Record<string, string>): 
 }
 
 /**
- * Whether to show the macOS 11 supportability disclaimer on the install page.
- *
- * Policy: conservative — default ON, hide only when we are confident the user
- * is on macOS 12 or later. This guarantees macOS 11 users always see the
- * warning, at the cost of occasional needless display when version detection
- * is blocked.
- *
- * Detection matrix:
- *   Chromium (Chrome/Edge/Arc):  navigator.userAgentData.getHighEntropyValues — reliable
- *   Firefox (Intel Mac):         userAgent exposes true "Mac OS X 11.0" — reliable
- *   Firefox (Apple Silicon):     userAgent capped at "10.15" — falls through (show)
- *   Safari:                      userAgent always "10_15_7" post-Big Sur — falls through (show)
- *   Non-macOS / SSR:             irrelevant — caller only invokes on macOS panel
- *
- * Any unknown / errored path returns true, matching the conservative policy.
- */
-export async function shouldShowMacOS11Notice(): Promise<boolean> {
-  if (typeof window === 'undefined') return true;
-
-  const ua = window.navigator.userAgent;
-  if (!/Mac OS X|Macintosh/.test(ua)) return true;
-
-  const uaData = (window.navigator as Navigator & {
-    userAgentData?: { getHighEntropyValues?: (hints: string[]) => Promise<{ platformVersion?: string }> };
-  }).userAgentData;
-  if (uaData?.getHighEntropyValues) {
-    try {
-      const hints = await uaData.getHighEntropyValues(['platformVersion']);
-      const major = parseInt((hints.platformVersion ?? '').split('.')[0], 10);
-      if (!isNaN(major) && major >= 12) return false;
-    } catch {
-      // Client Hints rejected or unsupported — fall through to show.
-    }
-  }
-
-  if (/Firefox\//.test(ua)) {
-    const match = ua.match(/Mac OS X (\d+)[._](\d+)/);
-    if (match) {
-      const major = parseInt(match[1], 10);
-      if (!isNaN(major) && major >= 12) return false;
-    }
-  }
-
-  return true;
-}
-
-/**
  * Trigger automatic download for supported browsers
  */
 export function triggerDownload(url: string, filename?: string): boolean {

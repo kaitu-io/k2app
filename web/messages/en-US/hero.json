@@ -338,7 +338,7 @@
       "androidLabel": "Android",
       "windows": "Supports Windows 10/11",
       "windowsLabel": "Windows",
-      "macos": "Supports macOS 11+",
+      "macos": "Supports macOS 12+",
       "macosLabel": "Mac"
     },
     "downloadButton": "Download",
@@ -438,7 +438,7 @@
       },
       "platforms": {
         "question": "What platforms does Overleap support?",
-        "answer": "Overleap supports all major platforms: Windows 10/11, macOS 11+ (Intel + Apple Silicon universal binary), Linux (Ubuntu, Debian, and other major distributions), iOS (iPhone/iPad, available on the China App Store), Android, and OpenWrt smart routers. One account allows up to 5 simultaneous devices. Overleap also provides the k2s server binary for self-hosting on any VPS."
+        "answer": "Overleap supports all major platforms: Windows 10/11, macOS 12+ (Intel + Apple Silicon universal binary), Linux (Ubuntu, Debian, and other major distributions), iOS (iPhone/iPad, available on the China App Store), Android, and OpenWrt smart routers. One account allows up to 5 simultaneous devices. Overleap also provides the k2s server binary for self-hosting on any VPS."
       },
       "selfHosting": {
         "question": "Can I self-host my own Overleap server?",

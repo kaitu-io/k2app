@@ -338,7 +338,7 @@
       "androidLabel": "Android",
       "windows": "Windows 10/11 に対応",
       "windowsLabel": "Windows",
-      "macos": "macOS 11+ に対応",
+      "macos": "macOS 12+ に対応",
       "macosLabel": "Mac"
     },
     "downloadButton": "ダウンロード",
@@ -438,7 +438,7 @@
       },
       "platforms": {
         "question": "Overleap はどのデバイスに対応していますか？",
-        "answer": "Overleap は全主要プラットフォームに対応しています：Windows 10/11、macOS 11+（Intel + Apple Silicon ユニバーサルバイナリ）、Linux（Ubuntu、Debian、その他主要ディストリビューション）、iOS（iPhone/iPad、中国版 App Store で入手可能）、Android、OpenWrt スマートルーター。1 つのアカウントで最大 5 台のデバイスを同時接続可能です。任意の VPS にセルフホスティング可能な k2s サーバーバイナリも提供しています。"
+        "answer": "Overleap は全主要プラットフォームに対応しています：Windows 10/11、macOS 12+（Intel + Apple Silicon ユニバーサルバイナリ）、Linux（Ubuntu、Debian、その他主要ディストリビューション）、iOS（iPhone/iPad、中国版 App Store で入手可能）、Android、OpenWrt スマートルーター。1 つのアカウントで最大 5 台のデバイスを同時接続可能です。任意の VPS にセルフホスティング可能な k2s サーバーバイナリも提供しています。"
       },
       "selfHosting": {
         "question": "Overleap サーバーをセルフホストできますか？",

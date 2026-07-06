@@ -13,7 +13,6 @@ import {
   RouterCliBlock,
   DownloadTipCard,
 } from './install-guides';
-import { MacOS11Notice } from './macos-11-notice';
 import { openDownloadInNewTab } from '@/lib/device-detection';
 import { Link } from '@/i18n/routing';
 
@@ -142,8 +141,6 @@ export function MacOSPanel({
         {t('install.install.heroTitle.macos')}
       </h1>
       <VersionLabel t={t} version={version} isBeta={isBeta} />
-
-      <MacOS11Notice t={t} />
 
       <Button size="lg" onClick={() => openDownloadInNewTab(primaryLink)}>
         <Download className="w-5 h-5 mr-2" />
