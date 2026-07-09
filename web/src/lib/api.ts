@@ -1722,6 +1722,20 @@ export const api = {
     });
   },
 
+  // 封禁用户（管理员）
+  async blockUser(userUUID: string): Promise<void> {
+    return this.request<void>(`/app/users/${userUUID}/block`, {
+      method: 'POST',
+    });
+  },
+
+  // 解封用户（管理员）
+  async unblockUser(userUUID: string): Promise<void> {
+    return this.request<void>(`/app/users/${userUUID}/unblock`, {
+      method: 'POST',
+    });
+  },
+
   // Withdraw management APIs
   async listWithdrawRequests(params: {
     page?: number;
