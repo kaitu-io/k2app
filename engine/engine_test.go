@@ -661,6 +661,76 @@ func TestEngineStatusJSON_Paused(t *testing.T) {
 	}
 }
 
+// TestEngine_PauseWake_StatusReflectsPaused drives Pause()/Wake() through
+// their real guarded entry points (not manual field mutation) and checks
+// both the one-shot OnStatus push AND a StatusJSON() query agree at every
+// step — this is the exact push/query duality that was broken for ticket
+// #3169 (query kept reporting "connected" while paused).
+func TestEngine_PauseWake_StatusReflectsPaused(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	pdns := dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
+		Dialer:  newMockWireDialer(newBlockingPacketConn()),
+		Servers: []string{"8.8.8.8:53"},
+	})
+	tm := &wire.TransportManager{}
+	e.mu.Lock()
+	e.state = StateConnected
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
+	e.proxyDNS = pdns
+	e.client = &config.ClientConfig{Server: "k2v5://udid:tok@1.2.3.4:443"}
+	e.connectedAt = time.Now().Add(-10 * time.Second)
+	e.mu.Unlock()
+
+	// Sanity: query agrees with "connected" before any pause.
+	if raw := e.StatusJSON(); !strings.Contains(raw, `"state":"connected"`) {
+		t.Fatalf("pre-pause StatusJSON = %s, want state=connected", raw)
+	}
+
+	e.Pause()
+
+	// Push: the one-shot OnStatus(StatePaused) fired.
+	states := h.getStates()
+	if len(states) == 0 || states[len(states)-1] != string(StatePaused) {
+		t.Fatalf("after Pause(), last pushed state = %v, want %q", states, StatePaused)
+	}
+	// Query: StatusJSON() must agree with the push, not lag behind it.
+	if raw := e.StatusJSON(); !strings.Contains(raw, `"state":"paused"`) {
+		t.Fatalf("after Pause(), StatusJSON = %s, want state=paused", raw)
+	}
+	// e.state itself stays StateConnected — paused is handler/query-only (event.go StatePaused comment).
+	e.mu.Lock()
+	internalState := e.state
+	e.mu.Unlock()
+	if internalState != StateConnected {
+		t.Fatalf("internal e.state after Pause() = %v, want StateConnected (paused must not mutate e.state)", internalState)
+	}
+
+	e.Wake()
+
+	states = h.getStates()
+	if len(states) == 0 || states[len(states)-1] != string(StateConnected) {
+		t.Fatalf("after Wake(), last pushed state = %v, want %q", states, StateConnected)
+	}
+	if raw := e.StatusJSON(); !strings.Contains(raw, `"state":"connected"`) {
+		t.Fatalf("after Wake(), StatusJSON = %s, want state=connected", raw)
+	}
+
+	// Second Pause()/Wake() cycle — guards against any one-shot-only bug
+	// (e.g. a field that gets cleared and never re-armed).
+	e.Pause()
+	if raw := e.StatusJSON(); !strings.Contains(raw, `"state":"paused"`) {
+		t.Fatalf("second Pause(): StatusJSON = %s, want state=paused", raw)
+	}
+	e.Wake()
+	if raw := e.StatusJSON(); !strings.Contains(raw, `"state":"connected"`) {
+		t.Fatalf("second Wake(): StatusJSON = %s, want state=connected", raw)
+	}
+}
+
 func TestEngineStatusJSON_AfterFailedStart(t *testing.T) {
 	e := New()
 	_ = e.Start(testConfig("garbage"))
