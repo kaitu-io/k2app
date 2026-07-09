@@ -72,7 +72,12 @@ export function getErrorI18nKey(code: number): string {
 // ==================== VPN 控制 ====================
 
 // Service state enum (matches Go backend)
-export type ServiceState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'disconnecting' | 'error';
+// 'paused' is a mobile-only, handler-broadcast-only value (engine.state itself
+// stays 'connected' — see k2/engine/event.go StatePaused comment). It reaches
+// the webapp via both the push event and status queries (k2/engine/engine.go
+// buildStatusLocked) while Android/iOS have torn down the tunnel for memory
+// conservation. See backendStatusToEvent() for how it's mapped.
+export type ServiceState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'disconnecting' | 'error' | 'paused';
 
 /**
  * ControlError 错误信息

@@ -72,6 +72,8 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
 
     companion object {
         private const val TAG = "K2VpnService"
+        /** Worst-case bound on how long a memory-pressure pause can last before self-waking. */
+        private const val PAUSE_SAFETY_NET_MS = 60_000L
     }
 
     // @Volatile: read from main, engineExecutor, and system callback threads.
@@ -88,6 +90,14 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
     private var pendingNetworkChange: Runnable? = null
     /** Tracks whether engine was paused by onTrimMemory — reset on wake or stopVpn. */
     private val enginePaused = AtomicBoolean(false)
+    /**
+     * Bounds how long the engine can stay paused. The only other wake path is
+     * ConnectivityManager.onAvailable(), which does not fire on a stable,
+     * unchanging network — on a fixed home WiFi this left the tunnel torn
+     * down (while the UI still read "connected") for 11-58 minutes in the
+     * field (ticket #3169). This timer force-wakes regardless.
+     */
+    private var pendingPauseTimeout: Runnable? = null
     /** Single-thread executor for all blocking gomobile JNI calls — keeps them off the main thread. */
     private val engineExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "k2-engine").apply { isDaemon = true }
@@ -182,10 +192,33 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= TRIM_MEMORY_RUNNING_LOW && engine != null && !enginePaused.get()) {
+        // RUNNING_CRITICAL (was RUNNING_LOW): this is a foreground service, so it
+        // only ever sees the RUNNING_* tiers (5/10/15), never the backgroundable
+        // BACKGROUND/MODERATE/COMPLETE tiers (40/60/80). RUNNING_LOW fires readily
+        // during ordinary background use and was tearing down the tunnel far more
+        // often than genuine memory pressure warranted (ticket #3169).
+        if (level >= TRIM_MEMORY_RUNNING_CRITICAL && engine != null && !enginePaused.get()) {
             Log.w(TAG, "onTrimMemory: level=$level — pausing engine and freeing Go memory")
             NativeLogger.log("WARN", "onTrimMemory: level=$level — pausing engine")
             enginePaused.set(true)
+
+            pendingPauseTimeout?.let { mainHandler.removeCallbacks(it) }
+            val timeout = Runnable {
+                if (enginePaused.compareAndSet(true, false)) {
+                    Log.w(TAG, "pause safety-net: no network callback within ${PAUSE_SAFETY_NET_MS}ms — waking anyway")
+                    NativeLogger.log("WARN", "pause safety-net: waking engine without network callback")
+                    engineExecutor.execute {
+                        try {
+                            engine?.wake()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "pause safety-net: engine.wake() failed: ${e.message}", e)
+                        }
+                    }
+                }
+            }
+            pendingPauseTimeout = timeout
+            mainHandler.postDelayed(timeout, PAUSE_SAFETY_NET_MS)
+
             engineExecutor.execute {
                 try {
                     engine?.pause()
@@ -419,6 +452,8 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         Log.i(TAG, "stopVpn: beginning teardown (engine=${engine != null})")
         NativeLogger.log("INFO", "stopVpn: beginning teardown")
         enginePaused.set(false)
+        pendingPauseTimeout?.let { mainHandler.removeCallbacks(it) }
+        pendingPauseTimeout = null
         unregisterNetworkCallback()
         // Capture eng + pfd locally and clear fields synchronously on the caller thread.
         //
@@ -483,6 +518,12 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
                 Log.d(TAG, "Network available: $network")
                 NativeLogger.log("DEBUG", "onAvailable: network change")
                 pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
+                // A real network callback beat the safety-net timer — cancel it so it
+                // doesn't fire a redundant wake() later (engine.wake() call below is a
+                // no-op past this point either way, but this keeps the log honest about
+                // which path actually recovered the tunnel).
+                pendingPauseTimeout?.let { mainHandler.removeCallbacks(it) }
+                pendingPauseTimeout = null
                 val runnable = Runnable {
                     // Run gomobile call off main thread
                     engineExecutor.execute {

@@ -209,6 +209,10 @@ export function backendStatusToEvent(status: StatusResponseData): VPNEvent {
     case 'disconnected':  event = 'BACKEND_DISCONNECTED'; break;
     case 'connecting':
     case 'reconnecting':  event = 'BACKEND_RECONNECTING'; break;
+    // Mobile-only: engine tore down wire connections for memory conservation
+    // but the tunnel is still alive and will resume on its own — treat like
+    // reconnecting, not disconnected. See ServiceState 'paused' doc comment.
+    case 'paused':         event = 'BACKEND_RECONNECTING'; break;
     case 'error':         event = 'BACKEND_ERROR'; break;
     case 'disconnecting': event = 'BACKEND_DISCONNECTED'; break;
     default:              event = 'BACKEND_DISCONNECTED'; break;

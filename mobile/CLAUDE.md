@@ -153,10 +153,12 @@ Two-layer panic protection in `k2/appext/appext.go`:
 ## Memory Pressure Handling
 
 ### Android: `onTrimMemory()`
-- Triggers at `TRIM_MEMORY_RUNNING_LOW` (level 10+)
+- Triggers at `TRIM_MEMORY_RUNNING_CRITICAL` (level 15+) — K2VpnService is a foreground service, so it only ever sees the RUNNING_* tiers (5/10/15), never the backgroundable BACKGROUND/MODERATE/COMPLETE tiers (40/60/80). `RUNNING_LOW` (10) fired too readily during ordinary background use and tore down the tunnel far more often than genuine memory pressure warranted (ticket #3169 — UI kept reading "connected" for 11-58 min while the tunnel was dead).
 - Calls `engine.pause()` (releases QUIC/TCP-WS connections) + `Appext.freeMemory()` (Go GC + return to OS)
 - `AtomicBoolean(enginePaused)` prevents double-pause
-- Auto-wake on `onAvailable()` network callback (`compareAndSet(true, false)`)
+- Primary wake: `onAvailable()` network callback (`compareAndSet(true, false)`)
+- Safety-net wake: `pendingPauseTimeout` — `onAvailable()` does not fire on a stable, unchanging network, so a 60s `mainHandler.postDelayed` bound-of-last-resort force-wakes if no network callback arrives first. Cancelled by a real `onAvailable()` and by `stopVpn()`.
+- `engine.GetStatus()`/`StatusJSON()` reports `"paused"` while `e.paused` is true (`k2/engine/engine.go buildStatusLocked`) — not just the one-shot `OnStatus(StatePaused)` push — so polling clients (webapp's 15s safety-net poll) don't overwrite the paused UI state back to "connected".
 - Reset on `stopVpn()`
 
 ### iOS: `NETunnelProvider.sleep()` / `wake()`

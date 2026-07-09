@@ -190,6 +190,22 @@ describe('VPN Machine Transitions', () => {
       act(() => { vi.advanceTimersByTime(3000); });
       expect(useVPNMachineStore.getState().state).toBe('connected');
     });
+
+    it('paused status (mobile memory-pressure pause) → reconnecting, never idle', async () => {
+      // End-to-end regression test for ticket #3169: a raw {state: 'paused'}
+      // status push, run through backendStatusToEvent exactly like
+      // dispatchStatus() does, must debounce into 'reconnecting' — never
+      // drop straight to 'idle' (which would clear connectedTunnel and read
+      // to the user as a full disconnect for what is actually a transient,
+      // self-recovering pause).
+      const { useVPNMachineStore, dispatch, backendStatusToEvent } = await enterConnected();
+
+      dispatch(backendStatusToEvent({ state: 'paused' } as any));
+      expect(useVPNMachineStore.getState().state).toBe('connected'); // debounce window
+
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(useVPNMachineStore.getState().state).toBe('reconnecting');
+    });
   });
 
   describe('reconnecting state', () => {
@@ -503,6 +519,17 @@ describe('backendStatusToEvent', () => {
     expect(backendStatusToEvent({ state: 'reconnecting' } as any)).toBe('BACKEND_RECONNECTING');
     expect(backendStatusToEvent({ state: 'error' } as any)).toBe('BACKEND_ERROR');
     expect(backendStatusToEvent({ state: 'disconnecting' } as any)).toBe('BACKEND_DISCONNECTED');
+  });
+
+  it('maps paused (mobile memory-pressure pause) to BACKEND_RECONNECTING, not disconnected', async () => {
+    // Regression test: 'paused' used to fall through the switch's default
+    // case to BACKEND_DISCONNECTED, which dropped a live-but-torn-down
+    // tunnel straight to 'idle' instead of 'reconnecting'. See ticket #3169
+    // (Android onTrimMemory pause — UI must not lie about being connected,
+    // but must also not claim the tunnel is fully gone).
+    const { backendStatusToEvent } = await getStore();
+
+    expect(backendStatusToEvent({ state: 'paused' } as any)).toBe('BACKEND_RECONNECTING');
   });
 });
 
