@@ -621,6 +621,46 @@ func TestEngineStatusJSON_Connected(t *testing.T) {
 	}
 }
 
+func TestEngineStatusJSON_Paused(t *testing.T) {
+	e := New()
+
+	// e.state stays StateConnected while paused (see event.go StatePaused
+	// comment) — buildStatusLocked must still report "paused" so queries
+	// (native getStatusJSON, webapp safety-net poll) agree with the
+	// one-shot OnStatus(StatePaused) push instead of overwriting it.
+	e.mu.Lock()
+	e.state = StateConnected
+	e.paused = true
+	e.client = &config.ClientConfig{Server: "k2v5://udid:tok@1.2.3.4:443"}
+	e.connectedAt = time.Now().Add(-10 * time.Second)
+	e.mu.Unlock()
+
+	raw := e.StatusJSON()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("StatusJSON returned invalid JSON: %v", err)
+	}
+	if m["state"] != StatePaused {
+		t.Fatalf("state = %v, want %q", m["state"], StatePaused)
+	}
+
+	// Unpausing (without a full Wake(), which requires TM/DNS scaffolding
+	// exercised separately in TestEngine_Wake_ResetsProxyDNS) must flip the
+	// queried state back to "connected".
+	e.mu.Lock()
+	e.paused = false
+	e.mu.Unlock()
+
+	raw = e.StatusJSON()
+	m = nil
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("StatusJSON returned invalid JSON: %v", err)
+	}
+	if m["state"] != StateConnected {
+		t.Fatalf("state after unpause = %v, want %q", m["state"], StateConnected)
+	}
+}
+
 func TestEngineStatusJSON_AfterFailedStart(t *testing.T) {
 	e := New()
 	_ = e.Start(testConfig("garbage"))

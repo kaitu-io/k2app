@@ -985,9 +985,19 @@ func (e *Engine) GetStatus() Status {
 }
 
 // buildStatusLocked builds a Status from current fields. Caller must hold e.mu.
+//
+// e.state itself stays StateConnected while paused (Pause()/Wake() only flip
+// e.paused — see the StatePaused comment in event.go). Any status query
+// (native getStatusJSON, webapp initial fetch, 15s safety-net poll) must see
+// "paused" here too, otherwise the one-shot OnStatus(StatePaused) push gets
+// immediately overwritten by the next poll reporting "connected".
 func (e *Engine) buildStatusLocked() Status {
+	state := e.state
+	if e.paused {
+		state = StatePaused
+	}
 	return Status{
-		State:       e.state,
+		State:       state,
 		Error:       e.lastError,
 		ConnectedAt: e.connectedAt,
 	}
