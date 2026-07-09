@@ -2,14 +2,19 @@ package center
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/redis"
 )
 
 // seedBlockedLoginUser creates a User + email LoginIdentify pair backed by the
@@ -263,4 +268,104 @@ func TestAuthOptional_BlockedUserTreatedAsAnonymous(t *testing.T) {
 	if resp.UserID != 0 {
 		t.Errorf("blocked user must be treated as anonymous (userID=0), got %d", resp.UserID)
 	}
+}
+
+func TestRefreshToken_BlockedUser_ReturnsForbidden(t *testing.T) {
+	skipIfNoConfig(t)
+
+	user, _ := seedBlockedLoginUser(t, true, "")
+
+	udid := "udid-refresh-block-" + user.UUID
+	device := Device{UDID: udid, UserID: user.ID, Remark: "refresh-block-test"}
+	require.NoError(t, db.Get().Create(&device).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&device) })
+
+	authResult, issueTime, err := generateTokens(context.Background(), user.ID, udid, 0)
+	require.NoError(t, err)
+	device.TokenIssueAt = issueTime.Unix()
+	require.NoError(t, db.Get().Save(&device).Error)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/api/auth/refresh", api_refresh_token)
+
+	resp := postJSON(t, r, "/api/auth/refresh", map[string]string{
+		"refreshToken": authResult.RefreshToken,
+	})
+	assert.Equal(t, int(ErrorForbidden), resp.Code)
+}
+
+func TestRefreshToken_NotBlockedUser_Succeeds(t *testing.T) {
+	skipIfNoConfig(t)
+
+	user, _ := seedBlockedLoginUser(t, false, "")
+
+	udid := "udid-refresh-ok-" + user.UUID
+	device := Device{UDID: udid, UserID: user.ID, Remark: "refresh-ok-test"}
+	require.NoError(t, db.Get().Create(&device).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&device) })
+
+	authResult, issueTime, err := generateTokens(context.Background(), user.ID, udid, 0)
+	require.NoError(t, err)
+	device.TokenIssueAt = issueTime.Unix()
+	require.NoError(t, db.Get().Save(&device).Error)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/api/auth/refresh", api_refresh_token)
+
+	resp := postJSON(t, r, "/api/auth/refresh", map[string]string{
+		"refreshToken": authResult.RefreshToken,
+	})
+	assert.Equal(t, 0, resp.Code)
+}
+
+func TestExchangeOTT_BlockedUser_RedirectsToInvalid(t *testing.T) {
+	skipIfNoConfig(t)
+
+	user, _ := seedBlockedLoginUser(t, true, "")
+
+	const redirect = "https://app.kaitu.io/dashboard"
+	token := "ott-test-blocked-" + user.UUID
+	data := ottData{UserID: user.ID, Redirect: redirect}
+	dataJSON, err := json.Marshal(data)
+	require.NoError(t, err)
+	require.NoError(t, redis.CacheSet(ottPrefix+token, string(dataJSON), ottTTL))
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/auth/ott/exchange", api_exchange_ott)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/ott/exchange?ott="+token+"&redirect="+url.QueryEscape(redirect), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "reason=invalid")
+}
+
+func TestExchangeOTT_NotBlockedUser_Succeeds(t *testing.T) {
+	skipIfNoConfig(t)
+
+	user, _ := seedBlockedLoginUser(t, false, "")
+
+	const redirect = "https://app.kaitu.io/dashboard"
+	token := "ott-test-ok-" + user.UUID
+	data := ottData{UserID: user.ID, Redirect: redirect}
+	dataJSON, err := json.Marshal(data)
+	require.NoError(t, err)
+	require.NoError(t, redis.CacheSet(ottPrefix+token, string(dataJSON), ottTTL))
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/auth/ott/exchange", api_exchange_ott)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/ott/exchange?ott="+token+"&redirect="+url.QueryEscape(redirect), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, redirect, w.Header().Get("Location"))
+	setCookie := w.Header().Get("Set-Cookie")
+	assert.Contains(t, setCookie, "access_token")
 }

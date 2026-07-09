@@ -433,6 +433,18 @@ func api_refresh_token(c *gin.Context) {
 		return
 	}
 
+	var user User
+	if err := db.Get().First(&user, claims.UserID).Error; err != nil {
+		log.Errorf(c, "failed to load user %d during token refresh: %v", claims.UserID, err)
+		Error(c, ErrorSystemError, "failed to refresh token")
+		return
+	}
+	if isUserBlocked(&user) {
+		log.Warnf(c, "token refresh rejected: user %d is blocked", claims.UserID)
+		Error(c, ErrorForbidden, "account blocked")
+		return
+	}
+
 	authResult, tokenIssueTime, err := generateTokens(c, claims.UserID, claims.DeviceID, claims.Roles)
 	if err != nil {
 		log.Errorf(c, "failed to generate new access token for user %d: %v", claims.UserID, err)
