@@ -142,6 +142,8 @@ type DataUser struct {
 	RegistrationCountry string `json:"registrationCountry"` // 注册时检测到的国家代码（空=未知）
 	CurrentCountry      string `json:"currentCountry"`      // 最近一次请求检测到的国家代码（空=未知）
 	SuggestedProfile    string `json:"suggestedProfile"`    // 推荐 routing profile，客户端默认选用（如 iroute / cnroute / global）
+
+	IsBlocked bool `json:"isBlocked,omitempty"` // 是否被封禁（仅管理员可见，仅管理端点填充）
 }
 
 // DataRetailerConfig 分销商配置数据结构

@@ -160,6 +160,7 @@ func api_admin_list_users(c *gin.Context) {
 			IsAdmin:            u.IsAdmin != nil && *u.IsAdmin,
 			HasAccessKey:       u.AccessKey != nil && *u.AccessKey != "",
 			AccessKeyCreatedAt: u.AccessKeyCreatedAt,
+			IsBlocked:          isUserBlocked(&u),
 		}
 	}
 
@@ -430,6 +431,7 @@ func api_admin_get_user_detail(c *gin.Context) {
 			IsAdmin:            user.IsAdmin != nil && *user.IsAdmin,
 			HasAccessKey:       user.AccessKey != nil && *user.AccessKey != "",
 			AccessKeyCreatedAt: user.AccessKeyCreatedAt,
+			IsBlocked:          isUserBlocked(&user),
 		},
 		Devices:       devices,
 		Orders:        orders,
