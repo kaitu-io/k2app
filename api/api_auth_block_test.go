@@ -191,3 +191,76 @@ func TestSendAuthCode_NotBlockedUser_Succeeds(t *testing.T) {
 		t.Errorf("expected success (0), got %d", resp.Code)
 	}
 }
+
+func TestAuthRequired_BlocksAlreadyLoggedInUser(t *testing.T) {
+	skipIfNoConfig(t)
+
+	now := time.Now().Format("20060102150405.000000")
+	user := User{UUID: "usr-block-mw-" + now, IsBlocked: BoolPtr(true)}
+	if err := db.Get().Create(&user).Error; err != nil {
+		t.Fatalf("failed to create test user: %v", err)
+	}
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	// Web-auth token (empty deviceID) — no Device row needed, exercises the
+	// no-udid branch of handleJWTAuth.
+	token := GenerateTestToken(user.ID, "", time.Hour)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/user/info", AuthRequired(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"code": 0})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/user/info", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp blockTestResp
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v, body=%s", err, w.Body.String())
+	}
+	if resp.Code != int(ErrorForbidden) {
+		t.Errorf("expected ErrorForbidden for blocked user's live session, got %d", resp.Code)
+	}
+}
+
+func TestAuthOptional_BlockedUserTreatedAsAnonymous(t *testing.T) {
+	skipIfNoConfig(t)
+
+	now := time.Now().Format("20060102150405.000000")
+	user := User{UUID: "usr-block-opt-" + now, IsBlocked: BoolPtr(true)}
+	if err := db.Get().Create(&user).Error; err != nil {
+		t.Fatalf("failed to create test user: %v", err)
+	}
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	token := GenerateTestToken(user.ID, "", time.Hour)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/optional-endpoint", AuthOptional(), func(c *gin.Context) {
+		// Anonymous requests reach here with ReqUserID == 0.
+		c.JSON(http.StatusOK, gin.H{"code": 0, "userID": ReqUserID(c)})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/optional-endpoint", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp struct {
+		Code   int    `json:"code"`
+		UserID uint64 `json:"userID"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v, body=%s", err, w.Body.String())
+	}
+	if resp.Code != 0 {
+		t.Errorf("AuthOptional must not abort for blocked user, got code %d", resp.Code)
+	}
+	if resp.UserID != 0 {
+		t.Errorf("blocked user must be treated as anonymous (userID=0), got %d", resp.UserID)
+	}
+}

@@ -417,6 +417,12 @@ func AuthRequired() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if isUserBlocked(ctx.User) {
+			log.Warnf(c, "request rejected for %s: user %d is blocked", c.Request.URL.Path, ctx.UserID)
+			Error(c, ErrorForbidden, "account blocked")
+			c.Abort()
+			return
+		}
 		maybeUpdateUserCountry(c, ctx.User)
 		c.Next()
 	}
@@ -430,6 +436,14 @@ func AuthOptional() gin.HandlerFunc {
 		// 尝试认证，但不阻止请求
 		// getAuthContext 会将认证信息存储到上下文中（如果认证成功）
 		ctx := getAuthContext(c)
+		if ctx != nil && isUserBlocked(ctx.User) {
+			// 被封禁账号在"允许匿名"的接口上降级为匿名，而不是 403——
+			// 这类接口本来就该让匿名用户能访问，被封禁不该比匿名更差。
+			log.Warnf(c, "optional auth: user %d is blocked, treating as anonymous", ctx.UserID)
+			c.Set("authContext", (*authContext)(nil))
+			c.Next()
+			return
+		}
 		if ctx != nil {
 			// 将 claims 信息存储到上下文中，供 ReqUserIDOptional 使用
 			c.Set("claims", &TokenClaims{UserID: ctx.UserID})
