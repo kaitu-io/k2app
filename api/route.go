@@ -340,6 +340,9 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/users/:uuid/devices/:udid/test-token", api_admin_issue_test_token)
 		admin.POST("/users/:uuid/access-key", api_admin_generate_access_key)
 		admin.DELETE("/users/:uuid/access-key", api_admin_revoke_access_key)
+		// 用户封禁管理（管理员直接执行，无需审批）
+		admin.POST("/users/:uuid/block", api_admin_block_user)
+		admin.POST("/users/:uuid/unblock", api_admin_unblock_user)
 
 		// Device statistics
 		admin.GET("/devices/statistics", api_admin_get_device_statistics)

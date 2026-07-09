@@ -89,6 +89,9 @@ type User struct {
 	// 地理位置（ISO 3166-1 alpha-2 小写，空字符串表示未知）
 	RegistrationCountry string `gorm:"column:registration_country;type:varchar(2);not null;default:''" json:"registrationCountry"` // 注册时（首次创建用户）检测到的国家
 	CurrentCountry      string `gorm:"column:current_country;type:varchar(2);not null;default:''" json:"currentCountry"`           // 最近一次认证请求检测到的国家
+
+	// 封禁状态（管理员后台直接操作，无审批流程）
+	IsBlocked *bool `gorm:"default:false"` // 是否被封禁：true 时所有登录入口和鉴权中间件均拒绝服务
 }
 
 // 获取付费人ID的辅助方法

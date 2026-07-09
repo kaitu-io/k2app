@@ -150,6 +150,7 @@ interface UserDetailData {
   roles?: number;
   hasAccessKey?: boolean;
   accessKeyCreatedAt?: number;
+  isBlocked?: boolean;
 }
 
 // 可分配的角色列表（不含 RoleUser，始终保留）
@@ -270,6 +271,7 @@ function UserDetailContent() {
       setUserDetail({
         ...data,
         isRetailer: data.isRetailer || false,
+        isBlocked: data.isBlocked || false,
         loginIdentifies: data.loginIdentifies || [],
         devices: data.devices || [],
         orders: data.orders || [],
@@ -616,7 +618,14 @@ function UserDetailContent() {
     <div className="container mx-auto p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">{"用户详情"}</h1>
-        <MoreActionsMenu userUUID={userDetail.uuid} userEmail={email} />
+        <MoreActionsMenu
+          userUUID={userDetail.uuid}
+          userEmail={email}
+          isBlocked={!!userDetail.isBlocked}
+          onBlockChange={(blocked) =>
+            setUserDetail((prev) => (prev ? { ...prev, isBlocked: blocked } : null))
+          }
+        />
       </div>
 
       {/* 基本信息 */}

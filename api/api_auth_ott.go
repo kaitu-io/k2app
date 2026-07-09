@@ -144,6 +144,12 @@ func api_exchange_ott(c *gin.Context) {
 		return
 	}
 
+	if isUserBlocked(&user) {
+		log.Warnf(c, "OTT exchange rejected: user %d is blocked", user.ID)
+		c.Redirect(302, "/auth/login?reason=invalid")
+		return
+	}
+
 	// Generate web cookie token (same as web login)
 	authResult, _, err := generateWebCookieToken(c, user.ID, user.Roles)
 	if err != nil {

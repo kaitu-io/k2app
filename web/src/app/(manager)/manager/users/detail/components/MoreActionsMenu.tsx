@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MoreHorizontal, Trash2, KeyRound } from "lucide-react";
+import { MoreHorizontal, Trash2, KeyRound, Ban } from "lucide-react";
 import { toast } from "sonner";
 import { api, isPendingApproval } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -26,14 +26,23 @@ import { ResetPasswordDialog } from "./ResetPasswordDialog";
 interface MoreActionsMenuProps {
   userUUID: string;
   userEmail: string;
+  isBlocked: boolean;
+  onBlockChange: (blocked: boolean) => void;
 }
 
-export function MoreActionsMenu({ userUUID, userEmail }: MoreActionsMenuProps) {
+export function MoreActionsMenu({
+  userUUID,
+  userEmail,
+  isBlocked,
+  onBlockChange,
+}: MoreActionsMenuProps) {
   const router = useRouter();
   const [showResetPasswordDialog, setShowResetPasswordDialog] = useState(false);
   const [showFirstConfirm, setShowFirstConfirm] = useState(false);
   const [showSecondConfirm, setShowSecondConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const [isTogglingBlock, setIsTogglingBlock] = useState(false);
 
   const handleDeleteClick = () => {
     setShowFirstConfirm(true);
@@ -73,6 +82,29 @@ export function MoreActionsMenu({ userUUID, userEmail }: MoreActionsMenuProps) {
     }
   };
 
+  const confirmToggleBlock = async () => {
+    if (isTogglingBlock) return;
+
+    setIsTogglingBlock(true);
+    try {
+      if (isBlocked) {
+        await api.unblockUser(userUUID);
+        toast.success("已解封该用户");
+        onBlockChange(false);
+      } else {
+        await api.blockUser(userUUID);
+        toast.success("已封禁该用户");
+        onBlockChange(true);
+      }
+      setShowBlockConfirm(false);
+    } catch (error) {
+      console.error("Failed to toggle user block status:", error);
+      toast.error("操作失败，请重试或联系管理员");
+    } finally {
+      setIsTogglingBlock(false);
+    }
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -90,6 +122,13 @@ export function MoreActionsMenu({ userUUID, userEmail }: MoreActionsMenuProps) {
             <KeyRound className="mr-2 h-4 w-4" />
             {"重置密码"}
           </DropdownMenuItem>
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onClick={() => setShowBlockConfirm(true)}
+          >
+            <Ban className="mr-2 h-4 w-4" />
+            {isBlocked ? "解封用户" : "封禁用户"}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className="text-destructive focus:text-destructive cursor-pointer"
@@ -100,6 +139,36 @@ export function MoreActionsMenu({ userUUID, userEmail }: MoreActionsMenuProps) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* 封禁/解封确认对话框 */}
+      <Dialog open={showBlockConfirm} onOpenChange={setShowBlockConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isBlocked ? "确认解封用户" : "确认封禁用户"}</DialogTitle>
+            <DialogDescription>
+              {isBlocked
+                ? "解封后 "
+                : "封禁后 "}
+              <span className="font-semibold">{userEmail}</span>
+              {isBlocked
+                ? " 将恢复正常登录和使用。"
+                : " 将无法登录、无法使用现有会话，直到被解封。"}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowBlockConfirm(false)}
+              disabled={isTogglingBlock}
+            >
+              {"取消"}
+            </Button>
+            <Button onClick={confirmToggleBlock} disabled={isTogglingBlock}>
+              {isTogglingBlock ? "处理中..." : "确认"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 第一次确认对话框 */}
       <Dialog open={showFirstConfirm} onOpenChange={setShowFirstConfirm}>

@@ -160,6 +160,7 @@ func api_admin_list_users(c *gin.Context) {
 			IsAdmin:            u.IsAdmin != nil && *u.IsAdmin,
 			HasAccessKey:       u.AccessKey != nil && *u.AccessKey != "",
 			AccessKeyCreatedAt: u.AccessKeyCreatedAt,
+			IsBlocked:          isUserBlocked(&u),
 		}
 	}
 
@@ -430,6 +431,7 @@ func api_admin_get_user_detail(c *gin.Context) {
 			IsAdmin:            user.IsAdmin != nil && *user.IsAdmin,
 			HasAccessKey:       user.AccessKey != nil && *user.AccessKey != "",
 			AccessKeyCreatedAt: user.AccessKeyCreatedAt,
+			IsBlocked:          isUserBlocked(&user),
 		},
 		Devices:       devices,
 		Orders:        orders,
@@ -983,4 +985,58 @@ func api_admin_change_user_tier(c *gin.Context) {
 		"to":     req.Tier,
 		"reason": req.Reason,
 	})
+}
+
+// api_admin_block_user 封禁用户（管理员直接执行，无需审批）
+// POST /app/users/:uuid/block
+func api_admin_block_user(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	var user User
+	if err := getDB().Where(&User{UUID: uuid}).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "user not found")
+			return
+		}
+		log.Errorf(c, "failed to find user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "database error")
+		return
+	}
+
+	if err := getDB().Model(&user).Update("is_blocked", true).Error; err != nil {
+		log.Errorf(c, "failed to block user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "failed to block user")
+		return
+	}
+
+	log.Infof(c, "admin blocked user %s (id=%d)", uuid, user.ID)
+	SuccessEmpty(c)
+	WriteAuditLog(c, "user_block", "user", uuid, nil)
+}
+
+// api_admin_unblock_user 解封用户
+// POST /app/users/:uuid/unblock
+func api_admin_unblock_user(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	var user User
+	if err := getDB().Where(&User{UUID: uuid}).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "user not found")
+			return
+		}
+		log.Errorf(c, "failed to find user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "database error")
+		return
+	}
+
+	if err := getDB().Model(&user).Update("is_blocked", false).Error; err != nil {
+		log.Errorf(c, "failed to unblock user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "failed to unblock user")
+		return
+	}
+
+	log.Infof(c, "admin unblocked user %s (id=%d)", uuid, user.ID)
+	SuccessEmpty(c)
+	WriteAuditLog(c, "user_unblock", "user", uuid, nil)
 }
