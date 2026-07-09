@@ -98,6 +98,12 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 		user = identify.User
 	}
 
+	if userExists && isUserBlocked(user) {
+		log.Warnf(c, "send-code rejected: user %d is blocked", user.ID)
+		Error(c, ErrorForbidden, "account blocked")
+		return
+	}
+
 	// 根据 userExistRequired 参数处理
 	if userExistRequired {
 		// 要求用户必须存在（登录模式）
@@ -274,6 +280,11 @@ func api_login(c *gin.Context) {
 		if err := tx.First(&user, identify.UserID).Error; err != nil {
 			log.Errorf(c, "failed to get user %d: %v", identify.UserID, err)
 			return err
+		}
+
+		if isUserBlocked(&user) {
+			log.Warnf(c, "login rejected: user %d is blocked", identify.UserID)
+			return e(ErrorForbidden, "account blocked")
 		}
 
 		// 追踪是否需要保存用户信息
@@ -534,6 +545,11 @@ func api_web_auth(c *gin.Context) {
 			log.Errorf(c, "failed to get user %d: %v", identify.UserID, err)
 			return err
 		}
+
+		if isUserBlocked(&user) {
+			log.Warnf(c, "web login rejected: user %d is blocked", identify.UserID)
+			return e(ErrorForbidden, "account blocked")
+		}
 		// 保存用户信息用于响应和 JWT
 		userIsAdmin = user.IsAdmin != nil && *user.IsAdmin
 		userRoles = user.Roles
@@ -776,6 +792,12 @@ func api_password_login(c *gin.Context) {
 		return
 	}
 
+	if isUserBlocked(user) {
+		log.Warnf(c, "password login rejected: user %d is blocked", user.ID)
+		Error(c, ErrorForbidden, "account blocked")
+		return
+	}
+
 	// Check if password is set
 	if !HasPasswordSet(user) {
 		log.Warnf(c, "user %d has no password set", user.ID)
@@ -936,6 +958,12 @@ func api_web_password_login(c *gin.Context) {
 	if user == nil {
 		log.Errorf(c, "user object is nil for identify %d", identify.ID)
 		Error(c, ErrorSystemError, "login failed")
+		return
+	}
+
+	if isUserBlocked(user) {
+		log.Warnf(c, "web password login rejected: user %d is blocked", user.ID)
+		Error(c, ErrorForbidden, "account blocked")
 		return
 	}
 
