@@ -546,3 +546,8 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 	}
 	return nil
 }
+
+// isUserBlocked 判断用户是否被封禁。nil 用户或 nil 标志一律视为未封禁。
+func isUserBlocked(u *User) bool {
+	return u != nil && u.IsBlocked != nil && *u.IsBlocked
+}
