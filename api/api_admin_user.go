@@ -986,3 +986,57 @@ func api_admin_change_user_tier(c *gin.Context) {
 		"reason": req.Reason,
 	})
 }
+
+// api_admin_block_user 封禁用户（管理员直接执行，无需审批）
+// POST /app/users/:uuid/block
+func api_admin_block_user(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	var user User
+	if err := getDB().Where(&User{UUID: uuid}).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "user not found")
+			return
+		}
+		log.Errorf(c, "failed to find user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "database error")
+		return
+	}
+
+	if err := getDB().Model(&user).Update("is_blocked", true).Error; err != nil {
+		log.Errorf(c, "failed to block user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "failed to block user")
+		return
+	}
+
+	log.Infof(c, "admin blocked user %s (id=%d)", uuid, user.ID)
+	SuccessEmpty(c)
+	WriteAuditLog(c, "user_block", "user", uuid, nil)
+}
+
+// api_admin_unblock_user 解封用户
+// POST /app/users/:uuid/unblock
+func api_admin_unblock_user(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	var user User
+	if err := getDB().Where(&User{UUID: uuid}).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "user not found")
+			return
+		}
+		log.Errorf(c, "failed to find user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "database error")
+		return
+	}
+
+	if err := getDB().Model(&user).Update("is_blocked", false).Error; err != nil {
+		log.Errorf(c, "failed to unblock user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "failed to unblock user")
+		return
+	}
+
+	log.Infof(c, "admin unblocked user %s (id=%d)", uuid, user.ID)
+	SuccessEmpty(c)
+	WriteAuditLog(c, "user_unblock", "user", uuid, nil)
+}
