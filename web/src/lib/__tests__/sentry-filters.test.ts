@@ -4,8 +4,10 @@ import {
   dropChatwootSdkErrors,
   dropFailedFormDataParseFromBotProbes,
   dropFailedServerActionLookupFromBotProbes,
+  dropInjectedMatchMediaCircularJsonErrors,
   dropNativePostMessageRejections,
   dropOutdatedBrowserSyntaxErrors,
+  dropRscNavigationFallbackRejections,
 } from '../sentry-filters';
 
 const originalUA = window.navigator.userAgent;
@@ -360,5 +362,173 @@ describe('dropFailedServerActionLookupFromBotProbes', () => {
       },
     } as unknown as ErrorEvent;
     expect(dropFailedServerActionLookupFromBotProbes(event)).toBe(event);
+  });
+});
+
+function circularJsonEvent(frames: Array<{ function?: string; filename?: string }>): ErrorEvent {
+  return {
+    exception: {
+      values: [
+        {
+          type: 'TypeError',
+          value:
+            "Converting circular structure to JSON\n    --> starting at object with constructor 'HTMLHtmlElement'\n    |     property '__reactFiber$xgd5lru6jpq' -> object with constructor 'rn'\n    --- property 'stateNode' closes the circle",
+          stacktrace: { frames },
+        },
+      ],
+    },
+  } as ErrorEvent;
+}
+
+describe('dropInjectedMatchMediaCircularJsonErrors', () => {
+  it('drops when window.matchMedia is an anonymous (injected) override', () => {
+    const event = circularJsonEvent([
+      { function: '<anonymous>', filename: './node_modules/next-themes/dist/index.mjs' },
+      { function: 'window.matchMedia', filename: '<anonymous>' },
+      { function: 'JSON.stringify', filename: '<anonymous>' },
+    ]);
+    expect(dropInjectedMatchMediaCircularJsonErrors(event)).toBeNull();
+  });
+
+  it('KEEPS the same TypeError when matchMedia resolves to our own bundle (real regression)', () => {
+    const event = circularJsonEvent([
+      { function: 'window.matchMedia', filename: 'https://overleap.io/_next/static/chunks/main-abc123.js' },
+      { function: 'JSON.stringify', filename: '<anonymous>' },
+    ]);
+    expect(dropInjectedMatchMediaCircularJsonErrors(event)).toBe(event);
+  });
+
+  it('KEEPS circular JSON TypeErrors unrelated to matchMedia', () => {
+    const event = circularJsonEvent([
+      { function: 'someAppFunction', filename: 'https://overleap.io/_next/static/chunks/main-abc123.js' },
+      { function: 'JSON.stringify', filename: '<anonymous>' },
+    ]);
+    expect(dropInjectedMatchMediaCircularJsonErrors(event)).toBe(event);
+  });
+
+  it('KEEPS other TypeErrors with an unrelated message', () => {
+    const event = circularJsonEvent([{ function: 'window.matchMedia', filename: '<anonymous>' }]);
+    event.exception!.values![0].value = "Cannot read properties of undefined (reading 'foo')";
+    expect(dropInjectedMatchMediaCircularJsonErrors(event)).toBe(event);
+  });
+
+  it('keeps events with no stacktrace', () => {
+    const event = {
+      exception: { values: [{ type: 'TypeError', value: 'Converting circular structure to JSON' }] },
+    } as ErrorEvent;
+    expect(dropInjectedMatchMediaCircularJsonErrors(event)).toBe(event);
+  });
+
+  it('keeps events with no exception payload', () => {
+    const event = { message: 'just a log' } as ErrorEvent;
+    expect(dropInjectedMatchMediaCircularJsonErrors(event)).toBe(event);
+  });
+});
+
+function rscFallbackConsoleBreadcrumb(url: string) {
+  return {
+    category: 'console',
+    level: 'error' as const,
+    message: `Failed to fetch RSC payload for ${url}. Falling back to browser navigation.`,
+  };
+}
+
+function loadFailureRejectionEvent(
+  value: string,
+  breadcrumbs: Array<{ category?: string; message?: string }> = [],
+  mechanismType: string = 'auto.browser.global_handlers.onunhandledrejection',
+  type: string = 'TypeError'
+): ErrorEvent {
+  return {
+    exception: {
+      values: [{ type, value, mechanism: { handled: false, type: mechanismType } }],
+    },
+    breadcrumbs,
+  } as unknown as ErrorEvent;
+}
+
+describe('dropRscNavigationFallbackRejections', () => {
+  it('drops "Load failed" when paired with the RSC-fetch-fallback console breadcrumb', () => {
+    // Reproduces Sentry issue 7551594594: iOS Safari's fetch/stream read fails
+    // mid-navigation; Next.js's fetchServerResponse catches it, logs, and
+    // falls back to a full navigation (which the breadcrumb trail confirms
+    // succeeded) — the dangling promise still surfaces as an unhandled
+    // rejection with just the bare TypeError.
+    const event = loadFailureRejectionEvent('Load failed', [
+      rscFallbackConsoleBreadcrumb('https://www.kaitu.io/zh-CN/purchase'),
+    ]);
+    expect(dropRscNavigationFallbackRejections(event)).toBeNull();
+  });
+
+  it('drops the Chrome-equivalent "Failed to fetch" message with the same breadcrumb', () => {
+    const event = loadFailureRejectionEvent('Failed to fetch', [
+      rscFallbackConsoleBreadcrumb('https://www.kaitu.io/en-US/account'),
+    ]);
+    expect(dropRscNavigationFallbackRejections(event)).toBeNull();
+  });
+
+  it('KEEPS "Load failed" with no matching breadcrumb (could be our own unguarded fetch)', () => {
+    const event = loadFailureRejectionEvent('Load failed', []);
+    expect(dropRscNavigationFallbackRejections(event)).toBe(event);
+  });
+
+  it('KEEPS "Load failed" when breadcrumbs are unrelated (real bug elsewhere)', () => {
+    const event = loadFailureRejectionEvent('Load failed', [
+      { category: 'console', message: 'some unrelated log line' },
+      { category: 'fetch', message: 'GET https://www.kaitu.io/api/user/info' },
+    ]);
+    expect(dropRscNavigationFallbackRejections(event)).toBe(event);
+  });
+
+  it('KEEPS the same message when it is a handled/caught error, not an unhandled rejection', () => {
+    const event = loadFailureRejectionEvent(
+      'Load failed',
+      [rscFallbackConsoleBreadcrumb('https://www.kaitu.io/zh-CN/purchase')],
+      'generic'
+    );
+    expect(dropRscNavigationFallbackRejections(event)).toBe(event);
+  });
+
+  it('KEEPS other TypeErrors even with the matching breadcrumb present', () => {
+    const event = loadFailureRejectionEvent(
+      "Cannot read properties of undefined (reading 'x')",
+      [rscFallbackConsoleBreadcrumb('https://www.kaitu.io/zh-CN/purchase')]
+    );
+    expect(dropRscNavigationFallbackRejections(event)).toBe(event);
+  });
+
+  it('KEEPS non-TypeError exceptions with the same message text', () => {
+    const event = loadFailureRejectionEvent(
+      'Load failed',
+      [rscFallbackConsoleBreadcrumb('https://www.kaitu.io/zh-CN/purchase')],
+      'auto.browser.global_handlers.onunhandledrejection',
+      'Error'
+    );
+    expect(dropRscNavigationFallbackRejections(event)).toBe(event);
+  });
+
+  it('keeps events with no exception payload', () => {
+    const event = { message: 'just a log' } as ErrorEvent;
+    expect(dropRscNavigationFallbackRejections(event)).toBe(event);
+  });
+
+  it('keeps events with empty exception values', () => {
+    const event = { exception: { values: [] } } as unknown as ErrorEvent;
+    expect(dropRscNavigationFallbackRejections(event)).toBe(event);
+  });
+
+  it('keeps events with no breadcrumbs field at all', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            value: 'Load failed',
+            mechanism: { handled: false, type: 'auto.browser.global_handlers.onunhandledrejection' },
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+    expect(dropRscNavigationFallbackRejections(event)).toBe(event);
   });
 });
