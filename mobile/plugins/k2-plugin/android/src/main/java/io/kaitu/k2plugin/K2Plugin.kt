@@ -703,6 +703,38 @@ class K2Plugin : Plugin() {
         }
     }
 
+    // Antiblock control-plane relay. Forwards the JSON-stringified RelayRequest to
+    // the app-module service (the only gomobile-allowed layer → Appext.relayFetch)
+    // and returns { response: <{code,message,data} envelope string> } so the webapp
+    // bridge can JSON.parse it back into an SResponse. Fail-soft: if the service
+    // bridge isn't bound, resolve a code:-1 envelope so the webapp transport learns
+    // relay is unavailable and falls back to a direct fetch.
+    @PluginMethod
+    fun relayFetch(call: PluginCall) {
+        val request = call.getString("request") ?: "{}"
+        val svc = vpnService
+        val ret = JSObject()
+        if (svc == null) {
+            // TRANSIENT, not a capability failure: bindToService() (BIND_AUTO_CREATE
+            // in load()) may not have hit onServiceConnected yet at the very first
+            // relay attempt. Return 503 (retryable → webapp node-failover, relay
+            // stays enabled), NOT code:-1 — a -1 flips the webapp's session-scoped
+            // markRelayUnsupported() and would disable relay for the WHOLE session
+            // over a millisecond bind window, forcing direct (exactly what GFW blocks).
+            Log.w(TAG, "relayFetch: service bridge not bound yet, returning code:503 (transient)")
+            ret.put("response", "{\"code\":503,\"message\":\"relay bridge not bound yet\"}")
+            call.resolve(ret)
+            return
+        }
+        try {
+            ret.put("response", svc.relayFetch(request))
+        } catch (e: Exception) {
+            Log.w(TAG, "relayFetch failed: ${e.message}")
+            ret.put("response", "{\"code\":-1,\"message\":\"relay native error\"}")
+        }
+        call.resolve(ret)
+    }
+
     @PluginMethod
     fun setDevEnabled(call: PluginCall) {
         val enabled = call.getBoolean("enabled", false) ?: false

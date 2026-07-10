@@ -1,6 +1,7 @@
 import UIKit
 import Capacitor
 import K2Mobile
+import K2Plugin
 
 private let kAppGroup = "group.io.kaitu"
 
@@ -9,6 +10,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Register the antiblock relay handler so the K2Plugin pod (which cannot
+        // link K2Mobile) can reach appext.RelayFetch in this App process. The
+        // relay is VPN-independent — a single ordinary outbound used to bootstrap
+        // the control plane before/without a tunnel. gomobile maps Go's
+        // `func RelayFetch(string) string` to a non-optional `String` return.
+        K2RelayBridge.handler = { req in AppextRelayFetch(req) }
+
         // Prefetch rule bundles so the first connect finds the cache warm and
         // doesn't block on a cold 10-second download inside NE's engine.Start.
         // Runs in the main App process; NE (separate process, 50 MB jetsam)

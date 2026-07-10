@@ -67,6 +67,11 @@ export class K2PluginWeb extends WebPlugin {
         // Fail-soft (not throw): App Bypass on web degrades to all-proxy badges.
         return { classifications: [] };
     }
+    async relayFetch() {
+        // Web has no gomobile core — report relay unsupported (code:-1) so the
+        // webapp transport learns to skip relay and use the direct fallback.
+        return { response: JSON.stringify({ code: -1, message: 'relay unsupported on web' }) };
+    }
     async iapGetProducts() {
         throw this.unavailable('IAP is not available on web');
     }

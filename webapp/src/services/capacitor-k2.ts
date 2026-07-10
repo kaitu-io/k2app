@@ -115,9 +115,17 @@ export async function capacitorRun<T = any>(action: string, params?: any): Promi
         return { code: 0, message: 'ok', data: res as unknown as T };
       }
 
-      case 'relay-fetch':
-        // Phase 2b: wire K2Plugin.relayFetch(). This build doesn't support native relay.
-        return { code: -1, message: 'relay unsupported on this build' };
+      case 'relay-fetch': {
+        // Antiblock control-plane relay through a camouflage node. The Go core
+        // (wire.RelayFetchJSON) is gomobile-exported as appext.RelayFetch and
+        // runs in-process — a single VPN-independent outbound. The boundary is
+        // string-in/string-out, so we serialize the RelayRequest and parse the
+        // {code,message,data} envelope back verbatim (identical to the daemon).
+        // If the native method is absent (older build), the catch below returns
+        // code:-1 so the webapp learns relay is unsupported and uses direct.
+        const res = await K2Plugin.relayFetch({ request: JSON.stringify(params ?? {}) });
+        return JSON.parse(res.response) as SResponse<T>;
+      }
 
       default:
         return { code: -1, message: `Unknown action: ${action}` };

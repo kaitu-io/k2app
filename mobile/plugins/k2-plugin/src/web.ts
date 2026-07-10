@@ -92,6 +92,12 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
     return { classifications: [] };
   }
 
+  async relayFetch(): Promise<{ response: string }> {
+    // Web has no gomobile core — report relay unsupported (code:-1) so the
+    // webapp transport learns to skip relay and use the direct fallback.
+    return { response: JSON.stringify({ code: -1, message: 'relay unsupported on web' }) };
+  }
+
   async iapGetProducts(): Promise<{ products: [] }> {
     throw this.unavailable('IAP is not available on web');
   }

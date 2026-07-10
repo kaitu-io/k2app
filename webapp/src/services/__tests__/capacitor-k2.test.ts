@@ -39,6 +39,7 @@ const mockK2Plugin = {
   openUrl: vi.fn().mockResolvedValue(undefined),
   setLogLevel: vi.fn().mockResolvedValue(undefined),
   classifyApps: vi.fn(),
+  relayFetch: vi.fn(),
 };
 
 vi.mock('k2-plugin', () => ({
@@ -949,11 +950,56 @@ describe('capacitor-k2 run(classify-apps)', () => {
   });
 });
 
-describe('capacitor-k2 relay-fetch placeholder', () => {
-  it('relay-fetch returns unsupported until Phase 2b', async () => {
+describe('capacitor-k2 relay-fetch (native bridge)', () => {
+  beforeEach(() => {
+    mockK2Plugin.relayFetch.mockReset();
+  });
+
+  it('forwards the stringified RelayRequest and parses the {code,message,data} envelope', async () => {
+    // Native returns wire.RelayFetchJSON output verbatim — a string envelope.
+    mockK2Plugin.relayFetch.mockResolvedValue({
+      response: JSON.stringify({
+        code: 0,
+        message: 'ok',
+        data: { status: 200, body: '{"ok":true}' },
+      }),
+    });
     const { __testCapacitorRun } = await import('../capacitor-k2');
+
+    const req = {
+      ip: '1.2.3.4',
+      pin: 'sha256:aa,sha256:bb',
+      ech: 'base64ech',
+      centerHost: 'k2.52j.me',
+      method: 'GET',
+      path: '/api/app/config',
+      headers: { 'X-K2-Token': 't' },
+    };
+    const res = await __testCapacitorRun('relay-fetch', req);
+
+    // The gomobile boundary is string-in/string-out — bridge serializes the request.
+    expect(mockK2Plugin.relayFetch).toHaveBeenCalledWith({ request: JSON.stringify(req) });
+    expect(res.code).toBe(0);
+    expect((res.data as any).status).toBe(200);
+    expect((res.data as any).body).toBe('{"ok":true}');
+  });
+
+  it('passes a node-fault 502 envelope through verbatim (triggers node-failover, not capability downgrade)', async () => {
+    mockK2Plugin.relayFetch.mockResolvedValue({
+      response: JSON.stringify({ code: 502, message: 'wire: relay uTLS handshake: timeout' }),
+    });
+    const { __testCapacitorRun } = await import('../capacitor-k2');
+
+    const res = await __testCapacitorRun('relay-fetch', { ip: '9.9.9.9' });
+    expect(res.code).toBe(502);
+    expect(res.data).toBeUndefined();
+  });
+
+  it('degrades to code:-1 when the native method is absent (older native build → webapp learns relay unsupported)', async () => {
+    mockK2Plugin.relayFetch.mockRejectedValue(new Error('relayFetch not implemented'));
+    const { __testCapacitorRun } = await import('../capacitor-k2');
+
     const res = await __testCapacitorRun('relay-fetch', { ip: '1.2.3.4' });
     expect(res.code).toBe(-1);
-    expect(res.message).toMatch(/unsupported/i);
   });
 });

@@ -19,6 +19,16 @@ interface VpnServiceBridge {
      */
     fun classifyApps(region: String, installedJSON: String): String
 
+    /**
+     * Antiblock control-plane relay: send one HTTP request to Center through a
+     * camouflage node. `request` is a JSON-stringified wire.RelayRequest;
+     * returns the JSON {code,message,data} envelope from Appext.relayFetch.
+     * Stateless static gomobile call — VPN-independent, so it works during
+     * cold-start bootstrap while the tunnel is down. Implemented by the
+     * app-module service (the only gomobile-allowed layer).
+     */
+    fun relayFetch(request: String): String
+
     class BridgeBinder(private val bridge: VpnServiceBridge) : Binder() {
         fun getService(): VpnServiceBridge = bridge
     }

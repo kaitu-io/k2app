@@ -86,6 +86,25 @@ describe('resolveAndFetch (relay-first, direct-fallback)', () => {
     expect((window as any)._k2.run).toHaveBeenCalledTimes(1); // still 1 — relay not retried
   });
 
+  it('transient relay code (503) does NOT disable relay: this request uses direct, the next still retries relay', async () => {
+    // Regression guard for the mobile bind-race fix: a not-ready-yet native
+    // (Android service not bound yet) returns a TRANSIENT 503, never code:-1, so
+    // the session-scoped relay capability must survive — otherwise a millisecond
+    // startup race would strand a blocked client on direct for the whole session.
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ ok: 1 }) }) as any;
+    pool.addNodes([N('1.1.1.1')]);
+    (window as any)._k2.run = vi.fn().mockResolvedValue({ code: 503, message: 'relay bridge not bound yet' });
+    // 1st request: relay attempted (503) → falls back to direct, capability intact
+    const res1 = await resolveAndFetch({ method: 'GET', path: '/api/a', headers: {} });
+    expect(res1.transport).toBe('ok');
+    expect(pool.isRelaySupported()).toBe(true); // transient — NOT a capability downgrade
+    // 2nd request: relay is RETRIED (not skipped), unlike the code:-1 path above
+    const callsAfterFirst = (window as any)._k2.run.mock.calls.length;
+    const res2 = await resolveAndFetch({ method: 'GET', path: '/api/b', headers: {} });
+    expect(res2.transport).toBe('ok');
+    expect((window as any)._k2.run.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+  });
+
   it('empty node pool: relay short-circuits without an _k2 call, falls back to direct', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ ok: 1 }) }) as any;
     const res = await resolveAndFetch({ method: 'GET', path: '/api/x', headers: {} });

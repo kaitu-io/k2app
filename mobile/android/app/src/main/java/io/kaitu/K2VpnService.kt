@@ -256,6 +256,20 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         }
     }
 
+    // Antiblock control-plane relay. Stateless static gomobile call (own TCP+uTLS
+    // +HTTP round-trip, no engine state) so it runs directly off the plugin's
+    // worker thread, VPN-independent — the whole point is bootstrapping before the
+    // tunnel exists. Returns the {code,message,data} envelope verbatim; on a native
+    // fault emit code:-1 so the webapp transport learns to use the direct fallback.
+    override fun relayFetch(request: String): String {
+        return try {
+            Appext.relayFetch(request)
+        } catch (e: Exception) {
+            Log.w(TAG, "relayFetch failed: ${e.message}")
+            "{\"code\":-1,\"message\":\"relay native error\"}"
+        }
+    }
+
     private fun startVpn(configJSON: String) {
         Log.i(TAG, "startVpn: configJSON length=${configJSON.length}")
         NativeLogger.log("INFO", "startVpn: configJSON length=${configJSON.length}")

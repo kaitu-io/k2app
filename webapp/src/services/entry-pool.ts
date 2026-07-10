@@ -109,12 +109,17 @@ export function clearDirectBlocked(): void {
 }
 
 // --- Relay capability (session-scoped, in-memory) ---------------------------
-// Relay-first is the transport order, but relay is unsupported on web/mobile
-// (capacitor returns code:-1; a daemon-less standalone fetch also yields -1).
-// The first such -1 flips this flag so subsequent requests skip the doomed
-// relay attempt and go straight to direct. In-memory (not persisted) so a
-// transient daemon-down on desktop self-heals on the next app launch — never a
-// permanent "relay off".
+// Relay-first is the transport order. A code:-1 from _k2.run('relay-fetch') is a
+// CAPABILITY signal — the platform genuinely cannot relay: web (no core), a
+// daemon-less / daemon-down desktop, or an old mobile build with no native
+// relayFetch method at all. The first such -1 flips this flag so subsequent
+// requests skip the doomed relay and go straight to direct. In-memory (not
+// persisted) so a transient daemon-down self-heals on the next app launch —
+// never a permanent "relay off".
+// NOTE: wired mobile (iOS/Android) DOES support relay. Its not-ready-yet states
+// (e.g. Android's service-bind window) return a TRANSIENT code (503 → node-
+// failover, relay stays enabled), NOT -1 — precisely so a startup race can never
+// disable relay for the whole session and strand a blocked client on direct.
 let relaySupported = true;
 
 export function isRelaySupported(): boolean {
