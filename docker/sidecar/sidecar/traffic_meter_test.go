@@ -9,6 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// futureCycleEnd is a billing-cycle end far enough ahead that checkAndResetCycle
+// is always a no-op regardless of when the test runs (2100-01-01 UTC). Do NOT use
+// a near-future literal here: a fixed date like 2026-07-01 silently turns into the
+// past once real time passes it, which then triggers an unwanted cycle reset that
+// zeroes the counters and fails these tests.
+const futureCycleEnd = 4102444800 // 2100-01-01 UTC
+
 // netDev builds a /proc/net/dev body for one physical interface eth0 with the
 // given rx/tx byte counters (other columns are filler the parser ignores).
 func netDev(rx, tx uint64) string {
@@ -25,7 +32,7 @@ func newTestTM(t *testing.T, rx, tx uint64, statePath string) *TrafficMonitor {
 	root := writeProcNetDev(t, netDev(rx, tx))
 	tm := &TrafficMonitor{
 		billingStartDate:  "2025-01-01",
-		billingCycleEndAt: 1782864000, // 2026-07-01: in the future so checkAndResetCycle is a no-op
+		billingCycleEndAt: futureCycleEnd, // far future so checkAndResetCycle is a no-op
 		trafficLimitGB:    0,
 		procPath:          root,
 		statePath:         statePath,
@@ -56,7 +63,7 @@ func TestSetUsage_AnchorsToGivenUsed(t *testing.T) {
 	// node already pushed rx=300GiB, tx=920GiB on its NIC this cycle.
 	statePath := filepath.Join(t.TempDir(), "s.state")
 	tm := newTestTM(t, 300*gib, 920*gib, statePath)
-	tm.billingCycleEndAt = 1782864000
+	tm.billingCycleEndAt = futureCycleEnd
 
 	require.NoError(t, tm.SetUsage(920)) // declare "920 GiB already used"
 
@@ -67,7 +74,7 @@ func TestSetUsage_AnchorsToGivenUsed(t *testing.T) {
 	// new model: prior holds the declared usage; baselines anchor at the CURRENT
 	// NIC counters (live delta starts at 0), persisted for a clean restart.
 	st := loadTrafficState(statePath)
-	assert.Equal(t, int64(1782864000), st.BillingCycleEndAt)
+	assert.Equal(t, int64(futureCycleEnd), st.BillingCycleEndAt)
 	assert.Equal(t, uint64(920*gib), st.PriorUsedBytes)
 	assert.Equal(t, uint64(300*gib), st.CycleStartRx)
 	assert.Equal(t, uint64(920*gib), st.CycleStartTx)
@@ -81,7 +88,7 @@ func TestSetUsage_FreshNode_AboveNIC(t *testing.T) {
 	const gib = 1024 * 1024 * 1024
 	statePath := filepath.Join(t.TempDir(), "s.state")
 	tm := newTestTM(t, 1*gib, 1*gib, statePath) // fresh NIC: only ~1GiB lifetime
-	tm.billingCycleEndAt = 1782864000
+	tm.billingCycleEndAt = futureCycleEnd
 
 	require.NoError(t, tm.SetUsage(751)) // 751GiB ≫ 1GiB NIC counter
 

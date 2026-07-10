@@ -379,24 +379,45 @@ function extractJsonLd(element: unknown): unknown {
   return JSON.parse(json);
 }
 
+/**
+ * Collect EVERY JSON-LD payload from the rendered page. The page emits each
+ * schema.org entity as its own <script> tag (TechArticle always, FAQPage only
+ * on /k2/comparison) rather than a single array root, so parsers that assume a
+ * single-object root don't crash on @context lookup. Tests that care about the
+ * FAQPage entity must scan all scripts, not just the first.
+ */
+function extractAllJsonLd(element: unknown): Array<Record<string, unknown>> {
+  const fragment = element as {
+    props: { children: Array<{ props?: Record<string, unknown> }> };
+  };
+  return fragment.props.children
+    .filter((child) => (child?.props?.type as string | undefined) === 'application/ld+json')
+    .map((scriptNode) => {
+      const htmlWrapper = scriptNode.props?.[RAW_HTML_PROP] as { __html?: string } | undefined;
+      const json = htmlWrapper?.__html;
+      if (!json) {
+        throw new Error('JSON-LD payload missing from script element');
+      }
+      return JSON.parse(json) as Record<string, unknown>;
+    });
+}
+
 describe('test_k2_comparison_emits_faqpage_jsonld', () => {
-  it('emits a JSON-LD array containing TechArticle + FAQPage for k2/comparison (zh-CN)', async () => {
+  it('emits per-entity TechArticle + FAQPage <script> tags for k2/comparison (zh-CN)', async () => {
     const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
 
     const element = await K2Page({
       params: Promise.resolve({ locale: 'zh-CN', path: ['comparison'] }),
     });
 
-    const jsonLd = extractJsonLd(element);
+    // Each schema.org entity is its own <script> tag (not a JSON array root).
+    const entities = extractAllJsonLd(element) as Array<{ '@type': string }>;
+    expect(entities.length).toBe(2);
 
-    expect(Array.isArray(jsonLd)).toBe(true);
-    const arr = jsonLd as Array<{ '@type': string }>;
-    expect(arr.length).toBe(2);
-
-    const techArticle = arr.find((obj) => obj['@type'] === 'TechArticle');
+    const techArticle = entities.find((obj) => obj['@type'] === 'TechArticle');
     expect(techArticle).toBeDefined();
 
-    const faqPages = arr.filter((obj) => obj['@type'] === 'FAQPage');
+    const faqPages = entities.filter((obj) => obj['@type'] === 'FAQPage');
     expect(faqPages.length).toBe(1);
   });
 
@@ -407,7 +428,7 @@ describe('test_k2_comparison_emits_faqpage_jsonld', () => {
       params: Promise.resolve({ locale: 'zh-CN', path: ['comparison'] }),
     });
 
-    const jsonLd = extractJsonLd(element) as Array<{
+    const jsonLd = extractAllJsonLd(element) as Array<{
       '@type': string;
       mainEntity?: Array<{
         '@type': string;
@@ -438,7 +459,7 @@ describe('test_k2_comparison_emits_faqpage_jsonld', () => {
       params: Promise.resolve({ locale: 'zh-CN', path: ['comparison'] }),
     });
 
-    const jsonLd = extractJsonLd(element) as Array<{
+    const jsonLd = extractAllJsonLd(element) as Array<{
       '@type': string;
       mainEntity?: Array<{ name: string; acceptedAnswer: { text: string } }>;
     }>;
@@ -456,7 +477,7 @@ describe('test_k2_comparison_emits_faqpage_jsonld', () => {
       params: Promise.resolve({ locale: 'en-US', path: ['comparison'] }),
     });
 
-    const jsonLd = extractJsonLd(element) as Array<{
+    const jsonLd = extractAllJsonLd(element) as Array<{
       '@type': string;
       mainEntity?: Array<{ name: string; acceptedAnswer: { text: string } }>;
     }>;
@@ -552,7 +573,7 @@ describe('test_k2_techarticle_is_brand_aware', () => {
       params: Promise.resolve({ locale: 'en-US', path: ['comparison'] }),
     });
 
-    const jsonLd = extractJsonLd(element) as Array<{ '@type': string; '@id'?: string }>;
+    const jsonLd = extractAllJsonLd(element) as Array<{ '@type': string; '@id'?: string }>;
     const faqPage = jsonLd.find((obj) => obj['@type'] === 'FAQPage');
     expect(faqPage).toBeDefined();
     expect(typeof faqPage!['@id']).toBe('string');
