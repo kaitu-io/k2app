@@ -56,8 +56,8 @@ export interface K2PluginInterface {
    * Antiblock control-plane relay: send one HTTP request to Center through a
    * camouflage VPN node (TCP→uTLS(ECH+pin)→HTTP/1.1). `request` is a
    * JSON-stringified wire.RelayRequest; `response` is the JSON-stringified
-   * {code,message,data} envelope from wire.RelayFetchJSON (gomobile-exported as
-   * appext.RelayFetch). String-in/string-out matches the gomobile boundary and
+   * {code,message,data} envelope from wire.RelayFetchJSON (the gomobile-exported
+   * relay function). String-in/string-out matches the gomobile boundary and
    * is identical to the desktop daemon's relay-fetch action. Runs in-process,
    * VPN-independent (App process on iOS, plugin process on Android).
    */

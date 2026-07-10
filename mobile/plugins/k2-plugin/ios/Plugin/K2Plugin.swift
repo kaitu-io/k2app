@@ -813,8 +813,8 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Debug
 
     // Antiblock control-plane relay. Forwards the JSON-stringified RelayRequest to
-    // appext.RelayFetch (via K2RelayBridge, registered by the App target) and
-    // resolves { response: <{code,message,data} envelope string> } so the webapp
+    // the gomobile relay export (via K2RelayBridge, registered by the App target)
+    // and resolves { response: <{code,message,data} envelope string> } so the webapp
     // bridge can JSON.parse it into an SResponse. Runs in the App process,
     // VPN-independent. Fail-soft: if the bridge isn't registered, return a code:-1
     // envelope so the webapp transport learns relay is unavailable and uses direct.
@@ -825,8 +825,8 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve(["response": #"{"code":-1,"message":"relay bridge not registered"}"#])
             return
         }
-        // appext.RelayFetch does its own blocking TCP+uTLS+HTTP round-trip (up to
-        // 15s); keep it off the caller thread.
+        // The gomobile relay call does its own blocking TCP+uTLS+HTTP round-trip
+        // (up to 15s); keep it off the caller thread.
         DispatchQueue.global(qos: .userInitiated).async {
             let response = handler(request)
             call.resolve(["response": response])

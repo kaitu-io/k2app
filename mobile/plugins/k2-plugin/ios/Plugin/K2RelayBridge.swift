@@ -1,13 +1,11 @@
 import Foundation
 
-/// Bridge that lets the K2Plugin pod reach the gomobile `appext.RelayFetch`
-/// symbol. That symbol lives in K2Mobile.xcframework, which is linked to the
+/// Bridge that lets the K2Plugin pod reach the gomobile-exported relay function
+/// (RelayFetch). That symbol lives in K2Mobile.xcframework, which is linked to the
 /// **App target** (and the NE target) — NOT to this static CocoaPod. So the pod
 /// cannot `import K2Mobile` directly; instead the App target's AppDelegate
-/// registers a handler at launch:
-///
-///     import K2Mobile
-///     K2RelayBridge.handler = { req in AppextRelayFetch(req) }
+/// registers a handler at launch that wraps the gomobile relay call — see
+/// `AppDelegate.didFinishLaunchingWithOptions`.
 ///
 /// String-in/string-out matches the gomobile boundary and the daemon's
 /// relay-fetch action. This mirrors Android's `VpnServiceBridge.relayFetch`.
