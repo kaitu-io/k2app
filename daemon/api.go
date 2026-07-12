@@ -76,6 +76,8 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		d.classifyApps(w, req.Params)
 	case "relay-fetch":
 		d.handleRelay(w, req.Params)
+	case "relay-add-nodes":
+		d.handleRelayAddNodes(w, req.Params)
 	case "get-presets":
 		d.getPresets(w, req.Params)
 	default:
@@ -194,6 +196,26 @@ func (d *Daemon) handleRelay(w http.ResponseWriter, params map[string]any) {
 	// wire returns a full {code,message,data} envelope as a JSON string; pass it
 	// through verbatim so the response shape matches the rest of /api/core.
 	out := wire.RelayFetchJSON(string(reqJSON))
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(out))
+}
+
+// handleRelayAddNodes incrementally feeds camouflage-node descriptors into the
+// wire RelayManager (antiblock). Params is {nodes:[{ip,port?,pin,ech,score?}]}.
+// The manager owns node storage/ranking/reuse — the webapp only forwards
+// descriptors it discovers (embedded seed + /api/tunnels).
+func (d *Daemon) handleRelayAddNodes(w http.ResponseWriter, params map[string]any) {
+	nodes, ok := params["nodes"]
+	if !ok {
+		writeJSON(w, Response{Code: 400, Message: "relay-add-nodes: missing nodes"})
+		return
+	}
+	nodesJSON, err := json.Marshal(nodes)
+	if err != nil {
+		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("bad relay nodes: %v", err)})
+		return
+	}
+	out := wire.RelayAddNodesJSON(string(nodesJSON))
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(out))
 }

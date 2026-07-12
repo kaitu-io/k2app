@@ -182,17 +182,45 @@ type relayEnvelope struct {
 }
 
 // RelayFetchJSON is the string-in/string-out wrapper for the gomobile (appext)
-// and daemon boundaries. It never panics and never returns an empty string.
+// and daemon boundaries. The request is node-less — {centerHost,method,path,
+// headers,body}; any node fields are ignored. The RelayManager owns node
+// selection, sequential failover, and connection reuse. Nodes must have been fed
+// in via RelayAddNodesJSON first (empty pool → 502). Never panics / empty.
 func RelayFetchJSON(reqJSON string) string {
 	var req RelayRequest
 	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
 		return marshalEnvelope(relayEnvelope{Code: -1, Message: "bad relay request: " + err.Error()})
 	}
-	resp, err := RelayFetch(context.Background(), &req)
+	// Overall budget for the sequential node sweep. Kept under the webapp's
+	// relay-then-direct total (15s) so a failed relay still leaves room for the
+	// direct fallback. Each per-node attempt is separately bounded (reqTimeout).
+	ctx, cancel := context.WithTimeout(context.Background(), 9*time.Second)
+	defer cancel()
+	resp, err := defaultRelayManager.Fetch(ctx, &req)
 	if err != nil {
 		return marshalEnvelope(relayEnvelope{Code: 502, Message: err.Error()})
 	}
 	return marshalEnvelope(relayEnvelope{Code: 0, Message: "ok", Data: resp})
+}
+
+// RelayAddNodesJSON incrementally feeds camouflage-node descriptors into the
+// RelayManager (webapp relay-add-nodes). Input is a JSON array of RelayNode
+// ({ip,port?,pin,ech,score?}). Idempotent + deduped by IP; known nodes keep their
+// health. Returns a {code,message,data:{added,total}} envelope. Never panics.
+func RelayAddNodesJSON(nodesJSON string) string {
+	var nodes []RelayNode
+	if err := json.Unmarshal([]byte(nodesJSON), &nodes); err != nil {
+		return marshalEnvelope(relayEnvelope{Code: -1, Message: "bad relay nodes: " + err.Error()})
+	}
+	added, total := defaultRelayManager.AddNodes(nodes)
+	b, err := json.Marshal(map[string]any{
+		"code": 0, "message": "ok",
+		"data": map[string]int{"added": added, "total": total},
+	})
+	if err != nil {
+		return `{"code":-1,"message":"relay marshal error"}`
+	}
+	return string(b)
 }
 
 func marshalEnvelope(e relayEnvelope) string {

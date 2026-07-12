@@ -203,6 +203,8 @@ rule.Engine.mu (state, RWMutex, standalone — no nesting with engine locks)
 
 config.Subscription.mu (state, standalone — no nesting with engine/daemon locks)
 
+wire.RelayManager.mu (state, standalone — control-plane relay node pool/ranking/health; network I/O (client.Do) and Transport.CloseIdleConnections happen OUTSIDE the lock)
+
 provider.processCache.mu (state, standalone — no nesting with engine/daemon locks)
 provider.LinuxProcessSearcher.indexMu (state, RWMutex, standalone — no nesting with engine/daemon locks)
 
