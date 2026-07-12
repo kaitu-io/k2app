@@ -40,6 +40,7 @@ const mockK2Plugin = {
   setLogLevel: vi.fn().mockResolvedValue(undefined),
   classifyApps: vi.fn(),
   relayFetch: vi.fn(),
+  relayAddNodes: vi.fn(),
 };
 
 vi.mock('k2-plugin', () => ({
@@ -1001,5 +1002,39 @@ describe('capacitor-k2 relay-fetch (native bridge)', () => {
 
     const res = await __testCapacitorRun('relay-fetch', { ip: '1.2.3.4' });
     expect(res.code).toBe(-1);
+  });
+});
+
+describe('capacitor-k2 relay-add-nodes (native bridge)', () => {
+  beforeEach(() => {
+    mockK2Plugin.relayAddNodes.mockReset();
+  });
+
+  it('forwards the stringified nodes array and parses the {added,total} envelope', async () => {
+    mockK2Plugin.relayAddNodes.mockResolvedValue({
+      response: JSON.stringify({ code: 0, message: 'ok', data: { added: 2, total: 2 } }),
+    });
+    const { __testCapacitorRun } = await import('../capacitor-k2');
+
+    const nodes = [
+      { ip: '1.1.1.1', pin: 'sha256:a', ech: 'E1' },
+      { ip: '2.2.2.2', pin: 'sha256:b', ech: 'E2' },
+    ];
+    const res = await __testCapacitorRun('relay-add-nodes', { nodes });
+
+    // gomobile boundary is string-in/string-out — bridge JSON-stringifies the array.
+    expect(mockK2Plugin.relayAddNodes).toHaveBeenCalledWith({ nodes: JSON.stringify(nodes) });
+    expect(res.code).toBe(0);
+    expect((res.data as any).added).toBe(2);
+  });
+
+  it('sends an empty array when nodes param is missing/invalid', async () => {
+    mockK2Plugin.relayAddNodes.mockResolvedValue({
+      response: JSON.stringify({ code: 0, message: 'ok', data: { added: 0, total: 0 } }),
+    });
+    const { __testCapacitorRun } = await import('../capacitor-k2');
+
+    await __testCapacitorRun('relay-add-nodes', {});
+    expect(mockK2Plugin.relayAddNodes).toHaveBeenCalledWith({ nodes: '[]' });
   });
 });

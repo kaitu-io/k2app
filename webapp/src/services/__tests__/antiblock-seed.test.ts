@@ -1,14 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 
 // ---------------------------------------------------------------------------
-// Module mocks — entry-pool (spy addNodes / control getNodes) and
-// antiblock-crypto.loadJsonp (keyed by URL). decrypt/base64ToBytes stay real
-// so decodeSeed exercises real AES-256-GCM with the real DECRYPTION_KEY.
+// Module mocks — entry-pool (spy addNodes) and antiblock-crypto.loadJsonp (keyed
+// by URL). decrypt/base64ToBytes stay real so decodeSeed exercises real
+// AES-256-GCM with the real DECRYPTION_KEY.
 // ---------------------------------------------------------------------------
 
 vi.mock('../entry-pool', () => ({
   addNodes: vi.fn(),
-  getNodes: vi.fn(() => [] as unknown[]),
 }));
 
 vi.mock('../antiblock-crypto', async (importOriginal) => {
@@ -18,13 +17,14 @@ vi.mock('../antiblock-crypto', async (importOriginal) => {
 
 import { loadJsonp, type JsonpConfig } from '../antiblock-crypto';
 import { DECRYPTION_KEY } from '../antiblock';
-import { addNodes, getNodes } from '../entry-pool';
+import { addNodes } from '../entry-pool';
 import { EMBEDDED_SEED } from '../antiblock-seed-embedded';
 import {
   SEED_GLOBAL,
   CURSOR_KEY,
   ENTRY_KEY,
   PROBE_AFTER_KEY,
+  SEEDED_KEY,
   PROBE_INTERVAL_MS,
   GAP_CONFIRM,
   seedPath,
@@ -35,7 +35,6 @@ import {
 } from '../antiblock-seed';
 
 const mockedLoadJsonp = vi.mocked(loadJsonp);
-const mockedGetNodes = vi.mocked(getNodes);
 const mockedAddNodes = vi.mocked(addNodes);
 
 // ---------------------------------------------------------------------------
@@ -103,7 +102,6 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedGetNodes.mockReturnValue([] as never);
 });
 
 afterEach(() => {
@@ -236,7 +234,6 @@ describe('bootstrapAntiblockSeed', () => {
   it('cold start: seeds EMBEDDED_SEED.nodes, writes ENTRY_KEY, runs network even when throttle is in the future', async () => {
     const ls = makeLocalStorage({ [PROBE_AFTER_KEY]: String(NOW + PROBE_INTERVAL_MS) });
     vi.stubGlobal('localStorage', ls);
-    mockedGetNodes.mockReturnValue([] as never); // empty pool → cold
     mockedLoadJsonp.mockResolvedValue(null); // no CDN frontier
 
     await bootstrapAntiblockSeed();
@@ -248,11 +245,13 @@ describe('bootstrapAntiblockSeed', () => {
   });
 
   it('warm + throttle in the future: does NOT call loadJsonp (throttled)', async () => {
-    const ls = makeLocalStorage({ [PROBE_AFTER_KEY]: String(NOW + PROBE_INTERVAL_MS) });
+    // Warm = already seeded this install (SEEDED_KEY set). Node storage moved to
+    // Go, so "warm" is a persisted marker, not a non-empty webapp pool.
+    const ls = makeLocalStorage({
+      [PROBE_AFTER_KEY]: String(NOW + PROBE_INTERVAL_MS),
+      [SEEDED_KEY]: '1',
+    });
     vi.stubGlobal('localStorage', ls);
-    mockedGetNodes.mockReturnValue([
-      { ip: '9.9.9.9', pin: 'p', ech: 'e' },
-    ] as never);
 
     await bootstrapAntiblockSeed();
 
@@ -262,9 +261,6 @@ describe('bootstrapAntiblockSeed', () => {
   it('warm + throttle expired: runs gallop and pushes PROBE_AFTER_KEY forward', async () => {
     const ls = makeLocalStorage({ [PROBE_AFTER_KEY]: String(NOW - 1) });
     vi.stubGlobal('localStorage', ls);
-    mockedGetNodes.mockReturnValue([
-      { ip: '9.9.9.9', pin: 'p', ech: 'e' },
-    ] as never);
     mockedLoadJsonp.mockResolvedValue(null);
 
     await bootstrapAntiblockSeed();
@@ -277,27 +273,28 @@ describe('bootstrapAntiblockSeed', () => {
   });
 
   it('cold + CDN advance: adds nodes, persists cursor, writes entry', async () => {
-    const ls = makeLocalStorage();
+    const ls = makeLocalStorage(); // SEEDED_KEY unset → cold
     vi.stubGlobal('localStorage', ls);
-    mockedGetNodes.mockReturnValue([] as never); // cold
-    // exists(n) truthy for n<=3 (floor is 0 from empty cursor + cursor:0 stub)
+    // Floor = max(persisted cursor=0, EMBEDDED_SEED.cursor). Probe a frontier just
+    // above the real embedded floor so the test is independent of the seed's
+    // build-regenerated cursor value.
+    const base = EMBEDDED_SEED.cursor;
     mockedLoadJsonp.mockImplementation((url: string) => {
       const n = cursorFromUrl(url);
-      return Promise.resolve(n >= 1 && n <= 3 ? validConfig : null);
+      return Promise.resolve(n > base && n <= base + 3 ? validConfig : null);
     });
 
     await bootstrapAntiblockSeed();
 
-    // EMBEDDED nodes first (cold), then payload nodes after advance
+    // EMBEDDED nodes first (always), then payload nodes after advance
     expect(mockedAddNodes).toHaveBeenCalledWith(SAMPLE_PAYLOAD.nodes);
-    expect(ls.setItem).toHaveBeenCalledWith(CURSOR_KEY, '3');
+    expect(ls.setItem).toHaveBeenCalledWith(CURSOR_KEY, String(base + 3));
     expect(ls.setItem).toHaveBeenCalledWith(ENTRY_KEY, SAMPLE_PAYLOAD.entries[0]);
   });
 
   it('never throws when loadJsonp returns null everywhere', async () => {
     const ls = makeLocalStorage();
     vi.stubGlobal('localStorage', ls);
-    mockedGetNodes.mockReturnValue([] as never);
     mockedLoadJsonp.mockResolvedValue(null);
 
     await expect(bootstrapAntiblockSeed()).resolves.toBeUndefined();
@@ -319,7 +316,6 @@ describe('bootstrapAntiblockSeed', () => {
       removeItem: vi.fn(),
     };
     vi.stubGlobal('localStorage', throwingLs);
-    mockedGetNodes.mockReturnValue([] as never);
     mockedLoadJsonp.mockResolvedValue(null);
 
     await expect(bootstrapAntiblockSeed()).resolves.toBeUndefined();

@@ -96,6 +96,9 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
     relayFetch(): Promise<{
         response: string;
     }>;
+    relayAddNodes(): Promise<{
+        response: string;
+    }>;
     iapGetProducts(): Promise<{
         products: [];
     }>;

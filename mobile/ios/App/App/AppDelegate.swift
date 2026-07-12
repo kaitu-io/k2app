@@ -16,6 +16,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // the control plane before/without a tunnel. gomobile maps Go's
         // `func RelayFetch(string) string` to a non-optional `String` return.
         K2RelayBridge.handler = { req in AppextRelayFetch(req) }
+        // Node feed for the relay: gomobile maps Go's `func RelayAddNodes(string)
+        // string` to a non-optional `String` return. The RelayManager (in this App
+        // process) owns node storage/ranking/health/reuse.
+        K2RelayBridge.addNodesHandler = { nodes in AppextRelayAddNodes(nodes) }
 
         // Prefetch rule bundles so the first connect finds the cache warm and
         // doesn't block on a cold 10-second download inside NE's engine.Start.

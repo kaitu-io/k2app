@@ -127,7 +127,13 @@ async function main() {
   const { getK2Source } = await import('./services/standalone-k2');
   console.info(`[WebApp] K2 source: ${getK2Source()}`);
 
-  // Seed antiblock relay pool before first cloud request (fire-and-forget)
+  // Prime the Go relay pool with the embedded node floor and WAIT for it, so the
+  // first cloud request (fired from store init below) can't race ahead of it and
+  // hit an empty pool → 502 → direct on a possibly-blocked network. Time-bounded
+  // inside ensureSeeded so a hung bridge never blocks startup. The CDN gallop stays
+  // fire-and-forget.
+  const { ensureSeeded } = await import('./services/entry-pool');
+  await ensureSeeded();
   void bootstrapAntiblockSeed();
 
   // 初始化所有 Stores

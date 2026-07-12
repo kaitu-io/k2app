@@ -5,15 +5,15 @@ vi.mock('../antiblock', () => ({ resolveEntry: vi.fn().mockResolvedValue('https:
 import { resolveAndFetch, CONTROL_PLANE_HOST } from '../resolve-and-fetch';
 import { resolveEntry } from '../antiblock';
 import * as pool from '../entry-pool';
-import type { NodeEntry } from '../node-descriptor';
 
 const mockedResolveEntry = vi.mocked(resolveEntry);
-const N = (ip: string): NodeEntry => ({ ip, pin: 'sha256:' + ip, ech: 'E' + ip });
 
-// Transport order is RELAY-FIRST, direct-fallback (see resolveAndFetch). Relay
-// is the primary path where supported; direct is the safety net and the only
-// path on web/mobile (learned via a relay code:-1).
-describe('resolveAndFetch (relay-first, direct-fallback)', () => {
+// Transport order is RELAY-FIRST, direct-fallback (see resolveAndFetch). Node
+// selection / ranking / sequential failover / connection reuse all live in the Go
+// RelayManager — the webapp sends ONE node-less relay-fetch and reads the
+// {code,message,data} envelope: 0=ok (any HTTP status passthrough), 502=relay
+// failed→direct, -1=unsupported→learn+direct, 503=transient→direct (relay stays on).
+describe('resolveAndFetch (relay-first, direct-fallback, node selection in Go)', () => {
   let originalFetch: typeof globalThis.fetch;
   beforeEach(() => {
     originalFetch = globalThis.fetch;
@@ -25,9 +25,8 @@ describe('resolveAndFetch (relay-first, direct-fallback)', () => {
   });
   afterEach(() => { globalThis.fetch = originalFetch; delete (window as any)._k2; });
 
-  it('relay success is returned verbatim and direct is never attempted', async () => {
+  it('sends a node-less relay-fetch; success is returned verbatim and direct is never attempted', async () => {
     globalThis.fetch = vi.fn() as any; // must NOT be called when relay wins
-    pool.addNodes([N('1.1.1.1'), N('2.2.2.2')]);
     (window as any)._k2.run = vi.fn().mockResolvedValue({ code: 0, message: 'ok', data: { status: 200, headers: {}, body: '{"ok":true}' } });
     const res = await resolveAndFetch({ method: 'GET', path: '/api/tunnels', headers: { Authorization: 'Bearer t' } });
     expect(res.transport).toBe('ok');
@@ -35,17 +34,17 @@ describe('resolveAndFetch (relay-first, direct-fallback)', () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true });
     }
-    expect((window as any)._k2.run).toHaveBeenCalledWith('relay-fetch', expect.objectContaining({
-      centerHost: CONTROL_PLANE_HOST, method: 'GET', path: '/api/tunnels', headers: { Authorization: 'Bearer t' },
-    }));
-    expect(globalThis.fetch).not.toHaveBeenCalled(); // relay won → no direct
+    // Node-less: exactly {centerHost,method,path,headers,body} — NO ip/pin/ech.
+    expect((window as any)._k2.run).toHaveBeenCalledWith('relay-fetch', {
+      centerHost: CONTROL_PLANE_HOST, method: 'GET', path: '/api/tunnels', headers: { Authorization: 'Bearer t' }, body: undefined,
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('relay non-2xx (401) is returned verbatim as transport:ok, no failover, no direct', async () => {
-    // The node WORKED — cloud-api._handle401 owns the refresh. Treating 401 as a
-    // node failure would (with one node) yield transport:fail and lose refresh.
+  it('relay non-2xx (401) is returned verbatim as transport:ok, no direct', async () => {
+    // The relay WORKED — cloud-api._handle401 owns the refresh. Treating 401 as a
+    // relay failure would fall to direct and (over a blocked network) lose refresh.
     globalThis.fetch = vi.fn() as any;
-    pool.addNodes([N('1.1.1.1')]);
     (window as any)._k2.run = vi.fn().mockResolvedValue({ code: 0, message: 'ok', data: { status: 401, headers: {}, body: '{"code":401}' } });
     const res = await resolveAndFetch({ method: 'GET', path: '/api/user/info', headers: { Authorization: 'Bearer expired' } });
     expect(res.transport).toBe('ok');
@@ -53,29 +52,27 @@ describe('resolveAndFetch (relay-first, direct-fallback)', () => {
       expect(res.status).toBe(401);
       expect(await res.json()).toEqual({ code: 401 });
     }
-    expect((window as any)._k2.run).toHaveBeenCalledTimes(1); // success-passthrough, no failover
+    expect((window as any)._k2.run).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('relay node failure (502) falls back to direct', async () => {
+  it('relay failure (502: Go has no usable nodes / all exhausted) falls back to direct', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ code: 0, data: 1 }) }) as any;
-    pool.addNodes([N('1.1.1.1')]);
-    (window as any)._k2.run = vi.fn().mockResolvedValue({ code: 502, message: 'relay failed' });
+    (window as any)._k2.run = vi.fn().mockResolvedValue({ code: 502, message: 'relay: no nodes available' });
     const res = await resolveAndFetch({ method: 'GET', path: '/api/x', headers: {} });
     expect(res.transport).toBe('ok');
     if (res.transport === 'ok') {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ code: 0, data: 1 });
     }
-    expect((window as any)._k2.run).toHaveBeenCalled(); // relay tried first
+    expect((window as any)._k2.run).toHaveBeenCalled();
     expect(globalThis.fetch).toHaveBeenCalledWith('https://k2.52j.me/api/x', expect.objectContaining({ method: 'GET' }));
+    expect(pool.isRelaySupported()).toBe(true); // 502 is a node fault, not a capability downgrade
   });
 
   it('relay unsupported (code:-1) is learned: this request uses direct, the next skips relay entirely', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ ok: 1 }) }) as any;
-    pool.addNodes([N('1.1.1.1')]);
     (window as any)._k2.run = vi.fn().mockResolvedValue({ code: -1, message: 'relay unsupported on this build' });
-    // 1st request: relay attempted once (returns -1) → direct
     const res1 = await resolveAndFetch({ method: 'GET', path: '/api/a', headers: {} });
     expect(res1.transport).toBe('ok');
     expect((window as any)._k2.run).toHaveBeenCalledTimes(1);
@@ -83,84 +80,72 @@ describe('resolveAndFetch (relay-first, direct-fallback)', () => {
     // 2nd request: relay skipped entirely → direct only, no new _k2 call
     const res2 = await resolveAndFetch({ method: 'GET', path: '/api/b', headers: {} });
     expect(res2.transport).toBe('ok');
-    expect((window as any)._k2.run).toHaveBeenCalledTimes(1); // still 1 — relay not retried
+    expect((window as any)._k2.run).toHaveBeenCalledTimes(1);
   });
 
   it('transient relay code (503) does NOT disable relay: this request uses direct, the next still retries relay', async () => {
-    // Regression guard for the mobile bind-race fix: a not-ready-yet native
-    // (Android service not bound yet) returns a TRANSIENT 503, never code:-1, so
-    // the session-scoped relay capability must survive — otherwise a millisecond
-    // startup race would strand a blocked client on direct for the whole session.
+    // Regression guard for the mobile bind-race: a not-ready-yet native (Android
+    // service not bound) returns TRANSIENT 503, never -1, so the session-scoped
+    // relay capability must survive.
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ ok: 1 }) }) as any;
-    pool.addNodes([N('1.1.1.1')]);
     (window as any)._k2.run = vi.fn().mockResolvedValue({ code: 503, message: 'relay bridge not bound yet' });
-    // 1st request: relay attempted (503) → falls back to direct, capability intact
     const res1 = await resolveAndFetch({ method: 'GET', path: '/api/a', headers: {} });
     expect(res1.transport).toBe('ok');
-    expect(pool.isRelaySupported()).toBe(true); // transient — NOT a capability downgrade
-    // 2nd request: relay is RETRIED (not skipped), unlike the code:-1 path above
+    expect(pool.isRelaySupported()).toBe(true);
     const callsAfterFirst = (window as any)._k2.run.mock.calls.length;
     const res2 = await resolveAndFetch({ method: 'GET', path: '/api/b', headers: {} });
     expect(res2.transport).toBe('ok');
     expect((window as any)._k2.run.mock.calls.length).toBeGreaterThan(callsAfterFirst);
   });
 
-  it('empty node pool: relay short-circuits without an _k2 call, falls back to direct', async () => {
+  it('no _k2 global: relay short-circuits to direct without throwing', async () => {
+    delete (window as any)._k2;
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ ok: 1 }) }) as any;
     const res = await resolveAndFetch({ method: 'GET', path: '/api/x', headers: {} });
     expect(res.transport).toBe('ok');
-    expect((window as any)._k2.run).not.toHaveBeenCalled(); // tryRelay short-circuits on empty pool
     expect(globalThis.fetch).toHaveBeenCalled();
   });
 
   it('direct fallback returns 4xx/5xx verbatim (does not error)', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 500, json: async () => ({ code: -1 }) }) as any;
-    const res = await resolveAndFetch({ method: 'GET', path: '/api/x', headers: {} }); // empty pool → direct
+    (window as any)._k2.run = vi.fn().mockResolvedValue({ code: 502, message: 'relay: no nodes available' });
+    const res = await resolveAndFetch({ method: 'GET', path: '/api/x', headers: {} });
     expect(res.transport).toBe('ok');
     if (res.transport === 'ok') expect(res.status).toBe(500);
   });
 
   it('relay fails and direct fails → transport:fail', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('blocked')) as any;
-    pool.addNodes([N('1.1.1.1')]);
-    (window as any)._k2.run = vi.fn().mockResolvedValue({ code: 502, message: 'relay failed' });
+    (window as any)._k2.run = vi.fn().mockResolvedValue({ code: 502, message: 'relay: all nodes exhausted' });
     const res = await resolveAndFetch({ method: 'GET', path: '/api/x', headers: {} });
     expect(res.transport).toBe('fail');
     expect((window as any)._k2.run).toHaveBeenCalled();
     expect(globalThis.fetch).toHaveBeenCalled();
   });
 
-  it('relay node that hangs is abandoned at 9s (< 15s budget) then falls back to direct', async () => {
+  it('relay that hangs is abandoned at 9s (< 15s budget) then falls back to direct', async () => {
     // Budget guard: RELAY_TIMEOUT_MS (9s) must leave room for the 5s direct probe
-    // inside cloud-api's 15s REQUEST_TIMEOUT_MS. A hung relay must NOT eat the
-    // whole budget, or the outer withTimeout fires before direct runs.
+    // inside cloud-api's 15s cap. A hung relay-fetch IPC must NOT eat the whole
+    // budget, or the outer withTimeout fires before direct runs.
     vi.useFakeTimers();
     try {
-      pool.addNodes([N('3.3.3.3')]);
       (window as any)._k2.run = vi.fn().mockReturnValue(new Promise<never>(() => {})); // never settles
       globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ ok: 1 }) }) as any;
       const resPromise = resolveAndFetch({ method: 'GET', path: '/api/x', headers: {} });
-      // Still pending just before the 9s relay timeout — direct not yet reached.
       await vi.advanceTimersByTimeAsync(8999);
       expect(globalThis.fetch).not.toHaveBeenCalled();
-      // Trip the 9s relay timeout → relay abandoned → direct fallback runs.
       await vi.advanceTimersByTimeAsync(1);
       const res = await resPromise;
-      expect(res.transport).toBe('ok'); // fell back to direct, well within the 15s cap
+      expect(res.transport).toBe('ok');
       expect(globalThis.fetch).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('under cloud-api\'s 15s total cap, a hung relay still leaves room for the direct fallback to return (not timeout)', async () => {
-    // Faithfully models cloud-api: withTimeout(resolveAndFetch(...), 15000).
-    // Regression guard for the relay-first budget bug: if RELAY_TIMEOUT_MS were
-    // >= the 15s cap, a hung relay would consume the whole budget and the outer
-    // timeout would fire BEFORE the direct fallback ran.
+  it('under cloud-api\'s 15s total cap, a hung relay still leaves room for the direct fallback to return', async () => {
     vi.useFakeTimers();
     try {
-      pool.addNodes([N('4.4.4.4')]);
       (window as any)._k2.run = vi.fn().mockReturnValue(new Promise<never>(() => {})); // hangs forever
       globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ ok: 1 }) }) as any;
 
@@ -173,8 +158,8 @@ describe('resolveAndFetch (relay-first, direct-fallback)', () => {
 
       await vi.advanceTimersByTimeAsync(15000);
       const res = await race;
-      expect(res).not.toBe(TIMEOUT);              // budget did NOT win
-      expect((res as { transport: string }).transport).toBe('ok'); // direct fallback returned in time
+      expect(res).not.toBe(TIMEOUT);
+      expect((res as { transport: string }).transport).toBe('ok');
     } finally {
       vi.useRealTimers();
     }

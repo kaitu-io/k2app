@@ -29,6 +29,15 @@ interface VpnServiceBridge {
      */
     fun relayFetch(request: String): String
 
+    /**
+     * Antiblock relay node feed: incrementally register camouflage-node
+     * descriptors (JSON array of {ip,port?,pin,ech,score?}) with the native
+     * RelayManager via Appext.relayAddNodes. Go owns node storage/ranking/health;
+     * this only forwards descriptors the webapp discovered. Returns the
+     * {code,message,data:{added,total}} envelope. Same gomobile-allowed layer.
+     */
+    fun relayAddNodes(nodesJSON: String): String
+
     class BridgeBinder(private val bridge: VpnServiceBridge) : Binder() {
         fun getService(): VpnServiceBridge = bridge
     }

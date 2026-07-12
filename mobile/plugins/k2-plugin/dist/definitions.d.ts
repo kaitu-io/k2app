@@ -131,6 +131,18 @@ export interface K2PluginInterface {
         response: string;
     }>;
     /**
+     * Antiblock relay node feed: incrementally register camouflage-node descriptors
+     * with the native RelayManager (gomobile RelayAddNodes). `nodes` is a
+     * JSON-stringified array of {ip,port?,pin,ech,score?}. Deduped by IP in Go,
+     * which owns node storage/ranking/health. `response` is the JSON-stringified
+     * {code,message,data:{added,total}} envelope. Idempotent; safe to call often.
+     */
+    relayAddNodes(options: {
+        nodes: string;
+    }): Promise<{
+        response: string;
+    }>;
+    /**
      * StoreKit 2 IAP (iOS only). Android/web reject as unimplemented.
      * Trust model: native NEVER grants entitlement — it returns transactionId,
      * the webapp calls Center verify, then calls iapFinishTransaction.

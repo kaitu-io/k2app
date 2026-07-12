@@ -98,6 +98,12 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
     return { response: JSON.stringify({ code: -1, message: 'relay unsupported on web' }) };
   }
 
+  async relayAddNodes(): Promise<{ response: string }> {
+    // No relay on web → node feed is a silent no-op (success envelope so callers
+    // don't log an error for a platform that legitimately has no RelayManager).
+    return { response: JSON.stringify({ code: 0, message: 'ok', data: { added: 0, total: 0 } }) };
+  }
+
   async iapGetProducts(): Promise<{ products: [] }> {
     throw this.unavailable('IAP is not available on web');
   }

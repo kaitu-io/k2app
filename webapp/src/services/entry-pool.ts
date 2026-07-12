@@ -1,125 +1,91 @@
 import type { NodeEntry } from './node-descriptor';
+import type { SResponse } from '../types/kaitu-core';
+import { EMBEDDED_SEED } from './antiblock-seed-embedded';
 
-const POOL_KEY = 'k2_node_pool';
-const STICKY_KEY = 'k2_direct_blocked_until';
+// The webapp is NO LONGER the authority for relay nodes. Node storage, ranking,
+// health, single-active-host selection, and connection reuse all live in the Go
+// RelayManager (k2/wire/relay_manager.go). This module is now only:
+//   1. a FEEDER — forwards camouflage-node descriptors it discovers (embedded
+//      seed + CDN refresh + /api/tunnels) to Go via relay-add-nodes; and
+//   2. the session-scoped relay-capability flag the transport layer
+//      (resolve-and-fetch.ts) still needs on the webapp side.
+// It holds NO node list and does NO scoring — that would be a second, divergent
+// source of truth. (See the "authority model" design: origins → Go single store.)
 
-const MAX_NODES = 64;
-const MAX_SCORE = 8;
-const MIN_SCORE = -4;
-const PRUNE_MS = 7 * 24 * 60 * 60 * 1000;
-const STICKY_TTL_MS = 5 * 60 * 1000;
-
-interface ScoredNode extends NodeEntry {
-  score: number;
-  lastOkAt: number;
-  lastFailAt: number;
-}
-
-function load(): ScoredNode[] {
-  try {
-    const raw = localStorage.getItem(POOL_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((n): n is ScoredNode =>
-      n && typeof n.ip === 'string' && typeof n.pin === 'string' && typeof n.ech === 'string');
-  } catch {
-    return [];
-  }
-}
-
-function save(nodes: ScoredNode[]): void {
-  // prune stale (no success in 7d, and that ever had a chance — lastOkAt===0 means never succeeded yet, keep)
-  const now = Date.now();
-  let kept = nodes.filter(n => n.lastOkAt === 0 || now - n.lastOkAt < PRUNE_MS);
-  // cap: drop worst (lowest score, then oldest lastOkAt)
-  if (kept.length > MAX_NODES) {
-    kept = kept
-      .slice()
-      .sort((a, b) => b.score - a.score || b.lastOkAt - a.lastOkAt)
-      .slice(0, MAX_NODES);
-  }
-  try {
-    localStorage.setItem(POOL_KEY, JSON.stringify(kept));
-  } catch {
-    /* quota / unavailable — best-effort */
-  }
-}
-
+/**
+ * Forward discovered camouflage-node descriptors to the Go RelayManager
+ * (relay-add-nodes — incremental, deduped by IP in Go). Fire-and-forget: Go owns
+ * the merge + persistence + ranking, so the webapp neither awaits nor stores the
+ * result. A no-op when relay is unsupported (web / daemon-less) or _k2 absent.
+ */
 export function addNodes(entries: NodeEntry[]): void {
-  const nodes = load();
-  const byIp = new Map(nodes.map(n => [n.ip, n]));
-  for (const e of entries) {
-    if (!e.ip || !e.pin || !e.ech) continue;
-    const existing = byIp.get(e.ip);
-    if (existing) {
-      // refresh descriptor (ech/pin may have rotated), keep score history
-      existing.pin = e.pin;
-      existing.ech = e.ech;
-    } else {
-      byIp.set(e.ip, { ip: e.ip, pin: e.pin, ech: e.ech, score: 1, lastOkAt: 0, lastFailAt: 0 });
+  if (!relaySupported || entries.length === 0) return;
+  const k2 = (window as unknown as { _k2?: { run: (a: string, p: unknown) => Promise<SResponse<unknown>> } })._k2;
+  if (!k2) return;
+  try {
+    void Promise.resolve(k2.run('relay-add-nodes', { nodes: entries })).catch(() => { /* best-effort */ });
+  } catch {
+    /* _k2.run threw synchronously (stub) — best-effort */
+  }
+}
+
+// SEED_PRIME_TIMEOUT_MS bounds the awaited embedded-seed prime so a hung/not-yet-
+// ready native bridge can never block app startup — if it fires we proceed unprimed
+// (degrades to the old fire-and-forget behaviour for that one cold start).
+const SEED_PRIME_TIMEOUT_MS = 2000;
+
+let seedPrimed: Promise<void> | null = null;
+
+/**
+ * Feed the embedded camouflage-node floor into the Go RelayManager and resolve
+ * ONLY after Go has ingested it (unlike fire-and-forget addNodes). The bootstrap
+ * awaits this BEFORE the first cloud request so a cold start — a fresh install
+ * hitting a live block — never issues a relay-fetch against an empty Go pool
+ * (which returns 502 → falls back to direct on the very network that is blocked).
+ * Memoized once it succeeds; a failed prime clears the memo so a later caller
+ * retries (and the ongoing addNodes discovery feeds cover the gap meanwhile).
+ * Internally time-bounded so a hung bridge never blocks the caller.
+ */
+export function ensureSeeded(): Promise<void> {
+  if (seedPrimed) return seedPrimed;
+  const p = (async () => {
+    if (!relaySupported || EMBEDDED_SEED.nodes.length === 0) return;
+    const k2 = (window as unknown as { _k2?: { run: (a: string, p: unknown) => Promise<SResponse<unknown>> } })._k2;
+    if (!k2) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const bound = new Promise<void>((r) => { timer = setTimeout(r, SEED_PRIME_TIMEOUT_MS); });
+    try {
+      await Promise.race([
+        Promise.resolve(k2.run('relay-add-nodes', { nodes: EMBEDDED_SEED.nodes })).then(() => undefined),
+        bound,
+      ]);
+    } finally {
+      clearTimeout(timer!);
     }
-  }
-  save([...byIp.values()]);
+  })().catch(() => {
+    // Prime attempt failed → clear the memo so the next caller retries.
+    seedPrimed = null;
+  });
+  seedPrimed = p;
+  return p;
 }
 
-export function getNodes(): NodeEntry[] {
-  const now = Date.now();
-  const nodes = load().filter(n => n.lastOkAt === 0 || now - n.lastOkAt < PRUNE_MS);
-  nodes.sort((a, b) => b.score - a.score || b.lastOkAt - a.lastOkAt);
-  return nodes.map(n => ({ ip: n.ip, pin: n.pin, ech: n.ech }));
-}
-
-function adjust(ip: string, delta: number, ok: boolean): void {
-  const nodes = load();
-  const n = nodes.find(x => x.ip === ip);
-  if (!n) return;
-  n.score = Math.max(MIN_SCORE, Math.min(MAX_SCORE, n.score + delta));
-  if (ok) n.lastOkAt = Date.now();
-  else n.lastFailAt = Date.now();
-  save(nodes);
-}
-
-export function recordSuccess(ip: string): void { adjust(ip, +1, true); }
-export function recordFailure(ip: string): void { adjust(ip, -1, false); }
-
-export function isDirectBlocked(): boolean {
-  try {
-    const until = Number(localStorage.getItem(STICKY_KEY) || 0);
-    return Date.now() < until;
-  } catch {
-    return false;
-  }
-}
-
-export function markDirectBlocked(): void {
-  try {
-    localStorage.setItem(STICKY_KEY, String(Date.now() + STICKY_TTL_MS));
-  } catch {
-    /* best-effort */
-  }
-}
-
-export function clearDirectBlocked(): void {
-  try {
-    localStorage.removeItem(STICKY_KEY);
-  } catch {
-    /* best-effort */
-  }
+// Test-only: reset the memoized embedded-seed prime between cases.
+export function __resetSeededForTest(): void {
+  seedPrimed = null;
 }
 
 // --- Relay capability (session-scoped, in-memory) ---------------------------
 // Relay-first is the transport order. A code:-1 from _k2.run('relay-fetch') is a
 // CAPABILITY signal — the platform genuinely cannot relay: web (no core), a
-// daemon-less / daemon-down desktop, or an old mobile build with no native
-// relayFetch method at all. The first such -1 flips this flag so subsequent
-// requests skip the doomed relay and go straight to direct. In-memory (not
-// persisted) so a transient daemon-down self-heals on the next app launch —
-// never a permanent "relay off".
+// daemon-less / daemon-down desktop, or an old build with no native relay method.
+// The first such -1 flips this flag so subsequent requests skip the doomed relay
+// and go straight to direct. In-memory (not persisted) so a transient daemon-down
+// self-heals on the next launch — never a permanent "relay off".
 // NOTE: wired mobile (iOS/Android) DOES support relay. Its not-ready-yet states
-// (e.g. Android's service-bind window) return a TRANSIENT code (503 → node-
-// failover, relay stays enabled), NOT -1 — precisely so a startup race can never
-// disable relay for the whole session and strand a blocked client on direct.
+// (e.g. Android's service-bind window) return a TRANSIENT code (503), NOT -1, so
+// a startup race can never disable relay for the whole session and strand a
+// blocked client on direct. Go's own no-nodes / all-exhausted case is 502.
 let relaySupported = true;
 
 export function isRelaySupported(): boolean {

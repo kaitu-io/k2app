@@ -24,7 +24,7 @@
 
 import { loadJsonp, decrypt, type JsonpConfig } from './antiblock-crypto';
 import { DECRYPTION_KEY, CDN_SOURCES } from './antiblock';
-import { addNodes, getNodes } from './entry-pool';
+import { addNodes } from './entry-pool';
 import type { NodeEntry } from './node-descriptor';
 import { EMBEDDED_SEED } from './antiblock-seed-embedded';
 
@@ -36,6 +36,9 @@ export const CURSOR_KEY = 'k2_seed_cursor';
 // SAME key antiblock.resolveEntry reads — the seed can prime the entry URL.
 export const ENTRY_KEY = 'k2_entry_url';
 export const PROBE_AFTER_KEY = 'k2_seed_probe_after';
+// First-launch marker (replaces the old pool-empty cold-start probe). Node
+// storage moved to Go, so "is the pool empty?" is no longer a webapp question.
+export const SEEDED_KEY = 'k2_relay_seeded';
 
 export const PROBE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const GAP_CONFIRM = 4;
@@ -199,12 +202,16 @@ function writeStr(key: string, value: string): void {
 
 export async function bootstrapAntiblockSeed(): Promise<void> {
   try {
-    // (1) Cold start: empty pool → seed the embedded floor immediately.
-    let coldStart = false;
-    if (getNodes().length === 0) {
-      addNodes(EMBEDDED_SEED.nodes);
-      if (EMBEDDED_SEED.entries[0]) writeStr(ENTRY_KEY, EMBEDDED_SEED.entries[0]);
-      coldStart = true;
+    // (1) Always feed the embedded floor to the Go RelayManager. It is idempotent
+    // (Go dedups by IP) and REQUIRED every launch: the manager's node store is
+    // in-process, so it starts empty on each app/daemon start and must be re-primed
+    // before the first relay-fetch. Cold start (first launch this install) is now
+    // detected via a persisted marker, since the webapp no longer holds the pool.
+    addNodes(EMBEDDED_SEED.nodes);
+    if (EMBEDDED_SEED.entries[0]) writeStr(ENTRY_KEY, EMBEDDED_SEED.entries[0]);
+    const coldStart = readNum(SEEDED_KEY) === 0;
+    if (coldStart) {
+      writeStr(SEEDED_KEY, '1');
       console.info(
         '[antiblock-seed] cold-start-used-embedded',
         'cursor=' + EMBEDDED_SEED.cursor,

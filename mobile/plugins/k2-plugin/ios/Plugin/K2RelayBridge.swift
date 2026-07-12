@@ -15,4 +15,11 @@ public enum K2RelayBridge {
     /// Set once by the App target. `nil` until registered → the plugin reports
     /// relay unsupported (code:-1) so the webapp transport uses the direct path.
     public static var handler: ((String) -> String)?
+
+    /// Relay node feed (gomobile RelayAddNodes). Incrementally registers
+    /// camouflage-node descriptors with the gomobile RelayManager, which owns
+    /// node storage/ranking/health. Also set by the App target's AppDelegate.
+    /// `nil` until registered → the plugin reports a transient code so the webapp
+    /// neither errors nor learns relay is unsupported.
+    public static var addNodesHandler: ((String) -> String)?
 }

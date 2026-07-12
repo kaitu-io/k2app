@@ -46,6 +46,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "iapRestore", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "iapFinishTransaction", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "relayFetch", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "relayAddNodes", returnType: CAPPluginReturnPromise),
     ]
 
     private var vpnManager: NETunnelProviderManager?
@@ -829,6 +830,24 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         // (up to 15s); keep it off the caller thread.
         DispatchQueue.global(qos: .userInitiated).async {
             let response = handler(request)
+            call.resolve(["response": response])
+        }
+    }
+
+    // Antiblock relay node feed. Forwards a JSON array of camouflage-node
+    // descriptors to the gomobile RelayManager (via K2RelayBridge, registered by
+    // the App target). Go owns node storage/ranking/health; this only forwards
+    // what the webapp discovered. Fail-soft: if the bridge isn't registered yet,
+    // return a transient code so the webapp neither errors nor learns "unsupported".
+    @objc func relayAddNodes(_ call: CAPPluginCall) {
+        let nodes = call.getString("nodes") ?? "[]"
+        guard let handler = K2RelayBridge.addNodesHandler else {
+            logger.warning("relayAddNodes: bridge not registered — returning code:503 (transient)")
+            call.resolve(["response": #"{"code":503,"message":"relay bridge not registered"}"#])
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let response = handler(nodes)
             call.resolve(["response": response])
         }
     }

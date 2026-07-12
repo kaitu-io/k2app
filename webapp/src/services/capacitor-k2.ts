@@ -127,6 +127,16 @@ export async function capacitorRun<T = any>(action: string, params?: any): Promi
         return JSON.parse(res.response) as SResponse<T>;
       }
 
+      case 'relay-add-nodes': {
+        // Feed camouflage-node descriptors to the Go RelayManager (incremental,
+        // deduped by IP in Go). Go owns node storage/ranking/health — the webapp
+        // only forwards what it discovers (embedded seed + /api/tunnels). The
+        // nodes array is JSON-stringified for the gomobile string boundary.
+        const nodes = Array.isArray(params?.nodes) ? params.nodes : [];
+        const res = await K2Plugin.relayAddNodes({ nodes: JSON.stringify(nodes) });
+        return JSON.parse(res.response) as SResponse<T>;
+      }
+
       default:
         return { code: -1, message: `Unknown action: ${action}` };
     }

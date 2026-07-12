@@ -270,6 +270,18 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         }
     }
 
+    // Antiblock relay node feed. Stateless static gomobile call — incrementally
+    // registers camouflage-node descriptors with the RelayManager (Go owns
+    // storage/ranking/health/reuse). VPN-independent, like relayFetch.
+    override fun relayAddNodes(nodesJSON: String): String {
+        return try {
+            Appext.relayAddNodes(nodesJSON)
+        } catch (e: Exception) {
+            Log.w(TAG, "relayAddNodes failed: ${e.message}")
+            "{\"code\":-1,\"message\":\"relay native error\"}"
+        }
+    }
+
     private fun startVpn(configJSON: String) {
         Log.i(TAG, "startVpn: configJSON length=${configJSON.length}")
         NativeLogger.log("INFO", "startVpn: configJSON length=${configJSON.length}")

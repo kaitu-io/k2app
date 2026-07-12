@@ -49,6 +49,13 @@ class K2Plugin : Plugin() {
     private var vpnService: VpnServiceBridge? = null
     private var serviceConnection: ServiceConnection? = null
     private val vpnServiceClassName = "io.kaitu.K2VpnService"
+    // Relay calls block ~1 handshake/RTT each. Capacitor dispatches EVERY
+    // @PluginMethod on ONE shared HandlerThread ("CapacitorPlugins"), so running
+    // the blocking Appext.relayFetch there serializes all relay + other plugin
+    // calls into a long queue (the "unbearably slow" startup). Offload to a small
+    // pool so relay round-trips run in parallel and never stall the shared thread.
+    private val relayExecutor: java.util.concurrent.ExecutorService =
+        java.util.concurrent.Executors.newFixedThreadPool(6)
     private var logsDir: File? = null
     private val webappLogLock = Any()
     private val S3_BUCKET_URL = "https://kaitu-service-logs.s3.ap-northeast-1.amazonaws.com"
@@ -713,7 +720,6 @@ class K2Plugin : Plugin() {
     fun relayFetch(call: PluginCall) {
         val request = call.getString("request") ?: "{}"
         val svc = vpnService
-        val ret = JSObject()
         if (svc == null) {
             // TRANSIENT, not a capability failure: bindToService() (BIND_AUTO_CREATE
             // in load()) may not have hit onServiceConnected yet at the very first
@@ -722,17 +728,48 @@ class K2Plugin : Plugin() {
             // markRelayUnsupported() and would disable relay for the WHOLE session
             // over a millisecond bind window, forcing direct (exactly what GFW blocks).
             Log.w(TAG, "relayFetch: service bridge not bound yet, returning code:503 (transient)")
+            val ret = JSObject()
             ret.put("response", "{\"code\":503,\"message\":\"relay bridge not bound yet\"}")
             call.resolve(ret)
             return
         }
-        try {
-            ret.put("response", svc.relayFetch(request))
-        } catch (e: Exception) {
-            Log.w(TAG, "relayFetch failed: ${e.message}")
-            ret.put("response", "{\"code\":-1,\"message\":\"relay native error\"}")
+        // Offload the blocking round-trip off Capacitor's shared thread (see
+        // relayExecutor). resolve() is thread-safe — fine to call from the worker.
+        relayExecutor.execute {
+            val ret = JSObject()
+            try {
+                ret.put("response", svc.relayFetch(request))
+            } catch (e: Exception) {
+                Log.w(TAG, "relayFetch failed: ${e.message}")
+                ret.put("response", "{\"code\":-1,\"message\":\"relay native error\"}")
+            }
+            call.resolve(ret)
         }
-        call.resolve(ret)
+    }
+
+    @PluginMethod
+    fun relayAddNodes(call: PluginCall) {
+        val nodes = call.getString("nodes") ?: "[]"
+        val svc = vpnService
+        if (svc == null) {
+            // Bind race — the seed will be re-fed on the next discovery pass. Report
+            // transient so the webapp neither errors nor learns "unsupported".
+            Log.w(TAG, "relayAddNodes: service bridge not bound yet, returning code:503 (transient)")
+            val ret = JSObject()
+            ret.put("response", "{\"code\":503,\"message\":\"relay bridge not bound yet\"}")
+            call.resolve(ret)
+            return
+        }
+        relayExecutor.execute {
+            val ret = JSObject()
+            try {
+                ret.put("response", svc.relayAddNodes(nodes))
+            } catch (e: Exception) {
+                Log.w(TAG, "relayAddNodes failed: ${e.message}")
+                ret.put("response", "{\"code\":-1,\"message\":\"relay native error\"}")
+            }
+            call.resolve(ret)
+        }
     }
 
     @PluginMethod

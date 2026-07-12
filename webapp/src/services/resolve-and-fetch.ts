@@ -1,6 +1,5 @@
 import { resolveEntry } from './antiblock';
 import * as pool from './entry-pool';
-import type { NodeEntry } from './node-descriptor';
 import type { RelayRequest, RelayResponse, SResponse } from '../types/kaitu-core';
 
 /** Inner-SNI control-plane routing label — MUST match node-side control_plane_routes (Phase 1). */
@@ -8,13 +7,12 @@ export const CONTROL_PLANE_HOST = 'k2.52j.me';
 
 const DIRECT_PROBE_TIMEOUT_MS = 5000;
 // MUST stay < cloud-api REQUEST_TIMEOUT_MS (15s) minus DIRECT_PROBE_TIMEOUT_MS,
-// so that when relay-first abandons a hung node the direct FALLBACK still fits
+// so that when relay-first abandons a hung sweep the direct FALLBACK still fits
 // inside the total request budget (9 + 5 = 14 < 15). If relay could consume the
 // whole 15s, the outer withTimeout would fire before direct ever runs, silently
-// defeating the fallback. (Dead nodes fail fast via 502; this guards the
-// black-hole/hang case — exactly the GFW scenario.)
+// defeating the fallback. Go's RelayManager sequences node failover internally
+// under its own 9s budget; this webapp cap guards the pathological hung-IPC case.
 const RELAY_TIMEOUT_MS = 9000;
-const RELAY_FANOUT = 6;
 
 export type TransportResult =
   | { transport: 'ok'; status: number; json: () => Promise<any> }
@@ -25,17 +23,6 @@ interface RelayReq {
   path: string;
   headers: Record<string, string>;
   body?: string;
-}
-
-// First-resolved race (Promise.any is ES2021; build target is ES2020).
-function firstResolved<T>(promises: Promise<T>[]): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    let remaining = promises.length;
-    if (remaining === 0) { reject(new Error('empty')); return; }
-    for (const p of promises) {
-      p.then(resolve, () => { if (--remaining === 0) reject(new Error('all failed')); });
-    }
-  });
 }
 
 async function tryDirect(req: RelayReq): Promise<TransportResult | null> {
@@ -50,69 +37,53 @@ async function tryDirect(req: RelayReq): Promise<TransportResult | null> {
       signal: controller.signal,
     });
     clearTimeout(timer);
-    pool.clearDirectBlocked();
     return { transport: 'ok', status: resp.status, json: () => resp.json() };
   } catch {
     clearTimeout(timer);
-    pool.markDirectBlocked();
     return null; // connection-level failure → caller falls back to relay
   }
 }
 
-async function relayOne(node: NodeEntry, req: RelayReq): Promise<{ status: number; body: string }> {
+// tryRelay sends ONE node-less relay request. Node selection, ranking, sequential
+// failover across nodes, and keep-alive connection reuse all happen inside the Go
+// RelayManager — the webapp neither picks a node nor knows which one served the
+// request. Envelope codes: 0 = success (any HTTP status, incl. 401, passed
+// through verbatim); -1 = relay UNSUPPORTED (capability downgrade → learn +
+// direct); 502 = relay failed (no usable nodes / all exhausted → direct); 503 =
+// transient not-ready (→ direct this time, relay stays enabled). The 9s cap
+// guards a pathologically hung IPC so the direct fallback still fits the budget.
+async function tryRelay(req: RelayReq): Promise<TransportResult> {
   const k2 = (window as unknown as { _k2?: { run: (a: string, p: RelayRequest) => Promise<SResponse<RelayResponse>> } })._k2;
-  if (!k2) throw new Error('no _k2');
+  if (!k2) return { transport: 'fail' };
   const relayReq: RelayRequest = {
-    ip: node.ip,
-    pin: node.pin,
-    ech: node.ech,
     centerHost: CONTROL_PLANE_HOST,
     method: req.method,
     path: req.path,
     headers: req.headers,
     body: req.body,
   };
-  // Race the IPC call against a per-relay timeout so a stalled node/daemon
-  // never keeps firstResolved pending indefinitely (§5.3 review #5 c).
-  const ipcPromise = k2.run('relay-fetch', relayReq);
   let timer: ReturnType<typeof setTimeout>;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      pool.recordFailure(node.ip);
-      reject(new Error('relay timeout'));
-    }, RELAY_TIMEOUT_MS);
+    timer = setTimeout(() => reject(new Error('relay timeout')), RELAY_TIMEOUT_MS);
   });
   let resp: SResponse<RelayResponse>;
   try {
-    resp = await Promise.race([ipcPromise, timeoutPromise]);
+    resp = await Promise.race([k2.run('relay-fetch', relayReq), timeoutPromise]);
+  } catch {
+    return { transport: 'fail' };
   } finally {
     clearTimeout(timer!);
   }
   if (resp.code === 0 && resp.data) {
-    pool.recordSuccess(node.ip);
-    return { status: resp.data.status, body: resp.data.body };
+    const data = resp.data;
+    return { transport: 'ok', status: data.status, json: async () => JSON.parse(data.body) };
   }
   if (resp.code === -1) {
-    // -1 = relay unsupported on this build/platform (capacitor / daemon-less
-    // standalone / daemon unreachable) — a CAPABILITY signal, not a node fault.
-    // Don't penalise the node's score; learn it so we stop trying relay this
-    // session and use direct. Node faults return 502, handled below.
+    // Capability signal (web / daemon-less / old build) — learn it so subsequent
+    // requests skip the doomed relay. Node faults are 502, transient is 503.
     pool.markRelayUnsupported();
-    throw new Error('relay unsupported');
   }
-  pool.recordFailure(node.ip);
-  throw new Error('relay failed code=' + resp.code);
-}
-
-async function tryRelay(req: RelayReq): Promise<TransportResult> {
-  const nodes = pool.getNodes().slice(0, RELAY_FANOUT);
-  if (nodes.length === 0) return { transport: 'fail' };
-  try {
-    const { status, body } = await firstResolved(nodes.map(n => relayOne(n, req)));
-    return { transport: 'ok', status, json: async () => JSON.parse(body) };
-  } catch {
-    return { transport: 'fail' };
-  }
+  return { transport: 'fail' };
 }
 
 /**

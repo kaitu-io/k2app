@@ -285,18 +285,33 @@ export interface IAppListProvider {
 
 // ==================== 核心接口 ====================
 
-/** Antiblock 中继：节点描述符 + 要发往 Center 的 HTTP 请求
- * (承接契约纪律 — 走 _k2.run，不放 _platform/新全局) */
+/** Antiblock 中继：要发往 Center 的 HTTP 请求（节点无关）
+ * (承接契约纪律 — 走 _k2.run，不放 _platform/新全局)
+ *
+ * 节点选择/排序/复用已下沉到 Go 的 RelayManager（webapp 通过 relay-add-nodes
+ * 增量喂节点，relay-fetch 只表达 HTTP 请求本身）。ip/pin/ech 保留为可选仅为
+ * 类型兼容，webapp 不再发送。 */
 export interface RelayRequest {
-  ip: string;
-  port?: number;          // 默认 443
-  pin: string;            // sha256:<rsa>,sha256:<ec>
-  ech: string;            // base64 ECH 配置（必需）
   centerHost: string;     // 内层 SNI + Host（如 k2.52j.me）
   method: string;
   path: string;
   headers?: Record<string, string>;
   body?: string;
+  /** @deprecated 节点选择已下沉 Go；webapp 不再发送这些字段 */
+  ip?: string;
+  port?: number;
+  pin?: string;
+  ech?: string;
+}
+
+/** Antiblock 中继：单个伪装节点描述符（webapp → Go relay-add-nodes 增量喂入）。
+ * Go 的 RelayManager 是节点存储 + 排序 + 健康的唯一权威。 */
+export interface RelayNodeDescriptor {
+  ip: string;
+  port?: number;          // 默认 443
+  pin: string;            // sha256:<rsa>,sha256:<ec>
+  ech: string;            // base64 ECH 配置（必需）
+  score?: number;         // 服务端 recommendScore（冷启动排序先验）
 }
 
 export interface RelayResponse {
