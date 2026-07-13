@@ -296,8 +296,11 @@ func (m *RelayManager) doViaNode(ctx context.Context, n *relayNodeState, req *Re
 // recordOutcome folds one attempt into a node's live health (EWMA latency on
 // success, consecutive-failure count on failure).
 func (m *RelayManager) recordOutcome(n *relayNodeState, ok bool, lat time.Duration) {
+	// The whole body is the critical section (all fields mutate atomically under
+	// the state lock) — but explicit Unlock at the single exit, not defer, so a
+	// future edit can't silently extend the lock past these pure field writes
+	// (Rule #5). No early return, no panic path: arithmetic only.
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if ok {
 		n.successN++
 		n.consecFail = 0
@@ -313,6 +316,7 @@ func (m *RelayManager) recordOutcome(n *relayNodeState, ok bool, lat time.Durati
 		n.consecFail++
 		n.lastFail = time.Now()
 	}
+	m.mu.Unlock()
 }
 
 func (m *RelayManager) setActive(n *relayNodeState) {
@@ -331,8 +335,11 @@ func (m *RelayManager) rankedSnapshot() []*relayNodeState {
 	// Fetch() calls run concurrently — the mobile plugin offloads relay onto a
 	// thread pool). The comparator is a pure function of in-memory state — no I/O,
 	// no external calls, no nested lock — so holding the state lock is compliant.
+	// Explicit Unlock (not defer) at the earliest safe point — right after the
+	// sort, since the comparator needs the lock but the returned slice is a
+	// private copy (Rule #5). sort.SliceStable can't panic here (pure int/dur
+	// comparisons), so no defer is needed for unlock safety.
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	out := make([]*relayNodeState, len(m.nodes))
 	copy(out, m.nodes)
 	sort.SliceStable(out, func(i, j int) bool {
@@ -356,6 +363,7 @@ func (m *RelayManager) rankedSnapshot() []*relayNodeState {
 		// unmeasured or equal latency → higher server prior first
 		return a.Score > b.Score
 	})
+	m.mu.Unlock()
 	return out
 }
 
