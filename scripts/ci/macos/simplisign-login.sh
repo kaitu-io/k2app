@@ -34,6 +34,15 @@ has_pkcs11_token() {
     pkcs11-tool --module "$PKCS11_MODULE" --list-slots 2>&1 | grep -q "token label"
 }
 
+# True only when this process can drive the macOS Accessibility API (osascript
+# + System Events). An interactive Terminal/desktop session with Accessibility
+# granted returns 0; the GitHub Actions runner service context cannot and
+# osascript fails with error -1719. This gates whether we may read the cloud
+# menu bar or attempt a GUI login at all.
+has_accessibility() {
+    osascript -e 'tell application "System Events" to get name of first process' >/dev/null 2>&1
+}
+
 generate_totp() {
     python3 -c "
 import pyotp, time, urllib.parse, sys
@@ -261,6 +270,40 @@ EOF
 
 echo "=== SimplySign Auto-Login ==="
 
+# Two execution contexts need different handling:
+#
+#   * Headless (the GitHub Actions runner service) — cannot drive the macOS
+#     Accessibility API; any osascript/System Events call fails with error
+#     -1719. This context only CONSUMES a cloud session that an interactive
+#     session established; it must never attempt a GUI login. The PKCS#11 slot
+#     is a cheap liveness gate here. It is deliberately NON-authoritative: a
+#     stale cached slot can outlive a dropped cloud session, so the real
+#     dead-session check is the signing preflight
+#     (scripts/ci/windows-sign-preflight.sh), which runs headlessly right
+#     before the heavy Tauri bundle and surfaces the real osslsigncode error
+#     (CKR_ATTRIBUTE_TYPE_INVALID) fast — instead of an opaque "failed to run
+#     bash" 18 minutes in.
+#
+#   * Interactive (Terminal/desktop with Accessibility granted) — can read the
+#     real cloud state via the menu bar and drive a GUI TOTP re-login. Here the
+#     menu bar ("Disconnect from cloud") is authoritative, so a cached slot
+#     with a dead cloud session correctly triggers a re-login instead of a
+#     false pass.
+if ! has_accessibility; then
+    echo "Headless context (no Accessibility). Not attempting GUI login."
+    if has_pkcs11_token; then
+        echo "PKCS#11 slot present — signing is verified by the preflight before"
+        echo "the build. Done!"
+        exit 0
+    fi
+    echo "ERROR: no PKCS#11 token and no GUI/Accessibility to log in." >&2
+    echo "Establish the SimplySign cloud session from an interactive session:" >&2
+    echo "  make simplisign-login   (in a Terminal/desktop with Accessibility granted)" >&2
+    exit 1
+fi
+
+# --- Interactive context below (Accessibility available) ---
+
 # Ensure the app is running before we probe the menu bar (the cloud-session
 # check reads it).
 if ! pgrep -f "SimplySign Desktop" > /dev/null; then
@@ -269,15 +312,8 @@ if ! pgrep -f "SimplySign Desktop" > /dev/null; then
     sleep 3
 fi
 
-# Readiness is BOTH conditions: the cloud session is live (menu bar shows
-# "Disconnect from cloud") AND the PKCS#11 slot is exposed. Checking the slot
-# alone (`has_pkcs11_token`) is a false-positive trap: after the SimplySign
-# cloud session drops, the local PKCS#11 module keeps advertising the cached
-# `wordgate` slot, so `--list-slots` still succeeds — but the private-key
-# signing operation forwarded to the cloud then fails with
-# CKR_ATTRIBUTE_TYPE_INVALID deep inside `tauri build`, surfacing only as an
-# opaque "failed to run bash". The menu-bar state is the authoritative signal
-# that the session can actually sign.
+# Authoritative readiness: the cloud session is live (menu bar shows
+# "Disconnect from cloud") AND the PKCS#11 slot is exposed.
 if is_connected && has_pkcs11_token; then
     echo "SimplySign cloud session live and PKCS#11 token available. Done!"
     exit 0
