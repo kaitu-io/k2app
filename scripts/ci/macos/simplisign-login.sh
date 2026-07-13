@@ -261,26 +261,42 @@ EOF
 
 echo "=== SimplySign Auto-Login ==="
 
-# Fast path: check PKCS#11 token directly (works even from non-GUI sessions)
-if has_pkcs11_token; then
-    echo "PKCS#11 token already available. Done!"
+# Ensure the app is running before we probe the menu bar (the cloud-session
+# check reads it).
+if ! pgrep -f "SimplySign Desktop" > /dev/null; then
+    echo "SimplySign Desktop not running — starting it..."
+    open "/Applications/SimplySign Desktop.app"
+    sleep 3
+fi
+
+# Readiness is BOTH conditions: the cloud session is live (menu bar shows
+# "Disconnect from cloud") AND the PKCS#11 slot is exposed. Checking the slot
+# alone (`has_pkcs11_token`) is a false-positive trap: after the SimplySign
+# cloud session drops, the local PKCS#11 module keeps advertising the cached
+# `wordgate` slot, so `--list-slots` still succeeds — but the private-key
+# signing operation forwarded to the cloud then fails with
+# CKR_ATTRIBUTE_TYPE_INVALID deep inside `tauri build`, surfacing only as an
+# opaque "failed to run bash". The menu-bar state is the authoritative signal
+# that the session can actually sign.
+if is_connected && has_pkcs11_token; then
+    echo "SimplySign cloud session live and PKCS#11 token available. Done!"
     exit 0
 fi
 
-echo "PKCS#11 token not available. Attempting GUI login..."
+if has_pkcs11_token && ! is_connected; then
+    echo "PKCS#11 slot is present but the SimplySign cloud session is DOWN"
+    echo "(menu bar shows 'Connect with cloud'). The cached slot CANNOT sign —"
+    echo "re-establishing the cloud session before proceeding."
+else
+    echo "SimplySign cloud session not ready. Attempting GUI login..."
+fi
 
 # GUI login requires SIMPLISIGN_TOTP_URI
 if [ -z "$SIMPLISIGN_TOTP_URI" ]; then
-    echo "ERROR: SIMPLISIGN_TOTP_URI not set and PKCS#11 token not available." >&2
-    echo "Either log in to SimplySign Desktop manually, or set SIMPLISIGN_TOTP_URI." >&2
+    echo "ERROR: SimplySign cloud session is not live and SIMPLISIGN_TOTP_URI is not set." >&2
+    echo "Reconnect manually: open 'SimplySign Desktop' -> 'Connect with cloud' + approve on phone," >&2
+    echo "or set SIMPLISIGN_TOTP_URI to enable automated login." >&2
     exit 1
-fi
-
-# Ensure app is running
-if ! pgrep -f "SimplySign Desktop" > /dev/null; then
-    echo "Starting SimplySign Desktop..."
-    open "/Applications/SimplySign Desktop.app"
-    sleep 3
 fi
 
 # Already connected via menu bar?
