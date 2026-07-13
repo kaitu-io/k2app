@@ -31,3 +31,20 @@ describe('getErrorMessage — password strength', () => {
     expect(msg).toBe(i18n.t('common:errors.client.invalidArgument'));
   });
 });
+
+describe('getErrorMessage — invalid credentials', () => {
+  beforeAll(async () => {
+    if (!i18n.isInitialized) await i18n.init();
+  });
+
+  // Wrong password / unknown email / no-password-set all return the SAME backend
+  // code (400006, deliberately generic to prevent email enumeration). The message
+  // must be specific enough to be actionable ("email or password is wrong") yet
+  // NOT reveal which field failed — so it maps to auth.invalidCredentials, never
+  // the vague auth.loginFailed (which reads like an unspecified/server error).
+  it('maps INVALID_CREDENTIALS to auth.invalidCredentials (not the generic loginFailed)', () => {
+    const msg = getErrorMessage(ERROR_CODES.INVALID_CREDENTIALS, 'invalid email or password', t);
+    expect(msg).toBe(i18n.t('auth:auth.invalidCredentials'));
+    expect(msg).not.toBe(i18n.t('auth:auth.loginFailed'));
+  });
+});

@@ -214,7 +214,11 @@ export function getErrorMessage(
       return t('common:errors.client.selfInvitation', 'Cannot use your own invite code');
 
     case ERROR_CODES.INVALID_CREDENTIALS:
-      return t('auth:auth.loginFailed', 'Login failed');
+      // Wrong password / unknown email / no-password-set all share this code
+      // (backend keeps it generic to prevent email enumeration). Show a specific,
+      // actionable message that still does NOT reveal which field was wrong —
+      // never the vague loginFailed, which users read as an unspecified error.
+      return t('auth:auth.invalidCredentials', 'Incorrect email or password');
 
     case ERROR_CODES.LICENSE_KEY_NOT_FOUND:
       return t('common:errors.client.licenseKeyNotFound', 'License key not found');
