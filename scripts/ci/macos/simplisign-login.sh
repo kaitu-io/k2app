@@ -34,13 +34,31 @@ has_pkcs11_token() {
     pkcs11-tool --module "$PKCS11_MODULE" --list-slots 2>&1 | grep -q "token label"
 }
 
-# True only when this process can drive the macOS Accessibility API (osascript
-# + System Events). An interactive Terminal/desktop session with Accessibility
-# granted returns 0; the GitHub Actions runner service context cannot and
-# osascript fails with error -1719. This gates whether we may read the cloud
-# menu bar or attempt a GUI login at all.
-has_accessibility() {
-    osascript -e 'tell application "System Events" to get name of first process' >/dev/null 2>&1
+# Classify the SimplySign cloud session by reading its menu bar, distinguishing
+# three states — crucially including "no-gui". Probing a generic System Events
+# call is NOT enough: reading the process list only needs Automation (Apple
+# Events) permission, which the GitHub Actions runner service HAS, whereas
+# clicking/reading another app's menu bar needs Accessibility (UI control),
+# which it does NOT — so a generic probe returns a false "GUI available" and
+# the menu read then fails with error -1719. Instead we read the actual menu
+# and treat a -1719 (or any osascript failure) as "no-gui":
+#   connected    -> "Disconnect from cloud" present (session live)
+#   disconnected -> "Connect with cloud" present (session genuinely down)
+#   no-gui       -> osascript can't drive the UI (headless runner service)
+cloud_menu_state() {
+    local out
+    out="$(get_menu_items 2>&1)"
+    if echo "$out" | grep -q "Disconnect from cloud"; then
+        echo "connected"
+    elif echo "$out" | grep -q "1719"; then
+        echo "no-gui"
+    elif echo "$out" | grep -q "Connect with cloud"; then
+        echo "disconnected"
+    else
+        # Any other osascript error (process missing, timeout) — don't drive
+        # the GUI blindly; fall back to the headless slot gate + preflight.
+        echo "no-gui"
+    fi
 }
 
 generate_totp() {
@@ -270,61 +288,61 @@ EOF
 
 echo "=== SimplySign Auto-Login ==="
 
-# Two execution contexts need different handling:
+# The signing path has two execution contexts, distinguished by whether this
+# process can actually drive the SimplySign menu bar (cloud_menu_state):
 #
-#   * Headless (the GitHub Actions runner service) — cannot drive the macOS
-#     Accessibility API; any osascript/System Events call fails with error
-#     -1719. This context only CONSUMES a cloud session that an interactive
-#     session established; it must never attempt a GUI login. The PKCS#11 slot
-#     is a cheap liveness gate here. It is deliberately NON-authoritative: a
-#     stale cached slot can outlive a dropped cloud session, so the real
-#     dead-session check is the signing preflight
+#   * no-gui (the GitHub Actions runner service) — osascript UI control fails
+#     with error -1719 (the service has Automation/Apple-Events permission but
+#     NOT Accessibility/UI-control). It only CONSUMES a cloud session an
+#     interactive session established and must never attempt a GUI login. The
+#     PKCS#11 slot is a cheap, NON-authoritative liveness gate here; the
+#     authoritative dead-session check is the signing preflight
 #     (scripts/ci/windows-sign-preflight.sh), which runs headlessly right
 #     before the heavy Tauri bundle and surfaces the real osslsigncode error
 #     (CKR_ATTRIBUTE_TYPE_INVALID) fast — instead of an opaque "failed to run
 #     bash" 18 minutes in.
 #
-#   * Interactive (Terminal/desktop with Accessibility granted) — can read the
-#     real cloud state via the menu bar and drive a GUI TOTP re-login. Here the
-#     menu bar ("Disconnect from cloud") is authoritative, so a cached slot
-#     with a dead cloud session correctly triggers a re-login instead of a
-#     false pass.
-if ! has_accessibility; then
-    echo "Headless context (no Accessibility). Not attempting GUI login."
-    if has_pkcs11_token; then
-        echo "PKCS#11 slot present — signing is verified by the preflight before"
-        echo "the build. Done!"
-        exit 0
-    fi
-    echo "ERROR: no PKCS#11 token and no GUI/Accessibility to log in." >&2
-    echo "Establish the SimplySign cloud session from an interactive session:" >&2
-    echo "  make simplisign-login   (in a Terminal/desktop with Accessibility granted)" >&2
-    exit 1
-fi
+#   * connected / disconnected (interactive Terminal/desktop) — the menu bar is
+#     authoritative, so a cached slot with a dead cloud session correctly
+#     triggers a GUI TOTP re-login instead of a false pass.
 
-# --- Interactive context below (Accessibility available) ---
-
-# Ensure the app is running before we probe the menu bar (the cloud-session
-# check reads it).
+# Make sure the app is running before we read its menu bar.
 if ! pgrep -f "SimplySign Desktop" > /dev/null; then
     echo "SimplySign Desktop not running — starting it..."
     open "/Applications/SimplySign Desktop.app"
     sleep 3
 fi
 
-# Authoritative readiness: the cloud session is live (menu bar shows
-# "Disconnect from cloud") AND the PKCS#11 slot is exposed.
-if is_connected && has_pkcs11_token; then
+STATE="$(cloud_menu_state)"
+echo "SimplySign menu state: $STATE"
+
+if [ "$STATE" = "no-gui" ]; then
+    echo "Headless context (cannot drive the SimplySign UI). Not attempting GUI login."
+    if has_pkcs11_token; then
+        echo "PKCS#11 slot present — signing is verified by the preflight before"
+        echo "the build. Done!"
+        exit 0
+    fi
+    echo "ERROR: no PKCS#11 token and no GUI access to log in." >&2
+    echo "Establish the SimplySign cloud session from an interactive session:" >&2
+    echo "  make simplisign-login   (in a Terminal/desktop with Accessibility granted)" >&2
+    exit 1
+fi
+
+# --- Interactive context below (menu bar is readable) ---
+
+# Authoritative readiness: the cloud session is live AND the PKCS#11 slot is
+# exposed.
+if [ "$STATE" = "connected" ] && has_pkcs11_token; then
     echo "SimplySign cloud session live and PKCS#11 token available. Done!"
     exit 0
 fi
 
-if has_pkcs11_token && ! is_connected; then
-    echo "PKCS#11 slot is present but the SimplySign cloud session is DOWN"
-    echo "(menu bar shows 'Connect with cloud'). The cached slot CANNOT sign —"
-    echo "re-establishing the cloud session before proceeding."
+if [ "$STATE" = "connected" ]; then
+    echo "Cloud connected but PKCS#11 slot not yet exposed — waiting for it below."
 else
-    echo "SimplySign cloud session not ready. Attempting GUI login..."
+    echo "SimplySign cloud session is DOWN (menu shows 'Connect with cloud')."
+    echo "Re-establishing the cloud session before proceeding."
 fi
 
 # GUI login requires SIMPLISIGN_TOTP_URI
