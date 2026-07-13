@@ -209,6 +209,23 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
 
+      - name: Reset stale k2 submodule working tree (self-hosted persistence guard)
+        shell: bash
+        run: |
+          # Self-hosted runners persist the workspace between runs. A prior
+          # release's `make fetch-rules-embed` overwrites k2/rule/embed/krs.tar.gz
+          # with the full ~2.5 MB archive (vs the committed cn-baseline
+          # placeholder), leaving the submodule dirty — so the next
+          # `git submodule update --init` aborts with "local changes would be
+          # overwritten by checkout" and the whole release fails at init. Reset
+          # the submodule working tree to its checked-out HEAD first; `update`
+          # then advances it to the pinned commit cleanly. No-op on fresh
+          # GitHub-hosted runners (k2/.git absent until init).
+          if [ -e k2/.git ]; then
+            git -C k2 reset --hard || true
+            git -C k2 clean -fd || true
+          fi
+
       - name: Init k2 submodule
         shell: bash
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
