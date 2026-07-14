@@ -165,6 +165,15 @@ func ScopeBrand(b Brand) func(*gorm.DB) *gorm.DB {
 	}
 }
 
+// parseBrandFilter 解析 admin ?brand= 筛选参数；空/非法返回 (BrandKaitu, false) 表示不过滤。
+func parseBrandFilter(raw string) (Brand, bool) {
+	b := Brand(strings.ToLower(raw))
+	if b.Valid() {
+		return b, true
+	}
+	return BrandKaitu, false
+}
+
 // BrandForCreate 解析 admin 创建路径上用户提交的 brand 字符串：
 // 空 → BrandKaitu（老 admin UI 零破坏）；非空但非法 → error（拒绝，绝不静默降级成 kaitu）。
 func BrandForCreate(s string) (Brand, error) {

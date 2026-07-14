@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
 
 // UserStatisticsResponse contains aggregated user statistics
@@ -98,35 +99,74 @@ type RefundReasonRow struct {
 func api_admin_get_user_statistics(c *gin.Context) {
 	var result UserStatisticsResponse
 	now := time.Now()
+	brandFilter, hasBrand := parseBrandFilter(c.Query("brand"))
 
 	// Get total user count
-	db.Get().Model(&User{}).Count(&result.TotalUsers)
+	q := db.Get().Model(&User{})
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.TotalUsers)
 
 	// Get paid users count (users who have completed first order)
-	db.Get().Model(&User{}).Where("is_first_order_done = ?", true).Count(&result.PaidUsers)
+	q = db.Get().Model(&User{}).Where("is_first_order_done = ?", true)
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.PaidUsers)
 	result.FreeUsers = result.TotalUsers - result.PaidUsers
 
 	// Get active pro users (expired_at > now)
 	nowUnix := now.Unix()
-	db.Get().Model(&User{}).Where("expired_at > ?", nowUnix).Count(&result.ActivePro)
+	q = db.Get().Model(&User{}).Where("expired_at > ?", nowUnix)
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.ActivePro)
 
 	// Get expired pro users (expired_at > 0 AND expired_at <= now)
-	db.Get().Model(&User{}).Where("expired_at > 0 AND expired_at <= ?", nowUnix).Count(&result.ExpiredPro)
+	q = db.Get().Model(&User{}).Where("expired_at > 0 AND expired_at <= ?", nowUnix)
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.ExpiredPro)
 
 	// Get users who never had pro (expired_at = 0 or NULL)
-	db.Get().Model(&User{}).Where("expired_at = 0 OR expired_at IS NULL").Count(&result.NeverHadPro)
+	q = db.Get().Model(&User{}).Where("expired_at = 0 OR expired_at IS NULL")
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.NeverHadPro)
 
 	// Get retailer count
-	db.Get().Model(&User{}).Where("is_retailer = ?", true).Count(&result.TotalRetailers)
+	q = db.Get().Model(&User{}).Where("is_retailer = ?", true)
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.TotalRetailers)
 
 	// Get new user counts for different periods
 	h24Ago := now.Add(-24 * time.Hour)
 	d7Ago := now.Add(-7 * 24 * time.Hour)
 	d30Ago := now.Add(-30 * 24 * time.Hour)
 
-	db.Get().Model(&User{}).Where("created_at >= ?", h24Ago).Count(&result.New24h)
-	db.Get().Model(&User{}).Where("created_at >= ?", d7Ago).Count(&result.New7d)
-	db.Get().Model(&User{}).Where("created_at >= ?", d30Ago).Count(&result.New30d)
+	q = db.Get().Model(&User{}).Where("created_at >= ?", h24Ago)
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.New24h)
+
+	q = db.Get().Model(&User{}).Where("created_at >= ?", d7Ago)
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.New7d)
+
+	q = db.Get().Model(&User{}).Where("created_at >= ?", d30Ago)
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.New30d)
 
 	// Get registration breakdown by month (last 6 months)
 	type monthResult struct {
@@ -135,10 +175,13 @@ func api_admin_get_user_statistics(c *gin.Context) {
 	}
 	var monthCounts []monthResult
 	sixMonthsAgo := now.AddDate(0, -6, 0)
-	db.Get().Model(&User{}).
+	q = db.Get().Model(&User{}).
 		Select("DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as count").
-		Where("created_at >= ?", sixMonthsAgo).
-		Group("DATE_FORMAT(created_at, '%Y-%m')").
+		Where("created_at >= ?", sixMonthsAgo)
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Group("DATE_FORMAT(created_at, '%Y-%m')").
 		Order("month ASC").
 		Find(&monthCounts)
 
@@ -157,12 +200,23 @@ func api_admin_get_user_statistics(c *gin.Context) {
 func api_admin_get_order_statistics(c *gin.Context) {
 	var result OrderStatisticsResponse
 	now := time.Now()
+	brandFilter, hasBrand := parseBrandFilter(c.Query("brand"))
+
+	// orderScope 返回一个新的 &Order{} model 查询，品牌过滤时 join users 按 users.brand 过滤
+	// （Order 无 brand 列，品牌经 user 继承）。
+	orderScope := func() *gorm.DB {
+		q := db.Get().Model(&Order{})
+		if hasBrand {
+			q = q.Joins("JOIN users ON users.id = orders.user_id").Where("users.brand = ?", string(brandFilter))
+		}
+		return q
+	}
 
 	// Get total order count
-	db.Get().Model(&Order{}).Count(&result.TotalOrders)
+	orderScope().Count(&result.TotalOrders)
 
 	// Get paid orders count
-	db.Get().Model(&Order{}).Where("is_paid = ?", true).Count(&result.PaidOrders)
+	orderScope().Where("is_paid = ?", true).Count(&result.PaidOrders)
 	result.UnpaidOrders = result.TotalOrders - result.PaidOrders
 
 	// Calculate conversion rate
@@ -174,7 +228,7 @@ func api_admin_get_order_statistics(c *gin.Context) {
 	var totalRevenue struct {
 		Sum int64
 	}
-	db.Get().Model(&Order{}).
+	orderScope().
 		Select("COALESCE(SUM(pay_amount), 0) as sum").
 		Where("is_paid = ?", true).
 		Scan(&totalRevenue)
@@ -190,7 +244,7 @@ func api_admin_get_order_statistics(c *gin.Context) {
 		Revenue int64
 		Count   int64
 	}
-	db.Get().Model(&Order{}).
+	orderScope().
 		Select("COALESCE(SUM(pay_amount), 0) as revenue, COUNT(*) as count").
 		Where("is_paid = ? AND paid_at >= ?", true, h24Ago).
 		Scan(&stats24h)
@@ -202,7 +256,7 @@ func api_admin_get_order_statistics(c *gin.Context) {
 		Revenue int64
 		Count   int64
 	}
-	db.Get().Model(&Order{}).
+	orderScope().
 		Select("COALESCE(SUM(pay_amount), 0) as revenue, COUNT(*) as count").
 		Where("is_paid = ? AND paid_at >= ?", true, d7Ago).
 		Scan(&stats7d)
@@ -214,7 +268,7 @@ func api_admin_get_order_statistics(c *gin.Context) {
 		Revenue int64
 		Count   int64
 	}
-	db.Get().Model(&Order{}).
+	orderScope().
 		Select("COALESCE(SUM(pay_amount), 0) as revenue, COUNT(*) as count").
 		Where("is_paid = ? AND paid_at >= ?", true, d30Ago).
 		Scan(&stats30d)
@@ -233,7 +287,7 @@ func api_admin_get_order_statistics(c *gin.Context) {
 		Count   int64
 	}
 	var dailyCounts []dailyResult
-	db.Get().Model(&Order{}).
+	orderScope().
 		Select("DATE_FORMAT(paid_at, '%Y-%m-%d') as day, COALESCE(SUM(pay_amount), 0) as revenue, COUNT(*) as count").
 		Where("is_paid = ? AND paid_at >= ?", true, d30Ago).
 		Group("DATE_FORMAT(paid_at, '%Y-%m-%d')").
@@ -251,11 +305,11 @@ func api_admin_get_order_statistics(c *gin.Context) {
 	// ===== 退款统计（按 refunded_at，不干扰 paid_at 营收口径）=====
 	computeRefundWindow := func(since time.Time) RefundStatsWindow {
 		var w RefundStatsWindow
-		db.Get().Model(&Order{}).
+		orderScope().
 			Where("is_refunded = ? AND refunded_at >= ?", true, since).
 			Count(&w.Count)
 		var sum int64
-		db.Get().Model(&Order{}).
+		orderScope().
 			Select("COALESCE(SUM(refund_amount), 0)").
 			Where("is_refunded = ? AND refunded_at >= ?", true, since).
 			Scan(&sum)
@@ -271,7 +325,7 @@ func api_admin_get_order_statistics(c *gin.Context) {
 	}
 
 	var reasons []RefundReasonRow
-	db.Get().Model(&Order{}).
+	orderScope().
 		Select("refund_reason as reason, COUNT(*) as count").
 		Where("is_refunded = ? AND refunded_at >= ? AND refund_reason != ''", true, d30Ago).
 		Group("refund_reason").
