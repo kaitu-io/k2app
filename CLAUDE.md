@@ -116,10 +116,10 @@ Marketing 策略 / 审查 / 内容日历统一放在 [`docs/marketing/`](docs/ma
 |-----|-------|
 | [`docs/marketing/README.md`](docs/marketing/README.md) | 目录索引 + 已知冲突点 + 工作方式 |
 | [`.agents/product-marketing-context.md`](.agents/product-marketing-context.md) | 单一事实源：品牌 / ICP / JTBD / 竞品 / 异议 / 声调（路径硬编码，所有 `marketing-skills:*` 自动引用） |
-| [`docs/marketing/brand-naming-strategy.md`](docs/marketing/brand-naming-strategy.md) | 品牌命名层级（Overleap 母 / Kaitu 中国产品 / k2 协议）+ SEO 关键词矩阵 |
+| [`docs/marketing/brand-naming-strategy.md`](docs/marketing/brand-naming-strategy.md) | 对等双品牌命名（Overleap 海外 / 开途·Kaitu 中国，k2 协议层全球共享）+ SEO 关键词矩阵 |
 | [`docs/marketing/content-calendar-2026-Q2.md`](docs/marketing/content-calendar-2026-Q2.md) | 13 周双轨内容日历（Kaitu zh-CN + Overleap en-US），W1-W13 |
 | [`docs/marketing/audits/`](docs/marketing/audits/) | CRO / ASO 审查快照（按日期） |
 
-**品牌架构**（2026-07-14 修订）：Overleap（海外）/ 开途·Kaitu（中国）**完全隔离**的两个独立产品品牌——不再是"母品牌/子产品"层级，任何面向用户的语境都不互相提及（法务文书署名 Overleap LLC 除外）；~~Kaitu by Overleap~~ 跨语境衔接句已作废。详见 `brand-naming-strategy.md`。技术/后端侧的品牌隔离机制见根 CLAUDE.md Cross-Layer Domain Vocabulary "Brand" 词条 + `api/CLAUDE.md`。
+**品牌架构**（2026-07-14 修订）：Overleap（海外）/ 开途·Kaitu（中国）**完全隔离**的两个独立产品品牌——不再是"母品牌/子产品"层级，任何面向用户的语境都不互相提及（法务文书署名 Overleap LLC 除外）；~~Kaitu by Overleap~~ 跨语境衔接句已作废。详见 `brand-naming-strategy.md`。技术/后端侧的品牌隔离机制见上文 Cross-Layer Domain Vocabulary "Brand" 词条 + `api/CLAUDE.md`。
 
 **剩余待对齐**：0。
