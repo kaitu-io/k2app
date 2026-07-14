@@ -247,17 +247,23 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 
 	log.Infof(ctx, "[WINBACK] Found %d users expired %d days ago", len(users), daysAfter)
 
-	vars := map[string]string{}
+	// 活动码/省钱区间必须按收件用户品牌计算（价格区间与 campaign 均品牌隔离），
+	// 按 brand 分组缓存一次，避免每封重查。
 	campaign, hasCampaign := winbackCampaigns[daysAfter]
-	if hasCampaign {
-		minPrice, maxPrice, ok := getPlanPriceRange(ctx)
-		if ok {
-			minSave := minPrice * uint64(100-campaign.discountPct) / 100
-			maxSave := maxPrice * uint64(100-campaign.discountPct) / 100
-			vars["SavingsText"] = fmt.Sprintf("立减 %s 起，最高立减 %s", formatCents(minSave), formatCents(maxSave))
-			vars["CampaignCode"] = campaign.code
-			vars["ValidDays"] = campaign.validDaysStr
+	varsByBrand := map[Brand]map[string]string{}
+	varsFor := func(b Brand) map[string]string {
+		if !b.Valid() {
+			b = BrandKaitu
 		}
+		if v, ok := varsByBrand[b]; ok {
+			return v
+		}
+		v := map[string]string{}
+		if hasCampaign {
+			v = campaignVarsForBrand(ctx, campaign.code, campaign.discountPct, campaign.validDaysStr, b)
+		}
+		varsByBrand[b] = v
+		return v
 	}
 
 	items := make([]SendEmailItem, 0, len(users))
@@ -277,7 +283,7 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 			Email:  email,
 			UserID: user.ID,
 			Slug:   slug,
-			Vars:   vars,
+			Vars:   varsFor(Brand(user.Brand)),
 		})
 	}
 
@@ -310,10 +316,30 @@ var winbackCampaigns = map[int]winbackCampaign{
 	30: {code: "BACK85", discountPct: 85, validDaysStr: "30 天内有效"},
 }
 
-// getPlanPriceRange 查询当前激活套餐的最低和最高售价（美分）
-func getPlanPriceRange(ctx context.Context) (minPrice, maxPrice uint64, ok bool) {
+// campaignVarsForBrand 按单个收件品牌计算生命周期邮件（winback / abandoned-order）
+// 的活动码模板变量。campaign 在该品牌下不存在（或不可用）、或该品牌无激活套餐时
+// 返回空 map——绝不把 kaitu 的价格区间/活动码发给 overleap 用户，反之亦然。
+func campaignVarsForBrand(ctx context.Context, code string, discountPct int, validDaysStr string, brand Brand) map[string]string {
+	vars := map[string]string{}
+	if getCampaignByCode(ctx, code, brand) == nil {
+		return vars
+	}
+	minPrice, maxPrice, ok := getPlanPriceRange(ctx, brand)
+	if !ok {
+		return vars
+	}
+	minSave := minPrice * uint64(100-discountPct) / 100
+	maxSave := maxPrice * uint64(100-discountPct) / 100
+	vars["SavingsText"] = fmt.Sprintf("立减 %s 起，最高立减 %s", formatCents(minSave), formatCents(maxSave))
+	vars["CampaignCode"] = code
+	vars["ValidDays"] = validDaysStr
+	return vars
+}
+
+// getPlanPriceRange 查询指定品牌当前激活套餐的最低和最高售价（美分）
+func getPlanPriceRange(ctx context.Context, brand Brand) (minPrice, maxPrice uint64, ok bool) {
 	var plans []Plan
-	if err := db.Get().Where("is_active = ?", true).Select("price").Find(&plans).Error; err != nil {
+	if err := db.Get().Scopes(ScopeBrand(brand)).Where("is_active = ?", true).Select("price").Find(&plans).Error; err != nil {
 		log.Errorf(ctx, "[WINBACK] Failed to query plans: %v", err)
 		return 0, 0, false
 	}

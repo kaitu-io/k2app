@@ -42,6 +42,8 @@ func loadTiersWithPlans(c *gin.Context, includeInactive bool) ([]TierWithPlans, 
 		// Tiers are an app-product concept. private_node plans reuse tier names
 		// but are a separate product — never surface them on the public endpoint.
 		q = q.Where("product = ?", ProductApp)
+		// 公开端点按请求品牌隔离；admin 路径（includeInactive=true）保持跨品牌视角。
+		q = q.Scopes(ScopeBrand(ReqBrand(c)))
 	}
 
 	var plans []Plan

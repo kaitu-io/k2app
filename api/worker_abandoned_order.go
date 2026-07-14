@@ -170,17 +170,23 @@ func processAbandonedOrders(ctx context.Context, batchID, slug string, windowSta
 		userMap[users[i].ID] = &users[i]
 	}
 
-	vars := map[string]string{}
+	// 活动码/省钱区间必须按收件用户品牌计算（价格区间与 campaign 均品牌隔离），
+	// 按 brand 分组缓存一次，避免每封重查。
 	campaign, hasCampaign := abandonedCampaigns[daysAfter]
-	if hasCampaign {
-		minPrice, maxPrice, ok := getPlanPriceRange(ctx)
-		if ok {
-			minSave := minPrice * uint64(100-campaign.discountPct) / 100
-			maxSave := maxPrice * uint64(100-campaign.discountPct) / 100
-			vars["SavingsText"] = fmt.Sprintf("立减 %s 起，最高立减 %s", formatCents(minSave), formatCents(maxSave))
-			vars["CampaignCode"] = campaign.code
-			vars["ValidDays"] = campaign.validDaysStr
+	varsByBrand := map[Brand]map[string]string{}
+	varsFor := func(b Brand) map[string]string {
+		if !b.Valid() {
+			b = BrandKaitu
 		}
+		if v, ok := varsByBrand[b]; ok {
+			return v
+		}
+		v := map[string]string{}
+		if hasCampaign {
+			v = campaignVarsForBrand(ctx, campaign.code, campaign.discountPct, campaign.validDaysStr, b)
+		}
+		varsByBrand[b] = v
+		return v
 	}
 
 	items := make([]SendEmailItem, 0, len(orders))
@@ -202,6 +208,7 @@ func processAbandonedOrders(ctx context.Context, batchID, slug string, windowSta
 			continue
 		}
 
+		vars := varsFor(Brand(user.Brand))
 		itemVars := make(map[string]string, len(vars)+2)
 		maps.Copy(itemVars, vars)
 		itemVars["PlanTitle"] = order.Title

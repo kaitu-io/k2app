@@ -75,9 +75,10 @@ func api_admin_create_plan(c *gin.Context) {
 		return
 	}
 
-	brand := Brand(req.Brand)
-	if !brand.Valid() {
-		brand = BrandKaitu
+	brand, brandErr := BrandForCreate(req.Brand)
+	if brandErr != nil {
+		Error(c, ErrorInvalidArgument, "invalid brand")
+		return
 	}
 
 	err := db.Get().Transaction(func(tx *gorm.DB) error {

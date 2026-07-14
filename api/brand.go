@@ -1,6 +1,7 @@
 package center
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -162,4 +163,17 @@ func ScopeBrand(b Brand) func(*gorm.DB) *gorm.DB {
 	return func(tx *gorm.DB) *gorm.DB {
 		return tx.Where("brand = ?", string(b))
 	}
+}
+
+// BrandForCreate 解析 admin 创建路径上用户提交的 brand 字符串：
+// 空 → BrandKaitu（老 admin UI 零破坏）；非空但非法 → error（拒绝，绝不静默降级成 kaitu）。
+func BrandForCreate(s string) (Brand, error) {
+	if s == "" {
+		return BrandKaitu, nil
+	}
+	b := Brand(strings.ToLower(s))
+	if !b.Valid() {
+		return "", fmt.Errorf("invalid brand: %q", s)
+	}
+	return b, nil
 }

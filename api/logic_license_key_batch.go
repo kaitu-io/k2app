@@ -17,9 +17,9 @@ import (
 func CreateLicenseKeyBatch(ctx context.Context, req *CreateLicenseKeyBatchRequest, adminUserID uint64) (*LicenseKeyBatch, error) {
 	expiresAt := time.Now().AddDate(0, 0, req.ExpiresInDays).Unix()
 
-	brand := Brand(req.Brand)
-	if !brand.Valid() {
-		brand = BrandKaitu
+	brand, err := BrandForCreate(req.Brand)
+	if err != nil {
+		return nil, err
 	}
 
 	batch := LicenseKeyBatch{
@@ -34,7 +34,7 @@ func CreateLicenseKeyBatch(ctx context.Context, req *CreateLicenseKeyBatchReques
 		Brand:            string(brand),
 	}
 
-	err := db.Get().Transaction(func(tx *gormdb.DB) error {
+	err = db.Get().Transaction(func(tx *gormdb.DB) error {
 		if err := tx.Create(&batch).Error; err != nil {
 			return fmt.Errorf("create batch: %w", err)
 		}
