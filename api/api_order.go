@@ -142,7 +142,7 @@ func api_create_order(c *gin.Context) {
 	// 如果有优惠码，应用优惠
 	if req.CampaignCode != "" {
 		log.Infof(c, "processing campaign code: %s", req.CampaignCode)
-		campaign = getCampaignByCode(c, req.CampaignCode)
+		campaign = getCampaignByCode(c, req.CampaignCode, ReqBrand(c))
 		if campaign != nil {
 			log.Debugf(c, "campaign found: ID=%d, Type=%s", campaign.ID, campaign.Type)
 			log.Infof(c, "applying campaign code %s for user %d", req.CampaignCode, user.ID)

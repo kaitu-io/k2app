@@ -47,6 +47,11 @@ func executeApprovalCampaignCreate(ctx context.Context, params json.RawMessage) 
 		return fmt.Errorf("campaign code already exists: %s", req.Code)
 	}
 
+	brand := Brand(req.Brand)
+	if !brand.Valid() {
+		brand = BrandKaitu
+	}
+
 	campaign := Campaign{
 		Code:          req.Code,
 		Name:          req.Name,
@@ -59,6 +64,7 @@ func executeApprovalCampaignCreate(ctx context.Context, params json.RawMessage) 
 		MatcherType:   req.MatcherType,
 		MatcherParams: req.MatcherParams,
 		MaxUsage:      req.MaxUsage,
+		Brand:         string(brand),
 	}
 
 	if err := db.Get().Create(&campaign).Error; err != nil {

@@ -51,6 +51,8 @@ type AdminCreatePlanRequest struct {
 	IsActive    bool   `json:"isActive" example:"true"`                        // 是否激活
 	// Apple App Store 商品ID（仅 iOS IAP）：如 io.kaitu.sub.family.1y。非空才在 iOS 购买面板出现。
 	AppleProductID string `json:"appleProductId" example:"io.kaitu.sub.family.1y"`
+	// Brand 归属品牌：kaitu | overleap，空/未知一律回退 kaitu（老 admin UI 零破坏）。
+	Brand string `json:"brand" example:"kaitu"`
 }
 
 func api_admin_create_plan(c *gin.Context) {
@@ -73,6 +75,11 @@ func api_admin_create_plan(c *gin.Context) {
 		return
 	}
 
+	brand := Brand(req.Brand)
+	if !brand.Valid() {
+		brand = BrandKaitu
+	}
+
 	err := db.Get().Transaction(func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&Plan{}).Where("pid = ?", req.PID).Count(&count).Error; err != nil {
@@ -92,6 +99,7 @@ func api_admin_create_plan(c *gin.Context) {
 			Highlight:      BoolPtr(req.Highlight),
 			IsActive:       BoolPtr(req.IsActive),
 			AppleProductID: req.AppleProductID,
+			Brand:          string(brand),
 		}
 
 		if err := tx.Create(&plan).Error; err != nil {

@@ -71,8 +71,9 @@ func MatchLicenseKey(key *LicenseKey, user *User) bool {
 }
 
 // RedeemLicenseKey validates, consumes, and grants plan access to the user.
-// Runs inside a DB transaction.
-func RedeemLicenseKey(ctx context.Context, code string, userID uint64) (*LicenseKey, *UserProHistory, error) {
+// Runs inside a DB transaction. brand scopes the key lookup so a user on one
+// brand can never redeem a code minted for the other.
+func RedeemLicenseKey(ctx context.Context, code string, userID uint64, brand Brand) (*LicenseKey, *UserProHistory, error) {
 	code = NormalizeCode(code)
 	var history *UserProHistory
 	var key *LicenseKey
@@ -80,7 +81,7 @@ func RedeemLicenseKey(ctx context.Context, code string, userID uint64) (*License
 	err := db.Get().Transaction(func(tx *gormdb.DB) error {
 		// 1. Load key
 		var k LicenseKey
-		if err := tx.Preload("Batch").Where("code = ?", code).First(&k).Error; err != nil {
+		if err := tx.Scopes(ScopeBrand(brand)).Preload("Batch").Where("code = ?", code).First(&k).Error; err != nil {
 			return ErrLicenseKeyNotFound
 		}
 		if k.IsUsed {

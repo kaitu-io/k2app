@@ -101,8 +101,8 @@ func api_get_app_config(c *gin.Context) {
 		}
 	}
 
-	// Get active announcements filtered by client version
-	announcements := getActiveAnnouncements(clientVersion)
+	// Get active announcements filtered by client version, scoped to request brand
+	announcements := getActiveAnnouncements(ReqBrand(c), clientVersion)
 
 	// Build response — singular field for backward compat, array for new clients
 	var singleAnnouncement *DataAnnouncement

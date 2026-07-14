@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
 
 // Brand 是双品牌拆分的核心枚举。用户的 brand 是出生属性（注册时确定，终身不变）。
@@ -153,4 +154,12 @@ func ReqBrand(c *gin.Context) Brand {
 		}
 	}
 	return resolveRequestBrand(c)
+}
+
+// ScopeBrand 是面向用户查询的唯一合法品牌过滤入口。
+// admin 路由（/app/*）不用它——admin 是唯一合法跨品牌视角，用显式 ?brand= 筛选。
+func ScopeBrand(b Brand) func(*gorm.DB) *gorm.DB {
+	return func(tx *gorm.DB) *gorm.DB {
+		return tx.Where("brand = ?", string(b))
+	}
 }

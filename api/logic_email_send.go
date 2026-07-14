@@ -148,6 +148,7 @@ func sendSingleTemplatedEmail(
 
 	// 1. Resolve user
 	userID := item.UserID
+	var resolvedUser *User
 	if userID == 0 {
 		user, err := FindOrCreateUserByEmail(ctx, item.Email)
 		if err != nil {
@@ -157,26 +158,41 @@ func sendSingleTemplatedEmail(
 			return resultItem
 		}
 		userID = user.ID
+		resolvedUser = user
+	}
+	if resolvedUser == nil {
+		var u User
+		if err := db.Get().First(&u, userID).Error; err != nil {
+			resultItem.Status = "failed"
+			resultItem.Error = fmt.Sprintf("resolve user failed: %v", err)
+			createEmailSendLog(ctx, batchID, 0, userID, item.Email, "", EmailSendLogStatusFailed, resultItem.Error)
+			return resultItem
+		}
+		resolvedUser = &u
 	}
 
-	// 2. Lookup template by slug (cached within batch)
-	tmpl, ok := templateCache[item.Slug]
+	// 2. Lookup template by slug (cached within batch, cache key includes brand
+	// since the same slug may have a distinct row per brand)
+	cacheKey := resolvedUser.Brand + ":" + item.Slug
+	tmpl, ok := templateCache[cacheKey]
 	if !ok {
 		var t EmailMarketingTemplate
-		if err := db.Get().Where("slug = ? AND is_active = ? AND origin_id IS NULL", item.Slug, true).
+		// 模板品牌必须匹配收件用户的品牌（user.Brand），而非请求品牌——
+		// 批量发信任务没有请求上下文，收件人是唯一的品牌真相源。
+		if err := db.Get().Where("slug = ? AND is_active = ? AND origin_id IS NULL AND brand = ?", item.Slug, true, resolvedUser.Brand).
 			First(&t).Error; err != nil {
 			resultItem.Status = "failed"
 			resultItem.Error = fmt.Sprintf("template slug %q not found", item.Slug)
 			createEmailSendLog(ctx, batchID, 0, userID, item.Email, "", EmailSendLogStatusFailed, resultItem.Error)
 			return resultItem
 		}
-		templateCache[item.Slug] = &t
+		templateCache[cacheKey] = &t
 		tmpl = &t
-		varsCache[item.Slug] = extractTemplateVars(t.Subject, t.Content)
+		varsCache[cacheKey] = extractTemplateVars(t.Subject, t.Content)
 	}
 
 	// 3. Validate variables
-	if err := validateTemplateVars(varsCache[item.Slug], item.Vars); err != nil {
+	if err := validateTemplateVars(varsCache[cacheKey], item.Vars); err != nil {
 		resultItem.Status = "failed"
 		resultItem.Error = err.Error()
 		createEmailSendLog(ctx, batchID, tmpl.ID, userID, item.Email, "", EmailSendLogStatusFailed, resultItem.Error)

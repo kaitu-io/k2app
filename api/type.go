@@ -686,6 +686,8 @@ type CampaignRequest struct {
 	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order=新客(未完成首单), vip=老客(已付费), all, paid_before, paid_before_active
 	MaxUsage      int64  `json:"maxUsage"`                                        // 最大使用次数（0=无限制）
 	MatcherParams string `json:"matcherParams"`
+	// Brand 归属品牌：kaitu | overleap，仅创建时生效，空/未知回退 kaitu；更新时忽略（品牌创建后不可变）。
+	Brand string `json:"brand" example:"kaitu"`
 }
 
 // CampaignResponse 优惠活动响应
@@ -1144,6 +1146,9 @@ type CreateLicenseKeyBatchRequest struct {
 	Quantity         int    `json:"quantity" binding:"required,min=1,max=10000"`
 	ExpiresInDays    int    `json:"expiresInDays" binding:"required,min=1"`
 	Note             string `json:"note"`
+	// Brand 归属品牌：kaitu | overleap，空/未知回退 kaitu（老 admin UI 零破坏）。批次与其下所有
+	// 授权码共享同一品牌。
+	Brand string `json:"brand" example:"kaitu"`
 }
 
 type LicenseKeyBatchResponse struct {
