@@ -32,6 +32,8 @@ type DataSlaveTunnelV20260717 struct {
 // No :protocol path param (C3). No echConfigList (C3). Mirrors the query
 // and scoring logic of api_k2_tunnels without the legacy/admin branches.
 func api_v20260717_tunnels(c *gin.Context) {
+	user := ReqUser(c)
+
 	var tunnels []SlaveTunnel
 	if err := db.Get().Model(&SlaveTunnel{}).
 		Preload("Node").
@@ -65,6 +67,15 @@ func api_v20260717_tunnels(c *gin.Context) {
 		}
 		// Private nodes must not surface in the shared pool (same guard as v1).
 		if tunnel.Node.Class == NodeClassPrivate {
+			continue
+		}
+
+		// Brand visibility filter: hide nodes not marked visible for the
+		// requesting user's brand. Uses user.Brand, not the request brand
+		// (Task 4 enforces the two are equal post-auth). No admin bypass here,
+		// matching this handler's stated design ("without the legacy/admin
+		// branches") — unlike api_k2_tunnels it never treats admins specially.
+		if user != nil && !tunnel.Node.VisibleTo(Brand(user.Brand)) {
 			continue
 		}
 
