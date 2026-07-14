@@ -85,7 +85,7 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 	var user *User
 	userExists := false
 
-	if err := db.Get().Preload("User").Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+	if err := db.Get().Preload("User").Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(ReqBrand(c))).First(&identify).Error; err != nil {
 		if !util.DbIsNotFoundErr(err) {
 			log.Errorf(c, "failed to check user: %v", err)
 			Error(c, ErrorSystemError, "failed to check user")
@@ -228,7 +228,7 @@ func api_login(c *gin.Context) {
 	}
 
 	var identify LoginIdentify
-	if err := db.Get().Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+	if err := db.Get().Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(ReqBrand(c))).First(&identify).Error; err != nil {
 		if util.DbIsNotFoundErr(err) {
 			log.Warnf(c, "user not found during login for email (hashed): %s", indexID)
 			Error(c, ErrorNotFound, "user not found")
@@ -531,7 +531,7 @@ func api_web_auth(c *gin.Context) {
 	}
 
 	var identify LoginIdentify
-	if err := db.Get().Where(&LoginIdentify{Type: "email", IndexID: indexID}).First(&identify).Error; err != nil {
+	if err := db.Get().Where(&LoginIdentify{Type: "email", IndexID: indexID, Brand: string(ReqBrand(c))}).First(&identify).Error; err != nil {
 		if util.DbIsNotFoundErr(err) {
 			log.Warnf(c, "user not found during web login for email (hashed): %s", indexID)
 			Error(c, ErrorNotFound, "user not found")
@@ -785,7 +785,7 @@ func api_password_login(c *gin.Context) {
 
 	// Find user by email
 	var identify LoginIdentify
-	if err := db.Get().Preload("User").Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+	if err := db.Get().Preload("User").Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(ReqBrand(c))).First(&identify).Error; err != nil {
 		if util.DbIsNotFoundErr(err) {
 			log.Warnf(c, "user not found for password login, email (hashed): %s", indexID)
 			// Use generic error to prevent email enumeration
@@ -955,7 +955,7 @@ func api_web_password_login(c *gin.Context) {
 	indexID := secretHashIt(c, []byte(req.Email))
 
 	var identify LoginIdentify
-	if err := db.Get().Preload("User").Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+	if err := db.Get().Preload("User").Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(ReqBrand(c))).First(&identify).Error; err != nil {
 		if util.DbIsNotFoundErr(err) {
 			log.Warnf(c, "user not found for web password login, email (hashed): %s", indexID)
 			Error(c, ErrorInvalidCredentials, "invalid email or password")

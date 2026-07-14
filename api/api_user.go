@@ -122,11 +122,12 @@ func api_update_login_email(c *gin.Context) {
 		return
 	}
 
-	// 检查邮箱是否已被其他用户绑定
+	// 检查邮箱是否已被其他用户绑定（限定当前请求品牌——跨品牌同邮箱是合法的独立账号）
 	var exist LoginIdentify
 	err := db.Get().Where(&LoginIdentify{
 		Type:    "email",
 		IndexID: indexID,
+		Brand:   string(ReqBrand(c)),
 	}).First(&exist).Error
 
 	if err == nil {
@@ -162,6 +163,7 @@ func api_update_login_email(c *gin.Context) {
 			Type:           "email",
 			IndexID:        indexID,
 			EncryptedValue: encEmail,
+			Brand:          string(ReqBrand(c)),
 		}
 		if err := db.Get().Create(&identify).Error; err != nil {
 			log.Errorf(c, "failed to bind email for user %d: %v", userID, err)
@@ -199,11 +201,12 @@ func api_send_bind_email_verification(c *gin.Context) {
 
 	indexID := secretHashIt(c, []byte(req.Email))
 
-	// 检查邮箱是否已被其他用户绑定
+	// 检查邮箱是否已被其他用户绑定（限定当前请求品牌——跨品牌同邮箱是合法的独立账号）
 	var exist LoginIdentify
 	err := db.Get().Where(&LoginIdentify{
 		Type:    "email",
 		IndexID: indexID,
+		Brand:   string(ReqBrand(c)),
 	}).First(&exist).Error
 
 	if err == nil {

@@ -61,7 +61,8 @@ func AddUser(ctx context.Context, email string) (*User, error) {
 	var user User
 	err = db.Get().Transaction(func(tx *gorm.DB) error {
 		user = User{
-			UUID: generateId("user"),
+			UUID:  generateId("user"),
+			Brand: string(BrandKaitu), // AddUser 是 CLI/admin 路径，无请求上下文，恒 kaitu
 		}
 		if err := tx.Create(&user).Error; err != nil {
 			log.Errorf(ctx, "failed to create user record: %v", err)
@@ -74,6 +75,7 @@ func AddUser(ctx context.Context, email string) (*User, error) {
 			Type:           "email",
 			IndexID:        indexID,
 			EncryptedValue: encEmail,
+			Brand:          string(BrandKaitu),
 		}
 		if err := tx.Create(&identify).Error; err != nil {
 			log.Errorf(ctx, "failed to create login identify for user %d: %v", user.ID, err)
@@ -207,10 +209,18 @@ func FindOrCreateUserByEmail(c context.Context, email string, langParams ...stri
 	email = strings.ToLower(email)
 	indexID := secretHashIt(c, []byte(email))
 
-	// 首先尝试查找现有用户
+	// 解析请求品牌：同邮箱在两品牌各自独立注册（LoginIdentify 唯一索引已扩展为
+	// (type, index_id, brand)）。非 gin.Context 调用（理论上不应发生于此函数，
+	// 但保持与 CountryFromGinContext 用法一致的防御式回退）恒 kaitu。
+	brand := BrandKaitu
+	if gc, ok := c.(*gin.Context); ok && gc != nil {
+		brand = ReqBrand(gc)
+	}
+
+	// 首先尝试查找现有用户（限定当前品牌，跨品牌同邮箱是两个独立账号）
 	var existingIdentify LoginIdentify
 	if err := db.Get().Model(&LoginIdentify{}).
-		Where("type = ? AND index_id = ?", "email", indexID).
+		Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(brand)).
 		Preload("User").
 		First(&existingIdentify).Error; err == nil {
 		// 用户已存在，直接返回
@@ -241,6 +251,7 @@ func FindOrCreateUserByEmail(c context.Context, email string, langParams ...stri
 			Language:            detectedLanguage,
 			RegistrationCountry: registrationCountry,
 			CurrentCountry:      registrationCountry,
+			Brand:               string(brand),
 		}
 		if err := tx.Create(&newUser).Error; err != nil {
 			return fmt.Errorf("failed to create user: %v", err)
@@ -252,6 +263,7 @@ func FindOrCreateUserByEmail(c context.Context, email string, langParams ...stri
 			Type:           "email",
 			IndexID:        indexID,
 			EncryptedValue: encEmail,
+			Brand:          string(brand),
 		}
 		if err := tx.Create(&identify).Error; err != nil {
 			return fmt.Errorf("failed to create login identify: %v", err)

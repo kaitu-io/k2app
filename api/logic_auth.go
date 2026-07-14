@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"gorm.io/gorm"
 
@@ -256,8 +257,22 @@ func randomSixDigitCode() (string, error) {
 // 单一 key 同时承担"复用同码"和"verify 校验"两个角色——历史上分成两个 key
 // (`auth:code:email:stable:<hash>` 复用 + `auth:code:email:<hash>` 校验)
 // 会出现 stable 命中但 storage 没命中的 case，合并后不会再有这种漂移。
-func verificationCodeKey(emailHash string) string {
-	return VerificationCodePrefix + emailHash
+//
+// key 前缀带 brand：同邮箱在两品牌各自独立注册后，验证码必须按品牌隔离——
+// 否则 overleap 请求发出的码可以被拿去登录 kaitu 侧的同邮箱账号（反之亦然）。
+func verificationCodeKey(emailHash string, brand Brand) string {
+	return VerificationCodePrefix + string(brand) + ":" + emailHash
+}
+
+// brandFromContext 从 context.Context 中取出请求品牌。验证码函数族的调用方
+// 几乎总是传入 *gin.Context（HTTP 请求路径），非 gin.Context（如测试用
+// context.Background()、理论上的 CLI 调用）恒回退 kaitu，与其它品牌解析
+// 兜底路径（FindOrCreateUserByEmail 等）保持一致。
+func brandFromContext(ctx context.Context) Brand {
+	if gc, ok := ctx.(*gin.Context); ok && gc != nil {
+		return ReqBrand(gc)
+	}
+	return BrandKaitu
 }
 
 // issueOrRefreshVerificationCode 拿到给定邮箱当前有效的验证码：
@@ -270,7 +285,7 @@ func issueOrRefreshVerificationCode(ctx context.Context, emailHash string) (stri
 	if EnableMockVerificationCode {
 		return MockVerificationCode, nil
 	}
-	cacheKey := verificationCodeKey(emailHash)
+	cacheKey := verificationCodeKey(emailHash, brandFromContext(ctx))
 	var existing string
 	if exist, err := redis.CacheGet(cacheKey, &existing); err == nil && exist && existing != "" {
 		if !strings.HasPrefix(existing, verificationCodeConsumedPrefix) {
@@ -311,7 +326,7 @@ func verifyEmailCode(ctx context.Context, emailHash, code string) VerifyCodeResu
 		}
 		return VerifyCodeWrong
 	}
-	cacheKey := verificationCodeKey(emailHash)
+	cacheKey := verificationCodeKey(emailHash, brandFromContext(ctx))
 	var savedCode string
 	log.Debugf(ctx, "verifying email code for %s", emailHash)
 	exist, err := redis.CacheGet(cacheKey, &savedCode)
@@ -348,7 +363,7 @@ func verifyEmailCode(ctx context.Context, emailHash, code string) VerifyCodeResu
 // 历史上这里是 deleteVerificationCode(rawEmail) — 但 save 写的是 indexID，
 // raw email 永远不命中 → 实际"删不掉"。本函数统一收到 emailHash (indexID)。
 func markVerificationCodeUsed(ctx context.Context, emailHash string) error {
-	cacheKey := verificationCodeKey(emailHash)
+	cacheKey := verificationCodeKey(emailHash, brandFromContext(ctx))
 	var savedCode string
 	exist, err := redis.CacheGet(cacheKey, &savedCode)
 	if err != nil {

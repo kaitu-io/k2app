@@ -48,6 +48,7 @@ const (
 	ErrorPlanNoRouter        ErrorCode = 402001 // 套餐不支持路由器
 	ErrorRouterDeviceLimit   ErrorCode = 403001 // 路由器登录数量已达上限
 	ErrorDeviceClassMismatch ErrorCode = 403002 // 设备身份与历史注册类型不符
+	ErrorBrandMismatch       ErrorCode = 403003 // 账号品牌与请求品牌不符
 
 	// Tier system error codes (added 2026-04-20)
 	ErrorTierMismatch            ErrorCode = 422001 // Plan tier 与 user tier 不匹配（续费场景）
