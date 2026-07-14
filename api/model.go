@@ -92,6 +92,9 @@ type User struct {
 
 	// 封禁状态（管理员后台直接操作，无审批流程）
 	IsBlocked *bool `gorm:"default:false"` // 是否被封禁：true 时所有登录入口和鉴权中间件均拒绝服务
+
+	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
+	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index" json:"brand"`
 }
 
 // 获取付费人ID的辅助方法
@@ -140,6 +143,11 @@ type LoginIdentify struct {
 	IndexID        string `gorm:"type:varchar(128);not null;uniqueIndex:idx_type_index_global"`
 	EncryptedValue string `gorm:"type:varchar(5000);not null"`
 	User           *User  `gorm:"foreignKey:UserID"`
+
+	// Brand 归属品牌：同邮箱可在两品牌各注册一个账号，故并入既有复合唯一索引
+	// idx_type_index_global（原 (type, index_id)，现 (type, index_id, brand)）。
+	// default 保证存量行零迁移——旧行全部 brand='kaitu'，(type,index_id) 唯一性不受影响。
+	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';uniqueIndex:idx_type_index_global" json:"brand"`
 }
 
 // Device 设备模型
@@ -472,8 +480,22 @@ type SlaveNode struct {
 	// 不加 index:低基数(3 值)索引近乎无用,且无 filter-by-ip_type 查询。
 	IPType string `gorm:"column:ip_type;type:varchar(20);not null;default:'unknown'" json:"ipType"`
 
+	// 品牌可见性：kaitu 默认可见（存量零影响），overleap 默认不可见（运营打标后上架）
+	VisibleKaitu    *bool `gorm:"default:true" json:"visibleKaitu"`
+	VisibleOverleap *bool `gorm:"default:false" json:"visibleOverleap"`
+
 	// 关联
 	Tunnels []SlaveTunnel `gorm:"foreignKey:NodeID"` // 该物理节点上的隧道
+}
+
+// VisibleTo 判断节点对指定品牌是否可见。nil 指针按列 default 语义解释。
+func (n *SlaveNode) VisibleTo(b Brand) bool {
+	switch b {
+	case BrandOverleap:
+		return n.VisibleOverleap != nil && *n.VisibleOverleap
+	default: // kaitu 及未知品牌
+		return n.VisibleKaitu == nil || *n.VisibleKaitu
+	}
 }
 
 // SlaveTunnel tunnel model
@@ -705,6 +727,9 @@ type Plan struct {
 	AppleProductID string `gorm:"column:apple_product_id;type:varchar(255);index" json:"appleProductId,omitempty"`
 
 	Product string `gorm:"type:varchar(20);not null;default:'app';index" json:"product"` // app | private_node
+
+	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
+	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index" json:"brand"`
 }
 
 // Subscription 是 provider 中立的"续订型"订阅记录（Apple IAP 今天；Stripe/Google 将来）。
@@ -766,6 +791,9 @@ type EmailMarketingTemplate struct {
 	OriginID     *uint64                  `gorm:"index" json:"originId"`                             // 源模板ID，null表示这是原始模板
 	Origin       *EmailMarketingTemplate  `gorm:"foreignKey:OriginID" json:"origin,omitempty"`       // 源模板引用
 	Translations []EmailMarketingTemplate `gorm:"foreignKey:OriginID" json:"translations,omitempty"` // 翻译版本列表
+
+	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
+	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index" json:"brand"`
 }
 
 // GetLanguagePreference 获取用户的语言偏好
@@ -915,6 +943,9 @@ type Campaign struct {
 	// 统计信息
 	UsageCount int64 `gorm:"default:0" json:"usageCount"` // 使用次数
 	MaxUsage   int64 `gorm:"default:0" json:"maxUsage"`   // 最大使用次数（0=无限制）
+
+	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
+	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index" json:"brand"`
 }
 
 // TableName 指定表名
@@ -941,6 +972,9 @@ type Announcement struct {
 	MaxVersion string `gorm:"type:varchar(20);not null;default:''" json:"maxVersion"`       // 最高版本（含），空=不限
 	ExpiresAt  int64  `gorm:"not null;default:0" json:"expiresAt"`                          // Unix秒，0=不过期
 	IsActive   *bool  `gorm:"default:false;index:idx_announcement_active" json:"isActive"`  // 可多条同时为true
+
+	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
+	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index" json:"brand"`
 }
 
 // ========================= EDM 邮件发送日志 =========================
@@ -1284,6 +1318,9 @@ type LicenseKeyBatch struct {
 	ExpiresAt        int64  `gorm:"not null" json:"expiresAt"`
 	Note             string `gorm:"type:text" json:"note"`
 	CreatedByUserID  uint64 `gorm:"not null" json:"createdByUserId"`
+
+	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
+	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index" json:"brand"`
 }
 
 func (LicenseKeyBatch) TableName() string { return "license_key_batches" }
@@ -1314,6 +1351,9 @@ type LicenseKey struct {
 	RecipientMatcher string  `gorm:"type:varchar(50);not null;default:'all'" json:"-"`
 	CampaignID       *uint64 `gorm:"index" json:"-"`
 	CreatedByUserID  *uint64 `gorm:"index" json:"-"`
+
+	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
+	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index" json:"brand"`
 }
 
 func (LicenseKey) TableName() string { return "license_keys" }
