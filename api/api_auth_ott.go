@@ -50,6 +50,13 @@ func isAllowedRedirect(rawURL string, b Brand) bool {
 // api_issue_ott issues a one-time token for webapp → web auth handoff
 func api_issue_ott(c *gin.Context) {
 	auth := getAuthContext(c)
+	// Device-JWT auth fills authContext.User from a Preload("User") which is nil
+	// when the user row is missing/soft-deleted — guard like ProRequired does.
+	if auth == nil || auth.User == nil {
+		log.Warnf(c, "OTT issue rejected: auth context has no user")
+		Error(c, ErrorNotLogin, "authentication failed")
+		return
+	}
 	log.Infof(c, "user %d requesting OTT", auth.UserID)
 
 	var req DataOTTRequest
