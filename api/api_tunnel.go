@@ -132,6 +132,8 @@ func api_k2_tunnels(c *gin.Context) {
 		// user's own birth attribute), not the request brand — Task 4 already
 		// enforces the two are equal post-auth. Admin bypasses (mirrors the
 		// isTest/quota-hide bypass pattern above) so triage sees all nodes.
+		// The `user != nil` guard is independent of isAdmin: it only prevents
+		// a nil dereference (AuthRequired guarantees non-nil in practice).
 		if !isAdmin && user != nil && !tunnel.Node.VisibleTo(Brand(user.Brand)) {
 			continue
 		}

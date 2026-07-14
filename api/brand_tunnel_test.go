@@ -96,3 +96,72 @@ func TestApiSubs_SharedPool_FiltersByUserBrand(t *testing.T) {
 	assert.Contains(t, kaituResp.Body.String(), domain,
 		"default node must remain visible to a kaitu user — zero regression for existing/default nodes")
 }
+
+// TestApiK2Relays_FiltersByUserBrand — /api/relays returns node IPv4/IPv6 to App
+// users, so a kaitu-only (default-visibility) relay node must be invisible to an
+// overleap user, visible to a kaitu user, and visible to an admin regardless of
+// the admin's own brand (admin bypass, same convention as api_tunnel.go).
+// Mirrors TestApiK2Relays_ExcludesPrivateNodes' direct-handler setup, but with
+// an injected authContext since api_k2_relays reads ReqUser(c). Needs dev MySQL.
+func TestApiK2Relays_FiltersByUserBrand(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	uniq := time.Now().Format("20060102150405.000000")
+
+	// Default-visibility relay node: zero-value VisibleKaitu/VisibleOverleap →
+	// kaitu-visible, overleap-invisible.
+	relayIP := "10.99.12.1"
+	node := SlaveNode{
+		Ipv4: relayIP, SecretToken: "relay-brand-s1", Country: "JP", Region: "japan",
+		Name: "relay-brand-jp-" + uniq, Class: NodeClassShared,
+	}
+	require.NoError(t, db.Get().Create(&node).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&node) })
+
+	tun := SlaveTunnel{
+		Domain: "relay-brand-jp-" + uniq + ".example", SecretToken: "relay-brand-tt1",
+		Name: "relay-brand-jp-tun-" + uniq, Protocol: TunnelProtocolK2V5, Port: 443,
+		NodeID: node.ID, IsTest: BoolPtr(false), HasRelay: BoolPtr(true),
+		ServerURL: "k2v5://relay-brand-jp.example:443",
+	}
+	require.NoError(t, db.Get().Create(&tun).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&tun) })
+
+	relaysFor := func(user *User) []DataRelay {
+		t.Helper()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/api/relays", nil)
+		c.Set("authContext", &authContext{UserID: user.ID, User: user})
+
+		api_k2_relays(c)
+
+		resp, err := ParseResponseData[DataRelayListResponse](w)
+		require.NoError(t, err)
+		return resp.Relays
+	}
+	hasIP := func(relays []DataRelay, ip string) bool {
+		for _, r := range relays {
+			if r.Ipv4 == ip {
+				return true
+			}
+		}
+		return false
+	}
+
+	overleapUser := &User{ID: 999901, Brand: string(BrandOverleap)}
+	assert.False(t, hasIP(relaysFor(overleapUser), relayIP),
+		"default (kaitu-only) relay node IP must NOT leak to an overleap user")
+
+	kaituUser := &User{ID: 999902, Brand: string(BrandKaitu)}
+	assert.True(t, hasIP(relaysFor(kaituUser), relayIP),
+		"default relay node must remain visible to a kaitu user — zero regression")
+
+	// Admin bypass: an overleap-brand ADMIN still sees the kaitu-only node
+	// (triage visibility, mirrors the isTest/quota-hide admin bypass).
+	adminOverleap := &User{ID: 999903, Brand: string(BrandOverleap), IsAdmin: BoolPtr(true)}
+	assert.True(t, hasIP(relaysFor(adminOverleap), relayIP),
+		"admin must see brand-hidden nodes (admin bypass) regardless of own brand")
+}
