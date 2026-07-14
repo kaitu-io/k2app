@@ -92,7 +92,10 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	// 品牌错配哨兵：Apple IAP 是 kaitu 专属支付渠道。这是唯一的入账动作前置点——
 	// 无论调用方是 api_apple_iap_verify（已有独立 handler 守卫）还是
 	// api_apple_webhook（无 handler 守卫，靠这里兜底），线上命中即为 bug，记 error
-	// 日志告警并拒绝入账，绝不静默记账。
+	// 日志告警并拒绝入账，绝不静默记账。品牌错配是持久条件：返回 error 会让 Apple
+	// 判为处理失败并按其 server-to-server 重试策略重发通知，本哨兵会对同一笔交易
+	// 反复告警——这是 fail-loud 的设计取舍，不是 bug。若此日志持续出现应视为 page
+	// 级事件而非重试可容忍瞬态。
 	if !Brand(user.Brand).Config().AllowsPayment(PayChannelAppleIAP) {
 		log.Errorf(ctx, "brand-mismatch apple credit: user %d brand %s does not allow apple_iap, txn=%s", userID, user.Brand, info.TransactionId)
 		return fmt.Errorf("brand mismatch: user %d brand %s does not allow apple_iap channel", userID, user.Brand)

@@ -73,6 +73,7 @@ Rules that span multiple directories. Layer-specific rules live in the layer doc
 - **Artifact naming**: Desktop uses `Kaitu_{VERSION}_{ARCH}.{EXT}` (underscore-separated). Mobile uses `kaitu/android/` CDN layout. See `desktop/CLAUDE.md` / `mobile/CLAUDE.md` for full details.
 - **Linux desktop = embedded Go binary, no Tauri**: `cmd/k2` ships a single Go binary with the React webapp embedded via `//go:embed` in `k2/webui`. Users install via `curl -fsSL https://kaitu.io/i/k2 | sudo bash` — downloads tarball + `.sha256`, verifies, runs `packaging/linux/install.sh`. macOS and Windows continue to use the Tauri shell. See `k2/webui/CLAUDE.md` for install flow details.
 - **Workspace layout**: Root `yarn install` provisions `webapp`, `desktop`, `mobile`. `web/` and `tools/kaitu-center/` have independent lockfiles — install there separately when touching them.
+- **Brand 参数化（开途/Overleap 双品牌）**: 后端按 Host→`X-K2-Brand`→kaitu 解析请求品牌；`users.brand` 是出生属性，认证层强制匹配（403003）。客户端 build 时烘焙品牌并恒发 `X-K2-Brand`。Spec: `docs/superpowers/specs/2026-07-14-brand-split-design.md`。
 
 ## Cross-Layer Domain Vocabulary
 
@@ -87,6 +88,7 @@ Terms you'll encounter in multiple layers. Per-layer extensions live in the laye
 - **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Category string, Message string}`. HTTP-aligned codes (101 NetworkUnavailable, 400 BadConfig, 401 AuthRejected, 402 PaymentRequired, 403 Forbidden, 408 Timeout, 502 ProtocolError, 503 ServerUnreachable, 570 ConnectionFatal). Categories: `client` / `network` / `server` / `target`.
 - **NetEvent** — Network state change event (Signal + 7 platform fields). Platforms construct it, gomobile exports as `EngineNetEvent` (iOS) / `engine.NetEvent` (Android). Routes through `netCoordinator` which distinguishes 网络断了 / 恢复 / 接口变了. Legacy `OnNetworkChanged()` maps to `SignalChanged`.
 - **transformStatus()** — Bridge-layer webapp boundary: normalizes `"stopped"`→`"disconnected"` and synthesizes `"error"` state. Details in `webapp/CLAUDE.md`.
+- **Brand** — Registry-backed enum (`kaitu` / `overleap`, `api/brand.go`) driving per-brand hosts/CORS/payment-channels/node-visibility. Resolved per-request (Host→`X-K2-Brand`→kaitu), immutable on `users.brand` once set, enforced at auth (403003 on mismatch). Spec + full design: `docs/superpowers/specs/2026-07-14-brand-split-design.md`; backend rules in `api/CLAUDE.md` "Brand" section.
 
 ## Layer Docs
 
@@ -118,6 +120,6 @@ Marketing 策略 / 审查 / 内容日历统一放在 [`docs/marketing/`](docs/ma
 | [`docs/marketing/content-calendar-2026-Q2.md`](docs/marketing/content-calendar-2026-Q2.md) | 13 周双轨内容日历（Kaitu zh-CN + Overleap en-US），W1-W13 |
 | [`docs/marketing/audits/`](docs/marketing/audits/) | CRO / ASO 审查快照（按日期） |
 
-**品牌架构**（2026-04-21 对齐）：**Overleap 母品牌 / Kaitu 中国产品** 层级结构 —— 海外统一 Overleap、中国统一 开途 / Kaitu、跨语境（footer / ToS / 英文 press）用 "Kaitu by Overleap"。详见 `brand-naming-strategy.md`。
+**品牌架构**（2026-07-14 修订）：Overleap（海外）/ 开途·Kaitu（中国）**完全隔离**的两个独立产品品牌——不再是"母品牌/子产品"层级，任何面向用户的语境都不互相提及（法务文书署名 Overleap LLC 除外）；~~Kaitu by Overleap~~ 跨语境衔接句已作废。详见 `brand-naming-strategy.md`。技术/后端侧的品牌隔离机制见根 CLAUDE.md Cross-Layer Domain Vocabulary "Brand" 词条 + `api/CLAUDE.md`。
 
-**剩余待对齐**：0 —— 全部 3 个冲突已 resolved (2026-04-21)。
+**剩余待对齐**：0。
