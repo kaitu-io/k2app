@@ -263,17 +263,27 @@ func TestBrandIsolationMatrix(t *testing.T) {
 		require.NoError(t, db.Get().Create(&tun).Error)
 		t.Cleanup(func() { db.Get().Unscoped().Delete(&tun) })
 
+		tunnelsBodyFor := func(user *User) string {
+			t.Helper()
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
+			c.Set("authContext", &authContext{UserID: user.ID, User: user})
+			api_k2_tunnels(c)
+			require.Equal(t, http.StatusOK, w.Code)
+			return w.Body.String()
+		}
+
 		overleapUser := &User{ID: 999801, Brand: string(BrandOverleap)}
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
-		c.Set("authContext", &authContext{UserID: overleapUser.ID, User: overleapUser})
-
-		api_k2_tunnels(c)
-
-		require.Equal(t, http.StatusOK, w.Code)
-		assert.NotContains(t, w.Body.String(), domain,
+		assert.NotContains(t, tunnelsBodyFor(overleapUser), domain,
 			"default (kaitu-visible-only) node must NOT leak to an overleap user's /api/tunnels")
+
+		// 正向对照：同一节点对 kaitu 用户必须可见。没有这条，未来任何无关过滤
+		// （配额隐藏、协议过滤等）把该节点顺带排除都会让上面的 NotContains 静默
+		// 变成 vacuous pass——Contains 锁死"节点消失的唯一原因是品牌过滤"。
+		kaituUser := &User{ID: 999802, Brand: string(BrandKaitu)}
+		assert.Contains(t, tunnelsBodyFor(kaituUser), domain,
+			"the same default node must remain visible to a kaitu user — zero regression control")
 	})
 
 	// ---------- #8: overleap 用户 POST /api/user/orders → 405001 PaymentChannelUnavailable ----------
@@ -459,14 +469,28 @@ func TestBrandIsolationMatrix(t *testing.T) {
 
 		before := statsForOverleap()
 
-		// 造一对同批用户：一个 kaitu、一个 overleap。overleap 过滤口径下 TotalUsers
-		// 只应增加 1（overleap 那个），kaitu 那个必须被排除在外。
+		// 造一对同批用户：一个 kaitu、一个 overleap。overleap 过滤口径下新增的
+		// overleap 用户必须被计入，kaitu 那个必须被排除在外。
 		_, _ = createBrandIsoAccessKeyUser(t, BrandKaitu, false)
 		_, _ = createBrandIsoAccessKeyUser(t, BrandOverleap, false)
 
 		after := statsForOverleap()
-		assert.Equal(t, before+1, after,
-			"brand=overleap filter must count exactly the new overleap user, not the kaitu one")
+
+		// 包含性：>= before+1 而非 == before+1 —— 共享 dev 库上并发的 overleap
+		// 注册（其它测试/会话）会让精确 delta 偶发失败；方向性断言并发安全。
+		assert.GreaterOrEqual(t, after, before+1,
+			"brand=overleap filter must count the newly created overleap user")
+
+		// 排他性（ground truth 对照）：endpoint 的 TotalUsers 必须等于 DB 里
+		// brand='overleap' 的真实行数（GORM 软删过滤与 endpoint 口径一致）。
+		// 若 endpoint 漏掉 brand filter，它会把全库（含 kaitu）用户都计进来，
+		// 与 overleap ground truth 差出几个数量级，立即失败。并发 kaitu 写入
+		// 不影响等式两边；仅两次查询间的并发 overleap 写入会破坏等式——dev 库
+		// 上该品牌几乎只有测试数据，毫秒级窗口可忽略。
+		var overleapGroundTruth int64
+		require.NoError(t, db.Get().Model(&User{}).Where("brand = ?", string(BrandOverleap)).Count(&overleapGroundTruth).Error)
+		assert.Equal(t, overleapGroundTruth, after,
+			"endpoint TotalUsers under brand=overleap must match the DB ground-truth overleap row count — kaitu users excluded")
 		_ = adminUser
 	})
 
