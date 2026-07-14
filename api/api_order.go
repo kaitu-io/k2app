@@ -76,6 +76,14 @@ func api_create_order(c *gin.Context) {
 	}
 	user := ReqUser(c)
 
+	// 支付渠道品牌门：WordGate 是 kaitu 专属支付渠道。overleap 用户在 Phase 6 前
+	// 无任何可用渠道——命中即拒单，绝不静默降级或误放行。
+	if !Brand(user.Brand).Config().AllowsPayment(PayChannelWordgate) {
+		log.Warnf(c, "user %d (brand=%s) rejected: wordgate payment channel unavailable for brand", user.ID, user.Brand)
+		Error(c, ErrorPaymentChannelUnavailable, "payment channel not available for this brand")
+		return
+	}
+
 	log.Infof(c, "user %d creating order, plan: %s, campaign: %s, preview: %v", user.ID, req.Plan, req.CampaignCode, req.Preview)
 
 	// 获取套餐信息

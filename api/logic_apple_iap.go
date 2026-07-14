@@ -88,6 +88,16 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
 		return fmt.Errorf("lock user %d: %w", userID, err)
 	}
+
+	// 品牌错配哨兵：Apple IAP 是 kaitu 专属支付渠道。这是唯一的入账动作前置点——
+	// 无论调用方是 api_apple_iap_verify（已有独立 handler 守卫）还是
+	// api_apple_webhook（无 handler 守卫，靠这里兜底），线上命中即为 bug，记 error
+	// 日志告警并拒绝入账，绝不静默记账。
+	if !Brand(user.Brand).Config().AllowsPayment(PayChannelAppleIAP) {
+		log.Errorf(ctx, "brand-mismatch apple credit: user %d brand %s does not allow apple_iap, txn=%s", userID, user.Brand, info.TransactionId)
+		return fmt.Errorf("brand mismatch: user %d brand %s does not allow apple_iap channel", userID, user.Brand)
+	}
+
 	now := time.Now().Unix()
 
 	// 账号绑定（INV9，§8.0）：仅在首笔（绑定）交易上强校验 appAccountToken。空 token 硬拒，

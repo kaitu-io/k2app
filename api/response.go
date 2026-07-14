@@ -54,6 +54,9 @@ const (
 	ErrorTierMismatch            ErrorCode = 422001 // Plan tier 与 user tier 不匹配（续费场景）
 	ErrorProxyPurchaseDeprecated ErrorCode = 422002 // 代付款功能已下线
 	ErrorInvalidClientClass      ErrorCode = 422003 // X-K2-Client 携带未知 client-class token
+
+	// 405xxx: 渠道/操作不可用
+	ErrorPaymentChannelUnavailable ErrorCode = 405001 // 当前品牌不支持该支付渠道
 )
 
 type DataAny struct{}
