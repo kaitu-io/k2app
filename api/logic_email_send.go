@@ -247,8 +247,10 @@ func sendSingleTemplatedEmail(
 	// 7. Create log (pending)
 	sendLog := createEmailSendLog(ctx, batchID, tmpl.ID, userID, item.Email, userLang, EmailSendLogStatusPending, "")
 
-	// 8. Send
-	if err := sendEmail(ctx, item.Email, subject, content); err != nil {
+	// 8. Send — from_name/from_email identity keyed off the recipient's own
+	// brand (resolvedUser.Brand), same authority used for template selection
+	// above (step 2), not the request brand (batch sends have no request ctx).
+	if err := sendEmail(ctx, item.Email, subject, content, Brand(resolvedUser.Brand)); err != nil {
 		resultItem.Status = "failed"
 		resultItem.Error = fmt.Sprintf("send failed: %v", err)
 		updateEmailSendLogStatus(sendLog, EmailSendLogStatusFailed, resultItem.Error)

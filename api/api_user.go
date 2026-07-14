@@ -237,7 +237,7 @@ func api_send_bind_email_verification(c *gin.Context) {
 		Code:          code,
 		ExpireMinutes: expireMinutes,
 	}
-	if err := emailTo(c, req.Email, verificationCodeTemplate, meta); err != nil {
+	if err := emailTo(c, req.Email, brandedVerificationCodeTemplate.For(Brand(user.Brand)), meta); err != nil {
 		log.Errorf(c, "failed to send verification email to %s for user %d: %v", req.Email, userID, err)
 		Error(c, ErrorSystemError, err.Error())
 		return
@@ -446,7 +446,7 @@ func api_set_password(c *gin.Context) {
 		ChangeTime: time.Now().Format("2006-01-02 15:04:05"),
 		ClientIP:   c.ClientIP(),
 	}
-	if err := emailToUser(c, int64(userID), passwordChangedTemplate, meta); err != nil {
+	if err := emailToUser(c, int64(userID), brandedPasswordChangedTemplate.For(Brand(user.Brand)), meta); err != nil {
 		log.Errorf(c, "failed to send password changed email to user %d: %v", userID, err)
 	}
 
