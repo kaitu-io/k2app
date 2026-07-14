@@ -1,6 +1,11 @@
 package center
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/wordgate/qtoolkit/log"
+)
 
 // Brand 是双品牌拆分的核心枚举。用户的 brand 是出生属性（注册时确定，终身不变）。
 // 未知输入一律回退 BrandKaitu，保证老客户端零破坏。
@@ -107,4 +112,45 @@ func BrandFromHost(host string) (Brand, bool) {
 		return b, true
 	}
 	return BrandKaitu, false
+}
+
+const brandContextKey = "brand"
+
+// resolveRequestBrand: Host → X-K2-Brand header → 默认 kaitu。
+// 老客户端（无 header、经任意入口域名）恒落 kaitu —— 零破坏硬要求。
+func resolveRequestBrand(c *gin.Context) Brand {
+	if b, ok := BrandFromHost(c.Request.Host); ok {
+		return b
+	}
+	if h := c.GetHeader("X-K2-Brand"); h != "" {
+		if b := Brand(strings.ToLower(h)); b.Valid() {
+			return b
+		}
+	}
+	return BrandKaitu
+}
+
+// BrandResolver 把请求品牌放进 gin context。挂在 /api、/app、webhook 组最前。
+func BrandResolver() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		b := resolveRequestBrand(c)
+		c.Set(brandContextKey, b)
+		// qtoolkit/log.MiddlewareRequestLog 不支持挂自定义字段（entry 在其内部构建，
+		// 无 SetField/WithField 钩子暴露给下游中间件）。Step 5 fallback：非 kaitu 品牌打一行
+		// debug 日志，kaitu 不打，避免全量噪音。日志字段待 qtoolkit 支持后再补。
+		if b != BrandKaitu {
+			log.Debugf(c, "request brand: %s", b)
+		}
+		c.Next()
+	}
+}
+
+// ReqBrand 取请求品牌；未挂 BrandResolver 时现场解析兜底。
+func ReqBrand(c *gin.Context) Brand {
+	if v, ok := c.Get(brandContextKey); ok {
+		if b, ok := v.(Brand); ok {
+			return b
+		}
+	}
+	return resolveRequestBrand(c)
 }

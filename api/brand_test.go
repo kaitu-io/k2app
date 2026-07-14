@@ -1,8 +1,11 @@
 package center
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -51,4 +54,37 @@ func TestBrandConfig(t *testing.T) {
 
 	// 未知 brand 回退 kaitu 配置
 	assert.Equal(t, BrandKaitu, Brand("nope").Config().ID)
+}
+
+func TestReqBrandResolution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(BrandResolver())
+	var got Brand
+	r.GET("/probe", func(c *gin.Context) { got = ReqBrand(c); c.Status(200) })
+
+	cases := []struct {
+		name   string
+		host   string
+		header string
+		want   Brand
+	}{
+		{"kaitu host", "www.kaitu.io", "", BrandKaitu},
+		{"overleap host", "overleap.io", "", BrandOverleap},
+		{"host 优先于 header", "overleap.io", "kaitu", BrandOverleap},
+		{"未知 host + overleap header", "1.2.3.4:8080", "overleap", BrandOverleap},
+		{"未知 host + 大写 header", "1.2.3.4", "OVERLEAP", BrandOverleap},
+		{"未知 host + 非法 header 回退 kaitu", "1.2.3.4", "evil", BrandKaitu},
+		{"全空回退 kaitu（老客户端）", "10.0.0.1", "", BrandKaitu},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+		req.Host = tc.host
+		if tc.header != "" {
+			req.Header.Set("X-K2-Brand", tc.header)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, tc.want, got, tc.name)
+	}
 }

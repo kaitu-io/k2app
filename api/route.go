@@ -31,9 +31,9 @@ func SetupRouter() *gin.Engine {
 		})
 	})
 	// Webhook 相关路由
-	r.POST("/webhook/wordgate", log.MiddlewareRequestLog(true), MiddleRecovery(), api_wordgate_webhook)
+	r.POST("/webhook/wordgate", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_wordgate_webhook)
 	// Apple App Store Server Notifications V2（自动续订订阅续费/退款/撤销）
-	r.POST("/webhook/appstore", log.MiddlewareRequestLog(true), MiddleRecovery(), api_apple_webhook)
+	r.POST("/webhook/appstore", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_apple_webhook)
 
 	// Chatwoot → FastGPT AI bridge
 	chatwootWebhook := r.Group("/webhook")
@@ -47,7 +47,7 @@ func SetupRouter() *gin.Engine {
 	api := r.Group("/api")
 	log.Debugf(ctx, "registering /api group")
 
-	api.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), ApiCORSMiddleware())
+	api.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), ApiCORSMiddleware())
 	// Preflight: ApiCORSMiddleware handles OPTIONS and aborts with 204
 	api.OPTIONS("/*path", func(c *gin.Context) {})
 	{
@@ -306,7 +306,7 @@ func SetupRouter() *gin.Engine {
 
 	admin := r.Group("/app")
 	log.Debugf(ctx, "registering /app group")
-	admin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AdminRequired())
+	admin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AdminRequired())
 	{
 		// 套餐管理
 		admin.GET("/plans", api_admin_list_plans)
@@ -397,14 +397,14 @@ func SetupRouter() *gin.Engine {
 	// list/detail/cancel: AuthRequired（角色用户可看自己的）
 	// approve/reject: AdminRequired（仅 is_admin 可审批）
 	approvalRoutes := r.Group("/app/approvals")
-	approvalRoutes.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AuthRequired())
+	approvalRoutes.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AuthRequired())
 	{
 		approvalRoutes.GET("", api_admin_list_approvals)
 		approvalRoutes.GET("/:id", api_admin_get_approval)
 		approvalRoutes.POST("/:id/cancel", api_admin_cancel_approval)
 	}
 	approvalAdmin := r.Group("/app/approvals")
-	approvalAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AdminRequired())
+	approvalAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AdminRequired())
 	{
 		approvalAdmin.POST("/:id/approve", api_admin_approve_approval)
 		approvalAdmin.POST("/:id/reject", api_admin_reject_approval)
@@ -414,7 +414,7 @@ func SetupRouter() *gin.Engine {
 	// 超级管理员（IsAdmin=true）经由 RoleRequired 内部 bypass 直接通过
 	opsAdmin := r.Group("/app")
 	log.Debugf(ctx, "registering /app opsAdmin group")
-	opsAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AuthRequired())
+	opsAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AuthRequired())
 	{
 		// No role restriction — every authenticated user can see their own permissions
 		opsAdmin.GET("/my-permissions", api_admin_my_permissions)
