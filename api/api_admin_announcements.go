@@ -41,6 +41,8 @@ type AnnouncementResponse struct {
 	MaxVersion string `json:"maxVersion"`
 	ExpiresAt  int64  `json:"expiresAt"`
 	IsActive   bool   `json:"isActive"`
+	// Brand 归属品牌：kaitu | overleap。admin 跨品牌列表视图需要标注每条记录的品牌。
+	Brand string `json:"brand"`
 }
 
 func convertAnnouncementToResponse(a Announcement) AnnouncementResponse {
@@ -58,6 +60,7 @@ func convertAnnouncementToResponse(a Announcement) AnnouncementResponse {
 		MaxVersion: a.MaxVersion,
 		ExpiresAt:  a.ExpiresAt,
 		IsActive:   a.IsActive != nil && *a.IsActive,
+		Brand:      a.Brand,
 	}
 }
 

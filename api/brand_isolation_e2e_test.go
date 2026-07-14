@@ -528,4 +528,40 @@ func TestBrandIsolationMatrix(t *testing.T) {
 		assert.Contains(t, dataO.Link, "overleap.io/s")
 		assert.NotContains(t, dataO.Link, "kaitu.io")
 	})
+
+	// ---------- #17: kaitu 用户购买 overleap plan PID → 拿不到该 plan ----------
+	t.Run("17_KaituUser_CannotPurchaseOverleapPlanPID", func(t *testing.T) {
+		skipIfNoConfig(t)
+		uniq := isoShortUniq()
+		pid := "t-brandiso-o-" + uniq
+		overleapPlan := Plan{
+			PID: pid, Label: "brandiso-overleap-plan", Price: 999, Month: 1,
+			Product: ProductApp, Tier: "basic", Brand: string(BrandOverleap), IsActive: BoolPtr(true),
+		}
+		require.NoError(t, db.Get().Create(&overleapPlan).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Where("pid = ?", pid).Delete(&Plan{}) })
+
+		// Layer 1 (HTTP-level, the actual exploit path): unlike #12's campaign
+		// code, kaitu users PASS the payment-channel gate (wordgate is a kaitu
+		// channel) — so getPlanByPID's own brand filter is the only thing
+		// standing between a kaitu user and an order (preview here; real
+		// creation follows the identical code path with preview=false) against
+		// an overleap-only plan PID. Before the fix getPlanByPID had no brand
+		// filter at all and this call would succeed.
+		user, _ := createBrandIsoAccessKeyUser(t, BrandKaitu, false)
+		body := []byte(`{"preview":true,"plan":"` + pid + `"}`)
+		c, w := ginCtxWithAuthAndHost(http.MethodPost, "/api/user/orders", "kaitu.io", body, user)
+		api_create_order(c)
+		resp, err := ParseResponse(w)
+		require.NoError(t, err)
+		assert.Equal(t, int(ErrorInvalidArgument), resp.Code,
+			"kaitu user must not be able to preview/purchase an overleap-brand plan PID")
+
+		// Layer 2 (defense in depth): the helper itself must not resolve the
+		// plan under the wrong brand scope, independent of the HTTP handler.
+		got := getPlanByPID(context.Background(), pid, BrandKaitu)
+		assert.Nil(t, got, "overleap-brand plan PID must not resolve under kaitu brand scope")
+		gotOverleap := getPlanByPID(context.Background(), pid, BrandOverleap)
+		assert.NotNil(t, gotOverleap, "sanity: the plan does resolve under its own (overleap) brand")
+	})
 }

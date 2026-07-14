@@ -243,6 +243,7 @@ func toLicenseKeyBatchResponse(b *LicenseKeyBatch, redeemed, expired int64) Lice
 		RedeemedCount:    redeemed,
 		ExpiredCount:     expired,
 		CreatedAt:        b.CreatedAt.Unix(),
+		Brand:            b.Brand,
 	}
 }
 

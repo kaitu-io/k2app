@@ -88,7 +88,7 @@ func api_create_order(c *gin.Context) {
 
 	// 获取套餐信息
 	log.Infof(c, "getting plan information for plan ID: %s", req.Plan)
-	plan := getPlanByPID(c, req.Plan)
+	plan := getPlanByPID(c, req.Plan, Brand(user.Brand))
 	if plan == nil {
 		log.Warnf(c, "invalid plan ID %s for user %d", req.Plan, user.ID)
 		Error(c, ErrorInvalidArgument, "invalid plan")

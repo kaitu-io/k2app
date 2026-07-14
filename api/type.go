@@ -707,6 +707,8 @@ type CampaignResponse struct {
 	UsageCount    int64  `json:"usageCount"`
 	MaxUsage      int64  `json:"maxUsage"`
 	MatcherParams string `json:"matcherParams"`
+	// Brand 归属品牌：kaitu | overleap。admin 跨品牌列表视图需要标注每条记录的品牌。
+	Brand string `json:"brand"`
 }
 
 // CampaignListResponse 优惠活动列表响应
@@ -1164,6 +1166,8 @@ type LicenseKeyBatchResponse struct {
 	RedeemedCount    int64  `json:"redeemedCount"`
 	ExpiredCount     int64  `json:"expiredCount"`
 	CreatedAt        int64  `json:"createdAt"`
+	// Brand 归属品牌：kaitu | overleap。admin 跨品牌列表视图需要标注每条记录的品牌。
+	Brand string `json:"brand"`
 }
 
 type LicenseKeyBatchDetailResponse struct {

@@ -432,5 +432,6 @@ func convertCampaignToResponse(campaign Campaign) CampaignResponse {
 		MatcherParams: campaign.MatcherParams,
 		UsageCount:    campaign.UsageCount,
 		MaxUsage:      campaign.MaxUsage,
+		Brand:         campaign.Brand,
 	}
 }

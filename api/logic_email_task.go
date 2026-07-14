@@ -118,24 +118,33 @@ func getTemplateForLanguage(ctx context.Context, templateID uint64, targetLang s
 	}
 
 	// 创建新的翻译模板记录
-	sourceTemplateID := templateID
-	newTemplate := EmailMarketingTemplate{
-		Name:        template.Name + " (" + targetLang + ")",
-		Language:    targetLang,
-		Subject:     translatedSubject,
-		Content:     translatedContent,
-		IsActive:    BoolPtr(true),
-		Description: "Auto-translated from " + template.Language,
-		OriginID:    &sourceTemplateID, // 关联到源模板
-	}
+	newTemplate := buildTranslatedTemplate(template, targetLang, translatedSubject, translatedContent)
 
 	if err := db.Get().Create(&newTemplate).Error; err != nil {
 		log.Errorf(ctx, "failed to save translated template: %v", err)
 		return nil, fmt.Errorf("failed to save translation: %w", err)
 	}
 
-	log.Infof(ctx, "successfully created translation %d for template %d, language %s", newTemplate.ID, sourceTemplateID, targetLang)
+	log.Infof(ctx, "successfully created translation %d for template %d, language %s", newTemplate.ID, templateID, targetLang)
 	return &newTemplate, nil
+}
+
+// buildTranslatedTemplate 组装懒翻译产出的模板记录。抽成纯函数（无 AI/DB 调用）便于
+// 单独测试——之前这段内联在 getTemplateForLanguage 里时漏拷贝了 source.Brand，
+// 导致所有自动翻译的模板一律落 kaitu（EmailMarketingTemplate.Brand 的 GORM
+// default:'kaitu'），品牌信息在翻译这一跳丢失。
+func buildTranslatedTemplate(source EmailMarketingTemplate, targetLang, translatedSubject, translatedContent string) EmailMarketingTemplate {
+	sourceTemplateID := source.ID
+	return EmailMarketingTemplate{
+		Name:        source.Name + " (" + targetLang + ")",
+		Language:    targetLang,
+		Subject:     translatedSubject,
+		Content:     translatedContent,
+		IsActive:    BoolPtr(true),
+		Description: "Auto-translated from " + source.Language,
+		OriginID:    &sourceTemplateID, // 关联到源模板
+		Brand:       source.Brand,
+	}
 }
 
 // processEmailWithAI 使用AI处理邮件（翻译+润色）
