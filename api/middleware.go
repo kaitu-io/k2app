@@ -823,15 +823,24 @@ func ApiCORSMiddleware() gin.HandlerFunc {
 	}
 }
 
+// corsAllowedOrigins builds the /app/* CORS whitelist: union of every brand's
+// WebOrigins plus the local dev origin. Single source of truth so a new brand
+// only needs registering in brandRegistry, not here.
+func corsAllowedOrigins() map[string]bool {
+	allowed := map[string]bool{"http://localhost:3000": true} // Development
+	for _, b := range AllBrands() {
+		for _, o := range b.Config().WebOrigins {
+			allowed[o] = true
+		}
+	}
+	return allowed
+}
+
 // CORSMiddleware handles CORS for cross-origin requests from web dashboard
 // Allows www.kaitu.io to access /app/* routes directly (bypassing Amplify proxy)
 // Required for WebSocket connections which cannot be proxied through Next.js rewrites
 func CORSMiddleware() gin.HandlerFunc {
-	allowedOrigins := map[string]bool{
-		"https://www.kaitu.io":  true,
-		"https://kaitu.io":      true,
-		"http://localhost:3000": true, // Development
-	}
+	allowedOrigins := corsAllowedOrigins()
 
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")

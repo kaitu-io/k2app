@@ -32,8 +32,9 @@ type DataOTTResponse struct {
 	URL string `json:"url"`
 }
 
-// isAllowedRedirect validates redirect URL: must be https, host must be kaitu.io or *.kaitu.io
-func isAllowedRedirect(rawURL string) bool {
+// isAllowedRedirect validates redirect URL: must be https, host must be the
+// user's brand root domain or a subdomain of it.
+func isAllowedRedirect(rawURL string, b Brand) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return false
@@ -42,7 +43,8 @@ func isAllowedRedirect(rawURL string) bool {
 		return false
 	}
 	host := strings.ToLower(u.Hostname())
-	return host == "kaitu.io" || strings.HasSuffix(host, ".kaitu.io")
+	root := b.Config().RedirectRootDomain
+	return host == root || strings.HasSuffix(host, "."+root)
 }
 
 // api_issue_ott issues a one-time token for webapp → web auth handoff
@@ -56,8 +58,9 @@ func api_issue_ott(c *gin.Context) {
 		return
 	}
 
-	if !isAllowedRedirect(req.Redirect) {
-		Error(c, ErrorInvalidArgument, "redirect URL must be https on kaitu.io domain")
+	userBrand := Brand(auth.User.Brand)
+	if !isAllowedRedirect(req.Redirect, userBrand) {
+		Error(c, ErrorInvalidArgument, "redirect URL must be https on the user's brand domain")
 		return
 	}
 
@@ -84,8 +87,13 @@ func api_issue_ott(c *gin.Context) {
 		return
 	}
 
-	// Build exchange URL
+	// Build exchange URL. Historically this viper key served kaitu only —
+	// overleap always resolves through the brand registry, and an empty
+	// viper value falls back to the registry too.
 	baseURL := viper.GetString("frontend_config.app_links.base_url")
+	if userBrand == BrandOverleap || baseURL == "" {
+		baseURL = userBrand.Config().BaseURL
+	}
 	exchangeURL := baseURL + "/api/auth/ott/exchange?ott=" + token + "&redirect=" + url.QueryEscape(req.Redirect)
 
 	log.Infof(c, "OTT issued for user %d, redirect: %s", auth.UserID, req.Redirect)
@@ -129,18 +137,19 @@ func api_exchange_ott(c *gin.Context) {
 		return
 	}
 
-	// Defense-in-depth: validate redirect URL even though it was checked at issue time
-	if !isAllowedRedirect(redirect) {
-		log.Warnf(c, "OTT exchange failed: redirect URL not allowed: %s", redirect)
-		c.Redirect(302, "/auth/login?reason=invalid")
-		return
-	}
-
-	// Look up user to get roles
+	// Look up user first: the redirect whitelist is brand-scoped, so we need
+	// the OTT-issuing user's brand before we can validate the redirect.
 	var user User
 	if err := db.Get().First(&user, data.UserID).Error; err != nil {
 		log.Errorf(c, "OTT exchange failed: user %d not found: %v", data.UserID, err)
 		c.Redirect(302, "/auth/login?reason=expired")
+		return
+	}
+
+	// Defense-in-depth: validate redirect URL even though it was checked at issue time
+	if !isAllowedRedirect(redirect, Brand(user.Brand)) {
+		log.Warnf(c, "OTT exchange failed: redirect URL not allowed for user %d brand %s: %s", user.ID, user.Brand, redirect)
+		c.Redirect(302, "/auth/login?reason=invalid")
 		return
 	}
 
