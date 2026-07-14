@@ -36,7 +36,7 @@ func api_get_invite_code(c *gin.Context) {
 		Code:      inviteCode.GetCode(),
 		CreatedAt: inviteCode.CreatedAt.Unix(),
 		Remark:    inviteCode.Remark,
-		Link:      inviteCode.Link(),
+		Link:      inviteCode.Link(ReqBrand(c)),
 	}
 
 	Success(c, &data)

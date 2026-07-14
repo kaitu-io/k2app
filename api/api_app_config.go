@@ -49,6 +49,8 @@ type DataAppConfig struct {
 func api_get_app_config(c *gin.Context) {
 	log.Infof(c, "requesting app config")
 
+	b := ReqBrand(c)
+
 	// Read app links from config
 	appLinks := DataAppLinks{
 		BaseURL:           viper.GetString("frontend_config.app_links.base_url"),
@@ -64,9 +66,10 @@ func api_get_app_config(c *gin.Context) {
 	// 从配置读取邀请奖励规则（使用统一的 configInvite）
 	inviteReward := configInvite(c)
 
-	// 设置默认值
-	if appLinks.BaseURL == "" {
-		appLinks.BaseURL = "https://www.kaitu.io"
+	// 设置默认值：viper 旧键（frontend_config.app_links.base_url）只服务 kaitu；
+	// overleap 恒走品牌注册表 BrandConfig.BaseURL，忽略 viper 旧键。
+	if appLinks.BaseURL == "" || b == BrandOverleap {
+		appLinks.BaseURL = b.Config().BaseURL
 	}
 	if appLinks.InstallPath == "" {
 		appLinks.InstallPath = "/install"
@@ -102,7 +105,7 @@ func api_get_app_config(c *gin.Context) {
 	}
 
 	// Get active announcements filtered by client version, scoped to request brand
-	announcements := getActiveAnnouncements(ReqBrand(c), clientVersion)
+	announcements := getActiveAnnouncements(b, clientVersion)
 
 	// Build response — singular field for backward compat, array for new clients
 	var singleAnnouncement *DataAnnouncement

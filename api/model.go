@@ -229,8 +229,8 @@ func (ic *InviteCode) GetCode() string {
 }
 
 // Link 动态生成邀请链接
-func (ic *InviteCode) Link() string {
-	baseURL := configInviteBaseURL()
+func (ic *InviteCode) Link(b Brand) string {
+	baseURL := configInviteBaseURL(b)
 	return fmt.Sprintf("%s/%s", baseURL, ic.GetCode())
 }
 

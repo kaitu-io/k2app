@@ -116,10 +116,14 @@ func ConfigServer(ctx context.Context) ServerConfig {
 
 // configInviteBaseURL 获取邀请链接基础URL
 // 从配置中读取 web_base_url，拼接 /s 路径（Web 前端的邀请落地页路由）
-func configInviteBaseURL() string {
-	webBaseURL := viper.GetString("frontend_config.web_base_url")
+// viper 旧键（frontend_config.web_base_url）只服务 kaitu；overleap 恒走品牌注册表 BrandConfig.BaseURL。
+func configInviteBaseURL(b Brand) string {
+	webBaseURL := ""
+	if b != BrandOverleap { // viper 旧键只服务 kaitu
+		webBaseURL = viper.GetString("frontend_config.web_base_url")
+	}
 	if webBaseURL == "" {
-		webBaseURL = "https://www.kaitu.io" // 默认值
+		webBaseURL = b.Config().BaseURL
 	}
 	return fmt.Sprintf("%s/s", webBaseURL)
 }

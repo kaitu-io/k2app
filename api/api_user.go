@@ -501,7 +501,7 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 			Code:      user.InvitedByCode.GetCode(),
 			CreatedAt: user.InvitedByCode.CreatedAt.Unix(),
 			Remark:    user.InvitedByCode.Remark,
-			Link:      user.InvitedByCode.Link(),
+			Link:      user.InvitedByCode.Link(Brand(user.Brand)),
 		}
 	}
 
