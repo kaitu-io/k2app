@@ -62,7 +62,8 @@ import BetaChannelToggle from "../components/BetaChannelToggle";
 import PasswordDialog from "../components/PasswordDialog";
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import { usePrivateNodes } from '../hooks/usePrivateNodes';
-import { getBrandSlogan } from '../brand/i18n-vars';
+import { getBrandSlogan, getBrandName } from '../brand/i18n-vars';
+import { brandConfig } from '../brand';
 import { getCurrentAppConfig } from '../config/apps';
 
 export default function Account() {
@@ -238,7 +239,7 @@ export default function Account() {
         onClick={
           window._platform?.os === 'ios'
             ? undefined
-            : () => window._platform!.openExternal?.('https://www.kaitu.io')
+            : () => window._platform!.openExternal?.(brandConfig.baseURL)
         }
       >
         <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 }, textAlign: 'center' }}>
@@ -251,7 +252,7 @@ export default function Account() {
               textShadow: '0 2px 4px rgba(0,0,0,0.2)',
             }}
           >
-            Kaitu.io 开途
+            {brandConfig.domainLabel}{getBrandName(i18n.language) !== brandConfig.productName ? ` ${getBrandName(i18n.language)}` : ''}
           </Typography>
           <Typography
             variant="caption"

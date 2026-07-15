@@ -33,7 +33,11 @@ import { useAuthStore } from "../stores";
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useSelfHostedStore, maskUriToken, parseK2v5Uri } from "../stores/self-hosted.store";
 import { getThemeColors } from "../theme/colors";
+import { brandConfig } from "../brand";
 
+// NOTE: intentionally NOT brand-parameterized — the k2s node install script
+// is k2-protocol infra hosted on kaitu.io only. Self-hosted tunnels are a
+// technical feature, not brand surface. Revisit if overleap.io mirrors /i/k2s.
 const DEPLOY_COMMAND = 'curl -fsSL https://kaitu.io/i/k2s | sudo sh';
 
 export default function Tunnels() {
@@ -94,7 +98,7 @@ export default function Tunnels() {
   }, []);
 
   const handleOpenDocs = useCallback(() => {
-    window._platform?.openExternal?.('https://kaitu.io/k2/');
+    window._platform?.openExternal?.(`${brandConfig.baseURL}/k2/`);
   }, []);
 
   const handleLogin = () => {

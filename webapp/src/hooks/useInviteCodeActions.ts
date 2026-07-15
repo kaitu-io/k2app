@@ -5,6 +5,7 @@ import { useShareLink } from './useShareLink';
 import { useAppConfig } from './useAppConfig';
 import type { MyInviteCode } from '../services/api-types';
 import { cloudApi } from '../services/cloud-api';
+import { brandConfig } from '../brand';
 
 /**
  * 邀请码操作的自定义 Hook
@@ -89,7 +90,7 @@ export function useInviteCodeActions() {
    * 与 InviteHub 的「复制推广链接」按钮行为一致
    */
   const copyPromotionLink = async (code: string) => {
-    const baseURL = appConfig?.appLinks?.baseURL || 'https://kaitu.io';
+    const baseURL = appConfig?.appLinks?.baseURL || brandConfig.baseURL;
     const link = `${baseURL}/s/${code}`;
     try {
       await window._platform!.writeClipboard?.(link);

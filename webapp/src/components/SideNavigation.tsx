@@ -200,7 +200,7 @@ function SideNavigation() {
         <Box
           component="img"
           src="/favicon.png"
-          alt="Kaitu"
+          alt={appConfig.appName}
           sx={{ width: 32, height: 32, mr: 1, borderRadius: '6px' }}
         />
         <Typography

@@ -231,7 +231,7 @@ export function getErrorMessage(
     case ERROR_CODES.LICENSE_KEY_NOT_MATCH:
       return t('common:errors.client.licenseKeyNotMatch', 'Not eligible for this license key');
     case ERROR_CODES.PROXY_MEMBERS_DEPRECATED:
-      return t('common:errors.client.proxyMembersDeprecated', '代付成员管理已下线，请在 kaitu.io/purchase 下单时指定受益方');
+      return t('common:errors.client.proxyMembersDeprecated');
 
     // Tier system error codes
     case ERROR_CODES.TIER_MISMATCH:

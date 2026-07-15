@@ -42,6 +42,7 @@ import InviteRule from "../components/InviteRule";
 import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
 import { getCurrentAppConfig } from '../config/apps';
+import { brandConfig } from '../brand';
 
 export default function Invite() {
   const { t } = useTranslation();
@@ -72,7 +73,7 @@ export default function Invite() {
   const { appConfig } = useAppConfig();
   const retailerEnabled = getCurrentAppConfig().features.retailer === true;
 
-  const baseURL = appConfig?.appLinks?.baseURL || 'https://kaitu.io';
+  const baseURL = appConfig?.appLinks?.baseURL || brandConfig.baseURL;
   const promotionLink = invite ? `${baseURL}/s/${invite.code}` : '';
 
   const isMobile = ['ios', 'android'].includes(window._platform!.os) || /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);

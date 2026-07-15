@@ -23,9 +23,10 @@ import { useAlert } from "../stores";
 import type { AppConfig } from "../services/api-types";
 import BackButton from "../components/BackButton";
 import { cloudApi } from '../services/cloud-api';
+import { brandConfig } from '../brand';
 
 // 默认的下载链接
-const DEFAULT_INSTALL_URL = "https://kaitu.io/install";
+const DEFAULT_INSTALL_URL = `${brandConfig.baseURL}/install`;
 
 // Brand SVG icons
 function AppleIcon(props: React.ComponentProps<typeof SvgIcon>) {
@@ -119,9 +120,9 @@ export default function DeviceInstall() {
       const shareText = `${t('purchase:deviceInstall.shareText')} ${installURL}`;
       // Prefer platform share (native share sheet on mobile)
       if (window._platform?.share) {
-        await window._platform.share({ title: 'Kaitu', text: shareText, url: installURL });
+        await window._platform.share({ title: brandConfig.productName, text: shareText, url: installURL });
       } else if (navigator.share) {
-        await navigator.share({ title: 'Kaitu', text: t('purchase:deviceInstall.shareText'), url: installURL });
+        await navigator.share({ title: brandConfig.productName, text: t('purchase:deviceInstall.shareText'), url: installURL });
       } else {
         // fallback: copy full share text with link
         await window._platform?.writeClipboard?.(shareText);
