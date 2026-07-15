@@ -35,6 +35,15 @@ export function AddRouterCard() {
     }
   };
 
+  // 路由器管理页必须在系统浏览器打开——裸 target=_blank 会落入 webview 默认行为
+  const openRouterAdmin = async (adminUrl: string) => {
+    try {
+      await window._platform!.openExternal(adminUrl);
+    } catch {
+      window.open(adminUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   return (
     <Card sx={{ mt: 2 }}>
       <CardContent>
@@ -55,8 +64,10 @@ export function AddRouterCard() {
                 key={`${c.lanIP}:${c.port}`}
                 data-testid={`add-router-open-${i}`}
                 href={`http://${c.lanIP}:${c.port}`}
-                target="_blank"
-                rel="noopener"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void openRouterAdmin(`http://${c.lanIP}:${c.port}`);
+                }}
               >
                 {t('privateNode:privateNode.router.open', { addr: `${c.lanIP}:${c.port}` })}
               </Link>

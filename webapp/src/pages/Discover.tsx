@@ -6,6 +6,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useKaituBridge } from '../hooks/useKaituBridge';
 import { useAuth } from "../stores";
 import { useAppLinks } from '../hooks/useAppLinks';
+import { allowedEmbedOrigins, isSafeExternalUrl } from '../utils/embed-origins';
 
 interface OverlayRect { top: number; left: number; width: number; height: number; }
 
@@ -131,12 +132,13 @@ export default function Discover() {
 
   // 监听iframe消息处理外部链接
   useEffect(() => {
+    const embedOrigins = allowedEmbedOrigins(iframeUrl);
     const handleMessage = (event: MessageEvent) => {
-      // 确保消息来源是我们的iframe (accept both kaitu.io and www.kaitu.io)
-      if (event.origin !== 'https://kaitu.io' && event.origin !== 'https://www.kaitu.io') return;
+      // 确保消息来源是我们的iframe（baseURL 可由 appConfig 下发，origin 从 iframeUrl 派生）
+      if (!embedOrigins.has(event.origin)) return;
 
       // 检查是否是链接点击事件
-      if (event.data?.type === 'external-link' && event.data?.url) {
+      if (event.data?.type === 'external-link' && isSafeExternalUrl(event.data?.url)) {
         // 使用bridge在默认浏览器中打开链接
         window._platform!.openExternal?.(event.data.url).catch(console.error);
       }
@@ -154,7 +156,7 @@ export default function Discover() {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, []);
+  }, [iframeUrl, navigate]);
 
   // 监听认证状态变化并广播到iframe
   useEffect(() => {
@@ -182,6 +184,11 @@ export default function Discover() {
       <iframe
         ref={iframeRef}
         src={iframeUrl}
+        // No allow-popups: window.open/target=_blank inside the iframe is
+        // engine-blocked, so nothing can open in the webview even before the
+        // site's embed-interceptor script attaches. Links open externally via
+        // the 'external-link' postMessage path (unaffected by sandbox).
+        sandbox="allow-scripts allow-same-origin allow-forms"
         onLoad={handleIframeLoad}
         onContextMenu={handleContextMenu}
         style={{

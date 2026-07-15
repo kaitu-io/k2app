@@ -31,4 +31,18 @@ describe('AddRouterCard', () => {
       expect(link.getAttribute('href')).toBe('http://192.168.8.1:1779');
     });
   });
+
+  it('opens router admin via _platform.openExternal, not webview navigation', async () => {
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    window._platform = { ...window._platform, openExternal } as typeof window._platform;
+
+    render(<AddRouterCard />);
+    const link = await waitFor(
+      () => screen.getByTestId('add-router-open-0') as HTMLAnchorElement,
+    );
+    link.click();
+    await waitFor(() =>
+      expect(openExternal).toHaveBeenCalledWith('http://192.168.8.1:1779'),
+    );
+  });
 });

@@ -130,11 +130,8 @@ const AnnouncementBanner: React.FC = () => {
       }
     }
 
-    if (announcement.openMode === 'webview') {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-
+    // openMode 'webview' is deliberately ignored: all announcement links open
+    // in the system browser (in-app webview opening is not allowed).
     try {
       await window._platform!.openExternal(targetUrl);
     } catch (error) {

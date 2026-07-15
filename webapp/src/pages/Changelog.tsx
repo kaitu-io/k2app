@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useKaituBridge } from '../hooks/useKaituBridge';
 import { useAuth } from "../stores";
 import { useAppLinks } from '../hooks/useAppLinks';
+import { allowedEmbedOrigins, isSafeExternalUrl } from '../utils/embed-origins';
 
 export default function Changelog() {
   const { t } = useTranslation();
@@ -83,12 +84,14 @@ export default function Changelog() {
 
   // Listen for iframe messages to handle external links
   useEffect(() => {
+    const embedOrigins = allowedEmbedOrigins(iframeUrl);
     const handleMessage = (event: MessageEvent) => {
-      // Ensure message is from our iframe
-      if (event.origin !== 'https://www.kaitu.io') return;
+      // Ensure message is from our iframe (origin derived from iframeUrl —
+      // the old hardcoded www.kaitu.io check dropped messages from kaitu.io)
+      if (!embedOrigins.has(event.origin)) return;
 
       // Check for link click events
-      if (event.data?.type === 'external-link' && event.data?.url) {
+      if (event.data?.type === 'external-link' && isSafeExternalUrl(event.data?.url)) {
         // Open link in default browser using bridge
         window._platform!.openExternal?.(event.data.url).catch(console.error);
       }
@@ -99,7 +102,7 @@ export default function Changelog() {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, []);
+  }, [iframeUrl]);
 
   // Listen for auth state changes and broadcast to iframe
   useEffect(() => {
@@ -152,6 +155,9 @@ export default function Changelog() {
       <iframe
         ref={iframeRef}
         src={iframeUrl}
+        // No allow-popups: nothing inside the iframe can open in the webview,
+        // even before the site's embed-interceptor attaches (see Discover.tsx).
+        sandbox="allow-scripts allow-same-origin allow-forms"
         onLoad={handleIframeLoad}
         onContextMenu={handleContextMenu}
         style={{
