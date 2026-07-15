@@ -43,6 +43,12 @@ export type Brand = {
     routers: boolean;
     linuxInstall: boolean;
     androidApkGuide: boolean;
+    /**
+     * /releases + /changelog. Both render public/releases.json, which is a
+     * single-brand artifact: 开途-worded release notes and dl.kaitu.io download
+     * URLs. Until per-brand release notes exist, only kaitu may serve them.
+     */
+    releaseNotes: boolean;
   };
 };
 
@@ -78,7 +84,7 @@ export const KAITU: Brand = {
     ],
     artifactPrefix: 'Kaitu',
   },
-  features: { routers: true, linuxInstall: true, androidApkGuide: true },
+  features: { routers: true, linuxInstall: true, androidApkGuide: true, releaseNotes: true },
 };
 
 export const OVERLEAP: Brand = {
@@ -107,7 +113,7 @@ export const OVERLEAP: Brand = {
     mobileBases: ['https://d13jc1jqzlg4yt.cloudfront.net/overleap'],
     artifactPrefix: 'Overleap',
   },
-  features: { routers: false, linuxInstall: false, androidApkGuide: false },
+  features: { routers: false, linuxInstall: false, androidApkGuide: false, releaseNotes: false },
 };
 
 export function brandById(id: BrandId): Brand {

@@ -55,7 +55,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/opensource',
     '/privacy',
     '/purchase',
-    '/releases',
+    ...(brand.features.releaseNotes ? ['/releases'] : []),
     ...(brand.features.routers ? ['/routers'] : []),
     '/support',
     '/terms',

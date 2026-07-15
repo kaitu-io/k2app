@@ -82,6 +82,18 @@ describe('sitemap — baked brand isolation', () => {
     expect(entries.some((e) => e.url.endsWith('/routers'))).toBe(true);
   });
 
+  it('overleap build: /releases is absent (release notes are a kaitu-only feature)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    const entries = await sitemap();
+    expect(entries.some((e) => e.url.endsWith('/releases'))).toBe(false);
+  });
+
+  it('kaitu build: /releases is present', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+    const entries = await sitemap();
+    expect(entries.some((e) => e.url.endsWith('/releases'))).toBe(true);
+  });
+
   it('kaitu build: only kaitu.io URLs and Payload filters on showOnKaitu', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     const entries = await sitemap();
