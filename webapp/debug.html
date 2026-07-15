@@ -318,7 +318,8 @@
           <input type="text" id="clipboardText" class="input-field" placeholder="Text to write to clipboard" value="hello-debug" />
         </div>
         <div class="input-row">
-          <input type="text" id="externalUrl" class="input-field" placeholder="URL to open externally" value="https://kaitu.io" />
+          <!-- value is seeded from brandConfig.baseURL by the module script below -->
+          <input type="text" id="externalUrl" class="input-field" placeholder="URL to open externally" />
           <button class="btn btn-platform" onclick="doOpenExternal()" style="flex:0 0 auto; min-width:60px">Open</button>
         </div>
         <div class="input-row">
@@ -359,6 +360,8 @@
     </div>
 
     <script type="module">
+      import { brandConfig } from './src/brand';
+
       // ── Constants ──
       const STORAGE_KEY = 'debug_config';
       const POLL_INTERVAL = 200;
@@ -375,15 +378,20 @@
       const versionLabel = document.getElementById('versionLabel');
       const desktopSection = document.getElementById('desktopSection');
 
+      // Brand literals must not be baked into this page (it is a production
+      // Rollup entry, so it ships in every brand's artifact — see
+      // scripts/check-brand-purity.sh). Seed from the registry instead.
+      document.getElementById('externalUrl').value = brandConfig.baseURL;
+
       // ── Presets ──
       const PRESETS = {
         global: {
-          server: 'vless://example.kaitu.io:443?security=tls&type=ws',
+          server: 'vless://example.invalid:443?security=tls&type=ws',
           mode: 'tun',
           rule: { global: true }
         },
         smart: {
-          server: 'vless://example.kaitu.io:443?security=tls&type=ws',
+          server: 'vless://example.invalid:443?security=tls&type=ws',
           mode: 'tun',
           rule: { global: false }
         }

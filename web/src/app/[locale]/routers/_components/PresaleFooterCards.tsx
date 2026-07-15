@@ -2,7 +2,7 @@ import Image from 'next/image';
 import { getTranslations } from 'next-intl/server';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ROUTER_PRODUCTS } from '@/lib/constants';
+import { ROUTER_PRODUCTS } from '../products';
 import { Router, CheckCircle, Star, Mail } from 'lucide-react';
 
 interface ProductImage {

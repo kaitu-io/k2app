@@ -48,11 +48,15 @@ const (
 	ErrorPlanNoRouter        ErrorCode = 402001 // 套餐不支持路由器
 	ErrorRouterDeviceLimit   ErrorCode = 403001 // 路由器登录数量已达上限
 	ErrorDeviceClassMismatch ErrorCode = 403002 // 设备身份与历史注册类型不符
+	ErrorBrandMismatch       ErrorCode = 403003 // 账号品牌与请求品牌不符
 
 	// Tier system error codes (added 2026-04-20)
 	ErrorTierMismatch            ErrorCode = 422001 // Plan tier 与 user tier 不匹配（续费场景）
 	ErrorProxyPurchaseDeprecated ErrorCode = 422002 // 代付款功能已下线
 	ErrorInvalidClientClass      ErrorCode = 422003 // X-K2-Client 携带未知 client-class token
+
+	// 405xxx: 渠道/操作不可用
+	ErrorPaymentChannelUnavailable ErrorCode = 405001 // 当前品牌不支持该支付渠道
 )
 
 type DataAny struct{}

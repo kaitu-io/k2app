@@ -46,6 +46,7 @@ import { cacheStore } from '../services/cache-store';
 import type { AuthResult } from '../services/api-types';
 import { delayedFocus } from '../utils/ui';
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
+import { brandConfig } from '../brand';
 
 export default function LoginDialog() {
   const { t, i18n } = useTranslation();
@@ -297,7 +298,7 @@ export default function LoginDialog() {
         <Box
           component="img"
           src="/icon-192x192.png"
-          alt="Kaitu"
+          alt={brandConfig.productName}
           sx={{
             width: 40,
             height: 40,
@@ -309,7 +310,7 @@ export default function LoginDialog() {
             {t("auth:auth.login", "Login")}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: -0.25 }}>
-            Kaitu.io
+            {brandConfig.domainLabel}
           </Typography>
         </Box>
       </DialogTitle>

@@ -22,6 +22,8 @@ type AnnouncementRequest struct {
 	MaxVersion string `json:"maxVersion"` // 最高版本，空=不限
 	ExpiresAt  int64  `json:"expiresAt"`  // Unix秒，0=不过期
 	IsActive   *bool  `json:"isActive"`
+	// Brand 归属品牌：kaitu | overleap，仅创建时生效，空→回退 kaitu，非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）；更新时忽略（品牌创建后不可变）。
+	Brand string `json:"brand" example:"kaitu"`
 }
 
 // AnnouncementResponse 公告响应
@@ -39,6 +41,8 @@ type AnnouncementResponse struct {
 	MaxVersion string `json:"maxVersion"`
 	ExpiresAt  int64  `json:"expiresAt"`
 	IsActive   bool   `json:"isActive"`
+	// Brand 归属品牌：kaitu | overleap。admin 跨品牌列表视图需要标注每条记录的品牌。
+	Brand string `json:"brand"`
 }
 
 func convertAnnouncementToResponse(a Announcement) AnnouncementResponse {
@@ -56,6 +60,7 @@ func convertAnnouncementToResponse(a Announcement) AnnouncementResponse {
 		MaxVersion: a.MaxVersion,
 		ExpiresAt:  a.ExpiresAt,
 		IsActive:   a.IsActive != nil && *a.IsActive,
+		Brand:      a.Brand,
 	}
 }
 
@@ -133,6 +138,12 @@ func api_admin_create_announcement(c *gin.Context) {
 
 	isActive := req.IsActive != nil && *req.IsActive
 
+	brand, brandErr := BrandForCreate(req.Brand)
+	if brandErr != nil {
+		Error(c, ErrorInvalidArgument, "invalid brand")
+		return
+	}
+
 	announcement := Announcement{
 		Message:    req.Message,
 		LinkURL:    req.LinkURL,
@@ -144,6 +155,7 @@ func api_admin_create_announcement(c *gin.Context) {
 		MaxVersion: req.MaxVersion,
 		ExpiresAt:  req.ExpiresAt,
 		IsActive:   BoolPtr(isActive),
+		Brand:      string(brand),
 	}
 
 	if err := db.Get().Create(&announcement).Error; err != nil {
@@ -329,11 +341,12 @@ func api_admin_deactivate_announcement(c *gin.Context) {
 	Success(c, &response)
 }
 
-// getActiveAnnouncements returns all active, unexpired announcements filtered by client version.
-// Sorted by priority DESC, id DESC. clientVersion="" skips version filtering.
-func getActiveAnnouncements(clientVersion string) []DataAnnouncement {
+// getActiveAnnouncements returns all active, unexpired announcements for the given brand,
+// filtered by client version. Sorted by priority DESC, id DESC. clientVersion="" skips version filtering.
+func getActiveAnnouncements(brand Brand, clientVersion string) []DataAnnouncement {
 	var announcements []Announcement
 	err := db.Get().
+		Scopes(ScopeBrand(brand)).
 		Where("is_active = ? AND (expires_at = 0 OR expires_at > ?)", true, time.Now().Unix()).
 		Order("priority DESC, id DESC").
 		Find(&announcements).Error

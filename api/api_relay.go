@@ -68,6 +68,15 @@ func api_k2_relays(c *gin.Context) {
 			continue
 		}
 
+		// Brand visibility filter: hide relay nodes not marked visible for the
+		// requesting user's brand — same predicate and admin-bypass convention
+		// as api_tunnel.go. Without this, kaitu-only node IPv4/IPv6/region would
+		// leak to overleap users (and vice versa). The `user != nil` guard is
+		// independent of isAdmin: it prevents a nil dereference, not a policy.
+		if !isAdmin && user != nil && !tunnel.Node.VisibleTo(Brand(user.Brand)) {
+			continue
+		}
+
 		relay := DataRelay{
 			ID:         fmt.Sprintf("relay-%s-%d", tunnel.Node.Region, tunnel.ID),
 			Name:       tunnel.Name,

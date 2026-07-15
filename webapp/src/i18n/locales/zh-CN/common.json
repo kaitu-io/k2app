@@ -96,9 +96,10 @@
       "licenseKeyUsed": "授权码已被使用",
       "licenseKeyExpired": "授权码已过期",
       "licenseKeyNotMatch": "不符合此授权码的使用条件",
+      "licenseKeyAlreadyRedeemed": "您已使用过授权码，每个账号限用一次",
       "tierMismatch": "当前档位无法购买此套餐，请联系客服变更档位",
       "proxyPurchaseDeprecated": "代付款功能已下线，请让对方使用自己的账号购买",
-      "proxyMembersDeprecated": "代付成员管理已下线，请在 kaitu.io/purchase 下单时指定受益方"
+      "proxyMembersDeprecated": "代付成员管理已下线，请在 {{brandDomain}}/purchase 下单时指定受益方"
     },
     "vpn": {
       "authFailed": "认证失败，请重新登录",
@@ -130,10 +131,6 @@
     "installCancelled": "安装已取消",
     "unknown": "未知错误",
     "unknownError": "未知错误"
-  },
-  "brand": {
-    "name": "开途",
-    "slogan": "越拥堵，越从容"
   },
   "features": {
     "fastConnect": "极速连接",

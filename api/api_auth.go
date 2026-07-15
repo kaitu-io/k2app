@@ -85,7 +85,7 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 	var user *User
 	userExists := false
 
-	if err := db.Get().Preload("User").Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+	if err := db.Get().Preload("User").Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(ReqBrand(c))).First(&identify).Error; err != nil {
 		if !util.DbIsNotFoundErr(err) {
 			log.Errorf(c, "failed to check user: %v", err)
 			Error(c, ErrorSystemError, "failed to check user")
@@ -145,7 +145,14 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 		Code:          code,
 		ExpireMinutes: expireMinutes,
 	}
-	if err := emailTo(c, req.Email, verificationCodeTemplate, meta); err != nil {
+	// user 此时理论上恒非 nil（userExistRequired=false 分支已 FindOrCreateUserByEmail），
+	// 但仍以 ReqBrand(c) 兜底：万一未来 userExistRequired=true 的调用点在此之前返回，
+	// 品牌选择也不应该 panic 或误判。
+	codeBrand := ReqBrand(c)
+	if user != nil {
+		codeBrand = Brand(user.Brand)
+	}
+	if err := emailTo(c, req.Email, brandedVerificationCodeTemplate.For(codeBrand), meta); err != nil {
 		log.Errorf(c, "failed to send verification code email to %s: %v", req.Email, err)
 		Error(c, ErrorSystemError, err.Error())
 		return
@@ -228,7 +235,7 @@ func api_login(c *gin.Context) {
 	}
 
 	var identify LoginIdentify
-	if err := db.Get().Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+	if err := db.Get().Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(ReqBrand(c))).First(&identify).Error; err != nil {
 		if util.DbIsNotFoundErr(err) {
 			log.Warnf(c, "user not found during login for email (hashed): %s", indexID)
 			Error(c, ErrorNotFound, "user not found")
@@ -259,7 +266,10 @@ func api_login(c *gin.Context) {
 					TransferTime: time.Now().Format("2006-01-02 15:04:05"),
 					DeviceRemark: oldDevice.Remark,
 				}
-				if err := emailToUser(c, int64(oldDevice.UserID), deviceTransferTemplate, transferMeta); err != nil {
+				// 收件人是设备原所有者（oldDevice.UserID），与本次登录用户不同——
+				// 品牌来自收件人自己的 User 行，而非当前请求品牌。
+				oldOwnerBrand := brandOfUser(c, oldDevice.UserID)
+				if err := emailToUser(c, int64(oldDevice.UserID), brandedDeviceTransferTemplate.For(oldOwnerBrand), transferMeta); err != nil {
 					log.Errorf(c, "failed to send device transfer email to user %d: %v", oldDevice.UserID, err)
 					// 不阻止登录流程，仅记录错误
 				}
@@ -382,7 +392,7 @@ func api_login(c *gin.Context) {
 			LoginTime: time.Now().Format("2006-01-02 15:04:05"),
 			Remark:    device.Remark,
 		}
-		if err := emailToUser(c, int64(identify.UserID), newDeviceLoginTemplate, meta); err != nil {
+		if err := emailToUser(c, int64(identify.UserID), brandedNewDeviceLoginTemplate.For(Brand(user.Brand)), meta); err != nil {
 			log.Errorf(c, "failed to send new device login email to user %d: %v", identify.UserID, err)
 		}
 
@@ -531,7 +541,7 @@ func api_web_auth(c *gin.Context) {
 	}
 
 	var identify LoginIdentify
-	if err := db.Get().Where(&LoginIdentify{Type: "email", IndexID: indexID}).First(&identify).Error; err != nil {
+	if err := db.Get().Where(&LoginIdentify{Type: "email", IndexID: indexID, Brand: string(ReqBrand(c))}).First(&identify).Error; err != nil {
 		if util.DbIsNotFoundErr(err) {
 			log.Warnf(c, "user not found during web login for email (hashed): %s", indexID)
 			Error(c, ErrorNotFound, "user not found")
@@ -548,6 +558,7 @@ func api_web_auth(c *gin.Context) {
 	var userIsAdmin bool     // 用于响应中返回用户信息
 	var userRoles uint64     // 用于 JWT 中的角色
 	var userHasPassword bool // 用于响应中告知前端 /account/security 应显示「修改」还是「设置」
+	var userBrand Brand      // 用于登录通知邮件模板品牌选择（user 只在事务闭包内可见）
 
 	// 使用事务处理用户信息更新和邀请码设置
 	err = db.Get().Transaction(func(tx *gorm.DB) error {
@@ -566,6 +577,7 @@ func api_web_auth(c *gin.Context) {
 		userIsAdmin = user.IsAdmin != nil && *user.IsAdmin
 		userRoles = user.Roles
 		userHasPassword = HasPasswordSet(&user)
+		userBrand = Brand(user.Brand)
 
 		// 追踪是否需要保存用户信息
 		needSave := false
@@ -656,7 +668,7 @@ func api_web_auth(c *gin.Context) {
 		LoginTime: time.Now().Format("2006-01-02 15:04:05"),
 		ClientIP:  c.ClientIP(),
 	}
-	if err := emailToUser(c, int64(identify.UserID), webLoginTemplate, meta); err != nil {
+	if err := emailToUser(c, int64(identify.UserID), brandedWebLoginTemplate.For(userBrand), meta); err != nil {
 		log.Errorf(c, "failed to send web login email to user %d: %v", identify.UserID, err)
 		// 不影响登录流程，仅记录错误
 	}
@@ -785,7 +797,7 @@ func api_password_login(c *gin.Context) {
 
 	// Find user by email
 	var identify LoginIdentify
-	if err := db.Get().Preload("User").Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+	if err := db.Get().Preload("User").Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(ReqBrand(c))).First(&identify).Error; err != nil {
 		if util.DbIsNotFoundErr(err) {
 			log.Warnf(c, "user not found for password login, email (hashed): %s", indexID)
 			// Use generic error to prevent email enumeration
@@ -856,7 +868,10 @@ func api_password_login(c *gin.Context) {
 				TransferTime: time.Now().Format("2006-01-02 15:04:05"),
 				DeviceRemark: oldDevice.Remark,
 			}
-			if err := emailToUser(c, int64(oldDevice.UserID), deviceTransferTemplate, transferMeta); err != nil {
+			// 收件人是设备原所有者（oldDevice.UserID），与本次登录用户不同——
+			// 品牌来自收件人自己的 User 行，而非当前请求品牌。
+			oldOwnerBrand := brandOfUser(c, oldDevice.UserID)
+			if err := emailToUser(c, int64(oldDevice.UserID), brandedDeviceTransferTemplate.For(oldOwnerBrand), transferMeta); err != nil {
 				log.Errorf(c, "failed to send device transfer email: %v", err)
 			}
 		}
@@ -909,7 +924,7 @@ func api_password_login(c *gin.Context) {
 	if meta.Platform == "" {
 		meta.Platform = "Unknown"
 	}
-	if err := emailToUser(c, int64(identify.UserID), passwordLoginTemplate, meta); err != nil {
+	if err := emailToUser(c, int64(identify.UserID), brandedPasswordLoginTemplate.For(Brand(user.Brand)), meta); err != nil {
 		log.Errorf(c, "failed to send password login email to user %d: %v", identify.UserID, err)
 	}
 
@@ -955,7 +970,7 @@ func api_web_password_login(c *gin.Context) {
 	indexID := secretHashIt(c, []byte(req.Email))
 
 	var identify LoginIdentify
-	if err := db.Get().Preload("User").Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+	if err := db.Get().Preload("User").Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(ReqBrand(c))).First(&identify).Error; err != nil {
 		if util.DbIsNotFoundErr(err) {
 			log.Warnf(c, "user not found for web password login, email (hashed): %s", indexID)
 			Error(c, ErrorInvalidCredentials, "invalid email or password")
@@ -1081,7 +1096,7 @@ func api_web_password_login(c *gin.Context) {
 		LoginTime: time.Now().Format("2006-01-02 15:04:05"),
 		ClientIP:  c.ClientIP(),
 	}
-	if err := emailToUser(c, int64(identify.UserID), webLoginTemplate, meta); err != nil {
+	if err := emailToUser(c, int64(identify.UserID), brandedWebLoginTemplate.For(Brand(user.Brand)), meta); err != nil {
 		log.Errorf(c, "failed to send web login email to user %d: %v", identify.UserID, err)
 	}
 

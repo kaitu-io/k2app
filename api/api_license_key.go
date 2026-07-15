@@ -19,7 +19,7 @@ func api_get_license_key(c *gin.Context) {
 	}
 
 	var key LicenseKey
-	if err := db.Get().Where("code = ?", code).First(&key).Error; err != nil {
+	if err := db.Get().Scopes(ScopeBrand(ReqBrand(c))).Where("code = ?", code).First(&key).Error; err != nil {
 		Error(c, ErrorLicenseKeyNotFound, "not found")
 		return
 	}
@@ -54,7 +54,7 @@ func api_redeem_license_key(c *gin.Context) {
 	userID := ReqUserID(c)
 	log.Debugf(c, "user %d redeeming license key %s", userID, code)
 
-	key, history, err := RedeemLicenseKey(c.Request.Context(), code, userID)
+	key, history, err := RedeemLicenseKey(c.Request.Context(), code, userID, ReqBrand(c))
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrLicenseKeyNotFound):

@@ -66,6 +66,22 @@ import { useAuth } from '../../stores';
 import { useUser } from '../../hooks/useUser';
 import { cloudApi } from '../../services/cloud-api';
 import Account from '../Account';
+import { brandConfig } from '../../brand';
+import { getBrandName, getBrandSlogan } from '../../brand/i18n-vars';
+
+// Test locale is zh-CN (navigator.language pinned in src/test/setup.ts), so
+// brand-derived copy is resolved for zh-CN here. Deriving these from
+// brandConfig — rather than hardcoding kaitu strings — keeps the suite green
+// and meaningful under `K2_BRAND=overleap` too.
+const BRAND_NAME_ZH = getBrandName('zh-CN');
+// Mirrors Account.tsx: domain label, plus the localized name only when it
+// differs from the Latin product name (kaitu zh → "Kaitu.io 开途";
+// overleap → "Overleap.io").
+const BRAND_BANNER =
+  BRAND_NAME_ZH !== brandConfig.productName
+    ? `${brandConfig.domainLabel} ${BRAND_NAME_ZH}`
+    : brandConfig.domainLabel;
+const BRAND_SLOGAN_ZH = getBrandSlogan('zh-CN');
 
 const mockRun = vi.fn();
 
@@ -264,8 +280,8 @@ describe('Account', () => {
   describe('iOS 外部支付导线屏蔽 (3.1.1)', () => {
     const WALLET = '我的钱包';
     const DELEGATE = '代付人设置';
-    const BANNER = 'Kaitu.io 开途';
-    const KAITU_URL = 'https://www.kaitu.io';
+    const BANNER = BRAND_BANNER;
+    const BRAND_URL = brandConfig.baseURL;
 
     it('非 iOS 平台应显示我的钱包和代付人设置', () => {
       (window as any)._platform.os = 'macos';
@@ -286,33 +302,46 @@ describe('Account', () => {
       expect(screen.queryByText(DELEGATE)).toBeNull();
     });
 
-    it('非 iOS 平台品牌横幅点击应打开 kaitu.io', () => {
+    it('非 iOS 平台品牌横幅点击应打开品牌官网', () => {
       (window as any)._platform.os = 'macos';
       render(<Account />);
       fireEvent.click(screen.getByText(BANNER));
-      expect((window as any)._platform.openExternal).toHaveBeenCalledWith(KAITU_URL);
+      expect((window as any)._platform.openExternal).toHaveBeenCalledWith(BRAND_URL);
     });
 
-    it('iOS 平台品牌横幅不应外链到 kaitu.io（Apple 点名 URL）', () => {
+    it('iOS 平台品牌横幅不应外链到品牌官网（Apple 点名 URL）', () => {
       (window as any)._platform.os = 'ios';
       render(<Account />);
       fireEvent.click(screen.getByText(BANNER));
-      expect((window as any)._platform.openExternal).not.toHaveBeenCalledWith(KAITU_URL);
+      expect((window as any)._platform.openExternal).not.toHaveBeenCalledWith(BRAND_URL);
     });
   });
 
   // ==================== Task 3: Slogan 延迟显示 ====================
   describe('Slogan 延迟显示', () => {
-    // Slogan text from zh-CN common.json brand.slogan
+    // Slogan comes from the brand registry (brand/i18n-vars getBrandSlogan),
+    // resolved for the zh-CN test locale.
     const findSlogan = () => {
-      // The slogan is rendered inside a Typography, search by partial match
-      const sloganElements = screen.queryAllByText(/越拥堵/);
+      const sloganElements = screen.queryAllByText(BRAND_SLOGAN_ZH);
       return sloganElements.length > 0 ? sloganElements[0] : null;
     };
 
     it('应始终显示 slogan', () => {
       render(<Account />);
       expect(findSlogan()).not.toBeNull();
+    });
+
+    it('slogan 来自当前品牌，不含跨品牌标识', () => {
+      render(<Account />);
+      const slogan = findSlogan();
+      expect(slogan).not.toBeNull();
+      // Assert on what the component actually painted, not on the module-level
+      // constant: `expect(BRAND_SLOGAN_ZH).not.toMatch(...)` only restates that
+      // the registry is clean — it passes even if Account renders a hardcoded
+      // cross-brand string, which is precisely the regression this guards.
+      expect(slogan!.textContent).toBe(BRAND_SLOGAN_ZH);
+      const forbidden = brandConfig.id === 'overleap' ? /开途|開途|Kaitu/ : /Overleap/;
+      expect(slogan!.textContent).not.toMatch(forbidden);
     });
   });
 

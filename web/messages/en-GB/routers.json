@@ -160,14 +160,14 @@
     "step3": {
       "title": "Install k2r",
       "subtitle": "SSH into the router and run this one-liner — it auto-detects ARM64 / x86_64 / ARMv7 and downloads the matching binary.",
-      "command": "wget -qO- https://kaitu.io/i/k2r | sudo sh",
+      "command": "wget -qO- https://overleap.io/i/k2r | sudo sh",
       "copyButton": "Copy command",
       "copiedLabel": "Copied",
       "explanation": "The script does three things: ① download the k2r binary for your CPU; ② install an /etc/init.d service; ③ start k2r immediately. After that, open http://<router-IP>:9000 in your browser to reach the admin panel.",
       "troubleshooting": {
         "label": "Common issues",
         "items": [
-          { "q": "wget: command not found", "a": "OpenWrt usually ships wget-ssl. Use curl instead: curl -fsSL https://kaitu.io/i/k2r | sudo sh" },
+          { "q": "wget: command not found", "a": "OpenWrt usually ships wget-ssl. Use curl instead: curl -fsSL https://overleap.io/i/k2r | sudo sh" },
           { "q": "Download fails", "a": "Some Chinese ISPs block the CDN. Manually download the binary from https://d0.all7.cc/kaitu/k2r/LATEST/ and scp it to the router." },
           { "q": "How to upgrade", "a": "Re-run the install command. The script swaps the binary and restarts the service." }
         ]

@@ -58,6 +58,7 @@ tools/kaitu-center/  MCP server (Claude Code) + OpenClaw plugin
 tools/kaitu-mail/    OpenClaw email plugin (himalaya CLI, per-account IMAP)
 tools/kaitu-signer/  Windows code-signing tray app (SimplySign + pywinauto, SQS-driven)
 mcp/                 Go MCP server for Claude Code (k2 user-facing tools)
+contracts/           Cross-layer contract artifact (api-contract.json) — generated, committed
 scripts/             Build, deploy, test helpers (see scripts/CLAUDE.md)
 docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
 .claude/             Claude Code project settings + skills
@@ -91,6 +92,7 @@ Rules that span multiple directories. Layer-specific rules live in the layer doc
 - **Artifact naming**: Desktop uses `Kaitu_{VERSION}_{ARCH}.{EXT}` (underscore-separated). Mobile uses `kaitu/android/` CDN layout. See `desktop/CLAUDE.md` / `mobile/CLAUDE.md` for full details.
 - **Linux desktop = embedded Go binary, no Tauri**: `cmd/k2` ships a single Go binary with the React webapp embedded via `//go:embed` in `k2/webui`. Users install via `curl -fsSL https://kaitu.io/i/k2 | sudo bash` — downloads tarball + `.sha256`, verifies, runs `packaging/linux/install.sh`. macOS and Windows continue to use the Tauri shell. See `k2/webui/CLAUDE.md` for install flow details.
 - **Workspace layout**: Root `yarn install` provisions `webapp`, `desktop`, `mobile`. `web/` and `tools/kaitu-center/` have independent lockfiles — install there separately when touching them.
+- **Brand 参数化（开途/Overleap 双品牌）**: 后端按 Host→`X-K2-Brand`→kaitu 解析请求品牌；`users.brand` 是出生属性，认证层强制匹配（403003）。客户端 build 时烘焙品牌并恒发 `X-K2-Brand`。**webapp 层**：env `K2_BRAND=kaitu|overleap`（默认 kaitu）→ Vite define `__K2_BRAND__` → `webapp/src/brand/` 注册表（theme/feature gates/i18n `{{brand}}` 插值）；产物纯度守卫 `webapp/scripts/check-brand-purity.sh`。**web 层**：`NEXT_PUBLIC_BRAND=kaitu|overleap` 一套代码两个 Amplify 部署（kaitu.io / overleap.io），互不感知；品牌泄漏守卫 `web/tests/brand-guard.test.ts`（字面量扫描）+ `web/tests/brand-leak-ssr.test.tsx`（渲染面+metadata，能抓字符串拼接）。**品牌字面量只能进 `webapp/src/brand/<brand>.ts` / `web/src/lib/brands.ts`**——静态 import 的页面里的字面量会进另一品牌产物。**跨层契约门**：三层注册表同一概念定义三遍，靠 `contracts/api-contract.json` 锁住交集——由 `api/contract_export_test.go` 从 **Go 活值**导出（品牌注册表真 struct / CORS allow-headers 打真 middleware 收响应头 / 错误码 go/ast 解析 `response.go`），webapp + web 各自 `readFileSync` 它做断言。改任一层的品牌数据后必须 `cd api && UPDATE_CONTRACT=1 go test -run TestExportContract ./...` 重新生成并一起提交，否则门会 FAIL。三条铁律：golden **只读**（自动重写=CI 永远绿）；跑它**必须带 `-count=1`**（golden 在 api/ 模块外，go test 缓存不 recheck 模块外文件 → 手改 golden 迁就代码会拿到陈旧 PASS）；契约文件**必须进 git**（gitignore 的产物=本地绿 CI 瞎）。跨层不变量是**宿主归属**（`host(各层 baseURL) ∈ api.Hosts[该品牌]`）而非字符串相等——api/webapp 用 `www.`、web 用裸域是合法漂移。Spec: `docs/superpowers/specs/2026-07-14-brand-split-design.md`；分层规则见 `api/CLAUDE.md` / `webapp/CLAUDE.md` / `web/CLAUDE.md` 的 "Brand" 段。
 
 ## Cross-Layer Domain Vocabulary
 
@@ -105,6 +107,7 @@ Terms you'll encounter in multiple layers. Per-layer extensions live in the laye
 - **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Category string, Message string}`. HTTP-aligned codes (101 NetworkUnavailable, 400 BadConfig, 401 AuthRejected, 402 PaymentRequired, 403 Forbidden, 408 Timeout, 502 ProtocolError, 503 ServerUnreachable, 570 ConnectionFatal). Categories: `client` / `network` / `server` / `target`.
 - **NetEvent** — Network state change event (Signal + 7 platform fields). Platforms construct it, gomobile exports as `EngineNetEvent` (iOS) / `engine.NetEvent` (Android). Routes through `netCoordinator` which distinguishes 网络断了 / 恢复 / 接口变了. Legacy `OnNetworkChanged()` maps to `SignalChanged`.
 - **transformStatus()** — Bridge-layer webapp boundary: normalizes `"stopped"`→`"disconnected"` and synthesizes `"error"` state. Details in `webapp/CLAUDE.md`.
+- **Brand** — Registry-backed enum (`kaitu` / `overleap`, `api/brand.go`) driving per-brand hosts/CORS/payment-channels/node-visibility. Resolved per-request (Host→`X-K2-Brand`→kaitu), immutable on `users.brand` once set, enforced at auth (403003 on mismatch). Spec + full design: `docs/superpowers/specs/2026-07-14-brand-split-design.md`; backend rules in `api/CLAUDE.md` "Brand" section.
 
 ## Layer Docs
 
@@ -132,10 +135,10 @@ Marketing 策略 / 审查 / 内容日历统一放在 [`docs/marketing/`](docs/ma
 |-----|-------|
 | [`docs/marketing/README.md`](docs/marketing/README.md) | 目录索引 + 已知冲突点 + 工作方式 |
 | [`.agents/product-marketing-context.md`](.agents/product-marketing-context.md) | 单一事实源：品牌 / ICP / JTBD / 竞品 / 异议 / 声调（路径硬编码，所有 `marketing-skills:*` 自动引用） |
-| [`docs/marketing/brand-naming-strategy.md`](docs/marketing/brand-naming-strategy.md) | 品牌命名层级（Overleap 母 / Kaitu 中国产品 / k2 协议）+ SEO 关键词矩阵 |
+| [`docs/marketing/brand-naming-strategy.md`](docs/marketing/brand-naming-strategy.md) | 对等双品牌命名（Overleap 海外 / 开途·Kaitu 中国，k2 协议层全球共享）+ SEO 关键词矩阵 |
 | [`docs/marketing/content-calendar-2026-Q2.md`](docs/marketing/content-calendar-2026-Q2.md) | 13 周双轨内容日历（Kaitu zh-CN + Overleap en-US），W1-W13 |
 | [`docs/marketing/audits/`](docs/marketing/audits/) | CRO / ASO 审查快照（按日期） |
 
-**品牌架构**（2026-04-21 对齐）：**Overleap 母品牌 / Kaitu 中国产品** 层级结构 —— 海外统一 Overleap、中国统一 开途 / Kaitu、跨语境（footer / ToS / 英文 press）用 "Kaitu by Overleap"。详见 `brand-naming-strategy.md`。
+**品牌架构**（2026-07-14 修订）：Overleap（海外）/ 开途·Kaitu（中国）**完全隔离**的两个独立产品品牌——不再是"母品牌/子产品"层级，任何面向用户的语境都不互相提及（法务文书署名 Overleap LLC 除外）；~~Kaitu by Overleap~~ 跨语境衔接句已作废。详见 `brand-naming-strategy.md`。技术/后端侧的品牌隔离机制见上文 Cross-Layer Domain Vocabulary "Brand" 词条 + `api/CLAUDE.md`。
 
-**剩余待对齐**：0 —— 全部 3 个冲突已 resolved (2026-04-21)。
+**剩余待对齐**：0。

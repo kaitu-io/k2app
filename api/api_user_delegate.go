@@ -90,9 +90,12 @@ func api_put_delegate(c *gin.Context) {
 
 	indexID := secretHashIt(c, []byte(email))
 
+	// 限定当前请求品牌：委托代付人必须与付费人同品牌注册（跨品牌账号体系独立，
+	// 不应互相成为代付关系）。
+	brand := ReqBrand(c)
 	var delegateUserID uint64
 	var existingLI LoginIdentify
-	err := db.Get().Where("type = ? AND index_id = ?", "email", indexID).First(&existingLI).Error
+	err := db.Get().Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(brand)).First(&existingLI).Error
 	switch {
 	case err == gorm.ErrRecordNotFound:
 		// Create stub user via LoginIdentify cascade
@@ -106,9 +109,11 @@ func api_put_delegate(c *gin.Context) {
 			Type:           "email",
 			IndexID:        indexID,
 			EncryptedValue: encEmail,
+			Brand:          string(brand),
 			User: &User{
 				UUID:      generateId("user"),
 				ExpiredAt: 0,
+				Brand:     string(brand),
 			},
 		}
 		if err := db.Get().Create(&newLI).Error; err != nil {

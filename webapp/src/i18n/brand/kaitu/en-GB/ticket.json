@@ -1,0 +1,14 @@
+{
+  "faq": {
+    "items": {
+      "allNationConnect": {
+        "question": "I used to use AllNationConnect — can I log in with Kaitu?",
+        "answer": "Yes. AllNationConnect is the earlier name of our Kaitu client and is no longer maintained (no protocol updates, no new nodes). Please:\n\n1. Search \"Kaitu\" on the App Store / Google Play, or visit kaitu.io to download the new client.\n2. Log in with your original email — your subscription syncs automatically, no need to repurchase.\n3. If you hit stability issues on the old client, upgrade to the new Kaitu — the old version no longer receives fixes."
+      },
+      "chinaAppStore": {
+        "question": "How is Kaitu listed on the App Store?",
+        "answer": "Our iOS client is designed within a compliant framework and passed Apple's standard review process for listing.\n\nIf other developers would like to discuss iOS listing experiences, feel free to contact us by email — we're happy to share."
+      }
+    }
+  }
+}

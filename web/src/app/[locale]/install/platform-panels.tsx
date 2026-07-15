@@ -3,6 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Download, ExternalLink } from 'lucide-react';
+import { siteBrand } from '@/lib/brands';
 import { PlatformIcon, PLATFORM_COLORS } from './platform-icons';
 import {
   BrowserBlockedGuide,
@@ -83,7 +84,7 @@ export function WindowsPanel({
   primaryLink,
   backupLink,
 }: DesktopPanelProps) {
-  const filename = `Kaitu_${version}_x64.exe`;
+  const filename = `${siteBrand().cdn.artifactPrefix}_${version}_x64.exe`;
   const publisher = 'ALL NATION CONNECT TECHNOLOGY PTE. LTD.';
 
   return (
@@ -130,7 +131,7 @@ export function MacOSPanel({
   onCopy,
   copied,
 }: DesktopPanelProps & { onCopy: () => void; copied: boolean }) {
-  const filename = `Kaitu_${version}_universal.pkg`;
+  const filename = `${siteBrand().cdn.artifactPrefix}_${version}_universal.pkg`;
   const publisher = 'ALL NATION CONNECT TECHNOLOGY PTE. LTD.';
 
   return (
@@ -148,13 +149,17 @@ export function MacOSPanel({
       </Button>
       <BackupLink href={backupLink} t={t} />
 
-      {/* CLI block */}
-      <div className="max-w-lg mx-auto mt-6">
-        <p className="text-xs text-muted-foreground mb-2">
-          {t('install.install.terminalInstall')}
-        </p>
-        <CliBlock onCopy={onCopy} copied={copied} />
-      </div>
+      {/* CLI block — pipes the /i/k2 install script, which is a kaitu-only
+          surface (middleware 404s it on other brands), so gate it alongside
+          the Linux installer rather than offering a command that can't work. */}
+      {siteBrand().features.linuxInstall && (
+        <div className="max-w-lg mx-auto mt-6">
+          <p className="text-xs text-muted-foreground mb-2">
+            {t('install.install.terminalInstall')}
+          </p>
+          <CliBlock onCopy={onCopy} copied={copied} />
+        </div>
+      )}
 
       {/* Install guides */}
       <div className="mt-8 max-w-xl mx-auto space-y-4 text-left">
@@ -259,12 +264,15 @@ export function AndroidPanel({
       </Button>
       <BackupLink href={backupLink} t={t} />
 
-      {/* Install guide */}
-      <div className="mt-8 max-w-xl mx-auto space-y-4 text-left">
-        <DownloadTipCard title={t('install.install.faq.androidUsbInstall.question')}>
-          <DesktopUsbInstallGuide />
-        </DownloadTipCard>
-      </div>
+      {/* Install guide — the USB/APK sideload walkthrough is a kaitu-only
+          surface (it depends on the desktop client's 其他设备安装 flow). */}
+      {siteBrand().features.androidApkGuide && (
+        <div className="mt-8 max-w-xl mx-auto space-y-4 text-left">
+          <DownloadTipCard title={t('install.install.faq.androidUsbInstall.question')}>
+            <DesktopUsbInstallGuide />
+          </DownloadTipCard>
+        </div>
+      )}
     </div>
   );
 }
@@ -273,7 +281,7 @@ export function AndroidPanel({
 // RouterPanel — k2r gateway installer for OpenWrt / soft router / Linux SBC
 // ---------------------------------------------------------------------------
 
-const ROUTER_INSTALL_CMD = 'wget -qO- https://kaitu.io/i/k2r | sudo sh';
+const ROUTER_INSTALL_CMD = `wget -qO- ${siteBrand().baseUrl}/i/k2r | sudo sh`;
 
 export function RouterPanel({
   t,
@@ -281,6 +289,8 @@ export function RouterPanel({
   copied,
 }: { t: PlatformPanelProps['t']; onCopy: () => void; copied: boolean }) {
   const variants = ['openwrt', 'softrouter', 'sbc'] as const;
+  // Routers are a kaitu-only surface (Brand.features.routers).
+  if (!siteBrand().features.routers) return null;
   return (
     <div className="text-center">
       <PanelHeroIcon type="router" />

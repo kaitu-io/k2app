@@ -127,6 +127,17 @@ func api_k2_tunnels(c *gin.Context) {
 			continue
 		}
 
+		// Brand visibility filter: hide nodes not marked visible for the
+		// requesting user's brand (kaitu vs overleap). Uses user.Brand (the
+		// user's own birth attribute), not the request brand — Task 4 already
+		// enforces the two are equal post-auth. Admin bypasses (mirrors the
+		// isTest/quota-hide bypass pattern above) so triage sees all nodes.
+		// The `user != nil` guard is independent of isAdmin: it only prevents
+		// a nil dereference (AuthRequired guarantees non-nil in practice).
+		if !isAdmin && user != nil && !tunnel.Node.VisibleTo(Brand(user.Brand)) {
+			continue
+		}
+
 		// Get load details from batch query result
 		details := NodeLoadDetails{Load: 100} // Default full load
 		if d, exists := nodeLoadDetails[tunnel.Node.ID]; exists {

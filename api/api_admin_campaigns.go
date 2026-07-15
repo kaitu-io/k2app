@@ -128,6 +128,13 @@ func api_admin_create_campaign(c *gin.Context) {
 		return
 	}
 
+	// 验证品牌（空=kaitu；非法值直接拒绝，不静默降级）。callback 侧同样校验兜底。
+	if _, err := BrandForCreate(req.Brand); err != nil {
+		log.Warnf(c, "invalid brand: %s", req.Brand)
+		Error(c, ErrorInvalidArgument, "invalid brand")
+		return
+	}
+
 	// 检查活动代码是否已存在
 	var existing Campaign
 	if err := db.Get().Where(&Campaign{Code: req.Code}).First(&existing).Error; err == nil {
@@ -425,5 +432,6 @@ func convertCampaignToResponse(campaign Campaign) CampaignResponse {
 		MatcherParams: campaign.MatcherParams,
 		UsageCount:    campaign.UsageCount,
 		MaxUsage:      campaign.MaxUsage,
+		Brand:         campaign.Brand,
 	}
 }

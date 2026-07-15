@@ -417,6 +417,16 @@ func AuthRequired() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		// 品牌强制隔离：非 admin 用户的品牌必须与请求品牌一致，否则硬拒（403003）。
+		// admin 豁免，让管理员可跨品牌操作。
+		if u := ctx.User; u != nil && (u.IsAdmin == nil || !*u.IsAdmin) {
+			if u.Brand != string(ReqBrand(c)) {
+				log.Warnf(c, "auth rejected for %s: user %d brand %q does not match request brand %q", c.Request.URL.Path, ctx.UserID, u.Brand, ReqBrand(c))
+				Error(c, ErrorBrandMismatch, "account belongs to a different brand")
+				c.Abort()
+				return
+			}
+		}
 		if isUserBlocked(ctx.User) {
 			log.Warnf(c, "request rejected for %s: user %d is blocked", c.Request.URL.Path, ctx.UserID)
 			Error(c, ErrorForbidden, "account blocked")
@@ -436,6 +446,16 @@ func AuthOptional() gin.HandlerFunc {
 		// 尝试认证，但不阻止请求
 		// getAuthContext 会将认证信息存储到上下文中（如果认证成功）
 		ctx := getAuthContext(c)
+		// 品牌强制隔离：有凭证且品牌错配必须硬拒，不能静默降级为匿名——
+		// 否则跨品牌半登录态会在"允许匿名"的接口上泄漏。admin 豁免。
+		if ctx != nil {
+			if u := ctx.User; u != nil && (u.IsAdmin == nil || !*u.IsAdmin) && u.Brand != string(ReqBrand(c)) {
+				log.Warnf(c, "optional auth rejected for %s: user %d brand %q does not match request brand %q", c.Request.URL.Path, ctx.UserID, u.Brand, ReqBrand(c))
+				Error(c, ErrorBrandMismatch, "account belongs to a different brand")
+				c.Abort()
+				return
+			}
+		}
 		if ctx != nil && isUserBlocked(ctx.User) {
 			// 被封禁账号在"允许匿名"的接口上降级为匿名，而不是 403——
 			// 这类接口本来就该让匿名用户能访问，被封禁不该比匿名更差。
@@ -791,7 +811,7 @@ func ApiCORSMiddleware() gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client, X-K2-Brand")
 			c.Header("Access-Control-Max-Age", "86400")
 		}
 
@@ -803,15 +823,24 @@ func ApiCORSMiddleware() gin.HandlerFunc {
 	}
 }
 
+// corsAllowedOrigins builds the /app/* CORS whitelist: union of every brand's
+// WebOrigins plus the local dev origin. Single source of truth so a new brand
+// only needs registering in brandRegistry, not here.
+func corsAllowedOrigins() map[string]bool {
+	allowed := map[string]bool{"http://localhost:3000": true} // Development
+	for _, b := range AllBrands() {
+		for _, o := range b.Config().WebOrigins {
+			allowed[o] = true
+		}
+	}
+	return allowed
+}
+
 // CORSMiddleware handles CORS for cross-origin requests from web dashboard
 // Allows www.kaitu.io to access /app/* routes directly (bypassing Amplify proxy)
 // Required for WebSocket connections which cannot be proxied through Next.js rewrites
 func CORSMiddleware() gin.HandlerFunc {
-	allowedOrigins := map[string]bool{
-		"https://www.kaitu.io":  true,
-		"https://kaitu.io":      true,
-		"http://localhost:3000": true, // Development
-	}
+	allowedOrigins := corsAllowedOrigins()
 
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
@@ -820,7 +849,7 @@ func CORSMiddleware() gin.HandlerFunc {
 		if allowedOrigins[origin] {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client, Cookie")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client, X-K2-Brand, Cookie")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			c.Header("Access-Control-Max-Age", "86400") // 24 hours
 		}

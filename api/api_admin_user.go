@@ -358,7 +358,7 @@ func api_admin_get_user_detail(c *gin.Context) {
 				Code:           codeStr,
 				CreatedAt:      code.CreatedAt.Unix(),
 				Remark:         code.Remark,
-				Link:           code.Link(),
+				Link:           code.Link(Brand(user.Brand)),
 				Config:         configInvite(c),
 				RegisterCount:  registerCountMap[codeID],
 				PurchaseCount:  purchaseCountMap[codeID],

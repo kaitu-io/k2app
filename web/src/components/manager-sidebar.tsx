@@ -119,7 +119,7 @@ const ManagerSidebar = () => {
           <Link href="/manager" className="flex items-center gap-2 font-semibold">
             <Image
               src="/kaitu-icon.png"
-              alt="Kaitu Logo"
+              alt="Admin"
               width={24}
               height={24}
               className="rounded-md"

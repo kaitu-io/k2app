@@ -15,12 +15,12 @@ const (
 	CampaignTypeCoupon   = "coupon"
 )
 
-// getCampaignByCode 根据优惠码获取优惠活动信息（从数据库查询）
-func getCampaignByCode(ctx context.Context, code string) *Campaign {
+// getCampaignByCode 根据优惠码获取优惠活动信息（从数据库查询），限定请求品牌。
+func getCampaignByCode(ctx context.Context, code string, brand Brand) *Campaign {
 	log.Debugf(ctx, "getting campaign by code: %s", code)
 
 	var campaign Campaign
-	if err := db.Get().Where(&Campaign{Code: code, IsActive: BoolPtr(true)}).First(&campaign).Error; err != nil {
+	if err := db.Get().Scopes(ScopeBrand(brand)).Where(&Campaign{Code: code, IsActive: BoolPtr(true)}).First(&campaign).Error; err != nil {
 		log.Warnf(ctx, "campaign code not found: %s", code)
 		return nil
 	}

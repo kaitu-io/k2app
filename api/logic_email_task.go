@@ -6,15 +6,38 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/ai"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/mail"
 )
 
-// edmSender sends EDM email via qtoolkit/mail's "edm" viper prefix.
+// edmSender sends EDM email via qtoolkit/mail's "edm" viper prefix (kaitu brand).
 // Dialer / SES client is lazy-loaded on first Send.
 var edmSender = mail.Config("edm")
+
+// edmSenderOverleap sends EDM email under the Overleap brand identity, bound to
+// the "edm_overleap" viper prefix (see config.yml for the placeholder block).
+// Kept as a distinct *mail.Sender rather than a per-message override because
+// qtoolkit/mail.Message has no From field at all — the From header is always
+// derived from the Sender's own bound config prefix (send_from). So a branded
+// from_name/from_email pair can only be delivered via a second prefix, not a
+// per-call parameter.
+var edmSenderOverleap = mail.Config("edm_overleap")
+
+// edmSenderForBrand picks the EDM sender identity for the recipient's brand.
+// Overleap's own sending domain requires Phase 0 domain verification with the
+// mail provider before edm_overleap.* can be filled in; edm.overleap_from_email
+// is the readiness signal ops flips once that's done. Until then this falls
+// back to the shared kaitu sender so Overleap EDM keeps sending (under the
+// kaitu identity) instead of failing outright on an unconfigured prefix.
+func edmSenderForBrand(b Brand) *mail.Sender {
+	if b == BrandOverleap && viper.GetString("edm.overleap_from_email") != "" {
+		return edmSenderOverleap
+	}
+	return edmSender
+}
 
 // getUserEmailByUser 从用户对象获取邮箱地址
 func getUserEmailByUser(ctx context.Context, user *User) (string, error) {
@@ -31,24 +54,28 @@ func getUserLanguagePreference(user *User) string {
 	return user.GetLanguagePreference()
 }
 
-// sendEmail 通过 qtoolkit/mail 的 "edm" prefix 发送邮件（dev 模式仅打印不发送）。
-func sendEmail(ctx context.Context, to, subject, body string) error {
+// sendEmail 通过 qtoolkit/mail 发送邮件（dev 模式仅打印不发送）。发件身份按
+// brand 选择 sender（见 edmSenderForBrand）——from_name 由 BrandConfig.EDMFromName
+// 定义，但受 qtoolkit/mail 无 per-message From 的限制，实际生效值烘焙进对应 sender
+// 绑定的 viper 前缀（edm.send_from / edm_overleap.send_from），本函数只负责选对
+// sender，不直接拼装 From 头。
+func sendEmail(ctx context.Context, to, subject, body string, brand Brand) error {
 	if isMailDevMode() {
-		log.Infof(ctx, "[DEV-MAIL-EDM] TO: %s | SUBJECT: %s\n--- BODY ---\n%s\n--- END ---",
-			to, subject, body)
+		log.Infof(ctx, "[DEV-MAIL-EDM] TO: %s | SUBJECT: %s | BRAND: %s (from_name=%s)\n--- BODY ---\n%s\n--- END ---",
+			to, subject, brand, brand.Config().EDMFromName, body)
 		return nil
 	}
 
-	if err := edmSender.Send(&mail.Message{
+	if err := edmSenderForBrand(brand).Send(&mail.Message{
 		To:      to,
 		Subject: subject,
 		Body:    body,
 	}); err != nil {
-		log.Errorf(ctx, "failed to send EDM email to %s: %v", to, err)
+		log.Errorf(ctx, "failed to send EDM email to %s (brand=%s): %v", to, brand, err)
 		return fmt.Errorf("EDM send failed: %w", err)
 	}
 
-	log.Infof(ctx, "EDM email sent to %s", to)
+	log.Infof(ctx, "EDM email sent to %s (brand=%s)", to, brand)
 	return nil
 }
 
@@ -91,24 +118,33 @@ func getTemplateForLanguage(ctx context.Context, templateID uint64, targetLang s
 	}
 
 	// 创建新的翻译模板记录
-	sourceTemplateID := templateID
-	newTemplate := EmailMarketingTemplate{
-		Name:        template.Name + " (" + targetLang + ")",
-		Language:    targetLang,
-		Subject:     translatedSubject,
-		Content:     translatedContent,
-		IsActive:    BoolPtr(true),
-		Description: "Auto-translated from " + template.Language,
-		OriginID:    &sourceTemplateID, // 关联到源模板
-	}
+	newTemplate := buildTranslatedTemplate(template, targetLang, translatedSubject, translatedContent)
 
 	if err := db.Get().Create(&newTemplate).Error; err != nil {
 		log.Errorf(ctx, "failed to save translated template: %v", err)
 		return nil, fmt.Errorf("failed to save translation: %w", err)
 	}
 
-	log.Infof(ctx, "successfully created translation %d for template %d, language %s", newTemplate.ID, sourceTemplateID, targetLang)
+	log.Infof(ctx, "successfully created translation %d for template %d, language %s", newTemplate.ID, templateID, targetLang)
 	return &newTemplate, nil
+}
+
+// buildTranslatedTemplate 组装懒翻译产出的模板记录。抽成纯函数（无 AI/DB 调用）便于
+// 单独测试——之前这段内联在 getTemplateForLanguage 里时漏拷贝了 source.Brand，
+// 导致所有自动翻译的模板一律落 kaitu（EmailMarketingTemplate.Brand 的 GORM
+// default:'kaitu'），品牌信息在翻译这一跳丢失。
+func buildTranslatedTemplate(source EmailMarketingTemplate, targetLang, translatedSubject, translatedContent string) EmailMarketingTemplate {
+	sourceTemplateID := source.ID
+	return EmailMarketingTemplate{
+		Name:        source.Name + " (" + targetLang + ")",
+		Language:    targetLang,
+		Subject:     translatedSubject,
+		Content:     translatedContent,
+		IsActive:    BoolPtr(true),
+		Description: "Auto-translated from " + source.Language,
+		OriginID:    &sourceTemplateID, // 关联到源模板
+		Brand:       source.Brand,
+	}
 }
 
 // processEmailWithAI 使用AI处理邮件（翻译+润色）

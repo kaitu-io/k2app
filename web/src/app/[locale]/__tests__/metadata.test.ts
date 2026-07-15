@@ -1,11 +1,8 @@
-// Unit tests for generateMetadata() cross-domain hreflang.
+// Unit tests for generateMetadata() — Brand Split Phase 2.
 //
-// After the cross-domain rebrand (PR-2), each locale's hreflang link points
-// to the host that owns that locale (kaitu.io for zh-*, overleap.io for
-// en-* and ja), regardless of which brand is currently rendering. This lets
-// Googlebot link the two domains as a single multi-regional property.
-//
-// x-default points to kaitu.io/zh-CN (Chinese is the product's main market).
+// The two brands are fully isolated (spec: 两站互不感知). hreflang links only
+// the rendering brand's OWN locales on its OWN host; x-default is that brand's
+// default locale. No cross-domain linking, ever.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Mock @/i18n/routing to avoid pulling next-intl/navigation (and transitively
@@ -18,9 +15,7 @@ vi.mock('@/i18n/routing', () => ({
   },
 }));
 
-// Ensure NEXT_PUBLIC_BASE_URL does not leak into these tests — hreflang must
-// use the brand-resolved base URL, not an env override (the override is only
-// honored for the current brand's own canonical/og.url below).
+// Ensure NEXT_PUBLIC_BASE_URL does not leak into these tests.
 beforeEach(() => {
   delete process.env.NEXT_PUBLIC_BASE_URL;
   vi.resetModules();
@@ -38,89 +33,93 @@ async function loadBrands() {
   return await import('@/lib/brands');
 }
 
-describe('generateMetadata — cross-domain hreflang (alternates.languages)', () => {
-  it('emits zh-CN → kaitu.io when brand=KAITU', async () => {
+describe('generateMetadata — brand-isolated SEO (Phase 2)', () => {
+  it('kaitu hreflang covers only kaitu locales on kaitu.io', async () => {
     const { KAITU } = await loadBrands();
     const generateMetadata = await loadMetadata();
     const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
-    expect(meta.alternates?.languages?.['zh-cn']).toBe('https://kaitu.io/zh-CN/install');
+    const langs = meta.alternates!.languages as Record<string, string>;
+    expect(Object.keys(langs).sort()).toEqual(['x-default', 'zh-cn', 'zh-hk', 'zh-tw']);
+    expect(langs['zh-tw']).toBe('https://kaitu.io/zh-TW/install');
+    expect(langs['x-default']).toBe('https://kaitu.io/zh-CN/install');
+    expect(JSON.stringify(meta)).not.toContain('overleap');
   });
 
-  it('emits en-US → overleap.io (cross-domain) when brand=KAITU', async () => {
+  it('overleap hreflang covers only overleap locales on overleap.io', async () => {
+    const { OVERLEAP } = await loadBrands();
+    const generateMetadata = await loadMetadata();
+    const meta = generateMetadata('en-US', '/purchase', {}, OVERLEAP);
+    const langs = meta.alternates!.languages as Record<string, string>;
+    expect(Object.keys(langs).sort()).toEqual(['en-au', 'en-gb', 'en-us', 'ja', 'x-default']);
+    expect(langs['x-default']).toBe('https://overleap.io/en-US/purchase');
+    expect(JSON.stringify(meta)).not.toContain('kaitu');
+  });
+
+  it('zh title uses brand wordmark (no hardcoded 开途 in source)', async () => {
     const { KAITU } = await loadBrands();
     const generateMetadata = await loadMetadata();
-    const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
-    expect(meta.alternates?.languages?.['en-us']).toBe('https://overleap.io/en-US/install');
+    const meta = generateMetadata('zh-CN', '', {}, KAITU);
+    expect(meta.title).toContain('开途');
   });
 
-  it('emits ja → overleap.io (cross-domain) when brand=KAITU', async () => {
+  it('overleap icons come from the brand favicon prefix', async () => {
+    const { OVERLEAP } = await loadBrands();
+    const generateMetadata = await loadMetadata();
+    const meta = generateMetadata('en-US', '', {}, OVERLEAP);
+    expect(JSON.stringify(meta.icons)).toContain('/brand/overleap/favicon-32x32.png');
+  });
+
+  it('kaitu icons keep the legacy root paths (no cache churn)', async () => {
     const { KAITU } = await loadBrands();
     const generateMetadata = await loadMetadata();
-    const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
-    expect(meta.alternates?.languages?.['ja']).toBe('https://overleap.io/ja/install');
-  });
-
-  it('emits the same languages record when brand=OVERLEAP (hreflang is brand-independent)', async () => {
-    const { KAITU, OVERLEAP } = await loadBrands();
-    const generateMetadata = await loadMetadata();
-    const metaKaitu = generateMetadata('zh-CN', '/install', {}, KAITU);
-    const metaOverleap = generateMetadata('en-US', '/install', {}, OVERLEAP);
-    expect(metaOverleap.alternates?.languages).toEqual(metaKaitu.alternates?.languages);
-  });
-
-  it('emits x-default → kaitu.io/zh-CN', async () => {
-    const { KAITU } = await loadBrands();
-    const generateMetadata = await loadMetadata();
-    const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
-    expect(meta.alternates?.languages?.['x-default']).toBe('https://kaitu.io/zh-CN/install');
-  });
-
-  it('emits all 7 locales + x-default (8 entries total)', async () => {
-    const { KAITU } = await loadBrands();
-    const generateMetadata = await loadMetadata();
-    const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
-    const languages = meta.alternates?.languages ?? {};
-    expect(Object.keys(languages).sort()).toEqual(
-      ['en-au', 'en-gb', 'en-us', 'ja', 'x-default', 'zh-cn', 'zh-hk', 'zh-tw'],
-    );
-  });
-
-  it('zh-TW and zh-HK also point to kaitu.io', async () => {
-    const { KAITU } = await loadBrands();
-    const generateMetadata = await loadMetadata();
-    const meta = generateMetadata('zh-CN', '/purchase', {}, KAITU);
-    expect(meta.alternates?.languages?.['zh-tw']).toBe('https://kaitu.io/zh-TW/purchase');
-    expect(meta.alternates?.languages?.['zh-hk']).toBe('https://kaitu.io/zh-HK/purchase');
-  });
-
-  it('en-GB and en-AU also point to overleap.io', async () => {
-    const { KAITU } = await loadBrands();
-    const generateMetadata = await loadMetadata();
-    const meta = generateMetadata('zh-CN', '/purchase', {}, KAITU);
-    expect(meta.alternates?.languages?.['en-gb']).toBe('https://overleap.io/en-GB/purchase');
-    expect(meta.alternates?.languages?.['en-au']).toBe('https://overleap.io/en-AU/purchase');
+    const meta = generateMetadata('zh-CN', '', {}, KAITU);
+    expect(JSON.stringify(meta.icons)).toContain('"/favicon-32x32.png"');
+    expect((meta.icons as { shortcut: string }).shortcut).toBe('/favicon.ico');
   });
 
   it('preserves pathname across locales (empty pathname → bare locale URL)', async () => {
     const { KAITU } = await loadBrands();
     const generateMetadata = await loadMetadata();
     const meta = generateMetadata('zh-CN', '', {}, KAITU);
-    expect(meta.alternates?.languages?.['zh-cn']).toBe('https://kaitu.io/zh-CN');
-    expect(meta.alternates?.languages?.['en-us']).toBe('https://overleap.io/en-US');
-    expect(meta.alternates?.languages?.['x-default']).toBe('https://kaitu.io/zh-CN');
+    const langs = meta.alternates!.languages as Record<string, string>;
+    expect(langs['zh-cn']).toBe('https://kaitu.io/zh-CN');
+  });
+
+  // The `brand` parameter defaulted to KAITU, so any call site that forgot to
+  // pass one published kaitu canonical/hreflang/og:url/siteName from the
+  // overleap build. /support was exactly that call site. The default must
+  // follow the baked brand, so forgetting to pass it degrades to correct.
+  it('omitted brand follows the baked brand, and never falls back to kaitu', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    vi.resetModules();
+    const generateMetadata = await loadMetadata();
+
+    const meta = generateMetadata('en-US', '/support');
+
+    expect(meta.alternates!.canonical).toBe('https://overleap.io/en-US/support');
+    expect(JSON.stringify(meta)).not.toContain('kaitu');
+    vi.unstubAllEnvs();
+  });
+
+  it('omitted brand on a kaitu build still yields kaitu metadata', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+    vi.resetModules();
+    const generateMetadata = await loadMetadata();
+
+    const meta = generateMetadata('zh-CN', '/support');
+
+    expect(meta.alternates!.canonical).toBe('https://kaitu.io/zh-CN/support');
+    expect(JSON.stringify(meta)).not.toContain('overleap');
+    vi.unstubAllEnvs();
   });
 
   it('ignores NEXT_PUBLIC_BASE_URL override for hreflang entries', async () => {
-    // Simulate a preview/staging env with a custom base URL. Hreflang must
-    // still use the production brand hosts so SEO is not broken.
-    process.env.NEXT_PUBLIC_BASE_URL = 'https://preview.kaitu.io';
-    vi.resetModules();
+    process.env.NEXT_PUBLIC_BASE_URL = 'https://preview.example.com';
     const { KAITU } = await loadBrands();
     const generateMetadata = await loadMetadata();
     const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
-    expect(meta.alternates?.languages?.['zh-cn']).toBe('https://kaitu.io/zh-CN/install');
-    expect(meta.alternates?.languages?.['en-us']).toBe('https://overleap.io/en-US/install');
-    // canonical still uses the override for the current brand (preview env).
-    expect(meta.alternates?.canonical).toBe('https://preview.kaitu.io/zh-CN/install');
+    const langs = meta.alternates!.languages as Record<string, string>;
+    // hreflang must use the brand's own host so preview envs can't poison SEO.
+    expect(langs['zh-cn']).toBe('https://kaitu.io/zh-CN/install');
   });
 });

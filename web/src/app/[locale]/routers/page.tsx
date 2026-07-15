@@ -1,8 +1,10 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { routing } from '@/i18n/routing';
+import { siteBrand } from '@/lib/brands';
 import { Hero } from './_components/Hero';
 import { Step1Hardware } from './_components/Step1Hardware';
 import { Step2InstallOS } from './_components/Step2InstallOS';
@@ -37,6 +39,14 @@ export default async function RoutersPage({
 }) {
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
+
+  // The routers presale surface is kaitu-only (Brand.features.routers). Without
+  // this gate the overleap deployment would serve 开途-branded router products —
+  // the exact leak tests/brand-guard.test.ts allowlists this directory against.
+  if (!siteBrand().features.routers) {
+    notFound();
+  }
+
   setRequestLocale(locale);
 
   return (

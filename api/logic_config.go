@@ -99,6 +99,47 @@ func createWordgateClient(ctx context.Context) *wordgate.Client {
 	return wordgate.NewClient(cfg.AppCode, cfg.AppSecret, cfg.BaseURL)
 }
 
+// StripeConfig Stripe 配置结构（Overleap LLC 收单主体；overleap 专属渠道，kaitu 永不读取）。
+// 开发用测试模式 key（sk_test_/whsec_...），真 key 切换见部署清单。
+type StripeConfig struct {
+	SecretKey       string
+	WebhookSecret   string
+	SuccessURL      string // Checkout 成功跳转
+	CancelURL       string // Checkout 取消跳转
+	PortalReturnURL string // Billing Portal 返回地址
+}
+
+// Ready 判断 Stripe 渠道是否配置可用：secret key 与 webhook secret 缺一不可。
+// 缺配置时渠道自动不可用（handler 返 405001 / webhook 返 503），绝不 panic。
+func (sc StripeConfig) Ready() bool {
+	return sc.SecretKey != "" && sc.WebhookSecret != ""
+}
+
+// configStripe 获取 Stripe 配置。跳转 URL 缺省回退 overleap 品牌注册表 BaseURL——
+// 沿用「viper 旧键只服务 kaitu，overleap 恒走 BrandConfig」的 Phase 1 规则。
+func configStripe(ctx context.Context) StripeConfig {
+	base := BrandOverleap.Config().BaseURL
+	cfg := StripeConfig{
+		SecretKey:       viper.GetString("stripe.secret_key"),
+		WebhookSecret:   viper.GetString("stripe.webhook_secret"),
+		SuccessURL:      viper.GetString("stripe.success_url"),
+		CancelURL:       viper.GetString("stripe.cancel_url"),
+		PortalReturnURL: viper.GetString("stripe.portal_return_url"),
+	}
+	if cfg.SuccessURL == "" {
+		cfg.SuccessURL = base + "/account?checkout=success"
+	}
+	if cfg.CancelURL == "" {
+		// /purchase, not /pricing — the latter has never existed on the site,
+		// so the old default sent every cancelled checkout to a 404.
+		cfg.CancelURL = base + "/purchase?checkout=cancelled"
+	}
+	if cfg.PortalReturnURL == "" {
+		cfg.PortalReturnURL = base + "/account"
+	}
+	return cfg
+}
+
 func ConfigServer(ctx context.Context) ServerConfig {
 	cfg := ServerConfig{
 		Port:       viper.GetInt("server.port"),
@@ -116,10 +157,14 @@ func ConfigServer(ctx context.Context) ServerConfig {
 
 // configInviteBaseURL 获取邀请链接基础URL
 // 从配置中读取 web_base_url，拼接 /s 路径（Web 前端的邀请落地页路由）
-func configInviteBaseURL() string {
-	webBaseURL := viper.GetString("frontend_config.web_base_url")
+// viper 旧键（frontend_config.web_base_url）只服务 kaitu；overleap 恒走品牌注册表 BrandConfig.BaseURL。
+func configInviteBaseURL(b Brand) string {
+	webBaseURL := ""
+	if b != BrandOverleap { // viper 旧键只服务 kaitu
+		webBaseURL = viper.GetString("frontend_config.web_base_url")
+	}
 	if webBaseURL == "" {
-		webBaseURL = "https://www.kaitu.io" // 默认值
+		webBaseURL = b.Config().BaseURL
 	}
 	return fmt.Sprintf("%s/s", webBaseURL)
 }

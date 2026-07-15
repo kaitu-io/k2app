@@ -126,7 +126,9 @@ export default function Dashboard() {
   // Routing summary for collapsed advanced settings bar
   const routingSummary = useRoutingSummary();
 
-  // Self-hosted tunnel
+  // Self-hosted tunnel. The brand gate governs every entry point into /tunnels;
+  // without it the page early-returns and the user lands on a blank screen.
+  const selfHostedEnabled = appConfig.features.selfHostedTunnels === true;
   const selfHostedTunnel = useSelfHostedStore((s) => s.tunnel);
 
   // Service failure alert tracking (silent mode - no UI feedback)
@@ -276,6 +278,7 @@ export default function Dashboard() {
 
   // Self-hosted tab content — dedicated 自部署 slot in SmartServerSelector
   const selfHostedTabContent = useMemo(() => {
+    if (!selfHostedEnabled) return null;
     if (!selfHostedTunnel) {
       return (
         <Box sx={{ px: 2, py: 4, textAlign: 'center' }}>
@@ -300,7 +303,7 @@ export default function Dashboard() {
         </List>
       </Box>
     );
-  }, [selfHostedTunnel, t, navigate]);
+  }, [selfHostedEnabled, selfHostedTunnel, t, navigate]);
 
   // Handle self-hosted tunnel selection
   const handleSelfHostedSelect = useCallback(() => {
@@ -374,12 +377,14 @@ export default function Dashboard() {
     : vpnState === 'serviceDown' ? 'disconnected'
     : vpnState;
 
-  // Auto-select self-hosted when it's the only option (guest with tunnel)
+  // Auto-select self-hosted when it's the only option (guest with tunnel).
+  // Gated: with the surface off, a tunnel left in storage must not silently
+  // become the active server mode behind a UI that can no longer show it.
   useEffect(() => {
-    if (!isAuthenticated && selfHostedTunnel && serverMode !== 'self_hosted' && !activeTunnel) {
+    if (selfHostedEnabled && !isAuthenticated && selfHostedTunnel && serverMode !== 'self_hosted' && !activeTunnel) {
       selectSelfHosted();
     }
-  }, [isAuthenticated, selfHostedTunnel, serverMode, activeTunnel, selectSelfHosted]);
+  }, [selfHostedEnabled, isAuthenticated, selfHostedTunnel, serverMode, activeTunnel, selectSelfHosted]);
 
   return (
     <DashboardContainer
@@ -475,7 +480,7 @@ export default function Dashboard() {
         )}
 
         {/* Self-hosted node — primary option for unauthenticated guests */}
-        {!isAuthenticated && selfHostedTunnel && (
+        {selfHostedEnabled && !isAuthenticated && selfHostedTunnel && (
           <Box sx={{ flexShrink: 0 }}>
             <List disablePadding sx={{ px: 2 }}>
               <SelfHostedTunnelItem
@@ -564,18 +569,20 @@ export default function Dashboard() {
                 >
                   {t('dashboard:dashboard.unlockCloudNodes')}
                 </Button>
-                <Button
-                  variant="text"
-                  size="small"
-                  onClick={() => navigate('/tunnels')}
-                  sx={{
-                    color: 'text.secondary',
-                    textTransform: 'none',
-                    fontSize: '0.75rem',
-                  }}
-                >
-                  {t('dashboard:dashboard.selfDeploy')}
-                </Button>
+                {selfHostedEnabled && (
+                  <Button
+                    variant="text"
+                    size="small"
+                    onClick={() => navigate('/tunnels')}
+                    sx={{
+                      color: 'text.secondary',
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                    }}
+                  >
+                    {t('dashboard:dashboard.selfDeploy')}
+                  </Button>
+                )}
               </Stack>
             </Box>
           </Box>

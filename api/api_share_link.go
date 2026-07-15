@@ -82,7 +82,7 @@ func api_get_share_link(c *gin.Context) {
 	}
 
 	// 生成微信防红短链接
-	shareLink, err := createInviteShareLink(c, inviteCode, expiresInDays)
+	shareLink, err := createInviteShareLink(c, ReqBrand(c), inviteCode, expiresInDays)
 	if err != nil {
 		log.Errorf(c, "failed to generate share link for code %s: %v", code, err)
 		Error(c, ErrorSystemError, "failed to generate share link")

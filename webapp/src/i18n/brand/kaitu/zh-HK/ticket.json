@@ -1,0 +1,14 @@
+{
+  "faq": {
+    "items": {
+      "allNationConnect": {
+        "question": "我之前用嘅係 AllNationConnect，個帳號可唔可以喺 Kaitu 登入？",
+        "answer": "可以。AllNationConnect 係我哋 Kaitu 嘅早期用戶端，已經停止維護（唔再更新協定同節點）。請：\n\n1. 喺 App Store / Google Play 搜尋 \"Kaitu\" 或 \"开途\"，又或者去 kaitu.io 下載新版用戶端。\n2. 用原來嘅郵箱登入，訂閱會自動同步保留，唔使重新購買。\n3. 如果原用戶端遇到穩定性問題，直接升級到新版，舊版本唔再修復。"
+      },
+      "chinaAppStore": {
+        "question": "點解 Kaitu 能夠喺 App Store 上架？",
+        "answer": "我哋嘅 iOS 用戶端喺合規框架內設計，通過咗 Apple 嘅正常審核流程上架。\n\n如果其他開發者想交流 iOS 上架經驗，歡迎透過郵件聯絡我哋，我哋好樂意分享。"
+      }
+    }
+  }
+}

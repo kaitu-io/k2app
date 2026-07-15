@@ -26,7 +26,7 @@ func TestIssueOrRefreshVerificationCode_FirstCallGeneratesAndPersists(t *testing
 	ctx := context.Background()
 	hash := "test-hash-first-call"
 	// ensure clean slate
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	code, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -34,7 +34,7 @@ func TestIssueOrRefreshVerificationCode_FirstCallGeneratesAndPersists(t *testing
 
 	// Persisted under unified key
 	var persisted string
-	exist, err := redis.CacheGet(verificationCodeKey(hash), &persisted)
+	exist, err := redis.CacheGet(verificationCodeKey(hash, BrandKaitu), &persisted)
 	require.NoError(t, err)
 	assert.True(t, exist)
 	assert.Equal(t, code, persisted)
@@ -44,7 +44,7 @@ func TestIssueOrRefreshVerificationCode_ReusesAndRefreshesTTL(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-reuse"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	first, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestIssueOrRefreshVerificationCode_ReusesAndRefreshesTTL(t *testing.T) {
 	// TTL should have been refreshed close to full window again. We assert
 	// it's > 0.6 * expiry — the half we fast-forwarded should NOT still be
 	// burning down.
-	ttl := testMiniRedis.TTL(verificationCodeKey(hash))
+	ttl := testMiniRedis.TTL(verificationCodeKey(hash, BrandKaitu))
 	assert.Greater(t, ttl, time.Duration(VerificationCodeExpiry)*time.Second*6/10,
 		"TTL must be refreshed by a resend")
 }
@@ -70,7 +70,7 @@ func TestVerifyEmailCode_Correct(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-verify-ok"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	code, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestVerifyEmailCode_WrongValueReportsWrongNotMissing(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-verify-wrong"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	_, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -96,7 +96,7 @@ func TestVerifyEmailCode_NoCodeReportsNotIssued(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-never-issued"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	assert.Equal(t, VerifyCodeNotIssued, verifyEmailCode(ctx, hash, "123456"))
 }
@@ -105,7 +105,7 @@ func TestMarkVerificationCodeUsed_KeepsCodeButShrinksTTLToGrace(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-mark-used"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	code, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestMarkVerificationCodeUsed_KeepsCodeButShrinksTTLToGrace(t *testing.T) {
 	assert.Equal(t, VerifyCodeOK, verifyEmailCode(ctx, hash, code))
 
 	// TTL has been shrunk to <= grace period.
-	ttl := testMiniRedis.TTL(verificationCodeKey(hash))
+	ttl := testMiniRedis.TTL(verificationCodeKey(hash, BrandKaitu))
 	assert.LessOrEqual(t, ttl, time.Duration(VerificationCodeUsedGracePeriod)*time.Second)
 }
 
@@ -128,7 +128,7 @@ func TestIssueOrRefreshDuringGrace_IssuesFreshCodeAndInvalidatesOld(t *testing.T
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-resend-during-grace"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	oldCode, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -148,7 +148,7 @@ func TestIssueOrRefreshDuringGrace_IssuesFreshCodeAndInvalidatesOld(t *testing.T
 	assert.Equal(t, VerifyCodeOK, verifyEmailCode(ctx, hash, newCode))
 
 	// Fresh code got full TTL (not the leftover grace TTL)
-	ttl := testMiniRedis.TTL(verificationCodeKey(hash))
+	ttl := testMiniRedis.TTL(verificationCodeKey(hash, BrandKaitu))
 	assert.Greater(t, ttl, time.Duration(VerificationCodeUsedGracePeriod*5)*time.Second,
 		"resend during grace must reset TTL to the full window")
 }
@@ -159,7 +159,7 @@ func TestVerifyEmailCode_DuringGrace_WrongCodeStillReportsWrong(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-grace-wrong"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	_, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -175,7 +175,7 @@ func TestMarkVerificationCodeUsed_TwiceIsIdempotent(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-mark-twice"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	code, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -187,7 +187,7 @@ func TestMarkVerificationCodeUsed_TwiceIsIdempotent(t *testing.T) {
 
 	// Stored value must NOT be "used:used:<code>" — that would break verify.
 	var raw string
-	exist, err := redis.CacheGet(verificationCodeKey(hash), &raw)
+	exist, err := redis.CacheGet(verificationCodeKey(hash, BrandKaitu), &raw)
 	require.NoError(t, err)
 	require.True(t, exist)
 	assert.Equal(t, "used:"+code, raw, "double-mark must not double-prefix")
@@ -197,7 +197,7 @@ func TestMarkVerificationCodeUsed_NoKeyIsNoOp(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-mark-nokey"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	// Should not error even though no code exists. Models the race where
 	// a concurrent request already consumed the code.
@@ -208,7 +208,7 @@ func TestVerifyEmailCode_AfterGracePeriod_ReportsNotIssued(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-grace-expires"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	code, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -225,7 +225,7 @@ func TestVerifyEmailCode_AfterFullTTL_ReportsNotIssued(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
 	hash := "test-hash-ttl-expires"
-	_ = redis.CacheDel(verificationCodeKey(hash))
+	_ = redis.CacheDel(verificationCodeKey(hash, BrandKaitu))
 
 	code, err := issueOrRefreshVerificationCode(ctx, hash)
 	require.NoError(t, err)
@@ -241,8 +241,8 @@ func TestVerifyEmailCode_AfterFullTTL_ReportsNotIssued(t *testing.T) {
 func TestIssueOrRefreshVerificationCode_DifferentEmailsGetDifferentCodes(t *testing.T) {
 	withRealVerificationCode(t)
 	ctx := context.Background()
-	_ = redis.CacheDel(verificationCodeKey("hash-a"))
-	_ = redis.CacheDel(verificationCodeKey("hash-b"))
+	_ = redis.CacheDel(verificationCodeKey("hash-a", BrandKaitu))
+	_ = redis.CacheDel(verificationCodeKey("hash-b", BrandKaitu))
 
 	codeA, err := issueOrRefreshVerificationCode(ctx, "hash-a")
 	require.NoError(t, err)

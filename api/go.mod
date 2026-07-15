@@ -18,6 +18,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/strahe/bwh v0.1.4
 	github.com/stretchr/testify v1.11.1
+	github.com/stripe/stripe-go/v82 v82.5.1
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.17
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/lighthouse v1.3.17
 	github.com/trustelem/zxcvbn v1.0.1

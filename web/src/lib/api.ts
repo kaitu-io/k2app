@@ -37,6 +37,7 @@
 import { toast } from "sonner";
 import { appEvents } from "./events";
 import { safeStorage } from "./safeStorage";
+import { siteBrand } from "./brands";
 
 // ============================================================================
 // API Types (moved from @/types/api.ts to avoid conflicts)
@@ -1266,6 +1267,8 @@ export const api = {
         ...authHeaders,
         ...csrfHeaders,
         "Content-Type": "application/json",
+        // Baked brand — Center resolves Host → X-K2-Brand → kaitu (api/brand.go).
+        "X-K2-Brand": siteBrand().id,
         ...fetchOptions.headers,
       };
 

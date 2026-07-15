@@ -88,6 +88,19 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
 		return fmt.Errorf("lock user %d: %w", userID, err)
 	}
+
+	// 品牌错配哨兵：Apple IAP 是 kaitu 专属支付渠道。这是唯一的入账动作前置点——
+	// 无论调用方是 api_apple_iap_verify（已有独立 handler 守卫）还是
+	// api_apple_webhook（无 handler 守卫，靠这里兜底），线上命中即为 bug，记 error
+	// 日志告警并拒绝入账，绝不静默记账。品牌错配是持久条件：返回 error 会让 Apple
+	// 判为处理失败并按其 server-to-server 重试策略重发通知，本哨兵会对同一笔交易
+	// 反复告警——这是 fail-loud 的设计取舍，不是 bug。若此日志持续出现应视为 page
+	// 级事件而非重试可容忍瞬态。
+	if !Brand(user.Brand).Config().AllowsPayment(PayChannelAppleIAP) {
+		alertPaymentBrandMismatch(ctx, "brand-mismatch apple credit: user %d brand %s does not allow apple_iap, txn=%s", userID, user.Brand, info.TransactionId)
+		return fmt.Errorf("brand mismatch: user %d brand %s does not allow apple_iap channel", userID, user.Brand)
+	}
+
 	now := time.Now().Unix()
 
 	// 账号绑定（INV9，§8.0）：仅在首笔（绑定）交易上强校验 appAccountToken。空 token 硬拒，
@@ -370,13 +383,21 @@ func GetActiveSubscriptions(userID uint64) []DataSubscription {
 		if !isSubscriptionLive(s, now) {
 			continue // 防陈旧 active 行(period 已过)被读成订阅中
 		}
+		// provider 分派：ProductID 语义随 provider 变（apple=商品ID / stripe=price ID），
+		// tier 反查与管理面各走各的。
 		tier := ""
-		if plan, _ := planByAppleProductID(context.Background(), getDB(), s.ProductID); plan != nil {
-			tier = plan.Tier
-		}
-		manage := ManageSurface{Kind: "url"} // 默认；下方按 provider 覆写
-		if s.Provider == "apple" {
+		manage := ManageSurface{Kind: "url"} // 未知 provider 的兜底
+		switch s.Provider {
+		case "apple":
+			if plan, _ := planByAppleProductID(context.Background(), getDB(), s.ProductID); plan != nil {
+				tier = plan.Tier
+			}
 			manage = appleManageSurface()
+		case "stripe":
+			if plan, _ := planByStripePriceID(context.Background(), getDB(), s.ProductID); plan != nil {
+				tier = plan.Tier
+			}
+			manage = ManageSurface{Kind: "stripe_portal"} // 客户端调 POST /api/user/stripe/portal 换 URL
 		}
 		out = append(out, DataSubscription{
 			Provider:         s.Provider,

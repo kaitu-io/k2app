@@ -1,10 +1,6 @@
 import { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
-import { KAITU, ownerBrand, brandById, type Brand } from '@/lib/brands';
-
-// Legacy export retained for pages that stay Kaitu-branded regardless of host
-// (e.g., k2 protocol docs, support page — see spec 2026-04-21-overleap-brand-web-design).
-export const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || KAITU.baseUrl;
+import { siteBrand, type Brand } from '@/lib/brands';
 
 interface MetadataOverrides {
   title?: string;
@@ -23,14 +19,18 @@ export function generateMetadata(
   locale: string,
   pathname: string = '',
   overrides: MetadataOverrides = {},
-  brand: Brand = KAITU
+  // Fail-safe, not fail-kaitu: an omitted brand must resolve to the brand this
+  // deployment was BUILT for, never to a hardcoded one. The previous `= KAITU`
+  // default made every non-passing call site (e.g. /support) publish
+  // canonical/hreflang/og:url pointing at the kaitu host from an overleap build.
+  brand: Brand = siteBrand()
 ): Metadata {
   const resolvedBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || brand.baseUrl;
 
   const titles: Record<string, string> = {
-    'zh-CN': '开途 k2cc — 30% 丢包照样满速的隐身隧道',
-    'zh-TW': '開途 k2cc — 30% 丟包照樣滿速的隱身隧道',
-    'zh-HK': '開途 k2cc — 30% 丟包照樣滿速的隱身隧道',
+    'zh-CN': `${brand.wordmark} k2cc — 30% 丢包照样满速的隐身隧道`,
+    'zh-TW': `${brand.wordmark} k2cc — 30% 丟包照樣滿速的隱身隧道`,
+    'zh-HK': `${brand.wordmark} k2cc — 30% 丟包照樣滿速的隱身隧道`,
     'en-US': `${brand.displayName} k2cc — Full Speed Through 30% Packet Loss`,
     'en-GB': `${brand.displayName} k2cc — Full Speed Through 30% Packet Loss`,
     'en-AU': `${brand.displayName} k2cc — Full Speed Through 30% Packet Loss`,
@@ -50,27 +50,25 @@ export function generateMetadata(
   const title = overrides.title || titles[locale] || titles['zh-CN'];
   const description = overrides.description || descriptions[locale] || descriptions['zh-CN'];
   // overrides.ogImage may be an absolute CDN URL (a post coverImage from
-  // media.kaitu.io) or a brand-relative path. Only prepend the base URL for the
-  // relative case, otherwise we'd produce `https://kaitu.iohttps://media...`.
+  // the CMS media CDN) or a brand-relative path. Only prepend the base URL for
+  // the relative case, otherwise we'd concatenate two absolute URLs.
   const ogImageSrc = overrides.ogImage || brand.ogImagePath;
   const ogImageUrl = /^https?:\/\//.test(ogImageSrc)
     ? ogImageSrc
     : `${resolvedBaseUrl}${ogImageSrc}`;
   const ogType = overrides.ogType || 'website';
 
-  // Cross-domain hreflang: each locale points to its owning brand's host,
-  // so Googlebot can link kaitu.io (zh-*) and overleap.io (en-*/ja) as a
-  // single multi-regional property. Hreflang must use the brand-resolved
-  // base URL — NOT NEXT_PUBLIC_BASE_URL — because a preview env override
-  // would break cross-domain linking. See spec §"Known Limitations".
+  // Phase 2: the two brands are fully isolated — hreflang links only this
+  // brand's own locales on its own host. x-default is the brand's default
+  // locale. No cross-domain linking, ever (spec: 两站互不感知).
+  //
+  // Hreflang must use the brand's own baseUrl — NOT NEXT_PUBLIC_BASE_URL —
+  // because a preview env override would poison the published SEO graph.
   const languages: Record<string, string> = {};
-  routing.locales.forEach(loc => {
-    const ownerBaseUrl = brandById(ownerBrand(loc)).baseUrl;
-    languages[loc.toLowerCase()] = `${ownerBaseUrl}/${loc}${pathname}`;
+  brand.allowedLocales.forEach(loc => {
+    languages[loc.toLowerCase()] = `${brand.baseUrl}/${loc}${pathname}`;
   });
-
-  // x-default points to the Chinese main market on kaitu.io (spec's choice).
-  languages['x-default'] = `${KAITU.baseUrl}/${KAITU.defaultLocale}${pathname}`;
+  languages['x-default'] = `${brand.baseUrl}/${brand.defaultLocale}${pathname}`;
 
   const ogBase = {
     title,
@@ -106,19 +104,21 @@ export function generateMetadata(
       canonical: `${resolvedBaseUrl}/${locale}${pathname}`,
       languages,
     },
+    // The default brand's faviconPrefix is '' — its URLs stay byte-identical to
+    // the legacy root paths (no cache churn). Other brands get a namespaced set.
     icons: {
       icon: [
-        { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
-        { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
-        { url: '/icon-48x48.png', sizes: '48x48', type: 'image/png' },
-        { url: '/icon-96x96.png', sizes: '96x96', type: 'image/png' },
-        { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
-        { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+        { url: `${brand.faviconPrefix}/favicon-16x16.png`, sizes: '16x16', type: 'image/png' },
+        { url: `${brand.faviconPrefix}/favicon-32x32.png`, sizes: '32x32', type: 'image/png' },
+        { url: `${brand.faviconPrefix}/icon-48x48.png`, sizes: '48x48', type: 'image/png' },
+        { url: `${brand.faviconPrefix}/icon-96x96.png`, sizes: '96x96', type: 'image/png' },
+        { url: `${brand.faviconPrefix}/icon-192x192.png`, sizes: '192x192', type: 'image/png' },
+        { url: `${brand.faviconPrefix}/icon-512x512.png`, sizes: '512x512', type: 'image/png' },
       ],
-      shortcut: '/favicon.ico',
+      shortcut: brand.faviconPrefix ? `${brand.faviconPrefix}/favicon-32x32.png` : '/favicon.ico',
       apple: [
-        { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
-        { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+        { url: `${brand.faviconPrefix}/icon-192x192.png`, sizes: '192x192', type: 'image/png' },
+        { url: `${brand.faviconPrefix}/icon-512x512.png`, sizes: '512x512', type: 'image/png' },
       ],
     },
   };

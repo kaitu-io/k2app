@@ -44,6 +44,26 @@ func Migrate() error {
 		}
 	}
 
+	// 双品牌拆分：login_identifies 唯一键 (type, index_id) → (type, index_id, brand)（one-time,
+	// idempotent，仿 NodeUsage re-key 守卫风格）。AutoMigrate 不会修改已存在的同名索引定义——
+	// 新增 brand 列不会自动并入既有复合唯一索引，需手动 drop，随后 AutoMigrate 按新 struct
+	// tag 重建复合唯一索引。守卫仅在 brand 列尚不存在时触发一次；brand 列建好后视为已完成
+	// re-key，永久跳过，避免每次部署都 drop+recreate 这个唯一索引。
+	// 真实索引名以 dev 库 `SHOW INDEX FROM login_identifies` 确认为 idx_type_index_global
+	// (LoginIdentify.Type / IndexID 的 uniqueIndex:idx_type_index_global 命名一致)。
+	// 额外列出的候选名是防御性的——HasIndex 挡住不存在的名字，drop 幂等。
+	if mig := db.Get().Migrator(); mig.HasTable(&LoginIdentify{}) && !mig.HasColumn(&LoginIdentify{}, "brand") {
+		for _, old := range []string{"idx_type_index_global", "idx_login_identifies_index_id", "index_id"} {
+			if mig.HasIndex(&LoginIdentify{}, old) {
+				if err := mig.DropIndex(&LoginIdentify{}, old); err != nil {
+					log.Errorf(ctx, "failed to drop legacy login_identifies index %s: %v", old, err)
+					return err
+				}
+				log.Infof(ctx, "dropped legacy login_identifies index %s for brand re-key", old)
+			}
+		}
+	}
+
 	err := db.Get().AutoMigrate(
 		&Plan{},
 		&User{},
@@ -54,6 +74,7 @@ func Migrate() error {
 		&UserProHistory{},
 		&Subscription{},
 		&SubscriptionCredit{},
+		&StripeWebhookEvent{},
 		&Message{},
 		&Secret{},
 		&SlaveNode{},

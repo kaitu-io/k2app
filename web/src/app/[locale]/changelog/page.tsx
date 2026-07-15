@@ -1,5 +1,7 @@
+import { notFound } from 'next/navigation';
 import { redirect } from '@/i18n/routing';
 import { routing } from '@/i18n/routing';
+import { siteBrand } from '@/lib/brands';
 
 /**
  * Changelog page — redirects to /releases for backward compatibility.
@@ -15,6 +17,12 @@ export default async function ChangelogPage({
 }) {
   const { locale } = await params;
   const sp = await searchParams;
+
+  // Same gate as its redirect target: 404 here rather than bounce the visitor
+  // to a /releases that 404s.
+  if (!siteBrand().features.releaseNotes) {
+    notFound();
+  }
 
   // Preserve embed and theme query params through redirect
   const query: Record<string, string> = {};

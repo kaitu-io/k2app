@@ -151,6 +151,20 @@ func handleWordgateOrderPaidEvent(c *gin.Context, webhookEvent *wordgate.Webhook
 
 		log.Debugf(c, "[Webhook] found local order: id=%d, uuid=%s, is_paid=%v", order.ID, order.UUID, order.IsPaid)
 
+		// 品牌错配哨兵：wordgate 是 kaitu 专属支付渠道。订单归属用户若不允许 wordgate
+		// （例如 overleap 用户），线上出现即为 bug（下单守卫本应已拦截）——记 error 日志
+		// 告警并拒绝处理，绝不静默入账。品牌错配是持久条件：返回 error 会让 wordgate 判为
+		// 失败并按其重试策略重发 webhook，本哨兵会对同一笔订单反复告警——这是 fail-loud
+		// 的设计取舍，不是 bug。若此日志持续出现应视为 page 级事件而非重试可容忍瞬态。
+		if order.User == nil {
+			log.Errorf(c, "brand-mismatch webhook: order %d has no associated user, refusing to process", order.ID)
+			return fmt.Errorf("order %d has no associated user", order.ID)
+		}
+		if !Brand(order.User.Brand).Config().AllowsPayment(PayChannelWordgate) {
+			alertPaymentBrandMismatch(c, "brand-mismatch webhook: order %d user brand %s does not allow wordgate", order.ID, order.User.Brand)
+			return fmt.Errorf("brand mismatch: order %d user brand %s does not allow wordgate channel", order.ID, order.User.Brand)
+		}
+
 		localIsPaid := order.IsPaid != nil && *order.IsPaid
 		// 如果本地订单未标记为已支付，则处理支付
 		if !localIsPaid && orderData.IsPaid {

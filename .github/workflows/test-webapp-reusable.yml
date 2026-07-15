@@ -27,9 +27,34 @@ jobs:
         run: yarn test
         working-directory: webapp
 
+      # Brand is baked at build time (K2_BRAND -> __K2_BRAND__), so the run above
+      # only ever exercises kaitu. Every overleap-specific regression this project
+      # has shipped was invisible to a kaitu-only run.
+      - name: Run webapp tests (vitest, overleap brand)
+        run: yarn test
+        working-directory: webapp
+        env:
+          K2_BRAND: overleap
+
       - name: Type-check webapp (tsc)
         run: npx tsc --noEmit
         working-directory: webapp
+
+      # Purity can only be judged on a real dist. Every brand leak this project
+      # has shipped (debug.html carrying kaitu.io into the overleap bundle, the
+      # openwrt config missing __K2_BRAND__) was invisible to source-level checks
+      # and to a build that merely exits 0 — the script has to grep the artifact.
+      # ~85s for both builds; a leaked brand costs more than that.
+      - name: Build webapp (kaitu) + brand purity gate
+        run: yarn build && bash scripts/check-brand-purity.sh kaitu dist
+        working-directory: webapp
+
+      # Overwrites dist/ — must follow the kaitu check, not race it.
+      - name: Build webapp (overleap) + brand purity gate
+        run: yarn build && bash scripts/check-brand-purity.sh overleap dist
+        working-directory: webapp
+        env:
+          K2_BRAND: overleap
 
       - name: Type-check K2 Plugin (mobile)
         run: npx tsc --noEmit

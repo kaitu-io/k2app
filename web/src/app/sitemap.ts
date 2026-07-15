@@ -3,28 +3,35 @@ import { posts } from '#velite';
 import { getPayload } from 'payload';
 import config from '@payload-config';
 import { getBrand } from '@/lib/brand-server';
+import { isPostVisibleToBrand } from '@/lib/k2-posts';
 
-// Render at request time — avoids build-time DB dependency and keeps blog listings fresh.
-// Also required for host-aware sitemap (reads `host` header via getBrand()).
+// Render at request time — avoids a build-time DB dependency and keeps Payload
+// blog listings fresh. (The brand itself is baked at build time via
+// NEXT_PUBLIC_BRAND; this is no longer host-aware.)
 export const dynamic = 'force-dynamic';
 
-type BlogEntry = { slug: string; updatedAt?: string; brand?: string | null };
+type BlogEntry = { slug: string; updatedAt?: string };
 
-async function fetchBlogPosts(): Promise<BlogEntry[]> {
+async function fetchBlogPosts(brandId: 'kaitu' | 'overleap'): Promise<BlogEntry[]> {
+  const visibilityField = brandId === 'kaitu' ? 'showOnKaitu' : 'showOnOverleap';
   try {
     const payload = await getPayload({ config });
     const { docs } = await payload.find({
       collection: 'posts',
       locale: 'zh-CN',
-      where: { status: { equals: 'published' } },
+      where: {
+        and: [
+          { status: { equals: 'published' } },
+          { [visibilityField]: { equals: true } },
+        ],
+      },
       limit: 500,
       depth: 0,
       overrideAccess: true,
     });
-    return (docs as unknown as Array<{ slug: string; updatedAt?: string; brand?: string | null }>).map((d) => ({
+    return (docs as unknown as Array<{ slug: string; updatedAt?: string }>).map((d) => ({
       slug: d.slug,
       updatedAt: d.updatedAt,
-      brand: d.brand,
     }));
   } catch (err) {
     console.error('sitemap: failed to fetch Payload blog posts', err);
@@ -37,7 +44,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = brand.baseUrl;
   const locales = brand.allowedLocales;
 
-  // Static pages in the application
+  // Static pages in the application. Feature-gated surfaces must not be
+  // advertised by a brand that 404s them (see routers/page.tsx).
   const staticPages = [
     '',           // Home page
     '/blog',
@@ -47,8 +55,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/opensource',
     '/privacy',
     '/purchase',
-    '/releases',
-    '/routers',
+    ...(brand.features.releaseNotes ? ['/releases'] : []),
+    ...(brand.features.routers ? ['/routers'] : []),
     '/support',
     '/terms',
   ];
@@ -92,10 +100,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   });
 
   // Add content pages from velite (published posts only).
-  // Filter by brand visibility. Missing brand is treated as 'both' (Velite schema
-  // default, and keeps legacy test fixtures that pre-date the field working).
+  //
+  // Both filters matter. Brand visibility is obvious. The locale filter is not:
+  // slugs are collected across ALL locales below, so a doc that is kaitu-only in
+  // en-US but unmarked in zh-CN would still contribute its slug and get emitted
+  // under the overleap locales — advertising a URL that 404s.
   const publishedPosts = posts.filter(
-    (post) => !post.draft && (!post.brand || post.brand === 'both' || post.brand === brand.id)
+    (post) =>
+      !post.draft &&
+      isPostVisibleToBrand(post, brand.id) &&
+      (locales as readonly string[]).includes(post.locale)
   );
   const uniqueSlugs = [...new Set(publishedPosts.map(p => p.slug))];
 
@@ -124,13 +138,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Payload CMS blog posts — all locales share the same slug.
   // DB fetch is tolerant: if unreachable at build time, blog section is simply omitted.
-  // Payload schema doesn't yet carry brand (Phase 2), so for now treat all payload
-  // posts as brand='both' and emit them under every host.
-  const blogPosts = await fetchBlogPosts();
-  for (const { slug, updatedAt, brand: postBrand } of blogPosts) {
-    // Respect brand field if Payload collection adds it later. Missing/null = visible everywhere.
-    if (postBrand && postBrand !== 'both' && postBrand !== brand.id) continue;
-
+  // Payload posts are filtered server-side by showOnKaitu/showOnOverleap.
+  const blogPosts = await fetchBlogPosts(brand.id);
+  for (const { slug, updatedAt } of blogPosts) {
     const alternates: Record<string, string> = {};
     locales.forEach(locale => {
       alternates[locale] = `${baseUrl}/${locale}/blog/${slug}`;

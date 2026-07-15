@@ -33,6 +33,8 @@ export default async function K2Layout({
 
   setRequestLocale(locale);
 
+  // Brand-filtered inside getK2Posts — the sidebar must not link to docs this
+  // deployment 404s.
   const groups = getK2Posts(rawLocale);
   const t = await getTranslations({ locale, namespace: 'k2' });
 

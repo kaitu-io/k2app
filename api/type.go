@@ -97,7 +97,7 @@ type ContactInfo struct {
 
 // ManageSurface 告诉客户端如何让用户管理/取消订阅。
 type ManageSurface struct {
-	Kind string `json:"kind"`          // 'apple_settings' | 'url'
+	Kind string `json:"kind"`          // 'apple_settings' | 'url' | 'stripe_portal'（后者=调 POST /api/user/stripe/portal 换 URL 再跳转）
 	URL  string `json:"url,omitempty"` // kind='url' 时的目标
 }
 
@@ -108,6 +108,11 @@ type DataSubscription struct {
 	CurrentPeriodEnd int64         `json:"currentPeriodEnd"` // unix 秒
 	AutoRenew        bool          `json:"autoRenew"`
 	Manage           ManageSurface `json:"manage"`
+}
+
+// DataStripeRedirect Stripe 跳转载体（Checkout Session / Billing Portal 共用）。
+type DataStripeRedirect struct {
+	URL string `json:"url"`
 }
 
 // DataUser API 用户数据结构
@@ -686,6 +691,8 @@ type CampaignRequest struct {
 	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order=新客(未完成首单), vip=老客(已付费), all, paid_before, paid_before_active
 	MaxUsage      int64  `json:"maxUsage"`                                        // 最大使用次数（0=无限制）
 	MatcherParams string `json:"matcherParams"`
+	// Brand 归属品牌：kaitu | overleap，仅创建时生效，空→回退 kaitu，非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）；更新时忽略（品牌创建后不可变）。
+	Brand string `json:"brand" example:"kaitu"`
 }
 
 // CampaignResponse 优惠活动响应
@@ -705,6 +712,8 @@ type CampaignResponse struct {
 	UsageCount    int64  `json:"usageCount"`
 	MaxUsage      int64  `json:"maxUsage"`
 	MatcherParams string `json:"matcherParams"`
+	// Brand 归属品牌：kaitu | overleap。admin 跨品牌列表视图需要标注每条记录的品牌。
+	Brand string `json:"brand"`
 }
 
 // CampaignListResponse 优惠活动列表响应
@@ -1144,6 +1153,9 @@ type CreateLicenseKeyBatchRequest struct {
 	Quantity         int    `json:"quantity" binding:"required,min=1,max=10000"`
 	ExpiresInDays    int    `json:"expiresInDays" binding:"required,min=1"`
 	Note             string `json:"note"`
+	// Brand 归属品牌：kaitu | overleap，空→回退 kaitu（老 admin UI 零破坏）；非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）。批次与其下所有
+	// 授权码共享同一品牌。
+	Brand string `json:"brand" example:"kaitu"`
 }
 
 type LicenseKeyBatchResponse struct {
@@ -1159,6 +1171,8 @@ type LicenseKeyBatchResponse struct {
 	RedeemedCount    int64  `json:"redeemedCount"`
 	ExpiredCount     int64  `json:"expiredCount"`
 	CreatedAt        int64  `json:"createdAt"`
+	// Brand 归属品牌：kaitu | overleap。admin 跨品牌列表视图需要标注每条记录的品牌。
+	Brand string `json:"brand"`
 }
 
 type LicenseKeyBatchDetailResponse struct {

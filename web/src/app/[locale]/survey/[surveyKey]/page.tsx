@@ -11,7 +11,7 @@ import SurveySuccess from "../_components/SurveySuccess";
 import EmailLogin from "@/components/EmailLogin";
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
-import { useBrand } from "@/components/providers/BrandProvider";
+import { useBrand } from '@/hooks/useBrand';
 
 type PageState =
   | { kind: "loading" }

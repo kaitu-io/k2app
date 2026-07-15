@@ -43,6 +43,7 @@ export const ERROR_CODES = {
   LICENSE_KEY_USED: 400008,
   LICENSE_KEY_EXPIRED: 400009,
   LICENSE_KEY_NOT_MATCH: 400010,
+  LICENSE_KEY_ALREADY_REDEEMED: 400011,
   PROXY_MEMBERS_DEPRECATED: 400012,
   VERIFICATION_CODE_EXPIRED: 400013,
 
@@ -54,7 +55,9 @@ export const ERROR_CODES = {
   PLAN_NO_ROUTER: 402001,
   ROUTER_DEVICE_LIMIT: 403001,
   DEVICE_CLASS_MISMATCH: 403002,
+  BRAND_MISMATCH: 403003,
   INVALID_CLIENT_CLASS: 422003,
+  PAYMENT_CHANNEL_UNAVAILABLE: 405001,
 
   // === Frontend-only codes (NOT from backend API) ===
 
@@ -228,8 +231,14 @@ export function getErrorMessage(
       return t('common:errors.client.licenseKeyExpired', 'License key expired');
     case ERROR_CODES.LICENSE_KEY_NOT_MATCH:
       return t('common:errors.client.licenseKeyNotMatch', 'Not eligible for this license key');
+    case ERROR_CODES.LICENSE_KEY_ALREADY_REDEEMED:
+      // 400011: the ACCOUNT already redeemed a key (globally, or another key
+      // from the same batch) — distinct from 400008, where the KEY was consumed
+      // by someone else. Anti-abuse limit, not a bad key.
+      return t('common:errors.client.licenseKeyAlreadyRedeemed',
+        'You have already redeemed a license key (one per account)');
     case ERROR_CODES.PROXY_MEMBERS_DEPRECATED:
-      return t('common:errors.client.proxyMembersDeprecated', '代付成员管理已下线，请在 kaitu.io/purchase 下单时指定受益方');
+      return t('common:errors.client.proxyMembersDeprecated');
 
     // Tier system error codes
     case ERROR_CODES.TIER_MISMATCH:
@@ -246,6 +255,14 @@ export function getErrorMessage(
       return t('auth:auth.deviceClassMismatch');
     case ERROR_CODES.INVALID_CLIENT_CLASS:
       return t('auth:auth.invalidClientClass');
+    case ERROR_CODES.BRAND_MISMATCH:
+      // 403003: account was born on the other brand — baked-brand clients
+      // should never see this except with restored/stale token storage.
+      return t('auth:auth.brandMismatch');
+    case ERROR_CODES.PAYMENT_CHANNEL_UNAVAILABLE:
+      // 405001: payment channel not allowed for this brand (e.g. WordGate on
+      // an overleap account). User-actionable: buy on the brand website.
+      return t('purchase:purchase.paymentChannelUnavailable');
 
     // 网络错误 (100-109)
     case ERROR_CODES.NETWORK_TIMEOUT:

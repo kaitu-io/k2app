@@ -1,0 +1,14 @@
+{
+  "faq": {
+    "items": {
+      "allNationConnect": {
+        "question": "我之前用的是 AllNationConnect，账号能在开途上登录吗？",
+        "answer": "可以。AllNationConnect 是我们开途的早期客户端，已经停止维护（不再更新协议和节点）。请：\n\n1. 在 App Store / Google Play 搜索 \"开途\" 或 \"Kaitu\"，或访问 kaitu.io 下载新版客户端。\n2. 用原来的邮箱登录，订阅会自动同步保留，无需重新购买。\n3. 如果原客户端遇到稳定性问题，直接升级到新版，老版本不再修复。"
+      },
+      "chinaAppStore": {
+        "question": "为什么开途能在 App Store 上架？",
+        "answer": "我们的 iOS 客户端在合规框架内设计，通过了苹果的正常审核流程上架。\n\n如果其他开发者希望交流 iOS 上架经验，欢迎通过邮件联系我们，我们很乐意分享。"
+      }
+    }
+  }
+}

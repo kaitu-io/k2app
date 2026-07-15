@@ -10,6 +10,7 @@ import {
   AccordionContent,
 } from '@/components/ui/accordion';
 import { getDownloadLinks } from '@/lib/constants';
+import { siteBrand } from '@/lib/brands';
 import type { MobileLinks } from '@/lib/downloads';
 import { detectDevice, triggerAutoDownload, type DeviceType } from '@/lib/device-detection';
 import { PlatformIcon, PLATFORM_COLORS, PLATFORM_IDS, type PlatformId } from './platform-icons';
@@ -73,9 +74,19 @@ function PlatformTabBar({
         : 'border-transparent hover:bg-muted/50'
     }`;
 
+  // Brand feature gates: /routers and the Linux one-liner installer are
+  // kaitu-only surfaces (Brand.features). Filtering here removes both the
+  // tile and its panel from the overleap build.
+  const brandFeatures = siteBrand().features;
+  const visiblePlatformIds = PLATFORM_IDS.filter((id) => {
+    if (id === 'router') return brandFeatures.routers;
+    if (id === 'linux') return brandFeatures.linuxInstall;
+    return true;
+  });
+
   return (
     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-8">
-      {PLATFORM_IDS.map((id) => {
+      {visiblePlatformIds.map((id) => {
         if (id === 'router') {
           return (
             <Link
@@ -235,7 +246,7 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
 
   const copyCliCommand = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText('curl -fsSL https://kaitu.io/i/k2 | sudo bash');
+      await navigator.clipboard.writeText(`curl -fsSL ${siteBrand().baseUrl}/i/k2 | sudo bash`);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -287,15 +298,17 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
             copied={copied}
           />
         </TabsContent>
-        <TabsContent value="linux">
-          <LinuxPanel
-            t={t}
-            version={displayVersion}
-            isBeta={isBeta}
-            onCopy={copyCliCommand}
-            copied={copied}
-          />
-        </TabsContent>
+        {siteBrand().features.linuxInstall && (
+          <TabsContent value="linux">
+            <LinuxPanel
+              t={t}
+              version={displayVersion}
+              isBeta={isBeta}
+              onCopy={copyCliCommand}
+              copied={copied}
+            />
+          </TabsContent>
+        )}
         <TabsContent value="ios">
           <IOSPanel
             t={t}

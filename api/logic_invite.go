@@ -22,11 +22,11 @@ const (
 // createInviteShareLink 为邀请码创建微信防红短链接
 // 每次生成不同的随机短链接路径，一个邀请码可以有多个有效的分享链接
 // expiresInDays: 链接有效期（天数，1-365）
-func createInviteShareLink(ctx context.Context, inviteCode InviteCode, expiresInDays int) (string, error) {
+func createInviteShareLink(ctx context.Context, b Brand, inviteCode InviteCode, expiresInDays int) (string, error) {
 	code := inviteCode.GetCode()
 
-	// 目标 URL：真实的邀请落地页 https://www.kaitu.io/s/{code}
-	targetURL := inviteCode.Link()
+	// 目标 URL：真实的邀请落地页 https://www.kaitu.io/s/{code}（品牌化）
+	targetURL := inviteCode.Link(b)
 
 	// 短链接路径：使用随机 xid，与邀请码完全解耦，确保每次生成唯一路径
 	// /s/{xid} - 短小且唯一的随机 ID（20字符）

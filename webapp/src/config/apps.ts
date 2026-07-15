@@ -1,17 +1,15 @@
 /**
  * Application Configuration
  *
- * This file defines the configuration for the Kaitu application including:
- * - Branding (colors, logos, app name)
+ * This file defines the configuration for the active brand's app:
+ * - Display name
  * - Features (enable/disable specific routes and functionality)
- * - API endpoints
- * - Bundle identifiers
+ * - Theme colours (mirrored from the brand registry)
  */
 
-export interface AppConfig {
-  /** Unique app identifier */
-  appId: string;
+import { brandConfig } from '../brand';
 
+export interface AppConfig {
   /** Display name of the application */
   appName: string;
 
@@ -19,6 +17,8 @@ export interface AppConfig {
   features: {
     /** Invite functionality */
     invite?: boolean;
+    /** Retailer (分销商) UI surfaces — brand-gated */
+    retailer?: boolean;
     /** Discovery/explore page */
     discover?: boolean;
     /** Delegate payer setup */
@@ -48,6 +48,8 @@ export interface AppConfig {
     appBypass?: boolean;
     /** Private (dedicated) node management page */
     privateNode?: boolean;
+    /** Self-hosted tunnel surfaces (/tunnels page + every entry into it) */
+    selfHostedTunnels?: boolean;
   };
 
   /** Branding configuration */
@@ -56,26 +58,26 @@ export interface AppConfig {
     primaryColor: string;
     /** Secondary theme color (hex) */
     secondaryColor?: string;
-    /** Logo asset path */
-    logo: string;
-    /** Favicon path */
-    favicon?: string;
   };
-
-  /** API endpoint configuration */
-  apiEndpoint: string;
 }
 
 /**
- * Kaitu application configuration
+ * App config = platform-static features + brand-divergent features.
+ * Brand-divergent gates come from brandConfig.features (single source of
+ * truth) — never fork on brand id inside components.
  */
-const KAITU_CONFIG: AppConfig = {
-  appId: 'io.kaitu.desktop',
-  appName: 'Kaitu',
+const APP_CONFIG: AppConfig = {
+  appName: brandConfig.productName,
   features: {
-    invite: true,
-    discover: true,
-    delegate: true,
+    // brand-divergent (from brand registry)
+    invite: brandConfig.features.invite,
+    retailer: brandConfig.features.retailer,
+    discover: brandConfig.features.discover,
+    delegate: brandConfig.features.delegate,
+    chatwoot: brandConfig.features.chatwoot,
+    privateNode: brandConfig.features.privateNode,
+    selfHostedTunnels: brandConfig.features.selfHostedTunnels,
+    // platform-static (same for both brands)
     proHistory: true,
     feedback: true,
     deviceInstall: true,
@@ -83,37 +85,18 @@ const KAITU_CONFIG: AppConfig = {
     updateLoginEmail: true,
     bridgeTest: true,
     proxyRule: {
-      visible: true,              // Show proxy rule selector
-      defaultValue: 'chnroute',   // Default to chnroute mode
+      visible: true,
+      defaultValue: 'chnroute',
     },
-    chatwoot: true,               // Enable Chatwoot chat widget
-    appBypass: true,               // Plan C: redesigned page
-    privateNode: true,             // Plan 5: dedicated node management
+    appBypass: true,
   },
   branding: {
-    primaryColor: '#1976d2',
-    secondaryColor: '#dc004e',
-    logo: '/assets/kaitu-logo.png',
-    favicon: '/assets/favicon.ico',
+    primaryColor: brandConfig.theme.dark.primary.main,
+    secondaryColor: brandConfig.theme.dark.secondary.main,
   },
-  apiEndpoint: 'https://k2.52j.me',
 };
 
-/**
- * Get the current application configuration
- * @returns Current app configuration (always Kaitu)
- */
-export const getCurrentAppConfig = (): AppConfig => {
-  return KAITU_CONFIG;
-};
-
-/**
- * Get current app ID
- * @returns Current app identifier (always 'kaitu')
- */
-export const getCurrentAppId = (): string => {
-  return 'kaitu';
-};
+export const getCurrentAppConfig = (): AppConfig => APP_CONFIG;
 
 /**
  * Check if a specific feature is enabled in the current app

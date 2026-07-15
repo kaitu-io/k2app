@@ -23,9 +23,14 @@ export default function Changelog() {
     onShowAlert: (title, message) => alert(`${title}\n\n${message}`),
   });
 
-  // Build changelog URL with embed flag and locale
+  // Build changelog URL with embed flag and locale.
+  // URL surgery (not string replace) so the host stays brand-agnostic.
   const changelogUrl = `${links.changelogUrl}?embed=true`;
-  const iframeUrl = changelogUrl.replace('kaitu.io/', `kaitu.io/${currentLang}/`);
+  const iframeUrl = (() => {
+    const u = new URL(changelogUrl);
+    u.pathname = `/${currentLang}${u.pathname}`;
+    return u.toString();
+  })();
 
   // Start progress bar animation
   const startProgress = () => {
@@ -86,8 +91,9 @@ export default function Changelog() {
   useEffect(() => {
     const embedOrigins = allowedEmbedOrigins(iframeUrl);
     const handleMessage = (event: MessageEvent) => {
-      // Ensure message is from our iframe (origin derived from iframeUrl —
-      // the old hardcoded www.kaitu.io check dropped messages from kaitu.io)
+      // Ensure message is from our iframe. Origins are derived from iframeUrl
+      // (apex + www sibling), so this follows an appConfig-issued baseURL and
+      // stays brand-neutral; a hardcoded host drops the sibling's messages.
       if (!embedOrigins.has(event.origin)) return;
 
       // Check for link click events

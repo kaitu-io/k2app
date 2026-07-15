@@ -1,83 +1,30 @@
 // Application constants and configuration
+import { siteBrand, type Brand } from './brands';
 
-export const CDN_BASE_PRIMARY = 'https://dl.kaitu.io/kaitu';
-export const CDN_BASE_BACKUP = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu';
-
-// Legacy aliases used by downloads.ts
-export const CDN_PRIMARY = `${CDN_BASE_PRIMARY}/desktop`;
-export const CDN_BACKUP = `${CDN_BASE_BACKUP}/desktop`;
-
-export function getDownloadLinks(version: string) {
+export function getDownloadLinks(version: string, brand: Brand = siteBrand()) {
+  const [primary, backup = primary] = brand.cdn.desktopBases;
+  const p = brand.cdn.artifactPrefix;
   return {
     windows: {
-      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_x64.exe`,
-      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_x64.exe`,
+      primary: `${primary}/${version}/${p}_${version}_x64.exe`,
+      backup: `${backup}/${version}/${p}_${version}_x64.exe`,
     },
     macos: {
-      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_universal.pkg`,
-      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_universal.pkg`,
+      primary: `${primary}/${version}/${p}_${version}_universal.pkg`,
+      backup: `${backup}/${version}/${p}_${version}_universal.pkg`,
     },
     linux: {
-      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_linux_amd64.tar.gz`,
-      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_linux_amd64.tar.gz`,
+      primary: `${primary}/${version}/${p}_${version}_linux_amd64.tar.gz`,
+      backup: `${backup}/${version}/${p}_${version}_linux_amd64.tar.gz`,
     },
   };
 }
 
-export function getAndroidDownloadLinks(version: string) {
+export function getAndroidDownloadLinks(version: string, brand: Brand = siteBrand()) {
+  const [primary, backup = primary] = brand.cdn.mobileBases;
+  const p = brand.cdn.artifactPrefix;
   return {
-    primary: `${CDN_BASE_PRIMARY}/android/${version}/Kaitu-${version}.apk`,
-    backup: `${CDN_BASE_BACKUP}/android/${version}/Kaitu-${version}.apk`,
+    primary: `${primary}/android/${version}/${p}-${version}.apk`,
+    backup: `${backup}/android/${version}/${p}-${version}.apk`,
   };
 }
-
-
-export const ROUTER_PRODUCTS = {
-  k2Mini: {
-    name: '开途 Mini 智能路由器',
-    englishName: 'Kaitu K2 Mini Router',
-    slug: 'k2-mini',
-    url: 'https://kaitu.io/products/k2-mini/',
-    tagline: '轻巧便携，随时随地畅享高速网络',
-    description: '超紧凑设计，即插即用，配置简单，适合旅行、桌面和小户型使用',
-    features: [
-      '超紧凑设计',
-      '即插即用',
-      '低功耗静音',
-      '全球电压支持',
-      '便携收纳包'
-    ],
-    status: 'presale'
-  },
-  k2001: {
-    name: '开途 001 路由器',
-    englishName: 'Kaitu K2-001 Router',
-    slug: 'k2-001',
-    url: 'https://kaitu.io/products/k2-001/',
-    tagline: '多应用智能路由器，轻松畅享自由网络',
-    description: '支持多应用安装，灵活扩展性，包含开路者服务，简单操作',
-    features: [
-      '多应用安装支持',
-      '灵活扩展性',
-      '内置开路者服务',
-      '远程管理支持',
-      '用户友好设计'
-    ],
-    status: 'presale'
-  }
-} as const;
-
-export const GITHUB_LINKS = {
-  server: 'https://github.com/getoverleap/k2',
-  protocol: 'https://github.com/getoverleap/k2',
-  organization: 'https://github.com/getoverleap',
-} as const;
-
-export const EXTERNAL_LINKS = {
-  documentation: 'https://docs.kaitu.me',
-  support: 'https://support.kaitu.me',
-  pricing: 'https://kaitu.me/pricing',
-  status: 'https://status.kaitu.me',
-  blog: 'https://blog.kaitu.me',
-  contact: 'mailto:support@kaitu.me',
-} as const;

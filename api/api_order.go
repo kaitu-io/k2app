@@ -76,11 +76,19 @@ func api_create_order(c *gin.Context) {
 	}
 	user := ReqUser(c)
 
+	// 支付渠道品牌门：WordGate 是 kaitu 专属支付渠道。overleap 用户在 Phase 6 前
+	// 无任何可用渠道——命中即拒单，绝不静默降级或误放行。
+	if !Brand(user.Brand).Config().AllowsPayment(PayChannelWordgate) {
+		log.Warnf(c, "user %d (brand=%s) rejected: wordgate payment channel unavailable for brand", user.ID, user.Brand)
+		Error(c, ErrorPaymentChannelUnavailable, "payment channel not available for this brand")
+		return
+	}
+
 	log.Infof(c, "user %d creating order, plan: %s, campaign: %s, preview: %v", user.ID, req.Plan, req.CampaignCode, req.Preview)
 
 	// 获取套餐信息
 	log.Infof(c, "getting plan information for plan ID: %s", req.Plan)
-	plan := getPlanByPID(c, req.Plan)
+	plan := getPlanByPID(c, req.Plan, Brand(user.Brand))
 	if plan == nil {
 		log.Warnf(c, "invalid plan ID %s for user %d", req.Plan, user.ID)
 		Error(c, ErrorInvalidArgument, "invalid plan")
@@ -142,7 +150,7 @@ func api_create_order(c *gin.Context) {
 	// 如果有优惠码，应用优惠
 	if req.CampaignCode != "" {
 		log.Infof(c, "processing campaign code: %s", req.CampaignCode)
-		campaign = getCampaignByCode(c, req.CampaignCode)
+		campaign = getCampaignByCode(c, req.CampaignCode, ReqBrand(c))
 		if campaign != nil {
 			log.Debugf(c, "campaign found: ID=%d, Type=%s", campaign.ID, campaign.Type)
 			log.Infof(c, "applying campaign code %s for user %d", req.CampaignCode, user.ID)

@@ -134,7 +134,8 @@ export default function Discover() {
   useEffect(() => {
     const embedOrigins = allowedEmbedOrigins(iframeUrl);
     const handleMessage = (event: MessageEvent) => {
-      // 确保消息来源是我们的iframe（baseURL 可由 appConfig 下发，origin 从 iframeUrl 派生）
+      // 确保消息来源是我们的 iframe：origin 从 iframeUrl 派生（裸域 + www 子域），
+      // 因此既跟随 appConfig 下发的 baseURL，又天然品牌中立。
       if (!embedOrigins.has(event.origin)) return;
 
       // 检查是否是链接点击事件

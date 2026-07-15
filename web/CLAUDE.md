@@ -20,6 +20,18 @@ cd web && yarn test:e2e:headed   # E2E with browser visible
 
 Next.js 15 (App Router) | React 19 | TypeScript | Tailwind CSS 4 | shadcn/ui | next-intl | Velite (content)
 
+## Brand (双品牌拆分 Phase 2: 一套代码，两个部署)
+
+- **Build-time baking**: `NEXT_PUBLIC_BRAND=kaitu|overleap` (default kaitu) → `siteBrand()` in `src/lib/brands.ts` — the ONLY brand source. No host/locale-based runtime resolution; no cross-domain 301/hreflang/canonical. Two Amplify apps (kaitu.io / overleap.io) build from the same repo with different env.
+- **Locale matrix**: kaitu → zh-CN (default)/zh-TW/zh-HK; overleap → en-US (default)/en-GB/en-AU/ja. Off-brand locale paths 301 to the brand default locale, same host. Message files partition by locale: en/ja files say "Overleap", zh files say「开途」— never mix (enforced by `tests/brand-guard.test.ts`).
+- **Admin is kaitu-only**: `/manager`, `/payload`, `/admin`, `/app/*` proxy → 404 on the overleap build (middleware).
+- **`X-K2-Brand`**: injected on every `/api/*`/`/app/*` request by BOTH `src/lib/api.ts` and middleware. Center resolves Host → header → kaitu (`api/brand.go`).
+- **Brand-leak guards**: `tests/brand-guard.test.ts` (file scan: messages per-locale + src allowlist + velite content) and `tests/brand-leak-ssr.test.tsx` (rendered chrome). `github.com/getoverleap` is the allow-listed protocol-layer org. Never add brand literals to src — extend the `Brand` registry instead.
+- **Legal signature is the ONE cross-brand exception**: both brands sign 法务文书 as `Overleap LLC` (`Brand.legalName`, rendered by `Footer`). The SSR guard strips it before scanning and asserts it is present, so the exception stays scoped.
+- **Feature gates**: `Brand.features` — routers/linuxInstall/androidApkGuide are kaitu-only surfaces. A gated surface must be gated everywhere it can be reached: page (`notFound()`), navigation tile, AND sitemap.
+- **Kaitu-only content**: velite markdown that documents kaitu-only surfaces (e.g. the `/i/k2*` install scripts) carries `brand: kaitu` frontmatter — the sitemap and the guard both honour it.
+- **Dev**: `yarn dev` (kaitu) / `yarn dev:overleap`; builds: `yarn build` / `yarn build:overleap`.
+
 ## Architecture
 
 ```
@@ -128,15 +140,18 @@ Error code-to-i18n mapping lives in `lib/api-errors.ts`. Use `getApiErrorMessage
 
 ## i18n (next-intl)
 
-| Code | Language | Default |
-|------|----------|---------|
-| `zh-CN` | Simplified Chinese | Yes |
-| `en-US` | English (US) | |
-| `en-GB` | English (UK) | |
-| `en-AU` | English (AU) | |
-| `zh-TW` | Traditional Chinese | |
-| `zh-HK` | Traditional Chinese (HK) | |
-| `ja` | Japanese | |
+Each locale belongs to exactly one brand — the deployment only serves its own
+(off-brand locales 301 to the brand's default locale).
+
+| Code | Language | Brand | Brand default |
+|------|----------|-------|---------------|
+| `zh-CN` | Simplified Chinese | kaitu | Yes |
+| `zh-TW` | Traditional Chinese | kaitu | |
+| `zh-HK` | Traditional Chinese (HK) | kaitu | |
+| `en-US` | English (US) | overleap | Yes |
+| `en-GB` | English (UK) | overleap | |
+| `en-AU` | English (AU) | overleap | |
+| `ja` | Japanese | overleap | |
 
 **URL format**: `/{locale}/path` (e.g., `/zh-CN/purchase`, `/en-US/install`)
 
@@ -200,13 +215,13 @@ Markdown files in `content/{locale}/` are processed by Velite at build time and 
 
 ## Environment
 
-See `.env.example` for all variables. Key ones:
+See `.env.example` for all variables.
 
-No special environment variables required. Build-time config (desktop version, download URL) is set in `next.config.ts`.
+`NEXT_PUBLIC_BRAND=kaitu|overleap` (default `kaitu`) bakes the deployment brand at build time — set per Amplify app, baked into `.env.production` by `amplify.yml` and inlined into client bundles.
 
 ## Deployment
 
-AWS Amplify (`amplify.yml`). Prebuild script (`scripts/amplify-prebuild.sh`) handles env setup.
+Two AWS Amplify apps (one per brand) built from the same repo and the same `amplify.yml`; they differ only by `NEXT_PUBLIC_BRAND` (kaitu.io / overleap.io). Prebuild script (`scripts/amplify-prebuild.sh`) handles env setup.
 
 ## SEO & GEO Constitutional Rules
 
@@ -225,7 +240,7 @@ Every public `[locale]` page MUST follow these rules. Violations directly harm o
 - Internal linking: every public page reachable within 3 clicks from homepage.
 
 **Content SEO:**
-- Page titles follow pattern: `{Page Topic} | Kaitu` (zh) / `{Page Topic} | Kaitu` (en). Max 60 characters.
+- Page titles follow pattern: `{Page Topic} | {brand.displayName}` —「开途」on zh, Overleap on en/ja. Max 60 characters.
 - Every content page (Velite markdown) must have frontmatter with `title`, `description`. Description used for meta.
 - Brand keyword consistency: product is "Kaitu" (en) / "开途" (zh), protocol is "k2", congestion control is "k2cc". Never deviate.
 

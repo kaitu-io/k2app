@@ -47,6 +47,11 @@ func executeApprovalCampaignCreate(ctx context.Context, params json.RawMessage) 
 		return fmt.Errorf("campaign code already exists: %s", req.Code)
 	}
 
+	brand, err := BrandForCreate(req.Brand)
+	if err != nil {
+		return err
+	}
+
 	campaign := Campaign{
 		Code:          req.Code,
 		Name:          req.Name,
@@ -59,6 +64,7 @@ func executeApprovalCampaignCreate(ctx context.Context, params json.RawMessage) 
 		MatcherType:   req.MatcherType,
 		MatcherParams: req.MatcherParams,
 		MaxUsage:      req.MaxUsage,
+		Brand:         string(brand),
 	}
 
 	if err := db.Get().Create(&campaign).Error; err != nil {
@@ -332,6 +338,9 @@ func executeApprovalPlanUpdate(ctx context.Context, params json.RawMessage) erro
 			return fmt.Errorf("invalid tier %q for plan %s", *req.Tier, p.PlanID)
 		}
 		plan.Tier = *req.Tier
+	}
+	if req.StripePriceID != nil {
+		plan.StripePriceID = *req.StripePriceID
 	}
 
 	if err := db.Get().Save(&plan).Error; err != nil {

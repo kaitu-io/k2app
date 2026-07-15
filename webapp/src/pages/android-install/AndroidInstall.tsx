@@ -3,13 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { Box, Typography } from '@mui/material';
 import BackButton from '../../components/BackButton';
 import AndroidInstallStepper from './AndroidInstallStepper';
+import { brandConfig } from '../../brand';
 
 export default function AndroidInstall() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
 
   // URL params for third-party apps (from Discover iframe bridge_navigate)
-  const name = searchParams.get('name') || 'Kaitu';
+  const name = searchParams.get('name') || brandConfig.productName;
   const icon = searchParams.get('icon') || '/favicon.png';
   const desc = searchParams.get('desc') || '';
   const apkUrl = searchParams.get('apk') || ''; // "" = Kaitu default (daemon fetches latest.json)
@@ -33,7 +34,7 @@ export default function AndroidInstall() {
       <BackButton to="/device-install" />
 
       <Typography variant="h5" sx={{ mt: 2, mb: 0.5, fontWeight: 600 }}>
-        {name === 'Kaitu' ? t('purchase:androidInstall.title') : name}
+        {name === brandConfig.productName ? t('purchase:androidInstall.title') : name}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         {t('purchase:androidInstall.subtitle')}

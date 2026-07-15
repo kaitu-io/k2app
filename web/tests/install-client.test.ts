@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createElement } from 'react';
 import { render } from '@testing-library/react';
 
@@ -55,8 +55,6 @@ vi.mock('@/lib/device-detection', () => ({
   openDownloadInNewTab: vi.fn(),
 }));
 vi.mock('@/lib/constants', () => ({
-  CDN_PRIMARY: 'https://cdn.test',
-  CDN_BACKUP: 'https://backup.test',
   getDownloadLinks: (v: string) => ({
     windows: { primary: `https://cdn/${v}/win.exe`, backup: '' },
     macos: { primary: `https://cdn/${v}/mac.pkg`, backup: '' },
@@ -141,5 +139,37 @@ describe('InstallClient', () => {
     );
     const items = container.querySelectorAll('[data-testid="accordion-item"]');
     expect(items.length).toBe(6);
+  });
+});
+
+function renderInstallClient() {
+  return render(
+    createElement(InstallClient, {
+      betaVersion: '0.4.0-beta.1',
+      stableVersion: '0.3.22',
+      mobileLinks: {
+        ios: { url: 'https://apps.apple.com/test', version: '0.4.0' },
+        android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk', version: '0.4.0' },
+      },
+    })
+  );
+}
+
+describe('install page brand gating', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('overleap: no Linux install command, no router section, no kaitu strings', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    const { container } = renderInstallClient();
+    expect(container.textContent).not.toContain('kaitu.io');
+    expect(container.textContent).not.toContain('开途');
+    expect(container.textContent).not.toMatch(/\bKaitu\b/);
+    expect(container.textContent).not.toContain('curl -fsSL');
+  });
+
+  it('kaitu: Linux install command present with kaitu.io URL', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+    const { container } = renderInstallClient();
+    expect(container.textContent).toContain('curl -fsSL https://kaitu.io/i/k2 | sudo bash');
   });
 });

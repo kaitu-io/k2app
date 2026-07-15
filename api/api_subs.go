@@ -254,6 +254,14 @@ func api_subs(c *gin.Context) {
 		if t.Node.Class == NodeClassPrivate {
 			continue
 		}
+		// Brand visibility filter: /api/subs has no BrandResolver middleware
+		// (Basic Auth is parsed inside this handler), so user.Brand — the
+		// authenticated user's own birth attribute — is the only brand signal
+		// available here. Admin bypasses, mirroring the isTest/quota-hide
+		// bypass a few lines below (isAdmin already computed above).
+		if !isAdmin && !t.Node.VisibleTo(Brand(authCtx.User.Brand)) {
+			continue
+		}
 		if t.ServerURL == "" {
 			continue
 		}

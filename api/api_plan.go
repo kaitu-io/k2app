@@ -55,7 +55,7 @@ func buildPlanDTO(c *gin.Context, plan Plan) DataPlan {
 func api_get_plans(c *gin.Context) {
 	log.Infof(c, "request to get plans (app-only, legacy)")
 	var plans []Plan
-	err := db.Get().Where("is_active = ?", true).Where("product = ?", ProductApp).Find(&plans).Error
+	err := db.Get().Scopes(ScopeBrand(ReqBrand(c))).Where("is_active = ?", true).Where("product = ?", ProductApp).Find(&plans).Error
 	if err != nil {
 		log.Errorf(c, "failed to load plans from database: %v", err)
 		Error(c, ErrorSystemError, "failed to load plans")
@@ -81,7 +81,7 @@ func api_get_product_plans(c *gin.Context) {
 	}
 	log.Infof(c, "request to get plans for product %s", product)
 	var plans []Plan
-	err := db.Get().Where("is_active = ?", true).Where("product = ?", product).Find(&plans).Error
+	err := db.Get().Scopes(ScopeBrand(ReqBrand(c))).Where("is_active = ?", true).Where("product = ?", product).Find(&plans).Error
 	if err != nil {
 		log.Errorf(c, "failed to load plans from database: %v", err)
 		Error(c, ErrorSystemError, "failed to load plans")

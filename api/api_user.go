@@ -122,11 +122,12 @@ func api_update_login_email(c *gin.Context) {
 		return
 	}
 
-	// 检查邮箱是否已被其他用户绑定
+	// 检查邮箱是否已被其他用户绑定（限定当前请求品牌——跨品牌同邮箱是合法的独立账号）
 	var exist LoginIdentify
 	err := db.Get().Where(&LoginIdentify{
 		Type:    "email",
 		IndexID: indexID,
+		Brand:   string(ReqBrand(c)),
 	}).First(&exist).Error
 
 	if err == nil {
@@ -162,6 +163,7 @@ func api_update_login_email(c *gin.Context) {
 			Type:           "email",
 			IndexID:        indexID,
 			EncryptedValue: encEmail,
+			Brand:          string(ReqBrand(c)),
 		}
 		if err := db.Get().Create(&identify).Error; err != nil {
 			log.Errorf(c, "failed to bind email for user %d: %v", userID, err)
@@ -199,11 +201,12 @@ func api_send_bind_email_verification(c *gin.Context) {
 
 	indexID := secretHashIt(c, []byte(req.Email))
 
-	// 检查邮箱是否已被其他用户绑定
+	// 检查邮箱是否已被其他用户绑定（限定当前请求品牌——跨品牌同邮箱是合法的独立账号）
 	var exist LoginIdentify
 	err := db.Get().Where(&LoginIdentify{
 		Type:    "email",
 		IndexID: indexID,
+		Brand:   string(ReqBrand(c)),
 	}).First(&exist).Error
 
 	if err == nil {
@@ -234,7 +237,7 @@ func api_send_bind_email_verification(c *gin.Context) {
 		Code:          code,
 		ExpireMinutes: expireMinutes,
 	}
-	if err := emailTo(c, req.Email, verificationCodeTemplate, meta); err != nil {
+	if err := emailTo(c, req.Email, brandedVerificationCodeTemplate.For(Brand(user.Brand)), meta); err != nil {
 		log.Errorf(c, "failed to send verification email to %s for user %d: %v", req.Email, userID, err)
 		Error(c, ErrorSystemError, err.Error())
 		return
@@ -443,7 +446,7 @@ func api_set_password(c *gin.Context) {
 		ChangeTime: time.Now().Format("2006-01-02 15:04:05"),
 		ClientIP:   c.ClientIP(),
 	}
-	if err := emailToUser(c, int64(userID), passwordChangedTemplate, meta); err != nil {
+	if err := emailToUser(c, int64(userID), brandedPasswordChangedTemplate.For(Brand(user.Brand)), meta); err != nil {
 		log.Errorf(c, "failed to send password changed email to user %d: %v", userID, err)
 	}
 
@@ -498,7 +501,7 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 			Code:      user.InvitedByCode.GetCode(),
 			CreatedAt: user.InvitedByCode.CreatedAt.Unix(),
 			Remark:    user.InvitedByCode.Remark,
-			Link:      user.InvitedByCode.Link(),
+			Link:      user.InvitedByCode.Link(Brand(user.Brand)),
 		}
 	}
 
