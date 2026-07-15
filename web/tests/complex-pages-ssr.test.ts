@@ -11,6 +11,10 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
+// install/page.tsx → brand-server.ts → `server-only`, a side-effect module that
+// throws outside RSC. Same stub as request-pathname.test.ts.
+vi.mock('server-only', () => ({}));
+
 // Mock next-intl/server (Server Component API)
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn().mockResolvedValue((key: string) => key),

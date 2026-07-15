@@ -5,6 +5,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import InstallClient from '@/app/[locale]/install/InstallClient';
 import { fetchAllDownloadLinks } from '@/lib/downloads';
+import { getBrand } from '@/lib/brand-server';
 
 type Locale = (typeof routing.locales)[number];
 
@@ -33,6 +34,7 @@ export default async function InstallPage({
   const locale = rawLocale as Locale;
   setRequestLocale(locale);
 
+  const brand = await getBrand();
   const all = await fetchAllDownloadLinks();
   const betaVersion = all.desktop.beta?.version ?? null;
   const stableVersion = all.desktop.stable?.version ?? null;
@@ -54,16 +56,16 @@ export default async function InstallPage({
           __html: JSON.stringify({
             '@context': 'https://schema.org',
             '@type': 'SoftwareApplication',
-            name: 'Kaitu',
+            name: brand.displayName,
             applicationCategory: 'NetworkingApplication',
             operatingSystem: 'Windows, macOS, iOS, Android',
             softwareVersion: stableVersion || betaVersion || undefined,
-            downloadUrl: 'https://kaitu.io/install',
-            url: 'https://kaitu.io/install',
+            downloadUrl: `${brand.baseUrl}/install`,
+            url: `${brand.baseUrl}/install`,
             publisher: {
               '@type': 'Organization',
-              name: 'Kaitu',
-              url: 'https://kaitu.io',
+              name: brand.displayName,
+              url: brand.baseUrl,
             },
             offers: {
               '@type': 'Offer',
