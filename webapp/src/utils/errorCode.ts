@@ -43,6 +43,7 @@ export const ERROR_CODES = {
   LICENSE_KEY_USED: 400008,
   LICENSE_KEY_EXPIRED: 400009,
   LICENSE_KEY_NOT_MATCH: 400010,
+  LICENSE_KEY_ALREADY_REDEEMED: 400011,
   PROXY_MEMBERS_DEPRECATED: 400012,
   VERIFICATION_CODE_EXPIRED: 400013,
 
@@ -230,6 +231,12 @@ export function getErrorMessage(
       return t('common:errors.client.licenseKeyExpired', 'License key expired');
     case ERROR_CODES.LICENSE_KEY_NOT_MATCH:
       return t('common:errors.client.licenseKeyNotMatch', 'Not eligible for this license key');
+    case ERROR_CODES.LICENSE_KEY_ALREADY_REDEEMED:
+      // 400011: the ACCOUNT already redeemed a key (globally, or another key
+      // from the same batch) — distinct from 400008, where the KEY was consumed
+      // by someone else. Anti-abuse limit, not a bad key.
+      return t('common:errors.client.licenseKeyAlreadyRedeemed',
+        'You have already redeemed a license key (one per account)');
     case ERROR_CODES.PROXY_MEMBERS_DEPRECATED:
       return t('common:errors.client.proxyMembersDeprecated');
 

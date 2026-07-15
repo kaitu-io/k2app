@@ -96,6 +96,7 @@
       "licenseKeyUsed": "授權碼已被使用",
       "licenseKeyExpired": "授權碼已過期",
       "licenseKeyNotMatch": "不符合此授權碼的使用條件",
+      "licenseKeyAlreadyRedeemed": "您已使用過授權碼，每個帳號限用一次",
       "tierMismatch": "目前級別無法購買此方案，請聯絡客服變更級別",
       "proxyPurchaseDeprecated": "代付款功能已下線，請讓對方使用自己的帳號購買",
       "proxyMembersDeprecated": "代付成員管理已下線，請在 {{brandDomain}}/purchase 下單時指定受益方"
