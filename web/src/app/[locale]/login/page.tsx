@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Image from "next/image";
-import { useBrand } from "@/components/providers/BrandProvider";
+import { useBrand } from '@/hooks/useBrand';
 
 function LoginPageContent() {
   const { login, isAuthenticated } = useAuth();

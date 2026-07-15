@@ -8,7 +8,7 @@ import { Link } from '@/i18n/routing'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { Download, Menu, X, ChevronDown } from 'lucide-react'
 import Image from 'next/image'
-import { useBrand } from '@/components/providers/BrandProvider'
+import { useBrand } from '@/hooks/useBrand'
 
 type DropdownId = 'why'
 type MobileSection = 'why'

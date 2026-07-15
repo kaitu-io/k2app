@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Gift, AlertCircle, Clock, CheckCircle, Loader2 } from 'lucide-react';
 import type { LicenseKeyPublic } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
-import { useBrand } from '@/components/providers/BrandProvider';
+import { useBrand } from '@/hooks/useBrand';
 import { useAuth } from '@/contexts/AuthContext';
 import EmailLogin from '@/components/EmailLogin';
 

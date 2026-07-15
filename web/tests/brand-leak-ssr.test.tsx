@@ -35,8 +35,6 @@ vi.mock('@/i18n/routing', () => ({
 
 import Footer from '@/components/Footer';
 import Header from '@/components/Header';
-import { BrandProvider } from '@/components/providers/BrandProvider';
-import { siteBrand } from '@/lib/brands';
 
 function loadMessages(locale: string) {
   const dir = path.resolve(__dirname, '../messages', locale);
@@ -56,10 +54,8 @@ afterEach(() => vi.unstubAllEnvs());
 function renderChrome(locale: string) {
   const { container } = render(
     <NextIntlClientProvider locale={locale} messages={loadMessages(locale)}>
-      <BrandProvider brand={siteBrand()}>
-        <Header />
-        <Footer />
-      </BrandProvider>
+      <Header />
+      <Footer />
     </NextIntlClientProvider>,
   );
   // Strip the allow-listed protocol-layer org link before asserting.
