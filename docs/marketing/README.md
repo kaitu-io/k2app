@@ -10,8 +10,8 @@ Kaitu / Overleap 的营销档案统一放在这个目录。
   品牌 / 定位 / ICP / JTBD / 竞品 / 异议 / 文案声调单一事实源。
   **位置固定不可挪** —— 所有 `marketing-skills:*` 启动时硬编码读 `.agents/product-marketing-context.md` 路径。
 
-- [`brand-naming-strategy.md`](./brand-naming-strategy.md) *(2026-03-10)*
-  品牌命名层级（传播层 / 产品层 / 协议层）、禁用组合、SEO 关键词矩阵。
+- [`brand-naming-strategy.md`](./brand-naming-strategy.md) *(2026-07-14)*
+  双品牌隔离规则（开途 / Overleap / 协议层）、禁用组合、SEO 关键词矩阵。
 
 ### 策略与日历
 
@@ -30,23 +30,20 @@ Kaitu / Overleap 的营销档案统一放在这个目录。
 
 ## ⚠️ 已知待对齐冲突
 
-### ✅ 冲突 #1：海外英文品牌 — Resolved (2026-04-21)
+### ✅ 冲突 #1：海外英文品牌 — Resolved (2026-07-14，取代 04-21 方案)
 
-**决策**：采用 **Overleap 母品牌 / Kaitu 中国产品** 层级结构。
+**现行决策**：**开途（中国）与 Overleap（海外）是两个完全隔离的对等品牌。**
 
-- 海外所有面（overleap.io、全球 App Store / Play、英文社交、技术社区）= **Overleap**
-- 中国市场（kaitu.io、国内社交、中国区 App Store、分销）= **开途 / Kaitu**
-- 跨语境 / 公司层（footer、ToS、英文 press、多语种技术文档）= "Kaitu by Overleap"
+- 中国面（kaitu.io、国内社交、中国区 App Store、分销）= **开途** —— 中文正文禁用 "Kaitu" 裸词，"kaitu" 只作域名 / bundle id
+- 海外面（overleap.io、全球 App Store / Play、英文社交、技术社区）= **Overleap**
+- **两边互不提及，没有衔接句。** 唯一例外是法务文书署名 **Overleap LLC**
+- 协议层（k2 / k2cc / k2s / k2r）不属于任一品牌，全球共享
 
-**连带更新**（已同步 2026-04-21）：
-- `brand-naming-strategy.md` 重写为终局形态
-- `product-marketing-context.md` Brand Architecture / Glossary / Strategic Open Questions 对齐
-- `content-calendar-2026-Q2.md` 英文线 `kaitu.io/blog` 全部改为 `overleap.io/blog`
-- `audits/2026-04-21-aso.md` 移除 "Kaitu.io VPN" fallback，全球区统一 "Overleap VPN"
+**已作废（2026-04-21 → 2026-07-14 被推翻）**：~~Overleap 母品牌 / Kaitu 中国产品 层级结构~~、~~跨语境衔接句 "Kaitu by Overleap"~~、~~跨市场信任迁移策略~~（隔离前提下不成立）。
 
-**过渡期 Open Questions**：
-- ~~GitHub org 名~~ — ✅ Resolved (2026-04-21)：`getoverleap`（github.com/getoverleap 已创建）
-- Overleap 法律实体注册：Inc. / LLC / Ltd. 司法辖区与注册可行性确认中
+**连带更新**（2026-07-15 同步）：`brand-naming-strategy.md`、`.agents/product-marketing-context.md`（Brand Architecture / Glossary / Strategic Open Questions / Changelog）、`content-calendar-2026-Q2.md`、根 `CLAUDE.md` 全部改为隔离口径。`audits/2026-04-21-aso.md` 无需改动（本就无层级表述，快照按原样保留）。
+
+**Open Question**：Overleap 法律实体注册 —— 法务已按 Overleap LLC 署名，但司法辖区（美国 / 新加坡 / 香港 / 开曼）与形态均未定。GitHub org 已定 `getoverleap`。
 
 ### ✅ 冲突 #2：Kaitu↔kaitai 歧义 — Resolved (2026-04-21)
 
