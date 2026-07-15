@@ -206,3 +206,64 @@ func TestAppCORSMiddleware_Unchanged(t *testing.T) {
 	assert.Equal(t, "https://www.kaitu.io", w.Header().Get("Access-Control-Allow-Origin"))
 	assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
 }
+
+// The headers webapp originates on every Center request. Sourced from
+// webapp/src/services/cloud-api.ts — X-K2-Client (buildClientHeader) and
+// X-K2-Brand (getBrandId, added in Phase 3). A preflight that omits any of
+// them makes the browser block the real request, and the client sees a bare
+// code:-1 with no server-side trace. Nothing else in the suite crosses this
+// contract: the Go tests never run a browser, and the webapp tests mock fetch.
+var webappOriginatedHeaders = []string{"Content-Type", "Authorization", "X-K2-Client", "X-K2-Brand"}
+
+// /api is the cross-origin direct transport for every browser-context client
+// we ship: Capacitor iOS/Android, the Tauri webview, and standalone dev. (The
+// website is same-origin — api.ts resolves against window.location.host and is
+// proxied by Next.js — so it never preflights.)
+func TestApiCORSMiddleware_PreflightAllowsWebappHeaders(t *testing.T) {
+	router := createApiCORSRouter()
+
+	for _, origin := range []string{
+		"capacitor://localhost",  // iOS
+		"https://localhost",      // Android
+		"http://tauri.localhost", // desktop webview
+		"http://localhost:5173",  // dev
+	} {
+		t.Run(origin, func(t *testing.T) {
+			req, _ := http.NewRequest("OPTIONS", "/api/plans", nil)
+			req.Header.Set("Origin", origin)
+			req.Header.Set("Access-Control-Request-Method", "GET")
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			allowed := w.Header().Get("Access-Control-Allow-Headers")
+			assert.NotEmpty(t, allowed, "preflight returned no Access-Control-Allow-Headers for %s", origin)
+			for _, h := range webappOriginatedHeaders {
+				assert.Contains(t, allowed, h,
+					"%s is missing from the CORS allow-list, so any webapp fetch that sends it fails preflight", h)
+			}
+		})
+	}
+}
+
+// /app has no preflight path in production (the website is same-origin; direct
+// /app access is WebSocket, which does not preflight), so this pins the header
+// list on a plain allowed-origin response instead.
+func TestAppCORSMiddleware_AllowsWebappHeaders(t *testing.T) {
+	router := createAppCORSRouter()
+
+	for _, origin := range BrandKaitu.Config().WebOrigins {
+		t.Run(origin, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", "/app/tunnels", nil)
+			req.Header.Set("Origin", origin)
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			allowed := w.Header().Get("Access-Control-Allow-Headers")
+			for _, h := range webappOriginatedHeaders {
+				assert.Contains(t, allowed, h, "%s missing from the /app CORS allow-list", h)
+			}
+		})
+	}
+}

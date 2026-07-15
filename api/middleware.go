@@ -811,7 +811,7 @@ func ApiCORSMiddleware() gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client, X-K2-Brand")
 			c.Header("Access-Control-Max-Age", "86400")
 		}
 
@@ -849,7 +849,7 @@ func CORSMiddleware() gin.HandlerFunc {
 		if allowedOrigins[origin] {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client, Cookie")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client, X-K2-Brand, Cookie")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			c.Header("Access-Control-Max-Age", "86400") // 24 hours
 		}
