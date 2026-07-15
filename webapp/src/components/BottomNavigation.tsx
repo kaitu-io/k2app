@@ -134,7 +134,7 @@ function BottomNavigation() {
         feature: null,
       },
       {
-        label: user?.isRetailer ? t("nav:navigation.retailer") : t("nav:navigation.invite"),
+        label: appConfig.features.retailer && user?.isRetailer ? t("nav:navigation.retailer") : t("nav:navigation.invite"),
         icon: <AnimatedInviteIcon><InviteIcon /></AnimatedInviteIcon>,
         path: "/invite",
         feature: "invite" as const,

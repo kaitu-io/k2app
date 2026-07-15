@@ -30,6 +30,7 @@ import { useUser } from '../hooks/useUser';
 import { useAppLinks } from '../hooks/useAppLinks';
 import type { Wallet, RetailerStats } from '../services/api-types';
 import { cloudApi } from '../services/cloud-api';
+import { getCurrentAppConfig } from '../config/apps';
 
 // 等级对应的颜色
 const levelColors: Record<number, string> = {
@@ -60,8 +61,10 @@ export default function RetailerStatsOverview() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const retailerEnabled = getCurrentAppConfig().features.retailer === true;
+
   useEffect(() => {
-    if (user?.isRetailer) {
+    if (retailerEnabled && user?.isRetailer) {
       loadRetailerData();
     }
   }, [user?.isRetailer]);
@@ -90,7 +93,7 @@ export default function RetailerStatsOverview() {
   };
 
   // 非分销商：显示"成为分销商"CTA
-  if (!user?.isRetailer) {
+  if (!retailerEnabled || !user?.isRetailer) {
     return (
       <Card
         elevation={0}

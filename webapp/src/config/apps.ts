@@ -8,6 +8,8 @@
  * - Bundle identifiers
  */
 
+import { brandConfig, getBrandId } from '../brand';
+
 export interface AppConfig {
   /** Unique app identifier */
   appId: string;
@@ -19,6 +21,8 @@ export interface AppConfig {
   features: {
     /** Invite functionality */
     invite?: boolean;
+    /** Retailer (分销商) UI surfaces — brand-gated */
+    retailer?: boolean;
     /** Discovery/explore page */
     discover?: boolean;
     /** Delegate payer setup */
@@ -67,15 +71,22 @@ export interface AppConfig {
 }
 
 /**
- * Kaitu application configuration
+ * App config = platform-static features + brand-divergent features.
+ * Brand-divergent gates come from brandConfig.features (single source of
+ * truth) — never fork on brand id inside components.
  */
-const KAITU_CONFIG: AppConfig = {
+const APP_CONFIG: AppConfig = {
   appId: 'io.kaitu.desktop',
-  appName: 'Kaitu',
+  appName: brandConfig.productName,
   features: {
-    invite: true,
-    discover: true,
-    delegate: true,
+    // brand-divergent (from brand registry)
+    invite: brandConfig.features.invite,
+    retailer: brandConfig.features.retailer,
+    discover: brandConfig.features.discover,
+    delegate: brandConfig.features.delegate,
+    chatwoot: brandConfig.features.chatwoot,
+    privateNode: brandConfig.features.privateNode,
+    // platform-static (same for both brands)
     proHistory: true,
     feedback: true,
     deviceInstall: true,
@@ -83,37 +94,24 @@ const KAITU_CONFIG: AppConfig = {
     updateLoginEmail: true,
     bridgeTest: true,
     proxyRule: {
-      visible: true,              // Show proxy rule selector
-      defaultValue: 'chnroute',   // Default to chnroute mode
+      visible: true,
+      defaultValue: 'chnroute',
     },
-    chatwoot: true,               // Enable Chatwoot chat widget
-    appBypass: true,               // Plan C: redesigned page
-    privateNode: true,             // Plan 5: dedicated node management
+    appBypass: true,
   },
   branding: {
-    primaryColor: '#1976d2',
-    secondaryColor: '#dc004e',
-    logo: '/assets/kaitu-logo.png',
-    favicon: '/assets/favicon.ico',
+    primaryColor: brandConfig.theme.dark.primary.main,
+    secondaryColor: brandConfig.theme.dark.secondary.main,
+    logo: '/favicon.png',
+    favicon: '/favicon.png',
   },
-  apiEndpoint: 'https://k2.52j.me',
+  // Entry URL is shared k2 infrastructure (brand-neutral), not brand surface.
+  apiEndpoint: import.meta.env.VITE_KAITU_ENTRY_URL || 'https://k2.52j.me',
 };
 
-/**
- * Get the current application configuration
- * @returns Current app configuration (always Kaitu)
- */
-export const getCurrentAppConfig = (): AppConfig => {
-  return KAITU_CONFIG;
-};
+export const getCurrentAppConfig = (): AppConfig => APP_CONFIG;
 
-/**
- * Get current app ID
- * @returns Current app identifier (always 'kaitu')
- */
-export const getCurrentAppId = (): string => {
-  return 'kaitu';
-};
+export const getCurrentAppId = (): string => getBrandId();
 
 /**
  * Check if a specific feature is enabled in the current app

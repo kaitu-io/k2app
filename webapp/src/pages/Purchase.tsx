@@ -40,6 +40,7 @@ import {
 } from "@mui/icons-material";
 import { getThemeColors } from '../theme/colors';
 import { cloudApi } from '../services/cloud-api';
+import { brandConfig } from '../brand';
 import { cacheStore } from '../services/cache-store';
 import { formatBytes } from '../utils/ui';
 
@@ -927,6 +928,25 @@ export default function Purchase() {
         maxRouterDevice={iapPlan?.maxRouterDevice}
         maxLanClient={iapPlan?.maxLanClient}
       />
+    );
+  }
+
+  // Brand payment-channel gate: without WordGate (web/desktop flow) and
+  // without IAP (iOS), this brand has no in-app purchase channel yet
+  // (overleap Stripe Checkout lands in Phase 6). Point users at the website.
+  if (!iap && !brandConfig.features.wordgatePurchase) {
+    return (
+      <Box sx={{ p: 4, textAlign: 'center' }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          {t('purchase:purchase.paymentChannelUnavailable')}
+        </Typography>
+        <Button
+          variant="contained"
+          onClick={() => window._platform?.openExternal?.(`${brandConfig.baseURL}/purchase`)}
+        >
+          {t('purchase:purchase.buyOnWebsite')}
+        </Button>
+      </Box>
     );
   }
 

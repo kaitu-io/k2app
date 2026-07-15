@@ -116,7 +116,7 @@ function SideNavigation() {
 
       },
       {
-        label: user?.isRetailer ? t("nav:navigation.retailer") : t("nav:navigation.invite"),
+        label: appConfig.features.retailer && user?.isRetailer ? t("nav:navigation.retailer") : t("nav:navigation.invite"),
         icon: <InviteIcon />,
         path: "/invite",
         feature: "invite" as const,

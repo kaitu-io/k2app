@@ -83,6 +83,7 @@
     "getPlansListFailedRetry": "取得方案清單失敗，請重試",
     "invalidCampaignCode": "活動碼無效",
     "paymentChannelUnavailable": "目前付款方式在本應用程式不可用，請前往官網購買或聯絡客服",
+    "buyOnWebsite": "請前往官網 {{brandDomain}} 完成購買",
     "createOrderFailed": "建立訂單失敗，請重試",
     "createOrderFailedNetwork": "建立訂單失敗，請檢查網路連線後重試",
     "refreshUserProfileFailed": "重新整理使用者資料失敗",
