@@ -42,13 +42,16 @@ func TestStripeCheckoutHandler(t *testing.T) {
 	skipIfNoConfig(t)
 	require.NoError(t, Migrate())
 
-	stubSession := func(t *testing.T, capture **stripe.CheckoutSessionParams) {
+	stubSession := func(t *testing.T, capture **stripe.CheckoutSessionParams, captureKey *string) {
 		t.Helper()
 		orig := stripeNewCheckoutSession
 		t.Cleanup(func() { stripeNewCheckoutSession = orig })
-		stripeNewCheckoutSession = func(params *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+		stripeNewCheckoutSession = func(key string, params *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
 			if capture != nil {
 				*capture = params
+			}
+			if captureKey != nil {
+				*captureKey = key
 			}
 			return &stripe.CheckoutSession{URL: "https://checkout.stripe.com/c/pay/cs_test_123"}, nil
 		}
@@ -116,7 +119,8 @@ func TestStripeCheckoutHandler(t *testing.T) {
 	t.Run("HappyPath_ReturnsURL_ParamsCorrect", func(t *testing.T) {
 		setStripeTestConfig(t, "sk_test_x", "whsec_x")
 		var captured *stripe.CheckoutSessionParams
-		stubSession(t, &captured)
+		var capturedKey string
+		stubSession(t, &captured, &capturedKey)
 		u := createStripeTestUser(t, BrandOverleap)
 		p := createStripeTestPlan(t)
 
@@ -126,6 +130,7 @@ func TestStripeCheckoutHandler(t *testing.T) {
 		require.Equal(t, 0, code)
 		assert.Equal(t, "https://checkout.stripe.com/c/pay/cs_test_123", data["url"])
 
+		assert.Equal(t, "sk_test_x", capturedKey) // key 逐调用传入，不写 stripe.Key 全局
 		require.NotNil(t, captured)
 		assert.Equal(t, string(stripe.CheckoutSessionModeSubscription), *captured.Mode)
 		require.Len(t, captured.LineItems, 1)
@@ -145,9 +150,10 @@ func TestStripePortalHandler(t *testing.T) {
 
 	orig := stripeNewPortalSession
 	t.Cleanup(func() { stripeNewPortalSession = orig })
-	var capturedCustomer string
-	stripeNewPortalSession = func(params *stripe.BillingPortalSessionParams) (*stripe.BillingPortalSession, error) {
+	var capturedCustomer, capturedKey string
+	stripeNewPortalSession = func(key string, params *stripe.BillingPortalSessionParams) (*stripe.BillingPortalSession, error) {
 		capturedCustomer = *params.Customer
+		capturedKey = key
 		return &stripe.BillingPortalSession{URL: "https://billing.stripe.com/p/session/test_123"}, nil
 	}
 
@@ -172,5 +178,6 @@ func TestStripePortalHandler(t *testing.T) {
 		require.Equal(t, 0, code)
 		assert.Equal(t, "https://billing.stripe.com/p/session/test_123", data["url"])
 		assert.Equal(t, sub.ProviderCustomerID, capturedCustomer)
+		assert.Equal(t, "sk_test_x", capturedKey)
 	})
 }

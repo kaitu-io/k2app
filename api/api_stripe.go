@@ -10,12 +10,16 @@ import (
 )
 
 // SDK 调用的测试替换点（对标 fetchAppleTransaction 的包级 var 模式，不打真 Stripe）。
+//
+// key 逐调用传入，绝不写 stripe.Key 包级全局：那是每请求写共享变量，按 Go 内存模型即真
+// 数据竞争（值恒定所以实践无害，但并发压测挂 -race 会报）。stripe-go 的资源 Client 结构
+// 本就支持 per-call key —— 包级函数只是 getC() 读全局的便利壳。
 var (
-	stripeNewCheckoutSession = func(params *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
-		return chksession.New(params)
+	stripeNewCheckoutSession = func(key string, params *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+		return chksession.Client{B: stripe.GetBackend(stripe.APIBackend), Key: key}.New(params)
 	}
-	stripeNewPortalSession = func(params *stripe.BillingPortalSessionParams) (*stripe.BillingPortalSession, error) {
-		return portalsession.New(params)
+	stripeNewPortalSession = func(key string, params *stripe.BillingPortalSessionParams) (*stripe.BillingPortalSession, error) {
+		return portalsession.Client{B: stripe.GetBackend(stripe.APIBackend), Key: key}.New(params)
 	}
 )
 
@@ -72,7 +76,6 @@ func api_stripe_checkout(c *gin.Context) {
 		return
 	}
 
-	stripe.Key = cfg.SecretKey
 	params := &stripe.CheckoutSessionParams{
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
@@ -100,7 +103,7 @@ func api_stripe_checkout(c *gin.Context) {
 		}
 	}
 
-	sess, err := stripeNewCheckoutSession(params)
+	sess, err := stripeNewCheckoutSession(cfg.SecretKey, params)
 	if err != nil {
 		log.Errorf(c, "[Stripe] create checkout session failed for user %d plan %s: %v", user.ID, plan.PID, err)
 		Error(c, ErrorSystemError, "failed to create checkout session")
@@ -133,8 +136,7 @@ func api_stripe_portal(c *gin.Context) {
 		return
 	}
 
-	stripe.Key = cfg.SecretKey
-	ps, err := stripeNewPortalSession(&stripe.BillingPortalSessionParams{
+	ps, err := stripeNewPortalSession(cfg.SecretKey, &stripe.BillingPortalSessionParams{
 		Customer:  stripe.String(sub.ProviderCustomerID),
 		ReturnURL: stripe.String(cfg.PortalReturnURL),
 	})
