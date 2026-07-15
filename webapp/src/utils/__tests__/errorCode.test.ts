@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import i18n from '../../i18n/i18n';
+import i18n, { i18nPromise } from '../../i18n/i18n';
 import { getErrorMessage, ERROR_CODES } from '../errorCode';
 
 const t = ((k: string, opts?: Record<string, unknown>) =>
@@ -7,7 +7,14 @@ const t = ((k: string, opts?: Record<string, unknown>) =>
 
 describe('getErrorMessage — password strength', () => {
   beforeAll(async () => {
-    if (!i18n.isInitialized) await i18n.init();
+    // Await the module's own init — never race it with a bare i18n.init().
+    // i18n.ts fires initI18n() at import time, and it awaits preloadResources()
+    // before calling .init(). A guard like `if (!i18n.isInitialized) i18n.init()`
+    // therefore wins whenever preload is slow (e.g. under CPU contention) and
+    // initializes the singleton with NO resources, permanently. Every t() then
+    // returns its default/key and the assertions below fail — a pure timing
+    // flake that looks like a broken test.
+    await i18nPromise;
   });
 
   it('maps password_too_short to account.password.tooShort with length param', () => {
