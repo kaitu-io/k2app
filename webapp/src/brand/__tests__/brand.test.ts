@@ -1,18 +1,23 @@
 /**
  * Brand config module tests.
- * Vitest runs with __K2_BRAND__ = 'kaitu' (vitest.config.ts define default),
- * so the active brandConfig under test is always kaitu unless K2_BRAND is set.
+ * Vitest defines __K2_BRAND__ from env K2_BRAND (default 'kaitu'), so the
+ * active brand here follows the build exactly as production does. The
+ * active-brand test below asserts against that env so the suite stays green
+ * under BOTH `vitest run` and `K2_BRAND=overleap vitest run`.
  */
 import { describe, it, expect } from 'vitest';
 import { brandConfig, getBrandId } from '../index';
 import { KAITU_BRAND } from '../kaitu';
 import { OVERLEAP_BRAND } from '../overleap';
 
+// Mirrors the vitest.config.ts define normalization (anything != overleap → kaitu).
+const EXPECTED_ACTIVE = process.env.K2_BRAND === 'overleap' ? 'overleap' : 'kaitu';
+
 describe('brand registry', () => {
-  it('active brand defaults to kaitu', () => {
-    expect(getBrandId()).toBe('kaitu');
-    expect(brandConfig.id).toBe('kaitu');
-    expect(brandConfig).toBe(KAITU_BRAND);
+  it('active brand follows the K2_BRAND build var (default kaitu)', () => {
+    expect(getBrandId()).toBe(EXPECTED_ACTIVE);
+    expect(brandConfig.id).toBe(EXPECTED_ACTIVE);
+    expect(brandConfig).toBe(EXPECTED_ACTIVE === 'overleap' ? OVERLEAP_BRAND : KAITU_BRAND);
   });
 
   it('kaitu config carries the kaitu identity', () => {

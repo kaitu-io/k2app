@@ -5,7 +5,10 @@
  */
 import { brandConfig } from './index';
 
-/** Locale-aware brand display name. 中文语境禁用裸词 Kaitu (kaitu → 开途/開途). */
+/** Locale-aware brand display name. Chinese locales must render the brand's
+ *  own zh name (names.zhHans / names.zhHant), never a bare Latin token —
+ *  see the per-brand `names` config. This module is bundled into BOTH brands,
+ *  so it deliberately carries no brand literals of its own. */
 export function getBrandName(locale: string): string {
   const l = locale.toLowerCase();
   const { names } = brandConfig;

@@ -35,10 +35,10 @@ import { useSelfHostedStore, maskUriToken, parseK2v5Uri } from "../stores/self-h
 import { getThemeColors } from "../theme/colors";
 import { brandConfig } from "../brand";
 
-// NOTE: intentionally NOT brand-parameterized — the k2s node install script
-// is k2-protocol infra hosted on kaitu.io only. Self-hosted tunnels are a
-// technical feature, not brand surface. Revisit if overleap.io mirrors /i/k2s.
-const DEPLOY_COMMAND = 'curl -fsSL https://kaitu.io/i/k2s | sudo sh';
+// The k2s install one-liner lives in the brand registry (brandConfig.k2sInstallUrl),
+// NOT as a literal here: this page is statically imported by App.tsx, so a literal
+// would be retained in EVERY brand's bundle and leak kaitu.io into overleap
+// artifacts. Via the brand module the inactive brand's config is tree-shaken away.
 
 export default function Tunnels() {
   const { t } = useTranslation("dashboard");
@@ -92,7 +92,7 @@ export default function Tunnels() {
   }, [inputUri, saveTunnel, t]);
 
   const handleCopy = useCallback(async () => {
-    await window._platform?.writeClipboard?.(DEPLOY_COMMAND);
+    await window._platform?.writeClipboard?.(brandConfig.k2sInstallUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, []);
@@ -107,6 +107,14 @@ export default function Tunnels() {
       message: t("tunnels.loginToSync"),
     });
   };
+
+  // Brand gate (constant condition — after all hooks so rules-of-hooks hold).
+  // Self-hosted tunnels depend on the kaitu.io-hosted k2s install script, so
+  // the whole surface is off for brands without one. Defence in depth: purity
+  // is already guaranteed by k2sInstallUrl living in the brand registry.
+  if (!brandConfig.features.selfHostedTunnels) {
+    return null;
+  }
 
   return (
     <Box sx={{ p: 2 }}>
@@ -140,7 +148,7 @@ export default function Tunnels() {
             <TextField
               size="small"
               fullWidth
-              value={DEPLOY_COMMAND}
+              value={brandConfig.k2sInstallUrl}
               InputProps={{
                 readOnly: true,
                 sx: { fontFamily: 'monospace', fontSize: '0.82rem' },

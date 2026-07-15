@@ -8,6 +8,9 @@ export const KAITU_BRAND: WebappBrandConfig = {
   baseURL: 'https://www.kaitu.io',
   websiteOrigins: ['https://www.kaitu.io', 'https://kaitu.io'],
   supportEmail: 'support@kaitu.me',
+  // Verbatim pre-split value (was Tunnels.tsx DEPLOY_COMMAND). k2s install
+  // script is k2-protocol infra hosted on kaitu.io only.
+  k2sInstallUrl: 'curl -fsSL https://kaitu.io/i/k2s | sudo sh',
   names: { default: 'Kaitu', zhHans: '开途', zhHant: '開途' },
   slogans: {
     default: 'Smooth passage, even in congestion',
@@ -39,5 +42,6 @@ export const KAITU_BRAND: WebappBrandConfig = {
     chatwoot: true,
     privateNode: true,
     antiblockRelay: true,
+    selfHostedTunnels: true,
   },
 };

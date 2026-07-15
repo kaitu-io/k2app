@@ -1,7 +1,12 @@
 import type { WebappBrandConfig } from './types';
 
 /**
- * Overleap — overseas brand. Fully isolated from 开途/Kaitu: never mentions it.
+ * Overleap — overseas brand. Fully isolated from the peer brand: never mentions it.
+ * NOTE: this module IS bundled into overleap artifacts, so it must not contain
+ * the peer brand's name or domain even in comments — the purity guard
+ * (scripts/check-brand-purity.sh) greps built output, and relying on the
+ * minifier to strip comments would make that contract load-bearing on a
+ * build-tool default. Keep cross-brand references out of this file entirely.
  * Payment: Stripe (website, Phase 6) + IAP with new product ids (Phase 5/6);
  * WordGate is locked to kaitu (backend 405001 enforces this too).
  * Theme palette: working values pending final design sign-off (see plan's open
@@ -14,6 +19,11 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
   baseURL: 'https://www.overleap.io',
   websiteOrigins: ['https://www.overleap.io', 'https://overleap.io'],
   supportEmail: 'support@overleap.io',
+  // No k2s install channel: the script is hosted on the peer brand's domain
+  // only, and an overleap build must never surface a cross-brand domain.
+  // Empty + the selfHostedTunnels gate off. Fill in once overleap.io
+  // mirrors /i/k2s.
+  k2sInstallUrl: '',
   names: { default: 'Overleap' }, // no zh variants — brand name is Overleap in every locale
   slogans: {
     default: 'Thrives where networks struggle',
@@ -44,5 +54,6 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
     chatwoot: false,
     privateNode: false,
     antiblockRelay: false,
+    selfHostedTunnels: false, // no k2s install channel for this brand (see k2sInstallUrl)
   },
 };

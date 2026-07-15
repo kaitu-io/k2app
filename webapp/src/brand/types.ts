@@ -34,6 +34,11 @@ export interface BrandFeatures {
   /** Antiblock relay presentation layer (relay transport itself is engine-side).
    *  Overleap users are not behind the GFW; keep UI noise off. */
   antiblockRelay: boolean;
+  /** Self-hosted tunnels page (k2s node deploy + k2v5 URI paste).
+   *  Gated because the k2s install script is only hosted on kaitu.io — an
+   *  overleap build must not surface a `curl kaitu.io/...` command (brand
+   *  leakage). Flip on for overleap once overleap.io mirrors /i/k2s. */
+  selfHostedTunnels: boolean;
 }
 
 interface PaletteTriple {
@@ -59,6 +64,12 @@ export interface WebappBrandConfig {
   /** Accepted origins for website-iframe postMessage (Discover/Changelog/BridgeTest). */
   websiteOrigins: string[];
   supportEmail: string;
+  /** One-liner that installs a self-hosted k2s node, shown on the Tunnels page.
+   *  Empty string = this brand has no k2s install channel (gate
+   *  `features.selfHostedTunnels` off too). Keeping the literal HERE rather
+   *  than in Tunnels.tsx is what lets the inactive brand's module — and the
+   *  cross-brand domain inside it — be tree-shaken out of the bundle. */
+  k2sInstallUrl: string;
   /** Locale-aware display names. zhHans covers zh-CN (简体), zhHant covers
    *  zh-TW/zh-HK (繁體); everything else uses `default`.
    *  Rule: 中文语境禁用裸词 Kaitu → kaitu sets zhHans: '开途' / zhHant: '開途'. */

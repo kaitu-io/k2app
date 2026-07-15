@@ -9,6 +9,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { render } from '../../test/utils/render';
+import { brandConfig } from '../../brand';
+import { KAITU_BRAND } from '../../brand/kaitu';
+import { OVERLEAP_BRAND } from '../../brand/overleap';
 
 // Mock stores
 vi.mock('../../stores', async () => {
@@ -105,8 +108,14 @@ function getDeployInput(): HTMLInputElement {
 
 // ==================== Tests ====================
 
+// The self-hosted tunnels surface only renders when the brand gate is open
+// (kaitu). Under K2_BRAND=overleap the page early-returns null, so the
+// surface-dependent blocks below are skipped rather than failing — this keeps
+// `K2_BRAND=overleap vitest run` exiting zero for dual-brand verification.
+const SURFACE = brandConfig.features.selfHostedTunnels;
+
 describe('Tunnels', () => {
-  describe('deploy command', () => {
+  describe.runIf(SURFACE)('deploy command', () => {
     it('renders deploy command in read-only input', () => {
       setupMocks();
       render(<Tunnels />);
@@ -127,13 +136,46 @@ describe('Tunnels', () => {
 
       await waitFor(() => {
         expect((window as any)._platform.writeClipboard).toHaveBeenCalledWith(
-          'curl -fsSL https://kaitu.io/i/k2s | sudo sh'
+          brandConfig.k2sInstallUrl
         );
       });
     });
+
   });
 
-  describe('URI input', () => {
+  // Always runs, under either brand — these are config-level contracts.
+  describe('brand gate', () => {
+    // Regression guard for the brand-purity contract: the k2s one-liner must
+    // come from the brand registry (so the inactive brand's copy tree-shakes
+    // away), and under kaitu it must stay byte-identical to the pre-split value.
+    it('kaitu sources the deploy command from the brand registry, byte-identical', () => {
+      expect(KAITU_BRAND.k2sInstallUrl).toBe('curl -fsSL https://kaitu.io/i/k2s | sudo sh');
+      expect(KAITU_BRAND.features.selfHostedTunnels).toBe(true);
+    });
+
+    it('overleap has no k2s install channel and no self-hosted tunnels surface', () => {
+      // Purity: no kaitu.io anywhere in the overleap brand config, so the
+      // literal cannot reach an overleap bundle once kaitu.ts tree-shakes out.
+      expect(OVERLEAP_BRAND.k2sInstallUrl).toBe('');
+      expect(OVERLEAP_BRAND.features.selfHostedTunnels).toBe(false);
+      expect(OVERLEAP_BRAND.k2sInstallUrl).not.toContain('kaitu.io');
+    });
+
+    // Brand-adaptive: green under both brands. Run with K2_BRAND=overleap to
+    // exercise the closed-gate branch for real.
+    it('renders the surface only when the brand gate is open', () => {
+      setupMocks();
+      const { container } = render(<Tunnels />);
+      if (SURFACE) {
+        expect(container).not.toBeEmptyDOMElement();
+        expect(screen.getByDisplayValue(brandConfig.k2sInstallUrl)).toBeInTheDocument();
+      } else {
+        expect(container).toBeEmptyDOMElement();
+      }
+    });
+  });
+
+  describe.runIf(SURFACE)('URI input', () => {
     it('renders empty input when no tunnel saved', () => {
       setupMocks();
       render(<Tunnels />);
@@ -225,7 +267,7 @@ describe('Tunnels', () => {
     });
   });
 
-  describe('cloud hint', () => {
+  describe.runIf(SURFACE)('cloud hint', () => {
     it('shows upgrade hint for guests', () => {
       setupMocks({ isAuthenticated: false });
       render(<Tunnels />);
