@@ -200,6 +200,8 @@ Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampai
 | `paid_before` | first paid before `matcherParams.beforeDate` | 时间窗定向 |
 | `paid_before_active` | `paid_before` AND membership still active | 时间窗定向且在期 |
 
+**`LicenseKeyBatch` is a different thing — don't fold it into campaigns.** 授权码批次是独立于活动码的分发单位：batch 自己存渠道标签 (`sourceTag`)、兑换条件 (`recipientMatcher`)、过期时间，统计维度包含兑换率和兑换→付费转化率。创建需走审批（见上面 Approval Workflow）。
+
 `first_order` and `vip` are exact mirrors and must never collapse into the same meaning — `logic_campaign_matcher_test.go` pins both. **History (do not repeat):** `first_order` once meant "已付费" (duplicating `vip`) while every campaign author read the name/label as "new customer" — all 5 `first_order` campaigns (FIRST_ORDER_20, READY4U, STAYFREE, SMOOTHDAY, KEEPGOING) silently rejected 100% of recipients with `ErrorInvalidCampaignCode`. Fixed 2026-06-06 by aligning the code to the name. When adding a matcher, keep the name describing the **audience**, and mirror the admin UI label in `web/.../manager/campaigns/page.tsx`.
 
 ## Local Development
@@ -227,6 +229,7 @@ cd api/cmd && ./kaitu-center start -f -c ../config.yml   # Foreground mode
 
 ### Tunnel Scoring
 
+- **The model is time-gated usage-sensitivity**: `score = 1 − trafficRatio · w(timeRatio)` where `w(t) = 0.15 + 0.85·t²`. The usage penalty's weight `w` climbs from a 0.15 floor at cycle start to 1.0 at cycle end, so early cycle is generous (a heavily-used node still scores high) and late cycle is strict (near-cap nodes get steered away). **The score is not an exhaustion check** — true exhaustion is handled by the hard cutoff / hide path (`isNodeOverQuota`), never by driving the score to 0. This replaced an earlier `trafficRatio − timeRatio` pacing model plus warmup/headroom terms; don't reintroduce those.
 - **Single authority**: `ComputeRecommendScore(inst *DataTunnelInstance) float64` in `logic_tunnel_score.go` is the ONLY place that derives a tunnel's recommendation score `[0,1]` from its budget. `/api/tunnels` and `/api/subs` both call this helper — never inline a score formula elsewhere.
 - **Nil instance = 0.5**: Non-cloud nodes get neutral 0.5, not 0. Zero would blacklist them from client-side `pickWeighted` / daemon `Subscription.Pick`.
 - **Dual-emit**: `/api/subs` emits both `recommendScore: float` and legacy `weight: int = round(score*100)` for backward compat with pre-e210564 daemons. Drop `weight` one release after rollout is confirmed.

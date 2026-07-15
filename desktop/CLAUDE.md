@@ -5,7 +5,8 @@ Rust desktop shell using Tauri v2. Serves webapp via tauri-plugin-localhost (por
 **Linux is NOT supported by this shell.** Linux desktop ships a single Go
 binary from `cmd/k2` with the React webapp embedded via `k2/webui`; users
 open `http://127.0.0.1:1777` in their browser after running
-`packaging/linux/install.sh`. See root `CLAUDE.md` and `k2/webui/CLAUDE.md`.
+`packaging/linux/install.sh`. Install flow: root `CLAUDE.md` "Cross-Layer Conventions".
+(`k2/webui/CLAUDE.md` covers the `//go:embed` package itself — not the installer.)
 
 ## Commands
 
