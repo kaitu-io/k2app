@@ -5,6 +5,7 @@ summary: Deploy k2s on a Linux VPS with zero configuration. Covers system servic
 section: getting-started
 order: 3
 draft: false
+brand: kaitu
 ---
 
 # k2s Server Deployment

@@ -11,7 +11,7 @@ draft: false
 
 Google BBR (Bottleneck Bandwidth and Round-trip propagation time) is one of the most widely deployed modern congestion control algorithms, powering YouTube, Google Cloud, and other large-scale services. BBR excels in general internet scenarios — but it was not designed for censorship networks.
 
-[k2cc](/k2/k2cc) is a proprietary congestion control algorithm developed by [Kaitu](https://kaitu.io), purpose-built for high-censorship, high-loss network environments. This article compares their real-world performance characteristics.
+[k2cc](/k2/k2cc) is a proprietary congestion control algorithm developed by the k2 project, purpose-built for high-censorship, high-loss network environments. This article compares their real-world performance characteristics.
 
 ## BBR's Design Assumptions
 
@@ -106,7 +106,7 @@ Hysteria2 uses BBR when users don't declare bandwidth, and Brutal (fixed-rate) w
 
 **Where can I find k2cc's technical details?**
 
-The design principles and core capabilities of k2cc are documented in [k2cc Adaptive Rate Control](/k2/k2cc). The algorithm implementation is original intellectual property of Kaitu.
+The design principles and core capabilities of k2cc are documented in [k2cc Adaptive Rate Control](/k2/k2cc). The algorithm implementation is original intellectual property of the k2 project.
 
 ---
 

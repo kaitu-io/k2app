@@ -1,7 +1,7 @@
 ---
 title: k2cc Adaptive Rate Control
 date: 2026-03-17
-summary: "k2cc is Kaitu's proprietary congestion control algorithm designed for high-censorship, high-loss networks. It automatically discovers optimal sending rates and distinguishes censorship-induced packet loss from congestion. Used by k2 (client-server) and future k2p (P2P)."
+summary: "k2cc is the k2 project's proprietary congestion control algorithm designed for high-censorship, high-loss networks. It automatically discovers optimal sending rates and distinguishes censorship-induced packet loss from congestion. Used by k2 (client-server) and future k2p (P2P)."
 section: technical
 order: 5
 draft: false
@@ -9,7 +9,7 @@ draft: false
 
 # k2cc Adaptive Rate Control
 
-k2cc is a proprietary congestion control algorithm independently developed by [Kaitu](https://kaitu.io) (开途). Its design philosophy, technical architecture, and implementation are original intellectual property of Kaitu.
+k2cc is a proprietary congestion control algorithm independently developed by the k2 project. Its design philosophy, technical architecture, and implementation are original intellectual property of the k2 project.
 
 k2cc (Adaptive Rate Control) is purpose-built for high-censorship, high-loss network environments. It automatically discovers the optimal sending rate — no manual bandwidth configuration needed. k2cc is a standalone congestion control algorithm, currently used by [k2](/k2/protocol) (client-server architecture) and will also serve as the congestion control layer for the future k2p (P2P architecture).
 
@@ -78,7 +78,7 @@ The k2 project includes a 14-scenario benchmark test suite covering the full spe
 
 **Is k2cc open source?**
 
-The design principles and capability descriptions of k2cc are documented publicly here. The algorithm implementation is core intellectual property of Kaitu and is not currently open source. The k2 benchmark framework (14 network scenarios) is open source — anyone can use the same test conditions to verify the real-world performance of different algorithms.
+The design principles and capability descriptions of k2cc are documented publicly here. The algorithm implementation is core intellectual property of the k2 project and is not currently open source. The k2 benchmark framework (14 network scenarios) is open source — anyone can use the same test conditions to verify the real-world performance of different algorithms.
 
 ---
 

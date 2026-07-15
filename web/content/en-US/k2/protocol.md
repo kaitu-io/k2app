@@ -9,7 +9,7 @@ draft: false
 
 # k2 Protocol Architecture
 
-k2 is the current version of the k2 protocol family, using a **client-server architecture**. All Kaitu clients and the k2 CLI use k2 by default — connection URLs start with `k2://`.
+k2 is the current version of the k2 protocol family, using a **client-server architecture**. All k2 clients and the k2 CLI use k2 by default — connection URLs start with `k2://`.
 
 k2 uses [k2cc](/k2/k2cc) as its congestion control layer. The future k2p will adopt a P2P architecture, also using k2cc. For details on the k2cc adaptive rate control algorithm, see [k2cc Adaptive Rate Control](/k2/k2cc).
 

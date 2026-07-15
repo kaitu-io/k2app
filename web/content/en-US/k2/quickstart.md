@@ -5,6 +5,7 @@ summary: Start a k2s server and connect with the k2 client in under a minute. Th
 section: getting-started
 order: 2
 draft: false
+brand: kaitu
 ---
 
 # 1-Minute Quickstart

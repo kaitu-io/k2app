@@ -1,7 +1,7 @@
 {
   "gift": {
     "title": "{name} 送给你一个礼物",
-    "subtitle": "Overleap VPN 专属会员",
+    "subtitle": "开途 VPN 专属会员",
     "planDays": "{days} 天会员",
     "expires": "还剩 {days} 天到期",
     "cta": "立即领取",

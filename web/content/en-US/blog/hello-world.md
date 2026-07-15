@@ -4,6 +4,7 @@ date: 2026-02-20
 summary: "The first post on the Kaitu blog, introducing our VPN service and content publishing system."
 tags: ["announcement", "getting-started"]
 draft: false
+brand: kaitu
 ---
 
 # Welcome to the Kaitu Blog

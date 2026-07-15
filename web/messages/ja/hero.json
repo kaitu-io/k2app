@@ -155,7 +155,7 @@
       "server": {
         "title": "サーバー（1分）",
         "step1": "# k2s サーバーをインストール",
-        "step2": "curl -fsSL https://kaitu.io/i/k2s | sudo sh",
+        "step2": "curl -fsSL https://overleap.io/i/k2s | sudo sh",
         "step3": "# サービスを起動",
         "step4": "k2s run",
         "step5": "# 接続 URI を出力",
@@ -164,7 +164,7 @@
       "client": {
         "title": "クライアント（30秒）",
         "step1": "# k2 クライアントをインストール",
-        "step2": "curl -fsSL https://kaitu.io/i/k2 | sudo sh",
+        "step2": "curl -fsSL https://overleap.io/i/k2 | sudo sh",
         "step3": "# 接続（URI を貼り付け）",
         "step4": "k2 up k2://..."
       }
@@ -172,17 +172,17 @@
     "testimonials": {
       "title": "ユーザーの声",
       "item1": {
-        "quote": "X上では「最近VPNがまだ使えているなら、それはラッキー」という投稿が溢れています。私が使っている開途はずっと正常に動いていて、長年のユーザーとして本当に嬉しいです。",
+        "quote": "X上では「最近VPNがまだ使えているなら、それはラッキー」という投稿が溢れています。私が使っているOverleapはずっと正常に動いていて、長年のユーザーとして本当に嬉しいです。",
         "author": "X 長期ユーザー",
         "tag": "X からのレビュー"
       },
       "item2": {
-        "quote": "妻が別のサービス（快連）を使っていましたが、もう使えなくなりました。私の開途はまだ普通に動いていて、速度も速いです。同じ状況で別のツールを使っていると、差がよくわかります。",
+        "quote": "妻が別のサービス（快連）を使っていましたが、もう使えなくなりました。私のOverleapはまだ普通に動いていて、速度も速いです。同じ状況で別のツールを使っていると、差がよくわかります。",
         "author": "匿名ユーザー",
         "tag": "一般ユーザー"
       },
       "item3": {
-        "quote": "中国でホームスクールをしており、VPNが必要なコンテンツが多くあります。開途はスムーズに使えて本当に助かっています。最近は他のサービスが次々と使えなくなっていますが、開途さん頑張ってください！",
+        "quote": "中国でホームスクールをしており、VPNが必要なコンテンツが多くあります。Overleapはスムーズに使えて本当に助かっています。最近は他のサービスが次々と使えなくなっていますが、Overleapさん頑張ってください！",
         "author": "ホームスクール保護者",
         "tag": "教育"
       }
@@ -442,7 +442,7 @@
       },
       "selfHosting": {
         "question": "Overleap サーバーをセルフホストできますか？",
-        "answer": "はい。Overleap は k2s サーバーバイナリを提供しており、あらゆる VPS（AWS、Alibaba Cloud、Tencent Cloud、Bandwagon など）に 1 行のコマンドで展開できます：curl -fsSL https://kaitu.io/i/k2s | sudo sh、その後 k2s run を実行すると k2:// 接続 URI が自動生成されます。クライアントに貼り付けるだけで接続できます。k2s はゼロ設定自動プロビジョニング、対話型 k2s setup ウィザード、マルチユーザー認証情報管理用の k2s user add をサポートします。"
+        "answer": "はい。Overleap は k2s サーバーバイナリを提供しており、あらゆる VPS（AWS、Alibaba Cloud、Tencent Cloud、Bandwagon など）に 1 行のコマンドで展開できます：curl -fsSL https://overleap.io/i/k2s | sudo sh、その後 k2s run を実行すると k2:// 接続 URI が自動生成されます。クライアントに貼り付けるだけで接続できます。k2s はゼロ設定自動プロビジョニング、対話型 k2s setup ウィザード、マルチユーザー認証情報管理用の k2s user add をサポートします。"
       },
       "routerSupport": {
         "question": "Overleap はスマートルーターで動作しますか？",
@@ -454,11 +454,11 @@
       },
       "chinaAppStore": {
         "question": "中国版 App Store から直接 Overleap をダウンロードできますか？",
-        "answer": "はい。Overleap iOS クライアントは中国版 App Store で通常の審査を経て公開されています。ユーザーは「Overleap」または「开途」で検索して直接インストールでき、海外 Apple ID への切り替えや制限回避は不要です。"
+        "answer": "はい。Overleap iOS クライアントは中国版 App Store で通常の審査を経て公開されています。ユーザーは「Overleap」で検索して直接インストールでき、海外 Apple ID への切り替えや制限回避は不要です。"
       },
       "pricing": {
         "question": "Overleap の料金はいくらですか？",
-        "answer": "Overleap は米ドル建てで、1 年、2 年、3 年、5 年のサブスクリプションプランを提供しています。長期プランほど月額実効料金が低くなります。すべてのプランにプロ版の全機能が含まれ、最大 5 台の同時接続と帯域制限なしが可能です。Alipay、WeChat Pay、銀聯、クレジットカード、暗号通貨でお支払いいただけます。購入後即時有効化。詳細は kaitu.io/purchase をご覧ください。"
+        "answer": "Overleap は米ドル建てで、1 年、2 年、3 年、5 年のサブスクリプションプランを提供しています。長期プランほど月額実効料金が低くなります。すべてのプランにプロ版の全機能が含まれ、最大 5 台の同時接続と帯域制限なしが可能です。Alipay、WeChat Pay、銀聯、クレジットカード、暗号通貨でお支払いいただけます。購入後即時有効化。詳細は overleap.io/purchase をご覧ください。"
       },
       "trial": {
         "question": "無料トライアルはありますか？",
@@ -490,7 +490,7 @@
       },
       "androidInstall": {
         "question": "Android が Overleap のインストールを危険として警告した場合は？",
-        "answer": "中国製 Android システム（MIUI、ColorOS、HyperOS、EMUI）は、アプリストア外からインストールされた APK にセキュリティチェックを適用しますが、これはアプリが安全でないことを意味しません。プロンプトに従って手動でインストールを許可するか、デスクトップコンピューターから USB 経由のインストール機能を使用してすべての制限を回避できます。詳細は kaitu.io/install をご覧ください。"
+        "answer": "中国製 Android システム（MIUI、ColorOS、HyperOS、EMUI）は、アプリストア外からインストールされた APK にセキュリティチェックを適用しますが、これはアプリが安全でないことを意味しません。プロンプトに従って手動でインストールを許可するか、デスクトップコンピューターから USB 経由のインストール機能を使用してすべての制限を回避できます。詳細は overleap.io/install をご覧ください。"
       }
     }
   }

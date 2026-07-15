@@ -5,6 +5,7 @@ summary: k2 is Kaitu's proprietary stealth tunnel protocol family. The current v
 section: overview
 order: 1
 draft: false
+brand: kaitu
 ---
 
 # k2 Protocol Overview

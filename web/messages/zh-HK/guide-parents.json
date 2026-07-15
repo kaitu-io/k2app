@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "使用指南 | Overleap 開途",
-    "description": "了解點樣開通、安裝同使用 Overleap 開途，包含詳細嘅影片教學同常見問題解答。支援 macOS、Windows、iOS 同安卓全平台。"
+    "title": "使用指南 | 開途",
+    "description": "了解點樣開通、安裝同使用開途，包含詳細嘅影片教學同常見問題解答。支援 macOS、Windows、iOS 同安卓全平台。"
   },
   "hero": {
     "title": "開途使用指南",
@@ -14,7 +14,7 @@
     "description": "6 分鐘了解開途嘅開通、安裝同使用"
   },
   "whyUseUs": {
-    "title": "點解揀 Overleap",
+    "title": "點解揀開途",
     "stable": {
       "title": "穩定流暢",
       "description": "獨有 k2cc 擁塞控制算法，頻寬高峰都可以正常使用"

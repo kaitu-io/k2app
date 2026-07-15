@@ -155,7 +155,7 @@
       "server": {
         "title": "Server (1 minute)",
         "step1": "# Install k2s server",
-        "step2": "curl -fsSL https://kaitu.io/i/k2s | sudo sh",
+        "step2": "curl -fsSL https://overleap.io/i/k2s | sudo sh",
         "step3": "# Start the service",
         "step4": "k2s run",
         "step5": "# Outputs connection URI",
@@ -164,7 +164,7 @@
       "client": {
         "title": "Client (30 seconds)",
         "step1": "# Install k2 client",
-        "step2": "curl -fsSL https://kaitu.io/i/k2 | sudo sh",
+        "step2": "curl -fsSL https://overleap.io/i/k2 | sudo sh",
         "step3": "# Connect (paste URI)",
         "step4": "k2 up k2://..."
       }
@@ -442,7 +442,7 @@
       },
       "selfHosting": {
         "question": "Can I self-host my own Overleap server?",
-        "answer": "Yes. Overleap provides the k2s server binary, deployable on any VPS (AWS, Alibaba Cloud, Tencent Cloud, Bandwagon, etc.) with a single command: curl -fsSL https://kaitu.io/i/k2s | sudo sh, then run k2s run to automatically generate a k2:// connection URI. Paste it into your client to connect. k2s supports zero-config auto-provisioning, an interactive k2s setup wizard, and k2s user add for multi-user credential management."
+        "answer": "Yes. Overleap provides the k2s server binary, deployable on any VPS (AWS, Alibaba Cloud, Tencent Cloud, Bandwagon, etc.) with a single command: curl -fsSL https://overleap.io/i/k2s | sudo sh, then run k2s run to automatically generate a k2:// connection URI. Paste it into your client to connect. k2s supports zero-config auto-provisioning, an interactive k2s setup wizard, and k2s user add for multi-user credential management."
       },
       "routerSupport": {
         "question": "Does Overleap work on smart routers?",
@@ -454,11 +454,11 @@
       },
       "chinaAppStore": {
         "question": "Can I download Overleap directly from the China App Store?",
-        "answer": "Yes. The Overleap iOS client is listed on the China App Store under normal review. Users can search \"Overleap\" or \"开途\" and install directly, without switching to an overseas Apple ID or bypassing restrictions."
+        "answer": "Yes. The Overleap iOS client is listed on the China App Store under normal review. Users can search \"Overleap\" and install directly, without switching to an overseas Apple ID or bypassing restrictions."
       },
       "pricing": {
         "question": "How much does Overleap cost?",
-        "answer": "Overleap offers 1-year, 2-year, 3-year, and 5-year subscription plans priced in USD. Longer plans have lower effective monthly rates. All plans include full Pro features with up to 5 simultaneous devices and no bandwidth limits. Payment methods include Alipay, WeChat Pay, UnionPay, credit cards, and cryptocurrency. Instant activation after purchase. See kaitu.io/purchase for details."
+        "answer": "Overleap offers 1-year, 2-year, 3-year, and 5-year subscription plans priced in USD. Longer plans have lower effective monthly rates. All plans include full Pro features with up to 5 simultaneous devices and no bandwidth limits. Payment methods include Alipay, WeChat Pay, UnionPay, credit cards, and cryptocurrency. Instant activation after purchase. See overleap.io/purchase for details."
       },
       "trial": {
         "question": "Is there a free trial?",
@@ -490,7 +490,7 @@
       },
       "androidInstall": {
         "question": "What if Android blocks Overleap installation as unsafe?",
-        "answer": "Chinese Android systems (MIUI, ColorOS, HyperOS, EMUI) apply security checks to APKs installed outside their app stores. This does not mean the app is unsafe. You can manually allow installation when prompted, or use the USB-assisted install feature from a desktop computer to bypass all restrictions. See kaitu.io/install for detailed guides."
+        "answer": "Chinese Android systems (MIUI, ColorOS, HyperOS, EMUI) apply security checks to APKs installed outside their app stores. This does not mean the app is unsafe. You can manually allow installation when prompted, or use the USB-assisted install feature from a desktop computer to bypass all restrictions. See overleap.io/install for detailed guides."
       }
     }
   }
