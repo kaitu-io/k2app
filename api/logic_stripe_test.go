@@ -328,3 +328,46 @@ func TestCreditStripeInvoice(t *testing.T) {
 		require.NoError(t, creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now+month, now+2*month)))
 	})
 }
+
+func TestGetActiveSubscriptions_StripeProvider(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+
+	u := createStripeTestUser(t, BrandOverleap)
+	p := createStripeTestPlan(t)
+	sub := &Subscription{UserID: u.ID, Provider: "stripe",
+		ProviderSubscriptionID: "sub_gas_" + stripeUniq(), ProviderCustomerID: "cus_gas_" + stripeUniq(),
+		ProductID: p.StripePriceID, CurrentPeriodEnd: time.Now().Unix() + 86400,
+		AutoRenew: true, Status: "active"}
+	require.NoError(t, db.Get().Create(sub).Error)
+
+	subs := GetActiveSubscriptions(u.ID)
+	require.Len(t, subs, 1)
+	assert.Equal(t, "stripe", subs[0].Provider)
+	assert.Equal(t, p.Tier, subs[0].Tier) // stripe 行走 planByStripePriceID，不再误走 apple 查找
+	assert.Equal(t, "stripe_portal", subs[0].Manage.Kind)
+	assert.True(t, subs[0].AutoRenew)
+}
+
+func TestUsersWithLiveAutoRenew(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+
+	uAuto := createStripeTestUser(t, BrandOverleap)  // 活跃自动续订 → 应跳过提醒
+	uNoSub := createStripeTestUser(t, BrandOverleap) // 无订阅 → 照发
+	uStale := createStripeTestUser(t, BrandOverleap) // 陈旧 active 行(period 已过) → 照发
+
+	mkSub := func(u *User, periodEnd int64, autoRenew bool) {
+		s := &Subscription{UserID: u.ID, Provider: "stripe",
+			ProviderSubscriptionID: "sub_ar_" + stripeUniq(), ProductID: "price_x",
+			CurrentPeriodEnd: periodEnd, AutoRenew: autoRenew, Status: "active"}
+		require.NoError(t, db.Get().Create(s).Error)
+	}
+	mkSub(uAuto, time.Now().Unix()+30*86400, true)
+	mkSub(uStale, time.Now().Unix()-86400, true)
+
+	got := usersWithLiveAutoRenew([]uint64{uAuto.ID, uNoSub.ID, uStale.ID})
+	assert.True(t, got[uAuto.ID])
+	assert.False(t, got[uNoSub.ID])
+	assert.False(t, got[uStale.ID]) // isSubscriptionLive 拒绝陈旧 active 行
+}

@@ -94,8 +94,19 @@ func processRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped
 
 	log.Infof(ctx, "[RENEWAL] Found %d users expiring in %d days", len(users), daysBefore)
 
+	// 活跃自动续订用户（apple/stripe）卡会自动扣款——跳过"手动续费"提醒。
+	userIDs := make([]uint64, 0, len(users))
+	for i := range users {
+		userIDs = append(userIDs, users[i].ID)
+	}
+	autoRenewSet := usersWithLiveAutoRenew(userIDs)
+
 	items := make([]SendEmailItem, 0, len(users))
 	for _, user := range users {
+		if autoRenewSet[user.ID] {
+			skipped++
+			continue
+		}
 		email := getUserEmailFromIdentifies(&user)
 		if email == "" {
 			skipped++
@@ -392,4 +403,27 @@ func getUserEmailFromIdentifies(user *User) string {
 		}
 	}
 	return ""
+}
+
+// usersWithLiveAutoRenew 返回给定用户集中"当前存在活跃自动续订订阅（apple/stripe）"的
+// user_id 集合。这些用户的卡会自动扣款，不应收到"请手动续费"提醒邮件。
+// 查询失败容错返回空集——宁可多发提醒，不可漏发。
+func usersWithLiveAutoRenew(userIDs []uint64) map[uint64]bool {
+	out := map[uint64]bool{}
+	if len(userIDs) == 0 {
+		return out
+	}
+	var subs []Subscription
+	if err := db.Get().
+		Where("user_id IN ? AND auto_renew = ? AND status IN ?", userIDs, true, activeSubStatuses).
+		Find(&subs).Error; err != nil {
+		return out
+	}
+	now := time.Now().Unix()
+	for i := range subs {
+		if isSubscriptionLive(&subs[i], now) {
+			out[subs[i].UserID] = true
+		}
+	}
+	return out
 }
