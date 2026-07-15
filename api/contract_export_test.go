@@ -185,18 +185,36 @@ func exportErrorCodes(t *testing.T) []contractErrorCode {
 			}
 			// 接受：显式 ErrorCode 类型，或省略类型（untyped int 常量）。
 			// 其它显式类型一律跳过。
+			errorCodeTyped := false
 			if vs.Type != nil {
 				id, ok := vs.Type.(*ast.Ident)
 				if !ok || id.Name != "ErrorCode" {
 					continue
 				}
+				errorCodeTyped = true
 			}
 			for i, name := range vs.Names {
-				if !strings.HasPrefix(name.Name, "Error") || i >= len(vs.Values) {
+				if !strings.HasPrefix(name.Name, "Error") {
 					continue
+				}
+				// 隐式常量重复 / iota（`const ( A ErrorCode = 1 \n B \n C )` 里的 B、C）
+				// 没有对应的 Values。静默跳过 = 该码不进契约 = webapp 侧"没有要求镜像它"
+				// = 门对着这个码空绿——正是 400011 漏了两年没人发现的那个病。
+				// 提取器只认显式字面量，看不懂就硬停，绝不静默漏。
+				if i >= len(vs.Values) {
+					t.Fatalf("常量 %s 没有显式字面量值（隐式常量重复或 iota）。\n"+
+						"本提取器只认 `ErrorFoo ErrorCode = N` 的显式写法——静默跳过会让这个码"+
+						"不进契约、前端无人守。请写成显式值，或升级提取器。", name.Name)
 				}
 				lit, ok := vs.Values[i].(*ast.BasicLit)
 				if !ok || lit.Kind != token.INT {
+					// 显式 ErrorCode 类型却不是整数字面量（如 `= ErrorBar + 1`）：
+					// 提取器看不见它，同样是静默漏码，硬停。
+					// 无类型的 Error* 常量（如字符串消息）跳过才是对的——它们不是错误码。
+					if errorCodeTyped {
+						t.Fatalf("ErrorCode 常量 %s 的值不是整数字面量——提取器看不见它，"+
+							"该码不会进契约、前端无人守。", name.Name)
+					}
 					continue
 				}
 				code, err := strconv.Atoi(lit.Value)
