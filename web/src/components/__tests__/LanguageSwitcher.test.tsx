@@ -1,14 +1,13 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 /**
- * Tests for LanguageSwitcher — brand-aware cross-domain locale switching.
+ * Tests for LanguageSwitcher — Brand Split Phase 2.
  *
- * The switching logic is extracted into a pure function `computeSwitchAction`
- * so it can be unit-tested without wrestling with Radix dropdown portals in
- * jsdom. A light integration test verifies the component mounts under both
- * brand providers.
+ * Each deployment is single-brand, so the dropdown offers only the baked
+ * brand's own locales and switching is always in place (router.replace).
+ * The old cross-domain `computeSwitchAction` is gone with the dual-host model.
  */
 
 // Mock i18n routing — the underlying next-intl/navigation chain fails to load in jsdom
@@ -34,138 +33,62 @@ vi.mock('@/lib/api', () => ({
   api: { updateUserLanguage: vi.fn().mockResolvedValue(undefined) },
 }));
 
+// Render the Radix dropdown inline. Radix opens on pointerdown and portals its
+// content; jsdom has no PointerEvent and this repo has no user-event dep, so a
+// real open is untestable here (the pre-Phase-2 file dodged this by unit-testing
+// a pure function instead). These pass-through stubs keep the assertions on the
+// thing this task actually changes: WHICH locales get mapped into menu items.
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
+    <div onClick={onClick}>{children}</div>
+  ),
+}));
+
 // Import after mocks are registered
-import LanguageSwitcher, { computeSwitchAction } from '../LanguageSwitcher';
-import { BrandProvider } from '@/components/providers/BrandProvider';
-import { KAITU, OVERLEAP } from '@/lib/brands';
+import LanguageSwitcher from '../LanguageSwitcher';
 
-describe('computeSwitchAction (pure)', () => {
-  it('returns {type:"assign"} when switching kaitu→overleap on production kaitu.io', () => {
-    const action = computeSwitchAction({
-      newLocale: 'en-US',
-      pathname: '/install',
-      currentBrand: 'kaitu',
-      currentHost: 'kaitu.io',
-      search: '',
-      hash: '',
-    });
-    expect(action).toEqual({
-      type: 'assign',
-      url: 'https://overleap.io/en-US/install',
-    });
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+afterEach(() => vi.unstubAllEnvs());
+
+describe('LanguageSwitcher — brand-local locales only', () => {
+  it('kaitu build lists exactly zh-CN/zh-TW/zh-HK', () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+    render(<LanguageSwitcher />);
+    expect(screen.getByText('简体中文')).toBeInTheDocument();
+    expect(screen.getByText('繁體中文 (台灣)')).toBeInTheDocument();
+    expect(screen.getByText('繁體中文 (香港)')).toBeInTheDocument();
+    expect(screen.queryByText('English (US)')).toBeNull();
+    expect(screen.queryByText('日本語')).toBeNull();
   });
 
-  it('returns {type:"router"} when switching between same-brand locales on production', () => {
-    const action = computeSwitchAction({
-      newLocale: 'zh-HK',
-      pathname: '/install',
-      currentBrand: 'kaitu',
-      currentHost: 'kaitu.io',
-      search: '',
-      hash: '',
-    });
-    expect(action).toEqual({
-      type: 'router',
-      pathname: '/install',
-      locale: 'zh-HK',
-    });
-  });
-
-  it('returns {type:"router"} when on non-production host, even for cross-brand locale', () => {
-    const action = computeSwitchAction({
-      newLocale: 'en-US',
-      pathname: '/install',
-      currentBrand: 'kaitu',
-      currentHost: 'localhost:3000',
-      search: '',
-      hash: '',
-    });
-    expect(action).toEqual({
-      type: 'router',
-      pathname: '/install',
-      locale: 'en-US',
-    });
-  });
-
-  it('returns {type:"assign"} when switching overleap→kaitu on production overleap.io', () => {
-    const action = computeSwitchAction({
-      newLocale: 'zh-CN',
-      pathname: '/install',
-      currentBrand: 'overleap',
-      currentHost: 'overleap.io',
-      search: '',
-      hash: '',
-    });
-    expect(action).toEqual({
-      type: 'assign',
-      url: 'https://kaitu.io/zh-CN/install',
-    });
-  });
-
-  it('returns {type:"router"} when switching to ja on overleap.io (ja is Overleap-owned)', () => {
-    const action = computeSwitchAction({
-      newLocale: 'ja',
-      pathname: '/install',
-      currentBrand: 'overleap',
-      currentHost: 'overleap.io',
-      search: '',
-      hash: '',
-    });
-    expect(action).toEqual({
-      type: 'router',
-      pathname: '/install',
-      locale: 'ja',
-    });
-  });
-
-  it('preserves query string and hash on cross-brand assign URL', () => {
-    const action = computeSwitchAction({
-      newLocale: 'en-US',
-      pathname: '/purchase',
-      currentBrand: 'kaitu',
-      currentHost: 'kaitu.io',
-      search: '?ref=abc',
-      hash: '#section',
-    });
-    expect(action).toEqual({
-      type: 'assign',
-      url: 'https://overleap.io/en-US/purchase?ref=abc#section',
-    });
-  });
-
-  it('also treats www-prefixed production hosts as production', () => {
-    const action = computeSwitchAction({
-      newLocale: 'en-US',
-      pathname: '/install',
-      currentBrand: 'kaitu',
-      currentHost: 'www.kaitu.io',
-      search: '',
-      hash: '',
-    });
-    expect(action.type).toBe('assign');
+  it('overleap build lists exactly en-US/en-GB/en-AU/ja', () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    render(<LanguageSwitcher />);
+    expect(screen.getByText('English (US)')).toBeInTheDocument();
+    expect(screen.getByText('English (UK)')).toBeInTheDocument();
+    expect(screen.getByText('English (AU)')).toBeInTheDocument();
+    expect(screen.getByText('日本語')).toBeInTheDocument();
+    expect(screen.queryByText('简体中文')).toBeNull();
+    expect(screen.queryByText('繁體中文 (台灣)')).toBeNull();
   });
 });
 
 describe('LanguageSwitcher (render)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('renders the trigger button inside KAITU brand provider', () => {
-    render(
-      <BrandProvider brand={KAITU}>
-        <LanguageSwitcher />
-      </BrandProvider>,
-    );
+  it('renders the trigger button on the kaitu build', () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+    render(<LanguageSwitcher />);
     expect(screen.getByRole('button')).toBeTruthy();
   });
 
-  it('mounts inside OVERLEAP brand provider without crashing', () => {
-    render(
-      <BrandProvider brand={OVERLEAP}>
-        <LanguageSwitcher />
-      </BrandProvider>,
-    );
+  it('mounts on the overleap build without crashing', () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    render(<LanguageSwitcher />);
     expect(screen.getByRole('button')).toBeTruthy();
   });
 });
