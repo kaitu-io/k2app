@@ -9,7 +9,6 @@ import type { SerializedEditorState } from '@payloadcms/richtext-lexical/lexical
 import { Link } from '@/i18n/routing'
 import { routing } from '@/i18n/routing'
 import { getBrand } from '@/lib/brand-server'
-import { brandById, type BrandId } from '@/lib/brands'
 import { generateMetadata as generatePageMetadata } from '../metadata'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
@@ -43,16 +42,6 @@ const getPost = cache(
     return findPostInCategory(payload, locale, categoryId, postSlug)
   },
 )
-
-function resolveCanonicalBrand(
-  locale: string,
-  showOnKaitu: boolean,
-  showOnOverleap: boolean,
-): BrandId {
-  if (showOnKaitu && !showOnOverleap) return 'kaitu'
-  if (showOnOverleap && !showOnKaitu) return 'overleap'
-  return locale.startsWith('en-') ? 'overleap' : 'kaitu'
-}
 
 export default async function CatchAll({ params }: Props) {
   const { locale, slug } = await params
@@ -174,12 +163,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const post = await getPost(locale as Locale, category.id, postSlug)
     if (!post) return {}
 
-    const canonicalBrandId = resolveCanonicalBrand(
-      locale,
-      post.showOnKaitu,
-      post.showOnOverleap,
-    )
-    const canonicalUrl = `${brandById(canonicalBrandId).baseUrl}/${locale}/${category.slug}/${post.slug}`
+    // Phase 2: brands are fully isolated — a post visible on this deployment
+    // canonicalizes to this deployment. (Cross-brand canonicals died with the
+    // dual-host model; visibility gating already 404s off-brand posts.)
+    const canonicalUrl = `${brand.baseUrl}/${locale}/${category.slug}/${post.slug}`
 
     // coverImage is populated to a media doc (absolute CDN url) at depth>=1.
     const cover =
@@ -203,8 +190,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       brand,
     )
 
-    // Preserve the cross-brand canonical (an Overleap-only post canonicalises
-    // to overleap.io) while keeping the helper's hreflang language alternates.
+    // Own-brand canonical while keeping the helper's language alternates.
     return {
       ...meta,
       alternates: {
