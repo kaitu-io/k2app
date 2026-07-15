@@ -148,6 +148,10 @@ func SetupRouter() *gin.Engine {
 			user.POST("/orders", AuthRequired(), EnforceDeviceClass(), api_create_order)
 			// iOS StoreKit IAP：客户端购买完成后上报 transactionId，服务端复核入账
 			user.POST("/apple-iap/verify", AuthRequired(), EnforceDeviceClass(), api_apple_iap_verify)
+			// Stripe Checkout（overleap 官网购买）：创建 Checkout Session，返回跳转 URL
+			user.POST("/stripe/checkout", AuthRequired(), EnforceDeviceClass(), api_stripe_checkout)
+			// Stripe Billing Portal（订阅管理/取消面）
+			user.POST("/stripe/portal", AuthRequired(), EnforceDeviceClass(), api_stripe_portal)
 			// 通知代付人付款（给当前用户的 delegate 发支付邀请邮件）
 			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), EnforceDeviceClass(), api_order_notify_delegate)
 			// 专属节点订阅只读列表（owner-scoped）
