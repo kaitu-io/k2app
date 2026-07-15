@@ -43,7 +43,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = brand.baseUrl;
   const locales = brand.allowedLocales;
 
-  // Static pages in the application
+  // Static pages in the application. Feature-gated surfaces must not be
+  // advertised by a brand that 404s them (see routers/page.tsx).
   const staticPages = [
     '',           // Home page
     '/blog',
@@ -54,7 +55,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/privacy',
     '/purchase',
     '/releases',
-    '/routers',
+    ...(brand.features.routers ? ['/routers'] : []),
     '/support',
     '/terms',
   ];
