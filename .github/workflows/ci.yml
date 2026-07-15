@@ -15,6 +15,42 @@ jobs:
   test-webapp:
     uses: ./.github/workflows/test-webapp-reusable.yml
 
+  # web/ had NO CI coverage until now, which meant its brand-leak guards
+  # (tests/brand-guard.test.ts, tests/brand-leak-ssr.test.tsx) and the
+  # cross-layer contract test were documentation, not gates — they only ran
+  # when someone remembered to run them locally.
+  # One run covers both brands: web resolves NEXT_PUBLIC_BRAND at call time via
+  # siteBrand(), so the tests flip it with vi.stubEnv rather than being baked
+  # like webapp's __K2_BRAND__ define.
+  test-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22' # web/.nvmrc + engines.node >=22
+          cache: 'yarn'
+          cache-dependency-path: web/yarn.lock
+
+      # web/ is NOT part of the root yarn workspace — it has its own lockfile.
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+        working-directory: web
+
+      # .velite/ is a gitignored build artifact, so it is absent on a fresh
+      # checkout; without it every test importing #velite fails to resolve.
+      - name: Generate Velite content
+        run: npx velite build
+        working-directory: web
+
+      - name: Run web tests (vitest)
+        run: yarn test
+        working-directory: web
+
   check-versions:
     runs-on: ubuntu-latest
     steps:
@@ -208,8 +244,14 @@ jobs:
         run: go build -tags=deadlock_disable ./...
         working-directory: k2
 
+      # -count=1 is load-bearing, not cargo-cult: TestExportContract compares the
+      # committed contracts/api-contract.json against live Go values, and that file
+      # lives OUTSIDE the api/ module. cmd/go does not stat files outside the module
+      # when deciding cache validity, so hand-editing the contract to match drifted
+      # code returns `ok (cached)` — the exact move this gate exists to stop. The
+      # k2 steps above already carry -count=1 for the same class of reason.
       - name: Go test API (mock-only)
-        run: go test ./...
+        run: go test ./... -count=1
         working-directory: api
 
   # --- Gateway (k2r) soft-router UAT — no hardware, runs in CI (Tier 3a) ---

@@ -27,6 +27,15 @@ jobs:
         run: yarn test
         working-directory: webapp
 
+      # Brand is baked at build time (K2_BRAND -> __K2_BRAND__), so the run above
+      # only ever exercises kaitu. Every overleap-specific regression this project
+      # has shipped was invisible to a kaitu-only run.
+      - name: Run webapp tests (vitest, overleap brand)
+        run: yarn test
+        working-directory: webapp
+        env:
+          K2_BRAND: overleap
+
       - name: Type-check webapp (tsc)
         run: npx tsc --noEmit
         working-directory: webapp
