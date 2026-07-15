@@ -49,8 +49,8 @@ func TestBrandConfig(t *testing.T) {
 	assert.Equal(t, "https://www.overleap.io", o.BaseURL)
 	assert.Equal(t, "Overleap", o.DisplayName)
 	assert.Equal(t, "support@overleap.io", o.SupportEmail)
-	assert.False(t, o.AllowsPayment("wordgate")) // Phase 6 前 overleap 渠道为空
-	assert.False(t, o.AllowsPayment("stripe"))
+	assert.False(t, o.AllowsPayment("wordgate")) // wordgate 恒锁 kaitu
+	assert.True(t, o.AllowsPayment("stripe"))    // Phase 6 起 overleap 走 stripe
 
 	// 未知 brand 回退 kaitu 配置
 	assert.Equal(t, BrandKaitu, Brand("nope").Config().ID)
