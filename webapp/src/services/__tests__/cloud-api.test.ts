@@ -828,3 +828,55 @@ describe('Cloud API Client', () => {
     });
   });
 });
+
+describe('X-K2-Brand header + 403003 brand mismatch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // vi.clearAllMocks() clears implementations — re-set them here (project rule)
+    mockedAuthService.getToken.mockResolvedValue('test-token');
+    mockedAuthService.getTokenEpoch.mockReturnValue(0);
+  });
+
+  function mockOk(body: unknown) {
+    vi.mocked(resolveAndFetch).mockResolvedValue({
+      transport: 'direct',
+      status: 200,
+      json: async () => body,
+    } as any);
+  }
+
+  it('request() sends X-K2-Brand on every call', async () => {
+    mockOk({ code: 0, data: {} });
+    await cloudApi.request('GET', '/api/user/info');
+    expect(resolveAndFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-K2-Brand': 'kaitu' }),
+      })
+    );
+  });
+
+  it('_doRefresh() sends X-K2-Brand', async () => {
+    mockOk({ code: 0, data: { token: 't2', refreshToken: 'r2' } });
+    await cloudApi._doRefresh('r1');
+    expect(resolveAndFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: '/api/auth/refresh',
+        headers: expect.objectContaining({ 'X-K2-Brand': 'kaitu' }),
+      })
+    );
+  });
+
+  it('403003 clears session and opens login dialog with brand-mismatch copy', async () => {
+    mockOk({ code: 403003, message: 'brand mismatch' });
+    const resp = await cloudApi.request('GET', '/api/user/info');
+    expect(resp.code).toBe(403003);
+    expect(mockedAuthService.clearTokens).toHaveBeenCalled();
+    expect(mockedAuthStore.setState).toHaveBeenCalledWith({ isAuthenticated: false });
+    expect(loginDialogOpen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trigger: 'brand-mismatch',
+        message: 'auth:auth.brandMismatch', // i18n mock echoes the key
+      })
+    );
+  });
+});

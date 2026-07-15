@@ -20,6 +20,7 @@ import { addNodes } from './entry-pool';
 import { cacheStore } from './cache-store';
 import { useLoginDialogStore } from '../stores/login-dialog.store';
 import i18n from '../i18n/i18n';
+import { getBrandId } from '../brand';
 
 /**
  * Build X-K2-Client header — sole origination point for this header.
@@ -99,6 +100,9 @@ export const cloudApi = {
       // 2. Build headers
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
+        // Brand is baked at build time; the backend authenticates it against
+        // users.brand (403003 on mismatch). Constant per artifact.
+        'X-K2-Brand': getBrandId(),
       };
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
@@ -152,6 +156,20 @@ export const cloudApi = {
         useLoginDialogStore.getState().open({
           trigger: 'device-class-mismatch',
           message: i18n.t('auth:auth.deviceClassMismatch'),
+        });
+        return jsonResponse;
+      }
+
+      // 6b. Handle 403003: token's user belongs to the other brand (should
+      // never happen with baked-brand clients — indicates restored/stale
+      // storage). Mirror the 403002 recovery: clear session, prompt re-login.
+      if (jsonResponse.code === 403003) {
+        console.warn('[CloudAPI] brand mismatch (403003) — clearing session');
+        await authService.clearTokens();
+        useAuthStore.setState({ isAuthenticated: false });
+        useLoginDialogStore.getState().open({
+          trigger: 'brand-mismatch',
+          message: i18n.t('auth:auth.brandMismatch'),
         });
         return jsonResponse;
       }
@@ -283,7 +301,10 @@ export const cloudApi = {
    */
   async _doRefresh(refreshToken: string): Promise<boolean> {
     try {
-      const refreshHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      const refreshHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-K2-Brand': getBrandId(),
+      };
       const clientHeader = buildClientHeader();
       if (clientHeader) {
         refreshHeaders['X-K2-Client'] = clientHeader;
