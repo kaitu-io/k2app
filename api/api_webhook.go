@@ -161,7 +161,7 @@ func handleWordgateOrderPaidEvent(c *gin.Context, webhookEvent *wordgate.Webhook
 			return fmt.Errorf("order %d has no associated user", order.ID)
 		}
 		if !Brand(order.User.Brand).Config().AllowsPayment(PayChannelWordgate) {
-			log.Errorf(c, "brand-mismatch webhook: order %d user brand %s does not allow wordgate", order.ID, order.User.Brand)
+			alertPaymentBrandMismatch(c, "brand-mismatch webhook: order %d user brand %s does not allow wordgate", order.ID, order.User.Brand)
 			return fmt.Errorf("brand mismatch: order %d user brand %s does not allow wordgate channel", order.ID, order.User.Brand)
 		}
 

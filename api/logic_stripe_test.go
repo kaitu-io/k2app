@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -137,4 +138,16 @@ func TestExtractStripeInvoiceFacts(t *testing.T) {
 		_, err := extractStripeInvoiceFacts(inv)
 		assert.Error(t, err)
 	})
+}
+
+func TestAlertPaymentBrandMismatch_Replaceable(t *testing.T) {
+	orig := alertPaymentBrandMismatch
+	t.Cleanup(func() { alertPaymentBrandMismatch = orig })
+
+	var captured string
+	alertPaymentBrandMismatch = func(ctx context.Context, format string, args ...any) {
+		captured = fmt.Sprintf(format, args...)
+	}
+	alertPaymentBrandMismatch(context.Background(), "user %d brand %s", uint64(7), "kaitu")
+	assert.Equal(t, "user 7 brand kaitu", captured)
 }

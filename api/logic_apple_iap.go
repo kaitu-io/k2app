@@ -97,7 +97,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	// 反复告警——这是 fail-loud 的设计取舍，不是 bug。若此日志持续出现应视为 page
 	// 级事件而非重试可容忍瞬态。
 	if !Brand(user.Brand).Config().AllowsPayment(PayChannelAppleIAP) {
-		log.Errorf(ctx, "brand-mismatch apple credit: user %d brand %s does not allow apple_iap, txn=%s", userID, user.Brand, info.TransactionId)
+		alertPaymentBrandMismatch(ctx, "brand-mismatch apple credit: user %d brand %s does not allow apple_iap, txn=%s", userID, user.Brand, info.TransactionId)
 		return fmt.Errorf("brand mismatch: user %d brand %s does not allow apple_iap channel", userID, user.Brand)
 	}
 
