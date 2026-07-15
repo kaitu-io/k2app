@@ -130,7 +130,9 @@ func configStripe(ctx context.Context) StripeConfig {
 		cfg.SuccessURL = base + "/account?checkout=success"
 	}
 	if cfg.CancelURL == "" {
-		cfg.CancelURL = base + "/pricing?checkout=cancelled"
+		// /purchase, not /pricing — the latter has never existed on the site,
+		// so the old default sent every cancelled checkout to a 404.
+		cfg.CancelURL = base + "/purchase?checkout=cancelled"
 	}
 	if cfg.PortalReturnURL == "" {
 		cfg.PortalReturnURL = base + "/account"

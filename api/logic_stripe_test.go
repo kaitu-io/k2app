@@ -51,8 +51,10 @@ func TestConfigStripe(t *testing.T) {
 		assert.True(t, cfg.Ready())
 		// URL 缺省回退 overleap 品牌 BaseURL（viper 旧键恒 kaitu-only 的既定规则：
 		// stripe 是 overleap 专属渠道，默认 URL 必须来自品牌注册表而非 viper 旧键）
+		// 这三条路径必须真实存在于 web/src/app/[locale]/ 下，否则用户付款后/取消后跳 404。
+		// 曾经的 /pricing 就是这样一个不存在的路由。
 		assert.Equal(t, "https://www.overleap.io/account?checkout=success", cfg.SuccessURL)
-		assert.Equal(t, "https://www.overleap.io/pricing?checkout=cancelled", cfg.CancelURL)
+		assert.Equal(t, "https://www.overleap.io/purchase?checkout=cancelled", cfg.CancelURL)
 		assert.Equal(t, "https://www.overleap.io/account", cfg.PortalReturnURL)
 	})
 
