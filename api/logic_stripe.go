@@ -57,10 +57,21 @@ type stripeInvoiceFacts struct {
 	SubscriptionID string
 	CustomerID     string
 	UserUUID       string // subscription_data.metadata.user_uuid（checkout 创建时烘焙）
-	PlanPID        string // subscription_data.metadata.plan_pid
+	PlanPID        string // subscription_data.metadata.plan_pid（订阅创建那一刻的**快照**，非实付）
+	PriceID        string // 计费周期那条 line 实际收的 price id —— 实付真相，用于与 PlanPID 快照对账
 	PeriodStart    int64  // unix 秒（invoice line period；basil 后订阅级 period 已删）
 	PeriodEnd      int64  // unix 秒
 	Livemode       bool
+}
+
+// stripeLinePriceID 取 line 的 price id（basil：line.pricing.price_details.price）。
+// 取不到返回 ""——调用方（creditStripeInvoice 对账哨兵）把"读不出"与"对不上"同等拒绝，
+// 绝不留"无法校验就放行"的口子。
+func stripeLinePriceID(line *stripe.InvoiceLineItem) string {
+	if line.Pricing == nil || line.Pricing.PriceDetails == nil {
+		return ""
+	}
+	return line.Pricing.PriceDetails.Price
 }
 
 func extractStripeInvoiceFacts(inv *stripe.Invoice) (*stripeInvoiceFacts, error) {
@@ -91,6 +102,7 @@ func extractStripeInvoiceFacts(inv *stripe.Invoice) (*stripeInvoiceFacts, error)
 			if line.Period.End > f.PeriodEnd {
 				f.PeriodEnd = line.Period.End
 				f.PeriodStart = line.Period.Start
+				f.PriceID = stripeLinePriceID(line) // 必须与 period 取自同一条 line
 			}
 		}
 	}
@@ -160,6 +172,20 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 	plan := planByPIDForCredit(ctx, tx, f.PlanPID, Brand(user.Brand))
 	if plan == nil {
 		return fmt.Errorf("no plan %q for brand %s (invoice %s)", f.PlanPID, user.Brand, f.InvoiceID)
+	}
+
+	// 实付对账哨兵：f.PlanPID 来自 subscription_data.metadata —— 订阅创建那一刻的不可变
+	// 快照。若只信快照，权益与这张 invoice 真正收的 price 之间零校验。触发路径：Stripe
+	// Billing Portal 一旦启用 "Customers can switch plans"，用户自助换档后续费 invoice 仍带
+	// 旧 plan_pid → 按旧档入账 + sub.ProductID 写旧 price + tier 反查报旧档，且静默绕过
+	// validatePurchase（仓库硬规则：复购必须同档，变更档位走人工）。
+	// 对不上就拒绝入账 + 告警（同品牌哨兵的 fail-loud）。首次绑定与续费同等适用。
+	// plan.StripePriceID 为空 或 f.PriceID 读不出 → 一律视为对不上：无法校验绝不放行。
+	if plan.StripePriceID == "" || f.PriceID != plan.StripePriceID {
+		alertStripeCredit(ctx, "price mismatch: invoice %s charged price %q but plan %q (user %d) expects %q — refusing credit; check Billing Portal plan switching is disabled",
+			f.InvoiceID, f.PriceID, plan.PID, userID, plan.StripePriceID)
+		return fmt.Errorf("price mismatch on invoice %s: charged %q, plan %q expects %q",
+			f.InvoiceID, f.PriceID, plan.PID, plan.StripePriceID)
 	}
 
 	now := time.Now().Unix()

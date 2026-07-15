@@ -46,7 +46,8 @@ func postStripeWebhook(t *testing.T, r *gin.Engine, payload []byte, sig string) 
 }
 
 // invoicePaidPayload 构造 basil 形态的 invoice.paid 事件 JSON。
-func invoicePaidPayload(eventID, invoiceID, subID, userUUID, planPID string, start, end int64) []byte {
+// priceID = line 实收 price（pricing.price_details.price），入账对账哨兵校验它与 plan 一致。
+func invoicePaidPayload(eventID, invoiceID, subID, userUUID, planPID, priceID string, start, end int64) []byte {
 	return []byte(fmt.Sprintf(`{
 		"id": %q, "object": "event", "type": "invoice.paid", "livemode": false,
 		"data": {"object": {
@@ -55,10 +56,11 @@ func invoicePaidPayload(eventID, invoiceID, subID, userUUID, planPID string, sta
 			"parent": {"subscription_details": {"subscription": %q,
 				"metadata": {"user_uuid": %q, "plan_pid": %q, "brand": "overleap"}}},
 			"lines": {"object": "list", "data": [
-				{"id": "il_1", "object": "line_item", "period": {"start": %d, "end": %d}}
+				{"id": "il_1", "object": "line_item", "period": {"start": %d, "end": %d},
+				 "pricing": {"price_details": {"price": %q}}}
 			]}
 		}}
-	}`, eventID, invoiceID, subID, subID, userUUID, planPID, start, end))
+	}`, eventID, invoiceID, subID, subID, userUUID, planPID, start, end, priceID))
 }
 
 // invoicePaidNoSubParentPayload 构造真·一次性账单（无 parent.subscription_details）。
@@ -119,7 +121,7 @@ func TestStripeWebhook(t *testing.T) {
 	month := int64(31 * 86400)
 
 	t.Run("BadSignature_400", func(t *testing.T) {
-		payload := invoicePaidPayload("evt_bad_"+stripeUniq(), "in_x", "sub_x", "user-x", "plan-x", now, now+month)
+		payload := invoicePaidPayload("evt_bad_"+stripeUniq(), "in_x", "sub_x", "user-x", "plan-x", "price-x", now, now+month)
 		w := postStripeWebhook(t, r, payload, "t=1,v1=deadbeef")
 		assert.Equal(t, 400, w.Code)
 	})
@@ -127,7 +129,7 @@ func TestStripeWebhook(t *testing.T) {
 	t.Run("MissingConfig_503", func(t *testing.T) {
 		viper.Set("stripe.webhook_secret", "")
 		t.Cleanup(func() { viper.Set("stripe.webhook_secret", stripeTestWebhookSecret) })
-		payload := invoicePaidPayload("evt_nc_"+stripeUniq(), "in_x", "sub_x", "user-x", "plan-x", now, now+month)
+		payload := invoicePaidPayload("evt_nc_"+stripeUniq(), "in_x", "sub_x", "user-x", "plan-x", "price-x", now, now+month)
 		w := postStripeWebhook(t, r, payload, stripeSigHeader(payload))
 		assert.Equal(t, 503, w.Code)
 	})
@@ -137,7 +139,7 @@ func TestStripeWebhook(t *testing.T) {
 		p := createStripeTestPlan(t)
 		evtID := "evt_" + stripeUniq()
 		cleanupStripeEvents(t, evtID)
-		payload := invoicePaidPayload(evtID, "in_"+stripeUniq(), "sub_"+stripeUniq(), u.UUID, p.PID, now, now+month)
+		payload := invoicePaidPayload(evtID, "in_"+stripeUniq(), "sub_"+stripeUniq(), u.UUID, p.PID, p.StripePriceID, now, now+month)
 
 		w := postStripeWebhook(t, r, payload, stripeSigHeader(payload))
 		require.Equal(t, 200, w.Code)
@@ -155,7 +157,7 @@ func TestStripeWebhook(t *testing.T) {
 		p := createStripeTestPlan(t)
 		evtID := "evt_" + stripeUniq()
 		cleanupStripeEvents(t, evtID)
-		payload := invoicePaidPayload(evtID, "in_"+stripeUniq(), "sub_"+stripeUniq(), u.UUID, p.PID, now, now+month)
+		payload := invoicePaidPayload(evtID, "in_"+stripeUniq(), "sub_"+stripeUniq(), u.UUID, p.PID, p.StripePriceID, now, now+month)
 
 		require.Equal(t, 200, postStripeWebhook(t, r, payload, stripeSigHeader(payload)).Code)
 		var before User
@@ -178,7 +180,7 @@ func TestStripeWebhook(t *testing.T) {
 		p := createStripeTestPlan(t)
 		evtID := "evt_" + stripeUniq()
 		cleanupStripeEvents(t, evtID)
-		payload := invoicePaidPayload(evtID, "in_"+stripeUniq(), "sub_"+stripeUniq(), u.UUID, p.PID, now, now+month)
+		payload := invoicePaidPayload(evtID, "in_"+stripeUniq(), "sub_"+stripeUniq(), u.UUID, p.PID, p.StripePriceID, now, now+month)
 
 		w := postStripeWebhook(t, r, payload, stripeSigHeader(payload))
 		assert.Equal(t, 500, w.Code) // fail-loud：Stripe 会重试 → 重复告警是设计取舍
@@ -236,7 +238,7 @@ func TestStripeWebhook(t *testing.T) {
 		// 先入账绑定
 		evt1 := "evt_" + stripeUniq()
 		cleanupStripeEvents(t, evt1)
-		payload := invoicePaidPayload(evt1, "in_"+stripeUniq(), subID, u.UUID, p.PID, now, now+month)
+		payload := invoicePaidPayload(evt1, "in_"+stripeUniq(), subID, u.UUID, p.PID, p.StripePriceID, now, now+month)
 		require.Equal(t, 200, postStripeWebhook(t, r, payload, stripeSigHeader(payload)).Code)
 
 		// 用户在 portal 取消自动续订
@@ -264,7 +266,7 @@ func TestStripeWebhook(t *testing.T) {
 		subID := "sub_" + stripeUniq()
 		evt1 := "evt_" + stripeUniq()
 		cleanupStripeEvents(t, evt1)
-		payload := invoicePaidPayload(evt1, "in_"+stripeUniq(), subID, u.UUID, p.PID, now, now+month)
+		payload := invoicePaidPayload(evt1, "in_"+stripeUniq(), subID, u.UUID, p.PID, p.StripePriceID, now, now+month)
 		require.Equal(t, 200, postStripeWebhook(t, r, payload, stripeSigHeader(payload)).Code)
 
 		evt2 := "evt_" + stripeUniq()

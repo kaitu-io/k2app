@@ -87,6 +87,13 @@ func TestStripeSubStatus(t *testing.T) {
 	assert.Equal(t, "", stripeSubStatus(stripe.SubscriptionStatus("weird_future_status")))
 }
 
+// mkPricing 构造 basil 形态的 line pricing（price id 藏在 pricing.price_details.price）。
+func mkPricing(priceID string) *stripe.InvoiceLineItemPricing {
+	return &stripe.InvoiceLineItemPricing{
+		PriceDetails: &stripe.InvoiceLineItemPricingPriceDetails{Price: priceID},
+	}
+}
+
 func TestExtractStripeInvoiceFacts(t *testing.T) {
 	mk := func() *stripe.Invoice {
 		return &stripe.Invoice{
@@ -102,7 +109,7 @@ func TestExtractStripeInvoiceFacts(t *testing.T) {
 				},
 			},
 			Lines: &stripe.InvoiceLineItemList{Data: []*stripe.InvoiceLineItem{
-				{Period: &stripe.Period{Start: 1000, End: 2000}},
+				{Period: &stripe.Period{Start: 1000, End: 2000}, Pricing: mkPricing("price_month")},
 			}},
 		}
 	}
@@ -115,18 +122,30 @@ func TestExtractStripeInvoiceFacts(t *testing.T) {
 		assert.Equal(t, "cus_test_1", f.CustomerID)
 		assert.Equal(t, "user-abc", f.UserUUID)
 		assert.Equal(t, "ol_pro_month", f.PlanPID)
+		assert.Equal(t, "price_month", f.PriceID)
 		assert.Equal(t, int64(1000), f.PeriodStart)
 		assert.Equal(t, int64(2000), f.PeriodEnd)
 		assert.False(t, f.Livemode)
 	})
 
-	t.Run("MultiLine_TakesLatestPeriod", func(t *testing.T) {
+	// price id 必须与 period 取自同一条 line（对账哨兵校验的就是"这个周期收了哪个 price"）。
+	t.Run("MultiLine_TakesLatestPeriod_AndItsPrice", func(t *testing.T) {
 		inv := mk()
-		inv.Lines.Data = append(inv.Lines.Data, &stripe.InvoiceLineItem{Period: &stripe.Period{Start: 2000, End: 3000}})
+		inv.Lines.Data = append(inv.Lines.Data, &stripe.InvoiceLineItem{
+			Period: &stripe.Period{Start: 2000, End: 3000}, Pricing: mkPricing("price_year")})
 		f, err := extractStripeInvoiceFacts(inv)
 		require.NoError(t, err)
 		assert.Equal(t, int64(3000), f.PeriodEnd)
 		assert.Equal(t, int64(2000), f.PeriodStart)
+		assert.Equal(t, "price_year", f.PriceID)
+	})
+
+	t.Run("LineWithoutPricing_EmptyPriceID", func(t *testing.T) {
+		inv := mk()
+		inv.Lines.Data[0].Pricing = nil
+		f, err := extractStripeInvoiceFacts(inv)
+		require.NoError(t, err) // extract 只提取；"读不出" 由 creditStripeInvoice 哨兵拒绝
+		assert.Equal(t, "", f.PriceID)
 	})
 
 	// 非订阅 invoice = 唯一可安全忽略的失败 → 必须带 errNotSubscriptionInvoice sentinel。
@@ -204,7 +223,8 @@ func createStripeTestPlan(t *testing.T) *Plan {
 func mkStripeFacts(u *User, p *Plan, invoiceID, subID string, start, end int64) *stripeInvoiceFacts {
 	return &stripeInvoiceFacts{
 		InvoiceID: invoiceID, SubscriptionID: subID, CustomerID: "cus_" + subID,
-		UserUUID: u.UUID, PlanPID: p.PID, PeriodStart: start, PeriodEnd: end, Livemode: false,
+		UserUUID: u.UUID, PlanPID: p.PID, PriceID: p.StripePriceID,
+		PeriodStart: start, PeriodEnd: end, Livemode: false,
 	}
 }
 
@@ -320,6 +340,70 @@ func TestCreditStripeInvoice(t *testing.T) {
 		var got User
 		require.NoError(t, db.Get().First(&got, u.ID).Error)
 		assert.Equal(t, int64(0), got.ExpiredAt) // 绝不静默入账
+	})
+
+	// 实付对账哨兵：ops 若误开 Billing Portal 换档，用户降档后续费 invoice 仍带旧 plan_pid
+	// 快照 → 必须拒绝入账 + 告警，绝不按快照错档静默记账。
+	t.Run("PriceMismatch_OnRenewal_RefusesAndAlerts", func(t *testing.T) {
+		orig := alertStripeCredit
+		t.Cleanup(func() { alertStripeCredit = orig })
+		var alerted string
+		alertStripeCredit = func(ctx context.Context, format string, args ...any) {
+			alerted = fmt.Sprintf(format, args...)
+		}
+
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		subID := "sub_" + stripeUniq()
+		require.NoError(t, creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now, now+month)))
+		var afterFirst User
+		require.NoError(t, db.Get().First(&afterFirst, u.ID).Error)
+
+		// 用户在 portal 降档：invoice 实收 price 变了，metadata 快照没变
+		f := mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now+month, now+2*month)
+		f.PriceID = "price_downgraded_" + stripeUniq()
+		assert.Error(t, creditInTx(f))
+		assert.Contains(t, alerted, "price mismatch")
+
+		var got User
+		require.NoError(t, db.Get().First(&got, u.ID).Error)
+		assert.Equal(t, afterFirst.ExpiredAt, got.ExpiredAt) // 权益纹丝不动
+	})
+
+	t.Run("PriceMismatch_OnFirstBind_RefusesAndAlerts", func(t *testing.T) {
+		orig := alertStripeCredit
+		t.Cleanup(func() { alertStripeCredit = orig })
+		var alerted string
+		alertStripeCredit = func(ctx context.Context, format string, args ...any) {
+			alerted = fmt.Sprintf(format, args...)
+		}
+
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		f := mkStripeFacts(u, p, "in_"+stripeUniq(), "sub_"+stripeUniq(), now, now+month)
+		f.PriceID = "price_other_" + stripeUniq()
+		assert.Error(t, creditInTx(f))
+		assert.Contains(t, alerted, "price mismatch")
+
+		var got User
+		require.NoError(t, db.Get().First(&got, u.ID).Error)
+		assert.Equal(t, int64(0), got.ExpiredAt)
+		var subCount int64
+		db.Get().Model(&Subscription{}).Where("user_id = ?", u.ID).Count(&subCount)
+		assert.Equal(t, int64(0), subCount) // 连订阅行都不该诞生
+	})
+
+	// "读不出 price" 与 "对不上" 同等拒绝：无法校验绝不放行。
+	t.Run("MissingPriceID_Refused", func(t *testing.T) {
+		orig := alertStripeCredit
+		t.Cleanup(func() { alertStripeCredit = orig })
+		alertStripeCredit = func(ctx context.Context, format string, args ...any) {}
+
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		f := mkStripeFacts(u, p, "in_"+stripeUniq(), "sub_"+stripeUniq(), now, now+month)
+		f.PriceID = ""
+		assert.Error(t, creditInTx(f))
 	})
 
 	t.Run("UnknownPlanPID_Refused", func(t *testing.T) {
