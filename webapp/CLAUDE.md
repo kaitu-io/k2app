@@ -164,6 +164,43 @@ React 18, Material-UI 5, React Router 7, i18next, Vite 6, Zustand, TypeScript.
 
 ---
 
+## Brand (双品牌: kaitu / overleap)
+
+**Spec**: `docs/superpowers/specs/2026-07-14-brand-split-design.md` §4. Brand is baked at
+BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest define
+`__K2_BRAND__` → `src/brand/index.ts` selects `KAITU_BRAND` / `OVERLEAP_BRAND`. No runtime switch.
+
+- **`src/brand/` is the single source of truth**: `brandConfig` carries productName /
+  domainLabel / baseURL / websiteOrigins / supportEmail / locale-aware names & slogans /
+  defaultLocale / MUI theme tokens / feature gates. Never fork on brand id in
+  components — add a gate to `BrandFeatures` and read it via
+  `getCurrentAppConfig().features.*` (config/apps.ts merges brand gates with
+  platform-static features).
+- **`X-K2-Brand` header**: injected ONLY in `services/cloud-api.ts` (`request()` +
+  `_doRefresh()`), riding both relay and direct transports. 403003 (BRAND_MISMATCH)
+  clears the session and opens LoginDialog, mirroring 403002.
+- **i18n is brand-neutral**: locale files use `{{brand}}` / `{{brandDomain}}` /
+  `{{brandBaseUrl}}` / `{{supportEmail}}` interpolation (defaultVariables installed in
+  `i18n/i18n.ts`, refreshed on languageChanged via `brand/i18n-vars.ts`). Brand-exclusive
+  copy lives in `src/i18n/brand/<brand>/<lang>/<ns>.json` overlays (deep-merged at load;
+  only the active brand's overlays are bundled). Guard test:
+  `src/i18n/__tests__/brand-literals.test.ts`. Kaitu default locale zh-CN; overleap en-US.
+- **Artifact purity**: `scripts/check-brand-purity.sh <brand> dist` — kaitu build must
+  contain zero `overleap.io`; overleap build zero `kaitu.io|开途|開途`. Run after any
+  build-affecting change. Bare `kaitu` protocol tokens (X-K2-Client `kaitu-service/`,
+  `kaitu-language` storage key) are intentional and excluded.
+- **Icons/title**: `public/` holds kaitu defaults; `brand-assets/<brand>/` overrides are
+  copied over dist icons by the `k2-brand` vite plugin, which also rewrites `<title>`.
+  Runtime asset paths (`/favicon.png`, `/icon-192x192.png`) are brand-stable.
+- **Phase 4/5 seam (shells)**: shells do NOT import webapp brand code. Desktop/mobile
+  builds pass `K2_BRAND` through the existing `make build-* → cd webapp && yarn build`
+  path (Makefile gets `BRAND ?= kaitu` + `export K2_BRAND=$(BRAND)` in Phase 4). Shell-
+  native brand config (tauri.conf.overleap.json, Android flavors, iOS schemes, IAP
+  product ids) is separate per-shell work; the shared contract is only the env var name
+  `K2_BRAND` and the `brand-assets/<brand>/` artwork directory.
+
+---
+
 ## Directory Structure
 
 ```
