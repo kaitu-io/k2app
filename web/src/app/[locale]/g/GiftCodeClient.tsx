@@ -29,7 +29,7 @@ function getDaysRemaining(expiresAt: number): number {
 export default function GiftCodeClient() {
   const t = useTranslations('licenseKeys');
   const brand = useBrand();
-  const productBadge = brand.id === 'kaitu' ? '开途 VPN' : 'Overleap';
+  const productBadge = brand.productName;
   const { isAuthenticated } = useAuth();
   const [inputCode, setInputCode] = useState('');
   const [state, setState] = useState<PageState>('idle');

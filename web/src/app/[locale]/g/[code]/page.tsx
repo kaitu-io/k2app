@@ -4,11 +4,12 @@ import type { Metadata } from 'next';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import RedeemClient from './RedeemClient';
+import { siteBrand } from '@/lib/brands';
 
 type Locale = (typeof routing.locales)[number];
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: '兑换授权码 | Kaitu' };
+  return { title: `兑换授权码 | ${siteBrand().displayName}` };
 }
 
 export default async function GiftCodeDirectPage({

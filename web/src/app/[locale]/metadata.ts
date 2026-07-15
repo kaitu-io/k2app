@@ -2,8 +2,8 @@ import { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
 import { KAITU, type Brand } from '@/lib/brands';
 
-// Legacy export retained for pages that stay Kaitu-branded regardless of host
-// (e.g., k2 protocol docs, support page — see spec 2026-04-21-overleap-brand-web-design).
+// Legacy export: the default-brand base URL, retained for the few pages that
+// still import it directly (k2 protocol docs, support page).
 export const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || KAITU.baseUrl;
 
 interface MetadataOverrides {
@@ -50,8 +50,8 @@ export function generateMetadata(
   const title = overrides.title || titles[locale] || titles['zh-CN'];
   const description = overrides.description || descriptions[locale] || descriptions['zh-CN'];
   // overrides.ogImage may be an absolute CDN URL (a post coverImage from
-  // media.kaitu.io) or a brand-relative path. Only prepend the base URL for the
-  // relative case, otherwise we'd produce `https://kaitu.iohttps://media...`.
+  // the CMS media CDN) or a brand-relative path. Only prepend the base URL for
+  // the relative case, otherwise we'd concatenate two absolute URLs.
   const ogImageSrc = overrides.ogImage || brand.ogImagePath;
   const ogImageUrl = /^https?:\/\//.test(ogImageSrc)
     ? ogImageSrc
@@ -104,8 +104,8 @@ export function generateMetadata(
       canonical: `${resolvedBaseUrl}/${locale}${pathname}`,
       languages,
     },
-    // Kaitu's faviconPrefix is '' — its URLs stay byte-identical to the legacy
-    // root paths (no cache churn). Overleap gets its namespaced set.
+    // The default brand's faviconPrefix is '' — its URLs stay byte-identical to
+    // the legacy root paths (no cache churn). Other brands get a namespaced set.
     icons: {
       icon: [
         { url: `${brand.faviconPrefix}/favicon-16x16.png`, sizes: '16x16', type: 'image/png' },

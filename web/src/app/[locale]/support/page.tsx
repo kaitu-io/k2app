@@ -3,6 +3,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
 import { generateMetadata as generateBaseMetadata, baseUrl } from '../metadata';
 import SupportClient from './SupportClient';
+import { getBrand } from '@/lib/brand-server';
 
 interface Props {
   params: Promise<{ locale: string }>;
@@ -25,6 +26,7 @@ export function generateStaticParams() {
 export default async function SupportPage({ params }: Props) {
   const { locale } = await params;
   setRequestLocale(locale as (typeof routing.locales)[number]);
+  const brand = await getBrand();
 
   const t = await getTranslations({ locale: locale as (typeof routing.locales)[number], namespace: 'guide-parents' });
 
@@ -58,7 +60,7 @@ export default async function SupportPage({ params }: Props) {
     duration: 'PT6M36S',
     publisher: {
       '@type': 'Organization',
-      name: 'Kaitu',
+      name: brand.displayName,
       url: baseUrl,
     },
   };

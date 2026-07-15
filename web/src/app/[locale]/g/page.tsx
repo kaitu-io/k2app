@@ -4,13 +4,15 @@ import { routing } from '@/i18n/routing';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import GiftCodeClient from './GiftCodeClient';
+import { siteBrand } from '@/lib/brands';
 
 type Locale = (typeof routing.locales)[number];
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: '兑换授权码 | Kaitu',
-    description: '输入授权码，免费获取 Kaitu 会员',
+    title: `兑换授权码 | ${siteBrand().displayName}`,
+    // zh copy uses brand.wordmark, never the bare latin brand word.
+    description: `输入授权码，免费获取${siteBrand().wordmark}会员`,
   };
 }
 
