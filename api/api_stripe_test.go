@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -36,6 +37,17 @@ func decodeCode(t *testing.T, w *httptest.ResponseRecorder) (code int, data map[
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	return resp.Code, resp.Data
+}
+
+// withStripeTestEmail 给测试用户挂一个 email 登录身份（checkout 预填邮箱走它）。
+func withStripeTestEmail(t *testing.T, u *User, email string) {
+	t.Helper()
+	enc, err := secretEncryptString(context.Background(), email)
+	require.NoError(t, err)
+	li := &LoginIdentify{UserID: u.ID, Type: "email", IndexID: "stripetest-" + stripeUniq(),
+		EncryptedValue: enc, Brand: u.Brand}
+	require.NoError(t, db.Get().Create(li).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(li) })
 }
 
 func TestStripeCheckoutHandler(t *testing.T) {
@@ -140,6 +152,55 @@ func TestStripeCheckoutHandler(t *testing.T) {
 		assert.Equal(t, u.UUID, captured.SubscriptionData.Metadata["user_uuid"])
 		assert.Equal(t, p.PID, captured.SubscriptionData.Metadata["plan_pid"])
 		assert.Equal(t, "overleap", captured.SubscriptionData.Metadata["brand"])
+	})
+
+	// 到期后重新订阅：必须复用既有 Customer，否则 Stripe 侧生成第二个 Customer
+	// → 账单历史割裂，portal 只看得到最新那个。
+	t.Run("ReturningCustomer_ReusesCustomerID_NotEmail", func(t *testing.T) {
+		setStripeTestConfig(t, "sk_test_x", "whsec_x")
+		var captured *stripe.CheckoutSessionParams
+		stubSession(t, &captured, nil)
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		withStripeTestEmail(t, u, "returning_"+stripeUniq()+"@overleap.io")
+
+		// 上一段订阅：已过期（否则撞防重叠门），但 customer id 仍在
+		custID := "cus_returning_" + stripeUniq()
+		old := &Subscription{UserID: u.ID, Provider: "stripe",
+			ProviderSubscriptionID: "sub_old_" + stripeUniq(), ProviderCustomerID: custID,
+			ProductID: p.StripePriceID, CurrentPeriodEnd: time.Now().Unix() - 86400,
+			AutoRenew: false, Status: "expired"}
+		require.NoError(t, db.Get().Create(old).Error)
+
+		c, w := ginStripeCtx(`{"plan":"`+p.PID+`"}`, u)
+		api_stripe_checkout(c)
+		code, _ := decodeCode(t, w)
+		require.Equal(t, 0, code)
+
+		require.NotNil(t, captured)
+		require.NotNil(t, captured.Customer)
+		assert.Equal(t, custID, *captured.Customer)
+		assert.Nil(t, captured.CustomerEmail) // 与 Customer 互斥，同传 Stripe 报 400
+	})
+
+	t.Run("FirstTimeCustomer_NoCustomerID_PrefillsEmail", func(t *testing.T) {
+		setStripeTestConfig(t, "sk_test_x", "whsec_x")
+		var captured *stripe.CheckoutSessionParams
+		stubSession(t, &captured, nil)
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		email := "firsttime_" + stripeUniq() + "@overleap.io"
+		withStripeTestEmail(t, u, email)
+
+		c, w := ginStripeCtx(`{"plan":"`+p.PID+`"}`, u)
+		api_stripe_checkout(c)
+		code, _ := decodeCode(t, w)
+		require.Equal(t, 0, code)
+
+		require.NotNil(t, captured)
+		assert.Nil(t, captured.Customer) // 无存量 customer → 让 Stripe 新建
+		require.NotNil(t, captured.CustomerEmail)
+		assert.Equal(t, email, *captured.CustomerEmail)
 	})
 }
 

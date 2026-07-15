@@ -95,11 +95,22 @@ func api_stripe_checkout(c *gin.Context) {
 			},
 		},
 	}
-	// 预填邮箱（best-effort：取不到就让 Stripe 收集）。
-	var full User
-	if err := db.Get().Preload("LoginIdentifies").First(&full, user.ID).Error; err == nil {
-		if email := getUserEmailFromIdentifies(&full); email != "" {
-			params.CustomerEmail = stripe.String(email)
+	// 复用既有 Stripe Customer：到期后重新订阅若恒传 CustomerEmail，Stripe 会新建**第二个**
+	// Customer —— 账单历史就此割裂，portal 只看得到最新那个（portal 按 provider_customer_id
+	// 开会话）。有存量 customer id 就传 Customer；没有才预填邮箱让 Stripe 新建。
+	// 二者互斥，Stripe 不接受同时传（400）。
+	var existing Subscription
+	if err := db.Get().
+		Where("user_id = ? AND provider = ? AND provider_customer_id <> ''", user.ID, "stripe").
+		Order("id DESC").First(&existing).Error; err == nil {
+		params.Customer = stripe.String(existing.ProviderCustomerID)
+	} else {
+		// 预填邮箱（best-effort：取不到就让 Stripe 收集）。
+		var full User
+		if err := db.Get().Preload("LoginIdentifies").First(&full, user.ID).Error; err == nil {
+			if email := getUserEmailFromIdentifies(&full); email != "" {
+				params.CustomerEmail = stripe.String(email)
+			}
 		}
 	}
 
