@@ -248,6 +248,14 @@ export function getErrorMessage(
       return t('auth:auth.deviceClassMismatch');
     case ERROR_CODES.INVALID_CLIENT_CLASS:
       return t('auth:auth.invalidClientClass');
+    case ERROR_CODES.BRAND_MISMATCH:
+      // 403003: account was born on the other brand — baked-brand clients
+      // should never see this except with restored/stale token storage.
+      return t('auth:auth.brandMismatch');
+    case ERROR_CODES.PAYMENT_CHANNEL_UNAVAILABLE:
+      // 405001: payment channel not allowed for this brand (e.g. WordGate on
+      // an overleap account). User-actionable: buy on the brand website.
+      return t('purchase:purchase.paymentChannelUnavailable');
 
     // 网络错误 (100-109)
     case ERROR_CODES.NETWORK_TIMEOUT:

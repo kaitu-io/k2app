@@ -82,6 +82,7 @@
     "getPlansListFailed": "プランリストの取得に失敗しました",
     "getPlansListFailedRetry": "プランリストの取得に失敗しました、再試行してください",
     "invalidCampaignCode": "プロモーションコードが無効です",
+    "paymentChannelUnavailable": "この支払い方法はこのアプリでは利用できません。公式サイトから購入するか、サポートにお問い合わせください。",
     "createOrderFailed": "注文の作成に失敗しました、再試行してください",
     "createOrderFailedNetwork": "注文の作成に失敗しました、ネットワーク接続を確認して再試行してください",
     "refreshUserProfileFailed": "ユーザープロファイルの更新に失敗しました",

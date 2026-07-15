@@ -82,6 +82,7 @@
     "getPlansListFailed": "獲取套餐列表失敗",
     "getPlansListFailedRetry": "獲取套餐列表失敗，請重試",
     "invalidCampaignCode": "活動碼無效",
+    "paymentChannelUnavailable": "目前付款方式在本應用程式不可用，請前往官網購買或聯絡客服",
     "createOrderFailed": "創建訂單失敗，請重試",
     "createOrderFailedNetwork": "創建訂單失敗，請檢查網絡連接後重試",
     "refreshUserProfileFailed": "刷新用戶資料失敗",

@@ -82,6 +82,7 @@
     "getPlansListFailed": "Failed to get plan list",
     "getPlansListFailedRetry": "Failed to get plan list, please retry",
     "invalidCampaignCode": "Invalid promo code",
+    "paymentChannelUnavailable": "This payment method isn't available in this app. Please purchase on our website or contact support.",
     "createOrderFailed": "Failed to create order, please retry",
     "createOrderFailedNetwork": "Failed to create order, please check network connection and retry",
     "refreshUserProfileFailed": "Failed to refresh user profile",
