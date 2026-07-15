@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import { useBrand } from '@/hooks/useBrand';
 import Image from 'next/image';
 import {
   Activity,
@@ -24,16 +25,12 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
-const VIDEO_URL = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/guides/kaitu_guide.mp4';
-
 const openChat = () => {
   const w = window as unknown as Record<string, unknown>;
   if (w.$chatwoot && typeof (w.$chatwoot as Record<string, unknown>).toggle === 'function') {
     (w.$chatwoot as { toggle: (action: string) => void }).toggle('open');
   }
 };
-
-const email = ['bnb', '@', 'kaitu', '.io'].join('');
 
 const FAQ_KEYS = [
   'multiDevice', 'verifyCode', 'paymentSafety', 'wechatPay',
@@ -65,6 +62,11 @@ function FaqItem({ questionKey, t }: { questionKey: string; t: (key: string) => 
 
 export default function SupportClient() {
   const t = useTranslations();
+  const brand = useBrand();
+  // Was a hardcoded address assembled from string fragments — a split literal
+  // the brand guards' regexes could not see, yet which rendered the kaitu
+  // support address into the overleap DOM. The registry is the single source.
+  const email = brand.contactEmail;
 
   return (
     <div className="min-h-screen bg-background">
@@ -95,28 +97,30 @@ export default function SupportClient() {
         </div>
       </section>
 
-      {/* Video Section */}
-      <section className="pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold text-foreground text-center mb-2">
-            {t('guide-parents.video.title')}
-          </h2>
-          <p className="text-muted-foreground text-center mb-6">
-            {t('guide-parents.video.description')}
-          </p>
-          <div className="rounded-xl overflow-hidden bg-black/50 shadow-2xl">
-            <video
-              controls
-              preload="metadata"
-              playsInline
-              className="w-full aspect-video"
-              poster=""
-            >
-              <source src={VIDEO_URL} type="video/mp4" />
-            </video>
+      {/* Video Section — only for brands that have their own guide recording. */}
+      {brand.guideVideoUrl && (
+        <section className="pb-16 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-2xl font-bold text-foreground text-center mb-2">
+              {t('guide-parents.video.title')}
+            </h2>
+            <p className="text-muted-foreground text-center mb-6">
+              {t('guide-parents.video.description')}
+            </p>
+            <div className="rounded-xl overflow-hidden bg-black/50 shadow-2xl">
+              <video
+                controls
+                preload="metadata"
+                playsInline
+                className="w-full aspect-video"
+                poster=""
+              >
+                <source src={brand.guideVideoUrl} type="video/mp4" />
+              </video>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Why Use Us Section */}
       <section className="py-16 px-4 sm:px-6 lg:px-8 bg-card/50">

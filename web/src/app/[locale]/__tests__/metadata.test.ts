@@ -85,6 +85,34 @@ describe('generateMetadata — brand-isolated SEO (Phase 2)', () => {
     expect(langs['zh-cn']).toBe('https://kaitu.io/zh-CN');
   });
 
+  // The `brand` parameter defaulted to KAITU, so any call site that forgot to
+  // pass one published kaitu canonical/hreflang/og:url/siteName from the
+  // overleap build. /support was exactly that call site. The default must
+  // follow the baked brand, so forgetting to pass it degrades to correct.
+  it('omitted brand follows the baked brand, and never falls back to kaitu', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    vi.resetModules();
+    const generateMetadata = await loadMetadata();
+
+    const meta = generateMetadata('en-US', '/support');
+
+    expect(meta.alternates!.canonical).toBe('https://overleap.io/en-US/support');
+    expect(JSON.stringify(meta)).not.toContain('kaitu');
+    vi.unstubAllEnvs();
+  });
+
+  it('omitted brand on a kaitu build still yields kaitu metadata', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+    vi.resetModules();
+    const generateMetadata = await loadMetadata();
+
+    const meta = generateMetadata('zh-CN', '/support');
+
+    expect(meta.alternates!.canonical).toBe('https://kaitu.io/zh-CN/support');
+    expect(JSON.stringify(meta)).not.toContain('overleap');
+    vi.unstubAllEnvs();
+  });
+
   it('ignores NEXT_PUBLIC_BASE_URL override for hreflang entries', async () => {
     process.env.NEXT_PUBLIC_BASE_URL = 'https://preview.example.com';
     const { KAITU } = await loadBrands();

@@ -26,6 +26,12 @@ export type Brand = {
   gaMeasurementId: string;
   /** Chatwoot website token. '' = support widget disabled for this brand. */
   chatwootToken: string;
+  /**
+   * Onboarding guide video (Support page player + its VideoObject JSON-LD).
+   * '' = this brand has no guide video: the player and the JSON-LD block are
+   * both omitted rather than falling back to another brand's asset.
+   */
+  guideVideoUrl: string;
   /** Download CDN layout (spec §8: /kaitu/ vs /overleap/ path segments, Kaitu_* vs Overleap_* artifacts). */
   cdn: {
     desktopBases: readonly string[];
@@ -60,6 +66,7 @@ export const KAITU: Brand = {
   faviconPrefix: '',
   gaMeasurementId: 'G-EH2PY4S0CX',
   chatwootToken: 'ZfFNvQRuoKzkik6X4KCSgp1h',
+  guideVideoUrl: 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/guides/kaitu_guide.mp4',
   cdn: {
     desktopBases: [
       'https://dl.kaitu.io/kaitu/desktop',
@@ -89,6 +96,10 @@ export const OVERLEAP: Brand = {
   faviconPrefix: '/brand/overleap',
   gaMeasurementId: '',   // Open Question #1: create GA4 property, then fill in
   chatwootToken: '',     // Open Question #1: create Chatwoot inbox, then fill in
+  // No Overleap-branded guide video has been produced yet. Empty on purpose:
+  // the Support page omits the player + VideoObject rather than serving the
+  // 开途-branded recording (spec: overleap 站 0 处 kaitu).
+  guideVideoUrl: '',
   cdn: {
     // /overleap/ CDN path per spec §8. dl.overleap.io CNAME does not exist yet
     // (Open Question #2) — raw CloudFront until provisioned. Artifacts appear in Phase 4/5.

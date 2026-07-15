@@ -1,10 +1,6 @@
 import { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
-import { KAITU, type Brand } from '@/lib/brands';
-
-// Legacy export: the default-brand base URL, retained for the few pages that
-// still import it directly (k2 protocol docs, support page).
-export const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || KAITU.baseUrl;
+import { siteBrand, type Brand } from '@/lib/brands';
 
 interface MetadataOverrides {
   title?: string;
@@ -23,7 +19,11 @@ export function generateMetadata(
   locale: string,
   pathname: string = '',
   overrides: MetadataOverrides = {},
-  brand: Brand = KAITU
+  // Fail-safe, not fail-kaitu: an omitted brand must resolve to the brand this
+  // deployment was BUILT for, never to a hardcoded one. The previous `= KAITU`
+  // default made every non-passing call site (e.g. /support) publish
+  // canonical/hreflang/og:url pointing at the kaitu host from an overleap build.
+  brand: Brand = siteBrand()
 ): Metadata {
   const resolvedBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || brand.baseUrl;
 
