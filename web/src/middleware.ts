@@ -1,84 +1,92 @@
 import createMiddleware from 'next-intl/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 import { routing } from './i18n/routing';
-import { KAITU, OVERLEAP, brandFromHost, ownerBrand } from './lib/brands';
-import { isProductionHost } from './lib/host-utils';
+import { siteBrand } from './lib/brands';
 
 type Locale = (typeof routing.locales)[number];
 
 const intlMiddleware = createMiddleware(routing);
 
-// Any locale-prefixed request path. Used to decide whether to cross-domain 301.
+// Any locale-prefixed request path (all 7 codebase locales — the brand gate
+// below decides which of them this deployment actually serves).
 const LOCALE_PREFIX_RE = /^\/(zh-CN|zh-TW|zh-HK|en-US|en-GB|en-AU|ja)(\/.*)?$/;
 
 export default function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  const host = request.headers.get('host');
-  const brand = brandFromHost(host);
+  const brand = siteBrand();
+  const isKaitu = brand.id === 'kaitu';
 
-  // Serve install scripts as static files (bypass i18n locale redirect)
-  if (pathname === '/i/k2') {
+  // ---- API proxy: inject the baked brand for the Center API. --------------
+  // Center resolves brand as Host → X-K2-Brand → kaitu (api/brand.go); the
+  // proxied request's Host is the backend origin, so the header is what
+  // carries the brand end-to-end. /app/* is the admin API — kaitu-only.
+  if (pathname.startsWith('/api/') || pathname.startsWith('/app/')) {
+    if (pathname.startsWith('/app/') && !isKaitu) {
+      return new NextResponse(null, { status: 404 });
+    }
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('X-K2-Brand', brand.id);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
+  // ---- Browsers request /favicon.ico unconditionally; the root file is the
+  // kaitu icon. Brands with a namespaced favicon set get a rewrite. -------
+  if (pathname === '/favicon.ico' && brand.faviconPrefix) {
+    return NextResponse.rewrite(
+      new URL(`${brand.faviconPrefix}/favicon-32x32.png`, request.url),
+    );
+  }
+
+  // ---- Install scripts: kaitu-only surface (Linux install / k2s / k2r). ---
+  if (pathname === '/i/k2' || pathname === '/i/k2s' || pathname === '/i/k2r') {
+    if (!isKaitu) {
+      return new NextResponse(null, { status: 404 });
+    }
+    if (pathname === '/i/k2s' || pathname === '/i/k2r') {
+      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+        || request.headers.get('x-real-ip')
+        || 'unknown';
+      const ua = request.headers.get('user-agent') || '';
+      const endpoint = pathname === '/i/k2s' ? 'k2s-download' : 'k2r-download';
+      fetch(`https://k2.52j.me/api/stats/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip_raw: ip, ua }),
+      }).catch(() => {
+        // Non-blocking, ignore errors
+      });
+    }
     return NextResponse.next();
   }
 
-  // Track k2s/k2r download
-  if (pathname === '/i/k2s' || pathname === '/i/k2r') {
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown';
-    const ua = request.headers.get('user-agent') || '';
-    const endpoint = pathname === '/i/k2s' ? 'k2s-download' : 'k2r-download';
-
-    fetch(`https://k2.52j.me/api/stats/${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ip_raw: ip, ua }),
-    }).catch(() => {
-      // Non-blocking, ignore errors
-    });
-
-    return NextResponse.next();
-  }
-
-  // Skip middleware for admin, manager, and payload routes (no locale prefix needed).
-  // `/manager/cms` is covered by the /manager prefix; `/payload/api` is Payload's REST.
+  // ---- Admin surfaces live only in the kaitu deployment (internal tools). -
   if (
     pathname.startsWith('/admin') ||
     pathname.startsWith('/manager') ||
     pathname.startsWith('/payload')
   ) {
+    if (!isKaitu) {
+      return new NextResponse(null, { status: 404 });
+    }
     return NextResponse.next();
   }
 
-  // Bidirectional 301 cross-domain redirect.
-  // If the URL's locale prefix is "owned" by the other brand (per ownerBrand())
-  // AND the current host is a production host, 301 to the owning brand's baseUrl.
-  // Dev hosts (localhost, amplify previews) pass through so each environment can
-  // exercise any locale without bouncing off-domain.
+  // ---- Off-brand locale → 301 to the same path under the brand's default
+  // locale, SAME HOST. The old cross-domain 301 is gone: the two brands do
+  // not know about each other (spec: 两站互不感知). ------------------------
   const localeMatch = pathname.match(LOCALE_PREFIX_RE);
-  if (localeMatch && isProductionHost(host)) {
-    const pathLocale = localeMatch[1];
-    const rest = localeMatch[2] ?? '';
-    const targetBrandId = ownerBrand(pathLocale);
-    if (targetBrandId !== brand.id) {
-      const targetBrand = targetBrandId === 'kaitu' ? KAITU : OVERLEAP;
-      const targetUrl = new URL(`/${pathLocale}${rest}`, targetBrand.baseUrl);
+  if (localeMatch) {
+    const pathLocale = localeMatch[1] as Locale;
+    if (!(brand.allowedLocales as readonly string[]).includes(pathLocale)) {
+      const rest = localeMatch[2] ?? '';
+      const targetUrl = new URL(`/${brand.defaultLocale}${rest}`, request.url);
       targetUrl.search = request.nextUrl.search;
-      targetUrl.hash = request.nextUrl.hash;
       return NextResponse.redirect(targetUrl, 301);
     }
   }
 
-  // Root path → pick locale
+  // ---- Root path → pick locale within the brand's allowed set. ------------
   if (pathname === '/') {
-    if (brand.id === 'overleap') {
-      const response = NextResponse.redirect(new URL('/en-US', request.url), 307);
-      response.headers.set('Cache-Control', 'private, no-store, must-revalidate');
-      return response;
-    }
-
-    // Cookie must be valid for the current brand — a leftover `en-GB` from clicking
-    // the language switcher on kaitu.io would otherwise bounce the user off-domain.
     const allowedSet = new Set<string>(brand.allowedLocales);
     const preferredLocale = request.cookies.get('preferredLocale')?.value;
     if (preferredLocale && allowedSet.has(preferredLocale)) {
@@ -91,8 +99,8 @@ export default function middleware(request: NextRequest) {
     const detectedLocale = getBestLocale(acceptLanguage, brand.allowedLocales);
 
     const response = NextResponse.redirect(new URL(`/${detectedLocale}`, request.url));
-    // The redirect target depends on Accept-Language + cookies; must not be publicly
-    // cached or CloudFront pins one PoP-wide answer for everybody.
+    // The redirect target depends on Accept-Language + cookies; must not be
+    // publicly cached or CloudFront pins one PoP-wide answer for everybody.
     response.headers.set('Cache-Control', 'private, no-store, must-revalidate');
 
     if (!request.cookies.get('hasVisited')) {
@@ -100,13 +108,13 @@ export default function middleware(request: NextRequest) {
         httpOnly: false,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 365 // 1 year
+        maxAge: 60 * 60 * 24 * 365, // 1 year
       });
       response.cookies.set('suggestedLocale', detectedLocale, {
         httpOnly: false,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 60 * 60 * 24 // 24 hours
+        maxAge: 60 * 60 * 24, // 24 hours
       });
     }
 
@@ -131,7 +139,10 @@ export default function middleware(request: NextRequest) {
   return response;
 }
 
-// Get the best matching locale based on Accept-Language header, constrained to allowedLocales.
+// Get the best matching locale based on Accept-Language header, constrained to
+// allowedLocales. (Unchanged from the pre-split implementation — it was already
+// allowedLocales-constrained; the overleap fallback lands on en-US because
+// zh-CN is not in its allowed set, so allowedLocales[0] wins.)
 function getBestLocale(
   acceptLanguage: string | null,
   allowedLocales: readonly Locale[]
@@ -143,7 +154,6 @@ function getBestLocale(
 
   if (!acceptLanguage) return fallback;
 
-  // Parse Accept-Language header
   const languages = acceptLanguage.split(',').map(lang => {
     const [code, q = '1'] = lang.trim().split(';q=');
     return {
@@ -152,19 +162,15 @@ function getBestLocale(
     };
   }).sort((a, b) => b.quality - a.quality);
 
-  // Find best matching locale
   for (const lang of languages) {
-    // Exact match (respecting allowedLocales)
     const exact = routing.locales.find(locale => locale.toLowerCase() === lang.code);
     if (exact && allowedSet.has(exact)) {
       return exact as Locale;
     }
 
-    // Language code match (e.g., 'en' matches 'en-US')
     const langPrefix = lang.code.split('-')[0];
     const langSuffix = lang.code.split('-')[1];
 
-    // Special handling for Chinese regions
     if (langPrefix === 'zh') {
       const zhPick =
         langSuffix === 'hk' || langSuffix === 'mo' ? 'zh-HK'
@@ -174,7 +180,6 @@ function getBestLocale(
       if (allowedSet.has(zhPick)) return zhPick as Locale;
     }
 
-    // Special handling for English regions
     if (langPrefix === 'en') {
       const enPick =
         langSuffix === 'au' ? 'en-AU'
@@ -195,6 +200,18 @@ function getBestLocale(
 }
 
 export const config = {
-  // Match only internationalized pathnames - exclude API routes (/api/ and /app/)
-  matcher: ['/', '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*', '/((?!api|app|manager|payload|_next|_vercel|.*\\..*).*)']
+  // /api, /app, /admin, /manager, /payload, /favicon.ico now MUST hit the
+  // middleware (brand gating + X-K2-Brand injection) — the old matcher
+  // excluded them. Static assets and _next remain excluded via the catch-all.
+  matcher: [
+    '/',
+    '/favicon.ico',
+    '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*',
+    '/(api|app)/:path*',
+    '/(admin|manager|payload)/:path*',
+    '/admin',
+    '/manager',
+    '/payload',
+    '/((?!api|app|admin|manager|payload|_next|_vercel|.*\\..*).*)',
+  ],
 };
