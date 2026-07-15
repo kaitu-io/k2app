@@ -2,12 +2,14 @@ package center
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/slack"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -235,4 +237,101 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 		userID, int(creditSeconds/86400), kind, f.InvoiceID,
 		time.Unix(user.ExpiredAt, 0).Format("2006-01-02"))
 	return nil
+}
+
+// applyStripeSubscriptionUpdate 落地 customer.subscription.updated：同步 auto_renew
+//（=!cancel_at_period_end）与 status。绝不 re-grant、绝不改用户权益到期（取消后用户
+// 仍享有到周期结束——对标 applyRenewalInfo 的铁律）；revoked terminal 绝不复活。
+// 未知订阅（绑定发生在 invoice.paid）→ 跳过。
+func applyStripeSubscriptionUpdate(ctx context.Context, s *stripe.Subscription) error {
+	var sub Subscription
+	if err := getDB().Where(&Subscription{Provider: "stripe", ProviderSubscriptionID: s.ID}).First(&sub).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Infof(ctx, "[StripeWebhook] sub %s not yet bound (bind happens on invoice.paid), skipping update", s.ID)
+			return nil
+		}
+		return err
+	}
+	if sub.Status == "revoked" {
+		return nil // terminal：绝不复活
+	}
+	updates := map[string]any{"auto_renew": !s.CancelAtPeriodEnd}
+	if st := stripeSubStatus(s.Status); st != "" {
+		updates["status"] = st
+	}
+	if err := getDB().Model(&Subscription{}).Where("id = ?", sub.ID).Updates(updates).Error; err != nil {
+		return err
+	}
+	log.Infof(ctx, "[StripeWebhook] sub %s autoRenew=%v status=%v", s.ID, updates["auto_renew"], updates["status"])
+	return nil
+}
+
+// markStripeSubscriptionDeleted 落地 customer.subscription.deleted：标记 expired + 关
+// auto_renew。权益不回收——expired_at 已等于最后周期末，自然过期（同 Apple EXPIRED 语义）。
+func markStripeSubscriptionDeleted(ctx context.Context, s *stripe.Subscription) error {
+	var sub Subscription
+	if err := getDB().Where(&Subscription{Provider: "stripe", ProviderSubscriptionID: s.ID}).First(&sub).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Infof(ctx, "[StripeWebhook] deleted sub %s unknown, skipping", s.ID)
+			return nil
+		}
+		return err
+	}
+	if sub.Status == "revoked" {
+		return nil
+	}
+	return getDB().Model(&Subscription{}).Where("id = ?", sub.ID).
+		Updates(map[string]any{"status": "expired", "auto_renew": false}).Error
+}
+
+// recordStripeRefundAlert 被动记账退款：Slack 告警 + 尽力归属本地用户。
+// 不自动 clawback、不自动置 revoked——主动退款/权益回收走 admin 后续迭代
+//（仓库既定「支付网关不退款」原则在 Stripe 侧的过渡形态）。
+func recordStripeRefundAlert(ctx context.Context, raw []byte) error {
+	var ch stripe.Charge
+	if err := json.Unmarshal(raw, &ch); err != nil {
+		return fmt.Errorf("parse charge: %w", err)
+	}
+	attribution := ""
+	if ch.Customer != nil && ch.Customer.ID != "" {
+		var sub Subscription
+		if err := getDB().Where(&Subscription{Provider: "stripe", ProviderCustomerID: ch.Customer.ID}).
+			Order("id DESC").First(&sub).Error; err == nil {
+			attribution = fmt.Sprintf(" user_id=%d sub=%s", sub.UserID, sub.ProviderSubscriptionID)
+		}
+	}
+	msg := fmt.Sprintf("[STRIPE-REFUND] charge=%s refunded=%d/%d %s customer=%s%s — passive record only, manual follow-up in Stripe Dashboard",
+		ch.ID, ch.AmountRefunded, ch.Amount, string(ch.Currency), stripeCustomerID(ch.Customer), attribution)
+	log.Errorf(ctx, "%s", msg)
+	if err := slack.Send("alert", msg); err != nil {
+		log.Errorf(ctx, "failed to send stripe refund alert: %v", err)
+	}
+	return nil
+}
+
+// recordStripeDisputeAlert 被动记账争议（chargeback）：Slack 告警。争议在 Stripe
+// Dashboard 应诉（devices 使用日志可作"已交付服务"抗辩素材）。
+func recordStripeDisputeAlert(ctx context.Context, raw []byte) error {
+	var d stripe.Dispute
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return fmt.Errorf("parse dispute: %w", err)
+	}
+	chargeID := ""
+	if d.Charge != nil {
+		chargeID = d.Charge.ID
+	}
+	msg := fmt.Sprintf("[STRIPE-DISPUTE] dispute=%s charge=%s amount=%d %s reason=%s — respond in Stripe Dashboard",
+		d.ID, chargeID, d.Amount, string(d.Currency), string(d.Reason))
+	log.Errorf(ctx, "%s", msg)
+	if err := slack.Send("alert", msg); err != nil {
+		log.Errorf(ctx, "failed to send stripe dispute alert: %v", err)
+	}
+	return nil
+}
+
+func stripeCustomerID(c *stripe.Customer) string {
+	if c == nil {
+		return ""
+	}
+	return c.ID
 }
