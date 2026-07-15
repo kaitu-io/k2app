@@ -333,9 +333,15 @@ describe('Account', () => {
 
     it('slogan 来自当前品牌，不含跨品牌标识', () => {
       render(<Account />);
-      expect(findSlogan()).not.toBeNull();
+      const slogan = findSlogan();
+      expect(slogan).not.toBeNull();
+      // Assert on what the component actually painted, not on the module-level
+      // constant: `expect(BRAND_SLOGAN_ZH).not.toMatch(...)` only restates that
+      // the registry is clean — it passes even if Account renders a hardcoded
+      // cross-brand string, which is precisely the regression this guards.
+      expect(slogan!.textContent).toBe(BRAND_SLOGAN_ZH);
       const forbidden = brandConfig.id === 'overleap' ? /开途|開途|Kaitu/ : /Overleap/;
-      expect(BRAND_SLOGAN_ZH).not.toMatch(forbidden);
+      expect(slogan!.textContent).not.toMatch(forbidden);
     });
   });
 
