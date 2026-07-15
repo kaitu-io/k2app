@@ -284,6 +284,67 @@ describe('test_k2_no_pcc_disclosure', () => {
     }
   });
 
+  // ── Brand gating ──────────────────────────────────────────────────────────
+  //
+  // en-US k2 docs are served by the overleap deployment (kaitu serves zh-* only).
+  // Docs are split by nature: protocol explanation is shared and must be
+  // brand-neutral; install docs teach `curl kaitu.io/i/k2*`, an endpoint
+  // overleap does not serve, so they stay `brand: kaitu` and 404 there.
+  describe('en-US k2 doc brand split', () => {
+    const listEnUsK2 = () =>
+      fs
+        .readdirSync(path.join(CONTENT_DIR, 'en-US', 'k2'))
+        .filter((f) => f.endsWith('.md'))
+        .map((f) => f.replace('.md', ''));
+
+    const brandOf = (slug: string): string => {
+      const fm = parseFrontmatter(readMd('en-US', slug));
+      return (fm['brand'] as string) ?? 'both';
+    };
+
+    const isGated = (slug: string) => brandOf(slug) === 'kaitu';
+
+    it('install docs stay kaitu-gated; protocol docs are shared', () => {
+      expect(listEnUsK2().filter(isGated).sort()).toEqual(['client', 'quickstart', 'server']);
+    });
+
+    it('no shared doc carries kaitu branding (it renders on overleap)', () => {
+      for (const slug of listEnUsK2().filter((s) => !isGated(s))) {
+        expect(
+          /Kaitu|开途|開途|kaitu\.(io|me)/.test(readMd('en-US', slug)),
+          `kaitu branding in shared doc en-US/k2/${slug}.md — it is served on overleap`,
+        ).toBe(false);
+      }
+    });
+
+    it('no shared doc links to a gated doc (the link would 404 on overleap)', () => {
+      const gated = listEnUsK2().filter(isGated);
+      for (const slug of listEnUsK2().filter((s) => !isGated(s))) {
+        const body = readMd('en-US', slug);
+        for (const target of gated) {
+          expect(
+            body.includes(`(/k2/${target})`),
+            `en-US/k2/${slug}.md links to gated /k2/${target}`,
+          ).toBe(false);
+        }
+      }
+    });
+
+    it('no shared doc links to a doc that has no en-US file', () => {
+      // /k2/vs-reality exists only in zh-CN. The k2 route falls back to the
+      // BRAND's default locale, so such a link is a 404 on overleap — it used
+      // to silently render the zh-CN page instead.
+      const present = new Set(listEnUsK2().map((s) => (s === 'index' ? 'k2' : s)));
+      for (const slug of listEnUsK2()) {
+        const body = readMd('en-US', slug);
+        const links = [...body.matchAll(/\(\/k2\/([a-z0-9-]+)\)/g)].map((m) => m[1]);
+        for (const target of links) {
+          expect(present.has(target), `en-US/k2/${slug}.md links to /k2/${target}, which has no en-US file`).toBe(true);
+        }
+      }
+    });
+  });
+
   it('no k2/ file summary or title mentions PCC or Vivace', () => {
     for (const locale of EXPECTED_LOCALES) {
       for (const slug of EXPECTED_SLUGS) {

@@ -85,9 +85,21 @@ describe('extended brand config', () => {
     expect(OVERLEAP.cdn.artifactPrefix).toBe('Overleap');
     expect(OVERLEAP.cdn.desktopBases[0]).toBe('https://d13jc1jqzlg4yt.cloudfront.net/overleap/desktop');
   });
-  it('feature gates: routers/linux/apk-guide are kaitu-only', () => {
-    expect(KAITU.features).toEqual({ routers: true, linuxInstall: true, androidApkGuide: true });
-    expect(OVERLEAP.features).toEqual({ routers: false, linuxInstall: false, androidApkGuide: false });
+  // Exact-match on purpose: a new gate must be added here deliberately, with a
+  // decision recorded for BOTH brands, rather than defaulting in unnoticed.
+  it('feature gates: routers/linux/apk-guide/release-notes are kaitu-only', () => {
+    expect(KAITU.features).toEqual({
+      routers: true,
+      linuxInstall: true,
+      androidApkGuide: true,
+      releaseNotes: true,
+    });
+    expect(OVERLEAP.features).toEqual({
+      routers: false,
+      linuxInstall: false,
+      androidApkGuide: false,
+      releaseNotes: false,
+    });
   });
   it('productName drives user-facing product badges', () => {
     expect(KAITU.productName).toBe('开途 VPN');
