@@ -185,6 +185,20 @@ BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest d
   copy lives in `src/i18n/brand/<brand>/<lang>/<ns>.json` overlays (deep-merged at load;
   only the active brand's overlays are bundled). Guard test:
   `src/i18n/__tests__/brand-literals.test.ts`. Kaitu default locale zh-CN; overleap en-US.
+- **Tests must be brand-adaptive**: `vitest` bakes the brand the same way builds do, so
+  `K2_BRAND=overleap npx vitest run` must also exit 0. Never hardcode brand identity in
+  assertions — assert against `brandConfig.*` / `getBrandName()`, or against the
+  `KAITU_BRAND` / `OVERLEAP_BRAND` named imports for registry contracts. Gate
+  brand-divergent suites with `describe.runIf(brandConfig.features.x)` and give the
+  closed-gate branch a **real assertion** (see `Tunnels.test.tsx` "brand gate" and
+  `Purchase.privateNode.test.tsx` "brand payment-channel gate"), not a bare skip.
+  Brand literals inside a test are only OK as mock fixtures.
+- **Brand literals belong in `src/brand/<brand>.ts`, never in a page/component**: pages are
+  statically imported, so a literal there ships in EVERY brand's bundle and breaks purity
+  (this is why `k2sInstallUrl` lives in the registry). `src/brand/overleap.ts` and
+  `src/brand/i18n-vars.ts` ship in overleap artifacts — keep them free of `kaitu.io` /
+  `开途` / `開途` **even in comments**; don't make the minifier's comment stripping
+  load-bearing. (`types.ts` is type-only → erased, so it's exempt.)
 - **Artifact purity**: `scripts/check-brand-purity.sh <brand> dist` — kaitu build must
   contain zero `overleap.io`; overleap build zero `kaitu.io|开途|開途`. Run after any
   build-affecting change. Bare `kaitu` protocol tokens (X-K2-Client `kaitu-service/`,
