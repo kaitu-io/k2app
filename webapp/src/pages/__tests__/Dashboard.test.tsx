@@ -80,6 +80,11 @@ import { useVPNMachine } from '../../stores/vpn-machine.store';
 import { useConnectionStore, useEffectiveCloudSelection, useHasConnectableSelection, hasConnectableSelection, AUTO_TUNNEL_SENTINEL } from '../../stores/connection.store';
 import { useUser } from '../../hooks/useUser';
 import Dashboard from '../Dashboard';
+import { getCurrentAppConfig } from '../../config/apps';
+
+// Brand gate — overleap ships no self-hosted surface. Adaptive, not forked, so
+// `K2_BRAND=overleap vitest run` stays green.
+const SELF_HOSTED = getCurrentAppConfig().features.selfHostedTunnels === true;
 
 // Mock window._k2
 const mockRun = vi.fn();
@@ -694,6 +699,38 @@ describe('Dashboard', () => {
       await waitFor(() => {
         expect(mockConnect).toHaveBeenCalled();
       });
+    });
+  });
+
+  // ==================== Self-hosted brand gate ====================
+  //
+  // /tunnels early-returns when the brand gate is closed, so every entry point
+  // into it must be gated too — otherwise the user navigates to a page that
+  // renders nothing and cannot get back with in-app controls.
+  describe('自部署 brand gate', () => {
+    it('shows the guest self-deploy entry point only when the brand gate is open', () => {
+      // Guests see the phantom-cloud overlay, which carries the self-deploy link.
+      vi.mocked(useAuthStore).mockImplementation((selector: any) =>
+        selector({ isAuthenticated: false, user: null })
+      );
+
+      render(<Dashboard />);
+
+      // Text queries, not the `name` ByRole option: `name` triggers
+      // computeAccessibleName -> getComputedStyle, which setup.ts installs as a
+      // vi.fn() that vi.clearAllMocks() strips of its implementation.
+      const selfDeployBtn = screen.queryByText(/自部署服务|Self-Deploy/i);
+
+      if (SELF_HOSTED) {
+        expect(selfDeployBtn).toBeInTheDocument();
+      } else {
+        expect(selfDeployBtn).not.toBeInTheDocument();
+      }
+      // The login CTA is brand-neutral and must survive either way, proving the
+      // overlay itself rendered and the assertion above is not vacuous.
+      expect(
+        screen.getByText(/登录解锁全球节点|Login to unlock global nodes/i)
+      ).toBeInTheDocument();
     });
   });
 });

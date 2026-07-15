@@ -67,6 +67,7 @@ export default defineConfig({
   define: {
     '__K2_BUILD_LOG_LEVEL__': JSON.stringify(process.env.K2_BUILD_LOG_LEVEL || 'debug'),
     '__K2_BUILD_COMMIT__': JSON.stringify(process.env.K2_COMMIT || ''),
+    '__K2_BRAND__': JSON.stringify(process.env.K2_BRAND === 'overleap' ? 'overleap' : 'kaitu'),
   },
   resolve: {
     alias: {

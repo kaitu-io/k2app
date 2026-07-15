@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import { useKaituBridge } from '../hooks/useKaituBridge';
 import { useAuth } from "../stores";
+import { brandConfig } from '../brand';
 
 export default function BridgeTest() {
   const { isAuthenticated } = useAuth();
@@ -53,7 +54,7 @@ export default function BridgeTest() {
     },
   });
 
-  const testUrl = 'https://www.kaitu.io/en-US/bridge-test/?embed=true';
+  const testUrl = `${brandConfig.baseURL}/en-US/bridge-test/?embed=true`;
   const embedMode = testUrl.includes('embed=true');
 
   // 监听认证状态变化并自动广播到iframe - 双向通信核心功能

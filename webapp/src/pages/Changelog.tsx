@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useKaituBridge } from '../hooks/useKaituBridge';
 import { useAuth } from "../stores";
 import { useAppLinks } from '../hooks/useAppLinks';
+import { brandConfig } from '../brand';
 
 export default function Changelog() {
   const { t } = useTranslation();
@@ -22,9 +23,14 @@ export default function Changelog() {
     onShowAlert: (title, message) => alert(`${title}\n\n${message}`),
   });
 
-  // Build changelog URL with embed flag and locale
+  // Build changelog URL with embed flag and locale.
+  // URL surgery (not string replace) so the host stays brand-agnostic.
   const changelogUrl = `${links.changelogUrl}?embed=true`;
-  const iframeUrl = changelogUrl.replace('kaitu.io/', `kaitu.io/${currentLang}/`);
+  const iframeUrl = (() => {
+    const u = new URL(changelogUrl);
+    u.pathname = `/${currentLang}${u.pathname}`;
+    return u.toString();
+  })();
 
   // Start progress bar animation
   const startProgress = () => {
@@ -85,7 +91,7 @@ export default function Changelog() {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       // Ensure message is from our iframe
-      if (event.origin !== 'https://www.kaitu.io') return;
+      if (!brandConfig.websiteOrigins.includes(event.origin)) return;
 
       // Check for link click events
       if (event.data?.type === 'external-link' && event.data?.url) {

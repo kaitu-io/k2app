@@ -6,6 +6,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useKaituBridge } from '../hooks/useKaituBridge';
 import { useAuth } from "../stores";
 import { useAppLinks } from '../hooks/useAppLinks';
+import { brandConfig } from '../brand';
 
 interface OverlayRect { top: number; left: number; width: number; height: number; }
 
@@ -132,8 +133,8 @@ export default function Discover() {
   // 监听iframe消息处理外部链接
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // 确保消息来源是我们的iframe (accept both kaitu.io and www.kaitu.io)
-      if (event.origin !== 'https://kaitu.io' && event.origin !== 'https://www.kaitu.io') return;
+      // 确保消息来源是我们的 iframe（品牌官网 origin 列表，含裸域与 www 子域）
+      if (!brandConfig.websiteOrigins.includes(event.origin)) return;
 
       // 检查是否是链接点击事件
       if (event.data?.type === 'external-link' && event.data?.url) {

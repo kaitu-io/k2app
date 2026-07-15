@@ -82,6 +82,8 @@
     "getPlansListFailed": "獲取套餐列表失敗",
     "getPlansListFailedRetry": "獲取套餐列表失敗，請重試",
     "invalidCampaignCode": "活動碼無效",
+    "paymentChannelUnavailable": "目前付款方式在本應用程式不可用，請前往官網 {{brandDomain}} 購買或聯絡客服",
+    "buyOnWebsite": "前往官網",
     "createOrderFailed": "創建訂單失敗，請重試",
     "createOrderFailedNetwork": "創建訂單失敗，請檢查網絡連接後重試",
     "refreshUserProfileFailed": "刷新用戶資料失敗",
@@ -105,7 +107,7 @@
     "multiDeviceSync": "在唔同裝置上使用相同嘅賬號登入，可享受多裝置同步服務",
     "contactSupport": "如需技術支援，請聯絡客服",
     "shareToFriends": "分享俾朋友",
-    "shareText": "Overleap — 安全快速嘅 VPN，下載安裝",
+    "shareText": "{{brand}} — 安全快速嘅 VPN，下載安裝",
     "androidInstallCard": "安卓手機安裝",
     "androidInstallCardDesc": "USB 連接電腦，保姆級引導，一鍵自動安裝到手機"
   },

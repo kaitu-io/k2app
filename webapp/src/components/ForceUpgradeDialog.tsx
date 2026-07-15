@@ -15,6 +15,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { isOlderVersion, isValidVersion, cleanVersion } from '../utils/versionCompare';
+import { brandConfig } from '../brand';
 
 /**
  * ForceUpgradeDialog - Shows a modal dialog when the client version is below minClientVersion.
@@ -32,10 +33,10 @@ const ForceUpgradeDialog: React.FC = () => {
   // Build download URL from appLinks
   const downloadUrl = useMemo(() => {
     if (!appConfig?.appLinks) {
-      return 'https://kaitu.io/install'; // fallback
+      return `${brandConfig.baseURL}/install`; // fallback
     }
     const { baseURL, installPath } = appConfig.appLinks;
-    return `${baseURL || 'https://kaitu.io'}${installPath || '/install'}`;
+    return `${baseURL || brandConfig.baseURL}${installPath || '/install'}`;
   }, [appConfig?.appLinks]);
 
   // Check version when app config is loaded

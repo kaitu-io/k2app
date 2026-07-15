@@ -6,6 +6,7 @@
  */
 
 import { useMemo } from 'react';
+import { brandConfig } from '../brand';
 import { useTranslation } from 'react-i18next';
 import { normalizeLanguageCode } from '../i18n/i18n';
 import { useAppConfig } from './useAppConfig';
@@ -61,7 +62,7 @@ export function useAppLinks() {
 
   // 构建链接对象
   const links = useMemo<AppLinks>(() => {
-    const baseURL = appConfig?.appLinks?.baseURL || 'https://kaitu.io';
+    const baseURL = appConfig?.appLinks?.baseURL || brandConfig.baseURL;
     return {
       discoveryUrl: `${baseURL}${appConfig?.appLinks?.discoveryPath || '/discovery'}?embed=true&theme=dark`,
       privacyPolicyUrl: `${baseURL}${appConfig?.appLinks?.privacyPath || '/privacy'}`,

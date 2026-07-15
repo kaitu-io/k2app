@@ -3,6 +3,7 @@ import { Box, IconButton, Tab, Tabs, Tooltip } from '@mui/material';
 import { Refresh as RefreshIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../stores/connection.store';
+import { getCurrentAppConfig } from '../config/apps';
 
 type TabValue = 'manual' | 'self_hosted' | 'k2sub';
 
@@ -39,9 +40,13 @@ export function SmartServerSelector({
   const serverMode = useConnectionStore((s) => s.serverMode);
   const setServerMode = useConnectionStore((s) => s.setServerMode);
   const isGateway = window._platform?.platformType === 'gateway';
+  // Brands without a k2s install channel have no self-hosted surface at all.
+  const selfHostedEnabled = getCurrentAppConfig().features.selfHostedTunnels === true;
 
+  // A persisted serverMode='self_hosted' (brand switch, stale storage) must not
+  // resolve to a tab that no longer exists — MUI would warn and render nothing.
   const tabValue: TabValue =
-    serverMode === 'self_hosted' ? 'self_hosted'
+    serverMode === 'self_hosted' && selfHostedEnabled ? 'self_hosted'
     : serverMode === 'k2sub' ? 'k2sub'
     : isGateway ? 'k2sub'
     : 'manual';
@@ -88,12 +93,14 @@ export function SmartServerSelector({
               disabled={!isInteractive}
             />
           )}
-          <Tab
-            value="self_hosted"
-            label={t('serverSelector.tabSelfHosted')}
-            sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
-            disabled={!isInteractive}
-          />
+          {selfHostedEnabled && (
+            <Tab
+              value="self_hosted"
+              label={t('serverSelector.tabSelfHosted')}
+              sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
+              disabled={!isInteractive}
+            />
+          )}
         </Tabs>
         {showManualRefresh && (
           <Tooltip title={t('dashboard.manualRefresh') || 'Refresh'}>
@@ -132,9 +139,11 @@ export function SmartServerSelector({
           {k2subContent}
         </Box>
       )}
-      <Box sx={{ display: tabValue === 'self_hosted' ? 'block' : 'none' }}>
-        {selfHostedContent}
-      </Box>
+      {selfHostedEnabled && (
+        <Box sx={{ display: tabValue === 'self_hosted' ? 'block' : 'none' }}>
+          {selfHostedContent}
+        </Box>
+      )}
     </Box>
   );
 }

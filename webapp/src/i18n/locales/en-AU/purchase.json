@@ -82,6 +82,8 @@
     "getPlansListFailed": "Failed to get plan list",
     "getPlansListFailedRetry": "Failed to get plan list, please retry",
     "invalidCampaignCode": "Invalid promo code",
+    "paymentChannelUnavailable": "This payment method isn't available in this app. Please purchase on {{brandDomain}} or contact support.",
+    "buyOnWebsite": "Go to Website",
     "createOrderFailed": "Failed to create order, please retry",
     "createOrderFailedNetwork": "Failed to create order, please check network connection and retry",
     "refreshUserProfileFailed": "Failed to refresh user profile",
@@ -105,7 +107,7 @@
     "multiDeviceSync": "Log in with the same account on different devices to enjoy multi-device sync service",
     "contactSupport": "For technical support, please contact customer service",
     "shareToFriends": "Share with Friends",
-    "shareText": "Overleap — Fast & secure VPN. Download here:",
+    "shareText": "{{brand}} — Fast & secure VPN. Download here:",
     "androidInstallCard": "Android Phone Install",
     "androidInstallCardDesc": "Connect via USB, step-by-step guided, auto-install to your phone"
   },

@@ -1,4 +1,7 @@
 import { createTheme, ThemeOptions } from '@mui/material/styles';
+import { brandConfig } from './brand';
+
+const brandTheme = brandConfig.theme;
 
 // 共享的主题配置
 const sharedThemeConfig: ThemeOptions = {
@@ -79,16 +82,8 @@ export const lightTheme = createTheme({
   ...sharedThemeConfig,
   palette: {
     mode: 'light',
-    primary: {
-      main: '#1565C0', // 深蓝色，与 Mobile 端保持一致，专业感更强
-      light: '#42A5F5', // 浅蓝色用于高亮
-      dark: '#0D47A1',  // 更深蓝色用于 hover 状态
-    },
-    secondary: {
-      main: '#00838F', // 青绿色，与 Mobile 端一致，体现连网特性
-      light: '#26C6DA', // 浅青绿色
-      dark: '#006064',  // 深青绿色
-    },
+    primary: { ...brandTheme.light.primary },
+    secondary: { ...brandTheme.light.secondary },
     success: {
       main: '#2E7D32', // 成功/连接状态色，与 Mobile 端一致
       light: '#66BB6A',
@@ -115,10 +110,10 @@ export const lightTheme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: '#1565C0', // 使用主品牌色，突出關鍵操作區域的重要性
+          backgroundColor: brandTheme.light.primary.main, // 使用主品牌色，突出關鍵操作區域的重要性
           borderBottom: 'none', // 移除邊框，讓色彩本身承擔區分作用
           color: '#FFFFFF', // 白色文字確保在深色背景下清晰
-          boxShadow: '0 2px 8px rgba(21, 101, 192, 0.15)', // 使用品牌色的陰影增強立體感
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)', // 中性陰影（品牌无关）增強立體感
         },
       },
     },
@@ -137,16 +132,8 @@ export const darkTheme = createTheme({
   ...sharedThemeConfig,
   palette: {
     mode: 'dark',
-    primary: {
-      main: '#42A5F5',  // 与 Mobile 端完全一致的浅蓝色，深色背景下可见性好
-      light: '#90CAF9', // 更浅的蓝色用于高亮
-      dark: '#1976D2',  // 深蓝色用于 hover 状态
-    },
-    secondary: {
-      main: '#26C6DA',  // 与 Mobile 端一致的浅青绿色，深色模式下效果好
-      light: '#4DD0E1', // 更浅的青绿色
-      dark: '#0097A7',  // 深青绿色
-    },
+    primary: { ...brandTheme.dark.primary },
+    secondary: { ...brandTheme.dark.secondary },
     success: {
       main: '#66BB6A',  // 与 Mobile 端一致的浅绿色，深色背景下可见
       light: '#81C784',

@@ -17,6 +17,7 @@ import {
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import BackButton from "../components/BackButton";
+import { brandConfig } from "../brand";
 
 export default function ServiceError() {
   const { t } = useTranslation();
@@ -27,7 +28,7 @@ export default function ServiceError() {
   const backTo = (location.state as { from?: string })?.from || '/';
 
   const handleDownload = () => {
-    window._platform?.openExternal?.('https://kaitu.io/install');
+    window._platform?.openExternal?.(`${brandConfig.baseURL}/install`);
   };
 
   return (

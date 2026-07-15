@@ -41,6 +41,8 @@ import RetailerStatsOverview from "../components/RetailerStatsOverview";
 import InviteRule from "../components/InviteRule";
 import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
+import { getCurrentAppConfig } from '../config/apps';
+import { brandConfig } from '../brand';
 
 export default function Invite() {
   const { t } = useTranslation();
@@ -69,8 +71,9 @@ export default function Invite() {
   const { getShareLink, loading: shareLinkLoading } = useShareLink();
   const { shareInviteCode } = useInviteCodeActions();
   const { appConfig } = useAppConfig();
+  const retailerEnabled = getCurrentAppConfig().features.retailer === true;
 
-  const baseURL = appConfig?.appLinks?.baseURL || 'https://kaitu.io';
+  const baseURL = appConfig?.appLinks?.baseURL || brandConfig.baseURL;
   const promotionLink = invite ? `${baseURL}/s/${invite.code}` : '';
 
   const isMobile = ['ios', 'android'].includes(window._platform!.os) || /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -262,7 +265,7 @@ export default function Invite() {
       <Box sx={{ mb: 2 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between">
           <Typography variant="h5" fontWeight={600}>
-            {user?.isRetailer ? t('invite:invite.retailerTitle') : t('invite:invite.inviteFriends')}
+            {retailerEnabled && user?.isRetailer ? t('invite:invite.retailerTitle') : t('invite:invite.inviteFriends')}
           </Typography>
           <Button
             variant="text"
@@ -706,7 +709,7 @@ export default function Invite() {
         )}
 
         {/* Invite rules for normal users */}
-        {!user?.isRetailer && (
+        {!(retailerEnabled && user?.isRetailer) && (
           <InviteRule invite={invite} loading={loadingInviteCode} />
         )}
 

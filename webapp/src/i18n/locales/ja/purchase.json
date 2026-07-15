@@ -82,6 +82,8 @@
     "getPlansListFailed": "プランリストの取得に失敗しました",
     "getPlansListFailedRetry": "プランリストの取得に失敗しました、再試行してください",
     "invalidCampaignCode": "プロモーションコードが無効です",
+    "paymentChannelUnavailable": "この支払い方法はこのアプリでは利用できません。公式サイト {{brandDomain}} から購入するか、サポートにお問い合わせください。",
+    "buyOnWebsite": "公式サイトへ",
     "createOrderFailed": "注文の作成に失敗しました、再試行してください",
     "createOrderFailedNetwork": "注文の作成に失敗しました、ネットワーク接続を確認して再試行してください",
     "refreshUserProfileFailed": "ユーザープロファイルの更新に失敗しました",
@@ -105,7 +107,7 @@
     "multiDeviceSync": "異なるデバイスで同じアカウントでログインすると、複数デバイスの同期サービスをご利用いただけます",
     "contactSupport": "技術サポートが必要な場合は、カスタマーサポートにお問い合わせください",
     "shareToFriends": "友達にシェア",
-    "shareText": "Overleap — 安全で高速な VPN、ダウンロードはこちら",
+    "shareText": "{{brand}} — 安全で高速な VPN、ダウンロードはこちら",
     "androidInstallCard": "Androidスマホへインストール",
     "androidInstallCardDesc": "USB接続で簡単ガイド付き、ワンタッチ自動インストール"
   },

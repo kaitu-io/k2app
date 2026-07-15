@@ -102,7 +102,7 @@
       "licenseKeyNotMatch": "Not eligible for this license key",
       "tierMismatch": "Your current tier cannot purchase this plan. Please contact support to switch tiers.",
       "proxyPurchaseDeprecated": "Proxy purchase is no longer supported. Please ask the recipient to purchase with their own account.",
-      "proxyMembersDeprecated": "Proxy member management has been removed. Specify the recipient at kaitu.io/purchase during checkout."
+      "proxyMembersDeprecated": "Proxy member management has been removed. Specify the recipient at {{brandDomain}}/purchase during checkout."
     },
     "tunnel": {
       "listFailed": "Failed to load server list",
@@ -130,10 +130,6 @@
     "installCancelled": "Installation cancelled",
     "unknown": "Unknown error",
     "unknownError": "Unknown Error"
-  },
-  "brand": {
-    "name": "Overleap",
-    "slogan": "Thrives where networks struggle"
   },
   "features": {
     "fastConnect": "Lightning Fast",
