@@ -99,46 +99,8 @@ export const OVERLEAP: Brand = {
   features: { routers: false, linuxInstall: false, androidApkGuide: false },
 };
 
-const LOCALE_BRAND: Record<Locale, BrandId> = {
-  'zh-CN': 'kaitu',
-  'zh-TW': 'kaitu',
-  'zh-HK': 'kaitu',
-  'en-US': 'overleap',
-  'en-GB': 'overleap',
-  'en-AU': 'overleap',
-  'ja': 'overleap',
-};
-
-export function ownerBrand(locale: string): BrandId {
-  return LOCALE_BRAND[locale as Locale] ?? 'kaitu';
-}
-
-const HOST_MAP: Record<string, Brand> = {
-  'kaitu.io': KAITU,
-  'www.kaitu.io': KAITU,
-  'overleap.io': OVERLEAP,
-  'www.overleap.io': OVERLEAP,
-};
-
-export function brandFromHost(host: string | null | undefined): Brand {
-  if (!host) return KAITU;
-  const h = host.toLowerCase().split(':')[0];
-  return HOST_MAP[h] ?? KAITU;
-}
-
 export function brandById(id: BrandId): Brand {
   return id === 'overleap' ? OVERLEAP : KAITU;
-}
-
-export function brandFromHostOrLocale(
-  host: string | null | undefined,
-  locale: string,
-): Brand {
-  if (host) {
-    const h = host.toLowerCase().split(':')[0];
-    if (HOST_MAP[h]) return HOST_MAP[h];
-  }
-  return brandById(ownerBrand(locale));
 }
 
 /**

@@ -1,14 +1,17 @@
 'use client';
 
-import { createContext, useContext, type ReactNode } from 'react';
-import { KAITU, type Brand } from '@/lib/brands';
+import { type ReactNode } from 'react';
+import { siteBrand, type Brand } from '@/lib/brands';
 
-const BrandContext = createContext<Brand>(KAITU);
-
-export function BrandProvider({ brand, children }: { brand: Brand; children: ReactNode }) {
-  return <BrandContext.Provider value={brand}>{children}</BrandContext.Provider>;
+/**
+ * Phase 2: the brand is baked into the bundle (NEXT_PUBLIC_BRAND is inlined at
+ * build time), so no React context is needed. BrandProvider is kept as a
+ * pass-through for API stability; useBrand() reads the baked registry entry.
+ */
+export function BrandProvider({ children }: { brand?: Brand; children: ReactNode }) {
+  return children;
 }
 
 export function useBrand(): Brand {
-  return useContext(BrandContext);
+  return siteBrand();
 }

@@ -10,7 +10,6 @@ import LanguageDetectionBanner from '@/components/LanguageDetectionBanner';
 import CookieConsent from '@/components/CookieConsent';
 import { EmbedThemeProvider } from '@/components/providers/EmbedThemeProvider';
 import { LocaleProvider } from '@/components/providers/LocaleProvider';
-import { BrandProvider } from '@/components/providers/BrandProvider';
 import { getBrand } from '@/lib/brand-server';
 import { siteBrand } from '@/lib/brands';
 import { getRequestPathname } from '@/lib/request-pathname';
@@ -109,22 +108,20 @@ export default async function LocaleLayout({
         )}
         <NextIntlClientProvider messages={messages}>
           <LocaleProvider locale={locale}>
-            <BrandProvider brand={brand}>
-              <Suspense fallback={null}>
-                <EmbedThemeProvider>
-                  <AppConfigProvider>
-                    <AuthProvider>
-                      <BrowserWarningBar brandDomain={new URL(brand.baseUrl).hostname} />
-                      <LanguageDetectionBanner />
-                      {children}
-                      <Toaster />
-                      <CookieConsent />
-                      <ChatwootWidget />
-                    </AuthProvider>
-                  </AppConfigProvider>
-                </EmbedThemeProvider>
-              </Suspense>
-            </BrandProvider>
+            <Suspense fallback={null}>
+              <EmbedThemeProvider>
+                <AppConfigProvider>
+                  <AuthProvider>
+                    <BrowserWarningBar brandDomain={new URL(brand.baseUrl).hostname} />
+                    <LanguageDetectionBanner />
+                    {children}
+                    <Toaster />
+                    <CookieConsent />
+                    <ChatwootWidget />
+                  </AuthProvider>
+                </AppConfigProvider>
+              </EmbedThemeProvider>
+            </Suspense>
           </LocaleProvider>
         </NextIntlClientProvider>
       </body>
