@@ -73,7 +73,7 @@ Rules that span multiple directories. Layer-specific rules live in the layer doc
 - **Artifact naming**: Desktop uses `Kaitu_{VERSION}_{ARCH}.{EXT}` (underscore-separated). Mobile uses `kaitu/android/` CDN layout. See `desktop/CLAUDE.md` / `mobile/CLAUDE.md` for full details.
 - **Linux desktop = embedded Go binary, no Tauri**: `cmd/k2` ships a single Go binary with the React webapp embedded via `//go:embed` in `k2/webui`. Users install via `curl -fsSL https://kaitu.io/i/k2 | sudo bash` — downloads tarball + `.sha256`, verifies, runs `packaging/linux/install.sh`. macOS and Windows continue to use the Tauri shell. See `k2/webui/CLAUDE.md` for install flow details.
 - **Workspace layout**: Root `yarn install` provisions `webapp`, `desktop`, `mobile`. `web/` and `tools/kaitu-center/` have independent lockfiles — install there separately when touching them.
-- **Brand 参数化（开途/Overleap 双品牌）**: 后端按 Host→`X-K2-Brand`→kaitu 解析请求品牌；`users.brand` 是出生属性，认证层强制匹配（403003）。客户端 build 时烘焙品牌并恒发 `X-K2-Brand`。Spec: `docs/superpowers/specs/2026-07-14-brand-split-design.md`。
+- **Brand 参数化（开途/Overleap 双品牌）**: 后端按 Host→`X-K2-Brand`→kaitu 解析请求品牌；`users.brand` 是出生属性，认证层强制匹配（403003）。客户端 build 时烘焙品牌并恒发 `X-K2-Brand`。web 层：`NEXT_PUBLIC_BRAND=kaitu|overleap` 一套代码两个 Amplify 部署（kaitu.io / overleap.io），互不感知，品牌泄漏守卫 `web/tests/brand-guard.test.ts`。Spec: `docs/superpowers/specs/2026-07-14-brand-split-design.md`。
 
 ## Cross-Layer Domain Vocabulary
 
