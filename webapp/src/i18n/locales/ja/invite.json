@@ -63,7 +63,7 @@
     "inviteCodeDescription2": "各被招待者は1回のみ招待できます",
     "loading": "招待コード情報を読み込み中...",
     "loadFailed": "招待コード情報の読み込みに失敗しました、再試行してください。",
-    "inviteYouToUse": "🎉 Overleap（Overleap.io）のご利用を招待します",
+    "inviteYouToUse": "🎉 {{brand}}（{{brandDomain}}）のご利用を招待します",
     "downloadApp": "📱 アプリをダウンロード",
     "inviteCodeLabel": "🎁 招待コード",
     "paidPurchase": "• 有料購入：##双方##がそれぞれ獲得",

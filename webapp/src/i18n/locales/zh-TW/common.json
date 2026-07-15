@@ -98,7 +98,7 @@
       "licenseKeyNotMatch": "不符合此授權碼的使用條件",
       "tierMismatch": "目前級別無法購買此方案，請聯絡客服變更級別",
       "proxyPurchaseDeprecated": "代付款功能已下線，請讓對方使用自己的帳號購買",
-      "proxyMembersDeprecated": "代付成員管理已下線，請在 kaitu.io/purchase 下單時指定受益方"
+      "proxyMembersDeprecated": "代付成員管理已下線，請在 {{brandDomain}}/purchase 下單時指定受益方"
     },
     "vpn": {
       "authFailed": "認證失敗，請重新登入",
@@ -130,10 +130,6 @@
     "installCancelled": "安裝已取消",
     "unknown": "未知錯誤",
     "unknownError": "未知錯誤"
-  },
-  "brand": {
-    "name": "開途",
-    "slogan": "越擁堵，越從容"
   },
   "features": {
     "fastConnect": "極速連線",

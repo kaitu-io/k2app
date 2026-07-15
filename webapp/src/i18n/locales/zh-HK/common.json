@@ -98,7 +98,7 @@
       "licenseKeyNotMatch": "唔符合此授權碼嘅使用條件",
       "tierMismatch": "當前檔位無法購買此套餐，請聯絡客服變更檔位",
       "proxyPurchaseDeprecated": "代付款功能已下線，請讓對方用自己嘅帳號購買",
-      "proxyMembersDeprecated": "代付成員管理已下線，請喺 kaitu.io/purchase 下單時指定受益方"
+      "proxyMembersDeprecated": "代付成員管理已下線，請喺 {{brandDomain}}/purchase 下單時指定受益方"
     },
     "vpn": {
       "authFailed": "認證失敗，請重新登入",
@@ -130,10 +130,6 @@
     "installCancelled": "安裝已取消",
     "unknown": "未知錯誤",
     "unknownError": "未知錯誤"
-  },
-  "brand": {
-    "name": "Overleap 開途",
-    "slogan": "越擁堵，越從容"
   },
   "features": {
     "fastConnect": "極速連接",

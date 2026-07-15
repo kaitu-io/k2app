@@ -62,6 +62,7 @@ import BetaChannelToggle from "../components/BetaChannelToggle";
 import PasswordDialog from "../components/PasswordDialog";
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import { usePrivateNodes } from '../hooks/usePrivateNodes';
+import { getBrandSlogan } from '../brand/i18n-vars';
 import { getCurrentAppConfig } from '../config/apps';
 
 export default function Account() {
@@ -261,7 +262,7 @@ export default function Account() {
               display: 'block'
             }}
           >
-            {t('common:brand.slogan')}
+            {getBrandSlogan(i18n.language)}
           </Typography>
         </CardContent>
       </Card>

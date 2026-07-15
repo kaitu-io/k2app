@@ -98,7 +98,7 @@
       "licenseKeyNotMatch": "このライセンスキーの使用条件を満たしていません",
       "tierMismatch": "現在のプランではこのパッケージを購入できません。サポートにお問い合わせください。",
       "proxyPurchaseDeprecated": "代理購入機能は終了しました。相手方ご自身のアカウントでご購入ください。",
-      "proxyMembersDeprecated": "代理メンバー管理は終了しました。購入時に kaitu.io/purchase で受益者を指定してください。"
+      "proxyMembersDeprecated": "代理メンバー管理は終了しました。購入時に {{brandDomain}}/purchase で受益者を指定してください。"
     },
     "vpn": {
       "authFailed": "認証に失敗しました、再度ログインしてください",
@@ -130,10 +130,6 @@
     "installCancelled": "インストールがキャンセルされました",
     "unknown": "不明なエラー",
     "unknownError": "不明なエラー"
-  },
-  "brand": {
-    "name": "Overleap",
-    "slogan": "混雑するほど、余裕が生まれる"
   },
   "features": {
     "fastConnect": "高速接続",

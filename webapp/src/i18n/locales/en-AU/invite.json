@@ -63,7 +63,7 @@
     "inviteCodeDescription2": "Each invitee can only be invited once",
     "loading": "Loading invitation code info...",
     "loadFailed": "Failed to load invitation code info, please retry.",
-    "inviteYouToUse": "🎉 Inviting you to use Overleap (Overleap.io)",
+    "inviteYouToUse": "🎉 Inviting you to use {{brand}} ({{brandDomain}})",
     "downloadApp": "📱 Download app",
     "inviteCodeLabel": "🎁 Invitation code",
     "paidPurchase": "• Paid purchase: ##Both parties## get",

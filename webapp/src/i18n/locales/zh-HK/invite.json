@@ -63,7 +63,7 @@
     "inviteCodeDescription2": "每個被邀請人僅能被邀請一次",
     "loading": "正在載入邀請碼信息...",
     "loadFailed": "邀請碼信息載入失敗，請重試。",
-    "inviteYouToUse": "🎉 邀請您使用 Overleap 開途（Overleap.io）",
+    "inviteYouToUse": "🎉 邀請您使用 {{brand}} {{brand}}（{{brandDomain}}）",
     "downloadApp": "📱 下載應用",
     "inviteCodeLabel": "🎁 邀請碼",
     "paidPurchase": "• 付費購買: ##雙方##各獲得",

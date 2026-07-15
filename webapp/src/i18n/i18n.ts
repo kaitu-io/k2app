@@ -17,15 +17,43 @@ export const languages = {
 
 export type LanguageCode = keyof typeof languages;
 
+/** Shallow-recursive merge: overlay wins; objects merge, scalars/arrays replace. */
+function deepMerge<T extends Record<string, any>>(base: T, overlay: Record<string, any>): T {
+  const out: Record<string, any> = { ...base };
+  for (const [k, v] of Object.entries(overlay)) {
+    out[k] =
+      v && typeof v === 'object' && !Array.isArray(v) && typeof out[k] === 'object'
+        ? deepMerge(out[k], v)
+        : v;
+  }
+  return out as T;
+}
+
+// The brand segment must be a compile-time constant in each import template so
+// Vite's import-analysis only bundles the ACTIVE brand's overlay JSONs — the
+// dead branch is removed after __K2_BRAND__ define folding (artifact purity).
+declare const __K2_BRAND__: string;
+const loadBrandOverlay: (lang: string, ns: Namespace) => Promise<any> =
+  __K2_BRAND__ === 'overleap'
+    ? (lang, ns) => import(`./brand/overleap/${lang}/${ns}.json`)
+    : (lang, ns) => import(`./brand/kaitu/${lang}/${ns}.json`);
+
 // 动态加载 namespace 的函数
 const loadNamespaceResources = async (lang: string, ns: Namespace) => {
+  let base: Record<string, any>;
   try {
     const module = await import(`./locales/${lang}/${ns}.json`);
-    return module.default || module;
+    base = module.default || module;
   } catch {
     // 回退到品牌默认语言
     const fallbackModule = await import(`./locales/${brandConfig.defaultLocale}/${ns}.json`);
-    return fallbackModule.default || fallbackModule;
+    base = fallbackModule.default || fallbackModule;
+  }
+  try {
+    const overlay = await loadBrandOverlay(lang, ns);
+    return deepMerge(base, overlay.default || overlay);
+  } catch {
+    return base; // no overlay for this brand/lang/ns — normal case
   }
 };
 
