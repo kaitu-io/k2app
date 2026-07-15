@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Script from "next/script";
 import { useSearchParams } from "next/navigation";
+import { siteBrand } from "@/lib/brands";
 
 /**
  * Hides Chatwoot widget DOM elements injected by the SDK.
@@ -28,6 +29,8 @@ function showChatwootElements() {
 export default function ChatwootWidget() {
   const searchParams = useSearchParams();
   const [shouldLoad, setShouldLoad] = useState(false);
+  // '' disables the support widget for this brand (overleap has no inbox yet).
+  const chatwootToken = siteBrand().chatwootToken;
 
   const isEmbed = searchParams.get('embed') === 'true' ||
     (typeof window !== 'undefined' && window.location.hash === '#embed');
@@ -48,7 +51,7 @@ export default function ChatwootWidget() {
     }
   }, [isEmbed]);
 
-  if (!shouldLoad || isEmbed) {
+  if (!shouldLoad || isEmbed || !chatwootToken) {
     return null;
   }
 
@@ -60,7 +63,7 @@ export default function ChatwootWidget() {
       onLoad={() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).chatwootSDK.run({
-          websiteToken: 'ZfFNvQRuoKzkik6X4KCSgp1h',
+          websiteToken: chatwootToken,
           baseUrl: 'https://chat.anc.52j.me'
         });
       }}
