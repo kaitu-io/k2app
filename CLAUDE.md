@@ -22,6 +22,24 @@ scripts/test_build.sh                       # Full build verification (14 checks
 yarn install                                # Always from root (workspace)
 ```
 
+## Constitutional Rule: Work Isolation
+
+**任何非纯只读的代码改动，必须在独立 git worktree + 独立 feature 分支中完成，禁止直接在共享主工作目录的 `main` 分支上编辑应用代码。** main 是随时可能被并行任务/其他 agent 读取的共享状态，直接在其上改代码会污染 `git status`、拖并行工作下水、绕开分支+review 流程。
+
+违反条件（以下行为均被禁止）:
+- 在主工作目录（`GIT_DIR == GIT_COMMON` 且 `branch == main`）直接 `Edit`/`Write` 应用代码文件（`webapp/`、`web/`、`api/`、`desktop/`、`mobile/`、`k2/` 等）而未先建立独立 worktree + 分支
+- 复用他人/其他并行任务正在使用的 worktree 完成不相关的改动
+- 改动完成后直接 commit 到 `main`，跳过分支 + PR/review 流程
+
+例外（不受此规则约束，可直接在 main 上进行）:
+- 纯只读调查 / 搜索 / 阅读（不产生代码改动）
+- 对 `CLAUDE.md` / `docs/` 等治理与文档类文件的直接修改
+- 用户明确指示"直接在当前目录改"时
+
+标准流程：使用 `superpowers:using-git-worktrees` 技能（或原生 `EnterWorktree` 工具）创建隔离工作区 → 新建 `fix/<slug>` / `feat/<slug>` 分支 → 完成改动 + 测试 → 按 [[feedback_check_staged_before_commit]] 规则单独 `git commit --only <paths>` → 用 `superpowers:finishing-a-development-branch` 决定合并 / PR 路径。
+
+---
+
 ## Project Structure
 
 ```
