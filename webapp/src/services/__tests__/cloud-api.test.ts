@@ -74,6 +74,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { cacheStore } from '../cache-store';
 import { resolveAndFetch } from '../resolve-and-fetch';
 import { addNodes } from '../entry-pool';
+import { brandConfig } from '../../brand';
 
 // Type helper for mocked functions
 const mockedAuthService = vi.mocked(authService);
@@ -850,7 +851,7 @@ describe('X-K2-Brand header + 403003 brand mismatch', () => {
     await cloudApi.request('GET', '/api/user/info');
     expect(resolveAndFetch).toHaveBeenCalledWith(
       expect.objectContaining({
-        headers: expect.objectContaining({ 'X-K2-Brand': 'kaitu' }),
+        headers: expect.objectContaining({ 'X-K2-Brand': brandConfig.id }),
       })
     );
   });
@@ -861,7 +862,7 @@ describe('X-K2-Brand header + 403003 brand mismatch', () => {
     expect(resolveAndFetch).toHaveBeenCalledWith(
       expect.objectContaining({
         path: '/api/auth/refresh',
-        headers: expect.objectContaining({ 'X-K2-Brand': 'kaitu' }),
+        headers: expect.objectContaining({ 'X-K2-Brand': brandConfig.id }),
       })
     );
   });

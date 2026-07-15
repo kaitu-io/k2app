@@ -77,6 +77,14 @@ vi.mock('../../stores/login-dialog.store', () => ({
 
 import Purchase from '../Purchase';
 import { cloudApi } from '../../services/cloud-api';
+import { brandConfig } from '../../brand';
+
+// These suites exercise the WordGate order/pay flow. Brands without an in-app
+// purchase channel (overleap: wordgatePurchase=false, no IAP on this platform)
+// intentionally render the "buy on the website" panel instead — see
+// Purchase.tsx's brand payment-channel gate. Gate the flow suites on that, and
+// assert the closed-gate behaviour explicitly below rather than just skipping.
+const WORDGATE = brandConfig.features.wordgatePurchase;
 
 const PRIVATE_NODE_PLAN: Plan = {
   pid: 'pn-1m',
@@ -139,7 +147,7 @@ const SHARED_PLAN: Plan = {
   product: 'app',
 };
 
-describe('Purchase — private node region selection', () => {
+describe.runIf(WORDGATE)('Purchase — private node region selection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     showAlert.mockReset();
@@ -206,7 +214,7 @@ describe('Purchase — private node region selection', () => {
   });
 });
 
-describe('Purchase — kind scoping', () => {
+describe.runIf(WORDGATE)('Purchase — kind scoping', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     showAlert.mockReset();
@@ -243,5 +251,40 @@ describe('Purchase — kind scoping', () => {
     expect(screen.getAllByText('$99.00').length).toBeGreaterThan(0);
     // Shared subscription must NOT appear in the dedicated-line scope.
     expect(screen.queryAllByText('$19.00').length).toBe(0);
+  });
+});
+
+// Always runs. Under kaitu the gate is open (plans render); under overleap the
+// gate is closed and the page must offer the website purchase route instead —
+// and must never surface the WordGate plan UI.
+describe('Purchase — brand payment-channel gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    showAlert.mockReset();
+    mockEndpoints({ app: [SHARED_PLAN], privateNode: [PRIVATE_NODE_PLAN] });
+  });
+
+  it('renders the WordGate plan UI only when the brand has that channel', async () => {
+    renderPurchase(['/']);
+
+    if (WORDGATE) {
+      await waitFor(() => {
+        expect(screen.getAllByText('$19.00').length).toBeGreaterThan(0);
+      });
+    } else {
+      // Closed gate: no plan cards, no region picker — the WordGate flow is
+      // absent entirely, and the user is pointed at the brand website.
+      await screen.findByText(i18n.t('purchase:purchase.buyOnWebsite'));
+      expect(screen.queryAllByText('$19.00').length).toBe(0);
+      expect(screen.queryAllByText('$99.00').length).toBe(0);
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(
+        screen.getByText(i18n.t('purchase:purchase.paymentChannelUnavailable')),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it('brand gate config matches the brand registry', () => {
+    expect(WORDGATE).toBe(brandConfig.id === 'kaitu');
   });
 });

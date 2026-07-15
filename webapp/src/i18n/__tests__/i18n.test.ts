@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeLanguageCode } from '../i18n';
+import { brandConfig } from '../../brand';
+
+// Unmappable input falls back to the BRAND's default locale by design
+// (kaitu → zh-CN, overleap → en-US). Asserting brandConfig.defaultLocale
+// pins that contract under either brand instead of hardcoding zh-CN.
+const FALLBACK = brandConfig.defaultLocale;
 
 describe('normalizeLanguageCode', () => {
   describe('supported languages', () => {
@@ -82,27 +88,33 @@ describe('normalizeLanguageCode', () => {
   });
 
   describe('unsupported languages', () => {
-    it('should fallback to zh-CN for completely unsupported languages', () => {
-      expect(normalizeLanguageCode('fr-FR')).toBe('zh-CN');
-      expect(normalizeLanguageCode('de-DE')).toBe('zh-CN');
-      expect(normalizeLanguageCode('es-ES')).toBe('zh-CN');
-      expect(normalizeLanguageCode('ko-KR')).toBe('zh-CN');
+    it("should fallback to the brand's default locale for completely unsupported languages", () => {
+      expect(normalizeLanguageCode('fr-FR')).toBe(FALLBACK);
+      expect(normalizeLanguageCode('de-DE')).toBe(FALLBACK);
+      expect(normalizeLanguageCode('es-ES')).toBe(FALLBACK);
+      expect(normalizeLanguageCode('ko-KR')).toBe(FALLBACK);
+    });
+
+    it('resolves the brand default locale to the expected per-brand value', () => {
+      // Guards the brand↔locale wiring itself, so the assertions above can
+      // never be vacuously satisfied by a wrong defaultLocale.
+      expect(FALLBACK).toBe(brandConfig.id === 'overleap' ? 'en-US' : 'zh-CN');
     });
   });
 
   describe('edge cases', () => {
     it('should handle empty string', () => {
-      expect(normalizeLanguageCode('')).toBe('zh-CN');
+      expect(normalizeLanguageCode('')).toBe(FALLBACK);
     });
 
     it('should handle single character codes', () => {
-      expect(normalizeLanguageCode('z')).toBe('zh-CN');
-      expect(normalizeLanguageCode('e')).toBe('zh-CN');
+      expect(normalizeLanguageCode('z')).toBe(FALLBACK);
+      expect(normalizeLanguageCode('e')).toBe(FALLBACK);
     });
 
     it('should handle invalid formats', () => {
-      expect(normalizeLanguageCode('invalid')).toBe('zh-CN');
-      expect(normalizeLanguageCode('123')).toBe('zh-CN');
+      expect(normalizeLanguageCode('invalid')).toBe(FALLBACK);
+      expect(normalizeLanguageCode('123')).toBe(FALLBACK);
     });
   });
 });
