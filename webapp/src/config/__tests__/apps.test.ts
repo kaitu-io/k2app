@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { getCurrentAppConfig, isFeatureEnabled } from '../apps';
 import { brandConfig } from '../../brand';
 
-// Active test brand is kaitu (__K2_BRAND__ vitest default).
+// Brand-adaptive: every assertion is expressed against brandConfig, so this
+// suite is green under K2_BRAND=kaitu and K2_BRAND=overleap alike.
 describe('getCurrentAppConfig derives from brandConfig', () => {
   it('brand-divergent features mirror brandConfig.features', () => {
     const cfg = getCurrentAppConfig();
@@ -12,6 +13,7 @@ describe('getCurrentAppConfig derives from brandConfig', () => {
     expect(cfg.features.retailer).toBe(brandConfig.features.retailer);
     expect(cfg.features.chatwoot).toBe(brandConfig.features.chatwoot);
     expect(cfg.features.privateNode).toBe(brandConfig.features.privateNode);
+    expect(cfg.features.selfHostedTunnels).toBe(brandConfig.features.selfHostedTunnels);
   });
 
   it('appName and branding come from the brand', () => {

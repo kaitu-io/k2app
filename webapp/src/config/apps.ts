@@ -1,19 +1,15 @@
 /**
  * Application Configuration
  *
- * This file defines the configuration for the Kaitu application including:
- * - Branding (colors, logos, app name)
+ * This file defines the configuration for the active brand's app:
+ * - Display name
  * - Features (enable/disable specific routes and functionality)
- * - API endpoints
- * - Bundle identifiers
+ * - Theme colours (mirrored from the brand registry)
  */
 
-import { brandConfig, getBrandId } from '../brand';
+import { brandConfig } from '../brand';
 
 export interface AppConfig {
-  /** Unique app identifier */
-  appId: string;
-
   /** Display name of the application */
   appName: string;
 
@@ -62,14 +58,7 @@ export interface AppConfig {
     primaryColor: string;
     /** Secondary theme color (hex) */
     secondaryColor?: string;
-    /** Logo asset path */
-    logo: string;
-    /** Favicon path */
-    favicon?: string;
   };
-
-  /** API endpoint configuration */
-  apiEndpoint: string;
 }
 
 /**
@@ -78,7 +67,6 @@ export interface AppConfig {
  * truth) — never fork on brand id inside components.
  */
 const APP_CONFIG: AppConfig = {
-  appId: 'io.kaitu.desktop',
   appName: brandConfig.productName,
   features: {
     // brand-divergent (from brand registry)
@@ -105,16 +93,10 @@ const APP_CONFIG: AppConfig = {
   branding: {
     primaryColor: brandConfig.theme.dark.primary.main,
     secondaryColor: brandConfig.theme.dark.secondary.main,
-    logo: '/favicon.png',
-    favicon: '/favicon.png',
   },
-  // Entry URL is shared k2 infrastructure (brand-neutral), not brand surface.
-  apiEndpoint: import.meta.env.VITE_KAITU_ENTRY_URL || 'https://k2.52j.me',
 };
 
 export const getCurrentAppConfig = (): AppConfig => APP_CONFIG;
-
-export const getCurrentAppId = (): string => getBrandId();
 
 /**
  * Check if a specific feature is enabled in the current app
