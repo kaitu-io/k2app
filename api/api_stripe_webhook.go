@@ -2,6 +2,8 @@ package center
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 
 	"github.com/gin-gonic/gin"
@@ -39,8 +41,10 @@ func api_stripe_webhook(c *gin.Context) {
 		return
 	}
 
-	// 验签（必须）。IgnoreAPIVersionMismatch：Stripe 账号 API 版本升级不应打断入账；
-	// 形态差异由 extractStripeInvoiceFacts 单点吸收。
+	// 验签（必须）。IgnoreAPIVersionMismatch：Stripe 账号 API 版本升级不应仅因版本号不符
+	// 就拒收事件。注意这**不**代表形态差异被吸收——extractStripeInvoiceFacts 只适配已知形态，
+	// 读不出就报错。真出现形态漂移（如 parent.subscription_details 被挪走），invoice.paid
+	// 分支会告警 + 500 让 Stripe 重投，绝不静默丢弃已付款；修 extract 后重投即可补账。
 	event, err := webhook.ConstructEventWithOptions(body, c.GetHeader("Stripe-Signature"), cfg.WebhookSecret,
 		webhook.ConstructEventOptions{IgnoreAPIVersionMismatch: true})
 	if err != nil {
@@ -83,9 +87,15 @@ func handleStripeEvent(c *gin.Context, event *stripe.Event) error {
 		}
 		f, err := extractStripeInvoiceFacts(&inv)
 		if err != nil {
-			// 无订阅 parent 的 invoice（一次性账单等）不属本渠道语义——忽略勿重试。
-			log.Warnf(c, "[StripeWebhook] invoice.paid not creditable, ignoring: %v", err)
-			return nil
+			if errors.Is(err, errNotSubscriptionInvoice) {
+				// 无订阅 parent 的 invoice（一次性账单等）不属本渠道语义——忽略勿重试。
+				log.Infof(c, "[StripeWebhook] invoice.paid not a subscription invoice, ignoring: %v", err)
+				return nil
+			}
+			// 形态解析失败：钱已经收了，事实却读不出来。忽略 = 静默吞掉一笔已付款
+			//（expired_at 不动 + 事件进 dedup 表永不重投）。告警 + 500 让 Stripe 重投。
+			alertStripeCredit(c, "invoice.paid unparseable — paid invoice NOT credited, event=%s: %v", event.ID, err)
+			return fmt.Errorf("extract invoice facts (event %s): %w", event.ID, err)
 		}
 		return withDeadlockRetry(c, 3, func(tx *gorm.DB) error {
 			return creditStripeInvoice(c, tx, f)

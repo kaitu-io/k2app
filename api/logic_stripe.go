@@ -32,6 +32,23 @@ func stripeSubStatus(s stripe.SubscriptionStatus) string {
 	}
 }
 
+// errNotSubscriptionInvoice 标记"这张 invoice 本就不属订阅入账语义"（一次性账单等）——
+// 这是 extractStripeInvoiceFacts 唯一可以安全忽略的失败。其余 extract 失败一概是**形态
+// 解析失败**：钱已经收了，事实却读不出来。两者性质相反，调用方必须能区分：
+// 前者 200 忽略，后者告警 + 500 让 Stripe 重投，绝不静默吞掉一笔已付款。
+var errNotSubscriptionInvoice = errors.New("invoice has no parent subscription")
+
+// alertStripeCredit 是 Stripe 入账侧非品牌类 fail-loud 哨兵的统一告警出口（形态解析失败、
+// 实付 price 与 plan 不符）。与 alertPaymentBrandMismatch 同级同构：error 日志 + Slack
+// "alert" 频道，best-effort 不阻断主流程，var 形态供测试替换。
+var alertStripeCredit = func(ctx context.Context, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	log.Errorf(ctx, "%s", msg)
+	if err := slack.Send("alert", "[STRIPE-CREDIT] "+msg); err != nil {
+		log.Errorf(ctx, "failed to send stripe credit alert: %v", err)
+	}
+}
+
 // stripeInvoiceFacts 是入账所需字段的规范载体。extractStripeInvoiceFacts 是从
 // stripe.Invoice 提取它的唯一适配点——隔离 SDK/API 版本形态差异（basil 把
 // subscription 挪进 invoice.parent.subscription_details）。升级 stripe-go 只改这里。
@@ -63,7 +80,8 @@ func extractStripeInvoiceFacts(inv *stripe.Invoice) (*stripeInvoiceFacts, error)
 		f.PlanPID = sd.Metadata["plan_pid"]
 	}
 	if f.SubscriptionID == "" {
-		return nil, fmt.Errorf("invoice %s has no parent subscription (not a subscription invoice)", inv.ID)
+		// 唯一可忽略的情形：本就不是订阅 invoice。用 sentinel 包裹保留 invoice id。
+		return nil, fmt.Errorf("invoice %s is not a subscription invoice: %w", inv.ID, errNotSubscriptionInvoice)
 	}
 	if inv.Lines != nil {
 		for _, line := range inv.Lines.Data {

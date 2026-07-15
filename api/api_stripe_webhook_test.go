@@ -61,6 +61,35 @@ func invoicePaidPayload(eventID, invoiceID, subID, userUUID, planPID string, sta
 	}`, eventID, invoiceID, subID, subID, userUUID, planPID, start, end))
 }
 
+// invoicePaidNoSubParentPayload 构造真·一次性账单（无 parent.subscription_details）。
+func invoicePaidNoSubParentPayload(eventID, invoiceID string, start, end int64) []byte {
+	return []byte(fmt.Sprintf(`{
+		"id": %q, "object": "event", "type": "invoice.paid", "livemode": false,
+		"data": {"object": {
+			"id": %q, "object": "invoice", "livemode": false,
+			"customer": "cus_oneoff",
+			"lines": {"object": "list", "data": [
+				{"id": "il_1", "object": "line_item", "period": {"start": %d, "end": %d}}
+			]}
+		}}
+	}`, eventID, invoiceID, start, end))
+}
+
+// invoicePaidBrokenShapePayload 构造形态损坏的订阅 invoice：有 subscription parent
+// （= 真订阅账单，钱已收），但 line 缺 period → 事实读不出。模拟 API 版本漂移。
+func invoicePaidBrokenShapePayload(eventID, invoiceID, subID, userUUID, planPID string) []byte {
+	return []byte(fmt.Sprintf(`{
+		"id": %q, "object": "event", "type": "invoice.paid", "livemode": false,
+		"data": {"object": {
+			"id": %q, "object": "invoice", "livemode": false,
+			"customer": "cus_%s",
+			"parent": {"subscription_details": {"subscription": %q,
+				"metadata": {"user_uuid": %q, "plan_pid": %q, "brand": "overleap"}}},
+			"lines": {"object": "list", "data": []}
+		}}
+	}`, eventID, invoiceID, subID, subID, userUUID, planPID))
+}
+
 func subscriptionEventPayload(eventID, eventType, subID string, cancelAtPeriodEnd bool, status string) []byte {
 	return []byte(fmt.Sprintf(`{
 		"id": %q, "object": "event", "type": %q, "livemode": false,
@@ -158,6 +187,46 @@ func TestStripeWebhook(t *testing.T) {
 		var count int64
 		db.Get().Model(&StripeWebhookEvent{}).Where("event_id = ?", evtID).Count(&count)
 		assert.Equal(t, int64(0), count)
+	})
+
+	// 形态解析失败 ≠ 可忽略：钱已收却读不出事实 → 必须告警 + 500 重投，
+	// 且绝不可落 dedup 行（落了就永不重投 = 静默吞钱）。
+	t.Run("InvoicePaid_BrokenShape_500_Alerted_NoDedupRow", func(t *testing.T) {
+		orig := alertStripeCredit
+		t.Cleanup(func() { alertStripeCredit = orig })
+		var alerted string
+		alertStripeCredit = func(ctx context.Context, format string, args ...any) {
+			alerted = fmt.Sprintf(format, args...)
+		}
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		evtID := "evt_" + stripeUniq()
+		cleanupStripeEvents(t, evtID)
+		payload := invoicePaidBrokenShapePayload(evtID, "in_"+stripeUniq(), "sub_"+stripeUniq(), u.UUID, p.PID)
+
+		w := postStripeWebhook(t, r, payload, stripeSigHeader(payload))
+		assert.Equal(t, 500, w.Code) // fail-loud：Stripe 重投 → 修 extract 后可补账
+		assert.Contains(t, alerted, "NOT credited")
+
+		// 事件不落 dedup 表 —— 重投仍会进入处理（这才是"钱没丢"的保证）
+		var count int64
+		db.Get().Model(&StripeWebhookEvent{}).Where("event_id = ?", evtID).Count(&count)
+		assert.Equal(t, int64(0), count)
+	})
+
+	// 真·一次性账单：不属订阅入账语义 → 200 忽略勿重试（唯一可忽略的 extract 失败）。
+	t.Run("InvoicePaid_NotSubscriptionInvoice_200Ignored", func(t *testing.T) {
+		orig := alertStripeCredit
+		t.Cleanup(func() { alertStripeCredit = orig })
+		alerted := false
+		alertStripeCredit = func(ctx context.Context, format string, args ...any) { alerted = true }
+		evtID := "evt_" + stripeUniq()
+		cleanupStripeEvents(t, evtID)
+		payload := invoicePaidNoSubParentPayload(evtID, "in_"+stripeUniq(), now, now+month)
+
+		w := postStripeWebhook(t, r, payload, stripeSigHeader(payload))
+		assert.Equal(t, 200, w.Code)
+		assert.False(t, alerted, "一次性账单是正常业务，不该告警")
 	})
 
 	t.Run("SubscriptionUpdated_CancelAtPeriodEnd_SyncsAutoRenew", func(t *testing.T) {

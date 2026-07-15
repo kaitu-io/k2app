@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"testing"
@@ -128,18 +129,29 @@ func TestExtractStripeInvoiceFacts(t *testing.T) {
 		assert.Equal(t, int64(2000), f.PeriodStart)
 	})
 
-	t.Run("NoSubscriptionParent_Error", func(t *testing.T) {
+	// 非订阅 invoice = 唯一可安全忽略的失败 → 必须带 errNotSubscriptionInvoice sentinel。
+	t.Run("NoSubscriptionParent_SentinelError", func(t *testing.T) {
 		inv := mk()
 		inv.Parent = nil
 		_, err := extractStripeInvoiceFacts(inv)
-		assert.Error(t, err)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, errNotSubscriptionInvoice))
+		assert.Contains(t, err.Error(), "in_test_1") // 包裹保留 invoice id
 	})
 
-	t.Run("NoLinePeriod_Error", func(t *testing.T) {
+	// 以下都是"形态解析失败"：钱已收、事实读不出 → 绝不可被当成"忽略勿重试"。
+	t.Run("NoLinePeriod_NotSentinel", func(t *testing.T) {
 		inv := mk()
 		inv.Lines = &stripe.InvoiceLineItemList{}
 		_, err := extractStripeInvoiceFacts(inv)
-		assert.Error(t, err)
+		require.Error(t, err)
+		assert.False(t, errors.Is(err, errNotSubscriptionInvoice))
+	})
+
+	t.Run("NilInvoice_NotSentinel", func(t *testing.T) {
+		_, err := extractStripeInvoiceFacts(nil)
+		require.Error(t, err)
+		assert.False(t, errors.Is(err, errNotSubscriptionInvoice))
 	})
 }
 
