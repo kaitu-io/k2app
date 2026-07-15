@@ -2,6 +2,7 @@
 "use client";
 
 import { AlertCircle, CheckCircle, Copy } from 'lucide-react';
+import { siteBrand } from '@/lib/brands';
 
 // ---------------------------------------------------------------------------
 // Reusable wrapper for yellow warning tip cards
@@ -145,11 +146,13 @@ export function MacOSAllowGuide({ publisher }: { publisher: string }) {
 }
 
 export function AndroidInstallGuide() {
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1a1a2e;padding:14px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#e0e0e0}.steps{display:flex;flex-direction:column;gap:10px}.step{display:flex;align-items:flex-start;gap:10px;background:#16213e;border-radius:8px;padding:10px 12px}.num{background:#0f3460;color:#e94560;font-weight:700;font-size:13px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}.content{flex:1}.title{font-size:12px;font-weight:600;color:#fff;margin-bottom:2px}.desc{font-size:10px;color:#999;line-height:1.4}.hl{background:#e94560;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600}</style></head><body><div class="steps"><div class="step"><div class="num">1</div><div class="content"><div class="title">📥 下载 APK 安装包</div><div class="desc">浏览器可能提示「有害文件」，选择 <span class="hl">保留</span></div></div></div><div class="step"><div class="num">2</div><div class="content"><div class="title">✈️ 开启飞行模式</div><div class="desc">安装前开启飞行模式，避免手机安全中心联网云检测拦截安装</div></div></div><div class="step"><div class="num">3</div><div class="content"><div class="title">📲 安装 APK</div><div class="desc">打开 APK → 允许「安装未知应用」→ 点击 <span class="hl">安装</span></div></div></div><div class="step"><div class="num">4</div><div class="content"><div class="title">📶 关闭飞行模式</div><div class="desc">安装完成后关闭飞行模式，恢复网络</div></div></div><div class="step"><div class="num">5</div><div class="content"><div class="title">🚀 打开开途</div><div class="desc">首次启动会请求 VPN 权限，点击 <span class="hl">允许</span> 即可</div></div></div></div></body></html>`;
+  const brand = siteBrand();
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1a1a2e;padding:14px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#e0e0e0}.steps{display:flex;flex-direction:column;gap:10px}.step{display:flex;align-items:flex-start;gap:10px;background:#16213e;border-radius:8px;padding:10px 12px}.num{background:#0f3460;color:#e94560;font-weight:700;font-size:13px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}.content{flex:1}.title{font-size:12px;font-weight:600;color:#fff;margin-bottom:2px}.desc{font-size:10px;color:#999;line-height:1.4}.hl{background:#e94560;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600}</style></head><body><div class="steps"><div class="step"><div class="num">1</div><div class="content"><div class="title">📥 下载 APK 安装包</div><div class="desc">浏览器可能提示「有害文件」，选择 <span class="hl">保留</span></div></div></div><div class="step"><div class="num">2</div><div class="content"><div class="title">✈️ 开启飞行模式</div><div class="desc">安装前开启飞行模式，避免手机安全中心联网云检测拦截安装</div></div></div><div class="step"><div class="num">3</div><div class="content"><div class="title">📲 安装 APK</div><div class="desc">打开 APK → 允许「安装未知应用」→ 点击 <span class="hl">安装</span></div></div></div><div class="step"><div class="num">4</div><div class="content"><div class="title">📶 关闭飞行模式</div><div class="desc">安装完成后关闭飞行模式，恢复网络</div></div></div><div class="step"><div class="num">5</div><div class="content"><div class="title">🚀 打开${brand.wordmark}</div><div class="desc">首次启动会请求 VPN 权限，点击 <span class="hl">允许</span> 即可</div></div></div></div></body></html>`;
   return <GuideIframe srcdoc={html} height={310} />;
 }
 
 export function DesktopUsbInstallGuide() {
+  const brand = siteBrand();
   // Step 1: Desktop app Account page → "其他设备安装"
   const step1 = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -177,7 +180,7 @@ body{background:#e8e8ec;padding:12px;font-family:-apple-system,BlinkMacSystemFon
 .tab.active .tab-ico{filter:none}
 </style></head><body>
 <div class="app">
-<div class="header"><h2>Kaitu.io 开途</h2><p>越拥堵，越从容</p></div>
+<div class="header"><h2>${brand.baseUrl.replace('https://', '')} ${brand.wordmark}</h2><p>越拥堵，越从容</p></div>
 <div class="menu">
 <div class="item"><span class="ico">✉️</span><span class="label">x***y@qq.com</span><span class="arrow" style="color:#4a7cba;font-size:11px;border:1px solid #4a7cba;padding:2px 8px;border-radius:4px">修改</span></div>
 <div class="item"><span class="ico">🖥</span><span class="label">我的设备</span><span class="arrow">›</span></div>
@@ -237,7 +240,7 @@ body{background:#e8e8ec;padding:12px;font-family:-apple-system,BlinkMacSystemFon
   <div class="line"></div>
   <div class="step"><div class="snum dim">2</div><div class="sinfo"><strong>USB 连接并授权</strong><span>用数据线连接手机和电脑</span></div></div>
   <div class="line"></div>
-  <div class="step"><div class="snum dim">3</div><div class="sinfo"><strong>自动安装</strong><span>开途自动推送 APK 到手机</span></div></div>
+  <div class="step"><div class="snum dim">3</div><div class="sinfo"><strong>自动安装</strong><span>${brand.wordmark}自动推送 APK 到手机</span></div></div>
 </div>
 </div>
 </body></html>`;
@@ -245,7 +248,7 @@ body{background:#e8e8ec;padding:12px;font-family:-apple-system,BlinkMacSystemFon
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground mb-1">
-        在电脑上打开开途客户端，进入「账户」→「其他设备安装」：
+        在电脑上打开{brand.wordmark}客户端，进入「账户」→「其他设备安装」：
       </p>
       <GuideIframe srcdoc={step1} height={380} />
       <p className="text-sm text-muted-foreground mb-1">
@@ -265,7 +268,7 @@ export function CliBlock({ onCopy, copied }: { onCopy: () => void; copied: boole
     <div className="bg-card rounded-lg border font-mono text-sm p-4">
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground">$</span>
-        <code className="flex-1 text-foreground break-all">curl -fsSL https://kaitu.io/i/k2 | sudo bash</code>
+        <code className="flex-1 text-foreground break-all">{`curl -fsSL ${siteBrand().baseUrl}/i/k2 | sudo bash`}</code>
         <button
           onClick={onCopy}
           className="shrink-0 p-1 hover:text-foreground transition-colors text-muted-foreground"

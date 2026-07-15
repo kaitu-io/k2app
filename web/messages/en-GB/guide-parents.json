@@ -42,7 +42,7 @@
     },
     "step2": {
       "title": "How to Install",
-      "description": "On the device where you want to install, open kaitu.io in your browser and click the download button. The page will automatically detect your operating system.",
+      "description": "On the device where you want to install, open overleap.io in your browser and click the download button. The page will automatically detect your operating system.",
       "platforms": {
         "macos": "macOS: You'll need to enter your password during installation — this is required. If the system blocks the installation, go to System Settings → Privacy & Security to allow it.",
         "windows": "Windows: If a blue security prompt appears, click \"More info\" to continue. If the browser blocks the download, click \"Keep\".",

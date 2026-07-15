@@ -10,8 +10,8 @@ import LanguageDetectionBanner from '@/components/LanguageDetectionBanner';
 import CookieConsent from '@/components/CookieConsent';
 import { EmbedThemeProvider } from '@/components/providers/EmbedThemeProvider';
 import { LocaleProvider } from '@/components/providers/LocaleProvider';
-import { BrandProvider } from '@/components/providers/BrandProvider';
 import { getBrand } from '@/lib/brand-server';
+import { siteBrand } from '@/lib/brands';
 import { getRequestPathname } from '@/lib/request-pathname';
 import { generateMetadata as generatePageMetadata } from './metadata';
 import { Metadata } from 'next';
@@ -20,8 +20,6 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import Script from 'next/script';
 import ChatwootWidget from '@/components/ChatwootWidget';
 import "../globals.css";
-
-const GA_MEASUREMENT_ID = 'G-EH2PY4S0CX';
 
 // Inline polyfill for Array.prototype.at — Sentry web-vitals (INP) and Next.js
 // server-action digest parsing call it. Native on iOS Safari 15.4+ / Chrome 92+.
@@ -37,7 +35,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export function generateStaticParams() {
-  return routing.locales.map((locale) => ({ locale }));
+  return siteBrand().allowedLocales.map((locale) => ({ locale }));
 }
 
 export async function generateMetadata({
@@ -64,6 +62,12 @@ export default async function LocaleLayout({
     notFound();
   }
 
+  // Off-brand locales are 301'd by middleware; notFound() here is the safety
+  // net for direct RSC requests that bypass it.
+  if (!(siteBrand().allowedLocales as readonly string[]).includes(locale)) {
+    notFound();
+  }
+
   // Enable static rendering
   setRequestLocale(locale as (typeof routing.locales)[number]);
 
@@ -86,36 +90,38 @@ export default async function LocaleLayout({
         <Script id="array-at-polyfill" strategy="afterInteractive">
           {ARRAY_AT_POLYFILL}
         </Script>
-        <Script
-          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
-          strategy="afterInteractive"
-        />
-        <Script id="google-analytics" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', '${GA_MEASUREMENT_ID}');
-          `}
-        </Script>
+        {brand.gaMeasurementId && (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${brand.gaMeasurementId}`}
+              strategy="afterInteractive"
+            />
+            <Script id="google-analytics" strategy="afterInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '${brand.gaMeasurementId}');
+              `}
+            </Script>
+          </>
+        )}
         <NextIntlClientProvider messages={messages}>
           <LocaleProvider locale={locale}>
-            <BrandProvider brand={brand}>
-              <Suspense fallback={null}>
-                <EmbedThemeProvider>
-                  <AppConfigProvider>
-                    <AuthProvider>
-                      <BrowserWarningBar brandDomain={new URL(brand.baseUrl).hostname} />
-                      <LanguageDetectionBanner />
-                      {children}
-                      <Toaster />
-                      <CookieConsent />
-                      <ChatwootWidget />
-                    </AuthProvider>
-                  </AppConfigProvider>
-                </EmbedThemeProvider>
-              </Suspense>
-            </BrandProvider>
+            <Suspense fallback={null}>
+              <EmbedThemeProvider>
+                <AppConfigProvider>
+                  <AuthProvider>
+                    <BrowserWarningBar brandDomain={new URL(brand.baseUrl).hostname} />
+                    <LanguageDetectionBanner />
+                    {children}
+                    <Toaster />
+                    <CookieConsent />
+                    <ChatwootWidget />
+                  </AuthProvider>
+                </AppConfigProvider>
+              </EmbedThemeProvider>
+            </Suspense>
           </LocaleProvider>
         </NextIntlClientProvider>
       </body>

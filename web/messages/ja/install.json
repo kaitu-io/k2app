@@ -49,7 +49,7 @@
     "linuxVersion": "Ubuntu / Fedora / Arch",
     "downloadLinux": "Linux デスクトップ",
     "cliInstall": "またはコマンドラインでインストール",
-    "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+    "cliCommand": "curl -fsSL https://overleap.io/i/k2 | sudo bash",
     "copied": "コピーしました",
     "beta": "ベータ",
     "alsoAvailableStable": "安定版 v{version} もダウンロード可能",
@@ -80,7 +80,7 @@
         "3": "初回起動時、「システム設定 → プライバシーとセキュリティ」でシステム拡張機能を許可"
       },
       "linux": {
-        "1": "スクリプトでインストール：curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+        "1": "スクリプトでインストール：curl -fsSL https://overleap.io/i/k2 | sudo bash",
         "2": "スクリプトが k2 バイナリをダウンロードし、kaitu.service systemd ユニットを登録します",
         "3": "インストール完了後、ブラウザで http://127.0.0.1:1777 を開いてサインインしてください"
       },

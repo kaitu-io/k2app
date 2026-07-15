@@ -160,14 +160,14 @@
     "step3": {
       "title": "k2r をインストール",
       "subtitle": "ルーターに SSH 接続して、以下のワンライナーを実行。ARM64 / x86_64 / ARMv7 を自動検出して対応バイナリをダウンロードします。",
-      "command": "wget -qO- https://kaitu.io/i/k2r | sudo sh",
+      "command": "wget -qO- https://overleap.io/i/k2r | sudo sh",
       "copyButton": "コマンドをコピー",
       "copiedLabel": "コピーしました",
       "explanation": "スクリプトは 3 つのことを行います：① k2r バイナリをダウンロード、② /etc/init.d 起動スクリプトを設置、③ k2r サービスを起動。完了したらブラウザで http://<ルーターIP>:9000 にアクセスして管理画面を開けます。",
       "troubleshooting": {
         "label": "よくあるトラブル",
         "items": [
-          { "q": "wget: command not found", "a": "OpenWrt のデフォルトは wget-ssl です。curl に置き換え可能：curl -fsSL https://kaitu.io/i/k2r | sudo sh" },
+          { "q": "wget: command not found", "a": "OpenWrt のデフォルトは wget-ssl です。curl に置き換え可能：curl -fsSL https://overleap.io/i/k2r | sudo sh" },
           { "q": "ダウンロードに失敗する", "a": "中国本土の一部 ISP では CDN がブロックされる場合があります。https://d0.all7.cc/kaitu/k2r/LATEST/ から手動でダウンロードして scp でルーターに転送してください。" },
           { "q": "アップグレード方法", "a": "同じインストールコマンドを再実行するだけ。バイナリを置き換えサービスを再起動します。" }
         ]

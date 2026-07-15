@@ -14,8 +14,9 @@ import { setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
 import { posts } from '#velite';
 import { routing } from '@/i18n/routing';
-import type { K2Post } from '@/lib/k2-posts';
+import { type K2Post, isPostVisibleToBrand } from '@/lib/k2-posts';
 import { getBrand } from '@/lib/brand-server';
+import { siteBrand, type Brand } from '@/lib/brands';
 import { generateMetadata as generateBaseMetadata } from '../../metadata';
 
 /** Resolve a slug from the optional catch-all path param. */
@@ -136,18 +137,27 @@ function buildComparisonFaqPage(locale: string, baseUrlArg: string, pathname: st
   };
 }
 
-/** Find a published k2 post by locale + slug, with zh-CN fallback. */
-function findK2Post(locale: string, slug: string): K2Post | undefined {
-  const exactMatch = (posts as K2Post[]).find(
-    (p) => p.locale === locale && p.slug === slug && !p.draft
+/**
+ * Find a published k2 post by locale + slug that the serving brand may show,
+ * falling back to the brand's own default locale.
+ *
+ * Two brand rules are enforced here:
+ *  - Off-brand posts are invisible (frontmatter `brand:`), so the caller 404s
+ *    instead of serving e.g. kaitu install docs from the overleap deployment.
+ *  - The fallback locale is the BRAND's default, not a hardcoded 'zh-CN'.
+ *    zh-CN is a kaitu-only locale; falling back to it from overleap turned
+ *    /ja/k2/client into a kaitu-branded Chinese page on the overleap site.
+ */
+function findK2Post(locale: string, slug: string, brand: Brand): K2Post | undefined {
+  const candidates = (posts as K2Post[]).filter(
+    (p) => p.slug === slug && !p.draft && isPostVisibleToBrand(p, brand.id)
   );
+
+  const exactMatch = candidates.find((p) => p.locale === locale);
   if (exactMatch) return exactMatch;
 
-  // Fall back to zh-CN if not found in the requested locale
-  if (locale !== 'zh-CN') {
-    return (posts as K2Post[]).find(
-      (p) => p.locale === 'zh-CN' && p.slug === slug && !p.draft
-    );
+  if (locale !== brand.defaultLocale) {
+    return candidates.find((p) => p.locale === brand.defaultLocale);
   }
 
   return undefined;
@@ -165,9 +175,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale, path } = await params;
   const slug = resolveSlug(path);
-  const post = findK2Post(locale, slug);
   const pathname = resolvePathname(path);
   const brand = await getBrand();
+  const post = findK2Post(locale, slug, brand);
 
   if (post) {
     return generateBaseMetadata(
@@ -199,10 +209,32 @@ export async function generateMetadata({
 }
 
 export function generateStaticParams(): { locale: string; path: string[] | undefined }[] {
+  const brand = siteBrand();
+  const seen = new Set<string>();
   const params: { locale: string; path: string[] | undefined }[] = [];
 
+  const push = (locale: string, path: string[] | undefined) => {
+    const key = `${locale}::${path?.join('/') ?? ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    params.push({ locale, path });
+  };
+
+  // Prerender only what this brand may serve, and only in this brand's locales.
+  // Prerendering an off-brand doc would hand it a real, indexable URL — the gate
+  // in the page component would then be the only thing standing between the
+  // crawler and the leak.
+  //
+  // The locale filter is load-bearing, not cosmetic: slugs are harvested from
+  // posts of every locale, so a doc gated `brand: kaitu` in en-US but unmarked
+  // (→ 'both') in zh-CN would otherwise contribute its slug back and prerender
+  // /en-US/k2/<slug> on overleap.
   const k2Posts = (posts as K2Post[]).filter(
-    (p) => (p.slug === 'k2' || p.slug.startsWith('k2/')) && !p.draft
+    (p) =>
+      (p.slug === 'k2' || p.slug.startsWith('k2/')) &&
+      !p.draft &&
+      isPostVisibleToBrand(p, brand.id) &&
+      (brand.allowedLocales as readonly string[]).includes(p.locale)
   );
 
   for (const post of k2Posts) {
@@ -211,19 +243,14 @@ export function generateStaticParams(): { locale: string; path: string[] | undef
     // Strip "k2/" prefix to get the path segments
     const pathSegments = post.slug.slice('k2/'.length).split('/');
 
-    params.push({ locale: post.locale, path: pathSegments });
-
-    // Also generate routes for all locales from the routing config
-    for (const locale of routing.locales) {
-      if (locale !== post.locale) {
-        params.push({ locale, path: pathSegments });
-      }
+    for (const locale of brand.allowedLocales) {
+      push(locale, pathSegments);
     }
   }
 
-  // Add index route (path: undefined) for each locale
-  for (const locale of routing.locales) {
-    params.push({ locale, path: undefined });
+  // Add index route (path: undefined) for each of this brand's locales
+  for (const locale of brand.allowedLocales) {
+    push(locale, undefined);
   }
 
   return params;
@@ -241,14 +268,16 @@ export default async function K2Page({
   setRequestLocale(locale as (typeof routing.locales)[number]);
 
   const slug = resolveSlug(path);
-  const post = findK2Post(locale, slug);
+  const brand = await getBrand();
+  const post = findK2Post(locale, slug, brand);
 
+  // Covers "no such doc" AND "this brand may not serve this doc" — off-brand
+  // docs are indistinguishable from missing ones, which is the point.
   if (!post) {
     notFound();
   }
 
   const pathname = resolvePathname(path);
-  const brand = await getBrand();
 
   // Per-article structured data — content is Velite-processed at build time (trusted source)
   const techArticle = {

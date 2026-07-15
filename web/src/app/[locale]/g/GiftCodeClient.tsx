@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Gift, AlertCircle, Clock, CheckCircle, Loader2, Search } from 'lucide-react';
 import type { LicenseKeyPublic } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
-import { useBrand } from '@/components/providers/BrandProvider';
+import { useBrand } from '@/hooks/useBrand';
 import { useAuth } from '@/contexts/AuthContext';
 import EmailLogin from '@/components/EmailLogin';
 
@@ -29,7 +29,7 @@ function getDaysRemaining(expiresAt: number): number {
 export default function GiftCodeClient() {
   const t = useTranslations('licenseKeys');
   const brand = useBrand();
-  const productBadge = brand.id === 'kaitu' ? '开途 VPN' : 'Overleap';
+  const productBadge = brand.productName;
   const { isAuthenticated } = useAuth();
   const [inputCode, setInputCode] = useState('');
   const [state, setState] = useState<PageState>('idle');

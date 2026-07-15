@@ -1,5 +1,5 @@
 /**
- * Recommended router hardware for running k2r (Kaitu Router gateway).
+ * Recommended router hardware for running k2r (k2r gateway).
  *
  * Static hardware specs live here; locale-aware copy (tagline / pros / cons /
  * fit) lives in messages/{locale}/routers.json under `hardware.{id}.*`.

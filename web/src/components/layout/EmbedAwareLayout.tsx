@@ -5,6 +5,7 @@ import NextLink from 'next/link';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { useEmbedMode } from '@/hooks/useEmbedMode';
+import { siteBrand } from '@/lib/brands';
 
 interface EmbedAwareLayoutProps {
   children: React.ReactNode;
@@ -27,6 +28,7 @@ function EmbedAwareLayoutContent({
   footerSection
 }: EmbedAwareLayoutProps) {
   const { isEmbedded, showNavigation, showFooter, compactLayout } = useEmbedMode();
+  const brand = siteBrand();
 
   return (
     <div className={`min-h-screen bg-background ${isEmbedded ? 'embedded-mode' : ''} ${className}`}>
@@ -36,15 +38,15 @@ function EmbedAwareLayoutContent({
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
               <div className="flex items-center space-x-2">
-                <Image 
-                  src="/kaitu-icon.png" 
-                  alt="Kaitu Logo" 
+                <Image
+                  src={brand.logoPath}
+                  alt={`${brand.displayName} Logo`}
                   width={32}
                   height={32}
                   className="rounded-md"
                 />
                 <NextLink href="/" className="text-xl font-bold text-foreground hover:text-primary transition-colors">
-                  {"Kaitu.io"}
+                  {new URL(brand.baseUrl).hostname}
                 </NextLink>
               </div>
               <div className="flex items-center space-x-4">

@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Gift, AlertCircle, Clock, CheckCircle, Loader2 } from 'lucide-react';
 import type { LicenseKeyPublic } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
-import { useBrand } from '@/components/providers/BrandProvider';
+import { useBrand } from '@/hooks/useBrand';
 import { useAuth } from '@/contexts/AuthContext';
 import EmailLogin from '@/components/EmailLogin';
 
@@ -27,7 +27,7 @@ function getDaysRemaining(expiresAt: number): number {
 export default function RedeemClient({ code }: { code: string }) {
   const t = useTranslations('licenseKeys');
   const brand = useBrand();
-  const productBadge = brand.id === 'kaitu' ? '开途 VPN' : 'Overleap';
+  const productBadge = brand.productName;
   const { isAuthenticated } = useAuth();
   const [key, setKey] = useState<LicenseKeyPublic | null>(null);
   const [fetchState, setFetchState] = useState<'loading' | 'ready' | 'notFound'>('loading');

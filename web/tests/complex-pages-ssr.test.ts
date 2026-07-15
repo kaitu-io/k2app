@@ -11,6 +11,10 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
+// install/page.tsx → brand-server.ts → `server-only`, a side-effect module that
+// throws outside RSC. Same stub as request-pathname.test.ts.
+vi.mock('server-only', () => ({}));
+
 // Mock next-intl/server (Server Component API)
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn().mockResolvedValue((key: string) => key),
@@ -48,8 +52,6 @@ vi.mock('@/components/Footer', () => ({
 
 // Mock @/lib/constants
 vi.mock('@/lib/constants', () => ({
-  CDN_PRIMARY: 'https://cdn-primary.test/kaitu/desktop',
-  CDN_BACKUP: 'https://cdn-backup.test/kaitu/desktop',
   getDownloadLinks: (version: string) => ({
     windows: { primary: `https://cdn/${version}/win.exe`, backup: `https://backup/${version}/win.exe` },
     macos: { primary: `https://cdn/${version}/mac.pkg`, backup: `https://backup/${version}/mac.pkg` },

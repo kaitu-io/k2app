@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:overleap": "NEXT_PUBLIC_BRAND=overleap next dev --turbopack",
+    "build:overleap": "NEXT_PUBLIC_BRAND=overleap yarn build",
     "prebuild": "bash scripts/amplify-prebuild.sh || true",
     "build": "yarn prebuild && next build",
     "start": "next start",

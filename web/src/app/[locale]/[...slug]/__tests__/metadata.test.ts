@@ -62,14 +62,19 @@ vi.mock('@/lib/brands', () => {
     id,
     displayName: id === 'kaitu' ? 'Kaitu' : 'Overleap',
     baseUrl: id === 'kaitu' ? 'https://kaitu.io' : 'https://overleap.io',
-    defaultLocale: 'zh-CN',
+    defaultLocale: id === 'kaitu' ? 'zh-CN' : 'en-US',
+    // Phase 2: metadata.ts builds hreflang from the brand's OWN locales.
+    allowedLocales:
+      id === 'kaitu' ? ['zh-CN', 'zh-TW', 'zh-HK'] : ['en-US', 'en-GB', 'en-AU', 'ja'],
+    faviconPrefix: id === 'kaitu' ? '' : '/brand/overleap',
+    wordmark: id === 'kaitu' ? '开途' : 'Overleap',
     ogImagePath: '/og-image.png',
   })
   return {
     brandById: (id: string) => mk(id),
-    // metadata.ts pulls KAITU + ownerBrand through the shared helper.
+    // metadata.ts pulls KAITU through the shared helper.
     KAITU: mk('kaitu'),
-    ownerBrand: (loc: string) => (loc.startsWith('zh') ? 'kaitu' : 'overleap'),
+    OVERLEAP: mk('overleap'),
   }
 })
 
@@ -92,6 +97,9 @@ beforeEach(() => {
     displayName: 'Kaitu',
     baseUrl: 'https://kaitu.io',
     defaultLocale: 'zh-CN',
+    allowedLocales: ['zh-CN', 'zh-TW', 'zh-HK'],
+    faviconPrefix: '',
+    wordmark: '开途',
     ogImagePath: '/og-image.png',
   } as never)
 })
@@ -153,7 +161,7 @@ describe('generateMetadata (post detail, 2 segments)', () => {
 
     expect(meta.title).toBe('Hello | Kaitu')
     expect(meta.description).toBe('Excerpted')
-    // Cross-brand canonical must be preserved (post is kaitu-only here).
+    // Phase 2: canonical is always the rendering brand's own host.
     expect(meta.alternates?.canonical).toBe('https://kaitu.io/zh-CN/cat-detail-1/hello')
     // Regression: post pages emit article-type OG with the post's own title +
     // URL, not the inherited homepage default.
@@ -169,6 +177,38 @@ describe('generateMetadata (post detail, 2 segments)', () => {
     const ogImages = (meta.openGraph as { images?: Array<{ url?: string }> })?.images
     expect(ogImages?.[0]?.url).toBe('https://media.kaitu.io/media/hello.png')
     expect(meta.twitter?.images).toContain('https://media.kaitu.io/media/hello.png')
+  })
+
+  // Phase 2 load-bearing case: this post is visible on overleap only, yet it is
+  // being rendered by the kaitu deployment. The old resolveCanonicalBrand would
+  // have pointed the canonical at overleap.io — a cross-brand leak. The brands
+  // are now fully isolated, so the canonical must stay on the rendering host.
+  it('post canonical always points at the rendering brand own host', async () => {
+    const category = { id: 3, slug: 'cat-detail-3', name: 'Cat 3' }
+    const post = {
+      id: 30,
+      slug: 'overleap-only',
+      title: 'Overleap Only',
+      excerpt: 'Excerpted',
+      publishedAt: '2026-06-04T00:00:00.000Z',
+      content: { root: {} },
+      showOnKaitu: false,
+      showOnOverleap: true,
+    }
+    mockFind
+      .mockResolvedValueOnce({ docs: [category] })
+      .mockResolvedValueOnce({ docs: [post] })
+    mockFindByID.mockResolvedValueOnce(post)
+
+    const meta = await generateMetadata({
+      params: Promise.resolve({ locale: 'zh-CN', slug: ['cat-detail-3', 'overleap-only'] }),
+    })
+
+    // Baked brand in this file's harness is kaitu (getBrand mock).
+    expect(meta.alternates?.canonical).toBe(
+      'https://kaitu.io/zh-CN/cat-detail-3/overleap-only',
+    )
+    expect(JSON.stringify(meta.alternates)).not.toContain('overleap.io')
   })
 
   it('returns empty when category not found', async () => {

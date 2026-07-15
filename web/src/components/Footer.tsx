@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import NextLink from 'next/link';
 import Image from 'next/image';
-import { useBrand } from '@/components/providers/BrandProvider';
+import { useBrand } from '@/hooks/useBrand';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Footer() {

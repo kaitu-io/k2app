@@ -105,6 +105,55 @@ vi.mock('#velite', () => ({
       order: 0,
       section: 'comparison',
     },
+    // en-US counterpart of the zh-CN architecture doc. The brand-aware JSON-LD
+    // cases below render this under OVERLEAP; before the fallback was made
+    // brand-aware they silently rendered the zh-CN post instead — i.e. they were
+    // passing while exercising the leak this suite now forbids.
+    {
+      title: 'k2 Architecture',
+      date: '2026-02-21T00:00:00.000Z',
+      summary: 'Technical deep-dive into k2 protocol architecture',
+      tags: ['k2', 'technical'],
+      draft: false,
+      content: '<h1>k2 Architecture</h1><p>Technical content.</p>',
+      metadata: { readingTime: 5, wordCount: 800 },
+      filePath: 'en-US/k2/architecture',
+      locale: 'en-US',
+      slug: 'k2/architecture',
+      order: 1,
+      section: 'technical',
+    },
+    // kaitu-only install doc, present in BOTH locales — the shape that made the
+    // frontmatter gate necessary (en-US gated, zh-CN unmarked → 'both').
+    {
+      title: 'k2s Server Deployment',
+      date: '2026-02-21T00:00:00.000Z',
+      summary: 'Deploy k2s on a Linux VPS. Install via https://kaitu.io/i/k2s.',
+      tags: ['k2', 'getting-started'],
+      draft: false,
+      content: '<h1>k2s Server Deployment</h1><p>curl -fsSL https://kaitu.io/i/k2s | sudo sh</p>',
+      metadata: { readingTime: 3, wordCount: 300 },
+      filePath: 'en-US/k2/server',
+      locale: 'en-US',
+      slug: 'k2/server',
+      order: 3,
+      section: 'getting-started',
+      brand: 'kaitu',
+    },
+    {
+      title: 'k2s 服务端部署',
+      date: '2026-02-21T00:00:00.000Z',
+      summary: '在 Linux VPS 上部署 k2s。',
+      tags: ['k2', 'getting-started'],
+      draft: false,
+      content: '<h1>k2s 服务端部署</h1><p>开途 服务端部署说明。</p>',
+      metadata: { readingTime: 3, wordCount: 300 },
+      filePath: 'zh-CN/k2/server',
+      locale: 'zh-CN',
+      slug: 'k2/server',
+      order: 3,
+      section: 'getting-started',
+    },
     {
       title: 'Unrelated Blog Post',
       date: '2026-02-20T00:00:00.000Z',
@@ -499,6 +548,76 @@ describe('test_k2_comparison_emits_faqpage_jsonld', () => {
     const jsonLd = extractJsonLd(element);
     expect(Array.isArray(jsonLd)).toBe(false);
     expect((jsonLd as { '@type': string })['@type']).toBe('TechArticle');
+  });
+});
+
+describe('test_k2_docs_are_brand_gated', () => {
+  /** Render and report whether the page 404'd (notFound() throws NOT_FOUND). */
+  async function renders(locale: string, path: string[] | undefined): Promise<boolean> {
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+    try {
+      await K2Page({ params: Promise.resolve({ locale, path }) });
+      return true;
+    } catch (e) {
+      if ((e as Error).message === 'NOT_FOUND') return false;
+      throw e;
+    }
+  }
+
+  it('overleap 404s a brand: kaitu doc instead of serving it', async () => {
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
+
+    expect(await renders('en-US', ['server'])).toBe(false);
+  });
+
+  it('kaitu still serves that same doc', async () => {
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(KAITU);
+
+    expect(await renders('zh-CN', ['server'])).toBe(true);
+  });
+
+  it('overleap does not fall back to the zh-CN copy of a gated doc', async () => {
+    // The regression: en-US/k2/server is brand: kaitu, but zh-CN/k2/server is
+    // unmarked ('both'). A zh-CN fallback would render a 开途 Chinese page on
+    // overleap.io rather than 404.
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
+
+    expect(await renders('ja', ['server'])).toBe(false);
+  });
+
+  it('overleap falls back to its OWN default locale, never to zh-CN', async () => {
+    // /ja/k2/architecture has no ja copy. Overleap must land on the en-US post.
+    const { getBrand } = await import('@/lib/brand-server');
+    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
+
+    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
+    const element = await K2Page({ params: Promise.resolve({ locale: 'ja', path: ['architecture'] }) });
+    const jsonLd = extractJsonLd(element) as { headline: string };
+    expect(jsonLd.headline).toBe('k2 Architecture');
+  });
+
+  it('generateStaticParams prerenders no gated doc and no off-brand locale (overleap)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    vi.resetModules();
+    const { generateStaticParams } = await import('../src/app/[locale]/k2/[[...path]]/page');
+
+    const params = generateStaticParams();
+    expect(params.some((p) => p.path?.join('/') === 'server')).toBe(false);
+    expect(params.every((p) => OVERLEAP.allowedLocales.includes(p.locale as never))).toBe(true);
+    vi.unstubAllEnvs();
+  });
+
+  it('the sidebar source hides gated docs from overleap but keeps them on kaitu', async () => {
+    const { getK2Posts } = await import('../src/lib/k2-posts');
+
+    const overleapSlugs = getK2Posts('en-US', 'overleap').flatMap((g) => g.posts.map((p) => p.slug));
+    expect(overleapSlugs).not.toContain('k2/server');
+
+    const kaituSlugs = getK2Posts('zh-CN', 'kaitu').flatMap((g) => g.posts.map((p) => p.slug));
+    expect(kaituSlugs).toContain('k2/server');
   });
 });
 

@@ -5,6 +5,7 @@ summary: Install and use the k2 command-line client on Linux or macOS. Connect t
 section: getting-started
 order: 4
 draft: false
+brand: kaitu
 ---
 
 # k2 Client Usage
