@@ -119,7 +119,7 @@ function AppRoutes() {
               <Route path="faq" element={<FAQ />} />
               <Route path="feedback" element={<Feedback />} />
               <Route path="submit-ticket" element={<Navigate to="/feedback" replace />} />
-              <Route path="submit-ticket-form" element={<MembershipGuard><SubmitTicket /></MembershipGuard>} />
+              <Route path="submit-ticket-form" element={<SubmitTicket />} />
             </>
           )}
 
