@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	db "github.com/wordgate/qtoolkit/db"
 )
 
 // setStripeTestConfig 设置 stripe viper 键并在测试结束时清空。
@@ -53,4 +55,15 @@ func TestConfigStripe(t *testing.T) {
 		viper.Set("stripe.success_url", "https://www.overleap.io/thanks")
 		assert.Equal(t, "https://www.overleap.io/thanks", configStripe(ctx).SuccessURL)
 	})
+}
+
+// 真 MySQL：验证 Phase 6 stripe 相关列/表在 AutoMigrate 后存在（对标 brand_schema_e2e_test.go）
+func TestStripeSchemaMigration(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+
+	m := db.Get().Migrator()
+	assert.True(t, m.HasColumn(&Plan{}, "stripe_price_id"), "plans missing stripe_price_id")
+	assert.True(t, m.HasColumn(&Subscription{}, "provider_customer_id"), "subscriptions missing provider_customer_id")
+	assert.True(t, m.HasTable(&StripeWebhookEvent{}), "stripe_webhook_events table missing")
 }

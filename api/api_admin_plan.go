@@ -51,6 +51,8 @@ type AdminCreatePlanRequest struct {
 	IsActive    bool   `json:"isActive" example:"true"`                        // 是否激活
 	// Apple App Store 商品ID（仅 iOS IAP）：如 io.kaitu.sub.family.1y。非空才在 iOS 购买面板出现。
 	AppleProductID string `json:"appleProductId" example:"io.kaitu.sub.family.1y"`
+	// Stripe Price ID（仅 overleap 官网 Checkout）：如 price_1Nxxxx。非空才可经 stripe 购买。
+	StripePriceID string `json:"stripePriceId" example:"price_1Nxxxx"`
 	// Brand 归属品牌：kaitu | overleap，空→回退 kaitu（老 admin UI 零破坏）；非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）。
 	Brand string `json:"brand" example:"kaitu"`
 }
@@ -100,6 +102,7 @@ func api_admin_create_plan(c *gin.Context) {
 			Highlight:      BoolPtr(req.Highlight),
 			IsActive:       BoolPtr(req.IsActive),
 			AppleProductID: req.AppleProductID,
+			StripePriceID:  req.StripePriceID,
 			Brand:          string(brand),
 		}
 
@@ -137,6 +140,8 @@ type AdminUpdatePlanRequest struct {
 	Month       *int    `json:"month" example:"1"`          // 月数
 	Highlight   *bool   `json:"highlight" example:"true"`   // 是否高亮显示
 	IsActive    *bool   `json:"isActive" example:"true"`    // 是否激活
+
+	StripePriceID *string `json:"stripePriceId"` // Stripe Price ID（overleap 官网 Checkout）
 }
 
 func api_admin_update_plan(c *gin.Context) {

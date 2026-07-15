@@ -339,6 +339,9 @@ func executeApprovalPlanUpdate(ctx context.Context, params json.RawMessage) erro
 		}
 		plan.Tier = *req.Tier
 	}
+	if req.StripePriceID != nil {
+		plan.StripePriceID = *req.StripePriceID
+	}
 
 	if err := db.Get().Save(&plan).Error; err != nil {
 		return fmt.Errorf("update plan %s: %w", p.PlanID, err)

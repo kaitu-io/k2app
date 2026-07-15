@@ -74,6 +74,7 @@ func Migrate() error {
 		&UserProHistory{},
 		&Subscription{},
 		&SubscriptionCredit{},
+		&StripeWebhookEvent{},
 		&Message{},
 		&Secret{},
 		&SlaveNode{},
