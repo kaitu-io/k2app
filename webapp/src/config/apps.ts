@@ -52,6 +52,8 @@ export interface AppConfig {
     appBypass?: boolean;
     /** Private (dedicated) node management page */
     privateNode?: boolean;
+    /** Self-hosted tunnel surfaces (/tunnels page + every entry into it) */
+    selfHostedTunnels?: boolean;
   };
 
   /** Branding configuration */
@@ -86,6 +88,7 @@ const APP_CONFIG: AppConfig = {
     delegate: brandConfig.features.delegate,
     chatwoot: brandConfig.features.chatwoot,
     privateNode: brandConfig.features.privateNode,
+    selfHostedTunnels: brandConfig.features.selfHostedTunnels,
     // platform-static (same for both brands)
     proHistory: true,
     feedback: true,

@@ -8,6 +8,7 @@
  */
 
 import { useState, useCallback } from "react";
+import { Navigate } from "react-router-dom";
 import {
   Box,
   Typography,
@@ -112,8 +113,12 @@ export default function Tunnels() {
   // Self-hosted tunnels depend on the kaitu.io-hosted k2s install script, so
   // the whole surface is off for brands without one. Defence in depth: purity
   // is already guaranteed by k2sInstallUrl living in the brand registry.
+  //
+  // Redirect rather than render nothing: this page early-returns above its own
+  // header and BackButton, so `null` is an unescapable blank screen for anyone
+  // who deep-links here (stale entry point, bookmark, restored route).
   if (!brandConfig.features.selfHostedTunnels) {
-    return null;
+    return <Navigate to="/" replace />;
   }
 
   return (

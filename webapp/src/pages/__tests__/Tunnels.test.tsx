@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { Route, Routes } from 'react-router-dom';
 import { render } from '../../test/utils/render';
 import { brandConfig } from '../../brand';
 import { KAITU_BRAND } from '../../brand/kaitu';
@@ -171,6 +172,27 @@ describe('Tunnels', () => {
         expect(screen.getByDisplayValue(brandConfig.k2sInstallUrl)).toBeInTheDocument();
       } else {
         expect(container).toBeEmptyDOMElement();
+      }
+    });
+
+    // A closed gate must bounce the user home, not strand them on a blank
+    // screen. This page early-returns above its own header/BackButton, so
+    // rendering nothing leaves deep-linkers with no way back inside the app.
+    it('redirects to / instead of stranding deep-links when the gate is closed', () => {
+      setupMocks();
+      render(
+        <Routes>
+          <Route path="/" element={<div data-testid="home-route" />} />
+          <Route path="/tunnels" element={<Tunnels />} />
+        </Routes>,
+        { useMemoryRouter: true, initialEntries: ['/tunnels'] }
+      );
+
+      if (SURFACE) {
+        expect(screen.queryByTestId('home-route')).not.toBeInTheDocument();
+        expect(screen.getByDisplayValue(brandConfig.k2sInstallUrl)).toBeInTheDocument();
+      } else {
+        expect(screen.getByTestId('home-route')).toBeInTheDocument();
       }
     });
   });
