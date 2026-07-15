@@ -34,6 +34,8 @@ func SetupRouter() *gin.Engine {
 	r.POST("/webhook/wordgate", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_wordgate_webhook)
 	// Apple App Store Server Notifications V2（自动续订订阅续费/退款/撤销）
 	r.POST("/webhook/appstore", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_apple_webhook)
+	// Stripe webhook（overleap 官网 Checkout 的入账通道：invoice.paid 单一入账事件）
+	r.POST("/webhook/stripe", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_stripe_webhook)
 
 	// Chatwoot → FastGPT AI bridge
 	chatwootWebhook := r.Group("/webhook")
@@ -148,6 +150,10 @@ func SetupRouter() *gin.Engine {
 			user.POST("/orders", AuthRequired(), EnforceDeviceClass(), api_create_order)
 			// iOS StoreKit IAP：客户端购买完成后上报 transactionId，服务端复核入账
 			user.POST("/apple-iap/verify", AuthRequired(), EnforceDeviceClass(), api_apple_iap_verify)
+			// Stripe Checkout（overleap 官网购买）：创建 Checkout Session，返回跳转 URL
+			user.POST("/stripe/checkout", AuthRequired(), EnforceDeviceClass(), api_stripe_checkout)
+			// Stripe Billing Portal（订阅管理/取消面）
+			user.POST("/stripe/portal", AuthRequired(), EnforceDeviceClass(), api_stripe_portal)
 			// 通知代付人付款（给当前用户的 delegate 发支付邀请邮件）
 			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), EnforceDeviceClass(), api_order_notify_delegate)
 			// 专属节点订阅只读列表（owner-scoped）

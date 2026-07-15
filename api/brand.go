@@ -1,11 +1,13 @@
 package center
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/slack"
 	"gorm.io/gorm"
 )
 
@@ -70,8 +72,8 @@ var brandRegistry = map[Brand]*BrandConfig{
 		BaseURL:            "https://www.overleap.io",
 		SupportEmail:       "support@overleap.io",
 		EDMFromName:        "Overleap Team",
-		// Phase 6 接入 Stripe / Apple IAP（新 bundle）/ Play Billing 时填充
-		PaymentChannels: []string{},
+		// Phase 6：Stripe Checkout（官网）已接入；Apple IAP（新 bundle）/ Play Billing 随 App 上架填充
+		PaymentChannels: []string{PayChannelStripe},
 	},
 }
 
@@ -185,4 +187,16 @@ func BrandForCreate(s string) (Brand, error) {
 		return "", fmt.Errorf("invalid brand: %q", s)
 	}
 	return b, nil
+}
+
+// alertPaymentBrandMismatch 是支付品牌错配哨兵的统一告警出口：error 日志 + Slack "alert" 频道。
+// 哨兵语义（fail-loud，Phase 1 既定）：命中即为 bug，拒绝入账并任由 provider 重试风暴
+// 反复告警——持久出现应视为 page 级事件。Slack 发送 best-effort，绝不阻断主流程；
+// var 形态供测试替换。wordgate/apple/stripe 三条渠道共用。
+var alertPaymentBrandMismatch = func(ctx context.Context, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	log.Errorf(ctx, "%s", msg)
+	if err := slack.Send("alert", "[PAYMENT-BRAND-MISMATCH] "+msg); err != nil {
+		log.Errorf(ctx, "failed to send brand-mismatch slack alert: %v", err)
+	}
 }

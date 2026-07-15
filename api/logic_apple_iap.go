@@ -97,7 +97,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	// 反复告警——这是 fail-loud 的设计取舍，不是 bug。若此日志持续出现应视为 page
 	// 级事件而非重试可容忍瞬态。
 	if !Brand(user.Brand).Config().AllowsPayment(PayChannelAppleIAP) {
-		log.Errorf(ctx, "brand-mismatch apple credit: user %d brand %s does not allow apple_iap, txn=%s", userID, user.Brand, info.TransactionId)
+		alertPaymentBrandMismatch(ctx, "brand-mismatch apple credit: user %d brand %s does not allow apple_iap, txn=%s", userID, user.Brand, info.TransactionId)
 		return fmt.Errorf("brand mismatch: user %d brand %s does not allow apple_iap channel", userID, user.Brand)
 	}
 
@@ -383,13 +383,21 @@ func GetActiveSubscriptions(userID uint64) []DataSubscription {
 		if !isSubscriptionLive(s, now) {
 			continue // 防陈旧 active 行(period 已过)被读成订阅中
 		}
+		// provider 分派：ProductID 语义随 provider 变（apple=商品ID / stripe=price ID），
+		// tier 反查与管理面各走各的。
 		tier := ""
-		if plan, _ := planByAppleProductID(context.Background(), getDB(), s.ProductID); plan != nil {
-			tier = plan.Tier
-		}
-		manage := ManageSurface{Kind: "url"} // 默认；下方按 provider 覆写
-		if s.Provider == "apple" {
+		manage := ManageSurface{Kind: "url"} // 未知 provider 的兜底
+		switch s.Provider {
+		case "apple":
+			if plan, _ := planByAppleProductID(context.Background(), getDB(), s.ProductID); plan != nil {
+				tier = plan.Tier
+			}
 			manage = appleManageSurface()
+		case "stripe":
+			if plan, _ := planByStripePriceID(context.Background(), getDB(), s.ProductID); plan != nil {
+				tier = plan.Tier
+			}
+			manage = ManageSurface{Kind: "stripe_portal"} // 客户端调 POST /api/user/stripe/portal 换 URL
 		}
 		out = append(out, DataSubscription{
 			Provider:         s.Provider,

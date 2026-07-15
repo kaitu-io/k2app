@@ -40,6 +40,7 @@ const (
 	VipSurveyReward  VipChangeType = "survey_reward"  // 问卷奖励
 	VipRefund        VipChangeType = "refund"         // 订单退款撤销授权 / Apple 退款撤销
 	VipAppleSub      VipChangeType = "apple_sub"      // Apple 自动续订订阅入账
+	VipStripeSub     VipChangeType = "stripe_sub"     // Stripe 自动续订订阅入账
 )
 
 // User 用户模型
@@ -726,6 +727,11 @@ type Plan struct {
 	// Apple App Store 商品ID（如 io.kaitu.sub.family.1y）。仅 iOS IAP 用：非空才在 iOS 购买面板出现。
 	AppleProductID string `gorm:"column:apple_product_id;type:varchar(255);index" json:"appleProductId,omitempty"`
 
+	// Stripe Price ID（如 price_1Nxxxx）。仅 overleap 官网 Stripe Checkout 用：
+	// 非空才可通过 /api/user/stripe/checkout 购买。价格真相源是 Stripe Price 对象（USD）；
+	// Plan.Price 仅展示。
+	StripePriceID string `gorm:"column:stripe_price_id;type:varchar(255);index" json:"stripePriceId,omitempty"`
+
 	Product string `gorm:"type:varchar(20);not null;default:'app';index" json:"product"` // app | private_node
 
 	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
@@ -746,6 +752,9 @@ type Subscription struct {
 	ProductID              string `gorm:"column:product_id;type:varchar(255);not null" json:"productId"`
 	// ProviderLatestRef 最近一笔交易/事件引用（Apple: transactionId）。
 	ProviderLatestRef string `gorm:"column:provider_latest_ref;type:varchar(64)" json:"providerLatestRef"`
+	// ProviderCustomerID 该 provider 的客户标识（Stripe: cus_...；Apple 无此概念，留空）。
+	// Billing Portal 会话创建与退款/争议归属查询用。
+	ProviderCustomerID string `gorm:"column:provider_customer_id;type:varchar(64);index" json:"-"`
 	// CurrentPeriodEnd 当前周期绝对到期时间（unix 秒，已归一；Apple ms 在适配器除以 1000）。
 	CurrentPeriodEnd int64  `gorm:"column:current_period_end" json:"currentPeriodEnd"`
 	AutoRenew        bool   `gorm:"column:auto_renew" json:"autoRenew"`
@@ -769,6 +778,16 @@ type SubscriptionCredit struct {
 	OriginalTransactionID string    `gorm:"column:original_transaction_id;type:varchar(64);not null;index" json:"originalTransactionId"`
 	CreditedSeconds       int64     `gorm:"column:credited_seconds;not null" json:"creditedSeconds"`
 	Kind                  string    `gorm:"column:kind;type:varchar(16);not null" json:"kind"` // purchase|renewal|grace
+}
+
+// StripeWebhookEvent 是 Stripe webhook 的事件级幂等去重表：同一 event id 只处理一次
+// （check → process → record，同 apple LastEventID 模式；并发窗口内的金额安全由
+// SubscriptionCredit UNIQUE(provider, transaction_id) + 行锁硬保证）。
+type StripeWebhookEvent struct {
+	ID        uint64 `gorm:"primarykey"`
+	CreatedAt time.Time
+	EventID   string `gorm:"column:event_id;type:varchar(64);not null;uniqueIndex"`
+	Type      string `gorm:"type:varchar(64);not null"`
 }
 
 // EmailMarketingTemplate EDM多语言邮件模板模型

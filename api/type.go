@@ -97,7 +97,7 @@ type ContactInfo struct {
 
 // ManageSurface 告诉客户端如何让用户管理/取消订阅。
 type ManageSurface struct {
-	Kind string `json:"kind"`          // 'apple_settings' | 'url'
+	Kind string `json:"kind"`          // 'apple_settings' | 'url' | 'stripe_portal'（后者=调 POST /api/user/stripe/portal 换 URL 再跳转）
 	URL  string `json:"url,omitempty"` // kind='url' 时的目标
 }
 
@@ -108,6 +108,11 @@ type DataSubscription struct {
 	CurrentPeriodEnd int64         `json:"currentPeriodEnd"` // unix 秒
 	AutoRenew        bool          `json:"autoRenew"`
 	Manage           ManageSurface `json:"manage"`
+}
+
+// DataStripeRedirect Stripe 跳转载体（Checkout Session / Billing Portal 共用）。
+type DataStripeRedirect struct {
+	URL string `json:"url"`
 }
 
 // DataUser API 用户数据结构
