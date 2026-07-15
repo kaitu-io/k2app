@@ -48,8 +48,6 @@ vi.mock('@/components/Footer', () => ({
 
 // Mock @/lib/constants
 vi.mock('@/lib/constants', () => ({
-  CDN_PRIMARY: 'https://cdn-primary.test/kaitu/desktop',
-  CDN_BACKUP: 'https://cdn-backup.test/kaitu/desktop',
   getDownloadLinks: (version: string) => ({
     windows: { primary: `https://cdn/${version}/win.exe`, backup: `https://backup/${version}/win.exe` },
     macos: { primary: `https://cdn/${version}/mac.pkg`, backup: `https://backup/${version}/mac.pkg` },

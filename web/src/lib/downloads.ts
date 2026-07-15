@@ -1,10 +1,6 @@
 // web/src/lib/downloads.ts
-import { CDN_PRIMARY, CDN_BACKUP, getDownloadLinks, getAndroidDownloadLinks } from './constants';
-
-const CDN_MOBILE_BASES = [
-  'https://dl.kaitu.io/kaitu',
-  'https://d13jc1jqzlg4yt.cloudfront.net/kaitu',
-];
+import { siteBrand } from './brands';
+import { getDownloadLinks, getAndroidDownloadLinks } from './constants';
 
 export interface MobileLinks {
   ios: { url: string; version: string };
@@ -36,7 +32,7 @@ export function flattenToRecord(all: AllDownloadLinks): Record<string, string> {
 
 async function fetchDesktopVersion(channel: 'beta' | 'stable'): Promise<string | null> {
   const path = channel === 'beta' ? '/beta/cloudfront.latest.json' : '/cloudfront.latest.json';
-  for (const base of [CDN_PRIMARY, CDN_BACKUP]) {
+  for (const base of siteBrand().cdn.desktopBases) {
     try {
       const res = await fetch(`${base}${path}`, { next: { revalidate: 300 } });
       if (res.ok) {
@@ -49,7 +45,7 @@ async function fetchDesktopVersion(channel: 'beta' | 'stable'): Promise<string |
 }
 
 async function fetchMobileLinks(): Promise<MobileLinks | null> {
-  for (const base of CDN_MOBILE_BASES) {
+  for (const base of siteBrand().cdn.mobileBases) {
     try {
       const [iosRes, androidRes] = await Promise.all([
         fetch(`${base}/ios/latest.json`, { next: { revalidate: 300 } }),

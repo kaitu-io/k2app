@@ -7,10 +7,6 @@ vi.stubGlobal('fetch', mockFetch);
 
 // Mock constants
 vi.mock('@/lib/constants', () => ({
-  CDN_PRIMARY: 'https://cdn-primary.test/kaitu/desktop',
-  CDN_BACKUP: 'https://cdn-backup.test/kaitu/desktop',
-  CDN_BASE_PRIMARY: 'https://cdn-primary.test/kaitu',
-  CDN_BASE_BACKUP: 'https://cdn-backup.test/kaitu',
   getDownloadLinks: (version: string) => ({
     windows: {
       primary: `https://cdn-primary.test/kaitu/desktop/${version}/Kaitu_${version}_x64.exe`,
@@ -80,17 +76,16 @@ describe('fetchAllDownloadLinks', () => {
   });
 
   it('falls back to backup CDN when primary fails', async () => {
+    // Phase 2: the CDN bases come from the brand registry (Brand.cdn), not from
+    // mocked constants — so these matchers use the real kaitu bases.
     mockFetch.mockImplementation((url: string) => {
-      // Primary fails for desktop
-      if (url.startsWith('https://cdn-primary.test') && url.includes('cloudfront.latest.json')) {
-        return Promise.resolve({ ok: false });
-      }
-      // Backup succeeds for desktop
-      if (url.startsWith('https://cdn-backup.test') && url.includes('cloudfront.latest.json')) {
+      // Backup succeeds for desktop (checked first: the backup base is a
+      // cloudfront host and the manifest filename also contains "cloudfront").
+      if (url.startsWith('https://d13jc1jqzlg4yt.cloudfront.net') && url.includes('cloudfront.latest.json')) {
         if (url.includes('/beta/')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: '0.4.0-beta.1' }) });
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: '0.3.22' }) });
       }
-      // Primary fails for mobile
+      // Primary fails for desktop AND mobile (both live under dl.kaitu.io).
       if (url.startsWith('https://dl.kaitu.io')) {
         return Promise.resolve({ ok: false });
       }

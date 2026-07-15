@@ -55,8 +55,6 @@ vi.mock('@/lib/device-detection', () => ({
   openDownloadInNewTab: vi.fn(),
 }));
 vi.mock('@/lib/constants', () => ({
-  CDN_PRIMARY: 'https://cdn.test',
-  CDN_BACKUP: 'https://backup.test',
   getDownloadLinks: (v: string) => ({
     windows: { primary: `https://cdn/${v}/win.exe`, backup: '' },
     macos: { primary: `https://cdn/${v}/mac.pkg`, backup: '' },
