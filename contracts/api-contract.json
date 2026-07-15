@@ -1,0 +1,211 @@
+{
+  "_generated": "GENERATED from live Go values by api/contract_export_test.go. Do not hand-edit. Regenerate: cd api && UPDATE_CONTRACT=1 go test -run TestExportContract ./...",
+  "brands": {
+    "kaitu": {
+      "id": "kaitu",
+      "displayName": "开途",
+      "hosts": [
+        "kaitu.io",
+        "www.kaitu.io"
+      ],
+      "webOrigins": [
+        "https://www.kaitu.io",
+        "https://kaitu.io"
+      ],
+      "redirectRootDomain": "kaitu.io",
+      "baseURL": "https://www.kaitu.io",
+      "supportEmail": "support@kaitu.me",
+      "edmFromName": "Kaitu Team",
+      "paymentChannels": [
+        "wordgate",
+        "apple_iap"
+      ]
+    },
+    "overleap": {
+      "id": "overleap",
+      "displayName": "Overleap",
+      "hosts": [
+        "overleap.io",
+        "www.overleap.io"
+      ],
+      "webOrigins": [
+        "https://www.overleap.io",
+        "https://overleap.io"
+      ],
+      "redirectRootDomain": "overleap.io",
+      "baseURL": "https://www.overleap.io",
+      "supportEmail": "support@overleap.io",
+      "edmFromName": "Overleap Team",
+      "paymentChannels": [
+        "stripe"
+      ]
+    }
+  },
+  "cors": {
+    "api": {
+      "allowHeaders": [
+        "Content-Type",
+        "Authorization",
+        "X-CSRF-Token",
+        "X-K2-Client",
+        "X-K2-Brand"
+      ]
+    },
+    "app": {
+      "allowHeaders": [
+        "Content-Type",
+        "Authorization",
+        "X-CSRF-Token",
+        "X-K2-Client",
+        "X-K2-Brand",
+        "Cookie"
+      ]
+    }
+  },
+  "errorCodes": [
+    {
+      "name": "ErrorNone",
+      "code": 0
+    },
+    {
+      "name": "ErrorPendingApproval",
+      "code": 202
+    },
+    {
+      "name": "ErrorInvalidOperation",
+      "code": 400
+    },
+    {
+      "name": "ErrorNotLogin",
+      "code": 401
+    },
+    {
+      "name": "ErrorPaymentRequired",
+      "code": 402
+    },
+    {
+      "name": "ErrorForbidden",
+      "code": 403
+    },
+    {
+      "name": "ErrorNotFound",
+      "code": 404
+    },
+    {
+      "name": "ErrorNotSupported",
+      "code": 405
+    },
+    {
+      "name": "ErrorUpgradeRequired",
+      "code": 406
+    },
+    {
+      "name": "ErrorConflict",
+      "code": 409
+    },
+    {
+      "name": "ErrorInvalidArgument",
+      "code": 422
+    },
+    {
+      "name": "ErrorTooEarly",
+      "code": 425
+    },
+    {
+      "name": "ErrorTooManyRequests",
+      "code": 429
+    },
+    {
+      "name": "ErrorSystemError",
+      "code": 500
+    },
+    {
+      "name": "ErrorServiceUnavailable",
+      "code": 503
+    },
+    {
+      "name": "ErrorInvalidCampaignCode",
+      "code": 400001
+    },
+    {
+      "name": "ErrorInvalidClientClock",
+      "code": 400002
+    },
+    {
+      "name": "ErrorInvalidVerificationCode",
+      "code": 400003
+    },
+    {
+      "name": "ErrorInvalidInviteCode",
+      "code": 400004
+    },
+    {
+      "name": "ErrorSelfInvitation",
+      "code": 400005
+    },
+    {
+      "name": "ErrorInvalidCredentials",
+      "code": 400006
+    },
+    {
+      "name": "ErrorLicenseKeyNotFound",
+      "code": 400007
+    },
+    {
+      "name": "ErrorLicenseKeyUsed",
+      "code": 400008
+    },
+    {
+      "name": "ErrorLicenseKeyExpired",
+      "code": 400009
+    },
+    {
+      "name": "ErrorLicenseKeyNotMatch",
+      "code": 400010
+    },
+    {
+      "name": "ErrorLicenseKeyAlreadyRedeemed",
+      "code": 400011
+    },
+    {
+      "name": "ErrorProxyMembersDeprecated",
+      "code": 400012
+    },
+    {
+      "name": "ErrorVerificationCodeExpired",
+      "code": 400013
+    },
+    {
+      "name": "ErrorPlanNoRouter",
+      "code": 402001
+    },
+    {
+      "name": "ErrorRouterDeviceLimit",
+      "code": 403001
+    },
+    {
+      "name": "ErrorDeviceClassMismatch",
+      "code": 403002
+    },
+    {
+      "name": "ErrorBrandMismatch",
+      "code": 403003
+    },
+    {
+      "name": "ErrorPaymentChannelUnavailable",
+      "code": 405001
+    },
+    {
+      "name": "ErrorTierMismatch",
+      "code": 422001
+    },
+    {
+      "name": "ErrorProxyPurchaseDeprecated",
+      "code": 422002
+    },
+    {
+      "name": "ErrorInvalidClientClass",
+      "code": 422003
+    }
+  ]
+}
