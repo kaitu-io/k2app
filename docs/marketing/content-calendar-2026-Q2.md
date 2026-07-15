@@ -183,7 +183,7 @@
 | 2. Twitter @kaitu_io 账号重启 + 发 3 条预热帖（不求转化，求"这个号活着"） | 运营 | 3h | 3 条帖 ≥500 impressions |
 | 3. 知乎账号确认（个人 / 机构）+ 5 个关键问题收藏 | 运营 | 2h | 5 个待答问题清单 |
 | 4. Telegram 频道 `@kaitu_io` 建立 + 置顶 k2 协议文档链接 + 发第一条用户 onboarding | 运营 | 1.5h | 频道上线 |
-| 5. overleap.io 独立站搭建（2026-04-21 已决策：**独立站**，不 301；overleap.io 是母品牌主站，kaitu.io 保留为中国产品站）—— 本周先拉起落地页 + 博客骨架 | 工程 | 3h | overleap.io 返回 200，有基础首页 + /blog 空状态 |
+| 5. overleap.io 独立站搭建（**独立站**，不 301、不互链；overleap.io 是海外品牌站，kaitu.io 是中国品牌站，两站完全隔离 —— 2026-07-14 决策）—— 本周先拉起落地页 + 博客骨架 | 工程 | 3h | overleap.io 返回 200，有基础首页 + /blog 空状态 |
 | 6. `web/content/{locale}/blog/` 目录初始化 + 博客列表页 UI 检查 | 工程 | 1h | 能访问 `/{locale}/blog` 并看到空状态或 hello-world |
 | 7. GA4 自定义维度 `first_content_source` 埋点方案设计（归因链路） | 工程 + 运营 | 2h | 文档出方案，不要求落地 |
 

@@ -1,6 +1,6 @@
 # Product Marketing Context — Kaitu / Overleap
 
-*Last updated: 2026-04-21*
+*Last updated: 2026-07-15 —— 品牌架构为 2026-07-14 的「完全隔离」决策，非 04-21 的母品牌层级*
 
 > 本文档被所有 `marketing-skills:*` 和 `kaitu-growth` skill 引用，作为品牌、定位、用户、竞品、文案声调的单一事实源。更新时用 `/product-marketing-context` skill。
 
@@ -25,31 +25,33 @@
 
 ## Brand Architecture
 
-**母品牌 / 产品品牌层级**（2026-04-21 决策）：
+**两个完全隔离的对等品牌**（2026-07-14 决策，推翻了 2026-04-21 的母品牌 / 子产品层级）：
 
-| 层级 | 名称 | 角色 | 主渠道 |
-|---|---|---|---|
-| **母品牌 / 公司层** | **Overleap**（overleap.io） | 海外所有面 + 未来法律实体 + 跨市场叙事 | overleap.io · 全球 App Store / Play · 英文社交 / 技术社区 |
-| **中国市场产品名** | **开途 / Kaitu**（kaitu.io） | 中国市场的产品品牌 | kaitu.io · 小红书 / 知乎 / 微博 · 中国区 App Store · 国内分销 |
-| **协议层（全球共享）** | k2（隧道）· k2cc（拥塞控制）· k2s（自托管服务端）· k2r（路由器硬件） | 技术品牌，跨市场统一 | 技术文档 · GitHub · 开发者内容 · benchmark |
+| 品牌 | 市场 | 主渠道 |
+|---|---|---|
+| **开途**（kaitu.io） | 中国 | kaitu.io · 小红书 / 知乎 / 微博 · 中国区 App Store · 国内分销 |
+| **Overleap**（overleap.io） | 海外 | overleap.io · 全球 App Store / Play · 英文社交 / 技术社区 |
+| **协议层（不属于任一品牌）** | 全球共享 | k2（隧道）· k2cc（拥塞控制）· k2s（自托管服务端）· k2r（路由器硬件）—— 技术文档 · GitHub · benchmark |
 
-**底层产品相同** —— 同一协议栈（k2 + k2cc）、同一客户端代码库、同一服务端。只是面向不同市场的品牌、本地化、营销叙事不同。
+**没有母子关系**：两者不是"公司层 / 产品层"，是两个各自独立运作的产品品牌，各有自己的用户池、定价面、支付渠道与叙事。
 
-### 品牌衔接规则
+**底层产品相同**（同一协议栈、同一客户端代码库、同一服务端）—— 这是**内部事实，不是对外叙事**。任何面向用户的语境都不说"这两个是一个东西"。
 
-- 中国面**只**出现 "开途 / Kaitu"，正文不提 Overleap（国内用户不关心公司层，添加会稀释信任）
-- 海外面**只**出现 "Overleap"，不提 Kaitu（英文用户无 Kaitu 背景，且 "Kaitu" 在 Google 会被纠错成 "kaitai"）
-- 跨语境 / 公司层（英文 press、footer、ToS / 隐私政策、招聘页、多语种技术白皮书）用 **"Kaitu by Overleap"** 或 "Kaitu, a product of Overleap" 衔接一次，之后保持单一叙事
+### 品牌隔离规则（硬规则）
+
+- 中国面**只**出现「开途」。中文用户面向语境**禁用 "Kaitu" 裸词** —— "kaitu" 只作为域名 / bundle id（kaitu.io、`io.kaitu`）出现，不进正文。
+- 海外面**只**出现 "Overleap"，**禁用 "Kaitu" 裸词** —— 英文用户无背景，且 Google 会把 "Kaitu" 纠错成 "kaitai"（Kaitai Struct 二进制解析器）。
+- **两边互不提及。** 没有衔接句、没有 footer 关联、没有 About 页交叉引用。~~"Kaitu by Overleap"~~ / ~~"Kaitu, a product of Overleap"~~ **已作废，禁止使用**。
+- **唯一例外：法务文书署名。** ToS / 隐私政策 / footer 的法律实体署名两边都是 **Overleap LLC**。这是刻意收窄的单点例外，不要扩大到叙事层。
 
 详细用词规则、禁用组合、SEO 关键词矩阵见 `docs/marketing/brand-naming-strategy.md`。
 
-### 品牌过渡期开放项
+### 品牌开放项
 
-这些项目不阻塞本文档使用，但需要单独决策与执行：
+不阻塞本文档使用，但需要单独决策与执行：
 
-- **GitHub org 名称未定** — `overleap` 和 `overleap-io` 均已被他人占用。候选：`overleap-net` / `getoverleap` / `joinoverleap` / `useoverleap` / `overleap-labs`，或通过 GitHub name release 流程争取（需商标）。过渡期保持私仓。
-- **Overleap 法律实体尚未注册** —— Inc. / LLC / Ltd. 可行性确认中。过渡期 ToS / 隐私政策 / 商户收款由现有运营主体签名，不硬绑 "Overleap Inc."。
-- **跨市场信任迁移** —— 中国技术派用户出海后通过 "Kaitu by Overleap" footer / About 页建立一次心智关联，之后纯 Overleap 叙事；不做反向引流。
+- **Overleap 法律实体的司法辖区未定** —— 美国 / 新加坡 / 香港 / 开曼均在考虑，Inc. / LLC / Ltd. 形态待定。法务文书已按 **Overleap LLC** 署名，但实体注册尚未落地；过渡期商户收款由现有运营主体承接，不硬绑 "Overleap Inc."。
+- **Overleap 侧数据为空** —— 付费主力画像 / 主要渠道 / 支付方式都还是 TBD，等首批付费用户数据回来再精修（见下面 Market Positioning Matrix）。
 
 ### Market Positioning Matrix
 
@@ -276,10 +278,11 @@
 
 | 术语 | 含义 |
 |---|---|
-| Overleap | 母品牌 / 公司层品牌；海外所有渠道的唯一品牌呈现 |
-| Kaitu | 中国市场产品名的英文拼写 |
-| 开途 | 中国市场产品名的中文写法（读音 kāi tú） |
-| Kaitu by Overleap | 跨语境 / 公司层叙事（footer / ToS / 英文 press）的衔接写法 |
+| Overleap | 海外市场的独立品牌；海外所有渠道的唯一品牌呈现 |
+| 开途 | 中国市场的独立品牌（读音 kāi tú）—— 中文语境的唯一写法 |
+| Kaitu | 「开途」的英文拼写。**仅用于域名 / bundle id（kaitu.io、`io.kaitu`）**；中文正文与海外面均禁用裸词 |
+| ~~Kaitu by Overleap~~ | **已作废**（2026-07-14）—— 两品牌完全隔离，无衔接写法 |
+| Overleap LLC | 法务文书署名主体；两品牌唯一共用的跨品牌元素（ToS / 隐私政策 / footer） |
 | k2 | 隧道协议名（ECH + QUIC/TCP-WS + k2cc） |
 | k2cc | 拥塞控制算法（congestion control） |
 | k2s | 可自部署的服务端二进制 |
@@ -382,7 +385,7 @@
 
 以下为不阻塞本文档使用、但需要独立决策的战略问题。团队应逐一回答：
 
-1. ~~**Kaitu ↔ Overleap 品牌关联策略**~~ — ✅ 已决策 (2026-04-21)：Overleap 母 / Kaitu 中国产品结构，衔接词 "Kaitu by Overleap"
+1. ~~**Kaitu ↔ Overleap 品牌关联策略**~~ — ✅ 已决策 (2026-07-14，取代 2026-04-21 的层级方案)：**两品牌完全隔离，无关联、无衔接词**。~~"Kaitu by Overleap"~~ 作废。
 2. ~~**Overleap 海外 GitHub org 命名**~~ — ✅ 已决策 (2026-04-21)：`getoverleap`（github.com/getoverleap）
 3. **Overleap 法律实体注册**：Inc. / LLC / Ltd. 选型 + 司法辖区（美国 / 新加坡 / 香港 / 开曼）
 4. **Overleap 的海外 ICP 锁定**：华人出海 / 隐私技术用户 / 其他审查市场 —— 选哪个做 launch wedge？
@@ -396,3 +399,5 @@
 
 - **2026-04-21** — V1 草稿由 `marketing-skills:product-marketing-context` skill 在 Kaitu 代码库内基于首页 / install / purchase / support / k2 协议文档 / i18n 源（zh-CN）/ tier-rename spec 自动起草；经 david 澄清品牌结构（Kaitu 中国、Overleap 海外）、ICP 分层（实用派主力）、竞争点名规划后定稿。
 - **2026-04-21** — 品牌架构决策：从"双品牌并列"升级为 **"Overleap 母品牌 / Kaitu 中国产品"** 层级结构，衔接词 "Kaitu by Overleap"。连带更新 Brand Architecture / Glossary / Strategic Open Questions。跨市场信任迁移问题由 footer 衔接规则承接；GitHub org 名与法律实体注册转为 Open Questions。详见 `docs/marketing/brand-naming-strategy.md`。
+- **2026-07-14** — **品牌架构再次翻转，推翻上一条**：放弃母品牌 / 子产品层级，改为 **开途（中国）与 Overleap（海外）两个完全隔离的对等品牌** —— 各自独立的用户池、支付渠道、叙事，任何面向用户的语境都不互相提及。衔接句 "Kaitu by Overleap" / "Kaitu, a product of Overleap" 作废；"跨市场信任迁移" 作为策略取消（隔离前提下不成立）。唯一保留的跨品牌元素是法务文书署名 **Overleap LLC**。连带更新 Brand Architecture / Glossary / Strategic Open Questions。
+- **2026-07-15** — 修复文档漂移：本文档、`docs/marketing/{README,brand-naming-strategy,content-calendar-2026-Q2}.md` 与根 `CLAUDE.md` 此前全部停留在 2026-04-21 的层级架构，07-14 的决策只存在于品牌拆分代码分支中，导致每次 `marketing-skills:*` 启动都加载已被推翻的架构。五处口径已统一到"完全隔离"。
