@@ -70,8 +70,8 @@ var brandRegistry = map[Brand]*BrandConfig{
 		BaseURL:            "https://www.overleap.io",
 		SupportEmail:       "support@overleap.io",
 		EDMFromName:        "Overleap Team",
-		// Phase 6 接入 Stripe / Apple IAP（新 bundle）/ Play Billing 时填充
-		PaymentChannels: []string{},
+		// Phase 6：Stripe Checkout（官网）已接入；Apple IAP（新 bundle）/ Play Billing 随 App 上架填充
+		PaymentChannels: []string{PayChannelStripe},
 	},
 }
 
