@@ -116,8 +116,9 @@ export function dropFailedServerActionLookupFromBotProbes(event: ErrorEvent): Er
  *   - mechanism is the global unhandled-rejection handler
  *   - stack contains no app frame (only native frames, or none at all)
  *
- * Our only direct `postMessage` call lives in `useEmbedMode` and is wrapped
- * in a synchronous try/catch, so it cannot produce an unhandled rejection.
+ * Our only direct `postMessage` call lives in `public/embed-interceptor.js`
+ * and is wrapped in a synchronous try/catch, so it cannot produce an
+ * unhandled rejection.
  * Any app frame in the stack therefore signals a real bug — keep it.
  */
 export function dropNativePostMessageRejections(event: ErrorEvent): ErrorEvent | null {

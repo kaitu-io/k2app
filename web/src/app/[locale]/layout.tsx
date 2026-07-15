@@ -86,6 +86,10 @@ export default async function LocaleLayout({
         <Script id="array-at-polyfill" strategy="afterInteractive">
           {ARRAY_AT_POLYFILL}
         </Script>
+        {/* Must run before hydration: in embed mode (app webview iframe) every
+            link click is forwarded to the parent app instead of navigating the
+            iframe. See public/embed-interceptor.js. */}
+        <Script src="/embed-interceptor.js" strategy="beforeInteractive" />
         <Script
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
           strategy="afterInteractive"
