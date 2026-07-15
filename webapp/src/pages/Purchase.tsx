@@ -887,7 +887,7 @@ export default function Purchase() {
       console.error(t('purchase:purchase.refreshUserProfileFailed'), error);
     }
     // 跳转到付费和授权历史页面
-    navigate('/pro-histories?type=recharge&from=/purchase');
+    navigate('/pro-histories?from=/purchase');
   };
   const handlePayFail = async () => {
     setPayDialogOpen(false);
@@ -898,7 +898,7 @@ export default function Purchase() {
       console.error(t('purchase:purchase.refreshUserProfileFailed'), error);
     }
     // 跳转到付费和授权历史页面
-    navigate('/pro-histories?type=recharge&from=/purchase');
+    navigate('/pro-histories?from=/purchase');
   };
 
   // iOS 订阅轨完全绕开 WordGate 多套餐购买流（单一自动续订商品，Apple 3.1.1）。
