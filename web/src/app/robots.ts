@@ -1,11 +1,9 @@
 import { MetadataRoute } from 'next';
-import { getBrand } from '@/lib/brand-server';
+import { siteBrand } from '@/lib/brands';
 
-// Must be dynamic so robots.txt content reflects the request host (kaitu.io vs overleap.io).
-export const dynamic = 'force-dynamic';
-
-export default async function robots(): Promise<MetadataRoute.Robots> {
-  const brand = await getBrand();
+// The brand is baked at build time — robots.txt is fully static per deployment.
+export default function robots(): MetadataRoute.Robots {
+  const brand = siteBrand();
   return {
     rules: {
       userAgent: '*',
