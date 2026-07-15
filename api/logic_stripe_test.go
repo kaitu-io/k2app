@@ -3,13 +3,16 @@ package center
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	stripe "github.com/stripe/stripe-go/v82"
 	db "github.com/wordgate/qtoolkit/db"
+	"gorm.io/gorm"
 )
 
 // setStripeTestConfig 设置 stripe viper 键并在测试结束时清空。
@@ -150,4 +153,178 @@ func TestAlertPaymentBrandMismatch_Replaceable(t *testing.T) {
 	}
 	alertPaymentBrandMismatch(context.Background(), "user %d brand %s", uint64(7), "kaitu")
 	assert.Equal(t, "user 7 brand kaitu", captured)
+}
+
+// ===================== creditStripeInvoice e2e（真 MySQL） =====================
+
+// stripeUniq 本文件测试数据唯一后缀。
+func stripeUniq() string { return strconv.FormatInt(time.Now().UnixNano(), 36) }
+
+// createStripeTestUser 造一个指定品牌的测试用户，t.Cleanup 硬删（含关联账目行）。
+func createStripeTestUser(t *testing.T, brand Brand) *User {
+	t.Helper()
+	u := &User{UUID: generateId("stripetest-user"), Brand: string(brand)}
+	require.NoError(t, db.Get().Create(u).Error)
+	t.Cleanup(func() {
+		db.Get().Unscoped().Where("user_id = ?", u.ID).Delete(&Subscription{})
+		db.Get().Unscoped().Where("user_id = ?", u.ID).Delete(&SubscriptionCredit{})
+		db.Get().Unscoped().Where("user_id = ?", u.ID).Delete(&UserProHistory{})
+		db.Get().Unscoped().Delete(u)
+	})
+	return u
+}
+
+// createStripeTestPlan 造一个 overleap + stripe price 的测试套餐。
+func createStripeTestPlan(t *testing.T) *Plan {
+	t.Helper()
+	p := &Plan{
+		PID: "olst_" + stripeUniq(), Label: "Overleap Pro Monthly (test)",
+		Price: 999, OriginPrice: 999, Month: 1, Tier: TierBasic,
+		IsActive: BoolPtr(true), Brand: string(BrandOverleap),
+		StripePriceID: "price_test_" + stripeUniq(),
+	}
+	require.NoError(t, db.Get().Create(p).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(p) })
+	return p
+}
+
+// mkStripeFacts 构造入账事实。
+func mkStripeFacts(u *User, p *Plan, invoiceID, subID string, start, end int64) *stripeInvoiceFacts {
+	return &stripeInvoiceFacts{
+		InvoiceID: invoiceID, SubscriptionID: subID, CustomerID: "cus_" + subID,
+		UserUUID: u.UUID, PlanPID: p.PID, PeriodStart: start, PeriodEnd: end, Livemode: false,
+	}
+}
+
+func creditInTx(f *stripeInvoiceFacts) error {
+	return db.Get().Transaction(func(tx *gorm.DB) error {
+		return creditStripeInvoice(context.Background(), tx, f)
+	})
+}
+
+func TestCreditStripeInvoice(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+
+	now := time.Now().Unix()
+	month := int64(31 * 86400)
+
+	t.Run("FirstInvoice_BindsAndCredits", func(t *testing.T) {
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		subID := "sub_" + stripeUniq()
+
+		require.NoError(t, creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now, now+month)))
+
+		var got User
+		require.NoError(t, db.Get().First(&got, u.ID).Error)
+		assert.InDelta(t, now+month, got.ExpiredAt, 5) // 首购从 now 起一个周期
+		assert.True(t, *got.IsFirstOrderDone)
+		assert.Equal(t, TierBasic, got.Tier)
+
+		var sub Subscription
+		require.NoError(t, db.Get().Where(&Subscription{Provider: "stripe", ProviderSubscriptionID: subID}).First(&sub).Error)
+		assert.Equal(t, u.ID, sub.UserID)
+		assert.Equal(t, p.StripePriceID, sub.ProductID)
+		assert.Equal(t, "cus_"+subID, sub.ProviderCustomerID)
+		assert.Equal(t, "active", sub.Status)
+		assert.Equal(t, now+month, sub.CurrentPeriodEnd)
+		assert.Equal(t, "sandbox", sub.Environment)
+	})
+
+	t.Run("SameInvoiceReplay_NoDoubleCredit", func(t *testing.T) {
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		f := mkStripeFacts(u, p, "in_"+stripeUniq(), "sub_"+stripeUniq(), now, now+month)
+
+		require.NoError(t, creditInTx(f))
+		var before User
+		require.NoError(t, db.Get().First(&before, u.ID).Error)
+
+		require.NoError(t, creditInTx(f)) // 重放：幂等成功，不加时长
+		var after User
+		require.NoError(t, db.Get().First(&after, u.ID).Error)
+		assert.Equal(t, before.ExpiredAt, after.ExpiredAt)
+
+		var creditCount int64
+		db.Get().Model(&SubscriptionCredit{}).Where("user_id = ?", u.ID).Count(&creditCount)
+		assert.Equal(t, int64(1), creditCount)
+	})
+
+	t.Run("RenewalInvoice_AdditiveCredit", func(t *testing.T) {
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		subID := "sub_" + stripeUniq()
+
+		require.NoError(t, creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now, now+month)))
+		require.NoError(t, creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now+month, now+2*month)))
+
+		var got User
+		require.NoError(t, db.Get().First(&got, u.ID).Error)
+		assert.InDelta(t, now+2*month, got.ExpiredAt, 5)
+
+		var sub Subscription
+		require.NoError(t, db.Get().Where(&Subscription{Provider: "stripe", ProviderSubscriptionID: subID}).First(&sub).Error)
+		assert.Equal(t, now+2*month, sub.CurrentPeriodEnd)
+
+		var hist []UserProHistory
+		db.Get().Where("user_id = ? AND type = ?", u.ID, VipStripeSub).Find(&hist)
+		assert.Len(t, hist, 2)
+	})
+
+	t.Run("MissingUserUUID_OnFirstBind_Refused", func(t *testing.T) {
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		f := mkStripeFacts(u, p, "in_"+stripeUniq(), "sub_"+stripeUniq(), now, now+month)
+		f.UserUUID = ""
+		assert.Error(t, creditInTx(f))
+	})
+
+	t.Run("MetadataPointsToDifferentUser_AfterBind_Refused", func(t *testing.T) {
+		u1 := createStripeTestUser(t, BrandOverleap)
+		u2 := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		subID := "sub_" + stripeUniq()
+		require.NoError(t, creditInTx(mkStripeFacts(u1, p, "in_"+stripeUniq(), subID, now, now+month)))
+
+		f2 := mkStripeFacts(u2, p, "in_"+stripeUniq(), subID, now+month, now+2*month)
+		assert.Error(t, creditInTx(f2)) // 绝不 re-bind
+	})
+
+	t.Run("KaituUser_BrandSentinel_RefusesAndAlerts", func(t *testing.T) {
+		orig := alertPaymentBrandMismatch
+		t.Cleanup(func() { alertPaymentBrandMismatch = orig })
+		var alerted string
+		alertPaymentBrandMismatch = func(ctx context.Context, format string, args ...any) {
+			alerted = fmt.Sprintf(format, args...)
+		}
+
+		u := createStripeTestUser(t, BrandKaitu)
+		p := createStripeTestPlan(t)
+		err := creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), "sub_"+stripeUniq(), now, now+month))
+		assert.Error(t, err)
+		assert.Contains(t, alerted, "stripe")
+
+		var got User
+		require.NoError(t, db.Get().First(&got, u.ID).Error)
+		assert.Equal(t, int64(0), got.ExpiredAt) // 绝不静默入账
+	})
+
+	t.Run("UnknownPlanPID_Refused", func(t *testing.T) {
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		f := mkStripeFacts(u, p, "in_"+stripeUniq(), "sub_"+stripeUniq(), now, now+month)
+		f.PlanPID = "nonexistent_" + stripeUniq()
+		assert.Error(t, creditInTx(f))
+	})
+
+	t.Run("DeactivatedPlan_RenewalStillCredits", func(t *testing.T) {
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		subID := "sub_" + stripeUniq()
+		require.NoError(t, creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now, now+month)))
+		// ops 下架 plan 后续费仍须入账（planByPIDForCredit 不看 is_active）
+		require.NoError(t, db.Get().Model(p).Update("is_active", false).Error)
+		require.NoError(t, creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now+month, now+2*month)))
+	})
 }

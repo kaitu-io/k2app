@@ -1,9 +1,15 @@
 package center
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	stripe "github.com/stripe/stripe-go/v82"
+	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // stripeSubStatus 把 Stripe subscription.status 映射到本仓库 Subscription.Status 词表
@@ -72,4 +78,161 @@ func extractStripeInvoiceFacts(inv *stripe.Invoice) (*stripeInvoiceFacts, error)
 		return nil, fmt.Errorf("invoice %s has no line period", inv.ID)
 	}
 	return f, nil
+}
+
+// creditStripeInvoice is the single Stripe→ledger entry point（对标 creditAppleTransaction）。
+// 它 (1) 首张 invoice 靠 metadata.user_uuid 绑定订阅归属，此后订阅行 UserID 权威，
+// 绝不 re-bind（INV9）；(2) 按 (provider, transaction_id=invoice.ID) 去重，每张 invoice
+// 至多入账一次（INV1）；(3) 首购 applyGiftCredit / 续费 applyRenewalCredit 叠加入账，
+// 礼赠时长永不被吸收（INV3）；(4) 刷新订阅行的 plan-state。必须在事务内调用；
+// 锁订阅行 + 用户行。
+func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts) error {
+	const provider = "stripe"
+
+	// Load-or-create 订阅行（绑定键 = Stripe subscription id）。
+	var sub Subscription
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(&Subscription{Provider: provider, ProviderSubscriptionID: f.SubscriptionID}).
+		First(&sub).Error
+	isFirst := errors.Is(err, gorm.ErrRecordNotFound)
+	if err != nil && !isFirst {
+		return err
+	}
+
+	// 归属解析：首张 invoice 靠 metadata.user_uuid（checkout 创建时烘焙，Stripe 原样回传）。
+	var userID uint64
+	if isFirst {
+		if f.UserUUID == "" {
+			return fmt.Errorf("invoice %s missing user_uuid metadata: refusing to bind", f.InvoiceID)
+		}
+		var u User
+		if err := tx.Where(&User{UUID: f.UserUUID}).First(&u).Error; err != nil {
+			return fmt.Errorf("resolve user %s for invoice %s: %w", f.UserUUID, f.InvoiceID, err)
+		}
+		userID = u.ID
+	} else {
+		userID = sub.UserID
+		if f.UserUUID != "" {
+			// 防御：metadata 与既有绑定冲突 → 拒绝（INV9，绝不 re-bind）。
+			var u User
+			if err := tx.Where(&User{UUID: f.UserUUID}).First(&u).Error; err == nil && u.ID != userID {
+				return fmt.Errorf("subscription %s already bound to user %d, invoice %s metadata points to user %d",
+					f.SubscriptionID, userID, f.InvoiceID, u.ID)
+			}
+		}
+	}
+
+	var user User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+		return fmt.Errorf("lock user %d: %w", userID, err)
+	}
+
+	// 品牌错配哨兵：stripe 是 overleap 专属支付渠道。线上命中即为 bug——告警并拒绝入账，
+	// 绝不静默记账。返回 error → webhook 500 → Stripe 按重试策略重发，对同一张 invoice
+	// 反复告警是 fail-loud 的设计取舍（同 wordgate/apple 哨兵），持续出现视为 page 级事件。
+	if !Brand(user.Brand).Config().AllowsPayment(PayChannelStripe) {
+		alertPaymentBrandMismatch(ctx, "brand-mismatch stripe credit: user %d brand %s does not allow stripe, invoice=%s",
+			userID, user.Brand, f.InvoiceID)
+		return fmt.Errorf("brand mismatch: user %d brand %s does not allow stripe channel", userID, user.Brand)
+	}
+
+	// plan：tier 与 sub.ProductID 的来源。品牌内查找、不过滤 is_active（下架不停续费入账）。
+	plan := planByPIDForCredit(ctx, tx, f.PlanPID, Brand(user.Brand))
+	if plan == nil {
+		return fmt.Errorf("no plan %q for brand %s (invoice %s)", f.PlanPID, user.Brand, f.InvoiceID)
+	}
+
+	now := time.Now().Unix()
+	priorPeriodEnd := sub.CurrentPeriodEnd // 0 when first
+
+	// Dedup（INV1）：每张 invoice 至多入账一次。
+	var existing SubscriptionCredit
+	dErr := tx.Where(&SubscriptionCredit{Provider: provider, TransactionID: f.InvoiceID}).First(&existing).Error
+	alreadyCredited := dErr == nil
+	if dErr != nil && !errors.Is(dErr, gorm.ErrRecordNotFound) {
+		return dErr
+	}
+
+	// Upsert 订阅行 plan-state（状态推导复用 deriveVerifiedStatus——revoked 绝不复活）。
+	sub.UserID = userID
+	sub.Provider = provider
+	sub.ProviderSubscriptionID = f.SubscriptionID
+	sub.ProductID = plan.StripePriceID
+	sub.ProviderCustomerID = f.CustomerID
+	sub.ProviderLatestRef = f.InvoiceID
+	if f.PeriodEnd > sub.CurrentPeriodEnd {
+		sub.CurrentPeriodEnd = f.PeriodEnd
+	}
+	sub.AutoRenew = true
+	if f.Livemode {
+		sub.Environment = "production"
+	} else {
+		sub.Environment = "sandbox"
+	}
+	sub.Status = deriveVerifiedStatus(sub.CurrentPeriodEnd, sub.Status, now)
+	if err := tx.Save(&sub).Error; err != nil {
+		return err
+	}
+	if alreadyCredited {
+		return nil // idempotent: plan-state 已刷新，不重复入账
+	}
+
+	// 叠加入账（INV3）。
+	var creditSeconds int64
+	var kind string
+	if isFirst {
+		creditSeconds = f.PeriodEnd - f.PeriodStart
+		if creditSeconds < 0 {
+			creditSeconds = 0
+		}
+		newExpiry := applyGiftCredit(user.ExpiredAt, creditSeconds, now)
+		creditSeconds = newExpiry - max(user.ExpiredAt, now) // audited net add
+		user.ExpiredAt = newExpiry
+		kind = "purchase"
+	} else {
+		newExpiry := applyRenewalCredit(user.ExpiredAt, priorPeriodEnd, f.PeriodEnd)
+		creditSeconds = newExpiry - user.ExpiredAt
+		user.ExpiredAt = newExpiry
+		kind = "renewal"
+	}
+
+	if user.IsActivated == nil || !*user.IsActivated {
+		user.IsActivated = BoolPtr(true)
+		user.ActivatedAt = now
+	}
+	if user.IsFirstOrderDone == nil || !*user.IsFirstOrderDone {
+		if plan.Tier != "" {
+			user.Tier = plan.Tier
+		}
+		user.IsFirstOrderDone = BoolPtr(true)
+	}
+	if err := tx.Save(&user).Error; err != nil {
+		return fmt.Errorf("save user %d: %w", userID, err)
+	}
+
+	creditRow := &SubscriptionCredit{
+		UserID:                userID,
+		Provider:              provider,
+		TransactionID:         f.InvoiceID,
+		OriginalTransactionID: f.SubscriptionID,
+		CreditedSeconds:       creditSeconds,
+		Kind:                  kind,
+	}
+	if err := tx.Create(creditRow).Error; err != nil {
+		return err
+	}
+	// Human audit（INV8）。Reason 用英文——overleap 用户会在 /api/user/pro-histories 看到它。
+	if err := tx.Create(&UserProHistory{
+		UserID:      userID,
+		Type:        VipStripeSub,
+		ReferenceID: creditRow.ID,
+		Days:        int(creditSeconds / 86400),
+		Reason:      fmt.Sprintf("stripe subscription credit (%s) - %s", kind, f.InvoiceID),
+	}).Error; err != nil {
+		return err
+	}
+	log.Infof(ctx, "[creditStripeInvoice] user %d credited +%dd (%s) invoice=%s expiry→%s",
+		userID, int(creditSeconds/86400), kind, f.InvoiceID,
+		time.Unix(user.ExpiredAt, 0).Format("2006-01-02"))
+	return nil
 }
