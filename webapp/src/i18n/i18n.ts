@@ -2,6 +2,8 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { namespaces, defaultNamespace, type Namespace } from './locales/namespaces';
+import { brandConfig } from '../brand';
+import { brandI18nVariables } from '../brand/i18n-vars';
 
 export const languages = {
   'en-US': { nativeName: 'English (US)', countryCode: 'US' },
@@ -21,8 +23,8 @@ const loadNamespaceResources = async (lang: string, ns: Namespace) => {
     const module = await import(`./locales/${lang}/${ns}.json`);
     return module.default || module;
   } catch {
-    // 回退到默认语言
-    const fallbackModule = await import(`./locales/zh-CN/${ns}.json`);
+    // 回退到品牌默认语言
+    const fallbackModule = await import(`./locales/${brandConfig.defaultLocale}/${ns}.json`);
     return fallbackModule.default || fallbackModule;
   }
 };
@@ -73,7 +75,7 @@ export function normalizeLanguageCode(lang: string): LanguageCode {
     return mappings[primaryCode];
   }
 
-  return 'zh-CN';
+  return brandConfig.defaultLocale;
 }
 
 // 初始化 i18n
@@ -94,13 +96,14 @@ const initI18n = async () => {
         [initialLang]: initialResources
       },
       lng: initialLang,
-      fallbackLng: 'zh-CN',
+      fallbackLng: brandConfig.defaultLocale,
       defaultNS: defaultNamespace,
       ns: [...namespaces],
       debug: false,
 
       interpolation: {
-        escapeValue: false
+        escapeValue: false,
+        defaultVariables: brandI18nVariables(initialLang),
       },
 
       detection: {
@@ -112,6 +115,14 @@ const initI18n = async () => {
       // 懒加载后端配置
       partialBundledLanguages: true,
     });
+
+  // Brand name is locale-dependent (kaitu: 开途 in zh-*, Kaitu elsewhere) —
+  // refresh interpolation defaults whenever the language changes.
+  i18n.on('languageChanged', (lng) => {
+    if (i18n.options.interpolation) {
+      i18n.options.interpolation.defaultVariables = brandI18nVariables(lng);
+    }
+  });
 
   return i18n;
 };
