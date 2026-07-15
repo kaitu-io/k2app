@@ -1,15 +1,47 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from 'path';
+import { copyFileSync, existsSync } from 'fs';
+import type { Plugin } from 'vite';
 
 const host = process.env.TAURI_DEV_HOST;
+
+// Brand at build time. Config files can't import src/brand (TS under Vite's
+// own transform), so the product-name map is duplicated here — keep in sync
+// with src/brand/{kaitu,overleap}.ts productName.
+const K2_BRAND = process.env.K2_BRAND === 'overleap' ? 'overleap' : 'kaitu';
+const BRAND_PRODUCT_NAME = K2_BRAND === 'overleap' ? 'Overleap' : 'Kaitu';
+
+/**
+ * - Rewrites <title> in index.html to the brand product name.
+ * - After bundling, overwrites the public/ icon files in dist/ with the
+ *   brand's artwork from brand-assets/<brand>/ (public/ holds the kaitu
+ *   defaults, so kaitu builds need no overwrite and brand-assets/kaitu
+ *   doesn't exist).
+ */
+function brandPlugin(): Plugin {
+  const iconFiles = ['favicon.png', 'icon-192x192.png', 'icon-512x512.png'];
+  return {
+    name: 'k2-brand',
+    transformIndexHtml(html) {
+      return html.replace('<title>Kaitu</title>', `<title>${BRAND_PRODUCT_NAME}</title>`);
+    },
+    writeBundle(options) {
+      const outDir = options.dir || resolve(__dirname, 'dist');
+      for (const f of iconFiles) {
+        const src = resolve(__dirname, 'brand-assets', K2_BRAND, f);
+        if (existsSync(src)) copyFileSync(src, resolve(outDir, f));
+      }
+    },
+  };
+}
 
 // https://vitejs.dev/config/
 // NOTE: This config is for Web standalone only.
 // Desktop uses desktop-tauri/vite.config.ts
 // Mobile uses mobile-capacitor/vite.config.ts
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), brandPlugin()],
 
   // 1. prevent vite from obscuring rust errors
   clearScreen: false,
