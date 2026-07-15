@@ -160,17 +160,22 @@ func exportAppAllowHeaders(t *testing.T) []string {
 	return parseAllowHeaders(t, w.Header().Get("Access-Control-Allow-Headers"), "/app GET("+origins[0]+")")
 }
 
-// ===================== errorCodes：go/ast 解析 response.go =====================
+// ===================== errorCodes：go/ast 扫描整个 api 包 =====================
 
-// exportErrorCodes 提取 response.go 里全部 `ErrorXxx ErrorCode = N` 常量。
-// 覆盖两种写法：显式 `ErrorFoo ErrorCode = 400` 与省略类型的 `ErrorFoo = 400001`。
-// 解析不到任何常量必须硬失败——静默返回空数组会让这个门永远绿。
-func exportErrorCodes(t *testing.T) []contractErrorCode {
+// errorCodeHomeFile 是错误码的唯一合法归属地（api/CLAUDE.md 的既定约定）。
+const errorCodeHomeFile = "response.go"
+
+// scanErrorCodeConsts 扫单个源文件里的错误码常量。
+//
+// 「错误码」的定义 = **显式 ErrorCode 类型的常量**，不靠名字前缀：
+// `CodeBrandMismatch ErrorCode = 403003` 也是错误码，用 `HasPrefix("Error")`
+// 过滤会把它静默漏掉。
+//
+// file != errorCodeHomeFile 时发现 ErrorCode 常量 → 硬停。这不是洁癖：契约只从
+// response.go 取值，散落在别处的码进不了契约 → 前端镜像门不会要求它 → 用户拿到
+// 兜底文案。跟 400011 一模一样的病，只是换了个文件。
+func scanErrorCodeConsts(t *testing.T, file string, f *ast.File) []contractErrorCode {
 	t.Helper()
-
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "response.go", nil, 0)
-	require.NoError(t, err, "解析 response.go 失败")
 
 	var out []contractErrorCode
 	for _, decl := range f.Decls {
@@ -183,39 +188,54 @@ func exportErrorCodes(t *testing.T) []contractErrorCode {
 			if !ok {
 				continue
 			}
-			// 接受：显式 ErrorCode 类型，或省略类型（untyped int 常量）。
-			// 其它显式类型一律跳过。
-			errorCodeTyped := false
+
+			typed := false
 			if vs.Type != nil {
-				id, ok := vs.Type.(*ast.Ident)
-				if !ok || id.Name != "ErrorCode" {
-					continue
+				id, isIdent := vs.Type.(*ast.Ident)
+				if !isIdent || id.Name != "ErrorCode" {
+					continue // 别的显式类型，与错误码无关
 				}
-				errorCodeTyped = true
+				typed = true
 			}
+
 			for i, name := range vs.Names {
-				if !strings.HasPrefix(name.Name, "Error") {
+				if !typed {
+					// 无类型常量。只在 response.go 里追究：无类型 int 常量能隐式转成
+					// ErrorCode 传进 Error()，所以 `ErrorFoo = 400099` 是**活码**，但没有
+					// 类型让提取器认出来 → 会静默漏。硬停，让人补上类型。
+					// 别的文件不追究：`ErrorRetryDelay = 5` 这类同名前缀的普通常量太多，
+					// 追究只会制造假警报。
+					if file == errorCodeHomeFile && strings.HasPrefix(name.Name, "Error") && i < len(vs.Values) {
+						if lit, isLit := vs.Values[i].(*ast.BasicLit); isLit && lit.Kind == token.INT {
+							t.Fatalf("%s 里的 %s 是无类型整数常量。错误码必须显式写成 "+
+								"`%s ErrorCode = N`，否则提取器认不出、它进不了契约、前端无人守。",
+								file, name.Name, name.Name)
+						}
+					}
 					continue
 				}
+
+				if file != errorCodeHomeFile {
+					t.Fatalf("%s 在 %s 里声明了 ErrorCode 常量。错误码必须集中在 %s——\n"+
+						"契约只从那里取值，别处声明的码进不了契约，前端镜像门就不会要求它，"+
+						"用户只会拿到兜底文案（400011 就是这么漏掉的）。请把它移过去。",
+						name.Name, file, errorCodeHomeFile)
+				}
+
 				// 隐式常量重复 / iota（`const ( A ErrorCode = 1 \n B \n C )` 里的 B、C）
-				// 没有对应的 Values。静默跳过 = 该码不进契约 = webapp 侧"没有要求镜像它"
-				// = 门对着这个码空绿——正是 400011 漏了两年没人发现的那个病。
-				// 提取器只认显式字面量，看不懂就硬停，绝不静默漏。
+				// 没有对应的 Values。静默跳过 = 该码不进契约 = 前端"没有要求镜像它"
+				// = 门对着这个码空绿。提取器看不懂就硬停，绝不静默漏。
 				if i >= len(vs.Values) {
 					t.Fatalf("常量 %s 没有显式字面量值（隐式常量重复或 iota）。\n"+
 						"本提取器只认 `ErrorFoo ErrorCode = N` 的显式写法——静默跳过会让这个码"+
 						"不进契约、前端无人守。请写成显式值，或升级提取器。", name.Name)
 				}
-				lit, ok := vs.Values[i].(*ast.BasicLit)
-				if !ok || lit.Kind != token.INT {
+				lit, isLit := vs.Values[i].(*ast.BasicLit)
+				if !isLit || lit.Kind != token.INT {
 					// 显式 ErrorCode 类型却不是整数字面量（如 `= ErrorBar + 1`）：
 					// 提取器看不见它，同样是静默漏码，硬停。
-					// 无类型的 Error* 常量（如字符串消息）跳过才是对的——它们不是错误码。
-					if errorCodeTyped {
-						t.Fatalf("ErrorCode 常量 %s 的值不是整数字面量——提取器看不见它，"+
-							"该码不会进契约、前端无人守。", name.Name)
-					}
-					continue
+					t.Fatalf("ErrorCode 常量 %s 的值不是整数字面量——提取器看不见它，"+
+						"该码不会进契约、前端无人守。", name.Name)
 				}
 				code, err := strconv.Atoi(lit.Value)
 				require.NoError(t, err, "常量 %s 的值 %q 不是十进制整数", name.Name, lit.Value)
@@ -223,8 +243,43 @@ func exportErrorCodes(t *testing.T) []contractErrorCode {
 			}
 		}
 	}
+	return out
+}
 
-	require.NotEmpty(t, out, "从 response.go 解析出 0 个 ErrorCode 常量——解析器坏了,门会变成永远绿")
+// exportErrorCodes 扫**整个 api 包**（非测试文件）提取错误码。
+//
+// 早先只 parse response.go —— 对抗性审查用一个探针文件实证了那是个洞：任何声明在
+// 别的 api 文件里的 ErrorCode 常量会静默地永远进不了契约，前端镜像门跟着一起瞎，
+// 而两道门都报绿。扫全包 + 强制归属地，把那条路堵死。
+//
+// 用 os.ReadDir + 逐文件 ParseFile 而非 parser.ParseDir：后者返回
+// map[string]*ast.Package，而 ast.Package 自 Go 1.22 起已废弃。
+func exportErrorCodes(t *testing.T) []contractErrorCode {
+	t.Helper()
+
+	entries, err := os.ReadDir(".")
+	require.NoError(t, err, "读取 api 包目录失败")
+
+	fset := token.NewFileSet()
+	var out []contractErrorCode
+	scannedHome := false
+
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, parseErr := parser.ParseFile(fset, name, nil, 0)
+		require.NoError(t, parseErr, "解析 %s 失败", name)
+		if name == errorCodeHomeFile {
+			scannedHome = true
+		}
+		out = append(out, scanErrorCodeConsts(t, name, f)...)
+	}
+
+	// 没扫到归属文件 = 扫描器指错了地方，会静默导出空契约。
+	require.True(t, scannedHome, "没有扫到 %s——错误码的归属文件不见了？契约会静默变空", errorCodeHomeFile)
+	require.NotEmpty(t, out, "从 %s 解析出 0 个 ErrorCode 常量——解析器坏了,门会变成永远绿", errorCodeHomeFile)
 
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Code != out[j].Code {
