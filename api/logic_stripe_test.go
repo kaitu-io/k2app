@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	stripe "github.com/stripe/stripe-go/v82"
 	db "github.com/wordgate/qtoolkit/db"
 )
 
@@ -66,4 +67,74 @@ func TestStripeSchemaMigration(t *testing.T) {
 	assert.True(t, m.HasColumn(&Plan{}, "stripe_price_id"), "plans missing stripe_price_id")
 	assert.True(t, m.HasColumn(&Subscription{}, "provider_customer_id"), "subscriptions missing provider_customer_id")
 	assert.True(t, m.HasTable(&StripeWebhookEvent{}), "stripe_webhook_events table missing")
+}
+
+func TestStripeSubStatus(t *testing.T) {
+	assert.Equal(t, "active", stripeSubStatus(stripe.SubscriptionStatusActive))
+	assert.Equal(t, "active", stripeSubStatus(stripe.SubscriptionStatusTrialing))
+	assert.Equal(t, "billing_retry", stripeSubStatus(stripe.SubscriptionStatusPastDue))
+	assert.Equal(t, "expired", stripeSubStatus(stripe.SubscriptionStatusCanceled))
+	assert.Equal(t, "expired", stripeSubStatus(stripe.SubscriptionStatusUnpaid))
+	assert.Equal(t, "expired", stripeSubStatus(stripe.SubscriptionStatusIncompleteExpired))
+	assert.Equal(t, "expired", stripeSubStatus(stripe.SubscriptionStatusPaused))
+	// incomplete = 首扣未完成，我们的订阅行只在 invoice.paid 后诞生，此状态无行可改 → 不改
+	assert.Equal(t, "", stripeSubStatus(stripe.SubscriptionStatusIncomplete))
+	assert.Equal(t, "", stripeSubStatus(stripe.SubscriptionStatus("weird_future_status")))
+}
+
+func TestExtractStripeInvoiceFacts(t *testing.T) {
+	mk := func() *stripe.Invoice {
+		return &stripe.Invoice{
+			ID:       "in_test_1",
+			Livemode: false,
+			Customer: &stripe.Customer{ID: "cus_test_1"},
+			Parent: &stripe.InvoiceParent{
+				SubscriptionDetails: &stripe.InvoiceParentSubscriptionDetails{
+					Subscription: &stripe.Subscription{ID: "sub_test_1"},
+					Metadata: map[string]string{
+						"user_uuid": "user-abc", "plan_pid": "ol_pro_month", "brand": "overleap",
+					},
+				},
+			},
+			Lines: &stripe.InvoiceLineItemList{Data: []*stripe.InvoiceLineItem{
+				{Period: &stripe.Period{Start: 1000, End: 2000}},
+			}},
+		}
+	}
+
+	t.Run("HappyPath", func(t *testing.T) {
+		f, err := extractStripeInvoiceFacts(mk())
+		require.NoError(t, err)
+		assert.Equal(t, "in_test_1", f.InvoiceID)
+		assert.Equal(t, "sub_test_1", f.SubscriptionID)
+		assert.Equal(t, "cus_test_1", f.CustomerID)
+		assert.Equal(t, "user-abc", f.UserUUID)
+		assert.Equal(t, "ol_pro_month", f.PlanPID)
+		assert.Equal(t, int64(1000), f.PeriodStart)
+		assert.Equal(t, int64(2000), f.PeriodEnd)
+		assert.False(t, f.Livemode)
+	})
+
+	t.Run("MultiLine_TakesLatestPeriod", func(t *testing.T) {
+		inv := mk()
+		inv.Lines.Data = append(inv.Lines.Data, &stripe.InvoiceLineItem{Period: &stripe.Period{Start: 2000, End: 3000}})
+		f, err := extractStripeInvoiceFacts(inv)
+		require.NoError(t, err)
+		assert.Equal(t, int64(3000), f.PeriodEnd)
+		assert.Equal(t, int64(2000), f.PeriodStart)
+	})
+
+	t.Run("NoSubscriptionParent_Error", func(t *testing.T) {
+		inv := mk()
+		inv.Parent = nil
+		_, err := extractStripeInvoiceFacts(inv)
+		assert.Error(t, err)
+	})
+
+	t.Run("NoLinePeriod_Error", func(t *testing.T) {
+		inv := mk()
+		inv.Lines = &stripe.InvoiceLineItemList{}
+		_, err := extractStripeInvoiceFacts(inv)
+		assert.Error(t, err)
+	})
 }
