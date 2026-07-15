@@ -1,16 +1,16 @@
 ---
 title: k2 Protocol Overview
 date: 2026-02-21
-summary: k2 is Kaitu's proprietary stealth tunnel protocol family. The current version, k2, features k2cc adaptive rate control, QUIC+H3 primary transport, TCP-WebSocket fallback, Encrypted Client Hello, and TLS fingerprint mimicry.
+summary: k2 is a proprietary stealth tunnel protocol family. The current version, k2, features k2cc adaptive rate control, QUIC+H3 primary transport, TCP-WebSocket fallback, Encrypted Client Hello, and TLS fingerprint mimicry.
 section: overview
 order: 1
 draft: false
-brand: kaitu
+brand: both
 ---
 
 # k2 Protocol Overview
 
-**k2** is Kaitu's proprietary stealth network tunnel protocol family, designed for high-censorship environments. The protocol evolves across major versions, each representing a generation of core architecture. **k2** is the current production version — connection URLs start with `k2://`, and all Kaitu clients and the k2 CLI use k2 by default.
+**k2** is a proprietary stealth network tunnel protocol family, designed for high-censorship environments. The protocol evolves across major versions, each representing a generation of core architecture. **k2** is the current production version — connection URLs start with `k2://`, and the k2 CLI uses k2 by default.
 
 k2 features **k2cc (Adaptive Rate Control)**, a proprietary congestion control algorithm that automatically finds the optimal sending rate in high-loss, high-latency networks — no manual bandwidth configuration needed. It uses **QUIC/HTTP3** as the primary transport, with automatic **TCP-WebSocket** fallback when QUIC is blocked, combined with ECH encrypted SNI and TLS fingerprint mimicry to make tunnel traffic indistinguishable from real HTTPS browsing.
 
@@ -18,7 +18,7 @@ k2 features **k2cc (Adaptive Rate Control)**, a proprietary congestion control a
 
 | Term | Meaning |
 |------|---------|
-| **k2** | Kaitu's proprietary stealth tunnel protocol family (project name) |
+| **k2** | The proprietary stealth tunnel protocol family (project name) |
 | **k2cc** | Adaptive Rate Control algorithm (standalone component, shared by all protocol versions) |
 | **k2** | Current protocol version, client-server architecture |
 | **k2p** (planned) | Future protocol version, P2P architecture, also uses k2cc |
@@ -57,12 +57,10 @@ For details, see [Stealth Camouflage](/k2/stealth).
 One command starts the server — it auto-generates all keys and certificates and prints a ready-to-use connection URL. One command connects the client — k2cc automatically finds the optimal rate. No manual configuration needed.
 
 ```bash
-# Server (30 seconds)
-curl -fsSL https://kaitu.io/i/k2s | sudo sh
+# Server: auto-generates all keys and certificates on first run
 sudo k2s run
 
-# Client (30 seconds)
-curl -fsSL https://kaitu.io/i/k2 | sudo sh
+# Client: connect with the URL the server printed
 sudo k2 up k2://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 
@@ -83,15 +81,13 @@ sudo k2 up k2://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 
 | Document | Description |
 |----------|-------------|
-| [1-Minute Quickstart](/k2/quickstart) | Start the server and connect in under a minute |
-| [k2s Server Deployment](/k2/server) | Detailed server installation and configuration |
-| [k2 Client Usage](/k2/client) | Client installation and common commands |
 | [k2cc Rate Control](/k2/k2cc) | k2cc core capabilities, censorship awareness, auto rate probing |
 | [k2 Protocol Architecture](/k2/protocol) | URL format, ECH, three-layer identity, transport layer |
 | [Stealth Camouflage](/k2/stealth) | ECH, TLS fingerprinting, and active probe resistance |
+| [Port Hopping](/k2/hop-ports) | UDP port rotation to defeat port-based QoS throttling |
+| [k2 vs Mainstream Protocols](/k2/comparison) | 9-dimension comparison vs WireGuard, Shadowsocks, Reality, Hysteria2 |
 | [k2cc vs BBR](/k2/vs-bbr) | k2cc vs Google BBR performance comparison under censorship |
 | [k2 vs Hysteria2](/k2/vs-hysteria2) | k2cc vs Brutal/BBR congestion control comparison |
-| [k2 vs VLESS+Reality](/k2/vs-reality) | Stealth approach and anti-blocking comparison |
 
 ## FAQ
 
@@ -101,18 +97,18 @@ k2 is the only tunnel protocol that combines censorship-aware congestion control
 
 **Is k2 open source?**
 
-k2's protocol design, ECH config derivation, and TLS fingerprint mimicry are fully documented publicly. The k2cc algorithm's design principles and capabilities are public, but the implementation is Kaitu's original intellectual property. The 14-scenario benchmark framework is open source — anyone can verify results independently.
+k2's protocol design, ECH config derivation, and TLS fingerprint mimicry are fully documented publicly. The k2cc algorithm's design principles and capabilities are public, but the implementation is the k2 project's original intellectual property. The 14-scenario benchmark framework is open source — anyone can verify results independently.
 
 **What's the difference between k2 and Clash/Shadowrocket?**
 
-Clash and Shadowrocket are proxy clients (traffic routers). k2 is a tunnel protocol. They operate at different layers — Clash handles traffic splitting, k2 handles tunnel transport. The Kaitu client has k2 built in, no need for Clash.
+Clash and Shadowrocket are proxy clients (traffic routers). k2 is a tunnel protocol. They operate at different layers — Clash handles traffic splitting, k2 handles tunnel transport. Clients with k2 built in do not need Clash.
 
 **Where should I start?**
 
-For a quick setup, see [1-Minute Quickstart](/k2/quickstart). To understand why k2 is faster, read [k2cc Adaptive Rate Control](/k2/k2cc). To understand why k2 is more secure, read [Stealth Camouflage](/k2/stealth).
+To understand why k2 is faster, read [k2cc Adaptive Rate Control](/k2/k2cc). To understand why k2 is more secure, read [Stealth Camouflage](/k2/stealth). For a dimension-by-dimension comparison against other protocols, see [k2 vs Mainstream Protocols](/k2/comparison).
 
 ## Supported Platforms
 
-The k2 CLI runs on **Linux** and **macOS**. The Kaitu desktop client (macOS/Windows) and mobile client (iOS/Android) ship with k2 built-in — no separate installation needed.
+The k2 CLI runs on **Linux** and **macOS**. Desktop clients (macOS/Windows) and mobile clients (iOS/Android) ship with k2 built-in — no separate installation needed.
 
-Visit the [download page](/install) to get the Kaitu client.
+Visit the [download page](/install) to get the client.

@@ -13,7 +13,7 @@ k2cc is a proprietary congestion control algorithm independently developed by th
 
 k2cc (Adaptive Rate Control) is purpose-built for high-censorship, high-loss network environments. It automatically discovers the optimal sending rate — no manual bandwidth configuration needed. k2cc is a standalone congestion control algorithm, currently used by [k2](/k2/protocol) (client-server architecture) and will also serve as the congestion control layer for the future k2p (P2P architecture).
 
-For a quick setup, see the [1-Minute Quickstart](/k2/quickstart).
+For the protocol's transport and identity design, see the [k2 Protocol Architecture](/k2/protocol).
 
 ## Why k2cc
 

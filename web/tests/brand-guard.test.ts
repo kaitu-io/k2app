@@ -72,8 +72,12 @@ describe('src: no user-facing brand literals outside the allowlist', () => {
 });
 
 describe('velite content served on overleap carries no kaitu words', () => {
-  // en-US/ja markdown renders on the overleap deployment. Files explicitly
-  // frontmattered `brand: kaitu` are kaitu-only (sitemap filters them) and exempt.
+  // en-US/ja markdown renders on the overleap deployment. Files frontmattered
+  // `brand: kaitu` are exempt because they are genuinely unreachable there: the
+  // /k2 route filters them out of findK2Post, the sidebar, generateStaticParams
+  // and the sitemap, and off-brand requests 404 (tests/k2-route.test.ts →
+  // test_k2_docs_are_brand_gated). The exemption rides on that gate — it is not
+  // a licence to leave kaitu prose on a reachable page.
   const isOverleapContent = (f: string) =>
     f.endsWith('.md') && !/^brand:\s*kaitu\s*$/m.test(readFileSync(f, 'utf8'));
 

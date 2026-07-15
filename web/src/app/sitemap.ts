@@ -3,6 +3,7 @@ import { posts } from '#velite';
 import { getPayload } from 'payload';
 import config from '@payload-config';
 import { getBrand } from '@/lib/brand-server';
+import { isPostVisibleToBrand } from '@/lib/k2-posts';
 
 // Render at request time — avoids a build-time DB dependency and keeps Payload
 // blog listings fresh. (The brand itself is baked at build time via
@@ -99,10 +100,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   });
 
   // Add content pages from velite (published posts only).
-  // Filter by brand visibility. Missing brand is treated as 'both' (Velite schema
-  // default, and keeps legacy test fixtures that pre-date the field working).
+  //
+  // Both filters matter. Brand visibility is obvious. The locale filter is not:
+  // slugs are collected across ALL locales below, so a doc that is kaitu-only in
+  // en-US but unmarked in zh-CN would still contribute its slug and get emitted
+  // under the overleap locales — advertising a URL that 404s.
   const publishedPosts = posts.filter(
-    (post) => !post.draft && (!post.brand || post.brand === 'both' || post.brand === brand.id)
+    (post) =>
+      !post.draft &&
+      isPostVisibleToBrand(post, brand.id) &&
+      (locales as readonly string[]).includes(post.locale)
   );
   const uniqueSlugs = [...new Set(publishedPosts.map(p => p.slug))];
 
