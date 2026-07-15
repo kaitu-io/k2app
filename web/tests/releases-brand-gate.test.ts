@@ -8,6 +8,8 @@
  * itself is what this file pins.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { existsSync } from 'fs';
+import path from 'path';
 
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn().mockResolvedValue((key: string) => key),
@@ -114,13 +116,17 @@ describe('/releases is gated on brands without their own release notes', () => {
 });
 
 describe('the release-notes payload is genuinely single-brand', () => {
-  it('public/releases.json still carries kaitu wording — i.e. the gate is still needed', async () => {
+  // releases.json is a gitignored build artifact (web/.gitignore), so it is
+  // absent on a fresh clone / CI. Skip rather than fail there — the gate
+  // itself is covered by the tests above; this one is a tripwire that only
+  // has something to inspect where the artifact was generated.
+  const releasesPath = path.resolve(__dirname, '../public/releases.json');
+
+  it.skipIf(!existsSync(releasesPath))(
+    'public/releases.json still carries kaitu wording — i.e. the gate is still needed',
+    async () => {
     const { readFileSync } = await import('fs');
-    const path = await import('path');
-    const raw = readFileSync(
-      path.resolve(__dirname, '../public/releases.json'),
-      'utf8',
-    );
+    const raw = readFileSync(releasesPath, 'utf8');
     // If this ever goes false, releases.json has been brand-parameterised and
     // the gate above can be revisited rather than silently kept forever.
     expect(/Kaitu|开途|kaitu\.io/.test(raw)).toBe(true);
