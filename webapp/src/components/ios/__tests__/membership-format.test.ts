@@ -50,8 +50,8 @@ describe('membership-format', () => {
       expect(formatExpiryDate(0)).toBe('');
       expect(formatExpiryDate(-1)).toBe('');
     });
-    it('formats a real timestamp to a non-empty localized string', () => {
-      expect(formatExpiryDate(NOW).length).toBeGreaterThan(0);
+    it('formats a real timestamp as YYYY-MM-DD', () => {
+      expect(formatExpiryDate(NOW)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
   });
 });

@@ -117,7 +117,7 @@ describe('IosMembershipPanel', () => {
   it('history button navigates to the purchase history page', () => {
     render(<IosMembershipPanel mode="status" />);
     fireEvent.click(screen.getByTestId('ios-membership-history-btn'));
-    expect(navigate).toHaveBeenCalledWith('/pro-histories?type=recharge&from=/purchase');
+    expect(navigate).toHaveBeenCalledWith('/pro-histories?from=/purchase');
   });
 
   it('shows the invite-reward card and navigates to /invite', () => {

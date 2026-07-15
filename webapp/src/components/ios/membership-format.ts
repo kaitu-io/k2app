@@ -3,6 +3,8 @@
  * 仅做「到期 unix 秒 → 剩余天数 / 紧迫度 / 本地化日期」的转换。
  */
 
+import { formatDate } from '../../utils/time';
+
 export type ExpiryUrgency = 'normal' | 'warning' | 'critical';
 
 /** 剩余天数（向上取整；已过期或无到期 → 0）。 */
@@ -18,10 +20,10 @@ export function expiryUrgency(days: number): ExpiryUrgency {
   return 'normal';
 }
 
-/** 本地化到期日期（无效/0 → 空串，调用方据此决定是否渲染）。 */
+/** 到期日期（ISO 格式 YYYY-MM-DD；无效/0 → 空串，调用方据此决定是否渲染）。 */
 export function formatExpiryDate(sec: number): string {
   if (!sec || sec <= 0) return '';
-  return new Date(sec * 1000).toLocaleDateString();
+  return formatDate(sec);
 }
 
 /** MUI 调色板色名，按紧迫度映射（供 Typography/Chip 的 color 使用）。 */

@@ -91,7 +91,7 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
 
         {/* 自助操作 — 付费记录 + 恢复购买 */}
         <MembershipActions
-          onHistory={() => navigate('/pro-histories?type=recharge&from=/purchase')}
+          onHistory={() => navigate('/pro-histories?from=/purchase')}
           onRestore={() => void restore()}
           restoring={restoring}
         />
