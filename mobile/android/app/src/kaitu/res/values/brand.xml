@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="k2_cdn_primary">https://d13jc1jqzlg4yt.cloudfront.net/kaitu</string>
+    <string name="k2_cdn_fallback">https://d0.all7.cc/kaitu</string>
+    <string name="k2_vpn_display_name">kaitu.io</string>
+</resources>
