@@ -11,14 +11,20 @@ set -euo pipefail
 #   bash scripts/ci/upload-release.sh --android            # Upload Android APK
 #   --web option REMOVED — Web OTA disabled due to native/webapp version mismatch risk (2026-03-22)
 #   bash scripts/ci/upload-release.sh --windows --skip-cdn # Upload only, no CDN invalidation
+#   bash scripts/ci/upload-release.sh --macos --brand=overleap  # Upload under the overleap S3/CDN prefix
 #
 # Each platform flag uploads ONLY its own artifacts, preventing cross-platform contamination.
+#
+# --brand=kaitu|overleap selects the S3/CDN path prefix and artifact filename
+# prefix. Falls back to $K2_BRAND, then "kaitu". Linux has no overleap channel
+# (see the linux case below) — it hard-fails for any non-kaitu brand.
 #
 # Skips gracefully if AWS credentials are not configured (local dev without AWS).
 #
 # Environment:
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY — required (skips if missing)
 #   AWS_DEFAULT_REGION — defaults to ap-northeast-1
+#   K2_BRAND — kaitu|overleap, fallback for --brand=
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -26,7 +32,8 @@ cd "$ROOT_DIR"
 
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-northeast-1}"
 
-S3_BUCKET="s3://d0.all7.cc/kaitu"
+BRAND="${BRAND:-${K2_BRAND:-kaitu}}"
+
 CDN_ID_D0="E3W144CRNT652P"
 CDN_ID_DL="E34P52R7B93FSC"
 VERSION=$(node -p "require('./package.json').version")
@@ -43,9 +50,15 @@ for arg in "$@"; do
     --android)  PLATFORM="android" ;;
     --web)      echo "ERROR: --web is disabled. Web OTA removed due to native/webapp version mismatch risk (2026-03-22)." >&2; exit 1 ;;
     --skip-cdn) SKIP_CDN=true ;;
+    --brand=*)  BRAND="${arg#*=}" ;;
     *) echo "Unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
+
+case "$BRAND" in kaitu|overleap) ;; *) echo "ERROR: --brand must be kaitu|overleap" >&2; exit 1 ;; esac
+BRAND_PRODUCT=$([ "$BRAND" = "overleap" ] && echo "Overleap" || echo "Kaitu")
+
+S3_BUCKET="s3://d0.all7.cc/${BRAND}"
 
 if [ -z "$PLATFORM" ]; then
   echo "Usage: $0 --windows|--macos|--linux|--android|--web [--skip-cdn]" >&2
@@ -61,7 +74,7 @@ fi
 
 RELEASE_DIR="release/${VERSION}"
 S3_DEST="${S3_BUCKET}/desktop/${VERSION}"
-INVALIDATION_PATH="/kaitu/desktop/${VERSION}/*"
+INVALIDATION_PATH="/${BRAND}/desktop/${VERSION}/*"
 
 upload_file() {
   local FILE="$1"
@@ -81,17 +94,18 @@ echo "=== Uploading ${PLATFORM} v${VERSION} to S3 ==="
 
 case "$PLATFORM" in
   windows)
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_x64.exe"
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_x64.exe.sig" --optional
+    upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_x64.exe"
+    upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_x64.exe.sig" --optional
     echo "Uploaded: Windows artifacts"
     ;;
   macos)
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.pkg"
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.app.tar.gz"
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.app.tar.gz.sig" --optional
+    upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_universal.pkg"
+    upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
+    upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig" --optional
     echo "Uploaded: macOS artifacts"
     ;;
   linux)
+    if [ "$BRAND" != "kaitu" ]; then echo "ERROR: Linux desktop is kaitu-only (no overleap Linux channel)."; exit 1; fi
     # Embedded-webapp Linux build: single Go binary + install.sh bundle.
     # Naming includes the `linux_` infix to disambiguate from the old
     # Tauri AppImage era artifact `Kaitu_${VERSION}_amd64.tar.gz`.
@@ -109,13 +123,13 @@ case "$PLATFORM" in
     ;;
   android)
     S3_DEST="${S3_BUCKET}/android/${VERSION}"
-    INVALIDATION_PATH="/kaitu/android/${VERSION}/*"
-    APK="${RELEASE_DIR}/Kaitu-${VERSION}.apk"
+    INVALIDATION_PATH="/${BRAND}/android/${VERSION}/*"
+    APK="${RELEASE_DIR}/${BRAND_PRODUCT}-${VERSION}.apk"
     if [ ! -f "$APK" ]; then
       echo "ERROR: $APK not found. Run 'make build-android' first." >&2; exit 1
     fi
-    aws s3 cp "$APK" "${S3_DEST}/Kaitu-${VERSION}.apk"
-    echo "Uploaded: android/${VERSION}/Kaitu-${VERSION}.apk"
+    aws s3 cp "$APK" "${S3_DEST}/${BRAND_PRODUCT}-${VERSION}.apk"
+    echo "Uploaded: android/${VERSION}/${BRAND_PRODUCT}-${VERSION}.apk"
     ;;
   # web) — removed, see --web error above
 esac

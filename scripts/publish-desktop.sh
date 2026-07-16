@@ -12,7 +12,17 @@ set -euo pipefail
 # Usage:
 #   bash scripts/publish-desktop.sh                  # auto-detect from package.json version
 #   bash scripts/publish-desktop.sh --channel=beta   # force beta channel
+#   bash scripts/publish-desktop.sh --brand=overleap # publish the overleap channel
 #   AWS_DEFAULT_REGION=ap-east-1 bash scripts/publish-desktop.sh
+#
+# --brand=kaitu|overleap selects the S3 path prefix, artifact filename prefix,
+# and GitHub Release tag/title. Falls back to $K2_BRAND, then "kaitu".
+# overleap has no Linux channel — the Linux webui.Upgrader manifest and its
+# .sig reads are skipped entirely (not warned about) when brand != kaitu.
+#
+# First overleap release: /overleap/desktop/ has no prior latest.json — the
+# updater 404s harmlessly until this script publishes the first manifest.
+# No seeding step is needed; just publish normally.
 
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-east-1}"
 
@@ -25,9 +35,12 @@ else
   CHANNEL="stable"
 fi
 
+BRAND="${BRAND:-${K2_BRAND:-kaitu}}"
+
 for arg in "$@"; do
   case "$arg" in
     --channel=*) CHANNEL="${arg#*=}" ;;
+    --brand=*)   BRAND="${arg#*=}" ;;
   esac
 done
 
@@ -35,9 +48,15 @@ if [ "$CHANNEL" != "stable" ] && [ "$CHANNEL" != "beta" ]; then
   echo "ERROR: Invalid channel '${CHANNEL}'. Must be 'stable' or 'beta'."
   exit 1
 fi
+case "$BRAND" in kaitu|overleap) ;; *) echo "ERROR: --brand must be kaitu|overleap" >&2; exit 1 ;; esac
+BRAND_PRODUCT=$([ "$BRAND" = "overleap" ] && echo "Overleap" || echo "Kaitu")
+# kaitu keeps the shared "v${VERSION}" GitHub Release tag; overleap gets its
+# own "overleap-v${VERSION}" tag so releases never collide across brands.
+REL_TAG=$([ "$BRAND" = "overleap" ] && echo "overleap-v${VERSION}" || echo "v${VERSION}")
+
 PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-S3_VER="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
-S3_ROOT="s3://d0.all7.cc/kaitu/desktop"
+S3_VER="s3://d0.all7.cc/${BRAND}/desktop/${VERSION}"
+S3_ROOT="s3://d0.all7.cc/${BRAND}/desktop"
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 
 # Beta publishes to beta/ subdirectory
@@ -47,7 +66,7 @@ else
   S3_MANIFEST="${S3_ROOT}"
 fi
 
-echo "Publishing Kaitu Desktop v${VERSION} (channel=${CHANNEL})"
+echo "Publishing ${BRAND_PRODUCT} Desktop v${VERSION} (channel=${CHANNEL})"
 echo "S3 version path: ${S3_VER}"
 echo "S3 manifest path: ${S3_MANIFEST}"
 echo ""
@@ -64,15 +83,21 @@ trap 'rm -rf "${TMPDIR}"' EXIT
 aws s3 cp "${S3_VER}/" "${TMPDIR}/" --recursive \
   --exclude "*" --include "*.sig"
 
-MACOS_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_universal.app.tar.gz.sig" 2>/dev/null || echo "")
-WINDOWS_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_x64.exe.sig" 2>/dev/null || echo "")
+MACOS_SIG=$(cat "${TMPDIR}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig" 2>/dev/null || echo "")
+WINDOWS_SIG=$(cat "${TMPDIR}/${BRAND_PRODUCT}_${VERSION}_x64.exe.sig" 2>/dev/null || echo "")
 # Linux signatures refer to the embedded-webapp Go binary bundle
 # (packaging/linux/install.sh + kaitu.service). The Tauri updater's
 # latest.json no longer includes a linux platform entry — Linux uses
 # a separate LATEST + checksums.txt channel consumed by webui.Upgrader
 # in k2/webui (already arch-aware via runtime.GOARCH).
-LINUX_AMD64_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_linux_amd64.tar.gz.sig" 2>/dev/null || echo "")
-LINUX_ARM64_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_linux_arm64.tar.gz.sig" 2>/dev/null || echo "")
+# overleap has no Linux channel — leave these empty and skip the
+# linux-specific verification/manifest steps below for that brand.
+LINUX_AMD64_SIG=""
+LINUX_ARM64_SIG=""
+if [ "$BRAND" = "kaitu" ]; then
+  LINUX_AMD64_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_linux_amd64.tar.gz.sig" 2>/dev/null || echo "")
+  LINUX_ARM64_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_linux_arm64.tar.gz.sig" 2>/dev/null || echo "")
+fi
 
 if [ -z "${MACOS_SIG}" ]; then
   echo "WARNING: macOS signature not found"
@@ -80,11 +105,13 @@ fi
 if [ -z "${WINDOWS_SIG}" ]; then
   echo "WARNING: Windows signature not found"
 fi
-if [ -z "${LINUX_AMD64_SIG}" ]; then
-  echo "WARNING: Linux amd64 signature not found"
-fi
-if [ -z "${LINUX_ARM64_SIG}" ]; then
-  echo "WARNING: Linux arm64 signature not found"
+if [ "$BRAND" = "kaitu" ]; then
+  if [ -z "${LINUX_AMD64_SIG}" ]; then
+    echo "WARNING: Linux amd64 signature not found"
+  fi
+  if [ -z "${LINUX_ARM64_SIG}" ]; then
+    echo "WARNING: Linux arm64 signature not found"
+  fi
 fi
 
 # --- Pre-publish signature verification ---
@@ -121,10 +148,12 @@ verify_signature() {
 }
 
 echo "Verifying signatures against S3 artifacts..."
-verify_signature "Kaitu_${VERSION}_universal.app.tar.gz" "${MACOS_SIG}" "macOS"
-verify_signature "Kaitu_${VERSION}_x64.exe" "${WINDOWS_SIG}" "Windows"
-verify_signature "Kaitu_${VERSION}_linux_amd64.tar.gz" "${LINUX_AMD64_SIG}" "Linux amd64"
-verify_signature "Kaitu_${VERSION}_linux_arm64.tar.gz" "${LINUX_ARM64_SIG}" "Linux arm64"
+verify_signature "${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz" "${MACOS_SIG}" "macOS"
+verify_signature "${BRAND_PRODUCT}_${VERSION}_x64.exe" "${WINDOWS_SIG}" "Windows"
+if [ "$BRAND" = "kaitu" ]; then
+  verify_signature "Kaitu_${VERSION}_linux_amd64.tar.gz" "${LINUX_AMD64_SIG}" "Linux amd64"
+  verify_signature "Kaitu_${VERSION}_linux_arm64.tar.gz" "${LINUX_ARM64_SIG}" "Linux arm64"
+fi
 echo "All signatures verified."
 echo ""
 
@@ -135,23 +164,23 @@ echo ""
 cat > "${TMPDIR}/cloudfront.latest.json" << EOF
 {
   "version": "${VERSION}",
-  "notes": "See https://github.com/${REPO}/releases/tag/v${VERSION}",
+  "notes": "See https://github.com/${REPO}/releases/tag/${REL_TAG}",
   "pub_date": "${PUB_DATE}",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "darwin-x86_64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "darwin-universal": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "windows-x86_64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64.exe",
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_x64.exe",
       "signature": "${WINDOWS_SIG}"
     }
   }
@@ -162,23 +191,23 @@ EOF
 cat > "${TMPDIR}/d0.latest.json" << EOF
 {
   "version": "${VERSION}",
-  "notes": "See https://github.com/${REPO}/releases/tag/v${VERSION}",
+  "notes": "See https://github.com/${REPO}/releases/tag/${REL_TAG}",
   "pub_date": "${PUB_DATE}",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
+      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "darwin-x86_64": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
+      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "darwin-universal": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
+      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "windows-x86_64": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64.exe",
+      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_x64.exe",
       "signature": "${WINDOWS_SIG}"
     }
   }
@@ -202,15 +231,19 @@ echo "latest.json files uploaded to ${S3_MANIFEST}/"
 # The Linux embedded-webapp daemon (cmd/k2 + k2/webui/upgrade.go) checks
 # for updates via a two-file manifest instead of latest.json:
 #
-#   kaitu/desktop/LATEST                     text file, just the version string
-#   kaitu/desktop/${VERSION}/checksums.txt   sha256 k2-linux-amd64 + k2-linux-arm64
+#   ${BRAND}/desktop/LATEST                     text file, just the version string
+#   ${BRAND}/desktop/${VERSION}/checksums.txt   sha256 k2-linux-amd64 + k2-linux-arm64
+#   (kaitu-only — overleap has no Linux channel, see the brand guard below)
 #
 # Mirrors the pattern used by cmd/k2r in release-openwrt.yml. Only the
 # Linux binaries are listed in checksums.txt — macOS and Windows have
 # their own update channel via Tauri's latest.json above. webui.Upgrader
 # picks its row from checksums.txt by `k2-linux-${runtime.GOARCH}`, so
 # both archs auto-update once their rows are present.
-if [ "$CHANNEL" = "stable" ]; then
+#
+# overleap has no Linux channel — skip this section entirely for that
+# brand (no warning; there's simply nothing to publish).
+if [ "$CHANNEL" = "stable" ] && [ "$BRAND" = "kaitu" ]; then
   echo ""
   echo "Generating Linux webui.Upgrader manifest..."
 
@@ -253,13 +286,20 @@ if [ "$CHANNEL" = "stable" ]; then
 fi
 
 # Create GitHub Release (stable only — beta skips GitHub Release)
+# kaitu keeps the shared "v${VERSION}" tag (REL_TAG, set above); overleap
+# gets its own "overleap-v${VERSION}" tag so the two brands never collide
+# in one release list, and its notes table drops the kaitu-only Linux rows.
 if [ "$CHANNEL" = "stable" ]; then
-  if gh release view "v${VERSION}" &>/dev/null; then
-    echo "GitHub Release v${VERSION} already exists, skipping."
+  if [ "$BRAND" = "overleap" ]; then
+    GH_NOTES="## Overleap Desktop v${VERSION}
+
+| Platform | Installer | Auto-Update |
+|----------|-----------|-------------|
+| **macOS** (Universal) | \`.pkg\` | \`.app.tar.gz\` |
+| **Windows** (x64) | \`.exe\` | \`.exe\` (auto-update) |
+"
   else
-    gh release create "v${VERSION}" \
-      --title "Kaitu v${VERSION}" \
-      --notes "## Kaitu Desktop v${VERSION}
+    GH_NOTES="## Kaitu Desktop v${VERSION}
 
 | Platform | Installer | Auto-Update |
 |----------|-----------|-------------|
@@ -268,8 +308,16 @@ if [ "$CHANNEL" = "stable" ]; then
 | **Linux** (x86_64) | \`Kaitu_${VERSION}_linux_amd64.tar.gz\` | \`tar.gz\` (auto-update) |
 | **Linux** (aarch64) | \`Kaitu_${VERSION}_linux_arm64.tar.gz\` | \`tar.gz\` (auto-update) |
 "
+  fi
+
+  if gh release view "${REL_TAG}" &>/dev/null; then
+    echo "GitHub Release ${REL_TAG} already exists, skipping."
+  else
+    gh release create "${REL_TAG}" \
+      --title "${BRAND_PRODUCT} v${VERSION}" \
+      --notes "${GH_NOTES}"
     echo ""
-    echo "GitHub Release created for v${VERSION}"
+    echo "GitHub Release created for ${REL_TAG}"
   fi
 fi
 
@@ -281,19 +329,19 @@ echo "Invalidating CDN caches..."
 for DIST_ID in "$CDN_ID_D0" "$CDN_ID_DL"; do
   aws cloudfront create-invalidation \
     --distribution-id "$DIST_ID" \
-    --paths "/kaitu/desktop/cloudfront.latest.json" \
-            "/kaitu/desktop/beta/cloudfront.latest.json" \
-            "/kaitu/desktop/d0.latest.json" \
-            "/kaitu/desktop/beta/d0.latest.json" \
-            "/kaitu/desktop/LATEST" \
-            "/kaitu/desktop/${VERSION}/checksums.txt" \
+    --paths "/${BRAND}/desktop/cloudfront.latest.json" \
+            "/${BRAND}/desktop/beta/cloudfront.latest.json" \
+            "/${BRAND}/desktop/d0.latest.json" \
+            "/${BRAND}/desktop/beta/d0.latest.json" \
+            "/${BRAND}/desktop/LATEST" \
+            "/${BRAND}/desktop/${VERSION}/checksums.txt" \
     --no-cli-pager --output text > /dev/null
 done
 echo "CDN invalidated: d0.all7.cc + dl.kaitu.io"
 
 echo ""
 if [ "$CHANNEL" = "stable" ]; then
-  echo "Done! Published Kaitu Desktop v${VERSION} (stable + GitHub Release)"
+  echo "Done! Published ${BRAND_PRODUCT} Desktop v${VERSION} (stable + GitHub Release)"
 else
-  echo "Done! Published Kaitu Desktop v${VERSION} (beta channel only, no GitHub Release)"
+  echo "Done! Published ${BRAND_PRODUCT} Desktop v${VERSION} (beta channel only, no GitHub Release)"
 fi
