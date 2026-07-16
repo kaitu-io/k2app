@@ -285,15 +285,20 @@ fi
 echo ""
 echo "--- Collecting artifacts ---"
 
-# Tauri generates Kaitu.app.tar.gz — rename to Kaitu_{VERSION}_universal.app.tar.gz
-APP_TAR_GZ=$(find "$BUNDLE_DIR" -name '*.app.tar.gz' -maxdepth 1 2>/dev/null | head -1)
-if [ -n "$APP_TAR_GZ" ]; then
-  cp "$APP_TAR_GZ" "$RELEASE_DIR/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
-  echo "Renamed: $(basename "$APP_TAR_GZ") → ${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
+# Collect the brand-exact tar.gz — NEVER glob: both brands share BUNDLE_DIR, so a
+# stale other-brand tar.gz from a previous build would win by alphabetical order
+# (Kaitu < Overleap) and ship the wrong app to updater clients.
+APP_TAR_GZ="$BUNDLE_DIR/${BRAND_PRODUCT}.app.tar.gz"
+if [ ! -f "$APP_TAR_GZ" ]; then
+  echo "ERROR: $APP_TAR_GZ not found — updater artifact missing"
+  exit 1
 fi
+cp "$APP_TAR_GZ" "$RELEASE_DIR/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
+echo "Renamed: $(basename "$APP_TAR_GZ") → ${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
 
-APP_SIG=$(find "$BUNDLE_DIR" -name '*.app.tar.gz.sig' -maxdepth 1 2>/dev/null | head -1)
-if [ -n "$APP_SIG" ]; then
+# .sig may legitimately be absent (deleted above when TAURI_SIGNING_PRIVATE_KEY unset)
+APP_SIG="$BUNDLE_DIR/${BRAND_PRODUCT}.app.tar.gz.sig"
+if [ -f "$APP_SIG" ]; then
   cp "$APP_SIG" "$RELEASE_DIR/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig"
   echo "Renamed: $(basename "$APP_SIG") → ${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig"
 fi
