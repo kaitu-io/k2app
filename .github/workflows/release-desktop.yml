@@ -430,9 +430,10 @@ jobs:
       - name: Brand purity gate (macOS)
         if: matrix.platform == 'macOS' && success()
         run: |
-          BUNDLE=$(find desktop/src-tauri/target -maxdepth 6 -name '*.app' -path '*/bundle/macos/*' | head -1)
+          BRAND_PRODUCT=$([ "${{ matrix.brand }}" = "overleap" ] && echo "Overleap" || echo "Kaitu")
+          BUNDLE=$(find desktop/src-tauri/target -maxdepth 6 -name "${BRAND_PRODUCT}.app" -path '*/bundle/macos/*' | head -1)
           if [ -z "$BUNDLE" ]; then
-            echo "::error::No .app bundle found under desktop/src-tauri/target for purity check"
+            echo "::error::No ${BRAND_PRODUCT}.app bundle found under desktop/src-tauri/target for purity check"
             exit 1
           fi
           bash scripts/check-desktop-brand-purity.sh ${{ matrix.brand }} "$BUNDLE"

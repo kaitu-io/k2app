@@ -41,7 +41,7 @@
       "nsis": {
         "installMode": "perMachine",
         "languages": ["English"],
-        "installerHooks": "installer-hooks.nsh"
+        "installerHooks": "installer-hooks.overleap.nsh"
       }
     }
   },

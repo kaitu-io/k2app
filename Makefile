@@ -158,6 +158,10 @@ simplisign-login:
 build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign-login
 	bash webapp/scripts/check-brand-purity.sh $(BRAND) webapp/dist
 	@bash scripts/ci/windows-sign-preflight.sh
+	@if [ "$(BRAND)" = "overleap" ]; then \
+		echo "--- Rendering overleap NSIS installer hooks (WebView2 cache path) ---"; \
+		sed 's/io\.kaitu\.desktop/io.overleap.desktop/g' desktop/src-tauri/installer-hooks.nsh > desktop/src-tauri/installer-hooks.overleap.nsh; \
+	fi
 	@if [ "$$(uname -s)" = "Darwin" ] || [ "$$(uname -s)" = "Linux" ]; then \
 		echo "--- Cross-compiling Windows from $$(uname -s) via cargo-xwin ---"; \
 		command -v cargo-xwin >/dev/null 2>&1 || { echo "ERROR: cargo-xwin not found. Install: cargo install --locked cargo-xwin"; exit 1; }; \

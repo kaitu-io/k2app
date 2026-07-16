@@ -16,12 +16,12 @@ case "$brand" in
   *) echo "unknown brand: $brand" >&2; exit 2 ;;
 esac
 
-matches=$(grep -rElI "$pattern" "$dist" || true)
+matches=$(grep -rEliI "$pattern" "$dist" || true)
 if [ -n "$matches" ]; then
   echo "BRAND PURITY VIOLATION ($brand build):" >&2
   echo "$matches" >&2
   # shellcheck disable=SC2086
-  grep -rEnoI "$pattern" $matches | head -40 >&2
+  grep -rEnoiI "$pattern" $matches | head -40 >&2
   exit 1
 fi
 echo "brand purity OK ($brand, $dist)"

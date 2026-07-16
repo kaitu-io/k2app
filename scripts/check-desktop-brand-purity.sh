@@ -61,9 +61,9 @@ fi
 
 # 2) binary strings — check every Mach-O/PE in the bundle
 while IFS= read -r BIN; do
-  if strings "$BIN" 2>/dev/null | grep -E -m1 "$FORBIDDEN" >/dev/null; then
+  if strings "$BIN" 2>/dev/null | grep -Ei -m1 "$FORBIDDEN" >/dev/null; then
     echo "PURITY FAIL ($BRAND): $(basename "$BIN") contains forbidden pattern: $FORBIDDEN" >&2
-    strings "$BIN" | grep -E "$FORBIDDEN" | head -5 >&2
+    strings "$BIN" | grep -Ei "$FORBIDDEN" | head -5 >&2
     FAIL=1
   fi
 done < <( (find "$TARGET" -type f ! -name 'k2*' \( -perm +111 -o -name '*.exe' -o -name '*.dll' \) 2>/dev/null || \
