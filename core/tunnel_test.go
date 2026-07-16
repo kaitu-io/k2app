@@ -1082,35 +1082,39 @@ func TestClientTunnel_HandleUDP_NonBTStillProxied(t *testing.T) {
 	tunnel.Close()
 }
 
-func TestClientTunnel_HandleUDP_STUNForcedDirect(t *testing.T) {
-	// Start a real UDP listener as the direct target
+// STUN (WebRTC call setup) must be RELAYED THROUGH THE PROXY, not forced
+// direct. Forcing it direct broke Telegram/KakaoTalk voice/video calls for
+// users behind the GFW (support ticket #3051). The detection still runs (so
+// the QUIC sniff is skipped for a WebRTC packet), but the proxy route is kept.
+func TestClientTunnel_HandleUDP_STUNKeepsProxyRoute(t *testing.T) {
+	// A direct listener that must NOT receive the STUN packet.
 	directListener, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer directListener.Close()
 
-	serverGot := make(chan []byte, 1)
+	wentDirect := make(chan struct{}, 1)
 	go func() {
 		buf := make([]byte, 4096)
-		n, _, err := directListener.ReadFrom(buf)
-		if err != nil {
-			return
+		if _, _, err := directListener.ReadFrom(buf); err == nil {
+			wentDirect <- struct{}{}
 		}
-		pkt := make([]byte, n)
-		copy(pkt, buf[:n])
-		serverGot <- pkt
 	}()
 
 	dialer := newMockDialer()
-	prov := &mockProvider{}
+	// Pre-load the proxy-side conn so DialUDP returns; what the tunnel writes
+	// into it is the "relayed through proxy" evidence.
+	remotePC := newMockPacketConn()
+	dialer.udpConns <- remotePC
 
+	prov := &mockProvider{}
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider:     prov,
-		Outbounds:    testOutbounds(dialer),
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
 		DirectTarget:  rule.Target(0),
 		DefaultTarget: rule.Target(2),
-		SniffBT:      true,
+		SniffBT:       true,
 		// Router nil → defaults to proxy → sniff will check for STUN
 	})
 
@@ -1135,54 +1139,57 @@ func TestClientTunnel_HandleUDP_STUNForcedDirect(t *testing.T) {
 	localPC.injectRead(stunPacket, nil)
 
 	select {
-	case got := <-serverGot:
-		if !bytes.Equal(got, stunPacket) {
-			t.Errorf("direct listener got %x, want %x", got, stunPacket)
+	case got := <-remotePC.writeCh:
+		if !bytes.Equal(got.data, stunPacket) {
+			t.Errorf("proxy conn got %x, want %x", got.data, stunPacket)
 		}
+	case <-wentDirect:
+		t.Fatal("STUN egressed DIRECT — regression of #3051")
 	case <-time.After(3 * time.Second):
-		t.Fatal("timeout waiting for direct listener to receive STUN packet")
+		t.Fatal("timeout waiting for STUN to reach the proxy conn")
 	}
 
 	localPC.closeConn()
+	remotePC.closeConn()
 	<-done
 
 	dialer.mu.Lock()
 	defer dialer.mu.Unlock()
-	if len(dialer.udpCalls) != 0 {
-		t.Errorf("DialUDP called %d times, expected 0 (STUN should force direct)", len(dialer.udpCalls))
+	if len(dialer.udpCalls) != 1 {
+		t.Errorf("DialUDP called %d times, expected 1 (STUN relayed through proxy)", len(dialer.udpCalls))
 	}
 
 	tunnel.Close()
 }
 
-func TestClientTunnel_HandleUDP_DTLSForcedDirect(t *testing.T) {
+// DTLS (WebRTC media key exchange) must be RELAYED THROUGH THE PROXY, not
+// forced direct — same #3051 root cause and contract as the STUN case above.
+func TestClientTunnel_HandleUDP_DTLSKeepsProxyRoute(t *testing.T) {
 	directListener, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer directListener.Close()
 
-	serverGot := make(chan []byte, 1)
+	wentDirect := make(chan struct{}, 1)
 	go func() {
 		buf := make([]byte, 4096)
-		n, _, err := directListener.ReadFrom(buf)
-		if err != nil {
-			return
+		if _, _, err := directListener.ReadFrom(buf); err == nil {
+			wentDirect <- struct{}{}
 		}
-		pkt := make([]byte, n)
-		copy(pkt, buf[:n])
-		serverGot <- pkt
 	}()
 
 	dialer := newMockDialer()
-	prov := &mockProvider{}
+	remotePC := newMockPacketConn()
+	dialer.udpConns <- remotePC
 
+	prov := &mockProvider{}
 	tunnel := NewClientTunnel(ClientTunnelConfig{
 		Provider:      prov,
 		Outbounds:     testOutbounds(dialer),
 		DirectTarget:  rule.Target(0),
 		DefaultTarget: rule.Target(2),
-		SniffBT:      true,
+		SniffBT:       true,
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -1206,21 +1213,24 @@ func TestClientTunnel_HandleUDP_DTLSForcedDirect(t *testing.T) {
 	localPC.injectRead(dtlsPacket, nil)
 
 	select {
-	case got := <-serverGot:
-		if !bytes.Equal(got, dtlsPacket) {
-			t.Errorf("direct listener got %x, want %x", got, dtlsPacket)
+	case got := <-remotePC.writeCh:
+		if !bytes.Equal(got.data, dtlsPacket) {
+			t.Errorf("proxy conn got %x, want %x", got.data, dtlsPacket)
 		}
+	case <-wentDirect:
+		t.Fatal("DTLS egressed DIRECT — regression of #3051")
 	case <-time.After(3 * time.Second):
-		t.Fatal("timeout waiting for direct listener to receive DTLS packet")
+		t.Fatal("timeout waiting for DTLS to reach the proxy conn")
 	}
 
 	localPC.closeConn()
+	remotePC.closeConn()
 	<-done
 
 	dialer.mu.Lock()
 	defer dialer.mu.Unlock()
-	if len(dialer.udpCalls) != 0 {
-		t.Errorf("DialUDP called %d times, expected 0 (DTLS should force direct)", len(dialer.udpCalls))
+	if len(dialer.udpCalls) != 1 {
+		t.Errorf("DialUDP called %d times, expected 1 (DTLS relayed through proxy)", len(dialer.udpCalls))
 	}
 
 	tunnel.Close()

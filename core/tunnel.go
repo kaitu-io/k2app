@@ -367,9 +367,15 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 
 			var meta sniff.Result
 
-			// 1. BT/WebRTC: PROXY → DIRECT
-			// Priority: STUN/DTLS first (strict magic cookie / header checks),
-			// then uTP/UDPTracker (loose first-byte heuristic, prone to false positives).
+			// 1. BitTorrent: PROXY → DIRECT.
+			// STUN/DTLS are detected (so the QUIC sniff below is skipped for a
+			// WebRTC first packet) but NOT forced direct. Forcing WebRTC direct
+			// sent Telegram/KakaoTalk call setup (STUN/DTLS ICE) straight out
+			// the local interface — fatal for users behind the GFW, whose direct
+			// egress to a foreign reflector is blocked, so calls never connected
+			// while text (TCP, proxied) worked. WebRTC is low-bandwidth and
+			// belongs on the tunnel; only BitTorrent needs to stay off it.
+			// See support ticket #3051.
 			if t.sniffBT && action != t.directTarget {
 				pktHead := packet
 				if len(pktHead) > 20 {
@@ -379,12 +385,10 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 
 				if sniff.IsSTUN(packet) {
 					meta.Protocol = sniff.ProtoSTUN
-					action = t.directTarget
-					slog.Debug("tunnel: STUN detected, forcing direct", "dest", dest)
+					slog.Debug("tunnel: STUN detected, keeping proxy route", "dest", dest)
 				} else if sniff.IsDTLS(packet) {
 					meta.Protocol = sniff.ProtoDTLS
-					action = t.directTarget
-					slog.Debug("tunnel: DTLS detected, forcing direct", "dest", dest)
+					slog.Debug("tunnel: DTLS detected, keeping proxy route", "dest", dest)
 				} else if sniff.IsUTP(packet) || sniff.IsUDPTracker(packet) {
 					meta.Protocol = sniff.ProtoBitTorrent
 					action = t.directTarget
