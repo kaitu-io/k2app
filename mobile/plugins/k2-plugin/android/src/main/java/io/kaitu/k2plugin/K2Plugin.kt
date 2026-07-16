@@ -314,7 +314,11 @@ class K2Plugin : Plugin() {
     fun checkWebUpdate(call: PluginCall) {
         Thread {
             try {
-                val result = fetchManifest(K2PluginUtils.webManifestEndpoints(getChannel()))
+                val result = fetchManifest(
+                    K2PluginUtils.webManifestEndpoints(
+                        getChannel(), K2PluginUtils.cdnPrimary(context), K2PluginUtils.cdnFallback(context)
+                    )
+                )
                 if (result == null) {
                     val ret = JSObject()
                     ret.put("available", false)
@@ -367,7 +371,11 @@ class K2Plugin : Plugin() {
     fun checkNativeUpdate(call: PluginCall) {
         Thread {
             try {
-                val result = fetchManifest(K2PluginUtils.androidManifestEndpoints(getChannel()))
+                val result = fetchManifest(
+                    K2PluginUtils.androidManifestEndpoints(
+                        getChannel(), K2PluginUtils.cdnPrimary(context), K2PluginUtils.cdnFallback(context)
+                    )
+                )
                 if (result == null) {
                     val ret = JSObject()
                     ret.put("available", false)
@@ -408,8 +416,11 @@ class K2Plugin : Plugin() {
             val webBackupDir = File(context.filesDir, "web-backup")
             try {
                 // Fetch manifest to get URL and hash
-                val result = fetchManifest(K2PluginUtils.webManifestEndpoints(getChannel()))
-                    ?: throw java.io.IOException("All web manifest endpoints failed")
+                val result = fetchManifest(
+                    K2PluginUtils.webManifestEndpoints(
+                        getChannel(), K2PluginUtils.cdnPrimary(context), K2PluginUtils.cdnFallback(context)
+                    )
+                ) ?: throw java.io.IOException("All web manifest endpoints failed")
                 val (manifest, baseURL) = result
                 val zipUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
                 val remoteVersion = manifest.getString("version")
@@ -820,7 +831,11 @@ class K2Plugin : Plugin() {
         try {
             val channel = getChannel()
             // 1. Check native update first
-            val nativeResult = fetchManifest(K2PluginUtils.androidManifestEndpoints(channel))
+            val nativeResult = fetchManifest(
+                K2PluginUtils.androidManifestEndpoints(
+                    channel, K2PluginUtils.cdnPrimary(context), K2PluginUtils.cdnFallback(context)
+                )
+            )
             if (nativeResult != null) {
                 val (manifest, baseURL) = nativeResult
                 val remoteVersion = manifest.getString("version")
@@ -847,7 +862,11 @@ class K2Plugin : Plugin() {
             }
 
             // 2. No native update — check web OTA
-            val webResult = fetchManifest(K2PluginUtils.webManifestEndpoints(channel))
+            val webResult = fetchManifest(
+                K2PluginUtils.webManifestEndpoints(
+                    channel, K2PluginUtils.cdnPrimary(context), K2PluginUtils.cdnFallback(context)
+                )
+            )
             if (webResult != null) {
                 val (manifest, baseURL) = webResult
                 val remoteVersion = manifest.getString("version")

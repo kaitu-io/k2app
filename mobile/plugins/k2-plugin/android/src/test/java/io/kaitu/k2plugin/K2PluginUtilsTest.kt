@@ -80,31 +80,42 @@ class K2PluginUtilsTest {
     }
 
     // ==================== manifestEndpoints ====================
+    // CDN base is now injected (host app resolves it from per-flavor brand.xml
+    // via K2PluginUtils.cdnPrimary/cdnFallback(context) at the K2Plugin.kt call
+    // sites). These pure functions stay JVM-testable with a fake base — no
+    // brand literal in the plugin itself.
+
+    private val FAKE_CDN_PRIMARY = "https://cdn.example/kaitu"
+    private val FAKE_CDN_FALLBACK = "https://cdn.example/kaitu-fallback"
 
     @Test
     fun androidManifestEndpoints_stable() {
-        val endpoints = K2PluginUtils.androidManifestEndpoints("stable")
-        assertTrue(endpoints[0].endsWith("/android/latest.json"))
+        val endpoints = K2PluginUtils.androidManifestEndpoints("stable", FAKE_CDN_PRIMARY, FAKE_CDN_FALLBACK)
+        assertEquals("$FAKE_CDN_PRIMARY/android/latest.json", endpoints[0])
+        assertEquals("$FAKE_CDN_FALLBACK/android/latest.json", endpoints[1])
         assertFalse(endpoints[0].contains("/beta/"))
     }
 
     @Test
     fun androidManifestEndpoints_beta() {
-        val endpoints = K2PluginUtils.androidManifestEndpoints("beta")
-        assertTrue(endpoints[0].endsWith("/android/beta/latest.json"))
+        val endpoints = K2PluginUtils.androidManifestEndpoints("beta", FAKE_CDN_PRIMARY, FAKE_CDN_FALLBACK)
+        assertEquals("$FAKE_CDN_PRIMARY/android/beta/latest.json", endpoints[0])
+        assertEquals("$FAKE_CDN_FALLBACK/android/beta/latest.json", endpoints[1])
     }
 
     @Test
     fun webManifestEndpoints_stable() {
-        val endpoints = K2PluginUtils.webManifestEndpoints("stable")
-        assertTrue(endpoints[0].endsWith("/web/latest.json"))
+        val endpoints = K2PluginUtils.webManifestEndpoints("stable", FAKE_CDN_PRIMARY, FAKE_CDN_FALLBACK)
+        assertEquals("$FAKE_CDN_PRIMARY/web/latest.json", endpoints[0])
+        assertEquals("$FAKE_CDN_FALLBACK/web/latest.json", endpoints[1])
         assertFalse(endpoints[0].contains("/beta/"))
     }
 
     @Test
     fun webManifestEndpoints_beta() {
-        val endpoints = K2PluginUtils.webManifestEndpoints("beta")
-        assertTrue(endpoints[0].endsWith("/web/beta/latest.json"))
+        val endpoints = K2PluginUtils.webManifestEndpoints("beta", FAKE_CDN_PRIMARY, FAKE_CDN_FALLBACK)
+        assertEquals("$FAKE_CDN_PRIMARY/web/beta/latest.json", endpoints[0])
+        assertEquals("$FAKE_CDN_FALLBACK/web/beta/latest.json", endpoints[1])
     }
 
     // ==================== resolveDownloadURL ====================

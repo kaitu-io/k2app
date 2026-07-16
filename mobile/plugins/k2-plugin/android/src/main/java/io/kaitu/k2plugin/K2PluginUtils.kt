@@ -1,11 +1,24 @@
 package io.kaitu.k2plugin
 
+import android.content.Context
 import java.security.MessageDigest
 
 internal object K2PluginUtils {
 
-    private const val CDN_PRIMARY = "https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
-    private const val CDN_FALLBACK = "https://d0.all7.cc/kaitu"
+    /**
+     * Brand CDN base URLs. The plugin module has no flavors of its own — brand
+     * comes from the host app's per-flavor `brand.xml` resources (`k2_cdn_primary`
+     * / `k2_cdn_fallback`), resolved by name at runtime so this module carries
+     * zero brand literals.
+     */
+    fun cdnPrimary(context: Context): String = brandString(context, "k2_cdn_primary")
+    fun cdnFallback(context: Context): String = brandString(context, "k2_cdn_fallback")
+
+    private fun brandString(context: Context, name: String): String {
+        val id = context.resources.getIdentifier(name, "string", context.packageName)
+        require(id != 0) { "host app missing brand string resource: $name" }
+        return context.getString(id)
+    }
 
     fun isNewerVersion(remote: String, local: String): Boolean {
         val (rBase, rPre) = splitVersion(remote)
@@ -51,19 +64,19 @@ internal object K2PluginUtils {
         return 0
     }
 
-    fun androidManifestEndpoints(channel: String): List<String> {
+    fun androidManifestEndpoints(channel: String, cdnPrimary: String, cdnFallback: String): List<String> {
         val prefix = if (channel == "beta") "beta/" else ""
         return listOf(
-            "$CDN_PRIMARY/android/${prefix}latest.json",
-            "$CDN_FALLBACK/android/${prefix}latest.json"
+            "$cdnPrimary/android/${prefix}latest.json",
+            "$cdnFallback/android/${prefix}latest.json"
         )
     }
 
-    fun webManifestEndpoints(channel: String): List<String> {
+    fun webManifestEndpoints(channel: String, cdnPrimary: String, cdnFallback: String): List<String> {
         val prefix = if (channel == "beta") "beta/" else ""
         return listOf(
-            "$CDN_PRIMARY/web/${prefix}latest.json",
-            "$CDN_FALLBACK/web/${prefix}latest.json"
+            "$cdnPrimary/web/${prefix}latest.json",
+            "$cdnFallback/web/${prefix}latest.json"
         )
     }
 
