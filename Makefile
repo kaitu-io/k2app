@@ -156,6 +156,7 @@ simplisign-login:
 	fi
 
 build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign-login
+	bash webapp/scripts/check-brand-purity.sh $(BRAND) webapp/dist
 	@bash scripts/ci/windows-sign-preflight.sh
 	@if [ "$$(uname -s)" = "Darwin" ] || [ "$$(uname -s)" = "Linux" ]; then \
 		echo "--- Cross-compiling Windows from $$(uname -s) via cargo-xwin ---"; \

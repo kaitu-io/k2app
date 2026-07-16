@@ -67,6 +67,10 @@ echo "--- Building webapp ---"
 make build-webapp
 
 echo ""
+echo "--- Brand purity gate (webapp dist, pre-package) ---"
+bash "$ROOT_DIR/webapp/scripts/check-brand-purity.sh" "$BRAND" "$ROOT_DIR/webapp/dist"
+
+echo ""
 echo "--- Building k2 (universal) ---"
 make build-k2-macos
 # When single-arch, Tauri expects k2-<target> (e.g. k2-aarch64-apple-darwin)
