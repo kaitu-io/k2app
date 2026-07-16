@@ -303,6 +303,10 @@ if [ -f "$APP_SIG" ]; then
   echo "Renamed: $(basename "$APP_SIG") → ${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig"
 fi
 
+echo ""
+echo "--- Brand purity gate (updater .app.tar.gz) ---"
+bash "$ROOT_DIR/scripts/check-desktop-brand-purity.sh" "$BRAND" "$RELEASE_DIR/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
+
 # --- Summary ---
 echo ""
 echo "=== Build complete ==="
