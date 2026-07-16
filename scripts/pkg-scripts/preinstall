@@ -1,18 +1,18 @@
 #!/bin/bash
 # macOS PKG preinstall script
-# Runs as root BEFORE files are copied to /Applications/Kaitu.app
+# Runs as root BEFORE files are copied to /Applications/@APP_NAME@.app
 
-K2="/Applications/Kaitu.app/Contents/MacOS/k2"
+K2="/Applications/@APP_NAME@.app/Contents/MacOS/k2"
 KAITU_SERVICE="/Applications/Kaitu.app/Contents/MacOS/kaitu-service"
 
-# 1. Quit the running Kaitu app and wait for it to exit (covers Kaitu + old kaitu-desktop)
-if pgrep -f "Kaitu.app" >/dev/null 2>&1; then
-    pkill -f "Kaitu.app" 2>/dev/null || true
+# 1. Quit the running app and wait for it to exit (covers current app + old kaitu-desktop)
+if pgrep -f "@APP_NAME@.app" >/dev/null 2>&1; then
+    pkill -f "@APP_NAME@.app" 2>/dev/null || true
     for i in $(seq 1 10); do
-        pgrep -f "Kaitu.app" >/dev/null 2>&1 || break
+        pgrep -f "@APP_NAME@.app" >/dev/null 2>&1 || break
         sleep 0.5
     done
-    pkill -9 -f "Kaitu.app" 2>/dev/null || true
+    pkill -9 -f "@APP_NAME@.app" 2>/dev/null || true
 fi
 
 # 2. Uninstall existing service via binary CLI (try both old and new binary names)
@@ -48,13 +48,13 @@ sleep 1
 
 # 6. Clear WebKit HTTP cache (prevents stale webapp assets after upgrade)
 #    Must run AFTER app is killed (step 1) to avoid file locks.
-#    Preserves: ~/Library/Application Support/io.kaitu.desktop/ (update-channel, pre-beta-log-level)
-#    Preserves: ~/Library/WebKit/io.kaitu.desktop/ (LocalStorage has encrypted auth tokens)
+#    Preserves: ~/Library/Application Support/@BUNDLE_ID@/ (update-channel, pre-beta-log-level)
+#    Preserves: ~/Library/WebKit/@BUNDLE_ID@/ (LocalStorage has encrypted auth tokens)
 CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null)
 if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
     USER_HOME=$(dscl . -read /Users/"$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
     if [ -n "$USER_HOME" ] && [ -d "$USER_HOME/Library" ]; then
-        rm -rf "$USER_HOME/Library/Caches/io.kaitu.desktop" 2>/dev/null || true
+        rm -rf "$USER_HOME/Library/Caches/@BUNDLE_ID@" 2>/dev/null || true
     fi
 fi
 

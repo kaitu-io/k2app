@@ -26,10 +26,23 @@ done
 # --- Read version ---
 VERSION=$(node -p "require('./package.json').version")
 
-if [ "$SINGLE_ARCH" = true ]; then
-  echo "=== Building Kaitu $VERSION for macOS (single-arch) ==="
+# --- Brand ---
+BRAND="${K2_BRAND:-kaitu}"
+if [ "$BRAND" = "overleap" ]; then
+  BRAND_PRODUCT="Overleap"
+  BUNDLE_ID="io.overleap.desktop"
+  TAURI_CONFIG_ARG="--config src-tauri/tauri.conf.overleap.json"
 else
-  echo "=== Building Kaitu $VERSION for macOS (universal) ==="
+  BRAND="kaitu"
+  BRAND_PRODUCT="Kaitu"
+  BUNDLE_ID="io.kaitu.desktop"
+  TAURI_CONFIG_ARG=""
+fi
+
+if [ "$SINGLE_ARCH" = true ]; then
+  echo "=== Building $BRAND_PRODUCT $VERSION for macOS (single-arch) ==="
+else
+  echo "=== Building $BRAND_PRODUCT $VERSION for macOS (universal) ==="
 fi
 
 # Determine native architecture for single-arch builds
@@ -97,7 +110,7 @@ fi
 if [ -n "$EXTRA_FEATURES" ]; then
   TAURI_ARGS="--features $EXTRA_FEATURES $TAURI_ARGS"
 fi
-yarn tauri build $TAURI_ARGS
+yarn tauri build $TAURI_ARGS $TAURI_CONFIG_ARG
 cd "$ROOT_DIR"
 
 # Restore Apple credentials for PKG signing + notarization
@@ -113,7 +126,7 @@ if [ "$SINGLE_ARCH" = true ]; then
 else
   BUNDLE_DIR="desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos"
 fi
-APP_PATH="$BUNDLE_DIR/Kaitu.app"
+APP_PATH="$BUNDLE_DIR/${BRAND_PRODUCT}.app"
 
 if [ ! -d "$APP_PATH" ]; then
   echo "ERROR: $APP_PATH not found"
@@ -147,8 +160,8 @@ echo "codesign verification passed"
 # Fix: re-create tar.gz from the re-signed .app so both share the same CDHash.
 echo ""
 echo "--- Rebuilding .app.tar.gz from re-signed app ---"
-REBUILT_TAR_GZ="$BUNDLE_DIR/Kaitu.app.tar.gz"
-tar czf "$REBUILT_TAR_GZ" -C "$BUNDLE_DIR" Kaitu.app
+REBUILT_TAR_GZ="$BUNDLE_DIR/${BRAND_PRODUCT}.app.tar.gz"
+tar czf "$REBUILT_TAR_GZ" -C "$BUNDLE_DIR" "${BRAND_PRODUCT}.app"
 echo "Rebuilt: $REBUILT_TAR_GZ ($(du -h "$REBUILT_TAR_GZ" | cut -f1))"
 
 # Re-sign the tar.gz with Tauri updater key (minisign) if available.
@@ -166,12 +179,12 @@ if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
   echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > /tmp/minisign.key
   echo "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" | minisign -S -s /tmp/minisign.key -m "$REBUILT_TAR_GZ"
   # Convert .minisig to Tauri's base64 .sig format
-  base64 < "${REBUILT_TAR_GZ}.minisig" | tr -d '\n' > "$BUNDLE_DIR/Kaitu.app.tar.gz.sig"
+  base64 < "${REBUILT_TAR_GZ}.minisig" | tr -d '\n' > "$BUNDLE_DIR/${BRAND_PRODUCT}.app.tar.gz.sig"
   rm -f /tmp/minisign.key "${REBUILT_TAR_GZ}.minisig"
   echo "Updater signature regenerated"
 else
   echo "WARN: TAURI_SIGNING_PRIVATE_KEY not set, skipping updater re-sign"
-  rm -f "$BUNDLE_DIR/Kaitu.app.tar.gz.sig"
+  rm -f "$BUNDLE_DIR/${BRAND_PRODUCT}.app.tar.gz.sig"
 fi
 
 # --- Create .pkg with pkgbuild ---
@@ -180,8 +193,8 @@ echo "--- Creating .pkg installer ---"
 RELEASE_DIR="release/$VERSION"
 mkdir -p "$RELEASE_DIR"
 
-PKG_UNSIGNED="$RELEASE_DIR/Kaitu_${VERSION}_universal-unsigned.pkg"
-PKG_SIGNED="$RELEASE_DIR/Kaitu_${VERSION}_universal.pkg"
+PKG_UNSIGNED="$RELEASE_DIR/${BRAND_PRODUCT}_${VERSION}_universal-unsigned.pkg"
+PKG_SIGNED="$RELEASE_DIR/${BRAND_PRODUCT}_${VERSION}_universal.pkg"
 
 # Stage only the .app for pkgbuild (exclude updater artifacts)
 PKG_STAGE=$(mktemp -d /tmp/k2app-pkg-stage.XXXXXX)
@@ -189,7 +202,7 @@ cp -R "$APP_PATH" "$PKG_STAGE/"
 
 # Create component plist with BundleIsRelocatable=false
 COMPONENT_PLIST=$(mktemp /tmp/k2app-component.XXXXXX)
-cat > "$COMPONENT_PLIST" <<'PLIST'
+cat > "$COMPONENT_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -204,22 +217,30 @@ cat > "$COMPONENT_PLIST" <<'PLIST'
     <key>BundleOverwriteAction</key>
     <string>upgrade</string>
     <key>RootRelativeBundlePath</key>
-    <string>Kaitu.app</string>
+    <string>${BRAND_PRODUCT}.app</string>
   </dict>
 </array>
 </plist>
 PLIST
 
+# Render pkg-scripts template for the active brand
+PKG_SCRIPTS_RENDERED=$(mktemp -d /tmp/k2app-pkg-scripts.XXXXXX)
+for f in preinstall postinstall; do
+  sed -e "s/@APP_NAME@/${BRAND_PRODUCT}/g" -e "s/@BUNDLE_ID@/${BUNDLE_ID}/g" \
+    "$ROOT_DIR/scripts/pkg-scripts/$f" > "$PKG_SCRIPTS_RENDERED/$f"
+  chmod +x "$PKG_SCRIPTS_RENDERED/$f"
+done
+
 pkgbuild \
   --root "$PKG_STAGE" \
   --component-plist "$COMPONENT_PLIST" \
-  --scripts "$ROOT_DIR/scripts/pkg-scripts" \
-  --identifier io.kaitu.desktop \
+  --scripts "$PKG_SCRIPTS_RENDERED" \
+  --identifier "$BUNDLE_ID" \
   --version "$VERSION" \
   --install-location "/Applications" \
   "$PKG_UNSIGNED"
 
-rm -rf "$PKG_STAGE" "$COMPONENT_PLIST"
+rm -rf "$PKG_STAGE" "$COMPONENT_PLIST" "$PKG_SCRIPTS_RENDERED"
 
 echo "Created unsigned pkg: $PKG_UNSIGNED"
 
@@ -263,14 +284,14 @@ echo "--- Collecting artifacts ---"
 # Tauri generates Kaitu.app.tar.gz — rename to Kaitu_{VERSION}_universal.app.tar.gz
 APP_TAR_GZ=$(find "$BUNDLE_DIR" -name '*.app.tar.gz' -maxdepth 1 2>/dev/null | head -1)
 if [ -n "$APP_TAR_GZ" ]; then
-  cp "$APP_TAR_GZ" "$RELEASE_DIR/Kaitu_${VERSION}_universal.app.tar.gz"
-  echo "Renamed: $(basename "$APP_TAR_GZ") → Kaitu_${VERSION}_universal.app.tar.gz"
+  cp "$APP_TAR_GZ" "$RELEASE_DIR/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
+  echo "Renamed: $(basename "$APP_TAR_GZ") → ${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
 fi
 
 APP_SIG=$(find "$BUNDLE_DIR" -name '*.app.tar.gz.sig' -maxdepth 1 2>/dev/null | head -1)
 if [ -n "$APP_SIG" ]; then
-  cp "$APP_SIG" "$RELEASE_DIR/Kaitu_${VERSION}_universal.app.tar.gz.sig"
-  echo "Renamed: $(basename "$APP_SIG") → Kaitu_${VERSION}_universal.app.tar.gz.sig"
+  cp "$APP_SIG" "$RELEASE_DIR/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig"
+  echo "Renamed: $(basename "$APP_SIG") → ${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig"
 fi
 
 # --- Summary ---
