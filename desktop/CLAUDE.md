@@ -22,8 +22,8 @@ yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows 
 
 Build-time 烘焙，与 webapp 同一契约：`BRAND=overleap make build-macos`（Makefile
 `BRAND ?= kaitu` → `export K2_BRAND`）。三层生效：webapp dist（`__K2_BRAND__`）、
-Rust `cfg(brand_overleap)`（build.rs 发 cfg；channel.rs updater 端点 / 桌面日志目录 /
-updater 回退路径编译期分叉——另一品牌 URL 不进二进制）、Tauri
+Rust `cfg(brand_overleap)`（build.rs 发 cfg；updater 端点（channel.rs）/ 桌面日志目录（main.rs）/
+updater 回退路径（updater.rs）编译期分叉——另一品牌 URL 不进二进制）、Tauri
 `--config src-tauri/tauri.conf.overleap.json`（productName/identifier/icon/entitlements/
 updater endpoints；**合并时数组整体替换，overlay 里数组字段必须写全量**）。
 
