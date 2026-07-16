@@ -35,16 +35,29 @@ esac
 # the path patterns above (narrowed to CDN path segments, not bare brand
 # words) — dex class/package names must not trip this guard.
 FAIL=0
-if grep -rEil --binary-files=without-match "$FORBIDDEN" "$SCAN" \
-     --exclude-dir='K2Mobile.xcframework' --exclude-dir='Frameworks' --exclude='lib*.so' 2>/dev/null | head -5 | grep .; then
+# Captured into a variable (not tested directly as a pipeline) because under
+# `set -o pipefail`, `head -5` closing its stdin early after 5 matches sends
+# SIGPIPE to the producer `grep -rEil`. If the killed producer's exit status
+# (141) is the pipeline's rightmost non-zero status, the `if` sees failure
+# and this branch is skipped even though matches were found — reporting
+# "PURITY OK" over mass leaks. Capturing first (with `|| true` swallowing the
+# whole pipeline's exit status) and testing the captured string sidesteps this.
+MATCHES=$(grep -rEil --binary-files=without-match "$FORBIDDEN" "$SCAN" \
+     --exclude-dir='K2Mobile.xcframework' --exclude-dir='Frameworks' --exclude='lib*.so' 2>/dev/null | head -5 || true)
+if [ -n "$MATCHES" ]; then
+  printf '%s\n' "$MATCHES" >&2
   echo "PURITY FAIL ($BRAND): text matches above" >&2
   FAIL=1
 fi
 while IFS= read -r BIN; do
-  if strings "$BIN" 2>/dev/null | grep -Ei -m1 "$FORBIDDEN" >/dev/null; then
+  # Same capture-first fix: `grep -m1` exits as soon as it sees a match,
+  # which can SIGPIPE the still-writing `strings` producer and make the
+  # pipeline's pipefail-visible status non-zero (failure) even on a match.
+  FOUND=$(strings "$BIN" 2>/dev/null | grep -Ei -m1 "$FORBIDDEN" || true)
+  if [ -n "$FOUND" ]; then
     echo "PURITY FAIL ($BRAND): $(basename "$BIN")" >&2
     FAIL=1
   fi
-done < <(find "$SCAN" \( -name 'classes*.dex' -o -path '*/MacOS/*' -o -name "$(basename "${SCAN%.app}")" \) -type f 2>/dev/null)
+done < <(find "$SCAN" \( -name 'classes*.dex' -o -path '*/MacOS/*' -o -name 'resources.arsc' -o -name "$(basename "${SCAN%.app}")" \) -type f 2>/dev/null)
 [ "$FAIL" = 0 ] && echo "PURITY OK ($BRAND): $TARGET"
 exit "$FAIL"

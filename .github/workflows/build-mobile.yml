@@ -65,7 +65,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        brand: [kaitu, overleap]
+        # Overleap iOS leg is red until Phase-0 ops lands: ASC has no
+        # io.overleap bundle id / App Group / NE capability yet, and the
+        # runner has no matching provisioning profiles, so the build would
+        # fail loudly on every push. Gate it behind repo variable
+        # OVERLEAP_MOBILE_CI so `main` stays green in the meantime. `vars` IS
+        # available in a matrix expression (job-level `if:` cannot see
+        # `matrix`, which is why this lives here instead). Flip
+        # OVERLEAP_MOBILE_CI to "true" in repo Settings > Variables once (a)
+        # CI secret OVERLEAP_ANDROID_STORE_PASSWORD exists (Android leg,
+        # separate job below), (b) ASC has io.overleap bundle ids + App Group
+        # + NE capability, and (c) provisioning profiles are installed on the
+        # runner (or fetched via `xcrun devicectl`/Fastlane match in this job).
+        brand: ${{ vars.OVERLEAP_MOBILE_CI == 'true' && fromJSON('["kaitu","overleap"]') || fromJSON('["kaitu"]') }}
 
     steps:
       - name: Checkout repository
@@ -281,7 +293,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        brand: [kaitu, overleap]
+        # Overleap Android leg is red until Phase-0 ops lands: CI secret
+        # OVERLEAP_ANDROID_STORE_PASSWORD isn't populated yet, so the
+        # keystore decrypt step below would fail on every push. Gate it
+        # behind repo variable OVERLEAP_MOBILE_CI so `main` stays green in
+        # the meantime — same switch and same milestone as the iOS leg in
+        # build-ios above (kept as two separate matrix expressions since
+        # `vars` isn't shared context across jobs). Flip OVERLEAP_MOBILE_CI
+        # to "true" in repo Settings > Variables once (a) that secret is
+        # populated, (b) ASC has io.overleap bundle ids + App Group + NE
+        # capability (iOS leg), and (c) provisioning profiles are on the
+        # iOS runner.
+        brand: ${{ vars.OVERLEAP_MOBILE_CI == 'true' && fromJSON('["kaitu","overleap"]') || fromJSON('["kaitu"]') }}
 
     steps:
       - name: Checkout repository

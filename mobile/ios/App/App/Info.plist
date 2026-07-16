@@ -30,6 +30,8 @@
     <string>$(K2_CDN_FALLBACK)</string>
     <key>K2VpnDisplayName</key>
     <string>$(K2_VPN_DISPLAY_NAME)</string>
+    <key>K2AppStoreURL</key>
+    <string>$(K2_APP_STORE_URL)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UILaunchStoryboardName</key>

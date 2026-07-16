@@ -22,7 +22,7 @@
         <string>$(PRODUCT_MODULE_NAME).PacketTunnelProvider</string>
     </dict>
     <key>CFBundleDisplayName</key>
-    <string>$(K2_DISPLAY_NAME)</string>
+    <string>$(K2_VPN_DISPLAY_NAME)</string>
     <key>K2AppGroup</key>
     <string>$(K2_APP_GROUP)</string>
 </dict>

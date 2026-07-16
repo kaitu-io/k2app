@@ -61,7 +61,14 @@ fi
 
 # 2) binary strings — check every Mach-O/PE in the bundle
 while IFS= read -r BIN; do
-  if strings "$BIN" 2>/dev/null | grep -Ei -m1 "$FORBIDDEN" >/dev/null; then
+  # Capture first, don't test the pipeline directly: under `set -o pipefail`,
+  # `grep -m1` exiting as soon as it matches can SIGPIPE the still-writing
+  # `strings` producer, and that producer's non-zero (141) exit status can be
+  # the pipeline's pipefail-visible status — making `if` see failure even
+  # though a match was found (mass leaks would report "PURITY OK"). See
+  # scripts/check-mobile-brand-purity.sh for the same fix and full rationale.
+  FOUND=$(strings "$BIN" 2>/dev/null | grep -Ei -m1 "$FORBIDDEN" || true)
+  if [ -n "$FOUND" ]; then
     echo "PURITY FAIL ($BRAND): $(basename "$BIN") contains forbidden pattern: $FORBIDDEN" >&2
     strings "$BIN" | grep -Ei "$FORBIDDEN" | head -5 >&2
     FAIL=1

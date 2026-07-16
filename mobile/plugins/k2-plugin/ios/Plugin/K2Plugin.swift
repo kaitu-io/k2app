@@ -69,7 +69,10 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     private var iosManifestEndpoints: [String] {
         ["\(cdnPrimary)/ios/latest.json", "\(cdnFallback)/ios/latest.json"]
     }
-    private let appStoreURL = "https://apps.apple.com/app/id6448744655"
+    // App Store URL from Info.plist (baked by brand-active.xcconfig at build
+    // time). Overleap has no listing yet (Phase 0) and resolves to "" —
+    // treated as absent at both call sites below, never surfaced as a dead link.
+    private let appStoreURL = Bundle.main.object(forInfoDictionaryKey: "K2AppStoreURL") as? String ?? "https://apps.apple.com/app/id6448744655"
 
     /// Real semantic version (e.g. "0.4.0-beta.3") embedded at build time via K2_APP_VERSION.
     /// Falls back to CFBundleShortVersionString for dev builds (where K2_APP_VERSION is unset).
@@ -459,11 +462,13 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     "available": true,
                     "version": remoteVersion
                 ]
-                if let appstoreUrl = json["appstore_url"] as? String {
+                if let appstoreUrl = json["appstore_url"] as? String, !appstoreUrl.isEmpty {
                     result["url"] = appstoreUrl
-                } else {
+                } else if !self.appStoreURL.isEmpty {
                     result["url"] = self.appStoreURL
                 }
+                // else: no manifest URL and no brand App Store URL (overleap,
+                // pre-Phase-0) — omit "url" rather than surface an empty string.
                 let finalResult = result
                 await MainActor.run { call.resolve(finalResult) }
             } else {
@@ -1112,12 +1117,18 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let remoteVersion = json["version"] as? String {
                     if isNewerVersion(remoteVersion, than: appVersion) {
-                        let storeUrl = (json["appstore_url"] as? String) ?? appStoreURL
-                        await MainActor.run {
-                            self.notifyListeners("nativeUpdateAvailable", data: [
-                                "version": remoteVersion,
-                                "appStoreUrl": storeUrl
-                            ])
+                        let manifestUrl = json["appstore_url"] as? String
+                        let storeUrl = (manifestUrl?.isEmpty == false ? manifestUrl! : nil) ?? appStoreURL
+                        // No manifest URL and no brand App Store URL (overleap,
+                        // pre-Phase-0): skip the notification rather than point
+                        // the "update available" UI at a dead empty-string link.
+                        if !storeUrl.isEmpty {
+                            await MainActor.run {
+                                self.notifyListeners("nativeUpdateAvailable", data: [
+                                    "version": remoteVersion,
+                                    "appStoreUrl": storeUrl
+                                ])
+                            }
                         }
                     }
                 }

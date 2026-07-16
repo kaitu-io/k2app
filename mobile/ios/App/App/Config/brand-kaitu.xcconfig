@@ -5,3 +5,4 @@ K2_DISPLAY_NAME = 开途
 K2_CDN_PRIMARY = https:/$()/d13jc1jqzlg4yt.cloudfront.net/kaitu
 K2_CDN_FALLBACK = https:/$()/d0.all7.cc/kaitu
 K2_VPN_DISPLAY_NAME = kaitu.io
+K2_APP_STORE_URL = https:/$()/apps.apple.com/app/id6448744655

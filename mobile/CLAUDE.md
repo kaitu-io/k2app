@@ -92,9 +92,19 @@ stale overleap APK once shipped `"appId":"io.kaitu"` in
 
 - `brand-{kaitu,overleap}.xcconfig` (under `ios/App/App/Config/`) define
   `K2_BUNDLE_ID` / `K2_APP_GROUP` / `K2_DISPLAY_NAME` / `K2_CDN_PRIMARY` /
-  `K2_CDN_FALLBACK` / `K2_VPN_DISPLAY_NAME`. `scripts/apply-ios-brand.sh
-  <brand>` copies the selected one to `brand-active.xcconfig` — the committed
-  content of `brand-active.xcconfig` is always the kaitu fallback.
+  `K2_CDN_FALLBACK` / `K2_VPN_DISPLAY_NAME` / `K2_APP_STORE_URL`.
+  `scripts/apply-ios-brand.sh <brand>` copies the selected one to
+  `brand-active.xcconfig` — the committed content of `brand-active.xcconfig`
+  is always the kaitu fallback.
+- `K2_APP_STORE_URL`: kaitu's is the live listing
+  (`https://apps.apple.com/app/id6448744655`); overleap's is **empty** — no
+  App Store listing exists yet (Phase 0). Empty resolves to an empty string
+  in Info.plist, and `K2Plugin.swift` treats empty as absent at both call
+  sites (native-update check and cold-start auto-check) rather than
+  surfacing a dead link. Distinct from `OVERLEAP_APPSTORE_URL`, which feeds
+  `scripts/publish-mobile.sh`'s manifest `appstore_url` field — same
+  Phase-0 milestone unblocks both, but they're two different mechanisms
+  (build-time xcconfig vs. publish-time env var).
 - Wrapper configs (`App-Base-{Debug,Release}.xcconfig`,
   `PacketTunnelExtension-Base-*.xcconfig`) `#include` both the
   CocoaPods-generated xcconfig *and* `brand-active.xcconfig` — this is the
@@ -118,15 +128,16 @@ stale overleap APK once shipped `"appId":"io.kaitu"` in
 ### iOS derivation iron rule
 
 - Swift reads brand values from `Info.plist` keys `K2AppGroup` /
-  `K2CDNPrimary` / `K2CDNFallback` / `K2VpnDisplayName` (populated from the
-  xcconfig `K2_*` vars via Info.plist `$(K2_APP_GROUP)`-style substitution).
+  `K2CDNPrimary` / `K2CDNFallback` / `K2VpnDisplayName` / `K2AppStoreURL`
+  (populated from the xcconfig `K2_*` vars via Info.plist `$(K2_APP_GROUP)`-style
+  substitution). `K2AppStoreURL` is main-app-only — the NE doesn't need it.
 - The NE's bundle id is derived as `Bundle.main.bundleIdentifier +
   ".ThePacketTunnel"` — **only in the main app process** (`K2Plugin.swift`).
   `PacketTunnelProvider.swift` (the NE process) never derives this; it reads
   its own `Bundle.main.bundleIdentifier` directly.
 - Every `?? ` fallback literal across `K2Plugin.swift` / `AppDelegate.swift` /
   `PacketTunnelProvider.swift` (`group.io.kaitu`, `kaitu.io`,
-  `com.allnationconnect.anc.wgios`, the CDN URLs) is intentionally the
+  `com.allnationconnect.anc.wgios`, the CDN URLs, the App Store URL) is intentionally the
   **pre-split kaitu value** — `loadVPNManager()` removes any NE config whose
   `providerBundleIdentifier` / `localizedDescription` doesn't match, so a
   derived value that drifts even slightly from the legacy literal wipes live

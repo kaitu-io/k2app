@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Stage iOS brand: xcconfig + localized display names + app icon + storekit.
+# Stage iOS brand: xcconfig + localized display names + app icon.
+# StoreKit configs (Kaitu.storekit / Overleap.storekit) are static per-brand
+# files, not staged by this script — see mobile/CLAUDE.md "iOS" section.
 # Usage: apply-ios-brand.sh <kaitu|overleap>
 BRAND="${1:?usage: $0 <kaitu|overleap>}"
 case "$BRAND" in kaitu|overleap) ;; *) echo "brand must be kaitu|overleap" >&2; exit 1 ;; esac
