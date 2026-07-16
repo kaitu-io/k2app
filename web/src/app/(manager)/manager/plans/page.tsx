@@ -83,7 +83,7 @@ export default function PlansPage() {
   const [pageCount, setPageCount] = useState(0);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
-  const [pageSize] = useState(10);
+  const [pageSize] = useState(50);
   const [isLoading, setIsLoading] = useState(false);
 
   // 对话框状态
@@ -236,8 +236,9 @@ export default function PlansPage() {
   const fetchPlans = async () => {
     setIsLoading(true);
     try {
+      // 后端分页为 1-based，前端 page state 为 0-based，请求时 +1 转换
       const response = await api.request<PlanListResponse>(
-        `/app/plans?page=${page}&pageSize=${pageSize}`
+        `/app/plans?page=${page + 1}&pageSize=${pageSize}`
       );
 
       setData(response.items || []);

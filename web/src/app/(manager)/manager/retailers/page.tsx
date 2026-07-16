@@ -287,7 +287,7 @@ export default function RetailersPage() {
       setIsLoading(true);
       try {
         const result = await api.getRetailers({
-          page,
+          page: page + 1, // 后端 1-based，前端 0-based
           pageSize,
           email: email || undefined,
           level: level ? parseInt(level, 10) : undefined,

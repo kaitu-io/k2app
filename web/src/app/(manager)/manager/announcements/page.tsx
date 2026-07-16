@@ -80,7 +80,7 @@ const initialForm: AnnouncementRequest = {
 export default function AnnouncementsPage() {
   const [announcements, setAnnouncements] = useState<AnnouncementResponse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0 });
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 50, total: 0 });
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);

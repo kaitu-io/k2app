@@ -165,7 +165,7 @@ export default function EmailTemplatesPage() {
     getPaginationRowModel: getPaginationRowModel(),
     initialState: {
       pagination: {
-        pageSize: 10,
+        pageSize: 50,
       },
     },
   });
