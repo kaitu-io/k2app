@@ -225,8 +225,23 @@ fi
 # For beta versions, we write ios/beta/latest.json (unused but consistent).
 # For stable versions, we write both ios/latest.json and ios/beta/latest.json.
 
+IOS_SKIPPED=false
 if [ "$PLATFORM" != "android" ] && [ -z "$APPSTORE_URL" ]; then
     echo "WARN: overleap App Store listing not yet live (OVERLEAP_APPSTORE_URL unset) — skipping ios manifest."
+    if [ "$PLATFORM" = "ios" ]; then
+        # iOS was the ONLY thing requested — nothing at all will be
+        # published, so stop here. Running on would leak the PLATFORM
+        # override into the CDN invalidation (firing /${BRAND}/android/*
+        # for a run that wrote nothing) and print a false success line.
+        # exit 0: this is an expected pending-Phase-0 state, not an error —
+        # CI matrix legs must stay green.
+        echo "Nothing published (overleap iOS manifest skipped — OVERLEAP_APPSTORE_URL unset)."
+        exit 0
+    fi
+    # Both platforms requested: android half still publishes below; the
+    # override narrows the rest of the run (incl. CDN paths) to android,
+    # which is exactly what was actually published.
+    IOS_SKIPPED=true
     PLATFORM="android"
 fi
 
@@ -272,6 +287,9 @@ if [ "$DRY_RUN" = false ] && ! use_local; then
 fi
 
 PLATFORM_LABEL="${PLATFORM:-mobile}"
+if [ "$IOS_SKIPPED" = true ]; then
+    PLATFORM_LABEL="android (ios manifest skipped — OVERLEAP_APPSTORE_URL unset)"
+fi
 echo ""
 if [ "$CHANNEL" = "beta" ]; then
     echo "Published ${PLATFORM_LABEL} v${VERSION} beta manifests successfully."
