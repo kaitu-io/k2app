@@ -18,6 +18,35 @@ yarn tauri build --target universal-apple-darwin  # macOS build
 yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows cross-build from macOS
 ```
 
+## Brand (双品牌: kaitu / overleap)
+
+Build-time 烘焙，与 webapp 同一契约：`BRAND=overleap make build-macos`（Makefile
+`BRAND ?= kaitu` → `export K2_BRAND`）。三层生效：webapp dist（`__K2_BRAND__`）、
+Rust `cfg(brand_overleap)`（build.rs 发 cfg；channel.rs updater 端点 / 桌面日志目录 /
+updater 回退路径编译期分叉——另一品牌 URL 不进二进制）、Tauri
+`--config src-tauri/tauri.conf.overleap.json`（productName/identifier/icon/entitlements/
+updater endpoints；**合并时数组整体替换，overlay 里数组字段必须写全量**）。
+
+- 产物命名 `Overleap_{VERSION}_{ARCH}.{EXT}`；S3/CDN 路径段 `/overleap/desktop/`；
+  latest.json 双份、独立 GitHub Release tag `overleap-v{VERSION}`
+  （`scripts/publish-desktop.sh --brand=overleap`）。
+- **k2 daemon 品牌中立**：1777 端口、launchd label `kaitu`（`k2/cmd/k2/service_darwin.go`）、
+  NSIS `SERVICE_NAME "kaitu"` 不随品牌变。两品牌同机共存 = last-install-wins 接管
+  daemon，双方 app 都能控制 VPN。
+- 纯度守卫 `scripts/check-desktop-brand-purity.sh <brand> <path>`：webapp 资源 +
+  二进制 strings（k2 sidecar 与裸 `kaitu` 内部 token——`kaitu-icon://` scheme、HKDF
+  盐、S3 桶、上面的 service name——豁免）；`.app.tar.gz` 目标额外按**内容**（`tar tzf`
+  顶层 `.app` 目录名）而非文件名校验——两品牌共享同一 Tauri bundle 目录，naive
+  `find *.app.tar.gz | head -1` 式收集会按字母序（Kaitu < Overleap）拿到上一次 kaitu
+  构建残留的 tar.gz，产物文件名对但内容是另一品牌（曾实际发生，见 commit
+  `813bf3f5`）。`build-macos.sh` 现在按品牌精确路径收集，且收集后立即跑这道门。
+- 递归 `make` 只透传 `K2_BRAND`（导出的 env），不透传 `BRAND`（make 变量本身）——脚本里
+  任何裸 `make build-webapp` 调用都会被子 make 进程自己的 `BRAND ?= kaitu` 吃掉、
+  静默改回 kaitu，必须写成 `make build-webapp BRAND=$BRAND`（见 commit `dd2d8608`）。
+- 签名主体（Developer ID / SimplySign / notarize 账号）与 updater minisign 密钥两品牌
+  共用——已拍板的品牌泄漏点，不再讨论。
+- overleap 图标是占位紫（`yarn tauri icon` 重跑即换正式稿）；NSIS 语言 overleap 仅 English。
+
 ## Rust Modules (`src-tauri/src/`)
 
 - **main.rs** — App setup: localhost plugin (14580), single-instance, process, updater, opener, clipboard-manager plugins. Wires tray + service + updater in setup closure. `RunEvent::ExitRequested` handler auto-applies pending updates.
