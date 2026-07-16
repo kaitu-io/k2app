@@ -26,12 +26,17 @@ jobs:
   # --- Plan: decide which desktop platforms (if any) this run targets ---
   #
   # Single source of truth for "does this tag belong to me, and if so, which
-  # matrix entries should I build". Bare v* (no suffix) → all five (macOS and
-  # Windows each fan out kaitu+overleap; Linux is kaitu-only — no overleap
-  # channel there, see scripts/ci/upload-release.sh); -desktop → same five;
-  # -windows/-macos → that platform's two brand entries; -linux → the single
-  # Linux/kaitu entry; anything else → none (workflow-skipped, no
-  # false-positive failure).
+  # matrix entries should I build". Brands trigger independently — a kaitu
+  # suffix never builds overleap and vice versa:
+  #   bare v* / -desktop → MAC_KAITU + WIN_KAITU + LIN (kaitu-only; Linux has
+  #     no overleap channel, see scripts/ci/upload-release.sh)
+  #   -windows            → WIN_KAITU only
+  #   -macos              → MAC_KAITU only
+  #   -linux              → LIN (unchanged)
+  #   -overleap           → MAC_OVERLEAP + WIN_OVERLEAP (opt-in, both platforms)
+  #   -overleap-windows   → WIN_OVERLEAP only
+  #   -overleap-macos     → MAC_OVERLEAP only
+  #   anything else       → none (workflow-skipped, no false-positive failure)
   #
   # The dynamic matrix output is consumed verbatim by the `release` job. We
   # use dynamic matrix instead of a job-level `if: ... matrix.X ...` because
@@ -66,13 +71,23 @@ jobs:
           # `gh workflow run --ref v0.4.4-windows` honors the suffix.
           # Unknown suffix → empty (workflow run skips) so unrelated tags
           # like v*-foo never spawn matrix entries.
+          #
+          # bash `case` takes the first match top-to-bottom, and
+          # `-overleap-windows`/`-overleap-macos` are also valid suffixes of
+          # the plain `-windows`/`-macos` patterns — so the three overleap
+          # patterns MUST stay ordered before their kaitu counterparts, or
+          # e.g. `v0.4.7-overleap-windows` would match `*-windows` first and
+          # silently build the wrong brand.
           case "$REF_NAME" in
-            *-windows)  INCLUDE=("$WIN_KAITU" "$WIN_OVERLEAP") ;;
-            *-macos)    INCLUDE=("$MAC_KAITU" "$MAC_OVERLEAP") ;;
-            *-linux)    INCLUDE=("$LIN") ;;
-            *-desktop)  INCLUDE=("$MAC_KAITU" "$MAC_OVERLEAP" "$WIN_KAITU" "$WIN_OVERLEAP" "$LIN") ;;
-            *-*)        INCLUDE=() ;;
-            *)          INCLUDE=("$MAC_KAITU" "$MAC_OVERLEAP" "$WIN_KAITU" "$WIN_OVERLEAP" "$LIN") ;;
+            *-overleap-windows) INCLUDE=("$WIN_OVERLEAP") ;;
+            *-overleap-macos)   INCLUDE=("$MAC_OVERLEAP") ;;
+            *-overleap)         INCLUDE=("$MAC_OVERLEAP" "$WIN_OVERLEAP") ;;
+            *-windows)          INCLUDE=("$WIN_KAITU") ;;
+            *-macos)            INCLUDE=("$MAC_KAITU") ;;
+            *-linux)            INCLUDE=("$LIN") ;;
+            *-desktop)          INCLUDE=("$MAC_KAITU" "$WIN_KAITU" "$LIN") ;;
+            *-*)                INCLUDE=() ;;
+            *)                  INCLUDE=("$MAC_KAITU" "$WIN_KAITU" "$LIN") ;;
           esac
 
           if [[ ${#INCLUDE[@]} -eq 0 ]]; then
@@ -319,7 +334,16 @@ jobs:
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           # Strip only the suffixes this workflow owns. The job-level `if`
           # already guarantees we only run on bare / -windows / -macos /
-          # -linux / -desktop tags.
+          # -linux / -desktop / -overleap / -overleap-windows /
+          # -overleap-macos tags.
+          #
+          # Order matters: `-overleap-windows`/`-overleap-macos` must be
+          # stripped before the plain `-windows`/`-macos` patterns, since
+          # `%-windows` would otherwise match the tail of
+          # `-overleap-windows` first and leave a dangling `-overleap`.
+          TAG_VERSION="${TAG_VERSION%-overleap-windows}"
+          TAG_VERSION="${TAG_VERSION%-overleap-macos}"
+          TAG_VERSION="${TAG_VERSION%-overleap}"
           TAG_VERSION="${TAG_VERSION%-desktop}"
           TAG_VERSION="${TAG_VERSION%-windows}"
           TAG_VERSION="${TAG_VERSION%-macos}"
