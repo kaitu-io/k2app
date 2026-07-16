@@ -1,0 +1,7 @@
+// kaitu brand — values MUST equal the pre-split hardcoded ones (live users).
+K2_BUNDLE_ID = com.allnationconnect.anc.wgios
+K2_APP_GROUP = group.io.kaitu
+K2_DISPLAY_NAME = 开途
+K2_CDN_PRIMARY = https:/$()/d13jc1jqzlg4yt.cloudfront.net/kaitu
+K2_CDN_FALLBACK = https:/$()/d0.all7.cc/kaitu
+K2_VPN_DISPLAY_NAME = kaitu.io

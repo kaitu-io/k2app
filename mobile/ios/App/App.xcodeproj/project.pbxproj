@@ -100,6 +100,13 @@
 		E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NEHelpersTests.swift; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
 		FF10000000000000000000A2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		BEEF00000000000000000001 /* brand-kaitu.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "brand-kaitu.xcconfig"; sourceTree = "<group>"; };
+		BEEF00000000000000000002 /* brand-overleap.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "brand-overleap.xcconfig"; sourceTree = "<group>"; };
+		BEEF00000000000000000003 /* brand-active.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "brand-active.xcconfig"; sourceTree = "<group>"; };
+		BEEF00000000000000000014 /* App-Base-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "App-Base-Debug.xcconfig"; sourceTree = "<group>"; };
+		BEEF00000000000000000015 /* App-Base-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "App-Base-Release.xcconfig"; sourceTree = "<group>"; };
+		BEEF00000000000000000016 /* PacketTunnelExtension-Base-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "PacketTunnelExtension-Base-Debug.xcconfig"; sourceTree = "<group>"; };
+		BEEF00000000000000000017 /* PacketTunnelExtension-Base-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "PacketTunnelExtension-Base-Release.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -192,6 +199,7 @@
 			isa = PBXGroup;
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
+				BEEF00000000000000000006 /* Config */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				AB10000000000000000000F2 /* AppBridgeViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -223,6 +231,20 @@
 				D08300DE0A8C33C607A9BC3E /* Foundation.framework */,
 			);
 			name = iOS;
+			sourceTree = "<group>";
+		};
+		BEEF00000000000000000006 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				BEEF00000000000000000003 /* brand-active.xcconfig */,
+				BEEF00000000000000000001 /* brand-kaitu.xcconfig */,
+				BEEF00000000000000000002 /* brand-overleap.xcconfig */,
+				BEEF00000000000000000014 /* App-Base-Debug.xcconfig */,
+				BEEF00000000000000000015 /* App-Base-Release.xcconfig */,
+				BEEF00000000000000000016 /* PacketTunnelExtension-Base-Debug.xcconfig */,
+				BEEF00000000000000000017 /* PacketTunnelExtension-Base-Release.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -611,9 +633,9 @@
 		};
 		504EC3171FED79650016851F /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */;
+			baseConfigurationReference = BEEF00000000000000000014 /* App-Base-Debug.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(K2_APP_ICON:default=AppIcon)";
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -628,7 +650,7 @@
 				);
 				MARKETING_VERSION = 0.4.6;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
-				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(K2_BUNDLE_ID)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -639,9 +661,9 @@
 		};
 		504EC3181FED79650016851F /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */;
+			baseConfigurationReference = BEEF00000000000000000015 /* App-Base-Release.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(K2_APP_ICON:default=AppIcon)";
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -655,7 +677,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.4.6;
-				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(K2_BUNDLE_ID)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
@@ -666,6 +688,7 @@
 		};
 		AEC589AB92CFE120D68CC2E4 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = BEEF00000000000000000003 /* brand-active.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_OBJC_WEAK = NO;
@@ -674,7 +697,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios.K2Tests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(K2_BUNDLE_ID).K2Tests";
 				PRODUCT_NAME = K2Tests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
@@ -685,7 +708,7 @@
 		};
 		B63896E443B09FCD01547F0B /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = D37F6F07B15C96C61F3681FF /* Pods-PacketTunnelExtension.release.xcconfig */;
+			baseConfigurationReference = BEEF00000000000000000017 /* PacketTunnelExtension-Base-Release.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = PacketTunnelExtension/PacketTunnelExtension.entitlements;
@@ -702,7 +725,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.4.6;
-				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios.ThePacketTunnel;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(K2_BUNDLE_ID).ThePacketTunnel";
 				PRODUCT_NAME = PacketTunnelExtension;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
@@ -714,7 +737,7 @@
 		};
 		CF789D2994406C697F2FBAE3 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 1BA01B94F08FAC328D94CDED /* Pods-PacketTunnelExtension.debug.xcconfig */;
+			baseConfigurationReference = BEEF00000000000000000016 /* PacketTunnelExtension-Base-Debug.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = PacketTunnelExtension/PacketTunnelExtension.entitlements;
@@ -731,7 +754,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.4.6;
-				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios.ThePacketTunnel;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(K2_BUNDLE_ID).ThePacketTunnel";
 				PRODUCT_NAME = PacketTunnelExtension;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
@@ -742,6 +765,7 @@
 		};
 		D89B5B833DB4537D7BF8F407 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = BEEF00000000000000000003 /* brand-active.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_OBJC_WEAK = NO;
@@ -750,7 +774,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios.K2Tests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(K2_BUNDLE_ID).K2Tests";
 				PRODUCT_NAME = K2Tests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;

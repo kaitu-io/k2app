@@ -1,0 +1,4 @@
+// Base config for the PacketTunnelExtension (NE) target (Debug) — see
+// App-Base-Debug.xcconfig for why this indirection exists.
+#include "../../Pods/Target Support Files/Pods-PacketTunnelExtension/Pods-PacketTunnelExtension.debug.xcconfig"
+#include "brand-active.xcconfig"

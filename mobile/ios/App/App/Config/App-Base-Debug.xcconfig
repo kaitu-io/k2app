@@ -1,0 +1,7 @@
+// Base config for the App target (Debug): chains in the CocoaPods-generated
+// xcconfig plus the brand variables. This file, not brand-active.xcconfig
+// directly, is the App/Debug baseConfigurationReference so `pod install` keeps
+// working — CocoaPods refuses to overwrite a custom baseConfigurationReference,
+// but is satisfied once it sees its own xcconfig #include'd here.
+#include "../../Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"
+#include "brand-active.xcconfig"

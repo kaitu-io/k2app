@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>zh-CN</string>
     <key>CFBundleDisplayName</key>
-    <string>开途</string>
+    <string>$(K2_DISPLAY_NAME)</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -22,6 +22,14 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>K2AppVersion</key>
     <string>$(K2_APP_VERSION)</string>
+    <key>K2AppGroup</key>
+    <string>$(K2_APP_GROUP)</string>
+    <key>K2CDNPrimary</key>
+    <string>$(K2_CDN_PRIMARY)</string>
+    <key>K2CDNFallback</key>
+    <string>$(K2_CDN_FALLBACK)</string>
+    <key>K2VpnDisplayName</key>
+    <string>$(K2_VPN_DISPLAY_NAME)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UILaunchStoryboardName</key>

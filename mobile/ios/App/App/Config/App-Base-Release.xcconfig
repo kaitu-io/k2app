@@ -1,0 +1,3 @@
+// Base config for the App target (Release) — see App-Base-Debug.xcconfig.
+#include "../../Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"
+#include "brand-active.xcconfig"

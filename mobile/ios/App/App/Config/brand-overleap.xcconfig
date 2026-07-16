@@ -1,0 +1,7 @@
+// overleap brand
+K2_BUNDLE_ID = io.overleap
+K2_APP_GROUP = group.io.overleap
+K2_DISPLAY_NAME = Overleap
+K2_CDN_PRIMARY = https:/$()/d13jc1jqzlg4yt.cloudfront.net/overleap
+K2_CDN_FALLBACK = https:/$()/d0.all7.cc/overleap
+K2_VPN_DISPLAY_NAME = Overleap

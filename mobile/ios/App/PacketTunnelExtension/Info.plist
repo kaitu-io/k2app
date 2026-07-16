@@ -20,8 +20,8 @@
         <string>$(PRODUCT_MODULE_NAME).PacketTunnelProvider</string>
     </dict>
     <key>CFBundleDisplayName</key>
-    <string>kaitu.io</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.allnationconnect.anc.wgios.ThePacketTunnel</string>
+    <string>$(K2_DISPLAY_NAME)</string>
+    <key>K2AppGroup</key>
+    <string>$(K2_APP_GROUP)</string>
 </dict>
 </plist>
