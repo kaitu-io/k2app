@@ -270,7 +270,7 @@ pub async fn apply_update_now(app: AppHandle) -> Result<(), String> {
         return Err("No update available".to_string());
     }
     // macOS: pre-install service before restart to avoid second password prompt.
-    // The new k2 binary is already at /Applications/Kaitu.app/Contents/MacOS/k2.
+    // The new k2 binary is already at the installed .app bundle's Contents/MacOS/k2.
     // If this fails (user cancels, etc.), ensure_service_running handles it after restart.
     #[cfg(target_os = "macos")]
     {
@@ -562,7 +562,12 @@ fn resolve_app_bundle_path() -> PathBuf {
                 None
             }
         })
-        .unwrap_or_else(|| PathBuf::from("/Applications/Kaitu.app"))
+        .unwrap_or_else(|| {
+            #[cfg(brand_overleap)]
+            { PathBuf::from("/Applications/Overleap.app") }
+            #[cfg(not(brand_overleap))]
+            { PathBuf::from("/Applications/Kaitu.app") }
+        })
 }
 
 /// Build the shell script that polls for the old process to exit, then relaunches.

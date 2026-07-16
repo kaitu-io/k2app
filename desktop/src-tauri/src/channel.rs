@@ -13,16 +13,28 @@ const CHANNEL_FILE: &str = "update-channel";
 const STABLE: &str = "stable";
 const BETA: &str = "beta";
 
-// Stable endpoints (same as tauri.conf.json)
+// Stable/Beta endpoints (same as the active tauri.conf). Brand is baked at
+// compile time via cfg(brand_overleap) so the other brand's URLs never enter
+// the binary (desktop purity guard greps for them).
+#[cfg(not(brand_overleap))]
 const STABLE_ENDPOINTS: &[&str] = &[
     "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/cloudfront.latest.json",
     "https://d0.all7.cc/kaitu/desktop/d0.latest.json",
 ];
-
-// Beta endpoints (beta/ subdirectory)
+#[cfg(not(brand_overleap))]
 const BETA_ENDPOINTS: &[&str] = &[
     "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/beta/cloudfront.latest.json",
     "https://d0.all7.cc/kaitu/desktop/beta/d0.latest.json",
+];
+#[cfg(brand_overleap)]
+const STABLE_ENDPOINTS: &[&str] = &[
+    "https://d13jc1jqzlg4yt.cloudfront.net/overleap/desktop/cloudfront.latest.json",
+    "https://d0.all7.cc/overleap/desktop/d0.latest.json",
+];
+#[cfg(brand_overleap)]
+const BETA_ENDPOINTS: &[&str] = &[
+    "https://d13jc1jqzlg4yt.cloudfront.net/overleap/desktop/beta/cloudfront.latest.json",
+    "https://d0.all7.cc/overleap/desktop/beta/d0.latest.json",
 ];
 
 fn channel_file_path(app: &AppHandle) -> Option<PathBuf> {
@@ -149,6 +161,21 @@ mod tests {
         fs::write(&path, "  beta\n").unwrap();
         assert_eq!(read_channel_from_file(&path), "beta");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_endpoints_match_brand() {
+        let urls = endpoints_for_channel("stable").unwrap();
+        #[cfg(brand_overleap)]
+        {
+            assert!(urls[0].as_str().contains("/overleap/desktop/"));
+            assert!(!urls.iter().any(|u| u.as_str().contains("/kaitu/")));
+        }
+        #[cfg(not(brand_overleap))]
+        {
+            assert!(urls[0].as_str().contains("/kaitu/desktop/"));
+            assert!(!urls.iter().any(|u| u.as_str().contains("/overleap/")));
+        }
     }
 
 }

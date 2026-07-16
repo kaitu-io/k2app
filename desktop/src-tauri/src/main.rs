@@ -17,19 +17,27 @@ use std::path::PathBuf;
 use tauri::{Manager, RunEvent, WindowEvent};
 
 /// Desktop log directory — shared between log plugin and log_upload.
+/// Per-brand so two coexisting brand apps don't interleave their shell logs.
+/// (Daemon logs under /var/log/kaitu etc. belong to the brand-neutral k2
+/// service and are intentionally shared.)
 pub(crate) fn get_desktop_log_dir() -> PathBuf {
+    #[cfg(brand_overleap)]
+    const BRAND_DIR: &str = "overleap";
+    #[cfg(not(brand_overleap))]
+    const BRAND_DIR: &str = "kaitu";
+
     #[cfg(target_os = "macos")]
     {
         dirs::home_dir()
-            .map(|h| h.join("Library/Logs/kaitu"))
-            .unwrap_or_else(|| PathBuf::from("/tmp/kaitu"))
+            .map(|h| h.join("Library/Logs").join(BRAND_DIR))
+            .unwrap_or_else(|| PathBuf::from("/tmp").join(BRAND_DIR))
     }
 
     #[cfg(target_os = "windows")]
     {
         dirs::data_local_dir()
-            .map(|d| d.join("kaitu").join("logs"))
-            .unwrap_or_else(|| PathBuf::from(r"C:\temp\kaitu"))
+            .map(|d| d.join(BRAND_DIR).join("logs"))
+            .unwrap_or_else(|| PathBuf::from(r"C:\temp").join(BRAND_DIR))
     }
 
     // Tauri shell is macOS + Windows only. Linux ships the Go-embed
@@ -39,7 +47,7 @@ pub(crate) fn get_desktop_log_dir() -> PathBuf {
     // on Linux CI and other unsupported targets.
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        PathBuf::from("/tmp/kaitu")
+        PathBuf::from("/tmp").join(BRAND_DIR)
     }
 }
 

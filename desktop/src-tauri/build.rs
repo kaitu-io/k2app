@@ -1,4 +1,13 @@
 fn main() {
+    // Brand at compile time: K2_BRAND=overleap → cfg(brand_overleap).
+    // rerun-if-env-changed is load-bearing — without it, switching BRAND
+    // between builds reuses the stale-brand object files (串包二进制).
+    println!("cargo:rerun-if-env-changed=K2_BRAND");
+    println!("cargo::rustc-check-cfg=cfg(brand_overleap)");
+    if std::env::var("K2_BRAND").as_deref() == Ok("overleap") {
+        println!("cargo:rustc-cfg=brand_overleap");
+    }
+
     let mcp_cap_path = std::path::Path::new("capabilities/mcp-bridge.json");
 
     #[cfg(feature = "mcp-bridge")]
