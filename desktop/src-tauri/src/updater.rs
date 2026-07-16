@@ -683,8 +683,15 @@ mod tests {
         let path = resolve_app_bundle_path();
         assert!(!path.as_os_str().is_empty());
         // In test binary context, current_exe is not inside a .app bundle,
-        // so it falls back to /Applications/Kaitu.app
-        assert_eq!(path, PathBuf::from("/Applications/Kaitu.app"));
+        // so it falls back to the brand-appropriate default.
+        #[cfg(brand_overleap)]
+        {
+            assert_eq!(path, PathBuf::from("/Applications/Overleap.app"));
+        }
+        #[cfg(not(brand_overleap))]
+        {
+            assert_eq!(path, PathBuf::from("/Applications/Kaitu.app"));
+        }
     }
 
     #[cfg(target_os = "macos")]
