@@ -8,6 +8,17 @@ K2_BIN   = desktop/src-tauri/binaries
 FEATURES ?=
 TAURI_FEATURES_ARG := $(if $(FEATURES),--features $(FEATURES),)
 
+# --- Brand (双品牌: kaitu / overleap) ---
+# BRAND=overleap make build-macos 一条命令切品牌。K2_BRAND 是跨层契约名：
+# webapp Vite define __K2_BRAND__ 与 desktop build.rs/option_env! 都读它。
+BRAND ?= kaitu
+ifeq ($(filter $(BRAND),kaitu overleap),)
+$(error BRAND must be 'kaitu' or 'overleap', got '$(BRAND)')
+endif
+export K2_BRAND = $(BRAND)
+BRAND_PRODUCT := $(if $(filter overleap,$(BRAND)),Overleap,Kaitu)
+TAURI_CONFIG_ARG := $(if $(filter overleap,$(BRAND)),--config src-tauri/tauri.conf.overleap.json,)
+
 # Capacitor 7 Android targets require JDK 21. Honor caller's JAVA_HOME if it's
 # already 21.x (CI sets this via actions/setup-java); otherwise auto-detect a
 # brew-installed openjdk@21 locally. Leaves system-default JDK alone so other
@@ -149,14 +160,14 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	@if [ "$$(uname -s)" = "Darwin" ] || [ "$$(uname -s)" = "Linux" ]; then \
 		echo "--- Cross-compiling Windows from $$(uname -s) via cargo-xwin ---"; \
 		command -v cargo-xwin >/dev/null 2>&1 || { echo "ERROR: cargo-xwin not found. Install: cargo install --locked cargo-xwin"; exit 1; }; \
-		cd desktop && yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc $(TAURI_FEATURES_ARG); \
+		cd desktop && yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc $(TAURI_FEATURES_ARG) $(TAURI_CONFIG_ARG); \
 	else \
-		cd desktop && yarn tauri build --target x86_64-pc-windows-msvc $(TAURI_FEATURES_ARG); \
+		cd desktop && yarn tauri build --target x86_64-pc-windows-msvc $(TAURI_FEATURES_ARG) $(TAURI_CONFIG_ARG); \
 	fi
 	@echo "--- Collecting artifacts ---"
 	@mkdir -p release/$(VERSION)
-	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Kaitu_$(VERSION)_x64-setup.exe release/$(VERSION)/Kaitu_$(VERSION)_x64.exe
-	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Kaitu_$(VERSION)_x64-setup.exe.sig release/$(VERSION)/Kaitu_$(VERSION)_x64.exe.sig 2>/dev/null || true
+	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/$(BRAND_PRODUCT)_$(VERSION)_x64-setup.exe release/$(VERSION)/$(BRAND_PRODUCT)_$(VERSION)_x64.exe
+	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/$(BRAND_PRODUCT)_$(VERSION)_x64-setup.exe.sig release/$(VERSION)/$(BRAND_PRODUCT)_$(VERSION)_x64.exe.sig 2>/dev/null || true
 	@echo "=== Build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
