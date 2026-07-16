@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -145,6 +146,26 @@ func (e *Engine) Status() string {
 //   - FileDescriptor >= 0: mobile path (platform-provided TUN FD, DNS interception)
 //   - FileDescriptor < 0:  desktop path (self-created TUN or proxy provider)
 func (e *Engine) Start(cfg Config) error {
+	// Failure guard: from this call on, Start owns cfg.FileDescriptor (mobile:
+	// a dup'd TUN fd whose cleanup appext has already relinquished) and, once
+	// built, the provider wrapping it. Every failure return must release them —
+	// a leaked TUN fd keeps the platform VPN up routing into a dead tunnel
+	// (Android: the bypassable=false default route blackholes the whole device
+	// until the app process dies). Mirrors the missRep guard below: both
+	// locals are cleared at commit, making the defer a no-op on success.
+	// Runs lock-free: every return path unlocks e.mu first.
+	cleanupFD := cfg.FileDescriptor
+	var cleanupProv provider.Provider
+	defer func() {
+		if cleanupProv != nil {
+			cleanupProv.Close() // releases the FD, consumed by sing-tun or not
+		} else if cleanupFD > 0 {
+			// Provider not built yet — release the raw fd. os.NewFile keeps
+			// this portable (the path is unreachable on Windows).
+			_ = os.NewFile(uintptr(cleanupFD), "k2-tun-fd").Close()
+		}
+	}()
+
 	e.mu.Lock()
 	if e.state != StateDisconnected {
 		e.mu.Unlock()
@@ -301,6 +322,14 @@ func (e *Engine) Start(cfg Config) error {
 			IPv6Address:       client.Tun.IPv6,
 		})
 	}
+
+	if cfg.Provider == nil {
+		// Engine-created provider: the failure guard closes it (and the
+		// platform FD it wraps). External providers (gateway) keep their own
+		// pre-commit lifecycle — creator destroys.
+		cleanupProv = prov
+	}
+	cleanupFD = -1 // fd ownership (if any) now lives inside prov
 
 	slog.Debug("engine: step 6 - provider created", "provider", prov.Name(), "mode", client.Mode, "elapsed", time.Since(startTime))
 
@@ -496,6 +525,10 @@ func (e *Engine) Start(cfg Config) error {
 	if ctx.Err() != nil {
 		// Stop() was called during Start() — clean up ALL started resources.
 		// Order follows resource ownership: prov → tm → tunnel (same as Stop()).
+		// The explicit closes below preserve that order; neutralize the
+		// failure guard so it doesn't close prov a second time after them.
+		cleanupProv = nil
+		cleanupFD = -1
 		e.mu.Unlock()
 		if cfg.NetworkMonitor != nil {
 			cfg.NetworkMonitor.Close()
@@ -514,6 +547,8 @@ func (e *Engine) Start(cfg Config) error {
 	e.ruleEngine = ruleEngine
 	e.missReporter = missRep
 	missRep = nil // ownership transferred; cancel the deferred stop
+	cleanupProv = nil // ownership transferred to e.prov (Stop/fail close it)
+	cleanupFD = -1
 	e.networkMonitor = cfg.NetworkMonitor
 
 	e.outboundTMs = allOTs

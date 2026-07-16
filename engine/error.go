@@ -165,8 +165,17 @@ func classifyByPatterns(msg string) *EngineError {
 		return newEngineError(ErrCodeEnvironmentSetupFailed, msg)
 	}
 
-	// 101: Client network unavailable (checked BEFORE 503 — "TCP dial: network unreachable" is client-side).
-	if strings.Contains(msg, "network unreachable") || strings.Contains(msg, "no route to host") {
+	// 101: Client network unavailable (checked BEFORE 503 — a local dial that
+	// can't even route is client-side, not server-side). Real errno strings:
+	// Linux/Android/Darwin ENETUNREACH renders as "connect: network is
+	// unreachable" (with "is" — the historical "network unreachable" pattern
+	// matched no real errno and every no-network attempt fell through to 503),
+	// EHOSTUNREACH as "no route to host", Windows WSAENETUNREACH as "A socket
+	// operation was attempted to an unreachable network".
+	if strings.Contains(msg, "network is unreachable") ||
+		strings.Contains(msg, "network unreachable") ||
+		strings.Contains(msg, "unreachable network") ||
+		strings.Contains(msg, "no route to host") {
 		return newEngineError(ErrCodeNetworkUnavailable, msg)
 	}
 

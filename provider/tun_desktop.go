@@ -42,12 +42,19 @@ func nextFreeDarwinUtun() string {
 }
 
 // TUNProvider creates a TUN device and runs a sing-tun stack for L3→L4 conversion.
+//
+// Lifecycle (Start/Close) is serialized by the engine — no internal locking.
 type TUNProvider struct {
 	cfg         ProviderConfig
 	tunIf       tun.Tun
 	stack       tun.Stack
 	name        string
 	dnsOverride *dnsOverride // macOS: system DNS → TUN IP (nil on other platforms)
+	// fdConsumed is set once tun.New takes ownership of cfg.FileDescriptor
+	// (macOS sysext FD path; tunIf.Close then releases it). Until then Close
+	// must release the raw fd itself. Irrelevant on the desktop self-create
+	// path (FileDescriptor <= 0).
+	fdConsumed bool
 }
 
 var _ Provider = (*TUNProvider)(nil)
@@ -115,6 +122,7 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	if err != nil {
 		return fmt.Errorf("provider: create TUN: %w", err)
 	}
+	p.fdConsumed = true // FD path: tunIf owns the fd from here (tunIf.Close releases it)
 
 	// Step 2: Create stack (TCP listener not yet bound).
 	// Use sing-tun's NewStack dispatcher (mirrors sing-box pattern):
@@ -193,6 +201,10 @@ func (p *TUNProvider) Close() error {
 	if p.tunIf != nil {
 		err = p.tunIf.Close()
 		p.tunIf = nil
+	}
+	if !p.fdConsumed {
+		closeRawFD(p.cfg.FileDescriptor)
+		p.fdConsumed = true // idempotent: never close the (reusable) fd number twice
 	}
 	// Remove DNS state marker AFTER TUN is fully closed.
 	// If we crash before this point, the marker survives and

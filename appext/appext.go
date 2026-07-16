@@ -227,9 +227,9 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 		"hasInterfaceMonitor", ecfg.InterfaceMonitor != nil,
 		"isNE", isNetworkExtension)
 
-	// Ownership transfers to engine.Start — it passes the FD to sing-tun which
-	// may or may not consume it before returning an error. Clear dupFd so the
-	// deferred cleanup does NOT double-close a potentially reused FD.
+	// Ownership transfers to engine.Start — its failure guard closes the FD on
+	// every error return (whether or not sing-tun consumed it). Clear dupFd so
+	// the deferred cleanup here does NOT double-close a potentially reused FD.
 	dupFd = -1
 	if err := e.inner.Start(ecfg); err != nil {
 		return err

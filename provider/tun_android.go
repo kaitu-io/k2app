@@ -12,11 +12,19 @@ import (
 )
 
 // TUNProvider wraps a TUN file descriptor from Android VpnService.Builder.
+//
+// Lifecycle (Start/Close) is serialized by the engine — no internal locking.
 type TUNProvider struct {
 	cfg   ProviderConfig
 	tunIf tun.Tun
 	stack tun.Stack
 	name  string
+	// fdConsumed is set once tun.New takes ownership of cfg.FileDescriptor
+	// (tunIf.Close then releases it). Until then Close must release the raw
+	// fd itself: the fd is the engine's dup of the VpnService tun — leaking
+	// it keeps the Android VPN alive routing into a dead tunnel, blackholing
+	// the whole device (bypassable=false default route).
+	fdConsumed bool
 }
 
 var _ Provider = (*TUNProvider)(nil)
@@ -52,6 +60,7 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	if err != nil {
 		return fmt.Errorf("provider: create TUN from FD: %w", err)
 	}
+	p.fdConsumed = true // tunIf owns the fd from here (tunIf.Close releases it)
 
 	// Android VpnService: gVisor stack via IncludeAllNetworks (mirrors sing-box pattern).
 	// System stack's net.Listen() may not work reliably in VPN service sandbox.
@@ -89,12 +98,16 @@ func (p *TUNProvider) Close() error {
 		p.stack.Close()
 		p.stack = nil
 	}
+	var err error
 	if p.tunIf != nil {
-		err := p.tunIf.Close()
+		err = p.tunIf.Close()
 		p.tunIf = nil
-		return err
 	}
-	return nil
+	if !p.fdConsumed {
+		closeRawFD(p.cfg.FileDescriptor)
+		p.fdConsumed = true // idempotent: never close the (reusable) fd number twice
+	}
+	return err
 }
 
 func (p *TUNProvider) Name() string { return p.name }

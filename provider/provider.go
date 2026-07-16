@@ -4,7 +4,19 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"os"
 )
+
+// closeRawFD releases a platform-supplied TUN fd that was never handed to
+// sing-tun (Close before Start, or Start failed before tun.New consumed it).
+// Uses os.NewFile instead of syscall.Close so the package compiles on
+// Windows, where this path is unreachable (FileDescriptor is only > 0 on
+// mobile / NE builds).
+func closeRawFD(fd int) {
+	if fd > 0 {
+		_ = os.NewFile(uintptr(fd), "k2-tun-fd").Close()
+	}
+}
 
 // Provider represents a platform-specific source of TCP/UDP connections.
 // Implementations include TUN devices (via sing-tun stack), proxy servers
