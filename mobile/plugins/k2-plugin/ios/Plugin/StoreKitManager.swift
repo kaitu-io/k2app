@@ -22,7 +22,7 @@ import os.log
 actor StoreKitManager {
     static let shared = StoreKitManager()
 
-    private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "storekit")
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios", category: "storekit")
 
     /// Transactions delivered to JS but not yet finished (awaiting Center grant).
     private var pending: [UInt64: StoreKit.Transaction] = [:]

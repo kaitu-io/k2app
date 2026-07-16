@@ -13,6 +13,7 @@
 		4A0F6114028D95A7FEB60E53 /* K2Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFAE7F17CEFF46E3748DC13 /* K2Helpers.swift */; };
 		1A9F11BBBBBB0000000B0002 /* IapHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0001 /* IapHelpers.swift */; };
 		1A9F11BBBBBB0000000B0004 /* IapHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0003 /* IapHelpersTests.swift */; };
+		1A9F11BBBBBB0000000B0006 /* BrandDerivationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0005 /* BrandDerivationTests.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -94,6 +95,7 @@
 		CBFAE7F17CEFF46E3748DC13 /* K2Helpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = K2Helpers.swift; path = "../../../plugins/k2-plugin/ios/Plugin/K2Helpers.swift"; sourceTree = "<group>"; };
 		1A9F11AAAAAA0000000A0001 /* IapHelpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IapHelpers.swift; path = "../../../plugins/k2-plugin/ios/Plugin/IapHelpers.swift"; sourceTree = "<group>"; };
 		1A9F11AAAAAA0000000A0003 /* IapHelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IapHelpersTests.swift; sourceTree = "<group>"; };
+		1A9F11AAAAAA0000000A0005 /* BrandDerivationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrandDerivationTests.swift; sourceTree = "<group>"; };
 		D08300DE0A8C33C607A9BC3E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		D37F6F07B15C96C61F3681FF /* Pods-PacketTunnelExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PacketTunnelExtension.release.xcconfig"; path = "Pods/Target Support Files/Pods-PacketTunnelExtension/Pods-PacketTunnelExtension.release.xcconfig"; sourceTree = "<group>"; };
 		DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
@@ -148,6 +150,7 @@
 				CBFAE7F17CEFF46E3748DC13 /* K2Helpers.swift */,
 				1A9F11AAAAAA0000000A0001 /* IapHelpers.swift */,
 				1A9F11AAAAAA0000000A0003 /* IapHelpersTests.swift */,
+				1A9F11AAAAAA0000000A0005 /* BrandDerivationTests.swift */,
 			);
 			path = K2Tests;
 			sourceTree = "<group>";
@@ -471,6 +474,7 @@
 				4A0F6114028D95A7FEB60E53 /* K2Helpers.swift in Sources */,
 				1A9F11BBBBBB0000000B0002 /* IapHelpers.swift in Sources */,
 				1A9F11BBBBBB0000000B0004 /* IapHelpersTests.swift in Sources */,
+				1A9F11BBBBBB0000000B0006 /* BrandDerivationTests.swift in Sources */,
 				41A12CB52DDBDCFEF454E423 /* NEHelpers.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

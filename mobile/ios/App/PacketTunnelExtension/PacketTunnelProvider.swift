@@ -3,8 +3,11 @@ import Network
 import K2Mobile  // gomobile xcframework (appext/ package)
 import os.log
 
-private let kAppGroup = "group.io.kaitu"
-private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "NE")
+// App Group from Info.plist (baked by brand-active.xcconfig at build time).
+// Bundle.main in the NE process is the extension's own bundle, which also
+// carries the K2AppGroup key (see PacketTunnelExtension/Info.plist).
+private let kAppGroup = Bundle.main.object(forInfoDictionaryKey: "K2AppGroup") as? String ?? "group.io.kaitu"
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios", category: "NE")
 
 private struct ClientConfigSubset: Codable {
     var tun: TunConfig?
@@ -134,7 +137,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 if remaining > 0 && remaining <= Self.maxCooldownGuard {
                     logger.warning("startTunnel: error cooldown active (\(Int(remaining))s remaining), failing fast")
                     NativeLogger.shared.log("WARN", "startTunnel: blocked by error cooldown (\(Int(remaining))s remaining)")
-                    completionHandler(NSError(domain: "com.allnationconnect.anc.wgios", code: 429,
+                    completionHandler(NSError(domain: Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios", code: 429,
                                               userInfo: [NSLocalizedDescriptionKey: "Error cooldown — too soon to retry"]))
                     return
                 }
@@ -152,7 +155,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             if gap > 0 && gap < Self.rapidRestartMinGap {
                 logger.warning("startTunnel: rapid restart detected (gap=\(Int(gap))s), failing fast")
                 NativeLogger.shared.log("WARN", "startTunnel: blocked by rapid restart detection (gap=\(Int(gap))s)")
-                completionHandler(NSError(domain: "com.allnationconnect.anc.wgios", code: 429,
+                completionHandler(NSError(domain: Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios", code: 429,
                                           userInfo: [NSLocalizedDescriptionKey: "Rapid restart cooldown"]))
                 return
             }
@@ -186,7 +189,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             configJSON = config
         } else {
             logger.error("Missing configJSON in options, providerConfiguration, and App Group")
-            completionHandler(NSError(domain: "com.allnationconnect.anc.wgios", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing configJSON"]))
+            completionHandler(NSError(domain: Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing configJSON"]))
             return
         }
 
@@ -232,7 +235,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 logger.info("Got TUN fd=\(fd) (fd scan)")
             } else {
                 logger.error("Failed to get TUN fd (both KVC and fd scan failed)")
-                let err = NSError(domain: "com.allnationconnect.anc.wgios", code: 2,
+                let err = NSError(domain: Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios", code: 2,
                                   userInfo: [NSLocalizedDescriptionKey: "Failed to get TUN fd"])
                 completionHandler(err)
                 return
@@ -242,7 +245,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 // Build EngineConfig with platform paths
                 guard let engineCfg = AppextNewEngineConfig() else {
                     logger.error("Failed to create EngineConfig")
-                    let err = NSError(domain: "com.allnationconnect.anc.wgios", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
+                    let err = NSError(domain: Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
                     completionHandler(err)
                     return
                 }
@@ -568,7 +571,7 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
                 logger.error("Cancelling tunnel: isPermanent=\(isPermanent) cooldown=\(Int(cooldown))s (code=\(code) category=\(category, privacy: .public))")
                 NativeLogger.shared.log("ERROR", "onStatus: cancelling tunnel, isPermanent=\(isPermanent) cooldown=\(Int(cooldown))s")
 
-                let nsError = NSError(domain: "com.allnationconnect.anc.wgios", code: code,
+                let nsError = NSError(domain: Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios", code: code,
                                       userInfo: [NSLocalizedDescriptionKey: message])
                 provider?.cancelTunnelWithError(nsError)
             } else {

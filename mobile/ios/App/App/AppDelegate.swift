@@ -3,7 +3,8 @@ import Capacitor
 import K2Mobile
 import K2Plugin
 
-private let kAppGroup = "group.io.kaitu"
+// App Group from Info.plist (baked by brand-active.xcconfig at build time).
+private let kAppGroup = Bundle.main.object(forInfoDictionaryKey: "K2AppGroup") as? String ?? "group.io.kaitu"
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {

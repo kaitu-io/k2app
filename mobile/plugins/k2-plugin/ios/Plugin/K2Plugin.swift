@@ -6,8 +6,13 @@ import Gzip
 import SSZipArchive
 import os.log
 
-private let kAppGroup = "group.io.kaitu"
-private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "K2Plugin")
+// App Group from Info.plist (baked by brand-active.xcconfig at build time).
+private let kAppGroup = Bundle.main.object(forInfoDictionaryKey: "K2AppGroup") as? String ?? "group.io.kaitu"
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios", category: "K2Plugin")
+/// NE provider bundle id derived from the host app's own identity.
+private var tunnelBundleID: String { (Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios") + ".ThePacketTunnel" }
+/// VPN display name from Info.plist (baked by brand-active.xcconfig at build time).
+private var vpnDisplayName: String { Bundle.main.object(forInfoDictionaryKey: "K2VpnDisplayName") as? String ?? "kaitu.io" }
 
 /// One-shot flag set after the first successful on-demand migration in load().
 /// Clears stale `NEOnDemandRuleConnect()` rules left by 0.4.1 and earlier
@@ -53,16 +58,17 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     private var statusObserver: NSObjectProtocol?
     private var logsDir: URL?
     private var webappLogHandle: FileHandle?
-    private let webappLogQueue = DispatchQueue(label: "com.allnationconnect.anc.wgios.webapp-log")
+    private let webappLogQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier ?? "com.allnationconnect.anc.wgios").webapp-log")
 
-    private let webManifestEndpoints = [
-        "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/web/latest.json",
-        "https://d0.all7.cc/kaitu/web/latest.json"
-    ]
-    private let iosManifestEndpoints = [
-        "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/ios/latest.json",
-        "https://d0.all7.cc/kaitu/ios/latest.json"
-    ]
+    // CDN base URLs from Info.plist (baked by brand-active.xcconfig at build time).
+    private let cdnPrimary = Bundle.main.object(forInfoDictionaryKey: "K2CDNPrimary") as? String ?? "https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
+    private let cdnFallback = Bundle.main.object(forInfoDictionaryKey: "K2CDNFallback") as? String ?? "https://d0.all7.cc/kaitu"
+    private var webManifestEndpoints: [String] {
+        ["\(cdnPrimary)/web/latest.json", "\(cdnFallback)/web/latest.json"]
+    }
+    private var iosManifestEndpoints: [String] {
+        ["\(cdnPrimary)/ios/latest.json", "\(cdnFallback)/ios/latest.json"]
+    }
     private let appStoreURL = "https://apps.apple.com/app/id6448744655"
 
     /// Real semantic version (e.g. "0.4.0-beta.3") embedded at build time via K2_APP_VERSION.
@@ -261,12 +267,12 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("connect: connection type=\(type(of: manager.connection)), status=\(manager.connection.status.rawValue)")
 
             let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
-            proto.providerBundleIdentifier = "com.allnationconnect.anc.wgios.ThePacketTunnel"
-            proto.serverAddress = "kaitu.io"
+            proto.providerBundleIdentifier = tunnelBundleID
+            proto.serverAddress = vpnDisplayName
             proto.providerConfiguration = ["configJSON": config]
             manager.protocolConfiguration = proto
             manager.isEnabled = true
-            manager.localizedDescription = "kaitu.io"
+            manager.localizedDescription = vpnDisplayName
 
             // alwaysOn is the user's Dashboard toggle. When true, iOS auto-restarts
             // NE after system release (jetsam, network loss) via NEOnDemandRuleConnect.
@@ -973,7 +979,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 logger.error("loadVPNManager: loadAllFromPreferences error: \(error.localizedDescription)")
             }
 
-            let bundleId = "com.allnationconnect.anc.wgios.ThePacketTunnel"
+            let bundleId = tunnelBundleID
             let allManagers = managers ?? []
             logger.info("loadVPNManager: found \(allManagers.count) VPN config(s)")
 
@@ -985,7 +991,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             // Identify stale configs to remove (wrong name OR wrong bundleId)
             let matchingManager = allManagers.first(where: {
                 ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleId
-                && $0.localizedDescription == "kaitu.io"
+                && $0.localizedDescription == vpnDisplayName
             })
             let staleManagers = allManagers.filter { $0 !== matchingManager }
 
