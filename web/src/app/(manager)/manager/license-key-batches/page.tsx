@@ -58,7 +58,7 @@ export default function LicenseKeyBatchesPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const page = parseInt(searchParams.get("page") || "1", 10);
-  const pageSize = parseInt(searchParams.get("pageSize") || "20", 10);
+  const pageSize = parseInt(searchParams.get("pageSize") || "50", 10);
 
   const columns: ColumnDef<LicenseKeyBatch>[] = [
     { accessorKey: "name", header: "批次名称" },

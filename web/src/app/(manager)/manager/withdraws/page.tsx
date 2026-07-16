@@ -56,7 +56,7 @@ export default function WithdrawsPage() {
     : 0;
   const pageSize = searchParams.get("pageSize")
     ? parseInt(searchParams.get("pageSize") as string, 10)
-    : 10;
+    : 50;
   const status = searchParams.get("status") || "";
 
   // 本地筛选状态

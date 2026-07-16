@@ -268,7 +268,7 @@ export default function UsersPage() {
     const fetchUsers = async () => {
       setIsLoading(true);
       const params = new URLSearchParams();
-      params.append("page", page.toString());
+      params.append("page", (page + 1).toString()); // 后端 1-based，前端 0-based
       params.append("pageSize", pageSize.toString());
       if (email) params.append("email", email.trim());
       if (hasOrdered) params.append("has_ordered", hasOrdered);
@@ -404,7 +404,7 @@ export default function UsersPage() {
 
       // 重新加载用户列表
       const params = new URLSearchParams();
-      params.append("page", page.toString());
+      params.append("page", (page + 1).toString()); // 后端 1-based，前端 0-based
       params.append("pageSize", pageSize.toString());
       if (email) params.append("email", email.trim());
       if (hasOrdered) params.append("has_ordered", hasOrdered);
