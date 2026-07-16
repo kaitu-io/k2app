@@ -8,31 +8,33 @@ set -euo pipefail
 # Beta is a superset of stable. Stable releases update BOTH channel manifests.
 # Artifacts are copied to the beta directory so relative URLs resolve correctly.
 #
-# Directory structure on S3 (s3://d0.all7.cc/kaitu/):
-#   android/{VER}/Kaitu-{VER}.apk              ← CI uploads here
+# Directory structure on S3 (s3://d0.all7.cc/{brand}/, brand = kaitu|overleap):
+#   android/{VER}/{Kaitu|Overleap}-{VER}.apk      ← CI uploads here
 #   android/latest.json                          ← this script publishes
-#   android/beta/{VER}/Kaitu-{VER}.apk          ← this script copies
+#   android/beta/{VER}/{Kaitu|Overleap}-{VER}.apk ← this script copies
 #   android/beta/latest.json                     ← this script publishes
 #   ios/latest.json                              ← this script publishes
 #   ios/beta/latest.json                         ← this script publishes
+#
+# --brand=kaitu|overleap selects the S3/CDN prefix and artifact filename
+# prefix. Falls back to $K2_BRAND, then "kaitu". overleap has no live App
+# Store listing yet (Phase 0) — if OVERLEAP_APPSTORE_URL is unset, the ios
+# manifest publish is skipped with a warning (see below).
 #
 # Usage:
 #   make publish-mobile VERSION=0.5.0            # Real S3 publish (stable)
 #   make publish-mobile VERSION=0.5.0-beta.1     # Real S3 publish (auto-detects beta)
 #   scripts/publish-mobile.sh 0.5.0 --dry-run    # Verify without uploading
 #   scripts/publish-mobile.sh 0.5.0 --s3-base=/tmp/mock-s3/kaitu --dry-run  # Local test
+#   scripts/publish-mobile.sh 0.5.0 --brand=overleap --dry-run              # Overleap brand
 
 VERSION="${1:-}"
 S3_BUCKET="d0.all7.cc"
-S3_PREFIX="kaitu"
 S3_BASE=""
 DRY_RUN=false
 CHANNEL=""
 PLATFORM=""  # empty = both, "android" or "ios"
-
-CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
-APPSTORE_URL="https://apps.apple.com/app/id6448744655"
-
+BRAND="${K2_BRAND:-kaitu}"
 
 # Parse arguments
 shift || true
@@ -42,13 +44,27 @@ for arg in "$@"; do
         --dry-run) DRY_RUN=true ;;
         --channel=*) CHANNEL="${arg#*=}" ;;
         --platform=*) PLATFORM="${arg#*=}" ;;
+        --brand=*) BRAND="${arg#*=}" ;;
         *) echo "Unknown argument: $arg" >&2; exit 1 ;;
     esac
 done
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta] [--platform=android|ios]" >&2
+    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta] [--platform=android|ios] [--brand=kaitu|overleap]" >&2
     exit 1
+fi
+
+if [ "$BRAND" != "kaitu" ] && [ "$BRAND" != "overleap" ]; then
+    echo "ERROR: Invalid brand '${BRAND}'. Must be 'kaitu' or 'overleap'." >&2
+    exit 1
+fi
+BRAND_PRODUCT=$([ "$BRAND" = "overleap" ] && echo "Overleap" || echo "Kaitu")
+S3_PREFIX="${BRAND}"
+CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}"
+if [ "$BRAND" = "overleap" ]; then
+    APPSTORE_URL="${OVERLEAP_APPSTORE_URL:-}"
+else
+    APPSTORE_URL="https://apps.apple.com/app/id6448744655"
 fi
 
 if [ -n "$PLATFORM" ] && [ "$PLATFORM" != "android" ] && [ "$PLATFORM" != "ios" ]; then
@@ -129,7 +145,7 @@ WORK_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$WORK_TMPDIR"' EXIT
 
 # Define artifact paths (CI uploads to {channel}/{VERSION}/)
-android_artifact="android/${VERSION}/Kaitu-${VERSION}.apk"
+android_artifact="android/${VERSION}/${BRAND_PRODUCT}-${VERSION}.apk"
 
 # Validate artifacts exist
 echo "Validating artifacts for v${VERSION}..."
@@ -209,6 +225,11 @@ fi
 # For beta versions, we write ios/beta/latest.json (unused but consistent).
 # For stable versions, we write both ios/latest.json and ios/beta/latest.json.
 
+if [ "$PLATFORM" != "android" ] && [ -z "$APPSTORE_URL" ]; then
+    echo "WARN: overleap App Store listing not yet live (OVERLEAP_APPSTORE_URL unset) — skipping ios manifest."
+    PLATFORM="android"
+fi
+
 if [ "$PLATFORM" != "android" ]; then
 echo "Processing ios..."
 ios_manifest="$WORK_TMPDIR/ios-latest.json"
@@ -239,8 +260,8 @@ if [ "$DRY_RUN" = false ] && ! use_local; then
     echo ""
     echo "Invalidating CDN caches..."
     CDN_PATHS=()
-    [ "$PLATFORM" != "ios" ] && CDN_PATHS+=("/kaitu/android/*")
-    [ "$PLATFORM" != "android" ] && CDN_PATHS+=("/kaitu/ios/*")
+    [ "$PLATFORM" != "ios" ] && CDN_PATHS+=("/${BRAND}/android/*")
+    [ "$PLATFORM" != "android" ] && CDN_PATHS+=("/${BRAND}/ios/*")
     for DIST_ID in "$CDN_ID_D0" "$CDN_ID_DL"; do
         aws cloudfront create-invalidation \
             --distribution-id "$DIST_ID" \

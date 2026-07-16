@@ -58,8 +58,14 @@ jobs:
     # macos-26 (Tahoe) ships Xcode 26.x. Apple requires Xcode 26 + iOS 26 SDK
     # for App Store submissions from 2026-04-28. Pinning the runner (instead of
     # macos-latest) makes future Xcode upgrades explicit and reproducible.
+    # GitHub-hosted (ephemeral) — no stale-workspace cleanup needed between
+    # matrix legs or runs (each gets a fresh VM).
     runs-on: macos-26
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        brand: [kaitu, overleap]
 
     steps:
       - name: Checkout repository
@@ -108,7 +114,22 @@ jobs:
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile --network-timeout 600000
 
+      - name: Resolve brand variables
+        id: brand
+        run: |
+          BRAND="${{ matrix.brand }}"
+          case "$BRAND" in
+            kaitu) PRODUCT=Kaitu ;;
+            overleap) PRODUCT=Overleap ;;
+            *) echo "::error::unknown brand $BRAND"; exit 1 ;;
+          esac
+          VERSION=$(node -p "require('./package.json').version")
+          echo "product=$PRODUCT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Cache gomobile bind output
+        # Brand-neutral: k2mobile is protocol-layer, same for both brands, so
+        # no matrix.brand in the key — this lets both legs share the cache.
         uses: actions/cache@v4
         with:
           path: k2/build
@@ -175,31 +196,40 @@ jobs:
 
       - name: Build iOS
         env:
+          BRAND: ${{ matrix.brand }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: bash scripts/build-mobile-ios.sh
 
+      - name: Brand purity gate
+        run: bash scripts/check-mobile-brand-purity.sh ${{ matrix.brand }} mobile/ios/App/build/App.xcarchive
+
       - name: Upload iOS archive
         uses: actions/upload-artifact@v4
         with:
-          name: ios-archive
+          name: ios-archive-${{ matrix.brand }}
           path: mobile/ios/App/build/App.xcarchive
           retention-days: 30
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa
-          path: release/*/Kaitu-*.ipa
+          name: ios-ipa-${{ matrix.brand }}
+          path: release/*/${{ steps.brand.outputs.product }}-*.ipa
           retention-days: 30
 
+      # overleap has no live App Store listing yet (Phase 0) — altool upload
+      # would fail (no App record for io.overleap in ASC). Archive + IPA
+      # export above still run for overleap so the build is verified and
+      # available as a workflow artifact; only the ASC upload is kaitu-only.
       - name: Upload to App Store Connect
+        if: matrix.brand == 'kaitu'
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          IPA_PATH="release/${VERSION}/Kaitu-${VERSION}.ipa"
+          IPA_PATH="release/${VERSION}/${{ steps.brand.outputs.product }}-${VERSION}.ipa"
           xcrun altool --upload-app \
             -f "$IPA_PATH" \
             -t ios \
@@ -217,10 +247,15 @@ jobs:
         if: success()
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          if [ "${{ matrix.brand }}" = "kaitu" ]; then
+            DOWNLOAD_URL="<https://apps.apple.com/app/id6448744655|App Store>"
+          else
+            DOWNLOAD_URL="(overleap: archived, no public App Store listing yet — Phase 0)"
+          fi
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
-            --platforms "iOS" \
-            --download-url "<https://apps.apple.com/app/id6448744655|App Store>"
+            --platforms "iOS (${{ matrix.brand }})" \
+            --download-url "${DOWNLOAD_URL}"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
@@ -228,7 +263,7 @@ jobs:
         if: failure()
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
-            --platform "iOS" \
+            --platform "iOS (${{ matrix.brand }})" \
             --error "Mobile iOS build failed. Check workflow run for details."
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
@@ -239,8 +274,14 @@ jobs:
       (github.event_name == 'push' && (!contains(github.ref_name, '-') || endsWith(github.ref_name, '-android'))) ||
       inputs.platform == 'android' ||
       inputs.platform == 'both'
+    # GitHub-hosted (ephemeral) — no stale-workspace cleanup needed between
+    # matrix legs or runs (each gets a fresh VM).
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        brand: [kaitu, overleap]
 
     steps:
       - name: Checkout repository
@@ -306,7 +347,22 @@ jobs:
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile --network-timeout 600000
 
+      - name: Resolve brand variables
+        id: brand
+        run: |
+          BRAND="${{ matrix.brand }}"
+          case "$BRAND" in
+            kaitu) PRODUCT=Kaitu ;;
+            overleap) PRODUCT=Overleap ;;
+            *) echo "::error::unknown brand $BRAND"; exit 1 ;;
+          esac
+          VERSION=$(node -p "require('./package.json').version")
+          echo "product=$PRODUCT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Cache gomobile bind output
+        # Brand-neutral: k2mobile is protocol-layer, same for both brands, so
+        # no matrix.brand in the key — this lets both legs share the cache.
         uses: actions/cache@v4
         with:
           path: k2/build
@@ -340,27 +396,47 @@ jobs:
       - name: Decrypt Android keystore
         env:
           KAITU_ANDROID_STORE_PASSWORD: ${{ secrets.KAITU_ANDROID_STORE_PASSWORD }}
+          OVERLEAP_ANDROID_STORE_PASSWORD: ${{ secrets.OVERLEAP_ANDROID_STORE_PASSWORD }}
         run: |
+          BRAND="${{ matrix.brand }}"
+          if [ "$BRAND" = "overleap" ]; then
+            STORE_PASSWORD="$OVERLEAP_ANDROID_STORE_PASSWORD"
+          else
+            STORE_PASSWORD="$KAITU_ANDROID_STORE_PASSWORD"
+          fi
           openssl enc -aes-256-cbc -d -pbkdf2 -iter 100000 \
-            -in mobile/android/app/kaitu-release.jks.enc \
-            -out mobile/android/app/kaitu-release.jks \
-            -pass pass:$KAITU_ANDROID_STORE_PASSWORD
+            -in "mobile/android/app/${BRAND}-release.jks.enc" \
+            -out "mobile/android/app/${BRAND}-release.jks" \
+            -pass pass:"$STORE_PASSWORD"
 
       - name: Build Android
         run: bash scripts/build-mobile-android.sh
         env:
+          BRAND: ${{ matrix.brand }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
           KAITU_ANDROID_STORE_PASSWORD: ${{ secrets.KAITU_ANDROID_STORE_PASSWORD }}
+          OVERLEAP_ANDROID_STORE_PASSWORD: ${{ secrets.OVERLEAP_ANDROID_STORE_PASSWORD }}
+
+      - name: Brand purity gate
+        # Brand-exact path (not a release/*/*.apk glob): the runner is
+        # ephemeral (GitHub-hosted) so there's no stale cross-brand artifact
+        # risk here, but the exact path also doubles as a build-output sanity
+        # check — if build-mobile-android.sh didn't produce this file, fail
+        # loudly instead of the gate silently matching nothing.
+        run: |
+          APK="release/${{ steps.brand.outputs.version }}/${{ steps.brand.outputs.product }}-${{ steps.brand.outputs.version }}.apk"
+          bash scripts/check-mobile-brand-purity.sh ${{ matrix.brand }} "$APK"
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: release/*/Kaitu-*.apk
+          name: android-apk-${{ matrix.brand }}
+          path: release/*/${{ steps.brand.outputs.product }}-*.apk
           retention-days: 30
 
       - name: Upload Android APK to S3
         env:
+          BRAND: ${{ matrix.brand }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
@@ -370,11 +446,11 @@ jobs:
         if: success()
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          CDN_BASE="https://dl.kaitu.io/kaitu/android"
+          CDN_BASE="https://dl.kaitu.io/${{ matrix.brand }}/android"
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
-            --platforms "Android" \
-            --download-url "<${CDN_BASE}/${VERSION}/Kaitu-${VERSION}.apk|Android APK>"
+            --platforms "Android (${{ matrix.brand }})" \
+            --download-url "<${CDN_BASE}/${VERSION}/${{ steps.brand.outputs.product }}-${VERSION}.apk|Android APK>"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
@@ -382,7 +458,7 @@ jobs:
         if: failure()
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
-            --platform "Android" \
+            --platform "Android (${{ matrix.brand }})" \
             --error "Mobile Android build failed. Check workflow run for details."
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}

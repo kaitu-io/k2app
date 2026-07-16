@@ -18,6 +18,26 @@ for arg in "$@"; do
   esac
 done
 
+# BRAND is the cross-layer contract name (Makefile: BRAND, K2_BRAND export).
+# This is a CI entry point invoked directly (not via `make build-ios`), so a
+# bare `make build-webapp` here would silently fall back to kaitu — the same
+# bug that hit desktop's build-macos.sh (fixed in dd2d8608). Every `make`
+# invocation below must carry BRAND=$BRAND explicitly.
+BRAND="${BRAND:-kaitu}"
+case "$BRAND" in
+  kaitu|overleap) ;;
+  *) echo "::error::BRAND must be 'kaitu' or 'overleap', got '$BRAND'" >&2; exit 1 ;;
+esac
+BRAND_PRODUCT=$([ "$BRAND" = "overleap" ] && echo "Overleap" || echo "Kaitu")
+# mobile/capacitor.config.ts reads process.env.K2_BRAND directly (same
+# contract as Makefile's `export K2_BRAND`). `make` exports it to its own
+# recipes automatically, but this script calls `npx cap sync` itself — without
+# this export, cap sync silently falls back to kaitu's appId/appName
+# regardless of BRAND above (confirmed on the Android side: a stale
+# overleap-flavor APK build was found shipping "appId":"io.kaitu" in
+# assets/capacitor.config.json — this export is the fix, applies equally here).
+export K2_BRAND="$BRAND"
+
 VERSION=$(node -p "require('./package.json').version")
 
 # Derive iOS-compatible MARKETING_VERSION + CURRENT_PROJECT_VERSION.
@@ -62,29 +82,35 @@ fi
 
 BUILD_NUMBER=$(( 400000 + V_MINOR * 10000 + V_PATCH * 100 + SLOT ))
 
-echo "=== Building Kaitu $VERSION for iOS ==="
+echo "=== Building $BRAND_PRODUCT $VERSION for iOS ==="
+echo "  BRAND: $BRAND"
 echo "  MARKETING_VERSION: $MARKETING_VERSION"
 echo "  CURRENT_PROJECT_VERSION: $BUILD_NUMBER"
 
 # --- Pre-build + webapp ---
 echo ""
 echo "--- Pre-build ---"
-make pre-build
+make pre-build BRAND="$BRAND"
 
 echo ""
 echo "--- Building webapp ---"
-make build-webapp
+make build-webapp BRAND="$BRAND"
 
 # --- gomobile bind → xcframework ---
 echo ""
 echo "--- Building K2Mobile.xcframework (gomobile bind) ---"
-make appext-ios
+make appext-ios BRAND="$BRAND"
 
 # --- Copy xcframework into iOS project ---
 echo ""
 echo "--- Copying xcframework to iOS project ---"
 cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
 echo "Copied K2Mobile.xcframework"
+
+# --- Apply brand (xcconfig + display names + icon) ---
+echo ""
+echo "--- Applying iOS brand ($BRAND) ---"
+bash scripts/apply-ios-brand.sh "$BRAND"
 
 # --- Capacitor sync ---
 echo ""
@@ -177,8 +203,8 @@ RELEASE_DIR="release/${VERSION}"
 mkdir -p "$RELEASE_DIR"
 
 if [ -f "mobile/ios/App/build/ipa/App.ipa" ]; then
-  cp "mobile/ios/App/build/ipa/App.ipa" "$RELEASE_DIR/Kaitu-${VERSION}.ipa"
-  echo "IPA exported: $RELEASE_DIR/Kaitu-${VERSION}.ipa"
+  cp "mobile/ios/App/build/ipa/App.ipa" "$RELEASE_DIR/${BRAND_PRODUCT}-${VERSION}.ipa"
+  echo "IPA exported: $RELEASE_DIR/${BRAND_PRODUCT}-${VERSION}.ipa"
 fi
 
 echo ""
