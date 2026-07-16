@@ -64,7 +64,7 @@ make pre-build
 
 echo ""
 echo "--- Building webapp ---"
-make build-webapp
+make build-webapp BRAND=$BRAND
 
 echo ""
 echo "--- Brand purity gate (webapp dist, pre-package) ---"
