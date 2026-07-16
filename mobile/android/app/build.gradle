@@ -38,24 +38,25 @@ android {
         kaitu {
             dimension "brand"
             applicationId "io.kaitu"
-            // Dev builds (cap run android) sign with the production keystore so
-            // they install straight over the released io.kaitu app — same
-            // signature, no uninstall, no data loss. Falls back to the default
-            // debug keystore (release buildType gets no signingConfig at all)
-            // when KAITU_ANDROID_STORE_PASSWORD isn't set (e.g. CI debug jobs
-            // or contributors without the key).
-            if (System.getenv("KAITU_ANDROID_STORE_PASSWORD")) {
-                signingConfig signingConfigs.release
-            }
+            // Unconditional: this is the release-path source of truth. A
+            // missing KAITU_ANDROID_STORE_PASSWORD must fail assembleRelease
+            // loudly (keystore password error), not silently produce an
+            // unsigned APK. Debug variants get their own conditional
+            // fallback below, in the androidComponents.onVariants block —
+            // don't reintroduce a conditional here.
+            signingConfig signingConfigs.release
         }
         overleap {
             dimension "brand"
             applicationId "io.overleap"
-            // Same debug-over-release installability semantics as kaitu, gated
-            // on OVERLEAP_ANDROID_STORE_PASSWORD instead.
-            if (System.getenv("OVERLEAP_ANDROID_STORE_PASSWORD")) {
-                signingConfig signingConfigs.overleap
-            }
+            // Unconditional: this is the release-path source of truth. A
+            // missing OVERLEAP_ANDROID_STORE_PASSWORD must fail
+            // assembleRelease loudly (keystore password error), not
+            // silently produce an unsigned APK. Debug variants get their
+            // own conditional fallback below, in the
+            // androidComponents.onVariants block — don't reintroduce a
+            // conditional here.
+            signingConfig signingConfigs.overleap
         }
     }
 
@@ -89,11 +90,13 @@ android {
 // The built-in "debug" buildType comes with an implicit signingConfigs.debug
 // default baked in by AGP, and that default takes priority over whatever
 // productFlavors{} assigns above (buildType > flavor in AGP's merge order) —
-// so the conditional signingConfig set on each flavor block never actually
-// reaches debug variants. Override it explicitly per (flavor, debug) variant
-// here to restore the "sign debug with the flavor's release keystore when its
-// store password is available, else fall back to the default debug keystore"
-// behavior for both flavors.
+// so the unconditional signingConfig set on each flavor block above (the
+// release-path source of truth) never actually reaches debug variants.
+// Override it explicitly per (flavor, debug) variant here to restore the
+// "sign debug with the flavor's release keystore when its store password is
+// available, else fall back to the default debug keystore" behavior for both
+// flavors. This block is debug-only — it must never be relied on for release
+// signing, and the flavor-level assignments above must stay unconditional.
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         def isOverleap = variant.flavorName == "overleap"
