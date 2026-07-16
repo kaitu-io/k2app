@@ -26,9 +26,12 @@ jobs:
   # --- Plan: decide which desktop platforms (if any) this run targets ---
   #
   # Single source of truth for "does this tag belong to me, and if so, which
-  # matrix entries should I build". Bare v* (no suffix) → all three; -desktop
-  # → all three; -windows/-macos/-linux → just that one; anything else → none
-  # (workflow-skipped, no false-positive failure).
+  # matrix entries should I build". Bare v* (no suffix) → all five (macOS and
+  # Windows each fan out kaitu+overleap; Linux is kaitu-only — no overleap
+  # channel there, see scripts/ci/upload-release.sh); -desktop → same five;
+  # -windows/-macos → that platform's two brand entries; -linux → the single
+  # Linux/kaitu entry; anything else → none (workflow-skipped, no
+  # false-positive failure).
   #
   # The dynamic matrix output is consumed verbatim by the `release` job. We
   # use dynamic matrix instead of a job-level `if: ... matrix.X ...` because
@@ -47,11 +50,16 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -eu
-          # Each desktop platform entry as JSON. Keep in sync with the
-          # release-job-step expectations (matrix.runner / target / platform).
-          MAC='{"runner":"macos-latest","target":"universal-apple-darwin","platform":"macOS"}'
-          WIN='{"runner":["self-hosted","macOS","ARM64"],"target":"x86_64-pc-windows-msvc","platform":"Windows"}'
-          LIN='{"runner":"macos-latest","target":"linux-amd64","platform":"Linux"}'
+          # Each desktop platform×brand entry as JSON. Keep in sync with the
+          # release-job-step expectations (matrix.runner / target / platform
+          # / brand). Linux has no overleap channel (Task 5's hard
+          # constraint — see scripts/ci/upload-release.sh) so it gets a
+          # single kaitu-only entry, never fanned out.
+          MAC_KAITU='{"runner":"macos-latest","target":"universal-apple-darwin","platform":"macOS","brand":"kaitu"}'
+          MAC_OVERLEAP='{"runner":"macos-latest","target":"universal-apple-darwin","platform":"macOS","brand":"overleap"}'
+          WIN_KAITU='{"runner":["self-hosted","macOS","ARM64"],"target":"x86_64-pc-windows-msvc","platform":"Windows","brand":"kaitu"}'
+          WIN_OVERLEAP='{"runner":["self-hosted","macOS","ARM64"],"target":"x86_64-pc-windows-msvc","platform":"Windows","brand":"overleap"}'
+          LIN='{"runner":"macos-latest","target":"linux-amd64","platform":"Linux","brand":"kaitu"}'
 
           # Decision is driven by the ref suffix alone — push and
           # workflow_dispatch behave identically so that
@@ -59,12 +67,12 @@ jobs:
           # Unknown suffix → empty (workflow run skips) so unrelated tags
           # like v*-foo never spawn matrix entries.
           case "$REF_NAME" in
-            *-windows)  INCLUDE=("$WIN") ;;
-            *-macos)    INCLUDE=("$MAC") ;;
+            *-windows)  INCLUDE=("$WIN_KAITU" "$WIN_OVERLEAP") ;;
+            *-macos)    INCLUDE=("$MAC_KAITU" "$MAC_OVERLEAP") ;;
             *-linux)    INCLUDE=("$LIN") ;;
-            *-desktop)  INCLUDE=("$MAC" "$WIN" "$LIN") ;;
+            *-desktop)  INCLUDE=("$MAC_KAITU" "$MAC_OVERLEAP" "$WIN_KAITU" "$WIN_OVERLEAP" "$LIN") ;;
             *-*)        INCLUDE=() ;;
-            *)          INCLUDE=("$MAC" "$WIN" "$LIN") ;;
+            *)          INCLUDE=("$MAC_KAITU" "$MAC_OVERLEAP" "$WIN_KAITU" "$WIN_OVERLEAP" "$LIN") ;;
           esac
 
           if [[ ${#INCLUDE[@]} -eq 0 ]]; then
@@ -356,6 +364,7 @@ jobs:
       - name: Build macOS (k2 + tauri + pkg)
         if: matrix.platform == 'macOS'
         env:
+          K2_BRAND: ${{ matrix.brand }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -377,7 +386,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: make build-windows
+        run: make build-windows BRAND=${{ matrix.brand }}
 
       - name: Build Linux (k2 + embedded webapp + tarball)
         if: matrix.platform == 'Linux'
@@ -414,6 +423,26 @@ jobs:
           done
           rm -f /tmp/minisign.key
 
+      # --- Brand purity gate (macOS/Windows only — Linux is kaitu-only and
+      # ships no brand-conditional strings, so it's covered by build-linux
+      # itself; no separate artifact-level check needed here) ---
+
+      - name: Brand purity gate (macOS)
+        if: matrix.platform == 'macOS' && success()
+        run: |
+          BUNDLE=$(find desktop/src-tauri/target -maxdepth 6 -name '*.app' -path '*/bundle/macos/*' | head -1)
+          if [ -z "$BUNDLE" ]; then
+            echo "::error::No .app bundle found under desktop/src-tauri/target for purity check"
+            exit 1
+          fi
+          bash scripts/check-desktop-brand-purity.sh ${{ matrix.brand }} "$BUNDLE"
+
+      - name: Brand purity gate (Windows)
+        if: matrix.platform == 'Windows' && success()
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          bash scripts/check-desktop-brand-purity.sh ${{ matrix.brand }} "release/${VERSION}"
+
       # --- Upload artifacts to S3 + CDN invalidation ---
 
       - name: Upload to S3 + invalidate CDN
@@ -429,7 +458,7 @@ jobs:
             Windows) PLATFORM_FLAG="--windows" ;;
             Linux)   PLATFORM_FLAG="--linux" ;;
           esac
-          bash scripts/ci/upload-release.sh $PLATFORM_FLAG
+          bash scripts/ci/upload-release.sh $PLATFORM_FLAG --brand=${{ matrix.brand }}
 
       # --- Cleanup ---
 
@@ -444,31 +473,36 @@ jobs:
         shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          CDN_BASE="https://dl.kaitu.io/kaitu/desktop/${VERSION}"
+          BRAND_PRODUCT=$([ "${BRAND}" = "overleap" ] && echo "Overleap" || echo "Kaitu")
+          # dl.kaitu.io is shared CDN infra for both brands — overleap
+          # artifacts live under the /overleap/ prefix on the same domain
+          # (internal Slack notification, not user-facing, so this is fine).
+          CDN_BASE="https://dl.kaitu.io/${BRAND}/desktop/${VERSION}"
 
           if [ "${PLATFORM}" = "macOS" ]; then
-            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_universal.pkg|macOS PKG>"
+            DOWNLOAD_URL="<${CDN_BASE}/${BRAND_PRODUCT}_${VERSION}_universal.pkg|macOS PKG>"
           elif [ "${PLATFORM}" = "Linux" ]; then
-            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_linux_amd64.tar.gz|Linux amd64> · <${CDN_BASE}/Kaitu_${VERSION}_linux_arm64.tar.gz|arm64>"
+            DOWNLOAD_URL="<${CDN_BASE}/${BRAND_PRODUCT}_${VERSION}_linux_amd64.tar.gz|Linux amd64> · <${CDN_BASE}/${BRAND_PRODUCT}_${VERSION}_linux_arm64.tar.gz|arm64>"
           else
-            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_x64.exe|Windows Setup>"
+            DOWNLOAD_URL="<${CDN_BASE}/${BRAND_PRODUCT}_${VERSION}_x64.exe|Windows Setup>"
           fi
 
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
-            --platforms "${PLATFORM}" \
+            --platforms "${PLATFORM} (${BRAND})" \
             --download-url "${DOWNLOAD_URL}"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
           PLATFORM: ${{ matrix.platform }}
+          BRAND: ${{ matrix.brand }}
 
       - name: Notify Slack on build failure
         if: failure()
         shell: bash
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
-            --platform "${{ matrix.platform }}" \
-            --error "Release build failed on ${{ matrix.platform }}. Check workflow run for details."
+            --platform "${{ matrix.platform }} (${{ matrix.brand }})" \
+            --error "Release build failed on ${{ matrix.platform }} (${{ matrix.brand }}). Check workflow run for details."
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
