@@ -88,6 +88,16 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingNetworkChange: Runnable? = null
+    /**
+     * Whether a terminal error status (state=disconnected + error) from the
+     * current engine session has already been forwarded to the plugin. The
+     * engine classifies failures (e.g. 101 network) and emits them via
+     * OnStatus before start() throws; the catch-block safety net must not
+     * overwrite that with a generic 570. Written and read only on the main
+     * thread (both the EventHandler forward and the catch synthesis run
+     * inside mainHandler.post), reset at the top of startVpn().
+     */
+    private var terminalErrorForwarded = false
     /** Tracks whether engine was paused by onTrimMemory — reset on wake or stopVpn. */
     private val enginePaused = AtomicBoolean(false)
     /**
@@ -289,6 +299,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
             Log.w(TAG, "startVpn: engine already exists — stopping before reconnect")
             stopVpn()
         }
+        terminalErrorForwarded = false
         createNotificationChannel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(1, createNotification("Connecting..."),
@@ -344,6 +355,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
                             "disconnected" -> {
                                 val hasError = obj.has("error") && !obj.isNull("error")
                                 if (hasError) {
+                                    terminalErrorForwarded = true
                                     val errObj = obj.optJSONObject("error")
                                     Log.w(TAG, "Disconnected with error: code=${errObj?.optInt("code")} message=${errObj?.optString("message")}")
                                 } else {
@@ -452,16 +464,22 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
                 Log.e(TAG, "Engine start failed: ${e.message}", e)
                 NativeLogger.log("ERROR", "startVpn: engine start failed: ${e.message}")
                 mainHandler.post {
-                    // Engine may have already emitted onStatus with error before throwing.
-                    // This is a safety net — synthesize status for unhandled start failures.
-                    val errorStatus = JSONObject().apply {
-                        put("state", "disconnected")
-                        put("error", JSONObject().apply {
-                            put("code", 570)
-                            put("message", e.message ?: "Failed to start engine")
-                        })
+                    // The engine classifies failures and emits them via OnStatus
+                    // (e.g. 101 network) before start() throws — on those paths a
+                    // synthesized status here would arrive second and overwrite
+                    // the accurate code with a generic 570 in the UI. Only
+                    // synthesize for start failures that never emitted one
+                    // (that's the safety net's actual job); always tear down.
+                    if (!terminalErrorForwarded) {
+                        val errorStatus = JSONObject().apply {
+                            put("state", "disconnected")
+                            put("error", JSONObject().apply {
+                                put("code", 570)
+                                put("message", e.message ?: "Failed to start engine")
+                            })
+                        }
+                        plugin?.onStatus(errorStatus.toString())
                     }
-                    plugin?.onStatus(errorStatus.toString())
                     stopVpn()
                 }
             }
