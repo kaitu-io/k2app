@@ -31,11 +31,155 @@ rm -rf node_modules/k2-plugin && yarn install --force  # Re-copy to node_modules
 npx cap sync                            # Sync to native projects
 ```
 
+## Brand (kaitu / overleap)
+
+Same `K2_BRAND` build-time contract as desktop/webapp/web (root `Makefile`
+`BRAND ?= kaitu` → `export K2_BRAND`; recursive `make` only inherits the
+**exported env** `K2_BRAND`, never the make variable `BRAND` itself — any
+script invoking `make` directly must pass `BRAND=$BRAND` explicitly, see root
+`CLAUDE.md`). `mobile/capacitor.config.ts` reads `process.env.K2_BRAND` at
+`cap sync` time to pick `appId`/`appName` (`io.kaitu`/`开途` vs
+`io.overleap`/`Overleap`). CI entry points `scripts/build-mobile-{ios,android}.sh`
+validate `BRAND` and **re-export `K2_BRAND` themselves**, because they call
+`npx cap sync` directly, outside `make`'s recipe-scoped env propagation — a
+stale overleap APK once shipped `"appId":"io.kaitu"` in
+`assets/capacitor.config.json` from missing exactly this export.
+
+### Android
+
+- Gradle product flavors `kaitu`/`overleap` on dimension `brand`
+  (`mobile/android/app/build.gradle`): `applicationId` forks
+  (`io.kaitu`/`io.overleap`) but `namespace "io.kaitu"` stays **shared** — that's
+  why `io.kaitu.K2VpnService` / `io.kaitu.k2plugin` class names keep working
+  unchanged for both flavor builds (namespace ≠ applicationId).
+- Per-flavor resources: `app/src/{kaitu,overleap}/res/values/brand.xml` — keys
+  `k2_cdn_primary` / `k2_cdn_fallback` / `k2_vpn_display_name`.
+- Dual keystores: `kaitu-release.jks.enc` / `overleap-release.jks.enc`
+  (AES-256-CBC), passwords `KAITU_ANDROID_STORE_PASSWORD` /
+  `OVERLEAP_ANDROID_STORE_PASSWORD` (also GH secrets). `make decrypt-keystore
+  BRAND=<brand>` decrypts the matching pair.
+- `signingConfigs` are assigned **unconditionally** at the flavor level — a
+  missing store password must fail `assembleRelease` loudly, not silently
+  produce an unsigned APK. Debug variants get a *separate* conditional
+  override in `androidComponents.onVariants(...withBuildType("debug"))`,
+  because AGP's buildType > flavor merge order otherwise lets the implicit
+  debug signingConfig clobber the flavor's. The comment in `build.gradle`
+  explains both halves — don't collapse them into one conditional.
+
+### Plugin brand purity
+
+- `plugins/k2-plugin` has no flavors of its own and carries zero brand
+  literals for CDN values: `K2PluginUtils.brandString()` resolves
+  `k2_cdn_primary` / `k2_cdn_fallback` via
+  `context.resources.getIdentifier(name, "string", context.packageName)` —
+  reads whatever the **host app**'s active flavor merged in at runtime.
+- The host app itself (`K2VpnService.kt`) reads `R.string.k2_vpn_display_name`
+  directly — a compile-time resource ref, resolved per-flavor by Gradle
+  resource merging since that code lives inside the flavored `app` module,
+  not the brand-neutral plugin module.
+- Exempt internal tokens — bare `kaitu` literals expected on **both** brand
+  builds, not a leak: `kaitu-icon://` scheme (Android WebViewClient
+  interception for app-bypass icons in `K2Plugin.kt`), `io.kaitu.k2plugin`
+  package/class labels, `kaitu-service-logs` S3 bucket host (both
+  `K2Plugin.swift` and `K2Plugin.kt`), `io.kaitu.K2VpnService` class name, and
+  the unreferenced `package_name` string resource in `main/res/values/strings.xml`
+  (always literally `io.kaitu`, not brand-flavored, not read anywhere).
+  `scripts/check-mobile-brand-purity.sh`'s overleap-build forbidden pattern is
+  narrowed to `/kaitu/(android|ios|web)/` CDN path segments (not the bare
+  word), specifically so these dex-level `io.kaitu.*` tokens don't trip the gate.
+
+### iOS
+
+- `brand-{kaitu,overleap}.xcconfig` (under `ios/App/App/Config/`) define
+  `K2_BUNDLE_ID` / `K2_APP_GROUP` / `K2_DISPLAY_NAME` / `K2_CDN_PRIMARY` /
+  `K2_CDN_FALLBACK` / `K2_VPN_DISPLAY_NAME`. `scripts/apply-ios-brand.sh
+  <brand>` copies the selected one to `brand-active.xcconfig` — the committed
+  content of `brand-active.xcconfig` is always the kaitu fallback.
+- Wrapper configs (`App-Base-{Debug,Release}.xcconfig`,
+  `PacketTunnelExtension-Base-*.xcconfig`) `#include` both the
+  CocoaPods-generated xcconfig *and* `brand-active.xcconfig` — this is the
+  escape hatch that lets `pod install` keep working (CocoaPods refuses to
+  overwrite a custom `baseConfigurationReference`, but is satisfied once it
+  sees its own xcconfig `#include`d from the wrapper).
+- `apply-ios-brand.sh` also stages localized `InfoPlist.strings` (en / ja /
+  zh-Hans / zh-Hant, copied from `App/brand/<brand>/`) and swaps
+  `Assets.xcassets/AppIcon.appiconset` content from
+  `App/brand/<brand>/AppIcon.appiconset/`.
+- **The diffs `apply-ios-brand.sh overleap` produces (xcconfig,
+  InfoPlist.strings, AppIcon) are never committed.** Run `scripts/apply-ios-brand.sh
+  kaitu` to restore the committed kaitu state before committing anything else
+  under `mobile/ios/`.
+- `Kaitu.storekit` / `Overleap.storekit` exist as static per-brand
+  placeholders (Overleap's product ids follow `io.overleap.sub.*`) but are
+  **not** wired into any Xcode scheme's StoreKit configuration and are not
+  touched by `apply-ios-brand.sh` — real StoreKit wiring is a Phase 6
+  dependency, not done yet.
+
+### iOS derivation iron rule
+
+- Swift reads brand values from `Info.plist` keys `K2AppGroup` /
+  `K2CDNPrimary` / `K2CDNFallback` / `K2VpnDisplayName` (populated from the
+  xcconfig `K2_*` vars via Info.plist `$(K2_APP_GROUP)`-style substitution).
+- The NE's bundle id is derived as `Bundle.main.bundleIdentifier +
+  ".ThePacketTunnel"` — **only in the main app process** (`K2Plugin.swift`).
+  `PacketTunnelProvider.swift` (the NE process) never derives this; it reads
+  its own `Bundle.main.bundleIdentifier` directly.
+- Every `?? ` fallback literal across `K2Plugin.swift` / `AppDelegate.swift` /
+  `PacketTunnelProvider.swift` (`group.io.kaitu`, `kaitu.io`,
+  `com.allnationconnect.anc.wgios`, the CDN URLs) is intentionally the
+  **pre-split kaitu value** — `loadVPNManager()` removes any NE config whose
+  `providerBundleIdentifier` / `localizedDescription` doesn't match, so a
+  derived value that drifts even slightly from the legacy literal wipes live
+  users' VPN configs. `K2Tests/BrandDerivationTests.swift` asserts equality
+  against the legacy literals for the kaitu build (skips itself on overleap
+  via a bundle-id-prefix check).
+- **kaitu's real bundle id is still the legacy ANC one**
+  (`com.allnationconnect.anc.wgios`), not `io.kaitu` — this brand split
+  explicitly does not migrate it (out of scope by design, not an oversight).
+  Only overleap gets a clean `io.overleap` + `group.io.overleap` +
+  `.ThePacketTunnel` from day one.
+
+### Release chain
+
+- `scripts/publish-mobile.sh --brand=kaitu|overleap` (falls back to
+  `$K2_BRAND`, then `kaitu`): kaitu's `APPSTORE_URL` is fixed
+  (`https://apps.apple.com/app/id6448744655`); overleap requires
+  `OVERLEAP_APPSTORE_URL` env — if unset, the iOS manifest step is skipped
+  with an early-exit WARN (no App Store listing yet — see handoff items
+  below) while Android still publishes normally.
+- `scripts/check-mobile-brand-purity.sh <brand> <apk-or-xcarchive>`: unzips /
+  extracts and greps (case-insensitive) for the other brand's tokens;
+  forbidden patterns are narrowed to CDN path segments
+  (`/kaitu/(android|ios|web)/` etc.), not bare brand words — see "Plugin
+  brand purity" above for why.
+- `.github/workflows/build-mobile.yml` runs both the iOS and Android jobs on
+  `matrix: brand: [kaitu, overleap]`, GitHub-hosted runners (`macos-26`,
+  `ubuntu-latest` — ephemeral, so no stale cross-brand artifact risk between
+  legs), with the purity gate run against the brand-exact artifact path
+  (never a glob — the desktop `.app.tar.gz` alphabetical-glob incident,
+  `813bf3f5`, is why this matters).
+
+### Phase 0/6 handoff items (not done yet)
+
+- App Store Connect: `io.overleap` bundle id + `.ThePacketTunnel` companion +
+  `group.io.overleap` App Group + NE capability, all need creating.
+- Google Play: overleap listing does not exist yet.
+- CI: `OVERLEAP_APPSTORE_URL` env (gates the iOS publish manifest) and the
+  `OVERLEAP_ANDROID_STORE_PASSWORD` GH secret — `build-mobile.yml` already
+  references `secrets.OVERLEAP_ANDROID_STORE_PASSWORD`, but it must actually
+  be populated in repo secrets.
+- IAP: `io.overleap.sub.*` product ids are a naming convention only —
+  `Overleap.storekit` is a local placeholder, not wired to a scheme or to
+  real App Store Connect products.
+- Icons: current overleap iconset is a placeholder sourced from
+  `web/public/brand/overleap` — needs a real design pass before store
+  submission.
+
 ## Architecture
 
 ```
 mobile/
-├── capacitor.config.ts          # Capacitor config (appId: io.kaitu, webDir: ../webapp/dist)
+├── capacitor.config.ts          # Capacitor config (appId/appName via K2_BRAND: io.kaitu/开途 or io.overleap/Overleap; webDir: ../webapp/dist)
 ├── plugins/k2-plugin/           # Capacitor plugin — JS ↔ native VPN bridge
 │   ├── src/                     # TypeScript definitions + web stub
 │   │   ├── definitions.ts       # K2PluginInterface (connect/disconnect/status/setLogLevel/updates)
@@ -188,7 +332,7 @@ Three-layer logging system across platforms:
 | Native | `{LogDir}/native.log` | `NativeLogger` (Swift/Kotlin) |
 | Webapp | `{LogDir}/webapp.log` | `K2Plugin.appendLogs(entries)` from JS |
 
-- **iOS LogDir**: `{AppGroup}/logs/` — App Group `group.io.kaitu` shared between App process and NE process
+- **iOS LogDir**: `{AppGroup}/logs/` — App Group is brand-parameterized (`K2_APP_GROUP`; `group.io.kaitu` on kaitu, `group.io.overleap` on overleap — see "Brand" above), shared between App process and NE process
 - **Android LogDir**: `{filesDir}/logs/`
 - **Upload**: `K2Plugin.uploadLogs()` — compress all logs → ZIP → PUT to S3 with `mobile/{version}/{udid}/{date}/logs-{ts}-{id}.zip` key format.
 - **Redaction**: Token, password, Bearer, X-K2-Token patterns stripped before upload
@@ -227,9 +371,9 @@ Go package `k2/appext/` → gomobile naming:
 - **Android `VpnService.protect()` scope**: Must protect wire transport (QUIC UDP, TCP-WS TCP), direct DNS (raw UDP), and direct tunnel connections (smart routing bypass). Uses `syscall.RawConn.Control()` in Go's `net.Dialer.Control`. gomobile requires `int32` fd parameter (not `int`).
 - **iOS log level is cross-process**: `K2Plugin.setLogLevel()` only logs — NE runs in separate process. Level applied via `configJSON.log.level` on next `startVPNTunnel`. Android plugin and VPN service share a process so it takes effect immediately.
 - **Mobile auto-update on cold start**: K2Plugin checks for updates on `load()` (plugin initialization) — every app launch, no explicit trigger needed.
-- **VPN display name**: User-visible VPN name is `"kaitu.io"` across iOS (NE `localizedDescription`, `serverAddress`, Info.plist `CFBundleDisplayName`) and Android (`setSession()`, notification title).
+- **VPN display name**: Brand-parameterized (`K2VpnDisplayName` Info.plist key / `k2_vpn_display_name` Android resource — see "Brand" above): `"kaitu.io"` on the kaitu build, `"Overleap"` on overleap, across iOS (NE `localizedDescription`, `serverAddress`, Info.plist `CFBundleDisplayName`) and Android (`setSession()`, notification title).
 - **iOS stale VPN config cleanup**: `loadVPNManager()` removes stale NE configs with wrong `providerBundleIdentifier` or `localizedDescription` on every load. Prevents "Found 0 registrations" after bundle ID migration.
-- **iOS App Group**: `kAppGroup = "group.io.kaitu"` — used by both `K2Plugin.swift` and `PacketTunnelProvider.swift`. Changed from `group.waymaker` in March 2026.
+- **iOS App Group**: `kAppGroup = ... ?? "group.io.kaitu"` — used by both `K2Plugin.swift` and `PacketTunnelProvider.swift`. The `"group.io.kaitu"` literal is the fallback and the actual kaitu-build value (changed from `group.waymaker` in March 2026); overleap gets `"group.io.overleap"` from `K2_APP_GROUP` (see "Brand" above) — never edit this fallback, it's load-bearing for the derivation iron rule.
 - **Web OTA min_native**: Manifest `min_native` field prevents applying webapp that requires a newer native app. Source: `webapp/package.json` → `minNativeVersion`. Bump this when webapp adds new native bridge dependencies. Comparison uses BASE version only (ignores pre-release): `0.4.0-beta.6` satisfies `min_native=0.4.0`.
 - **Web OTA boot verification**: `.boot-pending` marker in `web-update/` dir. Created on OTA apply, cleared by `checkReady()`. If present on cold start → OTA crashed → rollback to bundled webapp.
 
@@ -255,24 +399,26 @@ Optimizing for App Store discoverability. These rules apply to all App Store Con
 
 ## Android APK Signing
 
-Keystore at `mobile/android/app/kaitu-release.jks.enc` (AES-256-CBC encrypted).
+Dual keystores, one per brand — see "Brand" above for the full flavor/signingConfig story:
 
 ```bash
-make decrypt-keystore    # Requires KAITU_ANDROID_STORE_PASSWORD env var (also GH secret)
+make decrypt-keystore BRAND=kaitu      # Requires KAITU_ANDROID_STORE_PASSWORD env var (also GH secret)
+make decrypt-keystore BRAND=overleap   # Requires OVERLEAP_ANDROID_STORE_PASSWORD env var (also GH secret)
 ```
 
-- Alias: `kaitu`, RSA 2048
-- Gradle `signingConfigs.release` reads the password from the same env var
+- kaitu: `mobile/android/app/kaitu-release.jks.enc`, alias `kaitu`, RSA 2048, `signingConfigs.release`
+- overleap: `mobile/android/app/overleap-release.jks.enc`, alias `overleap`, `signingConfigs.overleap`
+- Each flavor's `signingConfig` reads its own password env var (see build.gradle's unconditional-at-flavor / conditional-at-debug-variant split in "Brand" above)
 
 ## Android S3 CDN Structure
 
-`d13jc1jqzlg4yt.cloudfront.net/kaitu/android/`:
+`d13jc1jqzlg4yt.cloudfront.net/{kaitu,overleap}/android/` (brand-parameterized path, `--brand` flag on `scripts/publish-mobile.sh`):
 
 - `latest.json` — stable APK manifest
 - `beta/latest.json` — beta channel
-- `tools/tools.json` — adb binaries
+- `tools/tools.json` — adb binaries (kaitu path only; not brand-specific content)
 
-`scripts/publish-mobile.sh` always updates the stable `android/latest.json` since the Android install flow reads the stable channel.
+`scripts/publish-mobile.sh` always updates the stable `{brand}/android/latest.json` since the Android install flow reads the stable channel.
 
 ## S3 Log Upload (Mobile)
 
