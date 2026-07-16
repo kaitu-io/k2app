@@ -1,8 +1,13 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
+// Brand at build time — same K2_BRAND contract as webapp/desktop.
+// appId must match the Android flavor applicationId / iOS bundle id actually
+// being built; Makefile exports K2_BRAND before every cap sync.
+const BRAND = process.env.K2_BRAND === 'overleap' ? 'overleap' : 'kaitu';
+
 const config: CapacitorConfig = {
-  appId: 'io.kaitu',
-  appName: 'Kaitu.io',
+  appId: BRAND === 'overleap' ? 'io.overleap' : 'io.kaitu',
+  appName: BRAND === 'overleap' ? 'Overleap' : '开途',
   webDir: '../webapp/dist',
   ios: {
     contentInset: 'never',

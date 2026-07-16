@@ -295,12 +295,12 @@ publish-k2:
 publish-android:
 	@test -n "$(VERSION)" || (echo "Usage: make publish-android VERSION=x.y.z" && exit 1)
 	@echo "Publishing Android v$(VERSION)..."
-	bash scripts/publish-mobile.sh $(VERSION) --platform=android
+	bash scripts/publish-mobile.sh $(VERSION) --platform=android --brand=$(BRAND)
 
 publish-ios:
 	@test -n "$(VERSION)" || (echo "Usage: make publish-ios VERSION=x.y.z" && exit 1)
 	@echo "Publishing iOS v$(VERSION)..."
-	bash scripts/publish-mobile.sh $(VERSION) --platform=ios
+	bash scripts/publish-mobile.sh $(VERSION) --platform=ios --brand=$(BRAND)
 
 # --- Mobile (delegates to k2/Makefile) ---
 appext-deps:
@@ -334,6 +334,7 @@ appext-android: appext-deps plugin-purity-check check-jdk-21
 
 build-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
+	bash scripts/apply-ios-brand.sh $(BRAND)
 	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync ios
 	cd mobile/ios/App && xcodebuild -workspace App.xcworkspace \
 		-scheme App -configuration Release \
@@ -344,24 +345,24 @@ build-android: pre-build build-webapp appext-android decrypt-keystore
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
 	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync android
-	cd mobile/android && KAITU_ANDROID_STORE_PASSWORD="$$KAITU_ANDROID_STORE_PASSWORD" ./gradlew assembleRelease
+	cd mobile/android && KAITU_ANDROID_STORE_PASSWORD="$$KAITU_ANDROID_STORE_PASSWORD" OVERLEAP_ANDROID_STORE_PASSWORD="$$OVERLEAP_ANDROID_STORE_PASSWORD" ./gradlew assemble$(shell echo $(BRAND) | awk '{print toupper(substr($$0,1,1)) substr($$0,2)}')Release
 	@echo "--- Collecting artifacts ---"
 	@mkdir -p release/$(VERSION)
-	@cp mobile/android/app/build/outputs/apk/release/app-release.apk release/$(VERSION)/Kaitu-$(VERSION).apk
+	@cp mobile/android/app/build/outputs/apk/$(BRAND)/release/app-$(BRAND)-release.apk release/$(VERSION)/$(BRAND_PRODUCT)-$(VERSION).apk
 	@echo "=== Build complete ==="
-	@echo "Release artifacts in release/$(VERSION)/:"
-	@ls -la release/$(VERSION)/Kaitu-$(VERSION).apk
+	@ls -la release/$(VERSION)/$(BRAND_PRODUCT)-$(VERSION).apk
 
 decrypt-keystore:
-	@if [ ! -f mobile/android/app/kaitu-release.jks ]; then \
-		if [ -z "$$KAITU_ANDROID_STORE_PASSWORD" ]; then \
-			echo "❌ KAITU_ANDROID_STORE_PASSWORD not set. Run: export KAITU_ANDROID_STORE_PASSWORD=<password>"; exit 1; \
-		fi; \
+	@KS=$(if $(filter overleap,$(BRAND)),overleap-release,kaitu-release); \
+	PW_VAR=$(if $(filter overleap,$(BRAND)),OVERLEAP_ANDROID_STORE_PASSWORD,KAITU_ANDROID_STORE_PASSWORD); \
+	PW=$${!PW_VAR}; \
+	if [ ! -f mobile/android/app/$$KS.jks ]; then \
+		if [ -z "$$PW" ]; then echo "❌ $$PW_VAR not set."; exit 1; fi; \
 		openssl enc -aes-256-cbc -d -pbkdf2 -iter 100000 \
-			-in mobile/android/app/kaitu-release.jks.enc \
-			-out mobile/android/app/kaitu-release.jks \
-			-pass pass:$$KAITU_ANDROID_STORE_PASSWORD; \
-		echo "Keystore decrypted."; \
+			-in mobile/android/app/$$KS.jks.enc \
+			-out mobile/android/app/$$KS.jks \
+			-pass pass:$$PW; \
+		echo "Keystore decrypted: $$KS.jks"; \
 	fi
 
 # Auto-detect the connected physical iPhone. Filters out paired-but-offline
@@ -371,6 +372,7 @@ IOS_DEVICE ?= $(shell scripts/detect-ios-device.sh 2>/dev/null)
 
 dev-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
+	bash scripts/apply-ios-brand.sh $(BRAND)
 	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync ios
 	@# Real devices (iOS 17+/26) only speak the CoreDevice tunnel, which Capacitor's
 	@# legacy `cap run` path reports as "Offline". Deploy hardware via devicectl;
@@ -385,7 +387,7 @@ dev-ios: pre-build build-webapp appext-ios
 dev-android: pre-build build-webapp appext-android
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
-	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync android && npx cap run android $(if $(ANDROID_DEVICE),--target $(ANDROID_DEVICE),)
+	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync android && npx cap run android --flavor $(BRAND) $(if $(ANDROID_DEVICE),--target $(ANDROID_DEVICE),)
 
 # --- Upload artifacts to S3 (run AFTER build-*, separate to prevent accidental uploads) ---
 upload-macos:
