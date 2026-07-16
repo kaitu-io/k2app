@@ -1,0 +1,56 @@
+{
+  "productName": "Overleap",
+  "identifier": "io.overleap.desktop",
+  "app": {
+    "windows": [{
+      "label": "main",
+      "title": "Overleap",
+      "width": 430,
+      "height": 956,
+      "minWidth": 320,
+      "minHeight": 460,
+      "maxWidth": 480,
+      "center": true,
+      "resizable": true,
+      "maximizable": false,
+      "minimizable": false,
+      "decorations": true,
+      "transparent": false,
+      "alwaysOnTop": false,
+      "skipTaskbar": false,
+      "visible": false,
+      "hiddenTitle": true
+    }]
+  },
+  "bundle": {
+    "icon": [
+      "icons-overleap/32x32.png",
+      "icons-overleap/128x128.png",
+      "icons-overleap/128x128@2x.png",
+      "icons-overleap/icon.icns",
+      "icons-overleap/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "Developer ID Application: ALL NATION CONNECT TECHNOLOGY PTE. LTD. (NJT954Q3RH)",
+      "entitlements": "entitlements.overleap.plist",
+      "hardenedRuntime": true
+    },
+    "windows": {
+      "signCommand": "bash windows-sign.sh %1",
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["English"],
+        "installerHooks": "installer-hooks.nsh"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://d13jc1jqzlg4yt.cloudfront.net/overleap/desktop/cloudfront.latest.json",
+        "https://d0.all7.cc/overleap/desktop/d0.latest.json"
+      ]
+    }
+  }
+}

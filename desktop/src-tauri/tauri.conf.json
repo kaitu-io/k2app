@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [{
       "label": "main",
-      "title": "Overleap.io \u5f00\u9014",
+      "title": "\u5f00\u9014 Kaitu.io",
       "width": 430,
       "height": 956,
       "minWidth": 320,
