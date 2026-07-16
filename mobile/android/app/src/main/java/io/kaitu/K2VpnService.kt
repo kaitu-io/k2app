@@ -384,7 +384,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         Log.i(TAG, "Building VPN interface: ipv4=$ipv4Addr/$ipv4Prefix ipv6=$ipv6Addr/$ipv6Prefix dns=$dnsServers")
 
         val builder = Builder()
-            .setSession("kaitu.io")
+            .setSession(getString(R.string.k2_vpn_display_name))
             .addAddress(ipv4Addr, ipv4Prefix)
             .addAddress(ipv6Addr, ipv6Prefix)
             .addRoute("0.0.0.0", 0)
@@ -659,7 +659,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
 
     private fun createNotification(text: String): Notification {
         return Notification.Builder(this, "k2vpn")
-            .setContentTitle("kaitu.io")
+            .setContentTitle(getString(R.string.k2_vpn_display_name))
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
             .setOngoing(true)
