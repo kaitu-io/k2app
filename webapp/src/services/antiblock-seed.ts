@@ -27,6 +27,7 @@ import { DECRYPTION_KEY, CDN_SOURCES } from './antiblock';
 import { addNodes } from './entry-pool';
 import type { NodeEntry } from './node-descriptor';
 import { EMBEDDED_SEED } from './antiblock-seed-embedded';
+import { RELAY_ENABLED } from './relay-flag';
 
 // Distinct from the legacy config.js channel (global __k2ac, path config.js).
 // Never read config.js / __k2ac here.
@@ -201,6 +202,7 @@ function writeStr(key: string, value: string): void {
 // ---------------------------------------------------------------------------
 
 export async function bootstrapAntiblockSeed(): Promise<void> {
+  if (!RELAY_ENABLED) return;
   try {
     // (1) Always feed the embedded floor to the Go RelayManager. It is idempotent
     // (Go dedups by IP) and REQUIRED every launch: the manager's node store is

@@ -15,6 +15,10 @@ vi.mock('../antiblock-crypto', async (importOriginal) => {
   return { ...actual, loadJsonp: vi.fn() };
 });
 
+// 保活种子模块行为测试：kill-switch 默认 false，这里翻成 true。
+// 默认关的行为见 antiblock-seed.relay-disabled.test.ts。
+vi.mock('../relay-flag', () => ({ RELAY_ENABLED: true }));
+
 import { loadJsonp, type JsonpConfig } from '../antiblock-crypto';
 import { DECRYPTION_KEY } from '../antiblock';
 import { addNodes } from '../entry-pool';
