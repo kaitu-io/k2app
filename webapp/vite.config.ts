@@ -6,9 +6,9 @@ import type { Plugin } from 'vite';
 
 const host = process.env.TAURI_DEV_HOST;
 
-// Brand at build time. Config files can't import src/brand (TS under Vite's
+// Brand at build time. Config files can't import src/brands (TS under Vite's
 // own transform), so the product-name map is duplicated here — keep in sync
-// with src/brand/{kaitu,overleap}.ts productName.
+// with src/brands/{kaitu,overleap}/index.ts productName.
 const K2_BRAND = process.env.K2_BRAND === 'overleap' ? 'overleap' : 'kaitu';
 const BRAND_PRODUCT_NAME = K2_BRAND === 'overleap' ? 'Overleap' : 'Kaitu';
 

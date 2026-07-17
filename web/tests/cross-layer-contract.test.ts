@@ -1,7 +1,7 @@
 /**
  * Cross-layer brand contract gate (web ↔ Go).
  *
- * The `brand` concept is defined three times — `api/brand.go`, `webapp/src/brand/*`,
+ * The `brand` concept is defined three times — `api/brand.go`, `webapp/src/brands/*`,
  * and `web/src/lib/brands.ts` — with no shared type. Drift between them is silent
  * and has already shipped a real outage (the API CORS allow-list omitted a header
  * the client always sends, killing the direct channel with no error anywhere).

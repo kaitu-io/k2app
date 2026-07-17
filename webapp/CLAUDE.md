@@ -168,9 +168,9 @@ React 18, Material-UI 5, React Router 7, i18next, Vite 6, Zustand, TypeScript.
 
 **Spec**: `docs/superpowers/specs/2026-07-14-brand-split-design.md` §4. Brand is baked at
 BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest define
-`__K2_BRAND__` → `src/brand/index.ts` selects `KAITU_BRAND` / `OVERLEAP_BRAND`. No runtime switch.
+`__K2_BRAND__` → `src/brands/index.ts` selects `KAITU_BRAND` / `OVERLEAP_BRAND`. No runtime switch.
 
-- **`src/brand/` is the single source of truth**: `brandConfig` carries productName /
+- **`src/brands/` is the single source of truth**: `brandConfig` carries productName /
   domainLabel / baseURL / websiteOrigins / supportEmail / locale-aware names & slogans /
   defaultLocale / MUI theme tokens / feature gates. Never fork on brand id in
   components — add a gate to `BrandFeatures` and read it via
@@ -193,10 +193,10 @@ BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest d
   closed-gate branch a **real assertion** (see `Tunnels.test.tsx` "brand gate" and
   `Purchase.privateNode.test.tsx` "brand payment-channel gate"), not a bare skip.
   Brand literals inside a test are only OK as mock fixtures.
-- **Brand literals belong in `src/brand/<brand>.ts`, never in a page/component**: pages are
+- **Brand literals belong in `src/brands/<brand>/index.ts`, never in a page/component**: pages are
   statically imported, so a literal there ships in EVERY brand's bundle and breaks purity
-  (this is why `k2sInstallUrl` lives in the registry). `src/brand/overleap.ts` and
-  `src/brand/i18n-vars.ts` ship in overleap artifacts — keep them free of `kaitu.io` /
+  (this is why `k2sInstallUrl` lives in the registry). `src/brands/overleap/index.ts` and
+  `src/brands/i18n-vars.ts` ship in overleap artifacts — keep them free of `kaitu.io` /
   `开途` / `開途` **even in comments**; don't make the minifier's comment stripping
   load-bearing. (`types.ts` is type-only → erased, so it's exempt.)
 - **Artifact purity**: `scripts/check-brand-purity.sh <brand> dist` — kaitu build must
