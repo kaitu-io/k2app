@@ -314,6 +314,14 @@
   "auto": {
     "title": "自動選擇",
     "subtitle": "自動揀選更優節點",
-    "noTunnelAvailable": "暫無可用節點"
+    "noTunnelAvailable": "暫無可用節點",
+    "filterTitle": "排除國家/地區",
+    "filterHint": "自動揀選會跳過勾選的國家/地區，手動揀選不受影響",
+    "excludedCount": "已排除 {{count}} 個國家/地區",
+    "excludedChip": "自動揀選已排除",
+    "nodeCount": "{{count}} 個節點",
+    "filterClear": "清除",
+    "filterDone": "完成",
+    "allExcluded": "可用節點已全部被排除，請調整國家/地區過濾"
   }
 }

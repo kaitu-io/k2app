@@ -314,6 +314,16 @@
   "auto": {
     "title": "Auto",
     "subtitle": "Automatically pick a better server",
-    "noTunnelAvailable": "No server available"
+    "noTunnelAvailable": "No server available",
+    "filterTitle": "Exclude countries/regions",
+    "filterHint": "Auto pick will skip the checked countries or regions. Manual selection is not affected.",
+    "excludedCount_one": "{{count}} country/region excluded",
+    "excludedCount_other": "{{count}} countries/regions excluded",
+    "excludedChip": "Excluded from Auto",
+    "nodeCount_one": "{{count}} server",
+    "nodeCount_other": "{{count}} servers",
+    "filterClear": "Clear",
+    "filterDone": "Done",
+    "allExcluded": "All available servers are excluded by your filter. Adjust the country/region filter."
   }
 }

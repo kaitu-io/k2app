@@ -314,6 +314,14 @@
   "auto": {
     "title": "自動選択",
     "subtitle": "より良いサーバーを自動で選択",
-    "noTunnelAvailable": "利用可能なサーバーがありません"
+    "noTunnelAvailable": "利用可能なサーバーがありません",
+    "filterTitle": "除外する国・地域",
+    "filterHint": "自動選択はチェックした国・地域をスキップします。手動選択には影響しません。",
+    "excludedCount": "{{count}} か国・地域を除外中",
+    "excludedChip": "自動選択から除外",
+    "nodeCount": "{{count}} 台のサーバー",
+    "filterClear": "クリア",
+    "filterDone": "完了",
+    "allExcluded": "利用可能なサーバーがすべて除外されています。国・地域フィルターを調整してください。"
   }
 }
