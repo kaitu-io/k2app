@@ -60,7 +60,7 @@ export const RELAY_ENABLED = false;
 ## 风险与取舍
 
 - 抗封锁能力回到 config.js 层：依赖 jsdelivr 镜像可达 + entry 域名未被墙。这是当初上 relay 的动因，但当前 relay 可达率（2/21）比直连更糟，回退是净收益；entry 域名可由运营侧通过 config.js 快速轮换。
-- `k2_entry_url` localStorage 缓存及其后台刷新逻辑保持原样。
+- `k2_entry_url` localStorage 缓存的后台刷新逻辑保持原样，但增加**一次性值匹配清除**（最终审查修订，用户批准）：relay 时代的 seed bootstrap 每次启动都把该缓存覆盖成 embedded 的 CloudFront entry（对 CN 被 GFW 封），而 `resolveEntry()` 只要缓存存在就永不回落兜底——存量用户升级后会卡在被封 entry 上。修法：`bootstrapAntiblockSeed()` 的关停路径中，仅当缓存值 ∈ `EMBEDDED_SEED.entries` 时删除该键（CDN 解析出的 entry 绝不误伤）。
 - Go relay 池仍会持有历史持久化节点数据，无害（无人查询）。
 
 ## 恢复路径
