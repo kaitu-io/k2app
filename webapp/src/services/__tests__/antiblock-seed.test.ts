@@ -169,11 +169,12 @@ describe('seedPath / seedUrls', () => {
     expect(seedPath(42)).toBe('v/42.js');
   });
 
-  it('seedUrls rewrites every /config.js mirror to /v/<n>.js', () => {
+  it('seedUrls rewrites every /ui.js mirror to /v/<n>.js', () => {
     const urls = seedUrls(7);
     expect(urls.length).toBeGreaterThanOrEqual(3);
     for (const u of urls) {
       expect(u).toMatch(/\/v\/7\.js$/);
+      expect(u).not.toContain('/ui.js');
       expect(u).not.toContain('/config.js');
     }
   });

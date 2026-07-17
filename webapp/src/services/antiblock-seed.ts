@@ -60,7 +60,7 @@ export function seedPath(n: number): string {
 /** Map each CDN mirror (.../config.js) to its versioned seed URL (.../v/<n>.js). */
 export function seedUrls(n: number): string[] {
   return CDN_SOURCES.map(
-    (src) => src.replace(/\/config\.js$/, '/') + seedPath(n),
+    (src) => src.replace(/\/ui\.js$/, '/') + seedPath(n),
   );
 }
 
