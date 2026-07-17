@@ -202,7 +202,20 @@ function writeStr(key: string, value: string): void {
 // ---------------------------------------------------------------------------
 
 export async function bootstrapAntiblockSeed(): Promise<void> {
-  if (!RELAY_ENABLED) return;
+  if (!RELAY_ENABLED) {
+    // 一次性修复：relay 时代的 seed bootstrap 每次启动都把直连缓存 k2_entry_url
+    // 覆盖成 embedded entry（其 CloudFront 域对 CN 被 GFW 封）。值匹配才清除——
+    // CDN 解析出的 entry 绝不误伤；清掉后 resolveEntry() 回到 CDN 解析 / 默认兜底。
+    try {
+      const cached = localStorage.getItem(ENTRY_KEY);
+      if (cached !== null && EMBEDDED_SEED.entries.includes(cached)) {
+        localStorage.removeItem(ENTRY_KEY);
+      }
+    } catch {
+      /* best-effort */
+    }
+    return;
+  }
   try {
     // (1) Always feed the embedded floor to the Go RelayManager. It is idempotent
     // (Go dedups by IP) and REQUIRED every launch: the manager's node store is

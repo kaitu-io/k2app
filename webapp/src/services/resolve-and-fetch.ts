@@ -9,6 +9,8 @@ export const CONTROL_PLANE_HOST = 'k2.52j.me';
 // Relay disabled → direct is the ONLY transport and owns (almost) the whole
 // 15s cloud-api budget (14s, leaving 1s headroom under the outer withTimeout).
 // When relay is primary, direct is the 5s fallback probe — see budget note below.
+// (14s headroom math assumes a cached entry; on a cold start resolveEntry's CDN
+// race runs first and the outer 15s withTimeout is the effective ceiling.)
 const DIRECT_PROBE_TIMEOUT_MS = RELAY_ENABLED ? 5000 : 14000;
 // MUST stay < cloud-api REQUEST_TIMEOUT_MS (15s) minus DIRECT_PROBE_TIMEOUT_MS,
 // so that when relay-first abandons a hung sweep the direct FALLBACK still fits
