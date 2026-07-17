@@ -3,6 +3,7 @@ package center
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -62,6 +63,49 @@ func TestResetRouterControlKeyRotates(t *testing.T) {
 	k3, _ := EnsureRouterControlKey(context.Background(), user.ID)
 	if k3 != k2 {
 		t.Fatal("ensure after reset must return the rotated key")
+	}
+}
+
+// TestEnsureRouterControlKeyConcurrent guards the first-mint race: concurrent
+// EnsureRouterControlKey calls for a brand-new user must all converge on the
+// same winning key, and that key must match what's actually stored in the DB.
+func TestEnsureRouterControlKeyConcurrent(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	user := routerControlKeyTestUser(t)
+
+	const n = 10
+	var wg sync.WaitGroup
+	results := make([]string, n)
+	errs := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = EnsureRouterControlKey(context.Background(), user.ID)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: %v", i, err)
+		}
+	}
+	want := results[0]
+	if !strings.HasPrefix(want, "rck_") || len(want) != 4+64 {
+		t.Fatalf("key format: %q", want)
+	}
+	for i, got := range results {
+		if got != want {
+			t.Fatalf("goroutine %d returned %q, want %q — racers did not converge", i, got, want)
+		}
+	}
+
+	var stored User
+	require.NoError(t, db.Get().First(&stored, user.ID).Error)
+	if stored.RouterControlKey == nil || *stored.RouterControlKey != want {
+		t.Fatalf("DB key = %v, want %q", stored.RouterControlKey, want)
 	}
 }
 
