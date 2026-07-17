@@ -97,7 +97,19 @@
     "loginToPurchase": "ログインして購入を完了",
     "loginNow": "今すぐログイン",
     "loginAndPay": "ログインして支払う",
-    "tierLocked": "現在のプランは「{{tier}}」です。このプランは別のランクのため購入できません。サポートにお問い合わせください。"
+    "tierLocked": "現在のプランは「{{tier}}」です。このプランは別のランクのため購入できません。サポートにお問い合わせください。",
+    "stripe": {
+      "subscribeTitle": "プランを選択",
+      "subscribeButton": "登録する",
+      "perMonth": "/月",
+      "manageTitle": "ご契約中のプラン",
+      "manageButton": "サブスクリプションを管理",
+      "portalHint": "請求・領収書・解約は Stripe の安全な管理ページで行えます。",
+      "openedHint": "ブラウザで安全な決済ページを開きました。お支払い完了後、こちらに戻って更新してください。",
+      "refreshStatus": "支払いが完了しました — 更新",
+      "requestFailed": "決済サービスに接続できませんでした。しばらくしてからお試しください。",
+      "noPlans": "現在ご利用いただけるプランはありません。後ほどご確認ください。"
+    }
   },
   "deviceInstall": {
     "title": "クライアントダウンロード",

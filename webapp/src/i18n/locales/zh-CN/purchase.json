@@ -97,7 +97,19 @@
     "loginToPurchase": "登录以完成购买",
     "loginNow": "立即登录",
     "loginAndPay": "登录并支付",
-    "tierLocked": "您当前为「{{tier}}」档，无法购买此档套餐。如需变更档位请联系客服。"
+    "tierLocked": "您当前为「{{tier}}」档，无法购买此档套餐。如需变更档位请联系客服。",
+    "stripe": {
+      "subscribeTitle": "选择订阅套餐",
+      "subscribeButton": "订阅",
+      "perMonth": "/月",
+      "manageTitle": "我的订阅",
+      "manageButton": "管理订阅",
+      "portalHint": "账单、发票与退订均在 Stripe 安全管理页完成。",
+      "openedHint": "已在浏览器打开安全支付页，完成支付后回到这里刷新状态。",
+      "refreshStatus": "我已完成支付——刷新",
+      "requestFailed": "无法连接支付服务，请稍后重试。",
+      "noPlans": "当前暂无可订阅的套餐，请稍后再来。"
+    }
   },
   "deviceInstall": {
     "title": "客户端下载",

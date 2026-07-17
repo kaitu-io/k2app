@@ -97,7 +97,19 @@
     "loginAndPay": "Log in & pay",
     "inviteRewardTitle": "Referral Reward",
     "inviteRewardDesc": "Complete your first top-up to receive {{days}} extra days",
-    "tierLocked": "Your current tier is {{tier}}. This plan requires a different tier — please contact support to switch tiers."
+    "tierLocked": "Your current tier is {{tier}}. This plan requires a different tier — please contact support to switch tiers.",
+    "stripe": {
+      "subscribeTitle": "Choose your plan",
+      "subscribeButton": "Subscribe",
+      "perMonth": "/mo",
+      "manageTitle": "Your subscription",
+      "manageButton": "Manage subscription",
+      "portalHint": "Billing, invoices and cancellation are handled on the secure Stripe portal.",
+      "openedHint": "We opened the secure checkout in your browser. Finish the payment there, then come back and refresh.",
+      "refreshStatus": "I've completed payment — refresh",
+      "requestFailed": "Could not reach the payment service. Please try again.",
+      "noPlans": "No subscription plans are available right now. Please check back soon."
+    }
   },
   "deviceInstall": {
     "title": "Client download",

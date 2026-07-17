@@ -44,7 +44,7 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
     discover: false, // overleap.io discovery page does not exist yet (web Phase 2 ships it; flip then)
     delegate: false,
     wordgatePurchase: false,
-    stripeCheckout: true, // gate reserved; Purchase flow lands in Phase 6
+    stripeCheckout: true, // Purchase page renders StripePurchasePanel (subscribe/manage)
     chatwoot: false,
     privateNode: false,
     antiblockRelay: false,
