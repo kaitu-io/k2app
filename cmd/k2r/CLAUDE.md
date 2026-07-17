@@ -43,4 +43,4 @@ Uses `flag.NewFlagSet` per subcommand, same as `cmd/k2` and `cmd/k2s`. `up`/`dow
 
 ## `reset`
 
-`cmdReset` tries the daemon IPC path first (`client.Do("reset", nil)`) — loopback origin is exempt from control-key auth (see `gateway/CLAUDE.md`), so no Bearer token is needed for the local CLI. If the daemon isn't reachable (`err != nil`), it falls back to `gateway.WipeBindingFiles()` to wipe credential/state/control-key files directly. Either path requires root (files live under `/etc/k2r/`).
+`cmdReset` tries the daemon IPC path first (`client.Do("reset", nil)`) — loopback origin is exempt from control-key auth (see `gateway/CLAUDE.md`), so no Bearer token is needed for the local CLI, and this path needs only loopback access, not root. If the daemon isn't reachable (`err != nil`), it falls back to `gateway.WipeBindingFiles()` to wipe credential/state/control-key files directly — that path does require root, since the files live under `/etc/k2r/`.

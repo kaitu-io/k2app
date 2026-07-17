@@ -14,8 +14,11 @@ const rootNoticeHTML = `<!doctype html><html><head><meta charset="utf-8">` +
 	`<div><h2>This router is managed by the companion app.</h2>` +
 	`<p>&#x8BF7;&#x4F7F;&#x7528;&#x914D;&#x5957;&#x5E94;&#x7528;&#x7BA1;&#x7406;&#x6B64;&#x8DEF;&#x7531;&#x5668;&#x3002;</p></div></body></html>`
 
-// handleRootNotice serves the notice page on exactly "/" and 404s elsewhere
-// (it is the mux fallback pattern, so it sees every unmatched path).
+// handleRootNotice serves the notice page on exactly "/" and 404s on any
+// other unmatched path (it is the mux fallback pattern, so it sees every
+// unmatched path). In practice only loopback callers ever reach that 404:
+// requireAuth exempts only the exact "/" path, so LAN callers hitting an
+// unmatched path get 401 from requireAuth before this handler runs.
 func handleRootNotice(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)

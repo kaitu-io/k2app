@@ -162,6 +162,12 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/router-devices/mode", g.handleRouterDeviceMode)
 
 	if webapp := webui.NewWebappHandler(g.version, g.commit, g.arch); webapp != nil {
+		// Non-nowebapp dev builds only: k2r production always ships with
+		// -tags nowebapp, so this branch never runs there. requireAuth
+		// exempts only the exact "/" path, so the embedded SPA's /assets/*
+		// requests get 401 from a LAN origin (and browsers can't attach a
+		// Bearer token to asset fetches anyway) — the panel only fully
+		// works when loaded from loopback.
 		mux.Handle("/", webapp)
 	} else {
 		mux.HandleFunc("/", handleRootNotice)
@@ -435,12 +441,12 @@ func (g *Gateway) wipeBinding() error {
 // WipeBindingFiles removes credential + state + control key from stateDir.
 // Exported for the k2r CLI so `k2r reset` also works with the daemon stopped.
 func WipeBindingFiles() error {
-	for _, p := range []string{defaultConfigPath(), statePath(), controlKeyPath()} {
+	for _, p := range []string{defaultConfigPath(), statePath()} {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
-	return nil
+	return clearControlKeyHash()
 }
 
 // closeTunnel extracts resources under mu, then closes outside lock.
