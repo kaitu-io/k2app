@@ -68,8 +68,9 @@
 - **数据**：k2r 在 `/etc/k2r/` 持久化 `controlKeyHash = sha256(controlKey)`。
 - **校验路径（防抢占的关键）**：controlKey 的权威来源是 Center，规则统一为**「Center 权威、adopt 覆盖」**——k2r 每次订阅刷新（`/api/subs`，已有的后台刷新信道，携带自身 udid:token）时，响应新增 `control_key_hash` 字段；k2r 与本地不一致即采纳落盘（无回滚分支，一条规则同时覆盖三个场景）：
   - **首次配置**：未配置的 k2r 接受第一个 `set-credential` 推送 `{url, controlKey?}`（TOFU——「谁配置谁拥有」，与现状语义一致；`controlKey` 参数可选，缺省时等待首次订阅刷新采纳，兼容 `k2r setup` CLI 流程）。推送的 key 先作临时绑定即时生效；首次订阅成功后被 Center 权威 hash 覆盖——若 app 推了过期 key，覆盖后 app 收 401 → 向 Center 重取 → 收敛。
-  - **legacy 升级**：已配置但无 key 的老 k2r，首次订阅刷新即从 Center 学到 hash，鉴权自动生效。**无任何 TOFU 窗口**，LAN 攻击者无法收编存量路由器。
+  - **legacy 升级**：已配置 k2subs 的老 k2r，升级后首次完成订阅刷新即从 Center 学到 hash，鉴权自动生效——**对能完成订阅刷新的路由器无 TOFU 窗口**，LAN 攻击者无法收编存量在线路由器。前提：Center 侧对路由器归属账号 mint-on-serve（见 §4）。
   - **key 轮换**：用户在 Center 重置 key → k2r 下次订阅刷新采纳新 hash；app 侧收到 401 后向 Center 重取。
+- **残留 TOFU 窗口（接受偏差，2026-07-17 终审记录）**：采纳只发生在订阅信道上，因此两类路由器窗口不闭合——① 直连 `k2v5://` 配置（无订阅信道）的 k2r：除非 app 曾经 `set-credential` 推过 controlKey，否则 `set-credential` 对 LAN 持续开放；② 断线/停摆的 k2subs 路由器：窗口开到下次成功刷新为止。威胁模型判定可接受：攻击者需持续在受害者 LAN 内，且该窗口在本设计前是「全部端点永久无鉴权」——严格变好。另注：无 CORS 不阻止跨源**副作用**——unbound 窗口期内，LAN 内任意设备浏览器访问恶意网页即可发出 `set-credential` simple POST（无 preflight），攻击面等同「LAN 内攻击者」，同窗口同判定。
 - **中间件**：除 `/ping` 与 `/`（静态页）外，所有端点要求 `Authorization: Bearer <controlKey>`，本地比对 hash，失败返回 HTTP 401。未绑定 key 状态下 `set-credential` 免鉴权（TOFU 入口），其余端点即使未配置也 401。**loopback（127.0.0.1/::1）来源豁免鉴权**——`k2r up/down/status/reset` CLI 走 localhost IPC，且能在本机发起 loopback 流量者已拥有路由器本体。
 - **解绑**：新增 CLI `k2r reset`——清除凭证、controlKeyHash、状态文件。app 侧「解除绑定」调用需鉴权的 reset API 端点（`/api/core` action `reset`）。
 
@@ -90,7 +91,7 @@
 
 - 新增 `POST /api/user/router-control-key`（用户鉴权）：账号级 controlKey，首调生成、后续幂等返回明文 key。同账号多设备天然共享控制权。存储：User 关联新字段/表存 key（server 端存明文或可逆——需向 app 重复下发；见开放项 §10）。
 - 新增 `POST /api/user/router-control-key/reset`（用户鉴权）：轮换。
-- `/api/subs` 响应（k2r 订阅信道）新增 `controlKeyHash` 字段：按请求 udid 归属账号查 key、下发 sha256。老客户端忽略未知字段，无兼容问题。
+- `/api/subs` 响应（k2r 订阅信道）新增 `controlKeyHash` 字段：按请求 udid 归属账号查 key、下发 sha256。老客户端忽略未知字段，无兼容问题。**gateway 分支 mint-on-serve**（2026-07-17 终审补）：k2r 客户端命中 gateway 分支时若账号尚无 key，则先幂等铸 key 再下发 hash——保证「用户从不打开新 app」的存量 k2subs 路由器也能闭合 TOFU 窗口（否则 §3.2 legacy 保证落空）。shared 分支（app 客户端）保持只读注入，不铸 key。
 - beacon/discover 端点不变。
 
 ## 5. App 侧发现（k2app 仓库，webapp + bridges）
