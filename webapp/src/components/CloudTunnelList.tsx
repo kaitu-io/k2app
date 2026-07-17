@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState, useMemo, useRef } from 'react';
 import {
   Box,
+  Badge,
   Chip,
   Typography,
   List,
@@ -15,13 +16,14 @@ import {
   useTheme,
   Skeleton,
 } from '@mui/material';
-import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon } from '@mui/icons-material';
+import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon, FilterList as FilterListIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
 import { EmptyState } from './LoadingAndEmpty';
 import { RecommendBar } from './RecommendBar';
+import { CountryFilterDialog } from './CountryFilterDialog';
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { useAuthStore } from '../stores/auth.store';
@@ -68,6 +70,19 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   // cloud list is emptied and this renders the renew prompt. Source of truth
   // is the connection store (also gates the connect button).
   const cloudAccessRevoked = useConnectionStore((s) => s.cloudAccessRevoked);
+
+  // Auto-pick country exclusion filter (persisted in connection.store).
+  const excludedCountries = useConnectionStore((s) => s.excludedCountries);
+  const setExcludedCountries = useConnectionStore((s) => s.setExcludedCountries);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const excludedSet = useMemo(() => new Set(excludedCountries), [excludedCountries]);
+
+  const toggleExcludedCountry = useCallback((code: string) => {
+    const cur = useConnectionStore.getState().excludedCountries;
+    void setExcludedCountries(
+      cur.includes(code) ? cur.filter(c => c !== code) : [...cur, code],
+    );
+  }, [setExcludedCountries]);
 
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [echConfigList, setEchConfigList] = useState<string | undefined>(undefined);
@@ -465,10 +480,31 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           </ListItemIcon>
           <ListItemText
             primary={t('dashboard:auto.title')}
-            secondary={t('dashboard:auto.subtitle')}
+            secondary={
+              <Box component="span" data-testid="auto-row-secondary">
+                {excludedCountries.length > 0
+                  ? t('dashboard:auto.excludedCount', { count: excludedCountries.length })
+                  : t('dashboard:auto.subtitle')}
+              </Box>
+            }
             primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
-            secondaryTypographyProps={{ fontSize: '0.75rem' }}
+            secondaryTypographyProps={{
+              fontSize: '0.75rem',
+              sx: excludedCountries.length > 0 ? { color: 'primary.main' } : undefined,
+            }}
           />
+          <IconButton
+            data-testid="auto-country-filter-btn"
+            size="small"
+            onClick={(e) => { e.stopPropagation(); setFilterOpen(true); }}
+            sx={{ mr: 0.5 }}
+          >
+            <Badge badgeContent={excludedCountries.length} color="primary">
+              <FilterListIcon
+                sx={{ fontSize: 20, color: excludedCountries.length > 0 ? 'primary.main' : 'text.secondary' }}
+              />
+            </Badge>
+          </IconButton>
           <Radio
             checked={selectedDomain === AUTO_TUNNEL_DOMAIN}
             color="primary"
@@ -518,6 +554,15 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
                         sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600 }}
                       />
                     )}
+                    {excludedSet.has(tunnel.node.country.toLowerCase()) && (
+                      <Chip
+                        data-testid="auto-excluded-chip"
+                        label={t('dashboard:auto.excludedChip')}
+                        size="small"
+                        variant="outlined"
+                        sx={{ height: 18, fontSize: '0.65rem', color: 'text.secondary' }}
+                      />
+                    )}
                   </Box>
                 }
                 secondary={getCountryName(tunnel.node.country)}
@@ -539,6 +584,15 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           );
         })}
       </List>
+
+      <CountryFilterDialog
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        tunnels={tunnels}
+        excludedCountries={excludedCountries}
+        onToggle={toggleExcludedCountry}
+        onClear={() => { void setExcludedCountries([]); }}
+      />
     </Box>
   );
 }
