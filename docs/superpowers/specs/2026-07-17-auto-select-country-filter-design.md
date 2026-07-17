@@ -64,14 +64,16 @@
 
 `webapp/src/i18n/locales/{en-AU,en-GB,en-US,ja,zh-CN,zh-HK,zh-TW}/dashboard.json` 全部补齐：
 
-- `auto.filterTitle`（排除国家）
-- `auto.filterHint`（自动选择将跳过勾选的国家，手动选择不受影响）
-- `auto.excludedCount`（已排除 {{count}} 个国家）
+中文文案统一用「国家/地区」不用裸「国家」（香港是地区，Apple 惯例「国家或地区」）：
+
+- `auto.filterTitle`（排除国家/地区）
+- `auto.filterHint`（自动选择将跳过勾选的国家/地区，手动选择不受影响）
+- `auto.excludedCount`（已排除 {{count}} 个国家/地区；英文用 i18next `_one`/`_other` 复数键）
 - `auto.excludedChip`（自动选择已排除）
 - `auto.nodeCount`（{{count}} 个节点）
 - `auto.filterClear`（清除）
 - `auto.filterDone`（完成）
-- `auto.allExcluded`（可用节点已全部被国家过滤排除，请调整过滤设置）
+- `auto.allExcluded`（可用节点已全部被排除，请调整国家/地区过滤）— 对应新前端错误码 `NO_TUNNEL_AVAILABLE_FILTERED: 573`（570-579 连接错误段）；原始池本就为空时仍走 572 `auto.noTunnelAvailable`
 
 ### 5. 测试（vitest）
 
