@@ -37,7 +37,6 @@ import { getCurrentAppConfig } from "./config/apps";
 
 const AppBypass = lazy(() => import('./pages/AppBypass'));
 const PrivateNodeManagement = lazy(() => import('./pages/PrivateNodeManagement'));
-const GatewaySetup = lazy(() => import('./pages/GatewaySetup'));
 
 // 应用路由组件
 function AppRoutes() {
@@ -56,12 +55,11 @@ function AppRoutes() {
           {appConfig.features.invite && <Route path="invite" element={null} />}
           {appConfig.features.discover && <Route path="discover" element={null} />}
           <Route path="account" element={null} />
-          {/* Gateway-only: Router tab */}
-          {window._platform?.platformType === 'gateway' && <Route path="router" element={null} />}
-          {/* Gateway-only: 路由器连接设置页（粘贴 k2subs 地址） */}
-          {window._platform?.platformType === 'gateway' && (
-            <Route path="setup" element={<Suspense fallback={null}><GatewaySetup /></Suspense>} />
-          )}
+          {/* Router tab entity lives in Layout's keep-alive tab list (router.store
+              phase !== 'none'); unconditional route so direct /router navigation
+              before a router has ever been seen just falls through to a null Outlet
+              instead of a route-miss (see task-B8 brief "无路由器时 tab 不渲染"). */}
+          <Route path="router" element={null} />
 
           {/* Non-Tab routes */}
           {/* Purchase 移出 keep-alive，每次访问重新渲染（避免与 LoginRequiredGuard 冲突）。

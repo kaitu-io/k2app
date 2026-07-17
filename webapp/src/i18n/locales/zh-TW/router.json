@@ -1,0 +1,26 @@
+{
+  "router": {
+    "title": "路由器",
+    "connected": "已連線",
+    "disconnected": "未連線",
+    "connect": "連線",
+    "disconnect": "中斷連線",
+    "offline": "無法連線到路由器 {{name}}，請確認路由器是否在線",
+    "retry": "重試"
+  },
+  "setup": {
+    "title": "設定路由器 {{name}}",
+    "intro": "點擊下方按鈕，一鍵完成路由器的首次設定",
+    "submit": "開始設定",
+    "error": {
+      "mint_failed": "取得連線憑證失敗，請檢查網路後重試",
+      "key_failed": "取得控制金鑰失敗，請檢查網路後重試",
+      "push_failed": "推送設定到路由器失敗，請確認路由器是否在線"
+    }
+  },
+  "settings": {
+    "title": "路由器設定",
+    "version": "韌體版本：{{version}}",
+    "unbind": "解除綁定"
+  }
+}

@@ -299,7 +299,8 @@
     "remark": "备注",
     "remarkPlaceholder": "如：爸爸的手机",
     "confirm": "确认",
-    "loadFailed": "加载设备列表失败"
+    "loadFailed": "加载设备列表失败",
+    "removeConfirmTitle": "确认从白名单移除该设备？"
   },
   "serverSelector": {
     "tabSmart": "智能选择",

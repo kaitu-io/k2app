@@ -299,7 +299,8 @@
     "remark": "Remark",
     "remarkPlaceholder": "e.g., Dad's phone",
     "confirm": "Confirm",
-    "loadFailed": "Failed to load devices"
+    "loadFailed": "Failed to load devices",
+    "removeConfirmTitle": "Remove this device from the allowlist?"
   },
   "serverSelector": {
     "tabSmart": "Smart",

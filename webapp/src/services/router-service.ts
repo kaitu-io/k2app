@@ -86,20 +86,24 @@ export async function getControlKey(forceRefresh = false): Promise<string | null
   return key;
 }
 
-/** POST {ROUTER_ANCHOR}/api/core;HTTP 401 → 强刷 key 重试一次(k2r 侧 key 已被 Center 权威轮换)。 */
-export async function routerCore<T = unknown>(
-  action: string,
-  params?: Record<string, unknown>,
+/**
+ * 共享请求 helper：{ROUTER_ANCHOR}{path};HTTP 401 → 强刷 key 重试一次
+ * (k2r 侧 key 已被 Center 权威轮换)。routerCore 与 routerDevices* 共用。
+ */
+async function routerFetch<T = unknown>(
+  path: string,
+  method: 'GET' | 'POST',
+  body?: unknown,
 ): Promise<RouterCoreResponse<T>> {
   const send = (key: string | null) =>
     routerRequest({
-      url: `${ROUTER_ANCHOR}/api/core`,
-      method: 'POST',
+      url: `${ROUTER_ANCHOR}${path}`,
+      method,
       headers: {
         'Content-Type': 'application/json',
         ...(key ? { Authorization: `Bearer ${key}` } : {}),
       },
-      body: JSON.stringify({ action, params: params ?? {} }),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       timeoutMs: CORE_TIMEOUT_MS,
     });
 
@@ -113,4 +117,25 @@ export async function routerCore<T = unknown>(
   } catch {
     return { code: -1, message: 'bad response' };
   }
+}
+
+/** POST {ROUTER_ANCHOR}/api/core;HTTP 401 → 强刷 key 重试一次(k2r 侧 key 已被 Center 权威轮换)。 */
+export async function routerCore<T = unknown>(
+  action: string,
+  params?: Record<string, unknown>,
+): Promise<RouterCoreResponse<T>> {
+  return routerFetch<T>('/api/core', 'POST', { action, params: params ?? {} });
+}
+
+/** GET {ROUTER_ANCHOR}/api/router-devices — LAN 设备列表。同 routerCore 的鉴权+401 重试语义。 */
+export async function routerDevicesGet<T = unknown>(): Promise<RouterCoreResponse<T>> {
+  return routerFetch<T>('/api/router-devices', 'GET');
+}
+
+/** POST {ROUTER_ANCHOR}/api/router-devices{subPath} — 设备 mode/allow/remove 等写操作。 */
+export async function routerDevicesPost<T = unknown>(
+  subPath: string,
+  body?: Record<string, unknown>,
+): Promise<RouterCoreResponse<T>> {
+  return routerFetch<T>(`/api/router-devices${subPath}`, 'POST', body ?? {});
 }

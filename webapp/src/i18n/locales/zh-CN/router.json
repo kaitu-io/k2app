@@ -1,0 +1,26 @@
+{
+  "router": {
+    "title": "路由器",
+    "connected": "已连接",
+    "disconnected": "未连接",
+    "connect": "连接",
+    "disconnect": "断开连接",
+    "offline": "无法连接到路由器 {{name}}，请检查路由器是否在线",
+    "retry": "重试"
+  },
+  "setup": {
+    "title": "配置路由器 {{name}}",
+    "intro": "点击下方按钮，一键完成路由器的首次配置",
+    "submit": "开始配置",
+    "error": {
+      "mint_failed": "获取连接凭证失败，请检查网络后重试",
+      "key_failed": "获取控制密钥失败，请检查网络后重试",
+      "push_failed": "推送配置到路由器失败，请检查路由器是否在线"
+    }
+  },
+  "settings": {
+    "title": "路由器设置",
+    "version": "固件版本：{{version}}",
+    "unbind": "解除绑定"
+  }
+}
