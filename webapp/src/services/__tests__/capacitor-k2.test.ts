@@ -9,7 +9,7 @@
 import { describe, it, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Clipboard } from '@capacitor/clipboard';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { mapInstalledApp } from '../capacitor-app-map';
 
 // Mock @capacitor/core
@@ -17,6 +17,9 @@ vi.mock('@capacitor/core', () => ({
   Capacitor: {
     isNativePlatform: vi.fn(() => true),
     getPlatform: vi.fn(() => 'ios'),
+  },
+  CapacitorHttp: {
+    request: vi.fn(),
   },
 }));
 
@@ -41,6 +44,7 @@ const mockK2Plugin = {
   classifyApps: vi.fn(),
   relayFetch: vi.fn(),
   relayAddNodes: vi.fn(),
+  getDefaultGateway: vi.fn(),
 };
 
 vi.mock('k2-plugin', () => ({
@@ -1002,6 +1006,186 @@ describe('capacitor-k2 relay-fetch (native bridge)', () => {
 
     const res = await __testCapacitorRun('relay-fetch', { ip: '1.2.3.4' });
     expect(res.code).toBe(-1);
+  });
+});
+
+describe('capacitor-k2 router bridge (getDefaultGateway + routerRequest)', () => {
+  let originalK2: any;
+  let originalPlatform: any;
+
+  beforeEach(() => {
+    originalK2 = window._k2;
+    originalPlatform = window._platform;
+    delete (window as any)._k2;
+    delete (window as any)._platform;
+    vi.clearAllMocks();
+    mockK2Plugin.checkReady.mockResolvedValue({ ready: true, version: '0.4.0' });
+    mockK2Plugin.addListener.mockResolvedValue({ remove: vi.fn() });
+  });
+
+  afterEach(() => {
+    (window as any)._k2 = originalK2;
+    (window as any)._platform = originalPlatform;
+  });
+
+  describe('getDefaultGateway', () => {
+    it('unwraps the native {gateway} object to a bare string', async () => {
+      mockK2Plugin.getDefaultGateway.mockResolvedValue({ gateway: '192.168.1.1' });
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const result = await window._platform.getDefaultGateway!();
+      expect(result).toBe('192.168.1.1');
+    });
+
+    it('returns null when native resolves gateway:null', async () => {
+      mockK2Plugin.getDefaultGateway.mockResolvedValue({ gateway: null });
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const result = await window._platform.getDefaultGateway!();
+      expect(result).toBeNull();
+    });
+
+    it('fails soft to null when the native call rejects (old plugin build)', async () => {
+      mockK2Plugin.getDefaultGateway.mockRejectedValue(new Error('not implemented'));
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const result = await window._platform.getDefaultGateway!();
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('routerRequest — private-IP SSRF gate (parity with desktop router_bridge.rs)', () => {
+    it('issues the request via CapacitorHttp for a 192.168.x.x target with disableRedirects', async () => {
+      vi.mocked(CapacitorHttp.request).mockResolvedValue({
+        status: 200,
+        data: '{"k2r":true}',
+        headers: {},
+        url: 'http://192.168.1.1:1779/ping',
+      });
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const result = await window._platform.routerRequest!({ url: 'http://192.168.1.1:1779/ping' });
+
+      expect(CapacitorHttp.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'http://192.168.1.1:1779/ping',
+          method: 'GET',
+          headers: {},
+          connectTimeout: 5000,
+          readTimeout: 5000,
+          responseType: 'text',
+          disableRedirects: true,
+        }),
+      );
+      expect(result).toEqual({ status: 200, body: '{"k2r":true}' });
+    });
+
+    it('allows 10.0.0.0/8', async () => {
+      vi.mocked(CapacitorHttp.request).mockResolvedValue({ status: 200, data: 'ok', headers: {}, url: '' });
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await expect(window._platform.routerRequest!({ url: 'http://10.1.2.3/ping' })).resolves.toBeDefined();
+    });
+
+    it('allows 172.16.0.0/12 (boundary octets 16 and 31)', async () => {
+      vi.mocked(CapacitorHttp.request).mockResolvedValue({ status: 200, data: 'ok', headers: {}, url: '' });
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await expect(window._platform.routerRequest!({ url: 'http://172.16.0.1/' })).resolves.toBeDefined();
+      await expect(window._platform.routerRequest!({ url: 'http://172.31.255.255/' })).resolves.toBeDefined();
+    });
+
+    it('rejects 172.32.x.x (just outside the /12 block)', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await expect(window._platform.routerRequest!({ url: 'http://172.32.0.1/' })).rejects.toThrow(/private IPv4/);
+      expect(CapacitorHttp.request).not.toHaveBeenCalled();
+    });
+
+    it('allows 127.0.0.1 loopback', async () => {
+      vi.mocked(CapacitorHttp.request).mockResolvedValue({ status: 200, data: 'ok', headers: {}, url: '' });
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await expect(window._platform.routerRequest!({ url: 'http://127.0.0.1:1779/ping' })).resolves.toBeDefined();
+    });
+
+    it('rejects a public IPv4 target (8.8.8.8) before calling CapacitorHttp', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await expect(window._platform.routerRequest!({ url: 'http://8.8.8.8/' })).rejects.toThrow(/private IPv4/);
+      expect(CapacitorHttp.request).not.toHaveBeenCalled();
+    });
+
+    it('rejects a hostname target even if it could resolve to a private IP', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await expect(window._platform.routerRequest!({ url: 'http://router.local/' })).rejects.toThrow(/private IPv4/);
+      expect(CapacitorHttp.request).not.toHaveBeenCalled();
+    });
+
+    it('rejects https:// even to a private IP (only http:// allowed)', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await expect(window._platform.routerRequest!({ url: 'https://192.168.1.1/' })).rejects.toThrow(/private IPv4/);
+      expect(CapacitorHttp.request).not.toHaveBeenCalled();
+    });
+
+    it('rejects a malformed URL', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await expect(window._platform.routerRequest!({ url: 'not-a-url' })).rejects.toThrow(/invalid URL/);
+      expect(CapacitorHttp.request).not.toHaveBeenCalled();
+    });
+
+    it('forwards method/headers/body/timeoutMs verbatim to CapacitorHttp', async () => {
+      vi.mocked(CapacitorHttp.request).mockResolvedValue({ status: 200, data: 'ok', headers: {}, url: '' });
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await window._platform.routerRequest!({
+        url: 'http://192.168.1.1:1779/api/core',
+        method: 'POST',
+        headers: { 'X-Control-Key': 'abc' },
+        body: '{"action":"status"}',
+        timeoutMs: 3000,
+      });
+
+      expect(CapacitorHttp.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'X-Control-Key': 'abc' },
+          data: '{"action":"status"}',
+          connectTimeout: 3000,
+          readTimeout: 3000,
+        }),
+      );
+    });
+
+    it('JSON-stringifies a non-string response body from CapacitorHttp', async () => {
+      vi.mocked(CapacitorHttp.request).mockResolvedValue({
+        status: 200,
+        data: { k2r: true },
+        headers: {},
+        url: '',
+      });
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const result = await window._platform.routerRequest!({ url: 'http://192.168.1.1/ping' });
+      expect(result.body).toBe(JSON.stringify({ k2r: true }));
+    });
   });
 });
 

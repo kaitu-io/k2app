@@ -2,7 +2,7 @@
   "name": "k2-webapp",
   "private": true,
   "version": "0.3.22",
-  "minNativeVersion": "0.4.0",
+  "minNativeVersion": "0.4.1",
   "type": "module",
   "exports": {
     "./src/*": "./src/*"
