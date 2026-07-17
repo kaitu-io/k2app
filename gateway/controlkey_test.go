@@ -2,7 +2,10 @@
 
 package gateway
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func withTempStateDir(t *testing.T) {
 	t.Helper()
@@ -32,6 +35,22 @@ func TestControlKeyHashRoundtrip(t *testing.T) {
 	// clear is idempotent
 	if err := clearControlKeyHash(); err != nil {
 		t.Fatalf("second clear: %v", err)
+	}
+}
+
+func TestControlKeyHashCorruptFile(t *testing.T) {
+	withTempStateDir(t)
+
+	// write garbage to file
+	if err := os.MkdirAll(stateDir(), 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(controlKeyPath(), []byte("{not json"), 0600); err != nil {
+		t.Fatalf("write garbage: %v", err)
+	}
+	// corrupt file should return "" (not panic or error)
+	if got := loadControlKeyHash(); got != "" {
+		t.Fatalf("corrupt file: load = %q, want empty", got)
 	}
 }
 
