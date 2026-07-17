@@ -40,6 +40,21 @@ describe('useStripeCheckout', () => {
     expect(result.current.error).not.toBeNull();
   });
 
+  it('checkout with code 0 but missing url does not report success (regression)', async () => {
+    // Bug: passing code 0 straight to getErrorMessage() hits ERROR_CODES.SUCCESS
+    // and returns the "Success" string even though nothing was opened.
+    postMock.mockResolvedValue({ code: 0, data: {} } as any);
+    const { result } = renderHook(() => useStripeCheckout());
+    let ok = true;
+    await act(async () => { ok = await result.current.checkout('p'); });
+    expect(ok).toBe(false);
+    expect(window._platform!.openExternal).not.toHaveBeenCalled();
+    expect(result.current.error).not.toBeNull();
+    // t is mocked to identity — the success key must never surface here.
+    expect(result.current.error).not.toBe('common:common.success');
+    expect(result.current.error).toBe('common:errors.api.responseFailed');
+  });
+
   it('openPortal posts and opens portal url', async () => {
     postMock.mockResolvedValue({ code: 0, data: { url: 'https://billing.stripe.com/p' } } as any);
     const { result } = renderHook(() => useStripeCheckout());

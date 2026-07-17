@@ -8,7 +8,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cloudApi } from '../services/cloud-api';
-import { getErrorMessage } from '../utils/errorCode';
+import { ERROR_CODES, getErrorMessage } from '../utils/errorCode';
 
 interface StripeRedirect {
   url: string;
@@ -35,11 +35,21 @@ export function useStripeCheckout(): UseStripeCheckoutReturn {
       setError(null);
       try {
         const res = await cloudApi.post<StripeRedirect>(path, body);
-        if (res.code !== 0 || !res.data?.url) {
+        if (res.code !== 0) {
           console.error('[useStripeCheckout] failed:', path, res.code, res.message);
           // Code-based mapping (never raw response.message) — see webapp/CLAUDE.md
           // "API Error Code Constitution".
           setError(getErrorMessage(res.code, res.message, t));
+          return false;
+        }
+        if (!res.data?.url) {
+          // code === 0 (success) but the body is missing the expected `url` —
+          // NOT a success case. Must NOT pass code 0 to getErrorMessage(),
+          // which maps SUCCESS -> "Success" and would show a misleading
+          // success string while nothing actually opened. Route through the
+          // dedicated "response shape invalid" code instead.
+          console.error('[useStripeCheckout] missing url in response:', path, res);
+          setError(getErrorMessage(ERROR_CODES.API_RESPONSE_FAILED, undefined, t));
           return false;
         }
         void window._platform?.openExternal?.(res.data.url);
