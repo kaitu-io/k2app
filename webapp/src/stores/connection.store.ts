@@ -77,6 +77,10 @@ interface ConnectionState {
   subsCountry: string | null;
   /** True once persisted subsCountry has been loaded from storage. */
   subsCountryLoaded: boolean;
+  /** ISO 3166-1 alpha-2 codes (lowercase, deduped, sorted) excluded from Auto pick. */
+  excludedCountries: string[];
+  /** True once persisted excludedCountries has been loaded from storage. */
+  excludedCountriesLoaded: boolean;
   /**
    * True when the cloud tunnel endpoint last reported 402 (membership expired).
    * This is the live entitlement signal — fresher than `useUser().isExpired` —
@@ -92,6 +96,7 @@ interface ConnectionState {
 const LAST_SERVER_URL_STORAGE_KEY = 'k2.vpn.last_server_url';
 const SERVER_MODE_STORAGE_KEY = 'k2.vpn.server_mode';
 const SUBS_COUNTRY_STORAGE_KEY = 'k2.connection.subsCountry';
+const EXCLUDED_COUNTRIES_STORAGE_KEY = 'k2.connection.excludedCountries';
 
 /**
  * Canonical "Auto pick" sentinel domain.
@@ -221,6 +226,8 @@ interface ConnectionActions {
   loadServerMode: () => Promise<void>;
   setSubsCountry: (country: string | null) => Promise<void>;
   loadSubsCountry: () => Promise<void>;
+  setExcludedCountries: (countries: string[]) => Promise<void>;
+  loadExcludedCountries: () => Promise<void>;
 }
 
 // ============ Helpers ============
@@ -284,6 +291,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   serverModeLoaded: false,
   subsCountry: null,
   subsCountryLoaded: false,
+  excludedCountries: [],
+  excludedCountriesLoaded: false,
   cloudAccessRevoked: false,
 
   // Actions
@@ -408,6 +417,39 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }
   },
 
+  setExcludedCountries: async (countries: string[]) => {
+    const normalized = [...new Set(countries.map(c => c.toLowerCase()))].sort();
+    set({ excludedCountries: normalized });
+    try {
+      if (normalized.length === 0) {
+        await window._platform.storage.remove(EXCLUDED_COUNTRIES_STORAGE_KEY);
+      } else {
+        await window._platform.storage.set(EXCLUDED_COUNTRIES_STORAGE_KEY, JSON.stringify(normalized));
+      }
+    } catch (err) {
+      console.warn('[Connection] Failed to persist excludedCountries:', err);
+    }
+  },
+
+  loadExcludedCountries: async () => {
+    try {
+      const v = await window._platform.storage.get<string>(EXCLUDED_COUNTRIES_STORAGE_KEY);
+      let parsed: string[] = [];
+      if (typeof v === 'string' && v) {
+        try {
+          const arr: unknown = JSON.parse(v);
+          if (Array.isArray(arr)) {
+            parsed = arr.filter((x): x is string => typeof x === 'string').map(c => c.toLowerCase());
+          }
+        } catch { /* corrupted JSON → default [] */ }
+      }
+      useConnectionStore.setState({ excludedCountries: parsed, excludedCountriesLoaded: true });
+    } catch (err) {
+      console.warn('[Connection] Failed to load excludedCountries:', err);
+      useConnectionStore.setState({ excludedCountriesLoaded: true });
+    }
+  },
+
   connect: async () => {
     const t0 = Date.now();
     // State guard: reject if already connecting/connected/reconnecting/disconnecting.
@@ -420,18 +462,24 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       return;
     }
 
-    const { selectedCloudTunnel, connectEpoch, serverMode } = get();
+    const { selectedCloudTunnel, connectEpoch, serverMode, excludedCountries } = get();
 
     // Resolve Auto sentinel (manual mode + null selection) into a concrete Tunnel.
     let resolvedTunnel: Tunnel | null = selectedCloudTunnel;
     if (serverMode === 'manual' && selectedCloudTunnel === null) {
       const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
       const tunnelList = cached?.items ?? [];
-      resolvedTunnel = pickAutoTunnel(tunnelList);
+      resolvedTunnel = pickAutoTunnel(tunnelList, excludedCountries);
       if (!resolvedTunnel) {
-        console.warn('[Connection] connect: Auto mode but no tunnel available, aborting');
+        // Distinguish "list genuinely empty" from "emptied by the user's
+        // country filter" — the latter gets an actionable message (573).
+        const filteredOut = excludedCountries.length > 0 && pickAutoTunnel(tunnelList) !== null;
+        console.warn('[Connection] connect: Auto mode but no tunnel available'
+          + (filteredOut ? ' (all candidates excluded by country filter)' : '') + ', aborting');
         vpnDispatch('BACKEND_ERROR', {
-          error: { code: ERROR_CODES.NO_TUNNEL_AVAILABLE_AUTO, message: 'No tunnel available for auto pick' },
+          error: filteredOut
+            ? { code: ERROR_CODES.NO_TUNNEL_AVAILABLE_FILTERED, message: 'All auto-pick candidates excluded by country filter' }
+            : { code: ERROR_CODES.NO_TUNNEL_AVAILABLE_AUTO, message: 'No tunnel available for auto pick' },
           isRetrying: false,
         });
         return;
@@ -758,6 +806,9 @@ export function initializeConnectionStore(): () => void {
 
   // Load persisted subsCountry (fire-and-forget). Independent of cold-start restore.
   useConnectionStore.getState().loadSubsCountry();
+
+  // Load persisted excludedCountries (fire-and-forget). Independent of cold-start restore.
+  useConnectionStore.getState().loadExcludedCountries();
 
   // Trigger 1: VPN state changes (vpn-machine.store uses subscribeWithSelector middleware)
   const unsubVPN = useVPNMachineStore.subscribe(
