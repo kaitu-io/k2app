@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   resolveEntry,
+  resolveEntries,
   decrypt,
   DECRYPTION_KEY,
   CDN_SOURCES,
@@ -155,7 +156,9 @@ describe('antiblock — AES-256-GCM decryption', () => {
     });
 
     it('test_cache_hit_skips_fetch', async () => {
-      mockLocalStorage.getItem.mockReturnValue('https://cached.example.com');
+      mockLocalStorage.getItem.mockReturnValue(
+        JSON.stringify({ entries: ['https://cached.example.com'], ts: 1 }),
+      );
 
       const entry = await resolveEntry();
       expect(entry).toBe('https://cached.example.com');
@@ -171,7 +174,9 @@ describe('antiblock — AES-256-GCM decryption', () => {
     });
 
     it('test_background_refresh_on_cache_hit', async () => {
-      mockLocalStorage.getItem.mockReturnValue('https://cached.example.com');
+      mockLocalStorage.getItem.mockReturnValue(
+        JSON.stringify({ entries: ['https://cached.example.com'], ts: 1 }),
+      );
       const appendSpy = vi.spyOn(document.head, 'appendChild');
 
       await resolveEntry();
@@ -202,14 +207,10 @@ describe('antiblock — AES-256-GCM decryption', () => {
     expect(CDN_SOURCES.some((u) => u.includes('jsd.cdn.zzko.cn'))).toBe(true);
     // 独立于 jsDelivr 基础设施的 GitHub 代理（故障域隔离）
     expect(CDN_SOURCES.some((u) => u.includes('cdn.statically.io'))).toBe(true);
-    // 所有源必须是 jsDelivr 兼容的 /gh/ 路径且以 config.js 结尾（seedUrls 依赖此形状）
+    // 所有源必须是 jsDelivr 兼容的 /gh/ 路径且以 ui.js 结尾（seedUrls 依赖此形状）
     for (const u of CDN_SOURCES) {
-      expect(u).toMatch(/^https:\/\/[^/]+\/gh\/kaitu-io\/ui-theme@dist\/config\.js$/);
+      expect(u).toMatch(/^https:\/\/[^/]+\/gh\/kaitu-io\/ui-theme@dist\/ui\.js$/);
     }
-  });
-
-  it('test_happy_eyeballs_uses_promise_any', () => {
-    expect(sourceCode).toContain('promiseAny');
   });
 
   it('test_no_atob_in_source', () => {
@@ -222,5 +223,114 @@ describe('antiblock — AES-256-GCM decryption', () => {
 
   it('test_default_entry_is_plain_url', () => {
     expect(DEFAULT_ENTRY.startsWith('https://')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ts freshness marker + single atomic record + multi-entry resolution
+// ---------------------------------------------------------------------------
+
+describe('antiblock — ts freshness + single-record store + resolveEntries', () => {
+  let store: Record<string, string>;
+
+  async function makeConfig(
+    entries: string[],
+    ts: number | undefined,
+  ): Promise<{ v: number; data: string }> {
+    const payload: Record<string, unknown> = { entries };
+    if (ts !== undefined) payload.ts = ts;
+    return { v: 1, data: await encryptForTest(JSON.stringify(payload), DECRYPTION_KEY) };
+  }
+
+  beforeEach(() => {
+    store = {};
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => (k in store ? store[k]! : null),
+      setItem: (k: string, v: string) => { store[k] = String(v); },
+      removeItem: (k: string) => { delete store[k]; },
+      clear: () => { store = {}; },
+    });
+  });
+
+  afterEach(async () => {
+    // 排空上个 test 遗留的后台镜像回调（setTimeout），让它们在本 test 的 mock+store
+    // 仍生效时落地，避免泄漏到下个 test 污染共享的 window.__k2ac。
+    await new Promise((r) => setTimeout(r, 15));
+    vi.restoreAllMocks();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (window as any).__k2ac;
+  });
+
+  it('test_picks_highest_ts_across_mirrors', async () => {
+    // 快镜像陈旧 (ts=100)、慢镜像新鲜 (ts=200)。首个返回可能是旧的，
+    // 但后台升级后记录必须收敛到 ts=200 的 entries。
+    const fastHost = new URL(CDN_SOURCES[0]!).host;
+    const cfgOld = await makeConfig(['https://old.example'], 100);
+    const cfgNew = await makeConfig(['https://new.example'], 200);
+    vi.spyOn(document.head, 'appendChild').mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (<T extends Node>(node: T): T => {
+        if (node instanceof HTMLScriptElement && node.src) {
+          const isFast = node.src.includes(fastHost);
+          setTimeout(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (window as any).__k2ac = isFast ? cfgOld : cfgNew;
+            node.onload?.(new Event('load'));
+          }, isFast ? 0 : 5);
+        }
+        return node;
+      }) as typeof document.head.appendChild,
+    );
+    await resolveEntries();
+    await new Promise((r) => setTimeout(r, 30)); // let background upgrade land
+    const rec = JSON.parse(store['k2_entry_cfg']!);
+    expect(rec.ts).toBe(200);
+    expect(rec.entries).toEqual(['https://new.example']);
+  });
+
+  it('test_ts_guard_rejects_stale_background_write', async () => {
+    store['k2_entry_cfg'] = JSON.stringify({ entries: ['https://fresh'], ts: 500 });
+    const stale = await makeConfig(['https://stale'], 100);
+    setupScriptMock(() => stale);
+    const entries = await resolveEntries();      // cache hit → returns fresh + bg refresh
+    expect(entries).toEqual(['https://fresh']);
+    await new Promise((r) => setTimeout(r, 20));
+    const rec = JSON.parse(store['k2_entry_cfg']!);
+    expect(rec.ts).toBe(500);                    // stale ts=100 must NOT overwrite
+    expect(rec.entries).toEqual(['https://fresh']);
+  });
+
+  it('test_missing_ts_treated_as_zero_but_entries_valid', async () => {
+    const noTs = await makeConfig(['https://noTs'], undefined);
+    setupScriptMock(() => noTs);
+    const entries = await resolveEntries();
+    expect(entries).toEqual(['https://noTs']);
+    expect(JSON.parse(store['k2_entry_cfg']!).ts).toBe(0);
+  });
+
+  it('test_resolveEntries_returns_full_list_resolveEntry_returns_first', async () => {
+    const cfg = await makeConfig(['https://a', 'https://b', 'https://c'], 300);
+    setupScriptMock(() => cfg);
+    const list = await resolveEntries();
+    expect(list).toEqual(['https://a', 'https://b', 'https://c']);
+    expect(await resolveEntry()).toBe('https://a'); // cache hit → record[0]
+  });
+
+  it('test_no_legacy_migration_from_k2_entry_url', async () => {
+    store['k2_entry_url'] = 'https://poisoned.cloudfront'; // legacy poisoned key
+    setupScriptMock(() => null);                           // all CDN fail
+    const entries = await resolveEntries();
+    expect(entries).toEqual([DEFAULT_ENTRY]);              // NOT the legacy value
+  });
+
+  it('test_cache_hit_returns_record_entries', async () => {
+    store['k2_entry_cfg'] = JSON.stringify({ entries: ['https://c1', 'https://c2'], ts: 42 });
+    const entries = await resolveEntries();
+    expect(entries).toEqual(['https://c1', 'https://c2']);
+  });
+
+  it('test_all_cdn_fail_returns_default_list', async () => {
+    setupScriptMock(() => null);
+    expect(await resolveEntries()).toEqual([DEFAULT_ENTRY]);
   });
 });
