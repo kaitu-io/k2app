@@ -305,7 +305,6 @@
     "tabSmart": "智能選擇",
     "tabManual": "指定伺服器",
     "countryAuto": "自動",
-    "countryPickerLabel": "節點地區",
     "nodesAvailable": "{{count}} 個節點 · {{regions}} 個地區",
     "smartHint": "k2 會根據延遲自動選擇最優節點",
     "manualHint": "適合需要固定 IP 嘅場景",
