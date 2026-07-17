@@ -88,6 +88,8 @@ func (g *Gateway) handleCore(w http.ResponseWriter, r *http.Request) {
 		g.handleStatus(w)
 	case "set-credential":
 		g.handleSetCredential(w, req.Params)
+	case "reset":
+		g.handleReset(w)
 	case "version":
 		writeJSON(w, Response{Code: 0, Data: map[string]string{
 			"version": g.version,
@@ -170,6 +172,21 @@ func (g *Gateway) handleSetCredential(w http.ResponseWriter, params map[string]a
 			slog.Warn("gateway: set-credential doUp failed", "err", err)
 		}
 	})
+	writeJSON(w, Response{Code: 0, Message: "ok"})
+}
+
+// handleReset unbinds the router: best-effort disconnect, then wipe
+// credential + state + control key. The next /ping reports configured:false
+// and set-credential re-opens (TOFU).
+func (g *Gateway) handleReset(w http.ResponseWriter) {
+	// Best-effort teardown: reset must still unbind even if the tunnel is
+	// already down (e.g. no TPROXY/engine running) or torn down with an
+	// error — the on-disk wipe below is what actually matters.
+	g.doDown(true)
+	if err := g.wipeBinding(); err != nil {
+		writeJSON(w, Response{Code: 1, Message: "reset failed"})
+		return
+	}
 	writeJSON(w, Response{Code: 0, Message: "ok"})
 }
 

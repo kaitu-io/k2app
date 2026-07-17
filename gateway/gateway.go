@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
@@ -406,13 +407,40 @@ func (g *Gateway) doDown(userInitiated bool) {
 	// Drain any active subscription sessions. Engine.Stop() (called via
 	// closeTunnel) does not own subscription state — Manager does — so the
 	// shell must close them explicitly. Idempotent: safe when no sessions
-	// were ever resolved (e.g. doDown without prior doUp).
-	g.subsMgr.CloseAll()
+	// were ever resolved (e.g. doDown without prior doUp). subsMgr is only
+	// nil for a zero-value Gateway (never New()-constructed) — handleReset
+	// calls doDown best-effort on whatever Gateway it's given, so guard it.
+	if g.subsMgr != nil {
+		g.subsMgr.CloseAll()
+	}
 	if userInitiated {
 		saveState(&persistedState{State: "disconnected", Timestamp: time.Now()})
 	}
 	// else: preserve whatever state.json the last doUp wrote — auto-reconnect
 	// on next start is the intent.
+}
+
+// wipeBinding removes the on-disk binding then clears the in-memory key.
+func (g *Gateway) wipeBinding() error {
+	if err := WipeBindingFiles(); err != nil {
+		return err
+	}
+	g.mu.Lock()
+	g.controlKeyHash = ""
+	g.controlKeyLoaded = true
+	g.mu.Unlock()
+	return nil
+}
+
+// WipeBindingFiles removes credential + state + control key from stateDir.
+// Exported for the k2r CLI so `k2r reset` also works with the daemon stopped.
+func WipeBindingFiles() error {
+	for _, p := range []string{defaultConfigPath(), statePath(), controlKeyPath()} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 // closeTunnel extracts resources under mu, then closes outside lock.

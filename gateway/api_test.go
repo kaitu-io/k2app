@@ -111,3 +111,39 @@ func TestRootNoticePage(t *testing.T) {
 		t.Fatalf("non-root path: code = %d, want 404", w.Code)
 	}
 }
+
+func TestResetWipesBinding(t *testing.T) {
+	withTempStateDir(t)
+	g := &Gateway{}
+
+	// 造出三件持久化物
+	if err := PersistConfig(GatewayFromURL("k2v5://u:t@h.example.com:443/")); err != nil {
+		t.Fatal(err)
+	}
+	saveState(&persistedState{State: "connected"})
+	if err := g.setControlKeyHash(hashControlKey("rck_x")); err != nil {
+		t.Fatal(err)
+	}
+
+	// loopback 来源直接打 reset(无 Bearer,靠豁免)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/core", strings.NewReader(`{"action":"reset"}`))
+	r.RemoteAddr = "127.0.0.1:40000"
+	g.handleCore(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reset: code = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	if _, err := os.Stat(defaultConfigPath()); !os.IsNotExist(err) {
+		t.Fatal("k2r.yml must be removed")
+	}
+	if loadState() != nil {
+		t.Fatal("state.json must be removed")
+	}
+	if g.currentControlKeyHash() != "" {
+		t.Fatal("in-memory control key must be cleared")
+	}
+	if loadControlKeyHash() != "" {
+		t.Fatal("control-key.json must be removed")
+	}
+}
