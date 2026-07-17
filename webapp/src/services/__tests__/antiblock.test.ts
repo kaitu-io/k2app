@@ -195,6 +195,19 @@ describe('antiblock — AES-256-GCM decryption', () => {
     expect(CDN_SOURCES.some((u) => u.includes('gcore.jsdelivr.net'))).toBe(true);
   });
 
+  it('test_cdn_sources_include_cn_reachable_and_diverse_mirrors', () => {
+    // 网宿 CDNetworks 官方边缘（CN 友好）
+    expect(CDN_SOURCES.some((u) => u.includes('quantil.jsdelivr.net'))).toBe(true);
+    // 国内镜像（CN 直达；从海外探测不通属预期）
+    expect(CDN_SOURCES.some((u) => u.includes('jsd.cdn.zzko.cn'))).toBe(true);
+    // 独立于 jsDelivr 基础设施的 GitHub 代理（故障域隔离）
+    expect(CDN_SOURCES.some((u) => u.includes('cdn.statically.io'))).toBe(true);
+    // 所有源必须是 jsDelivr 兼容的 /gh/ 路径且以 config.js 结尾（seedUrls 依赖此形状）
+    for (const u of CDN_SOURCES) {
+      expect(u).toMatch(/^https:\/\/[^/]+\/gh\/kaitu-io\/ui-theme@dist\/config\.js$/);
+    }
+  });
+
   it('test_happy_eyeballs_uses_promise_any', () => {
     expect(sourceCode).toContain('promiseAny');
   });

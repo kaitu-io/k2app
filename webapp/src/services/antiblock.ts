@@ -10,15 +10,27 @@ export const DECRYPTION_KEY =
 export { decrypt } from './antiblock-crypto';
 
 // jsdelivr mirrors — raced simultaneously (Happy Eyeballs)
-// Same repo path, different edge networks for redundancy in blocked regions
+// Same repo path, different edge networks for redundancy in blocked regions.
+// 安全性：config.js 载荷是 AES-256-GCM 加密+认证的，镜像只影响可用性，无法投毒
+// （解密失败的候选会被 promiseAny 淘汰）。坏/慢镜像在赛跑中零成本。
+// 缓存注意：jsDelivr 系全部忽略 query string（实测 2026-07），?bust= 无法穿透
+// 边缘缓存；@dist 是 branch ref，官方边缘 ~12h 回源，第三方镜像 TTL 更长且不可控
+// （曾实测 jsdmirror.cn 落后官方数天）。因此 entry 轮换必须保持新旧 entry 重叠可用。
 export const CDN_SOURCES = [
+  // jsDelivr 官方边缘（cdn.jsdelivr.net 主域对 CN 已失效，但其余边缘域可用性各异）
   'https://cdn.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
   'https://fastly.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
   'https://testingcf.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
   'https://gcore.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+  // 网宿 CDNetworks 官方边缘 — 历史上的 CN 友好入口（2026-07 内容校验通过）
+  'https://quantil.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+  // 国内第三方镜像（jsdMirror = 腾讯云 EdgeOne；zzko 面向 CN，海外探测不通属预期）
   'https://cdn.jsdmirror.com/gh/kaitu-io/ui-theme@dist/config.js',
   'https://cdn.jsdmirror.cn/gh/kaitu-io/ui-theme@dist/config.js',
   'https://jsd.onmicrosoft.cn/gh/kaitu-io/ui-theme@dist/config.js',
+  'https://jsd.cdn.zzko.cn/gh/kaitu-io/ui-theme@dist/config.js',
+  // statically.io — 独立于 jsDelivr 基础设施的 GitHub 代理，故障域隔离
+  'https://cdn.statically.io/gh/kaitu-io/ui-theme@dist/config.js',
 ];
 
 // ---------------------------------------------------------------------------
