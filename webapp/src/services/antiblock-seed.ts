@@ -29,8 +29,8 @@ import type { NodeEntry } from './node-descriptor';
 import { EMBEDDED_SEED } from './antiblock-seed-embedded';
 import { RELAY_ENABLED } from './relay-flag';
 
-// Distinct from the legacy config.js channel (global __k2ac, path config.js).
-// Never read config.js / __k2ac here.
+// Distinct from the entry-config channel (global __k2ac, path ui.js/config.js).
+// Never read that channel / __k2ac here.
 export const SEED_GLOBAL = '__k2sd';
 
 export const CURSOR_KEY = 'k2_seed_cursor';
@@ -57,7 +57,7 @@ export function seedPath(n: number): string {
   return 'v/' + n + '.js';
 }
 
-/** Map each CDN mirror (.../config.js) to its versioned seed URL (.../v/<n>.js). */
+/** Map each CDN mirror (.../ui.js) to its versioned seed URL (.../v/<n>.js). */
 export function seedUrls(n: number): string[] {
   return CDN_SOURCES.map(
     (src) => src.replace(/\/ui\.js$/, '/') + seedPath(n),
