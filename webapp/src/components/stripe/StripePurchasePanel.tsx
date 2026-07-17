@@ -22,6 +22,12 @@ interface StripePurchasePanelProps {
   plansLoading: boolean;
 }
 
+// Apple 订阅管理跳转（同 IosMembershipPanel.tsx 的 APPLE_SUBS_URL）：overleap 同时
+// 开了 apple_iap 渠道，manage.kind === 'apple_settings' 时该商品是在 iOS 端购买
+// 的，桌面/web 无法调用 Stripe portal（会打错商户或直接报错）——只能引导去 App
+// Store 的订阅管理页。
+const APPLE_SUBS_URL = 'itms-apps://apps.apple.com/account/subscriptions';
+
 export default function StripePurchasePanel({ plans, plansLoading }: StripePurchasePanelProps) {
   const { t } = useTranslation();
   const { user, fetchUser } = useUser();
@@ -58,8 +64,12 @@ export default function StripePurchasePanel({ plans, plansLoading }: StripePurch
     }
   };
 
-  // 管理面：有活跃订阅时不再兜售，转 Billing Portal。
+  // 管理面：有活跃订阅时不再兜售，按 manage.kind 分派到对应 provider 的管理入口。
+  // overleap 同时开了 apple_iap（本分支 api Tasks 1-3）——manage 面不能默认假设
+  // Stripe：iOS 端购的订阅在这里看到的是 apple_settings，Stripe portal 按钮对它
+  // 必然报错，必须先按 kind 分派（同 IosMembershipPanel.tsx openManage 的模式）。
   if (affordance.mode !== 'subscribe') {
+    const manage = affordance.activeSub?.manage;
     return (
       <Box sx={{ width: '100%', py: 1 }} data-testid="stripe-manage-panel">
         <Stack spacing={2.5}>
@@ -71,19 +81,49 @@ export default function StripePurchasePanel({ plans, plansLoading }: StripePurch
             maxRouterDevice={user?.maxRouterDevice}
             maxLanClient={user?.maxLanClient}
           />
-          <Typography variant="body2" color="text.secondary">
-            {t('purchase:purchase.stripe.portalHint')}
-          </Typography>
-          {error && <Alert severity="error">{error}</Alert>}
-          <Button
-            data-testid="stripe-portal-btn"
-            variant="contained"
-            endIcon={<OpenInNewIcon />}
-            disabled={loading}
-            onClick={() => void openPortal()}
-          >
-            {t('purchase:purchase.stripe.manageButton')}
-          </Button>
+
+          {manage?.kind === 'stripe_portal' && (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                {t('purchase:purchase.stripe.portalHint')}
+              </Typography>
+              {error && <Alert severity="error">{error}</Alert>}
+              <Button
+                data-testid="stripe-portal-btn"
+                variant="contained"
+                endIcon={<OpenInNewIcon />}
+                disabled={loading}
+                onClick={() => void openPortal()}
+              >
+                {t('purchase:purchase.stripe.manageButton')}
+              </Button>
+            </>
+          )}
+
+          {manage?.kind === 'apple_settings' && (
+            <Button
+              data-testid="stripe-manage-apple-btn"
+              variant="contained"
+              endIcon={<OpenInNewIcon />}
+              onClick={() => void window._platform?.openExternal?.(APPLE_SUBS_URL)}
+            >
+              {t('purchase:purchase.iap.openManage')}
+            </Button>
+          )}
+
+          {manage?.kind === 'url' && manage.url && (
+            <Button
+              data-testid="stripe-manage-url-btn"
+              variant="contained"
+              endIcon={<OpenInNewIcon />}
+              onClick={() => void window._platform?.openExternal?.(manage.url!)}
+            >
+              {t('purchase:purchase.iap.openManage')}
+            </Button>
+          )}
+
+          {/* kind 缺失/未知（或 'url' 却没带 url）：fail-safe——不给一个必然
+              报错或打错商户的死按钮，只展示订阅状态（标题 + 权益）。 */}
         </Stack>
       </Box>
     );

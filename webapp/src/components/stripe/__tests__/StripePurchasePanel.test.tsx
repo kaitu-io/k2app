@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import StripePurchasePanel from '../StripePurchasePanel';
 import type { Plan } from '../../../services/api-types';
@@ -31,11 +31,19 @@ const plans: Plan[] = [
 ];
 
 describe('StripePurchasePanel', () => {
+  let originalPlatform: typeof window._platform;
+
   beforeEach(() => {
     checkoutMock.mockReset().mockResolvedValue(true);
     portalMock.mockReset().mockResolvedValue(true);
     affordanceMock = { mode: 'subscribe' };
     userMock = { user: { uuid: 'u1' }, fetchUser: vi.fn() };
+    originalPlatform = window._platform;
+    (window as any)._platform = { openExternal: vi.fn() };
+  });
+
+  afterEach(() => {
+    (window as any)._platform = originalPlatform;
   });
 
   it('subscribe mode: renders plans and fires checkout with selected pid', async () => {
@@ -55,6 +63,41 @@ describe('StripePurchasePanel', () => {
     render(<StripePurchasePanel plans={plans} plansLoading={false} />);
     fireEvent.click(screen.getByTestId('stripe-portal-btn'));
     await waitFor(() => expect(portalMock).toHaveBeenCalled());
+  });
+
+  // overleap also runs apple_iap — a user who subscribed via iOS sees
+  // manage.kind === 'apple_settings' here (desktop/web), not stripe_portal.
+  // The panel must never show Stripe portal copy/button for that subscription.
+  it('manage mode (apple_settings): opens App Store subscriptions, no Stripe portal button', async () => {
+    affordanceMock = {
+      mode: 'manage',
+      activeSub: { provider: 'apple', tier: 'basic', currentPeriodEnd: 2000000000,
+        autoRenew: true, manage: { kind: 'apple_settings' } },
+    };
+    render(<StripePurchasePanel plans={plans} plansLoading={false} />);
+    expect(screen.queryByTestId('stripe-portal-btn')).toBeNull();
+    fireEvent.click(screen.getByTestId('stripe-manage-apple-btn'));
+    await waitFor(() =>
+      expect(window._platform!.openExternal).toHaveBeenCalledWith(
+        'itms-apps://apps.apple.com/account/subscriptions',
+      ),
+    );
+    expect(portalMock).not.toHaveBeenCalled();
+  });
+
+  // manage.kind missing/unknown: fail-safe — no dead button that would call
+  // the wrong provider or crash. Status-only.
+  it('manage mode (kind missing): shows no action button, never calls openPortal', () => {
+    affordanceMock = {
+      mode: 'manage',
+      activeSub: { provider: 'stripe', tier: 'basic', currentPeriodEnd: 2000000000,
+        autoRenew: true, manage: {} },
+    };
+    render(<StripePurchasePanel plans={plans} plansLoading={false} />);
+    expect(screen.queryByTestId('stripe-portal-btn')).toBeNull();
+    expect(screen.queryByTestId('stripe-manage-apple-btn')).toBeNull();
+    expect(screen.queryByTestId('stripe-manage-url-btn')).toBeNull();
+    expect(portalMock).not.toHaveBeenCalled();
   });
 
   it('empty plans: shows noPlans hint, no subscribe button', () => {
