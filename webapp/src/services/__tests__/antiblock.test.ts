@@ -204,8 +204,9 @@ describe('antiblock — AES-256-GCM decryption', () => {
     // 网宿 CDNetworks 官方边缘（CN 友好）
     expect(CDN_SOURCES.some((u) => u.includes('quantil.jsdelivr.net'))).toBe(true);
     // 国内镜像（CN 直达；从海外探测不通属预期）
-    expect(CDN_SOURCES.some((u) => u.includes('jsd.cdn.zzko.cn'))).toBe(true);
-    // 独立于 jsDelivr 基础设施的 GitHub 代理（故障域隔离）
+    expect(CDN_SOURCES.some((u) => u.includes('cdn.jsdmirror.cn'))).toBe(true);
+    // 独立于 jsDelivr 基础设施的边缘（故障域隔离）：Bunny CDN + statically.io
+    expect(CDN_SOURCES.some((u) => u.includes('jsdelivr.b-cdn.net'))).toBe(true);
     expect(CDN_SOURCES.some((u) => u.includes('cdn.statically.io'))).toBe(true);
     // 所有源必须是 jsDelivr 兼容的 /gh/ 路径且以 ui.js 结尾（seedUrls 依赖此形状）
     for (const u of CDN_SOURCES) {

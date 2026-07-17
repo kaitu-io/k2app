@@ -24,12 +24,13 @@ export const CDN_SOURCES = [
   'https://gcore.jsdelivr.net/gh/kaitu-io/ui-theme@dist/ui.js',
   // 网宿 CDNetworks 官方边缘 — 历史上的 CN 友好入口（2026-07 内容校验通过）
   'https://quantil.jsdelivr.net/gh/kaitu-io/ui-theme@dist/ui.js',
-  // 国内第三方镜像（jsdMirror = 腾讯云 EdgeOne；zzko 面向 CN，海外探测不通属预期）
+  // 国内第三方镜像（jsdMirror = 腾讯云 EdgeOne；海外探测不通属预期）
   'https://cdn.jsdmirror.com/gh/kaitu-io/ui-theme@dist/ui.js',
   'https://cdn.jsdmirror.cn/gh/kaitu-io/ui-theme@dist/ui.js',
   'https://jsd.onmicrosoft.cn/gh/kaitu-io/ui-theme@dist/ui.js',
-  'https://jsd.cdn.zzko.cn/gh/kaitu-io/ui-theme@dist/ui.js',
-  // statically.io — 独立于 jsDelivr 基础设施的 GitHub 代理，故障域隔离
+  // 独立于 jsDelivr 基础设施的边缘，故障域隔离（Bunny CDN + statically.io GitHub 代理）
+  // 注：原 jsd.cdn.zzko.cn 于 2026-07 TLS 证书过期（硬失败），替换为 Bunny b-cdn.net。
+  'https://jsdelivr.b-cdn.net/gh/kaitu-io/ui-theme@dist/ui.js',
   'https://cdn.statically.io/gh/kaitu-io/ui-theme@dist/ui.js',
 ];
 
