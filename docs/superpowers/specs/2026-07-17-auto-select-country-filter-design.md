@@ -23,15 +23,25 @@
 
 ### 1. UI — `webapp/src/components/CloudTunnelList.tsx`
 
-「自动选择」行（现 442-478 行）：
+已确认的高保真 mockup：https://claude.ai/code/artifact/4d790846-0345-478f-a5ef-773644e6e0a3
 
-- 行尾 Radio 之前加 `FilterListIcon` 的 `IconButton`，`onClick` 需 `stopPropagation`（不触发选中 Auto）。
-- 有排除国家时：图标 primary 色 + `Badge` 显示排除数量；行 secondary 文案追加「已排除 N 个国家」。
-- 点击打开 **MUI Dialog**（禁用 window.confirm/alert/prompt — Capacitor WebView 会静默吞掉）：
-  - 标题「排除国家」+ 说明「自动选择将跳过勾选的国家」。
-  - 国家列表从当前 tunnels 的 `node.country` 去重派生 — 把 `K2subConfig.tsx` 的 `buildCountryList` 抽成共享 util（如 `webapp/src/utils/country-list.ts`），两处复用。
-  - 每行：国旗（`getFlagIcon`）+ 国家名（`getCountryName`）+ `Checkbox`，勾选 = 排除。
-  - 底部操作：「清除」（全不选）/「完成」（关闭）。勾选即时生效并持久化，无需确认按钮提交语义。
+**「自动选择」行（现 442-478 行）：**
+
+- 行尾 `ListItemText` 与 `Radio` 之间加 `IconButton size="small"` + `FilterListIcon`，`onClick` 需 `stopPropagation`（不触发选中 Auto）。
+- **默认态**（无排除）：图标灰色 `text.secondary`，行外观与现状几乎一致。
+- **过滤生效态**：图标 `color="primary"` + `Badge badgeContent={n}` 显示排除数量；secondary 文案从 `auto.subtitle` 切换为 `auto.excludedCount`（「已排除 N 个国家」，`primary.main` 色）。
+
+**被排除国家的节点行：**
+
+- 不隐藏、不置灰；在名称旁加一枚小 `Chip`「自动选择已排除」（`auto.excludedChip`），复用现有 residential Chip 规格（outlined、height 18、fontSize 0.65rem），**中性灰色不用红色**——这是偏好不是错误。手动点击仍正常连接。
+
+**过滤对话框**（点漏斗打开，MUI `Dialog fullWidth maxWidth="xs"` — 禁用 window.confirm/alert/prompt，Capacitor WebView 会静默吞掉）：
+
+- `DialogTitle`「排除国家」+ hint「自动选择将跳过勾选的国家，手动选择不受影响」。
+- 国家列表从当前 tunnels 的 `node.country` 去重派生、按节点数降序 — 把 `K2subConfig.tsx` 的 `buildCountryList` 抽成共享 util（如 `webapp/src/utils/country-list.ts`），两处复用（需扩展为同时返回每国节点数）。
+- 每行：`ListItemButton` + 国旗（`getFlagIcon`）+ 国家名（`getCountryName`）+ 节点数（`auto.nodeCount`，「N 个节点」）+ `Checkbox edge="end"`，勾选 = 排除。
+- `DialogActions`：「清除」（全不选）/「完成」（仅关闭）。**勾选即时生效并持久化**，无确认提交语义。
+- 移动端窄屏 MUI Dialog 自动收缩，无需单独响应式处理。
 
 ### 2. 状态与持久化 — `webapp/src/stores/connection.store.ts`
 
@@ -55,8 +65,10 @@
 `webapp/src/i18n/locales/{en-AU,en-GB,en-US,ja,zh-CN,zh-HK,zh-TW}/dashboard.json` 全部补齐：
 
 - `auto.filterTitle`（排除国家）
-- `auto.filterHint`（自动选择将跳过勾选的国家）
+- `auto.filterHint`（自动选择将跳过勾选的国家，手动选择不受影响）
 - `auto.excludedCount`（已排除 {{count}} 个国家）
+- `auto.excludedChip`（自动选择已排除）
+- `auto.nodeCount`（{{count}} 个节点）
 - `auto.filterClear`（清除）
 - `auto.filterDone`（完成）
 - `auto.allExcluded`（可用节点已全部被国家过滤排除，请调整过滤设置）
