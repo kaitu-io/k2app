@@ -1,12 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../antiblock', () => ({ resolveEntry: vi.fn().mockResolvedValue('https://k2.52j.me') }));
+vi.mock('../antiblock', () => ({
+  resolveEntry: vi.fn().mockResolvedValue('https://k2.52j.me'),
+  resolveEntries: vi.fn().mockResolvedValue(['https://k2.52j.me']),
+}));
 
 import { resolveAndFetch } from '../resolve-and-fetch';
-import { resolveEntry } from '../antiblock';
+import { resolveEntry, resolveEntries } from '../antiblock';
 import * as pool from '../entry-pool';
 
 const mockedResolveEntry = vi.mocked(resolveEntry);
+const mockedResolveEntries = vi.mocked(resolveEntries);
 
 // RELAY_ENABLED=false（真实 flag 值）：直连是唯一传输。relay 代码保留但零调用。
 describe('resolveAndFetch with relay disabled (kill-switch)', () => {
@@ -17,6 +21,7 @@ describe('resolveAndFetch with relay disabled (kill-switch)', () => {
     vi.clearAllMocks();
     pool.__resetRelaySupportForTest();
     mockedResolveEntry.mockResolvedValue('https://k2.52j.me');
+    mockedResolveEntries.mockResolvedValue(['https://k2.52j.me']); // clearAllMocks 会清实现
     (window as any)._k2 = { run: vi.fn() };
   });
   afterEach(() => {
@@ -57,5 +62,47 @@ describe('resolveAndFetch with relay disabled (kill-switch)', () => {
     const res = await p;
     expect(aborted).toBe(true);
     expect(res.transport).toBe('fail');
+  });
+
+  // ── multi-entry failover ────────────────────────────────────────────────
+
+  it('GET races all entries; first HTTP response wins (blocked entry[0] loses to entry[1])', async () => {
+    mockedResolveEntries.mockResolvedValue(['https://blocked', 'https://good']);
+    globalThis.fetch = vi.fn((url: any) =>
+      String(url).startsWith('https://blocked')
+        ? new Promise(() => {}) // hangs (blocked)
+        : Promise.resolve({ status: 200, json: async () => ({ ok: true }) }),
+    ) as any;
+    const res = await resolveAndFetch({ method: 'GET', path: '/api/x', headers: {} });
+    expect(res.transport).toBe('ok');
+    if (res.transport === 'ok') expect(res.status).toBe(200);
+    expect(globalThis.fetch).toHaveBeenCalledWith('https://good/api/x', expect.any(Object));
+  });
+
+  it('POST does NOT race; sequential, advances only on connection failure', async () => {
+    mockedResolveEntries.mockResolvedValue(['https://e1', 'https://e2']);
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn((url: any) => {
+      calls.push(String(url));
+      return String(url).startsWith('https://e1')
+        ? Promise.reject(new TypeError('conn refused')) // e1 connection fails
+        : Promise.resolve({ status: 200, json: async () => ({ ok: true }) });
+    }) as any;
+    const res = await resolveAndFetch({ method: 'POST', path: '/api/auth/login', headers: {}, body: '{}' });
+    expect(res.transport).toBe('ok');
+    expect(calls).toEqual(['https://e1/api/auth/login', 'https://e2/api/auth/login']);
+  });
+
+  it('POST returning 500 is returned verbatim; NO failover to entry[1] (request executed)', async () => {
+    mockedResolveEntries.mockResolvedValue(['https://e1', 'https://e2']);
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn((url: any) => {
+      calls.push(String(url));
+      return Promise.resolve({ status: 500, json: async () => ({ err: 1 }) });
+    }) as any;
+    const res = await resolveAndFetch({ method: 'POST', path: '/api/order', headers: {}, body: '{}' });
+    expect(res.transport).toBe('ok');
+    if (res.transport === 'ok') expect(res.status).toBe(500);
+    expect(calls).toEqual(['https://e1/api/order']); // e1 only — no retry on HTTP response
   });
 });

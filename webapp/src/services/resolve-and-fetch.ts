@@ -1,4 +1,4 @@
-import { resolveEntry } from './antiblock';
+import { resolveEntries } from './antiblock';
 import * as pool from './entry-pool';
 import type { RelayRequest, RelayResponse, SResponse } from '../types/kaitu-core';
 import { RELAY_ENABLED } from './relay-flag';
@@ -31,23 +31,72 @@ interface RelayReq {
   body?: string;
 }
 
-async function tryDirect(req: RelayReq): Promise<TransportResult | null> {
-  const entry = await resolveEntry();
+// 单次直连一个 entry。拿到任何 HTTP 响应 → {transport:'ok'}（含 4xx/5xx，请求已执行）；
+// 连接级失败（网络错误 / abort，证明请求未到后端）→ null。
+function fetchOnce(
+  entry: string,
+  req: RelayReq,
+  timeoutMs: number,
+): Promise<TransportResult | null> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DIRECT_PROBE_TIMEOUT_MS);
-  try {
-    const resp = await fetch(entry + req.path, {
-      method: req.method,
-      headers: req.headers,
-      body: req.body,
-      signal: controller.signal,
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(entry + req.path, {
+    method: req.method,
+    headers: req.headers,
+    body: req.body,
+    signal: controller.signal,
+  })
+    .then((resp): TransportResult => {
+      clearTimeout(timer);
+      return { transport: 'ok', status: resp.status, json: () => resp.json() };
+    })
+    .catch(() => {
+      clearTimeout(timer);
+      return null; // connection-level failure
     });
-    clearTimeout(timer);
-    return { transport: 'ok', status: resp.status, json: () => resp.json() };
-  } catch {
-    clearTimeout(timer);
-    return null; // connection-level failure → caller falls back to relay
+}
+
+// 幂等（GET/HEAD）：并发竞速所有 entry，首个 HTTP 响应胜出，其余自然 abort（各自超时）。
+// 所有 entry 指向同一源站，故竞速本质是"哪个前端最快可达"。
+function raceEntries(entries: string[], req: RelayReq): Promise<TransportResult | null> {
+  return new Promise((resolve) => {
+    let remaining = entries.length;
+    let done = false;
+    for (const entry of entries) {
+      fetchOnce(entry, req, DIRECT_PROBE_TIMEOUT_MS).then((r) => {
+        if (done) return;
+        if (r) {
+          done = true;
+          resolve(r);
+          return;
+        }
+        if (--remaining === 0) resolve(null);
+      });
+    }
+  });
+}
+
+// 非幂等（POST/PUT/…）或单 entry：顺序。仅连接级失败（null，证明未执行）才试下一个；
+// 拿到任何 HTTP 响应即返回，绝不重放非幂等请求。共享 14s 截止，每 entry 分摊超时。
+async function sequentialEntries(entries: string[], req: RelayReq): Promise<TransportResult | null> {
+  const per = Math.max(4000, Math.floor(DIRECT_PROBE_TIMEOUT_MS / entries.length));
+  const deadline = Date.now() + DIRECT_PROBE_TIMEOUT_MS;
+  for (const entry of entries) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const r = await fetchOnce(entry, req, Math.min(per, remaining));
+    if (r) return r;
   }
+  return null;
+}
+
+async function tryDirect(req: RelayReq): Promise<TransportResult | null> {
+  const entries = await resolveEntries();
+  const method = req.method.toUpperCase();
+  const idempotent = method === 'GET' || method === 'HEAD';
+  return idempotent && entries.length > 1
+    ? raceEntries(entries, req)
+    : sequentialEntries(entries, req);
 }
 
 // tryRelay sends ONE node-less relay request. Node selection, ranking, sequential
