@@ -43,6 +43,11 @@ type Subscription struct {
 	fetchedAt   time.Time
 	interval    time.Duration // effective refresh interval
 	scoreSource ScoreSource   // optional, consulted by Pick when non-nil
+	// controlKeyHash is the account-level router control-key hash delivered by
+	// Center in the subs response ("" until first fetch carries one). Consumed
+	// by the k2r gateway to gate its panel HTTP API.
+	controlKeyHash   string
+	onControlKeyHash func(string) // invoked OUTSIDE mu after a fetch that carried a hash
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -71,6 +76,9 @@ type Tunnel struct {
 type subsResponse struct {
 	Tunnels []Tunnel `json:"tunnels"`
 	Refresh *int     `json:"refresh,omitempty"`
+	// ControlKeyHash is the SHA-256 hex of the owning account's router
+	// control key. Cross-repo contract with Center /api/subs (snake_case).
+	ControlKeyHash string `json:"control_key_hash,omitempty"`
 }
 
 // ScoreSource is an optional per-URL adjustment consulted by Pick.
@@ -188,6 +196,22 @@ func (s *Subscription) SetClientHeader(h string) {
 	s.mu.Unlock()
 }
 
+// SetOnControlKeyHash registers a callback fired (outside the state lock)
+// after every Fetch whose response carries a non-empty control_key_hash.
+// Set before StartRefresh.
+func (s *Subscription) SetOnControlKeyHash(fn func(string)) {
+	s.mu.Lock()
+	s.onControlKeyHash = fn
+	s.mu.Unlock()
+}
+
+// ControlKeyHash returns the last control-key hash from Center ("" = none yet).
+func (s *Subscription) ControlKeyHash() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.controlKeyHash
+}
+
 // SetTunnelsForTest replaces the current tunnel list. Tests only.
 func (s *Subscription) SetTunnelsForTest(tunnels []Tunnel) {
 	s.mu.Lock()
@@ -273,7 +297,17 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 	s.tunnels = sr.Tunnels
 	s.fetchedAt = now
 	s.interval = interval
+	if sr.ControlKeyHash != "" {
+		s.controlKeyHash = sr.ControlKeyHash
+	}
+	cb := s.onControlKeyHash
 	s.mu.Unlock()
+
+	// Callback runs outside the lock (concurrency constitution: no external
+	// calls under a state lock).
+	if cb != nil && sr.ControlKeyHash != "" {
+		cb(sr.ControlKeyHash)
+	}
 
 	// Write cache (outside lock).
 	if s.cacheFile != "" {
