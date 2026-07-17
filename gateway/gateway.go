@@ -65,6 +65,11 @@ type Gateway struct {
 	// Subscription manager — handles k2subs:// routes, OutboundProvider
 	// hot-swap, exclude state. Cleared on doDown via CloseAll.
 	subsMgr *subscription.Manager
+
+	// controlKeyHash gates the panel HTTP API ("" = unbound). Authority is
+	// Center via the subs channel; see reconcileControlKey. mu-protected.
+	controlKeyHash   string
+	controlKeyLoaded bool
 }
 
 // k2rReleaseEndpoints lists the CDN base URLs used by k2r's OTA upgrader.
@@ -160,9 +165,7 @@ func (g *Gateway) Run(addr string) error {
 		mux.Handle("/", webapp)
 	}
 
-	g.httpServer = &http.Server{
-		Handler: mux,
-	}
+	g.httpServer = &http.Server{Handler: g.requireAuth(mux)}
 
 	safego.Go(g.tryAutoReconnect)
 

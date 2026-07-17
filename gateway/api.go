@@ -45,6 +45,15 @@ func (g *Gateway) handleCore(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, Response{Code: 1, Message: "bad request"})
 		return
 	}
+	// TOFU entry: set-credential stays open only while no control key is
+	// bound (first-time provisioning). Every other action — and
+	// set-credential itself once bound — requires authorization.
+	if req.Action != "set-credential" || g.currentControlKeyHash() != "" {
+		if !g.authorized(r) {
+			writeUnauthorized(w)
+			return
+		}
+	}
 	switch req.Action {
 	case "up":
 		g.handleUp(w, req.Params)
