@@ -608,22 +608,7 @@ func (e *Engine) Start(cfg Config) error {
 	// unnecessary. Desktop daemon + Android keep the updater.
 	if client.CacheDir != "" && !cfg.NetworkExtension {
 		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []rule.NamedBundle, error) {
-			named, err := rule.LoadNamed(cacheDir)
-			if err != nil {
-				return nil, nil, err
-			}
-			bundles := make([]*krs.Bundle, 0, len(named))
-			regionBundlesRebuild := make(map[string]*krs.Bundle, len(named))
-			for _, nb := range named {
-				bundles = append(bundles, nb.Bundle)
-				if nb.Region != "" {
-					regionBundlesRebuild[nb.Region] = nb.Bundle
-				}
-			}
-			idx := matcherIndex(krs.Index(bundles))
-
-			entries, _, _ := buildRouteEntries(client.Routes, idx, outboundMap, heapRegionExpander(regionBundlesRebuild))
-			return entries, named, nil
+			return rebuildEntriesForUpdater(client.Routes, outboundMap, cacheDir)
 		}
 		rule.StartUpdaterNamed(ctx, ruleEngine, client.CacheDir, sources, rebuildFn)
 	}
@@ -1227,12 +1212,58 @@ func anchorDirectEntry() rule.RouteEntry {
 // route entry. rule.Engine.Match/MatchConn are first-match-wins over
 // entries, then fall through to `fallback` — prepending here is what makes
 // the anchor address win over a match:all catch-all in Global proxy mode
-// (fallback would otherwise be the proxy outbound). Called at all three
-// rule.Engine construction sites in this file (the match:all fast path,
-// the heap path, and the NE disk path) so no route.Engine is ever built
-// without it.
+// (fallback would otherwise be the proxy outbound).
+//
+// MUST be applied at every site that either constructs a rule.Engine OR
+// feeds a []rule.RouteEntry into a live engine's Reload/ReloadNamed/
+// ReloadWithClosers — a reload wholesale-replaces e.routes (rule/engine.go
+// reload), silently dropping any entry not present in what's passed in.
+// Audited call sites (2026-07-18 review; grep `buildRouteEntries(` /
+// `rule.NewEngine` / `\.Reload` across the repo to re-verify if you add a
+// new one):
+//  1. buildRuleEngine's match:all single-route fast path — rule.NewEngine.
+//  2. buildRuleEngine's heap path — rule.NewEngineNamed.
+//  3. buildRuleEngineDisk (NE mmap path) — rule.NewEngineWithClosers.
+//  4. rebuildEntriesForUpdater, wired into rule.StartUpdaterNamed in
+//     Start() — the 24h background rule-bundle updater's rebuild function,
+//     whose output feeds Engine.ReloadNamed on every tick (including the
+//     immediate first tick, seconds after connect). Missing this site was
+//     a shipped Critical bug: the anchor entry present right after
+//     construction was stripped by the first updater reload on desktop
+//     daemon + Android (client.CacheDir != "" && !NetworkExtension) —
+//     anchor routing worked at connect, then broke minutes later. See
+//     TestAnchorRoute_SurvivesUpdaterReload.
 func withAnchorFirst(entries []rule.RouteEntry) []rule.RouteEntry {
 	return append([]rule.RouteEntry{anchorDirectEntry()}, entries...)
+}
+
+// rebuildEntriesForUpdater reproduces buildRuleEngine's heap-path route
+// construction (load bundles from cacheDir, index, buildRouteEntries) for
+// the 24h background rule-bundle updater. Extracted as a standalone,
+// directly testable function — rather than left inline as a closure in
+// Start() — specifically so a test can drive the exact code path
+// rule.StartUpdaterNamed calls on every tick and confirm withAnchorFirst
+// survives it (see TestAnchorRoute_SurvivesUpdaterReload). Matches
+// rule.RebuildFuncNamed's signature modulo the extra (routes, outboundMap)
+// closure-over params, which Start()'s rebuildFn supplies from client.Routes
+// and the already-built outboundMap.
+func rebuildEntriesForUpdater(routes []config.RouteConfig, outboundMap map[string]rule.Target, cacheDir string) ([]rule.RouteEntry, []rule.NamedBundle, error) {
+	named, err := rule.LoadNamed(cacheDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	bundles := make([]*krs.Bundle, 0, len(named))
+	regionBundlesRebuild := make(map[string]*krs.Bundle, len(named))
+	for _, nb := range named {
+		bundles = append(bundles, nb.Bundle)
+		if nb.Region != "" {
+			regionBundlesRebuild[nb.Region] = nb.Bundle
+		}
+	}
+	idx := matcherIndex(krs.Index(bundles))
+
+	entries, _, _ := buildRouteEntries(routes, idx, outboundMap, heapRegionExpander(regionBundlesRebuild))
+	return withAnchorFirst(entries), named, nil
 }
 
 // buildRouteEntries converts config routes to rule.RouteEntry list using the given bundle index.

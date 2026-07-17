@@ -97,3 +97,56 @@ func TestAnchorRoute_DiskReaderPath(t *testing.T) {
 		t.Fatalf("Match(anchor)=%v, want direct on the disk-reader path", got)
 	}
 }
+
+// TestAnchorRoute_SurvivesUpdaterReload is the regression test for the
+// Critical gap found in review (2026-07-18 follow-up): Start() wires a
+// rebuild closure into rule.StartUpdaterNamed for the 24h background
+// rule-bundle updater (desktop daemon + Android — client.CacheDir != "" &&
+// !cfg.NetworkExtension; NE/iOS skips it). StartUpdaterNamed fires an
+// "immediate first check" within seconds of connect, which calls the
+// rebuild function and hot-swaps the live engine's routes via
+// Engine.ReloadNamed — a wholesale e.routes replace (rule/engine.go reload).
+// The rebuild function previously called buildRouteEntries directly,
+// bypassing withAnchorFirst, so the anchor entry present right after
+// buildRuleEngine construction was silently stripped by the first updater
+// tick: anchor traffic worked immediately after connect, then broke minutes
+// later. rebuildEntriesForUpdater is the exact function Start() wires into
+// the updater — this test drives it directly (per reviewer guidance) rather
+// than standing up a full Start() integration harness.
+func TestAnchorRoute_SurvivesUpdaterReload(t *testing.T) {
+	client := config.ClientFromURL(cpServerURL)
+	// The updater only runs for CacheDir != "" configs, which always take
+	// buildRuleEngine's heap path (never the bare match:all fast path in
+	// production — daemon/appext always set CacheDir). Push past the
+	// len==1 fast path here so this test's construction matches that shape.
+	client.Routes = append(client.Routes, config.RouteConfig{Via: "direct", Match: rule.MatchConfig{DomainSuffix: []string{"example.com"}}})
+	client.CacheDir = t.TempDir() // empty dir — rule.LoadNamed returns (nil, nil), no bundles needed for this test
+
+	outboundMap := buildOutboundMap(client.Routes)
+	re := buildRuleEngine(client, outboundMap, false)
+	defer re.Close()
+
+	// Precondition: anchor is already direct right after construction (the
+	// three-construction-site fix already covers this).
+	if got := re.Match(config.RouterAnchorIP); got != cpTDirect {
+		t.Fatalf("precondition: Match(anchor)=%v, want direct before reload", got)
+	}
+
+	// Drive the exact function Start() wires into rule.StartUpdaterNamed —
+	// what the immediate first updater tick calls within seconds of connect.
+	entries, named, err := rebuildEntriesForUpdater(client.Routes, outboundMap, client.CacheDir)
+	if err != nil {
+		t.Fatalf("rebuildEntriesForUpdater: %v", err)
+	}
+	if err := re.ReloadNamed(entries, named); err != nil {
+		t.Fatalf("ReloadNamed: %v", err)
+	}
+
+	if got := re.Match(config.RouterAnchorIP); got != cpTDirect {
+		t.Fatalf("Match(anchor)=%v, want direct AFTER updater reload (Critical gap regression)", got)
+	}
+	// Regression: builtin rule must not widen direct beyond the anchor /32.
+	if got := re.Match(cpUnrelatedIP); got != cpTProxy {
+		t.Fatalf("Match(%s)=%v, want proxy after reload (fallback intact)", cpUnrelatedIP, got)
+	}
+}
