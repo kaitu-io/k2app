@@ -32,6 +32,23 @@ fn is_private_host(u: &url::Url) -> bool {
     }
 }
 
+/// Build the HTTP client used to reach the LAN router.
+///
+/// Redirects are disabled on purpose: `is_private_host` validates only the
+/// *requested* URL, not any `Location:` a compromised/misbehaving router
+/// might respond with. A k2r panel response only ever needs one hop, so
+/// following redirects would let a private-IP target redirect the client to
+/// an arbitrary (non-private) URL post-validation — reopening the SSRF gate
+/// this module exists to close. Disabling redirects surfaces the 3xx to the
+/// caller instead of silently chasing it.
+fn build_router_client(timeout: std::time::Duration) -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn router_http_request(opts: RouterRequestOptions) -> Result<RouterResponse, String> {
     let parsed = url::Url::parse(&opts.url).map_err(|e| e.to_string())?;
@@ -40,10 +57,9 @@ pub async fn router_http_request(opts: RouterRequestOptions) -> Result<RouterRes
     }
     // reqwest::blocking panics inside an async runtime — always spawn_blocking.
     tokio::task::spawn_blocking(move || {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_millis(opts.timeout_ms.unwrap_or(5000)))
-            .build()
-            .map_err(|e| e.to_string())?;
+        let client = build_router_client(std::time::Duration::from_millis(
+            opts.timeout_ms.unwrap_or(5000),
+        ))?;
         let method = reqwest::Method::from_bytes(
             opts.method.as_deref().unwrap_or("GET").as_bytes(),
         )
@@ -174,5 +190,34 @@ mod tests {
         assert!(is_private_host(&url::Url::parse("http://192.168.1.1:1779/ping").unwrap()));
         assert!(!is_private_host(&url::Url::parse("http://8.8.8.8/").unwrap()));
         assert!(!is_private_host(&url::Url::parse("http://example.com/").unwrap()));
+    }
+
+    #[test]
+    fn router_client_does_not_follow_redirects() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf); // drain the request so the client isn't stuck writing
+            let response = "HTTP/1.1 301 Moved Permanently\r\nLocation: http://8.8.8.8/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let client = build_router_client(std::time::Duration::from_secs(5)).unwrap();
+        let resp = client
+            .get(format!("http://{}/", addr))
+            .send()
+            .expect("request to local listener should succeed");
+
+        // A followed redirect would either error out chasing http://8.8.8.8/
+        // (no network in test sandboxes) or return whatever 8.8.8.8 sends.
+        // Policy::none() means the 301 itself must come back to the caller.
+        assert_eq!(resp.status().as_u16(), 301);
+
+        server.join().unwrap();
     }
 }
