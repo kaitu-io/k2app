@@ -155,6 +155,9 @@ func SetupRouter() *gin.Engine {
 			// 铸造专属线路路由器凭证（k2subs:// URL）。调用方是普通 app/web 设备，
 			// 故不加 EnforceDeviceClass；铸造的是 router 设备（is_gateway=true）。
 			user.POST("/gateway-credential", AuthRequired(), api_gateway_credential)
+			// 路由器控制密钥（账号级，同 gateway-credential 不加 EnforceDeviceClass）
+			user.POST("/router-control-key", AuthRequired(), api_router_control_key)
+			user.POST("/router-control-key/reset", AuthRequired(), api_router_control_key_reset)
 			// 获取授权变更历史
 			user.GET("/pro-histories", AuthRequired(), EnforceDeviceClass(), api_get_pro_histories)
 			// 发送绑定邮箱验证码
