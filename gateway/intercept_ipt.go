@@ -248,6 +248,10 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 		)
 	}
 
+	// Anchor DNAT: unconditional, independent of LANSubnets/DNSRedirect/
+	// AllowlistMode — see gateway/anchor.go.
+	cmds = append(cmds, anchorIptCommands()...)
+
 	cmds = append(cmds,
 		cmdSpec{"ip", []string{"rule", "add", "fwmark", "1", "table", "100"}},
 		cmdSpec{"ip", []string{"route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100"}},

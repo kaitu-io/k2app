@@ -79,6 +79,10 @@ func (n *nftShellInterceptor) buildScript(cfg InterceptConfig) string {
 			"add chain inet k2r dnsredir_out { type nat hook output priority -100 ; policy accept ; }")
 	}
 
+	// Anchor DNAT: unconditional, independent of LANSubnets/DNSRedirect/
+	// AllowlistMode — see gateway/anchor.go.
+	lines = append(lines, anchorNftLines()...)
+
 	lines = append(lines,
 		`add rule inet k2r prerouting iifname "lo" return`)
 
