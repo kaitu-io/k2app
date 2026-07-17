@@ -220,7 +220,7 @@ Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, lice
 
 Stripe (website) went live in Phase 6 with: sentinel→Slack alert routing (done, `alertPaymentBrandMismatch`), brand-scoped `planByStripePriceID`, provider-aware `GetActiveSubscriptions`. Still open before Apple IAP / Play Billing for overleap:
 
-- **`planByAppleProductID`** (`logic_apple_iap.go`) has **no brand filter** (`tx.Where(&Plan{AppleProductID: productID})`). An Apple product ID collision or reuse across brands would credit the wrong brand's plan. Needs `ScopeBrand` treatment before Apple IAP goes live for overleap.
+- **`planByAppleProductID`** (`logic_apple_iap.go`) is now **brand-scoped** (Phase A) — `ScopeBrand` filter applied, preventing cross-brand product ID collisions.
 - **Overleap winback campaign codes**: `winbackCampaigns` (`worker_renewal_reminder.go`) has no overleap-scoped codes — `campaignVarsForBrand` returns an empty vars map for overleap recipients (silently no-op; verify intent once overleap runs campaigns).
 - **`SavingsText` is hardcoded Chinese** (`worker_renewal_reminder.go`): leaks Chinese copy into English winback email the moment overleap gets a campaign code in `winbackCampaigns` — needs an English variant gated on `brand` before that happens.
 - **Overleap lifecycle EDM templates** (`renewal-Nd` / `winback-Nd` slugs, brand=overleap) don't exist yet — reminder/winback sends to overleap users skip with a Slack alert until ops creates them.
