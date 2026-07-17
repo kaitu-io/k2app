@@ -1,7 +1,7 @@
 /**
  * IosSubscribePanel — iOS StoreKit 订阅入口（内联，非弹窗）
  *
- * iOS 只有单一自动续订订阅（io.kaitu.sub.basic.1y），故绝不展示 Center 的多时长套餐
+ * iOS 只有单一自动续订订阅（brandConfig.iapProductIds[0]，品牌各绑各的商品 id），故绝不展示 Center 的多时长套餐
  * 列表。本面板把会员权益 + 单一 StoreKit 商品 + 订阅/恢复/管理/法律链接全部内联在
  * Purchase 页内，取代旧的 IapPurchaseSheet 弹窗。
  *
