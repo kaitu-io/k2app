@@ -203,15 +203,17 @@ BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest d
   contain zero `overleap.io`; overleap build zero `kaitu.io|开途|開途`. Run after any
   build-affecting change. Bare `kaitu` protocol tokens (X-K2-Client `kaitu-service/`,
   `kaitu-language` storage key) are intentional and excluded.
-- **Icons/title**: `public/` holds kaitu defaults; `brand-assets/<brand>/` overrides are
-  copied over dist icons by the `k2-brand` vite plugin, which also rewrites `<title>`.
-  Runtime asset paths (`/favicon.png`, `/icon-192x192.png`) are brand-stable.
+- **Icons/title**: brand icons live in `src/brands/<brand>/assets/` (single source, both
+  brands symmetric — `public/` holds no brand icon). The `k2-brand` vite plugin copies the
+  active brand's icons into dist at writeBundle, serves them via dev-server middleware, and
+  rewrites `<title>`. Runtime asset paths (`/favicon.png`, `/icon-192x192.png`) are
+  brand-stable.
 - **Phase 4/5 seam (shells)**: shells do NOT import webapp brand code. Desktop/mobile
   builds pass `K2_BRAND` through the existing `make build-* → cd webapp && yarn build`
   path (Makefile gets `BRAND ?= kaitu` + `export K2_BRAND=$(BRAND)` in Phase 4). Shell-
   native brand config (tauri.conf.overleap.json, Android flavors, iOS schemes, IAP
   product ids) is separate per-shell work; the shared contract is only the env var name
-  `K2_BRAND` and the `brand-assets/<brand>/` artwork directory.
+  `K2_BRAND` and the `src/brands/<brand>/assets/` artwork directory.
 
 ---
 
