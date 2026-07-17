@@ -7,7 +7,7 @@
     "friendInvite": "あなたにはお友達がいて、この専用招待を共有してくれました",
     "friendGift": "お友達からの専用ギフト",
     "friendGiftDesc": "あなたのお友達はとても心配りがあり、特にこの貴重な招待資格を用意してくれました。招待された幸運な方として、超お得な新規会員専用特典をお楽しみいただけます！",
-    "purchaseReward": "初回購入で追加プレゼント",
+    "purchaseReward": "初回購入（{months}ヶ月以上のプラン）で追加プレゼント",
     "days": "日",
     "membershipDuration": "会員期間",
     "exclusiveBonus": "これはあなた専用の招待特典です",

@@ -37,6 +37,7 @@ import type { SendCodeResponse, AuthResult } from "../services/api-types";
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { getDeviceUdid } from '../services/device-udid';
+import { useAppConfig } from '../hooks/useAppConfig';
 import { delayedFocus } from '../utils/ui';
 
 // Cookie helper function
@@ -59,6 +60,7 @@ export interface EmailLoginFormProps {
 export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) {
   const { t, i18n } = useTranslation();
   const setIsAuthenticated = useAuthStore((s) => s.setIsAuthenticated);
+  const { appConfig } = useAppConfig();
 
   // Form state
   const [email, setEmail] = useState("");
@@ -269,7 +271,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
   return (
     <Box>
       {/* Invite Reward Prompt */}
-      {inviteCodeFromCookie && step === "code" && !isActivated && (
+      {/* 奖励数字来自服务端配置；配置未加载时不显示，避免向用户许诺错误的奖励条件 */}
+      {inviteCodeFromCookie && step === "code" && !isActivated && appConfig?.inviteReward && (
         <Alert
           severity="success"
           icon={<GiftIcon />}
@@ -287,7 +290,10 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
             {t('purchase:purchase.inviteRewardTitle')}
           </Typography>
           <Typography variant="caption">
-            {t('purchase:purchase.inviteRewardDesc', { days: 3 })}
+            {t('purchase:purchase.inviteRewardDesc', {
+              days: appConfig.inviteReward.purchaseRewardDays,
+              months: appConfig.inviteReward.minRewardMonths ?? 12,
+            })}
           </Typography>
         </Alert>
       )}

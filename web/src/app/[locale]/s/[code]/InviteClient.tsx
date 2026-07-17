@@ -116,6 +116,7 @@ export default function InviteClient({ code }: InviteClientProps) {
   }
 
   const rewardDays = appConfig.inviteReward.purchaseRewardDays;
+  const rewardMinMonths = appConfig.inviteReward.minRewardMonths ?? 12;
 
   // SVG circular progress for countdown
   const radius = 36;
@@ -143,7 +144,7 @@ export default function InviteClient({ code }: InviteClientProps) {
       <Card className="p-8 sm:p-10 mb-8 border-primary/20 bg-primary/5">
         <div className="text-center">
           <p className="text-sm uppercase tracking-widest text-primary mb-4 font-mono">
-            {t('invite.inviteLanding.purchaseReward')}
+            {t('invite.inviteLanding.purchaseReward', { months: rewardMinMonths })}
           </p>
           <div className="flex items-baseline justify-center gap-2 mb-4">
             <span className="text-7xl sm:text-8xl font-mono font-bold text-primary">

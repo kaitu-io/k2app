@@ -75,7 +75,7 @@ export default function InviteRule({ invite, loading }: InviteRuleProps) {
 
         {/* 规则说明 */}
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }} component="div">
-          <HighlightedText text={t('invite:invite.ruleDescription')} />
+          <HighlightedText text={t('invite:invite.ruleDescription', { months: invite?.config.minRewardMonths ?? 12 })} />
         </Typography>
 
         <Stack spacing={2}>

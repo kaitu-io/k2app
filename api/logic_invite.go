@@ -87,13 +87,32 @@ func handleInviteDownloadReward(ctx context.Context, userID uint64) (*UserProHis
 
 // handleInvitePurchaseRewardInTx 处理邀请购买奖励（同步执行，在事务中）
 // 必须在 ApplyOrderToTargetUsers 之前调用，因为后者会设置 IsFirstOrderDone=true
+func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, order *Order) error {
+	log.Infof(ctx, "[InviteReward] processing for user %d, order %d", order.UserID, order.ID)
+	plan, err := order.GetPlan()
+	if err != nil || plan == nil {
+		log.Warnf(ctx, "[InviteReward] plan not found for order %d, skipping reward: %v", order.ID, err)
+		return nil
+	}
+	return grantInvitePurchaseRewardInTx(ctx, tx, order.UserID, plan)
+}
+
+// grantInvitePurchaseRewardInTx 邀请购买奖励的统一入口——wordgate 订单路径
+// （handleInvitePurchaseRewardInTx）与 Apple IAP 路径（creditAppleTransaction）共用，
+// 保证两条支付通道同一套规则。必须在 IsFirstOrderDone 置位之前调用。
+//
+// 发放条件：首单 + 有邀请码 + 首单套餐月数 >= configInvite().MinRewardMonths。
+// 首单套餐时长不足门槛时双方均不发放，且首单资格随 IsFirstOrderDone 一次性消耗
+// （即之后再买长套餐也不补发）——前端在下单前对此有明确提示。
 //
 // 并发安全设计：
 // - buyer FOR UPDATE：序列化同一买家的并发首购，防止 IsFirstOrderDone 检查被 snapshot 绕过
 // - inviter FOR UPDATE：序列化同一邀请人的并发奖励，防止 expired_at lost update
-func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uint64, orderID uint64) error {
-	log.Infof(ctx, "[InviteReward] processing for user %d, order %d", userID, orderID)
-
+//
+// 注意：本函数会更新买家 user 行（ExpiredAt/IsActivated）。调用方若在同一事务中
+// 持有该 user 的内存快照并稍后 Save，必须在本函数返回后重新加载，否则旧快照会
+// 覆盖奖励天数（lost update）。
+func grantInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uint64, plan *Plan) error {
 	// 1. FOR UPDATE 锁定买家行，读取最新已提交的 IsFirstOrderDone
 	// 注意：Preload 走独立 SELECT 不带 FOR UPDATE，InvitedByCode 是不可变记录所以安全
 	var user User
@@ -114,6 +133,15 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uin
 		return nil
 	}
 
+	// 4. 套餐时长门槛：首单套餐月数不足 MinRewardMonths 不发奖励
+	// （防止"买 1 个月送 1 个月"把获客成本翻倍）
+	cfg := configInvite(ctx)
+	if plan.Month < cfg.MinRewardMonths {
+		log.Infof(ctx, "[InviteReward] user %d plan month %d < min reward months %d, skipping",
+			userID, plan.Month, cfg.MinRewardMonths)
+		return nil
+	}
+
 	inviteCodeID := user.InvitedByCode.ID
 	inviterUserID := user.InvitedByCode.UserID
 
@@ -126,7 +154,7 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uin
 	}
 
 	// 5. 为被邀请人添加购买奖励
-	days := configInvite(ctx).PurchaseRewardDays
+	days := cfg.PurchaseRewardDays
 	if days > 0 {
 		if _, err := addProExpiredDays(ctx, tx, &user, VipInvitedReward,
 			inviteCodeID, days, "被邀请首次购买奖励"); err != nil {
@@ -136,7 +164,7 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uin
 	}
 
 	// 6. 为邀请人添加奖励
-	inviterDays := configInvite(ctx).InviterPurchaseRewardDays
+	inviterDays := cfg.InviterPurchaseRewardDays
 	if inviterDays > 0 {
 		if _, err := addProExpiredDays(ctx, tx, &inviter, VipInviteReward,
 			inviteCodeID, inviterDays, "邀请用户首次购买奖励"); err != nil {

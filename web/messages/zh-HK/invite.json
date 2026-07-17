@@ -7,7 +7,7 @@
     "friendInvite": "您有一位好朋友，為您分享咗呢份專屬邀請",
     "friendGift": "好朋友嘅專屬禮物",
     "friendGiftDesc": "您嘅朋友好用心，特登為您準備咗呢份珍貴嘅邀請資格。作為被邀請嘅幸運兒，您會享受到超值嘅新人專屬獎勵！",
-    "purchaseReward": "首次購買即贈送",
+    "purchaseReward": "首購 {months} 個月及以上套餐即贈送",
     "days": "日",
     "membershipDuration": "會員時長",
     "exclusiveBonus": "呢個係專屬於您嘅邀請獎勵",

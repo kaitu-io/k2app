@@ -102,6 +102,7 @@ export interface UpdateUserInviteCodeRequest {
 export interface InviteConfig {
   purchaseRewardDays: number; // 购买奖励天数
   inviterPurchaseRewardDays: number; // 邀请人购买奖励天数
+  minRewardMonths: number; // 触发购买奖励的最低套餐月数
 }
 
 // 邀请码信息
@@ -652,13 +653,7 @@ export interface AppLinks {
   changelogPath: string; // Changelog page path
 }
 
-// 邀请奖励配置（全局配置）
-export interface InviteConfig {
-  // 邀请者购买时的奖励天数
-  inviterPurchaseRewardDays: number;
-  // 被邀请者购买时的奖励天数
-  purchaseRewardDays: number;
-}
+// 邀请奖励配置（全局配置）：见上方统一的 InviteConfig 定义
 
 // 公告信息
 export interface Announcement {
