@@ -62,6 +62,9 @@ export {
 // ============ App Routes Store ============
 export { useAppRoutesStore } from './app-routes.store';
 
+// ============ Router Store ============
+export { useRouterStore, isRouterTakeover } from './router.store';
+
 // 内部导入（用于 initializeAllStores）
 import { initializeAuthStore, useAuthStore } from './auth.store';
 import { initializeVPNMachine, useVPNMachineStore } from './vpn-machine.store';
@@ -71,6 +74,7 @@ import { initializeConnectionStore, useConnectionStore } from './connection.stor
 import { useSelfHostedStore } from './self-hosted.store';
 import { useFeedbackStore } from './feedback.store';
 import { useAppRoutesStore } from './app-routes.store';
+import { useRouterStore } from './router.store';
 
 /**
  * 初始化所有 Store
@@ -95,6 +99,13 @@ export function initializeAllStores(): () => void {
   const cleanupAuth = initializeAuthStore();
   const cleanupVPNMachine = initializeVPNMachine();
   const cleanupConnection = initializeConnectionStore();
+
+  // 路由器发现:启动 + 回前台各跑一次(探测本身 1.5s 超时,失败静默)
+  void useRouterStore.getState().runDiscovery();
+  const onVisible = () => {
+    if (!document.hidden) void useRouterStore.getState().runDiscovery();
+  };
+  document.addEventListener('visibilitychange', onVisible);
 
   // Subscribe to auth state for feedback polling
   const unsubFeedback = useAuthStore.subscribe(
@@ -174,6 +185,7 @@ export function initializeAllStores(): () => void {
   return () => {
     unsubFeedback();
     useFeedbackStore.getState().stopPolling();
+    document.removeEventListener('visibilitychange', onVisible);
     cleanupConnection();
     cleanupVPNMachine();
     cleanupAuth();
