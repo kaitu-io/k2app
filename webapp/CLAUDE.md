@@ -176,6 +176,15 @@ BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest d
   components — add a gate to `BrandFeatures` and read it via
   `getCurrentAppConfig().features.*` (config/apps.ts merges brand gates with
   platform-static features).
+- **品牌差异只进 `src/brands/<id>/{index,theme,assets,locales}`** — 共享代码里禁止品牌
+  id 分叉（唯一 resolver 是 `brandConfig`）。IAP 商品 id（`iapProductIds`）、FAQ 品牌
+  key（`faqExtraKeys`）、antiblock CDN 镜像（`antiblockCdnSources`）均为品牌配置字段，
+  消费方读 config，不留硬编码副本（Phase A defork）。
+- **Stripe 购买流**（`features.stripeCheckout` 品牌，即 overleap）：Purchase 页在
+  wordgate fallback 之前分支到 `components/stripe/StripePurchasePanel`（订阅模式：套餐卡
+  + checkout 外链；管理模式按 `activeSub.manage.kind` 分派 stripe_portal / apple_settings
+  / url）。hook `hooks/useStripeCheckout` 走 `POST /api/user/stripe/{checkout,portal}` +
+  `openExternal`，入账由服务端 Stripe webhook 完成（客户端不落账）。
 - **`X-K2-Brand` header**: injected ONLY in `services/cloud-api.ts` (`request()` +
   `_doRefresh()`), riding both relay and direct transports. 403003 (BRAND_MISMATCH)
   clears the session and opens LoginDialog, mirroring 403002.
