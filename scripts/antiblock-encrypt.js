@@ -152,6 +152,37 @@ async function runTests() {
     assert(!JSON.stringify(decrypted).includes('"ip"'), 'legacy config must not contain ip key');
   }));
 
+  // ---- test_payload_includes_integer_ts ----
+  results.push(runTest('test_payload_includes_integer_ts', () => {
+    const out = encrypt({ entries: ['https://k2.52j.me'], ts: 1721260800 }, DEFAULT_KEY);
+    const { data } = JSON.parse(extractJson(out));
+    const decrypted = decryptData(data, DEFAULT_KEY);
+    assert(decrypted.ts === 1721260800, `ts must survive roundtrip, got: ${decrypted.ts}`);
+    assert(Number.isInteger(decrypted.ts), `ts must be integer, got: ${decrypted.ts}`);
+  }));
+
+  // ---- test_main_writes_config_and_ui_with_matching_ts ----
+  // Integration: run the script's main path in a temp cwd and assert it emits
+  // BOTH config.js (legacy, old apps) and ui.js (new apps) with an identical ts.
+  results.push(await runAsyncTest('test_main_writes_config_and_ui_with_matching_ts', async () => {
+    const os = require('node:os');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-enc-'));
+    try {
+      execFileSync(process.execPath, [__filename], { cwd: tmp, encoding: 'utf-8', timeout: 10000 });
+      const readCfg = (name) => decryptData(
+        JSON.parse(extractJson(fs.readFileSync(path.join(tmp, name), 'utf-8').trim())).data,
+        DEFAULT_KEY,
+      );
+      const cfg = readCfg('config.js');
+      const ui = readCfg('ui.js');
+      assert(Number.isInteger(cfg.ts) && cfg.ts > 0, `config.js must carry integer ts, got: ${cfg.ts}`);
+      assert(cfg.ts === ui.ts, `config.js ts (${cfg.ts}) must equal ui.js ts (${ui.ts})`);
+      assert(JSON.stringify(cfg.entries) === JSON.stringify(ui.entries), 'config.js and ui.js entries must match');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }));
+
   // ---- test_webcrypto_decrypts_node_gcm ----
   // CROSS-RUNTIME CONTRACT: bytes produced by Node `crypto.createCipheriv`
   // (this script, the CDN publisher) MUST decode under the webapp consumer's
@@ -331,11 +362,17 @@ if (require.main === module && !process.argv.includes('--test')) {
     }
   }
 
-  // Always write config.js — legacy contract (entries only, __k2ac global). FROZEN.
-  const legacyJsonp = encrypt({ entries }, keyHex);
-  const outPath = path.join(process.cwd(), 'config.js');
-  fs.writeFileSync(outPath, legacyJsonp + '\n', 'utf8');
-  console.log(`Wrote ${outPath} (${Buffer.byteLength(legacyJsonp + '\n')} bytes)`);
+  // 单次计算 ts,喂给 config.js 与 ui.js,保证两文件 ts 一致。
+  const ts = Math.floor(Date.now() / 1000);
+
+  // Dual-publish: config.js（legacy，已发布旧 app 读）+ ui.js（新 app 读，全新缓存键）。
+  // 内容一致：encrypt({entries, ts})，__k2ac 全局，entries only（不含 nodes）。
+  const legacyJsonp = encrypt({ entries, ts }, keyHex);
+  for (const name of ['config.js', 'ui.js']) {
+    const outPath = path.join(process.cwd(), name);
+    fs.writeFileSync(outPath, legacyJsonp + '\n', 'utf8');
+    console.log(`Wrote ${outPath} (${Buffer.byteLength(legacyJsonp + '\n')} bytes)`);
+  }
 
   // Write v/<CURSOR>.js when CURSOR is provided — versioned seed (__k2sd global, includes nodes).
   if (cursorRaw !== undefined && cursorRaw !== '') {
@@ -344,7 +381,7 @@ if (require.main === module && !process.argv.includes('--test')) {
       console.error('Error: CURSOR must be a non-negative integer');
       process.exit(1);
     }
-    const versionedJsonp = encrypt({ entries, nodes: nodes || [] }, keyHex, '__k2sd');
+    const versionedJsonp = encrypt({ entries, nodes: nodes || [], ts }, keyHex, '__k2sd');
     const vDir = path.join(process.cwd(), 'v');
     fs.mkdirSync(vDir, { recursive: true });
     const vPath = path.join(vDir, `${cursor}.js`);
