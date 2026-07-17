@@ -11,7 +11,7 @@ const COMMON_FAQ_KEYS = [
 ] as const;
 
 // Kaitu-only stories (legacy ANC client, China App Store availability).
-// Their locale strings live in src/i18n/brand/kaitu/<lang>/ticket.json —
+// Their locale strings live in src/brands/kaitu/locales/<lang>/ticket.json —
 // they are not bundled into overleap builds at all.
 const KAITU_FAQ_KEYS = ['allNationConnect', 'chinaAppStore'] as const;
 

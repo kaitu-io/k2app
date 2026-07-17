@@ -181,8 +181,8 @@ BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest d
   clears the session and opens LoginDialog, mirroring 403002.
 - **i18n is brand-neutral**: locale files use `{{brand}}` / `{{brandDomain}}` /
   `{{brandBaseUrl}}` / `{{supportEmail}}` interpolation (defaultVariables installed in
-  `i18n/i18n.ts`, refreshed on languageChanged via `brand/i18n-vars.ts`). Brand-exclusive
-  copy lives in `src/i18n/brand/<brand>/<lang>/<ns>.json` overlays (deep-merged at load;
+  `i18n/i18n.ts`, refreshed on languageChanged via `brands/i18n-vars.ts`). Brand-exclusive
+  copy lives in `src/brands/<brand>/locales/<lang>/<ns>.json` overlays (deep-merged at load;
   only the active brand's overlays are bundled). Guard test:
   `src/i18n/__tests__/brand-literals.test.ts`. Kaitu default locale zh-CN; overleap en-US.
 - **Tests must be brand-adaptive**: `vitest` bakes the brand the same way builds do, so

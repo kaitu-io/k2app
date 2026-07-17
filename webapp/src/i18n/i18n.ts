@@ -35,8 +35,8 @@ function deepMerge<T extends Record<string, any>>(base: T, overlay: Record<strin
 declare const __K2_BRAND__: string;
 const loadBrandOverlay: (lang: string, ns: Namespace) => Promise<any> =
   __K2_BRAND__ === 'overleap'
-    ? (lang, ns) => import(`./brand/overleap/${lang}/${ns}.json`)
-    : (lang, ns) => import(`./brand/kaitu/${lang}/${ns}.json`);
+    ? (lang, ns) => import(`../brands/overleap/locales/${lang}/${ns}.json`)
+    : (lang, ns) => import(`../brands/kaitu/locales/${lang}/${ns}.json`);
 
 // 动态加载 namespace 的函数
 const loadNamespaceResources = async (lang: string, ns: Namespace) => {
