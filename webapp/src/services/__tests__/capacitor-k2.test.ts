@@ -1092,6 +1092,21 @@ describe('capacitor-k2 router bridge (getDefaultGateway + routerRequest)', () =>
       await expect(window._platform.routerRequest!({ url: 'http://10.1.2.3/ping' })).resolves.toBeDefined();
     });
 
+    // Design revision (spec commit 369373f2): discovery is a single anchor
+    // address — the app always probes http://10.17.79.1:1779 and k2r
+    // intercepts via DNAT. This constant MUST clear the private-IP gate.
+    it('allows the k2r discovery anchor address 10.17.79.1:1779', async () => {
+      vi.mocked(CapacitorHttp.request).mockResolvedValue({ status: 200, data: '{"k2r":true}', headers: {}, url: '' });
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const result = await window._platform.routerRequest!({ url: 'http://10.17.79.1:1779/ping' });
+      expect(CapacitorHttp.request).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'http://10.17.79.1:1779/ping', disableRedirects: true }),
+      );
+      expect(result).toEqual({ status: 200, body: '{"k2r":true}' });
+    });
+
     it('allows 172.16.0.0/12 (boundary octets 16 and 31)', async () => {
       vi.mocked(CapacitorHttp.request).mockResolvedValue({ status: 200, data: 'ok', headers: {}, url: '' });
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
