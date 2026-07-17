@@ -72,12 +72,16 @@ export const useRouterStore = create<RouterState & RouterActions>()((set, get) =
       if (!get().router || get().phase === 'unconfigured') return;
       try {
         const resp = await routerCore<RouterStatus>('status');
+        // unbindRouter() may have completed while this request was in flight —
+        // re-check before writing, or a stale response resurrects a cleared router.
+        if (!get().router) return;
         if (resp.code === 0 && resp.data) {
           set({ status: resp.data, phase: 'online' });
         } else if (resp.code === 401) {
           set({ status: null });
         }
       } catch {
+        if (!get().router) return;
         set({ phase: 'offline', status: null });
       }
     };
