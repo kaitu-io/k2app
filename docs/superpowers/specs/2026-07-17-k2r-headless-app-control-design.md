@@ -66,11 +66,11 @@
 ### 3.2 鉴权（controlKey）
 
 - **数据**：k2r 在 `/etc/k2r/` 持久化 `controlKeyHash = sha256(controlKey)`。
-- **校验路径（防抢占的关键）**：controlKey 的权威来源是 Center。k2r 每次订阅刷新（`/api/subs`，已有的后台刷新信道，携带自身 udid:token）时，响应新增 `controlKeyHash` 字段；k2r 比对并落盘。因此：
-  - **首次配置**：未配置的 k2r 接受第一个 `set-credential` 推送 `{url, controlKey}`（TOFU——「谁配置谁拥有」，与现状语义一致）；随即用推送的 k2subs URL 拉订阅，用 Center 返回的 hash 校验推送的 controlKey，不匹配则整体回滚（清除凭证与 key）。
+- **校验路径（防抢占的关键）**：controlKey 的权威来源是 Center，规则统一为**「Center 权威、adopt 覆盖」**——k2r 每次订阅刷新（`/api/subs`，已有的后台刷新信道，携带自身 udid:token）时，响应新增 `control_key_hash` 字段；k2r 与本地不一致即采纳落盘（无回滚分支，一条规则同时覆盖三个场景）：
+  - **首次配置**：未配置的 k2r 接受第一个 `set-credential` 推送 `{url, controlKey?}`（TOFU——「谁配置谁拥有」，与现状语义一致；`controlKey` 参数可选，缺省时等待首次订阅刷新采纳，兼容 `k2r setup` CLI 流程）。推送的 key 先作临时绑定即时生效；首次订阅成功后被 Center 权威 hash 覆盖——若 app 推了过期 key，覆盖后 app 收 401 → 向 Center 重取 → 收敛。
   - **legacy 升级**：已配置但无 key 的老 k2r，首次订阅刷新即从 Center 学到 hash，鉴权自动生效。**无任何 TOFU 窗口**，LAN 攻击者无法收编存量路由器。
-  - **key 轮换**：用户在 Center 重置 key → k2r 下次订阅刷新收敛；app 侧收到 401 后向 Center 重取。
-- **中间件**：除 `/ping` 与 `/`（静态页）外，所有端点要求 `Authorization: Bearer <controlKey>`，本地比对 hash，失败返回 401。未配置状态下 `set-credential` 免鉴权（TOFU 入口），其余端点即使未配置也 401。
+  - **key 轮换**：用户在 Center 重置 key → k2r 下次订阅刷新采纳新 hash；app 侧收到 401 后向 Center 重取。
+- **中间件**：除 `/ping` 与 `/`（静态页）外，所有端点要求 `Authorization: Bearer <controlKey>`，本地比对 hash，失败返回 HTTP 401。未绑定 key 状态下 `set-credential` 免鉴权（TOFU 入口），其余端点即使未配置也 401。**loopback（127.0.0.1/::1）来源豁免鉴权**——`k2r up/down/status/reset` CLI 走 localhost IPC，且能在本机发起 loopback 流量者已拥有路由器本体。
 - **解绑**：新增 CLI `k2r reset`——清除凭证、controlKeyHash、状态文件。app 侧「解除绑定」调用需鉴权的 reset API 端点（`/api/core` action `reset`）。
 
 ### 3.3 `/ping` 扩展（发现签名）
@@ -150,7 +150,7 @@ App 启动、回前台、Router tab 手动刷新。探测结果进 `router.store
 | 探测全链失败 | Router tab 离线态（曾配对）或不出现（从未配对）；后台静默按触发时机重试 |
 | 控制请求 401 | 先向 Center 重取 controlKey 重试一次（key 轮换场景）；仍 401 → 「重新配对」CTA |
 | 控制请求超时/网络错 | 标记 offline，轮询继续（下轮恢复即回 online） |
-| set-credential 后 Center 校验失败 | k2r 回滚（清凭证+key），app 收到明确错误码，提示重试 |
+| 推送的 controlKey 与账号不一致 | 首次订阅刷新后被 Center 权威 hash 覆盖 → app 旧 key 401 → 自动重取收敛（无回滚分支） |
 | 路由器隧道错误 | 复用现有 EngineError code→i18n 文案映射（1xx 网络 / 4xx 客户端 / 5xx 服务端语义不变；402 引导购买） |
 | mint 失败（无套餐） | 按 Center 错误文案引导购买，Router tab 管理功能（设备/OTA）不受影响 |
 
