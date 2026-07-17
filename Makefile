@@ -19,6 +19,9 @@ RELEASE_TAGS = release
 DESKTOP_TAGS = -tags=$(RELEASE_TAGS)
 # Gateway (k2r): production-only build, same constraint.
 PROD_TAGS    = -tags=$(RELEASE_TAGS)
+# k2r ships headless (no embedded webapp) — nowebapp drops the embedded SPA
+# asset (several MB) since discovery/config is done via the companion app.
+K2R_TAGS     = -tags=$(RELEASE_TAGS),nowebapp
 # Mobile: deadlock_disable for zero overhead (tight iOS NE ~50MB jetsam).
 MOBILE_TAGS  = -tags=deadlock_disable,$(RELEASE_TAGS)
 # gomobile bind takes a single -tags argument with space-separated values.
@@ -66,27 +69,27 @@ build-linux-arm64:
 # --- Gateway (k2r) ---
 build-k2r:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r ./cmd/k2r
+	CGO_ENABLED=0 GOOS=linux go build $(K2R_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r ./cmd/k2r
 
 build-k2r-linux-amd64:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-amd64 ./cmd/k2r
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(K2R_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-amd64 ./cmd/k2r
 
 build-k2r-linux-arm64:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-arm64 ./cmd/k2r
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(K2R_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-arm64 ./cmd/k2r
 
 build-k2r-armv7:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-armv7 ./cmd/k2r
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build $(K2R_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-armv7 ./cmd/k2r
 
 build-k2r-mipsle:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-mipsle ./cmd/k2r
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(K2R_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-mipsle ./cmd/k2r
 
 build-k2r-mips:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-mips ./cmd/k2r
+	CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build $(K2R_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-mips ./cmd/k2r
 
 # All k2r targets with optional UPX compression (router flash is 16-128MB):
 #   make build-k2r-all UPX=1

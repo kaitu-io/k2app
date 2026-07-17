@@ -144,9 +144,8 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/events", g.handleEvents)
 	mux.HandleFunc("/api/log-level", g.handleLogLevel)
 
-	// Shared webui endpoints (storage, platform, upgrade) — same handlers
-	// as cmd/k2 (Linux desktop) uses via the daemon package.
-	mux.HandleFunc("/api/storage", webui.NewStorageHandler(g.storage))
+	// Shared webui endpoints (platform, upgrade) — same handlers as cmd/k2
+	// (Linux desktop) uses via the daemon package.
 	mux.HandleFunc("/api/platform", webui.NewPlatformHandler(webui.PlatformInfo{
 		PlatformType: "gateway",
 		Version:      g.version,
@@ -163,6 +162,8 @@ func (g *Gateway) Run(addr string) error {
 
 	if webapp := webui.NewWebappHandler(g.version, g.commit, g.arch); webapp != nil {
 		mux.Handle("/", webapp)
+	} else {
+		mux.HandleFunc("/", handleRootNotice)
 	}
 
 	g.httpServer = &http.Server{Handler: g.requireAuth(mux)}

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,8 +30,31 @@ type Response struct {
 	Data    any    `json:"data,omitempty"`
 }
 
+// pingResponse is the discovery signature consumed by the companion app.
+// Raw JSON (no Response envelope) — cross-repo contract; keep HTTP 200 so
+// gateway.Client.Ping (reachability-only) stays compatible.
+type pingResponse struct {
+	K2R        bool   `json:"k2r"`
+	Version    string `json:"version"`
+	Configured bool   `json:"configured"`
+	Name       string `json:"name"`
+}
+
 func (g *Gateway) handlePing(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, Response{Code: 0, Message: "pong"})
+	_, statErr := os.Stat(defaultConfigPath())
+	host, _ := os.Hostname()
+	writeRawJSON(w, pingResponse{
+		K2R:        true,
+		Version:    g.version,
+		Configured: statErr == nil,
+		Name:       host,
+	})
+}
+
+// writeRawJSON writes v without the Response envelope (discovery contract).
+func writeRawJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 const maxRequestBody = 1 << 20 // 1 MB
@@ -259,5 +284,5 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 func defaultConfigPath() string {
-	return "/etc/k2r/k2r.yml"
+	return filepath.Join(stateDir(), "k2r.yml")
 }
