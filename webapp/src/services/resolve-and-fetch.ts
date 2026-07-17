@@ -1,11 +1,15 @@
 import { resolveEntry } from './antiblock';
 import * as pool from './entry-pool';
 import type { RelayRequest, RelayResponse, SResponse } from '../types/kaitu-core';
+import { RELAY_ENABLED } from './relay-flag';
 
 /** Inner-SNI control-plane routing label — MUST match node-side control_plane_routes (Phase 1). */
 export const CONTROL_PLANE_HOST = 'k2.52j.me';
 
-const DIRECT_PROBE_TIMEOUT_MS = 5000;
+// Relay disabled → direct is the ONLY transport and owns (almost) the whole
+// 15s cloud-api budget (14s, leaving 1s headroom under the outer withTimeout).
+// When relay is primary, direct is the 5s fallback probe — see budget note below.
+const DIRECT_PROBE_TIMEOUT_MS = RELAY_ENABLED ? 5000 : 14000;
 // MUST stay < cloud-api REQUEST_TIMEOUT_MS (15s) minus DIRECT_PROBE_TIMEOUT_MS,
 // so that when relay-first abandons a hung sweep the direct FALLBACK still fits
 // inside the total request budget (9 + 5 = 14 < 15). If relay could consume the
@@ -97,7 +101,7 @@ async function tryRelay(req: RelayReq): Promise<TransportResult> {
  * refresh.
  */
 export async function resolveAndFetch(req: RelayReq): Promise<TransportResult> {
-  if (pool.isRelaySupported()) {
+  if (RELAY_ENABLED && pool.isRelaySupported()) {
     const relay = await tryRelay(req);
     if (relay.transport === 'ok') return relay;
   }
