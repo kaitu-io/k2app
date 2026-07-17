@@ -34,11 +34,12 @@ func deriveAppleAccountToken(userUUID string) string {
 	return uuid.NewSHA1(appleAccountNS, []byte(userUUID)).String()
 }
 
-// planByAppleProductID 按 Apple 商品ID 查套餐；找不到即拒绝入账（未知商品）。
-func planByAppleProductID(ctx context.Context, tx *gorm.DB, productID string) (*Plan, error) {
+// planByAppleProductID 按 Apple 商品ID 查套餐（品牌过滤——同一商品 id 绝不跨品牌入账）；
+// 找不到即拒绝入账（未知商品）。
+func planByAppleProductID(ctx context.Context, tx *gorm.DB, productID string, brand Brand) (*Plan, error) {
 	var plan Plan
-	if err := tx.Where(&Plan{AppleProductID: productID}).First(&plan).Error; err != nil {
-		return nil, fmt.Errorf("no plan for apple product %s: %w", productID, err)
+	if err := tx.Scopes(ScopeBrand(brand)).Where(&Plan{AppleProductID: productID}).First(&plan).Error; err != nil {
+		return nil, fmt.Errorf("no plan for apple product %s (brand %s): %w", productID, brand, err)
 	}
 	return &plan, nil
 }
@@ -178,7 +179,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		user.ActivatedAt = now
 	}
 	if user.IsFirstOrderDone == nil || !*user.IsFirstOrderDone {
-		if plan, _ := planByAppleProductID(ctx, tx, info.ProductId); plan != nil && plan.Tier != "" {
+		if plan, _ := planByAppleProductID(ctx, tx, info.ProductId, Brand(user.Brand)); plan != nil && plan.Tier != "" {
 			user.Tier = plan.Tier
 		}
 		user.IsFirstOrderDone = BoolPtr(true)
@@ -233,8 +234,14 @@ func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID
 		return fmt.Errorf("family-shared ownership not entitled")
 	}
 
+	var vu User
+	if err := getDB().Select("brand").First(&vu, userID).Error; err != nil {
+		return fmt.Errorf("load user %d brand: %w", userID, err)
+	}
+	userBrand := Brand(vu.Brand)
+
 	return withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
-		if _, err := planByAppleProductID(ctx, tx, info.ProductId); err != nil {
+		if _, err := planByAppleProductID(ctx, tx, info.ProductId, userBrand); err != nil {
 			return err
 		}
 		return creditAppleTransaction(ctx, tx, userID, info)
@@ -371,6 +378,12 @@ func appleManageSurface() ManageSurface {
 // 容错：任何查询错误返回 nil（不让 user-info 因附带读模型失败而 500；mock-DB 测试
 // 未 mock 此查询时也优雅降级为空列表）。
 func GetActiveSubscriptions(userID uint64) []DataSubscription {
+	brand := BrandKaitu
+	var su User
+	if err := getDB().Select("brand").First(&su, userID).Error; err == nil {
+		brand = Brand(su.Brand)
+	}
+
 	var subs []Subscription
 	if err := getDB().Where("user_id = ? AND status IN ?", userID, activeSubStatuses).
 		Find(&subs).Error; err != nil {
@@ -389,7 +402,7 @@ func GetActiveSubscriptions(userID uint64) []DataSubscription {
 		manage := ManageSurface{Kind: "url"} // 未知 provider 的兜底
 		switch s.Provider {
 		case "apple":
-			if plan, _ := planByAppleProductID(context.Background(), getDB(), s.ProductID); plan != nil {
+			if plan, _ := planByAppleProductID(context.Background(), getDB(), s.ProductID, brand); plan != nil {
 				tier = plan.Tier
 			}
 			manage = appleManageSurface()
