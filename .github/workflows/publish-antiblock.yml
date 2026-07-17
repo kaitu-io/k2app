@@ -73,10 +73,11 @@ jobs:
             # Copy outputs — never delete existing v/*.js (append-only)
             mkdir -p v
             cp "$GITHUB_WORKSPACE/config.js" config.js
+            cp "$GITHUB_WORKSPACE/ui.js" ui.js
             cp "$GITHUB_WORKSPACE/v/${CURSOR}.js" "v/${CURSOR}.js"
 
             # Commit
-            git add config.js v/
+            git add config.js ui.js v/
             git commit -m "seed v${CURSOR} $(date -u +%Y%m%d%H%M%S)"
 
             # Push — break on success, retry on rejection
@@ -97,4 +98,5 @@ jobs:
       - name: Purge CDN cache
         run: |
           curl -s "https://purge.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js" || true
+          curl -s "https://purge.jsdelivr.net/gh/kaitu-io/ui-theme@dist/ui.js" || true
           curl -s "https://purge.jsdelivr.net/gh/kaitu-io/ui-theme@dist/v/${PUBLISHED_CURSOR}.js" || true
