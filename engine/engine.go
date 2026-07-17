@@ -1204,6 +1204,37 @@ func (e *Engine) fail(err error) error {
 	return err
 }
 
+// anchorDirectEntry is the built-in route entry that always sends k2r's
+// discovery/control anchor address (config.RouterAnchorIP) direct — never
+// user-configurable, never tunneled. See config/anchor.go for the shared
+// constant and gateway/anchor.go for the matching gateway-side PREROUTING
+// DNAT rule (2026-07-18 spec revision, anchor-only discovery for the k2r
+// router-control feature). Built via krs.BuildSet the same way inline
+// IPCIDR routes are (engine.go buildRouteEntries), so it participates in
+// rule.Engine's normal IP-match path (matchRouteIP / r.Sets).
+func anchorDirectEntry() rule.RouteEntry {
+	anchorSet, err := krs.BuildSet(krs.NamedSet{CIDRs: []string{config.RouterAnchorIP + "/32"}})
+	if err != nil {
+		// Unreachable in practice — config.RouterAnchorIP is a hardcoded
+		// valid literal — but fail safe (inert entry) rather than panic.
+		slog.Error("engine: anchor route build failed — anchor direct rule NOT installed", "err", err)
+		return rule.RouteEntry{}
+	}
+	return rule.RouteEntry{Target: outboundDirect, Sets: []krs.Matcher{anchorSet}}
+}
+
+// withAnchorFirst prepends the built-in anchor entry ahead of every other
+// route entry. rule.Engine.Match/MatchConn are first-match-wins over
+// entries, then fall through to `fallback` — prepending here is what makes
+// the anchor address win over a match:all catch-all in Global proxy mode
+// (fallback would otherwise be the proxy outbound). Called at all three
+// rule.Engine construction sites in this file (the match:all fast path,
+// the heap path, and the NE disk path) so no route.Engine is ever built
+// without it.
+func withAnchorFirst(entries []rule.RouteEntry) []rule.RouteEntry {
+	return append([]rule.RouteEntry{anchorDirectEntry()}, entries...)
+}
+
 // buildRouteEntries converts config routes to rule.RouteEntry list using the given bundle index.
 // outboundMap maps via URL → rule.Target for wire outbounds.
 // Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
@@ -1502,7 +1533,7 @@ func buildRuleEngine(
 	// Simple case: single route with match:all and wire outbound → all proxy, no routes.
 	if client.IsAllProxy() && len(finalRoutes) == 1 {
 		target := outboundMap[finalRoutes[0].Via]
-		return rule.NewEngine(nil, target, nil, true)
+		return rule.NewEngine(withAnchorFirst(nil), target, nil, true)
 	}
 
 	if useDiskReader {
@@ -1524,6 +1555,7 @@ func buildRuleEngine(
 	}
 	idx := matcherIndex(krs.Index(bundles))
 	entries, fallback, disableSniff := buildRouteEntries(finalRoutes, idx, outboundMap, heapRegionExpander(regionBundles))
+	entries = withAnchorFirst(entries)
 
 	logRuleEngineState(client.CacheDir, len(bundles) > 0, entries, fallback)
 	return rule.NewEngineNamed(entries, fallback, named, disableSniff)
@@ -1548,6 +1580,7 @@ func buildRuleEngineDisk(client *config.ClientConfig, finalRoutes []config.Route
 		}
 	}
 	entries, fallback, disableSniff := buildRouteEntries(finalRoutes, idx, outboundMap, diskRegionExpander(regionDisk))
+	entries = withAnchorFirst(entries)
 
 	logRuleEngineState(client.CacheDir, len(named) > 0, entries, fallback)
 	return rule.NewEngineWithClosers(entries, fallback, closers, disableSniff)
