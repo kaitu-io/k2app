@@ -120,9 +120,10 @@ func (g *Gateway) applyCredential(rawURL string) (*GatewayConfig, error) {
 }
 
 // handleSetCredential implements the /api/core "set-credential" action: the
-// user pastes a minted k2subs:// URL into the panel, k2r persists it (k2r.yml
-// + state.json) and connects asynchronously. The raw URL contains the bearer
-// token and is never logged.
+// companion app pushes {url, controlKey?}. The optional controlKey becomes a
+// provisional binding so the pushing app can control the router immediately;
+// Center remains the authority — reconcileControlKey overwrites it with the
+// account hash on the first successful subs fetch.
 func (g *Gateway) handleSetCredential(w http.ResponseWriter, params map[string]any) {
 	rawURL, _ := params["url"].(string)
 	if strings.TrimSpace(rawURL) == "" {
@@ -133,6 +134,11 @@ func (g *Gateway) handleSetCredential(w http.ResponseWriter, params map[string]a
 	if err != nil {
 		writeJSON(w, Response{Code: 1, Message: "invalid credential"})
 		return
+	}
+	if controlKey, _ := params["controlKey"].(string); controlKey != "" {
+		if err := g.setControlKeyHash(hashControlKey(controlKey)); err != nil {
+			slog.Warn("gateway: persist provisional control key failed", "err", err)
+		}
 	}
 	safego.Go(func() {
 		if err := g.doUp(cfg); err != nil {

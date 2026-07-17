@@ -363,6 +363,11 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 		// Identify as a k2r router so Center's /api/subs routes to the gateway
 		// branch on every refresh fetch.
 		sub.SetClientHeader(clientHeader)
+		// Center is the control-key authority: adopt the hash it delivered in
+		// the Resolve-time fetch, and keep adopting on every background refresh
+		// (rotation convergence).
+		sub.SetOnControlKeyHash(g.reconcileControlKey)
+		g.reconcileControlKey(sub.ControlKeyHash())
 		sub.StartRefresh(engineCtx, func() *http.Client { return client })
 	}
 

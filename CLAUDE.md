@@ -116,6 +116,7 @@ Reserved event names:
 | `DIAG: control-plane-relay-fail` | WARN | on node relay error | origin, path, err |
 | `DIAG: relay-fetch` | INFO | on relay response | centerHost, method, path, status, nodeIP |
 | `DIAG: relay-fetch-fail` | WARN | on relay dial/roundtrip error | centerHost, path, nodeIP, err |
+| `DIAG: control-key-adopt` | INFO | control-key hash adopted from Center subs | source |
 
 ### Layer 3 Rules — Full Trace
 

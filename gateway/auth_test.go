@@ -120,3 +120,54 @@ func TestHandleCoreTOFUGate(t *testing.T) {
 		t.Fatalf("version with bearer: code = %d, want 200", w.Code)
 	}
 }
+
+func TestReconcileControlKeyAdoptsAuthority(t *testing.T) {
+	g := newTestGateway(t)
+
+	// 空 → 采纳(legacy 升级 / CLI setup 场景)
+	g.reconcileControlKey("centerhash1")
+	if got := g.currentControlKeyHash(); got != "centerhash1" {
+		t.Fatalf("adopt: got %q, want centerhash1", got)
+	}
+	if got := loadControlKeyHash(); got != "centerhash1" {
+		t.Fatalf("adopt must persist, disk = %q", got)
+	}
+
+	// 不一致 → 覆盖(app 推了过期 key / key 轮换场景)
+	g.reconcileControlKey("centerhash2")
+	if got := g.currentControlKeyHash(); got != "centerhash2" {
+		t.Fatalf("overwrite: got %q, want centerhash2", got)
+	}
+
+	// 空 centerHash → no-op(老 Center 不下发该字段)
+	g.reconcileControlKey("")
+	if got := g.currentControlKeyHash(); got != "centerhash2" {
+		t.Fatalf("empty centerHash must be no-op, got %q", got)
+	}
+}
+
+func TestSetCredentialStoresProvisionalKey(t *testing.T) {
+	g := newTestGateway(t)
+
+	w := httptest.NewRecorder()
+	body := `{"action":"set-credential","params":{"url":"k2v5://u:t@h.example.com:443/","controlKey":"rck_pushed"}}`
+	g.handleCore(w, lanReq("POST", "/api/core", body, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("set-credential: code = %d, want 200", w.Code)
+	}
+	if got := g.currentControlKeyHash(); got != hashControlKey("rck_pushed") {
+		t.Fatalf("provisional key not bound: got %q", got)
+	}
+
+	// controlKey 缺省仍然合法(k2r setup CLI 流程,等订阅采纳)
+	g2 := newTestGateway(t)
+	w = httptest.NewRecorder()
+	body = `{"action":"set-credential","params":{"url":"k2v5://u:t@h.example.com:443/"}}`
+	g2.handleCore(w, lanReq("POST", "/api/core", body, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("set-credential without controlKey: code = %d, want 200", w.Code)
+	}
+	if got := g2.currentControlKeyHash(); got != "" {
+		t.Fatalf("no key pushed: hash must stay empty, got %q", got)
+	}
+}

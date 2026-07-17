@@ -5,6 +5,7 @@ package gateway
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -79,6 +80,21 @@ func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_ = json.NewEncoder(w).Encode(Response{Code: 401, Message: "unauthorized"})
+}
+
+// reconcileControlKey adopts the account control-key hash from Center — the
+// single authority. One rule covers first-setup verification (provisional
+// push gets overwritten if stale), legacy adoption (no local hash), and
+// rotation convergence: Center wins.
+func (g *Gateway) reconcileControlKey(centerHash string) {
+	if centerHash == "" || centerHash == g.currentControlKeyHash() {
+		return
+	}
+	if err := g.setControlKeyHash(centerHash); err != nil {
+		slog.Warn("gateway: reconcile control key failed", "err", err)
+		return
+	}
+	slog.Info("DIAG: control-key-adopt", "source", "subs")
 }
 
 // requireAuth gates the whole mux: /ping and / stay open (discovery + notice
