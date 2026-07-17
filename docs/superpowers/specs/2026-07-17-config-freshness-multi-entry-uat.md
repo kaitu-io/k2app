@@ -28,8 +28,9 @@ d.setAuthTag(r.slice(r.length-16));
 console.log(JSON.parse(Buffer.concat([d.update(r.slice(12,r.length-16)),d.final()]).toString()))' "$DATA" "$KEY"
 ```
 
-> ⚠️ **entries 顺序警告**：默认首位是 CloudFront 域（CN 疑似 GFW 封）。GET 并发竞速无感；**登录 POST 顺序**会先在 CloudFront 耗一个 ~4s 超时才切 `k2.52j.me`。UAT 场景 C/D 必须实测这条延迟。若要 CN-first：重跑 workflow 传 `entries` 输入
-> `["https://k2.52j.me","https://d1l0lk9fcyd6r8.cloudfront.net"]`。
+> ⚠️ **entries 顺序警告**：默认首位是 CloudFront 域（CN 疑似 GFW 封）。GET 并发竞速无感；**登录 POST 顺序**会先在 CloudFront 耗一个 **~7s** 超时才切 `k2.52j.me`。
+> 时序算法：`sequentialEntries` 的 per-entry 超时 = `max(4000, floor(14000 / entries.length))`；2 个 entry ⇒ `max(4000, 7000)=7000ms`（4s 下限只在 entry ≥4 个时才生效）。共享 14s 总截止。
+> 若要 CN-first：重跑 workflow 传 `entries` 输入 `["https://k2.52j.me","https://d1l0lk9fcyd6r8.cloudfront.net"]`。
 
 ---
 
@@ -89,7 +90,7 @@ localStorage.getItem('k2_entry_url')               // → null
 1. 令 CloudFront 连接级不可达（drop SYN）。
 2. 执行登录（POST `/api/auth/login`）。
 
-**期望**：CloudFront `fetchOnce` 返回 `null`（连接失败）→ 顺序切到 `k2.52j.me` → 登录成功。观测到 ~≤4s 的首 entry 超时延迟（见 §0 警告）。
+**期望**：CloudFront `fetchOnce` 返回 `null`（连接失败）→ 顺序切到 `k2.52j.me` → 登录成功。若 CloudFront 是**连接被拒（RST）**则失败极快；若是 **GFW 静默丢包（挂起）**则吃满 per-entry ~7s 超时才切（见 §0 警告）。
 
 ### 4b. HTTP 响应（如 401/500）→ 不 failover、不重放
 1. CloudFront **可达**但让后端对该请求返回非 2xx（或直接用正常网络，首 entry 就是源站）。
@@ -126,3 +127,35 @@ localStorage.getItem('k2_entry_url')               // → null
 - **CN 真机**：§4a 的 CloudFront-first 延迟只有在真实 GFW 环境才有代表性；若延迟不可接受，重跑 workflow 改 `entries` 顺序为 CN-first。
 
 发布信心：代码 + 单测 10/10；**业务信心待本 UAT §3/§4/§CN 通过后方可上调**（无真机 failover smoke 前按 feedback_release_confidence_framework 封顶 6–7）。
+
+---
+
+## 执行结果（2026-07-17，本机 standalone 浏览器 vs 线上 CDN）
+
+方法：仅起 Vite（端口 1420，antiblock 解析纯客户端、无需后端），在真 Chrome 里 `import('/src/services/antiblock.ts')` 调**真实导出函数**对着**线上 CDN** 跑；`resolve-and-fetch` failover 走单测（避免跨源 CORS 拒绝被误判为连接失败而混淆）。
+
+| § | 场景 | 方式 | 结果 |
+|---|---|---|---|
+| §0 | CDN 发布态（ui.js/config.js 双发、ts、cursor 81、purge） | node 解密线上 CDN | ✅ PASS |
+| §1 | 冷启动解析：拉 ui.js、Web Crypto 解密、原子写 `{entries,ts}`、不写 legacy 键 | 真浏览器真码 vs 线上 CDN | ✅ PASS |
+| §2 | ts 后台升级（过期→升级 / 未来→不覆盖） | 真浏览器真码 | ✅ PASS 双向 |
+| §3 | GET 并发竞速多 entry | 单测（`resolve-and-fetch.test.ts`） | ✅ 绿 |
+| §4 | POST 顺序、连接失败才切、HTTP 响应不重放 | 单测（含 relay-disabled 套件） | ✅ 绿 |
+| §5 | 旧 app 读 config.js 兼容 | 线上 config.js 存在且解密一致 + seed 单测 | ✅ PASS |
+| §6 | 全 CDN 失败 → DEFAULT_ENTRY | 单测 `test_all_cdn_fail_returns_default_list` + 离线韧性观测 | ✅ 绿 |
+
+§1 实测细节：清空存储后 `resolveEntries()` 返回 `["https://d1l0lk9fcyd6r8.cloudfront.net","https://k2.52j.me"]`，`localStorage['k2_entry_cfg']` = `{"entries":[…],"ts":1784272702}`（ts 与发布值一致），`k2_entry_url` 保持 `null`（不迁移旧键）。Network 面板证实**10 个 ui.js 镜像全部并发发起**。
+
+§2 实测细节：注入 `{ts:1}` → 立即返回过期值、后台刷新落地后升级为 `ts:1784272702`；注入 `{ts:9999999999}` → 立即返回、后台 CDN 旧 ts 被 ts-gate 正确拒绝、保持未来值不被覆盖。
+
+### 发现（非阻断，但要处理）
+
+1. **镜像 `jsd.cdn.zzko.cn` TLS 证书过期**（`ERR_CERT_DATE_INVALID`）——10 个源里 1 个死。竞速容忍（其余 9 个 200），非阻断；建议后续从 `CDN_SOURCES` 换掉或修证书。
+2. **默认 entries 首位 CloudFront（CN 风险）** + POST 顺序 per-entry ~7s 超时 ⇒ CN 用户登录最坏 +7s。**建议发布 CN-first 顺序**（见 §0 命令），把 `k2.52j.me` 放首位，CloudFront 兜底。
+
+### 仍需用户真机验（本机无法覆盖）
+
+- §3/§4 的**真实 GFW 环境 failover 延迟**（CloudFront 挂起 vs RST 的实际耗时）。
+- CN 真机冷启动端到端登录成功率。
+
+本机可覆盖项已全绿 → 代码/系统信心可维持 10/10；**CN 真机 §3/§4 smoke 通过前，业务信心按框架维持 6–7**。
