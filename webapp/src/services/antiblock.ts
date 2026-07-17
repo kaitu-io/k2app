@@ -1,4 +1,5 @@
 import { decrypt as _decrypt, loadJsonp } from './antiblock-crypto';
+import { brandConfig } from '../brands';
 
 const STORAGE_KEY = 'k2_entry_url';
 export const DEFAULT_ENTRY = 'https://k2.52j.me';
@@ -9,17 +10,9 @@ export const DECRYPTION_KEY =
 // continue to work without any change to their import paths.
 export { decrypt } from './antiblock-crypto';
 
-// jsdelivr mirrors — raced simultaneously (Happy Eyeballs)
-// Same repo path, different edge networks for redundancy in blocked regions
-export const CDN_SOURCES = [
-  'https://cdn.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
-  'https://fastly.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
-  'https://testingcf.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
-  'https://gcore.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
-  'https://cdn.jsdmirror.com/gh/kaitu-io/ui-theme@dist/config.js',
-  'https://cdn.jsdmirror.cn/gh/kaitu-io/ui-theme@dist/config.js',
-  'https://jsd.onmicrosoft.cn/gh/kaitu-io/ui-theme@dist/config.js',
-];
+// 品牌派生的入口配置 CDN 镜像（Happy Eyeballs 竞速）。空数组 = 该品牌无需
+// 入口伪装（fetchEntryFromCDN 对空列表返回 null → resolveEntry 回落 DEFAULT_ENTRY）。
+export const CDN_SOURCES: readonly string[] = brandConfig.antiblockCdnSources;
 
 // ---------------------------------------------------------------------------
 // JSONP global name used by the CDN config script

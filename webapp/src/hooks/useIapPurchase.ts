@@ -16,16 +16,14 @@ import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import type { IapProduct } from '../types/kaitu-core';
 import type { DataUser } from '../services/api-types';
+import { brandConfig } from '../brands';
 
 /**
- * App Store 商品 id（与 ASC 配置一致）。technical ids，品牌豁免。
- *
- * 单一自动续订订阅：Apple 自动续订上限 1 年（Center 的 2y/3y/5y 批量套餐无法
- * 做成自动续订，保持纯 web），且只有 basic 一档（无 family）。iOS 以此单商品
- * 与 Center `1y` 套餐对齐发布。数组形态保留（bridge `getProducts` 接收数组，
- * 未来加商品直接 append）。
+ * App Store 商品 id —— 品牌派生（brands/<id> 配置，与该品牌 iOS app 的 ASC 一致）。
+ * 单一自动续订订阅：Apple 自动续订上限 1 年，只有 basic 一档。数组形态保留
+ * （bridge `getProducts` 接收数组，未来加商品直接在品牌配置 append）。
  */
-export const IAP_PRODUCT_IDS = ['io.kaitu.sub.basic.1y'] as const;
+export const IAP_PRODUCT_IDS: readonly string[] = brandConfig.iapProductIds;
 
 /** 用户缓存 key（与 useUser 保持一致） */
 const USER_CACHE_KEY = 'api:user_info';
