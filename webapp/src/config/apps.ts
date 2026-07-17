@@ -7,7 +7,7 @@
  * - Theme colours (mirrored from the brand registry)
  */
 
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 
 export interface AppConfig {
   /** Display name of the application */

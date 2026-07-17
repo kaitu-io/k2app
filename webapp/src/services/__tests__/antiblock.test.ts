@@ -8,6 +8,7 @@ import {
   CDN_SOURCES,
   DEFAULT_ENTRY,
 } from '../antiblock';
+import { brandConfig } from '../../brands';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -170,30 +171,41 @@ describe('antiblock — AES-256-GCM decryption', () => {
       expect(entry).toBe(DEFAULT_ENTRY);
     });
 
-    it('test_background_refresh_on_cache_hit', async () => {
-      mockLocalStorage.getItem.mockReturnValue('https://cached.example.com');
-      const appendSpy = vi.spyOn(document.head, 'appendChild');
+    // Only meaningful when the brand has CDN mirrors to race — overleap's
+    // antiblockCdnSources is [] by design (not behind the GFW), so the
+    // background refresh has nothing to inject.
+    it.runIf(brandConfig.antiblockCdnSources.length > 0)(
+      'test_background_refresh_on_cache_hit',
+      async () => {
+        mockLocalStorage.getItem.mockReturnValue('https://cached.example.com');
+        const appendSpy = vi.spyOn(document.head, 'appendChild');
 
-      await resolveEntry();
+        await resolveEntry();
 
-      // Wait a tick for the background refresh to fire
-      await new Promise((r) => setTimeout(r, 10));
-      // Background refresh should inject <script> tags for all CDN sources
-      const scriptCalls = appendSpy.mock.calls.filter(
-        ([node]) => node instanceof HTMLScriptElement,
-      );
-      expect(scriptCalls.length).toBeGreaterThan(0);
-    });
+        // Wait a tick for the background refresh to fire
+        await new Promise((r) => setTimeout(r, 10));
+        // Background refresh should inject <script> tags for all CDN sources
+        const scriptCalls = appendSpy.mock.calls.filter(
+          ([node]) => node instanceof HTMLScriptElement,
+        );
+        expect(scriptCalls.length).toBeGreaterThan(0);
+      },
+    );
   });
 
   // ── Static analysis tests ───────────────────────────────────────────────
 
-  it('test_cdn_sources_have_multiple_mirrors', () => {
-    expect(CDN_SOURCES.length).toBeGreaterThanOrEqual(3);
-    expect(CDN_SOURCES.some((u) => u.includes('cdn.jsdelivr.net'))).toBe(true);
-    expect(CDN_SOURCES.some((u) => u.includes('fastly.jsdelivr.net'))).toBe(true);
-    expect(CDN_SOURCES.some((u) => u.includes('gcore.jsdelivr.net'))).toBe(true);
-  });
+  // kaitu-only: overleap's brand config ships zero CDN mirrors (no antiblock
+  // need outside the GFW) — see brands/overleap/index.ts antiblockCdnSources.
+  it.runIf(brandConfig.id === 'kaitu')(
+    'test_cdn_sources_have_multiple_mirrors',
+    () => {
+      expect(CDN_SOURCES.length).toBeGreaterThanOrEqual(3);
+      expect(CDN_SOURCES.some((u) => u.includes('cdn.jsdelivr.net'))).toBe(true);
+      expect(CDN_SOURCES.some((u) => u.includes('fastly.jsdelivr.net'))).toBe(true);
+      expect(CDN_SOURCES.some((u) => u.includes('gcore.jsdelivr.net'))).toBe(true);
+    },
+  );
 
   it('test_happy_eyeballs_uses_promise_any', () => {
     expect(sourceCode).toContain('promiseAny');

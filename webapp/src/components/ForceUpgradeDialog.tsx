@@ -15,7 +15,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { isOlderVersion, isValidVersion, cleanVersion } from '../utils/versionCompare';
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 
 /**
  * ForceUpgradeDialog - Shows a modal dialog when the client version is below minClientVersion.

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Box, Typography } from '@mui/material';
 import BackButton from '../../components/BackButton';
 import AndroidInstallStepper from './AndroidInstallStepper';
-import { brandConfig } from '../../brand';
+import { brandConfig } from '../../brands';
 
 export default function AndroidInstall() {
   const { t } = useTranslation();

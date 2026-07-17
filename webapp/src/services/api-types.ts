@@ -411,7 +411,7 @@ export interface DataInviteCode {
 
 /** 告诉客户端如何管理/取消订阅（与 Go `ManageSurface`）。 */
 export interface ManageSurface {
-  kind: 'apple_settings' | 'url';
+  kind: 'apple_settings' | 'url' | 'stripe_portal';
   url?: string;
 }
 

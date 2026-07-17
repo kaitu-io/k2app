@@ -115,7 +115,7 @@ export default defineConfig({
     // Must mirror vite.config.ts or runtime ReferenceError aborts connect().
     '__K2_BUILD_LOG_LEVEL__': JSON.stringify(process.env.K2_BUILD_LOG_LEVEL || 'debug'),
 
-    // Same contract: src/brand/index.ts reads __K2_BRAND__ at module scope and
+    // Same contract: src/brands/index.ts reads __K2_BRAND__ at module scope and
     // is pulled in by theme.ts, so a missing define is a ReferenceError at
     // startup (blank app), not a degraded brand.
     '__K2_BRAND__': JSON.stringify(process.env.K2_BRAND === 'overleap' ? 'overleap' : 'kaitu'),

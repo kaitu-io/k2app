@@ -19,6 +19,13 @@ import { loadJsonp, type JsonpConfig } from '../antiblock-crypto';
 import { DECRYPTION_KEY } from '../antiblock';
 import { addNodes } from '../entry-pool';
 import { EMBEDDED_SEED } from '../antiblock-seed-embedded';
+import { brandConfig } from '../../brands';
+
+// seedUrls()/findFrontier() derive from antiblock.ts CDN_SOURCES, which is now
+// brand-derived (Task 7). overleap ships zero CDN mirrors (not behind the
+// GFW), so the entire CDN-driven frontier-advance path is a correct no-op —
+// tests that exercise it only make sense for a brand with mirrors to probe.
+const hasCdnSources = brandConfig.antiblockCdnSources.length > 0;
 import {
   SEED_GLOBAL,
   CURSOR_KEY,
@@ -165,14 +172,17 @@ describe('seedPath / seedUrls', () => {
     expect(seedPath(42)).toBe('v/42.js');
   });
 
-  it('seedUrls rewrites every /config.js mirror to /v/<n>.js', () => {
-    const urls = seedUrls(7);
-    expect(urls.length).toBeGreaterThanOrEqual(3);
-    for (const u of urls) {
-      expect(u).toMatch(/\/v\/7\.js$/);
-      expect(u).not.toContain('/config.js');
-    }
-  });
+  it.runIf(hasCdnSources)(
+    'seedUrls rewrites every /config.js mirror to /v/<n>.js',
+    () => {
+      const urls = seedUrls(7);
+      expect(urls.length).toBeGreaterThanOrEqual(3);
+      for (const u of urls) {
+        expect(u).toMatch(/\/v\/7\.js$/);
+        expect(u).not.toContain('/config.js');
+      }
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -188,30 +198,39 @@ describe('findFrontier', () => {
     });
   }
 
-  it('gallops across a FAR frontier (valid n<=350, floor=10) → cursor 350', async () => {
-    mockExistsBy((n) => n <= 350);
-    const res = await findFrontier(10);
-    expect(res).not.toBeNull();
-    expect(res!.cursor).toBe(350);
-    expect(res!.payload).toEqual(SAMPLE_PAYLOAD);
-  });
+  it.runIf(hasCdnSources)(
+    'gallops across a FAR frontier (valid n<=350, floor=10) → cursor 350',
+    async () => {
+      mockExistsBy((n) => n <= 350);
+      const res = await findFrontier(10);
+      expect(res).not.toBeNull();
+      expect(res!.cursor).toBe(350);
+      expect(res!.payload).toEqual(SAMPLE_PAYLOAD);
+    },
+  );
 
-  it('jumps a single gap (valid n<=200 and n==202, 201 missing, floor=190) → cursor 202', async () => {
-    mockExistsBy((n) => n <= 200 || n === 202);
-    const res = await findFrontier(190);
-    expect(res).not.toBeNull();
-    expect(res!.cursor).toBe(202);
-  });
+  it.runIf(hasCdnSources)(
+    'jumps a single gap (valid n<=200 and n==202, 201 missing, floor=190) → cursor 202',
+    async () => {
+      mockExistsBy((n) => n <= 200 || n === 202);
+      const res = await findFrontier(190);
+      expect(res).not.toBeNull();
+      expect(res!.cursor).toBe(202);
+    },
+  );
 
-  it('bridges a CI gap (valid n=200,202, n=201 missing, floor=199) → cursor 202', async () => {
-    // Simulates a CDN publish gap: v/200.js exists, v/201.js was never published
-    // (CI gap), v/202.js exists, nothing above. Gallop hits 200, misses 201 →
-    // binary gives best=200. Gap-confirm must bridge the hole and return 202.
-    mockExistsBy((n) => n === 200 || n === 202);
-    const res = await findFrontier(199);
-    expect(res).not.toBeNull();
-    expect(res!.cursor).toBe(202);
-  });
+  it.runIf(hasCdnSources)(
+    'bridges a CI gap (valid n=200,202, n=201 missing, floor=199) → cursor 202',
+    async () => {
+      // Simulates a CDN publish gap: v/200.js exists, v/201.js was never published
+      // (CI gap), v/202.js exists, nothing above. Gallop hits 200, misses 201 →
+      // binary gives best=200. Gap-confirm must bridge the hole and return 202.
+      mockExistsBy((n) => n === 200 || n === 202);
+      const res = await findFrontier(199);
+      expect(res).not.toBeNull();
+      expect(res!.cursor).toBe(202);
+    },
+  );
 
   it('returns null when nothing exists above floor', async () => {
     mockExistsBy(() => false);
@@ -231,18 +250,21 @@ describe('bootstrapAntiblockSeed', () => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
   });
 
-  it('cold start: seeds EMBEDDED_SEED.nodes, writes ENTRY_KEY, runs network even when throttle is in the future', async () => {
-    const ls = makeLocalStorage({ [PROBE_AFTER_KEY]: String(NOW + PROBE_INTERVAL_MS) });
-    vi.stubGlobal('localStorage', ls);
-    mockedLoadJsonp.mockResolvedValue(null); // no CDN frontier
+  it.runIf(hasCdnSources)(
+    'cold start: seeds EMBEDDED_SEED.nodes, writes ENTRY_KEY, runs network even when throttle is in the future',
+    async () => {
+      const ls = makeLocalStorage({ [PROBE_AFTER_KEY]: String(NOW + PROBE_INTERVAL_MS) });
+      vi.stubGlobal('localStorage', ls);
+      mockedLoadJsonp.mockResolvedValue(null); // no CDN frontier
 
-    await bootstrapAntiblockSeed();
+      await bootstrapAntiblockSeed();
 
-    expect(mockedAddNodes).toHaveBeenCalledWith(EMBEDDED_SEED.nodes);
-    expect(ls.setItem).toHaveBeenCalledWith(ENTRY_KEY, EMBEDDED_SEED.entries[0]);
-    // network ran despite a future throttle (cold-start bypass)
-    expect(mockedLoadJsonp).toHaveBeenCalled();
-  });
+      expect(mockedAddNodes).toHaveBeenCalledWith(EMBEDDED_SEED.nodes);
+      expect(ls.setItem).toHaveBeenCalledWith(ENTRY_KEY, EMBEDDED_SEED.entries[0]);
+      // network ran despite a future throttle (cold-start bypass)
+      expect(mockedLoadJsonp).toHaveBeenCalled();
+    },
+  );
 
   it('warm + throttle in the future: does NOT call loadJsonp (throttled)', async () => {
     // Warm = already seeded this install (SEEDED_KEY set). Node storage moved to
@@ -258,39 +280,45 @@ describe('bootstrapAntiblockSeed', () => {
     expect(mockedLoadJsonp).not.toHaveBeenCalled();
   });
 
-  it('warm + throttle expired: runs gallop and pushes PROBE_AFTER_KEY forward', async () => {
-    const ls = makeLocalStorage({ [PROBE_AFTER_KEY]: String(NOW - 1) });
-    vi.stubGlobal('localStorage', ls);
-    mockedLoadJsonp.mockResolvedValue(null);
+  it.runIf(hasCdnSources)(
+    'warm + throttle expired: runs gallop and pushes PROBE_AFTER_KEY forward',
+    async () => {
+      const ls = makeLocalStorage({ [PROBE_AFTER_KEY]: String(NOW - 1) });
+      vi.stubGlobal('localStorage', ls);
+      mockedLoadJsonp.mockResolvedValue(null);
 
-    await bootstrapAntiblockSeed();
+      await bootstrapAntiblockSeed();
 
-    expect(mockedLoadJsonp).toHaveBeenCalled();
-    expect(ls.setItem).toHaveBeenCalledWith(
-      PROBE_AFTER_KEY,
-      String(NOW + PROBE_INTERVAL_MS),
-    );
-  });
+      expect(mockedLoadJsonp).toHaveBeenCalled();
+      expect(ls.setItem).toHaveBeenCalledWith(
+        PROBE_AFTER_KEY,
+        String(NOW + PROBE_INTERVAL_MS),
+      );
+    },
+  );
 
-  it('cold + CDN advance: adds nodes, persists cursor, writes entry', async () => {
-    const ls = makeLocalStorage(); // SEEDED_KEY unset → cold
-    vi.stubGlobal('localStorage', ls);
-    // Floor = max(persisted cursor=0, EMBEDDED_SEED.cursor). Probe a frontier just
-    // above the real embedded floor so the test is independent of the seed's
-    // build-regenerated cursor value.
-    const base = EMBEDDED_SEED.cursor;
-    mockedLoadJsonp.mockImplementation((url: string) => {
-      const n = cursorFromUrl(url);
-      return Promise.resolve(n > base && n <= base + 3 ? validConfig : null);
-    });
+  it.runIf(hasCdnSources)(
+    'cold + CDN advance: adds nodes, persists cursor, writes entry',
+    async () => {
+      const ls = makeLocalStorage(); // SEEDED_KEY unset → cold
+      vi.stubGlobal('localStorage', ls);
+      // Floor = max(persisted cursor=0, EMBEDDED_SEED.cursor). Probe a frontier just
+      // above the real embedded floor so the test is independent of the seed's
+      // build-regenerated cursor value.
+      const base = EMBEDDED_SEED.cursor;
+      mockedLoadJsonp.mockImplementation((url: string) => {
+        const n = cursorFromUrl(url);
+        return Promise.resolve(n > base && n <= base + 3 ? validConfig : null);
+      });
 
-    await bootstrapAntiblockSeed();
+      await bootstrapAntiblockSeed();
 
-    // EMBEDDED nodes first (always), then payload nodes after advance
-    expect(mockedAddNodes).toHaveBeenCalledWith(SAMPLE_PAYLOAD.nodes);
-    expect(ls.setItem).toHaveBeenCalledWith(CURSOR_KEY, String(base + 3));
-    expect(ls.setItem).toHaveBeenCalledWith(ENTRY_KEY, SAMPLE_PAYLOAD.entries[0]);
-  });
+      // EMBEDDED nodes first (always), then payload nodes after advance
+      expect(mockedAddNodes).toHaveBeenCalledWith(SAMPLE_PAYLOAD.nodes);
+      expect(ls.setItem).toHaveBeenCalledWith(CURSOR_KEY, String(base + 3));
+      expect(ls.setItem).toHaveBeenCalledWith(ENTRY_KEY, SAMPLE_PAYLOAD.entries[0]);
+    },
+  );
 
   it('never throws when loadJsonp returns null everywhere', async () => {
     const ls = makeLocalStorage();

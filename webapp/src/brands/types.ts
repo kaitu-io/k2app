@@ -76,6 +76,16 @@ export interface WebappBrandConfig {
   slogans: { default: string } & Partial<Record<LanguageCode, string>>;
   defaultLocale: LanguageCode;
   locales: LanguageCode[];
+  /** StoreKit 自动续订商品 id（与该品牌 iOS app 的 ASC 配置一致）。
+   *  technical ids，品牌纯净度豁免（对方品牌字面量不出现于对方构建——
+   *  resolver 常量折叠保证 tree-shake）。 */
+  iapProductIds: readonly string[];
+  /** 品牌专属 FAQ 故事 key（追加在通用集之后），locale 文案在
+   *  brands/<id>/locales/<lang>/ticket.json overlay。 */
+  faqExtraKeys: readonly string[];
+  /** antiblock 入口配置 CDN 镜像（启动时 Happy-Eyeballs 竞速）。
+   *  空数组 = 跳过 CDN 竞速，resolveEntry 直接回落 DEFAULT_ENTRY。 */
+  antiblockCdnSources: readonly string[];
   theme: BrandThemeTokens;
   features: BrandFeatures;
 }

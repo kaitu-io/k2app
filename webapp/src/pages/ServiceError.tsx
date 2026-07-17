@@ -17,7 +17,7 @@ import {
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import BackButton from "../components/BackButton";
-import { brandConfig } from "../brand";
+import { brandConfig } from "../brands";
 
 export default function ServiceError() {
   const { t } = useTranslation();

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { lightTheme, darkTheme } from './theme';
-import { brandConfig } from './brand';
-import { KAITU_BRAND } from './brand/kaitu';
-import { OVERLEAP_BRAND } from './brand/overleap';
+import { brandConfig } from './brands';
+import { KAITU_BRAND } from './brands/kaitu';
+import { OVERLEAP_BRAND } from './brands/overleap';
 
 describe('MUI theme derives from brand tokens', () => {
   it('dark palette primary/secondary come from brandConfig.theme.dark', () => {

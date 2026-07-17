@@ -33,6 +33,7 @@ import { LoadingState, EmptyPlans } from '../components/LoadingAndEmpty';
 import MembershipBenefits from '../components/MembershipBenefits';
 import EmailLoginForm from '../components/EmailLoginForm';
 import { IosSubscribePanel, IosMembershipPanel } from '../components/ios';
+import StripePurchasePanel from '../components/stripe/StripePurchasePanel';
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import {
   Warning as WarningIcon,
@@ -40,7 +41,7 @@ import {
 } from "@mui/icons-material";
 import { getThemeColors } from '../theme/colors';
 import { cloudApi } from '../services/cloud-api';
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 import { cacheStore } from '../services/cache-store';
 import { formatBytes } from '../utils/ui';
 
@@ -931,9 +932,16 @@ export default function Purchase() {
     );
   }
 
+  // Stripe 订阅品牌（web/desktop）：整页替换为订阅/管理面板。
+  // 纯订阅模式——WordGate 订单/campaign/专属节点流对该品牌永不运行。
+  if (!iap && brandConfig.features.stripeCheckout) {
+    return <StripePurchasePanel plans={plans} plansLoading={plansLoading} />;
+  }
+
   // Brand payment-channel gate: without WordGate (web/desktop flow) and
-  // without IAP (iOS), this brand has no in-app purchase channel yet
-  // (overleap Stripe Checkout lands in Phase 6). Point users at the website.
+  // without IAP (iOS), this brand has no in-app purchase channel yet.
+  // Point users at the website. Now only covers the hypothetical brand shape
+  // with both gates off (fail-safe) — overleap is handled above.
   if (!iap && !brandConfig.features.wordgatePurchase) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>

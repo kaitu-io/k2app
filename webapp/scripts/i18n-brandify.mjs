@@ -2,8 +2,8 @@
 /**
  * One-shot codemod: replace brand literals in base locale JSONs with i18next
  * interpolation placeholders (resolved via defaultVariables — see
- * src/brand/i18n-vars.ts). Order matters: domains before bare names.
- * Does NOT touch src/i18n/brand/ overlays.
+ * src/brands/i18n-vars.ts). Order matters: domains before bare names.
+ * Does NOT touch src/brands/<brand>/locales/ overlays.
  */
 import fs from 'node:fs';
 import path from 'node:path';

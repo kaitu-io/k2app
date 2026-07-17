@@ -36,8 +36,7 @@ func planByPIDForCredit(ctx context.Context, tx *gorm.DB, pid string, brand Bran
 }
 
 // planByStripePriceID 按 Stripe Price ID 查套餐（GetActiveSubscriptions tier 反查用）。
-// stripe 是 overleap 专属渠道，出生即带品牌过滤——对比 planByAppleProductID 的已知悬项
-// （那个等 Apple IAP overleap 上线前修，见 api/CLAUDE.md Phase 6 seams）。
+// stripe 是 overleap 专属渠道，出生即带品牌过滤——planByAppleProductID 也现已等同品牌隔离（Phase A）。
 func planByStripePriceID(ctx context.Context, tx *gorm.DB, priceID string) (*Plan, error) {
 	if priceID == "" {
 		return nil, fmt.Errorf("empty stripe price id")

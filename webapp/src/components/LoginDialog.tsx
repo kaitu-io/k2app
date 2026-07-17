@@ -46,7 +46,7 @@ import { cacheStore } from '../services/cache-store';
 import type { AuthResult } from '../services/api-types';
 import { delayedFocus } from '../utils/ui';
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 
 export default function LoginDialog() {
   const { t, i18n } = useTranslation();

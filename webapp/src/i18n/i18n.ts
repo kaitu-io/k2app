@@ -2,8 +2,8 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { namespaces, defaultNamespace, type Namespace } from './locales/namespaces';
-import { brandConfig } from '../brand';
-import { brandI18nVariables } from '../brand/i18n-vars';
+import { brandConfig } from '../brands';
+import { brandI18nVariables } from '../brands/i18n-vars';
 
 export const languages = {
   'en-US': { nativeName: 'English (US)', countryCode: 'US' },
@@ -35,8 +35,8 @@ function deepMerge<T extends Record<string, any>>(base: T, overlay: Record<strin
 declare const __K2_BRAND__: string;
 const loadBrandOverlay: (lang: string, ns: Namespace) => Promise<any> =
   __K2_BRAND__ === 'overleap'
-    ? (lang, ns) => import(`./brand/overleap/${lang}/${ns}.json`)
-    : (lang, ns) => import(`./brand/kaitu/${lang}/${ns}.json`);
+    ? (lang, ns) => import(`../brands/overleap/locales/${lang}/${ns}.json`)
+    : (lang, ns) => import(`../brands/kaitu/locales/${lang}/${ns}.json`);
 
 // 动态加载 namespace 的函数
 const loadNamespaceResources = async (lang: string, ns: Namespace) => {

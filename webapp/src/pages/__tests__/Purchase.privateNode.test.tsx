@@ -77,14 +77,15 @@ vi.mock('../../stores/login-dialog.store', () => ({
 
 import Purchase from '../Purchase';
 import { cloudApi } from '../../services/cloud-api';
-import { brandConfig } from '../../brand';
+import { brandConfig } from '../../brands';
 
-// These suites exercise the WordGate order/pay flow. Brands without an in-app
-// purchase channel (overleap: wordgatePurchase=false, no IAP on this platform)
-// intentionally render the "buy on the website" panel instead — see
+// These suites exercise the WordGate order/pay flow. Brands without that
+// channel take a different in-app path — overleap (wordgatePurchase=false,
+// no IAP on this platform) renders StripePurchasePanel instead — see
 // Purchase.tsx's brand payment-channel gate. Gate the flow suites on that, and
-// assert the closed-gate behaviour explicitly below rather than just skipping.
+// assert the non-WordGate behaviour explicitly below rather than just skipping.
 const WORDGATE = brandConfig.features.wordgatePurchase;
+const STRIPE = brandConfig.features.stripeCheckout;
 
 const PRIVATE_NODE_PLAN: Plan = {
   pid: 'pn-1m',
@@ -254,9 +255,11 @@ describe.runIf(WORDGATE)('Purchase — kind scoping', () => {
   });
 });
 
-// Always runs. Under kaitu the gate is open (plans render); under overleap the
-// gate is closed and the page must offer the website purchase route instead —
-// and must never surface the WordGate plan UI.
+// Always runs. Under kaitu the gate is open (WordGate plans render); under
+// overleap the WordGate flow is closed and the page must render
+// StripePurchasePanel instead — never the WordGate plan UI, never the
+// "buy on website" fallback (that's a fail-safe for a hypothetical brand
+// with both gates off, which no current brand is).
 describe('Purchase — brand payment-channel gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -264,13 +267,23 @@ describe('Purchase — brand payment-channel gate', () => {
     mockEndpoints({ app: [SHARED_PLAN], privateNode: [PRIVATE_NODE_PLAN] });
   });
 
-  it('renders the WordGate plan UI only when the brand has that channel', async () => {
+  it('renders the payment-channel UI matching the brand gate', async () => {
     renderPurchase(['/']);
 
     if (WORDGATE) {
       await waitFor(() => {
         expect(screen.getAllByText('$19.00').length).toBeGreaterThan(0);
       });
+    } else if (STRIPE) {
+      // Stripe subscribe panel — renders the "app" product-line plan
+      // (SHARED_PLAN, $19.00) as a subscription card, but the WordGate order
+      // flow and its private_node region picker are absent entirely, and the
+      // "buy on website" fallback never renders (stripeCheckout wins).
+      await screen.findByTestId('stripe-subscribe-panel');
+      expect(screen.getAllByText('$19.00').length).toBeGreaterThan(0);
+      expect(screen.queryAllByText('$99.00').length).toBe(0);
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(screen.queryByText(i18n.t('purchase:purchase.buyOnWebsite'))).toBeNull();
     } else {
       // Closed gate: no plan cards, no region picker — the WordGate flow is
       // absent entirely, and the user is pointed at the brand website.
@@ -286,5 +299,6 @@ describe('Purchase — brand payment-channel gate', () => {
 
   it('brand gate config matches the brand registry', () => {
     expect(WORDGATE).toBe(brandConfig.id === 'kaitu');
+    expect(STRIPE).toBe(brandConfig.id === 'overleap');
   });
 });

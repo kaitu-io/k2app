@@ -16,7 +16,7 @@ import {
 } from '@mui/material';
 import { useKaituBridge } from '../hooks/useKaituBridge';
 import { useAuth } from "../stores";
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 
 export default function BridgeTest() {
   const { isAuthenticated } = useAuth();

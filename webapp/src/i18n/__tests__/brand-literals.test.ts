@@ -2,7 +2,7 @@
  * Guard: base locale files must be brand-neutral.
  * Brand identity enters strings only via {{brand}}/{{brandDomain}}/
  * {{brandBaseUrl}}/{{supportEmail}} interpolation (Task 4) or via the
- * per-brand overlay dir src/i18n/brand/<brand>/ (which this test does NOT scan).
+ * per-brand overlay dir src/brands/<brand>/locales/ (which this test does NOT scan).
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';

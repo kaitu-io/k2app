@@ -1,4 +1,4 @@
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 
 const COMMON_FAQ_KEYS = [
   'connection',
@@ -10,14 +10,11 @@ const COMMON_FAQ_KEYS = [
   'loginFailed',
 ] as const;
 
-// Kaitu-only stories (legacy ANC client, China App Store availability).
-// Their locale strings live in src/i18n/brand/kaitu/<lang>/ticket.json —
-// they are not bundled into overleap builds at all.
-const KAITU_FAQ_KEYS = ['allNationConnect', 'chinaAppStore'] as const;
+export type FaqKey = string;
 
-export type FaqKey =
-  | (typeof COMMON_FAQ_KEYS)[number]
-  | (typeof KAITU_FAQ_KEYS)[number];
-
-export const FAQ_KEYS: readonly FaqKey[] =
-  brandConfig.id === 'kaitu' ? [...COMMON_FAQ_KEYS, ...KAITU_FAQ_KEYS] : [...COMMON_FAQ_KEYS];
+// 品牌专属故事 key 来自 brands/<id> 配置（kaitu: legacy ANC 客户端、中国区上架；
+// 其文案在 brands/kaitu/locales/<lang>/ticket.json overlay，不打进其它品牌构建）。
+export const FAQ_KEYS: readonly FaqKey[] = [
+  ...COMMON_FAQ_KEYS,
+  ...brandConfig.faqExtraKeys,
+];

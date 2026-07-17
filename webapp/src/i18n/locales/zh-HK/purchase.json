@@ -97,7 +97,19 @@
     "loginAndPay": "登入並支付",
     "inviteRewardTitle": "好友推薦獎勵",
     "inviteRewardDesc": "完成首次充值即可獲得 {{days}} 日額外贈送",
-    "tierLocked": "您當前為「{{tier}}」檔，無法購買此檔套餐。如需變更檔位請聯絡客服。"
+    "tierLocked": "您當前為「{{tier}}」檔，無法購買此檔套餐。如需變更檔位請聯絡客服。",
+    "stripe": {
+      "subscribeTitle": "選擇訂閱方案",
+      "subscribeButton": "訂閱",
+      "perMonth": "/月",
+      "manageTitle": "我的訂閱",
+      "manageButton": "管理訂閱",
+      "portalHint": "帳單、發票與退訂均在 Stripe 安全管理頁完成。",
+      "openedHint": "已在瀏覽器開啟安全付款頁，完成付款後回到這裡刷新狀態。",
+      "refreshStatus": "我已完成付款——刷新",
+      "requestFailed": "無法連接付款服務，請稍後重試。",
+      "noPlans": "目前暫無可訂閱的方案，請稍後再來。"
+    }
   },
   "deviceInstall": {
     "title": "客戶端下載",

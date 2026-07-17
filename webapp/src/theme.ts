@@ -1,5 +1,5 @@
 import { createTheme, ThemeOptions } from '@mui/material/styles';
-import { brandConfig } from './brand';
+import { brandConfig } from './brands';
 
 const brandTheme = brandConfig.theme;
 

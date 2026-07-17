@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const localesDir = path.resolve(here, '../src/i18n/locales');
-const overlayDir = path.resolve(here, '../src/i18n/brand/kaitu');
+const overlayDir = path.resolve(here, '../src/brands/kaitu/locales');
 const KEYS = ['allNationConnect', 'chinaAppStore'];
 
 for (const lang of fs.readdirSync(localesDir)) {
