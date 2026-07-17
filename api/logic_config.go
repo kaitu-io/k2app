@@ -27,6 +27,7 @@ type JwtConfig struct {
 type InviteConfig struct {
 	PurchaseRewardDays        int `json:"purchaseRewardDays"`        // 被邀请人购买奖励天数
 	InviterPurchaseRewardDays int `json:"inviterPurchaseRewardDays"` // 普通邀请人购买奖励天数
+	MinRewardMonths           int `json:"minRewardMonths"`           // 触发购买奖励的最低套餐月数（首单不足此时长不发奖励）
 }
 
 // RetailerDefaultConfig 分销商默认配置结构
@@ -72,9 +73,15 @@ func configInvite(ctx context.Context) InviteConfig {
 		inviterPurchaseRewardDays = 7 // 默认7天
 	}
 
+	minRewardMonths := viper.GetInt("invite.min_reward_months")
+	if minRewardMonths == 0 {
+		minRewardMonths = 12 // 默认年付及以上才触发购买奖励
+	}
+
 	cfg := InviteConfig{
 		PurchaseRewardDays:        purchaseRewardDays,
 		InviterPurchaseRewardDays: inviterPurchaseRewardDays,
+		MinRewardMonths:           minRewardMonths,
 	}
 	log.Debugf(ctx, "loading invite config: %+v", cfg)
 	return cfg

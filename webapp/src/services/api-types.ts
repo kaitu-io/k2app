@@ -102,6 +102,7 @@ export interface UpdateUserInviteCodeRequest {
 export interface InviteConfig {
   purchaseRewardDays: number; // 购买奖励天数
   inviterPurchaseRewardDays: number; // 邀请人购买奖励天数
+  minRewardMonths: number; // 触发购买奖励的最低套餐月数
 }
 
 // 邀请码信息
@@ -658,6 +659,8 @@ export interface InviteConfig {
   inviterPurchaseRewardDays: number;
   // 被邀请者购买时的奖励天数
   purchaseRewardDays: number;
+  // 触发购买奖励的最低套餐月数（首单不足此时长不发奖励）
+  minRewardMonths: number;
 }
 
 // 公告信息

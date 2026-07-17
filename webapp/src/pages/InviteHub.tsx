@@ -283,7 +283,7 @@ export default function Invite() {
 
       {/* Intro Section */}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
-        {t('invite:invite.introBody')}
+        {t('invite:invite.introBody', { months: appConfig?.inviteReward?.minRewardMonths ?? 12 })}
       </Typography>
 
       {/* Main Content */}

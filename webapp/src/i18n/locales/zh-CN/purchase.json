@@ -32,7 +32,7 @@
       "expiresOn": "有效期至 {{date}}",
       "daysLeft": "剩 {{days}} 天",
       "viewHistory": "付费记录",
-      "inviteRewardCard": "邀请好友，双方各得 {{days}} 天",
+      "inviteRewardCard": "邀请好友首购 {{months}} 个月及以上套餐，双方均得会员时长奖励",
       "inviteRewardCta": "去邀请"
     },
     "title": "购买套餐",
@@ -89,13 +89,14 @@
     "bindEmail": "绑定邮箱",
     "bindEmailToPayNow": "绑定邮箱后支付",
     "inviteRewardTitle": "好友推荐奖励",
-    "inviteRewardDesc": "完成首次充值即可获得 {{days}} 天额外赠送",
+    "inviteRewardDesc": "首次购买 {{months}} 个月及以上套餐，即可获得 {{days}} 天额外赠送",
     "operationFailed": "操作失败",
     "loginRequired": "请先登录后再购买",
     "loginToPurchase": "登录以完成购买",
     "loginNow": "立即登录",
     "loginAndPay": "登录并支付",
-    "tierLocked": "您当前为「{{tier}}」档，无法购买此档套餐。如需变更档位请联系客服。"
+    "tierLocked": "您当前为「{{tier}}」档，无法购买此档套餐。如需变更档位请联系客服。",
+    "inviteRewardThresholdHint": "当前套餐不参与好友邀请赠送：首单购买 {{months}} 个月及以上套餐，可额外获得 {{days}} 天会员时长"
   },
   "deviceInstall": {
     "title": "客户端下载",

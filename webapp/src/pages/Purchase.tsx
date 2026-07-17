@@ -19,6 +19,7 @@ import {
   FormControl,
   InputLabel,
   useTheme,
+  Alert,
 } from "@mui/material";
 import { Add as AddIcon, EmojiEvents as EmojiEventsIcon, Error as ErrorIcon } from "@mui/icons-material";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -642,6 +643,15 @@ export default function Purchase() {
   const isPrivateNode = selectedPlanObj?.product === 'private_node';
   const allowedRegions = selectedPlanObj?.privateNode?.allowedRegions ?? [];
 
+  // 邀请购买奖励门槛（与后端 handleInvitePurchaseRewardInTx 同一规则）：
+  // 仅"被邀请 + 未完成首单 + 所选套餐月数 >= minRewardMonths"时才有赠送。
+  const inviteRewardMinMonths = appConfig?.inviteReward?.minRewardMonths ?? 12;
+  const isInvitedFirstOrder = !!user?.inviteCode && !user?.isFirstOrderDone;
+  const inviteRewardEligible =
+    isInvitedFirstOrder &&
+    !!appConfig?.inviteReward &&
+    (selectedPlanObj?.month ?? 0) >= inviteRewardMinMonths;
+
   // 选中专属节点套餐时，默认选第一个可选地区；切回共享套餐时清空。
   useEffect(() => {
     if (!isPrivateNode) {
@@ -1004,8 +1014,8 @@ export default function Purchase() {
           </Box>
         )}
 
-        {/* 邀请奖励横幅 */}
-        {user?.inviteCode && appConfig?.inviteReward && (
+        {/* 邀请奖励横幅 — 仅所选套餐满足奖励门槛时显示 */}
+        {inviteRewardEligible && appConfig?.inviteReward && (
           <Box sx={{
             mb: 1,
             borderRadius: 2,
@@ -1017,9 +1027,19 @@ export default function Purchase() {
           }}>
             <EmojiEventsIcon sx={{ color: colors.warningDark, fontSize: 28, mr: 1.5 }} />
             <Typography variant="subtitle1" fontWeight="bold" color="text.primary" sx={{ fontSize: '1rem' }} component="span" >
-              {t('purchase:purchase.friendReferralBonus', { days: appConfig.inviteReward.inviterPurchaseRewardDays })}
+              {t('purchase:purchase.friendReferralBonus', { days: appConfig.inviteReward.purchaseRewardDays })}
             </Typography>
           </Box>
+        )}
+
+        {/* 邀请奖励门槛提示 — 已填邀请码但所选套餐时长不足，明确告知不参与赠送 */}
+        {isInvitedFirstOrder && appConfig?.inviteReward && !inviteRewardEligible && (
+          <Alert severity="info" icon={<EmojiEventsIcon fontSize="inherit" />} sx={{ mb: 1, borderRadius: 2 }}>
+            {t('purchase:purchase.inviteRewardThresholdHint', {
+              months: inviteRewardMinMonths,
+              days: appConfig.inviteReward.purchaseRewardDays,
+            })}
+          </Alert>
         )}
 
         {/* Plan 选择（纵向排列） */}
@@ -1144,7 +1164,7 @@ export default function Purchase() {
                     const planMonths = plans.find(p => p.pid === plan)?.month || 0;
                     return t('purchase:purchase.memberAuthorization', { months: planMonths });
                   })()}
-                  {user?.inviteCode && appConfig?.inviteReward && (
+                  {inviteRewardEligible && appConfig?.inviteReward && (
                     <Chip label={t('purchase:purchase.friendReferralGift', { days: appConfig.inviteReward.purchaseRewardDays })} color="success" size="small" sx={{ ml: 1, fontWeight: 'bold' }} component="span" />
                   )}
                 </Typography>

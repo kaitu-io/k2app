@@ -32,7 +32,7 @@
       "expiresOn": "Valid until {{date}}",
       "daysLeft": "{{days}} days left",
       "viewHistory": "Purchase history",
-      "inviteRewardCard": "Invite friends — you both get {{days}} days",
+      "inviteRewardCard": "Invite friends — when their first purchase is a {{months}}-month+ plan, you both earn bonus days",
       "inviteRewardCta": "Invite"
     },
     "title": "Purchase Plan",
@@ -94,8 +94,9 @@
     "loginNow": "Log in Now",
     "loginAndPay": "Log in & Pay",
     "inviteRewardTitle": "Referral Reward",
-    "inviteRewardDesc": "Complete your first top-up to receive {{days}} extra days",
-    "tierLocked": "Your current tier is {{tier}}. This plan requires a different tier — please contact support to switch tiers."
+    "inviteRewardDesc": "Get {{days}} extra days when your first purchase is a {{months}}-month or longer plan",
+    "tierLocked": "Your current tier is {{tier}}. This plan requires a different tier — please contact support to switch tiers.",
+    "inviteRewardThresholdHint": "This plan doesn't qualify for the friend referral bonus. Choose a {{months}}-month or longer plan for your first order to get {{days}} extra days."
   },
   "deviceInstall": {
     "title": "Client Download",

@@ -88,11 +88,16 @@ func handleInviteDownloadReward(ctx context.Context, userID uint64) (*UserProHis
 // handleInvitePurchaseRewardInTx 处理邀请购买奖励（同步执行，在事务中）
 // 必须在 ApplyOrderToTargetUsers 之前调用，因为后者会设置 IsFirstOrderDone=true
 //
+// 发放条件：首单 + 有邀请码 + 首单套餐月数 >= configInvite().MinRewardMonths。
+// 首单套餐时长不足门槛时双方均不发放，且首单资格随 IsFirstOrderDone 一次性消耗
+// （即之后再买长套餐也不补发）——前端在下单前对此有明确提示。
+//
 // 并发安全设计：
 // - buyer FOR UPDATE：序列化同一买家的并发首购，防止 IsFirstOrderDone 检查被 snapshot 绕过
 // - inviter FOR UPDATE：序列化同一邀请人的并发奖励，防止 expired_at lost update
-func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uint64, orderID uint64) error {
-	log.Infof(ctx, "[InviteReward] processing for user %d, order %d", userID, orderID)
+func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, order *Order) error {
+	userID := order.UserID
+	log.Infof(ctx, "[InviteReward] processing for user %d, order %d", userID, order.ID)
 
 	// 1. FOR UPDATE 锁定买家行，读取最新已提交的 IsFirstOrderDone
 	// 注意：Preload 走独立 SELECT 不带 FOR UPDATE，InvitedByCode 是不可变记录所以安全
@@ -111,6 +116,20 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uin
 	// 3. 如果没有邀请码，跳过
 	if user.InvitedByCode == nil {
 		log.Infof(ctx, "[InviteReward] user %d has no invite code, skipping", userID)
+		return nil
+	}
+
+	// 4. 套餐时长门槛：首单套餐月数不足 MinRewardMonths 不发奖励
+	// （防止"买 1 个月送 1 个月"把获客成本翻倍）
+	cfg := configInvite(ctx)
+	plan, err := order.GetPlan()
+	if err != nil || plan == nil {
+		log.Warnf(ctx, "[InviteReward] plan not found for order %d, skipping reward: %v", order.ID, err)
+		return nil
+	}
+	if plan.Month < cfg.MinRewardMonths {
+		log.Infof(ctx, "[InviteReward] order %d plan month %d < min reward months %d, skipping",
+			order.ID, plan.Month, cfg.MinRewardMonths)
 		return nil
 	}
 

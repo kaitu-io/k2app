@@ -277,6 +277,7 @@ export interface IssueDeviceTokenResponse {
 export interface InviteConfig {
   purchaseRewardDays: number;        // 被邀请人购买奖励天数
   inviterPurchaseRewardDays: number; // 邀请人购买奖励天数
+  minRewardMonths: number;           // 触发购买奖励的最低套餐月数
 }
 
 // InviteCode - 邀请码信息（表示"被谁邀请"，用于 User.invitedByCode）

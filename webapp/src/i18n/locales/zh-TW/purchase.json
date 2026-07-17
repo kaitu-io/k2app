@@ -32,7 +32,7 @@
       "expiresOn": "有效期至 {{date}}",
       "daysLeft": "剩 {{days}} 天",
       "viewHistory": "付費記錄",
-      "inviteRewardCard": "邀請好友，雙方各得 {{days}} 天",
+      "inviteRewardCard": "邀請好友首購 {{months}} 個月及以上方案，雙方均得會員時長獎勵",
       "inviteRewardCta": "去邀請"
     },
     "title": "購買方案",
@@ -94,8 +94,9 @@
     "loginNow": "立即登入",
     "loginAndPay": "登入並支付",
     "inviteRewardTitle": "好友推薦獎勵",
-    "inviteRewardDesc": "完成首次儲值即可獲得 {{days}} 天額外贈送",
-    "tierLocked": "您目前為「{{tier}}」級，無法購買此級別方案。如需變更級別請聯絡客服。"
+    "inviteRewardDesc": "首次購買 {{months}} 個月及以上方案，即可獲得 {{days}} 天額外贈送",
+    "tierLocked": "您目前為「{{tier}}」級，無法購買此級別方案。如需變更級別請聯絡客服。",
+    "inviteRewardThresholdHint": "目前方案不參與好友邀請贈送：首單購買 {{months}} 個月及以上方案，可額外獲得 {{days}} 天會員時長"
   },
   "deviceInstall": {
     "title": "客戶端下載",
