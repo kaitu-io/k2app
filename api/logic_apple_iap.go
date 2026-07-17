@@ -133,6 +133,25 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		return nil // idempotent: plan-state refreshed, no double credit
 	}
 
+	// 邀请购买奖励：Apple IAP 与 wordgate 订单同一规则（首单 + 套餐月数达门槛），
+	// 复用 grantInvitePurchaseRewardInTx。必须在下方 IsFirstOrderDone 置位之前执行；
+	// SAVEPOINT 保证奖励失败不阻断入账（支付到账优先）。奖励会更新买家 user 行，
+	// 之后必须重载本函数持有的 user 快照，否则后续 Save 会用旧值覆盖奖励天数。
+	if isFirst {
+		if plan, perr := planByAppleProductID(ctx, tx, info.ProductId); perr == nil && plan != nil {
+			if err := tx.SavePoint("iap_invite_reward").Error; err == nil {
+				if rerr := grantInvitePurchaseRewardInTx(ctx, tx, userID, plan); rerr != nil {
+					tx.RollbackTo("iap_invite_reward")
+					log.Errorf(ctx, "[creditAppleTransaction] invite reward failed (non-fatal, rolled back), user %d txn %s: %v",
+						userID, info.TransactionId, rerr)
+				}
+			}
+			if err := tx.First(&user, userID).Error; err != nil {
+				return fmt.Errorf("reload user %d after invite reward: %w", userID, err)
+			}
+		}
+	}
+
 	// Compute the additive credit.
 	var creditSeconds int64
 	var kind string
