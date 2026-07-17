@@ -9,14 +9,12 @@ import { useTranslation } from 'react-i18next';
 import { getThemeColors } from '../../theme/colors';
 
 interface InviteRewardCardProps {
-  /** 被邀请人首购奖励天数。 */
-  days: number;
   /** 触发奖励的最低套餐月数。 */
   months: number;
   onInvite: () => void;
 }
 
-export default function InviteRewardCard({ days, months, onInvite }: InviteRewardCardProps) {
+export default function InviteRewardCard({ months, onInvite }: InviteRewardCardProps) {
   const { t } = useTranslation();
   const theme = useTheme();
   const colors = getThemeColors(theme.palette.mode === 'dark');
@@ -37,7 +35,7 @@ export default function InviteRewardCard({ days, months, onInvite }: InviteRewar
       <EmojiEventsIcon sx={{ color: colors.warningDark, fontSize: 28, flexShrink: 0 }} />
       <Stack sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="subtitle2" fontWeight="bold" color="text.primary" component="span">
-          {t('purchase:purchase.iap.inviteRewardCard', { days, months })}
+          {t('purchase:purchase.iap.inviteRewardCard', { months })}
         </Typography>
       </Stack>
       <Button

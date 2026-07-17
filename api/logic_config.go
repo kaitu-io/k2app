@@ -73,9 +73,11 @@ func configInvite(ctx context.Context) InviteConfig {
 		inviterPurchaseRewardDays = 7 // 默认7天
 	}
 
-	minRewardMonths := viper.GetInt("invite.min_reward_months")
-	if minRewardMonths == 0 {
-		minRewardMonths = 12 // 默认年付及以上才触发购买奖励
+	// 未配置时默认 12（年付及以上才触发购买奖励）。
+	// 显式配置 0 表示关闭门槛（任何首单都发奖励），所以用 IsSet 区分，不能按零值兜底。
+	minRewardMonths := 12
+	if viper.IsSet("invite.min_reward_months") {
+		minRewardMonths = viper.GetInt("invite.min_reward_months")
 	}
 
 	cfg := InviteConfig{

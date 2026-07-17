@@ -271,7 +271,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
   return (
     <Box>
       {/* Invite Reward Prompt */}
-      {inviteCodeFromCookie && step === "code" && !isActivated && (
+      {/* 奖励数字来自服务端配置；配置未加载时不显示，避免向用户许诺错误的奖励条件 */}
+      {inviteCodeFromCookie && step === "code" && !isActivated && appConfig?.inviteReward && (
         <Alert
           severity="success"
           icon={<GiftIcon />}
@@ -290,8 +291,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
           </Typography>
           <Typography variant="caption">
             {t('purchase:purchase.inviteRewardDesc', {
-              days: appConfig?.inviteReward?.purchaseRewardDays ?? 30,
-              months: appConfig?.inviteReward?.minRewardMonths ?? 12,
+              days: appConfig.inviteReward.purchaseRewardDays,
+              months: appConfig.inviteReward.minRewardMonths ?? 12,
             })}
           </Typography>
         </Alert>

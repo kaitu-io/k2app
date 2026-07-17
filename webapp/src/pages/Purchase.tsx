@@ -1032,8 +1032,9 @@ export default function Purchase() {
           </Box>
         )}
 
-        {/* 邀请奖励门槛提示 — 已填邀请码但所选套餐时长不足，明确告知不参与赠送 */}
-        {isInvitedFirstOrder && appConfig?.inviteReward && !inviteRewardEligible && (
+        {/* 邀请奖励门槛提示 — 已填邀请码但所选套餐时长不足，明确告知不参与赠送。
+            selectedPlanObj 为空（套餐尚未加载/未选中）时不显示，避免误报闪烁 */}
+        {isInvitedFirstOrder && appConfig?.inviteReward && selectedPlanObj && !inviteRewardEligible && (
           <Alert severity="info" icon={<EmojiEventsIcon fontSize="inherit" />} sx={{ mb: 1, borderRadius: 2 }}>
             {t('purchase:purchase.inviteRewardThresholdHint', {
               months: inviteRewardMinMonths,

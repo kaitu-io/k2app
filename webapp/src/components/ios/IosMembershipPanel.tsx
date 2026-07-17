@@ -87,7 +87,6 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
         {/* 增长闭环 — 免费得天数（Apple 合规），仅配置存在时显示 */}
         {inviteRewardDays > 0 && (
           <InviteRewardCard
-            days={inviteRewardDays}
             months={appConfig?.inviteReward?.minRewardMonths ?? 12}
             onInvite={() => navigate('/invite')}
           />

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
 	"gorm.io/gorm"
@@ -172,9 +173,24 @@ func TestInviteReward_MissingPlan_SkipsWithoutError(t *testing.T) {
 	require.Empty(t, inviterHist)
 }
 
-// TestConfigInvite_MinRewardMonthsDefault 未配置 invite.min_reward_months 时默认 12。
-func TestConfigInvite_MinRewardMonthsDefault(t *testing.T) {
+// TestConfigInvite_MinRewardMonths 验证门槛解析：
+// 未配置时默认 12；显式配置（含 0 = 关闭门槛）按配置值生效，不被零值兜底改写。
+func TestConfigInvite_MinRewardMonths(t *testing.T) {
 	skipIfNoConfig(t)
-	cfg := configInvite(context.Background())
-	require.Equal(t, 12, cfg.MinRewardMonths, "config.yml sets no invite.min_reward_months, default must be 12")
+	ctx := context.Background()
+
+	if !viper.IsSet("invite.min_reward_months") {
+		require.Equal(t, 12, configInvite(ctx).MinRewardMonths,
+			"invite.min_reward_months unset, default must be 12")
+	}
+
+	// 显式 0 = 关闭门槛，必须原样生效（viper.Set 进程内覆盖，测试结束后还原）
+	orig := viper.Get("invite.min_reward_months")
+	viper.Set("invite.min_reward_months", 0)
+	t.Cleanup(func() { viper.Set("invite.min_reward_months", orig) })
+	require.Equal(t, 0, configInvite(ctx).MinRewardMonths,
+		"explicit 0 must disable the threshold, not fall back to 12")
+
+	viper.Set("invite.min_reward_months", 6)
+	require.Equal(t, 6, configInvite(ctx).MinRewardMonths)
 }

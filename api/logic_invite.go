@@ -145,7 +145,7 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, order *Ord
 	}
 
 	// 5. 为被邀请人添加购买奖励
-	days := configInvite(ctx).PurchaseRewardDays
+	days := cfg.PurchaseRewardDays
 	if days > 0 {
 		if _, err := addProExpiredDays(ctx, tx, &user, VipInvitedReward,
 			inviteCodeID, days, "被邀请首次购买奖励"); err != nil {
@@ -155,7 +155,7 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, order *Ord
 	}
 
 	// 6. 为邀请人添加奖励
-	inviterDays := configInvite(ctx).InviterPurchaseRewardDays
+	inviterDays := cfg.InviterPurchaseRewardDays
 	if inviterDays > 0 {
 		if _, err := addProExpiredDays(ctx, tx, &inviter, VipInviteReward,
 			inviteCodeID, inviterDays, "邀请用户首次购买奖励"); err != nil {
