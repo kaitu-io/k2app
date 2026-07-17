@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"math"
@@ -616,4 +617,151 @@ func splitJWT(token string) []string {
 	}
 	out = append(out, token[start:])
 	return out
+}
+
+// =====================================================================
+// TestSubs*ControlKeyHash — /api/subs carries control_key_hash for k2r
+// (Task B3, spec §4 mint-on-serve). Gateway branch mints the account's
+// router control key on first serve if absent; shared branch only reads,
+// never mints.
+// =====================================================================
+
+// userIDForUDID resolves the UserID of the Device row seeded by
+// subsTestDevice, so callers can drive EnsureRouterControlKey / DB
+// assertions against the same account the Basic-Auth request maps to.
+func userIDForUDID(t *testing.T, udid string) uint64 {
+	t.Helper()
+	var dev Device
+	require.NoError(t, db.Get().Where("udid = ?", udid).First(&dev).Error)
+	return dev.UserID
+}
+
+// seedGatewayPrivateLine gives userID exactly one serviceable private node +
+// k2v5 tunnel, mirroring the minimal setup in
+// TestApiSubs_GatewayBranch_PrecedesSharedMembershipGate — just enough for
+// the gateway branch to reach writeSubsOK instead of the no-entitlement 402.
+func seedGatewayPrivateLine(t *testing.T, userID uint64) {
+	t.Helper()
+	now := time.Now().Unix()
+	uniq := time.Now().Format("20060102150405.000000000")
+
+	priv := SlaveNode{
+		Ipv4: "10.99.7." + uniq[len(uniq)-2:], SecretToken: "cks-" + uniq, Country: "JP", Region: "japan",
+		Name: "cks-priv-jp-" + uniq, Class: NodeClassPrivate, PrivateOwnerUserID: &userID,
+	}
+	require.NoError(t, db.Get().Create(&priv).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&priv) })
+
+	tun := SlaveTunnel{
+		Domain: "cks-priv-jp-" + uniq + ".example", SecretToken: "cks-tt-" + uniq, Name: "cks-priv-jp-tun-" + uniq,
+		Protocol: TunnelProtocolK2V5, Port: 443, NodeID: priv.ID,
+		IsTest: BoolPtr(false), ServerURL: "k2v5://cks-priv-jp-" + uniq + ".example:443",
+	}
+	require.NoError(t, db.Get().Create(&tun).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&tun) })
+
+	sub := PrivateNodeSubscription{
+		UserID: userID, OrderID: userID*1000 + uint64(now%1000), Status: PNStatusActive, Region: "japan",
+		IPType: IPTypeNonResidential, SlaveNodeID: &priv.ID,
+		PurchasedAt: now, ExpiresAt: now + 86400,
+	}
+	require.NoError(t, db.Get().Create(&sub).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&sub) })
+}
+
+// TestSubsResponseCarriesControlKeyHash: an account that already has a
+// router control key gets its sha256 hash injected on the gateway branch,
+// and the raw-JSON contract (no {code,message,data} envelope) stays intact.
+func TestSubsResponseCarriesControlKeyHash(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	udid, authHeader := subsTestDevice(t, true) // gateway device
+	userID := userIDForUDID(t, udid)
+	seedGatewayPrivateLine(t, userID)
+
+	key, err := EnsureRouterControlKey(context.Background(), userID)
+	require.NoError(t, err)
+
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp), "raw JSON contract broken: body=%s", w.Body.String())
+
+	got, _ := resp["control_key_hash"].(string)
+	assert.Equal(t, HashRouterControlKey(key), got, "control_key_hash must be sha256 of the account's key")
+
+	_, hasCode := resp["code"]
+	assert.False(t, hasCode, "subs response must stay envelope-free")
+}
+
+// TestSubsGatewayBranchMintsKeyWhenAbsent: mint-on-serve (spec §4) — a
+// gateway request for an account with NO router control key yet must mint
+// one via EnsureRouterControlKey and serve its hash, closing the TOFU
+// window for pre-existing k2subs routers that never open a fresh app.
+func TestSubsGatewayBranchMintsKeyWhenAbsent(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	udid, authHeader := subsTestDevice(t, true) // gateway device, no key minted
+	userID := userIDForUDID(t, udid)
+	seedGatewayPrivateLine(t, userID)
+
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	got, _ := resp["control_key_hash"].(string)
+	require.NotEmpty(t, got, "gateway branch must mint-on-serve: control_key_hash missing for fresh account")
+
+	var u User
+	require.NoError(t, db.Get().First(&u, userID).Error)
+	require.NotNil(t, u.RouterControlKey, "minted key must be persisted")
+	assert.Equal(t, HashRouterControlKey(*u.RouterControlKey), got, "served hash must match the persisted key")
+}
+
+// TestSubsSharedBranchDoesNotMint: the shared branch (App/desktop client) is
+// read-only for the control key — it must never mint one, or every shared
+// user would passively acquire a router-control key they never asked for.
+func TestSubsSharedBranchDoesNotMint(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	udid, authHeader := subsTestDevice(t, false) // App device, no key minted
+	userID := userIDForUDID(t, udid)
+
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	_, has := resp["control_key_hash"]
+	assert.False(t, has, "shared branch must not mint: field must be omitted for keyless account")
+
+	var u User
+	require.NoError(t, db.Get().First(&u, userID).Error)
+	assert.Nil(t, u.RouterControlKey, "shared branch must never mint a key")
 }
