@@ -22,6 +22,16 @@ var fetchAppleTransaction = appstore.GetTransaction
 // appleBundleID 返回配置的 iOS bundle id（appstore.bundleId）。
 func appleBundleID() string { return viper.GetString("appstore.bundleId") }
 
+// appleBundleIDForBrand 返回该品牌 iOS app 的 bundle id。kaitu 沿用 legacy 键
+// appstore.bundleId（零破坏）；其它品牌读 appstore.bundleIds.<brand>。
+// 空串 = 该品牌尚无 iOS app —— 调用方必须响亮失败，绝不静默回落 kaitu 的 bundle。
+func appleBundleIDForBrand(b Brand) string {
+	if b == BrandKaitu {
+		return appleBundleID()
+	}
+	return viper.GetString("appstore.bundleIds." + string(b))
+}
+
 // appleAccountNS 是派生 appAccountToken 的固定命名空间（任意固定 UUID）。
 // 用户的 Center UUID（"user-"+xid）不是合法 RFC 4122 UUID，不能直接当 StoreKit
 // appAccountToken。这里用 uuidv5(NS, userUUID) 派生一个确定性的合法 UUID：
@@ -223,22 +233,25 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 // verifyAndGrantTransaction 信任锚点：向 Apple 复核 transactionId，校验通过后入账。
 // userID 来源——verify 端点：已鉴权用户；webhook：已存在订阅行的 UserID。
 func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID string) error {
-	info, err := fetchAppleTransaction(ctx, appleBundleID(), transactionID)
-	if err != nil {
-		return fmt.Errorf("apple verify failed: %w", err)
-	}
-	if info.BundleId != appleBundleID() {
-		return fmt.Errorf("bundle mismatch: got %s want %s", info.BundleId, appleBundleID())
-	}
-	if info.InAppOwnershipType == appstore.OwnershipType_FAMILY_SHARED {
-		return fmt.Errorf("family-shared ownership not entitled")
-	}
-
 	var vu User
 	if err := getDB().Select("brand").First(&vu, userID).Error; err != nil {
 		return fmt.Errorf("load user %d brand: %w", userID, err)
 	}
 	userBrand := Brand(vu.Brand)
+	bundleID := appleBundleIDForBrand(userBrand)
+	if bundleID == "" {
+		return fmt.Errorf("no apple bundle id configured for brand %s", userBrand)
+	}
+	info, err := fetchAppleTransaction(ctx, bundleID, transactionID)
+	if err != nil {
+		return fmt.Errorf("apple verify failed: %w", err)
+	}
+	if info.BundleId != bundleID {
+		return fmt.Errorf("bundle mismatch: got %s want %s", info.BundleId, bundleID)
+	}
+	if info.InAppOwnershipType == appstore.OwnershipType_FAMILY_SHARED {
+		return fmt.Errorf("family-shared ownership not entitled")
+	}
 
 	return withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
 		if _, err := planByAppleProductID(ctx, tx, info.ProductId, userBrand); err != nil {
