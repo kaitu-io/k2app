@@ -16,8 +16,8 @@ func api_apple_iap_verify(c *gin.Context) {
 		return
 	}
 
-	// 支付渠道品牌门：Apple IAP 是 kaitu 专属支付渠道（bundle id 绑定 kaitu app）。
-	// overleap 用户在 Phase 6 开新 bundle 前无任何可用渠道——命中即拒验。
+	// 支付渠道品牌门：apple_iap 需品牌开通（kaitu/overleap 各绑各的 bundle id，
+	// 跨 app 交易由 verifyAndGrantTransaction 的 bundle 校验拒绝）。
 	reqUser := ReqUser(c)
 	if reqUser != nil && !Brand(reqUser.Brand).Config().AllowsPayment(PayChannelAppleIAP) {
 		log.Warnf(c, "[AppleIAP] user %d (brand=%s) rejected: apple_iap channel unavailable for brand", userID, reqUser.Brand)

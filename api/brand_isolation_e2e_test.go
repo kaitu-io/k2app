@@ -25,8 +25,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wordgate/qtoolkit/appstore"
 	db "github.com/wordgate/qtoolkit/db"
 )
 
@@ -301,19 +303,28 @@ func TestBrandIsolationMatrix(t *testing.T) {
 			"overleap has no payment channels in Phase 1 — order must be rejected before plan/campaign lookup")
 	})
 
-	// ---------- #9: overleap 用户 POST /api/user/apple-iap/verify → 405001 ----------
-	t.Run("09_AppleIAPVerify_OverleapUser_PaymentChannelUnavailable", func(t *testing.T) {
+	// ---------- #9: overleap 用户 apple verify —— 渠道已放行，隔离下沉到 bundle 校验 ----------
+	t.Run("09_AppleIAPVerify_OverleapUser_BundleIsolation", func(t *testing.T) {
 		skipIfNoConfig(t)
+		viper.Set("appstore.bundleIds.overleap", "test.overleap.bundle")
+		t.Cleanup(func() { viper.Set("appstore.bundleIds.overleap", nil) })
 		user, _ := createBrandIsoAccessKeyUser(t, BrandOverleap, false)
 
-		body := []byte(`{"transactionId":"tx-brandiso-test"}`)
+		orig := fetchAppleTransaction
+		t.Cleanup(func() { fetchAppleTransaction = orig })
+		fetchAppleTransaction = func(ctx context.Context, bundleID, txnID string) (*appstore.TransactionInfo, error) {
+			// 模拟拿到的是对方品牌 app 的交易。
+			return &appstore.TransactionInfo{BundleId: "test.kaitu.bundle", ProductId: "io.overleap.sub.basic.1y"}, nil
+		}
+
+		body := []byte(`{"transactionId":"tx-brandiso-bundle"}`)
 		c, w := ginCtxWithAuthAndHost(http.MethodPost, "/api/user/apple-iap/verify", "overleap.io", body, user)
 		api_apple_iap_verify(c)
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
-		assert.Equal(t, int(ErrorPaymentChannelUnavailable), resp.Code,
-			"apple_iap is a kaitu-only channel (bundle id bound); overleap must be rejected before Apple verify call")
+		assert.Equal(t, int(ErrorInvalidOperation), resp.Code,
+			"cross-bundle transaction must be rejected at bundle check (brand isolation now lives there)")
 	})
 
 	// ---------- #10: OTT: kaitu 用户 issue redirect=https://overleap.io/x → 拒绝 ----------

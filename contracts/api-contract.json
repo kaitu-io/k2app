@@ -37,7 +37,8 @@
       "supportEmail": "support@overleap.io",
       "edmFromName": "Overleap Team",
       "paymentChannels": [
-        "stripe"
+        "stripe",
+        "apple_iap"
       ]
     }
   },
