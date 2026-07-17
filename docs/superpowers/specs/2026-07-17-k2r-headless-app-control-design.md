@@ -185,7 +185,7 @@ App 启动、回前台、Router tab 手动刷新。探测结果进 `router.store
 1. **controlKey 服务端存储形态**：需向同账号 app 重复下发明文 key → Center 存明文（或可逆加密）。风险可接受（key 只控制家庭路由器，且 Center 本就托管订阅凭证）；实现时与现有凭证存储惯例对齐。
 2. **`/api/subs` 响应字段的 JSON key**：遵循 Go snake_case → 桥不经手（k2r 内部消费），直接 `control_key_hash`。
 3. **实现拆仓顺序**：k2 仓库（gateway 鉴权 + headless + subs 字段消费）先行合并出测试版二进制 → k2app（api/ 下发 + webapp/bridges）跟进。k2 submodule 在父仓只读，两边各走独立 worktree/分支。锚点 DNAT 拦截（§3.4）作为 k2 仓库独立增量任务（2026-07-18 修订产生，晚于首轮 k2 合并）。
-4. **TUN 路由对锚点地址的排除（2026-07-18 新增，实现前必须验证）**：app 端本机 VPN 开启时，到 `10.17.79.1` 的流量必须走物理接口而非 TUN，否则「VPN 开着时发现/控制路由器」失效。需查 k2 引擎 TUN 路由表是否排除 RFC1918（或显式排除锚点 /32）；若未排除，k2 侧需补路由排除。
+4. **TUN 路由对锚点地址的排除（2026-07-18 已验证并拍板）**：调查结论——四平台（macOS/Windows 桌面 daemon、iOS NE、Android VpnService）TUN 均全量捕获 0.0.0.0/0，无 RFC1918 排除；锚点流量进 TUN 后的命运取决于路由模式：默认模式下规则引擎 fallback=direct 将其从物理接口重拨（功能等价 bypass，锚点可用）；**Global 全代理模式**下锚点进隧道被 k2s 服务端 private-ip-guard 拒绝（发现失效）。**修法（进 k2 侧锚点任务）**：规则引擎内置「`10.17.79.1/32` → direct」规则、优先于 catch-all fallback（`k2/engine/engine.go` buildRouteEntries 附近）——一处 Go 改动覆盖全平台，不动三平台 OS 路由 API（Android excludeRoute 需 API 33+，内置规则无此限制）。
 
 ## 11. 迁移与兼容
 
