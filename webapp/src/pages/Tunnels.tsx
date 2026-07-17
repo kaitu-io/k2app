@@ -34,7 +34,7 @@ import { useAuthStore } from "../stores";
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useSelfHostedStore, maskUriToken, parseK2v5Uri } from "../stores/self-hosted.store";
 import { getThemeColors } from "../theme/colors";
-import { brandConfig } from "../brand";
+import { brandConfig } from "../brands";
 
 // The k2s install one-liner lives in the brand registry (brandConfig.k2sInstallUrl),
 // NOT as a literal here: this page is statically imported by App.tsx, so a literal

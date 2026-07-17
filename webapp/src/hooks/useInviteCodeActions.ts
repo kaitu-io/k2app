@@ -5,7 +5,7 @@ import { useShareLink } from './useShareLink';
 import { useAppConfig } from './useAppConfig';
 import type { MyInviteCode } from '../services/api-types';
 import { cloudApi } from '../services/cloud-api';
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 
 /**
  * 邀请码操作的自定义 Hook

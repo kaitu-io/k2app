@@ -1,4 +1,5 @@
-import type { WebappBrandConfig } from './types';
+import type { WebappBrandConfig } from '../types';
+import { KAITU_THEME } from './theme';
 
 /** 开途 / Kaitu — China-market brand. Values mirror the pre-split product. */
 export const KAITU_BRAND: WebappBrandConfig = {
@@ -20,17 +21,20 @@ export const KAITU_BRAND: WebappBrandConfig = {
   },
   defaultLocale: 'zh-CN',
   locales: ['zh-CN', 'en-US', 'ja', 'zh-TW', 'zh-HK', 'en-AU', 'en-GB'],
-  theme: {
-    // Exact values lifted from the current webapp/src/theme.ts palettes.
-    light: {
-      primary: { main: '#1565C0', light: '#42A5F5', dark: '#0D47A1' },
-      secondary: { main: '#00838F', light: '#26C6DA', dark: '#006064' },
-    },
-    dark: {
-      primary: { main: '#42A5F5', light: '#90CAF9', dark: '#1976D2' },
-      secondary: { main: '#26C6DA', light: '#4DD0E1', dark: '#0097A7' },
-    },
-  },
+  iapProductIds: ['io.kaitu.sub.basic.1y'],
+  faqExtraKeys: ['allNationConnect', 'chinaAppStore'],
+  // jsdelivr 镜像组（原 services/antiblock.ts CDN_SOURCES 原样搬移；
+  // gh org 路径是基础设施地址，非用户面品牌词）。
+  antiblockCdnSources: [
+    'https://cdn.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+    'https://fastly.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+    'https://testingcf.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+    'https://gcore.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+    'https://cdn.jsdmirror.com/gh/kaitu-io/ui-theme@dist/config.js',
+    'https://cdn.jsdmirror.cn/gh/kaitu-io/ui-theme@dist/config.js',
+    'https://jsd.onmicrosoft.cn/gh/kaitu-io/ui-theme@dist/config.js',
+  ],
+  theme: KAITU_THEME,
   features: {
     invite: true,
     retailer: true,

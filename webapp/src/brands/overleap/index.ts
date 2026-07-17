@@ -1,4 +1,5 @@
-import type { WebappBrandConfig } from './types';
+import type { WebappBrandConfig } from '../types';
+import { OVERLEAP_THEME } from './theme';
 
 /**
  * Overleap — overseas brand. Fully isolated from the peer brand: never mentions it.
@@ -33,16 +34,10 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
   },
   defaultLocale: 'en-US',
   locales: ['zh-CN', 'en-US', 'ja', 'zh-TW', 'zh-HK', 'en-AU', 'en-GB'],
-  theme: {
-    light: {
-      primary: { main: '#5E35B1', light: '#7E57C2', dark: '#4527A0' },
-      secondary: { main: '#00897B', light: '#26A69A', dark: '#00695C' },
-    },
-    dark: {
-      primary: { main: '#9575CD', light: '#B39DDB', dark: '#673AB7' },
-      secondary: { main: '#4DB6AC', light: '#80CBC4', dark: '#26A69A' },
-    },
-  },
+  iapProductIds: ['io.overleap.sub.basic.1y'],
+  faqExtraKeys: [],
+  antiblockCdnSources: [], // 非受限网络市场，无需入口伪装竞速
+  theme: OVERLEAP_THEME,
   features: {
     invite: false,
     retailer: false,

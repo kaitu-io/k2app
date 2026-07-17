@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getCurrentAppConfig, isFeatureEnabled } from '../apps';
-import { brandConfig } from '../../brand';
+import { brandConfig } from '../../brands';
 
 // Brand-adaptive: every assertion is expressed against brandConfig, so this
 // suite is green under K2_BRAND=kaitu and K2_BRAND=overleap alike.

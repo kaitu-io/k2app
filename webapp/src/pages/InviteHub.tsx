@@ -42,7 +42,7 @@ import InviteRule from "../components/InviteRule";
 import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
 import { getCurrentAppConfig } from '../config/apps';
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 
 export default function Invite() {
   const { t } = useTranslation();

@@ -23,7 +23,7 @@ import { useAlert } from "../stores";
 import type { AppConfig } from "../services/api-types";
 import BackButton from "../components/BackButton";
 import { cloudApi } from '../services/cloud-api';
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 
 // 默认的下载链接
 const DEFAULT_INSTALL_URL = `${brandConfig.baseURL}/install`;

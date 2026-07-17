@@ -77,7 +77,7 @@ vi.mock('../../stores/login-dialog.store', () => ({
 
 import Purchase from '../Purchase';
 import { cloudApi } from '../../services/cloud-api';
-import { brandConfig } from '../../brand';
+import { brandConfig } from '../../brands';
 
 // These suites exercise the WordGate order/pay flow. Brands without an in-app
 // purchase channel (overleap: wordgatePurchase=false, no IAP on this platform)

@@ -1,4 +1,4 @@
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 
 const COMMON_FAQ_KEYS = [
   'connection',

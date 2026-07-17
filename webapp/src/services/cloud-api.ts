@@ -20,7 +20,7 @@ import { addNodes } from './entry-pool';
 import { cacheStore } from './cache-store';
 import { useLoginDialogStore } from '../stores/login-dialog.store';
 import i18n from '../i18n/i18n';
-import { getBrandId } from '../brand';
+import { getBrandId } from '../brands';
 
 /**
  * Build X-K2-Client header — sole origination point for this header.

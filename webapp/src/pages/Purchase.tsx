@@ -40,7 +40,7 @@ import {
 } from "@mui/icons-material";
 import { getThemeColors } from '../theme/colors';
 import { cloudApi } from '../services/cloud-api';
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 import { cacheStore } from '../services/cache-store';
 import { formatBytes } from '../utils/ui';
 

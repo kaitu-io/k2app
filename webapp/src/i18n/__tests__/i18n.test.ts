@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import i18n, { normalizeLanguageCode, changeLanguage, i18nPromise } from '../i18n';
-import { brandConfig } from '../../brand';
-import { getBrandName } from '../../brand/i18n-vars';
+import { brandConfig } from '../../brands';
+import { getBrandName } from '../../brands/i18n-vars';
 
 // Unmappable input falls back to the BRAND's default locale by design
 // (kaitu → zh-CN, overleap → en-US). Asserting brandConfig.defaultLocale

@@ -4,7 +4,7 @@
  * WHY THIS EXISTS
  * ---------------
  * The "brand" concept is declared three times — api/brand.go (Go),
- * webapp/src/brand/*.ts, web/src/lib/brands.ts — and nothing used to compare
+ * webapp/src/brands/*.ts, web/src/lib/brands.ts — and nothing used to compare
  * them. That gap shipped a real outage: `X-K2-Brand` was added to every webapp
  * request but never added to the backend's CORS allow-list, so every
  * browser-context client's direct transport failed preflight and users saw a
@@ -25,8 +25,8 @@
  * suite is green under both `vitest run` and `K2_BRAND=overleap vitest run`.
  *
  * Run:
- *   cd webapp && npx vitest run src/brand/__tests__/cross-layer-contract.test.ts
- *   cd webapp && K2_BRAND=overleap npx vitest run src/brand/__tests__/cross-layer-contract.test.ts
+ *   cd webapp && npx vitest run src/brands/__tests__/cross-layer-contract.test.ts
+ *   cd webapp && K2_BRAND=overleap npx vitest run src/brands/__tests__/cross-layer-contract.test.ts
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -117,7 +117,7 @@ const REGENERATE_CMD =
  */
 function loadContract(): ApiContract {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  // webapp/src/brand/__tests__ → repo root
+  // webapp/src/brands/__tests__ → repo root
   const contractPath = path.resolve(here, '../../../../contracts/api-contract.json');
   if (!existsSync(contractPath)) {
     throw new Error(

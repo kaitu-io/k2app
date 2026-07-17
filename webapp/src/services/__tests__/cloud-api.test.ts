@@ -74,7 +74,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { cacheStore } from '../cache-store';
 import { resolveAndFetch } from '../resolve-and-fetch';
 import { addNodes } from '../entry-pool';
-import { brandConfig } from '../../brand';
+import { brandConfig } from '../../brands';
 
 // Type helper for mocked functions
 const mockedAuthService = vi.mocked(authService);

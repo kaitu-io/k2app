@@ -2,8 +2,8 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { namespaces, defaultNamespace, type Namespace } from './locales/namespaces';
-import { brandConfig } from '../brand';
-import { brandI18nVariables } from '../brand/i18n-vars';
+import { brandConfig } from '../brands';
+import { brandI18nVariables } from '../brands/i18n-vars';
 
 export const languages = {
   'en-US': { nativeName: 'English (US)', countryCode: 'US' },

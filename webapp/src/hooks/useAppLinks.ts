@@ -6,7 +6,7 @@
  */
 
 import { useMemo } from 'react';
-import { brandConfig } from '../brand';
+import { brandConfig } from '../brands';
 import { useTranslation } from 'react-i18next';
 import { normalizeLanguageCode } from '../i18n/i18n';
 import { useAppConfig } from './useAppConfig';

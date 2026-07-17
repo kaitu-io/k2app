@@ -10,9 +10,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { render } from '../../test/utils/render';
-import { brandConfig } from '../../brand';
-import { KAITU_BRAND } from '../../brand/kaitu';
-import { OVERLEAP_BRAND } from '../../brand/overleap';
+import { brandConfig } from '../../brands';
+import { KAITU_BRAND } from '../../brands/kaitu';
+import { OVERLEAP_BRAND } from '../../brands/overleap';
 
 // Mock stores
 vi.mock('../../stores', async () => {

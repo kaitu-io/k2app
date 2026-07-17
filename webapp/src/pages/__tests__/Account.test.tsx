@@ -66,8 +66,8 @@ import { useAuth } from '../../stores';
 import { useUser } from '../../hooks/useUser';
 import { cloudApi } from '../../services/cloud-api';
 import Account from '../Account';
-import { brandConfig } from '../../brand';
-import { getBrandName, getBrandSlogan } from '../../brand/i18n-vars';
+import { brandConfig } from '../../brands';
+import { getBrandName, getBrandSlogan } from '../../brands/i18n-vars';
 
 // Test locale is zh-CN (navigator.language pinned in src/test/setup.ts), so
 // brand-derived copy is resolved for zh-CN here. Deriving these from
@@ -319,7 +319,7 @@ describe('Account', () => {
 
   // ==================== Task 3: Slogan 延迟显示 ====================
   describe('Slogan 延迟显示', () => {
-    // Slogan comes from the brand registry (brand/i18n-vars getBrandSlogan),
+    // Slogan comes from the brand registry (brands/i18n-vars getBrandSlogan),
     // resolved for the zh-CN test locale.
     const findSlogan = () => {
       const sloganElements = screen.queryAllByText(BRAND_SLOGAN_ZH);
