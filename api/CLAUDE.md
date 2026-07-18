@@ -72,6 +72,18 @@ Implications:
 - `PrivateNodeSubscription.SlaveNodeID` is the **per-line metering/quota anchor**: the node self-meters to `/slave/usage`, Center mirrors it into `NodeUsage` (1:1 by `NodeID`), and `isNodeOverQuota` (剩余 ≤ 500MB) drops the line from `/api/subs`. `CloudInstanceID` (nullable) is now display-only (IP/Region). Neither is the multi-node mechanism.
 - Router admission gate = `HasActivePrivateLines` (owning ≥1 serviceable private line), fully decoupled from App `tier`/`MaxRouterDevice`.
 
+## Router Control Key (k2r headless app-control)
+
+`User.RouterControlKey` (`*string`, `varchar(80)`) is an account-level bearer credential the app uses to authenticate to a headless k2r router's control API — all devices on the same account share one key. Stored **plaintext** (not hashed) because the plaintext must be re-issued to every app instance on the account on demand; k2r itself only ever receives/stores a sha256 hash. Accepted risk: the key only controls a home router, and Center already custodies subscription credentials at the same trust level.
+
+- `POST /api/user/router-control-key` (`AuthRequired`, `api_router_control_key.go`) — idempotent mint-or-return via `EnsureRouterControlKey` (`logic_router_control_key.go`): first caller wins a conditional `UPDATE ... WHERE router_control_key IS NULL OR ''`, concurrent losers re-read and converge on the winner's value. No-op if a key already exists.
+- `POST /api/user/router-control-key/reset` (`AuthRequired`) — unconditional rotation via `ResetRouterControlKey`. Any app instance still holding the old plaintext gets 401 from k2r on its next control request and must re-fetch (see `webapp/CLAUDE.md` "Router Tab" — `routerFetch`'s 401-retry).
+- `/api/subs` response gains `control_key_hash` (`SubsResponse.ControlKeyHash`, `sha256(RouterControlKey)` via `HashRouterControlKey`) — this is k2r's own subscription-refresh channel picking up the current key hash, not an app-facing field. Two injection paths in `api_subs.go`:
+  - **gateway branch** (k2r client, matched before the shared-pool branch — ordering is load-bearing) calls `ensureAndInjectControlKeyHash()`: **mints on serve** if the account has no key yet, so a k2r that's never had the app "set-credential" it can still converge on a hash purely by completing a subscription refresh (closes the TOFU window for legacy routers that predate this feature — see the spec's §3.2 "legacy 升级" case).
+  - **shared branch** (App/desktop clients) calls `injectControlKeyHash()` — read-only, never mints. A phone/desktop pulling its own `/api/subs` should not silently provision a router key nobody asked for.
+- Not yet consumed anywhere except k2r itself (submodule, out of scope here) and the mint/reset endpoints above.
+- `RouterControlKey`/`RouterControlKeyCreatedAt` are new `User` columns — hits the "New GORM model columns need a manual migrate" trap below for any integration test touching them against a pre-existing test DB.
+
 ## API Response Format
 
 ```go
@@ -265,6 +277,7 @@ cd api/cmd && ./kaitu-center start -f -c ../config.yml   # Foreground mode
 
 - **Always use `SetupMockDB(t)`** for mock DB tests. This is the canonical helper in `mock_db_test.go`. It uses `SkipInitializeWithVersion: true` and `QueryMatcherRegexp`.
 - **Guard integration tests with `skipIfNoConfig(t)`** at the top of each test function. This allows tests to run in CI without `config.yml`.
+- **New GORM model columns need a manual migrate before integration tests see them**: the long-lived test DB is pre-migrated out-of-band — `testInitConfig()`/`skipIfNoConfig()` never call `AutoMigrate`. After adding a field to a model already in `migrate.go`'s `AutoMigrate(...)` list, run `cd api/cmd && go run . migrate --config ../../center/config.yml` once against the test DB, or integration tests fail with `Unknown column` (not a skip — a real DB error). Production doesn't need this: `center.Migrate()` runs automatically on service start.
 - **Never panic on missing config**. `testInitConfig()` gracefully sets `testConfigAvailable = false` when `config.yml` is absent. Tests that need config must call `skipIfNoConfig(t)`.
 - **Use `t.Cleanup()`** for teardown, not `defer` in test body.
 - **Use `t.Helper()`** in all test helper functions.

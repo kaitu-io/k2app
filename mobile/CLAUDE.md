@@ -117,6 +117,15 @@ Failure mode: if any webapp code path leaks raw `k2subs://` to appext,
 a webapp bug — the only legitimate `via` on mobile is `k2v5://` or
 `direct`.
 
+## Router LAN Bridge (k2r headless app-control)
+
+Two K2Plugin capabilities support app-direct control of a headless k2r router. See `webapp/CLAUDE.md` "Router Tab" for the full flow; `docs/superpowers/specs/2026-07-17-k2r-headless-app-control-design.md` for the design.
+
+- **`getDefaultGateway()`** (iOS `K2Plugin.swift` `defaultGatewayIPv4()`, Android `K2Plugin.kt getDefaultGateway`) — returns the default gateway of the **physical** interface (WiFi/Ethernet), explicitly excluding TUN. iOS walks the `PF_ROUTE` sysctl routing table for the default (`dst=0.0.0.0`) entry and skips any `utun*` interface. Android iterates `ConnectivityManager.allNetworks`, filters to `TRANSPORT_WIFI`/`TRANSPORT_ETHERNET` capabilities, and reads the default IPv4 route from `LinkProperties` (deliberately not `activeNetwork`, whose `LinkProperties` would be the TUN's once VPN is connected — no real gateway there). **Currently an unconsumed capability**: the app's router discovery is anchor-only (constant `10.17.79.1:1779`, DNAT-intercepted by k2r on the forwarding path) — `router-service.ts` never calls `getDefaultGateway()`. Kept as an `IPlatform`-optional capability for future diagnostics/local-network display.
+- **`routerRequest`** (`capacitor-k2.ts`) — the mobile half of the native HTTP bridge webapp uses to reach the router, backed by `CapacitorHttp.request()` (native `URLSession`/`HttpURLConnection`, bypassing WebView CORS/mixed-content). Since `CapacitorHttp` has no native URL allowlist, a TS-side SSRF gate (`assertRouterUrlAllowed` / `isPrivateIPv4Literal`) runs before every request and throws unless the target is `http://` to a private-or-loopback IPv4 **literal** (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8 — no hostnames, no IPv6). Mirrors the desktop Rust `is_private_host` gate exactly (see `desktop/CLAUDE.md`). `disableRedirects: true` is always set — `HttpOptions` has no separate redirect-policy knob, but this flag maps to `HttpURLConnection#setInstanceFollowRedirects(false)` on Android and `URLSessionTaskDelegate` redirect refusal on iOS — needed because the SSRF gate only validates the *requested* URL, not a `Location:` header a compromised/misbehaving router might send.
+- **iOS local networking**: first LAN request triggers the OS local-network permission prompt (one-time). `Info.plist` carries `NSLocalNetworkUsageDescription` ("Detect and manage your router on the local network.") and `NSAppTransportSecurity.NSAllowsLocalNetworking = true` (ATS otherwise blocks plain `http://` to LAN hosts). No `NSBonjourServices` / multicast entitlement needed — discovery is anchor-IP-direct, not mDNS browsing.
+- **`minNativeVersion`**: bumped `0.4.0` → `0.4.1` in `webapp/package.json` for this feature (new native bridge dependency — `getDefaultGateway`/`routerRequest`).
+
 ## Android VpnService Architecture
 
 ```

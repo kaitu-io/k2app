@@ -465,20 +465,6 @@ describe('Config Store', () => {
       expect(result.routes?.[result.routes.length - 1]?.via).toBe('k2v5://legacy');
     });
 
-    it('gateway platform prepends ipinfo.io direct route', async () => {
-      (window as any)._platform.platformType = 'gateway';
-      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: null, autoDetect: true });
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-
-      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://gw' });
-
-      expect(result.routes?.[0]).toEqual({
-        via: 'direct',
-        match: { domain_suffix: ['ipinfo.io'] },
-      });
-    });
-
     it('without serverUrl returns empty routes', async () => {
       mockStorage.get.mockResolvedValue(null);
       const useConfigStore = await getStore();

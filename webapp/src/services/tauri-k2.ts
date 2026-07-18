@@ -11,7 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
-import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, RunningApp, InstalledApp } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, RunningApp, InstalledApp, RouterRequestOptions, RouterResponse } from '../types/kaitu-core';
 import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { getDeviceUdid } from './device-udid';
@@ -209,6 +209,14 @@ export async function injectTauriGlobals(): Promise<void> {
 
     getPid: async (): Promise<number> => {
       return await invoke<number>('get_pid');
+    },
+
+    getDefaultGateway: async (): Promise<string | null> => {
+      return await invoke<string | null>('get_default_gateway');
+    },
+
+    routerRequest: async (opts: RouterRequestOptions): Promise<RouterResponse> => {
+      return await invoke<RouterResponse>('router_http_request', { opts });
     },
 
     uploadLogs: async (params): Promise<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }> => {

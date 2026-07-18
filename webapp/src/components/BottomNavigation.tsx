@@ -11,7 +11,6 @@ import {
   Explore as DiscoverIcon,
   AccountCircle as AccountIcon,
   Router as RouterIcon,
-  Settings as SetupIcon,
 } from "@mui/icons-material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -19,6 +18,7 @@ import { getCurrentAppConfig } from "../config/apps";
 import { useMemo, memo } from "react";
 import { useUser } from "../hooks/useUser";
 import { useAuthStore } from "../stores";
+import { useRouterStore } from "../stores/router.store";
 
 const inviteWiggle = keyframes`
   0%, 82%, 100% { transform: rotate(0deg) scale(1); }
@@ -105,6 +105,9 @@ function BottomNavigation() {
   const appConfig = getCurrentAppConfig();
   const { user } = useUser();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  // Router tab appears once a router has ever been seen (phase !== 'none') —
+  // subscribed live so the entry reacts to discovery/unbind without a reload.
+  const hasRouter = useRouterStore((s) => s.phase !== 'none');
 
   // Define all navigation items
   const allNavItems = useMemo(() => {
@@ -115,16 +118,11 @@ function BottomNavigation() {
         path: "/",
         feature: null,
       },
-      // Gateway-only: Router tab
-      ...(window._platform?.platformType === 'gateway' ? [{
+      // Router tab — appears once a router has ever been paired (see hasRouter above)
+      ...(hasRouter ? [{
         label: t("nav:navigation.router"),
         icon: <RouterIcon />,
         path: "/router",
-        feature: null,
-      }, {
-        label: t("nav:navigation.setup"),
-        icon: <SetupIcon />,
-        path: "/setup",
         feature: null,
       }] : []),
       {
@@ -166,7 +164,7 @@ function BottomNavigation() {
     }
 
     return filtered;
-  }, [t, appConfig.features, user?.isRetailer, isAuthenticated]);
+  }, [t, appConfig.features, user?.isRetailer, isAuthenticated, hasRouter]);
 
   // Get current active path
   const currentPath = location.pathname;

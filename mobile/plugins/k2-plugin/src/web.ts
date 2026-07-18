@@ -104,6 +104,10 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
     return { response: JSON.stringify({ code: 0, message: 'ok', data: { added: 0, total: 0 } }) };
   }
 
+  async getDefaultGateway(): Promise<{ gateway: string | null }> {
+    return { gateway: null };
+  }
+
   async iapGetProducts(): Promise<{ products: [] }> {
     throw this.unavailable('IAP is not available on web');
   }

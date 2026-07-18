@@ -74,6 +74,12 @@ type User struct {
 	AccessKeyCreatedAt int64   `gorm:"not null;default:0"`           // key 生成时间戳（Unix秒，0 = 无key）
 	IsRetailer         *bool   `gorm:"default:false"`                // 是否为分销商（只有分销商才能使用AccessKey认证和授予订阅）
 
+	// 路由器控制密钥（账号级，k2r headless 面板鉴权）。
+	// 与 AccessKey 不同这里存明文：同账号多设备需重复下发同一 key
+	// （spec 2026-07-17-k2r-headless-app-control §10.1）；/api/subs 只下发其 sha256。
+	RouterControlKey          *string `gorm:"type:varchar(80)" json:"-"`
+	RouterControlKeyCreatedAt int64   `gorm:"not null;default:0"`
+
 	// 语言偏好
 	Language string `gorm:"type:varchar(10);not null;default:'en-US'" json:"language"` // 用户语言偏好：en-US, zh-CN, ja 等
 

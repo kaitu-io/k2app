@@ -63,6 +63,44 @@ type SubsTunnel struct {
 type SubsResponse struct {
 	Tunnels []SubsTunnel `json:"tunnels"`
 	Refresh int          `json:"refresh"`
+	// ControlKeyHash is the sha256 hex of the owning account's router control
+	// key — the authoritative value k2r's headless panel auths against.
+	// Omitted when the account has no key yet. Cross-repo contract: the k2
+	// submodule's config.subsResponse consumes this exact field name.
+	ControlKeyHash string `json:"control_key_hash,omitempty"`
+}
+
+// injectControlKeyHash writes the account's control-key hash into resp if one
+// already exists. Read-only — used on the shared branch (App/desktop client),
+// which must never mint a key on behalf of a user who never requested one.
+func injectControlKeyHash(resp *SubsResponse, user *User) {
+	if user != nil && user.RouterControlKey != nil && *user.RouterControlKey != "" {
+		resp.ControlKeyHash = HashRouterControlKey(*user.RouterControlKey)
+	}
+}
+
+// ensureAndInjectControlKeyHash is the gateway-branch (k2r client) mint-on-
+// serve counterpart: if the account has no control key yet, mint one
+// idempotently via EnsureRouterControlKey before injecting its hash. This
+// closes the TOFU window for pre-existing k2subs:// routers whose owner never
+// opens a fresh app to trigger the self-service mint endpoint (spec §4).
+// Minting failure DEGRADES to a keyless response (logged at Warn) rather than
+// failing the whole subs fetch — router control-key delivery must never take
+// the tunnel list down with it.
+func ensureAndInjectControlKeyHash(c *gin.Context, resp *SubsResponse, user *User) {
+	if user == nil {
+		return
+	}
+	if user.RouterControlKey == nil || *user.RouterControlKey == "" {
+		key, err := EnsureRouterControlKey(c.Request.Context(), user.ID)
+		if err != nil {
+			log.Warnf(c, "subs: mint router control key for user %d failed: %v", user.ID, err)
+		} else {
+			resp.ControlKeyHash = HashRouterControlKey(key)
+			return
+		}
+	}
+	injectControlKeyHash(resp, user)
 }
 
 // extractSubsBasicAuth parses "Authorization: Basic <b64>" → (udid, token, ok).
@@ -194,7 +232,9 @@ func api_subs(c *gin.Context) {
 			return
 		}
 		log.Infof(c, "subs: gateway user=%d returning %d private tunnels", authCtx.User.ID, len(items))
-		writeSubsOK(c, SubsResponse{Tunnels: items, Refresh: 1800})
+		resp := SubsResponse{Tunnels: items, Refresh: 1800}
+		ensureAndInjectControlKeyHash(c, &resp, authCtx.User)
+		writeSubsOK(c, resp)
 		return
 	}
 
@@ -285,7 +325,9 @@ func api_subs(c *gin.Context) {
 	log.Infof(c, "subs: user=%d country=%q isAdmin=%v returning %d tunnels",
 		authCtx.User.ID, country, isAdmin, len(items))
 
-	writeSubsOK(c, SubsResponse{Tunnels: items, Refresh: 1800})
+	resp := SubsResponse{Tunnels: items, Refresh: 1800}
+	injectControlKeyHash(&resp, authCtx.User)
+	writeSubsOK(c, resp)
 }
 
 // writeSubsOK emits the raw /api/subs success response. RecommendScore is

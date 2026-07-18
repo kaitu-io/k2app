@@ -299,7 +299,8 @@
     "remark": "備考",
     "remarkPlaceholder": "例：パパのスマホ",
     "confirm": "確認",
-    "loadFailed": "デバイスリストの読み込みに失敗しました"
+    "loadFailed": "デバイスリストの読み込みに失敗しました",
+    "removeConfirmTitle": "このデバイスをホワイトリストから削除しますか？"
   },
   "serverSelector": {
     "tabSmart": "スマート選択",

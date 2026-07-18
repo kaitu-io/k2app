@@ -299,7 +299,8 @@
     "remark": "備註",
     "remarkPlaceholder": "如：爸爸的手機",
     "confirm": "確認",
-    "loadFailed": "載入裝置清單失敗"
+    "loadFailed": "載入裝置清單失敗",
+    "removeConfirmTitle": "確認從白名單移除該裝置？"
   },
   "serverSelector": {
     "tabSmart": "智慧選擇",

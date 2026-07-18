@@ -83,6 +83,8 @@ yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows 
 | `set_dev_enabled` | service | Toggle WebView devtools inspection |
 | `list_running_processes` | app_list | Running GUI app process names (App Bypass) |
 | `list_installed_apps` | installed_apps | Installed apps for App Bypass (id/label/processNames/icon_url) |
+| `router_http_request` | router_bridge | SSRF-gated HTTP to a LAN k2r router (`http://` + private IPv4 only, no redirects) |
+| `get_default_gateway` | router_bridge | Physical-interface default gateway, excluding TUN (unconsumed — see "Router LAN Bridge") |
 
 ## Gotchas
 
@@ -98,6 +100,14 @@ yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows 
 - Pre-beta log level stored in `{app_data_dir}/pre-beta-log-level` file. Frontend passes `currentLogLevel` (from localStorage) when calling `set_update_channel` IPC since Rust cannot read browser localStorage.
 - Windows Authenticode signing requires intermediate CA chain: `osslsigncode` must use `-ac scripts/ci/macos/certum-chain.pem` (Certum Code Signing 2021 CA). Without it, Windows UAC shows "Publisher: Unknown" because it can't trace Wordgate LLC cert to a trusted root. SimplySign PKCS#11 token must be logged in first (`make simplisign-login`).
 - Windows cross-build from macOS: requires `cargo-xwin`, `makensis`, `osslsigncode`, `libp11`. See `docs/plans/2026-03-11-windows-build-on-macos.md` for full setup.
+
+## Router LAN Bridge (`router_bridge.rs`)
+
+Two Tauri commands support app-direct control of a headless k2r router (companion to the same feature's mobile bridge, see `mobile/CLAUDE.md`). Full design: `docs/superpowers/specs/2026-07-17-k2r-headless-app-control-design.md`.
+
+- **`router_http_request(opts: RouterRequestOptions) -> RouterResponse`** — the only channel webapp's `_platform.routerRequest` uses to reach a LAN router (`http://10.17.79.1:1779`, k2r's DNAT-intercepted anchor address — see `webapp/CLAUDE.md` "Router Tab"). Gated by `is_private_host()`: scheme must be `http` **and** host must parse as an `Ipv4Addr` that is private or loopback (hostnames, IPv6, and public IPv4 are all rejected). Built on `reqwest::blocking` inside `spawn_blocking` (blocking client panics in Tauri's async runtime — same rule as elsewhere in this file). The client is built with `redirect(Policy::none())` — deliberate: `is_private_host` only validates the *requested* URL, not a `Location:` header from a possibly-compromised router, so following redirects would let a validated private-IP target bounce the client to an arbitrary public URL post-validation. The 3xx is surfaced to the caller instead of chased.
+- **`get_default_gateway() -> Option<String>`** — physical-interface default gateway, macOS via `route -n get default` (skips `utun*` interfaces), Windows via `Get-NetRoute -DestinationPrefix '0.0.0.0/0'` filtered against adapter descriptions containing `wintun`/`tap`/`kaitu`/`tunnel`. **Currently unconsumed**: router discovery is anchor-only (constant address, DNAT-intercepted by k2r), so `router-service.ts` never calls this — kept as an `IPlatform`-optional capability for possible future diagnostics.
+- Mirrored on the mobile side by `capacitor-k2.ts`'s `isPrivateIPv4Literal`/`assertRouterUrlAllowed` TS gate (`CapacitorHttp` has no native URL allowlist, so the equivalent check has to live in TS) plus `disableRedirects: true`.
 
 ## Storage Encryption (`storage_crypto.rs`)
 

@@ -365,17 +365,15 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   },
 
   loadServerMode: async () => {
-    const isGateway = window._platform?.platformType === 'gateway';
     try {
       const stored = await window._platform.storage.get<string>(SERVER_MODE_STORAGE_KEY);
       let resolved: 'manual' | 'self_hosted' | 'k2sub';
       if (stored === 'self_hosted') {
         resolved = 'self_hosted';
-      } else if (isGateway) {
-        // Gateway default = k2sub. Coerce any other value (incl. legacy 'manual', 'smart') to k2sub.
-        resolved = 'k2sub';
       } else {
-        // Non-gateway: 'k2sub' is gateway-only — coerce to manual. Same for legacy 'smart'.
+        // 'k2sub' is set explicitly via setServerMode (SmartServerSelector's k2sub tab) —
+        // never a load-time default. Coerce any other stored value (incl. legacy
+        // 'manual', 'smart') to manual.
         resolved = 'manual';
       }
       useConnectionStore.setState({

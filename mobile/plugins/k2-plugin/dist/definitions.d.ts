@@ -143,6 +143,12 @@ export interface K2PluginInterface {
         response: string;
     }>;
     /**
+     * 物理接口(WiFi/以太网)默认网关 IPv4；排除 VPN TUN。gateway=null 表示不可用。
+     */
+    getDefaultGateway(): Promise<{
+        gateway: string | null;
+    }>;
+    /**
      * StoreKit 2 IAP (iOS only). Android/web reject as unimplemented.
      * Trust model: native NEVER grants entitlement — it returns transactionId,
      * the webapp calls Center verify, then calls iapFinishTransaction.

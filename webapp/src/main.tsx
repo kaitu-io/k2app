@@ -104,10 +104,6 @@ async function main() {
       const { injectCapacitorGlobals } = await import('./services/capacitor-k2');
       await injectCapacitorGlobals();
       setupViewportScaling();
-    } else if (window.__K2_GATEWAY__) {
-      console.info('[WebApp] Gateway detected, injecting gateway bridge...');
-      const { injectGatewayGlobals } = await import('./services/gateway-k2');
-      await injectGatewayGlobals();
     } else if (!window._k2 || !window._platform) {
       console.warn('[WebApp] Globals missing, injecting standalone implementation...');
       const { ensureK2Injected } = await import('./services/standalone-k2');

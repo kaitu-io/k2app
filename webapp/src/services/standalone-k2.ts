@@ -11,7 +11,7 @@
 
 declare const __K2_BUILD_COMMIT__: string;
 
-import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, RouterRequestOptions, SResponse } from '../types/kaitu-core';
 import { plainLocalStorage } from './plain-storage';
 import { transformStatus } from './status-transform';
 import { webPlatform } from './web-platform';
@@ -78,6 +78,17 @@ export const standalonePlatform: IPlatform = {
   commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',
   storage: plainLocalStorage,
   setDevEnabled: () => {},
+
+  getDefaultGateway: async () => null,
+  routerRequest: async (opts: RouterRequestOptions) => {
+    // dev-standalone:纯浏览器 fetch,不承诺 mixed-content 场景(仅本地调试)
+    const resp = await fetch(opts.url, {
+      method: opts.method ?? 'GET',
+      headers: opts.headers,
+      body: opts.body,
+    });
+    return { status: resp.status, body: await resp.text() };
+  },
 
   // appList is exposed unconditionally on the standalone bridge. On Linux
   // desktop with the Go daemon, /api/helper answers app-list-running. On pure
