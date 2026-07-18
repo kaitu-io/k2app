@@ -68,7 +68,7 @@
 
 - `auto.filterTitle`（排除国家/地区）
 - `auto.filterHint`（自动选择将跳过勾选的国家/地区，手动选择不受影响）
-- `auto.excludedCount`（已排除 {{count}} 个国家/地区；英文用 i18next `_one`/`_other` 复数键）
+- `auto.excludedCount`（已排除 {{count}} 个国家/地区；英文用数字无关平键 "Excluded countries/regions: {{count}}" —— 原设计的 i18next `_one`/`_other` 复数键与 `scripts/check-i18n.mjs --ci` 的「键集与 zh-CN 完全一致」构建门冲突，实现时改平键，2026-07-18 合并时定案）
 - `auto.excludedChip`（自动选择已排除）
 - `auto.nodeCount`（{{count}} 个节点）
 - `auto.filterClear`（清除）
