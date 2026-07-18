@@ -37,5 +37,8 @@
   },
   "takeover": {
     "banner": "The router on this network is protecting your traffic"
+  },
+  "legacy": {
+    "upgradeHint": "Detected router firmware is out of date. Please upgrade k2r on the router before managing it from the app."
   }
 }

@@ -7,7 +7,6 @@
     "discover": "発見",
     "account": "アカウント",
     "router": "ルーター",
-    "setup": "接続設定",
     "devices": "デバイス",
     "faq": "フィードバック",
     "purchase": "購入",
@@ -15,8 +14,7 @@
     "invite": "招待",
     "retailer": "販売代理",
     "proHistory": "認証履歴",
-    "help": "ヘルプ",
-    "activate": "開通"
+    "help": "ヘルプ"
   },
   "appBarConnector": {
     "disconnecting": "切断中",

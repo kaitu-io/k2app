@@ -1114,31 +1114,13 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
 
 // ==================== serverMode = k2sub Tests ====================
 
-describe('serverMode = k2sub (gateway)', () => {
+describe('serverMode = k2sub', () => {
   beforeEach(() => {
     (window as any)._platform = {
       os: 'linux' as const,
       version: '0.4.4',
       storage: mockStorage,
-      platformType: 'gateway',
     };
-  });
-
-  it('loadServerMode pins to k2sub on gateway when no stored value', async () => {
-    mockStorage.get.mockResolvedValue(undefined);
-    const connMod = await import('../connection.store');
-    await connMod.useConnectionStore.getState().loadServerMode();
-    expect(connMod.useConnectionStore.getState().serverMode).toBe('k2sub');
-  });
-
-  it('loadServerMode preserves stored "self_hosted" on gateway', async () => {
-    mockStorage.get.mockImplementation(async (key: string) => {
-      if (key === 'k2.vpn.server_mode') return 'self_hosted';
-      return undefined;
-    });
-    const connMod = await import('../connection.store');
-    await connMod.useConnectionStore.getState().loadServerMode();
-    expect(connMod.useConnectionStore.getState().serverMode).toBe('self_hosted');
   });
 
   it('setSubsCountry persists country', async () => {

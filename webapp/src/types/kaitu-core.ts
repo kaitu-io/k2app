@@ -401,7 +401,6 @@ declare global {
     _k2: IK2Vpn;
     _platform: IPlatform;
     __TAURI__?: any;
-    __K2_GATEWAY__?: { version: string; commit: string; arch: string };
   }
 }
 
