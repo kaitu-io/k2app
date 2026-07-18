@@ -313,6 +313,14 @@
   "auto": {
     "title": "自动选择",
     "subtitle": "自动选择更优的节点",
-    "noTunnelAvailable": "暂无可用节点"
+    "noTunnelAvailable": "暂无可用节点",
+    "filterTitle": "排除国家/地区",
+    "filterHint": "自动选择将跳过勾选的国家/地区，手动选择不受影响",
+    "excludedCount": "已排除 {{count}} 个国家/地区",
+    "excludedChip": "自动选择已排除",
+    "nodeCount": "{{count}} 个节点",
+    "filterClear": "清除",
+    "filterDone": "完成",
+    "allExcluded": "可用节点已全部被排除，请调整国家/地区过滤"
   }
 }

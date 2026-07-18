@@ -1112,6 +1112,90 @@ describe('connect() resolves Auto via pickAutoTunnel', () => {
   });
 });
 
+// ==================== excludedCountries ====================
+
+describe('excludedCountries', () => {
+  it('setExcludedCountries normalizes to lowercase, dedupes, sorts, and persists JSON', async () => {
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().setExcludedCountries(['HK', 'hk', 'JP']);
+    expect(connMod.useConnectionStore.getState().excludedCountries).toEqual(['hk', 'jp']);
+    expect(mockStorage.set).toHaveBeenCalledWith(
+      'k2.connection.excludedCountries',
+      JSON.stringify(['hk', 'jp']),
+    );
+  });
+
+  it('setExcludedCountries([]) removes the storage key', async () => {
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().setExcludedCountries([]);
+    expect(connMod.useConnectionStore.getState().excludedCountries).toEqual([]);
+    expect(mockStorage.remove).toHaveBeenCalledWith('k2.connection.excludedCountries');
+  });
+
+  it('loadExcludedCountries parses persisted JSON', async () => {
+    mockStorage.get.mockResolvedValue(JSON.stringify(['hk', 'kr']));
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().loadExcludedCountries();
+    expect(connMod.useConnectionStore.getState().excludedCountries).toEqual(['hk', 'kr']);
+    expect(connMod.useConnectionStore.getState().excludedCountriesLoaded).toBe(true);
+  });
+
+  it('loadExcludedCountries falls back to [] on corrupted JSON', async () => {
+    mockStorage.get.mockResolvedValue('not-json{{');
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().loadExcludedCountries();
+    expect(connMod.useConnectionStore.getState().excludedCountries).toEqual([]);
+    expect(connMod.useConnectionStore.getState().excludedCountriesLoaded).toBe(true);
+  });
+
+  it('loadExcludedCountries falls back to [] when nothing persisted', async () => {
+    mockStorage.get.mockResolvedValue(null);
+    const connMod = await import('../connection.store');
+    await connMod.useConnectionStore.getState().loadExcludedCountries();
+    expect(connMod.useConnectionStore.getState().excludedCountries).toEqual([]);
+    expect(connMod.useConnectionStore.getState().excludedCountriesLoaded).toBe(true);
+  });
+
+  it('connect() dispatches 573 when the auto-pick pool is emptied by the country filter', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { cacheStore } = await import('../../services/cache-store');
+    const tunnel = {
+      id: 50,
+      domain: 'hk.example.com',
+      name: 'HK Node',
+      protocol: 'k2v5',
+      port: 443,
+      serverUrl: 'k2v5://hk.example.com:443',
+      recommendScore: 0.8,
+      node: { country: 'HK' },
+    } as any;
+    cacheStore.set('api:tunnels', { items: [tunnel] });
+
+    await useConnectionStore.getState().setExcludedCountries(['hk']);
+    await useConnectionStore.getState().connect();
+
+    // _k2.run('up') must NOT be called
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(573);
+  });
+
+  it('connect() dispatches 572 when the tunnel list is genuinely empty regardless of filter', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    // cacheStore has no entry → tunnelList = [] (filter is irrelevant to an empty list)
+    await useConnectionStore.getState().setExcludedCountries(['hk']);
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(572);
+  });
+});
+
 // ==================== serverMode = k2sub Tests ====================
 
 describe('serverMode = k2sub (gateway)', () => {

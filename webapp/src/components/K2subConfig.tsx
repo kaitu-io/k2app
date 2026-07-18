@@ -13,6 +13,7 @@ import { useTheme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { SmartModeIcon } from './SmartModeIcon';
 import { getFlagIcon, getCountryName } from '../utils/country';
+import { buildCountryList } from '../utils/country-list';
 import type { Tunnel } from '../services/api-types';
 
 interface Props {
@@ -22,19 +23,10 @@ interface Props {
   isInteractive: boolean;
 }
 
-function buildCountryList(tunnels: Tunnel[]): string[] {
-  const counts: Record<string, number> = {};
-  for (const t of tunnels) {
-    const code = (t.node?.country ?? '').toLowerCase();
-    if (code) counts[code] = (counts[code] ?? 0) + 1;
-  }
-  return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([c]) => c);
-}
-
 export function K2subConfig({ tunnels, subsCountry, setSubsCountry, isInteractive }: Props) {
   const { t } = useTranslation('dashboard');
   const theme = useTheme();
-  const countries = useMemo(() => buildCountryList(tunnels), [tunnels]);
+  const countries = useMemo(() => buildCountryList(tunnels).map(e => e.code), [tunnels]);
 
   const selectedBg = theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
   const rowSx = (selected: boolean) => ({

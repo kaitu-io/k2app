@@ -305,7 +305,6 @@
     "tabSmart": "智能選擇",
     "tabManual": "指定伺服器",
     "countryAuto": "自動",
-    "countryPickerLabel": "節點地區",
     "nodesAvailable": "{{count}} 個節點 · {{regions}} 個地區",
     "smartHint": "k2 會根據延遲自動選擇最優節點",
     "manualHint": "適合需要固定 IP 嘅場景",
@@ -314,6 +313,14 @@
   "auto": {
     "title": "自動選擇",
     "subtitle": "自動揀選更優節點",
-    "noTunnelAvailable": "暫無可用節點"
+    "noTunnelAvailable": "暫無可用節點",
+    "filterTitle": "排除國家/地區",
+    "filterHint": "自動揀選會跳過勾選的國家/地區，手動揀選不受影響",
+    "excludedCount": "已排除 {{count}} 個國家/地區",
+    "excludedChip": "自動揀選已排除",
+    "nodeCount": "{{count}} 個節點",
+    "filterClear": "清除",
+    "filterDone": "完成",
+    "allExcluded": "可用節點已全部被排除，請調整國家/地區過濾"
   }
 }
