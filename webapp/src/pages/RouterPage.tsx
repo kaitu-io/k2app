@@ -12,6 +12,7 @@ import { useEffect } from 'react';
 import { Box, Typography, Button, Card, CardContent, Stack } from '@mui/material';
 import { WifiOff as OfflineIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useRouterStore } from '../stores/router.store';
 import { useVpnStore } from '../stores/vpn.store';
 import { RouterConnectionCard } from '../components/RouterConnectionCard';
@@ -29,11 +30,25 @@ export default function RouterPage() {
   const unbindRouter = useRouterStore((s) => s.unbindRouter);
   const localState = useVpnStore((s) => s.status?.state);
   const exclusion = useExclusionGuard('router-connect');
+  const navigate = useNavigate();
+  const location = useLocation();
 
+  // Layout keep-alive tabs are hidden by CSS (visibility), never unmounted,
+  // once visited — so a mount-only effect with unmount cleanup never actually
+  // stops the 2s poll after the first Router-tab visit (I2 fix). Gate on the
+  // route actually being active instead, using the same signal Layout uses
+  // to compute isActive (location.pathname === tab.path). This both starts
+  // polling when the tab becomes active and stops it the moment it doesn't
+  // (tab switch, not just true unmount) — spec §6.1 "tab 可见时才轮询，隐藏即停".
+  const isActive = location.pathname === '/router';
   useEffect(() => {
+    if (!isActive) {
+      stopPolling();
+      return;
+    }
     startPolling();
     return () => stopPolling();
-  }, [startPolling, stopPolling]);
+  }, [isActive, startPolling, stopPolling]);
 
   // Layout's tabPages only mounts this route once hasRouter (phase !== 'none'),
   // so this branch is defensive only (e.g. a stale render during unbind's
@@ -84,7 +99,17 @@ export default function RouterPage() {
               color="error"
               sx={{ mt: 1 }}
               data-testid="router-unbind"
-              onClick={() => exclusion.confirmUnbind(() => void unbindRouter())}
+              onClick={() =>
+                exclusion.confirmUnbind(() => {
+                  // Post-unbind: phase→'none' removes the /router tab entity
+                  // and RouterPage itself renders <></> (see the phase==='none'
+                  // branch above) while the route is still /router — a blank
+                  // page. Navigate back to Dashboard once unbind succeeds (M4).
+                  void unbindRouter().then((ok) => {
+                    if (ok) navigate('/');
+                  });
+                })
+              }
             >
               {t('router:settings.unbind')}
             </Button>

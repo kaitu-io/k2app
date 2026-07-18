@@ -57,6 +57,41 @@ describe('runDiscovery', () => {
   });
 });
 
+describe('runDiscovery feeds status (I3 — Dashboard banner/exclusion independent of the Router-tab poll)', () => {
+  it('fetches status once after a successful configured discovery, so isRouterTakeover works without ever opening the Router tab', async () => {
+    (svc.probeRouter as any).mockResolvedValue(R1);
+    (svc.routerCore as any).mockResolvedValue({ code: 0, data: { state: 'connected' } });
+    const store = await freshStore();
+    await store.getState().runDiscovery();
+    expect(svc.routerCore).toHaveBeenCalledWith('status');
+    expect(store.getState().status).toEqual({ state: 'connected' });
+    expect(store.getState().phase).toBe('online');
+    expect(isRouterTakeover(store.getState())).toBe(true);
+  });
+  it('does not fetch status for an unconfigured router', async () => {
+    (svc.probeRouter as any).mockResolvedValue({ ...R1, configured: false });
+    const store = await freshStore();
+    await store.getState().runDiscovery();
+    expect(svc.routerCore).not.toHaveBeenCalled();
+  });
+  it('a failed status fetch does not flip phase away from the anchor-probe-confirmed online', async () => {
+    (svc.probeRouter as any).mockResolvedValue(R1);
+    (svc.routerCore as any).mockRejectedValue(new Error('timeout'));
+    const store = await freshStore();
+    await store.getState().runDiscovery();
+    expect(store.getState().phase).toBe('online');
+    expect(store.getState().status).toBeNull();
+  });
+  it('a 401 status fetch does not flip phase away from online', async () => {
+    (svc.probeRouter as any).mockResolvedValue(R1);
+    (svc.routerCore as any).mockResolvedValue({ code: 401 });
+    const store = await freshStore();
+    await store.getState().runDiscovery();
+    expect(store.getState().phase).toBe('online');
+    expect(store.getState().status).toBeNull();
+  });
+});
+
 describe('setupRouter', () => {
   it('mint + key + set-credential happy path', async () => {
     (svc.probeRouter as any).mockResolvedValue({ ...R1, configured: false });

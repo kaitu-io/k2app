@@ -30,6 +30,15 @@ const CORE_TIMEOUT_MS = 10000;
 const STORAGE_LAST_ROUTER = 'k2.router.last';
 const STORAGE_CONTROL_KEY = 'k2.router.control_key';
 
+/**
+ * 401 强刷负缓存(I4 修复)：一次强刷仍 401,说明 k2r 侧 key 尚未收到新值
+ * (legacy-upgrade 未绑定窗口最长约 30min)，60s 内再收到 401 不再打 Center——
+ * 否则 2s 轮询 × 每次强刷一条 POST + 一条 audit 行,把 Center 打成热循环。
+ * 幂等场景无副作用：正常 key 轮换只在 60s 窗口外发生一次,不受影响。
+ */
+const FORCE_REFRESH_401_BACKOFF_MS = 60_000;
+let force401BackoffUntil = 0;
+
 async function routerRequest(opts: RouterRequestOptions): Promise<RouterResponse> {
   const fn = window._platform?.routerRequest;
   if (!fn) throw new Error('router bridge unavailable');
@@ -109,7 +118,19 @@ async function routerFetch<T = unknown>(
 
   let resp = await send(await getControlKey());
   if (resp.status === 401) {
+    if (Date.now() < force401BackoffUntil) {
+      // A previous force-refresh within the last 60s still ended in 401 —
+      // k2r hasn't received the rotated key yet (legacy-upgrade unbound
+      // window, up to ~30min). Don't hit Center again on every 2s poll tick;
+      // just report unauthorized and let the next window retry.
+      return { code: 401, message: 'unauthorized' };
+    }
     resp = await send(await getControlKey(true));
+    if (resp.status === 401) {
+      force401BackoffUntil = Date.now() + FORCE_REFRESH_401_BACKOFF_MS;
+    } else {
+      force401BackoffUntil = 0;
+    }
   }
   if (resp.status === 401) return { code: 401, message: 'unauthorized' };
   try {

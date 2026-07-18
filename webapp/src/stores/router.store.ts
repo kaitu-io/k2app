@@ -61,6 +61,30 @@ export const useRouterStore = create<RouterState & RouterActions>()((set, get) =
       }
       await saveLastRouter(info);
       set({ router: info, phase: info.configured ? 'online' : 'unconfigured' });
+      // Feed status independent of the Router tab's 2s poll (I3 fix): the
+      // Dashboard takeover banner (§6.2) and connect-exclusion dialog (§6.3)
+      // both gate on isRouterTakeover(), which needs status.state==='connected'.
+      // Before this, ONLY the poll wrote `status` — so those Dashboard features
+      // stayed inert until the user happened to open the Router tab once.
+      // runDiscovery already runs at startup + visibilitychange/foreground
+      // (stores/index.ts) — that cadence is enough; the banner doesn't need
+      // 2s freshness. A failed/401 status fetch must not flip phase away from
+      // the anchor-probe-confirmed 'online' (probeRouter already proved k2r
+      // is reachable and configured).
+      if (info.configured) {
+        try {
+          const resp = await routerCore<RouterStatus>('status');
+          // unbindRouter() may have completed while this request was in
+          // flight — don't resurrect a cleared router (same guard as poll()).
+          if (!get().router) return;
+          if (resp.code === 0 && resp.data) {
+            set({ status: resp.data });
+          }
+        } catch {
+          // network/timeout — leave status as-is; the poll (if the Router tab
+          // is active) or the next discovery pass will retry.
+        }
+      }
     } finally {
       set({ discovering: false });
     }

@@ -22,9 +22,11 @@ export function RouterConnectionCard({ onBeforeConnect }: { onBeforeConnect?: ()
   const [busy, setBusy] = useState(false);
 
   const connected = status?.state === 'connected';
-  // status.lastError 是 engine.Status 内嵌的 EngineError({code, message})，
+  // k2r 的 /api/core status 直出 engine.Status 原始形态(不经过本机 daemon 的
+  // transformStatus 归一化)，错误字段键是 error，不是本机约定的 lastError——
+  // 见 services/status-transform.ts:25 `raw.error`。EngineError({code, message})
   // 复用既有 code→i18n 映射(utils/errorCode.ts getErrorMessage)，禁止直显 message。
-  const lastError = (status as { lastError?: { code?: number; message?: string } } | null)?.lastError;
+  const lastError = (status as { error?: { code?: number; message?: string } } | null)?.error;
 
   const handleToggle = async () => {
     if (busy) return;
