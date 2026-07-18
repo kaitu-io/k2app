@@ -498,6 +498,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
             size="small"
             onClick={(e) => { e.stopPropagation(); setFilterOpen(true); }}
             sx={{ mr: 0.5 }}
+            aria-label={t('dashboard:auto.filterTitle')}
           >
             <Badge badgeContent={excludedCountries.length} color="primary">
               <FilterListIcon
