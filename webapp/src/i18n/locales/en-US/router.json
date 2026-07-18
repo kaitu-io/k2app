@@ -21,6 +21,21 @@
   "settings": {
     "title": "Router Settings",
     "version": "Firmware version: {{version}}",
-    "unbind": "Unbind"
+    "unbind": "Unbind",
+    "unbindConfirmTitle": "Unbind this router?",
+    "unbindConfirmBody": "After unbinding, this app will no longer be able to control the router. You'll need to set it up again to use it.",
+    "unbindCancel": "Cancel",
+    "unbindConfirm": "Unbind"
+  },
+  "exclusion": {
+    "title": "Connect both tunnels?",
+    "bodyRouter": "Your device's VPN is already connected. Continuing will route traffic through both tunnels at once — we recommend disconnecting the local VPN first.",
+    "bodyDashboard": "The router on this network is already protecting your traffic. Continuing will route traffic through both tunnels at once — we recommend disconnecting the router first.",
+    "keep": "Keep both",
+    "proceedRouter": "Disconnect local VPN & continue",
+    "proceedDashboard": "Disconnect router & continue"
+  },
+  "takeover": {
+    "banner": "The router on this network is protecting your traffic"
   }
 }

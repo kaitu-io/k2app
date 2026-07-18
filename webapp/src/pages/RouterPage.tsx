@@ -4,9 +4,9 @@
  * (由 Layout.tsx 的动态 tab 列表控制,本组件本身在 phase==='none' 时防御性渲染 null)。
  * 主语永远是路由器;本机 VPN 归 Dashboard。
  *
- * 互斥守卫(本机 VPN 与路由器接管互斥)在此先给出直通占位实现——真实拦截 Dialog
- * 是 B9 的范围(独立组件 RouterExclusionDialog,不在 B8 文件清单内)。B9 落地后
- * 把 useExclusionGuard 换成对该组件的导入。
+ * 互斥守卫(本机 VPN 与路由器接管互斥)+ unbind 二次确认均来自 B9 的
+ * RouterExclusionDialog(components/RouterExclusionDialog.tsx)——替换了 B8 的
+ * 直通占位实现(guard 恒真、confirmUnbind 直接调用回调、无 Dialog)。
  */
 import { useEffect } from 'react';
 import { Box, Typography, Button, Card, CardContent, Stack } from '@mui/material';
@@ -16,15 +16,8 @@ import { useRouterStore } from '../stores/router.store';
 import { useVpnStore } from '../stores/vpn.store';
 import { RouterConnectionCard } from '../components/RouterConnectionCard';
 import { RouterSetupCard } from '../components/RouterSetupCard';
+import { useExclusionGuard, RouterExclusionDialog } from '../components/RouterExclusionDialog';
 import RouterDevicesSection from './RouterDevices';
-
-/** 占位互斥守卫:直通放行,不拦截、不弹窗。B9 用 RouterExclusionDialog 替换。 */
-function useExclusionGuard() {
-  return {
-    guard: async (_localConnected?: boolean) => true,
-    confirmUnbind: (fn: () => void) => fn(),
-  };
-}
 
 export default function RouterPage() {
   const { t } = useTranslation();
@@ -35,7 +28,7 @@ export default function RouterPage() {
   const stopPolling = useRouterStore((s) => s.stopPolling);
   const unbindRouter = useRouterStore((s) => s.unbindRouter);
   const localState = useVpnStore((s) => s.status?.state);
-  const exclusion = useExclusionGuard();
+  const exclusion = useExclusionGuard('router-connect');
 
   useEffect(() => {
     startPolling();
@@ -98,6 +91,7 @@ export default function RouterPage() {
           </CardContent>
         </Card>
       </Stack>
+      <RouterExclusionDialog controller={exclusion} />
     </Box>
   );
 }
