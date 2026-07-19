@@ -206,6 +206,17 @@ fn collect_logs_to_staging() -> Result<PathBuf, String> {
         }
     }
 
+    // 4. Windows installer diagnostics (NSIS hooks). Best-effort: these
+    //    files only exist after an install/upgrade, and are the definitive
+    //    evidence when the k2 service fails to come back after an update.
+    //    Note: they may be ANSI-encoded — sanitize_staging_dir skips
+    //    non-UTF-8 files, and create_tar_gz packs raw bytes, so they
+    //    survive the pipeline untouched.
+    #[cfg(target_os = "windows")]
+    {
+        staged_count += stage_named_files(&installer_diag_candidates(), &staging_dir);
+    }
+
     log::info!(
         "[log_upload] Staged {} log files into {}",
         staged_count,
@@ -213,6 +224,42 @@ fn collect_logs_to_staging() -> Result<PathBuf, String> {
     );
 
     Ok(staging_dir)
+}
+
+/// Windows installer diagnostic files worth uploading.
+/// - `install-diag.log`: written by the NSIS POSTINSTALL hook next to the
+///   app binary (`$INSTDIR`) — records `k2.exe service install` exit code,
+///   output, and the post-install `sc query` state.
+/// - `kaitu-preinstall.log`: written by the NSIS PREINSTALL hook to the
+///   user temp dir — records service stop/delete/taskkill results and
+///   whether k2.exe was file-locked. Elevation keeps the same user profile,
+///   so `%TEMP%` matches; a cross-account elevation misses it (acceptable).
+#[cfg(target_os = "windows")]
+fn installer_diag_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("install-diag.log"));
+        }
+    }
+    candidates.push(std::env::temp_dir().join("kaitu-preinstall.log"));
+    candidates
+}
+
+/// Stage a list of files into the staging dir under their own file names.
+/// Missing/empty files are skipped silently. Returns the number staged.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn stage_named_files(paths: &[PathBuf], staging_dir: &Path) -> usize {
+    let mut count = 0;
+    for path in paths {
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        if copy_file_to_staging(path, &staging_dir.join(name)) {
+            count += 1;
+        }
+    }
+    count
 }
 
 /// Copy a file to staging. Returns true if successful and file had content.
@@ -852,6 +899,60 @@ mod tests {
         std::fs::write(&src, "content").unwrap();
         assert!(copy_file_to_staging(&src, &dest));
         assert!(dest.exists());
+    }
+
+    #[test]
+    fn test_stage_named_files_missing_and_present() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir().unwrap();
+
+        let present = src_dir.path().join("install-diag.log");
+        std::fs::write(&present, "service_install_exit=1\r\n").unwrap();
+        let missing = src_dir.path().join("kaitu-preinstall.log");
+
+        let staged = stage_named_files(&[present, missing], staging.path());
+        assert_eq!(staged, 1);
+        assert!(staging.path().join("install-diag.log").exists());
+        assert!(!staging.path().join("kaitu-preinstall.log").exists());
+    }
+
+    // The k2-side install log (k2-service-install.log, written by
+    // `k2 service install` into the service log dir) must be picked up
+    // by the existing `k2*.log` service-dir glob — no dedicated staging
+    // code exists for it, so this contract test guards the file name.
+    #[test]
+    fn test_service_dir_glob_matches_install_log() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("k2-service-install.log"), "step ok").unwrap();
+        std::fs::write(dir.path().join("k2.log"), "main log").unwrap();
+        std::fs::write(dir.path().join("unrelated.log"), "nope").unwrap();
+
+        let matched: Vec<String> = glob::glob(&dir.path().join("k2*.log").to_string_lossy())
+            .unwrap()
+            .flatten()
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .collect();
+
+        assert!(matched.contains(&"k2-service-install.log".to_string()));
+        assert!(matched.contains(&"k2.log".to_string()));
+        assert!(!matched.contains(&"unrelated.log".to_string()));
+    }
+
+    // NSIS may write its diag logs in a non-UTF-8 ANSI codepage. The
+    // sanitize pass must skip them (read_to_string fails) without
+    // deleting or corrupting them, and tar must still pack them.
+    #[test]
+    fn test_sanitize_skips_non_utf8_but_keeps_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("kaitu-preinstall.log");
+        // Invalid UTF-8 bytes (GBK-ish sequence)
+        let raw: &[u8] = b"[4] net stop: exit=2 output=\xb7\xfe\xce\xf1\xce\xb4\r\n";
+        std::fs::write(&path, raw).unwrap();
+
+        sanitize_staging_dir(dir.path()).unwrap();
+
+        let after = std::fs::read(&path).unwrap();
+        assert_eq!(after, raw, "non-UTF-8 file must remain byte-identical");
     }
 
     #[test]
