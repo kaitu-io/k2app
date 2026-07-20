@@ -5,6 +5,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -29,6 +31,7 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
+import java.net.Inet4Address
 import java.net.URL
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -770,6 +773,35 @@ class K2Plugin : Plugin() {
             }
             call.resolve(ret)
         }
+    }
+
+    /**
+     * 物理接口(WiFi/Ethernet)的默认网关。不用 activeNetwork——VPN 连接时
+     * active network 是 TUN,其 LinkProperties 没有真实网关。
+     */
+    @PluginMethod
+    fun getDefaultGateway(call: PluginCall) {
+        val ret = JSObject()
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            for (network in cm.allNetworks) {
+                val caps = cm.getNetworkCapabilities(network) ?: continue
+                val physical = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+                if (!physical) continue
+                val lp = cm.getLinkProperties(network) ?: continue
+                val gw = lp.routes.firstOrNull { it.isDefaultRoute && it.gateway is Inet4Address }?.gateway
+                if (gw != null) {
+                    ret.put("gateway", gw.hostAddress)
+                    call.resolve(ret)
+                    return
+                }
+            }
+        } catch (_: Exception) {
+            // fall through: gateway=null,发现链走 beacon 兜底
+        }
+        ret.put("gateway", JSObject.NULL)
+        call.resolve(ret)
     }
 
     @PluginMethod

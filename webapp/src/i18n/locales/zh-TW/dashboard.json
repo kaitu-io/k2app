@@ -299,13 +299,13 @@
     "remark": "備註",
     "remarkPlaceholder": "如：爸爸的手機",
     "confirm": "確認",
-    "loadFailed": "載入裝置清單失敗"
+    "loadFailed": "載入裝置清單失敗",
+    "removeConfirmTitle": "確認從白名單移除該裝置？"
   },
   "serverSelector": {
     "tabSmart": "智慧選擇",
     "tabManual": "指定伺服器",
     "countryAuto": "自動",
-    "countryPickerLabel": "節點地區",
     "nodesAvailable": "{{count}} 台節點 · {{regions}} 個地區",
     "smartHint": "k2 將根據延遲自動選擇最優節點",
     "manualHint": "適合需要固定 IP 的場景",
@@ -314,6 +314,14 @@
   "auto": {
     "title": "自動選擇",
     "subtitle": "自動選擇更優的節點",
-    "noTunnelAvailable": "暫無可用節點"
+    "noTunnelAvailable": "暫無可用節點",
+    "filterTitle": "排除國家/地區",
+    "filterHint": "自動選擇將跳過勾選的國家/地區，手動選擇不受影響",
+    "excludedCount": "已排除 {{count}} 個國家/地區",
+    "excludedChip": "自動選擇已排除",
+    "nodeCount": "{{count}} 個節點",
+    "filterClear": "清除",
+    "filterDone": "完成",
+    "allExcluded": "可用節點已全部被排除，請調整國家/地區過濾"
   }
 }

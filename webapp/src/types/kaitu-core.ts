@@ -166,6 +166,24 @@ export interface IIap {
 }
 
 /**
+ * LAN 路由器原生 HTTP 请求参数（绕过 WebView CORS/mixed-content）。
+ * 仅允许 http:// + 私网/回环 IPv4 host —— 由各平台实现侧强制校验。
+ */
+export interface RouterRequestOptions {
+  url: string;
+  method?: 'GET' | 'POST';
+  headers?: Record<string, string>;
+  body?: string;
+  timeoutMs?: number;
+}
+
+/** LAN 路由器原生 HTTP 请求结果 */
+export interface RouterResponse {
+  status: number;
+  body: string;
+}
+
+/**
  * 平台能力接口
  *
  * Injected as window._platform before React loads.
@@ -213,6 +231,12 @@ export interface IPlatform {
    * 传入 k2 daemon 后，daemon 监控此 PID，进程退出时自动停止 VPN
    */
   getPid?(): Promise<number>;
+
+  /** 物理接口（WiFi/以太网）默认网关 IPv4；排除 TUN 虚拟接口。null = 不可用/无网关。 */
+  getDefaultGateway?(): Promise<string | null>;
+
+  /** 原生 HTTP 到 LAN 路由器（绕过 WebView CORS/mixed-content；仅 http:// + 私网 IP）。 */
+  routerRequest?(opts: RouterRequestOptions): Promise<RouterResponse>;
 
   // ====== 网关专属（可选）======
 
@@ -377,7 +401,6 @@ declare global {
     _k2: IK2Vpn;
     _platform: IPlatform;
     __TAURI__?: any;
-    __K2_GATEWAY__?: { version: string; commit: string; arch: string };
   }
 }
 

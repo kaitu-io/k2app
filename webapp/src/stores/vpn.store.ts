@@ -303,3 +303,12 @@ export function useVPNStatus() {
 
   return { ...derived, setOptimisticState };
 }
+
+/**
+ * lowerCamel alias — Router tab (RouterPage.tsx) reads only the raw
+ * `status.state` field (no derived VPNStatus needed) and follows the
+ * store-hook naming convention used by router.store/connection.store
+ * (`useRouterStore`/`useConnectionStore`). Same store instance, no
+ * behavior difference from `useVPNStore`.
+ */
+export const useVpnStore = useVPNStore;

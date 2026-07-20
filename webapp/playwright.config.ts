@@ -51,7 +51,7 @@ export default defineConfig({
   // Shared settings
   use: {
     // Base URL
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:1420',
 
     // Trace on first retry
     trace: 'on-first-retry',
@@ -139,7 +139,8 @@ export default defineConfig({
   // Dev server configuration
   webServer: {
     command: 'yarn dev',
-    url: 'http://localhost:5173',
+    // vite.config.ts pins port 1420 (Tauri dev port) — keep in sync
+    url: 'http://localhost:1420',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },

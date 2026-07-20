@@ -1,0 +1,44 @@
+{
+  "router": {
+    "title": "Router",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "offline": "Can't reach router {{name}}. Check that it's online.",
+    "retry": "Retry"
+  },
+  "setup": {
+    "title": "Set up {{name}}",
+    "intro": "Tap the button below to finish the router's first-time setup in one step.",
+    "submit": "Start setup",
+    "error": {
+      "mint_failed": "Failed to get a connection credential. Check your network and try again.",
+      "key_failed": "Failed to get a control key. Check your network and try again.",
+      "push_failed": "Failed to push the configuration to the router. Check that it's online."
+    }
+  },
+  "settings": {
+    "title": "Router Settings",
+    "version": "Firmware version: {{version}}",
+    "unbind": "Unbind",
+    "unbindConfirmTitle": "Unbind this router?",
+    "unbindConfirmBody": "After unbinding, this app will no longer be able to control the router. You'll need to set it up again to use it.",
+    "unbindCancel": "Cancel",
+    "unbindConfirm": "Unbind"
+  },
+  "exclusion": {
+    "title": "Connect both tunnels?",
+    "bodyRouter": "Your device's VPN is already connected. Continuing will route traffic through both tunnels at once — we recommend disconnecting the local VPN first.",
+    "bodyDashboard": "The router on this network is already protecting your traffic. Continuing will route traffic through both tunnels at once — we recommend disconnecting the router first.",
+    "keep": "Keep both",
+    "proceedRouter": "Disconnect local VPN & continue",
+    "proceedDashboard": "Disconnect router & continue"
+  },
+  "takeover": {
+    "banner": "The router on this network is protecting your traffic"
+  },
+  "legacy": {
+    "upgradeHint": "Detected router firmware is out of date. Please upgrade k2r on the router before managing it from the app."
+  }
+}

@@ -9,12 +9,12 @@
 
 declare const __K2_BUILD_COMMIT__: string;
 
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { Clipboard } from '@capacitor/clipboard';
 import { Share } from '@capacitor/share';
 import { getDeviceUdid } from './device-udid';
 import { K2Plugin } from 'k2-plugin';
-import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, InstalledApp, IIap } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, InstalledApp, IIap, RouterRequestOptions, RouterResponse } from '../types/kaitu-core';
 import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { createCapacitorStorage } from './capacitor-storage';
@@ -25,6 +25,44 @@ import { mapInstalledApp, type AndroidInstalledApp } from './capacitor-app-map';
  */
 export function isCapacitorNative(): boolean {
   return Capacitor.isNativePlatform();
+}
+
+/**
+ * IPv4 literal + RFC1918-private-or-loopback check. Mirrors the desktop bridge's
+ * `is_private_host` gate (desktop/src-tauri/src/router_bridge.rs) exactly:
+ * 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8. Hostnames and IPv6
+ * literals are rejected (same as the Rust side, which only matches `Host::Ipv4`).
+ */
+function isPrivateIPv4Literal(hostname: string): boolean {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
+  if (!m) return false;
+  const octets = m.slice(1, 5).map(Number);
+  if (octets.some((n) => n > 255)) return false;
+  const [a, b] = octets;
+  if (a === 10) return true; // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  if (a === 127) return true; // 127.0.0.0/8 loopback
+  return false;
+}
+
+/**
+ * TS-side SSRF gate for routerRequest — the mobile twin of the Rust
+ * `router_http_request` guard, since CapacitorHttp has no native URL allowlist.
+ * Must run BEFORE issuing the request: only http:// to a private/loopback IPv4
+ * literal host. Throws (not fail-soft) so a bad target surfaces immediately
+ * instead of silently no-opping.
+ */
+function assertRouterUrlAllowed(rawUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('routerRequest: invalid URL');
+  }
+  if (parsed.protocol !== 'http:' || !isPrivateIPv4Literal(parsed.hostname)) {
+    throw new Error('routerRequest: only http:// to private IPv4 allowed');
+  }
 }
 
 /**
@@ -283,6 +321,43 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
     syncLocale: async (_locale: string): Promise<void> => {
       // No-op on mobile — no tray menu to update
+    },
+
+    getDefaultGateway: async (): Promise<string | null> => {
+      try {
+        const { gateway } = await K2Plugin.getDefaultGateway();
+        return gateway ?? null;
+      } catch {
+        return null;
+      }
+    },
+
+    // CapacitorHttp 走原生 URLSession/HttpURLConnection——绕过 WebView 的 CORS
+    // 与 mixed-content 限制,这是 app 触达 http://LAN 的唯一合规通道。TS 侧
+    // assertRouterUrlAllowed 镜像 desktop router_bridge.rs 的 is_private_host
+    // 门（仅 http:// + 私网/回环 IPv4 字面量），在发起请求前校验——CapacitorHttp
+    // 没有独立的"重定向策略"API,但 HttpOptions.disableRedirects 在 Android
+    // (HttpURLConnection#setInstanceFollowRedirects) 与 iOS
+    // (URLSessionTaskDelegate willPerformHTTPRedirection) 都原生生效,与 B4
+    // desktop 侧 reqwest Policy::none() 语义对齐：校验只覆盖被请求的 URL,不
+    // 关闭重定向就会让一个合法私网目标把客户端重定向到任意公网地址,重开
+    // 这个模块本该关闭的 SSRF 口子。
+    routerRequest: async (opts: RouterRequestOptions): Promise<RouterResponse> => {
+      assertRouterUrlAllowed(opts.url);
+      const resp = await CapacitorHttp.request({
+        url: opts.url,
+        method: opts.method ?? 'GET',
+        headers: opts.headers ?? {},
+        data: opts.body,
+        connectTimeout: opts.timeoutMs ?? 5000,
+        readTimeout: opts.timeoutMs ?? 5000,
+        responseType: 'text',
+        disableRedirects: true,
+      });
+      return {
+        status: resp.status,
+        body: typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data ?? ''),
+      };
     },
 
     updater,
