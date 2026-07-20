@@ -358,12 +358,23 @@ func ToDataRetailerConfigWithContext(ctx context.Context, config *RetailerConfig
 
 // isUserFirstPaidOrderInTx 检查是否为该用户在该分销商下的首个已支付订单（事务内）
 // 用于判断应该使用首单分成还是续费分成
-func isUserFirstPaidOrderInTx(tx *gorm.DB, userID uint64, retailerID uint64, currentOrderID uint64) bool {
+// 注意：不按 retailer 过滤。分销商归属挂在买家身上（User.InvitedByCodeID → InviteCode.UserID），
+// 对同一 user 恒定，订单表里没有、也不需要 retailer 维度。
+//
+// 修复历史（2026-07-20）：原实现带 `retailer_id = ?` 条件，而 orders 表从无该列 —— MySQL 报
+// Unknown column，GORM 的 Count 不返回 error 到调用方，count 保持 0，函数因此**恒返回 true**，
+// 于是每一单都被判成首单、一律走 FirstOrderPercent，RenewalPercent 从未生效（超额返现）。
+// 现改为按买家历史已付订单判定，并检查查询错误——出错时保守返回 false（按续费低比例算，
+// 宁可少发也不错发；错发的钱追不回来）。
+func isUserFirstPaidOrderInTx(ctx context.Context, tx *gorm.DB, userID uint64, currentOrderID uint64) bool {
 	var count int64
-	tx.Model(&Order{}).
-		Where("user_id = ? AND retailer_id = ? AND is_paid = ? AND (is_refunded IS NULL OR is_refunded = ?) AND id < ?", userID, retailerID, true, false, currentOrderID).
-		Count(&count)
-	return count == 0 // 如果之前没有已支付订单，则当前订单是首单
+	if err := tx.Model(&Order{}).
+		Where("user_id = ? AND is_paid = ? AND (is_refunded IS NULL OR is_refunded = ?) AND id < ?", userID, true, false, currentOrderID).
+		Count(&count).Error; err != nil {
+		log.Errorf(ctx, "[isUserFirstPaidOrder] count failed for user %d order %d: %v — 保守按续费处理", userID, currentOrderID, err)
+		return false
+	}
+	return count == 0 // 之前没有已支付订单 → 当前订单是首单
 }
 
 // GetRetailerLevelHistory 获取分销商等级变更历史
@@ -423,7 +434,7 @@ func processRetailerCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint6
 	}
 
 	// 4. 判断是首单还是续费，选择对应的分成比例
-	isFirstOrder := isUserFirstPaidOrderInTx(tx, order.UserID, retailerID, orderID)
+	isFirstOrder := isUserFirstPaidOrderInTx(ctx, tx, order.UserID, orderID)
 
 	var cashbackPercent int
 	var orderType string

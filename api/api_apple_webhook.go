@@ -107,7 +107,7 @@ func api_apple_webhook(c *gin.Context) {
 		}
 
 	case appstore.NotificationType_REFUND, appstore.NotificationType_REVOKE:
-		if err := revokeSubscription(c, &sub); err != nil {
+		if err := revokeSubscription(c, &sub, asn.TransactionInfo.TransactionId); err != nil {
 			log.Errorf(c, "[AppleWebhook] revoke failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)
 			return

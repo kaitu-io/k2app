@@ -222,6 +222,106 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	log.Infof(ctx, "[creditAppleTransaction] user %d credited +%dd (%s) txn=%s expiry→%s",
 		userID, int(creditSeconds/86400), kind, info.TransactionId,
 		time.Unix(user.ExpiredAt, 0).Format("2006-01-02"))
+
+	// 建订单 + 分销商返现。位置关键：必须在上面的 alreadyCredited 早退之后，
+	// 幂等性才由既有的 (provider, transaction_id) 去重天然覆盖——重投的交易根本走不到这里。
+	// SAVEPOINT 非致命：Apple 已扣款，权益到账优先级高于内部账务；返现失败可事后补，
+	// 入账回滚则是"用户付了钱没权益"的最坏结果。与上面邀请奖励的处理保持一致。
+	if plan, perr := planByAppleProductID(ctx, tx, info.ProductId); perr == nil && plan != nil {
+		if err := tx.SavePoint("iap_order_cashback").Error; err == nil {
+			if oerr := createAppleIAPOrderInTx(ctx, tx, userID, plan, info); oerr != nil {
+				tx.RollbackTo("iap_order_cashback")
+				log.Errorf(ctx, "[creditAppleTransaction] iap order+cashback failed (non-fatal, rolled back), user %d txn %s: %v",
+					userID, info.TransactionId, oerr)
+			}
+		}
+	}
+	return nil
+}
+
+// revokeIAPOrderCashbackInTx 撤销某笔 Apple 交易对应订单的分销商返现，并把订单标记为已退款。
+//
+// 致命语义（与建单侧的非致命相反）：退款撤返现失败必须整体回滚。少扣一笔返现是真实资损，
+// 而回滚只是让 Apple 重投通知——重投是安全的（refundCashbackInTx 对已退款订单是幂等的
+// no-op，IsRefunded 也只是重复置位）。宁可重试，不可漏扣。
+//
+// 订单标记为 IsRefunded 还有第二重作用：isUserFirstPaidOrderInTx 排除已退款订单，
+// 退款后用户的下一单会重新算首单，与网页侧口径一致。
+func revokeIAPOrderCashbackInTx(ctx context.Context, tx *gorm.DB, txnID string) error {
+	if txnID == "" {
+		return nil // 调用方无交易号，跳过订单侧处理
+	}
+	var order Order
+	err := tx.Where(&Order{AppleTransactionID: txnID}).First(&order).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// 正常场景：退款的是本功能上线前的交易（当时没建单），无订单可撤。
+		log.Infof(ctx, "[revokeIAPOrderCashback] no order for apple txn %s, nothing to revoke", txnID)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("lookup order by apple txn %s: %w", txnID, err)
+	}
+
+	// 幂等门：Apple 会重投 REFUND 通知。已退款订单直接短路——否则 refundCashbackInTx 会撞上
+	// wallet_changes 的 idx_type_order 唯一索引（它靠该索引兜底防二次扣款，但把重复当错误抛）。
+	if order.IsRefunded != nil && *order.IsRefunded {
+		log.Infof(ctx, "[revokeIAPOrderCashback] order %s already refunded, skipping (apple txn %s)", order.UUID, txnID)
+		return nil
+	}
+
+	if err := refundCashbackInTx(ctx, tx, order.ID); err != nil {
+		return fmt.Errorf("refund cashback for order %d: %w", order.ID, err)
+	}
+
+	now := time.Now()
+	if err := tx.Model(&Order{}).Where("id = ?", order.ID).Updates(map[string]any{
+		"is_refunded":   true,
+		"refunded_at":   &now,
+		"refund_amount": order.PayAmount,
+		"refund_reason": fmt.Sprintf("Apple 退款/撤销 - %s", txnID),
+	}).Error; err != nil {
+		return fmt.Errorf("mark order %d refunded: %w", order.ID, err)
+	}
+	log.Infof(ctx, "[revokeIAPOrderCashback] order %s refunded + cashback revoked (apple txn %s)", order.UUID, txnID)
+	return nil
+}
+
+// createAppleIAPOrderInTx 为一笔已入账的 Apple 交易补建订单并触发分销商返现。
+//
+// 口径（重要）：PayAmount/OriginAmount 取 **plan 标价**，不是用户实付、也不是本方实收。
+// Apple 是多币种定价（美区 $59.99、国区 ¥328…）且抽成 15%，实付/实收都无法作为统一分佣基数；
+// 而 appstore.TransactionInfo 的 Price/Currency 均为 optional，缺字段时无兜底。取 plan 标价
+// 让 iOS 与网页两条链路的分佣基数完全一致，也让既有 processRetailerCashbackInTx
+// （基数 = order.PayAmount）无需改动。财务侧靠 Order.Channel 区分口径。
+//
+// 首单/续费比例不在这里判定：processRetailerCashbackInTx 用 isUserFirstPaidOrderInTx
+// 查 orders 表，本函数每笔交易建一单，首购天然是首单、续订天然走 RenewalPercent。
+func createAppleIAPOrderInTx(ctx context.Context, tx *gorm.DB, userID uint64, plan *Plan, info *appstore.TransactionInfo) error {
+	now := time.Now()
+	order := &Order{
+		UUID:                 generateId("ord"),
+		Title:                plan.Label,
+		OriginAmount:         plan.Price,
+		PayAmount:            plan.Price,
+		CampaignReduceAmount: 0,
+		UserID:               userID,
+		IsPaid:               BoolPtr(true),
+		PaidAt:               &now,
+		Channel:              OrderChannelAppleIAP,
+		AppleTransactionID:   info.TransactionId,
+	}
+	if err := order.SetPlan(plan); err != nil {
+		return fmt.Errorf("set plan meta: %w", err)
+	}
+	if err := tx.Create(order).Error; err != nil {
+		return fmt.Errorf("create iap order: %w", err)
+	}
+
+	if err := processOrderCashbackInTx(ctx, tx, order.ID); err != nil {
+		return fmt.Errorf("process cashback for iap order %d: %w", order.ID, err)
+	}
+	log.Infof(ctx, "[createAppleIAPOrder] user %d order %s (%s, %d cents) txn=%s",
+		userID, order.UUID, OrderChannelAppleIAP, order.PayAmount, info.TransactionId)
 	return nil
 }
 
@@ -250,10 +350,16 @@ func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID
 // revokeSubscription 处理 REFUND/REVOKE：撤销续订授予的权益。保守回收：仅当用户当前到期
 // 落在本订阅周期窗口内（由本订阅"撑着"）时才扣到 now，避免误伤叠加的一次性时长。
 // 已知简化：双源重叠时不做精确分账（v1 接受，见 spec §9）。
-func revokeSubscription(ctx context.Context, sub *Subscription) error {
+//
+// txnID 是被退款的那笔 Apple 交易；用它精确反查对应订单，撤销已发放的分销商返现并把订单
+// 标记为已退款。传空串则跳过订单侧处理（调用方拿不到交易号时的降级，不阻断权益回收）。
+func revokeSubscription(ctx context.Context, sub *Subscription, txnID string) error {
 	return getDB().Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, sub.UserID).Error; err != nil {
+			return err
+		}
+		if err := revokeIAPOrderCashbackInTx(ctx, tx, txnID); err != nil {
 			return err
 		}
 		now := time.Now().Unix()

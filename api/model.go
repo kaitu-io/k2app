@@ -258,7 +258,20 @@ type Order struct {
 	// createPrivateNodeSubscription 读取，跨越"下单→支付回调"的时间差。AutoMigrate
 	// 自动新增此可空列（additive，无需手动迁移）。
 	PrivateNodeRegion string `gorm:"type:varchar(50)" json:"privateNodeRegion,omitempty"`
+	// Channel 标识订单来源渠道。空值 = 历史 wordgate 订单（AutoMigrate 后存量行为空）。
+	// 口径警告：apple_iap 订单的 PayAmount 是 **plan 标价**，不是用户实付、也不是本方实收
+	// ——Apple 多币种定价 + 15% 抽成，两者都对不上。营收统计必须按 Channel 分开算，
+	// 直接 SUM(pay_amount) 会把两种口径混成一个错的数。
+	Channel string `gorm:"type:varchar(20);index" json:"channel,omitempty"`
+	// AppleTransactionID 绑定 Apple 交易号（仅 Channel=apple_iap）。退款路径靠它从
+	// REFUND/REVOKE 通知反查订单以撤销分销商返现——故必须是带索引的独立列，不能塞进 Meta。
+	AppleTransactionID string `gorm:"type:varchar(64);index" json:"appleTransactionId,omitempty"`
 }
+
+const (
+	OrderChannelWordgate = "wordgate"  // 网页/WordGate 支付（历史订单为空值，语义等同）
+	OrderChannelAppleIAP = "apple_iap" // iOS StoreKit 内购
+)
 
 // GetPlan 获取订单的计划信息
 func (o *Order) GetPlan() (*Plan, error) {
