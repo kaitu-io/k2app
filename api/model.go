@@ -269,7 +269,10 @@ type Order struct {
 }
 
 const (
-	OrderChannelWordgate = "wordgate"  // 网页/WordGate 支付（历史订单为空值，语义等同）
+	// OrderChannelWordgate 目前**不写入任何订单**——网页/WordGate 订单的 Channel 保持空串，
+	// 与全部历史订单一致。此常量只声明取值域：判定网页订单请用 `Channel != OrderChannelAppleIAP`，
+	// 不要写 `Channel == OrderChannelWordgate`（那会漏掉所有存量订单）。
+	OrderChannelWordgate = "wordgate"
 	OrderChannelAppleIAP = "apple_iap" // iOS StoreKit 内购
 )
 

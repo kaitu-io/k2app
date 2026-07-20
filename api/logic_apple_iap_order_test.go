@@ -241,6 +241,128 @@ func TestRevokeSubscription_ReplayIsIdempotent(t *testing.T) {
 	assert.Equal(t, int64(0), f.retailerBalance(t), "重投不得二次扣款（余额不得变负）")
 }
 
+// 空 productId 必须硬失败。GORM 结构体条件丢弃零值，不拦就退化成 `SELECT * FROM plans LIMIT 1`，
+// 静默返回任意 plan，其 Price 会成为订单金额和分佣基数。
+func TestPlanByAppleProductID_EmptyProductIDRejected(t *testing.T) {
+	skipIfNoDB(t)
+	plan, err := planByAppleProductID(context.Background(), db.Get(), "")
+	require.Error(t, err, "空 productId 必须拒绝，不得回退成任意 plan")
+	assert.Nil(t, plan)
+	assert.Contains(t, err.Error(), "empty apple product id")
+}
+
+// 同一 productId 挂到多个 plan 时必须拒绝，不能按主键序默默取旧的低价行。
+// 真实触发方式：改价时"插新行、留旧行"。
+func TestPlanByAppleProductID_AmbiguousMappingRejected(t *testing.T) {
+	skipIfNoDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+
+	dup := &Plan{
+		PID: f.plan.PID + "dup", Label: "IAP 年付（改价）", Price: 5999, OriginPrice: 5999,
+		Month: 12, Tier: "basic", AppleProductID: f.productID,
+	}
+	require.NoError(t, db.Get().Create(dup).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(dup) })
+
+	plan, err := planByAppleProductID(context.Background(), db.Get(), f.productID)
+	require.Error(t, err, "一对多映射必须拒绝，不得猜测用哪个价")
+	assert.Nil(t, plan)
+	assert.Contains(t, err.Error(), "multiple plans")
+}
+
+// 建单是非致命的：product 没映射到 plan 时，用户权益必须照常到账，只是不建单/不返现。
+// 这条钉住的是设计取舍——Apple 已扣款，"付了钱没权益"比"内部账务缺一笔"严重得多。
+func TestCreditAppleTransaction_UnmappedProduct_StillGrantsEntitlement(t *testing.T) {
+	skipIfNoDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	day := int64(86400)
+	t0 := time.Now().Unix()
+
+	// 把 plan 的 apple_product_id 摘掉，制造"交易的 productId 查不到 plan"
+	require.NoError(t, db.Get().Model(&Plan{}).Where("id = ?", f.plan.ID).
+		Update("apple_product_id", "").Error)
+
+	require.NoError(t, f.credit(t, "IAPO-UNMAP1", t0, t0+365*day), "建单失败不得让入账失败")
+
+	// 权益到账
+	var u User
+	require.NoError(t, db.Get().First(&u, f.buyer.ID).Error)
+	assert.Greater(t, u.ExpiredAt, t0, "权益必须照常到账")
+
+	// 去重账本写了（幂等仍然成立）
+	var creditCount int64
+	require.NoError(t, db.Get().Model(&SubscriptionCredit{}).
+		Where("user_id = ? AND transaction_id = ?", f.buyer.ID, "IAPO-UNMAP1").
+		Count(&creditCount).Error)
+	assert.Equal(t, int64(1), creditCount)
+
+	// 但没有订单、没有返现
+	assert.Empty(t, f.orders(t), "查不到 plan 时不建单")
+	assert.Equal(t, int64(0), f.retailerBalance(t), "不建单则无返现")
+}
+
+// 后台退款必须拒绝 IAP 订单：Apple 已原路退款，再走 ProcessOrderRefund 会往用户钱包
+// 二次打款（可提现，真实资损），且授权天数按 VipPurchase 反算恒为 0，权益也扣不掉。
+func TestProcessOrderRefund_RejectsAppleIAPOrder(t *testing.T) {
+	skipIfNoDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	day := int64(86400)
+	t0 := time.Now().Unix()
+
+	require.NoError(t, f.credit(t, "IAPO-ARJ1", t0, t0+365*day))
+	orders := f.orders(t)
+	require.Len(t, orders, 1)
+	iapOrder := orders[0]
+	require.Equal(t, OrderChannelAppleIAP, iapOrder.Channel)
+
+	err := ProcessOrderRefund(context.Background(), iapOrder.ID, "管理员误操作", 1)
+	require.Error(t, err, "IAP 订单必须被拒绝")
+	assert.Contains(t, err.Error(), "Apple 内购订单不支持后台退款")
+
+	// 事务整体回滚：订单未被标记退款
+	after := f.orders(t)
+	require.Len(t, after, 1)
+	if after[0].IsRefunded != nil {
+		assert.False(t, *after[0].IsRefunded, "拒绝后订单不得被标记为已退款")
+	}
+
+	// 关键：买家钱包不得凭空多出 PayAmount
+	var buyerWallet Wallet
+	werr := db.Get().Where(&Wallet{UserID: f.buyer.ID}).First(&buyerWallet).Error
+	if werr == nil {
+		assert.Equal(t, int64(0), buyerWallet.Balance, "买家钱包不得被二次打款")
+	} else {
+		assert.ErrorIs(t, werr, gorm.ErrRecordNotFound, "要么没钱包，要么余额为 0")
+	}
+}
+
+// Apple 退款后，若无其它有效付费订单，IsFirstOrderDone 必须翻回 false，
+// 否则退款用户仍被 first_order 活动码当成老客拒绝。
+func TestRevokeSubscription_ResetsIsFirstOrderDone(t *testing.T) {
+	skipIfNoDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	day := int64(86400)
+	t0 := time.Now().Unix()
+
+	require.NoError(t, f.credit(t, "IAPO-FOD1", t0, t0+365*day))
+
+	var beforeUser User
+	require.NoError(t, db.Get().First(&beforeUser, f.buyer.ID).Error)
+	require.NotNil(t, beforeUser.IsFirstOrderDone)
+	require.True(t, *beforeUser.IsFirstOrderDone, "前置：入账后应标记已完成首单")
+
+	var sub Subscription
+	require.NoError(t, db.Get().Where(&Subscription{
+		Provider: "apple", ProviderSubscriptionID: f.origTxn,
+	}).First(&sub).Error)
+	require.NoError(t, revokeSubscription(context.Background(), &sub, "IAPO-FOD1"))
+
+	var afterUser User
+	require.NoError(t, db.Get().First(&afterUser, f.buyer.ID).Error)
+	require.NotNil(t, afterUser.IsFirstOrderDone)
+	assert.False(t, *afterUser.IsFirstOrderDone, "唯一付费订单退款后必须翻回新客")
+}
+
 // 无分销商的买家：照常建单，只是不产生返现。
 func TestCreditAppleTransaction_NoRetailer_StillCreatesOrder(t *testing.T) {
 	skipIfNoDB(t)

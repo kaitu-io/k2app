@@ -3,6 +3,7 @@ package center
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -406,10 +407,18 @@ func processRetailerCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint6
 
 	// 2. 通过邀请码链条查找分销商
 	// User.InvitedByCodeID → InviteCode.UserID → User(IsRetailer=true)
+	// 买家查不到分两种情况，绝不能一律吞成"成功但不返现"：
+	//   - RecordNotFound：买家被硬删/软删，确实无从归属，跳过返现是正确的
+	//   - 其它错误（连接断、锁等待超时、死锁）：是故障，必须上抛让调用方回滚重试
+	// 吞掉后者在 IAP 路径上是不可逆的：subscription_credits 去重行与订单在同一事务提交，
+	// 之后每次重投都在 alreadyCredited 处早退，永远走不回返现——分销商被静默永久少发。
 	var user User
 	if err := tx.Preload("InvitedByCode.User").First(&user, order.UserID).Error; err != nil {
-		log.Errorf(ctx, "[ProcessRetailerCashback] 查询用户失败: %v", err)
-		return nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf(ctx, "[ProcessRetailerCashback] 订单 %d 的买家 %d 不存在，跳过返现", orderID, order.UserID)
+			return nil
+		}
+		return fmt.Errorf("查询买家 %d 失败: %w", order.UserID, err)
 	}
 
 	// 检查用户是否有邀请码
