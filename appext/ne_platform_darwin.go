@@ -25,20 +25,27 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/control"
 )
 
+// bindReemitInterval bounds how often a still-pathological direct-bind (utun
+// or nil) is re-logged, so the decisive line survives 20MB log rotation during
+// a multi-minute dial storm without flooding the log itself.
+const bindReemitInterval = 30 * time.Second
+
 // bindLogState records the last logged direct-bind resolution so the
 // per-socket controlFunc only emits a DIAG line when the resolved interface
-// identity changes — never per call. Compared by identity only (name/index/
-// isTun), deliberately ignoring the network family so a stable interface does
-// not flap-log between tcp4/udp6 sockets.
+// identity changes — never per call. Identity is compared by name/index/isTun,
+// deliberately ignoring the network family so a stable interface does not
+// flap-log between tcp4/udp6 sockets; `at` drives the pathological re-emit.
 type bindLogState struct {
 	name  string
 	index int
 	isTun bool
+	at    time.Time
 }
 
 type nePlatform struct {
@@ -170,16 +177,22 @@ func (p *nePlatform) controlFunc() control.Func {
 }
 
 // logBindDecision emits DIAG Event B — the interface a direct socket is
-// actually bound to — but only when the resolved identity differs from the
-// last logged one, so a 512/s dial storm produces a single line, not 512.
-// A utun bind (or a nil resolution) is the pathological case and is logged at
-// WARN; a physical uplink at INFO. name=="" means DefaultInterface() was nil.
+// actually bound to — but only when the resolved identity changes, so a 512/s
+// dial storm produces one line, not 512. While the resolution is pathological
+// (a utun bind, or nil), it is re-emitted at most once per bindReemitInterval
+// so the decisive line survives 20MB log rotation across a multi-minute storm.
+// Loads before allocating so the suppressed common path stays alloc-free on
+// this per-socket hot path. A utun bind or nil resolution is logged at WARN;
+// a physical uplink at INFO. name=="" means DefaultInterface() was nil.
 func (p *nePlatform) logBindDecision(name string, index int, isTun bool, network string) {
-	st := &bindLogState{name: name, index: index, isTun: isTun}
-	if prev := p.lastBind.Swap(st); prev != nil &&
-		prev.name == name && prev.index == index && prev.isTun == isTun {
-		return // unchanged since last log
+	prev := p.lastBind.Load()
+	changed := prev == nil || prev.name != name || prev.index != index || prev.isTun != isTun
+	pathological := isTun || name == ""
+	stale := !changed && pathological && time.Since(prev.at) >= bindReemitInterval
+	if !changed && !stale {
+		return // unchanged, and either healthy or logged recently
 	}
+	p.lastBind.Store(&bindLogState{name: name, index: index, isTun: isTun, at: time.Now()})
 	if name == "" {
 		slog.Warn("DIAG: direct-bind", "resolved", "nil", "net", network)
 		return
