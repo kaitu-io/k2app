@@ -2221,6 +2221,23 @@ func TestBuildRouteEntries_NewFieldsCopied(t *testing.T) {
 	}
 }
 
+func TestBuildRouteEntries_SrcIPCIDR(t *testing.T) {
+	routes := []config.RouteConfig{
+		{Via: "k2v5://u:p@1.2.3.4:443", Match: rule.MatchConfig{SrcIPCIDR: []string{"10.81.1.0/24", "bogus"}}},
+	}
+	outboundMap := map[string]rule.Target{"k2v5://u:p@1.2.3.4:443": rule.Target(2)}
+	entries, _, _ := buildRouteEntries(routes, nil, outboundMap, heapRegionExpander(nil))
+	if len(entries) != 1 {
+		t.Fatalf("want 1 entry, got %d", len(entries))
+	}
+	if len(entries[0].SrcCIDRs) != 1 || entries[0].SrcCIDRs[0].String() != "10.81.1.0/24" {
+		t.Fatalf("want compiled [10.81.1.0/24] (bogus dropped), got %v", entries[0].SrcCIDRs)
+	}
+	if entries[0].Target != rule.Target(2) {
+		t.Fatalf("want target 2, got %v", entries[0].Target)
+	}
+}
+
 // TestBuildRouteEntries_AllInvalidInlineDropped pins the IsEmpty guard at the
 // assembly site: an inline route whose domain_suffix is not a valid hostname
 // must contribute NO route entry (old BuildInlineSet stored the garbage and

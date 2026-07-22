@@ -486,17 +486,19 @@ func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) (ru
 	}
 
 	meta := rule.ConnMeta{Network: network}
-	if t.processSearcher != nil && srcAddr != nil {
-		srcIP, ok := netip.AddrFromSlice(srcAddr.IP)
-		if ok {
+	if srcAddr != nil {
+		if srcIP, ok := netip.AddrFromSlice(srcAddr.IP); ok {
 			// net.IPv4 / net.ParseIP return 16-byte IPv4-mapped IPv6, which makes
 			// netip.AddrFromSlice produce an addr whose Is4() reports false. Both
 			// Darwin and Linux ProcessSearchers early-return when Is4() is false,
 			// so attribution never fires. Unmap() strips the ::ffff: prefix so
-			// downstream searchers see a true 4-byte IPv4 addr.
-			srcIP = srcIP.Unmap()
-			meta.ProcessName, meta.PackageName, meta.InstallerPackage = t.processSearcher.FindProcess(network, srcIP, uint16(srcAddr.Port))
+			// downstream searchers see a true 4-byte IPv4 addr. Multi-slot gateway
+			// routing also keys off this same unmapped address (ConnMeta.SrcIP).
+			meta.SrcIP = srcIP.Unmap()
 		}
+	}
+	if t.processSearcher != nil && srcAddr != nil && meta.SrcIP.IsValid() {
+		meta.ProcessName, meta.PackageName, meta.InstallerPackage = t.processSearcher.FindProcess(network, meta.SrcIP, uint16(srcAddr.Port))
 	}
 
 	return t.router.RouteConn(host, meta), meta
