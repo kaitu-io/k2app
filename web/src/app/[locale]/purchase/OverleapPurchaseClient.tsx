@@ -3,7 +3,7 @@
 /**
  * Overleap 网页购买面板（Stripe 订阅制）。
  *
- * kaitu 的 WordGate 流在 PurchaseClient.tsx，两者由 page.tsx 按构建期品牌分流。
+ * 另一品牌的 WordGate 流在 PurchaseClient.tsx，两者由 page.tsx 按构建期品牌分流。
  * Stripe 价格解析在服务端（plan → stripe_price_id），本组件只负责：
  * 选套餐 → POST /api/user/stripe/checkout → 同窗口跳 Stripe Checkout。
  * 权益经 webhook 异步入账，success 回跳落在 /account（见 OverleapAccountClient）。

@@ -28,7 +28,7 @@ export default async function PurchasePage({
 }) {
   const { locale: rawLocale } = await params;
   setRequestLocale(rawLocale as Locale);
-  // 构建期品牌分流：overleap 构建走 Stripe 订阅面板，kaitu 构建保持 WordGate 流
+  // 构建期品牌分流：overleap 构建走 Stripe 订阅面板，其他品牌构建保持 WordGate 流
   if (siteBrand().id === 'overleap') {
     return <OverleapPurchaseClient />;
   }
