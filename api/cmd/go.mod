@@ -88,6 +88,7 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/strahe/bwh v0.1.4 // indirect
+	github.com/stripe/stripe-go/v82 v82.5.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.17 // indirect
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/lighthouse v1.3.17 // indirect
