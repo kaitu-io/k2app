@@ -40,19 +40,9 @@
     },
     "router": {
       "title": "Add a Router",
-      "intro": "Install k2r on your OpenWrt router, then use the address below to finish connecting.",
+      "intro": "Install k2r on your OpenWrt router — the app will auto-discover it and show it below.",
       "detected": "Routers detected on your local network:",
-      "open": "Open {{addr}}",
-      "mint": "Generate router connection address",
-      "paste": "Copy the address below and paste it into the Settings page of your router panel:",
-      "copy": "Copy"
-    },
-    "setup": {
-      "title": "Connect your private line",
-      "hint": "Paste the router connection address generated in the app or on the web below, then tap Connect.",
-      "connect": "Connect",
-      "ok": "Connecting started. Check the status page in a moment to see your private line.",
-      "err": "Invalid connection address. Please make sure you copied the full address."
+      "manage": "Manage Router"
     }
   }
 }

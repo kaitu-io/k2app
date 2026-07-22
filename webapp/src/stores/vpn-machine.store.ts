@@ -15,7 +15,7 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { StatusResponseData, ControlError, InitializationStatus, RouterSlot } from '../services/vpn-types';
+import type { StatusResponseData, ControlError, InitializationStatus } from '../services/vpn-types';
 
 // ============ Types ============
 
@@ -47,8 +47,6 @@ export interface VPNMachineState {
   // survives webapp reload/cold-start. Read by disconnect() and analytics
   // to compute durationSec. null when no active session.
   startAt: number | null;
-  // Enterprise multi-slot router manifest. null in consumer mode (or non-gateway).
-  slots: RouterSlot[] | null;
 }
 
 // ============ Transition Table ============
@@ -107,7 +105,6 @@ export const useVPNMachineStore = create<VPNMachineState>()(
     networkAvailable: true,
     initialization: null,
     startAt: null,
-    slots: null,
   })),
 );
 
@@ -230,10 +227,7 @@ export function initializeVPNMachine(): () => void {
   const dispatchStatus = (status: StatusResponseData) => {
     // Forward engine's session start. Engine emits startAt only when state=connected;
     // when omitted, clear local copy so consumers fall back to webapp-local timestamps.
-    useVPNMachineStore.setState({
-      startAt: status.startAt ?? null,
-      slots: status.slots && status.slots.length > 0 ? status.slots : null,
-    });
+    useVPNMachineStore.setState({ startAt: status.startAt ?? null });
     const event = backendStatusToEvent(status);
     dispatch(event, {
       error: status.error ?? null,
@@ -335,21 +329,4 @@ export function useVPNMachine() {
     isTransitioning: state === 'connecting' || state === 'reconnecting' || state === 'disconnecting',
     isInteractive: state === 'connected' || state === 'connecting' || state === 'reconnecting',
   };
-}
-
-// ============ Enterprise Slot Selectors ============
-
-/** Non-empty slots array in enterprise mode; null in consumer mode. */
-export const routerSlots = (s: VPNMachineState): RouterSlot[] | null => s.slots;
-
-/** True if any slot is fail-closed (tunnel down) — drives the nav alarm badge. */
-export const hasSlotAlarm = (s: VPNMachineState): boolean =>
-  (s.slots ?? []).some((x) => x.state === 'failClosed');
-
-export function useRouterSlots(): RouterSlot[] | null {
-  return useVPNMachineStore(routerSlots);
-}
-
-export function useHasSlotAlarm(): boolean {
-  return useVPNMachineStore(hasSlotAlarm);
 }

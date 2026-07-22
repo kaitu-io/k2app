@@ -1,7 +1,7 @@
 import { styled, useTheme } from "@mui/material/styles";
 import { Box } from "@mui/material";
 import { useLocation, useNavigate, Outlet } from "react-router-dom";
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import BottomNavigation from "./BottomNavigation";
 import SideNavigation from "./SideNavigation";
 import AnnouncementBanner from "./AnnouncementBanner";
@@ -9,9 +9,9 @@ import ServiceAlert from "./ServiceAlert";
 import FeedbackButton from "./FeedbackButton";
 import { DisconnectFeedbackStrip } from "./DisconnectFeedbackStrip";
 import { useLayout } from "../stores";
+import { useRouterStore, routerSlots } from "../stores/router.store";
 import { getCurrentAppConfig } from "../config/apps";
 import LoginRequiredGuard from "./LoginRequiredGuard";
-import { useRouterSlots } from "../stores/vpn-machine.store";
 
 // Lazy load Tab pages for code splitting, but keep them mounted once loaded
 const Dashboard = lazy(() => import("../pages/Dashboard"));
@@ -19,7 +19,7 @@ const Dashboard = lazy(() => import("../pages/Dashboard"));
 const InviteHub = lazy(() => import("../pages/InviteHub"));
 const Discover = lazy(() => import("../pages/Discover"));
 const Account = lazy(() => import("../pages/Account"));
-const RouterDevices = lazy(() => import("../pages/RouterDevices"));
+const RouterPage = lazy(() => import("../pages/RouterPage"));
 
 const SIDEBAR_WIDTH = 220;
 
@@ -60,12 +60,9 @@ interface TabPageConfig {
   featureFlag?: 'invite' | 'discover' | 'proHistory' | 'feedback' | 'deviceInstall' | 'delegate' | 'updateLoginEmail' | 'appBypass';
 }
 
-const TAB_PAGES: TabPageConfig[] = [
+// 静态部分——Router tab 是唯一的动态项（依赖 router.store.phase，见下方 Layout 组件体）。
+const STATIC_TAB_PAGES: TabPageConfig[] = [
   { path: '/', component: Dashboard, noPadding: true },
-  // Gateway-only: Router tab (LAN device management)
-  ...(window._platform?.platformType === 'gateway' ? [
-    { path: '/router', component: RouterDevices } as TabPageConfig,
-  ] : []),
   // Purchase 移出 keep-alive，改为普通路由（避免与 LoginRequiredGuard 冲突）
   { path: '/invite', component: InviteHub, requiresLogin: true, featureFlag: 'invite' },
   { path: '/discover', component: Discover, noPadding: true, featureFlag: 'discover' },
@@ -74,27 +71,36 @@ const TAB_PAGES: TabPageConfig[] = [
 
 export default function Layout() {
   const location = useLocation();
-  const navigate = useNavigate();
   const { isDesktop } = useLayout();
   const appConfig = getCurrentAppConfig();
   const theme = useTheme();
-  const routerSlots = useRouterSlots();
   // Track which Tab pages have been mounted (for lazy loading and keep-alive)
   const [mountedTabs, setMountedTabs] = useState<Record<string, boolean>>({});
 
-  // Enterprise routers land on /router instead of Dashboard — but only once,
-  // the first time slots become known, so a user who navigates back to '/'
-  // afterward isn't yanked away again.
+  // Router tab appears once a router has ever been seen (phase !== 'none') —
+  // subscribed here so the tab list reacts live to discovery/unbind, not just
+  // at mount (see task-B8 brief "关键接线").
+  const hasRouter = useRouterStore((s) => s.phase !== 'none');
+  const tabPages = useMemo<TabPageConfig[]>(
+    () => (hasRouter ? [...STATIC_TAB_PAGES, { path: '/router', component: RouterPage }] : STATIC_TAB_PAGES),
+    [hasRouter],
+  );
+
+  // Enterprise multi-slot routers land on /router instead of Dashboard — but
+  // only once, the first time the slots manifest becomes known, so a user who
+  // navigates back to '/' afterward isn't yanked away again.
+  const navigate = useNavigate();
+  const isEnterpriseRouter = useRouterStore((s) => s.phase === 'online' && routerSlots(s) !== null);
   const hasRedirectedToRouter = useRef(false);
   useEffect(() => {
-    if (!hasRedirectedToRouter.current && routerSlots && location.pathname === '/') {
+    if (!hasRedirectedToRouter.current && isEnterpriseRouter && location.pathname === '/') {
       hasRedirectedToRouter.current = true;
       navigate('/router', { replace: true });
     }
-  }, [routerSlots, location.pathname, navigate]);
+  }, [isEnterpriseRouter, location.pathname, navigate]);
 
   // Check if current path is a Tab page
-  const currentTabPage = TAB_PAGES.find(tab => tab.path === location.pathname);
+  const currentTabPage = tabPages.find(tab => tab.path === location.pathname);
   const isTabPage = !!currentTabPage;
 
   // Mount Tab page on first visit
@@ -138,7 +144,7 @@ export default function Layout() {
 
       <Main isDesktop={isDesktop}>
         {/* Tab Pages - Keep Alive (cached, hidden when not active) */}
-        {TAB_PAGES.map((tabPage) => {
+        {tabPages.map((tabPage) => {
           const isMounted = mountedTabs[tabPage.path];
           const isActive = location.pathname === tabPage.path;
           const Component = tabPage.component;

@@ -101,41 +101,31 @@ interface ConfigActions {
 
 // ============ Helpers ============
 
-/** Gateway-only: keep ipinfo.io on a direct route so the router can probe its real egress IP. */
-function gatewayPrefix(): RouteConfig[] {
-  if (typeof window !== 'undefined' && window._platform?.platformType === 'gateway') {
-    return [{ via: 'direct', match: { domain_suffix: ['ipinfo.io'] } }];
-  }
-  return [];
-}
-
 function buildRoutes(
   defaultVia: 'proxy' | 'direct',
   countryVia: 'direct' | 'k2p' | null,
   country: string | null,
   serverUrl: string | undefined,
 ): RouteConfig[] {
-  const prefix = gatewayPrefix();
   if (!serverUrl) {
     // Defense in depth. connection.store.connect() guards against this with a user-visible
     // error, so reaching this branch means a caller bypassed the guard — log loudly.
     console.error('[ConfigStore] buildRoutes: serverUrl is empty — this should have been caught by connect() guard');
-    return prefix;
+    return [];
   }
 
   // Global: everything through proxy
   if (countryVia === null) {
-    return [...prefix, { via: serverUrl, match: { all: true } }];
+    return [{ via: serverUrl, match: { all: true } }];
   }
 
   // Smart (bypass) mode: emit a region route for direct local traffic.
   if (countryVia === 'direct') {
     if (!country) {
       // No country set — fall back to global shape
-      return [...prefix, { via: serverUrl, match: { all: true } }];
+      return [{ via: serverUrl, match: { all: true } }];
     }
     const routes: RouteConfig[] = [
-      ...prefix,
       { match: { region: country }, via: 'direct' },
     ];
     // CN-only: drop connections to Tencent's overseas ASN (the tencent-overseas
@@ -160,7 +150,7 @@ function buildRoutes(
   const preset = PROFILE_TO_PRESET[profile];
   if (!preset) {
     // Unknown country, fall back to global
-    return [...prefix, { via: serverUrl, match: { all: true } }];
+    return [{ via: serverUrl, match: { all: true } }];
   }
 
   const countryRoute: RouteConfig = { via: 'k2p://home', match: { preset } };
@@ -169,7 +159,7 @@ function buildRoutes(
     ? { via: serverUrl, match: {} }
     : { via: 'direct', match: {} };
 
-  return [...prefix, countryRoute, defaultRoute];
+  return [countryRoute, defaultRoute];
 }
 
 /** Map a RoutePreset to its defaultVia + countryVia values. */

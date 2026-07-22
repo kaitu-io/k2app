@@ -299,29 +299,13 @@
     "remark": "備考",
     "remarkPlaceholder": "例：パパのスマホ",
     "confirm": "確認",
-    "loadFailed": "デバイスリストの読み込みに失敗しました"
-  },
-  "routerSlots": {
-    "title": "回線",
-    "line": "回線",
-    "customName": "カスタム名",
-    "unbound": "未割り当て",
-    "failClosed": "回線切断 — トラフィックはブロック中",
-    "downFor": "{{duration}}切断中",
-    "rename": "Wi-Fi 名を変更",
-    "renameHint": "1〜32 文字",
-    "password": "Wi-Fi パスワードを変更",
-    "passwordHint": "8〜63 文字",
-    "confirm": "適用",
-    "cancel": "キャンセル",
-    "applyFailed": "適用に失敗しました。再試行してください",
-    "managementGroup": "管理セグメント"
+    "loadFailed": "デバイスリストの読み込みに失敗しました",
+    "removeConfirmTitle": "このデバイスをホワイトリストから削除しますか？"
   },
   "serverSelector": {
     "tabSmart": "スマート選択",
     "tabManual": "サーバー指定",
     "countryAuto": "自動",
-    "countryPickerLabel": "ノード地域",
     "nodesAvailable": "{{count}} 台 · {{regions}} 地域",
     "smartHint": "k2 が遅延に基づいて最適なノードを自動選択します",
     "manualHint": "固定 IP が必要なユーザー向け",
@@ -330,6 +314,14 @@
   "auto": {
     "title": "自動選択",
     "subtitle": "より良いサーバーを自動で選択",
-    "noTunnelAvailable": "利用可能なサーバーがありません"
+    "noTunnelAvailable": "利用可能なサーバーがありません",
+    "filterTitle": "除外する国・地域",
+    "filterHint": "自動選択はチェックした国・地域をスキップします。手動選択には影響しません。",
+    "excludedCount": "{{count}} か国・地域を除外中",
+    "excludedChip": "自動選択から除外",
+    "nodeCount": "{{count}} 台のサーバー",
+    "filterClear": "クリア",
+    "filterDone": "完了",
+    "allExcluded": "利用可能なサーバーがすべて除外されています。国・地域フィルターを調整してください。"
   }
 }

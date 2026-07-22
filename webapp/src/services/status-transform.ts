@@ -58,6 +58,5 @@ export function transformStatus(raw: any): StatusResponseData {
     startAt,
     error,
     retrying,
-    slots: raw.slots,
   };
 }

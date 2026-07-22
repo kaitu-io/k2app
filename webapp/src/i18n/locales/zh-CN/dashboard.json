@@ -299,23 +299,8 @@
     "remark": "备注",
     "remarkPlaceholder": "如：爸爸的手机",
     "confirm": "确认",
-    "loadFailed": "加载设备列表失败"
-  },
-  "routerSlots": {
-    "title": "线路",
-    "line": "线路",
-    "customName": "自定义名称",
-    "unbound": "未绑定",
-    "failClosed": "线路已断开 — 流量已阻断",
-    "downFor": "已断开 {{duration}}",
-    "rename": "修改 Wi-Fi 名称",
-    "renameHint": "1-32 个字符",
-    "password": "修改 Wi-Fi 密码",
-    "passwordHint": "8-63 个字符",
-    "confirm": "应用",
-    "cancel": "取消",
-    "applyFailed": "应用失败，请重试",
-    "managementGroup": "管理网段"
+    "loadFailed": "加载设备列表失败",
+    "removeConfirmTitle": "确认从白名单移除该设备？"
   },
   "serverSelector": {
     "tabSmart": "智能选择",
@@ -329,6 +314,14 @@
   "auto": {
     "title": "自动选择",
     "subtitle": "自动选择更优的节点",
-    "noTunnelAvailable": "暂无可用节点"
+    "noTunnelAvailable": "暂无可用节点",
+    "filterTitle": "排除国家/地区",
+    "filterHint": "自动选择将跳过勾选的国家/地区，手动选择不受影响",
+    "excludedCount": "已排除 {{count}} 个国家/地区",
+    "excludedChip": "自动选择已排除",
+    "nodeCount": "{{count}} 个节点",
+    "filterClear": "清除",
+    "filterDone": "完成",
+    "allExcluded": "可用节点已全部被排除，请调整国家/地区过滤"
   }
 }

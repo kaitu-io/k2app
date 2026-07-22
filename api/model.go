@@ -74,6 +74,12 @@ type User struct {
 	AccessKeyCreatedAt int64   `gorm:"not null;default:0"`           // key 生成时间戳（Unix秒，0 = 无key）
 	IsRetailer         *bool   `gorm:"default:false"`                // 是否为分销商（只有分销商才能使用AccessKey认证和授予订阅）
 
+	// 路由器控制密钥（账号级，k2r headless 面板鉴权）。
+	// 与 AccessKey 不同这里存明文：同账号多设备需重复下发同一 key
+	// （spec 2026-07-17-k2r-headless-app-control §10.1）；/api/subs 只下发其 sha256。
+	RouterControlKey          *string `gorm:"type:varchar(80)" json:"-"`
+	RouterControlKeyCreatedAt int64   `gorm:"not null;default:0"`
+
 	// 语言偏好
 	Language string `gorm:"type:varchar(10);not null;default:'en-US'" json:"language"` // 用户语言偏好：en-US, zh-CN, ja 等
 
@@ -258,7 +264,23 @@ type Order struct {
 	// createPrivateNodeSubscription 读取，跨越"下单→支付回调"的时间差。AutoMigrate
 	// 自动新增此可空列（additive，无需手动迁移）。
 	PrivateNodeRegion string `gorm:"type:varchar(50)" json:"privateNodeRegion,omitempty"`
+	// Channel 标识订单来源渠道。空值 = 历史 wordgate 订单（AutoMigrate 后存量行为空）。
+	// 口径警告：apple_iap 订单的 PayAmount 是 **plan 标价**，不是用户实付、也不是本方实收
+	// ——Apple 多币种定价 + 15% 抽成，两者都对不上。营收统计必须按 Channel 分开算，
+	// 直接 SUM(pay_amount) 会把两种口径混成一个错的数。
+	Channel string `gorm:"type:varchar(20);index" json:"channel,omitempty"`
+	// AppleTransactionID 绑定 Apple 交易号（仅 Channel=apple_iap）。退款路径靠它从
+	// REFUND/REVOKE 通知反查订单以撤销分销商返现——故必须是带索引的独立列，不能塞进 Meta。
+	AppleTransactionID string `gorm:"type:varchar(64);index" json:"appleTransactionId,omitempty"`
 }
+
+const (
+	// OrderChannelWordgate 目前**不写入任何订单**——网页/WordGate 订单的 Channel 保持空串，
+	// 与全部历史订单一致。此常量只声明取值域：判定网页订单请用 `Channel != OrderChannelAppleIAP`，
+	// 不要写 `Channel == OrderChannelWordgate`（那会漏掉所有存量订单）。
+	OrderChannelWordgate = "wordgate"
+	OrderChannelAppleIAP = "apple_iap" // iOS StoreKit 内购
+)
 
 // GetPlan 获取订单的计划信息
 func (o *Order) GetPlan() (*Plan, error) {

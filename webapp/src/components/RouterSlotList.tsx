@@ -1,9 +1,11 @@
 /**
  * RouterSlotList — enterprise multi-slot router form.
  *
- * Renders k2r's per-slot manifest (see vpn-types.ts RouterSlot): one row
+ * Renders k2r's per-slot manifest (router-service RouterSlot): one row
  * per bound line with rename/password self-service actions, plus a
  * fail-closed alarm indicator. Disabled (unbound) slots are display-only.
+ * Writes go through routerCore('set-slot-ssid'|'set-slot-password') —
+ * anchor + Bearer controlKey, same auth semantics as every k2r control call.
  */
 import { useState } from 'react';
 import {
@@ -12,8 +14,7 @@ import {
 } from '@mui/material';
 import { Edit as RenameIcon, Lock as PasswordIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import type { RouterSlot } from '../services/vpn-types';
-import { gatewaySetSlotSsid, gatewaySetSlotPassword } from '../services/gateway-core';
+import { routerCore, type RouterSlot } from '../services/router-service';
 
 interface RouterSlotListProps {
   slots: RouterSlot[];
@@ -85,35 +86,35 @@ export default function RouterSlotList({ slots }: RouterSlotListProps) {
   const confirmRename = async () => {
     if (!renameSlot) return;
     if (renameValue.length < 1 || renameValue.length > 32) {
-      setRenameError(t('dashboard:routerSlots.renameHint'));
+      setRenameError(t('router:slots.renameHint'));
       return;
     }
-    const res = await gatewaySetSlotSsid(renameSlot.slot, renameValue);
+    const res = await routerCore('set-slot-ssid', { slot: renameSlot.slot, ssid: renameValue });
     if (res.code === 0) {
       setRenameSlot(null);
     } else {
-      setRenameError(t('dashboard:routerSlots.applyFailed'));
+      setRenameError(t('router:slots.applyFailed'));
     }
   };
 
   const confirmPassword = async () => {
     if (!passwordSlot) return;
     if (passwordValue.length < 8 || passwordValue.length > 63) {
-      setPasswordError(t('dashboard:routerSlots.passwordHint'));
+      setPasswordError(t('router:slots.passwordHint'));
       return;
     }
-    const res = await gatewaySetSlotPassword(passwordSlot.slot, passwordValue);
+    const res = await routerCore('set-slot-password', { slot: passwordSlot.slot, password: passwordValue });
     if (res.code === 0) {
       setPasswordSlot(null);
     } else {
-      setPasswordError(t('dashboard:routerSlots.applyFailed'));
+      setPasswordError(t('router:slots.applyFailed'));
     }
   };
 
   return (
     <Box sx={{ mb: 2 }}>
       <Typography variant="h6" fontWeight={700} sx={{ px: 1, mb: 1 }}>
-        {t('dashboard:routerSlots.title')}
+        {t('router:slots.title')}
       </Typography>
       <List disablePadding>
         {slots.map((slot) => {
@@ -121,8 +122,8 @@ export default function RouterSlotList({ slots }: RouterSlotListProps) {
           const isFailClosed = slot.state === 'failClosed';
           const lineLabel = slot.country ? `${slot.country.toUpperCase()}-${slot.index}` : '';
           const ssidLabel = isDisabled
-            ? t('dashboard:routerSlots.unbound')
-            : slot.ssid || t('dashboard:routerSlots.customName');
+            ? t('router:slots.unbound')
+            : slot.ssid || t('router:slots.customName');
           return (
             <ListItem
               key={slot.slot}
@@ -163,7 +164,7 @@ export default function RouterSlotList({ slots }: RouterSlotListProps) {
                 primary={ssidLabel}
                 secondary={
                   isFailClosed
-                    ? `${lineLabel} · ${t('dashboard:routerSlots.failClosed')}${slot.downSince ? ` · ${t('dashboard:routerSlots.downFor', { duration: formatDownFor(slot.downSince) })}` : ''}`
+                    ? `${lineLabel} · ${t('router:slots.failClosed')}${slot.downSince ? ` · ${t('router:slots.downFor', { duration: formatDownFor(slot.downSince) })}` : ''}`
                     : lineLabel
                 }
                 primaryTypographyProps={{ sx: { color: isDisabled ? 'text.disabled' : 'text.primary' } }}
@@ -176,7 +177,7 @@ export default function RouterSlotList({ slots }: RouterSlotListProps) {
 
       {/* Rename dialog */}
       <Dialog open={!!renameSlot} onClose={() => setRenameSlot(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>{t('dashboard:routerSlots.rename')}</DialogTitle>
+        <DialogTitle>{t('router:slots.rename')}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -184,21 +185,21 @@ export default function RouterSlotList({ slots }: RouterSlotListProps) {
             data-testid="slot-rename-input"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
-            helperText={renameError || t('dashboard:routerSlots.renameHint')}
+            helperText={renameError || t('router:slots.renameHint')}
             error={!!renameError}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRenameSlot(null)}>{t('dashboard:routerSlots.cancel')}</Button>
+          <Button onClick={() => setRenameSlot(null)}>{t('router:slots.cancel')}</Button>
           <Button variant="contained" data-testid="slot-rename-confirm" onClick={confirmRename}>
-            {t('dashboard:routerSlots.confirm')}
+            {t('router:slots.confirm')}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Password dialog */}
       <Dialog open={!!passwordSlot} onClose={() => setPasswordSlot(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>{t('dashboard:routerSlots.password')}</DialogTitle>
+        <DialogTitle>{t('router:slots.password')}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -207,14 +208,14 @@ export default function RouterSlotList({ slots }: RouterSlotListProps) {
             data-testid="slot-password-input"
             value={passwordValue}
             onChange={(e) => setPasswordValue(e.target.value)}
-            helperText={passwordError || t('dashboard:routerSlots.passwordHint')}
+            helperText={passwordError || t('router:slots.passwordHint')}
             error={!!passwordError}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPasswordSlot(null)}>{t('dashboard:routerSlots.cancel')}</Button>
+          <Button onClick={() => setPasswordSlot(null)}>{t('router:slots.cancel')}</Button>
           <Button variant="contained" data-testid="slot-password-confirm" onClick={confirmPassword}>
-            {t('dashboard:routerSlots.confirm')}
+            {t('router:slots.confirm')}
           </Button>
         </DialogActions>
       </Dialog>

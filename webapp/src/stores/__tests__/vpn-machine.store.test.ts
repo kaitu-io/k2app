@@ -730,24 +730,3 @@ describe('initializeVPNMachine — safety-net poll (event-driven mode)', () => {
     expect(useVPNMachineStore.getState().state).toBe('connected');
   });
 });
-
-describe('enterprise slots selectors', () => {
-  it('routerSlots returns slots array when status carries them', async () => {
-    const { useVPNMachineStore, routerSlots, hasSlotAlarm } = await getStore();
-    useVPNMachineStore.setState({
-      slots: [
-        { slot: 1, ssid: 'overleap-ae-1', country: 'ae', index: 1, state: 'running' },
-        { slot: 2, ssid: '', country: 'gn', index: 1, state: 'failClosed', downSince: '2026-07-22T02:00:00Z' },
-      ],
-    });
-    const s = useVPNMachineStore.getState();
-    expect(routerSlots(s)).toHaveLength(2);
-    expect(hasSlotAlarm(s)).toBe(true);
-  });
-
-  it('routerSlots null for consumer-mode status', async () => {
-    const { useVPNMachineStore, routerSlots, hasSlotAlarm } = await getStore();
-    expect(routerSlots(useVPNMachineStore.getState())).toBeNull();
-    expect(hasSlotAlarm(useVPNMachineStore.getState())).toBe(false);
-  });
-});

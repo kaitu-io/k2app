@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, waitFor } from '@testing-library/react';
 import { render, screen } from '../../test/utils/render';
-import type { RouterSlot } from '../../services/vpn-types';
+import type { RouterSlot } from '../../services/router-service';
 
 // Mock MUI Dialog/Modal subtree to avoid ModalManager jsdom incompatibility
 // (ownerWindow().getComputedStyle returns undefined in jsdom). Mirrors the
@@ -19,11 +19,9 @@ vi.mock('@mui/material', async () => {
 
 import RouterSlotList, { groupDevicesBySlot } from '../RouterSlotList';
 
-const setSsidMock = vi.fn();
-const setPasswordMock = vi.fn();
-vi.mock('../../services/gateway-core', () => ({
-  gatewaySetSlotSsid: (slot: number, ssid: string) => setSsidMock(slot, ssid),
-  gatewaySetSlotPassword: (slot: number, password: string) => setPasswordMock(slot, password),
+const routerCoreMock = vi.fn();
+vi.mock('../../services/router-service', () => ({
+  routerCore: (action: string, params?: Record<string, unknown>) => routerCoreMock(action, params),
 }));
 
 const SLOTS: RouterSlot[] = [
@@ -34,8 +32,7 @@ const SLOTS: RouterSlot[] = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  setSsidMock.mockResolvedValue({ code: 0 });
-  setPasswordMock.mockResolvedValue({ code: 0 });
+  routerCoreMock.mockResolvedValue({ code: 0 });
 });
 
 describe('RouterSlotList', () => {
@@ -46,22 +43,26 @@ describe('RouterSlotList', () => {
     expect(screen.getByTestId('slot-3-disabled')).toBeInTheDocument();
   });
 
-  it('rename flow calls gatewaySetSlotSsid', async () => {
+  it('rename flow calls routerCore set-slot-ssid', async () => {
     render(<RouterSlotList slots={SLOTS} />);
     fireEvent.click(screen.getByTestId('slot-1-rename'));
     const input = await screen.findByTestId('slot-rename-input');
     fireEvent.change(input.querySelector('input')!, { target: { value: 'Studio A' } });
     fireEvent.click(screen.getByTestId('slot-rename-confirm'));
-    await waitFor(() => expect(setSsidMock).toHaveBeenCalledWith(1, 'Studio A'));
+    await waitFor(() =>
+      expect(routerCoreMock).toHaveBeenCalledWith('set-slot-ssid', { slot: 1, ssid: 'Studio A' })
+    );
   });
 
-  it('password flow calls gatewaySetSlotPassword', async () => {
+  it('password flow calls routerCore set-slot-password', async () => {
     render(<RouterSlotList slots={SLOTS} />);
     fireEvent.click(screen.getByTestId('slot-1-password'));
     const input = await screen.findByTestId('slot-password-input');
     fireEvent.change(input.querySelector('input')!, { target: { value: 'newpass123' } });
     fireEvent.click(screen.getByTestId('slot-password-confirm'));
-    await waitFor(() => expect(setPasswordMock).toHaveBeenCalledWith(1, 'newpass123'));
+    await waitFor(() =>
+      expect(routerCoreMock).toHaveBeenCalledWith('set-slot-password', { slot: 1, password: 'newpass123' })
+    );
   });
 
   it('disabled slot has no actions', () => {
