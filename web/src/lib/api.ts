@@ -2262,7 +2262,9 @@ export const api = {
   },
 
   async listEnterpriseLines(customerId: number): Promise<EnterpriseLineItem[]> {
-    return this.request<EnterpriseLineItem[]>(`/app/enterprise/customers/${customerId}/lines`);
+    // Backend wraps unpaginated lists as {items: [...]} (ItemsAll envelope).
+    const res = await this.request<ListResult<EnterpriseLineItem>>(`/app/enterprise/customers/${customerId}/lines`);
+    return res.items || [];
   },
 
   async createEnterpriseLine(body: { customerId: number; nodeId: number; countryCode: string; lineNo: number }): Promise<EnterpriseLineItem> {
@@ -2281,7 +2283,9 @@ export const api = {
     if (params.deviceId !== undefined) q.set('deviceId', String(params.deviceId));
     if (params.customerId !== undefined) q.set('customerId', String(params.customerId));
     const qs = q.toString();
-    return this.request<EnterpriseBindingItem[]>(`/app/enterprise/bindings${qs ? '?' + qs : ''}`);
+    // Backend wraps unpaginated lists as {items: [...]} (ItemsAll envelope).
+    const res = await this.request<ListResult<EnterpriseBindingItem>>(`/app/enterprise/bindings${qs ? '?' + qs : ''}`);
+    return res.items || [];
   },
 
   async upsertEnterpriseBinding(body: { gatewayDeviceId: number; slot: number; lineId: number }): Promise<void> {

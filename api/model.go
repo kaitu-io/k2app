@@ -1423,10 +1423,10 @@ func (u User) MarshalJSON() ([]byte, error) {
 
 // EnterpriseCustomer 企业客户(一客户一持有账号)
 type EnterpriseCustomer struct {
-	ID        uint64 `gorm:"primarykey"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	ID        uint64         `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Company string `gorm:"type:varchar(255);not null" json:"company"`
 	Contact string `gorm:"type:varchar(255)" json:"contact"`
@@ -1438,10 +1438,10 @@ type EnterpriseCustomer struct {
 // EnterpriseLine 企业线路:一线路 = 一专属节点(Class=private)= 一固定出口 IP。
 // 规范显示名 = 大写 CountryCode + "-" + LineNo(如 AE-1),不落库。
 type EnterpriseLine struct {
-	ID        uint64 `gorm:"primarykey"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	ID        uint64         `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	CustomerID  uint64              `gorm:"not null;index;uniqueIndex:idx_ent_cust_country_no,priority:1" json:"customerId"`
 	Customer    *EnterpriseCustomer `gorm:"foreignKey:CustomerID" json:"-"`
@@ -1455,9 +1455,9 @@ type EnterpriseLine struct {
 // EnterpriseRouterBinding 路由器绑定矩阵:槽位→线路。唯一写入方=运营 admin。
 // 同 IP 多路由器并发是风控反模式 → LineID 全局唯一(一线路最多绑一处)。
 type EnterpriseRouterBinding struct {
-	ID        uint64 `gorm:"primarykey"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        uint64    `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 
 	GatewayDeviceID uint64          `gorm:"not null;index;uniqueIndex:idx_ent_gw_slot,priority:1" json:"gatewayDeviceId"` // → Device(IsGateway)
 	Slot            int             `gorm:"not null;uniqueIndex:idx_ent_gw_slot,priority:2" json:"slot"`                  // 1..8

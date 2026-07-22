@@ -812,7 +812,7 @@ func TestSubs_GatewaySlotBindings(t *testing.T) {
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&tun) })
 
 	sub := PrivateNodeSubscription{
-		UserID: user.ID, OrderID: user.ID, Status: PNStatusActive, Region: "dubai",
+		UserID: user.ID, OrderID: 1_000_000_000 + user.ID, Status: PNStatusActive, Region: "dubai",
 		IPType: IPTypeNonResidential, SlaveNodeID: &node.ID,
 		PurchasedAt: now, ExpiresAt: now + 86400,
 	}
@@ -889,7 +889,7 @@ func TestSubs_GatewayNoBindings_FieldOmitted(t *testing.T) {
 	t.Cleanup(func() { db.Get().Unscoped().Delete(&tun) })
 
 	sub := PrivateNodeSubscription{
-		UserID: user.ID, OrderID: user.ID, Status: PNStatusActive, Region: "tokyo",
+		UserID: user.ID, OrderID: 1_000_000_000 + user.ID, Status: PNStatusActive, Region: "tokyo",
 		IPType: IPTypeNonResidential, SlaveNodeID: &node.ID,
 		PurchasedAt: now, ExpiresAt: now + 86400,
 	}

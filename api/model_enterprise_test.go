@@ -1,6 +1,7 @@
 package center
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -49,4 +50,21 @@ func TestEnterpriseModels_Constraints(t *testing.T) {
 	require.Error(t, db.Get().Create(&EnterpriseRouterBinding{GatewayDeviceID: dev.ID, Slot: 1, LineID: line.ID}).Error)
 	// 同线路绑到别的槽 → 拒绝(line_id unique)
 	require.Error(t, db.Get().Create(&EnterpriseRouterBinding{GatewayDeviceID: dev.ID, Slot: 2, LineID: line.ID}).Error)
+}
+
+// TestEnterpriseModels_JSONFieldCasing pins the camelCase JSON contract for
+// the base fields. Without explicit tags Go marshals ID as "ID" — the web
+// manager reads .id, silently getting undefined (customerId dropped from
+// create-line requests; found by real-browser smoke, 2026-07-23).
+func TestEnterpriseModels_JSONFieldCasing(t *testing.T) {
+	for name, v := range map[string]any{
+		"customer": EnterpriseCustomer{ID: 5},
+		"line":     EnterpriseLine{ID: 5},
+		"binding":  EnterpriseRouterBinding{ID: 5},
+	} {
+		b, err := json.Marshal(v)
+		require.NoError(t, err, name)
+		require.Contains(t, string(b), `"id":5`, name)
+		require.NotContains(t, string(b), `"ID"`, name)
+	}
 }
