@@ -1400,7 +1400,7 @@ export const api = {
     });
   },
 
-  // ====== Stripe（overleap 专属渠道；kaitu 品牌调用会得到 405001）======
+  // ====== Stripe（overleap 专属渠道；其他品牌调用会得到 405001）======
 
   async createStripeCheckout(
     planPid: string,
