@@ -63,6 +63,11 @@ type SubsTunnel struct {
 type SubsResponse struct {
 	Tunnels []SubsTunnel `json:"tunnels"`
 	Refresh int          `json:"refresh"`
+
+	// SlotBindings is the enterprise multi-slot manifest (operator-maintained
+	// binding matrix). Present only for enterprise gateway devices; its
+	// presence switches k2r into multi-slot mode.
+	SlotBindings []SubsSlotBinding `json:"slot_bindings,omitempty"`
 }
 
 // extractSubsBasicAuth parses "Authorization: Basic <b64>" → (udid, token, ok).
@@ -194,7 +199,19 @@ func api_subs(c *gin.Context) {
 			return
 		}
 		log.Infof(c, "subs: gateway user=%d returning %d private tunnels", authCtx.User.ID, len(items))
-		writeSubsOK(c, SubsResponse{Tunnels: items, Refresh: 1800})
+		resp := SubsResponse{Tunnels: items, Refresh: 1800}
+		// TunnelIndex must index this same response's `items` — mirror
+		// buildPrivateSubsTunnels's filter so positions line up even if
+		// privTunnels contains an entry it would have skipped.
+		aligned := make([]SlaveTunnel, 0, len(privTunnels))
+		for _, t := range privTunnels {
+			if t.Node == nil || t.Node.ID == 0 || t.ServerURL == "" {
+				continue
+			}
+			aligned = append(aligned, t)
+		}
+		resp.SlotBindings = resolveSlotBindings(c, authCtx.Device.ID, aligned)
+		writeSubsOK(c, resp)
 		return
 	}
 
