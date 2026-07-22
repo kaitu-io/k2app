@@ -40,5 +40,22 @@
   },
   "legacy": {
     "upgradeHint": "检测到路由器固件版本过旧，请先在路由器上升级 k2r 后再使用应用内管理"
+  },
+  "slots": {
+    "title": "线路",
+    "customName": "自定义名称",
+    "unbound": "未绑定",
+    "failClosed": "线路中断 — 流量已阻断",
+    "downFor": "已中断 {{duration}}",
+    "rename": "修改 Wi-Fi 名称",
+    "renameHint": "1-32 个字符",
+    "password": "修改 Wi-Fi 密码",
+    "passwordHint": "8-63 个字符",
+    "confirm": "应用",
+    "cancel": "取消",
+    "applyFailed": "应用失败，请重试",
+    "managedByAccount": "此路由器由其绑定账号管理",
+    "unbindEnterpriseBody": "解除绑定将导致全部线路断网，恢复需联系运营人员。确定继续？",
+    "managementGroup": "管理网段"
   }
 }

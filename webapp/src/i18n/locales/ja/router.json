@@ -40,5 +40,22 @@
   },
   "legacy": {
     "upgradeHint": "ルーターのファームウェアが古いことを検出しました。アプリ内での管理を行う前に、ルーター側で k2r をアップグレードしてください。"
+  },
+  "slots": {
+    "title": "回線",
+    "customName": "カスタム名",
+    "unbound": "未割り当て",
+    "failClosed": "回線断 — 通信を遮断中",
+    "downFor": "{{duration}} 前から停止",
+    "rename": "Wi-Fi 名を変更",
+    "renameHint": "1〜32文字",
+    "password": "Wi-Fi パスワードを変更",
+    "passwordHint": "8〜63文字",
+    "confirm": "適用",
+    "cancel": "キャンセル",
+    "applyFailed": "適用に失敗しました。もう一度お試しください",
+    "managedByAccount": "このルーターは紐付けられたアカウントによって管理されています",
+    "unbindEnterpriseBody": "バインド解除するとすべての回線が切断されます。復旧には運用担当者の対応が必要です。続行しますか？",
+    "managementGroup": "管理ネットワーク"
   }
 }

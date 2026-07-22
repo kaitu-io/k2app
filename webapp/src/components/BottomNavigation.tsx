@@ -2,6 +2,7 @@ import { styled, keyframes } from "@mui/material/styles";
 import {
   BottomNavigation as MuiBottomNavigation,
   BottomNavigationAction,
+  Badge,
   Paper,
 } from "@mui/material";
 import {
@@ -18,7 +19,7 @@ import { getCurrentAppConfig } from "../config/apps";
 import { useMemo, memo } from "react";
 import { useUser } from "../hooks/useUser";
 import { useAuthStore } from "../stores";
-import { useRouterStore } from "../stores/router.store";
+import { useRouterStore, hasSlotAlarm } from "../stores/router.store";
 
 const inviteWiggle = keyframes`
   0%, 82%, 100% { transform: rotate(0deg) scale(1); }
@@ -108,6 +109,8 @@ function BottomNavigation() {
   // Router tab appears once a router has ever been seen (phase !== 'none') —
   // subscribed live so the entry reacts to discovery/unbind without a reload.
   const hasRouter = useRouterStore((s) => s.phase !== 'none');
+  // Enterprise multi-slot: any fail-closed slot lights a red dot on the tab.
+  const slotAlarm = useRouterStore(hasSlotAlarm);
 
   // Define all navigation items
   const allNavItems = useMemo(() => {
@@ -121,7 +124,11 @@ function BottomNavigation() {
       // Router tab — appears once a router has ever been paired (see hasRouter above)
       ...(hasRouter ? [{
         label: t("nav:navigation.router"),
-        icon: <RouterIcon />,
+        icon: (
+          <Badge color="error" variant="dot" invisible={!slotAlarm} data-testid="router-nav-alarm-badge">
+            <RouterIcon />
+          </Badge>
+        ),
         path: "/router",
         feature: null,
       }] : []),
@@ -164,7 +171,7 @@ function BottomNavigation() {
     }
 
     return filtered;
-  }, [t, appConfig.features, user?.isRetailer, isAuthenticated, hasRouter]);
+  }, [t, appConfig.features, user?.isRetailer, isAuthenticated, hasRouter, slotAlarm]);
 
   // Get current active path
   const currentPath = location.pathname;

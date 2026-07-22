@@ -11,6 +11,7 @@ import {
   saveLastRouter,
   clearLastRouter,
   type RouterInfo,
+  type RouterSlot,
 } from '../services/router-service';
 import { mintGatewayCredential } from '../services/private-node-service';
 
@@ -27,6 +28,9 @@ interface RouterState {
   status: RouterStatus | null;
   discovering: boolean;
   setupError: string | null;
+  /** status 拉取持续 401:本账号的 controlKey 不被 k2r 承认(路由器归属另一账号,
+   * 典型是企业路由器)。RouterPage 用它把连接卡换成「由绑定账号管理」提示。 */
+  unauthorized: boolean;
 }
 
 interface RouterActions {
@@ -48,6 +52,7 @@ export const useRouterStore = create<RouterState & RouterActions>()((set, get) =
   status: null,
   discovering: false,
   setupError: null,
+  unauthorized: false,
 
   runDiscovery: async () => {
     if (get().discovering) return;
@@ -100,9 +105,9 @@ export const useRouterStore = create<RouterState & RouterActions>()((set, get) =
         // re-check before writing, or a stale response resurrects a cleared router.
         if (!get().router) return;
         if (resp.code === 0 && resp.data) {
-          set({ status: resp.data, phase: 'online' });
+          set({ status: resp.data, phase: 'online', unauthorized: false });
         } else if (resp.code === 401) {
-          set({ status: null });
+          set({ status: null, unauthorized: true });
         }
       } catch {
         if (!get().router) return;
@@ -161,7 +166,7 @@ export const useRouterStore = create<RouterState & RouterActions>()((set, get) =
     if (resp.code !== 0) return false;
     get().stopPolling();
     await clearLastRouter();
-    set({ phase: 'none', router: null, status: null });
+    set({ phase: 'none', router: null, status: null, unauthorized: false });
     return true;
   },
 }));
@@ -170,4 +175,15 @@ export const useRouterStore = create<RouterState & RouterActions>()((set, get) =
  * 锚点可达(phase online)本身即证明 k2r 在本机转发路径上(spec §3.4),无需网关判定。 */
 export function isRouterTakeover(s: Pick<RouterState, 'phase' | 'status'>): boolean {
   return s.phase === 'online' && s.status?.state === 'connected';
+}
+
+/** 企业多槽清单:status.slots 存在且非空 → 企业形态;否则 null(消费版)。 */
+export function routerSlots(s: Pick<RouterState, 'status'>): RouterSlot[] | null {
+  const slots = (s.status as { slots?: RouterSlot[] } | null)?.slots;
+  return slots && slots.length > 0 ? slots : null;
+}
+
+/** 任一槽 fail-closed → Router tab 红点告警。 */
+export function hasSlotAlarm(s: Pick<RouterState, 'status'>): boolean {
+  return (routerSlots(s) ?? []).some((x) => x.state === 'failClosed');
 }

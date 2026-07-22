@@ -13,11 +13,12 @@ import { Box, Typography, Button, Card, CardContent, Stack } from '@mui/material
 import { WifiOff as OfflineIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useRouterStore } from '../stores/router.store';
+import { useRouterStore, routerSlots } from '../stores/router.store';
 import { useVpnStore } from '../stores/vpn.store';
 import { RouterConnectionCard } from '../components/RouterConnectionCard';
 import { RouterSetupCard } from '../components/RouterSetupCard';
 import { useExclusionGuard, RouterExclusionDialog } from '../components/RouterExclusionDialog';
+import RouterSlotList from '../components/RouterSlotList';
 import RouterDevicesSection from './RouterDevices';
 
 export default function RouterPage() {
@@ -28,6 +29,8 @@ export default function RouterPage() {
   const startPolling = useRouterStore((s) => s.startPolling);
   const stopPolling = useRouterStore((s) => s.stopPolling);
   const unbindRouter = useRouterStore((s) => s.unbindRouter);
+  const slots = useRouterStore(routerSlots);
+  const unauthorized = useRouterStore((s) => s.unauthorized);
   const localState = useVpnStore((s) => s.status?.state);
   const exclusion = useExclusionGuard('router-connect');
   const navigate = useNavigate();
@@ -83,9 +86,26 @@ export default function RouterPage() {
   return (
     <Box sx={{ p: 2 }}>
       <Stack spacing={2}>
-        <RouterConnectionCard
-          onBeforeConnect={() => exclusion.guard(localState === 'connected')}
-        />
+        {unauthorized && !slots ? (
+          // k2r rejects this account's controlKey — the router belongs to
+          // another account (typical: enterprise router + employee phone).
+          // No connect card: there is nothing this account can control.
+          <Card data-testid="router-managed-by-account">
+            <CardContent>
+              <Typography color="text.secondary">
+                {t('router:slots.managedByAccount')}
+              </Typography>
+            </CardContent>
+          </Card>
+        ) : slots ? (
+          // Enterprise multi-slot form: the tunnel lifecycle is owned by the
+          // operator's binding manifest — no consumer up/down card.
+          <RouterSlotList slots={slots} />
+        ) : (
+          <RouterConnectionCard
+            onBeforeConnect={() => exclusion.guard(localState === 'connected')}
+          />
+        )}
         <RouterDevicesSection />
         <Card data-testid="router-settings-section">
           <CardContent>

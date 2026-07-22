@@ -40,5 +40,22 @@
   },
   "legacy": {
     "upgradeHint": "偵測到路由器韌體版本過舊，請先在路由器上升級 k2r 後再使用應用程式內管理"
+  },
+  "slots": {
+    "title": "線路",
+    "customName": "自訂名稱",
+    "unbound": "未綁定",
+    "failClosed": "線路中斷 — 流量已封鎖",
+    "downFor": "已中斷 {{duration}}",
+    "rename": "修改 Wi-Fi 名稱",
+    "renameHint": "1-32 個字元",
+    "password": "修改 Wi-Fi 密碼",
+    "passwordHint": "8-63 個字元",
+    "confirm": "套用",
+    "cancel": "取消",
+    "applyFailed": "套用失敗，請重試",
+    "managedByAccount": "此路由器由其綁定帳號管理",
+    "unbindEnterpriseBody": "解除綁定將導致全部線路斷網，恢復需聯絡營運人員。確定繼續？",
+    "managementGroup": "管理網段"
   }
 }

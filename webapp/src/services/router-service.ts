@@ -19,6 +19,20 @@ export interface RouterInfo {
   configured: boolean;
 }
 
+/**
+ * RouterSlot — k2r 企业多槽 status 的单槽清单项（Plan 1 Task 9 契约）。
+ * `state`: running=隧道在线 / failClosed=线路断且流量被阻断(fail-closed) /
+ * disabled=槽未绑定线路。`downSince` 仅 failClosed 时存在。
+ */
+export interface RouterSlot {
+  slot: number;
+  ssid: string;
+  country: string;
+  index: number;
+  state: 'running' | 'failClosed' | 'disabled';
+  downSince?: string;
+}
+
 export interface RouterCoreResponse<T = unknown> {
   code: number;
   message?: string;

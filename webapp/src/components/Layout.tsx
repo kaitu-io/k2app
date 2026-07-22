@@ -1,7 +1,7 @@
 import { styled, useTheme } from "@mui/material/styles";
 import { Box } from "@mui/material";
-import { useLocation, Outlet } from "react-router-dom";
-import { useState, useEffect, useMemo, lazy, Suspense } from "react";
+import { useLocation, useNavigate, Outlet } from "react-router-dom";
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import BottomNavigation from "./BottomNavigation";
 import SideNavigation from "./SideNavigation";
 import AnnouncementBanner from "./AnnouncementBanner";
@@ -9,7 +9,7 @@ import ServiceAlert from "./ServiceAlert";
 import FeedbackButton from "./FeedbackButton";
 import { DisconnectFeedbackStrip } from "./DisconnectFeedbackStrip";
 import { useLayout } from "../stores";
-import { useRouterStore } from "../stores/router.store";
+import { useRouterStore, routerSlots } from "../stores/router.store";
 import { getCurrentAppConfig } from "../config/apps";
 import LoginRequiredGuard from "./LoginRequiredGuard";
 
@@ -85,6 +85,19 @@ export default function Layout() {
     () => (hasRouter ? [...STATIC_TAB_PAGES, { path: '/router', component: RouterPage }] : STATIC_TAB_PAGES),
     [hasRouter],
   );
+
+  // Enterprise multi-slot routers land on /router instead of Dashboard — but
+  // only once, the first time the slots manifest becomes known, so a user who
+  // navigates back to '/' afterward isn't yanked away again.
+  const navigate = useNavigate();
+  const isEnterpriseRouter = useRouterStore((s) => s.phase === 'online' && routerSlots(s) !== null);
+  const hasRedirectedToRouter = useRef(false);
+  useEffect(() => {
+    if (!hasRedirectedToRouter.current && isEnterpriseRouter && location.pathname === '/') {
+      hasRedirectedToRouter.current = true;
+      navigate('/router', { replace: true });
+    }
+  }, [isEnterpriseRouter, location.pathname, navigate]);
 
   // Check if current path is a Tab page
   const currentTabPage = tabPages.find(tab => tab.path === location.pathname);

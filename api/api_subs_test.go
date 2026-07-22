@@ -765,3 +765,147 @@ func TestSubsSharedBranchDoesNotMint(t *testing.T) {
 	require.NoError(t, db.Get().First(&u, userID).Error)
 	assert.Nil(t, u.RouterControlKey, "shared branch must never mint a key")
 }
+
+// =====================================================================
+// =====================================================================
+// TestSubs_GatewaySlotBindings / TestSubs_GatewayNoBindings_FieldOmitted
+//
+// Enterprise slot_bindings manifest on the /api/subs gateway branch.
+// Needs dev MySQL.
+// =====================================================================
+
+func TestSubs_GatewaySlotBindings(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	now := time.Now().Unix()
+	uniq := time.Now().Format("20060102150405.000000")
+
+	user := User{UUID: "usr-subs-ent-" + uniq, ExpiredAt: now + 86400}
+	require.NoError(t, db.Get().Create(&user).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	udid := "udid-subs-ent-" + uniq
+	device := Device{UDID: udid, UserID: user.ID, Remark: "ent-gw-test", IsGateway: true, TokenIssueAt: now}
+	require.NoError(t, db.Get().Create(&device).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&device) })
+
+	token := GenerateTestToken(user.ID, udid, time.Hour)
+	require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", device.ID).
+		Update("token_issue_at", tokenIssueAtOf(t, token)).Error)
+
+	domain := "ent-subs-" + uniq + ".example"
+	node := SlaveNode{
+		Ipv4: uniqueTestIP(t), SecretToken: "ent-subs-s1", Country: "ae", Region: "dubai",
+		Name: "ent-subs-node-" + uniq, Class: NodeClassPrivate, PrivateOwnerUserID: &user.ID,
+	}
+	require.NoError(t, db.Get().Create(&node).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&node) })
+
+	tun := SlaveTunnel{
+		Domain: domain, SecretToken: "ent-subs-tt1", Name: "ent-subs-tun-" + uniq,
+		Protocol: TunnelProtocolK2V5, Port: 443, NodeID: node.ID,
+		IsTest: BoolPtr(false), ServerURL: "k2v5://" + domain + ":443",
+	}
+	require.NoError(t, db.Get().Create(&tun).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&tun) })
+
+	sub := PrivateNodeSubscription{
+		UserID: user.ID, OrderID: user.ID, Status: PNStatusActive, Region: "dubai",
+		IPType: IPTypeNonResidential, SlaveNodeID: &node.ID,
+		PurchasedAt: now, ExpiresAt: now + 86400,
+	}
+	require.NoError(t, db.Get().Create(&sub).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&sub) })
+
+	cust := &EnterpriseCustomer{Company: "Ent-Subs-" + uniq, UserID: user.ID}
+	require.NoError(t, db.Get().Create(cust).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(cust) })
+
+	line := &EnterpriseLine{CustomerID: cust.ID, NodeID: node.ID, CountryCode: "ae", LineNo: 1}
+	require.NoError(t, db.Get().Create(line).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(line) })
+
+	binding := &EnterpriseRouterBinding{GatewayDeviceID: device.ID, Slot: 1, LineID: line.ID}
+	require.NoError(t, db.Get().Create(binding).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(binding) })
+
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(udid+":"+token))
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	var resp SubsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.SlotBindings, 1)
+	b := resp.SlotBindings[0]
+	require.Equal(t, 1, b.Slot)
+	require.Equal(t, "ae", b.Country)
+	require.GreaterOrEqual(t, b.TunnelIndex, 0)
+	require.Less(t, b.TunnelIndex, len(resp.Tunnels))
+}
+
+func TestSubs_GatewayNoBindings_FieldOmitted(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	now := time.Now().Unix()
+	uniq := time.Now().Format("20060102150405.000000")
+
+	user := User{UUID: "usr-subs-noent-" + uniq, ExpiredAt: now + 86400}
+	require.NoError(t, db.Get().Create(&user).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	udid := "udid-subs-noent-" + uniq
+	device := Device{UDID: udid, UserID: user.ID, Remark: "gw-no-ent-test", IsGateway: true, TokenIssueAt: now}
+	require.NoError(t, db.Get().Create(&device).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&device) })
+
+	token := GenerateTestToken(user.ID, udid, time.Hour)
+	require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", device.ID).
+		Update("token_issue_at", tokenIssueAtOf(t, token)).Error)
+
+	domain := "noent-subs-" + uniq + ".example"
+	node := SlaveNode{
+		Ipv4: uniqueTestIP(t), SecretToken: "noent-subs-s1", Country: "jp", Region: "tokyo",
+		Name: "noent-subs-node-" + uniq, Class: NodeClassPrivate, PrivateOwnerUserID: &user.ID,
+	}
+	require.NoError(t, db.Get().Create(&node).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&node) })
+
+	tun := SlaveTunnel{
+		Domain: domain, SecretToken: "noent-subs-tt1", Name: "noent-subs-tun-" + uniq,
+		Protocol: TunnelProtocolK2V5, Port: 443, NodeID: node.ID,
+		IsTest: BoolPtr(false), ServerURL: "k2v5://" + domain + ":443",
+	}
+	require.NoError(t, db.Get().Create(&tun).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&tun) })
+
+	sub := PrivateNodeSubscription{
+		UserID: user.ID, OrderID: user.ID, Status: PNStatusActive, Region: "tokyo",
+		IPType: IPTypeNonResidential, SlaveNodeID: &node.ID,
+		PurchasedAt: now, ExpiresAt: now + 86400,
+	}
+	require.NoError(t, db.Get().Create(&sub).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&sub) })
+	// No EnterpriseCustomer/Line/Binding — consumer-mode dedicated line, no enterprise.
+
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(udid+":"+token))
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+
+	req, _ := http.NewRequest("GET", "/api/subs", nil)
+	req.Header.Set("Authorization", authHeader)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	require.NotContains(t, w.Body.String(), "slot_bindings") // omitempty:消费版响应无此字段
+}

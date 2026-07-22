@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { Package, Users, Server, Receipt, Tag, Wallet, FileText, Activity, LogOut, Gauge, UserCircle, ClipboardList, Cloud, BarChart3, Key, MessageSquare, ShieldCheck, Megaphone, BookOpen } from "lucide-react";
+import { Package, Users, Server, Receipt, Tag, Wallet, FileText, Activity, LogOut, Gauge, UserCircle, ClipboardList, Cloud, BarChart3, Key, MessageSquare, ShieldCheck, Megaphone, BookOpen, Router } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,7 @@ const menuGroups: MenuGroup[] = [
       { href: "/manager/cloud", icon: Cloud, label: "节点部署" },
       { href: "/manager/node-operations", icon: ClipboardList, label: "节点运维" },
       { href: "/manager/nodes", icon: Server, label: "节点管理" },
+      { href: "/manager/enterprise", icon: Router, label: "企业路由器" },
     ]
   },
   {

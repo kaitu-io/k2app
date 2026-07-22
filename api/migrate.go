@@ -107,6 +107,10 @@ func Migrate() error {
 		&SurveyResponse{},
 		// Announcement system
 		&Announcement{},
+		// Enterprise multi-slot router
+		&EnterpriseCustomer{},
+		&EnterpriseLine{},
+		&EnterpriseRouterBinding{},
 	)
 	if err != nil {
 		log.Errorf(ctx, "database migration failed: %v", err)

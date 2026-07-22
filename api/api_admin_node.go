@@ -19,15 +19,17 @@ type AdminNodeTunnel struct {
 
 // AdminNodeItem represents a node with its tunnels for admin listing
 type AdminNodeItem struct {
-	ID        uint64            `json:"id"`
-	Name      string            `json:"name"`
-	Country   string            `json:"country"`
-	Region    string            `json:"region"`
-	Ipv4      string            `json:"ipv4"`
-	Ipv6      string            `json:"ipv6"`
-	IPType    string            `json:"ipType,omitempty"` // residential|non_residential|unknown (C2)
-	UpdatedAt int64             `json:"updatedAt"`
-	Tunnels   []AdminNodeTunnel `json:"tunnels"`
+	ID                 uint64            `json:"id"`
+	Name               string            `json:"name"`
+	Country            string            `json:"country"`
+	Region             string            `json:"region"`
+	Ipv4               string            `json:"ipv4"`
+	Ipv6               string            `json:"ipv6"`
+	IPType             string            `json:"ipType,omitempty"`             // residential|non_residential|unknown (C2)
+	Class              string            `json:"class"`                        // shared | private
+	PrivateOwnerUserID *uint64           `json:"privateOwnerUserId,omitempty"` // class=private 时 = 主人 UserID
+	UpdatedAt          int64             `json:"updatedAt"`
+	Tunnels            []AdminNodeTunnel `json:"tunnels"`
 }
 
 func api_admin_list_nodes(c *gin.Context) {
@@ -67,15 +69,17 @@ func api_admin_list_nodes(c *gin.Context) {
 		}
 
 		items = append(items, AdminNodeItem{
-			ID:        node.ID,
-			Name:      node.Name,
-			Country:   node.Country,
-			Region:    node.Region,
-			Ipv4:      node.Ipv4,
-			Ipv6:      node.Ipv6,
-			IPType:    node.IPType, // C2: expose ip_type on admin node list
-			UpdatedAt: node.UpdatedAt.Unix(),
-			Tunnels:   tunnels,
+			ID:                 node.ID,
+			Name:               node.Name,
+			Country:            node.Country,
+			Region:             node.Region,
+			Ipv4:               node.Ipv4,
+			Ipv6:               node.Ipv6,
+			IPType:             node.IPType, // C2: expose ip_type on admin node list
+			Class:              node.Class,
+			PrivateOwnerUserID: node.PrivateOwnerUserID,
+			UpdatedAt:          node.UpdatedAt.Unix(),
+			Tunnels:            tunnels,
 		})
 	}
 

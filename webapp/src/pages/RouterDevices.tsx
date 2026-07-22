@@ -24,6 +24,8 @@ import {
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { routerDevicesGet, routerDevicesPost } from '../services/router-service';
+import { useRouterStore, routerSlots } from '../stores/router.store';
+import { groupDevicesBySlot } from '../components/RouterSlotList';
 
 interface RouterDevice {
   mac: string;
@@ -43,6 +45,9 @@ interface RouterDeviceList {
 
 function RouterDevicesSection() {
   const { t } = useTranslation();
+  // Enterprise multi-slot: devices are grouped by their slot subnet
+  // (10.81.N.x → slot N, spec §6); consumer mode renders a flat list.
+  const slots = useRouterStore(routerSlots);
   const [data, setData] = useState<RouterDeviceList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -153,9 +158,9 @@ function RouterDevicesSection() {
 
       {error && <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
-      {/* Device list */}
-      <Stack spacing={1}>
-        {data.routerDevices.map(device => (
+      {/* Device list — grouped by slot in enterprise mode, flat otherwise */}
+      {(() => {
+        const renderDeviceCard = (device: RouterDevice) => (
           <Card key={device.mac} variant="outlined" sx={{ p: 1.5 }}>
             <Stack direction="row" alignItems="center" spacing={1.5}>
               {device.online ? <OnlineIcon color="success" fontSize="small" /> : <OfflineIcon color="disabled" fontSize="small" />}
@@ -193,8 +198,26 @@ function RouterDevicesSection() {
               )}
             </Stack>
           </Card>
-        ))}
-      </Stack>
+        );
+
+        if (!slots) {
+          return <Stack spacing={1}>{data.routerDevices.map(renderDeviceCard)}</Stack>;
+        }
+        return (
+          <Stack spacing={2}>
+            {groupDevicesBySlot(data.routerDevices, slots).map((group) => (
+              <Box key={group.slot ? `slot-${group.slot.slot}` : 'management'} data-testid={group.slot ? `device-group-slot-${group.slot.slot}` : 'device-group-management'}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ display: 'block', mb: 0.5 }}>
+                  {group.slot
+                    ? `${group.slot.ssid || t('router:slots.customName')} · ${group.label}`
+                    : t('router:slots.managementGroup')}
+                </Typography>
+                <Stack spacing={1}>{group.devices.map(renderDeviceCard)}</Stack>
+              </Box>
+            ))}
+          </Stack>
+        );
+      })()}
 
       {/* Remark dialog */}
       <Dialog open={remarkDialogOpen} onClose={() => setRemarkDialogOpen(false)} maxWidth="xs" fullWidth>

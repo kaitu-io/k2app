@@ -37,7 +37,11 @@ vi.mock('../../stores/connection.store', () => ({
   useConnectionStore: (sel: any) => sel({ disconnect: mockDisconnect }),
 }));
 vi.mock('../../stores/router.store', () => ({
-  useRouterStore: (sel: any) => sel({ disconnectRouter: mockDisconnectRouter }),
+  useRouterStore: (sel: any) => sel({ disconnectRouter: mockDisconnectRouter, status: null }),
+  routerSlots: (s: any) => {
+    const slots = s?.status?.slots;
+    return slots && slots.length > 0 ? slots : null;
+  },
 }));
 
 import { useExclusionGuard, RouterExclusionDialog } from '../RouterExclusionDialog';

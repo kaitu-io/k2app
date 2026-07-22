@@ -195,3 +195,65 @@ describe('isRouterTakeover', () => {
     expect(isRouterTakeover({ phase: 'online', status: { state: 'disconnected' } })).toBe(false);
   });
 });
+
+describe('enterprise slots selectors', () => {
+  it('routerSlots returns slots array when status carries them, hasSlotAlarm on failClosed', async () => {
+    const { routerSlots, hasSlotAlarm } = await import('../router.store');
+    const s = {
+      status: {
+        state: 'connected',
+        slots: [
+          { slot: 1, ssid: 'line-ae-1', country: 'ae', index: 1, state: 'running' },
+          { slot: 2, ssid: '', country: 'gn', index: 1, state: 'failClosed', downSince: '2026-07-22T02:00:00Z' },
+        ],
+      },
+    } as any;
+    expect(routerSlots(s)).toHaveLength(2);
+    expect(hasSlotAlarm(s)).toBe(true);
+  });
+
+  it('routerSlots null for consumer-mode status / empty slots / null status', async () => {
+    const { routerSlots, hasSlotAlarm } = await import('../router.store');
+    expect(routerSlots({ status: { state: 'connected' } } as any)).toBeNull();
+    expect(routerSlots({ status: { state: 'connected', slots: [] } } as any)).toBeNull();
+    expect(routerSlots({ status: null } as any)).toBeNull();
+    expect(hasSlotAlarm({ status: { state: 'connected' } } as any)).toBe(false);
+  });
+
+  it('hasSlotAlarm false when all slots running/disabled', async () => {
+    const { routerSlots, hasSlotAlarm } = await import('../router.store');
+    const s = {
+      status: {
+        state: 'connected',
+        slots: [
+          { slot: 1, ssid: 'a', country: 'ae', index: 1, state: 'running' },
+          { slot: 2, ssid: '', country: '', index: 0, state: 'disabled' },
+        ],
+      },
+    } as any;
+    expect(routerSlots(s)).toHaveLength(2);
+    expect(hasSlotAlarm(s)).toBe(false);
+  });
+});
+
+describe('poll 401 → unauthorized flag', () => {
+  it('sets unauthorized on 401 and clears it on a later 0-code status', async () => {
+    vi.useFakeTimers();
+    (svc.probeRouter as any).mockResolvedValue(R1);
+    const store = await freshStore();
+    await store.getState().runDiscovery();
+
+    (svc.routerCore as any).mockResolvedValue({ code: 401, message: 'unauthorized' });
+    store.getState().startPolling();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState().unauthorized).toBe(true);
+    expect(store.getState().status).toBeNull();
+
+    (svc.routerCore as any).mockResolvedValue({ code: 0, data: { state: 'connected' } });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(store.getState().unauthorized).toBe(false);
+    expect(store.getState().status).toEqual({ state: 'connected' });
+
+    store.getState().stopPolling();
+  });
+});

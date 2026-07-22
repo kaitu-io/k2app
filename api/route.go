@@ -387,9 +387,9 @@ func SetupRouter() *gin.Engine {
 		// Strategy rules management
 		strategy := admin.Group("/strategy")
 		{
-			strategy.GET("/rules", api_admin_strategy_list)           // List all versions
-			strategy.POST("/rules", api_admin_strategy_create)        // Create new version
-			strategy.GET("/rules/:version", api_admin_strategy_get)   // Get specific version
+			strategy.GET("/rules", api_admin_strategy_list)                       // List all versions
+			strategy.POST("/rules", api_admin_strategy_create)                    // Create new version
+			strategy.GET("/rules/:version", api_admin_strategy_get)               // Get specific version
 			strategy.PUT("/rules/:version/activate", api_admin_strategy_activate) // Activate version
 			strategy.DELETE("/rules/:version", api_admin_strategy_delete)         // Delete version
 		}
@@ -422,113 +422,125 @@ func SetupRouter() *gin.Engine {
 		// No role restriction — every authenticated user can see their own permissions
 		opsAdmin.GET("/my-permissions", api_admin_my_permissions)
 
-		viewOrEdit  := RoleDevopsViewer | RoleDevopsEditor
+		viewOrEdit := RoleDevopsViewer | RoleDevopsEditor
 		allOpsRoles := RoleDevopsViewer | RoleDevopsEditor | RoleSupport
 
 		// 隧道管理
-		opsAdmin.GET("/tunnels",        RoleRequired(viewOrEdit),    api_admin_list_tunnels)
-		opsAdmin.PUT("/tunnels/:id",    RoleRequired(RoleDevopsEditor), api_admin_update_tunnel)
+		opsAdmin.GET("/tunnels", RoleRequired(viewOrEdit), api_admin_list_tunnels)
+		opsAdmin.PUT("/tunnels/:id", RoleRequired(RoleDevopsEditor), api_admin_update_tunnel)
 		opsAdmin.DELETE("/tunnels/:id", RoleRequired(RoleDevopsEditor), api_admin_delete_tunnel)
 
 		// 物理节点管理
-		opsAdmin.GET("/nodes",          RoleRequired(viewOrEdit),    api_admin_list_nodes)
-		opsAdmin.PUT("/nodes/:ipv4",    RoleRequired(RoleDevopsEditor), api_admin_update_node)
+		opsAdmin.GET("/nodes", RoleRequired(viewOrEdit), api_admin_list_nodes)
+		opsAdmin.PUT("/nodes/:ipv4", RoleRequired(RoleDevopsEditor), api_admin_update_node)
 		opsAdmin.DELETE("/nodes/:ipv4", RoleRequired(RoleDevopsEditor), api_admin_delete_node)
 
 		// 云实例（只读）
-		opsAdmin.GET("/cloud/instances",     RoleRequired(viewOrEdit), api_admin_list_cloud_instances)
+		opsAdmin.GET("/cloud/instances", RoleRequired(viewOrEdit), api_admin_list_cloud_instances)
 		opsAdmin.GET("/cloud/instances/:id", RoleRequired(viewOrEdit), api_admin_get_cloud_instance)
-		opsAdmin.GET("/cloud/accounts",      RoleRequired(viewOrEdit), api_admin_list_cloud_accounts)
-		opsAdmin.GET("/cloud/regions",       RoleRequired(viewOrEdit), api_admin_list_cloud_regions)
-		opsAdmin.GET("/cloud/plans",         RoleRequired(viewOrEdit), api_admin_list_cloud_plans)
-		opsAdmin.GET("/cloud/images",        RoleRequired(viewOrEdit), api_admin_list_cloud_images)
+		opsAdmin.GET("/cloud/accounts", RoleRequired(viewOrEdit), api_admin_list_cloud_accounts)
+		opsAdmin.GET("/cloud/regions", RoleRequired(viewOrEdit), api_admin_list_cloud_regions)
+		opsAdmin.GET("/cloud/plans", RoleRequired(viewOrEdit), api_admin_list_cloud_plans)
+		opsAdmin.GET("/cloud/images", RoleRequired(viewOrEdit), api_admin_list_cloud_images)
 
 		// 云实例（读写）
-		opsAdmin.POST("/cloud/instances/sync",                RoleRequired(RoleDevopsEditor), api_admin_sync_all_cloud_instances)
-		opsAdmin.POST("/cloud/instances/:id/change-ip",       RoleRequired(RoleDevopsEditor), api_admin_change_ip_cloud_instance)
-		opsAdmin.PUT("/cloud/instances/:id/traffic-config",   RoleRequired(RoleDevopsEditor), api_admin_update_traffic_config)
-		opsAdmin.POST("/cloud/instances",                     RoleRequired(RoleDevopsEditor), api_admin_create_cloud_instance)
-		opsAdmin.DELETE("/cloud/instances/:id",               RoleRequired(RoleDevopsEditor), api_admin_delete_cloud_instance)
+		opsAdmin.POST("/cloud/instances/sync", RoleRequired(RoleDevopsEditor), api_admin_sync_all_cloud_instances)
+		opsAdmin.POST("/cloud/instances/:id/change-ip", RoleRequired(RoleDevopsEditor), api_admin_change_ip_cloud_instance)
+		opsAdmin.PUT("/cloud/instances/:id/traffic-config", RoleRequired(RoleDevopsEditor), api_admin_update_traffic_config)
+		opsAdmin.POST("/cloud/instances", RoleRequired(RoleDevopsEditor), api_admin_create_cloud_instance)
+		opsAdmin.DELETE("/cloud/instances/:id", RoleRequired(RoleDevopsEditor), api_admin_delete_cloud_instance)
 
 		// 专属节点运维任务队列（外部 AI agent / 运维消费）
-		opsAdmin.GET("/node-operations",             RoleRequired(viewOrEdit),       adminListNodeOperations)
-		opsAdmin.POST("/node-operations",            RoleRequired(RoleDevopsEditor), adminCreateNodeOperation)
-		opsAdmin.POST("/node-operations/:id/claim",  RoleRequired(RoleDevopsEditor), adminClaimNodeOperation)
+		opsAdmin.GET("/node-operations", RoleRequired(viewOrEdit), adminListNodeOperations)
+		opsAdmin.POST("/node-operations", RoleRequired(RoleDevopsEditor), adminCreateNodeOperation)
+		opsAdmin.POST("/node-operations/:id/claim", RoleRequired(RoleDevopsEditor), adminClaimNodeOperation)
 		opsAdmin.POST("/node-operations/:id/update", RoleRequired(RoleDevopsEditor), adminUpdateNodeOperation)
+
+		// 企业路由器（多槽多线路）
+		opsAdmin.GET("/enterprise/customers", RoleRequired(viewOrEdit), api_admin_list_enterprise_customers)
+		opsAdmin.POST("/enterprise/customers", RoleRequired(RoleDevopsEditor), api_admin_create_enterprise_customer)
+		opsAdmin.PUT("/enterprise/customers/:id", RoleRequired(RoleDevopsEditor), api_admin_update_enterprise_customer)
+		opsAdmin.GET("/enterprise/customers/:id/lines", RoleRequired(viewOrEdit), api_admin_list_enterprise_lines)
+		opsAdmin.POST("/enterprise/lines", RoleRequired(RoleDevopsEditor), api_admin_create_enterprise_line)
+		opsAdmin.PUT("/enterprise/lines/:id", RoleRequired(RoleDevopsEditor), api_admin_update_enterprise_line)
+		opsAdmin.DELETE("/enterprise/lines/:id", RoleRequired(RoleDevopsEditor), api_admin_delete_enterprise_line)
+		opsAdmin.GET("/enterprise/bindings", RoleRequired(viewOrEdit), api_admin_list_enterprise_bindings)
+		opsAdmin.PUT("/enterprise/bindings", RoleRequired(RoleDevopsEditor), api_admin_upsert_enterprise_binding)
+		opsAdmin.DELETE("/enterprise/bindings/:id", RoleRequired(RoleDevopsEditor), api_admin_delete_enterprise_binding)
 
 		// 用户查看（只读）— DevOps + Support + Marketing 均可访问
 		readRoles := viewOrEdit | RoleSupport | RoleMarketing
-		opsAdmin.GET("/users",               RoleRequired(readRoles), api_admin_list_users)
-		opsAdmin.GET("/users/:uuid",         RoleRequired(readRoles), api_admin_get_user_detail)
+		opsAdmin.GET("/users", RoleRequired(readRoles), api_admin_list_users)
+		opsAdmin.GET("/users/:uuid", RoleRequired(readRoles), api_admin_get_user_detail)
 		opsAdmin.GET("/users/:uuid/devices", RoleRequired(readRoles), api_admin_get_user_devices)
 
 		// 订单查看（只读）— Support + Marketing 可访问
-		opsAdmin.GET("/orders",              RoleRequired(readRoles), api_admin_list_orders)
-		opsAdmin.GET("/orders/:uuid",        RoleRequired(readRoles), api_admin_get_order_detail)
+		opsAdmin.GET("/orders", RoleRequired(readRoles), api_admin_list_orders)
+		opsAdmin.GET("/orders/:uuid", RoleRequired(readRoles), api_admin_get_order_detail)
 
 		// 设备日志 + 工单
-		opsAdmin.GET("/device-logs",                  RoleRequired(allOpsRoles), api_admin_list_device_logs)
-		opsAdmin.GET("/feedback-tickets",             RoleRequired(allOpsRoles), api_admin_list_feedback_tickets)
+		opsAdmin.GET("/device-logs", RoleRequired(allOpsRoles), api_admin_list_device_logs)
+		opsAdmin.GET("/feedback-tickets", RoleRequired(allOpsRoles), api_admin_list_feedback_tickets)
 		opsAdmin.PUT("/feedback-tickets/:id/resolve", RoleRequired(RoleSupport), api_admin_resolve_feedback_ticket)
-		opsAdmin.PUT("/feedback-tickets/:id/close",   RoleRequired(RoleSupport), api_admin_close_feedback_ticket)
-		opsAdmin.POST("/feedback-tickets/:id/reply",   RoleRequired(RoleSupport), api_admin_reply_ticket)
-		opsAdmin.GET("/feedback-tickets/:id/replies",  RoleRequired(allOpsRoles), api_admin_list_ticket_replies)
+		opsAdmin.PUT("/feedback-tickets/:id/close", RoleRequired(RoleSupport), api_admin_close_feedback_ticket)
+		opsAdmin.POST("/feedback-tickets/:id/reply", RoleRequired(RoleSupport), api_admin_reply_ticket)
+		opsAdmin.GET("/feedback-tickets/:id/replies", RoleRequired(allOpsRoles), api_admin_list_ticket_replies)
 
 		// 分销商管理（Marketing 角色）
-		opsAdmin.GET("/retailers",                          RoleRequired(RoleMarketing), api_admin_list_retailers)
-		opsAdmin.GET("/retailers/todos",                    RoleRequired(RoleMarketing), api_admin_list_retailer_todos)
-		opsAdmin.GET("/retailers/:uuid",                    RoleRequired(RoleMarketing), api_admin_get_retailer_detail)
-		opsAdmin.PUT("/retailers/:uuid/level",              RoleRequired(RoleMarketing), api_admin_update_retailer_config)
-		opsAdmin.PUT("/retailers/:uuid/notes",              RoleRequired(RoleMarketing), api_admin_update_retailer_notes)
-		opsAdmin.POST("/retailers/:uuid/notes",             RoleRequired(RoleMarketing), api_admin_create_retailer_note)
-		opsAdmin.GET("/retailers/:uuid/notes",              RoleRequired(RoleMarketing), api_admin_list_retailer_notes)
-		opsAdmin.PUT("/retailers/:uuid/notes/:noteId",      RoleRequired(RoleMarketing), api_admin_update_retailer_note)
-		opsAdmin.DELETE("/retailers/:uuid/notes/:noteId",   RoleRequired(RoleMarketing), api_admin_delete_retailer_note)
+		opsAdmin.GET("/retailers", RoleRequired(RoleMarketing), api_admin_list_retailers)
+		opsAdmin.GET("/retailers/todos", RoleRequired(RoleMarketing), api_admin_list_retailer_todos)
+		opsAdmin.GET("/retailers/:uuid", RoleRequired(RoleMarketing), api_admin_get_retailer_detail)
+		opsAdmin.PUT("/retailers/:uuid/level", RoleRequired(RoleMarketing), api_admin_update_retailer_config)
+		opsAdmin.PUT("/retailers/:uuid/notes", RoleRequired(RoleMarketing), api_admin_update_retailer_notes)
+		opsAdmin.POST("/retailers/:uuid/notes", RoleRequired(RoleMarketing), api_admin_create_retailer_note)
+		opsAdmin.GET("/retailers/:uuid/notes", RoleRequired(RoleMarketing), api_admin_list_retailer_notes)
+		opsAdmin.PUT("/retailers/:uuid/notes/:noteId", RoleRequired(RoleMarketing), api_admin_update_retailer_note)
+		opsAdmin.DELETE("/retailers/:uuid/notes/:noteId", RoleRequired(RoleMarketing), api_admin_delete_retailer_note)
 
 		// EDM 邮件营销管理（Marketing 角色）
 		// 公告管理（Marketing 角色）
-		opsAdmin.GET("/announcements",                    RoleRequired(RoleMarketing), api_admin_list_announcements)
-		opsAdmin.POST("/announcements",                   RoleRequired(RoleMarketing), api_admin_create_announcement)
-		opsAdmin.PUT("/announcements/:id",                RoleRequired(RoleMarketing), api_admin_update_announcement)
-		opsAdmin.DELETE("/announcements/:id",             RoleRequired(RoleMarketing), api_admin_delete_announcement)
-		opsAdmin.POST("/announcements/:id/activate",      RoleRequired(RoleMarketing), api_admin_activate_announcement)
-		opsAdmin.POST("/announcements/:id/deactivate",    RoleRequired(RoleMarketing), api_admin_deactivate_announcement)
+		opsAdmin.GET("/announcements", RoleRequired(RoleMarketing), api_admin_list_announcements)
+		opsAdmin.POST("/announcements", RoleRequired(RoleMarketing), api_admin_create_announcement)
+		opsAdmin.PUT("/announcements/:id", RoleRequired(RoleMarketing), api_admin_update_announcement)
+		opsAdmin.DELETE("/announcements/:id", RoleRequired(RoleMarketing), api_admin_delete_announcement)
+		opsAdmin.POST("/announcements/:id/activate", RoleRequired(RoleMarketing), api_admin_activate_announcement)
+		opsAdmin.POST("/announcements/:id/deactivate", RoleRequired(RoleMarketing), api_admin_deactivate_announcement)
 
 		edmOps := opsAdmin.Group("/edm")
 		{
-			edmOps.GET("/templates",                              RoleRequired(RoleMarketing), api_admin_list_email_templates)
-			edmOps.POST("/templates",                             RoleRequired(RoleMarketing), api_admin_create_email_template)
-			edmOps.PUT("/templates/:id",                          RoleRequired(RoleMarketing), api_admin_update_email_template)
-			edmOps.DELETE("/templates/:id",                       RoleRequired(RoleMarketing), api_admin_delete_email_template)
-			edmOps.POST("/templates/:id/translate/:language",     RoleRequired(RoleMarketing), api_admin_translate_email_template)
-			edmOps.POST("/send",                                  RoleRequired(RoleMarketing), api_admin_send_templated_emails)
-			edmOps.GET("/send-logs",                              RoleRequired(RoleMarketing), api_admin_list_email_send_logs)
-			edmOps.GET("/send-logs/stats",                        RoleRequired(RoleMarketing), api_admin_get_email_send_log_stats)
+			edmOps.GET("/templates", RoleRequired(RoleMarketing), api_admin_list_email_templates)
+			edmOps.POST("/templates", RoleRequired(RoleMarketing), api_admin_create_email_template)
+			edmOps.PUT("/templates/:id", RoleRequired(RoleMarketing), api_admin_update_email_template)
+			edmOps.DELETE("/templates/:id", RoleRequired(RoleMarketing), api_admin_delete_email_template)
+			edmOps.POST("/templates/:id/translate/:language", RoleRequired(RoleMarketing), api_admin_translate_email_template)
+			edmOps.POST("/send", RoleRequired(RoleMarketing), api_admin_send_templated_emails)
+			edmOps.GET("/send-logs", RoleRequired(RoleMarketing), api_admin_list_email_send_logs)
+			edmOps.GET("/send-logs/stats", RoleRequired(RoleMarketing), api_admin_get_email_send_log_stats)
 		}
 
 		// 优惠活动管理（审批流程已覆盖，RoleMarketing 可操作）
-		opsAdmin.GET("/campaigns",                          RoleRequired(RoleMarketing), api_admin_list_campaigns)
-		opsAdmin.GET("/campaigns/:id",                      RoleRequired(RoleMarketing), api_admin_get_campaign)
-		opsAdmin.POST("/campaigns",                         RoleRequired(RoleMarketing), api_admin_create_campaign)
-		opsAdmin.PUT("/campaigns/:id",                      RoleRequired(RoleMarketing), api_admin_update_campaign)
-		opsAdmin.DELETE("/campaigns/:id",                   RoleRequired(RoleMarketing), api_admin_delete_campaign)
-		opsAdmin.GET("/campaigns/code/:code/stats",         RoleRequired(RoleMarketing), api_admin_get_campaign_stats)
-		opsAdmin.GET("/campaigns/code/:code/orders",        RoleRequired(RoleMarketing), api_admin_get_campaign_orders)
-		opsAdmin.GET("/campaigns/code/:code/funnel",        RoleRequired(RoleMarketing), api_admin_get_campaign_funnel)
+		opsAdmin.GET("/campaigns", RoleRequired(RoleMarketing), api_admin_list_campaigns)
+		opsAdmin.GET("/campaigns/:id", RoleRequired(RoleMarketing), api_admin_get_campaign)
+		opsAdmin.POST("/campaigns", RoleRequired(RoleMarketing), api_admin_create_campaign)
+		opsAdmin.PUT("/campaigns/:id", RoleRequired(RoleMarketing), api_admin_update_campaign)
+		opsAdmin.DELETE("/campaigns/:id", RoleRequired(RoleMarketing), api_admin_delete_campaign)
+		opsAdmin.GET("/campaigns/code/:code/stats", RoleRequired(RoleMarketing), api_admin_get_campaign_stats)
+		opsAdmin.GET("/campaigns/code/:code/orders", RoleRequired(RoleMarketing), api_admin_get_campaign_orders)
+		opsAdmin.GET("/campaigns/code/:code/funnel", RoleRequired(RoleMarketing), api_admin_get_campaign_funnel)
 
 		// 授权码批次管理
-		opsAdmin.GET("/license-key-batches/stats",           RoleRequired(RoleMarketing), api_admin_license_key_batch_stats)
+		opsAdmin.GET("/license-key-batches/stats", RoleRequired(RoleMarketing), api_admin_license_key_batch_stats)
 		opsAdmin.GET("/license-key-batches/stats/by-source", RoleRequired(RoleMarketing), api_admin_license_key_batch_stats_by_source)
-		opsAdmin.GET("/license-key-batches/stats/trend",     RoleRequired(RoleMarketing), api_admin_license_key_batch_stats_trend)
-		opsAdmin.POST("/license-key-batches",                RoleRequired(RoleMarketing), api_admin_create_license_key_batch)
-		opsAdmin.GET("/license-key-batches",                 RoleRequired(RoleMarketing), api_admin_list_license_key_batches)
-		opsAdmin.GET("/license-key-batches/:id",             RoleRequired(RoleMarketing), api_admin_get_license_key_batch)
-		opsAdmin.GET("/license-key-batches/:id/keys",        RoleRequired(RoleMarketing), api_admin_list_license_key_batch_keys)
-		opsAdmin.DELETE("/license-key-batches/:id",          RoleRequired(RoleMarketing), api_admin_delete_license_key_batch)
+		opsAdmin.GET("/license-key-batches/stats/trend", RoleRequired(RoleMarketing), api_admin_license_key_batch_stats_trend)
+		opsAdmin.POST("/license-key-batches", RoleRequired(RoleMarketing), api_admin_create_license_key_batch)
+		opsAdmin.GET("/license-key-batches", RoleRequired(RoleMarketing), api_admin_list_license_key_batches)
+		opsAdmin.GET("/license-key-batches/:id", RoleRequired(RoleMarketing), api_admin_get_license_key_batch)
+		opsAdmin.GET("/license-key-batches/:id/keys", RoleRequired(RoleMarketing), api_admin_list_license_key_batch_keys)
+		opsAdmin.DELETE("/license-key-batches/:id", RoleRequired(RoleMarketing), api_admin_delete_license_key_batch)
 
 		// LicenseKey 管理（RoleMarketing 可操作）
-		opsAdmin.GET("/license-keys",                       RoleRequired(RoleMarketing), api_admin_list_license_keys)
-		opsAdmin.DELETE("/license-keys/:id",                RoleRequired(RoleMarketing), api_admin_delete_license_key)
+		opsAdmin.GET("/license-keys", RoleRequired(RoleMarketing), api_admin_list_license_keys)
+		opsAdmin.DELETE("/license-keys/:id", RoleRequired(RoleMarketing), api_admin_delete_license_key)
 	}
 
 	// 节点管理路由（需要节点认证）
@@ -540,7 +552,7 @@ func SetupRouter() *gin.Engine {
 		slaveManage.PUT("/nodes/:ipv4", api_slave_node_upsert)                                                // 注册/更新物理节点
 		slaveManage.PUT("/nodes/:ipv4/tunnels/:domain", SlaveAuthRequired(), api_slave_node_upsert_tunnel)    // 添加/更新隧道
 		slaveManage.DELETE("/nodes/:ipv4/tunnels/:domain", SlaveAuthRequired(), api_slave_node_delete_tunnel) // 删除隧道
-		slaveManage.DELETE("/nodes/:ipv4", SlaveAuthRequired(), api_slave_node_unregister)                 // 节点自注销（graceful shutdown）
+		slaveManage.DELETE("/nodes/:ipv4", SlaveAuthRequired(), api_slave_node_unregister)                    // 节点自注销（graceful shutdown）
 
 		// 节点状态上报
 		slaveManage.POST("/report/status", SlaveAuthRequired(), api_slave_report_status)
@@ -573,7 +585,6 @@ func SetupRouter() *gin.Engine {
 		csr.POST("/submit", api_csr_submit)
 		csr.POST("/verify", api_csr_verify)
 	}
-
 
 	// 注册任务处理器并挂载监控面板
 	// 路径: /app/asynqmon - 与其他管理接口保持一致（/app/* 前缀）

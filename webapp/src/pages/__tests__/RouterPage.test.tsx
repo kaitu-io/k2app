@@ -41,10 +41,18 @@ const mockState: any = {
   disconnectRouter: vi.fn(),
   setupRouter: vi.fn(),
   unbindRouter: vi.fn(),
+  unauthorized: false,
 };
 vi.mock('../../stores/router.store', () => ({
   useRouterStore: (sel: any) => (sel ? sel(mockState) : mockState),
   isRouterTakeover: () => false,
+  // Real selector semantics (status.slots pass-through) so RouterPage's
+  // enterprise dispatch stays consumer-mode unless a test sets status.slots.
+  routerSlots: (s: any) => {
+    const slots = s?.status?.slots;
+    return slots && slots.length > 0 ? slots : null;
+  },
+  hasSlotAlarm: () => false,
 }));
 vi.mock('../../stores/connection.store', () => ({
   useConnectionStore: (sel: any) => sel({ connectedTunnel: null }),

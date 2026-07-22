@@ -15,7 +15,7 @@ import {
 import { useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../stores/connection.store';
-import { useRouterStore } from '../stores/router.store';
+import { useRouterStore, routerSlots } from '../stores/router.store';
 
 export type ExclusionContext = 'router-connect' | 'dashboard-connect';
 
@@ -82,6 +82,9 @@ export function RouterExclusionDialog({ controller }: { controller: ExclusionCon
   const { t } = useTranslation();
   const c = controller;
   const isRouterSide = c.context === 'router-connect';
+  // Enterprise multi-slot router: unbinding takes ALL customer lines offline
+  // and recovery needs the operator — the confirmation copy must say so.
+  const isEnterprise = useRouterStore((s) => routerSlots(s) !== null);
   return (
     <>
       <Dialog open={c.open} onClose={() => c.resolveChoice('cancel')} data-testid="router-exclusion-dialog">
@@ -104,7 +107,9 @@ export function RouterExclusionDialog({ controller }: { controller: ExclusionCon
       <Dialog open={c.unbindPending !== null} onClose={c.clearUnbind} data-testid="router-unbind-dialog">
         <DialogTitle>{t('router:settings.unbindConfirmTitle')}</DialogTitle>
         <DialogContent>
-          <DialogContentText>{t('router:settings.unbindConfirmBody')}</DialogContentText>
+          <DialogContentText>
+            {t(isEnterprise ? 'router:slots.unbindEnterpriseBody' : 'router:settings.unbindConfirmBody')}
+          </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={c.clearUnbind}>{t('router:settings.unbindCancel')}</Button>

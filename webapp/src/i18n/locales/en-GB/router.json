@@ -40,5 +40,22 @@
   },
   "legacy": {
     "upgradeHint": "Detected router firmware is out of date. Please upgrade k2r on the router before managing it from the app."
+  },
+  "slots": {
+    "title": "Lines",
+    "customName": "Custom name",
+    "unbound": "Unbound",
+    "failClosed": "Line down — traffic blocked",
+    "downFor": "Down for {{duration}}",
+    "rename": "Rename Wi-Fi",
+    "renameHint": "1-32 characters",
+    "password": "Change Wi-Fi password",
+    "passwordHint": "8-63 characters",
+    "confirm": "Apply",
+    "cancel": "Cancel",
+    "applyFailed": "Failed to apply, please retry",
+    "managedByAccount": "This router is managed by its bound account",
+    "unbindEnterpriseBody": "Unbinding will take ALL lines offline. Recovery requires operator assistance. Continue?",
+    "managementGroup": "Management network"
   }
 }

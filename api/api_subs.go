@@ -68,6 +68,11 @@ type SubsResponse struct {
 	// Omitted when the account has no key yet. Cross-repo contract: the k2
 	// submodule's config.subsResponse consumes this exact field name.
 	ControlKeyHash string `json:"control_key_hash,omitempty"`
+
+	// SlotBindings is the enterprise multi-slot manifest (operator-maintained
+	// binding matrix). Present only for enterprise gateway devices; its
+	// presence switches k2r into multi-slot mode.
+	SlotBindings []SubsSlotBinding `json:"slot_bindings,omitempty"`
 }
 
 // injectControlKeyHash writes the account's control-key hash into resp if one
@@ -234,6 +239,17 @@ func api_subs(c *gin.Context) {
 		log.Infof(c, "subs: gateway user=%d returning %d private tunnels", authCtx.User.ID, len(items))
 		resp := SubsResponse{Tunnels: items, Refresh: 1800}
 		ensureAndInjectControlKeyHash(c, &resp, authCtx.User)
+		// TunnelIndex must index this same response's `items` — mirror
+		// buildPrivateSubsTunnels's filter so positions line up even if
+		// privTunnels contains an entry it would have skipped.
+		aligned := make([]SlaveTunnel, 0, len(privTunnels))
+		for _, t := range privTunnels {
+			if t.Node == nil || t.Node.ID == 0 || t.ServerURL == "" {
+				continue
+			}
+			aligned = append(aligned, t)
+		}
+		resp.SlotBindings = resolveSlotBindings(c, authCtx.Device.ID, aligned)
 		writeSubsOK(c, resp)
 		return
 	}

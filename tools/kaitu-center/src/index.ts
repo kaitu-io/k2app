@@ -38,6 +38,7 @@ import { approvalTools } from './tools/admin-approvals.js'
 import { walletTools } from './tools/admin-wallet.js'
 import { strategyTools } from './tools/admin-strategy.js'
 import { announcementTools } from './tools/admin-announcements.js'
+import { enterpriseTools } from './tools/admin-enterprise.js'
 
 // CMS tools — target Payload REST at /payload/api/*
 import { cmsPostsTools } from './tools/cms-posts.js'
@@ -67,6 +68,7 @@ const allFactoryTools: ToolRegistration[] = [
   ...walletTools,
   ...strategyTools,
   ...announcementTools,
+  ...enterpriseTools,
   ...cmsPostsTools,
   ...cmsCategoriesTools,
   ...cmsTagsTools,
