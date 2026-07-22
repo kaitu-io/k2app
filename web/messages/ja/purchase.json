@@ -191,5 +191,23 @@
     "priceSlash": "/"
   },
   "giftCodePrompt": "已有授权码？",
-  "giftCodeLink": "点此兑换"
+  "giftCodeLink": "点此兑换",
+  "stripe": {
+    "title": "プランを選択",
+    "annualLabel": "年間プラン",
+    "monthlyLabel": "月間プラン",
+    "perMonthApprox": "≈ {price}/月",
+    "monthlyPrice": "{price}/月",
+    "cancelAnytime": "いつでもキャンセル可能",
+    "savePercent": "{percent}% お得",
+    "currencyNote": "価格はユーロ表示です。決済時に USD / GBP へ自動換算されます。",
+    "subscribe": "登録する",
+    "redirecting": "安全な決済ページへ移動しています…",
+    "alreadySubscribed": "すでに有効なサブスクリプションがあります。",
+    "manageInAccount": "サブスクリプションを管理",
+    "checkoutCancelled": "決済がキャンセルされました。いつでも再試行できます。",
+    "channelUnavailable": "このお支払い方法はご利用いただけません。",
+    "genericError": "エラーが発生しました。もう一度お試しください。",
+    "noPlans": "プランを準備中です。しばらくお待ちください。"
+  }
 }

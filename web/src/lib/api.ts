@@ -533,6 +533,7 @@ export const ErrorCode = {
   VerificationCodeExpired: 400013, // Verification code expired or not sent
   TierMismatch: 422001,            // 跨档购买被拒绝（仅同档续费）
   ProxyPurchaseDeprecated: 422002, // 代付下单已下线
+  ChannelUnavailable: 405001,      // 支付渠道不可用（如非 overleap 品牌调用 Stripe 端点）
 } as const;
 
 export type ErrorCodeType = typeof ErrorCode[keyof typeof ErrorCode];

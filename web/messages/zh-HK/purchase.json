@@ -191,5 +191,23 @@
     "priceSlash": "/"
   },
   "giftCodePrompt": "已有授权码？",
-  "giftCodeLink": "点此兑换"
+  "giftCodeLink": "点此兑换",
+  "stripe": {
+    "title": "Choose your plan",
+    "annualLabel": "Annual",
+    "monthlyLabel": "Monthly",
+    "perMonthApprox": "≈ {price}/mo",
+    "monthlyPrice": "{price}/mo",
+    "cancelAnytime": "Cancel anytime",
+    "savePercent": "Save {percent}%",
+    "currencyNote": "Prices in EUR. USD and GBP equivalents are applied automatically at checkout.",
+    "subscribe": "Subscribe",
+    "redirecting": "Redirecting to secure checkout…",
+    "alreadySubscribed": "You already have an active subscription.",
+    "manageInAccount": "Manage subscription",
+    "checkoutCancelled": "Checkout was cancelled — you can try again anytime.",
+    "channelUnavailable": "This payment method is not available for your account.",
+    "genericError": "Something went wrong. Please try again.",
+    "noPlans": "Plans are being prepared. Please check back soon."
+  }
 }
