@@ -3,6 +3,7 @@ package center
 import (
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -10,14 +11,18 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 )
 
-// uniqueTestIP generates a unique 10.x.x.x address for SlaveNode.Ipv4's
-// uniqueIndex, keyed off the current time so parallel/repeated test runs
-// don't collide.
+// uniqueTestIP generates a unique 10.250.x.x address for SlaveNode.Ipv4's
+// uniqueIndex. A per-process counter guarantees in-run uniqueness (the old
+// nano%256 scheme was a birthday problem: back-to-back calls inside one
+// fixture collided ~1.5% of runs); the nanosecond-derived third octet keeps
+// clashes with rows leaked by an interrupted earlier run unlikely.
 func uniqueTestIP(t *testing.T) string {
 	t.Helper()
-	now := time.Now()
-	return fmt.Sprintf("10.250.%d.%d", (now.Unix()/60)%256, now.UnixNano()%256)
+	n := testIPCounter.Add(1)
+	return fmt.Sprintf("10.250.%d.%d", time.Now().UnixNano()%251, n%251)
 }
+
+var testIPCounter atomic.Uint32
 
 func TestEnterpriseModels_Constraints(t *testing.T) {
 	testInitConfig()
