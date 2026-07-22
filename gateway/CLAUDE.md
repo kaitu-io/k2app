@@ -18,8 +18,11 @@ Lock ordering: `opMu` (serialization) → `mu` (state) → `sseMu` (state).
 
 ## Files
 
-- `gateway.go` — `Gateway` struct, `Run`/`Stop`/`doUp`/`doDown`, `EventHandler` impl, auto-reconnect, crash recovery. Wires the k2r-specific `webui.Upgrader` (`newK2rUpgrader`) and `webui.Storage` (rooted at `/etc/k2r/`).
-- `api.go` — HTTP API: `/api/core` (up/down/status), `/ping`, `/api/log-level`, router device handlers. `/api/storage`, `/api/platform`, `/api/upgrade`, and `/` (SPA) are registered directly via `webui.New*Handler` in `gateway.go`.
+- `gateway.go` — `Gateway` struct, `Run`/`Stop`/`doUp`/`doDown`, `EventHandler` impl, auto-reconnect, crash recovery. Wires the k2r-specific `webui.Upgrader` (`newK2rUpgrader`) and `webui.Storage` (rooted at `/etc/k2r/`). `doUp`'s subscription refresh loop wires `sub.SetOnControlKeyHash(g.reconcileControlKey)` plus an immediate reconcile call.
+- `api.go` — HTTP API: `/api/core` (up/down/status/set-credential/reset/version) with control-key auth (loopback exempt, TOFU open for `set-credential` only while unbound), `/ping` discovery signature (raw JSON, no auth), `/api/log-level`, router device handlers. `defaultConfigPath()` = `stateDir()/k2r.yml` (production value unchanged: `/etc/k2r/k2r.yml`). `/api/platform` and `/api/upgrade` are registered directly via `webui.New*Handler` in `gateway.go`; `/` serves the embedded webapp when built in, otherwise `handleRootNotice` (see `notice.go`). `/api/storage` retired (headless) — `Gateway.storage` is retained internally, feeding only `RouterDeviceManager` persistence, not exposed over HTTP.
+- `auth.go` — control-key bearer auth: `currentControlKeyHash`/`setControlKeyHash` (lazy-load from disk, persist outside `g.mu`), `isLoopback` (127.0.0.1/::1 always authorized — the CLI talks over loopback), `authorized` (deny-by-default, `subtle.ConstantTimeCompare` against the stored SHA-256), `writeUnauthorized` (HTTP 401 + `Response` envelope `{code:401,message:"unauthorized"}` — the companion app keys off the status code, not the envelope), `requireAuth` (wraps the whole mux; exempts exactly `/ping`, `/`, `/api/core` — `/api/core` defers to `handleCore`'s per-action TOFU check), `reconcileControlKey(centerHash)` (Center-authoritative adopt-overwrite: empty hash or hash already matching → no-op, else persist + overwrite; logs `DIAG: control-key-adopt`).
+- `controlkey.go` — SHA-256 hash persistence at `stateDir()/control-key.json` (dir 0700 / file 0600); the plaintext control key is never written to disk.
+- `notice.go` — brand-neutral, self-contained static page served on `/` (404 elsewhere) when `webui.NewWebappHandler` returns nil, i.e. `nowebapp` headless builds.
 - `sse.go` — `/api/events` SSE endpoint, `broadcastSSE` fan-out
 - `config.go` — `GatewayConfig` (embeds `ClientConfig`), `LoadGateway`, `resolveExcludeIPs`
 - `provider.go` — `gatewayProvider` (implements `provider.Provider`), dual-stack TCP/UDP accept loops
@@ -49,6 +52,20 @@ Both backends: fwmark 1 → ip rule → table 100 → local loopback delivery.
 1. Server IPs (resolve server hostname)
 2. Direct DNS upstream IPs (prevent DNS query loops)
 3. Gateway's own interface IPs
+
+## Control API Auth
+
+`requireAuth` wraps the whole mux; `authorized()` is deny-by-default (no bound key → only loopback passes):
+
+| 请求 | 无绑定 key | 有绑定 key |
+|---|---|---|
+| `/ping`、`/` | 放行 | 放行 |
+| loopback 来源任意端点 | 放行 | 放行 |
+| `/api/core` set-credential | 放行（TOFU） | 要求 Bearer |
+| `/api/core` 其他 action | 401 | 要求 Bearer |
+| 其他端点（LAN 来源） | 401 | 要求 Bearer |
+
+Control-key authority: Center is the single source of truth. It ships `control_key_hash` (snake_case, cross-repo contract) on every `/api/subs` fetch; `reconcileControlKey` adopt-overwrites the local hash whenever Center's differs (covers first-setup TOFU convergence, legacy adoption, and rotation) — a provisional hash set via `set-credential {controlKey}` is only ever a bridge until the first successful subs fetch.
 
 ## Config
 

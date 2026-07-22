@@ -1,0 +1,46 @@
+# cmd/k2r — Gateway CLI
+
+Gateway binary for LAN routers/soft-routers (TPROXY interception). Linux only (`//go:build linux`). Headless: production builds always use `-tags nowebapp` (root `Makefile` `K2R_TAGS`, applied to all six `build-k2r*` targets) — no embedded webapp, control is over HTTP API + control-key auth (see `gateway/CLAUDE.md` "Control API Auth").
+
+## Subcommands
+
+```
+k2r setup <URL>              First-time: generate config + install service + start
+k2r run [-c yaml]             Start gateway daemon (service entry point)
+
+k2r up [URL|config.yaml]      Connect via gateway daemon (no args: reconnect saved config)
+k2r down                      Disconnect
+k2r status                    Connection status
+k2r reset                     Unbind router: wipe credential, state, control key
+
+k2r service install           Install as system service (systemd or OpenWRT procd)
+k2r service uninstall         Remove system service
+k2r upgrade [--check]         Check/install updates
+
+k2r version                   Version info
+k2r help                      Usage info
+```
+
+## Global Flags
+
+```
+--json    Machine-readable JSON output
+--quiet   Minimal output
+--help    Help for any command
+```
+
+## Files
+
+- `main.go` — Subcommand dispatch, global flags, `cmdRun`/`cmdSetup`/`cmdUp`/`cmdDown`/`cmdStatus`/`cmdReset`/`cmdService`
+- `output.go` — Output layer (human vs JSON switching)
+- `service_linux.go` — systemd unit + OpenWRT procd init script generation, install/uninstall
+- `service_linux_test.go` — Tests for the OpenWRT procd script generation
+- `upgrade.go` — `k2r upgrade`: CLI-side `webui.Upgrader` (`newCliUpgrader`), CDN endpoints mirror the gateway daemon's `newK2rUpgrader`
+
+## Pattern
+
+Uses `flag.NewFlagSet` per subcommand, same as `cmd/k2` and `cmd/k2s`. `up`/`down`/`status`/`reset` are IPC calls via `gateway.NewClient(gateway.DefaultGatewayAddr)` to the running gateway daemon's HTTP API — not direct calls into the `gateway` package. `run` builds a `gateway.Gateway` directly (`gateway.New(...).Run(...)`) since it *is* the daemon process. Output uses `out.ok()`/`out.fail()`/`out.printResult()` for JSON/human switching.
+
+## `reset`
+
+`cmdReset` tries the daemon IPC path first (`client.Do("reset", nil)`) — loopback origin is exempt from control-key auth (see `gateway/CLAUDE.md`), so no Bearer token is needed for the local CLI, and this path needs only loopback access, not root. If the daemon isn't reachable (`err != nil`), it falls back to `gateway.WipeBindingFiles()` to wipe credential/state/control-key files directly — that path does require root, since the files live under `/etc/k2r/`.

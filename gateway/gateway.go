@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
@@ -65,6 +66,11 @@ type Gateway struct {
 	// Subscription manager — handles k2subs:// routes, OutboundProvider
 	// hot-swap, exclude state. Cleared on doDown via CloseAll.
 	subsMgr *subscription.Manager
+
+	// controlKeyHash gates the panel HTTP API ("" = unbound). Authority is
+	// Center via the subs channel; see reconcileControlKey. mu-protected.
+	controlKeyHash   string
+	controlKeyLoaded bool
 }
 
 // k2rReleaseEndpoints lists the CDN base URLs used by k2r's OTA upgrader.
@@ -139,9 +145,8 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/events", g.handleEvents)
 	mux.HandleFunc("/api/log-level", g.handleLogLevel)
 
-	// Shared webui endpoints (storage, platform, upgrade) — same handlers
-	// as cmd/k2 (Linux desktop) uses via the daemon package.
-	mux.HandleFunc("/api/storage", webui.NewStorageHandler(g.storage))
+	// Shared webui endpoints (platform, upgrade) — same handlers as cmd/k2
+	// (Linux desktop) uses via the daemon package.
 	mux.HandleFunc("/api/platform", webui.NewPlatformHandler(webui.PlatformInfo{
 		PlatformType: "gateway",
 		Version:      g.version,
@@ -157,12 +162,18 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/router-devices/mode", g.handleRouterDeviceMode)
 
 	if webapp := webui.NewWebappHandler(g.version, g.commit, g.arch); webapp != nil {
+		// Non-nowebapp dev builds only: k2r production always ships with
+		// -tags nowebapp, so this branch never runs there. requireAuth
+		// exempts only the exact "/" path, so the embedded SPA's /assets/*
+		// requests get 401 from a LAN origin (and browsers can't attach a
+		// Bearer token to asset fetches anyway) — the panel only fully
+		// works when loaded from loopback.
 		mux.Handle("/", webapp)
+	} else {
+		mux.HandleFunc("/", handleRootNotice)
 	}
 
-	g.httpServer = &http.Server{
-		Handler: mux,
-	}
+	g.httpServer = &http.Server{Handler: g.requireAuth(mux)}
 
 	safego.Go(g.tryAutoReconnect)
 
@@ -360,6 +371,11 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 		// Identify as a k2r router so Center's /api/subs routes to the gateway
 		// branch on every refresh fetch.
 		sub.SetClientHeader(clientHeader)
+		// Center is the control-key authority: adopt the hash it delivered in
+		// the Resolve-time fetch, and keep adopting on every background refresh
+		// (rotation convergence).
+		sub.SetOnControlKeyHash(g.reconcileControlKey)
+		g.reconcileControlKey(sub.ControlKeyHash())
 		sub.StartRefresh(engineCtx, func() *http.Client { return client })
 	}
 
@@ -397,13 +413,40 @@ func (g *Gateway) doDown(userInitiated bool) {
 	// Drain any active subscription sessions. Engine.Stop() (called via
 	// closeTunnel) does not own subscription state — Manager does — so the
 	// shell must close them explicitly. Idempotent: safe when no sessions
-	// were ever resolved (e.g. doDown without prior doUp).
-	g.subsMgr.CloseAll()
+	// were ever resolved (e.g. doDown without prior doUp). subsMgr is only
+	// nil for a zero-value Gateway (never New()-constructed) — handleReset
+	// calls doDown best-effort on whatever Gateway it's given, so guard it.
+	if g.subsMgr != nil {
+		g.subsMgr.CloseAll()
+	}
 	if userInitiated {
 		saveState(&persistedState{State: "disconnected", Timestamp: time.Now()})
 	}
 	// else: preserve whatever state.json the last doUp wrote — auto-reconnect
 	// on next start is the intent.
+}
+
+// wipeBinding removes the on-disk binding then clears the in-memory key.
+func (g *Gateway) wipeBinding() error {
+	if err := WipeBindingFiles(); err != nil {
+		return err
+	}
+	g.mu.Lock()
+	g.controlKeyHash = ""
+	g.controlKeyLoaded = true
+	g.mu.Unlock()
+	return nil
+}
+
+// WipeBindingFiles removes credential + state + control key from stateDir.
+// Exported for the k2r CLI so `k2r reset` also works with the daemon stopped.
+func WipeBindingFiles() error {
+	for _, p := range []string{defaultConfigPath(), statePath()} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return clearControlKeyHash()
 }
 
 // closeTunnel extracts resources under mu, then closes outside lock.

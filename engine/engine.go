@@ -608,22 +608,7 @@ func (e *Engine) Start(cfg Config) error {
 	// unnecessary. Desktop daemon + Android keep the updater.
 	if client.CacheDir != "" && !cfg.NetworkExtension {
 		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []rule.NamedBundle, error) {
-			named, err := rule.LoadNamed(cacheDir)
-			if err != nil {
-				return nil, nil, err
-			}
-			bundles := make([]*krs.Bundle, 0, len(named))
-			regionBundlesRebuild := make(map[string]*krs.Bundle, len(named))
-			for _, nb := range named {
-				bundles = append(bundles, nb.Bundle)
-				if nb.Region != "" {
-					regionBundlesRebuild[nb.Region] = nb.Bundle
-				}
-			}
-			idx := matcherIndex(krs.Index(bundles))
-
-			entries, _, _ := buildRouteEntries(client.Routes, idx, outboundMap, heapRegionExpander(regionBundlesRebuild))
-			return entries, named, nil
+			return rebuildEntriesForUpdater(client.Routes, outboundMap, cacheDir)
 		}
 		rule.StartUpdaterNamed(ctx, ruleEngine, client.CacheDir, sources, rebuildFn)
 	}
@@ -1204,6 +1189,83 @@ func (e *Engine) fail(err error) error {
 	return err
 }
 
+// anchorDirectEntry is the built-in route entry that always sends k2r's
+// discovery/control anchor address (config.RouterAnchorIP) direct — never
+// user-configurable, never tunneled. See config/anchor.go for the shared
+// constant and gateway/anchor.go for the matching gateway-side PREROUTING
+// DNAT rule (2026-07-18 spec revision, anchor-only discovery for the k2r
+// router-control feature). Built via krs.BuildSet the same way inline
+// IPCIDR routes are (engine.go buildRouteEntries), so it participates in
+// rule.Engine's normal IP-match path (matchRouteIP / r.Sets).
+func anchorDirectEntry() rule.RouteEntry {
+	anchorSet, err := krs.BuildSet(krs.NamedSet{CIDRs: []string{config.RouterAnchorIP + "/32"}})
+	if err != nil {
+		// Unreachable in practice — config.RouterAnchorIP is a hardcoded
+		// valid literal — but fail safe (inert entry) rather than panic.
+		slog.Error("engine: anchor route build failed — anchor direct rule NOT installed", "err", err)
+		return rule.RouteEntry{}
+	}
+	return rule.RouteEntry{Target: outboundDirect, Sets: []krs.Matcher{anchorSet}}
+}
+
+// withAnchorFirst prepends the built-in anchor entry ahead of every other
+// route entry. rule.Engine.Match/MatchConn are first-match-wins over
+// entries, then fall through to `fallback` — prepending here is what makes
+// the anchor address win over a match:all catch-all in Global proxy mode
+// (fallback would otherwise be the proxy outbound).
+//
+// MUST be applied at every site that either constructs a rule.Engine OR
+// feeds a []rule.RouteEntry into a live engine's Reload/ReloadNamed/
+// ReloadWithClosers — a reload wholesale-replaces e.routes (rule/engine.go
+// reload), silently dropping any entry not present in what's passed in.
+// Audited call sites (2026-07-18 review; grep `buildRouteEntries(` /
+// `rule.NewEngine` / `\.Reload` across the repo to re-verify if you add a
+// new one):
+//  1. buildRuleEngine's match:all single-route fast path — rule.NewEngine.
+//  2. buildRuleEngine's heap path — rule.NewEngineNamed.
+//  3. buildRuleEngineDisk (NE mmap path) — rule.NewEngineWithClosers.
+//  4. rebuildEntriesForUpdater, wired into rule.StartUpdaterNamed in
+//     Start() — the 24h background rule-bundle updater's rebuild function,
+//     whose output feeds Engine.ReloadNamed on every tick (including the
+//     immediate first tick, seconds after connect). Missing this site was
+//     a shipped Critical bug: the anchor entry present right after
+//     construction was stripped by the first updater reload on desktop
+//     daemon + Android (client.CacheDir != "" && !NetworkExtension) —
+//     anchor routing worked at connect, then broke minutes later. See
+//     TestAnchorRoute_SurvivesUpdaterReload.
+func withAnchorFirst(entries []rule.RouteEntry) []rule.RouteEntry {
+	return append([]rule.RouteEntry{anchorDirectEntry()}, entries...)
+}
+
+// rebuildEntriesForUpdater reproduces buildRuleEngine's heap-path route
+// construction (load bundles from cacheDir, index, buildRouteEntries) for
+// the 24h background rule-bundle updater. Extracted as a standalone,
+// directly testable function — rather than left inline as a closure in
+// Start() — specifically so a test can drive the exact code path
+// rule.StartUpdaterNamed calls on every tick and confirm withAnchorFirst
+// survives it (see TestAnchorRoute_SurvivesUpdaterReload). Matches
+// rule.RebuildFuncNamed's signature modulo the extra (routes, outboundMap)
+// closure-over params, which Start()'s rebuildFn supplies from client.Routes
+// and the already-built outboundMap.
+func rebuildEntriesForUpdater(routes []config.RouteConfig, outboundMap map[string]rule.Target, cacheDir string) ([]rule.RouteEntry, []rule.NamedBundle, error) {
+	named, err := rule.LoadNamed(cacheDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	bundles := make([]*krs.Bundle, 0, len(named))
+	regionBundlesRebuild := make(map[string]*krs.Bundle, len(named))
+	for _, nb := range named {
+		bundles = append(bundles, nb.Bundle)
+		if nb.Region != "" {
+			regionBundlesRebuild[nb.Region] = nb.Bundle
+		}
+	}
+	idx := matcherIndex(krs.Index(bundles))
+
+	entries, _, _ := buildRouteEntries(routes, idx, outboundMap, heapRegionExpander(regionBundlesRebuild))
+	return withAnchorFirst(entries), named, nil
+}
+
 // buildRouteEntries converts config routes to rule.RouteEntry list using the given bundle index.
 // outboundMap maps via URL → rule.Target for wire outbounds.
 // Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
@@ -1502,7 +1564,7 @@ func buildRuleEngine(
 	// Simple case: single route with match:all and wire outbound → all proxy, no routes.
 	if client.IsAllProxy() && len(finalRoutes) == 1 {
 		target := outboundMap[finalRoutes[0].Via]
-		return rule.NewEngine(nil, target, nil, true)
+		return rule.NewEngine(withAnchorFirst(nil), target, nil, true)
 	}
 
 	if useDiskReader {
@@ -1524,6 +1586,7 @@ func buildRuleEngine(
 	}
 	idx := matcherIndex(krs.Index(bundles))
 	entries, fallback, disableSniff := buildRouteEntries(finalRoutes, idx, outboundMap, heapRegionExpander(regionBundles))
+	entries = withAnchorFirst(entries)
 
 	logRuleEngineState(client.CacheDir, len(bundles) > 0, entries, fallback)
 	return rule.NewEngineNamed(entries, fallback, named, disableSniff)
@@ -1548,6 +1611,7 @@ func buildRuleEngineDisk(client *config.ClientConfig, finalRoutes []config.Route
 		}
 	}
 	entries, fallback, disableSniff := buildRouteEntries(finalRoutes, idx, outboundMap, diskRegionExpander(regionDisk))
+	entries = withAnchorFirst(entries)
 
 	logRuleEngineState(client.CacheDir, len(named) > 0, entries, fallback)
 	return rule.NewEngineWithClosers(entries, fallback, closers, disableSniff)

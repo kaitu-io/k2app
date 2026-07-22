@@ -23,6 +23,10 @@ implementation instead of two copies drifting.
 
 - `embed.go` / `embed_nop.go` — `//go:embed all:dist` for the webapp
   bundle; nop variant is used with `-tags nowebapp` for headless builds.
+  **k2r production builds always use `-tags nowebapp` (headless since
+  2026-07)** — `NewWebappHandler` returns nil and `gateway.go` falls back
+  to a static notice page (`gateway/notice.go`) on `/`. The embed remains
+  live for `cmd/k2` Linux desktop, which still ships the webapp bundle.
 - `serve.go` — `NewWebappHandler(version, commit, arch)`: injects
   `window.__K2_GATEWAY__`, serves SPA with cache-control split between
   HTML (no-cache) and fingerprinted assets (1 year immutable).
@@ -66,7 +70,11 @@ upgrader := webui.NewUpgrader(version, webui.UpgradeConfig{
 
 // In gateway.Run():
 upgrader.RecoverOnStartup()
-mux.HandleFunc("/api/storage", webui.NewStorageHandler(storage))
+// storage is NOT exposed as /api/storage in the gateway package (headless
+// k2r retired that HTTP handler) — it is read internally, e.g. by
+// RouterDeviceManager for allowlist/mode persistence. cmd/k2 Linux desktop
+// (daemon package) still registers webui.NewStorageHandler(storage) on
+// /api/storage for the embedded webapp.
 mux.HandleFunc("/api/platform", webui.NewPlatformHandler(webui.PlatformInfo{
     PlatformType: "gateway",
     Version: version, Commit: commit, Arch: arch,
@@ -74,6 +82,8 @@ mux.HandleFunc("/api/platform", webui.NewPlatformHandler(webui.PlatformInfo{
 mux.HandleFunc("/api/upgrade", webui.NewUpgradeHandler(upgrader))
 if webapp := webui.NewWebappHandler(version, commit, arch); webapp != nil {
     mux.Handle("/", webapp)
+} else {
+    mux.HandleFunc("/", handleRootNotice) // k2r nowebapp builds: static notice page
 }
 ```
 

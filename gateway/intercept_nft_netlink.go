@@ -63,6 +63,7 @@ func (n *nftNetlinkInterceptor) Install(cfg InterceptConfig) error {
 		Priority: nftables.ChainPriorityMangle,
 	})
 
+	n.addAnchorRedirect()
 	n.addLoopbackBypass()
 	n.addExcludeRules(cfg.ExcludeIPs)
 

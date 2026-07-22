@@ -66,6 +66,8 @@ func main() {
 		os.Exit(cmdDown(rest))
 	case "status":
 		os.Exit(cmdStatus(rest))
+	case "reset":
+		os.Exit(cmdReset(rest))
 	case "service":
 		cmdService(rest)
 	case "upgrade":
@@ -94,6 +96,7 @@ Commands:
   up        Connect via gateway daemon
   down      Disconnect
   status    Connection status
+  reset     Unbind router (wipe credential, state, control key)
 
   service   System service (install, uninstall)
   upgrade   Check and install updates
@@ -284,6 +287,35 @@ func cmdStatus(args []string) int {
 		data, _ := json.MarshalIndent(resp.Data, "", "  ")
 		fmt.Println(string(data))
 	}
+	return 0
+}
+
+// cmdReset unbinds the router. Daemon running → authenticated-exempt loopback
+// IPC; daemon stopped → wipe files directly.
+func cmdReset(args []string) int {
+	fs := flag.NewFlagSet("k2r reset", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Unbind router: wipe credential, state and control key.\n\nUsage: k2r reset\n")
+	}
+	fs.Parse(args)
+
+	client := gateway.NewClient(gateway.DefaultGatewayAddr)
+	if resp, err := client.Do("reset", nil); err == nil {
+		if resp.Code != 0 {
+			out.fail("RESET_FAILED", resp.Message, "")
+			return 2
+		}
+		out.printResult("Reset complete")
+		out.ok(map[string]string{"state": "unbound"})
+		return 0
+	}
+	// Daemon not running — wipe on-disk state directly.
+	if err := gateway.WipeBindingFiles(); err != nil {
+		out.fail("RESET_FAILED", err.Error(), "run as root")
+		return 2
+	}
+	out.printResult("Reset complete (daemon not running, files wiped)")
+	out.ok(map[string]string{"state": "unbound"})
 	return 0
 }
 

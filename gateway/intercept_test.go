@@ -303,14 +303,18 @@ func TestNftRuleGeneration_DNSRedirect(t *testing.T) {
 	}
 }
 
+// Bare word "redirect" is no longer a sufficient probe here: the anchor DNAT
+// rule (gateway/anchor.go) is unconditional and legitimately emits its own
+// "redirect to :<port>" line regardless of DNSRedirect. This test narrows to
+// the DNS-specific chain name, which the anchor rule never emits.
 func TestNftRuleGeneration_DNSRedirect_Disabled(t *testing.T) {
 	nft := &nftShellInterceptor{}
 	script := nft.buildScript(InterceptConfig{
 		ListenPort: 12345,
 		LANSubnets: []string{"192.168.1.0/24"},
 	})
-	if strings.Contains(script, "redirect") {
-		t.Error("should not have redirect rule when DNSRedirect is false")
+	if strings.Contains(script, "dnsredir") {
+		t.Error("should not have DNS redirect chain when DNSRedirect is false")
 	}
 }
 
