@@ -54,16 +54,20 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // SSR-compatible rewrites for API proxying
+  // SSR-compatible rewrites for API proxying.
+  // API_PROXY_TARGET overrides the upstream for local development against a
+  // locally-running Center (e.g. API_PROXY_TARGET=http://127.0.0.1:5899 yarn dev);
+  // production builds keep the hardcoded default.
   async rewrites() {
+    const apiTarget = process.env.API_PROXY_TARGET || 'https://k2.52j.me';
     return [
       {
         source: '/api/:path*',
-        destination: 'https://k2.52j.me/api/:path*',
+        destination: `${apiTarget}/api/:path*`,
       },
       {
         source: '/app/:path*',
-        destination: 'https://k2.52j.me/app/:path*',
+        destination: `${apiTarget}/app/:path*`,
       },
     ];
   },
