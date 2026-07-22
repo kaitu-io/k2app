@@ -12,6 +12,14 @@
 
 **目标**：overleap.io 完整网页购买流（欧美 VPN 主流转化路径：官网 → 网页付费 → 下载 app）+ 订阅管理闭环 + Stripe 侧资源建立 + ops 上线清单。kaitu 一切不变。
 
+## 全局约束（每个任务隐含遵守）
+
+- **Stripe key 永不入 git、永不出现在报告/commit message/测试代码里**。本地配置在 `center/config.yml`（gitignored；`center → api` 符号链接，实体是 `api/config.yml`，同样 gitignored）。
+- **kaitu 零行为变化**：现有 `PurchaseClient.tsx`、`/account` 的 kaitu redirect、WordGate 流一行不改。
+- **品牌纯度**：新组件/文案零 "kaitu" 字样（大小写均含）；overleap 页面无中文 locale（en-US/en-GB/en-AU/ja）。
+- **错误码宪法**：客户端按 code 映射文案，绝不展示后端原始 message（web 既有 `api-errors.ts` 模式）。
+- **测试判据**：api 真库 `go test ./...` 以 `-v` 下 0 SKIP 为准；web/webapp 用各自 vitest 套件。
+
 ## 既有资产（不重做，本 spec 只消费）
 
 - `POST /api/user/stripe/checkout`（`api/api_stripe.go`）：品牌门（405001 ErrorPaymentChannelUnavailable）→ 品牌隔离 plan 解析（`getPlanByPID` + `StripePriceID` 非空）→ tier 校验 → 防双扣（`GetActiveSubscriptions` 非空即拒）→ Checkout Session（subscription metadata：user_uuid/plan_pid/brand；复用既有 Stripe Customer）。返回 `{url}`。
@@ -39,7 +47,7 @@
 - Price 年付：recurring interval=year，**EUR 89.00** 为主币种，`currency_options`：USD 79.00、GBP 79.00（Checkout 按客户属地自动选币，与 ASC 定价 $79/€89/£79 对齐）。
 - Price 月付：recurring interval=month，**EUR 11.99**，`currency_options`：USD 11.99、GBP 9.99。
 - Billing Portal configuration：开启 subscription cancel（at period end）、payment method update、invoice history；**关闭** subscription update/plan switching。
-- 建法：用测试 key 通过 Stripe API 脚本建（脚本入库 `scripts/`，live 切换时对 live key 重跑同一脚本），price id 回填 Plan 行。
+- 建法：`scripts/stripe-setup-overleap.sh`（curl 调 Stripe REST API，key 从 `STRIPE_SECRET_KEY` 环境变量读，脚本本身零密钥）。**幂等**：Price 带 `lookup_key`（`overleap_basic_1y` / `overleap_basic_1m`），先按 lookup_key 查、存在即输出既有 id 不重建；Product 按 `metadata.slug=overleap-basic` 查。live 切换时对 live key 重跑同一脚本。脚本输出 price id 供回填 Plan 行。
 
 ## 2. Plan 行（admin 数据，dev 库先建，生产上线时照建）
 
@@ -57,12 +65,12 @@
 - `purchase/page.tsx`（server component）读取品牌（既有 `brand-server.ts` 机制）：kaitu → 渲染现有 `PurchaseClient`（不动）；overleap → 渲染新组件 `OverleapPurchaseClient.tsx`（同目录）。
 - `OverleapPurchaseClient` 行为：
   - 套餐区：年付主推卡（含"折合 €7.42/月，省 38%"式对比）+ 月付卡；数据来自既有 plans 接口（按品牌下发，只展示 `stripePriceId` 非空的 plan）。
-  - 未登录：点购买 → 进入 web 既有登录/注册流，回来后继续。
+  - 未登录：点购买 → 复用既有 `redirectToLogin()`（`web/src/lib/auth.ts`，`/login?next=<path>` 机制），next 指回 `/purchase?plan=<pid>`；登录回来后该套餐高亮，用户再点一次购买——**不自动触发 checkout**（避免登录后意外直跳付款页）。
   - 已登录：点购买 → `POST /api/user/stripe/checkout {plan: <pid>}` → `window.location.href = data.url`（同窗口跳转，非外链——网页场景没有"打开外部浏览器"问题）。
   - 已有活跃订阅（`user.subscriptions` 非空）：隐藏购买按钮，显示"已订阅"卡 + 链接到 `/account`。
   - `?checkout=cancelled`：页顶温和提示"支付未完成，可随时重试"，其余照常。
   - 错误处理：405001 → 品牌渠道不可用提示；其余按 web 既有错误码映射，不显示原始 message。
-- i18n：overleap 站 locale 为 en-US/en-GB/en-AU/ja，新文案四 locale 全量提供（无中文——品牌隔离）。
+- i18n：新增独立 namespace（按 `web/messages/namespaces.ts` 既有机制注册）。overleap 站 locale 为 en-US/en-GB/en-AU/ja，四 locale 全量翻译；zh-* 三个目录放英文同文案文件（overleap 页面在中文 locale 不可达，仅保构建/加载完整性，不构成品牌泄漏面）。
 
 ## 4. web `/account` overleap 分支
 
@@ -74,6 +82,7 @@
   - `url` → 直接跳该 URL（IAP 用户 → App Store 订阅页）。
 - `?checkout=success` 落地：webhook 入账异步 → 显示"正在激活订阅…"，轮询用户信息（间隔 3s，最多 10 次）；出现活跃订阅即切换为订阅卡 + **下载引导区**（各平台下载入口，网页付费→装 app 的转化收尾）；超时兜底："支付已完成，权益将在几分钟内到账，刷新本页查看。"
 - 无订阅且非 success 回跳：显示"暂无订阅" + 引导 `/purchase`。
+- 导航入口：确认 overleap 站 header 登录态用户菜单有 Account 入口（没有则补，kaitu 侧导航不动）。
 
 ## 5. webapp 顺手必修（同属 Stripe 收口）
 
@@ -81,7 +90,7 @@
 
 ## 6. 配置与 ops
 
-- 本地/staging：`center/config.yml` 增 `stripe.secret_key`（sk_test）与 `stripe.webhook_secret`（Stripe CLI 或 Dashboard 测试端点的 whsec）。**key 永不入 git、永不出现在报告/commit 里。** 跳转 URL 三项不配，走代码内 overleap.io 缺省。
+- 本地/staging：`center/config.yml` 增 `stripe.secret_key` 与 `stripe.webhook_secret`——**已完成（2026-07-22）**，测试 key 取自用户指定的 `wordgate/nextpay/api/config.dev.yml`（同一 Stripe 账号测试模式；`config.yml` 里那对是占位符，勿取）。注意 nextpay 的 whsec 绑定其自身端点：本地 E2E 跑 `stripe listen` 时以 CLI 生成的 whsec **临时覆盖**再还原。跳转 URL 三项不配，走代码内 overleap.io 缺省。
 - 上线清单（并入 runbook 记忆 `project_overleap_ios_asc_release_checklist.md` B 节）：
   1. live `sk_live_` + live webhook secret 切换（Dashboard 注册 `POST /webhook/stripe`，订阅 invoice.paid / customer.subscription.updated / customer.subscription.deleted / charge.refunded / charge.dispute.created 五事件）；
   2. live 侧重跑资源脚本建 Product/Price，Portal configuration 同参；
@@ -93,6 +102,7 @@
 
 - **单测**（web vitest）：品牌分流渲染（kaitu 出 WordGate 组件 / overleap 出 Stripe 组件）；checkout 调用与跳转；已订阅态隐藏购买；`?checkout=cancelled` 提示；success 轮询（出现订阅停轮询 / 超时兜底）；manage.kind 双分派。
 - **回归**：api `go test ./...`（真库，0 SKIP 判据）；webapp 双品牌套件；web 既有契约测试。
+- **品牌下发验证**：确认 `/api/plans` 经 BrandResolver 按请求品牌过滤（overleap.io 来源请求只见 overleap plans、`stripePriceId` 字段随 DataPlan 下发）——plan 阶段核实字段存在性，缺则属 api 侧小改。
 - **端到端（测试模式，拿到 sk_test 后）**：Stripe CLI `listen --forward-to localhost:<port>/webhook/stripe` → 测试卡 4242 完成年付 checkout → 验 invoice.paid 入账、`user.subscriptions` 出现、success 落地页轮询成功 → Portal 取消 → `customer.subscription.deleted` 权益处理；月付同流程走一遍购买。
 - 交付时截图过一遍购买/管理全流程。
 
