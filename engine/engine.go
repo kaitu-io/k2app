@@ -497,7 +497,7 @@ func (e *Engine) Start(cfg Config) error {
 			RejectTarget: outboundReject,
 			EngineCtx:    ctx, // engine context — cancelled on Stop()
 		})
-		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}
+		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e, forward: cfg.DNSForwardUpstream}
 		if err := tunnel.StartWithHandler(ctx, dh); err != nil {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()

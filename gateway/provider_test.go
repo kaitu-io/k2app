@@ -6,6 +6,8 @@ import (
 	"net"
 	"sync"
 	"testing"
+
+	"github.com/kaitu-io/k2/provider"
 )
 
 type mockHandler struct {
@@ -102,4 +104,23 @@ func TestTProxyUDPConn_InitialDataIsCopied(t *testing.T) {
 		t.Errorf("data = %q, want 'original' (initial data should be copied)", buf[:n])
 	}
 	conn.Close()
+}
+
+// TestPacketSourceAddr_MultiSlotSrcIP pins the fix that makes multi-slot
+// per-slot SrcIP routing possible for UDP: provider.SourcePacketAddr only
+// recognizes the PacketSourcer interface, and both gateway UDP conn types
+// must implement it (TCP already gets a conn.RemoteAddr() fallback in
+// core/tunnel.go; UDP has none — this method IS the only path).
+func TestPacketSourceAddr_MultiSlotSrcIP(t *testing.T) {
+	want := &net.UDPAddr{IP: net.IPv4(10, 81, 1, 30), Port: 5000}
+
+	tc := newTProxyUDPConn(nil, want, &net.UDPAddr{IP: net.IPv4(8, 8, 8, 8), Port: 53}, []byte{1})
+	if got := provider.SourcePacketAddr(tc); got == nil || got.String() != want.String() {
+		t.Fatalf("tproxyUDPConn: got %v, want %v", got, want)
+	}
+
+	dc := newDNSUDPConn(nil, want, []byte{1})
+	if got := provider.SourcePacketAddr(dc); got == nil || got.String() != want.String() {
+		t.Fatalf("dnsUDPConn: got %v, want %v", got, want)
+	}
 }

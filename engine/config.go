@@ -82,6 +82,11 @@ type Config struct {
 	// OUTSIDE engine.mu (read-copy-act pattern). The provider must not
 	// acquire any lock the caller also holds.
 	OutboundProvider OutboundProvider
+
+	// DNSForwardUpstream, when non-empty ("host:port"), disables the local
+	// DNS middleware for provider port-53 flows and forwards raw queries to
+	// this upstream through the rule engine (multi-slot gateway mode).
+	DNSForwardUpstream string
 }
 
 // OutboundProvider supplies replacement k2v5:// URLs when an existing
