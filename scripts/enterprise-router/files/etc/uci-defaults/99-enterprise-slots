@@ -1,0 +1,59 @@
+#!/bin/sh
+# Enterprise multi-slot factory topology. Runs once on first boot.
+# Contract with k2r (gateway/uci_linux.go): named wifi-iface sections
+# slot1..slot8; k2r only ever touches ssid/key/disabled on them.
+
+. /lib/functions.sh
+
+for i in 1 2 3 4 5 6 7 8; do
+  # Bridge + subnet per slot: third octet == slot number (slot attribution).
+  uci set network.line$i=interface
+  uci set network.line$i.proto='static'
+  uci set network.line$i.device="br-line$i"
+  uci set network.line$i.ipaddr="10.81.$i.1"
+  uci set network.line$i.netmask='255.255.255.0'
+  uci set network.brline$i=device
+  uci set network.brline$i.type='bridge'
+  uci set network.brline$i.name="br-line$i"
+
+  # DHCP per slot, DNS = the bridge itself (k2r intercepts :53).
+  uci set dhcp.line$i=dhcp
+  uci set dhcp.line$i.interface="line$i"
+  uci set dhcp.line$i.start='30'
+  uci set dhcp.line$i.limit='200'
+  uci set dhcp.line$i.leasetime='12h'
+
+  # Wifi iface: named section slotN, disabled at factory. SSID/key are
+  # placeholders — k2r convergence owns them.
+  uci set wireless.slot$i=wifi-iface
+  uci set wireless.slot$i.device='radio0'
+  uci set wireless.slot$i.mode='ap'
+  uci set wireless.slot$i.network="line$i"
+  uci set wireless.slot$i.ssid="slot-$i"
+  uci set wireless.slot$i.encryption='psk2'
+  uci set wireless.slot$i.key='changeme-factory'
+  uci set wireless.slot$i.disabled='1'
+  uci set wireless.slot$i.isolate='1'
+
+  # Firewall zone per slot: NO forwarding to wan (fail-closed at kernel
+  # level — if k2r dies, slots go dark; the home WAN IP never leaks).
+  # No inter-slot forwarding either (account isolation).
+  uci add firewall zone
+  uci set firewall.@zone[-1].name="line$i"
+  uci set firewall.@zone[-1].network="line$i"
+  uci set firewall.@zone[-1].input='ACCEPT'
+  uci set firewall.@zone[-1].output='ACCEPT'
+  uci set firewall.@zone[-1].forward='REJECT'
+done
+
+# Management: default br-lan keeps DHCP but gets NO wan forwarding either.
+# Wired ports = management only (anchor reachable, no internet).
+uci set firewall.@zone[1].forward='REJECT'
+# Remove the default lan→wan forwarding if present.
+uci -q delete firewall.@forwarding[0]
+
+uci commit network
+uci commit dhcp
+uci commit wireless
+uci commit firewall
+exit 0
