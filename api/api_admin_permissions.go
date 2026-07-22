@@ -32,12 +32,13 @@ var allGroups = []string{
 	"surveys",
 	"admins",
 	"cms",
+	"enterprise", "enterprise.write",
 }
 
 // roleGroupMap maps each role bitmask to its permitted groups.
 var roleGroupMap = map[uint64][]string{
-	RoleDevopsViewer: {"nodes", "tunnels", "cloud", "users", "orders", "device_logs", "feedback_tickets", "stats"},
-	RoleDevopsEditor: {"nodes", "nodes.write", "tunnels", "tunnels.write", "cloud", "cloud.write", "users", "orders", "device_logs", "feedback_tickets", "stats", "strategy", "strategy.write"},
+	RoleDevopsViewer: {"nodes", "tunnels", "cloud", "users", "orders", "device_logs", "feedback_tickets", "stats", "enterprise"},
+	RoleDevopsEditor: {"nodes", "nodes.write", "tunnels", "tunnels.write", "cloud", "cloud.write", "users", "orders", "device_logs", "feedback_tickets", "stats", "strategy", "strategy.write", "enterprise", "enterprise.write"},
 	RoleSupport:      {"users", "orders", "device_logs", "feedback_tickets", "feedback_tickets.write"},
 	RoleMarketing:    {"users", "orders", "retailers", "retailers.write", "edm", "campaigns", "campaigns.write", "license_keys", "license_keys.write", "stats", "surveys", "announcements", "announcements.write"},
 }
