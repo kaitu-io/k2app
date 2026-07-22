@@ -64,7 +64,7 @@
 
 - `purchase/page.tsx`（server component）读取品牌（既有 `brand-server.ts` 机制）：kaitu → 渲染现有 `PurchaseClient`（不动）；overleap → 渲染新组件 `OverleapPurchaseClient.tsx`（同目录）。
 - `OverleapPurchaseClient` 行为：
-  - 套餐区：年付主推卡（含"折合 €7.42/月，省 38%"式对比）+ 月付卡；数据来自既有 plans 接口（按品牌下发，只展示 `stripePriceId` 非空的 plan）。
+  - 套餐区：年付主推卡（含"折合 €7.42/月，省 38%"式对比）+ 月付卡；数据来自既有 `/api/plans`（BrandResolver 按品牌下发，客户端过滤 `product === 'app'`）。**注**：`DataPlan` 不下发 `stripePriceId`（已核实 `api/type.go:561`），Stripe 价格解析纯服务端——overleap 品牌下发的 app plan 即可购，无需客户端判别字段。
   - 未登录：点购买 → 复用既有 `redirectToLogin()`（`web/src/lib/auth.ts`，`/login?next=<path>` 机制），next 指回 `/purchase?plan=<pid>`；登录回来后该套餐高亮，用户再点一次购买——**不自动触发 checkout**（避免登录后意外直跳付款页）。
   - 已登录：点购买 → `POST /api/user/stripe/checkout {plan: <pid>}` → `window.location.href = data.url`（同窗口跳转，非外链——网页场景没有"打开外部浏览器"问题）。
   - 已有活跃订阅（`user.subscriptions` 非空）：隐藏购买按钮，显示"已订阅"卡 + 链接到 `/account`。
