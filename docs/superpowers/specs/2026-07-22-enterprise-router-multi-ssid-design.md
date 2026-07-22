@@ -64,7 +64,7 @@ k2r 多槽模式(同一二进制)
 
 ## 3. 数据模型(api/,三张新表)
 
-复用现状:SlaveNode(Kind=private_node + owner 旁路)、CloudInstance、计量、凭证 mint、配额治理**零改动**。节点开设走现有节点运维流程,本设计只做"挂载"。
+复用现状:SlaveNode(Class=private + PrivateOwnerUserID 旁路)、CloudInstance、计量、凭证 mint、配额治理**零改动**。节点开设走现有节点运维流程,本设计只做"挂载"。
 
 ```
 EnterpriseCustomer            企业客户(一客户一持有账号)
