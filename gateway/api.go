@@ -285,6 +285,54 @@ func (g *Gateway) handleDown(w http.ResponseWriter) {
 	writeJSON(w, Response{Code: 0, Message: "disconnecting"})
 }
 
+// gatewayStatus extends engine.Status with gateway-specific fields for
+// /api/core status. It defines its OWN MarshalJSON rather than relying on
+// the embedded engine.Status's promoted one: engine.Status implements
+// json.Marshaler (to compute uptimeSeconds dynamically), and Go silently
+// promotes that method to any type embedding it — without an override here,
+// json.Marshal would call ONLY engine.Status.MarshalJSON and drop every
+// sibling field below (lanSubnets, interceptor, slots, ...) with no error,
+// which is exactly the bug that made /api/core status never report slots[].
+type gatewayStatus struct {
+	engine.Status
+	LANSubnets       []string     `json:"lanSubnets,omitempty"`
+	Interceptor      string       `json:"interceptor,omitempty"`
+	ListenPort       int          `json:"listenPort,omitempty"`
+	MaxLanClient     int          `json:"maxLanClient,omitempty"`
+	RouterDeviceMode string       `json:"routerDeviceMode,omitempty"`
+	Slots            []SlotStatus `json:"slots,omitempty"`
+}
+
+func (s gatewayStatus) MarshalJSON() ([]byte, error) {
+	base, err := s.Status.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(base, &m); err != nil {
+		return nil, err
+	}
+	if len(s.LANSubnets) > 0 {
+		m["lanSubnets"] = s.LANSubnets
+	}
+	if s.Interceptor != "" {
+		m["interceptor"] = s.Interceptor
+	}
+	if s.ListenPort != 0 {
+		m["listenPort"] = s.ListenPort
+	}
+	if s.MaxLanClient != 0 {
+		m["maxLanClient"] = s.MaxLanClient
+	}
+	if s.RouterDeviceMode != "" {
+		m["routerDeviceMode"] = s.RouterDeviceMode
+	}
+	if len(s.Slots) > 0 {
+		m["slots"] = s.Slots
+	}
+	return json.Marshal(m)
+}
+
 func (g *Gateway) handleStatus(w http.ResponseWriter) {
 	g.mu.Lock()
 	status := g.lastStatus
@@ -311,15 +359,6 @@ func (g *Gateway) handleStatus(w http.ResponseWriter) {
 		rdm.mu.RUnlock()
 	}
 
-	type gatewayStatus struct {
-		engine.Status
-		LANSubnets       []string     `json:"lanSubnets,omitempty"`
-		Interceptor      string       `json:"interceptor,omitempty"`
-		ListenPort       int          `json:"listenPort,omitempty"`
-		MaxLanClient     int          `json:"maxLanClient,omitempty"`
-		RouterDeviceMode string       `json:"routerDeviceMode,omitempty"`
-		Slots            []SlotStatus `json:"slots,omitempty"`
-	}
 	writeJSON(w, Response{Code: 0, Data: gatewayStatus{
 		Status:           status,
 		Interceptor:      interceptorName,
