@@ -30,6 +30,10 @@ type RouteEntry struct {
 
 	NetworkMatch string // "tcp" or "udp" (empty = any)
 	IPIsPrivate  bool   // match private/loopback IPs
+
+	// SrcCIDRs: compiled from MatchConfig.SrcIPCIDR. Connection source
+	// must fall in one of these prefixes (AND with other groups).
+	SrcCIDRs []netip.Prefix
 }
 
 // hasHostCriteria reports whether this route has domain/IP matching criteria.
@@ -45,7 +49,7 @@ func (r *RouteEntry) hasMetaCriteria() bool {
 	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 ||
 		len(r.ProcessNamePrefixes) > 0 || len(r.PackageNamePrefixes) > 0 ||
 		len(r.InstallerPackages) > 0 ||
-		r.NetworkMatch != ""
+		r.NetworkMatch != "" || len(r.SrcCIDRs) > 0
 }
 
 // Engine is the multi-ruleset matching engine.
@@ -360,6 +364,23 @@ func processNameMatches(rule, observed string) bool {
 //
 // Empty observed field where the route has criteria for that group = no match.
 func matchMeta(r *RouteEntry, meta ConnMeta) bool {
+	if len(r.SrcCIDRs) > 0 {
+		if !meta.SrcIP.IsValid() {
+			return false
+		}
+		src := meta.SrcIP.Unmap()
+		hit := false
+		for _, p := range r.SrcCIDRs {
+			if p.Contains(src) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			return false
+		}
+	}
+
 	hasProcess := len(r.ProcessNames) > 0 || len(r.ProcessNamePrefixes) > 0
 	if hasProcess {
 		if meta.ProcessName == "" {

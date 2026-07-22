@@ -48,6 +48,12 @@ type MatchConfig struct {
 	Network     string `yaml:"network,omitempty"      json:"network,omitempty"`
 	IPIsPrivate bool   `yaml:"ip_is_private,omitempty" json:"ip_is_private,omitempty"`
 
+	// SrcIPCIDR matches the connection's LAN source address (CIDR list,
+	// OR within list). Multi-slot gateway mode pins each slot subnet to
+	// its outbound. Meta criterion — never participates in DNS-time
+	// host matching.
+	SrcIPCIDR []string `yaml:"src_ip_cidr,omitempty" json:"src_ip_cidr,omitempty"`
+
 	// Catch-all.
 	All bool `yaml:"all,omitempty" json:"all,omitempty"`
 }
@@ -60,7 +66,7 @@ func (m MatchConfig) HasCriteria() bool {
 		len(m.ProcessName) > 0 || len(m.PackageName) > 0 ||
 		len(m.ProcessNamePrefix) > 0 || len(m.PackageNamePrefix) > 0 ||
 		len(m.InstallerPackage) > 0 ||
-		m.Network != "" || m.IPIsPrivate
+		m.Network != "" || m.IPIsPrivate || len(m.SrcIPCIDR) > 0
 }
 
 // HasHostCriteria reports whether any host-based (domain/IP) criterion is set.
