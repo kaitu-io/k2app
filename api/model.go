@@ -1393,3 +1393,52 @@ func (u User) MarshalJSON() ([]byte, error) {
 		MaxLanClient:    q.MaxLanClient,
 	})
 }
+
+// ===== 企业路由器(多槽多线路)=====
+// 设计:docs/superpowers/specs/2026-07-22-enterprise-router-multi-ssid-design.md §3
+// 单向流:运营写这三张表 → /api/subs gateway 分支 join 生成 → k2r 收敛。
+// subs 永不因健康度/配额改动绑定内容。
+
+// EnterpriseCustomer 企业客户(一客户一持有账号)
+type EnterpriseCustomer struct {
+	ID        uint64 `gorm:"primarykey"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+
+	Company string `gorm:"type:varchar(255);not null" json:"company"`
+	Contact string `gorm:"type:varchar(255)" json:"contact"`
+	Status  string `gorm:"type:varchar(20);not null;default:'active'" json:"status"` // active | suspended
+	UserID  uint64 `gorm:"not null;uniqueIndex" json:"userId"`
+	User    *User  `gorm:"foreignKey:UserID" json:"-"`
+}
+
+// EnterpriseLine 企业线路:一线路 = 一专属节点(Class=private)= 一固定出口 IP。
+// 规范显示名 = 大写 CountryCode + "-" + LineNo(如 AE-1),不落库。
+type EnterpriseLine struct {
+	ID        uint64 `gorm:"primarykey"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+
+	CustomerID  uint64              `gorm:"not null;index;uniqueIndex:idx_ent_cust_country_no,priority:1" json:"customerId"`
+	Customer    *EnterpriseCustomer `gorm:"foreignKey:CustomerID" json:"-"`
+	NodeID      uint64              `gorm:"not null;uniqueIndex" json:"nodeId"` // 一节点最多一条线路
+	Node        *SlaveNode          `gorm:"foreignKey:NodeID" json:"-"`
+	CountryCode string              `gorm:"type:varchar(2);not null;uniqueIndex:idx_ent_cust_country_no,priority:2" json:"countryCode"` // ISO 3166-1 alpha-2 小写
+	LineNo      int                 `gorm:"not null;uniqueIndex:idx_ent_cust_country_no,priority:3" json:"lineNo"`                      // 同客户同国序号,1 起
+	Status      string              `gorm:"type:varchar(20);not null;default:'active'" json:"status"`                                   // active | suspended
+}
+
+// EnterpriseRouterBinding 路由器绑定矩阵:槽位→线路。唯一写入方=运营 admin。
+// 同 IP 多路由器并发是风控反模式 → LineID 全局唯一(一线路最多绑一处)。
+type EnterpriseRouterBinding struct {
+	ID        uint64 `gorm:"primarykey"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	GatewayDeviceID uint64          `gorm:"not null;index;uniqueIndex:idx_ent_gw_slot,priority:1" json:"gatewayDeviceId"` // → Device(IsGateway)
+	Slot            int             `gorm:"not null;uniqueIndex:idx_ent_gw_slot,priority:2" json:"slot"`                  // 1..8
+	LineID          uint64          `gorm:"not null;uniqueIndex" json:"lineId"`
+	Line            *EnterpriseLine `gorm:"foreignKey:LineID" json:"-"`
+}
