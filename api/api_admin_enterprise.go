@@ -169,6 +169,33 @@ func api_admin_update_enterprise_customer(c *gin.Context) {
 	WriteAuditLog(c, "enterprise_customer_update", "enterprise_customer", id, nil)
 }
 
+// enterpriseNodeDTO/enterpriseLineDTO surface the Preloaded relations that
+// EnterpriseLine.Node / EnterpriseRouterBinding.Line intentionally omit from
+// JSON (json:"-" on the model — raw GORM structs are not the wire format).
+type enterpriseNodeDTO struct {
+	Ipv4    string `json:"ipv4"`
+	Name    string `json:"name"`
+	Country string `json:"country"`
+}
+
+type enterpriseLineDTO struct {
+	ID          uint64             `json:"id"`
+	CustomerID  uint64             `json:"customerId"`
+	NodeID      uint64             `json:"nodeId"`
+	CountryCode string             `json:"countryCode"`
+	LineNo      int                `json:"lineNo"`
+	Status      string             `json:"status"`
+	Node        *enterpriseNodeDTO `json:"node,omitempty"`
+}
+
+func toEnterpriseLineDTO(l EnterpriseLine) enterpriseLineDTO {
+	dto := enterpriseLineDTO{ID: l.ID, CustomerID: l.CustomerID, NodeID: l.NodeID, CountryCode: l.CountryCode, LineNo: l.LineNo, Status: l.Status}
+	if l.Node != nil {
+		dto.Node = &enterpriseNodeDTO{Ipv4: l.Node.Ipv4, Name: l.Node.Name, Country: l.Node.Country}
+	}
+	return dto
+}
+
 func api_admin_list_enterprise_lines(c *gin.Context) {
 	customerID := c.Param("id")
 	var lines []EnterpriseLine
@@ -177,7 +204,11 @@ func api_admin_list_enterprise_lines(c *gin.Context) {
 		Error(c, ErrorSystemError, "failed to list enterprise lines")
 		return
 	}
-	ItemsAll(c, lines)
+	items := make([]enterpriseLineDTO, 0, len(lines))
+	for _, l := range lines {
+		items = append(items, toEnterpriseLineDTO(l))
+	}
+	ItemsAll(c, items)
 }
 
 type adminCreateEnterpriseLineRequest struct {
@@ -255,6 +286,14 @@ func api_admin_delete_enterprise_line(c *gin.Context) {
 	WriteAuditLog(c, "enterprise_line_delete", "enterprise_line", id, nil)
 }
 
+type enterpriseBindingDTO struct {
+	ID              uint64             `json:"id"`
+	GatewayDeviceID uint64             `json:"gatewayDeviceId"`
+	Slot            int                `json:"slot"`
+	LineID          uint64             `json:"lineId"`
+	Line            *enterpriseLineDTO `json:"line,omitempty"`
+}
+
 func api_admin_list_enterprise_bindings(c *gin.Context) {
 	var bindings []EnterpriseRouterBinding
 	query := db.Get().Preload("Line").Preload("Line.Node")
@@ -270,7 +309,16 @@ func api_admin_list_enterprise_bindings(c *gin.Context) {
 		Error(c, ErrorSystemError, "failed to list enterprise bindings")
 		return
 	}
-	ItemsAll(c, bindings)
+	items := make([]enterpriseBindingDTO, 0, len(bindings))
+	for _, b := range bindings {
+		dto := enterpriseBindingDTO{ID: b.ID, GatewayDeviceID: b.GatewayDeviceID, Slot: b.Slot, LineID: b.LineID}
+		if b.Line != nil {
+			lineDTO := toEnterpriseLineDTO(*b.Line)
+			dto.Line = &lineDTO
+		}
+		items = append(items, dto)
+	}
+	ItemsAll(c, items)
 }
 
 type adminUpsertEnterpriseBindingRequest struct {
