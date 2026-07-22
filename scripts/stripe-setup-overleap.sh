@@ -11,10 +11,10 @@ API=https://api.stripe.com/v1
 req() { curl -sS -u "${STRIPE_SECRET_KEY}:" "$@"; }
 first_id() { python3 -c 'import json,sys; d=json.load(sys.stdin).get("data",[]); print(d[0]["id"] if d else "")'; }
 obj_id() { python3 -c 'import json,sys; o=json.load(sys.stdin); print(o.get("id") or sys.exit("stripe error: %s" % o))'; }
+first_id_by_slug() { python3 -c 'import json,sys; d=json.load(sys.stdin).get("data",[]); ids=[o["id"] for o in d if o.get("metadata",{}).get("slug")==sys.argv[1]]; print(ids[0] if ids else "")' "$1"; }
 
-# --- Product（metadata.slug 幂等）---
-product_id=$(req "$API/products/search" \
-  --data-urlencode "query=metadata['slug']:'overleap-basic' AND active:'true'" | first_id)
+# --- Product（metadata.slug 幂等；list+本地过滤，避免 search 端点最终一致性导致重复创建）---
+product_id=$(req "$API/products" -G -d "active=true" -d "limit=100" | first_id_by_slug overleap-basic)
 if [ -z "$product_id" ]; then
   product_id=$(req "$API/products" \
     -d name="Overleap Basic" \
