@@ -21,19 +21,38 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/control"
 )
 
+// bindLogState records the last logged direct-bind resolution so the
+// per-socket controlFunc only emits a DIAG line when the resolved interface
+// identity changes — never per call. Compared by identity only (name/index/
+// isTun), deliberately ignoring the network family so a stable interface does
+// not flap-log between tcp4/udp6 sockets.
+type bindLogState struct {
+	name  string
+	index int
+	isTun bool
+}
+
 type nePlatform struct {
 	finder   control.InterfaceFinder
 	netMon   tun.NetworkUpdateMonitor
 	ifaceMon tun.DefaultInterfaceMonitor
 	closed   sync.Once
+	lastBind atomic.Pointer[bindLogState] // gates DIAG: direct-bind, see logBindDecision
 }
+
+// isTunName reports whether an interface name is a utun (the NE's own TUN).
+// Used to detect the self-binding loop where the default-interface probe
+// resolves to the tunnel instead of the physical uplink.
+func isTunName(name string) bool { return strings.HasPrefix(name, "utun") }
 
 // newNEPlatform creates the Darwin NE platform networking component.
 // Uses UnderNetworkExtension: true so sing-tun detects the default interface
@@ -82,9 +101,21 @@ func (p *nePlatform) ControlFunc() func(network, address string, c syscall.RawCo
 
 func (p *nePlatform) Start(callback func()) error {
 	p.ifaceMon.RegisterCallback(func(defaultInterface *control.Interface, flags int) {
+		// DIAG Event A: record what the default-interface probe resolved to on
+		// every change. When this is a utun*, direct sockets get bound to the
+		// TUN and loop back into gVisor (the "国内直连全挂" failure). Emitted at
+		// INFO so it survives the default build log level. nil-guarded — the
+		// previous code dereferenced defaultInterface.Name unconditionally.
+		if defaultInterface != nil {
+			slog.Info("DIAG: ne-iface-resolved",
+				"name", defaultInterface.Name,
+				"index", defaultInterface.Index,
+				"isTun", isTunName(defaultInterface.Name),
+				"flags", flags)
+		} else {
+			slog.Warn("DIAG: ne-iface-resolved", "result", "nil", "flags", flags)
+		}
 		if callback != nil {
-			slog.Debug("NE network: default interface changed",
-				"interface", defaultInterface.Name, "flags", flags)
 			callback()
 		}
 	})
@@ -130,10 +161,36 @@ func (p *nePlatform) controlFunc() control.Func {
 	return func(network, address string, conn syscall.RawConn) error {
 		iface := p.ifaceMon.DefaultInterface()
 		if iface == nil {
+			p.logBindDecision("", -1, false, network)
 			return nil // no interface yet — NECP auto-bypasses NE sockets
 		}
+		p.logBindDecision(iface.Name, iface.Index, isTunName(iface.Name), network)
 		return control.BindToInterface0(p.finder, conn, network, address, iface.Name, iface.Index, false)
 	}
+}
+
+// logBindDecision emits DIAG Event B — the interface a direct socket is
+// actually bound to — but only when the resolved identity differs from the
+// last logged one, so a 512/s dial storm produces a single line, not 512.
+// A utun bind (or a nil resolution) is the pathological case and is logged at
+// WARN; a physical uplink at INFO. name=="" means DefaultInterface() was nil.
+func (p *nePlatform) logBindDecision(name string, index int, isTun bool, network string) {
+	st := &bindLogState{name: name, index: index, isTun: isTun}
+	if prev := p.lastBind.Swap(st); prev != nil &&
+		prev.name == name && prev.index == index && prev.isTun == isTun {
+		return // unchanged since last log
+	}
+	if name == "" {
+		slog.Warn("DIAG: direct-bind", "resolved", "nil", "net", network)
+		return
+	}
+	if isTun {
+		slog.Warn("DIAG: direct-bind",
+			"resolved", name, "index", index, "isTun", true, "net", network)
+		return
+	}
+	slog.Info("DIAG: direct-bind",
+		"resolved", name, "index", index, "isTun", false, "net", network)
 }
 
 // neSlogAdapter bridges sing's logger to Go's slog.
