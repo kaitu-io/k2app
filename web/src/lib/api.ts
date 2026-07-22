@@ -2237,6 +2237,64 @@ export const api = {
     });
   },
 
+  // ========================= Enterprise Router (multi-slot / multi-line) APIs =========================
+
+  async listEnterpriseCustomers(params: { page?: number; pageSize?: number } = {}): Promise<ListResult<EnterpriseCustomerItem>> {
+    const q = new URLSearchParams();
+    if (params.page !== undefined) q.set('page', String(params.page));
+    if (params.pageSize !== undefined) q.set('pageSize', String(params.pageSize));
+    const qs = q.toString();
+    return this.request<ListResult<EnterpriseCustomerItem>>(`/app/enterprise/customers${qs ? '?' + qs : ''}`);
+  },
+
+  async createEnterpriseCustomer(body: { company: string; contact?: string; userId: number }): Promise<EnterpriseCustomerItem> {
+    return this.request<EnterpriseCustomerItem>(`/app/enterprise/customers`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async updateEnterpriseCustomer(id: number, body: { company?: string; contact?: string; status?: string }): Promise<EnterpriseCustomerItem> {
+    return this.request<EnterpriseCustomerItem>(`/app/enterprise/customers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async listEnterpriseLines(customerId: number): Promise<EnterpriseLineItem[]> {
+    return this.request<EnterpriseLineItem[]>(`/app/enterprise/customers/${customerId}/lines`);
+  },
+
+  async createEnterpriseLine(body: { customerId: number; nodeId: number; countryCode: string; lineNo: number }): Promise<EnterpriseLineItem> {
+    return this.request<EnterpriseLineItem>(`/app/enterprise/lines`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async deleteEnterpriseLine(id: number): Promise<void> {
+    return this.request<void>(`/app/enterprise/lines/${id}`, { method: 'DELETE' });
+  },
+
+  async listEnterpriseBindings(params: { deviceId?: number; customerId?: number } = {}): Promise<EnterpriseBindingItem[]> {
+    const q = new URLSearchParams();
+    if (params.deviceId !== undefined) q.set('deviceId', String(params.deviceId));
+    if (params.customerId !== undefined) q.set('customerId', String(params.customerId));
+    const qs = q.toString();
+    return this.request<EnterpriseBindingItem[]>(`/app/enterprise/bindings${qs ? '?' + qs : ''}`);
+  },
+
+  async upsertEnterpriseBinding(body: { gatewayDeviceId: number; slot: number; lineId: number }): Promise<void> {
+    return this.request<void>(`/app/enterprise/bindings`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async deleteEnterpriseBinding(id: number): Promise<void> {
+    return this.request<void>(`/app/enterprise/bindings/${id}`, { method: 'DELETE' });
+  },
+
   // License Key Batch APIs
   async listLicenseKeyBatches(params: { page?: number; pageSize?: number; sourceTag?: string } = {}): Promise<{ items: LicenseKeyBatch[]; total: number }> {
     const q = new URLSearchParams();
@@ -2578,8 +2636,41 @@ export interface AdminNodeItem {
   region: string;
   ipv4: string;
   ipv6: string;
+  class: string; // shared | private
+  privateOwnerUserId?: number;
   updatedAt: number;
   tunnels: AdminNodeTunnel[];
+}
+
+// ============================================================
+// Enterprise router (multi-slot / multi-line) types
+// ============================================================
+
+export interface EnterpriseCustomerItem {
+  id: number;
+  company: string;
+  contact: string;
+  status: string;
+  userId: number;
+  createdAt: string;
+}
+
+export interface EnterpriseLineItem {
+  id: number;
+  customerId: number;
+  nodeId: number;
+  countryCode: string;
+  lineNo: number;
+  status: string;
+  node?: { ipv4: string; name: string; country: string };
+}
+
+export interface EnterpriseBindingItem {
+  id: number;
+  gatewayDeviceId: number;
+  slot: number;
+  lineId: number;
+  line?: EnterpriseLineItem;
 }
 
 // ============================================================
