@@ -503,17 +503,20 @@ func (g *Gateway) onSlotBindingsChanged(newBindings []config.SlotBinding) {
 	safego.Go(g.reapplyTunnel)
 }
 
-// reapplyTunnel reloads the persisted config and re-runs doUp against it.
-// doUp itself serializes via opMu and tears down the old tunnel first
-// (closeTunnel), so this is the same sequence /api/core down+up would run —
-// no separate lifecycle path.
+// reapplyTunnel reloads the config from the LAST successful doUp (persisted
+// state, not defaultConfigPath()'s on-disk YAML — the CLI's `k2r up <path>`
+// accepts an arbitrary path, so the file that originally configured this
+// session may live anywhere) and re-runs doUp against it. doUp itself
+// serializes via opMu and tears down the old tunnel first (closeTunnel), so
+// this is the same sequence /api/core down+up would run — no separate
+// lifecycle path.
 func (g *Gateway) reapplyTunnel() {
-	cfg, err := LoadGateway(defaultConfigPath())
-	if err != nil {
-		slog.Warn("DIAG: slot-reapply-load-failed", "err", err)
+	st := loadState()
+	if st == nil || st.Config == nil {
+		slog.Warn("DIAG: slot-reapply-load-failed", "err", "no persisted config")
 		return
 	}
-	if err := g.doUp(cfg); err != nil {
+	if err := g.doUp(st.Config); err != nil {
 		slog.Warn("DIAG: slot-reapply-failed", "err", err)
 	}
 }
