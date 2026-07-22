@@ -39,7 +39,7 @@ describe('StripePurchasePanel', () => {
     affordanceMock = { mode: 'subscribe' };
     userMock = { user: { uuid: 'u1' }, fetchUser: vi.fn() };
     originalPlatform = window._platform;
-    (window as any)._platform = { openExternal: vi.fn() };
+    (window as any)._platform = { openExternal: vi.fn(), os: 'macos' };
   });
 
   afterEach(() => {
@@ -98,6 +98,24 @@ describe('StripePurchasePanel', () => {
     expect(screen.queryByTestId('stripe-manage-apple-btn')).toBeNull();
     expect(screen.queryByTestId('stripe-manage-url-btn')).toBeNull();
     expect(portalMock).not.toHaveBeenCalled();
+  });
+
+  // itms-apps:// silently no-ops on non-Apple platforms (Windows/Linux desktop) —
+  // those must get the https fallback so the button actually does something.
+  it('manage mode (apple_settings) on a non-Apple platform: opens the https fallback URL', async () => {
+    affordanceMock = {
+      mode: 'manage',
+      activeSub: { provider: 'apple', tier: 'basic', currentPeriodEnd: 2000000000,
+        autoRenew: true, manage: { kind: 'apple_settings' } },
+    };
+    (window as any)._platform = { openExternal: vi.fn(), os: 'windows' };
+    render(<StripePurchasePanel plans={plans} plansLoading={false} />);
+    fireEvent.click(screen.getByTestId('stripe-manage-apple-btn'));
+    await waitFor(() =>
+      expect(window._platform!.openExternal).toHaveBeenCalledWith(
+        'https://apps.apple.com/account/subscriptions',
+      ),
+    );
   });
 
   it('empty plans: shows noPlans hint, no subscribe button', () => {

@@ -27,6 +27,14 @@ interface StripePurchasePanelProps {
 // 的，桌面/web 无法调用 Stripe portal（会打错商户或直接报错）——只能引导去 App
 // Store 的订阅管理页。
 const APPLE_SUBS_URL = 'itms-apps://apps.apple.com/account/subscriptions';
+const APPLE_SUBS_URL_HTTPS = 'https://apps.apple.com/account/subscriptions';
+
+// itms-apps:// only resolves on Apple platforms — it silently no-ops on
+// Windows/Linux desktop, so those need the https fallback to actually open.
+function appleSubsUrl(): string {
+  const os = window._platform?.os;
+  return os === 'ios' || os === 'macos' ? APPLE_SUBS_URL : APPLE_SUBS_URL_HTTPS;
+}
 
 export default function StripePurchasePanel({ plans, plansLoading }: StripePurchasePanelProps) {
   const { t } = useTranslation();
@@ -105,7 +113,7 @@ export default function StripePurchasePanel({ plans, plansLoading }: StripePurch
               data-testid="stripe-manage-apple-btn"
               variant="contained"
               endIcon={<OpenInNewIcon />}
-              onClick={() => void window._platform?.openExternal?.(APPLE_SUBS_URL)}
+              onClick={() => void window._platform?.openExternal?.(appleSubsUrl())}
             >
               {t('purchase:purchase.iap.openManage')}
             </Button>

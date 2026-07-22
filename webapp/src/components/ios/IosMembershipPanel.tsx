@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import type { DataSubscription } from '../../services/api-types';
 import { useIapPurchase } from '../../hooks/useIapPurchase';
+import { useStripeCheckout } from '../../hooks/useStripeCheckout';
 import { useUser } from '../../hooks/useUser';
 import { useAppConfig } from '../../hooks/useAppConfig';
 import { useAlert } from '../../stores/alert.store';
@@ -41,6 +42,7 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
   const { user, fetchUser } = useUser();
   const { appConfig } = useAppConfig();
   const { restore, restoring, purchaseError, lastGrantedUser } = useIapPurchase();
+  const { openPortal } = useStripeCheckout();
   const { showAlert } = useAlert();
 
   // 恢复成功后：提示 + 刷新用户，使 affordance 重算（未绑定的 Apple 订阅被绑定后
@@ -53,10 +55,20 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastGrantedUser]);
 
+  // 按 manage.kind 分派（与 StripePurchasePanel 的 manage 面一致）：本品牌同时
+  // 开了 apple_iap + stripe_checkout，同一个 iOS 会员中心可能对应任一 provider——
+  // stripe_portal 必须走 Billing Portal，不能塌缩成 App Store 订阅页。
   const openManage = () => {
-    const url =
-      activeSub?.manage?.kind === 'url' && activeSub.manage.url ? activeSub.manage.url : APPLE_SUBS_URL;
-    void window._platform?.openExternal?.(url);
+    const manage = activeSub?.manage;
+    if (manage?.kind === 'stripe_portal') {
+      void openPortal();
+      return;
+    }
+    if (manage?.kind === 'url' && manage.url) {
+      void window._platform?.openExternal?.(manage.url);
+      return;
+    }
+    void window._platform?.openExternal?.(APPLE_SUBS_URL);
   };
 
   const inviteRewardDays = appConfig?.inviteReward?.purchaseRewardDays ?? 0;

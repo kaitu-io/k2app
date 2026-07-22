@@ -20,9 +20,19 @@ const showAlert = vi.fn();
 const navigate = vi.fn();
 let appConfig: unknown = { inviteReward: { purchaseRewardDays: 7 } };
 const user = { expiredAt: 1_700_000_000 + 200 * 86400, maxDevice: 5, maxRouterDevice: 0, maxLanClient: 0 };
+const mockOpenPortal = vi.fn();
 
 vi.mock('../../../hooks/useIapPurchase', () => ({
   useIapPurchase: () => ({ restore, restoring, purchaseError, lastGrantedUser: null }),
+}));
+vi.mock('../../../hooks/useStripeCheckout', () => ({
+  useStripeCheckout: () => ({
+    checkout: vi.fn(),
+    openPortal: mockOpenPortal,
+    loading: false,
+    error: null,
+    clearError: vi.fn(),
+  }),
 }));
 vi.mock('../../../hooks/useUser', () => ({
   useUser: () => ({ user, fetchUser }),
@@ -53,6 +63,7 @@ describe('IosMembershipPanel', () => {
     (window as { _platform?: unknown })._platform = { openExternal: vi.fn() };
     restore.mockClear();
     navigate.mockClear();
+    mockOpenPortal.mockClear();
     restoring = false;
     purchaseError = null;
     appConfig = { inviteReward: { purchaseRewardDays: 7 } };
@@ -130,5 +141,18 @@ describe('IosMembershipPanel', () => {
     appConfig = { inviteReward: { purchaseRewardDays: 0 } };
     render(<IosMembershipPanel mode="status" />);
     expect(screen.queryByTestId('invite-reward-card')).toBeNull();
+  });
+
+  describe('openManage dispatch by manage.kind', () => {
+    it('stripe_portal kind calls openPortal instead of the App Store URL', () => {
+      const openExternal = vi.fn();
+      (window as { _platform?: unknown })._platform = { openExternal };
+      render(
+        <IosMembershipPanel mode="manage" activeSub={sub({ provider: 'stripe', manage: { kind: 'stripe_portal' } })} />,
+      );
+      fireEvent.click(screen.getByTestId('ios-membership-manage-btn'));
+      expect(mockOpenPortal).toHaveBeenCalledTimes(1);
+      expect(openExternal).not.toHaveBeenCalled();
+    });
   });
 });
