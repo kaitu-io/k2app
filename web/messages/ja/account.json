@@ -16,6 +16,21 @@
       "removeConfirm": "确认移除？你的付款将不再有预设代付人。",
       "currentHint": "付款时可选择「请 {email} 代付」，我们会发邮件给 TA。",
       "savedToast": "已保存"
+    },
+    "stripe": {
+      "navSubscription": "サブスクリプション",
+      "activating": "サブスクリプションを有効化しています…",
+      "activationDelayed": "お支払いは完了しました。数分以内に有効になります。ページを更新してご確認ください。",
+      "subscriptionTitle": "ご利用中のプラン",
+      "renewsOn": "{date} に更新",
+      "expiresOn": "{date} に期限切れ",
+      "manage": "サブスクリプションを管理",
+      "opening": "開いています…",
+      "noSubscription": "有効なサブスクリプションはありません。",
+      "choosePlan": "プランを見る",
+      "downloadTitle": "準備完了 — アプリを入手",
+      "downloadCta": "Overleap をダウンロード",
+      "genericError": "エラーが発生しました。もう一度お試しください。"
     }
   }
 }

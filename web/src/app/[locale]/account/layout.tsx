@@ -13,6 +13,7 @@ import { Link } from "@/i18n/routing";
 import { usePathname } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { siteBrand } from "@/lib/brands";
 
 export default function AccountLayout({
   children,
@@ -46,40 +47,55 @@ export default function AccountLayout({
     return null; // Will redirect
   }
 
-  // Navigation items for account section
-  const navItems = [
-    {
-      href: "/purchase",
-      label: t("admin.account.renew.title"),
-      icon: CreditCard,
-    },
-    {
-      href: "/account/delegate",
-      label: t("admin.account.delegate.title"),
-      icon: Users,
-    },
-    {
-      href: "/account/wallet",
-      label: t("admin.account.wallet.title"),
-      icon: Wallet,
-    },
-    {
-      href: "/account/security",
-      label: t("admin.account.security.title"),
-      icon: Lock,
-    },
-    // Reserved for future features
-    // {
-    //   href: "/account/devices",
-    //   label: t("admin.account.devices.title"),
-    //   icon: Smartphone,
-    // },
-    // {
-    //   href: "/account/payment-history",
-    //   label: t("admin.account.paymentHistory.title"),
-    //   icon: CreditCard,
-    // },
-  ];
+  // Navigation items for account section.
+  // overleap 无 WordGate 续费/代理/钱包概念：只留订阅 + 安全。
+  const navItems =
+    siteBrand().id === "overleap"
+      ? [
+          {
+            href: "/account",
+            label: t("account.stripe.navSubscription"),
+            icon: CreditCard,
+          },
+          {
+            href: "/account/security",
+            label: t("admin.account.security.title"),
+            icon: Lock,
+          },
+        ]
+      : [
+          {
+            href: "/purchase",
+            label: t("admin.account.renew.title"),
+            icon: CreditCard,
+          },
+          {
+            href: "/account/delegate",
+            label: t("admin.account.delegate.title"),
+            icon: Users,
+          },
+          {
+            href: "/account/wallet",
+            label: t("admin.account.wallet.title"),
+            icon: Wallet,
+          },
+          {
+            href: "/account/security",
+            label: t("admin.account.security.title"),
+            icon: Lock,
+          },
+          // Reserved for future features
+          // {
+          //   href: "/account/devices",
+          //   label: t("admin.account.devices.title"),
+          //   icon: Smartphone,
+          // },
+          // {
+          //   href: "/account/payment-history",
+          //   label: t("admin.account.paymentHistory.title"),
+          //   icon: CreditCard,
+          // },
+        ];
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -95,7 +111,10 @@ export default function AccountLayout({
       <div className="md:hidden mb-4">
         <div className="flex gap-2 overflow-x-auto pb-2">
           {navItems.map((item) => {
-            const isActive = pathname.includes(item.href);
+            const isActive =
+              item.href === "/account"
+                ? /\/account\/?$/.test(pathname)
+                : pathname.includes(item.href);
             const Icon = item.icon;
             return (
               <Link
@@ -130,7 +149,10 @@ export default function AccountLayout({
         <aside className="hidden md:block md:w-[220px] flex-shrink-0">
           <nav className="space-y-2">
             {navItems.map((item) => {
-              const isActive = pathname.includes(item.href);
+              const isActive =
+                item.href === "/account"
+                  ? /\/account\/?$/.test(pathname)
+                  : pathname.includes(item.href);
               const Icon = item.icon;
               return (
                 <Link

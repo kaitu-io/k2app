@@ -16,6 +16,21 @@
       "removeConfirm": "确认移除？你的付款将不再有预设代付人。",
       "currentHint": "付款时可选择「请 {email} 代付」，我们会发邮件给 TA。",
       "savedToast": "已保存"
+    },
+    "stripe": {
+      "navSubscription": "Subscription",
+      "activating": "Activating your subscription…",
+      "activationDelayed": "Payment received. Your subscription will be active within a few minutes — refresh this page to check.",
+      "subscriptionTitle": "Your subscription",
+      "renewsOn": "Renews on {date}",
+      "expiresOn": "Expires on {date}",
+      "manage": "Manage subscription",
+      "opening": "Opening…",
+      "noSubscription": "No active subscription yet.",
+      "choosePlan": "See plans",
+      "downloadTitle": "You're all set — get the apps",
+      "downloadCta": "Download Overleap",
+      "genericError": "Something went wrong. Please try again."
     }
   }
 }
