@@ -301,6 +301,22 @@ export interface User {
   deviceCount: number;
   retailerConfig?: RetailerConfig;  // 分销商配置（仅管理员可见）
   wallet?: Wallet;                  // 钱包信息（仅管理员可见）
+  subscriptions?: DataSubscription[];  // 活跃续订订阅（0..N），Go DataUser.Subscriptions
+}
+
+// 订阅管理面（Go api ManageSurface）——决定"管理订阅"跳去哪
+export interface ManageSurface {
+  kind: 'stripe_portal' | 'apple_settings' | 'url';
+  url?: string;
+}
+
+// provider 中立的活跃续订订阅（Go api DataSubscription）
+export interface DataSubscription {
+  provider: string;          // 'stripe' | 'apple'
+  tier: string;
+  currentPeriodEnd: number;  // unix 秒
+  autoRenew: boolean;
+  manage: ManageSurface;
 }
 
 // 套餐相关类型
@@ -312,6 +328,7 @@ export interface Plan {
   month: number;
   highlight: boolean;
   tier?: string;                    // 套餐档位: "lite" | "basic" | "family" | "business"
+  product?: string;                 // 'app' | 'private_node'（Go DataPlan.Product）
 }
 
 // 优惠活动类型
@@ -1379,6 +1396,29 @@ export const api = {
     return this.request<CreateOrderResponse>('/api/user/orders', {
       method: 'POST',
       body: JSON.stringify(request),
+      ...options,
+    });
+  },
+
+  // ====== Stripe（overleap 专属渠道；kaitu 品牌调用会得到 405001）======
+
+  async createStripeCheckout(
+    planPid: string,
+    options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>
+  ): Promise<{ url: string }> {
+    return this.request<{ url: string }>('/api/user/stripe/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ plan: planPid }),
+      ...options,
+    });
+  },
+
+  async createStripePortal(
+    options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>
+  ): Promise<{ url: string }> {
+    return this.request<{ url: string }>('/api/user/stripe/portal', {
+      method: 'POST',
+      body: JSON.stringify({}),
       ...options,
     });
   },
