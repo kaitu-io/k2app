@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Overleap 网页购买面板（Stripe 订阅制）。
+ * 本品牌网页购买面板（Stripe 订阅制）。
  *
  * 另一品牌的 WordGate 流在 PurchaseClient.tsx，两者由 page.tsx 按构建期品牌分流。
  * Stripe 价格解析在服务端（plan → stripe_price_id），本组件只负责：
