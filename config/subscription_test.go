@@ -815,6 +815,92 @@ func TestPick_ScoreSource_TopKLimit(t *testing.T) {
 	}
 }
 
+// --- Task N: slot_bindings (enterprise multi-slot gateway) ---
+
+func TestFetch_SlotBindings(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(subsResponse{
+			Tunnels: []Tunnel{
+				{URL: "k2v5://a:b@1.1.1.1:443", Weight: 1},
+				{URL: "k2v5://a:b@2.2.2.2:443", Weight: 1},
+			},
+			SlotBindings: []SlotBinding{
+				{Slot: 1, Country: "ae", Index: 1, TunnelIndex: 0},
+				{Slot: 5, Country: "gn", Index: 1, TunnelIndex: 1},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	subsURL := "k2subs://alice:tok@" + srv.URL[len("https://"):] + "/subs/team"
+	s, err := NewSubscription(subsURL, "")
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+
+	var cbGot []SlotBinding
+	s.SetOnSlotBindings(func(b []SlotBinding) { cbGot = b })
+	if err := s.Fetch(context.Background(), srv.Client()); err != nil {
+		t.Fatal(err)
+	}
+	got := s.SlotBindings()
+	if len(got) != 2 || got[0] != (SlotBinding{Slot: 1, Country: "ae", Index: 1, TunnelIndex: 0}) {
+		t.Fatalf("SlotBindings = %+v", got)
+	}
+	if len(cbGot) != 2 {
+		t.Fatalf("callback got %+v", cbGot)
+	}
+}
+
+func TestCache_SlotBindingsRoundTrip_And_LegacyFallback(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(subsResponse{
+			Tunnels: []Tunnel{
+				{URL: "k2v5://a:b@1.1.1.1:443", Weight: 1},
+			},
+			SlotBindings: []SlotBinding{
+				{Slot: 1, Country: "ae", Index: 1, TunnelIndex: 0},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	subsURL := "k2subs://alice:tok@" + srv.URL[len("https://"):] + "/subs/team"
+
+	// 新格式写入(Fetch 触发 writeCache)→读回(新 Subscription 走 loadCache)
+	s1, err := NewSubscription(subsURL, dir)
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	if err := s1.Fetch(context.Background(), srv.Client()); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := NewSubscription(subsURL, dir)
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	if got := s2.SlotBindings(); len(got) != 1 || got[0].Country != "ae" {
+		t.Fatalf("cache roundtrip: %+v", got)
+	}
+	if len(s2.Tunnels()) != 1 {
+		t.Fatalf("cache roundtrip tunnels: %+v", s2.Tunnels())
+	}
+
+	// 旧格式(裸 []Tunnel JSON)可读、bindings 为空
+	legacy := s1.cacheFile
+	if err := os.WriteFile(legacy, []byte(`[{"url":"k2v5://a:b@1.1.1.1:443"}]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s3, err := NewSubscription(subsURL, dir)
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	if len(s3.Tunnels()) != 1 || len(s3.SlotBindings()) != 0 {
+		t.Fatalf("legacy fallback: tunnels=%d bindings=%d", len(s3.Tunnels()), len(s3.SlotBindings()))
+	}
+}
+
 // --- Helpers ---
 
 func contains(s, substr string) bool {
