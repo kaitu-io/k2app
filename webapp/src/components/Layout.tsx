@@ -1,7 +1,7 @@
 import { styled, useTheme } from "@mui/material/styles";
 import { Box } from "@mui/material";
-import { useLocation, Outlet } from "react-router-dom";
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useLocation, useNavigate, Outlet } from "react-router-dom";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import BottomNavigation from "./BottomNavigation";
 import SideNavigation from "./SideNavigation";
 import AnnouncementBanner from "./AnnouncementBanner";
@@ -11,6 +11,7 @@ import { DisconnectFeedbackStrip } from "./DisconnectFeedbackStrip";
 import { useLayout } from "../stores";
 import { getCurrentAppConfig } from "../config/apps";
 import LoginRequiredGuard from "./LoginRequiredGuard";
+import { useRouterSlots } from "../stores/vpn-machine.store";
 
 // Lazy load Tab pages for code splitting, but keep them mounted once loaded
 const Dashboard = lazy(() => import("../pages/Dashboard"));
@@ -73,11 +74,24 @@ const TAB_PAGES: TabPageConfig[] = [
 
 export default function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { isDesktop } = useLayout();
   const appConfig = getCurrentAppConfig();
   const theme = useTheme();
+  const routerSlots = useRouterSlots();
   // Track which Tab pages have been mounted (for lazy loading and keep-alive)
   const [mountedTabs, setMountedTabs] = useState<Record<string, boolean>>({});
+
+  // Enterprise routers land on /router instead of Dashboard — but only once,
+  // the first time slots become known, so a user who navigates back to '/'
+  // afterward isn't yanked away again.
+  const hasRedirectedToRouter = useRef(false);
+  useEffect(() => {
+    if (!hasRedirectedToRouter.current && routerSlots && location.pathname === '/') {
+      hasRedirectedToRouter.current = true;
+      navigate('/router', { replace: true });
+    }
+  }, [routerSlots, location.pathname, navigate]);
 
   // Check if current path is a Tab page
   const currentTabPage = TAB_PAGES.find(tab => tab.path === location.pathname);

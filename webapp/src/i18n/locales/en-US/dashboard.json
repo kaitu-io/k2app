@@ -301,6 +301,22 @@
     "confirm": "Confirm",
     "loadFailed": "Failed to load devices"
   },
+  "routerSlots": {
+    "title": "Lines",
+    "line": "Line",
+    "customName": "Custom name",
+    "unbound": "Unbound",
+    "failClosed": "Line down — traffic blocked",
+    "downFor": "Down for {{duration}}",
+    "rename": "Rename Wi-Fi",
+    "renameHint": "1-32 characters",
+    "password": "Change Wi-Fi password",
+    "passwordHint": "8-63 characters",
+    "confirm": "Apply",
+    "cancel": "Cancel",
+    "applyFailed": "Failed to apply, please retry",
+    "managementGroup": "Management"
+  },
   "serverSelector": {
     "tabSmart": "Smart",
     "tabManual": "Fixed Server",

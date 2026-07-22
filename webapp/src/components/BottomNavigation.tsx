@@ -3,6 +3,7 @@ import {
   BottomNavigation as MuiBottomNavigation,
   BottomNavigationAction,
   Paper,
+  Badge,
 } from "@mui/material";
 import {
   Dashboard as DashboardIcon,
@@ -19,6 +20,7 @@ import { getCurrentAppConfig } from "../config/apps";
 import { useMemo, memo } from "react";
 import { useUser } from "../hooks/useUser";
 import { useAuthStore } from "../stores";
+import { useHasSlotAlarm } from "../stores/vpn-machine.store";
 
 const inviteWiggle = keyframes`
   0%, 82%, 100% { transform: rotate(0deg) scale(1); }
@@ -105,6 +107,7 @@ function BottomNavigation() {
   const appConfig = getCurrentAppConfig();
   const { user } = useUser();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const hasSlotAlarm = useHasSlotAlarm();
 
   // Define all navigation items
   const allNavItems = useMemo(() => {
@@ -118,7 +121,11 @@ function BottomNavigation() {
       // Gateway-only: Router tab
       ...(window._platform?.platformType === 'gateway' ? [{
         label: t("nav:navigation.router"),
-        icon: <RouterIcon />,
+        icon: (
+          <Badge color="error" variant="dot" invisible={!hasSlotAlarm}>
+            <RouterIcon />
+          </Badge>
+        ),
         path: "/router",
         feature: null,
       }, {
@@ -166,7 +173,7 @@ function BottomNavigation() {
     }
 
     return filtered;
-  }, [t, appConfig.features, user?.isRetailer, isAuthenticated]);
+  }, [t, appConfig.features, user?.isRetailer, isAuthenticated, hasSlotAlarm]);
 
   // Get current active path
   const currentPath = location.pathname;

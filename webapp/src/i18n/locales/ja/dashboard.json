@@ -301,6 +301,22 @@
     "confirm": "確認",
     "loadFailed": "デバイスリストの読み込みに失敗しました"
   },
+  "routerSlots": {
+    "title": "回線",
+    "line": "回線",
+    "customName": "カスタム名",
+    "unbound": "未割り当て",
+    "failClosed": "回線切断 — トラフィックはブロック中",
+    "downFor": "{{duration}}切断中",
+    "rename": "Wi-Fi 名を変更",
+    "renameHint": "1〜32 文字",
+    "password": "Wi-Fi パスワードを変更",
+    "passwordHint": "8〜63 文字",
+    "confirm": "適用",
+    "cancel": "キャンセル",
+    "applyFailed": "適用に失敗しました。再試行してください",
+    "managementGroup": "管理セグメント"
+  },
   "serverSelector": {
     "tabSmart": "スマート選択",
     "tabManual": "サーバー指定",

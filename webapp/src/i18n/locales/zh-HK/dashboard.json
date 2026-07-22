@@ -301,6 +301,22 @@
     "confirm": "確認",
     "loadFailed": "載入裝置清單失敗"
   },
+  "routerSlots": {
+    "title": "線路",
+    "line": "線路",
+    "customName": "自訂名稱",
+    "unbound": "未綁定",
+    "failClosed": "線路已斷線 — 流量已阻斷",
+    "downFor": "已斷線 {{duration}}",
+    "rename": "修改 Wi-Fi 名稱",
+    "renameHint": "1-32 個字元",
+    "password": "修改 Wi-Fi 密碼",
+    "passwordHint": "8-63 個字元",
+    "confirm": "套用",
+    "cancel": "取消",
+    "applyFailed": "套用失敗，請重試",
+    "managementGroup": "管理網段"
+  },
   "serverSelector": {
     "tabSmart": "智能選擇",
     "tabManual": "指定伺服器",

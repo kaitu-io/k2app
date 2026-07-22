@@ -301,6 +301,22 @@
     "confirm": "确认",
     "loadFailed": "加载设备列表失败"
   },
+  "routerSlots": {
+    "title": "线路",
+    "line": "线路",
+    "customName": "自定义名称",
+    "unbound": "未绑定",
+    "failClosed": "线路已断开 — 流量已阻断",
+    "downFor": "已断开 {{duration}}",
+    "rename": "修改 Wi-Fi 名称",
+    "renameHint": "1-32 个字符",
+    "password": "修改 Wi-Fi 密码",
+    "passwordHint": "8-63 个字符",
+    "confirm": "应用",
+    "cancel": "取消",
+    "applyFailed": "应用失败，请重试",
+    "managementGroup": "管理网段"
+  },
   "serverSelector": {
     "tabSmart": "智能选择",
     "tabManual": "指定服务器",

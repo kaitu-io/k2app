@@ -21,3 +21,28 @@ export async function gatewaySetCredential(
   const resp = await getK2().run<unknown>('set-credential', { url });
   return { code: resp.code, message: resp.message };
 }
+
+/**
+ * Customer self-service Wi-Fi rename for one enterprise slot (k2r
+ * `set-slot-ssid` action). Persists a takeover flag on the router so
+ * manifest convergence never clobbers a customer-set name.
+ */
+export async function gatewaySetSlotSsid(
+  slot: number,
+  ssid: string,
+): Promise<{ code: number; message?: string }> {
+  const resp = await getK2().run<unknown>('set-slot-ssid', { slot, ssid });
+  return { code: resp.code, message: resp.message };
+}
+
+/**
+ * Customer self-service Wi-Fi re-key for one enterprise slot (k2r
+ * `set-slot-password` action).
+ */
+export async function gatewaySetSlotPassword(
+  slot: number,
+  password: string,
+): Promise<{ code: number; message?: string }> {
+  const resp = await getK2().run<unknown>('set-slot-password', { slot, password });
+  return { code: resp.code, message: resp.message };
+}

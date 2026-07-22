@@ -25,6 +25,8 @@ import {
   WifiOff as OfflineIcon,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
+import { useRouterSlots } from '../stores/vpn-machine.store';
+import RouterSlotList, { groupDevicesBySlot } from '../components/RouterSlotList';
 
 interface RouterDevice {
   mac: string;
@@ -58,6 +60,7 @@ async function gwFetch<T>(path: string, opts?: RequestInit): Promise<{ code: num
 
 export default function RouterDevices() {
   const { t } = useTranslation();
+  const slots = useRouterSlots();
   const [data, setData] = useState<RouterDeviceList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -120,8 +123,12 @@ export default function RouterDevices() {
   const isAllowlist = data.mode === 'allowlist';
   const quotaText = data.quota <= 0 ? t('dashboard:routerDevices.unlimited') : `${data.used}/${data.quota}`;
 
+  const deviceGroups = slots ? groupDevicesBySlot(data.routerDevices, slots) : null;
+
   return (
     <Box sx={{ p: 2, maxWidth: 600, mx: 'auto' }}>
+      {slots && <RouterSlotList slots={slots} />}
+
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
         <Typography variant="h6" fontWeight={700}>
           {t('dashboard:routerDevices.title')}
@@ -160,44 +167,53 @@ export default function RouterDevices() {
 
       {error && <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
-      {/* Device list */}
-      <Stack spacing={1}>
-        {data.routerDevices.map(device => (
-          <Card key={device.mac} variant="outlined" sx={{ p: 1.5 }}>
-            <Stack direction="row" alignItems="center" spacing={1.5}>
-              {device.online ? <OnlineIcon color="success" fontSize="small" /> : <OfflineIcon color="disabled" fontSize="small" />}
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="body2" fontWeight={600} noWrap>
-                  {device.hostname || device.mac}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {device.ip || device.mac}{device.remark ? ` · ${device.remark}` : ''}
-                </Typography>
-              </Box>
-              {device.allowed ? (
-                <Stack direction="row" alignItems="center" spacing={0.5}>
-                  <AllowedIcon color="success" fontSize="small" />
-                  <IconButton size="small" onClick={() => handleRemove(device.mac)}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
+      {/* Device list — grouped by slot in enterprise mode, flat otherwise */}
+      {(deviceGroups ?? [{ slot: null, label: '', devices: data.routerDevices }]).map((group, gi) => (
+        <Box key={group.slot?.slot ?? gi} sx={{ mb: 2 }}>
+          {deviceGroups && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, px: 0.5 }}>
+              {group.slot ? group.label : t('dashboard:routerSlots.managementGroup')}
+            </Typography>
+          )}
+          <Stack spacing={1}>
+            {group.devices.map(device => (
+              <Card key={device.mac} variant="outlined" sx={{ p: 1.5 }}>
+                <Stack direction="row" alignItems="center" spacing={1.5}>
+                  {device.online ? <OnlineIcon color="success" fontSize="small" /> : <OfflineIcon color="disabled" fontSize="small" />}
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" fontWeight={600} noWrap>
+                      {device.hostname || device.mac}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {device.ip || device.mac}{device.remark ? ` · ${device.remark}` : ''}
+                    </Typography>
+                  </Box>
+                  {device.allowed ? (
+                    <Stack direction="row" alignItems="center" spacing={0.5}>
+                      <AllowedIcon color="success" fontSize="small" />
+                      <IconButton size="small" onClick={() => handleRemove(device.mac)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Stack>
+                  ) : (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<AddIcon />}
+                      onClick={() => {
+                        setRemarkTarget({ mac: device.mac, remark: '' });
+                        setRemarkDialogOpen(true);
+                      }}
+                    >
+                      {t('dashboard:routerDevices.allow')}
+                    </Button>
+                  )}
                 </Stack>
-              ) : (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<AddIcon />}
-                  onClick={() => {
-                    setRemarkTarget({ mac: device.mac, remark: '' });
-                    setRemarkDialogOpen(true);
-                  }}
-                >
-                  {t('dashboard:routerDevices.allow')}
-                </Button>
-              )}
-            </Stack>
-          </Card>
-        ))}
-      </Stack>
+              </Card>
+            ))}
+          </Stack>
+        </Box>
+      ))}
 
       {/* Remark dialog */}
       <Dialog open={remarkDialogOpen} onClose={() => setRemarkDialogOpen(false)} maxWidth="xs" fullWidth>

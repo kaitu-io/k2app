@@ -128,6 +128,20 @@ export interface StatusResponseData {
   serviceVersion?: string; // kaitu-service 版本号（用于检测更新后版本不匹配）
   networkAvailable: boolean; // Whether network is available for VPN connection
   initialization?: InitializationStatus; // App initialization status (GeoIP, Rules, Antiblock)
+  // Enterprise multi-slot router manifest (k2r gateway/api.go gatewayStatus).
+  // Present only for enterprise-bound gateways; absent/empty = consumer mode.
+  slots?: RouterSlot[];
+}
+
+// One row of the enterprise router's slot manifest. Cross-repo contract with
+// k2 gateway.SlotStatus (gateway/slot_health.go) — already camelCase on the wire.
+export interface RouterSlot {
+  slot: number;
+  ssid: string;
+  country: string;
+  index: number;
+  state: 'running' | 'failClosed' | 'disabled';
+  downSince?: string;
 }
 
 // ==================== 配置管理 ====================
