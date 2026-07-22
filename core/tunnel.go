@@ -296,7 +296,7 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 		}
 	}
 
-	slog.Debug("tunnel: route", "dest", dest, "action", action)
+	slog.Debug("tunnel: route", "dest", dest, "action", action, "srcAddr", srcAddr, "srcIPValid", connMeta.SrcIP.IsValid(), "srcIP", connMeta.SrcIP)
 
 	outbound := t.outbound(action)
 	if outbound == nil {
