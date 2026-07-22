@@ -139,6 +139,10 @@ func (c *tproxyUDPConn) Close() error {
 	return nil
 }
 
+// PacketSourceAddr implements provider.PacketSourcer — lets the tunnel's
+// UDP path populate ConnMeta.SrcIP for multi-slot per-slot routing.
+func (c *tproxyUDPConn) PacketSourceAddr() *net.UDPAddr { return c.src }
+
 func (c *tproxyUDPConn) LocalAddr() net.Addr               { return c.dst }
 func (c *tproxyUDPConn) SetDeadline(t time.Time) error      { return nil }
 func (c *tproxyUDPConn) SetReadDeadline(t time.Time) error   { return nil }
@@ -185,6 +189,14 @@ func (c *dnsUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 		return 0, net.ErrClosed
 	}
 	return c.conn.WriteTo(b, c.src)
+}
+
+// PacketSourceAddr implements provider.PacketSourcer — lets the tunnel's
+// UDP path populate ConnMeta.SrcIP even for DNS queries forwarded through
+// DNSForwardUpstream (multi-slot fail-closed DNS keys off this).
+func (c *dnsUDPConn) PacketSourceAddr() *net.UDPAddr {
+	ua, _ := c.src.(*net.UDPAddr)
+	return ua
 }
 
 func (c *dnsUDPConn) Close() error                          { c.closed.Store(true); return nil }

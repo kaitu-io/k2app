@@ -80,11 +80,21 @@ func SourceAddr(conn net.Conn) *net.UDPAddr {
 	return nil
 }
 
+// PacketSourcer is implemented by net.PacketConn wrappers that carry a
+// single flow's LAN source address baked in at construction (sing-tun's
+// singPacketConn, and gateway's TPROXY/DNS single-shot conns). Letting
+// gateway's own conn types satisfy this via a same-named method — rather
+// than requiring them to embed a provider type — keeps the two packages
+// decoupled while still feeding ConnMeta.SrcIP for multi-slot routing.
+type PacketSourcer interface {
+	PacketSourceAddr() *net.UDPAddr
+}
+
 // SourcePacketAddr extracts the original source address from a PacketConn.
-// Returns nil if the PacketConn is not a singPacketConn with source.
+// Returns nil if the PacketConn doesn't implement PacketSourcer.
 func SourcePacketAddr(conn net.PacketConn) *net.UDPAddr {
-	if sc, ok := conn.(*singPacketConn); ok {
-		return sc.source
+	if ps, ok := conn.(PacketSourcer); ok {
+		return ps.PacketSourceAddr()
 	}
 	return nil
 }
@@ -120,6 +130,9 @@ func (c *singPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	}
 	return len(b), nil
 }
+
+// PacketSourceAddr implements PacketSourcer.
+func (c *singPacketConn) PacketSourceAddr() *net.UDPAddr { return c.source }
 
 func (c *singPacketConn) Close() error                       { return c.conn.Close() }
 func (c *singPacketConn) LocalAddr() net.Addr                { return c.conn.LocalAddr() }

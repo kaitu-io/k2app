@@ -49,6 +49,11 @@ type Subscription struct {
 	controlKeyHash   string
 	onControlKeyHash func(string) // invoked OUTSIDE mu after a fetch that carried a hash
 
+	// slotBindings is the enterprise multi-slot gateway manifest ("" tunnels
+	// mode when nil/empty). Cross-repo wire contract with Center /api/subs.
+	slotBindings   []SlotBinding
+	onSlotBindings func([]SlotBinding) // invoked OUTSIDE mu after every fetch, empty included
+
 	cancel context.CancelFunc
 	done   chan struct{}
 }
@@ -79,6 +84,21 @@ type subsResponse struct {
 	// ControlKeyHash is the SHA-256 hex of the owning account's router
 	// control key. Cross-repo contract with Center /api/subs (snake_case).
 	ControlKeyHash string `json:"control_key_hash,omitempty"`
+	// SlotBindings is the enterprise multi-slot gateway manifest. Non-empty
+	// = k2r enters multi-slot mode. Cross-repo contract with Center
+	// /api/subs (snake_case); consumer subs responses omit this field.
+	SlotBindings []SlotBinding `json:"slot_bindings,omitempty"`
+}
+
+// SlotBinding maps one fixed router slot to a tunnel in the same subs
+// response. Cross-repo wire contract with Center /api/subs (snake_case);
+// enterprise multi-slot gateway mode. TunnelIndex indexes into the
+// response's tunnels array (same-order invariant kept by s.tunnels).
+type SlotBinding struct {
+	Slot        int    `json:"slot"`
+	Country     string `json:"country"`
+	Index       int    `json:"index"`
+	TunnelIndex int    `json:"tunnel_index"`
 }
 
 // ScoreSource is an optional per-URL adjustment consulted by Pick.
@@ -212,6 +232,23 @@ func (s *Subscription) ControlKeyHash() string {
 	return s.controlKeyHash
 }
 
+// SlotBindings returns a copy of the current slot binding manifest.
+func (s *Subscription) SlotBindings() []SlotBinding {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]SlotBinding, len(s.slotBindings))
+	copy(out, s.slotBindings)
+	return out
+}
+
+// SetOnSlotBindings registers a callback fired after every successful
+// Fetch with the (possibly empty) manifest. Runs outside the state lock.
+func (s *Subscription) SetOnSlotBindings(fn func([]SlotBinding)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onSlotBindings = fn
+}
+
 // SetTunnelsForTest replaces the current tunnel list. Tests only.
 func (s *Subscription) SetTunnelsForTest(tunnels []Tunnel) {
 	s.mu.Lock()
@@ -295,12 +332,14 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 
 	s.mu.Lock()
 	s.tunnels = sr.Tunnels
+	s.slotBindings = sr.SlotBindings
 	s.fetchedAt = now
 	s.interval = interval
 	if sr.ControlKeyHash != "" {
 		s.controlKeyHash = sr.ControlKeyHash
 	}
 	cb := s.onControlKeyHash
+	cb2 := s.onSlotBindings
 	s.mu.Unlock()
 
 	// Callback runs outside the lock (concurrency constitution: no external
@@ -308,10 +347,15 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 	if cb != nil && sr.ControlKeyHash != "" {
 		cb(sr.ControlKeyHash)
 	}
+	// Unconditional — an empty manifest is itself a meaningful change
+	// (gateway must notice bindings being cleared).
+	if cb2 != nil {
+		cb2(sr.SlotBindings)
+	}
 
 	// Write cache (outside lock).
 	if s.cacheFile != "" {
-		s.writeCache(sr.Tunnels)
+		s.writeCache(sr.Tunnels, sr.SlotBindings)
 	}
 
 	return nil
@@ -484,6 +528,15 @@ func (s *Subscription) refreshLoop(ctx context.Context, clientFn func() *http.Cl
 	}
 }
 
+// subsCacheFile is the on-disk cache format. Superseded the pre-multi-slot
+// bare []Tunnel array; loadCache falls back to the legacy shape so caches
+// written by older builds still load (bindings come back empty, which is
+// correct — those builds never had bindings to lose).
+type subsCacheFile struct {
+	Tunnels      []Tunnel      `json:"tunnels"`
+	SlotBindings []SlotBinding `json:"slot_bindings,omitempty"`
+}
+
 func (s *Subscription) loadCache() {
 	if s.cacheFile == "" {
 		return
@@ -495,6 +548,13 @@ func (s *Subscription) loadCache() {
 		}
 		return
 	}
+	var cf subsCacheFile
+	if err := json.Unmarshal(data, &cf); err == nil && cf.Tunnels != nil {
+		s.tunnels = cf.Tunnels
+		s.slotBindings = cf.SlotBindings
+		return
+	}
+	// Legacy shape: bare []Tunnel array (pre-multi-slot cache on disk).
 	var tunnels []Tunnel
 	if err := json.Unmarshal(data, &tunnels); err != nil {
 		slog.Warn("subscription: cache corrupt, ignoring", "file", s.cacheFile, "err", err)
@@ -503,11 +563,11 @@ func (s *Subscription) loadCache() {
 	s.tunnels = tunnels
 }
 
-func (s *Subscription) writeCache(tunnels []Tunnel) {
+func (s *Subscription) writeCache(tunnels []Tunnel, bindings []SlotBinding) {
 	if s.cacheFile == "" {
 		return
 	}
-	data, err := json.Marshal(tunnels)
+	data, err := json.Marshal(subsCacheFile{Tunnels: tunnels, SlotBindings: bindings})
 	if err != nil {
 		return
 	}

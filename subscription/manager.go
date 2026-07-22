@@ -130,6 +130,28 @@ func (m *Manager) CandidateURLs() []string {
 	return urls
 }
 
+// SlotBindings returns the slot manifest from the first active session
+// (k2r runs a single k2subs subscription). Empty = consumer mode.
+func (m *Manager) SlotBindings() []config.SlotBinding {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, sess := range m.sessions {
+		return sess.sub.SlotBindings()
+	}
+	return nil
+}
+
+// Tunnels returns the ordered tunnel list from the first active session.
+// Order matches the subs response — SlotBinding.TunnelIndex indexes it.
+func (m *Manager) Tunnels() []config.Tunnel {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, sess := range m.sessions {
+		return sess.sub.Tunnels()
+	}
+	return nil
+}
+
 // Sessions returns a snapshot of active sessions. Intended for platform
 // shells that need to drive Session.sub.StartRefresh from doUp. The
 // returned slice is a copy — mutating it does not affect Manager state,

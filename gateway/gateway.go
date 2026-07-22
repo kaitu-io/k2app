@@ -18,6 +18,7 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/probe"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/subscription"
 	"github.com/kaitu-io/k2/webui"
@@ -71,6 +72,20 @@ type Gateway struct {
 	// Center via the subs channel; see reconcileControlKey. mu-protected.
 	controlKeyHash   string
 	controlKeyLoaded bool
+
+	// slotBindings is non-nil in enterprise multi-slot mode (subs response
+	// carried a non-empty slot_bindings manifest). nil = consumer mode,
+	// unchanged behavior. mu-protected; set in doUp, cleared in closeTunnel.
+	slotBindings []config.SlotBinding
+
+	// Per-slot health (multi-slot mode only). slotTunnelURLs maps slot →
+	// bound tunnel URL; slotRegistry/slotProbeSvc back status's fail-closed
+	// state; slotDownSince tracks when a slot's failClosed streak started.
+	// All mu-protected; populated in doUp, cleared in closeTunnel.
+	slotTunnelURLs map[int]string
+	slotRegistry   *probe.Registry
+	slotProbeSvc   *probe.Service
+	slotDownSince  map[int]time.Time
 }
 
 // k2rReleaseEndpoints lists the CDN base URLs used by k2r's OTA upgrader.
@@ -279,6 +294,25 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	// a restart re-fetches the subscription.
 	engineClient := subscription.ApplyResolved(&cfg.ClientConfig, resolved)
 
+	slotBindings := g.subsMgr.SlotBindings()
+	multiSlot := len(slotBindings) > 0
+	var slotTunnelURLs map[int]string
+	if multiSlot {
+		tunnels := g.subsMgr.Tunnels()
+		slotRoutes, err := buildSlotRoutes(slotBindings, tunnels)
+		if err != nil {
+			return fmt.Errorf("slot routes: %w", err)
+		}
+		engineClient.Routes = slotRoutes
+		slotTunnelURLs = map[int]string{}
+		for _, b := range slotBindings {
+			if b.TunnelIndex >= 0 && b.TunnelIndex < len(tunnels) {
+				slotTunnelURLs[b.Slot] = tunnels[b.TunnelIndex].URL
+			}
+		}
+		slog.Info("DIAG: multi-slot-mode", "slots", len(slotBindings))
+	}
+
 	dialTargets, err := extractDialTargets(engineClient.Routes)
 	if err != nil {
 		return err
@@ -346,7 +380,14 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 
 	eng := engine.New()
 	eng.SetEventHandler(g)
-	ecfg := engineConfig(engineClient, prov, g.broadcastSnapshot, g.subsMgr)
+	var obProvider engine.OutboundProvider = g.subsMgr
+	if multiSlot {
+		obProvider = nil // 确定性绑定:禁用 outbound 热替换(fail-closed)
+	}
+	ecfg := engineConfig(engineClient, prov, g.broadcastSnapshot, obProvider)
+	if multiSlot {
+		ecfg.DNSForwardUpstream = slotDNSUpstream
+	}
 	if err := eng.Start(ecfg); err != nil {
 		prov.Close()
 		interceptor.Remove()
@@ -354,6 +395,12 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 		return err
 	}
 	subsCleanup = false // engine owns sessions until doDown/closeTunnel
+
+	if multiSlot {
+		if err := applySlotWifi(slotBindings, loadSlotLocal()); err != nil {
+			slog.Warn("DIAG: wifi-convergence-failed", "err", err)
+		}
+	}
 
 	// Per-session context for refresh goroutines — cancelled in closeTunnel
 	// so background fetches stop even if sub.Close() is delayed. Mirrors
@@ -376,6 +423,7 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 		// (rotation convergence).
 		sub.SetOnControlKeyHash(g.reconcileControlKey)
 		g.reconcileControlKey(sub.ControlKeyHash())
+		sub.SetOnSlotBindings(g.onSlotBindingsChanged)
 		sub.StartRefresh(engineCtx, func() *http.Client { return client })
 	}
 
@@ -387,7 +435,18 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	g.routerDeviceMgr = rdm
 	g.engineCtx = engineCtx
 	g.engineCnl = engineCnl
+	if multiSlot {
+		g.slotBindings = slotBindings
+		g.slotTunnelURLs = slotTunnelURLs
+	} else {
+		g.slotBindings = nil
+		g.slotTunnelURLs = nil
+	}
 	g.mu.Unlock()
+
+	if multiSlot {
+		g.startSlotHealth()
+	}
 
 	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
 	return nil
@@ -424,6 +483,42 @@ func (g *Gateway) doDown(userInitiated bool) {
 	}
 	// else: preserve whatever state.json the last doUp wrote — auto-reconnect
 	// on next start is the intent.
+}
+
+// onSlotBindingsChanged fires on every successful subs refresh (empty
+// manifest included — clearing bindings is a change). A real change
+// re-applies the tunnel: down + up against the persisted config. Rare
+// (operator edits the binding matrix), so a full re-dial blip on all
+// slots is the accepted convergence cost — deterministic beats clever.
+// Consumer↔enterprise switches (empty↔non-empty) are covered the same way.
+func (g *Gateway) onSlotBindingsChanged(newBindings []config.SlotBinding) {
+	g.mu.Lock()
+	same := slotBindingsEqual(g.slotBindings, newBindings)
+	running := g.lastStatus.State == engine.StateConnected || g.lastStatus.State == engine.StateConnecting
+	g.mu.Unlock()
+	if same || !running {
+		return
+	}
+	slog.Info("DIAG: slot-bindings-changed", "slots", len(newBindings))
+	safego.Go(g.reapplyTunnel)
+}
+
+// reapplyTunnel reloads the config from the LAST successful doUp (persisted
+// state, not defaultConfigPath()'s on-disk YAML — the CLI's `k2r up <path>`
+// accepts an arbitrary path, so the file that originally configured this
+// session may live anywhere) and re-runs doUp against it. doUp itself
+// serializes via opMu and tears down the old tunnel first (closeTunnel), so
+// this is the same sequence /api/core down+up would run — no separate
+// lifecycle path.
+func (g *Gateway) reapplyTunnel() {
+	st := loadState()
+	if st == nil || st.Config == nil {
+		slog.Warn("DIAG: slot-reapply-load-failed", "err", "no persisted config")
+		return
+	}
+	if err := g.doUp(st.Config); err != nil {
+		slog.Warn("DIAG: slot-reapply-failed", "err", err)
+	}
 }
 
 // wipeBinding removes the on-disk binding then clears the in-memory key.
@@ -464,7 +559,17 @@ func (g *Gateway) closeTunnel() {
 	engineCnl := g.engineCnl
 	g.engineCnl = nil
 	g.engineCtx = nil
+	g.slotBindings = nil
+	g.slotTunnelURLs = nil
+	slotProbeSvc := g.slotProbeSvc
+	g.slotProbeSvc = nil
+	g.slotRegistry = nil
+	g.slotDownSince = nil
 	g.mu.Unlock()
+
+	if slotProbeSvc != nil {
+		slotProbeSvc.Close()
+	}
 
 	// Cancel per-session ctx first so subscription refresh goroutines stop
 	// independently of sub.Close (called via CloseAll in doDown). No-op on

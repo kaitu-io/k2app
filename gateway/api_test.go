@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/kaitu-io/k2/engine"
 )
 
 // TestHandleSetCredentialPersistsConfig locks in Cleanup #1: applyCredential
@@ -49,6 +52,51 @@ func TestHandleSetCredentialRejectsBadURL(t *testing.T) {
 	g := &Gateway{}
 	if _, err := g.applyCredential("not-a-url"); err == nil {
 		t.Fatal("want error on bad url")
+	}
+}
+
+// TestGatewayStatusMarshalJSON_IncludesExtendedFields locks in a real bug:
+// gatewayStatus embeds engine.Status, which implements json.Marshaler (to
+// compute uptimeSeconds dynamically). Without gatewayStatus's own
+// MarshalJSON override, Go silently promotes the embedded method and
+// json.Marshal drops every sibling field below with no error — lanSubnets,
+// interceptor, and (critically) slots never appeared in any /api/core
+// status response, in any mode, until this override was added.
+func TestGatewayStatusMarshalJSON_IncludesExtendedFields(t *testing.T) {
+	gs := gatewayStatus{
+		Status: engine.Status{
+			State:       engine.StateConnected,
+			ConnectedAt: time.Now().Add(-5 * time.Second),
+		},
+		LANSubnets:       []string{"10.99.0.0/24"},
+		Interceptor:      "nftables-netlink",
+		ListenPort:       12345,
+		MaxLanClient:     10,
+		RouterDeviceMode: "open",
+		Slots: []SlotStatus{
+			{Slot: 1, State: "running"},
+		},
+	}
+	data, err := json.Marshal(gs)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m["state"] != "connected" {
+		t.Fatalf("state = %v, want connected (from embedded engine.Status)", m["state"])
+	}
+	if m["lanSubnets"] == nil {
+		t.Fatal("lanSubnets missing — embedded engine.Status.MarshalJSON silently ate sibling fields")
+	}
+	if m["interceptor"] != "nftables-netlink" {
+		t.Fatalf("interceptor = %v, want nftables-netlink", m["interceptor"])
+	}
+	slots, ok := m["slots"].([]any)
+	if !ok || len(slots) != 1 {
+		t.Fatalf("slots = %v, want a 1-element array", m["slots"])
 	}
 }
 

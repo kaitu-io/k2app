@@ -140,10 +140,71 @@ log:
 			os.Exit(1)
 		}
 		fmt.Printf("Gateway config: %s\n", gatewayCfgPath)
+
+		// 6. Enterprise multi-slot UAT fixtures: a self-signed cert for a
+		// mock /api/subs HTTPS endpoint (served from inside the k2r
+		// container on localhost by the mocksubs test binary), a k2r.yml
+		// variant whose route is k2subs:// instead of a static k2v5://, and
+		// the mock's default JSON response. Generated unconditionally
+		// (cheap) but only consumed by the `multislot` UAT phase — every
+		// other phase keeps using the static k2r.yml above untouched.
+		mocksubsCertPath := filepath.Join(*outDir, "mocksubs.crt")
+		mocksubsKeyPath := filepath.Join(*outDir, "mocksubs.key")
+		if err := generateTLSCertForHosts(mocksubsCertPath, mocksubsKeyPath, []string{"localhost"}); err != nil {
+			slog.Error("generate mocksubs TLS cert", "err", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Mocksubs cert: %s, key: %s\n", mocksubsCertPath, mocksubsKeyPath)
+
+		multiSlotCfg := `routes:
+  - via: "k2subs://uat:uatpass@localhost:8443/subs/team?refresh=5"
+    match:
+      all: true
+lan_subnets:
+  - "10.99.0.0/24"
+  - "10.81.1.0/24"
+  - "10.81.2.0/24"
+dns:
+  direct:
+    - "8.8.8.8:53"
+  proxy:
+    - "8.8.8.8:53"
+rule:
+  global: true
+listen_port: 12345
+log:
+  level: debug
+  output: stderr
+`
+		multiSlotCfgPath := filepath.Join(*outDir, "k2r-multislot.yml")
+		if err := os.WriteFile(multiSlotCfgPath, []byte(multiSlotCfg), 0644); err != nil {
+			slog.Error("write multi-slot gateway config", "err", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Multi-slot gateway config: %s\n", multiSlotCfgPath)
+
+		deadURL := "k2v5://dead:dead@10.99.0.99:443"
+		mocksubsResponse := fmt.Sprintf(`{"tunnels":[{"url":%q,"weight":1},{"url":%q,"weight":1}],"slot_bindings":[{"slot":1,"country":"ae","index":1,"tunnel_index":0},{"slot":2,"country":"gn","index":1,"tunnel_index":1}]}`,
+			wireURL, deadURL)
+		mocksubsResponsePath := filepath.Join(*outDir, "mocksubs-response.json")
+		if err := os.WriteFile(mocksubsResponsePath, []byte(mocksubsResponse), 0644); err != nil {
+			slog.Error("write mocksubs response", "err", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Mocksubs response: %s\n", mocksubsResponsePath)
 	}
 }
 
 func generateTLSCert(certPath, keyPath string) error {
+	return generateTLSCertForHosts(certPath, keyPath, []string{"k2s", "localhost"})
+}
+
+// generateTLSCertForHosts writes a self-signed EC cert+key for the given
+// DNS names. Used both for k2s (wire TLS, verified only via the wire
+// layer's own insecure=1 flag) and mocksubs (a stdlib net/http HTTPS
+// server, whose Go http.Client DOES verify against the system trust
+// store — the UAT entrypoint installs this same cert there).
+func generateTLSCertForHosts(certPath, keyPath string, hosts []string) error {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
@@ -153,7 +214,7 @@ func generateTLSCert(certPath, keyPath string) error {
 		SerialNumber: big.NewInt(1),
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour),
-		DNSNames:     []string{"k2s", "localhost"},
+		DNSNames:     hosts,
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)

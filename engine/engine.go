@@ -367,11 +367,6 @@ func (e *Engine) Start(cfg Config) error {
 	}
 
 	// Setup transports in parallel.
-	type otResult struct {
-		ot          *outboundTransport
-		tcpwsDialer wire.Dialer
-		err         error
-	}
 	otResults := make([]otResult, len(k2v5URLs))
 
 	if len(k2v5URLs) > 0 {
@@ -387,32 +382,26 @@ func (e *Engine) Start(cfg Config) error {
 		g.Wait()
 	}
 
-	// Check results and clean up on any failure.
-	tmMap := make(map[string]*outboundTransport, len(k2v5URLs))
-	var allOTs []*outboundTransport
-	var primaryOT *outboundTransport
-	var tcpwsDialer wire.Dialer
-
-	for i, r := range otResults {
-		if r.err != nil {
-			// Close ALL successfully-created TMs (errgroup runs concurrently,
-			// so indices after i may also have succeeded).
-			for _, other := range otResults {
-				if other.ot != nil {
-					other.ot.tm.Close()
-				}
+	// Reduce results: a FAILED outbound does not abort the whole engine as
+	// long as at least one OTHER outbound succeeded — multi-slot gateway
+	// mode pins each slot to its own outbound, and one dead enterprise
+	// line must not take down every other slot (or, in consumer mode, an
+	// obscure app-bypass route). The failed URL's target simply gets no
+	// transport in the outbound table below, which core.ClientTunnel
+	// already treats as reject (nil entry). Only a TOTAL failure (every
+	// configured k2v5 outbound unreachable) still aborts Start — this is
+	// the exact scenario TestEngineStart_WireProbeFailure locks in.
+	tmMap, allOTs, primaryOT, tcpwsDialer, firstErr := reduceOutboundResults(k2v5URLs, otResults)
+	if len(k2v5URLs) > 0 && primaryOT == nil {
+		for _, r := range otResults {
+			if r.ot != nil {
+				r.ot.tm.Close()
 			}
-			if cfg.NetworkMonitor != nil {
-				cfg.NetworkMonitor.Close()
-			}
-			return e.fail(fmt.Errorf("outbound setup: %w", r.err))
 		}
-		tmMap[k2v5URLs[i]] = r.ot
-		allOTs = append(allOTs, r.ot)
-		if primaryOT == nil {
-			primaryOT = r.ot
-			tcpwsDialer = r.tcpwsDialer
+		if cfg.NetworkMonitor != nil {
+			cfg.NetworkMonitor.Close()
 		}
+		return e.fail(fmt.Errorf("outbound setup: %w", firstErr))
 	}
 
 	// TUN mode requires at least one k2v5 outbound for DNS proxy transport.
@@ -435,7 +424,14 @@ func (e *Engine) Start(cfg Config) error {
 	for via, target := range outboundMap {
 		switch {
 		case strings.HasPrefix(via, "k2v5://"):
-			ot := tmMap[via]
+			ot, ok := tmMap[via]
+			if !ok {
+				// This outbound's transport setup failed (tolerated above
+				// as long as at least one OTHER outbound succeeded).
+				// Leaving outbounds[target] unset (nil) makes routes to it
+				// reject — the same convention as outboundReject.
+				continue
+			}
 			outbounds[target] = core.NewWireOutbound(ot.name, ot.swappable, e)
 		case strings.HasPrefix(via, "k2p://"):
 			k2pOut, k2pErr := core.NewK2POutbound(via)
@@ -497,7 +493,7 @@ func (e *Engine) Start(cfg Config) error {
 			RejectTarget: outboundReject,
 			EngineCtx:    ctx, // engine context — cancelled on Stop()
 		})
-		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}
+		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e, forward: cfg.DNSForwardUpstream}
 		if err := tunnel.StartWithHandler(ctx, dh); err != nil {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()
@@ -1334,6 +1330,15 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 		entry.PackageNamePrefixes = append([]string(nil), route.Match.PackageNamePrefix...)
 		entry.InstallerPackages = append([]string(nil), route.Match.InstallerPackage...)
 
+		for _, c := range route.Match.SrcIPCIDR {
+			p, err := netip.ParsePrefix(c)
+			if err != nil {
+				slog.Warn("route: invalid src_ip_cidr dropped", "cidr", c, "route", i)
+				continue
+			}
+			entry.SrcCIDRs = append(entry.SrcCIDRs, p)
+		}
+
 		// Plan B: expand match.region into one host entry (Sets) + one meta
 		// entry (process/package criteria from bundle.Apps[GOOS]). The two
 		// entries are appended directly to `entries` — the per-route `entry`
@@ -1358,7 +1363,7 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 			len(entry.ProcessNames) > 0 || len(entry.PackageNames) > 0 ||
 			len(entry.ProcessNamePrefixes) > 0 || len(entry.PackageNamePrefixes) > 0 ||
 			len(entry.InstallerPackages) > 0 ||
-			entry.NetworkMatch != "" || entry.IPIsPrivate
+			entry.NetworkMatch != "" || entry.IPIsPrivate || len(entry.SrcCIDRs) > 0
 		if hasAnyCriteria {
 			entries = append(entries, entry)
 		}
@@ -1397,6 +1402,40 @@ func buildOutboundMap(routes []config.RouteConfig) map[string]rule.Target {
 		nextIdx++
 	}
 	return m
+}
+
+// otResult is one k2v5:// outbound's setup outcome, collected by the
+// errgroup in Start's step 6.5 and reduced by reduceOutboundResults.
+type otResult struct {
+	ot          *outboundTransport
+	tcpwsDialer wire.Dialer
+	err         error
+}
+
+// reduceOutboundResults classifies per-outbound setup outcomes. A failed
+// outbound is simply omitted from tmMap — its route target then has no
+// entry in the outbound table, which core.ClientTunnel already treats as
+// reject (nil entry, same convention as outboundReject). primaryOT is nil
+// only when EVERY outbound failed (or none were configured); the caller
+// uses that — not any single failure — to decide whether Start aborts.
+// firstErr is the first error encountered, for the abort-path message.
+func reduceOutboundResults(urls []string, results []otResult) (tmMap map[string]*outboundTransport, allOTs []*outboundTransport, primaryOT *outboundTransport, tcpwsDialer wire.Dialer, firstErr error) {
+	tmMap = make(map[string]*outboundTransport, len(urls))
+	for i, r := range results {
+		if r.err != nil {
+			if firstErr == nil {
+				firstErr = r.err
+			}
+			continue
+		}
+		tmMap[urls[i]] = r.ot
+		allOTs = append(allOTs, r.ot)
+		if primaryOT == nil {
+			primaryOT = r.ot
+			tcpwsDialer = r.tcpwsDialer
+		}
+	}
+	return tmMap, allOTs, primaryOT, tcpwsDialer, firstErr
 }
 
 // setupOutboundTransportFn is the function used by the outbound-replacement

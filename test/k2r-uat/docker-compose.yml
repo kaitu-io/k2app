@@ -5,6 +5,17 @@
 #
 # The k2r-net bridge gives all containers a shared L2 segment.
 # lan-client's default route points to k2r so traffic flows through TPROXY.
+#
+# lan-client-slot1/slot2 each get their OWN dedicated bridge network
+# (slot1-net/slot2-net), mirroring production's one-physical-bridge-per-slot
+# topology (see gateway/slots.go's slotSubnet doc comment: "factory-baked
+# bridge subnet for a slot"). This is NOT optional plumbing — a single lan
+# client aliasing multiple secondary IPs onto one interface was tried first
+# and silently breaks under Docker Desktop's virtualized networking: a plain
+# non-TPROXY curl sourced from a secondary IP to k2r's own API port timed
+# out even though the identical request from the container's PRIMARY IP
+# succeeded instantly. Giving each slot its own container + bridge (primary
+# IP, real subnet) sidesteps that limitation entirely.
 
 services:
   # Step 1: Generate TLS certs, ECH keys, server + gateway configs.
@@ -58,6 +69,10 @@ services:
     networks:
       k2r-net:
         ipv4_address: 10.99.0.20
+      slot1-net:
+        ipv4_address: 10.81.1.20
+      slot2-net:
+        ipv4_address: 10.81.2.20
 
   # Step 4: Simulated LAN device — routes all traffic through k2r.
   lan-client:
@@ -72,6 +87,33 @@ services:
       k2r-net:
         ipv4_address: 10.99.0.30
 
+  # Step 5/6: Per-slot LAN devices — each on its own dedicated bridge,
+  # mirroring production's one-physical-bridge-per-slot topology. Used only
+  # by the multislot phase (test_multislot); other phases ignore them.
+  lan-client-slot1:
+    build:
+      context: .
+      dockerfile: Dockerfile.lanclient
+    depends_on:
+      k2r: { condition: service_started }
+    cap_add:
+      - NET_ADMIN
+    networks:
+      slot1-net:
+        ipv4_address: 10.81.1.30
+
+  lan-client-slot2:
+    build:
+      context: .
+      dockerfile: Dockerfile.lanclient
+    depends_on:
+      k2r: { condition: service_started }
+    cap_add:
+      - NET_ADMIN
+    networks:
+      slot2-net:
+        ipv4_address: 10.81.2.30
+
 networks:
   k2r-net:
     driver: bridge
@@ -79,6 +121,18 @@ networks:
       config:
         - subnet: 10.99.0.0/24
           gateway: 10.99.0.1
+  slot1-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.81.1.0/24
+          gateway: 10.81.1.1
+  slot2-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.81.2.0/24
+          gateway: 10.81.2.1
 
 volumes:
   k2-config:

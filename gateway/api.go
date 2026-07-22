@@ -88,6 +88,10 @@ func (g *Gateway) handleCore(w http.ResponseWriter, r *http.Request) {
 		g.handleStatus(w)
 	case "set-credential":
 		g.handleSetCredential(w, req.Params)
+	case "set-slot-ssid":
+		g.handleSetSlotSSID(w, req.Params)
+	case "set-slot-password":
+		g.handleSetSlotPassword(w, req.Params)
 	case "reset":
 		g.handleReset(w)
 	case "version":
@@ -175,6 +179,90 @@ func (g *Gateway) handleSetCredential(w http.ResponseWriter, params map[string]a
 	writeJSON(w, Response{Code: 0, Message: "ok"})
 }
 
+// handleSetSlotSSID is the customer self-service rename action. Persists
+// the takeover flag so manifest convergence never clobbers a customer-set
+// name (see wifiSlotCommands). Enterprise multi-slot mode only.
+func (g *Gateway) handleSetSlotSSID(w http.ResponseWriter, params map[string]any) {
+	slot, ssid := intParam(params, "slot"), strParam(params, "ssid")
+	g.mu.Lock()
+	bound := slotIsBound(g.slotBindings, slot)
+	multi := len(g.slotBindings) > 0
+	g.mu.Unlock()
+	if !multi {
+		writeJSON(w, Response{Code: 1, Message: "not in multi-slot mode"})
+		return
+	}
+	if !bound {
+		writeJSON(w, Response{Code: 1, Message: "slot not bound"})
+		return
+	}
+	if !validSSID(ssid) {
+		writeJSON(w, Response{Code: 1, Message: "invalid ssid"})
+		return
+	}
+	if err := runSlotWifiCmdsFn(setSlotSSIDCmds(slot, ssid)); err != nil {
+		writeJSON(w, Response{Code: 1, Message: err.Error()})
+		return
+	}
+	local := loadSlotLocal()
+	local.TakenOver[slot] = true
+	if err := local.save(); err != nil {
+		slog.Warn("DIAG: slot-local-save-failed", "err", err)
+	}
+	writeJSON(w, Response{Code: 0, Message: "ok"})
+}
+
+// handleSetSlotPassword is the customer self-service re-key action.
+// Passwords never touch slots-local.json — they live only in UCI wireless.
+// Enterprise multi-slot mode only.
+func (g *Gateway) handleSetSlotPassword(w http.ResponseWriter, params map[string]any) {
+	slot, password := intParam(params, "slot"), strParam(params, "password")
+	g.mu.Lock()
+	bound := slotIsBound(g.slotBindings, slot)
+	multi := len(g.slotBindings) > 0
+	g.mu.Unlock()
+	if !multi {
+		writeJSON(w, Response{Code: 1, Message: "not in multi-slot mode"})
+		return
+	}
+	if !bound {
+		writeJSON(w, Response{Code: 1, Message: "slot not bound"})
+		return
+	}
+	if !validWifiPassword(password) {
+		writeJSON(w, Response{Code: 1, Message: "invalid password"})
+		return
+	}
+	if err := runSlotWifiCmdsFn(setSlotPasswordCmds(slot, password)); err != nil {
+		writeJSON(w, Response{Code: 1, Message: err.Error()})
+		return
+	}
+	writeJSON(w, Response{Code: 0, Message: "ok"})
+}
+
+func slotIsBound(bindings []config.SlotBinding, slot int) bool {
+	for _, b := range bindings {
+		if b.Slot == slot {
+			return true
+		}
+	}
+	return false
+}
+
+// intParam/strParam: /api/core params decode via encoding/json into
+// map[string]any, so JSON numbers arrive as float64.
+func intParam(m map[string]any, k string) int {
+	if f, ok := m[k].(float64); ok {
+		return int(f)
+	}
+	return 0
+}
+
+func strParam(m map[string]any, k string) string {
+	s, _ := m[k].(string)
+	return s
+}
+
 // handleReset unbinds the router: best-effort disconnect, then wipe
 // credential + state + control key. The next /ping reports configured:false
 // and set-credential re-opens (TOFU).
@@ -195,6 +283,54 @@ func (g *Gateway) handleDown(w http.ResponseWriter) {
 	// the disconnect intent so daemon restart does not auto-reconnect.
 	safego.Go(func() { g.doDown(true) })
 	writeJSON(w, Response{Code: 0, Message: "disconnecting"})
+}
+
+// gatewayStatus extends engine.Status with gateway-specific fields for
+// /api/core status. It defines its OWN MarshalJSON rather than relying on
+// the embedded engine.Status's promoted one: engine.Status implements
+// json.Marshaler (to compute uptimeSeconds dynamically), and Go silently
+// promotes that method to any type embedding it — without an override here,
+// json.Marshal would call ONLY engine.Status.MarshalJSON and drop every
+// sibling field below (lanSubnets, interceptor, slots, ...) with no error,
+// which is exactly the bug that made /api/core status never report slots[].
+type gatewayStatus struct {
+	engine.Status
+	LANSubnets       []string     `json:"lanSubnets,omitempty"`
+	Interceptor      string       `json:"interceptor,omitempty"`
+	ListenPort       int          `json:"listenPort,omitempty"`
+	MaxLanClient     int          `json:"maxLanClient,omitempty"`
+	RouterDeviceMode string       `json:"routerDeviceMode,omitempty"`
+	Slots            []SlotStatus `json:"slots,omitempty"`
+}
+
+func (s gatewayStatus) MarshalJSON() ([]byte, error) {
+	base, err := s.Status.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(base, &m); err != nil {
+		return nil, err
+	}
+	if len(s.LANSubnets) > 0 {
+		m["lanSubnets"] = s.LANSubnets
+	}
+	if s.Interceptor != "" {
+		m["interceptor"] = s.Interceptor
+	}
+	if s.ListenPort != 0 {
+		m["listenPort"] = s.ListenPort
+	}
+	if s.MaxLanClient != 0 {
+		m["maxLanClient"] = s.MaxLanClient
+	}
+	if s.RouterDeviceMode != "" {
+		m["routerDeviceMode"] = s.RouterDeviceMode
+	}
+	if len(s.Slots) > 0 {
+		m["slots"] = s.Slots
+	}
+	return json.Marshal(m)
 }
 
 func (g *Gateway) handleStatus(w http.ResponseWriter) {
@@ -223,14 +359,6 @@ func (g *Gateway) handleStatus(w http.ResponseWriter) {
 		rdm.mu.RUnlock()
 	}
 
-	type gatewayStatus struct {
-		engine.Status
-		LANSubnets       []string `json:"lanSubnets,omitempty"`
-		Interceptor      string   `json:"interceptor,omitempty"`
-		ListenPort       int      `json:"listenPort,omitempty"`
-		MaxLanClient     int      `json:"maxLanClient,omitempty"`
-		RouterDeviceMode string   `json:"routerDeviceMode,omitempty"`
-	}
 	writeJSON(w, Response{Code: 0, Data: gatewayStatus{
 		Status:           status,
 		Interceptor:      interceptorName,
@@ -238,6 +366,7 @@ func (g *Gateway) handleStatus(w http.ResponseWriter) {
 		ListenPort:       listenPort,
 		MaxLanClient:     maxLanClient,
 		RouterDeviceMode: routerDeviceMode,
+		Slots:            g.slotStatuses(),
 	}})
 }
 

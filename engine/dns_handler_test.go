@@ -338,3 +338,40 @@ func TestBuildSERVFAIL(t *testing.T) {
 		t.Errorf("RCODE: got %d, want 2", sf[3]&0x0F)
 	}
 }
+
+// --- DNSForwardUpstream (multi-slot gateway mode) ---
+
+type recordingInner struct {
+	udpDest string
+	tcpDest string
+}
+
+func (r *recordingInner) HandleTCP(conn net.Conn, dest string)       { r.tcpDest = dest; conn.Close() }
+func (r *recordingInner) HandleUDP(conn net.PacketConn, dest string) { r.udpDest = dest; conn.Close() }
+
+func TestDNSHandler_ForwardUpstream(t *testing.T) {
+	inner := &recordingInner{}
+	h := &dnsHandler{inner: inner, dns: nil, forward: "1.1.1.1:53"}
+	c1, c2 := net.Pipe()
+	defer c2.Close()
+	h.HandleTCP(c1, ":53")
+	if inner.tcpDest != "1.1.1.1:53" {
+		t.Fatalf("tcp dest = %q, want rewritten upstream", inner.tcpDest)
+	}
+	pc, _ := net.ListenPacket("udp", "127.0.0.1:0")
+	h.HandleUDP(pc, "10.81.1.1:53")
+	if inner.udpDest != "1.1.1.1:53" {
+		t.Fatalf("udp dest = %q, want rewritten upstream", inner.udpDest)
+	}
+}
+
+func TestDNSHandler_ForwardEmpty_KeepsMiddlewarePath(t *testing.T) {
+	inner := &recordingInner{}
+	h := &dnsHandler{inner: inner, dns: nil, forward: ""}
+	// forward 空 + dns 中间件 nil → 现状行为:透传 inner(dest 原样)
+	c1, _ := net.Pipe()
+	h.HandleTCP(c1, ":53")
+	if inner.tcpDest != ":53" {
+		t.Fatalf("dest = %q, want passthrough unchanged", inner.tcpDest)
+	}
+}

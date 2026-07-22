@@ -366,6 +366,62 @@ func TestEngineStop_NotStarted(t *testing.T) {
 	}
 }
 
+// TestReduceOutboundResults_PartialFailureTolerated pins the multi-slot
+// gateway fix: one dead outbound (e.g. an enterprise slot's line) must not
+// abort engine Start when at least one OTHER outbound succeeded. Caught by
+// the enterprise-router UAT — engine.Start previously aborted on ANY
+// outbound failure regardless of how many others succeeded.
+func TestReduceOutboundResults_PartialFailureTolerated(t *testing.T) {
+	urls := []string{"k2v5://a", "k2v5://dead", "k2v5://b"}
+	deadErr := errors.New("simulated dial failure")
+	aliveOT1 := &outboundTransport{}
+	aliveOT2 := &outboundTransport{}
+	results := []otResult{
+		{ot: aliveOT1},
+		{err: deadErr},
+		{ot: aliveOT2},
+	}
+
+	tmMap, allOTs, primaryOT, _, firstErr := reduceOutboundResults(urls, results)
+
+	if primaryOT != aliveOT1 {
+		t.Fatalf("primaryOT = %v, want the first SUCCESSFUL outbound (aliveOT1)", primaryOT)
+	}
+	if len(allOTs) != 2 {
+		t.Fatalf("allOTs = %d entries, want 2 (only the successes)", len(allOTs))
+	}
+	if len(tmMap) != 2 || tmMap["k2v5://a"] != aliveOT1 || tmMap["k2v5://b"] != aliveOT2 {
+		t.Fatalf("tmMap = %+v, want only the 2 successful URLs mapped", tmMap)
+	}
+	if _, deadMapped := tmMap["k2v5://dead"]; deadMapped {
+		t.Fatal("dead outbound must NOT appear in tmMap — its route target must fall back to reject")
+	}
+	if firstErr != deadErr {
+		t.Fatalf("firstErr = %v, want the dead outbound's error (for diagnostics)", firstErr)
+	}
+}
+
+// TestReduceOutboundResults_AllFailed preserves the existing "no outbound
+// at all works" abort behavior (TestEngineStart_WireProbeFailure's
+// end-to-end counterpart): primaryOT must be nil so Start still fails.
+func TestReduceOutboundResults_AllFailed(t *testing.T) {
+	urls := []string{"k2v5://a", "k2v5://b"}
+	err1 := errors.New("first failure")
+	results := []otResult{{err: err1}, {err: errors.New("second failure")}}
+
+	tmMap, allOTs, primaryOT, _, firstErr := reduceOutboundResults(urls, results)
+
+	if primaryOT != nil {
+		t.Fatalf("primaryOT = %v, want nil when every outbound failed", primaryOT)
+	}
+	if len(allOTs) != 0 || len(tmMap) != 0 {
+		t.Fatalf("allOTs/tmMap must be empty, got allOTs=%v tmMap=%v", allOTs, tmMap)
+	}
+	if firstErr != err1 {
+		t.Fatalf("firstErr = %v, want the FIRST failure in order", firstErr)
+	}
+}
+
 func TestEngineStart_WireProbeFailure(t *testing.T) {
 	e := New()
 	h := &mockEventHandler{}
@@ -2218,6 +2274,23 @@ func TestBuildRouteEntries_NewFieldsCopied(t *testing.T) {
 	// InstallerPackages case preserved.
 	if !reflect.DeepEqual([]string{"com.xiaomi.market"}, e.InstallerPackages) {
 		t.Errorf("InstallerPackages = %v", e.InstallerPackages)
+	}
+}
+
+func TestBuildRouteEntries_SrcIPCIDR(t *testing.T) {
+	routes := []config.RouteConfig{
+		{Via: "k2v5://u:p@1.2.3.4:443", Match: rule.MatchConfig{SrcIPCIDR: []string{"10.81.1.0/24", "bogus"}}},
+	}
+	outboundMap := map[string]rule.Target{"k2v5://u:p@1.2.3.4:443": rule.Target(2)}
+	entries, _, _ := buildRouteEntries(routes, nil, outboundMap, heapRegionExpander(nil))
+	if len(entries) != 1 {
+		t.Fatalf("want 1 entry, got %d", len(entries))
+	}
+	if len(entries[0].SrcCIDRs) != 1 || entries[0].SrcCIDRs[0].String() != "10.81.1.0/24" {
+		t.Fatalf("want compiled [10.81.1.0/24] (bogus dropped), got %v", entries[0].SrcCIDRs)
+	}
+	if entries[0].Target != rule.Target(2) {
+		t.Fatalf("want target 2, got %v", entries[0].Target)
 	}
 }
 

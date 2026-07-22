@@ -33,6 +33,14 @@ type dnsHandler struct {
 	ctx    context.Context // engine context — cancelled on Stop()
 	engine *Engine         // for wire error reporting (same package); nil in tests
 
+	// forward, when non-empty (host:port), bypasses the DNS middleware:
+	// port-53 flows are handed to inner with dest rewritten to this
+	// upstream, so they route through the rule engine like ordinary
+	// traffic. Multi-slot gateway mode: each LAN subnet's DNS exits via
+	// its own slot outbound (DNS exit IP == traffic exit IP); a dead
+	// slot rejects DNS too (fail-closed).
+	forward string
+
 	consecutiveFails atomic.Int32
 }
 
@@ -40,6 +48,10 @@ const dnsWireErrorThreshold int32 = 30
 
 func (h *dnsHandler) HandleTCP(conn net.Conn, dest string) {
 	_, port, _ := net.SplitHostPort(dest)
+	if port == "53" && h.forward != "" {
+		h.inner.HandleTCP(conn, h.forward)
+		return
+	}
 	if port == "53" && h.dns != nil {
 		h.serveDNSStream(conn)
 		return
@@ -49,6 +61,10 @@ func (h *dnsHandler) HandleTCP(conn net.Conn, dest string) {
 
 func (h *dnsHandler) HandleUDP(conn net.PacketConn, dest string) {
 	_, port, _ := net.SplitHostPort(dest)
+	if port == "53" && h.forward != "" {
+		h.inner.HandleUDP(conn, h.forward)
+		return
+	}
 	if port == "53" && h.dns != nil {
 		h.serveDNS(conn)
 		return

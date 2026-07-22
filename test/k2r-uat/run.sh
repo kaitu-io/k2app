@@ -15,11 +15,15 @@
 #   - Crash recovery (kill -9, stale rule cleanup, auto-reconnect post-crash)
 #   - API completeness (status fields, SSE events, log-level, error handling)
 #   - Node cutoff (quota-pause simulation: freeze k2s → LAN flow fails → recovers)
+#   - Enterprise multi-slot mode (k2subs:// slot_bindings: per-slot egress,
+#     fail-closed dead slot, DNS follows the same rule, manifest-change
+#     convergence, revert to consumer mode)
 #
 # Usage:
 #   ./run.sh                       # full UAT
 #   ./run.sh --phase rules         # single phase
 #   ./run.sh --phase node-cutoff   # quota-cutoff phase only
+#   ./run.sh --phase multislot     # enterprise multi-slot phase only
 #   ./run.sh --keep                # keep containers after test for debugging
 #
 # Env:
@@ -35,7 +39,7 @@ COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 
 # ── Tunable parameters ────────────────────────────────────────────
 : "${CONNECT_TIMEOUT:=90}"   # max wait for k2r to connect (seconds)
-: "${PHASE:=all}"            # all | rules | tunnel | lan-tcp | lan-dns | cleanup | reconnect | auto | crash | api | node-cutoff
+: "${PHASE:=all}"            # all | rules | tunnel | lan-tcp | lan-dns | cleanup | reconnect | auto | crash | api | node-cutoff | multislot
 : "${KEEP:=false}"           # keep containers after test
 
 # ── Parse args ────────────────────────────────────────────────────
@@ -133,6 +137,18 @@ k2r_exec() {
 
 lan_exec() {
     docker exec "$(docker compose -f "$COMPOSE_FILE" ps -q lan-client)" "$@"
+}
+
+# Per-slot LAN clients (multislot phase only) — each is a separate container
+# on its own dedicated bridge network (slot1-net/slot2-net), giving it a real
+# PRIMARY IP in the slot's subnet rather than an aliased secondary IP. See
+# docker-compose.yml's topology comment for why this matters.
+lan_exec_slot1() {
+    docker exec "$(docker compose -f "$COMPOSE_FILE" ps -q lan-client-slot1)" "$@"
+}
+
+lan_exec_slot2() {
+    docker exec "$(docker compose -f "$COMPOSE_FILE" ps -q lan-client-slot2)" "$@"
 }
 
 # Get status JSON from API.
@@ -242,6 +258,7 @@ build_binaries() {
     (cd "$PROJECT_ROOT" && CGO_ENABLED=0 GOOS=linux go build -ldflags "$ldflags" -o "$build_dir/k2r"        ./cmd/k2r)
     (cd "$PROJECT_ROOT" && CGO_ENABLED=0 GOOS=linux go build -ldflags "$ldflags" -o "$build_dir/k2s"        ./cmd/k2s)
     (cd "$PROJECT_ROOT" && CGO_ENABLED=0 GOOS=linux go build -ldflags "$ldflags" -o "$build_dir/gen-config" ./docker/gen-config)
+    (cd "$PROJECT_ROOT" && CGO_ENABLED=0 GOOS=linux go build -ldflags "$ldflags" -o "$build_dir/mocksubs"   ./test/k2r-uat/mocksubs)
     log_ok "Binaries built ($(du -sh "$build_dir" | cut -f1))"
 }
 
@@ -1027,6 +1044,238 @@ test_node_cutoff() {
     fi
 }
 
+# ── Phase 12: Enterprise multi-slot mode ─────────────────────────
+# Exercises the k2subs:// -> slot_bindings path end to end: a mock HTTPS
+# /api/subs server (mocksubs, started inside the k2r container by
+# docker-entrypoint-k2r.sh whenever the gen-config-produced mocksubs
+# fixtures are present) serves a 2-slot manifest — slot 1 bound to the
+# real k2s tunnel (alive), slot 2 bound to a dead k2v5:// URL (never
+# reachable). lan-client gets two extra source addresses, one per slot
+# subnet, so curl --interface picks which "slot" a request comes from.
+# Container-internal status/connect helpers, used only by test_multislot.
+#
+# This sandbox's Docker port-forward (host -p 11779:1779) does not present
+# as loopback to k2r's gateway/auth.go isLoopback() check, so the shared
+# $API-based get_status/wait_connected (which curl the host-forwarded port)
+# always get 401 here even though the engine is genuinely connected —
+# confirmed by comparing `docker exec k2r curl 127.0.0.1:1779/...` (succeeds)
+# against host-side curl (401) on the completely unmodified `rules` phase
+# too. Scoping the workaround to this function avoids touching the shared
+# helpers other phases rely on.
+get_status_internal() {
+    k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/core \
+        -H "Content-Type: application/json" \
+        -d '{"action":"status"}' 2>/dev/null || true
+}
+
+get_state_internal() {
+    get_status_internal | jq -r '.data.state // empty' 2>/dev/null || true
+}
+
+wait_connected_internal() {
+    local timeout="${1:-$CONNECT_TIMEOUT}"
+    local deadline=$((SECONDS + timeout))
+    while [[ $SECONDS -lt $deadline ]]; do
+        if [[ "$(get_state_internal)" == "connected" ]]; then
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
+
+test_multislot() {
+    log_phase "12 — Enterprise multi-slot mode"
+
+    if [[ "$TPROXY_DATAPLANE" == "unknown" ]]; then
+        probe_tproxy_dataplane
+    fi
+    require_tproxy_dataplane "12 multislot phase" || return
+
+    # Multi-slot fixtures live in the SAME /etc/k2 volume every phase shares
+    # (written by gen-config at container start) — switch this session's
+    # config to the k2subs:// variant. Other phases are untouched: they
+    # keep calling `k2r up /etc/k2/k2r.yml` (static k2v5://).
+    log_info "Switching to k2subs:// multi-slot config..."
+    k2r_exec k2r up /etc/k2/k2r-multislot.yml 2>&1 || true
+    if ! wait_connected_internal 60; then
+        log_fail "12.0 k2r did not reach connected state in multi-slot mode"
+        return
+    fi
+    assert_eq "12.0 k2r state is connected (multi-slot)" "connected" "$(get_state_internal)"
+
+    # 12.1 (M1) k2r logged entering multi-slot mode.
+    local k2r_log
+    k2r_log=$(docker compose -f "$COMPOSE_FILE" logs k2r 2>&1)
+    assert_contains "12.1 (M1) k2r logged multi-slot-mode slots=2" "multi-slot-mode" "$k2r_log"
+
+    # Per-slot LAN clients each live on their own dedicated bridge (real
+    # primary IP in the slot's subnet) — route default via k2r's address on
+    # that same network. Idempotent — safe to re-run if invoked more than once.
+    lan_exec_slot1 ip route del default 2>/dev/null || true
+    lan_exec_slot1 ip route add default via 10.81.1.20 2>/dev/null || true
+    lan_exec_slot2 ip route del default 2>/dev/null || true
+    lan_exec_slot2 ip route add default via 10.81.2.20 2>/dev/null || true
+    setup_lan_route
+
+    slot_curl_ok() {
+        local execFn="$1" timeout="${2:-8}"
+        "$execFn" curl -sf --max-time "$timeout" "http://example.com" 2>&1 | grep -qi "example"
+    }
+
+    # 12.2 (M2) slot1 (alive tunnel) egresses fine.
+    if slot_curl_ok lan_exec_slot1 15; then
+        log_ok "12.2 (M2) slot1 (10.81.1.30, bound to alive tunnel) reaches internet"
+    else
+        log_fail "12.2 (M2) slot1 curl failed — expected success through the alive tunnel"
+    fi
+
+    # 12.3 (M3) slot2 (dead tunnel) fails — fail-closed, no direct fallback.
+    # Checked 3x to rule out a one-off timing fluke rather than a genuine
+    # design gap (a real leak would show at least one success).
+    local slot2_leaked=false
+    for _ in 1 2 3; do
+        if slot_curl_ok lan_exec_slot2 5; then
+            slot2_leaked=true
+            break
+        fi
+    done
+    if $slot2_leaked; then
+        log_fail "12.3 (M3) slot2 (dead tunnel) unexpectedly reached the internet — fail-closed broken"
+    else
+        log_ok "12.3 (M3) slot2 (10.81.2.30, bound to dead tunnel) fails consistently (fail-closed)"
+    fi
+
+    # 12.4 (M4) No direct-egress fallback: k2r's own routing-decision log
+    # (core/tunnel.go's "tunnel: route", action=outbound(N) — convention:
+    # 0=direct, 1=reject, 2+=wire outbounds) never shows target 0 (direct)
+    # for a slot2-sourced flow — multi-slot mode disables the direct
+    # outbound entirely (only the two slot pins + a reject catch-all,
+    # verified at the unit level by TestBuildSlotRoutes). A plain substring
+    # match on "direct" is NOT safe here: unrelated log fields like
+    # dnsRedirect=true contain "direct" as a substring ("Redirect"), so the
+    # check must anchor on the exact action=outbound(0) log token instead.
+    k2r_log=$(docker compose -f "$COMPOSE_FILE" logs k2r 2>&1)
+    assert_not_contains "12.4 (M4) no direct-dial log entries for 10.81.2 (no leak)" "action=outbound(0).*srcIP=10.81.2" "$k2r_log"
+
+    # 12.5 (M5) Unbound source (lan-client's own bridge address, not in any
+    # slot subnet) hits the reject catch-all too — multi-slot mode has no
+    # implicit "primary" LAN client the way consumer mode does.
+    if slot_curl_ok lan_exec 5; then
+        log_fail "12.5 (M5) unbound source unexpectedly reached the internet"
+    else
+        log_ok "12.5 (M5) unbound source (10.99.0.30) hits the reject catch-all"
+    fi
+
+    # 12.6 (M6) status API self-describes via slots[] — 8 rows always,
+    # slot1 running, slot2 eventually failClosed (probe cadence is 60s;
+    # zeroThreshold=2 consecutive failures, so allow up to ~2 cycles).
+    local status slot1_state slot2_state slots_len deadline=$((SECONDS + 150))
+    while [[ $SECONDS -lt $deadline ]]; do
+        status=$(get_status_internal)
+        slots_len=$(echo "$status" | jq -r '.data.slots | length' 2>/dev/null || echo "0")
+        slot2_state=$(echo "$status" | jq -r '.data.slots[1].state' 2>/dev/null || echo "")
+        [[ "$slot2_state" == "failClosed" ]] && break
+        sleep 5
+    done
+    slot1_state=$(echo "$status" | jq -r '.data.slots[0].state' 2>/dev/null || echo "")
+    assert_eq "12.6a (M6) status slots[] has 8 rows" "8" "$slots_len"
+    assert_eq "12.6b (M6) slot1 state=running" "running" "$slot1_state"
+    assert_eq "12.6c (M6) slot2 state=failClosed" "failClosed" "$slot2_state"
+
+    # 12.7 (M7) DNS follows the same per-slot fail-closed rule: slot1's DNS
+    # exits via its tunnel (resolves); slot2's DNS dies with its tunnel.
+    if require_tproxy_dataplane "12.7a slot1 DNS"; then
+        local dns1
+        dns1=$(lan_exec_slot1 dig @8.8.8.8 example.com +tcp +short +time=8 +tries=1 2>&1 || true)
+        if echo "$dns1" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+            log_ok "12.7a (M7) slot1 DNS resolves through its tunnel"
+        else
+            log_fail "12.7a (M7) slot1 DNS failed: $dns1"
+        fi
+    fi
+    if require_tproxy_dataplane "12.7b slot2 DNS"; then
+        local dns2
+        dns2=$(lan_exec_slot2 dig @8.8.8.8 example.com +tcp +short +time=8 +tries=1 2>&1 || true)
+        if echo "$dns2" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+            log_fail "12.7b (M7) slot2 DNS unexpectedly resolved (should fail-closed with its dead tunnel)"
+        else
+            log_ok "12.7b (M7) slot2 DNS fails closed (dead tunnel)"
+        fi
+    fi
+
+    # 12.8 (M8) Manifest change converges: repoint slot2 -> the alive
+    # tunnel (tunnel_index 0) and confirm k2r picks it up within the
+    # refresh cadence (?refresh=5 in the k2subs:// URL) without a manual
+    # restart, and that slot2 traffic starts working.
+    local alive_url
+    alive_url=$(k2r_exec cat /etc/k2/mocksubs-response.json | jq -r '.tunnels[0].url')
+    log_info "Repointing slot2 -> alive tunnel (M8 convergence)..."
+    k2r_exec sh -c "cat > /etc/k2/mocksubs-response.json <<JSON
+{\"tunnels\":[{\"url\":\"$alive_url\",\"weight\":1}],\"slot_bindings\":[{\"slot\":1,\"country\":\"ae\",\"index\":1,\"tunnel_index\":0},{\"slot\":2,\"country\":\"gn\",\"index\":1,\"tunnel_index\":0}]}
+JSON"
+    deadline=$((SECONDS + 60))
+    local converged=false
+    while [[ $SECONDS -lt $deadline ]]; do
+        k2r_log=$(docker compose -f "$COMPOSE_FILE" logs k2r 2>&1)
+        if echo "$k2r_log" | grep -q "slot-bindings-changed"; then
+            converged=true
+            break
+        fi
+        sleep 3
+    done
+    if $converged; then
+        log_ok "12.8a (M8) k2r logged slot-bindings-changed after manifest edit"
+    else
+        log_fail "12.8a (M8) no slot-bindings-changed within 60s of manifest edit"
+    fi
+    # Reconnect settles after the reapply; give it a few seconds then probe.
+    sleep 5
+    wait_connected_internal 30 || true
+    if slot_curl_ok lan_exec_slot2 15; then
+        log_ok "12.8b (M8) slot2 now reaches internet after convergence"
+    else
+        log_fail "12.8b (M8) slot2 still fails after convergence to the alive tunnel"
+    fi
+
+    # 12.9 (M9) Clearing slot_bindings reverts k2r to consumer (single
+    # tunnel) behavior — the sole signal (slots[] absent) the app relies on
+    # to stop rendering the enterprise form.
+    log_info "Clearing slot_bindings (M9 — revert to consumer mode)..."
+    k2r_exec sh -c "cat > /etc/k2/mocksubs-response.json <<JSON
+{\"tunnels\":[{\"url\":\"$alive_url\",\"weight\":1}],\"slot_bindings\":[]}
+JSON"
+    deadline=$((SECONDS + 60))
+    local reverted=false
+    while [[ $SECONDS -lt $deadline ]]; do
+        status=$(get_status_internal)
+        if [[ "$(echo "$status" | jq -r 'has("data") and (.data | has("slots") | not)' 2>/dev/null)" == "true" ]]; then
+            reverted=true
+            break
+        fi
+        sleep 5
+    done
+    if $reverted; then
+        log_ok "12.9a (M9) status slots[] absent — reverted to consumer mode"
+    else
+        log_fail "12.9a (M9) status still reports slots[] after clearing the manifest"
+    fi
+    # Settle buffer mirrors M8b: engine "connected" can fire a beat before
+    # the reinstalled interceptor/routes are fully warm after a reapply.
+    wait_connected_internal 30 || true
+    sleep 5
+    if slot_curl_ok lan_exec 15; then
+        log_ok "12.9b (M9) consumer-mode LAN flow works again (single-tunnel behavior)"
+    else
+        log_fail "12.9b (M9) consumer-mode LAN flow failed after reverting"
+    fi
+
+    # Leave the harness back on the plain k2v5:// config for any phase run
+    # after this one (e.g. `--phase all` ordering, or a repeat run).
+    k2r_exec k2r up /etc/k2/k2r.yml 2>&1 || true
+    wait_connected_internal 30 || true
+}
+
 # ── Main ──────────────────────────────────────────────────────────
 main() {
     echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
@@ -1050,6 +1299,7 @@ main() {
             test_crash_recovery
             test_api
             test_node_cutoff
+            test_multislot
             ;;
         rules)      test_rules ;;
         tunnel)     test_tunnel ;;
@@ -1061,6 +1311,7 @@ main() {
         crash)      test_crash_recovery ;;
         api)        test_api ;;
         node-cutoff) test_node_cutoff ;;
+        multislot)  test_multislot ;;
         *)          echo "Unknown phase: $PHASE"; exit 1 ;;
     esac
 }
