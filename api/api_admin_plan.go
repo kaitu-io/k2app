@@ -27,7 +27,8 @@ func api_admin_list_plans(c *gin.Context) {
 		return
 	}
 
-	if err := query.Offset(pagination.Offset()).Limit(pagination.PageSize).Find(&plans).Error; err != nil {
+	// 显式排序：新建套餐排最前，避免依赖 InnoDB 隐式主键序
+	if err := query.Order("id DESC").Offset(pagination.Offset()).Limit(pagination.PageSize).Find(&plans).Error; err != nil {
 		log.Errorf(c, "failed to get plans: %v", err)
 		Error(c, ErrorSystemError, "failed to get plans")
 		return

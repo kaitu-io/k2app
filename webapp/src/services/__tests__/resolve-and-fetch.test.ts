@@ -1,12 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../antiblock', () => ({ resolveEntry: vi.fn().mockResolvedValue('https://k2.52j.me') }));
+vi.mock('../antiblock', () => ({
+  resolveEntry: vi.fn().mockResolvedValue('https://k2.52j.me'),
+  resolveEntries: vi.fn().mockResolvedValue(['https://k2.52j.me']),
+}));
+// 保活 relay-first 行为测试：kill-switch 默认 false，这里翻成 true。
+// 默认关的行为见 resolve-and-fetch.relay-disabled.test.ts。
+vi.mock('../relay-flag', () => ({ RELAY_ENABLED: true }));
 
 import { resolveAndFetch, CONTROL_PLANE_HOST } from '../resolve-and-fetch';
-import { resolveEntry } from '../antiblock';
+import { resolveEntry, resolveEntries } from '../antiblock';
 import * as pool from '../entry-pool';
 
 const mockedResolveEntry = vi.mocked(resolveEntry);
+const mockedResolveEntries = vi.mocked(resolveEntries);
 
 // Transport order is RELAY-FIRST, direct-fallback (see resolveAndFetch). Node
 // selection / ranking / sequential failover / connection reuse all live in the Go
@@ -21,6 +28,7 @@ describe('resolveAndFetch (relay-first, direct-fallback, node selection in Go)',
     vi.clearAllMocks();
     pool.__resetRelaySupportForTest();
     mockedResolveEntry.mockResolvedValue('https://k2.52j.me');
+    mockedResolveEntries.mockResolvedValue(['https://k2.52j.me']); // clearAllMocks 会清实现
     (window as any)._k2 = { run: vi.fn() };
   });
   afterEach(() => { globalThis.fetch = originalFetch; delete (window as any)._k2; });

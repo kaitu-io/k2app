@@ -62,7 +62,7 @@ func MarkOrderAsPaid(ctx context.Context, tx *gorm.DB, order *Order, provisionSu
 	// 奖励失败不阻断支付到账——支付是最高优先级
 	// 使用 SAVEPOINT 确保奖励要么全部成功要么全部回滚（避免部分状态）
 	if err := tx.SavePoint("invite_reward").Error; err == nil {
-		if err := handleInvitePurchaseRewardInTx(ctx, tx, order.UserID, order.ID); err != nil {
+		if err := handleInvitePurchaseRewardInTx(ctx, tx, order); err != nil {
 			tx.RollbackTo("invite_reward")
 			log.Errorf(ctx, "[MarkOrderAsPaid] invite reward failed (non-fatal, rolled back), order %d: %v", order.ID, err)
 		}

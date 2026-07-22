@@ -76,7 +76,7 @@ export default function CampaignsPage() {
   const [editingCampaign, setEditingCampaign] = useState<CampaignResponse | null>(null);
   const [pagination, setPagination] = useState({
     page: 0,
-    pageSize: 10,
+    pageSize: 50,
     total: 0
   });
   const [filters, setFilters] = useState({
@@ -309,7 +309,7 @@ export default function CampaignsPage() {
     try {
       setLoading(true);
       const response = await api.getCampaigns({
-        page: pagination.page,
+        page: pagination.page + 1, // 后端 1-based，前端 0-based
         pageSize: pagination.pageSize,
         ...filters
       });

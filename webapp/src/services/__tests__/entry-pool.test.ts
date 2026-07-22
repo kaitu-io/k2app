@@ -1,4 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// 保活 feeder 行为测试：kill-switch 默认 false，这里翻成 true。
+// 默认关的行为见 entry-pool.relay-disabled.test.ts。
+vi.mock('../relay-flag', () => ({ RELAY_ENABLED: true }));
+
 import * as pool from '../entry-pool';
 import type { NodeEntry } from '../node-descriptor';
 import { EMBEDDED_SEED } from '../antiblock-seed-embedded';

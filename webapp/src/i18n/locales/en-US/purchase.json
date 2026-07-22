@@ -32,7 +32,7 @@
       "expiresOn": "Valid until {{date}}",
       "daysLeft": "{{days}} days left",
       "viewHistory": "Purchase history",
-      "inviteRewardCard": "Invite friends — you both get {{days}} days",
+      "inviteRewardCard": "Invite friends — when their first purchase is a {{months}}-month+ plan, you both earn bonus days",
       "inviteRewardCta": "Invite"
     },
     "title": "Purchase Plan",
@@ -91,7 +91,7 @@
     "bindEmail": "Bind Email",
     "bindEmailToPayNow": "Bind email to pay",
     "inviteRewardTitle": "Referral Reward",
-    "inviteRewardDesc": "Get {{days}} extra days after your first purchase",
+    "inviteRewardDesc": "Get {{days}} extra days when your first purchase is a {{months}}-month or longer plan",
     "operationFailed": "Operation Failed",
     "loginRequired": "Please login to purchase",
     "loginToPurchase": "Login to Complete Purchase",
@@ -109,7 +109,8 @@
       "refreshStatus": "I've completed payment — refresh",
       "requestFailed": "Could not reach the payment service. Please try again.",
       "noPlans": "No subscription plans are available right now. Please check back soon."
-    }
+    },
+    "inviteRewardThresholdHint": "This plan doesn't qualify for the friend referral bonus. Choose a {{months}}-month or longer plan for your first order to get {{days}} extra days."
   },
   "deviceInstall": {
     "title": "Client Download",

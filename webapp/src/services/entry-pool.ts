@@ -1,6 +1,7 @@
 import type { NodeEntry } from './node-descriptor';
 import type { SResponse } from '../types/kaitu-core';
 import { EMBEDDED_SEED } from './antiblock-seed-embedded';
+import { RELAY_ENABLED } from './relay-flag';
 
 // The webapp is NO LONGER the authority for relay nodes. Node storage, ranking,
 // health, single-active-host selection, and connection reuse all live in the Go
@@ -19,6 +20,7 @@ import { EMBEDDED_SEED } from './antiblock-seed-embedded';
  * result. A no-op when relay is unsupported (web / daemon-less) or _k2 absent.
  */
 export function addNodes(entries: NodeEntry[]): void {
+  if (!RELAY_ENABLED) return;
   if (!relaySupported || entries.length === 0) return;
   const k2 = (window as unknown as { _k2?: { run: (a: string, p: unknown) => Promise<SResponse<unknown>> } })._k2;
   if (!k2) return;
@@ -47,6 +49,7 @@ let seedPrimed: Promise<void> | null = null;
  * Internally time-bounded so a hung bridge never blocks the caller.
  */
 export function ensureSeeded(): Promise<void> {
+  if (!RELAY_ENABLED) return Promise.resolve();
   if (seedPrimed) return seedPrimed;
   const p = (async () => {
     if (!relaySupported || EMBEDDED_SEED.nodes.length === 0) return;

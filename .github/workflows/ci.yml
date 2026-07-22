@@ -124,7 +124,7 @@ jobs:
         working-directory: desktop/src-tauri
 
       - name: Go test MCP
-        run: go test ./... -v 2>&1 | tee /tmp/go-test-output.txt
+        run: go test ./... -v -count=1 2>&1 | tee /tmp/go-test-output.txt
         working-directory: mcp
 
       - name: Cross-language hardware ID gate
@@ -216,7 +216,7 @@ jobs:
         working-directory: desktop/src-tauri
 
       - name: Go test MCP
-        run: go test ./... -v 2>&1 | tee /tmp/go-test-output.txt
+        run: go test ./... -v -count=1 2>&1 | tee /tmp/go-test-output.txt
         working-directory: mcp
 
       - name: Cross-language hardware ID gate
@@ -408,7 +408,7 @@ jobs:
 
       - name: Go test MCP
         shell: bash
-        run: go test ./... -v 2>&1 | tee /tmp/go-test-output.txt
+        run: go test ./... -v -count=1 2>&1 | tee /tmp/go-test-output.txt
         working-directory: mcp
 
       - name: MachineGuid post-Go check

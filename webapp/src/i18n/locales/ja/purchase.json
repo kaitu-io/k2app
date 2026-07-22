@@ -32,7 +32,7 @@
       "expiresOn": "有効期限 {{date}}",
       "daysLeft": "残り {{days}} 日",
       "viewHistory": "購入履歴",
-      "inviteRewardCard": "友達を招待して、お互いに {{days}} 日獲得",
+      "inviteRewardCard": "友達を招待して、初回購入が{{months}}ヶ月以上のプランならお互いに特典日数を獲得",
       "inviteRewardCta": "招待する"
     },
     "title": "プランを購入",
@@ -91,7 +91,7 @@
     "bindEmail": "メールアドレスを登録",
     "bindEmailToPayNow": "メール登録後に支払う",
     "inviteRewardTitle": "紹介報酬",
-    "inviteRewardDesc": "初回チャージで{{days}}日間の追加特典を獲得",
+    "inviteRewardDesc": "初回購入で{{months}}ヶ月以上のプランを選ぶと、{{days}}日間の追加特典を獲得",
     "operationFailed": "操作に失敗しました",
     "loginRequired": "購入するにはログインしてください",
     "loginToPurchase": "ログインして購入を完了",
@@ -109,7 +109,8 @@
       "refreshStatus": "支払いが完了しました — 更新",
       "requestFailed": "決済サービスに接続できませんでした。しばらくしてからお試しください。",
       "noPlans": "現在ご利用いただけるプランはありません。後ほどご確認ください。"
-    }
+    },
+    "inviteRewardThresholdHint": "現在のプランは友達紹介特典の対象外です。初回注文で{{months}}ヶ月以上のプランを選ぶと、{{days}}日間の追加特典を獲得できます。"
   },
   "deviceInstall": {
     "title": "クライアントダウンロード",

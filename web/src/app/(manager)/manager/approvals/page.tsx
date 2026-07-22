@@ -76,7 +76,7 @@ export default function ApprovalsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [pagination, setPagination] = useState({
     page: 0,
-    pageSize: 20,
+    pageSize: 50,
     total: 0,
   });
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -253,7 +253,7 @@ export default function ApprovalsPage() {
       setLoading(true);
       const response = await api.getApprovals({
         status: statusFilter || undefined,
-        page: pagination.page,
+        page: pagination.page + 1, // 后端 1-based，前端 0-based
         pageSize: pagination.pageSize,
       });
       setApprovals(response.items || []);
