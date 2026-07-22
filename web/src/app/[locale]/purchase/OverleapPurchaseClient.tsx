@@ -13,13 +13,11 @@ import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { Link } from '@/i18n/routing';
 import { useAuth } from '@/contexts/AuthContext';
-import { api, ApiError, type Plan, type User } from '@/lib/api';
+import { api, ApiError, ErrorCode, type Plan, type User } from '@/lib/api';
 import { redirectToLogin } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import MembershipBenefits from '@/components/MembershipBenefits';
-
-const ERROR_CHANNEL_UNAVAILABLE = 405001;
 
 function formatEur(cents: number, digits: number): string {
   return `€${(cents / 100).toFixed(digits)}`;
@@ -102,7 +100,7 @@ export default function OverleapPurchaseClient() {
       window.location.assign(url);
     } catch (err) {
       setError(
-        err instanceof ApiError && err.code === ERROR_CHANNEL_UNAVAILABLE
+        err instanceof ApiError && err.code === ErrorCode.ChannelUnavailable
           ? t('stripe.channelUnavailable')
           : t('stripe.genericError')
       );

@@ -37,6 +37,7 @@ vi.mock('@/lib/api', () => {
   }
   return {
     ApiError,
+    ErrorCode: { ChannelUnavailable: 405001 },
     api: {
       getPlans: (...a: unknown[]) => mockGetPlans(...a),
       getUserProfile: (...a: unknown[]) => mockGetUserProfile(...a),
