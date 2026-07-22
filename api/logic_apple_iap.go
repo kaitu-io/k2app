@@ -162,7 +162,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	// SAVEPOINT 保证奖励失败不阻断入账（支付到账优先）。奖励会更新买家 user 行，
 	// 之后必须重载本函数持有的 user 快照，否则后续 Save 会用旧值覆盖奖励天数。
 	if isFirst {
-		if plan, perr := planByAppleProductID(ctx, tx, info.ProductId); perr == nil && plan != nil {
+		if plan, perr := planByAppleProductID(ctx, tx, info.ProductId, Brand(user.Brand)); perr == nil && plan != nil {
 			if err := tx.SavePoint("iap_invite_reward").Error; err == nil {
 				if rerr := grantInvitePurchaseRewardInTx(ctx, tx, userID, plan); rerr != nil {
 					tx.RollbackTo("iap_invite_reward")
