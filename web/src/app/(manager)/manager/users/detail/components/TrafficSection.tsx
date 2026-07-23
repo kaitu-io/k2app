@@ -12,9 +12,17 @@ function formatBytes(n: number): string {
   return `${n} B`;
 }
 
+// cstNow returns the current instant shifted to Asia/Shanghai (UTC+8, no
+// DST), read back with getUTC* accessors so it matches the accounting month
+// used server-side. Using local getters on this shifted Date would
+// double-apply the browser's own timezone offset.
+function cstNow(): Date {
+  return new Date(Date.now() + 8 * 3600 * 1000);
+}
+
 function recentMonths(count: number): string[] {
-  const now = new Date();
-  const anchor = now.getFullYear() * 12 + now.getMonth();
+  const now = cstNow();
+  const anchor = now.getUTCFullYear() * 12 + now.getUTCMonth();
   return Array.from({ length: count }, (_, i) => {
     const m = anchor - i;
     return `${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}`;
@@ -23,7 +31,10 @@ function recentMonths(count: number): string[] {
 
 export function TrafficSection({ uuid }: { uuid: string }) {
   const [data, setData] = useState<TrafficUserDetailResponse | null>(null);
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(() => {
+    const d = cstNow();
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
