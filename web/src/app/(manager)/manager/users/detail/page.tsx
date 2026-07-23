@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, ContactInfo, ContactType, getContactUrl, getContactTypeName, AdminDeviceData, IssueDeviceTokenResponse } from "@/lib/api";
 import { TIER_OPTIONS, DEFAULT_TIER, type TierValue } from "@/lib/tiers";
+import { TrafficSection } from "./components/TrafficSection";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -1243,6 +1244,8 @@ function UserDetailContent() {
           )}
         </CardContent>
       </Card>
+
+      {uuid && <TrafficSection uuid={uuid} />}
 
       {/* 订单历史 */}
       <Card>
