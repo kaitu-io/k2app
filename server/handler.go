@@ -128,6 +128,11 @@ type ProxyHandler struct {
 	rxBytes atomic.Int64
 	txBytes atomic.Int64
 
+	// Per-device pending deltas (user-level accounting, spec 2026-07-22).
+	// Same observation points as rxBytes/txBytes; drained by the device
+	// traffic reporter each cycle.
+	devTraffic deviceTraffic
+
 	// Accepting gate (Plan 3-k2s, A2). false = refuse NEW connections
 	// (Center verdict=stop). MUST default true — see NewProxyHandler.
 	// Established connections are never force-killed; stop = refuse new only.
@@ -140,6 +145,9 @@ func (h *ProxyHandler) TrafficBytes() (rx, tx int64) { return h.rxBytes.Load(), 
 // ResetTraffic zeroes the counters (sidecar triggers on a new Center epoch).
 func (h *ProxyHandler) ResetTraffic() { h.rxBytes.Store(0); h.txBytes.Store(0) }
 
+// TakeDeviceTraffic drains the per-device pending byte deltas.
+func (h *ProxyHandler) TakeDeviceTraffic() map[string]DeviceDelta { return h.devTraffic.Take() }
+
 // SetAccepting toggles whether the node accepts NEW connections.
 func (h *ProxyHandler) SetAccepting(v bool) { h.accepting.Store(v) }
 
@@ -151,8 +159,8 @@ func (h *ProxyHandler) Accepting() bool { return h.accepting.Load() }
 // Operators can override per-node via the K2_DNS_SERVERS env var
 // (comma-separated "ip:port,ip:port,..." — port defaults to 53 when omitted).
 var defaultResolverServers = []string{
-	"8.8.8.8:53", "8.8.4.4:53",         // Google
-	"1.1.1.1:53", "1.0.0.1:53",         // Cloudflare
+	"8.8.8.8:53", "8.8.4.4:53", // Google
+	"1.1.1.1:53", "1.0.0.1:53", // Cloudflare
 	"9.9.9.9:53", "149.112.112.112:53", // Quad9
 }
 
@@ -278,6 +286,10 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		return
 	}
 
+	udid := connDeviceID(conn)
+	var sessRx, sessTx int64
+	defer func() { h.devTraffic.Add(udid, atomic.LoadInt64(&sessRx), sessTx) }()
+
 	startTime := time.Now()
 
 	// Use scoped logger from wire layer (carries remote + sid + addr).
@@ -342,7 +354,8 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 				log.Debug("server: HandleUDP client->target ReadFrom done", "err", err)
 				break
 			}
-			h.rxBytes.Add(int64(n)) // uplink read from client (rx)
+			h.rxBytes.Add(int64(n))            // uplink read from client (rx)
+			atomic.AddInt64(&sessRx, int64(n)) // cross-goroutine write, must be atomic
 			log.Debug("server: HandleUDP client->target forwarding", "len", n)
 			if _, err := target.Write(buf[:n]); err != nil {
 				log.Warn("server: HandleUDP client->target Write failed", "err", err)
@@ -369,6 +382,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 			break
 		}
 		h.txBytes.Add(int64(n)) // downlink read from target (tx)
+		sessTx += int64(n)      // main goroutine only, plain add is fine
 		log.Debug("server: HandleUDP target->client forwarding", "len", n)
 		if _, err := conn.WriteTo(buf[:n], nil); err != nil {
 			exitReason = "writeto-fail"
@@ -529,12 +543,14 @@ type closeWriter interface {
 // the target side. a->b (uplink read from the client) counts as rx; b->a
 // (downlink read from the target) counts as tx.
 func (h *ProxyHandler) pipe(a, b net.Conn) {
+	udid := connDeviceID(a) // a is the client side
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		bp := tcpBufPool.Get().(*[]byte)
 		n, _ := io.CopyBuffer(b, a, *bp) // a->b: uplink (rx)
 		h.rxBytes.Add(n)
+		h.devTraffic.Add(udid, n, 0)
 		tcpBufPool.Put(bp)
 		if cw, ok := b.(closeWriter); ok {
 			cw.CloseWrite()
@@ -545,6 +561,7 @@ func (h *ProxyHandler) pipe(a, b net.Conn) {
 	bp := tcpBufPool.Get().(*[]byte)
 	n, _ := io.CopyBuffer(a, b, *bp) // b->a: downlink (tx)
 	h.txBytes.Add(n)
+	h.devTraffic.Add(udid, 0, n)
 	tcpBufPool.Put(bp)
 	if cw, ok := a.(closeWriter); ok {
 		cw.CloseWrite()
