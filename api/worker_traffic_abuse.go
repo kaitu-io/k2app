@@ -72,7 +72,7 @@ func recordTrafficAbuseAlert(month string, userID uint, bytes int64) (bool, erro
 // retention window (accounting-day string comparison — ISO "2006-01-02" is
 // lexicographically ordered, so this is safe).
 func cleanupTrafficRetention(days int) error {
-	cutoff := time.Now().In(cnZone).AddDate(0, 0, -days).Format("2006-01-02")
+	cutoff := trafficDate(time.Now().AddDate(0, 0, -days))
 	return db.Get().Where("date < ?", cutoff).Delete(&DeviceTrafficDaily{}).Error
 }
 

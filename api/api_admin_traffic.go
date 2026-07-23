@@ -163,10 +163,14 @@ func api_admin_traffic_top_users(c *gin.Context) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	if _, _, err := trafficMonthRange(month); err != nil {
+		Error(c, ErrorInvalidArgument, "bad month")
+		return
+	}
 	rows, total, err := queryTrafficTopUsers(month, limit)
 	if err != nil {
 		log.Errorf(c, "traffic top-users: %v", err)
-		Error(c, ErrorInvalidArgument, err.Error())
+		Error(c, ErrorSystemError, "query failed")
 		return
 	}
 	Success(c, &TrafficTopUsersResponse{Month: month, TotalBytes: total, Users: rows})
@@ -184,10 +188,14 @@ func api_admin_traffic_user(c *gin.Context) {
 		return
 	}
 	month := c.DefaultQuery("month", time.Now().In(cnZone).Format("2006-01"))
+	if _, _, err := trafficMonthRange(month); err != nil {
+		Error(c, ErrorInvalidArgument, "bad month")
+		return
+	}
 	detail, err := queryTrafficUserDetail(uint(user.ID), month)
 	if err != nil {
 		log.Errorf(c, "traffic user detail: %v", err)
-		Error(c, ErrorInvalidArgument, err.Error())
+		Error(c, ErrorSystemError, "query failed")
 		return
 	}
 	Success(c, detail)
