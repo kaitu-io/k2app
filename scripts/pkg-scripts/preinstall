@@ -2,6 +2,7 @@
 # macOS PKG preinstall script
 # Runs as root BEFORE files are copied to /Applications/@APP_NAME@.app
 
+APP_NAME="@APP_NAME@"
 K2="/Applications/@APP_NAME@.app/Contents/MacOS/k2"
 KAITU_SERVICE="/Applications/Kaitu.app/Contents/MacOS/kaitu-service"
 
@@ -15,33 +16,42 @@ if pgrep -f "@APP_NAME@.app" >/dev/null 2>&1; then
     pkill -9 -f "@APP_NAME@.app" 2>/dev/null || true
 fi
 
-# 2. Uninstall existing service via binary CLI (try both old and new binary names)
+# 2. Uninstall existing service via binary CLI (current app's own binary — every
+#    brand ships a k2 binary under its own bundle, so this step is brand-safe).
 if [ -x "$K2" ]; then
     "$K2" service uninstall 2>&1 || true
 fi
-if [ -x "$KAITU_SERVICE" ]; then
-    "$KAITU_SERVICE" service uninstall 2>&1 || true
-fi
 
-# 3. Clean up all known launchd service variants (legacy + current formats)
-for PLIST in \
-    /Library/LaunchDaemons/io.kaitu.k2.plist \
-    /Library/LaunchDaemons/io.kaitu.service.plist \
-    /Library/LaunchDaemons/com.kaitu.service.plist \
-    /Library/LaunchDaemons/kaitu.plist; do
-    if [ -f "$PLIST" ]; then
-        launchctl unload "$PLIST" 2>/dev/null || true
-        rm -f "$PLIST"
+# Steps 3-4 clean up *kaitu's* legacy pre-rename artifacts (old kaitu-desktop
+# binary name / launchd ids from before this app was called "k2"). They must
+# only run for a kaitu install/upgrade — brands are fully isolated, and a
+# Kaitu.app/kaitu-service/io.kaitu.* launchd job belonging to a co-installed
+# kaitu build must never be torn down by installing a different brand.
+if [ "$APP_NAME" = "Kaitu" ]; then
+    if [ -x "$KAITU_SERVICE" ]; then
+        "$KAITU_SERVICE" service uninstall 2>&1 || true
     fi
-done
 
-# 4. Kill orphaned daemon processes (launchd KeepAlive already removed by step 3)
-#    Only needed if a daemon was started outside launchd or launchctl unload didn't SIGTERM it
-pkill -x kaitu-service 2>/dev/null || true
-pkill -x k2 2>/dev/null || true
-sleep 1
-pkill -9 -x kaitu-service 2>/dev/null || true
-pkill -9 -x k2 2>/dev/null || true
+    # 3. Clean up all known launchd service variants (legacy + current formats)
+    for PLIST in \
+        /Library/LaunchDaemons/io.kaitu.k2.plist \
+        /Library/LaunchDaemons/io.kaitu.service.plist \
+        /Library/LaunchDaemons/com.kaitu.service.plist \
+        /Library/LaunchDaemons/kaitu.plist; do
+        if [ -f "$PLIST" ]; then
+            launchctl unload "$PLIST" 2>/dev/null || true
+            rm -f "$PLIST"
+        fi
+    done
+
+    # 4. Kill orphaned daemon processes (launchd KeepAlive already removed by step 3)
+    #    Only needed if a daemon was started outside launchd or launchctl unload didn't SIGTERM it
+    pkill -x kaitu-service 2>/dev/null || true
+    pkill -x k2 2>/dev/null || true
+    sleep 1
+    pkill -9 -x kaitu-service 2>/dev/null || true
+    pkill -9 -x k2 2>/dev/null || true
+fi
 
 # 5. Wait for cleanup
 sleep 1
