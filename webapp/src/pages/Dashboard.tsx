@@ -31,6 +31,9 @@ import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useConnectionStore, AUTO_TUNNEL_DOMAIN, useEffectiveCloudSelection, useHasConnectableSelection, isAutoSelection } from '../stores/connection.store';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
+import { useRouterStore, isRouterTakeover } from '../stores/router.store';
+import { useExclusionGuard, RouterExclusionDialog } from '../components/RouterExclusionDialog';
+import { RouterTakeoverBanner } from '../components/RouterTakeoverBanner';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
@@ -96,6 +99,11 @@ export default function Dashboard() {
     disconnect,
     enrichFromTunnelList,
   } = useConnectionStore();
+
+  // Dual-connection exclusion guard: fires only right before Dashboard's
+  // connect would create a second active tunnel alongside an already-online
+  // router takeover (spec §6.3) — never on mere navigation.
+  const exclusion = useExclusionGuard('dashboard-connect');
 
   // Display tunnel: connected snapshot → manual/self-hosted selection
   const displayTunnel = connectedTunnel ?? activeTunnel;
@@ -365,12 +373,17 @@ export default function Dashboard() {
         console.warn('[Dashboard] handleToggleConnection: no tunnel selected, aborting');
         return;
       }
+      const takeover = isRouterTakeover(useRouterStore.getState());
+      if (!(await exclusion.guard(takeover))) {
+        console.info('[Dashboard] handleToggleConnection: connect cancelled by exclusion guard (router takeover)');
+        return;
+      }
       console.info('[Dashboard] handleToggleConnection: → connect (tunnel=' + (displayTunnel?.domain ?? 'auto') + ')');
       connect();
     } else {
       console.warn('[Dashboard] handleToggleConnection: no matching branch (vpnState=' + vpnState + ', isRetrying=' + isRetrying + ')');
     }
-  }, [isConnected, isDisconnected, isTransitioning, vpnState, displayTunnel, hasTunnelSelected, connect, disconnect]);
+  }, [isConnected, isDisconnected, isTransitioning, vpnState, displayTunnel, hasTunnelSelected, connect, disconnect, exclusion]);
 
   // Map vpnState to ServiceState for CollapsibleConnectionSection
   const serviceState = vpnState === 'idle' ? 'disconnected'
@@ -405,6 +418,9 @@ export default function Dashboard() {
           </Box>
         </Suspense>
       )}
+
+      {/* 路由器接管横幅:本机未连接但流量已被 k2r 网关保护——消除「未保护」误读 */}
+      <RouterTakeoverBanner />
 
       {/* SECTION 1: Connection Control */}
       <CollapsibleConnectionSection
@@ -711,6 +727,8 @@ export default function Dashboard() {
           {t('dashboard:dashboard.refreshRetryHint')}
         </Alert>
       </Snackbar>
+
+      <RouterExclusionDialog controller={exclusion} />
     </DashboardContainer>
   );
 }

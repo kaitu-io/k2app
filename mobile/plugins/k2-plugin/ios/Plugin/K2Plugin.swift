@@ -52,6 +52,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "iapFinishTransaction", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "relayFetch", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "relayAddNodes", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getDefaultGateway", returnType: CAPPluginReturnPromise),
     ]
 
     private var vpnManager: NETunnelProviderManager?
@@ -861,6 +862,56 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             let response = handler(nodes)
             call.resolve(["response": response])
         }
+    }
+
+    /// 物理接口默认网关：sysctl PF_ROUTE 路由表 dump，取 default(dst=0.0.0.0)
+    /// 且接口非 utun 的 gateway。iOS 无公开高层 API，这是标准做法。
+    @objc func getDefaultGateway(_ call: CAPPluginCall) {
+        call.resolve(["gateway": Self.defaultGatewayIPv4() as Any])
+    }
+
+    static func defaultGatewayIPv4() -> String? {
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_GATEWAY]
+        var len = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &len, nil, 0) == 0, len > 0 else { return nil }
+        var buf = [UInt8](repeating: 0, count: len)
+        guard sysctl(&mib, u_int(mib.count), &buf, &len, nil, 0) == 0 else { return nil }
+
+        var offset = 0
+        let hdrSize = MemoryLayout<rt_msghdr>.stride
+        while offset + hdrSize <= len {
+            let rtm = buf.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: rt_msghdr.self) }
+            if rtm.rtm_msglen == 0 { break }
+            defer { offset += Int(rtm.rtm_msglen) }
+            guard rtm.rtm_addrs & (RTA_DST | RTA_GATEWAY) == (RTA_DST | RTA_GATEWAY) else { continue }
+
+            var addrOffset = offset + hdrSize
+            var dstIsDefault = false
+            var gateway: String?
+            for i in 0..<Int32(RTAX_MAX) {
+                guard rtm.rtm_addrs & (1 << i) != 0 else { continue }
+                let sa = buf.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: addrOffset, as: sockaddr.self) }
+                if sa.sa_family == UInt8(AF_INET) {
+                    let sin = buf.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: addrOffset, as: sockaddr_in.self) }
+                    if i == RTAX_DST { dstIsDefault = sin.sin_addr.s_addr == 0 }
+                    if i == RTAX_GATEWAY {
+                        var addr = sin.sin_addr
+                        var str = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                        inet_ntop(AF_INET, &addr, &str, socklen_t(INET_ADDRSTRLEN))
+                        gateway = String(cString: str)
+                    }
+                }
+                let saLen = max(Int(sa.sa_len), MemoryLayout<UInt32>.stride)
+                addrOffset += (saLen + 3) & ~3
+            }
+            if dstIsDefault, let gw = gateway {
+                var ifname = [CChar](repeating: 0, count: Int(IFNAMSIZ) + 1)
+                if_indextoname(UInt32(rtm.rtm_index), &ifname)
+                let name = String(cString: ifname)
+                if !name.hasPrefix("utun") { return gw }
+            }
+        }
+        return nil
     }
 
     @objc func debugDump(_ call: CAPPluginCall) {

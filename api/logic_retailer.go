@@ -3,6 +3,7 @@ package center
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -358,12 +359,23 @@ func ToDataRetailerConfigWithContext(ctx context.Context, config *RetailerConfig
 
 // isUserFirstPaidOrderInTx 检查是否为该用户在该分销商下的首个已支付订单（事务内）
 // 用于判断应该使用首单分成还是续费分成
-func isUserFirstPaidOrderInTx(tx *gorm.DB, userID uint64, retailerID uint64, currentOrderID uint64) bool {
+// 注意：不按 retailer 过滤。分销商归属挂在买家身上（User.InvitedByCodeID → InviteCode.UserID），
+// 对同一 user 恒定，订单表里没有、也不需要 retailer 维度。
+//
+// 修复历史（2026-07-20）：原实现带 `retailer_id = ?` 条件，而 orders 表从无该列 —— MySQL 报
+// Unknown column，GORM 的 Count 不返回 error 到调用方，count 保持 0，函数因此**恒返回 true**，
+// 于是每一单都被判成首单、一律走 FirstOrderPercent，RenewalPercent 从未生效（超额返现）。
+// 现改为按买家历史已付订单判定，并检查查询错误——出错时保守返回 false（按续费低比例算，
+// 宁可少发也不错发；错发的钱追不回来）。
+func isUserFirstPaidOrderInTx(ctx context.Context, tx *gorm.DB, userID uint64, currentOrderID uint64) bool {
 	var count int64
-	tx.Model(&Order{}).
-		Where("user_id = ? AND retailer_id = ? AND is_paid = ? AND (is_refunded IS NULL OR is_refunded = ?) AND id < ?", userID, retailerID, true, false, currentOrderID).
-		Count(&count)
-	return count == 0 // 如果之前没有已支付订单，则当前订单是首单
+	if err := tx.Model(&Order{}).
+		Where("user_id = ? AND is_paid = ? AND (is_refunded IS NULL OR is_refunded = ?) AND id < ?", userID, true, false, currentOrderID).
+		Count(&count).Error; err != nil {
+		log.Errorf(ctx, "[isUserFirstPaidOrder] count failed for user %d order %d: %v — 保守按续费处理", userID, currentOrderID, err)
+		return false
+	}
+	return count == 0 // 之前没有已支付订单 → 当前订单是首单
 }
 
 // GetRetailerLevelHistory 获取分销商等级变更历史
@@ -395,10 +407,18 @@ func processRetailerCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint6
 
 	// 2. 通过邀请码链条查找分销商
 	// User.InvitedByCodeID → InviteCode.UserID → User(IsRetailer=true)
+	// 买家查不到分两种情况，绝不能一律吞成"成功但不返现"：
+	//   - RecordNotFound：买家被硬删/软删，确实无从归属，跳过返现是正确的
+	//   - 其它错误（连接断、锁等待超时、死锁）：是故障，必须上抛让调用方回滚重试
+	// 吞掉后者在 IAP 路径上是不可逆的：subscription_credits 去重行与订单在同一事务提交，
+	// 之后每次重投都在 alreadyCredited 处早退，永远走不回返现——分销商被静默永久少发。
 	var user User
 	if err := tx.Preload("InvitedByCode.User").First(&user, order.UserID).Error; err != nil {
-		log.Errorf(ctx, "[ProcessRetailerCashback] 查询用户失败: %v", err)
-		return nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf(ctx, "[ProcessRetailerCashback] 订单 %d 的买家 %d 不存在，跳过返现", orderID, order.UserID)
+			return nil
+		}
+		return fmt.Errorf("查询买家 %d 失败: %w", order.UserID, err)
 	}
 
 	// 检查用户是否有邀请码
@@ -423,7 +443,7 @@ func processRetailerCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint6
 	}
 
 	// 4. 判断是首单还是续费，选择对应的分成比例
-	isFirstOrder := isUserFirstPaidOrderInTx(tx, order.UserID, retailerID, orderID)
+	isFirstOrder := isUserFirstPaidOrderInTx(ctx, tx, order.UserID, orderID)
 
 	var cashbackPercent int
 	var orderType string

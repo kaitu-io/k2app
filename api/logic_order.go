@@ -129,6 +129,16 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 		if order.RefundAmount > 0 {
 			return fmt.Errorf("订单已有退款金额记录，无法退款（数据异常）")
 		}
+		// IAP 订单不走本流程。两条独立理由，任一成立都必须拒绝：
+		//  1. 资金：Apple 已原路退款到用户支付方式，本流程第 4 步还会往用户钱包打
+		//     order.PayAmount，等于退两次钱（且钱包余额可提现，是真实资损）。
+		//  2. 授权：第 2 步按 UserProHistory(type=VipPurchase, reference_id=orderID) 反算天数，
+		//     而 IAP 入账写的是 type=VipAppleSub 且 reference_id=SubscriptionCredit.ID，
+		//     这里恒查到 0 天，权益根本扣不掉。
+		// 正确路径是 Apple 的 REFUND/REVOKE 通知 → revokeSubscription → revokeIAPOrderCashbackInTx。
+		if order.Channel == OrderChannelAppleIAP {
+			return fmt.Errorf("Apple 内购订单不支持后台退款，请引导用户通过 Apple 申请退款（订单 %s）", order.UUID)
+		}
 
 		// ---------- 2. 撤销授权 ----------
 		// SUM 订单直接关联的 VipPurchase 天数（不含邀请奖励）

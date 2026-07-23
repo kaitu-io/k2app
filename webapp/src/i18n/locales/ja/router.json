@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "ルーター",
+    "connected": "接続済み",
+    "disconnected": "未接続",
+    "connect": "接続",
+    "disconnect": "接続を切断",
+    "offline": "ルーター {{name}} に接続できません。オンラインになっているか確認してください",
+    "retry": "再試行"
+  },
+  "setup": {
+    "title": "{{name}} を設定",
+    "intro": "下のボタンをタップして、ルーターの初期設定をワンステップで完了します",
+    "submit": "設定を開始",
+    "error": {
+      "mint_failed": "接続情報の取得に失敗しました。ネットワークを確認して再試行してください",
+      "key_failed": "コントロールキーの取得に失敗しました。ネットワークを確認して再試行してください",
+      "push_failed": "ルーターへの設定送信に失敗しました。オンラインになっているか確認してください"
+    }
+  },
+  "settings": {
+    "title": "ルーター設定",
+    "version": "ファームウェアバージョン：{{version}}",
+    "unbind": "連携解除",
+    "unbindConfirmTitle": "このルーターの連携を解除しますか？",
+    "unbindConfirmBody": "解除すると、このアプリからルーターを操作できなくなります。再度利用するには設定をやり直す必要があります。",
+    "unbindCancel": "キャンセル",
+    "unbindConfirm": "連携解除"
+  },
+  "exclusion": {
+    "title": "両方のトンネルを接続しますか？",
+    "bodyRouter": "この端末の VPN はすでに接続されています。このまま続けると通信が二重に転送されます。先に端末側の VPN を切断することをおすすめします。",
+    "bodyDashboard": "このネットワークのルーターがすでに通信を保護しています。このまま続けると通信が二重に転送されます。先にルーターを切断することをおすすめします。",
+    "keep": "両方接続したままにする",
+    "proceedRouter": "端末側 VPN を切断して続行",
+    "proceedDashboard": "ルーターを切断して続行"
+  },
+  "takeover": {
+    "banner": "このネットワークのルーターが通信を保護しています"
+  },
+  "legacy": {
+    "upgradeHint": "ルーターのファームウェアが古いことを検出しました。アプリ内での管理を行う前に、ルーター側で k2r をアップグレードしてください。"
+  },
+  "slots": {
+    "title": "回線",
+    "customName": "カスタム名",
+    "unbound": "未割り当て",
+    "failClosed": "回線断 — 通信を遮断中",
+    "downFor": "{{duration}} 前から停止",
+    "rename": "Wi-Fi 名を変更",
+    "renameHint": "1〜32文字",
+    "password": "Wi-Fi パスワードを変更",
+    "passwordHint": "8〜63文字",
+    "confirm": "適用",
+    "cancel": "キャンセル",
+    "applyFailed": "適用に失敗しました。もう一度お試しください",
+    "managedByAccount": "このルーターは紐付けられたアカウントによって管理されています",
+    "unbindEnterpriseBody": "バインド解除するとすべての回線が切断されます。復旧には運用担当者の対応が必要です。続行しますか？",
+    "managementGroup": "管理ネットワーク"
+  }
+}

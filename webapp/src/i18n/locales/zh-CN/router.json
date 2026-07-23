@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "路由器",
+    "connected": "已连接",
+    "disconnected": "未连接",
+    "connect": "连接",
+    "disconnect": "断开连接",
+    "offline": "无法连接到路由器 {{name}}，请检查路由器是否在线",
+    "retry": "重试"
+  },
+  "setup": {
+    "title": "配置路由器 {{name}}",
+    "intro": "点击下方按钮，一键完成路由器的首次配置",
+    "submit": "开始配置",
+    "error": {
+      "mint_failed": "获取连接凭证失败，请检查网络后重试",
+      "key_failed": "获取控制密钥失败，请检查网络后重试",
+      "push_failed": "推送配置到路由器失败，请检查路由器是否在线"
+    }
+  },
+  "settings": {
+    "title": "路由器设置",
+    "version": "固件版本：{{version}}",
+    "unbind": "解除绑定",
+    "unbindConfirmTitle": "解除路由器绑定？",
+    "unbindConfirmBody": "解除绑定后，本应用将不再能控制该路由器，需要重新配置才能使用。",
+    "unbindCancel": "取消",
+    "unbindConfirm": "解除绑定"
+  },
+  "exclusion": {
+    "title": "同时连接两个隧道？",
+    "bodyRouter": "本机 VPN 已连接。继续连接路由器将导致流量被重复代理，建议先断开本机 VPN。",
+    "bodyDashboard": "当前网络的路由器已接管流量。继续连接本机 VPN 将导致流量被重复代理，建议先断开路由器。",
+    "keep": "保持双连",
+    "proceedRouter": "断开本机 VPN 并继续",
+    "proceedDashboard": "断开路由器并继续"
+  },
+  "takeover": {
+    "banner": "当前网络的路由器正在保护你的流量"
+  },
+  "legacy": {
+    "upgradeHint": "检测到路由器固件版本过旧，请先在路由器上升级 k2r 后再使用应用内管理"
+  },
+  "slots": {
+    "title": "线路",
+    "customName": "自定义名称",
+    "unbound": "未绑定",
+    "failClosed": "线路中断 — 流量已阻断",
+    "downFor": "已中断 {{duration}}",
+    "rename": "修改 Wi-Fi 名称",
+    "renameHint": "1-32 个字符",
+    "password": "修改 Wi-Fi 密码",
+    "passwordHint": "8-63 个字符",
+    "confirm": "应用",
+    "cancel": "取消",
+    "applyFailed": "应用失败，请重试",
+    "managedByAccount": "此路由器由其绑定账号管理",
+    "unbindEnterpriseBody": "解除绑定将导致全部线路断网，恢复需联系运营人员。确定继续？",
+    "managementGroup": "管理网段"
+  }
+}

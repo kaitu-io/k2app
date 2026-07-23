@@ -299,13 +299,13 @@
     "remark": "Remark",
     "remarkPlaceholder": "e.g., Dad's phone",
     "confirm": "Confirm",
-    "loadFailed": "Failed to load devices"
+    "loadFailed": "Failed to load devices",
+    "removeConfirmTitle": "Remove this device from the allowlist?"
   },
   "serverSelector": {
     "tabSmart": "Smart",
     "tabManual": "Fixed Server",
     "countryAuto": "Auto",
-    "countryPickerLabel": "Node Region",
     "nodesAvailable": "{{count}} nodes · {{regions}} regions",
     "smartHint": "k2 selects the optimal node automatically",
     "manualHint": "For users who need a fixed server IP",
@@ -314,6 +314,14 @@
   "auto": {
     "title": "Auto",
     "subtitle": "Automatically pick a better server",
-    "noTunnelAvailable": "No server available"
+    "noTunnelAvailable": "No server available",
+    "filterTitle": "Exclude countries/regions",
+    "filterHint": "Auto pick will skip the checked countries or regions. Manual selection is not affected.",
+    "excludedCount": "Excluded countries/regions: {{count}}",
+    "excludedChip": "Excluded from Auto",
+    "nodeCount": "Servers: {{count}}",
+    "filterClear": "Clear",
+    "filterDone": "Done",
+    "allExcluded": "All available servers are excluded by your filter. Adjust the country/region filter."
   }
 }

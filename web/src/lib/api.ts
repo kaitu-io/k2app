@@ -213,6 +213,41 @@ export interface UsageOverviewResponse {
   k2sDownloads: { date: string; count: number }[];
 }
 
+export interface TrafficTopUser {
+  userId: number;
+  email: string;
+  uuid: string;
+  rxBytes: number;
+  txBytes: number;
+  totalBytes: number;
+  deviceCount: number;
+  nodeCount: number;
+}
+
+export interface TrafficTopUsersResponse {
+  month: string;
+  totalBytes: number;
+  users: TrafficTopUser[];
+}
+
+export interface TrafficDailyPoint {
+  date: string;
+  bytes: number;
+}
+
+export interface TrafficBreakdownRow {
+  key: string;
+  bytes: number;
+}
+
+export interface TrafficUserDetailResponse {
+  month: string;
+  totalBytes: number;
+  daily: TrafficDailyPoint[];
+  devices: TrafficBreakdownRow[];
+  nodes: TrafficBreakdownRow[];
+}
+
 export interface ConnectionRatingStatisticsResponse {
   summary: {
     total: number;
@@ -2104,6 +2139,20 @@ export const api = {
     return this.request<UsageOverviewResponse>(`/app/stats/overview?${searchParams}`);
   },
 
+  async getTrafficTopUsers(params?: { month?: string; limit?: number }): Promise<TrafficTopUsersResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.month) searchParams.set('month', params.month);
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    const qs = searchParams.toString();
+    return this.request<TrafficTopUsersResponse>(`/app/traffic/top-users${qs ? `?${qs}` : ''}`);
+  },
+
+  async getTrafficUserDetail(params: { uuid: string; month?: string }): Promise<TrafficUserDetailResponse> {
+    const searchParams = new URLSearchParams({ uuid: params.uuid });
+    if (params.month) searchParams.set('month', params.month);
+    return this.request<TrafficUserDetailResponse>(`/app/traffic/user?${searchParams}`);
+  },
+
   // ==================== Admin Users ====================
 
   // Get admin users list (for assignee dropdown)
@@ -2279,6 +2328,68 @@ export const api = {
     return this.request<void>(`/app/nodes/${encodeURIComponent(ipv4)}`, {
       method: 'DELETE',
     });
+  },
+
+  // ========================= Enterprise Router (multi-slot / multi-line) APIs =========================
+
+  async listEnterpriseCustomers(params: { page?: number; pageSize?: number } = {}): Promise<ListResult<EnterpriseCustomerItem>> {
+    const q = new URLSearchParams();
+    if (params.page !== undefined) q.set('page', String(params.page));
+    if (params.pageSize !== undefined) q.set('pageSize', String(params.pageSize));
+    const qs = q.toString();
+    return this.request<ListResult<EnterpriseCustomerItem>>(`/app/enterprise/customers${qs ? '?' + qs : ''}`);
+  },
+
+  async createEnterpriseCustomer(body: { company: string; contact?: string; userId: number }): Promise<EnterpriseCustomerItem> {
+    return this.request<EnterpriseCustomerItem>(`/app/enterprise/customers`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async updateEnterpriseCustomer(id: number, body: { company?: string; contact?: string; status?: string }): Promise<EnterpriseCustomerItem> {
+    return this.request<EnterpriseCustomerItem>(`/app/enterprise/customers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async listEnterpriseLines(customerId: number): Promise<EnterpriseLineItem[]> {
+    // Backend wraps unpaginated lists as {items: [...]} (ItemsAll envelope).
+    const res = await this.request<ListResult<EnterpriseLineItem>>(`/app/enterprise/customers/${customerId}/lines`);
+    return res.items || [];
+  },
+
+  async createEnterpriseLine(body: { customerId: number; nodeId: number; countryCode: string; lineNo: number }): Promise<EnterpriseLineItem> {
+    return this.request<EnterpriseLineItem>(`/app/enterprise/lines`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async deleteEnterpriseLine(id: number): Promise<void> {
+    return this.request<void>(`/app/enterprise/lines/${id}`, { method: 'DELETE' });
+  },
+
+  async listEnterpriseBindings(params: { deviceId?: number; customerId?: number } = {}): Promise<EnterpriseBindingItem[]> {
+    const q = new URLSearchParams();
+    if (params.deviceId !== undefined) q.set('deviceId', String(params.deviceId));
+    if (params.customerId !== undefined) q.set('customerId', String(params.customerId));
+    const qs = q.toString();
+    // Backend wraps unpaginated lists as {items: [...]} (ItemsAll envelope).
+    const res = await this.request<ListResult<EnterpriseBindingItem>>(`/app/enterprise/bindings${qs ? '?' + qs : ''}`);
+    return res.items || [];
+  },
+
+  async upsertEnterpriseBinding(body: { gatewayDeviceId: number; slot: number; lineId: number }): Promise<void> {
+    return this.request<void>(`/app/enterprise/bindings`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async deleteEnterpriseBinding(id: number): Promise<void> {
+    return this.request<void>(`/app/enterprise/bindings/${id}`, { method: 'DELETE' });
   },
 
   // License Key Batch APIs
@@ -2622,8 +2733,41 @@ export interface AdminNodeItem {
   region: string;
   ipv4: string;
   ipv6: string;
+  class: string; // shared | private
+  privateOwnerUserId?: number;
   updatedAt: number;
   tunnels: AdminNodeTunnel[];
+}
+
+// ============================================================
+// Enterprise router (multi-slot / multi-line) types
+// ============================================================
+
+export interface EnterpriseCustomerItem {
+  id: number;
+  company: string;
+  contact: string;
+  status: string;
+  userId: number;
+  createdAt: string;
+}
+
+export interface EnterpriseLineItem {
+  id: number;
+  customerId: number;
+  nodeId: number;
+  countryCode: string;
+  lineNo: number;
+  status: string;
+  node?: { ipv4: string; name: string; country: string };
+}
+
+export interface EnterpriseBindingItem {
+  id: number;
+  gatewayDeviceId: number;
+  slot: number;
+  lineId: number;
+  line?: EnterpriseLineItem;
 }
 
 // ============================================================

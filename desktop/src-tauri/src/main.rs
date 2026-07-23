@@ -5,6 +5,7 @@ mod channel;
 mod icon_protocol;
 mod installed_apps;
 mod log_upload;
+mod router_bridge;
 mod service;
 mod storage;
 mod storage_crypto;
@@ -132,6 +133,8 @@ fn main() {
             storage::storage_remove,
             app_list::list_running_processes,
             installed_apps::list_installed_apps,
+            router_bridge::get_default_gateway,
+            router_bridge::router_http_request,
         ]);
 
     #[cfg(feature = "mcp-bridge")]

@@ -77,6 +77,9 @@ export class K2PluginWeb extends WebPlugin {
         // don't log an error for a platform that legitimately has no RelayManager).
         return { response: JSON.stringify({ code: 0, message: 'ok', data: { added: 0, total: 0 } }) };
     }
+    async getDefaultGateway() {
+        return { gateway: null };
+    }
     async iapGetProducts() {
         throw this.unavailable('IAP is not available on web');
     }
