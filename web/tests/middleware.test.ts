@@ -6,7 +6,7 @@
  * behavior anymore: hosts are irrelevant, redirects stay on the same origin.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 vi.mock('next-intl/middleware', () => ({
   default: () => () => new Response(null, { status: 200 }),
@@ -119,6 +119,31 @@ describe('favicon rewrite', () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     const res = await run(makeRequest('/favicon.ico'));
     expect(res.headers.get('x-middleware-rewrite')).toBeNull();
+  });
+  // Regression test for a real bug the mocked next-intl/middleware above
+  // cannot catch: kaitu's empty faviconPrefix must short-circuit before
+  // falling through to intlMiddleware, or next-intl's default
+  // localePrefix:'always' redirects /favicon.ico to /zh-CN/favicon.ico (no
+  // matching route → dead page, not the icon). Verified against the real
+  // next-intl middleware, not the module-level mock.
+  it('kaitu: /favicon.ico does not fall through to intlMiddleware', async () => {
+    // The describe-level mock always returns 200, which can't distinguish
+    // "short-circuited before intlMiddleware" from "reached it and it happened
+    // to return 200" — that gap is exactly what hid the real bug (real
+    // next-intl's default localePrefix:'always' redirects any non-prefixed
+    // path, including /favicon.ico, to /zh-CN/favicon.ico — a dead route, not
+    // the icon). This override simulates that redirect so the test can tell
+    // the two cases apart.
+    vi.doMock('next-intl/middleware', () => ({
+      default: () => (req: NextRequest) =>
+        NextResponse.redirect(new URL(`/zh-CN${req.nextUrl.pathname}`, req.url), 307),
+    }));
+    vi.resetModules();
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+    const { default: mw } = await import('../src/middleware');
+    const res = await mw(makeRequest('/favicon.ico'));
+    expect(res?.status).not.toBe(307);
+    expect(res?.headers.get('location')).toBeNull();
   });
 });
 

@@ -30,11 +30,19 @@ export default function middleware(request: NextRequest) {
   }
 
   // ---- Browsers request /favicon.ico unconditionally; the root file is the
-  // kaitu icon. Brands with a namespaced favicon set get a rewrite. -------
-  if (pathname === '/favicon.ico' && brand.faviconPrefix) {
-    return NextResponse.rewrite(
-      new URL(`${brand.faviconPrefix}/favicon-32x32.png`, request.url),
-    );
+  // kaitu icon. Brands with a namespaced favicon set get a rewrite. kaitu
+  // (empty faviconPrefix) must return here rather than fall through to
+  // intlMiddleware below — next-intl's default localePrefix ('always')
+  // redirects any non-prefixed path to `/${defaultLocale}${pathname}`, which
+  // for /favicon.ico has no matching route and resolves as a dead page
+  // instead of the icon. -----------------------------------------------------
+  if (pathname === '/favicon.ico') {
+    if (brand.faviconPrefix) {
+      return NextResponse.rewrite(
+        new URL(`${brand.faviconPrefix}/favicon-32x32.png`, request.url),
+      );
+    }
+    return NextResponse.next();
   }
 
   // ---- Install scripts: kaitu-only surface (Linux install / k2s / k2r). ---
