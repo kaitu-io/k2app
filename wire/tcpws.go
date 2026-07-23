@@ -47,6 +47,7 @@ type smuxStreamConn struct {
 	br         *bufio.Reader
 	remoteAddr net.Addr
 	closeOnce  sync.Once
+	dev        *deviceIDHolder
 }
 
 // RemoteAddr returns the overridden remote address if set, otherwise delegates to Stream.
@@ -55,6 +56,15 @@ func (c *smuxStreamConn) RemoteAddr() net.Addr {
 		return c.remoteAddr
 	}
 	return c.Stream.RemoteAddr()
+}
+
+// DeviceID implements ConnDeviceID. Returns "" if no holder is wired
+// (defensive) or if the metadata stream hasn't landed yet.
+func (c *smuxStreamConn) DeviceID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.get()
 }
 
 // Read uses the buffered reader if present.
@@ -212,6 +222,11 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 			return nil, fmt.Errorf("wire: smux client: %w", smuxErr)
 		}
 
+		// Best-effort device attribution: mirror QUIC's metadata stream so the
+		// server can attribute this session's traffic. TCP-WS auth already
+		// happened at the HTTP layer; a failure here must not fail the connect.
+		c.sendMetadataBestEffort(sess)
+
 		// --- Store result under lock ---
 		// concurrency:allow — closing locally-owned sess not yet stored in struct
 		c.mu.Lock()
@@ -229,6 +244,41 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		return nil, err
 	}
 	return v.(*smux.Session), nil
+}
+
+// sendMetadataBestEffort opens a metadata stream and sends credentials + mode,
+// mirroring QUIC's sendMetadata for device attribution. Unlike QUIC, TCP-WS
+// auth already happened at the HTTP layer (/k2v5/auth), so this is purely
+// for the server's per-session deviceIDHolder — every failure is logged and
+// swallowed, never surfaced to the caller of connect().
+//
+// TCP-WS frames carry no H3 marker (unlike QUIC's WriteH3ProxyFrameType) —
+// that's an existing protocol difference between the two transports, not an
+// omission here.
+func (c *TCPWSClient) sendMetadataBestEffort(sess *smux.Session) {
+	stream, err := sess.OpenStream()
+	if err != nil {
+		slog.Debug("TCPWSClient: metadata open stream failed", "err", err)
+		return
+	}
+	defer stream.Close()
+	if err := WriteStreamHeader(stream, StreamTypeMeta, ""); err != nil {
+		slog.Debug("TCPWSClient: metadata header failed", "err", err)
+		return
+	}
+	if err := WriteMetadataFrame(stream, MetadataFrame{
+		UDID:  c.cfg.UDID,
+		Token: c.cfg.Token,
+		Mode:  c.cfg.Mode,
+	}); err != nil {
+		slog.Debug("TCPWSClient: metadata frame failed", "err", err)
+		return
+	}
+	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
+	br := bufio.NewReader(stream)
+	if _, _, _, err := ReadStreamResponse(br); err != nil {
+		slog.Debug("TCPWSClient: metadata response failed", "err", err)
+	}
 }
 
 // checkCachedSession inspects the cached smux session under mu and evicts
@@ -653,6 +703,7 @@ func (s *TCPWSServer) HandleSession(sess *smux.Session) {
 
 func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, remote net.Addr) {
 	defer sess.Close()
+	dev := &deviceIDHolder{}
 	for {
 		stream, err := sess.AcceptStream()
 		if err != nil {
@@ -664,12 +715,12 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 					connLog.Error("TCPWSServer: panic in handleStream", "panic", r)
 				}
 			}()
-			s.handleStream(stream, connLog, remote)
+			s.handleStream(stream, connLog, remote, dev)
 		}()
 	}
 }
 
-func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, remote net.Addr) {
+func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder) {
 	br := bufio.NewReader(stream)
 
 	streamType, addr, err := ReadStreamHeader(br)
@@ -688,13 +739,14 @@ func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, re
 			return
 		}
 		slog.Info("TCPWSServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode)
+		dev.set(meta.UDID)               // self-reported (unvalidated) — attribution only, see spec §8
 		WriteStreamResponse(stream, nil) // OK
 		stream.Close()
 	case StreamTypeTCP:
-		sc := &smuxStreamConn{Stream: stream, br: br, remoteAddr: remote}
+		sc := &smuxStreamConn{Stream: stream, br: br, remoteAddr: remote, dev: dev}
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
 	case StreamTypeUDP:
-		s.handleUDPStream(stream, br, connLog, remote)
+		s.handleUDPStream(stream, br, connLog, remote, dev)
 	default:
 		stream.Close()
 	}
@@ -728,7 +780,7 @@ func runSmuxUDPHandler(
 	handler.HandleUDP(sess, addr)
 }
 
-func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, remote net.Addr) {
+func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder) {
 	mux := &serverSmuxWriter{stream: stream}
 	sessions := make(map[uint32]*smuxServerUDPConn)
 	var sessionsMu deadlock.Mutex
@@ -765,6 +817,7 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, con
 				log:        sessLog,
 				readCh:     make(chan []byte, 32),
 				done:       make(chan struct{}),
+				dev:        dev,
 			}
 			sessions[frame.SessionID] = sess
 
@@ -1228,6 +1281,7 @@ type smuxServerUDPConn struct {
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
+	dev        *deviceIDHolder
 }
 
 var _ net.PacketConn = (*smuxServerUDPConn)(nil)
@@ -1236,6 +1290,15 @@ var _ UDPSessionInfo = (*smuxServerUDPConn)(nil)
 func (c *smuxServerUDPConn) UDPSessionID() uint32  { return c.sessionID }
 func (c *smuxServerUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
 func (c *smuxServerUDPConn) Logger() *slog.Logger   { return c.log }
+
+// DeviceID implements ConnDeviceID. Returns "" if no holder is wired
+// (defensive) or if the metadata stream hasn't landed yet.
+func (c *smuxServerUDPConn) DeviceID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.get()
+}
 
 func (c *smuxServerUDPConn) deliver(payload []byte) {
 	select {

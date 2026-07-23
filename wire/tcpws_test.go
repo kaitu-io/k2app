@@ -728,18 +728,36 @@ func TestTCPWSClient_FullFlow_WS(t *testing.T) {
 		}
 		defer sess.Close()
 
-		// Accept stream
-		stream, err := sess.AcceptStream()
-		if err != nil {
-			serverDone <- err
-			return
-		}
-
-		br := bufio.NewReader(stream)
-		streamType, addr, err := ReadStreamHeader(br)
-		if err != nil {
-			serverDone <- err
-			return
+		// Accept stream. TCPWSClient.connect sends a best-effort metadata
+		// stream immediately after the smux session is established (see
+		// sendMetadataBestEffort) — drain and OK it before the actual
+		// proxy stream, mirroring TCPWSServer.handleStream.
+		var stream *smux.Stream
+		var br *bufio.Reader
+		var streamType byte
+		var addr string
+		for {
+			stream, err = sess.AcceptStream()
+			if err != nil {
+				serverDone <- err
+				return
+			}
+			br = bufio.NewReader(stream)
+			streamType, addr, err = ReadStreamHeader(br)
+			if err != nil {
+				serverDone <- err
+				return
+			}
+			if streamType == StreamTypeMeta {
+				if _, err := ReadMetadataFrame(br); err != nil {
+					serverDone <- err
+					return
+				}
+				WriteStreamResponse(stream, nil)
+				stream.Close()
+				continue
+			}
+			break
 		}
 		if streamType != StreamTypeTCP || addr != "example.com:80" {
 			serverDone <- fmt.Errorf("unexpected stream: type=%d addr=%s", streamType, addr)
@@ -877,18 +895,35 @@ func TestTCPWSClient_DialUDP_WS(t *testing.T) {
 		}
 		defer sess.Close()
 
-		// Accept UDP stream
-		stream, err := sess.AcceptStream()
-		if err != nil {
-			serverDone <- err
-			return
-		}
-
-		br := bufio.NewReader(stream)
-		streamType, _, err := ReadStreamHeader(br)
-		if err != nil {
-			serverDone <- err
-			return
+		// Accept UDP stream. TCPWSClient.connect sends a best-effort metadata
+		// stream immediately after the smux session is established (see
+		// sendMetadataBestEffort) — drain and OK it before the actual UDP
+		// stream, mirroring TCPWSServer.handleStream.
+		var stream *smux.Stream
+		var br *bufio.Reader
+		var streamType byte
+		for {
+			stream, err = sess.AcceptStream()
+			if err != nil {
+				serverDone <- err
+				return
+			}
+			br = bufio.NewReader(stream)
+			streamType, _, err = ReadStreamHeader(br)
+			if err != nil {
+				serverDone <- err
+				return
+			}
+			if streamType == StreamTypeMeta {
+				if _, err := ReadMetadataFrame(br); err != nil {
+					serverDone <- err
+					return
+				}
+				WriteStreamResponse(stream, nil)
+				stream.Close()
+				continue
+			}
+			break
 		}
 		if streamType != StreamTypeUDP {
 			serverDone <- fmt.Errorf("expected UDP stream type")
