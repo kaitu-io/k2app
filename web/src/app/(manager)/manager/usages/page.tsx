@@ -311,11 +311,10 @@ function formatBytes(n: number): string {
 }
 
 function recentMonths(count: number): string[] {
-  const out: string[] = [];
-  const d = new Date();
-  for (let i = 0; i < count; i++) {
-    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-    d.setMonth(d.getMonth() - 1);
-  }
-  return out;
+  const now = new Date();
+  const anchor = now.getFullYear() * 12 + now.getMonth();
+  return Array.from({ length: count }, (_, i) => {
+    const m = anchor - i;
+    return `${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}`;
+  });
 }
