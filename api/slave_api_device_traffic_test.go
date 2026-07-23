@@ -44,12 +44,28 @@ func TestDeviceTrafficIngest_UpsertAndIdempotency(t *testing.T) {
 	require.NoError(t, db.Get().Where("node_ipv4 = ? AND udid = ?", ip, "udid-t1").First(&row).Error)
 	assert.Equal(t, int64(101), row.RxBytes, "duplicate batch must not double-count")
 
+	// 游标状态锚定：rows upsert 和 cursor advance 现在在同一事务内提交，
+	// 游标必须精确反映"最后一次成功 ingest"的 (boot_id, batch_seq) ——
+	// 即上面的 req2 (boot-A, seq 2)，而不是被跳过的重发 req (boot-A, seq 1)。
+	// 这钉住了 atomicity 契约：如果 rows 写入提交了而 cursor 没有跟着提交
+	// （partial-failure），游标会停留在旧值，下一次重试就会命中 dedup 之外
+	// 的路径，导致 additive upsert 重复累加。
+	var curAfterDup DeviceTrafficCursor
+	require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&curAfterDup).Error)
+	assert.Equal(t, "boot-A", curAfterDup.BootID)
+	assert.Equal(t, int64(2), curAfterDup.BatchSeq, "cursor must reflect last successful ingest, not the deduped resend")
+
 	// 重启换 boot_id、seq 归 1 → 必须被接受
 	req3 := DeviceTrafficRequest{BootID: "boot-B", BatchSeq: 1, Ts: time.Now().Unix(),
 		Devices: []DeviceTrafficItem{{UDID: "udid-t1", Rx: 10, Tx: 0}}}
 	require.NoError(t, ingestDeviceTraffic(nil, ip, &req3))
 	require.NoError(t, db.Get().Where("node_ipv4 = ? AND udid = ?", ip, "udid-t1").First(&row).Error)
 	assert.Equal(t, int64(111), row.RxBytes, "new boot_id must be accepted")
+
+	var curFinal DeviceTrafficCursor
+	require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&curFinal).Error)
+	assert.Equal(t, "boot-B", curFinal.BootID)
+	assert.Equal(t, int64(1), curFinal.BatchSeq, "cursor must track the new boot_id's seq")
 }
 
 func TestDeviceTrafficIngest_ResolvesUserID(t *testing.T) {

@@ -96,20 +96,41 @@ func ingestDeviceTraffic(c *gin.Context, ipv4 string, req *DeviceTrafficRequest)
 				UserID: userByUDID[d.UDID], RxBytes: d.Rx, TxBytes: d.Tx,
 			})
 		}
-		if uerr := db.Get().Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "date"}, {Name: "udid"}, {Name: "node_ipv4"}},
-			DoUpdates: clause.Assignments(map[string]any{
-				"rx_bytes": gorm.Expr("rx_bytes + VALUES(rx_bytes)"),
-				"tx_bytes": gorm.Expr("tx_bytes + VALUES(tx_bytes)"),
-				"user_id":  gorm.Expr("VALUES(user_id)"),
-			}),
-		}).Create(&rows).Error; uerr != nil {
-			return uerr
-		}
+
+		// 3+4) daily upsert and cursor advance MUST commit atomically. This
+		// ledger is additive (rx_bytes + VALUES(rx_bytes)), unlike the
+		// max-based /slave/usage. If the rows upsert committed but the
+		// cursor advance failed separately, the handler would error, k2s
+		// would retry the identical batch, the stale cursor would miss the
+		// dedup check above, and the additive upsert would re-apply the
+		// same delta → double count. Wrapping both writes in one
+		// transaction guarantees they move together: either the batch is
+		// fully applied (rows + cursor) or fully rolled back for retry.
+		return db.Get().Transaction(func(tx *gorm.DB) error {
+			if uerr := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "date"}, {Name: "udid"}, {Name: "node_ipv4"}},
+				DoUpdates: clause.Assignments(map[string]any{
+					"rx_bytes": gorm.Expr("rx_bytes + VALUES(rx_bytes)"),
+					"tx_bytes": gorm.Expr("tx_bytes + VALUES(tx_bytes)"),
+					"user_id":  gorm.Expr("VALUES(user_id)"),
+				}),
+			}).Create(&rows).Error; uerr != nil {
+				return uerr
+			}
+			return advanceDeviceTrafficCursor(tx, ipv4, req)
+		})
 	}
 
-	// 4) advance cursor (upsert by ipv4)
-	return db.Get().Clauses(clause.OnConflict{
+	// No devices in this batch: still advance the cursor so a resend of an
+	// empty batch is recognized as a duplicate.
+	return advanceDeviceTrafficCursor(db.Get(), ipv4, req)
+}
+
+// advanceDeviceTrafficCursor upserts the per-node idempotency cursor. Callers
+// inside the step-3/4 transaction MUST pass the tx handle, not db.Get() —
+// see the atomicity comment above.
+func advanceDeviceTrafficCursor(d *gorm.DB, ipv4 string, req *DeviceTrafficRequest) error {
+	return d.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "ipv4"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			"boot_id":   req.BootID,
