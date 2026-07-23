@@ -189,6 +189,14 @@ type ServerConfig struct {
 	UsageReportURL string `yaml:"usage_report_url"` // Center base URL for usage reporting; "" disables. env K2_USAGE_REPORT_URL
 	NodeSecret     string `yaml:"-"`                // K2_NODE_SECRET (Basic auth pw). Secret — never serialized.
 	NodeIPv4       string `yaml:"-"`                // node public IPv4 (Basic auth user); "" => ProbePublicIP fallback at runtime
+
+	// NodeCutoffReport gates the LEGACY in-process node-level usage reporter
+	// (server/usage_reporter.go). Default false: against the current
+	// pure-recorder Center that endpoint returns no verdict, and the legacy
+	// loop would read that as "stop" and also stomp NodeUsage quota fields.
+	// Only enable against a Center that actually serves verdicts.
+	// env K2_NODE_CUTOFF_REPORT ("1"/"true").
+	NodeCutoffReport bool `yaml:"node_cutoff_report"`
 }
 
 // DNSConfig contains DNS resolver configuration.
@@ -392,5 +400,8 @@ func setServerDefaults(cfg *ServerConfig) {
 	}
 	if v, ok := os.LookupEnv("K2_NODE_IPV4"); ok {
 		cfg.NodeIPv4 = v
+	}
+	if v := os.Getenv("K2_NODE_CUTOFF_REPORT"); v == "1" || v == "true" {
+		cfg.NodeCutoffReport = true
 	}
 }

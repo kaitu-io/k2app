@@ -48,6 +48,29 @@ func TestSetServerDefaults_UsageReportEnv(t *testing.T) {
 	})
 }
 
+// TestNodeCutoffReportEnv verifies K2_NODE_CUTOFF_REPORT gates the LEGACY
+// node-level usage reporter separately from the UsageReportURL/NodeSecret
+// creds gate: "1" enables it, unset/empty leaves it false (dormant) so the
+// legacy reporter's broken verdict handling can't halt a node by accident.
+func TestNodeCutoffReportEnv(t *testing.T) {
+	t.Run("K2_NODE_CUTOFF_REPORT=1 → NodeCutoffReport true", func(t *testing.T) {
+		t.Setenv("K2_NODE_CUTOFF_REPORT", "1")
+		cfg := &ServerConfig{}
+		setServerDefaults(cfg)
+		if !cfg.NodeCutoffReport {
+			t.Fatal("K2_NODE_CUTOFF_REPORT=1 must set NodeCutoffReport")
+		}
+	})
+
+	t.Run("env unset → default false", func(t *testing.T) {
+		cfg := &ServerConfig{}
+		setServerDefaults(cfg)
+		if cfg.NodeCutoffReport {
+			t.Fatal("default must be false")
+		}
+	})
+}
+
 // TestServerConfig_SecretYAMLHygiene proves the secret + identity fields carry
 // yaml:"-" so yaml.Marshal never serializes them into any config file, while a
 // normal yaml field (UsageReportURL) does appear.

@@ -426,20 +426,27 @@ func (s *Server) Run(ctx context.Context) error {
 		slog.Info("k2s usage API listening", "listen", s.cfg.UsageAPIListen)
 	}
 
-	// Usage reporter (Plan 3-k2s Phase B, Option D). Gated: only private nodes
+	// Usage reporting (Plan 3-k2s Phase B, Option D). Gated: only private nodes
 	// inject both UsageReportURL and NodeSecret. Shared-pool nodes set neither →
-	// reporter never starts → zero behavior change. The reporter holds the node
-	// secret and runs the in-process traffic-cutoff loop (read counters → POST
-	// Center → apply verdict/epoch-reset on s.handler). ctx cancel stops it.
+	// no reporter starts → zero behavior change.
 	if s.cfg.UsageReportURL != "" && s.cfg.NodeSecret != "" {
 		ipv4 := s.cfg.NodeIPv4
 		if ipv4 == "" {
 			ipv4 = wire.ProbePublicIP("https://api4.ipify.org")
 		}
 		if ipv4 != "" {
-			rep := newUsageReporter(s.handler, s.cfg.UsageReportURL, ipv4, s.cfg.NodeSecret)
-			safego.Go(func() { rep.Run(ctx) })
-			slog.Info("k2s usage reporter started", "center", s.cfg.UsageReportURL)
+			// Device-level accounting reporter: always on when creds exist.
+			drep := newDeviceTrafficReporter(s.handler, s.cfg.UsageReportURL, ipv4, s.cfg.NodeSecret)
+			safego.Go(func() { drep.Run(ctx) })
+			slog.Info("k2s device traffic reporter started", "center", s.cfg.UsageReportURL)
+
+			// LEGACY node-level cutoff reporter: explicit opt-in only — the
+			// current Center /slave/usage serves no verdict (see config field doc).
+			if s.cfg.NodeCutoffReport {
+				rep := newUsageReporter(s.handler, s.cfg.UsageReportURL, ipv4, s.cfg.NodeSecret)
+				safego.Go(func() { rep.Run(ctx) })
+				slog.Info("k2s usage reporter started", "center", s.cfg.UsageReportURL)
+			}
 		} else {
 			slog.Warn("usage reporter disabled: node IPv4 undetermined")
 		}
