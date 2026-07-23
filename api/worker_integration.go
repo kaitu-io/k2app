@@ -51,6 +51,7 @@ func InitWorker() {
 	asynq.Handle(TaskTypePrivateNodeLifecycleSweep, handlePrivateNodeLifecycleSweep)
 	asynq.Handle(TaskTypePrivateNodeTrafficWarn, handlePrivateNodeTrafficWarn)
 	asynq.Handle(TaskTypeTrafficAbuseCheck, handleTrafficAbuseCheck)
+	asynq.Handle(TaskTypeStatsRetentionCleanup, handleStatsRetentionCleanup)
 
 	// 注册续费提醒 Cron 任务
 	// 每天北京时间 10:30 执行（UTC 02:30）
@@ -86,10 +87,16 @@ func InitWorker() {
 	asynq.Cron("*/30 * * * *", TaskTypePrivateNodeTrafficWarn, nil, hibikenAsynq.Unique(31*time.Minute))
 
 	// 注册流量滥用检查 Cron 任务
-	// 每小时第 5 分扫描自然月(CST)累计超阈值(traffic.abuse_monthly_gb,默认 500GB)的用户,
-	// Slack 告警按 (month,user) 去重,并顺带清理超过 180 天保留期的 DeviceTrafficDaily 明细
+	// 每小时第 5 分扫描自然月(CST)累计超阈值(traffic.abuse_monthly_gb,默认 100GB)的用户,
+	// Slack 告警按 (month,user) 去重 + 用户警告邮件,并顺带清理超过 60 天保留期的 DeviceTrafficDaily 明细
 	// Unique(2h) 防止多实例重复入队
 	asynq.Cron("5 * * * *", TaskTypeTrafficAbuseCheck, nil, hibikenAsynq.Unique(2*time.Hour))
+
+	// 注册时序统计表保留期清理 Cron 任务
+	// 每日 04:20 分批清扫 slave_node_loads(>30d) 与 stat_*/connection_ratings(>120d),
+	// 这些表此前无任何清理、无限增长(slave_node_loads 曾达 160 万行/297MB)
+	// Unique(25h) 防止多实例重复入队
+	asynq.Cron("20 4 * * *", TaskTypeStatsRetentionCleanup, nil, hibikenAsynq.Unique(25*time.Hour))
 
 	// 注册 ECH 相关的 worker
 	RegisterECHWorker()

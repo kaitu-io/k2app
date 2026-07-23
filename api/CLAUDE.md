@@ -187,6 +187,7 @@ Unified `Provider` interface for cloud VPS management:
 | `worker_renewal_reminder.go` | Membership renewal reminders |
 | `worker_retailer_followup.go` | Retailer follow-up notifications |
 | `worker_traffic_abuse.go` | 每小时聚合当月 per-user 流量，超阈值（`traffic.abuse_monthly_gb`，缺省 100GB）Slack 告警 + 用户警告邮件（模板 `traffic-abuse-warning`，月度去重）+ 60 天保留清理（隐私政策承诺 2 个月） |
+| `worker_stats_retention.go` | 每日分批清扫无界时序表：`slave_node_loads` >30d（读取端只取每节点最新一条）、`stat_*`/`connection_ratings` >120d（admin 报表最大回看 90d）；stat 表按 `reported_at`（服务端权威，`created_at` 是客户端时钟含脏数据） |
 | `worker_integration.go` | `InitWorker()` — registers all handlers + cron schedules |
 
 Asynqmon UI available at `/app/asynqmon` (admin auth required).
