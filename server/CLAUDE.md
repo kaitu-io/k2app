@@ -6,6 +6,9 @@ Server-side listener orchestration, auto-provisioning, and TCP/UDP proxy handler
 
 - `server.go` — Server struct, TLS listener, ECH routing, auto-provisioning, lifecycle
 - `handler.go` — TCP/UDP proxy handlers (AcceptTCP → net.Dial → pipe)
+- `device_traffic.go` — Per-device traffic accumulator (UDID-keyed delta map, Rx/Tx counts)
+- `device_traffic_reporter.go` — Immutable-batch uploader (boot_id + batch_seq idempotency, retry-safe to Center)
+- `device_traffic_contract_test.go` — Wire-shape tripwire for `DeviceTrafficRequest` JSON contract
 - `*_test.go` — unit tests for TLS peek, handlers, auto-provisioning
 
 ## Server DNS Cache
@@ -115,3 +118,7 @@ control_plane_routes:
 - `handler_test.go` — TCP/UDP proxy with mock targets
 - `control_plane_test.go` — relay routing, reverse-proxy, private-IP rejection
 - `test/e2e_test.go` — full integration with real client
+
+## Per-Device Traffic Accounting
+
+Metering points: per-session traffic deltas counted at pipe exit (TCP `net.Dial` return, UDP packet end in `HandleUDP`). A session's final Rx/Tx are accumulated into the device delta map (UDID-keyed). Periodically, `DeviceTrafficReporter` batches the deltas as immutable `DeviceTrafficRequest` (BootID + BatchSeq for idempotency). Center deduplicates by cursor: a retry resends the same request verbatim (same Ts, same devices array) — the endpoint ignores replays. Legacy `usageReporter` now requires `K2_NODE_CUTOFF_REPORT=1` (default off) because its verdict-handling path is incompatible with Center's current pure-recorder design (reads missing verdict as "stop" instead of "continue") — keep off unless explicitly mitigating legacy verdict consumption.
