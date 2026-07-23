@@ -161,7 +161,7 @@ Sliding expiration: cookie auth auto-renews token if remaining lifetime < 7 days
 | `/app/device-logs` | Admin | Device log list (filter by udid/reason/time) |
 | `/app/feedback-tickets` | Admin | Feedback ticket list + resolve/close |
 | `/app/*` | Admin | All other admin endpoints |
-| `/slave/*` | Slave | Node management, status reporting |
+| `/slave/*` | Slave | Node management, status reporting, per-user device-traffic increment upload |
 | `/csr/*` | None | Certificate signing requests |
 
 ## Cloud Provider (cloudprovider/)
@@ -186,6 +186,7 @@ Unified `Provider` interface for cloud VPS management:
 | `worker_diagnosis.go` | Route diagnosis aggregation |
 | `worker_renewal_reminder.go` | Membership renewal reminders |
 | `worker_retailer_followup.go` | Retailer follow-up notifications |
+| `worker_traffic_abuse.go` | 每小时聚合当月 per-user 流量，超阈值 Slack 告警（月度去重）+ 180 天保留清理 |
 | `worker_integration.go` | `InitWorker()` — registers all handlers + cron schedules |
 
 Asynqmon UI available at `/app/asynqmon` (admin auth required).
