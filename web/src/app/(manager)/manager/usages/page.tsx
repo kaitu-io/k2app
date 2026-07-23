@@ -3,7 +3,8 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
-import { api, UsageOverviewResponse } from "@/lib/api";
+import Link from "next/link";
+import { api, UsageOverviewResponse, TrafficTopUsersResponse } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,11 +16,25 @@ export default function UsagesPage() {
   const [range, setRange] = useState("30d");
   const [os, setOs] = useState("all");
   const [tab, setTab] = useState("devices");
+  const [traffic, setTraffic] = useState<TrafficTopUsersResponse | null>(null);
+  const [trafficMonth, setTrafficMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [trafficLoading, setTrafficLoading] = useState(false);
 
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, os]);
+
+  useEffect(() => {
+    if (tab !== "traffic") return;
+    let cancelled = false;
+    setTrafficLoading(true);
+    api.getTrafficTopUsers({ month: trafficMonth, limit: 50 })
+      .then((r) => { if (!cancelled) setTraffic(r); })
+      .catch((e) => console.error("Failed to load traffic ranking:", e))
+      .finally(() => { if (!cancelled) setTrafficLoading(false); });
+    return () => { cancelled = true; };
+  }, [tab, trafficMonth]);
 
   async function loadData() {
     setLoading(true);
@@ -119,6 +134,7 @@ export default function UsagesPage() {
           <TabsTrigger value="connections">连接趋势</TabsTrigger>
           <TabsTrigger value="nodes">节点分布</TabsTrigger>
           <TabsTrigger value="downloads">k2s 下载</TabsTrigger>
+          <TabsTrigger value="traffic">流量排行</TabsTrigger>
         </TabsList>
 
         <TabsContent value="devices">
@@ -190,6 +206,65 @@ export default function UsagesPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="traffic">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>账号流量排行</CardTitle>
+                <CardDescription>
+                  按自然月累计（Asia/Shanghai）· 全网 {formatBytes(traffic?.totalBytes ?? 0)}
+                </CardDescription>
+              </div>
+              <Select value={trafficMonth} onValueChange={setTrafficMonth}>
+                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {recentMonths(6).map((m) => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardHeader>
+            <CardContent>
+              {trafficLoading && <div className="text-muted-foreground text-sm py-8 text-center">加载中…</div>}
+              {!trafficLoading && (
+                <div className="space-y-2">
+                  {traffic?.users?.map((u) => {
+                    const grand = traffic.totalBytes || 1;
+                    const pct = ((u.totalBytes / grand) * 100).toFixed(1);
+                    return (
+                      <div key={`${u.userId}`} className="flex items-center gap-3">
+                        <span className="font-mono text-sm w-56 truncate">
+                          {u.userId === 0 ? (
+                            <Badge variant="outline">未识别设备</Badge>
+                          ) : (
+                            <Link className="hover:underline" href={`/manager/users/detail?uuid=${u.uuid}`}>
+                              {u.email || u.uuid}
+                            </Link>
+                          )}
+                        </span>
+                        <span className="text-sm w-24 text-right">{formatBytes(u.totalBytes)}</span>
+                        <span className="text-xs text-muted-foreground w-24 text-right">
+                          ↑{formatBytes(u.rxBytes)} ↓{formatBytes(u.txBytes)}
+                        </span>
+                        <span className="text-xs text-muted-foreground w-20 text-right">
+                          {u.deviceCount} 设备 / {u.nodeCount} 节点
+                        </span>
+                        <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
+                          <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-sm text-muted-foreground w-14 text-right">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                  {(!traffic?.users || traffic.users.length === 0) && (
+                    <div className="text-muted-foreground text-sm py-8 text-center">暂无数据</div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -226,4 +301,21 @@ function BarChart({ data }: { data: { date: string; count: number }[] }) {
       })}
     </div>
   );
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(1)} GB`;
+  if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${n} B`;
+}
+
+function recentMonths(count: number): string[] {
+  const out: string[] = [];
+  const d = new Date();
+  for (let i = 0; i < count; i++) {
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    d.setMonth(d.getMonth() - 1);
+  }
+  return out;
 }
