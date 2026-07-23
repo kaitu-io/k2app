@@ -207,6 +207,7 @@ type connUDPState struct {
 	done         chan struct{}
 	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
 	log          *slog.Logger // scoped logger with "remote" field
+	dev          *deviceIDHolder
 }
 
 // runUDPHandler invokes handler.HandleUDP and removes the session from the
@@ -267,10 +268,20 @@ type quicStreamConn struct {
 	br        *bufio.Reader // set after parsing stream header
 	closeOnce sync.Once
 	closeErr  error
+	dev       *deviceIDHolder
 }
 
 func (c *quicStreamConn) LocalAddr() net.Addr  { return c.local }
 func (c *quicStreamConn) RemoteAddr() net.Addr { return c.remote }
+
+// DeviceID implements ConnDeviceID. Returns "" if no holder is wired
+// (defensive) or if the metadata stream hasn't landed yet.
+func (c *quicStreamConn) DeviceID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.get()
+}
 
 // Read uses the buffered reader if present (to consume any data
 // buffered during header parsing), otherwise reads from the stream directly.
@@ -1168,6 +1179,7 @@ func (s *QUICServer) acceptLoop() {
 // connContext holds per-QUIC-connection state shared across all streams.
 type connContext struct {
 	mode atomic.Value // string: "" (normal) or "gateway"
+	dev  *deviceIDHolder
 	udp  *connUDPState
 }
 
@@ -1175,13 +1187,15 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 	connLog := slog.With("remote", conn.RemoteAddr())
 
 	// Shared UDP state for datagram + overflow stream paths
+	dev := &deviceIDHolder{}
 	state := &connUDPState{
 		sessions: make(map[uint32]*serverUDPConn),
 		overflow: &udpOverflowStream{qconn: conn},
 		done:     make(chan struct{}),
 		log:      connLog,
+		dev:      dev,
 	}
-	ctx := &connContext{udp: state}
+	ctx := &connContext{udp: state, dev: dev}
 	ctx.mode.Store("") // default: normal client
 
 	// Accept streams (TCP proxy + UDP overflow + metadata)
@@ -1259,11 +1273,12 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 			local:  qconn.LocalAddr(),
 			remote: qconn.RemoteAddr(),
 			br:     br,
+			dev:    ctx.dev,
 		}
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
 		log.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
 	case StreamTypeUDP:
-		s.handleUDPStream(stream, br, ctx.udp.log, qconn.RemoteAddr().String())
+		s.handleUDPStream(stream, br, ctx.dev, ctx.udp.log, qconn.RemoteAddr().String())
 	case StreamTypeUDPOverflow:
 		s.handleUDPOverflowStream(br, ctx.udp)
 	case StreamTypeEcho:
@@ -1299,12 +1314,13 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 	}
 
 	ctx.mode.Store(meta.Mode)
+	ctx.dev.set(meta.UDID)
 	WriteStreamResponse(stream, nil) // OK
 	stream.Close()
 	slog.Info("QUICServer: metadata auth OK", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
 }
 
-func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, connLog *slog.Logger, remoteStr string) {
+func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, dev *deviceIDHolder, connLog *slog.Logger, remoteStr string) {
 	writer := &quicStreamWriter{stream: stream}
 	sessions := make(map[uint32]*quicStreamServerUDPConn)
 
@@ -1332,6 +1348,7 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, conn
 				log:        sessLog,
 				readCh:     make(chan []byte, 32),
 				done:       make(chan struct{}),
+				dev:        dev,
 			}
 			sessions[frame.SessionID] = sess
 
@@ -1402,6 +1419,7 @@ func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, fram
 			sendInflight: &state.sendInflight,
 			created:      time.Now(),
 			log:          sessLog,
+			dev:          state.dev,
 		}
 		state.sessions[frame.SessionID] = sess
 
@@ -1848,6 +1866,7 @@ type serverUDPConn struct {
 	txErrors     atomic.Int64
 	txDrops      atomic.Int64 // datagrams silently dropped (queue saturated)
 	rxPackets    atomic.Int64
+	dev          *deviceIDHolder
 }
 
 var _ net.PacketConn = (*serverUDPConn)(nil)
@@ -1856,6 +1875,15 @@ var _ UDPSessionInfo = (*serverUDPConn)(nil)
 func (c *serverUDPConn) UDPSessionID() uint32  { return c.sessionID }
 func (c *serverUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
 func (c *serverUDPConn) Logger() *slog.Logger  { return c.log }
+
+// DeviceID implements ConnDeviceID. Returns "" if no holder is wired
+// (defensive) or if the metadata stream hasn't landed yet.
+func (c *serverUDPConn) DeviceID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.get()
+}
 
 func (c *serverUDPConn) deliver(payload []byte) {
 	select {
@@ -2041,6 +2069,7 @@ type quicStreamServerUDPConn struct {
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
+	dev        *deviceIDHolder
 }
 
 var _ net.PacketConn = (*quicStreamServerUDPConn)(nil)
@@ -2049,6 +2078,15 @@ var _ UDPSessionInfo = (*quicStreamServerUDPConn)(nil)
 func (c *quicStreamServerUDPConn) UDPSessionID() uint32  { return c.sessionID }
 func (c *quicStreamServerUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
 func (c *quicStreamServerUDPConn) Logger() *slog.Logger   { return c.log }
+
+// DeviceID implements ConnDeviceID. Returns "" if no holder is wired
+// (defensive) or if the metadata stream hasn't landed yet.
+func (c *quicStreamServerUDPConn) DeviceID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.get()
+}
 
 func (c *quicStreamServerUDPConn) deliver(payload []byte) {
 	select {
