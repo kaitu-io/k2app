@@ -212,6 +212,41 @@ export interface UsageOverviewResponse {
   k2sDownloads: { date: string; count: number }[];
 }
 
+export interface TrafficTopUser {
+  userId: number;
+  email: string;
+  uuid: string;
+  rxBytes: number;
+  txBytes: number;
+  totalBytes: number;
+  deviceCount: number;
+  nodeCount: number;
+}
+
+export interface TrafficTopUsersResponse {
+  month: string;
+  totalBytes: number;
+  users: TrafficTopUser[];
+}
+
+export interface TrafficDailyPoint {
+  date: string;
+  bytes: number;
+}
+
+export interface TrafficBreakdownRow {
+  key: string;
+  bytes: number;
+}
+
+export interface TrafficUserDetailResponse {
+  month: string;
+  totalBytes: number;
+  daily: TrafficDailyPoint[];
+  devices: TrafficBreakdownRow[];
+  nodes: TrafficBreakdownRow[];
+}
+
 export interface ConnectionRatingStatisticsResponse {
   summary: {
     total: number;
@@ -2058,6 +2093,20 @@ export const api = {
     const searchParams = new URLSearchParams({ range: params.range });
     if (params.os) searchParams.set('os', params.os);
     return this.request<UsageOverviewResponse>(`/app/stats/overview?${searchParams}`);
+  },
+
+  async getTrafficTopUsers(params?: { month?: string; limit?: number }): Promise<TrafficTopUsersResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.month) searchParams.set('month', params.month);
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    const qs = searchParams.toString();
+    return this.request<TrafficTopUsersResponse>(`/app/traffic/top-users${qs ? `?${qs}` : ''}`);
+  },
+
+  async getTrafficUserDetail(params: { uuid: string; month?: string }): Promise<TrafficUserDetailResponse> {
+    const searchParams = new URLSearchParams({ uuid: params.uuid });
+    if (params.month) searchParams.set('month', params.month);
+    return this.request<TrafficUserDetailResponse>(`/app/traffic/user?${searchParams}`);
   },
 
   // ==================== Admin Users ====================
