@@ -50,6 +50,7 @@ func InitWorker() {
 	asynq.Handle(TaskTypeProvisionTimeoutSweep, handleProvisionTimeoutSweep)
 	asynq.Handle(TaskTypePrivateNodeLifecycleSweep, handlePrivateNodeLifecycleSweep)
 	asynq.Handle(TaskTypePrivateNodeTrafficWarn, handlePrivateNodeTrafficWarn)
+	asynq.Handle(TaskTypeTrafficAbuseCheck, handleTrafficAbuseCheck)
 
 	// 注册续费提醒 Cron 任务
 	// 每天北京时间 10:30 执行（UTC 02:30）
@@ -83,6 +84,12 @@ func InitWorker() {
 	// 每 30 分钟扫描 active 专属线路,跨 80%/95% 阈值各发一封,按 TrafficEpoch 去重
 	// Unique(31min) 防止多实例重复入队
 	asynq.Cron("*/30 * * * *", TaskTypePrivateNodeTrafficWarn, nil, hibikenAsynq.Unique(31*time.Minute))
+
+	// 注册流量滥用检查 Cron 任务
+	// 每小时第 5 分扫描自然月(CST)累计超阈值(traffic.abuse_monthly_gb,默认 500GB)的用户,
+	// Slack 告警按 (month,user) 去重,并顺带清理超过 180 天保留期的 DeviceTrafficDaily 明细
+	// Unique(2h) 防止多实例重复入队
+	asynq.Cron("5 * * * *", TaskTypeTrafficAbuseCheck, nil, hibikenAsynq.Unique(2*time.Hour))
 
 	// 注册 ECH 相关的 worker
 	RegisterECHWorker()
