@@ -1,6 +1,6 @@
 # 隐私政策 / Privacy Policy
 
-**最后更新 / Last Updated: 2024-11**
+**最后更新 / Last Updated: 2026-07**
 
 ---
 
@@ -15,6 +15,8 @@
 1.3 **连接日志**：我们记录连接时间戳和使用的服务器位置，用于服务优化和故障排查。我们不记录您的浏览历史、DNS 查询或任何可识别您在线活动的信息。
 
 1.4 **支付信息**：支付通过第三方支付处理商处理，我们不直接存储您的信用卡或银行账户信息。我们仅保留交易记录用于订单管理和退款处理。
+
+1.5 **流量用量统计**：为保障服务质量与公平使用，我们会记录您账号下各设备的每日流量用量。**该记录仅为流量的字节数汇总**（按设备、账号、服务器维度按日统计），**不包含任何具体访问内容**——我们不知道、也无法还原您访问了哪些网站、使用了哪些应用或传输了什么数据。该统计仅保留 2 个月。
 
 ### 二、信息使用目的
 
@@ -46,11 +48,13 @@
 
 4.2 **连接日志**：仅保留最近 7 天的连接日志，用于服务优化和故障排查，之后自动删除。
 
-4.3 **支付记录**：根据财务法规要求，交易记录保留 7 年。
+4.3 **流量用量统计**：仅保留最近 2 个月，之后自动删除（详见第 1.5 条，该统计不含任何访问内容）。
 
-4.4 **客服记录**：与客户支持相关的通信记录在问题解决后保留 2 年。
+4.4 **支付记录**：根据财务法规要求，交易记录保留 7 年。
 
-4.5 **删除请求**：您可以随时请求删除您的账户和相关数据，我们将在 30 天内处理您的请求。
+4.5 **客服记录**：与客户支持相关的通信记录在问题解决后保留 2 年。
+
+4.6 **删除请求**：您可以随时请求删除您的账户和相关数据，我们将在 30 天内处理您的请求。
 
 ### 五、Cookie 和追踪技术
 
@@ -112,6 +116,8 @@
 
 1.4 **Payment Information**: Payments are processed through third-party payment processors. We do not directly store your credit card or bank account information. We only retain transaction records for order management and refund processing.
 
+1.5 **Traffic Volume Statistics**: To safeguard service quality and fair use, we record the daily traffic volume of each device under your account. **This record is a byte-count total only** (aggregated per device, account, and server, per day) and **contains none of your actual online activity** — we do not know, and cannot reconstruct, which websites you visited, which apps you used, or what data you transmitted. These statistics are retained for 2 months only.
+
 ### 2. How We Use Information
 
 2.1 **Service Provision**: We use collected information to provide, maintain, and improve network proxy services, including server allocation, connection optimization, and technical support.
@@ -142,11 +148,13 @@
 
 4.2 **Connection Logs**: Only the last 7 days of connection logs are retained for service optimization and troubleshooting, then automatically deleted.
 
-4.3 **Payment Records**: Transaction records are retained for 7 years as required by financial regulations.
+4.3 **Traffic Volume Statistics**: Retained for the most recent 2 months only, then automatically deleted (see Section 1.5 — these statistics contain none of your actual online activity).
 
-4.4 **Support Records**: Communication records related to customer support are retained for 2 years after issue resolution.
+4.4 **Payment Records**: Transaction records are retained for 7 years as required by financial regulations.
 
-4.5 **Deletion Requests**: You may request deletion of your account and related data at any time, and we will process your request within 30 days.
+4.5 **Support Records**: Communication records related to customer support are retained for 2 years after issue resolution.
+
+4.6 **Deletion Requests**: You may request deletion of your account and related data at any time, and we will process your request within 30 days.
 
 ### 5. Cookies and Tracking Technologies
 

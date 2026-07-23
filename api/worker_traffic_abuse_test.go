@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
@@ -45,13 +46,28 @@ func TestTrafficAbuse_FindAndDedup(t *testing.T) {
 
 func TestTrafficRetentionCleanup(t *testing.T) {
 	skipIfNoConfig(t)
-	oldDate := time.Now().In(cnZone).AddDate(0, 0, -200).Format("2006-01-02")
+	// 隐私政策承诺"流量用量统计保留 2 个月"——保留期常量必须与之对齐。
+	assert.Equal(t, 60, trafficRetentionDays)
+
+	oldDate := time.Now().In(cnZone).AddDate(0, 0, -70).Format("2006-01-02")
+	recentDate := time.Now().In(cnZone).AddDate(0, 0, -10).Format("2006-01-02")
 	t.Cleanup(func() {
 		db.Get().Where("node_ipv4 = ?", "10.96.0.2").Delete(&DeviceTrafficDaily{})
 	})
 	seedTraffic(t, oldDate, "old-d1", "10.96.0.2", 9300, 1, 1)
-	require.NoError(t, cleanupTrafficRetention(180))
-	var cnt int64
-	db.Get().Model(&DeviceTrafficDaily{}).Where("node_ipv4 = ?", "10.96.0.2").Count(&cnt)
-	assert.Equal(t, int64(0), cnt)
+	seedTraffic(t, recentDate, "new-d1", "10.96.0.2", 9300, 1, 1)
+	require.NoError(t, cleanupTrafficRetention(trafficRetentionDays))
+	var dates []string
+	db.Get().Model(&DeviceTrafficDaily{}).Where("node_ipv4 = ?", "10.96.0.2").Pluck("date", &dates)
+	assert.Equal(t, []string{recentDate}, dates, "70-day-old row purged, 10-day-old row kept")
+}
+
+func TestTrafficAbuseThresholdDefault(t *testing.T) {
+	orig := viper.Get("traffic.abuse_monthly_gb")
+	t.Cleanup(func() { viper.Set("traffic.abuse_monthly_gb", orig) })
+
+	viper.Set("traffic.abuse_monthly_gb", 0) // 未配置/非正数 → 默认 100 GB
+	assert.Equal(t, int64(100)<<30, trafficAbuseThresholdBytes())
+	viper.Set("traffic.abuse_monthly_gb", 250)
+	assert.Equal(t, int64(250)<<30, trafficAbuseThresholdBytes())
 }

@@ -1,6 +1,6 @@
 # 服务条款 / Terms of Service
 
-**最后更新 / Last Updated: 2024-11**
+**最后更新 / Last Updated: 2026-07**
 
 ---
 
@@ -52,6 +52,8 @@
 (h) 转售、出租或以任何方式商业化使用本服务，除非获得我们的书面授权。
 
 4.2 违反上述规定可能导致您的账户被暂停或终止，且不予退款。严重违规行为可能被报告给相关执法部门。
+
+4.3 **公平使用**：本服务的网络资源由全体用户共享。若您的流量使用量持续显著高于正常水平并影响其他用户的服务体验，我们可能先行提醒，并对您的账号采取限速措施；经提醒仍未改善的，我们保留依第 4.2 条暂停或终止服务的权利。如您有持续的大流量需求，可联系我们了解专属线路方案。
 
 ### 五、服务可用性与免责
 
@@ -223,6 +225,8 @@
 (h) Reselling, renting, or commercially using the Service in any way without our written authorization.
 
 4.2 Violation of the above provisions may result in suspension or termination of your account without refund. Serious violations may be reported to relevant law enforcement authorities.
+
+4.3 **Fair Use**: The Service's network resources are shared by all users. If your traffic usage remains significantly and persistently above normal levels and affects other users' experience, we may notify you and apply speed limits to your account; if the situation does not improve after notice, we reserve the right to suspend or terminate the Service under Section 4.2. If you have sustained high-traffic needs, please contact us to learn about dedicated line options.
 
 ### 5. Service Availability and Disclaimers
 

@@ -119,7 +119,7 @@ type DeviceTrafficDaily struct {
 
 幂等游标独立成表 `DeviceTrafficCursor { Ipv4 唯一, BootID, BatchSeq }`——不碰 `NodeUsage`（该表属于节点级计量模型，语义隔离；且 device 上报可能先于 sidecar 建行到达）。
 
-量级：~20 节点 × 每节点日活数百设备 ≈ 万行/天。`worker_traffic_abuse` 顺带清理 >180 天的行。
+量级：~20 节点 × 每节点日活数百设备 ≈ 万行/天。`worker_traffic_abuse` 顺带清理 >60 天的行（隐私政策承诺"流量用量统计保留 2 个月"）。
 
 **月度视图是纯查询口径**：本月用量 = `SUM WHERE date BETWEEN 月初 AND 月末`（Asia/Shanghai）。月份翻转零动作、无清零故障面。如排行查询压力可见，再加 `user_traffic_monthly` 派生汇总表（worker 增量维护）——首版先不建，日表索引足够。
 
@@ -137,9 +137,9 @@ type DeviceTrafficDaily struct {
 
 ### 4.4 告警 worker（`worker_traffic_abuse.go`，Asynq cron 每小时）
 
-- 聚**当前自然月** per-user 累计，超过 `config.yml` 阈值（`traffic.abuse_monthly_gb`，viper 读取，缺省 500）→ Slack（复用 `sendCloudSlackNotification`）。
+- 聚**当前自然月** per-user 累计，超过 `config.yml` 阈值（`traffic.abuse_monthly_gb`，viper 读取，缺省 100）→ Slack（复用 `sendCloudSlackNotification`）+ 用户警告邮件（EDM 模板 `traffic-abuse-warning`，公平使用提示，月度去重）。
 - 去重：小表 `TrafficAbuseAlert { Month, UserID 联合唯一 }`，insert 成功才发通知——同账号同月只告警一次，DB 判据可测试、无 Redis 依赖。
-- 顺带执行 §4.1 的 180 天保留清理。
+- 顺带执行 §4.1 的 60 天保留清理。
 
 ## 5. Admin UI（`web/src/app/(manager)/manager/`）
 
