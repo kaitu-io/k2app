@@ -381,6 +381,10 @@ func SetupRouter() *gin.Engine {
 		// Usage analytics overview
 		admin.GET("/stats/overview", api_admin_usage_overview)
 
+		// User traffic accounting: monthly ranking + per-user detail
+		admin.GET("/traffic/top-users", api_admin_traffic_top_users)
+		admin.GET("/traffic/user", api_admin_traffic_user)
+
 		// 问卷调查统计
 		admin.GET("/surveys/stats", api_admin_survey_stats)
 
