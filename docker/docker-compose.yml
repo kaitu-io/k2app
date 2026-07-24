@@ -111,6 +111,13 @@ services:
     environment:
       - TZ=Asia/Singapore
       - K2_LOG_LEVEL=${K2V5_LOG_LEVEL:-info}
+      # Per-device traffic accounting (per-user-traffic-accounting spec §9):
+      # k2s's in-process deviceTrafficReporter starts only when BOTH are set
+      # (config.go: UsageReportURL + NodeSecret are env-only, yaml:"-"). Pass
+      # through the sidecar's existing values. Do NOT add K2_NODE_CUTOFF_REPORT —
+      # the legacy node-level usageReporter must stay off against pure-recorder Center.
+      - K2_USAGE_REPORT_URL=${K2_CENTER_URL:-https://k2.52j.me}
+      - K2_NODE_SECRET=${K2_NODE_SECRET}
     logging:
       driver: journald
       options:
