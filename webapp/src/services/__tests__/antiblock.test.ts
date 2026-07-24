@@ -212,7 +212,11 @@ describe('antiblock — AES-256-GCM decryption', () => {
     },
   );
 
-  it('test_cdn_sources_include_cn_reachable_and_diverse_mirrors', () => {
+  // kaitu-only: this asserts the kaitu-specific mirror roster + jsDelivr /gh/
+  // path shape. overleap ships antiblockCdnSources=[] (no antiblock need outside
+  // the GFW), so CDN_SOURCES is empty and none of these mirrors apply.
+  it.runIf(brandConfig.id === 'kaitu')(
+    'test_cdn_sources_include_cn_reachable_and_diverse_mirrors', () => {
     // 网宿 CDNetworks 官方边缘（CN 友好）
     expect(CDN_SOURCES.some((u) => u.includes('quantil.jsdelivr.net'))).toBe(true);
     // 国内镜像（CN 直达；从海外探测不通属预期）
@@ -274,7 +278,13 @@ describe('antiblock — ts freshness + single-record store + resolveEntries', ()
     delete (window as any).__k2ac;
   });
 
-  it('test_picks_highest_ts_across_mirrors', async () => {
+  // CDN-injection tests below only apply when the brand races CDN mirrors.
+  // overleap's antiblockCdnSources=[] → fetchEntryFromCDN() short-circuits to
+  // null and resolveEntries() falls back to [DEFAULT_ENTRY]; that empty-CDN path
+  // is asserted by the brand-neutral test_all_cdn_fail_returns_default_list /
+  // test_no_legacy_migration_from_k2_entry_url below (which run in every brand).
+  it.runIf(brandConfig.antiblockCdnSources.length > 0)(
+    'test_picks_highest_ts_across_mirrors', async () => {
     // 快镜像陈旧 (ts=100)、慢镜像新鲜 (ts=200)。首个返回可能是旧的，
     // 但后台升级后记录必须收敛到 ts=200 的 entries。
     const fastHost = new URL(CDN_SOURCES[0]!).host;
@@ -313,7 +323,8 @@ describe('antiblock — ts freshness + single-record store + resolveEntries', ()
     expect(rec.entries).toEqual(['https://fresh']);
   });
 
-  it('test_missing_ts_treated_as_zero_but_entries_valid', async () => {
+  it.runIf(brandConfig.antiblockCdnSources.length > 0)(
+    'test_missing_ts_treated_as_zero_but_entries_valid', async () => {
     const noTs = await makeConfig(['https://noTs'], undefined);
     setupScriptMock(() => noTs);
     const entries = await resolveEntries();
@@ -321,7 +332,8 @@ describe('antiblock — ts freshness + single-record store + resolveEntries', ()
     expect(JSON.parse(store['k2_entry_cfg']!).ts).toBe(0);
   });
 
-  it('test_resolveEntries_returns_full_list_resolveEntry_returns_first', async () => {
+  it.runIf(brandConfig.antiblockCdnSources.length > 0)(
+    'test_resolveEntries_returns_full_list_resolveEntry_returns_first', async () => {
     const cfg = await makeConfig(['https://a', 'https://b', 'https://c'], 300);
     setupScriptMock(() => cfg);
     const list = await resolveEntries();
