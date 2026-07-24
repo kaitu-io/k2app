@@ -326,6 +326,57 @@ pub async fn admin_reinstall_service() -> Result<String, String> {
     }
 }
 
+/// Sentinel exit code: elevation itself failed (UAC declined / launch error).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+const ELEVATION_FAILED_EXIT: i32 = 997;
+/// Sentinel exit code: elevated process ran but its exit code was unreadable
+/// (rare `-Verb RunAs` handle-rights quirk / constrained language mode).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+const EXIT_CODE_UNREADABLE_EXIT: i32 = 998;
+
+/// Build the PowerShell command that elevates `k2.exe service install` and
+/// propagates its real exit code back to the (hidden) outer powershell.
+///
+/// Window-safety invariant: the ONLY process launched via `-Verb RunAs` is
+/// k2.exe with `-WindowStyle Hidden` — byte-identical to the long-shipped
+/// invocation except for `-PassThru` (which only returns a Process object).
+/// No nested powershell/cmd is ever elevated: console hosts launched through
+/// ShellExecute can flash a console window before `-WindowStyle` applies.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn build_admin_install_ps_script(service_path: &str) -> String {
+    format!(
+        r#"try {{ $p = Start-Process -FilePath '{}' -ArgumentList 'service','install' -Verb RunAs -Wait -WindowStyle Hidden -PassThru; if ($null -ne $p.ExitCode) {{ exit $p.ExitCode }} else {{ exit {} }} }} catch {{ Write-Error $_; exit {} }}"#,
+        service_path, EXIT_CODE_UNREADABLE_EXIT, ELEVATION_FAILED_EXIT
+    )
+}
+
+/// Interpret the outer powershell exit code into the install result.
+/// Only exit 0 is success; sentinels get dedicated messages so desktop.log
+/// tells apart "UAC declined" / "code unreadable" / "k2 install failed".
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn interpret_admin_install_exit(code: Option<i32>, stderr: &str) -> Result<String, String> {
+    match code {
+        Some(0) => Ok("Service installed and started".to_string()),
+        Some(ELEVATION_FAILED_EXIT) => Err(format!(
+            "elevation failed (UAC declined or launch error): {}",
+            stderr.trim()
+        )),
+        Some(EXIT_CODE_UNREADABLE_EXIT) => Err(
+            "k2 service install ran but exit code was unreadable (see k2-service-install.log)"
+                .to_string(),
+        ),
+        Some(c) => Err(format!(
+            "k2 service install failed with exit code {} (see k2-service-install.log): {}",
+            c,
+            stderr.trim()
+        )),
+        None => Err(format!(
+            "powershell terminated without exit code: {}",
+            stderr.trim()
+        )),
+    }
+}
+
 #[cfg(target_os = "windows")]
 async fn admin_reinstall_service_windows() -> Result<String, String> {
     let exe_path = std::env::current_exe()
@@ -337,10 +388,7 @@ async fn admin_reinstall_service_windows() -> Result<String, String> {
         return Err(format!("Service not found: {:?}", service_path));
     }
 
-    let ps_script = format!(
-        r#"Start-Process -FilePath '{}' -ArgumentList 'service','install' -Verb RunAs -Wait -WindowStyle Hidden"#,
-        service_path.display()
-    );
+    let ps_script = build_admin_install_ps_script(&service_path.display().to_string());
 
     let output = Command::new("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
@@ -348,12 +396,33 @@ async fn admin_reinstall_service_windows() -> Result<String, String> {
         .output()
         .map_err(|e| format!("PowerShell failed: {}", e))?;
 
-    if output.status.success() {
-        Ok("Service installed and started".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Failed: {}", stderr))
-    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    interpret_admin_install_exit(output.status.code(), &stderr)
+}
+
+/// Best-effort tail of the k2-side install log (written by `k2 service
+/// install` into the service log dir). Pure diagnostics — never affects
+/// control flow.
+#[cfg(target_os = "windows")]
+fn read_install_log_tail() -> Option<String> {
+    let program_data =
+        std::env::var("ProgramData").unwrap_or_else(|_| r"C:\ProgramData".to_string());
+    let path = std::path::PathBuf::from(program_data)
+        .join("kaitu")
+        .join("k2-service-install.log");
+    let content = std::fs::read_to_string(&path).ok()?;
+    const TAIL: usize = 2048;
+    let start = content.len().saturating_sub(TAIL);
+    // Avoid splitting a UTF-8 char at the cut point.
+    let tail_start = (start..content.len())
+        .find(|&i| content.is_char_boundary(i))
+        .unwrap_or(content.len());
+    Some(content[tail_start..].to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_install_log_tail() -> Option<String> {
+    None
 }
 
 /// macOS: install k2 service with admin privileges via osascript.
@@ -544,15 +613,23 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
         log::info!("[service] k2 binary exists: {:?} -> {}", k2_path, k2_path.as_ref().map_or(false, |p| p.exists()));
     }
 
-    match admin_reinstall_service().await {
-        Ok(msg) => log::info!("[service] Admin install succeeded: {}", msg),
-        Err(ref e) => {
-            log::error!("[service] Admin install failed: {}", e);
-            return Err(e.clone());
+    // The reported install result is diagnostics only — phase 3 (actual
+    // service state) is the sole arbiter. A spurious failure report (e.g.
+    // `-Verb RunAs` exit-code quirk, constrained language mode) must not
+    // fail startup when the service actually came up; conversely a
+    // spurious success (as before -PassThru) must not skip verification.
+    let install_error = match admin_reinstall_service().await {
+        Ok(msg) => {
+            log::info!("[service] Admin install succeeded: {}", msg);
+            None
         }
-    }
+        Err(e) => {
+            log::error!("[service] Admin install reported failure: {}", e);
+            Some(e)
+        }
+    };
 
-    // Phase 3: verify post-install
+    // Phase 3: verify post-install — ground truth.
     let ver = app_version.clone();
     let ok = tokio::task::spawn_blocking(move || {
         matches!(
@@ -564,10 +641,25 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
     .map_err(|e| format!("spawn_blocking failed: {}", e))?;
 
     if ok {
+        if install_error.is_some() {
+            log::warn!(
+                "[service] Install reported failure but service is running with the correct version — treating as success"
+            );
+        }
         log::info!("[service] Service ready after install");
         Ok(())
     } else {
-        Err("Service did not start with correct version after install".to_string())
+        // Surface the k2-side install log so the failure cause lands in
+        // desktop.log (and thus in feedback log uploads).
+        if let Some(tail) = read_install_log_tail() {
+            log::error!("[service] k2-service-install.log tail:\n{}", tail);
+        }
+        match install_error {
+            Some(e) => Err(format!("Service did not start after install: {}", e)),
+            None => Err(
+                "Service did not start with correct version after install".to_string(),
+            ),
+        }
     }
 }
 
@@ -721,6 +813,70 @@ mod tests {
         std::env::remove_var("K2_DAEMON_PORT");
         let url = service_base_url();
         assert_eq!(url, "http://127.0.0.1:1777");
+    }
+
+    // -------------------------------------------------------------------
+    // Admin install script + exit interpretation (cross-platform pure fns)
+    // -------------------------------------------------------------------
+
+    /// Window-safety contract: the only -Verb RunAs target is k2.exe itself.
+    /// Elevating a console host (powershell/cmd) via ShellExecute can flash
+    /// a console window before -WindowStyle applies — never allowed here.
+    #[test]
+    fn test_admin_install_script_never_elevates_console_host() {
+        let script = build_admin_install_ps_script(r"C:\Program Files\Kaitu\k2.exe");
+        assert!(script.contains(r"-FilePath 'C:\Program Files\Kaitu\k2.exe'"));
+        assert!(!script.to_lowercase().contains("-filepath 'powershell"));
+        assert!(!script.to_lowercase().contains("-filepath 'cmd"));
+        // Exactly one process launch in the script
+        assert_eq!(script.matches("Start-Process").count(), 1);
+    }
+
+    #[test]
+    fn test_admin_install_script_shape() {
+        let script = build_admin_install_ps_script(r"C:\Program Files\Kaitu\k2.exe");
+        // Exit code must be captured and propagated
+        assert!(script.contains("-PassThru"));
+        assert!(script.contains("exit $p.ExitCode"));
+        // Hidden window flag preserved from the shipped invocation
+        assert!(script.contains("-WindowStyle Hidden"));
+        assert!(script.contains("-Verb RunAs -Wait"));
+        // Sentinels: null ExitCode → 998, launch/UAC failure → 997
+        assert!(script.contains("exit 998"));
+        assert!(script.contains("exit 997"));
+        // UAC decline must be caught, not left as an unhandled error
+        assert!(script.starts_with("try {"));
+        assert!(script.contains("catch"));
+        assert!(script.contains("'service','install'"));
+    }
+
+    #[test]
+    fn test_interpret_admin_install_exit_success() {
+        let r = interpret_admin_install_exit(Some(0), "");
+        assert_eq!(r.unwrap(), "Service installed and started");
+    }
+
+    #[test]
+    fn test_interpret_admin_install_exit_sentinels_and_failures() {
+        // 997: UAC declined / launch error — stderr carries the reason
+        let e = interpret_admin_install_exit(Some(997), "The operation was canceled by the user.")
+            .unwrap_err();
+        assert!(e.contains("UAC declined"));
+        assert!(e.contains("canceled by the user"));
+
+        // 998: ran but exit code unreadable — points at the k2-side log
+        let e = interpret_admin_install_exit(Some(998), "").unwrap_err();
+        assert!(e.contains("unreadable"));
+        assert!(e.contains("k2-service-install.log"));
+
+        // Real k2 exit code — surfaced verbatim
+        let e = interpret_admin_install_exit(Some(1), "").unwrap_err();
+        assert!(e.contains("exit code 1"));
+        assert!(e.contains("k2-service-install.log"));
+
+        // Killed / no exit code
+        let e = interpret_admin_install_exit(None, "boom").unwrap_err();
+        assert!(e.contains("without exit code"));
     }
 
     // -------------------------------------------------------------------
