@@ -40,12 +40,14 @@ func (s slotURLSource) DirectDialer() wire.DirectDialer { return &gatewayDirectD
 
 // slotStatuses builds the 8-row self-description. nil in consumer mode.
 func (g *Gateway) slotStatuses() []SlotStatus {
+	// loadSlotLocal 读磁盘 JSON，按其文档在锁外调用（Rule #2: no I/O under lock）。
+	local := loadSlotLocal()
+	// Rule #5: 显式 Unlock() 而非 defer——本函数体 >15 行，defer 会让整个循环体隐式持锁。
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	if len(g.slotBindings) == 0 {
+		g.mu.Unlock()
 		return nil
 	}
-	local := loadSlotLocal()
 	bound := map[int]config.SlotBinding{}
 	for _, b := range g.slotBindings {
 		bound[b.Slot] = b
@@ -76,6 +78,7 @@ func (g *Gateway) slotStatuses() []SlotStatus {
 		}
 		out = append(out, st)
 	}
+	g.mu.Unlock()
 	return out
 }
 
