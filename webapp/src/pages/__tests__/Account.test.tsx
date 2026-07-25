@@ -65,7 +65,7 @@ vi.mock('../../components/BetaChannelToggle', () => ({
 import { useAuth } from '../../stores';
 import { useUser } from '../../hooks/useUser';
 import { cloudApi } from '../../services/cloud-api';
-import Account from '../Account';
+import Account, { maskEmail } from '../Account';
 import { brandConfig } from '../../brands';
 import { getBrandName, getBrandSlogan } from '../../brands/i18n-vars';
 
@@ -374,5 +374,32 @@ describe('Account', () => {
       expect(screen.getByText('设置密码')).toBeTruthy();
       expect(screen.queryByText('修改密码')).toBeNull();
     });
+  });
+});
+
+describe('maskEmail', () => {
+  it('固定 3 个星号，不随用户名长度增长（长星号串会撑破窄屏行宽）', () => {
+    expect(maskEmail('zhangsan.lisi.wangwu@example.com')).toBe('z***u@example.com');
+    expect(maskEmail('abc@example.com')).toBe('a***c@example.com');
+  });
+
+  it('单字符用户名不抛异常（旧实现 "*".repeat(-1) 会 RangeError 导致整页白屏）', () => {
+    expect(() => maskEmail('a@example.com')).not.toThrow();
+    expect(maskEmail('a@example.com')).toBe('a***@example.com');
+  });
+
+  it('两字符用户名仍被掩码（旧实现原样输出，等于没掩码）', () => {
+    expect(maskEmail('ab@example.com')).toBe('a***@example.com');
+    expect(maskEmail('ab@example.com')).not.toContain('b');
+  });
+
+  it('缺少 @ 或以 @ 开头时原样返回，不构造出 undefined', () => {
+    expect(maskEmail('not-an-email')).toBe('not-an-email');
+    expect(maskEmail('@example.com')).toBe('@example.com');
+    expect(maskEmail('')).toBe('');
+  });
+
+  it('域名含 @ 时按最后一个 @ 切分', () => {
+    expect(maskEmail('user@name@example.com')).toBe('u***e@example.com');
   });
 });
