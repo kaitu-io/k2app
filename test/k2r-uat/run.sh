@@ -152,8 +152,22 @@ lan_exec_slot2() {
 }
 
 # Get status JSON from API.
+#
+# Runs curl *inside* the k2r container against its own loopback, not
+# against the host-published port ($API). Docker's port-publish path
+# (userland-proxy / gVisor NAT on Docker Desktop, DNAT+conntrack on
+# native Linux) does not preserve the caller's source address as
+# 127.0.0.1, so gateway/auth.go's isLoopback() sees a non-loopback
+# RemoteAddr and 401s every unbound-key request — confirmed by
+# comparing `k2r_exec curl 127.0.0.1:1779/...` (succeeds) against
+# host-side `curl "$API"/...` (401) on this exact call. This is a test
+# harness/Docker-networking artifact, not a production bug: the real
+# CLI (k2r up/down/status) runs in the same network namespace as the
+# gateway it talks to, so it is genuinely loopback. Do NOT relax
+# isLoopback()/authorized() to "fix" this — that would defeat
+# deny-by-default control-key auth for actual LAN-side callers.
 get_status() {
-    curl -sf -X POST "$API/api/core" \
+    k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/core \
         -H "Content-Type: application/json" \
         -d '{"action":"status"}' 2>/dev/null || true
 }
@@ -637,7 +651,7 @@ test_cleanup() {
 
     # 6.7 Idempotent down.
     local resp
-    resp=$(curl -sf -X POST "$API/api/core" \
+    resp=$(k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/core \
         -H "Content-Type: application/json" \
         -d '{"action":"down"}' 2>/dev/null || true)
     if echo "$resp" | grep -q '"code":0'; then
@@ -897,7 +911,7 @@ test_api() {
 
     # 10.2 Unknown action returns error.
     local resp
-    resp=$(curl -sf -X POST "$API/api/core" \
+    resp=$(k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/core \
         -H "Content-Type: application/json" \
         -d '{"action":"invalid"}' 2>/dev/null || true)
     assert_contains "10.2 Unknown action returns error" '"code":1' "$resp"
@@ -907,7 +921,7 @@ test_api() {
     local sse_file
     sse_file=$(mktemp)
     # Start SSE listener in background.
-    curl -sf -N --max-time 10 "$API/api/events" >"$sse_file" 2>/dev/null &
+    k2r_exec curl -sf -N --max-time 10 http://127.0.0.1:1779/api/events >"$sse_file" 2>/dev/null &
     local sse_pid=$!
     sleep 1
 
@@ -933,25 +947,25 @@ test_api() {
     wait_connected 30 || true
 
     # 10.4 Log level API — debug.
-    resp=$(curl -sf -X POST "$API/api/log-level" \
+    resp=$(k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/log-level \
         -H "Content-Type: application/json" \
         -d '{"level":"debug"}' 2>/dev/null || true)
     assert_contains "10.4a Log level: debug accepted" '"code":0' "$resp"
 
     # 10.4 Log level API — info.
-    resp=$(curl -sf -X POST "$API/api/log-level" \
+    resp=$(k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/log-level \
         -H "Content-Type: application/json" \
         -d '{"level":"info"}' 2>/dev/null || true)
     assert_contains "10.4b Log level: info accepted" '"code":0' "$resp"
 
     # 10.4 Log level API — warn.
-    resp=$(curl -sf -X POST "$API/api/log-level" \
+    resp=$(k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/log-level \
         -H "Content-Type: application/json" \
         -d '{"level":"warn"}' 2>/dev/null || true)
     assert_contains "10.4c Log level: warn accepted" '"code":0' "$resp"
 
     # 10.5 Log level API — invalid level doesn't crash.
-    resp=$(curl -sf -X POST "$API/api/log-level" \
+    resp=$(k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/log-level \
         -H "Content-Type: application/json" \
         -d '{"level":"invalid_level_xyz"}' 2>/dev/null || true)
     # Should return code=0 (SetLogLevel ignores unknown) or code=1 — either way, shouldn't crash.
@@ -966,7 +980,7 @@ test_api() {
     assert_contains "10.6 GET /ping returns pong" '"pong"' "$resp"
 
     # Reset to debug.
-    curl -sf -X POST "$API/api/log-level" \
+    k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/log-level \
         -H "Content-Type: application/json" \
         -d '{"level":"debug"}' >/dev/null 2>&1 || true
 }
@@ -1052,37 +1066,10 @@ test_node_cutoff() {
 # real k2s tunnel (alive), slot 2 bound to a dead k2v5:// URL (never
 # reachable). lan-client gets two extra source addresses, one per slot
 # subnet, so curl --interface picks which "slot" a request comes from.
-# Container-internal status/connect helpers, used only by test_multislot.
 #
-# This sandbox's Docker port-forward (host -p 11779:1779) does not present
-# as loopback to k2r's gateway/auth.go isLoopback() check, so the shared
-# $API-based get_status/wait_connected (which curl the host-forwarded port)
-# always get 401 here even though the engine is genuinely connected —
-# confirmed by comparing `docker exec k2r curl 127.0.0.1:1779/...` (succeeds)
-# against host-side curl (401) on the completely unmodified `rules` phase
-# too. Scoping the workaround to this function avoids touching the shared
-# helpers other phases rely on.
-get_status_internal() {
-    k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/core \
-        -H "Content-Type: application/json" \
-        -d '{"action":"status"}' 2>/dev/null || true
-}
-
-get_state_internal() {
-    get_status_internal | jq -r '.data.state // empty' 2>/dev/null || true
-}
-
-wait_connected_internal() {
-    local timeout="${1:-$CONNECT_TIMEOUT}"
-    local deadline=$((SECONDS + timeout))
-    while [[ $SECONDS -lt $deadline ]]; do
-        if [[ "$(get_state_internal)" == "connected" ]]; then
-            return 0
-        fi
-        sleep 2
-    done
-    return 1
-}
+# Status/connect polling below uses the shared get_status/get_state/
+# wait_connected helpers (container-internal curl — see their doc
+# comment for why host-forwarded $API can't be used against /api/core).
 
 test_multislot() {
     log_phase "12 — Enterprise multi-slot mode"
@@ -1098,11 +1085,11 @@ test_multislot() {
     # keep calling `k2r up /etc/k2/k2r.yml` (static k2v5://).
     log_info "Switching to k2subs:// multi-slot config..."
     k2r_exec k2r up /etc/k2/k2r-multislot.yml 2>&1 || true
-    if ! wait_connected_internal 60; then
+    if ! wait_connected 60; then
         log_fail "12.0 k2r did not reach connected state in multi-slot mode"
         return
     fi
-    assert_eq "12.0 k2r state is connected (multi-slot)" "connected" "$(get_state_internal)"
+    assert_eq "12.0 k2r state is connected (multi-slot)" "connected" "$(get_state)"
 
     # 12.1 (M1) k2r logged entering multi-slot mode.
     local k2r_log
@@ -1172,7 +1159,7 @@ test_multislot() {
     # zeroThreshold=2 consecutive failures, so allow up to ~2 cycles).
     local status slot1_state slot2_state slots_len deadline=$((SECONDS + 150))
     while [[ $SECONDS -lt $deadline ]]; do
-        status=$(get_status_internal)
+        status=$(get_status)
         slots_len=$(echo "$status" | jq -r '.data.slots | length' 2>/dev/null || echo "0")
         slot2_state=$(echo "$status" | jq -r '.data.slots[1].state' 2>/dev/null || echo "")
         [[ "$slot2_state" == "failClosed" ]] && break
@@ -1231,7 +1218,7 @@ JSON"
     fi
     # Reconnect settles after the reapply; give it a few seconds then probe.
     sleep 5
-    wait_connected_internal 30 || true
+    wait_connected 30 || true
     if slot_curl_ok lan_exec_slot2 15; then
         log_ok "12.8b (M8) slot2 now reaches internet after convergence"
     else
@@ -1248,7 +1235,7 @@ JSON"
     deadline=$((SECONDS + 60))
     local reverted=false
     while [[ $SECONDS -lt $deadline ]]; do
-        status=$(get_status_internal)
+        status=$(get_status)
         if [[ "$(echo "$status" | jq -r 'has("data") and (.data | has("slots") | not)' 2>/dev/null)" == "true" ]]; then
             reverted=true
             break
@@ -1262,7 +1249,7 @@ JSON"
     fi
     # Settle buffer mirrors M8b: engine "connected" can fire a beat before
     # the reinstalled interceptor/routes are fully warm after a reapply.
-    wait_connected_internal 30 || true
+    wait_connected 30 || true
     sleep 5
     if slot_curl_ok lan_exec 15; then
         log_ok "12.9b (M9) consumer-mode LAN flow works again (single-tunnel behavior)"
@@ -1273,7 +1260,7 @@ JSON"
     # Leave the harness back on the plain k2v5:// config for any phase run
     # after this one (e.g. `--phase all` ordering, or a repeat run).
     k2r_exec k2r up /etc/k2/k2r.yml 2>&1 || true
-    wait_connected_internal 30 || true
+    wait_connected 30 || true
 }
 
 # ── Main ──────────────────────────────────────────────────────────
