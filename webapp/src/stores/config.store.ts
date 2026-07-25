@@ -456,6 +456,11 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       routes,
     };
 
+    // Forward the app version so the node can attribute this device's traffic
+    // (engine → wire metadata stream → Center /slave/device-check-auth).
+    const appVersion = window._platform?.version;
+    if (appVersion) result.client_version = appVersion;
+
     if (telemetry.ruleMissEnabled) {
       result.telemetry = {
         rule_miss: { enabled: true },
