@@ -66,10 +66,11 @@ type Engine struct {
 	reRaceChan   chan *outboundTransport
 	reRaceCancel context.CancelFunc
 
-	// wireMode and outboundProvider are snapshotted from Config at Start so
-	// the background outboundReplaceLoop can build replacement TMs without
-	// re-reading user-supplied Config (which may be mutated by the caller).
+	// wireMode, clientVersion and outboundProvider are snapshotted from Config
+	// at Start so the background outboundReplaceLoop can build replacement TMs
+	// without re-reading user-supplied Config (which may be mutated by caller).
 	wireMode         string
+	clientVersion    string // client app version, sent to the node via metadata for attribution
 	outboundProvider OutboundProvider
 
 	// missReporter is non-nil only when client.Telemetry.RuleMiss.Enabled
@@ -177,6 +178,7 @@ func (e *Engine) Start(cfg Config) error {
 		return fmt.Errorf("engine: Client config is required")
 	}
 	e.client = client
+	e.clientVersion = client.ClientVersion
 	e.lastError = nil
 
 	// Validate route CIDR conflicts (e.g. k2p route overlaps local LAN).
@@ -374,7 +376,7 @@ func (e *Engine) Start(cfg Config) error {
 		for i, via := range k2v5URLs {
 			i, via := i, via
 			g.Go(func() error {
-				ot, tcpws, err := setupOutboundTransport(ctx, via, cfg.DirectDialer, cfg.WireMode)
+				ot, tcpws, err := setupOutboundTransport(ctx, via, cfg.DirectDialer, cfg.WireMode, client.ClientVersion)
 				otResults[i] = otResult{ot: ot, tcpwsDialer: tcpws, err: err}
 				return nil // errors collected in results, not errgroup
 			})
@@ -926,6 +928,7 @@ func (e *Engine) Stop() error {
 	e.outbounds = nil
 	e.client = nil
 	e.wireMode = ""
+	e.clientVersion = ""
 	e.outboundProvider = nil
 	e.connectedAt = time.Time{}
 	e.paused = false
@@ -1455,12 +1458,14 @@ func setupOutboundTransport(
 	via string,
 	directDialer wire.DirectDialer,
 	wireMode string,
+	clientVersion string,
 ) (*outboundTransport, wire.Dialer, error) {
 	wireCfg, err := wire.ParseURL(via)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse %s: %w", extractServerHost(via), err)
 	}
-	wireCfg.Mode = wireMode // binary identity (e.g., "gateway" for k2r)
+	wireCfg.Mode = wireMode          // binary identity (e.g., "gateway" for k2r)
+	wireCfg.Version = clientVersion // client app version for metadata attribution
 
 	dialAddr, err := resolveDialAddr(ctx, wireCfg, directDialer)
 	if err != nil {
@@ -2039,6 +2044,7 @@ func (e *Engine) replaceOutboundServer(
 	e.mu.Lock()
 	currentURL := target.url
 	wireMode := e.wireMode
+	clientVersion := e.clientVersion
 	e.mu.Unlock()
 	reason := lastWireErr
 
@@ -2059,7 +2065,7 @@ func (e *Engine) replaceOutboundServer(
 			"outbound", target.name,
 			"newURL", config.TruncateVia(newURL))
 
-		newOT, _, setupErr := setupOutboundTransportFn(ctx, newURL, dd, wireMode)
+		newOT, _, setupErr := setupOutboundTransportFn(ctx, newURL, dd, wireMode, clientVersion)
 		if setupErr != nil {
 			slog.Warn("engine: outbound replacement setup failed",
 				"outbound", target.name,

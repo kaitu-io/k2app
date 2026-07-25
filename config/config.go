@@ -27,6 +27,7 @@ type ClientConfig struct {
 	CacheDir  string        `yaml:"cache_dir"  json:"cache_dir"`  // cache directory for rule bundles ("" = platform default)
 	RuleSources []string `yaml:"rule_sources,omitempty" json:"rule_sources,omitempty"` // override default k2b download sources
 	Telemetry TelemetryConfig `yaml:"telemetry,omitempty" json:"telemetry,omitempty"` // anonymous usage telemetry (Phase 1: rule miss)
+	ClientVersion string `yaml:"client_version,omitempty" json:"client_version,omitempty"` // client app version, forwarded to the node via the metadata stream for per-device attribution. Set by the webapp; "" = legacy/unknown.
 
 	// Derived fields (not serialized to YAML/JSON).
 	Server string `yaml:"-" json:"-"` // first k2v5:// URL from routes
@@ -221,9 +222,10 @@ type ECHConfig struct {
 // AuthConfig contains server auth configuration.
 // Validators are checked in order: users_file → remote_url → accept-all.
 type AuthConfig struct {
-	UsersFile string        `yaml:"users_file"` // path to users file (udid:token per line)
-	RemoteURL string        `yaml:"remote_url"` // Center API auth URL
-	CacheTTL  time.Duration `yaml:"cache_ttl"`
+	UsersFile   string        `yaml:"users_file"`   // path to users file (udid:token per line)
+	RemoteURL   string        `yaml:"remote_url"`   // Center API auth URL
+	CacheTTL    time.Duration `yaml:"cache_ttl"`    // TTL for cached successful auths (0 = no cache)
+	EnforceQUIC bool          `yaml:"enforce_quic"` // reject unauthenticated QUIC proxy streams. Default false (permissive) during rollout — flip to true only once new clients (which send metadata) have propagated, else legacy clients are cut off. env K2_ENFORCE_QUIC_AUTH
 }
 
 // LogConfig contains logging configuration.
@@ -403,5 +405,8 @@ func setServerDefaults(cfg *ServerConfig) {
 	}
 	if v := os.Getenv("K2_NODE_CUTOFF_REPORT"); v == "1" || v == "true" {
 		cfg.NodeCutoffReport = true
+	}
+	if v := os.Getenv("K2_ENFORCE_QUIC_AUTH"); v == "1" || v == "true" {
+		cfg.Auth.EnforceQUIC = true
 	}
 }

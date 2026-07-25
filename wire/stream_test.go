@@ -409,6 +409,14 @@ func TestMetadataFrame_RoundTrip(t *testing.T) {
 			meta: MetadataFrame{UDID: "device1", Token: "secret"},
 		},
 		{
+			name: "normal client with version",
+			meta: MetadataFrame{UDID: "device1", Token: "secret", Version: "0.4.8"},
+		},
+		{
+			name: "full frame with mode and version",
+			meta: MetadataFrame{UDID: "abc", Token: "jwt", Mode: "gateway", Version: "1.2.3"},
+		},
+		{
 			name: "empty fields",
 			meta: MetadataFrame{},
 		},
@@ -436,6 +444,42 @@ func TestMetadataFrame_RoundTrip(t *testing.T) {
 			if got.Mode != tt.meta.Mode {
 				t.Errorf("Mode = %q, want %q", got.Mode, tt.meta.Mode)
 			}
+			if got.Version != tt.meta.Version {
+				t.Errorf("Version = %q, want %q", got.Version, tt.meta.Version)
+			}
 		})
+	}
+}
+
+// TestMetadataFrame_ForwardCompat verifies an old reader (one that doesn't know
+// the "version" key) tolerates a frame carrying it — the kv format skips unknown
+// keys. This pins the backward-compatibility guarantee for the phased rollout:
+// a new client sending version must never break an un-upgraded node.
+func TestMetadataFrame_ForwardCompat(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteMetadataFrame(&buf, MetadataFrame{UDID: "u", Token: "t", Version: "9.9.9"}); err != nil {
+		t.Fatalf("WriteMetadataFrame: %v", err)
+	}
+	// Simulate an old reader: parse the same wire bytes but only read udid/token.
+	br := bufio.NewReader(&buf)
+	fieldCount, _, err := ReadVarint(br)
+	if err != nil {
+		t.Fatalf("read field count: %v", err)
+	}
+	seen := map[string]string{}
+	for i := uint64(0); i < fieldCount; i++ {
+		kl, _, _ := ReadVarint(br)
+		kb := make([]byte, kl)
+		io.ReadFull(br, kb)
+		vl, _, _ := ReadVarint(br)
+		vb := make([]byte, vl)
+		io.ReadFull(br, vb)
+		seen[string(kb)] = string(vb)
+	}
+	if seen["udid"] != "u" || seen["token"] != "t" {
+		t.Errorf("old reader failed to extract udid/token: %v", seen)
+	}
+	if seen["version"] != "9.9.9" {
+		t.Errorf("version field not present on wire: %v", seen)
 	}
 }

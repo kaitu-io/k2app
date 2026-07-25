@@ -143,7 +143,7 @@ func TestContract_ReplaceLoop_SetupFailRetriesThenSucceeds(t *testing.T) {
 
 	orig := setupOutboundTransportFn
 	defer func() { setupOutboundTransportFn = orig }()
-	setupOutboundTransportFn = func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string) (*outboundTransport, wire.Dialer, error) {
+	setupOutboundTransportFn = func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string, clientVersion string) (*outboundTransport, wire.Dialer, error) {
 		setupCallsMu.Lock()
 		setupCalls = append(setupCalls, via)
 		setupCallsMu.Unlock()
@@ -249,7 +249,7 @@ func TestContract_ReplaceLoop_SetupFailRetriesThenSucceeds(t *testing.T) {
 func TestContract_ReplaceLoop_TargetDisappearedReturnsError(t *testing.T) {
 	orig := setupOutboundTransportFn
 	defer func() { setupOutboundTransportFn = orig }()
-	setupOutboundTransportFn = func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string) (*outboundTransport, wire.Dialer, error) {
+	setupOutboundTransportFn = func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string, clientVersion string) (*outboundTransport, wire.Dialer, error) {
 		tm := wire.NewTransportManager()
 		ot := &outboundTransport{
 			tm:       tm,

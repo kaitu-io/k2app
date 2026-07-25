@@ -267,9 +267,10 @@ func (c *TCPWSClient) sendMetadataBestEffort(sess *smux.Session) {
 		return
 	}
 	if err := WriteMetadataFrame(stream, MetadataFrame{
-		UDID:  c.cfg.UDID,
-		Token: c.cfg.Token,
-		Mode:  c.cfg.Mode,
+		UDID:    c.cfg.UDID,
+		Token:   c.cfg.Token,
+		Mode:    c.cfg.Mode,
+		Version: c.cfg.Version,
 	}); err != nil {
 		slog.Debug("TCPWSClient: metadata frame failed", "err", err)
 		return

@@ -133,12 +133,31 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	}
 	if cfg.Auth.RemoteURL != "" {
 		slog.Info("server: auth chain", "mode", "remote_url", "url", cfg.Auth.RemoteURL)
-		validators = append(validators, wire.NewRemoteValidator(cfg.Auth.RemoteURL))
+		// Lazy node-IPv4 resolver for the remote validator's Basic auth. Nodes
+		// often don't set K2_NODE_IPV4 and must ProbePublicIP, which can't run at
+		// construction time (may block / network not up yet). Resolve once, on
+		// first auth — by then a client is connected so the network is live.
+		var ipOnce sync.Once
+		var nodeIPv4 string
+		ipv4Fn := func() string {
+			ipOnce.Do(func() {
+				nodeIPv4 = cfg.NodeIPv4
+				if nodeIPv4 == "" {
+					nodeIPv4 = wire.ProbePublicIP("https://api4.ipify.org")
+				}
+				slog.Info("server: remote auth node identity resolved", "ipv4", nodeIPv4)
+			})
+			return nodeIPv4
+		}
+		validators = append(validators, wire.NewRemoteValidator(cfg.Auth.RemoteURL, ipv4Fn, cfg.NodeSecret))
 	}
 
 	var validator wire.JWTValidator
 	if len(validators) > 0 {
 		validator = wire.ChainValidators(validators...)
+		// Cache successful auths: opening the QUIC metadata path to all normal
+		// clients would otherwise fire one Center request per new connection.
+		validator = wire.CachingValidator(validator, cfg.Auth.CacheTTL)
 	} else {
 		slog.Info("server: auth chain", "mode", "accept-all")
 		validator = func(jwt, udid, mode string) bool {
@@ -147,6 +166,8 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	}
 	s.authHandler = wire.NewAuthHandler(store, validator)
 	s.quicSrv.SetValidator(validator)
+	s.quicSrv.SetEnforce(cfg.Auth.EnforceQUIC)
+	slog.Info("server: QUIC device-auth enforcement", "enforce", cfg.Auth.EnforceQUIC)
 
 	return s, nil
 }

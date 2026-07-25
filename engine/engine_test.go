@@ -1916,7 +1916,7 @@ func TestBuildOutboundMap_DedupSameURL(t *testing.T) {
 
 func TestSetupOutboundTransport_InvalidURL(t *testing.T) {
 	ctx := context.Background()
-	_, _, err := setupOutboundTransport(ctx, "not-a-valid-url", nil, "")
+	_, _, err := setupOutboundTransport(ctx, "not-a-valid-url", nil, "", "")
 	if err == nil {
 		t.Fatal("expected error for invalid URL")
 	}

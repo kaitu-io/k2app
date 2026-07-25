@@ -116,8 +116,8 @@ func TriggerReplaceForTestCtx(
 // setupOutboundTransportFn. Returns the previous value so callers can restore
 // it via t.Cleanup.
 func SetSetupOutboundTransportFnShape(
-	fn func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string) (*OutboundTransportShape, wire.Dialer, error),
-) func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string) (*OutboundTransportShape, wire.Dialer, error) {
+	fn func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string, clientVersion string) (*OutboundTransportShape, wire.Dialer, error),
+) func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string, clientVersion string) (*OutboundTransportShape, wire.Dialer, error) {
 	prev := setupOutboundTransportFn
 	setupOutboundTransportFn = fn
 	return prev

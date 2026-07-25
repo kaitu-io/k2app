@@ -599,14 +599,18 @@ serialize:
 	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", k2cc.DefaultMaxRate/1_000_000)
 
 	// Send metadata stream before storing connection (no lock held — Rule #2).
-	// Must happen before any other streams so server knows the client mode.
-	if c.cfg.Mode != "" {
-		if err := c.sendMetadata(ctx, conn); err != nil {
-			slog.Warn("QUICClient: metadata stream failed", "mode", c.cfg.Mode, "err", err)
-			conn.CloseWithError(0x01, "metadata auth failed")
-			transport.Close()
-			return nil, fmt.Errorf("wire: metadata auth: %w", err)
-		}
+	// Must happen before any other streams so the server can authenticate and
+	// attribute this connection. Sent by ALL clients (normal + gateway), not
+	// just gateway — previously gated on Mode!="", which left normal clients
+	// completely unauthenticated on the QUIC path (the P0 this fix closes).
+	//
+	// Best-effort: the QUIC handshake already succeeded here; a metadata-stream
+	// failure must NOT fail connect(). The server's enforce gate — not the
+	// client — is the authority on whether to serve proxy streams. Mirrors
+	// TCP-WS sendMetadataBestEffort. Under enforce=on the server closes the conn
+	// on auth failure, so the subsequent DialTCP surfaces the rejection anyway.
+	if err := c.sendMetadata(ctx, conn); err != nil {
+		slog.Warn("QUICClient: metadata stream failed (best-effort)", "mode", c.cfg.Mode, "err", err)
 	}
 
 	// --- Store result under lock ---
@@ -648,9 +652,10 @@ func (c *QUICClient) sendMetadata(ctx context.Context, conn *quic.Conn) error {
 		return fmt.Errorf("write stream header: %w", err)
 	}
 	if err := WriteMetadataFrame(stream, MetadataFrame{
-		UDID:  c.cfg.UDID,
-		Token: c.cfg.Token,
-		Mode:  c.cfg.Mode,
+		UDID:    c.cfg.UDID,
+		Token:   c.cfg.Token,
+		Mode:    c.cfg.Mode,
+		Version: c.cfg.Version,
 	}); err != nil {
 		stream.Close()
 		return fmt.Errorf("write metadata: %w", err)
@@ -1108,10 +1113,20 @@ type tcpAcceptResult struct {
 	err  error
 }
 
+// quicAuthWaitDefault bounds how long a proxy stream waits for a late metadata
+// stream under enforce before deciding the connection is unauthenticated. The
+// client sends metadata synchronously inside connect() before any proxy stream,
+// so on the wire metadata always precedes proxy streams; this only covers the
+// server accepting the two streams out of order. Kept short so a legacy client
+// (which never sends metadata) isn't stalled long before rejection.
+const quicAuthWaitDefault = 500 * time.Millisecond
+
 // QUICServer is the QUIC/H3 server transport.
 type QUICServer struct {
 	store    *TicketStore
 	validate JWTValidator // set by SetValidator; used by metadata stream auth
+	enforce  bool         // set by SetEnforce; when true, unauthenticated proxy streams are rejected
+	authWait time.Duration
 
 	mu    deadlock.Mutex
 	ln    *quic.Listener
@@ -1123,9 +1138,10 @@ type QUICServer struct {
 // NewQUICServer creates a new QUIC server transport.
 func NewQUICServer(store *TicketStore) *QUICServer {
 	return &QUICServer{
-		store: store,
-		tcpCh: make(chan tcpAcceptResult, 64),
-		done:  make(chan struct{}),
+		store:    store,
+		tcpCh:    make(chan tcpAcceptResult, 64),
+		done:     make(chan struct{}),
+		authWait: quicAuthWaitDefault,
 	}
 }
 
@@ -1133,6 +1149,33 @@ func NewQUICServer(store *TicketStore) *QUICServer {
 // Must be called before Listen.
 func (s *QUICServer) SetValidator(v JWTValidator) {
 	s.validate = v
+}
+
+// SetEnforce toggles QUIC device-auth enforcement. When false (default,
+// permissive) the metadata stream is used only for attribution and never blocks
+// a connection — required during rollout so legacy clients (which don't send
+// metadata) keep working. When true, proxy streams on a connection that failed
+// or omitted metadata auth are rejected. Must be called before Listen.
+func (s *QUICServer) SetEnforce(v bool) {
+	s.enforce = v
+}
+
+// proxyAuthorized is the admission gate for QUIC proxy streams (TCP/UDP egress).
+// Permissive mode never blocks. Enforce mode admits only connections whose
+// metadata stream authenticated, waiting up to authWait for a metadata stream
+// that the server may have accepted after the proxy stream.
+func (s *QUICServer) proxyAuthorized(ctx *connContext, log *slog.Logger) bool {
+	if !s.enforce {
+		return true
+	}
+	if ctx.authOK.Load() {
+		return true
+	}
+	select {
+	case <-ctx.authDone:
+	case <-time.After(s.authWait):
+	}
+	return ctx.authOK.Load()
 }
 
 // Listen starts accepting QUIC connections from the given listener.
@@ -1181,6 +1224,14 @@ type connContext struct {
 	mode atomic.Value // string: "" (normal) or "gateway"
 	dev  *deviceIDHolder
 	udp  *connUDPState
+
+	// Auth state for the enforce gate. authOK is the validation result of the
+	// metadata stream; authDone is closed once the metadata stream has been
+	// processed (success OR failure OR parse error), letting a proxy stream that
+	// raced ahead wait for the verdict instead of being wrongly rejected.
+	authOK   atomic.Bool
+	authDone chan struct{}
+	authOnce sync.Once
 }
 
 func (s *QUICServer) handleConn(conn *quic.Conn) {
@@ -1195,7 +1246,7 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 		log:      connLog,
 		dev:      dev,
 	}
-	ctx := &connContext{udp: state, dev: dev}
+	ctx := &connContext{udp: state, dev: dev, authDone: make(chan struct{})}
 	ctx.mode.Store("") // default: normal client
 
 	// Accept streams (TCP proxy + UDP overflow + metadata)
@@ -1268,6 +1319,12 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 	case StreamTypeMeta:
 		s.handleMetadataStream(qconn, stream, br, ctx)
 	case StreamTypeTCP:
+		if !s.proxyAuthorized(ctx, log) {
+			log.Warn("QUICServer.handleStream: TCP rejected (enforce: unauthenticated)", "addr", addr)
+			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+			stream.Close()
+			return
+		}
 		sc := &quicStreamConn{
 			Stream: stream,
 			local:  qconn.LocalAddr(),
@@ -1278,6 +1335,11 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
 		log.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
 	case StreamTypeUDP:
+		if !s.proxyAuthorized(ctx, log) {
+			log.Warn("QUICServer.handleStream: UDP rejected (enforce: unauthenticated)")
+			stream.Close()
+			return
+		}
 		s.handleUDPStream(stream, br, ctx.dev, ctx.udp.log, qconn.RemoteAddr().String())
 	case StreamTypeUDPOverflow:
 		s.handleUDPOverflowStream(br, ctx.udp)
@@ -1290,9 +1352,15 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 }
 
 // handleMetadataStream processes a connection metadata stream (StreamType 0x10).
-// Validates credentials via JWTValidator chain and stores mode in connContext.
-// On auth failure, closes the entire QUIC connection.
+// Attribution (udid/mode) is applied regardless of the validation result — the
+// udid is self-reported and used for traffic accounting, same trust model as
+// TCP-WS. The validation result drives the enforce gate: under enforce a failed
+// or absent auth closes the connection; under permissive it is recorded but the
+// connection is served (rollout requirement — legacy clients send no metadata).
+// authDone is always signalled so a proxy stream waiting on the gate unblocks.
 func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream, br *bufio.Reader, ctx *connContext) {
+	defer ctx.authOnce.Do(func() { close(ctx.authDone) })
+
 	meta, err := ReadMetadataFrame(br)
 	if err != nil {
 		slog.Warn("QUICServer: metadata stream parse failed", "remote", qconn.RemoteAddr(), "err", err)
@@ -1301,20 +1369,32 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 		return
 	}
 
-	slog.Info("QUICServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
+	slog.Info("QUICServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "version", meta.Version, "remote", qconn.RemoteAddr())
 
-	// Validate credentials + mode via the same validator chain used by HTTP auth.
-	// s.validate is immutable after SetValidator (called before Listen), no lock needed.
-	if s.validate != nil && !s.validate(meta.Token, meta.UDID, meta.Mode) {
-		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
-		WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+	// Attribution first, independent of auth outcome (accounting must work in
+	// permissive mode even when validation fails).
+	ctx.mode.Store(meta.Mode)
+	ctx.dev.set(meta.UDID)
+
+	// Validate via the same validator chain used by HTTP auth. s.validate is
+	// immutable after SetValidator (called before Listen), no lock needed.
+	authed := s.validate == nil || s.validate(meta.Token, meta.UDID, meta.Mode)
+	ctx.authOK.Store(authed)
+
+	if !authed {
+		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "enforce", s.enforce, "remote", qconn.RemoteAddr())
+		if s.enforce {
+			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+			stream.Close()
+			qconn.CloseWithError(0x01, "unauthorized")
+			return
+		}
+		// Permissive: accept, attribution recorded, no block.
+		WriteStreamResponse(stream, nil)
 		stream.Close()
-		qconn.CloseWithError(0x01, "unauthorized")
 		return
 	}
 
-	ctx.mode.Store(meta.Mode)
-	ctx.dev.set(meta.UDID)
 	WriteStreamResponse(stream, nil) // OK
 	stream.Close()
 	slog.Info("QUICServer: metadata auth OK", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())

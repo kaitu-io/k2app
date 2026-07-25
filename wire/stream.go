@@ -241,9 +241,10 @@ func (e *StreamError) IsProxyLayer() bool  { return true }
 
 // MetadataFrame holds key-value metadata for a connection (auth + mode).
 type MetadataFrame struct {
-	UDID  string
-	Token string
-	Mode  string // "gateway" or "" (normal)
+	UDID    string
+	Token   string
+	Mode    string // "gateway" or "" (normal)
+	Version string // client app version (e.g. "0.4.8"); "" = legacy/unknown. Observation only — never an auth-exemption signal (self-reported, spoofable).
 }
 
 // WriteMetadataFrame writes a metadata frame payload to w.
@@ -259,6 +260,9 @@ func WriteMetadataFrame(w io.Writer, meta MetadataFrame) error {
 	}
 	if meta.Mode != "" {
 		fields = append(fields, [2]string{"mode", meta.Mode})
+	}
+	if meta.Version != "" {
+		fields = append(fields, [2]string{"version", meta.Version})
 	}
 
 	buf = AppendVarint(buf, uint64(len(fields)))
@@ -322,6 +326,8 @@ func ReadMetadataFrame(r interface {
 			meta.Token = string(valBuf)
 		case "mode":
 			meta.Mode = string(valBuf)
+		case "version":
+			meta.Version = string(valBuf)
 		}
 	}
 	return meta, nil
