@@ -66,6 +66,22 @@ import { getBrandSlogan, getBrandName } from '../brands/i18n-vars';
 import { brandConfig } from '../brands';
 import { getCurrentAppConfig } from '../config/apps';
 
+/**
+ * 掩码登录邮箱。星号数固定为 3，不随用户名长度增长——等长掩码会生成一个
+ * 没有断行机会的长星号串，撑破手机窄屏下的行宽（且泄露用户名长度）。
+ */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return email;
+  const username = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  // 用户名不足 3 字符时只保留首字符，避免掩码后仍能还原
+  const masked = username.length <= 2
+    ? `${username.charAt(0)}***`
+    : `${username.charAt(0)}***${username.charAt(username.length - 1)}`;
+  return `${masked}@${domain}`;
+}
+
 export default function Account() {
   const { user, loading, isMembership, isExpired, fetchUser } = useUser();
   const affordance = useSubscriptionAffordance();
@@ -93,16 +109,6 @@ export default function Account() {
     }
     setAppVersion(version);
   }, []);
-
-  const maskEmail = (email: string) => {
-    const [username, domain] = email.split("@");
-    const maskedUsername =
-      username.charAt(0) +
-      "*".repeat(username.length - 2) +
-      username.charAt(username.length - 1);
-    return `${maskedUsername}@${domain}`;
-  };
-
 
   const handleLogout = async () => {
     try {
@@ -489,9 +495,20 @@ export default function Account() {
                 <EmailIcon />
               </ListItemIcon>
               <ListItemText
+                sx={{ minWidth: 0 }}
                 primary={
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Typography variant="body2" component="span" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
+                    <Typography
+                      variant="body2"
+                      component="span"
+                      sx={{
+                        fontWeight: 500,
+                        fontSize: '0.9rem',
+                        minWidth: 0,
+                        // 邮箱是用户可控的无界内容，且掩码星号串没有天然断行点
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
                       {user?.loginIdentifies?.find(i => i.type === 'email')?.value ? maskEmail(user.loginIdentifies.find(i => i.type === 'email')!.value) : t('account:account.loginEmail')}
                     </Typography>
                     {!isMembership && (
@@ -502,6 +519,7 @@ export default function Account() {
                         variant="outlined"
                         sx={{
                           ml: 0,
+                          flexShrink: 0,
                           fontWeight: 500,
                           fontSize: '0.75rem',
                           height: '20px'
@@ -511,7 +529,10 @@ export default function Account() {
                   </Box>
                 }
               />
-              <ListItemSecondaryAction>
+              {/* 次要动作留在正常流内（而非 ListItemSecondaryAction 的绝对定位）：
+                  这里是文字按钮，宽度远超 MUI 为图标预留的 48px paddingRight，
+                  绝对定位会让邮箱文字压到按钮底下。 */}
+              <Box sx={{ flexShrink: 0, ml: 1 }}>
                 {isMembership ? (
                   !!!user?.loginIdentifies?.find(i => i.type === 'email')?.value ? (
                     <Button
@@ -565,7 +586,7 @@ export default function Account() {
                     {t('account:account.proPlan')}
                   </Button>
                 ) : null}
-              </ListItemSecondaryAction>
+              </Box>
             </ListItem>
 
             {/* 多设备权益但未设置邮箱的提醒 */}
