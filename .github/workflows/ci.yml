@@ -472,21 +472,23 @@ jobs:
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       - name: Setup Node.js (self-hosted)
+        # The runner's .path file already pins a working node onto PATH
+        # (no shell rc is sourced for a launchd service process, so the
+        # `nvm` shell function this step used to invoke is never defined —
+        # "nvm: 未找到命令", exit 127, every run). Verify the pinned
+        # version satisfies .nvmrc instead of trying to switch versions.
         shell: bash
         run: |
           NODE_VERSION=$(cat .nvmrc)
           CURRENT=$(node -v 2>/dev/null || echo "none")
-          if [ "$CURRENT" != "v${NODE_VERSION}" ]; then
-            nvm install "$NODE_VERSION"
+          if [[ "$CURRENT" != v${NODE_VERSION}.* ]]; then
+            echo "::error::Runner node ($CURRENT) does not satisfy .nvmrc (v${NODE_VERSION}.x) — update the runner's .path entry"
+            exit 1
           fi
-          nvm use "$NODE_VERSION"
-          NODE_DIR=$(dirname "$(which node)")
-          echo "$NODE_DIR" >> "$GITHUB_PATH"
+          echo "Using node $CURRENT"
           if ! command -v yarn &>/dev/null; then
             npm install -g yarn
           fi
-          NPM_GLOBAL=$(npm prefix -g)
-          echo "$NPM_GLOBAL" >> "$GITHUB_PATH"
 
       - name: Setup Go
         uses: actions/setup-go@v5
