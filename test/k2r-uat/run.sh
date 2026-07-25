@@ -976,8 +976,16 @@ test_api() {
     fi
 
     # 10.6 GET /ping.
+    #
+    # cf3a905 replaced /ping's old {"code":0,"message":"pong"} with the
+    # discovery-signature contract the companion app actually consumes
+    # (gateway/api.go pingResponse: k2r/version/configured/name) — this
+    # assertion was never updated to match and has been silently wrong
+    # since, invisible only because the suite always died earlier (at the
+    # loopback-auth regression fixed above) before ever reaching phase 10.
+    # Assert on the real contract's discovery field instead.
     resp=$(curl -sf "$API/ping" 2>/dev/null || true)
-    assert_contains "10.6 GET /ping returns pong" '"pong"' "$resp"
+    assert_contains "10.6 GET /ping returns discovery signature" '"k2r":true' "$resp"
 
     # Reset to debug.
     k2r_exec curl -sf -X POST http://127.0.0.1:1779/api/log-level \
