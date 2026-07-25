@@ -501,14 +501,21 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Set persistent cache paths (Windows)
+      - name: Set persistent cache paths (self-hosted)
+        # This job cross-compiles the Windows target FROM the macOS
+        # self-hosted runner (see build-windows's runs-on comment history —
+        # there is no actual Windows machine here, "Windows" is a custom
+        # label on macOS-runner-k2app). C:/... paths are a Windows
+        # filesystem convention and are not absolute on Darwin, so Go
+        # rejected GOMODCACHE outright ("entry is relative; must be
+        # absolute path") the first time this step ever actually ran.
         shell: bash
         run: |
-          echo "CARGO_HOME=C:/cache/cargo" >> "$GITHUB_ENV"
-          echo "GOMODCACHE=C:/cache/gomod" >> "$GITHUB_ENV"
-          echo "SCCACHE_DIR=C:/cache/sccache" >> "$GITHUB_ENV"
+          echo "CARGO_HOME=$HOME/cache/cargo" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$HOME/cache/gomod" >> "$GITHUB_ENV"
+          echo "SCCACHE_DIR=$HOME/cache/sccache" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "C:/cache/cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/cache/cargo/bin" >> "$GITHUB_PATH"
 
       - name: Setup sccache (Windows local disk)
         shell: bash
