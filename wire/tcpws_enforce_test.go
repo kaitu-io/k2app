@@ -17,7 +17,7 @@ func setupTCPWSEnforcePair(t *testing.T, cfg Config, enforce bool, validator JWT
 	server := NewTCPWSServer()
 	server.SetValidator(validator)
 	server.SetEnforce(enforce)
-	server.authWait = 300 * time.Millisecond
+	server.adm.authWait = 300 * time.Millisecond
 	server.HandleConn(serverConn)
 
 	client := NewTCPWSClient(cfg)

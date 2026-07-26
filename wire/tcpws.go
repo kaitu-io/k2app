@@ -660,21 +660,21 @@ type TCPWSServer struct {
 	// streams are rejected. Both are immutable after construction/SetX (called
 	// before HandleConn), so no lock is needed on the read path.
 	validate JWTValidator
-	enforce  bool
-	authWait time.Duration
+	adm      admissionPolicy // device-auth admission; see admission.go
 
 	mu    deadlock.Mutex
 	tcpCh chan tcpAcceptResult
-	udpH  UDPHandler
-	done  chan struct{}
+	// udpH is an egress sink: reach it only through admitUDP, never directly.
+	udpH UDPHandler
+	done chan struct{}
 }
 
 // NewTCPWSServer creates a new TCP-WS server transport.
 func NewTCPWSServer() *TCPWSServer {
 	return &TCPWSServer{
-		authWait: authWaitDefault,
-		tcpCh:    make(chan tcpAcceptResult, 64),
-		done:     make(chan struct{}),
+		adm:   admissionPolicy{authWait: authWaitDefault},
+		tcpCh: make(chan tcpAcceptResult, 64),
+		done:  make(chan struct{}),
 	}
 }
 
@@ -693,37 +693,36 @@ func (s *TCPWSServer) SetValidator(v JWTValidator) {
 // same K2_ENFORCE_AUTH flag that governs QUIC: enforcement must cover BOTH
 // transports, else an attacker forces TCP-WS fallback to bypass QUIC auth.
 func (s *TCPWSServer) SetEnforce(v bool) {
-	s.enforce = v
+	s.adm.enforce = v
 }
 
-// tcpwsSessionAuth holds per-smux-session auth state for the enforce gate.
-// Mirrors the auth fields of QUICServer.connContext: authOK is the metadata
-// validation result; authDone is closed once the metadata stream is processed
-// (success, failure, or parse error) so a proxy stream that raced ahead of the
-// metadata stream waits for the verdict instead of being wrongly rejected.
-type tcpwsSessionAuth struct {
-	authOK   atomic.Bool
-	authDone chan struct{}
-	authOnce sync.Once
+// admitTCP is the only route from an accepted proxy stream to AcceptTCP, and so
+// the whole of the TCP admission gate — the TCP-WS twin of
+// QUICServer.admitTCP. See admission.go and TestAdmissionGate_EgressSinksAreGated.
+func (s *TCPWSServer) admitTCP(auth *connAuth, stream *smux.Stream, br *bufio.Reader, remote net.Addr, dev *deviceIDHolder, addr string, connLog *slog.Logger) {
+	if !s.adm.admit(auth) {
+		connLog.Warn("TCPWSServer: TCP rejected (enforce: unauthenticated)", "addr", addr)
+		WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+		stream.Close()
+		return
+	}
+	s.sendTCP(tcpAcceptResult{
+		conn: &smuxStreamConn{Stream: stream, br: br, remoteAddr: remote, dev: dev},
+		addr: addr,
+	})
 }
 
-// proxyAuthorized is the admission gate for TCP-WS proxy streams (TCP/UDP
-// egress), identical in semantics to QUICServer.proxyAuthorized. Permissive
-// mode never blocks; enforce mode admits only sessions whose metadata stream
-// authenticated, waiting up to authWait for a metadata stream the server may
-// have accepted after the proxy stream.
-func (s *TCPWSServer) proxyAuthorized(auth *tcpwsSessionAuth) bool {
-	if !s.enforce {
-		return true
+// admitUDP is the only reader of s.udpH, and so the whole of the UDP admission
+// gate — the TCP-WS twin of QUICServer.admitUDP. ok=false means the session
+// failed admission; a nil handler with ok=true means ServeUDP has not been
+// called yet, which is not an auth condition.
+func (s *TCPWSServer) admitUDP(auth *connAuth) (handler UDPHandler, ok bool) {
+	if !s.adm.admit(auth) {
+		return nil, false
 	}
-	if auth.authOK.Load() {
-		return true
-	}
-	select {
-	case <-auth.authDone:
-	case <-time.After(s.authWait):
-	}
-	return auth.authOK.Load()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.udpH, true
 }
 
 // HandleConn processes a new TCP-WS client connection.
@@ -759,7 +758,7 @@ func (s *TCPWSServer) HandleSession(sess *smux.Session) {
 func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, remote net.Addr) {
 	defer sess.Close()
 	dev := &deviceIDHolder{}
-	auth := &tcpwsSessionAuth{authDone: make(chan struct{})}
+	auth := newConnAuth()
 	for {
 		stream, err := sess.AcceptStream()
 		if err != nil {
@@ -776,7 +775,7 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 	}
 }
 
-func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder, auth *tcpwsSessionAuth) {
+func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder, auth *connAuth) {
 	br := bufio.NewReader(stream)
 
 	streamType, addr, err := ReadStreamHeader(br)
@@ -789,21 +788,9 @@ func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, conn
 	case StreamTypeMeta:
 		s.handleMetadataStream(sess, stream, br, connLog, dev, auth)
 	case StreamTypeTCP:
-		if !s.proxyAuthorized(auth) {
-			connLog.Warn("TCPWSServer.handleStream: TCP rejected (enforce: unauthenticated)", "addr", addr)
-			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
-			stream.Close()
-			return
-		}
-		sc := &smuxStreamConn{Stream: stream, br: br, remoteAddr: remote, dev: dev}
-		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
+		s.admitTCP(auth, stream, br, remote, dev, addr, connLog)
 	case StreamTypeUDP:
-		if !s.proxyAuthorized(auth) {
-			connLog.Warn("TCPWSServer.handleStream: UDP rejected (enforce: unauthenticated)")
-			stream.Close()
-			return
-		}
-		s.handleUDPStream(stream, br, connLog, remote, dev)
+		s.handleUDPStream(stream, br, connLog, remote, dev, auth)
 	default:
 		stream.Close()
 	}
@@ -815,10 +802,11 @@ func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, conn
 // traffic accounting. The validation result drives the enforce gate: under
 // enforce a failed or absent auth tears down the session; under permissive it is
 // recorded but the session is served (rollout requirement — legacy clients send
-// unvalidated metadata). authDone is always signalled so a proxy stream waiting
-// on the gate unblocks.
-func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, dev *deviceIDHolder, auth *tcpwsSessionAuth) {
-	defer auth.authOnce.Do(func() { close(auth.authDone) })
+// unvalidated metadata). The verdict is always settled so a proxy path waiting
+// on the gate unblocks; the deferred settle is the fail-closed backstop for
+// parse errors and panics.
+func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, dev *deviceIDHolder, auth *connAuth) {
+	defer auth.settle(false)
 
 	meta, err := ReadMetadataFrame(br)
 	if err != nil {
@@ -835,11 +823,11 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 	dev.set(meta.UDID) // self-reported (unvalidated) — attribution, see spec §8
 
 	authed := s.validate == nil || s.validate(meta.Token, meta.UDID, meta.Mode)
-	auth.authOK.Store(authed)
+	auth.settle(authed)
 
 	if !authed {
-		connLog.Warn("TCPWSServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "enforce", s.enforce)
-		if s.enforce {
+		connLog.Warn("TCPWSServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "enforce", s.adm.enforce)
+		if s.adm.enforce {
 			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
 			stream.Close()
 			sess.Close() // tear the session, mirroring QUIC's CloseWithError
@@ -883,7 +871,7 @@ func runSmuxUDPHandler(
 	handler.HandleUDP(sess, addr)
 }
 
-func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder) {
+func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder, auth *connAuth) {
 	mux := &serverSmuxWriter{stream: stream}
 	sessions := make(map[uint32]*smuxServerUDPConn)
 	var sessionsMu deadlock.Mutex
@@ -911,6 +899,28 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, con
 				sessionsMu.Unlock()
 				continue // at capacity, drop frame
 			}
+			// Admission gate: on denial no session is created, and the stream is
+			// torn down rather than left to re-ask on every new session id —
+			// a session that never sends metadata would otherwise pay the
+			// admission wait again per frame.
+			//
+			// admit() may wait, so release the map lock first — runSmuxUDPHandler
+			// needs it to reap finished sessions. Only this loop creates
+			// sessions, so nothing can add one while the lock is released.
+			sessionsMu.Unlock()
+			handler, admitted := s.admitUDP(auth)
+			if !admitted {
+				connLog.Warn("TCPWSServer: UDP stream rejected (enforce: unauthenticated)",
+					"sid", frame.SessionID, "addr", frame.Addr)
+				sessionsMu.Lock()
+				for _, sess := range sessions {
+					sess.close()
+				}
+				sessionsMu.Unlock()
+				stream.Close()
+				return
+			}
+			sessionsMu.Lock()
 			sessLog := connLog.With("sid", frame.SessionID, "addr", frame.Addr)
 			sess = &smuxServerUDPConn{
 				writer:     mux,
@@ -924,9 +934,6 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, con
 			}
 			sessions[frame.SessionID] = sess
 
-			s.mu.Lock()
-			handler := s.udpH
-			s.mu.Unlock()
 			if handler != nil {
 				addr := frame.Addr
 				sid := frame.SessionID

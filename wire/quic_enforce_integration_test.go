@@ -41,7 +41,7 @@ func TestIntegration_QUICEnforce_ForgedTokenRejected(t *testing.T) {
 		return udid == "good-device" && jwt == "valid-token"
 	})
 	server.SetEnforce(true)
-	server.authWait = 300 * time.Millisecond
+	server.adm.authWait = 300 * time.Millisecond
 	server.Listen(ln)
 	defer server.Close()
 

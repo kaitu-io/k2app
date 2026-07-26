@@ -197,8 +197,13 @@ waits briefly (`authWaitDefault`, 500 ms) for the verdict before rejecting.
 ### 4.3 Enforcement
 
 The server validates the metadata via a `JWTValidator` and records the verdict per
-connection. Admission of proxy (TCP/UDP) streams is gated by a single flag,
-`K2_ENFORCE_AUTH` (config `auth.enforce_auth`, default **false**):
+connection. **Admission is a property of the connection, not of a stream**: one
+metadata stream decides, and every proxy path on that connection lives or dies by
+that verdict. Both transports share the implementation (`wire/admission.go`), and
+the two things egress needs — a route to `AcceptTCP` and the server's `UDPHandler`
+— are handed out only by the gate, so a path that does not ask cannot proxy.
+Admission is governed by a single flag, `K2_ENFORCE_AUTH` (config
+`auth.enforce_auth`, default **false**):
 
 - **Permissive (default)** — an unauthenticated or unvalidated connection is still
   served; the udid is recorded for attribution but the stream is never blocked. This
@@ -209,6 +214,13 @@ connection. Admission of proxy (TCP/UDP) streams is gated by a single flag,
 
 Flip to enforce only after fixed clients have propagated fleet-wide, else unupgraded
 clients are cut off.
+
+Every client-reachable egress entry is gated: QUIC stream TCP (`0x01`), stream UDP
+(`0x02`), the client overflow stream (`0x03`), QUIC datagrams, and the TCP-WS
+stream types. The echo stream (`0x04`) is deliberately **not** gated — it reflects
+bytes inside the connection and never reaches the network, so it grants an
+unauthenticated peer no egress, while gating it would add the admission wait to the
+transport race's data-path probe.
 
 ### 4.4 Validator Chain
 

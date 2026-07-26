@@ -45,7 +45,7 @@ func startDatagramEchoServer(t *testing.T, validator JWTValidator, enforce bool)
 	server := NewQUICServer()
 	server.SetValidator(validator)
 	server.SetEnforce(enforce)
-	server.authWait = 300 * time.Millisecond
+	server.adm.authWait = 300 * time.Millisecond
 	server.Listen(ln)
 
 	ctx, cancel := context.WithCancel(context.Background())

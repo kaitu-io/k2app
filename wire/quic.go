@@ -1121,23 +1121,23 @@ const authWaitDefault = 500 * time.Millisecond
 
 // QUICServer is the QUIC/H3 server transport.
 type QUICServer struct {
-	validate JWTValidator // set by SetValidator; used by metadata stream auth
-	enforce  bool         // set by SetEnforce; when true, unauthenticated proxy streams are rejected
-	authWait time.Duration
+	validate JWTValidator    // set by SetValidator; used by metadata stream auth
+	adm      admissionPolicy // device-auth admission; see admission.go
 
 	mu    deadlock.Mutex
 	ln    *quic.Listener
 	tcpCh chan tcpAcceptResult
-	udpH  UDPHandler
-	done  chan struct{}
+	// udpH is an egress sink: reach it only through admitUDP, never directly.
+	udpH UDPHandler
+	done chan struct{}
 }
 
 // NewQUICServer creates a new QUIC server transport.
 func NewQUICServer() *QUICServer {
 	return &QUICServer{
-		tcpCh:    make(chan tcpAcceptResult, 64),
-		done:     make(chan struct{}),
-		authWait: authWaitDefault,
+		tcpCh: make(chan tcpAcceptResult, 64),
+		done:  make(chan struct{}),
+		adm:   admissionPolicy{authWait: authWaitDefault},
 	}
 }
 
@@ -1153,25 +1153,47 @@ func (s *QUICServer) SetValidator(v JWTValidator) {
 // metadata) keep working. When true, proxy streams on a connection that failed
 // or omitted metadata auth are rejected. Must be called before Listen.
 func (s *QUICServer) SetEnforce(v bool) {
-	s.enforce = v
+	s.adm.enforce = v
 }
 
-// proxyAuthorized is the admission gate for QUIC proxy streams (TCP/UDP egress).
-// Permissive mode never blocks. Enforce mode admits only connections whose
-// metadata stream authenticated, waiting up to authWait for a metadata stream
-// that the server may have accepted after the proxy stream.
-func (s *QUICServer) proxyAuthorized(ctx *connContext, log *slog.Logger) bool {
-	if !s.enforce {
-		return true
+// admitTCP is the only route from an accepted proxy stream to AcceptTCP, and so
+// the whole of the TCP admission gate: on denial the client gets an
+// `unauthorized` stream response instead of a hung stream. Nothing else may
+// call sendTCP with a client-originated connection — see
+// TestAdmissionGate_EgressSinksAreGated.
+func (s *QUICServer) admitTCP(ctx *connContext, qconn *quic.Conn, stream *quic.Stream, br *bufio.Reader, addr string, log *slog.Logger) {
+	if !s.adm.admit(ctx.auth) {
+		log.Warn("QUICServer: TCP rejected (enforce: unauthenticated)", "addr", addr)
+		WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+		stream.Close()
+		return
 	}
-	if ctx.authOK.Load() {
-		return true
+	s.sendTCP(tcpAcceptResult{conn: &quicStreamConn{
+		Stream: stream,
+		local:  qconn.LocalAddr(),
+		remote: qconn.RemoteAddr(),
+		br:     br,
+		dev:    ctx.dev,
+	}, addr: addr})
+	log.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
+}
+
+// admitUDP is the only reader of s.udpH, and so the whole of the UDP admission
+// gate: a UDP path that skips it has no handler to proxy with. That is what
+// stops a newly added path from silently bypassing enforce, as the datagram and
+// overflow paths once did.
+//
+// ok=false means the connection failed admission — drop the frame without
+// creating a session. A nil handler with ok=true means ServeUDP has not been
+// called yet, which is not an auth condition and keeps the pre-existing
+// no-handler behaviour.
+func (s *QUICServer) admitUDP(ctx *connContext) (handler UDPHandler, ok bool) {
+	if !s.adm.admit(ctx.auth) {
+		return nil, false
 	}
-	select {
-	case <-ctx.authDone:
-	case <-time.After(s.authWait):
-	}
-	return ctx.authOK.Load()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.udpH, true
 }
 
 // Listen starts accepting QUIC connections from the given listener.
@@ -1221,13 +1243,9 @@ type connContext struct {
 	dev  *deviceIDHolder
 	udp  *connUDPState
 
-	// Auth state for the enforce gate. authOK is the validation result of the
-	// metadata stream; authDone is closed once the metadata stream has been
-	// processed (success OR failure OR parse error), letting a proxy stream that
-	// raced ahead wait for the verdict instead of being wrongly rejected.
-	authOK   atomic.Bool
-	authDone chan struct{}
-	authOnce sync.Once
+	// auth is the device-auth verdict for this connection, consumed by the
+	// admission gate (admitTCP / admitUDP). See admission.go.
+	auth *connAuth
 }
 
 func (s *QUICServer) handleConn(conn *quic.Conn) {
@@ -1242,7 +1260,7 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 		log:      connLog,
 		dev:      dev,
 	}
-	ctx := &connContext{udp: state, dev: dev, authDone: make(chan struct{})}
+	ctx := &connContext{udp: state, dev: dev, auth: newConnAuth()}
 	ctx.mode.Store("") // default: normal client
 
 	// Accept streams (TCP proxy + UDP overflow + metadata)
@@ -1315,31 +1333,16 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 	case StreamTypeMeta:
 		s.handleMetadataStream(qconn, stream, br, ctx)
 	case StreamTypeTCP:
-		if !s.proxyAuthorized(ctx, log) {
-			log.Warn("QUICServer.handleStream: TCP rejected (enforce: unauthenticated)", "addr", addr)
-			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
-			stream.Close()
-			return
-		}
-		sc := &quicStreamConn{
-			Stream: stream,
-			local:  qconn.LocalAddr(),
-			remote: qconn.RemoteAddr(),
-			br:     br,
-			dev:    ctx.dev,
-		}
-		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
-		log.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
+		s.admitTCP(ctx, qconn, stream, br, addr, log)
 	case StreamTypeUDP:
-		if !s.proxyAuthorized(ctx, log) {
-			log.Warn("QUICServer.handleStream: UDP rejected (enforce: unauthenticated)")
-			stream.Close()
-			return
-		}
-		s.handleUDPStream(stream, br, ctx.dev, ctx.udp.log, qconn.RemoteAddr().String())
+		s.handleUDPStream(stream, br, ctx, qconn.RemoteAddr().String())
 	case StreamTypeUDPOverflow:
 		s.handleUDPOverflowStream(br, ctx)
 	case StreamTypeEcho:
+		// Deliberately not gated: the echo stream reflects bytes back inside the
+		// same QUIC connection and never reaches the network, so it grants an
+		// unauthenticated peer no egress. Gating it would only add authWait to
+		// the transport race's data-path probe.
 		HandleEchoStream(stream, br)
 	default:
 		log.Debug("QUICServer.handleStream: unknown stream type", "streamType", streamType)
@@ -1353,9 +1356,10 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 // TCP-WS. The validation result drives the enforce gate: under enforce a failed
 // or absent auth closes the connection; under permissive it is recorded but the
 // connection is served (rollout requirement — legacy clients send no metadata).
-// authDone is always signalled so a proxy stream waiting on the gate unblocks.
+// The verdict is always settled so a proxy path waiting on the gate unblocks;
+// the deferred settle is the fail-closed backstop for parse errors and panics.
 func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream, br *bufio.Reader, ctx *connContext) {
-	defer ctx.authOnce.Do(func() { close(ctx.authDone) })
+	defer ctx.auth.settle(false)
 
 	meta, err := ReadMetadataFrame(br)
 	if err != nil {
@@ -1375,11 +1379,11 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 	// Validate via the same validator chain used by HTTP auth. s.validate is
 	// immutable after SetValidator (called before Listen), no lock needed.
 	authed := s.validate == nil || s.validate(meta.Token, meta.UDID, meta.Mode)
-	ctx.authOK.Store(authed)
+	ctx.auth.settle(authed)
 
 	if !authed {
-		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "enforce", s.enforce, "remote", qconn.RemoteAddr())
-		if s.enforce {
+		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "enforce", s.adm.enforce, "remote", qconn.RemoteAddr())
+		if s.adm.enforce {
 			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
 			stream.Close()
 			qconn.CloseWithError(0x01, "unauthorized")
@@ -1396,9 +1400,10 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 	slog.Info("QUICServer: metadata auth OK", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
 }
 
-func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, dev *deviceIDHolder, connLog *slog.Logger, remoteStr string) {
+func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, ctx *connContext, remoteStr string) {
 	writer := &quicStreamWriter{stream: stream}
 	sessions := make(map[uint32]*quicStreamServerUDPConn)
+	connLog := ctx.udp.log
 
 	for {
 		frame, err := ReadSmuxUDPFrame(br)
@@ -1415,6 +1420,20 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, dev 
 			if len(sessions) >= maxServerUDPSessions {
 				continue // at capacity, drop frame
 			}
+			// Admission gate: on denial no session is created, and the stream is
+			// torn down rather than left to re-ask on every new session id —
+			// a connection that never sends metadata would otherwise pay the
+			// admission wait again per frame.
+			handler, admitted := s.admitUDP(ctx)
+			if !admitted {
+				connLog.Warn("QUICServer: UDP stream rejected (enforce: unauthenticated)",
+					"sid", frame.SessionID, "addr", frame.Addr)
+				for _, sess := range sessions {
+					sess.close()
+				}
+				stream.Close()
+				return
+			}
 			sessLog := connLog.With("sid", frame.SessionID, "addr", frame.Addr)
 			sess = &quicStreamServerUDPConn{
 				writer:     writer,
@@ -1424,13 +1443,10 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, dev 
 				log:        sessLog,
 				readCh:     make(chan []byte, 32),
 				done:       make(chan struct{}),
-				dev:        dev,
+				dev:        ctx.dev,
 			}
 			sessions[frame.SessionID] = sess
 
-			s.mu.Lock()
-			handler := s.udpH
-			s.mu.Unlock()
 			if handler != nil {
 				addr := frame.Addr
 				go func() {
@@ -1476,22 +1492,24 @@ func (s *QUICServer) handleDatagrams(conn *quic.Conn, ctx *connContext) {
 // deliverToSession looks up or creates a serverUDPConn in state.sessions, then delivers the payload.
 // Used by both handleDatagrams and handleUDPOverflowStream for session sharing.
 //
-// This is the single choke point for QUIC UDP egress: the datagram path (the
-// PRIMARY UDP path — DialUDP prefers datagrams, stream-UDP is only fallback) and
-// the client overflow stream both funnel new sessions through here. Gating new
-// sessions with proxyAuthorized closes the enforce bypass that would otherwise
-// let a connection which never sent a (valid) metadata stream proxy UDP — stream
-// TCP/UDP are gated separately in handleStream, but datagrams never reach it. The
-// gate runs OUTSIDE state.mu: under enforce an unauthenticated connection blocks
-// up to authWait, and holding the map lock would stall every other session's
-// datagrams; permissive and already-authenticated connections return instantly.
+// This is the choke point for the two QUIC UDP paths that never reach
+// handleStream: the datagram path (the PRIMARY UDP path — DialUDP prefers
+// datagrams, stream-UDP is only fallback) and the client overflow stream. Both
+// obtain their handler from admitUDP, which is what makes the enforce gate
+// unforgettable here rather than a check to remember.
+//
+// admitUDP runs OUTSIDE state.mu: under enforce an unauthenticated connection
+// blocks up to authWait, and holding the map lock would stall every other
+// session's datagrams. It also keeps s.mu from being taken under state.mu.
+// Permissive and already-authenticated connections return instantly.
 func (s *QUICServer) deliverToSession(ctx *connContext, state *connUDPState, conn *quic.Conn, frame *UDPFrame) {
 	state.mu.Lock()
 	sess, ok := state.sessions[frame.SessionID]
 	state.mu.Unlock()
 
 	if !ok {
-		if !s.proxyAuthorized(ctx, state.log) {
+		handler, admitted := s.admitUDP(ctx)
+		if !admitted {
 			state.log.Warn("QUICServer: UDP session rejected (enforce: unauthenticated)", "sid", frame.SessionID, "addr", frame.Addr)
 			return
 		}
@@ -1522,9 +1540,6 @@ func (s *QUICServer) deliverToSession(ctx *connContext, state *connUDPState, con
 			}
 			state.sessions[frame.SessionID] = sess
 
-			s.mu.Lock()
-			handler := s.udpH
-			s.mu.Unlock()
 			sessLog.Info("QUICServer: new UDP session", "handlerSet", handler != nil)
 			if handler != nil {
 				addr := frame.Addr
