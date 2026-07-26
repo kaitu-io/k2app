@@ -1378,7 +1378,14 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 
 	// Validate via the same validator chain used by HTTP auth. s.validate is
 	// immutable after SetValidator (called before Listen), no lock needed.
-	authed := s.validate == nil || s.validate(meta.Token, meta.UDID, meta.Mode)
+	// A nil validator means no auth backend is configured (k2p/P2P, tests). That
+	// may authenticate everyone in permissive mode, where the verdict only feeds
+	// attribution — but never under enforce, or the gate would be a no-op on a
+	// misconfigured node.
+	authed := !s.adm.enforce
+	if s.validate != nil {
+		authed = s.validate(meta.Token, meta.UDID, meta.Mode)
+	}
 	ctx.auth.settle(authed)
 
 	if !authed {

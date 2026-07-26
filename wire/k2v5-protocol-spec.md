@@ -578,6 +578,13 @@ Prober → TCP:443 → K2 Server → TCP → Real public_name Website
          (raw bytes forwarded, including TLS ClientHello)
 ```
 
+The relay target is **not** taken from the prober's ClientHello. The server keeps a
+whitelist of outer SNIs seen on successful ECH connections, and only its own ECH
+`public_name` may enter it — a client picks its own outer SNI, so trusting it would
+turn the node into an open TCP relay to an arbitrary host, on the one path that
+never passes device auth. Legitimate clients are unaffected: uTLS forces their outer
+SNI to `public_name` (§3.1).
+
 This provides:
 
 - **Active probing resistance**: Censors see a real website with a valid certificate

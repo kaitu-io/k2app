@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"net"
 	"testing"
 	"time"
@@ -124,6 +125,42 @@ func TestIntegration_QUICEnforce_PermissiveServesStreamUDP(t *testing.T) {
 	}
 	if string(frame.Payload) != "ping" {
 		t.Fatalf("echo mismatch: got %q", frame.Payload)
+	}
+}
+
+// TestIntegration_QUICEnforce_NilValidatorAuthenticatesNobody: a nil validator
+// means no auth backend is configured. In permissive mode that authenticates
+// everyone (the verdict only feeds attribution), but under enforce it must
+// authenticate nobody — otherwise a misconfigured node reports enforcement it
+// does not perform, which is worse than no gate at all.
+func TestIntegration_QUICEnforce_NilValidatorAuthenticatesNobody(t *testing.T) {
+	serverAddr, cleanup := startDatagramEchoServer(t, nil, true) // no validator, enforce
+	defer cleanup()
+
+	client := NewQUICClient(Config{
+		Host:  "127.0.0.1",
+		Port:  serverAddr.Port,
+		UDID:  "some-device",
+		Token: "some-token",
+	})
+	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pconn, err := client.DialUDP(ctx, "8.8.8.8:53")
+	if err != nil {
+		return // rejected outright, as required
+	}
+	defer pconn.Close()
+
+	if _, err := pconn.WriteTo([]byte("ping"), nil); err != nil {
+		return
+	}
+	buf := make([]byte, 4096)
+	pconn.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
+	if _, _, err := pconn.ReadFrom(buf); err == nil {
+		t.Fatal("SECURITY REGRESSION: enforce=on with no validator configured proxied traffic — the node claims enforcement it does not perform")
 	}
 }
 

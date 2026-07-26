@@ -72,6 +72,8 @@ type Server struct {
 
 Note: `wire.ReverseProxy` is a function (not a type) — called for non-ECH SNIs to camouflage as the real target site.
 
+**The camouflage relay is the one egress path that never passes device auth**, so its target must never be attacker-chosen. A non-ECH connection is relayed only if its SNI is in `trustedSNIs`, and `learnOuterSNI` admits exactly one name: `s.camouflageName`, the `public_name` of the node's own ECH config. Real clients always send that (uTLS forces outer SNI = public_name, spec §3.1), so the pin is free. Without it, anyone holding the node's ECH config — it ships in the `k2v5://` URL, so every current and *former* user has one — could teach the node an arbitrary string and get a raw TCP relay to `<string>:443`, reaching even reserved IPs that `ProxyHandler.checkAddr` blocks on the authenticated path.
+
 ## Lifecycle
 
 1. `New(cfg)` → create server, run `setupAutoProvision` if CertDir set

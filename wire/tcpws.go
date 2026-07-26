@@ -822,7 +822,14 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 	// permissive mode even when validation fails).
 	dev.set(meta.UDID) // self-reported (unvalidated) — attribution, see spec §8
 
-	authed := s.validate == nil || s.validate(meta.Token, meta.UDID, meta.Mode)
+	// A nil validator means no auth backend is configured (tests, embedders).
+	// That may authenticate everyone in permissive mode, where the verdict only
+	// feeds attribution — but never under enforce, or the gate would be a no-op
+	// on a misconfigured node. Mirrors QUICServer.handleMetadataStream.
+	authed := !s.adm.enforce
+	if s.validate != nil {
+		authed = s.validate(meta.Token, meta.UDID, meta.Mode)
+	}
 	auth.settle(authed)
 
 	if !authed {

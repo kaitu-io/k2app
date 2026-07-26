@@ -40,6 +40,10 @@ type Server struct {
 	// echConfig is the ECH config list bytes (for distribution to clients).
 	echConfig []byte
 
+	// camouflageName is this node's cover domain — the `public_name` of its own
+	// ECH config. It is the ONLY outer SNI learnOuterSNI will trust; see there.
+	camouflageName string
+
 	// trustedSNIs holds outer SNIs learned from successful ECH connections.
 	// Key: outer SNI domain, Value: last seen time.
 	// Entries expire after trustedSNITTL. Max trustedSNIMax entries.
@@ -107,6 +111,7 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		}
 
 		// Legacy ECH: single combined key+config file.
+		s.camouflageName = cfg.ECH.PublicName
 		if cfg.ECH.KeyPath != "" {
 			echKeys, echConfig, err := wire.EnsureECHKey(cfg.ECH.KeyPath, cfg.ECH.PublicName)
 			if err != nil {
@@ -151,6 +156,14 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		// clients would otherwise fire one Center request per new connection.
 		validator = wire.CachingValidator(validator, cfg.Auth.CacheTTL)
 	} else {
+		// The accept-all fallback admits any two non-empty strings. Combined with
+		// enforce that is the worst possible state: the node logs that it enforces
+		// device auth while admitting everyone. Refuse to start rather than report
+		// an enforcement the node does not perform.
+		if cfg.Auth.EnforceAuth {
+			return nil, fmt.Errorf("auth: enforce_auth is on but no validator is configured — " +
+				"set auth.users_file or auth.remote_url, else the accept-all fallback admits any non-empty udid/token")
+		}
 		slog.Info("server: auth chain", "mode", "accept-all")
 		validator = func(jwt, udid, mode string) bool {
 			return jwt != "" && udid != ""
@@ -218,6 +231,9 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 	if cfg.ECH.PublicName != "" {
 		publicName = cfg.ECH.PublicName // explicit override
 	}
+	// Same name is the camouflage identity: the cover site we impersonate, the
+	// only outer SNI real clients send, and so the only one learnOuterSNI trusts.
+	s.camouflageName = publicName
 	var profile *wire.TargetProfile
 	if publicName != "" {
 		profile, err = wire.ProbeTarget(publicName)
@@ -621,8 +637,23 @@ func (s *Server) handleRawTCP(conn net.Conn) {
 // learnOuterSNI records an outer SNI from a successful ECH connection.
 // The SNI is added to trustedSNIs with the current timestamp.
 // Expired entries are evicted, and the map is capped at trustedSNIMax.
+//
+// Only this node's own camouflage domain is admitted. The outer SNI is chosen
+// by the client, and a trusted SNI makes handleRawTCP relay raw TCP to
+// <SNI>:443 — a path that never passes the device-auth admission gate and,
+// unlike the proxy handler, applies no isReservedIP check. Without this pin,
+// anyone holding the node's ECH config (it ships inside the k2v5:// URL, so
+// every current and former user has one, revoked devices included) could learn
+// an arbitrary string and turn the node into an open TCP relay, reaching even
+// its own private network. Pinning costs legitimate traffic nothing: uTLS
+// forces a real client's outer SNI to the ECH config's public_name (spec §3.1).
 func (s *Server) learnOuterSNI(sni string) {
 	if sni == "" {
+		return
+	}
+	if s.camouflageName == "" || !strings.EqualFold(sni, s.camouflageName) {
+		slog.Warn("server: refusing to trust unexpected outer SNI",
+			"sni", sni, "expected", s.camouflageName)
 		return
 	}
 	s.trustedSNIMu.Lock()
