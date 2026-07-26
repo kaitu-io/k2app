@@ -137,7 +137,7 @@ func TestContract_NormalTCPviaQUIC_UDPviaDatagram(t *testing.T) {
 func TestContract_QUICBlocked_FallbackTCPWS(t *testing.T) {
 	tcpwsCalled := false
 
-	qc := NewQUICClient(Config{}, nil)
+	qc := NewQUICClient(Config{})
 	qc.closed = true // force DialTCP to fail
 	qc.handshakeFailStreak.Store(quicConnFailThreshold)
 
@@ -274,7 +274,7 @@ func TestContract_DatagramLossHigh_DegradeToStream(t *testing.T) {
 // WiFi to cellular) resets all transport state and gives QUIC a fresh chance.
 // User scenario: user walks out of office WiFi to cellular.
 func TestContract_NetworkSwitch_ResetAll(t *testing.T) {
-	qc := NewQUICClient(Config{}, nil)
+	qc := NewQUICClient(Config{})
 	qc.handshakeFailStreak.Store(5)
 
 	tm := NewTransportManager()

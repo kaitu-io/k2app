@@ -42,7 +42,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 ## Files
 
 - `wire.go` — Dialer/Listener/UDPHandler interfaces, `WireStats`/`StatsProvider`, Config, `ParseURL()`
-- `auth.go` — `TicketStore` (1h TTL, 30s grace), `AuthHandler` (JWT full + ticket)
+- `auth.go` — `JWTValidator` type: the single device-auth abstraction for BOTH transports. Auth rides the metadata stream (StreamType 0x10), validated by `handleMetadataStream` in `quic.go`/`tcpws.go`; the enforce gate (`SetEnforce`, env `K2_ENFORCE_AUTH`, default permissive) rejects unauthenticated proxy streams on both. Validators: `auth_users.go` (`NewUsersFileValidator`, `ChainValidators`), `auth_remote.go` (`NewRemoteValidator` → Center `POST /slave/device-check-auth` with `Basic ipv4:NodeSecret`), `auth_cache.go` (`CachingValidator`, TTL, success-only). **The old ticket flow (spec §4 `POST /k2v5/auth` + `TicketStore`) was never wired end-to-end and was removed 2026-07 — do not reintroduce it.**
 - `auth_info.go` — `AuthInfo` (UDID+Token), `EnsureAuth()` (load or generate credentials)
 - `ech.go` — ECH key management (generate, save/load, rotation, migration), `BuildClientTLSConfig`, SNI peek, reverse proxy
 - `ech_provider.go` — `ECHProvider` interface, `LocalECHProvider` (Cloudflare DNS HTTPS fetch), `ParseECHConfigBytes`, `GenerateECHKeyFromTemplate`, 3-tier fallback

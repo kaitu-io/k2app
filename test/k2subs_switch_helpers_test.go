@@ -91,9 +91,9 @@ func (f *fakeSubsServer) SetRefresh(secs int) {
 	f.mu.Unlock()
 }
 
-func (f *fakeSubsServer) FailNext()           { f.failNext.Store(true) }
-func (f *fakeSubsServer) FailAll(on bool)     { f.failAll.Store(on) }
-func (f *fakeSubsServer) Fetches() int64      { return f.fetches.Load() }
+func (f *fakeSubsServer) FailNext()                { f.failNext.Store(true) }
+func (f *fakeSubsServer) FailAll(on bool)          { f.failAll.Store(on) }
+func (f *fakeSubsServer) Fetches() int64           { return f.fetches.Load() }
 func (f *fakeSubsServer) HTTPClient() *http.Client { return f.srv.Client() }
 
 func (f *fakeSubsServer) QuerySnapshot() []string {
@@ -163,7 +163,7 @@ func (f *fakeWireSetup) BuiltTM(url string) *wire.TransportManager {
 // Install replaces engine.setupOutboundTransportFn for the duration of t.
 func (f *fakeWireSetup) Install(t *testing.T) {
 	t.Helper()
-	stub := func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string) (*engine.OutboundTransportShape, wire.Dialer, error) {
+	stub := func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string, clientVersion string) (*engine.OutboundTransportShape, wire.Dialer, error) {
 		f.mu.Lock()
 		f.setupLog = append(f.setupLog, via)
 		failErr := f.failURLs[via]
@@ -222,10 +222,20 @@ type k2subsFixture struct {
 func newK2subsFixture(t *testing.T, initialTunnels []config.Tunnel) *k2subsFixture {
 	t.Helper()
 
+	// Snapshot goroutines already alive at fixture setup so VerifyNone flags
+	// only leaks introduced by THIS test. Without this, goroutines leaked by
+	// earlier tests in the same `package test` binary (notably the pion/ice +
+	// mdns + quic-go stack from k2p_e2e, whose recvLoops linger after the QUIC
+	// layer closes) would be attributed to whichever k2subs test's goleak runs
+	// next. IgnoreCurrent is the right tool here — a blanket function ignore
+	// can't be used because the leaked set includes k2's own `safego.Go`
+	// goroutines, and ignoring those would mask real k2subs leaks.
+	ignoreExisting := goleak.IgnoreCurrent()
 	// Register goleak first → runs last (LIFO) → catches leaks after
 	// every other cleanup has settled.
 	t.Cleanup(func() {
 		goleak.VerifyNone(t,
+			ignoreExisting,
 			// HTTP/2 transport idle conn keepalive — released as the
 			// httptest.Server's idle conns close. Sometimes lingers a few ms
 			// after Close(); harmless.

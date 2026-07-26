@@ -262,7 +262,7 @@ func TestCloseSmuxSessionSafe_NilGuard(t *testing.T) {
 // as a regression guard for the fast-cancel path and connectMu release.
 // The quicDialHardTimeout bounds test ensures the timeout constant stays sane.
 func TestQUICClient_ConnectMu_NotStarved(t *testing.T) {
-	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1}, nil)
+	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1})
 
 	// Attempt connect with an immediately-cancelled context.
 	// This triggers the transport.Dial → ctx.Done → Conn.destroy path.
@@ -319,7 +319,7 @@ func TestTCPWSClient_ConnectOnClosed_NoWastedDial(t *testing.T) {
 	// Non-routable target — if connect() actually dials, this test will take
 	// ~10s (tcpwsConnectTimeout). The fast-fail path returns in <100ms.
 	cfg := Config{Host: "192.0.2.1", Port: 443}
-	tc := NewTCPWSClient(cfg, nil)
+	tc := NewTCPWSClient(cfg)
 	_ = tc.Close() // mark client closed before any connect attempt
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -353,7 +353,7 @@ func TestTCPWSClient_ConnectOnClosed_NoWastedDial(t *testing.T) {
 func TestTCPWSClient_ConnectSingleFlight_CollapsesSlowDials(t *testing.T) {
 	const delay = 1500 * time.Millisecond
 	cfg := Config{Host: "192.0.2.1", Port: 443}
-	tc := NewTCPWSClient(cfg, nil)
+	tc := NewTCPWSClient(cfg)
 	tc.SetDirectDialer(&blockingDialer{delay: delay})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -414,7 +414,7 @@ func TestTCPWSClient_ConnectSingleFlight_NoStarvation(t *testing.T) {
 	}
 	// Use a non-routable IP to trigger TCP SYN timeout.
 	cfg := Config{Host: "192.0.2.1", Port: 443} // TEST-NET-1, guaranteed non-routable
-	tc := NewTCPWSClient(cfg, nil)
+	tc := NewTCPWSClient(cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), tcpwsConnectTimeout+5*time.Second)
 	defer cancel()

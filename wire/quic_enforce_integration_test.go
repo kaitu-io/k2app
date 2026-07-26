@@ -36,7 +36,7 @@ func TestIntegration_QUICEnforce_ForgedTokenRejected(t *testing.T) {
 	}
 	defer ln.Close()
 
-	server := NewQUICServer(NewTicketStore())
+	server := NewQUICServer()
 	server.SetValidator(func(jwt, udid, mode string) bool {
 		return udid == "good-device" && jwt == "valid-token"
 	})
@@ -71,7 +71,7 @@ func TestIntegration_QUICEnforce_ForgedTokenRejected(t *testing.T) {
 			Port:  serverAddr.Port,
 			UDID:  udid,
 			Token: token,
-		}, NewTicketStore())
+		})
 		client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
 		defer client.Close()
 
@@ -121,7 +121,7 @@ func TestIntegration_QUICEnforce_PermissiveServesUnauthenticated(t *testing.T) {
 	}
 	defer ln.Close()
 
-	server := NewQUICServer(NewTicketStore())
+	server := NewQUICServer()
 	server.SetValidator(func(jwt, udid, mode string) bool { return false }) // reject everyone
 	server.SetEnforce(false)                                                // permissive
 	server.Listen(ln)
@@ -146,7 +146,7 @@ func TestIntegration_QUICEnforce_PermissiveServesUnauthenticated(t *testing.T) {
 	serverAddr := serverUDP.LocalAddr().(*net.UDPAddr)
 	client := NewQUICClient(Config{
 		Host: "127.0.0.1", Port: serverAddr.Port, UDID: "legacy", Token: "whatever",
-	}, NewTicketStore())
+	})
 	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
 	defer client.Close()
 

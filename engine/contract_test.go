@@ -22,7 +22,7 @@ import (
 // Reconnecting would kill the active video stream for no benefit.
 func TestContract_PoorSignal_TCPHealthGate(t *testing.T) {
 	// Set up a real TransportManager with a QUICClient that has recent TCP success.
-	qc := wire.NewQUICClient(wire.Config{}, nil)
+	qc := wire.NewQUICClient(wire.Config{})
 	qc.RecordTCPSuccess() // marks TCP as recently healthy
 
 	tm := wire.NewTransportManager()
@@ -144,7 +144,7 @@ func TestContract_StreamError_IsTarget(t *testing.T) {
 // boundary. If TCP success was too long ago, reconnect should be allowed.
 func TestContract_PoorSignal_TCPHealthGate_Timing(t *testing.T) {
 	// QUICClient with NO recent TCP success (default zero value).
-	qc := wire.NewQUICClient(wire.Config{}, nil)
+	qc := wire.NewQUICClient(wire.Config{})
 	// Do NOT call RecordTCPSuccess — lastTCPSuccessAt stays 0.
 
 	tm := wire.NewTransportManager()

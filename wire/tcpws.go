@@ -19,9 +19,9 @@ import (
 	"github.com/sasha-s/go-deadlock"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/coder/websocket"
 	utls "github.com/metacubex/utls"
 	smux "github.com/xtaci/smux/v2"
-	"github.com/coder/websocket"
 )
 
 // Compile-time interface checks.
@@ -97,10 +97,10 @@ func (c *smuxStreamConn) Close() error {
 // TCPWSClient is the TCP-WS + smux client transport.
 //
 // Connection flow (production mode):
-//   1. TCP dial to server:port
-//   2. uTLS handshake with fingerprint (chrome/firefox/safari/random)
-//   3. WebSocket upgrade to /k2v5/tunnel over TLS connection
-//   4. smux session multiplexing over WebSocket binary frames
+//  1. TCP dial to server:port
+//  2. uTLS handshake with fingerprint (chrome/firefox/safari/random)
+//  3. WebSocket upgrade to /k2v5/tunnel over TLS connection
+//  4. smux session multiplexing over WebSocket binary frames
 //
 // The uTLS library allows fingerprint customization to evade DPI detection.
 // ECH (Encrypted Client Hello) config is passed through to hide the real SNI.
@@ -108,7 +108,6 @@ func (c *smuxStreamConn) Close() error {
 // Test mode: SetTestConn bypasses TCP+TLS+WS and uses a direct net.Conn for smux.
 type TCPWSClient struct {
 	cfg          Config
-	store        *TicketStore
 	serverAddr   string
 	tlsConfig    *tls.Config // override for testing
 	testConn     net.Conn    // override for testing (bypasses TCP+TLS+WS)
@@ -118,9 +117,9 @@ type TCPWSClient struct {
 	connectSF singleflight.Group // dedupes concurrent connect attempts without held lock
 	initUDPMu deadlock.Mutex     // serializes UDP mux lazy init; ordering: initUDPMu → mu
 	sess      *smux.Session
-	udpMux *smuxUDPMux
-	alloc  *SessionIDAllocator
-	closed bool
+	udpMux    *smuxUDPMux
+	alloc     *SessionIDAllocator
+	closed    bool
 }
 
 // WireStats returns a snapshot of TCP-WS transport metrics.
@@ -134,14 +133,13 @@ var (
 )
 
 // NewTCPWSClient creates a new TCP-WS client transport.
-func NewTCPWSClient(cfg Config, store *TicketStore) *TCPWSClient {
+func NewTCPWSClient(cfg Config) *TCPWSClient {
 	dialHost := cfg.Host
 	if cfg.DialAddr != "" {
 		dialHost = cfg.DialAddr
 	}
 	return &TCPWSClient{
 		cfg:        cfg,
-		store:      store,
 		serverAddr: net.JoinHostPort(dialHost, strconv.Itoa(cfg.Port)),
 	}
 }
@@ -246,11 +244,13 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 	return v.(*smux.Session), nil
 }
 
-// sendMetadataBestEffort opens a metadata stream and sends credentials + mode,
-// mirroring QUIC's sendMetadata for device attribution. Unlike QUIC, TCP-WS
-// auth already happened at the HTTP layer (/k2v5/auth), so this is purely
-// for the server's per-session deviceIDHolder — every failure is logged and
-// swallowed, never surfaced to the caller of connect().
+// sendMetadataBestEffort opens the metadata stream and sends credentials + mode,
+// mirroring QUIC's sendMetadata. This IS the device-auth carrier for TCP-WS
+// (there is no separate HTTP auth handshake — that ticket flow was never wired
+// and is gone): the server validates the metadata and, under enforce, gates
+// proxy streams on it. Sending is best-effort — a failure here is logged and
+// swallowed, never surfaced to connect() — because the enforce/permissive
+// decision belongs to the server, not the client's connect path.
 //
 // TCP-WS frames carry no H3 marker (unlike QUIC's WriteH3ProxyFrameType) —
 // that's an existing protocol difference between the two transports, not an
@@ -655,7 +655,13 @@ func (c *TCPWSClient) Close() error {
 
 // TCPWSServer is the TCP-WS + smux server transport.
 type TCPWSServer struct {
-	store *TicketStore
+	// Device-auth state, mirroring QUICServer. The metadata stream (StreamType
+	// 0x10) authenticates the session; under enforce, unauthenticated proxy
+	// streams are rejected. Both are immutable after construction/SetX (called
+	// before HandleConn), so no lock is needed on the read path.
+	validate JWTValidator
+	enforce  bool
+	authWait time.Duration
 
 	mu    deadlock.Mutex
 	tcpCh chan tcpAcceptResult
@@ -664,12 +670,60 @@ type TCPWSServer struct {
 }
 
 // NewTCPWSServer creates a new TCP-WS server transport.
-func NewTCPWSServer(store *TicketStore) *TCPWSServer {
+func NewTCPWSServer() *TCPWSServer {
 	return &TCPWSServer{
-		store: store,
-		tcpCh: make(chan tcpAcceptResult, 64),
-		done:  make(chan struct{}),
+		authWait: authWaitDefault,
+		tcpCh:    make(chan tcpAcceptResult, 64),
+		done:     make(chan struct{}),
 	}
+}
+
+// SetValidator sets the JWTValidator used by metadata stream auth. Must be
+// called before HandleConn/HandleSession. Mirrors QUICServer.SetValidator so a
+// node authenticates identically on both transports.
+func (s *TCPWSServer) SetValidator(v JWTValidator) {
+	s.validate = v
+}
+
+// SetEnforce toggles TCP-WS device-auth enforcement. When false (default,
+// permissive) an unauthenticated session is still served — attribution is
+// recorded but the connection is never blocked, so legacy clients that predate
+// metadata auth keep working during rollout. When true, proxy streams on a
+// session that failed (or never sent) metadata auth are rejected. This is the
+// same K2_ENFORCE_AUTH flag that governs QUIC: enforcement must cover BOTH
+// transports, else an attacker forces TCP-WS fallback to bypass QUIC auth.
+func (s *TCPWSServer) SetEnforce(v bool) {
+	s.enforce = v
+}
+
+// tcpwsSessionAuth holds per-smux-session auth state for the enforce gate.
+// Mirrors the auth fields of QUICServer.connContext: authOK is the metadata
+// validation result; authDone is closed once the metadata stream is processed
+// (success, failure, or parse error) so a proxy stream that raced ahead of the
+// metadata stream waits for the verdict instead of being wrongly rejected.
+type tcpwsSessionAuth struct {
+	authOK   atomic.Bool
+	authDone chan struct{}
+	authOnce sync.Once
+}
+
+// proxyAuthorized is the admission gate for TCP-WS proxy streams (TCP/UDP
+// egress), identical in semantics to QUICServer.proxyAuthorized. Permissive
+// mode never blocks; enforce mode admits only sessions whose metadata stream
+// authenticated, waiting up to authWait for a metadata stream the server may
+// have accepted after the proxy stream.
+func (s *TCPWSServer) proxyAuthorized(auth *tcpwsSessionAuth) bool {
+	if !s.enforce {
+		return true
+	}
+	if auth.authOK.Load() {
+		return true
+	}
+	select {
+	case <-auth.authDone:
+	case <-time.After(s.authWait):
+	}
+	return auth.authOK.Load()
 }
 
 // HandleConn processes a new TCP-WS client connection.
@@ -705,6 +759,7 @@ func (s *TCPWSServer) HandleSession(sess *smux.Session) {
 func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, remote net.Addr) {
 	defer sess.Close()
 	dev := &deviceIDHolder{}
+	auth := &tcpwsSessionAuth{authDone: make(chan struct{})}
 	for {
 		stream, err := sess.AcceptStream()
 		if err != nil {
@@ -716,12 +771,12 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 					connLog.Error("TCPWSServer: panic in handleStream", "panic", r)
 				}
 			}()
-			s.handleStream(stream, connLog, remote, dev)
+			s.handleStream(sess, stream, connLog, remote, dev, auth)
 		}()
 	}
 }
 
-func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder) {
+func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder, auth *tcpwsSessionAuth) {
 	br := bufio.NewReader(stream)
 
 	streamType, addr, err := ReadStreamHeader(br)
@@ -732,25 +787,72 @@ func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, re
 
 	switch streamType {
 	case StreamTypeMeta:
-		// TCP-WS auth happens at HTTP level (/k2v5/auth with X-K2-Mode header).
-		// Metadata stream on TCP-WS is accepted for protocol symmetry but not validated here.
-		meta, err := ReadMetadataFrame(br)
-		if err != nil {
+		s.handleMetadataStream(sess, stream, br, connLog, dev, auth)
+	case StreamTypeTCP:
+		if !s.proxyAuthorized(auth) {
+			connLog.Warn("TCPWSServer.handleStream: TCP rejected (enforce: unauthenticated)", "addr", addr)
+			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
 			stream.Close()
 			return
 		}
-		slog.Info("TCPWSServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode)
-		dev.set(meta.UDID)               // self-reported (unvalidated) — attribution only, see spec §8
-		WriteStreamResponse(stream, nil) // OK
-		stream.Close()
-	case StreamTypeTCP:
 		sc := &smuxStreamConn{Stream: stream, br: br, remoteAddr: remote, dev: dev}
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
 	case StreamTypeUDP:
+		if !s.proxyAuthorized(auth) {
+			connLog.Warn("TCPWSServer.handleStream: UDP rejected (enforce: unauthenticated)")
+			stream.Close()
+			return
+		}
 		s.handleUDPStream(stream, br, connLog, remote, dev)
 	default:
 		stream.Close()
 	}
+}
+
+// handleMetadataStream processes a TCP-WS connection metadata stream (StreamType
+// 0x10). Mirrors QUICServer.handleMetadataStream: attribution (udid) is applied
+// regardless of the validation result — the udid is self-reported and used for
+// traffic accounting. The validation result drives the enforce gate: under
+// enforce a failed or absent auth tears down the session; under permissive it is
+// recorded but the session is served (rollout requirement — legacy clients send
+// unvalidated metadata). authDone is always signalled so a proxy stream waiting
+// on the gate unblocks.
+func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, dev *deviceIDHolder, auth *tcpwsSessionAuth) {
+	defer auth.authOnce.Do(func() { close(auth.authDone) })
+
+	meta, err := ReadMetadataFrame(br)
+	if err != nil {
+		connLog.Warn("TCPWSServer: metadata stream parse failed", "err", err)
+		WriteStreamResponse(stream, fmt.Errorf("bad metadata"))
+		stream.Close()
+		return
+	}
+
+	connLog.Info("TCPWSServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "version", meta.Version)
+
+	// Attribution first, independent of auth outcome (accounting must work in
+	// permissive mode even when validation fails).
+	dev.set(meta.UDID) // self-reported (unvalidated) — attribution, see spec §8
+
+	authed := s.validate == nil || s.validate(meta.Token, meta.UDID, meta.Mode)
+	auth.authOK.Store(authed)
+
+	if !authed {
+		connLog.Warn("TCPWSServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "enforce", s.enforce)
+		if s.enforce {
+			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+			stream.Close()
+			sess.Close() // tear the session, mirroring QUIC's CloseWithError
+			return
+		}
+		// Permissive: accept, attribution recorded, no block.
+		WriteStreamResponse(stream, nil)
+		stream.Close()
+		return
+	}
+
+	WriteStreamResponse(stream, nil) // OK
+	stream.Close()
 }
 
 // runSmuxUDPHandler invokes handler.HandleUDP and removes the session from
@@ -899,25 +1001,25 @@ func (s *TCPWSServer) Close() error {
 // Design (mirror of serverSmuxWriter for stream-level isolation; see
 // commit 17e06b1 for jp01 May 2026 incident and rationale):
 //
-//   1. writeMu is sync.Mutex (NOT deadlock.Mutex). It is a serialization
-//      lock that legitimately holds across smux.Stream.Write, which may
-//      block under peer-window flow control when the server's
-//      handleUDPStream main loop stalls (server-side fix in deliver()
-//      mitigates the most common cause but does not eliminate it).
-//      deadlock.Mutex's 30/60s watchdog would mis-detect this as a
-//      deadlock and trigger os.Exit(2) on desktop production builds (which
-//      do NOT carry -tags=deadlock_disable) — the v0.4.4 daemon-FATAL
-//      root cause this fix exists for.
+//  1. writeMu is sync.Mutex (NOT deadlock.Mutex). It is a serialization
+//     lock that legitimately holds across smux.Stream.Write, which may
+//     block under peer-window flow control when the server's
+//     handleUDPStream main loop stalls (server-side fix in deliver()
+//     mitigates the most common cause but does not eliminate it).
+//     deadlock.Mutex's 30/60s watchdog would mis-detect this as a
+//     deadlock and trigger os.Exit(2) on desktop production builds (which
+//     do NOT carry -tags=deadlock_disable) — the v0.4.4 daemon-FATAL
+//     root cause this fix exists for.
 //
-//   2. Each Write has a deadline (streamWriteDeadline = 5s). If the write
-//      does not complete in that window, the stream is treated as dead:
-//      smux.Stream is Close()d, future writeFrame calls fast-fail via the
-//      dead flag without queueing on the mutex.
+//  2. Each Write has a deadline (streamWriteDeadline = 5s). If the write
+//     does not complete in that window, the stream is treated as dead:
+//     smux.Stream is Close()d, future writeFrame calls fast-fail via the
+//     dead flag without queueing on the mutex.
 //
-//   3. Failure stays at mux level. Stream.Close cascades through smux:
-//      ReadSmuxUDPFrame returns ErrClosedPipe → readLoop exits and closes
-//      m.done → smuxUDPConn.ReadFrom returns net.ErrClosed. Consumers
-//      naturally unwind; TCPWSClient rebuilds a fresh mux on next DialUDP.
+//  3. Failure stays at mux level. Stream.Close cascades through smux:
+//     ReadSmuxUDPFrame returns ErrClosedPipe → readLoop exits and closes
+//     m.done → smuxUDPConn.ReadFrom returns net.ErrClosed. Consumers
+//     naturally unwind; TCPWSClient rebuilds a fresh mux on next DialUDP.
 type smuxUDPMux struct {
 	stream      *smux.Stream
 	br          *bufio.Reader
@@ -1172,10 +1274,10 @@ func (c *smuxUDPConn) Close() error {
 	return nil
 }
 
-func (c *smuxUDPConn) LocalAddr() net.Addr                    { return c.mux.stream.LocalAddr() }
-func (c *smuxUDPConn) SetDeadline(t time.Time) error          { c.rd.set(t); return nil }
-func (c *smuxUDPConn) SetReadDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *smuxUDPConn) SetWriteDeadline(time.Time) error       { return nil }
+func (c *smuxUDPConn) LocalAddr() net.Addr               { return c.mux.stream.LocalAddr() }
+func (c *smuxUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *smuxUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *smuxUDPConn) SetWriteDeadline(time.Time) error  { return nil }
 
 // ============================================================================
 // Server-side smux UDP stream writer (shared, mutex-protected)
@@ -1290,7 +1392,7 @@ var _ UDPSessionInfo = (*smuxServerUDPConn)(nil)
 
 func (c *smuxServerUDPConn) UDPSessionID() uint32  { return c.sessionID }
 func (c *smuxServerUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
-func (c *smuxServerUDPConn) Logger() *slog.Logger   { return c.log }
+func (c *smuxServerUDPConn) Logger() *slog.Logger  { return c.log }
 
 // DeviceID implements ConnDeviceID. Returns "" if no holder is wired
 // (defensive) or if the metadata stream hasn't landed yet.
@@ -1353,7 +1455,7 @@ func (c *smuxServerUDPConn) Close() error {
 	return nil
 }
 
-func (c *smuxServerUDPConn) LocalAddr() net.Addr                    { return c.writer.stream.LocalAddr() }
-func (c *smuxServerUDPConn) SetDeadline(t time.Time) error          { c.rd.set(t); return nil }
-func (c *smuxServerUDPConn) SetReadDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *smuxServerUDPConn) SetWriteDeadline(time.Time) error       { return nil }
+func (c *smuxServerUDPConn) LocalAddr() net.Addr               { return c.writer.stream.LocalAddr() }
+func (c *smuxServerUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *smuxServerUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *smuxServerUDPConn) SetWriteDeadline(time.Time) error  { return nil }

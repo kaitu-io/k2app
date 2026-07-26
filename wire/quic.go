@@ -244,7 +244,7 @@ func DefaultQUICConfig() *quic.Config {
 		MaxIdleTimeout:                 30 * time.Second,
 		KeepAlivePeriod:                10 * time.Second,
 		MaxIncomingStreams:             quicMaxStreams,
-		InitialPacketSize:             1400,
+		InitialPacketSize:              1400,
 	}
 }
 
@@ -320,7 +320,6 @@ func (c *quicStreamConn) Close() error {
 // QUICClient is the QUIC/H3 client transport.
 type QUICClient struct {
 	cfg          Config
-	store        *TicketStore
 	serverAddr   string
 	hopStart     int
 	hopEnd       int
@@ -335,23 +334,22 @@ type QUICClient struct {
 	alloc     *SessionIDAllocator
 	udpMux    *quicUDPMux
 	closed    bool
-	ccSender *k2cc.K2CCSender // stored for stats access
+	ccSender  *k2cc.K2CCSender // stored for stats access
 
-	portHopAttempts    atomic.Int32 // hop attempts before TCP-WS fallback
-	portHopExhaustedAt atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
-	lastTCPSuccessAt   atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
+	portHopAttempts     atomic.Int32 // hop attempts before TCP-WS fallback
+	portHopExhaustedAt  atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
+	lastTCPSuccessAt    atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
 	handshakeFailStreak atomic.Int32 // consecutive connect() handshake failures across different hop ports
 }
 
 // NewQUICClient creates a new QUIC client transport.
-func NewQUICClient(cfg Config, store *TicketStore) *QUICClient {
+func NewQUICClient(cfg Config) *QUICClient {
 	dialHost := cfg.Host
 	if cfg.DialAddr != "" {
 		dialHost = cfg.DialAddr
 	}
 	return &QUICClient{
 		cfg:        cfg,
-		store:      store,
 		serverAddr: net.JoinHostPort(dialHost, strconv.Itoa(cfg.Port)),
 		hopStart:   cfg.HopStart,
 		hopEnd:     cfg.HopEnd,
@@ -1113,17 +1111,16 @@ type tcpAcceptResult struct {
 	err  error
 }
 
-// quicAuthWaitDefault bounds how long a proxy stream waits for a late metadata
+// authWaitDefault bounds how long a proxy stream waits for a late metadata
 // stream under enforce before deciding the connection is unauthenticated. The
 // client sends metadata synchronously inside connect() before any proxy stream,
 // so on the wire metadata always precedes proxy streams; this only covers the
 // server accepting the two streams out of order. Kept short so a legacy client
 // (which never sends metadata) isn't stalled long before rejection.
-const quicAuthWaitDefault = 500 * time.Millisecond
+const authWaitDefault = 500 * time.Millisecond
 
 // QUICServer is the QUIC/H3 server transport.
 type QUICServer struct {
-	store    *TicketStore
 	validate JWTValidator // set by SetValidator; used by metadata stream auth
 	enforce  bool         // set by SetEnforce; when true, unauthenticated proxy streams are rejected
 	authWait time.Duration
@@ -1136,12 +1133,11 @@ type QUICServer struct {
 }
 
 // NewQUICServer creates a new QUIC server transport.
-func NewQUICServer(store *TicketStore) *QUICServer {
+func NewQUICServer() *QUICServer {
 	return &QUICServer{
-		store:    store,
 		tcpCh:    make(chan tcpAcceptResult, 64),
 		done:     make(chan struct{}),
-		authWait: quicAuthWaitDefault,
+		authWait: authWaitDefault,
 	}
 }
 
@@ -1601,12 +1597,12 @@ type quicUDPMux struct {
 	lastActive  map[uint32]*atomic.Int64 // unix seconds per session
 	done        chan struct{}
 	started     bool
-	streamMux  *quicStreamUDPMux // stream-based UDP fallback
-	overflow   *udpOverflowStream // per-packet overflow for oversized datagrams
+	streamMux   *quicStreamUDPMux  // stream-based UDP fallback
+	overflow    *udpOverflowStream // per-packet overflow for oversized datagrams
 
 	// Datagram health tracking: consecutive ReadFrom timeouts indicate
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
-	relayTimeouts atomic.Int32
+	relayTimeouts      atomic.Int32
 	clientHopAttempts  *atomic.Int32 // shared with QUICClient; nil on server/tests
 	clientHopExhausted *atomic.Int64 // shared with QUICClient; nil on server/tests
 
@@ -1919,10 +1915,10 @@ func (c *quicUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicUDPConn) LocalAddr() net.Addr                { return c.qconn.LocalAddr() }
-func (c *quicUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *quicUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
-func (c *quicUDPConn) SetWriteDeadline(time.Time) error    { return nil }
+func (c *quicUDPConn) LocalAddr() net.Addr               { return c.qconn.LocalAddr() }
+func (c *quicUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *quicUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *quicUDPConn) SetWriteDeadline(time.Time) error  { return nil }
 
 // ============================================================================
 // Server-side PacketConn for UDP sessions
@@ -1932,7 +1928,7 @@ type serverUDPConn struct {
 	qconn        datagramSender
 	sessionID    uint32
 	addr         string
-	remoteAddr   string // client IP:port for diagnostic attribution
+	remoteAddr   string       // client IP:port for diagnostic attribution
 	log          *slog.Logger // scoped logger with remote, sid, addr
 	readCh       chan []byte
 	done         chan struct{}
@@ -2068,10 +2064,10 @@ func (c *serverUDPConn) Close() error {
 	return nil
 }
 
-func (c *serverUDPConn) LocalAddr() net.Addr                { return c.qconn.LocalAddr() }
-func (c *serverUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *serverUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
-func (c *serverUDPConn) SetWriteDeadline(time.Time) error    { return nil }
+func (c *serverUDPConn) LocalAddr() net.Addr               { return c.qconn.LocalAddr() }
+func (c *serverUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *serverUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *serverUDPConn) SetWriteDeadline(time.Time) error  { return nil }
 
 // ============================================================================
 // Server-side QUIC stream writer (shared, mutex-protected)
@@ -2157,7 +2153,7 @@ var _ UDPSessionInfo = (*quicStreamServerUDPConn)(nil)
 
 func (c *quicStreamServerUDPConn) UDPSessionID() uint32  { return c.sessionID }
 func (c *quicStreamServerUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
-func (c *quicStreamServerUDPConn) Logger() *slog.Logger   { return c.log }
+func (c *quicStreamServerUDPConn) Logger() *slog.Logger  { return c.log }
 
 // DeviceID implements ConnDeviceID. Returns "" if no holder is wired
 // (defensive) or if the metadata stream hasn't landed yet.
@@ -2219,10 +2215,10 @@ func (c *quicStreamServerUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicStreamServerUDPConn) LocalAddr() net.Addr                { return &net.UDPAddr{} }
-func (c *quicStreamServerUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *quicStreamServerUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
-func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error    { return nil }
+func (c *quicStreamServerUDPConn) LocalAddr() net.Addr               { return &net.UDPAddr{} }
+func (c *quicStreamServerUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *quicStreamServerUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error  { return nil }
 
 // ============================================================================
 // Client-side stream-based UDP mux (fallback when datagrams not supported)
@@ -2242,7 +2238,7 @@ type quicStreamUDPMux struct {
 	writeMu     sync.Mutex // serialization, may hold across I/O
 	streamOnce  sync.Once  // guards stream.Close
 	dead        atomic.Bool
-	doneOnce    sync.Once  // guards close(done) — replaces ad-hoc select pattern
+	doneOnce    sync.Once // guards close(done) — replaces ad-hoc select pattern
 	mu          deadlock.Mutex
 	sessions    map[uint32]chan *UDPFrame
 	sessionDone map[uint32]chan struct{} // closed by reaper to notify quicStreamUDPConn
@@ -2468,7 +2464,7 @@ func (c *quicStreamUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicStreamUDPConn) LocalAddr() net.Addr                { return c.mux.qconn.LocalAddr() }
-func (c *quicStreamUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *quicStreamUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
-func (c *quicStreamUDPConn) SetWriteDeadline(time.Time) error    { return nil }
+func (c *quicStreamUDPConn) LocalAddr() net.Addr               { return c.mux.qconn.LocalAddr() }
+func (c *quicStreamUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *quicStreamUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *quicStreamUDPConn) SetWriteDeadline(time.Time) error  { return nil }

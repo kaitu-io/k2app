@@ -45,7 +45,7 @@ func TestTCPWSClient_Create(t *testing.T) {
 		ECH:         "dGVzdA==",
 		Fingerprint: "chrome",
 	}
-	tc := NewTCPWSClient(cfg, nil)
+	tc := NewTCPWSClient(cfg)
 	if tc == nil {
 		t.Fatal("NewTCPWSClient returned nil")
 	}
@@ -55,8 +55,7 @@ func TestTCPWSClient_Create(t *testing.T) {
 }
 
 func TestTCPWSServer_Create(t *testing.T) {
-	store := NewTicketStore()
-	ts := NewTCPWSServer(store)
+	ts := NewTCPWSServer()
 	if ts == nil {
 		t.Fatal("NewTCPWSServer returned nil")
 	}
@@ -72,11 +71,10 @@ func setupTCPWSPair(t *testing.T) (*TCPWSClient, *TCPWSServer, func()) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 
-	store := NewTicketStore()
-	server := NewTCPWSServer(store)
+	server := NewTCPWSServer()
 	server.HandleConn(serverConn)
 
-	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443}, store)
+	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443})
 	client.testConn = clientConn
 
 	cleanup := func() {
@@ -615,7 +613,7 @@ func TestTCPWSClient_uTLS_Handshake(t *testing.T) {
 				Fingerprint: tt.fingerprint,
 			}
 
-			client := NewTCPWSClient(cfg, nil)
+			client := NewTCPWSClient(cfg)
 			client.tlsConfig = &tls.Config{
 				ServerName:         host,
 				InsecureSkipVerify: true,
@@ -788,7 +786,7 @@ func TestTCPWSClient_FullFlow_WS(t *testing.T) {
 		Fingerprint: "chrome",
 	}
 
-	client := NewTCPWSClient(cfg, nil)
+	client := NewTCPWSClient(cfg)
 	client.tlsConfig = &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: true,
@@ -950,7 +948,7 @@ func TestTCPWSClient_DialUDP_WS(t *testing.T) {
 		Fingerprint: "chrome",
 	}
 
-	client := NewTCPWSClient(cfg, nil)
+	client := NewTCPWSClient(cfg)
 	client.tlsConfig = &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: true,
@@ -1070,7 +1068,7 @@ func TestTCPWSClient_ProbeContextCancellation(t *testing.T) {
 	defer srv.Close()
 
 	// Client
-	client := NewTCPWSClient(Config{Host: host, Port: port, Fingerprint: "chrome"}, nil)
+	client := NewTCPWSClient(Config{Host: host, Port: port, Fingerprint: "chrome"})
 	client.tlsConfig = &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: true,
@@ -1174,11 +1172,10 @@ func TestSmuxUDPMuxConcurrentClose(t *testing.T) {
 func TestTCPWSClient_DialUDP_AfterReset(t *testing.T) {
 	// Phase 1: initial setup + first DialUDP
 	clientConn1, serverConn1 := net.Pipe()
-	store := NewTicketStore()
-	server := NewTCPWSServer(store)
+	server := NewTCPWSServer()
 	server.HandleConn(serverConn1)
 
-	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443}, store)
+	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443})
 	client.testConn = clientConn1
 
 	received1 := make(chan string, 1)
@@ -1228,7 +1225,7 @@ func TestTCPWSClient_DialUDP_AfterReset(t *testing.T) {
 	client.mu.Unlock()
 
 	// Server needs new smux session on new pipe
-	server2 := NewTCPWSServer(store)
+	server2 := NewTCPWSServer()
 	server2.HandleConn(serverConn2)
 
 	received2 := make(chan string, 1)

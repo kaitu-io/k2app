@@ -14,8 +14,8 @@ import (
 // connection (e.g., from NAT-traversed hole punch). Initializes K2CC
 // congestion control, session allocator, and UDP mux — the same setup
 // that QUICClient.connect() does at wire/quic.go:453-472.
-func NewQUICClientFromConn(conn *quic.Conn, transport *quic.Transport, cfg Config, store *TicketStore) *QUICClient {
-	c := NewQUICClient(cfg, store)
+func NewQUICClientFromConn(conn *quic.Conn, transport *quic.Transport, cfg Config) *QUICClient {
+	c := NewQUICClient(cfg)
 
 	sender := k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate)
 	conn.SetCongestionControl(sender)
@@ -36,8 +36,8 @@ func NewQUICClientFromConn(conn *quic.Conn, transport *quic.Transport, cfg Confi
 // NewQUICServerFromListener creates a QUICServer and starts accepting
 // connections from the given listener. Convenience wrapper combining
 // NewQUICServer() + Listen().
-func NewQUICServerFromListener(ln *quic.Listener, store *TicketStore) *QUICServer {
-	s := NewQUICServer(store)
+func NewQUICServerFromListener(ln *quic.Listener) *QUICServer {
+	s := NewQUICServer()
 	s.Listen(ln)
 	return s
 }
@@ -45,8 +45,8 @@ func NewQUICServerFromListener(ln *quic.Listener, store *TicketStore) *QUICServe
 // NewQUICServerFromConn creates a QUICServer that handles an already-established
 // QUIC connection (e.g., after peer auth on a punched connection). Also starts
 // accepting new connections from ln for future peers.
-func NewQUICServerFromConn(conn *quic.Conn, ln *quic.Listener, store *TicketStore) *QUICServer {
-	s := NewQUICServer(store)
+func NewQUICServerFromConn(conn *quic.Conn, ln *quic.Listener) *QUICServer {
+	s := NewQUICServer()
 	go s.handleConn(conn)
 	if ln != nil {
 		s.Listen(ln)

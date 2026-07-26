@@ -37,8 +37,7 @@ func TestRaceTransport_QUIC443Wins(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := NewTicketStore()
-	qs := NewQUICServer(store)
+	qs := NewQUICServer()
 	qs.Listen(ln)
 
 	serverAddr := serverUDP.LocalAddr().(*net.UDPAddr)

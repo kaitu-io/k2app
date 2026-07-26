@@ -55,7 +55,7 @@ type Engine struct {
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
 	netCoord       *netCoordinator
-	dnsH           *dnsHandler // for counter reset on network recovery
+	dnsH           *dnsHandler         // for counter reset on network recovery
 	proxyDNS       *dns.ProxyDNSClient // proxy DNS connection pool (nil in proxy mode)
 	ruleEngine     *rule.Engine
 	outbounds      []core.Outbound // owned by engine, closed in Stop()
@@ -460,15 +460,15 @@ func (e *Engine) Start(cfg Config) error {
 		DefaultTarget:   outboundDirect, // router is always set; fallback for tests
 		Router:          router,
 		ProcessSearcher: processSearcher,
-		SniffBT:   !ruleEngine.DisableSniff(), // sniff BT in smart mode only
-		SniffSNI:  !ruleEngine.DisableSniff(), // sniff TLS/QUIC SNI in smart mode only
-		BlockQUIC: client.BlockQUIC,
+		SniffBT:         !ruleEngine.DisableSniff(), // sniff BT in smart mode only
+		SniffSNI:        !ruleEngine.DisableSniff(), // sniff TLS/QUIC SNI in smart mode only
+		BlockQUIC:       client.BlockQUIC,
 	}
 	tunnel := core.NewClientTunnel(tunnelCfg)
 
 	// 8. Start.
 	var proxyDNS *dns.ProxyDNSClient // non-nil in TUN mode; stored in Engine for reconnect reset
-	var dh *dnsHandler // non-nil in TUN mode; stored in Engine for DNS counter reset
+	var dh *dnsHandler               // non-nil in TUN mode; stored in Engine for DNS counter reset
 	if client.Mode != "proxy" {
 		// TUN mode (mobile or desktop): intercept DNS at port 53.
 		// If DirectDialer implements DialerController, use its control func
@@ -544,7 +544,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.proxyDNS = proxyDNS
 	e.ruleEngine = ruleEngine
 	e.missReporter = missRep
-	missRep = nil // ownership transferred; cancel the deferred stop
+	missRep = nil     // ownership transferred; cancel the deferred stop
 	cleanupProv = nil // ownership transferred to e.prov (Stop/fail close it)
 	cleanupFD = -1
 	e.networkMonitor = cfg.NetworkMonitor
@@ -1464,7 +1464,7 @@ func setupOutboundTransport(
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse %s: %w", extractServerHost(via), err)
 	}
-	wireCfg.Mode = wireMode          // binary identity (e.g., "gateway" for k2r)
+	wireCfg.Mode = wireMode         // binary identity (e.g., "gateway" for k2r)
 	wireCfg.Version = clientVersion // client app version for metadata attribution
 
 	dialAddr, err := resolveDialAddr(ctx, wireCfg, directDialer)
@@ -1507,7 +1507,7 @@ func setupOutboundTransport(
 		tm.SetTCPWS(raceResult.TCPWS)
 		tcpwsDialer = raceResult.TCPWS
 	} else if raceResult.TransportType != "tcpws" {
-		tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
+		tcpwsClient := wire.NewTCPWSClient(wireCfg)
 		if directDialer != nil {
 			tcpwsClient.SetDirectDialer(directDialer)
 		}
@@ -1865,18 +1865,18 @@ func (e *Engine) ClearWireError() {
 // outboundReplaceLoop waits for wire-health signals (currently: echoLoop's
 // 3-consecutive-fail) and responds in two escalating phases:
 //
-//   Phase A — same-server wire re-race. Runs wire.RaceTransport against the
-//     outbound's current URL. On success, hot-swaps the winning Dialer into
-//     the existing TransportManager via ReplacePrimary/SwapTCPWS. Same
-//     behavior as the pre-Step-3 reRaceLoop.
+//	Phase A — same-server wire re-race. Runs wire.RaceTransport against the
+//	  outbound's current URL. On success, hot-swaps the winning Dialer into
+//	  the existing TransportManager via ReplacePrimary/SwapTCPWS. Same
+//	  behavior as the pre-Step-3 reRaceLoop.
 //
-//   Phase B — server replacement. After reRaceFailThresholdForReplace
-//     consecutive Phase-A failures, asks OutboundProvider for a DIFFERENT
-//     k2v5:// URL, builds a fresh TransportManager in the background, and
-//     atomically swaps it into target.swappable. The old TM is Closed
-//     immediately — in-flight smux / QUIC streams receive ConnectionClosed
-//     within ms and application layers retry. TUN / provider / DNS hijack
-//     stay alive throughout (zero DNS-leakage window).
+//	Phase B — server replacement. After reRaceFailThresholdForReplace
+//	  consecutive Phase-A failures, asks OutboundProvider for a DIFFERENT
+//	  k2v5:// URL, builds a fresh TransportManager in the background, and
+//	  atomically swaps it into target.swappable. The old TM is Closed
+//	  immediately — in-flight smux / QUIC streams receive ConnectionClosed
+//	  within ms and application layers retry. TUN / provider / DNS hijack
+//	  stay alive throughout (zero DNS-leakage window).
 //
 // If Phase B's provider is nil (appext / gateway) or returns ErrExhausted
 // (all subscription tunnels already tried and failed), the loop fires

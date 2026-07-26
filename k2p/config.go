@@ -23,9 +23,6 @@ type Config struct {
 	// WireCfg is the k2v5 wire config for the data plane after hole punch.
 	WireCfg wire.Config
 
-	// TicketStore for k2v5 auth (may be nil for first connection).
-	TicketStore *wire.TicketStore
-
 	// TLSCert is the TLS certificate for the home side to accept QUIC connections.
 	// If nil, GenerateCertPair() creates an ephemeral self-signed cert.
 	// For persistent identity, load from disk and pass here.

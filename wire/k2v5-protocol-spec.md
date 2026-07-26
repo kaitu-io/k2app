@@ -1,7 +1,7 @@
 # k2v5 Protocol Specification
 
-Version: 1.1
-Date: 2025-02-12
+Version: 1.2
+Date: 2026-07-26
 
 ## 1. Overview
 
@@ -151,66 +151,76 @@ The routing decision happens at the TCP level, before any TLS state is establish
 
 ## 4. Authentication
 
+Device auth rides the **connection metadata stream** (StreamType `0x10`, §5.x), not a
+separate HTTP handshake. There is no ticket, no `/k2v5/auth` endpoint, and no
+per-connection round-trip beyond the metadata stream itself. The same model and the
+same `JWTValidator` govern **both transports** (QUIC and TCP-WS) — auth that only
+covered QUIC would let a client force the TCP-WS fallback to bypass it.
+
+> **Historical note.** Spec v1.1 (2025-02) described a ticket flow (`POST /k2v5/auth`
+> → `AuthTicket` → present ticket on streams). That flow was **never implemented
+> end-to-end** — no client ever obtained a ticket and no stream ever required one —
+> so it was removed in 2026-07 along with `AuthHandler`/`TicketStore`. Do not
+> reintroduce it.
+
 ### 4.1 Auth Flow
 
 ```
-Client                          Server
-  |                               |
-  |  POST /k2v5/auth              |
-  |  Authorization: Bearer <JWT>  |
-  |  X-K2-Device: <UDID>          |
-  |------------------------------>|
-  |                               |  Validate JWT + UDID
-  |  200 OK                       |
-  |  {"ticket":"...","expires":N} |
-  |<------------------------------|
-  |                               |
-  |  [Use ticket for streams]     |
-  |                               |
-  |  POST /k2v5/auth              |
-  |  X-K2-Ticket: <ticket>        |  Ticket renewal
-  |  X-K2-Device: <UDID>          |
-  |------------------------------>|
-  |                               |
+Client                                Server
+  |  Open metadata stream (0x10)        |
+  |  MetadataFrame{udid, token, mode,   |
+  |                version}             |
+  |------------------------------------>|
+  |                                     |  JWTValidator(token, udid, mode)
+  |  Stream response: OK / unauthorized |
+  |<------------------------------------|
+  |                                     |
+  |  Open proxy stream(s) (TCP/UDP)     |  Admission gated by the metadata
+  |------------------------------------>|  verdict (see 4.3 Enforcement)
 ```
 
-### 4.2 Auth Endpoint
+The client sends the metadata stream first, before any proxy stream. Because a proxy
+stream may still race ahead of the metadata stream on the server, the enforce gate
+waits briefly (`authWaitDefault`, 500 ms) for the verdict before rejecting.
 
-**`POST /k2v5/auth`**
+### 4.2 Metadata Frame
 
-Request headers:
-- `X-K2-Device` (required): Device UDID
-- `Authorization: Bearer <JWT>` (initial auth): JWT token
-- `X-K2-Ticket: <ticket>` (renewal): Existing ticket
+`MetadataFrame` (wire framing in §5.x), kv-extensible so old servers ignore unknown keys:
 
-Response (`200 OK`):
-```json
-{
-  "ticket": "hex-encoded-random-token",
-  "expires": 3600,
-  "udp": true,
-  "version": 1
-}
-```
+| Field | Required | Description |
+|-------|----------|-------------|
+| `udid` | yes | Device UDID (also the traffic-attribution key — self-reported) |
+| `token` | yes | JWT authentication token (from the `k2v5://UDID:TOKEN@…` URL) |
+| `mode` | no | `gateway` for router clients, `""` for normal clients |
+| `version` | no | Client app version — **observation only, never an auth signal** (self-reported, spoofable) |
 
-Error responses: `401 Unauthorized` with `{"error":"..."}`.
+### 4.3 Enforcement
 
-### 4.3 Ticket Lifecycle
+The server validates the metadata via a `JWTValidator` and records the verdict per
+connection. Admission of proxy (TCP/UDP) streams is gated by a single flag,
+`K2_ENFORCE_AUTH` (config `auth.enforce_auth`, default **false**):
 
-- **TTL**: 1 hour (server-configurable)
-- **Renewal**: Client presents existing ticket to get a new one
-- **Grace period**: 30 seconds — when a new ticket is issued, the old ticket remains valid during this window to prevent race conditions during ticket rotation
-- **Device binding**: One active ticket per device. Issuing a new ticket invalidates the previous one (moved to grace period)
+- **Permissive (default)** — an unauthenticated or unvalidated connection is still
+  served; the udid is recorded for attribution but the stream is never blocked. This
+  is the rollout-safe default: legacy clients that send no/invalid metadata keep
+  working until the flag is flipped.
+- **Enforce** — proxy streams on a connection whose metadata failed (or never sent)
+  validation are rejected; QUIC tears the connection, TCP-WS tears the smux session.
 
-### 4.4 Ticket Store
+Flip to enforce only after fixed clients have propagated fleet-wide, else unupgraded
+clients are cut off.
 
-Server-side in-memory store with three maps:
+### 4.4 Validator Chain
 
-| Map | Key | Value | Purpose |
-|-----|-----|-------|---------|
-| `byToken` | ticket token | `AuthTicket` | Active ticket lookup |
-| `byDevice` | device UDID | current token | Enforce one-ticket-per-device |
-| `graceTokens` | old token | grace expiry time | Allow old tickets during transition |
+`JWTValidator` (`wire/auth.go`) is resolved server-side as an ordered chain
+(`ChainValidators`, first success wins), wrapped in a success-only TTL cache
+(`CachingValidator`) so opening auth to every connection does not hammer Center:
+
+| Validator | Source |
+|-----------|--------|
+| `NewUsersFileValidator` | local `users_file` (`username:token_or_bcrypt`) |
+| `NewRemoteValidator` | Center `POST /slave/device-check-auth`, authenticated with `Basic <nodeIPv4>:<NodeSecret>`; empty secret fails closed |
+| accept-all fallback | only when no validator configured: `token != "" && udid != ""` |
 
 ## 5. Wire Framing
 

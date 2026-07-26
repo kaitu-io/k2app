@@ -26,7 +26,7 @@ func TestLive_QUICDatagramDNS(t *testing.T) {
 		t.Fatalf("parse URL: %v", err)
 	}
 
-	client := wire.NewQUICClient(cfg, nil)
+	client := wire.NewQUICClient(cfg)
 	defer client.Close()
 
 	// 1. Test TCP (stream) — should work

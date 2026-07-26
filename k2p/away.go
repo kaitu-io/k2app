@@ -121,7 +121,7 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 		"dialMs", time.Since(startTime).Milliseconds())
 
 	return &ConnectResult{
-		Dialer:        wire.NewQUICClientFromConn(quicConn, tr, cfg.WireCfg, cfg.TicketStore),
+		Dialer:        wire.NewQUICClientFromConn(quicConn, tr, cfg.WireCfg),
 		TransportType: transportType,
 	}, nil
 }

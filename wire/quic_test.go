@@ -57,7 +57,7 @@ func TestQUICClientConfig(t *testing.T) {
 		HopEnd:      20000,
 	}
 
-	qc := NewQUICClient(cfg, nil)
+	qc := NewQUICClient(cfg)
 	if qc == nil {
 		t.Fatal("NewQUICClient returned nil")
 	}
@@ -77,7 +77,7 @@ func TestQUICClientConfig_NoHop(t *testing.T) {
 		Fingerprint: "chrome",
 	}
 
-	qc := NewQUICClient(cfg, nil)
+	qc := NewQUICClient(cfg)
 	if qc.hopEnabled() {
 		t.Error("port hopping should be disabled when hop range not set")
 	}
@@ -88,16 +88,15 @@ func TestQUICConfigType(t *testing.T) {
 	cfg := DefaultQUICConfig()
 	// Verify it's the right type for quic-go
 	_ = &quic.Config{
-		EnableDatagrams:   cfg.EnableDatagrams,
-		MaxIdleTimeout:    cfg.MaxIdleTimeout,
-		KeepAlivePeriod:   cfg.KeepAlivePeriod,
+		EnableDatagrams:    cfg.EnableDatagrams,
+		MaxIdleTimeout:     cfg.MaxIdleTimeout,
+		KeepAlivePeriod:    cfg.KeepAlivePeriod,
 		MaxIncomingStreams: cfg.MaxIncomingStreams,
 	}
 }
 
 func TestQUICServer_Create(t *testing.T) {
-	store := NewTicketStore()
-	qs := NewQUICServer(store)
+	qs := NewQUICServer()
 	if qs == nil {
 		t.Fatal("NewQUICServer returned nil")
 	}
@@ -109,7 +108,7 @@ func TestQUICClient_HopPort(t *testing.T) {
 		Port:     443,
 		HopStart: 10000,
 		HopEnd:   20000,
-	}, nil)
+	})
 
 	seen := make(map[int]bool)
 	for i := 0; i < 100; i++ {
@@ -167,8 +166,7 @@ func setupQUICPair(t *testing.T) (*QUICClient, *QUICServer, func()) {
 		t.Fatal(err)
 	}
 
-	store := NewTicketStore()
-	server := NewQUICServer(store)
+	server := NewQUICServer()
 	server.Listen(ln)
 
 	// Client
@@ -177,7 +175,7 @@ func setupQUICPair(t *testing.T) (*QUICClient, *QUICServer, func()) {
 		Host: "127.0.0.1",
 		Port: serverAddr.Port,
 	}
-	client := NewQUICClient(clientCfg, store)
+	client := NewQUICClient(clientCfg)
 	client.tlsConfig = &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"h3"},
@@ -567,8 +565,7 @@ func TestQUICClient_DialUDP_StreamFallback(t *testing.T) {
 	}
 	defer ln.Close()
 
-	store := NewTicketStore()
-	server := NewQUICServer(store)
+	server := NewQUICServer()
 	server.Listen(ln)
 	defer server.Close()
 
@@ -596,7 +593,7 @@ func TestQUICClient_DialUDP_StreamFallback(t *testing.T) {
 		Host: "127.0.0.1",
 		Port: serverAddr.Port,
 	}
-	client := NewQUICClient(clientCfg, store)
+	client := NewQUICClient(clientCfg)
 	defer client.Close()
 	client.tlsConfig = &tls.Config{
 		InsecureSkipVerify: true,
@@ -988,7 +985,7 @@ func TestQUICClient_dialUDPStream_DeadConnDetectedByConnect(t *testing.T) {
 
 func TestQUICClient_ConsecConnFails(t *testing.T) {
 	// Test that connect() failures increment handshakeFailStreak and success resets it.
-	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1}, nil)
+	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1})
 	qc.SetTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"h3"},

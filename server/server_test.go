@@ -728,77 +728,6 @@ func TestServer_WSUpgrade(t *testing.T) {
 	wg.Wait()
 }
 
-// TestServer_AuthWithoutWS verifies that POST /k2v5/auth still works (AC14).
-func TestServer_AuthWithoutWS(t *testing.T) {
-	srv := newTestServer(t)
-
-	// Test through handleK2V5 with a pipe.
-	clientRaw, serverRaw := net.Pipe()
-
-	// Server side: handleK2V5.
-	done := make(chan struct{})
-	go func() {
-		srv.handleK2V5(serverRaw, "")
-		close(done)
-	}()
-
-	// Client side: TLS + POST /k2v5/auth.
-	tlsConn := tls.Client(clientRaw, &tls.Config{
-		InsecureSkipVerify: true,
-		MinVersion:         tls.VersionTLS13,
-	})
-	if err := tlsConn.Handshake(); err != nil {
-		t.Fatalf("client TLS handshake: %v", err)
-	}
-
-	// Build an HTTP POST request for auth.
-	req, err := http.NewRequest("POST", "http://localhost/k2v5/auth", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("X-K2-Device", "test-device-001")
-	req.Header.Set("Authorization", "Bearer test-jwt-token")
-	req.Header.Set("Connection", "close")
-
-	if err := req.Write(tlsConn); err != nil {
-		t.Fatalf("write request: %v", err)
-	}
-
-	// Read the response.
-	resp, err := http.ReadResponse(bufio.NewReader(tlsConn), req)
-	if err != nil {
-		t.Fatalf("read response: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
-	}
-
-	// Parse auth response.
-	var authResp wire.AuthResponse
-	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
-		t.Fatalf("decode auth response: %v", err)
-	}
-
-	if authResp.Ticket == "" {
-		t.Error("ticket should not be empty")
-	}
-	if authResp.Expires <= 0 {
-		t.Error("expires should be positive")
-	}
-	if authResp.Version != 1 {
-		t.Errorf("version = %d, want 1", authResp.Version)
-	}
-
-	// Close the underlying pipe directly to avoid TLS close_notify timeout.
-	clientRaw.Close()
-	<-done
-}
-
-// TestServer_AuthViaHTTPHandler verifies that GET /k2v5/auth works through
-// the HTTP handler path (for GET-based auth requests).
 func TestSetCertPair_RSA(t *testing.T) {
 	srv := newTestServer(t)
 	pair, err := wire.GenerateCertPair()
@@ -878,58 +807,6 @@ func TestSetCertPair_NilProfile(t *testing.T) {
 	if _, ok := leaf.PublicKey.(*ecdsa.PublicKey); !ok {
 		t.Errorf("expected ECDSA public key (default), got %T", leaf.PublicKey)
 	}
-}
-
-func TestServer_AuthViaHTTPHandler(t *testing.T) {
-	srv := newTestServer(t)
-
-	// Test through handleK2V5 with a pipe — this tests the GET path.
-	clientRaw, serverRaw := net.Pipe()
-
-	// Server side: handleK2V5.
-	go srv.handleK2V5(serverRaw, "")
-
-	// Client side: TLS + GET /k2v5/auth (routed through handleHTTP).
-	tlsConn := tls.Client(clientRaw, &tls.Config{
-		InsecureSkipVerify: true,
-		MinVersion:         tls.VersionTLS13,
-	})
-	if err := tlsConn.Handshake(); err != nil {
-		t.Fatalf("client TLS handshake: %v", err)
-	}
-
-	req, err := http.NewRequest("GET", "http://localhost/k2v5/auth", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("X-K2-Device", "test-device-002")
-	req.Header.Set("Authorization", "Bearer test-jwt-token-2")
-
-	if err := req.Write(tlsConn); err != nil {
-		t.Fatalf("write request: %v", err)
-	}
-
-	resp, err := http.ReadResponse(bufio.NewReader(tlsConn), req)
-	if err != nil {
-		t.Fatalf("read response: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
-	}
-
-	var authResp wire.AuthResponse
-	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
-		t.Fatalf("decode auth response: %v", err)
-	}
-
-	if authResp.Ticket == "" {
-		t.Error("ticket should not be empty")
-	}
-
-	tlsConn.Close()
 }
 
 // TestSetupAutoProvision verifies that the unified auto-provisioning flow

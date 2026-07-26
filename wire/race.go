@@ -199,7 +199,7 @@ func buildAndProbeQUIC(ctx context.Context, cfg Config, dialAddr string, dd Dire
 		qcfg.DialAddr = dialAddr
 	}
 
-	qc := NewQUICClient(qcfg, nil)
+	qc := NewQUICClient(qcfg)
 	if dd != nil {
 		qc.SetDirectDialer(dd)
 	}
@@ -243,7 +243,7 @@ func buildTCPWSCandidate(ctx context.Context, cfg Config, dialAddr string, dd Di
 		tcfg.DialAddr = dialAddr
 	}
 
-	tc := NewTCPWSClient(tcfg, nil)
+	tc := NewTCPWSClient(tcfg)
 	if dd != nil {
 		tc.SetDirectDialer(dd)
 	}

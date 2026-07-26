@@ -26,7 +26,7 @@ ECH match   No match
 k2v5 handler  ReverseProxy
     │
 ┌───┴───┐
-│ Auth  │  POST /k2v5/auth, TicketStore
+│ Auth  │  metadata stream (0x10) → JWTValidator; enforce gate K2_ENFORCE_AUTH
 └───┬───┘
     │
 QUIC + TCP-WS Listeners
@@ -61,11 +61,9 @@ When `CertDir` is set (always true in zero-config mode):
 ```go
 type Server struct {
     cfg      *config.ServerConfig
-    store    *wire.TicketStore
-    quicSrv  *wire.QUICServer
-    tcpwsSrv *wire.TCPWSServer
+    quicSrv  *wire.QUICServer      // SetValidator + SetEnforce (metadata-stream device auth)
+    tcpwsSrv *wire.TCPWSServer     // same validator + enforce — both transports gated
     handler  *ProxyHandler         // TCP/UDP proxy (AcceptTCP/ServeUDP)
-    authHandler http.Handler       // POST /k2v5/auth
     TLSConfig   *tls.Config       // cert selection callback + ECH keys
     echConfig   []byte            // ECH config list for client distribution
     done        chan struct{}

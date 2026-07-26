@@ -2,12 +2,10 @@ package server
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -18,25 +16,22 @@ import (
 	"time"
 
 	"github.com/apernet/quic-go"
+	"github.com/coder/websocket"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 	"github.com/kaitu-io/k2/wire/tlspad"
 	smux "github.com/xtaci/smux/v2"
-	"github.com/coder/websocket"
 )
 
 // Server is the k2s server daemon.
 // It accepts QUIC and TCP-WS connections and proxies traffic.
 type Server struct {
-	cfg   *config.ServerConfig
-	store *wire.TicketStore
+	cfg *config.ServerConfig
 
 	quicSrv  *wire.QUICServer
 	tcpwsSrv *wire.TCPWSServer
 	handler  *ProxyHandler
-
-	authHandler http.Handler
 
 	// TLSConfig for incoming TCP connections.
 	// Set by New() from config, or directly for testing.
@@ -76,13 +71,10 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	if err := validateControlPlaneRoutes(cfg.ControlPlaneRoutes); err != nil {
 		return nil, fmt.Errorf("control_plane_routes: %w", err)
 	}
-	store := wire.NewTicketStore()
-
 	s := &Server{
 		cfg:         cfg,
-		store:       store,
-		quicSrv:     wire.NewQUICServer(store),
-		tcpwsSrv:    wire.NewTCPWSServer(store),
+		quicSrv:     wire.NewQUICServer(),
+		tcpwsSrv:    wire.NewTCPWSServer(),
 		handler:     NewProxyHandler(),
 		trustedSNIs: make(map[string]time.Time),
 		proxySem:    make(chan struct{}, 128),
@@ -164,10 +156,15 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 			return jwt != "" && udid != ""
 		}
 	}
-	s.authHandler = wire.NewAuthHandler(store, validator)
+	// Enforcement must cover BOTH transports with the same validator: QUIC is
+	// primary, TCP-WS is the fallback used exactly on the UDP-blocked/censored
+	// networks that matter most. Gating only QUIC would let an attacker force
+	// TCP-WS to bypass device auth entirely.
 	s.quicSrv.SetValidator(validator)
-	s.quicSrv.SetEnforce(cfg.Auth.EnforceQUIC)
-	slog.Info("server: QUIC device-auth enforcement", "enforce", cfg.Auth.EnforceQUIC)
+	s.quicSrv.SetEnforce(cfg.Auth.EnforceAuth)
+	s.tcpwsSrv.SetValidator(validator)
+	s.tcpwsSrv.SetEnforce(cfg.Auth.EnforceAuth)
+	slog.Info("server: device-auth enforcement", "enforce", cfg.Auth.EnforceAuth)
 
 	return s, nil
 }
@@ -358,9 +355,6 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.TLSConfig == nil {
 		return fmt.Errorf("TLS config required")
 	}
-
-	// Start background ticket cleanup.
-	s.store.StartCleanup(5*time.Minute, s.done)
 
 	slog.Info("k2s server starting", "listen", s.cfg.Listen)
 
@@ -743,13 +737,15 @@ func (s *Server) handleK2V5(conn net.Conn, outerSNI string) {
 	buffConn := &bufferedConn{Conn: tlsConn, br: br}
 
 	if isHTTPMethod(first) {
+		// Only GET is a valid k2v5 client verb (WebSocket upgrade to
+		// /k2v5/tunnel). The ticket-auth POST /k2v5/auth endpoint was removed —
+		// device auth now rides the metadata stream on the smux/QUIC path, so any
+		// other HTTP method is not a k2v5 client.
 		if string(first[:3]) == "GET" {
-			// Potential WebSocket upgrade or other GET — serve via HTTP handler.
 			s.handleHTTP(buffConn)
-			return
+		} else {
+			buffConn.Close()
 		}
-		// POST/PUT/etc — auth handler.
-		s.handleAuth(buffConn)
 		return
 	}
 
@@ -758,7 +754,7 @@ func (s *Server) handleK2V5(conn net.Conn, outerSNI string) {
 }
 
 // handleHTTP serves a single HTTP request on a raw connection.
-// Routes WebSocket upgrades to /k2v5/tunnel and auth to /k2v5/auth.
+// Routes WebSocket upgrades to /k2v5/tunnel.
 func (s *Server) handleHTTP(conn net.Conn) {
 	ln := newSingleConnListener(conn)
 	mux := http.NewServeMux()
@@ -783,36 +779,8 @@ func (s *Server) handleHTTP(conn net.Conn) {
 		}
 		s.tcpwsSrv.HandleSession(sess)
 	})
-	mux.HandleFunc("/k2v5/auth", func(w http.ResponseWriter, r *http.Request) {
-		s.authHandler.ServeHTTP(w, r)
-	})
 	httpSrv := &http.Server{Handler: mux}
 	httpSrv.Serve(ln)
-}
-
-// handleAuth serves the /k2v5/auth HTTP endpoint on a single connection.
-func (s *Server) handleAuth(conn net.Conn) {
-	defer conn.Close()
-
-	br := bufio.NewReader(conn)
-	req, err := http.ReadRequest(br)
-	if err != nil {
-		return
-	}
-
-	rec := &responseRecorder{code: 200, header: make(http.Header)}
-	s.authHandler.ServeHTTP(rec, req)
-
-	resp := &http.Response{
-		StatusCode:    rec.code,
-		Header:        rec.header,
-		Body:          io.NopCloser(&rec.body),
-		ContentLength: int64(rec.body.Len()),
-		Proto:         "HTTP/1.1",
-		ProtoMajor:    1,
-		ProtoMinor:    1,
-	}
-	resp.Write(conn)
 }
 
 // isHTTPMethod checks if the first bytes look like an HTTP method.
@@ -836,17 +804,6 @@ type bufferedConn struct {
 func (c *bufferedConn) Read(b []byte) (int, error) {
 	return c.br.Read(b)
 }
-
-// responseRecorder captures HTTP response for writing to a raw connection.
-type responseRecorder struct {
-	code   int
-	header http.Header
-	body   bytes.Buffer
-}
-
-func (r *responseRecorder) Header() http.Header         { return r.header }
-func (r *responseRecorder) WriteHeader(code int)        { r.code = code }
-func (r *responseRecorder) Write(b []byte) (int, error) { return r.body.Write(b) }
 
 // singleConnListener serves exactly one connection through http.Server.Serve.
 // After the connection is returned once, Accept blocks until Close is called.
