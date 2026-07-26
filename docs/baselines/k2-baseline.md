@@ -140,8 +140,7 @@ Capabilities:
 - ECH config forging: query Cloudflare DNS for real ECH template, forge config with config_id + 1
 - ECH config rotation: maintain multiple configs (shared HPKE key, different config_ids) for graceful rotation
 - TLS record padding: probe target, apply padding distribution to match fingerprint
-- Auth handler: POST /k2v5/auth with hybrid ticket renewal (>50% TTL = return existing, <50% TTL = rotate)
-- Auth lifecycle: background cleanup of expired tickets and grace tokens (5min interval)
+- Device auth: metadata stream (StreamType 0x10) on QUIC + TCP-WS, validated by JWTValidator chain (users_file → remote /slave/device-check-auth → accept-all), success cached by CachingValidator; enforced per-connection by K2_ENFORCE_AUTH (default permissive). (Ticket auth POST /k2v5/auth removed 2026-07.)
 - Auth auto-generation: create UDID + token on first start, persist to cert_dir/auth.json
 - QUIC listener: AcceptTCP streams, ServeUDP datagrams/streams (with stream fallback)
 - TCP-WS listener: WebSocket upgrade to /k2v5/tunnel, smux multiplexing over binary WS frames
@@ -166,7 +165,7 @@ Capabilities:
 - TransportManager: QUIC primary, TCP-WS automatic fallback
 - Stream protocol: HTTP/3 frame type + header (dest addr, flags) + response (status) + data
 - UDP protocol: datagrams (preferred) or stream-based frames with length prefix (QUIC/TCP-WS)
-- Auth: ticket-based authentication with hybrid renewal, TicketStore with background cleanup, AuthHandler
+- Auth: device authentication via the metadata stream + JWTValidator chain (users_file/remote/accept-all) with success-only CachingValidator; enforced per-connection on both transports by K2_ENFORCE_AUTH (ticket-based TicketStore/AuthHandler removed 2026-07)
 - Auth info management: EnsureAuth (load or generate UDID + token), persist to JSON
 - ECH core: X25519 HPKE key generation, PeekClientHello with HasECH detection, EnsureECHPrivateKey (auto-generate/load)
 - ECH client: BuildClientTLSConfig with ECH config list, mandates ECH (no fallback to plaintext SNI)

@@ -1271,7 +1271,7 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 	}()
 
 	// Read datagrams (UDP proxy) — blocks until connection closes
-	s.handleDatagrams(conn, state)
+	s.handleDatagrams(conn, ctx)
 
 	// Cleanup: close all UDP sessions and overflow stream
 	close(state.done)
@@ -1338,7 +1338,7 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 		}
 		s.handleUDPStream(stream, br, ctx.dev, ctx.udp.log, qconn.RemoteAddr().String())
 	case StreamTypeUDPOverflow:
-		s.handleUDPOverflowStream(br, ctx.udp)
+		s.handleUDPOverflowStream(br, ctx)
 	case StreamTypeEcho:
 		HandleEchoStream(stream, br)
 	default:
@@ -1448,7 +1448,8 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, dev 
 	}
 }
 
-func (s *QUICServer) handleDatagrams(conn *quic.Conn, state *connUDPState) {
+func (s *QUICServer) handleDatagrams(conn *quic.Conn, ctx *connContext) {
+	state := ctx.udp
 	log := state.log
 	log.Info("QUICServer: handleDatagrams started")
 	var totalReceived int64
@@ -1468,54 +1469,78 @@ func (s *QUICServer) handleDatagrams(conn *quic.Conn, state *connUDPState) {
 		}
 		log.Debug("QUICServer: datagram received", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 
-		s.deliverToSession(state, conn, frame)
+		s.deliverToSession(ctx, state, conn, frame)
 	}
 }
 
 // deliverToSession looks up or creates a serverUDPConn in state.sessions, then delivers the payload.
 // Used by both handleDatagrams and handleUDPOverflowStream for session sharing.
-func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, frame *UDPFrame) {
+//
+// This is the single choke point for QUIC UDP egress: the datagram path (the
+// PRIMARY UDP path — DialUDP prefers datagrams, stream-UDP is only fallback) and
+// the client overflow stream both funnel new sessions through here. Gating new
+// sessions with proxyAuthorized closes the enforce bypass that would otherwise
+// let a connection which never sent a (valid) metadata stream proxy UDP — stream
+// TCP/UDP are gated separately in handleStream, but datagrams never reach it. The
+// gate runs OUTSIDE state.mu: under enforce an unauthenticated connection blocks
+// up to authWait, and holding the map lock would stall every other session's
+// datagrams; permissive and already-authenticated connections return instantly.
+func (s *QUICServer) deliverToSession(ctx *connContext, state *connUDPState, conn *quic.Conn, frame *UDPFrame) {
 	state.mu.Lock()
 	sess, ok := state.sessions[frame.SessionID]
+	state.mu.Unlock()
+
 	if !ok {
-		if len(state.sessions) >= maxServerUDPSessions {
-			state.mu.Unlock()
-			state.log.Warn("QUICServer: max UDP sessions reached, dropping")
+		if !s.proxyAuthorized(ctx, state.log) {
+			state.log.Warn("QUICServer: UDP session rejected (enforce: unauthenticated)", "sid", frame.SessionID, "addr", frame.Addr)
 			return
 		}
-		sessLog := state.log.With("sid", frame.SessionID, "addr", frame.Addr)
-		sess = &serverUDPConn{
-			qconn:        conn,
-			sessionID:    frame.SessionID,
-			addr:         frame.Addr,
-			remoteAddr:   conn.RemoteAddr().String(),
-			readCh:       make(chan []byte, 32),
-			done:         make(chan struct{}),
-			overflow:     state.overflow,
-			sendInflight: &state.sendInflight,
-			created:      time.Now(),
-			log:          sessLog,
-			dev:          state.dev,
-		}
-		state.sessions[frame.SessionID] = sess
 
-		s.mu.Lock()
-		handler := s.udpH
-		s.mu.Unlock()
-		sessLog.Info("QUICServer: new UDP session", "handlerSet", handler != nil)
-		if handler != nil {
-			addr := frame.Addr
-			go state.runUDPHandler(handler, sess, addr)
+		state.mu.Lock()
+		// Re-check under lock: a concurrent frame for the same session may have
+		// created it while we were gating.
+		sess, ok = state.sessions[frame.SessionID]
+		if !ok {
+			if len(state.sessions) >= maxServerUDPSessions {
+				state.mu.Unlock()
+				state.log.Warn("QUICServer: max UDP sessions reached, dropping")
+				return
+			}
+			sessLog := state.log.With("sid", frame.SessionID, "addr", frame.Addr)
+			sess = &serverUDPConn{
+				qconn:        conn,
+				sessionID:    frame.SessionID,
+				addr:         frame.Addr,
+				remoteAddr:   conn.RemoteAddr().String(),
+				readCh:       make(chan []byte, 32),
+				done:         make(chan struct{}),
+				overflow:     state.overflow,
+				sendInflight: &state.sendInflight,
+				created:      time.Now(),
+				log:          sessLog,
+				dev:          state.dev,
+			}
+			state.sessions[frame.SessionID] = sess
+
+			s.mu.Lock()
+			handler := s.udpH
+			s.mu.Unlock()
+			sessLog.Info("QUICServer: new UDP session", "handlerSet", handler != nil)
+			if handler != nil {
+				addr := frame.Addr
+				go state.runUDPHandler(handler, sess, addr)
+			}
 		}
+		state.mu.Unlock()
 	}
-	state.mu.Unlock()
 
 	sess.deliver(frame.Payload)
 }
 
 // handleUDPOverflowStream reads SmuxUDPFrame from a client-initiated overflow stream
 // and delivers them to the shared session map (same sessions as datagram path).
-func (s *QUICServer) handleUDPOverflowStream(br *bufio.Reader, state *connUDPState) {
+func (s *QUICServer) handleUDPOverflowStream(br *bufio.Reader, ctx *connContext) {
+	state := ctx.udp
 	state.log.Info("QUICServer: receiving overflow stream from client")
 	// We need the qconn to create new sessions — get it from the overflow struct.
 	conn := state.overflow.qconn
@@ -1524,7 +1549,7 @@ func (s *QUICServer) handleUDPOverflowStream(br *bufio.Reader, state *connUDPSta
 		if err != nil {
 			return
 		}
-		s.deliverToSession(state, conn, frame)
+		s.deliverToSession(ctx, state, conn, frame)
 	}
 }
 

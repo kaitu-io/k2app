@@ -587,8 +587,8 @@ TCP connection to :443
   │     └── TLS handshake with ECH decryption
   │           ├── ECH decrypted OK → inner SNI revealed
   │           │     └── k2v5 handler
-  │           │           ├── HTTP method → /k2v5/auth
-  │           │           └── smux header → tunnel
+  │           │           ├── GET /k2v5/tunnel → WebSocket upgrade → smux tunnel
+  │           │           └── other methods → connection closed
   │           └── ECH decryption failed (forged)
   │                 └── ReverseProxy to public_name
   │

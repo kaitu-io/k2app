@@ -224,7 +224,7 @@ type ECHConfig struct {
 type AuthConfig struct {
 	UsersFile   string        `yaml:"users_file"`   // path to users file (udid:token per line)
 	RemoteURL   string        `yaml:"remote_url"`   // Center API auth URL
-	CacheTTL    time.Duration `yaml:"cache_ttl"`    // TTL for cached successful auths (0 = no cache)
+	CacheTTL    time.Duration `yaml:"cache_ttl"`    // TTL for cached successful auths; 0 → defaults to 5m in SetDefaults (not "no cache")
 	EnforceAuth bool          `yaml:"enforce_auth"` // reject unauthenticated proxy streams on BOTH transports (QUIC + TCP-WS). Default false (permissive) during rollout — flip to true only once new clients (which send metadata) have propagated, else legacy clients are cut off. env K2_ENFORCE_AUTH
 }
 
