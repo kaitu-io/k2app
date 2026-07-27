@@ -133,7 +133,7 @@ k2t://<host>:<port>?pbk=<base64url(S_pub)>&front=<front域名>&sid=<hex(short_id
 shared  = X25519(C_priv, S_pub)
 authKey = HKDF-Expand(HKDF-Extract(SHA-256, salt = C_pub, IKM = shared),
                       info = "k2t/v1 auth", L = 44)
-          → key   = authKey[0:32]     (ChaCha20-Poly1305 密钥)
+          → key   = authKey[0:32]     (AES-256-GCM 密钥)
           → nonce = authKey[32:44]    (12 字节)
 ```
 
@@ -152,7 +152,7 @@ authKey = HKDF-Expand(HKDF-Extract(SHA-256, salt = C_pub, IKM = shared),
 | `reserved` | 2 | 置 0 |
 
 ```
-session_id = ChaCha20Poly1305_Seal(key, nonce, plaintext = 上表16字节, aad = front域名的UTF-8字节)
+session_id = AES-256-GCM_Seal(key, nonce, plaintext = 上表16字节, aad = front域名的UTF-8字节)
            → 16 字节密文 + 16 字节 tag = 32 字节
 ```
 
@@ -160,12 +160,20 @@ TLS 1.3 的 `legacy_session_id` 恰为 32 字节且浏览器填随机值，**容
 
 `aad` 绑定 `front`，使得截获的 `session_id` 无法搬到伪装成其他站点的节点上重放。
 
+**实现要点（均由 §12 的实测确定，不可凭直觉替换）：**
+
+- `session_id` 在序列化后的 ClientHello 中位于偏移 **39**（handshake 头 4 + legacy_version 2 + random 32 + 长度字节 1），长度 32。
+- 改写必须**同时**写 `HandshakeState.Hello.SessionId` 与 `HandshakeState.Hello.Raw[39:71]`，**原地等长覆盖**。不要触发重新序列化——原地覆盖可保证 ClientHello 其余字节完全不变，指纹零漂移。
+- 用于 ECDH 的私钥取自 `HandshakeState.State13.KeyShareKeys.Ecdhe`。**不要读同结构的 `CurveID` 字段——实测其值恒为 `0x0000`（未填充），据此判断曲线会出错。**
+
 ### 4.5 服务端：判别
 
 节点在 443 端口接受 TCP，`Peek` 出完整 ClientHello（复用现有 `wire.PeekClientHello` 基础设施），然后：
 
 1. 提取 `legacy_session_id`。长度 ≠ 32 → **借壳路径**。
-2. 提取 `key_share` 中的 x25519 公钥 `C_pub`。不存在 → **借壳路径**。
+2. 提取 `key_share` 扩展中 **group == `0x001d`（X25519）** 的条目作为 `C_pub`。不存在 → **借壳路径**。
+
+   > **必须按 group 精确选取，不能取第一个条目。** 实测的真实浏览器会并列发送多个 key_share：Chrome PQ 发 3 个（`0x001d` 32B、一个 GREASE group 1B、`0x6399` X25519MLKEM768 1216B），Firefox 发 `0x0017`(P-256, 65B) + `0x001d`，Safari 发 `0x001d` + GREASE。GREASE 的 group 值每个指纹/每条连接都不同，必须跳过而非枚举。
 3. `shared = X25519(S_priv, C_pub)`，按 §4.4 同法派生 `key` / `nonce`。
 4. `AEAD_Open(key, nonce, session_id, aad = 本节点的 front 域名)`。失败 → **借壳路径**。
 5. 校验 `version` 已知；`timestamp` 在 ±`REPLAY_WINDOW`（默认 ±10 分钟）内；`short_id` 在本节点有效集合内。任一不满足 → **借壳路径**。
@@ -331,7 +339,7 @@ ECH 的教训是：一个核心设计假设过期了约两年而无人察觉，�
 2. **变体 A 还是变体 B**（§4.7）——v1 建议 A，但需确认 A 的握手尺寸吻合度是否足够。
 3. **时序对齐的具体做法**（§8.2）——认证路径注入多少延迟、如何标定、是否随 front 变化。
 4. **front 清单从哪来、由谁分配**——每节点独立配置已定，但选取标准与分配机制未定。
-5. **uTLS 是否支持改写 `session_id` 与指定 key_share 私钥**——REALITY 在 uTLS 上实现了同类机制，故推断可行，**但本项目尚未验证**。这是实现可行性的前置条件。
+5. ~~**uTLS 是否支持改写 `session_id` 与指定 key_share 私钥**~~ — **已验证可行，见 §12。**
 6. **`short_id` 的分配、下发与吊销**——与 Center 的设备体系如何衔接。
 7. **流量形状**（§8.2）——是否纳入 v1，还是明确留给后续。
 
@@ -348,6 +356,40 @@ ECH 的教训是：一个核心设计假设过期了约两年而无人察觉，�
 | 外层 SNI 管过墙、内层管真实内容 | **保持** | Tessera 中外层 SNI = front（过墙伪装），内层标识任意（k2v5 语义不变） |
 | 不影响旧客户端 | **保持，且由结构保证** | 新增传输而非修改，存量客户端从未收到 `k2t://` URL（§7） |
 | public_name 白名单 + 每节点随机 | **作废** | 实测证明现实世界只有一个 `public_name`，白名单无素材（§1.2）。该需求由"每节点独立 front"承接 |
+
+---
+
+## 12. 可行性验证
+
+§4.4 的判别机制依赖两个 uTLS 能力，其中任一不成立都会使整份设计作废。两者已用可执行测试验证，代码在 [`spike/feasibility_test.go`](spike/feasibility_test.go)，`go test ./docs/tessera/spike/` 可复现。
+
+验证对象：`github.com/metacubex/utls v1.8.4`（本仓库现有依赖，未新增）。
+
+### 12.1 结论
+
+| 待验证项 | 结果 |
+|---|---|
+| 能否改写 `legacy_session_id` | ✅ 可原地等长覆盖 |
+| 能否取得线路上那个 X25519 key_share 的私钥 | ✅ `State13.KeyShareKeys.Ecdhe` 的公钥与线路上 `0x001d` 条目**逐字节相同** |
+| 改写后 TLS 握手是否仍能完成 | ✅ 与真实 Go TLS 1.3 服务端握手成功，协商 `0x0304` |
+| 改写是否引起指纹漂移 | ✅ 无漂移，仅 `[39:71]` 32 字节不同，1726 字节的 ChromePQ ClientHello 其余完全一致 |
+| 判别是否真的能区分 | ✅ 未改写的原生浏览器 ClientHello 解封失败 |
+| AAD 绑定是否有效 | ✅ 换一个 front 域名解封失败 |
+
+第二项是存亡点：服务端从线路上读到的 key_share 派生共享密钥，客户端**必须**用那把私钥而非另生成一把，否则两侧密钥不同、每条连接都会静默落进借壳路径。四个指纹（Chrome_120_PQ / Chrome_Auto / Firefox_120 / Safari_16_0）全部通过。
+
+### 12.2 实测中暴露的、凭推理会做错的三处
+
+1. **`KeySharePrivateKeys.CurveID` 恒为 `0x0000`**（未填充）。按它判断 `Ecdhe` 对应哪条曲线会得到错误结论；只能按 group 从线路上取 `0x001d`。
+2. **真实浏览器并列发送多个 key_share，且含 GREASE 条目。** Chrome PQ 是 `0x001d`(32B) + GREASE(1B) + `0x6399` X25519MLKEM768(1216B)。取"第一个 key_share"或"最长的 key_share"都会取错。GREASE 的 group 值逐指纹变化（实测见到 `0x3a3a` / `0x7a7a` / `0xeaea`），必须跳过而非枚举。
+3. **AEAD 容量必须精确核对。** 16 字节明文 + 16 字节 tag = 32 字节，与 `session_id` 恰好吻合，一字节都不多。任何增加明文字段的改动都会溢出这个字段，届时只能牺牲字段或另找载体。
+
+### 12.3 本次验证未覆盖的
+
+- **服务端侧的完整实现**：`Raw` 解析器是为测试写的最小实现，真实服务端还需处理分片、超长 ClientHello、恶意构造的长度字段。
+- **变体 B**（出示 front 真实证书链）——未验证服务端 TLS 栈能否绕过"证书与私钥必须匹配"的约束。
+- **认证路径与借壳路径的时序差**（§8.2）——本次未测量。
+- **QUIC 路径**（§6）——本机制在 QUIC 上的适用性未验证。
 
 ---
 
