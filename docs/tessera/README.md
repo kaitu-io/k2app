@@ -16,6 +16,16 @@
 |---|---|
 | [spec.md](spec.md) | 完整协议规范：威胁模型、判别机制、借壳转发、一致性要求、迁移路径 |
 
+设计中的每一处"可行"都由可执行测试背书，而不是推理。`go test ./docs/tessera/spike/`：
+
+| 证据 | 回答的问题 |
+|---|---|
+| [spike/feasibility_test.go](spike/feasibility_test.go) | TCP 判别能否在现有 uTLS 上实现（§12） |
+| [spike/quic_test.go](spike/quic_test.go) | QUIC 上判别载体与借壳转发怎么落地（§6） |
+| [spike/timing_test.go](spike/timing_test.go) | 两条路径的时序差有多可分、缓解是否有效（§13） |
+| [spike/residual_test.go](spike/residual_test.go) | 缓解后的残余在大样本下会不会被攒出来（§13.4） |
+| [tools/ech_survey.py](tools/ech_survey.py) | 现实世界到底有多少域名部署了 ECH（§1.2） |
+
 ## 一句话概括
 
 **判别靠密码学秘密而非协议标志位；任何认证失败的连接——包括所有主动探测——被整条透明转发给一个真实网站，探测者拿到真证书真内容，无法证实节点身份。**
