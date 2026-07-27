@@ -24,6 +24,7 @@
 | [spike/quic_test.go](spike/quic_test.go) | QUIC 上判别载体与借壳转发怎么落地（§6） |
 | [spike/timing_test.go](spike/timing_test.go) | 两条路径的时序差有多可分、缓解是否有效（§13） |
 | [spike/residual_test.go](spike/residual_test.go) | 缓解后的残余在大样本下会不会被攒出来（§13.4） |
+| [spike/shape_test.go](spike/shape_test.go) | 流量形状这条轴有多大，以及为什么它的零假设取不到（§14） |
 | [tools/ech_survey.py](tools/ech_survey.py) | 现实世界到底有多少域名部署了 ECH（§1.2） |
 
 ## 一句话概括
