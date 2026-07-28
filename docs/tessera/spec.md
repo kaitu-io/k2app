@@ -271,7 +271,7 @@ P3 要求逐层自洽。当前设计在各层的状态：
 
 | 层 | 处理 | 状态 |
 |---|---|---|
-| **L1 TLS 指纹** | uTLS + 真实浏览器 spec，两条传输统一 | ❌ **QUIC 路径是现役能力正对着的破绽**。当前用 Go 标准库构造 ClientHello（`wire/quic.go` 丢弃了 ClientHelloID），而 GFW 自 2024-04 起就在**规模化解密 QUIC Initial**（§2 A 档）——这不是"以后要补的一致性问题"。`utls.UQUICClient` 实测可产出含 GREASE 的 Chrome QUIC ClientHello；代价是 quic-go 直接驱动 `crypto/tls.QUICConn`，接入需给 fork 打补丁（§6.4）。**另有未验证项**：uTLS 的输出与**真实浏览器**的差异从未测过（§12 验证的是"改写相对 uTLS 自身零漂移"，不是"uTLS 相对 Chrome 零漂移"），因此 TCP 侧的 ✅ 也未被测量赚到 |
+| **L1 TLS 指纹** | uTLS + 真实浏览器 spec，两条传输统一 | ❌ **QUIC 路径是现役能力正对着的破绽**。当前用 Go 标准库构造 ClientHello（`wire/quic.go` 丢弃了 ClientHelloID），而 GFW 自 2024-04 起就在**规模化解密 QUIC Initial**（§2 A 档）——这不是"以后要补的一致性问题"。**能力这半边已坐实**：`utls.UQUICClient(HelloChrome_120)` 实测产出含 GREASE、空 `legacy_session_id` 的 Chrome QUIC ClientHello（spike 绿，`TestUTLSCoversTheQUICClientHello`）。**未接的是接入**，且接入点已核实源码定位到 `apernet/quic-go`（本仓已依赖的 fork）的 `internal/handshake/crypto_setup.go`：字段 `conn *tls.QUICConn`（`:30`）由标准库 `tls.QUICClient(...)`（`:95`）构造，二者皆具体类型、且在 `internal/` 包内模块外不可替换；该 fork **无任何 utls / ClientHelloSpec 导出钩子**（grep 零命中）。**修法 = 给 fork 打补丁**：把该字段抽象成覆盖 `Start/NextEvent/HandleData/…` 的接口、由调用方传入 `utls.UQUICConn`——与 §6.4 的 token 补丁同一张 fork 单。**另有未验证项**：uTLS 的输出与**真实浏览器**的差异从未测过（§12 验证的是"改写相对 uTLS 自身零漂移"，不是"uTLS 相对 Chrome 零漂移"），因此 TCP 侧的 ✅ 也未被测量赚到 |
 | **L2 外层 SNI** | front 的真实域名 | ✅ 国家级 TCP 已实测清空（§14.5.1，省级不追见 §8.3）；⚠️ QUIC 侧独立黑名单未测（§2 门 3） |
 | **L3 证书** | 变体 A 补长 / 变体 B 真证书 | ✅ 借壳路径完全真实；认证路径见 §4.7 |
 | **L4 IP** | SNI 与目的 IP 不匹配 | ❌ **无消除手段**（除非自建 CDN 或公开节点 IP，后者等于把节点列表交给审查者）。是**赌注**，见下 |
@@ -331,6 +331,7 @@ token = C_pub(32) || AES-256-GCM_Seal(key, nonce, 凭据明文(16), aad = front 
 
 | 项 | 状态 |
 |---|---|
+| **QUIC ClientHello 换 uTLS**（§5 L1，本节最高优先级） | uTLS 产字节已验证（spike 绿，`TestUTLSCoversTheQUICClientHello`）。**接入 seam 已核实源码定位**：`apernet/quic-go` `internal/handshake/crypto_setup.go` 的 `conn *tls.QUICConn`（`:30`）+ `tls.QUICClient(...)` 构造（`:95`），均为标准库具体类型、internal 包、该 fork 无 utls 导出钩子。**patch = 把此字段接口化、调用方传 `utls.UQUICConn`**，与下面的 token 补丁同一张 fork 单。**注意与 SNI 黑名单是两条正交轴**：uTLS 管"ClientHello 长得像不像 Chrome"，不管"front 域名在不在 QUIC 黑名单"（后者见下一行 + §14.5.2） |
 | quic-go 客户端无法设置任意 token | **需给 `github.com/apernet/quic-go`（已在用的 fork）打补丁**。`ClientToken` 的载荷字段未导出、无构造函数；已加断言测试，将来上游若补上构造函数会失败提醒 |
 | **QUIC 的 SNI 黑名单是独立的一张** | **新增门槛。** GFW 自 2024-04-07 起对 QUIC 单独维护约 5.8 万 FQDN 的黑名单，**与 TCP 黑名单相互独立**（§2 A 档）。front 在 TCP 上安全**不蕴含**它在 QUIC 上安全，两条路径必须分别验证 |
 | **token 存在性本身是否是特征** | **未普查，且优先级高于原判。** 真实客户端只在此前拿到过 NEW_TOKEN 时才带 token；首包即带 token 的比例、以及审查者能否判定"首次"，均未测量。**升级理由**：GFW 已在规模化解密 Initial（§2 A 档），而 **Token 字段本就在 Initial 的明文部分——连解密都不需要**。这是继 ECH 普查之后同一类的问题，必须实测而非推理 |
@@ -338,7 +339,7 @@ token = C_pub(32) || AES-256-GCM_Seal(key, nonce, 凭据明文(16), aad = front 
 | **连接迁移会打断认证连接** | 中继按 4 元组建立；认证连接若因 NAT 重绑定换了源地址，新 4 元组的首包是短头包、无 token，会被判为借壳而转走。**修法：短头包按 DCID 查本地已签发的连接 ID，命中则走本地。此修法未实测**，属推理 |
 | 时序旁路 | §13 的结论同样适用：借壳路径多一个到 front 的 RTT。缓解方案相同 |
 
-> **判别载体与借壳机制已落地并实测，但 §6 重新成为高优先级**——不是因为机制有问题，而是因为 §2 的边界显示 **QUIC 是 GFW 唯一一处正在扩张的现役能力**（2024-04 新增、独立黑名单、规模化解密 Initial）。三项待办按优先级：**① QUIC ClientHello 换 uTLS**（§5 L1，现役能力正对着的破绽）、**② token 存在性普查**（明文可见，无需解密）、③ 连接迁移的 DCID 路由（有明确修法，未实测）。
+> **判别载体与借壳机制已落地并实测，但 §6 重新成为高优先级**——不是因为机制有问题，而是因为 §2 的边界显示 **QUIC 是 GFW 唯一一处正在扩张的现役能力**（2024-04 新增、独立黑名单、规模化解密 Initial）。三项待办按优先级：**① QUIC ClientHello 换 uTLS**（§5 L1，现役能力正对着的破绽；产字节已验证、接入 seam 已定位到 `crypto_setup.go`，剩余 = 一处 internal 字段接口化的 fork patch）、**② token 存在性普查**（明文可见，无需解密）、③ 连接迁移的 DCID 路由（有明确修法，未实测）。
 
 ---
 
@@ -432,7 +433,7 @@ ECH 的教训是：一个核心设计假设过期了约两年而无人察觉，�
 
 ### 协议层（有明确修法）
 
-3. **QUIC ClientHello 换 uTLS**（§5 L1 / §6.4）——GFW 自 2024-04 起规模化解密 QUIC Initial，这是现役能力正对着的破绽。需给 `apernet/quic-go` fork 打补丁。
+3. **QUIC ClientHello 换 uTLS**（§5 L1 / §6.4）——GFW 自 2024-04 起规模化解密 QUIC Initial，这是现役能力正对着的破绽。产字节已验证（spike 绿）、接入 seam 已核实定位到 `apernet/quic-go` 的 `internal/handshake/crypto_setup.go:30/:95`（具体 `*tls.QUICConn`、internal 包、无 utls 钩子）。**剩余 = 把该字段接口化、传 `utls.UQUICConn` 的 fork patch**；这是实现动作，非设计未决。
 4. **token 存在性的真实世界普查**（§6.4）——Token 在 Initial 明文部分，连解密都不需要。
 5. **uTLS 输出 vs 真实浏览器抓包**的逐字节比对——§12 验证的是"改写相对 uTLS 自身零漂移"，**不是** "uTLS 相对 Chrome 零漂移"。§5 L1 的 ✅ 目前未被测量赚到。一台机器一次抓包即可。
 6. **连接迁移下的 DCID 路由**（§6.4）——修法明确、未实测。
