@@ -30,6 +30,7 @@
 | [spike/shape_test.go](spike/shape_test.go) | 流量形状这条轴有多大，以及为什么它的零假设取不到（§14） |
 | [tools/ech_survey.py](tools/ech_survey.py) | 现实世界到底有多少域名部署了 ECH（§1.2） |
 | [tools/front_survey.py](tools/front_survey.py) | 候选 front 在流量类别与 IP 分散度上的实测评分（§14.5） |
+| [tools/sni_gate_probe.py](tools/sni_gate_probe.py) | 候选 front 的名字是否在 GFW 的 SNI 黑名单内——**须在境内跑**（§14.5.1） |
 
 ## 一句话概括
 
