@@ -30,9 +30,20 @@ vet: | .fork/quic-go
 
 # Regenerate the patch from the working fork. scripts/fork-quic-go.sh keeps a
 # pristine copy next to it for exactly this.
+#
+# Running the fork's own suite leaves artifacts behind (keylog.txt), and a
+# regenerated patch will happily carry them into the deliverable. They are
+# excluded by name rather than by a wildcard, and anything else that appears
+# only on the fork side is printed -- a silent exclusion would be as bad as a
+# silent inclusion the day this patch really does need to add a file.
+PATCH_EXCLUDE := -x keylog.txt
+
 patch: | .fork/quic-go.orig
-	cd .fork && diff -ruN quic-go.orig quic-go > ../patches/quic-go-utls-seam.patch || true
-	@echo "wrote patches/quic-go-utls-seam.patch"
+	@cd .fork && diff -rq $(PATCH_EXCLUDE) quic-go.orig quic-go 2>/dev/null \
+		| grep '^Only in quic-go/' \
+		| sed 's/^/  NEW FILE: /' || true
+	cd .fork && diff -ruN $(PATCH_EXCLUDE) quic-go.orig quic-go > ../patches/quic-go-utls-seam.patch || true
+	@echo "wrote patches/quic-go-utls-seam.patch ($$(grep -c '^diff ' patches/quic-go-utls-seam.patch) files)"
 
 .fork/quic-go .fork/quic-go.orig:
 	@./scripts/fork-quic-go.sh

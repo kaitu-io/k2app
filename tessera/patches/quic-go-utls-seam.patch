@@ -1,6 +1,6 @@
-diff -ruN quic-go.orig/config.go quic-go/config.go
---- quic-go.orig/config.go	2026-07-29 04:39:31
-+++ quic-go/config.go	2026-07-29 04:48:25
+diff -ruN -x keylog.txt quic-go.orig/config.go quic-go/config.go
+--- quic-go.orig/config.go	2026-07-29 05:01:08
++++ quic-go/config.go	2026-07-29 05:01:09
 @@ -127,5 +127,6 @@
  		Tracer:                           config.Tracer,
  		MaxDatagramFrameSize:             config.MaxDatagramFrameSize,
@@ -8,9 +8,9 @@ diff -ruN quic-go.orig/config.go quic-go/config.go
 +		ClientTLSConnFactory:             config.ClientTLSConnFactory,
  	}
  }
-diff -ruN quic-go.orig/config_test.go quic-go/config_test.go
---- quic-go.orig/config_test.go	2026-07-29 04:39:32
-+++ quic-go/config_test.go	2026-07-29 04:48:30
+diff -ruN -x keylog.txt quic-go.orig/config_test.go quic-go/config_test.go
+--- quic-go.orig/config_test.go	2026-07-29 05:01:09
++++ quic-go/config_test.go	2026-07-29 05:01:09
 @@ -86,7 +86,7 @@
  		}
  
@@ -20,9 +20,9 @@ diff -ruN quic-go.orig/config_test.go quic-go/config_test.go
  			// Can't compare functions.
  		case "Versions":
  			f.Set(reflect.ValueOf([]Version{1, 2, 3}))
-diff -ruN quic-go.orig/connection.go quic-go/connection.go
---- quic-go.orig/connection.go	2026-07-29 04:39:32
-+++ quic-go/connection.go	2026-07-29 04:41:17
+diff -ruN -x keylog.txt quic-go.orig/connection.go quic-go/connection.go
+--- quic-go.orig/connection.go	2026-07-29 05:01:09
++++ quic-go/connection.go	2026-07-29 05:01:09
 @@ -488,6 +488,7 @@
  		destConnID,
  		params,
@@ -31,9 +31,9 @@ diff -ruN quic-go.orig/connection.go quic-go/connection.go
  		enable0RTT,
  		s.rttStats,
  		s.qlogger,
-diff -ruN quic-go.orig/fuzzing/handshake/cmd/corpus.go quic-go/fuzzing/handshake/cmd/corpus.go
---- quic-go.orig/fuzzing/handshake/cmd/corpus.go	2026-07-29 04:39:31
-+++ quic-go/fuzzing/handshake/cmd/corpus.go	2026-07-29 04:41:55
+diff -ruN -x keylog.txt quic-go.orig/fuzzing/handshake/cmd/corpus.go quic-go/fuzzing/handshake/cmd/corpus.go
+--- quic-go.orig/fuzzing/handshake/cmd/corpus.go	2026-07-29 05:01:08
++++ quic-go/fuzzing/handshake/cmd/corpus.go	2026-07-29 05:01:09
 @@ -28,6 +28,7 @@
  			RootCAs:            testdata.GetRootCA(),
  			ClientSessionCache: tls.NewLRUClientSessionCache(1),
@@ -42,9 +42,9 @@ diff -ruN quic-go.orig/fuzzing/handshake/cmd/corpus.go quic-go/fuzzing/handshake
  		false,
  		&utils.RTTStats{},
  		nil,
-diff -ruN quic-go.orig/fuzzing/handshake/fuzz.go quic-go/fuzzing/handshake/fuzz.go
---- quic-go.orig/fuzzing/handshake/fuzz.go	2026-07-29 04:39:31
-+++ quic-go/fuzzing/handshake/fuzz.go	2026-07-29 04:41:47
+diff -ruN -x keylog.txt quic-go.orig/fuzzing/handshake/fuzz.go quic-go/fuzzing/handshake/fuzz.go
+--- quic-go.orig/fuzzing/handshake/fuzz.go	2026-07-29 05:01:08
++++ quic-go/fuzzing/handshake/fuzz.go	2026-07-29 05:01:09
 @@ -280,6 +280,7 @@
  		protocol.ConnectionID{},
  		clientTP,
@@ -53,9 +53,9 @@ diff -ruN quic-go.orig/fuzzing/handshake/fuzz.go quic-go/fuzzing/handshake/fuzz.
  		enable0RTTClient,
  		&utils.RTTStats{},
  		nil,
-diff -ruN quic-go.orig/interface.go quic-go/interface.go
---- quic-go.orig/interface.go	2026-07-29 04:39:32
-+++ quic-go/interface.go	2026-07-29 04:41:06
+diff -ruN -x keylog.txt quic-go.orig/interface.go quic-go/interface.go
+--- quic-go.orig/interface.go	2026-07-29 05:01:08
++++ quic-go/interface.go	2026-07-29 05:29:11
 @@ -13,6 +13,13 @@
  	"github.com/apernet/quic-go/qlogwriter"
  )
@@ -70,7 +70,31 @@ diff -ruN quic-go.orig/interface.go quic-go/interface.go
  // The StreamID is the ID of a QUIC stream.
  type StreamID = protocol.StreamID
  
-@@ -194,6 +201,18 @@
+@@ -39,6 +46,23 @@
+ 	rtt  time.Duration
+ }
+ 
++// NewClientToken builds a ClientToken carrying arbitrary bytes, for callers
++// that source tokens from somewhere other than a server's NEW_TOKEN frame.
++//
++// The Initial packet's Token field is cleartext and opaque to everyone but the
++// server that issued it, which makes it usable as a carrier: a caller can put
++// its own bytes there and a server that cannot decode them is required to
++// proceed as if no token were present (RFC 9000 §8.1.3).
++//
++// rtt seeds the connection's initial RTT estimate. Pass
++// [github.com/apernet/quic-go/internal/utils.DefaultInitialRTT] (100ms) unless
++// the token really does come with a measurement — a zero here is not "no
++// opinion", it sets the smoothed RTT to zero and drives an unusually eager
++// retransmission of the very first flight.
++func NewClientToken(data []byte, rtt time.Duration) *ClientToken {
++	return &ClientToken{data: data, rtt: rtt}
++}
++
+ type TokenStore interface {
+ 	// Pop searches for a ClientToken associated with the given key.
+ 	// Since tokens are not supposed to be reused, it must remove the token from the cache.
+@@ -194,6 +218,18 @@
  
  	MaxDatagramFrameSize int64
  	DisablePathManager   bool
@@ -89,9 +113,9 @@ diff -ruN quic-go.orig/interface.go quic-go/interface.go
  }
  
  // ClientHelloInfo contains information about an incoming connection attempt.
-diff -ruN quic-go.orig/internal/handshake/crypto_setup.go quic-go/internal/handshake/crypto_setup.go
---- quic-go.orig/internal/handshake/crypto_setup.go	2026-07-29 04:39:31
-+++ quic-go/internal/handshake/crypto_setup.go	2026-07-29 04:40:42
+diff -ruN -x keylog.txt quic-go.orig/internal/handshake/crypto_setup.go quic-go/internal/handshake/crypto_setup.go
+--- quic-go.orig/internal/handshake/crypto_setup.go	2026-07-29 05:01:08
++++ quic-go/internal/handshake/crypto_setup.go	2026-07-29 05:01:09
 @@ -25,9 +25,29 @@
  
  const clientSessionStateRevision = 5
@@ -150,9 +174,9 @@ diff -ruN quic-go.orig/internal/handshake/crypto_setup.go quic-go/internal/hands
  	cs.conn.SetTransportParameters(cs.ourParams.Marshal(protocol.PerspectiveClient))
  
  	return cs
-diff -ruN quic-go.orig/internal/handshake/crypto_setup_test.go quic-go/internal/handshake/crypto_setup_test.go
---- quic-go.orig/internal/handshake/crypto_setup_test.go	2026-07-29 04:39:31
-+++ quic-go/internal/handshake/crypto_setup_test.go	2026-07-29 04:44:28
+diff -ruN -x keylog.txt quic-go.orig/internal/handshake/crypto_setup_test.go quic-go/internal/handshake/crypto_setup_test.go
+--- quic-go.orig/internal/handshake/crypto_setup_test.go	2026-07-29 05:01:08
++++ quic-go/internal/handshake/crypto_setup_test.go	2026-07-29 05:01:09
 @@ -69,6 +69,7 @@
  		protocol.ConnectionID{},
  		&wire.TransportParameters{},
