@@ -1,0 +1,179 @@
+diff -ruN quic-go.orig/config.go quic-go/config.go
+--- quic-go.orig/config.go	2026-07-29 04:39:31
++++ quic-go/config.go	2026-07-29 04:48:25
+@@ -127,5 +127,6 @@
+ 		Tracer:                           config.Tracer,
+ 		MaxDatagramFrameSize:             config.MaxDatagramFrameSize,
+ 		DisablePathManager:               config.DisablePathManager,
++		ClientTLSConnFactory:             config.ClientTLSConnFactory,
+ 	}
+ }
+diff -ruN quic-go.orig/config_test.go quic-go/config_test.go
+--- quic-go.orig/config_test.go	2026-07-29 04:39:32
++++ quic-go/config_test.go	2026-07-29 04:48:30
+@@ -86,7 +86,7 @@
+ 		}
+ 
+ 		switch fn := typ.Field(i).Name; fn {
+-		case "GetConfigForClient", "RequireAddressValidation", "GetLogWriter", "AllowConnectionWindowIncrease", "Tracer":
++		case "GetConfigForClient", "RequireAddressValidation", "GetLogWriter", "AllowConnectionWindowIncrease", "Tracer", "ClientTLSConnFactory":
+ 			// Can't compare functions.
+ 		case "Versions":
+ 			f.Set(reflect.ValueOf([]Version{1, 2, 3}))
+diff -ruN quic-go.orig/connection.go quic-go/connection.go
+--- quic-go.orig/connection.go	2026-07-29 04:39:32
++++ quic-go/connection.go	2026-07-29 04:41:17
+@@ -488,6 +488,7 @@
+ 		destConnID,
+ 		params,
+ 		tlsConf,
++		s.config.ClientTLSConnFactory,
+ 		enable0RTT,
+ 		s.rttStats,
+ 		s.qlogger,
+diff -ruN quic-go.orig/fuzzing/handshake/cmd/corpus.go quic-go/fuzzing/handshake/cmd/corpus.go
+--- quic-go.orig/fuzzing/handshake/cmd/corpus.go	2026-07-29 04:39:31
++++ quic-go/fuzzing/handshake/cmd/corpus.go	2026-07-29 04:41:55
+@@ -28,6 +28,7 @@
+ 			RootCAs:            testdata.GetRootCA(),
+ 			ClientSessionCache: tls.NewLRUClientSessionCache(1),
+ 		},
++		nil,
+ 		false,
+ 		&utils.RTTStats{},
+ 		nil,
+diff -ruN quic-go.orig/fuzzing/handshake/fuzz.go quic-go/fuzzing/handshake/fuzz.go
+--- quic-go.orig/fuzzing/handshake/fuzz.go	2026-07-29 04:39:31
++++ quic-go/fuzzing/handshake/fuzz.go	2026-07-29 04:41:47
+@@ -280,6 +280,7 @@
+ 		protocol.ConnectionID{},
+ 		clientTP,
+ 		clientConf,
++		nil,
+ 		enable0RTTClient,
+ 		&utils.RTTStats{},
+ 		nil,
+diff -ruN quic-go.orig/interface.go quic-go/interface.go
+--- quic-go.orig/interface.go	2026-07-29 04:39:32
++++ quic-go/interface.go	2026-07-29 04:41:06
+@@ -13,6 +13,13 @@
+ 	"github.com/apernet/quic-go/qlogwriter"
+ )
+ 
++// TLSConn is the TLS engine that drives a QUIC handshake. *tls.QUICConn
++// satisfies it; see Config.ClientTLSConnFactory for why it is nameable.
++type TLSConn = handshake.QUICTLSConn
++
++// ClientTLSConnFactory builds the TLS engine for a client handshake.
++type ClientTLSConnFactory = handshake.ClientTLSConnFactory
++
+ // The StreamID is the ID of a QUIC stream.
+ type StreamID = protocol.StreamID
+ 
+@@ -194,6 +201,18 @@
+ 
+ 	MaxDatagramFrameSize int64
+ 	DisablePathManager   bool
++
++	// ClientTLSConnFactory, if set, supplies the TLS engine for the client
++	// handshake instead of crypto/tls. It is consulted once per connection, so
++	// connections that leave it nil keep the standard library. Returning nil has
++	// the same effect. Only valid for the client.
++	//
++	// This exists so a caller can hand the handshake to uTLS and emit a
++	// browser-shaped ClientHello: on QUIC the ClientHello rides in the Initial
++	// packet, whose header protection uses a key derived from the (cleartext)
++	// Destination Connection ID, so any observer can decrypt it and read the
++	// stdlib's distinctive fingerprint.
++	ClientTLSConnFactory ClientTLSConnFactory
+ }
+ 
+ // ClientHelloInfo contains information about an incoming connection attempt.
+diff -ruN quic-go.orig/internal/handshake/crypto_setup.go quic-go/internal/handshake/crypto_setup.go
+--- quic-go.orig/internal/handshake/crypto_setup.go	2026-07-29 04:39:31
++++ quic-go/internal/handshake/crypto_setup.go	2026-07-29 04:40:42
+@@ -25,9 +25,29 @@
+ 
+ const clientSessionStateRevision = 5
+ 
++// QUICTLSConn is the subset of *tls.QUICConn that cryptoSetup drives. Naming it
++// lets a caller substitute a different TLS engine -- e.g. one backed by uTLS,
++// which emits a browser-shaped ClientHello -- without quic-go taking on a
++// dependency of its own. *tls.QUICConn satisfies this natively, so the standard
++// path is unchanged.
++type QUICTLSConn interface {
++	Start(context.Context) error
++	NextEvent() tls.QUICEvent
++	HandleData(tls.QUICEncryptionLevel, []byte) error
++	SendSessionTicket(tls.QUICSessionTicketOptions) error
++	StoreSession(*tls.SessionState) error
++	ConnectionState() tls.ConnectionState
++	SetTransportParameters([]byte)
++	Close() error
++}
++
++// ClientTLSConnFactory builds the TLS engine for a client handshake. It is
++// consulted per connection; returning nil selects the standard library.
++type ClientTLSConnFactory func(*tls.QUICConfig) QUICTLSConn
++
+ type cryptoSetup struct {
+ 	tlsConf *tls.Config
+-	conn    *tls.QUICConn
++	conn    QUICTLSConn
+ 
+ 	events []Event
+ 
+@@ -71,6 +91,7 @@
+ 	connID protocol.ConnectionID,
+ 	tp *wire.TransportParameters,
+ 	tlsConf *tls.Config,
++	tlsConnFactory ClientTLSConnFactory,
+ 	enable0RTT bool,
+ 	rttStats *utils.RTTStats,
+ 	qlogger qlogwriter.Recorder,
+@@ -92,10 +113,16 @@
+ 	cs.tlsConf = tlsConf
+ 	cs.allow0RTT = enable0RTT
+ 
+-	cs.conn = tls.QUICClient(&tls.QUICConfig{
++	qconf := &tls.QUICConfig{
+ 		TLSConfig:           tlsConf,
+ 		EnableSessionEvents: true,
+-	})
++	}
++	if tlsConnFactory != nil {
++		cs.conn = tlsConnFactory(qconf)
++	}
++	if cs.conn == nil {
++		cs.conn = tls.QUICClient(qconf)
++	}
+ 	cs.conn.SetTransportParameters(cs.ourParams.Marshal(protocol.PerspectiveClient))
+ 
+ 	return cs
+diff -ruN quic-go.orig/internal/handshake/crypto_setup_test.go quic-go/internal/handshake/crypto_setup_test.go
+--- quic-go.orig/internal/handshake/crypto_setup_test.go	2026-07-29 04:39:31
++++ quic-go/internal/handshake/crypto_setup_test.go	2026-07-29 04:44:28
+@@ -69,6 +69,7 @@
+ 		protocol.ConnectionID{},
+ 		&wire.TransportParameters{},
+ 		tlsConf,
++		nil,
+ 		false,
+ 		utils.NewRTTStats(),
+ 		nil,
+@@ -189,6 +190,7 @@
+ 		protocol.ConnectionID{},
+ 		clientTransportParameters,
+ 		clientConf,
++		nil,
+ 		enable0RTT,
+ 		clientRTTStats,
+ 		nil,
+@@ -282,6 +284,7 @@
+ 		protocol.ConnectionID{},
+ 		cTransportParameters,
+ 		clientConf,
++		nil,
+ 		false,
+ 		utils.NewRTTStats(),
+ 		nil,
