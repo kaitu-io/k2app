@@ -26,6 +26,7 @@
 | [spike/residual_test.go](spike/residual_test.go) | 缓解后的残余在大样本下会不会被攒出来（§13.4） |
 | [spike/shape_test.go](spike/shape_test.go) | 流量形状这条轴有多大，以及为什么它的零假设取不到（§14） |
 | [tools/ech_survey.py](tools/ech_survey.py) | 现实世界到底有多少域名部署了 ECH（§1.2） |
+| [tools/front_survey.py](tools/front_survey.py) | 候选 front 在流量类别与 IP 分散度上的实测评分（§14.5） |
 
 ## 一句话概括
 
