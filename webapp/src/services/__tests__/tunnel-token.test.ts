@@ -14,12 +14,15 @@ const NINETY_DAYS = 7776000;
 
 /**
  * 构造一个"够用"的假 JWT：真实 header/signature 无关紧要，adoptTunnelToken
- * 只解 payload 的 exp claim（不验签）。remainingSeconds 可为负（模拟已过期）。
+ * 只解 payload 的 exp / token_issue_at claim（不验签）。remainingSeconds 可
+ * 为负（模拟已过期）。tokenIssueAt 省略时不写入该字段（模拟旧格式 token）。
  */
-function fakeJwt(remainingSeconds: number): string {
+function fakeJwt(remainingSeconds: number, tokenIssueAt?: number): string {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = btoa(JSON.stringify({ exp: nowSeconds + remainingSeconds }));
+  const payloadObj: Record<string, number> = { exp: nowSeconds + remainingSeconds };
+  if (tokenIssueAt !== undefined) payloadObj.token_issue_at = tokenIssueAt;
+  const payload = btoa(JSON.stringify(payloadObj));
   return `${header}.${payload}.fakesig`;
 }
 
@@ -78,6 +81,28 @@ describe('adoptTunnelToken', () => {
     const incoming = fakeJwt(NINETY_DAYS);
     await adoptTunnelToken(incoming);
     expect(authService.setTunnelToken).toHaveBeenCalledWith(incoming);
+  });
+
+  // 服务端吊销路径（final-review re-review finding NEW-2）：递增
+  // Device.TunnelIssueAt 后重签的新 token 带着新锚点，即便按 exp 算剩余
+  // 寿命远高于 50% 阈值也必须采纳——否则客户端会一直捧着一个下次请求就会
+  // 401 的旧锚点 token。这里两份 token 剩余寿命都是 89 天（远高于 45 天
+  // 阈值），单靠 isStoredTunnelTokenStale 不会触发采纳；必须靠
+  // token_issue_at 不一致这条新判据。
+  it('adopts when incoming token_issue_at differs from stored, even with plenty of remaining lifetime (revoke-then-reissue)', async () => {
+    vi.mocked(authService.getTunnelToken).mockResolvedValue(fakeJwt(89 * 86400, 1000));
+    const incoming = fakeJwt(89 * 86400, 2000);
+    await adoptTunnelToken(incoming);
+    expect(authService.setTunnelToken).toHaveBeenCalledWith(incoming);
+  });
+
+  // 对照组：token_issue_at 相同、剩余寿命也未跌破阈值 → 不应采纳（确认新
+  // 判据只在锚点真的变化时触发，不是逢新字符串就采纳）。
+  it('no-ops when token_issue_at matches and stored token is not yet stale', async () => {
+    vi.mocked(authService.getTunnelToken).mockResolvedValue(fakeJwt(89 * 86400, 1000));
+    const incoming = fakeJwt(90 * 86400, 1000);
+    await adoptTunnelToken(incoming);
+    expect(authService.setTunnelToken).not.toHaveBeenCalled();
   });
 
   it('syncs native config on mobile platforms only', async () => {

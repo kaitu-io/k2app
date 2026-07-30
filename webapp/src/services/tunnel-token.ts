@@ -45,6 +45,24 @@ function decodeJwtExp(token: string): number | null {
 }
 
 /**
+ * 解码 JWT payload 拿到 `token_issue_at`（epoch 秒，镜像
+ * `api/logic_auth.go` `TokenClaims.TokenIssueAt` 的 JSON tag）。同样不验签。
+ * 解码失败或字段缺失（旧格式 token）返回 null。
+ */
+function decodeJwtTokenIssueAt(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4 !== 0) b64 += '=';
+    const payload = JSON.parse(atob(b64));
+    return typeof payload.token_issue_at === 'number' ? payload.token_issue_at : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 判断当前已存的 tunnel token 是否"足够陈旧"，值得采纳一份新到达的
  * token：没存过、解不出 exp、或剩余寿命跌破配置寿命的 50%——与服务端
  * `maybeRenewTunnelToken` 的滚动续期门保持同一判据（spec §4.3）。
@@ -57,11 +75,31 @@ function isStoredTunnelTokenStale(stored: string | null): boolean {
   return remaining * 2 < TUNNEL_TOKEN_LIFETIME_SECONDS;
 }
 
+/**
+ * 判断 stored 与 incoming 两份 token 的 `token_issue_at` 吊销锚点是否不
+ * 一致。服务端吊销路径（递增 `Device.TunnelIssueAt`，spec §4.1）会让
+ * 服务端下一次签发带上新锚点——此时旧 token 已经会在下次请求时被
+ * `validateTunnelToken` 401（锚点比对），即便它自身按 `exp` 算剩余寿命
+ * 还很充裕，也必须采纳新锚点的 token，否则客户端会一直捧着一个即将
+ * 处处 401 的 token 不放（isStoredTunnelTokenStale 单独看不出这一点，
+ * 因为它只看 stored 自己的剩余寿命，不知道 incoming 带来了新锚点）。
+ * 双方任一解不出该 claim（旧格式 token 缺字段）时不判定为不一致，避免
+ * 误触发；stored 为 null 的"没存过"场景已由 isStoredTunnelTokenStale
+ * 覆盖，不在这里处理。
+ */
+function hasTokenIssueAtMismatch(stored: string | null, incoming: string): boolean {
+  if (!stored) return false;
+  const storedIssueAt = decodeJwtTokenIssueAt(stored);
+  const incomingIssueAt = decodeJwtTokenIssueAt(incoming);
+  if (storedIssueAt === null || incomingIssueAt === null) return false;
+  return storedIssueAt !== incomingIssueAt;
+}
+
 export async function adoptTunnelToken(token: string | undefined): Promise<void> {
   if (!token) return;
   try {
     const current = await authService.getTunnelToken();
-    if (!isStoredTunnelTokenStale(current)) return;
+    if (!isStoredTunnelTokenStale(current) && !hasTokenIssueAtMismatch(current, token)) return;
     await authService.setTunnelToken(token);
     await syncNativeVpnConfig(token);
   } catch (err) {
