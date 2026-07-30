@@ -83,6 +83,7 @@ func Migrate() error {
 		&NodeUsage{},
 		&DeviceTrafficDaily{},
 		&DeviceTrafficCursor{},
+		&DeviceSessionDaily{},
 		&TrafficAbuseAlert{},
 		&PrivateNodeSubscription{},
 		&PrivateNodePlanSpec{},
