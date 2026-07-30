@@ -19,7 +19,7 @@ k2 侧分支基底：`fix/quic-device-auth`（master + 5 commits，无分叉）
 
 **HTTP 票据路径**：`wire/auth.go` 的 `TicketStore` + `AuthHandler` + `POST /k2v5/auth` 完整实现且已挂载（`server/server.go:148`），但**没有任何客户端调用过它**。它是一条从未通电的线路。
 
-后果：拿到一份 `k2v5://` URL（其中 `ech`、`pin` 都是明文参数）即可无限期免费使用任意共享节点；`udid` 由客户端自报，流量归属可任意伪造；`docs/superpowers/specs/2026-07-22-per-user-traffic-accounting-design.md` §8 记录的自动配额处置因此没有可信依据，其 §170 明写自动处置的硬前置是"metadata UDID 与 ticket 交叉验证"。
+后果：拿到一份 `k2v5://` URL（其中 `ech`、`pin` 都是明文参数）即可无限期免费使用任意共享节点；`udid` 由客户端自报，流量归属可任意伪造；`docs/superpowers/specs/2026-07-22-per-user-traffic-accounting-design.md` §8 记录的自动配额处置因此没有可信依据——那份 spec 的风险表里明写"Phase 2 自动处置的硬前置：TCP-WS upgrade 带 ticket 校验，metadata UDID 与 ticket.DeviceID 交叉验证"。本设计就是在兑现那个前置（用 cookie 取代其中已被铲掉的 ticket）。
 
 分支 `fix/quic-device-auth` 已经修复了准入结构（见 §3.1），但它把每条新连接都变成一次同步的 Center 校验，且强制开关默认关闭——所以今天线上仍然是完全不设防的。
 
@@ -33,7 +33,7 @@ k2 侧分支基底：`fix/quic-device-auth`（master + 5 commits，无分叉）
 |---|---|---|---|
 | P1 | **k2r 企业路由器** | `api/api_gateway_credential.go:66-90`；`k2/config/subscription.go:26-33,158,302-309` | `generateTokens` 同时签了 access + refresh，但只把 access 塞进 URL，**refresh 被直接丢弃**。`Subscription.creds` 是构造后不可变字段，订阅刷新只换节点列表不换 token。绑定约 24h 后 `/api/subs` 稳定 401，隧道列表永久停在绑定当天的磁盘缓存 |
 | P2 | **桌面 daemon 7 天自动重连** | `k2/daemon/daemon.go:620-661` | 重放磁盘上的 `persistedState.Config`，token 冻结在上次连接时刻；webapp 不在链路上，无刷新机会 |
-| P3 | **iOS on-demand / alwaysOn 重启** | `mobile/…/K2Plugin.swift:276,286-288`；`PacketTunnelProvider.swift:178-190` | 系统无参数拉起 NE，configJSON 从 App Group 读取，token 冻结；NE 内无 Center 通信能力 |
+| P3 | **iOS on-demand / alwaysOn 重启** | `mobile/…/K2Plugin.swift:276,286-288`；`PacketTunnelProvider.swift:178-195` | 系统无参数拉起 NE，configJSON 按 options → `providerConfiguration` → App Group 的顺序读取（**无参数时 `providerConfiguration` 先命中**，见 §4.3），token 冻结；NE 内无 Center 通信能力 |
 | P4 | **Android always-on VPN 重启** | `mobile/android/…/K2VpnService.kt:133-142` | `SharedPreferences("k2vpn")` 重放 configJSON，同 P3 |
 | P5 | **桌面 k2subs 订阅静默降级** | `k2/subscription/resolve.go:74-84`；`k2/config/subscription.go:540-564` | fetch 401 → 只要有磁盘缓存就 `slog.Warn` 后继续用。缓存加载**无 TTL、无年龄检查**，三天前的 `subs-*.json` 照用，带着过期 token 去连节点 |
 | P6 | **App 冷启动竞态** | `webapp/src/stores/connection.store.ts:451-556`；`hooks/useUser.ts:92-99`；`CloudTunnelList.tsx:158` | 唯一的 token 刷新触发器是后台 revalidate 撞到 401（`cloud-api.ts:253-347`）。它与用户点连接之间**没有任何 gate**；`connect()` 不检查 auth 状态、不等刷新、不主动刷新 |
@@ -84,7 +84,7 @@ k2 侧分支基底：`fix/quic-device-auth`（master + 5 commits，无分叉）
 
 本设计**完整保留**这个结构，只替换它下面"每条新连接同步验一次"的部分。
 
-同时保留的还有：两个传输共用同一个 `enforce` 开关（只覆盖 QUIC 会让攻击者强制走 TCP-WS 绕过）、`NewRemoteValidator` 补上 Basic auth（缺它导致 `/slave/device-check-auth` 在生产恒 401、命中数为 0）、相机伪装中继不再信任客户端自选的 SNI。
+同时保留的还有：两个传输共用同一个 `enforce` 开关（只覆盖 QUIC 会让攻击者强制走 TCP-WS 绕过）、`NewRemoteValidator` 补上 Basic auth（缺它导致 `/slave/device-check-auth` 在生产恒 401、命中数为 0）、伪装中继（camouflage relay）不再信任客户端自选的 SNI。
 
 ### 3.2 三层凭据模型
 
