@@ -10,7 +10,7 @@ import (
 // setupTCPWSEnforcePair wires a client↔server pair over net.Pipe with a
 // validator and enforce flag, so the TCP-WS device-auth gate can be driven
 // end-to-end. Mirrors setupTCPWSPair but exercises the enforce path.
-func setupTCPWSEnforcePair(t *testing.T, cfg Config, enforce bool, validator JWTValidator) (*TCPWSClient, *TCPWSServer, func()) {
+func setupTCPWSEnforcePair(t *testing.T, cfg Config, enforce bool, validator Validator) (*TCPWSClient, *TCPWSServer, func()) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 
@@ -39,7 +39,12 @@ func setupTCPWSEnforcePair(t *testing.T, cfg Config, enforce bool, validator JWT
 func TestTCPWSEnforce_ForgedRejected(t *testing.T) {
 	cfg := Config{Host: "127.0.0.1", Port: 443, UDID: "attacker", Token: "forged"}
 	client, _, cleanup := setupTCPWSEnforcePair(t, cfg, true,
-		func(jwt, udid, mode string) bool { return udid == "good" && jwt == "valid" })
+		func(token, udid, mode string) AuthVerdict {
+			if udid == "good" && token == "valid" {
+				return AuthVerdict{OK: true}
+			}
+			return AuthVerdict{Code: 401}
+		})
 	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -58,7 +63,12 @@ func TestTCPWSEnforce_ForgedRejected(t *testing.T) {
 func TestTCPWSEnforce_ValidAdmitted(t *testing.T) {
 	cfg := Config{Host: "127.0.0.1", Port: 443, UDID: "good", Token: "valid"}
 	client, server, cleanup := setupTCPWSEnforcePair(t, cfg, true,
-		func(jwt, udid, mode string) bool { return udid == "good" && jwt == "valid" })
+		func(token, udid, mode string) AuthVerdict {
+			if udid == "good" && token == "valid" {
+				return AuthVerdict{OK: true}
+			}
+			return AuthVerdict{Code: 401}
+		})
 	defer cleanup()
 
 	go func() {
@@ -85,7 +95,7 @@ func TestTCPWSEnforce_ValidAdmitted(t *testing.T) {
 func TestTCPWSEnforce_PermissiveServesUnauthenticated(t *testing.T) {
 	cfg := Config{Host: "127.0.0.1", Port: 443, UDID: "legacy", Token: "whatever"}
 	client, server, cleanup := setupTCPWSEnforcePair(t, cfg, false,
-		func(jwt, udid, mode string) bool { return false }) // reject everyone
+		func(token, udid, mode string) AuthVerdict { return AuthVerdict{Code: 401} }) // reject everyone
 	defer cleanup()
 
 	go func() {

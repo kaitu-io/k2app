@@ -10,44 +10,47 @@ import (
 
 var remoteAuthClient = &http.Client{Timeout: 5 * time.Second}
 
-// NewRemoteValidator creates a JWTValidator that validates credentials
-// against a remote Center API endpoint (POST /slave/device-check-auth).
+// NewRemoteValidator creates a Validator that validates credentials against a
+// remote Center API endpoint (POST /slave/device-check-auth).
 //
-// nodeIPv4Fn + nodeSecret are the node's own Basic-auth identity: that endpoint
-// sits behind Center's SlaveAuthRequired() (username=ipv4, password=NodeSecret).
-// Omitting them made every device-auth request 401 — the reason /slave/device-
-// check-auth showed 0 hits in production despite being wired. An empty secret
-// means the node has no Center identity: fail closed without firing a request.
+// Verdict mapping (spec §6.4 — "fail-closed only for Center saying no, never
+// for Center not speaking"):
+//   - JSON code 0            → OK, with UserID + ServiceExpiredAt from data
+//   - JSON code 401/402/403  → explicit rejection with that code
+//   - transport error / HTTP 5xx / decode failure / any other JSON code
+//     (422 bad request, 500 Center bug, …) → Code -1 (cannot determine)
+//   - node config problems (empty NodeSecret, unresolvable node IPv4, bad
+//     URL) → "no opinion" (OK=false, Code=0): the node's own fault, and the
+//     chain tail fail-closes it to 401 — same fail-closed behavior as before.
 //
-// nodeIPv4Fn is a lazy provider: nodes commonly don't set K2_NODE_IPV4 and must
-// ProbePublicIP at runtime, which can't run at NewServer() time (may block /
-// network not up). It's called on first auth (a client already connected → net
-// is up) and should memoize (sync.Once) — see server.go.
-func NewRemoteValidator(remoteURL string, nodeIPv4Fn func() string, nodeSecret string) JWTValidator {
-	return func(jwt, udid, mode string) bool {
+// nodeIPv4Fn + nodeSecret are the node's Basic-auth identity (username=ipv4,
+// password=NodeSecret): /slave/device-check-auth sits behind Center's
+// SlaveAuthRequired(). nodeIPv4Fn is a lazy memoizing provider — see server.go.
+func NewRemoteValidator(remoteURL string, nodeIPv4Fn func() string, nodeSecret string) Validator {
+	return func(token, udid, mode string) AuthVerdict {
 		if nodeSecret == "" {
 			slog.Warn("wire: remote auth: node secret unset, rejecting", "udid", udid)
-			return false
+			return AuthVerdict{}
 		}
 		nodeIPv4 := nodeIPv4Fn()
 		if nodeIPv4 == "" {
 			slog.Warn("wire: remote auth: node ipv4 unresolved, rejecting", "udid", udid)
-			return false
+			return AuthVerdict{}
 		}
 		body, err := json.Marshal(struct {
 			UDID  string `json:"udid"`
 			Token string `json:"token"`
 			Mode  string `json:"mode,omitempty"`
-		}{UDID: udid, Token: jwt, Mode: mode})
+		}{UDID: udid, Token: token, Mode: mode})
 		if err != nil {
 			slog.Warn("wire: remote auth: marshal failed", "err", err)
-			return false
+			return AuthVerdict{}
 		}
 
 		req, err := http.NewRequest(http.MethodPost, remoteURL, bytes.NewReader(body))
 		if err != nil {
 			slog.Warn("wire: remote auth: build request failed", "url", remoteURL, "err", err)
-			return false
+			return AuthVerdict{}
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.SetBasicAuth(nodeIPv4, nodeSecret)
@@ -55,22 +58,39 @@ func NewRemoteValidator(remoteURL string, nodeIPv4Fn func() string, nodeSecret s
 		resp, err := remoteAuthClient.Do(req)
 		if err != nil {
 			slog.Warn("wire: remote auth: request failed", "url", remoteURL, "err", err)
-			return false
+			return AuthVerdict{Code: -1}
 		}
 		defer resp.Body.Close()
 
+		if resp.StatusCode >= 500 {
+			slog.Warn("wire: remote auth: server error", "url", remoteURL, "status", resp.StatusCode)
+			return AuthVerdict{Code: -1}
+		}
+
 		var result struct {
 			Code int `json:"code"`
+			Data struct {
+				UserID           uint64 `json:"userID"`
+				UDID             string `json:"udid"`
+				ServiceExpiredAt int64  `json:"serviceExpiredAt"`
+			} `json:"data"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			slog.Warn("wire: remote auth: decode failed", "url", remoteURL, "err", err)
-			return false
+			return AuthVerdict{Code: -1}
 		}
 
-		if result.Code != 0 {
+		switch result.Code {
+		case 0:
+			return AuthVerdict{OK: true, UserID: result.Data.UserID, SvcExp: result.Data.ServiceExpiredAt}
+		case 401, 402, 403:
 			slog.Debug("wire: remote auth: rejected", "udid", udid, "code", result.Code)
-			return false
+			return AuthVerdict{Code: result.Code}
+		default:
+			// Center answered but not with a verdict about this device (422
+			// malformed request, 500 system error, …) — cannot determine.
+			slog.Warn("wire: remote auth: unexpected code", "udid", udid, "code", result.Code)
+			return AuthVerdict{Code: -1}
 		}
-		return true
 	}
 }

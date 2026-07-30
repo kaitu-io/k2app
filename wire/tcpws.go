@@ -659,7 +659,7 @@ type TCPWSServer struct {
 	// 0x10) authenticates the session; under enforce, unauthenticated proxy
 	// streams are rejected. Both are immutable after construction/SetX (called
 	// before HandleConn), so no lock is needed on the read path.
-	validate JWTValidator
+	validate Validator
 	adm      admissionPolicy // device-auth admission; see admission.go
 
 	mu    deadlock.Mutex
@@ -678,10 +678,10 @@ func NewTCPWSServer() *TCPWSServer {
 	}
 }
 
-// SetValidator sets the JWTValidator used by metadata stream auth. Must be
+// SetValidator sets the Validator used by metadata stream auth. Must be
 // called before HandleConn/HandleSession. Mirrors QUICServer.SetValidator so a
 // node authenticates identically on both transports.
-func (s *TCPWSServer) SetValidator(v JWTValidator) {
+func (s *TCPWSServer) SetValidator(v Validator) {
 	s.validate = v
 }
 
@@ -826,10 +826,11 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 	// That may authenticate everyone in permissive mode, where the verdict only
 	// feeds attribution — but never under enforce, or the gate would be a no-op
 	// on a misconfigured node. Mirrors QUICServer.handleMetadataStream.
-	authed := !s.adm.enforce
+	verdict := AuthVerdict{OK: !s.adm.enforce}
 	if s.validate != nil {
-		authed = s.validate(meta.Token, meta.UDID, meta.Mode)
+		verdict = s.validate(meta.Token, meta.UDID, meta.Mode)
 	}
+	authed := verdict.OK
 	auth.settle(authed)
 
 	if !authed {

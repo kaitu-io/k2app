@@ -24,7 +24,7 @@ import (
 // startDatagramEchoServer builds an enforce-configurable QUIC server whose UDP
 // handler echoes each payload back. Only sessions the datagram gate admits ever
 // reach the handler.
-func startDatagramEchoServer(t *testing.T, validator JWTValidator, enforce bool) (*net.UDPAddr, func()) {
+func startDatagramEchoServer(t *testing.T, validator Validator, enforce bool) (*net.UDPAddr, func()) {
 	t.Helper()
 	cert := generateTestCert(t)
 
@@ -131,7 +131,12 @@ func rawDatagramEchoes(t *testing.T, conn *quic.Conn) bool {
 // able to proxy UDP via raw datagrams.
 func TestIntegration_QUICEnforce_UnauthenticatedDatagramRejected(t *testing.T) {
 	serverAddr, cleanup := startDatagramEchoServer(t,
-		func(jwt, udid, mode string) bool { return udid == "good-device" && jwt == "valid-token" },
+		func(token, udid, mode string) AuthVerdict {
+			if udid == "good-device" && token == "valid-token" {
+				return AuthVerdict{OK: true}
+			}
+			return AuthVerdict{Code: 401}
+		},
 		true, // enforce
 	)
 	defer cleanup()
@@ -149,7 +154,12 @@ func TestIntegration_QUICEnforce_UnauthenticatedDatagramRejected(t *testing.T) {
 // can proxy UDP under enforce.
 func TestIntegration_QUICEnforce_ValidDatagramAdmitted(t *testing.T) {
 	serverAddr, cleanup := startDatagramEchoServer(t,
-		func(jwt, udid, mode string) bool { return udid == "good-device" && jwt == "valid-token" },
+		func(token, udid, mode string) AuthVerdict {
+			if udid == "good-device" && token == "valid-token" {
+				return AuthVerdict{OK: true}
+			}
+			return AuthVerdict{Code: 401}
+		},
 		true, // enforce
 	)
 	defer cleanup()
@@ -190,7 +200,7 @@ func TestIntegration_QUICEnforce_ValidDatagramAdmitted(t *testing.T) {
 // served, so flipping the flag is the only thing that cuts off legacy clients.
 func TestIntegration_QUICEnforce_PermissiveServesDatagram(t *testing.T) {
 	serverAddr, cleanup := startDatagramEchoServer(t,
-		func(jwt, udid, mode string) bool { return false }, // reject everyone
+		func(token, udid, mode string) AuthVerdict { return AuthVerdict{Code: 401} }, // reject everyone
 		false, // permissive
 	)
 	defer cleanup()

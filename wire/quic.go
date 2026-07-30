@@ -1121,7 +1121,7 @@ const authWaitDefault = 500 * time.Millisecond
 
 // QUICServer is the QUIC/H3 server transport.
 type QUICServer struct {
-	validate JWTValidator    // set by SetValidator; used by metadata stream auth
+	validate Validator       // set by SetValidator; used by metadata stream auth
 	adm      admissionPolicy // device-auth admission; see admission.go
 
 	mu    deadlock.Mutex
@@ -1141,9 +1141,9 @@ func NewQUICServer() *QUICServer {
 	}
 }
 
-// SetValidator sets the JWTValidator used by metadata stream auth.
+// SetValidator sets the Validator used by metadata stream auth.
 // Must be called before Listen.
-func (s *QUICServer) SetValidator(v JWTValidator) {
+func (s *QUICServer) SetValidator(v Validator) {
 	s.validate = v
 }
 
@@ -1382,10 +1382,11 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 	// may authenticate everyone in permissive mode, where the verdict only feeds
 	// attribution — but never under enforce, or the gate would be a no-op on a
 	// misconfigured node.
-	authed := !s.adm.enforce
+	verdict := AuthVerdict{OK: !s.adm.enforce}
 	if s.validate != nil {
-		authed = s.validate(meta.Token, meta.UDID, meta.Mode)
+		verdict = s.validate(meta.Token, meta.UDID, meta.Mode)
 	}
+	authed := verdict.OK
 	ctx.auth.settle(authed)
 
 	if !authed {

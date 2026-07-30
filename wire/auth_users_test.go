@@ -67,8 +67,8 @@ func TestNewUsersFileValidator_Match(t *testing.T) {
 	os.WriteFile(path, []byte("testudid:testtoken\n"), 0600)
 
 	v := NewUsersFileValidator(path)
-	// v(jwt, udid, mode) — jwt=token, udid=device
-	if !v("testtoken", "testudid", "") {
+	// v(token, udid, mode)
+	if v("testtoken", "testudid", "").OK != true {
 		t.Error("expected valid credentials to pass")
 	}
 }
@@ -79,8 +79,9 @@ func TestNewUsersFileValidator_WrongToken(t *testing.T) {
 	os.WriteFile(path, []byte("testudid:testtoken\n"), 0600)
 
 	v := NewUsersFileValidator(path)
-	if v("wrongtoken", "testudid", "") {
-		t.Error("expected wrong token to fail")
+	got := v("wrongtoken", "testudid", "")
+	if got.OK != false || got.Code != 0 {
+		t.Errorf("expected no-opinion for wrong token, got %+v", got)
 	}
 }
 
@@ -90,8 +91,9 @@ func TestNewUsersFileValidator_UnknownUDID(t *testing.T) {
 	os.WriteFile(path, []byte("testudid:testtoken\n"), 0600)
 
 	v := NewUsersFileValidator(path)
-	if v("testtoken", "unknown", "") {
-		t.Error("expected unknown UDID to fail")
+	got := v("testtoken", "unknown", "")
+	if got.OK != false || got.Code != 0 {
+		t.Errorf("expected no-opinion for unknown udid, got %+v", got)
 	}
 }
 
@@ -102,21 +104,21 @@ func TestNewUsersFileValidator_HotReload(t *testing.T) {
 
 	v := NewUsersFileValidator(path)
 
-	// v(jwt, udid, mode)
-	if !v("token1", "user1", "") {
+	// v(token, udid, mode)
+	if !v("token1", "user1", "").OK {
 		t.Error("user1 should be valid")
 	}
-	if v("token2", "user2", "") {
+	if v("token2", "user2", "").OK {
 		t.Error("user2 should be invalid")
 	}
 
 	// Update file: remove user1, add user2.
 	os.WriteFile(path, []byte("user2:token2\n"), 0600)
 
-	if v("token1", "user1", "") {
+	if v("token1", "user1", "").OK {
 		t.Error("user1 should be invalid after update")
 	}
-	if !v("token2", "user2", "") {
+	if !v("token2", "user2", "").OK {
 		t.Error("user2 should be valid after update")
 	}
 }
@@ -127,13 +129,14 @@ func TestNewUsersFileValidator_FileMissing(t *testing.T) {
 	os.WriteFile(path, []byte("testudid:testtoken\n"), 0600)
 
 	v := NewUsersFileValidator(path)
-	if !v("testtoken", "testudid", "") {
+	if !v("testtoken", "testudid", "").OK {
 		t.Error("should pass when file exists")
 	}
 
 	os.Remove(path)
-	if v("testtoken", "testudid", "") {
-		t.Error("should fail when file removed")
+	got := v("testtoken", "testudid", "")
+	if got.OK != false || got.Code != 0 {
+		t.Errorf("expected no-opinion when file removed, got %+v", got)
 	}
 }
 
@@ -143,25 +146,27 @@ func TestNewUsersFileValidator_EmptyFile(t *testing.T) {
 	os.WriteFile(path, []byte(""), 0600)
 
 	v := NewUsersFileValidator(path)
-	if v("anytoken", "anyudid", "") {
-		t.Error("empty file should reject all")
+	got := v("anytoken", "anyudid", "")
+	if got.OK != false || got.Code != 0 {
+		t.Errorf("expected no-opinion for empty file, got %+v", got)
 	}
 }
 
-func TestChainValidators(t *testing.T) {
-	reject := func(user, pass, mode string) bool { return false }
-	accept := func(user, pass, mode string) bool { return true }
-
-	// Both reject → false.
-	if ChainValidators(reject, reject)("a", "b", "") {
-		t.Error("both reject should fail")
-	}
-	// First accepts → true (short-circuit).
-	if !ChainValidators(accept, reject)("a", "b", "") {
-		t.Error("first accept should pass")
-	}
-	// Second accepts → true.
-	if !ChainValidators(reject, accept)("a", "b", "") {
-		t.Error("second accept should pass")
+// TestNewUsersFileValidator_NeverIssuesExplicitRejection pins the no-opinion
+// rule: whatever goes wrong locally (missing file, empty file, unknown udid,
+// wrong token), the users-file validator must not preempt Center's verdict.
+func TestNewUsersFileValidator_NeverIssuesExplicitRejection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "users")
+	os.WriteFile(path, []byte("alice:token1\n"), 0600)
+	v := NewUsersFileValidator(path)
+	for name, args := range map[string][2]string{
+		"wrong token":  {"WRONG", "alice"},
+		"unknown udid": {"token1", "nobody"},
+	} {
+		got := v(args[0], args[1], "")
+		if got.OK || got.Code != 0 {
+			t.Errorf("%s: got %+v, want no-opinion {OK:false Code:0}", name, got)
+		}
 	}
 }

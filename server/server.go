@@ -123,7 +123,7 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	}
 
 	// Auth: build validator chain (users_file → remote_url → accept-all).
-	var validators []wire.JWTValidator
+	var validators []wire.Validator
 	if cfg.Auth.UsersFile != "" {
 		slog.Info("server: auth chain", "mode", "users_file", "path", cfg.Auth.UsersFile)
 		validators = append(validators, wire.NewUsersFileValidator(cfg.Auth.UsersFile))
@@ -149,7 +149,7 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		validators = append(validators, wire.NewRemoteValidator(cfg.Auth.RemoteURL, ipv4Fn, cfg.NodeSecret))
 	}
 
-	var validator wire.JWTValidator
+	var validator wire.Validator
 	if len(validators) > 0 {
 		validator = wire.ChainValidators(validators...)
 		// Cache successful auths: opening the QUIC metadata path to all normal
@@ -165,8 +165,11 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 				"set auth.users_file or auth.remote_url, else the accept-all fallback admits any non-empty udid/token")
 		}
 		slog.Info("server: auth chain", "mode", "accept-all")
-		validator = func(jwt, udid, mode string) bool {
-			return jwt != "" && udid != ""
+		validator = func(token, udid, mode string) wire.AuthVerdict {
+			if token != "" && udid != "" {
+				return wire.AuthVerdict{OK: true}
+			}
+			return wire.AuthVerdict{OK: false, Code: 401}
 		}
 	}
 	// Enforcement must cover BOTH transports with the same validator: QUIC is

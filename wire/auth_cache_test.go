@@ -8,17 +8,17 @@ import (
 
 func TestCachingValidator_CachesSuccess(t *testing.T) {
 	var calls atomic.Int32
-	inner := func(jwt, udid, mode string) bool {
+	inner := func(token, udid, mode string) AuthVerdict {
 		calls.Add(1)
-		return true
+		return AuthVerdict{OK: true}
 	}
 	now := time.Unix(1000, 0)
-	c := &authCache{inner: inner, ttl: time.Minute, now: func() time.Time { return now }, entries: map[string]int64{}}
+	c := &authCache{inner: inner, ttl: time.Minute, now: func() time.Time { return now }, entries: map[string]cachedVerdict{}}
 
-	if !c.validate("tok", "dev", "") {
+	if !c.validate("tok", "dev", "").OK {
 		t.Fatal("first call should pass")
 	}
-	if !c.validate("tok", "dev", "") {
+	if !c.validate("tok", "dev", "").OK {
 		t.Fatal("second call should pass (cached)")
 	}
 	if got := calls.Load(); got != 1 {
@@ -28,12 +28,12 @@ func TestCachingValidator_CachesSuccess(t *testing.T) {
 
 func TestCachingValidator_ExpiresAfterTTL(t *testing.T) {
 	var calls atomic.Int32
-	inner := func(jwt, udid, mode string) bool {
+	inner := func(token, udid, mode string) AuthVerdict {
 		calls.Add(1)
-		return true
+		return AuthVerdict{OK: true}
 	}
 	now := time.Unix(1000, 0)
-	c := &authCache{inner: inner, ttl: time.Minute, now: func() time.Time { return now }, entries: map[string]int64{}}
+	c := &authCache{inner: inner, ttl: time.Minute, now: func() time.Time { return now }, entries: map[string]cachedVerdict{}}
 
 	c.validate("tok", "dev", "")
 	now = now.Add(2 * time.Minute) // past TTL
@@ -45,12 +45,12 @@ func TestCachingValidator_ExpiresAfterTTL(t *testing.T) {
 
 func TestCachingValidator_DoesNotCacheFailure(t *testing.T) {
 	var calls atomic.Int32
-	inner := func(jwt, udid, mode string) bool {
+	inner := func(token, udid, mode string) AuthVerdict {
 		calls.Add(1)
-		return false
+		return AuthVerdict{Code: 401}
 	}
 	now := time.Unix(1000, 0)
-	c := &authCache{inner: inner, ttl: time.Minute, now: func() time.Time { return now }, entries: map[string]int64{}}
+	c := &authCache{inner: inner, ttl: time.Minute, now: func() time.Time { return now }, entries: map[string]cachedVerdict{}}
 
 	c.validate("tok", "dev", "")
 	c.validate("tok", "dev", "")
@@ -61,12 +61,12 @@ func TestCachingValidator_DoesNotCacheFailure(t *testing.T) {
 
 func TestCachingValidator_KeyIsolation(t *testing.T) {
 	var calls atomic.Int32
-	inner := func(jwt, udid, mode string) bool {
+	inner := func(token, udid, mode string) AuthVerdict {
 		calls.Add(1)
-		return true
+		return AuthVerdict{OK: true}
 	}
 	now := time.Unix(1000, 0)
-	c := &authCache{inner: inner, ttl: time.Minute, now: func() time.Time { return now }, entries: map[string]int64{}}
+	c := &authCache{inner: inner, ttl: time.Minute, now: func() time.Time { return now }, entries: map[string]cachedVerdict{}}
 
 	c.validate("tok", "devA", "")
 	c.validate("tok", "devB", "")  // different udid → not a cache hit

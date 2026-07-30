@@ -37,8 +37,11 @@ func TestIntegration_QUICEnforce_ForgedTokenRejected(t *testing.T) {
 	defer ln.Close()
 
 	server := NewQUICServer()
-	server.SetValidator(func(jwt, udid, mode string) bool {
-		return udid == "good-device" && jwt == "valid-token"
+	server.SetValidator(func(token, udid, mode string) AuthVerdict {
+		if udid == "good-device" && token == "valid-token" {
+			return AuthVerdict{OK: true}
+		}
+		return AuthVerdict{Code: 401}
 	})
 	server.SetEnforce(true)
 	server.adm.authWait = 300 * time.Millisecond
@@ -122,8 +125,8 @@ func TestIntegration_QUICEnforce_PermissiveServesUnauthenticated(t *testing.T) {
 	defer ln.Close()
 
 	server := NewQUICServer()
-	server.SetValidator(func(jwt, udid, mode string) bool { return false }) // reject everyone
-	server.SetEnforce(false)                                                // permissive
+	server.SetValidator(func(token, udid, mode string) AuthVerdict { return AuthVerdict{Code: 401} }) // reject everyone
+	server.SetEnforce(false)                                                                          // permissive
 	server.Listen(ln)
 	defer server.Close()
 

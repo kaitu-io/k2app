@@ -56,7 +56,12 @@ func openRawUDPStream(t *testing.T, conn *quic.Conn, streamType byte) *quic.Stre
 // peer has no datagram support, and one that the datagram gate does not cover.
 func TestIntegration_QUICEnforce_UnauthenticatedStreamUDPRejected(t *testing.T) {
 	serverAddr, cleanup := startDatagramEchoServer(t,
-		func(jwt, udid, mode string) bool { return udid == "good-device" && jwt == "valid-token" },
+		func(token, udid, mode string) AuthVerdict {
+			if udid == "good-device" && token == "valid-token" {
+				return AuthVerdict{OK: true}
+			}
+			return AuthVerdict{Code: 401}
+		},
 		true, // enforce
 	)
 	defer cleanup()
@@ -79,7 +84,12 @@ func TestIntegration_QUICEnforce_UnauthenticatedStreamUDPRejected(t *testing.T) 
 // replies come back as datagrams, not on the stream.
 func TestIntegration_QUICEnforce_UnauthenticatedOverflowRejected(t *testing.T) {
 	serverAddr, cleanup := startDatagramEchoServer(t,
-		func(jwt, udid, mode string) bool { return udid == "good-device" && jwt == "valid-token" },
+		func(token, udid, mode string) AuthVerdict {
+			if udid == "good-device" && token == "valid-token" {
+				return AuthVerdict{OK: true}
+			}
+			return AuthVerdict{Code: 401}
+		},
 		true, // enforce
 	)
 	defer cleanup()
@@ -107,7 +117,7 @@ func TestIntegration_QUICEnforce_UnauthenticatedOverflowRejected(t *testing.T) {
 // legacy clients.
 func TestIntegration_QUICEnforce_PermissiveServesStreamUDP(t *testing.T) {
 	serverAddr, cleanup := startDatagramEchoServer(t,
-		func(jwt, udid, mode string) bool { return false }, // reject everyone
+		func(token, udid, mode string) AuthVerdict { return AuthVerdict{Code: 401} }, // reject everyone
 		false, // permissive
 	)
 	defer cleanup()
@@ -167,7 +177,7 @@ func TestIntegration_QUICEnforce_NilValidatorAuthenticatesNobody(t *testing.T) {
 // startTCPWSUDPEchoServer wires a TCP-WS server with a UDP echo handler over
 // net.Pipe and hands back the raw client end, so a test can drive smux directly
 // without TCPWSClient's metadata stream.
-func startTCPWSUDPEchoServer(t *testing.T, validator JWTValidator, enforce bool) (net.Conn, func()) {
+func startTCPWSUDPEchoServer(t *testing.T, validator Validator, enforce bool) (net.Conn, func()) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 
@@ -235,7 +245,12 @@ func rawSmuxUDPEchoes(t *testing.T, clientConn net.Conn) bool {
 // so an ungated UDP entry here is not a corner case — it is the main road.
 func TestTCPWSEnforce_UnauthenticatedStreamUDPRejected(t *testing.T) {
 	clientConn, cleanup := startTCPWSUDPEchoServer(t,
-		func(jwt, udid, mode string) bool { return udid == "good" && jwt == "valid" },
+		func(token, udid, mode string) AuthVerdict {
+			if udid == "good" && token == "valid" {
+				return AuthVerdict{OK: true}
+			}
+			return AuthVerdict{Code: 401}
+		},
 		true, // enforce
 	)
 	defer cleanup()
@@ -248,7 +263,7 @@ func TestTCPWSEnforce_UnauthenticatedStreamUDPRejected(t *testing.T) {
 // TestTCPWSEnforce_PermissiveServesStreamUDP is the matching rollout guard.
 func TestTCPWSEnforce_PermissiveServesStreamUDP(t *testing.T) {
 	clientConn, cleanup := startTCPWSUDPEchoServer(t,
-		func(jwt, udid, mode string) bool { return false }, // reject everyone
+		func(token, udid, mode string) AuthVerdict { return AuthVerdict{Code: 401} }, // reject everyone
 		false, // permissive
 	)
 	defer cleanup()
