@@ -64,10 +64,12 @@ type admissionPolicy struct {
 // admit reports whether a connection may perform egress.
 //
 // Permissive (the default, and the only mode in production until the rollout
-// flag is flipped) never blocks: an unauthenticated connection is still served
-// and its udid is kept for attribution only. Enforce admits a connection whose
-// metadata stream validated, waiting up to authWait for a verdict that may not
-// have landed yet.
+// flag is flipped) never blocks: an unauthenticated connection is still
+// served, but attribution follows the verdict, not the self-report — only a
+// passing verdict attributes to the sent udid, otherwise the connection lands
+// in the empty-udid bucket. Enforce admits a connection whose metadata stream
+// validated, waiting up to authWait for a verdict that may not have landed
+// yet.
 //
 // That wait covers only stream-acceptance reordering on the server: the client
 // sends metadata synchronously inside connect() and reads the response before

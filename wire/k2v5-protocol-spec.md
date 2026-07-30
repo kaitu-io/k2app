@@ -189,7 +189,7 @@ waits briefly (`authWaitDefault`, 500 ms) for the verdict before rejecting.
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `udid` | yes | Device UDID (also the traffic-attribution key — self-reported) |
+| `udid` | yes | Device UDID (also the traffic-attribution key once a passing verdict lands — self-reported, not trusted otherwise) |
 | `token` | yes | JWT authentication token (from the `k2v5://UDID:TOKEN@…` URL) |
 | `mode` | no | `gateway` for router clients, `""` for normal clients |
 | `version` | no | Client app version — **observation only, never an auth signal** (self-reported, spoofable) |
@@ -208,9 +208,11 @@ Admission is governed by a single flag, `K2_ENFORCE_AUTH` (config
 `auth.enforce_auth`, default **false**):
 
 - **Permissive (default)** — an unauthenticated or unvalidated connection is still
-  served; the udid is recorded for attribution but the stream is never blocked. This
-  is the rollout-safe default: legacy clients that send no/invalid metadata keep
-  working until the flag is flipped.
+  served, but attribution follows the server-side verdict, never the self-reported
+  udid: only a passing verdict attributes the connection to its udid, otherwise it
+  lands in the empty-udid bucket. The stream itself is never blocked. This is the
+  rollout-safe default: legacy clients that send no/invalid metadata keep working
+  until the flag is flipped.
 - **Enforce** — proxy streams on a connection whose metadata failed (or never sent)
   validation are rejected; QUIC tears the connection, TCP-WS tears the smux session.
 

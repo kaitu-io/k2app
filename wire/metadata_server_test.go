@@ -288,6 +288,44 @@ func TestQUICMetadata_AttributionRequiresVerdict(t *testing.T) {
 	}
 }
 
+// TestQUICMetadata_AttributionSetOnOK: the positive twin — a validated QUIC
+// connection is attributed to its udid (accounting must keep working). Mirrors
+// TestTCPWSMetadata_AttributionSetOnOK.
+func TestQUICMetadata_AttributionSetOnOK(t *testing.T) {
+	server, addr, cleanup := startRawQUICServer(t, vOK(), false)
+	defer cleanup()
+	conn, connCleanup := dialRawQUIC(t, addr)
+	defer connCleanup()
+
+	br, stream := sendRawMetadataQUIC(t, conn, MetadataFrame{UDID: "real-device", Token: "t"})
+	defer stream.Close()
+	if ok, _, _, err := ReadStreamResponse(br); err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+
+	proxy, err := conn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.Close()
+	if err := WriteH3ProxyFrameType(proxy); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteStreamHeader(proxy, StreamTypeTCP, "example.com:80"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	acc, _, err := server.AcceptTCP(ctx)
+	if err != nil {
+		t.Fatalf("AcceptTCP: %v", err)
+	}
+	defer acc.Close()
+	if got := acc.(*quicStreamConn).dev.get(); got != "real-device" {
+		t.Fatalf("validated QUIC connection attribution = %q, want real-device", got)
+	}
+}
+
 // TestMetadataResponse_OldClientSafe_QUIC: an OLD client reads exactly one
 // status byte after a NEW server's [0x00][kv] response, then Close()s. The
 // unread kv must be silently discarded — no error, and the connection must

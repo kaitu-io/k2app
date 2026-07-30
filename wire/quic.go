@@ -1132,10 +1132,12 @@ func (s *QUICServer) SetValidator(v Validator) {
 }
 
 // SetEnforce toggles QUIC device-auth enforcement. When false (default,
-// permissive) the metadata stream is used only for attribution and never blocks
-// a connection — required during rollout so legacy clients (which don't send
-// metadata) keep working. When true, proxy streams on a connection that failed
-// or omitted metadata auth are rejected. Must be called before Listen.
+// permissive) the metadata stream never blocks a connection — required during
+// rollout so legacy clients (which don't send metadata) keep working.
+// Attribution still follows the verdict, not the self-report: only a passing
+// verdict feeds ctx.dev, an unvalidated connection lands in the empty-udid
+// bucket. When true, proxy streams on a connection that failed or omitted
+// metadata auth are rejected. Must be called before Listen.
 func (s *QUICServer) SetEnforce(v bool) {
 	s.adm.enforce = v
 }
