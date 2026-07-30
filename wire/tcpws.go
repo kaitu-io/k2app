@@ -67,6 +67,14 @@ func (c *smuxStreamConn) DeviceID() string {
 	return c.dev.get()
 }
 
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *smuxStreamConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
+}
+
 // Read uses the buffered reader if present.
 func (c *smuxStreamConn) Read(b []byte) (int, error) {
 	if c.br != nil {
@@ -855,6 +863,7 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 	// bucket). TCP-WS has no ctx.mode (unlike QUIC) — mirrors QUICServer's
 	// unconditional dev.set.
 	dev.set(st.udid)
+	dev.setSession(st.sessionID)
 	auth.settle(st.authed)
 
 	if !st.authed {
@@ -1456,6 +1465,14 @@ func (c *smuxServerUDPConn) DeviceID() string {
 		return ""
 	}
 	return c.dev.get()
+}
+
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *smuxServerUDPConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
 }
 
 func (c *smuxServerUDPConn) deliver(payload []byte) {

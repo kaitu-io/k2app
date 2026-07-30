@@ -146,7 +146,7 @@ func (h *ProxyHandler) TrafficBytes() (rx, tx int64) { return h.rxBytes.Load(), 
 func (h *ProxyHandler) ResetTraffic() { h.rxBytes.Store(0); h.txBytes.Store(0) }
 
 // TakeDeviceTraffic drains the per-device pending byte deltas.
-func (h *ProxyHandler) TakeDeviceTraffic() map[string]DeviceDelta { return h.devTraffic.Take() }
+func (h *ProxyHandler) TakeDeviceTraffic() map[DeviceKey]DeviceDelta { return h.devTraffic.Take() }
 
 // SetAccepting toggles whether the node accepts NEW connections.
 func (h *ProxyHandler) SetAccepting(v bool) { h.accepting.Store(v) }
@@ -286,9 +286,9 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		return
 	}
 
-	udid := connDeviceID(conn)
+	key := connDeviceKey(conn)
 	var sessRx, sessTx int64
-	defer func() { h.devTraffic.Add(udid, atomic.LoadInt64(&sessRx), sessTx) }()
+	defer func() { h.devTraffic.Add(key, atomic.LoadInt64(&sessRx), sessTx) }()
 
 	startTime := time.Now()
 
@@ -543,14 +543,14 @@ type closeWriter interface {
 // the target side. a->b (uplink read from the client) counts as rx; b->a
 // (downlink read from the target) counts as tx.
 func (h *ProxyHandler) pipe(a, b net.Conn) {
-	udid := connDeviceID(a) // a is the client side
+	key := connDeviceKey(a) // a is the client side
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		bp := tcpBufPool.Get().(*[]byte)
 		n, _ := io.CopyBuffer(b, a, *bp) // a->b: uplink (rx)
 		h.rxBytes.Add(n)
-		h.devTraffic.Add(udid, n, 0)
+		h.devTraffic.Add(key, n, 0)
 		tcpBufPool.Put(bp)
 		if cw, ok := b.(closeWriter); ok {
 			cw.CloseWrite()
@@ -561,7 +561,7 @@ func (h *ProxyHandler) pipe(a, b net.Conn) {
 	bp := tcpBufPool.Get().(*[]byte)
 	n, _ := io.CopyBuffer(a, b, *bp) // b->a: downlink (tx)
 	h.txBytes.Add(n)
-	h.devTraffic.Add(udid, 0, n)
+	h.devTraffic.Add(key, 0, n)
 	tcpBufPool.Put(bp)
 	if cw, ok := a.(closeWriter); ok {
 		cw.CloseWrite()

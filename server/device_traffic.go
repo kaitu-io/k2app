@@ -11,18 +11,26 @@ type DeviceDelta struct {
 	Rx, Tx int64
 }
 
+// DeviceKey identifies one accounting bucket: device + auth session (spec
+// §6.6 会话可观测). Session is "" for legacy/unattributed traffic — the
+// zero key remains the legal "unattributed" bucket.
+type DeviceKey struct {
+	UDID    string
+	Session string
+}
+
 // deviceTraffic accumulates per-device byte deltas between reporter cycles.
 // Semantics: entries are pending deltas — Take() drains the map, so memory is
 // bounded by "devices active since the last report", not lifetime actives.
 type deviceTraffic struct {
 	mu sync.Mutex
-	m  map[string]*DeviceDelta
+	m  map[DeviceKey]*DeviceDelta
 }
 
-// Add accumulates a delta for udid. Zero deltas are dropped so idle
-// connections never materialize entries. The empty udid is the legal
+// Add accumulates a delta for key. Zero deltas are dropped so idle
+// connections never materialize entries. The zero key is the legal
 // "unattributed" bucket (old clients / raw smux without metadata).
-func (d *deviceTraffic) Add(udid string, rx, tx int64) {
+func (d *deviceTraffic) Add(key DeviceKey, rx, tx int64) {
 	if rx == 0 && tx == 0 {
 		return
 	}
@@ -30,23 +38,23 @@ func (d *deviceTraffic) Add(udid string, rx, tx int64) {
 	// concurrency:allow — pure in-memory map op, no I/O under lock
 	defer d.mu.Unlock()
 	if d.m == nil {
-		d.m = make(map[string]*DeviceDelta)
+		d.m = make(map[DeviceKey]*DeviceDelta)
 	}
-	e, ok := d.m[udid]
+	e, ok := d.m[key]
 	if !ok {
 		e = &DeviceDelta{}
-		d.m[udid] = e
+		d.m[key] = e
 	}
 	e.Rx += rx
 	e.Tx += tx
 }
 
 // Take atomically drains all pending deltas.
-func (d *deviceTraffic) Take() map[string]DeviceDelta {
+func (d *deviceTraffic) Take() map[DeviceKey]DeviceDelta {
 	d.mu.Lock()
 	// concurrency:allow — pure in-memory map swap
 	defer d.mu.Unlock()
-	out := make(map[string]DeviceDelta, len(d.m))
+	out := make(map[DeviceKey]DeviceDelta, len(d.m))
 	for k, v := range d.m {
 		out[k] = *v
 	}
@@ -54,11 +62,15 @@ func (d *deviceTraffic) Take() map[string]DeviceDelta {
 	return out
 }
 
-// connDeviceID extracts the attributed device id from a proxy-side conn via
-// optional assertion. Missing interface or empty value → "" (unattributed).
-func connDeviceID(c any) string {
+// connDeviceKey extracts the attributed device + session via optional
+// assertions. Missing interfaces or empty values → zero fields (unattributed).
+func connDeviceKey(c any) DeviceKey {
+	var k DeviceKey
 	if dc, ok := c.(wire.ConnDeviceID); ok {
-		return dc.DeviceID()
+		k.UDID = dc.DeviceID()
 	}
-	return ""
+	if sc, ok := c.(wire.ConnSessionID); ok {
+		k.Session = sc.SessionID()
+	}
+	return k
 }

@@ -9,11 +9,11 @@ import (
 	"testing"
 )
 
-type fakeSource struct{ batches []map[string]DeviceDelta }
+type fakeSource struct{ batches []map[DeviceKey]DeviceDelta }
 
-func (f *fakeSource) TakeDeviceTraffic() map[string]DeviceDelta {
+func (f *fakeSource) TakeDeviceTraffic() map[DeviceKey]DeviceDelta {
 	if len(f.batches) == 0 {
-		return map[string]DeviceDelta{}
+		return map[DeviceKey]DeviceDelta{}
 	}
 	b := f.batches[0]
 	f.batches = f.batches[1:]
@@ -32,7 +32,7 @@ func TestDeviceReporter_HappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := &fakeSource{batches: []map[string]DeviceDelta{{"u1": {Rx: 10, Tx: 20}}}}
+	src := &fakeSource{batches: []map[DeviceKey]DeviceDelta{{{UDID: "u1"}: {Rx: 10, Tx: 20}}}}
 	r := newTestReporter(src, srv.URL)
 	if err := r.runOnce(context.Background()); err != nil {
 		t.Fatalf("runOnce: %v", err)
@@ -80,9 +80,9 @@ func TestDeviceReporter_RetryResendsImmutableBatch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := &fakeSource{batches: []map[string]DeviceDelta{
-		{"u1": {Rx: 10}},
-		{"u2": {Rx: 99}}, // 第二批，必须等第一批确认后才被取走
+	src := &fakeSource{batches: []map[DeviceKey]DeviceDelta{
+		{{UDID: "u1"}: {Rx: 10}},
+		{{UDID: "u2"}: {Rx: 99}}, // 第二批，必须等第一批确认后才被取走
 	}}
 	r := newTestReporter(src, srv.URL)
 

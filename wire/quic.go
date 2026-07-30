@@ -285,6 +285,14 @@ func (c *quicStreamConn) DeviceID() string {
 	return c.dev.get()
 }
 
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *quicStreamConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
+}
+
 // Read uses the buffered reader if present (to consume any data
 // buffered during header parsing), otherwise reads from the stream directly.
 func (c *quicStreamConn) Read(b []byte) (int, error) {
@@ -1434,6 +1442,7 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 	// udid on a hit, Center-confirmed udid on cold OK, "" otherwise.
 	ctx.mode.Store(st.mode)
 	ctx.dev.set(st.udid)
+	ctx.dev.setSession(st.sessionID)
 	ctx.auth.settle(st.authed)
 
 	if !st.authed {
@@ -2085,6 +2094,14 @@ func (c *serverUDPConn) DeviceID() string {
 	return c.dev.get()
 }
 
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *serverUDPConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
+}
+
 func (c *serverUDPConn) deliver(payload []byte) {
 	select {
 	case c.readCh <- payload:
@@ -2286,6 +2303,14 @@ func (c *quicStreamServerUDPConn) DeviceID() string {
 		return ""
 	}
 	return c.dev.get()
+}
+
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *quicStreamServerUDPConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
 }
 
 func (c *quicStreamServerUDPConn) deliver(payload []byte) {

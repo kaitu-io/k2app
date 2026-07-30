@@ -7,20 +7,20 @@ import (
 
 func TestDeviceTraffic_AddTake(t *testing.T) {
 	var dt deviceTraffic
-	dt.Add("a", 10, 20)
-	dt.Add("a", 1, 2)
-	dt.Add("b", 5, 0)
-	dt.Add("", 7, 7) // unattributed bucket is legal
+	dt.Add(DeviceKey{UDID: "a"}, 10, 20)
+	dt.Add(DeviceKey{UDID: "a"}, 1, 2)
+	dt.Add(DeviceKey{UDID: "b"}, 5, 0)
+	dt.Add(DeviceKey{}, 7, 7) // unattributed bucket is legal
 
 	got := dt.Take()
-	if got["a"] != (DeviceDelta{Rx: 11, Tx: 22}) {
-		t.Fatalf("a = %+v", got["a"])
+	if got[DeviceKey{UDID: "a"}] != (DeviceDelta{Rx: 11, Tx: 22}) {
+		t.Fatalf("a = %+v", got[DeviceKey{UDID: "a"}])
 	}
-	if got["b"] != (DeviceDelta{Rx: 5, Tx: 0}) {
-		t.Fatalf("b = %+v", got["b"])
+	if got[DeviceKey{UDID: "b"}] != (DeviceDelta{Rx: 5, Tx: 0}) {
+		t.Fatalf("b = %+v", got[DeviceKey{UDID: "b"}])
 	}
-	if got[""] != (DeviceDelta{Rx: 7, Tx: 7}) {
-		t.Fatalf("empty bucket = %+v", got[""])
+	if got[DeviceKey{}] != (DeviceDelta{Rx: 7, Tx: 7}) {
+		t.Fatalf("empty bucket = %+v", got[DeviceKey{}])
 	}
 	// Take must drain.
 	if second := dt.Take(); len(second) != 0 {
@@ -30,7 +30,7 @@ func TestDeviceTraffic_AddTake(t *testing.T) {
 
 func TestDeviceTraffic_ZeroDeltaIgnored(t *testing.T) {
 	var dt deviceTraffic
-	dt.Add("a", 0, 0)
+	dt.Add(DeviceKey{UDID: "a"}, 0, 0)
 	if got := dt.Take(); len(got) != 0 {
 		t.Fatalf("zero delta should not create an entry, got %v", got)
 	}
@@ -44,13 +44,13 @@ func TestDeviceTraffic_ConcurrentAdd(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
-				dt.Add("x", 1, 1)
+				dt.Add(DeviceKey{UDID: "x"}, 1, 1)
 			}
 		}()
 	}
 	wg.Wait()
 	got := dt.Take()
-	if got["x"] != (DeviceDelta{Rx: 5000, Tx: 5000}) {
-		t.Fatalf("x = %+v, want {5000 5000}", got["x"])
+	if got[DeviceKey{UDID: "x"}] != (DeviceDelta{Rx: 5000, Tx: 5000}) {
+		t.Fatalf("x = %+v, want {5000 5000}", got[DeviceKey{UDID: "x"}])
 	}
 }
