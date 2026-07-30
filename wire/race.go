@@ -3,6 +3,7 @@ package wire
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -104,6 +105,21 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 		}()
 	}()
 
+	// Named candErrs (not errors) to avoid shadowing the stdlib "errors"
+	// package — raceExitError below needs errors.Join to preserve structured
+	// causes (e.g. ErrMetadataRejected) through the race exit. Declared here
+	// (not just before the final collection loop) because waitForWinner must
+	// also record failed candidates it drains during the stagger waits — a
+	// candidate that fails FAST (e.g. an enforce server's near-instant
+	// metadata rejection, well under the 300ms quic-hop stagger) previously
+	// had its error silently discarded by waitForWinner before ever reaching
+	// this slice, which is a total loss (worse than the %v-flattening this
+	// task set out to fix — that at least preserved a stringified message).
+	// Found empirically via Step 9's end-to-end test against a real enforce
+	// server: quic-443's ErrMetadataRejected{402} arrived within ~2ms and was
+	// swallowed by the first waitForWinner call before this fix.
+	var candErrs [3]error
+
 	// --- Candidate 1: QUIC on port 443 ---
 	launch("quic-443", func(ctx context.Context) raceCandidate {
 		return buildAndProbeQUIC(ctx, cfg, dialAddr, directDialer, cfg.Port, 0, 0, "quic-443")
@@ -112,7 +128,7 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 	var consumed int
 
 	// --- Stagger: wait 300ms or early result ---
-	if w := waitForWinner(results, staggerQUICHop-time.Since(raceStart), &consumed); w != nil {
+	if w := waitForWinner(results, staggerQUICHop-time.Since(raceStart), &consumed, &candErrs); w != nil {
 		winner = w
 		slog.Info("DIAG: transport-race-winner", "winner", w.transportType, "winnerMs", time.Since(raceStart).Milliseconds(), "tried", 1)
 		return &RaceResult{Dialer: w.dialer, TransportType: w.transportType}, nil
@@ -127,7 +143,7 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 
 	// --- Stagger: wait until 800ms from race start ---
 	remaining := staggerTCPWS - time.Since(raceStart)
-	if w := waitForWinner(results, remaining, &consumed); w != nil {
+	if w := waitForWinner(results, remaining, &consumed, &candErrs); w != nil {
 		winner = w
 		slog.Info("DIAG: transport-race-winner", "winner", w.transportType, "winnerMs", time.Since(raceStart).Milliseconds(), "tried", spawned)
 		return &RaceResult{Dialer: w.dialer, TransportType: w.transportType}, nil
@@ -139,7 +155,6 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 	})
 
 	// --- Collect remaining results ---
-	var errors [3]error
 	for i := consumed; i < spawned; i++ {
 		select {
 		case r := <-results:
@@ -156,28 +171,40 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 			}
 			switch r.transportType {
 			case "quic-443":
-				errors[0] = r.err
+				candErrs[0] = r.err
 			case "quic-hop":
-				errors[1] = r.err
+				candErrs[1] = r.err
 			case "tcpws":
-				errors[2] = r.err
+				candErrs[2] = r.err
 			}
 		case <-raceCtx.Done():
 			slog.Warn("DIAG: transport-race-fail",
-				"quic443Err", errors[0],
-				"quicHopErr", errors[1],
-				"tcpwsErr", errors[2],
+				"quic443Err", candErrs[0],
+				"quicHopErr", candErrs[1],
+				"tcpwsErr", candErrs[2],
 			)
-			return nil, fmt.Errorf("transport race: all candidates failed or timed out")
+			return nil, raceExitError(candErrs[0], candErrs[1], candErrs[2])
 		}
 	}
 
 	slog.Warn("DIAG: transport-race-fail",
-		"quic443Err", errors[0],
-		"quicHopErr", errors[1],
-		"tcpwsErr", errors[2],
+		"quic443Err", candErrs[0],
+		"quicHopErr", candErrs[1],
+		"tcpwsErr", candErrs[2],
 	)
-	return nil, fmt.Errorf("transport race: quic-443: %v; quic-hop: %v; tcpws: %v", errors[0], errors[1], errors[2])
+	return nil, raceExitError(candErrs[0], candErrs[1], candErrs[2])
+}
+
+// raceExitError joins the per-candidate errors while PRESERVING their chains:
+// a metadata auth rejection (ErrMetadataRejected wrapping StreamError{401..403})
+// must survive to engine.ClassifyError, or enforce rollout turns every
+// credential problem into an unclassified 570. errors.Join skips nils.
+func raceExitError(quic443, quicHop, tcpws error) error {
+	joined := errors.Join(quic443, quicHop, tcpws)
+	if joined == nil {
+		return fmt.Errorf("transport race: all candidates failed or timed out")
+	}
+	return fmt.Errorf("transport race: %w", joined)
 }
 
 // buildInsecureTLSConfig builds a minimal InsecureSkipVerify TLS config
@@ -319,9 +346,24 @@ func drainQUICBackup(
 	return res
 }
 
-// waitForWinner waits up to duration for a successful result on the channel.
-// consumed tracks results read (caller uses to avoid double-reading).
-func waitForWinner(results chan raceCandidate, d time.Duration, consumed *int) *raceCandidate {
+// waitForWinner drains `results` for up to d, returning the first successful
+// candidate. Failed candidates it drains along the way are recorded into
+// candErrs (indexed by transport, same convention as the final collection
+// loop in RaceTransport) instead of being discarded — a candidate that fails
+// fast (within the stagger window) must not lose its error just because it
+// didn't win the race.
+func waitForWinner(results chan raceCandidate, d time.Duration, consumed *int, candErrs *[3]error) *raceCandidate {
+	record := func(r raceCandidate) {
+		switch r.transportType {
+		case "quic-443":
+			candErrs[0] = r.err
+		case "quic-hop":
+			candErrs[1] = r.err
+		case "tcpws":
+			candErrs[2] = r.err
+		}
+	}
+
 	if d <= 0 {
 		select {
 		case r := <-results:
@@ -329,6 +371,7 @@ func waitForWinner(results chan raceCandidate, d time.Duration, consumed *int) *
 			if r.err == nil {
 				return &r
 			}
+			record(r)
 		default:
 		}
 		return nil
@@ -344,6 +387,7 @@ func waitForWinner(results chan raceCandidate, d time.Duration, consumed *int) *
 			if r.err == nil {
 				return &r
 			}
+			record(r)
 			continue
 		case <-timer.C:
 			return nil

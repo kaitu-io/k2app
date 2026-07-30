@@ -85,10 +85,34 @@ func ClassifyError(err error) *EngineError {
 		return ee
 	}
 
+	// Priority 0b: metadata (device-auth) rejection — the server explicitly
+	// rejected this connection's credentials on the metadata stream. Producer-
+	// classified via wire.ErrMetadataRejected; the embedded StreamError carries
+	// the server's code (401 invalid credentials / 402 subscription expired /
+	// 403 device class or ban). All CategoryClient: retrying the same
+	// credentials cannot succeed. Must run BEFORE the bare-StreamError check —
+	// errors.As would otherwise classify the embedded StreamError as
+	// CategoryTarget. Traverses MultiTransportError via its Unwrap() []error.
+	if errors.Is(err, wire.ErrMetadataRejected) {
+		var se *wire.StreamError
+		if errors.As(err, &se) && (se.Code == ErrCodeAuthRejected || se.Code == ErrCodePaymentRequired || se.Code == ErrCodeForbidden) {
+			return newEngineError(se.Code, err.Error())
+		}
+		return newEngineError(ErrCodeAuthRejected, err.Error())
+	}
+
+	// Priority 0c: legacy stream-rejection sentinel — old enforce servers and
+	// the proxy-stream admission gate answer the uncoded 0x01 "unauthorized".
+	// Structured errors.Is on the producer's sentinel, never string matching.
+	if errors.Is(err, wire.ErrStreamRejected) {
+		return newEngineError(ErrCodeAuthRejected, err.Error())
+	}
+
 	// Priority 0: StreamError — server responded to a proxy request about a
 	// specific target. The wire is healthy (server received and responded).
-	// Always CategoryTarget regardless of code. Auth/payment errors use
-	// stream rejection (ErrStreamRejected), not StreamError.
+	// Always CategoryTarget regardless of code. Auth/payment errors arrive
+	// wrapped in ErrMetadataRejected / ErrStreamRejected (handled above),
+	// never as a bare StreamError.
 	var se *wire.StreamError
 	if errors.As(err, &se) && se.Code > 0 {
 		return &EngineError{Code: se.Code, Category: CategoryTarget, Message: se.Message}
@@ -130,11 +154,6 @@ func ClassifyError(err error) *EngineError {
 
 // classifyByPatterns matches error message text to an error code with category.
 func classifyByPatterns(msg string) *EngineError {
-	// 401: Auth rejected (server explicitly rejected credentials).
-	if strings.Contains(msg, "stream rejected") {
-		return newEngineError(ErrCodeAuthRejected, msg)
-	}
-
 	// 402: Payment required / subscription expired.
 	if strings.Contains(msg, "payment required") || strings.Contains(msg, "subscription") {
 		return newEngineError(ErrCodePaymentRequired, msg)
