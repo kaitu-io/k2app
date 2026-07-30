@@ -24,6 +24,9 @@ const (
 	// Token 类型常量
 	TokenTypeAccess  = "access"
 	TokenTypeRefresh = "refresh"
+	// TokenTypeTunnel 隧道专用凭据（90 天，仅用于 k2v5:// URL userinfo 与
+	// /slave/device-check-auth；比对 Device.TunnelIssueAt）。spec §4.1。
+	TokenTypeTunnel = "tunnel"
 
 	// 验证码相关常量
 	VerificationCodeLength = 6 // 验证码长度
@@ -565,4 +568,101 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 // isUserBlocked 判断用户是否被封禁。nil 用户或 nil 标志一律视为未封禁。
 func isUserBlocked(u *User) bool {
 	return u != nil && u.IsBlocked != nil && *u.IsBlocked
+}
+
+// ===================== 隧道专用凭据（Phase 0，spec §4） =====================
+
+// generateTunnelToken 签发 tunnel token。issueAt 是设备的 TunnelIssueAt 吊销
+// 锚点，原样写进 claims.TokenIssueAt；exp = now + jwt.tunnel_token_expiry。
+// 续期调用方传入不变的锚点即实现"只延长 exp、不重置锚点"。
+func generateTunnelToken(ctx context.Context, userID uint64, deviceID string, roles uint64, issueAt int64) (string, error) {
+	jwtConfig := configJwt(ctx)
+	claims := TokenClaims{
+		UserID:       userID,
+		DeviceID:     deviceID,
+		Exp:          time.Now().Add(time.Duration(jwtConfig.TunnelTokenExpiry) * time.Second).Unix(),
+		Type:         TokenTypeTunnel,
+		TokenIssueAt: issueAt,
+		Roles:        roles,
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(jwtConfig.Secret))
+}
+
+// validateTunnelToken 校验 tunnel token：验签 + type 必须为 tunnel + 设备存在
+// + TunnelIssueAt 锚点匹配（且非 0——0 表示该设备从未签发过隧道凭据）。
+// 吊销路径（spec §4.1）：删 Device 行 → 401；递增 TunnelIssueAt → 401。
+func validateTunnelToken(ctx context.Context, tokenString string) (*TokenClaims, *Device, error) {
+	jwtConfig := configJwt(ctx)
+	token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(*jwt.Token) (interface{}, error) {
+		return []byte(jwtConfig.Secret), nil
+	})
+	if err != nil {
+		log.Warnf(ctx, "failed to parse tunnel token: %v", err)
+		return nil, nil, ErrInvalidToken
+	}
+	claims, ok := token.Claims.(*TokenClaims)
+	if !ok || !token.Valid {
+		return nil, nil, ErrInvalidToken
+	}
+	if claims.Type != TokenTypeTunnel {
+		log.Warnf(ctx, "invalid tunnel token type: %s, user %d, udid %s", claims.Type, claims.UserID, claims.DeviceID)
+		return nil, nil, ErrInvalidToken
+	}
+	var device Device
+	if err := db.Get().Where("user_id = ? AND udid = ?", claims.UserID, claims.DeviceID).First(&device).Error; err != nil {
+		if util.DbIsNotFoundErr(err) {
+			log.Warnf(ctx, "device not found for tunnel token: user %d, udid %s", claims.UserID, claims.DeviceID)
+			return nil, nil, ErrInvalidToken
+		}
+		return nil, nil, err
+	}
+	if device.TunnelIssueAt == 0 || device.TunnelIssueAt != claims.TokenIssueAt {
+		log.Warnf(ctx, "tunnel issue at mismatch for user %d, udid %s", claims.UserID, claims.DeviceID)
+		return nil, nil, ErrInvalidToken
+	}
+	return claims, &device, nil
+}
+
+// maybeRenewTunnelToken 滚动续期门：请求所用 tunnel token 剩余寿命不足 50%
+// （即已过 45 天）时签发新 token（锚点不变），返回 (newToken, true, nil)；
+// 否则 ("", false, nil)。非 tunnel claims 恒不续期。spec §4.3。
+func maybeRenewTunnelToken(ctx context.Context, claims *TokenClaims, dev *Device) (string, bool, error) {
+	if claims == nil || dev == nil || claims.Type != TokenTypeTunnel {
+		return "", false, nil
+	}
+	total := configJwt(ctx).TunnelTokenExpiry
+	remaining := claims.Exp - time.Now().Unix()
+	if remaining*2 >= total {
+		return "", false, nil
+	}
+	tok, err := generateTunnelToken(ctx, claims.UserID, claims.DeviceID, claims.Roles, dev.TunnelIssueAt)
+	if err != nil {
+		return "", false, err
+	}
+	return tok, true, nil
+}
+
+// issueTunnelTokenForDevice 为设备签发 tunnel token；首次签发（TunnelIssueAt==0）
+// 先用条件 UPDATE 落锚点（WHERE tunnel_issue_at = 0 防并发首签竞态，输家重读
+// 收敛到赢家的锚点），再按锚点签 token。subs / tunnels 两条分发路径共用此入口
+// （gateway-credential 路径的 Device 行尚不存在，在事务内直接 generateTunnelToken，
+// 不走此入口）。
+func issueTunnelTokenForDevice(ctx context.Context, dev *Device, roles uint64) (string, error) {
+	if dev == nil {
+		return "", fmt.Errorf("issue tunnel token: nil device")
+	}
+	if dev.TunnelIssueAt == 0 {
+		anchor := time.Now().Unix()
+		if err := db.Get().Model(&Device{}).
+			Where("id = ? AND tunnel_issue_at = 0", dev.ID).
+			Update("tunnel_issue_at", anchor).Error; err != nil {
+			return "", err
+		}
+		var fresh Device
+		if err := db.Get().First(&fresh, dev.ID).Error; err != nil {
+			return "", err
+		}
+		dev.TunnelIssueAt = fresh.TunnelIssueAt
+	}
+	return generateTunnelToken(ctx, dev.UserID, dev.UDID, roles, dev.TunnelIssueAt)
 }
