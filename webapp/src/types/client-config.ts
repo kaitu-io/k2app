@@ -97,6 +97,10 @@ export interface ClientConfig {
   proxy?: { listen?: string };
   dns?: { direct?: string[]; proxy?: string[] };
   telemetry?: TelemetryConfig;
+  // Client app version, forwarded by the engine to the node via the metadata
+  // stream for per-device traffic attribution. Observation only on the server —
+  // never an auth-exemption signal.
+  client_version?: string;
 }
 
 export const CLIENT_CONFIG_DEFAULTS: ClientConfig = {
