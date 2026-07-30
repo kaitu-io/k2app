@@ -210,6 +210,8 @@ config.Subscription.mu (state, standalone — no nesting with engine/daemon lock
 
 wire.RelayManager.mu (state, standalone — control-plane relay node pool/ranking/health; network I/O (client.Do) and Transport.CloseIdleConnections happen OUTSIDE the lock)
 
+wire.authCache.mu (state, standalone — device-auth verdict cache; inner validator I/O (Center call) runs OUTSIDE the lock, inside a singleflight.Group)
+
 provider.processCache.mu (state, standalone — no nesting with engine/daemon locks)
 provider.LinuxProcessSearcher.indexMu (state, RWMutex, standalone — no nesting with engine/daemon locks)
 
