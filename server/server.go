@@ -353,7 +353,7 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	// Route the credential through url.UserPassword rather than interpolating
 	// auth.Token directly into fmt.Sprintf — matches cmd/k2s/user.go's
 	// buildUserURL and keeps the raw token out of any Sprintf/Errorf arg list
-	// that wire/credential_log_guard_test.go statically scans (spec §9).
+	// that wire/log_guard_test.go statically scans (spec §9).
 	userinfo := url.UserPassword(auth.UDID, auth.Token).String()
 	connectURL := fmt.Sprintf("k2v5://%s@%s:%s?ech=%s&pin=%s&insecure=1",
 		userinfo, host, port, echB64, pins)
@@ -378,7 +378,7 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	// owns operator-facing display: it reads connect-url.txt back and prints
 	// it directly (readConnectURL/waitForConnectURL in cmd/k2s/setup.go),
 	// so this slog call was a redundant credential leak, not the only path
-	// to visibility. Caught by wire/credential_log_guard_test.go (spec §9).
+	// to visibility. Caught by wire/log_guard_test.go (spec §9).
 	urlPath := filepath.Join(cfg.CertDir, "connect-url.txt")
 	if err := os.WriteFile(urlPath, []byte(connectURL+"\n"), 0600); err != nil {
 		slog.Error("server: failed to save connect URL", "err", err)
