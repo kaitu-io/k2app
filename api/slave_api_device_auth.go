@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
@@ -12,7 +13,8 @@ import (
 //
 type SlaveDeviceCheckAuthRequest struct {
 	UDID  string `json:"udid" binding:"required" example:"device-123"`                            // 设备唯一标识 (必填)
-	Token string `json:"token" binding:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"` // JWT access token
+	Token string `json:"token" binding:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"` // JWT token（tunnel 或过渡期 access）
+	Mode  string `json:"mode"`                                                                    // "gateway" 或 ""。Phase 0 只接收；校验在 Phase 1（spec §5.4）
 }
 
 // SlaveDeviceCheckAuthResult 节点设备认证结果
@@ -44,10 +46,11 @@ func handleSlaveJWTAuth(c *gin.Context, udid, token string) {
 		return
 	}
 
-	// 2. 验证 token 有效性（401 如果无效）
-	claims, device, err := validateToken(c, token, TokenTypeAccess)
+	// 2. 验证 token 有效性（401 如果无效）。过渡期双接受（spec §10.1）：
+	//    tunnel（新，比对 TunnelIssueAt）与 access（存量 URL，比对 TokenIssueAt）。
+	claims, device, err := validateDeviceAuthToken(c, token)
 	if err != nil {
-		log.Warnf(c, "failed to validate access token: %v", err)
+		log.Warnf(c, "failed to validate device auth token: %v", err)
 		ErrorE(c, err) // 返回 401
 		return
 	}
@@ -65,6 +68,15 @@ func handleSlaveJWTAuth(c *gin.Context, udid, token string) {
 	if err != nil {
 		log.Errorf(c, "failed to get user %d: %v", device.UserID, err)
 		ErrorE(c, err)
+		return
+	}
+
+	// 4.5 封禁检查（spec §4.1 第 2 条）：本路径走 SlaveAuthRequired 而非
+	// AuthRequired，封禁检查从未在这条路径执行过。access token 时代靠 24h
+	// 过期兜底；90 天凭据下缺这道门 = 封号在隧道上 90 天不生效。
+	if isUserBlocked(&user) {
+		log.Warnf(c, "device check auth rejected: user %d is blocked", device.UserID)
+		Error(c, ErrorForbidden, "account blocked")
 		return
 	}
 
@@ -113,4 +125,17 @@ func handleSlaveJWTAuth(c *gin.Context, udid, token string) {
 		UDID:             claims.DeviceID,
 		ServiceExpiredAt: serviceExpiredAt,
 	})
+}
+
+// validateDeviceAuthToken 的过渡期 token 分派器：先做一次不验签的 claims 窥探
+// 拿到 Type，再交给对应验证器完整验签比对（窥探不作任何信任决定）。
+// tunnel → validateTunnelToken（Device.TunnelIssueAt 锚点）
+// 其他   → validateToken(TokenTypeAccess)（Device.TokenIssueAt 锚点）
+// 移除 access 分支的时机与 enforce 翻开关同一判据集（spec §7.2 / §10.1）。
+func validateDeviceAuthToken(c *gin.Context, token string) (*TokenClaims, *Device, error) {
+	var peek TokenClaims
+	if _, _, err := jwt.NewParser().ParseUnverified(token, &peek); err == nil && peek.Type == TokenTypeTunnel {
+		return validateTunnelToken(c, token)
+	}
+	return validateToken(c, token, TokenTypeAccess)
 }
