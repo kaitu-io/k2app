@@ -197,6 +197,10 @@
       "code": 405001
     },
     {
+      "name": "ErrorEmailAlreadyInUse",
+      "code": 409001
+    },
+    {
       "name": "ErrorTierMismatch",
       "code": 422001
     },

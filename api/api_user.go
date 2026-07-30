@@ -134,7 +134,7 @@ func api_update_login_email(c *gin.Context) {
 		// Email exists, check if it belongs to another user
 		if exist.UserID != userID {
 			log.Warnf(c, "user %d attempted to bind email %s which is already in use by user %d", userID, req.Email, exist.UserID)
-			Error(c, ErrorInvalidArgument, "email already in use")
+			Error(c, ErrorEmailAlreadyInUse, "email already in use")
 			return
 		}
 	} else if !util.DbIsNotFoundErr(err) {
@@ -202,8 +202,9 @@ func api_send_bind_email_verification(c *gin.Context) {
 	indexID := secretHashIt(c, []byte(req.Email))
 
 	// 检查邮箱是否已被其他用户绑定（限定当前请求品牌——跨品牌同邮箱是合法的独立账号）
+	// getDB()（而非 db.Get()）是包内既有的可测 seam，让这道拦截可被 handler 测试覆盖。
 	var exist LoginIdentify
-	err := db.Get().Where(&LoginIdentify{
+	err := getDB().Where(&LoginIdentify{
 		Type:    "email",
 		IndexID: indexID,
 		Brand:   string(ReqBrand(c)),
@@ -213,7 +214,7 @@ func api_send_bind_email_verification(c *gin.Context) {
 		// Email exists, check if it belongs to another user
 		if exist.UserID != userID {
 			log.Warnf(c, "user %d attempted to bind email %s which is already in use by user %d", userID, req.Email, exist.UserID)
-			Error(c, ErrorInvalidArgument, "email already in use")
+			Error(c, ErrorEmailAlreadyInUse, "email already in use")
 			return
 		}
 	} else if !util.DbIsNotFoundErr(err) {

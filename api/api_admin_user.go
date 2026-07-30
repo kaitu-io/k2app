@@ -701,7 +701,7 @@ func api_admin_update_user_email(c *gin.Context) {
 
 	if err == nil && existingIdentify.UserID != user.ID {
 		// 邮箱已被其他用户使用
-		Error(c, ErrorConflict, "email already in use by another user")
+		Error(c, ErrorEmailAlreadyInUse, "email already in use by another user")
 		return
 	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Errorf(c, "检查邮箱唯一性失败: %v", err)

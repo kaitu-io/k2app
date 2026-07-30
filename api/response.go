@@ -57,6 +57,9 @@ const (
 
 	// 405xxx: 渠道/操作不可用
 	ErrorPaymentChannelUnavailable ErrorCode = 405001 // 当前品牌不支持该支付渠道
+
+	// 409xxx: 资源冲突（同品牌内唯一性被占用）
+	ErrorEmailAlreadyInUse ErrorCode = 409001 // 邮箱已被同品牌下的其他账号绑定
 )
 
 type DataAny struct{}

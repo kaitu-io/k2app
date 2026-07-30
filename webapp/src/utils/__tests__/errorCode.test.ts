@@ -55,3 +55,37 @@ describe('getErrorMessage — invalid credentials', () => {
     expect(msg).not.toBe(i18n.t('auth:auth.loginFailed'));
   });
 });
+
+describe('getErrorMessage — email already in use', () => {
+  beforeAll(async () => {
+    await i18nPromise;
+  });
+
+  // The backend rejects a bind/update-email request whose target address already
+  // belongs to another account BEFORE issuing or mailing any verification code.
+  // It used to share the generic 422, which rendered as "参数错误" — indistinguishable
+  // from a transient glitch, so users kept re-tapping "send code" and reported it
+  // as "收不到验证码" (support case 2026-07-29). The dedicated 409001 must resolve
+  // to copy that names the actual cause.
+  it('maps EMAIL_ALREADY_IN_USE to the dedicated i18n copy', () => {
+    const msg = getErrorMessage(ERROR_CODES.EMAIL_ALREADY_IN_USE, 'email already in use', t);
+    expect(msg).toBe(i18n.t('auth:updateEmail.emailAlreadyInUse'));
+  });
+
+  // Mutation guards: the whole point of the fix is NOT landing on either generic
+  // string. Both would pass a naive "returns something" assertion.
+  it('does not fall back to the generic invalidArgument or sendCodeFailed copy', () => {
+    const msg = getErrorMessage(ERROR_CODES.EMAIL_ALREADY_IN_USE, 'email already in use', t);
+    expect(msg).not.toBe(i18n.t('common:errors.client.invalidArgument'));
+    expect(msg).not.toBe(i18n.t('auth:updateEmail.sendCodeFailed'));
+  });
+
+  // A missing translation key makes i18next echo the key itself — that would slip
+  // past the assertions above while shipping "auth:updateEmail.emailAlreadyInUse"
+  // to the user's screen.
+  it('resolves to real copy, not the raw i18n key', () => {
+    const msg = getErrorMessage(ERROR_CODES.EMAIL_ALREADY_IN_USE, 'email already in use', t);
+    expect(msg).not.toContain('updateEmail.emailAlreadyInUse');
+    expect(msg.length).toBeGreaterThan(4);
+  });
+});

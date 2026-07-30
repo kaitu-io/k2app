@@ -80,11 +80,19 @@ Checklist for new backend error codes:
 3. Add `case` in `getErrorMessage()` with i18n key
 4. Add i18n translation in all 7 locales
 5. Never duplicate error code constants outside `errorCode.ts`
+6. **Regenerate the cross-layer contract** — the error-code registry is part of
+   `contracts/api-contract.json`, so a new constant fails `TestExportContract`
+   until you run `cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./...`
+   and commit the regenerated artifact. (`-count=1` is mandatory: the golden lives
+   outside the api module, which go test's cache does not recheck.)
 
 Code ranges:
 - `0`: Success
 - `400-503`: Backend HTTP-aligned codes (sync with `api/response.go`)
-- `400001-400999`: Backend custom business codes
+- `<base>NNN`: Backend custom business codes, prefixed by the HTTP-aligned base they
+  refine — `400001+` (bad request), `402001` (payment), `403001+` (forbidden),
+  `405001` (unavailable), `409001` (conflict), `422001+` (invalid argument). Pick the
+  base whose semantics match; don't default everything to `400xxx`.
 - `100-199`: Frontend-only network errors
 - `500-579`: Frontend-only VPN/action/API errors
 - `-1`: Frontend-only cloud API network failure
