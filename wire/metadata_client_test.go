@@ -211,3 +211,73 @@ func TestQUICClient_PermissiveCredentialProblemStillConnects(t *testing.T) {
 	}
 	conn.Close()
 }
+
+// --- Fast-follow to Task 5 review: legacy (0x01) metadata rejection must be
+// proxy-layer-visible too. -------------------------------------------------
+//
+// The coded (0x02) form was already covered transitively — TestSendMetadata_
+// CodedRejectIsStreamError proves *StreamError comes back, and *StreamError
+// self-implements IsProxyLayer() (wire/stream.go), so it's automatically
+// recognized by isProxyLayerError() even wrapped inside ErrMetadataRejected,
+// with no extra wrapping needed at the connect() call site. The legacy form
+// used a bare ErrStreamRejected sentinel (no IsProxyLayer()), so without the
+// explicit &ProxyLayerError{...} wrap added at the quic.go/tcpws.go call
+// sites, TransportManager's isProxyLayerError() would miss it and needlessly
+// retry via TCP-WS against a server that will repeat the identical rejection.
+//
+// vReject(0) (AuthVerdict{OK:false, Code:0}, the "no opinion" state — see
+// wire/auth.go's four-state doc) is what drives the server down the legacy
+// branch: quic.go:1401 / tcpws.go:824 both branch on `verdict.Code > 0` for
+// coded vs legacy, and 0 fails that check.
+
+// TestQUICClient_LegacyMetadataRejectIsProxyLayerError proves a legacy-form
+// (uncoded) rejection from QUICClient.connect() is recognized by
+// isProxyLayerError() — the signal TransportManager uses to skip TCP-WS
+// fallback (transport.go DialTCP/DialUDP).
+func TestQUICClient_LegacyMetadataRejectIsProxyLayerError(t *testing.T) {
+	_, addr, cleanup := startRawQUICServer(t, vReject(0), true)
+	defer cleanup()
+
+	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"})
+	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := client.DialTCP(ctx, "example.com:80", nil)
+	if err == nil {
+		t.Fatal("connect must fail on explicit legacy metadata rejection")
+	}
+	if !errors.Is(err, ErrMetadataRejected) {
+		t.Fatalf("err = %v, want ErrMetadataRejected in chain", err)
+	}
+	if !errors.Is(err, ErrStreamRejected) {
+		t.Fatalf("err = %v, want ErrStreamRejected (legacy form) in chain", err)
+	}
+	if !isProxyLayerError(err) {
+		t.Fatalf("err = %v, want isProxyLayerError == true (TransportManager must skip TCP-WS fallback)", err)
+	}
+}
+
+// TestTCPWSClient_LegacyMetadataRejectIsProxyLayerError — the TCP-WS twin.
+func TestTCPWSClient_LegacyMetadataRejectIsProxyLayerError(t *testing.T) {
+	cfg := Config{Host: "127.0.0.1", Port: 443, UDID: "d", Token: "t"}
+	client, _, cleanup := setupTCPWSEnforcePair(t, cfg, true, vReject(0))
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := client.DialTCP(ctx, "example.com:80", nil)
+	if err == nil {
+		t.Fatal("connect must fail on explicit legacy metadata rejection")
+	}
+	if !errors.Is(err, ErrMetadataRejected) {
+		t.Fatalf("err = %v, want ErrMetadataRejected in chain", err)
+	}
+	if !errors.Is(err, ErrStreamRejected) {
+		t.Fatalf("err = %v, want ErrStreamRejected (legacy form) in chain", err)
+	}
+	if !isProxyLayerError(err) {
+		t.Fatalf("err = %v, want isProxyLayerError == true (TransportManager must skip TCP-WS fallback)", err)
+	}
+}

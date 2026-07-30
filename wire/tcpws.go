@@ -234,7 +234,11 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 			if isMetadataReject(mdErr) {
 				sess.Close()
 				conn.Close()
-				return nil, fmt.Errorf("%w: %w", ErrMetadataRejected, mdErr)
+				// ProxyLayerError: the wire transport worked (stream opened, server
+				// responded with an explicit rejection) — TCP-WS fallback to the
+				// same server/credentials cannot help. Matches the established
+				// convention at :482 for the proxy-stream rejection path.
+				return nil, &ProxyLayerError{Err: fmt.Errorf("%w: %w", ErrMetadataRejected, mdErr)}
 			}
 			slog.Debug("TCPWSClient: metadata stream failed (best-effort)", "err", mdErr)
 		}
