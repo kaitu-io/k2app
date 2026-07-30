@@ -84,6 +84,19 @@ type authSessions struct {
 
 // newAuthSessions builds a registry and starts its sweeper goroutine
 // (safego.Go; exits on Close).
+//
+// v MUST have its own bounded call latency (the NewRemoteValidator convention:
+// remoteAuthClient's http.Client sets Timeout: 5*time.Second — see
+// wire/auth_remote.go). The sweeper enforces no local timeout of its own: a
+// validator call that never returns wedges the worker running it forever,
+// which starves sweepOnce's wg.Wait (fewer live workers each pass), which in
+// the worst case wedges Close()'s wg.Wait — and therefore
+// QUICServer.Close/TCPWSServer.Close/whole-process SIGTERM. This is not a new
+// obligation introduced here: CachingValidator (wire/auth_cache.go) calls the
+// same inner Validator inside singleflight.Group.Do with no timeout of its
+// own either, so the bounded-latency contract already has to hold for every
+// Validator in the chain today. Do not swap in a custom Validator without
+// verifying it upholds this.
 func newAuthSessions(v Validator, sweep time.Duration) *authSessions {
 	a := &authSessions{
 		validate: v,
@@ -197,6 +210,19 @@ func (a *authSessions) sweepOnce() {
 // per session (a pass may itself span many minutes under load, and grace math
 // against a pass-start clock would drift). Validator call and kill() happen
 // with NO lock held (constitutional Rule #1/#2).
+//
+// Single-reviewer assumption: reviewSession updates authAt/svcExp/graceStart
+// via three separate atomic Store calls, not one atomic group update — safe
+// only because at most one goroutine reviews a given *authSession at a time.
+// That holds today because authSessions runs exactly one sweeper goroutine
+// per instance (the ticker loop started in newAuthSessions), and sweepOnce's
+// worker pool fans a single pass's snapshot out across workers without ever
+// assigning the same session to two workers concurrently. Calling sweepOnce()
+// concurrently from multiple goroutines — as TestDeadlock_AuthSessionsStandalone
+// deliberately does, to stress lock-ordering rather than session-state
+// correctness — CAN interleave the three Store calls on an overlapping session
+// inconsistently. Do not add a second production caller of sweepOnce() without
+// also adding per-session serialization.
 func (a *authSessions) reviewSession(s *authSession) {
 	authAt := s.authAt.Load()
 	if authAt == 0 {
