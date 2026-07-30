@@ -10,6 +10,8 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	db "github.com/wordgate/qtoolkit/db"
 )
 
 // ============================================================================
@@ -165,23 +167,25 @@ func api_subs(c *gin.Context) {
 		return
 	}
 
-	// Validate JWT token and load user+device via existing JWT auth logic.
-	authCtx := handleJWTAuth(c, token)
-	if authCtx == nil || authCtx.User == nil {
-		log.Warnf(c, "subs: JWT auth failed for udid=%s", udid)
+	// Validate the credential and load user+device. Transition-period dual
+	// accept (spec §10.1): the Basic-auth password may be a tunnel token
+	// (Phase 0 URLs) or a legacy access token (pre-Phase-0 URLs).
+	auth := subsAuthenticate(c, token)
+	if auth == nil || auth.User == nil {
+		log.Warnf(c, "subs: auth failed for udid=%s", udid)
 		subsError(c, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	// Verify the UDID in Basic Auth matches the token's device UDID.
-	if authCtx.UDID != udid {
-		log.Warnf(c, "subs: UDID mismatch: basic_auth=%s token=%s", udid, authCtx.UDID)
+	if auth.UDID != udid {
+		log.Warnf(c, "subs: UDID mismatch: basic_auth=%s token=%s", udid, auth.UDID)
 		subsError(c, http.StatusUnauthorized, "credential mismatch")
 		return
 	}
 
 	// Require device context — web-auth tokens (no device) must not access subs.
-	if authCtx.Device == nil {
+	if auth.Device == nil {
 		log.Warnf(c, "subs: device context required, udid=%s", udid)
 		subsError(c, http.StatusUnauthorized, "device context required")
 		return
@@ -203,13 +207,18 @@ func api_subs(c *gin.Context) {
 			subsError(c, http.StatusBadRequest, "invalid client class")
 			return
 		}
-		if info.IsGateway() != authCtx.Device.IsGateway {
+		if info.IsGateway() != auth.Device.IsGateway {
 			log.Warnf(c, "subs: device class mismatch udid=%s db_gateway=%v header_gateway=%v",
-				udid, authCtx.Device.IsGateway, info.IsGateway())
+				udid, auth.Device.IsGateway, info.IsGateway())
 			subsError(c, http.StatusForbidden, "device class mismatch")
 			return
 		}
 	}
+
+	// Phase 0: whatever credential authenticated this request, the URLs we
+	// return embed a tunnel token — access→tunnel conversion on legacy
+	// requests, 50%-threshold rolling renewal on tunnel-token requests.
+	urlToken := subsTokenForURLs(c, auth, token)
 
 	// 能力矩阵：路由器（gateway）只用专属节点；App/桌面用共享池。k2r 未发布，
 	// 此处硬切，无存量路由器回落需求。
@@ -223,22 +232,22 @@ func api_subs(c *gin.Context) {
 	// (see ResolveGatewayPrivateTunnels + its test, which deliberately use an
 	// expired-shared-membership owner). The branch returns in ALL paths, so a
 	// non-gateway device falls straight through to the unchanged shared-pool flow.
-	if authCtx.Device.IsGateway {
-		privTunnels, err := ResolveGatewayPrivateTunnels(c, authCtx.User.ID, time.Now().Unix())
+	if auth.Device.IsGateway {
+		privTunnels, err := ResolveGatewayPrivateTunnels(c, auth.User.ID, time.Now().Unix())
 		if err != nil {
 			log.Errorf(c, "subs: resolve private tunnels failed: %v", err)
 			subsError(c, http.StatusInternalServerError, "failed to load private nodes")
 			return
 		}
-		items := buildPrivateSubsTunnels(privTunnels, udid, token)
+		items := buildPrivateSubsTunnels(privTunnels, udid, urlToken)
 		if len(items) == 0 {
-			log.Infof(c, "subs: gateway user %d has no serviceable private node", authCtx.User.ID)
+			log.Infof(c, "subs: gateway user %d has no serviceable private node", auth.User.ID)
 			subsError(c, http.StatusPaymentRequired, "no private node entitlement")
 			return
 		}
-		log.Infof(c, "subs: gateway user=%d returning %d private tunnels", authCtx.User.ID, len(items))
+		log.Infof(c, "subs: gateway user=%d returning %d private tunnels", auth.User.ID, len(items))
 		resp := SubsResponse{Tunnels: items, Refresh: 1800}
-		ensureAndInjectControlKeyHash(c, &resp, authCtx.User)
+		ensureAndInjectControlKeyHash(c, &resp, auth.User)
 		// TunnelIndex must index this same response's `items` — mirror
 		// buildPrivateSubsTunnels's filter so positions line up even if
 		// privTunnels contains an entry it would have skipped.
@@ -249,21 +258,21 @@ func api_subs(c *gin.Context) {
 			}
 			aligned = append(aligned, t)
 		}
-		resp.SlotBindings = resolveSlotBindings(c, authCtx.Device.ID, aligned)
+		resp.SlotBindings = resolveSlotBindings(c, auth.Device.ID, aligned)
 		writeSubsOK(c, resp)
 		return
 	}
 
 	// Check membership (mirrors ProRequired middleware logic exactly).
 	// Non-gateway (App/desktop) devices only — gateway devices returned above.
-	if authCtx.User.IsExpired() {
-		log.Infof(c, "subs: user %d membership expired", authCtx.User.ID)
+	if auth.User.IsExpired() {
+		log.Infof(c, "subs: user %d membership expired", auth.User.ID)
 		subsError(c, http.StatusPaymentRequired, "membership expired")
 		return
 	}
 
 	// Admin bypass for test tunnels — mirrors api_k2_tunnels:44,67-71.
-	isAdmin := authCtx.User.IsAdmin != nil && *authCtx.User.IsAdmin
+	isAdmin := auth.User.IsAdmin != nil && *auth.User.IsAdmin
 
 	tunnels, err := fetchK2V5Tunnels(c, isAdmin)
 	if err != nil {
@@ -315,7 +324,7 @@ func api_subs(c *gin.Context) {
 		// authenticated user's own birth attribute — is the only brand signal
 		// available here. Admin bypasses, mirroring the isTest/quota-hide
 		// bypass a few lines below (isAdmin already computed above).
-		if !isAdmin && !t.Node.VisibleTo(Brand(authCtx.User.Brand)) {
+		if !isAdmin && !t.Node.VisibleTo(Brand(auth.User.Brand)) {
 			continue
 		}
 		if t.ServerURL == "" {
@@ -339,7 +348,7 @@ func api_subs(c *gin.Context) {
 		score := ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u))
 
 		items = append(items, SubsTunnel{
-			URL:            injectSubsCreds(t.ServerURL, udid, token),
+			URL:            injectSubsCreds(t.ServerURL, udid, urlToken),
 			Weight:         int(math.Round(score * subsLegacyWeightScale)),
 			RecommendScore: score,
 			IPType:         t.Node.IPType,
@@ -347,10 +356,10 @@ func api_subs(c *gin.Context) {
 	}
 
 	log.Infof(c, "subs: user=%d country=%q isAdmin=%v returning %d tunnels",
-		authCtx.User.ID, country, isAdmin, len(items))
+		auth.User.ID, country, isAdmin, len(items))
 
 	resp := SubsResponse{Tunnels: items, Refresh: 1800}
-	injectControlKeyHash(&resp, authCtx.User)
+	injectControlKeyHash(&resp, auth.User)
 	writeSubsOK(c, resp)
 }
 
@@ -384,4 +393,71 @@ func buildPrivateSubsTunnels(tunnels []SlaveTunnel, udid, token string) []SubsTu
 		})
 	}
 	return items
+}
+
+// subsAuthResult 是 /api/subs 的统一认证结果：无论请求用哪种 token 认证，
+// handler 后续只消费 User/Device/UDID；TunnelClaims 非 nil 时表示请求以
+// tunnel token 认证（供 subsTokenForURLs 走续期分支）。
+type subsAuthResult struct {
+	User         *User
+	Device       *Device
+	UDID         string
+	TunnelClaims *TokenClaims
+	CredType     string // "tunnel" | "access"
+}
+
+// subsAuthenticate 过渡期双 token 认证：不验签窥探 claims.Type 分派——
+// tunnel → validateTunnelToken（TunnelIssueAt 锚点）；其他 → handleJWTAuth
+// （既有 access 路径原样保留，含 X-K2-Client 设备信息刷新）。成功时按凭据
+// 类型打一条 INFO（credType=tunnel|access）——spec §11 采纳率出口判据的唯一
+// 权威数据源（部署后 grep 计数）。
+func subsAuthenticate(c *gin.Context, token string) *subsAuthResult {
+	var peek TokenClaims
+	if _, _, err := jwt.NewParser().ParseUnverified(token, &peek); err == nil && peek.Type == TokenTypeTunnel {
+		claims, device, err := validateTunnelToken(c, token)
+		if err != nil {
+			log.Warnf(c, "subs: tunnel token validation failed: %v", err)
+			return nil
+		}
+		var user User
+		if err := db.Get().First(&user, device.UserID).Error; err != nil {
+			log.Errorf(c, "subs: load user %d failed: %v", device.UserID, err)
+			return nil
+		}
+		log.Infof(c, "subs: authenticated udid=%s credType=tunnel", device.UDID)
+		return &subsAuthResult{User: &user, Device: device, UDID: device.UDID, TunnelClaims: claims, CredType: "tunnel"}
+	}
+	authCtx := handleJWTAuth(c, token)
+	if authCtx == nil || authCtx.User == nil {
+		return nil
+	}
+	log.Infof(c, "subs: authenticated udid=%s credType=access", authCtx.UDID)
+	return &subsAuthResult{User: authCtx.User, Device: authCtx.Device, UDID: authCtx.UDID, CredType: "access"}
+}
+
+// subsTokenForURLs 决定回填进 tunnel URL 的凭据（恒为 tunnel token）：
+//   - tunnel token 请求：剩余 <50% 续期（锚点不变），否则原样回填；
+//   - access token 请求（存量 URL）：签发该设备的 tunnel token（转换点）。
+//
+// 签发/续期失败时降级回填请求自带的 token（可用性优先，同
+// ensureAndInjectControlKeyHash 的哲学：凭据升级失败不得拖垮隧道列表）。
+func subsTokenForURLs(c *gin.Context, auth *subsAuthResult, requestToken string) string {
+	if auth.TunnelClaims != nil {
+		renewed, ok, err := maybeRenewTunnelToken(c, auth.TunnelClaims, auth.Device)
+		if err != nil {
+			log.Warnf(c, "subs: tunnel token renew failed for udid=%s: %v", auth.UDID, err)
+			return requestToken
+		}
+		if ok {
+			log.Infof(c, "subs: rolled tunnel token for udid=%s", auth.UDID)
+			return renewed
+		}
+		return requestToken
+	}
+	tok, err := issueTunnelTokenForDevice(c, auth.Device, auth.User.Roles)
+	if err != nil {
+		log.Warnf(c, "subs: issue tunnel token failed for udid=%s: %v", auth.UDID, err)
+		return requestToken
+	}
+	return tok
 }
