@@ -444,3 +444,34 @@ func TestTCPWSClient_ConnectSingleFlight_NoStarvation(t *testing.T) {
 			elapsed, tcpwsConnectTimeout+3*time.Second)
 	}
 }
+
+// TestDeadlock_AuthSessionsStandalone: wire.authSessions.mu is a standalone
+// state lock — register/unregister/sweep from concurrent goroutines while the
+// validator itself takes an unrelated lock. go-deadlock (5s test timeout)
+// panics if the sweeper ever holds a.mu across the validator call.
+func TestDeadlock_AuthSessionsStandalone(t *testing.T) {
+	var validatorMu deadlock.Mutex
+	a := newAuthSessions(func(token, udid, mode string) AuthVerdict {
+		validatorMu.Lock()
+		defer validatorMu.Unlock()
+		return AuthVerdict{OK: true}
+	}, time.Hour)
+	defer a.Close()
+	a.now = func() time.Time { return time.Now().Add(time.Hour) } // force staleness
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				s := &authSession{auth: newConnAuth(), kill: func() {}}
+				unreg := a.register(s)
+				s.markAuthed("d", "t", "", time.Now().Unix(), 0)
+				a.sweepOnce()
+				unreg()
+			}
+		}()
+	}
+	wg.Wait()
+}
