@@ -150,6 +150,19 @@ func (g *Gateway) applyCredential(rawURL string) (*GatewayConfig, error) {
 	return cfg, nil
 }
 
+// persistRotatedCredential is the Subscription creds-rotation callback for
+// k2r: reuse applyCredential's persistence path (k2r.yml + state.json, spec
+// §4.3 P1) so the rotated tunnel credential survives a full router restart.
+// It does NOT touch the running engine — the in-memory Subscription already
+// carries the new creds for its next fetch/connect.
+func (g *Gateway) persistRotatedCredential(newRaw string) {
+	if _, err := g.applyCredential(newRaw); err != nil {
+		slog.Warn("gateway: persist rotated subscription credential failed", "err", err)
+		return
+	}
+	slog.Info("DIAG: subs-creds-persist", "component", "gateway")
+}
+
 // handleSetCredential implements the /api/core "set-credential" action: the
 // companion app pushes {url, controlKey?}. The optional controlKey becomes a
 // provisional binding so the pushing app can control the router immediately;

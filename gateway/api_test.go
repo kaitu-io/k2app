@@ -195,3 +195,31 @@ func TestResetWipesBinding(t *testing.T) {
 		t.Fatal("control-key.json must be removed")
 	}
 }
+
+// TestPersistRotatedCredentialWritesBothStores：凭据轮换的落盘必须复用
+// applyCredential（k2r.yml + state.json 双写，spec §4.3 P1）。
+func TestPersistRotatedCredentialWritesBothStores(t *testing.T) {
+	dir := t.TempDir()
+	prev := stateDirOverride
+	stateDirOverride = dir
+	t.Cleanup(func() { stateDirOverride = prev })
+
+	g := &Gateway{}
+	newRaw := "k2subs://router-x:rotated-tok@center.example/api/subs"
+	g.persistRotatedCredential(newRaw)
+
+	st := loadState()
+	if st == nil || st.Config == nil || len(st.Config.Routes) == 0 {
+		t.Fatal("state.json not persisted after rotation")
+	}
+	if st.Config.Routes[0].Via != newRaw {
+		t.Fatalf("state route = %q, want rotated URL", st.Config.Routes[0].Via)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "k2r.yml"))
+	if err != nil {
+		t.Fatalf("k2r.yml not persisted: %v", err)
+	}
+	if !strings.Contains(string(data), "rotated-tok") {
+		t.Fatal("k2r.yml must carry the rotated credential")
+	}
+}
