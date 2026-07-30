@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 )
 
@@ -196,8 +197,51 @@ func TestResetWipesBinding(t *testing.T) {
 	}
 }
 
-// TestPersistRotatedCredentialWritesBothStores：凭据轮换的落盘必须复用
-// applyCredential（k2r.yml + state.json 双写，spec §4.3 P1）。
+// TestGatewayRewriteRouteVia mirrors daemon's TestRewriteRouteVia (same
+// pure-function shape, gateway's own config.ClientConfig usage) — the
+// building block persistRotatedCredential uses to patch only the rotated
+// route in an existing on-disk config.
+func TestGatewayRewriteRouteVia(t *testing.T) {
+	oldVia := "k2subs://u:oldtok@center.example/api/subs"
+	newVia := "k2subs://u:newtok@center.example/api/subs"
+
+	t.Run("RewritesMatchingRoute", func(t *testing.T) {
+		cfg := &config.ClientConfig{Routes: []config.RouteConfig{
+			{Via: "direct"},
+			{Via: oldVia},
+		}}
+		if !rewriteRouteVia(cfg, oldVia, newVia) {
+			t.Fatal("want rewrite to report true")
+		}
+		if cfg.Routes[1].Via != newVia {
+			t.Fatalf("route not rewritten: %q", cfg.Routes[1].Via)
+		}
+		if cfg.Routes[0].Via != "direct" {
+			t.Fatal("unrelated route must not change")
+		}
+	})
+
+	t.Run("NoMatch_False", func(t *testing.T) {
+		cfg := &config.ClientConfig{Routes: []config.RouteConfig{{Via: "k2v5://x@h:443"}}}
+		if rewriteRouteVia(cfg, oldVia, newVia) {
+			t.Fatal("no matching route — must report false")
+		}
+	})
+
+	t.Run("NilAndDegenerate_False", func(t *testing.T) {
+		if rewriteRouteVia(nil, oldVia, newVia) {
+			t.Fatal("nil cfg must be a no-op")
+		}
+		cfg := &config.ClientConfig{Routes: []config.RouteConfig{{Via: oldVia}}}
+		if rewriteRouteVia(cfg, oldVia, oldVia) {
+			t.Fatal("identical old/new must be a no-op")
+		}
+	})
+}
+
+// TestPersistRotatedCredentialWritesBothStores：首次设置(磁盘上尚无 k2r.yml)
+// 时的落盘回退路径必须复用 applyCredential（k2r.yml + state.json 双写，spec
+// §4.3 P1）。
 func TestPersistRotatedCredentialWritesBothStores(t *testing.T) {
 	dir := t.TempDir()
 	prev := stateDirOverride
@@ -205,8 +249,11 @@ func TestPersistRotatedCredentialWritesBothStores(t *testing.T) {
 	t.Cleanup(func() { stateDirOverride = prev })
 
 	g := &Gateway{}
+	oldRaw := "k2subs://router-x:tok123@center.example/api/subs"
 	newRaw := "k2subs://router-x:rotated-tok@center.example/api/subs"
-	g.persistRotatedCredential(newRaw)
+	// No k2r.yml on disk yet: LoadGateway fails → first-ever-setup fallback
+	// (applyCredential) must still persist something.
+	g.persistRotatedCredential(oldRaw, newRaw)
 
 	st := loadState()
 	if st == nil || st.Config == nil || len(st.Config.Routes) == 0 {
@@ -221,5 +268,102 @@ func TestPersistRotatedCredentialWritesBothStores(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "rotated-tok") {
 		t.Fatal("k2r.yml must carry the rotated credential")
+	}
+}
+
+// TestPersistRotatedCredentialPreservesOtherConfig is the regression test
+// for whole-branch review Finding #2: an existing on-disk k2r.yml carries
+// operator-set fields (lan_subnets, max_lan_client, listen_port) alongside
+// the route to rotate. Before the fix, persistRotatedCredential reused
+// applyCredential → GatewayFromURL, which builds a bare single-route config
+// from scratch and PersistConfig would overwrite k2r.yml wholesale, silently
+// wiping all of these (max_lan_client in particular becomes 0 = unlimited,
+// unenforced quota). After the fix, only the rotated route's Via changes —
+// everything else must survive untouched.
+func TestPersistRotatedCredentialPreservesOtherConfig(t *testing.T) {
+	dir := t.TempDir()
+	prev := stateDirOverride
+	stateDirOverride = dir
+	t.Cleanup(func() { stateDirOverride = prev })
+
+	oldRaw := "k2subs://router-x:tok123@center.example/api/subs"
+	newRaw := "k2subs://router-x:rotated-tok@center.example/api/subs"
+
+	seed := GatewayFromURL(oldRaw)
+	seed.LANSubnets = []string{"10.77.0.0/24"}
+	seed.MaxLanClient = 7
+	seed.ListenPort = 23456
+	if err := PersistConfig(seed); err != nil {
+		t.Fatalf("seed PersistConfig: %v", err)
+	}
+
+	g := &Gateway{}
+	g.persistRotatedCredential(oldRaw, newRaw)
+
+	cfg, err := LoadGateway(defaultConfigPath())
+	if err != nil {
+		t.Fatalf("LoadGateway after rotation: %v", err)
+	}
+	if len(cfg.Routes) != 1 || cfg.Routes[0].Via != newRaw {
+		t.Fatalf("route not rewritten: %+v", cfg.Routes)
+	}
+	if len(cfg.LANSubnets) != 1 || cfg.LANSubnets[0] != "10.77.0.0/24" {
+		t.Fatalf("lan_subnets wiped by rotation: %+v, want [10.77.0.0/24]", cfg.LANSubnets)
+	}
+	if cfg.MaxLanClient != 7 {
+		t.Fatalf("max_lan_client wiped by rotation: got %d, want 7", cfg.MaxLanClient)
+	}
+	if cfg.ListenPort != 23456 {
+		t.Fatalf("listen_port wiped by rotation: got %d, want 23456", cfg.ListenPort)
+	}
+
+	st := loadState()
+	if st == nil || st.Config == nil {
+		t.Fatal("state.json not persisted after rotation")
+	}
+	if len(st.Config.Routes) != 1 || st.Config.Routes[0].Via != newRaw {
+		t.Fatalf("state route not rewritten: %+v", st.Config.Routes)
+	}
+	if st.Config.MaxLanClient != 7 {
+		t.Fatalf("state max_lan_client wiped: got %d, want 7", st.Config.MaxLanClient)
+	}
+}
+
+// TestPersistRotatedCredentialNoMatchDoesNotCorrupt: when oldRaw doesn't
+// match any route in the existing on-disk config (e.g. the callback fires
+// for a subscription this gateway process isn't currently tracking, or the
+// on-disk config was already replaced by a subsequent set-credential), the
+// existing k2r.yml must be left byte-for-byte untouched — no partial/wrong
+// rewrite. Mirrors daemon's TestPersistRotatedCreds_NoMatch_DoesNotPersist.
+func TestPersistRotatedCredentialNoMatchDoesNotCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	prev := stateDirOverride
+	stateDirOverride = dir
+	t.Cleanup(func() { stateDirOverride = prev })
+
+	seed := GatewayFromURL("k2subs://router-x:tok123@center.example/api/subs")
+	if err := PersistConfig(seed); err != nil {
+		t.Fatalf("seed PersistConfig: %v", err)
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "k2r.yml"))
+	if err != nil {
+		t.Fatalf("read seeded k2r.yml: %v", err)
+	}
+
+	g := &Gateway{}
+	g.persistRotatedCredential(
+		"k2subs://router-x:othertok@other.example/api/subs",
+		"k2subs://router-x:othernewtok@other.example/api/subs",
+	)
+
+	after, err := os.ReadFile(filepath.Join(dir, "k2r.yml"))
+	if err != nil {
+		t.Fatalf("read k2r.yml after no-match rotation: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("k2r.yml changed on a no-match rotation:\nbefore=%s\nafter=%s", before, after)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state.json")); !os.IsNotExist(err) {
+		t.Fatalf("state.json should not exist after a no-match rotation, stat err = %v", err)
 	}
 }

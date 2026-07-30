@@ -199,7 +199,20 @@ func NewSubscription(raw string, cacheDir string) (*Subscription, error) {
 	}
 
 	if cacheDir != "" {
-		h := sha256.Sum256([]byte(raw))
+		// Key the cache filename on endpoint (credential-stripped: no userinfo,
+		// just scheme+host+path+query), NOT raw (which embeds udid:token).
+		// Phase 0 credential rotation (spec §4.3) rewrites raw's userinfo in
+		// place — same Subscription instance, s.cacheFile computed once here
+		// stays correct across that in-memory rotation regardless. But a
+		// process RESTART re-derives cacheFile from the *persisted* raw
+		// (Task 7/8 write the rotated URL back to disk), and hashing raw
+		// there would compute a different filename every restart-after-
+		// rotation — loadCache() would miss and P5's cache fallback (see
+		// subscription/resolve.go) would find nothing to degrade to. endpoint
+		// never changes across rotation (only the userinfo does), so hashing
+		// it keeps the filename stable across both in-memory rotation and any
+		// later restart that starts from the rotated raw URL.
+		h := sha256.Sum256([]byte(endpoint))
 		name := fmt.Sprintf("subs-%x.json", h[:4])
 		s.cacheFile = filepath.Join(cacheDir, name)
 		s.loadCache()

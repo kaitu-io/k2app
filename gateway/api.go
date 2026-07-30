@@ -150,16 +150,66 @@ func (g *Gateway) applyCredential(rawURL string) (*GatewayConfig, error) {
 	return cfg, nil
 }
 
+// rewriteRouteVia replaces every route whose Via equals oldVia with newVia.
+// Returns true when at least one route was rewritten. Pure function — mirrors
+// daemon.rewriteRouteVia (k2/daemon/daemon.go rewriteRouteVia) for the
+// gateway's own config type (GatewayConfig embeds config.ClientConfig).
+func rewriteRouteVia(cfg *config.ClientConfig, oldVia, newVia string) bool {
+	if cfg == nil || oldVia == "" || newVia == "" || oldVia == newVia {
+		return false
+	}
+	changed := false
+	for i := range cfg.Routes {
+		if cfg.Routes[i].Via == oldVia {
+			cfg.Routes[i].Via = newVia
+			changed = true
+		}
+	}
+	return changed
+}
+
 // persistRotatedCredential is the Subscription creds-rotation callback for
-// k2r: reuse applyCredential's persistence path (k2r.yml + state.json, spec
-// §4.3 P1) so the rotated tunnel credential survives a full router restart.
+// k2r: rewrite ONLY the rotated route's Via in the EXISTING on-disk config
+// (k2r.yml) and re-persist both stores (k2r.yml + state.json, spec §4.3 P1)
+// so the rotated tunnel credential survives a full router restart.
+//
+// This deliberately does NOT reuse applyCredential(newRaw) for the common
+// case: applyCredential calls GatewayFromURL, which builds a brand-new
+// GatewayConfig from scratch (one route + SetGatewayDefaults) — correct for
+// "operator pastes a fresh credential via the setup UI", but wrong here: an
+// unattended rotation event would silently wipe every other operator
+// setting (lan_subnets, max_lan_client — the LAN client quota fed to
+// RouterDeviceManager.quota, becomes unenforced/0=unlimited — listen_port,
+// dns_port, log, any additional routes). Whole-branch review Finding #2.
+//
 // It does NOT touch the running engine — the in-memory Subscription already
 // carries the new creds for its next fetch/connect.
-func (g *Gateway) persistRotatedCredential(newRaw string) {
-	if _, err := g.applyCredential(newRaw); err != nil {
+func (g *Gateway) persistRotatedCredential(oldRaw, newRaw string) {
+	cfg, err := LoadGateway(defaultConfigPath())
+	if err != nil {
+		// No existing on-disk config to patch — e.g. first-ever setup with
+		// nothing persisted yet (mirrors the "never connected on this
+		// device" style fallback used elsewhere in this codebase). Fall
+		// back to the from-scratch path so rotation still persists
+		// something rather than silently doing nothing.
+		if _, err := g.applyCredential(newRaw); err != nil {
+			slog.Warn("gateway: persist rotated subscription credential failed", "err", err)
+			return
+		}
+		slog.Info("DIAG: subs-creds-persist", "component", "gateway")
+		return
+	}
+
+	if !rewriteRouteVia(&cfg.ClientConfig, oldRaw, newRaw) {
+		slog.Warn("DIAG: subs-creds-persist-miss", "component", "gateway")
+		return
+	}
+
+	if err := PersistConfig(cfg); err != nil {
 		slog.Warn("gateway: persist rotated subscription credential failed", "err", err)
 		return
 	}
+	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
 	slog.Info("DIAG: subs-creds-persist", "component", "gateway")
 }
 
