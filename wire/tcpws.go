@@ -796,15 +796,20 @@ func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, conn
 	}
 }
 
-// handleMetadataStream processes a TCP-WS connection metadata stream (StreamType
-// 0x10). Mirrors QUICServer.handleMetadataStream: attribution (udid) is applied
-// regardless of the validation result — the udid is self-reported and used for
-// traffic accounting. The validation result drives the enforce gate: under
-// enforce a failed or absent auth tears down the session; under permissive it is
-// recorded but the session is served (rollout requirement — legacy clients send
-// unvalidated metadata). The verdict is always settled so a proxy path waiting
-// on the gate unblocks; the deferred settle is the fail-closed backstop for
-// parse errors and panics.
+// handleMetadataStream processes a TCP-WS connection metadata stream
+// (StreamType 0x10). Mirrors QUICServer.handleMetadataStream.
+//
+// Attribution follows the SERVER-side verdict, never the self-reported value:
+// only a validated connection gets dev.set (a Center-validated udid is
+// trustworthy — Center rejects device.UDID != udid), and a failed or absent
+// validation lands in the empty-udid bucket (spec §5.3 udid 收口).
+//
+// Response contract (spec §5.2): permissive ALWAYS answers OK — rollout must
+// never fail a legacy-credential client. Under enforce, an explicit rejection
+// (Code 401/402/403 — only Center issues these) answers with the coded 0x02
+// form so the client can classify without string matching; "cannot determine"
+// and parse failures answer the legacy 0x01 form (no invented code). The
+// verdict is always settled; the deferred settle is the fail-closed backstop.
 func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, dev *deviceIDHolder, auth *connAuth) {
 	defer auth.settle(false)
 
@@ -818,10 +823,6 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 
 	connLog.Info("TCPWSServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "version", meta.Version)
 
-	// Attribution first, independent of auth outcome (accounting must work in
-	// permissive mode even when validation fails).
-	dev.set(meta.UDID) // self-reported (unvalidated) — attribution, see spec §8
-
 	// A nil validator means no auth backend is configured (tests, embedders).
 	// That may authenticate everyone in permissive mode, where the verdict only
 	// feeds attribution — but never under enforce, or the gate would be a no-op
@@ -830,24 +831,31 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 	if s.validate != nil {
 		verdict = s.validate(meta.Token, meta.UDID, meta.Mode)
 	}
-	authed := verdict.OK
-	auth.settle(authed)
 
-	if !authed {
-		connLog.Warn("TCPWSServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "enforce", s.adm.enforce)
+	if verdict.OK {
+		dev.set(meta.UDID)
+	}
+	auth.settle(verdict.OK)
+
+	if !verdict.OK {
+		connLog.Warn("TCPWSServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "code", verdict.Code, "enforce", s.adm.enforce)
 		if s.adm.enforce {
-			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+			if verdict.Code > 0 {
+				WriteStreamResponse(stream, &StreamError{Code: verdict.Code, Message: "auth rejected"})
+			} else {
+				WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+			}
 			stream.Close()
 			sess.Close() // tear the session, mirroring QUIC's CloseWithError
 			return
 		}
-		// Permissive: accept, attribution recorded, no block.
-		WriteStreamResponse(stream, nil)
+		// Permissive: accept, no attribution (empty-udid bucket), never block.
+		WriteMetadataResponse(stream, "")
 		stream.Close()
 		return
 	}
 
-	WriteStreamResponse(stream, nil) // OK
+	WriteMetadataResponse(stream, "") // Phase 2: cookie issuance goes here
 	stream.Close()
 }
 

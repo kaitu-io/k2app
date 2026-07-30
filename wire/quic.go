@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/rand"
 	"net"
@@ -19,6 +20,7 @@ import (
 	"github.com/sasha-s/go-deadlock"
 
 	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire/k2cc"
 )
 
@@ -1017,6 +1019,17 @@ func (c *QUICClient) extractConnLocked() (mux *quicUDPMux, conn *quic.Conn, tr *
 // on a dead UDP write). 5s is 50x normal close time (<100ms).
 const quicCloseTimeout = 5 * time.Second
 
+// quicMetadataRejectDrainDelay bounds the async delay between closing the
+// metadata stream (rejection response written) and closing the connection.
+// See handleMetadataStream's enforce-rejection branch: without this window,
+// CloseWithError can race ahead of the still-unflushed stream FIN.
+const quicMetadataRejectDrainDelay = 50 * time.Millisecond
+
+// metadataStreamDrainTimeout bounds how long handleMetadataStream waits for
+// the client's own FIN before falling back to CancelRead as a leak backstop.
+// See handleMetadataStream's deferred cleanup.
+const metadataStreamDrainTimeout = 200 * time.Millisecond
+
 // quicDialHardTimeout bounds the total time connect() holds connectMu.
 // Must be well under go-deadlock's 60s threshold. Covers: UDP listen +
 // QUIC handshake + Conn.destroy cleanup on failure. If transport.Dial
@@ -1350,16 +1363,39 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 	}
 }
 
-// handleMetadataStream processes a connection metadata stream (StreamType 0x10).
-// Attribution (udid/mode) is applied regardless of the validation result — the
-// udid is self-reported and used for traffic accounting, same trust model as
-// TCP-WS. The validation result drives the enforce gate: under enforce a failed
-// or absent auth closes the connection; under permissive it is recorded but the
-// connection is served (rollout requirement — legacy clients send no metadata).
-// The verdict is always settled so a proxy path waiting on the gate unblocks;
-// the deferred settle is the fail-closed backstop for parse errors and panics.
+// handleMetadataStream processes a connection metadata stream (StreamType
+// 0x10). Mirrors TCPWSServer.handleMetadataStream.
+//
+// Attribution follows the SERVER-side verdict, never the self-reported value:
+// only a validated connection gets mode.Store/dev.set (a Center-validated
+// udid is trustworthy — Center rejects device.UDID != udid), and a failed or
+// absent validation lands in the empty-udid bucket (spec §5.3 udid 收口).
+//
+// Response contract (spec §5.2): permissive ALWAYS answers OK — rollout must
+// never fail a legacy-credential client. Under enforce, an explicit rejection
+// (Code 401/402/403 — only Center issues these) answers with the coded 0x02
+// form so the client can classify without string matching; "cannot determine"
+// and parse failures answer the legacy 0x01 form (no invented code). The
+// verdict is always settled; the deferred settle is the fail-closed backstop.
 func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream, br *bufio.Reader, ctx *connContext) {
 	defer ctx.auth.settle(false)
+	// Release the receive half when this handler returns: quic-go's
+	// Stream.Close() only sends FIN (write side); without CancelRead the
+	// receive half never completes and the stream slot leaks — the same leak
+	// quicStreamConn.Close fixes for proxy streams (wire/CLAUDE.md). Drain to
+	// EOF first (bounded): a well-behaved client (including an OLD client —
+	// spec §5.1) closes its own send side right after reading the response,
+	// so this lets that graceful FIN land normally — CancelRead is then a
+	// no-op (quic-go only emits STOP_SENDING if the receive side hasn't
+	// already reached EOF; a STOP_SENDING racing an in-flight peer Close()
+	// resets the peer's send stream and makes ITS Close() return an error —
+	// reproduced deterministically without the drain). If the client never
+	// closes, the deadline expires and CancelRead is the real backstop.
+	defer func() {
+		stream.SetReadDeadline(time.Now().Add(metadataStreamDrainTimeout))
+		io.Copy(io.Discard, br)
+		stream.CancelRead(0)
+	}()
 
 	meta, err := ReadMetadataFrame(br)
 	if err != nil {
@@ -1371,11 +1407,6 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 
 	slog.Info("QUICServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "version", meta.Version, "remote", qconn.RemoteAddr())
 
-	// Attribution first, independent of auth outcome (accounting must work in
-	// permissive mode even when validation fails).
-	ctx.mode.Store(meta.Mode)
-	ctx.dev.set(meta.UDID)
-
 	// Validate via the same validator chain used by HTTP auth. s.validate is
 	// immutable after SetValidator (called before Listen), no lock needed.
 	// A nil validator means no auth backend is configured (k2p/P2P, tests). That
@@ -1386,24 +1417,46 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 	if s.validate != nil {
 		verdict = s.validate(meta.Token, meta.UDID, meta.Mode)
 	}
-	authed := verdict.OK
-	ctx.auth.settle(authed)
 
-	if !authed {
-		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "enforce", s.adm.enforce, "remote", qconn.RemoteAddr())
+	if verdict.OK {
+		ctx.mode.Store(meta.Mode)
+		ctx.dev.set(meta.UDID)
+	}
+	ctx.auth.settle(verdict.OK)
+
+	if !verdict.OK {
+		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "code", verdict.Code, "enforce", s.adm.enforce, "remote", qconn.RemoteAddr())
 		if s.adm.enforce {
-			WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+			if verdict.Code > 0 {
+				WriteStreamResponse(stream, &StreamError{Code: verdict.Code, Message: "auth rejected"})
+			} else {
+				WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+			}
 			stream.Close()
-			qconn.CloseWithError(0x01, "unauthorized")
+			// Tear the connection down, but not synchronously: quic-go's
+			// SendStream.Close() only schedules the FIN for the packet
+			// scheduler (send_stream.go onHasStreamData) — it does not wait
+			// for the response bytes to actually reach the wire. Calling
+			// CloseWithError inline races ahead of that and the client sees
+			// a bare "Application error" instead of the coded/legacy
+			// rejection body (reproduced deterministically without this
+			// delay). The bounded async delay gives the scheduler a window
+			// to flush first; the enforce gate (ctx.auth) — not this close —
+			// is what actually prevents the rejected connection from
+			// proxying anything in the meantime.
+			safego.Go(func() {
+				time.Sleep(quicMetadataRejectDrainDelay)
+				qconn.CloseWithError(0x01, "unauthorized")
+			})
 			return
 		}
-		// Permissive: accept, attribution recorded, no block.
-		WriteStreamResponse(stream, nil)
+		// Permissive: accept, no attribution (empty-udid bucket), never block.
+		WriteMetadataResponse(stream, "")
 		stream.Close()
 		return
 	}
 
-	WriteStreamResponse(stream, nil) // OK
+	WriteMetadataResponse(stream, "") // Phase 2: cookie issuance goes here
 	stream.Close()
 	slog.Info("QUICServer: metadata auth OK", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
 }
