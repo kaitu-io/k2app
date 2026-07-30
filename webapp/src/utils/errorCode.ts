@@ -59,6 +59,9 @@ export const ERROR_CODES = {
   INVALID_CLIENT_CLASS: 422003,
   PAYMENT_CHANNEL_UNAVAILABLE: 405001,
 
+  // Resource conflict — uniqueness already taken within the brand (added 2026-07-29)
+  EMAIL_ALREADY_IN_USE: 409001,
+
   // === Frontend-only codes (NOT from backend API) ===
 
   // 网络错误 (100-109) - 来自 classifyNetworkError
@@ -173,6 +176,12 @@ export function getErrorMessage(
 
     case ERROR_CODES.CONFLICT:
       return t('common:errors.client.conflict', 'Operation conflict, please try again');
+
+    // Backend rejects this BEFORE issuing or mailing a verification code, so the
+    // user never receives an email. The copy must say so — the old generic 422
+    // ("参数错误") read as a transient glitch and users retried for hours.
+    case ERROR_CODES.EMAIL_ALREADY_IN_USE:
+      return t('auth:updateEmail.emailAlreadyInUse', 'This email is already used by another account');
 
     case ERROR_CODES.INVALID_ARGUMENT:
       // Backend's password strength validator returns a stable enum string in
