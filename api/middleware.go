@@ -304,6 +304,17 @@ func handleJWTAuth(c *gin.Context, token string) *authContext {
 		return nil
 	}
 
+	// Default-deny by token type (spec §3.2/§8): handleJWTAuth grants the full
+	// /api/* surface, so only an access token may pass. A tunnel token's
+	// claims.TokenIssueAt can equal Device.TokenIssueAt (gateway-credential
+	// mints both from the same now), which would otherwise slip through the
+	// device-branch TokenIssueAt check and yield 90-day account access. Mirrors
+	// validateToken's claims.Type != tokenType guard.
+	if claims.Type != TokenTypeAccess {
+		log.Warnf(c, "rejected non-access token type %s at handleJWTAuth", claims.Type)
+		return nil
+	}
+
 	// 从JWT token中获取UDID
 	udid := claims.DeviceID
 
