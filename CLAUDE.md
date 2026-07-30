@@ -119,6 +119,7 @@ Reserved event names:
 | `DIAG: control-key-adopt` | INFO | control-key hash adopted from Center subs | source |
 | `DIAG: subs-creds-rotate` | INFO | subscription fetch adopted rotated credentials | endpoint |
 | `DIAG: subs-creds-persist` | INFO | rotated subscription credential persisted | component |
+| `DIAG: subs-creds-persist-miss` | WARN | credential rotation callback fired but no route in lastConfig matched the old URL — nothing persisted | component |
 
 ### Layer 3 Rules — Full Trace
 

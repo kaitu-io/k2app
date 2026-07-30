@@ -847,15 +847,33 @@ func rewriteRouteVia(cfg *config.ClientConfig, oldVia, newVia string) bool {
 // the matching k2subs:// route in lastConfig and re-persist auto-reconnect
 // state. Concurrency constitution: field rewrite under d.mu; the disk write
 // (saveLifecycleState) happens OUTSIDE the lock.
+//
+// Every subscription registered in doUp's loop shares this same callback and
+// the same *config.ClientConfig (d.lastConfig) — so two subscriptions can
+// rotate concurrently. d.mu only serializes access to the *pointer*; once a
+// pointer to the shared struct escapes the lock, nothing protects the fields
+// it points to. saveLifecycleState's json.Marshal walks every route, not
+// just the one this call rewrote, so it must never read the live, still-
+// mutable d.lastConfig after unlocking. Instead we snapshot (deep-copy) the
+// Routes slice into a fresh backing array while still holding the lock, and
+// marshal/persist that private copy outside the lock — no other goroutine
+// can ever observe or mutate memory reachable only from this copy.
 func (d *Daemon) persistRotatedCreds(oldRaw, newRaw string) {
 	d.mu.Lock()
 	cfg := d.lastConfig
 	state := d.lastStatus.State
 	updated := rewriteRouteVia(cfg, oldRaw, newRaw)
+	var snapshot *config.ClientConfig
+	if updated {
+		cp := *cfg
+		cp.Routes = append([]config.RouteConfig(nil), cfg.Routes...)
+		snapshot = &cp
+	}
 	d.mu.Unlock()
 	if !updated {
+		slog.Warn("DIAG: subs-creds-persist-miss", "component", "daemon")
 		return
 	}
 	slog.Info("DIAG: subs-creds-persist", "component", "daemon")
-	d.saveLifecycleState(cfg, state)
+	d.saveLifecycleState(snapshot, state)
 }
