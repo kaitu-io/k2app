@@ -250,6 +250,8 @@ export interface Tunnel {
 export interface TunnelListResponse {
   items: Tunnel[]; // 隧道列表
   echConfigList?: string; // Base64 encoded ECHConfigList for K2v4 connections (optional)
+  /** 90 天隧道专用凭据（Phase 0）。经 adoptTunnelToken() 持久化。 */
+  tunnelToken?: string;
 }
 
 // 优惠活动

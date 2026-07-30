@@ -30,6 +30,8 @@ import { getDeviceUdid } from './device-udid';
 // Storage keys
 export const TOKEN_STORAGE_KEY = 'k2.auth.token';
 export const REFRESH_TOKEN_STORAGE_KEY = 'k2.auth.refresh';
+/** 90 天隧道专用凭据（Phase 0）。仅用于 k2v5://=userinfo，不作 API bearer。 */
+export const TUNNEL_TOKEN_STORAGE_KEY = 'k2.auth.tunnel_token';
 
 /**
  * Token pair returned from login/register/refresh
@@ -115,6 +117,29 @@ export const authService = {
   },
 
   /**
+   * Get the 90-day tunnel token (Phase 0 credential for k2v5:// URLs).
+   * @returns tunnel token or null if none adopted yet
+   */
+  async getTunnelToken(): Promise<string | null> {
+    try {
+      const storage = getStorage();
+      return await storage.get(TUNNEL_TOKEN_STORAGE_KEY);
+    } catch (error) {
+      console.warn('[AuthService] Failed to get tunnel token:', error);
+      return null;
+    }
+  },
+
+  /**
+   * Persist a tunnel token delivered by /api/v20260717/tunnels.
+   */
+  async setTunnelToken(token: string): Promise<void> {
+    const storage = getStorage();
+    await storage.set(TUNNEL_TOKEN_STORAGE_KEY, token);
+    console.debug('[AuthService] Tunnel token saved');
+  },
+
+  /**
    * Save tokens after login/register/refresh
    * @param tokens Token pair from API response
    */
@@ -145,6 +170,7 @@ export const authService = {
     try {
       await storage.remove(TOKEN_STORAGE_KEY);
       await storage.remove(REFRESH_TOKEN_STORAGE_KEY);
+      await storage.remove(TUNNEL_TOKEN_STORAGE_KEY);
       console.debug('[AuthService] Tokens cleared');
     } catch (error) {
       console.warn('[AuthService] Failed to clear tokens:', error);
@@ -165,12 +191,14 @@ export const authService = {
    * @returns UDID and token (token may be null if not logged in)
    */
   async getCredentials(): Promise<TunnelCredentials> {
-    const [udid, token] = await Promise.all([
+    const [udid, tunnelToken, accessToken] = await Promise.all([
       this.getUdid(),
+      this.getTunnelToken(),
       this.getToken(),
     ]);
-
-    return { udid, token };
+    // 隧道 URL 优先用 90 天 tunnel token（Phase 0）；尚未拉过
+    // /api/tunnels 时回落 access token（服务端过渡期双接受）。
+    return { udid, token: tunnelToken ?? accessToken };
   },
 
   /**
