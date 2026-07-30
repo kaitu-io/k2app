@@ -103,6 +103,8 @@ k2 侧分支基底：`fix/quic-device-auth`（master + 5 commits，无分叉）
 
 但它**不进通用的 `handleJWTAuth`**：那会让一个 90 天的凭据获得整个 `/api/*` 面（改密码、退款、看订单）。两个端点是白名单，不是默认。`/api/subs` 因此是双 token 认证——access 与 tunnel 都收，按 `claims.Type` 分派。
 
+**这条承诺必须由 `handleJWTAuth` 本体的一道 default-deny 强制，而不是靠时间戳偶然不等。** 现状的 `handleJWTAuth`（`api/middleware.go:291-373`）自己 `jwt.ParseWithClaims`，**通篇不检查 `claims.Type`**——web 分支（`DeviceID==""`）只解析 `UserID`，device 分支唯一的信任判据是 `device.TokenIssueAt == claims.TokenIssueAt`。而 tunnel token 铸造时（尤其 `api/api_gateway_credential.go` 的网关凭据路径）用同一个 `now` 同时写 `Device.TokenIssueAt` 与 `Device.TunnelIssueAt`，`generateTunnelToken` 又把该 `issueAt` 写进共享的 `claims.TokenIssueAt` JSON 字段——于是路由器的 tunnel token 的 `claims.TokenIssueAt` **恰好等于** `Device.TokenIssueAt`，拿去当 `Authorization: Bearer` 打任意 `AuthRequired()` 端点会**直接通过**，拿到整个账户面 90 天。这不是概率事件，对网关凭据路径是必然。因此 Phase 0 必须在 `handleJWTAuth` 开头加一道 `if claims.Type != TokenTypeAccess { return nil }`（default-deny，与 `validateToken` 的 `claims.Type != tokenType` 检查对齐——产出方分类、消费方查询，符合 `k2/CLAUDE.md` 的错误归属规则在 api 侧的等价适用），并配一条负向回归测试 `TestHandleJWTAuth_RejectsTunnelToken`：铸一个 tunnel token 当 Bearer 打进任意 `AuthRequired()` 端点，断言 401。这道门与它的变异验证（改坏 → 该测试必须变红）是 Phase 0 的验收项，不是可选加固。
+
 ### 3.3 数据流
 
 ```
@@ -393,6 +395,8 @@ exp = min(auth_at + 15min, svc_exp)
 
 前移有上限：同一会话连续无法判定累计超过 `cookie_grace_max`（默认 6 小时）后转为断连，避免 Center 永久失联时节点无限期自治。
 
+**这个 6 小时宽限是可被滥用的攻击面，必须配一条单节点级告警。** 节点无法区分"Center 真的下线"与"有人专门干扰**这一台节点**到 Center 的路径"。一个预判到自己即将被封的用户，若同时能降级自有/受控节点到 Center 的 egress，就能把 §2 目标 5 承诺的 15 分钟吊销 SLA 拖到 6 小时。防线不在节点本地（它天然分不清），而在车队级观测：**当单台节点持续 `DIAG: auth-center-unreachable` 超过一个远小于 6 小时的阈值（建议 5–10 分钟）时，应告警而不仅是 log**。判据很干净——Center 真下线会 fleet-wide 同时出现，唯独一台节点够不着一个所有其他节点都够得着的 Center，这本身就是值得 page 的异常。这条告警的实现归 Phase 3 的可观测面（与 §7.2 的 rollout 采集同一条通道），本设计只钉住它是必需项、不是可选项。
+
 节点侧还需要区分"Center 拒绝"与"Center 不可达"，才能把 Center 的 `code` 映射成 §5.2 的结构化错误码回给客户端。这正是 §5.3 要把 `NewRemoteValidator` 从返回 `bool` 改为返回 `{ok, code, userID, serviceExpiredAt}` 的原因——今天它把这两类失败压成了同一个 `false`，信息在那一步就丢了。
 
 ### 6.5 长连接周期重校
@@ -421,6 +425,10 @@ type authSession struct {
 1. 快照（持 state lock）→ **释放锁**。
 2. 对每个会话：`svc_exp` 已过 → `kill()`，零 Center 往返。
 3. `now - auth_at > 15min` → 调用 validator（**锁外**，命中 `CachingValidator` 则不触 Center）→ 按 §6.4 处置。
+
+**成功重校必须前移注册表里的 `authSession.authAt = now`（这一步只改服务端注册表，不产生新 cookie，与 §6.3 的"cookie 永不本地续期"不冲突——客户端手里那份仍按原 `exp` 过期）。** 少了它会制造一类新的惊群：GFW 事件后大量客户端在同一秒重连，形成一个 `auth_at` 近乎相同的 cohort，此后**每隔 15 分钟、永久地**整体同时回 Center——正是 cookie 设计要消除的那种同步风暴，只是触发源从"节点重启"换成了"相关重连"。除前移外，清扫的调度间隔本身也要加 **±2 分钟 jitter**，让已经相位锁定的 cohort 在几个周期内自然错开。
+
+**清扫一次 pass 的时长必须有上界。** `remoteAuthClient` 的超时是 5 秒；Center 不可达时 `-1` 不缓存（singleflight 只合并并发调用，串行循环享受不到），一个万级连接的节点串行跑一次 pass 可达一小时量级。这会连累两件事：`authSessions.Close()` 的 `wg.Wait` 要等当前 pass 走完，于是 `QUICServer.Close`/`TCPWSServer.Close`（乃至整机 SIGTERM 关停）挂起同样时长；且快照晚序会话的 `svc_exp` 到期断连被拖后一整个 pass。因此：pass 内用小并发度 worker（如 8 路）消费快照；每处理一个会话前先 `select { case <-done: return; default: }`，让 `Close` 有一条不等 pass 完成的退出路径；`now` 每个会话重新取一次，避免 pass 内漂移几十分钟使宽限计算失真。
 
 严格遵守 `k2/CLAUDE.md` 的并发宪法：临界区只做字段读写，Center 调用与 `kill()` 都在锁外，新互斥量登记进 Lock Ordering Graph（`wire.authSessions.mu`，standalone，不与任何 engine 锁嵌套）。
 
@@ -512,6 +520,7 @@ auth:
 | 层 | 变更 | 兼容性 |
 |---|---|---|
 | `api/` | `TokenTypeTunnel` 常量；`tunnel_token_expiry` 配置；`Device.TunnelIssueAt` 列（需手动 migrate） | 新增，无破坏 |
+| `api/` | **`middleware.go` `handleJWTAuth` 加 `claims.Type != TokenTypeAccess → reject`（§3.2 的 default-deny）** | 收紧：现状放行任意 type，但今天没有 tunnel token 存在，故对存量零影响 |
 | `api/` | `/slave/device-check-auth` 请求体加 `mode`；加封禁检查；token type 改 tunnel | **破坏性**：需与节点侧同步发布，或在过渡期同时接受 access 与 tunnel 两种 type |
 | `api/` | `/api/subs`、`/api/tunnels`、`gateway-credential` 改发 tunnel token；滚动续期 | 老客户端仍能用 access token 连（因为过渡期双接受），无破坏 |
 | `api/` | `/slave/device-traffic` 的 `devices[]` 加 `session_id` | 新增可选字段，无破坏 |
@@ -536,7 +545,7 @@ auth:
 - **`§6.4` 的三态语义**：三张表分别构造（Center 明确拒绝、Center 不可达、节点配置缺失），断言各自的处置。**这是最容易写成假绿的一组**——必须验证"不可达"路径真的走到了延长分支，而不是被上游某个检查提前挡掉。
 - **周期重校**：注入可控时钟，验证 `svc_exp` 过期零 Center 断连、`auth_at` 超窗触发重校、Center 不可达时不断连、累计超 `cookie_grace_max` 后断连。
 - **两传输一致性**：同一组表驱动用例跑 QUIC 与 TCP-WS 两遍，断言行为一致。这是防止 §5.2 的两份手抄实现再次分叉的结构性守卫。
-- **凭据不入日志**：一条静态守卫测试，扫描 `wire/` 与 `server/` 的所有 `slog.*` 调用点，断言没有任何一处把 `cookie`、`token`、`NodeSecret` 作为值传入。这类约束靠人工 review 一定会漏——`§6.2` 的理由（S3 日志上传）意味着漏一次就是真实的凭据外泄。
+- **凭据不入日志**：一条静态守卫测试，扫描 `wire/` 与 `server/` 的所有 `slog.*` 调用点，断言没有任何一处把 `cookie`、`token`、`NodeSecret` 作为值传入。这类约束靠人工 review 一定会漏——`§6.2` 的理由（S3 日志上传）意味着漏一次就是真实的凭据外泄。**两点补强**：（1）守卫必须**在 Phase 1 就落地它的 `token`/`NodeSecret` 版本**，不能等到 Phase 2——Phase 1 恰好重写了 `auth_remote.go`/`auth_users.go` 的全部日志调用点和两个 handler 的日志，那正是最容易把 `meta.Token` 顺手写进日志的时刻；cookie 维度在 Phase 2 补上。（2）只扫 `slog.*` 直接实参**抓不住 error 包装泄漏**：`fmt.Errorf("... %s", cookie)` 或 `fmt.Sprintf(... token ...)` 把凭据塞进 error/字符串，下游一句 `slog.Error(..., "err", err)` 就外泄了，而 error 那一步的实参名是 `err` 不是 `cookie`。守卫必须同时覆盖同包内 `fmt.Errorf`/`fmt.Sprintf`/`errors.New` 里插值 `cookie`/`token`/`nodeSecret` 命名变量的调用点；更稳的做法是让这些凭据用一个带 redacting `String()`/`LogValue()` 的类型承载，任何意外包含都自我脱敏，与 grep 式守卫互补。守卫自身的盲区（若最终仍靠 grep）要在测试文件的文档注释里诚实写明。
 - **api handler**：按 `CLAUDE.md` 的要求，新写的 handler 测试**必须 `go test -run X` 单跑与全量跑各一次**（`center` 包共享 viper/redis 全局状态，两种跑法结果可能不同），断言只锚定自己那道门。
 - **DB 集成测试**：注意 `skipIfNoConfig` 会静默跳过 170 个测试，判据是 `-v` 下 **0 SKIP**。新 worktree 需 `mkdir -p center && cp <主仓>/center/config.yml center/`。
 - **并发**：`go test -race -timeout 300s ./wire/...`；新增互斥量必须通过既有的 `deadlock_test.go` 与静态审计（`go-deadlock` 只在 runtime 生效，不能替代对所有 `Lock()` 点的静态检查）。
@@ -561,7 +570,19 @@ cookie 在 TLS + ECH 内传输，泄漏需要先攻破传输层。一旦泄漏�
 
 不做 cookie 与连接/IP 的绑定：绑 IP 会直接破坏移动网络切换，而那正是本设计要解决的问题。
 
-### 10.4 本次不解决的
+### 10.4 cookie 签名密钥（`cookie.key`）泄漏——与 cookie 盗窃是两个量级
+
+§10.3 分析的是**一张 cookie** 泄漏（有界：一个节点、15 分钟、一个已归属 udid）。**签名密钥泄漏是另一回事，必须单独命名。** cookie 快路径的信任全部落在 `<cert_dir>/cookie.key` 这一把 32 字节密钥上——payload 里的 `udid`/`user_id`/`svc_exp` 全是攻击者可控内容，唯一不可伪造的是那把密钥算出的 HMAC。谁拿到这把密钥（节点被攻陷、备份泄漏、内鬼），就能为**任意 udid/user_id、乃至从未认证过的身份**铸 cookie，`auth_at = now`、`svc_exp` 任意远，且因为快路径**首次出示也不进 validator 链**，这条连接零 Center 接触即被放行。唯一的兜底是 §6.5 的周期重校，但攻击者只要每 <15 分钟用一张新铸的 `auth_at=now` cookie 重连，就能维持一条永不被重校打断、Center 完全看不见的会话链，归属到他选的任何 udid（含真实受害者——这是计费构陷向量）。
+
+**缓解（部分已在设计里）**：密钥 per-node 独立生成、不从 `NodeSecret` 派生（§6.7），因此泄漏被牢牢限制在**那一台节点**——这是刻意的好设计，务必保留。但残余风险的关键性质是**从 Center 侧不可检测**（这些连接 Center 根本看不到）。因此本设计要求补一条检测：利用 §6.6 已经在建的 `session_id` 遥测，Center 侧交叉核对——`device-traffic` 上报里出现的 `session_id`，若在任何节点都**没有对应的冷认证记录**（每个合法 `session_id` 都诞生于一次 Center 冷认证，见 §6.2），即为可疑，应告警。这不能阻止伪造，但把"到人工发现为止"的检测缺口（§6.7 自己点出的那个）关小到一次遥测批次的延迟。密钥的 30 天自动轮换是另一半——它限制的是泄漏后的最坏暴露时长。
+
+### 10.5 无并发限制 + 90 天自续期 = URL 泄漏的性质变了
+
+§2 把并发限制列为非目标（先观测、拿到分布再定阈值），这个排序本身合理。但要诚实记录它与 90 天自续期叠加后的一个**回归轴**：今天一份泄漏的 `k2subs://` URL 已经是无限访问，但底层 access token ≤24 小时就死；本设计之后，同一份泄漏 URL 变成一个**被合法校验通过、无并发上限、每 ≤45 天经 `/api/subs` 自动续期**的凭据，只要还有**任何人**周期性使用它，它就长青，连重新分享都不需要。这对欺诈**检测**是净进步（归属正确了），但对欺诈**防范**是零改善甚至倒退。
+
+结论不是现在就上并发限制（那个排序论证成立），而是两条：（1）在此显式登记为已知回归轴；（2）§6.6 的 `session_id` 遥测在约两个月的 rollout 期内必须**按期真被 review**（不是只采集）——它是最快到手的滥用信号，"同一 udid 同时活跃在 N 个节点/会话"的异常分布正是从这里读出来的。这条 review 承诺写进 Phase 3 的运维节奏，不是采集完就搁置。
+
+### 10.6 本次不解决的
 
 - 并发使用限制（只做可观测，§2）。
 - 跨节点凭据（§10.2）。
