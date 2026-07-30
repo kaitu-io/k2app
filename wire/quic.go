@@ -604,14 +604,26 @@ serialize:
 	// just gateway — previously gated on Mode!="", which left normal clients
 	// completely unauthenticated on the QUIC path (the P0 this fix closes).
 	//
-	// Best-effort: the QUIC handshake already succeeded here; a metadata-stream
-	// failure must NOT fail connect(). The server's enforce gate — not the
-	// client — is the authority on whether to serve proxy streams. Mirrors
-	// TCP-WS sendMetadataBestEffort. Under enforce=on the server closes the conn
-	// on auth failure, so the subsequent DialTCP surfaces the rejection anyway.
-	if err := c.sendMetadata(ctx, conn); err != nil {
-		slog.Warn("QUICClient: metadata stream failed (best-effort)", "mode", c.cfg.Mode, "err", err)
+	// Single shared orchestration (metadata_client.go): transport-layer errors
+	// stay best-effort — the server's enforce gate, not the client, is the
+	// authority; but an EXPLICIT server rejection (only possible under
+	// enforce — permissive servers always answer OK) must fail connect() with
+	// the structured code instead of limping into a closed connection.
+	cookie, mdErr := sendMetadata(ctx, quicMetaTransport{conn: conn}, MetadataFrame{
+		UDID:    c.cfg.UDID,
+		Token:   c.cfg.Token,
+		Mode:    c.cfg.Mode,
+		Version: c.cfg.Version,
+	})
+	if mdErr != nil {
+		if isMetadataReject(mdErr) {
+			closeQUICConnSafe(conn, "metadata auth rejected")
+			transport.Close()
+			return nil, fmt.Errorf("%w: %w", ErrMetadataRejected, mdErr)
+		}
+		slog.Warn("QUICClient: metadata stream failed (best-effort)", "mode", c.cfg.Mode, "err", mdErr)
 	}
+	_ = cookie // Phase 2: CookieJar.Put(pin, cookie)
 
 	// --- Store result under lock ---
 	// concurrency:allow — closing locally-owned conn/transport not yet stored in struct;
@@ -632,51 +644,6 @@ serialize:
 	go c.acceptOverflowStreams(conn, c.udpMux)
 
 	return conn, nil
-}
-
-// sendMetadata opens a metadata stream (StreamType 0x10) and sends credentials + mode.
-// The server validates and responds with OK or error.
-func (c *QUICClient) sendMetadata(ctx context.Context, conn *quic.Conn) error {
-	stream, err := conn.OpenStreamSync(ctx)
-	if err != nil {
-		return fmt.Errorf("open stream: %w", err)
-	}
-
-	if err := WriteH3ProxyFrameType(stream); err != nil {
-		stream.Close()
-		return fmt.Errorf("write frame type: %w", err)
-	}
-	// Write stream header with empty addr (metadata has no destination).
-	if err := WriteStreamHeader(stream, StreamTypeMeta, ""); err != nil {
-		stream.Close()
-		return fmt.Errorf("write stream header: %w", err)
-	}
-	if err := WriteMetadataFrame(stream, MetadataFrame{
-		UDID:    c.cfg.UDID,
-		Token:   c.cfg.Token,
-		Mode:    c.cfg.Mode,
-		Version: c.cfg.Version,
-	}); err != nil {
-		stream.Close()
-		return fmt.Errorf("write metadata: %w", err)
-	}
-
-	// Read server response.
-	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
-	br := bufio.NewReader(stream)
-	ok, errCode, errMsg, err := ReadStreamResponse(br)
-	stream.Close()
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-	if !ok {
-		if errCode > 0 {
-			return &StreamError{Code: errCode, Message: errMsg}
-		}
-		return fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
-	}
-	slog.Info("QUICClient: metadata auth OK", "mode", c.cfg.Mode)
-	return nil
 }
 
 // DialTCP opens a TCP proxy stream through the QUIC connection.

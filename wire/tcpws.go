@@ -220,10 +220,25 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 			return nil, fmt.Errorf("wire: smux client: %w", smuxErr)
 		}
 
-		// Best-effort device attribution: mirror QUIC's metadata stream so the
-		// server can attribute this session's traffic. TCP-WS auth already
-		// happened at the HTTP layer; a failure here must not fail the connect.
-		c.sendMetadataBestEffort(sess)
+		// Shared metadata orchestration (metadata_client.go). Best-effort for
+		// transport errors; an explicit rejection fails the connect — TCP-WS
+		// used to drop ok/errCode entirely, which is the divergence the shared
+		// sendMetadata removes.
+		cookie, mdErr := sendMetadata(ctx, smuxMetaTransport{sess: sess}, MetadataFrame{
+			UDID:    c.cfg.UDID,
+			Token:   c.cfg.Token,
+			Mode:    c.cfg.Mode,
+			Version: c.cfg.Version,
+		})
+		if mdErr != nil {
+			if isMetadataReject(mdErr) {
+				sess.Close()
+				conn.Close()
+				return nil, fmt.Errorf("%w: %w", ErrMetadataRejected, mdErr)
+			}
+			slog.Debug("TCPWSClient: metadata stream failed (best-effort)", "err", mdErr)
+		}
+		_ = cookie // Phase 2: CookieJar.Put(pin, cookie)
 
 		// --- Store result under lock ---
 		// concurrency:allow — closing locally-owned sess not yet stored in struct
@@ -242,44 +257,6 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		return nil, err
 	}
 	return v.(*smux.Session), nil
-}
-
-// sendMetadataBestEffort opens the metadata stream and sends credentials + mode,
-// mirroring QUIC's sendMetadata. This IS the device-auth carrier for TCP-WS
-// (there is no separate HTTP auth handshake — that ticket flow was never wired
-// and is gone): the server validates the metadata and, under enforce, gates
-// proxy streams on it. Sending is best-effort — a failure here is logged and
-// swallowed, never surfaced to connect() — because the enforce/permissive
-// decision belongs to the server, not the client's connect path.
-//
-// TCP-WS frames carry no H3 marker (unlike QUIC's WriteH3ProxyFrameType) —
-// that's an existing protocol difference between the two transports, not an
-// omission here.
-func (c *TCPWSClient) sendMetadataBestEffort(sess *smux.Session) {
-	stream, err := sess.OpenStream()
-	if err != nil {
-		slog.Debug("TCPWSClient: metadata open stream failed", "err", err)
-		return
-	}
-	defer stream.Close()
-	if err := WriteStreamHeader(stream, StreamTypeMeta, ""); err != nil {
-		slog.Debug("TCPWSClient: metadata header failed", "err", err)
-		return
-	}
-	if err := WriteMetadataFrame(stream, MetadataFrame{
-		UDID:    c.cfg.UDID,
-		Token:   c.cfg.Token,
-		Mode:    c.cfg.Mode,
-		Version: c.cfg.Version,
-	}); err != nil {
-		slog.Debug("TCPWSClient: metadata frame failed", "err", err)
-		return
-	}
-	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
-	br := bufio.NewReader(stream)
-	if _, _, _, err := ReadStreamResponse(br); err != nil {
-		slog.Debug("TCPWSClient: metadata response failed", "err", err)
-	}
 }
 
 // checkCachedSession inspects the cached smux session under mu and evicts
