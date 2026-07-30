@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -319,8 +320,13 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	echB64 := base64.URLEncoding.EncodeToString(echConfigList)
 	pins := pair.FormatPins()
 
-	connectURL := fmt.Sprintf("k2v5://%s:%s@%s:%s?ech=%s&pin=%s&insecure=1",
-		auth.UDID, auth.Token, host, port, echB64, pins)
+	// Route the credential through url.UserPassword rather than interpolating
+	// auth.Token directly into fmt.Sprintf — matches cmd/k2s/user.go's
+	// buildUserURL and keeps the raw token out of any Sprintf/Errorf arg list
+	// that wire/credential_log_guard_test.go statically scans (spec §9).
+	userinfo := url.UserPassword(auth.UDID, auth.Token).String()
+	connectURL := fmt.Sprintf("k2v5://%s@%s:%s?ech=%s&pin=%s&insecure=1",
+		userinfo, host, port, echB64, pins)
 
 	// Add ip= raw IPv4 for dialing (separate from Host which is TLS SNI domain).
 	if rawIP4 := wire.ProbePublicIP("https://api4.ipify.org"); rawIP4 != "" {
@@ -335,9 +341,14 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 		connectURL += fmt.Sprintf("&hop=%d-%d", cfg.HopStart, cfg.HopEnd)
 	}
 
-	slog.Info("Connect URL", "url", connectURL)
-
-	// Save connect URL to file for k2s run smart mode to read.
+	// Do NOT slog.Info the raw connectURL: it embeds auth.Token, and
+	// config.SetupLogging routes slog's default output into a rotated,
+	// world-readable (0644) log file meant for support/log-upload tooling —
+	// a materially wider exposure than the 0600 file below. cmd/k2s already
+	// owns operator-facing display: it reads connect-url.txt back and prints
+	// it directly (readConnectURL/waitForConnectURL in cmd/k2s/setup.go),
+	// so this slog call was a redundant credential leak, not the only path
+	// to visibility. Caught by wire/credential_log_guard_test.go (spec §9).
 	urlPath := filepath.Join(cfg.CertDir, "connect-url.txt")
 	if err := os.WriteFile(urlPath, []byte(connectURL+"\n"), 0600); err != nil {
 		slog.Error("server: failed to save connect URL", "err", err)

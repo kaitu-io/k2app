@@ -154,8 +154,8 @@ The routing decision happens at the TCP level, before any TLS state is establish
 Device auth rides the **connection metadata stream** (StreamType `0x10`, §5.x), not a
 separate HTTP handshake. There is no ticket, no `/k2v5/auth` endpoint, and no
 per-connection round-trip beyond the metadata stream itself. The same model and the
-same `JWTValidator` govern **both transports** (QUIC and TCP-WS) — auth that only
-covered QUIC would let a client force the TCP-WS fallback to bypass it.
+same `Validator`/`AuthVerdict` chain govern **both transports** (QUIC and TCP-WS) —
+auth that only covered QUIC would let a client force the TCP-WS fallback to bypass it.
 
 > **Historical note.** Spec v1.1 (2025-02) described a ticket flow (`POST /k2v5/auth`
 > → `AuthTicket` → present ticket on streams). That flow was **never implemented
@@ -171,7 +171,7 @@ Client                                Server
   |  MetadataFrame{udid, token, mode,   |
   |                version}             |
   |------------------------------------>|
-  |                                     |  JWTValidator(token, udid, mode)
+  |                                     |  Validator(token, udid, mode) → AuthVerdict
   |  Stream response: OK / unauthorized |
   |<------------------------------------|
   |                                     |
@@ -196,8 +196,10 @@ waits briefly (`authWaitDefault`, 500 ms) for the verdict before rejecting.
 
 ### 4.3 Enforcement
 
-The server validates the metadata via a `JWTValidator` and records the verdict per
-connection. **Admission is a property of the connection, not of a stream**: one
+The server validates the metadata via a `Validator` (returning a four-state
+`AuthVerdict` — OK / no opinion / explicit reject 401-403 / cannot determine -1) and
+records the verdict per connection. **Admission is a property of the connection, not
+of a stream**: one
 metadata stream decides, and every proxy path on that connection lives or dies by
 that verdict. Both transports share the implementation (`wire/admission.go`), and
 the two things egress needs — a route to `AcceptTCP` and the server's `UDPHandler`
@@ -224,9 +226,16 @@ transport race's data-path probe.
 
 ### 4.4 Validator Chain
 
-`JWTValidator` (`wire/auth.go`) is resolved server-side as an ordered chain
-(`ChainValidators`, first success wins), wrapped in a success-only TTL cache
-(`CachingValidator`) so opening auth to every connection does not hammer Center:
+`Validator` (`wire/auth.go`) is resolved server-side as an ordered chain
+(`ChainValidators`), wrapped in a success-only TTL cache (`CachingValidator`) so
+opening auth to every connection does not hammer Center. The chain's semantics
+follow the four-state `AuthVerdict`: the first `OK` wins immediately; a "no
+opinion" verdict (`Code == 0`, the validator doesn't know this udid) is skipped;
+an explicit rejection (`Code` 401/402/403 — only Center issues these) short-circuits
+the chain right there; if every validator ran out with no explicit reject but at
+least one returned "cannot determine" (`Code == -1`, e.g. Center unreachable), the
+chain tail returns `Code: -1` rather than fail-closing; only when every validator
+had no opinion at all does the tail fail-closed to `Code: 401`.
 
 | Validator | Source |
 |-----------|--------|
