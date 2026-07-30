@@ -309,6 +309,10 @@ cookie = base64url( payload || HMAC-SHA256(cookieKey[key_id], payload)[:16] )
 
 截断到 128 bit 的 MAC 对这个用途足够，且让 cookie 保持在 metadata value 的 4096 字节限制内绰绰有余。
 
+**cookie 是"已签名"而非"已加密"。** payload 对持有者可读——但持有者就是设备自己，`udid` / `user_id` / `svc_exp` 全是它已经知道的信息，因此不构成泄漏。**不要在将来假设它有机密性**（例如往里塞节点内部标识或策略参数）。
+
+**cookie 永不进日志。** 桌面端有 S3 日志上传通道（见 `desktop/CLAUDE.md`），任何被记录的 cookie 都会离开设备并进入可被检索的存储。所有涉及 cookie 的日志一律只记 `key_id`、`session_id` 前 8 字节与验签结果，**绝不记 cookie 本体或 MAC**。同一约束适用于 `token`——`NodeSecret` 已有 `NEVER log` 的先例（`server/usage_reporter.go:87`），本次按同样标准处理。
+
 ### 6.3 生命周期：不做本地续期
 
 ```
@@ -476,6 +480,7 @@ auth:
 - **`§6.4` 的三态语义**：三张表分别构造（Center 明确拒绝、Center 不可达、节点配置缺失），断言各自的处置。**这是最容易写成假绿的一组**——必须验证"不可达"路径真的走到了延长分支，而不是被上游某个检查提前挡掉。
 - **周期重校**：注入可控时钟，验证 `svc_exp` 过期零 Center 断连、`auth_at` 超窗触发重校、Center 不可达时不断连、累计超 `cookie_grace_max` 后断连。
 - **两传输一致性**：同一组表驱动用例跑 QUIC 与 TCP-WS 两遍，断言行为一致。这是防止 §5.2 的两份手抄实现再次分叉的结构性守卫。
+- **凭据不入日志**：一条静态守卫测试，扫描 `wire/` 与 `server/` 的所有 `slog.*` 调用点，断言没有任何一处把 `cookie`、`token`、`NodeSecret` 作为值传入。这类约束靠人工 review 一定会漏——`§6.2` 的理由（S3 日志上传）意味着漏一次就是真实的凭据外泄。
 - **api handler**：按 `CLAUDE.md` 的要求，新写的 handler 测试**必须 `go test -run X` 单跑与全量跑各一次**（`center` 包共享 viper/redis 全局状态，两种跑法结果可能不同），断言只锚定自己那道门。
 - **DB 集成测试**：注意 `skipIfNoConfig` 会静默跳过 170 个测试，判据是 `-v` 下 **0 SKIP**。新 worktree 需 `mkdir -p center && cp <主仓>/center/config.yml center/`。
 - **并发**：`go test -race -timeout 300s ./wire/...`；新增互斥量必须通过既有的 `deadlock_test.go` 与静态审计（`go-deadlock` 只在 runtime 生效，不能替代对所有 `Lock()` 点的静态检查）。
