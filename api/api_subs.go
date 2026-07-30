@@ -184,6 +184,19 @@ func api_subs(c *gin.Context) {
 		return
 	}
 
+	// Blocked-user gate (finding #6, whole-branch review): Task 2 added this
+	// exact check to /slave/device-check-auth (see isUserBlocked's call site in
+	// slave_api_device_auth.go), but /api/subs never got the mirror — a blocked
+	// account could still pull a fresh 90-day tunnel-token credential list here
+	// on either the access or tunnel credential path (the actual connect is
+	// still blocked downstream by Task 2's gate, but there's no reason to hand
+	// out a fresh list to a blocked account in the meantime).
+	if isUserBlocked(auth.User) {
+		log.Warnf(c, "subs: user %d is blocked", auth.User.ID)
+		subsError(c, http.StatusForbidden, "account blocked")
+		return
+	}
+
 	// Require device context — web-auth tokens (no device) must not access subs.
 	if auth.Device == nil {
 		log.Warnf(c, "subs: device context required, udid=%s", udid)
@@ -212,6 +225,19 @@ func api_subs(c *gin.Context) {
 				udid, auth.Device.IsGateway, info.IsGateway())
 			subsError(c, http.StatusForbidden, "device class mismatch")
 			return
+		}
+		// Device app-info refresh (finding #5, whole-branch review): the
+		// access-token path already gets this for free — handleJWTAuth (called
+		// from inside subsAuthenticate) parses this same header and calls
+		// refreshDeviceAppInfo internally. The tunnel-token path bypasses
+		// handleJWTAuth entirely (goes through validateTunnelToken instead), so
+		// without this call app_version/app_platform/app_arch/os_version/
+		// device_model would never update for any device authenticating here
+		// with a tunnel token — which matters most for k2r routers, since Task 5
+		// mints their credential as a tunnel token from device-creation time and
+		// /api/subs is their ONLY authenticated Center touchpoint.
+		if auth.CredType == "tunnel" {
+			refreshDeviceAppInfo(c, auth.Device, info)
 		}
 	}
 

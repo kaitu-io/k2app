@@ -268,10 +268,30 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         UserDefaults(suiteName: kAppGroup)?.set(config, forKey: "configJSON")
         // 2) providerConfiguration — read BEFORE the App Group on an
         //    on-demand relaunch; without this write the stale token wins.
+        //    EXCEPTION: skipped below when the manager backs a live session —
+        //    see the status guard, since saveToPreferences on THAT manager is
+        //    not actually inert (final-review finding #1).
         loadVPNManager { manager in
             guard let manager = manager,
                   let proto = manager.protocolConfiguration as? NETunnelProviderProtocol else {
                 // Never connected on this device — App Group write suffices.
+                call.resolve()
+                return
+            }
+            // Never mutate a LIVE manager's saved config. saveToPreferences on
+            // the NETunnelProviderManager backing an active/connected NE session
+            // can reconfigure or disrupt the running tunnel and re-evaluates
+            // on-demand rules — that's not inert, regardless of the "persist
+            // only" framing above. Mirrors the status checks already used by
+            // connect()/disconnect() in this file. Skip the
+            // providerConfiguration write unless the tunnel is fully torn down
+            // (.disconnected) or was never configured (.invalid); the App Group
+            // write above already covers the next on-demand relaunch, and a
+            // currently-running tunnel already holds its own credential in
+            // memory so it doesn't need this write anyway.
+            let status = manager.connection.status
+            guard status == .disconnected || status == .invalid else {
+                logger.debug("updateConfig: skipping providerConfiguration write — manager is live (status=\(status.rawValue))")
                 call.resolve()
                 return
             }

@@ -40,6 +40,16 @@ describe('rewriteConfigCredential', () => {
   it('returns input unchanged on malformed JSON', () => {
     expect(rewriteConfigCredential('not-json', 'U', 'T')).toBe('not-json');
   });
+
+  // finding #7 (whole-branch review): '@' detection was scanning the ENTIRE
+  // remainder of the URL, not just the authority component — an '@' inside a
+  // query param (no real userinfo present) got misparsed as the userinfo
+  // separator, truncating everything up to and including that '@'.
+  it('does not misparse an "@" that appears inside the query string, not userinfo', () => {
+    const bare = JSON.stringify({ routes: [{ via: 'k2v5://h.example.com:443?x=a@b' }] });
+    const cfg = JSON.parse(rewriteConfigCredential(bare, 'U', 'T'));
+    expect(cfg.routes[0].via).toBe('k2v5://U:T@h.example.com:443?x=a@b');
+  });
 });
 
 describe("capacitorRun('sync-credential')", () => {

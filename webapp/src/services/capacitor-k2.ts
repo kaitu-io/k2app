@@ -110,9 +110,18 @@ export function rewriteConfigCredential(configJson: string, udid: string, token:
     for (const route of cfg.routes) {
       if (typeof route?.via !== 'string' || !route.via.startsWith('k2v5://')) continue;
       const rest = route.via.substring('k2v5://'.length);
-      const atIdx = rest.indexOf('@');
-      const hostPart = atIdx >= 0 ? rest.substring(atIdx + 1) : rest;
-      const next = `k2v5://${udid}:${token}@${hostPart}`;
+      // Userinfo '@' must only be looked for within the authority component
+      // (before the first '/' or '?') — scanning the entire remainder would
+      // misparse an '@' inside a query param (e.g. "?x=a@b") as the userinfo
+      // separator, truncating the host (finding #7, whole-branch review).
+      const slashIdx = rest.indexOf('/');
+      const qIdx = rest.indexOf('?');
+      const authorityEnd = slashIdx < 0 ? qIdx : (qIdx < 0 ? slashIdx : Math.min(slashIdx, qIdx));
+      const authority = authorityEnd >= 0 ? rest.substring(0, authorityEnd) : rest;
+      const tail = authorityEnd >= 0 ? rest.substring(authorityEnd) : '';
+      const atIdx = authority.indexOf('@');
+      const hostPart = atIdx >= 0 ? authority.substring(atIdx + 1) : authority;
+      const next = `k2v5://${udid}:${token}@${hostPart}${tail}`;
       if (next !== route.via) {
         route.via = next;
         changed = true;
