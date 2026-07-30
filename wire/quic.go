@@ -618,6 +618,7 @@ serialize:
 		Token:   c.cfg.Token,
 		Mode:    c.cfg.Mode,
 		Version: c.cfg.Version,
+		Cookie:  c.jar.Get(c.cfg.Pin), // nil-safe; "" = cold auth
 	})
 	if mdErr != nil {
 		if isMetadataReject(mdErr) {
@@ -631,7 +632,10 @@ serialize:
 		}
 		slog.Warn("QUICClient: metadata stream failed (best-effort)", "mode", c.cfg.Mode, "err", mdErr)
 	}
-	_ = cookie // Phase 2: CookieJar.Put(pin, cookie)
+	// newCookie is non-empty only right after a Center cold auth (spec §6.3);
+	// jar.Put is a no-op on empty. Never log cookie/newCookie/meta.Token
+	// (spec §6.2/§9).
+	c.jar.Put(c.cfg.Pin, cookie)
 
 	// --- Store result under lock ---
 	// concurrency:allow — closing locally-owned conn/transport not yet stored in struct;
@@ -1112,6 +1116,11 @@ type QUICServer struct {
 	validate Validator       // set by SetValidator; used by metadata stream auth
 	adm      admissionPolicy // device-auth admission; see admission.go
 
+	// cookieSigner enables the local cookie fast path; nil = cold auth only
+	// (legacy TLS mode without cert_dir, k2p). Immutable after SetCookieSigner
+	// (called before Listen), no lock needed on the read path.
+	cookieSigner *CookieSigner
+
 	mu    deadlock.Mutex
 	ln    *quic.Listener
 	tcpCh chan tcpAcceptResult
@@ -1134,6 +1143,10 @@ func NewQUICServer() *QUICServer {
 func (s *QUICServer) SetValidator(v Validator) {
 	s.validate = v
 }
+
+// SetCookieSigner enables node-local cookie issue/verify (spec §6). Must be
+// called before Listen. nil (the default) disables the cookie fast path.
+func (s *QUICServer) SetCookieSigner(cs *CookieSigner) { s.cookieSigner = cs }
 
 // SetEnforce toggles QUIC device-auth enforcement. When false (default,
 // permissive) the metadata stream never blocks a connection — required during
@@ -1384,28 +1397,23 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 
 	slog.Info("QUICServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "version", meta.Version, "remote", qconn.RemoteAddr())
 
-	// Validate via the same validator chain used by HTTP auth. s.validate is
-	// immutable after SetValidator (called before Listen), no lock needed.
-	// A nil validator means no auth backend is configured (k2p/P2P, tests). That
-	// may authenticate everyone in permissive mode, where the verdict only feeds
-	// attribution — but never under enforce, or the gate would be a no-op on a
-	// misconfigured node.
-	verdict := AuthVerdict{OK: !s.adm.enforce}
-	if s.validate != nil {
-		verdict = s.validate(meta.Token, meta.UDID, meta.Mode)
-	}
+	// Single decision point shared verbatim with TCP-WS (spec §9 two-transport
+	// consistency): a valid cookie short-circuits the validator chain entirely
+	// and issues no new cookie; otherwise this runs cold auth through
+	// s.validate exactly as before, now also minting a cookie on success.
+	st := resolveMetadataAuth(s.cookieSigner, s.validate, meta, s.adm.enforce, time.Now())
 
-	if verdict.OK {
-		ctx.mode.Store(meta.Mode)
-		ctx.dev.set(meta.UDID)
-	}
-	ctx.auth.settle(verdict.OK)
+	// Attribution from the SERVER-determined identity (spec §5.3): cookie's
+	// udid on a hit, Center-confirmed udid on cold OK, "" otherwise.
+	ctx.mode.Store(st.mode)
+	ctx.dev.set(st.udid)
+	ctx.auth.settle(st.authed)
 
-	if !verdict.OK {
-		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "code", verdict.Code, "enforce", s.adm.enforce, "remote", qconn.RemoteAddr())
+	if !st.authed {
+		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "code", st.code, "enforce", s.adm.enforce, "remote", qconn.RemoteAddr())
 		if s.adm.enforce {
-			if verdict.Code > 0 {
-				WriteStreamResponse(stream, &StreamError{Code: verdict.Code, Message: "auth rejected"})
+			if st.code != 0 {
+				WriteStreamResponse(stream, &StreamError{Code: st.code, Message: "auth rejected"})
 			} else {
 				WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
 			}
@@ -1433,9 +1441,11 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 		return
 	}
 
-	WriteMetadataResponse(stream, "") // Phase 2: cookie issuance goes here
+	// newCookie is non-empty ONLY after a Center cold auth (spec §6.3) — a
+	// cookie hit answers with an empty kv and the client keeps its copy.
+	WriteMetadataResponse(stream, st.newCookie)
 	stream.Close()
-	slog.Info("QUICServer: metadata auth OK", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
+	slog.Info("QUICServer: metadata auth OK", "udid", st.udid, "mode", st.mode, "cookieHit", st.cookieHit, "remote", qconn.RemoteAddr())
 }
 
 func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, ctx *connContext, remoteStr string) {

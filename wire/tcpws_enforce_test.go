@@ -115,3 +115,62 @@ func TestTCPWSEnforce_PermissiveServesUnauthenticated(t *testing.T) {
 	}
 	conn.Close()
 }
+
+// TestTCPWSCookie_SecondConnectIsWarm: cold auth issues a cookie; a second
+// connection presenting it must be admitted WITHOUT another validator call.
+func TestTCPWSCookie_SecondConnectIsWarm(t *testing.T) {
+	dir := t.TempDir()
+	signer, err := NewCookieSigner(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	validator := func(token, udid, mode string) AuthVerdict {
+		calls++
+		return AuthVerdict{OK: true, UserID: 1, SvcExp: time.Now().Add(time.Hour).Unix()}
+	}
+	jar := NewCookieJar()
+	cfg := Config{Host: "127.0.0.1", Port: 443, UDID: "good", Token: "valid"}
+
+	dialOnce := func() {
+		t.Helper()
+		clientConn, serverConn := net.Pipe()
+		server := NewTCPWSServer()
+		server.SetValidator(validator)
+		server.SetEnforce(true)
+		server.SetCookieSigner(signer)
+		server.adm.authWait = 300 * time.Millisecond
+		server.HandleConn(serverConn)
+		client := NewTCPWSClient(cfg, jar)
+		client.testConn = clientConn
+		defer func() { client.Close(); server.Close(); clientConn.Close(); serverConn.Close() }()
+
+		go func() {
+			conn, _, err := server.AcceptTCP(context.Background())
+			if err != nil {
+				return
+			}
+			WriteStreamResponse(conn, nil)
+			conn.Close()
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		conn, err := client.DialTCP(ctx, "example.com:80", nil)
+		if err != nil {
+			t.Fatalf("dial failed: %v", err)
+		}
+		conn.Close()
+	}
+
+	dialOnce() // cold
+	if calls != 1 {
+		t.Fatalf("first connect: validator calls=%d, want 1", calls)
+	}
+	if jar.Get(cfg.Pin) == "" {
+		t.Fatal("client did not store the issued cookie")
+	}
+	dialOnce() // warm — same jar, fresh server process state
+	if calls != 1 {
+		t.Fatalf("COLD AUTH REPEATED: validator calls=%d after warm reconnect, want 1", calls)
+	}
+}

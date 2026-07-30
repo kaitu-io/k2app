@@ -161,3 +161,92 @@ func TestIntegration_QUICEnforce_PermissiveServesUnauthenticated(t *testing.T) {
 	}
 	conn.Close()
 }
+
+// TestIntegration_QUICCookie_SecondConnectIsWarm is the QUIC twin of
+// TestTCPWSCookie_SecondConnectIsWarm: cold auth issues a cookie; a second
+// client sharing the jar must be admitted WITHOUT another validator call.
+// Two clients (not one reused connection) — this is the RaceTransport shape:
+// independent dialers sharing one per-outbound jar.
+func TestIntegration_QUICCookie_SecondConnectIsWarm(t *testing.T) {
+	cert := generateTestCert(t)
+
+	serverUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverUDP.Close()
+	serverTransport := &quic.Transport{Conn: serverUDP}
+	defer serverTransport.Close()
+
+	ln, err := serverTransport.Listen(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h3"},
+	}, DefaultQUICConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	signer, err := NewCookieSigner(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	server := NewQUICServer()
+	server.SetValidator(func(token, udid, mode string) AuthVerdict {
+		calls++
+		return AuthVerdict{OK: true, UserID: 1, SvcExp: time.Now().Add(time.Hour).Unix()}
+	})
+	server.SetEnforce(true)
+	server.SetCookieSigner(signer)
+	server.adm.authWait = 300 * time.Millisecond
+	server.Listen(ln)
+	defer server.Close()
+
+	go func() {
+		for {
+			select {
+			case <-server.done:
+				return
+			case res := <-server.tcpCh:
+				if res.err != nil {
+					return
+				}
+				c := res.conn
+				WriteStreamResponse(c, nil)
+				go func() { io.Copy(c, c); c.Close() }()
+			}
+		}
+	}()
+
+	jar := NewCookieJar()
+	serverAddr := serverUDP.LocalAddr().(*net.UDPAddr)
+	cfg := Config{Host: "127.0.0.1", Port: serverAddr.Port, UDID: "good", Token: "valid"}
+
+	dial := func() {
+		t.Helper()
+		client := NewQUICClient(cfg, jar)
+		client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		conn, err := client.DialTCP(ctx, "93.184.216.34:80", nil)
+		if err != nil {
+			t.Fatalf("dial failed: %v", err)
+		}
+		conn.Close()
+	}
+
+	dial() // cold
+	if calls != 1 {
+		t.Fatalf("first connect: validator calls=%d, want 1", calls)
+	}
+	if jar.Get(cfg.Pin) == "" {
+		t.Fatal("client did not store the issued cookie")
+	}
+	dial() // warm — different client, same jar
+	if calls != 1 {
+		t.Fatalf("COLD AUTH REPEATED: validator calls=%d after warm reconnect, want 1", calls)
+	}
+}
