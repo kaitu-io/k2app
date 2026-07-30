@@ -58,6 +58,7 @@ func TestNewServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { s.Close() }) // stops the revalidation sweeper goroutines (goleak)
 	if s.handler == nil {
 		t.Error("handler should not be nil")
 	}
@@ -98,6 +99,7 @@ func TestServer_TCPWSProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { srv.Close() }) // stops the revalidation sweeper goroutines (goleak)
 	srv.handler.AllowPrivateIP = true // echo server is on localhost
 	srv.TLSConfig = &tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -264,6 +266,7 @@ func newTestServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { srv.Close() }) // stops the revalidation sweeper goroutines (goleak)
 	srv.handler.AllowPrivateIP = true
 	srv.TLSConfig = &tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -501,6 +504,7 @@ func TestServer_MatchLocalRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { srv.Close() }) // stops the revalidation sweeper goroutines (goleak)
 
 	tests := []struct {
 		sni        string
@@ -536,6 +540,7 @@ func TestServer_MatchLocalRoute_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { srv.Close() }) // stops the revalidation sweeper goroutines (goleak)
 	target, ok := srv.matchLocalRoute("anything.com")
 	if ok {
 		t.Errorf("expected no match with empty local_routes, got target=%q", target)
@@ -579,6 +584,7 @@ func TestServer_LocalRoutes_TCPRelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { srv.Close() }) // stops the revalidation sweeper goroutines (goleak)
 	srv.handler.AllowPrivateIP = true
 	cert := generateTestCert(t)
 	srv.TLSConfig = &tls.Config{
@@ -822,6 +828,7 @@ func TestSetupAutoProvision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New with CertDir: %v", err)
 	}
+	t.Cleanup(func() { srv.Close() }) // stops the revalidation sweeper goroutines (goleak)
 
 	// TLSConfig should be set up
 	if srv.TLSConfig == nil {
@@ -894,6 +901,7 @@ func TestSetupAutoProvision_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first New: %v", err)
 	}
+	t.Cleanup(func() { srv1.Close() }) // stops the revalidation sweeper goroutines (goleak)
 
 	// Read auth from first call
 	authData1, _ := os.ReadFile(filepath.Join(dir, "auth.json"))
@@ -903,6 +911,7 @@ func TestSetupAutoProvision_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second New: %v", err)
 	}
+	t.Cleanup(func() { srv2.Close() }) // stops the revalidation sweeper goroutines (goleak)
 
 	// Auth should be the same
 	authData2, _ := os.ReadFile(filepath.Join(dir, "auth.json"))

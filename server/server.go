@@ -183,7 +183,37 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	s.tcpwsSrv.SetEnforce(cfg.Auth.EnforceAuth)
 	slog.Info("server: device-auth enforcement", "enforce", cfg.Auth.EnforceAuth)
 
+	// Phase 2 (spec §6): node-local cookie signer — key lives beside the
+	// certs and ECH keys in cert_dir, same lifecycle, NOT derived from
+	// NodeSecret (§6.7). Legacy static-TLS nodes (no cert_dir) run cold-auth
+	// only.
+	if cfg.CertDir != "" {
+		signer, err := wire.NewCookieSigner(cfg.CertDir)
+		if err != nil {
+			return nil, fmt.Errorf("cookie signer: %w", err)
+		}
+		s.quicSrv.SetCookieSigner(signer)
+		s.tcpwsSrv.SetCookieSigner(signer)
+	}
+	// Periodic revalidation (spec §6.5) uses the SAME cached chain as cold
+	// auth, so Center sees at most one request per device per node per
+	// cookie window across both paths.
+	s.quicSrv.EnableRevalidation(validator)
+	s.tcpwsSrv.EnableRevalidation(validator)
+
 	return s, nil
+}
+
+// Close stops the QUIC and TCP-WS transports, including the revalidation
+// sweeper goroutines EnableRevalidation starts in New(). Run()'s own shutdown
+// sequence already closes s.quicSrv/s.tcpwsSrv directly once ctx is done; this
+// method exists for callers (chiefly tests) that construct a Server via New()
+// without ever calling Run() and still need to release those goroutines.
+// Idempotent — QUICServer.Close/TCPWSServer.Close are themselves idempotent.
+func (s *Server) Close() error {
+	s.quicSrv.Close()
+	s.tcpwsSrv.Close()
+	return nil
 }
 
 // setupAutoProvision performs unified auto-provisioning of certs, ECH, and auth.

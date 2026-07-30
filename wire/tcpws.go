@@ -657,6 +657,11 @@ type TCPWSServer struct {
 	// QUICServer.cookieSigner.
 	cookieSigner *CookieSigner
 
+	// sessions is the live-connection registry + revalidation sweeper (spec
+	// §6.5); nil = disabled (tests, k2p). Immutable after EnableRevalidation
+	// (called before HandleConn/HandleSession). Mirrors QUICServer.sessions.
+	sessions *authSessions
+
 	mu    deadlock.Mutex
 	tcpCh chan tcpAcceptResult
 	// udpH is an egress sink: reach it only through admitUDP, never directly.
@@ -696,6 +701,15 @@ func (s *TCPWSServer) SetEnforce(v bool) {
 // SetCookieSigner enables node-local cookie issue/verify (spec §6). Must be
 // called before HandleConn/HandleSession. Mirrors QUICServer.SetCookieSigner.
 func (s *TCPWSServer) SetCookieSigner(cs *CookieSigner) { s.cookieSigner = cs }
+
+// EnableRevalidation creates the connection registry and starts the periodic
+// revalidation sweeper against v (pass the same cached validator chain used
+// for cold auth so Center load is shared). Must be called before
+// HandleConn/HandleSession; Close() tears the sweeper down. Mirrors
+// QUICServer.EnableRevalidation.
+func (s *TCPWSServer) EnableRevalidation(v Validator) {
+	s.sessions = newAuthSessions(v, authSweepInterval)
+}
 
 // admitTCP is the only route from an accepted proxy stream to AcceptTCP, and so
 // the whole of the TCP admission gate — the TCP-WS twin of
@@ -760,6 +774,12 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 	defer sess.Close()
 	dev := &deviceIDHolder{}
 	auth := newConnAuth()
+	var as *authSession
+	if s.sessions != nil {
+		as = &authSession{auth: auth, kill: func() { sess.Close() }}
+		unregister := s.sessions.register(as)
+		defer unregister()
+	}
 	for {
 		stream, err := sess.AcceptStream()
 		if err != nil {
@@ -771,12 +791,12 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 					connLog.Error("TCPWSServer: panic in handleStream", "panic", r)
 				}
 			}()
-			s.handleStream(sess, stream, connLog, remote, dev, auth)
+			s.handleStream(sess, stream, connLog, remote, dev, auth, as)
 		}()
 	}
 }
 
-func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder, auth *connAuth) {
+func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder, auth *connAuth, as *authSession) {
 	br := bufio.NewReader(stream)
 
 	streamType, addr, err := ReadStreamHeader(br)
@@ -787,7 +807,7 @@ func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, conn
 
 	switch streamType {
 	case StreamTypeMeta:
-		s.handleMetadataStream(sess, stream, br, connLog, dev, auth)
+		s.handleMetadataStream(sess, stream, br, connLog, dev, auth, as)
 	case StreamTypeTCP:
 		s.admitTCP(auth, stream, br, remote, dev, addr, connLog)
 	case StreamTypeUDP:
@@ -811,7 +831,7 @@ func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, conn
 // form so the client can classify without string matching; "cannot determine"
 // and parse failures answer the legacy 0x01 form (no invented code). The
 // verdict is always settled; the deferred settle is the fail-closed backstop.
-func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, dev *deviceIDHolder, auth *connAuth) {
+func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, dev *deviceIDHolder, auth *connAuth, as *authSession) {
 	defer auth.settle(false)
 
 	meta, err := ReadMetadataFrame(br)
@@ -859,6 +879,9 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 	// cookie hit answers with an empty kv and the client keeps its copy.
 	WriteMetadataResponse(stream, st.newCookie)
 	stream.Close()
+	if as != nil {
+		as.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)
+	}
 }
 
 // runSmuxUDPHandler invokes handler.HandleUDP and removes the session from
@@ -1000,16 +1023,23 @@ func (s *TCPWSServer) ServeUDP(ctx context.Context, handler UDPHandler) error {
 	}
 }
 
-// Close stops the server.
+// Close stops the server and tears down the revalidation sweeper (if
+// enabled). sessions.Close() calls wg.Wait() internally, which must never run
+// under s.mu (Rule #3 — waiting under lock risks deadlock if the goroutine
+// being waited on ever needs that same lock), so it runs after s.mu is
+// released. Mirrors QUICServer.Close.
 func (s *TCPWSServer) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	select {
 	case <-s.done:
+		s.mu.Unlock()
 		return nil
 	default:
 		close(s.done)
+	}
+	s.mu.Unlock()
+	if s.sessions != nil {
+		s.sessions.Close() // wg.Wait — no lock held (Rule #3)
 	}
 	return nil
 }

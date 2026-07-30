@@ -1121,6 +1121,11 @@ type QUICServer struct {
 	// (called before Listen), no lock needed on the read path.
 	cookieSigner *CookieSigner
 
+	// sessions is the live-connection registry + revalidation sweeper (spec
+	// §6.5); nil = disabled (tests, k2p). Immutable after EnableRevalidation
+	// (called before Listen).
+	sessions *authSessions
+
 	mu    deadlock.Mutex
 	ln    *quic.Listener
 	tcpCh chan tcpAcceptResult
@@ -1147,6 +1152,14 @@ func (s *QUICServer) SetValidator(v Validator) {
 // SetCookieSigner enables node-local cookie issue/verify (spec §6). Must be
 // called before Listen. nil (the default) disables the cookie fast path.
 func (s *QUICServer) SetCookieSigner(cs *CookieSigner) { s.cookieSigner = cs }
+
+// EnableRevalidation creates the connection registry and starts the periodic
+// revalidation sweeper against v (pass the same cached validator chain used
+// for cold auth so Center load is shared). Must be called before Listen;
+// Close() tears the sweeper down.
+func (s *QUICServer) EnableRevalidation(v Validator) {
+	s.sessions = newAuthSessions(v, authSweepInterval)
+}
 
 // SetEnforce toggles QUIC device-auth enforcement. When false (default,
 // permissive) the metadata stream never blocks a connection — required during
@@ -1249,6 +1262,10 @@ type connContext struct {
 	// auth is the device-auth verdict for this connection, consumed by the
 	// admission gate (admitTCP / admitUDP). See admission.go.
 	auth *connAuth
+
+	// sess is this connection's registry entry (nil when revalidation is
+	// disabled). Identity is published onto it by handleMetadataStream.
+	sess *authSession
 }
 
 func (s *QUICServer) handleConn(conn *quic.Conn) {
@@ -1265,6 +1282,16 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 	}
 	ctx := &connContext{udp: state, dev: dev, auth: newConnAuth()}
 	ctx.mode.Store("") // default: normal client
+
+	if s.sessions != nil {
+		as := &authSession{auth: ctx.auth, kill: func() {
+			// 0x03: revoked-by-revalidation (0x01 = unauthorized at admission).
+			conn.CloseWithError(0x03, "session revoked")
+		}}
+		ctx.sess = as
+		unregister := s.sessions.register(as)
+		defer unregister() // handleConn returns when the connection dies
+	}
 
 	// Accept streams (TCP proxy + UDP overflow + metadata)
 	go func() {
@@ -1445,6 +1472,9 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 	// cookie hit answers with an empty kv and the client keeps its copy.
 	WriteMetadataResponse(stream, st.newCookie)
 	stream.Close()
+	if ctx.sess != nil {
+		ctx.sess.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)
+	}
 	slog.Info("QUICServer: metadata auth OK", "udid", st.udid, "mode", st.mode, "cookieHit", st.cookieHit, "remote", qconn.RemoteAddr())
 }
 
@@ -1654,21 +1684,27 @@ func (s *QUICServer) ServeUDP(ctx context.Context, handler UDPHandler) error {
 	}
 }
 
-// Close stops the server and closes the listener.
+// Close stops the server, tears down the revalidation sweeper (if enabled),
+// and closes the listener. sessions.Close() calls wg.Wait() internally, which
+// must never run under s.mu (Rule #3 — waiting under lock risks deadlock if
+// the goroutine being waited on ever needs that same lock), so it runs after
+// s.mu is released.
 func (s *QUICServer) Close() error {
-	// concurrency:allow — server-side, ln.Close() is fast (no protocol drain)
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	select {
 	case <-s.done:
+		s.mu.Unlock()
 		return nil
 	default:
 		close(s.done)
 	}
-
-	if s.ln != nil {
-		return s.ln.Close()
+	ln := s.ln
+	s.mu.Unlock()
+	if s.sessions != nil {
+		s.sessions.Close() // wg.Wait — no lock held (Rule #3)
+	}
+	if ln != nil {
+		return ln.Close()
 	}
 	return nil
 }

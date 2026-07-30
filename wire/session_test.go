@@ -1,9 +1,15 @@
 package wire
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	smux "github.com/xtaci/smux/v2"
 )
 
 // sweepFixture builds a registry whose sweeper goroutine is given a 1-hour
@@ -232,5 +238,135 @@ func TestAuthSessions_CloseStopsSweeper(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Close did not return — sweeper goroutine stuck")
+	}
+}
+
+// A revoked verdict from the sweeper must actually sever a live TCP-WS
+// session (kill() wiring, not just registry bookkeeping).
+func TestTCPWSServer_SweepKillSeversSession(t *testing.T) {
+	verdict := atomic.Value{}
+	verdict.Store(AuthVerdict{OK: true, SvcExp: time.Now().Add(time.Hour).Unix()})
+	validator := func(token, udid, mode string) AuthVerdict { return verdict.Load().(AuthVerdict) }
+
+	clientConn, serverConn := net.Pipe()
+	server := NewTCPWSServer()
+	server.SetValidator(validator)
+	server.SetEnforce(true)
+	server.EnableRevalidation(validator)
+	server.adm.authWait = 300 * time.Millisecond
+	server.HandleConn(serverConn)
+	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443, UDID: "good", Token: "valid"}, nil)
+	client.testConn = clientConn
+	defer func() { client.Close(); server.Close(); clientConn.Close(); serverConn.Close() }()
+
+	go func() {
+		for {
+			conn, _, err := server.AcceptTCP(context.Background())
+			if err != nil {
+				return
+			}
+			WriteStreamResponse(conn, nil)
+			go io.Copy(io.Discard, conn)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn, err := client.DialTCP(ctx, "example.com:80", nil)
+	if err != nil {
+		t.Fatalf("initial dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Flip Center to "revoked", age the session past the window, sweep.
+	verdict.Store(AuthVerdict{OK: false, Code: 402})
+	server.sessions.now = func() time.Time { return time.Now().Add(cookieTTL + time.Minute) }
+	server.sessions.sweepOnce()
+
+	// The smux session was torn down: the existing proxy conn dies. A plain
+	// read timeout is NOT proof of that — the target echo goroutine simply
+	// never writes back either way, so a mutated no-op kill() would leave the
+	// read blocked until the deadline and still return a non-nil error
+	// (smux.ErrTimeout — a bare errors.New, NOT a net.Error, so a Timeout()
+	// type-assertion can't catch it), silently passing a bare err==nil check.
+	// Require the error to be something other than smux's own deadline
+	// timeout — that is only true when sess.Close() actually fired.
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buf := make([]byte, 1)
+	start := time.Now()
+	_, err = conn.Read(buf)
+	if err == nil {
+		t.Fatal("REVOCATION LEAK: proxy stream still alive after sweeper kill")
+	}
+	if errors.Is(err, smux.ErrTimeout) {
+		t.Fatalf("REVOCATION LEAK: read only failed via smux read-deadline timeout (%v elapsed) — sweeper kill() did not sever the session, a stalled stream just happened to also error", time.Since(start))
+	}
+}
+
+// The permissive/undecidable twin: an undecidable revalidation must NOT sever
+// the session (fleet-safety at the transport level, not just unit level).
+func TestTCPWSServer_SweepUnreachableKeepsSession(t *testing.T) {
+	verdict := atomic.Value{}
+	verdict.Store(AuthVerdict{OK: true, SvcExp: time.Now().Add(time.Hour).Unix()})
+	var calls atomic.Int32
+	validator := func(token, udid, mode string) AuthVerdict {
+		calls.Add(1)
+		return verdict.Load().(AuthVerdict)
+	}
+
+	clientConn, serverConn := net.Pipe()
+	server := NewTCPWSServer()
+	server.SetValidator(validator)
+	server.SetEnforce(true)
+	server.EnableRevalidation(validator)
+	server.adm.authWait = 300 * time.Millisecond
+	server.HandleConn(serverConn)
+	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443, UDID: "good", Token: "valid"}, nil)
+	client.testConn = clientConn
+	defer func() { client.Close(); server.Close(); clientConn.Close(); serverConn.Close() }()
+
+	echoReady := make(chan net.Conn, 1)
+	go func() {
+		conn, _, err := server.AcceptTCP(context.Background())
+		if err != nil {
+			return
+		}
+		WriteStreamResponse(conn, nil)
+		echoReady <- conn
+		io.Copy(conn, conn)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn, err := client.DialTCP(ctx, "example.com:80", nil)
+	if err != nil {
+		t.Fatalf("initial dial: %v", err)
+	}
+	defer conn.Close()
+	<-echoReady
+
+	verdict.Store(AuthVerdict{OK: false, Code: -1}) // Center unreachable
+	server.sessions.now = func() time.Time { return time.Now().Add(cookieTTL + time.Minute) }
+	preSweepCalls := calls.Load()
+	server.sessions.sweepOnce()
+
+	// FALSE GREEN guard: reviewSession skips any session whose authAt is
+	// still 0 (never authenticated) WITHOUT calling the validator at all — a
+	// session that merely got REGISTERED but never markAuthed'd would sail
+	// through the assertions below for the wrong reason (nothing ever touched
+	// it), silently passing even if the metadata handler's markAuthed publish
+	// were deleted. Require the sweep to have actually reached the validator.
+	if got := calls.Load() - preSweepCalls; got != 1 {
+		t.Fatalf("FALSE GREEN: sweep validator calls=%d, want 1 — the session was never revalidated (markAuthed publish missing?)", got)
+	}
+
+	// Session must still carry data.
+	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatalf("FLEET KILLER: write failed after undecidable sweep: %v", err)
+	}
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, buf); err != nil {
+		t.Fatalf("FLEET KILLER: session dead after undecidable sweep: %v", err)
 	}
 }
