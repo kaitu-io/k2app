@@ -25,7 +25,7 @@ k2 侧分支基底：`fix/quic-device-auth`（master + 5 commits，无分叉）
 
 ### 1.2 认证一旦打开，凭据活不过 24 小时
 
-`k2v5://UDID:TOKEN@…` 里的 TOKEN 是用户的 **web access token**，`api/config.yml:61` 定义其寿命为 86400 秒。今天它过期完全无害（无人校验）；强制认证打开后它是承重的。
+`k2v5://UDID:TOKEN@…` 里的 TOKEN 是用户的 **web access token**，寿命 86400 秒（viper 键 `jwt.access_token_expiry`；`api/config.yml` 不在 git 里，值由 `api/logic_config.go` 读取）。今天它过期完全无害（无人校验）；强制认证打开后它是承重的。
 
 而有 **6 条路径**在 token 过期后**无法自愈**：
 
@@ -92,12 +92,16 @@ k2 侧分支基底：`fix/quic-device-auth`（master + 5 commits，无分叉）
 |---|---|---|---|---|---|
 | 用户会话 | access token | Center | 24h | Center | `/api/*` |
 | | refresh token | Center | 30d | Center | `/api/auth/refresh` |
-| **隧道凭据** | **tunnel token** | **Center** | **90d** | **Center** | **仅 `/slave/device-check-auth`** |
+| **隧道凭据** | **tunnel token** | **Center** | **90d** | **Center** | **`/slave/device-check-auth` + `/api/subs`（见下）** |
 | **连接凭据** | **cookie** | **节点** | **15min** | **节点（本地 HMAC）** | **仅该节点的 k2v5 连接** |
 
 每一层泄漏的爆炸半径都被下一层限制住：cookie 泄漏 = 一个节点 15 分钟；tunnel token 泄漏 = 隧道访问 90 天（但拿不到账户，改不了密码、退不了款、看不到订单）；access token 泄漏才是账户级问题，而它不再出现在任何隧道 URL 里。
 
 这一点本身就是对现状的改进：今天每一条 k2v5 连接都在线上重传用户的**账户级** access token。
+
+**tunnel token 的作用域是两个端点，不是一个。** `k2subs://udid:token@host/api/subs` 里的 token 就是 Basic auth 的 password——订阅刷新本身要用它。所以 `/api/subs` 必须接受 tunnel token，否则 P1 的路由器在换用新凭据后**第一次刷新就死**，正好把要修的问题原样复现。
+
+但它**不进通用的 `handleJWTAuth`**：那会让一个 90 天的凭据获得整个 `/api/*` 面（改密码、退款、看订单）。两个端点是白名单，不是默认。`/api/subs` 因此是双 token 认证——access 与 tunnel 都收，按 `claims.Type` 分派。
 
 ### 3.3 数据流
 
@@ -133,7 +137,7 @@ k2 侧分支基底：`fix/quic-device-auth`（master + 5 commits，无分叉）
 TokenTypeTunnel = "tunnel"
 ```
 
-寿命由新配置项 `tunnel_token_expiry` 控制，默认 `7776000`（90 天），与 access/refresh 并列写在 `api/config.yml`。
+寿命由新配置项控制：viper 键 `jwt.tunnel_token_expiry`，**代码内默认 `7776000`（90 天）**。注意 `api/config.yml` 不在 git 里，所以代码默认值是唯一可靠的事实源；线上 config.yml 里的显式配置属于部署清单项，不是代码变更。
 
 **新增 Device 列**：
 
@@ -168,7 +172,11 @@ TunnelIssueAt int64 `gorm:"column:tunnel_issue_at;default:0"`
 
 **滚动续期，由 Center 单向推动，客户端只负责持久化。**
 
-`/api/subs` 与 `/api/tunnels` 在成功响应时检查请求所用 tunnel token 的剩余寿命：不足 50%（即已过 45 天）则签发新的 tunnel token 并写进响应（subs 走 URL 内嵌，tunnels 走 `tunnelToken` 字段）。客户端持久化新值。
+**`/api/subs`（条件续期）**：请求本身就是用 tunnel token 认证的，所以服务端能测出它的剩余寿命。不足 50%（即已过 45 天）则签发新的并内嵌进响应的 tunnel URL。客户端持久化新值。
+
+**`/api/tunnels`（无条件重签）**：这个端点用 access token 认证，**请求根本不携带 tunnel token**，服务端无从测量剩余寿命——所以 50% 规则在这里不可实现。改为每次成功响应都按当前锚点重签一个新的写进 `tunnelToken` 字段。这是 50% 规则的安全退化形：`TunnelIssueAt` 锚点不变，因此吊销语义完全不受影响，只是多签了几次。
+
+**客户端必须先采纳、再注入。** `k2/config/subscription.go:302-309` 在每次 `Fetch` 后会用客户端自己的 `s.creds` **重写响应里所有 tunnel URL 的 userinfo**。若不先采纳 Center 回填的新凭据就走这一步，续期会被客户端原地抹掉——刷新看起来成功，凭据却一天没延长。这才是 `creds` 必须改为可变的真正机理，顺序颠倒等于整个 Phase 0 白做。
 
 `Device.TunnelIssueAt` 在续期时**不变**——续期只延长 `exp`，不重置吊销锚点。这样"登出所有设备"这类操作仍然能一次性作废所有已续期的凭据。
 
@@ -178,7 +186,9 @@ TunnelIssueAt int64 `gorm:"column:tunnel_issue_at;default:0"`
 
 - P1 k2r：`Subscription.creds` 从不可变字段改为受 `mu` 保护的可变字段，`Fetch` 成功且响应 URL 携带新凭据时更新并落盘（`gateway/api.go:138-150 applyCredential` 已有落盘路径可复用）。
 - P2 桌面：`persistedState.Config` 在订阅刷新后回写。
-- P3/P4 iOS/Android：webapp 拿到新 tunnel token 后必须同步进 App Group / SharedPreferences，使系统无参数拉起 NE 时读到的是新值。这是移动端唯一的额外工作量。
+- P3 iOS：**读取顺序是 options → `providerConfiguration` → App Group**（`PacketTunnelProvider.swift:178-195`），系统无参数拉起时 `providerConfiguration` 先命中。因此**只同步 App Group 不生效**——必须同时用 `saveToPreferences` 回写 `providerConfiguration`。
+- P4 Android：同步进 `SharedPreferences("k2vpn")`。
+- P3/P4 共同：这是移动端唯一的额外工作量。原生同步失败走 graceful catch，**不 bump `minNativeVersion`**——旧原生包缺 `updateConfig` 是无害的（存量凭据仍有 ≥45 天寿命，下次 App 更新自然收敛），为此强制升级不划算。这是对 `mobile/CLAUDE.md` 的 bump 规则的有意偏离，在此记录。
 - P5：见 §4.4。
 - P6：见 §4.4。
 
