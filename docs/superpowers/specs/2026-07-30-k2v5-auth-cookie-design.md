@@ -256,6 +256,21 @@ Jar 必须位于**单个 dialer 之上**：`RaceTransport` 为每个候选创建
 - `CachingValidator` 加 **singleflight**。当前实现（`wire/auth_cache.go:35-57`）是"miss → 调 inner → 存"，并发 miss 会各打一次 Center。三路竞速的 300ms/800ms 错开只是让这件事**大部分时候**不发生，不是保证。
 - `CachingValidator` TTL 从 5 分钟改为 15 分钟，与 cookie 寿命对齐（§6.3）。这是 `docker/sidecar/main.go:461` 模板里的 `cache_ttl` 值。
 
+**验证结论是四态，不是三态。** 这一点漏掉会在链的这一层就把 §6.4 压掉：`NewUsersFileValidator` 以 udid 为键，文件缺失或查无此人时返回 false（`wire/auth_users.go:63-85`），而**共享节点的 users 文件本来就是空的**。若把这个 false 当成"明确拒绝"，它会抢在 remote validator 之前给出 401，Center 的真实回答——包括"不可达"——永远到不了调用方。
+
+| `OK` | `Code` | 含义 | 链的行为 |
+|---|---|---|---|
+| `true` | `0` | 通过 | 立即返回 |
+| `false` | `0` | **无意见**（本 validator 不认识这个 udid） | 跳过，继续 |
+| `false` | `401`/`402`/`403` | 明确拒绝（只有 Center 能给出） | 立即返回 |
+| `false` | `-1` | 无法判定 | 记下，继续 |
+
+收尾：见过明确拒绝则返回它；否则见过 `-1` 则返回 `-1`；否则（全体无意见）返回 `{OK: false, Code: 401}`。
+
+`CachingValidator` 只缓存 `OK == true`。`-1` **绝不缓存**——缓存"够不着"会把一次瞬时抖动固化成一个 TTL 长的故障。`401`/`402`/`403` 也不缓存，否则刚续费的用户会被锁在 TTL 里（这是分支现有实现已经做对的性质，保留）。
+
+下游消费方（尤其是 §6.5 的周期重校）**必须 switch on `Code`，不能写成 `if !verdict.OK`**。后者会把 `-1` 当成拒绝，于是一次 Center 抖动就把全车队连接在 15 分钟后断光——正是 §6.4 要防的那个故障。
+
 **cookie 路径**：metadata 携带有效 cookie 时，直接本地验签放行，**完全不进入 validator 链**。
 
 **udid 取值收口**：服务端记录的 `udid` 一律取自服务端判定结果（cookie 内的，或冷认证时 Center 确认的），**永不取 `meta.UDID`**。当前 `dev.set(meta.UDID)` 在 QUIC（`quic.go:1317`）与 TCP-WS（`tcpws.go:~830`）两处都是无条件执行的自报值。
