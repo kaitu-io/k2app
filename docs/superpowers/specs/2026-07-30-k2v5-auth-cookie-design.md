@@ -252,7 +252,15 @@ Phase 0 完成后逐条复核（这是 Phase 0 的验收标准，不是事后总
 | 402 | 订阅已过期 | 引导续费 |
 | 403 | 设备类别不符（见 §5.4）/ 用户被封禁 | 联系客服 |
 
-这三个码都落在 `engine/error.go:57` 的 `CategoryClient`，因此 `engine.go:1846 ClearWireError` 不会清除它们、`status-transform.ts:33-38` 会正确判定 `retrying=false`——既有机制无需改动，只是终于拿到了正确的输入。
+这三个码要落在 `engine/error.go` 的 `CategoryClient`，这样 `ClearWireError` 不会清除它们、`status-transform.ts:33-38` 会正确判定 `retrying=false`——既有机制无需改动，只是终于拿到了正确的输入。
+
+**但不能按码分类。** `StreamError{403}` 已经被代理层用来表示"目标地址被 block"（`server/handler.go:243`），而 `engine/contract_test.go:124 TestContract_StreamError_IsTarget` 把裸 `StreamError`（含 403）钉死为 `CategoryTarget`。若直接按码判分类，**"用户访问了一个被封的 IP"会被误报成"你的账号认证失败"**——一个每天都会发生的正常情形被翻译成让用户去重新登录。
+
+正确做法是让认证拒绝**在类型上可区分**，而不是靠码值猜：`sendMetadata` 仍返回 `*StreamError{Code}`（Phase 2 靠 `errors.As` 取码，不受影响），但 `connect()` 传播时用一个哨兵错误 `ErrMetadataRejected` 包裹，engine 以 `errors.Is` 判定这是认证拒绝、再取码分 401/402/403。这与 `k2/CLAUDE.md` 的错误归属规则一致——消费方查询一个明确的标记，而不是枚举码值。
+
+**race 出口会把这个结构压平。** `wire/race.go:180` 用 `%v` 把三个候选的错误拼成字符串，结构化的码到不了 `ClassifyError`。而 enforce 打开后，认证拒绝**恰恰只会经 race 路径**到达 `engine.Start`——不修这一处，上面整套结构化错误码在真实路径上完全落空，测试却会全绿（各层单测都过，只是它们之间的那一段把信息扔了）。修法：race 出口改用 `errors.Join` 保留错误链，并配一条端到端的保真测试。
+
+（顺带：该函数里的局部变量 `var errors [3]error` 遮蔽了 stdlib 的 `errors` 包，改这里时必须先更名。）
 
 **cookie 存储。** 新增 `wire.CookieJar`，按服务端身份（pin 指纹，而非 host:port——同一节点可能多 IP/多端口）索引。**仅存内存，不落盘**：15 分钟的凭据不值得增加磁盘暴露面，进程重启后一次冷认证即可恢复。
 
@@ -279,6 +287,8 @@ Jar 必须位于**单个 dialer 之上**：`RaceTransport` 为每个候选创建
 
 收尾：见过明确拒绝则返回它；否则见过 `-1` 则返回 `-1`；否则（全体无意见）返回 `{OK: false, Code: 401}`。
 
+**Center 还会返回 401/402/403 之外的码**（422 `ErrorInvalidArgument`、500 `ErrorSystemError` 等）。这些一律映射为 `-1`（无法判定）——它们表示 Center 自己出了问题或收到了畸形请求，**不是对这个用户的授权裁决**，按拒绝处理会把一次服务端故障变成用户被踢。只有明确表达"这个用户不该被服务"的三个码才是拒绝。
+
 `CachingValidator` 只缓存 `OK == true`。`-1` **绝不缓存**——缓存"够不着"会把一次瞬时抖动固化成一个 TTL 长的故障。`401`/`402`/`403` 也不缓存，否则刚续费的用户会被锁在 TTL 里（这是分支现有实现已经做对的性质，保留）。
 
 下游消费方（尤其是 §6.5 的周期重校）**必须 switch on `Code`，不能写成 `if !verdict.OK`**。后者会把 `-1` 当成拒绝，于是一次 Center 抖动就把全车队连接在 15 分钟后断光——正是 §6.4 要防的那个故障。
@@ -302,7 +312,9 @@ mode == ""         →  放行（普通客户端，也是老客户端的默认�
 
 只在危险方向（App 设备自称路由器）拦截。反方向（路由器自称普通客户端）是降级，无害。存量 k2r 恒发 `mode=gateway`（`gateway/config.go:104`），其 Device 行 `IsGateway=true`（`api_gateway_credential.go:73`），不受影响。
 
-校验通过的 mode 签进 cookie，此后全程使用 cookie 内的值。
+校验通过的 mode 签进 cookie，此后全程使用 cookie 内的值。注意 `connContext.mode` 当前是**只写字段**（`quic.go` 里只有 `Store`，没有任何 `Load` 消费者）——Phase 1 把它 gate 在 `verdict.OK` 之后，但它的第一个真正消费者是 Phase 2 签发 cookie 的那一步。
+
+**归属**：`SlaveDeviceCheckAuthRequest.Mode` 这个字段在接口契约里划给 Phase 0（它要动这个 struct），而**校验逻辑**归 Phase 1。实施时按"字段已存在则复用，不存在则按契约逐字补上"处理，两个 Phase 都不会冲突。补字段会牵动 8 个既有测试的调用点（需补一个 `""` 参数）。
 
 ---
 
