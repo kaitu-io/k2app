@@ -497,7 +497,11 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	// release via CloseIdleConnections.
 	for _, sess := range subs {
 		client := sess.HTTPClient()
-		sess.Subscription().StartRefresh(ctx, func() *http.Client { return client })
+		sub := sess.Subscription()
+		// Phase 0（spec §4.3 P2）：凭据轮换后回写 persistedState.Config，
+		// 使 7 天自动重连重放的是新 token 而非冻结在上次连接时刻的旧值。
+		sub.SetOnCredsRotate(d.persistRotatedCreds)
+		sub.StartRefresh(ctx, func() *http.Client { return client })
 	}
 
 	d.mu.Lock()
@@ -821,4 +825,37 @@ func (s daemonURLSource) DirectDialer() wire.DirectDialer {
 		return nil
 	}
 	return dd
+}
+
+// rewriteRouteVia replaces every route whose Via equals oldVia with newVia.
+// Returns true when at least one route was rewritten. Pure function.
+func rewriteRouteVia(cfg *config.ClientConfig, oldVia, newVia string) bool {
+	if cfg == nil || oldVia == "" || newVia == "" || oldVia == newVia {
+		return false
+	}
+	changed := false
+	for i := range cfg.Routes {
+		if cfg.Routes[i].Via == oldVia {
+			cfg.Routes[i].Via = newVia
+			changed = true
+		}
+	}
+	return changed
+}
+
+// persistRotatedCreds is the Subscription creds-rotation callback: rewrite
+// the matching k2subs:// route in lastConfig and re-persist auto-reconnect
+// state. Concurrency constitution: field rewrite under d.mu; the disk write
+// (saveLifecycleState) happens OUTSIDE the lock.
+func (d *Daemon) persistRotatedCreds(oldRaw, newRaw string) {
+	d.mu.Lock()
+	cfg := d.lastConfig
+	state := d.lastStatus.State
+	updated := rewriteRouteVia(cfg, oldRaw, newRaw)
+	d.mu.Unlock()
+	if !updated {
+		return
+	}
+	slog.Info("DIAG: subs-creds-persist", "component", "daemon")
+	d.saveLifecycleState(cfg, state)
 }

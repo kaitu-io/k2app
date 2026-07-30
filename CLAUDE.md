@@ -118,6 +118,7 @@ Reserved event names:
 | `DIAG: relay-fetch-fail` | WARN | on relay dial/roundtrip error | centerHost, path, nodeIP, err |
 | `DIAG: control-key-adopt` | INFO | control-key hash adopted from Center subs | source |
 | `DIAG: subs-creds-rotate` | INFO | subscription fetch adopted rotated credentials | endpoint |
+| `DIAG: subs-creds-persist` | INFO | rotated subscription credential persisted | component |
 
 ### Layer 3 Rules — Full Trace
 
