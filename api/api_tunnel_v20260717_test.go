@@ -163,3 +163,52 @@ func TestV20260717ExcludesPrivateNodes(t *testing.T) {
 	require.NotContains(t, w.Body.String(), uniq,
 		"private node must never surface in shared-pool /api/v20260717/tunnels")
 }
+
+// TestV20260717TunnelsCarriesTunnelToken：设备上下文存在时响应携带
+// tunnelToken（Phase 0 分发路径之二）；无设备上下文（既有无 auth 测试路径）
+// 时字段缺席、不 500。
+func TestV20260717TunnelsCarriesTunnelToken(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+
+	now := time.Now().Unix()
+	uniq := time.Now().Format("20060102150405.000000")
+
+	user := User{UUID: "usr-v2-tt-" + uniq, ExpiredAt: now + 86400}
+	require.NoError(t, db.Get().Create(&user).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+	device := Device{UDID: "udid-v2-tt-" + uniq, UserID: user.ID, TokenIssueAt: now}
+	require.NoError(t, db.Get().Create(&device).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&device) })
+
+	r := gin.New()
+	r.GET("/api/v20260717/tunnels", func(c *gin.Context) {
+		c.Set("authContext", &authContext{UserID: user.ID, UDID: device.UDID, Device: &device, User: &user})
+		api_v20260717_tunnels(c)
+	})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v20260717/tunnels", nil)
+	r.ServeHTTP(w, req)
+	require.Equal(t, 200, w.Code, "body=%s", w.Body.String())
+
+	var envelope struct {
+		Data struct {
+			TunnelToken string `json:"tunnelToken"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &envelope))
+	require.NotEmpty(t, envelope.Data.TunnelToken, "设备上下文请求必须携带 tunnelToken")
+
+	// 签出的必须是可通过校验的 tunnel token（真实可用，不是占位字符串）。
+	_, _, err := validateTunnelToken(nil, envelope.Data.TunnelToken)
+	require.NoError(t, err)
+
+	// 无设备上下文：字段缺席，不失败（兼容既有 TestV20260717TunnelsShape 的驱动方式）。
+	r2 := tunnelV20260717TestRouter()
+	w2 := httptest.NewRecorder()
+	r2.ServeHTTP(w2, httptest.NewRequest("GET", "/api/v20260717/tunnels", nil))
+	require.Equal(t, 200, w2.Code)
+	require.NotContains(t, w2.Body.String(), "tunnelToken", "无设备上下文时字段应 omitempty")
+}
