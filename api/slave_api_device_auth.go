@@ -33,12 +33,12 @@ func api_slave_device_check_auth(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, err.Error())
 		return
 	}
-	handleSlaveJWTAuth(c, req.UDID, req.Token)
+	handleSlaveJWTAuth(c, req.UDID, req.Token, req.Mode)
 }
 
 // handleSlaveJWTAuth 处理 JWT token 认证
 // udid 参数必填：必须与 token 中的 UDID 匹配
-func handleSlaveJWTAuth(c *gin.Context, udid, token string) {
+func handleSlaveJWTAuth(c *gin.Context, udid, token, mode string) {
 	// 1. 验证 UDID 必填
 	if udid == "" {
 		log.Warnf(c, "UDID is required for JWT auth")
@@ -59,6 +59,17 @@ func handleSlaveJWTAuth(c *gin.Context, udid, token string) {
 	if device.UDID != udid {
 		log.Warnf(c, "UDID mismatch: token=%s, request=%s", device.UDID, udid)
 		Error(c, ErrorNotLogin, "UDID mismatch")
+		return
+	}
+
+	// 3.5 设备类别交叉校验（spec §5.4）。此前 mode 经节点上送但请求体没有该
+	// 字段，ShouldBindJSON 直接丢弃——任何 App 设备自称 gateway 都会通过。
+	// 只拦危险方向（App 设备自称路由器骗 gateway 能力）；mode=="" 是普通客户端
+	// 与老客户端的默认，放行；路由器自称普通客户端是降级，无害，不拦。
+	// 形状照抄 api_subs.go 的 X-K2-Client 交叉校验。
+	if mode == "gateway" && !device.IsGateway {
+		log.Warnf(c, "device class mismatch: udid=%s mode=gateway db_gateway=false", udid)
+		Error(c, ErrorForbidden, "device class mismatch")
 		return
 	}
 

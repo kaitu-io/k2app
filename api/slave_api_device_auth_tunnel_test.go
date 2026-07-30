@@ -29,7 +29,7 @@ func driveDeviceCheckAuth(t *testing.T, node *SlaveNode, udid, token string) *ht
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/slave/device-check-auth", nil)
 	c.Set("i_am_the_node", node)
-	handleSlaveJWTAuth(c, udid, token)
+	handleSlaveJWTAuth(c, udid, token, "")
 	return w
 }
 
