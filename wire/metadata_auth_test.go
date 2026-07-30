@@ -161,9 +161,21 @@ func TestMetadataAuth_UndecidableColdAuthFollowsEnforce(t *testing.T) {
 // A node without cert_dir (legacy TLS mode) has no signer: cookies in the
 // frame are ignored, cold auth still works, no cookie is issued.
 func TestMetadataAuth_NilSignerColdOnly(t *testing.T) {
+	// A structurally well-formed cookie (issued by a real signer) is used here
+	// specifically so a nil resolveMetadataAuth signer must reach past parsing
+	// and hit CookieSigner.Verify's s.mu.Lock() — proving the `signer != nil`
+	// guard on the cookie-hit branch is load-bearing, not just a guard against
+	// malformed input. A short/garbage string (the original fixture) never
+	// clears Verify's own length precondition, so it can't exercise this path.
+	realSigner := newTestSigner(t)
+	validShapedCookie, err := realSigner.Issue(testCookie())
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	calls := 0
 	st := resolveMetadataAuth(nil, countingValidator(okVerdict(), &calls),
-		MetadataFrame{UDID: "dev-1", Token: "tok", Cookie: "garbage"}, true, time.Now())
+		MetadataFrame{UDID: "dev-1", Token: "tok", Cookie: validShapedCookie}, true, time.Now())
 	if !st.authed || calls != 1 || st.newCookie != "" {
 		t.Fatalf("nil signer: authed=%v calls=%d newCookie=%q", st.authed, calls, st.newCookie)
 	}
