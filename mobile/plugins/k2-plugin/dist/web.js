@@ -12,6 +12,9 @@ export class K2PluginWeb extends WebPlugin {
     async getConfig() {
         throw this.unavailable('K2Plugin is not available on web');
     }
+    async updateConfig(_options) {
+        throw this.unavailable('K2Plugin is not available on web');
+    }
     async connect(_options) {
         throw this.unavailable('K2Plugin is not available on web');
     }

@@ -20,6 +20,9 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
     getConfig(): Promise<{
         config?: string;
     }>;
+    updateConfig(_options: {
+        config: string;
+    }): Promise<void>;
     connect(_options: {
         config: string;
     }): Promise<void>;

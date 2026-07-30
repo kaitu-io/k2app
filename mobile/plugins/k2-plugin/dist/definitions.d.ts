@@ -31,6 +31,15 @@ export interface K2PluginInterface {
     getConfig(): Promise<{
         config?: string;
     }>;
+    /**
+     * Persist a refreshed config JSON WITHOUT starting the VPN. Used to sync
+     * a renewed tunnel credential into the system-relaunch config store:
+     * Android SharedPreferences("k2vpn"), iOS App Group + the saved manager's
+     * providerConfiguration (the no-options startTunnel read path).
+     */
+    updateConfig(options: {
+        config: string;
+    }): Promise<void>;
     connect(options: {
         config: string;
         alwaysOn?: boolean;

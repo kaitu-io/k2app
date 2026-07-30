@@ -32,6 +32,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getConfig", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateConfig", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "connect", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "disconnect", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "checkWebUpdate", returnType: CAPPluginReturnPromise),
@@ -253,6 +254,37 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         let defaults = UserDefaults(suiteName: kAppGroup)
         let config = defaults?.string(forKey: "configJSON")
         call.resolve(["config": config ?? ""])
+    }
+
+    @objc func updateConfig(_ call: CAPPluginCall) {
+        guard let config = call.getString("config") else {
+            call.reject("Missing config parameter")
+            return
+        }
+        // Persist only — never starts the tunnel. Two stores, matching
+        // PacketTunnelProvider's no-options read order (options →
+        // providerConfiguration → App Group):
+        // 1) App Group — the final fallback read path.
+        UserDefaults(suiteName: kAppGroup)?.set(config, forKey: "configJSON")
+        // 2) providerConfiguration — read BEFORE the App Group on an
+        //    on-demand relaunch; without this write the stale token wins.
+        loadVPNManager { manager in
+            guard let manager = manager,
+                  let proto = manager.protocolConfiguration as? NETunnelProviderProtocol else {
+                // Never connected on this device — App Group write suffices.
+                call.resolve()
+                return
+            }
+            proto.providerConfiguration = ["configJSON": config]
+            manager.protocolConfiguration = proto
+            manager.saveToPreferences { error in
+                if let error = error {
+                    // Best-effort: App Group already carries the new value.
+                    logger.warning("updateConfig: saveToPreferences failed: \(error.localizedDescription)")
+                }
+                call.resolve()
+            }
+        }
     }
 
     @objc func connect(_ call: CAPPluginCall) {
