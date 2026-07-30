@@ -120,6 +120,7 @@ Reserved event names:
 | `DIAG: subs-creds-rotate` | INFO | subscription fetch adopted rotated credentials | endpoint |
 | `DIAG: subs-creds-persist` | INFO | rotated subscription credential persisted | component |
 | `DIAG: subs-creds-persist-miss` | WARN | credential rotation callback fired but no route in lastConfig matched the old URL — nothing persisted | component |
+| `DIAG: subs-stale-cache` | WARN | subs fetch failed, serving disk cache | via, cacheAgeS, err |
 
 ### Layer 3 Rules — Full Trace
 
