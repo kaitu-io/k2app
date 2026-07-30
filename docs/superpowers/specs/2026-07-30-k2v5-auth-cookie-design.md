@@ -254,7 +254,9 @@ Jar 必须位于**单个 dialer 之上**：`RaceTransport` 为每个候选创建
 
 - `NewRemoteValidator` 从"返回 bool"改为返回结构化结果 `{ok, code, userID, serviceExpiredAt}`，使 §4.5 的信息能进入 cookie，且使 §6.4 能区分"被拒绝"与"够不着"。
 - `CachingValidator` 加 **singleflight**。当前实现（`wire/auth_cache.go:35-57`）是"miss → 调 inner → 存"，并发 miss 会各打一次 Center。三路竞速的 300ms/800ms 错开只是让这件事**大部分时候**不发生，不是保证。
-- `CachingValidator` TTL 从 5 分钟改为 15 分钟，与 cookie 寿命对齐（§6.3）。这是 `docker/sidecar/main.go:461` 模板里的 `cache_ttl` 值。
+- `CachingValidator` TTL 从 5 分钟改为 15 分钟，与 cookie 寿命对齐（§6.3）。
+
+  **归属**（两处别重复改）：Go 代码里的默认值（`config/config.go` 的 `SetDefaults`，当前 `5 * time.Minute`）归 **Phase 1**——它本来就在动这个 validator；`docker/sidecar/main.go` 模板里硬编码的 `cache_ttl: 5m` 归 **Phase 3**，它属于部署配置。
 
 **验证结论是四态，不是三态。** 这一点漏掉会在链的这一层就把 §6.4 压掉：`NewUsersFileValidator` 以 udid 为键，文件缺失或查无此人时返回 false（`wire/auth_users.go:63-85`），而**共享节点的 users 文件本来就是空的**。若把这个 false 当成"明确拒绝"，它会抢在 remote validator 之前给出 401，Center 的真实回答——包括"不可达"——永远到不了调用方。
 
@@ -448,6 +450,8 @@ DIAG: auth-rollout  total=N  authed=N  cookie_hit=N  cold=N  unauthed=N  legacy_
 2. 按 `kaitu-node-ops` 的批量脚本铺开（先小批、再全量），不手工逐台。
 3. 回滚：单个环境变量 + 重启容器。回滚条件写死在部署清单里：连接成功率跌幅 > 1%，或 24 小时内出现 ≥ 3 起同型工单。
 
+"连接成功率"在服务端没有直接的观测量，所以它在计划里落地为 **`authed/total` 相对翻开关前 7 天基线的跌幅**——这是 §7.2 的埋点已经在产出的数字，不需要新增机制。写清楚这个替代口径，免得回滚时对着一个测不出来的指标争论。
+
 ### 7.4 配置改动
 
 `docker/sidecar/main.go` 的 `k2v5ConfigTemplate`（当前不生成 `enforce_auth`，`cache_ttl` 硬编码 5m）：
@@ -460,9 +464,18 @@ auth:
   enforce_auth: {{.EnforceAuth}}
 ```
 
-`docker/docker-compose.yml` 的 k2s 容器补 `K2_ENFORCE_AUTH=${K2_ENFORCE_AUTH:-0}`（`config/config.go:409` 已支持该环境变量）。
+`docker/docker-compose.yml` **必须给两个容器都注入** `K2_ENFORCE_AUTH=${K2_ENFORCE_AUTH:-0}`：
 
-**同时需要核实的一处风险**：sidecar 生成的 validator 链是 `users_file` → `remote_url`，`users_file` 优先。若共享节点的 `/etc/k2v5/users` 里有任何条目，其中的 token 会**绕过 Center 直接通过**。部署前必须确认共享节点该文件为空。分支已有的"enforce 打开且无真实 validator 则拒绝启动"（`server/server.go:163-168`）保留。
+- **k2s 容器**——`config/config.go:409` 读它，这是实际生效的那一处。
+- **k2-sidecar 容器**——上面那段 yaml 的模板渲染发生在 sidecar 里（`generateK2V5Config` 直接 `os.Getenv`）。只注入 k2s 会让生成的配置文件恒写 `enforce_auth: false`，而实际行为被环境变量覆盖成 true。**配置文件撒谎比配置错误更难排查**：下一个人 `cat` 那个 yaml 会得到与线上行为相反的结论。
+
+**部署前必须核实的一处风险**：sidecar 生成的 validator 链是 `users_file` → `remote_url`，`users_file` 优先。若共享节点的 users 文件里有任何条目，其中的 token 会**绕过 Center 直接通过**。宿主上的实际路径是 `/apps/k2s/users`（compose 里 bind-mount 的源头，容器内挂到 `/etc/k2v5/users`）——核实要查宿主路径，查容器内路径也行但别只查模板里写的那个字符串。分支已有的"enforce 打开且无真实 validator 则拒绝启动"（`server/server.go:163-166`）保留。
+
+### 7.5 判据 4 目前没有数据源
+
+§7.2 的前三条判据都有现成的数据来源，**第四条没有**：`/api/subs` 不记录请求用的是哪一类凭据，DB 里也没有请求级记录。因此 Phase 3 的第一批工作里必须包含"造出这个数据源"——在 `/api/subs` 加一行记录凭据类型的 INFO 日志作为权威口径，另用 `devices.tunnel_issue_at`（配合 `token_last_used_at` 近 7 天）做设备级的下界交叉验证。
+
+这一条单独列出来，是因为它很容易被当成"到时候查一下就行"而拖到翻开关的前一天才发现无从查起。
 
 ---
 
