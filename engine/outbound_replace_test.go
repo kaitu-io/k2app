@@ -360,3 +360,71 @@ func (b *blockingProvider) NextURL(currentURL string, reason error) (string, err
 	return "", context.Canceled
 }
 
+// TestContract_ReplaceLoop_CarriesNewJar locks the invariant Task 2 exists to
+// protect: after a successful server swap, target.jar must be the NEW
+// server's CookieJar (the one setupOutboundTransportFn built for it), never
+// the pre-replacement jar. If this regresses, the next same-server re-race
+// for this outbound (outboundReplaceLoop Phase A, engine.go ~line 1931)
+// builds fresh dialers against a jar that was never populated for the new
+// server's cert pin — forcing a redundant Center cold-auth on every re-race
+// after a server replacement, and permanently splitting the outbound's
+// cookie state into two divergent jar objects for the rest of the
+// connection's life.
+func TestContract_ReplaceLoop_CarriesNewJar(t *testing.T) {
+	var newJar *wire.CookieJar
+
+	orig := setupOutboundTransportFn
+	defer func() { setupOutboundTransportFn = orig }()
+	setupOutboundTransportFn = func(ctx context.Context, via string, dd wire.DirectDialer, wireMode string, clientVersion string) (*outboundTransport, wire.Dialer, error) {
+		tm := wire.NewTransportManager()
+		newJar = wire.NewCookieJar()
+		ot := &outboundTransport{
+			tm:       tm,
+			wireCfg:  wire.Config{Host: "replacement", Port: 443},
+			dialAddr: "replacement:443",
+			name:     "k2v5-replacement",
+			url:      via,
+			jar:      newJar,
+		}
+		ot.swappable = wire.NewSwappableDialer(tm)
+		return ot, nil, nil
+	}
+
+	origTM := wire.NewTransportManager()
+	origJar := wire.NewCookieJar()
+	target := &outboundTransport{
+		tm:       origTM,
+		wireCfg:  wire.Config{Host: "original", Port: 443},
+		dialAddr: "original:443",
+		name:     "k2v5-original",
+		url:      "k2v5://original:443",
+		jar:      origJar,
+	}
+	target.swappable = wire.NewSwappableDialer(origTM)
+
+	e := New()
+	e.mu.Lock()
+	e.state = StateConnected
+	e.outboundTMs = []*outboundTransport{target}
+	e.mu.Unlock()
+
+	provider := &mockOutboundProvider{queue: []string{"k2v5://replacement:443"}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := e.replaceOutboundServer(ctx, target, errors.New("wire dead"), nil, provider); err != nil {
+		t.Fatalf("replaceOutboundServer returned error: %v", err)
+	}
+
+	if newJar == nil {
+		t.Fatal("setupOutboundTransportFn mock never ran — test setup broken")
+	}
+	if target.jar == origJar {
+		t.Fatal("target.jar still points at the pre-replacement jar after a successful swap")
+	}
+	if target.jar != newJar {
+		t.Fatalf("target.jar = %p, want the new server's jar %p (from setupOutboundTransportFn)", target.jar, newJar)
+	}
+}
+

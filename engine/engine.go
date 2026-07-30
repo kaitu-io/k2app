@@ -2120,6 +2120,7 @@ func (e *Engine) replaceOutboundServer(
 		target.dialAddr = newOT.dialAddr
 		target.name = newOT.name
 		target.url = newURL
+		target.jar = newOT.jar
 		target.reRaceFailStreak = 0
 		e.mu.Unlock()
 
