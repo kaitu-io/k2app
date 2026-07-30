@@ -264,7 +264,9 @@ Phase 0 完成后逐条复核（这是 Phase 0 的验收标准，不是事后总
 
 **cookie 存储。** 新增 `wire.CookieJar`，按服务端身份（pin 指纹，而非 host:port——同一节点可能多 IP/多端口）索引。**仅存内存，不落盘**：15 分钟的凭据不值得增加磁盘暴露面，进程重启后一次冷认证即可恢复。
 
-Jar 必须位于**单个 dialer 之上**：`RaceTransport` 为每个候选创建独立的 `QUICClient`/`TCPWSClient`（`wire/race.go:202,214,246`），三者必须共享同一个 jar，否则三路竞速会产生三次冷认证。由 engine 按 outbound 创建 jar 并注入构造函数——`NewQUICClient(cfg, store *TicketStore)` 这个参数位在 master 上本来就存在（`quic_p2p.go`、`k2p/home.go`、`k2p/away.go` 都在传），分支把它删了，本次以 `*CookieJar` 复用该位置。
+Jar 必须位于**单个 dialer 之上**：`RaceTransport` 为每个候选创建独立的 `QUICClient`/`TCPWSClient`（`wire/race.go:202,214,246`），三者必须共享同一个 jar，否则三路竞速会产生三次冷认证。由 engine 按 outbound 创建 jar 并注入构造函数——`NewQUICClient(cfg, store *TicketStore)` 这个参数位在 master 上本来就存在，分支把它删了，本次以 `*CookieJar` 复用该位置。
+
+**`RaceTransport` 自己也必须接受 jar 并透传给三个候选。** 少了这一步，"三候选共享 jar"就不成立——每个候选各建各的，属性在构造那一刻就没了。真实调用点是 `wire/quic_p2p.go:18`、`wire/probe.go:144`、`wire/race.go:202/246`、`engine/engine.go:1510`，加上 engine 的两处 `RaceTransport` 调用（1479 / 1920）与 `outboundTransport`。（`k2p/away.go` 走的是 `NewQUICClientFromConn`，`k2p/home.go` 只用服务端构造函数，两者都不在这条线上。）
 
 ### 5.3 服务端
 
@@ -272,6 +274,8 @@ Jar 必须位于**单个 dialer 之上**：`RaceTransport` 为每个候选创建
 
 - `NewRemoteValidator` 从"返回 bool"改为返回结构化结果 `{ok, code, userID, serviceExpiredAt}`，使 §4.5 的信息能进入 cookie，且使 §6.4 能区分"被拒绝"与"够不着"。
 - `CachingValidator` 加 **singleflight**。当前实现（`wire/auth_cache.go:35-57`）是"miss → 调 inner → 存"，并发 miss 会各打一次 Center。三路竞速的 300ms/800ms 错开只是让这件事**大部分时候**不发生，不是保证。
+
+  顺带修一处既有的宪法违反：`auth_cache.go` 用的是 `sync.Mutex`，而 `k2/CLAUDE.md` 明确要求"新增互斥量字段必须用 `deadlock.Mutex`，绝不用 `sync.Mutex`"。这是分支引入时漏掉的，既然本 Phase 要重写这个文件，一并改掉。
 - `CachingValidator` TTL 从 5 分钟改为 15 分钟，与 cookie 寿命对齐（§6.3）。
 
   **归属**（两处别重复改）：Go 代码里的默认值（`config/config.go` 的 `SetDefaults`，当前 `5 * time.Minute`）归 **Phase 1**——它本来就在动这个 validator；`docker/sidecar/main.go` 模板里硬编码的 `cache_ttl: 5m` 归 **Phase 3**，它属于部署配置。
@@ -410,7 +414,9 @@ type authSession struct {
 }
 ```
 
-注册于连接接受时，注销于连接关闭时。清扫 goroutine 每 60 秒执行一次：
+注册于连接接受时，注销于连接关闭时。但**接受连接的那一刻 udid 与 token 还不存在**——它们要等 metadata stream 到达才有。所以注册分两步：accept 时先登记一个空壳，metadata 判定通过后再由 `markAuthed` 原子发布凭据。清扫器只处理已发布的会话，避免读到半初始化的结构。
+
+清扫 goroutine 每 60 秒执行一次：
 
 1. 快照（持 state lock）→ **释放锁**。
 2. 对每个会话：`svc_exp` 已过 → `kill()`，零 Center 往返。
