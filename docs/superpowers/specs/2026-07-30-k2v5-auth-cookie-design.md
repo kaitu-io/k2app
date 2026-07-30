@@ -144,8 +144,10 @@ TokenTypeTunnel = "tunnel"
 **新增 Device 列**：
 
 ```go
-TunnelIssueAt int64 `gorm:"column:tunnel_issue_at;default:0"`
+TunnelIssueAt int64 `gorm:"column:tunnel_issue_at;not null;default:0"`
 ```
+
+（gorm 标签带 `not null` 与生产迁移 SQL 的 `BIGINT NOT NULL DEFAULT 0` 一致——`default:0` 单独已能避免 NULL，但让 `AutoMigrate` 生成的列定义与手写 SQL 不漂移。）
 
 **这一列是必需的，不能复用 `TokenIssueAt`**：`api_refresh_token`（`api/api_auth.go:439-478`）在每次 web token 刷新时会把新的 `TokenIssueAt` 写回 Device 行。若 tunnel token 也绑 `TokenIssueAt`，则用户每 24 小时刷新一次 web token 就会把自己的隧道凭据作废——正好毁掉本 Phase 的目的。两个时钟必须独立。
 
