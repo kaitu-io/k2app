@@ -59,7 +59,7 @@ func TestRaceTransport_QUIC443Wins(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := RaceTransport(ctx, cfg, "", nil)
+	result, err := RaceTransport(ctx, cfg, "", nil, nil)
 	if err != nil {
 		t.Fatalf("RaceTransport failed: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestRaceTransport_FallbackToTCPWS(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	result, err := RaceTransport(ctx, cfg, "", nil)
+	result, err := RaceTransport(ctx, cfg, "", nil, nil)
 	if err != nil {
 		t.Fatalf("RaceTransport failed: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestRaceTransport_AllFail(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := RaceTransport(ctx, cfg, "", nil)
+	result, err := RaceTransport(ctx, cfg, "", nil, nil)
 	if err == nil {
 		if result != nil && result.Dialer != nil {
 			result.Dialer.Close()

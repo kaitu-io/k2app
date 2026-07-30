@@ -136,7 +136,7 @@ func TestTransportManager_ResetClearsFallback(t *testing.T) {
 // TestReset_ClearsConsecConnFails verifies that Reset()
 // clears the consecutive connection failure counter.
 func TestReset_ClearsConsecConnFails(t *testing.T) {
-	qc := NewQUICClient(Config{})
+	qc := NewQUICClient(Config{}, nil)
 	qc.handshakeFailStreak.Store(2)
 
 	tm := NewTransportManager()

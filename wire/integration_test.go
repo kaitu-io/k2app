@@ -265,7 +265,7 @@ func TestIntegration_URLToClient(t *testing.T) {
 	}
 
 	// Create QUIC client from config
-	qc := NewQUICClient(cfg)
+	qc := NewQUICClient(cfg, nil)
 	if qc.serverAddr != "1.2.3.4:443" {
 		t.Errorf("serverAddr = %q", qc.serverAddr)
 	}
@@ -274,7 +274,7 @@ func TestIntegration_URLToClient(t *testing.T) {
 	}
 
 	// Create TCP-WS client from same config
-	tc := NewTCPWSClient(cfg)
+	tc := NewTCPWSClient(cfg, nil)
 	if tc.serverAddr != "1.2.3.4:443" {
 		t.Errorf("serverAddr = %q", tc.serverAddr)
 	}

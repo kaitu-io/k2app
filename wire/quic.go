@@ -322,6 +322,7 @@ func (c *quicStreamConn) Close() error {
 // QUICClient is the QUIC/H3 client transport.
 type QUICClient struct {
 	cfg          Config
+	jar          *CookieJar // per-outbound cookie store; nil = no cookie support (probe/p2p)
 	serverAddr   string
 	hopStart     int
 	hopEnd       int
@@ -344,14 +345,17 @@ type QUICClient struct {
 	handshakeFailStreak atomic.Int32 // consecutive connect() handshake failures across different hop ports
 }
 
-// NewQUICClient creates a new QUIC client transport.
-func NewQUICClient(cfg Config) *QUICClient {
+// NewQUICClient creates a new QUIC client transport. jar is the per-outbound
+// CookieJar shared with the sibling TCP-WS client (nil disables cookies) —
+// this parameter slot is the same one master used for *TicketStore.
+func NewQUICClient(cfg Config, jar *CookieJar) *QUICClient {
 	dialHost := cfg.Host
 	if cfg.DialAddr != "" {
 		dialHost = cfg.DialAddr
 	}
 	return &QUICClient{
 		cfg:        cfg,
+		jar:        jar,
 		serverAddr: net.JoinHostPort(dialHost, strconv.Itoa(cfg.Port)),
 		hopStart:   cfg.HopStart,
 		hopEnd:     cfg.HopEnd,

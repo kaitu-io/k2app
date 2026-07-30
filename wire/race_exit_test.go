@@ -50,7 +50,7 @@ func TestRaceTransport_MetadataRejectionSurvivesExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	res, err := RaceTransport(ctx, cfg, "", nil)
+	res, err := RaceTransport(ctx, cfg, "", nil, nil)
 	if res != nil && res.Dialer != nil {
 		res.Dialer.Close()
 	}

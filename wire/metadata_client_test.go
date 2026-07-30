@@ -142,7 +142,7 @@ func TestQUICClient_MetadataRejectFailsConnect(t *testing.T) {
 	_, addr, cleanup := startRawQUICServer(t, vReject(401), true)
 	defer cleanup()
 
-	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"})
+	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"}, nil)
 	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
 	defer client.Close()
 
@@ -189,7 +189,7 @@ func TestQUICClient_PermissiveCredentialProblemStillConnects(t *testing.T) {
 	server, addr, cleanup := startRawQUICServer(t, vReject(401), false)
 	defer cleanup()
 
-	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"})
+	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"}, nil)
 	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
 	defer client.Close()
 
@@ -238,7 +238,7 @@ func TestQUICClient_LegacyMetadataRejectIsProxyLayerError(t *testing.T) {
 	_, addr, cleanup := startRawQUICServer(t, vReject(0), true)
 	defer cleanup()
 
-	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"})
+	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"}, nil)
 	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
 	defer client.Close()
 

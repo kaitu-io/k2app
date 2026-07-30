@@ -105,6 +105,11 @@ type outboundTransport struct {
 	// separately.
 	swappable *wire.SwappableDialer
 
+	// jar is this outbound's CookieJar — shared by every dialer ever built
+	// for this outbound (race candidates, fallback TCP-WS client, re-race),
+	// so a transport switch or re-race never repeats a cold auth.
+	jar *wire.CookieJar
+
 	// reRaceFailStreak counts consecutive wire-level RaceTransport
 	// failures against this outbound's current URL. When it reaches
 	// reRaceFailThresholdForReplace, outboundReplaceLoop escalates from
@@ -1475,8 +1480,13 @@ func setupOutboundTransport(
 		wireCfg.DialAddr = dialAddr
 	}
 
+	// One CookieJar per outbound, shared by every dialer built below (all
+	// three race candidates plus the TCP-WS fallback client) — a transport
+	// switch or re-race must never trigger a redundant Center cold-auth.
+	jar := wire.NewCookieJar()
+
 	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-	raceResult, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, directDialer)
+	raceResult, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, directDialer, jar)
 	raceCancel()
 	if err != nil {
 		return nil, nil, fmt.Errorf("transport race %s: %w", wireCfg.Host, err)
@@ -1507,7 +1517,7 @@ func setupOutboundTransport(
 		tm.SetTCPWS(raceResult.TCPWS)
 		tcpwsDialer = raceResult.TCPWS
 	} else if raceResult.TransportType != "tcpws" {
-		tcpwsClient := wire.NewTCPWSClient(wireCfg)
+		tcpwsClient := wire.NewTCPWSClient(wireCfg, jar)
 		if directDialer != nil {
 			tcpwsClient.SetDirectDialer(directDialer)
 		}
@@ -1525,6 +1535,7 @@ func setupOutboundTransport(
 		dialAddr: dialAddr,
 		name:     fmt.Sprintf("k2v5-%s", wireCfg.Host),
 		url:      via,
+		jar:      jar,
 	}
 	// Install the indirection wrapper that core.WireOutbound and
 	// ProxyDNSClient will dial through. See outboundTransport.swappable doc.
@@ -1917,7 +1928,7 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 		)
 
 		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-		result, raceErr := wire.RaceTransport(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd)
+		result, raceErr := wire.RaceTransport(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd, target.jar)
 		raceCancel()
 
 		if raceErr == nil {

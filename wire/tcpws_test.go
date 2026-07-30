@@ -45,7 +45,7 @@ func TestTCPWSClient_Create(t *testing.T) {
 		ECH:         "dGVzdA==",
 		Fingerprint: "chrome",
 	}
-	tc := NewTCPWSClient(cfg)
+	tc := NewTCPWSClient(cfg, nil)
 	if tc == nil {
 		t.Fatal("NewTCPWSClient returned nil")
 	}
@@ -74,7 +74,7 @@ func setupTCPWSPair(t *testing.T) (*TCPWSClient, *TCPWSServer, func()) {
 	server := NewTCPWSServer()
 	server.HandleConn(serverConn)
 
-	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443})
+	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443}, nil)
 	client.testConn = clientConn
 
 	cleanup := func() {
@@ -613,7 +613,7 @@ func TestTCPWSClient_uTLS_Handshake(t *testing.T) {
 				Fingerprint: tt.fingerprint,
 			}
 
-			client := NewTCPWSClient(cfg)
+			client := NewTCPWSClient(cfg, nil)
 			client.tlsConfig = &tls.Config{
 				ServerName:         host,
 				InsecureSkipVerify: true,
@@ -786,7 +786,7 @@ func TestTCPWSClient_FullFlow_WS(t *testing.T) {
 		Fingerprint: "chrome",
 	}
 
-	client := NewTCPWSClient(cfg)
+	client := NewTCPWSClient(cfg, nil)
 	client.tlsConfig = &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: true,
@@ -948,7 +948,7 @@ func TestTCPWSClient_DialUDP_WS(t *testing.T) {
 		Fingerprint: "chrome",
 	}
 
-	client := NewTCPWSClient(cfg)
+	client := NewTCPWSClient(cfg, nil)
 	client.tlsConfig = &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: true,
@@ -1068,7 +1068,7 @@ func TestTCPWSClient_ProbeContextCancellation(t *testing.T) {
 	defer srv.Close()
 
 	// Client
-	client := NewTCPWSClient(Config{Host: host, Port: port, Fingerprint: "chrome"})
+	client := NewTCPWSClient(Config{Host: host, Port: port, Fingerprint: "chrome"}, nil)
 	client.tlsConfig = &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: true,
@@ -1175,7 +1175,7 @@ func TestTCPWSClient_DialUDP_AfterReset(t *testing.T) {
 	server := NewTCPWSServer()
 	server.HandleConn(serverConn1)
 
-	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443})
+	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443}, nil)
 	client.testConn = clientConn1
 
 	received1 := make(chan string, 1)

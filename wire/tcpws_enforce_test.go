@@ -20,7 +20,7 @@ func setupTCPWSEnforcePair(t *testing.T, cfg Config, enforce bool, validator Val
 	server.adm.authWait = 300 * time.Millisecond
 	server.HandleConn(serverConn)
 
-	client := NewTCPWSClient(cfg)
+	client := NewTCPWSClient(cfg, nil)
 	client.testConn = clientConn
 
 	cleanup := func() {

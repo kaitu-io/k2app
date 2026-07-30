@@ -132,7 +132,7 @@ func TestContract_EchoDetectsBlockedShortHeader(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	result, err := RaceTransport(ctx, cfg, "", nil)
+	result, err := RaceTransport(ctx, cfg, "", nil, nil)
 	if err != nil {
 		t.Fatalf("RaceTransport failed: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestContract_OldServerNoEcho(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := RaceTransport(ctx, cfg, "", nil)
+	result, err := RaceTransport(ctx, cfg, "", nil, nil)
 	if err != nil {
 		t.Fatalf("RaceTransport should degrade gracefully for old server: %v", err)
 	}

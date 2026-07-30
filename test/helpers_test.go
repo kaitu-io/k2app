@@ -132,7 +132,7 @@ func setupQUICEnv(t *testing.T) *testEnv {
 		Host: "127.0.0.1",
 		Port: serverAddr.Port,
 	}
-	env.quicClient = wire.NewQUICClient(clientCfg)
+	env.quicClient = wire.NewQUICClient(clientCfg, nil)
 	// Bypass ECH/fingerprint for testing
 	env.quicClient.SetTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
@@ -199,7 +199,7 @@ func setupTCPWSEnv(t *testing.T) *testEnv {
 
 	// TCP-WS client (bypass TLS for testing)
 	clientCfg := wire.Config{Host: "127.0.0.1", Port: 0}
-	env.tcpwsClient = wire.NewTCPWSClient(clientCfg)
+	env.tcpwsClient = wire.NewTCPWSClient(clientCfg, nil)
 	// Connect directly via net.Pipe to avoid TLS for unit test
 	clientConn, serverConn := net.Pipe()
 	env.tcpwsSrv.HandleConn(serverConn)

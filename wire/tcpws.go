@@ -108,6 +108,7 @@ func (c *smuxStreamConn) Close() error {
 // Test mode: SetTestConn bypasses TCP+TLS+WS and uses a direct net.Conn for smux.
 type TCPWSClient struct {
 	cfg          Config
+	jar          *CookieJar // per-outbound cookie store; nil = no cookie support (probe/p2p)
 	serverAddr   string
 	tlsConfig    *tls.Config // override for testing
 	testConn     net.Conn    // override for testing (bypasses TCP+TLS+WS)
@@ -132,14 +133,17 @@ var (
 	_ StatsProvider = (*TCPWSClient)(nil)
 )
 
-// NewTCPWSClient creates a new TCP-WS client transport.
-func NewTCPWSClient(cfg Config) *TCPWSClient {
+// NewTCPWSClient creates a new TCP-WS client transport. jar is the
+// per-outbound CookieJar shared with the sibling QUIC client (nil disables
+// cookies).
+func NewTCPWSClient(cfg Config, jar *CookieJar) *TCPWSClient {
 	dialHost := cfg.Host
 	if cfg.DialAddr != "" {
 		dialHost = cfg.DialAddr
 	}
 	return &TCPWSClient{
 		cfg:        cfg,
+		jar:        jar,
 		serverAddr: net.JoinHostPort(dialHost, strconv.Itoa(cfg.Port)),
 	}
 }

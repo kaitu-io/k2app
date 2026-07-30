@@ -57,7 +57,7 @@ func TestQUICClientConfig(t *testing.T) {
 		HopEnd:      20000,
 	}
 
-	qc := NewQUICClient(cfg)
+	qc := NewQUICClient(cfg, nil)
 	if qc == nil {
 		t.Fatal("NewQUICClient returned nil")
 	}
@@ -77,7 +77,7 @@ func TestQUICClientConfig_NoHop(t *testing.T) {
 		Fingerprint: "chrome",
 	}
 
-	qc := NewQUICClient(cfg)
+	qc := NewQUICClient(cfg, nil)
 	if qc.hopEnabled() {
 		t.Error("port hopping should be disabled when hop range not set")
 	}
@@ -108,7 +108,7 @@ func TestQUICClient_HopPort(t *testing.T) {
 		Port:     443,
 		HopStart: 10000,
 		HopEnd:   20000,
-	})
+	}, nil)
 
 	seen := make(map[int]bool)
 	for i := 0; i < 100; i++ {
@@ -175,7 +175,7 @@ func setupQUICPair(t *testing.T) (*QUICClient, *QUICServer, func()) {
 		Host: "127.0.0.1",
 		Port: serverAddr.Port,
 	}
-	client := NewQUICClient(clientCfg)
+	client := NewQUICClient(clientCfg, nil)
 	client.tlsConfig = &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"h3"},
@@ -593,7 +593,7 @@ func TestQUICClient_DialUDP_StreamFallback(t *testing.T) {
 		Host: "127.0.0.1",
 		Port: serverAddr.Port,
 	}
-	client := NewQUICClient(clientCfg)
+	client := NewQUICClient(clientCfg, nil)
 	defer client.Close()
 	client.tlsConfig = &tls.Config{
 		InsecureSkipVerify: true,
@@ -985,7 +985,7 @@ func TestQUICClient_dialUDPStream_DeadConnDetectedByConnect(t *testing.T) {
 
 func TestQUICClient_ConsecConnFails(t *testing.T) {
 	// Test that connect() failures increment handshakeFailStreak and success resets it.
-	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1})
+	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1}, nil)
 	qc.SetTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"h3"},

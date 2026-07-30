@@ -152,7 +152,7 @@ func TestIntegration_QUICEnforce_NilValidatorAuthenticatesNobody(t *testing.T) {
 		Port:  serverAddr.Port,
 		UDID:  "some-device",
 		Token: "some-token",
-	})
+	}, nil)
 	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
 	defer client.Close()
 

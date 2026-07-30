@@ -54,7 +54,9 @@ type connectedQUIC struct {
 //
 // First candidate with verified data flow wins.
 // directDialer may be nil (non-desktop platforms).
-func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDialer DirectDialer) (*RaceResult, error) {
+// jar is the per-outbound CookieJar shared by every candidate built here
+// (nil disables cookies).
+func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDialer DirectDialer, jar *CookieJar) (*RaceResult, error) {
 	raceStart := time.Now()
 	raceCtx, raceCancel := context.WithTimeout(ctx, raceTimeout)
 
@@ -122,7 +124,7 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 
 	// --- Candidate 1: QUIC on port 443 ---
 	launch("quic-443", func(ctx context.Context) raceCandidate {
-		return buildAndProbeQUIC(ctx, cfg, dialAddr, directDialer, cfg.Port, 0, 0, "quic-443")
+		return buildAndProbeQUIC(ctx, cfg, dialAddr, directDialer, cfg.Port, 0, 0, "quic-443", jar)
 	})
 
 	var consumed int
@@ -137,7 +139,7 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 	// --- Candidate 2: QUIC on hop ports ---
 	if cfg.HopStart > 0 && cfg.HopEnd > 0 {
 		launch("quic-hop", func(ctx context.Context) raceCandidate {
-			return buildAndProbeQUIC(ctx, cfg, dialAddr, directDialer, cfg.Port, cfg.HopStart, cfg.HopEnd, "quic-hop")
+			return buildAndProbeQUIC(ctx, cfg, dialAddr, directDialer, cfg.Port, cfg.HopStart, cfg.HopEnd, "quic-hop", jar)
 		})
 	}
 
@@ -151,7 +153,7 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 
 	// --- Candidate 3: TCP-WS ---
 	launch("tcpws", func(ctx context.Context) raceCandidate {
-		return buildTCPWSCandidate(ctx, cfg, dialAddr, directDialer)
+		return buildTCPWSCandidate(ctx, cfg, dialAddr, directDialer, jar)
 	})
 
 	// --- Collect remaining results ---
@@ -216,7 +218,7 @@ func buildInsecureTLSConfig() *tls.Config {
 	}
 }
 
-func buildAndProbeQUIC(ctx context.Context, cfg Config, dialAddr string, dd DirectDialer, port, hopStart, hopEnd int, name string) raceCandidate {
+func buildAndProbeQUIC(ctx context.Context, cfg Config, dialAddr string, dd DirectDialer, port, hopStart, hopEnd int, name string, jar *CookieJar) raceCandidate {
 	// Clone config with port/hop overrides.
 	qcfg := cfg
 	qcfg.Port = port
@@ -226,7 +228,7 @@ func buildAndProbeQUIC(ctx context.Context, cfg Config, dialAddr string, dd Dire
 		qcfg.DialAddr = dialAddr
 	}
 
-	qc := NewQUICClient(qcfg)
+	qc := NewQUICClient(qcfg, jar)
 	if dd != nil {
 		qc.SetDirectDialer(dd)
 	}
@@ -264,13 +266,13 @@ func buildAndProbeQUIC(ctx context.Context, cfg Config, dialAddr string, dd Dire
 	return raceCandidate{dialer: qc, transportType: name}
 }
 
-func buildTCPWSCandidate(ctx context.Context, cfg Config, dialAddr string, dd DirectDialer) raceCandidate {
+func buildTCPWSCandidate(ctx context.Context, cfg Config, dialAddr string, dd DirectDialer, jar *CookieJar) raceCandidate {
 	tcfg := cfg
 	if dialAddr != "" {
 		tcfg.DialAddr = dialAddr
 	}
 
-	tc := NewTCPWSClient(tcfg)
+	tc := NewTCPWSClient(tcfg, jar)
 	if dd != nil {
 		tc.SetDirectDialer(dd)
 	}

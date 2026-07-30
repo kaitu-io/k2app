@@ -212,6 +212,8 @@ wire.RelayManager.mu (state, standalone — control-plane relay node pool/rankin
 
 wire.authCache.mu (state, standalone — device-auth verdict cache; inner validator I/O (Center call) runs OUTSIDE the lock, inside a singleflight.Group)
 
+wire.CookieJar.mu (state, standalone — map ops only; one jar per outbound, shared by every dialer built for that outbound)
+
 provider.processCache.mu (state, standalone — no nesting with engine/daemon locks)
 provider.LinuxProcessSearcher.indexMu (state, RWMutex, standalone — no nesting with engine/daemon locks)
 

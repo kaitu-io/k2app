@@ -74,7 +74,7 @@ func TestIntegration_QUICEnforce_ForgedTokenRejected(t *testing.T) {
 			Port:  serverAddr.Port,
 			UDID:  udid,
 			Token: token,
-		})
+		}, nil)
 		client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
 		defer client.Close()
 
@@ -149,7 +149,7 @@ func TestIntegration_QUICEnforce_PermissiveServesUnauthenticated(t *testing.T) {
 	serverAddr := serverUDP.LocalAddr().(*net.UDPAddr)
 	client := NewQUICClient(Config{
 		Host: "127.0.0.1", Port: serverAddr.Port, UDID: "legacy", Token: "whatever",
-	})
+	}, nil)
 	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
 	defer client.Close()
 

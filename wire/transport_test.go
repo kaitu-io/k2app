@@ -261,16 +261,16 @@ func TestTransportManager_Reset(t *testing.T) {
 	}{
 		{
 			name:  "both transports",
-			quic:  NewQUICClient(Config{}),
-			tcpws: NewTCPWSClient(Config{}),
+			quic:  NewQUICClient(Config{}, nil),
+			tcpws: NewTCPWSClient(Config{}, nil),
 		},
 		{
 			name: "only quic",
-			quic: NewQUICClient(Config{}),
+			quic: NewQUICClient(Config{}, nil),
 		},
 		{
 			name:  "only tcpws",
-			tcpws: NewTCPWSClient(Config{}),
+			tcpws: NewTCPWSClient(Config{}, nil),
 		},
 		{
 			name: "no transports",
@@ -303,7 +303,7 @@ func TestTransportManager_Reset(t *testing.T) {
 // ==========================================================================
 
 func TestReset_ClearsPortHopAttempts(t *testing.T) {
-	client := NewQUICClient(Config{HopStart: 1000, HopEnd: 2000})
+	client := NewQUICClient(Config{HopStart: 1000, HopEnd: 2000}, nil)
 	client.portHopAttempts.Store(3) // exhausted
 
 	tm := NewTransportManager()
@@ -406,7 +406,7 @@ func TestTransportManager_QUICFailNoFallback(t *testing.T) {
 func TestTransportManager_ConsecConnFailsFallback(t *testing.T) {
 	// Use real QUICClient (closed=true to force DialTCP failure) with
 	// handshakeFailStreak pre-set to simulate accumulated handshake failures.
-	qc := NewQUICClient(Config{})
+	qc := NewQUICClient(Config{}, nil)
 	qc.closed = true // force connect() to return ErrNotConnected
 
 	tcpws := &mockTransport{
@@ -452,7 +452,7 @@ func TestTransportManager_ConsecConnFailsFallback(t *testing.T) {
 }
 
 func TestTransportManager_ConsecConnFailsReset(t *testing.T) {
-	qc := NewQUICClient(Config{})
+	qc := NewQUICClient(Config{}, nil)
 
 	tcpws := &mockTransport{
 		available: true,
@@ -515,10 +515,10 @@ func TestQuicContext_ExtendedBudgetAfterReset(t *testing.T) {
 // ==========================================================================
 
 func TestTransportManager_Handshake_BothFail(t *testing.T) {
-	qc := NewQUICClient(Config{})
+	qc := NewQUICClient(Config{}, nil)
 	qc.closed = true // forces connect() to return ErrNotConnected
 
-	tc := NewTCPWSClient(Config{})
+	tc := NewTCPWSClient(Config{}, nil)
 	tc.closed = true // forces connect() to return ErrNotConnected
 
 	tm := NewTransportManager()
@@ -536,11 +536,11 @@ func TestTransportManager_Handshake_BothFail(t *testing.T) {
 }
 
 func TestTransportManager_Handshake_FallbackSkipsQUIC(t *testing.T) {
-	qc := NewQUICClient(Config{})
+	qc := NewQUICClient(Config{}, nil)
 	// Don't set closed — if QUIC were attempted, connect() would try a real
 	// handshake. But fallbackActive skips it entirely.
 
-	tc := NewTCPWSClient(Config{})
+	tc := NewTCPWSClient(Config{}, nil)
 	tc.closed = true // TCP-WS will fail, proving it was attempted
 
 	tm := NewTransportManager()
@@ -573,13 +573,13 @@ func TestTransportManager_Handshake_NoTransports(t *testing.T) {
 }
 
 func TestTransportManager_Handshake_ConsecFailsFallback(t *testing.T) {
-	qc := NewQUICClient(Config{})
+	qc := NewQUICClient(Config{}, nil)
 	qc.closed = true // forces connect() to fail
 
 	// Pre-set streak to threshold so the Handshake call triggers fallback.
 	qc.handshakeFailStreak.Store(quicConnFailThreshold)
 
-	tc := NewTCPWSClient(Config{})
+	tc := NewTCPWSClient(Config{}, nil)
 	tc.closed = true // TCP-WS also fails, but we only care about fallbackActive
 
 	tm := NewTransportManager()

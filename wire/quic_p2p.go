@@ -15,7 +15,7 @@ import (
 // congestion control, session allocator, and UDP mux — the same setup
 // that QUICClient.connect() does at wire/quic.go:453-472.
 func NewQUICClientFromConn(conn *quic.Conn, transport *quic.Transport, cfg Config) *QUICClient {
-	c := NewQUICClient(cfg)
+	c := NewQUICClient(cfg, nil) // k2p data plane has no Center cookie flow
 
 	sender := k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate)
 	conn.SetCongestionControl(sender)

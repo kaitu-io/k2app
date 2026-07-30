@@ -169,7 +169,7 @@ func TestIntegration_QUICEnforce_ValidDatagramAdmitted(t *testing.T) {
 		Port:  serverAddr.Port,
 		UDID:  "good-device",
 		Token: "valid-token",
-	})
+	}, nil)
 	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
 	defer client.Close()
 
