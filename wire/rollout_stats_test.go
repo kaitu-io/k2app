@@ -37,6 +37,10 @@ func TestRolloutStats_NilReceiverSafe(t *testing.T) {
 	r.RecordCold()
 	r.RecordUnauthed()
 	r.RecordLegacyNoMetadata()
+
+	stop := make(chan struct{})
+	close(stop)
+	r.Run(stop, time.Millisecond, nil) // must return immediately, not panic
 }
 
 func TestRecordVerdict_Mapping(t *testing.T) {
@@ -145,12 +149,12 @@ func TestRolloutStats_CallSitesPresent(t *testing.T) {
 		funcs map[string][]string // function name → required call tokens inside its body
 	}{
 		{"quic.go", map[string][]string{
-			"func (s *QUICServer) handleConn":           {".RecordConn()", ".RecordLegacyNoMetadata()", ".settled()"},
-			"func (s *QUICServer) handleMetadataStream": {"recordVerdict("},
+			"func (s *QUICServer) handleConn":           {".RecordConn()", ".RecordLegacyNoMetadata()", ".settled()", ".claimRolloutCount()"},
+			"func (s *QUICServer) handleMetadataStream": {"recordVerdict(", ".claimRolloutCount()"},
 		}},
 		{"tcpws.go", map[string][]string{
-			"func (s *TCPWSServer) handleSession":        {".RecordConn()", ".RecordLegacyNoMetadata()", ".settled()"},
-			"func (s *TCPWSServer) handleMetadataStream": {"recordVerdict("},
+			"func (s *TCPWSServer) handleSession":        {".RecordConn()", ".RecordLegacyNoMetadata()", ".settled()", ".claimRolloutCount()"},
+			"func (s *TCPWSServer) handleMetadataStream": {"recordVerdict(", ".claimRolloutCount()"},
 		}},
 	}
 	for _, tc := range cases {
