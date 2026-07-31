@@ -183,6 +183,50 @@ func TestTCPWSMetadata_AttributionSetOnOK(t *testing.T) {
 	}
 }
 
+// TestTCPWSMetadata_SessionAttributionSetOnOK: the session-slot twin of
+// TestTCPWSMetadata_AttributionSetOnOK — a validated connection must also get
+// a non-empty server-issued auth session id (spec §6.6 会话可观测), set by
+// dev.setSession(st.sessionID) in handleMetadataStream. Mirrors
+// TestQUICMetadata_SessionAttributionSetOnOK.
+func TestTCPWSMetadata_SessionAttributionSetOnOK(t *testing.T) {
+	sess, server, cleanup := startRawTCPWSServer(t, vOK(), false)
+	defer cleanup()
+
+	br, stream := sendRawMetadataSmux(t, sess, MetadataFrame{UDID: "real-device", Token: "t"})
+	defer stream.Close()
+	if ok, _, _, err := ReadStreamResponse(br); err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+
+	proxy, err := sess.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.Close()
+	if err := WriteStreamHeader(proxy, StreamTypeTCP, "example.com:80"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, _, err := server.AcceptTCP(ctx)
+	if err != nil {
+		t.Fatalf("AcceptTCP: %v", err)
+	}
+	defer conn.Close()
+	sc, ok := conn.(*smuxStreamConn)
+	if !ok {
+		t.Fatalf("AcceptTCP returned %T, want *smuxStreamConn", conn)
+	}
+	if got := sc.dev.session(); got == "" {
+		t.Fatalf("validated TCP-WS connection has empty session id, want non-empty")
+	}
+	// Also verify the public ConnSessionID contract server/device_traffic.go
+	// relies on (connDeviceKey type-asserts on this interface).
+	if got := sc.SessionID(); got == "" {
+		t.Fatalf("smuxStreamConn.SessionID() empty on validated connection")
+	}
+}
+
 // startRawQUICServer boots a real QUIC listener with the given validator and
 // returns the server plus dial address, so tests can inspect AcceptTCP output.
 func startRawQUICServer(t *testing.T, validator Validator, enforce bool) (*QUICServer, *net.UDPAddr, func()) {
@@ -323,6 +367,55 @@ func TestQUICMetadata_AttributionSetOnOK(t *testing.T) {
 	defer acc.Close()
 	if got := acc.(*quicStreamConn).dev.get(); got != "real-device" {
 		t.Fatalf("validated QUIC connection attribution = %q, want real-device", got)
+	}
+}
+
+// TestQUICMetadata_SessionAttributionSetOnOK: the session-slot twin of
+// TestQUICMetadata_AttributionSetOnOK — a validated QUIC connection must also
+// get a non-empty server-issued auth session id (spec §6.6 会话可观测), set by
+// ctx.dev.setSession(st.sessionID) in handleMetadataStream. Mirrors
+// TestTCPWSMetadata_SessionAttributionSetOnOK.
+func TestQUICMetadata_SessionAttributionSetOnOK(t *testing.T) {
+	server, addr, cleanup := startRawQUICServer(t, vOK(), false)
+	defer cleanup()
+	conn, connCleanup := dialRawQUIC(t, addr)
+	defer connCleanup()
+
+	br, stream := sendRawMetadataQUIC(t, conn, MetadataFrame{UDID: "real-device", Token: "t"})
+	defer stream.Close()
+	if ok, _, _, err := ReadStreamResponse(br); err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+
+	proxy, err := conn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.Close()
+	if err := WriteH3ProxyFrameType(proxy); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteStreamHeader(proxy, StreamTypeTCP, "example.com:80"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	acc, _, err := server.AcceptTCP(ctx)
+	if err != nil {
+		t.Fatalf("AcceptTCP: %v", err)
+	}
+	defer acc.Close()
+	sc, ok := acc.(*quicStreamConn)
+	if !ok {
+		t.Fatalf("AcceptTCP returned %T, want *quicStreamConn", acc)
+	}
+	if got := sc.dev.session(); got == "" {
+		t.Fatalf("validated QUIC connection has empty session id, want non-empty")
+	}
+	// Also verify the public ConnSessionID contract server/device_traffic.go
+	// relies on (connDeviceKey type-asserts on this interface).
+	if got := sc.SessionID(); got == "" {
+		t.Fatalf("quicStreamConn.SessionID() empty on validated connection")
 	}
 }
 

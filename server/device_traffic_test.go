@@ -5,6 +5,59 @@ import (
 	"testing"
 )
 
+// fakeDeviceConn implements wire.ConnDeviceID only.
+type fakeDeviceConn struct{ udid string }
+
+func (f fakeDeviceConn) DeviceID() string { return f.udid }
+
+// fakeSessionConn implements wire.ConnSessionID only — isolates the
+// ConnSessionID branch in connDeviceKey (server/device_traffic.go) from the
+// ConnDeviceID branch, so a regression that drops only the session branch
+// still reddens this test even though DeviceID-based tests would stay green.
+type fakeSessionConn struct{ session string }
+
+func (f fakeSessionConn) SessionID() string { return f.session }
+
+// fakeDeviceSessionConn implements both interfaces.
+type fakeDeviceSessionConn struct {
+	udid    string
+	session string
+}
+
+func (f fakeDeviceSessionConn) DeviceID() string  { return f.udid }
+func (f fakeDeviceSessionConn) SessionID() string { return f.session }
+
+func TestConnDeviceKey_SessionBranch(t *testing.T) {
+	got := connDeviceKey(fakeSessionConn{session: "sess-abc123"})
+	want := DeviceKey{UDID: "", Session: "sess-abc123"}
+	if got != want {
+		t.Fatalf("connDeviceKey = %+v, want %+v", got, want)
+	}
+}
+
+func TestConnDeviceKey_DeviceBranch(t *testing.T) {
+	got := connDeviceKey(fakeDeviceConn{udid: "dev-1"})
+	want := DeviceKey{UDID: "dev-1", Session: ""}
+	if got != want {
+		t.Fatalf("connDeviceKey = %+v, want %+v", got, want)
+	}
+}
+
+func TestConnDeviceKey_BothInterfaces(t *testing.T) {
+	got := connDeviceKey(fakeDeviceSessionConn{udid: "dev-1", session: "sess-1"})
+	want := DeviceKey{UDID: "dev-1", Session: "sess-1"}
+	if got != want {
+		t.Fatalf("connDeviceKey = %+v, want %+v", got, want)
+	}
+}
+
+func TestConnDeviceKey_NoInterfaces_ZeroKey(t *testing.T) {
+	got := connDeviceKey(struct{}{})
+	if got != (DeviceKey{}) {
+		t.Fatalf("connDeviceKey = %+v, want zero DeviceKey", got)
+	}
+}
+
 func TestDeviceTraffic_AddTake(t *testing.T) {
 	var dt deviceTraffic
 	dt.Add(DeviceKey{UDID: "a"}, 10, 20)
