@@ -62,6 +62,30 @@ func TestTrafficRetentionCleanup(t *testing.T) {
 	assert.Equal(t, []string{recentDate}, dates, "70-day-old row purged, 10-day-old row kept")
 }
 
+func TestTrafficRetentionCleanup_DeviceSessionDaily(t *testing.T) {
+	skipIfNoConfig(t)
+	// 隐私政策承诺"流量用量统计保留 2 个月"—— DeviceSessionDaily 是同一类
+	// 数据（per-device/per-node/per-day 流量统计），必须复用同一保留期常量。
+	assert.Equal(t, 60, trafficRetentionDays)
+
+	oldDate := time.Now().In(cnZone).AddDate(0, 0, -70).Format("2006-01-02")
+	recentDate := time.Now().In(cnZone).AddDate(0, 0, -10).Format("2006-01-02")
+	t.Cleanup(func() {
+		db.Get().Where("node_ipv4 = ?", "10.96.0.3").Delete(&DeviceSessionDaily{})
+	})
+	require.NoError(t, db.Get().Create(&DeviceSessionDaily{
+		Date: oldDate, UDID: "sess-old-d1", SessionID: "sess-old-1", NodeIpv4: "10.96.0.3", RxBytes: 1, TxBytes: 1,
+	}).Error)
+	require.NoError(t, db.Get().Create(&DeviceSessionDaily{
+		Date: recentDate, UDID: "sess-new-d1", SessionID: "sess-new-1", NodeIpv4: "10.96.0.3", RxBytes: 1, TxBytes: 1,
+	}).Error)
+
+	require.NoError(t, cleanupTrafficRetention(trafficRetentionDays))
+	var dates []string
+	db.Get().Model(&DeviceSessionDaily{}).Where("node_ipv4 = ?", "10.96.0.3").Pluck("date", &dates)
+	assert.Equal(t, []string{recentDate}, dates, "70-day-old session row purged, 10-day-old session row kept")
+}
+
 func TestTrafficAbuseThresholdDefault(t *testing.T) {
 	orig := viper.Get("traffic.abuse_monthly_gb")
 	t.Cleanup(func() { viper.Set("traffic.abuse_monthly_gb", orig) })

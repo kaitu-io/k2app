@@ -13,14 +13,15 @@ import (
 
 // TaskTypeTrafficAbuseCheck is the hourly Asynq cron task that scans the
 // current CST-calendar-month per-user traffic total, Slack-alerts once per
-// (month, user) via TrafficAbuseAlert dedup, and sweeps DeviceTrafficDaily
-// rows past the retention window.
+// (month, user) via TrafficAbuseAlert dedup, and sweeps DeviceTrafficDaily +
+// DeviceSessionDaily rows past the retention window.
 const TaskTypeTrafficAbuseCheck = "traffic:abuse_check"
 
-// trafficRetentionDays is how long DeviceTrafficDaily rows are kept before
-// cleanupTrafficRetention deletes them. 60 days ("两个月") is a promise made in
-// the public privacy policy (web/public/legal/privacy-policy.md §4) — do not
-// raise it without amending that document first.
+// trafficRetentionDays is how long DeviceTrafficDaily and DeviceSessionDaily
+// rows are kept before cleanupTrafficRetention deletes them. 60 days
+// ("两个月") is a promise made in the public privacy policy
+// (web/public/legal/privacy-policy.md §4) — do not raise it without amending
+// that document first.
 const trafficRetentionDays = 60
 
 // trafficAbuseWarningSlug is the EDM template (per-brand rows, per-language
@@ -77,12 +78,18 @@ func recordTrafficAbuseAlert(month string, userID uint, bytes int64) (bool, erro
 	return res.RowsAffected > 0, nil
 }
 
-// cleanupTrafficRetention deletes DeviceTrafficDaily rows older than the
-// retention window (accounting-day string comparison — ISO "2006-01-02" is
-// lexicographically ordered, so this is safe).
+// cleanupTrafficRetention deletes DeviceTrafficDaily and DeviceSessionDaily
+// rows older than the retention window (accounting-day string comparison —
+// ISO "2006-01-02" is lexicographically ordered, so this is safe). Both
+// tables are per-device/per-node/per-day traffic statistics covered by the
+// same "2 个月" privacy-policy promise (web/public/legal/privacy-policy.md
+// §1.5/§4.3) and must share the identical cutoff.
 func cleanupTrafficRetention(days int) error {
 	cutoff := trafficDate(time.Now().AddDate(0, 0, -days))
-	return db.Get().Where("date < ?", cutoff).Delete(&DeviceTrafficDaily{}).Error
+	if err := db.Get().Where("date < ?", cutoff).Delete(&DeviceTrafficDaily{}).Error; err != nil {
+		return err
+	}
+	return db.Get().Where("date < ?", cutoff).Delete(&DeviceSessionDaily{}).Error
 }
 
 // handleTrafficAbuseCheck is the Asynq cron handler for TaskTypeTrafficAbuseCheck.
