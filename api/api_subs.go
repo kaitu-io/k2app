@@ -184,6 +184,12 @@ func api_subs(c *gin.Context) {
 		return
 	}
 
+	// Phase 3 observability (auth spec §7.2 criterion 4): one INFO line per
+	// subs request recording which credential generation the caller presented.
+	// Ops greps `subs: credential-type` to compute tunnel-token adoption.
+	// REMOVE together with the access fallback branch (Phase 3 Task 12).
+	log.Infof(c, "subs: credential-type type=%s udid=%s", auth.CredType, udid)
+
 	// Blocked-user gate (finding #6, whole-branch review): Task 2 added this
 	// exact check to /slave/device-check-auth (see isUserBlocked's call site in
 	// slave_api_device_auth.go), but /api/subs never got the mirror — a blocked
