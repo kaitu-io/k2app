@@ -39,7 +39,7 @@ for n in sorted(data['data']['items'], key=lambda x: x.get('name','')):
 DIRTY=0
 while IFS='|' read -r IP NAME; do
   [ -n "$SINGLE_NODE" ] && [ "$IP" != "$SINGLE_NODE" ] && continue
-  COUNT=$(ssh $SSH_OPTS "$SSH_USER@$IP" "awk 'NF{n++} END{print n+0}' /apps/k2s/users 2>/dev/null" 2>/dev/null || echo "SSH_ERR")
+  COUNT=$(ssh $SSH_OPTS "$SSH_USER@$IP" "sudo awk 'NF{n++} END{print n+0}' /apps/k2s/users 2>/dev/null" 2>/dev/null || echo "SSH_ERR")
   printf '%-16s %-28s users_entries=%s\n' "$IP" "$NAME" "$COUNT"
   if [ "$COUNT" != "0" ]; then DIRTY=$((DIRTY + 1)); fi
 done <<< "$NODE_LIST"

@@ -6,6 +6,7 @@
 #   ./update-compose.sh --dry-run          # Preview what would be updated
 #   ./update-compose.sh --sleep=30         # Custom interval between nodes (default: 60s)
 #   ./update-compose.sh --node=8.218.55.0  # Update single node only
+#   ./update-compose.sh --set-env=KEY=VALUE  # Upsert a single .env key
 #
 # Requires:
 #   KAITU_CENTER_URL  — Center API base URL
@@ -38,7 +39,7 @@ for arg in "$@"; do
     --version=*) K2_VERSION="${arg#--version=}" ;;
     --set-env=*) SET_ENV="${arg#--set-env=}" ;;
     -h|--help)
-      echo "Usage: $0 [--dry-run] [--sleep=SECONDS] [--node=IP] [--version=TAG]"
+      echo "Usage: $0 [--dry-run] [--sleep=SECONDS] [--node=IP] [--version=TAG] [--set-env=KEY=VALUE]"
       exit 0
       ;;
     *) echo "Unknown option: $arg"; exit 1 ;;

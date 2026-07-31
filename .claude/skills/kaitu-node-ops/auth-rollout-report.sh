@@ -44,7 +44,14 @@ while IFS='|' read -r IP NAME; do
   [ -n "$SINGLE_NODE" ] && [ "$IP" != "$SINGLE_NODE" ] && continue
   LINE=$(ssh $SSH_OPTS "$SSH_USER@$IP" "sudo docker logs --since $SINCE k2s 2>&1 | grep 'DIAG: auth-rollout' | awk '$SUM_AWK'" 2>/dev/null || echo "SSH_ERR")
   # spec §6.4 fail-open guard: count auth-center-unreachable WARNs in the same window.
-  UNREACH=$(ssh $SSH_OPTS "$SSH_USER@$IP" "sudo docker logs --since $SINCE k2s 2>&1 | grep -c 'DIAG: auth-center-unreachable'" 2>/dev/null || echo "?")
+  # grep -c exits 1 on a zero count (standard grep behavior) even though it still
+  # prints "0" — without the inner `|| true`, that non-zero exit propagates through
+  # the ssh pipeline and trips the outer `|| echo "?"` fallback too, so $UNREACH
+  # would end up as the two-line "0\n?" on every HEALTHY node (the common case).
+  # The inner `|| true` guards only the remote shell's own pipeline, so a zero
+  # count still resolves to a clean "0"; a real SSH connection failure (which
+  # never reaches the remote shell) still falls through to the outer "?" fallback.
+  UNREACH=$(ssh $SSH_OPTS "$SSH_USER@$IP" "sudo docker logs --since $SINCE k2s 2>&1 | grep -c 'DIAG: auth-center-unreachable' || true" 2>/dev/null || echo "?")
   printf '%-16s %-28s %s unreachable=%s\n' "$IP" "$NAME" "$LINE" "$UNREACH"
   if [ "$LINE" != "SSH_ERR" ]; then
     for kv in $LINE; do
