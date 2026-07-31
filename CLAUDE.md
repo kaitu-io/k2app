@@ -125,6 +125,7 @@ Reserved event names:
 | `DIAG: auth-session-expired` | INFO | SvcExp passed on a live session — killed with zero Center calls | udid, svcExp |
 | `DIAG: auth-session-revoked` | WARN | Center explicit reject (401/402/403) on revalidation — session killed | udid, code |
 | `DIAG: auth-grace-exhausted` | WARN | undecidable streak exceeded cookieGraceMax (6h) — session killed | udid, graceS |
+| `DIAG: auth-rollout` | INFO | periodic — every 5 min summary (never per-connection); window deltas, emits even when total=0 | total, authed, cookie_hit, cold, unauthed, legacy_no_metadata |
 
 ### Layer 3 Rules — Full Trace
 
