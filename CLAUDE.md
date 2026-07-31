@@ -121,6 +121,10 @@ Reserved event names:
 | `DIAG: subs-creds-persist` | INFO | rotated subscription credential persisted | component |
 | `DIAG: subs-creds-persist-miss` | WARN | credential rotation callback fired but no route in lastConfig matched the old URL — nothing persisted | component |
 | `DIAG: subs-stale-cache` | WARN | subs fetch failed, serving disk cache | via, cacheAgeS, err |
+| `DIAG: auth-center-unreachable` | WARN | revalidation undecidable (Center down/timeout) — session kept, authAt advanced one window | udid, code, graceS |
+| `DIAG: auth-session-expired` | INFO | SvcExp passed on a live session — killed with zero Center calls | udid, svcExp |
+| `DIAG: auth-session-revoked` | WARN | Center explicit reject (401/402/403) on revalidation — session killed | udid, code |
+| `DIAG: auth-grace-exhausted` | WARN | undecidable streak exceeded cookieGraceMax (6h) — session killed | udid, graceS |
 
 ### Layer 3 Rules — Full Trace
 
@@ -213,6 +217,14 @@ wire.RelayManager.mu (state, standalone — control-plane relay node pool/rankin
 wire.authCache.mu (state, standalone — device-auth verdict cache; inner validator I/O (Center call) runs OUTSIDE the lock, inside a singleflight.Group)
 
 wire.CookieJar.mu (state, standalone — map ops only; one jar per outbound, shared by every dialer built for that outbound)
+
+wire.authSessions.mu (state, standalone — connection registry set only; the
+  sweeper snapshots under it and calls Validator / kill() strictly OUTSIDE the
+  lock; no nesting with any engine/server/transport lock)
+
+wire.CookieSigner: rotateMu (serialization, holds across the rotation's file
+  write) → CookieSigner.mu (state). Standalone — never acquired while holding
+  any other lock.
 
 provider.processCache.mu (state, standalone — no nesting with engine/daemon locks)
 provider.LinuxProcessSearcher.indexMu (state, RWMutex, standalone — no nesting with engine/daemon locks)
