@@ -172,7 +172,7 @@ One table for every `.env` var across ops / provisioning / metering. "Set by": w
 
 ### §3.1 k2s user auth
 
-Two modes, first match wins: (1) `/apps/k2s/users` (bind-mounted), (2) Center remote `/slave/device-check-auth` (fallback). **Empty file = pure remote auth = default.** No restart needed (changes apply on next full auth; 1h tickets stay valid). Format = one `udid:token` per line.
+Two modes, first match wins: (1) `/apps/k2s/users` (bind-mounted), (2) Center remote `/slave/device-check-auth` (fallback). **Empty file = pure remote auth = default.** No restart needed (changes apply on next cold auth; the cached-success TTL — 15 min — still honors an already-validated entry until expiry. The old 1h HTTP ticket flow was removed 2026-07, k2 commit 4c68240). Format = one `udid:token` per line.
 
 | Operation | Command |
 |-----------|---------|
@@ -225,8 +225,10 @@ Local scripts in this skill dir (`.claude/skills/kaitu-node-ops/`). Need `KAITU_
 | Script | Purpose | Flags |
 |--------|---------|-------|
 | `deploy-compose.sh` | SCP `docker/docker-compose.yml` to all active nodes (MD5-skip, no restart) | `--all`, `--dry-run` |
-| `update-compose.sh` | `pull` + `up -d` across active nodes, rolling | `--sleep=N`, `--node=IP`, `--dry-run` |
+| `update-compose.sh` | `pull` + `up -d` across active nodes, rolling | `--sleep=N`, `--node=IP`, `--version=TAG`, `--set-env=KEY=VALUE`, `--dry-run` |
 | `deploy-auto-update.sh` | SCP `auto-update.sh` + install daily cron (idempotent) | `--all`, `--node=IP`, `--dry-run` |
+| `audit-users-file.sh` | Fleet audit: `/apps/k2s/users` must be empty before any enforce flip (non-empty entries bypass Center auth) | `--node=IP` |
+| `auth-rollout-report.sh` | Aggregate `DIAG: auth-rollout` per-node + fleet (enforce-rollout gate metrics); also counts `auth-center-unreachable` per node and pages on single-node isolation (spec §6.4) | `--since=24h`, `--node=IP` |
 
 > **⚠ DIR-MIGRATION GUARD (active until the whole fleet is on `/apps/k2s`):** the canonical compose now carries `name: k2s`. Do **NOT** run `deploy-compose.sh` / `update-compose.sh` / `deploy-auto-update.sh` against the **full fleet** while any node is still at `/apps/kaitu-slave`. Pushing the `name: k2s` compose to an un-migrated node makes its next `up -d` / nightly `auto-update` resolve project `k2s` → **empty `k2s_*` volumes (cert + metering state lost) + `container_name` collision**. During the migration window use `--node=<already-migrated-IP>` only, or run fleet-wide **after** the sweep completes. Remove this note once all nodes are on `/apps/k2s`. (Background: spec `2026-06-23-node-deploy-dir-k2s-migration-design.md`.)
 

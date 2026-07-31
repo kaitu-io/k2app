@@ -28,6 +28,7 @@ DRY_RUN=false
 SLEEP_INTERVAL=60
 SINGLE_NODE=""
 K2_VERSION=""
+SET_ENV=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -35,6 +36,7 @@ for arg in "$@"; do
     --sleep=*) SLEEP_INTERVAL="${arg#--sleep=}" ;;
     --node=*) SINGLE_NODE="${arg#--node=}" ;;
     --version=*) K2_VERSION="${arg#--version=}" ;;
+    --set-env=*) SET_ENV="${arg#--set-env=}" ;;
     -h|--help)
       echo "Usage: $0 [--dry-run] [--sleep=SECONDS] [--node=IP] [--version=TAG]"
       exit 0
@@ -42,6 +44,18 @@ for arg in "$@"; do
     *) echo "Unknown option: $arg"; exit 1 ;;
   esac
 done
+
+if [ -n "$SET_ENV" ]; then
+  # VALUE charset is deliberately narrow: [^[:space:]]* would admit | & etc.,
+  # which collide with the sed replacement delimiter below (Step 0b) and open a
+  # shell-injection surface. Restrict to what real env values here need.
+  if ! [[ "$SET_ENV" =~ ^[A-Z0-9_]+=[A-Za-z0-9._:-]*$ ]]; then
+    echo "ERROR: --set-env expects KEY=VALUE with VALUE in [A-Za-z0-9._:-] (got: $SET_ENV)"; exit 1
+  fi
+  case "${SET_ENV%%=*}" in
+    *SECRET*|*CLAIM*|*TOKEN*) echo "ERROR: refusing to touch secret env keys"; exit 1 ;;
+  esac
+fi
 
 if [ -z "${KAITU_CENTER_URL:-}" ] || [ -z "${KAITU_ACCESS_KEY:-}" ]; then
   echo "ERROR: KAITU_CENTER_URL and KAITU_ACCESS_KEY must be set"
@@ -117,6 +131,15 @@ for entry in "${UPDATE_LIST[@]}"; do
       FAILED=$((FAILED + 1))
       echo ""
       continue
+    fi
+  fi
+
+  # Step 0b: upsert arbitrary .env key (if --set-env specified)
+  if [ -n "$SET_ENV" ]; then
+    KEY="${SET_ENV%%=*}"
+    echo "  [0b] Setting ${SET_ENV} in .env..."
+    if ! ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/k2s && if sudo grep -q '^${KEY}=' .env; then sudo sed -i 's|^${KEY}=.*|${SET_ENV}|' .env; else echo '${SET_ENV}' | sudo tee -a .env >/dev/null; fi"; then
+      echo "  FAILED to set env"; FAILED=$((FAILED + 1)); echo ""; continue
     fi
   fi
 
