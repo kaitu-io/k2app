@@ -76,3 +76,42 @@ func TestReadConnectURL_ReturnsEmptyWhenMissing(t *testing.T) {
 
 	assert.Empty(t, result, "should return empty string when file is missing")
 }
+
+func TestK2V5ConfigTemplate_EnforceAuthAndCacheTTL(t *testing.T) {
+	render := func(enforce bool) string {
+		data := K2V5ConfigData{
+			CertDir:     "/etc/k2v5",
+			CertPath:    "/etc/kaitu/certs/server-cert.pem",
+			KeyPath:     "/etc/kaitu/certs/server-key.pem",
+			CenterURL:   "https://k2.52j.me",
+			LogLevel:    "info",
+			UsersFile:   "/etc/k2v5/users",
+			EnforceAuth: enforce,
+		}
+		tmpl, err := template.New("k2v5-config").Parse(k2v5ConfigTemplate)
+		require.NoError(t, err)
+		var buf bytes.Buffer
+		require.NoError(t, tmpl.Execute(&buf, data))
+		return buf.String()
+	}
+
+	off := render(false)
+	assert.Contains(t, off, "cache_ttl: 15m", "cache TTL must align with the 15-min cookie TTL (spec §6.3)")
+	assert.Contains(t, off, "enforce_auth: false", "default must render permissive")
+
+	on := render(true)
+	assert.Contains(t, on, "enforce_auth: true")
+}
+
+func TestEnforceAuthFromEnv(t *testing.T) {
+	cases := []struct {
+		val  string
+		want bool
+	}{
+		{"", false}, {"0", false}, {"false", false}, {"1", true}, {"true", true},
+	}
+	for _, tc := range cases {
+		t.Setenv("K2_ENFORCE_AUTH", tc.val)
+		assert.Equal(t, tc.want, enforceAuthFromEnv(), "K2_ENFORCE_AUTH=%q", tc.val)
+	}
+}

@@ -438,14 +438,15 @@ func (s *Sidecar) generateConfigs(result *sidecar.RegisterResult) error {
 
 // K2V5ConfigData holds template data for k2v5 configuration
 type K2V5ConfigData struct {
-	CertDir   string
-	CertPath  string
-	KeyPath   string
-	CenterURL string
-	LogLevel  string
-	UsersFile string
-	HopStart  int
-	HopEnd    int
+	CertDir     string
+	CertPath    string
+	KeyPath     string
+	CenterURL   string
+	LogLevel    string
+	UsersFile   string
+	HopStart    int
+	HopEnd      int
+	EnforceAuth bool
 }
 
 const k2v5ConfigTemplate = `listen: ":443"
@@ -458,7 +459,8 @@ tls:
 auth:
   users_file: "{{.UsersFile}}"
   remote_url: "{{.CenterURL}}/slave/device-check-auth"
-  cache_ttl: 5m
+  cache_ttl: 15m
+  enforce_auth: {{.EnforceAuth}}
 log:
   level: "{{.LogLevel}}"
 {{- if and .HopStart .HopEnd}}
@@ -466,6 +468,13 @@ hop_start: {{.HopStart}}
 hop_end: {{.HopEnd}}
 {{- end}}
 `
+
+// enforceAuthFromEnv mirrors k2's config.go K2_ENFORCE_AUTH parsing exactly:
+// "1" or "true" → true, anything else (including unset) → false/permissive.
+func enforceAuthFromEnv() bool {
+	v := os.Getenv("K2_ENFORCE_AUTH")
+	return v == "1" || v == "true"
+}
 
 // generateK2V5Config generates k2v5-config.yaml for k2s server
 func (s *Sidecar) generateK2V5Config() error {
@@ -480,14 +489,15 @@ func (s *Sidecar) generateK2V5Config() error {
 	k2v5DataDir := "/etc/k2v5"
 
 	data := K2V5ConfigData{
-		CertDir:   k2v5DataDir,
-		CertPath:  fmt.Sprintf("%s/certs/server-cert.pem", configDir),
-		KeyPath:   fmt.Sprintf("%s/certs/server-key.pem", configDir),
-		CenterURL: s.config.K2Center.BaseURL,
-		LogLevel:  logLevel,
-		UsersFile: k2v5DataDir + "/users",
-		HopStart:  s.config.Tunnel.HopPortStart,
-		HopEnd:    s.config.Tunnel.HopPortEnd,
+		CertDir:     k2v5DataDir,
+		CertPath:    fmt.Sprintf("%s/certs/server-cert.pem", configDir),
+		KeyPath:     fmt.Sprintf("%s/certs/server-key.pem", configDir),
+		CenterURL:   s.config.K2Center.BaseURL,
+		LogLevel:    logLevel,
+		UsersFile:   k2v5DataDir + "/users",
+		HopStart:    s.config.Tunnel.HopPortStart,
+		HopEnd:      s.config.Tunnel.HopPortEnd,
+		EnforceAuth: enforceAuthFromEnv(),
 	}
 
 	return s.generateConfigFromTemplate("k2v5-config.yaml", k2v5ConfigTemplate, outputPath, data)
