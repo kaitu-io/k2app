@@ -108,6 +108,9 @@ func (r *RolloutStats) snapshotAndReset() rolloutSnapshot {
 // Emits even when total==0 — a silent reporter is indistinguishable from a
 // dead one, and ops aggregation needs proof of life. log==nil → slog.Default().
 func (r *RolloutStats) Run(stop <-chan struct{}, interval time.Duration, log *slog.Logger) {
+	if r == nil {
+		return
+	}
 	if log == nil {
 		log = slog.Default()
 	}

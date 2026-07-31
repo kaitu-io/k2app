@@ -206,17 +206,27 @@ func NewCookieSigner(dir string) (*CookieSigner, error) {
 // persist snapshots state under mu, then writes with NO state lock held
 // (file I/O — concurrency Rule #2). rotateMu may be held by the caller.
 //
-// Write-to-temp + rename, NOT a plain os.WriteFile: unlike EnsureCertPair/
-// EnsureECHPrivateKey (provisioning-time-only writes), this file is rewritten
-// every cookieKeyRotatePeriod WHILE THE NODE IS SERVING LIVE TRAFFIC. A crash
-// or power loss between os.WriteFile's truncate and its write would leave
-// cookie.key corrupt (0 bytes or partial JSON), and NewCookieSigner's load
-// path treats that as a hard error — the node refuses to boot, on every
-// restart, until an operator deletes the file by hand. The temp file lives in
-// the SAME directory as the target (os.Rename is only atomic on POSIX within
-// one filesystem); on any error before the rename, the temp file is removed
-// so a failed rotation never leaks a stray file and never touches the
-// previously-committed cookie.key.
+// Write-to-temp + fsync + rename, NOT a plain os.WriteFile: unlike
+// EnsureCertPair/EnsureECHPrivateKey (provisioning-time-only writes), this
+// file is rewritten every cookieKeyRotatePeriod WHILE THE NODE IS SERVING
+// LIVE TRAFFIC. A crash or power loss between os.WriteFile's truncate and its
+// write would leave cookie.key corrupt (0 bytes or partial JSON), and
+// NewCookieSigner's load path treats that as a hard error — the node refuses
+// to boot, on every restart, until an operator deletes the file by hand. The
+// temp file lives in the SAME directory as the target (os.Rename is only
+// atomic on POSIX within one filesystem); on any error before the rename, the
+// temp file is removed so a failed rotation never leaks a stray file and
+// never touches the previously-committed cookie.key.
+//
+// The temp file's data is fsync'd before the rename: without it, a *power
+// loss* (not just a process crash) can leave the write sitting in the OS
+// page cache — never reaching disk — even though the rename appears to have
+// completed from this process's point of view on some filesystems. The
+// rename's directory-entry update is fsync'd too, best-effort: failure there
+// doesn't invalidate an already-committed rename, and some platforms (e.g.
+// Windows) don't support fsync on a directory handle at all, so that error is
+// deliberately swallowed rather than turning a successful rotation into a
+// reported failure.
 func (s *CookieSigner) persist() error {
 	s.mu.Lock()
 	f := cookieKeyFile{KeyID: s.keyID, Key: append([]byte(nil), s.key[:]...), RotatedAt: s.rotatedAt.Unix()}
@@ -230,13 +240,35 @@ func (s *CookieSigner) persist() error {
 		return fmt.Errorf("wire: cookie key marshal: %w", err)
 	}
 	tmpPath := s.path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-		os.Remove(tmpPath) // best-effort: nothing to act on if this itself fails
+	tf, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("wire: cookie key open: %w", err)
+	}
+	if _, err := tf.Write(data); err != nil {
+		tf.Close()
+		os.Remove(tmpPath)
 		return fmt.Errorf("wire: cookie key write: %w", err)
+	}
+	if err := tf.Sync(); err != nil {
+		tf.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("wire: cookie key sync: %w", err)
+	}
+	if err := tf.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("wire: cookie key close: %w", err)
 	}
 	if err := os.Rename(tmpPath, s.path); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("wire: cookie key rename: %w", err)
+	}
+	// Best-effort directory fsync so the rename's directory-entry update is
+	// durable too. Not fatal: the rename above already succeeded, so a
+	// failure here (e.g. Windows has no directory-fsync support) must not
+	// turn a completed rotation into a reported error.
+	if dir, derr := os.Open(filepath.Dir(s.path)); derr == nil {
+		_ = dir.Sync()
+		dir.Close()
 	}
 	return nil
 }
