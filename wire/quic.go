@@ -1408,6 +1408,18 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 // handleMetadataStream processes a connection metadata stream (StreamType
 // 0x10). Mirrors TCPWSServer.handleMetadataStream.
 //
+// Rollout counting (spec §7.2): recordVerdict fires once, right after
+// ctx.auth.settle(st.authed), covering the enforce-reject, permissive-accept,
+// and success branches below. A pre-parse ReadMetadataFrame failure (bad
+// metadata) returns before that point — the deferred ctx.auth.settle(false)
+// still settles the connection (so it does NOT count as
+// RecordLegacyNoMetadata, which only fires on a connection that never
+// presented metadata at all), but it also never reaches recordVerdict. That
+// leaves a small, documented residual bucket (parse-failed connections)
+// uncounted by both cookie_hit/cold/unauthed and legacy_no_metadata — expect
+// total != authed+unauthed+legacy_no_metadata by roughly that delta; it is
+// not a counting bug.
+//
 // Attribution follows the SERVER-side verdict, never the self-reported value:
 // only a validated connection gets mode.Store/dev.set (a Center-validated
 // udid is trustworthy — Center rejects device.UDID != udid), and a failed or
