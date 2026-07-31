@@ -59,6 +59,12 @@ services:
       - K2_JUMP_PORT_MAX=${K2_JUMP_PORT_MAX:-40019}
       - K2_NODE_ARCH=${K2_NODE_ARCH:-k2v5}
       - K2_CUTOFF_POLL_INTERVAL=${K2_CUTOFF_POLL_INTERVAL:-5s}
+      # Phase 3 enforce rollout: sidecar renders enforce_auth into
+      # k2v5-config.yaml from this var (docker/sidecar/main.go). The SAME var
+      # is also injected into k2s below — env override there is the
+      # authoritative switch; keeping both in sync makes the generated yaml
+      # tell the truth.
+      - K2_ENFORCE_AUTH=${K2_ENFORCE_AUTH:-0}
     healthcheck:
       test: ["CMD", "test", "-f", "/etc/kaitu/.ready"]
       interval: 2s
@@ -118,6 +124,9 @@ services:
       # the legacy node-level usageReporter must stay off against pure-recorder Center.
       - K2_USAGE_REPORT_URL=${K2_CENTER_URL:-https://k2.52j.me}
       - K2_NODE_SECRET=${K2_NODE_SECRET}
+      # Device-auth enforcement (k2 config.go reads K2_ENFORCE_AUTH directly;
+      # runtime override of the yaml value). Default 0 = permissive.
+      - K2_ENFORCE_AUTH=${K2_ENFORCE_AUTH:-0}
     logging:
       driver: journald
       options:
