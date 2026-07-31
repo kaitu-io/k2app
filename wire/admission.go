@@ -52,6 +52,18 @@ func (a *connAuth) settle(ok bool) {
 // authenticated reports the verdict so far, without waiting for one.
 func (a *connAuth) authenticated() bool { return a.ok.Load() }
 
+// settled reports whether the metadata verdict has been recorded (done closed)
+// — i.e. this connection presented a metadata stream at all. Used by the
+// rollout counters to classify legacy (pre-metadata) clients at teardown.
+func (a *connAuth) settled() bool {
+	select {
+	case <-a.done:
+		return true
+	default:
+		return false
+	}
+}
+
 // admissionPolicy is the server-side enforcement configuration. Both
 // QUICServer and TCPWSServer hold one, driven by the same K2_ENFORCE_AUTH flag:
 // enforcement that covered only QUIC would let an attacker force the TCP-WS

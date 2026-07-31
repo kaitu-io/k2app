@@ -670,6 +670,11 @@ type TCPWSServer struct {
 	// (called before HandleConn/HandleSession). Mirrors QUICServer.sessions.
 	sessions *authSessions
 
+	// rollout is the Phase 3 enforce-rollout counter set; set by
+	// SetRolloutStats, immutable after (called before HandleConn/HandleSession).
+	// nil-safe (all Record* are nil-receiver safe). Mirrors QUICServer.rollout.
+	rollout *RolloutStats
+
 	mu    deadlock.Mutex
 	tcpCh chan tcpAcceptResult
 	// udpH is an egress sink: reach it only through admitUDP, never directly.
@@ -705,6 +710,10 @@ func (s *TCPWSServer) SetValidator(v Validator) {
 func (s *TCPWSServer) SetEnforce(v bool) {
 	s.adm.enforce = v
 }
+
+// SetRolloutStats mirrors QUICServer.SetRolloutStats — both transports feed
+// the SAME counter set so the DIAG: auth-rollout summary covers the node.
+func (s *TCPWSServer) SetRolloutStats(r *RolloutStats) { s.rollout = r }
 
 // SetCookieSigner enables node-local cookie issue/verify (spec §6). Must be
 // called before HandleConn/HandleSession. Mirrors QUICServer.SetCookieSigner.
@@ -782,6 +791,12 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 	defer sess.Close()
 	dev := &deviceIDHolder{}
 	auth := newConnAuth()
+	s.rollout.RecordConn()
+	defer func() {
+		if !auth.settled() {
+			s.rollout.RecordLegacyNoMetadata()
+		}
+	}()
 	var as *authSession
 	if s.sessions != nil {
 		as = &authSession{auth: auth, kill: func() { sess.Close() }}
@@ -865,6 +880,7 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 	dev.set(st.udid)
 	dev.setSession(st.sessionID)
 	auth.settle(st.authed)
+	recordVerdict(s.rollout, st.cookieHit, st.authed)
 
 	if !st.authed {
 		connLog.Warn("TCPWSServer: metadata auth rejected", "udid", meta.UDID, "code", st.code, "enforce", s.adm.enforce)

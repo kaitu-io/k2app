@@ -3,6 +3,8 @@ package wire
 import (
 	"context"
 	"log/slog"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -118,6 +120,61 @@ foundRecord:
 			t.Fatalf("missing field %q in log record", key)
 		} else if actualVal != expectedVal {
 			t.Fatalf("field %q = %d, want %d", key, actualVal, expectedVal)
+		}
+	}
+}
+
+func TestConnAuth_Settled(t *testing.T) {
+	a := newConnAuth()
+	if a.settled() {
+		t.Fatal("fresh connAuth must not be settled")
+	}
+	a.settle(true)
+	if !a.settled() {
+		t.Fatal("connAuth must be settled after settle()")
+	}
+}
+
+// TestRolloutStats_CallSitesPresent is a source-scan tripwire in the spirit of
+// TestAdmissionGate_EgressSinksAreGated: the counters only mean anything if
+// BOTH transports feed them at the same three points. Deleting any hook goes
+// red here (mutation-verified).
+func TestRolloutStats_CallSitesPresent(t *testing.T) {
+	cases := []struct {
+		file  string
+		funcs map[string][]string // function name → required call tokens inside its body
+	}{
+		{"quic.go", map[string][]string{
+			"func (s *QUICServer) handleConn":           {".RecordConn()", ".RecordLegacyNoMetadata()", ".settled()"},
+			"func (s *QUICServer) handleMetadataStream": {"recordVerdict("},
+		}},
+		{"tcpws.go", map[string][]string{
+			"func (s *TCPWSServer) handleSession":        {".RecordConn()", ".RecordLegacyNoMetadata()", ".settled()"},
+			"func (s *TCPWSServer) handleMetadataStream": {"recordVerdict("},
+		}},
+	}
+	for _, tc := range cases {
+		src, err := os.ReadFile(tc.file)
+		if err != nil {
+			t.Fatalf("read %s: %v", tc.file, err)
+		}
+		text := string(src)
+		for fn, tokens := range tc.funcs {
+			start := strings.Index(text, fn)
+			if start < 0 {
+				t.Fatalf("%s: function %q not found", tc.file, fn)
+			}
+			// body ends at the next top-level func declaration
+			end := strings.Index(text[start+len(fn):], "\nfunc ")
+			body := text[start:]
+			if end >= 0 {
+				body = text[start : start+len(fn)+end]
+			}
+			for _, tok := range tokens {
+				if !strings.Contains(body, tok) {
+					t.Errorf("%s %s: missing required call %q", tc.file, fn, tok)
+				}
+			}
 		}
 	}
 }

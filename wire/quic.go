@@ -1134,6 +1134,12 @@ type QUICServer struct {
 	// (called before Listen).
 	sessions *authSessions
 
+	// rollout is the Phase 3 enforce-rollout counter set; set by
+	// SetRolloutStats, immutable after (called before Listen). nil-safe (all
+	// Record* are nil-receiver safe) — tests and callers without stats never
+	// crash.
+	rollout *RolloutStats
+
 	mu    deadlock.Mutex
 	ln    *quic.Listener
 	tcpCh chan tcpAcceptResult
@@ -1179,6 +1185,10 @@ func (s *QUICServer) EnableRevalidation(v Validator) {
 func (s *QUICServer) SetEnforce(v bool) {
 	s.adm.enforce = v
 }
+
+// SetRolloutStats wires the Phase 3 enforce-rollout counters. Must be called
+// before Listen; nil is safe (all Record* are nil-receiver safe).
+func (s *QUICServer) SetRolloutStats(r *RolloutStats) { s.rollout = r }
 
 // admitTCP is the only route from an accepted proxy stream to AcceptTCP, and so
 // the whole of the TCP admission gate: on denial the client gets an
@@ -1290,6 +1300,13 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 	}
 	ctx := &connContext{udp: state, dev: dev, auth: newConnAuth()}
 	ctx.mode.Store("") // default: normal client
+
+	s.rollout.RecordConn()
+	defer func() {
+		if !ctx.auth.settled() {
+			s.rollout.RecordLegacyNoMetadata()
+		}
+	}()
 
 	if s.sessions != nil {
 		as := &authSession{auth: ctx.auth, kill: func() {
@@ -1444,6 +1461,7 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 	ctx.dev.set(st.udid)
 	ctx.dev.setSession(st.sessionID)
 	ctx.auth.settle(st.authed)
+	recordVerdict(s.rollout, st.cookieHit, st.authed)
 
 	if !st.authed {
 		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "code", st.code, "enforce", s.adm.enforce, "remote", qconn.RemoteAddr())
