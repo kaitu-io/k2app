@@ -79,6 +79,20 @@ func main() {
 		return
 	}
 
+	// Clear any stale ready flag from a previous run BEFORE NewSidecar's
+	// network-bound DetectIP calls (up to 2x30s timeout) — not inside Start(),
+	// which runs after those calls complete. The .ready file lives in the
+	// persistent `config` named volume and survives container recreation; the
+	// k2s healthcheck (test -f .ready, probed every 2s from container start)
+	// would otherwise see the PREVIOUS run's flag and go green while this run
+	// is still mid-DetectIP, well before Register()/generateConfigs() have
+	// rewritten k2v5-config.yaml — letting k2s start on the OLD config on a
+	// `docker compose up -d` after an env-var flip (e.g. an enforce-rollback).
+	readyFileStart := fmt.Sprintf("%s/.ready", cfg.ConfigDir)
+	if err := os.Remove(readyFileStart); err != nil && !os.IsNotExist(err) {
+		slog.Warn("Failed to remove stale ready flag", "component", "sidecar", "file", readyFileStart, "err", err)
+	}
+
 	s, err := NewSidecar(&cfg)
 	if err != nil {
 		slog.Error("Failed to initialize", "component", "sidecar", "err", err)
@@ -134,20 +148,6 @@ func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 func (s *Sidecar) Start() error {
 	slog.Info("Center URL", "component", "sidecar", "url", s.config.K2Center.BaseURL)
 	slog.Info("Config Dir", "component", "sidecar", "dir", s.config.ConfigDir)
-
-	// Step 0: Clear any stale ready flag from a previous run. The .ready file
-	// lives in the persistent `config` named volume, so it survives container
-	// recreation — on a `docker compose up -d` after an env-var flip (e.g. an
-	// enforce-rollback), the k2s healthcheck (test -f .ready) could otherwise
-	// go green on the very first 2s probe, before THIS run's Register() and
-	// generateK2V5Config() (which rewrites k2v5-config.yaml with the new
-	// enforce_auth value) have actually completed — letting k2s start reading
-	// the OLD generated yaml. Removing it here makes the healthcheck reflect
-	// "this run finished," not "some run, ever, finished."
-	readyFileStart := fmt.Sprintf("%s/.ready", s.config.ConfigDir)
-	if err := os.Remove(readyFileStart); err != nil && !os.IsNotExist(err) {
-		slog.Warn("Failed to remove stale ready flag", "component", "sidecar", "file", readyFileStart, "err", err)
-	}
 
 	// Step 1: Build tunnel configurations
 	tunnels := s.buildTunnelConfigs()
