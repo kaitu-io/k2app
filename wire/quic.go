@@ -1303,7 +1303,11 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 
 	s.rollout.RecordConn()
 	defer func() {
-		if !ctx.auth.settled() {
+		// !settled() alone is not enough to decide "count as legacy": the
+		// metadata goroutine may still be resolving its verdict (see
+		// connAuth.rolloutCounted). claimRolloutCount() is the actual
+		// tie-breaker — only the winner of that race increments a counter.
+		if !ctx.auth.settled() && ctx.auth.claimRolloutCount() {
 			s.rollout.RecordLegacyNoMetadata()
 		}
 	}()
@@ -1420,6 +1424,17 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 // total != authed+unauthed+legacy_no_metadata by roughly that delta; it is
 // not a counting bug.
 //
+// At-most-once counting (connAuth.rolloutCounted): this handler can race the
+// accept loop's teardown defer (RecordLegacyNoMetadata fires if the
+// connection dies while this goroutine is still blocked resolving a
+// verdict), and nothing limits a client to a single metadata stream per
+// connection, so this function can run more than once per connection. Both
+// the teardown defer and the `recordVerdict` call below first claim
+// ctx.auth.rolloutCounted via CAS and only proceed on a win — so every
+// connection contributes at most one rollout-counter increment, no matter
+// which of those two paths gets there first or how many metadata streams the
+// client opens.
+//
 // Attribution follows the SERVER-side verdict, never the self-reported value:
 // only a validated connection gets mode.Store/dev.set (a Center-validated
 // udid is trustworthy — Center rejects device.UDID != udid), and a failed or
@@ -1473,7 +1488,9 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 	ctx.dev.set(st.udid)
 	ctx.dev.setSession(st.sessionID)
 	ctx.auth.settle(st.authed)
-	recordVerdict(s.rollout, st.cookieHit, st.authed)
+	if ctx.auth.claimRolloutCount() {
+		recordVerdict(s.rollout, st.cookieHit, st.authed)
+	}
 
 	if !st.authed {
 		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "code", st.code, "enforce", s.adm.enforce, "remote", qconn.RemoteAddr())

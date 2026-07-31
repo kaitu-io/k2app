@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -194,4 +196,54 @@ func TestAdmissionPolicy(t *testing.T) {
 			t.Error("the first verdict must win — a deferred backstop must not undo it")
 		}
 	})
+}
+
+// TestConnAuth_ClaimRolloutCount_SequentialSecondCallLoses pins the simple,
+// deterministic half of the rollout-counter double-count fix: once one caller
+// has claimed the connection's rollout-counter slot, every later caller —
+// e.g. a second metadata stream's recordVerdict, or the teardown defer racing
+// behind an already-completed verdict — must lose the claim.
+func TestConnAuth_ClaimRolloutCount_SequentialSecondCallLoses(t *testing.T) {
+	a := newConnAuth()
+	if !a.claimRolloutCount() {
+		t.Fatal("first claim on a fresh connAuth must win")
+	}
+	if a.claimRolloutCount() {
+		t.Fatal("second claim must lose — a connection may contribute at most one rollout-counter increment")
+	}
+	if a.claimRolloutCount() {
+		t.Fatal("claim must stay lost on repeated calls, not just the second one")
+	}
+}
+
+// TestConnAuth_ClaimRolloutCount_ConcurrentRaceHasExactlyOneWinner is the
+// direct concurrency proof for the CAS itself: this is what stands in for the
+// real teardown-defer-vs-in-stream-verdict goroutine race (Important #1),
+// which is timing-dependent and impractical to reproduce deterministically.
+// Many goroutines hit claimRolloutCount() simultaneously on the SAME
+// connAuth — exactly the shape of the race between the accept loop's
+// teardown defer and handleMetadataStream (or between N concurrent metadata
+// streams on one connection) — and exactly one must observe a win.
+func TestConnAuth_ClaimRolloutCount_ConcurrentRaceHasExactlyOneWinner(t *testing.T) {
+	const n = 64
+	a := newConnAuth()
+	var wins atomic.Int64
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			<-start // maximize contention: release every goroutine at once
+			if a.claimRolloutCount() {
+				wins.Add(1)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if got := wins.Load(); got != 1 {
+		t.Fatalf("claimRolloutCount: %d of %d concurrent callers won, want exactly 1", got, n)
+	}
 }

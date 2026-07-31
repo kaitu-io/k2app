@@ -34,6 +34,21 @@ type connAuth struct {
 	ok   atomic.Bool
 	done chan struct{}
 	once sync.Once
+
+	// rolloutCounted guards RolloutStats double-counting. A connection can
+	// reach a rollout-counter increment via two independent races: (1) the
+	// accept loop's teardown defer (RecordLegacyNoMetadata, when the
+	// connection dies before a verdict lands) can run concurrently with the
+	// metadata-stream goroutine still resolving its verdict (recordVerdict)
+	// — Center-slow/unreachable is exactly the condition both are trying to
+	// observe; (2) nothing limits a client to one StreamType 0x10 stream per
+	// connection, so recordVerdict can otherwise fire once per stream while
+	// RecordConn fires once per connection. rolloutCounted is CAS'd exactly
+	// once by whichever caller reaches claimRolloutCount() first, so each
+	// connection contributes at most one rollout-counter increment
+	// regardless of how many metadata streams it opens or which of the two
+	// paths above wins.
+	rolloutCounted atomic.Bool
 }
 
 func newConnAuth() *connAuth { return &connAuth{done: make(chan struct{})} }
@@ -62,6 +77,17 @@ func (a *connAuth) settled() bool {
 	default:
 		return false
 	}
+}
+
+// claimRolloutCount reports whether the caller is the first to claim this
+// connection's rollout-counter increment. The CAS is unconditional and
+// idempotent from the caller's point of view: call it right before every
+// Record* call that classifies this connection (RecordLegacyNoMetadata at
+// teardown, recordVerdict at metadata-stream completion) and only make that
+// call when claimRolloutCount returns true. See the rolloutCounted field
+// doc for the two races this closes.
+func (a *connAuth) claimRolloutCount() bool {
+	return a.rolloutCounted.CompareAndSwap(false, true)
 }
 
 // admissionPolicy is the server-side enforcement configuration. Both

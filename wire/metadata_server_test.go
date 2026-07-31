@@ -490,3 +490,119 @@ func TestMetadataResponse_OldClientSafe_TCPWS(t *testing.T) {
 	}
 	acc.Close()
 }
+
+// TestIntegration_QUICMetadata_DoubleStreamCountsRolloutOnce is the
+// integration regression for Important #1(b) (multi-stream poisoning):
+// nothing limits a client to one StreamType 0x10 stream per connection, and
+// under permissive mode (the only mode active during the whole rollout
+// window) a failed verdict never tears the connection down — so before the
+// connAuth.rolloutCounted CAS, a client opening N metadata streams on one
+// connection could drive the rollout counters up N times at near-zero cost,
+// poisoning the go/no-go and rollback signals. RecordConn (which counts
+// `total`) fires exactly once per connection regardless; recordVerdict must
+// now match that — at most one increment per connection, no matter how many
+// metadata streams it opens.
+//
+// SetRolloutStats is wired before Listen() (i.e. before the accept loop
+// goroutine that reads it exists) specifically so this test has no
+// unsynchronized cross-goroutine field access of its own to trip a false
+// positive under -race.
+func TestIntegration_QUICMetadata_DoubleStreamCountsRolloutOnce(t *testing.T) {
+	cert := generateTestCert(t)
+	serverUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverUDP.Close()
+	serverTransport := &quic.Transport{Conn: serverUDP}
+	defer serverTransport.Close()
+	ln, err := serverTransport.Listen(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h3"},
+	}, DefaultQUICConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	server := NewQUICServer()
+	server.SetValidator(vOK())
+	server.SetEnforce(false) // permissive — the only mode active during the rollout window
+	rollout := NewRolloutStats()
+	server.SetRolloutStats(rollout)
+	server.adm.authWait = 300 * time.Millisecond
+	server.Listen(ln)
+	defer server.Close()
+
+	addr := serverUDP.LocalAddr().(*net.UDPAddr)
+	conn, connCleanup := dialRawQUIC(t, addr)
+	defer connCleanup()
+
+	// Two metadata streams on the SAME connection, sequentially so ordering
+	// is deterministic: each ReadStreamResponse only returns after the
+	// server's handleMetadataStream has already reached recordVerdict (it
+	// runs strictly before WriteMetadataResponse), so by the time both reads
+	// complete both verdicts have already been (attempted to be) recorded.
+	br1, s1 := sendRawMetadataQUIC(t, conn, MetadataFrame{UDID: "d", Token: "t"})
+	if ok, _, _, err := ReadStreamResponse(br1); err != nil || !ok {
+		t.Fatalf("first metadata stream: ok=%v err=%v", ok, err)
+	}
+	s1.Close()
+
+	br2, s2 := sendRawMetadataQUIC(t, conn, MetadataFrame{UDID: "d", Token: "t"})
+	if ok, _, _, err := ReadStreamResponse(br2); err != nil || !ok {
+		t.Fatalf("second metadata stream: ok=%v err=%v", ok, err)
+	}
+	s2.Close()
+
+	snap := rollout.snapshotAndReset()
+	total := snap.cookieHit + snap.cold + snap.unauthed
+	if total != 1 {
+		t.Fatalf("rollout verdict counters incremented %d times for one connection across 2 metadata streams, want exactly 1 (cookieHit=%d cold=%d unauthed=%d)",
+			total, snap.cookieHit, snap.cold, snap.unauthed)
+	}
+}
+
+// TestIntegration_TCPWSMetadata_DoubleStreamCountsRolloutOnce is the TCP-WS
+// twin of TestIntegration_QUICMetadata_DoubleStreamCountsRolloutOnce — see
+// that test's doc comment for the scenario. Written self-contained (not via
+// startRawTCPWSServer) so SetRolloutStats can be wired before HandleConn
+// spawns the handleSession goroutine that reads it, keeping the test itself
+// -race clean.
+func TestIntegration_TCPWSMetadata_DoubleStreamCountsRolloutOnce(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	server := NewTCPWSServer()
+	server.SetValidator(vOK())
+	server.SetEnforce(false) // permissive — the only mode active during the rollout window
+	rollout := NewRolloutStats()
+	server.SetRolloutStats(rollout)
+	server.adm.authWait = 300 * time.Millisecond
+	server.HandleConn(serverConn)
+	defer server.Close()
+
+	sess, err := smux.Client(clientConn, DefaultSmuxConfig())
+	if err != nil {
+		t.Fatalf("smux client: %v", err)
+	}
+	defer sess.Close()
+
+	br1, s1 := sendRawMetadataSmux(t, sess, MetadataFrame{UDID: "d", Token: "t"})
+	if ok, _, _, err := ReadStreamResponse(br1); err != nil || !ok {
+		t.Fatalf("first metadata stream: ok=%v err=%v", ok, err)
+	}
+	s1.Close()
+
+	br2, s2 := sendRawMetadataSmux(t, sess, MetadataFrame{UDID: "d", Token: "t"})
+	if ok, _, _, err := ReadStreamResponse(br2); err != nil || !ok {
+		t.Fatalf("second metadata stream: ok=%v err=%v", ok, err)
+	}
+	s2.Close()
+
+	snap := rollout.snapshotAndReset()
+	total := snap.cookieHit + snap.cold + snap.unauthed
+	if total != 1 {
+		t.Fatalf("rollout verdict counters incremented %d times for one connection across 2 metadata streams, want exactly 1 (cookieHit=%d cold=%d unauthed=%d)",
+			total, snap.cookieHit, snap.cold, snap.unauthed)
+	}
+}
