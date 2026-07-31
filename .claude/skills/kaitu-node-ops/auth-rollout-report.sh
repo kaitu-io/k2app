@@ -47,13 +47,22 @@ while IFS='|' read -r IP NAME; do
   UNREACH=$(ssh $SSH_OPTS "$SSH_USER@$IP" "sudo docker logs --since $SINCE k2s 2>&1 | grep -c 'DIAG: auth-center-unreachable'" 2>/dev/null || echo "?")
   printf '%-16s %-28s %s unreachable=%s\n' "$IP" "$NAME" "$LINE" "$UNREACH"
   if [ "$LINE" != "SSH_ERR" ]; then
-    NODES_SEEN=$((NODES_SEEN + 1))
-    case "$UNREACH" in ''|*[!0-9]*) ;; *) if [ "$UNREACH" -gt 0 ]; then NODES_UNREACH=$((NODES_UNREACH + 1)); UNREACH_LIST="$UNREACH_LIST $IP($UNREACH)"; fi ;; esac
     for kv in $LINE; do
       K="${kv%%=*}"; V="${kv#*=}"
       FLEET[$K]=$(( ${FLEET[$K]} + V ))
     done
   fi
+  # NODES_SEEN/NODES_UNREACH are gated on UNREACH's own SSH call succeeding,
+  # independently of LINE — the two calls can fail independently, and this
+  # counter feeds the fail-open alert (spec §6.4), so it must not silently
+  # drop a node just because the unrelated rollout-line call happened to fail.
+  case "$UNREACH" in
+    ''|*[!0-9]*) ;;
+    *)
+      NODES_SEEN=$((NODES_SEEN + 1))
+      if [ "$UNREACH" -gt 0 ]; then NODES_UNREACH=$((NODES_UNREACH + 1)); UNREACH_LIST="$UNREACH_LIST $IP($UNREACH)"; fi
+      ;;
+  esac
 done <<< "$NODE_LIST"
 
 echo ""
