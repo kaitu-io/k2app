@@ -61,9 +61,17 @@ services:
       - K2_CUTOFF_POLL_INTERVAL=${K2_CUTOFF_POLL_INTERVAL:-5s}
       # Phase 3 enforce rollout: sidecar renders enforce_auth into
       # k2v5-config.yaml from this var (docker/sidecar/main.go). The SAME var
-      # is also injected into k2s below — env override there is the
-      # authoritative switch; keeping both in sync makes the generated yaml
-      # tell the truth.
+      # is also injected into k2s below, but k2/config/config.go's env check
+      # is a ONE-WAY OR (`if v == "1" || v == "true" { EnforceAuth = true }`):
+      # K2_ENFORCE_AUTH=1 always wins over the yaml, but K2_ENFORCE_AUTH=0
+      # never explicitly forces false — it just leaves whatever the yaml
+      # already says in effect. So an operator rollback via this env var
+      # alone is NOT guaranteed to take effect if the yaml still says
+      # enforce_auth: true (e.g. sidecar's regen from a previous run hadn't
+      # completed yet — see the .ready-flag staleness fix in main.go Start()).
+      # What actually matters for a reliable rollback is the sidecar
+      # regenerating k2v5-config.yaml with the new value BEFORE k2s reads it;
+      # keeping both env vars in sync here is best-effort, not a guarantee.
       - K2_ENFORCE_AUTH=${K2_ENFORCE_AUTH:-0}
     healthcheck:
       test: ["CMD", "test", "-f", "/etc/kaitu/.ready"]

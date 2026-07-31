@@ -135,6 +135,20 @@ func (s *Sidecar) Start() error {
 	slog.Info("Center URL", "component", "sidecar", "url", s.config.K2Center.BaseURL)
 	slog.Info("Config Dir", "component", "sidecar", "dir", s.config.ConfigDir)
 
+	// Step 0: Clear any stale ready flag from a previous run. The .ready file
+	// lives in the persistent `config` named volume, so it survives container
+	// recreation — on a `docker compose up -d` after an env-var flip (e.g. an
+	// enforce-rollback), the k2s healthcheck (test -f .ready) could otherwise
+	// go green on the very first 2s probe, before THIS run's Register() and
+	// generateK2V5Config() (which rewrites k2v5-config.yaml with the new
+	// enforce_auth value) have actually completed — letting k2s start reading
+	// the OLD generated yaml. Removing it here makes the healthcheck reflect
+	// "this run finished," not "some run, ever, finished."
+	readyFileStart := fmt.Sprintf("%s/.ready", s.config.ConfigDir)
+	if err := os.Remove(readyFileStart); err != nil && !os.IsNotExist(err) {
+		slog.Warn("Failed to remove stale ready flag", "component", "sidecar", "file", readyFileStart, "err", err)
+	}
+
 	// Step 1: Build tunnel configurations
 	tunnels := s.buildTunnelConfigs()
 	slog.Info("Tunnels to register", "component", "sidecar", "count", len(tunnels))
