@@ -1,7 +1,7 @@
 package wire
 
 import (
-	"bytes"
+	"context"
 	"log/slog"
 	"testing"
 	"time"
@@ -62,8 +62,11 @@ func TestRecordVerdict_Mapping(t *testing.T) {
 }
 
 func TestRolloutStats_RunEmitsDIAGLine(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// recordChan synchronizes between Run() goroutine and test goroutine.
+	// The custom handler sends each log record down the channel.
+	recordChan := make(chan *slog.Record, 1)
+	customHandler := &testLogHandler{recordChan: recordChan}
+	logger := slog.New(customHandler)
 
 	r := NewRolloutStats()
 	r.RecordConn()
@@ -73,20 +76,76 @@ func TestRolloutStats_RunEmitsDIAGLine(t *testing.T) {
 	done := make(chan struct{})
 	go func() { r.Run(stop, 20*time.Millisecond, logger); close(done) }()
 
+	// Wait for the DIAG: auth-rollout record to arrive on the channel.
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if bytes.Contains(buf.Bytes(), []byte("DIAG: auth-rollout")) {
-			break
+	var record *slog.Record
+	for {
+		select {
+		case rec := <-recordChan:
+			if rec.Message == "DIAG: auth-rollout" {
+				record = rec
+				goto foundRecord
+			}
+		case <-time.After(time.Until(deadline)):
+			t.Fatal("timeout waiting for DIAG: auth-rollout record")
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
+
+foundRecord:
 	close(stop)
 	<-done
 
-	out := buf.String()
-	for _, want := range []string{"DIAG: auth-rollout", "total=1", "authed=1", "cookie_hit=0", "cold=1", "unauthed=0", "legacy_no_metadata=0"} {
-		if !bytes.Contains([]byte(out), []byte(want)) {
-			t.Fatalf("emitted line missing %q; got: %s", want, out)
+	// Verify all required fields are present in the record.
+	attrs := make(map[string]int64)
+	record.Attrs(func(a slog.Attr) bool {
+		if v, ok := a.Value.Any().(int64); ok {
+			attrs[a.Key] = v
+		}
+		return true
+	})
+
+	expectedFields := map[string]int64{
+		"total":                  1,
+		"authed":                 1,
+		"cookie_hit":             0,
+		"cold":                   1,
+		"unauthed":               0,
+		"legacy_no_metadata":     0,
+	}
+
+	for key, expectedVal := range expectedFields {
+		if actualVal, ok := attrs[key]; !ok {
+			t.Fatalf("missing field %q in log record", key)
+		} else if actualVal != expectedVal {
+			t.Fatalf("field %q = %d, want %d", key, actualVal, expectedVal)
 		}
 	}
+}
+
+// testLogHandler is a custom slog.Handler that sends records down a channel.
+// Used to synchronize test goroutines without concurrent buffer access.
+type testLogHandler struct {
+	recordChan chan<- *slog.Record
+}
+
+func (h *testLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= slog.LevelInfo
+}
+
+func (h *testLogHandler) Handle(ctx context.Context, record slog.Record) error {
+	// Send a copy of the record down the channel for the test to read.
+	// Non-blocking send to avoid deadlock if channel is full.
+	select {
+	case h.recordChan <- &record:
+	default:
+	}
+	return nil
+}
+
+func (h *testLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h
+}
+
+func (h *testLogHandler) WithGroup(name string) slog.Handler {
+	return h
 }
