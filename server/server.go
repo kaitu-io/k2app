@@ -58,6 +58,10 @@ type Server struct {
 	// control-plane requests to Center (system CA validates Center's cert).
 	controlPlaneTransport http.RoundTripper
 
+	// rollout aggregates Phase 3 enforce-rollout auth admission counters fed
+	// by both transports; reported periodically by Run() via rollout.Run().
+	rollout *wire.RolloutStats
+
 	done chan struct{}
 }
 
@@ -182,6 +186,12 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	s.tcpwsSrv.SetValidator(validator)
 	s.tcpwsSrv.SetEnforce(cfg.Auth.EnforceAuth)
 	slog.Info("server: device-auth enforcement", "enforce", cfg.Auth.EnforceAuth)
+
+	// Phase 3 enforce-rollout observability: both transports feed one counter
+	// set; the reporter goroutine starts in Run().
+	s.rollout = wire.NewRolloutStats()
+	s.quicSrv.SetRolloutStats(s.rollout)
+	s.tcpwsSrv.SetRolloutStats(s.rollout)
 
 	// Phase 2 (spec §6): node-local cookie signer — key lives beside the
 	// certs and ECH keys in cert_dir, same lifecycle, NOT derived from
@@ -449,6 +459,13 @@ func (s *Server) Run(ctx context.Context) error {
 	s.quicSrv.Listen(quicLn)
 
 	var wg sync.WaitGroup
+
+	// DIAG: auth-rollout — one INFO summary every 5 minutes (spec §7.2).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.rollout.Run(s.done, wire.RolloutReportInterval, nil)
+	}()
 
 	// QUIC TCP accept loop.
 	wg.Add(1)
