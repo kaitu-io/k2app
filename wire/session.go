@@ -11,12 +11,15 @@ import (
 )
 
 // Long-connection periodic revalidation (spec §6.5). Without it the
-// "15 minutes to lose access" promise is void: a 6-hour QUIC connection would
+// "lose access within ~2×cookieTTL" bound (wire/cookie.go's header — the
+// cache_ttl/cookieTTL stacking) is void: a 6-hour QUIC connection would
 // outlive an unsubscribe by 6 hours. The registry tracks live authenticated
 // connections on a listener; a sweeper re-checks each one against its own
 // clocks and, only when the endorsement window has lapsed, against the
 // validator chain (whose CachingValidator dedups with the cold-auth path, so
-// Center sees at most one request per device per node per cookieTTL).
+// Center sees at most one request per device per node per cookieTTL — but,
+// same as the cold-auth path, may also return a pre-revocation cached OK
+// instead of a fresh check).
 
 const (
 	// cookieGraceMax caps the self-governed "Center unreachable" state: a

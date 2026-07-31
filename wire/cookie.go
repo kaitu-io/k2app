@@ -24,8 +24,18 @@ import (
 //
 // THE core invariant (spec §6.3): a cookie is NEVER renewed locally. The only
 // event that produces a new cookie is a fresh Center cold auth, so AuthAt is
-// always a real Center endorsement time and revocation lag is hard-capped at
-// cookieTTL no matter how often the cookie is presented.
+// always a real Center endorsement time no matter how often the cookie is
+// presented.
+//
+// Revocation lag is NOT simply cookieTTL, though: the cold-auth path that
+// mints a cookie runs through CachingValidator (wire/auth_cache.go), which
+// caches OK verdicts for cache_ttl (config default 15min, same value as
+// cookieTTL — config/config.go setServerDefaults). A cold auth landing just
+// under cache_ttl after Center revokes can still read a pre-revocation cached
+// OK and mint a fresh cookie good for another full cookieTTL. The two windows
+// stack, so the worst-case bound is ~2×cookieTTL (~30 minutes), not
+// cookieTTL — the same stacking applies to session.go's periodic
+// revalidation, which consults the same cached validator chain.
 
 const (
 	// cookieTTL bounds the age of the Center endorsement a cookie carries.
@@ -195,6 +205,18 @@ func NewCookieSigner(dir string) (*CookieSigner, error) {
 
 // persist snapshots state under mu, then writes with NO state lock held
 // (file I/O — concurrency Rule #2). rotateMu may be held by the caller.
+//
+// Write-to-temp + rename, NOT a plain os.WriteFile: unlike EnsureCertPair/
+// EnsureECHPrivateKey (provisioning-time-only writes), this file is rewritten
+// every cookieKeyRotatePeriod WHILE THE NODE IS SERVING LIVE TRAFFIC. A crash
+// or power loss between os.WriteFile's truncate and its write would leave
+// cookie.key corrupt (0 bytes or partial JSON), and NewCookieSigner's load
+// path treats that as a hard error — the node refuses to boot, on every
+// restart, until an operator deletes the file by hand. The temp file lives in
+// the SAME directory as the target (os.Rename is only atomic on POSIX within
+// one filesystem); on any error before the rename, the temp file is removed
+// so a failed rotation never leaks a stray file and never touches the
+// previously-committed cookie.key.
 func (s *CookieSigner) persist() error {
 	s.mu.Lock()
 	f := cookieKeyFile{KeyID: s.keyID, Key: append([]byte(nil), s.key[:]...), RotatedAt: s.rotatedAt.Unix()}
@@ -207,8 +229,14 @@ func (s *CookieSigner) persist() error {
 	if err != nil {
 		return fmt.Errorf("wire: cookie key marshal: %w", err)
 	}
-	if err := os.WriteFile(s.path, data, 0600); err != nil {
+	tmpPath := s.path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		os.Remove(tmpPath) // best-effort: nothing to act on if this itself fails
 		return fmt.Errorf("wire: cookie key write: %w", err)
+	}
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("wire: cookie key rename: %w", err)
 	}
 	return nil
 }

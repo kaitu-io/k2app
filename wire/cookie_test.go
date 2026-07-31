@@ -246,6 +246,81 @@ func TestCookieSigner_AutoRotateWithOverlap(t *testing.T) {
 	}
 }
 
+// persist() must never corrupt the previously-committed cookie.key: if the
+// write-to-temp step can't even create a file (directory made read-only,
+// simulating a failed rotation write), the ORIGINAL file must be left
+// completely untouched — still the exact bytes it had before, still loading
+// and verifying successfully. This is the property the plain-os.WriteFile
+// implementation lacked: a crash between truncate and write there would leave
+// cookie.key corrupt (0 bytes or partial JSON), and NewCookieSigner's load
+// path hard-fails on that, refusing to boot on every restart until an
+// operator deletes the file by hand.
+func TestCookieSigner_PersistFailureLeavesOriginalIntact(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewCookieSigner(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := s.Issue(testCookie())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyPath := filepath.Join(dir, cookieKeyFileName)
+	before, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Make the directory read-only: the temp file persist() tries to create
+	// (same dir, required for atomic os.Rename) cannot even be opened. This
+	// must fail cleanly with NO write to the original path.
+	if err := os.Chmod(dir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) }) // let t.TempDir() clean up
+
+	if err := s.persist(); err == nil {
+		t.Fatal("persist() succeeded despite read-only directory — test setup broken")
+	}
+
+	// Restore write access to read the directory listing and to let the
+	// eventual TempDir cleanup remove it.
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != cookieKeyFileName {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Fatalf("LEAKED TEMP FILE: dir contents = %v, want only %q", names, cookieKeyFileName)
+	}
+
+	after, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("CORRUPTED: cookie.key changed after failed persist():\nbefore=%s\nafter=%s", before, after)
+	}
+
+	// The original cookie, signed before the failed persist(), must still
+	// verify — proving the original key material survived intact.
+	s2, err := NewCookieSigner(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s2.Verify(raw, time.Now()); !ok {
+		t.Fatal("cookie signed before failed persist() no longer verifies — original key corrupted")
+	}
+}
+
 // Rotation must survive a restart: the rotated file carries prev key too.
 func TestCookieSigner_RotationPersisted(t *testing.T) {
 	dir := t.TempDir()
