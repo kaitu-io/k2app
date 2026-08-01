@@ -212,13 +212,40 @@ func NewSubscription(raw string, cacheDir string) (*Subscription, error) {
 		// never changes across rotation (only the userinfo does), so hashing
 		// it keeps the filename stable across both in-memory rotation and any
 		// later restart that starts from the rotated raw URL.
-		h := sha256.Sum256([]byte(endpoint))
-		name := fmt.Sprintf("subs-%x.json", h[:4])
-		s.cacheFile = filepath.Join(cacheDir, name)
+		s.cacheFile = filepath.Join(cacheDir, SubscriptionCacheName(endpoint))
 		s.loadCache()
 	}
 
 	return s, nil
+}
+
+// SubscriptionCacheName derives the on-disk cache filename for a subscription
+// endpoint. Exported so tests can locate (or pre-populate) the cache file by
+// CALLING this rather than re-deriving it.
+//
+// It exists because a test that mirrored the formula silently rotted the
+// moment the key changed from raw to endpoint: the test kept writing the
+// old filename, production kept reading the new one, and the stale-cache
+// fallback it was meant to exercise quietly stopped being exercised. A
+// duplicated derivation is a test that can pass while testing nothing.
+//
+// Pass the CREDENTIAL-STRIPPED endpoint, never the raw k2subs:// URL — see
+// NewSubscription for why the key must stay invariant across credential
+// rotation.
+func SubscriptionCacheName(endpoint string) string {
+	h := sha256.Sum256([]byte(endpoint))
+	return fmt.Sprintf("subs-%x.json", h[:4])
+}
+
+// SubscriptionEndpoint returns the credential-stripped HTTPS endpoint that
+// NewSubscription would derive from raw — the input SubscriptionCacheName
+// expects. Exported for the same anti-drift reason.
+func SubscriptionEndpoint(raw string) (string, error) {
+	s, err := NewSubscription(raw, "")
+	if err != nil {
+		return "", err
+	}
+	return s.endpoint, nil
 }
 
 // SetScoreSource installs an optional per-URL adjustment used by Pick.
