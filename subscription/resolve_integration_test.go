@@ -1,10 +1,8 @@
 package subscription
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -163,7 +161,7 @@ func TestResolve_SessionOwnsHTTPTransport(t *testing.T) {
 	tunnelsBlob, _ := json.Marshal([]config.Tunnel{
 		{URL: "k2v5://cached.example:443", Weight: 1, RecommendScore: 0.5},
 	})
-	if err := os.WriteFile(filepath.Join(subsSubdir, subscriptionCacheName(subsURL)), tunnelsBlob, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(subsSubdir, subscriptionCacheName(t, subsURL)), tunnelsBlob, 0o644); err != nil {
 		t.Fatalf("write cache: %v", err)
 	}
 
@@ -203,10 +201,20 @@ func TestResolve_SessionOwnsHTTPTransport(t *testing.T) {
 	sess.Close()
 }
 
-// subscriptionCacheName mirrors the deterministic filename
-// config/subscription.go computes for the disk cache file:
-// "subs-" + first 4 bytes of sha256(raw) in hex + ".json".
-func subscriptionCacheName(raw string) string {
-	h := sha256.Sum256([]byte(raw))
-	return fmt.Sprintf("subs-%x.json", h[:4])
+// subscriptionCacheName asks config/ for the cache filename instead of
+// re-deriving it.
+//
+// It used to mirror the formula — sha256(raw) — and rotted silently when the
+// key moved to the credential-stripped endpoint (so the filename stays stable
+// across credential rotation). The test kept writing the old name while
+// production read the new one, so the stale-cache fallback this test exists to
+// exercise was no longer being exercised at all; it only surfaced because
+// Resolve then hard-failed. Derive, never mirror.
+func subscriptionCacheName(t *testing.T, raw string) string {
+	t.Helper()
+	endpoint, err := config.SubscriptionEndpoint(raw)
+	if err != nil {
+		t.Fatalf("derive subscription endpoint: %v", err)
+	}
+	return config.SubscriptionCacheName(endpoint)
 }
