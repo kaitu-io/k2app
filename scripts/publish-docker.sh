@@ -28,9 +28,13 @@ echo ""
 
 # 1. Cross-compile binaries
 echo "[1/4] Building binaries (linux/amd64)..."
+# Stamp version/commit so the deployed binary self-reports what it is:
+# `k2s version` is the only post-deploy check that doesn't depend on trusting
+# the image tag. Without this the binary reports "k2s dev (none)" and a
+# rollout can only be verified by image digest.
 cd k2 && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -tags release \
-    -ldflags "-s -w" \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
     -o ../docker/k2s/k2s ./cmd/k2s
 cd ..
 echo "  -> docker/k2s/k2s"
