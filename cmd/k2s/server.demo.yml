@@ -38,7 +38,7 @@ listen: ":443"
 # auth:
 #   users_file: "/etc/k2s/users"    # file-based (udid:token per line, hot-reload)
 #   remote_url: "https://api.example.com/k2/auth"  # Center API
-#   cache_ttl: 5m
+#   cache_ttl: 15m
 
 # Logging
 log:

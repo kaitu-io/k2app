@@ -2,15 +2,14 @@ package server
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,25 +17,22 @@ import (
 	"time"
 
 	"github.com/apernet/quic-go"
+	"github.com/coder/websocket"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 	"github.com/kaitu-io/k2/wire/tlspad"
 	smux "github.com/xtaci/smux/v2"
-	"github.com/coder/websocket"
 )
 
 // Server is the k2s server daemon.
 // It accepts QUIC and TCP-WS connections and proxies traffic.
 type Server struct {
-	cfg   *config.ServerConfig
-	store *wire.TicketStore
+	cfg *config.ServerConfig
 
 	quicSrv  *wire.QUICServer
 	tcpwsSrv *wire.TCPWSServer
 	handler  *ProxyHandler
-
-	authHandler http.Handler
 
 	// TLSConfig for incoming TCP connections.
 	// Set by New() from config, or directly for testing.
@@ -44,6 +40,10 @@ type Server struct {
 
 	// echConfig is the ECH config list bytes (for distribution to clients).
 	echConfig []byte
+
+	// camouflageName is this node's cover domain — the `public_name` of its own
+	// ECH config. It is the ONLY outer SNI learnOuterSNI will trust; see there.
+	camouflageName string
 
 	// trustedSNIs holds outer SNIs learned from successful ECH connections.
 	// Key: outer SNI domain, Value: last seen time.
@@ -57,6 +57,10 @@ type Server struct {
 	// controlPlaneTransport is the HTTPS round-tripper used to relay
 	// control-plane requests to Center (system CA validates Center's cert).
 	controlPlaneTransport http.RoundTripper
+
+	// rollout aggregates Phase 3 enforce-rollout auth admission counters fed
+	// by both transports; reported periodically by Run() via rollout.Run().
+	rollout *wire.RolloutStats
 
 	done chan struct{}
 }
@@ -76,13 +80,10 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	if err := validateControlPlaneRoutes(cfg.ControlPlaneRoutes); err != nil {
 		return nil, fmt.Errorf("control_plane_routes: %w", err)
 	}
-	store := wire.NewTicketStore()
-
 	s := &Server{
 		cfg:         cfg,
-		store:       store,
-		quicSrv:     wire.NewQUICServer(store),
-		tcpwsSrv:    wire.NewTCPWSServer(store),
+		quicSrv:     wire.NewQUICServer(),
+		tcpwsSrv:    wire.NewTCPWSServer(),
 		handler:     NewProxyHandler(),
 		trustedSNIs: make(map[string]time.Time),
 		proxySem:    make(chan struct{}, 128),
@@ -115,6 +116,7 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		}
 
 		// Legacy ECH: single combined key+config file.
+		s.camouflageName = cfg.ECH.PublicName
 		if cfg.ECH.KeyPath != "" {
 			echKeys, echConfig, err := wire.EnsureECHKey(cfg.ECH.KeyPath, cfg.ECH.PublicName)
 			if err != nil {
@@ -126,29 +128,117 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	}
 
 	// Auth: build validator chain (users_file → remote_url → accept-all).
-	var validators []wire.JWTValidator
+	var validators []wire.Validator
 	if cfg.Auth.UsersFile != "" {
 		slog.Info("server: auth chain", "mode", "users_file", "path", cfg.Auth.UsersFile)
 		validators = append(validators, wire.NewUsersFileValidator(cfg.Auth.UsersFile))
 	}
 	if cfg.Auth.RemoteURL != "" {
 		slog.Info("server: auth chain", "mode", "remote_url", "url", cfg.Auth.RemoteURL)
-		validators = append(validators, wire.NewRemoteValidator(cfg.Auth.RemoteURL))
+		// Lazy node-IPv4 resolver for the remote validator's Basic auth. Nodes
+		// often don't set K2_NODE_IPV4 and must ProbePublicIP, which can't run at
+		// construction time (may block / network not up yet). Resolve once, on
+		// first auth — by then a client is connected so the network is live.
+		var ipOnce sync.Once
+		var nodeIPv4 string
+		ipv4Fn := func() string {
+			ipOnce.Do(func() {
+				nodeIPv4 = cfg.NodeIPv4
+				if nodeIPv4 == "" {
+					nodeIPv4 = wire.ProbePublicIP("https://api4.ipify.org")
+				}
+				slog.Info("server: remote auth node identity resolved", "ipv4", nodeIPv4)
+			})
+			return nodeIPv4
+		}
+		// Node-level auth-fault alerting (spec §6.4). Wraps the REMOTE
+		// validator specifically — it is the only one that talks to Center, so
+		// its verdicts are the only honest "can this node still authenticate?"
+		// signal. Wrapping outside CachingValidator below would instead see
+		// cache hits, where Center was never asked. nil alerter (no webhook
+		// configured) returns the validator untouched.
+		nodeLabel := cfg.NodeName
+		if nodeLabel == "" {
+			nodeLabel = cfg.NodeIPv4
+		}
+		alerter := wire.NewSlackAlerter(cfg.SlackWebhookURL, nodeLabel)
+		if alerter != nil {
+			slog.Info("server: auth fault alerting enabled", "node", nodeLabel)
+		}
+		validators = append(validators, wire.WithAuthHealthAlerts(
+			wire.NewRemoteValidator(cfg.Auth.RemoteURL, ipv4Fn, cfg.NodeSecret), alerter))
 	}
 
-	var validator wire.JWTValidator
+	var validator wire.Validator
 	if len(validators) > 0 {
 		validator = wire.ChainValidators(validators...)
+		// Cache successful auths: opening the QUIC metadata path to all normal
+		// clients would otherwise fire one Center request per new connection.
+		validator = wire.CachingValidator(validator, cfg.Auth.CacheTTL)
 	} else {
+		// The accept-all fallback admits any two non-empty strings. Combined with
+		// enforce that is the worst possible state: the node logs that it enforces
+		// device auth while admitting everyone. Refuse to start rather than report
+		// an enforcement the node does not perform.
+		if cfg.Auth.EnforceAuth {
+			return nil, fmt.Errorf("auth: enforce_auth is on but no validator is configured — " +
+				"set auth.users_file or auth.remote_url, else the accept-all fallback admits any non-empty udid/token")
+		}
 		slog.Info("server: auth chain", "mode", "accept-all")
-		validator = func(jwt, udid, mode string) bool {
-			return jwt != "" && udid != ""
+		validator = func(token, udid, mode string) wire.AuthVerdict {
+			if token != "" && udid != "" {
+				return wire.AuthVerdict{OK: true}
+			}
+			return wire.AuthVerdict{OK: false, Code: 401}
 		}
 	}
-	s.authHandler = wire.NewAuthHandler(store, validator)
+	// Enforcement must cover BOTH transports with the same validator: QUIC is
+	// primary, TCP-WS is the fallback used exactly on the UDP-blocked/censored
+	// networks that matter most. Gating only QUIC would let an attacker force
+	// TCP-WS to bypass device auth entirely.
 	s.quicSrv.SetValidator(validator)
+	s.quicSrv.SetEnforce(cfg.Auth.EnforceAuth)
+	s.tcpwsSrv.SetValidator(validator)
+	s.tcpwsSrv.SetEnforce(cfg.Auth.EnforceAuth)
+	slog.Info("server: device-auth enforcement", "enforce", cfg.Auth.EnforceAuth)
+
+	// Phase 3 enforce-rollout observability: both transports feed one counter
+	// set; the reporter goroutine starts in Run().
+	s.rollout = wire.NewRolloutStats()
+	s.quicSrv.SetRolloutStats(s.rollout)
+	s.tcpwsSrv.SetRolloutStats(s.rollout)
+
+	// Phase 2 (spec §6): node-local cookie signer — key lives beside the
+	// certs and ECH keys in cert_dir, same lifecycle, NOT derived from
+	// NodeSecret (§6.7). Legacy static-TLS nodes (no cert_dir) run cold-auth
+	// only.
+	if cfg.CertDir != "" {
+		signer, err := wire.NewCookieSigner(cfg.CertDir)
+		if err != nil {
+			return nil, fmt.Errorf("cookie signer: %w", err)
+		}
+		s.quicSrv.SetCookieSigner(signer)
+		s.tcpwsSrv.SetCookieSigner(signer)
+	}
+	// Periodic revalidation (spec §6.5) uses the SAME cached chain as cold
+	// auth, so Center sees at most one request per device per node per
+	// cookie window across both paths.
+	s.quicSrv.EnableRevalidation(validator)
+	s.tcpwsSrv.EnableRevalidation(validator)
 
 	return s, nil
+}
+
+// Close stops the QUIC and TCP-WS transports, including the revalidation
+// sweeper goroutines EnableRevalidation starts in New(). Run()'s own shutdown
+// sequence already closes s.quicSrv/s.tcpwsSrv directly once ctx is done; this
+// method exists for callers (chiefly tests) that construct a Server via New()
+// without ever calling Run() and still need to release those goroutines.
+// Idempotent — QUICServer.Close/TCPWSServer.Close are themselves idempotent.
+func (s *Server) Close() error {
+	s.quicSrv.Close()
+	s.tcpwsSrv.Close()
+	return nil
 }
 
 // setupAutoProvision performs unified auto-provisioning of certs, ECH, and auth.
@@ -200,6 +290,9 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 	if cfg.ECH.PublicName != "" {
 		publicName = cfg.ECH.PublicName // explicit override
 	}
+	// Same name is the camouflage identity: the cover site we impersonate, the
+	// only outer SNI real clients send, and so the only one learnOuterSNI trusts.
+	s.camouflageName = publicName
 	var profile *wire.TargetProfile
 	if publicName != "" {
 		profile, err = wire.ProbeTarget(publicName)
@@ -282,8 +375,13 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	echB64 := base64.URLEncoding.EncodeToString(echConfigList)
 	pins := pair.FormatPins()
 
-	connectURL := fmt.Sprintf("k2v5://%s:%s@%s:%s?ech=%s&pin=%s&insecure=1",
-		auth.UDID, auth.Token, host, port, echB64, pins)
+	// Route the credential through url.UserPassword rather than interpolating
+	// auth.Token directly into fmt.Sprintf — matches cmd/k2s/user.go's
+	// buildUserURL and keeps the raw token out of any Sprintf/Errorf arg list
+	// that wire/log_guard_test.go statically scans (spec §9).
+	userinfo := url.UserPassword(auth.UDID, auth.Token).String()
+	connectURL := fmt.Sprintf("k2v5://%s@%s:%s?ech=%s&pin=%s&insecure=1",
+		userinfo, host, port, echB64, pins)
 
 	// Add ip= raw IPv4 for dialing (separate from Host which is TLS SNI domain).
 	if rawIP4 := wire.ProbePublicIP("https://api4.ipify.org"); rawIP4 != "" {
@@ -298,9 +396,14 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 		connectURL += fmt.Sprintf("&hop=%d-%d", cfg.HopStart, cfg.HopEnd)
 	}
 
-	slog.Info("Connect URL", "url", connectURL)
-
-	// Save connect URL to file for k2s run smart mode to read.
+	// Do NOT slog.Info the raw connectURL: it embeds auth.Token, and
+	// config.SetupLogging routes slog's default output into a rotated,
+	// world-readable (0644) log file meant for support/log-upload tooling —
+	// a materially wider exposure than the 0600 file below. cmd/k2s already
+	// owns operator-facing display: it reads connect-url.txt back and prints
+	// it directly (readConnectURL/waitForConnectURL in cmd/k2s/setup.go),
+	// so this slog call was a redundant credential leak, not the only path
+	// to visibility. Caught by wire/log_guard_test.go (spec §9).
 	urlPath := filepath.Join(cfg.CertDir, "connect-url.txt")
 	if err := os.WriteFile(urlPath, []byte(connectURL+"\n"), 0600); err != nil {
 		slog.Error("server: failed to save connect URL", "err", err)
@@ -338,9 +441,6 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("TLS config required")
 	}
 
-	// Start background ticket cleanup.
-	s.store.StartCleanup(5*time.Minute, s.done)
-
 	slog.Info("k2s server starting", "listen", s.cfg.Listen)
 
 	// TCP listener.
@@ -374,6 +474,13 @@ func (s *Server) Run(ctx context.Context) error {
 	s.quicSrv.Listen(quicLn)
 
 	var wg sync.WaitGroup
+
+	// DIAG: auth-rollout — one INFO summary every 5 minutes (spec §7.2).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.rollout.Run(s.done, wire.RolloutReportInterval, nil)
+	}()
 
 	// QUIC TCP accept loop.
 	wg.Add(1)
@@ -606,8 +713,23 @@ func (s *Server) handleRawTCP(conn net.Conn) {
 // learnOuterSNI records an outer SNI from a successful ECH connection.
 // The SNI is added to trustedSNIs with the current timestamp.
 // Expired entries are evicted, and the map is capped at trustedSNIMax.
+//
+// Only this node's own camouflage domain is admitted. The outer SNI is chosen
+// by the client, and a trusted SNI makes handleRawTCP relay raw TCP to
+// <SNI>:443 — a path that never passes the device-auth admission gate and,
+// unlike the proxy handler, applies no isReservedIP check. Without this pin,
+// anyone holding the node's ECH config (it ships inside the k2v5:// URL, so
+// every current and former user has one, revoked devices included) could learn
+// an arbitrary string and turn the node into an open TCP relay, reaching even
+// its own private network. Pinning costs legitimate traffic nothing: uTLS
+// forces a real client's outer SNI to the ECH config's public_name (spec §3.1).
 func (s *Server) learnOuterSNI(sni string) {
 	if sni == "" {
+		return
+	}
+	if s.camouflageName == "" || !strings.EqualFold(sni, s.camouflageName) {
+		slog.Warn("server: refusing to trust unexpected outer SNI",
+			"sni", sni, "expected", s.camouflageName)
 		return
 	}
 	s.trustedSNIMu.Lock()
@@ -722,13 +844,15 @@ func (s *Server) handleK2V5(conn net.Conn, outerSNI string) {
 	buffConn := &bufferedConn{Conn: tlsConn, br: br}
 
 	if isHTTPMethod(first) {
+		// Only GET is a valid k2v5 client verb (WebSocket upgrade to
+		// /k2v5/tunnel). The ticket-auth POST /k2v5/auth endpoint was removed —
+		// device auth now rides the metadata stream on the smux/QUIC path, so any
+		// other HTTP method is not a k2v5 client.
 		if string(first[:3]) == "GET" {
-			// Potential WebSocket upgrade or other GET — serve via HTTP handler.
 			s.handleHTTP(buffConn)
-			return
+		} else {
+			buffConn.Close()
 		}
-		// POST/PUT/etc — auth handler.
-		s.handleAuth(buffConn)
 		return
 	}
 
@@ -737,7 +861,7 @@ func (s *Server) handleK2V5(conn net.Conn, outerSNI string) {
 }
 
 // handleHTTP serves a single HTTP request on a raw connection.
-// Routes WebSocket upgrades to /k2v5/tunnel and auth to /k2v5/auth.
+// Routes WebSocket upgrades to /k2v5/tunnel.
 func (s *Server) handleHTTP(conn net.Conn) {
 	ln := newSingleConnListener(conn)
 	mux := http.NewServeMux()
@@ -762,36 +886,8 @@ func (s *Server) handleHTTP(conn net.Conn) {
 		}
 		s.tcpwsSrv.HandleSession(sess)
 	})
-	mux.HandleFunc("/k2v5/auth", func(w http.ResponseWriter, r *http.Request) {
-		s.authHandler.ServeHTTP(w, r)
-	})
 	httpSrv := &http.Server{Handler: mux}
 	httpSrv.Serve(ln)
-}
-
-// handleAuth serves the /k2v5/auth HTTP endpoint on a single connection.
-func (s *Server) handleAuth(conn net.Conn) {
-	defer conn.Close()
-
-	br := bufio.NewReader(conn)
-	req, err := http.ReadRequest(br)
-	if err != nil {
-		return
-	}
-
-	rec := &responseRecorder{code: 200, header: make(http.Header)}
-	s.authHandler.ServeHTTP(rec, req)
-
-	resp := &http.Response{
-		StatusCode:    rec.code,
-		Header:        rec.header,
-		Body:          io.NopCloser(&rec.body),
-		ContentLength: int64(rec.body.Len()),
-		Proto:         "HTTP/1.1",
-		ProtoMajor:    1,
-		ProtoMinor:    1,
-	}
-	resp.Write(conn)
 }
 
 // isHTTPMethod checks if the first bytes look like an HTTP method.
@@ -815,17 +911,6 @@ type bufferedConn struct {
 func (c *bufferedConn) Read(b []byte) (int, error) {
 	return c.br.Read(b)
 }
-
-// responseRecorder captures HTTP response for writing to a raw connection.
-type responseRecorder struct {
-	code   int
-	header http.Header
-	body   bytes.Buffer
-}
-
-func (r *responseRecorder) Header() http.Header         { return r.header }
-func (r *responseRecorder) WriteHeader(code int)        { r.code = code }
-func (r *responseRecorder) Write(b []byte) (int, error) { return r.body.Write(b) }
 
 // singleConnListener serves exactly one connection through http.Server.Serve.
 // After the connection is returned once, Accept blocks until Close is called.

@@ -141,7 +141,7 @@ func ProbeURL(ctx context.Context, rawURL string, dd DirectDialer, rounds int, i
 		return ProbeStats{MeasuredAt: time.Now()}, fmt.Errorf("probe: parse URL: %w", err)
 	}
 
-	qc := NewQUICClient(cfg, nil)
+	qc := NewQUICClient(cfg, nil) // temporary probe never reuses a session
 	defer qc.Close()
 	if dd != nil {
 		qc.SetDirectDialer(dd)

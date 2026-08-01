@@ -1,311 +1,59 @@
 package wire
 
-import (
-	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
-	"log/slog"
-	"net/http"
-	"runtime/debug"
-	"strings"
-	"sync"
-	"time"
+// AuthVerdict is the structured result of a device-auth validation.
+//
+// Code is FOUR-state, not three. The "no opinion" state exists because
+// NewUsersFileValidator is keyed by udid and shared nodes deliberately run
+// with an empty users file: if a users-file miss were an explicit rejection,
+// it would shadow Center's real answer (including "unreachable") in every
+// chain. Fail-closed applies only to Center saying no, never to Center being
+// silent (spec §6.4).
+//
+//	OK     Code          meaning
+//	true   0             authenticated
+//	false  0             no opinion (this validator doesn't know the udid)
+//	false  401/402/403   explicit rejection (only Center can issue these)
+//	false  -1            cannot determine (network error / timeout / 5xx / decode failure)
+//	false  -2            node fault: THIS node cannot perform auth at all
+type AuthVerdict struct {
+	OK     bool
+	Code   int
+	UserID uint64
+	SvcExp int64 // Center's ServiceExpiredAt (unix seconds); 0 = no subscription clock (users_file path)
+}
 
-	"github.com/kaitu-io/k2/safego"
-)
-
+// Auth verdict codes that are NOT HTTP-derived. Both are negative so they can
+// never collide with a Center-issued status code.
 const (
-	// ticketRenewalThreshold is the fraction of TTL remaining below which
-	// a ticket is automatically renewed. 0.5 = 50% remaining.
-	ticketRenewalThreshold = 0.5
+	// AuthCodeUndetermined — Center was asked but did not answer (network
+	// error, timeout, 5xx, decode failure). Transient and not this node's
+	// fault: permissive serves, enforce rejects (spec §6.4).
+	AuthCodeUndetermined = -1
+
+	// AuthCodeNodeFault — THIS node cannot perform device auth at all: no
+	// NodeSecret, unresolvable node IPv4, or a malformed request it built
+	// itself. Center was never even asked.
+	//
+	// Why it is not folded into the fail-closed 401 tail (its behavior before
+	// this code existed): a 401 is the wire's way of saying "your credentials
+	// are invalid", and it reaches the user as an auth error. One node missing
+	// K2_NODE_SECRET would then tell every device it serves that THEIR account
+	// failed — sending the whole incident down the wrong diagnostic path while
+	// the client, treating 401 as a client error, stops retrying instead of
+	// racing to a healthy node. Nor can it be folded into -1: that would let a
+	// permanently misconfigured node look like a transient Center blip forever.
+	//
+	// It is also deliberately NOT a passing verdict: a node that cannot
+	// authenticate must never attribute traffic or count a connection as
+	// authed — see resolveMetadataAuth, which maps this to a server-category
+	// rejection so the rollout counters keep telling the truth.
+	AuthCodeNodeFault = -2
 )
 
-// AuthTicket represents a server-issued auth ticket.
-type AuthTicket struct {
-	Token      string
-	DeviceID   string
-	Mode       string // "gateway" or "" (normal client)
-	UDPEnabled bool
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
-}
-
-// AuthResponse is the JSON response from POST /k2v5/auth.
-type AuthResponse struct {
-	Ticket  string `json:"ticket"`
-	Expires int    `json:"expires"` // seconds
-	UDP     bool   `json:"udp"`
-	Version int    `json:"version"`
-}
-
-// TicketStore manages auth tickets in memory.
-type TicketStore struct {
-	mu          sync.RWMutex
-	byToken     map[string]*AuthTicket
-	byDevice    map[string]string // deviceID → current token
-	graceTokens map[string]time.Time // old token → grace expiry
-
-	ticketTTL   time.Duration
-	gracePeriod time.Duration
-}
-
-// NewTicketStore creates a new ticket store with default settings.
-func NewTicketStore() *TicketStore {
-	return &TicketStore{
-		byToken:     make(map[string]*AuthTicket),
-		byDevice:    make(map[string]string),
-		graceTokens: make(map[string]time.Time),
-		ticketTTL:   time.Hour,
-		gracePeriod: 30 * time.Second,
-	}
-}
-
-// Issue creates a new ticket for the device, invalidating any previous ticket.
-func (s *TicketStore) Issue(deviceID string, udpEnabled bool) (*AuthTicket, error) {
-	token, err := randomHex(32)
-	if err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	ticket := &AuthTicket{
-		Token:      token,
-		DeviceID:   deviceID,
-		UDPEnabled: udpEnabled,
-		CreatedAt:  now,
-		ExpiresAt:  now.Add(s.ticketTTL),
-	}
-
-	s.mu.Lock()
-	// concurrency:allow — pure in-memory map operations, no I/O or external calls
-	defer s.mu.Unlock()
-
-	// Move old ticket to grace period
-	if oldToken, ok := s.byDevice[deviceID]; ok {
-		delete(s.byToken, oldToken)
-		s.graceTokens[oldToken] = now.Add(s.gracePeriod)
-	}
-
-	s.byToken[token] = ticket
-	s.byDevice[deviceID] = token
-
-	return ticket, nil
-}
-
-// Validate checks if a ticket is valid and returns it.
-func (s *TicketStore) Validate(token string) (*AuthTicket, bool) {
-	s.mu.RLock()
-	// concurrency:allow — pure in-memory map operations, no I/O or external calls
-	defer s.mu.RUnlock()
-
-	now := time.Now()
-
-	// Check active tickets
-	if ticket, ok := s.byToken[token]; ok {
-		if now.Before(ticket.ExpiresAt) {
-			return ticket, true
-		}
-		return nil, false
-	}
-
-	// Check grace period tickets
-	if graceExpiry, ok := s.graceTokens[token]; ok {
-		if now.Before(graceExpiry) {
-			// Return a minimal ticket — enough to authenticate
-			return &AuthTicket{Token: token, DeviceID: "grace"}, true
-		}
-	}
-
-	return nil, false
-}
-
-// Remaining returns seconds until ticket expires.
-func (s *TicketStore) Remaining(token string) int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if ticket, ok := s.byToken[token]; ok {
-		rem := time.Until(ticket.ExpiresAt).Seconds()
-		if rem < 0 {
-			return 0
-		}
-		return int(rem)
-	}
-	return 0
-}
-
-// StartCleanup starts a background goroutine that periodically removes expired
-// tickets and grace tokens. The goroutine stops when done is closed.
-func (s *TicketStore) StartCleanup(interval time.Duration, done chan struct{}) {
-	safego.Go(func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				s.cleanupSafe()
-			case <-done:
-				return
-			}
-		}
-	})
-}
-
-// cleanupSafe wraps cleanup() with panic recovery so the cleanup loop survives.
-func (s *TicketStore) cleanupSafe() {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("auth: cleanup panic recovered", "panic", r,
-				"stack", string(debug.Stack()))
-		}
-	}()
-	s.cleanup()
-}
-
-// cleanup removes expired tickets and grace tokens.
-func (s *TicketStore) cleanup() {
-	s.mu.Lock()
-	// concurrency:allow — pure in-memory map operations, no I/O or external calls
-	defer s.mu.Unlock()
-
-	now := time.Now()
-
-	// Clean expired tickets
-	for token, ticket := range s.byToken {
-		if now.After(ticket.ExpiresAt) {
-			delete(s.byToken, token)
-			// Also clean byDevice if this was the current token
-			if currentToken, ok := s.byDevice[ticket.DeviceID]; ok && currentToken == token {
-				delete(s.byDevice, ticket.DeviceID)
-			}
-		}
-	}
-
-	// Clean expired grace tokens
-	for token, expiry := range s.graceTokens {
-		if now.After(expiry) {
-			delete(s.graceTokens, token)
-		}
-	}
-}
-
-// JWTValidator validates a JWT token, device UDID, and optional client mode.
-// Mode is "gateway" for router clients or "" for normal clients.
-// Validators that don't support mode-based authorization should ignore the mode parameter.
-type JWTValidator func(jwt, udid, mode string) bool
-
-// AuthHandler handles POST /k2v5/auth requests.
-type AuthHandler struct {
-	store    *TicketStore
-	validate JWTValidator
-}
-
-// NewAuthHandler creates a new auth handler.
-func NewAuthHandler(store *TicketStore, validate JWTValidator) *AuthHandler {
-	return &AuthHandler{store: store, validate: validate}
-}
-
-func (h *AuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	deviceID := r.Header.Get("X-K2-Device")
-	if deviceID == "" {
-		http.Error(w, `{"error":"missing X-K2-Device"}`, http.StatusUnauthorized)
-		return
-	}
-
-	// Try ticket auth first
-	if ticketToken := r.Header.Get("X-K2-Ticket"); ticketToken != "" {
-		_, ok := h.store.Validate(ticketToken)
-		if !ok {
-			http.Error(w, `{"error":"invalid ticket"}`, http.StatusUnauthorized)
-			return
-		}
-		// Ticket valid — return remaining time
-		h.respondTicket(w, ticketToken, deviceID)
-		return
-	}
-
-	// Full auth with JWT
-	auth := r.Header.Get("Authorization")
-	jwt := strings.TrimPrefix(auth, "Bearer ")
-	if jwt == "" || jwt == auth { // no "Bearer " prefix found
-		http.Error(w, `{"error":"missing Authorization"}`, http.StatusUnauthorized)
-		return
-	}
-
-	mode := r.Header.Get("X-K2-Mode") // "gateway" or "" (normal)
-
-	if !h.validate(jwt, deviceID, mode) {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-
-	// Issue new ticket
-	ticket, err := h.store.Issue(deviceID, true)
-	if err != nil {
-		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
-		return
-	}
-	ticket.Mode = mode
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(AuthResponse{
-		Ticket:  ticket.Token,
-		Expires: h.store.Remaining(ticket.Token),
-		UDP:     ticket.UDPEnabled,
-		Version: 1,
-	})
-}
-
-func (h *AuthHandler) respondTicket(w http.ResponseWriter, token, deviceID string) {
-	h.store.mu.RLock()
-	ticket, ok := h.store.byToken[token]
-	h.store.mu.RUnlock()
-
-	if !ok {
-		// Shouldn't happen (already validated), but handle gracefully
-		http.Error(w, `{"error":"invalid ticket"}`, http.StatusUnauthorized)
-		return
-	}
-
-	remaining := time.Until(ticket.ExpiresAt)
-	total := h.store.ticketTTL
-
-	// Check if renewal is needed (< 50% TTL remaining)
-	if remaining < time.Duration(float64(total)*ticketRenewalThreshold) {
-		// Auto-renew: issue new ticket, old enters grace
-		newTicket, err := h.store.Issue(deviceID, true)
-		if err != nil {
-			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(AuthResponse{
-			Ticket:  newTicket.Token,
-			Expires: h.store.Remaining(newTicket.Token),
-			UDP:     newTicket.UDPEnabled,
-			Version: 1,
-		})
-		return
-	}
-
-	// Ticket fresh enough, return current info
-	remainingSecs := int(remaining.Seconds())
-	if remainingSecs < 0 {
-		remainingSecs = 0
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(AuthResponse{
-		Ticket:  token,
-		Expires: remainingSecs,
-		UDP:     true,
-		Version: 1,
-	})
-}
-
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
+// Validator validates a device credential (token, udid, optional mode) and
+// returns a structured verdict. It replaces the old bool JWTValidator and is
+// the single device-auth abstraction for BOTH transports: the QUIC and TCP-WS
+// metadata streams (StreamType 0x10) call it, and the enforce gate acts on its
+// verdict. Implementations: NewUsersFileValidator, NewRemoteValidator,
+// CachingValidator, ChainValidators.
+type Validator func(token, udid, mode string) AuthVerdict

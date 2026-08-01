@@ -1,6 +1,13 @@
 package subscription
 
 import (
+	"bytes"
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/kaitu-io/k2/config"
@@ -57,5 +64,52 @@ func TestApplyResolved_ReplacesK2subsWithK2v5(t *testing.T) {
 	}
 	if got.Routes[1].Via != "direct" {
 		t.Fatalf("non-k2subs route should pass through, got %q", got.Routes[1].Via)
+	}
+}
+
+// TestResolveWarnsStaleCacheAge：fetch 失败但磁盘缓存可用时，除既有的
+// 降级 Warn 外必须再打一条 DIAG: subs-stale-cache 且带 cacheAgeS 字段
+// （spec §4.4 P5——降级保留，但必须报告"正在用多老的数据"）。
+func TestResolveWarnsStaleCacheAge(t *testing.T) {
+	cacheDir := t.TempDir()
+
+	// 先用一个正常 server 完成一次成功 Fetch，制造磁盘缓存。
+	okSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"tunnels":[{"url":"k2v5://u:tok@h.example.com:443/"}],"refresh":600}`)
+	}))
+	host := strings.TrimPrefix(okSrv.URL, "https://")
+	raw := "k2subs://u:tok@" + host + "/api/subs"
+	seed, err := config.NewSubscription(raw, cacheDir)
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	if err := seed.Fetch(context.Background(), okSrv.Client()); err != nil {
+		t.Fatalf("seed fetch: %v", err)
+	}
+	okSrv.Close() // 之后同一 endpoint 的 fetch 必然失败 → 走缓存降级
+
+	// 捕获 slog 输出。
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	m := NewManager(cacheDir, nil, nil)
+	cfg := &config.ClientConfig{Routes: []config.RouteConfig{{Via: raw}}}
+	sessions, resolved, err := m.Resolve(cfg)
+	if err != nil {
+		t.Fatalf("Resolve must degrade to cache, got err: %v", err)
+	}
+	t.Cleanup(m.CloseAll)
+	if len(sessions) != 1 || len(resolved) != 1 {
+		t.Fatalf("want 1 session + 1 resolved route, got %d/%d", len(sessions), len(resolved))
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "DIAG: subs-stale-cache") {
+		t.Fatalf("missing DIAG: subs-stale-cache in logs:\n%s", out)
+	}
+	if !strings.Contains(out, "cacheAgeS=") {
+		t.Fatalf("stale-cache DIAG must carry cacheAgeS field:\n%s", out)
 	}
 }

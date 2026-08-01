@@ -19,9 +19,9 @@ import (
 	"github.com/sasha-s/go-deadlock"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/coder/websocket"
 	utls "github.com/metacubex/utls"
 	smux "github.com/xtaci/smux/v2"
-	"github.com/coder/websocket"
 )
 
 // Compile-time interface checks.
@@ -67,6 +67,14 @@ func (c *smuxStreamConn) DeviceID() string {
 	return c.dev.get()
 }
 
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *smuxStreamConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
+}
+
 // Read uses the buffered reader if present.
 func (c *smuxStreamConn) Read(b []byte) (int, error) {
 	if c.br != nil {
@@ -97,10 +105,10 @@ func (c *smuxStreamConn) Close() error {
 // TCPWSClient is the TCP-WS + smux client transport.
 //
 // Connection flow (production mode):
-//   1. TCP dial to server:port
-//   2. uTLS handshake with fingerprint (chrome/firefox/safari/random)
-//   3. WebSocket upgrade to /k2v5/tunnel over TLS connection
-//   4. smux session multiplexing over WebSocket binary frames
+//  1. TCP dial to server:port
+//  2. uTLS handshake with fingerprint (chrome/firefox/safari/random)
+//  3. WebSocket upgrade to /k2v5/tunnel over TLS connection
+//  4. smux session multiplexing over WebSocket binary frames
 //
 // The uTLS library allows fingerprint customization to evade DPI detection.
 // ECH (Encrypted Client Hello) config is passed through to hide the real SNI.
@@ -108,7 +116,7 @@ func (c *smuxStreamConn) Close() error {
 // Test mode: SetTestConn bypasses TCP+TLS+WS and uses a direct net.Conn for smux.
 type TCPWSClient struct {
 	cfg          Config
-	store        *TicketStore
+	jar          *CookieJar // per-outbound cookie store; nil = no cookie support (probe/p2p)
 	serverAddr   string
 	tlsConfig    *tls.Config // override for testing
 	testConn     net.Conn    // override for testing (bypasses TCP+TLS+WS)
@@ -118,9 +126,9 @@ type TCPWSClient struct {
 	connectSF singleflight.Group // dedupes concurrent connect attempts without held lock
 	initUDPMu deadlock.Mutex     // serializes UDP mux lazy init; ordering: initUDPMu → mu
 	sess      *smux.Session
-	udpMux *smuxUDPMux
-	alloc  *SessionIDAllocator
-	closed bool
+	udpMux    *smuxUDPMux
+	alloc     *SessionIDAllocator
+	closed    bool
 }
 
 // WireStats returns a snapshot of TCP-WS transport metrics.
@@ -133,15 +141,17 @@ var (
 	_ StatsProvider = (*TCPWSClient)(nil)
 )
 
-// NewTCPWSClient creates a new TCP-WS client transport.
-func NewTCPWSClient(cfg Config, store *TicketStore) *TCPWSClient {
+// NewTCPWSClient creates a new TCP-WS client transport. jar is the
+// per-outbound CookieJar shared with the sibling QUIC client (nil disables
+// cookies).
+func NewTCPWSClient(cfg Config, jar *CookieJar) *TCPWSClient {
 	dialHost := cfg.Host
 	if cfg.DialAddr != "" {
 		dialHost = cfg.DialAddr
 	}
 	return &TCPWSClient{
 		cfg:        cfg,
-		store:      store,
+		jar:        jar,
 		serverAddr: net.JoinHostPort(dialHost, strconv.Itoa(cfg.Port)),
 	}
 }
@@ -222,10 +232,33 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 			return nil, fmt.Errorf("wire: smux client: %w", smuxErr)
 		}
 
-		// Best-effort device attribution: mirror QUIC's metadata stream so the
-		// server can attribute this session's traffic. TCP-WS auth already
-		// happened at the HTTP layer; a failure here must not fail the connect.
-		c.sendMetadataBestEffort(sess)
+		// Shared metadata orchestration (metadata_client.go). Best-effort for
+		// transport errors; an explicit rejection fails the connect — TCP-WS
+		// used to drop ok/errCode entirely, which is the divergence the shared
+		// sendMetadata removes.
+		cookie, mdErr := sendMetadata(ctx, smuxMetaTransport{sess: sess}, MetadataFrame{
+			UDID:    c.cfg.UDID,
+			Token:   c.cfg.Token,
+			Mode:    c.cfg.Mode,
+			Version: c.cfg.Version,
+			Cookie:  c.jar.Get(c.cfg.Pin), // nil-safe; "" = cold auth
+		})
+		if mdErr != nil {
+			if isMetadataReject(mdErr) {
+				sess.Close()
+				conn.Close()
+				// ProxyLayerError: the wire transport worked (stream opened, server
+				// responded with an explicit rejection) — TCP-WS fallback to the
+				// same server/credentials cannot help. Matches the established
+				// convention at :482 for the proxy-stream rejection path.
+				return nil, &ProxyLayerError{Err: fmt.Errorf("%w: %w", ErrMetadataRejected, mdErr)}
+			}
+			slog.Debug("TCPWSClient: metadata stream failed (best-effort)", "err", mdErr)
+		}
+		// newCookie is non-empty only right after a Center cold auth (spec
+		// §6.3); jar.Put is a no-op on empty. Never log cookie/newCookie/
+		// meta.Token (spec §6.2/§9).
+		c.jar.Put(c.cfg.Pin, cookie)
 
 		// --- Store result under lock ---
 		// concurrency:allow — closing locally-owned sess not yet stored in struct
@@ -244,41 +277,6 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		return nil, err
 	}
 	return v.(*smux.Session), nil
-}
-
-// sendMetadataBestEffort opens a metadata stream and sends credentials + mode,
-// mirroring QUIC's sendMetadata for device attribution. Unlike QUIC, TCP-WS
-// auth already happened at the HTTP layer (/k2v5/auth), so this is purely
-// for the server's per-session deviceIDHolder — every failure is logged and
-// swallowed, never surfaced to the caller of connect().
-//
-// TCP-WS frames carry no H3 marker (unlike QUIC's WriteH3ProxyFrameType) —
-// that's an existing protocol difference between the two transports, not an
-// omission here.
-func (c *TCPWSClient) sendMetadataBestEffort(sess *smux.Session) {
-	stream, err := sess.OpenStream()
-	if err != nil {
-		slog.Debug("TCPWSClient: metadata open stream failed", "err", err)
-		return
-	}
-	defer stream.Close()
-	if err := WriteStreamHeader(stream, StreamTypeMeta, ""); err != nil {
-		slog.Debug("TCPWSClient: metadata header failed", "err", err)
-		return
-	}
-	if err := WriteMetadataFrame(stream, MetadataFrame{
-		UDID:  c.cfg.UDID,
-		Token: c.cfg.Token,
-		Mode:  c.cfg.Mode,
-	}); err != nil {
-		slog.Debug("TCPWSClient: metadata frame failed", "err", err)
-		return
-	}
-	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
-	br := bufio.NewReader(stream)
-	if _, _, _, err := ReadStreamResponse(br); err != nil {
-		slog.Debug("TCPWSClient: metadata response failed", "err", err)
-	}
 }
 
 // checkCachedSession inspects the cached smux session under mu and evicts
@@ -654,21 +652,109 @@ func (c *TCPWSClient) Close() error {
 
 // TCPWSServer is the TCP-WS + smux server transport.
 type TCPWSServer struct {
-	store *TicketStore
+	// Device-auth state, mirroring QUICServer. The metadata stream (StreamType
+	// 0x10) authenticates the session; under enforce, unauthenticated proxy
+	// streams are rejected. Both are immutable after construction/SetX (called
+	// before HandleConn), so no lock is needed on the read path.
+	validate Validator
+	adm      admissionPolicy // device-auth admission; see admission.go
+
+	// cookieSigner enables the local cookie fast path; nil = cold auth only
+	// (legacy TLS mode without cert_dir, k2p). Immutable after SetCookieSigner
+	// (called before HandleConn), no lock needed on the read path. Mirrors
+	// QUICServer.cookieSigner.
+	cookieSigner *CookieSigner
+
+	// sessions is the live-connection registry + revalidation sweeper (spec
+	// §6.5); nil = disabled (tests, k2p). Immutable after EnableRevalidation
+	// (called before HandleConn/HandleSession). Mirrors QUICServer.sessions.
+	sessions *authSessions
+
+	// rollout is the Phase 3 enforce-rollout counter set; set by
+	// SetRolloutStats, immutable after (called before HandleConn/HandleSession).
+	// nil-safe (all Record* are nil-receiver safe). Mirrors QUICServer.rollout.
+	rollout *RolloutStats
 
 	mu    deadlock.Mutex
 	tcpCh chan tcpAcceptResult
-	udpH  UDPHandler
-	done  chan struct{}
+	// udpH is an egress sink: reach it only through admitUDP, never directly.
+	udpH UDPHandler
+	done chan struct{}
 }
 
 // NewTCPWSServer creates a new TCP-WS server transport.
-func NewTCPWSServer(store *TicketStore) *TCPWSServer {
+func NewTCPWSServer() *TCPWSServer {
 	return &TCPWSServer{
-		store: store,
+		adm:   admissionPolicy{authWait: authWaitDefault},
 		tcpCh: make(chan tcpAcceptResult, 64),
 		done:  make(chan struct{}),
 	}
+}
+
+// SetValidator sets the Validator used by metadata stream auth. Must be
+// called before HandleConn/HandleSession. Mirrors QUICServer.SetValidator so a
+// node authenticates identically on both transports.
+func (s *TCPWSServer) SetValidator(v Validator) {
+	s.validate = v
+}
+
+// SetEnforce toggles TCP-WS device-auth enforcement. When false (default,
+// permissive) an unauthenticated session is still served, but attribution
+// follows the verdict, not the self-report — a session with no passing
+// verdict lands in the empty-udid bucket; the connection itself is never
+// blocked, so legacy clients that predate metadata auth keep working during
+// rollout. When true, proxy streams on a session that failed (or never sent)
+// metadata auth are rejected. This is the same K2_ENFORCE_AUTH flag that
+// governs QUIC: enforcement must cover BOTH transports, else an attacker
+// forces TCP-WS fallback to bypass QUIC auth.
+func (s *TCPWSServer) SetEnforce(v bool) {
+	s.adm.enforce = v
+}
+
+// SetRolloutStats mirrors QUICServer.SetRolloutStats — both transports feed
+// the SAME counter set so the DIAG: auth-rollout summary covers the node.
+func (s *TCPWSServer) SetRolloutStats(r *RolloutStats) { s.rollout = r }
+
+// SetCookieSigner enables node-local cookie issue/verify (spec §6). Must be
+// called before HandleConn/HandleSession. Mirrors QUICServer.SetCookieSigner.
+func (s *TCPWSServer) SetCookieSigner(cs *CookieSigner) { s.cookieSigner = cs }
+
+// EnableRevalidation creates the connection registry and starts the periodic
+// revalidation sweeper against v (pass the same cached validator chain used
+// for cold auth so Center load is shared). Must be called before
+// HandleConn/HandleSession; Close() tears the sweeper down. Mirrors
+// QUICServer.EnableRevalidation.
+func (s *TCPWSServer) EnableRevalidation(v Validator) {
+	s.sessions = newAuthSessions(v, authSweepInterval)
+}
+
+// admitTCP is the only route from an accepted proxy stream to AcceptTCP, and so
+// the whole of the TCP admission gate — the TCP-WS twin of
+// QUICServer.admitTCP. See admission.go and TestAdmissionGate_EgressSinksAreGated.
+func (s *TCPWSServer) admitTCP(auth *connAuth, stream *smux.Stream, br *bufio.Reader, remote net.Addr, dev *deviceIDHolder, addr string, connLog *slog.Logger) {
+	if !s.adm.admit(auth) {
+		connLog.Warn("TCPWSServer: TCP rejected (enforce: unauthenticated)", "addr", addr)
+		WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+		stream.Close()
+		return
+	}
+	s.sendTCP(tcpAcceptResult{
+		conn: &smuxStreamConn{Stream: stream, br: br, remoteAddr: remote, dev: dev},
+		addr: addr,
+	})
+}
+
+// admitUDP is the only reader of s.udpH, and so the whole of the UDP admission
+// gate — the TCP-WS twin of QUICServer.admitUDP. ok=false means the session
+// failed admission; a nil handler with ok=true means ServeUDP has not been
+// called yet, which is not an auth condition.
+func (s *TCPWSServer) admitUDP(auth *connAuth) (handler UDPHandler, ok bool) {
+	if !s.adm.admit(auth) {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.udpH, true
 }
 
 // HandleConn processes a new TCP-WS client connection.
@@ -704,6 +790,23 @@ func (s *TCPWSServer) HandleSession(sess *smux.Session) {
 func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, remote net.Addr) {
 	defer sess.Close()
 	dev := &deviceIDHolder{}
+	auth := newConnAuth()
+	s.rollout.RecordConn()
+	defer func() {
+		// !settled() alone is not enough to decide "count as legacy": the
+		// metadata goroutine may still be resolving its verdict (see
+		// connAuth.rolloutCounted). claimRolloutCount() is the actual
+		// tie-breaker — only the winner of that race increments a counter.
+		if !auth.settled() && auth.claimRolloutCount() {
+			s.rollout.RecordLegacyNoMetadata()
+		}
+	}()
+	var as *authSession
+	if s.sessions != nil {
+		as = newAuthSession(auth, func() { sess.Close() })
+		unregister := s.sessions.register(as)
+		defer unregister()
+	}
 	for {
 		stream, err := sess.AcceptStream()
 		if err != nil {
@@ -715,12 +818,12 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 					connLog.Error("TCPWSServer: panic in handleStream", "panic", r)
 				}
 			}()
-			s.handleStream(stream, connLog, remote, dev)
+			s.handleStream(sess, stream, connLog, remote, dev, auth, as)
 		}()
 	}
 }
 
-func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder) {
+func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder, auth *connAuth, as *authSession) {
 	br := bufio.NewReader(stream)
 
 	streamType, addr, err := ReadStreamHeader(br)
@@ -731,24 +834,107 @@ func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, re
 
 	switch streamType {
 	case StreamTypeMeta:
-		// TCP-WS auth happens at HTTP level (/k2v5/auth with X-K2-Mode header).
-		// Metadata stream on TCP-WS is accepted for protocol symmetry but not validated here.
-		meta, err := ReadMetadataFrame(br)
-		if err != nil {
-			stream.Close()
-			return
-		}
-		slog.Info("TCPWSServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode)
-		dev.set(meta.UDID)               // self-reported (unvalidated) — attribution only, see spec §8
-		WriteStreamResponse(stream, nil) // OK
-		stream.Close()
+		s.handleMetadataStream(sess, stream, br, connLog, dev, auth, as)
 	case StreamTypeTCP:
-		sc := &smuxStreamConn{Stream: stream, br: br, remoteAddr: remote, dev: dev}
-		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
+		s.admitTCP(auth, stream, br, remote, dev, addr, connLog)
 	case StreamTypeUDP:
-		s.handleUDPStream(stream, br, connLog, remote, dev)
+		s.handleUDPStream(stream, br, connLog, remote, dev, auth)
 	default:
 		stream.Close()
+	}
+}
+
+// handleMetadataStream processes a TCP-WS connection metadata stream
+// (StreamType 0x10). Mirrors QUICServer.handleMetadataStream.
+//
+// Rollout counting (spec §7.2): recordVerdict fires once, right after
+// auth.settle(st.authed), covering the enforce-reject, permissive-accept, and
+// success branches below. A pre-parse ReadMetadataFrame failure (bad
+// metadata) returns before that point — the deferred auth.settle(false)
+// still settles the connection (so it does NOT count as
+// RecordLegacyNoMetadata, which only fires on a connection that never
+// presented metadata at all), but it also never reaches recordVerdict. That
+// leaves a small, documented residual bucket (parse-failed connections)
+// uncounted by both cookie_hit/cold/unauthed and legacy_no_metadata — expect
+// total != authed+unauthed+legacy_no_metadata by roughly that delta; it is
+// not a counting bug.
+//
+// At-most-once counting (connAuth.rolloutCounted): this handler can race the
+// accept loop's teardown defer (RecordLegacyNoMetadata fires if the
+// connection dies while this goroutine is still blocked resolving a
+// verdict), and nothing limits a client to a single metadata stream per
+// connection, so this function can run more than once per connection. Both
+// the teardown defer and the `recordVerdict` call below first claim
+// auth.rolloutCounted via CAS and only proceed on a win — so every
+// connection contributes at most one rollout-counter increment, no matter
+// which of those two paths gets there first or how many metadata streams the
+// client opens.
+//
+// Attribution follows the SERVER-side verdict, never the self-reported value:
+// only a validated connection gets dev.set (a Center-validated udid is
+// trustworthy — Center rejects device.UDID != udid), and a failed or absent
+// validation lands in the empty-udid bucket (spec §5.3 udid 收口).
+//
+// Response contract (spec §5.2): permissive ALWAYS answers OK — rollout must
+// never fail a legacy-credential client. Under enforce, an explicit rejection
+// (Code 401/402/403 — only Center issues these) answers with the coded 0x02
+// form so the client can classify without string matching; "cannot determine"
+// and parse failures answer the legacy 0x01 form (no invented code). The
+// verdict is always settled; the deferred settle is the fail-closed backstop.
+func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, dev *deviceIDHolder, auth *connAuth, as *authSession) {
+	defer auth.settle(false)
+
+	meta, err := ReadMetadataFrame(br)
+	if err != nil {
+		connLog.Warn("TCPWSServer: metadata stream parse failed", "err", err)
+		WriteStreamResponse(stream, fmt.Errorf("bad metadata"))
+		stream.Close()
+		return
+	}
+
+	connLog.Info("TCPWSServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "version", meta.Version)
+
+	// Single decision point shared verbatim with QUIC (spec §9 two-transport
+	// consistency): a valid cookie short-circuits the validator chain entirely
+	// and issues no new cookie; otherwise this runs cold auth through
+	// s.validate exactly as before, now also minting a cookie on success.
+	st := resolveMetadataAuth(s.cookieSigner, s.validate, meta, s.adm.enforce, time.Now())
+
+	// Attribution from the SERVER-determined identity (spec §5.3): cookie's
+	// udid on a hit, Center-confirmed udid on cold OK, "" otherwise (empty-udid
+	// bucket). TCP-WS has no ctx.mode (unlike QUIC) — mirrors QUICServer's
+	// unconditional dev.set.
+	dev.set(st.udid)
+	dev.setSession(st.sessionID)
+	auth.settle(st.authed)
+	if auth.claimRolloutCount() {
+		recordVerdict(s.rollout, st.cookieHit, st.authed)
+	}
+
+	if !st.authed {
+		connLog.Warn("TCPWSServer: metadata auth rejected", "udid", meta.UDID, "code", st.code, "enforce", s.adm.enforce)
+		if s.adm.enforce {
+			if st.code != 0 {
+				WriteStreamResponse(stream, &StreamError{Code: st.code, Message: "auth rejected"})
+			} else {
+				WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+			}
+			stream.Close()
+			sess.Close() // tear the session, mirroring QUIC's CloseWithError
+			return
+		}
+		// Permissive: accept, no attribution (empty-udid bucket), never block.
+		WriteMetadataResponse(stream, "")
+		stream.Close()
+		return
+	}
+
+	// newCookie is non-empty ONLY after a Center cold auth (spec §6.3) — a
+	// cookie hit answers with an empty kv and the client keeps its copy.
+	WriteMetadataResponse(stream, st.newCookie)
+	stream.Close()
+	if as != nil {
+		as.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)
 	}
 }
 
@@ -780,7 +966,7 @@ func runSmuxUDPHandler(
 	handler.HandleUDP(sess, addr)
 }
 
-func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder) {
+func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder, auth *connAuth) {
 	mux := &serverSmuxWriter{stream: stream}
 	sessions := make(map[uint32]*smuxServerUDPConn)
 	var sessionsMu deadlock.Mutex
@@ -808,6 +994,28 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, con
 				sessionsMu.Unlock()
 				continue // at capacity, drop frame
 			}
+			// Admission gate: on denial no session is created, and the stream is
+			// torn down rather than left to re-ask on every new session id —
+			// a session that never sends metadata would otherwise pay the
+			// admission wait again per frame.
+			//
+			// admit() may wait, so release the map lock first — runSmuxUDPHandler
+			// needs it to reap finished sessions. Only this loop creates
+			// sessions, so nothing can add one while the lock is released.
+			sessionsMu.Unlock()
+			handler, admitted := s.admitUDP(auth)
+			if !admitted {
+				connLog.Warn("TCPWSServer: UDP stream rejected (enforce: unauthenticated)",
+					"sid", frame.SessionID, "addr", frame.Addr)
+				sessionsMu.Lock()
+				for _, sess := range sessions {
+					sess.close()
+				}
+				sessionsMu.Unlock()
+				stream.Close()
+				return
+			}
+			sessionsMu.Lock()
 			sessLog := connLog.With("sid", frame.SessionID, "addr", frame.Addr)
 			sess = &smuxServerUDPConn{
 				writer:     mux,
@@ -821,9 +1029,6 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, con
 			}
 			sessions[frame.SessionID] = sess
 
-			s.mu.Lock()
-			handler := s.udpH
-			s.mu.Unlock()
 			if handler != nil {
 				addr := frame.Addr
 				sid := frame.SessionID
@@ -872,16 +1077,23 @@ func (s *TCPWSServer) ServeUDP(ctx context.Context, handler UDPHandler) error {
 	}
 }
 
-// Close stops the server.
+// Close stops the server and tears down the revalidation sweeper (if
+// enabled). sessions.Close() calls wg.Wait() internally, which must never run
+// under s.mu (Rule #3 — waiting under lock risks deadlock if the goroutine
+// being waited on ever needs that same lock), so it runs after s.mu is
+// released. Mirrors QUICServer.Close.
 func (s *TCPWSServer) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	select {
 	case <-s.done:
+		s.mu.Unlock()
 		return nil
 	default:
 		close(s.done)
+	}
+	s.mu.Unlock()
+	if s.sessions != nil {
+		s.sessions.Close() // wg.Wait — no lock held (Rule #3)
 	}
 	return nil
 }
@@ -898,25 +1110,25 @@ func (s *TCPWSServer) Close() error {
 // Design (mirror of serverSmuxWriter for stream-level isolation; see
 // commit 17e06b1 for jp01 May 2026 incident and rationale):
 //
-//   1. writeMu is sync.Mutex (NOT deadlock.Mutex). It is a serialization
-//      lock that legitimately holds across smux.Stream.Write, which may
-//      block under peer-window flow control when the server's
-//      handleUDPStream main loop stalls (server-side fix in deliver()
-//      mitigates the most common cause but does not eliminate it).
-//      deadlock.Mutex's 30/60s watchdog would mis-detect this as a
-//      deadlock and trigger os.Exit(2) on desktop production builds (which
-//      do NOT carry -tags=deadlock_disable) — the v0.4.4 daemon-FATAL
-//      root cause this fix exists for.
+//  1. writeMu is sync.Mutex (NOT deadlock.Mutex). It is a serialization
+//     lock that legitimately holds across smux.Stream.Write, which may
+//     block under peer-window flow control when the server's
+//     handleUDPStream main loop stalls (server-side fix in deliver()
+//     mitigates the most common cause but does not eliminate it).
+//     deadlock.Mutex's 30/60s watchdog would mis-detect this as a
+//     deadlock and trigger os.Exit(2) on desktop production builds (which
+//     do NOT carry -tags=deadlock_disable) — the v0.4.4 daemon-FATAL
+//     root cause this fix exists for.
 //
-//   2. Each Write has a deadline (streamWriteDeadline = 5s). If the write
-//      does not complete in that window, the stream is treated as dead:
-//      smux.Stream is Close()d, future writeFrame calls fast-fail via the
-//      dead flag without queueing on the mutex.
+//  2. Each Write has a deadline (streamWriteDeadline = 5s). If the write
+//     does not complete in that window, the stream is treated as dead:
+//     smux.Stream is Close()d, future writeFrame calls fast-fail via the
+//     dead flag without queueing on the mutex.
 //
-//   3. Failure stays at mux level. Stream.Close cascades through smux:
-//      ReadSmuxUDPFrame returns ErrClosedPipe → readLoop exits and closes
-//      m.done → smuxUDPConn.ReadFrom returns net.ErrClosed. Consumers
-//      naturally unwind; TCPWSClient rebuilds a fresh mux on next DialUDP.
+//  3. Failure stays at mux level. Stream.Close cascades through smux:
+//     ReadSmuxUDPFrame returns ErrClosedPipe → readLoop exits and closes
+//     m.done → smuxUDPConn.ReadFrom returns net.ErrClosed. Consumers
+//     naturally unwind; TCPWSClient rebuilds a fresh mux on next DialUDP.
 type smuxUDPMux struct {
 	stream      *smux.Stream
 	br          *bufio.Reader
@@ -1171,10 +1383,10 @@ func (c *smuxUDPConn) Close() error {
 	return nil
 }
 
-func (c *smuxUDPConn) LocalAddr() net.Addr                    { return c.mux.stream.LocalAddr() }
-func (c *smuxUDPConn) SetDeadline(t time.Time) error          { c.rd.set(t); return nil }
-func (c *smuxUDPConn) SetReadDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *smuxUDPConn) SetWriteDeadline(time.Time) error       { return nil }
+func (c *smuxUDPConn) LocalAddr() net.Addr               { return c.mux.stream.LocalAddr() }
+func (c *smuxUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *smuxUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *smuxUDPConn) SetWriteDeadline(time.Time) error  { return nil }
 
 // ============================================================================
 // Server-side smux UDP stream writer (shared, mutex-protected)
@@ -1289,7 +1501,7 @@ var _ UDPSessionInfo = (*smuxServerUDPConn)(nil)
 
 func (c *smuxServerUDPConn) UDPSessionID() uint32  { return c.sessionID }
 func (c *smuxServerUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
-func (c *smuxServerUDPConn) Logger() *slog.Logger   { return c.log }
+func (c *smuxServerUDPConn) Logger() *slog.Logger  { return c.log }
 
 // DeviceID implements ConnDeviceID. Returns "" if no holder is wired
 // (defensive) or if the metadata stream hasn't landed yet.
@@ -1298,6 +1510,14 @@ func (c *smuxServerUDPConn) DeviceID() string {
 		return ""
 	}
 	return c.dev.get()
+}
+
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *smuxServerUDPConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
 }
 
 func (c *smuxServerUDPConn) deliver(payload []byte) {
@@ -1352,7 +1572,7 @@ func (c *smuxServerUDPConn) Close() error {
 	return nil
 }
 
-func (c *smuxServerUDPConn) LocalAddr() net.Addr                    { return c.writer.stream.LocalAddr() }
-func (c *smuxServerUDPConn) SetDeadline(t time.Time) error          { c.rd.set(t); return nil }
-func (c *smuxServerUDPConn) SetReadDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *smuxServerUDPConn) SetWriteDeadline(time.Time) error       { return nil }
+func (c *smuxServerUDPConn) LocalAddr() net.Addr               { return c.writer.stream.LocalAddr() }
+func (c *smuxServerUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *smuxServerUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *smuxServerUDPConn) SetWriteDeadline(time.Time) error  { return nil }

@@ -88,16 +88,15 @@ func TestQUICConfigType(t *testing.T) {
 	cfg := DefaultQUICConfig()
 	// Verify it's the right type for quic-go
 	_ = &quic.Config{
-		EnableDatagrams:   cfg.EnableDatagrams,
-		MaxIdleTimeout:    cfg.MaxIdleTimeout,
-		KeepAlivePeriod:   cfg.KeepAlivePeriod,
+		EnableDatagrams:    cfg.EnableDatagrams,
+		MaxIdleTimeout:     cfg.MaxIdleTimeout,
+		KeepAlivePeriod:    cfg.KeepAlivePeriod,
 		MaxIncomingStreams: cfg.MaxIncomingStreams,
 	}
 }
 
 func TestQUICServer_Create(t *testing.T) {
-	store := NewTicketStore()
-	qs := NewQUICServer(store)
+	qs := NewQUICServer()
 	if qs == nil {
 		t.Fatal("NewQUICServer returned nil")
 	}
@@ -167,8 +166,7 @@ func setupQUICPair(t *testing.T) (*QUICClient, *QUICServer, func()) {
 		t.Fatal(err)
 	}
 
-	store := NewTicketStore()
-	server := NewQUICServer(store)
+	server := NewQUICServer()
 	server.Listen(ln)
 
 	// Client
@@ -177,7 +175,7 @@ func setupQUICPair(t *testing.T) (*QUICClient, *QUICServer, func()) {
 		Host: "127.0.0.1",
 		Port: serverAddr.Port,
 	}
-	client := NewQUICClient(clientCfg, store)
+	client := NewQUICClient(clientCfg, nil)
 	client.tlsConfig = &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"h3"},
@@ -567,8 +565,7 @@ func TestQUICClient_DialUDP_StreamFallback(t *testing.T) {
 	}
 	defer ln.Close()
 
-	store := NewTicketStore()
-	server := NewQUICServer(store)
+	server := NewQUICServer()
 	server.Listen(ln)
 	defer server.Close()
 
@@ -596,7 +593,7 @@ func TestQUICClient_DialUDP_StreamFallback(t *testing.T) {
 		Host: "127.0.0.1",
 		Port: serverAddr.Port,
 	}
-	client := NewQUICClient(clientCfg, store)
+	client := NewQUICClient(clientCfg, nil)
 	defer client.Close()
 	client.tlsConfig = &tls.Config{
 		InsecureSkipVerify: true,

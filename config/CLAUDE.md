@@ -43,7 +43,7 @@ pcc: gfw
 rate: 100000000
 auth:
   remote_url: "https://auth.example.com/check"
-  cache_ttl: 5m
+  cache_ttl: 15m
 log:
   level: info
 control_plane_routes:            # optional; antiblock Phase 1 relay.

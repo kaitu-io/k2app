@@ -100,12 +100,13 @@ func TestContract_EchoLoop_TriggersReRace(t *testing.T) {
 // is classified as a client error, preventing automatic retry loops.
 // User scenario: token expired; retrying the same credentials wastes bandwidth.
 //
-// Auth in k2v5 is connection-level (not per-request). Auth failures arrive as
-// ErrStreamRejected ("stream rejected"), NOT as StreamError. StreamError is
-// only used for target-specific responses (blocked IP, target unreachable).
+// Auth in k2v5 is connection-level (not per-request). Auth failures arrive
+// wrapped in wire.ErrStreamRejected / wire.ErrMetadataRejected sentinels, NOT
+// as a bare StreamError. StreamError is only used for target-specific
+// responses (blocked IP, target unreachable).
 func TestContract_AuthFailed_NoRetry(t *testing.T) {
 	// Real auth failure: stream rejection at connection level → CategoryClient.
-	err := fmt.Errorf("wire: stream rejected")
+	err := fmt.Errorf("connect: %w: unauthorized", wire.ErrStreamRejected)
 	classified := ClassifyError(err)
 
 	if classified.Category != CategoryClient {

@@ -26,7 +26,7 @@ ECH match   No match
 k2v5 handler  ReverseProxy
     │
 ┌───┴───┐
-│ Auth  │  POST /k2v5/auth, TicketStore
+│ Auth  │  metadata stream (0x10) → Validator/AuthVerdict; enforce gate K2_ENFORCE_AUTH
 └───┬───┘
     │
 QUIC + TCP-WS Listeners
@@ -61,11 +61,9 @@ When `CertDir` is set (always true in zero-config mode):
 ```go
 type Server struct {
     cfg      *config.ServerConfig
-    store    *wire.TicketStore
-    quicSrv  *wire.QUICServer
-    tcpwsSrv *wire.TCPWSServer
+    quicSrv  *wire.QUICServer      // SetValidator + SetEnforce (metadata-stream device auth)
+    tcpwsSrv *wire.TCPWSServer     // same validator + enforce — both transports gated
     handler  *ProxyHandler         // TCP/UDP proxy (AcceptTCP/ServeUDP)
-    authHandler http.Handler       // POST /k2v5/auth
     TLSConfig   *tls.Config       // cert selection callback + ECH keys
     echConfig   []byte            // ECH config list for client distribution
     done        chan struct{}
@@ -73,6 +71,8 @@ type Server struct {
 ```
 
 Note: `wire.ReverseProxy` is a function (not a type) — called for non-ECH SNIs to camouflage as the real target site.
+
+**The camouflage relay is the one egress path that never passes device auth**, so its target must never be attacker-chosen. A non-ECH connection is relayed only if its SNI is in `trustedSNIs`, and `learnOuterSNI` admits exactly one name: `s.camouflageName`, the `public_name` of the node's own ECH config. Real clients always send that (uTLS forces outer SNI = public_name, spec §3.1), so the pin is free. Without it, anyone holding the node's ECH config — it ships in the `k2v5://` URL, so every current and *former* user has one — could teach the node an arbitrary string and get a raw TCP relay to `<string>:443`, reaching even reserved IPs that `ProxyHandler.checkAddr` blocks on the authenticated path.
 
 ## Lifecycle
 

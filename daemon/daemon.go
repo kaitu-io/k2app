@@ -497,7 +497,11 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	// release via CloseIdleConnections.
 	for _, sess := range subs {
 		client := sess.HTTPClient()
-		sess.Subscription().StartRefresh(ctx, func() *http.Client { return client })
+		sub := sess.Subscription()
+		// Phase 0（spec §4.3 P2）：凭据轮换后回写 persistedState.Config，
+		// 使 7 天自动重连重放的是新 token 而非冻结在上次连接时刻的旧值。
+		sub.SetOnCredsRotate(d.persistRotatedCreds)
+		sub.StartRefresh(ctx, func() *http.Client { return client })
 	}
 
 	d.mu.Lock()
@@ -821,4 +825,55 @@ func (s daemonURLSource) DirectDialer() wire.DirectDialer {
 		return nil
 	}
 	return dd
+}
+
+// rewriteRouteVia replaces every route whose Via equals oldVia with newVia.
+// Returns true when at least one route was rewritten. Pure function.
+func rewriteRouteVia(cfg *config.ClientConfig, oldVia, newVia string) bool {
+	if cfg == nil || oldVia == "" || newVia == "" || oldVia == newVia {
+		return false
+	}
+	changed := false
+	for i := range cfg.Routes {
+		if cfg.Routes[i].Via == oldVia {
+			cfg.Routes[i].Via = newVia
+			changed = true
+		}
+	}
+	return changed
+}
+
+// persistRotatedCreds is the Subscription creds-rotation callback: rewrite
+// the matching k2subs:// route in lastConfig and re-persist auto-reconnect
+// state. Concurrency constitution: field rewrite under d.mu; the disk write
+// (saveLifecycleState) happens OUTSIDE the lock.
+//
+// Every subscription registered in doUp's loop shares this same callback and
+// the same *config.ClientConfig (d.lastConfig) — so two subscriptions can
+// rotate concurrently. d.mu only serializes access to the *pointer*; once a
+// pointer to the shared struct escapes the lock, nothing protects the fields
+// it points to. saveLifecycleState's json.Marshal walks every route, not
+// just the one this call rewrote, so it must never read the live, still-
+// mutable d.lastConfig after unlocking. Instead we snapshot (deep-copy) the
+// Routes slice into a fresh backing array while still holding the lock, and
+// marshal/persist that private copy outside the lock — no other goroutine
+// can ever observe or mutate memory reachable only from this copy.
+func (d *Daemon) persistRotatedCreds(oldRaw, newRaw string) {
+	d.mu.Lock()
+	cfg := d.lastConfig
+	state := d.lastStatus.State
+	updated := rewriteRouteVia(cfg, oldRaw, newRaw)
+	var snapshot *config.ClientConfig
+	if updated {
+		cp := *cfg
+		cp.Routes = append([]config.RouteConfig(nil), cfg.Routes...)
+		snapshot = &cp
+	}
+	d.mu.Unlock()
+	if !updated {
+		slog.Warn("DIAG: subs-creds-persist-miss", "component", "daemon")
+		return
+	}
+	slog.Info("DIAG: subs-creds-persist", "component", "daemon")
+	d.saveLifecycleState(snapshot, state)
 }

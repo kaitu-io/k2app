@@ -33,9 +33,9 @@ func TestClassifyError(t *testing.T) {
 		{"unsupported scheme", fmt.Errorf("wire: unsupported scheme %q, want k2v5", "http"), 400},
 		{"missing port", errors.New("wire: missing port"), 400},
 
-		// 401 Auth Rejected
-		{"stream rejected", errors.New("wire: stream rejected by server: invalid token"), 401},
-		{"stream rejected unauthorized", errors.New("wire: stream rejected by server: unauthorized"), 401},
+		// 401/402 Auth Rejected (structured sentinels, not string matching)
+		{"stream rejected sentinel", fmt.Errorf("%w: invalid token", wire.ErrStreamRejected), 401},
+		{"metadata rejected 402", fmt.Errorf("%w: %w", wire.ErrMetadataRejected, &wire.StreamError{Code: 402, Message: "expired"}), 402},
 
 		// 403 Forbidden
 		{"pin mismatch", errors.New("wire: public key pin mismatch and not signed by Kaitu CA"), 403},
@@ -153,7 +153,7 @@ func TestClassifyError_Category(t *testing.T) {
 		{"101 network", errors.New("wire: network unreachable"), 101, CategoryNetwork},
 		{"108 network", context.DeadlineExceeded, 108, CategoryNetwork},
 		{"400 client", fmt.Errorf("wire: parse URL: bad"), 400, CategoryClient},
-		{"401 client", errors.New("wire: stream rejected by server: expired"), 401, CategoryClient},
+		{"401 client", fmt.Errorf("%w: expired", wire.ErrStreamRejected), 401, CategoryClient},
 		{"402 client", errors.New("payment required"), 402, CategoryClient},
 		{"403 client", errors.New("wire: public key pin mismatch and not signed by Kaitu CA"), 403, CategoryClient},
 		{"502 server", errors.New("wire: uTLS handshake: verify failed"), 502, CategoryServer},
@@ -281,5 +281,91 @@ func TestClassifyError_GatewayIptablesFailure(t *testing.T) {
 				t.Errorf("category = %q, want %q (gateway-host problem, not server)", result.Category, CategoryClient)
 			}
 		})
+	}
+}
+
+// TestClassifyError_MetadataRejection: the producer (wire connect) classifies
+// via the ErrMetadataRejected sentinel; the embedded StreamError carries the
+// server code. All three land in CategoryClient — retrying the same
+// credentials cannot succeed, so the state machine must stop retrying.
+func TestClassifyError_MetadataRejection(t *testing.T) {
+	for _, code := range []int{401, 402, 403} {
+		err := fmt.Errorf("%w: %w", wire.ErrMetadataRejected, &wire.StreamError{Code: code, Message: "auth rejected"})
+		got := ClassifyError(err)
+		if got.Code != code || got.Category != CategoryClient {
+			t.Errorf("code %d: got {%d %s}, want {%d %s}", code, got.Code, got.Category, code, CategoryClient)
+		}
+	}
+}
+
+// TestClassifyError_MetadataRejectionNodeFault: a metadata rejection carrying
+// a 5xx code means the NODE could not authenticate (no NodeSecret,
+// unresolvable node IPv4 — wire.AuthCodeNodeFault), not that the device was
+// judged. It must stay in the server category so the engine keeps retrying and
+// the transport race routes around the broken node; collapsing it into 401
+// would both blame the user's account and stop the retry that would have
+// rescued them.
+func TestClassifyError_MetadataRejectionNodeFault(t *testing.T) {
+	for _, code := range []int{502, 503, 570} {
+		err := fmt.Errorf("%w: %w", wire.ErrMetadataRejected, &wire.StreamError{Code: code, Message: "auth unavailable"})
+		got := ClassifyError(err)
+		if got.Code != code {
+			t.Errorf("code %d: got %d, want it preserved", code, got.Code)
+		}
+		if got.Category != CategoryServer {
+			t.Errorf("code %d: category = %s, want %s (must stay retryable)", code, got.Category, CategoryServer)
+		}
+	}
+}
+
+// TestClassifyError_MetadataRejectionUnknownCodeStaysClient: an unrecognised
+// code still defaults to the fail-closed 401. Only the explicitly enumerated
+// server codes escape the client category.
+func TestClassifyError_MetadataRejectionUnknownCodeStaysClient(t *testing.T) {
+	err := fmt.Errorf("%w: %w", wire.ErrMetadataRejected, &wire.StreamError{Code: 418, Message: "teapot"})
+	got := ClassifyError(err)
+	if got.Code != ErrCodeAuthRejected || got.Category != CategoryClient {
+		t.Errorf("got {%d %s}, want {%d %s}", got.Code, got.Category, ErrCodeAuthRejected, CategoryClient)
+	}
+}
+
+// TestClassifyError_MetadataRejectionThroughMultiTransport: the same rejection
+// arriving inside a MultiTransportError (TransportManager fallback path) must
+// classify identically — MultiTransportError.Unwrap() []error carries it.
+func TestClassifyError_MetadataRejectionThroughMultiTransport(t *testing.T) {
+	inner := fmt.Errorf("%w: %w", wire.ErrMetadataRejected, &wire.StreamError{Code: 402, Message: "subscription expired"})
+	mte := &wire.MultiTransportError{QUICErr: errors.New("quic: handshake timeout"), TCPWSErr: inner}
+	got := ClassifyError(mte)
+	if got.Code != 402 || got.Category != CategoryClient {
+		t.Fatalf("got {%d %s}, want {402 client}", got.Code, got.Category)
+	}
+}
+
+// TestClassifyError_LegacyStreamRejectedSentinel: an old enforce server (or
+// the proxy-stream admission gate) answers the uncoded 0x01 "unauthorized" —
+// classified 401 via the errors.Is sentinel, not via string matching.
+func TestClassifyError_LegacyStreamRejectedSentinel(t *testing.T) {
+	got := ClassifyError(fmt.Errorf("connect: %w: unauthorized", wire.ErrStreamRejected))
+	if got.Code != ErrCodeAuthRejected || got.Category != CategoryClient {
+		t.Fatalf("got {%d %s}, want {401 client}", got.Code, got.Category)
+	}
+}
+
+// TestClassifyError_FabricatedStringIsNotAuth: string matching is gone — a
+// message that merely CONTAINS "stream rejected" no longer classifies as 401.
+func TestClassifyError_FabricatedStringIsNotAuth(t *testing.T) {
+	got := ClassifyError(errors.New("wire: stream rejected by server: whatever"))
+	if got.Code == ErrCodeAuthRejected {
+		t.Fatal("string matching resurrected")
+	}
+}
+
+// TestClassifyError_BareStreamError403StaysTarget: proxy-layer StreamError
+// (server/handler.go writes 403 for blocked target addresses) must remain
+// CategoryTarget — a user browsing to a blocked IP is not an auth failure.
+func TestClassifyError_BareStreamError403StaysTarget(t *testing.T) {
+	got := ClassifyError(&wire.StreamError{Code: 403, Message: "blocked: 10.0.0.1 is a reserved IP"})
+	if got.Category != CategoryTarget {
+		t.Fatalf("category = %s, want target", got.Category)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/rand"
 	"net"
@@ -19,6 +20,7 @@ import (
 	"github.com/sasha-s/go-deadlock"
 
 	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire/k2cc"
 )
 
@@ -244,7 +246,7 @@ func DefaultQUICConfig() *quic.Config {
 		MaxIdleTimeout:                 30 * time.Second,
 		KeepAlivePeriod:                10 * time.Second,
 		MaxIncomingStreams:             quicMaxStreams,
-		InitialPacketSize:             1400,
+		InitialPacketSize:              1400,
 	}
 }
 
@@ -281,6 +283,14 @@ func (c *quicStreamConn) DeviceID() string {
 		return ""
 	}
 	return c.dev.get()
+}
+
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *quicStreamConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
 }
 
 // Read uses the buffered reader if present (to consume any data
@@ -320,7 +330,7 @@ func (c *quicStreamConn) Close() error {
 // QUICClient is the QUIC/H3 client transport.
 type QUICClient struct {
 	cfg          Config
-	store        *TicketStore
+	jar          *CookieJar // per-outbound cookie store; nil = no cookie support (probe/p2p)
 	serverAddr   string
 	hopStart     int
 	hopEnd       int
@@ -335,23 +345,25 @@ type QUICClient struct {
 	alloc     *SessionIDAllocator
 	udpMux    *quicUDPMux
 	closed    bool
-	ccSender *k2cc.K2CCSender // stored for stats access
+	ccSender  *k2cc.K2CCSender // stored for stats access
 
-	portHopAttempts    atomic.Int32 // hop attempts before TCP-WS fallback
-	portHopExhaustedAt atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
-	lastTCPSuccessAt   atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
+	portHopAttempts     atomic.Int32 // hop attempts before TCP-WS fallback
+	portHopExhaustedAt  atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
+	lastTCPSuccessAt    atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
 	handshakeFailStreak atomic.Int32 // consecutive connect() handshake failures across different hop ports
 }
 
-// NewQUICClient creates a new QUIC client transport.
-func NewQUICClient(cfg Config, store *TicketStore) *QUICClient {
+// NewQUICClient creates a new QUIC client transport. jar is the per-outbound
+// CookieJar shared with the sibling TCP-WS client (nil disables cookies) —
+// this parameter slot is the same one master used for *TicketStore.
+func NewQUICClient(cfg Config, jar *CookieJar) *QUICClient {
 	dialHost := cfg.Host
 	if cfg.DialAddr != "" {
 		dialHost = cfg.DialAddr
 	}
 	return &QUICClient{
 		cfg:        cfg,
-		store:      store,
+		jar:        jar,
 		serverAddr: net.JoinHostPort(dialHost, strconv.Itoa(cfg.Port)),
 		hopStart:   cfg.HopStart,
 		hopEnd:     cfg.HopEnd,
@@ -599,15 +611,39 @@ serialize:
 	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", k2cc.DefaultMaxRate/1_000_000)
 
 	// Send metadata stream before storing connection (no lock held — Rule #2).
-	// Must happen before any other streams so server knows the client mode.
-	if c.cfg.Mode != "" {
-		if err := c.sendMetadata(ctx, conn); err != nil {
-			slog.Warn("QUICClient: metadata stream failed", "mode", c.cfg.Mode, "err", err)
-			conn.CloseWithError(0x01, "metadata auth failed")
+	// Must happen before any other streams so the server can authenticate and
+	// attribute this connection. Sent by ALL clients (normal + gateway), not
+	// just gateway — previously gated on Mode!="", which left normal clients
+	// completely unauthenticated on the QUIC path (the P0 this fix closes).
+	//
+	// Single shared orchestration (metadata_client.go): transport-layer errors
+	// stay best-effort — the server's enforce gate, not the client, is the
+	// authority; but an EXPLICIT server rejection (only possible under
+	// enforce — permissive servers always answer OK) must fail connect() with
+	// the structured code instead of limping into a closed connection.
+	cookie, mdErr := sendMetadata(ctx, quicMetaTransport{conn: conn}, MetadataFrame{
+		UDID:    c.cfg.UDID,
+		Token:   c.cfg.Token,
+		Mode:    c.cfg.Mode,
+		Version: c.cfg.Version,
+		Cookie:  c.jar.Get(c.cfg.Pin), // nil-safe; "" = cold auth
+	})
+	if mdErr != nil {
+		if isMetadataReject(mdErr) {
+			closeQUICConnSafe(conn, "metadata auth rejected")
 			transport.Close()
-			return nil, fmt.Errorf("wire: metadata auth: %w", err)
+			// ProxyLayerError: the wire transport worked (stream opened, server
+			// responded with an explicit rejection) — TCP-WS fallback to the same
+			// server/credentials cannot help. Matches the established convention
+			// at :714 for the proxy-stream rejection path.
+			return nil, &ProxyLayerError{Err: fmt.Errorf("%w: %w", ErrMetadataRejected, mdErr)}
 		}
+		slog.Warn("QUICClient: metadata stream failed (best-effort)", "mode", c.cfg.Mode, "err", mdErr)
 	}
+	// newCookie is non-empty only right after a Center cold auth (spec §6.3);
+	// jar.Put is a no-op on empty. Never log cookie/newCookie/meta.Token
+	// (spec §6.2/§9).
+	c.jar.Put(c.cfg.Pin, cookie)
 
 	// --- Store result under lock ---
 	// concurrency:allow — closing locally-owned conn/transport not yet stored in struct;
@@ -628,50 +664,6 @@ serialize:
 	go c.acceptOverflowStreams(conn, c.udpMux)
 
 	return conn, nil
-}
-
-// sendMetadata opens a metadata stream (StreamType 0x10) and sends credentials + mode.
-// The server validates and responds with OK or error.
-func (c *QUICClient) sendMetadata(ctx context.Context, conn *quic.Conn) error {
-	stream, err := conn.OpenStreamSync(ctx)
-	if err != nil {
-		return fmt.Errorf("open stream: %w", err)
-	}
-
-	if err := WriteH3ProxyFrameType(stream); err != nil {
-		stream.Close()
-		return fmt.Errorf("write frame type: %w", err)
-	}
-	// Write stream header with empty addr (metadata has no destination).
-	if err := WriteStreamHeader(stream, StreamTypeMeta, ""); err != nil {
-		stream.Close()
-		return fmt.Errorf("write stream header: %w", err)
-	}
-	if err := WriteMetadataFrame(stream, MetadataFrame{
-		UDID:  c.cfg.UDID,
-		Token: c.cfg.Token,
-		Mode:  c.cfg.Mode,
-	}); err != nil {
-		stream.Close()
-		return fmt.Errorf("write metadata: %w", err)
-	}
-
-	// Read server response.
-	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
-	br := bufio.NewReader(stream)
-	ok, errCode, errMsg, err := ReadStreamResponse(br)
-	stream.Close()
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-	if !ok {
-		if errCode > 0 {
-			return &StreamError{Code: errCode, Message: errMsg}
-		}
-		return fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
-	}
-	slog.Info("QUICClient: metadata auth OK", "mode", c.cfg.Mode)
-	return nil
 }
 
 // DialTCP opens a TCP proxy stream through the QUIC connection.
@@ -1014,6 +1006,17 @@ func (c *QUICClient) extractConnLocked() (mux *quicUDPMux, conn *quic.Conn, tr *
 // on a dead UDP write). 5s is 50x normal close time (<100ms).
 const quicCloseTimeout = 5 * time.Second
 
+// quicMetadataRejectDrainDelay bounds the async delay between closing the
+// metadata stream (rejection response written) and closing the connection.
+// See handleMetadataStream's enforce-rejection branch: without this window,
+// CloseWithError can race ahead of the still-unflushed stream FIN.
+const quicMetadataRejectDrainDelay = 50 * time.Millisecond
+
+// metadataStreamDrainTimeout bounds how long handleMetadataStream waits for
+// the client's own FIN before falling back to CancelRead as a leak backstop.
+// See handleMetadataStream's deferred cleanup.
+const metadataStreamDrainTimeout = 200 * time.Millisecond
+
 // quicDialHardTimeout bounds the total time connect() holds connectMu.
 // Must be well under go-deadlock's 60s threshold. Covers: UDP listen +
 // QUIC handshake + Conn.destroy cleanup on failure. If transport.Dial
@@ -1108,31 +1111,123 @@ type tcpAcceptResult struct {
 	err  error
 }
 
+// authWaitDefault bounds how long a proxy stream waits for a late metadata
+// stream under enforce before deciding the connection is unauthenticated. The
+// client sends metadata synchronously inside connect() before any proxy stream,
+// so on the wire metadata always precedes proxy streams; this only covers the
+// server accepting the two streams out of order. Kept short so a legacy client
+// (which never sends metadata) isn't stalled long before rejection.
+const authWaitDefault = 500 * time.Millisecond
+
 // QUICServer is the QUIC/H3 server transport.
 type QUICServer struct {
-	store    *TicketStore
-	validate JWTValidator // set by SetValidator; used by metadata stream auth
+	validate Validator       // set by SetValidator; used by metadata stream auth
+	adm      admissionPolicy // device-auth admission; see admission.go
+
+	// cookieSigner enables the local cookie fast path; nil = cold auth only
+	// (legacy TLS mode without cert_dir, k2p). Immutable after SetCookieSigner
+	// (called before Listen), no lock needed on the read path.
+	cookieSigner *CookieSigner
+
+	// sessions is the live-connection registry + revalidation sweeper (spec
+	// §6.5); nil = disabled (tests, k2p). Immutable after EnableRevalidation
+	// (called before Listen).
+	sessions *authSessions
+
+	// rollout is the Phase 3 enforce-rollout counter set; set by
+	// SetRolloutStats, immutable after (called before Listen). nil-safe (all
+	// Record* are nil-receiver safe) — tests and callers without stats never
+	// crash.
+	rollout *RolloutStats
 
 	mu    deadlock.Mutex
 	ln    *quic.Listener
 	tcpCh chan tcpAcceptResult
-	udpH  UDPHandler
-	done  chan struct{}
+	// udpH is an egress sink: reach it only through admitUDP, never directly.
+	udpH UDPHandler
+	done chan struct{}
 }
 
 // NewQUICServer creates a new QUIC server transport.
-func NewQUICServer(store *TicketStore) *QUICServer {
+func NewQUICServer() *QUICServer {
 	return &QUICServer{
-		store: store,
 		tcpCh: make(chan tcpAcceptResult, 64),
 		done:  make(chan struct{}),
+		adm:   admissionPolicy{authWait: authWaitDefault},
 	}
 }
 
-// SetValidator sets the JWTValidator used by metadata stream auth.
+// SetValidator sets the Validator used by metadata stream auth.
 // Must be called before Listen.
-func (s *QUICServer) SetValidator(v JWTValidator) {
+func (s *QUICServer) SetValidator(v Validator) {
 	s.validate = v
+}
+
+// SetCookieSigner enables node-local cookie issue/verify (spec §6). Must be
+// called before Listen. nil (the default) disables the cookie fast path.
+func (s *QUICServer) SetCookieSigner(cs *CookieSigner) { s.cookieSigner = cs }
+
+// EnableRevalidation creates the connection registry and starts the periodic
+// revalidation sweeper against v (pass the same cached validator chain used
+// for cold auth so Center load is shared). Must be called before Listen;
+// Close() tears the sweeper down.
+func (s *QUICServer) EnableRevalidation(v Validator) {
+	s.sessions = newAuthSessions(v, authSweepInterval)
+}
+
+// SetEnforce toggles QUIC device-auth enforcement. When false (default,
+// permissive) the metadata stream never blocks a connection — required during
+// rollout so legacy clients (which don't send metadata) keep working.
+// Attribution still follows the verdict, not the self-report: only a passing
+// verdict feeds ctx.dev, an unvalidated connection lands in the empty-udid
+// bucket. When true, proxy streams on a connection that failed or omitted
+// metadata auth are rejected. Must be called before Listen.
+func (s *QUICServer) SetEnforce(v bool) {
+	s.adm.enforce = v
+}
+
+// SetRolloutStats wires the Phase 3 enforce-rollout counters. Must be called
+// before Listen; nil is safe (all Record* are nil-receiver safe).
+func (s *QUICServer) SetRolloutStats(r *RolloutStats) { s.rollout = r }
+
+// admitTCP is the only route from an accepted proxy stream to AcceptTCP, and so
+// the whole of the TCP admission gate: on denial the client gets an
+// `unauthorized` stream response instead of a hung stream. Nothing else may
+// call sendTCP with a client-originated connection — see
+// TestAdmissionGate_EgressSinksAreGated.
+func (s *QUICServer) admitTCP(ctx *connContext, qconn *quic.Conn, stream *quic.Stream, br *bufio.Reader, addr string, log *slog.Logger) {
+	if !s.adm.admit(ctx.auth) {
+		log.Warn("QUICServer: TCP rejected (enforce: unauthenticated)", "addr", addr)
+		WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+		stream.Close()
+		return
+	}
+	s.sendTCP(tcpAcceptResult{conn: &quicStreamConn{
+		Stream: stream,
+		local:  qconn.LocalAddr(),
+		remote: qconn.RemoteAddr(),
+		br:     br,
+		dev:    ctx.dev,
+	}, addr: addr})
+	log.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
+}
+
+// admitUDP is the only reader of s.udpH, and so the whole of the UDP admission
+// gate: a UDP path that skips it has no handler to proxy with. That is what
+// stops a newly added path from silently bypassing enforce, as the datagram and
+// overflow paths once did.
+//
+// ok=false means the connection failed admission — drop the frame without
+// creating a session. A nil handler with ok=true means ServeUDP has not been
+// called yet, which is not an auth condition and keeps the pre-existing
+// no-handler behaviour.
+func (s *QUICServer) admitUDP(ctx *connContext) (handler UDPHandler, ok bool) {
+	if !s.adm.admit(ctx.auth) {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.udpH, true
 }
 
 // Listen starts accepting QUIC connections from the given listener.
@@ -1181,6 +1276,14 @@ type connContext struct {
 	mode atomic.Value // string: "" (normal) or "gateway"
 	dev  *deviceIDHolder
 	udp  *connUDPState
+
+	// auth is the device-auth verdict for this connection, consumed by the
+	// admission gate (admitTCP / admitUDP). See admission.go.
+	auth *connAuth
+
+	// sess is this connection's registry entry (nil when revalidation is
+	// disabled). Identity is published onto it by handleMetadataStream.
+	sess *authSession
 }
 
 func (s *QUICServer) handleConn(conn *quic.Conn) {
@@ -1195,8 +1298,29 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 		log:      connLog,
 		dev:      dev,
 	}
-	ctx := &connContext{udp: state, dev: dev}
+	ctx := &connContext{udp: state, dev: dev, auth: newConnAuth()}
 	ctx.mode.Store("") // default: normal client
+
+	s.rollout.RecordConn()
+	defer func() {
+		// !settled() alone is not enough to decide "count as legacy": the
+		// metadata goroutine may still be resolving its verdict (see
+		// connAuth.rolloutCounted). claimRolloutCount() is the actual
+		// tie-breaker — only the winner of that race increments a counter.
+		if !ctx.auth.settled() && ctx.auth.claimRolloutCount() {
+			s.rollout.RecordLegacyNoMetadata()
+		}
+	}()
+
+	if s.sessions != nil {
+		as := newAuthSession(ctx.auth, func() {
+			// 0x03: revoked-by-revalidation (0x01 = unauthorized at admission).
+			conn.CloseWithError(0x03, "session revoked")
+		})
+		ctx.sess = as
+		unregister := s.sessions.register(as)
+		defer unregister() // handleConn returns when the connection dies
+	}
 
 	// Accept streams (TCP proxy + UDP overflow + metadata)
 	go func() {
@@ -1224,7 +1348,7 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 	}()
 
 	// Read datagrams (UDP proxy) — blocks until connection closes
-	s.handleDatagrams(conn, state)
+	s.handleDatagrams(conn, ctx)
 
 	// Cleanup: close all UDP sessions and overflow stream
 	close(state.done)
@@ -1268,20 +1392,16 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 	case StreamTypeMeta:
 		s.handleMetadataStream(qconn, stream, br, ctx)
 	case StreamTypeTCP:
-		sc := &quicStreamConn{
-			Stream: stream,
-			local:  qconn.LocalAddr(),
-			remote: qconn.RemoteAddr(),
-			br:     br,
-			dev:    ctx.dev,
-		}
-		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
-		log.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
+		s.admitTCP(ctx, qconn, stream, br, addr, log)
 	case StreamTypeUDP:
-		s.handleUDPStream(stream, br, ctx.dev, ctx.udp.log, qconn.RemoteAddr().String())
+		s.handleUDPStream(stream, br, ctx, qconn.RemoteAddr().String())
 	case StreamTypeUDPOverflow:
-		s.handleUDPOverflowStream(br, ctx.udp)
+		s.handleUDPOverflowStream(br, ctx)
 	case StreamTypeEcho:
+		// Deliberately not gated: the echo stream reflects bytes back inside the
+		// same QUIC connection and never reaches the network, so it grants an
+		// unauthenticated peer no egress. Gating it would only add authWait to
+		// the transport race's data-path probe.
 		HandleEchoStream(stream, br)
 	default:
 		log.Debug("QUICServer.handleStream: unknown stream type", "streamType", streamType)
@@ -1289,10 +1409,63 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 	}
 }
 
-// handleMetadataStream processes a connection metadata stream (StreamType 0x10).
-// Validates credentials via JWTValidator chain and stores mode in connContext.
-// On auth failure, closes the entire QUIC connection.
+// handleMetadataStream processes a connection metadata stream (StreamType
+// 0x10). Mirrors TCPWSServer.handleMetadataStream.
+//
+// Rollout counting (spec §7.2): recordVerdict fires once, right after
+// ctx.auth.settle(st.authed), covering the enforce-reject, permissive-accept,
+// and success branches below. A pre-parse ReadMetadataFrame failure (bad
+// metadata) returns before that point — the deferred ctx.auth.settle(false)
+// still settles the connection (so it does NOT count as
+// RecordLegacyNoMetadata, which only fires on a connection that never
+// presented metadata at all), but it also never reaches recordVerdict. That
+// leaves a small, documented residual bucket (parse-failed connections)
+// uncounted by both cookie_hit/cold/unauthed and legacy_no_metadata — expect
+// total != authed+unauthed+legacy_no_metadata by roughly that delta; it is
+// not a counting bug.
+//
+// At-most-once counting (connAuth.rolloutCounted): this handler can race the
+// accept loop's teardown defer (RecordLegacyNoMetadata fires if the
+// connection dies while this goroutine is still blocked resolving a
+// verdict), and nothing limits a client to a single metadata stream per
+// connection, so this function can run more than once per connection. Both
+// the teardown defer and the `recordVerdict` call below first claim
+// ctx.auth.rolloutCounted via CAS and only proceed on a win — so every
+// connection contributes at most one rollout-counter increment, no matter
+// which of those two paths gets there first or how many metadata streams the
+// client opens.
+//
+// Attribution follows the SERVER-side verdict, never the self-reported value:
+// only a validated connection gets mode.Store/dev.set (a Center-validated
+// udid is trustworthy — Center rejects device.UDID != udid), and a failed or
+// absent validation lands in the empty-udid bucket (spec §5.3 udid 收口).
+//
+// Response contract (spec §5.2): permissive ALWAYS answers OK — rollout must
+// never fail a legacy-credential client. Under enforce, an explicit rejection
+// (Code 401/402/403 — only Center issues these) answers with the coded 0x02
+// form so the client can classify without string matching; "cannot determine"
+// and parse failures answer the legacy 0x01 form (no invented code). The
+// verdict is always settled; the deferred settle is the fail-closed backstop.
 func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream, br *bufio.Reader, ctx *connContext) {
+	defer ctx.auth.settle(false)
+	// Release the receive half when this handler returns: quic-go's
+	// Stream.Close() only sends FIN (write side); without CancelRead the
+	// receive half never completes and the stream slot leaks — the same leak
+	// quicStreamConn.Close fixes for proxy streams (wire/CLAUDE.md). Drain to
+	// EOF first (bounded): a well-behaved client (including an OLD client —
+	// spec §5.1) closes its own send side right after reading the response,
+	// so this lets that graceful FIN land normally — CancelRead is then a
+	// no-op (quic-go only emits STOP_SENDING if the receive side hasn't
+	// already reached EOF; a STOP_SENDING racing an in-flight peer Close()
+	// resets the peer's send stream and makes ITS Close() return an error —
+	// reproduced deterministically without the drain). If the client never
+	// closes, the deadline expires and CancelRead is the real backstop.
+	defer func() {
+		stream.SetReadDeadline(time.Now().Add(metadataStreamDrainTimeout))
+		io.Copy(io.Discard, br)
+		stream.CancelRead(0)
+	}()
+
 	meta, err := ReadMetadataFrame(br)
 	if err != nil {
 		slog.Warn("QUICServer: metadata stream parse failed", "remote", qconn.RemoteAddr(), "err", err)
@@ -1301,28 +1474,70 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 		return
 	}
 
-	slog.Info("QUICServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
+	slog.Info("QUICServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "version", meta.Version, "remote", qconn.RemoteAddr())
 
-	// Validate credentials + mode via the same validator chain used by HTTP auth.
-	// s.validate is immutable after SetValidator (called before Listen), no lock needed.
-	if s.validate != nil && !s.validate(meta.Token, meta.UDID, meta.Mode) {
-		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
-		WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+	// Single decision point shared verbatim with TCP-WS (spec §9 two-transport
+	// consistency): a valid cookie short-circuits the validator chain entirely
+	// and issues no new cookie; otherwise this runs cold auth through
+	// s.validate exactly as before, now also minting a cookie on success.
+	st := resolveMetadataAuth(s.cookieSigner, s.validate, meta, s.adm.enforce, time.Now())
+
+	// Attribution from the SERVER-determined identity (spec §5.3): cookie's
+	// udid on a hit, Center-confirmed udid on cold OK, "" otherwise.
+	ctx.mode.Store(st.mode)
+	ctx.dev.set(st.udid)
+	ctx.dev.setSession(st.sessionID)
+	ctx.auth.settle(st.authed)
+	if ctx.auth.claimRolloutCount() {
+		recordVerdict(s.rollout, st.cookieHit, st.authed)
+	}
+
+	if !st.authed {
+		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "code", st.code, "enforce", s.adm.enforce, "remote", qconn.RemoteAddr())
+		if s.adm.enforce {
+			if st.code != 0 {
+				WriteStreamResponse(stream, &StreamError{Code: st.code, Message: "auth rejected"})
+			} else {
+				WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+			}
+			stream.Close()
+			// Tear the connection down, but not synchronously: quic-go's
+			// SendStream.Close() only schedules the FIN for the packet
+			// scheduler (send_stream.go onHasStreamData) — it does not wait
+			// for the response bytes to actually reach the wire. Calling
+			// CloseWithError inline races ahead of that and the client sees
+			// a bare "Application error" instead of the coded/legacy
+			// rejection body (reproduced deterministically without this
+			// delay). The bounded async delay gives the scheduler a window
+			// to flush first; the enforce gate (ctx.auth) — not this close —
+			// is what actually prevents the rejected connection from
+			// proxying anything in the meantime.
+			safego.Go(func() {
+				time.Sleep(quicMetadataRejectDrainDelay)
+				qconn.CloseWithError(0x01, "unauthorized")
+			})
+			return
+		}
+		// Permissive: accept, no attribution (empty-udid bucket), never block.
+		WriteMetadataResponse(stream, "")
 		stream.Close()
-		qconn.CloseWithError(0x01, "unauthorized")
 		return
 	}
 
-	ctx.mode.Store(meta.Mode)
-	ctx.dev.set(meta.UDID)
-	WriteStreamResponse(stream, nil) // OK
+	// newCookie is non-empty ONLY after a Center cold auth (spec §6.3) — a
+	// cookie hit answers with an empty kv and the client keeps its copy.
+	WriteMetadataResponse(stream, st.newCookie)
 	stream.Close()
-	slog.Info("QUICServer: metadata auth OK", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
+	if ctx.sess != nil {
+		ctx.sess.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)
+	}
+	slog.Info("QUICServer: metadata auth OK", "udid", st.udid, "mode", st.mode, "cookieHit", st.cookieHit, "remote", qconn.RemoteAddr())
 }
 
-func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, dev *deviceIDHolder, connLog *slog.Logger, remoteStr string) {
+func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, ctx *connContext, remoteStr string) {
 	writer := &quicStreamWriter{stream: stream}
 	sessions := make(map[uint32]*quicStreamServerUDPConn)
+	connLog := ctx.udp.log
 
 	for {
 		frame, err := ReadSmuxUDPFrame(br)
@@ -1339,6 +1554,20 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, dev 
 			if len(sessions) >= maxServerUDPSessions {
 				continue // at capacity, drop frame
 			}
+			// Admission gate: on denial no session is created, and the stream is
+			// torn down rather than left to re-ask on every new session id —
+			// a connection that never sends metadata would otherwise pay the
+			// admission wait again per frame.
+			handler, admitted := s.admitUDP(ctx)
+			if !admitted {
+				connLog.Warn("QUICServer: UDP stream rejected (enforce: unauthenticated)",
+					"sid", frame.SessionID, "addr", frame.Addr)
+				for _, sess := range sessions {
+					sess.close()
+				}
+				stream.Close()
+				return
+			}
 			sessLog := connLog.With("sid", frame.SessionID, "addr", frame.Addr)
 			sess = &quicStreamServerUDPConn{
 				writer:     writer,
@@ -1348,13 +1577,10 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, dev 
 				log:        sessLog,
 				readCh:     make(chan []byte, 32),
 				done:       make(chan struct{}),
-				dev:        dev,
+				dev:        ctx.dev,
 			}
 			sessions[frame.SessionID] = sess
 
-			s.mu.Lock()
-			handler := s.udpH
-			s.mu.Unlock()
 			if handler != nil {
 				addr := frame.Addr
 				go func() {
@@ -1372,7 +1598,8 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, dev 
 	}
 }
 
-func (s *QUICServer) handleDatagrams(conn *quic.Conn, state *connUDPState) {
+func (s *QUICServer) handleDatagrams(conn *quic.Conn, ctx *connContext) {
+	state := ctx.udp
 	log := state.log
 	log.Info("QUICServer: handleDatagrams started")
 	var totalReceived int64
@@ -1392,54 +1619,77 @@ func (s *QUICServer) handleDatagrams(conn *quic.Conn, state *connUDPState) {
 		}
 		log.Debug("QUICServer: datagram received", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 
-		s.deliverToSession(state, conn, frame)
+		s.deliverToSession(ctx, state, conn, frame)
 	}
 }
 
 // deliverToSession looks up or creates a serverUDPConn in state.sessions, then delivers the payload.
 // Used by both handleDatagrams and handleUDPOverflowStream for session sharing.
-func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, frame *UDPFrame) {
+//
+// This is the choke point for the two QUIC UDP paths that never reach
+// handleStream: the datagram path (the PRIMARY UDP path — DialUDP prefers
+// datagrams, stream-UDP is only fallback) and the client overflow stream. Both
+// obtain their handler from admitUDP, which is what makes the enforce gate
+// unforgettable here rather than a check to remember.
+//
+// admitUDP runs OUTSIDE state.mu: under enforce an unauthenticated connection
+// blocks up to authWait, and holding the map lock would stall every other
+// session's datagrams. It also keeps s.mu from being taken under state.mu.
+// Permissive and already-authenticated connections return instantly.
+func (s *QUICServer) deliverToSession(ctx *connContext, state *connUDPState, conn *quic.Conn, frame *UDPFrame) {
 	state.mu.Lock()
 	sess, ok := state.sessions[frame.SessionID]
+	state.mu.Unlock()
+
 	if !ok {
-		if len(state.sessions) >= maxServerUDPSessions {
-			state.mu.Unlock()
-			state.log.Warn("QUICServer: max UDP sessions reached, dropping")
+		handler, admitted := s.admitUDP(ctx)
+		if !admitted {
+			state.log.Warn("QUICServer: UDP session rejected (enforce: unauthenticated)", "sid", frame.SessionID, "addr", frame.Addr)
 			return
 		}
-		sessLog := state.log.With("sid", frame.SessionID, "addr", frame.Addr)
-		sess = &serverUDPConn{
-			qconn:        conn,
-			sessionID:    frame.SessionID,
-			addr:         frame.Addr,
-			remoteAddr:   conn.RemoteAddr().String(),
-			readCh:       make(chan []byte, 32),
-			done:         make(chan struct{}),
-			overflow:     state.overflow,
-			sendInflight: &state.sendInflight,
-			created:      time.Now(),
-			log:          sessLog,
-			dev:          state.dev,
-		}
-		state.sessions[frame.SessionID] = sess
 
-		s.mu.Lock()
-		handler := s.udpH
-		s.mu.Unlock()
-		sessLog.Info("QUICServer: new UDP session", "handlerSet", handler != nil)
-		if handler != nil {
-			addr := frame.Addr
-			go state.runUDPHandler(handler, sess, addr)
+		state.mu.Lock()
+		// Re-check under lock: a concurrent frame for the same session may have
+		// created it while we were gating.
+		sess, ok = state.sessions[frame.SessionID]
+		if !ok {
+			if len(state.sessions) >= maxServerUDPSessions {
+				state.mu.Unlock()
+				state.log.Warn("QUICServer: max UDP sessions reached, dropping")
+				return
+			}
+			sessLog := state.log.With("sid", frame.SessionID, "addr", frame.Addr)
+			sess = &serverUDPConn{
+				qconn:        conn,
+				sessionID:    frame.SessionID,
+				addr:         frame.Addr,
+				remoteAddr:   conn.RemoteAddr().String(),
+				readCh:       make(chan []byte, 32),
+				done:         make(chan struct{}),
+				overflow:     state.overflow,
+				sendInflight: &state.sendInflight,
+				created:      time.Now(),
+				log:          sessLog,
+				dev:          state.dev,
+			}
+			state.sessions[frame.SessionID] = sess
+
+			sessLog.Info("QUICServer: new UDP session", "handlerSet", handler != nil)
+			if handler != nil {
+				addr := frame.Addr
+				go state.runUDPHandler(handler, sess, addr)
+			}
 		}
+		state.mu.Unlock()
 	}
-	state.mu.Unlock()
 
 	sess.deliver(frame.Payload)
 }
 
 // handleUDPOverflowStream reads SmuxUDPFrame from a client-initiated overflow stream
 // and delivers them to the shared session map (same sessions as datagram path).
-func (s *QUICServer) handleUDPOverflowStream(br *bufio.Reader, state *connUDPState) {
+func (s *QUICServer) handleUDPOverflowStream(br *bufio.Reader, ctx *connContext) {
+	state := ctx.udp
 	state.log.Info("QUICServer: receiving overflow stream from client")
 	// We need the qconn to create new sessions — get it from the overflow struct.
 	conn := state.overflow.qconn
@@ -1448,7 +1698,7 @@ func (s *QUICServer) handleUDPOverflowStream(br *bufio.Reader, state *connUDPSta
 		if err != nil {
 			return
 		}
-		s.deliverToSession(state, conn, frame)
+		s.deliverToSession(ctx, state, conn, frame)
 	}
 }
 
@@ -1490,21 +1740,27 @@ func (s *QUICServer) ServeUDP(ctx context.Context, handler UDPHandler) error {
 	}
 }
 
-// Close stops the server and closes the listener.
+// Close stops the server, tears down the revalidation sweeper (if enabled),
+// and closes the listener. sessions.Close() calls wg.Wait() internally, which
+// must never run under s.mu (Rule #3 — waiting under lock risks deadlock if
+// the goroutine being waited on ever needs that same lock), so it runs after
+// s.mu is released.
 func (s *QUICServer) Close() error {
-	// concurrency:allow — server-side, ln.Close() is fast (no protocol drain)
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	select {
 	case <-s.done:
+		s.mu.Unlock()
 		return nil
 	default:
 		close(s.done)
 	}
-
-	if s.ln != nil {
-		return s.ln.Close()
+	ln := s.ln
+	s.mu.Unlock()
+	if s.sessions != nil {
+		s.sessions.Close() // wg.Wait — no lock held (Rule #3)
+	}
+	if ln != nil {
+		return ln.Close()
 	}
 	return nil
 }
@@ -1521,12 +1777,12 @@ type quicUDPMux struct {
 	lastActive  map[uint32]*atomic.Int64 // unix seconds per session
 	done        chan struct{}
 	started     bool
-	streamMux  *quicStreamUDPMux // stream-based UDP fallback
-	overflow   *udpOverflowStream // per-packet overflow for oversized datagrams
+	streamMux   *quicStreamUDPMux  // stream-based UDP fallback
+	overflow    *udpOverflowStream // per-packet overflow for oversized datagrams
 
 	// Datagram health tracking: consecutive ReadFrom timeouts indicate
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
-	relayTimeouts atomic.Int32
+	relayTimeouts      atomic.Int32
 	clientHopAttempts  *atomic.Int32 // shared with QUICClient; nil on server/tests
 	clientHopExhausted *atomic.Int64 // shared with QUICClient; nil on server/tests
 
@@ -1839,10 +2095,10 @@ func (c *quicUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicUDPConn) LocalAddr() net.Addr                { return c.qconn.LocalAddr() }
-func (c *quicUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *quicUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
-func (c *quicUDPConn) SetWriteDeadline(time.Time) error    { return nil }
+func (c *quicUDPConn) LocalAddr() net.Addr               { return c.qconn.LocalAddr() }
+func (c *quicUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *quicUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *quicUDPConn) SetWriteDeadline(time.Time) error  { return nil }
 
 // ============================================================================
 // Server-side PacketConn for UDP sessions
@@ -1852,7 +2108,7 @@ type serverUDPConn struct {
 	qconn        datagramSender
 	sessionID    uint32
 	addr         string
-	remoteAddr   string // client IP:port for diagnostic attribution
+	remoteAddr   string       // client IP:port for diagnostic attribution
 	log          *slog.Logger // scoped logger with remote, sid, addr
 	readCh       chan []byte
 	done         chan struct{}
@@ -1883,6 +2139,14 @@ func (c *serverUDPConn) DeviceID() string {
 		return ""
 	}
 	return c.dev.get()
+}
+
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *serverUDPConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
 }
 
 func (c *serverUDPConn) deliver(payload []byte) {
@@ -1988,10 +2252,10 @@ func (c *serverUDPConn) Close() error {
 	return nil
 }
 
-func (c *serverUDPConn) LocalAddr() net.Addr                { return c.qconn.LocalAddr() }
-func (c *serverUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *serverUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
-func (c *serverUDPConn) SetWriteDeadline(time.Time) error    { return nil }
+func (c *serverUDPConn) LocalAddr() net.Addr               { return c.qconn.LocalAddr() }
+func (c *serverUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *serverUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *serverUDPConn) SetWriteDeadline(time.Time) error  { return nil }
 
 // ============================================================================
 // Server-side QUIC stream writer (shared, mutex-protected)
@@ -2077,7 +2341,7 @@ var _ UDPSessionInfo = (*quicStreamServerUDPConn)(nil)
 
 func (c *quicStreamServerUDPConn) UDPSessionID() uint32  { return c.sessionID }
 func (c *quicStreamServerUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
-func (c *quicStreamServerUDPConn) Logger() *slog.Logger   { return c.log }
+func (c *quicStreamServerUDPConn) Logger() *slog.Logger  { return c.log }
 
 // DeviceID implements ConnDeviceID. Returns "" if no holder is wired
 // (defensive) or if the metadata stream hasn't landed yet.
@@ -2086,6 +2350,14 @@ func (c *quicStreamServerUDPConn) DeviceID() string {
 		return ""
 	}
 	return c.dev.get()
+}
+
+// SessionID implements ConnSessionID. "" until the metadata verdict lands.
+func (c *quicStreamServerUDPConn) SessionID() string {
+	if c.dev == nil {
+		return ""
+	}
+	return c.dev.session()
 }
 
 func (c *quicStreamServerUDPConn) deliver(payload []byte) {
@@ -2139,10 +2411,10 @@ func (c *quicStreamServerUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicStreamServerUDPConn) LocalAddr() net.Addr                { return &net.UDPAddr{} }
-func (c *quicStreamServerUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *quicStreamServerUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
-func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error    { return nil }
+func (c *quicStreamServerUDPConn) LocalAddr() net.Addr               { return &net.UDPAddr{} }
+func (c *quicStreamServerUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *quicStreamServerUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error  { return nil }
 
 // ============================================================================
 // Client-side stream-based UDP mux (fallback when datagrams not supported)
@@ -2162,7 +2434,7 @@ type quicStreamUDPMux struct {
 	writeMu     sync.Mutex // serialization, may hold across I/O
 	streamOnce  sync.Once  // guards stream.Close
 	dead        atomic.Bool
-	doneOnce    sync.Once  // guards close(done) — replaces ad-hoc select pattern
+	doneOnce    sync.Once // guards close(done) — replaces ad-hoc select pattern
 	mu          deadlock.Mutex
 	sessions    map[uint32]chan *UDPFrame
 	sessionDone map[uint32]chan struct{} // closed by reaper to notify quicStreamUDPConn
@@ -2388,7 +2660,7 @@ func (c *quicStreamUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicStreamUDPConn) LocalAddr() net.Addr                { return c.mux.qconn.LocalAddr() }
-func (c *quicStreamUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
-func (c *quicStreamUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
-func (c *quicStreamUDPConn) SetWriteDeadline(time.Time) error    { return nil }
+func (c *quicStreamUDPConn) LocalAddr() net.Addr               { return c.mux.qconn.LocalAddr() }
+func (c *quicStreamUDPConn) SetDeadline(t time.Time) error     { c.rd.set(t); return nil }
+func (c *quicStreamUDPConn) SetReadDeadline(t time.Time) error { c.rd.set(t); return nil }
+func (c *quicStreamUDPConn) SetWriteDeadline(time.Time) error  { return nil }

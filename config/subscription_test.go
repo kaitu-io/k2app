@@ -901,6 +901,84 @@ func TestCache_SlotBindingsRoundTrip_And_LegacyFallback(t *testing.T) {
 	}
 }
 
+// TestSubscription_CacheFileStableAcrossRotation is the regression test for
+// the whole-branch-review Finding #3 bug: cacheFile used to be derived from
+// the full raw k2subs:// URL (which embeds udid:token), so a credential
+// rotation — which rewrites raw's userinfo in place — combined with a
+// process restart from the newly-persisted raw would compute a DIFFERENT
+// cache filename and silently orphan the old cache file. Keying off endpoint
+// (credential-stripped) instead keeps the filename stable forever, both
+// within one process's lifetime AND across a restart that starts from the
+// rotated URL.
+func TestSubscription_CacheFileStableAcrossRotation(t *testing.T) {
+	var rotated atomic.Bool
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pass := "secret"
+		if rotated.Load() {
+			pass = "secret-rotated"
+		}
+		json.NewEncoder(w).Encode(subsResponse{
+			Tunnels: []Tunnel{
+				{URL: "k2v5://alice:" + pass + "@server1.example.com:443", Weight: 1},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	raw := "k2subs://alice:secret@" + srv.Listener.Addr().String() + "/api"
+
+	s, err := NewSubscription(raw, dir)
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	s.endpoint = srv.URL + "/api"
+	cacheBefore := s.cacheFile
+	if cacheBefore == "" {
+		t.Fatal("cacheFile should be set")
+	}
+
+	var gotOld, gotNew string
+	s.SetOnCredsRotate(func(oldRaw, newRaw string) {
+		gotOld, gotNew = oldRaw, newRaw
+	})
+
+	ctx := context.Background()
+	if err := s.Fetch(ctx, srv.Client()); err != nil {
+		t.Fatalf("first fetch: %v", err)
+	}
+	if s.cacheFile != cacheBefore {
+		t.Fatalf("cacheFile changed after non-rotating fetch: before=%q after=%q", cacheBefore, s.cacheFile)
+	}
+
+	// Second fetch: server rotates the credential embedded in the tunnel URL.
+	rotated.Store(true)
+	if err := s.Fetch(ctx, srv.Client()); err != nil {
+		t.Fatalf("second fetch: %v", err)
+	}
+	if gotNew == "" || gotOld == gotNew {
+		t.Fatalf("rotation callback did not fire as expected: old=%q new=%q", gotOld, gotNew)
+	}
+	if s.cacheFile != cacheBefore {
+		t.Errorf("cacheFile changed after in-memory rotation: before=%q after=%q", cacheBefore, s.cacheFile)
+	}
+
+	// Simulate a process restart: the platform shell persisted gotNew to disk
+	// (Task 7/8's rotation-safe persist), so the next process constructs a
+	// fresh Subscription from THAT url. Its cacheFile must land on the SAME
+	// path so loadCache() finds the existing cache rather than missing.
+	s2, err := NewSubscription(gotNew, dir)
+	if err != nil {
+		t.Fatalf("NewSubscription(rotated raw): %v", err)
+	}
+	if s2.cacheFile != cacheBefore {
+		t.Errorf("cacheFile after restart with rotated raw = %q, want %q (stable across rotation)", s2.cacheFile, cacheBefore)
+	}
+	if len(s2.Tunnels()) != 1 {
+		t.Errorf("restart should have loaded the existing cache, got %d tunnels", len(s2.Tunnels()))
+	}
+}
+
 // --- Helpers ---
 
 func contains(s, substr string) bool {

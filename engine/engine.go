@@ -55,7 +55,7 @@ type Engine struct {
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
 	netCoord       *netCoordinator
-	dnsH           *dnsHandler // for counter reset on network recovery
+	dnsH           *dnsHandler         // for counter reset on network recovery
 	proxyDNS       *dns.ProxyDNSClient // proxy DNS connection pool (nil in proxy mode)
 	ruleEngine     *rule.Engine
 	outbounds      []core.Outbound // owned by engine, closed in Stop()
@@ -66,10 +66,11 @@ type Engine struct {
 	reRaceChan   chan *outboundTransport
 	reRaceCancel context.CancelFunc
 
-	// wireMode and outboundProvider are snapshotted from Config at Start so
-	// the background outboundReplaceLoop can build replacement TMs without
-	// re-reading user-supplied Config (which may be mutated by the caller).
+	// wireMode, clientVersion and outboundProvider are snapshotted from Config
+	// at Start so the background outboundReplaceLoop can build replacement TMs
+	// without re-reading user-supplied Config (which may be mutated by caller).
 	wireMode         string
+	clientVersion    string // client app version, sent to the node via metadata for attribution
 	outboundProvider OutboundProvider
 
 	// missReporter is non-nil only when client.Telemetry.RuleMiss.Enabled
@@ -103,6 +104,11 @@ type outboundTransport struct {
 	// reference to tm for Dial forwarding only — it must never be Close()d
 	// separately.
 	swappable *wire.SwappableDialer
+
+	// jar is this outbound's CookieJar — shared by every dialer ever built
+	// for this outbound (race candidates, fallback TCP-WS client, re-race),
+	// so a transport switch or re-race never repeats a cold auth.
+	jar *wire.CookieJar
 
 	// reRaceFailStreak counts consecutive wire-level RaceTransport
 	// failures against this outbound's current URL. When it reaches
@@ -177,6 +183,7 @@ func (e *Engine) Start(cfg Config) error {
 		return fmt.Errorf("engine: Client config is required")
 	}
 	e.client = client
+	e.clientVersion = client.ClientVersion
 	e.lastError = nil
 
 	// Validate route CIDR conflicts (e.g. k2p route overlaps local LAN).
@@ -374,7 +381,7 @@ func (e *Engine) Start(cfg Config) error {
 		for i, via := range k2v5URLs {
 			i, via := i, via
 			g.Go(func() error {
-				ot, tcpws, err := setupOutboundTransport(ctx, via, cfg.DirectDialer, cfg.WireMode)
+				ot, tcpws, err := setupOutboundTransport(ctx, via, cfg.DirectDialer, cfg.WireMode, client.ClientVersion)
 				otResults[i] = otResult{ot: ot, tcpwsDialer: tcpws, err: err}
 				return nil // errors collected in results, not errgroup
 			})
@@ -458,15 +465,15 @@ func (e *Engine) Start(cfg Config) error {
 		DefaultTarget:   outboundDirect, // router is always set; fallback for tests
 		Router:          router,
 		ProcessSearcher: processSearcher,
-		SniffBT:   !ruleEngine.DisableSniff(), // sniff BT in smart mode only
-		SniffSNI:  !ruleEngine.DisableSniff(), // sniff TLS/QUIC SNI in smart mode only
-		BlockQUIC: client.BlockQUIC,
+		SniffBT:         !ruleEngine.DisableSniff(), // sniff BT in smart mode only
+		SniffSNI:        !ruleEngine.DisableSniff(), // sniff TLS/QUIC SNI in smart mode only
+		BlockQUIC:       client.BlockQUIC,
 	}
 	tunnel := core.NewClientTunnel(tunnelCfg)
 
 	// 8. Start.
 	var proxyDNS *dns.ProxyDNSClient // non-nil in TUN mode; stored in Engine for reconnect reset
-	var dh *dnsHandler // non-nil in TUN mode; stored in Engine for DNS counter reset
+	var dh *dnsHandler               // non-nil in TUN mode; stored in Engine for DNS counter reset
 	if client.Mode != "proxy" {
 		// TUN mode (mobile or desktop): intercept DNS at port 53.
 		// If DirectDialer implements DialerController, use its control func
@@ -542,7 +549,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.proxyDNS = proxyDNS
 	e.ruleEngine = ruleEngine
 	e.missReporter = missRep
-	missRep = nil // ownership transferred; cancel the deferred stop
+	missRep = nil     // ownership transferred; cancel the deferred stop
 	cleanupProv = nil // ownership transferred to e.prov (Stop/fail close it)
 	cleanupFD = -1
 	e.networkMonitor = cfg.NetworkMonitor
@@ -926,6 +933,7 @@ func (e *Engine) Stop() error {
 	e.outbounds = nil
 	e.client = nil
 	e.wireMode = ""
+	e.clientVersion = ""
 	e.outboundProvider = nil
 	e.connectedAt = time.Time{}
 	e.paused = false
@@ -1455,12 +1463,14 @@ func setupOutboundTransport(
 	via string,
 	directDialer wire.DirectDialer,
 	wireMode string,
+	clientVersion string,
 ) (*outboundTransport, wire.Dialer, error) {
 	wireCfg, err := wire.ParseURL(via)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse %s: %w", extractServerHost(via), err)
 	}
-	wireCfg.Mode = wireMode // binary identity (e.g., "gateway" for k2r)
+	wireCfg.Mode = wireMode         // binary identity (e.g., "gateway" for k2r)
+	wireCfg.Version = clientVersion // client app version for metadata attribution
 
 	dialAddr, err := resolveDialAddr(ctx, wireCfg, directDialer)
 	if err != nil {
@@ -1470,8 +1480,13 @@ func setupOutboundTransport(
 		wireCfg.DialAddr = dialAddr
 	}
 
+	// One CookieJar per outbound, shared by every dialer built below (all
+	// three race candidates plus the TCP-WS fallback client) — a transport
+	// switch or re-race must never trigger a redundant Center cold-auth.
+	jar := wire.NewCookieJar()
+
 	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-	raceResult, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, directDialer)
+	raceResult, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, directDialer, jar)
 	raceCancel()
 	if err != nil {
 		return nil, nil, fmt.Errorf("transport race %s: %w", wireCfg.Host, err)
@@ -1502,7 +1517,7 @@ func setupOutboundTransport(
 		tm.SetTCPWS(raceResult.TCPWS)
 		tcpwsDialer = raceResult.TCPWS
 	} else if raceResult.TransportType != "tcpws" {
-		tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
+		tcpwsClient := wire.NewTCPWSClient(wireCfg, jar)
 		if directDialer != nil {
 			tcpwsClient.SetDirectDialer(directDialer)
 		}
@@ -1520,6 +1535,7 @@ func setupOutboundTransport(
 		dialAddr: dialAddr,
 		name:     fmt.Sprintf("k2v5-%s", wireCfg.Host),
 		url:      via,
+		jar:      jar,
 	}
 	// Install the indirection wrapper that core.WireOutbound and
 	// ProxyDNSClient will dial through. See outboundTransport.swappable doc.
@@ -1860,18 +1876,18 @@ func (e *Engine) ClearWireError() {
 // outboundReplaceLoop waits for wire-health signals (currently: echoLoop's
 // 3-consecutive-fail) and responds in two escalating phases:
 //
-//   Phase A — same-server wire re-race. Runs wire.RaceTransport against the
-//     outbound's current URL. On success, hot-swaps the winning Dialer into
-//     the existing TransportManager via ReplacePrimary/SwapTCPWS. Same
-//     behavior as the pre-Step-3 reRaceLoop.
+//	Phase A — same-server wire re-race. Runs wire.RaceTransport against the
+//	  outbound's current URL. On success, hot-swaps the winning Dialer into
+//	  the existing TransportManager via ReplacePrimary/SwapTCPWS. Same
+//	  behavior as the pre-Step-3 reRaceLoop.
 //
-//   Phase B — server replacement. After reRaceFailThresholdForReplace
-//     consecutive Phase-A failures, asks OutboundProvider for a DIFFERENT
-//     k2v5:// URL, builds a fresh TransportManager in the background, and
-//     atomically swaps it into target.swappable. The old TM is Closed
-//     immediately — in-flight smux / QUIC streams receive ConnectionClosed
-//     within ms and application layers retry. TUN / provider / DNS hijack
-//     stay alive throughout (zero DNS-leakage window).
+//	Phase B — server replacement. After reRaceFailThresholdForReplace
+//	  consecutive Phase-A failures, asks OutboundProvider for a DIFFERENT
+//	  k2v5:// URL, builds a fresh TransportManager in the background, and
+//	  atomically swaps it into target.swappable. The old TM is Closed
+//	  immediately — in-flight smux / QUIC streams receive ConnectionClosed
+//	  within ms and application layers retry. TUN / provider / DNS hijack
+//	  stay alive throughout (zero DNS-leakage window).
 //
 // If Phase B's provider is nil (appext / gateway) or returns ErrExhausted
 // (all subscription tunnels already tried and failed), the loop fires
@@ -1912,7 +1928,7 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 		)
 
 		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-		result, raceErr := wire.RaceTransport(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd)
+		result, raceErr := wire.RaceTransport(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd, target.jar)
 		raceCancel()
 
 		if raceErr == nil {
@@ -2039,6 +2055,7 @@ func (e *Engine) replaceOutboundServer(
 	e.mu.Lock()
 	currentURL := target.url
 	wireMode := e.wireMode
+	clientVersion := e.clientVersion
 	e.mu.Unlock()
 	reason := lastWireErr
 
@@ -2059,7 +2076,7 @@ func (e *Engine) replaceOutboundServer(
 			"outbound", target.name,
 			"newURL", config.TruncateVia(newURL))
 
-		newOT, _, setupErr := setupOutboundTransportFn(ctx, newURL, dd, wireMode)
+		newOT, _, setupErr := setupOutboundTransportFn(ctx, newURL, dd, wireMode, clientVersion)
 		if setupErr != nil {
 			slog.Warn("engine: outbound replacement setup failed",
 				"outbound", target.name,
@@ -2103,6 +2120,7 @@ func (e *Engine) replaceOutboundServer(
 		target.dialAddr = newOT.dialAddr
 		target.name = newOT.name
 		target.url = newURL
+		target.jar = newOT.jar
 		target.reRaceFailStreak = 0
 		e.mu.Unlock()
 

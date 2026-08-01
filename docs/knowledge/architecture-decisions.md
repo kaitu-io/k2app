@@ -270,7 +270,9 @@ if bytes.HasPrefix(data, []byte("GET /k2v5/tunnel")) {
 }
 ```
 
-**Outcome**: TCP-WS traffic looks like WebSocket to DPI. Auth endpoint (`POST /k2v5/auth`) continues to work without WS.
+**Outcome**: TCP-WS traffic looks like WebSocket to DPI.
+
+> **Superseded (2026-07)**: the `POST /k2v5/auth` ticket endpoint referenced here was removed. Device auth now rides the metadata stream on both transports (see `wire/k2v5-protocol-spec.md` §4).
 
 **Validation**:
 - Tests: `wire/tcpws_test.go` (TestTCPWSClient_WSUpgrade), `server/server_test.go` (TestServer_WSUpgrade)
@@ -283,6 +285,8 @@ if bytes.HasPrefix(data, []byte("GET /k2v5/tunnel")) {
 ---
 
 ## Hybrid Ticket Renewal (wire-protocol-compliance, 2026-02-12)
+
+> **SUPERSEDED (2026-07)** — historical record only. This ticket-renewal design (`POST /k2v5/auth`, `AuthHandler`, `TicketStore`, `wire/auth_test.go`) was never wired end-to-end and has been removed. Device auth now rides the metadata stream, validated by the `Validator`/`AuthVerdict` chain (four-state: OK / no opinion / explicit reject 401-403 / cannot determine -1), gated per-connection by `K2_ENFORCE_AUTH`. See `wire/k2v5-protocol-spec.md` §4. The code snippet below no longer exists.
 
 **Decision**: Auto-renew tickets when < 50% TTL remaining. Return existing ticket when > 50% TTL.
 

@@ -81,6 +81,14 @@ func (m *Manager) Resolve(cfg *config.ClientConfig) (sessions []*Session, resolv
 				return nil, nil, fmt.Errorf("subscription fetch failed (no cache): %w", fetchErr)
 			}
 			slog.Warn("subscription: fetch failed, using cached data", "err", fetchErr)
+			// spec §4.4 P5：降级本身是正确的可用性设计（保留），但必须报告
+			// "正在用多久以前的数据"。缓存年龄 = 缓存文件 mtime 距今。
+			if age, ok := sub.CacheAge(); ok {
+				slog.Warn("DIAG: subs-stale-cache",
+					"via", config.TruncateVia(route.Via),
+					"cacheAgeS", int64(age.Seconds()),
+					"err", fetchErr)
+			}
 		}
 
 		tunnel, pickErr := sub.Pick(nil)

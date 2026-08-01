@@ -184,8 +184,8 @@ func handleAwaySession(ctx context.Context, cfg Config, exchange *CandidateExcha
 			tr.Close()
 			return nil, authErr
 		}
-		return wire.NewQUICServerFromConn(qconn, quicLn, cfg.TicketStore), nil
+		return wire.NewQUICServerFromConn(qconn, quicLn), nil
 	}
 
-	return wire.NewQUICServerFromListener(quicLn, cfg.TicketStore), nil
+	return wire.NewQUICServerFromListener(quicLn), nil
 }

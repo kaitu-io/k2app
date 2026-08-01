@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaitu-io/k2/rule"
 	"gopkg.in/yaml.v3"
@@ -150,6 +151,16 @@ func TestDefaultServerConfig(t *testing.T) {
 	}
 	if cfg.Log.Output != "stderr" {
 		t.Errorf("Log.Output = %q, want stderr", cfg.Log.Output)
+	}
+}
+
+// TestServerDefaults_AuthCacheTTL15m: the auth cache TTL is aligned with the
+// Phase 2 cookie TTL (15m) — spec §5.3. The revocation ceiling is "at most
+// 15 minutes after Center's last endorsement".
+func TestServerDefaults_AuthCacheTTL15m(t *testing.T) {
+	cfg := DefaultServerConfig()
+	if cfg.Auth.CacheTTL != 15*time.Minute {
+		t.Fatalf("Auth.CacheTTL default = %v, want 15m", cfg.Auth.CacheTTL)
 	}
 }
 

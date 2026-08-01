@@ -255,6 +255,7 @@ func TestNew_DefaultsControlPlaneRouteWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() { s.Close() }) // stops the revalidation sweeper goroutines (goleak)
 	origin, ok := s.matchControlPlaneRoute("k2.52j.me")
 	if !ok || origin != "k2.52j.me:443" {
 		t.Fatalf("built-in default route: got (%q,%v), want (k2.52j.me:443,true)", origin, ok)
@@ -270,6 +271,7 @@ func TestNew_ExplicitControlPlaneRouteOverridesDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() { s.Close() }) // stops the revalidation sweeper goroutines (goleak)
 	if origin, ok := s.matchControlPlaneRoute("cp.test"); !ok || origin != "cp.test:443" {
 		t.Fatalf("explicit route: got (%q,%v), want (cp.test:443,true)", origin, ok)
 	}

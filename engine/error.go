@@ -85,10 +85,49 @@ func ClassifyError(err error) *EngineError {
 		return ee
 	}
 
+	// Priority 0b: metadata (device-auth) rejection — the server rejected this
+	// connection on the metadata stream. Producer-classified via
+	// wire.ErrMetadataRejected; the embedded StreamError carries the server's
+	// code. Two disjoint families, and keeping them apart is the whole point:
+	//
+	//   4xx (401 invalid credentials / 402 subscription expired / 403 device
+	//        class or ban) → CategoryClient. Center judged THIS device;
+	//        retrying the same credentials — here or on another node — cannot
+	//        succeed, so the engine must stop rather than race on.
+	//   5xx (503 the node itself cannot authenticate: no NodeSecret,
+	//        unresolvable node IPv4 — wire.AuthCodeNodeFault) → CategoryServer.
+	//        The device is fine and a healthy node will admit it, so this must
+	//        stay retryable. Collapsing it into 401 would tell the user their
+	//        account failed AND stop the transport race that would otherwise
+	//        route around one misconfigured node.
+	//
+	// Must run BEFORE the bare-StreamError check — errors.As would otherwise
+	// classify the embedded StreamError as CategoryTarget. Traverses
+	// MultiTransportError via its Unwrap() []error.
+	if errors.Is(err, wire.ErrMetadataRejected) {
+		var se *wire.StreamError
+		if errors.As(err, &se) {
+			switch se.Code {
+			case ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden,
+				ErrCodeProtocolError, ErrCodeServerUnreachable, ErrCodeConnectionFatal:
+				return newEngineError(se.Code, err.Error())
+			}
+		}
+		return newEngineError(ErrCodeAuthRejected, err.Error())
+	}
+
+	// Priority 0c: legacy stream-rejection sentinel — old enforce servers and
+	// the proxy-stream admission gate answer the uncoded 0x01 "unauthorized".
+	// Structured errors.Is on the producer's sentinel, never string matching.
+	if errors.Is(err, wire.ErrStreamRejected) {
+		return newEngineError(ErrCodeAuthRejected, err.Error())
+	}
+
 	// Priority 0: StreamError — server responded to a proxy request about a
 	// specific target. The wire is healthy (server received and responded).
-	// Always CategoryTarget regardless of code. Auth/payment errors use
-	// stream rejection (ErrStreamRejected), not StreamError.
+	// Always CategoryTarget regardless of code. Auth/payment errors arrive
+	// wrapped in ErrMetadataRejected / ErrStreamRejected (handled above),
+	// never as a bare StreamError.
 	var se *wire.StreamError
 	if errors.As(err, &se) && se.Code > 0 {
 		return &EngineError{Code: se.Code, Category: CategoryTarget, Message: se.Message}
@@ -130,11 +169,6 @@ func ClassifyError(err error) *EngineError {
 
 // classifyByPatterns matches error message text to an error code with category.
 func classifyByPatterns(msg string) *EngineError {
-	// 401: Auth rejected (server explicitly rejected credentials).
-	if strings.Contains(msg, "stream rejected") {
-		return newEngineError(ErrCodeAuthRejected, msg)
-	}
-
 	// 402: Payment required / subscription expired.
 	if strings.Contains(msg, "payment required") || strings.Contains(msg, "subscription") {
 		return newEngineError(ErrCodePaymentRequired, msg)

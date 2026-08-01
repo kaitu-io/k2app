@@ -15,18 +15,19 @@ import (
 // ClientConfig is the client-side configuration.
 // Loaded by `k2 run -c` or parsed from `k2 up` URL, or unmarshalled from JSON.
 type ClientConfig struct {
-	Routes    []RouteConfig `yaml:"routes"     json:"routes"`
-	Mode      string        `yaml:"mode"       json:"mode"`       // "tun" or "proxy", default "tun"
-	Tun       TunConfig     `yaml:"tun"        json:"tun"`
-	Proxy     ProxyConfig   `yaml:"proxy"      json:"proxy"`
-	DNS       DNSConfig     `yaml:"dns"        json:"dns"`
-	Log       LogConfig     `yaml:"log"        json:"log"`
-	Listen    string        `yaml:"listen"     json:"listen"`     // daemon HTTP listen address, default "127.0.0.1:1777"
-	PIDFile   string        `yaml:"pid_file"   json:"pid_file"`   // path to PID file (empty = no PID file)
-	BlockQUIC bool          `yaml:"block_quic" json:"block_quic"` // block browser QUIC via ICMP reject (default: false = allow through DATAGRAM)
-	CacheDir  string        `yaml:"cache_dir"  json:"cache_dir"`  // cache directory for rule bundles ("" = platform default)
-	RuleSources []string `yaml:"rule_sources,omitempty" json:"rule_sources,omitempty"` // override default k2b download sources
-	Telemetry TelemetryConfig `yaml:"telemetry,omitempty" json:"telemetry,omitempty"` // anonymous usage telemetry (Phase 1: rule miss)
+	Routes        []RouteConfig   `yaml:"routes"     json:"routes"`
+	Mode          string          `yaml:"mode"       json:"mode"` // "tun" or "proxy", default "tun"
+	Tun           TunConfig       `yaml:"tun"        json:"tun"`
+	Proxy         ProxyConfig     `yaml:"proxy"      json:"proxy"`
+	DNS           DNSConfig       `yaml:"dns"        json:"dns"`
+	Log           LogConfig       `yaml:"log"        json:"log"`
+	Listen        string          `yaml:"listen"     json:"listen"`                                 // daemon HTTP listen address, default "127.0.0.1:1777"
+	PIDFile       string          `yaml:"pid_file"   json:"pid_file"`                               // path to PID file (empty = no PID file)
+	BlockQUIC     bool            `yaml:"block_quic" json:"block_quic"`                             // block browser QUIC via ICMP reject (default: false = allow through DATAGRAM)
+	CacheDir      string          `yaml:"cache_dir"  json:"cache_dir"`                              // cache directory for rule bundles ("" = platform default)
+	RuleSources   []string        `yaml:"rule_sources,omitempty" json:"rule_sources,omitempty"`     // override default k2b download sources
+	Telemetry     TelemetryConfig `yaml:"telemetry,omitempty" json:"telemetry,omitempty"`           // anonymous usage telemetry (Phase 1: rule miss)
+	ClientVersion string          `yaml:"client_version,omitempty" json:"client_version,omitempty"` // client app version, forwarded to the node via the metadata stream for per-device attribution. Set by the webapp; "" = legacy/unknown.
 
 	// Derived fields (not serialized to YAML/JSON).
 	Server string `yaml:"-" json:"-"` // first k2v5:// URL from routes
@@ -47,7 +48,7 @@ type TelemetryConfig struct {
 // allocations. Flipping Enabled=true wires the full ring buffer → hash →
 // batcher → HTTP POST pipeline described in k2/engine/miss_reporter.go.
 type RuleMissConfig struct {
-	Enabled       bool   `yaml:"enabled" json:"enabled"`               // default false — MUST stay off by default
+	Enabled       bool   `yaml:"enabled" json:"enabled"`                                   // default false — MUST stay off by default
 	Endpoint      string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`             // e.g. "https://center.kaitu.io/api/telemetry/rule_miss"
 	Country       string `yaml:"country,omitempty" json:"country,omitempty"`               // ISO 3166-1 alpha-2, or "XX" when unknown
 	ClientVersion string `yaml:"client_version,omitempty" json:"client_version,omitempty"` // e.g. "0.4.3"
@@ -65,9 +66,9 @@ type RuleMissConfig struct {
 //
 // Reserved (not yet implemented, validation rejects these):
 //   - "device://<deviceId>"           — route via another device on the same user account
-//                                       (reserved for k2p home / bring-your-own-relay feature)
+//     (reserved for k2p home / bring-your-own-relay feature)
 //   - "auto://<pool>[/<country>]"     — route via a Center-selected node from a named pool
-//                                       (reserved for server-driven exit selection)
+//     (reserved for server-driven exit selection)
 //
 // When implementing reserved schemes, add them to ViaSchemeReserved in the scheme
 // constants below and wire up the outbound in engine.setupOutboundTransport.
@@ -83,8 +84,8 @@ const (
 	ViaReject = "reject"
 
 	// Implemented URL schemes (wire outbounds).
-	ViaSchemeK2v5  = "k2v5"
-	ViaSchemeK2p   = "k2p"
+	ViaSchemeK2v5   = "k2v5"
+	ViaSchemeK2p    = "k2p"
 	ViaSchemeK2subs = "k2subs"
 
 	// Reserved URL schemes — defined for forward-compat but not yet implemented.
@@ -157,7 +158,7 @@ type ProxyConfig struct {
 // Loaded by `k2 run -s`.
 type ServerConfig struct {
 	Listen      string            `yaml:"listen"`
-	Host        string            `yaml:"host"`         // external hostname/IP for connect URL (auto-detected if empty)
+	Host        string            `yaml:"host"` // external hostname/IP for connect URL (auto-detected if empty)
 	TLS         TLSConfig         `yaml:"tls"`
 	ECH         ECHConfig         `yaml:"ech"`
 	CertDir     string            `yaml:"cert_dir"`     // directory for auto-generated dual keypair (RSA+EC)
@@ -169,13 +170,13 @@ type ServerConfig struct {
 	// default (relays the single permanent inner SNI k2.52j.me to the Center
 	// address); set explicitly only to override that default.
 	ControlPlaneRoutes map[string]string `yaml:"control_plane_routes"`
-	PCC         string            `yaml:"pcc"`
-	Rate        int64             `yaml:"rate"`
-	Auth        AuthConfig        `yaml:"auth"`
-	Log         LogConfig         `yaml:"log"`
-	PIDFile     string            `yaml:"pid_file"` // path to PID file (empty = no PID file)
-	HopStart    int               `yaml:"hop_start"` // hop port range start (0 = no hop)
-	HopEnd      int               `yaml:"hop_end"`   // hop port range end (0 = no hop)
+	PCC                string            `yaml:"pcc"`
+	Rate               int64             `yaml:"rate"`
+	Auth               AuthConfig        `yaml:"auth"`
+	Log                LogConfig         `yaml:"log"`
+	PIDFile            string            `yaml:"pid_file"`  // path to PID file (empty = no PID file)
+	HopStart           int               `yaml:"hop_start"` // hop port range start (0 = no hop)
+	HopEnd             int               `yaml:"hop_end"`   // hop port range end (0 = no hop)
 
 	// UsageAPIListen is the loopback usage API addr (Plan 3-k2s, A3).
 	// Default 127.0.0.1:9099; empty string disables the API.
@@ -189,6 +190,17 @@ type ServerConfig struct {
 	UsageReportURL string `yaml:"usage_report_url"` // Center base URL for usage reporting; "" disables. env K2_USAGE_REPORT_URL
 	NodeSecret     string `yaml:"-"`                // K2_NODE_SECRET (Basic auth pw). Secret — never serialized.
 	NodeIPv4       string `yaml:"-"`                // node public IPv4 (Basic auth user); "" => ProbePublicIP fallback at runtime
+
+	// SlackWebhookURL enables node-level auth-fault alerting (spec §6.4):
+	// sustained `DIAG: auth-center-unreachable`, and node misconfiguration
+	// that makes device auth impossible. Empty (the default) disables
+	// alerting entirely — no goroutine, no HTTP, no behavior change.
+	// Secret — never serialized, never logged. env K2_SLACK_WEBHOOK_URL.
+	SlackWebhookURL string `yaml:"-"`
+	// NodeName labels alerts so an operator can tell one node's incident from
+	// a fleet-wide one. Falls back to the node's IPv4, then "unknown-node".
+	// env K2_NODE_NAME.
+	NodeName string `yaml:"-"`
 
 	// NodeCutoffReport gates the LEGACY in-process node-level usage reporter
 	// (server/usage_reporter.go). Default false: against the current
@@ -213,17 +225,18 @@ type TLSConfig struct {
 
 // ECHConfig contains Encrypted Client Hello configuration.
 type ECHConfig struct {
-	KeyPath    string `yaml:"key_path"`     // legacy: single file with key+config
-	PublicName string `yaml:"public_name"`  // legacy: explicit public name
-	Provider   string `yaml:"provider"`     // "local" (default) — ECH template provider
+	KeyPath    string `yaml:"key_path"`    // legacy: single file with key+config
+	PublicName string `yaml:"public_name"` // legacy: explicit public name
+	Provider   string `yaml:"provider"`    // "local" (default) — ECH template provider
 }
 
 // AuthConfig contains server auth configuration.
 // Validators are checked in order: users_file → remote_url → accept-all.
 type AuthConfig struct {
-	UsersFile string        `yaml:"users_file"` // path to users file (udid:token per line)
-	RemoteURL string        `yaml:"remote_url"` // Center API auth URL
-	CacheTTL  time.Duration `yaml:"cache_ttl"`
+	UsersFile   string        `yaml:"users_file"`   // path to users file (udid:token per line)
+	RemoteURL   string        `yaml:"remote_url"`   // Center API auth URL
+	CacheTTL    time.Duration `yaml:"cache_ttl"`    // TTL for cached successful auths; 0 → defaults to 15m in SetDefaults (not "no cache")
+	EnforceAuth bool          `yaml:"enforce_auth"` // reject unauthenticated proxy streams on BOTH transports (QUIC + TCP-WS). Default false (permissive) during rollout — flip to true only once new clients (which send metadata) have propagated, else legacy clients are cut off. env K2_ENFORCE_AUTH
 }
 
 // LogConfig contains logging configuration.
@@ -375,7 +388,7 @@ func setServerDefaults(cfg *ServerConfig) {
 		cfg.ECH.Provider = "local"
 	}
 	if cfg.Auth.CacheTTL == 0 {
-		cfg.Auth.CacheTTL = 5 * time.Minute
+		cfg.Auth.CacheTTL = 15 * time.Minute
 	}
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
@@ -403,5 +416,17 @@ func setServerDefaults(cfg *ServerConfig) {
 	}
 	if v := os.Getenv("K2_NODE_CUTOFF_REPORT"); v == "1" || v == "true" {
 		cfg.NodeCutoffReport = true
+	}
+	if v := os.Getenv("K2_ENFORCE_AUTH"); v == "1" || v == "true" {
+		cfg.Auth.EnforceAuth = true
+	}
+	// Node-level alerting (spec §6.4). Unset => alerting off, which is the
+	// documented default: a node with no webhook must behave exactly as it did
+	// before alerting existed.
+	if v, ok := os.LookupEnv("K2_SLACK_WEBHOOK_URL"); ok {
+		cfg.SlackWebhookURL = v
+	}
+	if v, ok := os.LookupEnv("K2_NODE_NAME"); ok {
+		cfg.NodeName = v
 	}
 }

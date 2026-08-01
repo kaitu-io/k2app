@@ -424,6 +424,9 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 		sub.SetOnControlKeyHash(g.reconcileControlKey)
 		g.reconcileControlKey(sub.ControlKeyHash())
 		sub.SetOnSlotBindings(g.onSlotBindingsChanged)
+		// Phase 0（spec §4.3 P1）：凭据轮换落盘（k2r.yml + state.json），只重写
+		// 匹配 oldRaw 的那条 route，其余字段原样保留（Finding #2 fix）。
+		sub.SetOnCredsRotate(g.persistRotatedCredential)
 		sub.StartRefresh(engineCtx, func() *http.Client { return client })
 	}
 

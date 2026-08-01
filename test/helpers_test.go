@@ -50,17 +50,16 @@ type testEnv struct {
 	quicSrv  *wire.QUICServer
 	tcpwsSrv *wire.TCPWSServer
 	handler  *server.ProxyHandler
-	store    *wire.TicketStore
 
 	// Client transports
-	quicClient *wire.QUICClient
+	quicClient  *wire.QUICClient
 	tcpwsClient *wire.TCPWSClient
 
 	// TCP-WS server listener (for feeding connections to tcpwsSrv)
 	tcpwsLn net.Listener
 
 	// Network addresses
-	quicAddr string
+	quicAddr  string
 	tcpwsAddr string
 
 	// Cleanup
@@ -79,7 +78,6 @@ func setupQUICEnv(t *testing.T) *testEnv {
 	env := &testEnv{
 		t:      t,
 		cancel: cancel,
-		store:  wire.NewTicketStore(),
 	}
 
 	// QUIC server
@@ -102,7 +100,7 @@ func setupQUICEnv(t *testing.T) *testEnv {
 	}
 	env.cleanup = append(env.cleanup, func() { ln.Close() })
 
-	env.quicSrv = wire.NewQUICServer(env.store)
+	env.quicSrv = wire.NewQUICServer()
 	env.quicSrv.Listen(ln)
 	env.handler = server.NewProxyHandler()
 	env.handler.AllowPrivateIP = true // echo servers run on localhost
@@ -134,7 +132,7 @@ func setupQUICEnv(t *testing.T) *testEnv {
 		Host: "127.0.0.1",
 		Port: serverAddr.Port,
 	}
-	env.quicClient = wire.NewQUICClient(clientCfg, env.store)
+	env.quicClient = wire.NewQUICClient(clientCfg, nil)
 	// Bypass ECH/fingerprint for testing
 	env.quicClient.SetTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
@@ -152,7 +150,6 @@ func setupTCPWSEnv(t *testing.T) *testEnv {
 	env := &testEnv{
 		t:      t,
 		cancel: cancel,
-		store:  wire.NewTicketStore(),
 	}
 
 	// TCP listener for smux connections
@@ -164,7 +161,7 @@ func setupTCPWSEnv(t *testing.T) *testEnv {
 	env.cleanup = append(env.cleanup, func() { tcpLn.Close() })
 	env.tcpwsAddr = tcpLn.Addr().String()
 
-	env.tcpwsSrv = wire.NewTCPWSServer(env.store)
+	env.tcpwsSrv = wire.NewTCPWSServer()
 	env.handler = server.NewProxyHandler()
 	env.handler.AllowPrivateIP = true // echo servers run on localhost
 
@@ -202,7 +199,7 @@ func setupTCPWSEnv(t *testing.T) *testEnv {
 
 	// TCP-WS client (bypass TLS for testing)
 	clientCfg := wire.Config{Host: "127.0.0.1", Port: 0}
-	env.tcpwsClient = wire.NewTCPWSClient(clientCfg, env.store)
+	env.tcpwsClient = wire.NewTCPWSClient(clientCfg, nil)
 	// Connect directly via net.Pipe to avoid TLS for unit test
 	clientConn, serverConn := net.Pipe()
 	env.tcpwsSrv.HandleConn(serverConn)

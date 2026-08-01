@@ -124,6 +124,7 @@ type Config struct {
 	Transport   string // tp= parameter: "quic", "tcpws", or "" (auto, default)
 	Mode        string // mode= parameter: "gateway" or "" (normal)
 	DialAddr    string // Resolved dial address (set by engine: ip6 preferred > ip4). Not parsed from URL.
+	Version     string // client app version for metadata attribution (set by engine from ClientConfig.ClientVersion). Not parsed from URL.
 }
 
 // ParseURL parses a k2v5:// URL into Config.

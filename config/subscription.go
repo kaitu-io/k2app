@@ -25,9 +25,7 @@ import (
 // disk caching, weighted random server selection, and background refresh.
 type Subscription struct {
 	// Immutable after construction.
-	raw       string
 	endpoint  string        // https:// URL (no userinfo, no query)
-	creds     string        // "user:pass"
 	refresh   time.Duration // client-side fallback refresh interval
 	cacheFile string        // disk cache path ("" = no disk cache)
 
@@ -38,7 +36,18 @@ type Subscription struct {
 	clientHeader string
 
 	// State (mu-protected).
-	mu          deadlock.Mutex
+	mu deadlock.Mutex
+	// raw / creds were immutable pre-Phase-0. Center now rotates the tunnel
+	// credential by embedding a fresh udid:token in every subs-response
+	// tunnel URL (spec §4.3); Fetch adopts it here so the NEXT fetch's Basic
+	// auth and the persisted k2subs:// URL both carry the new token.
+	raw   string // k2subs:// URL, userinfo rewritten on rotation
+	creds string // "user:pass", rotated by Fetch
+	// onCredsRotate is invoked OUTSIDE mu after a fetch that adopted rotated
+	// creds, with the previous and updated raw k2subs:// URL. Platform
+	// shells persist newRaw (daemon persistedState / k2r applyCredential).
+	onCredsRotate func(oldRaw, newRaw string)
+
 	tunnels     []Tunnel
 	fetchedAt   time.Time
 	interval    time.Duration // effective refresh interval
@@ -190,7 +199,20 @@ func NewSubscription(raw string, cacheDir string) (*Subscription, error) {
 	}
 
 	if cacheDir != "" {
-		h := sha256.Sum256([]byte(raw))
+		// Key the cache filename on endpoint (credential-stripped: no userinfo,
+		// just scheme+host+path+query), NOT raw (which embeds udid:token).
+		// Phase 0 credential rotation (spec §4.3) rewrites raw's userinfo in
+		// place — same Subscription instance, s.cacheFile computed once here
+		// stays correct across that in-memory rotation regardless. But a
+		// process RESTART re-derives cacheFile from the *persisted* raw
+		// (Task 7/8 write the rotated URL back to disk), and hashing raw
+		// there would compute a different filename every restart-after-
+		// rotation — loadCache() would miss and P5's cache fallback (see
+		// subscription/resolve.go) would find nothing to degrade to. endpoint
+		// never changes across rotation (only the userinfo does), so hashing
+		// it keeps the filename stable across both in-memory rotation and any
+		// later restart that starts from the rotated raw URL.
+		h := sha256.Sum256([]byte(endpoint))
 		name := fmt.Sprintf("subs-%x.json", h[:4])
 		s.cacheFile = filepath.Join(cacheDir, name)
 		s.loadCache()
@@ -249,6 +271,61 @@ func (s *Subscription) SetOnSlotBindings(fn func([]SlotBinding)) {
 	s.onSlotBindings = fn
 }
 
+// Creds returns the current "user:pass" credential (rotates via Fetch).
+func (s *Subscription) Creds() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.creds
+}
+
+// RawURL returns the k2subs:// subscription URL carrying the CURRENT
+// credentials — what platform shells should persist for restart/reconnect.
+func (s *Subscription) RawURL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.raw
+}
+
+// SetOnCredsRotate registers the rotation callback (fired outside mu).
+// Set before StartRefresh.
+func (s *Subscription) SetOnCredsRotate(fn func(oldRaw, newRaw string)) {
+	s.mu.Lock()
+	s.onCredsRotate = fn
+	s.mu.Unlock()
+}
+
+// CacheAge reports how long ago the disk cache file was last written (file
+// mtime). ok=false when no cache is configured or the file doesn't exist.
+// cacheFile is immutable after construction — no lock needed.
+func (s *Subscription) CacheAge() (time.Duration, bool) {
+	if s.cacheFile == "" {
+		return 0, false
+	}
+	fi, err := os.Stat(s.cacheFile)
+	if err != nil {
+		return 0, false
+	}
+	return time.Since(fi.ModTime()), true
+}
+
+// extractCreds returns the "user:pass" userinfo carried by the first tunnel
+// URL that has one ("" when none). Center injects the same credential into
+// every URL of a response, so the first hit is authoritative.
+func extractCreds(tunnels []Tunnel) string {
+	for _, t := range tunnels {
+		u, err := url.Parse(t.URL)
+		if err != nil || u.User == nil {
+			continue
+		}
+		pass, ok := u.User.Password()
+		if !ok || pass == "" || u.User.Username() == "" {
+			continue
+		}
+		return u.User.Username() + ":" + pass
+	}
+	return ""
+}
+
 // SetTunnelsForTest replaces the current tunnel list. Tests only.
 func (s *Subscription) SetTunnelsForTest(tunnels []Tunnel) {
 	s.mu.Lock()
@@ -265,12 +342,13 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 		return fmt.Errorf("subscription fetch: build request: %w", err)
 	}
 
-	user, pass, _ := strings.Cut(s.creds, ":")
-	req.SetBasicAuth(user, pass)
-
 	s.mu.Lock()
+	creds := s.creds
 	clientHeader := s.clientHeader
 	s.mu.Unlock()
+
+	user, pass, _ := strings.Cut(creds, ":")
+	req.SetBasicAuth(user, pass)
 	if clientHeader != "" {
 		req.Header.Set("X-K2-Client", clientHeader)
 	}
@@ -299,9 +377,23 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 		return fmt.Errorf("subscription fetch: parse JSON: %w", err)
 	}
 
+	// Phase 0 credential rotation (spec §4.3): adopt the credential Center
+	// embedded in the response BEFORE re-injecting ours, so both the injected
+	// tunnel URLs and the next fetch's Basic auth use the new token. Only
+	// same-udid credentials are adopted (defense against a corrupted body).
+	adopted := ""
+	if newCreds := extractCreds(sr.Tunnels); newCreds != "" && newCreds != creds {
+		curUser, _, _ := strings.Cut(creds, ":")
+		newUser, _, _ := strings.Cut(newCreds, ":")
+		if curUser == newUser {
+			adopted = newCreds
+			creds = newCreds
+		}
+	}
+
 	// Inject credentials into each tunnel URL.
 	for i := range sr.Tunnels {
-		injected, err := injectCreds(sr.Tunnels[i].URL, s.creds)
+		injected, err := injectCreds(sr.Tunnels[i].URL, creds)
 		if err != nil {
 			return fmt.Errorf("subscription fetch: inject creds into tunnel %d: %w", i, err)
 		}
@@ -338,6 +430,17 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 	if sr.ControlKeyHash != "" {
 		s.controlKeyHash = sr.ControlKeyHash
 	}
+	var oldRaw, newRaw string
+	var credsCb func(string, string)
+	if adopted != "" && s.creds != adopted {
+		oldRaw = s.raw
+		s.creds = adopted
+		if nr, err := injectCreds(s.raw, adopted); err == nil {
+			s.raw = nr
+		}
+		newRaw = s.raw
+		credsCb = s.onCredsRotate
+	}
 	cb := s.onControlKeyHash
 	cb2 := s.onSlotBindings
 	s.mu.Unlock()
@@ -351,6 +454,14 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 	// (gateway must notice bindings being cleared).
 	if cb2 != nil {
 		cb2(sr.SlotBindings)
+	}
+	// oldRaw 只在上面锁区的采纳分支里被赋值，因此它非空 ⇔ 本次 Fetch 采纳了
+	// 新凭据——用它做 "是否采纳" 的判据。DIAG 独立于回调是否注册。
+	if oldRaw != "" {
+		slog.Info("DIAG: subs-creds-rotate", "endpoint", s.endpoint)
+	}
+	if credsCb != nil {
+		credsCb(oldRaw, newRaw)
 	}
 
 	// Write cache (outside lock).

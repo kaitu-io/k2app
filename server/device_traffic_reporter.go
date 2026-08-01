@@ -36,13 +36,14 @@ type DeviceTrafficRequest struct {
 }
 
 type DeviceTrafficItem struct {
-	UDID string `json:"udid"`
-	Rx   int64  `json:"rx"`
-	Tx   int64  `json:"tx"`
+	UDID      string `json:"udid"`
+	SessionID string `json:"session_id,omitempty"`
+	Rx        int64  `json:"rx"`
+	Tx        int64  `json:"tx"`
 }
 
 type deviceTrafficSource interface {
-	TakeDeviceTraffic() map[string]DeviceDelta
+	TakeDeviceTraffic() map[DeviceKey]DeviceDelta
 }
 
 // deviceBatch is IMMUTABLE once created: retries resend it verbatim. Merging
@@ -109,10 +110,15 @@ func (r *deviceTrafficReporter) runOnce(ctx context.Context) error {
 			return nil
 		}
 		items := make([]DeviceTrafficItem, 0, len(snap))
-		for udid, d := range snap {
-			items = append(items, DeviceTrafficItem{UDID: udid, Rx: d.Rx, Tx: d.Tx})
+		for key, d := range snap {
+			items = append(items, DeviceTrafficItem{UDID: key.UDID, SessionID: key.Session, Rx: d.Rx, Tx: d.Tx})
 		}
-		sort.Slice(items, func(i, j int) bool { return items[i].UDID < items[j].UDID })
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].UDID != items[j].UDID {
+				return items[i].UDID < items[j].UDID
+			}
+			return items[i].SessionID < items[j].SessionID
+		})
 		r.seq++
 		r.pending = &deviceBatch{bootID: r.bootID, seq: r.seq, items: items}
 	}

@@ -241,9 +241,11 @@ func (e *StreamError) IsProxyLayer() bool  { return true }
 
 // MetadataFrame holds key-value metadata for a connection (auth + mode).
 type MetadataFrame struct {
-	UDID  string
-	Token string
-	Mode  string // "gateway" or "" (normal)
+	UDID    string
+	Token   string
+	Mode    string // "gateway" or "" (normal)
+	Version string // client app version (e.g. "0.4.8"); "" = legacy/unknown. Observation only — never an auth-exemption signal (self-reported, spoofable).
+	Cookie  string // node-issued connection cookie (Phase 2); kv key "cookie". Empty = cold auth.
 }
 
 // WriteMetadataFrame writes a metadata frame payload to w.
@@ -259,6 +261,12 @@ func WriteMetadataFrame(w io.Writer, meta MetadataFrame) error {
 	}
 	if meta.Mode != "" {
 		fields = append(fields, [2]string{"mode", meta.Mode})
+	}
+	if meta.Version != "" {
+		fields = append(fields, [2]string{"version", meta.Version})
+	}
+	if meta.Cookie != "" {
+		fields = append(fields, [2]string{"cookie", meta.Cookie})
 	}
 
 	buf = AppendVarint(buf, uint64(len(fields)))
@@ -288,7 +296,15 @@ func ReadMetadataFrame(r interface {
 	if fieldCount > 16 {
 		return MetadataFrame{}, fmt.Errorf("wire: metadata field count %d exceeds max 16", fieldCount)
 	}
+	return readMetadataFields(r, fieldCount)
+}
 
+// readMetadataFields reads fieldCount [key][val] pairs. Shared by
+// ReadMetadataFrame (request) and ReadMetadataResponse (response kv).
+func readMetadataFields(r interface {
+	io.Reader
+	io.ByteReader
+}, fieldCount uint64) (MetadataFrame, error) {
 	var meta MetadataFrame
 	for i := uint64(0); i < fieldCount; i++ {
 		keyLen, _, err := ReadVarint(r)
@@ -322,7 +338,63 @@ func ReadMetadataFrame(r interface {
 			meta.Token = string(valBuf)
 		case "mode":
 			meta.Mode = string(valBuf)
+		case "version":
+			meta.Version = string(valBuf)
+		case "cookie":
+			meta.Cookie = string(valBuf)
 		}
 	}
 	return meta, nil
+}
+
+// ============================================================================
+// Metadata Stream Response: [0x00][MetadataFrame kv]  (success)
+//                           [0x01]/[0x02]…            (rejection — WriteStreamResponse)
+// ============================================================================
+
+// WriteMetadataResponse writes a successful metadata-stream response: the
+// 0x00 status byte followed by a MetadataFrame-format kv (cookie only, or an
+// empty kv when there is no cookie). 0x02 is already taken by the coded
+// error format, so success-with-payload rides BEHIND 0x00 instead of using a
+// new status byte. Old clients read the single 0x00 and Close(): on QUIC the
+// unread kv stays in the receive buffer until the stream is released; on
+// smux Close() discards it. Neither surfaces an error — pinned by
+// TestMetadataResponse_OldClientSafe_{QUIC,TCPWS}.
+func WriteMetadataResponse(w io.Writer, cookie string) error {
+	buf := []byte{0x00}
+	if cookie == "" {
+		buf = AppendVarint(buf, 0)
+	} else {
+		buf = AppendVarint(buf, 1)
+		buf = AppendVarint(buf, uint64(len("cookie")))
+		buf = append(buf, "cookie"...)
+		buf = AppendVarint(buf, uint64(len(cookie)))
+		buf = append(buf, cookie...)
+	}
+	_, err := w.Write(buf)
+	return err
+}
+
+// ReadMetadataResponse reads the kv payload that follows a 0x00 success
+// status. The caller must already have consumed the status byte (via
+// ReadStreamResponse). An old server sends a bare [0x00] and closes, so ANY
+// failure to read the leading field count (EOF, reset, deadline) means
+// "no kv" and returns ("", nil). A malformed kv after a successful
+// field-count read is a protocol error.
+func ReadMetadataResponse(r interface {
+	io.Reader
+	io.ByteReader
+}) (cookie string, err error) {
+	fieldCount, _, err := ReadVarint(r)
+	if err != nil {
+		return "", nil // old server: nothing after the bare [0x00]
+	}
+	if fieldCount > 16 {
+		return "", fmt.Errorf("wire: metadata response field count %d exceeds max 16", fieldCount)
+	}
+	meta, err := readMetadataFields(r, fieldCount)
+	if err != nil {
+		return "", err
+	}
+	return meta.Cookie, nil
 }

@@ -385,7 +385,7 @@ type Config struct {
     SignalServer string            // unchanged
     Token        string            // unchanged
     WireCfg      wire.Config       // unchanged
-    TicketStore  *wire.TicketStore  // unchanged
+    // TicketStore *wire.TicketStore — REMOVED 2026-07 (ticket auth deleted; device auth rides the metadata stream)
     TLSCert      *tls.Certificate  // unchanged
     PeerSecret   string            // unchanged
     Pin          string            // unchanged
