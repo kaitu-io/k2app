@@ -94,12 +94,16 @@ func TestNewRemoteValidator_Timeout(t *testing.T) {
 	}
 }
 
-// TestNewRemoteValidator_EmptySecret pins fail-closed behavior: with no node
-// secret the validator must reject WITHOUT hitting Center — an unauthenticated
-// request would 401 anyway, and firing it would leak a per-connection request
-// storm at Center for zero benefit. This is "no opinion" (node's own fault),
-// not an explicit rejection — the chain tail fail-closes it to 401.
-func TestNewRemoteValidator_EmptySecret(t *testing.T) {
+// TestNewRemoteValidator_NodeFault pins the node-fault verdict: with no node
+// secret (or no resolvable node IPv4) the validator must reject WITHOUT
+// hitting Center — an unauthenticated request would 401 anyway, and firing it
+// would leak a per-connection request storm at Center for zero benefit.
+//
+// The verdict is AuthCodeNodeFault, deliberately NOT "no opinion": no-opinion
+// fail-closes at the chain tail to 401, which tells every device on this node
+// that THEIR credentials are bad when the real fault is the node's own
+// configuration. See AuthCodeNodeFault's doc.
+func TestNewRemoteValidator_NodeFault(t *testing.T) {
 	hit := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hit = true
@@ -107,13 +111,26 @@ func TestNewRemoteValidator_EmptySecret(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	v := NewRemoteValidator(srv.URL, func() string { return testNodeIPv4 }, "")
-	got := v("tok1", "dev1", "")
-	if got.OK || got.Code != 0 {
-		t.Errorf("empty node secret must be no-opinion, got %+v", got)
+	cases := []struct {
+		name   string
+		ipv4Fn func() string
+		secret string
+	}{
+		{"empty secret", func() string { return testNodeIPv4 }, ""},
+		{"unresolved ipv4", func() string { return "" }, "s3cret"},
 	}
-	if hit {
-		t.Error("empty node secret must not send any request to Center")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			hit = false
+			v := NewRemoteValidator(srv.URL, tc.ipv4Fn, tc.secret)
+			got := v("tok1", "dev1", "")
+			if got.OK || got.Code != AuthCodeNodeFault {
+				t.Errorf("want node-fault verdict {OK:false Code:%d}, got %+v", AuthCodeNodeFault, got)
+			}
+			if hit {
+				t.Error("node fault must not send any request to Center")
+			}
+		})
 	}
 }
 

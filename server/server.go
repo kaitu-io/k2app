@@ -151,7 +151,22 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 			})
 			return nodeIPv4
 		}
-		validators = append(validators, wire.NewRemoteValidator(cfg.Auth.RemoteURL, ipv4Fn, cfg.NodeSecret))
+		// Node-level auth-fault alerting (spec §6.4). Wraps the REMOTE
+		// validator specifically — it is the only one that talks to Center, so
+		// its verdicts are the only honest "can this node still authenticate?"
+		// signal. Wrapping outside CachingValidator below would instead see
+		// cache hits, where Center was never asked. nil alerter (no webhook
+		// configured) returns the validator untouched.
+		nodeLabel := cfg.NodeName
+		if nodeLabel == "" {
+			nodeLabel = cfg.NodeIPv4
+		}
+		alerter := wire.NewSlackAlerter(cfg.SlackWebhookURL, nodeLabel)
+		if alerter != nil {
+			slog.Info("server: auth fault alerting enabled", "node", nodeLabel)
+		}
+		validators = append(validators, wire.WithAuthHealthAlerts(
+			wire.NewRemoteValidator(cfg.Auth.RemoteURL, ipv4Fn, cfg.NodeSecret), alerter))
 	}
 
 	var validator wire.Validator

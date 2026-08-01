@@ -2,6 +2,7 @@ package wire
 
 import (
 	"log/slog"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,27 @@ const (
 
 	// authSweepInterval is the sweeper cadence.
 	authSweepInterval = 60 * time.Second
+
+	// authRevalJitterMax de-phases revalidation cohorts (spec §6.5). Each
+	// session shortens its own endorsement window by a random amount in
+	// [0, authRevalJitterMax).
+	//
+	// Why per-session and not on the sweeper's ticker. The spec words this as
+	// jitter on "the sweep interval", but jittering the ticker cannot achieve
+	// what the spec asks for: the revalidation trigger is per-session
+	// (`now - authAt > cookieTTL`), so a cohort that reconnected in the same
+	// second becomes stale in the same second and every member is picked up by
+	// whichever pass runs next — together. Moving that pass around in time
+	// moves the whole cohort with it, and because a successful recheck sets
+	// authAt = now, the cohort re-locks in phase and stays locked forever.
+	// Jittering each session's own window is what actually spreads them: the
+	// cohort fans out across a 2-minute band on its first revalidation and
+	// keeps drifting apart from there.
+	//
+	// The offset is subtracted, never added, so a session's endorsement window
+	// can only ever be shorter than cookieTTL. Revocation bounds documented
+	// elsewhere (wire/cookie.go's ~2xcookieTTL stacking) stay upper bounds.
+	authRevalJitterMax = 2 * time.Minute
 )
 
 // authSession is one live transport connection's auth state.
@@ -50,6 +72,25 @@ type authSession struct {
 	authAt     atomic.Int64 // unix sec of last Center endorsement; 0 = never authed
 	svcExp     atomic.Int64 // Center ServiceExpiredAt; 0 = no subscription clock
 	graceStart atomic.Int64 // unix sec of first consecutive undecidable; 0 = none
+
+	// revalJitter shortens THIS session's endorsement window, in seconds, so
+	// reconnect cohorts do not revalidate in lockstep. Assigned once at
+	// construction and never mutated, so it needs no synchronization. See
+	// authRevalJitterMax.
+	revalJitter int64
+}
+
+// newAuthSession builds a registry entry with its de-phasing jitter already
+// assigned. Construct sessions ONLY through here: a hand-built &authSession{}
+// gets revalJitter == 0, which silently puts it back in lockstep with every
+// other zero-jitter session — the exact failure authRevalJitterMax exists to
+// prevent, and one that no test of a single session can see.
+func newAuthSession(auth *connAuth, kill func()) *authSession {
+	return &authSession{
+		auth:        auth,
+		kill:        kill,
+		revalJitter: rand.Int64N(int64(authRevalJitterMax.Seconds())),
+	}
 }
 
 // markAuthed publishes the session identity exactly once (first metadata
@@ -238,8 +279,10 @@ func (a *authSessions) reviewSession(s *authSession) {
 		s.kill()
 		return
 	}
-	// 2. Endorsement still inside the window → nothing to do.
-	if now.Unix()-authAt <= int64(cookieTTL.Seconds()) {
+	// 2. Endorsement still inside this session's (jittered) window → nothing to
+	// do. revalJitter only ever shortens the window, so this can fire earlier
+	// than cookieTTL but never later.
+	if now.Unix()-authAt <= int64(cookieTTL.Seconds())-s.revalJitter {
 		return
 	}
 	// 3. Stale → revalidate. Validator call OUTSIDE any lock.

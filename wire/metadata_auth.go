@@ -7,12 +7,21 @@ import (
 	"time"
 )
 
+// metadataRejectCodeNodeFault is the wire code sent to the client when THIS
+// node cannot perform device auth (AuthCodeNodeFault). It is deliberately in
+// the 5xx SERVER range — mirroring engine.ErrCodeServerUnreachable, which wire
+// cannot import (engine depends on wire, not the reverse) — so the client
+// treats it as "this node is broken, race to another one" instead of as a
+// credential failure it must stop retrying. The k2/CLAUDE.md code ranges are
+// load-bearing: a node-side fault is never a 4xx.
+const metadataRejectCodeNodeFault = 503
+
 // metadataAuthResult is the single server-side admission decision for one
 // metadata frame. Both transports consume it verbatim, so QUIC and TCP-WS
 // cannot drift (spec §9 two-transport consistency).
 type metadataAuthResult struct {
 	authed    bool
-	code      int    // 0 = none; 401/402/403 = Center explicit reject (spec §5.2)
+	code      int    // 0 = none; 401/402/403 = Center explicit reject (spec §5.2); 503 = this node cannot auth
 	udid      string // server-determined identity; "" = unattributed bucket (spec §5.3)
 	mode      string // server-determined mode
 	sessionID string // hex(16B); "" when unauthenticated
@@ -93,6 +102,15 @@ func resolveMetadataAuth(signer *CookieSigner, validate Validator, meta Metadata
 		return res
 	case v.Code == 401 || v.Code == 402 || v.Code == 403:
 		return metadataAuthResult{authed: false, code: v.Code, token: meta.Token}
+	case v.Code == AuthCodeNodeFault:
+		// This node cannot authenticate anyone (no NodeSecret, unresolvable
+		// IPv4, …). Fail closed in BOTH modes — never attribute traffic on a
+		// node whose auth is broken, and never let it count toward the authed
+		// buckets that gate the enforce rollout. Permissive still serves the
+		// connection (handleMetadataStream's permissive branch does not tear
+		// it down), so this is not an outage; it shows up as `unauthed` in
+		// DIAG: auth-rollout, which is exactly the signal an operator needs.
+		return metadataAuthResult{authed: false, code: metadataRejectCodeNodeFault, token: meta.Token}
 	default:
 		// Undecidable (-1) or unclassified: permissive admits, enforce
 		// rejects WITHOUT a structured code. Never conflate "Center didn't

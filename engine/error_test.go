@@ -298,6 +298,37 @@ func TestClassifyError_MetadataRejection(t *testing.T) {
 	}
 }
 
+// TestClassifyError_MetadataRejectionNodeFault: a metadata rejection carrying
+// a 5xx code means the NODE could not authenticate (no NodeSecret,
+// unresolvable node IPv4 — wire.AuthCodeNodeFault), not that the device was
+// judged. It must stay in the server category so the engine keeps retrying and
+// the transport race routes around the broken node; collapsing it into 401
+// would both blame the user's account and stop the retry that would have
+// rescued them.
+func TestClassifyError_MetadataRejectionNodeFault(t *testing.T) {
+	for _, code := range []int{502, 503, 570} {
+		err := fmt.Errorf("%w: %w", wire.ErrMetadataRejected, &wire.StreamError{Code: code, Message: "auth unavailable"})
+		got := ClassifyError(err)
+		if got.Code != code {
+			t.Errorf("code %d: got %d, want it preserved", code, got.Code)
+		}
+		if got.Category != CategoryServer {
+			t.Errorf("code %d: category = %s, want %s (must stay retryable)", code, got.Category, CategoryServer)
+		}
+	}
+}
+
+// TestClassifyError_MetadataRejectionUnknownCodeStaysClient: an unrecognised
+// code still defaults to the fail-closed 401. Only the explicitly enumerated
+// server codes escape the client category.
+func TestClassifyError_MetadataRejectionUnknownCodeStaysClient(t *testing.T) {
+	err := fmt.Errorf("%w: %w", wire.ErrMetadataRejected, &wire.StreamError{Code: 418, Message: "teapot"})
+	got := ClassifyError(err)
+	if got.Code != ErrCodeAuthRejected || got.Category != CategoryClient {
+		t.Errorf("got {%d %s}, want {%d %s}", got.Code, got.Category, ErrCodeAuthRejected, CategoryClient)
+	}
+}
+
 // TestClassifyError_MetadataRejectionThroughMultiTransport: the same rejection
 // arriving inside a MultiTransportError (TransportManager fallback path) must
 // classify identically — MultiTransportError.Unwrap() []error carries it.

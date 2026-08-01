@@ -191,6 +191,17 @@ type ServerConfig struct {
 	NodeSecret     string `yaml:"-"`                // K2_NODE_SECRET (Basic auth pw). Secret — never serialized.
 	NodeIPv4       string `yaml:"-"`                // node public IPv4 (Basic auth user); "" => ProbePublicIP fallback at runtime
 
+	// SlackWebhookURL enables node-level auth-fault alerting (spec §6.4):
+	// sustained `DIAG: auth-center-unreachable`, and node misconfiguration
+	// that makes device auth impossible. Empty (the default) disables
+	// alerting entirely — no goroutine, no HTTP, no behavior change.
+	// Secret — never serialized, never logged. env K2_SLACK_WEBHOOK_URL.
+	SlackWebhookURL string `yaml:"-"`
+	// NodeName labels alerts so an operator can tell one node's incident from
+	// a fleet-wide one. Falls back to the node's IPv4, then "unknown-node".
+	// env K2_NODE_NAME.
+	NodeName string `yaml:"-"`
+
 	// NodeCutoffReport gates the LEGACY in-process node-level usage reporter
 	// (server/usage_reporter.go). Default false: against the current
 	// pure-recorder Center that endpoint returns no verdict, and the legacy
@@ -408,5 +419,14 @@ func setServerDefaults(cfg *ServerConfig) {
 	}
 	if v := os.Getenv("K2_ENFORCE_AUTH"); v == "1" || v == "true" {
 		cfg.Auth.EnforceAuth = true
+	}
+	// Node-level alerting (spec §6.4). Unset => alerting off, which is the
+	// documented default: a node with no webhook must behave exactly as it did
+	// before alerting existed.
+	if v, ok := os.LookupEnv("K2_SLACK_WEBHOOK_URL"); ok {
+		cfg.SlackWebhookURL = v
+	}
+	if v, ok := os.LookupEnv("K2_NODE_NAME"); ok {
+		cfg.NodeName = v
 	}
 }

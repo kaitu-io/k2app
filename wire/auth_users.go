@@ -90,29 +90,42 @@ func NewUsersFileValidator(path string) Validator {
 	}
 }
 
-// ChainValidators tries each validator in order with four-state semantics:
-// OK returns immediately; an explicit rejection (Code 401/402/403) returns
-// immediately; "cannot determine" (-1) is remembered and the chain continues
-// (a later validator may still say yes); "no opinion" (Code 0) is skipped.
-// Tail rule: if any validator was undetermined return {OK:false, Code:-1},
-// otherwise return the fail-closed {OK:false, Code:401}.
+// ChainValidators tries each validator in order with the five-state semantics
+// of AuthVerdict: OK returns immediately; an explicit rejection (Code
+// 401/402/403) returns immediately; "cannot determine" (-1) and "node fault"
+// (-2) are remembered and the chain continues (a later validator may still say
+// yes); "no opinion" (Code 0) is skipped.
+//
+// Tail rule, most-specific first:
+//   - any validator reported a NODE FAULT → {Code:-2}. It outranks -1 because
+//     it is not transient: a node with no NodeSecret stays broken until an
+//     operator fixes it, and collapsing it into -1 would disguise a permanent
+//     misconfiguration as a passing Center blip.
+//   - any validator was undetermined → {Code:-1}
+//   - otherwise → the fail-closed {Code:401}
 func ChainValidators(validators ...Validator) Validator {
 	return func(token, udid, mode string) AuthVerdict {
 		sawUndetermined := false
+		sawNodeFault := false
 		for _, v := range validators {
 			verdict := v(token, udid, mode)
 			if verdict.OK {
 				return verdict
 			}
 			switch {
-			case verdict.Code == -1:
+			case verdict.Code == AuthCodeUndetermined:
 				sawUndetermined = true
+			case verdict.Code == AuthCodeNodeFault:
+				sawNodeFault = true
 			case verdict.Code > 0:
 				return verdict
 			}
 		}
+		if sawNodeFault {
+			return AuthVerdict{OK: false, Code: AuthCodeNodeFault}
+		}
 		if sawUndetermined {
-			return AuthVerdict{OK: false, Code: -1}
+			return AuthVerdict{OK: false, Code: AuthCodeUndetermined}
 		}
 		return AuthVerdict{OK: false, Code: 401}
 	}

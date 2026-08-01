@@ -803,7 +803,7 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 	}()
 	var as *authSession
 	if s.sessions != nil {
-		as = &authSession{auth: auth, kill: func() { sess.Close() }}
+		as = newAuthSession(auth, func() { sess.Close() })
 		unregister := s.sessions.register(as)
 		defer unregister()
 	}

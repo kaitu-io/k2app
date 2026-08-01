@@ -20,8 +20,11 @@ var remoteAuthClient = &http.Client{Timeout: 5 * time.Second}
 //   - transport error / HTTP 5xx / decode failure / any other JSON code
 //     (422 bad request, 500 Center bug, …) → Code -1 (cannot determine)
 //   - node config problems (empty NodeSecret, unresolvable node IPv4, bad
-//     URL) → "no opinion" (OK=false, Code=0): the node's own fault, and the
-//     chain tail fail-closes it to 401 — same fail-closed behavior as before.
+//     URL) → Code -2 (AuthCodeNodeFault): still fail-closed under enforce, but
+//     reported as a SERVER fault rather than as the device's credentials
+//     being invalid. See AuthCodeNodeFault's doc for why this is not folded
+//     into the 401 tail. Each emits `DIAG: auth-node-misconfigured`, which is
+//     also what the Slack alerter pages on.
 //
 // nodeIPv4Fn + nodeSecret are the node's Basic-auth identity (username=ipv4,
 // password=NodeSecret): /slave/device-check-auth sits behind Center's
@@ -29,13 +32,13 @@ var remoteAuthClient = &http.Client{Timeout: 5 * time.Second}
 func NewRemoteValidator(remoteURL string, nodeIPv4Fn func() string, nodeSecret string) Validator {
 	return func(token, udid, mode string) AuthVerdict {
 		if nodeSecret == "" {
-			slog.Warn("wire: remote auth: node secret unset, rejecting", "udid", udid)
-			return AuthVerdict{}
+			slog.Warn("DIAG: auth-node-misconfigured", "reason", "node_secret_unset", "udid", udid)
+			return AuthVerdict{Code: AuthCodeNodeFault}
 		}
 		nodeIPv4 := nodeIPv4Fn()
 		if nodeIPv4 == "" {
-			slog.Warn("wire: remote auth: node ipv4 unresolved, rejecting", "udid", udid)
-			return AuthVerdict{}
+			slog.Warn("DIAG: auth-node-misconfigured", "reason", "node_ipv4_unresolved", "udid", udid)
+			return AuthVerdict{Code: AuthCodeNodeFault}
 		}
 		body, err := json.Marshal(struct {
 			UDID  string `json:"udid"`
@@ -43,14 +46,14 @@ func NewRemoteValidator(remoteURL string, nodeIPv4Fn func() string, nodeSecret s
 			Mode  string `json:"mode,omitempty"`
 		}{UDID: udid, Token: token, Mode: mode})
 		if err != nil {
-			slog.Warn("wire: remote auth: marshal failed", "err", err)
-			return AuthVerdict{}
+			slog.Warn("DIAG: auth-node-misconfigured", "reason", "marshal_failed", "err", err)
+			return AuthVerdict{Code: AuthCodeNodeFault}
 		}
 
 		req, err := http.NewRequest(http.MethodPost, remoteURL, bytes.NewReader(body))
 		if err != nil {
-			slog.Warn("wire: remote auth: build request failed", "url", remoteURL, "err", err)
-			return AuthVerdict{}
+			slog.Warn("DIAG: auth-node-misconfigured", "reason", "bad_remote_url", "url", remoteURL, "err", err)
+			return AuthVerdict{Code: AuthCodeNodeFault}
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.SetBasicAuth(nodeIPv4, nodeSecret)

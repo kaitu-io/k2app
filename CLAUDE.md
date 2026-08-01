@@ -122,6 +122,7 @@ Reserved event names:
 | `DIAG: subs-creds-persist-miss` | WARN | credential rotation callback fired but no route in lastConfig matched the old URL — nothing persisted | component |
 | `DIAG: subs-stale-cache` | WARN | subs fetch failed, serving disk cache | via, cacheAgeS, err |
 | `DIAG: auth-center-unreachable` | WARN | revalidation undecidable (Center down/timeout) — session kept, authAt advanced one window | udid, code, graceS |
+| `DIAG: auth-node-misconfigured` | WARN | THIS node cannot authenticate anyone (no `K2_NODE_SECRET`, unresolvable node IPv4) — Center is never asked | reason, udid |
 | `DIAG: auth-session-expired` | INFO | SvcExp passed on a live session — killed with zero Center calls | udid, svcExp |
 | `DIAG: auth-session-revoked` | WARN | Center explicit reject (401/402/403) on revalidation — session killed | udid, code |
 | `DIAG: auth-grace-exhausted` | WARN | undecidable streak exceeded cookieGraceMax (6h) — session killed | udid, graceS |
@@ -222,6 +223,12 @@ wire.CookieJar.mu (state, standalone — map ops only; one jar per outbound, sha
 wire.authSessions.mu (state, standalone — connection registry set only; the
   sweeper snapshots under it and calls Validator / kill() strictly OUTSIDE the
   lock; no nesting with any engine/server/transport lock)
+
+wire.SlackAlerter.mu (state, standalone — per-key cooldown map only; the
+  webhook POST runs on its own goroutine, strictly OUTSIDE the lock)
+
+wire.authHealth.mu (state, standalone — Center-reachability state only;
+  SlackAlerter.Fire is called OUTSIDE it, so the two never nest)
 
 wire.CookieSigner: rotateMu (serialization, holds across the rotation's file
   write) → CookieSigner.mu (state). Standalone — never acquired while holding

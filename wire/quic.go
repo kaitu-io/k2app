@@ -1313,10 +1313,10 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 	}()
 
 	if s.sessions != nil {
-		as := &authSession{auth: ctx.auth, kill: func() {
+		as := newAuthSession(ctx.auth, func() {
 			// 0x03: revoked-by-revalidation (0x01 = unauthorized at admission).
 			conn.CloseWithError(0x03, "session revoked")
-		}}
+		})
 		ctx.sess = as
 		unregister := s.sessions.register(as)
 		defer unregister() // handleConn returns when the connection dies
