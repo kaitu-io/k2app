@@ -19,6 +19,7 @@ import { create } from 'zustand';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { authService } from '../services/auth-service';
 import { cacheStore } from '../services/cache-store';
+import { adoptTunnelToken } from '../services/tunnel-token';
 import { cloudApi } from '../services/cloud-api';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
@@ -164,6 +165,7 @@ export function refreshTunnelsCacheAfterAutoPick(
       cloudApi.get<TunnelListResponse>('/api/v20260717/tunnels').then(res => {
         if (res.code === 0 && res.data) {
           cacheStore.set('api:tunnels', res.data);
+          void adoptTunnelToken(res.data.tunnelToken);
           console.debug('[Connection] auto-pick: tunnel cache refreshed ('
             + (res.data.items?.length ?? 0) + ' items, vpnState=' + state + ')');
         } else if (res.code !== 401) {

@@ -72,7 +72,7 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 		c.Request = httptest.NewRequest("POST", "/slave/device-check-auth", nil)
 		c.Set("i_am_the_node", &node)
 
-		handleSlaveJWTAuth(c, device.UDID, token)
+		handleSlaveJWTAuth(c, device.UDID, token, "")
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
@@ -126,7 +126,7 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 		c.Request = httptest.NewRequest("POST", "/slave/device-check-auth", nil)
 		c.Set("i_am_the_node", &node)
 
-		handleSlaveJWTAuth(c, device.UDID, token)
+		handleSlaveJWTAuth(c, device.UDID, token, "")
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestHandleSlaveJWTAuth_PrivateNode(t *testing.T) {
 		c.Request = httptest.NewRequest("POST", "/slave/device-check-auth", nil)
 		c.Set("i_am_the_node", &node)
 
-		handleSlaveJWTAuth(c, device.UDID, token)
+		handleSlaveJWTAuth(c, device.UDID, token, "")
 
 		resp, err := ParseResponse(w)
 		require.NoError(t, err)

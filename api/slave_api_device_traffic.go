@@ -22,9 +22,10 @@ type DeviceTrafficRequest struct {
 }
 
 type DeviceTrafficItem struct {
-	UDID string `json:"udid"`
-	Rx   int64  `json:"rx"`
-	Tx   int64  `json:"tx"`
+	UDID      string `json:"udid"`
+	SessionID string `json:"session_id"`
+	Rx        int64  `json:"rx"`
+	Tx        int64  `json:"tx"`
 }
 
 // api_slave_device_traffic records POST /slave/device-traffic.
@@ -97,6 +98,20 @@ func ingestDeviceTraffic(c *gin.Context, ipv4 string, req *DeviceTrafficRequest)
 			})
 		}
 
+		// 3b) per-session rows (spec §6.6 会话可观测, PURE OBSERVATION — no
+		// thresholds/enforcement). Legacy items with no session_id contribute
+		// only to the daily aggregate above, never to this table.
+		sessRows := make([]DeviceSessionDaily, 0, len(req.Devices))
+		for _, d := range req.Devices {
+			if d.SessionID == "" {
+				continue // legacy node / unattributed — daily aggregate only
+			}
+			sessRows = append(sessRows, DeviceSessionDaily{
+				Date: date, UDID: d.UDID, SessionID: d.SessionID, NodeIpv4: ipv4,
+				RxBytes: d.Rx, TxBytes: d.Tx,
+			})
+		}
+
 		// 3+4) daily upsert and cursor advance MUST commit atomically. This
 		// ledger is additive (rx_bytes + VALUES(rx_bytes)), unlike the
 		// max-based /slave/usage. If the rows upsert committed but the
@@ -107,6 +122,12 @@ func ingestDeviceTraffic(c *gin.Context, ipv4 string, req *DeviceTrafficRequest)
 		// transaction guarantees they move together: either the batch is
 		// fully applied (rows + cursor) or fully rolled back for retry.
 		return db.Get().Transaction(func(tx *gorm.DB) error {
+			// A batch may contain multiple session rows sharing the same
+			// (date, udid, node_ipv4) — the daily-aggregate table's key is
+			// coarser than the per-session key. MySQL applies ON DUPLICATE
+			// KEY in-order within one bulk INSERT, so the additive upsert
+			// below still accumulates correctly even with several same-key
+			// rows batched together.
 			if uerr := tx.Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "date"}, {Name: "udid"}, {Name: "node_ipv4"}},
 				DoUpdates: clause.Assignments(map[string]any{
@@ -116,6 +137,17 @@ func ingestDeviceTraffic(c *gin.Context, ipv4 string, req *DeviceTrafficRequest)
 				}),
 			}).Create(&rows).Error; uerr != nil {
 				return uerr
+			}
+			if len(sessRows) > 0 {
+				if serr := tx.Clauses(clause.OnConflict{
+					Columns: []clause.Column{{Name: "date"}, {Name: "udid"}, {Name: "session_id"}, {Name: "node_ipv4"}},
+					DoUpdates: clause.Assignments(map[string]any{
+						"rx_bytes": gorm.Expr("rx_bytes + VALUES(rx_bytes)"),
+						"tx_bytes": gorm.Expr("tx_bytes + VALUES(tx_bytes)"),
+					}),
+				}).Create(&sessRows).Error; serr != nil {
+					return serr
+				}
 			}
 			return advanceDeviceTrafficCursor(tx, ipv4, req)
 		})

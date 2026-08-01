@@ -26,6 +26,7 @@ import { RecommendBar } from './RecommendBar';
 import { CountryFilterDialog } from './CountryFilterDialog';
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
+import { adoptTunnelToken } from '../services/tunnel-token';
 import { useAuthStore } from '../stores/auth.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
@@ -163,6 +164,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           }
           if (res.code === 0 && res.data) {
             cacheStore.set('api:tunnels', res.data);
+            void adoptTunnelToken(res.data.tunnelToken);
             setTunnels(res.data.items || []);
             setEchConfigList(res.data.echConfigList);
             onTunnelsLoadedRef.current?.(res.data.items || []);
@@ -196,6 +198,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         setTunnels(loadedTunnels);
         setEchConfigList(response.data.echConfigList);
         cacheStore.set('api:tunnels', response.data);
+        void adoptTunnelToken(response.data.tunnelToken);
         console.debug('[CloudTunnelList] ECH config from API:', response.data.echConfigList ? `present (len=${response.data.echConfigList.length})` : 'empty');
         retryCountRef.current = 0;
         onTunnelsLoadedRef.current?.(loadedTunnels);

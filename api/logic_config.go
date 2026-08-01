@@ -21,6 +21,9 @@ type JwtConfig struct {
 	Secret             string `json:"secret"`
 	AccessTokenExpiry  int64  `json:"accessTokenExpiry"`
 	RefreshTokenExpiry int64  `json:"refreshTokenExpiry"`
+	// TunnelTokenExpiry 隧道专用凭据寿命（秒）。viper 键 jwt.tunnel_token_expiry，
+	// 默认 7776000（90 天）。见 spec §4.1。
+	TunnelTokenExpiry int64 `json:"tunnelTokenExpiry"`
 }
 
 // InviteConfig 邀请奖励配置结构
@@ -56,6 +59,10 @@ func configJwt(ctx context.Context) JwtConfig {
 		Secret:             viper.GetString("jwt.secret"),
 		AccessTokenExpiry:  viper.GetInt64("jwt.access_token_expiry"),
 		RefreshTokenExpiry: viper.GetInt64("jwt.refresh_token_expiry"),
+		TunnelTokenExpiry:  viper.GetInt64("jwt.tunnel_token_expiry"),
+	}
+	if cfg.TunnelTokenExpiry <= 0 {
+		cfg.TunnelTokenExpiry = 7776000 // 90d — spec §4.1 默认值
 	}
 	// log.Debugf(ctx, "loading JWT config: %+v", cfg)
 	return cfg

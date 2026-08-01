@@ -19,6 +19,10 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
     throw this.unavailable('K2Plugin is not available on web');
   }
 
+  async updateConfig(_options: { config: string }): Promise<void> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
   async connect(_options: { config: string }): Promise<void> {
     throw this.unavailable('K2Plugin is not available on web');
   }

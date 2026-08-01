@@ -111,6 +111,20 @@ func api_v20260717_tunnels(c *gin.Context) {
 	log.Infof(c, "v20260717 tunnels: returned %d items", len(items))
 	type response struct {
 		Items []DataSlaveTunnelV20260717 `json:"items"`
+		// TunnelToken 是该设备的 90 天隧道专用凭据（Phase 0，spec §4.2）。
+		// webapp authService 持久化后用于拼接 k2v5:// URL。请求以 access
+		// token 认证、不携带 tunnel token，无法做 50% 条件续期——每次成功
+		// 响应按当前锚点重签（无条件续期，锚点不变故旧 token 不失效）。
+		TunnelToken string `json:"tunnelToken,omitempty"`
 	}
-	Success(c, &response{Items: items})
+	resp := response{Items: items}
+	if dev := ReqDevice(c); dev != nil && user != nil {
+		if tok, err := issueTunnelTokenForDevice(c, dev, user.Roles); err != nil {
+			// 凭据升级失败不拖垮隧道列表（同 subs 的降级哲学）。
+			log.Warnf(c, "v20260717 tunnels: issue tunnel token failed for udid=%s: %v", dev.UDID, err)
+		} else {
+			resp.TunnelToken = tok
+		}
+	}
+	Success(c, &resp)
 }

@@ -304,6 +304,17 @@ func handleJWTAuth(c *gin.Context, token string) *authContext {
 		return nil
 	}
 
+	// Default-deny by token type (spec §3.2/§8): handleJWTAuth grants the full
+	// /api/* surface, so only an access token may pass. A tunnel token's
+	// claims.TokenIssueAt can equal Device.TokenIssueAt (gateway-credential
+	// mints both from the same now), which would otherwise slip through the
+	// device-branch TokenIssueAt check and yield 90-day account access. Mirrors
+	// validateToken's claims.Type != tokenType guard.
+	if claims.Type != TokenTypeAccess {
+		log.Warnf(c, "rejected non-access token type %s at handleJWTAuth", claims.Type)
+		return nil
+	}
+
 	// 从JWT token中获取UDID
 	udid := claims.DeviceID
 
@@ -573,12 +584,23 @@ func EnforceDeviceClass() gin.HandlerFunc {
 }
 
 // SlaveAuthRequired authenticates slave nodes via Basic Auth (IPv4:NodeSecret).
+//
+// Node-level failures here use ErrorSystemError (500), NOT ErrorNotLogin
+// (401). This is a node identity problem (bad NodeSecret, unregistered/stale
+// IPv4), not an end-user device credential problem. k2/wire/auth_remote.go's
+// NewRemoteValidator reads a 401 body from /slave/device-check-auth as an
+// explicit device-credential rejection -- reusing that code here would make
+// a misconfigured node masquerade as "your device token is invalid" for
+// every device it serves. ErrorSystemError falls outside NewRemoteValidator's
+// {0,401,402,403} switch, landing in its `default` branch (Code:-1,
+// "cannot determine"), which is the correct undetermined verdict for a
+// node-side problem. See final-review-fix-C1.
 func SlaveAuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		identifier, secretToken, ok := c.Request.BasicAuth()
 		if !ok {
 			log.Warnf(c, "invalid basic auth")
-			Error(c, ErrorNotLogin, "invalid authorization format")
+			Error(c, ErrorSystemError, "invalid authorization format")
 			c.Abort()
 			return
 		}
@@ -588,14 +610,14 @@ func SlaveAuthRequired() gin.HandlerFunc {
 		err := db.Get().Where(&SlaveNode{Ipv4: identifier}).First(&node).Error
 		if err != nil {
 			log.Warnf(c, "invalid credentials: %s (node not found)", identifier)
-			Error(c, ErrorNotLogin, "invalid node credentials")
+			Error(c, ErrorSystemError, "invalid node credentials")
 			c.Abort()
 			return
 		}
 
 		if node.SecretToken != secretToken {
 			log.Warnf(c, "invalid credentials: %s (secret mismatch)", identifier)
-			Error(c, ErrorNotLogin, "invalid secret token")
+			Error(c, ErrorSystemError, "invalid secret token")
 			c.Abort()
 			return
 		}

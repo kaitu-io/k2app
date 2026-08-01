@@ -3,6 +3,7 @@ package center
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -51,7 +52,7 @@ func api_gateway_credential(c *gin.Context) {
 	}
 
 	udid := newRouterUDID()
-	var accessToken string
+	var tunnelToken string
 	err := db.Get().Transaction(func(tx *gorm.DB) error {
 		// Rotation: drop any existing router devices so the limit check counts
 		// only the device we are about to mint.
@@ -62,11 +63,14 @@ func api_gateway_credential(c *gin.Context) {
 		if err := checkDeviceLimitOrKick(ctx, tx, user, true); err != nil {
 			return err
 		}
-		tokens, now, err := generateTokens(ctx, user.ID, udid, user.Roles)
+		// Phase 0（spec §4.2）：不再签 access/refresh 对（refresh 曾被直接丢弃
+		// —— P1 的根因）。改签 90 天 tunnel token，锚点 = 设备创建时刻。
+		now := time.Now()
+		tok, err := generateTunnelToken(ctx, user.ID, udid, user.Roles, now.Unix())
 		if err != nil {
 			return err
 		}
-		accessToken = tokens.AccessToken
+		tunnelToken = tok
 		return tx.Create(&Device{
 			UDID:            udid,
 			UserID:          user.ID,
@@ -74,6 +78,7 @@ func api_gateway_credential(c *gin.Context) {
 			AppPlatform:     "router",
 			TokenIssueAt:    now.Unix(),
 			TokenLastUsedAt: now.Unix(),
+			TunnelIssueAt:   now.Unix(),
 		}).Error
 	})
 	if err != nil {
@@ -88,6 +93,6 @@ func api_gateway_credential(c *gin.Context) {
 		return
 	}
 
-	url := injectSubsCreds(gatewayCredentialBase(), udid, accessToken)
+	url := injectSubsCreds(gatewayCredentialBase(), udid, tunnelToken)
 	Success(c, &gin.H{"url": url})
 }

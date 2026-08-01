@@ -37,6 +37,24 @@ type DeviceTrafficDaily struct {
 	UpdatedAt time.Time
 }
 
+// DeviceSessionDaily records per-auth-session traffic per day per node (k2v5
+// auth spec §6.6 会话可观测). Rows exist only for reports that carry a
+// session_id (Phase-2+ nodes). PURE OBSERVATION: consumed by ad-hoc analysis
+// of "how many concurrent sessions/nodes per udid" — no thresholds, no
+// enforcement, by design (concurrency policy is explicitly deferred until
+// this data exists).
+type DeviceSessionDaily struct {
+	ID        uint64 `gorm:"primarykey"`
+	Date      string `gorm:"type:varchar(10);not null;uniqueIndex:idx_dsd_key,priority:1"`
+	UDID      string `gorm:"column:udid;type:varchar(64);not null;uniqueIndex:idx_dsd_key,priority:2"`
+	SessionID string `gorm:"type:varchar(32);not null;uniqueIndex:idx_dsd_key,priority:3"`
+	NodeIpv4  string `gorm:"type:varchar(15);not null;uniqueIndex:idx_dsd_key,priority:4"`
+	RxBytes   int64  `gorm:"not null;default:0"`
+	TxBytes   int64  `gorm:"not null;default:0"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // DeviceTrafficCursor is the per-node idempotency cursor for device-traffic
 // batches: a report with the same boot_id and batch_seq <= BatchSeq has
 // already been ingested and must be skipped (ack-lost resend).

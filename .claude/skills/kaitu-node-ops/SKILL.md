@@ -144,6 +144,8 @@ One table for every `.env` var across ops / provisioning / metering. "Set by": w
 | `K2_CUTOFF_POLL_INTERVAL` | Enforcer poll period | ops | default `5s`. |
 | `K2_JUMP_PORT_MIN`/`MAX` | Hop port range (default 40000/40019) | ops | Docker port map → container 443; 20 ports, high range to dodge GFW scan. |
 | `K2_LOG_LEVEL` | `debug`/`info`/`warn`/`error` | ops | |
+| `K2_ENFORCE_AUTH` | Device-auth enforcement: `0`/unset = permissive (serve unauthenticated clients), `1` = reject them | ops | **Default 0. Never flip without the §5 pre-enforce gate** (`audit-users-file.sh` clean + `auth-rollout-report.sh` showing `legacy_no_metadata` at the agreed threshold). Read by BOTH the sidecar (renders `enforce_auth` into `k2v5-config.yaml`) and k2s. Rollback caveat: k2's env check is a one-way OR — `=1` overrides the yaml, `=0` does **not** force false, it only stops overriding. A real rollback needs the sidecar to regenerate the yaml, so use `docker compose up -d`, never `docker restart`. |
+| `K2_SLACK_WEBHOOK_URL` | Node-level auth-fault alerting (k2v5 auth spec §6.4) | ops | **SECRET — never read/log.** Empty/unset = alerting fully off (no goroutine, no HTTP), which is the default. Pages on sustained `DIAG: auth-center-unreachable` (5 min) and immediately on `DIAG: auth-node-misconfigured`; 30 min cooldown per event, with its own recovery notice. The node posts to Slack **directly** — the path under suspicion is the node→Center path, so alerting via Center would fail exactly when needed. **Reading the alerts: fleet-wide = a Center outage; ONE node alerting while the others stay quiet = the page-worthy case (possible targeted interference with that node's path to Center, which stretches the 15-min revocation SLA to the 6h grace).** |
 
 > **Metering is decoupled from the private claim.** Any node — shared or private — meters and self-cuts iff `K2_NODE_BILLING_START_DATE` is set. `K2_PRIVATE_CLAIM` only controls identity/activation. The reporter cadence is owned by Center (`next_report_interval`, 10s floor) — don't tune it from the node.
 
@@ -172,7 +174,7 @@ One table for every `.env` var across ops / provisioning / metering. "Set by": w
 
 ### §3.1 k2s user auth
 
-Two modes, first match wins: (1) `/apps/k2s/users` (bind-mounted), (2) Center remote `/slave/device-check-auth` (fallback). **Empty file = pure remote auth = default.** No restart needed (changes apply on next full auth; 1h tickets stay valid). Format = one `udid:token` per line.
+Two modes, first match wins: (1) `/apps/k2s/users` (bind-mounted), (2) Center remote `/slave/device-check-auth` (fallback). **Empty file = pure remote auth = default.** No restart needed (changes apply on next cold auth; the cached-success TTL — 15 min — still honors an already-validated entry until expiry. The old 1h HTTP ticket flow was removed 2026-07, k2 commit 4c68240). Format = one `udid:token` per line.
 
 | Operation | Command |
 |-----------|---------|
@@ -225,10 +227,12 @@ Local scripts in this skill dir (`.claude/skills/kaitu-node-ops/`). Need `KAITU_
 | Script | Purpose | Flags |
 |--------|---------|-------|
 | `deploy-compose.sh` | SCP `docker/docker-compose.yml` to all active nodes (MD5-skip, no restart) | `--all`, `--dry-run` |
-| `update-compose.sh` | `pull` + `up -d` across active nodes, rolling | `--sleep=N`, `--node=IP`, `--dry-run` |
+| `update-compose.sh` | `pull` + `up -d` across active nodes, rolling | `--sleep=N`, `--node=IP`, `--version=TAG`, `--set-env=KEY=VALUE`, `--dry-run` |
 | `deploy-auto-update.sh` | SCP `auto-update.sh` + install daily cron (idempotent) | `--all`, `--node=IP`, `--dry-run` |
+| `audit-users-file.sh` | Fleet audit: `/apps/k2s/users` must be empty before any enforce flip (non-empty entries bypass Center auth) | `--node=IP` |
+| `auth-rollout-report.sh` | Aggregate `DIAG: auth-rollout` per-node + fleet (enforce-rollout gate metrics); also counts `auth-center-unreachable` per node and pages on single-node isolation (spec §6.4) | `--since=24h`, `--node=IP` |
 
-> **⚠ DIR-MIGRATION GUARD (active until the whole fleet is on `/apps/k2s`):** the canonical compose now carries `name: k2s`. Do **NOT** run `deploy-compose.sh` / `update-compose.sh` / `deploy-auto-update.sh` against the **full fleet** while any node is still at `/apps/kaitu-slave`. Pushing the `name: k2s` compose to an un-migrated node makes its next `up -d` / nightly `auto-update` resolve project `k2s` → **empty `k2s_*` volumes (cert + metering state lost) + `container_name` collision**. During the migration window use `--node=<already-migrated-IP>` only, or run fleet-wide **after** the sweep completes. Remove this note once all nodes are on `/apps/k2s`. (Background: spec `2026-06-23-node-deploy-dir-k2s-migration-design.md`.)
+> **⚠ DIR-MIGRATION GUARD (active until the whole fleet is on `/apps/k2s`):** the canonical compose now carries `name: k2s`. Do **NOT** run `deploy-compose.sh` / `update-compose.sh` / `deploy-auto-update.sh` against the **full fleet** while any node is still at `/apps/kaitu-slave`. Pushing the `name: k2s` compose to an un-migrated node makes its next `up -d` / nightly `auto-update` resolve project `k2s` → **empty `k2s_*` volumes (cert + metering state lost) + `container_name` collision**. During the migration window use `--node=<already-migrated-IP>` only, or run fleet-wide **after** the sweep completes. `audit-users-file.sh` / `auth-rollout-report.sh` also hardcode `/apps/k2s`, so on an un-migrated node they degrade safely — a plain `SSH_ERR` or an apparent-nonzero audit count, not silent wrong data — but expect that output during the migration window. Remove this note once all nodes are on `/apps/k2s`. (Background: spec `2026-06-23-node-deploy-dir-k2s-migration-design.md`.)
 
 **Node activity heuristic** (no explicit status field): active = `tunnelCount > 0` **and** a real name (`hk.aliyun.wm01`, not IP-as-name) **and** SSH on :1022. `tunnelCount==0` + IP-name = decommissioned; scripts skip them by default (`--all` includes them).
 
