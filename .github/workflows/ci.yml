@@ -472,21 +472,23 @@ jobs:
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       - name: Setup Node.js (self-hosted)
+        # The runner's .path file already pins a working node onto PATH
+        # (no shell rc is sourced for a launchd service process, so the
+        # `nvm` shell function this step used to invoke is never defined —
+        # "nvm: 未找到命令", exit 127, every run). Verify the pinned
+        # version satisfies .nvmrc instead of trying to switch versions.
         shell: bash
         run: |
           NODE_VERSION=$(cat .nvmrc)
           CURRENT=$(node -v 2>/dev/null || echo "none")
-          if [ "$CURRENT" != "v${NODE_VERSION}" ]; then
-            nvm install "$NODE_VERSION"
+          if [[ "$CURRENT" != v${NODE_VERSION}.* ]]; then
+            echo "::error::Runner node ($CURRENT) does not satisfy .nvmrc (v${NODE_VERSION}.x) — update the runner's .path entry"
+            exit 1
           fi
-          nvm use "$NODE_VERSION"
-          NODE_DIR=$(dirname "$(which node)")
-          echo "$NODE_DIR" >> "$GITHUB_PATH"
+          echo "Using node $CURRENT"
           if ! command -v yarn &>/dev/null; then
             npm install -g yarn
           fi
-          NPM_GLOBAL=$(npm prefix -g)
-          echo "$NPM_GLOBAL" >> "$GITHUB_PATH"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -499,14 +501,21 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Set persistent cache paths (Windows)
+      - name: Set persistent cache paths (self-hosted)
+        # This job cross-compiles the Windows target FROM the macOS
+        # self-hosted runner (see build-windows's runs-on comment history —
+        # there is no actual Windows machine here, "Windows" is a custom
+        # label on macOS-runner-k2app). C:/... paths are a Windows
+        # filesystem convention and are not absolute on Darwin, so Go
+        # rejected GOMODCACHE outright ("entry is relative; must be
+        # absolute path") the first time this step ever actually ran.
         shell: bash
         run: |
-          echo "CARGO_HOME=C:/cache/cargo" >> "$GITHUB_ENV"
-          echo "GOMODCACHE=C:/cache/gomod" >> "$GITHUB_ENV"
-          echo "SCCACHE_DIR=C:/cache/sccache" >> "$GITHUB_ENV"
+          echo "CARGO_HOME=$HOME/cache/cargo" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$HOME/cache/gomod" >> "$GITHUB_ENV"
+          echo "SCCACHE_DIR=$HOME/cache/sccache" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "C:/cache/cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/cache/cargo/bin" >> "$GITHUB_PATH"
 
       - name: Setup sccache (Windows local disk)
         shell: bash
@@ -521,6 +530,9 @@ jobs:
 
       - name: Build Windows installer
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: make build-windows
 
       - name: Verify NSIS installer exists
