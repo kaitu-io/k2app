@@ -135,6 +135,15 @@ services:
       # Device-auth enforcement (k2 config.go reads K2_ENFORCE_AUTH directly;
       # runtime override of the yaml value). Default 0 = permissive.
       - K2_ENFORCE_AUTH=${K2_ENFORCE_AUTH:-0}
+      # Node-level auth-fault alerting (k2v5 auth spec §6.4). Empty (the
+      # default) disables alerting completely — no goroutine, no HTTP. Set
+      # K2_SLACK_WEBHOOK_URL in .env to page on sustained
+      # `DIAG: auth-center-unreachable` or on `DIAG: auth-node-misconfigured`.
+      # The node posts to Slack DIRECTLY, on purpose: the path under suspicion
+      # is the node's path to Center, so routing the alert through Center would
+      # fail exactly when it matters. K2_NODE_NAME only labels the alert.
+      - K2_SLACK_WEBHOOK_URL=${K2_SLACK_WEBHOOK_URL:-}
+      - K2_NODE_NAME=${K2_NODE_NAME:-}
     logging:
       driver: journald
       options:
