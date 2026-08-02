@@ -187,6 +187,22 @@ class K2Plugin : Plugin() {
     }
 
     @PluginMethod
+    fun updateConfig(call: PluginCall) {
+        val config = call.getString("config")
+        if (config == null) {
+            call.reject("Missing config parameter")
+            return
+        }
+        // Persist only — always-on restart (K2VpnService.onStartCommand with
+        // null intent) replays this. Never touches the running VPN.
+        // commit()（同步）保证进程被杀也不丢。
+        context.getSharedPreferences("k2vpn", Context.MODE_PRIVATE)
+            .edit().putString("configJSON", config).commit()
+        Log.d(TAG, "updateConfig: config persisted (${config.length} bytes)")
+        call.resolve()
+    }
+
+    @PluginMethod
     fun connect(call: PluginCall) {
         val config = call.getString("config")
         if (config == null) {

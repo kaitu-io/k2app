@@ -169,6 +169,12 @@ type Device struct {
 	TokenIssueAt    int64  `gorm:"not null"`
 	TokenLastUsedAt int64  `gorm:"not null"`
 
+	// TunnelIssueAt 是 tunnel token 的独立吊销锚点（unix 秒，0 = 从未签发）。
+	// 不能复用 TokenIssueAt：api_refresh_token 每次 web token 刷新都会重写
+	// TokenIssueAt，若共用则用户每 24h 就作废自己的隧道凭据（spec §4.1）。
+	// 续期不改此列（只延长 exp）；递增此列 = 作废该设备所有 tunnel token。
+	TunnelIssueAt int64 `gorm:"column:tunnel_issue_at;not null;default:0"`
+
 	// App 版本信息（从 X-K2-Client header 解析）
 	AppVersion  string `gorm:"type:varchar(32)"` // 应用版本，如 "0.4.0-beta.1"
 	AppPlatform string `gorm:"type:varchar(20)"` // 运行平台，如 "macos", "windows", "linux", "ios", "android"

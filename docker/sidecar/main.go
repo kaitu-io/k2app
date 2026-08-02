@@ -79,6 +79,20 @@ func main() {
 		return
 	}
 
+	// Clear any stale ready flag from a previous run BEFORE NewSidecar's
+	// network-bound DetectIP calls (up to 2x30s timeout) — not inside Start(),
+	// which runs after those calls complete. The .ready file lives in the
+	// persistent `config` named volume and survives container recreation; the
+	// k2s healthcheck (test -f .ready, probed every 2s from container start)
+	// would otherwise see the PREVIOUS run's flag and go green while this run
+	// is still mid-DetectIP, well before Register()/generateConfigs() have
+	// rewritten k2v5-config.yaml — letting k2s start on the OLD config on a
+	// `docker compose up -d` after an env-var flip (e.g. an enforce-rollback).
+	readyFileStart := fmt.Sprintf("%s/.ready", cfg.ConfigDir)
+	if err := os.Remove(readyFileStart); err != nil && !os.IsNotExist(err) {
+		slog.Warn("Failed to remove stale ready flag", "component", "sidecar", "file", readyFileStart, "err", err)
+	}
+
 	s, err := NewSidecar(&cfg)
 	if err != nil {
 		slog.Error("Failed to initialize", "component", "sidecar", "err", err)
@@ -438,14 +452,15 @@ func (s *Sidecar) generateConfigs(result *sidecar.RegisterResult) error {
 
 // K2V5ConfigData holds template data for k2v5 configuration
 type K2V5ConfigData struct {
-	CertDir   string
-	CertPath  string
-	KeyPath   string
-	CenterURL string
-	LogLevel  string
-	UsersFile string
-	HopStart  int
-	HopEnd    int
+	CertDir     string
+	CertPath    string
+	KeyPath     string
+	CenterURL   string
+	LogLevel    string
+	UsersFile   string
+	HopStart    int
+	HopEnd      int
+	EnforceAuth bool
 }
 
 const k2v5ConfigTemplate = `listen: ":443"
@@ -458,7 +473,8 @@ tls:
 auth:
   users_file: "{{.UsersFile}}"
   remote_url: "{{.CenterURL}}/slave/device-check-auth"
-  cache_ttl: 5m
+  cache_ttl: 15m
+  enforce_auth: {{.EnforceAuth}}
 log:
   level: "{{.LogLevel}}"
 {{- if and .HopStart .HopEnd}}
@@ -466,6 +482,13 @@ hop_start: {{.HopStart}}
 hop_end: {{.HopEnd}}
 {{- end}}
 `
+
+// enforceAuthFromEnv mirrors k2's config.go K2_ENFORCE_AUTH parsing exactly:
+// "1" or "true" → true, anything else (including unset) → false/permissive.
+func enforceAuthFromEnv() bool {
+	v := os.Getenv("K2_ENFORCE_AUTH")
+	return v == "1" || v == "true"
+}
 
 // generateK2V5Config generates k2v5-config.yaml for k2s server
 func (s *Sidecar) generateK2V5Config() error {
@@ -480,14 +503,15 @@ func (s *Sidecar) generateK2V5Config() error {
 	k2v5DataDir := "/etc/k2v5"
 
 	data := K2V5ConfigData{
-		CertDir:   k2v5DataDir,
-		CertPath:  fmt.Sprintf("%s/certs/server-cert.pem", configDir),
-		KeyPath:   fmt.Sprintf("%s/certs/server-key.pem", configDir),
-		CenterURL: s.config.K2Center.BaseURL,
-		LogLevel:  logLevel,
-		UsersFile: k2v5DataDir + "/users",
-		HopStart:  s.config.Tunnel.HopPortStart,
-		HopEnd:    s.config.Tunnel.HopPortEnd,
+		CertDir:     k2v5DataDir,
+		CertPath:    fmt.Sprintf("%s/certs/server-cert.pem", configDir),
+		KeyPath:     fmt.Sprintf("%s/certs/server-key.pem", configDir),
+		CenterURL:   s.config.K2Center.BaseURL,
+		LogLevel:    logLevel,
+		UsersFile:   k2v5DataDir + "/users",
+		HopStart:    s.config.Tunnel.HopPortStart,
+		HopEnd:      s.config.Tunnel.HopPortEnd,
+		EnforceAuth: enforceAuthFromEnv(),
 	}
 
 	return s.generateConfigFromTemplate("k2v5-config.yaml", k2v5ConfigTemplate, outputPath, data)

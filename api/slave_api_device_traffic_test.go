@@ -97,10 +97,55 @@ func TestDeviceTrafficIngest_ResolvesUserID(t *testing.T) {
 func TestDeviceTrafficRequest_WireShape(t *testing.T) {
 	b, err := json.Marshal(DeviceTrafficRequest{
 		BootID: "b1", BatchSeq: 2, Ts: 3,
-		Devices: []DeviceTrafficItem{{UDID: "u", Rx: 1, Tx: 2}},
+		Devices: []DeviceTrafficItem{
+			{UDID: "u", SessionID: "s1", Rx: 1, Tx: 2},
+			{UDID: "u2", Rx: 3, Tx: 4}, // legacy: no session_id on the wire
+		},
 	})
 	require.NoError(t, err)
 	assert.Equal(t,
-		`{"boot_id":"b1","batch_seq":2,"ts":3,"devices":[{"udid":"u","rx":1,"tx":2}]}`,
+		`{"boot_id":"b1","batch_seq":2,"ts":3,"devices":[{"udid":"u","session_id":"s1","rx":1,"tx":2},{"udid":"u2","session_id":"","rx":3,"tx":4}]}`,
 		string(b))
+}
+
+// spec §6.6: session_id is recorded (per-day per-node per-session additive
+// rows) — observation only, no thresholds, no blocking.
+func TestDeviceTrafficIngest_SessionDaily(t *testing.T) {
+	skipIfNoConfig(t)
+	ip := "10.99.0.3"
+	t.Cleanup(func() {
+		db.Get().Where("node_ipv4 = ?", ip).Delete(&DeviceTrafficDaily{})
+		db.Get().Where("node_ipv4 = ?", ip).Delete(&DeviceSessionDaily{})
+		db.Get().Where("ipv4 = ?", ip).Delete(&DeviceTrafficCursor{})
+	})
+
+	req := DeviceTrafficRequest{
+		BootID: "boot-S", BatchSeq: 1, Ts: time.Now().Unix(),
+		Devices: []DeviceTrafficItem{
+			{UDID: "udid-s1", SessionID: "aaaa", Rx: 10, Tx: 20},
+			{UDID: "udid-s1", SessionID: "bbbb", Rx: 1, Tx: 2},
+			{UDID: "udid-s2", Rx: 5, Tx: 5}, // legacy: no session_id → no session row
+		},
+	}
+	require.NoError(t, ingestDeviceTraffic(nil, ip, &req))
+
+	// Daily aggregate still sums across sessions of the same udid.
+	var daily DeviceTrafficDaily
+	require.NoError(t, db.Get().Where("node_ipv4 = ? AND udid = ?", ip, "udid-s1").First(&daily).Error)
+	assert.Equal(t, int64(11), daily.RxBytes)
+	assert.Equal(t, int64(22), daily.TxBytes)
+
+	var sessRows []DeviceSessionDaily
+	require.NoError(t, db.Get().Where("node_ipv4 = ?", ip).Order("session_id").Find(&sessRows).Error)
+	require.Len(t, sessRows, 2, "one row per (udid, session); legacy item must not create one")
+	assert.Equal(t, "aaaa", sessRows[0].SessionID)
+	assert.Equal(t, int64(10), sessRows[0].RxBytes)
+
+	// Second batch, same session → additive.
+	req2 := DeviceTrafficRequest{BootID: "boot-S", BatchSeq: 2, Ts: time.Now().Unix(),
+		Devices: []DeviceTrafficItem{{UDID: "udid-s1", SessionID: "aaaa", Rx: 3, Tx: 4}}}
+	require.NoError(t, ingestDeviceTraffic(nil, ip, &req2))
+	var row DeviceSessionDaily
+	require.NoError(t, db.Get().Where("node_ipv4 = ? AND session_id = ?", ip, "aaaa").First(&row).Error)
+	assert.Equal(t, int64(13), row.RxBytes)
 }

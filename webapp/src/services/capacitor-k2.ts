@@ -97,6 +97,43 @@ function buildIapBridge(): IIap {
 }
 
 /**
+ * Rewrite the credential (userinfo) of every k2v5:// route inside a stored
+ * ClientConfig JSON. Pure string/JSON transform — exported for tests.
+ * Malformed input is returned unchanged (sync is best-effort; the stored
+ * token stays valid ≥45 days either way).
+ */
+export function rewriteConfigCredential(configJson: string, udid: string, token: string): string {
+  try {
+    const cfg = JSON.parse(configJson);
+    if (!Array.isArray(cfg?.routes)) return configJson;
+    let changed = false;
+    for (const route of cfg.routes) {
+      if (typeof route?.via !== 'string' || !route.via.startsWith('k2v5://')) continue;
+      const rest = route.via.substring('k2v5://'.length);
+      // Userinfo '@' must only be looked for within the authority component
+      // (before the first '/' or '?') — scanning the entire remainder would
+      // misparse an '@' inside a query param (e.g. "?x=a@b") as the userinfo
+      // separator, truncating the host (finding #7, whole-branch review).
+      const slashIdx = rest.indexOf('/');
+      const qIdx = rest.indexOf('?');
+      const authorityEnd = slashIdx < 0 ? qIdx : (qIdx < 0 ? slashIdx : Math.min(slashIdx, qIdx));
+      const authority = authorityEnd >= 0 ? rest.substring(0, authorityEnd) : rest;
+      const tail = authorityEnd >= 0 ? rest.substring(authorityEnd) : '';
+      const atIdx = authority.indexOf('@');
+      const hostPart = atIdx >= 0 ? authority.substring(atIdx + 1) : authority;
+      const next = `k2v5://${udid}:${token}@${hostPart}${tail}`;
+      if (next !== route.via) {
+        route.via = next;
+        changed = true;
+      }
+    }
+    return changed ? JSON.stringify(cfg) : configJson;
+  } catch {
+    return configJson;
+  }
+}
+
+/**
  * Module-level capacitor run dispatcher.
  * Extracted from injectCapacitorGlobals so it can be tested directly
  * without going through the injected window._k2 global.
@@ -173,6 +210,26 @@ export async function capacitorRun<T = any>(action: string, params?: any): Promi
         const nodes = Array.isArray(params?.nodes) ? params.nodes : [];
         const res = await K2Plugin.relayAddNodes({ nodes: JSON.stringify(nodes) });
         return JSON.parse(res.response) as SResponse<T>;
+      }
+
+      case 'sync-credential': {
+        // Phase 0（spec §4.3 P3/P4）：把续期后的 tunnel token 写回系统
+        // 无参数拉起 VPN 时读取的原生存储。只持久化，不触碰运行中的 VPN。
+        const udid = params?.udid as string | undefined;
+        const token = params?.token as string | undefined;
+        if (!udid || !token) {
+          return { code: -1, message: 'udid and token are required' };
+        }
+        const { config } = await K2Plugin.getConfig();
+        if (!config) {
+          return { code: 0, message: 'no stored config' };
+        }
+        const updated = rewriteConfigCredential(config, udid, token);
+        if (updated === config) {
+          return { code: 0, message: 'unchanged' };
+        }
+        await K2Plugin.updateConfig({ config: updated });
+        return { code: 0, message: 'ok' };
       }
 
       default:
