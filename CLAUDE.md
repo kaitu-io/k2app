@@ -2,7 +2,7 @@
 
 Tauri v2 desktop + Capacitor 7 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management.
 
-**This file is the only doc loaded on every session.** It carries the map plus the rules that bite before you'd know to look them up. Everything else is a leaf: the repo has ~70 `CLAUDE.md` files, and a directory's own doc loads when you work in that directory. So **layer-specific detail belongs in the layer doc, not here** — putting it here charges every session for it.
+**This file is the only doc loaded on every session.** It carries the map plus the rules that bite before you'd know to look them up. Everything else is a leaf: the repo has ~27 `CLAUDE.md` files (8 here + 19 inside the `k2/` submodule), and a directory's own doc loads when you work in that directory. So **layer-specific detail belongs in the layer doc, not here** — putting it here charges every session for it.
 
 ## Quick Commands
 
@@ -12,13 +12,16 @@ make dev-standalone                         # Standalone browser dev (macOS, no 
 make dev-macos / make dev-windows           # Tauri desktop dev
 make dev-android / make dev-ios             # Mobile dev (gomobile bind + cap sync + cap run)
 make build-macos / build-windows / build-linux / build-android / build-ios
-make upload-macos / upload-windows / upload-linux / upload-android / upload-web
-make publish-mobile VERSION=x.y.z           # Mobile latest.json (phase 2 release)
+make upload-macos / upload-windows / upload-linux / upload-android
+git push origin main:website                # Website deploy — Amplify builds the `website` branch,
+                                            # which is a pure mirror of main. Never commit to it directly.
+make publish-android VERSION=x.y.z BRAND=kaitu   # Mobile latest.json (phase 2 release)
+make publish-ios     VERSION=x.y.z BRAND=kaitu   # both delegate to scripts/publish-mobile.sh
 cd webapp && yarn test                      # vitest
 cd desktop/src-tauri && cargo test          # Rust tests
 cd api && go test ./...                     # Center API tests
 cd mcp && go test ./...                     # Go MCP server tests
-scripts/test_build.sh                       # Full build verification (14 checks)
+scripts/test_build.sh                       # Full build verification (count is dynamic, not fixed)
 yarn install                                # Always from root (workspace)
 ```
 
@@ -92,7 +95,7 @@ Terms that cross layer boundaries. Each layer's doc extends its own.
 - **k2subs** — Subscription URL scheme (`k2subs://udid:token@host/api/subs`), resolved to `k2v5://` tunnels via `/api/subs`. **Desktop daemon only** — mobile is manual-only, webapp hands `_k2.run('up')` a single `k2v5://` URL. Don't assume symmetry. See `mobile/CLAUDE.md` "Server Selection".
 - **probe.Registry** — In-memory per-URL QUIC-probe cache (`k2/probe/`), read by the daemon probe loop, `/api/core probe`, and `Subscription.Pick`. **Flake tolerance**: a first `score==0` returns `ok=false` (neutral); only two consecutive zeros hard-exclude. TTL 15 min.
 - **recommendScore** — Canonical `[0.0, 1.0]` tunnel recommendation signal (higher = better), from `api.ComputeRecommendScore`. Non-cloud nodes get `0.5` neutral, never 0. Legacy `weight` is dual-emitted as `round(score*100)`. Model + rules: `api/CLAUDE.md` "Tunnel Scoring".
-- **EngineError** — `{Code int, Category string, Message string}` (`k2/engine/error.go`). Code ranges are load-bearing and **must never be mixed**: `1xx` network (101 NetworkUnavailable), `4xx` client (400 BadConfig, 401 AuthRejected, 402 PaymentRequired, 403 Forbidden, 408 Timeout), `5xx` server (502 ProtocolError, 503 ServerUnreachable, 570 ConnectionFatal). Categories: `client`/`network`/`server`/`target`.
+- **EngineError** — `{Code int, Category string, Message string}` (`k2/engine/error.go`). Code ranges are load-bearing and **must never be mixed**: `1xx` network (101 NetworkUnavailable, **108 Timeout**), `4xx` client (400 BadConfig, 401 AuthRejected, 402 PaymentRequired, 403 Forbidden, 412 EnvironmentSetupFailed), `5xx` server (502 ProtocolError, 503 ServerUnreachable, 504 RuleBundlesUnavailable, 570 ConnectionFatal). Categories: `client`/`network`/`server`/`target`. **Timeout is `108`, not `408`** — it is a network fault, not a client fault; this file said `408` until 2026-08-02, so distrust any code or doc that repeats it.
 - **NetEvent** — Network state change (Signal + 7 platform fields), constructed by platforms, exported by gomobile as `EngineNetEvent` (iOS) / `engine.NetEvent` (Android). Routed through `netCoordinator`, which separates 网络断了 / 恢复 / 接口变了. Legacy `OnNetworkChanged()` → `SignalChanged`. Details: `k2/engine/CLAUDE.md`, `k2/appext/CLAUDE.md`.
 - **transformStatus()** — Bridge-layer webapp boundary: `"stopped"`→`"disconnected"`, synthesizes `"error"`. See `webapp/CLAUDE.md`.
 - **Brand** — Registry-backed enum (`kaitu` / `overleap`, `api/brand.go`) driving per-brand hosts/CORS/payment-channels/node-visibility. Resolved per-request (Host→`X-K2-Brand`→kaitu), immutable on `users.brand` once set, enforced at auth (403003 on mismatch). Spec + full design: `docs/superpowers/specs/2026-07-14-brand-split-design.md`; backend rules in `api/CLAUDE.md` "Brand" section.

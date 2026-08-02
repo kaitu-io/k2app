@@ -93,8 +93,8 @@ web/
 │   └── en-US/                 # English content (fallback to zh-CN)
 │       └── k2/                # K2 protocol docs (en-US)
 ├── velite.config.ts           # Velite schema + collection config (order/section fields)
-├── messages/                  # i18n JSON files (7 locales × 16 namespaces)
-│   └── namespaces.ts          # Namespace registry — update when adding new *.json files
+├── messages/                  # i18n JSON files (7 locales × 21 namespaces)
+│   └── namespaces.ts          # Namespace registry — hand-edit when adding new *.json files
 ├── tests/                     # Playwright E2E specs + vitest + build tests
 └── public/                    # Static assets, legal docs, app icons
 ```
@@ -163,9 +163,15 @@ const t = useTranslations();  // NOT const { t } = useTranslations()
 
 **Navigation**: Use `Link` from `@/i18n/routing` for internal links (auto locale prefix). Use `next/link` for external links.
 
-**Files**: `messages/{locale}/{namespace}.json` — namespaces: nav, common, auth, purchase, hero, install, discovery, invite, wallet, campaigns, changelog, admin, theme, k2, releases, guide-parents, errors.
+**Files**: `messages/{locale}/{namespace}.json` — 21 namespaces: account, admin, auth, campaigns, changelog, common, discovery, errors, guide-parents, hero, install, invite, k2, licenseKeys, nav, purchase, releases, routers, survey, theme, wallet.
 
 **Namespace registry**: `messages/namespaces.ts` lists all active namespaces. When adding a new `*.json` namespace file, add its name to the `namespaces` array in `namespaces.ts` — otherwise it is never loaded and all keys return their raw key string silently.
+
+> **Ignore that file's own `DO NOT EDIT` banner.** It says to regenerate via
+> `node scripts/i18n/split-namespaces.js web`; **that script no longer exists**.
+> Hand-editing `namespaces.ts` is the correct and only way to register a namespace.
+> (Its `namespaceMapping` table is a separate flat-key→namespace map used by the
+> splitter that generated the current layout — leave it alone unless you're moving keys.)
 
 **usePathname / Link for locale-aware navigation**: Inside `[locale]` components, use `usePathname` and `Link` from `@/i18n/routing`, NOT from `next/navigation` or `next/link`. The `@/i18n/routing` versions strip the locale prefix from pathnames and auto-prefix links.
 

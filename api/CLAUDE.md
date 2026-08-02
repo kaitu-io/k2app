@@ -8,7 +8,8 @@ Central API service for authentication, user management, payments, tunnel manage
 cd api && go test ./...                                    # Run all tests
 cd api && go test -run TestName ./...                      # Run specific test
 cd api/cmd && go build -o kaitu-center .                   # Build binary
-cd api && docker-compose up -d                             # Start local MySQL + Redis
+# MySQL + Redis come from the shared dev containers — see "Local Development" below.
+# There is no `api/docker-compose.yml` any more (retired → .deprecated).
 cd api/cmd && ./kaitu-center migrate -c ../config.yml      # Run DB migrations
 cd api/cmd && ./kaitu-center start -f -c ../config.yml     # Start foreground (dev)
 make deploy-api                                            # Build + deploy
@@ -31,7 +32,7 @@ Required:
 
 ## Tech Stack
 
-**Go 1.24** + Gin | **GORM** (MySQL/MariaDB) | **Redis** | **Asynq** (task queue) | **qtoolkit** (logging, DB, mail, slack)
+**Go 1.25** + Gin | **GORM** (MySQL/MariaDB) | **Redis** | **Asynq** (task queue) | **qtoolkit** (logging, DB, mail, slack)
 
 ## File Layout
 
@@ -94,8 +95,12 @@ Error(c, ErrorCode, "message")       // Error (HTTP 200, error in code field)
 
 ### Error Codes
 
+Full list is `api/response.go` — this table is the shape, not a substitute for reading it.
+
 | Code | Constant | Meaning |
 |------|----------|---------|
+| 0 | `ErrorNone` | Success |
+| 202 | `ErrorPendingApproval` | Submitted, awaiting maker-checker approval |
 | 400 | `ErrorInvalidOperation` | Invalid operation |
 | 401 | `ErrorNotLogin` | Not logged in / expired token |
 | 402 | `ErrorPaymentRequired` | Membership expired |
@@ -109,7 +114,17 @@ Error(c, ErrorCode, "message")       // Error (HTTP 200, error in code field)
 | 429 | `ErrorTooManyRequests` | Rate limited |
 | 500 | `ErrorSystemError` | System exception |
 | 503 | `ErrorServiceUnavailable` | Service unavailable |
-| 400001–400011 | `ErrorInvalidCampaignCode`…`ErrorLicenseKeyAlreadyRedeemed` | Business-specific codes |
+
+**Business-specific codes** — each is prefixed by the HTTP-aligned base whose semantics it refines. Pick the matching base; don't default everything to `400xxx`:
+
+| Range | Constants | Refines |
+|-------|-----------|---------|
+| `400001`–`400013` | `ErrorInvalidCampaignCode` … `ErrorVerificationCodeExpired` | Bad request |
+| `402001` | `ErrorPlanNoRouter` | Payment required |
+| `403001`–`403003` | `ErrorRouterDeviceLimit` / `ErrorDeviceClassMismatch` / **`ErrorBrandMismatch`** | Forbidden |
+| `405001` | `ErrorPaymentChannelUnavailable` | Not supported (brand gate) |
+| `409001` | `ErrorEmailAlreadyInUse` | Conflict |
+| `422001`–`422003` | `ErrorTierMismatch` / `ErrorProxyPurchaseDeprecated` / `ErrorInvalidClientClass` | Invalid argument |
 
 > **Constitution**: Every error code added to `response.go` MUST be mirrored in `webapp/src/utils/errorCode.ts`. See `webapp/CLAUDE.md` "API Error Code Constitution" for the full checklist.
 
