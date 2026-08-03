@@ -72,6 +72,17 @@ type testEnv struct {
 // Returns the test env with server accepting QUIC connections and client ready to dial.
 func setupQUICEnv(t *testing.T) *testEnv {
 	t.Helper()
+	return setupQUICEnvUDP(t, nil)
+}
+
+// setupQUICEnvUDP is setupQUICEnv with an overridable server-side UDP handler.
+// Passing nil keeps the production server.ProxyHandler, which is what every
+// ordinary E2E test wants. Tests that need the server to behave like a
+// *different* implementation — e.g. a pre-multi-dest server that replies with
+// an empty frame addr — supply their own handler here rather than standing up
+// a second, divergent QUIC fixture.
+func setupQUICEnvUDP(t *testing.T, udp wire.UDPHandler) *testEnv {
+	t.Helper()
 	cert := generateTestCert(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -120,10 +131,13 @@ func setupQUICEnv(t *testing.T) *testEnv {
 		}
 	}()
 
+	if udp == nil {
+		udp = wire.UDPHandlerFunc(env.handler.HandleUDP)
+	}
 	env.wg.Add(1)
 	go func() {
 		defer env.wg.Done()
-		env.quicSrv.ServeUDP(ctx, wire.UDPHandlerFunc(env.handler.HandleUDP))
+		env.quicSrv.ServeUDP(ctx, udp)
 	}()
 
 	// QUIC client
