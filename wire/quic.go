@@ -1797,6 +1797,11 @@ type quicUDPMux struct {
 	// Connection-level UDP drop counters. Per-session counters only surface
 	// in a close-time log line, which is useless while a game is stuttering;
 	// these feed WireStats so the heartbeat can show loss in real time.
+	//
+	// Cumulative since the connection was established, not a per-interval
+	// delta — unlike relayTimeouts above, nothing ever resets these to 0.
+	// To read "is it dropping right now", diff two heartbeat samples rather
+	// than reading the raw value.
 	udpTxDrops atomic.Int64 // uplink datagrams dropped (send budget saturated)
 	udpRxDrops atomic.Int64 // downlink datagrams dropped (session channel full)
 }
@@ -1925,20 +1930,28 @@ func (m *quicUDPMux) readLoop() {
 			slog.Warn("quicUDPMux: datagram parse failed", "len", len(data), "err", err)
 			continue
 		}
-		m.mu.Lock()
-		ch, ok := m.sessions[frame.SessionID]
-		m.mu.Unlock()
-		if !ok {
-			slog.Debug("quicUDPMux: no session for datagram", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
-			continue
-		}
-		m.touchSession(frame.SessionID)
-		select {
-		case ch <- frame:
-		default:
-			m.udpRxDrops.Add(1)
-			slog.Warn("quicUDPMux: channel full, dropping datagram", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
-		}
+		m.dispatchFrame(frame)
+	}
+}
+
+// dispatchFrame delivers a decoded frame to its session's channel, dropping
+// it (and counting udpRxDrops) if the session is unknown or its channel is
+// full. Split out of readLoop so the drop path is unit-testable without a
+// live QUIC connection.
+func (m *quicUDPMux) dispatchFrame(frame *UDPFrame) {
+	m.mu.Lock()
+	ch, ok := m.sessions[frame.SessionID]
+	m.mu.Unlock()
+	if !ok {
+		slog.Debug("quicUDPMux: no session for datagram", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
+		return
+	}
+	m.touchSession(frame.SessionID)
+	select {
+	case ch <- frame:
+	default:
+		m.udpRxDrops.Add(1)
+		slog.Warn("quicUDPMux: channel full, dropping datagram", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 	}
 }
 

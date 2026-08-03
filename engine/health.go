@@ -43,8 +43,15 @@ type HealthSnapshot struct {
 	// Relay-layer observability (NOT for wire-layer decisions).
 	RelayUDPTimeouts int32 `json:"relay_udp_timeouts"`
 	PortHopAttempts  int32 `json:"port_hop_attempts"`
-	UDPTxDrops       int64 `json:"udp_tx_drops"`
-	UDPRxDrops       int64 `json:"udp_rx_drops"`
+
+	// UDPTxDrops/UDPRxDrops are cumulative since the connection was
+	// established, not a per-interval delta — unlike RelayUDPTimeouts
+	// above (which resets to 0 on every successful receive), nothing
+	// ever resets these. A large value may be hours old; to judge
+	// current loss rate, diff two heartbeat samples rather than
+	// reading the raw value.
+	UDPTxDrops int64 `json:"udp_tx_drops"`
+	UDPRxDrops int64 `json:"udp_rx_drops"`
 }
 
 const (

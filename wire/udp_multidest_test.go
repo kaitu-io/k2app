@@ -163,3 +163,26 @@ func TestQUICUDPMux_CountsTxDrops(t *testing.T) {
 		t.Fatalf("sent %d frames, want 0 (dropped)", len(sender.sent))
 	}
 }
+
+func TestQUICUDPMux_CountsRxDrops(t *testing.T) {
+	sessionCh := make(chan *UDPFrame, 32)
+	m := &quicUDPMux{
+		sessions:    map[uint32]chan *UDPFrame{5: sessionCh},
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
+	}
+	// Saturate the session's read channel so the next dispatch is dropped.
+	for i := 0; i < cap(sessionCh); i++ {
+		sessionCh <- &UDPFrame{SessionID: 5}
+	}
+
+	m.dispatchFrame(&UDPFrame{SessionID: 5, Payload: []byte("x")})
+
+	if got := m.udpRxDrops.Load(); got != 1 {
+		t.Fatalf("mux udpRxDrops = %d, want 1", got)
+	}
+	if len(sessionCh) != cap(sessionCh) {
+		t.Fatalf("sessionCh len = %d, want unchanged at cap %d (dropped, not delivered)", len(sessionCh), cap(sessionCh))
+	}
+}
