@@ -916,6 +916,8 @@ func (c *QUICClient) WireStats() WireStats {
 	}
 	if mux != nil {
 		s.RelayUDPTimeouts = mux.relayTimeouts.Load()
+		s.UDPTxDrops = mux.udpTxDrops.Load()
+		s.UDPRxDrops = mux.udpRxDrops.Load()
 	}
 	s.PortHopAttempts = c.portHopAttempts.Load()
 	return s
@@ -1791,6 +1793,12 @@ type quicUDPMux struct {
 	consecutiveRecvs atomic.Int32
 
 	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
+
+	// Connection-level UDP drop counters. Per-session counters only surface
+	// in a close-time log line, which is useless while a game is stuttering;
+	// these feed WireStats so the heartbeat can show loss in real time.
+	udpTxDrops atomic.Int64 // uplink datagrams dropped (send budget saturated)
+	udpRxDrops atomic.Int64 // downlink datagrams dropped (session channel full)
 }
 
 const (
@@ -1928,6 +1936,7 @@ func (m *quicUDPMux) readLoop() {
 		select {
 		case ch <- frame:
 		default:
+			m.udpRxDrops.Add(1)
 			slog.Warn("quicUDPMux: channel full, dropping datagram", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 		}
 	}
@@ -2055,6 +2064,7 @@ func (c *quicUDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 		c.mux.sendInflight.Add(-1)
 		put()
 		c.txDrops.Add(1)
+		c.mux.udpTxDrops.Add(1)
 		c.mux.recordTimeout()
 		return len(b), nil
 	}

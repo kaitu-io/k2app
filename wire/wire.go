@@ -52,8 +52,10 @@ type WireStats struct {
 	WireFallback   bool // TCP-WS serving traffic due to QUIC failure
 
 	// Relay-layer observability (NOT for wire-layer decisions).
-	RelayUDPTimeouts int32   // consecutive timeout count
-	PortHopAttempts  int32   // port hop attempts
+	RelayUDPTimeouts int32 // consecutive timeout count
+	PortHopAttempts  int32 // port hop attempts
+	UDPTxDrops       int64 // uplink datagrams dropped (send budget saturated)
+	UDPRxDrops       int64 // downlink datagrams dropped (session channel full)
 }
 
 // StatsProvider is an optional interface for Dialers that expose metrics.

@@ -146,3 +146,20 @@ func TestServerUDPConn_PerPacketAddrRoundTrip(t *testing.T) {
 		t.Errorf("downlink frame addr = %q, want 3.3.3.3:27015", f.Addr)
 	}
 }
+
+func TestQUICUDPMux_CountsTxDrops(t *testing.T) {
+	sender := &fakeDatagramSender{}
+	c := newTestQUICUDPConn(sender)
+	// Saturate the inflight budget so the next write is dropped.
+	c.mux.sendInflight.Store(maxDatagramInflight)
+
+	if _, err := c.WriteTo([]byte("x"), nil); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	if got := c.mux.udpTxDrops.Load(); got != 1 {
+		t.Fatalf("mux udpTxDrops = %d, want 1", got)
+	}
+	if len(sender.sent) != 0 {
+		t.Fatalf("sent %d frames, want 0 (dropped)", len(sender.sent))
+	}
+}

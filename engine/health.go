@@ -41,8 +41,10 @@ type HealthSnapshot struct {
 	WireFallback   bool      `json:"wire_fallback"` // TCP-WS serving due to QUIC failure
 
 	// Relay-layer observability (NOT for wire-layer decisions).
-	RelayUDPTimeouts int32   `json:"relay_udp_timeouts"`
-	PortHopAttempts  int32   `json:"port_hop_attempts"`
+	RelayUDPTimeouts int32 `json:"relay_udp_timeouts"`
+	PortHopAttempts  int32 `json:"port_hop_attempts"`
+	UDPTxDrops       int64 `json:"udp_tx_drops"`
+	UDPRxDrops       int64 `json:"udp_rx_drops"`
 }
 
 const (
@@ -239,6 +241,8 @@ func (hm *healthMonitor) sample() {
 
 		RelayUDPTimeouts: ws.RelayUDPTimeouts,
 		PortHopAttempts:  ws.PortHopAttempts,
+		UDPTxDrops:       ws.UDPTxDrops,
+		UDPRxDrops:       ws.UDPRxDrops,
 	}
 
 	// Write to ring buffer.
@@ -273,6 +277,8 @@ func (hm *healthMonitor) sample() {
 			"rxMB", fmt.Sprintf("%.1f", float64(rx)/(1024*1024)),
 			"tcpConns", diagTCP,
 			"udpConns", diagUDP,
+			"udpTxDrops", ws.UDPTxDrops,
+			"udpRxDrops", ws.UDPRxDrops,
 			"uptimeS", int(time.Since(hm.connectedAt).Seconds()),
 			"fallback", ws.WireFallback,
 			"heapMB", fmt.Sprintf("%.1f", float64(ms.HeapInuse)/(1024*1024)),
