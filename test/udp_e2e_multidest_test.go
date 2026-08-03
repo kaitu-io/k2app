@@ -9,11 +9,14 @@ package test
 // the client writes has never actually been parsed by the real server, and the
 // destination the server derives has never actually come off a real datagram.
 //
-// These tests close that gap: a real wire.QUICClient UDP session, real QUIC
-// datagrams, the real wire server session demux, the real
-// server.ProxyHandler, and real UDP echo servers on loopback.
+// These tests close that gap: a real client UDP session, real frames on a real
+// transport, the real wire server session demux, the real server.ProxyHandler,
+// and real UDP echo servers on loopback. Multi-destination is exercised over
+// *both* transports — QUIC datagrams and smux (TCP-WS) — because the two carry
+// separate, structurally identical implementations of the per-packet dest/src
+// handling, so green on one says nothing about the other.
 //
-// Loopback destinations are only reachable because setupQUICEnv sets
+// Loopback destinations are only reachable because the env setup sets
 // handler.AllowPrivateIP — the pre-existing, production-default-off test hook
 // (server/handler.go). The SSRF guard itself is never relaxed here; its
 // production posture is locked down by TestResolveUDPDest_BlocksPrivateIP and
@@ -60,10 +63,14 @@ func (a litAddr) Network() string { return "udp" }
 func (a litAddr) String() string  { return string(a) }
 
 // emptyAddr is a non-nil net.Addr that formats to "". Handing it to the client
-// conn's WriteTo produces a frame with addr_len == 0 — byte-identical to what
-// a pre-multi-dest client emits for a subsequent packet. This is the only way
-// to put a legacy uplink frame on a real wire without shipping a legacy
-// client; nothing in production ever constructs it.
+// conn's WriteTo produces an uplink frame with addr_len == 0, which is the
+// only way to exercise the server's "no addr → session target" fallback over a
+// real wire.
+//
+// It is a synthetic frame, not a replayed historical one: the pre-branch
+// client always wrote the full targetAddr (see the note on
+// EmptyAddrUplinkFallback), so no shipped client has ever produced this frame.
+// Nothing in production constructs emptyAddr.
 type emptyAddr struct{}
 
 func (emptyAddr) Network() string { return "udp" }
@@ -118,19 +125,25 @@ func readUDPPacket(t *testing.T, pc net.PacketConn, deadline time.Time, what str
 	return string(buf[:n]), src
 }
 
-// TestE2E_UDP_MultiDest_OneSession is the regression test for the original
-// bug: one client source port addressing several peers. A game client uses a
-// single socket for the game server, the matchmaker and a STUN reflector; the
-// pre-fix client dropped every packet's real destination and delivered all of
-// them to whatever the session was opened against, so B's traffic silently
-// went to A.
+// dialUDPFunc is the one thing that differs between the QUIC and TCP-WS
+// multi-destination cases: which transport opens the session.
+type dialUDPFunc func(ctx context.Context, addr string) (net.PacketConn, error)
+
+// assertMultiDestOneSession is the regression test body for the original bug:
+// one client source port addressing several peers. A game client uses a single
+// socket for the game server, the matchmaker and a STUN reflector; the pre-fix
+// client dropped every packet's real destination and delivered all of them to
+// whatever the session was opened against, so B's traffic silently went to A.
 //
 // Both echoes must come back, and each must be attributed to the peer that
 // actually sent it — a client that cannot tell A's reply from B's cannot
 // demultiplex, even if the bytes arrive.
-func TestE2E_UDP_MultiDest_OneSession(t *testing.T) {
-	env := setupQUICEnv(t)
-	defer env.Close()
+//
+// Shared by both transports on purpose: smuxUDPConn/smuxServerUDPConn carry
+// per-packet dest/src logic structurally identical to the QUIC conns', so the
+// two transports must be held to one assertion, not two that can drift.
+func assertMultiDestOneSession(t *testing.T, dialUDP dialUDPFunc) {
+	t.Helper()
 
 	addrA, _ := startTaggedUDPEcho(t, "A")
 	addrB, _ := startTaggedUDPEcho(t, "B")
@@ -140,7 +153,7 @@ func TestE2E_UDP_MultiDest_OneSession(t *testing.T) {
 	defer cancel()
 
 	// One session, opened against A.
-	pc, err := env.quicClient.DialUDP(ctx, addrA)
+	pc, err := dialUDP(ctx, addrA)
 	if err != nil {
 		t.Fatalf("DialUDP(%s): %v", addrA, err)
 	}
@@ -175,6 +188,31 @@ func TestE2E_UDP_MultiDest_OneSession(t *testing.T) {
 	} else if src != addrB {
 		t.Errorf("B's echo attributed to %s, want %s (collected %v)", src, addrB, got)
 	}
+}
+
+// TestE2E_UDP_MultiDest_OneSession covers the QUIC datagram path — the primary
+// UDP transport.
+func TestE2E_UDP_MultiDest_OneSession(t *testing.T) {
+	env := setupQUICEnv(t)
+	defer env.Close()
+	assertMultiDestOneSession(t, env.quicClient.DialUDP)
+}
+
+// TestE2E_UDP_MultiDest_OneSession_TCPWS covers the smux path. TCP-WS is the
+// fallback taken whenever QUIC is blocked, which for this product's users is
+// an ordinary condition, not an edge case — so multi-destination has to hold
+// there too. It is a separate code path: smuxUDPConn.WriteTo and
+// smuxServerUDPConn.ReadFrom re-implement the per-packet dest/src handling
+// rather than sharing it with the QUIC conns, so passing on QUIC says nothing
+// about this one.
+//
+// Full-cone filtering is deliberately not repeated here: the egress socket
+// lives in server.HandleUDP, below and independent of the transport, and
+// TestE2E_UDP_FullCone_ThirdPartyReply already pins it.
+func TestE2E_UDP_MultiDest_OneSession_TCPWS(t *testing.T) {
+	env := setupTCPWSEnv(t)
+	defer env.Close()
+	assertMultiDestOneSession(t, env.tcpwsClient.DialUDP)
 }
 
 // TestE2E_UDP_FullCone_ThirdPartyReply proves endpoint-independent
@@ -237,16 +275,33 @@ func TestE2E_UDP_FullCone_ThirdPartyReply(t *testing.T) {
 	}
 }
 
-// TestE2E_UDP_EmptyAddrFrameCompat is the release gate for mixed-version
-// fleets. The frame format already carried a per-frame addr before this
-// branch, with addr_len == 0 meaning "same as the session's first target", so
-// new and old peers are supposed to interoperate in both directions. That
-// claim is what makes a staged rollout safe, and nothing else tests it.
+// TestE2E_UDP_EmptyAddrFrameCompat pins the addr_len == 0 semantics both peers
+// implement: "same as the session's first target" on the uplink, "same as the
+// session target" on the downlink.
+//
+// Only the downlink half is an actual mixed-version scenario — see that
+// subtest. The uplink half is protocol conformance, not compatibility; the
+// mislabel is called out there rather than here so it survives a rename.
 func TestE2E_UDP_EmptyAddrFrameCompat(t *testing.T) {
-	// Old client -> new server: an uplink frame with no addr must be
-	// forwarded to the session's first destination, not dropped and not
-	// mis-parsed as a destination named "".
-	t.Run("OldClientUplink", func(t *testing.T) {
+	// An uplink frame with addr_len == 0 must be forwarded to the session's
+	// first destination — not dropped, not mis-parsed as a destination
+	// literally named "".
+	//
+	// NOTE: this is NOT an old-client scenario, despite what the frame format
+	// invites you to assume. The pre-branch client (git show f4769e5^) wrote
+	// MarshalUDPFrame(sessionID, c.targetAddr, b) unconditionally: every
+	// packet carried the full target addr, and an old client never emitted
+	// addr_len == 0 at all. As of this branch there is no known producer of
+	// an empty-addr uplink frame anywhere in production — the emptyAddr{}
+	// below exists only in this test.
+	//
+	// The fallback branch is still worth pinning: it is load-bearing protocol
+	// surface that any future client (or a third-party/older-than-git
+	// implementation) may rely on. But if someone later proposes deleting it,
+	// the honest risk assessment is "no current producer", not "breaks old
+	// clients" — and they should get that from this comment rather than from
+	// a subtest name that lies to them.
+	t.Run("EmptyAddrUplinkFallback", func(t *testing.T) {
 		env := setupQUICEnv(t)
 		defer env.Close()
 
@@ -263,7 +318,7 @@ func TestE2E_UDP_EmptyAddrFrameCompat(t *testing.T) {
 		defer pc.Close()
 
 		// The session's first frame must carry the addr — that is how the
-		// server learns the session target, for old and new clients alike.
+		// server learns the session target in the first place.
 		if _, err := pc.WriteTo([]byte("establish"), litAddr(addrA)); err != nil {
 			t.Fatalf("WriteTo (establish): %v", err)
 		}
@@ -271,22 +326,28 @@ func TestE2E_UDP_EmptyAddrFrameCompat(t *testing.T) {
 			t.Fatalf("establish echo = %q from %s, want %q from %s", payload, src, "Aestablish", addrA)
 		}
 
-		// Legacy subsequent packet: addr_len == 0.
-		if _, err := pc.WriteTo([]byte("legacy"), emptyAddr{}); err != nil {
+		// Subsequent packet with addr_len == 0.
+		if _, err := pc.WriteTo([]byte("fallback"), emptyAddr{}); err != nil {
 			t.Fatalf("WriteTo (empty addr): %v", err)
 		}
-		payload, src := readUDPPacket(t, pc, deadline, "legacy-frame echo")
-		if payload != "Alegacy" {
-			t.Errorf("legacy-frame echo = %q, want %q — empty-addr uplink was not forwarded to the session target", payload, "Alegacy")
+		payload, src := readUDPPacket(t, pc, deadline, "empty-addr-frame echo")
+		if payload != "Afallback" {
+			t.Errorf("empty-addr echo = %q, want %q — empty-addr uplink was not forwarded to the session target", payload, "Afallback")
 		}
 		if src != addrA {
-			t.Errorf("legacy-frame echo attributed to %s, want %s", src, addrA)
+			t.Errorf("empty-addr echo attributed to %s, want %s", src, addrA)
 		}
 	})
 
-	// Old server -> new client: a downlink frame with no addr must make the
-	// client fall back to the session target rather than surface an empty
-	// source (which would break every caller that keys state on the source).
+	// Old server -> new client: this half IS a real mixed-version scenario.
+	// The pre-branch server (git show fe4b567^) wrote
+	// MarshalUDPFrame(sessionID, "", b) unconditionally — every downlink
+	// frame it ever sent had addr_len == 0. So a new client talking to a
+	// not-yet-upgraded node sees exactly this, on every packet, and must fall
+	// back to the session target rather than surface an empty source (which
+	// would break every caller that keys state on the source).
+	//
+	// This is the direction that actually gates a staged rollout.
 	t.Run("OldServerDownlink", func(t *testing.T) {
 		// A destination that is never dialed: the stand-in server answers
 		// from its own goroutine and never touches the network, so this only
