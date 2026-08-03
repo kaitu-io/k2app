@@ -26,6 +26,12 @@ var (
 	udpBufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
 )
 
+// maxUDPDestsPerSession bounds how many distinct destinations one client
+// source port may address through a single session. Games and P2P apps use a
+// handful (game server + matchmaker + STUN); the cap keeps a hostile or
+// runaway client from turning one session into a scanning engine.
+const maxUDPDestsPerSession = 64
+
 // cgn is the Carrier-Grade NAT range (100.64.0.0/10), not covered by net.IP.IsPrivate().
 var cgn = net.IPNet{
 	IP:   net.IP{100, 64, 0, 0},
@@ -324,16 +330,22 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		return
 	}
 
-	targetAddr, err := net.ResolveUDPAddr("udp4", resolvedAddr)
-	if err != nil {
+	// Pre-check the session's primary destination so an obviously bad session
+	// fails fast; per-packet destinations are checked in the uplink loop.
+	if _, err := net.ResolveUDPAddr("udp4", resolvedAddr); err != nil {
 		log.Error("server: UDP resolve", "resolved", resolvedAddr, "err", err)
 		conn.Close()
 		return
 	}
 
-	target, err := net.DialUDP("udp4", nil, targetAddr)
+	// Unconnected socket: one egress port serves every destination this
+	// session addresses, and replies from any peer are accepted. That is
+	// endpoint-independent mapping + filtering (full cone), which is what
+	// games and ICE need. A connected DialUDP socket would pin the session to
+	// its first destination and yield symmetric NAT.
+	target, err := net.ListenUDP("udp4", nil)
 	if err != nil {
-		log.Error("server: UDP dial", "err", err)
+		log.Error("server: UDP listen", "err", err)
 		conn.Close()
 		return
 	}
@@ -348,17 +360,48 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		defer target.Close() // unblock target→client Read when client is gone
 		bp := udpBufPool.Get().(*[]byte)
 		buf := *bp
+		// Resolution cache, owned by this goroutine (no lock needed).
+		dests := make(map[string]*net.UDPAddr, 4)
+		dests[addr] = nil // placeholder, filled on first use
 		for {
-			n, _, err := conn.ReadFrom(buf)
+			n, to, err := conn.ReadFrom(buf)
 			if err != nil {
 				log.Debug("server: HandleUDP client->target ReadFrom done", "err", err)
 				break
 			}
+			key := addr
+			if to != nil && to.String() != "" {
+				key = to.String()
+			}
+			ua, ok := dests[key]
+			if !ok || ua == nil {
+				if len(dests) > maxUDPDestsPerSession {
+					log.Warn("server: HandleUDP too many destinations", "dropped", key)
+					continue
+				}
+				if !h.AllowPrivateIP {
+					if err := h.checkAddr(key); err != nil {
+						log.Warn("server: UDP dest blocked", "dest", key, "err", err)
+						continue
+					}
+				}
+				resolved, err := h.resolveAddr(key)
+				if err != nil {
+					log.Warn("server: UDP dest resolve failed", "dest", key, "err", err)
+					continue
+				}
+				ua, err = net.ResolveUDPAddr("udp4", resolved)
+				if err != nil {
+					log.Warn("server: UDP dest addr invalid", "dest", key, "resolved", resolved, "err", err)
+					continue
+				}
+				dests[key] = ua
+			}
 			h.rxBytes.Add(int64(n))            // uplink read from client (rx)
 			atomic.AddInt64(&sessRx, int64(n)) // cross-goroutine write, must be atomic
-			log.Debug("server: HandleUDP client->target forwarding", "len", n)
-			if _, err := target.Write(buf[:n]); err != nil {
-				log.Warn("server: HandleUDP client->target Write failed", "err", err)
+			log.Debug("server: HandleUDP client->target forwarding", "len", n, "dest", key)
+			if _, err := target.WriteToUDP(buf[:n], ua); err != nil {
+				log.Warn("server: HandleUDP client->target Write failed", "dest", key, "err", err)
 				break
 			}
 		}
@@ -371,7 +414,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	buf := *bp
 	for {
 		target.SetReadDeadline(time.Now().Add(60 * time.Second))
-		n, err := target.Read(buf)
+		n, from, err := target.ReadFromUDP(buf)
 		if err != nil {
 			if errors.Is(err, os.ErrDeadlineExceeded) {
 				exitReason = "target-timeout"
@@ -383,8 +426,9 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		}
 		h.txBytes.Add(int64(n)) // downlink read from target (tx)
 		sessTx += int64(n)      // main goroutine only, plain add is fine
-		log.Debug("server: HandleUDP target->client forwarding", "len", n)
-		if _, err := conn.WriteTo(buf[:n], nil); err != nil {
+		log.Debug("server: HandleUDP target->client forwarding", "len", n, "src", from)
+		// Carry the true source so the client can demultiplex replies.
+		if _, err := conn.WriteTo(buf[:n], from); err != nil {
 			exitReason = "writeto-fail"
 			log.Warn("server: HandleUDP target->client WriteTo failed", "err", err)
 			break
