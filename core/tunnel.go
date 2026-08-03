@@ -572,7 +572,7 @@ func (c *prefixPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 }
 
 // peekUDP reads the first UDP packet for protocol sniffing.
-// Returns the packet and source addr (must be replayed via prefixPacketConn).
+// Returns the packet and dest addr (must be replayed via prefixPacketConn).
 func peekUDP(conn net.PacketConn) (packet []byte, addr net.Addr) {
 	bp := udpBufPool.Get().(*[]byte)
 	buf := *bp
@@ -720,15 +720,32 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 	go func() {
 		bp := udpBufPool.Get().(*[]byte)
 		buf := *bp
+		// The first packet's destination defines the session. Packets to that
+		// same destination keep using destAddr so an outbound that resolved a
+		// domain (SNI upgrade, IPv6 rewrite) keeps its hostname label; packets
+		// to any OTHER destination are forwarded verbatim. Games open one
+		// socket and talk to the game server, the matchmaker and a STUN
+		// reflector through it — pinning every packet to the first destination
+		// silently misdelivers the rest.
+		var primary net.Addr
 		for {
 			if idleTimeout > 0 {
 				local.SetReadDeadline(time.Now().Add(idleTimeout))
 			}
-			n, _, err := local.ReadFrom(buf)
+			n, to, err := local.ReadFrom(buf)
 			if err != nil {
 				break
 			}
-			if _, err := remote.WriteTo(buf[:n], destAddr); err != nil {
+			dst := destAddr
+			if to != nil {
+				if primary == nil {
+					primary = to
+				}
+				if !sameUDPAddr(to, primary) {
+					dst = to
+				}
+			}
+			if _, err := remote.WriteTo(buf[:n], dst); err != nil {
 				break
 			}
 			if tx != nil {
@@ -765,4 +782,14 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 	udpBufPool.Put(bp)
 	local.Close() // unblock local.ReadFrom in goroutine
 	<-done
+}
+
+// sameUDPAddr reports whether two addresses denote the same UDP endpoint.
+// Compared by string because the two sides can be different concrete types
+// (a *net.UDPAddr from the TUN stack vs a wire-layer raw address).
+func sameUDPAddr(a, b net.Addr) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.String() == b.String()
 }
