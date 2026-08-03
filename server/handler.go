@@ -1,12 +1,14 @@
 package server
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -29,8 +31,32 @@ var (
 // maxUDPDestsPerSession bounds how many distinct destinations one client
 // source port may address through a single session. Games and P2P apps use a
 // handful (game server + matchmaker + STUN); the cap keeps a hostile or
-// runaway client from turning one session into a scanning engine.
+// runaway client from turning one session into a scanning engine. Once full,
+// the least-recently-used destination is evicted to admit a new one (see
+// udpDestLRU in HandleUDP) rather than freezing the session's destination set
+// — a long-lived game session that rotates peers must keep being able to
+// reach new ones.
 const maxUDPDestsPerSession = 64
+
+// udpDestNegativeCacheTTL bounds how long a failed destination (blocked by
+// policy or unresolvable) stays cached before HandleUDP's uplink loop will
+// retry it. Caching failures — not just successes — is what makes
+// maxUDPDestsPerSession an actual cap: without it, an attacker addressing N
+// distinct unresolvable domains costs N upstream DNS queries and never grows
+// the destination table, so the cap never engages (task-4 review C1). The TTL
+// keeps a transient upstream hiccup from permanently blackholing a
+// destination for the rest of a long session.
+const udpDestNegativeCacheTTL = 30 * time.Second
+
+// udpDestResolveTimeout bounds a single destination's checkAddr+resolveAddr
+// pipeline in HandleUDP's uplink loop. That loop is shared by every
+// destination in the session, so an unbounded resolve (upstream DNS budgets
+// up to 5s per query, core/dns/direct.go) serializes in front of every other
+// in-flight destination's packets — one black-holed domain stalls a live
+// game session by seconds (task-4 review C2). 500ms is generous for any
+// resolver that's actually going to answer (LAN/edge resolvers respond in
+// tens of ms) while keeping the worst case survivable for real-time traffic.
+const udpDestResolveTimeout = 500 * time.Millisecond
 
 // cgn is the Carrier-Grade NAT range (100.64.0.0/10), not covered by net.IP.IsPrivate().
 var cgn = net.IPNet{
@@ -46,7 +72,9 @@ func isReservedIP(ip net.IP) bool {
 }
 
 // checkAddr resolves addr (host:port) and returns an error if the target IP is reserved.
-func (h *ProxyHandler) checkAddr(addr string) error {
+// ctx bounds the upstream lookup for domain hosts; IP-literal hosts never touch
+// the resolver so ctx is irrelevant on that path.
+func (h *ProxyHandler) checkAddr(ctx context.Context, addr string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("invalid address %q: %w", addr, err)
@@ -61,7 +89,7 @@ func (h *ProxyHandler) checkAddr(addr string) error {
 	}
 
 	// Host is a domain — resolve via our DNS cache + upstream.
-	ips, err := h.resolver.LookupHost(context.TODO(), host)
+	ips, err := h.resolver.LookupHost(ctx, host)
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", host, err)
 	}
@@ -75,7 +103,9 @@ func (h *ProxyHandler) checkAddr(addr string) error {
 
 // resolveAddr resolves the host portion of addr if it's a domain name.
 // Returns addr unchanged if host is already an IP literal.
-func (h *ProxyHandler) resolveAddr(addr string) (string, error) {
+// ctx bounds the upstream lookup for domain hosts; IP-literal hosts never touch
+// the resolver so ctx is irrelevant on that path.
+func (h *ProxyHandler) resolveAddr(ctx context.Context, addr string) (string, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return addr, nil
@@ -83,12 +113,82 @@ func (h *ProxyHandler) resolveAddr(addr string) (string, error) {
 	if net.ParseIP(host) != nil {
 		return addr, nil
 	}
-	ips, err := h.resolver.LookupHost(context.TODO(), host)
+	ips, err := h.resolver.LookupHost(ctx, host)
 	if err != nil {
 		return "", err
 	}
 	return net.JoinHostPort(ips[0], port), nil
 }
+
+// resolveUDPDest policy-checks and resolves one uplink UDP destination for
+// HandleUDP's per-packet dispatch. blocked reports whether a non-nil err came
+// from checkAddr (policy) as opposed to resolveAddr/net.ResolveUDPAddr
+// (resolution) — callers use it to attribute drops to the right counter.
+//
+// IP-literal destinations (the common case for game/P2P traffic) never reach
+// the resolver: checkAddr and resolveAddr both fast-path IP literals with
+// zero network calls, so no explicit bypass is needed here beyond skipping
+// the timeout machinery below. Domain destinations are bounded by
+// udpDestResolveTimeout — see that constant's doc for why.
+func (h *ProxyHandler) resolveUDPDest(key string) (ua *net.UDPAddr, blocked bool, err error) {
+	host, _, err := net.SplitHostPort(key)
+	if err != nil {
+		return nil, false, fmt.Errorf("invalid dest %q: %w", key, err)
+	}
+
+	if _, litErr := netip.ParseAddr(host); litErr == nil {
+		// IP literal: checkAddr's fast path below is zero-network, so an
+		// unbounded context costs nothing here.
+		if !h.AllowPrivateIP {
+			if err := h.checkAddr(context.Background(), key); err != nil {
+				return nil, true, err
+			}
+		}
+		ua, err = net.ResolveUDPAddr("udp4", key)
+		return ua, false, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), udpDestResolveTimeout)
+	defer cancel()
+
+	if !h.AllowPrivateIP {
+		if err := h.checkAddr(ctx, key); err != nil {
+			return nil, true, err
+		}
+	}
+	resolved, err := h.resolveAddr(ctx, key)
+	if err != nil {
+		return nil, false, err
+	}
+	ua, err = net.ResolveUDPAddr("udp4", resolved)
+	return ua, false, err
+}
+
+// udpDestEntry caches the outcome of resolveUDPDest for one uplink
+// destination within a session. addr is nil for a negative-cache entry
+// (checkAddr or resolution failed); blocked distinguishes a policy rejection
+// from a resolution failure for the drop counters in HandleUDP.
+type udpDestEntry struct {
+	addr     *net.UDPAddr
+	blocked  bool
+	cachedAt time.Time
+	lru      *list.Element // this entry's node in HandleUDP's LRU list; Value is the dest key
+}
+
+// cachedAddr is a net.Addr with a pre-formatted String(). HandleUDP's
+// target->client loop hands the wire layer a net.Addr per downlink packet,
+// and the wire layer calls String() on it to embed the source in the
+// downlink frame. A *net.UDPAddr's String() reformats from scratch on every
+// call; caching the formatted string per source peer (single digits per
+// session even under abuse, since full-cone accepts any source) turns that
+// into a one-time cost per peer instead of a per-packet one.
+type cachedAddr struct {
+	network string
+	addr    string
+}
+
+func (a cachedAddr) Network() string { return a.network }
+func (a cachedAddr) String() string  { return a.addr }
 
 // connTracker tracks active connections for forceful close during shutdown.
 type connTracker struct {
@@ -245,7 +345,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	log.Info("server: HandleTCP")
 
 	if !h.AllowPrivateIP {
-		if err := h.checkAddr(addr); err != nil {
+		if err := h.checkAddr(context.Background(), addr); err != nil {
 			wire.WriteStreamResponse(conn, &wire.StreamError{Code: 403, Message: err.Error()})
 			log.Error("server: TCP proxy blocked", "err", err)
 			return
@@ -253,7 +353,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	}
 
 	// Resolve domain to IP before dialing (uses shared DNS cache).
-	dialAddr, err := h.resolveAddr(addr)
+	dialAddr, err := h.resolveAddr(context.Background(), addr)
 	if err != nil {
 		wire.WriteStreamResponse(conn, &wire.StreamError{Code: 502, Message: err.Error()})
 		log.Error("server: TCP proxy resolve", "err", err)
@@ -309,7 +409,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	untrackConn := h.conns.track(conn)
 	defer untrackConn()
 	if !h.AllowPrivateIP {
-		if err := h.checkAddr(addr); err != nil {
+		if err := h.checkAddr(context.Background(), addr); err != nil {
 			log.Error("server: UDP proxy blocked", "err", err)
 			conn.Close()
 			return
@@ -317,13 +417,20 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	}
 
 	// DNS interception: cache responses for port 53 to reduce upstream load.
+	// isDNSPort is evaluated once against the session's initial destination —
+	// not per packet. Task 3 made per-packet destinations dest-aware, so a
+	// session that starts elsewhere and later addresses a :53 peer will have
+	// those later packets forwarded raw through the generic path below
+	// (bypassing the cache), not intercepted here. That's accepted: DNS
+	// sessions are opened by the client on a dedicated socket, so mixing
+	// DNS and non-DNS destinations in one session isn't a real scenario.
 	if h.dnsCache != nil && isDNSPort(addr) {
 		h.handleDNSUDP(conn, addr, log)
 		return
 	}
 
 	// Resolve domain to IP before dialing (uses shared DNS cache).
-	resolvedAddr, err := h.resolveAddr(addr)
+	resolvedAddr, err := h.resolveAddr(context.Background(), addr)
 	if err != nil {
 		log.Error("server: UDP resolve domain", "err", err)
 		conn.Close()
@@ -353,6 +460,10 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	defer untrackTarget()
 
 	done := make(chan struct{})
+	// Per-session drop/evict counters, written only by the uplink goroutine
+	// below and read by the main goroutine in the final log.Info after
+	// <-done — atomic to match the sessRx convention just above.
+	var sessDestBlocked, sessDestUnresolvable, sessDestEvicted int64
 
 	// client -> target
 	go func() {
@@ -360,48 +471,80 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		defer target.Close() // unblock target→client Read when client is gone
 		bp := udpBufPool.Get().(*[]byte)
 		buf := *bp
-		// Resolution cache, owned by this goroutine (no lock needed).
-		dests := make(map[string]*net.UDPAddr, 4)
-		dests[addr] = nil // placeholder, filled on first use
+		// Destination cache, owned by this goroutine (no lock needed): both
+		// the map (keyed by dest, for O(1) lookup) and an LRU list (for
+		// eviction once maxUDPDestsPerSession is reached) track every
+		// distinct destination this session has addressed, successful or
+		// not — see udpDestNegativeCacheTTL's doc for why failures must
+		// count too.
+		dests := make(map[string]*udpDestEntry, 4)
+		lru := list.New()
 		for {
 			n, to, err := conn.ReadFrom(buf)
 			if err != nil {
 				log.Debug("server: HandleUDP client->target ReadFrom done", "err", err)
 				break
 			}
-			key := addr
+			destKey := addr
 			if to != nil && to.String() != "" {
-				key = to.String()
+				destKey = to.String()
 			}
-			ua, ok := dests[key]
-			if !ok || ua == nil {
-				if len(dests) > maxUDPDestsPerSession {
-					log.Warn("server: HandleUDP too many destinations", "dropped", key)
-					continue
-				}
-				if !h.AllowPrivateIP {
-					if err := h.checkAddr(key); err != nil {
-						log.Warn("server: UDP dest blocked", "dest", key, "err", err)
-						continue
+
+			entry, ok := dests[destKey]
+			if ok && entry.addr == nil && time.Since(entry.cachedAt) >= udpDestNegativeCacheTTL {
+				// Negative-cache entry expired: drop it and re-resolve below,
+				// same as if it had never been seen.
+				lru.Remove(entry.lru)
+				delete(dests, destKey)
+				ok = false
+			}
+
+			if !ok {
+				if len(dests) >= maxUDPDestsPerSession {
+					if oldest := lru.Back(); oldest != nil {
+						oldKey := oldest.Value.(string)
+						lru.Remove(oldest)
+						delete(dests, oldKey)
+						atomic.AddInt64(&sessDestEvicted, 1)
+						log.Debug("server: HandleUDP dest evicted for new dest", "evicted", oldKey, "new", destKey)
 					}
 				}
-				resolved, err := h.resolveAddr(key)
-				if err != nil {
-					log.Warn("server: UDP dest resolve failed", "dest", key, "err", err)
-					continue
+				ua, blocked, rerr := h.resolveUDPDest(destKey)
+				entry = &udpDestEntry{addr: ua, blocked: blocked, cachedAt: time.Now()}
+				entry.lru = lru.PushFront(destKey)
+				dests[destKey] = entry
+				switch {
+				case rerr != nil && blocked:
+					log.Warn("server: HandleUDP dest blocked", "dest", destKey, "err", rerr)
+				case rerr != nil:
+					log.Warn("server: HandleUDP dest unresolvable", "dest", destKey, "err", rerr)
+				default:
+					log.Debug("server: HandleUDP dest resolved", "dest", destKey)
 				}
-				ua, err = net.ResolveUDPAddr("udp4", resolved)
-				if err != nil {
-					log.Warn("server: UDP dest addr invalid", "dest", key, "resolved", resolved, "err", err)
-					continue
-				}
-				dests[key] = ua
+			} else {
+				lru.MoveToFront(entry.lru)
 			}
+
+			if entry.addr == nil {
+				// Dropped: neither counted as rx nor forwarded. This slightly
+				// undercounts a hostile session's metered traffic (in the
+				// user's favor), but that's an acceptable trade once C1's
+				// negative cache is in place — a session can no longer turn
+				// this into unbounded upstream DNS load or an unbounded
+				// destination table regardless of how the byte counters land.
+				if entry.blocked {
+					atomic.AddInt64(&sessDestBlocked, 1)
+				} else {
+					atomic.AddInt64(&sessDestUnresolvable, 1)
+				}
+				continue
+			}
+
 			h.rxBytes.Add(int64(n))            // uplink read from client (rx)
 			atomic.AddInt64(&sessRx, int64(n)) // cross-goroutine write, must be atomic
-			log.Debug("server: HandleUDP client->target forwarding", "len", n, "dest", key)
-			if _, err := target.WriteToUDP(buf[:n], ua); err != nil {
-				log.Warn("server: HandleUDP client->target Write failed", "dest", key, "err", err)
+			log.Debug("server: HandleUDP client->target forwarding", "len", n, "dest", destKey)
+			if _, err := target.WriteToUDP(buf[:n], entry.addr); err != nil {
+				log.Warn("server: HandleUDP client->target Write failed", "dest", destKey, "err", err)
 				break
 			}
 		}
@@ -412,9 +555,22 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	var exitReason string
 	bp := udpBufPool.Get().(*[]byte)
 	buf := *bp
+	// Cache one net.Addr per source peer this loop has already seen. This
+	// loop is single-goroutine (no lock needed). Building the address and
+	// formatting its String() (which the wire layer calls per packet to
+	// embed the source in the downlink frame) costs one allocation per peer
+	// instead of one per packet — peer count per session is normally single
+	// digits. But full-cone deliberately accepts packets from any source
+	// (task-4 review, decided: no source filtering), so a session's egress
+	// port is itself an unsolicited-traffic target once an attacker learns
+	// or guesses it; without a bound this cache would grow once per distinct
+	// attacker source port. Cap it and reset on overflow — this is a perf
+	// cache, not a correctness dependency, so dropping it under attack is
+	// safe (worst case: one extra allocation per already-seen peer).
+	srcAddrs := make(map[netip.AddrPort]net.Addr, 4)
 	for {
 		target.SetReadDeadline(time.Now().Add(60 * time.Second))
-		n, from, err := target.ReadFromUDP(buf)
+		n, srcAP, err := target.ReadFromUDPAddrPort(buf)
 		if err != nil {
 			if errors.Is(err, os.ErrDeadlineExceeded) {
 				exitReason = "target-timeout"
@@ -423,6 +579,14 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 			}
 			log.Debug("server: HandleUDP target->client Read done", "err", err)
 			break
+		}
+		from, ok := srcAddrs[srcAP]
+		if !ok {
+			if len(srcAddrs) >= maxUDPDestsPerSession {
+				clear(srcAddrs)
+			}
+			from = cachedAddr{network: "udp", addr: net.UDPAddrFromAddrPort(srcAP).String()}
+			srcAddrs[srcAP] = from
 		}
 		h.txBytes.Add(int64(n)) // downlink read from target (tx)
 		sessTx += int64(n)      // main goroutine only, plain add is fine
@@ -440,7 +604,10 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	target.Close()
 	<-done
 	log.Info("server: HandleUDP done",
-		"exitReason", exitReason, "durationS", int(time.Since(startTime).Seconds()))
+		"exitReason", exitReason, "durationS", int(time.Since(startTime).Seconds()),
+		"destsBlocked", atomic.LoadInt64(&sessDestBlocked),
+		"destsUnresolvable", atomic.LoadInt64(&sessDestUnresolvable),
+		"destsEvicted", atomic.LoadInt64(&sessDestEvicted))
 }
 
 // handleDNSUDP handles DNS UDP sessions with transparent caching and a

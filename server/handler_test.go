@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"log/slog"
 	"net"
@@ -70,7 +71,7 @@ func TestCheckAddr(t *testing.T) {
 		"100.64.0.1:8080",
 	}
 	for _, addr := range blockedAddrs {
-		if err := h.checkAddr(addr); err == nil {
+		if err := h.checkAddr(context.Background(), addr); err == nil {
 			t.Errorf("expected %s to be blocked", addr)
 		}
 	}
@@ -82,13 +83,13 @@ func TestCheckAddr(t *testing.T) {
 		"[2001:4860:4860::8888]:53",
 	}
 	for _, addr := range allowedAddrs {
-		if err := h.checkAddr(addr); err != nil {
+		if err := h.checkAddr(context.Background(), addr); err != nil {
 			t.Errorf("expected %s to be allowed, got: %v", addr, err)
 		}
 	}
 
 	// Invalid addresses.
-	if err := h.checkAddr("no-port"); err == nil {
+	if err := h.checkAddr(context.Background(), "no-port"); err == nil {
 		t.Error("expected error for missing port")
 	}
 }
@@ -102,7 +103,7 @@ func TestCheckAddr_UsesResolver(t *testing.T) {
 	h.resolver = NewResolver(h.dnsCache, k2dns.NewDirectDNSClient([]string{fakeDNS.LocalAddr().String()}))
 
 	// Domain that resolves to public IP → allowed.
-	if err := h.checkAddr("example.com:443"); err != nil {
+	if err := h.checkAddr(context.Background(), "example.com:443"); err != nil {
 		t.Fatalf("expected allowed, got: %v", err)
 	}
 	if calls.Load() != 1 {
@@ -110,7 +111,7 @@ func TestCheckAddr_UsesResolver(t *testing.T) {
 	}
 
 	// Second call: cache hit → no new upstream call.
-	if err := h.checkAddr("example.com:443"); err != nil {
+	if err := h.checkAddr(context.Background(), "example.com:443"); err != nil {
 		t.Fatalf("expected allowed (cached), got: %v", err)
 	}
 	if calls.Load() != 1 {
@@ -504,7 +505,7 @@ func TestResolveAddr_Domain(t *testing.T) {
 	h := NewProxyHandler()
 	h.resolver = NewResolver(h.dnsCache, k2dns.NewDirectDNSClient([]string{fakeDNS.LocalAddr().String()}))
 
-	resolved, err := h.resolveAddr("example.com:443")
+	resolved, err := h.resolveAddr(context.Background(), "example.com:443")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,7 +516,7 @@ func TestResolveAddr_Domain(t *testing.T) {
 
 func TestResolveAddr_IP(t *testing.T) {
 	h := NewProxyHandler()
-	resolved, err := h.resolveAddr("8.8.8.8:53")
+	resolved, err := h.resolveAddr(context.Background(), "8.8.8.8:53")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +527,7 @@ func TestResolveAddr_IP(t *testing.T) {
 
 func TestResolveAddr_IPv6(t *testing.T) {
 	h := NewProxyHandler()
-	resolved, err := h.resolveAddr("[::1]:443")
+	resolved, err := h.resolveAddr(context.Background(), "[::1]:443")
 	if err != nil {
 		t.Fatal(err)
 	}
