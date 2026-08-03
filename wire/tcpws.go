@@ -1344,8 +1344,11 @@ func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	select {
 	case frame := <-c.readCh:
 		n := copy(b, frame.Payload)
-		addr, _ := net.ResolveUDPAddr("udp4", c.targetAddr)
-		return n, addr, nil
+		src := frame.Addr
+		if src == "" {
+			src = c.targetAddr
+		}
+		return n, rawAddr(src), nil
 	case <-c.reaped:
 		return 0, nil, net.ErrClosed
 	case <-c.done:
@@ -1359,19 +1362,23 @@ func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	}
 }
 
-func (c *smuxUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
-	if err := c.mux.writeFrame(c.sessionID, c.targetAddr, b); err != nil {
+func (c *smuxUDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	dest := c.targetAddr
+	if addr != nil {
+		dest = addr.String()
+	}
+	if err := c.mux.writeFrame(c.sessionID, dest, b); err != nil {
 		if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, net.ErrClosed) {
 			slog.Debug("smuxUDPConn: WriteTo failed (closed)", "sessionID", c.sessionID,
-				"target", c.targetAddr, "err", err)
+				"target", dest, "err", err)
 		} else {
 			slog.Warn("smuxUDPConn: WriteTo failed", "sessionID", c.sessionID,
-				"target", c.targetAddr, "len", len(b), "err", err)
+				"target", dest, "len", len(b), "err", err)
 		}
 		return 0, err
 	}
 	slog.Debug("smuxUDPConn: WriteTo ok", "sessionID", c.sessionID,
-		"target", c.targetAddr, "len", len(b))
+		"target", dest, "len", len(b))
 	return len(b), nil
 }
 

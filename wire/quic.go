@@ -2016,9 +2016,15 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		n := copy(b, frame.Payload)
 		c.rxPackets.Add(1)
 		c.rxBytes.Add(int64(n))
-		slog.Debug("quicUDPConn: ReadFrom ok", "sessionID", c.sessionID, "target", c.targetAddr, "len", n)
-		addr, _ := net.ResolveUDPAddr("udp4", c.targetAddr)
-		return n, addr, nil
+		// Frame addr carries the real source when the peer is a full-cone
+		// server; empty means an older server that only ever replies from
+		// the session target.
+		src := frame.Addr
+		if src == "" {
+			src = c.targetAddr
+		}
+		slog.Debug("quicUDPConn: ReadFrom ok", "sessionID", c.sessionID, "src", src, "len", n)
+		return n, rawAddr(src), nil
 	case <-c.reaped:
 		return 0, nil, net.ErrClosed
 	case <-c.done:
@@ -2032,8 +2038,12 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	}
 }
 
-func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
-	frame, put := MarshalUDPFrame(c.sessionID, c.targetAddr, b)
+func (c *quicUDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	dest := c.targetAddr
+	if addr != nil {
+		dest = addr.String()
+	}
+	frame, put := MarshalUDPFrame(c.sessionID, dest, b)
 
 	// Atomic inflight check: drop immediately when queue is saturated.
 	// Returns (len, nil) — silent drop is protocol-correct for unreliable
@@ -2061,7 +2071,7 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	// Per-packet overflow: if datagram too large, send via overflow stream
 	var tooLarge *quic.DatagramTooLargeError
 	if errors.As(err, &tooLarge) && c.mux.overflow != nil {
-		if err2 := c.mux.overflow.send(c.sessionID, c.targetAddr, b); err2 != nil {
+		if err2 := c.mux.overflow.send(c.sessionID, dest, b); err2 != nil {
 			return 0, err2
 		}
 		c.txPackets.Add(1)
@@ -2071,7 +2081,7 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 
 	// Other errors: track for health monitoring
 	slog.Warn("quicUDPConn: SendDatagram failed", "sessionID", c.sessionID,
-		"target", c.targetAddr, "payloadLen", len(b), "err", err)
+		"target", dest, "payloadLen", len(b), "err", err)
 	c.mux.recordTimeout()
 	return 0, err
 }
@@ -2632,8 +2642,11 @@ func (c *quicStreamUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	select {
 	case frame := <-c.readCh:
 		n := copy(b, frame.Payload)
-		addr, _ := net.ResolveUDPAddr("udp4", c.targetAddr)
-		return n, addr, nil
+		src := frame.Addr
+		if src == "" {
+			src = c.targetAddr
+		}
+		return n, rawAddr(src), nil
 	case <-c.reaped:
 		return 0, nil, net.ErrClosed
 	case <-c.done:
@@ -2645,8 +2658,12 @@ func (c *quicStreamUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	}
 }
 
-func (c *quicStreamUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
-	if err := c.mux.writeFrame(c.sessionID, c.targetAddr, b); err != nil {
+func (c *quicStreamUDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	dest := c.targetAddr
+	if addr != nil {
+		dest = addr.String()
+	}
+	if err := c.mux.writeFrame(c.sessionID, dest, b); err != nil {
 		return 0, err
 	}
 	return len(b), nil
