@@ -1089,7 +1089,7 @@ func TestServerUDPConn_WriteTo_InflightDrop(t *testing.T) {
 		qconn:        immediateDatagramSender{},
 		sessionID:    1,
 		addr:         "192.168.1.1:1234",
-		readCh:       make(chan []byte, 1),
+		readCh:       make(chan *UDPFrame, 1),
 		done:         make(chan struct{}),
 		sendInflight: &inflight,
 	}

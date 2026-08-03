@@ -2,7 +2,9 @@ package wire
 
 import (
 	"bytes"
+	"log/slog"
 	"net"
+	"sync/atomic"
 	"testing"
 )
 
@@ -94,3 +96,53 @@ func TestQUICUDPConn_ReadFrom_ReturnsFrameSource(t *testing.T) {
 }
 
 func newBytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
+
+func TestServerUDPConn_PerPacketAddrRoundTrip(t *testing.T) {
+	sender := &fakeDatagramSender{}
+	var inflight atomic.Int32
+	c := &serverUDPConn{
+		qconn:        sender,
+		sessionID:    9,
+		addr:         "1.1.1.1:443",
+		log:          slog.Default(),
+		readCh:       make(chan *UDPFrame, 4),
+		done:         make(chan struct{}),
+		sendInflight: &inflight,
+	}
+
+	// Uplink: a frame addressed to a second destination surfaces that dest.
+	c.deliver(&UDPFrame{SessionID: 9, Addr: "2.2.2.2:27015", Payload: []byte("hi")})
+	buf := make([]byte, 16)
+	n, to, err := c.ReadFrom(buf)
+	if err != nil {
+		t.Fatalf("ReadFrom: %v", err)
+	}
+	if n != 2 || to.String() != "2.2.2.2:27015" {
+		t.Fatalf("n=%d to=%v, want 2 / 2.2.2.2:27015", n, to)
+	}
+
+	// Uplink with empty addr (subsequent-packet optimization) → session addr.
+	c.deliver(&UDPFrame{SessionID: 9, Addr: "", Payload: []byte("yo")})
+	_, to2, err := c.ReadFrom(buf)
+	if err != nil {
+		t.Fatalf("ReadFrom 2: %v", err)
+	}
+	if to2.String() != "1.1.1.1:443" {
+		t.Fatalf("to2 = %v, want 1.1.1.1:443", to2)
+	}
+
+	// Downlink: the real source is carried back in the frame addr.
+	if _, err := c.WriteTo([]byte("pong"), rawAddr("3.3.3.3:27015")); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	if len(sender.sent) != 1 {
+		t.Fatalf("sent %d frames, want 1", len(sender.sent))
+	}
+	f, err := ReadUDPFrame(newBytesReader(sender.sent[0]))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if f.Addr != "3.3.3.3:27015" {
+		t.Errorf("downlink frame addr = %q, want 3.3.3.3:27015", f.Addr)
+	}
+}

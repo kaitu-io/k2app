@@ -1023,7 +1023,7 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, con
 				addr:       frame.Addr,
 				remoteAddr: remoteStr,
 				log:        sessLog,
-				readCh:     make(chan []byte, 32),
+				readCh:     make(chan *UDPFrame, 32),
 				done:       make(chan struct{}),
 				dev:        dev,
 			}
@@ -1037,7 +1037,7 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, con
 		}
 		sessionsMu.Unlock()
 
-		sess.deliver(frame.Payload)
+		sess.deliver(frame)
 	}
 }
 
@@ -1496,7 +1496,7 @@ type smuxServerUDPConn struct {
 	addr       string
 	remoteAddr string
 	log        *slog.Logger
-	readCh     chan []byte
+	readCh     chan *UDPFrame
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
@@ -1527,9 +1527,9 @@ func (c *smuxServerUDPConn) SessionID() string {
 	return c.dev.session()
 }
 
-func (c *smuxServerUDPConn) deliver(payload []byte) {
+func (c *smuxServerUDPConn) deliver(frame *UDPFrame) {
 	select {
-	case c.readCh <- payload:
+	case c.readCh <- frame:
 	case <-c.done:
 	default:
 		// Drop: handler exited or too slow. Protocol-correct for unreliable UDP.
@@ -1538,7 +1538,7 @@ func (c *smuxServerUDPConn) deliver(payload []byte) {
 		// writeMu deadlock FATAL (desktop) or silent UDP freeze (mobile).
 		// Mirrors serverUDPConn.deliver (quic.go) datagram-path protection.
 		slog.Debug("DIAG: udp-deliver-drop", "transport", "tcpws",
-			"sessionID", c.sessionID, "addr", c.addr, "len", len(payload))
+			"sessionID", c.sessionID, "addr", c.addr, "len", len(frame.Payload))
 	}
 }
 
@@ -1551,10 +1551,13 @@ func (c *smuxServerUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		defer timer.Stop()
 	}
 	select {
-	case payload := <-c.readCh:
-		n := copy(b, payload)
-		addr, _ := net.ResolveUDPAddr("udp", c.addr)
-		return n, addr, nil
+	case frame := <-c.readCh:
+		n := copy(b, frame.Payload)
+		dst := frame.Addr
+		if dst == "" {
+			dst = c.addr
+		}
+		return n, rawAddr(dst), nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-timerCh:
@@ -1562,9 +1565,13 @@ func (c *smuxServerUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	}
 }
 
-func (c *smuxServerUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
-	// Empty addr for responses
-	if err := c.writer.writeFrame(c.sessionID, "", b); err != nil {
+func (c *smuxServerUDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	// Carry the real source back so the client can demultiplex replies.
+	var src string
+	if addr != nil {
+		src = addr.String()
+	}
+	if err := c.writer.writeFrame(c.sessionID, src, b); err != nil {
 		return 0, err
 	}
 	return len(b), nil

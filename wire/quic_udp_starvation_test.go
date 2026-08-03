@@ -104,7 +104,7 @@ func TestWriteTo_NoStarvation_WithInflightCap(t *testing.T) {
 			qconn:        mock,
 			sessionID:    uint32(i + 1),
 			addr:         "142.250.183.35:443",
-			readCh:       make(chan []byte, 32),
+			readCh:       make(chan *UDPFrame, 32),
 			done:         make(chan struct{}),
 			sendInflight: &sharedInflight,
 		}
@@ -218,7 +218,7 @@ func TestWriteTo_OverflowBeforeDrop(t *testing.T) {
 			qconn:        mock,
 			sessionID:    1,
 			addr:         "142.250.183.35:443",
-			readCh:       make(chan []byte, 32),
+			readCh:       make(chan *UDPFrame, 32),
 			done:         make(chan struct{}),
 			sendInflight: &sharedInflight,
 			overflow:     nil, // no overflow stream available
@@ -251,7 +251,7 @@ func TestWriteTo_OverflowBeforeDrop(t *testing.T) {
 			qconn:        mock,
 			sessionID:    3,
 			addr:         "142.250.183.35:443",
-			readCh:       make(chan []byte, 32),
+			readCh:       make(chan *UDPFrame, 32),
 			done:         make(chan struct{}),
 			sendInflight: &sharedInflight,
 			overflow:     nil,

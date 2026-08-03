@@ -37,30 +37,30 @@ func TestSmuxServerUDPConn_Deliver_DropsWhenReadChFull(t *testing.T) {
 		sessionID: 42,
 		addr:      "8.8.8.8:53",
 		log:       slog.Default(),
-		readCh:    make(chan []byte, 2), // small buffer to force full
+		readCh:    make(chan *UDPFrame, 2), // small buffer to force full
 		done:      make(chan struct{}),
 	}
 	// Fill readCh — handler is "slow" / not consuming.
-	c.readCh <- []byte("frame-1")
-	c.readCh <- []byte("frame-2")
+	c.readCh <- &UDPFrame{Payload: []byte("frame-1")}
+	c.readCh <- &UDPFrame{Payload: []byte("frame-2")}
 
 	// done is open. With current bug (no default branch) this deliver blocks
 	// forever. With fix, it drops and returns immediately.
-	if !deliverProbe(t, func() { c.deliver([]byte("frame-3")) }, 200*time.Millisecond) {
+	if !deliverProbe(t, func() { c.deliver(&UDPFrame{Payload: []byte("frame-3")}) }, 200*time.Millisecond) {
 		t.Fatal("smuxServerUDPConn.deliver blocked when readCh full + done open " +
 			"— would freeze handleUDPStream main loop and trigger client deadlock FATAL")
 	}
 
 	// Drained frames must be exactly the first two (drop discarded the third).
-	if got := string(<-c.readCh); got != "frame-1" {
+	if got := string((<-c.readCh).Payload); got != "frame-1" {
 		t.Errorf("first frame = %q, want frame-1", got)
 	}
-	if got := string(<-c.readCh); got != "frame-2" {
+	if got := string((<-c.readCh).Payload); got != "frame-2" {
 		t.Errorf("second frame = %q, want frame-2", got)
 	}
 	select {
 	case extra := <-c.readCh:
-		t.Errorf("expected drop, but got extra frame: %q", string(extra))
+		t.Errorf("expected drop, but got extra frame: %q", string(extra.Payload))
 	default:
 		// ok — frame-3 was dropped
 	}
@@ -73,25 +73,25 @@ func TestQuicStreamServerUDPConn_Deliver_DropsWhenReadChFull(t *testing.T) {
 		sessionID: 7,
 		addr:      "1.1.1.1:53",
 		log:       slog.Default(),
-		readCh:    make(chan []byte, 2),
+		readCh:    make(chan *UDPFrame, 2),
 		done:      make(chan struct{}),
 	}
-	c.readCh <- []byte("frame-1")
-	c.readCh <- []byte("frame-2")
+	c.readCh <- &UDPFrame{Payload: []byte("frame-1")}
+	c.readCh <- &UDPFrame{Payload: []byte("frame-2")}
 
-	if !deliverProbe(t, func() { c.deliver([]byte("frame-3")) }, 200*time.Millisecond) {
+	if !deliverProbe(t, func() { c.deliver(&UDPFrame{Payload: []byte("frame-3")}) }, 200*time.Millisecond) {
 		t.Fatal("quicStreamServerUDPConn.deliver blocked when readCh full + done open")
 	}
 
-	if got := string(<-c.readCh); got != "frame-1" {
+	if got := string((<-c.readCh).Payload); got != "frame-1" {
 		t.Errorf("first frame = %q, want frame-1", got)
 	}
-	if got := string(<-c.readCh); got != "frame-2" {
+	if got := string((<-c.readCh).Payload); got != "frame-2" {
 		t.Errorf("second frame = %q, want frame-2", got)
 	}
 	select {
 	case extra := <-c.readCh:
-		t.Errorf("expected drop, but got extra frame: %q", string(extra))
+		t.Errorf("expected drop, but got extra frame: %q", string(extra.Payload))
 	default:
 	}
 }
@@ -100,15 +100,15 @@ func TestQuicStreamServerUDPConn_Deliver_DropsWhenReadChFull(t *testing.T) {
 // happy-path behavior — a non-full readCh accepts the frame as before.
 func TestSmuxServerUDPConn_Deliver_HappyPath(t *testing.T) {
 	c := &smuxServerUDPConn{
-		readCh: make(chan []byte, 4),
+		readCh: make(chan *UDPFrame, 4),
 		done:   make(chan struct{}),
 		log:    slog.Default(),
 	}
-	c.deliver([]byte("hello"))
+	c.deliver(&UDPFrame{Payload: []byte("hello")})
 	select {
 	case got := <-c.readCh:
-		if string(got) != "hello" {
-			t.Errorf("got %q, want hello", string(got))
+		if string(got.Payload) != "hello" {
+			t.Errorf("got %q, want hello", string(got.Payload))
 		}
 	default:
 		t.Fatal("happy path: deliver did not enqueue to readCh")
@@ -119,13 +119,13 @@ func TestSmuxServerUDPConn_Deliver_HappyPath(t *testing.T) {
 // returns (already worked before fix, but the select arm must be preserved).
 func TestSmuxServerUDPConn_Deliver_DoneClosed(t *testing.T) {
 	c := &smuxServerUDPConn{
-		readCh: make(chan []byte), // unbuffered — full at all times
+		readCh: make(chan *UDPFrame), // unbuffered — full at all times
 		done:   make(chan struct{}),
 		log:    slog.Default(),
 	}
 	close(c.done)
 
-	if !deliverProbe(t, func() { c.deliver([]byte("x")) }, 100*time.Millisecond) {
+	if !deliverProbe(t, func() { c.deliver(&UDPFrame{Payload: []byte("x")}) }, 100*time.Millisecond) {
 		t.Fatal("deliver did not return after done was closed")
 	}
 }
@@ -137,7 +137,7 @@ func TestSmuxServerUDPConn_Deliver_DoneClosed(t *testing.T) {
 // rest are dropped — but none hang).
 func TestSmuxServerUDPConn_Deliver_HighConcurrency_NoBlocking(t *testing.T) {
 	c := &smuxServerUDPConn{
-		readCh: make(chan []byte, 8),
+		readCh: make(chan *UDPFrame, 8),
 		done:   make(chan struct{}),
 		log:    slog.Default(),
 	}
@@ -147,7 +147,7 @@ func TestSmuxServerUDPConn_Deliver_HighConcurrency_NoBlocking(t *testing.T) {
 	for i := range N {
 		go func() {
 			defer wg.Done()
-			c.deliver([]byte{byte(i)})
+			c.deliver(&UDPFrame{Payload: []byte{byte(i)}})
 		}()
 	}
 
@@ -174,26 +174,26 @@ func TestSmuxServerUDPConn_Deliver_HighConcurrency_NoBlocking(t *testing.T) {
 func TestSmuxServerUDPConn_Deliver_CrossSessionIsolation(t *testing.T) {
 	stuck := &smuxServerUDPConn{
 		sessionID: 1,
-		readCh:    make(chan []byte, 2), // small to force full
+		readCh:    make(chan *UDPFrame, 2), // small to force full
 		done:      make(chan struct{}),
 		log:       slog.Default(),
 	}
 	healthy := &smuxServerUDPConn{
 		sessionID: 2,
-		readCh:    make(chan []byte, 2),
+		readCh:    make(chan *UDPFrame, 2),
 		done:      make(chan struct{}),
 		log:       slog.Default(),
 	}
 	// Stuck session: fill readCh, handler does NOT drain.
-	stuck.readCh <- []byte("a")
-	stuck.readCh <- []byte("b")
+	stuck.readCh <- &UDPFrame{Payload: []byte("a")}
+	stuck.readCh <- &UDPFrame{Payload: []byte("b")}
 
 	// Simulate main loop: stuck session deliver MUST return so main loop
 	// can immediately deliver to the healthy session.
 	mainLoopComplete := make(chan struct{})
 	go func() {
-		stuck.deliver([]byte("c"))                  // dropped by fix
-		healthy.deliver([]byte("for-healthy-sess")) // must reach healthy
+		stuck.deliver(&UDPFrame{Payload: []byte("c")})                  // dropped by fix
+		healthy.deliver(&UDPFrame{Payload: []byte("for-healthy-sess")}) // must reach healthy
 		close(mainLoopComplete)
 	}()
 
@@ -207,8 +207,8 @@ func TestSmuxServerUDPConn_Deliver_CrossSessionIsolation(t *testing.T) {
 	// Healthy session must have received the frame.
 	select {
 	case got := <-healthy.readCh:
-		if string(got) != "for-healthy-sess" {
-			t.Errorf("healthy session got %q, want for-healthy-sess", string(got))
+		if string(got.Payload) != "for-healthy-sess" {
+			t.Errorf("healthy session got %q, want for-healthy-sess", string(got.Payload))
 		}
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("healthy session did not receive frame despite main loop progressing")
@@ -224,12 +224,12 @@ func TestSmuxServerUDPConn_Deliver_CloseDuringDeliverRace(t *testing.T) {
 	for trial := range 200 {
 		c := &smuxServerUDPConn{
 			sessionID: uint32(trial),
-			readCh:    make(chan []byte, 1),
+			readCh:    make(chan *UDPFrame, 1),
 			done:      make(chan struct{}),
 			log:       slog.Default(),
 		}
 		// Pre-fill so delivery without close would hit default.
-		c.readCh <- []byte("preload")
+		c.readCh <- &UDPFrame{Payload: []byte("preload")}
 
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -240,7 +240,7 @@ func TestSmuxServerUDPConn_Deliver_CloseDuringDeliverRace(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			c.deliver([]byte("racing-frame"))
+			c.deliver(&UDPFrame{Payload: []byte("racing-frame")})
 		}()
 
 		done := make(chan struct{})
@@ -262,16 +262,16 @@ func TestSmuxServerUDPConn_Deliver_ReadFromAfterDrop(t *testing.T) {
 	c := &smuxServerUDPConn{
 		sessionID: 1,
 		addr:      "1.2.3.4:53",
-		readCh:    make(chan []byte, 2),
+		readCh:    make(chan *UDPFrame, 2),
 		done:      make(chan struct{}),
 		log:       slog.Default(),
 	}
 
 	// Fill, force drop, drain, refill — confirms read-path integrity.
-	c.deliver([]byte("a"))
-	c.deliver([]byte("b"))
-	c.deliver([]byte("c")) // dropped
-	c.deliver([]byte("d")) // dropped
+	c.deliver(&UDPFrame{Payload: []byte("a")})
+	c.deliver(&UDPFrame{Payload: []byte("b")})
+	c.deliver(&UDPFrame{Payload: []byte("c")}) // dropped
+	c.deliver(&UDPFrame{Payload: []byte("d")}) // dropped
 
 	buf := make([]byte, 64)
 	n, _, err := c.ReadFrom(buf)
@@ -284,7 +284,7 @@ func TestSmuxServerUDPConn_Deliver_ReadFromAfterDrop(t *testing.T) {
 	}
 
 	// readCh drained. New deliver should now succeed (not drop).
-	c.deliver([]byte("e"))
+	c.deliver(&UDPFrame{Payload: []byte("e")})
 	n, _, err = c.ReadFrom(buf)
 	if err != nil || string(buf[:n]) != "e" {
 		t.Fatalf("ReadFrom post-drain: got %q err=%v, want 'e'", string(buf[:n]), err)
@@ -305,7 +305,7 @@ func TestSmuxServerUDPConn_Deliver_NilReadCh_DoesNotCrash(t *testing.T) {
 		// readCh: nil — send to nil chan blocks
 		// done:   nil — recv from nil chan blocks
 	}
-	if !deliverProbe(t, func() { c.deliver([]byte("x")) }, 100*time.Millisecond) {
+	if !deliverProbe(t, func() { c.deliver(&UDPFrame{Payload: []byte("x")}) }, 100*time.Millisecond) {
 		t.Fatal("deliver on nil readCh/done blocked — default branch did not fire")
 	}
 }
@@ -316,23 +316,23 @@ func TestSmuxServerUDPConn_Deliver_NilReadCh_DoesNotCrash(t *testing.T) {
 func TestQuicStreamServerUDPConn_Deliver_CrossSessionIsolation(t *testing.T) {
 	stuck := &quicStreamServerUDPConn{
 		sessionID: 1,
-		readCh:    make(chan []byte, 2),
+		readCh:    make(chan *UDPFrame, 2),
 		done:      make(chan struct{}),
 		log:       slog.Default(),
 	}
 	healthy := &quicStreamServerUDPConn{
 		sessionID: 2,
-		readCh:    make(chan []byte, 2),
+		readCh:    make(chan *UDPFrame, 2),
 		done:      make(chan struct{}),
 		log:       slog.Default(),
 	}
-	stuck.readCh <- []byte("a")
-	stuck.readCh <- []byte("b")
+	stuck.readCh <- &UDPFrame{Payload: []byte("a")}
+	stuck.readCh <- &UDPFrame{Payload: []byte("b")}
 
 	mainLoopComplete := make(chan struct{})
 	go func() {
-		stuck.deliver([]byte("c"))
-		healthy.deliver([]byte("for-healthy-sess"))
+		stuck.deliver(&UDPFrame{Payload: []byte("c")})
+		healthy.deliver(&UDPFrame{Payload: []byte("for-healthy-sess")})
 		close(mainLoopComplete)
 	}()
 
@@ -344,8 +344,8 @@ func TestQuicStreamServerUDPConn_Deliver_CrossSessionIsolation(t *testing.T) {
 
 	select {
 	case got := <-healthy.readCh:
-		if string(got) != "for-healthy-sess" {
-			t.Errorf("quic-stream: healthy got %q", string(got))
+		if string(got.Payload) != "for-healthy-sess" {
+			t.Errorf("quic-stream: healthy got %q", string(got.Payload))
 		}
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("quic-stream: healthy did not receive frame")
@@ -356,16 +356,16 @@ func TestQuicStreamServerUDPConn_Deliver_CloseDuringDeliverRace(t *testing.T) {
 	for trial := range 200 {
 		c := &quicStreamServerUDPConn{
 			sessionID: uint32(trial),
-			readCh:    make(chan []byte, 1),
+			readCh:    make(chan *UDPFrame, 1),
 			done:      make(chan struct{}),
 			log:       slog.Default(),
 		}
-		c.readCh <- []byte("preload")
+		c.readCh <- &UDPFrame{Payload: []byte("preload")}
 
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() { defer wg.Done(); close(c.done) }()
-		go func() { defer wg.Done(); c.deliver([]byte("racing")) }()
+		go func() { defer wg.Done(); c.deliver(&UDPFrame{Payload: []byte("racing")}) }()
 
 		done := make(chan struct{})
 		go func() { wg.Wait(); close(done) }()
@@ -382,7 +382,7 @@ func TestQuicStreamServerUDPConn_Deliver_NilReadCh_DoesNotCrash(t *testing.T) {
 		sessionID: 1,
 		log:       slog.Default(),
 	}
-	if !deliverProbe(t, func() { c.deliver([]byte("x")) }, 100*time.Millisecond) {
+	if !deliverProbe(t, func() { c.deliver(&UDPFrame{Payload: []byte("x")}) }, 100*time.Millisecond) {
 		t.Fatal("quic-stream: deliver on nil chans blocked")
 	}
 }

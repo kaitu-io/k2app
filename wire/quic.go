@@ -1575,7 +1575,7 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, ctx 
 				addr:       frame.Addr,
 				remoteAddr: remoteStr,
 				log:        sessLog,
-				readCh:     make(chan []byte, 32),
+				readCh:     make(chan *UDPFrame, 32),
 				done:       make(chan struct{}),
 				dev:        ctx.dev,
 			}
@@ -1594,7 +1594,7 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, ctx 
 			}
 		}
 
-		sess.deliver(frame.Payload)
+		sess.deliver(frame)
 	}
 }
 
@@ -1664,7 +1664,7 @@ func (s *QUICServer) deliverToSession(ctx *connContext, state *connUDPState, con
 				sessionID:    frame.SessionID,
 				addr:         frame.Addr,
 				remoteAddr:   conn.RemoteAddr().String(),
-				readCh:       make(chan []byte, 32),
+				readCh:       make(chan *UDPFrame, 32),
 				done:         make(chan struct{}),
 				overflow:     state.overflow,
 				sendInflight: &state.sendInflight,
@@ -1683,7 +1683,7 @@ func (s *QUICServer) deliverToSession(ctx *connContext, state *connUDPState, con
 		state.mu.Unlock()
 	}
 
-	sess.deliver(frame.Payload)
+	sess.deliver(frame)
 }
 
 // handleUDPOverflowStream reads SmuxUDPFrame from a client-initiated overflow stream
@@ -2120,7 +2120,7 @@ type serverUDPConn struct {
 	addr         string
 	remoteAddr   string       // client IP:port for diagnostic attribution
 	log          *slog.Logger // scoped logger with remote, sid, addr
-	readCh       chan []byte
+	readCh       chan *UDPFrame
 	done         chan struct{}
 	closeOnce    sync.Once
 	rd           readDeadline
@@ -2159,9 +2159,9 @@ func (c *serverUDPConn) SessionID() string {
 	return c.dev.session()
 }
 
-func (c *serverUDPConn) deliver(payload []byte) {
+func (c *serverUDPConn) deliver(frame *UDPFrame) {
 	select {
-	case c.readCh <- payload:
+	case c.readCh <- frame:
 	case <-c.done:
 	default:
 		// Drop: handler exited or too slow. Protocol-correct for unreliable datagrams.
@@ -2179,11 +2179,16 @@ func (c *serverUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		defer timer.Stop()
 	}
 	select {
-	case payload := <-c.readCh:
-		n := copy(b, payload)
+	case frame := <-c.readCh:
+		n := copy(b, frame.Payload)
 		c.rxPackets.Add(1)
-		addr, _ := net.ResolveUDPAddr("udp", c.addr)
-		return n, addr, nil
+		// Per-packet destination: a client may address several peers from one
+		// source port. Empty addr means "same as the session's first target".
+		dst := frame.Addr
+		if dst == "" {
+			dst = c.addr
+		}
+		return n, rawAddr(dst), nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-timerCh:
@@ -2191,9 +2196,14 @@ func (c *serverUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	}
 }
 
-func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
-	// Empty addr for response frames (client already knows the target)
-	frame, put := MarshalUDPFrame(c.sessionID, "", b)
+func (c *serverUDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	// Carry the real source back so the client can demultiplex replies from
+	// multiple peers on one session.
+	var src string
+	if addr != nil {
+		src = addr.String()
+	}
+	frame, put := MarshalUDPFrame(c.sessionID, src, b)
 
 	// Atomic inflight check: when datagram queue is saturated, overflow to
 	// the reliable stream path instead of blocking in datagramQueue.Add().
@@ -2205,7 +2215,7 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 		// Overflow to stream: preserves data via reliable STREAM frames.
 		// Critical for QUIC handshake completion packets that MUST arrive.
 		if c.overflow != nil {
-			if err := c.overflow.send(c.sessionID, "", b); err == nil {
+			if err := c.overflow.send(c.sessionID, src, b); err == nil {
 				c.txPackets.Add(1)
 				c.txBytes.Add(int64(len(b)))
 				return len(b), nil
@@ -2228,7 +2238,7 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	// Per-packet overflow: if datagram too large, send via overflow stream
 	var tooLarge *quic.DatagramTooLargeError
 	if errors.As(err, &tooLarge) && c.overflow != nil {
-		if err2 := c.overflow.send(c.sessionID, "", b); err2 != nil {
+		if err2 := c.overflow.send(c.sessionID, src, b); err2 != nil {
 			c.txErrors.Add(1)
 			return 0, err2
 		}
@@ -2339,7 +2349,7 @@ type quicStreamServerUDPConn struct {
 	addr       string
 	remoteAddr string
 	log        *slog.Logger // scoped logger with remote, sid, addr
-	readCh     chan []byte
+	readCh     chan *UDPFrame
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
@@ -2370,9 +2380,9 @@ func (c *quicStreamServerUDPConn) SessionID() string {
 	return c.dev.session()
 }
 
-func (c *quicStreamServerUDPConn) deliver(payload []byte) {
+func (c *quicStreamServerUDPConn) deliver(frame *UDPFrame) {
 	select {
-	case c.readCh <- payload:
+	case c.readCh <- frame:
 	case <-c.done:
 	default:
 		// Drop: handler exited or too slow. Protocol-correct for unreliable UDP.
@@ -2380,7 +2390,7 @@ func (c *quicStreamServerUDPConn) deliver(payload []byte) {
 		// — freezing flow control and triggering client-side writeMu deadlock
 		// FATAL. Mirrors serverUDPConn.deliver datagram-path protection.
 		slog.Debug("DIAG: udp-deliver-drop", "transport", "quic-stream",
-			"sessionID", c.sessionID, "addr", c.addr, "len", len(payload))
+			"sessionID", c.sessionID, "addr", c.addr, "len", len(frame.Payload))
 	}
 }
 
@@ -2393,10 +2403,13 @@ func (c *quicStreamServerUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		defer timer.Stop()
 	}
 	select {
-	case payload := <-c.readCh:
-		n := copy(b, payload)
-		addr, _ := net.ResolveUDPAddr("udp", c.addr)
-		return n, addr, nil
+	case frame := <-c.readCh:
+		n := copy(b, frame.Payload)
+		dst := frame.Addr
+		if dst == "" {
+			dst = c.addr
+		}
+		return n, rawAddr(dst), nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-timerCh:
@@ -2404,9 +2417,13 @@ func (c *quicStreamServerUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	}
 }
 
-func (c *quicStreamServerUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
-	// Empty addr for responses
-	if err := c.writer.writeFrame(c.sessionID, "", b); err != nil {
+func (c *quicStreamServerUDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	// Carry the real source back so the client can demultiplex replies.
+	var src string
+	if addr != nil {
+		src = addr.String()
+	}
+	if err := c.writer.writeFrame(c.sessionID, src, b); err != nil {
 		return 0, err
 	}
 	return len(b), nil

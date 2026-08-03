@@ -132,7 +132,7 @@ func TestQuicUDPConn_ReadFrom_NoDeadline(t *testing.T) {
 
 func TestServerUDPConn_ReadFrom_Timeout(t *testing.T) {
 	c := &serverUDPConn{
-		readCh: make(chan []byte),
+		readCh: make(chan *UDPFrame),
 		done:   make(chan struct{}),
 		addr:   "1.2.3.4:443",
 	}
@@ -167,7 +167,7 @@ func TestSmuxUDPConn_ReadFrom_Timeout(t *testing.T) {
 
 func TestSmuxServerUDPConn_ReadFrom_Timeout(t *testing.T) {
 	c := &smuxServerUDPConn{
-		readCh: make(chan []byte),
+		readCh: make(chan *UDPFrame),
 		done:   make(chan struct{}),
 		addr:   "1.2.3.4:443",
 	}

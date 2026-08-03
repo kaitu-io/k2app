@@ -21,7 +21,7 @@ func TestConnUDPState_RunUDPHandler_RemovesSessionOnExit(t *testing.T) {
 	}
 	sess := &serverUDPConn{
 		sessionID: 42,
-		readCh:    make(chan []byte, 32),
+		readCh:    make(chan *UDPFrame, 32),
 		done:      make(chan struct{}),
 		log:       slog.Default(),
 	}
@@ -73,7 +73,7 @@ func TestConnUDPState_RunUDPHandler_RemovesSessionOnPanic(t *testing.T) {
 	}
 	sess := &serverUDPConn{
 		sessionID: 99,
-		readCh:    make(chan []byte, 32),
+		readCh:    make(chan *UDPFrame, 32),
 		done:      make(chan struct{}),
 		log:       slog.Default(),
 	}
