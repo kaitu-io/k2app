@@ -221,19 +221,37 @@ func (e *Engine) RouteConnProto(host string, meta ConnMeta) (Target, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	for i := range e.routes {
-		r := &e.routes[i]
-		if len(r.Protocols) == 0 {
-			continue
+		if r := &e.routes[i]; matchProtoRoute(r, host, meta) {
+			return r.Target, true
 		}
-		if !matchMeta(r, meta) {
-			continue
-		}
-		if r.hasHostCriteria() && !matchRouteHost(r, host) {
-			continue
-		}
-		return r.Target, true
 	}
 	return 0, false
+}
+
+// matchProtoRoute reports whether r takes part in the post-sniff protocol
+// re-route AND matches this connection. Extracted from RouteConnProto's loop
+// body so that function's `defer mu.RUnlock()` stays inside the 15-line scope
+// the concurrency constitution allows (Rule #5, pinned by lint/).
+//
+// Three conditions, in cost order — all three must hold:
+//  1. the route carries Protocols criteria (routes that never mention a
+//     protocol are invisible to the re-route, by design),
+//  2. full connection metadata matches (protocol is only one of the meta
+//     dimensions; port/network/process criteria on the same route still apply),
+//  3. host criteria, when the route has any, are satisfied — otherwise
+//     {protocol, domain_suffix} would degrade to "any traffic of this
+//     protocol", silently dropping the domain restriction.
+func matchProtoRoute(r *RouteEntry, host string, meta ConnMeta) bool {
+	if len(r.Protocols) == 0 {
+		return false
+	}
+	if !matchMeta(r, meta) {
+		return false
+	}
+	if r.hasHostCriteria() && !matchRouteHost(r, host) {
+		return false
+	}
+	return true
 }
 
 // SetMissReporter installs a rule-miss telemetry sink. Pass nil to clear.
