@@ -34,12 +34,9 @@ tmp pin below), the port rule still gets its say — meta-only routes are
 evaluated *before* the tmp cache in `matchConnLocked`, precisely so
 per-connection identity supersedes IP-level caching.
 
-That pre-tmp pass is itself gated on a local `hasAnyMeta` in `matchConnLocked`,
-which today counts only `ProcessName` / `PackageName` / `Network` — **not**
-`SrcIP`, `Port`, or `Protocol`. In practice `core/tunnel.go routeConn` always
-populates `Network` ("tcp"/"udp"), so the gate is always open on the real call
-path and port/src-IP-only routes are reached. The gate is narrower than the
-criteria it guards; do not rely on it widening.
+That pre-tmp pass is itself gated on a local `hasAnyMeta`, which is narrower
+than the criteria it guards — see "Known debt" under the predicate family
+below.
 
 ## Match Dimensions
 
@@ -83,9 +80,9 @@ matching also accepts the 15-char kernel truncation of a longer rule name
 ## Protocol Matching Participates Only After Sniffing
 
 `Protocols` is the one dimension whose observed value does not exist at dial
-time. `RouteConnProto` is its entry point, called from `core/tunnel.go`'s UDP
-handler as **step 6** of the post-sniff sequence. It differs from `MatchConn`
-in three ways, all deliberate:
+time. `RouteConnProto` is its entry point, called from `core/tunnel.go` after
+the first packet/bytes have been sniffed. It differs from `MatchConn` in three
+ways, all deliberate:
 
 1. It considers **only** routes with `len(Protocols) > 0`. Routes that never
    mention a protocol are untouched by the re-route.
@@ -102,18 +99,50 @@ destination IP literal. Passing the raw IP unconditionally would make any
 `{protocol, domain_suffix}` combination compare an IP against a domain matcher —
 never a hit, and no log line to explain it.
 
-Current scope: the protocol re-route exists on the **UDP path only**. The TCP
-handler sniffs BitTorrent and forces direct, but never populates
-`ConnMeta.Protocol` and never calls `RouteConnProto`, so `protocol:` rules do
-not fire on TCP.
+Both transports do this: the UDP handler as step 6, the TCP handler as the last
+step of its single-peek sniff block.
+
+### A protocol rule can only fire if the protocol was sniffed
+
+This is the real semantic boundary of the dimension, and it is easy to write a
+rule that can never match. Sniffing is gated twice.
+
+**Outer gate (both transports)** — no sniffing at all when:
+
+- the connection routes to **reject** (`t.outbound(action) == nil`), or
+- sniffing is off for this config. `SniffBT` and `SniffSNI` are both wired to
+  `!ruleEngine.DisableSniff()` (`engine/engine.go`), so in **bulk-proxy /
+  global mode a `protocol:` rule can never fire at all.**
+
+**Inner gate (per protocol)**:
+
+| Protocol | Transport | Additionally requires | So a rule cannot fire when |
+|---|---|---|---|
+| `bittorrent` | TCP + UDP | `sniffBT` **and** the connection was headed for the **proxy** (`action != directTarget`) | the connection was already routed direct |
+| `stun`, `dtls` | UDP | same gate as above | the connection was already routed direct |
+| `quic` | UDP | `meta.Protocol == ""` (not already STUN/DTLS/BT) — **not** subject to the direct/proxy precondition | the first packet was classified as STUN/DTLS/BT first |
+
+Concretely, for the three protocols behind the proxy-bound precondition:
+
+- `{protocol:["stun"], via: direct}` **works** — the connection was proxy-bound,
+  got sniffed, and the rule flips it to direct.
+- `{protocol:["stun"], via: <some proxy>}` applied to a connection that was
+  **already direct never fires** — that connection was never sniffed, so
+  `ConnMeta.Protocol` stays empty and every route carrying `Protocols` is
+  fail-closed against it.
+
+Do not "fix" that inner gate: it is what keeps WebRTC on the tunnel for #3051
+and what keeps sniffing off the hot path for already-direct traffic.
+
+TCP only ever produces `bittorrent` — it has no STUN/DTLS/QUIC detector.
 
 ### Post-sniff defaults when no protocol rule exists
 
 Unchanged by the protocol dimension — a config with no `protocol:` rule behaves
 exactly as before:
 
-- **BitTorrent** (uTP / UDP tracker) → forced **direct**.
-- **STUN / DTLS** → detected, `ConnMeta.Protocol` set, and **kept on the
+- **BitTorrent** (TCP peer handshake; UDP uTP / tracker) → forced **direct**.
+- **STUN / DTLS** (UDP) → detected, `ConnMeta.Protocol` set, and **kept on the
   tunnel**.
 
 The STUN/DTLS default is a support-ticket-backed decision, not an oversight.
@@ -166,6 +195,32 @@ user:
   nothing.
 
 `hasProcessCriteria` is a strict subset of `hasMetaCriteria`.
+
+### Known debt: `hasAnyMeta` is narrower than the criteria it guards
+
+`matchConnLocked`'s local `hasAnyMeta` counts only `ProcessName` /
+`PackageName` / `Network`. It does **not** count `SrcIP`, `Port`, or
+`Protocol`, even though all three are meta criteria that `matchMeta` checks.
+
+**Why it is harmless today**: `hasAnyMeta` only gates the *pre-tmp* pass —
+being false costs a route its chance to be evaluated ahead of the DNS-learned
+pin cache, it never causes a wrong match. And it is never false on a real
+connection: every production `MatchConn` call goes through `Router.RouteConn`,
+and all three `core/tunnel.go` call sites (initial `routeConn`, plus the TCP
+and UDP SNI re-routes) pass a `ConnMeta` that `routeConn` built with `Network`
+set to "tcp" or "udp". The protocol dimension is unaffected either way —
+`RouteConnProto` does not go through `matchConnLocked` at all.
+
+**When it would start to bite**: a `MatchConn` caller that leaves `Network`
+empty while setting only `SrcIP`/`Port`. Then a meta-only route carrying just
+that dimension would be skipped in the pre-tmp pass and a stale DNS pin could
+win over it.
+
+Left as-is deliberately — widening it is a semantic change to match ordering
+and deserves its own review, not a drive-by edit. It is also the one member of
+the family the reflection guard structurally cannot reach (a local variable,
+and one that enumerates `ConnMeta` observations rather than `RouteEntry`
+fields).
 
 ### The structural guard, and what it cannot see
 

@@ -18,8 +18,8 @@ Protocol detection and domain extraction from first packet/bytes. Used by `core/
 | `IsBitTorrent(io.Reader)` | BT handshake | TCP peek | bool | PROXY→DIRECT |
 | `IsUTP([]byte)` | uTP (BT UDP) | UDP packet | bool | PROXY→DIRECT |
 | `IsUDPTracker([]byte)` | BT UDP Tracker | UDP packet | bool | PROXY→DIRECT |
-| `IsSTUN([]byte)` | STUN (RFC 8489) | UDP packet | bool | PROXY→DIRECT (WebRTC) |
-| `IsDTLS([]byte)` | DTLS (RFC 6347) | UDP packet | bool | PROXY→DIRECT (WebRTC) |
+| `IsSTUN([]byte)` | STUN (RFC 8489) | UDP packet | bool | Identify WebRTC and **keep it on the tunnel** (ticket #3051) |
+| `IsDTLS([]byte)` | DTLS (RFC 6347) | UDP packet | bool | Identify WebRTC and **keep it on the tunnel** (ticket #3051) |
 
 ## Files
 
