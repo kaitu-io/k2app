@@ -449,10 +449,21 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 			// keep the historical defaults set above: BitTorrent forced direct,
 			// STUN and DTLS kept on the tunnel (ticket #3051 — forcing WebRTC
 			// direct broke calls for users behind the GFW).
+			//
+			// Use the sniffed SNI domain when we have one (same as step 3's
+			// RouteConn(meta.Domain, ...) call) so a combined
+			// {protocol, domain_suffix/ip_cidr} rule can actually match — host
+			// is still an IP literal here, and RouteConnProto's host-criteria
+			// branch would silently never hit against an IP when the rule was
+			// authored against a domain.
 			if meta.Protocol != "" && t.router != nil {
+				protoHost := host
+				if meta.Domain != "" {
+					protoHost = meta.Domain
+				}
 				protoMeta := connMeta
 				protoMeta.Protocol = meta.Protocol
-				if protoAction, matched := t.router.RouteConnProto(host, protoMeta); matched {
+				if protoAction, matched := t.router.RouteConnProto(protoHost, protoMeta); matched {
 					action = protoAction
 					slog.Debug("tunnel: protocol rule override", "dest", dest,
 						"protocol", meta.Protocol, "action", action)
