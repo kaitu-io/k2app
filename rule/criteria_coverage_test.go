@@ -66,6 +66,17 @@ import (
 // methods (hasAnyCriteria in engine/engine.go, hasAnyMeta in matchConnLocked)
 // cannot be reflected over. They are pinned by example instead —
 // TestBuildRouteEntries_PortOnly / _ProtocolOnly in engine/engine_test.go.
+//
+// And the third struct: adding a match dimension means touching THREE structs,
+// but this file only walks two of them. ConnMeta — the observed side, which
+// every meta dimension needs a field in before matchMeta has anything to
+// compare against — is not covered here, because "which ConnMeta field does
+// this criterion read?" is a semantic question with no reflective answer. A
+// dimension added to RouteEntry/MatchConfig and wired through both predicates
+// will pass everything in this file while silently having no observed value
+// to match on. The population side is pinned by example instead: see
+// core/tunnel.go's routeConn (Port, SrcIP, Network, process fields) and the
+// post-sniff Protocol assignment, covered by core/tunnel_protocol_rule_test.go.
 // ---------------------------------------------------------------------------
 
 // routeEntryExempt lists RouteEntry fields that are deliberately NOT match

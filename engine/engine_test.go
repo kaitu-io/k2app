@@ -2470,3 +2470,43 @@ func TestPrefetchRulesForStart_NESkipsNetwork(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildRouteEntries_ProtocolNormalized pins the normalization at the
+// assembly site: `entry.Protocols = append(..., strings.ToLower(strings.TrimSpace(p)))`
+// in buildRouteEntries.
+//
+// It is the only defense for hand-written config. rule.matchMeta compares the
+// sniffed protocol to the compiled list with plain ==, and the sniffer always
+// emits the lowercase constants from sniff/result.go ("quic", "stun", ...).
+// So a user writing `protocol: ["STUN"]` or `protocol: [" quic "]` — neither
+// of which is unreasonable in hand-edited YAML — produces a rule that can
+// never match, with no parse error and no log line.
+//
+// The pre-existing protocol fixtures all use an already-lowercase, already-
+// trimmed "stun", so replacing the normalization with a bare append left the
+// whole ./engine/ suite green. Verified before adding this test.
+func TestBuildRouteEntries_ProtocolNormalized(t *testing.T) {
+	routes := []config.RouteConfig{
+		{Via: "k2v5://u:p@1.2.3.4:443", Match: rule.MatchConfig{
+			Protocol: []string{"STUN", "  quic  ", "DtLs"},
+		}},
+	}
+	outboundMap := map[string]rule.Target{"k2v5://u:p@1.2.3.4:443": rule.Target(2)}
+	entries, _, _ := buildRouteEntries(routes, nil, outboundMap, heapRegionExpander(nil))
+	if len(entries) != 1 {
+		t.Fatalf("want 1 entry, got %d", len(entries))
+	}
+
+	want := []string{"stun", "quic", "dtls"}
+	got := entries[0].Protocols
+	if len(got) != len(want) {
+		t.Fatalf("Protocols = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Protocols[%d] = %q, want %q — an unnormalized entry can never equal "+
+				"the lowercase constant the sniffer emits, so the rule silently never fires",
+				i, got[i], want[i])
+		}
+	}
+}

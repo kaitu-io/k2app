@@ -28,11 +28,25 @@ checks host and meta criteria with **AND** semantics: a route matches when
 
 Consequence worth internalizing: **`port` and `protocol` are connection-time
 dimensions and cannot participate in a DNS-time decision.** A rule like
-`{domain_suffix: [...], port: ["443"]}` does not steer the DNS answer; it steers
-the connection.
+But **"cannot participate" is not "has no effect at DNS time"** — and for a
+*combined* route the difference is dangerous.
 
-Mind the ordering, though — it is the opposite of what "meta beats the pin
-cache" suggests for *combined* routes. The pre-tmp pass in `matchConnLocked`
+At DNS time `matchHostLocked` does not skip a `{domain_suffix, port}` route; it
+**discards the port condition and matches on host alone**, returning that
+route's target. `core/dns/middleware.go` then uses that target for three
+things: picking the upstream resolver (`queryUpstream`), short-circuiting to
+**NXDOMAIN when the target is reject**, and calling `setTmpRule` to pin **every
+resolved IP** to it. So:
+
+- `{domain_suffix:["x"], port:["443"], via: reject}` NXDOMAINs **the entire
+  domain**, not just port 443. The port narrowing you wrote is silently gone.
+- `{domain_suffix:["x"], port:["27000-27100"], via: proxy}` pins **all** of that
+  domain's IPs to the proxy at DNS time. At connection time the `e.tmp` hit
+  returns before the route is ever reached, so the port condition **never takes
+  effect in production** — the rule is overridden by a pin it planted itself.
+
+Mind the ordering too — it is the opposite of what "meta beats the pin cache"
+suggests for *combined* routes. The pre-tmp pass in `matchConnLocked`
 skips on `hasHostCriteria() || !hasMetaCriteria()`, i.e. it considers **purely
 meta** routes only. A `{domain_suffix, port}` route compiles to a non-empty
 `Sets`, so it has host criteria and is skipped there; if the destination IP was
@@ -99,6 +113,37 @@ ways, all deliberate:
 3. It returns `(Target, bool)`. **Callers must check the bool** —
    `Target(0)` is `direct`, a perfectly legitimate result, so the zero value is
    not distinguishable from "no match" on its own.
+
+### ⚠ The re-route crosses route priority
+
+`RouteConnProto` scans **only** protocol-carrying routes and, on a hit,
+overwrites the target that normal matching already produced. It does **not**
+re-run the routing table. So a protocol rule **overrides any earlier route that
+already matched, regardless of position** — first-match-wins does not hold
+across this step.
+
+Measured: with `[{network:"udp", via:direct}, {protocol:["quic"], via:proxy}]`,
+a real QUIC Initial ends up on the **proxy** — the earlier, higher-priority
+`direct` route loses to the later protocol rule.
+
+This includes **App Bypass**: a process-based direct route that matched at dial
+time can be undone by a protocol rule. Contrast the two SNI re-routes
+(`core/tunnel.go` TCP and UDP), which call `Router.RouteConn` — the full table —
+specifically so a process bypass survives; their comments say as much ("a
+Chrome-bypass QUIC flow stays direct"). The protocol step deliberately does not
+do that, and therefore does not inherit that protection.
+
+Reachability today is narrow: STUN/DTLS/BT are only sniffed on proxy-bound
+connections, so an already-direct route can only be overridden via **QUIC**,
+whose detection sits outside that gate. Current real-world impact is **zero** —
+no shipped config carries a `protocol:` rule.
+
+**Before shipping any default `protocol:` rule, decide whether this override
+semantics is intended.** Changing it is a design decision about what
+`{protocol: ...}` means — whether it is a filter over the matched route or a
+free-standing override — not a bug fix, and it needs its own review cycle.
+
+### Other matching details
 
 Full meta criteria still apply inside `RouteConnProto` (`matchMeta`), and host
 criteria are applied when present via `matchRouteHost`. The call site passes the
