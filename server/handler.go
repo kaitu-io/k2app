@@ -175,6 +175,77 @@ type udpDestEntry struct {
 	lru      *list.Element // this entry's node in HandleUDP's LRU list; Value is the dest key
 }
 
+// addressedPeers records the resolved IP:port of every destination a UDP
+// session has addressed, so the downlink loop can tell a solicited reply from
+// traffic that arrived at the session's egress port unbidden.
+//
+// The full-cone egress socket is unconnected, so the kernel no longer filters
+// unsolicited inbound, and HandleUDP meters every byte it reads from the
+// target — including those packets — against the user's device quota. That is
+// a deliberate trade (see server/CLAUDE.md, "Per-Device Traffic Accounting"),
+// but it must at least be VISIBLE, hence this counter.
+//
+// Written by the uplink goroutine and read by the downlink loop, so it
+// carries its own mutex; the uplink only touches it on a destination-cache
+// miss, not per packet. Bounded by the same maxUDPDestsPerSession budget as
+// the dests LRU it shadows — entries are added and released in lockstep with
+// it, so this introduces no new unbounded memory. The refcount exists because
+// two dest keys can resolve to the same peer (a hostname and its IP literal);
+// releasing one must not un-address the other.
+type addressedPeers struct {
+	mu sync.Mutex
+	m  map[netip.AddrPort]int
+}
+
+func newAddressedPeers() *addressedPeers {
+	return &addressedPeers{m: make(map[netip.AddrPort]int, 4)}
+}
+
+// normalizeAddrPort strips a 4-in-6 mapping so a destination resolved through
+// net.ResolveUDPAddr (which may hand back a 16-byte IPv4) compares equal to a
+// source read via ReadFromUDPAddrPort (which yields a 4-byte IPv4 on an AF_INET
+// socket).
+func normalizeAddrPort(ap netip.AddrPort) netip.AddrPort {
+	return netip.AddrPortFrom(ap.Addr().Unmap(), ap.Port())
+}
+
+func (p *addressedPeers) add(ua *net.UDPAddr) {
+	if ua == nil {
+		return
+	}
+	ap := normalizeAddrPort(ua.AddrPort())
+	p.mu.Lock()
+	p.m[ap]++
+	p.mu.Unlock()
+}
+
+func (p *addressedPeers) release(ua *net.UDPAddr) {
+	if ua == nil {
+		return
+	}
+	ap := normalizeAddrPort(ua.AddrPort())
+	p.mu.Lock()
+	if n := p.m[ap]; n > 1 {
+		p.m[ap] = n - 1
+	} else {
+		delete(p.m, ap)
+	}
+	p.mu.Unlock()
+}
+
+// addressed reports whether this session has (still) addressed src. An
+// evicted destination reads as unaddressed, so a long-running session that
+// cycles through more than maxUDPDestsPerSession peers can over-report. That
+// direction is accepted: the alternative is an unbounded set, and the counter
+// is a visibility signal, not a security control.
+func (p *addressedPeers) addressed(src netip.AddrPort) bool {
+	ap := normalizeAddrPort(src)
+	p.mu.Lock()
+	_, ok := p.m[ap]
+	p.mu.Unlock()
+	return ok
+}
+
 // cachedAddr is a net.Addr with a pre-formatted String(). HandleUDP's
 // target->client loop hands the wire layer a net.Addr per downlink packet,
 // and the wire layer calls String() on it to embed the source in the
@@ -189,6 +260,16 @@ type cachedAddr struct {
 
 func (a cachedAddr) Network() string { return a.network }
 func (a cachedAddr) String() string  { return a.addr }
+
+// srcEntry is HandleUDP's downlink-loop cache for one source peer: the
+// pre-formatted address handed to the wire layer, plus whether this session
+// ever addressed that peer. Only the "solicited" verdict is final — see the
+// re-check in the downlink loop — so a peer that speaks before we do (ICE,
+// STUN) stops being counted as soon as the session addresses it.
+type srcEntry struct {
+	addr        net.Addr
+	unsolicited bool
+}
 
 // connTracker tracks active connections for forceful close during shutdown.
 type connTracker struct {
@@ -464,6 +545,11 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	// below and read by the main goroutine in the final log.Info after
 	// <-done — atomic to match the sessRx convention just above.
 	var sessDestBlocked, sessDestUnresolvable, sessDestEvicted int64
+	// The unsolicited-source counters are the exception to the "written only
+	// by the uplink goroutine" note above: they are written by the downlink
+	// loop (the main goroutine) and read by it, so they need no atomics.
+	var sessSrcUnsolicitedPkts, sessSrcUnsolicitedBytes int64
+	peers := newAddressedPeers()
 
 	// client -> target
 	go func() {
@@ -504,6 +590,9 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 					if oldest := lru.Back(); oldest != nil {
 						oldKey := oldest.Value.(string)
 						lru.Remove(oldest)
+						if old := dests[oldKey]; old != nil {
+							peers.release(old.addr)
+						}
 						delete(dests, oldKey)
 						atomic.AddInt64(&sessDestEvicted, 1)
 						log.Debug("server: HandleUDP dest evicted for new dest", "evicted", oldKey, "new", destKey)
@@ -513,6 +602,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 				entry = &udpDestEntry{addr: ua, blocked: blocked, cachedAt: time.Now()}
 				entry.lru = lru.PushFront(destKey)
 				dests[destKey] = entry
+				peers.add(ua) // no-op for a negative-cache entry (ua == nil)
 				switch {
 				case rerr != nil && blocked:
 					log.Warn("server: HandleUDP dest blocked", "dest", destKey, "err", rerr)
@@ -567,7 +657,12 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	// attacker source port. Cap it and reset on overflow — this is a perf
 	// cache, not a correctness dependency, so dropping it under attack is
 	// safe (worst case: one extra allocation per already-seen peer).
-	srcAddrs := make(map[netip.AddrPort]net.Addr, 4)
+	//
+	// It also memoizes each peer's solicited/unsolicited verdict so the
+	// unsolicited counters below don't take peers' lock on every packet. The
+	// overflow clear() only costs a re-derivation — peers stays authoritative
+	// — so the verdict survives it.
+	srcAddrs := make(map[netip.AddrPort]srcEntry, 4)
 	for {
 		target.SetReadDeadline(time.Now().Add(60 * time.Second))
 		n, srcAP, err := target.ReadFromUDPAddrPort(buf)
@@ -580,13 +675,33 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 			log.Debug("server: HandleUDP target->client Read done", "err", err)
 			break
 		}
-		from, ok := srcAddrs[srcAP]
+		e, ok := srcAddrs[srcAP]
 		if !ok {
 			if len(srcAddrs) >= maxUDPDestsPerSession {
 				clear(srcAddrs)
 			}
-			from = cachedAddr{network: "udp", addr: net.UDPAddrFromAddrPort(srcAP).String()}
-			srcAddrs[srcAP] = from
+			e = srcEntry{
+				addr:        cachedAddr{network: "udp", addr: net.UDPAddrFromAddrPort(srcAP).String()},
+				unsolicited: !peers.addressed(srcAP),
+			}
+			srcAddrs[srcAP] = e
+			if e.unsolicited {
+				log.Debug("server: HandleUDP inbound from unaddressed source", "src", e.addr)
+			}
+		} else if e.unsolicited && peers.addressed(srcAP) {
+			// The session has addressed this peer since we last looked. Normal
+			// for ICE/STUN, where the remote can legitimately speak first, so
+			// the "unsolicited" verdict is re-checked until it clears rather
+			// than cached at first sight. Only the SOLICITED verdict is final,
+			// which is what keeps peers.addressed off the per-packet path for
+			// every well-behaved peer.
+			e.unsolicited = false
+			srcAddrs[srcAP] = e
+		}
+		from := e.addr
+		if e.unsolicited {
+			sessSrcUnsolicitedPkts++
+			sessSrcUnsolicitedBytes += int64(n)
 		}
 		h.txBytes.Add(int64(n)) // downlink read from target (tx)
 		sessTx += int64(n)      // main goroutine only, plain add is fine
@@ -607,7 +722,9 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		"exitReason", exitReason, "durationS", int(time.Since(startTime).Seconds()),
 		"destsBlocked", atomic.LoadInt64(&sessDestBlocked),
 		"destsUnresolvable", atomic.LoadInt64(&sessDestUnresolvable),
-		"destsEvicted", atomic.LoadInt64(&sessDestEvicted))
+		"destsEvicted", atomic.LoadInt64(&sessDestEvicted),
+		"srcUnsolicitedPkts", sessSrcUnsolicitedPkts,
+		"srcUnsolicitedBytes", sessSrcUnsolicitedBytes)
 }
 
 // handleDNSUDP handles DNS UDP sessions with transparent caching and a

@@ -1,8 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
 	"net"
+	"net/netip"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -458,4 +463,148 @@ func TestHandleUDP_DestCapEvictsOldestNotFreezes(t *testing.T) {
 		t.Fatal("timeout: destination past the cap was never admitted (hard-freeze regression)")
 	}
 	sess.Close()
+}
+
+// ============================================================================
+// Unsolicited-inbound visibility (branch final review I1)
+// ============================================================================
+
+func TestAddressedPeers_RefcountsAliasedDests(t *testing.T) {
+	p := newAddressedPeers()
+	peer := netip.MustParseAddrPort("203.0.113.9:27015")
+
+	if p.addressed(peer) {
+		t.Fatal("empty set reported the peer as addressed")
+	}
+
+	// A hostname dest and an IP-literal dest can resolve to the same peer.
+	ua := &net.UDPAddr{IP: net.IPv4(203, 0, 113, 9), Port: 27015}
+	p.add(ua)
+	p.add(ua)
+	if !p.addressed(peer) {
+		t.Fatal("peer not addressed after add")
+	}
+
+	// Evicting one of the two dest keys must not un-address the peer.
+	p.release(ua)
+	if !p.addressed(peer) {
+		t.Fatal("peer un-addressed after releasing only one of two aliases")
+	}
+	p.release(ua)
+	if p.addressed(peer) {
+		t.Fatal("peer still addressed after releasing the last alias")
+	}
+}
+
+func TestAddressedPeers_UnmapsIPv4In6(t *testing.T) {
+	p := newAddressedPeers()
+	// net.ResolveUDPAddr may hand back a 16-byte 4-in-6 IPv4 while
+	// ReadFromUDPAddrPort on an AF_INET socket yields a 4-byte one. They must
+	// compare equal, or every reply would look unsolicited.
+	p.add(&net.UDPAddr{IP: net.ParseIP("::ffff:203.0.113.9"), Port: 27015})
+	if !p.addressed(netip.MustParseAddrPort("203.0.113.9:27015")) {
+		t.Fatal("4-in-6 destination did not match its unmapped source form")
+	}
+}
+
+func TestAddressedPeers_NilDestIsNoop(t *testing.T) {
+	p := newAddressedPeers()
+	p.add(nil)     // negative-cache entry
+	p.release(nil) // evicting a negative-cache entry
+	if len(p.m) != 0 {
+		t.Fatalf("nil dest produced %d entries, want 0", len(p.m))
+	}
+}
+
+// Full-cone egress accepts inbound from any source, and HandleUDP meters
+// every byte it reads from the target against the user's device quota — so a
+// third party spraying a session's egress port burns that user's quota. The
+// branch decision is to keep metering everything (filtering to addressed
+// sources would let a client farm free downlink from an unaddressed port),
+// but the exposure must be observable, so the session's closing log line
+// carries how much of its tx nobody asked for.
+func TestHandleUDP_UnsolicitedInboundIsCounted(t *testing.T) {
+	var buf bytes.Buffer
+	var bufMu sync.Mutex
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	slog.SetDefault(slog.New(slog.NewTextHandler(&lockedWriter{w: &buf, mu: &bufMu},
+		&slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	learned := make(chan net.Addr, 1)
+	pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer pc.Close()
+	go func() {
+		b := make([]byte, 2048)
+		for {
+			n, from, err := pc.ReadFrom(b)
+			if err != nil {
+				return
+			}
+			select {
+			case learned <- from:
+			default:
+			}
+			pc.WriteTo(append([]byte("A"), b[:n]...), from)
+		}
+	}()
+	addrA := pc.LocalAddr().String()
+
+	h := newTestProxyHandler()
+	sess := newFakeUDPSession()
+	handlerDone := make(chan struct{})
+	go func() { h.HandleUDP(sess, addrA); close(handlerDone) }()
+	sess.feed("hello", addrA)
+
+	select {
+	case <-sess.out: // the solicited echo — must NOT be counted
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for initial echo")
+	}
+
+	var k2sEgress net.Addr
+	select {
+	case k2sEgress = <-learned:
+	case <-time.After(3 * time.Second):
+		t.Fatal("did not learn k2s egress addr")
+	}
+
+	thirdParty, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen thirdParty: %v", err)
+	}
+	defer thirdParty.Close()
+	payload := []byte("0123456789")
+	if _, err := thirdParty.WriteTo(payload, k2sEgress); err != nil {
+		t.Fatalf("thirdParty write: %v", err)
+	}
+	select {
+	case <-sess.out:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for third-party packet delivery")
+	}
+
+	sess.Close()
+	select {
+	case <-handlerDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("HandleUDP did not return")
+	}
+
+	bufMu.Lock()
+	logs := buf.String()
+	bufMu.Unlock()
+
+	want := []string{
+		"srcUnsolicitedPkts=1",
+		fmt.Sprintf("srcUnsolicitedBytes=%d", len(payload)),
+	}
+	for _, w := range want {
+		if !strings.Contains(logs, w) {
+			t.Errorf("session log missing %q — unsolicited inbound is invisible.\nlogs:\n%s", w, logs)
+		}
+	}
 }
