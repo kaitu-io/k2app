@@ -1,11 +1,17 @@
 package wire
 
 import (
+	"bufio"
 	"bytes"
+	"context"
+	"crypto/tls"
 	"log/slog"
 	"net"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/apernet/quic-go"
 )
 
 // fakeDatagramSender captures frames written by quicUDPConn.
@@ -184,5 +190,256 @@ func TestQUICUDPMux_CountsRxDrops(t *testing.T) {
 	}
 	if len(sessionCh) != cap(sessionCh) {
 		t.Fatalf("sessionCh len = %d, want unchanged at cap %d (dropped, not delivered)", len(sessionCh), cap(sessionCh))
+	}
+}
+
+// ============================================================================
+// quicStreamUDPConn / quicStreamServerUDPConn (QUIC stream-UDP fallback path,
+// used whenever datagram negotiation fails — see QUICClient.DialUDP fallback
+// to dialUDPStream). Same per-packet dest/src contract as quicUDPConn above,
+// but writeFrame writes directly to a *quic.Stream (concrete type), so a real
+// loopback QUIC stream pair is needed instead of a fake sender.
+// ============================================================================
+
+// setupQUICStreamPair returns a connected client/server *quic.Stream pair over
+// a real loopback QUIC connection, for testing frame-level protocols that
+// write/read directly on *quic.Stream (quicStreamUDPMux, quicStreamWriter).
+func setupQUICStreamPair(t *testing.T) (clientStream, serverStream *quic.Stream, cleanup func()) {
+	t.Helper()
+	cert := generateTestCert(t)
+
+	serverUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTransport := &quic.Transport{Conn: serverUDP}
+	ln, err := serverTransport.Listen(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h3"},
+	}, DefaultQUICConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverAddr := serverUDP.LocalAddr().(*net.UDPAddr)
+
+	clientUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTransport := &quic.Transport{Conn: clientUDP}
+
+	serverConnCh := make(chan *quic.Conn, 1)
+	serverErrCh := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept(context.Background())
+		if err != nil {
+			serverErrCh <- err
+			return
+		}
+		serverConnCh <- conn
+	}()
+
+	clientConn, err := clientTransport.Dial(context.Background(), serverAddr, &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"h3"},
+	}, DefaultQUICConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var serverConn *quic.Conn
+	select {
+	case serverConn = <-serverConnCh:
+	case err := <-serverErrCh:
+		t.Fatalf("server accept: %v", err)
+	}
+
+	// AcceptStream blocks until the peer actually sends a frame on the
+	// stream — OpenStreamSync alone only reserves a local stream ID and
+	// doesn't make the stream visible to the remote side. So the accept
+	// must run concurrently with (and complete after) the client's first
+	// write, which we do here as a priming handshake: the same H3 frame
+	// type + stream header that dialUDPStream/handleUDPStream exchange in
+	// production, consumed here so it doesn't leak into the UDP frames the
+	// test reads/writes afterward.
+	ssCh := make(chan *quic.Stream, 1)
+	ssErrCh := make(chan error, 1)
+	go func() {
+		ss, err := serverConn.AcceptStream(context.Background())
+		if err != nil {
+			ssErrCh <- err
+			return
+		}
+		ssCh <- ss
+	}()
+
+	cs, err := clientConn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteH3ProxyFrameType(cs); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteStreamHeader(cs, StreamTypeUDP, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	var ss *quic.Stream
+	select {
+	case ss = <-ssCh:
+	case err := <-ssErrCh:
+		t.Fatalf("server accept stream: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for server AcceptStream")
+	}
+
+	br := bufio.NewReader(ss)
+	if _, _, err := ReadVarint(br); err != nil {
+		t.Fatalf("read H3 frame type: %v", err)
+	}
+	if _, _, err := ReadStreamHeader(br); err != nil {
+		t.Fatalf("read stream header: %v", err)
+	}
+
+	cleanup = func() {
+		cs.Close()
+		ss.Close()
+		clientConn.CloseWithError(0, "")
+		serverConn.CloseWithError(0, "")
+		clientTransport.Close()
+		serverTransport.Close()
+	}
+	return cs, ss, cleanup
+}
+
+func newTestQUICStreamUDPMux(stream *quic.Stream) *quicStreamUDPMux {
+	return &quicStreamUDPMux{
+		stream:      stream,
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
+	}
+}
+
+func TestQUICStreamUDPConn_WriteTo_PerPacketDest(t *testing.T) {
+	clientStream, serverStream, cleanup := setupQUICStreamPair(t)
+	defer cleanup()
+
+	mux := newTestQUICStreamUDPMux(clientStream)
+	c := &quicStreamUDPConn{
+		mux:        mux,
+		sessionID:  7,
+		targetAddr: "1.1.1.1:443",
+		readCh:     make(chan *UDPFrame, 4),
+		reaped:     make(chan struct{}),
+		done:       make(chan struct{}),
+	}
+
+	// nil addr → session target
+	if _, err := c.WriteTo([]byte("a"), nil); err != nil {
+		t.Fatalf("WriteTo(nil): %v", err)
+	}
+	// explicit addr → that addr
+	if _, err := c.WriteTo([]byte("b"), rawAddr("2.2.2.2:27015")); err != nil {
+		t.Fatalf("WriteTo(addr): %v", err)
+	}
+
+	br := bufio.NewReader(serverStream)
+	f0, err := ReadSmuxUDPFrame(br)
+	if err != nil {
+		t.Fatalf("parse frame 0: %v", err)
+	}
+	if f0.Addr != "1.1.1.1:443" {
+		t.Errorf("frame 0 addr = %q, want 1.1.1.1:443", f0.Addr)
+	}
+	f1, err := ReadSmuxUDPFrame(br)
+	if err != nil {
+		t.Fatalf("parse frame 1: %v", err)
+	}
+	if f1.Addr != "2.2.2.2:27015" {
+		t.Errorf("frame 1 addr = %q, want 2.2.2.2:27015", f1.Addr)
+	}
+}
+
+func TestQUICStreamUDPConn_ReadFrom_ReturnsFrameSource(t *testing.T) {
+	mux := newTestQUICStreamUDPMux(nil) // no write in this test — real stream not needed
+	c := &quicStreamUDPConn{
+		mux:        mux,
+		sessionID:  7,
+		targetAddr: "1.1.1.1:443",
+		readCh:     make(chan *UDPFrame, 4),
+		reaped:     make(chan struct{}),
+		done:       make(chan struct{}),
+	}
+
+	// Frame carrying a real source (new server) → that source is returned.
+	c.readCh <- &UDPFrame{SessionID: 7, Addr: "3.3.3.3:27015", Payload: []byte("x")}
+	buf := make([]byte, 16)
+	n, from, err := c.ReadFrom(buf)
+	if err != nil {
+		t.Fatalf("ReadFrom: %v", err)
+	}
+	if n != 1 || from.String() != "3.3.3.3:27015" {
+		t.Fatalf("n=%d from=%v, want 1 / 3.3.3.3:27015", n, from)
+	}
+
+	// Frame with empty addr (old server / subsequent-packet optimization) →
+	// falls back to session target.
+	c.readCh <- &UDPFrame{SessionID: 7, Addr: "", Payload: []byte("y")}
+	_, from2, err := c.ReadFrom(buf)
+	if err != nil {
+		t.Fatalf("ReadFrom 2: %v", err)
+	}
+	if from2.String() != "1.1.1.1:443" {
+		t.Fatalf("from2 = %v, want 1.1.1.1:443", from2)
+	}
+}
+
+func TestQuicStreamServerUDPConn_PerPacketAddrRoundTrip(t *testing.T) {
+	clientStream, serverStream, cleanup := setupQUICStreamPair(t)
+	defer cleanup()
+
+	c := &quicStreamServerUDPConn{
+		writer:    &quicStreamWriter{stream: serverStream},
+		sessionID: 9,
+		addr:      "1.1.1.1:443",
+		log:       slog.Default(),
+		readCh:    make(chan *UDPFrame, 4),
+		done:      make(chan struct{}),
+	}
+
+	// Uplink: a frame addressed to a second destination surfaces that dest.
+	c.deliver(&UDPFrame{SessionID: 9, Addr: "2.2.2.2:27015", Payload: []byte("hi")})
+	buf := make([]byte, 16)
+	n, to, err := c.ReadFrom(buf)
+	if err != nil {
+		t.Fatalf("ReadFrom: %v", err)
+	}
+	if n != 2 || to.String() != "2.2.2.2:27015" {
+		t.Fatalf("n=%d to=%v, want 2 / 2.2.2.2:27015", n, to)
+	}
+
+	// Uplink with empty addr (subsequent-packet optimization) → session addr.
+	c.deliver(&UDPFrame{SessionID: 9, Addr: "", Payload: []byte("yo")})
+	_, to2, err := c.ReadFrom(buf)
+	if err != nil {
+		t.Fatalf("ReadFrom 2: %v", err)
+	}
+	if to2.String() != "1.1.1.1:443" {
+		t.Fatalf("to2 = %v, want 1.1.1.1:443", to2)
+	}
+
+	// Downlink: the real source is carried back in the frame addr.
+	if _, err := c.WriteTo([]byte("pong"), rawAddr("3.3.3.3:27015")); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	br := bufio.NewReader(clientStream)
+	f, err := ReadSmuxUDPFrame(br)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if f.Addr != "3.3.3.3:27015" {
+		t.Errorf("downlink frame addr = %q, want 3.3.3.3:27015", f.Addr)
 	}
 }
