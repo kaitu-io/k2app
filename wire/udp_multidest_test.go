@@ -560,3 +560,73 @@ func TestQuicStreamServerUDPConn_PerPacketAddrRoundTrip(t *testing.T) {
 		t.Errorf("downlink frame addr = %q, want 3.3.3.3:27015", f.Addr)
 	}
 }
+
+// QUICClient.WireStats folds the stream-UDP mux's drop counters into the
+// connection's totals — sessions on a datagram-less server run there, and
+// their drops belong to the same connection. Nothing exercised that merge:
+// replacing its body with `_ = sm` left the whole wire package green, which
+// is the "green test never reached its target" shape. It also sits on exactly
+// the number canary triage reads, so a broken merge during a datagram→stream
+// fallback would surface as a structural 0 with nobody the wiser.
+func TestQUICClient_WireStats_FoldsStreamMuxDrops(t *testing.T) {
+	newMuxMaps := func() (map[uint32]chan *UDPFrame, map[uint32]chan struct{}, map[uint32]*atomic.Int64) {
+		return make(map[uint32]chan *UDPFrame), make(map[uint32]chan struct{}), make(map[uint32]*atomic.Int64)
+	}
+
+	sessions, sessionDone, lastActive := newMuxMaps()
+	dgram := &quicUDPMux{
+		sessions: sessions, sessionDone: sessionDone, lastActive: lastActive,
+		done: make(chan struct{}),
+	}
+	dgram.udpTxDrops.Store(2)
+	dgram.udpRxDrops.Store(4)
+	dgram.udpRxDropsNoSession.Store(1)
+
+	c := &QUICClient{}
+	c.udpMux = dgram
+
+	// Datagram path only: totals are the datagram mux's.
+	s := c.WireStats()
+	if s.Transport != "quic" {
+		t.Fatalf("Transport = %q, want quic", s.Transport)
+	}
+	if s.UDPRxDrops != 4 || s.UDPRxDropsNoSession != 1 || s.UDPTxDrops != 2 {
+		t.Fatalf("datagram-only stats = tx %d / rx %d / noSess %d, want 2 / 4 / 1",
+			s.UDPTxDrops, s.UDPRxDrops, s.UDPRxDropsNoSession)
+	}
+
+	// A datagram-less server pushed sessions onto the stream mux, and it has
+	// been dropping. Those drops must show up in the connection's totals.
+	sessions, sessionDone, lastActive = newMuxMaps()
+	stream := &quicStreamUDPMux{
+		sessions: sessions, sessionDone: sessionDone, lastActive: lastActive,
+		done: make(chan struct{}),
+	}
+	stream.udpRxDrops.Store(5)
+	stream.udpRxDropsNoSession.Store(3)
+	dgram.streamMux = stream
+
+	s = c.WireStats()
+	if s.UDPRxDrops != 9 {
+		t.Errorf("UDPRxDrops = %d, want 9 (4 datagram + 5 stream) — stream-mux drops are not folded in", s.UDPRxDrops)
+	}
+	if s.UDPRxDropsNoSession != 4 {
+		t.Errorf("UDPRxDropsNoSession = %d, want 4 (1 datagram + 3 stream)", s.UDPRxDropsNoSession)
+	}
+	// Unchanged: the stream mux has no lossy send path, so it contributes no
+	// TX drops. See the per-transport table on WireStats.
+	if s.UDPTxDrops != 2 {
+		t.Errorf("UDPTxDrops = %d, want 2 (stream mux contributes none)", s.UDPTxDrops)
+	}
+}
+
+// A QUICClient with no UDP mux at all (no UDP session ever opened) must report
+// zeros rather than panic — the nil guards in WireStats are load-bearing on
+// every heartbeat taken before the first UDP session.
+func TestQUICClient_WireStats_NoMux(t *testing.T) {
+	c := &QUICClient{}
+	s := c.WireStats()
+	if s.Transport != "quic" || s.UDPRxDrops != 0 || s.UDPRxDropsNoSession != 0 || s.UDPTxDrops != 0 {
+		t.Fatalf("WireStats with no mux = %+v, want quic with zero drops", s)
+	}
+}

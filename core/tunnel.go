@@ -719,9 +719,12 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 	// The first packet's destination defines the session. It is written by the
 	// TX goroutine below and read by the RX loop in the caller goroutine
 	// (repairSourceAddr), so it is an atomic handoff rather than a local: a
-	// plain variable here is a data race that -race catches. It is stored at
-	// most once per session, so the pointer indirection costs one allocation
-	// for the whole session, not one per packet.
+	// plain variable here is a data race that -race catches.
+	//
+	// It is stored at most once per session, and the TX loop is careful to
+	// keep it that cheap — one allocation for the whole session, none per
+	// packet. BenchmarkPipePacketUplink pins that at 0 allocs/op; see the
+	// comment on the store below for the trap.
 	var primary atomic.Pointer[net.Addr]
 
 	// local → remote (TX) in spawned goroutine
@@ -747,10 +750,15 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 			if to != nil {
 				p := primary.Load()
 				if p == nil {
-					// `to` is redeclared by the := above on every iteration, so
-					// taking its address here does not alias later packets.
-					primary.Store(&to)
-					p = &to
+					// Copy into a variable declared INSIDE this branch before
+					// taking its address. Writing &to instead makes `to` escape,
+					// and since `to` is redeclared by the := above on every
+					// iteration, that is a 16-byte heap allocation on every
+					// packet for a value stored once per session. `first` only
+					// escapes on the one iteration that takes this branch.
+					first := to
+					primary.Store(&first)
+					p = &first
 				}
 				if !sameUDPAddr(to, *p) {
 					dst = to
