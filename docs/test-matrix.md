@@ -125,3 +125,34 @@ PASS:  T08 — SSE event delivery confirmed (all transitions)
 | AR05 | P1 | Ingestion | relay-add-nodes 并入 Go 池 added>0 | Go 报告 added 计数 | PASS | seed 节点 35.88.216.55 被 relay-fetch 实际选用 — 摄入端到端闭环 |
 | AR06 | P1 | No-regression | 正常连接隧道 | tunnel connected | BLOCKED:device-disconnected | 需登录+设备;隧道连接走 _k2.run(up),非 relay-fetch 路径,与 A 正交 |
 | AR07 | P2 | Logged-in | 登录态冷启动(force-stop+重开)relay 仍快 | 重启后 relay-fetch 快 | BLOCKED:device-disconnected | 设备 USB 掉线;relay 传输对认证无感(已见 /api/user/info 走 relay 返 401),登录后仅 401→200,同传输 |
+
+---
+
+# SP4 Release Regression — macOS proxy-mode (k2 e158935)
+
+**Date:** 2026-08-04
+**Platform:** macOS, k2 binary `0.4.8 (e158935)` built from feat/udp-game-wiring, **proxy mode** (no TUN, no root)
+**Scope:** P0 regression after k2 submodule advance (SP1 full-cone UDP + SP2 port/protocol rules) + webapp type alignment
+**Method:** QA daemon on `127.0.0.1:1778` (isolated from production daemon on 1777), real production node JP 5372 (18.182.139.255), real account session (hi@kaitu.io, membership extended for QA)
+
+## Test Matrix
+
+| ID | Pri | Category | Test Case | Expected | Status | Notes |
+|----|-----|----------|-----------|----------|--------|-------|
+| Q01 | P0 | Build | Binary version stamp | `0.4.8 (e158935)` | PASS | ldflags stamping verified against the shipped artifact |
+| Q02 | P0 | Daemon | Boot in proxy mode, API answers | /ping pong, status=disconnected | PASS | config `listen:` override to 1778 works |
+| Q03 | P0 | Connect | `up` with routes containing a **port-dimension rule** (`{network:udp, port:["9999"]}→direct`) + catch-all proxy | connected; port route accepted | PASS | Wire-contract JSON → Go compile → engine accepts; connected in ~7s |
+| Q04 | P0 | Data path | `curl -x socks5h://` through tunnel | exit IP == node IP | PASS | 18.182.139.255 == JP 5372; real wire + remote DNS + TCP relay on new binary |
+| Q05 | P0 | Disconnect | `down` | disconnected | PASS | immediate |
+| Q06 | P0 | Rules | `up` with `{preset:"games"}→direct` route | games.krs fetched + engine connects | PASS | `~/Library/Caches/k2/rules/games.krs` (20 KB) pulled from CDN release v2026.08.04; SP3 bundle live end-to-end |
+| Q07a | P0 | Error | `up` with malformed URL (no ECH) | clean sync error, no zombie state | PASS | 511 "ECH config required", state stays disconnected |
+| Q07b | P0 | Error | `up` valid URL shape, blackhole IP (192.0.2.1) | error surfaces, never eternal "connected" | PASS | transport race → sync 511 "all candidates failed or timed out", state=disconnected. **Obsoletes 2026-02-26 CRITICAL T03** — connect now fails synchronously |
+| Q08 | P1 | UI | Webapp UI regression | — | SKIP:no-runtime-change | branch webapp diff is type-only; vitest full suite green (test_build.sh 15/15) |
+| Q09 | P1 | App Bypass | per-app routing | — | SKIP:no-runtime-change | no engine behavior change for existing configs; unit suites cover |
+| Q10 | P0 | Mobile | iOS/Android regression | — | BLOCKED:Task-4 | real-device smoke required |
+| Q11 | P0 | UDP | TUN-mode NAT type (Full Cone) + real game + Telegram/KakaoTalk voice (#3051/#3345) | — | BLOCKED:Task-4 | needs attended TUN + phones + SP1-deployed node |
+
+## Session Notes
+
+- Proxy mode is the safe regression vehicle on a shared dev machine: no TUN, no root, no route hijack, yet exercises the full wire/DNS/rule-engine path against production nodes.
+- UDP full-cone itself is covered by SP1's e2e (multi-dest echo servers) and engine race suites; system-level TUN UDP deferred to Task 4 attended smoke.
