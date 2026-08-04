@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { MatchConfig, PresetName, RouteConfig } from '../client-config';
 
+// Type enforcement via tsc-checked contract file: see client-config.contract.ts
 describe('MatchConfig wire contract', () => {
   it('accepts destination-port specs as strings', () => {
     const m: MatchConfig = { network: 'udp', port: ['27015', '27000-28000'] };
