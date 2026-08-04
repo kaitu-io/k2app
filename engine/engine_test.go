@@ -2294,6 +2294,36 @@ func TestBuildRouteEntries_SrcIPCIDR(t *testing.T) {
 	}
 }
 
+// TestBuildRouteEntries_PortOnly pins the two assembly-site gates that a route
+// whose ONLY criterion is match.port has to pass. Both fail silently:
+//   - hasAnyCriteria decides whether the compiled entry enters the routing
+//     table at all. Omit PortRanges there and the entry is built, then dropped
+//     — the rule vanishes with no error anywhere.
+//   - MatchConfig.HasCriteria decides whether a LAST route counts as the
+//     fallback. Omit Port there and this route silently becomes the catch-all,
+//     sending every unmatched connection to the game outbound.
+//
+// This route is deliberately the last one, so one test covers both.
+func TestBuildRouteEntries_PortOnly(t *testing.T) {
+	routes := []config.RouteConfig{
+		{Via: "k2v5://u:p@1.2.3.4:443", Match: rule.MatchConfig{Port: []string{"27000-28000"}}},
+	}
+	outboundMap := map[string]rule.Target{"k2v5://u:p@1.2.3.4:443": rule.Target(2)}
+	entries, fallback, _ := buildRouteEntries(routes, nil, outboundMap, heapRegionExpander(nil))
+	if len(entries) != 1 {
+		t.Fatalf("port-only route must produce 1 entry, got %d", len(entries))
+	}
+	if len(entries[0].PortRanges) != 1 || entries[0].PortRanges[0] != (rule.PortRange{Lo: 27000, Hi: 28000}) {
+		t.Fatalf("want compiled [27000-28000], got %v", entries[0].PortRanges)
+	}
+	if entries[0].Target != rule.Target(2) {
+		t.Fatalf("want target 2, got %v", entries[0].Target)
+	}
+	if fallback != outboundDirect {
+		t.Fatalf("port-only last route must not become the fallback: fallback = %v, want direct(%v)", fallback, outboundDirect)
+	}
+}
+
 // TestBuildRouteEntries_AllInvalidInlineDropped pins the IsEmpty guard at the
 // assembly site: an inline route whose domain_suffix is not a valid hostname
 // must contribute NO route entry (old BuildInlineSet stored the garbage and
