@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"container/list"
 	"log/slog"
 	"net/netip"
 	"strings"
@@ -85,6 +86,8 @@ func (r *RouteEntry) hasProcessCriteria() bool {
 type Engine struct {
 	mu       deadlock.RWMutex
 	tmp      map[netip.Addr]Target
+	tmpOrder *list.List                   // LRU order for tmp: Front()=oldest, Back()=newest. Mutated only under e.mu; see tmp_lru.go.
+	tmpIndex map[netip.Addr]*list.Element // O(1) lookup into tmpOrder by addr. Must stay in lockstep with both tmp and tmpOrder — see tmpLRUReset.
 	routes   []RouteEntry
 	fallback Target
 	// disableSniff: the bulk of traffic is proxied (a match:all proxy catch-all),
@@ -123,6 +126,8 @@ type reporterSlot struct{ r MissReporter }
 func NewEngine(routes []RouteEntry, fallback Target, bundles []*krs.Bundle, disableSniff bool) *Engine {
 	return &Engine{
 		tmp:          make(map[netip.Addr]Target),
+		tmpOrder:     list.New(),
+		tmpIndex:     make(map[netip.Addr]*list.Element),
 		routes:       routes,
 		fallback:     fallback,
 		bundles:      bundles,
@@ -568,21 +573,23 @@ func (e *Engine) SetTmpRule(ip string, target Target) {
 		return
 	}
 	prev, existed := e.tmp[addr]
-	evicted := 0
+	var evictedAddr netip.Addr
+	evicted := false
 	if !existed && len(e.tmp) >= tmpRuleCap {
-		// Bounded cache: clear and let DNS re-pin live IPs on their next lookup.
-		// Cheaper and constitution-safe vs an LRU; the pin cache is an
-		// optimization, not a source of truth (routes still match correctly).
-		evicted = len(e.tmp)
-		e.tmp = make(map[netip.Addr]Target)
-		prev, existed = 0, false
+		// Bounded cache: evict exactly the least-recently-used pin and let DNS
+		// re-pin it on its next lookup if it's still live. LRU (rather than a
+		// whole-table clear) keeps hot pins warm under DNS churn near the cap;
+		// the pin cache is still an optimization, not a source of truth
+		// (routes still match correctly without it).
+		evictedAddr, evicted = e.tmpLRUEvictOldest()
 	}
 	e.tmp[addr] = target
+	e.tmpLRUTouch(addr, target)
 	tmpSize := len(e.tmp)
 	e.mu.Unlock()
 
-	if evicted > 0 {
-		slog.Info("DIAG: rule-tmp-evict", "evicted", evicted, "cap", tmpRuleCap)
+	if evicted {
+		slog.Info("DIAG: rule-tmp-evict", "ip", evictedAddr.String(), "cap", tmpRuleCap)
 	}
 	switch {
 	case !existed:
@@ -598,13 +605,6 @@ func (e *Engine) SetTmpRule(ip string, target Target) {
 // tmpRuleCap bounds the DNS-learned pin cache so a long-lived tunnel under heavy
 // DNS churn cannot grow e.tmp without limit (iOS NE jetsam budget).
 const tmpRuleCap = 4096
-
-// tmpLen returns the number of DNS-learned pins. Test/diagnostic accessor.
-func (e *Engine) tmpLen() int {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return len(e.tmp)
-}
 
 // DisableSniff reports whether BT/SNI sniffing should be off because the bulk of
 // traffic is proxied. Sniffing only refines routing (BT→direct, SNI direct→proxy
@@ -671,6 +671,7 @@ func (e *Engine) Close() {
 	e.bundles = nil
 	e.routes = nil
 	e.tmp = make(map[netip.Addr]Target)
+	e.tmpLRUReset()
 	e.mu.Unlock()
 	runClosers(cs)
 }
@@ -701,6 +702,7 @@ func (e *Engine) reload(routes []RouteEntry, bundles []*krs.Bundle, closers []fu
 	e.closers = closers
 	e.routes = routes
 	e.tmp = make(map[netip.Addr]Target)
+	e.tmpLRUReset()
 	e.mu.Unlock()
 
 	slog.Info("DIAG: rule-tmp-reload",
