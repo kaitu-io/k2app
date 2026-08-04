@@ -851,7 +851,8 @@ func TestSetTmpRule_PinsWhenRoutesExist(t *testing.T) {
 }
 
 func TestSetTmpRule_CapsGrowth(t *testing.T) {
-	e := NewEngine(nil, Target(0), nil, false)
+	routes := []RouteEntry{{Target: Target(0)}} // ≥1 route so pins activate
+	e := NewEngine(routes, Target(0), nil, false)
 	for i := 0; i < 5000; i++ {
 		e.SetTmpRule(fmt.Sprintf("10.%d.%d.%d", (i>>16)&255, (i>>8)&255, i&255), Target(2))
 	}

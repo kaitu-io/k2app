@@ -3,6 +3,7 @@ package rule
 import (
 	"fmt"
 	"net/netip"
+	"strings"
 	"testing"
 )
 
@@ -169,23 +170,60 @@ func TestClose_ResetsLRUStructuresInSync(t *testing.T) {
 	for i := 0; i < n; i++ {
 		e.SetTmpRule(tmpTestIP(10, i), Target(1))
 	}
-	e.mu.Lock()
+	e.mu.RLock()
 	before := e.tmpOrder.Len()
-	e.mu.Unlock()
+	e.mu.RUnlock()
 	if before != n {
 		t.Fatalf("setup: tmpOrder.Len() = %d, want %d", before, n)
 	}
 
 	e.Close()
 
-	e.mu.Lock()
+	e.mu.RLock()
 	orderLen := e.tmpOrder.Len()
 	indexLen := len(e.tmpIndex)
-	e.mu.Unlock()
+	e.mu.RUnlock()
 	if orderLen != 0 {
 		t.Errorf("Close: tmpOrder.Len() = %d, want 0", orderLen)
 	}
 	if indexLen != 0 {
 		t.Errorf("Close: len(tmpIndex) = %d, want 0", indexLen)
+	}
+}
+
+// TestSetTmpRule_DIAGEvictedIPField verifies the DIAG payload contract for
+// eviction: when SetTmpRule evicts to make room, the evicted IP rides along
+// on the same `rule-tmp-pin` add line (see SetTmpRule's doc comment for why
+// there's no separate rule-tmp-evict line) in an `evictedIP` field — and it
+// must be the EVICTED (oldest) IP, not the new pin's own IP. On-call triage
+// greps this field to see which pin got kicked out; the two addresses are
+// easy to transpose by accident since both are in scope at the log call
+// site. Mutation check: swapping evictedAddr for addr (the new pin's own
+// address) in the log call must turn this red.
+func TestSetTmpRule_DIAGEvictedIPField(t *testing.T) {
+	buf := captureSlog(t)
+	e := NewEngine([]RouteEntry{{Target: Target(0), NetworkMatch: "tcp"}}, Target(2), nil, false)
+	defer e.Close()
+
+	for i := 0; i < tmpRuleCap; i++ {
+		e.SetTmpRule(tmpTestIP(10, i), Target(1))
+	}
+	buf.Reset() // discard the cap-filling pin logs
+
+	newIP := "203.0.113.11"
+	oldestIP := tmpTestIP(10, 0)
+	e.SetTmpRule(newIP, Target(1))
+
+	out := buf.String()
+	if !strings.Contains(out, "DIAG: rule-tmp-pin") {
+		t.Fatalf("missing rule-tmp-pin log on overflow:\n%s", out)
+	}
+	wantEvicted := fmt.Sprintf("evictedIP=%s", oldestIP)
+	if !strings.Contains(out, wantEvicted) {
+		t.Errorf("evictedIP field wrong or missing; want %q in:\n%s", wantEvicted, out)
+	}
+	if strings.Contains(out, fmt.Sprintf("evictedIP=%s", newIP)) {
+		t.Errorf("evictedIP must be the EVICTED (oldest) ip %q, not the new pin's own ip %q:\n%s",
+			oldestIP, newIP, out)
 	}
 }

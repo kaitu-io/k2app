@@ -549,7 +549,15 @@ func matchMeta(r *RouteEntry, meta ConnMeta) bool {
 // Threshold-gated DIAG: emits `DIAG: rule-tmp-pin` only on first pin of an
 // IP, or when target changes for an already-pinned IP. Duplicate calls
 // (same ip + same target) are silent — DNS pipeline re-pins on every cache
-// hit and we'd flood the log otherwise.
+// hit and we'd flood the log otherwise. Eviction does NOT get its own DIAG
+// line: it only ever happens on the "add" path (a new key at capacity), so
+// the evicted IP rides along as an extra field on that same add line —
+// zero information loss, zero extra log volume. (An earlier version of this
+// method emitted a standalone `DIAG: rule-tmp-evict` line per eviction;
+// under the old whole-table-clear behavior that was one line per 4096 pins,
+// but LRU eviction fires once per new pin once the cache is warm, which
+// would have turned it into a 1:1 flood — exactly what the paragraph above
+// says duplicate suppression exists to avoid.)
 func (e *Engine) SetTmpRule(ip string, target Target) {
 	addr, err := netip.ParseAddr(ip)
 	if err != nil {
@@ -575,23 +583,41 @@ func (e *Engine) SetTmpRule(ip string, target Target) {
 	prev, existed := e.tmp[addr]
 	var evictedAddr netip.Addr
 	evicted := false
+	desync := false
 	if !existed && len(e.tmp) >= tmpRuleCap {
 		// Bounded cache: evict exactly the least-recently-used pin and let DNS
 		// re-pin it on its next lookup if it's still live. LRU (rather than a
 		// whole-table clear) keeps hot pins warm under DNS churn near the cap;
 		// the pin cache is still an optimization, not a source of truth
 		// (routes still match correctly without it).
-		evictedAddr, evicted = e.tmpLRUEvictOldest()
+		var ok bool
+		evictedAddr, ok = e.tmpLRUEvictOldest()
+		if ok {
+			evicted = true
+		} else {
+			// Unreachable as long as tmpOrder/tmpIndex stay in lockstep with
+			// tmp (see tmpLRUReset's doc comment) — len(e.tmp) >= tmpRuleCap
+			// with tmpRuleCap > 0 means tmpOrder can't be empty. If this ever
+			// fires, some tmp-mutation path forgot to keep the LRU structures
+			// synced, and without this warning the failure mode is silent:
+			// e.tmp grows past tmpRuleCap with no signal until whatever
+			// consumes the memory (iOS NE jetsam) notices instead.
+			desync = true
+		}
 	}
 	e.tmp[addr] = target
-	e.tmpLRUTouch(addr, target)
+	e.tmpLRUTouch(addr)
 	tmpSize := len(e.tmp)
 	e.mu.Unlock()
 
-	if evicted {
-		slog.Info("DIAG: rule-tmp-evict", "ip", evictedAddr.String(), "cap", tmpRuleCap)
+	if desync {
+		slog.Warn("DIAG: rule-tmp-lru-desync", "tmpSize", tmpSize, "cap", tmpRuleCap)
 	}
 	switch {
+	case !existed && evicted:
+		slog.Info("DIAG: rule-tmp-pin",
+			"ip", ip, "target", uint8(target), "action", "add", "tmpSize", tmpSize,
+			"evictedIP", evictedAddr.String())
 	case !existed:
 		slog.Info("DIAG: rule-tmp-pin",
 			"ip", ip, "target", uint8(target), "action", "add", "tmpSize", tmpSize)
@@ -603,7 +629,13 @@ func (e *Engine) SetTmpRule(ip string, target Target) {
 }
 
 // tmpRuleCap bounds the DNS-learned pin cache so a long-lived tunnel under heavy
-// DNS churn cannot grow e.tmp without limit (iOS NE jetsam budget).
+// DNS churn cannot grow e.tmp without limit (iOS NE jetsam budget). Per-entry
+// cost is higher than the bare map alone: e.tmp + tmpOrder + tmpIndex
+// together measured at ~274 B/entry (runtime.ReadMemStats HeapAlloc delta,
+// full 4096-entry cache, GC'd before/after) — ~1.07 MB resident at cap, vs
+// ~349 KB for the pre-LRU bare map. Still ~2.1% of the NE 50 MB jetsam
+// budget, so the cap itself doesn't need adjusting for this — but size any
+// future cap change off this number, not the old bare-map one.
 const tmpRuleCap = 4096
 
 // DisableSniff reports whether BT/SNI sniffing should be off because the bulk of
