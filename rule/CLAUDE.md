@@ -6,7 +6,7 @@ Multi-ruleset routing engine. Turns `routes:` in `ClientConfig` into an ordered
 | Caller | Entry point | Knows |
 |--------|-------------|-------|
 | DNS pipeline (`core/dns`) | `Match(host)` | a host string, nothing else |
-| L4 tunnel (`core/tunnel.go`) | `MatchConn(host, ConnMeta)` | host + connection metadata |
+| L4 tunnel (`core/tunnel.go`) | `MatchConn(host, ConnMeta)`, reached via `core.Router.RouteConn` | host + connection metadata |
 | Sniffer, post-first-packet (`core/tunnel.go`) | `RouteConnProto(host, ConnMeta)` | the sniffed application protocol |
 
 Route entries are built in `engine/engine.go buildRouteEntries`, not here — this
@@ -29,10 +29,18 @@ checks host and meta criteria with **AND** semantics: a route matches when
 Consequence worth internalizing: **`port` and `protocol` are connection-time
 dimensions and cannot participate in a DNS-time decision.** A rule like
 `{domain_suffix: [...], port: ["443"]}` does not steer the DNS answer; it steers
-the connection. If a domain-only route already pinned that IP at DNS time (see
-tmp pin below), the port rule still gets its say — meta-only routes are
-evaluated *before* the tmp cache in `matchConnLocked`, precisely so
-per-connection identity supersedes IP-level caching.
+the connection.
+
+Mind the ordering, though — it is the opposite of what "meta beats the pin
+cache" suggests for *combined* routes. The pre-tmp pass in `matchConnLocked`
+skips on `hasHostCriteria() || !hasMetaCriteria()`, i.e. it considers **purely
+meta** routes only. A `{domain_suffix, port}` route compiles to a non-empty
+`Sets`, so it has host criteria and is skipped there; if the destination IP was
+already pinned at DNS time, the `e.tmp` hit returns before the main loop and
+that route is never evaluated at all. Only a route with **no host criteria
+whatsoever** (port-only, process-only, …) is guaranteed its say ahead of the
+pin cache — that is the case the pre-tmp pass exists for, so per-connection
+identity can supersede IP-level caching.
 
 That pre-tmp pass is itself gated on a local `hasAnyMeta`, which is narrower
 than the criteria it guards — see "Known debt" under the predicate family
@@ -107,12 +115,21 @@ step of its single-peek sniff block.
 This is the real semantic boundary of the dimension, and it is easy to write a
 rule that can never match. Sniffing is gated twice.
 
-**Outer gate (both transports)** — no sniffing at all when:
+**Outer gate** — the first packet/bytes are peeked only when the connection has
+a usable outbound (`t.outbound(action) != nil`, so a **reject**-routed
+connection is never sniffed) **and** at least one sniff flag is on. The flag
+set differs by transport:
 
-- the connection routes to **reject** (`t.outbound(action) == nil`), or
-- sniffing is off for this config. `SniffBT` and `SniffSNI` are both wired to
-  `!ruleEngine.DisableSniff()` (`engine/engine.go`), so in **bulk-proxy /
-  global mode a `protocol:` rule can never fire at all.**
+- TCP: `sniffBT || sniffSNI`
+- UDP: `sniffBT || sniffSNI || blockQUIC`
+
+`SniffBT` and `SniffSNI` are both wired to `!ruleEngine.DisableSniff()`
+(`engine/engine.go`), so in bulk-proxy / global mode both are false and **no
+TCP protocol rule can fire**. UDP is **not** symmetric: `BlockQUIC` comes
+straight from `client.BlockQUIC` and has nothing to do with `DisableSniff()`.
+A global-mode config with `blockQUIC` on still peeks UDP, so a QUIC packet on a
+connection that a preceding direct exception route sent direct still reaches
+the re-route. Do not read "global mode" as "protocol rules are off".
 
 **Inner gate (per protocol)**:
 
@@ -120,7 +137,7 @@ rule that can never match. Sniffing is gated twice.
 |---|---|---|---|
 | `bittorrent` | TCP + UDP | `sniffBT` **and** the connection was headed for the **proxy** (`action != directTarget`) | the connection was already routed direct |
 | `stun`, `dtls` | UDP | same gate as above | the connection was already routed direct |
-| `quic` | UDP | `meta.Protocol == ""` (not already STUN/DTLS/BT) — **not** subject to the direct/proxy precondition | the first packet was classified as STUN/DTLS/BT first |
+| `quic` | UDP | `meta.Protocol == ""` (not already classified STUN/DTLS/BT). **Not** subject to the proxy-bound precondition — but see the `blockQUIC` drop below | the first packet was classified STUN/DTLS/BT first, **or** `blockQUIC` is on and the connection was proxy-bound |
 
 Concretely, for the three protocols behind the proxy-bound precondition:
 
@@ -130,6 +147,15 @@ Concretely, for the three protocols behind the proxy-bound precondition:
   **already direct never fires** — that connection was never sniffed, so
   `ConnMeta.Protocol` stays empty and every route carrying `Protocols` is
   fail-closed against it.
+
+And the QUIC-specific trap, which bites the most natural rule someone writes:
+
+- `{protocol:["quic"], via: direct}` — "don't block it, just send it direct" —
+  **never fires on a proxy-bound connection while `blockQUIC` is on**. The
+  fast-path drop inside the QUIC detector (`if t.blockQUIC && action !=
+  t.directTarget { return }`, and the second identical check after the SNI
+  step) returns from the handler *before* the re-route runs. `blockQUIC`
+  pre-empts exactly the rule meant to override it.
 
 Do not "fix" that inner gate: it is what keeps WebRTC on the tunnel for #3051
 and what keeps sniffing off the hot path for already-direct traffic.
@@ -271,10 +297,11 @@ re-pins on every cache hit, so a live domain is continuously touched.
 `e.tmp` (addr → Target), `e.tmpOrder` (`*list.List`, Front = oldest), and
 `e.tmpIndex` (addr → `*list.Element`) are **one logical unit**. Clearing or
 mutating one without the others leaves stale elements whose eviction becomes a
-no-op `delete` — and `e.tmp` then grows past the cap silently. All four write
-sites, all under `e.mu` held for writing:
+no-op `delete` — and `e.tmp` then grows past the cap silently. Four write
+sites; the three mutating ones all run under `e.mu` held for writing, the
+constructor runs before the engine is reachable by any other goroutine:
 
-1. `NewEngine` — constructs all three.
+1. `NewEngine` — constructs all three (no lock: nothing else can see it yet).
 2. `SetTmpRule` — `e.tmp[addr] = target` + `tmpLRUTouch`, plus
    `tmpLRUEvictOldest` at cap (which deletes from all three).
 3. `Close` — `e.tmp = make(...)` + `tmpLRUReset()`.
@@ -310,9 +337,12 @@ exactly what `rule-tmp-pin`'s duplicate suppression exists to avoid.
   by parsed RFC3339 time, never by string compare.
 - `downloader.go` — Happy Eyeballs race across `DefaultSources` (GitHub origin +
   jsdelivr/ghproxy mirrors for CN resilience).
-- `embed.go` + `embed/krs.tar.gz` — build-time embedded baseline, extracted on
-  true cold start (offline, censorship-proof). Release builds overwrite the
-  committed placeholder via `make fetch-rules-embed`.
+- `embed.go` + `embed/krs.tar.gz` — build-time embedded baseline (`//go:embed`),
+  extracted on true cold start (offline, censorship-proof). The committed
+  archive is a small baseline placeholder; a release build is expected to
+  replace it with the full production archive beforehand, but **no target in
+  this repo's Makefile does that** — the refresh is out-of-band. (An earlier
+  comment named a `make fetch-rules-embed` target; no such target exists.)
 - `updater.go` — background re-check tick; hot-reloads via `ReloadNamed`.
 - `loadnamed.go` (heap `*krs.Bundle`) vs `opennamed.go` (mmap `NamedDiskBundle`).
   The iOS NE path **must** use `OpenNamed`: `LoadNamed` expands the full corpus

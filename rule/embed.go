@@ -11,10 +11,15 @@ import (
 )
 
 // embeddedRules is the gzipped tarball of all .krs rule bundles, baked into
-// the binary at build time. The build pipeline (`make fetch-rules-embed`)
-// overwrites rule/embed/krs.tar.gz with the full production archive before
-// a release build; the committed copy is a small cn-baseline placeholder so the
-// package always compiles and dev/test builds have real bundles.
+// the binary at build time. A release build is expected to overwrite
+// rule/embed/krs.tar.gz with the full production archive first; the committed
+// copy is a small cn-baseline placeholder so the package always compiles and
+// dev/test builds have real bundles.
+//
+// That overwrite is currently out-of-band: no Makefile target, script, or
+// workflow in this repo refreshes the archive. (This comment used to name a
+// `make fetch-rules-embed` target — it does not exist, and citing it sent
+// readers looking for a build step that was never there.)
 //
 // seedFromEmbed (ensure.go) extracts this into the cache on true cold start —
 // instant, offline, censorship-proof. The CDN remains the source of newer
