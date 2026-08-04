@@ -34,6 +34,10 @@ type RouteEntry struct {
 	// SrcCIDRs: compiled from MatchConfig.SrcIPCIDR. Connection source
 	// must fall in one of these prefixes (AND with other groups).
 	SrcCIDRs []netip.Prefix
+
+	// PortRanges: compiled from MatchConfig.Port. Destination port must fall
+	// in one of these ranges (OR within the list, AND with other groups).
+	PortRanges []PortRange
 }
 
 // hasHostCriteria reports whether this route has domain/IP matching criteria.
@@ -49,7 +53,7 @@ func (r *RouteEntry) hasMetaCriteria() bool {
 	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 ||
 		len(r.ProcessNamePrefixes) > 0 || len(r.PackageNamePrefixes) > 0 ||
 		len(r.InstallerPackages) > 0 ||
-		r.NetworkMatch != "" || len(r.SrcCIDRs) > 0
+		r.NetworkMatch != "" || len(r.SrcCIDRs) > 0 || len(r.PortRanges) > 0
 }
 
 // Engine is the multi-ruleset matching engine.
@@ -433,6 +437,19 @@ func matchMeta(r *RouteEntry, meta ConnMeta) bool {
 					hit = true
 					break
 				}
+			}
+		}
+		if !hit {
+			return false
+		}
+	}
+
+	if len(r.PortRanges) > 0 {
+		hit := false
+		for _, pr := range r.PortRanges {
+			if pr.Contains(meta.Port) {
+				hit = true
+				break
 			}
 		}
 		if !hit {

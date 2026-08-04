@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -480,12 +481,15 @@ func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) (ru
 	if t.router == nil {
 		return t.defaultTarget, rule.ConnMeta{}
 	}
-	host, _, err := net.SplitHostPort(dest)
+	host, portStr, err := net.SplitHostPort(dest)
 	if err != nil {
 		return t.directTarget, rule.ConnMeta{}
 	}
 
 	meta := rule.ConnMeta{Network: network}
+	if p, perr := strconv.ParseUint(portStr, 10, 16); perr == nil {
+		meta.Port = uint16(p)
+	}
 	if srcAddr != nil {
 		if srcIP, ok := netip.AddrFromSlice(srcAddr.IP); ok {
 			// net.IPv4 / net.ParseIP return 16-byte IPv4-mapped IPv6, which makes
