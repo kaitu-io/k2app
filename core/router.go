@@ -32,6 +32,14 @@ func (r *Router) RouteConn(host string, meta rule.ConnMeta) rule.Target {
 	return r.engine.MatchConn(host, meta)
 }
 
+// RouteConnProto matches only routes that carry protocol criteria, letting
+// an explicit protocol rule override the tunnel's hardcoded post-sniff
+// defaults. Used after the first UDP packet is sniffed, when meta.Protocol
+// becomes known.
+func (r *Router) RouteConnProto(host string, meta rule.ConnMeta) (rule.Target, bool) {
+	return r.engine.RouteConnProto(host, meta)
+}
+
 // SetTmpRule adds a DNS-learned temporary routing rule.
 func (r *Router) SetTmpRule(ip string, target rule.Target) {
 	r.engine.SetTmpRule(ip, target)

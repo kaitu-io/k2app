@@ -1356,6 +1356,10 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 			entry.PortRanges = append(entry.PortRanges, pr)
 		}
 
+		for _, p := range route.Match.Protocol {
+			entry.Protocols = append(entry.Protocols, strings.ToLower(strings.TrimSpace(p)))
+		}
+
 		// Plan B: expand match.region into one host entry (Sets) + one meta
 		// entry (process/package criteria from bundle.Apps[GOOS]). The two
 		// entries are appended directly to `entries` — the per-route `entry`
@@ -1381,7 +1385,7 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 			len(entry.ProcessNamePrefixes) > 0 || len(entry.PackageNamePrefixes) > 0 ||
 			len(entry.InstallerPackages) > 0 ||
 			entry.NetworkMatch != "" || entry.IPIsPrivate || len(entry.SrcCIDRs) > 0 ||
-			len(entry.PortRanges) > 0
+			len(entry.PortRanges) > 0 || len(entry.Protocols) > 0
 		if hasAnyCriteria {
 			entries = append(entries, entry)
 		}

@@ -12,6 +12,11 @@ type ConnMeta struct {
 	Network          string // "tcp" or "udp" (empty = unknown)
 	Port             uint16 // destination port (0 = unknown)
 
+	// Protocol is the sniffed application protocol ("stun", "dtls", "quic",
+	// "bittorrent"). Empty = not sniffed or unknown; routes with Protocols
+	// criteria then never match.
+	Protocol string
+
 	// SrcIP is the connection's LAN source address (multi-slot gateway
 	// routing pins each slot's bridge subnet to one outbound).
 	// Zero value = unknown; routes with SrcCIDRs then never match.

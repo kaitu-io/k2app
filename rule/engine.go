@@ -38,6 +38,11 @@ type RouteEntry struct {
 	// PortRanges: compiled from MatchConfig.Port. Destination port must fall
 	// in one of these ranges (OR within the list, AND with other groups).
 	PortRanges []PortRange
+
+	// Protocols: compiled from MatchConfig.Protocol, lowercased. Sniffed
+	// application protocol must match one of these (OR within the list).
+	// Only known post-sniff — see ConnMeta.Protocol and RouteConnProto.
+	Protocols []string
 }
 
 // hasHostCriteria reports whether this route has domain/IP matching criteria.
@@ -53,7 +58,8 @@ func (r *RouteEntry) hasMetaCriteria() bool {
 	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 ||
 		len(r.ProcessNamePrefixes) > 0 || len(r.PackageNamePrefixes) > 0 ||
 		len(r.InstallerPackages) > 0 ||
-		r.NetworkMatch != "" || len(r.SrcCIDRs) > 0 || len(r.PortRanges) > 0
+		r.NetworkMatch != "" || len(r.SrcCIDRs) > 0 || len(r.PortRanges) > 0 ||
+		len(r.Protocols) > 0
 }
 
 // Engine is the multi-ruleset matching engine.
@@ -181,6 +187,31 @@ func (e *Engine) MatchConn(host string, meta ConnMeta) Target {
 		slot.r.Report(host, meta.Network)
 	}
 	return t
+}
+
+// RouteConnProto matches only routes that carry Protocols criteria and
+// reports whether any matched. Used by the sniffer to let an explicit
+// protocol rule override the hardcoded post-sniff defaults (BitTorrent
+// direct, STUN/DTLS on the tunnel — ticket #3051) without disturbing routes
+// that never mention a protocol. Unlike MatchConn, this does not consult the
+// DNS-learned tmp cache — protocol is only known post-sniff, per-connection.
+func (e *Engine) RouteConnProto(host string, meta ConnMeta) (Target, bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for i := range e.routes {
+		r := &e.routes[i]
+		if len(r.Protocols) == 0 {
+			continue
+		}
+		if !matchMeta(r, meta) {
+			continue
+		}
+		if r.hasHostCriteria() && !matchRouteHost(r, host) {
+			continue
+		}
+		return r.Target, true
+	}
+	return 0, false
 }
 
 // SetMissReporter installs a rule-miss telemetry sink. Pass nil to clear.
@@ -334,6 +365,18 @@ func matchRouteDomain(r *RouteEntry, parents []string) bool {
 	return false
 }
 
+// matchRouteHost reports whether host (IP literal or domain) matches the
+// route's host criteria. Same IP-vs-domain dispatch as matchConnLocked's
+// host branch (netip.ParseAddr success → IP match, failure → reversed-parent
+// domain match), factored out for RouteConnProto callers that match a single
+// route outside the per-lookup tmp-cache path.
+func matchRouteHost(r *RouteEntry, host string) bool {
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return matchRouteIP(r, addr)
+	}
+	return matchRouteDomain(r, krs.ReversedParents(host))
+}
+
 // commTruncLen is the kernel-imposed cap on what process searchers can
 // observe via /proc/PID/comm (Linux TASK_COMM_LEN) or lsof COMMAND (macOS
 // MAXCOMLEN) — 15 visible characters before the trailing nul. UI-supplied
@@ -448,6 +491,22 @@ func matchMeta(r *RouteEntry, meta ConnMeta) bool {
 		hit := false
 		for _, pr := range r.PortRanges {
 			if pr.Contains(meta.Port) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			return false
+		}
+	}
+
+	if len(r.Protocols) > 0 {
+		if meta.Protocol == "" {
+			return false
+		}
+		hit := false
+		for _, p := range r.Protocols {
+			if meta.Protocol == p {
 				hit = true
 				break
 			}

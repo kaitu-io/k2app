@@ -445,6 +445,20 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 				}
 			}
 
+			// 6. Protocol-aware re-route. A protocol rule wins; without one we
+			// keep the historical defaults set above: BitTorrent forced direct,
+			// STUN and DTLS kept on the tunnel (ticket #3051 — forcing WebRTC
+			// direct broke calls for users behind the GFW).
+			if meta.Protocol != "" && t.router != nil {
+				protoMeta := connMeta
+				protoMeta.Protocol = meta.Protocol
+				if protoAction, matched := t.router.RouteConnProto(host, protoMeta); matched {
+					action = protoAction
+					slog.Debug("tunnel: protocol rule override", "dest", dest,
+						"protocol", meta.Protocol, "action", action)
+				}
+			}
+
 		}
 	}
 

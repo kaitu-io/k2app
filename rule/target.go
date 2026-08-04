@@ -53,6 +53,12 @@ type MatchConfig struct {
 	// matching (a DNS query carries no destination port).
 	Port []string `yaml:"port,omitempty" json:"port,omitempty"`
 
+	// Protocol matches the sniffed application protocol: "stun", "dtls",
+	// "quic", "bittorrent". Meta criterion, and only known AFTER the first
+	// packet is sniffed — it therefore participates in the post-sniff
+	// re-route, not in the initial routing decision.
+	Protocol []string `yaml:"protocol,omitempty" json:"protocol,omitempty"`
+
 	// SrcIPCIDR matches the connection's LAN source address (CIDR list,
 	// OR within list). Multi-slot gateway mode pins each slot subnet to
 	// its outbound. Meta criterion — never participates in DNS-time
@@ -71,7 +77,8 @@ func (m MatchConfig) HasCriteria() bool {
 		len(m.ProcessName) > 0 || len(m.PackageName) > 0 ||
 		len(m.ProcessNamePrefix) > 0 || len(m.PackageNamePrefix) > 0 ||
 		len(m.InstallerPackage) > 0 ||
-		m.Network != "" || m.IPIsPrivate || len(m.SrcIPCIDR) > 0 || len(m.Port) > 0
+		m.Network != "" || m.IPIsPrivate || len(m.SrcIPCIDR) > 0 || len(m.Port) > 0 ||
+		len(m.Protocol) > 0
 }
 
 // HasHostCriteria reports whether any host-based (domain/IP) criterion is set.
