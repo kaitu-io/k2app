@@ -716,18 +716,18 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 
 	done := make(chan struct{})
 
+	// The first packet's destination defines the session. It is written by the
+	// TX goroutine below and read by the RX loop in the caller goroutine
+	// (repairSourceAddr), so it is an atomic handoff rather than a local: a
+	// plain variable here is a data race that -race catches. It is stored at
+	// most once per session, so the pointer indirection costs one allocation
+	// for the whole session, not one per packet.
+	var primary atomic.Pointer[net.Addr]
+
 	// local → remote (TX) in spawned goroutine
 	go func() {
 		bp := udpBufPool.Get().(*[]byte)
 		buf := *bp
-		// The first packet's destination defines the session. Packets to that
-		// same destination keep using destAddr so an outbound that resolved a
-		// domain (SNI upgrade, IPv6 rewrite) keeps its hostname label; packets
-		// to any OTHER destination are forwarded verbatim. Games open one
-		// socket and talk to the game server, the matchmaker and a STUN
-		// reflector through it — pinning every packet to the first destination
-		// silently misdelivers the rest.
-		var primary net.Addr
 		for {
 			if idleTimeout > 0 {
 				local.SetReadDeadline(time.Now().Add(idleTimeout))
@@ -736,12 +736,23 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 			if err != nil {
 				break
 			}
+			// Packets to the session's first destination keep using destAddr so
+			// an outbound that resolved a domain (SNI upgrade, IPv6 rewrite)
+			// keeps its hostname label; packets to any OTHER destination are
+			// forwarded verbatim. Games open one socket and talk to the game
+			// server, the matchmaker and a STUN reflector through it — pinning
+			// every packet to the first destination silently misdelivers the
+			// rest.
 			dst := destAddr
 			if to != nil {
-				if primary == nil {
-					primary = to
+				p := primary.Load()
+				if p == nil {
+					// `to` is redeclared by the := above on every iteration, so
+					// taking its address here does not alias later packets.
+					primary.Store(&to)
+					p = &to
 				}
-				if !sameUDPAddr(to, primary) {
+				if !sameUDPAddr(to, *p) {
 					dst = to
 				}
 			}
@@ -771,6 +782,7 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 			}
 			break
 		}
+		from = repairSourceAddr(from, primary.Load())
 		if _, err := local.WriteTo(buf[:n], from); err != nil {
 			slog.Debug("pipePacket: remote→local WriteTo failed", "from", from, "len", n, "err", err)
 			break
@@ -782,6 +794,52 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 	udpBufPool.Put(bp)
 	local.Close() // unblock local.ReadFrom in goroutine
 	<-done
+}
+
+// repairSourceAddr replaces a downlink source that is not an IP literal with
+// the session's primary destination.
+//
+// A server that predates per-packet source addressing sends every downlink
+// frame with addr_len == 0; the wire layer then falls back to the session's
+// target string verbatim (quicUDPConn/quicStreamUDPConn/smuxUDPConn ReadFrom).
+// When ClientTunnel.handleUDP upgraded that target to a hostname — QUIC SNI
+// upgrade or IPv6→hostname rewrite, both of which JoinHostPort a *domain* —
+// the fallback is a hostname. sing-tun rejects a non-IP write destination with
+// os.ErrInvalid (stack_gvisor_udp.go: `if !destination.IsIP()`), and the RX
+// loop treats a WriteTo error as fatal, so a single downlink packet tears down
+// the whole session including its uplink. New client + not-yet-upgraded node +
+// SNI-upgraded UDP session is exactly the mid-rollout combination, so this is
+// not a corner case.
+//
+// primary is the first destination the app actually addressed, straight off
+// the TUN stack, so it is always a real IP:port. Handing that back is also
+// more correct than re-resolving the hostname per packet: a fresh DNS answer
+// may be an IP the app never wrote to, and the app's connected socket would
+// discard the reply.
+//
+// primary is nil only if a downlink packet beats the session's first uplink
+// packet. That cannot happen for a client-initiated session — the server has
+// no session to reply on until the first uplink frame arrives — so this is
+// unreachable in production. If it ever does happen the address is passed
+// through unchanged: failing exactly as before is better than inventing a
+// destination the app never addressed.
+func repairSourceAddr(from net.Addr, primary *net.Addr) net.Addr {
+	if from == nil || primary == nil || isIPAddrPort(from) {
+		return from
+	}
+	return *primary
+}
+
+// isIPAddrPort reports whether addr is an IP:port literal rather than a
+// hostname:port. The *net.UDPAddr case is handled without String() because
+// that allocates, and the RX loop runs it on every downlink packet; the wire
+// layer's rawAddr is already a string, so its String() is free.
+func isIPAddrPort(addr net.Addr) bool {
+	if u, ok := addr.(*net.UDPAddr); ok {
+		return u.IP != nil
+	}
+	_, err := netip.ParseAddrPort(addr.String())
+	return err == nil
 }
 
 // sameUDPAddr reports whether two addresses denote the same UDP endpoint.
