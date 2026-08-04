@@ -110,7 +110,8 @@ Reserved event names:
 | `DIAG: process-lookup-slow` | INFO | latency > 100ms | platform, network, latencyMs |
 | `DIAG: udp-deliver-drop` | DEBUG | server session readCh full — handler stuck/slow | transport, sessionID, addr, len |
 | `DIAG: stream-killed-on-write-fail` | WARN | per-Write deadline (5s) exceeded or write error on UDP relay mux | transport, side, sessionID, len, writeMs, err |
-| `DIAG: rule-tmp-pin` | INFO | new IP pinned to tmp rule, or target changed for already-pinned IP (duplicates suppressed) | ip, target, action ("add"/"change"), prevTarget (change only), tmpSize |
+| `DIAG: rule-tmp-pin` | INFO | new IP pinned to tmp rule, or target changed for already-pinned IP (duplicates suppressed). At capacity each new pin evicts the least-recently-pinned entry, reported here as `evictedIP` — the standalone `DIAG: rule-tmp-evict` event was **removed**, so grepping logs for that name now returns nothing | ip, target, action ("add"/"change"), prevTarget (change only), tmpSize, evictedIP (only when this add evicted one) |
+| `DIAG: rule-tmp-lru-desync` | WARN | tmp cache is at `tmpRuleCap` but eviction found nothing to evict — the tmp/tmpOrder/tmpIndex trio went out of lockstep. Unreachable on any correct write path; exists so the cache growing past its cap is not silent | tmpSize, cap |
 | `DIAG: rule-tmp-reload` | INFO | rule engine reload cleared the DNS-learned tmp cache | cleared, routes, bundles |
 | `DIAG: control-plane-relay` | INFO | on node relay response | origin, method, path, status, bytes |
 | `DIAG: control-plane-relay-fail` | WARN | on node relay error | origin, path, err |
@@ -529,7 +530,7 @@ Concrete type assertions create hidden coupling. If a third transport is added (
 
 ```
 sniff/CLAUDE.md                Protocol sniffing (TLS/QUIC/HTTP/BT/STUN/DTLS detectors)
-rule/                          In-tree routing engine: domain suffix + IP range binary search, k2b mmap format, inline/remote rule sets, connection-metadata matching (no CLAUDE.md — start at rule/engine.go)
+rule/CLAUDE.md                 In-tree routing engine: two-phase (DNS vs connection) matching, match dimensions, criteria predicate family, tmp pin LRU, bundle lifecycle
 cmd/k2/CLAUDE.md               Client CLI subcommands + dispatch
 cmd/k2s/CLAUDE.md              Server CLI + foreground/service mode
 cmd/k2r/CLAUDE.md              Gateway CLI subcommands + dispatch (Linux only)
@@ -684,7 +685,7 @@ engine.Stop()
 
 ## Dependencies
 
-- `rule/` (in-tree) — multi-ruleset routing engine: domain suffix binary search + IP range O(log n) binary search, k2b mmap-indexed format, routes-based config, per-service IP-CIDR + domain rule sets, inline rules (domain_suffix/ip_cidr in config), connection metadata matching (process_name, package_name, network, ip_is_private)
+- `rule/` (in-tree) — multi-ruleset routing engine: domain suffix binary search + IP range O(log n) binary search, k2b mmap-indexed format, routes-based config, per-service IP-CIDR + domain rule sets, inline rules (domain_suffix/ip_cidr in config), connection metadata matching (process_name, package_name, network, ip_is_private, src_ip_cidr, port, protocol — see rule/CLAUDE.md)
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
 - `github.com/apernet/quic-go` — QUIC with congestion control API
