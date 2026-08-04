@@ -50,3 +50,18 @@ func TestPortRangeContains(t *testing.T) {
 		}
 	}
 }
+
+// TestPortRangeContains_ZeroNeverMatchesWideRange pins the port-0 guard on its
+// own. The range above starts at 27000, so 0 is already excluded by Lo — delete
+// the guard and that assertion still passes. Only a range whose Lo is 0 lets a
+// missing guard through, and ConnMeta.Port uses 0 for "port unknown": without
+// the guard such a connection would match every rule spanning the full range.
+func TestPortRangeContains_ZeroNeverMatchesWideRange(t *testing.T) {
+	wide := PortRange{Lo: 0, Hi: 65535}
+	if wide.Contains(0) {
+		t.Error("Contains(0) = true on a 0-65535 range, want false (0 means unknown port)")
+	}
+	if !wide.Contains(1) || !wide.Contains(65535) {
+		t.Error("wide range must still contain real ports 1 and 65535")
+	}
+}
