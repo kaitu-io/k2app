@@ -132,9 +132,25 @@ type TCPWSClient struct {
 }
 
 // WireStats returns a snapshot of TCP-WS transport metrics.
-// TCP-WS has no congestion control stats — only transport name is returned.
+//
+// TCP-WS has no congestion-control stats, so the CC fields stay zero. The UDP
+// downlink drop counters are real, though: this used to return a bare
+// WireStats{Transport: "tcpws"}, which meant a heartbeat taken while QUIC was
+// falling back reported udpRxDrops=0 no matter how much the mux was
+// discarding — a structural zero in exactly the state where a user is most
+// likely to be stuttering. UDPTxDrops stays 0 by construction, not by
+// omission: smux writes fail loudly instead of dropping (see WireStats).
 func (c *TCPWSClient) WireStats() WireStats {
-	return WireStats{Transport: "tcpws"}
+	c.mu.Lock()
+	mux := c.udpMux
+	c.mu.Unlock()
+
+	s := WireStats{Transport: "tcpws"}
+	if mux != nil {
+		s.UDPRxDrops = mux.udpRxDrops.Load()
+		s.UDPRxDropsNoSession = mux.udpRxDropsNoSession.Load()
+	}
+	return s
 }
 
 var (
@@ -1142,6 +1158,15 @@ type smuxUDPMux struct {
 	done        chan struct{}
 	closeOnce   sync.Once
 	started     bool
+
+	// Downlink drop counters, same split and same semantics as quicUDPMux's:
+	// udpRxDrops is a LIVE session losing packets, udpRxDropsNoSession is the
+	// benign tail of frames arriving for a closed or reaped session.
+	// Deliberately no udpTxDrops: this mux never silently discards an uplink
+	// packet — writeFrame either writes the frame or returns an error that
+	// tears the session down. See WireStats for what 0 means on which path.
+	udpRxDrops          atomic.Int64 // downlink frames dropped (session channel full)
+	udpRxDropsNoSession atomic.Int64 // downlink frames for an unknown session
 }
 
 func newSmuxUDPMux(stream *smux.Stream) *smuxUDPMux {
@@ -1179,16 +1204,35 @@ func (m *smuxUDPMux) readLoop() {
 			slog.Warn("smuxUDPMux: readLoop exiting", "err", err)
 			return
 		}
-		m.mu.Lock()
-		ch, ok := m.sessions[frame.SessionID]
-		m.mu.Unlock()
-		if ok {
-			m.touchSession(frame.SessionID)
-			select {
-			case ch <- frame:
-			default:
-			}
-		}
+		m.dispatchFrame(frame)
+	}
+}
+
+// dispatchFrame delivers a decoded frame to its session's channel, dropping
+// it if the session is unknown (counted as udpRxDropsNoSession) or its
+// channel is full (counted as udpRxDrops). Both used to be silent: the
+// fallback transport reported no drops at all, so a heartbeat read of
+// udpRxDrops=0 during a TCP-WS fallback meant "not instrumented", not "not
+// dropping" — and fallback is precisely when a user is most likely to be
+// stuttering. Split out of readLoop so the drop paths are unit-testable
+// without a live smux session.
+func (m *smuxUDPMux) dispatchFrame(frame *UDPFrame) {
+	m.mu.Lock()
+	ch, ok := m.sessions[frame.SessionID]
+	m.mu.Unlock()
+	if !ok {
+		m.udpRxDropsNoSession.Add(1)
+		slog.Debug("smuxUDPMux: no session for frame", "sessionID", frame.SessionID,
+			"addr", frame.Addr, "payloadLen", len(frame.Payload))
+		return
+	}
+	m.touchSession(frame.SessionID)
+	select {
+	case ch <- frame:
+	default:
+		m.udpRxDrops.Add(1)
+		slog.Warn("smuxUDPMux: channel full, dropping frame", "sessionID", frame.SessionID,
+			"addr", frame.Addr, "payloadLen", len(frame.Payload))
 	}
 }
 

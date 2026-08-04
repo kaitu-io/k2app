@@ -899,6 +899,10 @@ func (c *QUICClient) WireStats() WireStats {
 	c.mu.Lock()
 	sender := c.ccSender
 	mux := c.udpMux
+	var streamMux *quicStreamUDPMux
+	if mux != nil {
+		streamMux = mux.streamMux
+	}
 	c.mu.Unlock()
 
 	s := WireStats{Transport: "quic"}
@@ -918,6 +922,16 @@ func (c *QUICClient) WireStats() WireStats {
 		s.RelayUDPTimeouts = mux.relayTimeouts.Load()
 		s.UDPTxDrops = mux.udpTxDrops.Load()
 		s.UDPRxDrops = mux.udpRxDrops.Load()
+		s.UDPRxDropsNoSession = mux.udpRxDropsNoSession.Load()
+		// Sessions on a datagram-less server run over the stream-UDP mux
+		// instead; their drops belong to the same connection, so fold them
+		// in rather than reporting a structural 0 for those sessions.
+		// streamMux is written under c.mu (dialUDPStream), so it is read in
+		// the same critical section that captured mux above.
+		if sm := streamMux; sm != nil {
+			s.UDPRxDrops += sm.udpRxDrops.Load()
+			s.UDPRxDropsNoSession += sm.udpRxDropsNoSession.Load()
+		}
 	}
 	s.PortHopAttempts = c.portHopAttempts.Load()
 	return s
@@ -1804,6 +1818,16 @@ type quicUDPMux struct {
 	// than reading the raw value.
 	udpTxDrops atomic.Int64 // uplink datagrams dropped (send budget saturated)
 	udpRxDrops atomic.Int64 // downlink datagrams dropped (session channel full)
+
+	// Kept separate from udpRxDrops on purpose. A frame for an unknown
+	// session is dominated by the benign tail: the peer keeps sending for a
+	// moment after the client closed or the reaper evicted the session, and
+	// every UDP session a client ever opens can contribute a few. Folding
+	// that into udpRxDrops would make the canary's loss signal scale with
+	// session churn instead of with actual loss. A live session losing
+	// packets (udpRxDrops) and a dead session receiving them are different
+	// diagnoses, so they get different counters.
+	udpRxDropsNoSession atomic.Int64 // downlink datagrams for an unknown session
 }
 
 const (
@@ -1935,14 +1959,15 @@ func (m *quicUDPMux) readLoop() {
 }
 
 // dispatchFrame delivers a decoded frame to its session's channel, dropping
-// it (and counting udpRxDrops) if the session is unknown or its channel is
-// full. Split out of readLoop so the drop path is unit-testable without a
-// live QUIC connection.
+// it if the session is unknown (counted as udpRxDropsNoSession) or its
+// channel is full (counted as udpRxDrops). Split out of readLoop so the drop
+// paths are unit-testable without a live QUIC connection.
 func (m *quicUDPMux) dispatchFrame(frame *UDPFrame) {
 	m.mu.Lock()
 	ch, ok := m.sessions[frame.SessionID]
 	m.mu.Unlock()
 	if !ok {
+		m.udpRxDropsNoSession.Add(1)
 		slog.Debug("quicUDPMux: no session for datagram", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 		return
 	}
@@ -2491,6 +2516,13 @@ type quicStreamUDPMux struct {
 	lastActive  map[uint32]*atomic.Int64
 	done        chan struct{}
 	started     bool
+
+	// Downlink drop counters, same split and same semantics as quicUDPMux's.
+	// There is deliberately no udpTxDrops here: this mux never silently
+	// discards an uplink packet — writeFrame either writes the frame or
+	// returns an error that tears the session down. See WireStats.
+	udpRxDrops          atomic.Int64 // downlink frames dropped (session channel full)
+	udpRxDropsNoSession atomic.Int64 // downlink frames for an unknown session
 }
 
 func newQuicStreamUDPMux(stream *quic.Stream, qconn *quic.Conn) *quicStreamUDPMux {
@@ -2529,20 +2561,30 @@ func (m *quicStreamUDPMux) readLoop() {
 			slog.Warn("quicStreamUDPMux: readLoop exiting", "err", err)
 			return
 		}
-		m.mu.Lock()
-		ch, ok := m.sessions[frame.SessionID]
-		m.mu.Unlock()
-		if ok {
-			m.touchSession(frame.SessionID)
-			select {
-			case ch <- frame:
-				slog.Debug("DIAG: stream-mux-recv", "sessionID", frame.SessionID, "len", len(frame.Payload))
-			default:
-				slog.Warn("DIAG: stream-mux-drop", "sessionID", frame.SessionID, "len", len(frame.Payload), "chanLen", len(ch))
-			}
-		} else {
-			slog.Warn("DIAG: stream-mux-no-session", "sessionID", frame.SessionID, "len", len(frame.Payload))
-		}
+		m.dispatchFrame(frame)
+	}
+}
+
+// dispatchFrame delivers a decoded frame to its session's channel, dropping
+// it if the session is unknown (counted as udpRxDropsNoSession) or its
+// channel is full (counted as udpRxDrops). Split out of readLoop so the drop
+// paths are unit-testable without a live QUIC stream.
+func (m *quicStreamUDPMux) dispatchFrame(frame *UDPFrame) {
+	m.mu.Lock()
+	ch, ok := m.sessions[frame.SessionID]
+	m.mu.Unlock()
+	if !ok {
+		m.udpRxDropsNoSession.Add(1)
+		slog.Warn("DIAG: stream-mux-no-session", "sessionID", frame.SessionID, "len", len(frame.Payload))
+		return
+	}
+	m.touchSession(frame.SessionID)
+	select {
+	case ch <- frame:
+		slog.Debug("DIAG: stream-mux-recv", "sessionID", frame.SessionID, "len", len(frame.Payload))
+	default:
+		m.udpRxDrops.Add(1)
+		slog.Warn("DIAG: stream-mux-drop", "sessionID", frame.SessionID, "len", len(frame.Payload), "chanLen", len(ch))
 	}
 }
 

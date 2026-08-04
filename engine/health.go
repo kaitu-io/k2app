@@ -25,8 +25,8 @@ const (
 
 // HealthSnapshot is a 1-second sample of wire and tunnel metrics.
 type HealthSnapshot struct {
-	Timestamp   time.Time `json:"ts"`
-	Transport   string    `json:"transport"`
+	Timestamp      time.Time `json:"ts"`
+	Transport      string    `json:"transport"`
 	PacketLossRate float64   `json:"packet_loss_rate"`
 	Throughput     float64   `json:"throughput"`
 	SendingRate    float64   `json:"sending_rate"`
@@ -44,20 +44,30 @@ type HealthSnapshot struct {
 	RelayUDPTimeouts int32 `json:"relay_udp_timeouts"`
 	PortHopAttempts  int32 `json:"port_hop_attempts"`
 
-	// UDPTxDrops/UDPRxDrops are cumulative since the connection was
-	// established, not a per-interval delta — unlike RelayUDPTimeouts
-	// above (which resets to 0 on every successful receive), nothing
-	// ever resets these. A large value may be hours old; to judge
-	// current loss rate, diff two heartbeat samples rather than
-	// reading the raw value.
+	// UDP drop counters are cumulative since the connection was established,
+	// not a per-interval delta — unlike RelayUDPTimeouts above (which resets
+	// to 0 on every successful receive), nothing ever resets these. A large
+	// value may be hours old; to judge current loss rate, diff two heartbeat
+	// samples rather than reading the raw value.
+	//
+	// UDPTxDrops is 0 by construction on stream-backed transports (TCP-WS,
+	// QUIC stream-UDP fallback) — they have no lossy send path — while every
+	// downlink drop on every transport is counted. See wire.WireStats for the
+	// per-transport table; read Transport/WireFallback to know which row you
+	// are looking at.
 	UDPTxDrops int64 `json:"udp_tx_drops"`
-	UDPRxDrops int64 `json:"udp_rx_drops"`
+	UDPRxDrops int64 `json:"udp_rx_drops"` // live session, channel full
+
+	// UDPRxDropsNoSession counts downlink packets for a session the client no
+	// longer knows. Mostly the benign tail after a session closes, so it is
+	// kept out of UDPRxDrops to stop session churn from looking like loss.
+	UDPRxDropsNoSession int64 `json:"udp_rx_drops_no_session"`
 }
 
 const (
-	ringSize           = 300 // 5 minutes at 1Hz
-	actionCooldown     = 10 * time.Second
-	ewmaAlpha = 0.3 // EWMA weight for new sample (matches ARC adaptive alpha weight)
+	ringSize       = 300 // 5 minutes at 1Hz
+	actionCooldown = 10 * time.Second
+	ewmaAlpha      = 0.3 // EWMA weight for new sample (matches ARC adaptive alpha weight)
 
 	// wakeDiagThreshold is the wall-clock gap that triggers a DIAG: wake log.
 	// Short gaps (system load, brief doze) are logged for diagnostics.
@@ -112,12 +122,12 @@ func (wd *wakeDetector) checkWake(now time.Time, health, transport string, uptim
 // healthMonitor samples wire stats at 1Hz, maintains a ring buffer,
 // detects health degradation trends, and takes corrective action.
 type healthMonitor struct {
-	mu     deadlock.Mutex
+	mu        deadlock.Mutex
 	primaryTM *outboundTransport   // for health FSM (WireStats, TCPRecentlyHealthy)
 	tms       []*outboundTransport // for echoLoop (probe each independently)
-	tunnel *core.ClientTunnel
-	done   chan struct{}
-	wg     sync.WaitGroup
+	tunnel    *core.ClientTunnel
+	done      chan struct{}
+	wg        sync.WaitGroup
 
 	health         string
 	degradedStreak int
@@ -134,14 +144,14 @@ type healthMonitor struct {
 	ringIdx  int
 	ringFull bool
 
-	onSnapshot func(HealthSnapshot) // push to daemon SSE
-	onReconnect   func()               // triggers OnNetworkChanged for full reconnect
+	onSnapshot  func(HealthSnapshot) // push to daemon SSE
+	onReconnect func()               // triggers OnNetworkChanged for full reconnect
 
-	diagCounter   int       // samples since last DIAG heartbeat (fires at 30)
-	connectedAt   time.Time // engine connected timestamp for uptime calc
-	wake          wakeDetector // sleep/wake detection + reconnect trigger
+	diagCounter int          // samples since last DIAG heartbeat (fires at 30)
+	connectedAt time.Time    // engine connected timestamp for uptime calc
+	wake        wakeDetector // sleep/wake detection + reconnect trigger
 
-	reRaceChan  chan *outboundTransport // non-nil: engine's re-race channel (per-TM)
+	reRaceChan chan *outboundTransport // non-nil: engine's re-race channel (per-TM)
 }
 
 func newHealthMonitor(
@@ -231,8 +241,8 @@ func (hm *healthMonitor) sample() {
 	action := hm.transition(level, tcpHealthy)
 
 	snap := HealthSnapshot{
-		Timestamp:   time.Now(),
-		Transport:   ws.Transport,
+		Timestamp:      time.Now(),
+		Transport:      ws.Transport,
 		PacketLossRate: ws.PacketLossRate,
 		Throughput:     ws.Throughput,
 		SendingRate:    ws.SendingRate,
@@ -250,6 +260,8 @@ func (hm *healthMonitor) sample() {
 		PortHopAttempts:  ws.PortHopAttempts,
 		UDPTxDrops:       ws.UDPTxDrops,
 		UDPRxDrops:       ws.UDPRxDrops,
+
+		UDPRxDropsNoSession: ws.UDPRxDropsNoSession,
 	}
 
 	// Write to ring buffer.
@@ -286,6 +298,7 @@ func (hm *healthMonitor) sample() {
 			"udpConns", diagUDP,
 			"udpTxDrops", ws.UDPTxDrops,
 			"udpRxDrops", ws.UDPRxDrops,
+			"udpRxDropsNoSess", ws.UDPRxDropsNoSession,
 			"uptimeS", int(time.Since(hm.connectedAt).Seconds()),
 			"fallback", ws.WireFallback,
 			"heapMB", fmt.Sprintf("%.1f", float64(ms.HeapInuse)/(1024*1024)),
@@ -431,10 +444,11 @@ func (hm *healthMonitor) resetCounters() {
 // quic-go's built-in keepalive). Enforced at init() time below.
 //
 // Detection timeline (wire dies at t=2s after handshake):
-//   t=1:  probe ok      → trust=1, interval=2s
-//   t=3:  probe FAIL    → trust=0, strikes=1, interval=1s + DIAG: echo-probe-fail
-//   t=4:  probe FAIL    → strikes=2
-//   t=5:  probe FAIL    → strikes=3 → rerace signal sent
+//
+//	t=1:  probe ok      → trust=1, interval=2s
+//	t=3:  probe FAIL    → trust=0, strikes=1, interval=1s + DIAG: echo-probe-fail
+//	t=4:  probe FAIL    → strikes=2
+//	t=5:  probe FAIL    → strikes=3 → rerace signal sent
 //
 // vs old design (single 30s ticker, 3-strike absolute): ~92s nominal, ∞ in
 // practice (short-session reconnect loop reset the counter every <30s).

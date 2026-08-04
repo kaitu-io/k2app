@@ -55,14 +55,37 @@ type WireStats struct {
 	RelayUDPTimeouts int32 // consecutive timeout count
 	PortHopAttempts  int32 // port hop attempts
 
-	// UDPTxDrops/UDPRxDrops are cumulative since the connection was
-	// established, not a per-interval delta — unlike RelayUDPTimeouts
-	// above (which resets to 0 on every successful receive), nothing
-	// ever resets these. A large value may be hours old; to judge
-	// current loss rate, diff two heartbeat samples rather than
-	// reading the raw value.
+	// UDP drop counters are cumulative since the connection was established,
+	// not a per-interval delta — unlike RelayUDPTimeouts above (which resets
+	// to 0 on every successful receive), nothing ever resets these. A large
+	// value may be hours old; to judge current loss rate, diff two heartbeat
+	// samples rather than reading the raw value.
+	//
+	// What 0 means, per transport — every path that silently discards a UDP
+	// packet increments one of these, so 0 is always "nothing was dropped",
+	// never "nobody counted":
+	//
+	//	                        UDPTxDrops              UDPRxDrops / NoSession
+	//	QUIC datagram           send budget saturated   instrumented
+	//	QUIC stream-UDP mux     n/a — always 0          instrumented
+	//	TCP-WS smux mux         n/a — always 0          instrumented
+	//
+	// The two "n/a" cells are not gaps. A stream-backed transport has no
+	// lossy send path: writeFrame either writes the frame or returns an
+	// error, which tears the session down (visible as a session end, not as
+	// a drop). Only the QUIC datagram path can accept a packet from the app
+	// and then silently discard it, so only it can report a TX drop.
+	// Transport (plus WireFallback) tells you which row you are reading.
 	UDPTxDrops int64 // uplink datagrams dropped (send budget saturated)
-	UDPRxDrops int64 // downlink datagrams dropped (session channel full)
+	UDPRxDrops int64 // downlink packets dropped for a LIVE session (channel full)
+
+	// UDPRxDropsNoSession counts downlink packets addressed to a session ID
+	// the client no longer knows. Kept out of UDPRxDrops because it is
+	// dominated by a benign tail — the peer keeps sending for a moment after
+	// the app closed the socket or the idle reaper evicted the session, so
+	// this scales with session churn, not with loss. A rising UDPRxDrops is
+	// a stuttering user; a rising UDPRxDropsNoSession usually is not.
+	UDPRxDropsNoSession int64
 }
 
 // StatsProvider is an optional interface for Dialers that expose metrics.

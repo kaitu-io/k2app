@@ -191,6 +191,123 @@ func TestQUICUDPMux_CountsRxDrops(t *testing.T) {
 	if len(sessionCh) != cap(sessionCh) {
 		t.Fatalf("sessionCh len = %d, want unchanged at cap %d (dropped, not delivered)", len(sessionCh), cap(sessionCh))
 	}
+	if got := m.udpRxDropsNoSession.Load(); got != 0 {
+		t.Fatalf("mux udpRxDropsNoSession = %d, want 0 (the session exists)", got)
+	}
+}
+
+// A frame for a session the client no longer knows must land in its OWN
+// counter. Folding it into udpRxDrops would make that number scale with
+// session churn — every closed session gets a short tail of late packets —
+// and the canary reads udpRxDrops as "the user is losing packets".
+func TestQUICUDPMux_CountsNoSessionDropsSeparately(t *testing.T) {
+	m := &quicUDPMux{
+		sessions:    map[uint32]chan *UDPFrame{},
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
+	}
+
+	m.dispatchFrame(&UDPFrame{SessionID: 9, Payload: []byte("late")})
+
+	if got := m.udpRxDropsNoSession.Load(); got != 1 {
+		t.Fatalf("mux udpRxDropsNoSession = %d, want 1", got)
+	}
+	if got := m.udpRxDrops.Load(); got != 0 {
+		t.Fatalf("mux udpRxDrops = %d, want 0 (no live session lost a packet)", got)
+	}
+}
+
+// The QUIC stream-UDP fallback used to drop silently: DIAG log lines only, no
+// counter, so the heartbeat reported 0 for a path that was actively dropping.
+func TestQUICStreamUDPMux_CountsRxDrops(t *testing.T) {
+	sessionCh := make(chan *UDPFrame, 32)
+	m := &quicStreamUDPMux{
+		sessions:    map[uint32]chan *UDPFrame{5: sessionCh},
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
+	}
+	for i := 0; i < cap(sessionCh); i++ {
+		sessionCh <- &UDPFrame{SessionID: 5}
+	}
+
+	m.dispatchFrame(&UDPFrame{SessionID: 5, Payload: []byte("x")})
+	m.dispatchFrame(&UDPFrame{SessionID: 9, Payload: []byte("late")})
+
+	if got := m.udpRxDrops.Load(); got != 1 {
+		t.Errorf("stream mux udpRxDrops = %d, want 1", got)
+	}
+	if got := m.udpRxDropsNoSession.Load(); got != 1 {
+		t.Errorf("stream mux udpRxDropsNoSession = %d, want 1", got)
+	}
+	if len(sessionCh) != cap(sessionCh) {
+		t.Errorf("sessionCh len = %d, want unchanged at cap %d", len(sessionCh), cap(sessionCh))
+	}
+}
+
+// Same for the TCP-WS fallback — the state a user is most likely to be
+// stuttering in, and the one that reported nothing at all.
+func TestSmuxUDPMux_CountsRxDrops(t *testing.T) {
+	sessionCh := make(chan *UDPFrame, 32)
+	m := &smuxUDPMux{
+		sessions:    map[uint32]chan *UDPFrame{5: sessionCh},
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
+	}
+	for i := 0; i < cap(sessionCh); i++ {
+		sessionCh <- &UDPFrame{SessionID: 5}
+	}
+
+	m.dispatchFrame(&UDPFrame{SessionID: 5, Payload: []byte("x")})
+	m.dispatchFrame(&UDPFrame{SessionID: 9, Payload: []byte("late")})
+
+	if got := m.udpRxDrops.Load(); got != 1 {
+		t.Errorf("smux mux udpRxDrops = %d, want 1", got)
+	}
+	if got := m.udpRxDropsNoSession.Load(); got != 1 {
+		t.Errorf("smux mux udpRxDropsNoSession = %d, want 1", got)
+	}
+	if len(sessionCh) != cap(sessionCh) {
+		t.Errorf("sessionCh len = %d, want unchanged at cap %d", len(sessionCh), cap(sessionCh))
+	}
+}
+
+// TCPWSClient.WireStats returned a bare WireStats{Transport: "tcpws"}, so a
+// heartbeat sampled during a QUIC fallback reported udpRxDrops=0 regardless of
+// what the mux was doing. That is the structural zero this branch has to stop
+// shipping, because canary triage reads exactly that field.
+func TestTCPWSClient_WireStats_ReportsUDPDrops(t *testing.T) {
+	c := &TCPWSClient{}
+
+	// No mux yet (no UDP session ever opened): zeros, and no panic.
+	if s := c.WireStats(); s.Transport != "tcpws" || s.UDPRxDrops != 0 {
+		t.Fatalf("WireStats with no mux = %+v, want tcpws with zero drops", s)
+	}
+
+	mux := &smuxUDPMux{
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
+	}
+	mux.udpRxDrops.Store(7)
+	mux.udpRxDropsNoSession.Store(3)
+	c.udpMux = mux
+
+	s := c.WireStats()
+	if s.UDPRxDrops != 7 {
+		t.Errorf("WireStats.UDPRxDrops = %d, want 7", s.UDPRxDrops)
+	}
+	if s.UDPRxDropsNoSession != 3 {
+		t.Errorf("WireStats.UDPRxDropsNoSession = %d, want 3", s.UDPRxDropsNoSession)
+	}
+	// Not a gap: smux writes fail loudly rather than dropping, so there is no
+	// uplink drop to report on this transport.
+	if s.UDPTxDrops != 0 {
+		t.Errorf("WireStats.UDPTxDrops = %d, want 0 (no lossy send path on smux)", s.UDPTxDrops)
+	}
 }
 
 // ============================================================================
