@@ -150,7 +150,10 @@ PASS:  T08 — SSE event delivery confirmed (all transitions)
 | Q08 | P1 | UI | Webapp UI regression | — | SKIP:no-runtime-change | branch webapp diff is type-only; vitest full suite green (test_build.sh 15/15) |
 | Q09 | P1 | App Bypass | per-app routing | — | SKIP:no-runtime-change | no engine behavior change for existing configs; unit suites cover |
 | Q10 | P0 | Mobile | iOS/Android regression | — | BLOCKED:Task-4 | real-device smoke required |
-| Q11 | P0 | UDP | TUN-mode NAT type (Full Cone) + real game + Telegram/KakaoTalk voice (#3051/#3345) | — | BLOCKED:Task-4 | needs attended TUN + phones + SP1-deployed node |
+| Q11 | P0 | UDP | Full-cone NAT through a real tunnel (proxy mode, `scripts/check-nat-type.py`) | 3 distinct peers each reply from their own address; one shared public mapping | PASS | Oregon canary on SP1 server `d8619b93` + client `7682a659`: google/cloudflare/nextcloud all answered themselves, mapping `35.88.216.55:51488` for all three |
+| Q12 | P0 | UDP | Same check against a **pre-SP1** server (JP 5372, `c911d237`) | must NOT pass — proves the check discriminates | PASS (fails as required) | All three requests misdelivered to google's STUN; cloudflare and nextcloud never received anything. This is the games-breaking bug SP1 fixes |
+| Q13 | P0 | Regression | TCP + remote DNS through the fixed client | exit IP == node, HTTPS 200 | PASS | `https://www.google.com` 200 in 0.66s, exit 35.88.216.55 |
+| Q14 | P0 | UDP | TUN-mode NAT type + real game + Telegram/KakaoTalk voice (#3051/#3345) | — | BLOCKED:Task-4 | needs attended TUN + phones. Proxy-mode Q11 already proves the wire/server halves |
 
 ## Session Notes
 
