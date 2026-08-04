@@ -553,6 +553,12 @@ func TestProxyProvider_SOCKS5_UDPAssociate(t *testing.T) {
 	}
 }
 
+// TestProxyProvider_SOCKS5_UDPAssociate_MultiDest verifies full-cone parity
+// with TUN mode: one client source address addressing two different
+// destinations must share a single session (one HandleUDP call), and that
+// session's ReadFrom must surface each payload paired with its own
+// per-packet destination rather than a fixed one. Sessions are keyed by
+// client source address, not destination — see provider/proxy.go udpRelay.run.
 func TestProxyProvider_SOCKS5_UDPAssociate_MultiDest(t *testing.T) {
 	p := NewProxyProvider(ProviderConfig{ProxyListen: "127.0.0.1:0"})
 	handler := newTestHandler()
@@ -577,45 +583,38 @@ func TestProxyProvider_SOCKS5_UDPAssociate_MultiDest(t *testing.T) {
 	}
 	defer udpConn.Close()
 
-	// Send to two different destinations
+	// Send to two different destinations from the same source port.
 	udpConn.Write(buildSOCKS5UDPPacket("127.0.0.1:1111", []byte("first")))
 	udpConn.Write(buildSOCKS5UDPPacket("127.0.0.1:2222", []byte("second")))
 
-	// Should get two HandleUDP calls with different dests
-	dests := make(map[string]net.PacketConn)
-	for i := 0; i < 2; i++ {
-		select {
-		case call := <-handler.udpCalls:
-			dests[call.dest] = call.conn
-		case <-time.After(2 * time.Second):
-			t.Fatalf("expected 2 HandleUDP calls, got %d", i)
-		}
+	// Exactly one HandleUDP call: same source address, one session.
+	var call udpCall
+	select {
+	case call = <-handler.udpCalls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("HandleUDP not called")
+	}
+	select {
+	case <-handler.udpCalls:
+		t.Fatal("HandleUDP invoked a second time for the same source address")
+	case <-time.After(200 * time.Millisecond):
 	}
 
-	if _, ok := dests["127.0.0.1:1111"]; !ok {
-		t.Error("missing HandleUDP call for 127.0.0.1:1111")
-	}
-	if _, ok := dests["127.0.0.1:2222"]; !ok {
-		t.Error("missing HandleUDP call for 127.0.0.1:2222")
-	}
-
-	// Verify each session gets correct payload
+	// The single session must yield both payloads, each with its own dest.
+	wantDests := []string{"127.0.0.1:1111", "127.0.0.1:2222"}
+	wantPayloads := []string{"first", "second"}
 	buf := make([]byte, 4096)
-	for dest, pc := range dests {
-		pc.SetReadDeadline(time.Now().Add(2 * time.Second))
-		n, _, err := pc.ReadFrom(buf)
+	for i := range wantDests {
+		call.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		n, from, err := call.conn.ReadFrom(buf)
 		if err != nil {
 			t.Fatal(err)
 		}
-		switch dest {
-		case "127.0.0.1:1111":
-			if string(buf[:n]) != "first" {
-				t.Errorf("dest %s payload = %q, want first", dest, buf[:n])
-			}
-		case "127.0.0.1:2222":
-			if string(buf[:n]) != "second" {
-				t.Errorf("dest %s payload = %q, want second", dest, buf[:n])
-			}
+		if string(buf[:n]) != wantPayloads[i] {
+			t.Errorf("payload %d = %q, want %q", i, buf[:n], wantPayloads[i])
+		}
+		if from == nil || from.String() != wantDests[i] {
+			t.Errorf("dest %d = %v, want %q", i, from, wantDests[i])
 		}
 	}
 }

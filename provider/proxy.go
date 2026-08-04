@@ -378,7 +378,7 @@ func writeSOCKS5UDPHeader(dest string) []byte {
 type udpRelay struct {
 	udpConn   net.PacketConn
 	handler   ConnectionHandler
-	sessions  map[string]*udpSession // dest → session
+	sessions  map[string]*udpSession // client source addr → session
 	mu        sync.Mutex
 	done      chan struct{}
 	closeOnce sync.Once
@@ -402,23 +402,29 @@ func (r *udpRelay) run() {
 			continue // drop malformed/fragmented
 		}
 
+		// Sessions are keyed by client source address, not destination: a
+		// single client source port must map to one egress session that
+		// carries many destinations (full-cone parity with TUN mode). dest
+		// from this first packet becomes the session's primary destination;
+		// later packets on the same session may target other destinations.
+		key := from.String()
 		r.mu.Lock()
-		sess, ok := r.sessions[dest]
+		sess, ok := r.sessions[key]
 		if !ok {
 			sess = &udpSession{
 				relay:      r,
 				clientAddr: from,
 				dest:       dest,
-				readCh:     make(chan []byte, 32),
+				readCh:     make(chan udpPacket, 32),
 				done:       make(chan struct{}),
 			}
-			r.sessions[dest] = sess
+			r.sessions[key] = sess
 			go r.handler.HandleUDP(sess, dest)
 		}
 		r.mu.Unlock()
 
 		sess.setClientAddr(from)
-		sess.deliver(payload)
+		sess.deliver(dest, payload)
 	}
 }
 
@@ -468,11 +474,20 @@ func (d *readDeadline) makeTimer() (<-chan time.Time, *time.Timer, error) {
 	return timer.C, timer, nil
 }
 
+// udpPacket carries one queued uplink payload alongside the destination it
+// was addressed to. A session now fans out to many destinations, so the
+// destination must travel with the payload rather than being fixed per
+// session.
+type udpPacket struct {
+	dest    string
+	payload []byte
+}
+
 type udpSession struct {
 	relay      *udpRelay
 	clientAddr net.Addr
 	dest       string
-	readCh     chan []byte
+	readCh     chan udpPacket
 	done       chan struct{}
 	closeOnce  sync.Once
 	mu         sync.Mutex // protects clientAddr
@@ -481,11 +496,11 @@ type udpSession struct {
 
 var _ net.PacketConn = (*udpSession)(nil)
 
-func (s *udpSession) deliver(payload []byte) {
+func (s *udpSession) deliver(dest string, payload []byte) {
 	p := make([]byte, len(payload))
 	copy(p, payload)
 	select {
-	case s.readCh <- p:
+	case s.readCh <- udpPacket{dest: dest, payload: p}:
 	case <-s.done:
 	}
 }
@@ -505,9 +520,9 @@ func (s *udpSession) ReadFrom(b []byte) (int, net.Addr, error) {
 		defer timer.Stop()
 	}
 	select {
-	case payload := <-s.readCh:
-		n := copy(b, payload)
-		addr, _ := net.ResolveUDPAddr("udp", s.dest)
+	case pkt := <-s.readCh:
+		n := copy(b, pkt.payload)
+		addr, _ := net.ResolveUDPAddr("udp", pkt.dest)
 		return n, addr, nil
 	case <-s.done:
 		return 0, nil, net.ErrClosed
@@ -516,17 +531,26 @@ func (s *udpSession) ReadFrom(b []byte) (int, net.Addr, error) {
 	}
 }
 
-func (s *udpSession) WriteTo(b []byte, _ net.Addr) (int, error) {
-	header := writeSOCKS5UDPHeader(s.dest)
+// WriteTo sends a downlink reply to the client. addr is the true reply
+// source (the peer that just sent this session data) — with one session
+// now serving many peers, the client can only tell them apart if the
+// SOCKS5 UDP header carries the real source. Fall back to the session's
+// primary dest only when addr is nil (defensive; callers should pass it).
+func (s *udpSession) WriteTo(b []byte, addr net.Addr) (int, error) {
+	replyFrom := s.dest
+	if addr != nil {
+		replyFrom = addr.String()
+	}
+	header := writeSOCKS5UDPHeader(replyFrom)
 	pkt := make([]byte, len(header)+len(b))
 	copy(pkt, header)
 	copy(pkt[len(header):], b)
 
 	s.mu.Lock()
-	addr := s.clientAddr
+	clientAddr := s.clientAddr
 	s.mu.Unlock()
 
-	if _, err := s.relay.udpConn.WriteTo(pkt, addr); err != nil {
+	if _, err := s.relay.udpConn.WriteTo(pkt, clientAddr); err != nil {
 		return 0, err
 	}
 	return len(b), nil
