@@ -110,6 +110,7 @@ Reserved event names:
 | `DIAG: process-lookup-slow` | INFO | latency > 100ms | platform, network, latencyMs |
 | `DIAG: udp-deliver-drop` | DEBUG | server session readCh full — handler stuck/slow | transport, sessionID, addr, len |
 | `DIAG: stream-killed-on-write-fail` | WARN | per-Write deadline (5s) exceeded or write error on UDP relay mux | transport, side, sessionID, len, writeMs, err |
+| `DIAG: udp-mux-rebuild` | WARN | a dead UDP relay mux was evicted from the client cache and will be rebuilt | transport, reason (`write-fail`/`peer-closed`/`closed`), rebuilds (cumulative) |
 | `DIAG: rule-tmp-pin` | INFO | new IP pinned to tmp rule, or target changed for already-pinned IP (duplicates suppressed). At capacity each new pin evicts the least-recently-pinned entry, reported here as `evictedIP` — the standalone `DIAG: rule-tmp-evict` event was **removed**, so grepping logs for that name now returns nothing | ip, target, action ("add"/"change"), prevTarget (change only), tmpSize, evictedIP (only when this add evicted one) |
 | `DIAG: rule-tmp-lru-desync` | WARN | tmp cache is at `tmpRuleCap` but eviction found nothing to evict — the tmp/tmpOrder/tmpIndex trio went out of lockstep. Unreachable on any correct write path; exists so the cache growing past its cap is not silent | tmpSize, cap |
 | `DIAG: rule-tmp-reload` | INFO | rule engine reload cleared the DNS-learned tmp cache | cleared, routes, bundles |

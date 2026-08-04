@@ -347,6 +347,10 @@ type QUICClient struct {
 	closed    bool
 	ccSender  *k2cc.K2CCSender // stored for stats access
 
+	// udpMuxRebuilds counts dead stream-UDP mux evictions, reported by the
+	// udp-mux-rebuild DIAG event.
+	udpMuxRebuilds atomic.Uint64
+
 	portHopAttempts     atomic.Int32 // hop attempts before TCP-WS fallback
 	portHopExhaustedAt  atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
 	lastTCPSuccessAt    atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
@@ -818,19 +822,19 @@ func (c *QUICClient) DialStreamUDP(ctx context.Context, addr string) (net.Packet
 // Uses check-release-act-reacquire to avoid holding mu during blocking I/O
 // (OpenStreamSync, WriteH3ProxyFrameType, WriteStreamHeader).
 func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr string) (net.PacketConn, error) {
-	// Fast path: mux already initialized.
+	// Fast path: a live mux is already initialized.
 	c.mu.Lock()
 	if c.udpMux == nil || c.alloc == nil {
 		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
-	if c.udpMux.streamMux != nil {
-		mux := c.udpMux.streamMux
-		alloc := c.alloc
-		c.mu.Unlock()
-		return c.newStreamUDPConn(mux, alloc, addr), nil
-	}
+	live, evicted := c.takeLiveStreamMuxLocked()
+	alloc := c.alloc
 	c.mu.Unlock()
+	c.discardDeadStreamMux(evicted)
+	if live != nil {
+		return c.newStreamUDPConn(live, alloc, addr), nil
+	}
 
 	// Slow path: initialize UDP stream mux. Serialized by initUDPMu.
 	c.initUDPMu.Lock()
@@ -842,13 +846,13 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
-	if c.udpMux.streamMux != nil {
-		mux := c.udpMux.streamMux
-		alloc := c.alloc
-		c.mu.Unlock()
-		return c.newStreamUDPConn(mux, alloc, addr), nil
-	}
+	live, evicted = c.takeLiveStreamMuxLocked()
+	alloc = c.alloc
 	c.mu.Unlock()
+	c.discardDeadStreamMux(evicted)
+	if live != nil {
+		return c.newStreamUDPConn(live, alloc, addr), nil
+	}
 
 	// Blocking I/O — no lock held.
 	stream, err := conn.OpenStreamSync(ctx)
@@ -866,18 +870,56 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 	}
 
 	// Store result under lock. Re-check for concurrent resetConnection.
+	// The connection may also have been replaced while we dialed; a mux
+	// bound to the superseded conn could never carry a frame.
 	c.mu.Lock()
-	if c.udpMux == nil {
+	if c.udpMux == nil || c.conn != conn {
 		c.mu.Unlock()
 		stream.Close()
 		return nil, ErrNotConnected
 	}
 	c.udpMux.streamMux = newQuicStreamUDPMux(stream, conn)
 	mux := c.udpMux.streamMux
-	alloc := c.alloc
+	alloc = c.alloc
 	c.mu.Unlock()
 
 	return c.newStreamUDPConn(mux, alloc, addr), nil
+}
+
+// takeLiveStreamMuxLocked returns the cached stream-UDP mux if it is still
+// usable, evicting it if it has died. A dead mux comes back as `evicted` and
+// must be disposed of via discardDeadStreamMux with no lock held.
+//
+// Mirror of TCPWSClient.takeLiveUDPMuxLocked — same trap: the cached mux is
+// otherwise only cleared when the whole QUIC *connection* resets, so a
+// stream-level death would strand every subsequent UDP send (#3420).
+//
+// Caller must hold c.mu and have checked c.udpMux != nil.
+func (c *QUICClient) takeLiveStreamMuxLocked() (live, evicted *quicStreamUDPMux) {
+	m := c.udpMux.streamMux
+	if m == nil {
+		return nil, nil
+	}
+	if !m.dead.Load() {
+		return m, nil
+	}
+	c.udpMux.streamMux = nil
+	return nil, m
+}
+
+// discardDeadStreamMux disposes of an evicted mux and records the rebuild.
+// Must be called with no lock held.
+func (c *QUICClient) discardDeadStreamMux(m *quicStreamUDPMux) {
+	if m == nil {
+		return
+	}
+	// Also closes m.done, releasing consumers parked in ReadFrom.
+	m.close()
+	slog.Warn("DIAG: udp-mux-rebuild",
+		"transport", "quic-stream",
+		"reason", m.deathReason(),
+		"rebuilds", c.udpMuxRebuilds.Add(1),
+	)
 }
 
 // newStreamUDPConn creates a quicStreamUDPConn with a new session ID.
@@ -2509,7 +2551,8 @@ type quicStreamUDPMux struct {
 	writeMu     sync.Mutex // serialization, may hold across I/O
 	streamOnce  sync.Once  // guards stream.Close
 	dead        atomic.Bool
-	doneOnce    sync.Once // guards close(done) — replaces ad-hoc select pattern
+	deadReason  atomic.Value // string; written once, by whoever first marks dead
+	doneOnce    sync.Once    // guards close(done) — replaces ad-hoc select pattern
 	mu          deadlock.Mutex
 	sessions    map[uint32]chan *UDPFrame
 	sessionDone map[uint32]chan struct{} // closed by reaper to notify quicStreamUDPConn
@@ -2558,6 +2601,9 @@ func (m *quicStreamUDPMux) readLoop() {
 	for {
 		frame, err := ReadSmuxUDPFrame(m.br)
 		if err != nil {
+			// Relay stream gone — mark dead so the next dialUDPStream
+			// rebuilds rather than reusing it. Mirror of smuxUDPMux.
+			m.markDeadOnce(deathReasonPeerClosed)
 			slog.Warn("quicStreamUDPMux: readLoop exiting", "err", err)
 			return
 		}
@@ -2590,20 +2636,20 @@ func (m *quicStreamUDPMux) dispatchFrame(frame *UDPFrame) {
 
 func (m *quicStreamUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) error {
 	if m.dead.Load() {
-		return errStreamDead
+		return m.deadErr()
 	}
 
 	m.writeMu.Lock()
 	if m.dead.Load() {
 		m.writeMu.Unlock()
-		return errStreamDead
+		return m.deadErr()
 	}
 
 	_ = m.stream.SetWriteDeadline(time.Now().Add(streamWriteDeadline))
 	start := time.Now()
 	err := WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
 	if err != nil {
-		m.dead.Store(true)
+		m.markDeadOnce(deathReasonWriteFail)
 	}
 	m.writeMu.Unlock()
 
@@ -2616,8 +2662,36 @@ func (m *quicStreamUDPMux) writeFrame(sessionID uint32, addr string, payload []b
 	return err
 }
 
+// markDeadOnce sets the dead flag and records why. First caller wins, so the
+// recorded reason is what actually killed the mux. Mirror of smuxUDPMux.
+func (m *quicStreamUDPMux) markDeadOnce(reason string) {
+	if m.dead.CompareAndSwap(false, true) {
+		m.deadReason.Store(reason)
+	}
+}
+
+// deathReason reports why the mux died, or "" while it is still alive.
+func (m *quicStreamUDPMux) deathReason() string {
+	s, _ := m.deadReason.Load().(string)
+	if s == "" && m.dead.Load() {
+		// Marked dead but the reason Store has not landed yet (nanosecond
+		// window inside markDeadOnce). Never report a blank cause.
+		return "unknown"
+	}
+	return s
+}
+
+// deadErr reports the death to a writer that arrived after the fact, naming
+// the cause. Wraps errStreamDead so errors.Is keeps matching.
+func (m *quicStreamUDPMux) deadErr() error {
+	if r := m.deathReason(); r != "" {
+		return fmt.Errorf("%w (%s)", errStreamDead, r)
+	}
+	return errStreamDead
+}
+
 func (m *quicStreamUDPMux) markDead() {
-	m.dead.Store(true)
+	m.markDeadOnce(deathReasonClosed)
 	m.closeStreamOnce()
 }
 

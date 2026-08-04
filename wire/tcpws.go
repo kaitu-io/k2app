@@ -129,6 +129,11 @@ type TCPWSClient struct {
 	udpMux    *smuxUDPMux
 	alloc     *SessionIDAllocator
 	closed    bool
+
+	// udpMuxRebuilds counts dead-mux evictions, reported by the
+	// udp-mux-rebuild DIAG event. A steadily climbing value means the relay
+	// stream keeps dying and is being rebuilt per dial.
+	udpMuxRebuilds atomic.Uint64
 }
 
 // WireStats returns a snapshot of TCP-WS transport metrics.
@@ -532,19 +537,19 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 		return nil, err
 	}
 
-	// Fast path: mux already initialized.
+	// Fast path: a live mux is already initialized.
 	c.mu.Lock()
 	if c.alloc == nil {
 		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
-	if c.udpMux != nil {
-		mux := c.udpMux
-		alloc := c.alloc
-		c.mu.Unlock()
-		return c.newSmuxUDPConn(mux, alloc, addr), nil
-	}
+	live, evicted := c.takeLiveUDPMuxLocked()
+	alloc := c.alloc
 	c.mu.Unlock()
+	c.discardDeadUDPMux(evicted)
+	if live != nil {
+		return c.newSmuxUDPConn(live, alloc, addr), nil
+	}
 
 	// Slow path: initialize UDP mux. Serialized by initUDPMu.
 	c.initUDPMu.Lock()
@@ -556,13 +561,13 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
-	if c.udpMux != nil {
-		mux := c.udpMux
-		alloc := c.alloc
-		c.mu.Unlock()
-		return c.newSmuxUDPConn(mux, alloc, addr), nil
-	}
+	live, evicted = c.takeLiveUDPMuxLocked()
+	alloc = c.alloc
 	c.mu.Unlock()
+	c.discardDeadUDPMux(evicted)
+	if live != nil {
+		return c.newSmuxUDPConn(live, alloc, addr), nil
+	}
 
 	// Blocking I/O — no lock held.
 	stream, err := sess.OpenStream()
@@ -575,18 +580,63 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 	}
 
 	// Store result under lock. Re-check for concurrent resetConnection.
+	// The session itself may also have been swapped while we dialed
+	// (checkCachedSession evicts a dead session, connect() installs a fresh
+	// one) — caching a mux built on the superseded session would hand out a
+	// stream that can never carry a frame.
 	c.mu.Lock()
-	if c.alloc == nil {
+	if c.alloc == nil || c.sess != sess {
 		c.mu.Unlock()
 		stream.Close()
 		return nil, ErrNotConnected
 	}
 	c.udpMux = newSmuxUDPMux(stream)
 	mux := c.udpMux
-	alloc := c.alloc
+	alloc = c.alloc
 	c.mu.Unlock()
 
 	return c.newSmuxUDPConn(mux, alloc, addr), nil
+}
+
+// takeLiveUDPMuxLocked returns the cached UDP mux if it is still usable, and
+// evicts it if it has died. A dead mux comes back as `evicted`; the caller
+// must dispose of it via discardDeadUDPMux with no lock held.
+//
+// Why eviction has to live here: the cache is otherwise only cleared when the
+// whole smux *session* dies (checkCachedSession / resetConnection / Close).
+// A stream-level death — writeFrame's 5s deadline, or the peer closing the
+// relay stream — leaves the session alive, so before this the dead mux was
+// handed out for the rest of the session's life and every UDP send failed
+// instantly while TCP proxying and the heartbeat stayed healthy (#3420).
+//
+// Caller must hold c.mu.
+func (c *TCPWSClient) takeLiveUDPMuxLocked() (live, evicted *smuxUDPMux) {
+	if c.udpMux == nil {
+		return nil, nil
+	}
+	if !c.udpMux.dead.Load() {
+		return c.udpMux, nil
+	}
+	evicted = c.udpMux
+	c.udpMux = nil
+	return nil, evicted
+}
+
+// discardDeadUDPMux disposes of an evicted mux and records the rebuild.
+// Must be called with no lock held — close() touches smux internals.
+func (c *TCPWSClient) discardDeadUDPMux(m *smuxUDPMux) {
+	if m == nil {
+		return
+	}
+	// close() also closes m.done, releasing any smuxUDPConn still parked in
+	// ReadFrom on the evicted mux. writeFrame's failure path only closes the
+	// stream, so this is what actually unblocks those consumers.
+	m.close()
+	slog.Warn("DIAG: udp-mux-rebuild",
+		"transport", "tcpws",
+		"reason", m.deathReason(),
+		"rebuilds", c.udpMuxRebuilds.Add(1),
+	)
 }
 
 // DialStreamUDP opens a stream-backed UDP session.
@@ -1145,12 +1195,21 @@ func (s *TCPWSServer) Close() error {
 //     ReadSmuxUDPFrame returns ErrClosedPipe → readLoop exits and closes
 //     m.done → smuxUDPConn.ReadFrom returns net.ErrClosed. Consumers
 //     naturally unwind; TCPWSClient rebuilds a fresh mux on next DialUDP.
+//
+//     The rebuild half lives in takeLiveUDPMuxLocked — do not assume it is
+//     implicit. From 907f724 (2026-05) until #3420 (2026-08) this paragraph
+//     was the ONLY place the rebuild existed: DialUDP kept handing out the
+//     dead mux, so one write failure killed all proxy UDP (and therefore all
+//     proxy DNS) for the rest of the smux session while TCP and the
+//     heartbeat stayed healthy. Any new cache read of udpMux must go through
+//     takeLiveUDPMuxLocked.
 type smuxUDPMux struct {
 	stream      *smux.Stream
 	br          *bufio.Reader
 	writeMu     sync.Mutex // serialization, may hold across I/O — see (1)
 	streamOnce  sync.Once  // guards stream.Close (called from close() + writeFrame failure)
 	dead        atomic.Bool
+	deadReason  atomic.Value // string; written once, by whoever first marks dead
 	mu          deadlock.Mutex
 	sessions    map[uint32]chan *UDPFrame
 	sessionDone map[uint32]chan struct{} // closed by reaper to notify smuxUDPConn
@@ -1201,6 +1260,13 @@ func (m *smuxUDPMux) readLoop() {
 	for {
 		frame, err := ReadSmuxUDPFrame(m.br)
 		if err != nil {
+			// The relay stream is gone. Mark the mux dead so the next
+			// DialUDP rebuilds instead of reusing it — otherwise writes keep
+			// being accepted into a stream that no longer exists until one of
+			// them finally errors (22s of silently dropped DNS in #3420).
+			// Deliberately no closeStreamOnce here: this is the read-exit
+			// path and Close may block; eviction closes the stream.
+			m.markDeadOnce(deathReasonPeerClosed)
 			slog.Warn("smuxUDPMux: readLoop exiting", "err", err)
 			return
 		}
@@ -1240,7 +1306,7 @@ func (m *smuxUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) e
 	// Fast-path bypass: once dead, do not queue on the mutex. This drains any
 	// backlog of waiting writers immediately so cleanup propagates fast.
 	if m.dead.Load() {
-		return errStreamDead
+		return m.deadErr()
 	}
 
 	m.writeMu.Lock()
@@ -1248,7 +1314,7 @@ func (m *smuxUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) e
 	// out may have marked the mux dead while we were waiting on Lock.
 	if m.dead.Load() {
 		m.writeMu.Unlock()
-		return errStreamDead
+		return m.deadErr()
 	}
 
 	_ = m.stream.SetWriteDeadline(time.Now().Add(streamWriteDeadline))
@@ -1258,7 +1324,7 @@ func (m *smuxUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) e
 		// Store dead under writeMu so any subsequent writer that acquires
 		// the lock sees dead=true immediately and fast-fails — no head-of-
 		// line queue keeps growing while we tear down.
-		m.dead.Store(true)
+		m.markDeadOnce(deathReasonWriteFail)
 	}
 	m.writeMu.Unlock()
 
@@ -1273,12 +1339,50 @@ func (m *smuxUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) e
 	return err
 }
 
+// Reasons a UDP relay mux died, surfaced in errStreamDead and in the
+// udp-mux-rebuild DIAG event. Knowing which one fired is the difference
+// between "our write stalled" and "the peer hung up".
+const (
+	deathReasonWriteFail  = "write-fail"  // our Write hit the 5s deadline or errored
+	deathReasonPeerClosed = "peer-closed" // readLoop saw EOF/reset on the relay stream
+	deathReasonClosed     = "closed"      // local teardown (close/reset)
+)
+
+// markDeadOnce sets the dead flag and records why. The first caller wins, so
+// the recorded reason is the one that actually killed the mux rather than a
+// later teardown that merely observed it.
+func (m *smuxUDPMux) markDeadOnce(reason string) {
+	if m.dead.CompareAndSwap(false, true) {
+		m.deadReason.Store(reason)
+	}
+}
+
+// deathReason reports why the mux died, or "" while it is still alive.
+func (m *smuxUDPMux) deathReason() string {
+	s, _ := m.deadReason.Load().(string)
+	if s == "" && m.dead.Load() {
+		// Marked dead but the reason Store has not landed yet (nanosecond
+		// window inside markDeadOnce). Never report a blank cause.
+		return "unknown"
+	}
+	return s
+}
+
+// deadErr reports the death to a writer that arrived after the fact, naming
+// the cause. Wraps errStreamDead so errors.Is keeps matching.
+func (m *smuxUDPMux) deadErr() error {
+	if r := m.deathReason(); r != "" {
+		return fmt.Errorf("%w (%s)", errStreamDead, r)
+	}
+	return errStreamDead
+}
+
 // markDead transitions the mux to the dead state and closes the underlying
 // stream once. Safe to call from any goroutine; idempotent across concurrent
 // callers via streamOnce. Used by close() to pre-mark the mux so concurrent
 // writeFrame calls fast-fail without emitting a false-positive DIAG warning.
 func (m *smuxUDPMux) markDead() {
-	m.dead.Store(true)
+	m.markDeadOnce(deathReasonClosed)
 	m.closeStreamOnce()
 }
 
@@ -1469,7 +1573,7 @@ const streamWriteDeadline = 5 * time.Second
 
 // errStreamDead is returned by writeFrame after the stream has been killed.
 // Producers see this and abandon the UDP session cleanly.
-var errStreamDead = errors.New("wire: stream killed (peer flow-control stalled)")
+var errStreamDead = errors.New("wire: UDP relay stream is dead")
 
 type serverSmuxWriter struct {
 	stream    *smux.Stream
