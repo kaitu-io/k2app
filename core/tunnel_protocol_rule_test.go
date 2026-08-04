@@ -597,3 +597,202 @@ func (f *xorNonceAEADTest) Open(out, nonce, ciphertext, additionalData []byte) (
 	}
 	return result, err
 }
+
+// --- TCP side -------------------------------------------------------------
+//
+// The protocol re-route originally landed on the UDP path only. TCP is
+// BitTorrent's primary transport, so {protocol:["bittorrent"]} — the first
+// protocol rule a user is likely to write — matched nothing there, silently.
+// The two tests below pin the TCP counterpart of the UDP handler's step 6.
+
+// btHandshakePkt returns a BitTorrent peer handshake (19-byte pstr + payload),
+// the fixture sniff.IsBitTorrent recognizes on a TCP peek.
+func btHandshakePkt(t *testing.T) []byte {
+	t.Helper()
+	pkt, err := hex.DecodeString(
+		"13426974546f7272656e742070726f746f636f6c" +
+			"0000000000100000e21ea9569b69bab33c97851d0298bdfa89bc90922d5554313631302dea812fcd6a3563e3be40c1d1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pkt
+}
+
+// TestTCPSniff_NoProtocolRule_KeepsBTForcedDirect pins the "absent any
+// protocol rule, behavior is byte-for-byte what it was" half of the contract.
+// A Router IS installed here (unlike TestClientTunnel_HandleTCP_BTForcedDirect,
+// which passes Router: nil) precisely so the new RouteConnProto call is
+// actually reached and proven to be a no-op when no route mentions a protocol.
+func TestTCPSniff_NoProtocolRule_KeepsBTForcedDirect(t *testing.T) {
+	const (
+		directTarget = rule.Target(0)
+		proxyTarget  = rule.Target(2)
+	)
+	// No routes at all → everything falls through to the proxy fallback, so
+	// the BT sniff gate (action != directTarget) is open.
+	ruleEngine := rule.NewEngine(nil, proxyTarget, nil, false)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	serverGot := make(chan []byte, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 256)
+		n, _ := conn.Read(buf)
+		out := make([]byte, n)
+		copy(out, buf[:n])
+		serverGot <- out
+	}()
+
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  directTarget,
+		DefaultTarget: proxyTarget,
+		Router:        NewRouter(ruleEngine),
+		SniffBT:       true,
+	})
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer tunnel.Close()
+
+	localConn, providerConn := net.Pipe()
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleTCP(localConn, ln.Addr().String())
+		close(done)
+	}()
+
+	bt := btHandshakePkt(t)
+	providerConn.Write(bt)
+
+	select {
+	case got := <-serverGot:
+		if len(got) < 20 || !bytes.Equal(got[:20], bt[:20]) {
+			t.Errorf("direct listener got %x, want a BT handshake prefix %x", got, bt[:20])
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout: BitTorrent did not reach the direct listener — the no-protocol-rule default (force direct) regressed")
+	}
+
+	providerConn.Close()
+	<-done
+
+	dialer.mu.Lock()
+	tcpCalls := len(dialer.tcpCalls)
+	dialer.mu.Unlock()
+	if tcpCalls != 0 {
+		t.Errorf("DialTCP called %d times, want 0 (no protocol rule → BitTorrent still forced direct)", tcpCalls)
+	}
+}
+
+// TestTCPSniff_ProtocolRuleOverridesBTDefault is the override half: an
+// explicit {protocol:["bittorrent"], via: <proxy>} rule must beat the
+// hardcoded "BitTorrent forced direct" default and put the flow back on the
+// tunnel. Inverting the default (rather than reinforcing it) is what makes
+// this test able to fail — a no-op re-route leaves the connection direct.
+//
+// Mutation check: deleting the protocol re-route block from handleTCP must
+// turn this red.
+func TestTCPSniff_ProtocolRuleOverridesBTDefault(t *testing.T) {
+	const (
+		directTarget = rule.Target(0)
+		proxyTarget  = rule.Target(2)
+	)
+	// The rule cannot match at routeConn time — meta.Protocol is empty there
+	// and matchMeta is fail-closed on protocol — so the connection starts on
+	// the fallback (proxy), gets forced direct by the BT default, and only
+	// the post-sniff re-route can bring it back.
+	ruleEngine := rule.NewEngine([]rule.RouteEntry{
+		{Target: proxyTarget, Protocols: []string{"bittorrent"}},
+	}, proxyTarget, nil, false)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	wentDirect := make(chan struct{}, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		wentDirect <- struct{}{}
+	}()
+
+	dialer := newMockDialer()
+	remoteConn, clientConn := net.Pipe()
+	dialer.tcpConns <- remoteConn
+
+	prov := &mockProvider{}
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  directTarget,
+		DefaultTarget: proxyTarget,
+		Router:        NewRouter(ruleEngine),
+		SniffBT:       true,
+	})
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer tunnel.Close()
+
+	localConn, providerConn := net.Pipe()
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleTCP(localConn, ln.Addr().String())
+		close(done)
+	}()
+
+	bt := btHandshakePkt(t)
+	go providerConn.Write(bt)
+
+	proxyGot := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 256)
+		n, err := clientConn.Read(buf)
+		if err != nil {
+			return
+		}
+		out := make([]byte, n)
+		copy(out, buf[:n])
+		proxyGot <- out
+	}()
+
+	select {
+	case got := <-proxyGot:
+		if len(got) < 20 || !bytes.Equal(got[:20], bt[:20]) {
+			t.Errorf("proxy conn got %x, want a BT handshake prefix %x", got, bt[:20])
+		}
+	case <-wentDirect:
+		t.Fatal("BitTorrent egressed DIRECT — the {protocol:[\"bittorrent\"], via: proxy} rule did not override the post-sniff default")
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for BitTorrent to reach the proxy conn")
+	}
+
+	providerConn.Close()
+	clientConn.Close()
+	<-done
+
+	dialer.mu.Lock()
+	tcpCalls := len(dialer.tcpCalls)
+	dialer.mu.Unlock()
+	if tcpCalls != 1 {
+		t.Errorf("DialTCP called %d times, want 1 (protocol rule routes BitTorrent to the proxy)", tcpCalls)
+	}
+}

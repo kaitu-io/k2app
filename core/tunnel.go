@@ -244,8 +244,17 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 			conn = &prefixConn{Conn: conn, reader: io.MultiReader(bytes.NewReader(peeked), conn)}
 
 			// BT: downgrade PROXY → DIRECT
+			//
+			// protocol records what was sniffed so the protocol-rule re-route
+			// below can offer an explicit rule the chance to override this
+			// default. Note the gate: BT is only ever sniffed on a connection
+			// that was headed for the PROXY. A connection already routed
+			// direct is never inspected, so `protocol` stays empty and no
+			// protocol rule can fire for it — see rule/CLAUDE.md.
+			var protocol string
 			if t.sniffBT && action != t.directTarget {
 				if sniff.IsBitTorrent(bytes.NewReader(peeked)) {
+					protocol = sniff.ProtoBitTorrent
 					action = t.directTarget
 					slog.Debug("tunnel: BitTorrent detected, forcing direct", "dest", dest)
 				}
@@ -279,6 +288,34 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 				if newDest := net.JoinHostPort(sni, port); dest != newDest {
 					dest = newDest
 					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", sni)
+				}
+			}
+
+			// Protocol-aware re-route — the TCP counterpart of the UDP
+			// handler's step 6. An explicit protocol rule wins; without one
+			// we keep the historical default set above (BitTorrent forced
+			// direct), byte for byte. TCP is BitTorrent's primary transport,
+			// so {protocol:["bittorrent"]} is the first protocol rule a user
+			// is likely to write — leaving this out made it match nothing on
+			// TCP, silently.
+			//
+			// Use the sniffed SNI/Host when we have one (same host the SNI
+			// re-route above used) so a combined {protocol, domain_suffix}
+			// rule can actually match: `host` is an IP literal whenever the
+			// client dialed by address, and RouteConnProto's host-criteria
+			// branch would silently never hit against an IP for a
+			// domain-authored rule.
+			if protocol != "" && t.router != nil {
+				protoHost := host
+				if sni != "" {
+					protoHost = sni
+				}
+				protoMeta := connMeta
+				protoMeta.Protocol = protocol
+				if protoAction, matched := t.router.RouteConnProto(protoHost, protoMeta); matched {
+					action = protoAction
+					slog.Debug("tunnel: protocol rule override", "dest", dest,
+						"protocol", protocol, "action", action)
 				}
 			}
 		}
