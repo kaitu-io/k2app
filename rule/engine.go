@@ -54,12 +54,29 @@ func (r *RouteEntry) hasHostCriteria() bool {
 }
 
 // hasMetaCriteria reports whether this route has connection metadata criteria.
+// Used by matchConnLocked/matchMeta to decide whether a route needs any
+// per-connection matching at all. Deliberately broader than
+// hasProcessCriteria below — Port/Protocol/SrcCIDRs/NetworkMatch are
+// connection-time criteria too, they just don't require process attribution.
 func (r *RouteEntry) hasMetaCriteria() bool {
 	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 ||
 		len(r.ProcessNamePrefixes) > 0 || len(r.PackageNamePrefixes) > 0 ||
 		len(r.InstallerPackages) > 0 ||
 		r.NetworkMatch != "" || len(r.SrcCIDRs) > 0 || len(r.PortRanges) > 0 ||
 		len(r.Protocols) > 0
+}
+
+// hasProcessCriteria reports whether this route needs per-connection process
+// attribution (OS process name / Android package name / installer package).
+// Narrower than hasMetaCriteria: Port, Protocol, SrcCIDRs and NetworkMatch
+// are populated from the packet/socket alone (destination port, sniffed
+// protocol, source IP, transport) — none of them need ProcessSearcher.
+// Backs Engine.HasProcessCriteria, which gates the tunnel's per-connection
+// lsof-equivalent cost (see engine/engine.go's ProcessSearcher gate).
+func (r *RouteEntry) hasProcessCriteria() bool {
+	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 ||
+		len(r.ProcessNamePrefixes) > 0 || len(r.PackageNamePrefixes) > 0 ||
+		len(r.InstallerPackages) > 0
 }
 
 // Engine is the multi-ruleset matching engine.
@@ -604,15 +621,33 @@ func (e *Engine) DisableSniff() bool {
 }
 
 // HasMetaCriteria reports whether any loaded route matches on connection
-// metadata (process_name / package_name / network). The tunnel uses this to
-// short-circuit per-connection ProcessSearcher invocation when no rule needs
-// it — without any bypass list, calling lsof/equivalent per connection is
-// pure waste.
+// metadata (process_name / package_name / network / port / protocol /
+// src_ip_cidr). General "does anything need per-connection matching"
+// check — NOT the ProcessSearcher gate; see HasProcessCriteria for that
+// narrower question.
 func (e *Engine) HasMetaCriteria() bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	for i := range e.routes {
 		if e.routes[i].hasMetaCriteria() {
+			return true
+		}
+	}
+	return false
+}
+
+// HasProcessCriteria reports whether any loaded route needs per-connection
+// process attribution (process_name / package_name / installer_package,
+// exact or prefix). The tunnel uses this — not HasMetaCriteria — to
+// short-circuit per-connection ProcessSearcher invocation: without any App
+// Bypass list, calling lsof/equivalent per connection is pure waste. Port,
+// protocol, and src_ip_cidr rules must NOT hold this gate open — they're
+// populated from the packet/socket alone, never from process lookup.
+func (e *Engine) HasProcessCriteria() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for i := range e.routes {
+		if e.routes[i].hasProcessCriteria() {
 			return true
 		}
 	}

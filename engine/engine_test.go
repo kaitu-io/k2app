@@ -2355,6 +2355,49 @@ func TestBuildRouteEntries_ProtocolOnly(t *testing.T) {
 	}
 }
 
+// TestGateProcessSearcher_PortProtocolOnly_DropsProcessSearcher pins the
+// narrowed ProcessSearcher gate (engine.go's gateProcessSearcher, backed by
+// rule.Engine.HasProcessCriteria): a ruleset with ONLY port/protocol/network
+// criteria — no process_name/package_name/installer_package anywhere —
+// must NOT hold the ProcessSearcher gate open. Port/Protocol/NetworkMatch
+// are populated from the packet/socket alone (core/tunnel.go's routeConn)
+// and never touch process attribution. Getting this wrong means every user
+// on a port- or protocol-only ruleset (e.g. the default games/STUN rules)
+// pays a per-connection lsof-equivalent cost for nothing — this is exactly
+// the regression the coordinator flagged: HasMetaCriteria (which DOES
+// count Port/Protocol/NetworkMatch) used to gate this and would keep the
+// searcher alive for every such user.
+func TestGateProcessSearcher_PortProtocolOnly_DropsProcessSearcher(t *testing.T) {
+	ruleEngine := rule.NewEngine([]rule.RouteEntry{
+		{
+			Target:       rule.Target(0),
+			NetworkMatch: "udp",
+			PortRanges:   []rule.PortRange{{Lo: 3478, Hi: 3478}},
+			Protocols:    []string{"stun"},
+		},
+	}, rule.Target(2), nil, false)
+
+	got := gateProcessSearcher(provider.NopProcessSearcher{}, ruleEngine)
+	if got != nil {
+		t.Fatalf("gateProcessSearcher with port/protocol/network-only rules = %v, want nil (no rule needs process attribution)", got)
+	}
+}
+
+// TestGateProcessSearcher_ProcessRule_KeepsProcessSearcher is the positive
+// control for the test above: a ruleset that DOES reference process_name
+// must keep the ProcessSearcher alive.
+func TestGateProcessSearcher_ProcessRule_KeepsProcessSearcher(t *testing.T) {
+	ruleEngine := rule.NewEngine([]rule.RouteEntry{
+		{Target: rule.Target(0), ProcessNames: []string{"Steam"}},
+	}, rule.Target(2), nil, false)
+
+	searcher := provider.NopProcessSearcher{}
+	got := gateProcessSearcher(searcher, ruleEngine)
+	if got == nil {
+		t.Fatal("gateProcessSearcher with a process_name rule = nil, want the searcher preserved")
+	}
+}
+
 // TestBuildRouteEntries_AllInvalidInlineDropped pins the IsEmpty guard at the
 // assembly site: an inline route whose domain_suffix is not a valid hostname
 // must contribute NO route entry (old BuildInlineSet stored the garbage and

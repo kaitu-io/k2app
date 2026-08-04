@@ -451,13 +451,7 @@ func (e *Engine) Start(cfg Config) error {
 	}
 
 	// 7. Build client tunnel.
-	// Gate ProcessSearcher: skip per-connection process attribution when no
-	// loaded rule references it. This zeroes out the lsof exec cost for the
-	// 99% of users who haven't configured an App Bypass list.
-	processSearcher := cfg.ProcessSearcher
-	if processSearcher != nil && !ruleEngine.HasMetaCriteria() {
-		processSearcher = nil
-	}
+	processSearcher := gateProcessSearcher(cfg.ProcessSearcher, ruleEngine)
 	tunnelCfg := core.ClientTunnelConfig{
 		Provider:        prov,
 		Outbounds:       outbounds,
@@ -1396,6 +1390,24 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 		}
 	}
 	return entries, fallback, disableSniff
+}
+
+// gateProcessSearcher decides whether the tunnel should receive a
+// ProcessSearcher: skip per-connection process attribution when no loaded
+// rule needs it. This zeroes out the lsof exec cost for the 99% of users
+// who haven't configured an App Bypass list. Deliberately keyed on
+// rule.Engine.HasProcessCriteria, NOT HasMetaCriteria — port/protocol/
+// network/src_ip_cidr rules are populated from the packet/socket alone (see
+// core/tunnel.go's routeConn) and never touch ProcessSearcher, so they must
+// not hold this gate open. Getting this wrong means every user on a port- or
+// protocol-only ruleset (e.g. the default games/STUN rules) pays a
+// per-connection lsof-equivalent cost for nothing. Extracted as a pure
+// function for unit testing — see engine_test.go.
+func gateProcessSearcher(processSearcher provider.ProcessSearcher, ruleEngine *rule.Engine) provider.ProcessSearcher {
+	if processSearcher != nil && !ruleEngine.HasProcessCriteria() {
+		return nil
+	}
+	return processSearcher
 }
 
 // buildOutboundMap assigns Target indices to each unique outbound URL in routes.
