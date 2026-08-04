@@ -15,6 +15,12 @@ Server-side listener orchestration, auto-provisioning, and TCP/UDP proxy handler
 
 `HandleUDP` transparently caches DNS responses for port-53 traffic using `core/dns.DNSCache` (freelru, 10k entries, 5min–4hr TTL, 30min stale window). Cache hit: respond directly from cache, no upstream query. Cache miss: forward to system resolver (`h.dnsUpstream`, default `127.0.0.11:53` — Docker embedded DNS → host systemd-resolved → cloud provider internal DNS) instead of client-specified upstream. This avoids upstream reachability issues (e.g. `9.9.9.9` unreachable from certain cloud regions). Truncated (TC) responses forwarded but not cached. Non-DNS UDP (port != 53) unchanged. `writeToMu` serializes `conn.WriteTo` calls from cache-hit goroutine and upstream-response goroutine.
 
+## Server UDP NAT Semantics
+
+`HandleUDP`'s egress socket is **unconnected** (`net.ListenUDP("udp4", nil)`, `handler.go`): one session gets one stable egress port, and a reply from *any* source address is accepted back on it — endpoint-independent mapping + filtering, i.e. full-cone NAT. This is what games and ICE/STUN need (Symmetric NAT fails connectivity checks on both). A session tracks the distinct destinations it has addressed in a map + LRU (`udpDestEntry`, `maxUDPDestsPerSession = 64`, evicts oldest on overflow) so it can multiplex a game server + matchmaker + STUN reflector through the one socket.
+
+**Do not change the egress socket back to `net.DialUDP`.** A connected socket pins the session to its first destination and only accepts replies from that peer — that's Symmetric NAT, and it will immediately regress the full-cone behavior this section describes: ICE checks fail Strict, and multi-destination sessions (matchmaker/STUN/game-server on one socket) silently lose replies from every destination but the first.
+
 ## Architecture
 
 ```
@@ -35,7 +41,7 @@ QUIC + TCP-WS Listeners
 │AcceptTCP│  │ServeUDP  │
 └───┬────┘  └────┬─────┘
     │            │
-net.Dial     net.Dial
+net.Dial   net.ListenUDP
 bidirectional  forward
   pipe       packets
 ```

@@ -40,7 +40,7 @@ Outbound table is `[]Outbound` indexed by `rule.Target` value. `nil` entry = rej
 2. `outbound(target)` → lookup Outbound (nil = reject)
 3. Sniff (single peek): BT (uTP/UDPTracker) / WebRTC (STUN/DTLS) → force direct; QUIC SNI (443) → upgrade direct→wire
 4. `outbound.DialUDP` returns `(PacketConn, destAddr)` — destAddr non-nil for direct (WriteTo target), nil for wire (pre-connected)
-5. `pipePacket(local, remote, destAddr)` bidirectional copy
+5. `pipePacket(local, remote, destAddr)` bidirectional copy. `pipePacket` treats the session's first observed destination as `primary`: packets to `primary` keep using the outbound's `destAddr` (preserves the domain label from an SNI upgrade / IPv6 rewrite instead of a bare IP), packets to any other destination are forwarded with their real, per-packet address. This is what lets one UDP socket (game server + matchmaker + STUN reflector, say) fan out correctly instead of pinning every packet to the first peer it talked to. See `pipePacket` in `tunnel.go`.
 
 **Sniff flags** (set by engine, disabled in global mode):
 - `sniffBT` — BT/WebRTC detection: wire→direct (BitTorrent TCP, uTP, UDPTracker, STUN, DTLS)

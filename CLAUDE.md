@@ -56,7 +56,7 @@ All diagnostic logs use `log/slog` (stdlib). The `DIAG:` prefix is reserved for 
 
 - Emitted every 30 seconds from `healthMonitor.sample()`.
 - Fixed prefix: `"DIAG: heartbeat"`.
-- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `uptimeS`, `fallback`, `heapMB`, `sysMB`, `goroutines`.
+- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `udpTxDrops`, `udpRxDrops`, `uptimeS`, `fallback`, `heapMB`, `sysMB`, `goroutines`. `udpTxDrops`/`udpRxDrops` are cumulative since connect, not a per-interval delta — diff two heartbeats to get a rate.
 - Human-readable sizes (MB) and durations (ms/s).
 - MUST NOT log at 1Hz — only every 30 samples.
 
@@ -560,7 +560,7 @@ scripts/                       Install scripts (install-k2s.sh, install-k2.sh) +
 
 ## Architecture
 
-**L4 Proxy Model**: Client uses gVisor stack (sing-tun) to convert TUN packets to L4 TCP/UDP connections. Server is simple userspace proxy (no TUN/NAT).
+**L4 Proxy Model**: Client uses gVisor stack (sing-tun) to convert TUN packets to L4 TCP/UDP connections. Server is a userspace proxy — no TUN, no kernel NAT table. Its UDP egress socket is unconnected (`net.ListenUDP`, full-cone: one port per session, any source accepted back) with a per-session destination LRU (`server/handler.go`), which is NAT-*like* addressing but not an actual NAT implementation — see `server/CLAUDE.md`.
 
 ### Layer Model
 
@@ -668,7 +668,7 @@ engine.Stop()
 - TUN device requires root. `k2 setup` or `k2 service install` installs daemon as root via launchd/systemd/Windows Service
 - QUIC datagrams may not be supported — wire.DialUDP falls back to stream-based UDP
 - `blockQUIC` defaults to `false` — browser QUIC flows through DATAGRAM path (unreliable, no retransmission at tunnel layer). Inner browser QUIC CC (BBR/Cubic) adapts to outer K2CC throughput. Set `block_quic: true` in client config to restore ICMP-reject behavior.
-- `SendDatagram` uses atomic inflight counter (`maxDatagramInflight=32`) — when concurrent calls exceed limit, excess packets dropped immediately (no goroutine spawned). Protocol-correct for unreliable DATAGRAM. Inner protocol retransmits as needed.
+- `SendDatagram` uses atomic inflight counter (`maxDatagramInflight=8`, `wire/quic.go:55`) — when concurrent calls exceed limit, excess packets dropped immediately (no goroutine spawned). Protocol-correct for unreliable DATAGRAM. Inner protocol retransmits as needed. 8 is deliberately well below quic-go's own 32-frame datagram queue: `datagramQueue.Add()` blocks indefinitely once that queue is full, so a limit close to 32 would let most concurrent `HandleUDP` goroutines pile up in the blocking path and freeze together — the low cap keeps most of them free to keep reading from targets instead.
 - smux needs buffer tuning for VPN traffic (default 4MB too small, use 16MB)
 - ECH requires X25519 keys (not P-256) — Go's crypto/tls only supports DHKEM(X25519)
 - DNS queries need trailing dot (FQDN) — `crypto.cloudflare.com.` not `crypto.cloudflare.com`
