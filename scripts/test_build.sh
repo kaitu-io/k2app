@@ -121,7 +121,6 @@ else
 fi
 
 JS_COUNT=$(find webapp/dist/assets -name '*.js' 2>/dev/null | wc -l | tr -d ' ')
-CSS_COUNT=$(find webapp/dist/assets -name '*.css' 2>/dev/null | wc -l | tr -d ' ')
 
 if [ "$JS_COUNT" -gt 0 ]; then
   pass "dist/assets/ contains JS files ($JS_COUNT)"
@@ -129,11 +128,8 @@ else
   fail "dist/assets/ contains no JS files"
 fi
 
-if [ "$CSS_COUNT" -gt 0 ]; then
-  pass "dist/assets/ contains CSS files ($CSS_COUNT)"
-else
-  fail "dist/assets/ contains no CSS files"
-fi
+# No CSS assertion: MUI/Emotion injects styles at runtime, so a correct build
+# emits zero .css files — asserting their presence fails every build.
 
 # ============================================================
 # 3. k2 Go build
