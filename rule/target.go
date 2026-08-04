@@ -85,8 +85,8 @@ func (m MatchConfig) HasHostCriteria() bool {
 //
 // Country-specific presets follow the "{cc}-access" naming convention and
 // expand to [{cc}-sites, geoip-{cc}], served from the per-country
-// {cc}-direct.k2b bundle published by kaitu-io/k2-rules (14 countries:
-// cn, ir, ru, tr, pk, vn, mm, eg, id, sa, ae, th, bd, by).
+// {cc}-direct.k2b bundle published by kaitu-io/k2-rules (17 countries:
+// cn, ir, ru, tr, pk, vn, mm, eg, id, sa, ae, th, bd, by, tm, kz, uz).
 //
 // Note on geoip-cn: as of k2-rules sources.go (post HTTPDNS-anchors merge),
 // the "geoip-cn" set blends two data sources — Loyalsoldier mainland CIDRs
@@ -95,10 +95,18 @@ func (m MatchConfig) HasHostCriteria() bool {
 // binaries pick up HTTPDNS anchors on the next daily bundle refresh without
 // needing this preset map to change. See k2-rules sources.go for details.
 //
+// "games" is a standalone service bundle (not a "{cc}-access" country
+// package): overseas game-publisher domains + ASN IP ranges, served from
+// games.krs as the sets [games-sites, games-ip]. Referencing the "games"
+// preset pulls in this extra bundle on top of whatever country presets are
+// already selected.
+//
 // The set names "ir-blocked" and "ru-blocked" are reserved for a future
 // force-proxy feature (IP+domain data from runetfreedom / citizenlab). They
 // are downloaded as part of ir-direct.k2b / ru-direct.k2b but not yet
-// exposed via any preset here.
+// exposed via any preset here. Similarly, "tencent-overseas" (from
+// tencent-overseas.krs) is published by kaitu-io/k2-rules but is a
+// build-internal set — deliberately not exposed via any preset here.
 var presets = map[string][]string{
 	"overseas":  {"overseas"},
 	"cn-access": {"cn-sites", "geoip-cn"},
@@ -115,6 +123,10 @@ var presets = map[string][]string{
 	"th-access": {"th-sites", "geoip-th"},
 	"bd-access": {"bd-sites", "geoip-bd"},
 	"by-access": {"by-sites", "geoip-by"},
+	"tm-access": {"tm-sites", "geoip-tm"},
+	"kz-access": {"kz-sites", "geoip-kz"},
+	"uz-access": {"uz-sites", "geoip-uz"},
+	"games":     {"games-sites", "games-ip"},
 }
 
 // ExpandPreset returns a copy of the preset's name list, or nil if unknown.

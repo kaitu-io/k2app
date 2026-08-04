@@ -69,6 +69,41 @@ func TestExpandPreset(t *testing.T) {
 		t.Errorf("ExpandPreset(\"mm-access\") = %v, want mm-sites and geoip-mm", mm)
 	}
 
+	tm := ExpandPreset("tm-access")
+	if tm == nil {
+		t.Fatal("ExpandPreset(\"tm-access\") returned nil")
+	}
+	if !contains(tm, "tm-sites") || !contains(tm, "geoip-tm") {
+		t.Errorf("ExpandPreset(\"tm-access\") = %v, want tm-sites and geoip-tm", tm)
+	}
+
+	kz := ExpandPreset("kz-access")
+	if kz == nil {
+		t.Fatal("ExpandPreset(\"kz-access\") returned nil")
+	}
+	if !contains(kz, "kz-sites") || !contains(kz, "geoip-kz") {
+		t.Errorf("ExpandPreset(\"kz-access\") = %v, want kz-sites and geoip-kz", kz)
+	}
+
+	uz := ExpandPreset("uz-access")
+	if uz == nil {
+		t.Fatal("ExpandPreset(\"uz-access\") returned nil")
+	}
+	if !contains(uz, "uz-sites") || !contains(uz, "geoip-uz") {
+		t.Errorf("ExpandPreset(\"uz-access\") = %v, want uz-sites and geoip-uz", uz)
+	}
+
+	// "games" is a standalone service bundle, not a "{cc}-access" country
+	// preset — no "-access" suffix, and its set names don't follow the
+	// {cc}-sites/geoip-{cc} shape.
+	games := ExpandPreset("games")
+	if games == nil {
+		t.Fatal("ExpandPreset(\"games\") returned nil")
+	}
+	if !contains(games, "games-sites") || !contains(games, "games-ip") {
+		t.Errorf("ExpandPreset(\"games\") = %v, want games-sites and games-ip", games)
+	}
+
 	// Unknown preset returns nil.
 	if got := ExpandPreset("nonexistent"); got != nil {
 		t.Errorf("ExpandPreset(\"nonexistent\") = %v, want nil", got)
