@@ -38,22 +38,27 @@ func TestSelector_QualityPathNeedsSustainAndFreshBackup(t *testing.T) {
 	}
 }
 
-// Switch back requires echo-verified recovery AND asymmetric ratio.
-func TestSelector_SwitchBackRequiresEchoAndRatio(t *testing.T) {
+// Switch back requires echo-verified recovery ALONE — no score comparison
+// (spec §3.2 "切回为什么不做分数比较"). While tcpws serves traffic QUIC
+// carries none, so scoreQUIC is unmeasurable and pinned at neutral; a
+// score-ratio gate would be mathematically unreachable against a healthy
+// tcpws and would strand users on the stateful fallback forever.
+func TestSelector_SwitchBackRequiresEcho(t *testing.T) {
 	base := time.Unix(1000, 0)
 	st := newState("tcpws")
 	st.nextReviewAt = base // review window open
-	// Ratio met (quic 0.9 > tcpws 0.5×1.2=0.6) but echo NOT verified → stay.
+	// Echo NOT verified → stay, regardless of scores.
 	in := selectorInput{now: base, scoreQUIC: 0.9, scoreTCPWS: 0.5, quicEchoRecovered: false}
 	_, d := selectorStep(st, in)
 	if d != channelStay {
 		t.Fatalf("no echo recovery → stay, got %v", d)
 	}
-	// Echo verified + ratio met → switch back.
-	in2 := selectorInput{now: base, scoreQUIC: 0.9, scoreTCPWS: 0.5, quicEchoRecovered: true}
+	// Echo verified → switch back, even with a score ratio that would have
+	// failed the old switchBackRatio gate (tcpws healthy, quic neutral).
+	in2 := selectorInput{now: base, scoreQUIC: 0.5, scoreTCPWS: 0.99, quicEchoRecovered: true}
 	_, d2 := selectorStep(st, in2)
 	if d2 != channelSwitchToQUIC {
-		t.Fatalf("echo+ratio → switch back, got %v", d2)
+		t.Fatalf("echo alone → switch back, got %v", d2)
 	}
 }
 
@@ -86,7 +91,11 @@ func TestSelector_FlapWindowDoublesCapped(t *testing.T) {
 	}
 }
 
-// Dead zone: ratio between 0.833 and 1.5 → no movement in either direction.
+// Dead zone: switch-AWAY only. Ratio below switchAwayRatio → no movement
+// away from QUIC. (Switch-back has no dead zone / no score gate at all —
+// see TestSelector_SwitchBackRequiresEcho and
+// TestRollback_FiresWhenTCPWSHealthyAndQUICEchoVerified: an echo-verified
+// rollback fires regardless of scores, by design (spec §3.2).)
 func TestSelector_DeadZoneNoMovement(t *testing.T) {
 	base := time.Unix(1000, 0)
 	onQUIC := newState("quic")
@@ -96,13 +105,6 @@ func TestSelector_DeadZoneNoMovement(t *testing.T) {
 	_, d := selectorStep(onQUIC, selectorInput{now: base.Add(qualitySustainWindow + time.Second), scoreQUIC: 0.5, scoreTCPWS: 0.6, backupFresh: backupFreshSamplesGate})
 	if d != channelStay {
 		t.Fatalf("ratio 1.2 on QUIC → stay, got %v", d)
-	}
-	onTCPWS := newState("tcpws")
-	onTCPWS.nextReviewAt = base
-	// ratio tcpws/quic = 0.5/0.55 = 0.91 (> 0.833) → stay on TCP-WS.
-	_, d2 := selectorStep(onTCPWS, selectorInput{now: base, scoreQUIC: 0.55, scoreTCPWS: 0.5, quicEchoRecovered: true})
-	if d2 != channelStay {
-		t.Fatalf("ratio 0.91 on TCP-WS → stay, got %v", d2)
 	}
 }
 

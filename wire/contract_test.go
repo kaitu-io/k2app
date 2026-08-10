@@ -212,7 +212,13 @@ func TestContract_QUICRecover_ProbeSuccess(t *testing.T) {
 	// Simulate the background probe's echo-verified recovery: 3 passing
 	// echo rounds mark quicEchoRecovered, then evaluateSelector — past the
 	// flap-damping review window opened by SetFallbackActive(true) above —
-	// applies the switch back to QUIC.
+	// applies the switch back to QUIC. Deliberately NO score manipulation:
+	// rollback is echo-gated only (spec §3.2 "切回为什么不做分数比较") — while
+	// tcpws serves traffic QUIC carries none, so scoreQUIC is unmeasurable and
+	// pinned at neutral. A score-ratio gate would be mathematically
+	// unreachable against a healthy tcpws; see
+	// TestRollback_FiresWhenTCPWSHealthyAndQUICEchoVerified for the regression
+	// pinning that exact scenario.
 	now := time.Now()
 	for i := 0; i < 3; i++ {
 		tm.RecordEchoResult("quic", 20*time.Millisecond, nil, now)

@@ -195,16 +195,19 @@ func TestContract_QUICBackupFlow(t *testing.T) {
 	}
 
 	// Simulate the background probe's echo-verified recovery (runProbeOnce):
-	// 3 passing echo rounds mark quicEchoRecovered, a clean loss/RTT sample
-	// gives QUIC a clear quality edge over tcpws (which Phase 1 already
-	// nudged off-neutral with one real success), then evaluateSelector —
+	// 3 passing echo rounds mark quicEchoRecovered, then evaluateSelector —
 	// past the flap-damping review window opened by the race-lost install
-	// above — applies the switch back to QUIC.
+	// above — applies the switch back to QUIC. Deliberately NO score
+	// compensation here: Phase 1 already nudged scoreTCPWS off-neutral with
+	// one real success (tcpws is "healthy-ish", not cold), and rollback is
+	// echo-gated only (spec §3.2) — a score-ratio gate would be unreachable
+	// against a healthy tcpws and strand users on the stateful fallback
+	// forever. See TestRollback_FiresWhenTCPWSHealthyAndQUICEchoVerified for
+	// the dedicated regression pinning this against a fully healthy tcpws.
 	now := time.Now()
 	for i := 0; i < 3; i++ {
 		tm.RecordEchoResult("quic", 20*time.Millisecond, nil, now)
 	}
-	tm.RecordQUICStats(WireStats{RTT: 20 * time.Millisecond, MinRTT: 20 * time.Millisecond}, now)
 	tm.quicEchoRecovered.Store(true)
 
 	if got := tm.evaluateSelector(now.Add(flapWindowBase + time.Second)); got != channelSwitchToQUIC {

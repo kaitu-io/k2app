@@ -130,15 +130,17 @@ quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT �
 2. **质量通路**（新增，解根因 B）：`score(tcpws) > score(quic) × 1.5` 且**持续 ≥ 10s** → 切。半死场景由此路生效。
    - **前置条件（审查坐实的顺序依赖）**：质量通路要能比较，备用通道必须已有**非陈旧**分数。但 §3.3 规定主通道健康时移动端对备用通道 0 主动探测 → 此时 `score(tcpws)` 是陈旧/中性值，无法据以切换。解法：**主通道 score 跌破 0.7 是唯一的"预警触发器"**，它先驱动 §3.3 的频率控制器把备用通道探测升频（5s），攒够 ≥2 个新样本后质量通路才被允许评估。在备用通道尚无新样本的窗口内，只有快速通路（握手失败）能切走。这避免了"切到一条从没探测过、可能已死的备用通道"。
 
-**切回（TCP-WS → QUIC），全部满足才切**（解根因 A）：
+**切回（TCP-WS → QUIC），全部满足才切**（解根因 A，且不制造"永不回家"的反向缺陷）：
 1. `now >= nextReviewAt`（在回滚评审窗口内）；
-2. 后台探测完成 **握手 + 连续 3 次 EchoProbe 全部通过**（不再是握手即切回）；
-3. `score(quic) > score(tcpws) × 1.2`（**不对称迟滞是防震荡核心**）。
+2. 后台探测完成 **握手 + 连续 3 次 EchoProbe 全部通过**（`quicEchoRecovered`，不再是握手即切回）。
 
-**迟滞方向性说明**（门槛依当前活跃通道而变，这正是迟滞的意义）：
-- 当前在 QUIC：仅当 `score_tcpws / score_quic > 1.5` 才切走 TCP-WS。
-- 当前在 TCP-WS：仅当 `score_tcpws / score_quic < 1/1.2 ≈ 0.833` 才切回 QUIC。
-- 因此 `0.833 ≤ ratio ≤ 1.5` 是"维持现状"区间 —— 分数在此范围内抖动不会触发任何切换。
+**切回为什么不做分数比较**（审查坐实的设计修正，2026-08-10）：回退期间 QUIC 不承载任何真实流量，其 loss/RTT 质量**无法测量**，`ChannelScore.quality` 只能停在中性 0.5 → `score(quic) ≤ 0.5`。若切回门槛写成 `score(quic) > score(tcpws) × 1.2`，面对一条健康的 tcpws（分数近 1.0）**在数学上永不成立** —— 用户会被永久钉死在有状态的 tcpws/smux 回退路径上（车队规模下的真实成本回归），与"QUIC 是无状态战略首选"的前提相悖。此门槛**也无法靠 Task 7 补救**：`QualityFromEchoRTT` 是自相对量（minRTT/rtt），两条健康通道都≈1.0，1.2× 仍不可达 —— 只有 tcpws 自身劣化才会触发，那是"被赶走"而非"回家"。
+
+**因此切回的健康证明就是 `quicEchoRecovered` 本身**（一次全新握手 + 3 次连续 echo，比任何 EWMA 分数都强的即时可用性证明）；防震荡由 **3 次 echo 门 + 递增的 flap 窗口**（下）承担，不由分数承担。这恢复了"探测成功即回 QUIC"的原始语义，但探测现在是**诚实的 echo 验证**（根因 A 已修）。切回决策落地后立即消费并清零 `quicEchoRecovered`，下次回退须重新赢得验证。
+
+**迟滞方向性说明**（切走仍是分数驱动的不对称迟滞；切回是 echo 门驱动）：
+- 当前在 QUIC：仅当 `score_tcpws / score_quic > 1.5` 才切走 TCP-WS（对离开 QUIC 保守）。
+- 当前在 TCP-WS：QUIC 数据面 echo 连续 3 击通过 + 过 flap 窗口即切回（对回家积极）。不对称性由此体现 —— 离开靠"分数显著劣化"，回家靠"数据面证明恢复"，两侧信号不同源，刻意如此。
 
 **震荡惩罚（收敛保证）**：每完成一次 QUIC→TCPWS→QUIC 完整往返，`flapCount++`，`nextReviewAt` 的窗口翻倍：`30s → 60s → 120s → … → 上限 600s`。`Reset()`（网络切换）把 flapCount 与窗口清零 —— 换了网络，旧震荡历史无意义。
 
@@ -217,12 +219,12 @@ quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT �
 1. **纯函数单测**（`score_test.go`, `transport_selector_test.go`[新]）：
    - ChannelScore 公式全覆盖：availability 失败双倍权重、quality_quic 半死走低、**quality_tcpws 取 echo RTT（非 WireStats）**、**信号缺席→0.5**、**陈旧样本(>3×间隔)→回退 0.5**、EWMA 收敛。
    - 顺序依赖：备用通道无新样本时质量通路不切走（只允许快速通路）；score<0.7 预警升频后攒够 ≥2 样本才放行质量通路。
-   - 迟滞 FSM 全转移矩阵：切走两条路径、切回三条件、方向性维持区间（在 QUIC 时 ratio≤1.5 不动、在 TCP-WS 时 ratio≥0.833 不动）、flapCount 窗口翻倍序列（30→60→120→…→600 封顶）、Reset 清零。
+   - 迟滞 FSM 全转移矩阵：切走两条路径（分数驱动，在 QUIC 时 ratio≤1.5 不动）、切回二条件（`now>=nextReviewAt` + `quicEchoRecovered`，不做分数比较）、flapCount 窗口翻倍序列（30→60→120→…→600 封顶）、Reset 清零、切回后 `quicEchoRecovered` 消费清零。
    - 参照现有 `echoStep`（`health.go:511`）的纯函数抽取模式，无 time/IO/log。
 
 2. **wire 契约测试扩展**（`contract_test.go` 现有 11 个 + 新增 4 个）：
    - 半死 QUIC（握手通、echo 超时/高 RTT）→ ≤ 阈值秒数内切 TCP-WS（**根因 B 回归**）。
-   - 恢复：QUIC 数据面恢复 → 必须"握手 + 3 次 echo 通过 + score×1.2"才切回；**只握手不 echo 绝不切回**（**根因 A 回归**）。
+   - 恢复：QUIC 数据面恢复 → 必须"握手 + 连续 3 次 echo 通过（`quicEchoRecovered`）+ 过 flap 窗口"才切回；**只握手不 echo 绝不切回**（**根因 A 回归**）。**反向回归**：tcpws 健康（分数高）+ QUIC echo 已验证 → 回滚**必须**触发（钉死切回不做分数比较的修正，防止"永不回家"）。
    - flap 场景：反复触发 → nextReviewAt 窗口指数增长，`DIAG: flap-damped` 出现。
    - 老服务器：TCP-WS 无 echo → 永不因信号缺席切换。
 
@@ -242,7 +244,7 @@ quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT �
 
 - **Phase 1（止血根因 A/B，改动小、可独立发布）**：
   - `score.go` ChannelScore + 迟滞 FSM 骨架；
-  - 回滚探测加 echo 验证 + 3 次通过 + 不对称门槛（直接修"切回来"震荡）；
+  - 回滚探测加 echo 验证 + 连续 3 次通过 + flap 窗口（不对称迟滞：离开靠分数劣化、回家靠 echo 证明；直接修"切回来"震荡且不制造"永不回家"）；
   - `handshakeFailStreak` 之外，echo 连续失败也计入切走（修"半死不切换"）；
   - `assess()` 删除 fallback→degraded。
 - **Phase 2（TCP-WS 真正顶上 + 自适应省电）**：

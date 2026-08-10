@@ -234,6 +234,65 @@ func TestProbe_RollbackRequiresEchoNotJustHandshake(t *testing.T) {
 	}
 }
 
+// TestRollback_FiresWhenTCPWSHealthyAndQUICEchoVerified pins the fix-round-1
+// defect: rollback (tcpws→QUIC) must fire on echo verification ALONE, even
+// when tcpws is fully healthy. This is the mirror case of
+// TestProbe_RollbackRequiresEchoNotJustHandshake — that one pins "handshake
+// alone must not roll back", this one pins "a healthy backup must not
+// permanently block rolling back".
+//
+// The bug this guards against: while tcpws serves traffic, QUIC carries no
+// real traffic, so scoreQUIC.quality can never be measured and stays pinned
+// at neutral (0.5) — scoreQUIC ≤ 0.5 structurally. A rollback gate of the
+// shape `scoreQUIC > scoreTCPWS × k` can mathematically never fire once
+// tcpws is healthy (scoreTCPWS ≈ 1.0), permanently stranding users on the
+// stateful tcpws/smux path — the opposite of the design's goal (QUIC is the
+// strategic, stateless home). See spec §3.2 "切回为什么不做分数比较".
+//
+// Mutation verification: this test FAILS if selectorStep's rollback branch
+// is reverted to the old `in.scoreQUIC > in.scoreTCPWS*switchBackRatio`
+// gate (verified by hand: temporarily restoring that gate makes this test
+// fail with "evaluateSelector = channelStay, want channelSwitchToQUIC",
+// then removing it again restores PASS — the same red/green protocol used
+// for TestProbe_RollbackRequiresEchoNotJustHandshake).
+func TestRollback_FiresWhenTCPWSHealthyAndQUICEchoVerified(t *testing.T) {
+	tm := NewTransportManager()
+	tm.SetPrimary(&mockTransport{available: true}, "quic-443")
+	tm.SetTCPWS(&mockTransport{available: true})
+
+	now := time.Now()
+
+	// Drive tcpws to a healthy score: several real successes + a good echo
+	// RTT baseline (QualityFromEchoRTT is self-relative — a stable RTT
+	// converges to ~1.0 quality).
+	for i := 0; i < 5; i++ {
+		tm.RecordEchoResult("tcpws", 15*time.Millisecond, nil, now)
+	}
+	if got := tm.ScoreTCPWS(now); got < 0.9 {
+		t.Fatalf("precondition: scoreTCPWS = %v, want a healthy (~1.0) score", got)
+	}
+
+	// QUIC echo-verified (fresh handshake + 3 passing echo rounds, exactly
+	// what runProbeOnce sets after a successful probe cycle) — its own score
+	// is necessarily low/neutral since it carries no traffic while tcpws is
+	// active; that must not matter.
+	tm.quicEchoRecovered.Store(true)
+	if got := tm.ScoreQUIC(now); got > 0.5 {
+		t.Fatalf("precondition: scoreQUIC = %v, want it pinned at/below neutral (untraded channel)", got)
+	}
+
+	// forceActiveForTest installs a zero-value nextReviewAt, so the
+	// flap-damping review window is trivially open.
+	tm.forceActiveForTest("tcpws")
+
+	if got := tm.evaluateSelector(now); got != channelSwitchToQUIC {
+		t.Fatalf("evaluateSelector = %v, want channelSwitchToQUIC — echo verification alone must roll back even against a healthy tcpws", got)
+	}
+	if tm.ActiveChannel() != "quic" {
+		t.Fatalf("ActiveChannel = %q, want quic", tm.ActiveChannel())
+	}
+}
+
 // TestTransportManager_ResetClearsFallback verifies that Reset()
 // clears fallback state.
 func TestTransportManager_ResetClearsFallback(t *testing.T) {

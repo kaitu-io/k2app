@@ -66,7 +66,6 @@ const (
 
 const (
 	switchAwayRatio         = 1.5              // switch QUIC→TCPWS when tcpws > quic × this
-	switchBackRatio         = 1.2              // switch TCPWS→QUIC when quic > tcpws × this (higher = asymmetric hysteresis)
 	qualityDegradeThreshold = 0.7              // QUIC score below this pre-warns the frequency controller
 	qualitySustainWindow    = 10 * time.Second // quality-path condition must hold this long before switching away
 	flapWindowBase          = 30 * time.Second // first rollback review window
@@ -133,19 +132,24 @@ func selectorStep(st selectorState, in selectorInput) (selectorState, channelDec
 		return st, channelStay
 	}
 
-	// active == "tcpws": rollback path.
+	// active == "tcpws": rollback path. QUIC is the strategic home — return to
+	// it as soon as the data path is echo-verified healthy (quicEchoRecovered:
+	// a fresh handshake + 3 consecutive echo rounds, set by runProbeOnce),
+	// gated only by the growing flap-damping window. Deliberately NO score
+	// comparison: while tcpws serves traffic QUIC carries none, so its quality
+	// is unmeasurable and scoreQUIC is pinned at neutral — a `scoreQUIC >
+	// scoreTCPWS × k` gate is impossible to satisfy against a healthy tcpws and
+	// would strand users on the stateful fallback forever. Anti-thrash is the
+	// 3-round echo proof + nextReviewAt (30s→600s), not scores.
 	if in.now.Before(st.nextReviewAt) {
 		return st, channelStay // flap-damped
 	}
 	if !in.quicEchoRecovered {
 		return st, channelStay
 	}
-	if in.scoreQUIC > in.scoreTCPWS*switchBackRatio {
-		st.active = "quic"
-		st.aboveSince = time.Time{}
-		return st, channelSwitchToQUIC
-	}
-	return st, channelStay
+	st.active = "quic"
+	st.aboveSince = time.Time{}
+	return st, channelSwitchToQUIC
 }
 
 // switchAway transitions to tcpws and grows the flap-damping window.
@@ -370,6 +374,10 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 		slog.Warn("wire: switching to TCP-WS", "reason", reason, "scoreQUIC", in.scoreQUIC, "scoreTCPWS", in.scoreTCPWS)
 		slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", reason)
 	case channelSwitchToQUIC:
+		// Consume the one-shot verification: the next time QUIC falls back,
+		// it must re-earn a fresh handshake + 3 echo rounds before it is
+		// eligible to roll back again.
+		tm.quicEchoRecovered.Store(false)
 		slog.Info("wire: rolling back to QUIC (echo-verified)", "scoreQUIC", in.scoreQUIC, "scoreTCPWS", in.scoreTCPWS)
 		slog.Info("DIAG: transport-switch", "from", "tcpws", "to", "quic", "reason", "quic-recovered")
 	}
