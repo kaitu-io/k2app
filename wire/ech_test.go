@@ -464,6 +464,66 @@ func buildTestClientHello(sni string, includeECH bool) []byte {
 	return record
 }
 
+// buildTestClientHelloECHConfigID builds a ClientHello with a well-formed outer
+// ECHClientHello extension carrying the given config_id.
+// Body layout: type(0)|kdf_id(2)|aead_id(2)|config_id(1)|enc<u16>|payload<u16>.
+func buildTestClientHelloECHConfigID(sni string, configID uint8) []byte {
+	sniBytes := []byte(sni)
+	sniExt := []byte{0x00, 0x00}
+	sniExtLen := 5 + len(sniBytes)
+	sniExt = append(sniExt, byte(sniExtLen>>8), byte(sniExtLen))
+	sniListLen := 3 + len(sniBytes)
+	sniExt = append(sniExt, byte(sniListLen>>8), byte(sniListLen), 0x00, byte(len(sniBytes)>>8), byte(len(sniBytes)))
+	sniExt = append(sniExt, sniBytes...)
+
+	echBody := []byte{0x00, 0x00, 0x01, 0x00, 0x01, configID, 0x00, 0x02, 0xaa, 0xbb, 0x00, 0x04, 0x01, 0x02, 0x03, 0x04}
+	echExt := []byte{0xfe, 0x0d, byte(len(echBody) >> 8), byte(len(echBody))}
+	echExt = append(echExt, echBody...)
+
+	allExts := append(sniExt, echExt...)
+	extsLen := len(allExts)
+
+	body := []byte{0x03, 0x03}
+	body = append(body, make([]byte, 32)...)
+	body = append(body, 0x00)                   // session id len
+	body = append(body, 0x00, 0x02, 0x13, 0x01) // cipher suites
+	body = append(body, 0x01, 0x00)             // compression
+	body = append(body, byte(extsLen>>8), byte(extsLen))
+	body = append(body, allExts...)
+
+	handshake := []byte{0x01, 0x00, byte(len(body) >> 8), byte(len(body))}
+	handshake = append(handshake, body...)
+
+	record := []byte{0x16, 0x03, 0x01, byte(len(handshake) >> 8), byte(len(handshake))}
+	record = append(record, handshake...)
+	return record
+}
+
+func TestPeekClientHello_ECHConfigID(t *testing.T) {
+	hello := buildTestClientHelloECHConfigID("cloudflare-ech.com", 0x2a)
+	info, err := PeekClientHello(hello)
+	if err != nil {
+		t.Fatalf("PeekClientHello: %v", err)
+	}
+	if !info.HasECH || !info.ECHOuter {
+		t.Fatalf("HasECH=%v ECHOuter=%v, want both true", info.HasECH, info.ECHOuter)
+	}
+	if info.ECHConfigID != 0x2a {
+		t.Errorf("ECHConfigID = %#x, want 0x2a", info.ECHConfigID)
+	}
+}
+
+func TestECHConfigIDFromConfig(t *testing.T) {
+	// ECHConfig: version(2)|length(2)|config_id(1)|...
+	cfg := []byte{0xfe, 0x0d, 0x00, 0x10, 0x2a, 0x00, 0x20}
+	if id, ok := ECHConfigIDFromConfig(cfg); !ok || id != 0x2a {
+		t.Errorf("ECHConfigIDFromConfig = (%#x, %v), want (0x2a, true)", id, ok)
+	}
+	if _, ok := ECHConfigIDFromConfig([]byte{0x01, 0x02}); ok {
+		t.Error("short config: want ok=false")
+	}
+}
+
 func TestGenerateECHKey(t *testing.T) {
 	// AC3: Generate ECH key pair
 	key, echConfig, err := GenerateECHKey("cloudflare-ech.com")
