@@ -9,11 +9,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/apernet/quic-go"
-	h3qlog "github.com/apernet/quic-go/http3/qlog"
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/qlog"
-	"github.com/apernet/quic-go/qlogwriter"
+	"github.com/kaitu-io/kuic"
+	h3qlog "github.com/kaitu-io/kuic/http3/qlog"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/qlog"
+	"github.com/kaitu-io/kuic/qlogwriter"
 )
 
 // GetSSLKeyLog creates a file for the TLS key log

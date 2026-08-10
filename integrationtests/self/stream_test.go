@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 
 	"golang.org/x/sync/errgroup"
 

@@ -3,9 +3,9 @@ package qlog
 import (
 	"context"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/qlog"
-	"github.com/apernet/quic-go/qlogwriter"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/qlog"
+	"github.com/kaitu-io/kuic/qlogwriter"
 )
 
 const EventSchema = "urn:ietf:params:qlog:events:http3-12"

@@ -12,9 +12,9 @@ import (
 	"net/textproto"
 	"time"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/http3/qlog"
-	"github.com/apernet/quic-go/quicvarint"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/http3/qlog"
+	"github.com/kaitu-io/kuic/quicvarint"
 
 	"github.com/quic-go/qpack"
 )

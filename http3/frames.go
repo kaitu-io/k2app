@@ -7,10 +7,10 @@ import (
 	"io"
 	"maps"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/http3/qlog"
-	"github.com/apernet/quic-go/qlogwriter"
-	"github.com/apernet/quic-go/quicvarint"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/http3/qlog"
+	"github.com/kaitu-io/kuic/qlogwriter"
+	"github.com/kaitu-io/kuic/quicvarint"
 )
 
 // FrameType is the frame type of a HTTP/3 frame

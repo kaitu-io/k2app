@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/protocol"
 )
 
 // ParseVersionNegotiationPacket parses a Version Negotiation packet.

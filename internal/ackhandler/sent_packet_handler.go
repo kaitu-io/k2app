@@ -6,15 +6,15 @@ import (
 	"sync"
 	"time"
 
-	congestionExt "github.com/apernet/quic-go/congestion"
-	"github.com/apernet/quic-go/internal/congestion"
-	"github.com/apernet/quic-go/internal/monotime"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/qerr"
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/internal/wire"
-	"github.com/apernet/quic-go/qlog"
-	"github.com/apernet/quic-go/qlogwriter"
+	congestionExt "github.com/kaitu-io/kuic/congestion"
+	"github.com/kaitu-io/kuic/internal/congestion"
+	"github.com/kaitu-io/kuic/internal/monotime"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/qerr"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/internal/wire"
+	"github.com/kaitu-io/kuic/qlog"
+	"github.com/kaitu-io/kuic/qlogwriter"
 )
 
 const (

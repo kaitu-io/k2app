@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/protocol"
 )
 
 var (

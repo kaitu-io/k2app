@@ -3,8 +3,8 @@ package handshake
 import (
 	"testing"
 
-	"github.com/apernet/quic-go/internal/wire"
-	"github.com/apernet/quic-go/quicvarint"
+	"github.com/kaitu-io/kuic/internal/wire"
+	"github.com/kaitu-io/kuic/quicvarint"
 
 	"github.com/stretchr/testify/require"
 )

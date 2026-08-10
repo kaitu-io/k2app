@@ -14,12 +14,12 @@ import (
 	mrand "math/rand/v2"
 	"net"
 
-	"github.com/apernet/quic-go/fuzzing/internal/helper"
-	"github.com/apernet/quic-go/internal/handshake"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/qtls"
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/internal/wire"
+	"github.com/kaitu-io/kuic/fuzzing/internal/helper"
+	"github.com/kaitu-io/kuic/internal/handshake"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/qtls"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/internal/wire"
 )
 
 var (

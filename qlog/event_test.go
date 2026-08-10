@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/qerr"
-	"github.com/apernet/quic-go/internal/synctest"
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/internal/wire"
-	"github.com/apernet/quic-go/qlogwriter"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/qerr"
+	"github.com/kaitu-io/kuic/internal/synctest"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/internal/wire"
+	"github.com/kaitu-io/kuic/qlogwriter"
 
 	"github.com/stretchr/testify/require"
 )

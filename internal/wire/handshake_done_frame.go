@@ -1,7 +1,7 @@
 package wire
 
 import (
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/protocol"
 )
 
 // A HandshakeDoneFrame is a HANDSHAKE_DONE frame

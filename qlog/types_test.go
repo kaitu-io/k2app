@@ -3,7 +3,7 @@ package qlog
 import (
 	"testing"
 
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/protocol"
 
 	"github.com/stretchr/testify/require"
 )

@@ -1,4 +1,4 @@
-module github.com/apernet/quic-go
+module github.com/kaitu-io/kuic
 
 go 1.24
 

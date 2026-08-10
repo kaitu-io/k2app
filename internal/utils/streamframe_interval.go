@@ -3,7 +3,7 @@ package utils
 import (
 	"fmt"
 
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/protocol"
 )
 
 // ByteInterval is an interval from one ByteCount to the other

@@ -1,10 +1,10 @@
 package ackhandler
 
 import (
-	"github.com/apernet/quic-go/congestion"
-	"github.com/apernet/quic-go/internal/monotime"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/wire"
+	"github.com/kaitu-io/kuic/congestion"
+	"github.com/kaitu-io/kuic/internal/monotime"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/wire"
 )
 
 // SentPacketHandler handles ACKs received for outgoing packets

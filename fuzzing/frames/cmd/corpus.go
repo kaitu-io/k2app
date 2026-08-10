@@ -6,10 +6,10 @@ import (
 	mrand "math/rand/v2"
 	"time"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/fuzzing/internal/helper"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/wire"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/fuzzing/internal/helper"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/wire"
 )
 
 const version = protocol.Version1

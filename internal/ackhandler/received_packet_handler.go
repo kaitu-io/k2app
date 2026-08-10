@@ -3,10 +3,10 @@ package ackhandler
 import (
 	"fmt"
 
-	"github.com/apernet/quic-go/internal/monotime"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/internal/wire"
+	"github.com/kaitu-io/kuic/internal/monotime"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/internal/wire"
 )
 
 type receivedPacketHandler struct {

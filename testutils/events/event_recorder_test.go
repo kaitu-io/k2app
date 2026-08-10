@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go/internal/synctest"
-	"github.com/apernet/quic-go/qlog"
-	"github.com/apernet/quic-go/qlogwriter"
+	"github.com/kaitu-io/kuic/internal/synctest"
+	"github.com/kaitu-io/kuic/qlog"
+	"github.com/kaitu-io/kuic/qlogwriter"
 	"github.com/stretchr/testify/require"
 )
 

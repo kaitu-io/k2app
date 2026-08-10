@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/net/http/httpguts"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 // Settings are HTTP/3 settings that apply to the underlying connection.

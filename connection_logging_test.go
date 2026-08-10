@@ -5,8 +5,8 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/apernet/quic-go/internal/wire"
-	"github.com/apernet/quic-go/qlog"
+	"github.com/kaitu-io/kuic/internal/wire"
+	"github.com/kaitu-io/kuic/qlog"
 
 	"github.com/stretchr/testify/require"
 )

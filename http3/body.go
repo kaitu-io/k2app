@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 // A Hijacker allows hijacking of the stream creating part of a quic.Conn from a http.ResponseWriter.

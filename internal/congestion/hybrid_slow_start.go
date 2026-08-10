@@ -3,7 +3,7 @@ package congestion
 import (
 	"time"
 
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/protocol"
 )
 
 // Note(pwestin): the magic clamping numbers come from the original code in

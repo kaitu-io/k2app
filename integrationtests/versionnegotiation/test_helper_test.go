@@ -7,9 +7,9 @@ import (
 	"flag"
 	"os"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/integrationtests/tools"
-	"github.com/apernet/quic-go/qlogwriter"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/integrationtests/tools"
+	"github.com/kaitu-io/kuic/qlogwriter"
 )
 
 var (

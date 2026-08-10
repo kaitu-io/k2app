@@ -8,9 +8,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/apernet/quic-go/internal/handshake"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/qlogwriter"
+	"github.com/kaitu-io/kuic/internal/handshake"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/qlogwriter"
 )
 
 // The StreamID is the ID of a QUIC stream.

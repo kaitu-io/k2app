@@ -23,11 +23,11 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/http3"
-	"github.com/apernet/quic-go/http3/qlog"
-	quicproxy "github.com/apernet/quic-go/integrationtests/tools/proxy"
-	"github.com/apernet/quic-go/testutils/events"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/http3"
+	"github.com/kaitu-io/kuic/http3/qlog"
+	quicproxy "github.com/kaitu-io/kuic/integrationtests/tools/proxy"
+	"github.com/kaitu-io/kuic/testutils/events"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

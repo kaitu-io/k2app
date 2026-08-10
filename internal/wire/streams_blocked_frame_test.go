@@ -5,8 +5,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/quicvarint"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/quicvarint"
 
 	"github.com/stretchr/testify/require"
 )

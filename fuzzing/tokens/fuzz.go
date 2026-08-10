@@ -5,9 +5,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/internal/handshake"
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/internal/handshake"
+	"github.com/kaitu-io/kuic/internal/protocol"
 )
 
 func Fuzz(data []byte) int {

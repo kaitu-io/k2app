@@ -1,8 +1,8 @@
 package flowcontrol
 
 import (
-	"github.com/apernet/quic-go/internal/monotime"
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/monotime"
+	"github.com/kaitu-io/kuic/internal/protocol"
 )
 
 type flowController interface {

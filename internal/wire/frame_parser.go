@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/qerr"
-	"github.com/apernet/quic-go/quicvarint"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/qerr"
+	"github.com/kaitu-io/kuic/quicvarint"
 )
 
 var errUnknownFrameType = errors.New("unknown frame type")

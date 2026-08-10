@@ -3,7 +3,7 @@ package http3
 import (
 	"fmt"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 type ErrCode quic.ApplicationErrorCode

@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/internal/testdata"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/internal/testdata"
 
 	"github.com/stretchr/testify/require"
 )

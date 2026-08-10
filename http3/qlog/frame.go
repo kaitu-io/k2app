@@ -1,8 +1,8 @@
 package qlog
 
 import (
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/qlogwriter/jsontext"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/qlogwriter/jsontext"
 )
 
 // Frame represents an HTTP/3 frame.

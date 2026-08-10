@@ -3,8 +3,8 @@ package qlog
 import (
 	"time"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/qlogwriter/jsontext"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/qlogwriter/jsontext"
 )
 
 type encoderHelper struct {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 const streamDatagramQueueLen = 32

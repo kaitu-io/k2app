@@ -3,7 +3,7 @@ package congestion
 import (
 	"time"
 
-	"github.com/apernet/quic-go/internal/monotime"
+	"github.com/kaitu-io/kuic/internal/monotime"
 )
 
 // Time is a monotonic timestamp used by congestion control.

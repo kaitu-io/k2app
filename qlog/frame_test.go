@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/qerr"
-	"github.com/apernet/quic-go/qlogwriter/jsontext"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/qerr"
+	"github.com/kaitu-io/kuic/qlogwriter/jsontext"
 
 	"github.com/stretchr/testify/require"
 )

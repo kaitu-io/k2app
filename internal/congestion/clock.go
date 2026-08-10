@@ -1,7 +1,7 @@
 package congestion
 
 import (
-	"github.com/apernet/quic-go/internal/monotime"
+	"github.com/kaitu-io/kuic/internal/monotime"
 )
 
 // A Clock returns the current time

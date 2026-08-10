@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go/internal/synctest"
+	"github.com/kaitu-io/kuic/internal/synctest"
 
 	"github.com/stretchr/testify/require"
 )

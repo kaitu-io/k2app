@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/apernet/quic-go/internal/flowcontrol"
-	"github.com/apernet/quic-go/internal/monotime"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/qerr"
-	"github.com/apernet/quic-go/internal/wire"
+	"github.com/kaitu-io/kuic/internal/flowcontrol"
+	"github.com/kaitu-io/kuic/internal/monotime"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/qerr"
+	"github.com/kaitu-io/kuic/internal/wire"
 )
 
 // StreamLimitReachedError is returned from Conn.OpenStream and Conn.OpenUniStream

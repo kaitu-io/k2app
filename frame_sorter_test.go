@@ -7,9 +7,9 @@ import (
 	mrand "math/rand/v2"
 	"testing"
 
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/internal/utils/tree"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/internal/utils/tree"
 
 	"github.com/stretchr/testify/require"
 )

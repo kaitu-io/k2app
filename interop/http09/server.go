@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 const NextProto = "hq-interop"

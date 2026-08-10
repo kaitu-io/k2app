@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/internal/synctest"
-	"github.com/apernet/quic-go/testutils/simnet"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/internal/synctest"
+	"github.com/kaitu-io/kuic/testutils/simnet"
 
 	"github.com/stretchr/testify/require"
 )

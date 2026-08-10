@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go/internal/monotime"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/qlog"
-	"github.com/apernet/quic-go/testutils/events"
+	"github.com/kaitu-io/kuic/internal/monotime"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/qlog"
+	"github.com/kaitu-io/kuic/testutils/events"
 
 	"github.com/stretchr/testify/require"
 )

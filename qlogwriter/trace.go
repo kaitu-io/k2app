@@ -4,15 +4,15 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/qlogwriter/jsontext"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/qlogwriter/jsontext"
 )
 
 type ConnectionID = protocol.ConnectionID
 
 // Setting of this only works when quic-go is used as a library.
 // When building a binary from this repository, the version can be set using the following go build flag:
-// -ldflags="-X github.com/apernet/quic-go/qlogwriter.quicGoVersion=foobar"
+// -ldflags="-X github.com/kaitu-io/kuic/qlogwriter.quicGoVersion=foobar"
 var quicGoVersion = "(devel)"
 
 func init() {
@@ -24,7 +24,7 @@ func init() {
 		return
 	}
 	for _, d := range info.Deps {
-		if d.Path == "github.com/apernet/quic-go" {
+		if d.Path == "github.com/kaitu-io/kuic" {
 			quicGoVersion = d.Version
 			if d.Replace != nil {
 				if len(d.Replace.Version) > 0 {

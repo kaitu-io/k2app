@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/apernet/quic-go/internal/monotime"
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/monotime"
+	"github.com/kaitu-io/kuic/internal/protocol"
 )
 
 const maxBurstSizePackets = 10

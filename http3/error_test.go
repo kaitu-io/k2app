@@ -3,7 +3,7 @@ package http3
 import (
 	"testing"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

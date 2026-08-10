@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

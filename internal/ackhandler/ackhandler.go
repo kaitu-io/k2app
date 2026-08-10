@@ -1,9 +1,9 @@
 package ackhandler
 
 import (
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/qlogwriter"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/qlogwriter"
 )
 
 // NewAckHandler creates a new SentPacketHandler and a new ReceivedPacketHandler.

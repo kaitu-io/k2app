@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/synctest"
-	"github.com/apernet/quic-go/qlog"
-	"github.com/apernet/quic-go/qlogwriter"
-	"github.com/apernet/quic-go/testutils/simnet"
+	"github.com/kaitu-io/kuic"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/synctest"
+	"github.com/kaitu-io/kuic/qlog"
+	"github.com/kaitu-io/kuic/qlogwriter"
+	"github.com/kaitu-io/kuic/testutils/simnet"
 
 	"github.com/stretchr/testify/require"
 )
@@ -217,7 +217,7 @@ func TestKeepAlive(t *testing.T) {
 		requireIdleTimeoutError(t, err)
 
 		// can't rely on the server connection closing, since we impose a minimum idle timeout of 5s,
-		// see https://github.com/apernet/quic-go/issues/4751
+		// see https://github.com/kaitu-io/kuic/issues/4751
 		serverConn.CloseWithError(0, "")
 	})
 }

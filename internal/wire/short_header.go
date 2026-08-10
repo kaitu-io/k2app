@@ -4,8 +4,8 @@ import (
 	"errors"
 	"io"
 
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/utils"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/utils"
 )
 
 // ParseShortHeader parses a short header packet.

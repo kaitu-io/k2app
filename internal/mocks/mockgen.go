@@ -2,11 +2,11 @@
 
 package mocks
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination short_header_sealer.go github.com/apernet/quic-go/internal/handshake ShortHeaderSealer"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination short_header_opener.go github.com/apernet/quic-go/internal/handshake ShortHeaderOpener"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination long_header_opener.go github.com/apernet/quic-go/internal/handshake LongHeaderOpener"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination crypto_setup.go github.com/apernet/quic-go/internal/handshake CryptoSetup"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination stream_flow_controller.go github.com/apernet/quic-go/internal/flowcontrol StreamFlowController"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination congestion.go github.com/apernet/quic-go/internal/congestion SendAlgorithmWithDebugInfos"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mockackhandler -destination ackhandler/sent_packet_handler.go github.com/apernet/quic-go/internal/ackhandler SentPacketHandler"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mockackhandler -destination ackhandler/received_packet_handler.go github.com/apernet/quic-go/internal/ackhandler ReceivedPacketHandler"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination short_header_sealer.go github.com/kaitu-io/kuic/internal/handshake ShortHeaderSealer"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination short_header_opener.go github.com/kaitu-io/kuic/internal/handshake ShortHeaderOpener"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination long_header_opener.go github.com/kaitu-io/kuic/internal/handshake LongHeaderOpener"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination crypto_setup.go github.com/kaitu-io/kuic/internal/handshake CryptoSetup"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination stream_flow_controller.go github.com/kaitu-io/kuic/internal/flowcontrol StreamFlowController"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination congestion.go github.com/kaitu-io/kuic/internal/congestion SendAlgorithmWithDebugInfos"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mockackhandler -destination ackhandler/sent_packet_handler.go github.com/kaitu-io/kuic/internal/ackhandler SentPacketHandler"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mockackhandler -destination ackhandler/received_packet_handler.go github.com/kaitu-io/kuic/internal/ackhandler ReceivedPacketHandler"

@@ -29,7 +29,7 @@ func TestRequestHeaderParsing(t *testing.T) {
 		testRequestHeaderParsing(t, "/foo")
 	})
 
-	// see https://github.com/apernet/quic-go/pull/1898
+	// see https://github.com/kaitu-io/kuic/pull/1898
 	t.Run("path starting with //", func(t *testing.T) {
 		testRequestHeaderParsing(t, "//foo")
 	})

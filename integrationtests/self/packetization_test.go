@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
-	quicproxy "github.com/apernet/quic-go/integrationtests/tools/proxy"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/qlog"
-	"github.com/apernet/quic-go/qlogwriter"
-	"github.com/apernet/quic-go/quicvarint"
+	"github.com/kaitu-io/kuic"
+	quicproxy "github.com/kaitu-io/kuic/integrationtests/tools/proxy"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/qlog"
+	"github.com/kaitu-io/kuic/qlogwriter"
+	"github.com/kaitu-io/kuic/quicvarint"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

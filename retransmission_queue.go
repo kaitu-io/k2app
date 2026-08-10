@@ -3,10 +3,10 @@ package quic
 import (
 	"fmt"
 
-	"github.com/apernet/quic-go/internal/ackhandler"
+	"github.com/kaitu-io/kuic/internal/ackhandler"
 
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/wire"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/wire"
 )
 
 type framesToRetransmit struct {

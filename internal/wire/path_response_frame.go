@@ -3,7 +3,7 @@ package wire
 import (
 	"io"
 
-	"github.com/apernet/quic-go/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/protocol"
 )
 
 // A PathResponseFrame is a PATH_RESPONSE frame

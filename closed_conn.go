@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync/atomic"
 
-	"github.com/apernet/quic-go/internal/utils"
+	"github.com/kaitu-io/kuic/internal/utils"
 )
 
 // A closedLocalConn is a connection that we closed locally.

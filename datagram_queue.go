@@ -4,9 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/internal/utils/ringbuffer"
-	"github.com/apernet/quic-go/internal/wire"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/internal/utils/ringbuffer"
+	"github.com/kaitu-io/kuic/internal/wire"
 )
 
 const (

@@ -6,13 +6,13 @@ import (
 	"log"
 	"net"
 
-	fuzzhandshake "github.com/apernet/quic-go/fuzzing/handshake"
-	"github.com/apernet/quic-go/fuzzing/internal/helper"
-	"github.com/apernet/quic-go/internal/handshake"
-	"github.com/apernet/quic-go/internal/protocol"
-	"github.com/apernet/quic-go/internal/testdata"
-	"github.com/apernet/quic-go/internal/utils"
-	"github.com/apernet/quic-go/internal/wire"
+	fuzzhandshake "github.com/kaitu-io/kuic/fuzzing/handshake"
+	"github.com/kaitu-io/kuic/fuzzing/internal/helper"
+	"github.com/kaitu-io/kuic/internal/handshake"
+	"github.com/kaitu-io/kuic/internal/protocol"
+	"github.com/kaitu-io/kuic/internal/testdata"
+	"github.com/kaitu-io/kuic/internal/utils"
+	"github.com/kaitu-io/kuic/internal/wire"
 )
 
 const alpn = "fuzz"
