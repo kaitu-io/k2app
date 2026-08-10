@@ -358,3 +358,30 @@ func TestFingerprintSpecUnusableSNI_FailsLoudly(t *testing.T) {
 	})
 	require.ErrorIs(t, err, handshake.ErrSNIWithoutHostname)
 }
+
+// TestFingerprintSpecECHAllowsIPInnerSNI is the counterweight to
+// TestFingerprintSpecUnusableSNI_FailsLoudly: the unusable-SNI guard must not
+// fire when ECH is in play. With ECH the spec's server_name is overwritten
+// with the config's public name and ServerName only reaches the encrypted
+// inner ClientHello, where an IP literal works. Tunnel URLs may carry a raw IP
+// as host, so a guard that rejected this would break working deployments.
+func TestFingerprintSpecECHAllowsIPInnerSNI(t *testing.T) {
+	echKey, echList := echKeypair(t, gateOuterSNI)
+	addr := gateServer(t, echKey)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := DialAddr(ctx, addr.String(), &tls.Config{
+		ServerName:                     "127.0.0.1", // IP literal, inner SNI only
+		InsecureSkipVerify:             true,
+		NextProtos:                     []string{gateALPN},
+		EncryptedClientHelloConfigList: echList,
+		MinVersion:                     tls.VersionTLS13,
+	}, &Config{
+		NewClientHelloSpec: func() (*tls.ClientHelloSpec, error) { return gateClientHelloSpec(t), nil },
+	})
+	require.NoError(t, err)
+	defer conn.CloseWithError(0, "")
+	require.True(t, conn.ConnectionState().TLS.ECHAccepted)
+}

@@ -54,6 +54,12 @@ var ErrNoQUICTransportParametersExtension = errors.New(
 // is in the list the caller asked to send. Note that quic-go fills an empty
 // ServerName in from the dial address, so dialing an IP with no explicit
 // ServerName lands here rather than in the empty case.
+//
+// Not checked when ECH is configured. There, ApplyPreset overwrites the spec's
+// server_name with the ECH config's public name, and ServerName only reaches
+// the encrypted inner ClientHello — where an IP literal is fine in practice
+// (TestECHWithIPInnerSNI). That exemption is load-bearing: k2v5 URLs may carry
+// a raw IP as host, and rejecting those would break working tunnels.
 var ErrSNIWithoutHostname = errors.New(
 	"kuic: ClientHelloSpec contains a server_name extension but tls.Config.ServerName " +
 		"is empty or an IP literal; peers silently drop such a ClientHello (RFC 6066 §3)")
@@ -100,7 +106,7 @@ func newFingerprintedConn(qconf *tls.QUICConfig, spec *tls.ClientHelloSpec) (*fi
 	if tpExt == nil {
 		return nil, ErrNoQUICTransportParametersExtension
 	}
-	if specHasSNI(spec) && !usableSNI(qconf.TLSConfig.ServerName) {
+	if len(qconf.TLSConfig.EncryptedClientHelloConfigList) == 0 && specHasSNI(spec) && !usableSNI(qconf.TLSConfig.ServerName) {
 		return nil, fmt.Errorf("%w (ServerName=%q)", ErrSNIWithoutHostname, qconf.TLSConfig.ServerName)
 	}
 
