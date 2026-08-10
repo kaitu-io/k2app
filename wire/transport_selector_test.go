@@ -1,6 +1,8 @@
 package wire
 
 import (
+	"context"
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -122,5 +124,126 @@ func TestSelector_FlapWindowDoubling(t *testing.T) {
 	expected := time.Duration(30) * time.Second << uint(1) // 30s<<1 = 60s
 	if window != expected {
 		t.Fatalf("flap window = %v, want %v", window, expected)
+	}
+}
+
+// recordCollector is a minimal test-only slog.Handler that appends every
+// record to a slice. The tests below drive evaluateSelector synchronously
+// from a single goroutine, so no locking is needed (unlike
+// engine/engine_test.go's channel-based captureHandler, which has to survive
+// concurrent engine goroutines).
+type recordCollector struct {
+	records *[]slog.Record
+}
+
+func (h recordCollector) Enabled(context.Context, slog.Level) bool { return true }
+func (h recordCollector) Handle(_ context.Context, r slog.Record) error {
+	*h.records = append(*h.records, r)
+	return nil
+}
+func (h recordCollector) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h recordCollector) WithGroup(string) slog.Handler      { return h }
+
+// attrString returns the string value of attribute key on r, and whether it
+// was present.
+func attrString(r slog.Record, key string) (string, bool) {
+	var val string
+	var found bool
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == key {
+			val, found = a.Value.String(), true
+			return false
+		}
+		return true
+	})
+	return val, found
+}
+
+// TestEvaluateSelector_ChannelReviewAndFlapDampedGating covers Task 8's R1
+// (flap-damped) and R2 (channel-review spam gating). evaluateSelector runs
+// on every Dial*/Handshake call AND every echo tick — while tcpws is active
+// and the review window hasn't closed, a naive "log every review" would
+// spam at dial rate. Both DIAG logs below must fire at most once per review
+// window (identified by selState.nextReviewAt), except the rollback itself
+// (channelSwitchToQUIC), which is never rate-limited.
+func TestEvaluateSelector_ChannelReviewAndFlapDampedGating(t *testing.T) {
+	var records []slog.Record
+	prev := slog.Default()
+	slog.SetDefault(slog.New(recordCollector{records: &records}))
+	defer slog.SetDefault(prev)
+
+	tm := NewTransportManager()
+	base := time.Unix(1000, 0)
+	tm.forceActiveForTest("tcpws")
+	tm.mu.Lock()
+	tm.selState.nextReviewAt = base.Add(30 * time.Second)
+	tm.mu.Unlock()
+
+	countMsg := func(msg string) int {
+		n := 0
+		for _, r := range records {
+			if r.Message == msg {
+				n++
+			}
+		}
+		return n
+	}
+	countReasonAttr := func(msg, reason string) int {
+		n := 0
+		for _, r := range records {
+			if r.Message != msg {
+				continue
+			}
+			if v, ok := attrString(r, "reason"); ok && v == reason {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Echo not yet recovered: two evaluateSelector calls within the same
+	// window (simulating dial-rate calls) must yield exactly one
+	// channel-review log, not two.
+	if d := tm.evaluateSelector(base); d != channelStay {
+		t.Fatalf("expected stay, got %v", d)
+	}
+	if d := tm.evaluateSelector(base.Add(time.Second)); d != channelStay {
+		t.Fatalf("expected stay, got %v", d)
+	}
+	if got := countMsg("DIAG: channel-review"); got != 1 {
+		t.Fatalf("channel-review logged %d times before echo recovery, want 1", got)
+	}
+	if got := countReasonAttr("DIAG: transport-switch", "flap-damped"); got != 0 {
+		t.Fatalf("flap-damped logged %d times before echo recovery, want 0", got)
+	}
+
+	// Echo recovers but the review window is still open: repeated calls
+	// must yield exactly one flap-damped log, and must NOT re-trigger
+	// channel-review (still the same window).
+	tm.quicEchoRecovered.Store(true)
+	if d := tm.evaluateSelector(base.Add(2 * time.Second)); d != channelStay {
+		t.Fatalf("expected stay (flap-damped), got %v", d)
+	}
+	if d := tm.evaluateSelector(base.Add(3 * time.Second)); d != channelStay {
+		t.Fatalf("expected stay (flap-damped), got %v", d)
+	}
+	if got := countMsg("DIAG: channel-review"); got != 1 {
+		t.Fatalf("channel-review logged %d times during flap-damped window, want still 1", got)
+	}
+	if got := countReasonAttr("DIAG: transport-switch", "flap-damped"); got != 1 {
+		t.Fatalf("flap-damped logged %d times, want exactly 1", got)
+	}
+
+	// Window elapses: rollback fires. This channel-review log is
+	// unconditional (not rate-limited) even though the window identity
+	// (nextReviewAt) hasn't changed since the last "stay" log.
+	if d := tm.evaluateSelector(base.Add(31 * time.Second)); d != channelSwitchToQUIC {
+		t.Fatalf("expected switch back to quic, got %v", d)
+	}
+	if got := countMsg("DIAG: channel-review"); got != 2 {
+		t.Fatalf("channel-review logged %d times after rollback, want 2 (1 stay + 1 switch)", got)
+	}
+	if got := countReasonAttr("DIAG: transport-switch", "quic-recovered"); got != 1 {
+		t.Fatalf("quic-recovered logged %d times, want exactly 1", got)
 	}
 }

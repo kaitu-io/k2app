@@ -41,6 +41,15 @@ type HealthSnapshot struct {
 	Health         string    `json:"health"`
 	WireFallback   bool      `json:"wire_fallback"` // TCP-WS serving due to QUIC failure
 
+	// Dual-channel quality scoreboard (Task 8 observability). Primary
+	// outbound only — HealthSnapshot is per-engine, same scope as every
+	// other field above (see hm.primaryTM's doc). daemon/gateway's
+	// broadcastSnapshot marshals HealthSnapshot wholesale for SSE, so these
+	// reach the UI with no separate plumbing.
+	ScoreQUIC     float64 `json:"score_quic"`
+	ScoreTCPWS    float64 `json:"score_tcpws"`
+	ActiveChannel string  `json:"active_channel"`
+
 	// Relay-layer observability (NOT for wire-layer decisions).
 	RelayUDPTimeouts int32 `json:"relay_udp_timeouts"`
 	PortHopAttempts  int32 `json:"port_hop_attempts"`
@@ -256,6 +265,17 @@ func (hm *healthMonitor) sample() {
 
 	now := time.Now()
 
+	// Dual-channel quality scoreboard (Task 8): read outside hm.mu, same as
+	// WireStats()/TCPRecentlyHealthy() above — TransportManager has its own
+	// lock, primary-only (matches HealthSnapshot's existing primary-only scope).
+	var scoreQUIC, scoreTCPWS float64
+	var activeChannel string
+	if hm.primaryTM != nil {
+		scoreQUIC = hm.primaryTM.tm.ScoreQUIC(now)
+		scoreTCPWS = hm.primaryTM.tm.ScoreTCPWS(now)
+		activeChannel = hm.primaryTM.tm.ActiveChannel()
+	}
+
 	hm.mu.Lock()
 
 	// Detect sleep/wake via wall-clock gap. Reconnect decision deferred to after Unlock.
@@ -290,6 +310,10 @@ func (hm *healthMonitor) sample() {
 		RxBytes:        rx,
 		Health:         hm.health,
 		WireFallback:   ws.WireFallback,
+
+		ScoreQUIC:     scoreQUIC,
+		ScoreTCPWS:    scoreTCPWS,
+		ActiveChannel: activeChannel,
 
 		RelayUDPTimeouts: ws.RelayUDPTimeouts,
 		PortHopAttempts:  ws.PortHopAttempts,
@@ -347,6 +371,9 @@ func (hm *healthMonitor) sample() {
 			"udpRxDropsNoSess", ws.UDPRxDropsNoSession,
 			"uptimeS", int(time.Since(hm.connectedAt).Seconds()),
 			"fallback", ws.WireFallback,
+			"activeChannel", activeChannel,
+			"scoreQuic", fmt.Sprintf("%.2f", scoreQUIC),
+			"scoreTcpws", fmt.Sprintf("%.2f", scoreTCPWS),
 			"heapMB", fmt.Sprintf("%.1f", float64(ms.HeapInuse)/(1024*1024)),
 			"sysMB", fmt.Sprintf("%.1f", float64(ms.Sys)/(1024*1024)),
 			"goroutines", runtime.NumGoroutine(),

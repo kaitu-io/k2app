@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +15,26 @@ import (
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/wire"
 )
+
+// TestHealthSnapshot_HasChannelScores verifies HealthSnapshot serializes the
+// dual-channel quality scoreboard (Task 8 observability) — daemon/gateway's
+// broadcastSnapshot wholesale-marshals HealthSnapshot for SSE, so any field
+// added here reaches those consumers automatically.
+func TestHealthSnapshot_HasChannelScores(t *testing.T) {
+	var snap HealthSnapshot
+	snap.ScoreQUIC = 0.9
+	snap.ScoreTCPWS = 0.5
+	snap.ActiveChannel = "quic"
+	b, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"score_quic", "score_tcpws", "active_channel"} {
+		if !strings.Contains(string(b), key) {
+			t.Fatalf("snapshot JSON missing %q: %s", key, b)
+		}
+	}
+}
 
 // mockTransportManager returns a TransportManager with no transports set.
 // WireStats() returns zero values; Reset() is a no-op.

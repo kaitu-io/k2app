@@ -222,6 +222,16 @@ type TransportManager struct {
 
 	// Background QUIC probe: actively tests QUIC recovery during fallback.
 	probeCancel context.CancelFunc
+
+	// channelReviewLoggedWindow / flapDampedLoggedWindow dedupe the
+	// per-window DIAG logs emitted from evaluateSelector (Task 8, R2/R1) —
+	// keyed on selState.nextReviewAt's value, which only changes when a
+	// fresh flap round begins (switchAway). evaluateSelector runs on every
+	// Dial*/Handshake call AND every echo tick, so without this gate a
+	// naive "log every review" would spam at dial rate while the FSM sits
+	// out the flap window. Read/written only from evaluateSelector, under mu.
+	channelReviewLoggedWindow time.Time
+	flapDampedLoggedWindow    time.Time
 }
 
 // NewTransportManager creates a new transport manager.
@@ -378,6 +388,26 @@ func (tm *TransportManager) TCPWS() Dialer {
 // hysteresis FSM's decision (selectorStep, Task 2). Called lazily at the end
 // of every Dial*/Handshake call (Phase 1), and also from echoLoop's own
 // cadence via the EvaluateSelector passthrough (Task 7).
+//
+// Task 8 (R1/R2) layers two rate-limited DIAG logs on top of the FSM
+// decision, both scoped to selectorStep's tcpws-active (rollback) branch:
+//
+//   - DIAG: channel-review — a rollback-review status snapshot. Logged at
+//     most once per review window while the decision stays "stay" (gated by
+//     channelReviewLoggedWindow), plus unconditionally the moment the
+//     decision actually IS the rollback (channelSwitchToQUIC) — switches are
+//     rare by construction, so that one is never rate-limited.
+//   - DIAG: transport-switch reason=flap-damped — fires when a rollback is
+//     blocked purely by the flap-damping window (QUIC already
+//     echo-verified healthy, but nextReviewAt hasn't arrived). Same
+//     once-per-window gate, separate field: this typically fires LATER in
+//     the window than the channel-review log above, since echo recovery
+//     usually lands after the window opens rather than before it.
+//
+// Both gates key off newState.nextReviewAt's identity rather than a time
+// interval: it only changes when a fresh flap round starts (switchAway), so
+// comparing against it naturally yields "once per fallback episode" without
+// needing to know the window's (doubling, 30s→600s) duration.
 func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 	tm.mu.Lock()
 	var consecFails int32
@@ -394,7 +424,47 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 	}
 	newState, decision := selectorStep(tm.selState, in)
 	tm.selState = newState
+
+	logChannelReview := false
+	reviewDecision := ""
+	switch {
+	case decision == channelSwitchToQUIC:
+		logChannelReview = true
+		reviewDecision = "switch-to-quic"
+	case decision == channelStay && newState.active == "tcpws" &&
+		tm.channelReviewLoggedWindow != newState.nextReviewAt:
+		tm.channelReviewLoggedWindow = newState.nextReviewAt
+		logChannelReview = true
+		reviewDecision = "stay"
+	}
+
+	logFlapDamped := decision == channelStay && newState.active == "tcpws" &&
+		in.quicEchoRecovered && in.now.Before(newState.nextReviewAt) &&
+		tm.flapDampedLoggedWindow != newState.nextReviewAt
+	if logFlapDamped {
+		tm.flapDampedLoggedWindow = newState.nextReviewAt
+	}
 	tm.mu.Unlock()
+
+	if logChannelReview {
+		nextReviewInS := int(newState.nextReviewAt.Sub(now).Seconds())
+		if nextReviewInS < 0 {
+			nextReviewInS = 0
+		}
+		slog.Info("DIAG: channel-review",
+			"activeChannel", newState.active,
+			"scoreQuic", in.scoreQUIC,
+			"scoreTcpws", in.scoreTCPWS,
+			"flapCount", newState.flapCount,
+			"nextReviewInS", nextReviewInS,
+			"decision", reviewDecision,
+		)
+	}
+	if logFlapDamped {
+		// Not an actual transition (from==to=="tcpws") — reused shape so
+		// existing `grep "DIAG: transport-switch"` tooling still catches it.
+		slog.Warn("DIAG: transport-switch", "from", "tcpws", "to", "tcpws", "reason", "flap-damped")
+	}
 
 	switch decision {
 	case channelSwitchToTCPWS:
@@ -447,6 +517,8 @@ func (tm *TransportManager) ReplacePrimary(d Dialer, transportType string) {
 	tm.primary = d
 	tm.primaryType = transportType
 	tm.selState = selectorState{active: "quic"}
+	tm.channelReviewLoggedWindow = time.Time{}
+	tm.flapDampedLoggedWindow = time.Time{}
 	tm.mu.Unlock()
 	tm.quicEchoRecovered.Store(false)
 
@@ -960,6 +1032,8 @@ func (tm *TransportManager) Reset() {
 
 	tm.mu.Lock()
 	tm.selState = selectorState{active: "quic"}
+	tm.channelReviewLoggedWindow = time.Time{}
+	tm.flapDampedLoggedWindow = time.Time{}
 	tm.mu.Unlock()
 	tm.quicEchoRecovered.Store(false)
 	tm.backupFresh.Store(0)
