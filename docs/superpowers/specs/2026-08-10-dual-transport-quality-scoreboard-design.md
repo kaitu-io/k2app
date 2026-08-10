@@ -79,21 +79,24 @@ k2 的 QUIC(主) + TCP-WS(备) 双通道策略在两类线上场景下表现不�
 |---|---|---|---|
 | echo RTT + 成功率（主动） | 现有 `EchoProbe` | **新增 smux echo 流**（复用 `StreamTypeEcho=0x04`；服务端新增分发；老服务器→unsupported→该信号缺席） | 按需，见 §3.3 |
 | dial 成功率 + 建连延迟（被动） | 每次 `DialTCP/DialUDP/Handshake` 结果回报 | 同 | 零 |
-| 传输质量 | K2CC `PacketLossRate` + RTT/MinRTT（`WireStats`） | RTT/MinRTT 膨胀比（TCP 无直接丢包率） | 零 |
+| 传输质量 | K2CC `PacketLossRate` + RTT/MinRTT（`WireStats`） | **echo RTT 膨胀比**（见下"来源修正"） | 零/按需 |
+
+> **来源修正（审查坐实的缺陷）**：`TCPWSClient.WireStats()`（`wire/tcpws.go:148`）**只返回 UDP drop 计数 + `Transport="tcpws"`，RTT/MinRTT/LossRate 全为 0**（smux 无 CC 统计）。因此 TCP-WS 的 quality **不能**取自 WireStats，只能取自 **echo RTT**（主动探测，`echoRtt / minEchoRtt` 膨胀比）+ dial 延迟（被动）。QUIC 与 TCP-WS 的 quality 公式因此形状一致但输入不同源；ChannelScore 必须对两种输入分别建模，不能假设 WireStats 对两通道对称有效。
 
 **分数公式（纯函数，初始参数，可调）**：
 
 ```
-score        = availability × quality           ∈ [0,1]
-availability = EWMA(成功=1, 失败=0)              # 失败权重×2（宁可误杀，见下）
-quality      = clamp(1 − loss×2, 0, 1) × clamp(minRTT/rtt, 0, 1)
+score        = availability × quality                    ∈ [0,1]
+availability = EWMA(成功=1, 失败=0)                        # 失败权重×2（宁可误杀）
+quality_quic = clamp(1 − loss×2, 0, 1) × clamp(minRtt/rtt, 0, 1)   # loss+rtt 取自 WireStats
+quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT 膨胀比；无 echo → 0.5
 ```
 
-- `availability` 的失败样本用双倍权重更新 EWMA —— 呼应 echo 误分类事故提炼的"缺数据≠健康、也≠故障"原则的姊妹原则："失败要快跌、恢复要慢升"。
-- `quality`：半死 QUIC 的高丢包 / 高 RTT 膨胀会让它持续走低，这是根因 A/B 的正面解。
-- **信号缺席 = 中性 0.5（fail-safe 硬规则）**：某信号无数据（如老服务器无 echo、刚建连无被动样本）时该项记 0.5，**绝不因数据缺失产生切换**。这是从 #3463 echo 误分类事故直接提炼的宪法级约束：缺测量数据既不能判健康也不能判故障。
+- `availability` 的失败样本用双倍权重更新 EWMA ——"失败要快跌、恢复要慢升"，与 fail-safe 原则互补。
+- **信号缺席 = 中性 0.5（fail-safe 硬规则）**：某信号无数据（老服务器无 echo、刚建连无被动样本）时该项记 0.5，**绝不因数据缺失产生切换**。源自 #3463 echo 误分类事故的宪法级约束。
+- **样本时效性（审查坐实的缺陷）**：QUIC 一旦变为备用通道，不再有 dial 流量 → 其被动 `availability` 会**停在切换前的陈旧 1.0**，若直接参与回滚判断会假装 QUIC 健康。故每个信号带 `lastSampleAt`；**超过 3× 该信号当前探测间隔未更新的样本，回退为中性 0.5**。这保证"备用通道的分数只反映它当前被主动探测出来的质量"，陈旧的主用期分数不会污染回滚决策。
 
-`ChannelScore` 是纯计算 + `atomic`/单锁字段，`Update(sample)` 与 `Value()` 均为微秒级临界区，不跨 I/O（遵守 Concurrency Rules）。所有权：每个 Dialer 持有自己的 ChannelScore；TransportManager 读两条通道的 `Value()` 做决策。
+`ChannelScore` 是纯计算 + `atomic`/单锁字段，`Update(sample)` 与 `Value(now)` 均为微秒级临界区，不跨 I/O（遵守 Concurrency Rules）。所有权：每个 Dialer 持有自己的 ChannelScore；TransportManager 读两条通道的 `Value(now)` 做决策。
 
 > 与既有 `wire/probe.go ProbeStats.Score()` 的关系：probe.go 的分数用于**节点选择**（哪台服务器），一次性快照，`-1` 哨兵表示 unsupported。本设计的 ChannelScore 用于**通道选择**（同一服务器 QUIC vs TCP-WS），持续 EWMA。两者正交，公式风格刻意对齐（都是 `availability×rtt×...` 形状）但不共享代码 —— 避免"测试抄公式"陷阱，各自独立单测。
 
@@ -110,6 +113,7 @@ quality      = clamp(1 − loss×2, 0, 1) × clamp(minRTT/rtt, 0, 1)
 **切走（QUIC → TCP-WS），任一满足即切**：
 1. **快速通路**（保留现有语义）：`ConsecConnFails() >= 3`（握手连续失败，UDP 彻底封锁）→ 秒切。
 2. **质量通路**（新增，解根因 B）：`score(tcpws) > score(quic) × 1.5` 且**持续 ≥ 10s** → 切。半死场景由此路生效。
+   - **前置条件（审查坐实的顺序依赖）**：质量通路要能比较，备用通道必须已有**非陈旧**分数。但 §3.3 规定主通道健康时移动端对备用通道 0 主动探测 → 此时 `score(tcpws)` 是陈旧/中性值，无法据以切换。解法：**主通道 score 跌破 0.7 是唯一的"预警触发器"**，它先驱动 §3.3 的频率控制器把备用通道探测升频（5s），攒够 ≥2 个新样本后质量通路才被允许评估。在备用通道尚无新样本的窗口内，只有快速通路（握手失败）能切走。这避免了"切到一条从没探测过、可能已死的备用通道"。
 
 **切回（TCP-WS → QUIC），全部满足才切**（解根因 A）：
 1. `now >= nextReviewAt`（在回滚评审窗口内）；
@@ -195,7 +199,8 @@ quality      = clamp(1 − loss×2, 0, 1) × clamp(minRTT/rtt, 0, 1)
 遵守记忆中的测试教训（变异验证、测试不抄公式、绿测试可能没到目标）。
 
 1. **纯函数单测**（`score_test.go`, `transport_selector_test.go`[新]）：
-   - ChannelScore 公式全覆盖：availability 失败双倍权重、quality 半死走低、**信号缺席→0.5**、EWMA 收敛。
+   - ChannelScore 公式全覆盖：availability 失败双倍权重、quality_quic 半死走低、**quality_tcpws 取 echo RTT（非 WireStats）**、**信号缺席→0.5**、**陈旧样本(>3×间隔)→回退 0.5**、EWMA 收敛。
+   - 顺序依赖：备用通道无新样本时质量通路不切走（只允许快速通路）；score<0.7 预警升频后攒够 ≥2 样本才放行质量通路。
    - 迟滞 FSM 全转移矩阵：切走两条路径、切回三条件、方向性维持区间（在 QUIC 时 ratio≤1.5 不动、在 TCP-WS 时 ratio≥0.833 不动）、flapCount 窗口翻倍序列（30→60→120→…→600 封顶）、Reset 清零。
    - 参照现有 `echoStep`（`health.go:511`）的纯函数抽取模式，无 time/IO/log。
 
