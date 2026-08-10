@@ -935,3 +935,169 @@ func TestBackupProbe_MobilePowerSavingSkipsProbe(t *testing.T) {
 		t.Fatalf("MobilePowerSaving must disable active backup probing, got %d calls", calls)
 	}
 }
+
+// --- fix-round-2 --------------------------------------------------------
+
+// statsEchoStub adds wire.StatsProvider (WireStats()) on top of
+// echoStubDialer's wire.Dialer + wire.EchoProber, so TransportManager.
+// WireStats() takes the "quic" branch and calls RecordQUICStats — the exact
+// production path the N1 fix relies on. Test-only.
+type statsEchoStub struct {
+	echoStubDialer
+	stats wire.WireStats
+}
+
+func (s *statsEchoStub) WireStats() wire.WireStats {
+	return s.stats
+}
+
+func TestSample_FeedsQUICQualityForEveryOutboundNotJustPrimary(t *testing.T) {
+	// N1 regression: before this fix, healthMonitor.sample() only ever
+	// called WireStats() on hm.primaryTM, so a secondary outbound's
+	// scoreQUIC.quality never initialized — permanently neutral 0.5 —
+	// capping ScoreQUIC at avail×0.5 ≤ 0.5 forever, always below
+	// echoBackupProbeThreshold (0.7). Two consequences on any multi-outbound
+	// config: (a) probeBackupOnce permanently stuck in the degraded 5s
+	// branch, and (b) once a couple of real (healthy) tcpws backup probes
+	// land, wire's selectorStep quality path (scoreTCPWS > scoreQUIC×1.5,
+	// sustained, backupFresh≥2) trips a false switch-away on a perfectly
+	// healthy secondary QUIC outbound.
+	//
+	// This drives the real hm.sample() (not a hand-rolled WireStats call)
+	// so a regression in the sampler loop itself is what this test is
+	// sensitive to — see the mutation evidence in the fix-round-2 report
+	// section (revert to primaryTM-only sampling → RED).
+	healthyStats := wire.WireStats{
+		Transport:      "quic",
+		PacketLossRate: 0,
+		RTT:            50 * time.Millisecond,
+		MinRTT:         50 * time.Millisecond,
+	}
+
+	primaryStub := &statsEchoStub{stats: healthyStats}
+	primaryStub.setFn(func(ctx context.Context) error { return nil })
+	primaryTM := wire.NewTransportManager()
+	primaryTM.SetPrimary(primaryStub, "quic-443")
+	primaryOT := &outboundTransport{tm: primaryTM, name: "t-primary"}
+
+	secondaryStub := &statsEchoStub{stats: healthyStats}
+	secondaryStub.setFn(func(ctx context.Context) error { return nil })
+	secondaryTM := wire.NewTransportManager()
+	secondaryTM.SetPrimary(secondaryStub, "quic-443")
+	secondaryOT := &outboundTransport{tm: secondaryTM, name: "t-secondary"}
+
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	secondaryTM.SetTCPWS(backup)
+
+	// ScoreQUIC = availability × quality. Availability comes from dial/echo
+	// outcomes (recordDialOutcome / RecordEchoResult), not from WireStats —
+	// every connected outbound necessarily had a successful primary dial, so
+	// simulate that here. This test is about the QUALITY component (N1's
+	// bug), not availability, so priming it directly keeps the test focused.
+	primaryTM.RecordEchoResult("quic", 0, nil, time.Now())
+	secondaryTM.RecordEchoResult("quic", 0, nil, time.Now())
+
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+	hm := newHealthMonitor(primaryOT, []*outboundTransport{primaryOT, secondaryOT}, tunnel, nil, nil, time.Now())
+
+	// Drive a few real sample() ticks directly (no ticker/goroutine needed —
+	// sample() uses time.Now() internally, which is fine: we only need
+	// scoreQUIC's quality component to prime, not to control exact timing).
+	for range 3 {
+		hm.sample()
+	}
+
+	now := time.Now()
+	if got := secondaryOT.tm.ScoreQUIC(now); got < echoBackupProbeThreshold {
+		t.Fatalf("N1 regression: secondary outbound's ScoreQUIC never primed by sample(), got %v (want >= %v) — quality stuck neutral because only primaryTM was ever sampled", got, echoBackupProbeThreshold)
+	}
+
+	// (a) backup cadence must land in the healthy 60s branch, not stuck
+	// degraded forever.
+	st := &backupLoopState{}
+	if interval := hm.probeBackupOnce(secondaryOT, st, now); interval != backupProbeIntervalHealthy {
+		t.Fatalf("N1 regression: secondary backup cadence = %v, want healthy %v (would have been degraded %v pre-fix)", interval, backupProbeIntervalHealthy, backupProbeIntervalDegraded)
+	}
+
+	// (b) the hysteresis FSM's quality-path switch-away condition must not
+	// hold: with scoreQUIC primed near 1.0, scoreTCPWS (even if probed and
+	// near its own max of 1.0) can never exceed scoreQUIC×1.5 — the raw
+	// invariant that gates channelSwitchToTCPWS, independent of how long we
+	// wait. 1.5 mirrors wire's private switchAwayRatio (wire/transport.go).
+	const switchAwayRatio = 1.5
+	scoreQUIC := secondaryOT.tm.ScoreQUIC(now)
+	scoreTCPWS := secondaryOT.tm.ScoreTCPWS(now)
+	if scoreTCPWS > scoreQUIC*switchAwayRatio {
+		t.Fatalf("N1 regression: switch-away condition holds (scoreTCPWS=%v > scoreQUIC=%v×%v) — a healthy secondary QUIC outbound would eventually be switched away from", scoreTCPWS, scoreQUIC, switchAwayRatio)
+	}
+
+	secondaryTM.EvaluateSelector(now)
+	if secondaryTM.ActiveChannel() != "quic" {
+		t.Fatalf("N1 regression: secondary outbound's healthy QUIC was switched away from (scoreQUIC=%v, scoreTCPWS=%v)", scoreQUIC, scoreTCPWS)
+	}
+}
+
+func TestBackupProbe_ModeChangeDuringHealthyWaitNoticedQuickly(t *testing.T) {
+	// N2: while waiting out the 60s healthy cadence, a mid-window
+	// degradation must be noticed within ~backupProbeIntervalDegraded, not
+	// stranded behind the stale 60s-away probe deadline. This exercises the
+	// "wake often, probe on the (possibly pulled-in) gate" split directly —
+	// see the fix-round-2 report mutation evidence (revert the pull-in →
+	// RED).
+	ot, _ := newEchoTransport("t-quic-mode-change", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+
+	t0 := time.Now()
+	ot.tm.RecordEchoResult("quic", 0, nil, t0)
+	ot.tm.RecordQUICStats(wire.WireStats{PacketLossRate: 0, RTT: 50 * time.Millisecond, MinRTT: 50 * time.Millisecond}, t0)
+	if got := ot.tm.ScoreQUIC(t0); got < echoBackupProbeThreshold {
+		t.Fatalf("setup: expected healthy QUIC score >= %v, got %v", echoBackupProbeThreshold, got)
+	}
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	st := &backupLoopState{}
+
+	// t0: probes, schedules the next PROBE 60s out (healthy cadence).
+	if wake := hm.probeBackupOnce(ot, st, t0); wake != backupProbeIntervalHealthy {
+		t.Fatalf("expected healthy cadence at t0, got %v", wake)
+	}
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected 1 probe at t0, got %d", calls)
+	}
+
+	// t0+10s: QUIC degrades mid-window.
+	degradeAt := t0.Add(10 * time.Second)
+	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, degradeAt)
+	if got := ot.tm.ScoreQUIC(degradeAt); got >= echoBackupProbeThreshold {
+		t.Fatalf("setup: expected degraded QUIC score below %v at t0+10s, got %v", echoBackupProbeThreshold, got)
+	}
+
+	// A check right at the moment of degradation must report a WAKE cadence
+	// of at most backupProbeIntervalDegraded — not the ~50s remaining on
+	// the stale 60s-away deadline — while still NOT forcing an immediate
+	// probe (the probe gate is pulled in, not bypassed).
+	wake := hm.probeBackupOnce(ot, st, degradeAt)
+	if wake > backupProbeIntervalDegraded {
+		t.Fatalf("expected a re-check within %v of a mid-window degradation, got %v", backupProbeIntervalDegraded, wake)
+	}
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("degradation must not itself force an immediate probe, got %d calls (expected still 1)", calls)
+	}
+
+	// The next wake, exactly `wake` later, must find the (pulled-in) probe
+	// gate reached and actually probe — well before t0+60s.
+	nextCheck := degradeAt.Add(wake)
+	hm.probeBackupOnce(ot, st, nextCheck)
+	if calls := backup.calls.Load(); calls != 2 {
+		t.Fatalf("expected the second probe to have fired by t0+10s+%v, got %d calls", wake, calls)
+	}
+	if elapsed := nextCheck.Sub(degradeAt); elapsed > backupProbeIntervalDegraded {
+		t.Fatalf("second probe took %v after degradation — worse than the %v mode-check cadence should allow", elapsed, backupProbeIntervalDegraded)
+	}
+	if elapsed := nextCheck.Sub(t0); elapsed >= backupProbeIntervalHealthy {
+		t.Fatalf("second probe fired at t0+%v — no better than the stale 60s boundary this fix targets", elapsed)
+	}
+}

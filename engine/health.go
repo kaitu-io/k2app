@@ -228,6 +228,30 @@ func (hm *healthMonitor) sample() {
 		ws = hm.primaryTM.tm.WireStats()
 		tcpHealthy = hm.primaryTM.tm.TCPRecentlyHealthy(30 * time.Second)
 	}
+
+	// fix-round-2 (N1): feed every OTHER outbound's QUIC quality too.
+	// WireStats() has the side effect of calling RecordQUICStats when its
+	// TransportManager's active transport is QUIC (wire/transport.go) — that
+	// is the ONLY production path that ever primes a ChannelScore's quality
+	// component. Before this loop, only hm.primaryTM was ever sampled here,
+	// so every non-primary outbound's scoreQUIC.quality stayed permanently
+	// uninitialized → ChannelScore's staleness gate substitutes neutral 0.5
+	// forever → ScoreQUIC capped at avail×0.5 ≤ 0.5, always below
+	// echoBackupProbeThreshold (0.7). Two consequences on any multi-outbound
+	// config (multi-slot gateway / rule-based multi-`via`): probeBackupOnce
+	// permanently stuck in the degraded 5s cadence, AND wire's
+	// selectorStep quality path (scoreTCPWS > scoreQUIC×1.5, sustained,
+	// backupFresh≥2) eventually trips a false switch-away on a perfectly
+	// healthy QUIC outbound. Health FSM / HealthSnapshot reporting stays
+	// primary-only (unchanged) — the return value here is discarded
+	// on purpose, only the RecordQUICStats side effect matters.
+	for _, ot := range hm.tms {
+		if ot == nil || ot == hm.primaryTM {
+			continue
+		}
+		ot.tm.WireStats()
+	}
+
 	tx, rx := hm.tunnel.TrafficBytes()
 
 	now := time.Now()
@@ -810,12 +834,21 @@ func (hm *healthMonitor) backupProbeLoop(ot *outboundTransport) {
 
 // probeBackupOnce evaluates whether the backup channel is due for a probe
 // at `now` and, if so, probes it and records the outcome. Returns the
-// duration until the next check is due — backupProbeLoop re-arms its timer
+// duration until the next CHECK is due — backupProbeLoop re-arms its timer
 // from this; a test can call this directly with synthetic `now` values and
 // a state that persists across calls, without any real waiting (fix-round-1
 // Important 3: this replaces probeOnceForTest as the way to exercise
 // backup-cadence behavior — echoProbeLoop's probeOnceForTest no longer
 // touches backup logic at all).
+//
+// The returned duration is a WAKE cadence, not necessarily the PROBE
+// cadence (fix-round-2 N2): while healthy-and-waiting for the next probe,
+// this still returns at most backupProbeIntervalDegraded so the caller
+// re-evaluates whether the mode has changed — a healthy desktop outbound
+// still only actually PROBES every 60s (st.nextProbeAt is the real probe
+// gate), but a degradation partway through that 60s window is noticed
+// within one mode-check tick instead of stranded behind the stale
+// 60s-away deadline.
 //
 // R5's scope is deliberately asymmetric:
 //
@@ -861,7 +894,28 @@ func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopSt
 	}
 
 	if !st.nextProbeAt.IsZero() && now.Before(st.nextProbeAt) {
-		return st.nextProbeAt.Sub(now)
+		// fix-round-2 (N2): don't just sleep out the full remaining wait —
+		// mode (healthy/degraded) can change while we're waiting (e.g. QUIC
+		// degrades 10s into a 60s healthy window), and the pre-N2 code
+		// wouldn't notice until the stale nextProbeAt finally arrived, up to
+		// backupProbeIntervalHealthy (60s) late. Pull nextProbeAt IN — never
+		// push it out — whenever the interval just computed from the
+		// CURRENT score would land sooner than the already-scheduled probe.
+		// A later flip back to healthy does not cancel an already-pulled-in
+		// probe (worst case: one harmless extra probe, not a missed one).
+		if candidate := now.Add(interval); candidate.Before(st.nextProbeAt) {
+			st.nextProbeAt = candidate
+		}
+		remaining := st.nextProbeAt.Sub(now)
+		if remaining > backupProbeIntervalDegraded {
+			// Still keep WAKING at least this often to re-check mode, even
+			// though the actual PROBE stays gated by st.nextProbeAt — a
+			// healthy desktop outbound still only probes every 60s, it just
+			// re-evaluates whether that's still the right cadence every
+			// ≤backupProbeIntervalDegraded.
+			return backupProbeIntervalDegraded
+		}
+		return remaining
 	}
 	// The interval reported here is exactly the interval this goroutine
 	// re-arms its own timer with below — the real, achievable cadence, not
