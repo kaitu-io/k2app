@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -614,6 +616,38 @@ func TestEchoStep_FailResetsTrust(t *testing.T) {
 	res := echoStep(maxIdx, 0, context.DeadlineExceeded)
 	if res.NewTrust != 0 || res.Classify != echoFail {
 		t.Fatalf("fail should collapse trust to 0, got %+v", res)
+	}
+}
+
+// TestEchoStep_QUICStreamDeadlineCountsAsFailure pins the cross-layer contract
+// that a black-holed data path accumulates strikes toward a re-race.
+//
+// This is the error shape EchoProbe actually returns when the response never
+// arrives: stream.SetReadDeadline expires and quic-go reports a deadline error
+// that unwraps to os.ErrDeadlineExceeded — NOT context.DeadlineExceeded, which
+// is what every other case here feeds in. Classifying it as echoUnsupported
+// grows trust and holds strikes at zero, so the engine never re-races off a
+// dead wire while the UI still reads "connected".
+//
+// The synthetic error below only guards the engine's half of the contract.
+// wire.TestIsEchoUnsupported_RealStreamDeadlineIsNotUnsupported is the
+// authority: it drives a real quic-go connection to a real read deadline.
+func TestEchoStep_QUICStreamDeadlineCountsAsFailure(t *testing.T) {
+	err := fmt.Errorf("echo: read response: %w", os.ErrDeadlineExceeded)
+
+	res := echoStep(0, 0, err)
+	if res.Classify != echoFail {
+		t.Fatalf("QUIC stream deadline classified as %v, want echoFail: %v", res.Classify, err)
+	}
+	if res.NewStrikes != 1 {
+		t.Fatalf("strikes should advance to 1 on a dead data path, got %d", res.NewStrikes)
+	}
+
+	// Three consecutive deadlines must reach the re-race threshold.
+	res = echoStep(0, echoReraceThreshold-1, err)
+	if !res.ShouldRerace {
+		t.Fatalf("%d consecutive stream deadlines did not trigger re-race: %+v",
+			echoReraceThreshold, res)
 	}
 }
 

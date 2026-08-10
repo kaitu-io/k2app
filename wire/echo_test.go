@@ -252,3 +252,96 @@ func TestEchoProbe_NonceMismatch(t *testing.T) {
 		t.Fatalf("server error: %v", err)
 	}
 }
+
+// The two tests below are a discriminating pair over IsEchoUnsupported, driven
+// by a REAL quic-go connection rather than a hand-built error value. Every
+// other echo test feeds IsEchoUnsupported a synthetic error (errors.New, io.EOF,
+// context.DeadlineExceeded), and none of those is what the production read path
+// actually returns — which is how a silent-blindness bug shipped: a black-holed
+// data path yields quic-go's stream deadline error, whose Unwrap chain reaches
+// os.ErrDeadlineExceeded and never context.DeadlineExceeded.
+//
+// Keep both. The pre-echo case is the control: it proves the timeout case is
+// asserting a real distinction, not just tracking a predicate that says false.
+
+// TestIsEchoUnsupported_RealStreamDeadlineIsNotUnsupported covers the black-hole
+// network: the QUIC handshake completed, but Short Header packets are being
+// dropped, so the echo response never arrives and the stream read deadline
+// fires. That is wire death and MUST accumulate strikes toward a re-race.
+func TestIsEchoUnsupported_RealStreamDeadlineIsNotUnsupported(t *testing.T) {
+	ln, addr, cleanupServer := echoTestServer(t)
+	defer cleanupServer()
+
+	// Server accepts the stream but never responds — the client-observable state
+	// is identical to a black hole: writes buffer locally, the read blocks until
+	// the deadline.
+	done := make(chan struct{})
+	go func() {
+		conn, err := ln.Accept(context.Background())
+		if err != nil {
+			return
+		}
+		stream, err := conn.AcceptStream(context.Background())
+		if err != nil {
+			return
+		}
+		<-done
+		stream.Close()
+	}()
+
+	conn, cleanupClient := echoTestClient(t, addr)
+	defer cleanupClient()
+	defer close(done)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	_, err := EchoProbe(ctx, conn)
+	if err == nil {
+		t.Fatal("expected a timeout error from the unanswered echo, got nil")
+	}
+	if IsEchoUnsupported(err) {
+		t.Fatalf("stream read deadline classified as 'old server, no echo support': %v\n"+
+			"A dead data path would grow trust instead of triggering re-race.", err)
+	}
+}
+
+// TestIsEchoUnsupported_RealPreEchoServerIsUnsupported is the control case: a
+// server predating StreamTypeEcho falls through QUICServer.handleStream's
+// `default:` branch, which calls stream.Close(). The client sees EOF, not a
+// timeout, and must classify it as unsupported so it does NOT storm re-races
+// against a perfectly healthy old server.
+func TestIsEchoUnsupported_RealPreEchoServerIsUnsupported(t *testing.T) {
+	ln, addr, cleanupServer := echoTestServer(t)
+	defer cleanupServer()
+
+	go func() {
+		conn, err := ln.Accept(context.Background())
+		if err != nil {
+			return
+		}
+		stream, err := conn.AcceptStream(context.Background())
+		if err != nil {
+			return
+		}
+		// Mirror the pre-echo server: parse the header, hit `default:`, close.
+		br := bufio.NewReader(stream)
+		ReadVarint(br)
+		ReadStreamHeader(br)
+		stream.Close()
+	}()
+
+	conn, cleanupClient := echoTestClient(t, addr)
+	defer cleanupClient()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := EchoProbe(ctx, conn)
+	if err == nil {
+		t.Fatal("expected an EOF error from the closed stream, got nil")
+	}
+	if !IsEchoUnsupported(err) {
+		t.Fatalf("pre-echo server EOF misclassified as wire death: %v", err)
+	}
+}

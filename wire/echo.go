@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"os"
 	"time"
 
 	"github.com/apernet/quic-go"
@@ -107,10 +109,28 @@ func HandleEchoStream(stream *quic.Stream, br *bufio.Reader) {
 //
 // Exported so engine/health.go can distinguish "wire dead" from "server can't
 // validate"; only the former should accumulate strikes toward rerace.
+//
+// Every timeout must be excluded here, and identifying one is not as simple as
+// comparing against context.DeadlineExceeded. EchoProbe arms the response read
+// with stream.SetReadDeadline, and quic-go answers an expired stream deadline
+// with its own unexported deadlineError, which unwraps to os.ErrDeadlineExceeded
+// — never to context.DeadlineExceeded. Checking only the latter made a
+// black-holed data path (handshake passes, Short Header packets dropped) look
+// like a pre-echo server, so trust grew, strikes stayed at zero, and neither
+// health.go's re-race nor race.go's transport selection ever noticed the wire
+// was dead. Because the fail-open default below turns any unrecognized error
+// into "benign", a check that misses a real failure mode fails silently: prefer
+// over-matching timeouts here. See TestIsEchoUnsupported_RealStreamDeadlineIsNotUnsupported,
+// which drives a real quic-go connection rather than a synthetic error value.
 func IsEchoUnsupported(err error) bool {
-	// Old servers close the stream with "unknown stream type" or similar.
-	// A context.DeadlineExceeded means timeout (blocked path, not old server).
-	if errors.Is(err, context.DeadlineExceeded) {
+	// Blocked path, not an old server — the wire is genuinely dead.
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return false
+	}
+	// Catch-all for timeouts that carry neither sentinel (quic-go's stream
+	// deadline error reports Timeout() through the net.Error interface).
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
 		return false
 	}
 	// Stream reset or unexpected EOF from server = likely old server.
