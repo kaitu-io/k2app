@@ -94,6 +94,7 @@ Reserved event names:
 | `DIAG: transport-race-start` | INFO | race begins | candidates |
 | `DIAG: transport-race-winner` | INFO | race complete | winner, winnerMs, tried |
 | `DIAG: transport-race-fail` | WARN | all candidates failed | quic443Err, quicHopErr, tcpwsErr |
+| `DIAG: ech-block-suspected` | WARN | all ECH transports failed AND a no-ECH TLS to the same IP completed (fires off race-fail, background, gated out when a candidate reached auth) | host, sni, hint |
 | `DIAG: echo-probe-ok` | DEBUG | echo succeeded | transport, rttMs |
 | `DIAG: echo-probe-fail` | WARN | echo failed | transport, err |
 | `DIAG: echo-probe-unsupported` | WARN | server doesn't support echo (old k2v5) | transport |
