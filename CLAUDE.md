@@ -233,6 +233,8 @@ wire.SlackAlerter.mu (state, standalone — per-key cooldown map only; the
 wire.authHealth.mu (state, standalone — Center-reachability state only;
   SlackAlerter.Fire is called OUTSIDE it, so the two never nest)
 
+wire.ChannelScore.mu (state, standalone — field-only, no nesting; read/written by TransportManager under no other lock)
+
 wire.CookieSigner: rotateMu (serialization, holds across the rotation's file
   write) → CookieSigner.mu (state). Standalone — never acquired while holding
   any other lock.
