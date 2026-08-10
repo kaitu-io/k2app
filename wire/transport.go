@@ -343,10 +343,41 @@ func (tm *TransportManager) RecordEchoResult(channel string, rtt time.Duration, 
 	}
 }
 
+// EvaluateSelector is the exported passthrough to evaluateSelector (Task 7)
+// — engine/health.go's echoProbeLoop calls this once per probe cycle so the
+// hysteresis FSM is driven on its own cadence rather than only piggy-backing
+// on Dial*/Handshake traffic (this is the "later echoLoop" the comment below
+// forecast).
+func (tm *TransportManager) EvaluateSelector(now time.Time) {
+	tm.evaluateSelector(now)
+}
+
+// SetChannelProbeInterval is the exported passthrough to the named channel's
+// ChannelScore.SetProbeInterval (Task 7) — engine/health.go's echoProbeLoop
+// calls this whenever it changes a channel's probe cadence (exponential
+// trust schedule for the primary; 60s/5s/off for the backup) so
+// ChannelScore's staleness gating tracks the cadence actually in effect. A
+// no-op for an unrecognized channel key.
+func (tm *TransportManager) SetChannelProbeInterval(channel string, d time.Duration) {
+	if sc := tm.scoreFor(channel); sc != nil {
+		sc.SetProbeInterval(d)
+	}
+}
+
+// TCPWS returns the current TCP-WS transport (nil if unset). Exported (Task
+// 7) so engine/health.go's echoProbeLoop can opportunistically probe the
+// backup channel when active=="quic" and QUIC quality has degraded — see
+// wire.TransportManager doc and qualityDegradeThreshold.
+func (tm *TransportManager) TCPWS() Dialer {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.tcpws
+}
+
 // evaluateSelector reads scores + selector state under tm.mu and applies the
 // hysteresis FSM's decision (selectorStep, Task 2). Called lazily at the end
-// of every Dial*/Handshake call (Phase 1 — a later echoLoop will drive this
-// on its own cadence instead of piggy-backing on traffic).
+// of every Dial*/Handshake call (Phase 1), and also from echoLoop's own
+// cadence via the EvaluateSelector passthrough (Task 7).
 func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 	tm.mu.Lock()
 	var consecFails int32

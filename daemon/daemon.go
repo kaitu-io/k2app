@@ -544,6 +544,11 @@ func (d *Daemon) engineConfigFromClientConfig(
 		HealthCallback:   d.broadcastSnapshot,
 		OutboundProvider: d.subsMgr, // subscription.Manager implements engine.OutboundProvider (k2subs rotation).
 		ProcessSearcher:  newProcessSearcher(),
+		// Desktop has no battery-radio cost concern — echoProbeLoop actively
+		// probes the inactive backup transport (Task 7 dual-transport
+		// scoreboard). MobilePowerSaving stays false (default); set
+		// explicitly here for symmetry with appext's true.
+		MobilePowerSaving: false,
 	}
 
 	// Apply network monitor if available.

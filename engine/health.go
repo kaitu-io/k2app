@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -154,6 +155,14 @@ type healthMonitor struct {
 	wake        wakeDetector // sleep/wake detection + reconnect trigger
 
 	reRaceChan chan *outboundTransport // non-nil: engine's re-race channel (per-TM)
+
+	// mobilePowerSaving disables echoProbeLoop's active backup-channel
+	// probing (Task 7): mobile relies on protocol keepalive instead of
+	// spending radio wake-ups on an opportunistic tcpws echo while QUIC is
+	// active. Desktop leaves this false. Set post-construction from
+	// Config.MobilePowerSaving (engine.go) rather than a constructor param,
+	// to avoid touching the many existing newHealthMonitor call sites.
+	mobilePowerSaving bool
 }
 
 func newHealthMonitor(
@@ -444,7 +453,14 @@ func (hm *healthMonitor) resetCounters() {
 	hm.ewmaInitialized = false
 }
 
-// Echo wire-health probing — exponential-trust schedule.
+// Echo wire-health probing — exponential-trust schedule for RE-RACE
+// DETECTION ONLY (trust/strikes/rerace below). Task 7 gave the same probe
+// loop a second, independent job — feeding the dual-channel quality
+// scoreboard (wire.TransportManager.RecordEchoResult/EvaluateSelector) and
+// opportunistically probing the backup channel — documented separately at
+// probeOnce/probeBackupIfNeeded below. The two jobs share one probe per
+// tick but are otherwise uncoupled: scoreboard feeding never influences
+// trust/strikes, and vice versa.
 //
 // Principle: "trust" = time we're willing to skip verification. Each successful
 // probe halves uncertainty about wire health → next probe interval doubles. Each
@@ -475,6 +491,28 @@ var echoIntervals = []time.Duration{
 const (
 	echoProbeTimeout    = 2 * time.Second
 	echoReraceThreshold = 3 // consecutive real failures (unsupported and ok don't count)
+
+	// echoBackupProbeThreshold mirrors wire's private qualityDegradeThreshold
+	// (wire/transport.go) — the same 0.7 the hysteresis FSM uses to pre-warn
+	// before considering a switch away from QUIC. Kept as a separate
+	// engine-side constant rather than exporting wire's (R4): this is the
+	// only consumer, and widening wire's API for one float is worse than a
+	// commented mirror. If wire's threshold ever changes, this must change
+	// with it — there is no compile-time link between the two.
+	echoBackupProbeThreshold = 0.7
+
+	// backupProbeIntervalHealthy is the low-frequency cadence at which the
+	// backup (currently-inactive) channel is opportunistically echo-probed
+	// while the primary channel is healthy. Desktop only — see
+	// healthMonitor.mobilePowerSaving.
+	backupProbeIntervalHealthy = 60 * time.Second
+
+	// backupProbeIntervalDegraded is the upgraded cadence used once the
+	// active channel's score drops below echoBackupProbeThreshold — the
+	// backup channel needs fresher samples so evaluateSelector's quality
+	// path (backupFreshSamplesGate) can act quickly once it's actually
+	// ready to serve traffic.
+	backupProbeIntervalDegraded = 5 * time.Second
 )
 
 func init() {
@@ -559,15 +597,29 @@ func (hm *healthMonitor) echoLoop() {
 	wg.Wait()
 }
 
-// echoProbeLoop runs one transport's exponential-trust echo schedule until
-// hm.done. State (trust, strikes, unsupportedLogged) is goroutine-local.
-func (hm *healthMonitor) echoProbeLoop(ot *outboundTransport) {
-	var trustIdx, strikes int32
-	// Rate-limit DIAG: echo-probe-unsupported to once per (transport, state-change)
-	// to avoid spam when probing a pre-echo server at high cadence.
-	unsupportedLogged := false
+// echoLoopState is one echoProbeLoop goroutine's mutable state, factored out
+// of the loop body (into probeOnce) so probeOnceForTest can drive a single
+// iteration deterministically without a goroutine or timer. Real-loop state
+// is goroutine-local (one echoLoopState per outboundTransport, never shared);
+// test-hook state is a fresh zero value per call — see probeOnceForTest.
+type echoLoopState struct {
+	trustIdx, strikes int32
+	// unsupportedLogged rate-limits DIAG: echo-probe-unsupported to once per
+	// (transport, state-change), avoiding spam when probing a pre-echo
+	// server at high cadence.
+	unsupportedLogged bool
 
-	timer := time.NewTimer(echoIntervals[trustIdx])
+	// nextBackupProbeAt paces the backup-channel probe independently of the
+	// primary's exponential-trust timer (Task 7). Zero = eligible immediately.
+	nextBackupProbeAt time.Time
+}
+
+// echoProbeLoop runs one transport's exponential-trust echo schedule until
+// hm.done. State is goroutine-local (echoLoopState), never shared.
+func (hm *healthMonitor) echoProbeLoop(ot *outboundTransport) {
+	st := &echoLoopState{}
+
+	timer := time.NewTimer(echoIntervals[st.trustIdx])
 	defer timer.Stop()
 
 	for {
@@ -577,63 +629,182 @@ func (hm *healthMonitor) echoProbeLoop(ot *outboundTransport) {
 		case <-timer.C:
 		}
 
-		primary := ot.tm.Primary()
-		if primary == nil {
-			trustIdx, strikes, unsupportedLogged = 0, 0, false
-			timer.Reset(echoIntervals[0])
-			continue
-		}
-		ep, ok := primary.(wire.EchoProber)
-		if !ok {
-			// TCP-WS or similar — built-in WS ping/pong covers liveness.
-			// Sleep at max interval (cheap no-op pacing).
-			trustIdx, strikes, unsupportedLogged = 0, 0, false
-			timer.Reset(echoIntervals[len(echoIntervals)-1])
-			continue
-		}
-
-		transport := ot.tm.PrimaryType()
-		echoCtx, cancel := context.WithTimeout(context.Background(), echoProbeTimeout)
-		err := ep.RunEchoProbe(echoCtx)
-		cancel()
-
-		res := echoStep(trustIdx, strikes, err)
-
-		switch res.Classify {
-		case echoOK:
-			unsupportedLogged = false
-			// echo-probe-ok is logged inside wire.EchoProbe at DEBUG with rttMs;
-			// no need to duplicate here.
-		case echoUnsupported:
-			if !unsupportedLogged {
-				slog.Warn("DIAG: echo-probe-unsupported", "transport", transport)
-				unsupportedLogged = true
-			}
-		case echoFail:
-			unsupportedLogged = false
-			slog.Warn("DIAG: echo-probe-fail",
-				"transport", transport,
-				"err", err.Error(),
-				"trustIdx", trustIdx,
-				"strikes", res.NewStrikes,
-			)
-		}
-
-		trustIdx = res.NewTrust
-		strikes = res.NewStrikes
-
-		if res.ShouldRerace && hm.reRaceChan != nil {
-			// Cap-1 channel + select-default in engine.outboundReplaceLoop gives
-			// natural burst throttling; consumer logs DIAG: transport-rerace.
-			select {
-			case hm.reRaceChan <- ot:
-			default:
-			}
-			strikes = 0
-		}
-
-		timer.Reset(echoIntervals[trustIdx])
+		hm.probeOnce(ot, st, time.Now())
+		timer.Reset(echoIntervals[st.trustIdx])
 	}
+}
+
+// probeOnceForTest drives exactly one echoProbeLoop iteration synchronously,
+// bypassing the timer/goroutine. Uses fresh loop-local state each call — the
+// tests that use this hook drive a single probe cycle and don't depend on
+// trust/strikes/backup-cadence carrying over between calls. Test-only.
+func (hm *healthMonitor) probeOnceForTest(ot *outboundTransport, now time.Time) {
+	hm.probeOnce(ot, &echoLoopState{}, now)
+}
+
+// probeOnce runs one primary-channel echo probe (re-race trust/strikes
+// bookkeeping, unchanged from before Task 7) and, new in Task 7, feeds the
+// result into the dual-channel quality scoreboard and evaluates the
+// hysteresis FSM on the probe's own cadence — then opportunistically probes
+// the backup channel via probeBackupIfNeeded. Mutates st in place; the
+// caller re-arms its timer from st.trustIdx afterward.
+func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now time.Time) {
+	primary := ot.tm.Primary()
+	if primary == nil {
+		st.trustIdx, st.strikes, st.unsupportedLogged = 0, 0, false
+		return
+	}
+	ep, ok := primary.(wire.EchoProber)
+	if !ok {
+		// TCP-WS or similar — built-in WS ping/pong covers liveness.
+		// Sleep at max interval (cheap no-op pacing).
+		st.trustIdx, st.strikes, st.unsupportedLogged = 0, 0, false
+		st.trustIdx = int32(len(echoIntervals) - 1)
+		hm.probeBackupIfNeeded(ot, st, now)
+		return
+	}
+
+	transport := ot.tm.PrimaryType()
+	echoCtx, cancel := context.WithTimeout(context.Background(), echoProbeTimeout)
+	start := time.Now()
+	err := ep.RunEchoProbe(echoCtx)
+	cancel()
+	probeNow := time.Now()
+
+	res := echoStep(st.trustIdx, st.strikes, err)
+
+	switch res.Classify {
+	case echoOK:
+		st.unsupportedLogged = false
+		// echo-probe-ok is logged inside wire.EchoProbe at DEBUG with rttMs;
+		// no need to duplicate here.
+	case echoUnsupported:
+		if !st.unsupportedLogged {
+			slog.Warn("DIAG: echo-probe-unsupported", "transport", transport)
+			st.unsupportedLogged = true
+		}
+	case echoFail:
+		st.unsupportedLogged = false
+		slog.Warn("DIAG: echo-probe-fail",
+			"transport", transport,
+			"err", err.Error(),
+			"trustIdx", st.trustIdx,
+			"strikes", res.NewStrikes,
+		)
+	}
+
+	st.trustIdx = res.NewTrust
+	st.strikes = res.NewStrikes
+
+	if res.ShouldRerace && hm.reRaceChan != nil {
+		// Cap-1 channel + select-default in engine.outboundReplaceLoop gives
+		// natural burst throttling; consumer logs DIAG: transport-rerace.
+		select {
+		case hm.reRaceChan <- ot:
+		default:
+		}
+		st.strikes = 0
+	}
+
+	// Task 7: feed the dual-channel scoreboard with this probe's outcome and
+	// evaluate the hysteresis FSM on the probe's own cadence (R1/R2) — rather
+	// than only piggy-backing on Dial*/Handshake traffic. primaryChannel is
+	// whatever channel `primary` actually belongs to — NOT necessarily
+	// ot.tm.ActiveChannel(): when tcpws won the initial race but QUIC also
+	// connected, tm.primary is installed as the QUIC dialer with fallback
+	// active (see setupOutboundTransport), so probing `primary` here probes
+	// QUIC even while tcpws is the active/serving channel. Recording under
+	// primaryChannel (not activeChannel) keeps each channel's score fed only
+	// by probes that actually exercised it.
+	primaryChannel := channelForType(transport)
+	var rtt time.Duration
+	if primaryChannel == "tcpws" {
+		// R1: rtt is measured at the call site (includes stream-open
+		// overhead — acceptable, QualityFromEchoRTT is self-relative).
+		// QUIC's quality signal comes from RecordQUICStats (CC stats), so
+		// rtt stays 0 for the quic channel — RecordEchoResult's quality
+		// branch is tcpws-only anyway.
+		rtt = probeNow.Sub(start)
+	}
+	ot.tm.RecordEchoResult(primaryChannel, rtt, err, probeNow)
+	ot.tm.EvaluateSelector(probeNow)
+	ot.tm.SetChannelProbeInterval(primaryChannel, echoIntervals[st.trustIdx])
+
+	hm.probeBackupIfNeeded(ot, st, probeNow)
+}
+
+// channelForType classifies a primaryType label the same way
+// wire.TransportManager does internally ("quic*" → "quic", else "tcpws").
+// Duplicated here (rather than exported from wire) because it's a one-line
+// string-prefix check — not worth widening wire's API for.
+func channelForType(transportType string) string {
+	if strings.HasPrefix(transportType, "quic") {
+		return "quic"
+	}
+	return "tcpws"
+}
+
+// probeBackupIfNeeded opportunistically echo-probes the backup (currently
+// inactive) channel so its score has fresh data when/if the hysteresis FSM
+// needs it (R5). Scope is deliberately asymmetric:
+//
+//   - active=="quic": backup = tm.TCPWS(). Cadence is 60s while QUIC is
+//     healthy, upgraded to 5s once ScoreQUIC drops below
+//     echoBackupProbeThreshold (mirrors wire's private
+//     qualityDegradeThreshold — R4) so evaluateSelector's quality path has
+//     fresh backupFresh samples by the time it needs them.
+//   - active=="tcpws": no-op here. QUIC recovery probing during fallback is
+//     ALREADY owned by wire's runProbeOnce (30s, echo-verified,
+//     quicEchoRecovered) — duplicating it in the engine loop would be a
+//     second, uncoordinated prober racing the same QUIC connection.
+//
+// hm.mobilePowerSaving disables this entirely: mobile relies on protocol
+// keepalive instead of spending radio wake-ups on opportunistic backup
+// echoes. Per R3, the power-saving branch does NOT touch the backup
+// channel's ChannelScore.probeInterval — it's simply left at whatever it
+// last was (defaultProbeInterval if never set), so a channel with no active
+// probing goes stale → neutral 0.5 on ChannelScore's own staleness gate.
+// That decay is a designed fail-safe, not a bug.
+func (hm *healthMonitor) probeBackupIfNeeded(ot *outboundTransport, st *echoLoopState, now time.Time) {
+	if hm.mobilePowerSaving {
+		return
+	}
+	if ot.tm.ActiveChannel() != "quic" {
+		return
+	}
+
+	interval := backupProbeIntervalHealthy
+	if ot.tm.ScoreQUIC(now) < echoBackupProbeThreshold {
+		interval = backupProbeIntervalDegraded
+	}
+
+	if !st.nextBackupProbeAt.IsZero() && now.Before(st.nextBackupProbeAt) {
+		return
+	}
+	st.nextBackupProbeAt = now.Add(interval)
+	ot.tm.SetChannelProbeInterval("tcpws", interval)
+
+	backup := ot.tm.TCPWS()
+	if backup == nil {
+		return
+	}
+	prober, ok := backup.(wire.EchoProber)
+	if !ok {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), echoProbeTimeout)
+	start := time.Now()
+	err := prober.RunEchoProbe(ctx)
+	cancel()
+	probeNow := time.Now()
+
+	if err != nil && !wire.IsEchoUnsupported(err) {
+		slog.Warn("DIAG: echo-probe-fail", "transport", "tcpws-backup", "err", err.Error())
+	}
+
+	ot.tm.RecordEchoResult("tcpws", probeNow.Sub(start), err, probeNow)
+	ot.tm.EvaluateSelector(probeNow)
 }
 
 // History returns the ring buffer contents oldest-first.

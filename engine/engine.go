@@ -553,6 +553,7 @@ func (e *Engine) Start(cfg Config) error {
 
 	// Start health monitor (1Hz wire stats sampling + health FSM).
 	hm := newHealthMonitor(primaryOT, allOTs, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
+	hm.mobilePowerSaving = cfg.MobilePowerSaving
 	hm.start()
 	e.health = hm
 

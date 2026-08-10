@@ -771,3 +771,75 @@ func TestEchoStep_ScenarioWireFailsEarly(t *testing.T) {
 		t.Fatalf("step 4 (fail #3, expect rerace): %+v", r)
 	}
 }
+
+// --- Task 7: echoLoop drives the dual-channel scoreboard ------------------
+//
+// Uses the echoStubDialer / newEchoTransport / newHMForEcho fakes from
+// health_echo_integration_test.go. probeOnceForTest drives exactly one
+// echoProbeLoop iteration synchronously (fresh loop-local trust/strikes/
+// backup-cadence state each call) so these tests don't depend on real
+// timers.
+
+func TestEchoLoop_FeedsChannelScore(t *testing.T) {
+	// A healthMonitor with one TM whose QUIC echo succeeds should raise that
+	// channel's availability score above neutral (0.5*0.5=0.25) within one
+	// probe cycle.
+	ot, _ := newEchoTransport("t-quic-ok", func(ctx context.Context) error { return nil })
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+
+	now := time.Now()
+	hm.probeOnceForTest(ot, now)
+
+	if got := ot.tm.ScoreQUIC(now); got <= 0.5*0.5 {
+		t.Fatalf("successful echo should push score above neutral, got %v", got)
+	}
+}
+
+func TestEchoLoop_BackupProbesWhenQUICDegraded(t *testing.T) {
+	// Drive scoreQUIC below echoBackupProbeThreshold via a real failure
+	// (context.DeadlineExceeded — not IsEchoUnsupported, so it actually
+	// counts as a failure), then verify one probeOnce call fires the
+	// tcpws backup probe (R5: backup = the OTHER channel's client when
+	// active=="quic").
+	ot, _ := newEchoTransport("t-quic-degraded", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+
+	now := time.Now()
+	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, now)
+	if got := ot.tm.ScoreQUIC(now); got >= echoBackupProbeThreshold {
+		t.Fatalf("setup: expected degraded QUIC score below %v, got %v", echoBackupProbeThreshold, got)
+	}
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	hm.probeOnceForTest(ot, now)
+
+	if calls := backup.calls.Load(); calls == 0 {
+		t.Fatal("expected backup (tcpws) probe to fire when QUIC degraded, got 0 calls")
+	}
+	if got := ot.tm.ScoreTCPWS(now); got <= 0.5*0.5 {
+		t.Fatalf("backup probe success should raise tcpws score above neutral, got %v", got)
+	}
+}
+
+func TestEchoLoop_MobilePowerSavingSkipsBackupProbe(t *testing.T) {
+	// Same degraded-QUIC setup as above, but with MobilePowerSaving on:
+	// backup probing must NOT fire — mobile relies on protocol keepalive
+	// and lets the tcpws score decay to neutral by staleness instead.
+	ot, _ := newEchoTransport("t-quic-degraded-ps", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+
+	now := time.Now()
+	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, now)
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	hm.mobilePowerSaving = true
+	hm.probeOnceForTest(ot, now)
+
+	if calls := backup.calls.Load(); calls != 0 {
+		t.Fatalf("MobilePowerSaving must disable active backup probing, got %d calls", calls)
+	}
+}
