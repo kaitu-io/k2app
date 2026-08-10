@@ -56,7 +56,8 @@ All diagnostic logs use `log/slog` (stdlib). The `DIAG:` prefix is reserved for 
 
 - Emitted every 30 seconds from `healthMonitor.sample()`.
 - Fixed prefix: `"DIAG: heartbeat"`.
-- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `udpTxDrops`, `udpRxDrops`, `uptimeS`, `fallback`, `heapMB`, `sysMB`, `goroutines`. `udpTxDrops`/`udpRxDrops` are cumulative since connect, not a per-interval delta — diff two heartbeats to get a rate.
+- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `dialOk`, `dialFail`, `directOk`, `directFail`, `udpTxDrops`, `udpRxDrops`, `uptimeS`, `fallback`, `heapMB`, `sysMB`, `goroutines`. `udpTxDrops`/`udpRxDrops` are cumulative since connect, not a per-interval delta — diff two heartbeats to get a rate.
+- **The four `dial*` fields are per-window deltas, not cumulative** — the opposite convention from `udpTxDrops`, deliberately: their whole purpose is answering "is anything working *right now*", which a running total cannot do without arithmetic across log lines. `dialOk`/`dialFail` count proxied dials, `directOk`/`directFail` direct ones; they are split because a direct-path fault (a socket bound to the wrong interface, ticket #3303) and a proxy-path fault (a node that cannot egress, ticket #3463) are unrelated problems that hide behind each other when summed. **`dialFail` high with `dialOk` at 0 is the signature no other field can show**: `loss` stays 0.000 and `health` stays `healthy` when every request fails at the proxy layer, because the wire itself is fine. All zeros means idle, not healthy — distinguish before concluding.
 - Human-readable sizes (MB) and durations (ms/s).
 - MUST NOT log at 1Hz — only every 30 samples.
 

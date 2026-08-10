@@ -147,6 +147,8 @@ type healthMonitor struct {
 	onSnapshot  func(HealthSnapshot) // push to daemon SSE
 	onReconnect func()               // triggers OnNetworkChanged for full reconnect
 
+	lastDial core.DialOutcomes // cumulative dial counts at the previous heartbeat
+
 	diagCounter int          // samples since last DIAG heartbeat (fires at 30)
 	connectedAt time.Time    // engine connected timestamp for uptime calc
 	wake        wakeDetector // sleep/wake detection + reconnect trigger
@@ -277,15 +279,22 @@ func (hm *healthMonitor) sample() {
 	hm.diagCounter++
 	var ms runtime.MemStats
 	var diagTCP, diagUDP int64
+	var dialTotal core.DialOutcomes
 	emitHeartbeat := hm.diagCounter >= 30
 	if emitHeartbeat {
 		hm.diagCounter = 0
 		hm.mu.Unlock()
 		runtime.ReadMemStats(&ms)
 		diagTCP, diagUDP = hm.tunnel.ActiveConns()
+		dialTotal = hm.tunnel.DialOutcomes()
 		hm.mu.Lock()
 	}
 	if emitHeartbeat {
+		// Report the window, not the running total: "0 succeeded out of 516
+		// attempts in the last 30s" is a diagnosis, whereas a cumulative pair
+		// needs subtracting across log lines before it says anything.
+		dial := dialTotal.Sub(hm.lastDial)
+		hm.lastDial = dialTotal
 		slog.Info("DIAG: heartbeat",
 			"health", hm.health,
 			"transport", ws.Transport,
@@ -296,6 +305,10 @@ func (hm *healthMonitor) sample() {
 			"rxMB", fmt.Sprintf("%.1f", float64(rx)/(1024*1024)),
 			"tcpConns", diagTCP,
 			"udpConns", diagUDP,
+			"dialOk", dial.ProxyOK,
+			"dialFail", dial.ProxyFail,
+			"directOk", dial.DirectOK,
+			"directFail", dial.DirectFail,
 			"udpTxDrops", ws.UDPTxDrops,
 			"udpRxDrops", ws.UDPRxDrops,
 			"udpRxDropsNoSess", ws.UDPRxDropsNoSession,

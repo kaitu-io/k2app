@@ -50,6 +50,8 @@ Outbound table is `[]Outbound` indexed by `rule.Target` value. `nil` entry = rej
 
 **Traffic counting**: `txBytes`/`rxBytes` `atomic.Int64` count all bytes through `pipe()`/`pipePacket()`.
 
+**Dial counting**: `recordDial` is called on every `outbound.DialTCP`/`DialUDP` return in `HandleTCP`/`HandleUDP`, incrementing one of four `atomic.Int64` counters — proxied vs direct, success vs failure — read via `DialOutcomes()` and reported as per-heartbeat deltas by `engine/health.go`. This exists because byte counters and wire loss cannot separate "nobody asked" from "everybody asked and every one failed": when a node is reachable but cannot egress, every dial fails at the proxy layer while wire loss stays 0 and the health FSM reads `healthy`. `DialOutcomes.Sub` gives the window. Direct and proxied are counted apart on purpose — see the heartbeat field notes in `k2/CLAUDE.md`. These counters are observability only; nothing reads them to make a decision, and `wire/`'s channel scoring deliberately excludes proxy-layer errors (switching transport cannot fix a node that cannot egress).
+
 **Files**: `tunnel.go`, `tunnel_test.go`
 
 ## Outbound (outbound.go)

@@ -113,6 +113,37 @@ type ClientTunnel struct {
 
 	activeTCP atomic.Int64 // currently active TCP handler goroutines
 	activeUDP atomic.Int64 // currently active UDP handler goroutines
+
+	// Dial outcomes, split by path. Byte counters and wire loss cannot tell
+	// "nobody asked" apart from "everybody asked and every one failed": a
+	// tunnel whose wire is provably alive still fails every request when the
+	// node itself cannot reach the destination, and those proxy-layer failures
+	// leave wire loss at zero, so the health FSM reads healthy while nothing
+	// loads. Attempt counts are the only signal that separates the two.
+	proxyDialOK    atomic.Int64
+	proxyDialFail  atomic.Int64
+	directDialOK   atomic.Int64
+	directDialFail atomic.Int64
+}
+
+// DialOutcomes is a cumulative count of outbound dial attempts since tunnel
+// start. Deltas over a window are what carry meaning — "attempted N, succeeded
+// 0" localises a fault that both byte counters and wire loss report as healthy.
+type DialOutcomes struct {
+	ProxyOK    int64
+	ProxyFail  int64
+	DirectOK   int64
+	DirectFail int64
+}
+
+// Sub returns the change from prev to d, i.e. the outcomes of one window.
+func (d DialOutcomes) Sub(prev DialOutcomes) DialOutcomes {
+	return DialOutcomes{
+		ProxyOK:    d.ProxyOK - prev.ProxyOK,
+		ProxyFail:  d.ProxyFail - prev.ProxyFail,
+		DirectOK:   d.DirectOK - prev.DirectOK,
+		DirectFail: d.DirectFail - prev.DirectFail,
+	}
 }
 
 var _ provider.ConnectionHandler = (*ClientTunnel)(nil)
@@ -184,6 +215,34 @@ func (t *ClientTunnel) Close() error {
 // TrafficBytes returns cumulative TX (local→remote) and RX (remote→local) byte counts.
 func (t *ClientTunnel) TrafficBytes() (tx, rx int64) {
 	return t.txBytes.Load(), t.rxBytes.Load()
+}
+
+// DialOutcomes returns the cumulative dial counters.
+func (t *ClientTunnel) DialOutcomes() DialOutcomes {
+	return DialOutcomes{
+		ProxyOK:    t.proxyDialOK.Load(),
+		ProxyFail:  t.proxyDialFail.Load(),
+		DirectOK:   t.directDialOK.Load(),
+		DirectFail: t.directDialFail.Load(),
+	}
+}
+
+// recordDial counts one dial attempt. Direct and proxied paths are counted
+// apart because they fail for unrelated reasons — a direct socket bound to the
+// wrong interface versus a node that cannot egress — and a combined counter
+// hides both behind each other.
+func (t *ClientTunnel) recordDial(ob Outbound, err error) {
+	_, direct := ob.(*directOutbound)
+	switch {
+	case direct && err == nil:
+		t.directDialOK.Add(1)
+	case direct:
+		t.directDialFail.Add(1)
+	case err == nil:
+		t.proxyDialOK.Add(1)
+	default:
+		t.proxyDialFail.Add(1)
+	}
 }
 
 // ActiveConns returns the number of currently active TCP and UDP handler goroutines.
@@ -357,6 +416,7 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	}
 
 	remote, err := outbound.DialTCP(t.ctx, dest, earlyData)
+	t.recordDial(outbound, err)
 	if err != nil {
 		slog.Warn("tunnel: TCP dial failed", "dest", dest, "outbound", outbound.Name(), "err", err)
 		return
@@ -515,6 +575,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 		return // reject: silently drop
 	}
 	remote, destAddr, err := outbound.DialUDP(t.ctx, dest)
+	t.recordDial(outbound, err)
 	if err != nil {
 		slog.Warn("tunnel: UDP dial failed", "dest", dest, "outbound", outbound.Name(), "err", err)
 		return
