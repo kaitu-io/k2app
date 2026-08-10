@@ -27,7 +27,7 @@ const clientSessionStateRevision = 5
 
 type cryptoSetup struct {
 	tlsConf *tls.Config
-	conn    *tls.QUICConn
+	conn    quicTLSConn
 
 	events []Event
 
@@ -67,16 +67,23 @@ type cryptoSetup struct {
 var _ CryptoSetup = &cryptoSetup{}
 
 // NewCryptoSetupClient creates a new crypto setup for the client
+//
+// newClientHelloSpec, when non-nil, is called once to obtain a ClientHelloSpec
+// that shapes this connection's ClientHello to a chosen fingerprint. It returns
+// an error alongside the setup so a malformed spec fails the dial rather than
+// silently falling back to the unshaped handshake — the whole reason a caller
+// passes a spec is that the unshaped one is not acceptable.
 func NewCryptoSetupClient(
 	connID protocol.ConnectionID,
 	tp *wire.TransportParameters,
 	tlsConf *tls.Config,
+	newClientHelloSpec func() (*tls.ClientHelloSpec, error),
 	enable0RTT bool,
 	rttStats *utils.RTTStats,
 	qlogger qlogwriter.Recorder,
 	logger utils.Logger,
 	version protocol.Version,
-) CryptoSetup {
+) (CryptoSetup, error) {
 	cs := newCryptoSetup(
 		connID,
 		tp,
@@ -92,13 +99,26 @@ func NewCryptoSetupClient(
 	cs.tlsConf = tlsConf
 	cs.allow0RTT = enable0RTT
 
-	cs.conn = tls.QUICClient(&tls.QUICConfig{
+	qconf := &tls.QUICConfig{
 		TLSConfig:           tlsConf,
 		EnableSessionEvents: true,
-	})
+	}
+	if newClientHelloSpec == nil {
+		cs.conn = tls.QUICClient(qconf)
+	} else {
+		spec, err := newClientHelloSpec()
+		if err != nil {
+			return nil, fmt.Errorf("kuic: build ClientHelloSpec: %w", err)
+		}
+		conn, err := newFingerprintedConn(qconf, spec)
+		if err != nil {
+			return nil, err
+		}
+		cs.conn = conn
+	}
 	cs.conn.SetTransportParameters(cs.ourParams.Marshal(protocol.PerspectiveClient))
 
-	return cs
+	return cs, nil
 }
 
 // NewCryptoSetupServer creates a new crypto setup for the server

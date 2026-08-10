@@ -194,6 +194,25 @@ type Config struct {
 
 	MaxDatagramFrameSize int64
 	DisablePathManager   bool
+
+	// NewClientHelloSpec, when non-nil, shapes the client's TLS ClientHello to
+	// a chosen fingerprint via github.com/metacubex/utls. Client-only; servers
+	// ignore it. Leaving it nil keeps the ordinary unshaped handshake.
+	//
+	// It is a factory rather than a value because the spec is mutated per
+	// connection: kuic writes this connection's real QUIC transport parameters
+	// into the spec's quic_transport_parameters extension, and those include
+	// initial_source_connection_id. Sharing one spec across dials would have
+	// them overwrite each other's connection ID, which every conformant server
+	// rejects with TRANSPORT_PARAMETER_ERROR. Return a freshly built spec each
+	// call.
+	//
+	// The spec MUST contain a *utls.QUICTransportParametersExtension; a
+	// ClientHello without quic_transport_parameters is not a valid QUIC
+	// ClientHello. Dialing fails if it is missing or if the factory errors —
+	// there is no silent fallback to the unshaped handshake, because a caller
+	// that asked for a fingerprint is not served by quietly not having one.
+	NewClientHelloSpec func() (*tls.ClientHelloSpec, error)
 }
 
 // ClientHelloInfo contains information about an incoming connection attempt.

@@ -392,7 +392,7 @@ var newClientConnection = func(
 	qlogTrace qlogwriter.Trace,
 	logger utils.Logger,
 	v protocol.Version,
-) *wrappedConn {
+) (*wrappedConn, error) {
 	s := &Conn{
 		conn:                conn,
 		config:              conf,
@@ -484,16 +484,20 @@ var newClientConnection = func(
 	if s.qlogger != nil {
 		s.qlogTransportParameters(params, protocol.PerspectiveClient, false)
 	}
-	cs := handshake.NewCryptoSetupClient(
+	cs, err := handshake.NewCryptoSetupClient(
 		destConnID,
 		params,
 		tlsConf,
+		s.config.NewClientHelloSpec,
 		enable0RTT,
 		s.rttStats,
 		s.qlogger,
 		logger,
 		s.version,
 	)
+	if err != nil {
+		return nil, err
+	}
 	s.cryptoStreamHandler = cs
 	s.cryptoStreamManager = newCryptoStreamManager(s.initialStream, s.handshakeStream, oneRTTStream)
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
@@ -509,7 +513,7 @@ var newClientConnection = func(
 			s.rttStats.SetInitialRTT(token.rtt)
 		}
 	}
-	return &wrappedConn{Conn: s}
+	return &wrappedConn{Conn: s}, nil
 }
 
 func (c *Conn) preSetup() {

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	tls "github.com/metacubex/utls"
+
 	"github.com/kaitu-io/kuic/internal/protocol"
 	"github.com/kaitu-io/kuic/qlogwriter"
 	"github.com/kaitu-io/kuic/quicvarint"
@@ -86,8 +88,12 @@ func configWithNonZeroNonFunctionFields(t *testing.T) *Config {
 		}
 
 		switch fn := typ.Field(i).Name; fn {
-		case "GetConfigForClient", "RequireAddressValidation", "GetLogWriter", "AllowConnectionWindowIncrease", "Tracer":
-			// Can't compare functions.
+		case "GetConfigForClient", "RequireAddressValidation", "GetLogWriter", "AllowConnectionWindowIncrease", "Tracer", "NewClientHelloSpec":
+			// Can't compare functions. NewClientHelloSpec's propagation through
+			// Clone and populateConfig is covered by
+			// TestConfigNewClientHelloSpecPropagates instead — a function field
+			// listed here is invisible to the two tests below, so dropping it
+			// from populateConfig would otherwise go unnoticed.
 		case "Versions":
 			f.Set(reflect.ValueOf([]Version{1, 2, 3}))
 		case "ConnectionIDLength":
@@ -200,4 +206,32 @@ func TestConfigZeroLimits(t *testing.T) {
 	c := populateConfig(config)
 	require.Zero(t, c.MaxIncomingStreams)
 	require.Zero(t, c.MaxIncomingUniStreams)
+}
+
+// TestConfigNewClientHelloSpecPropagates covers the one Config field the
+// reflection-based tests above cannot: a func field. Losing it in populateConfig
+// would silently disable ClientHello fingerprinting — the dial would still
+// succeed, just with the unshaped handshake this fork exists to avoid, which is
+// exactly the kind of regression no functional test notices.
+func TestConfigNewClientHelloSpecPropagates(t *testing.T) {
+	var called bool
+	spec := &tls.ClientHelloSpec{}
+	c := &Config{NewClientHelloSpec: func() (*tls.ClientHelloSpec, error) {
+		called = true
+		return spec, nil
+	}}
+
+	for name, got := range map[string]*Config{
+		"Clone":          c.Clone(),
+		"populateConfig": populateConfig(c),
+	} {
+		t.Run(name, func(t *testing.T) {
+			called = false
+			require.NotNil(t, got.NewClientHelloSpec, "NewClientHelloSpec was dropped")
+			s, err := got.NewClientHelloSpec()
+			require.NoError(t, err)
+			require.True(t, called)
+			require.Same(t, spec, s)
+		})
+	}
 }

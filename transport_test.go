@@ -536,8 +536,8 @@ func testTransportDial(t *testing.T, early bool) {
 			_ qlogwriter.Trace,
 			_ utils.Logger,
 			_ protocol.Version,
-		) *wrappedConn {
-			return &wrappedConn{testHooks: conn}
+		) (*wrappedConn, error) {
+			return &wrappedConn{testHooks: conn}, nil
 		}
 
 		tr := &Transport{Conn: serverConn}
@@ -612,13 +612,13 @@ func TestTransportDialingVersionNegotiation(t *testing.T) {
 		_ qlogwriter.Trace,
 		_ utils.Logger,
 		v protocol.Version,
-	) *wrappedConn {
+	) (*wrappedConn, error) {
 		connChan <- connParams{pn: pn, hasNegotiatedVersion: hasNegotiatedVersion, version: v}
 		if counter == 0 {
 			counter++
-			return &wrappedConn{testHooks: conn}
+			return &wrappedConn{testHooks: conn}, nil
 		}
-		return &wrappedConn{testHooks: conn2}
+		return &wrappedConn{testHooks: conn2}, nil
 	}
 
 	tr := &Transport{Conn: newUDPConnLocalhost(t)}

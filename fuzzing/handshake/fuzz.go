@@ -276,16 +276,20 @@ func runHandshake(runConfig [confLen]byte, messageConfig uint8, clientConf *tls.
 		return -1
 	}
 
-	client := handshake.NewCryptoSetupClient(
+	client, err := handshake.NewCryptoSetupClient(
 		protocol.ConnectionID{},
 		clientTP,
 		clientConf,
+		nil,
 		enable0RTTClient,
 		&utils.RTTStats{},
 		nil,
 		utils.DefaultLogger.WithPrefix("client"),
 		protocol.Version1,
 	)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err := client.StartHandshake(context.Background()); err != nil {
 		log.Fatal(err)
 	}
