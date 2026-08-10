@@ -905,6 +905,9 @@ func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, conn
 		s.admitTCP(auth, stream, br, remote, dev, addr, connLog)
 	case StreamTypeUDP:
 		s.handleUDPStream(stream, br, connLog, remote, dev, auth)
+	case StreamTypeEcho:
+		handleEcho(stream, br)
+		stream.Close()
 	default:
 		stream.Close()
 	}
