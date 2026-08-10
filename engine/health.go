@@ -842,11 +842,21 @@ func (hm *healthMonitor) backupProbeLoop(ot *outboundTransport) {
 // touches backup logic at all).
 //
 // The returned duration is a WAKE cadence, not necessarily the PROBE
-// cadence (fix-round-2 N2): while healthy-and-waiting for the next probe,
+// cadence (N2, actually reachable from backupProbeLoop as of fix-round-3 —
+// round 2 wrote this same intent into the WAITING branch only, which
+// production never actually reaches: backupProbeLoop's sole wake source is
+// this function's own previous return value, so a probe-path return of the
+// full healthy interval means the next wake always lands exactly at (or
+// after) the freshly-set st.nextProbeAt, and the waiting branch's
+// now.Before(st.nextProbeAt) is therefore never true in production — only a
+// test driving a synthetic mid-window `now` could reach it. Fix-round-3
+// caps the PROBE path's return the same way, making the waiting branch's
+// pull-in logic reachable): while healthy-and-waiting for the next probe,
 // this still returns at most backupProbeIntervalDegraded so the caller
 // re-evaluates whether the mode has changed — a healthy desktop outbound
-// still only actually PROBES every 60s (st.nextProbeAt is the real probe
-// gate), but a degradation partway through that 60s window is noticed
+// still only actually PROBES every 60s (st.nextProbeAt / SetChannelProbeInterval
+// are the real probe gate/cadence, untouched by this capping), but a
+// degradation partway through that 60s window is now actually noticed
 // within one mode-check tick instead of stranded behind the stale
 // 60s-away deadline.
 //
@@ -917,9 +927,10 @@ func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopSt
 		}
 		return remaining
 	}
-	// The interval reported here is exactly the interval this goroutine
-	// re-arms its own timer with below — the real, achievable cadence, not
-	// an aspirational one (fix-round-1 Important 1).
+	// SetChannelProbeInterval and st.nextProbeAt (the actual PROBE gate)
+	// still use the real, achievable `interval` (60s/5s) unchanged — the
+	// declared-vs-real cadence equality established in fix-round-1 is
+	// unaffected by fix-round-3 below (fix-round-1 Important 1).
 	ot.tm.SetChannelProbeInterval("tcpws", interval)
 
 	if backup := ot.tm.TCPWS(); backup != nil {
@@ -940,7 +951,24 @@ func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopSt
 	}
 
 	st.nextProbeAt = now.Add(interval)
-	return interval
+
+	// fix-round-3 (N2 still open after round 2): backupProbeLoop's ONLY
+	// wake source is the duration returned here — timer.Reset(next) is
+	// called right after this function returns (backupProbeLoop below), so
+	// returning the full `interval` (60s in the healthy branch) means the
+	// loop's next wake lands exactly AT (or just after) the freshly-set
+	// st.nextProbeAt, every single time. now.Before(st.nextProbeAt) is then
+	// never true on the following wake, so the waiting branch above —
+	// including its pull-in logic — is never entered in production; only a
+	// test calling probeBackupOnce with a synthetic mid-window `now` could
+	// ever reach it. Capping the wake here the same way the waiting branch
+	// already caps it fixes that: a healthy outbound still only PROBES
+	// every 60s (st.nextProbeAt / SetChannelProbeInterval are untouched
+	// above), but the loop now WAKES at most every backupProbeIntervalDegraded
+	// to re-evaluate mode — making the waiting branch's pull-in reachable,
+	// so a degradation partway through the 60s window is now actually
+	// noticed within ~5s instead of at the stale 60s boundary.
+	return min(interval, backupProbeIntervalDegraded)
 }
 
 // History returns the ring buffer contents oldest-first.

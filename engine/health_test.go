@@ -847,11 +847,16 @@ func TestBackupProbe_CadenceUpgradesWhenQUICDegraded(t *testing.T) {
 }
 
 func TestBackupProbe_HealthyCadenceStaysLowFrequency(t *testing.T) {
-	// Mirror of the degraded test above, but with QUIC healthy: cadence must
-	// be 60s, and — critically — a re-check at +5s (which WOULD fire under
-	// the 5s degraded cadence) must NOT probe. This is what actually proves
-	// the two cadences are distinct code paths rather than one always
-	// winning regardless of QUIC's score.
+	// Mirror of the degraded test above, but with QUIC healthy: the real
+	// PROBE cadence must stay 60s, even though (fix-round-3, N2) the WAKE
+	// cadence returned by probeBackupOnce is now always capped at
+	// backupProbeIntervalDegraded regardless of branch — so healthy vs
+	// degraded is no longer visible in the return value itself. Instead
+	// this proves it behaviorally: a re-check at exactly +5s (which WOULD
+	// re-probe if the real gate had mistakenly become the 5s degraded
+	// cadence) must NOT probe, and neither does a re-check well within the
+	// 60s window. This is what actually proves the two PROBE cadences are
+	// distinct, not just that the WAKE cadence is capped either way.
 	ot, _ := newEchoTransport("t-quic-healthy", func(ctx context.Context) error { return nil })
 	backup := &echoStubDialer{}
 	backup.setFn(func(ctx context.Context) error { return nil })
@@ -870,16 +875,24 @@ func TestBackupProbe_HealthyCadenceStaysLowFrequency(t *testing.T) {
 	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
 	st := &backupLoopState{}
 
-	if interval := hm.probeBackupOnce(ot, st, t0); interval != backupProbeIntervalHealthy {
-		t.Fatalf("expected healthy cadence %v at t0, got %v", backupProbeIntervalHealthy, interval)
+	if wake := hm.probeBackupOnce(ot, st, t0); wake > backupProbeIntervalDegraded {
+		t.Fatalf("expected the wake cadence to be capped at %v, got %v", backupProbeIntervalDegraded, wake)
 	}
 	if calls := backup.calls.Load(); calls != 1 {
 		t.Fatalf("expected 1 probe at t0, got %d", calls)
 	}
 
-	hm.probeBackupOnce(ot, st, t0.Add(5*time.Second))
+	// If the real PROBE cadence were mistakenly the degraded 5s instead of
+	// the healthy 60s, a check landing exactly at t0+5s would re-probe.
+	hm.probeBackupOnce(ot, st, t0.Add(backupProbeIntervalDegraded))
 	if calls := backup.calls.Load(); calls != 1 {
-		t.Fatalf("expected no second probe within the 60s healthy cadence (checked at +5s), got %d calls", calls)
+		t.Fatalf("expected no second probe at t0+%v — QUIC is healthy, the real probe cadence must be %v, not %v", backupProbeIntervalDegraded, backupProbeIntervalHealthy, backupProbeIntervalDegraded)
+	}
+
+	// And well within the 60s healthy window generally.
+	hm.probeBackupOnce(ot, st, t0.Add(30*time.Second))
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected no second probe within the 60s healthy cadence (checked at +30s), got %d calls", calls)
 	}
 }
 
@@ -1014,10 +1027,22 @@ func TestSample_FeedsQUICQualityForEveryOutboundNotJustPrimary(t *testing.T) {
 	}
 
 	// (a) backup cadence must land in the healthy 60s branch, not stuck
-	// degraded forever.
+	// degraded forever. Fix-round-3 caps probeBackupOnce's return value at
+	// backupProbeIntervalDegraded even on the healthy path (that's the WAKE
+	// cadence — see probeBackupOnce's doc), so the healthy/degraded
+	// distinction is no longer visible in the return value directly; check
+	// the real PROBE gate instead — a call landing exactly where the
+	// degraded 5s cadence would have re-probed must NOT re-probe.
 	st := &backupLoopState{}
-	if interval := hm.probeBackupOnce(secondaryOT, st, now); interval != backupProbeIntervalHealthy {
-		t.Fatalf("N1 regression: secondary backup cadence = %v, want healthy %v (would have been degraded %v pre-fix)", interval, backupProbeIntervalHealthy, backupProbeIntervalDegraded)
+	if wake := hm.probeBackupOnce(secondaryOT, st, now); wake > backupProbeIntervalDegraded {
+		t.Fatalf("N1 regression: wake cadence not capped, got %v", wake)
+	}
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("N1 regression: expected 1 probe, got %d", calls)
+	}
+	hm.probeBackupOnce(secondaryOT, st, now.Add(backupProbeIntervalDegraded))
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("N1 regression: secondary re-probed at +%v — real cadence is degraded (5s) not healthy (60s), quality still stuck neutral pre-fix", backupProbeIntervalDegraded)
 	}
 
 	// (b) the hysteresis FSM's quality-path switch-away condition must not
@@ -1039,12 +1064,24 @@ func TestSample_FeedsQUICQualityForEveryOutboundNotJustPrimary(t *testing.T) {
 }
 
 func TestBackupProbe_ModeChangeDuringHealthyWaitNoticedQuickly(t *testing.T) {
-	// N2: while waiting out the 60s healthy cadence, a mid-window
-	// degradation must be noticed within ~backupProbeIntervalDegraded, not
-	// stranded behind the stale 60s-away probe deadline. This exercises the
-	// "wake often, probe on the (possibly pulled-in) gate" split directly —
-	// see the fix-round-2 report mutation evidence (revert the pull-in →
-	// RED).
+	// N2, reopened in fix-round-3: the round-2 fix's pull-in logic (in the
+	// `now.Before(st.nextProbeAt)` waiting branch) was correct in isolation
+	// but UNREACHABLE from production. backupProbeLoop's only wake source is
+	// probeBackupOnce's own previous return value (timer.Reset(next)); round
+	// 2's PROBE path still returned the full healthy interval (60s)
+	// unchanged, so the next wake always landed exactly at (or after) the
+	// freshly-set st.nextProbeAt — now.Before(st.nextProbeAt) was therefore
+	// never true in production, only reachable by a test driving a
+	// synthetic mid-window `now` directly (which is exactly what round 2's
+	// version of this test did — it defended the bug, asserting the t0
+	// return WAS the full 60s). Fix-round-3 caps the probe path's return the
+	// same way the waiting path already was.
+	//
+	// This version walks the timeline the way backupProbeLoop's own timer
+	// actually would: each call's `now` is the PREVIOUS call's own returned
+	// wake duration later — never a synthetic mid-window jump — so a
+	// regression back to "probe path returns the uncapped interval" is
+	// caught by the very first assertion below, not by the timeline walk.
 	ot, _ := newEchoTransport("t-quic-mode-change", func(ctx context.Context) error { return nil })
 	backup := &echoStubDialer{}
 	backup.setFn(func(ctx context.Context) error { return nil })
@@ -1060,44 +1097,58 @@ func TestBackupProbe_ModeChangeDuringHealthyWaitNoticedQuickly(t *testing.T) {
 	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
 	st := &backupLoopState{}
 
-	// t0: probes, schedules the next PROBE 60s out (healthy cadence).
-	if wake := hm.probeBackupOnce(ot, st, t0); wake != backupProbeIntervalHealthy {
-		t.Fatalf("expected healthy cadence at t0, got %v", wake)
+	// t0: probes (healthy branch). The wake duration returned MUST be
+	// capped at backupProbeIntervalDegraded even here — NOT the full 60s
+	// healthy interval. Returning the uncapped interval is exactly the
+	// round-3 bug: it would make backupProbeLoop's next wake land exactly
+	// on top of nextProbeAt, so the waiting branch (and its pull-in) would
+	// never actually be entered in production.
+	wake := hm.probeBackupOnce(ot, st, t0)
+	if wake > backupProbeIntervalDegraded {
+		t.Fatalf("expected the wake cadence to be capped at %v even in the healthy branch, got %v", backupProbeIntervalDegraded, wake)
 	}
 	if calls := backup.calls.Load(); calls != 1 {
 		t.Fatalf("expected 1 probe at t0, got %d", calls)
 	}
 
-	// t0+10s: QUIC degrades mid-window.
-	degradeAt := t0.Add(10 * time.Second)
+	// QUIC degrades immediately after the t0 probe — the worst case for
+	// detection latency.
+	degradeAt := t0.Add(time.Millisecond)
 	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, degradeAt)
 	if got := ot.tm.ScoreQUIC(degradeAt); got >= echoBackupProbeThreshold {
-		t.Fatalf("setup: expected degraded QUIC score below %v at t0+10s, got %v", echoBackupProbeThreshold, got)
+		t.Fatalf("setup: expected degraded QUIC score below %v, got %v", echoBackupProbeThreshold, got)
 	}
 
-	// A check right at the moment of degradation must report a WAKE cadence
-	// of at most backupProbeIntervalDegraded — not the ~50s remaining on
-	// the stale 60s-away deadline — while still NOT forcing an immediate
-	// probe (the probe gate is pulled in, not bypassed).
-	wake := hm.probeBackupOnce(ot, st, degradeAt)
-	if wake > backupProbeIntervalDegraded {
-		t.Fatalf("expected a re-check within %v of a mid-window degradation, got %v", backupProbeIntervalDegraded, wake)
-	}
-	if calls := backup.calls.Load(); calls != 1 {
-		t.Fatalf("degradation must not itself force an immediate probe, got %d calls (expected still 1)", calls)
+	// Walk the timeline exactly the way backupProbeLoop's real timer would:
+	// each wake's `now` is the previous wake's `now` plus that SAME call's
+	// own returned duration.
+	now := t0.Add(wake)
+	var probedAt time.Time
+	for i := 0; i < 20; i++ {
+		w := hm.probeBackupOnce(ot, st, now)
+		if w > backupProbeIntervalDegraded {
+			t.Fatalf("wake #%d (now=t0+%v) returned %v — exceeds the %v mode-check cadence", i, now.Sub(t0), w, backupProbeIntervalDegraded)
+		}
+		if backup.calls.Load() == 2 {
+			probedAt = now
+			break
+		}
+		now = now.Add(w)
+		if now.Sub(t0) >= backupProbeIntervalHealthy {
+			break
+		}
 	}
 
-	// The next wake, exactly `wake` later, must find the (pulled-in) probe
-	// gate reached and actually probe — well before t0+60s.
-	nextCheck := degradeAt.Add(wake)
-	hm.probeBackupOnce(ot, st, nextCheck)
-	if calls := backup.calls.Load(); calls != 2 {
-		t.Fatalf("expected the second probe to have fired by t0+10s+%v, got %d calls", wake, calls)
+	if probedAt.IsZero() {
+		t.Fatalf("degraded probe never fired while walking the timeline (stopped at t0+%v)", now.Sub(t0))
 	}
-	if elapsed := nextCheck.Sub(degradeAt); elapsed > backupProbeIntervalDegraded {
-		t.Fatalf("second probe took %v after degradation — worse than the %v mode-check cadence should allow", elapsed, backupProbeIntervalDegraded)
+	// (b) fires within ~5s of degradation — bounded by (wake to notice) +
+	// (wake to actually probe once the gate is pulled in), i.e.
+	// ≤2×backupProbeIntervalDegraded, never at the old 60s boundary.
+	if elapsed := probedAt.Sub(degradeAt); elapsed > 2*backupProbeIntervalDegraded {
+		t.Fatalf("degraded probe fired %v after degradation — worse than the ~%v the mode-check cadence should allow", elapsed, 2*backupProbeIntervalDegraded)
 	}
-	if elapsed := nextCheck.Sub(t0); elapsed >= backupProbeIntervalHealthy {
-		t.Fatalf("second probe fired at t0+%v — no better than the stale 60s boundary this fix targets", elapsed)
+	if elapsed := probedAt.Sub(t0); elapsed >= backupProbeIntervalHealthy {
+		t.Fatalf("degraded probe fired at t0+%v — no better than the stale 60s boundary this fix targets", elapsed)
 	}
 }
