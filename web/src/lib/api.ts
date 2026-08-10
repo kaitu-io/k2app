@@ -855,6 +855,7 @@ export interface AdminOrderListItem {
     refundedAt?: number;
     refundAmount?: number;
     refundReason?: string;
+    channel?: string;                 // 来源渠道：空 = 网页订单，'apple_iap' = iOS 内购
     user: ResourceUser;               // 购买用户
     cashback?: ResourceCashback;      // 分销返现信息（可选）
 }

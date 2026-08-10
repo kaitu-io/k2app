@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/appstore"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/slack"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -93,7 +94,7 @@ func deriveVerifiedStatus(effectivePeriodEnd int64, existingStatus string, now i
 // additively so gifts are never absorbed (INV3); and (4) keeps the subscriptions row's
 // plan-state current. Must run inside a tx; locks the subscription + user rows.
 func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, info *appstore.TransactionInfo) error {
-	const provider = "apple"
+	const provider = SubscriptionProviderApple
 	newPeriodEnd := info.ExpiresDate / 1000
 
 	// Load-or-create the subscription row (binding key = OriginalTransactionId).
@@ -264,6 +265,18 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		userID, int(creditSeconds/86400), kind, info.TransactionId,
 		time.Unix(user.ExpiredAt, 0).Format("2006-01-02"))
 
+	// 沙盒交易到此为止：权益照发（iOS 用沙盒账号做内购端到端测试时必须能看到 Pro 生效），
+	// 但**绝不建订单**。订单是财务实体——它的 PayAmount 取 plan 标价，直接充当分销返现基数、
+	// 营收统计口径、以及后台退款往用户钱包打款的金额，而沙盒交易用户实付为 0。
+	// 生产事故（2026-08-10）：沙盒交易建出 ord-d9sjien7k7qc2u9r30ig（4900 分），客服在后台点退款，
+	// 差一步就把 $49 可提现余额打进一个从没付过钱的账号；当时全库唯一的 IAP 订单就是这一笔。
+	// environment 此前只被写进 subscriptions.environment 存档，全代码库没有任何一处读它做判断。
+	if info.Environment == appstore.Environment_Sandbox {
+		log.Warnf(ctx, "[creditAppleTransaction] sandbox txn %s credited to user %d, order+cashback intentionally skipped (sandbox is not a financial event)",
+			info.TransactionId, userID)
+		return nil
+	}
+
 	// 建订单 + 分销商返现。位置关键：必须在上面的 alreadyCredited 早退之后，
 	// 幂等性才由既有的 (provider, transaction_id) 去重天然覆盖——重投的交易根本走不到这里。
 	// SAVEPOINT 非致命：Apple 已扣款，权益到账优先级高于内部账务；返现失败可事后补，
@@ -333,6 +346,7 @@ func revokeIAPOrderCashbackInTx(ctx context.Context, tx *gorm.DB, txnID string) 
 	// 幂等门：Apple 会重投 REFUND 通知。已退款订单直接短路——否则 refundCashbackInTx 会撞上
 	// wallet_changes 的 idx_type_order 唯一索引（它靠该索引兜底防二次扣款，但把重复当错误抛）。
 	if order.IsRefunded != nil && *order.IsRefunded {
+		alertIfAlreadyWalletRefunded(ctx, tx, &order, txnID)
 		log.Infof(ctx, "[revokeIAPOrderCashback] order %s already refunded, skipping (apple txn %s)", order.UUID, txnID)
 		return nil
 	}
@@ -371,6 +385,34 @@ func revokeIAPOrderCashbackInTx(ctx context.Context, tx *gorm.DB, txnID string) 
 
 	log.Infof(ctx, "[revokeIAPOrderCashback] order %s refunded + cashback revoked (apple txn %s)", order.UUID, txnID)
 	return nil
+}
+
+// alertIfAlreadyWalletRefunded 是双退哨兵：订单已被标记退款时判断这次短路是否踩到了资损。
+//
+// 短路的常规原因是 Apple 重投同一条 REFUND/REVOKE 通知，无害。但若这笔订单此前走过**后台钱包
+// 退款**（ProcessOrderRefund 会留下 wallet_changes{type=order_refund, order_id}），那么用户已经
+// 拿到一份可提现的钱包补偿，现在 Apple 又原路退了一次——同一笔订单退了两次钱，是真实资损。
+//
+// 只告警不阻断：Apple 侧退款已是既成事实，这里返错只会让整个事务回滚 → 通知 500 → Apple 重试风暴，
+// 钱一分也追不回来。查询失败同样不阻断——哨兵瞎了要留痕，但不能因此把主流程拖垮。
+func alertIfAlreadyWalletRefunded(ctx context.Context, tx *gorm.DB, order *Order, txnID string) {
+	var walletRefunds int64
+	if err := tx.Model(&WalletChange{}).
+		Where(&WalletChange{Type: WalletChangeTypeOrderRefund, OrderID: &order.ID}).
+		Count(&walletRefunds).Error; err != nil {
+		log.Errorf(ctx, "[revokeIAPOrderCashback] double-refund sentinel query failed for order %s (apple txn %s): %v",
+			order.UUID, txnID, err)
+		return
+	}
+	if walletRefunds == 0 {
+		return
+	}
+	msg := fmt.Sprintf("订单 %s（用户 %d，%d 分）此前已通过后台退款打入用户钱包，现又收到 Apple 退款/撤销通知（txn %s）——同一笔订单退了两次钱，钱包余额可提现，请人工核对并冻结/追回",
+		order.UUID, order.UserID, order.PayAmount, txnID)
+	log.Errorf(ctx, "%s", msg)
+	if err := slack.Send("alert", "[DOUBLE-REFUND] "+msg); err != nil {
+		log.Errorf(ctx, "failed to send double-refund slack alert: %v", err)
+	}
 }
 
 // createAppleIAPOrderInTx 为一笔已入账的 Apple 交易补建订单并触发分销商返现。
