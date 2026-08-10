@@ -3,14 +3,14 @@ package wire
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"fmt"
 	"net"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 	"github.com/coder/websocket"
 	smux "github.com/xtaci/smux/v2"
 )
@@ -120,11 +120,9 @@ func TestRaceTransport_FallbackToTCPWS(t *testing.T) {
 	}
 	defer listener.Close()
 
-	srv := &http.Server{
-		Handler:   mux,
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
-	}
-	go srv.Serve(tls.NewListener(listener, srv.TLSConfig))
+	srv := &http.Server{Handler: mux}
+	srvTLS := &tls.Config{Certificates: []tls.Certificate{cert}}
+	go srv.Serve(tls.NewListener(listener, srvTLS))
 	defer srv.Close()
 
 	_, portStr, _ := net.SplitHostPort(listener.Addr().String())

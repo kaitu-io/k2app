@@ -2,7 +2,7 @@ package wire
 
 import (
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"errors"
 	"testing"
 	"time"

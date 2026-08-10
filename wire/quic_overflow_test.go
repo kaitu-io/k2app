@@ -4,14 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"errors"
 	"net"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 // TestUDPOverflowStream_LazyInit verifies that the overflow stream is only

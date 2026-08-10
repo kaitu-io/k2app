@@ -8,14 +8,14 @@ package wire
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"fmt"
 	"net"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 	"github.com/coder/websocket"
 	smux "github.com/xtaci/smux/v2"
 )
@@ -109,11 +109,9 @@ func TestContract_EchoDetectsBlockedShortHeader(t *testing.T) {
 		}
 	})
 
-	srv := &http.Server{
-		Handler:   mux,
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
-	}
-	go srv.Serve(tls.NewListener(tcpLn, srv.TLSConfig))
+	srv := &http.Server{Handler: mux}
+	srvTLS := &tls.Config{Certificates: []tls.Certificate{cert}}
+	go srv.Serve(tls.NewListener(tcpLn, srvTLS))
 
 	defer func() {
 		srv.Close()

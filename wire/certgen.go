@@ -7,7 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"

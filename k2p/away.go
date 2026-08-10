@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 	"github.com/pion/ice/v4"

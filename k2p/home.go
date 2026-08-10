@@ -2,12 +2,12 @@ package k2p
 
 import (
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 	"github.com/pion/ice/v4"

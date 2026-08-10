@@ -3,7 +3,6 @@ module github.com/kaitu-io/k2
 go 1.25.0
 
 require (
-	github.com/apernet/quic-go v0.57.2-0.20260111184307-eec823306178
 	github.com/coder/websocket v1.8.14
 	github.com/electricbubble/gadb v0.1.0
 	github.com/google/nftables v0.3.0
@@ -36,6 +35,7 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/kaitu-io/kuic v0.0.0
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
@@ -62,3 +62,5 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/kaitu-io/kuic => /Users/david/projects/kaitu-io/kuic

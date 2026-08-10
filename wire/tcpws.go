@@ -3,7 +3,7 @@ package wire
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +20,6 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/coder/websocket"
-	utls "github.com/metacubex/utls"
 	smux "github.com/xtaci/smux/v2"
 )
 
@@ -391,12 +390,12 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 
 	// 2. uTLS handshake
 	var tlsCfg *tls.Config
-	var clientHelloID utls.ClientHelloID
+	var clientHelloID tls.ClientHelloID
 
 	if c.tlsConfig != nil {
 		// Test mode with override TLS config
 		tlsCfg = c.tlsConfig.Clone()
-		clientHelloID = utls.HelloChrome_120_PQ // Default for tests
+		clientHelloID = tls.HelloChrome_120_PQ // Default for tests
 	} else {
 		// Production mode: build from Config
 		tlsCfg, clientHelloID, err = BuildClientTLSConfig(c.cfg)
@@ -406,22 +405,17 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 		}
 	}
 
-	// Create uTLS config (subset of standard tls.Config fields)
-	utlsCfg := &utls.Config{
-		ServerName:         tlsCfg.ServerName,
-		InsecureSkipVerify: tlsCfg.InsecureSkipVerify,
-		MinVersion:         tlsCfg.MinVersion,
-		MaxVersion:         tlsCfg.MaxVersion,
-	}
-
-	// Pass ECH config if available
-	if len(tlsCfg.EncryptedClientHelloConfigList) > 0 {
-		utlsCfg.EncryptedClientHelloConfigList = tlsCfg.EncryptedClientHelloConfigList
-	}
+	// tlsCfg goes to uTLS as-is. It used to be copied field by field into a
+	// fresh config here, and the copy carried InsecureSkipVerify but not
+	// VerifyPeerCertificate: with pin= set, BuildClientTLSConfig turns off
+	// chain verification precisely because it installs a pin verifier, so the
+	// TCP-WS leg ended up accepting any certificate. The default path lost
+	// RootCAs (the embedded Kaitu CA) and the blocked-CA check the same way.
+	// Don't reintroduce a copy — every field it forgets fails open.
 
 	// Create uTLS connection with fingerprint
 	slog.Debug("TCPWSClient: starting uTLS handshake", "sni", tlsCfg.ServerName, "fingerprint", fmt.Sprintf("%v", clientHelloID))
-	uconn := utls.UClient(conn, utlsCfg, clientHelloID)
+	uconn := tls.UClient(conn, tlsCfg, clientHelloID)
 	if err := uconn.HandshakeContext(connectCtx); err != nil {
 		conn.Close()
 		slog.Debug("TCPWSClient: uTLS handshake failed", "err", err)

@@ -8,7 +8,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 	"github.com/sasha-s/go-deadlock"
 
 	"github.com/kaitu-io/k2/k2p"

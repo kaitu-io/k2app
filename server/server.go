@@ -3,7 +3,9 @@ package server
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
+	stdtls "crypto/tls"
+
+	tls "github.com/metacubex/utls"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -16,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 	"github.com/coder/websocket"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/safego"
@@ -90,7 +92,7 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		done:        make(chan struct{}),
 	}
 	s.controlPlaneTransport = &http.Transport{
-		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSClientConfig:       &stdtls.Config{MinVersion: stdtls.VersionTLS12},
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          32,
 		IdleConnTimeout:       90 * time.Second,

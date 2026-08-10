@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 // ProbeStats is the aggregated result of a single ProbeURL invocation:

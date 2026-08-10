@@ -3,7 +3,7 @@ package wire
 import (
 	"testing"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 func TestNewQUICClientFromConn_FactoryExists(t *testing.T) {

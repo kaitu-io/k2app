@@ -10,7 +10,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"

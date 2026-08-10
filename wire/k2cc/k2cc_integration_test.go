@@ -5,7 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"fmt"
 	"io"
@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 // median returns the median of a float64 slice. Returns 0 for empty input.

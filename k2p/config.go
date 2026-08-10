@@ -1,7 +1,7 @@
 package k2p
 
 import (
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 
 	"github.com/kaitu-io/k2/wire"
 )

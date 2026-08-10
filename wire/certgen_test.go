@@ -3,7 +3,7 @@ package wire
 import (
 	"crypto/ecdsa"
 	"crypto/rsa"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"fmt"
 	"os"

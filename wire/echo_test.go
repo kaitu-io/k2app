@@ -3,13 +3,13 @@ package wire
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 // echoTestServer sets up a raw QUIC listener and returns the listener and cleanup func.

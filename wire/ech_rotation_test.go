@@ -3,7 +3,7 @@ package wire
 import (
 	"crypto/ecdh"
 	"crypto/rand"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"encoding/binary"
 	"os"
 	"path/filepath"

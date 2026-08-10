@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/apernet/quic-go/congestion"
+	"github.com/kaitu-io/kuic/congestion"
 )
 
 // ============================================================================

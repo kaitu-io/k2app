@@ -2,14 +2,14 @@ package wire
 
 import (
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"io"
 	"net"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 // TestIntegration_QUICEnforce_ForgedTokenRejected is the end-to-end regression

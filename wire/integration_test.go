@@ -3,13 +3,13 @@ package wire
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"net"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 // ============================================================================

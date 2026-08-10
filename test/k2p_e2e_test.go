@@ -3,7 +3,7 @@ package test
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"fmt"
 	"io"
@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 
 	"github.com/kaitu-io/k2/k2p"
 	"github.com/kaitu-io/k2/server"

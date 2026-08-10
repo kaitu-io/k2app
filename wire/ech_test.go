@@ -5,7 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -15,20 +15,19 @@ import (
 	"testing"
 	"time"
 
-	utls "github.com/metacubex/utls"
 )
 
 func TestParseFingerprint(t *testing.T) {
 	tests := []struct {
 		fp   string
-		want utls.ClientHelloID
+		want tls.ClientHelloID
 	}{
-		{"chrome", utls.HelloChrome_120_PQ},
-		{"firefox", utls.HelloFirefox_120},
-		{"safari", utls.HelloSafari_16_0},
-		{"random", utls.HelloRandomizedALPN},
-		{"", utls.HelloChrome_120_PQ}, // default
-		{"unknown", utls.HelloChrome_120_PQ}, // fallback to default
+		{"chrome", tls.HelloChrome_120_PQ},
+		{"firefox", tls.HelloFirefox_120},
+		{"safari", tls.HelloSafari_16_0},
+		{"random", tls.HelloRandomizedALPN},
+		{"", tls.HelloChrome_120_PQ}, // default
+		{"unknown", tls.HelloChrome_120_PQ}, // fallback to default
 	}
 
 	for _, tt := range tests {
@@ -105,7 +104,7 @@ func TestBuildClientTLSConfig(t *testing.T) {
 	}
 
 	// Fingerprint
-	if clientHelloID != utls.HelloChrome_120_PQ {
+	if clientHelloID != tls.HelloChrome_120_PQ {
 		t.Errorf("clientHelloID = %v, want HelloChrome_120_PQ", clientHelloID)
 	}
 

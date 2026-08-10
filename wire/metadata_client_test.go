@@ -3,7 +3,7 @@ package wire
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"errors"
 	"io"
 	"net"

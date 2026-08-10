@@ -5,7 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"math/big"
 	"net"
@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/server"
 	"github.com/kaitu-io/k2/wire"

@@ -3,7 +3,7 @@ package wire
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	utls "github.com/metacubex/utls"
 )
 
 // RelayRequest is a single control-plane HTTP request to be sent to Center
@@ -114,7 +113,7 @@ func relayDial(ctx context.Context, req *RelayRequest, override *tls.Config) (ne
 	dialAddr := net.JoinHostPort(req.IP, strconv.Itoa(port))
 
 	var tlsCfg *tls.Config
-	clientHelloID := utls.HelloChrome_120_PQ
+	clientHelloID := tls.HelloChrome_120_PQ
 	if override != nil {
 		tlsCfg = override.Clone()
 	} else {
@@ -139,7 +138,7 @@ func relayDial(ctx context.Context, req *RelayRequest, override *tls.Config) (ne
 		return nil, fmt.Errorf("wire: relay TCP dial %s: %w", dialAddr, err)
 	}
 
-	utlsCfg := &utls.Config{
+	utlsCfg := &tls.Config{
 		ServerName:                     tlsCfg.ServerName,
 		InsecureSkipVerify:             tlsCfg.InsecureSkipVerify,
 		MinVersion:                     tlsCfg.MinVersion,
@@ -151,7 +150,7 @@ func relayDial(ctx context.Context, req *RelayRequest, override *tls.Config) (ne
 		RootCAs:               tlsCfg.RootCAs,
 		VerifyPeerCertificate: tlsCfg.VerifyPeerCertificate,
 	}
-	uconn := utls.UClient(conn, utlsCfg, clientHelloID)
+	uconn := tls.UClient(conn, utlsCfg, clientHelloID)
 	if err := uconn.HandshakeContext(ctx); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("wire: relay uTLS handshake: %w", err)

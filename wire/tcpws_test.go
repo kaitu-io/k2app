@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"fmt"
 	"net"
 	"net/http"
@@ -695,15 +695,11 @@ func TestTCPWSClient_FullFlow_WS(t *testing.T) {
 	fmt.Sscanf(portStr, "%d", &port)
 
 	// Start HTTPS server
-	srv := &http.Server{
-		Handler: mux,
-		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-		},
-	}
+	srv := &http.Server{Handler: mux}
+	srvTLS := &tls.Config{Certificates: []tls.Certificate{cert}}
 
 	go func() {
-		tlsListener := tls.NewListener(listener, srv.TLSConfig)
+		tlsListener := tls.NewListener(listener, srvTLS)
 		srv.Serve(tlsListener)
 	}()
 	defer srv.Close()
@@ -862,15 +858,11 @@ func TestTCPWSClient_DialUDP_WS(t *testing.T) {
 	var port int
 	fmt.Sscanf(portStr, "%d", &port)
 
-	srv := &http.Server{
-		Handler: mux,
-		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-		},
-	}
+	srv := &http.Server{Handler: mux}
+	srvTLS := &tls.Config{Certificates: []tls.Certificate{cert}}
 
 	go func() {
-		tlsListener := tls.NewListener(listener, srv.TLSConfig)
+		tlsListener := tls.NewListener(listener, srvTLS)
 		srv.Serve(tlsListener)
 	}()
 	defer srv.Close()
@@ -1060,11 +1052,9 @@ func TestTCPWSClient_ProbeContextCancellation(t *testing.T) {
 	var port int
 	fmt.Sscanf(portStr, "%d", &port)
 
-	srv := &http.Server{
-		Handler:   mux,
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
-	}
-	go srv.Serve(tls.NewListener(listener, srv.TLSConfig))
+	srv := &http.Server{Handler: mux}
+	srvTLS := &tls.Config{Certificates: []tls.Certificate{cert}}
+	go srv.Serve(tls.NewListener(listener, srvTLS))
 	defer srv.Close()
 
 	// Client

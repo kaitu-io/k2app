@@ -4,7 +4,7 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
@@ -19,22 +19,21 @@ import (
 	"sync"
 	"time"
 
-	utls "github.com/metacubex/utls"
 )
 
 var copyBufPool = sync.Pool{New: func() any { b := make([]byte, 32*1024); return &b }}
 
 // ParseFingerprint maps the fp= URL parameter to a utls ClientHelloID.
-func ParseFingerprint(fp string) utls.ClientHelloID {
+func ParseFingerprint(fp string) tls.ClientHelloID {
 	switch fp {
 	case "firefox":
-		return utls.HelloFirefox_120
+		return tls.HelloFirefox_120
 	case "safari":
-		return utls.HelloSafari_16_0
+		return tls.HelloSafari_16_0
 	case "random":
-		return utls.HelloRandomizedALPN
+		return tls.HelloRandomizedALPN
 	default: // "chrome", "", or unknown
-		return utls.HelloChrome_120_PQ
+		return tls.HelloChrome_120_PQ
 	}
 }
 
@@ -59,13 +58,13 @@ func ParseECHConfig(encoded string) ([]byte, error) {
 // BuildClientTLSConfig creates a TLS config from k2v5 Config for client connections.
 // Returns the tls.Config and the utls ClientHelloID to use.
 // k2v5 mandates ECH — returns error if ECH config is missing.
-func BuildClientTLSConfig(cfg Config) (*tls.Config, utls.ClientHelloID, error) {
+func BuildClientTLSConfig(cfg Config) (*tls.Config, tls.ClientHelloID, error) {
 	echBytes, err := ParseECHConfig(cfg.ECH)
 	if err != nil {
-		return nil, utls.ClientHelloID{}, err
+		return nil, tls.ClientHelloID{}, err
 	}
 	if len(echBytes) == 0 {
-		return nil, utls.ClientHelloID{}, errors.New("wire: ECH config required (k2v5 never exposes real SNI)")
+		return nil, tls.ClientHelloID{}, errors.New("wire: ECH config required (k2v5 never exposes real SNI)")
 	}
 
 	tlsCfg := &tls.Config{
@@ -79,7 +78,7 @@ func BuildClientTLSConfig(cfg Config) (*tls.Config, utls.ClientHelloID, error) {
 		// Pin verification: check public key hash (overrides everything)
 		pins, err := ParsePins(cfg.Pin)
 		if err != nil {
-			return nil, utls.ClientHelloID{}, err
+			return nil, tls.ClientHelloID{}, err
 		}
 		tlsCfg.InsecureSkipVerify = true
 		tlsCfg.VerifyPeerCertificate = buildPinVerifier(pins)

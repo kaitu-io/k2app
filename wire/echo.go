@@ -12,7 +12,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 const echoNonceLen = 8

@@ -6,7 +6,7 @@
 package wire
 
 import (
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 	"github.com/kaitu-io/k2/wire/k2cc"
 )
 

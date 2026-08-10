@@ -5,7 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"io"
@@ -109,7 +109,13 @@ func selfSignedServerTLS(t *testing.T) *tls.Config {
 		NotAfter:     time.Now().Add(time.Hour),
 	}
 	der, _ := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	return &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
+	return &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}},
+		// Disable HTTP/2: the relay client speaks HTTP/1.1 over the uTLS conn.
+		// Negotiating it here rather than via http.Server.TLSNextProto, which
+		// net/http hard-types to *crypto/tls.Conn.
+		NextProtos: []string{"http/1.1"},
+	}
 }
 
 func TestRelayFetch_OverrideDial_EndToEnd(t *testing.T) {
@@ -124,14 +130,9 @@ func TestRelayFetch_OverrideDial_EndToEnd(t *testing.T) {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, "centerhit:"+r.URL.Path)
 		}),
-		// Disable HTTP/2: our relay client sends HTTP/1.1 over the uTLS conn.
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
-	// Set TLSConfig BEFORE starting the goroutine to avoid the data race where
-	// ServeTLS reads srv.TLSConfig concurrently with the main goroutine writing it.
-	srv.TLSConfig = selfSignedServerTLS(t)
 	srvDone := make(chan struct{})
-	go func() { _ = srv.ServeTLS(lc, "", ""); close(srvDone) }()
+	go func() { _ = srv.Serve(tls.NewListener(lc, selfSignedServerTLS(t))); close(srvDone) }()
 	t.Cleanup(func() { _ = srv.Close(); <-srvDone })
 
 	host, portStr, _ := net.SplitHostPort(lc.Addr().String())
@@ -200,13 +201,9 @@ func startTLSNode(t *testing.T, handler http.HandlerFunc) (string, int) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	srv := &http.Server{
-		Handler:      handler,
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
-	}
-	srv.TLSConfig = selfSignedServerTLS(t)
+	srv := &http.Server{Handler: handler}
 	srvDone := make(chan struct{})
-	go func() { _ = srv.ServeTLS(lc, "", ""); close(srvDone) }()
+	go func() { _ = srv.Serve(tls.NewListener(lc, selfSignedServerTLS(t))); close(srvDone) }()
 	t.Cleanup(func() { _ = srv.Close(); <-srvDone })
 	host, portStr, _ := net.SplitHostPort(lc.Addr().String())
 	port, _ := strconv.Atoi(portStr)

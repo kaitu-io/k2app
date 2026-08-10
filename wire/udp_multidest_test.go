@@ -4,14 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"log/slog"
 	"net"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/kuic"
 )
 
 // fakeDatagramSender captures frames written by quicUDPConn.
