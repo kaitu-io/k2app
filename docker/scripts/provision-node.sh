@@ -554,7 +554,7 @@ if [ -f /apps/k2s/auto-update.sh ]; then
         ok "Cron entry already exists."
     fi
 else
-    warn "auto-update.sh not found yet. Deploy it with deploy-auto-update.sh after provisioning."
+    warn "auto-update.sh not found yet. Copy docker/scripts/auto-update.sh to /apps/k2s/auto-update.sh (chmod +x), then re-run this step."
 fi
 
 # ===================================================================
@@ -603,6 +603,6 @@ echo ""
 echo -e "${YELLOW}Next steps:${NC}"
 echo -e "  1. Deploy docker-compose.yml + .env to /apps/k2s/"
 echo -e "  2. Ensure users file exists: touch /apps/k2s/users"
-echo -e "  3. Deploy auto-update.sh via deploy-auto-update.sh"
+echo -e "  3. Copy docker/scripts/auto-update.sh to /apps/k2s/auto-update.sh (chmod +x)"
 echo -e "  4. docker compose up -d && verify sidecar healthy"
 echo -e "  5. Verify hop port DNAT: iptables -t nat -L PREROUTING -n | grep REDIRECT"
