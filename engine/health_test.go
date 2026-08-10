@@ -776,9 +776,13 @@ func TestEchoStep_ScenarioWireFailsEarly(t *testing.T) {
 //
 // Uses the echoStubDialer / newEchoTransport / newHMForEcho fakes from
 // health_echo_integration_test.go. probeOnceForTest drives exactly one
-// echoProbeLoop iteration synchronously (fresh loop-local trust/strikes/
-// backup-cadence state each call) so these tests don't depend on real
-// timers.
+// echoProbeLoop (primary-channel) iteration synchronously. The backup-probe
+// tests below (fix-round-1) call hm.probeBackupOnce directly with an
+// explicit *backupLoopState that persists across calls, since — after
+// fix-round-1 decoupled the backup probe onto its own timer/goroutine
+// (Important 1 + 4) — probeOnceForTest no longer touches backup logic at
+// all, and cadence assertions require state that survives multiple
+// synthetic-time calls.
 
 func TestEchoLoop_FeedsChannelScore(t *testing.T) {
 	// A healthMonitor with one TM whose QUIC echo succeeds should raise that
@@ -795,38 +799,124 @@ func TestEchoLoop_FeedsChannelScore(t *testing.T) {
 	}
 }
 
-func TestEchoLoop_BackupProbesWhenQUICDegraded(t *testing.T) {
-	// Drive scoreQUIC below echoBackupProbeThreshold via a real failure
-	// (context.DeadlineExceeded — not IsEchoUnsupported, so it actually
-	// counts as a failure), then verify one probeOnce call fires the
-	// tcpws backup probe (R5: backup = the OTHER channel's client when
-	// active=="quic").
+func TestBackupProbe_CadenceUpgradesWhenQUICDegraded(t *testing.T) {
+	// fix-round-1 (Important 1 + 3): the backup probe's cadence must be the
+	// REAL cadence it runs at — 5s once QUIC degrades, not bounded by
+	// whatever the primary's exponential-trust timer happens to be at. This
+	// test drives probeBackupOnce directly across synthetic time steps (no
+	// real waiting) with one *backupLoopState carried across calls, so it
+	// actually exercises pacing — unlike the original (vacuous) version,
+	// which built a fresh state each call and so let every call through
+	// unconditionally regardless of which interval constant was in play.
 	ot, _ := newEchoTransport("t-quic-degraded", func(ctx context.Context) error { return nil })
 	backup := &echoStubDialer{}
 	backup.setFn(func(ctx context.Context) error { return nil })
 	ot.tm.SetTCPWS(backup)
 
-	now := time.Now()
-	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, now)
-	if got := ot.tm.ScoreQUIC(now); got >= echoBackupProbeThreshold {
+	t0 := time.Now()
+	// context.DeadlineExceeded is a real failure (not IsEchoUnsupported),
+	// so this actually drives scoreQUIC down.
+	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, t0)
+	if got := ot.tm.ScoreQUIC(t0); got >= echoBackupProbeThreshold {
 		t.Fatalf("setup: expected degraded QUIC score below %v, got %v", echoBackupProbeThreshold, got)
 	}
 
 	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
-	hm.probeOnceForTest(ot, now)
+	st := &backupLoopState{}
 
-	if calls := backup.calls.Load(); calls == 0 {
-		t.Fatal("expected backup (tcpws) probe to fire when QUIC degraded, got 0 calls")
+	// t0: first check — nothing scheduled yet, so it probes immediately and
+	// reports the degraded (5s) cadence.
+	if interval := hm.probeBackupOnce(ot, st, t0); interval != backupProbeIntervalDegraded {
+		t.Fatalf("expected degraded cadence %v at t0, got %v", backupProbeIntervalDegraded, interval)
 	}
-	if got := ot.tm.ScoreTCPWS(now); got <= 0.5*0.5 {
-		t.Fatalf("backup probe success should raise tcpws score above neutral, got %v", got)
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected 1 probe at t0, got %d", calls)
+	}
+
+	// t0+4s: inside the 5s cadence window — must NOT probe again.
+	hm.probeBackupOnce(ot, st, t0.Add(4*time.Second))
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected no probe at t0+4s (within the 5s degraded cadence), got %d calls", calls)
+	}
+
+	// t0+6s: cadence window elapsed — probes again.
+	hm.probeBackupOnce(ot, st, t0.Add(6*time.Second))
+	if calls := backup.calls.Load(); calls != 2 {
+		t.Fatalf("expected a second probe at t0+6s, got %d calls", calls)
 	}
 }
 
-func TestEchoLoop_MobilePowerSavingSkipsBackupProbe(t *testing.T) {
-	// Same degraded-QUIC setup as above, but with MobilePowerSaving on:
-	// backup probing must NOT fire — mobile relies on protocol keepalive
-	// and lets the tcpws score decay to neutral by staleness instead.
+func TestBackupProbe_HealthyCadenceStaysLowFrequency(t *testing.T) {
+	// Mirror of the degraded test above, but with QUIC healthy: cadence must
+	// be 60s, and — critically — a re-check at +5s (which WOULD fire under
+	// the 5s degraded cadence) must NOT probe. This is what actually proves
+	// the two cadences are distinct code paths rather than one always
+	// winning regardless of QUIC's score.
+	ot, _ := newEchoTransport("t-quic-healthy", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+
+	t0 := time.Now()
+	// Availability alone caps Value() at avail*neutral(0.5)=0.5, which is
+	// BELOW echoBackupProbeThreshold (0.7) — quality (CC stats) must also be
+	// primed for scoreQUIC to clear 0.7 and land in the healthy branch.
+	ot.tm.RecordEchoResult("quic", 0, nil, t0)
+	ot.tm.RecordQUICStats(wire.WireStats{PacketLossRate: 0, RTT: 50 * time.Millisecond, MinRTT: 50 * time.Millisecond}, t0)
+	if got := ot.tm.ScoreQUIC(t0); got < echoBackupProbeThreshold {
+		t.Fatalf("setup: expected healthy QUIC score >= %v, got %v", echoBackupProbeThreshold, got)
+	}
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	st := &backupLoopState{}
+
+	if interval := hm.probeBackupOnce(ot, st, t0); interval != backupProbeIntervalHealthy {
+		t.Fatalf("expected healthy cadence %v at t0, got %v", backupProbeIntervalHealthy, interval)
+	}
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected 1 probe at t0, got %d", calls)
+	}
+
+	hm.probeBackupOnce(ot, st, t0.Add(5*time.Second))
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected no second probe within the 60s healthy cadence (checked at +5s), got %d calls", calls)
+	}
+}
+
+func TestBackupProbe_SkipsWhenPrimaryIsTCPWS(t *testing.T) {
+	// fix-round-1 Important 2: when tcpws wins the transport race outright
+	// (no separate QUIC dialer connected), engine.go's setupOutboundTransport
+	// installs the SAME *TCPWSClient as both tm.primary and tm.TCPWS() (mirrors
+	// engine.go's tm.SetPrimary(raceResult.Dialer, "tcpws") + tm.SetTCPWS(...)
+	// when raceResult.QUICBackup is nil and raceResult.TransportType=="tcpws").
+	// ActiveChannel() still nominally reports "quic" (fresh TransportManager
+	// default) even though PrimaryType is "tcpws". probeBackupOnce must
+	// recognize this and skip — probing "the backup" would double-probe the
+	// identical connection echoProbeLoop is already probing as the primary.
+	stub := &echoStubDialer{}
+	stub.setFn(func(ctx context.Context) error { return nil })
+	tm := wire.NewTransportManager()
+	tm.SetPrimary(stub, "tcpws")
+	tm.SetTCPWS(stub)
+	ot := &outboundTransport{tm: tm, name: "t-tcpws-only"}
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	st := &backupLoopState{}
+
+	now := time.Now()
+	if interval := hm.probeBackupOnce(ot, st, now); interval != backupProbeIntervalHealthy {
+		t.Fatalf("expected the no-op/healthy pace, got %v", interval)
+	}
+	if calls := stub.calls.Load(); calls != 0 {
+		t.Fatalf("expected zero backup probes when primary IS tcpws (double-probe guard), got %d", calls)
+	}
+}
+
+func TestBackupProbe_MobilePowerSavingSkipsProbe(t *testing.T) {
+	// Degraded-QUIC setup (would normally upgrade to 5s cadence), but with
+	// MobilePowerSaving on: backup probing must NOT fire — mobile relies on
+	// protocol keepalive and lets the tcpws score decay to neutral by
+	// staleness instead.
 	ot, _ := newEchoTransport("t-quic-degraded-ps", func(ctx context.Context) error { return nil })
 	backup := &echoStubDialer{}
 	backup.setFn(func(ctx context.Context) error { return nil })
@@ -837,7 +927,9 @@ func TestEchoLoop_MobilePowerSavingSkipsBackupProbe(t *testing.T) {
 
 	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
 	hm.mobilePowerSaving = true
-	hm.probeOnceForTest(ot, now)
+	st := &backupLoopState{}
+
+	hm.probeBackupOnce(ot, st, now)
 
 	if calls := backup.calls.Load(); calls != 0 {
 		t.Fatalf("MobilePowerSaving must disable active backup probing, got %d calls", calls)
