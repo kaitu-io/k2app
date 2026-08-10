@@ -33,6 +33,18 @@ k2 的 QUIC(主) + TCP-WS(备) 双通道策略在两类线上场景下表现不�
 3. **让 TCP-WS 真正顶上**：TCP-WS 活跃且质量好时健康等级为 `healthy`（不再无条件 `degraded`）。
 4. **统一两套机制**：通道选择归口到一个带迟滞的选择器；engine re-race 退回到它本来的正交职责（换服务器/端口）。
 
+### 1.2b 与正交 spec 的边界（代理层出网黑洞检测 `ec3d6d1`）
+
+同日有一份正交 spec `2026-08-10-proxy-egress-blackout-detection.md`（基于 dial 计数器 `f70b71a`），两者维度必须严格分开：
+
+| 维度 | 本 spec（质量记分板） | 代理层出网黑洞检测 |
+|---|---|---|
+| 管什么 | **通道选择**（QUIC vs TCP-WS，同一节点） | **节点可用性**（该节点能否出网） |
+| 信号源 | wire 层 echo + handshake + WireStats，**排除 proxy-layer 错误** | **proxy-layer 错误是唯一输入**（dial 全灭） |
+| 动作 | 换通道 | 换节点（re-race Phase B） |
+
+两者的分界正是 proxy-layer 错误归属：它进不了通道分数（换通道无用），只进节点可用性。**顺序约束**：黑洞检测 spec 声明它须排在本 spec 的 Phase 1/2 **之后**（依赖本 spec 对 re-race 语义的收窄，见 §4.2）。本 plan 不实现黑洞检测，但 Phase 1/2 完成后为它铺好前提。
+
 ### 1.3 非目标（YAGNI）
 
 - 不做 active-active 双通道分流（复杂度爆炸，与"半死时省着用"矛盾）。
@@ -57,9 +69,10 @@ k2 的 QUIC(主) + TCP-WS(备) 双通道策略在两类线上场景下表现不�
                     │        │ scoreQUIC      scoreTCPWS │  │  ← wire/score.go [新]
                     │        └───┬───────────────┬───────┘  │
                     └────────────┼───────────────┼──────────┘
-              主动信号:  echo RTT/失败      echo(新TCP-WS)/被动
-              被动信号:  dial 成功率+延迟(两通道皆有,零成本)
-              质量信号:  K2CC 丢包率        RTT 膨胀比
+   availability:  echo 成败 + handshake 成败 (纯 transport 层, 不含 dial)
+   quality(quic): K2CC 丢包率 + RTT 膨胀 (WireStats)
+   quality(tcpws):echo RTT 膨胀 (WireStats 对 tcpws 恒 0)
+   (dial 成败 = 观测专用, 归节点可用性检测, 不入通道分数)
 ```
 
 分层职责（遵守 k2 Layer Boundary Rules）：
@@ -77,22 +90,24 @@ k2 的 QUIC(主) + TCP-WS(备) 双通道策略在两类线上场景下表现不�
 
 | 信号类别 | QUIC 来源 | TCP-WS 来源 | 采集成本 |
 |---|---|---|---|
-| echo RTT + 成功率（主动） | 现有 `EchoProbe` | **新增 smux echo 流**（复用 `StreamTypeEcho=0x04`；服务端新增分发；老服务器→unsupported→该信号缺席） | 按需，见 §3.3 |
-| dial 成功率 + 建连延迟（被动） | 每次 `DialTCP/DialUDP/Handshake` 结果回报 | 同 | 零 |
+| availability：echo 成功率（主动） | 现有 `EchoProbe` | **新增 smux echo 流**（复用 `StreamTypeEcho=0x04`；服务端新增分发；老服务器→unsupported→该信号缺席） | 按需，见 §3.3 |
+| availability：handshake 成败 | `connect()` 成功/失败（即 `handshakeFailStreak` 的样本源） | 同 | 零 |
 | 传输质量 | K2CC `PacketLossRate` + RTT/MinRTT（`WireStats`） | **echo RTT 膨胀比**（见下"来源修正"） | 零/按需 |
 
-> **来源修正（审查坐实的缺陷）**：`TCPWSClient.WireStats()`（`wire/tcpws.go:148`）**只返回 UDP drop 计数 + `Transport="tcpws"`，RTT/MinRTT/LossRate 全为 0**（smux 无 CC 统计）。因此 TCP-WS 的 quality **不能**取自 WireStats，只能取自 **echo RTT**（主动探测，`echoRtt / minEchoRtt` 膨胀比）+ dial 延迟（被动）。QUIC 与 TCP-WS 的 quality 公式因此形状一致但输入不同源；ChannelScore 必须对两种输入分别建模，不能假设 WireStats 对两通道对称有效。
+> **来源修正 1（TCP-WS 无 WireStats RTT，审查坐实）**：`TCPWSClient.WireStats()`（`wire/tcpws.go:148`）**只返回 UDP drop 计数 + `Transport="tcpws"`，RTT/MinRTT/LossRate 全为 0**（smux 无 CC 统计）。因此 TCP-WS 的 quality **不能**取自 WireStats，只能取自 **echo RTT**（主动探测，`echoRtt / minEchoRtt` 膨胀比）。QUIC 与 TCP-WS 的 quality 公式形状一致但输入不同源；ChannelScore 必须分别建模，不能假设 WireStats 对两通道对称有效。
+
+> **来源修正 2（proxy-layer dial 结果必须排除在通道分数外，ec3d6d1/f70b71a 坐实）**：**availability 绝不能取"dial 成功率"**。原因：① `core/ClientTunnel` 已有 dial 计数器（`f70b71a`，按 `isProxyLayerError` 细分 `dialOk/dialFail/directOk/directFail`），是**观测专用**，喂 heartbeat 与正交的节点可用性检测（`ec3d6d1` 代理层出网黑洞检测），**不喂通道分数**；② 半死 QUIC 的 `DialTCP` 失败恰好是"读响应超时 → `ProxyLayerError`"（`wire/quic.go:727`），归 proxy 层，**dial 信号根本测不出半死**；③ 换通道救不了"节点出不了网"，把 proxy-layer 失败计入通道 availability 会触发无意义切换。故 availability **只由 echo（主动，纯 transport 层）+ handshake 成败（transport 层）驱动**，两者天然绕开 proxy-layer。这与 f70b71a commit message 的边界声明一致："Channel scoring in wire/ deliberately excludes proxy-layer errors"。
 
 **分数公式（纯函数，初始参数，可调）**：
 
 ```
 score        = availability × quality                    ∈ [0,1]
-availability = EWMA(成功=1, 失败=0)                        # 失败权重×2（宁可误杀）
+availability = EWMA(样本)  样本 ∈ {echo 成败, handshake 成败}  # 失败权重×2；纯 transport 层，不含 dial
 quality_quic = clamp(1 − loss×2, 0, 1) × clamp(minRtt/rtt, 0, 1)   # loss+rtt 取自 WireStats
 quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT 膨胀比；无 echo → 0.5
 ```
 
-- `availability` 的失败样本用双倍权重更新 EWMA ——"失败要快跌、恢复要慢升"，与 fail-safe 原则互补。
+- `availability` 的样本源**仅** echo 探测成败 + `connect()` handshake 成败（见"来源修正 2"），失败样本用双倍权重更新 EWMA ——"失败要快跌、恢复要慢升"，与 fail-safe 原则互补。
 - **信号缺席 = 中性 0.5（fail-safe 硬规则）**：某信号无数据（老服务器无 echo、刚建连无被动样本）时该项记 0.5，**绝不因数据缺失产生切换**。源自 #3463 echo 误分类事故的宪法级约束。
 - **样本时效性（审查坐实的缺陷）**：QUIC 一旦变为备用通道，不再有 dial 流量 → 其被动 `availability` 会**停在切换前的陈旧 1.0**，若直接参与回滚判断会假装 QUIC 健康。故每个信号带 `lastSampleAt`；**超过 3× 该信号当前探测间隔未更新的样本，回退为中性 0.5**。这保证"备用通道的分数只反映它当前被主动探测出来的质量"，陈旧的主用期分数不会污染回滚决策。
 
@@ -147,7 +162,7 @@ quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT �
 
 - **服务端**（`wire/tcpws.go handleStream`）：新增 `case StreamTypeEcho:` → 调用一个 smux 版 `HandleEchoStream`（读 `echoNonceLen` 字节回写；echo.go 现有 `HandleEchoStream` 签名是 `*quic.Stream`，需抽出一个基于 `io.ReadWriter` 的公共实现，QUIC/smux 各自适配 —— 遵守"抽公共、不复制"）。
 - **客户端**（`TCPWSClient`）：实现 `EchoProber` 接口（新增 `RunEchoProbe`），打开 smux 流写 nonce 读回。
-- **向后兼容**：老 k2s 无 TCP-WS echo → 客户端读 EOF → `IsEchoUnsupported=true` → 该信号缺席 → ChannelScore 按 §3.1 记中性 0.5，策略平滑退化（TCP-WS 靠被动信号评分，永不因缺 echo 误切）。
+- **向后兼容**：老 k2s 无 TCP-WS echo → 客户端读 EOF → `IsEchoUnsupported=true` → echo 信号缺席 → ChannelScore 的 echo-availability 与 quality 均按 §3.1 记中性 0.5（TCP-WS 仍有 handshake-availability 这一 transport 层信号），策略平滑退化，永不因缺 echo 误切。
 
 ---
 
@@ -185,10 +200,11 @@ quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT �
 
 | 场景 | 行为 |
 |---|---|
-| 老服务器（无 TCP-WS echo） | TCP-WS 走被动信号 + 中性 quality；策略退化为"近似只修根因 A/B 的最小版"，不误切、不震荡 |
+| 老服务器（无 TCP-WS echo） | TCP-WS 靠 handshake-availability + 中性 quality；策略退化为"近似只修根因 A/B 的最小版"，不误切、不震荡 |
 | echo 错误分类 | 沿用 `IsEchoUnsupported` 修复后语义（timeout 三重判定：`context.DeadlineExceeded` / `os.ErrDeadlineExceeded` / `net.Error.Timeout()`）；fail-closed |
 | 两通道都烂 | channelSelector 维持现状 + healthMonitor critical 全量重连兜底 |
 | UDP relay 不健康 | `ErrDatagramRelayUnhealthy` 照旧 per-request stream 降级，**不计入** ChannelScore availability（relay 层不驱动 wire 层，遵守 VOCABULARY.md） |
+| 节点出不了网（proxy-layer 全灭） | **不计入** ChannelScore（换通道无用）；由正交的节点可用性检测处理（§1.2b）。dial 计数器已在 `core/ClientTunnel`（f70b71a），wire 层不重复 |
 | 网络切换 Reset | `channelSelector.Reset()` 清 flapCount/窗口/分数 EWMA；`freshAfterReset` 语义保留 |
 | Stop 期间切换 TOCTOU | 沿用现有 P2 已知风险边界（QUIC idle 30s 回收），不新增未受保护路径 |
 
