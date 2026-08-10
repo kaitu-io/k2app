@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -28,7 +29,7 @@ type ProxyLayerError struct {
 
 func (e *ProxyLayerError) Error() string      { return e.Err.Error() }
 func (e *ProxyLayerError) Unwrap() error      { return e.Err }
-func (e *ProxyLayerError) IsProxyLayer() bool  { return true }
+func (e *ProxyLayerError) IsProxyLayer() bool { return true }
 
 // isProxyLayerError returns true when the Dialer has marked the error
 // as proxy-layer (server responded, transport worked). Checked via
@@ -168,6 +169,16 @@ func switchAway(st selectorState, now time.Time) selectorState {
 	return st
 }
 
+// channelForType maps a primaryType label ("quic-443", "quic-hop", "tcpws")
+// to its ChannelScore key. Used to classify which channel a primary dial
+// outcome belongs to.
+func channelForType(transportType string) string {
+	if strings.HasPrefix(transportType, "quic") {
+		return "quic"
+	}
+	return "tcpws"
+}
+
 // TransportManager manages primary and TCP-WS transports.
 // QUIC is strongly preferred; TCP-WS is used as last-resort fallback only
 // when QUIC is genuinely unavailable (UDP blocked). ISPs rarely block UDP,
@@ -178,10 +189,29 @@ type TransportManager struct {
 	tcpws       Dialer
 	primaryType string // "quic-443", "quic-hop", "tcpws"
 
-	// Fallback state: tracks QUIC→TCP-WS transport-level fallback.
-	// Set when consecutive QUIC handshake failures reach quicConnFailThreshold.
-	// Cleared on QUIC recovery, Reset(), or successful probe.
-	fallbackActive atomic.Bool
+	// Dual-channel quality scoreboard (Task 1) + hysteresis FSM (Task 2).
+	// selState.active is the ONLY source of truth for which channel is
+	// serving traffic — FallbackActive() derives from it. Protected by mu.
+	scoreQUIC  *ChannelScore
+	scoreTCPWS *ChannelScore
+	selState   selectorState
+
+	// quicEchoRecovered is set by the background probe (runProbeOnce) only
+	// after a freshly (re-)established QUIC handshake also passes 3
+	// consecutive echo rounds. evaluateSelector — never the probe itself —
+	// decides whether that is enough to roll back (root cause A fix: a
+	// probe that only completes the handshake must never clear fallback).
+	quicEchoRecovered atomic.Bool
+
+	// backupFresh counts tcpws-channel samples ever recorded (dial or
+	// echo). Gates the quality-path switch-away so a single lucky/unlucky
+	// tcpws sample right after cold start can't flip the transport.
+	backupFresh atomic.Int32
+
+	// tcpwsMinEchoRTT is the running minimum echo RTT observed on the
+	// tcpws channel — the baseline for QualityFromEchoRTT (tcpws has no
+	// congestion-control stats, unlike QUIC).
+	tcpwsMinEchoRTT atomic.Int64 // ns; 0 = unset
 
 	// Post-reset grace: first QUIC dial after Reset gets extended budget.
 	freshAfterReset atomic.Bool
@@ -192,7 +222,158 @@ type TransportManager struct {
 
 // NewTransportManager creates a new transport manager.
 func NewTransportManager() *TransportManager {
-	return &TransportManager{}
+	return &TransportManager{
+		scoreQUIC:  NewChannelScore(),
+		scoreTCPWS: NewChannelScore(),
+		selState:   selectorState{active: "quic"},
+	}
+}
+
+// ActiveChannel returns which channel ("quic" or "tcpws") is currently
+// serving traffic. The single source of truth for channel selection.
+func (tm *TransportManager) ActiveChannel() string {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.selState.active == "" {
+		return "quic"
+	}
+	return tm.selState.active
+}
+
+// ScoreQUIC returns the current QUIC channel quality score in [0,1].
+func (tm *TransportManager) ScoreQUIC(now time.Time) float64 {
+	return tm.scoreQUIC.Value(now)
+}
+
+// ScoreTCPWS returns the current TCP-WS channel quality score in [0,1].
+func (tm *TransportManager) ScoreTCPWS(now time.Time) float64 {
+	return tm.scoreTCPWS.Value(now)
+}
+
+// scoreFor returns the ChannelScore for a channel key, or nil for an
+// unrecognized channel (defensive — callers pass "quic"/"tcpws" literals).
+func (tm *TransportManager) scoreFor(channel string) *ChannelScore {
+	switch channel {
+	case "quic":
+		return tm.scoreQUIC
+	case "tcpws":
+		return tm.scoreTCPWS
+	default:
+		return nil
+	}
+}
+
+// recordDialOutcome feeds a real dial/handshake result into the channel's
+// availability signal, gated by isProxyLayerError: a proxy-layer error means
+// the wire transport worked and only the proxy/target-side failed (e.g.
+// DialTCP's read-response timeout, or connect()'s own metadata-rejection
+// path) — that is orthogonal to transport availability (spec §3.1
+// correction) and must never trigger a channel switch. Availability never
+// otherwise sees "per-dial" noise: every other error class (handshake
+// failure, stream-open failure, write failure) IS a legitimate transport
+// signal and is recorded.
+//
+// Called after the dial/connect completes, always outside tm.mu —
+// ChannelScore has its own standalone lock (Lock Ordering: tm.mu ->
+// ChannelScore.mu is fine elsewhere, but this call site never holds tm.mu).
+func (tm *TransportManager) recordDialOutcome(channel string, err error, now time.Time) {
+	sc := tm.scoreFor(channel)
+	if sc == nil {
+		return
+	}
+	if err != nil && isProxyLayerError(err) {
+		return
+	}
+	sc.RecordAvailability(err == nil, now)
+	if channel == "tcpws" {
+		tm.backupFresh.Add(1)
+	}
+}
+
+// RecordQUICStats feeds QUIC quality from congestion-control loss/RTT stats.
+func (tm *TransportManager) RecordQUICStats(ws WireStats, now time.Time) {
+	tm.scoreQUIC.RecordQuality(QualityFromLossRTT(ws.PacketLossRate, ws.RTT, ws.MinRTT), now)
+}
+
+// updateTCPWSMinEchoRTT updates (if lower) and returns the running minimum
+// echo RTT observed on the tcpws channel.
+func (tm *TransportManager) updateTCPWSMinEchoRTT(rtt time.Duration) time.Duration {
+	for {
+		cur := tm.tcpwsMinEchoRTT.Load()
+		if cur != 0 && time.Duration(cur) <= rtt {
+			return time.Duration(cur)
+		}
+		if tm.tcpwsMinEchoRTT.CompareAndSwap(cur, int64(rtt)) {
+			return rtt
+		}
+	}
+}
+
+// RecordEchoResult feeds an echo-probe outcome into a channel's
+// availability (and, for tcpws, quality — tcpws has no CC stats, so echo
+// RTT inflation is its only quality signal). An IsEchoUnsupported error
+// (old server without an echo handler) is benign and recorded as neither
+// success nor failure.
+func (tm *TransportManager) RecordEchoResult(channel string, rtt time.Duration, err error, now time.Time) {
+	sc := tm.scoreFor(channel)
+	if sc == nil {
+		return
+	}
+	if err != nil {
+		if IsEchoUnsupported(err) {
+			return
+		}
+		sc.RecordAvailability(false, now)
+		if channel == "tcpws" {
+			tm.backupFresh.Add(1)
+		}
+		return
+	}
+	sc.RecordAvailability(true, now)
+	if channel == "tcpws" {
+		tm.backupFresh.Add(1)
+		if rtt > 0 {
+			minRTT := tm.updateTCPWSMinEchoRTT(rtt)
+			sc.RecordQuality(QualityFromEchoRTT(rtt, minRTT), now)
+		}
+	}
+}
+
+// evaluateSelector reads scores + selector state under tm.mu and applies the
+// hysteresis FSM's decision (selectorStep, Task 2). Called lazily at the end
+// of every Dial*/Handshake call (Phase 1 — a later echoLoop will drive this
+// on its own cadence instead of piggy-backing on traffic).
+func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
+	tm.mu.Lock()
+	var consecFails int32
+	if qc, ok := tm.primary.(*QUICClient); ok {
+		consecFails = qc.ConsecConnFails()
+	}
+	in := selectorInput{
+		now:               now,
+		scoreQUIC:         tm.scoreQUIC.Value(now),
+		scoreTCPWS:        tm.scoreTCPWS.Value(now),
+		consecConnFails:   consecFails,
+		backupFresh:       int(tm.backupFresh.Load()),
+		quicEchoRecovered: tm.quicEchoRecovered.Load(),
+	}
+	newState, decision := selectorStep(tm.selState, in)
+	tm.selState = newState
+	tm.mu.Unlock()
+
+	switch decision {
+	case channelSwitchToTCPWS:
+		reason := "quic-quality-degraded"
+		if in.consecConnFails >= quicConnFailThreshold {
+			reason = "quic-handshake-threshold"
+		}
+		slog.Warn("wire: switching to TCP-WS", "reason", reason, "scoreQUIC", in.scoreQUIC, "scoreTCPWS", in.scoreTCPWS)
+		slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", reason)
+	case channelSwitchToQUIC:
+		slog.Info("wire: rolling back to QUIC (echo-verified)", "scoreQUIC", in.scoreQUIC, "scoreTCPWS", in.scoreTCPWS)
+		slog.Info("DIAG: transport-switch", "from", "tcpws", "to", "quic", "reason", "quic-recovered")
+	}
+	return decision
 }
 
 // SetPrimary sets the primary transport with its type label.
@@ -218,13 +399,17 @@ func (tm *TransportManager) PrimaryType() string {
 }
 
 // ReplacePrimary hot-swaps the primary transport during runtime re-race.
+// The new primary is unrelated to whatever the old one was doing, so the
+// selector resets to "quic" and any echo-verification from the old primary
+// is discarded — it says nothing about the new one.
 func (tm *TransportManager) ReplacePrimary(d Dialer, transportType string) {
 	tm.mu.Lock()
 	old := tm.primary
 	tm.primary = d
 	tm.primaryType = transportType
-	tm.fallbackActive.Store(false)
+	tm.selState = selectorState{active: "quic"}
 	tm.mu.Unlock()
+	tm.quicEchoRecovered.Store(false)
 
 	// Close old primary outside lock (Rule #4).
 	if old != nil {
@@ -259,18 +444,16 @@ func (tm *TransportManager) SwapTCPWS(d Dialer) Dialer {
 	return old
 }
 
-// recordQuicSuccess clears fallback state when QUIC succeeds.
+// recordQuicSuccess resets the QUIC handshake failure streak after a
+// successful dial. It deliberately does NOT clear fallback — recovery from
+// tcpws back to quic requires echo verification (evaluateSelector +
+// quicEchoRecovered), never a bare handshake/dial success (root cause A).
 func (tm *TransportManager) recordQuicSuccess() {
 	tm.mu.RLock()
-	if qc, ok := tm.primary.(*QUICClient); ok {
-		qc.RecordSuccess()
-	}
+	qc, ok := tm.primary.(*QUICClient)
 	tm.mu.RUnlock()
-
-	wasFallback := tm.fallbackActive.Swap(false)
-	if wasFallback {
-		slog.Info("wire: QUIC recovered from fallback")
-		slog.Info("DIAG: transport-switch", "from", "tcpws", "to", "quic", "reason", "quic-recovered")
+	if ok {
+		qc.RecordSuccess()
 	}
 }
 
@@ -279,21 +462,35 @@ func (tm *TransportManager) SetFallbackActive(active bool) {
 	tm.SetFallbackActiveWithReason(active, "quic-handshake-threshold")
 }
 
-// SetFallbackActiveWithReason sets or clears fallback with a specific reason for diagnostics.
+// SetFallbackActiveWithReason sets or clears fallback with a specific reason
+// for diagnostics. Compat shim over selState: still needed for the
+// race-lost QUICBackup install path (engine.go installs QUIC as primary
+// with fallback=true when tcpws won the transport race) and for manual
+// overrides. Idempotent — calling with the same value twice does not
+// re-trigger flap bookkeeping or logging.
 func (tm *TransportManager) SetFallbackActiveWithReason(active bool, reason string) {
+	tm.mu.Lock()
+	var didSwitch bool
 	if active {
-		if tm.fallbackActive.CompareAndSwap(false, true) {
-			slog.Warn("wire: QUIC fallback activated", "reason", reason)
-			slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", reason)
+		if tm.selState.active != "tcpws" {
+			tm.selState = switchAway(tm.selState, time.Now())
+			didSwitch = true
 		}
-	} else {
-		tm.fallbackActive.Store(false)
+	} else if tm.selState.active != "quic" {
+		tm.selState.active = "quic"
+		tm.selState.aboveSince = time.Time{}
+	}
+	tm.mu.Unlock()
+
+	if active && didSwitch {
+		slog.Warn("wire: QUIC fallback activated", "reason", reason)
+		slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", reason)
 	}
 }
 
 // FallbackActive returns whether QUIC has failed and TCP-WS is serving traffic.
 func (tm *TransportManager) FallbackActive() bool {
-	return tm.fallbackActive.Load()
+	return tm.ActiveChannel() == "tcpws"
 }
 
 // DialTCP opens a TCP proxy connection.
@@ -301,35 +498,42 @@ func (tm *TransportManager) FallbackActive() bool {
 func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	tm.mu.RLock()
 	primary := tm.primary
+	primaryType := tm.primaryType
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
+
+	active := tm.ActiveChannel()
+	primaryChannel := channelForType(primaryType)
 
 	slog.Debug("TransportManager: DialTCP", "addr", addr, "hasPrimary", primary != nil, "hasTCPWS", tcpws != nil)
 
 	var primaryErr error
 
 	// Try primary first (preferred), skip if fallback is active.
-	if primary != nil && !tm.fallbackActive.Load() {
+	if primary != nil && active != "tcpws" {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
 		slog.Debug("TransportManager: trying primary first")
 		conn, err := primary.DialTCP(quicCtx, addr, earlyData)
 		quicCancel()
+		now := time.Now()
+		tm.recordDialOutcome(primaryChannel, err, now)
 		if err == nil {
-			tm.recordQuicSuccess()
+			if qc, ok := primary.(*QUICClient); ok {
+				qc.RecordSuccess()
+			}
+			tm.evaluateSelector(now)
 			return conn, nil
 		}
 		// Server responded with error — transport worked, proxy layer failed.
 		// TCP-WS hits the same server; fallback won't help.
 		if isProxyLayerError(err) {
 			slog.Debug("TransportManager: primary proxy error, skipping TCP-WS", "err", err)
+			tm.evaluateSelector(now)
 			return nil, err
 		}
 
 		slog.Debug("TransportManager: primary transport error, trying TCP-WS", "err", err)
 		primaryErr = err
-		if qc, ok := primary.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
-			tm.SetFallbackActive(true)
-		}
 	} else if primary != nil {
 		slog.Debug("TransportManager: primary skipped, fallback active")
 	}
@@ -338,6 +542,9 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 	if tcpws != nil {
 		slog.Debug("TransportManager: trying TCP-WS fallback")
 		conn, err := tcpws.DialTCP(ctx, addr, earlyData)
+		now := time.Now()
+		tm.recordDialOutcome("tcpws", err, now)
+		tm.evaluateSelector(now)
 		if err == nil {
 			return conn, nil
 		}
@@ -348,6 +555,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 		return nil, fmt.Errorf("TCP-WS: %w", err)
 	}
 
+	tm.evaluateSelector(time.Now())
 	if primaryErr != nil {
 		return nil, fmt.Errorf("QUIC: %w", primaryErr)
 	}
@@ -356,40 +564,47 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 
 // DialUDP opens a UDP proxy connection.
 // Prefers QUIC (datagram), falls back to TCP-WS (smux stream).
-// ErrDatagramRelayUnhealthy is not counted as a QUIC transport failure (F1 handles it).
+// ErrDatagramRelayUnhealthy is not counted as a QUIC transport failure (F1
+// handles it) — it is a relay-layer signal, orthogonal to transport
+// availability, so it is excluded from recordDialOutcome entirely (neither
+// success nor failure).
 func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	tm.mu.RLock()
 	primary := tm.primary
+	primaryType := tm.primaryType
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
+
+	active := tm.ActiveChannel()
+	primaryChannel := channelForType(primaryType)
 
 	slog.Debug("TransportManager: DialUDP", "addr", addr, "hasPrimary", primary != nil, "hasTCPWS", tcpws != nil)
 
 	var primaryErr error
 
-	if primary != nil && !tm.fallbackActive.Load() {
+	if primary != nil && active != "tcpws" {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
 		slog.Debug("TransportManager: trying primary for UDP")
 		conn, err := primary.DialUDP(quicCtx, addr)
 		quicCancel()
+		now := time.Now()
+		if !errors.Is(err, ErrDatagramRelayUnhealthy) {
+			tm.recordDialOutcome(primaryChannel, err, now)
+		}
 		if err == nil {
-			// Don't call recordQuicSuccess() here. QUIC datagram success
-			// doesn't prove the TCP stream path works. Let DialTCP manage
-			// its own recovery when TCP actually succeeds.
 			slog.Debug("TransportManager: primary UDP success", "addr", addr)
+			tm.evaluateSelector(now)
 			return conn, nil
 		}
 		// Server responded with error — transport worked, proxy layer failed.
 		if isProxyLayerError(err) {
 			slog.Debug("TransportManager: primary UDP proxy error, skipping TCP-WS", "err", err)
+			tm.evaluateSelector(now)
 			return nil, err
 		}
 
 		slog.Debug("TransportManager: primary UDP transport error, trying TCP-WS", "err", err)
 		primaryErr = err
-		if qc, ok := primary.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
-			tm.SetFallbackActive(true)
-		}
 	} else if primary != nil {
 		slog.Debug("TransportManager: primary UDP skipped, fallback active")
 	}
@@ -397,6 +612,9 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 	if tcpws != nil {
 		slog.Debug("TransportManager: trying TCP-WS for UDP fallback")
 		conn, err := tcpws.DialUDP(ctx, addr)
+		now := time.Now()
+		tm.recordDialOutcome("tcpws", err, now)
+		tm.evaluateSelector(now)
 		if err == nil {
 			slog.Debug("TransportManager: TCP-WS UDP success", "addr", addr)
 			return conn, nil
@@ -408,6 +626,7 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 		return nil, fmt.Errorf("TCP-WS: %w", err)
 	}
 
+	tm.evaluateSelector(time.Now())
 	if primaryErr != nil {
 		return nil, fmt.Errorf("QUIC: %w", primaryErr)
 	}
@@ -419,32 +638,40 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 func (tm *TransportManager) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	tm.mu.RLock()
 	primary := tm.primary
+	primaryType := tm.primaryType
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
+
+	active := tm.ActiveChannel()
+	primaryChannel := channelForType(primaryType)
 
 	slog.Debug("TransportManager: DialStreamUDP", "addr", addr, "hasPrimary", primary != nil, "hasTCPWS", tcpws != nil)
 
 	var primaryErr error
 
-	if primary != nil && !tm.fallbackActive.Load() {
+	if primary != nil && active != "tcpws" {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
 		conn, err := primary.DialStreamUDP(quicCtx, addr)
 		quicCancel()
+		now := time.Now()
+		tm.recordDialOutcome(primaryChannel, err, now)
 		if err == nil {
+			tm.evaluateSelector(now)
 			return conn, nil
 		}
 		if isProxyLayerError(err) {
+			tm.evaluateSelector(now)
 			return nil, err
 		}
 		slog.Debug("TransportManager: primary stream UDP failed, trying TCP-WS", "err", err)
 		primaryErr = err
-		if qc, ok := primary.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
-			tm.SetFallbackActive(true)
-		}
 	}
 
 	if tcpws != nil {
 		conn, err := tcpws.DialStreamUDP(ctx, addr)
+		now := time.Now()
+		tm.recordDialOutcome("tcpws", err, now)
+		tm.evaluateSelector(now)
 		if err == nil {
 			return conn, nil
 		}
@@ -454,6 +681,7 @@ func (tm *TransportManager) DialStreamUDP(ctx context.Context, addr string) (net
 		return nil, fmt.Errorf("TCP-WS: %w", err)
 	}
 
+	tm.evaluateSelector(time.Now())
 	if primaryErr != nil {
 		return nil, fmt.Errorf("QUIC: %w", primaryErr)
 	}
@@ -474,27 +702,30 @@ func (tm *TransportManager) Handshake(ctx context.Context) error {
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
 
+	active := tm.ActiveChannel()
+
 	slog.Debug("TransportManager: Handshake", "hasPrimary", primary != nil, "hasTCPWS", tcpws != nil)
 
 	var primaryErr error
 
 	// Try primary first (preferred), skip if fallback is active.
-	if primary != nil && !tm.fallbackActive.Load() {
+	if primary != nil && active != "tcpws" {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
 		slog.Debug("TransportManager: Handshake trying primary")
 		if qc, ok := primary.(*QUICClient); ok {
 			_, err := qc.connect(quicCtx)
 			quicCancel()
+			now := time.Now()
+			tm.recordDialOutcome("quic", err, now)
 			if err == nil {
-				tm.recordQuicSuccess()
+				qc.RecordSuccess()
+				tm.evaluateSelector(now)
 				slog.Info("TransportManager: Handshake primary ok")
 				return nil
 			}
 			slog.Debug("TransportManager: Handshake primary failed", "err", err)
 			primaryErr = err
-			if qc.ConsecConnFails() >= quicConnFailThreshold {
-				tm.SetFallbackActive(true)
-			}
+			tm.evaluateSelector(now)
 		} else {
 			quicCancel()
 		}
@@ -505,6 +736,9 @@ func (tm *TransportManager) Handshake(ctx context.Context) error {
 		slog.Debug("TransportManager: Handshake trying TCP-WS")
 		if tc, ok := tcpws.(*TCPWSClient); ok {
 			_, err := tc.connect(ctx)
+			now := time.Now()
+			tm.recordDialOutcome("tcpws", err, now)
+			tm.evaluateSelector(now)
 			if err == nil {
 				slog.Info("TransportManager: Handshake TCP-WS ok")
 				return nil
@@ -580,36 +814,90 @@ func (tm *TransportManager) quicProbeLoop(ctx context.Context) {
 			return
 		case <-time.After(quicProbeInterval):
 		}
+		tm.runProbeOnce(ctx)
+	}
+}
 
-		if !tm.fallbackActive.Load() {
-			continue
-		}
+// runProbeOnce executes one recovery-probe cycle: while tcpws is serving
+// traffic, attempt a fresh QUIC handshake, then echo-verify the data path
+// with 3 consecutive rounds. Only echo-verified recovery is eligible for
+// rollback — evaluateSelector (not this probe) owns the actual switch
+// decision. This is the root cause A fix: the old probe cleared fallback
+// right after a bare handshake success; this one requires the data path to
+// also prove itself before quicEchoRecovered is ever set.
+//
+// All connect + echo I/O happens without tm.mu held (check-release-act
+// pattern): tm.primary is read once under RLock, then every blocking call
+// runs unlocked.
+func (tm *TransportManager) runProbeOnce(ctx context.Context) {
+	if !tm.FallbackActive() {
+		return
+	}
 
-		tm.mu.RLock()
-		p := tm.primary
-		tm.mu.RUnlock()
+	tm.mu.RLock()
+	p := tm.primary
+	tm.mu.RUnlock()
+	if p == nil {
+		return
+	}
 
-		qc, ok := p.(*QUICClient)
-		if !ok || qc == nil {
-			continue
-		}
-
-		// Reset stale QUIC connection before probing — existing conn is dead.
+	// Force a fresh handshake attempt for the real QUICClient — any cached
+	// connection is presumed dead (that's why we're in fallback).
+	if qc, ok := p.(*QUICClient); ok {
 		qc.resetConnection()
-
 		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		_, err := qc.connect(probeCtx)
 		cancel()
-
-		if err == nil {
-			slog.Info("wire: QUIC probe succeeded, clearing fallback")
-			tm.recordQuicSuccess()
-		} else {
-			slog.Debug("wire: QUIC probe failed", "err", err)
-			// connect() increments handshakeFailStreak, but that's harmless —
-			// fallbackActive is already true, so the threshold check is a no-op.
+		now := time.Now()
+		tm.recordDialOutcome("quic", err, now)
+		if err != nil {
+			slog.Debug("wire: QUIC probe handshake failed", "err", err)
+			tm.quicEchoRecovered.Store(false)
+			return
 		}
 	}
+
+	prober, ok := p.(EchoProber)
+	if !ok {
+		// No data-path verification available for this dialer — cannot
+		// echo-verify recovery, so it can never be eligible for rollback.
+		tm.quicEchoRecovered.Store(false)
+		return
+	}
+
+	echoOK := true
+	for i := 0; i < 3; i++ {
+		echoCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := prober.RunEchoProbe(echoCtx)
+		cancel()
+		tm.RecordEchoResult("quic", 0, err, time.Now())
+		if err != nil && !IsEchoUnsupported(err) {
+			echoOK = false
+			break
+		}
+	}
+	tm.quicEchoRecovered.Store(echoOK)
+	if echoOK {
+		slog.Info("wire: QUIC probe echo-verified, eligible for rollback")
+	} else {
+		slog.Debug("wire: QUIC probe echo verification failed")
+	}
+	// NOTE: do NOT clear fallback here — evaluateSelector owns the switch
+	// decision (reads quicEchoRecovered + scores + the flap-damping window).
+}
+
+// forceActiveForTest sets the selector's active channel directly, bypassing
+// the hysteresis FSM. Test-only.
+func (tm *TransportManager) forceActiveForTest(channel string) {
+	tm.mu.Lock()
+	tm.selState = selectorState{active: channel}
+	tm.mu.Unlock()
+}
+
+// runProbeOnceForTest runs exactly one probe cycle synchronously, bypassing
+// the quicProbeInterval ticker. Test-only.
+func (tm *TransportManager) runProbeOnceForTest(ctx context.Context) {
+	tm.runProbeOnce(ctx)
 }
 
 // Reset implements the Dialer Reset contract: resets cached connections on
@@ -617,7 +905,7 @@ func (tm *TransportManager) quicProbeLoop(ctx context.Context) {
 // a fresh chance on the next dial. Called by engine on network change.
 func (tm *TransportManager) Reset() {
 	slog.Debug("wire: connections reset",
-		"wasFallback", tm.fallbackActive.Load(),
+		"wasFallback", tm.FallbackActive(),
 	)
 	tm.mu.RLock()
 	p := tm.primary
@@ -631,7 +919,11 @@ func (tm *TransportManager) Reset() {
 		t.Reset()
 	}
 
-	tm.fallbackActive.Store(false)
+	tm.mu.Lock()
+	tm.selState = selectorState{active: "quic"}
+	tm.mu.Unlock()
+	tm.quicEchoRecovered.Store(false)
+	tm.backupFresh.Store(0)
 	tm.freshAfterReset.Store(true)
 }
 
@@ -654,7 +946,7 @@ func (tm *TransportManager) WireStats() WireStats {
 	p, t := tm.primary, tm.tcpws
 	tm.mu.RUnlock()
 
-	if tm.fallbackActive.Load() {
+	if tm.ActiveChannel() == "tcpws" {
 		if sp, ok := t.(StatsProvider); ok {
 			ws := sp.WireStats()
 			ws.WireFallback = true
@@ -663,7 +955,11 @@ func (tm *TransportManager) WireStats() WireStats {
 	}
 
 	if sp, ok := p.(StatsProvider); ok {
-		return sp.WireStats()
+		ws := sp.WireStats()
+		if ws.Transport == "quic" {
+			tm.RecordQUICStats(ws, time.Now())
+		}
+		return ws
 	}
 	if sp, ok := t.(StatsProvider); ok {
 		return sp.WireStats()

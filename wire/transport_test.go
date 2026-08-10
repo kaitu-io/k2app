@@ -291,7 +291,7 @@ func TestTransportManager_Reset(t *testing.T) {
 			tm.Reset()
 
 			// Verify fallback state cleared.
-			if tm.fallbackActive.Load() {
+			if tm.FallbackActive() {
 				t.Error("fallbackActive should be false after reset")
 			}
 		})
