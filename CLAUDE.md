@@ -79,7 +79,7 @@ Reserved event names:
 | `DIAG: proxy-dial-slow` | INFO | latency > 3s | dest, transport, latencyMs |
 | `DIAG: quic-handshake-fail` | WARN | on handshake error | addr, consecutiveFails, err |
 | `DIAG: transport-switch` | WARN | on QUIC↔TCP-WS transition (real reasons, see `wire/CLAUDE.md` transport.go: `quic-quality-degraded`/`quic-handshake-threshold` switch-away, `quic-recovered` echo-verified switch-back, `quic-race-lost` tcpws won the initial transport race, `flap-damped` — **not an actual transition**, `from`==`to`=="tcpws", logged when a rollback is blocked purely by the flap-damping window) | from, to, reason |
-| `DIAG: channel-review` | INFO | on each rollback-review evaluation while tcpws is active, rate-limited to at most once per review window (plus one unconditional log the moment the decision is the actual rollback) | activeChannel, scoreQuic, scoreTcpws, flapCount, nextReviewInS, decision |
+| `DIAG: channel-review` | INFO | on each rollback-review evaluation while tcpws is active, rate-limited to at most once per review window (plus one unconditional log the moment the decision is the actual rollback) | activeChannel, scoreQuic, scoreTcpws, flapCount, nextReviewInS, decision (`stay` \| `switch-to-quic` — this event is emitted only from the rollback branch, so there is no `switch-to-tcpws` value; a switch-away shows up as `DIAG: transport-switch` instead) |
 | `DIAG: udp-relay-timeout` | WARN | consecutive > 2 | consecutiveCount, threshold |
 | `DIAG: conn-highwater` | INFO | active > 100 | tcpCount, udpCount |
 | `DIAG: wire-handshake` | INFO | handshake probe ok | handshakeMs, transport |

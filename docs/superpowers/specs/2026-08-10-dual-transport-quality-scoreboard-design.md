@@ -182,6 +182,12 @@ quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT �
 - 改为：探测结果除了喂 `echoStep`（re-race 用），**同时喂对应通道的 ChannelScore.Update**。备用通道按 §3.3 频率也探测并更新其分数。
 - re-race 语义**保留但收窄**：echo 3 击仍触发 `reRaceChan`，但语义明确为"**当前活跃通道也救不了 → 换服务器/端口**"这个正交维度。通道内 QUIC↔TCPWS 的切换由 §3.2 channelSelector 独立负责，不再经过 re-race。这解开根因 C 的两机制冲突。
 
+> **实现校正（final review I1/I4 —— 以此段为准，上一条是设计意图）**：re-race 并没有、也不需要退出通道维度，因为它跑的是全量 `RaceTransport`；真正会踩踏 channelSelector 的是**特定拓扑下的击数累加**，所以收窄落在 `probeOnce` 的 strike 门（`suppressStrike`，engine/health.go），而不是 `reRaceChan` 本身：
+> - **fallback 期间 primary 仍是 QUIC**（`ActiveChannel()=="tcpws"` 且 `primaryChannel=="quic"`）：这条路已知是死的（正因为死了才切走），它的 echo 超时不再累加击数。否则数秒内 3 击 → re-race → `RaceTransport` 关掉 echo 失败的 QUIC 且不保留 backup → `ReplacePrimary(tcpws)` 抹掉 selector 的整个 fallback 状态（flap 历史、`quicEchoRecovered`、回滚机制），用户**再也回不到 QUIC**；半死场景里 re-race 几乎总是跑赢 10s 的质量路径。该路径的恢复由 wire `runProbeOnce` 独占。
+> - **primary 就是 tcpws 且 `TCPRecentlyHealthy(30s)`**：本分支让 `TCPWSClient` 成了 `EchoProber`，tcpws primary 首次进入 1-16s / 2s 超时的探测表；8 字节 echo 与大流量共用同一条 TCP 连接，HoL 阻塞下连续 3 次超过 2s 完全可能发生在一条工作正常的连接上，而 re-race 会关掉正在服务传输的那个会话。
+> - 两条门**都只拦击数，不拦记分**：`RecordEchoResult` 照常喂分数，selector 和 heartbeat 仍看得见真实劣化。没有近期 TCP 成功证据时，tcpws 击数照常累加。
+> - 其余 echo 死亡照旧触发 re-race —— 这正是它"通道选择已经救不了这个 outbound"的本职。
+
 ### 4.3 兜底不变
 
 两通道都烂时：channelSelector 不空转（维持当前通道），healthMonitor 现有 `HealthCritical → maybeAct → onReconnect`（`health.go:404`，10s cooldown + TCP health gate）路径兜底全量重连。职责不重叠：channelSelector 管"选哪条"，healthMonitor 管"都不行就整体重连"。
@@ -193,8 +199,8 @@ quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT �
 沿用 `DIAG:` 三层宪法（`k2/CLAUDE.md`）。
 
 - `DIAG: heartbeat` 新增字段：`scoreQuic`、`scoreTcpws`、`activeChannel`（进 `HealthSnapshot` → ring → 桌面 SSE，工单可查）。
-- `DIAG: transport-switch` 的 `reason` 扩展枚举：`score-degraded`（质量切走）、`score-recovered`（echo 验证后切回）、`quic-handshake-threshold`（保留）、`flap-damped`（想切回但被观察窗口拦，WARN 一次/窗口）。
-- 新增 `DIAG: channel-review`（INFO，阈值门控：仅每次回滚评审发生时记录）—— 字段 `activeChannel, scoreQuic, scoreTcpws, flapCount, nextReviewInS, decision`。加入 `k2/CLAUDE.md` 保留事件名表。
+- `DIAG: transport-switch` 的 `reason` 扩展枚举（**以落地名为准**）：`quic-quality-degraded`（质量切走）、`quic-recovered`（echo 验证后切回）、`quic-handshake-threshold`（保留）、`quic-race-lost`（tcpws 赢下初始竞速，QUIC 以 fallback 态装为 primary）、`flap-damped`（想切回但被观察窗口拦，WARN 一次/窗口）。设计稿早期写的 `score-degraded` / `score-recovered` **没有落地**，勿据此写 grep/告警。
+- 新增 `DIAG: channel-review`（INFO，阈值门控：仅每次回滚评审发生时记录）—— 字段 `activeChannel, scoreQuic, scoreTcpws, flapCount, nextReviewInS, decision`；`decision` 取值 `stay` / `switch-to-quic`（该事件只从回滚分支发出，没有 `switch-to-tcpws`）。加入 `k2/CLAUDE.md` 保留事件名表。
 
 ---
 
@@ -207,7 +213,7 @@ quality_tcpws= clamp(minEchoRtt / echoRtt, 0, 1)                    # echo RTT �
 | 两通道都烂 | channelSelector 维持现状 + healthMonitor critical 全量重连兜底 |
 | UDP relay 不健康 | `ErrDatagramRelayUnhealthy` 照旧 per-request stream 降级，**不计入** ChannelScore availability（relay 层不驱动 wire 层，遵守 VOCABULARY.md） |
 | 节点出不了网（proxy-layer 全灭） | **不计入** ChannelScore（换通道无用）；由正交的节点可用性检测处理（§1.2b）。dial 计数器已在 `core/ClientTunnel`（f70b71a），wire 层不重复 |
-| 网络切换 Reset | `channelSelector.Reset()` 清 flapCount/窗口/分数 EWMA；`freshAfterReset` 语义保留 |
+| 网络切换 Reset | `TransportManager.Reset()` 清 flapCount/窗口/`quicEchoRecovered`/`backupFresh`/两条分数 EWMA（`ChannelScore.Reset`，保留 `probeInterval`）**以及 `tcpwsMinEchoRTT` 棘轮**；`freshAfterReset` 语义保留。棘轮是必须项：EWMA 还能靠 staleness 衰减回中性，最小 RTT 只降不升、永不衰减，5ms 局域网基线带进 80ms 移动网会把 `QualityFromEchoRTT` 钉在 ~0.06，进程余生质量路径静默失效 |
 | Stop 期间切换 TOCTOU | 沿用现有 P2 已知风险边界（QUIC idle 30s 回收），不新增未受保护路径 |
 
 ---

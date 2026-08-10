@@ -75,6 +75,20 @@ func (s *ChannelScore) RecordQuality(q float64, now time.Time) {
 	s.mu.Unlock()
 }
 
+// Reset clears both EWMA components back to "no data yet" — the state a
+// freshly constructed ChannelScore is in, where Value() returns
+// neutral×neutral. Called by TransportManager.Reset on a network change:
+// every sample in here was measured on the OLD network path and says nothing
+// about the new one (spec §6, "网络切换 Reset"). probeInterval is deliberately
+// preserved: it describes the cadence the probe loops are currently running
+// at, which a network change does not alter.
+func (s *ChannelScore) Reset() {
+	s.mu.Lock()
+	s.avail, s.availInit, s.availAt = 0, false, time.Time{}
+	s.quality, s.qualityInit, s.qualityAt = 0, false, time.Time{}
+	s.mu.Unlock()
+}
+
 // SetProbeInterval updates the cadence used for staleness gating.
 func (s *ChannelScore) SetProbeInterval(d time.Duration) {
 	if d <= 0 {

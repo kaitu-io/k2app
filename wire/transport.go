@@ -107,15 +107,41 @@ type selectorInput struct {
 	now               time.Time
 	scoreQUIC         float64
 	scoreTCPWS        float64
-	consecConnFails   int32 // QUIC handshake streak (fast path)
-	backupFresh       int   // fresh backup samples since degradation pre-warning
-	quicEchoRecovered bool  // background probe passed handshake + 3 echo rounds
+	consecConnFails   int32  // QUIC handshake streak (fast path)
+	backupFresh       int    // fresh backup samples since degradation pre-warning
+	quicEchoRecovered bool   // background probe passed handshake + 3 echo rounds
+	primaryChannel    string // channelForType(primaryType): which channel tm.primary actually is
 }
 
 // selectorStep is the pure transition. No time.Now, no I/O, no logging.
 func selectorStep(st selectorState, in selectorInput) (selectorState, channelDecision) {
 	if st.active != "tcpws" {
 		// QUIC branch (default: empty string is treated as QUIC).
+		//
+		// Topology gate (final-review C1): this whole branch decides whether to
+		// switch AWAY FROM the quic channel — which presupposes that a quic
+		// channel exists. When tcpws won the startup race outright,
+		// setupOutboundTransport installs the SAME *TCPWSClient as both
+		// tm.primary and tm.tcpws while selState.active still defaults to
+		// "quic"; the same shape arises after a re-race lands on tcpws
+		// (ReplacePrimary resets active to "quic"). In that topology
+		// scoreTCPWS is measured (~1.0, fed by the primary's own dials and
+		// echoes) while scoreQUIC has no source at all and sits at the neutral
+		// 0.25 floor, so `scoreTCPWS > scoreQUIC×1.5` holds permanently: the
+		// FSM would "switch away" from a QUIC channel that does not exist,
+		// flip FallbackActive, and log a fabricated
+		// `transport-switch reason=quic-quality-degraded`. Stay put instead —
+		// with no quic dialer there is nothing to switch away from, and the
+		// per-request fallback in Dial* is unaffected either way.
+		//
+		// channelForType only ever yields "quic" or "tcpws", so the production
+		// caller (evaluateSelector) always fills this in; the zero value is
+		// reserved for selectorStep's own pure unit tests, which pin the FSM's
+		// score/time algebra on the normal quic-primary topology.
+		if in.primaryChannel == "tcpws" {
+			return st, channelStay
+		}
+
 		// Fast path: handshake genuinely failing (UDP blocked).
 		if in.consecConnFails >= quicConnFailThreshold {
 			return switchAway(st, in.now), channelSwitchToTCPWS
@@ -148,11 +174,17 @@ func selectorStep(st selectorState, in selectorInput) (selectorState, channelDec
 	// it as soon as the data path is echo-verified healthy (quicEchoRecovered:
 	// a fresh handshake + 3 consecutive echo rounds, set by runProbeOnce),
 	// gated only by the growing flap-damping window. Deliberately NO score
-	// comparison: while tcpws serves traffic QUIC carries none, so its quality
-	// is unmeasurable and scoreQUIC is pinned at neutral — a `scoreQUIC >
-	// scoreTCPWS × k` gate is impossible to satisfy against a healthy tcpws and
-	// would strand users on the stateful fallback forever. Anti-thrash is the
-	// 3-round echo proof + nextReviewAt (30s→600s), not scores.
+	// comparison: while tcpws serves traffic QUIC carries no user traffic, so
+	// its QUALITY component has no source (RecordQUICStats is CC-driven and
+	// only fires for the active QUIC path) and stays pinned at neutral,
+	// capping scoreQUIC at ≤0.5 — a `scoreQUIC > scoreTCPWS × k` gate is
+	// impossible to satisfy against a healthy tcpws and would strand users on
+	// the stateful fallback forever. (scoreQUIC is not frozen outright: the
+	// AVAILABILITY component keeps moving, because runProbeOnce records its
+	// handshake and echo outcomes under the "quic" channel. That is the whole
+	// point — but availability alone can never lift Value above 0.5.)
+	// Anti-thrash is the 3-round echo proof + nextReviewAt (30s→600s), not
+	// scores.
 	if in.now.Before(st.nextReviewAt) {
 		return st, channelStay // flap-damped
 	}
@@ -219,15 +251,29 @@ type TransportManager struct {
 	// probe that only completes the handshake must never clear fallback).
 	quicEchoRecovered atomic.Bool
 
-	// backupFresh counts tcpws-channel samples ever recorded (dial or
-	// echo). Gates the quality-path switch-away so a single lucky/unlucky
-	// tcpws sample right after cold start can't flip the transport.
+	// backupFresh counts tcpws-channel samples (dial or echo) recorded since
+	// the last Reset. Gates the quality-path switch-away so a single
+	// lucky/unlucky tcpws sample right after cold start can't flip the
+	// transport. Despite the name it is a MONOTONIC SINCE-RESET counter, not a
+	// windowed one: it only ever grows until Reset zeroes it, so on a
+	// long-lived process (mobile especially) samples from hours ago keep the
+	// gate permanently satisfied. That is a known follow-up, not a bug in the
+	// gate's cold-start purpose — recency of the tcpws SIGNAL is enforced
+	// separately, by ChannelScore's own staleness gating.
 	backupFresh atomic.Int32
 
 	// tcpwsMinEchoRTT is the running minimum echo RTT observed on the
 	// tcpws channel — the baseline for QualityFromEchoRTT (tcpws has no
 	// congestion-control stats, unlike QUIC).
 	tcpwsMinEchoRTT atomic.Int64 // ns; 0 = unset
+
+	// tcpwsLastTCPOKAt is when a real user TCP stream last succeeded over the
+	// tcpws dialer — the tcpws-channel counterpart of QUICClient's
+	// lastTCPSuccessAt, and the evidence TCPRecentlyHealthy reports when the
+	// primary is a *TCPWSClient rather than a *QUICClient. Written on the
+	// success paths of DialTCP only (a stream that carried a request is the
+	// signal; UDP sessions and handshakes are not).
+	tcpwsLastTCPOKAt atomic.Int64 // UnixNano; 0 = never
 
 	// Post-reset grace: first QUIC dial after Reset gets extended budget.
 	freshAfterReset atomic.Bool
@@ -446,6 +492,7 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 		consecConnFails:   consecFails,
 		backupFresh:       int(tm.backupFresh.Load()),
 		quicEchoRecovered: tm.quicEchoRecovered.Load(),
+		primaryChannel:    channelForType(tm.primaryType),
 	}
 	newState, decision := selectorStep(tm.selState, in)
 	tm.selState = newState
@@ -687,6 +734,11 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 		if err == nil {
 			if qc, ok := primary.(*QUICClient); ok {
 				qc.RecordSuccess()
+			} else if primaryChannel == "tcpws" {
+				// tcpws-as-primary: QUICClient's own lastTCPSuccessAt can't
+				// speak for this dialer — record here so TCPRecentlyHealthy
+				// has an answer for it too.
+				tm.recordTCPWSTCPSuccess(now)
 			}
 			tm.evaluateSelector(now)
 			return conn, nil
@@ -713,6 +765,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 		tm.recordDialOutcome("tcpws", err, now)
 		tm.evaluateSelector(now)
 		if err == nil {
+			tm.recordTCPWSTCPSuccess(now)
 			return conn, nil
 		}
 		slog.Debug("TransportManager: TCP-WS failed", "err", err)
@@ -1003,8 +1056,25 @@ func (tm *TransportManager) runProbeOnce(ctx context.Context) {
 
 	tm.mu.RLock()
 	p := tm.primary
+	primaryChannel := channelForType(tm.primaryType)
 	tm.mu.RUnlock()
 	if p == nil {
+		return
+	}
+
+	// This is the QUIC RECOVERY probe: everything below records under the
+	// hardcoded "quic" channel and, on success, arms quicEchoRecovered — the
+	// single gate evaluateSelector uses to roll tcpws→quic back. If the
+	// primary is not the quic channel there is nothing to recover, and running
+	// anyway would (a) echo-probe the tcpws primary that engine's own
+	// echoProbeLoop is already probing, (b) record those tcpws samples as QUIC
+	// availability, and (c) arm a rollback to a QUIC dialer that does not
+	// exist — the fabricated `transport-switch reason=quic-recovered` half of
+	// final-review C1. The pre-rewrite loop had this guard as
+	// `qc, ok := p.(*QUICClient); if !ok { continue }`; it is restored here as
+	// an explicit early return so the EchoProber section below can never be
+	// reached by a non-QUIC primary.
+	if primaryChannel != "quic" {
 		return
 	}
 
@@ -1067,6 +1137,19 @@ func (tm *TransportManager) runProbeOnce(ctx context.Context) {
 			break
 		}
 	}
+	// Freshness re-check (final-review I3): the loop above spends up to ~15s
+	// in unlocked I/O, and evaluateSelector can complete a rollback (and
+	// consume quicEchoRecovered via Store(false)) at any point during it.
+	// Storing unconditionally here would re-arm the flag with THIS episode's
+	// evidence after the episode already ended — so the NEXT fallback would
+	// find a pre-armed flag and roll back without any fresh verification,
+	// which is exactly the invariant (root cause A) this probe exists to
+	// establish. If fallback is no longer active the result is stale by
+	// definition: drop it and let the next episode's probe earn it again.
+	if !tm.FallbackActive() {
+		slog.Debug("wire: QUIC probe result discarded, fallback ended mid-probe", "echoOK", echoOK)
+		return
+	}
 	tm.quicEchoRecovered.Store(echoOK)
 	if echoOK {
 		slog.Info("wire: QUIC probe echo-verified, eligible for rollback")
@@ -1118,10 +1201,32 @@ func (tm *TransportManager) Reset() {
 	tm.quicEchoRecovered.Store(false)
 	tm.backupFresh.Store(0)
 	tm.freshAfterReset.Store(true)
+
+	// Every measurement below was taken on the OLD network path (spec §6,
+	// "网络切换 Reset"). The EWMAs would eventually decay to neutral on their
+	// own via staleness gating (~3× probeInterval), but tcpwsMinEchoRTT is a
+	// monotonic ratchet that NEVER decays: carrying a 5 ms LAN minimum across
+	// a move to an 80 ms mobile path pins QualityFromEchoRTT at ~0.06 for the
+	// rest of the process lifetime, silently disabling the selector's quality
+	// path. Clear both, so the new path is measured from scratch.
+	tm.scoreQUIC.Reset()
+	tm.scoreTCPWS.Reset()
+	tm.tcpwsMinEchoRTT.Store(0)
+	tm.tcpwsLastTCPOKAt.Store(0)
 }
 
-// TCPRecentlyHealthy returns true if a TCP stream succeeded within the given window.
-// Used by health monitor to skip destructive port hops when TCP is working fine.
+// TCPRecentlyHealthy returns true if a TCP stream over the CURRENT PRIMARY
+// succeeded within the given window. Used by engine/health.go to skip
+// destructive corrective action (full reconnect, echo-strike re-race) while
+// the primary is demonstrably still carrying user traffic.
+//
+// Both primary kinds answer for themselves. *QUICClient tracks its own
+// lastTCPSuccessAt (cleared on its Reset). For a *TCPWSClient primary — the
+// topology where tcpws won the startup race outright, or a re-race landed on
+// tcpws — the answer comes from tm.tcpwsLastTCPOKAt, recorded on DialTCP's
+// tcpws success paths. Before that second branch existed this method returned
+// a flat false for every tcpws primary, which made any gate built on it a
+// silent no-op in exactly the topology that needed it (final-review I4).
 func (tm *TransportManager) TCPRecentlyHealthy(window time.Duration) bool {
 	tm.mu.RLock()
 	p := tm.primary
@@ -1129,7 +1234,20 @@ func (tm *TransportManager) TCPRecentlyHealthy(window time.Duration) bool {
 	if qc, ok := p.(*QUICClient); ok {
 		return qc.tcpRecentlyHealthy(window)
 	}
-	return false
+	if p == nil {
+		return false
+	}
+	ts := tm.tcpwsLastTCPOKAt.Load()
+	if ts == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, ts)) < window
+}
+
+// recordTCPWSTCPSuccess marks now as a successful TCP stream over the tcpws
+// dialer. See tcpwsLastTCPOKAt / TCPRecentlyHealthy.
+func (tm *TransportManager) recordTCPWSTCPSuccess(now time.Time) {
+	tm.tcpwsLastTCPOKAt.Store(now.UnixNano())
 }
 
 // WireStats returns stats from the active transport.
@@ -1149,6 +1267,18 @@ func (tm *TransportManager) WireStats() WireStats {
 
 	if sp, ok := p.(StatsProvider); ok {
 		ws := sp.WireStats()
+		// Transport=="quic" is the guard: only the QUIC path has
+		// congestion-control loss/RTT to convert into a quality sample.
+		// PROTECTIVE NOTE — a QUIC WireStats with all-zero CC data (fresh
+		// connection, no RTT sample yet) yields QualityFromLossRTT(0,0,0)=1.0,
+		// and that optimism is deliberate and load-bearing: it is the ONLY
+		// production path that ever initializes scoreQUIC.quality, and until
+		// it fires the staleness gate substitutes neutral 0.5, capping
+		// ScoreQUIC at avail×0.5 ≤ 0.5 — permanently below
+		// qualityDegradeThreshold (0.7), which false-trips the selector's
+		// quality path and pins engine's backup probe to its degraded cadence
+		// on a perfectly healthy outbound. Do NOT "fix" the zero case to
+		// neutral; real measurements overwrite it within one EWMA step.
 		if ws.Transport == "quic" {
 			tm.RecordQUICStats(ws, time.Now())
 		}

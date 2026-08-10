@@ -412,6 +412,16 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 	// so channel choice no longer decides the health grade — only quality
 	// (loss/RTT below) does. A clean TCP-WS naturally lands in the healthy
 	// branch, same as a clean QUIC path.
+	//
+	// Honest scope note: "only quality decides" is a QUIC-path statement.
+	// TCPWSClient.WireStats reports no PacketLossRate and no RTT/MinRTT (there
+	// is no congestion controller to read them from — only UDP-mux drop
+	// counters), so on a TCP-WS-serving outbound both predicates below are
+	// structurally false and this function can only ever return healthy. That
+	// is not an oversight to "fix" with a proxy metric: it means degraded /
+	// critical — and therefore maybeAct's reconnect — are QUIC-path-only
+	// signals today. TCP-WS quality is graded elsewhere, by the echo-RTT
+	// channel score (wire.QualityFromEchoRTT) the selector consumes.
 	highLoss := hm.smoothWireLoss > 0.05
 	veryHighLoss := hm.smoothWireLoss > 0.25
 	highRTT := ws.MinRTT > 0 && ws.RTT > 3*ws.MinRTT
@@ -638,6 +648,61 @@ func echoStep(trust, strikes int32, err error) echoStepResult {
 	}
 }
 
+// echoStrikeTCPHealthyWindow is how far back a successful TCP stream still
+// counts as proof that the primary is carrying traffic. Same window (and same
+// reasoning) as sample()'s TCPRecentlyHealthy call feeding maybeAct: it must
+// comfortably span several echo intervals (ceiling 16s) so a single slow
+// window doesn't look like silence.
+const echoStrikeTCPHealthyWindow = 30 * time.Second
+
+// suppressStrike decides whether an echo FAILURE on the primary must be kept
+// out of the re-race strike counter. Scoring is never affected — the sample
+// still feeds the channel's ChannelScore; only the destructive escalation
+// (3 strikes → reRaceChan → full RaceTransport + ReplacePrimary) is gated.
+// Returns the reason string for the DIAG trail.
+//
+// Two topologies need it, both of them ones where a failing echo is expected
+// rather than informative (final review I1 + I4):
+//
+//   - Fallback is active (tcpws serving) while the primary is still the QUIC
+//     dialer. That QUIC path is known-dead — being dead is precisely why the
+//     selector moved to tcpws — and its recovery is already owned by wire's
+//     runProbeOnce (30s, handshake + 3 echo rounds, quicEchoRecovered). Left
+//     ungated, its echo timeouts strike 3× within seconds and fire a re-race
+//     that closes the QUIC dialer without preserving a backup and calls
+//     ReplacePrimary(tcpws), destroying the FSM's entire fallback state (flap
+//     history, quicEchoRecovered, the rollback machinery) — the re-race
+//     almost always beats the 10s-sustain quality path, so this is what the
+//     half-dead-QUIC scenario actually did before the gate. This is the part
+//     of root cause C ("two uncoordinated switching mechanisms") that the
+//     scoreboard alone did not resolve.
+//
+//   - The primary IS the tcpws channel and TCP streams over it succeeded
+//     recently. TCPWSClient became an EchoProber in this branch, which put
+//     tcpws primaries on the 1-16s trust schedule with a 2s timeout for the
+//     first time. An 8-byte echo shares one TCP connection with bulk
+//     transfer, so under load TCP head-of-line blocking can blow that 2s
+//     three times in a row on a connection that is working fine — and the
+//     re-race would then close the very session serving the transfer.
+//     Recent TCP success is the same "it's actually working, don't touch it"
+//     evidence maybeAct already uses to skip reconnects.
+//
+// When TCP has NOT recently succeeded, tcpws strikes accumulate normally —
+// the gate withholds the escalation only while there is live proof it would
+// be destructive.
+func suppressStrike(tm *wire.TransportManager, primaryChannel, activeChannel string, class echoClass) (bool, string) {
+	if class != echoFail {
+		return false, ""
+	}
+	if activeChannel == "tcpws" && primaryChannel == "quic" {
+		return true, "fallback-active-quic-primary-owned-by-wire-probe"
+	}
+	if primaryChannel == "tcpws" && tm.TCPRecentlyHealthy(echoStrikeTCPHealthyWindow) {
+		return true, "tcpws-primary-tcp-recently-healthy"
+	}
+	return false, ""
+}
+
 // echoLoop spawns one primary-probe goroutine AND one backup-probe goroutine
 // per outboundTransport, joins on hm.done. Per-transport state is local to
 // each child goroutine — no shared map, no lock.
@@ -727,14 +792,23 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 	}
 	ep, ok := primary.(wire.EchoProber)
 	if !ok {
-		// TCP-WS or similar — built-in WS ping/pong covers liveness.
-		// Sleep at max interval (cheap no-op pacing).
+		// No data-path verification available for this dialer — nothing to
+		// probe, so pace at the max interval (cheap no-op). NOTE: TCP-WS is
+		// NOT in this branch anymore; *TCPWSClient implements EchoProber as of
+		// this branch, which is why suppressStrike has a tcpws-primary case.
+		// Only test doubles and future dialers land here.
 		st.trustIdx = int32(len(echoIntervals) - 1)
 		st.strikes, st.unsupportedLogged = 0, false
 		return
 	}
 
 	transport := ot.tm.PrimaryType()
+	// primaryChannel is whatever channel `primary` actually belongs to — NOT
+	// necessarily ot.tm.ActiveChannel(); see the scoreboard block at the end
+	// of this function for the full topology note.
+	primaryChannel := channelForType(transport)
+	activeChannel := ot.tm.ActiveChannel()
+
 	echoCtx, cancel := context.WithTimeout(context.Background(), echoProbeTimeout)
 	start := time.Now()
 	err := ep.RunEchoProbe(echoCtx)
@@ -742,6 +816,17 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 	probeNow := time.Now()
 
 	res := echoStep(st.trustIdx, st.strikes, err)
+
+	// Strike gating (final-review I1 + I4). echoStep stays pure and always
+	// classifies the outcome — scoring below is fed unconditionally either
+	// way. What is gated here is only the STRIKE, i.e. whether this failure
+	// counts toward the 3-strike re-race that tears the whole outbound down
+	// and re-runs RaceTransport.
+	if suppress, why := suppressStrike(ot.tm, primaryChannel, activeChannel, res.Classify); suppress {
+		res.NewStrikes = st.strikes
+		res.ShouldRerace = false
+		slog.Debug("engine: echo strike suppressed", "transport", transport, "reason", why)
+	}
 
 	switch res.Classify {
 	case echoOK:
@@ -778,15 +863,17 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 
 	// Task 7: feed the dual-channel scoreboard with this probe's outcome and
 	// evaluate the hysteresis FSM on the probe's own cadence (R1/R2) — rather
-	// than only piggy-backing on Dial*/Handshake traffic. primaryChannel is
-	// whatever channel `primary` actually belongs to — NOT necessarily
-	// ot.tm.ActiveChannel(): when tcpws won the initial race but QUIC also
-	// connected, tm.primary is installed as the QUIC dialer with fallback
-	// active (see setupOutboundTransport), so probing `primary` here probes
-	// QUIC even while tcpws is the active/serving channel. Recording under
-	// primaryChannel (not activeChannel) keeps each channel's score fed only
-	// by probes that actually exercised it.
-	primaryChannel := channelForType(transport)
+	// than only piggy-backing on Dial*/Handshake traffic. primaryChannel
+	// (computed above) is whatever channel `primary` actually belongs to — NOT
+	// necessarily ot.tm.ActiveChannel(): when tcpws won the initial race but
+	// QUIC also connected, tm.primary is installed as the QUIC dialer with
+	// fallback active (see setupOutboundTransport), so probing `primary` here
+	// probes QUIC even while tcpws is the active/serving channel. Recording
+	// under primaryChannel (not activeChannel) keeps each channel's score fed
+	// only by probes that actually exercised it. This recording is deliberately
+	// NOT gated by suppressStrike above: a suppressed strike still means the
+	// echo genuinely failed, and the score is how that fact reaches the
+	// selector.
 	var rtt time.Duration
 	if primaryChannel == "tcpws" {
 		// R1: rtt is measured at the call site (includes stream-open
@@ -884,8 +971,11 @@ func (hm *healthMonitor) backupProbeLoop(ot *outboundTransport) {
 // still only actually PROBES every 60s (st.nextProbeAt / SetChannelProbeInterval
 // are the real probe gate/cadence, untouched by this capping), but a
 // degradation partway through that 60s window is now actually noticed
-// within one mode-check tick instead of stranded behind the stale
-// 60s-away deadline.
+// within ≤2 mode-check ticks (~10s) instead of stranded behind the stale
+// 60s-away deadline — one tick to WAKE and see the new mode, a second for
+// the pulled-in nextProbeAt to actually come due. That 2× bound is what
+// TestBackupProbe_ModeChangeDuringHealthyWaitNoticedQuickly asserts; the
+// single-tick "~5s" this comment used to claim was never reachable.
 //
 // R5's scope is deliberately asymmetric:
 //
@@ -994,7 +1084,9 @@ func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopSt
 	// above), but the loop now WAKES at most every backupProbeIntervalDegraded
 	// to re-evaluate mode — making the waiting branch's pull-in reachable,
 	// so a degradation partway through the 60s window is now actually
-	// noticed within ~5s instead of at the stale 60s boundary.
+	// noticed within ≤2 wake ticks (~10s, one to see the mode change and one
+	// for the pulled-in nextProbeAt to come due) instead of at the stale 60s
+	// boundary.
 	return min(interval, backupProbeIntervalDegraded)
 }
 

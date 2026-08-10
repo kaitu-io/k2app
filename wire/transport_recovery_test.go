@@ -291,6 +291,56 @@ func TestRollback_FiresWhenTCPWSHealthyAndQUICEchoVerified(t *testing.T) {
 	if tm.ActiveChannel() != "quic" {
 		t.Fatalf("ActiveChannel = %q, want quic", tm.ActiveChannel())
 	}
+	// The verification is one-shot: a completed rollback consumes it, so the
+	// NEXT fallback episode has to earn a fresh handshake + 3 echo rounds all
+	// over again (final-review I3 — see
+	// TestProbe_StaleEchoResultDiscardedAfterRollback for the in-flight-probe
+	// half of that invariant).
+	if tm.quicEchoRecovered.Load() {
+		t.Fatal("quicEchoRecovered must be consumed (false) once the rollback actually lands")
+	}
+}
+
+// TestProbe_StaleEchoResultDiscardedAfterRollback pins final-review I3: a
+// recovery probe already in flight when the rollback lands must NOT re-arm
+// quicEchoRecovered afterwards.
+//
+// runProbeOnce spends up to ~20s in unlocked I/O (handshake + 3 echo rounds
+// at 5s each). evaluateSelector can complete the rollback — and consume the
+// flag with Store(false) — at any point inside that window. An unconditional
+// Store at the end then writes the FINISHED episode's evidence back onto a
+// selector that is already home on QUIC, so the next time QUIC falls back it
+// finds a pre-armed flag and rolls straight back with no fresh verification
+// at all: precisely root cause A, re-entering through the back door.
+//
+// The rollback is simulated deterministically from inside the last echo round
+// (which is exactly when the real race lands) rather than from a competing
+// goroutine, so there is nothing timing-dependent here.
+func TestProbe_StaleEchoResultDiscardedAfterRollback(t *testing.T) {
+	tm := NewTransportManager()
+	probe := &echoingMockTransport{mockTransport: mockTransport{available: true}}
+	var round int
+	probe.echoFn = func(context.Context) error {
+		round++
+		if round == 3 {
+			// evaluateSelector rolls back mid-probe and consumes the flag.
+			tm.forceActiveForTest("quic")
+			tm.quicEchoRecovered.Store(false)
+		}
+		return nil
+	}
+	tm.SetPrimary(probe, "quic-443")
+	tm.SetTCPWS(&mockTransport{available: true})
+	tm.forceActiveForTest("tcpws")
+
+	tm.runProbeOnceForTest(context.Background())
+
+	if round != 3 {
+		t.Fatalf("precondition: probe ran %d echo rounds, want 3 — the rollback never landed mid-probe", round)
+	}
+	if tm.quicEchoRecovered.Load() {
+		t.Fatal("stale echo verification re-armed quicEchoRecovered after the rollback had already consumed it — the next fallback would roll back without fresh proof")
+	}
 }
 
 // TestTransportManager_ResetClearsFallback verifies that Reset()
@@ -309,6 +359,62 @@ func TestTransportManager_ResetClearsFallback(t *testing.T) {
 
 	if tm.FallbackActive() {
 		t.Fatal("fallback should be cleared after reset")
+	}
+}
+
+// TestReset_ClearsChannelScoresAndMinEchoRTT pins final-review I2 (spec §6,
+// "网络切换 Reset ... 清 flapCount/窗口/分数 EWMA"): Reset must clear both
+// ChannelScores AND the tcpws min-echo-RTT ratchet, not just the selector
+// state.
+//
+// The EWMAs alone would eventually decay to neutral through ChannelScore's
+// staleness gate (~3×probeInterval, ~48s), which is survivable. The min-RTT
+// ratchet is not: it is monotonic and never decays, so a 5ms LAN baseline
+// carried across a move to an 80ms mobile path pins QualityFromEchoRTT at
+// ~0.06 and silently disables the selector's quality path for the rest of the
+// process lifetime.
+func TestReset_ClearsChannelScoresAndMinEchoRTT(t *testing.T) {
+	tm := NewTransportManager()
+	tm.SetPrimary(&mockTransport{available: true}, "quic-hop")
+	tm.SetTCPWS(&mockTransport{available: true})
+
+	now := time.Now()
+	// Old network: both channels measured healthy, and the tcpws ratchet
+	// dragged down to a 5ms LAN minimum.
+	for i := 0; i < 6; i++ {
+		tm.RecordEchoResult("tcpws", 5*time.Millisecond, nil, now)
+		tm.RecordEchoResult("quic", 0, nil, now)
+	}
+	tm.RecordQUICStats(WireStats{RTT: 20 * time.Millisecond, MinRTT: 20 * time.Millisecond}, now)
+	if got := tm.ScoreTCPWS(now); got < 0.9 {
+		t.Fatalf("precondition: scoreTCPWS = %v, want a healthy (~1.0) score", got)
+	}
+	if got := tm.ScoreQUIC(now); got < 0.9 {
+		t.Fatalf("precondition: scoreQUIC = %v, want a healthy (~1.0) score", got)
+	}
+	if got := tm.tcpwsMinEchoRTT.Load(); got != int64(5*time.Millisecond) {
+		t.Fatalf("precondition: tcpwsMinEchoRTT = %v, want 5ms", time.Duration(got))
+	}
+
+	tm.Reset()
+
+	// Both scores are back to "no data yet" → neutral × neutral.
+	const wantNeutral = scoreNeutral * scoreNeutral
+	if got := tm.ScoreQUIC(now); got != wantNeutral {
+		t.Fatalf("scoreQUIC = %v after Reset, want %v (old-network EWMA survived)", got, wantNeutral)
+	}
+	if got := tm.ScoreTCPWS(now); got != wantNeutral {
+		t.Fatalf("scoreTCPWS = %v after Reset, want %v (old-network EWMA survived)", got, wantNeutral)
+	}
+
+	// New network: an 80ms echo is now the baseline, so its quality is 1.0 and
+	// the first post-Reset sample lands at a clean 1.0. With the 5ms ratchet
+	// still in place it would be QualityFromEchoRTT(80ms, 5ms) = 0.0625,
+	// dragging the score down instead — on a link that is simply farther away,
+	// not worse.
+	tm.RecordEchoResult("tcpws", 80*time.Millisecond, nil, now)
+	if got := tm.ScoreTCPWS(now); got < 0.99 {
+		t.Fatalf("scoreTCPWS = %v after a first 80ms echo on the new path, want ~1.0 — the stale min-RTT ratchet is still crushing it", got)
 	}
 }
 

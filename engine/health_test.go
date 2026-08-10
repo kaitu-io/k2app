@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -969,6 +970,149 @@ func TestBackupProbe_MobilePowerSavingSkipsProbe(t *testing.T) {
 	if calls := backup.calls.Load(); calls != 0 {
 		t.Fatalf("MobilePowerSaving must disable active backup probing, got %d calls", calls)
 	}
+}
+
+// --- final review: echo-strike gating (I1 + I4) --------------------------
+
+// dialableEchoStub is an echoStubDialer whose DialTCP actually succeeds, so a
+// test can put real "TCP recently worked" evidence into the TransportManager
+// (wire.TransportManager records it on DialTCP's tcpws success paths, which is
+// what TCPRecentlyHealthy reports for a *TCPWSClient-shaped primary).
+type dialableEchoStub struct {
+	echoStubDialer
+}
+
+func (e *dialableEchoStub) DialTCP(ctx context.Context, addr string, ed []byte) (net.Conn, error) {
+	c, _ := net.Pipe()
+	return c, nil
+}
+
+// newTCPWSPrimaryTransport builds the tcpws-won-outright topology: the SAME
+// dialer installed as primary AND backup, PrimaryType "tcpws" (mirrors
+// engine.go's setupOutboundTransport when raceResult.QUICBackup is nil).
+func newTCPWSPrimaryTransport(t *testing.T, name string, tcpHealthy bool) (*outboundTransport, *dialableEchoStub) {
+	t.Helper()
+	stub := &dialableEchoStub{}
+	stub.setFn(func(ctx context.Context) error { return context.DeadlineExceeded })
+	tm := wire.NewTransportManager()
+	tm.SetPrimary(stub, "tcpws")
+	tm.SetTCPWS(stub)
+	if tcpHealthy {
+		conn, err := tm.DialTCP(context.Background(), "203.0.113.7:443", nil)
+		if err != nil {
+			t.Fatalf("seed TCP success: %v", err)
+		}
+		conn.Close()
+		if !tm.TCPRecentlyHealthy(echoStrikeTCPHealthyWindow) {
+			t.Fatal("precondition: TCPRecentlyHealthy must report the seeded TCP stream — the gate under test would be a silent no-op otherwise")
+		}
+	} else if tm.TCPRecentlyHealthy(echoStrikeTCPHealthyWindow) {
+		t.Fatal("precondition: no TCP stream was seeded, TCPRecentlyHealthy must be false")
+	}
+	return &outboundTransport{tm: tm, name: name}, stub
+}
+
+// TestProbeOnce_FallbackActiveQUICPrimaryDoesNotStrike pins final-review I1.
+//
+// During fallback the selector has moved to tcpws while tm.primary is still
+// the QUIC dialer, so probeOnce keeps echo-probing a path that is known dead —
+// that is *why* the selector left it. Recovery of that path belongs to wire's
+// runProbeOnce (30s, handshake + 3 echo rounds, quicEchoRecovered). Left
+// ungated, the primary's echo timeouts strike 3× within seconds and fire a
+// re-race, which closes the echo-failed QUIC dialer without preserving a
+// backup and ReplacePrimary(tcpws)es over the whole fallback state — flap
+// history, quicEchoRecovered, the entire rollback machinery — so the user
+// never gets back to QUIC. The scoreboard alone did not resolve that half of
+// root cause C; this gate does.
+func TestProbeOnce_FallbackActiveQUICPrimaryDoesNotStrike(t *testing.T) {
+	ot, stub := newEchoTransport("t-fallback-quic-primary", func(ctx context.Context) error {
+		return context.DeadlineExceeded
+	})
+	ot.tm.SetTCPWS(&echoStubDialer{})
+	ot.tm.SetFallbackActive(true) // tcpws serving, QUIC still the primary
+	if ot.tm.ActiveChannel() != "tcpws" {
+		t.Fatalf("precondition: ActiveChannel = %q, want tcpws", ot.tm.ActiveChannel())
+	}
+
+	hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+	st := &echoLoopState{}
+	for i := 0; i < 2*echoReraceThreshold; i++ {
+		hm.probeOnce(ot, st, time.Now())
+	}
+
+	if stub.calls.Load() != int64(2*echoReraceThreshold) {
+		t.Fatalf("precondition: %d probes ran, want %d — the failures under test never happened", stub.calls.Load(), 2*echoReraceThreshold)
+	}
+	select {
+	case <-ch:
+		t.Fatal("re-race fired on the known-dead QUIC primary during fallback — this destroys the selector's fallback state and wire's own recovery probe owns that path")
+	default:
+	}
+	if st.strikes != 0 {
+		t.Fatalf("strikes = %d, want 0 — failures on the dead primary must not accumulate toward re-race", st.strikes)
+	}
+	// Scoring is explicitly NOT gated: the selector still needs to see that
+	// the QUIC channel is unavailable.
+	if got := ot.tm.ScoreQUIC(time.Now()); got >= 0.25 {
+		t.Fatalf("scoreQUIC = %v, want it driven below the 0.25 neutral floor — score recording must continue even while strikes are gated", got)
+	}
+}
+
+// TestProbeOnce_TCPWSPrimaryStrikeGatedByRecentTCPHealth pins final-review I4.
+//
+// Making TCPWSClient an EchoProber put tcpws primaries on the 1-16s trust
+// schedule with a 2s echo timeout for the first time. That 8-byte echo shares
+// one TCP connection with bulk transfer, so head-of-line blocking under load
+// can blow 2s three times in a row on a connection that is working perfectly —
+// and the re-race would then close the very session serving the transfer.
+// Recent TCP success gates the strike (the same evidence maybeAct uses to skip
+// a reconnect); with no such evidence, strikes accumulate normally.
+func TestProbeOnce_TCPWSPrimaryStrikeGatedByRecentTCPHealth(t *testing.T) {
+	t.Run("tcp recently healthy: no strikes, no rerace", func(t *testing.T) {
+		ot, stub := newTCPWSPrimaryTransport(t, "t-tcpws-loaded", true)
+		hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+		st := &echoLoopState{}
+		for i := 0; i < 2*echoReraceThreshold; i++ {
+			hm.probeOnce(ot, st, time.Now())
+		}
+
+		if stub.calls.Load() != int64(2*echoReraceThreshold) {
+			t.Fatalf("precondition: %d probes ran, want %d", stub.calls.Load(), 2*echoReraceThreshold)
+		}
+		select {
+		case <-ch:
+			t.Fatal("re-race fired on a tcpws primary that is demonstrably still carrying TCP streams — echo timeouts under HoL blocking must not tear down a working session")
+		default:
+		}
+		if st.strikes != 0 {
+			t.Fatalf("strikes = %d, want 0", st.strikes)
+		}
+		// The failures still reach the scoreboard, so a genuinely bad tcpws
+		// channel is still visible to the selector and the heartbeat.
+		if got := ot.tm.ScoreTCPWS(time.Now()); got >= 0.25 {
+			t.Fatalf("scoreTCPWS = %v, want it driven below the 0.25 neutral floor — gating strikes must not gate scoring", got)
+		}
+	})
+
+	t.Run("no recent tcp: strikes accumulate and rerace fires", func(t *testing.T) {
+		// The known-bad control. Without it, the assertions above would also
+		// pass against a build that simply never strikes on tcpws at all.
+		ot, _ := newTCPWSPrimaryTransport(t, "t-tcpws-silent", false)
+		hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+		st := &echoLoopState{}
+		for i := 0; i < echoReraceThreshold; i++ {
+			hm.probeOnce(ot, st, time.Now())
+		}
+
+		select {
+		case got := <-ch:
+			if got != ot {
+				t.Fatalf("rerace signal targeted wrong outbound: got %p want %p", got, ot)
+			}
+		default:
+			t.Fatalf("no rerace after %d failures with no recent TCP success — the gate must withhold escalation only while there is live proof it would be destructive", echoReraceThreshold)
+		}
+	})
 }
 
 // --- fix-round-2 --------------------------------------------------------

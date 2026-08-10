@@ -3,6 +3,7 @@ package wire
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -124,6 +125,167 @@ func TestSelector_FlapWindowDoubling(t *testing.T) {
 	expected := time.Duration(30) * time.Second << uint(1) // 30s<<1 = 60s
 	if window != expected {
 		t.Fatalf("flap window = %v, want %v", window, expected)
+	}
+}
+
+// The quality path must not fire when the primary IS the tcpws channel —
+// there is no quic channel to switch away from. Pure-FSM half of C1's fix;
+// TestSelector_TCPWSWonOutright_NoPhantomSwitchNoQuicRecovered drives the
+// same topology through the real TransportManager.
+func TestSelector_QualityPathInertWhenPrimaryIsTCPWS(t *testing.T) {
+	base := time.Unix(1000, 0)
+	st := newState("quic")
+	st.aboveSince = base
+	// Exactly the input that switches away in the normal topology (see
+	// TestSelector_QualityPathNeedsSustainAndFreshBackup): measured tcpws vs a
+	// scoreQUIC pinned at the neutral floor, sustained past the window, backup
+	// fresh. The ONLY difference is who the primary is.
+	in := selectorInput{
+		now:         base.Add(qualitySustainWindow + time.Second),
+		scoreQUIC:   0.25,
+		scoreTCPWS:  1.0,
+		backupFresh: backupFreshSamplesGate,
+	}
+	if _, d := selectorStep(st, selectorInput{
+		now: in.now, scoreQUIC: in.scoreQUIC, scoreTCPWS: in.scoreTCPWS,
+		backupFresh: in.backupFresh, primaryChannel: "quic",
+	}); d != channelSwitchToTCPWS {
+		t.Fatalf("control (quic primary): want channelSwitchToTCPWS, got %v — the input no longer satisfies the quality path, so the assertion below would be vacuous", d)
+	}
+
+	in.primaryChannel = "tcpws"
+	if _, d := selectorStep(st, in); d != channelStay {
+		t.Fatalf("tcpws primary: want channelStay, got %v — switching away from a quic channel that does not exist", d)
+	}
+}
+
+// echoingMockTransport is a mockTransport that also implements EchoProber, so
+// runProbeOnce's data-path verification section can reach it. Test-only.
+type echoingMockTransport struct {
+	mockTransport
+	echoCalls atomic.Int32
+	echoFn    func(ctx context.Context) error
+}
+
+func (m *echoingMockTransport) RunEchoProbe(ctx context.Context) error {
+	m.echoCalls.Add(1)
+	if m.echoFn != nil {
+		return m.echoFn(ctx)
+	}
+	return nil
+}
+
+var _ EchoProber = (*echoingMockTransport)(nil)
+
+// TestSelector_TCPWSWonOutright_NoPhantomSwitchNoQuicRecovered is the
+// regression test for final-review C1: the whole FSM + recovery-probe pair,
+// driven through the real TransportManager in the topology where TCP-WS won
+// the startup race outright.
+//
+// In that topology engine's setupOutboundTransport installs the SAME dialer
+// as tm.primary AND tm.tcpws (there is no QUIC dialer at all), while
+// selState.active still holds its "quic" default. Every measurement — primary
+// dials via channelForType(primaryType)=="tcpws", plus echo probes — lands on
+// the tcpws score, so scoreTCPWS climbs to ~1.0 while scoreQUIC has no source
+// whatsoever and sits at the neutral floor 0.25. `scoreTCPWS > scoreQUIC×1.5`
+// is therefore permanently true, and the pre-fix FSM would:
+//
+//  1. "switch away" after the 10s sustain window, logging a fabricated
+//     DIAG: transport-switch reason=quic-quality-degraded, and
+//  2. flip FallbackActive → engage runProbeOnce, which (having lost the old
+//     loop's `p.(*QUICClient)` guard) would echo-probe the TCPWS primary,
+//     record those samples as QUIC availability, set quicEchoRecovered, and
+//     produce an equally fabricated reason=quic-recovered — then repeat
+//     forever with a doubling window.
+//
+// Mutation protocol (both halves verified RED/GREEN by hand):
+//   - remove selectorStep's `in.primaryChannel == "tcpws"` early return →
+//     the loop below fails at the first evaluateSelector past the sustain
+//     window ("phantom switch away").
+//   - remove runProbeOnce's `primaryChannel != "quic"` early return →
+//     the second half fails on echoCalls / quicEchoRecovered / scoreQUIC.
+func TestSelector_TCPWSWonOutright_NoPhantomSwitchNoQuicRecovered(t *testing.T) {
+	var records []slog.Record
+	prev := slog.Default()
+	slog.SetDefault(slog.New(recordCollector{records: &records}))
+	defer slog.SetDefault(prev)
+
+	countReason := func(reason string) int {
+		n := 0
+		for _, r := range records {
+			if r.Message != "DIAG: transport-switch" {
+				continue
+			}
+			if v, ok := attrString(r, "reason"); ok && v == reason {
+				n++
+			}
+		}
+		return n
+	}
+
+	same := &echoingMockTransport{mockTransport: mockTransport{available: true}}
+	tm := NewTransportManager()
+	tm.SetPrimary(same, "tcpws")
+	tm.SetTCPWS(same)
+
+	ctx := context.Background()
+	base := time.Now()
+
+	// ~25s of healthy traffic and probes on the one real channel — well past
+	// qualitySustainWindow (10s), with backupFresh far past its gate.
+	for i := 0; i <= 25; i++ {
+		now := base.Add(time.Duration(i) * time.Second)
+		conn, err := tm.DialTCP(ctx, "203.0.113.1:443", nil)
+		if err != nil {
+			t.Fatalf("dial %d: %v", i, err)
+		}
+		conn.Close()
+		tm.RecordEchoResult("tcpws", 12*time.Millisecond, nil, now)
+		if d := tm.evaluateSelector(now); d != channelStay {
+			t.Fatalf("evaluateSelector at t+%ds = %v, want channelStay — phantom switch away from a QUIC channel that was never created", i, d)
+		}
+	}
+
+	// Guard against a vacuous pass: the quality-path condition really IS
+	// satisfied here, so only the topology gate can be holding the switch.
+	now := base.Add(25 * time.Second)
+	if sq, st := tm.ScoreQUIC(now), tm.ScoreTCPWS(now); st <= sq*switchAwayRatio {
+		t.Fatalf("precondition: scoreTCPWS %v must exceed scoreQUIC %v × %v, else this test proves nothing", st, sq, switchAwayRatio)
+	}
+	if got := tm.backupFresh.Load(); int(got) < backupFreshSamplesGate {
+		t.Fatalf("precondition: backupFresh = %d, want ≥ %d", got, backupFreshSamplesGate)
+	}
+	if tm.FallbackActive() {
+		t.Fatal("FallbackActive flipped — the FSM switched to a channel it was already on")
+	}
+	if n := countReason("quic-quality-degraded"); n != 0 {
+		t.Fatalf("logged %d fabricated quic-quality-degraded switches", n)
+	}
+
+	// Second half: even if something else puts the selector in the tcpws state
+	// with this topology (a manual SetFallbackActive, or a re-race that landed
+	// on tcpws), the QUIC RECOVERY probe must stay out of it entirely — there
+	// is no QUIC to recover.
+	tm.forceActiveForTest("tcpws")
+	echoesBefore := same.echoCalls.Load()
+	quicBefore := tm.ScoreQUIC(now)
+
+	tm.runProbeOnceForTest(ctx)
+
+	if got := same.echoCalls.Load(); got != echoesBefore {
+		t.Fatalf("recovery probe ran %d echo rounds against a non-QUIC primary (want 0) — double-probing the channel engine already probes", got-echoesBefore)
+	}
+	if tm.quicEchoRecovered.Load() {
+		t.Fatal("quicEchoRecovered armed by probing a TCPWS primary — a rollback to a QUIC dialer that does not exist")
+	}
+	if got := tm.ScoreQUIC(now); got != quicBefore {
+		t.Fatalf("scoreQUIC moved %v → %v — tcpws samples recorded under the quic channel", quicBefore, got)
+	}
+	if d := tm.evaluateSelector(now); d != channelStay {
+		t.Fatalf("evaluateSelector after the probe = %v, want channelStay", d)
+	}
+	if n := countReason("quic-recovered"); n != 0 {
+		t.Fatalf("logged %d fabricated quic-recovered rollbacks", n)
 	}
 }
 

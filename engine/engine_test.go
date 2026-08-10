@@ -731,7 +731,7 @@ func TestEngine_PauseWake_StatusReflectsPaused(t *testing.T) {
 		Dialer:  newMockWireDialer(newBlockingPacketConn()),
 		Servers: []string{"8.8.8.8:53"},
 	})
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.primaryTM = &outboundTransport{tm: tm}
@@ -976,7 +976,7 @@ func TestEngine_OnNetworkChanged_WhenConnected(t *testing.T) {
 	e.SetEventHandler(h)
 
 	// Simulate connected state with a TransportManager.
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.primaryTM = &outboundTransport{tm: tm}
@@ -1095,7 +1095,7 @@ func TestEngine_NetworkMonitor_CallbackTriggersOnNetworkChanged(t *testing.T) {
 	mon := &mockNetworkMonitor{}
 
 	// Simulate a connected engine with a transport manager and the monitor started.
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.primaryTM = &outboundTransport{tm: tm}
@@ -1609,7 +1609,7 @@ func TestEngine_OnNetworkChanged_ResetsProxyDNS(t *testing.T) {
 		Servers: []string{"8.8.8.8:53"},
 	})
 
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.primaryTM = &outboundTransport{tm: tm}
@@ -1638,7 +1638,7 @@ func TestEngine_Pause_ResetsProxyDNS(t *testing.T) {
 		Servers: []string{"8.8.8.8:53"},
 	})
 
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.primaryTM = &outboundTransport{tm: tm}
@@ -1666,7 +1666,7 @@ func TestEngine_Wake_ResetsProxyDNS(t *testing.T) {
 		Servers: []string{"8.8.8.8:53"},
 	})
 
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.paused = true
@@ -1689,7 +1689,7 @@ func TestEngine_OnNetworkChanged_PreservesAuthError(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.primaryTM = &outboundTransport{tm: tm}
@@ -1719,7 +1719,7 @@ func TestEngine_OnNetworkChanged_ClearsNetworkError(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.primaryTM = &outboundTransport{tm: tm}
@@ -1742,7 +1742,7 @@ func TestEngine_OnHealthCritical_DoesNotClearError(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.primaryTM = &outboundTransport{tm: tm}
@@ -1765,7 +1765,7 @@ func TestEngine_OnHealthCritical_WhenConnected(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	tm := &wire.TransportManager{}
+	tm := wire.NewTransportManager()
 	e.mu.Lock()
 	e.state = StateConnected
 	e.primaryTM = &outboundTransport{tm: tm}
