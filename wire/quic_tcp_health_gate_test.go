@@ -9,11 +9,11 @@ import (
 // Tests for TCP health gate on QUICClient
 //
 // When TCP streams recently succeeded (within tcpHealthWindow), DialUDP skips
-// destructive port hops and returns ErrDatagramRelayUnhealthy instead. This prevents
-// normal datagram packet loss from killing healthy TCP streams.
+// destructive reconnects and returns ErrDatagramRelayUnhealthy instead. This
+// prevents normal datagram packet loss from killing healthy TCP streams.
 // ==========================================================================
 
-func TestTCPHealthGate_NoHopWhenTCPHealthy(t *testing.T) {
+func TestTCPHealthGate_HealthyAfterRecentSuccess(t *testing.T) {
 	c := &QUICClient{}
 	// Simulate recent TCP success
 	c.lastTCPSuccessAt.Store(time.Now().UnixNano())
@@ -23,7 +23,7 @@ func TestTCPHealthGate_NoHopWhenTCPHealthy(t *testing.T) {
 	}
 }
 
-func TestTCPHealthGate_HopStillWorksWhenTCPFailing(t *testing.T) {
+func TestTCPHealthGate_UnhealthyWithoutAnySuccess(t *testing.T) {
 	c := &QUICClient{}
 	// No TCP success recorded (zero value)
 	if c.tcpRecentlyHealthy(tcpHealthWindow) {
@@ -31,7 +31,7 @@ func TestTCPHealthGate_HopStillWorksWhenTCPFailing(t *testing.T) {
 	}
 }
 
-func TestTCPHealthGate_HopAfterTCPHealthExpiry(t *testing.T) {
+func TestTCPHealthGate_UnhealthyAfterWindowExpiry(t *testing.T) {
 	c := &QUICClient{}
 	// Simulate TCP success that's older than the health window
 	c.lastTCPSuccessAt.Store(time.Now().Add(-tcpHealthWindow - time.Second).UnixNano())

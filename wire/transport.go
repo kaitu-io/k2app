@@ -59,19 +59,19 @@ const (
 	quicProbeInterval = 30 * time.Second
 
 	// quicConnFailThreshold is how many consecutive QUIC connection (handshake)
-	// failures to different hop ports before activating TCP-WS fallback.
+	// failures before activating TCP-WS fallback.
 	quicConnFailThreshold int32 = 3
 )
 
 // TransportManager manages primary and TCP-WS transports.
 // QUIC is strongly preferred; TCP-WS is used as last-resort fallback only
 // when QUIC is genuinely unavailable (UDP blocked). ISPs rarely block UDP,
-// so even with 40%+ packet loss, QUIC with port hopping outperforms TCP-WS.
+// so even with 40%+ packet loss, QUIC outperforms TCP-WS.
 type TransportManager struct {
 	mu          deadlock.RWMutex
-	primary     Dialer // was: quic — the preferred transport (QUIC-443, QUIC-hop, or tcpws)
+	primary     Dialer // was: quic — the preferred transport (QUIC-443 or tcpws)
 	tcpws       Dialer
-	primaryType string // "quic-443", "quic-hop", "tcpws"
+	primaryType string // "quic-443" or "tcpws"
 
 	// Fallback state: tracks QUIC→TCP-WS transport-level fallback.
 	// Set when consecutive QUIC handshake failures reach quicConnFailThreshold.
@@ -531,7 +531,7 @@ func (tm *TransportManager) Reset() {
 }
 
 // TCPRecentlyHealthy returns true if a TCP stream succeeded within the given window.
-// Used by health monitor to skip destructive port hops when TCP is working fine.
+// Used by health monitor to skip destructive reconnects when TCP is working fine.
 func (tm *TransportManager) TCPRecentlyHealthy(window time.Duration) bool {
 	tm.mu.RLock()
 	p := tm.primary

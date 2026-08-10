@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -332,8 +331,6 @@ type QUICClient struct {
 	cfg          Config
 	jar          *CookieJar // per-outbound cookie store; nil = no cookie support (probe/p2p)
 	serverAddr   string
-	hopStart     int
-	hopEnd       int
 	tlsConfig    *tls.Config // override for testing (bypasses BuildClientTLSConfig)
 	directDialer DirectDialer
 
@@ -351,10 +348,8 @@ type QUICClient struct {
 	// udp-mux-rebuild DIAG event.
 	udpMuxRebuilds atomic.Uint64
 
-	portHopAttempts     atomic.Int32 // hop attempts before TCP-WS fallback
-	portHopExhaustedAt  atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
 	lastTCPSuccessAt    atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
-	handshakeFailStreak atomic.Int32 // consecutive connect() handshake failures across different hop ports
+	handshakeFailStreak atomic.Int32 // consecutive connect() handshake failures across reconnect attempts
 }
 
 // NewQUICClient creates a new QUIC client transport. jar is the per-outbound
@@ -369,8 +364,6 @@ func NewQUICClient(cfg Config, jar *CookieJar) *QUICClient {
 		cfg:        cfg,
 		jar:        jar,
 		serverAddr: net.JoinHostPort(dialHost, strconv.Itoa(cfg.Port)),
-		hopStart:   cfg.HopStart,
-		hopEnd:     cfg.HopEnd,
 	}
 }
 
@@ -382,16 +375,6 @@ func (c *QUICClient) SetTLSConfig(cfg *tls.Config) {
 // SetDirectDialer sets a physical-interface-bound dialer for bypassing TUN.
 func (c *QUICClient) SetDirectDialer(d DirectDialer) {
 	c.directDialer = d
-}
-
-// hopEnabled returns true if port hopping is configured.
-func (c *QUICClient) hopEnabled() bool {
-	return c.hopStart > 0 && c.hopEnd > 0 && c.hopStart < c.hopEnd
-}
-
-// hopPort returns a random port in the hop range.
-func (c *QUICClient) hopPort() int {
-	return c.hopStart + rand.Intn(c.hopEnd-c.hopStart)
 }
 
 // ConsecConnFails returns the number of consecutive connection handshake failures.
@@ -424,8 +407,8 @@ func (c *QUICClient) RunEchoProbe(ctx context.Context) error {
 }
 
 // tcpRecentlyHealthy returns true if a TCP stream succeeded within the given window.
-// Used by DialUDP to skip destructive port hops when TCP streams are healthy
-// (indicating normal packet loss, not ISP port blocking).
+// Used by DialUDP to skip destructive reconnects when TCP streams are healthy
+// (indicating normal packet loss, not a broken UDP path).
 func (c *QUICClient) tcpRecentlyHealthy(window time.Duration) bool {
 	ts := c.lastTCPSuccessAt.Load()
 	if ts == 0 {
@@ -497,14 +480,7 @@ serialize:
 
 	// --- All blocking I/O below — NO lock held ---
 
-	addr := c.serverAddr // immutable after construction
-	if c.hopEnabled() {  // reads atomics, no lock needed
-		dialHost := cfg.Host
-		if cfg.DialAddr != "" {
-			dialHost = cfg.DialAddr
-		}
-		addr = net.JoinHostPort(dialHost, strconv.Itoa(c.hopPort()))
-	}
+	addr := c.serverAddr // immutable after construction; fixed 443, no port hopping
 
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -663,7 +639,7 @@ serialize:
 	c.transport = transport
 	c.ccSender = sender
 	c.alloc = NewSessionIDAllocator()
-	c.udpMux = newQuicUDPMux(conn, &c.portHopAttempts, &c.portHopExhaustedAt)
+	c.udpMux = newQuicUDPMux(conn)
 	// Start accept loop for server-initiated overflow streams
 	go c.acceptOverflowStreams(conn, c.udpMux)
 
@@ -753,7 +729,7 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string, earlyData []byte)
 //
 // When the datagram relay path is unhealthy (consecutive timeouts or high loss),
 // returns ErrDatagramRelayUnhealthy for TCP-WS fallback. Relay-layer metrics
-// never trigger wire-layer actions (port hop, reconnect).
+// never trigger wire-layer actions (reconnect, transport switch).
 func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	for {
 		conn, err := c.connect(ctx)
@@ -975,7 +951,6 @@ func (c *QUICClient) WireStats() WireStats {
 			s.UDPRxDropsNoSession += sm.udpRxDropsNoSession.Load()
 		}
 	}
-	s.PortHopAttempts = c.portHopAttempts.Load()
 	return s
 }
 
@@ -1125,7 +1100,7 @@ func closeQUICResources(mux *quicUDPMux, conn *quic.Conn, tr *quic.Transport, re
 }
 
 // resetConnection closes cached connection resources without marking client as closed.
-// Used only for intentional resets (port hop, network change) — NOT for error recovery.
+// Used only for intentional resets (network change) — NOT for error recovery.
 // Dead connections are detected by connect() via conn.Context().Done().
 func (c *QUICClient) resetConnection() {
 	c.mu.Lock()
@@ -1134,15 +1109,13 @@ func (c *QUICClient) resetConnection() {
 	closeQUICResources(mux, conn, tr, "connection reset")
 }
 
-// Reset closes cached connections and clears all fallback/hop state.
+// Reset closes cached connections and clears all fallback state.
 // Called by TransportManager.Reset() on network change.
 // After Reset(), the next DialTCP/DialUDP will establish a fresh connection
-// with a clean handshake failure streak and hop counter.
+// with a clean handshake failure streak.
 func (c *QUICClient) Reset() {
 	c.resetConnection()
 	c.handshakeFailStreak.Store(0)
-	c.portHopAttempts.Store(0)
-	c.portHopExhaustedAt.Store(0)
 }
 
 // Close closes the QUIC connection and underlying transport.
@@ -1840,13 +1813,7 @@ type quicUDPMux struct {
 
 	// Datagram health tracking: consecutive ReadFrom timeouts indicate
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
-	relayTimeouts      atomic.Int32
-	clientHopAttempts  *atomic.Int32 // shared with QUICClient; nil on server/tests
-	clientHopExhausted *atomic.Int64 // shared with QUICClient; nil on server/tests
-
-	// Sustained recovery tracking: consecutive recvs without timeout.
-	// After relayRecoveryRecvs consecutive receives, hop counters reset.
-	consecutiveRecvs atomic.Int32
+	relayTimeouts atomic.Int32
 
 	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
 
@@ -1872,32 +1839,13 @@ type quicUDPMux struct {
 	udpRxDropsNoSession atomic.Int64 // downlink datagrams for an unknown session
 }
 
-const (
-	relayTimeoutThreshold int32 = 3
-
-	relayRecoveryRecvs int32 = 10 // consecutive recvs to confirm recovery → reset hop counter
-)
+const relayTimeoutThreshold int32 = 3
 
 func (m *quicUDPMux) recordRecv() {
 	m.relayTimeouts.Store(0)
-
-	// Sustained recovery: N consecutive recvs without timeout → reset hop counter.
-	// Prevents single lucky packet from resetting (requires sustained evidence).
-	if m.clientHopAttempts != nil && m.clientHopAttempts.Load() > 0 {
-		if m.consecutiveRecvs.Add(1) >= relayRecoveryRecvs {
-			m.clientHopAttempts.Store(0)
-			if m.clientHopExhausted != nil {
-				m.clientHopExhausted.Store(0)
-			}
-			m.consecutiveRecvs.Store(0)
-			slog.Debug("quicUDPMux: hop counter reset after sustained recovery",
-				"threshold", relayRecoveryRecvs)
-		}
-	}
 }
 
 func (m *quicUDPMux) recordTimeout() {
-	m.consecutiveRecvs.Store(0) // any timeout breaks recovery streak
 	count := m.relayTimeouts.Add(1)
 	if count == relayTimeoutThreshold {
 		slog.Warn("quicUDPMux: datagram relay path marked unhealthy",
@@ -1909,16 +1857,14 @@ func (m *quicUDPMux) datagramRelayHealthy() bool {
 	return m.relayTimeouts.Load() < relayTimeoutThreshold
 }
 
-func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32, hopExhausted *atomic.Int64) *quicUDPMux {
+func newQuicUDPMux(conn *quic.Conn) *quicUDPMux {
 	return &quicUDPMux{
-		conn:               conn,
-		sessions:           make(map[uint32]chan *UDPFrame),
-		sessionDone:        make(map[uint32]chan struct{}),
-		lastActive:         make(map[uint32]*atomic.Int64),
-		done:               make(chan struct{}),
-		clientHopAttempts:  hopAttempts,
-		clientHopExhausted: hopExhausted,
-		overflow:           &udpOverflowStream{qconn: conn},
+		conn:        conn,
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
+		overflow:    &udpOverflowStream{qconn: conn},
 	}
 }
 

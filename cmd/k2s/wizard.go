@@ -74,24 +74,6 @@ func promptPort(prompt string, defaultPort int) int {
 	}
 }
 
-// promptHopRange asks for a hop port range, returns start and end (0,0 if disabled).
-func promptHopRange() (int, int) {
-	enabled := promptYesNo("Enable port hopping?", false)
-	if !enabled {
-		return 0, 0
-	}
-
-	input := promptString("Hop range", "50000-50100")
-	start, end, err := parseRange(input)
-	if err != nil {
-		fmt.Println("Invalid format, using default 50000-50100")
-		return 50000, 50100
-	}
-	count := end - start + 1
-	fmt.Printf("Using: %d-%d (%d ports)\n", start, end, count)
-	return start, end
-}
-
 // parseRange parses "50000-50100" into start, end.
 func parseRange(s string) (int, int, error) {
 	parts := strings.SplitN(s, "-", 2)
@@ -176,7 +158,7 @@ func printHeader() {
 }
 
 // printComplete prints the setup completion summary.
-func printComplete(configPath, url string, hopEnabled bool) {
+func printComplete(configPath, url string) {
 	fmt.Println()
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("Setup complete!")
@@ -190,11 +172,6 @@ func printComplete(configPath, url string, hopEnabled bool) {
 	fmt.Println("Add more users:")
 	fmt.Println("  sudo k2s user add <username>")
 	fmt.Println()
-	if hopEnabled {
-		fmt.Println("Port hopping guide:")
-		fmt.Println("  https://kaitu.io/k2/hop-ports")
-		fmt.Println()
-	}
 	fmt.Println("Reconfigure:")
 	fmt.Println("  sudo k2s setup --reset")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

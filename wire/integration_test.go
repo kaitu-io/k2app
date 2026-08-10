@@ -42,7 +42,7 @@ func TestIntegration_TransportManager_Failover(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// First call: QUIC preferred
@@ -269,10 +269,6 @@ func TestIntegration_URLToClient(t *testing.T) {
 	if qc.serverAddr != "1.2.3.4:443" {
 		t.Errorf("serverAddr = %q", qc.serverAddr)
 	}
-	if !qc.hopEnabled() {
-		t.Error("port hopping should be enabled")
-	}
-
 	// Create TCP-WS client from same config
 	tc := NewTCPWSClient(cfg, nil)
 	if tc.serverAddr != "1.2.3.4:443" {
@@ -281,7 +277,7 @@ func TestIntegration_URLToClient(t *testing.T) {
 
 	// TransportManager wires them together
 	tm := NewTransportManager()
-	// In real code: tm.SetPrimary(qc, "quic-hop"), tm.SetTCPWS(tc)
+	// In real code: tm.SetPrimary(qc, "quic-443"), tm.SetTCPWS(tc)
 	// Here we verify the creation pipeline works
 	_ = tm
 }

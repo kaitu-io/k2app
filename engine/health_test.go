@@ -202,7 +202,7 @@ func TestHealthEscalation(t *testing.T) {
 	ot := &outboundTransport{tm: tm, name: "test"}
 	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() { reconnectCount++ }, time.Now())
 
-	// Every maybeAct in critical state returns onReconnect (no hop escalation).
+	// Every maybeAct in critical state returns onReconnect (no other escalation).
 	hm.health = HealthCritical
 	hm.lastAction = time.Time{} // bypass cooldown
 	action := hm.maybeAct(false)
@@ -338,7 +338,7 @@ func TestHealthMonitor_EWMAPreventsFalseCritical(t *testing.T) {
 
 func TestHealthMonitor_CriticalTriggersReconnect(t *testing.T) {
 	// When health goes critical, maybeAct should return onReconnect directly.
-	// No port hop escalation — wire layer owns hop decisions.
+	// No other escalation — wire layer owns transport decisions.
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
@@ -347,14 +347,14 @@ func TestHealthMonitor_CriticalTriggersReconnect(t *testing.T) {
 	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() { reconnected = true }, time.Now())
 	hm.health = HealthCritical
 
-	// First maybeAct should return onReconnect (not a port hop)
+	// First maybeAct should return onReconnect
 	action := hm.maybeAct(false)
 	if action == nil {
 		t.Fatal("expected reconnect action, got nil")
 	}
 	action()
 	if !reconnected {
-		t.Fatal("maybeAct should return onReconnect directly, not port hop")
+		t.Fatal("maybeAct should return onReconnect directly")
 	}
 }
 

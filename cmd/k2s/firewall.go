@@ -57,84 +57,43 @@ func detectFirewall() firewallType {
 }
 
 // firewallRules generates the commands needed to open ports for the given firewall type.
-func firewallRules(fw firewallType, port int, hopStart, hopEnd int) []shellCmd {
+func firewallRules(fw firewallType, port int) []shellCmd {
 	switch fw {
 	case firewallUFW:
-		return ufwRules(port, hopStart, hopEnd)
+		return ufwRules(port)
 	case firewallFirewalld:
-		return firewalldRules(port, hopStart, hopEnd)
+		return firewalldRules(port)
 	case firewallIPTables:
-		return iptablesRules(port, hopStart, hopEnd)
+		return iptablesRules(port)
 	default:
 		return nil
 	}
 }
 
-func ufwRules(port int, hopStart, hopEnd int) []shellCmd {
-	rules := []shellCmd{
+func ufwRules(port int) []shellCmd {
+	return []shellCmd{
 		{name: "ufw", args: []string{"allow", fmt.Sprintf("%d/tcp", port)}},
 		{name: "ufw", args: []string{"allow", fmt.Sprintf("%d/udp", port)}},
 	}
-	if hopStart > 0 && hopEnd > 0 {
-		rules = append(rules, shellCmd{name: "ufw", args: []string{"allow", fmt.Sprintf("%d:%d/udp", hopStart, hopEnd)}})
-	}
-	return rules
 }
 
-func firewalldRules(port int, hopStart, hopEnd int) []shellCmd {
-	rules := []shellCmd{
+func firewalldRules(port int) []shellCmd {
+	return []shellCmd{
 		{name: "firewall-cmd", args: []string{"--permanent", fmt.Sprintf("--add-port=%d/tcp", port)}},
 		{name: "firewall-cmd", args: []string{"--permanent", fmt.Sprintf("--add-port=%d/udp", port)}},
+		{name: "firewall-cmd", args: []string{"--reload"}},
 	}
-	if hopStart > 0 && hopEnd > 0 {
-		rules = append(rules,
-			shellCmd{name: "firewall-cmd", args: []string{"--permanent", fmt.Sprintf("--add-port=%d-%d/udp", hopStart, hopEnd)}},
-			shellCmd{name: "firewall-cmd", args: []string{"--permanent", fmt.Sprintf("--add-forward-port=port=%d-%d:proto=udp:toport=%d", hopStart, hopEnd, port)}},
-		)
-	}
-	rules = append(rules, shellCmd{name: "firewall-cmd", args: []string{"--reload"}})
-	return rules
 }
 
-func iptablesRules(port int, hopStart, hopEnd int) []shellCmd {
-	rules := []shellCmd{
+func iptablesRules(port int) []shellCmd {
+	return []shellCmd{
 		{name: "iptables", args: []string{"-A", "INPUT", "-p", "tcp", "--dport", fmt.Sprintf("%d", port), "-j", "ACCEPT"}},
 		{name: "iptables", args: []string{"-A", "INPUT", "-p", "udp", "--dport", fmt.Sprintf("%d", port), "-j", "ACCEPT"}},
-	}
-	if hopStart > 0 && hopEnd > 0 {
-		rules = append(rules,
-			shellCmd{name: "iptables", args: []string{"-A", "INPUT", "-p", "udp", "--dport", fmt.Sprintf("%d:%d", hopStart, hopEnd), "-j", "ACCEPT"}},
-			shellCmd{name: "iptables", args: []string{"-t", "nat", "-A", "PREROUTING", "-p", "udp", "--dport", fmt.Sprintf("%d:%d", hopStart, hopEnd), "-j", "REDIRECT", "--to-port", fmt.Sprintf("%d", port)}},
-		)
-	}
-	return rules
-}
-
-// hopNATRules generates NAT redirect rules for port hopping (separate from port opening).
-// These redirect hop ports to the main listen port.
-func hopNATRules(fw firewallType, port, hopStart, hopEnd int) []shellCmd {
-	if hopStart == 0 || hopEnd == 0 {
-		return nil
-	}
-	switch fw {
-	case firewallUFW:
-		// ufw doesn't manage NAT, use raw iptables
-		return []shellCmd{
-			{name: "iptables", args: []string{"-t", "nat", "-A", "PREROUTING", "-p", "udp", "--dport", fmt.Sprintf("%d:%d", hopStart, hopEnd), "-j", "REDIRECT", "--to-port", fmt.Sprintf("%d", port)}},
-		}
-	case firewallFirewalld:
-		// Already included in firewalldRules
-		return nil
-	case firewallIPTables:
-		// Already included in iptablesRules
-		return nil
-	default:
-		return nil
 	}
 }
 
 // runFirewallSetup detects the firewall, shows rules, and optionally executes them.
-func runFirewallSetup(port int, hopStart, hopEnd int) {
+func runFirewallSetup(port int) {
 	fmt.Println()
 	fmt.Println("Firewall setup")
 	fmt.Println()
@@ -146,14 +105,14 @@ func runFirewallSetup(port int, hopStart, hopEnd int) {
 		fmt.Println("No firewall detected")
 		fmt.Println()
 		fmt.Println("If using cloud VPS, open these ports in Security Group:")
-		printRequiredPorts(port, hopStart, hopEnd)
+		printRequiredPorts(port)
 		return
 
 	case firewallIPTables:
 		fmt.Println("Detected: iptables (no ufw/firewalld)")
 		fmt.Println()
 		fmt.Println("Please run these commands manually:")
-		rules := firewallRules(fw, port, hopStart, hopEnd)
+		rules := firewallRules(fw, port)
 		for _, rule := range rules {
 			fmt.Printf("  %s\n", rule)
 		}
@@ -168,20 +127,15 @@ func runFirewallSetup(port int, hopStart, hopEnd int) {
 
 	fmt.Println()
 	fmt.Println("Ports to open:")
-	printRequiredPorts(port, hopStart, hopEnd)
+	printRequiredPorts(port)
 	fmt.Println()
 
 	autoConfig := promptYesNo("Auto-configure?", true)
 
-	rules := firewallRules(fw, port, hopStart, hopEnd)
-
-	// For ufw with hop, also need NAT rules
-	natRules := hopNATRules(fw, port, hopStart, hopEnd)
-
-	allRules := append(rules, natRules...)
+	rules := firewallRules(fw, port)
 
 	if autoConfig {
-		for _, cmd := range allRules {
+		for _, cmd := range rules {
 			fmt.Printf("  %s\n", cmd)
 			if err := cmd.Run(); err != nil {
 				fmt.Printf("  %s: %v\n", cmd, err)
@@ -189,7 +143,7 @@ func runFirewallSetup(port int, hopStart, hopEnd int) {
 		}
 	} else {
 		fmt.Println("Please run these commands manually:")
-		for _, cmd := range allRules {
+		for _, cmd := range rules {
 			fmt.Printf("  %s\n", cmd)
 		}
 	}
@@ -199,9 +153,6 @@ func runFirewallSetup(port int, hopStart, hopEnd int) {
 }
 
 // printRequiredPorts displays the ports that need to be opened.
-func printRequiredPorts(port int, hopStart, hopEnd int) {
+func printRequiredPorts(port int) {
 	fmt.Printf("  %d/tcp + %d/udp (main)\n", port, port)
-	if hopStart > 0 && hopEnd > 0 {
-		fmt.Printf("  %d-%d/udp      (hop)\n", hopStart, hopEnd)
-	}
 }

@@ -392,10 +392,6 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	// IPv6 omitted from connect URL — client doesn't handle ip6= reliably yet.
 	// Re-enable when client k2v5 URL parser handles IPv6 brackets correctly.
 
-	if cfg.HopStart > 0 && cfg.HopEnd > 0 {
-		connectURL += fmt.Sprintf("&hop=%d-%d", cfg.HopStart, cfg.HopEnd)
-	}
-
 	// Do NOT slog.Info the raw connectURL: it embeds auth.Token, and
 	// config.SetupLogging routes slog's default output into a rotated,
 	// world-readable (0644) log file meant for support/log-upload tooling —

@@ -50,7 +50,7 @@ func TestContract_StartupQUICFirst(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
@@ -102,7 +102,7 @@ func TestContract_NormalTCPviaQUIC_UDPviaDatagram(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
@@ -151,7 +151,7 @@ func TestContract_QUICBlocked_FallbackTCPWS(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(qc, "quic-hop")
+	tm.SetPrimary(qc, "quic-443")
 	tm.SetTCPWS(tcpws)
 	tm.SetFallbackActive(true)
 
@@ -192,7 +192,7 @@ func TestContract_QUICRecover_ProbeSuccess(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// Start in fallback state (QUIC was blocked).
@@ -243,7 +243,7 @@ func TestContract_DatagramLossHigh_DegradeToStream(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// UDP should succeed via TCP-WS fallback.
@@ -278,7 +278,7 @@ func TestContract_NetworkSwitch_ResetAll(t *testing.T) {
 	qc.handshakeFailStreak.Store(5)
 
 	tm := NewTransportManager()
-	tm.SetPrimary(qc, "quic-hop")
+	tm.SetPrimary(qc, "quic-443")
 	tm.SetFallbackActive(true)
 
 	// Simulate network change.
@@ -318,7 +318,7 @@ func TestContract_SlowUpstream_NoFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// DialTCP may succeed via TCP-WS per-request (QUIC error falls through).
@@ -357,7 +357,7 @@ func TestContract_ServerProxyError_NoFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	_, err := tm.DialTCP(context.Background(), "target.com:443", nil)
@@ -402,7 +402,7 @@ func TestContract_ServerRejected_NoFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	_, err := tm.DialTCP(context.Background(), "blocked.com:443", nil)
@@ -446,7 +446,7 @@ func TestContract_ReadResponseTimeout_NoFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	_, err := tm.DialTCP(context.Background(), "slow.example.com:443", nil)

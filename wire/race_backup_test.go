@@ -38,31 +38,32 @@ func TestDrainQUICBackup_CapturesConnectedQUIC(t *testing.T) {
 	}
 }
 
-// TestDrainQUICBackup_Prefers443OverHop verifies that when both quic-443
-// and quic-hop arrive, quic-443 is preferred as the backup.
-func TestDrainQUICBackup_Prefers443OverHop(t *testing.T) {
-	quic443 := &mockTransport{available: true}
-	quicHop := &mockTransport{available: true}
+// TestDrainQUICBackup_ClosesExtraQUICCandidates verifies that only the first
+// connected QUIC candidate is kept as the backup and any extra is closed —
+// leaking a live QUIC connection would keep an unused UDP socket open for the
+// lifetime of the outbound.
+func TestDrainQUICBackup_ClosesExtraQUICCandidates(t *testing.T) {
+	first := &mockTransport{available: true}
+	extra := &mockTransport{available: true}
 	res := &RaceResult{
 		Dialer:        &mockTransport{available: true},
 		TransportType: "tcpws",
 	}
 
 	results := make(chan raceCandidate, 2)
-	// quic-hop arrives first, then quic-443.
-	results <- raceCandidate{dialer: quicHop, transportType: "quic-hop"}
-	results <- raceCandidate{dialer: quic443, transportType: "quic-443"}
+	results <- raceCandidate{dialer: first, transportType: "quic-443"}
+	results <- raceCandidate{dialer: extra, transportType: "quic-443"}
 
 	var mu sync.Mutex
 	var backup *connectedQUIC
 
 	res = drainQUICBackup(res, results, 2, &mu, &backup)
 
-	if res.QUICBackup != quic443 {
-		t.Fatal("QUICBackup should prefer quic-443 over quic-hop")
+	if res.QUICBackup != first {
+		t.Fatal("QUICBackup should be the first connected QUIC candidate")
 	}
-	if !quicHop.closed {
-		t.Fatal("displaced quic-hop should be closed")
+	if !extra.closed {
+		t.Fatal("extra QUIC candidate should be closed, not leaked")
 	}
 }
 
