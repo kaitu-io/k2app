@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -63,6 +64,17 @@ const (
 	// failures to different hop ports before activating TCP-WS fallback.
 	quicConnFailThreshold int32 = 3
 )
+
+// legacySelectorEnabled returns true when K2_CHANNEL_SELECTOR_LEGACY=1,
+// reverting the channel selector to its pre-scoreboard behavior: switch-away
+// by handshake-failure streak alone (no quality path) and switch-back on a
+// bare successful handshake alone (no echo verification, no flap-window
+// wait). A production rollback valve — remove once the scoreboard is proven
+// stable. Read once, at TransportManager construction (NewTransportManager
+// caches it into tm.legacy); not re-read per call.
+func legacySelectorEnabled() bool {
+	return os.Getenv("K2_CHANNEL_SELECTOR_LEGACY") == "1"
+}
 
 const (
 	switchAwayRatio         = 1.5              // switch QUIC→TCPWS when tcpws > quic × this
@@ -232,6 +244,13 @@ type TransportManager struct {
 	// out the flap window. Read/written only from evaluateSelector, under mu.
 	channelReviewLoggedWindow time.Time
 	flapDampedLoggedWindow    time.Time
+
+	// legacy caches legacySelectorEnabled() at construction time — immutable
+	// for the TransportManager's lifetime (tests must t.Setenv BEFORE
+	// constructing). When true, evaluateSelector and runProbeOnce fall back
+	// to the pre-scoreboard handshake-streak-only semantics.
+	// LEGACY (K2_CHANNEL_SELECTOR_LEGACY=1): pre-scoreboard behavior — remove after scoreboard proven stable.
+	legacy bool
 }
 
 // NewTransportManager creates a new transport manager.
@@ -240,6 +259,7 @@ func NewTransportManager() *TransportManager {
 		scoreQUIC:  NewChannelScore(),
 		scoreTCPWS: NewChannelScore(),
 		selState:   selectorState{active: "quic"},
+		legacy:     legacySelectorEnabled(),
 	}
 }
 
@@ -409,6 +429,11 @@ func (tm *TransportManager) TCPWS() Dialer {
 // comparing against it naturally yields "once per fallback episode" without
 // needing to know the window's (doubling, 30s→600s) duration.
 func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
+	// LEGACY (K2_CHANNEL_SELECTOR_LEGACY=1): pre-scoreboard behavior — remove after scoreboard proven stable.
+	if tm.legacy {
+		return tm.evaluateSelectorLegacy(now)
+	}
+
 	tm.mu.Lock()
 	var consecFails int32
 	if qc, ok := tm.primary.(*QUICClient); ok {
@@ -483,6 +508,37 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 		slog.Info("DIAG: transport-switch", "from", "tcpws", "to", "quic", "reason", "quic-recovered")
 	}
 	return decision
+}
+
+// evaluateSelectorLegacy is the switch-away half of the
+// K2_CHANNEL_SELECTOR_LEGACY=1 rollback valve: only the fast path applies
+// (consecutive QUIC handshake failures) — the quality path (score ratio /
+// sustain window / backupFresh gate) is disabled entirely. Switch-back is
+// NOT decided here: in legacy mode it happens synchronously inside
+// runProbeOnce right after a bare handshake success (see its own LEGACY
+// fence), so this function never looks at the active=="tcpws" branch at
+// all. switchAway's flap-window bookkeeping still runs when this fires
+// (harmless — nextReviewAt is simply never consulted by the legacy
+// rollback path, so it can never block it).
+// LEGACY (K2_CHANNEL_SELECTOR_LEGACY=1): pre-scoreboard behavior — remove after scoreboard proven stable.
+func (tm *TransportManager) evaluateSelectorLegacy(now time.Time) channelDecision {
+	tm.mu.Lock()
+	var consecFails int32
+	if qc, ok := tm.primary.(*QUICClient); ok {
+		consecFails = qc.ConsecConnFails()
+	}
+	if tm.selState.active == "tcpws" || consecFails < quicConnFailThreshold {
+		tm.mu.Unlock()
+		return channelStay
+	}
+	tm.selState = switchAway(tm.selState, now)
+	scoreQUIC := tm.scoreQUIC.Value(now)
+	scoreTCPWS := tm.scoreTCPWS.Value(now)
+	tm.mu.Unlock()
+
+	slog.Warn("wire: switching to TCP-WS", "reason", "quic-handshake-threshold", "scoreQUIC", scoreQUIC, "scoreTCPWS", scoreTCPWS)
+	slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", "quic-handshake-threshold")
+	return channelSwitchToTCPWS
 }
 
 // SetPrimary sets the primary transport with its type label.
@@ -964,6 +1020,30 @@ func (tm *TransportManager) runProbeOnce(ctx context.Context) {
 		if err != nil {
 			slog.Debug("wire: QUIC probe handshake failed", "err", err)
 			tm.quicEchoRecovered.Store(false)
+			return
+		}
+
+		// LEGACY (K2_CHANNEL_SELECTOR_LEGACY=1): pre-scoreboard behavior — remove after scoreboard proven stable.
+		// Old root-cause-A rollback: a bare handshake success switches back
+		// to QUIC immediately — no echo verification, no quicEchoRecovered
+		// gate, no nextReviewAt wait. This is deliberately what a rollback
+		// valve is for. Equivalent to the pre-Task-3
+		// SetFallbackActiveWithReason(false, "quic-probe-success") path,
+		// inlined here because that shim's false branch does not itself log
+		// (only its active=true branch does).
+		if tm.legacy {
+			tm.recordQuicSuccess()
+			tm.mu.Lock()
+			wasTCPWS := tm.selState.active == "tcpws"
+			if wasTCPWS {
+				tm.selState.active = "quic"
+				tm.selState.aboveSince = time.Time{}
+			}
+			tm.mu.Unlock()
+			if wasTCPWS {
+				slog.Info("wire: rolling back to QUIC (legacy handshake-only)")
+				slog.Info("DIAG: transport-switch", "from", "tcpws", "to", "quic", "reason", "quic-probe-success")
+			}
 			return
 		}
 	}

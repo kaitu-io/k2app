@@ -2,6 +2,7 @@ package wire
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net"
 	"testing"
@@ -595,6 +596,121 @@ func TestTransportManager_Handshake_ConsecFailsFallback(t *testing.T) {
 	// Handshake should have activated fallback.
 	if !tm.FallbackActive() {
 		t.Fatal("fallbackActive should be set after ConsecConnFails >= threshold")
+	}
+}
+
+// TestLegacySelector_EnvGate pins legacySelectorEnabled()'s env contract:
+// K2_CHANNEL_SELECTOR_LEGACY=1 is the only truthy value.
+func TestLegacySelector_EnvGate(t *testing.T) {
+	t.Setenv("K2_CHANNEL_SELECTOR_LEGACY", "1")
+	if !legacySelectorEnabled() {
+		t.Fatal("expected legacy mode when env=1")
+	}
+	t.Setenv("K2_CHANNEL_SELECTOR_LEGACY", "")
+	if legacySelectorEnabled() {
+		t.Fatal("expected new mode when env unset")
+	}
+}
+
+// TestLegacySelector_RollbackOnHandshakeOnly is the mirror image of
+// TestProbe_RollbackRequiresEchoNotJustHandshake (transport_recovery_test.go):
+// that test pins that the NEW echo-gated probe must NOT roll back on a bare
+// handshake success against a half-dead QUIC server (handshake ok, echo
+// dead). This test drives the SAME half-dead server through a LEGACY
+// TransportManager and asserts the opposite — legacy mode restores the old
+// root-cause-A behavior where a bare handshake success alone is enough, so
+// the rollback valve genuinely reverts the fix. It also asserts a
+// non-legacy TM against the same server stays on tcpws, so the two modes are
+// contrasted side by side in one test.
+func TestLegacySelector_RollbackOnHandshakeOnly(t *testing.T) {
+	addr, cleanup := startHalfDeadQUICServer(t)
+	defer cleanup()
+
+	t.Setenv("K2_CHANNEL_SELECTOR_LEGACY", "1")
+	qcLegacy := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port}, NewCookieJar())
+	qcLegacy.SetTLSConfig(&tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}})
+	defer qcLegacy.Close()
+
+	tmLegacy := NewTransportManager()
+	if !tmLegacy.legacy {
+		t.Fatal("precondition: tmLegacy.legacy must be true (env set before construction)")
+	}
+	tmLegacy.SetPrimary(qcLegacy, "quic-443")
+	tmLegacy.SetTCPWS(&mockTransport{available: true})
+	tmLegacy.forceActiveForTest("tcpws")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	tmLegacy.runProbeOnceForTest(ctx)
+
+	if got := tmLegacy.ActiveChannel(); got != "quic" {
+		t.Fatalf("legacy TM ActiveChannel = %q, want quic — bare handshake success must roll back immediately in legacy mode", got)
+	}
+
+	// Contrast: a non-legacy TM against the same half-dead server must stay
+	// on tcpws (this is TestProbe_RollbackRequiresEchoNotJustHandshake's
+	// assertion, repeated here so the two modes are visibly side by side).
+	t.Setenv("K2_CHANNEL_SELECTOR_LEGACY", "")
+	qcNew := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port}, NewCookieJar())
+	qcNew.SetTLSConfig(&tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}})
+	defer qcNew.Close()
+
+	tmNew := NewTransportManager()
+	if tmNew.legacy {
+		t.Fatal("precondition: tmNew.legacy must be false (env unset before construction)")
+	}
+	tmNew.SetPrimary(qcNew, "quic-443")
+	tmNew.SetTCPWS(&mockTransport{available: true})
+	tmNew.forceActiveForTest("tcpws")
+	tmNew.runProbeOnceForTest(ctx)
+
+	if got := tmNew.ActiveChannel(); got != "tcpws" {
+		t.Fatalf("non-legacy TM ActiveChannel = %q, want tcpws — half-dead QUIC (handshake ok, echo dead) must NOT roll back", got)
+	}
+}
+
+// TestLegacySelector_QualityPathDisabled drives the quality-path switch-away
+// condition (tcpws sustained-better than quic, past the sustain window, with
+// fresh backup samples — exactly what TestSelector_QualityPathNeedsSustainAndFreshBackup
+// in transport_selector_test.go proves DOES switch away in non-legacy mode)
+// against a legacy TransportManager and asserts it does NOT switch: in
+// legacy mode only consecConnFails can move the selector away from quic.
+func TestLegacySelector_QualityPathDisabled(t *testing.T) {
+	t.Setenv("K2_CHANNEL_SELECTOR_LEGACY", "1")
+	tm := NewTransportManager()
+	if !tm.legacy {
+		t.Fatal("precondition: tm.legacy must be true (env set before construction)")
+	}
+	tm.SetPrimary(&mockTransport{available: true}, "quic-443")
+	tm.SetTCPWS(&mockTransport{available: true})
+
+	base := time.Now()
+
+	// Drive tcpws to a healthy score with fresh samples (backupFreshSamplesGate+).
+	for i := 0; i < 5; i++ {
+		tm.RecordEchoResult("tcpws", 15*time.Millisecond, nil, base)
+	}
+	if got := tm.ScoreTCPWS(base); got < 0.9 {
+		t.Fatalf("precondition: scoreTCPWS = %v, want a healthy (~1.0) score", got)
+	}
+
+	// Drive quic to a low score so scoreTCPWS > scoreQUIC*switchAwayRatio holds.
+	tm.RecordQUICStats(WireStats{PacketLossRate: 0.5, RTT: 500 * time.Millisecond, MinRTT: 20 * time.Millisecond}, base)
+	if got := tm.ScoreQUIC(base); got*switchAwayRatio >= tm.ScoreTCPWS(base) {
+		t.Fatalf("precondition: scoreQUIC=%v scoreTCPWS=%v does not satisfy the quality-path ratio", got, tm.ScoreTCPWS(base))
+	}
+
+	// Advance past the sustain window — in non-legacy mode this alone would
+	// be enough to switch away (see TestSelector_QualityPathNeedsSustainAndFreshBackup).
+	after := base.Add(qualitySustainWindow + time.Second)
+	if d := tm.evaluateSelector(base); d != channelStay {
+		t.Fatalf("evaluateSelector(base) = %v, want channelStay", d)
+	}
+	if d := tm.evaluateSelector(after); d != channelStay {
+		t.Fatalf("legacy evaluateSelector must NOT switch away on the quality path alone, got %v", d)
+	}
+	if got := tm.ActiveChannel(); got != "quic" {
+		t.Fatalf("ActiveChannel = %q, want quic — quality path must stay disabled in legacy mode", got)
 	}
 }
 
