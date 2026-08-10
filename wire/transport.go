@@ -63,6 +63,106 @@ const (
 	quicConnFailThreshold int32 = 3
 )
 
+const (
+	switchAwayRatio         = 1.5              // switch QUIC→TCPWS when tcpws > quic × this
+	switchBackRatio         = 1.2              // switch TCPWS→QUIC when quic > tcpws × this (higher = asymmetric hysteresis)
+	qualityDegradeThreshold = 0.7              // QUIC score below this pre-warns the frequency controller
+	qualitySustainWindow    = 10 * time.Second // quality-path condition must hold this long before switching away
+	flapWindowBase          = 30 * time.Second // first rollback review window
+	flapWindowMax           = 600 * time.Second
+	backupFreshSamplesGate  = 2 // backup must have this many fresh samples before the quality path may switch away
+)
+
+type channelDecision int
+
+const (
+	channelStay channelDecision = iota
+	channelSwitchToTCPWS
+	channelSwitchToQUIC
+)
+
+// selectorState is the persistent state of the hysteresis FSM. Copied by
+// value into selectorStep (pure) and written back by the stateful wrapper.
+type selectorState struct {
+	active       string    // "quic" | "tcpws"
+	aboveSince   time.Time // when the quality-path condition first held (zero = not holding)
+	flapCount    int       // completed QUIC→TCPWS→QUIC round trips
+	nextReviewAt time.Time // rollback review window opens at this time
+}
+
+// selectorInput is one evaluation's observations. All scores are ChannelScore.Value.
+type selectorInput struct {
+	now               time.Time
+	scoreQUIC         float64
+	scoreTCPWS        float64
+	consecConnFails   int32 // QUIC handshake streak (fast path)
+	backupFresh       int   // fresh backup samples since degradation pre-warning
+	quicEchoRecovered bool  // background probe passed handshake + 3 echo rounds
+	sinceAbove        time.Duration // test-only override: elapsed time condition has held; 0 = derive from aboveSince
+}
+
+// selectorStep is the pure transition. No time.Now, no I/O, no logging.
+func selectorStep(st selectorState, in selectorInput) (selectorState, channelDecision) {
+	if st.active == "quic" {
+		// Fast path: handshake genuinely failing (UDP blocked).
+		if in.consecConnFails >= quicConnFailThreshold {
+			return switchAway(st, in.now), channelSwitchToTCPWS
+		}
+
+		// Quality path: tcpws sustained-better AND backup measured fresh.
+		condHolds := in.scoreTCPWS > in.scoreQUIC*switchAwayRatio
+
+		if condHolds {
+			// Record when the condition first held
+			if st.aboveSince.IsZero() {
+				st.aboveSince = in.now
+			}
+
+			// Check if backup is fresh and enough time has passed
+			held := in.sinceAbove
+			if held == 0 {
+				held = in.now.Sub(st.aboveSince)
+			}
+
+			if in.backupFresh >= backupFreshSamplesGate && held >= qualitySustainWindow {
+				return switchAway(st, in.now), channelSwitchToTCPWS
+			}
+		} else {
+			// Condition not holding, reset the timer
+			st.aboveSince = time.Time{}
+		}
+
+		return st, channelStay
+	}
+
+	// active == "tcpws": rollback path.
+	if in.now.Before(st.nextReviewAt) {
+		return st, channelStay // flap-damped
+	}
+	if !in.quicEchoRecovered {
+		return st, channelStay
+	}
+	if in.scoreQUIC > in.scoreTCPWS*switchBackRatio {
+		st.active = "quic"
+		st.aboveSince = time.Time{}
+		return st, channelSwitchToQUIC
+	}
+	return st, channelStay
+}
+
+// switchAway transitions to tcpws and grows the flap-damping window.
+func switchAway(st selectorState, now time.Time) selectorState {
+	st.active = "tcpws"
+	st.aboveSince = time.Time{}
+	window := flapWindowBase << uint(st.flapCount)
+	if window > flapWindowMax || window <= 0 {
+		window = flapWindowMax
+	}
+	st.nextReviewAt = now.Add(window)
+	st.flapCount++
+	return st
+}
+
 // TransportManager manages primary and TCP-WS transports.
 // QUIC is strongly preferred; TCP-WS is used as last-resort fallback only
 // when QUIC is genuinely unavailable (UDP blocked). ISPs rarely block UDP,
