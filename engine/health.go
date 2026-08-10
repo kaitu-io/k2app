@@ -42,7 +42,6 @@ type HealthSnapshot struct {
 
 	// Relay-layer observability (NOT for wire-layer decisions).
 	RelayUDPTimeouts int32 `json:"relay_udp_timeouts"`
-	PortHopAttempts  int32 `json:"port_hop_attempts"`
 
 	// UDP drop counters are cumulative since the connection was established,
 	// not a per-interval delta — unlike RelayUDPTimeouts above (which resets
@@ -259,7 +258,6 @@ func (hm *healthMonitor) sample() {
 		WireFallback:   ws.WireFallback,
 
 		RelayUDPTimeouts: ws.RelayUDPTimeouts,
-		PortHopAttempts:  ws.PortHopAttempts,
 		UDPTxDrops:       ws.UDPTxDrops,
 		UDPRxDrops:       ws.UDPRxDrops,
 
@@ -367,7 +365,7 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 }
 
 // transition updates health state and streaks.
-// Returns a deferred action (port hop or full reconnect) to execute outside hm.mu.
+// Returns a deferred action (full reconnect) to execute outside hm.mu.
 func (hm *healthMonitor) transition(level string, tcpHealthy bool) (action func()) {
 	switch level {
 	case HealthHealthy:
@@ -413,7 +411,7 @@ func (hm *healthMonitor) transition(level string, tcpHealthy bool) (action func(
 
 // maybeAct decides on corrective action with cooldown.
 // Returns the action to execute outside hm.mu, or nil if no action needed.
-// Only action is full reconnect — wire layer owns port hop decisions.
+// Only action is full reconnect — wire layer owns transport decisions.
 func (hm *healthMonitor) maybeAct(tcpHealthy bool) func() {
 	if time.Since(hm.lastAction) < actionCooldown {
 		return nil

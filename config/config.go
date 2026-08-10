@@ -174,9 +174,7 @@ type ServerConfig struct {
 	Rate               int64             `yaml:"rate"`
 	Auth               AuthConfig        `yaml:"auth"`
 	Log                LogConfig         `yaml:"log"`
-	PIDFile            string            `yaml:"pid_file"`  // path to PID file (empty = no PID file)
-	HopStart           int               `yaml:"hop_start"` // hop port range start (0 = no hop)
-	HopEnd             int               `yaml:"hop_end"`   // hop port range end (0 = no hop)
+	PIDFile            string            `yaml:"pid_file"` // path to PID file (empty = no PID file)
 
 	// UsageAPIListen is the loopback usage API addr (Plan 3-k2s, A3).
 	// Default 127.0.0.1:9099; empty string disables the API.

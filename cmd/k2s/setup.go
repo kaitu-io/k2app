@@ -22,7 +22,6 @@ func cmdSetup(args []string) {
 	fs := flag.NewFlagSet("k2s setup", flag.ExitOnError)
 	portFlag := fs.Int("port", 0, "listen port (default: prompt or 443)")
 	usernameFlag := fs.String("username", "", "first user to create (default: prompt or prince)")
-	hopFlag := fs.String("hop", "", "port hop range, e.g. 50000-50100 (default: disabled)")
 	noFirewall := fs.Bool("no-firewall", false, "skip firewall configuration")
 	reset := fs.Bool("reset", false, "re-run setup (preserves certs and users)")
 	fs.Usage = func() {
@@ -77,32 +76,21 @@ Examples:
 		return
 	}
 
-	// Parse hop range if given.
-	hopStart, hopEnd := 0, 0
-	if *hopFlag != "" {
-		var err error
-		hopStart, hopEnd, err = parseRange(*hopFlag)
-		if err != nil {
-			out.fail("INVALID_HOP", err.Error(), "expected format: 50000-50100")
-			os.Exit(1)
-		}
-	}
-
 	// Non-interactive if all required params given.
 	if *portFlag > 0 && *usernameFlag != "" && *noFirewall {
 		runNonInteractiveSetup(certDir, configPath, usersPath, urlPath,
-			*portFlag, *usernameFlag, hopStart, hopEnd)
+			*portFlag, *usernameFlag)
 		return
 	}
 
 	// Interactive: prompt for missing params.
 	runInteractiveSetup(certDir, configPath, usersPath, urlPath,
-		*portFlag, *usernameFlag, hopStart, hopEnd, *noFirewall)
+		*portFlag, *usernameFlag, *noFirewall)
 }
 
 // runNonInteractiveSetup runs fully automated setup with all parameters provided.
 func runNonInteractiveSetup(certDir, configPath, usersPath, urlPath string,
-	port int, username string, hopStart, hopEnd int) {
+	port int, username string) {
 
 	if err := os.MkdirAll(certDir, 0755); err != nil {
 		out.fail("DIR_FAILED", err.Error(), "")
@@ -124,7 +112,7 @@ func runNonInteractiveSetup(certDir, configPath, usersPath, urlPath string,
 		os.Exit(2)
 	}
 
-	cfg := buildMinimalConfig(port, hopStart, hopEnd, usersPath)
+	cfg := buildMinimalConfig(port, usersPath)
 	if err := writeConfigYAML(configPath, cfg); err != nil {
 		out.fail("CONFIG_FAILED", err.Error(), "")
 		os.Exit(2)
@@ -153,7 +141,7 @@ func runNonInteractiveSetup(certDir, configPath, usersPath, urlPath string,
 // runInteractiveSetup prompts for missing parameters and runs setup.
 // Values already provided via flags are used directly without prompting.
 func runInteractiveSetup(certDir, configPath, usersPath, urlPath string,
-	portGiven int, usernameGiven string, hopStart, hopEnd int, noFirewall bool) {
+	portGiven int, usernameGiven string, noFirewall bool) {
 
 	if err := os.MkdirAll(certDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating directory %s: %v\n", certDir, err)
@@ -171,13 +159,7 @@ func runInteractiveSetup(certDir, configPath, usersPath, urlPath string,
 	}
 	fmt.Println()
 
-	// Step 2: Hop
-	if hopStart == 0 && hopEnd == 0 {
-		hopStart, hopEnd = promptHopRange()
-	}
-	fmt.Println()
-
-	// Step 3: Username
+	// Step 2: Username
 	var username, token string
 	var err error
 	if usernameGiven != "" {
@@ -199,15 +181,15 @@ func runInteractiveSetup(certDir, configPath, usersPath, urlPath string,
 	}
 	fmt.Println()
 
-	// Step 4: Firewall
+	// Step 3: Firewall
 	if !noFirewall {
-		runFirewallSetup(port, hopStart, hopEnd)
+		runFirewallSetup(port)
 	}
 	fmt.Println()
 
-	// Step 5: Config + start
+	// Step 4: Config + start
 	fmt.Println("Generating config...")
-	cfg := buildMinimalConfig(port, hopStart, hopEnd, usersPath)
+	cfg := buildMinimalConfig(port, usersPath)
 	if err := writeConfigYAML(configPath, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing config: %v\n", err)
 		os.Exit(1)
@@ -222,11 +204,11 @@ func runInteractiveSetup(certDir, configPath, usersPath, urlPath string,
 	}
 
 	url, _ = replaceURLCredentials(url, username, token)
-	printComplete(configPath, url, hopStart > 0)
+	printComplete(configPath, url)
 }
 
 // buildMinimalConfig creates a minimal config map with only user-chosen fields.
-func buildMinimalConfig(port, hopStart, hopEnd int, usersPath string) map[string]any {
+func buildMinimalConfig(port int, usersPath string) map[string]any {
 	cfg := map[string]any{
 		"listen": fmt.Sprintf(":%d", port),
 		"auth": map[string]any{
@@ -235,10 +217,6 @@ func buildMinimalConfig(port, hopStart, hopEnd int, usersPath string) map[string
 		"log": map[string]any{
 			"level": "info",
 		},
-	}
-	if hopStart > 0 && hopEnd > 0 {
-		cfg["hop_start"] = hopStart
-		cfg["hop_end"] = hopEnd
 	}
 	return cfg
 }

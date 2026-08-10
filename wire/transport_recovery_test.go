@@ -45,7 +45,7 @@ func TestTransportManager_FallbackTracking(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// Before fallback: QUIC stats
@@ -97,7 +97,7 @@ func TestTransportManager_QuicRecovery(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// Set fallback, then QUIC succeeds → should clear fallback
@@ -118,7 +118,7 @@ func TestTransportManager_QuicRecovery(t *testing.T) {
 // clears fallback state.
 func TestTransportManager_ResetClearsFallback(t *testing.T) {
 	tm := NewTransportManager()
-	tm.SetPrimary(&mockTransport{available: true}, "quic-hop")
+	tm.SetPrimary(&mockTransport{available: true}, "quic-443")
 	tm.SetTCPWS(&mockTransport{available: true})
 
 	tm.SetFallbackActive(true)
@@ -140,7 +140,7 @@ func TestReset_ClearsConsecConnFails(t *testing.T) {
 	qc.handshakeFailStreak.Store(2)
 
 	tm := NewTransportManager()
-	tm.SetPrimary(qc, "quic-hop")
+	tm.SetPrimary(qc, "quic-443")
 
 	tm.Reset()
 
@@ -166,7 +166,7 @@ func TestTransportManager_RelayUDPUnhealthyNotFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialUDP(context.Background(), "8.8.8.8:53")

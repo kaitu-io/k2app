@@ -144,7 +144,7 @@ func TestTransportManager_DialTCP_FallbackWorks(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
@@ -194,7 +194,7 @@ func TestTransportManager_DialUDP_FallbackAfterHealthDegradation(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// Simulate threshold broken connections (these succeed but are broken)
@@ -254,7 +254,7 @@ func TestTransportManager_DialUDP_FallbackOnDialError(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialUDP(context.Background(), "8.8.8.8:53")
@@ -299,7 +299,7 @@ func TestTransportManager_DialUDP_Asymmetry(t *testing.T) {
 			dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 				return nil, errors.New("QUIC broken")
 			},
-		}, "quic-hop")
+		}, "quic-443")
 		tm.SetTCPWS(&mockTransport{
 			available: true,
 			dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
@@ -334,7 +334,7 @@ func TestTransportManager_DialUDP_Asymmetry(t *testing.T) {
 				}
 				return &brokenPacketConn{closed: make(chan struct{})}, nil
 			},
-		}, "quic-hop")
+		}, "quic-443")
 		tm.SetTCPWS(&mockTransport{
 			available: true,
 			dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {

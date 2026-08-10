@@ -37,7 +37,7 @@ k2s help                            Usage info
 - `main.go` — Subcommand dispatch, global flags, `cmdRun`, `cmdConfig`
 - `output.go` — Output layer (human vs JSON switching)
 - `setup.go` — `k2s setup`: wizard + non-interactive mode
-- `wizard.go` — Interactive prompts (port, hop range, username)
+- `wizard.go` — Interactive prompts (port, username)
 - `user.go` — `k2s user`: add/list/del/reset with --json support
 - `upgrade.go` — `k2s upgrade`: LATEST + checksums.txt from CDN, beta channel support
 - `service.go` — `k2s service`: install/uninstall

@@ -53,7 +53,6 @@ type WireStats struct {
 
 	// Relay-layer observability (NOT for wire-layer decisions).
 	RelayUDPTimeouts int32 // consecutive timeout count
-	PortHopAttempts  int32 // port hop attempts
 
 	// UDP drop counters are cumulative since the connection was established,
 	// not a per-interval delta — unlike RelayUDPTimeouts above (which resets
@@ -147,8 +146,6 @@ type Config struct {
 	Port        int
 	ECH         string
 	Fingerprint string
-	HopStart    int
-	HopEnd      int
 	Insecure    bool   // skip TLS certificate verification (for self-signed certs)
 	Pin         string // pin=sha256:<rsa>,sha256:<ec> — public key pin hashes
 	IPv4        string // ip= parameter: raw IPv4 address for dialing
@@ -220,14 +217,9 @@ func ParseURL(raw string) (Config, error) {
 	if v := q.Get("tp"); v != "" {
 		cfg.Transport = v
 	}
-	if v := q.Get("hop"); v != "" {
-		start, end, err := parseHopRange(v)
-		if err != nil {
-			return Config{}, fmt.Errorf("wire: invalid hop range %q: %w", v, err)
-		}
-		cfg.HopStart = start
-		cfg.HopEnd = end
-	}
+	// hop= is deliberately ignored: port hopping was removed at the protocol
+	// layer (fixed 443 is what the camouflage story depends on). Old servers
+	// still emit it; parsing it would only resurrect a dead knob.
 
 	return cfg, nil
 }
@@ -272,21 +264,3 @@ func normalizeSslipIPv6(s string) string {
 	return s
 }
 
-func parseHopRange(s string) (int, int, error) {
-	parts := strings.SplitN(s, "-", 2)
-	if len(parts) != 2 {
-		return 0, 0, errors.New("expected start-end format")
-	}
-	start, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return 0, 0, err
-	}
-	end, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, 0, err
-	}
-	if start >= end {
-		return 0, 0, errors.New("start must be less than end")
-	}
-	return start, end, nil
-}

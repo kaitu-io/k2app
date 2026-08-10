@@ -53,8 +53,6 @@ func TestQUICClientConfig(t *testing.T) {
 		Port:        443,
 		ECH:         "dGVzdA==", // "test" in base64
 		Fingerprint: "chrome",
-		HopStart:    10000,
-		HopEnd:      20000,
 	}
 
 	qc := NewQUICClient(cfg, nil)
@@ -63,23 +61,6 @@ func TestQUICClientConfig(t *testing.T) {
 	}
 	if qc.serverAddr != "1.2.3.4:443" {
 		t.Errorf("serverAddr = %q, want %q", qc.serverAddr, "1.2.3.4:443")
-	}
-	if !qc.hopEnabled() {
-		t.Error("port hopping should be enabled")
-	}
-}
-
-func TestQUICClientConfig_NoHop(t *testing.T) {
-	cfg := Config{
-		Host:        "1.2.3.4",
-		Port:        443,
-		ECH:         "dGVzdA==",
-		Fingerprint: "chrome",
-	}
-
-	qc := NewQUICClient(cfg, nil)
-	if qc.hopEnabled() {
-		t.Error("port hopping should be disabled when hop range not set")
 	}
 }
 
@@ -102,24 +83,19 @@ func TestQUICServer_Create(t *testing.T) {
 	}
 }
 
-func TestQUICClient_HopPort(t *testing.T) {
-	qc := NewQUICClient(Config{
-		Host:     "1.2.3.4",
-		Port:     443,
-		HopStart: 10000,
-		HopEnd:   20000,
-	}, nil)
-
-	seen := make(map[int]bool)
-	for i := 0; i < 100; i++ {
-		port := qc.hopPort()
-		if port < 10000 || port >= 20000 {
-			t.Fatalf("hopPort() = %d, out of range [10000, 20000)", port)
-		}
-		seen[port] = true
+// TestQUICClient_DialsConfiguredPortOnly pins the post-port-hopping invariant:
+// the dial address is fixed at construction and a legacy hop= parameter from an
+// un-upgraded server cannot move it off the configured port. 443 has to stay 443
+// or the whole camouflage story falls apart.
+func TestQUICClient_DialsConfiguredPortOnly(t *testing.T) {
+	cfg, err := ParseURL("k2v5://dev:tok@1.2.3.4:443?ech=dGVzdA==&hop=50000-50100")
+	if err != nil {
+		t.Fatalf("ParseURL: %v", err)
 	}
-	if len(seen) < 5 {
-		t.Errorf("hopPort() lacks randomness, only %d distinct ports in 100 calls", len(seen))
+
+	qc := NewQUICClient(cfg, nil)
+	if qc.serverAddr != "1.2.3.4:443" {
+		t.Fatalf("serverAddr = %q, want 1.2.3.4:443 (hop= must not move the dial port)", qc.serverAddr)
 	}
 }
 

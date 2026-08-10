@@ -235,8 +235,8 @@ func TestContract_OldServerNoEcho(t *testing.T) {
 // hot-swap mechanism used by re-race when echo probes detect degradation.
 //
 // User scenario: tunnel running on QUIC-443, network change causes echo
-// failures, re-race finds QUIC-hop works better, hot-swaps without dropping
-// TCP-WS fallback.
+// failures, re-race establishes a fresh QUIC connection, hot-swaps without
+// dropping TCP-WS fallback.
 func TestContract_ReplacePrimary_ClosesOld(t *testing.T) {
 	old := &mockTransport{available: true}
 	tcpws := &mockTransport{available: true}
@@ -252,7 +252,7 @@ func TestContract_ReplacePrimary_ClosesOld(t *testing.T) {
 	}
 
 	newPrimary := &mockTransport{available: true}
-	tm.ReplacePrimary(newPrimary, "quic-hop")
+	tm.ReplacePrimary(newPrimary, "quic-443")
 
 	// Old primary must be closed.
 	if !old.closed {
@@ -270,8 +270,8 @@ func TestContract_ReplacePrimary_ClosesOld(t *testing.T) {
 	}
 
 	// Type label must be updated.
-	if got := tm.PrimaryType(); got != "quic-hop" {
-		t.Errorf("PrimaryType = %q, want quic-hop", got)
+	if got := tm.PrimaryType(); got != "quic-443" {
+		t.Errorf("PrimaryType = %q, want quic-443", got)
 	}
 
 	// Fallback must be cleared (new primary is fresh).

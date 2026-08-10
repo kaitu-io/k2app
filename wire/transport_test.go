@@ -77,7 +77,7 @@ func TestTransportManager_DialTCP_QUICPreferred(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
@@ -108,7 +108,7 @@ func TestTransportManager_DialTCP_FallbackToTCPWS(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
@@ -124,7 +124,7 @@ func TestTransportManager_DialTCP_FallbackToTCPWS(t *testing.T) {
 
 func TestTransportManager_DialTCP_BothDown(t *testing.T) {
 	tm := NewTransportManager()
-	tm.SetPrimary(&mockTransport{available: false}, "quic-hop")
+	tm.SetPrimary(&mockTransport{available: false}, "quic-443")
 	tm.SetTCPWS(&mockTransport{available: false})
 
 	_, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
@@ -161,7 +161,7 @@ func TestTransportManager_DialTCP_QUICFailsFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
@@ -180,7 +180,7 @@ func TestTransportManager_Close(t *testing.T) {
 	tcpws := &mockTransport{available: true}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	err := tm.Close()
@@ -239,7 +239,7 @@ func TestTransportManager_DialUDP_BothDown(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	_, err := tm.DialUDP(context.Background(), "8.8.8.8:53")
@@ -281,7 +281,7 @@ func TestTransportManager_Reset(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tm := NewTransportManager()
 			if tt.quic != nil {
-				tm.SetPrimary(tt.quic, "quic-hop")
+				tm.SetPrimary(tt.quic, "quic-443")
 			}
 			if tt.tcpws != nil {
 				tm.SetTCPWS(tt.tcpws)
@@ -302,17 +302,17 @@ func TestTransportManager_Reset(t *testing.T) {
 // Network change recovery tests
 // ==========================================================================
 
-func TestReset_ClearsPortHopAttempts(t *testing.T) {
-	client := NewQUICClient(Config{HopStart: 1000, HopEnd: 2000}, nil)
-	client.portHopAttempts.Store(3) // exhausted
+func TestReset_ClearsHandshakeFailStreak(t *testing.T) {
+	client := NewQUICClient(Config{Host: "1.2.3.4", Port: 443}, nil)
+	client.handshakeFailStreak.Store(quicConnFailThreshold)
 
 	tm := NewTransportManager()
-	tm.SetPrimary(client, "quic-hop")
+	tm.SetPrimary(client, "quic-443")
 
 	tm.Reset()
 
-	if got := client.portHopAttempts.Load(); got != 0 {
-		t.Fatalf("portHopAttempts = %d after Reset, want 0", got)
+	if got := client.ConsecConnFails(); got != 0 {
+		t.Fatalf("handshakeFailStreak = %d after Reset, want 0", got)
 	}
 }
 
@@ -353,7 +353,7 @@ func TestTransportManager_FallbackSkipsQUIC(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 	tm.SetFallbackActive(true)
 
@@ -386,7 +386,7 @@ func TestTransportManager_QUICFailNoFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(quic, "quic-hop")
+	tm.SetPrimary(quic, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// Multiple QUIC failures — should NOT auto-activate fallback.
@@ -418,7 +418,7 @@ func TestTransportManager_ConsecConnFailsFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(qc, "quic-hop")
+	tm.SetPrimary(qc, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// Below threshold: no fallback.
@@ -463,7 +463,7 @@ func TestTransportManager_ConsecConnFailsReset(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetPrimary(qc, "quic-hop")
+	tm.SetPrimary(qc, "quic-443")
 	tm.SetTCPWS(tcpws)
 
 	// 2 failures, then recordQuicSuccess resets counter.
@@ -522,7 +522,7 @@ func TestTransportManager_Handshake_BothFail(t *testing.T) {
 	tc.closed = true // forces connect() to return ErrNotConnected
 
 	tm := NewTransportManager()
-	tm.SetPrimary(qc, "quic-hop")
+	tm.SetPrimary(qc, "quic-443")
 	tm.SetTCPWS(tc)
 
 	err := tm.Handshake(context.Background())
@@ -544,7 +544,7 @@ func TestTransportManager_Handshake_FallbackSkipsQUIC(t *testing.T) {
 	tc.closed = true // TCP-WS will fail, proving it was attempted
 
 	tm := NewTransportManager()
-	tm.SetPrimary(qc, "quic-hop")
+	tm.SetPrimary(qc, "quic-443")
 	tm.SetTCPWS(tc)
 	tm.SetFallbackActive(true)
 
@@ -583,7 +583,7 @@ func TestTransportManager_Handshake_ConsecFailsFallback(t *testing.T) {
 	tc.closed = true // TCP-WS also fails, but we only care about fallbackActive
 
 	tm := NewTransportManager()
-	tm.SetPrimary(qc, "quic-hop")
+	tm.SetPrimary(qc, "quic-443")
 	tm.SetTCPWS(tc)
 
 	err := tm.Handshake(context.Background())

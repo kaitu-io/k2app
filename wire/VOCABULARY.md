@@ -16,13 +16,12 @@ Three-layer model for metrics, naming, and decision ownership.
 
 ## Key Rule
 
-> **Wire-layer decisions (port hop, reconnect, fallback) must only be driven by Wire-layer metrics (K2CC packet loss, QUIC handshake failure).** Relay-layer metrics (datagram sent/recv ratio) are observability only.
+> **Wire-layer decisions (reconnect, transport fallback) must only be driven by Wire-layer metrics (K2CC packet loss, QUIC handshake failure).** Relay-layer metrics (datagram sent/recv ratio) are observability only.
 
 ## Naming Conventions
 
 - `PacketLossRate` — Wire-layer loss from K2CC (ACK-based, per monitor interval)
 - `RelayUDPTimeouts` — Relay-layer consecutive timeout count
-- `PortHopAttempts` — Wire-layer port hop counter (not relay-specific)
 - `WireFallback` — TCP-WS serving traffic due to QUIC failure
 - `handshakeFailStreak` — Consecutive QUIC handshake failures (drives fallback)
 - `smoothWireLoss` — EWMA-smoothed wire loss in healthMonitor

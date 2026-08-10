@@ -13,7 +13,7 @@ import (
 // rollout failure reaches engine.Start) degraded to an unclassifiable string.
 func TestRaceExitError_PreservesStructuredCause(t *testing.T) {
 	authErr := fmt.Errorf("%w: %w", ErrMetadataRejected, &StreamError{Code: 402, Message: "subscription expired"})
-	err := raceExitError(authErr, nil, errors.New("tcpws: dial refused"))
+	err := raceExitError(authErr, errors.New("tcpws: dial refused"))
 	if err == nil {
 		t.Fatal("want non-nil")
 	}
@@ -27,7 +27,7 @@ func TestRaceExitError_PreservesStructuredCause(t *testing.T) {
 }
 
 func TestRaceExitError_AllNil(t *testing.T) {
-	if err := raceExitError(nil, nil, nil); err == nil {
+	if err := raceExitError(nil, nil); err == nil {
 		t.Fatal("all-nil (timeout without candidate errors) must still be an error")
 	}
 }

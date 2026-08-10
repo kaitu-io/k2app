@@ -25,7 +25,7 @@ func NewQUICClientFromConn(conn *quic.Conn, transport *quic.Transport, cfg Confi
 	c.transport = transport
 	c.ccSender = sender
 	c.alloc = NewSessionIDAllocator()
-	c.udpMux = newQuicUDPMux(conn, &c.portHopAttempts, &c.portHopExhaustedAt)
+	c.udpMux = newQuicUDPMux(conn)
 	c.mu.Unlock()
 
 	go c.acceptOverflowStreams(conn, c.udpMux)

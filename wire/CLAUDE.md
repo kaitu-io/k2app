@@ -35,9 +35,15 @@ type StatsProvider interface {
 
 ## Config (wire.go)
 
-`Config` parsed from `k2v5://udid:token@host:port?ech=...&pin=...&fp=...&hop=START-END`
+`Config` parsed from `k2v5://udid:token@host:port?ech=...&pin=...&fp=...`
 
-Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, Pin.
+Fields: UDID, Token, Host, Port, ECH, Fingerprint, Insecure, Pin.
+
+Port hopping was removed at the protocol layer: the dial port is whatever the URL
+says (443 in production) and never moves. A legacy `hop=` emitted by an
+un-upgraded server parses clean and is dropped — never resurrect it as a
+dial-port override, a random high UDP port is exactly the anomaly the 443
+camouflage exists to avoid.
 
 ## Files
 
@@ -58,11 +64,11 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `certgen.go` — `GenerateCertPair` (RSA-2048 + EC P-256), `EnsureCertPair`, pin hash generation
 - `stream.go` — QUIC varint encoding, `StreamHeader` (type 0x4B32 H3 frame), request/response
 - `udp.go` — `UDPFrame` wire format, `SessionAllocator`, `SessionMap`, smux framing
-- `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, relay UDP health tracking (`quicUDPMux`: consecutive timeouts → `ErrDatagramRelayUnhealthy` for TCP-WS fallback, consecutive-recv counter for hop recovery)
+- `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, relay UDP health tracking (`quicUDPMux`: consecutive timeouts → `ErrDatagramRelayUnhealthy` for TCP-WS fallback, any recv clears the streak)
 - `quic_limits_desktop.go` — Desktop/server QUIC flow control windows (8 MB stream / 20 MB conn / 256 streams)
 - `quic_limits_mobile.go` — Mobile QUIC flow control windows (2 MB stream / 8 MB conn / 64 streams) — iOS NE ~50 MB jetsam limit
 - `echo.go` — `EchoProbe` (client) + `HandleEchoStream` (server), `EchoProber` interface, `StreamTypeEcho=0x04`
-- `race.go` — `RaceTransport`: three-way Happy Eyeballs (QUIC-443 → QUIC-hop → TCP-WS), staggered start, echo verification
+- `race.go` — `RaceTransport`: two-way Happy Eyeballs (QUIC-443 → TCP-WS at +800ms), staggered start, echo verification
 - `tcpws.go` — smux config, `TCPWSClient`/`TCPWSServer`
 - `transport.go` — `TransportManager`: QUIC strongly preferred, TCP-WS last-resort fallback. Consecutive handshake failure threshold (3, `handshakeFailStreak`) activates fallback — no exponential backoff. Background QUIC probe loop (30s interval) actively tests recovery during fallback. `DialTCP` tries QUIC first (with context budget 3-5s), falls back to TCP-WS on failure. `FallbackActive` tracks QUIC→TCP-WS state. `Reset` uses the `wire.Dialer` interface contract (no concrete type assertions).
 - `ip.go` — `ProbePublicIP`, `FormatSslipHost`, `HasIPv6` (server auto-provisioning helpers)
@@ -103,7 +109,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - QUIC connection liveness: quic-go's KeepAlive (10s) + MaxIdleTimeout (30s) detect dead connections at protocol level. `conn.Context().Done()` fires when connection dies. `connect()` checks this before reusing cached conn — no manual `resetConnection()` needed on error paths. macOS sleep/wake is handled by singTunMonitor → `OnNetworkChanged()` → `Reset()` (desktop), or by platform-native callbacks (appext). No application-level wall-clock staleness check needed.
 - Stream response timeout ≠ transport failure: A 5s stream response timeout means the server's upstream `net.Dial` to the destination is slow/failing — NOT that QUIC transport is broken (OpenStreamSync succeeded = transport is alive). Do NOT increment `handshakeFailStreak` or trigger TCP-WS fallback on stream timeouts. `handshakeFailStreak` is strictly for QUIC handshake failures (UDP blocked by firewall).
 - Proxy-layer errors skip TCP-WS fallback: Dialer marks errors as proxy-layer after the request is sent (stream opened + header written). `ProxyLayerError` wrapper and `StreamError` both implement `IsProxyLayer() bool`. `TransportManager` checks via interface (`proxyLayerErr`), not type enumeration. Covers: `StreamError` (server error code), `ErrStreamRejected` (server rejection), `ReadStreamResponse` timeout (server processing). Only transport-layer errors (handshake failure, stream open failure, write failure) trigger per-request fallback.
-- Relay UDP unhealthy → `ErrDatagramRelayUnhealthy`: When relay datagram path has consecutive ReadFrom timeouts (threshold: 3), `DialUDP` returns `ErrDatagramRelayUnhealthy` for per-request TCP-WS fallback. Loss rate tracking was removed (DNS racing inflated false positives). Hop counter resets after 10 consecutive recvs without timeout. Relay-layer metrics never trigger wire-layer actions (port hop, reconnect). See `VOCABULARY.md`.
+- Relay UDP unhealthy → `ErrDatagramRelayUnhealthy`: When relay datagram path has consecutive ReadFrom timeouts (threshold: 3), `DialUDP` returns `ErrDatagramRelayUnhealthy` for per-request TCP-WS fallback. Loss rate tracking was removed (DNS racing inflated false positives). Any successful recv clears the timeout streak. Relay-layer metrics never trigger wire-layer actions (reconnect, transport switch). See `VOCABULARY.md`.
 - QUIC flow control is platform-specific (build tags `ios || android` vs desktop) — mobile uses smaller windows (2 MB stream / 8 MB conn vs 8 MB / 20 MB desktop) to stay under iOS NE jetsam limit.
 - QUIC stream responses have 5s timeout to prevent indefinite blocking on slow/dead servers.
 - `DialTCP(ctx, addr, earlyData)` sends earlyData after stream header, before reading server response. Server's `bufio.Reader` naturally buffers it during header parsing; `pipe()` consumes it after upstream dial. Saves 1 RTT on high-latency links. Backward compatible — old servers handle it without changes. Pass `nil` for no early data.
