@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 
 	tls "github.com/metacubex/utls"
 
@@ -38,6 +39,24 @@ var (
 var ErrNoQUICTransportParametersExtension = errors.New(
 	"kuic: ClientHelloSpec has no *utls.QUICTransportParametersExtension; " +
 		"a QUIC ClientHello must carry quic_transport_parameters (id 57)")
+
+// ErrSNIWithoutHostname is returned when a spec carries a server_name
+// extension but the TLS config has no host name to put in it.
+//
+// utls fills SNIExtension.ServerName from Config.ServerName. Empty gives an
+// SNI with an empty host; an IP literal gives an SNI that RFC 6066 §3 forbids
+// ("Literal IPv4 and IPv6 addresses are not permitted"). Either way the peer
+// drops the ClientHello without answering, and the dial surfaces as a bare
+// timeout with nothing on the wire to explain it.
+//
+// The unshaped path never hits this: crypto/tls and utls both simply omit the
+// extension when ServerName is unusable. A spec cannot, because the extension
+// is in the list the caller asked to send. Note that quic-go fills an empty
+// ServerName in from the dial address, so dialing an IP with no explicit
+// ServerName lands here rather than in the empty case.
+var ErrSNIWithoutHostname = errors.New(
+	"kuic: ClientHelloSpec contains a server_name extension but tls.Config.ServerName " +
+		"is empty or an IP literal; peers silently drop such a ClientHello (RFC 6066 §3)")
 
 // fingerprintedConn adapts utls's fingerprint-shaping QUIC connection to
 // quicTLSConn.
@@ -81,6 +100,9 @@ func newFingerprintedConn(qconf *tls.QUICConfig, spec *tls.ClientHelloSpec) (*fi
 	if tpExt == nil {
 		return nil, ErrNoQUICTransportParametersExtension
 	}
+	if specHasSNI(spec) && !usableSNI(qconf.TLSConfig.ServerName) {
+		return nil, fmt.Errorf("%w (ServerName=%q)", ErrSNIWithoutHostname, qconf.TLSConfig.ServerName)
+	}
 
 	uconn := tls.UQUICClient(qconf, tls.HelloCustom)
 	if err := uconn.ApplyPreset(spec); err != nil {
@@ -117,6 +139,23 @@ func findQUICTransportParametersExtension(spec *tls.ClientHelloSpec) *tls.QUICTr
 		}
 	}
 	return nil
+}
+
+// specHasSNI reports whether the spec asks for a server_name extension whose
+// value utls would fill in from the TLS config.
+func specHasSNI(spec *tls.ClientHelloSpec) bool {
+	for _, ext := range spec.Extensions {
+		if sni, ok := ext.(*tls.SNIExtension); ok && sni.ServerName == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// usableSNI reports whether name can legally appear in a server_name
+// extension: non-empty and not an IP literal.
+func usableSNI(name string) bool {
+	return name != "" && net.ParseIP(name) == nil
 }
 
 // rawTransportParameter carries one already-encoded transport parameter through

@@ -327,3 +327,34 @@ func TestFingerprintSpec_PluggableCongestionControl(t *testing.T) {
 	require.Eventually(t, func() bool { return cc.sent.Load() > 0 }, 3*time.Second, 10*time.Millisecond,
 		"the installed congestion controller never saw a packet — SetCongestionControl is not taking effect on the fingerprinted dial path")
 }
+
+// TestFingerprintSpecUnusableSNI_FailsLoudly covers a trap that costs hours
+// when it is not caught here. utls fills SNIExtension.ServerName from
+// tls.Config.ServerName, and quic-go fills an empty ServerName in from the dial
+// address — so dialing an IP without an explicit ServerName ships an SNI
+// containing an IP literal, which RFC 6066 forbids. The peer drops the
+// ClientHello without replying and the dial reads as a plain timeout.
+//
+// Verified by construction: the same dial with ServerName "localhost" succeeds
+// (TestFingerprintSpecWithoutECH_Handshakes), and with "127.0.0.1" it hung for
+// the full context before this guard existed.
+func TestFingerprintSpecUnusableSNI_FailsLoudly(t *testing.T) {
+	ln, err := ListenAddr("127.0.0.1:0", &tls.Config{
+		Certificates: []tls.Certificate{testdata.GetTLSConfig().Certificates[0]},
+		NextProtos:   []string{gateALPN},
+	}, &Config{})
+	require.NoError(t, err)
+	defer ln.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err = DialAddr(ctx, ln.Addr().String(), &tls.Config{
+		InsecureSkipVerify: true, // no ServerName: quic-go fills in the dial IP
+		NextProtos:         []string{gateALPN},
+		MinVersion:         tls.VersionTLS13,
+	}, &Config{
+		NewClientHelloSpec: func() (*tls.ClientHelloSpec, error) { return gateClientHelloSpec(t), nil },
+	})
+	require.ErrorIs(t, err, handshake.ErrSNIWithoutHostname)
+}
