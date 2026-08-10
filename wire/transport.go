@@ -98,12 +98,12 @@ type selectorInput struct {
 	consecConnFails   int32 // QUIC handshake streak (fast path)
 	backupFresh       int   // fresh backup samples since degradation pre-warning
 	quicEchoRecovered bool  // background probe passed handshake + 3 echo rounds
-	sinceAbove        time.Duration // test-only override: elapsed time condition has held; 0 = derive from aboveSince
 }
 
 // selectorStep is the pure transition. No time.Now, no I/O, no logging.
 func selectorStep(st selectorState, in selectorInput) (selectorState, channelDecision) {
-	if st.active == "quic" {
+	if st.active != "tcpws" {
+		// QUIC branch (default: empty string is treated as QUIC).
 		// Fast path: handshake genuinely failing (UDP blocked).
 		if in.consecConnFails >= quicConnFailThreshold {
 			return switchAway(st, in.now), channelSwitchToTCPWS
@@ -119,10 +119,7 @@ func selectorStep(st selectorState, in selectorInput) (selectorState, channelDec
 			}
 
 			// Check if backup is fresh and enough time has passed
-			held := in.sinceAbove
-			if held == 0 {
-				held = in.now.Sub(st.aboveSince)
-			}
+			held := in.now.Sub(st.aboveSince)
 
 			if in.backupFresh >= backupFreshSamplesGate && held >= qualitySustainWindow {
 				return switchAway(st, in.now), channelSwitchToTCPWS
@@ -154,10 +151,18 @@ func selectorStep(st selectorState, in selectorInput) (selectorState, channelDec
 func switchAway(st selectorState, now time.Time) selectorState {
 	st.active = "tcpws"
 	st.aboveSince = time.Time{}
-	window := flapWindowBase << uint(st.flapCount)
-	if window > flapWindowMax || window <= 0 {
+
+	var window time.Duration
+	const maxSafeShift = 20 // 30s<<20 ≈ 8.7h, far exceeds flapWindowMax; prevent overflow
+	if st.flapCount >= maxSafeShift {
 		window = flapWindowMax
+	} else {
+		window = flapWindowBase << uint(st.flapCount)
+		if window > flapWindowMax || window <= 0 {
+			window = flapWindowMax
+		}
 	}
+
 	st.nextReviewAt = now.Add(window)
 	st.flapCount++
 	return st

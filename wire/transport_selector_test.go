@@ -90,8 +90,10 @@ func TestSelector_FlapWindowDoublesCapped(t *testing.T) {
 func TestSelector_DeadZoneNoMovement(t *testing.T) {
 	base := time.Unix(1000, 0)
 	onQUIC := newState("quic")
+	// Set aboveSince and advance time to simulate sustained condition holding.
+	onQUIC.aboveSince = base
 	// ratio tcpws/quic = 0.6/0.5 = 1.2 (< 1.5) → stay on QUIC.
-	_, d := selectorStep(onQUIC, selectorInput{now: base, scoreQUIC: 0.5, scoreTCPWS: 0.6, backupFresh: backupFreshSamplesGate, sinceAbove: qualitySustainWindow + time.Second})
+	_, d := selectorStep(onQUIC, selectorInput{now: base.Add(qualitySustainWindow + time.Second), scoreQUIC: 0.5, scoreTCPWS: 0.6, backupFresh: backupFreshSamplesGate})
 	if d != channelStay {
 		t.Fatalf("ratio 1.2 on QUIC → stay, got %v", d)
 	}
@@ -101,5 +103,22 @@ func TestSelector_DeadZoneNoMovement(t *testing.T) {
 	_, d2 := selectorStep(onTCPWS, selectorInput{now: base, scoreQUIC: 0.55, scoreTCPWS: 0.5, quicEchoRecovered: true})
 	if d2 != channelStay {
 		t.Fatalf("ratio 0.91 on TCP-WS → stay, got %v", d2)
+	}
+}
+
+// Flap window doubling: verify flapCount=1 yields 60s (30s<<1).
+func TestSelector_FlapWindowDoubling(t *testing.T) {
+	base := time.Unix(1000, 0)
+	st := newState("quic")
+	st.flapCount = 1 // 30s<<1 = 60s
+	in := selectorInput{now: base, consecConnFails: 3, scoreQUIC: 0.1, scoreTCPWS: 0.9}
+	out, d := selectorStep(st, in)
+	if d != channelSwitchToTCPWS {
+		t.Fatalf("expected switch, got %v", d)
+	}
+	window := out.nextReviewAt.Sub(base)
+	expected := time.Duration(30) * time.Second << uint(1) // 30s<<1 = 60s
+	if window != expected {
+		t.Fatalf("flap window = %v, want %v", window, expected)
 	}
 }
