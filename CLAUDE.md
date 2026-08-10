@@ -516,7 +516,7 @@ All optional capability interfaces that upper layers may type-assert on must be 
 | Interface | Package | Implemented by | Asserted by |
 |-----------|---------|----------------|-------------|
 | `StatsProvider` | wire | QUICClient, TCPWSClient | engine (stats collection) |
-| `EchoProber` | wire | QUICClient | engine (echo health probe) |
+| `EchoProber` | wire | QUICClient, TCPWSClient | engine (echo health probe) |
 
 When adding a new optional interface, add it to this table.
 

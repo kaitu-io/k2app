@@ -18,8 +18,9 @@ import (
 const echoNonceLen = 8
 
 // EchoProber is an optional capability interface for transports that need
-// data-path verification (QUIC). TCPWSClient does not implement this.
-// Engine type-asserts on this interface (not concrete type) per layer boundary rules.
+// data-path verification. Implemented by QUICClient (quic.go's EchoProbe)
+// and TCPWSClient (tcpws.go's RunEchoProbe). Engine type-asserts on this
+// interface (not concrete type) per layer boundary rules.
 type EchoProber interface {
 	RunEchoProbe(ctx context.Context) error
 }

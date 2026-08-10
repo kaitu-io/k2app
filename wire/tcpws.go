@@ -3,6 +3,7 @@ package wire
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -26,8 +27,9 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ Dialer   = (*TCPWSClient)(nil)
-	_ Listener = (*TCPWSServer)(nil)
+	_ Dialer     = (*TCPWSClient)(nil)
+	_ Listener   = (*TCPWSServer)(nil)
+	_ EchoProber = (*TCPWSClient)(nil)
 )
 
 // DefaultSmuxConfig returns the smux configuration for k2v5 TCP-WS transport.
@@ -524,6 +526,55 @@ func (c *TCPWSClient) DialTCP(ctx context.Context, addr string, earlyData []byte
 	}
 
 	return &smuxStreamConn{Stream: stream, br: br}, nil
+}
+
+// RunEchoProbe implements EchoProber for TCP-WS data-path verification
+// (mirrors QUIC's EchoProbe, wire/echo.go). Reuses the cached smux session
+// via connect() exactly like DialTCP — a probe must not force a fresh
+// connection when a live session is already cached. Unlike QUIC, no H3 frame
+// type marker precedes the stream header: DialTCP's smux stream-opening
+// sequence is WriteStreamHeader directly, and this matches it — a mismatched
+// preamble would desync the server's reader and poison the muxed session.
+func (c *TCPWSClient) RunEchoProbe(ctx context.Context) error {
+	sess, err := c.connect(ctx)
+	if err != nil {
+		return fmt.Errorf("echo: connect: %w", err)
+	}
+
+	stream, err := sess.OpenStream()
+	if err != nil {
+		return fmt.Errorf("echo: open stream: %w", err)
+	}
+	defer stream.Close()
+
+	if err := WriteStreamHeader(stream, StreamTypeEcho, ""); err != nil {
+		return fmt.Errorf("echo: write header: %w", err)
+	}
+
+	var nonce [echoNonceLen]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return fmt.Errorf("echo: generate nonce: %w", err)
+	}
+	if _, err := stream.Write(nonce[:]); err != nil {
+		return fmt.Errorf("echo: write nonce: %w", err)
+	}
+
+	// Set read deadline from context so reads respect cancellation, matching
+	// QUIC's EchoProbe — smux.Stream.SetReadDeadline exists on the concrete
+	// type returned by OpenStream (confirmed via smux/v2 stream.go).
+	if deadline, ok := ctx.Deadline(); ok {
+		stream.SetReadDeadline(deadline)
+	}
+
+	var resp [echoNonceLen]byte
+	if _, err := io.ReadFull(stream, resp[:]); err != nil {
+		return fmt.Errorf("echo: read response: %w", err)
+	}
+
+	if nonce != resp {
+		return errors.New("echo: nonce mismatch")
+	}
+	return nil
 }
 
 // DialUDP opens a UDP proxy session through a shared smux UDP stream.
