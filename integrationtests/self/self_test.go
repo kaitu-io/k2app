@@ -2,7 +2,7 @@ package self_test
 
 import (
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"flag"
 	"fmt"

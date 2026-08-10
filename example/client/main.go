@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"flag"
 	"io"

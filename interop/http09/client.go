@@ -2,7 +2,7 @@ package http09
 
 import (
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"errors"
 	"io"
 	"log"

@@ -1,7 +1,7 @@
 package qtls
 
 import (
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"fmt"
 	"net"
 	"testing"

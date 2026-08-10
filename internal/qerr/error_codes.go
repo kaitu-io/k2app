@@ -1,7 +1,7 @@
 package qerr
 
 import (
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"fmt"
 )
 

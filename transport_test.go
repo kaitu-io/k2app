@@ -3,7 +3,7 @@ package quic
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"errors"
 	"math"
 	"net"

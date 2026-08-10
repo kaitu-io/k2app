@@ -1,7 +1,7 @@
 package main
 
 import (
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"fmt"
 	"log"
 	"net"

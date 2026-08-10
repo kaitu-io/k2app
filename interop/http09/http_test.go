@@ -1,7 +1,7 @@
 package http09
 
 import (
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"fmt"
 	"io"
 	"net"

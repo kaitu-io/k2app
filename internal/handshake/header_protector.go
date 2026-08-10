@@ -3,7 +3,7 @@ package handshake
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"encoding/binary"
 	"fmt"
 

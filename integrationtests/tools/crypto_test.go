@@ -1,7 +1,7 @@
 package tools
 
 import (
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"crypto/x509"
 	"io"
 	"net"

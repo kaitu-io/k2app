@@ -2,7 +2,7 @@ package http3
 
 import (
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"errors"
 	"fmt"
 	"io"

@@ -3,7 +3,7 @@ package self_test
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
+	tls "github.com/metacubex/utls"
 	"fmt"
 	"io"
 	"math"
