@@ -174,16 +174,29 @@ func TestHealthTransitions_Fallback(t *testing.T) {
 	ot := &outboundTransport{tm: tm, name: "test"}
 	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 
-	// Fallback stats → assess returns degraded (not critical).
+	// Fallback (TCP-WS) with clean stats: health is quality-driven, not
+	// channel-driven — a clean fallback path settles healthy, not degraded.
+	for i := 0; i < 10; i++ {
+		hm.smoothWireLoss = 0.0
+		level := hm.assess(wire.WireStats{Transport: "tcpws", WireFallback: true})
+		hm.transition(level, false)
+	}
+	if hm.health != HealthHealthy {
+		t.Fatalf("clean TCP-WS fallback should be healthy, got %s", hm.health)
+	}
+
+	// Quality degrades while still on TCP-WS fallback: health tracks the
+	// loss/RTT signal, not the fallback flag itself.
 	for i := 0; i < 5; i++ {
+		hm.smoothWireLoss = 0.10
 		level := hm.assess(wire.WireStats{Transport: "tcpws", WireFallback: true})
 		hm.transition(level, false)
 	}
 	if hm.health != HealthDegraded {
-		t.Fatalf("fallback should be degraded, got %s", hm.health)
+		t.Fatalf("high-loss TCP-WS fallback should be degraded, got %s", hm.health)
 	}
 
-	// Fallback recovery: QUIC comes back with good stats → healthy after 10 samples.
+	// Recovery: QUIC comes back with good stats → healthy after 10 samples.
 	for i := 0; i < 10; i++ {
 		hm.smoothWireLoss = 0.01
 		level := hm.assess(wire.WireStats{Transport: "quic"})
@@ -191,6 +204,17 @@ func TestHealthTransitions_Fallback(t *testing.T) {
 	}
 	if hm.health != HealthHealthy {
 		t.Fatalf("should be healthy after QUIC recovery, got %s", hm.health)
+	}
+}
+
+func TestAssess_TCPWSActiveHealthyNotDegraded(t *testing.T) {
+	hm := &healthMonitor{health: HealthHealthy}
+	// TCP-WS is serving, but quality is good — must read healthy, not degraded.
+	ws := wire.WireStats{Transport: "tcpws", WireFallback: true}
+	hm.smoothWireLoss = 0.0
+	hm.ewmaInitialized = true
+	if got := hm.assess(ws); got != HealthHealthy {
+		t.Fatalf("healthy TCP-WS should assess healthy, got %v", got)
 	}
 }
 

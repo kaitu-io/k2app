@@ -346,13 +346,12 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 		return hm.health
 	}
 
-	// In fallback: TCP-WS working but suboptimal. Treat as degraded
-	// so HealthMonitor reflects reality without triggering aggressive
-	// corrective actions that would disrupt the working TCP-WS path.
-	if ws.WireFallback {
-		return HealthDegraded
-	}
-
+	// WireFallback is observability-only here (see HealthSnapshot/heartbeat):
+	// being on TCP-WS is a legitimate steady state under the dual-channel
+	// selector (it switches back to QUIC only after echo-verified recovery),
+	// so channel choice no longer decides the health grade — only quality
+	// (loss/RTT below) does. A clean TCP-WS naturally lands in the healthy
+	// branch, same as a clean QUIC path.
 	highLoss := hm.smoothWireLoss > 0.05
 	veryHighLoss := hm.smoothWireLoss > 0.25
 	highRTT := ws.MinRTT > 0 && ws.RTT > 3*ws.MinRTT
