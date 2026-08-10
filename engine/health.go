@@ -665,17 +665,36 @@ const echoStrikeTCPHealthyWindow = 30 * time.Second
 // rather than informative (final review I1 + I4):
 //
 //   - Fallback is active (tcpws serving) while the primary is still the QUIC
-//     dialer. That QUIC path is known-dead — being dead is precisely why the
-//     selector moved to tcpws — and its recovery is already owned by wire's
-//     runProbeOnce (30s, handshake + 3 echo rounds, quicEchoRecovered). Left
-//     ungated, its echo timeouts strike 3× within seconds and fire a re-race
-//     that closes the QUIC dialer without preserving a backup and calls
+//     dialer, AND the tcpws channel is provably still carrying traffic. That
+//     QUIC path is known-dead — being dead is precisely why the selector moved
+//     to tcpws — and its recovery is already owned by wire's runProbeOnce
+//     (30s, handshake + 3 echo rounds, quicEchoRecovered). Left ungated, its
+//     echo timeouts strike 3× within seconds and fire a re-race that closes
+//     the QUIC dialer without preserving a backup and calls
 //     ReplacePrimary(tcpws), destroying the FSM's entire fallback state (flap
 //     history, quicEchoRecovered, the rollback machinery) — the re-race
 //     almost always beats the 10s-sustain quality path, so this is what the
 //     half-dead-QUIC scenario actually did before the gate. This is the part
 //     of root cause C ("two uncoordinated switching mechanisms") that the
 //     scoreboard alone did not resolve.
+//
+//     The tcpws-proof condition is NOT optional (final review NEW-1). probeOnce
+//     is the ONLY producer on reRaceChan, and Phase B server replacement
+//     (replaceOutboundServer) is reachable only through it; assess() cannot
+//     reach critical on tcpws stats, so healthMonitor's reconnect path is no
+//     backstop here. An unconditional suppression therefore severs the only
+//     automated escalation exactly when the NODE dies while a user sits in
+//     fallback — a routine fleet event (crash, quota cutoff) — leaving both
+//     channels dead and the user hung until a network change or a manual
+//     reconnect. Requiring live proof keeps the escalation for the
+//     both-channels-dead case while still protecting a working tcpws session.
+//
+//     Accepted trade: an IDLE fallback user generates no dials, so there is no
+//     live proof and strikes resume. That re-race may land tcpws as primary —
+//     which is now a stable, honest terminal state (the C1 topology gates stop
+//     the FSM and the recovery probe from fabricating a QUIC channel there).
+//     I.e. the idle case is the pre-fix status quo minus the phantom loop,
+//     which is strictly better than a user who cannot escalate at all.
 //
 //   - The primary IS the tcpws channel and TCP streams over it succeeded
 //     recently. TCPWSClient became an EchoProber in this branch, which put
@@ -687,14 +706,23 @@ const echoStrikeTCPHealthyWindow = 30 * time.Second
 //     Recent TCP success is the same "it's actually working, don't touch it"
 //     evidence maybeAct already uses to skip reconnects.
 //
-// When TCP has NOT recently succeeded, tcpws strikes accumulate normally —
-// the gate withholds the escalation only while there is live proof it would
-// be destructive.
+// BOTH cases require live proof, and that symmetry is the invariant to
+// preserve: when no TCP stream has recently succeeded over the TCP-WS channel,
+// strikes accumulate normally in either topology. The gate withholds the
+// escalation only while there is live proof it would be destructive — never
+// on topology alone.
+//
+// "Live proof" is deliberately DialTCP-only (wire's recordTCPWSDialSuccess):
+// that path reads a server response, so it is end-to-end. UDP dials over
+// tcpws open a smux stream without any round trip — they keep "succeeding"
+// against a dead node — so counting them would manufacture exactly the proof
+// this gate must not have.
 func suppressStrike(tm *wire.TransportManager, primaryChannel, activeChannel string, class echoClass) (bool, string) {
 	if class != echoFail {
 		return false, ""
 	}
-	if activeChannel == "tcpws" && primaryChannel == "quic" {
+	if activeChannel == "tcpws" && primaryChannel == "quic" &&
+		tm.TCPWSChannelRecentlyHealthy(echoStrikeTCPHealthyWindow) {
 		return true, "fallback-active-quic-primary-owned-by-wire-probe"
 	}
 	if primaryChannel == "tcpws" && tm.TCPRecentlyHealthy(echoStrikeTCPHealthyWindow) {

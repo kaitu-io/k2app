@@ -1012,50 +1012,108 @@ func newTCPWSPrimaryTransport(t *testing.T, name string, tcpHealthy bool) (*outb
 	return &outboundTransport{tm: tm, name: name}, stub
 }
 
-// TestProbeOnce_FallbackActiveQUICPrimaryDoesNotStrike pins final-review I1.
-//
-// During fallback the selector has moved to tcpws while tm.primary is still
-// the QUIC dialer, so probeOnce keeps echo-probing a path that is known dead —
-// that is *why* the selector left it. Recovery of that path belongs to wire's
-// runProbeOnce (30s, handshake + 3 echo rounds, quicEchoRecovered). Left
-// ungated, the primary's echo timeouts strike 3× within seconds and fire a
-// re-race, which closes the echo-failed QUIC dialer without preserving a
-// backup and ReplacePrimary(tcpws)es over the whole fallback state — flap
-// history, quicEchoRecovered, the entire rollback machinery — so the user
-// never gets back to QUIC. The scoreboard alone did not resolve that half of
-// root cause C; this gate does.
-func TestProbeOnce_FallbackActiveQUICPrimaryDoesNotStrike(t *testing.T) {
-	ot, stub := newEchoTransport("t-fallback-quic-primary", func(ctx context.Context) error {
+// newFallbackTransport builds the fallback topology: QUIC installed as the
+// primary (echo always failing — it is the dead path the selector left) with
+// tcpws serving. When alive, a real DialTCP is driven through the fallback
+// path first so the TCP-WS channel has genuine, recent proof of life.
+func newFallbackTransport(t *testing.T, name string, tcpwsAlive bool) (*outboundTransport, *echoStubDialer) {
+	t.Helper()
+	ot, quicStub := newEchoTransport(name, func(ctx context.Context) error {
 		return context.DeadlineExceeded
 	})
-	ot.tm.SetTCPWS(&echoStubDialer{})
+	backup := &dialableEchoStub{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
 	ot.tm.SetFallbackActive(true) // tcpws serving, QUIC still the primary
 	if ot.tm.ActiveChannel() != "tcpws" {
 		t.Fatalf("precondition: ActiveChannel = %q, want tcpws", ot.tm.ActiveChannel())
 	}
+	if tcpwsAlive {
+		// Fallback is active, so DialTCP skips the primary and goes straight
+		// to the tcpws dialer — exactly how a real user's traffic feeds the
+		// channel's proof-of-life clock.
+		conn, err := ot.tm.DialTCP(context.Background(), "203.0.113.9:443", nil)
+		if err != nil {
+			t.Fatalf("seed tcpws TCP success: %v", err)
+		}
+		conn.Close()
+		if !ot.tm.TCPWSChannelRecentlyHealthy(echoStrikeTCPHealthyWindow) {
+			t.Fatal("precondition: the seeded tcpws stream must register as live proof, else the suppression under test is vacuous")
+		}
+	} else if ot.tm.TCPWSChannelRecentlyHealthy(echoStrikeTCPHealthyWindow) {
+		t.Fatal("precondition: nothing was dialed, the tcpws channel must have no proof of life")
+	}
+	return ot, quicStub
+}
 
-	hm, ch := newHMForEcho(t, []*outboundTransport{ot})
-	st := &echoLoopState{}
-	for i := 0; i < 2*echoReraceThreshold; i++ {
-		hm.probeOnce(ot, st, time.Now())
-	}
+// TestProbeOnce_FallbackStrikeGatedByLiveTCPWSProof pins final-review I1 and
+// its NEW-1 correction together, because they are two halves of one rule.
+//
+// I1: during fallback the selector has moved to tcpws while tm.primary is
+// still the QUIC dialer, so probeOnce keeps echo-probing a path that is known
+// dead — that is *why* the selector left it. Recovery of that path belongs to
+// wire's runProbeOnce (30s, handshake + 3 echo rounds, quicEchoRecovered).
+// Ungated, those timeouts strike 3× within seconds and fire a re-race that
+// closes the echo-failed QUIC dialer without preserving a backup and
+// ReplacePrimary(tcpws)es over the whole fallback state — flap history,
+// quicEchoRecovered, the entire rollback machinery — so the user never gets
+// back to QUIC.
+//
+// NEW-1: that suppression must NOT be unconditional. probeOnce is the only
+// producer on reRaceChan and Phase B server replacement is reachable only
+// through it, while assess() cannot reach critical on tcpws stats — so
+// suppressing on topology alone severs the only automated escalation for a
+// node that dies while the user is in fallback (crash, quota cutoff), leaving
+// both channels dead and the user hung. Live tcpws proof is the discriminator
+// between "protect a working session" and "the node is gone".
+func TestProbeOnce_FallbackStrikeGatedByLiveTCPWSProof(t *testing.T) {
+	t.Run("live tcpws: no strikes, no rerace", func(t *testing.T) {
+		ot, quicStub := newFallbackTransport(t, "t-fallback-live-tcpws", true)
+		hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+		st := &echoLoopState{}
+		for i := 0; i < 2*echoReraceThreshold; i++ {
+			hm.probeOnce(ot, st, time.Now())
+		}
 
-	if stub.calls.Load() != int64(2*echoReraceThreshold) {
-		t.Fatalf("precondition: %d probes ran, want %d — the failures under test never happened", stub.calls.Load(), 2*echoReraceThreshold)
-	}
-	select {
-	case <-ch:
-		t.Fatal("re-race fired on the known-dead QUIC primary during fallback — this destroys the selector's fallback state and wire's own recovery probe owns that path")
-	default:
-	}
-	if st.strikes != 0 {
-		t.Fatalf("strikes = %d, want 0 — failures on the dead primary must not accumulate toward re-race", st.strikes)
-	}
-	// Scoring is explicitly NOT gated: the selector still needs to see that
-	// the QUIC channel is unavailable.
-	if got := ot.tm.ScoreQUIC(time.Now()); got >= 0.25 {
-		t.Fatalf("scoreQUIC = %v, want it driven below the 0.25 neutral floor — score recording must continue even while strikes are gated", got)
-	}
+		if quicStub.calls.Load() != int64(2*echoReraceThreshold) {
+			t.Fatalf("precondition: %d probes ran, want %d — the failures under test never happened", quicStub.calls.Load(), 2*echoReraceThreshold)
+		}
+		select {
+		case <-ch:
+			t.Fatal("re-race fired on the known-dead QUIC primary while tcpws is demonstrably serving — this destroys the selector's fallback state and wire's own recovery probe owns that path")
+		default:
+		}
+		if st.strikes != 0 {
+			t.Fatalf("strikes = %d, want 0 — failures on the dead primary must not accumulate toward re-race", st.strikes)
+		}
+		// Scoring is explicitly NOT gated: the selector still needs to see
+		// that the QUIC channel is unavailable.
+		if got := ot.tm.ScoreQUIC(time.Now()); got >= 0.25 {
+			t.Fatalf("scoreQUIC = %v, want it driven below the 0.25 neutral floor — score recording must continue even while strikes are gated", got)
+		}
+	})
+
+	t.Run("dead tcpws: strikes accumulate and rerace fires", func(t *testing.T) {
+		// The node died while the user was in fallback: QUIC echo fails AND
+		// nothing is getting through on tcpws either. Re-race is the only
+		// automated path to Phase A retry / Phase B server rotation, so it
+		// MUST still fire.
+		ot, _ := newFallbackTransport(t, "t-fallback-dead-node", false)
+		hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+		st := &echoLoopState{}
+		for i := 0; i < echoReraceThreshold; i++ {
+			hm.probeOnce(ot, st, time.Now())
+		}
+
+		select {
+		case got := <-ch:
+			if got != ot {
+				t.Fatalf("rerace signal targeted wrong outbound: got %p want %p", got, ot)
+			}
+		default:
+			t.Fatalf("no rerace after %d failures with a dead node (no tcpws proof of life) — probeOnce is the ONLY producer on reRaceChan, so suppressing here strands the user with both channels dead until a network change or manual reconnect", echoReraceThreshold)
+		}
+	})
 }
 
 // TestProbeOnce_TCPWSPrimaryStrikeGatedByRecentTCPHealth pins final-review I4.

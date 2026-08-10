@@ -738,7 +738,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 				// tcpws-as-primary: QUICClient's own lastTCPSuccessAt can't
 				// speak for this dialer — record here so TCPRecentlyHealthy
 				// has an answer for it too.
-				tm.recordTCPWSTCPSuccess(now)
+				tm.recordTCPWSDialSuccess(now)
 			}
 			tm.evaluateSelector(now)
 			return conn, nil
@@ -765,7 +765,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 		tm.recordDialOutcome("tcpws", err, now)
 		tm.evaluateSelector(now)
 		if err == nil {
-			tm.recordTCPWSTCPSuccess(now)
+			tm.recordTCPWSDialSuccess(now)
 			return conn, nil
 		}
 		slog.Debug("TransportManager: TCP-WS failed", "err", err)
@@ -1244,9 +1244,41 @@ func (tm *TransportManager) TCPRecentlyHealthy(window time.Duration) bool {
 	return time.Since(time.Unix(0, ts)) < window
 }
 
-// recordTCPWSTCPSuccess marks now as a successful TCP stream over the tcpws
-// dialer. See tcpwsLastTCPOKAt / TCPRecentlyHealthy.
-func (tm *TransportManager) recordTCPWSTCPSuccess(now time.Time) {
+// TCPWSChannelRecentlyHealthy reports whether a TCP stream over the TCP-WS
+// CHANNEL succeeded within the given window — regardless of which dialer is
+// currently the primary. TCPRecentlyHealthy answers "is the PRIMARY proving
+// itself?"; this answers "is the TCP-WS channel proving itself?". The two
+// coincide when tcpws IS the primary, and diverge in the fallback topology
+// (tcpws serving, QUIC still installed as primary), which is the case that
+// needs this one: there, the serving channel is the one nobody else can
+// vouch for.
+//
+// Deliberately fed ONLY by DialTCP (see recordTCPWSDialSuccess): that path
+// reads a server response frame, so success is end-to-end proof of life.
+func (tm *TransportManager) TCPWSChannelRecentlyHealthy(window time.Duration) bool {
+	ts := tm.tcpwsLastTCPOKAt.Load()
+	if ts == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, ts)) < window
+}
+
+// recordTCPWSDialSuccess marks now as a successful TCP stream over the tcpws
+// dialer. See tcpwsLastTCPOKAt / TCPRecentlyHealthy /
+// TCPWSChannelRecentlyHealthy.
+//
+// ONLY DialTCP calls this, and that is load-bearing rather than an oversight.
+// TCPWSClient.DialTCP writes the stream header and then blocks on
+// ReadStreamResponse, so `err == nil` means the server answered — real
+// proof-of-life, and any failure after the request was sent is classified as
+// a ProxyLayerError, so it never reaches this success path. DialUDP/
+// DialStreamUDP have no such round trip: they open a smux stream, write a
+// header, and return without reading anything (and their fast path returns a
+// cached mux with no I/O at all). Against a dead node those keep "succeeding"
+// until smux's own keepalive finally tears the session down, so counting them
+// would manufacture proof-of-life for exactly the node-death case these
+// timestamps are consulted for.
+func (tm *TransportManager) recordTCPWSDialSuccess(now time.Time) {
 	tm.tcpwsLastTCPOKAt.Store(now.UnixNano())
 }
 
