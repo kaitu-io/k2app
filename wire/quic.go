@@ -516,11 +516,17 @@ serialize:
 	qcfg := DefaultQUICConfig()
 	// Shape the ClientHello to Chrome-over-QUIC. The factory runs per dial:
 	// each connection needs its own spec, because kuic writes this connection's
-	// transport parameters (including initial_source_connection_id) into it.
-	// A dial with no fingerprint is worse than no dial — the QUIC leg would go
-	// out looking like nothing else on the internet — so a spec failure fails
-	// the dial rather than falling back to the unshaped handshake.
+	// initial_source_connection_id into it. A dial with no fingerprint is worse
+	// than no dial — the QUIC leg would go out looking like nothing else on the
+	// internet — so a spec failure fails the dial rather than falling back to
+	// the unshaped handshake.
 	qcfg.NewClientHelloSpec = buildChromeH3Spec
+	// Shape the Initial packets around it. Without this the ClientHello looks
+	// like Chrome inside packets that do not: quic-go picks a *random* Initial
+	// destination connection ID length in [8,20] (varying run to run, which no
+	// real client does) and starts packet numbering at 0 where Chrome starts
+	// at 1. Both are readable from the long header.
+	qcfg.InitialPacketSpec = chromeH3InitialPacketSpec()
 
 	// Wrap transport.Dial in a goroutine with hard timeout.
 	// quic-go's Transport.Dial internally calls Conn.destroy() on context cancel,

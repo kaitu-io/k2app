@@ -7,6 +7,8 @@ import (
 	mrand "math/rand"
 
 	tls "github.com/metacubex/utls"
+
+	quic "github.com/kaitu-io/kuic"
 )
 
 // Chrome-over-QUIC ClientHello fingerprint.
@@ -30,16 +32,24 @@ import (
 // match uquic's byte for byte. quic_fingerprint_test.go pins that set so it
 // cannot drift back out silently.
 //
-// SCOPE — read before trusting this for evasion. This shapes the *ClientHello*.
-// It does not reproduce Chrome's QUIC Initial *packet* structure, and uquic's
-// parrot says exactly what is missing: SrcConnIDLength 0 / DestConnIDLength 8,
-// a first packet number of 1 (not 0) with per-packet number lengths {1, 2}, and
-// QUICRandomFrames — Chrome fragments CRYPTO across many frames and interleaves
-// PING and PADDING, targeting a 1231-byte payload across two Initial datagrams.
-// All of that is still quic-go's. A fingerprinter working at the QUIC packet
-// layer rather than the TLS layer can therefore still separate this from
-// Chrome. Closing the gap means porting uQUIC's InitialPacketSpec machinery
-// into kuic, which is a much larger change than this file.
+// SCOPE — read before trusting this for evasion. This file shapes the
+// *ClientHello*; chromeH3InitialPacketSpec below shapes part of the QUIC
+// Initial packet around it. Measured against uquic's parrot, what is covered
+// and what is not:
+//
+//	covered  source connection ID length 0 (kuic's default already matches)
+//	covered  destination connection ID length 8 (quic-go: random in [8,20])
+//	covered  first Initial packet number 1 (quic-go: 0)
+//	MISSING  per-packet number encoding lengths {1, 2}
+//	MISSING  QUICRandomFrames — Chrome cuts CRYPTO into many frames and
+//	         interleaves PING and PADDING, padding each of two Initial
+//	         datagrams to a 1231-byte payload. quic-go sends one big CRYPTO
+//	         frame per packet.
+//
+// The two MISSING items both need kuic's packet packer replaced (uQUIC does it
+// with a uPacketPacker), which is a much larger change than this file. Until
+// then a fingerprinter working at the QUIC packet layer rather than the TLS
+// layer can still separate this from Chrome.
 
 // buildChromeH3Spec returns a fresh Chrome-146-over-QUIC ClientHelloSpec.
 //
@@ -133,6 +143,23 @@ func buildChromeH3Spec() (*tls.ClientHelloSpec, error) {
 			&tls.SNIExtension{},
 		}),
 	}, nil
+}
+
+// chromeH3InitialPacketSpec returns Chrome 146's Initial-packet shape, the QUIC
+// half of the fingerprint that buildChromeH3Spec covers at the TLS half.
+//
+// Ported from the same uquic parrot. Only the fields kuic reads today are set;
+// the CRYPTO-frame framing Chrome uses (many small CRYPTO frames interleaved
+// with PING and PADDING, padded to 1231 bytes across two Initial datagrams) is
+// still quic-go's — see the SCOPE note above.
+//
+// SrcConnIDLength is deliberately absent: kuic already dials with a zero-length
+// source connection ID, which is what Chrome sends.
+func chromeH3InitialPacketSpec() *quic.InitialPacketSpec {
+	return &quic.InitialPacketSpec{
+		DestConnIDLength: 8, // quic-go would pick a random length in [8,20]
+		InitPacketNumber: 1, // quic-go starts at 0
+	}
 }
 
 // shuffleQUICTransportParameters permutes the parameter order in place.
