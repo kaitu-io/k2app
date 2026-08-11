@@ -133,6 +133,59 @@ Two consequences to preserve:
   it fails the dial (`ErrNoQUICTransportParametersExtension`) rather than
   falling back to an unshaped handshake.
 
+## The Chrome-146 Initial framing port
+
+`Config.InitialPacketSpec` shapes the QUIC packet layer around the ClientHello:
+the destination connection ID length, the first packet number and its per-packet
+encoding lengths, and — the packet-layer half — a `FrameBuilder` that re-cuts the
+Initial CRYPTO stream. Chrome sends its ClientHello as many small CRYPTO frames
+interleaved with PING and PADDING, padded to ~1231 bytes per datagram; quic-go
+sends one big CRYPTO frame per packet. `&QUICRandomFrames{...}` reproduces the
+former (`u_quic_frames.go`, ported from uQUIC minus the `clienthellod`
+dependency and the flight-layout builders Chrome does not need).
+
+`uPacketPacker` (`u_packet_packer.go`) is where the builder is applied. It is
+**not** a re-implementation of `PackCoalescedPacket` the way uQUIC's is. It
+embeds the base packer and overrides `PackCoalescedPacket` for one case only:
+the fresh ClientHello flight — a client Initial carrying new CRYPTO popped from
+the initial stream. That flight has no handshake keys yet, so it never coalesces,
+which is what lets the override own the whole datagram and delegate everything
+else — ACK-only Initials, Initial retransmissions (which come from the
+retransmission queue, so `initialStream.HasData()` is false), PTO probes, and
+every later encryption level — to the base packer unchanged. **Consequence to
+keep:** a retransmitted or PTO-probed Initial goes out as quic-go's single CRYPTO
+frame, distinguishable from Chrome but only under packet loss. Re-framing those
+would risk desyncing the Initial ack handler (which tracks the contiguous range
+it popped) against a re-cut wire layout; the ClientHello, which is what a
+first-packet classifier reads, is covered.
+
+Two deliberate divergences from uQUIC, both driven by the wire-capture test
+(`TestChrome146Initial_ReframedOnTheWire`), which decrypts the real Initial
+datagrams and asserts on their frames:
+
+- **`QUICRandomFrames` measures its PADDING top-up at the real base offset**, not
+  at 0. A CRYPTO frame's offset varint widens from 1 to 2 bytes as the value
+  crosses 64, so measuring at offset 0 undercounts datagrams past the first and
+  lands the payload a few bytes over `Length`. uQUIC has this latent.
+- **The CRYPTO-pop cap reserves room by builder parameters**, not a flat 16
+  bytes. Splitting into up to `MaxCRYPTO` frames adds ~5 bytes of header each;
+  16 is smaller than Chrome's `MaxCRYPTO`=14 worth, so uQUIC's first datagram
+  ends up with no PADDING at all — itself a tell, since Chrome's does.
+
+The per-packet PN encoding lengths live in the ack handler
+(`internal/ackhandler/u_sent_packet_handler.go` + the two fields and the
+`PeekPacketNumber` branch in `sent_packet_handler.go`). kuic stores them on the
+concrete handler rather than wrapping it in a `uSentPacketHandler` as uQUIC does;
+the handler is fork-local, so there is no constructor to shadow. Empty leaves
+quic-go's own length calculation untouched, and a pinned length only ever forces
+one that decodes correctly, never a shorter one.
+
+**Backward-compat gate:** `TestNewClientOldServer_ReframedInitial` in
+`integrationtests/apernetcompat` dials the un-upgraded apernet server with the
+full Chrome-146 `InitialPacketSpec`. A re-framing bug that dropped or duplicated
+a CRYPTO byte would leave the server unable to reassemble the ClientHello, so a
+green handshake there is the proof the re-cut stream is faithful.
+
 ## Writing a ClientHelloSpec
 
 Two requirements beyond ordinary utls spec authoring:
@@ -171,6 +224,13 @@ The baseline is tagged `apernet-base-<commit>` (currently
    The import swap is mechanical:
    `"crypto/tls"` → `tls "github.com/metacubex/utls"` everywhere except
    `integrationtests/gomodvendor` and the three http3 boundary sites.
+   Two base files also carry small Initial-framing edits that can conflict:
+   `sent_packet_handler.go` (the two `initialPacketNumber*` fields and the
+   `PeekPacketNumber` branch) and `connection.go` (the client wiring near
+   `newPacketPacker`). Everything else for that feature is in its own `u_*.go`
+   files, and `uPacketPacker` delegates to — rather than copies —
+   `PackCoalescedPacket`, so upstream changes to the packing loop need no
+   re-sync. See "The Chrome-146 Initial framing port".
 4. `go build ./... && go vet ./... && go test ./... -count=1`.
 5. The gate in `u_fingerprint_test.go` must pass. It is mutation-verified —
    if it goes green after a change that should have broken it, distrust it and

@@ -56,6 +56,18 @@ type InitialPacketSpec struct {
 	// acknowledged, which for a first flight means 2 bytes. Chrome 146 sends
 	// {1, 2}: one byte for PN=1, two for PN=2.
 	InitPacketNumberLengths []PacketNumberLen
+
+	// FrameBuilder re-cuts the Initial CRYPTO stream into the frame layout a real
+	// client sends: many small CRYPTO frames interleaved with PING and PADDING,
+	// rather than quic-go's single CRYPTO frame per packet. Applied per Initial
+	// datagram of the fresh ClientHello flight only (see uPacketPacker); nil leaves
+	// quic-go's framing untouched.
+	//
+	// Chrome 146:
+	//
+	//	&QUICRandomFrames{MinPING: 1, MaxPING: 4, MinCRYPTO: 6, MaxCRYPTO: 14,
+	//	                  MinPADDING: 2, MaxPADDING: 6, Length: 1231 - 16}
+	FrameBuilder QUICFrameBuilder
 }
 
 // initialPacketNumber returns the packet number the first Initial should carry.

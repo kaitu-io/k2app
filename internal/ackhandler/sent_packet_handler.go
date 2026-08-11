@@ -72,6 +72,16 @@ type sentPacketHandler struct {
 	appDataPackets   *packetNumberSpace
 	lostPackets      lostPacketTracker // only for application-data packet number space
 
+	// [UQUIC] Pinned packet-number encoding lengths for the Initial packet number
+	// space, installed by SetInitialPacketNumberLengths. When non-empty, PeekPacketNumber
+	// returns initialPacketNumberLengths[pn-initialPacketNumberBase] (last entry
+	// repeating) for Initial packets instead of quic-go's minimal-length calculation.
+	// Chrome 146 sends {1, 2}; quic-go would send {2, 2}. Empty leaves the default path
+	// untouched — this only ever forces a length that decodes correctly, never a shorter
+	// one than the packet number needs.
+	initialPacketNumberBase    protocol.PacketNumber
+	initialPacketNumberLengths []protocol.PacketNumberLen
+
 	// Do we know that the peer completed address validation yet?
 	// Always true for the server.
 	peerCompletedAddressValidation bool
@@ -999,6 +1009,14 @@ func (h *sentPacketHandler) ECNMode(isShortHeaderPacket bool) protocol.ECN {
 func (h *sentPacketHandler) PeekPacketNumber(encLevel protocol.EncryptionLevel) (protocol.PacketNumber, protocol.PacketNumberLen) {
 	pnSpace := h.getPacketNumberSpace(encLevel)
 	pn := pnSpace.pns.Peek()
+	// [UQUIC] A fingerprinting spec can pin the Initial packet numbers' encoding length.
+	if encLevel == protocol.EncryptionInitial && len(h.initialPacketNumberLengths) > 0 && pn >= h.initialPacketNumberBase {
+		idx := int(pn - h.initialPacketNumberBase)
+		if idx >= len(h.initialPacketNumberLengths) {
+			idx = len(h.initialPacketNumberLengths) - 1
+		}
+		return pn, h.initialPacketNumberLengths[idx]
+	}
 	// See section 17.1 of RFC 9000.
 	return pn, protocol.PacketNumberLengthForHeader(pn, pnSpace.largestAcked)
 }

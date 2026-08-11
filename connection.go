@@ -451,6 +451,12 @@ var newClientConnection = func(
 		s.qlogger,
 		s.logger,
 	)
+	// Pin the Initial packet numbers' encoding length when the spec asks for it (Chrome
+	// 146: {1, 2}). This must happen before any packet is packed, so it sits with the
+	// handler's construction rather than at the packer below.
+	if ips := conf.InitialPacketSpec; ips != nil && len(ips.InitPacketNumberLengths) > 0 {
+		ackhandler.SetInitialPacketNumberLengths(s.sentPacketHandler, initialPacketNumber, ips.InitPacketNumberLengths)
+	}
 	s.currentMTUEstimate.Store(uint32(estimateMaxPayloadSize(protocol.ByteCount(s.config.InitialPacketSize))))
 	oneRTTStream := newCryptoStream()
 	params := &wire.TransportParameters{
@@ -531,7 +537,13 @@ var newClientConnection = func(
 	s.cryptoStreamHandler = cs
 	s.cryptoStreamManager = newCryptoStreamManager(s.initialStream, s.handshakeStream, oneRTTStream)
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
-	s.packer = newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective)
+	basePacker := newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective)
+	s.packer = basePacker
+	// Re-frame the Initial CRYPTO to a real client's layout when the spec carries a frame
+	// builder (Chrome 146). Without one, the base packer is used unchanged.
+	if ips := conf.InitialPacketSpec; ips != nil && ips.FrameBuilder != nil {
+		s.packer = newUPacketPacker(basePacker, ips.FrameBuilder)
+	}
 	if len(tlsConf.ServerName) > 0 {
 		s.tokenStoreKey = tlsConf.ServerName
 	} else {

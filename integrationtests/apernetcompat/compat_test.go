@@ -349,6 +349,50 @@ func TestNewClientOldServer_FingerprintedNoECH(t *testing.T) {
 	requireEchoWorksKuic(t, conn)
 }
 
+// TestNewClientOldServer_ReframedInitial is the backward-compat gate for the
+// Chrome-146 Initial framing (kuic's u_packet_packer.go): the client re-cuts its
+// Initial CRYPTO into many frames interleaved with PING and PADDING, starts the
+// packet numbers at 1 with {1,2} encoding lengths, and pins an 8-byte destination
+// connection ID. All of that is a re-shaping of the QUIC packet layer the old
+// apernet/quic-go server has never seen this client send — so it must still parse
+// the re-cut CRYPTO frames, reassemble the ClientHello from them, and complete the
+// handshake. A failure here means B2 cannot ship client-first.
+func TestNewClientOldServer_ReframedInitial(t *testing.T) {
+	certDER, key, pool := selfSignedCert(t)
+	addr := apernetServer(t, certDER, key, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := kuic.DialAddr(ctx, addr.String(), &utls.Config{
+		ServerName: innerSNI,
+		NextProtos: []string{alpn},
+		RootCAs:    utlsPool(pool),
+		MinVersion: utls.VersionTLS13,
+	}, &kuic.Config{
+		NewClientHelloSpec: compatSpec,
+		InitialPacketSpec: &kuic.InitialPacketSpec{
+			DestConnIDLength:        8,
+			InitPacketNumber:        1,
+			InitPacketNumberLengths: []kuic.PacketNumberLen{kuic.PacketNumberLen1, kuic.PacketNumberLen2},
+			FrameBuilder: &kuic.QUICRandomFrames{
+				MinPING: 1, MaxPING: 4,
+				MinCRYPTO: 6, MaxCRYPTO: 14,
+				MinPADDING: 2, MaxPADDING: 6,
+				Length: 1231 - 16,
+			},
+		},
+	})
+	require.NoError(t, err, "a re-framed Chrome-146 Initial must handshake with an un-upgraded apernet server")
+	defer conn.CloseWithError(0, "")
+
+	state := conn.ConnectionState().TLS
+	require.True(t, state.HandshakeComplete)
+	require.Equal(t, alpn, state.NegotiatedProtocol)
+
+	requireEchoWorksKuic(t, conn)
+}
+
 // TestNewClientOldServer_Unfingerprinted covers the same pairing with no spec
 // set. It separates two failure modes that would otherwise look identical: the
 // fork being incompatible at all (this fails too) versus the fingerprinting
