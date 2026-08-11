@@ -193,6 +193,26 @@ func compatSpec() (*utls.ClientHelloSpec, error) {
 	}, nil
 }
 
+// twoDatagramSpec is compatSpec plus a ~1200-byte filler extension, so the
+// ClientHello reliably spans two Initial datagrams and its SNI lands mid-stream.
+// That is the shape that actually reproduced the ClientHello-scrambler bug: with a
+// small, single-datagram ClientHello the scrambler's cut can fall harmlessly, so
+// TestNewClientOldServer_ReframedInitial needs this to be a real regression guard
+// rather than a lucky pass. The filler uses a GREASE extension ID (0x0a0a); the dial
+// never depends on the server understanding it.
+func twoDatagramSpec() (*utls.ClientHelloSpec, error) {
+	spec, err := compatSpec()
+	if err != nil {
+		return nil, err
+	}
+	// Insert the filler before the trailing SNI so the SNI sits deep in the
+	// ClientHello, where the scrambler cuts it across the datagram boundary.
+	filler := &utls.GenericExtension{Id: 0x0a0a, Data: make([]byte, 1200)}
+	ext := spec.Extensions
+	spec.Extensions = append(ext[:len(ext)-1:len(ext)-1], filler, ext[len(ext)-1])
+	return spec, nil
+}
+
 // --- servers --------------------------------------------------------------
 
 // apernetServer starts an apernet/quic-go (crypto/tls) server. This stands in
@@ -357,40 +377,54 @@ func TestNewClientOldServer_FingerprintedNoECH(t *testing.T) {
 // apernet/quic-go server has never seen this client send — so it must still parse
 // the re-cut CRYPTO frames, reassemble the ClientHello from them, and complete the
 // handshake. A failure here means B2 cannot ship client-first.
+//
+// It handshakes many times, not once. The re-framer's CRYPTO fragmentation is
+// randomized per connection, and the failure it guards against — kuic's ClientHello
+// scrambler handing the re-framer non-contiguous stream ranges, which it lays out at
+// wrong offsets so the peer can never reassemble the ClientHello — hit only some
+// fraction of connections (≈5 in 7 when the bug was live). A single dial can draw a
+// layout that happens to work; the loop makes a regression show up reliably.
 func TestNewClientOldServer_ReframedInitial(t *testing.T) {
 	certDER, key, pool := selfSignedCert(t)
 	addr := apernetServer(t, certDER, key, nil, nil)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	conn, err := kuic.DialAddr(ctx, addr.String(), &utls.Config{
-		ServerName: innerSNI,
-		NextProtos: []string{alpn},
-		RootCAs:    utlsPool(pool),
-		MinVersion: utls.VersionTLS13,
-	}, &kuic.Config{
-		NewClientHelloSpec: compatSpec,
-		InitialPacketSpec: &kuic.InitialPacketSpec{
-			DestConnIDLength:        8,
-			InitPacketNumber:        1,
-			InitPacketNumberLengths: []kuic.PacketNumberLen{kuic.PacketNumberLen1, kuic.PacketNumberLen2},
-			FrameBuilder: &kuic.QUICRandomFrames{
-				MinPING: 1, MaxPING: 4,
-				MinCRYPTO: 6, MaxCRYPTO: 14,
-				MinPADDING: 2, MaxPADDING: 6,
-				Length: 1231 - 16,
-			},
+	spec := &kuic.InitialPacketSpec{
+		DestConnIDLength:        8,
+		InitPacketNumber:        1,
+		InitPacketNumberLengths: []kuic.PacketNumberLen{kuic.PacketNumberLen1, kuic.PacketNumberLen2},
+		FrameBuilder: &kuic.QUICRandomFrames{
+			MinPING: 1, MaxPING: 4,
+			MinCRYPTO: 6, MaxCRYPTO: 14,
+			MinPADDING: 2, MaxPADDING: 6,
+			Length: 1231 - 16,
 		},
-	})
-	require.NoError(t, err, "a re-framed Chrome-146 Initial must handshake with an un-upgraded apernet server")
-	defer conn.CloseWithError(0, "")
+	}
 
-	state := conn.ConnectionState().TLS
-	require.True(t, state.HandshakeComplete)
-	require.Equal(t, alpn, state.NegotiatedProtocol)
+	const iterations = 24
+	for i := 0; i < iterations; i++ {
+		func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
 
-	requireEchoWorksKuic(t, conn)
+			conn, err := kuic.DialAddr(ctx, addr.String(), &utls.Config{
+				ServerName: innerSNI,
+				NextProtos: []string{alpn},
+				RootCAs:    utlsPool(pool),
+				MinVersion: utls.VersionTLS13,
+			}, &kuic.Config{
+				NewClientHelloSpec: twoDatagramSpec,
+				InitialPacketSpec:  spec,
+			})
+			require.NoErrorf(t, err, "iteration %d: a re-framed Chrome-146 Initial must handshake with an un-upgraded apernet server", i)
+			defer conn.CloseWithError(0, "")
+
+			state := conn.ConnectionState().TLS
+			require.True(t, state.HandshakeComplete)
+			require.Equal(t, alpn, state.NegotiatedProtocol)
+
+			requireEchoWorksKuic(t, conn)
+		}()
+	}
 }
 
 // TestNewClientOldServer_Unfingerprinted covers the same pairing with no spec

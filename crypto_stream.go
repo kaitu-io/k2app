@@ -128,6 +128,20 @@ func newInitialCryptoStream(isClient bool) *initialCryptoStream {
 	return s
 }
 
+// DisableScrambling turns off the anti-DPI ClientHello scrambler for this stream.
+// A fingerprinting dial (Config.NewClientHelloSpec) shapes its own ClientHello and,
+// with an InitialPacketSpec.FrameBuilder, re-frames the Initial CRYPTO to match a real
+// client. The scrambler contradicts that on two counts: its SNI/ECH cuts are not what
+// the imitated client sends, and — because it makes PopCryptoFrame hand out
+// non-contiguous, out-of-order stream ranges — the re-framer, which assumes each
+// datagram pops a contiguous slice, computes wrong CRYPTO offsets and ships a
+// ClientHello the peer cannot reassemble. Under ECH the outer SNI is encrypted anyway,
+// so nothing is lost. Ported in intent from uQUIC's newUClientConnection. Call before
+// the ClientHello is written.
+func (s *initialCryptoStream) DisableScrambling() {
+	s.scramble = false
+}
+
 func (s *initialCryptoStream) HasData() bool {
 	// The ClientHello might be written in multiple parts.
 	// In order to correctly split the ClientHello, we need the entire ClientHello has been queued.

@@ -159,6 +159,22 @@ would risk desyncing the Initial ack handler (which tracks the contiguous range
 it popped) against a re-cut wire layout; the ClientHello, which is what a
 first-packet classifier reads, is covered.
 
+**The ClientHello scrambler must be off on this path.** kuic's
+`initialCryptoStream` (crypto_stream.go) has an upstream anti-DPI feature that
+cuts the ClientHello at the SNI and ECH, so `PopCryptoFrame` hands out
+non-contiguous, out-of-order stream ranges. The re-framer assumes each datagram
+pops a *contiguous* slice and takes its lowest CRYPTO offset as the datagram's
+base — so a scrambled pop makes it compute wrong wire offsets, and the peer
+receives a ClientHello it can never reassemble. The handshake then hangs until
+its deadline. This is nondeterministic (it depends on where the cuts fall
+relative to the datagram boundary) and invisible to client-side unit tests,
+which see all the bytes present just reordered; it only shows as a real handshake
+that never completes. `newClientConnection` calls
+`s.initialStream.DisableScrambling()` whenever `NewClientHelloSpec` is set — under
+ECH the outer SNI is encrypted anyway, so nothing is lost. The regression guard is
+`TestNewClientOldServer_ReframedInitial`, which loops many handshakes with a
+two-datagram ClientHello (a single dial can draw a layout that happens to work).
+
 Two deliberate divergences from uQUIC, both driven by the wire-capture test
 (`TestChrome146Initial_ReframedOnTheWire`), which decrypts the real Initial
 datagrams and asserts on their frames:

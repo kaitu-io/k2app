@@ -495,6 +495,11 @@ var newClientConnection = func(
 	// known. See wire.PopulateFromClientHelloSpec.
 	var clientHelloSpec *tls.ClientHelloSpec
 	if s.config.NewClientHelloSpec != nil {
+		// A fingerprinted dial shapes its own ClientHello (and, with a FrameBuilder,
+		// re-frames the Initial CRYPTO). kuic's anti-DPI scrambler would both de-shape it
+		// and hand the re-framer non-contiguous stream ranges it lays out wrong; turn it
+		// off here, before the ClientHello is written.
+		s.initialStream.DisableScrambling()
 		spec, err := s.config.NewClientHelloSpec()
 		if err != nil {
 			return nil, fmt.Errorf("kuic: build ClientHelloSpec: %w", err)
