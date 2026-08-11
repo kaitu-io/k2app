@@ -3,7 +3,6 @@ package wire
 import (
 	"bufio"
 	"context"
-	tls "github.com/metacubex/utls"
 	"errors"
 	"io"
 	"net"
@@ -143,7 +142,7 @@ func TestQUICClient_MetadataRejectFailsConnect(t *testing.T) {
 	defer cleanup()
 
 	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"}, nil)
-	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+	client.tlsConfig = buildInsecureTLSConfig()
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -190,7 +189,7 @@ func TestQUICClient_PermissiveCredentialProblemStillConnects(t *testing.T) {
 	defer cleanup()
 
 	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"}, nil)
-	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+	client.tlsConfig = buildInsecureTLSConfig()
 	defer client.Close()
 
 	// Drain AcceptTCP so the proxy stream completes server-side.
@@ -239,7 +238,7 @@ func TestQUICClient_LegacyMetadataRejectIsProxyLayerError(t *testing.T) {
 	defer cleanup()
 
 	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"}, nil)
-	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+	client.tlsConfig = buildInsecureTLSConfig()
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

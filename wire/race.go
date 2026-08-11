@@ -189,10 +189,23 @@ func raceExitError(quic443, tcpws error) error {
 	return fmt.Errorf("transport race: %w", joined)
 }
 
-// buildInsecureTLSConfig builds a minimal InsecureSkipVerify TLS config
-// for testing or dev environments where ECH is not configured.
+// buildInsecureTLSConfig builds a minimal InsecureSkipVerify TLS config for
+// the dev/test path — `insecure=1` in the URL with no ECH configured. It is
+// also what the wire tests use, deliberately: this is the one place that knows
+// what an unverified QUIC client config has to look like, and the ServerName
+// below is exactly the kind of requirement that rots if every test restates it.
 func buildInsecureTLSConfig() *tls.Config {
 	return &tls.Config{
+		// ServerName must be a real host name. Empty is not an option: quic-go
+		// fills an empty ServerName in from the dial address, and since the
+		// fingerprinted ClientHello always carries a server_name extension, an
+		// IP literal there — forbidden by RFC 6066 §3 — gets the ClientHello
+		// dropped unanswered, surfacing as a bare handshake timeout. kuic
+		// rejects that config up front (ErrSNIWithoutHostname) instead.
+		//
+		// The ordinary path never reaches here: BuildClientTLSConfig sets the
+		// k2v5 inner SNI, and with ECH the name is encrypted anyway.
+		ServerName:         "localhost",
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"h3"},
 	}

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	tls "github.com/metacubex/utls"
 	"net"
 	"testing"
 	"time"
@@ -153,7 +152,7 @@ func TestIntegration_QUICEnforce_NilValidatorAuthenticatesNobody(t *testing.T) {
 		UDID:  "some-device",
 		Token: "some-token",
 	}, nil)
-	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+	client.tlsConfig = buildInsecureTLSConfig()
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

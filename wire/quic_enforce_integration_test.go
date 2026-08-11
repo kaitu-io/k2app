@@ -76,7 +76,7 @@ func TestIntegration_QUICEnforce_ForgedTokenRejected(t *testing.T) {
 			UDID:  udid,
 			Token: token,
 		}, nil)
-		client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+		client.tlsConfig = buildInsecureTLSConfig()
 		defer client.Close()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -151,7 +151,7 @@ func TestIntegration_QUICEnforce_PermissiveServesUnauthenticated(t *testing.T) {
 	client := NewQUICClient(Config{
 		Host: "127.0.0.1", Port: serverAddr.Port, UDID: "legacy", Token: "whatever",
 	}, nil)
-	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+	client.tlsConfig = buildInsecureTLSConfig()
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -227,7 +227,7 @@ func TestIntegration_QUICCookie_SecondConnectIsWarm(t *testing.T) {
 	dial := func() {
 		t.Helper()
 		client := NewQUICClient(cfg, jar)
-		client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+		client.tlsConfig = buildInsecureTLSConfig()
 		defer client.Close()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -307,7 +307,7 @@ func TestIntegration_QUICSweep_KillSeversConn(t *testing.T) {
 
 	serverAddr := serverUDP.LocalAddr().(*net.UDPAddr)
 	client := NewQUICClient(Config{Host: "127.0.0.1", Port: serverAddr.Port, UDID: "good", Token: "valid"}, nil)
-	client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+	client.tlsConfig = buildInsecureTLSConfig()
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

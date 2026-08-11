@@ -152,10 +152,7 @@ func setupQUICPair(t *testing.T) (*QUICClient, *QUICServer, func()) {
 		Port: serverAddr.Port,
 	}
 	client := NewQUICClient(clientCfg, nil)
-	client.tlsConfig = &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"h3"},
-	}
+	client.tlsConfig = buildInsecureTLSConfig()
 
 	cleanup := func() {
 		client.Close()
@@ -571,10 +568,7 @@ func TestQUICClient_DialUDP_StreamFallback(t *testing.T) {
 	}
 	client := NewQUICClient(clientCfg, nil)
 	defer client.Close()
-	client.tlsConfig = &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"h3"},
-	}
+	client.tlsConfig = buildInsecureTLSConfig()
 
 	// Client: dial UDP (should use stream fallback)
 	pconn, err := client.DialUDP(context.Background(), "8.8.8.8:53")
@@ -962,10 +956,7 @@ func TestQUICClient_dialUDPStream_DeadConnDetectedByConnect(t *testing.T) {
 func TestQUICClient_ConsecConnFails(t *testing.T) {
 	// Test that connect() failures increment handshakeFailStreak and success resets it.
 	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1}, nil)
-	qc.SetTLSConfig(&tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"h3"},
-	})
+	qc.SetTLSConfig(buildInsecureTLSConfig())
 
 	// connect() to unreachable port should fail (timeout) and increment counter.
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)

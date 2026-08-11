@@ -149,6 +149,7 @@ func setupQUICEnvUDP(t *testing.T, udp wire.UDPHandler) *testEnv {
 	env.quicClient = wire.NewQUICClient(clientCfg, nil)
 	// Bypass ECH/fingerprint for testing
 	env.quicClient.SetTLSConfig(&tls.Config{
+		ServerName:         "localhost", // fingerprinted ClientHello needs a host name, not an inferred IP
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"h3"},
 	})

@@ -2,7 +2,6 @@ package wire
 
 import (
 	"context"
-	tls "github.com/metacubex/utls"
 	"errors"
 	"testing"
 	"time"
@@ -69,7 +68,7 @@ func TestMetadataConsistency_QUIC(t *testing.T) {
 			defer cleanup()
 
 			client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"}, nil)
-			client.tlsConfig = &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}}
+			client.tlsConfig = buildInsecureTLSConfig()
 			defer client.Close()
 
 			if tc.wantConnect {
