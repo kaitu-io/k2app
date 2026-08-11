@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	tls "github.com/metacubex/utls"
+
+	quic "github.com/kaitu-io/kuic"
 )
 
 // These tests guard buildChromeH3Spec against the ways it can break without
@@ -191,5 +193,39 @@ func TestChromeH3Spec_CipherSuitesAreTLS13Only(t *testing.T) {
 	}
 	if spec.TLSVersMin != tls.VersionTLS13 || spec.TLSVersMax != tls.VersionTLS13 {
 		t.Errorf("TLS version range = [%#x, %#x], want TLS 1.3 only", spec.TLSVersMin, spec.TLSVersMax)
+	}
+}
+
+// TestChromeH3InitialPacketSpec guards the QUIC-packet-layer half of the
+// fingerprint. Like the ClientHello guards above, a wrong value here connects
+// fine and simply looks unlike Chrome at the packet layer — the failure mode no
+// functional test catches. Values are transcribed from uquic's Chrome-146 parrot.
+//
+// The wire-level proof that kuic actually emits this shape lives in kuic's
+// TestChrome146Initial_ReframedOnTheWire; this only pins what k2 hands kuic.
+func TestChromeH3InitialPacketSpec(t *testing.T) {
+	ips := chromeH3InitialPacketSpec()
+	if ips.DestConnIDLength != 8 {
+		t.Errorf("DestConnIDLength = %d, want 8 (quic-go randomizes in [8,20])", ips.DestConnIDLength)
+	}
+	if ips.InitPacketNumber != 1 {
+		t.Errorf("InitPacketNumber = %d, want 1 (quic-go starts at 0)", ips.InitPacketNumber)
+	}
+	wantPNLens := []quic.PacketNumberLen{quic.PacketNumberLen1, quic.PacketNumberLen2}
+	if len(ips.InitPacketNumberLengths) != len(wantPNLens) {
+		t.Fatalf("InitPacketNumberLengths = %v, want %v", ips.InitPacketNumberLengths, wantPNLens)
+	}
+	for i, l := range wantPNLens {
+		if ips.InitPacketNumberLengths[i] != l {
+			t.Errorf("InitPacketNumberLengths[%d] = %d, want %d", i, ips.InitPacketNumberLengths[i], l)
+		}
+	}
+	rf, ok := ips.FrameBuilder.(*quic.QUICRandomFrames)
+	if !ok {
+		t.Fatalf("FrameBuilder = %T, want *quic.QUICRandomFrames", ips.FrameBuilder)
+	}
+	want := quic.QUICRandomFrames{MinPING: 1, MaxPING: 4, MinCRYPTO: 6, MaxCRYPTO: 14, MinPADDING: 2, MaxPADDING: 6, Length: 1231 - 16}
+	if *rf != want {
+		t.Errorf("QUICRandomFrames = %+v, want %+v", *rf, want)
 	}
 }

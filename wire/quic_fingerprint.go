@@ -33,23 +33,25 @@ import (
 // cannot drift back out silently.
 //
 // SCOPE — read before trusting this for evasion. This file shapes the
-// *ClientHello*; chromeH3InitialPacketSpec below shapes part of the QUIC
-// Initial packet around it. Measured against uquic's parrot, what is covered
-// and what is not:
+// *ClientHello*; chromeH3InitialPacketSpec below shapes the QUIC Initial packet
+// around it. Measured against uquic's parrot, what is covered and what is not:
 //
 //	covered  source connection ID length 0 (kuic's default already matches)
 //	covered  destination connection ID length 8 (quic-go: random in [8,20])
 //	covered  first Initial packet number 1 (quic-go: 0)
-//	MISSING  per-packet number encoding lengths {1, 2}
-//	MISSING  QUICRandomFrames — Chrome cuts CRYPTO into many frames and
-//	         interleaves PING and PADDING, padding each of two Initial
-//	         datagrams to a 1231-byte payload. quic-go sends one big CRYPTO
-//	         frame per packet.
+//	covered  per-packet number encoding lengths {1, 2} (quic-go: {2, 2})
+//	covered  CRYPTO framing — each Initial datagram re-cut into many CRYPTO
+//	         frames interleaved with PING and PADDING, padded to a 1231-byte
+//	         payload, across the two datagrams the ClientHello spans. quic-go
+//	         sends one big CRYPTO frame per packet.
+//	MISSING  Initial CRYPTO retransmissions / PTO probes are not re-framed —
+//	         they go out as quic-go's single CRYPTO frame. This shows only under
+//	         packet loss, where Chrome's own framing is already perturbed; see
+//	         kuic's u_packet_packer.go SCOPE note for why (ack-handler desync).
 //
-// The two MISSING items both need kuic's packet packer replaced (uQUIC does it
-// with a uPacketPacker), which is a much larger change than this file. Until
-// then a fingerprinter working at the QUIC packet layer rather than the TLS
-// layer can still separate this from Chrome.
+// The framing is done by kuic's uPacketPacker, driven by the InitialPacketSpec
+// this file hands it. A fingerprinter working at the QUIC packet layer now sees
+// Chrome's Initial flight, not quic-go's, for the ClientHello itself.
 
 // buildChromeH3Spec returns a fresh Chrome-146-over-QUIC ClientHelloSpec.
 //
@@ -148,17 +150,29 @@ func buildChromeH3Spec() (*tls.ClientHelloSpec, error) {
 // chromeH3InitialPacketSpec returns Chrome 146's Initial-packet shape, the QUIC
 // half of the fingerprint that buildChromeH3Spec covers at the TLS half.
 //
-// Ported from the same uquic parrot. Only the fields kuic reads today are set;
-// the CRYPTO-frame framing Chrome uses (many small CRYPTO frames interleaved
-// with PING and PADDING, padded to 1231 bytes across two Initial datagrams) is
-// still quic-go's — see the SCOPE note above.
+// Ported from the same uquic parrot. SrcConnIDLength is deliberately absent:
+// kuic already dials with a zero-length source connection ID, which is what
+// Chrome sends.
 //
-// SrcConnIDLength is deliberately absent: kuic already dials with a zero-length
-// source connection ID, which is what Chrome sends.
+// The FrameBuilder parameters below come straight from uquic's Chrome-146
+// parrot, informed by a real pcap: each Initial datagram is re-cut into 6–13
+// CRYPTO frames interleaved with 1–3 PING and 2–5 PADDING frames and padded to a
+// 1231-byte QUIC payload (1215 + 16-byte AEAD tag). kuic applies this per Initial
+// datagram of the ClientHello flight.
 func chromeH3InitialPacketSpec() *quic.InitialPacketSpec {
 	return &quic.InitialPacketSpec{
-		DestConnIDLength: 8, // quic-go would pick a random length in [8,20]
-		InitPacketNumber: 1, // quic-go starts at 0
+		DestConnIDLength:        8,                                                  // quic-go would pick a random length in [8,20]
+		InitPacketNumber:        1,                                                  // quic-go starts at 0
+		InitPacketNumberLengths: []quic.PacketNumberLen{quic.PacketNumberLen1, quic.PacketNumberLen2}, // PN=1→1 byte, PN=2→2 bytes; quic-go sends {2,2}
+		FrameBuilder: &quic.QUICRandomFrames{
+			MinPING:    1,
+			MaxPING:    4,
+			MinCRYPTO:  6,
+			MaxCRYPTO:  14,
+			MinPADDING: 2,
+			MaxPADDING: 6,
+			Length:     1231 - 16, // QUIC payload target; 16-byte AEAD tag
+		},
 	}
 }
 

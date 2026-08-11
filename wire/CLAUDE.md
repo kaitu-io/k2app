@@ -41,10 +41,12 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, Insecure, Pin.
 
 **`Fingerprint` (`fp=`) shapes the TCP-WS leg only.** It picks a uTLS
 `ClientHelloID` for `tcpws.go`. The QUIC leg does not read it: it always sends
-`buildChromeH3Spec()` (`quic_fingerprint.go`), because Chrome's HTTP/3
-ClientHello is not the same shape as its TCP one and there is exactly one
-QUIC parrot to choose from. Adding an `fp=` value that only exists on one leg
-would leave the other leg silently unshaped — the state this replaced.
+Chrome-146-over-QUIC — `buildChromeH3Spec()` for the ClientHello and
+`chromeH3InitialPacketSpec()` for the Initial *packet* around it
+(`quic_fingerprint.go`) — because Chrome's HTTP/3 ClientHello is not the same
+shape as its TCP one and there is exactly one QUIC parrot to choose from. Adding
+an `fp=` value that only exists on one leg would leave the other leg silently
+unshaped — the state this replaced.
 
 Port hopping was removed at the protocol layer: the dial port is whatever the URL
 says (443 in production) and never moves. A legacy `hop=` emitted by an
@@ -72,7 +74,7 @@ camouflage exists to avoid.
 - `stream.go` — QUIC varint encoding, `StreamHeader` (type 0x4B32 H3 frame), request/response
 - `udp.go` — `UDPFrame` wire format, `SessionAllocator`, `SessionMap`, smux framing
 - `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, relay UDP health tracking (`quicUDPMux`: consecutive timeouts → `ErrDatagramRelayUnhealthy` for TCP-WS fallback, any recv clears the streak)
-- `quic_fingerprint.go` — `buildChromeH3Spec()`, the Chrome-146-over-QUIC `ClientHelloSpec` handed to kuic's `Config.NewClientHelloSpec` on every dial. Ported from refraction-networking/uquic (BSD-3). **A factory, never a cached value**: kuic writes this connection's transport parameters — including `initial_source_connection_id` — into the returned spec, so a shared one has concurrent dials overwrite each other. Two spec-authoring requirements are load-bearing and fail loudly if dropped: a `QUICTransportParametersExtension` (else `TRANSPORT_PARAMETER_ERROR`) and a GREASE-ECH placeholder (else the server answers `missing_extension` and ECH is silently unused). **Scope: the ClientHello only** — the QUIC Initial *packet* structure (CID lengths, PN encoding, CRYPTO fragmentation, padding) is still quic-go's, so a packet-layer fingerprinter can still separate this from Chrome. See `kuic/MAINTAINING.md`.
+- `quic_fingerprint.go` — the Chrome-146-over-QUIC fingerprint handed to kuic on every dial: `buildChromeH3Spec()` (the `ClientHelloSpec`, via `Config.NewClientHelloSpec`) and `chromeH3InitialPacketSpec()` (the Initial *packet* shape, via `Config.InitialPacketSpec`). Ported from refraction-networking/uquic (BSD-3). **`buildChromeH3Spec` is a factory, never a cached value**: kuic writes this connection's transport parameters — including `initial_source_connection_id` — into the returned spec, so a shared one has concurrent dials overwrite each other. Two spec-authoring requirements are load-bearing and fail loudly if dropped: a `QUICTransportParametersExtension` (else `TRANSPORT_PARAMETER_ERROR`) and a GREASE-ECH placeholder (else the server answers `missing_extension` and ECH is silently unused). **Scope**: the packet shape now covers CID lengths, first PN and its encoding lengths `{1,2}`, and CRYPTO fragmentation with PING/PADDING across the two Initial datagrams the ClientHello spans; what remains quic-go's is Initial CRYPTO *retransmissions*/PTO probes, visible only under packet loss. The `quic_fingerprint.go` SCOPE table and `kuic/MAINTAINING.md` carry the details.
 - `quic_limits_desktop.go` — Desktop/server QUIC flow control windows (8 MB stream / 20 MB conn / 256 streams)
 - `quic_limits_mobile.go` — Mobile QUIC flow control windows (2 MB stream / 8 MB conn / 64 streams) — iOS NE ~50 MB jetsam limit
 - `echo.go` — `EchoProbe` (client) + `HandleEchoStream` (server), `EchoProber` interface, `StreamTypeEcho=0x04`
