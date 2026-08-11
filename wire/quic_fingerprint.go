@@ -16,20 +16,30 @@ import (
 // looked like two different clients, and the QUIC one looked like nothing on
 // the public internet.
 //
-// The spec below is ported from refraction-networking/uquic's QUICChrome_146
-// parrot (BSD-3-Clause), which was authored from a real Chrome 146 capture, and
-// translated to metacubex/utls types. Chrome's HTTP/3 ClientHello is NOT its
-// TCP one: TLS 1.3 suites only with no GREASE cipher, h3 ALPN, ALPS on the new
-// 0x44cd codepoint, GREASE ECH, and a quic_transport_parameters extension that
-// carries several Google-private parameters. utls's built-in Chrome presets are
-// all TCP, so none of them is usable here.
+// The spec below is ported from refraction-networking/uquic's
+// QUICChrome_146_IPv4 parrot (BSD-3-Clause), which was authored from a real
+// Chrome 146 capture, and translated to metacubex/utls types. Chrome's HTTP/3
+// ClientHello is NOT its TCP one: TLS 1.3 suites only with no GREASE cipher, h3
+// ALPN, ALPS on the new 0x44cd codepoint, GREASE ECH, and a
+// quic_transport_parameters extension that carries several Google-private
+// parameters. utls's built-in Chrome presets are all TCP, so none is usable.
+//
+// Port verified against uquic v0.0.7-0.20260804184259-837c7ce1b72b (the tagged
+// releases stop at Chrome 115): all 14 transport parameters and all 11
+// extensions match in value and in pre-shuffle order, and the two helpers below
+// match uquic's byte for byte. quic_fingerprint_test.go pins that set so it
+// cannot drift back out silently.
 //
 // SCOPE — read before trusting this for evasion. This shapes the *ClientHello*.
-// It does not reproduce Chrome's QUIC Initial *packet* structure: connection ID
-// lengths, packet number encoding, CRYPTO frame fragmentation and datagram
-// padding are still quic-go's. A fingerprinter working at the QUIC packet layer
-// rather than the TLS layer can still separate this from Chrome. Closing that
-// gap means porting uQUIC's packet-layer machinery into kuic.
+// It does not reproduce Chrome's QUIC Initial *packet* structure, and uquic's
+// parrot says exactly what is missing: SrcConnIDLength 0 / DestConnIDLength 8,
+// a first packet number of 1 (not 0) with per-packet number lengths {1, 2}, and
+// QUICRandomFrames — Chrome fragments CRYPTO across many frames and interleaves
+// PING and PADDING, targeting a 1231-byte payload across two Initial datagrams.
+// All of that is still quic-go's. A fingerprinter working at the QUIC packet
+// layer rather than the TLS layer can therefore still separate this from
+// Chrome. Closing the gap means porting uQUIC's InitialPacketSpec machinery
+// into kuic, which is a much larger change than this file.
 
 // buildChromeH3Spec returns a fresh Chrome-146-over-QUIC ClientHelloSpec.
 //
