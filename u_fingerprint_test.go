@@ -226,6 +226,17 @@ func TestFingerprintSpecMissingTransportParams_FailsLoudly(t *testing.T) {
 
 // TestFingerprintSpecWithoutECH_Handshakes isolates the fingerprint mechanism
 // from ECH, so a gate failure can be attributed to one or the other.
+//
+// It is also the only test here that covers the transport-parameter injection
+// in u_clienthello.go, and the coverage is not incidental — delete the
+// injection and this is the sole test in the file that goes red. ECH gives the
+// server a second route to the parameters (the decrypted inner ClientHello,
+// built from the bytes utls stashed internally rather than from the spec's
+// extension), so every ECH test above stays green with the injection gone.
+//
+// Keep a no-ECH case here even if k2 only ever ships ECH. Losing it means an
+// all-green suite that has stopped testing the thing this fork exists for.
+// MAINTAINING.md has the full reasoning under "The transport-parameters trap".
 func TestFingerprintSpecWithoutECH_Handshakes(t *testing.T) {
 	ln, err := ListenAddr("127.0.0.1:0", &tls.Config{
 		Certificates: []tls.Certificate{testdata.GetTLSConfig().Certificates[0]},

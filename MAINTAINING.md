@@ -58,6 +58,28 @@ marshaled parameters back into `(id, value)` pairs and writing them into the
 spec's extension — `ApplyPreset` copies the spec's extension list by interface
 value, so that object is the one the ClientHello is built from.
 
+**ECH hides this bug.** Measured, not reasoned: disable the injection and
+`TestFingerprintSpecWithoutECH_Handshakes` fails with exactly the error above,
+while every ECH test still passes. With ECH the server reads the parameters
+from the decrypted *inner* ClientHello, which utls builds from the bytes
+`UQUICConn.SetTransportParameters` stashed internally — the spec's extension
+only shapes the *outer* hello. So on an ECH deployment the injection is not a
+correctness fix at all; it is what keeps the outer ClientHello from advertising
+an empty `quic_transport_parameters`, which no browser does and which is
+therefore a discriminator all by itself.
+
+Consequence for testing: **a no-ECH case is not optional coverage.** An all-ECH
+suite goes green with the injection deleted.
+
+That matters more than it looks, because of a second hazard with no other
+alarm: `QUICTransportParametersExtension` caches its marshaled bytes in an
+unexported `marshalResult` on the first `Len()` call, and kuic cannot reset it
+(`UQUICConn.conn` is unexported, so the extension list is out of reach). Today
+`Len()` runs after the injection and all is well. If a utls bump ever measured
+the ClientHello first, the injection would silently stop reaching the wire —
+red in the no-ECH tests, invisible everywhere else. If those go red after a
+utls bump, look here before looking anywhere else.
+
 Two consequences to preserve:
 
 - **`NewClientHelloSpec` is a factory, not a value.** The parameters written in
@@ -109,6 +131,25 @@ The baseline is tagged `apernet-base-<commit>` (currently
 5. The gate in `u_fingerprint_test.go` must pass. It is mutation-verified —
    if it goes green after a change that should have broken it, distrust it and
    re-run the mutations described in its commit message.
+6. `cd integrationtests/apernetcompat && go test ./... -count=1`. Separate
+   module, so `./...` at the root does not reach it. See below.
+
+## The apernet compatibility matrix
+
+`integrationtests/apernetcompat/` is its own module requiring **both** forks at
+once — kuic via `replace ../..`, apernet/quic-go at the version kuic was forked
+from. It answers the question kuic's own suite structurally cannot: does a
+fingerprinted kuic client interoperate with the un-upgraded apernet server that
+is already deployed, and does an un-upgraded apernet client still reach a kuic
+server? Both directions matter, because the fork rolls out client-first and the
+rollout window contains both mixed pairings.
+
+The peer in the first case is stdlib `crypto/tls`, which has never seen a utls
+type. That is the only place a malformed shaped ClientHello shows up as a dead
+handshake rather than as nothing at all.
+
+Bump the apernet version in its `go.mod` whenever the rebase baseline moves —
+a matrix pinned to a fork point the fleet no longer runs proves nothing.
 
 ## utls version
 
