@@ -22,8 +22,12 @@ import (
 // This file is the gate for the whole fork: a ClientHello shaped to a
 // fingerprint spec, carrying a real (not GREASE) Encrypted Client Hello, must
 // complete a QUIC handshake. That combination is the one reported broken in
-// other uTLS+QUIC integrations, and the transport-parameters handling in
-// internal/handshake/u_clienthello.go is the reason it works here.
+// other uTLS+QUIC integrations.
+//
+// The spec's transport parameters are authoritative for the wire — see
+// wire.PopulateFromClientHelloSpec. A handshake that dies right after the
+// ClientHello with TRANSPORT_PARAMETER_ERROR points there, and specifically at
+// initial_source_connection_id, the one parameter the spec cannot supply.
 
 const gateOuterSNI = "public.example"  // ECH outer name — what a censor sees
 const gateInnerSNI = "localhost"      // ECH inner name — what the test cert is for
@@ -113,9 +117,28 @@ func gateClientHelloSpec(t *testing.T) *tls.ClientHelloSpec {
 				tls.GREASE_PLACEHOLDER,
 				tls.VersionTLS13,
 			}},
-			// The load-bearing one. Contents are overwritten per connection
-			// with quic-go's real transport parameters.
-			&tls.QUICTransportParametersExtension{},
+			// The load-bearing one. These values go on the wire as written —
+			// the spec is authoritative, quic-go's own config does not
+			// override them. The only one filled in per connection is
+			// initial_source_connection_id, whose zero-length placeholder
+			// PopulateFromClientHelloSpec replaces with this connection's real
+			// SCID (RFC 9000 §7.3 requires them to match).
+			//
+			// A spec with an empty extension is not usable: it would advertise
+			// no flow control at all.
+			&tls.QUICTransportParametersExtension{
+				TransportParameters: tls.TransportParameters{
+					tls.InitialMaxStreamDataBidiLocal(6291456),
+					tls.InitialMaxStreamDataBidiRemote(6291456),
+					tls.InitialMaxStreamDataUni(6291456),
+					tls.InitialMaxData(15728640),
+					tls.InitialMaxStreamsBidi(100),
+					tls.InitialMaxStreamsUni(103),
+					tls.MaxIdleTimeout(30000),
+					tls.MaxUDPPayloadSize(1472),
+					tls.InitialSourceConnectionID([]byte{}),
+				},
+			},
 			// Placeholder that utls swaps for the real encrypted_client_hello
 			// extension when Config.EncryptedClientHelloConfigList is set. A
 			// spec without an EncryptedClientHelloExtension cannot carry ECH.
@@ -395,4 +418,57 @@ func TestFingerprintSpecECHAllowsIPInnerSNI(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.CloseWithError(0, "")
 	require.True(t, conn.ConnectionState().TLS.ECHAccepted)
+}
+
+// fixedLenConnIDGenerator hands out connection IDs of a fixed non-zero length,
+// which the default client transport does not: quic-go dials with a zero-length
+// source connection ID, and so does Chrome.
+type fixedLenConnIDGenerator struct{ length int }
+
+func (g fixedLenConnIDGenerator) GenerateConnectionID() (ConnectionID, error) {
+	b := make([]byte, g.length)
+	if _, err := rand.Read(b); err != nil {
+		return ConnectionID{}, err
+	}
+	return ConnectionIDFromBytes(b), nil
+}
+
+func (g fixedLenConnIDGenerator) ConnectionIDLen() int { return g.length }
+
+// TestFingerprintSpecBackfillsSourceConnectionID covers the one parameter a
+// spec author cannot supply and the only one kuic still writes into the spec.
+//
+// RFC 9000 §7.3 requires initial_source_connection_id to equal the packet's
+// Source Connection ID. A spec carries a zero-length placeholder, and
+// PopulateFromClientHelloSpec replaces it with this connection's real value.
+//
+// It needs its own test because the default transport makes the bug invisible:
+// there the source connection ID is itself zero-length, so a back-fill that
+// never ran is indistinguishable from one that did. Forcing an 8-byte
+// connection ID separates them — get this wrong and the server answers
+// TRANSPORT_PARAMETER_ERROR.
+func TestFingerprintSpecBackfillsSourceConnectionID(t *testing.T) {
+	echKey, echList := echKeypair(t, gateOuterSNI)
+	addr := gateServer(t, echKey)
+
+	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+	require.NoError(t, err)
+	tr := &Transport{Conn: udpConn, ConnectionIDGenerator: fixedLenConnIDGenerator{length: 8}}
+	defer tr.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := tr.Dial(ctx, addr, &tls.Config{
+		ServerName:                     gateInnerSNI,
+		NextProtos:                     []string{gateALPN},
+		RootCAs:                        testdata.GetRootCA(),
+		EncryptedClientHelloConfigList: echList,
+		MinVersion:                     tls.VersionTLS13,
+	}, &Config{
+		NewClientHelloSpec: func() (*tls.ClientHelloSpec, error) { return gateClientHelloSpec(t), nil },
+	})
+	require.NoError(t, err, "the spec's zero-length initial_source_connection_id must be replaced with the real 8-byte one")
+	defer conn.CloseWithError(0, "")
+	require.True(t, conn.ConnectionState().TLS.HandshakeComplete)
 }

@@ -34,13 +34,56 @@ diverges is a line to re-apply on every rebase.
    engine swap the crypto/tls targets were both a link error and a meaningless
    assertion.
 
-6. **`integrationtests/self/self_go12{4,5}_test.go`** both return 0 from
-   `getCurveID`. utls keeps the negotiated group unexported.
+6. **`integrationtests/self/handshake_drop_test.go`** no longer asserts which
+   key exchange group was negotiated. utls keeps it in an unexported field with
+   no equivalent of crypto/tls's `ConnectionState.CurveID`. Upstream's
+   `self_go12{4,5}_test.go` helpers were deleted rather than stubbed — a stub
+   returning 0 just made the caller fail.
+
+## The spec's transport parameters are authoritative
+
+When a dial carries a `ClientHelloSpec`, the spec's `quic_transport_parameters`
+are what goes on the wire — values, order, and all. `Config`'s flow-control
+settings do not override them. `wire.PopulateFromClientHelloSpec` copies the
+spec's values into quic-go's own `TransportParameters` so its flow control
+agrees with what it advertised, and stashes the exact serialization in
+`ClientOverride`, which `Marshal` returns verbatim.
+
+The direction is deliberate and was reversed once. Letting quic-go win puts
+quic-go's parameter set on the wire under a Chrome-shaped ClientHello: no
+`version_information`, no `google_initial_rtt`, no `google_connection_options`,
+a `max_ack_delay` Chrome never sends, and quic-go's canonical ordering instead
+of Chrome's per-connection shuffle. That combination is a rarer fingerprint than
+either half alone.
+
+**Consequences for anyone writing a spec:**
+
+- **A spec must carry real transport parameter values.** An empty
+  `&utls.QUICTransportParametersExtension{}` used to be normal — kuic filled it
+  in. Now it means a connection advertising no flow control at all.
+- **`initial_source_connection_id` is the one exception**, and the only one
+  kuic still writes. RFC 9000 §7.3 requires it to equal the packet's Source
+  Connection ID, which no spec author can know. Include it with a zero-length
+  value as a placeholder; a non-empty value is honoured as a deliberate pin.
+- **Parameters quic-go has no field for pass through untouched** — that is the
+  point. They live only in `ClientOverride`.
+- **Flow control comes from the spec.** A Chrome spec brings Chrome's windows
+  (6 MB stream / 15 MB connection), overriding whatever the caller tuned. On
+  memory-constrained platforms that is a real change, not a cosmetic one.
+
+The default client transport hides the connection-ID back-fill: quic-go dials
+with a zero-length source connection ID (as does Chrome), so a back-fill that
+never ran looks identical to one that did.
+`TestFingerprintSpecBackfillsSourceConnectionID` forces an 8-byte connection ID
+precisely to separate them. Don't delete it.
 
 ## The transport-parameters trap
 
 This is the part that is easy to get wrong and produces a handshake that dies
 right after the ClientHello.
+
+This section describes the mechanism the section above rests on, and the trap
+an earlier version of this fork fell into.
 
 utls's `UQUICConn.SetTransportParameters` records the parameters internally but
 deliberately does **not** write them into the ClientHello when a preset is
@@ -53,38 +96,39 @@ connection's, including `initial_source_connection_id`, which RFC 9000 §7.3
 requires to equal the packet's Source Connection ID. Any conformant server
 answers `TRANSPORT_PARAMETER_ERROR`.
 
-`fingerprintedConn.SetTransportParameters` fixes this by decoding quic-go's
-marshaled parameters back into `(id, value)` pairs and writing them into the
-spec's extension — `ApplyPreset` copies the spec's extension list by interface
-value, so that object is the one the ClientHello is built from.
+That is exactly why the spec is authoritative: the ClientHello is built from
+the spec's extension, so the spec is where the parameters have to be correct.
+`ApplyPreset` copies the extension list by interface value, so writing the real
+connection ID into the spec's extension before the dial reaches it — which
+`PopulateFromClientHelloSpec` does — reaches the object the ClientHello
+marshals from.
 
-**ECH hides this bug.** Measured, not reasoned: disable the injection and
-`TestFingerprintSpecWithoutECH_Handshakes` fails with exactly the error above,
-while every ECH test still passes. With ECH the server reads the parameters
-from the decrypted *inner* ClientHello, which utls builds from the bytes
-`UQUICConn.SetTransportParameters` stashed internally — the spec's extension
-only shapes the *outer* hello. So on an ECH deployment the injection is not a
-correctness fix at all; it is what keeps the outer ClientHello from advertising
-an empty `quic_transport_parameters`, which no browser does and which is
-therefore a discriminator all by itself.
+kuic briefly did the opposite, decoding quic-go's marshaled parameters and
+overwriting the spec's extension with them. That handshakes perfectly well and
+throws Chrome's parameters away. Don't.
 
-Consequence for testing: **a no-ECH case is not optional coverage.** An all-ECH
-suite goes green with the injection deleted.
+**ECH takes a different route to the parameters, so keep both cases.** With
+ECH the server reads them from the decrypted *inner* ClientHello, which utls
+builds from the bytes `UQUICConn.SetTransportParameters` stashed internally;
+without ECH the spec's extension is the only source. Both paths have to work,
+and a suite covering only one has repeatedly gone green on a broken other. Back
+when kuic overwrote the spec instead, deleting that overwrite left every ECH
+test passing and only `TestFingerprintSpecWithoutECH_Handshakes` red.
 
-That matters more than it looks, because of a second hazard with no other
-alarm: `QUICTransportParametersExtension` caches its marshaled bytes in an
-unexported `marshalResult` on the first `Len()` call, and kuic cannot reset it
+There is also a hazard with no alarm of its own:
+`QUICTransportParametersExtension` caches its marshaled bytes in an unexported
+`marshalResult` on the first `Len()` call, and kuic cannot reset it
 (`UQUICConn.conn` is unexported, so the extension list is out of reach). Today
-`Len()` runs after the injection and all is well. If a utls bump ever measured
-the ClientHello first, the injection would silently stop reaching the wire —
-red in the no-ECH tests, invisible everywhere else. If those go red after a
-utls bump, look here before looking anywhere else.
+`Len()` runs after `PopulateFromClientHelloSpec` and all is well. If a utls
+bump ever measured the ClientHello first, the connection ID back-fill would
+stop reaching the wire. If the fingerprint tests go red after a utls bump, look
+here before looking anywhere else.
 
 Two consequences to preserve:
 
-- **`NewClientHelloSpec` is a factory, not a value.** The parameters written in
-  are connection-specific. A shared spec has concurrent dials overwrite each
-  other's connection ID.
+- **`NewClientHelloSpec` is a factory, not a value.** This connection's source
+  connection ID is written into the spec. A shared spec has concurrent dials
+  overwrite each other's.
 - **The spec must contain a `*utls.QUICTransportParametersExtension`.** Missing
   it fails the dial (`ErrNoQUICTransportParametersExtension`) rather than
   falling back to an unshaped handshake.

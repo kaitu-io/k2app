@@ -67,43 +67,38 @@ var ErrSNIWithoutHostname = errors.New(
 // fingerprintedConn adapts utls's fingerprint-shaping QUIC connection to
 // quicTLSConn.
 //
-// It exists to solve one specific problem. utls builds the ClientHello from the
-// ClientHelloSpec's extension list, and its QUICTransportParametersExtension
-// marshals from its own structured TransportParameters field —
-// UQUICConn.SetTransportParameters only records the bytes for internal use and
-// deliberately does NOT write them into the ClientHello (see the commented-out
-// block in utls u_quic.go SetTransportParameters).
+// Note what it deliberately does NOT do: rewrite the spec's transport
+// parameters. utls builds the ClientHello's quic_transport_parameters extension
+// from the spec's own structured TransportParameters field —
+// UQUICConn.SetTransportParameters only records the bytes for internal use (see
+// the commented-out block in utls u_quic.go). That makes the spec authoritative
+// for the wire, which is exactly what is wanted: the spec's values, order, and
+// the Google-private and GREASE parameters quic-go has no concept of.
 //
-// Left alone, that means the ClientHello advertises whatever transport
-// parameters the spec was authored with instead of the ones this connection
-// actually negotiated — including initial_source_connection_id, which RFC 9000
-// section 7.3 requires to equal the packet's Source Connection ID. A mismatch
-// is a TRANSPORT_PARAMETER_ERROR from any conformant server, and shows up as a
-// handshake that dies right after the ClientHello.
+// The one parameter a spec author cannot know, initial_source_connection_id, is
+// filled in before we get here — wire.PopulateFromClientHelloSpec writes this
+// connection's real SCID into the spec's parameter slice and mirrors the whole
+// set into quic-go's own TransportParameters, so the two agree. RFC 9000 §7.3
+// requires that value to equal the packet's Source Connection ID; getting it
+// wrong is a TRANSPORT_PARAMETER_ERROR immediately after the ClientHello.
 //
-// So SetTransportParameters below also decodes quic-go's marshaled parameters
-// and writes them into the spec's extension, which is the copy the ClientHello
-// is actually built from.
+// An earlier version of this type did the opposite — overwriting the spec's
+// parameters with quic-go's marshaled set. That handshakes fine, and puts
+// quic-go's parameter set on the wire under a Chrome-shaped ClientHello. Don't
+// go back to it.
 type fingerprintedConn struct {
 	*tls.UQUICConn
-
-	// tpExt is the spec's quic_transport_parameters extension. ApplyPreset
-	// copies the spec's extension list by interface value, so this pointer is
-	// the same object the ClientHello marshals from.
-	tpExt *tls.QUICTransportParametersExtension
 }
 
 // newFingerprintedConn builds a QUIC client connection whose ClientHello is
 // shaped to spec.
 //
 // spec must be freshly built for this connection and not shared with any other:
-// the transport parameters written into it are connection-specific, so a shared
-// spec would have concurrent dials overwrite each other's
-// initial_source_connection_id. Config.ClientHelloSpec is a factory for exactly
-// this reason.
+// this connection's initial_source_connection_id has already been written into
+// it, so a shared spec would have concurrent dials overwrite each other's.
+// Config.NewClientHelloSpec is a factory for exactly this reason.
 func newFingerprintedConn(qconf *tls.QUICConfig, spec *tls.ClientHelloSpec) (*fingerprintedConn, error) {
-	tpExt := findQUICTransportParametersExtension(spec)
-	if tpExt == nil {
+	if FindQUICTransportParametersExtension(spec) == nil {
 		return nil, ErrNoQUICTransportParametersExtension
 	}
 	if len(qconf.TLSConfig.EncryptedClientHelloConfigList) == 0 && specHasSNI(spec) && !usableSNI(qconf.TLSConfig.ServerName) {
@@ -114,15 +109,7 @@ func newFingerprintedConn(qconf *tls.QUICConfig, spec *tls.ClientHelloSpec) (*fi
 	if err := uconn.ApplyPreset(spec); err != nil {
 		return nil, fmt.Errorf("kuic: apply ClientHelloSpec: %w", err)
 	}
-	return &fingerprintedConn{UQUICConn: uconn, tpExt: tpExt}, nil
-}
-
-// SetTransportParameters records params for utls's internal use and, crucially,
-// writes them into the ClientHello's quic_transport_parameters extension. See
-// the type doc for why both are needed.
-func (c *fingerprintedConn) SetTransportParameters(params []byte) {
-	c.tpExt.TransportParameters = decodeTransportParameters(params)
-	c.UQUICConn.SetTransportParameters(params)
+	return &fingerprintedConn{UQUICConn: uconn}, nil
 }
 
 // StoreSession is never reached: utls's UQUICClient ignores
@@ -133,9 +120,13 @@ func (c *fingerprintedConn) StoreSession(*tls.SessionState) error {
 	return errors.New("kuic: session storage is unavailable on the uTLS client path")
 }
 
-// findQUICTransportParametersExtension returns the spec's
+// FindQUICTransportParametersExtension returns the spec's
 // quic_transport_parameters extension, or nil if it has none.
-func findQUICTransportParametersExtension(spec *tls.ClientHelloSpec) *tls.QUICTransportParametersExtension {
+//
+// Exported because the connection setup needs it too: the spec's parameters are
+// authoritative for the wire, so they have to be read before quic-go builds its
+// own view of them.
+func FindQUICTransportParametersExtension(spec *tls.ClientHelloSpec) *tls.QUICTransportParametersExtension {
 	if spec == nil {
 		return nil
 	}

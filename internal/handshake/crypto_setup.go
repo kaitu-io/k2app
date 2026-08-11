@@ -68,16 +68,17 @@ var _ CryptoSetup = &cryptoSetup{}
 
 // NewCryptoSetupClient creates a new crypto setup for the client
 //
-// newClientHelloSpec, when non-nil, is called once to obtain a ClientHelloSpec
-// that shapes this connection's ClientHello to a chosen fingerprint. It returns
-// an error alongside the setup so a malformed spec fails the dial rather than
-// silently falling back to the unshaped handshake — the whole reason a caller
-// passes a spec is that the unshaped one is not acceptable.
+// clientHelloSpec, when non-nil, shapes this connection's ClientHello to a
+// chosen fingerprint. The caller builds it — by the time it arrives here its
+// transport parameters are already authoritative for tp, including this
+// connection's initial_source_connection_id. An unusable spec returns an error
+// rather than silently falling back to the unshaped handshake: the whole reason
+// a caller passes a spec is that the unshaped one is not acceptable.
 func NewCryptoSetupClient(
 	connID protocol.ConnectionID,
 	tp *wire.TransportParameters,
 	tlsConf *tls.Config,
-	newClientHelloSpec func() (*tls.ClientHelloSpec, error),
+	clientHelloSpec *tls.ClientHelloSpec,
 	enable0RTT bool,
 	rttStats *utils.RTTStats,
 	qlogger qlogwriter.Recorder,
@@ -103,14 +104,10 @@ func NewCryptoSetupClient(
 		TLSConfig:           tlsConf,
 		EnableSessionEvents: true,
 	}
-	if newClientHelloSpec == nil {
+	if clientHelloSpec == nil {
 		cs.conn = tls.QUICClient(qconf)
 	} else {
-		spec, err := newClientHelloSpec()
-		if err != nil {
-			return nil, fmt.Errorf("kuic: build ClientHelloSpec: %w", err)
-		}
-		conn, err := newFingerprintedConn(qconf, spec)
+		conn, err := newFingerprintedConn(qconf, clientHelloSpec)
 		if err != nil {
 			return nil, err
 		}

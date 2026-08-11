@@ -143,7 +143,26 @@ func compatSpec() (*utls.ClientHelloSpec, error) {
 		},
 		CompressionMethods: []uint8{0},
 		Extensions: []utls.TLSExtension{
-			&utls.QUICTransportParametersExtension{},
+			// These values are what the peer actually reads. The spec is
+			// authoritative for the wire; only the zero-length
+			// initial_source_connection_id is filled in per connection.
+			&utls.QUICTransportParametersExtension{
+				TransportParameters: utls.TransportParameters{
+					utls.InitialMaxStreamDataBidiLocal(6291456),
+					utls.InitialMaxStreamDataBidiRemote(6291456),
+					utls.InitialMaxStreamDataUni(6291456),
+					utls.InitialMaxData(15728640),
+					utls.InitialMaxStreamsBidi(100),
+					utls.InitialMaxStreamsUni(103),
+					utls.MaxIdleTimeout(30000),
+					utls.MaxUDPPayloadSize(1472),
+					utls.InitialSourceConnectionID([]byte{}),
+					// Google-private and unknown-to-quic-go parameters ride
+					// along untouched. Whether a stdlib crypto/tls peer
+					// tolerates them is precisely what this matrix is for.
+					&utls.FakeQUICTransportParameter{Id: 0x3128, Val: []byte{0x31, 0x30, 0x41, 0x46}},
+				},
+			},
 			&utls.ALPNExtension{AlpnProtocols: []string{alpn}},
 			&utls.KeyShareExtension{KeyShares: []utls.KeyShare{
 				{Group: utls.X25519MLKEM768},

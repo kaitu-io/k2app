@@ -481,6 +481,36 @@ var newClientConnection = func(
 	} else {
 		params.MaxDatagramFrameSize = protocol.InvalidByteCount
 	}
+	// When the dial is fingerprinted, the ClientHelloSpec — not the block above
+	// — decides what goes on the wire. The spec is built here rather than deeper
+	// in the handshake because the parameters it carries have to be in place
+	// before quic-go reasons about flow control, and because
+	// initial_source_connection_id can only be filled in where srcConnID is
+	// known. See wire.PopulateFromClientHelloSpec.
+	var clientHelloSpec *tls.ClientHelloSpec
+	if s.config.NewClientHelloSpec != nil {
+		spec, err := s.config.NewClientHelloSpec()
+		if err != nil {
+			return nil, fmt.Errorf("kuic: build ClientHelloSpec: %w", err)
+		}
+		tpExt := handshake.FindQUICTransportParametersExtension(spec)
+		if tpExt == nil {
+			return nil, handshake.ErrNoQUICTransportParametersExtension
+		}
+		// Everything except the connection ID comes from the spec, so start
+		// from a blank struct rather than the config-derived one above —
+		// leaving quic-go's defaults in would silently mix two parameter sets.
+		//
+		// Consequence to know about: parameters Chrome omits stay zero here.
+		// active_connection_id_limit is the notable one — our own value is only
+		// read when marshaling (which ClientOverride bypasses) and when
+		// qlogging, never to bound what we accept, so zero is harmless on the
+		// wire and only under-reports in qlog. What bounds the connection IDs
+		// we issue is the *peer's* limit, handled in handleTransportParameters.
+		params = &wire.TransportParameters{InitialSourceConnectionID: srcConnID}
+		params.PopulateFromClientHelloSpec(tpExt.TransportParameters)
+		clientHelloSpec = spec
+	}
 	if s.qlogger != nil {
 		s.qlogTransportParameters(params, protocol.PerspectiveClient, false)
 	}
@@ -488,7 +518,7 @@ var newClientConnection = func(
 		destConnID,
 		params,
 		tlsConf,
-		s.config.NewClientHelloSpec,
+		clientHelloSpec,
 		enable0RTT,
 		s.rttStats,
 		s.qlogger,

@@ -4,7 +4,6 @@ import (
 	"context"
 	stdtls "crypto/tls"
 
-	tls "github.com/metacubex/utls"
 	"fmt"
 	"net"
 	"net/http"
@@ -120,7 +119,10 @@ func TestHTTPClientTrace(t *testing.T) {
 			require.Nil(t, e.Args.(map[string]any)["err"])
 		case "TLSHandshakeDone":
 			require.Nil(t, e.Args.(map[string]any)["err"])
-			state := e.Args.(map[string]any)["state"].(tls.ConnectionState)
+			// net/http types httptrace.TLSHandshakeDone with stdlib crypto/tls and
+			// cannot be changed, so http3 bridges kuic's utls state back to it
+			// (http3.stdConnectionState). This assertion has to follow.
+			state := e.Args.(map[string]any)["state"].(stdtls.ConnectionState)
 			require.Equal(t, 1, len(state.PeerCertificates))
 			require.Equal(t, "localhost", state.PeerCertificates[0].DNSNames[0])
 		case "WroteHeaderField":

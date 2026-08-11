@@ -90,6 +90,21 @@ type TransportParameters struct {
 	MaxDatagramFrameSize protocol.ByteCount // RFC 9221
 	EnableResetStreamAt  bool               // https://datatracker.ietf.org/doc/draft-ietf-quic-reliable-stream-reset/06/
 	MinAckDelay          *time.Duration
+
+	// ClientOverride, when non-nil, is emitted verbatim by Marshal and
+	// MarshalForSessionTicket in place of a fresh serialization. It is set by
+	// PopulateFromUQUIC when the client dials with a ClientHelloSpec, so that
+	// the parameters on the wire are the spec's — in the spec's values, the
+	// spec's order, including parameters this struct has no field for
+	// (Google-private ones, GREASE, version_information).
+	//
+	// The struct fields are populated from the same source, so quic-go's own
+	// flow control agrees with what it advertised. Re-serializing here instead
+	// would drop everything the struct cannot represent and re-impose quic-go's
+	// canonical ordering, which is the fingerprint this exists to avoid.
+	//
+	// Client-side only. A server never has a spec.
+	ClientOverride []byte
 }
 
 // Unmarshal the transport parameters
@@ -352,6 +367,11 @@ func (p *TransportParameters) readNumericTransportParameter(b []byte, paramID tr
 
 // Marshal the transport parameters
 func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
+	// A ClientHelloSpec's parameters go out byte for byte. See ClientOverride.
+	if p.ClientOverride != nil {
+		return p.ClientOverride
+	}
+
 	// Typical Transport Parameters consume around 110 bytes, depending on the exact values,
 	// especially the lengths of the Connection IDs.
 	// Allocate 256 bytes, so we won't have to grow the slice in any case.
@@ -485,6 +505,11 @@ func (p *TransportParameters) marshalVarintParam(b []byte, id transportParameter
 // Since the session ticket is encrypted, the serialization format is defined by the server.
 // For convenience, we use the same format that we also use for sending the transport parameters.
 func (p *TransportParameters) MarshalForSessionTicket(b []byte) []byte {
+	// Keep the ticket consistent with what went on the wire. See ClientOverride.
+	if p.ClientOverride != nil {
+		return append(b, p.ClientOverride...)
+	}
+
 	b = quicvarint.Append(b, transportParameterMarshalingVersion)
 
 	// initial_max_stream_data_bidi_local
