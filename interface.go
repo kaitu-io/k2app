@@ -200,19 +200,30 @@ type Config struct {
 	// ignore it. Leaving it nil keeps the ordinary unshaped handshake.
 	//
 	// It is a factory rather than a value because the spec is mutated per
-	// connection: kuic writes this connection's real QUIC transport parameters
-	// into the spec's quic_transport_parameters extension, and those include
-	// initial_source_connection_id. Sharing one spec across dials would have
-	// them overwrite each other's connection ID, which every conformant server
-	// rejects with TRANSPORT_PARAMETER_ERROR. Return a freshly built spec each
-	// call.
+	// connection: kuic writes this connection's real source connection ID into
+	// the spec's quic_transport_parameters extension, because RFC 9000 §7.3
+	// requires initial_source_connection_id to match the packet's. Sharing one
+	// spec across dials would have them overwrite each other's, which every
+	// conformant server rejects with TRANSPORT_PARAMETER_ERROR. Return a
+	// freshly built spec each call.
 	//
-	// The spec MUST contain a *utls.QUICTransportParametersExtension; a
-	// ClientHello without quic_transport_parameters is not a valid QUIC
-	// ClientHello. Dialing fails if it is missing or if the factory errors —
-	// there is no silent fallback to the unshaped handshake, because a caller
-	// that asked for a fingerprint is not served by quietly not having one.
+	// The spec MUST contain a *utls.QUICTransportParametersExtension carrying
+	// real values: those parameters are authoritative for the wire, and the
+	// settings above do not override them. An empty extension advertises no
+	// flow control at all. Dialing fails if it is missing or if the factory
+	// errors — there is no silent fallback to the unshaped handshake, because a
+	// caller that asked for a fingerprint is not served by quietly not having
+	// one.
 	NewClientHelloSpec func() (*tls.ClientHelloSpec, error)
+
+	// InitialPacketSpec, when non-nil, shapes the QUIC Initial packets around
+	// the ClientHello — connection ID lengths, packet numbering, and how the
+	// CRYPTO stream is cut into frames and datagrams. Client-only.
+	//
+	// NewClientHelloSpec without this leaves a browser-shaped ClientHello
+	// wrapped in quic-go-shaped packets, which a fingerprinter reading the QUIC
+	// layer rather than the TLS layer can still pick out.
+	InitialPacketSpec *InitialPacketSpec
 }
 
 // ClientHelloInfo contains information about an incoming connection attempt.

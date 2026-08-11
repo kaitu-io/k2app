@@ -257,7 +257,10 @@ func (t *Transport) dial(ctx context.Context, addr net.Addr, host string, tlsCon
 		newSendConn(t.conn, addr, packetInfo{}, utils.DefaultLogger),
 		tlsConf,
 		conf,
-		0,
+		// This is the only place the first Initial's packet number is chosen,
+		// so a spec that pins it has to be read here. quic-go starts at 0;
+		// Chrome starts at 1.
+		conf.InitialPacketSpec.initialPacketNumber(),
 		false,
 		use0RTT,
 		conf.Versions[0],
@@ -278,7 +281,15 @@ func (t *Transport) doDial(
 	if err != nil {
 		return nil, err
 	}
-	destConnID, err := generateConnectionIDForInitial()
+	// quic-go picks a *random* destination connection ID length between 8 and
+	// 20 for the Initial. Real clients are consistent, so the randomness is
+	// itself a discriminator; a spec pins it (Chrome: 8).
+	var destConnID protocol.ConnectionID
+	if l := config.InitialPacketSpec.destConnIDLength(); l > 0 {
+		destConnID, err = generateConnectionIDWithLength(l)
+	} else {
+		destConnID, err = generateConnectionIDForInitial()
+	}
 	if err != nil {
 		return nil, err
 	}

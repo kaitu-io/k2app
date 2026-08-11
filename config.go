@@ -128,5 +128,6 @@ func populateConfig(config *Config) *Config {
 		MaxDatagramFrameSize:             config.MaxDatagramFrameSize,
 		DisablePathManager:               config.DisablePathManager,
 		NewClientHelloSpec:               config.NewClientHelloSpec,
+		InitialPacketSpec:                config.InitialPacketSpec,
 	}
 }

@@ -2,8 +2,8 @@ package quic
 
 import (
 	"context"
-	tls "github.com/metacubex/utls"
 	"errors"
+	tls "github.com/metacubex/utls"
 	"net"
 
 	"github.com/kaitu-io/kuic/internal/protocol"
@@ -11,6 +11,10 @@ import (
 
 // make it possible to mock connection ID for initial generation in the tests
 var generateConnectionIDForInitial = protocol.GenerateConnectionIDForInitial
+
+// generateConnectionIDWithLength builds an Initial destination connection ID of
+// an exact length, for InitialPacketSpec.DestConnIDLength.
+var generateConnectionIDWithLength = protocol.GenerateConnectionID
 
 // DialAddr establishes a new QUIC connection to a server.
 // It resolves the address, and then creates a new UDP connection to dial the QUIC server.

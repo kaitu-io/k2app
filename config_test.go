@@ -138,6 +138,12 @@ func configWithNonZeroNonFunctionFields(t *testing.T) *Config {
 			f.Set(reflect.ValueOf(int64(0)))
 		case "DisablePathManager":
 			f.Set(reflect.ValueOf(false))
+		case "InitialPacketSpec":
+			f.Set(reflect.ValueOf(&InitialPacketSpec{
+				DestConnIDLength:        8,
+				InitPacketNumber:        1,
+				InitPacketNumberLengths: []PacketNumberLen{PacketNumberLen1, PacketNumberLen2},
+			}))
 		default:
 			t.Fatalf("all fields must be accounted for, but saw unknown field %q", fn)
 		}
