@@ -16,6 +16,20 @@ import (
 // refraction-networking/uquic's QUICChrome_146_IPv4 parrot, which is the
 // authority this file was ported from; they are deliberately literal rather
 // than derived from the spec under test.
+//
+// KNOWN BLIND SPOT — these assert the spec as built, not the bytes that reach
+// the wire, and today those differ. kuic's fingerprintedConn.SetTransportParameters
+// REPLACES the whole parameter list with quic-go's own before the ClientHello
+// is marshaled, so the emitted quic_transport_parameters carries quic-go's set
+// (measured: 0x18cf 0x5 0x6 0x7 0x4 0x8 0x9 0x1 0x3 0xb 0xe 0xf) and not
+// Chrome's. version_information, google_initial_rtt (0x3127) and
+// google_connection_options (0x3128) never go out, and max_ack_delay (0xb) —
+// which Chrome 146 does not send — does. A test passing here therefore does not
+// mean the connection looks like Chrome at the transport-parameter layer.
+// uQUIC solves this the other way round (PopulateFromUQUIC: the spec's values
+// are authoritative and only initial_source_connection_id is back-filled).
+// Closing it is a pending decision, because Chrome's flow-control values would
+// then override k2's platform-tuned receive windows.
 
 // chrome146TransportParameterIDs is Chrome 146's fixed transport parameter set.
 // The GREASE parameter is not here: its ID is drawn per connection and is
