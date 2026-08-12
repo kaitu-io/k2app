@@ -25,6 +25,15 @@ jobs:
             goarch: arm64
     steps:
       - uses: actions/checkout@v4
+      # kuic lives at third_party/kuic (private repo kaitu-io/kuic). The default
+      # GITHUB_TOKEN can't read it, so load a read-only deploy key and init the
+      # submodule over SSH before the Go build touches it.
+      - name: Load kuic submodule deploy key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.KUIC_DEPLOY_KEY }}
+      - name: Init submodules (kuic)
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
