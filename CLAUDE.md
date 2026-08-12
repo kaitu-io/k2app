@@ -690,7 +690,7 @@ engine.Stop()
 - `rule/` (in-tree) — multi-ruleset routing engine: domain suffix binary search + IP range O(log n) binary search, k2b mmap-indexed format, routes-based config, per-service IP-CIDR + domain rule sets, inline rules (domain_suffix/ip_cidr in config), connection metadata matching (process_name, package_name, network, ip_is_private, src_ip_cidr, port, protocol — see rule/CLAUDE.md)
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
-- `github.com/apernet/quic-go` — QUIC with congestion control API
+- `github.com/kaitu-io/kuic` — QUIC core (private fork of `apernet/quic-go`; utls-based ClientHello fingerprinting + ECH + pluggable CC). **Consumed as a git submodule at `third_party/kuic`, not a proxied module**: `go.mod` carries `replace github.com/kaitu-io/kuic => ./third_party/kuic`, so the build reads local source and never hits a module proxy (no `GOPRIVATE` needed for building). The submodule is SHA-pinned; bumping kuic = update the submodule pointer + commit. CI must `git submodule update --init --recursive` with an ssh-agent key that can read the private `kaitu-io/kuic` repo. Fork-maintenance (rebasing on upstream) lives in `third_party/kuic/MAINTAINING.md`.
 - `github.com/metacubex/utls` — TLS fingerprinting + ECH
 - `github.com/xtaci/smux/v2` — TCP-WS stream multiplexing
 - `golang.org/x/mobile` — gomobile bind (iOS xcframework + Android aar)

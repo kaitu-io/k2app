@@ -63,4 +63,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace github.com/kaitu-io/kuic => /Users/david/projects/kaitu-io/kuic
+replace github.com/kaitu-io/kuic => ./third_party/kuic
