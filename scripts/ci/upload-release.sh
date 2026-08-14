@@ -9,7 +9,7 @@ set -euo pipefail
 #   bash scripts/ci/upload-release.sh --macos              # Upload macOS pkg + app.tar.gz + sig
 #   bash scripts/ci/upload-release.sh --linux              # Upload Linux tar.gz + sig + k2 binary
 #   bash scripts/ci/upload-release.sh --android            # Upload Android APK
-#   --web option REMOVED — Web OTA disabled due to native/webapp version mismatch risk (2026-03-22)
+#   --web is handled by .github/workflows/publish-web-ota.yml (contract gate + smoke gate + signing) — not this script
 #   bash scripts/ci/upload-release.sh --windows --skip-cdn # Upload only, no CDN invalidation
 #   bash scripts/ci/upload-release.sh --macos --brand=overleap  # Upload under the overleap S3/CDN prefix
 #
@@ -48,7 +48,7 @@ for arg in "$@"; do
     --linux)    PLATFORM="linux" ;;
     --desktop)  echo "ERROR: --desktop is deprecated. Use --windows, --macos, or --linux." >&2; exit 1 ;;
     --android)  PLATFORM="android" ;;
-    --web)      echo "ERROR: --web is disabled. Web OTA removed due to native/webapp version mismatch risk (2026-03-22)." >&2; exit 1 ;;
+    --web)      echo "ERROR: web OTA is published by .github/workflows/publish-web-ota.yml (gh workflow run publish-web-ota.yml). This script intentionally does not handle it — the workflow carries the contract gate, smoke gate, and minisign signing that this script cannot." >&2; exit 1 ;;
     --skip-cdn) SKIP_CDN=true ;;
     --brand=*)  BRAND="${arg#*=}" ;;
     *) echo "Unknown argument: $arg" >&2; exit 1 ;;
@@ -131,7 +131,7 @@ case "$PLATFORM" in
     aws s3 cp "$APK" "${S3_DEST}/${BRAND_PRODUCT}-${VERSION}.apk"
     echo "Uploaded: android/${VERSION}/${BRAND_PRODUCT}-${VERSION}.apk"
     ;;
-  # web) — removed, see --web error above
+  # web) — lives in .github/workflows/publish-web-ota.yml, see --web error above
 esac
 
 # --- CDN invalidation (both distributions) ---
