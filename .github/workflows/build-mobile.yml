@@ -86,7 +86,9 @@ jobs:
       - name: Checkout k2 submodule
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+          ssh-private-key: |
+            ${{ secrets.K2_DEPLOY_KEY }}
+            ${{ secrets.KUIC_DEPLOY_KEY }}
 
       - name: Init k2 submodule
         run: |
@@ -313,7 +315,9 @@ jobs:
       - name: Checkout k2 submodule
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+          ssh-private-key: |
+            ${{ secrets.K2_DEPLOY_KEY }}
+            ${{ secrets.KUIC_DEPLOY_KEY }}
 
       - name: Init k2 submodule
         run: |
