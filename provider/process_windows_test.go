@@ -15,43 +15,6 @@ type errFetcher string
 
 func (e errFetcher) Error() string { return string(e) }
 
-func TestNtohs_KnownValues(t *testing.T) {
-	cases := []struct {
-		in   uint32
-		want uint16
-	}{
-		{0x000031D4, 54321}, // 0xD431 in NBO
-		{0x00005000, 80},    // 0x0050 in NBO
-		{0x0000BB01, 443},   // 0x01BB in NBO
-		{0x00000000, 0},
-		{0x0000FFFF, 0xFFFF},
-	}
-	for _, c := range cases {
-		got := ntohs(c.in)
-		if got != c.want {
-			t.Errorf("ntohs(0x%08X) = %d, want %d", c.in, got, c.want)
-		}
-	}
-}
-
-func TestUint32ToIPv4_KnownValues(t *testing.T) {
-	cases := []struct {
-		in   uint32
-		want [4]byte
-	}{
-		{0x0501A8C0, [4]byte{192, 168, 1, 5}},
-		{0x0100007F, [4]byte{127, 0, 0, 1}},
-		{0x00000000, [4]byte{0, 0, 0, 0}},
-		{0x010101D5, [4]byte{213, 1, 1, 1}}, // 213.1.1.1 ← 0xD5010101 NBO
-	}
-	for _, c := range cases {
-		got := uint32ToIPv4(c.in)
-		if got != c.want {
-			t.Errorf("uint32ToIPv4(0x%08X) = %v, want %v", c.in, got, c.want)
-		}
-	}
-}
-
 type mockTCPFetcher struct {
 	rows  []tcpRowOwnerPID
 	err   error
@@ -74,6 +37,28 @@ func (m *mockUDPFetcher) Fetch() ([]udpRowOwnerPID, error) {
 	return m.rows, m.err
 }
 
+type mockTCP6Fetcher struct {
+	rows  []tcp6RowOwnerPID
+	err   error
+	calls atomic.Int32
+}
+
+func (m *mockTCP6Fetcher) Fetch() ([]tcp6RowOwnerPID, error) {
+	m.calls.Add(1)
+	return m.rows, m.err
+}
+
+type mockUDP6Fetcher struct {
+	rows  []udp6RowOwnerPID
+	err   error
+	calls atomic.Int32
+}
+
+func (m *mockUDP6Fetcher) Fetch() ([]udp6RowOwnerPID, error) {
+	m.calls.Add(1)
+	return m.rows, m.err
+}
+
 type mockProcNamer struct {
 	names map[uint32]string
 }
@@ -84,11 +69,13 @@ func (m *mockProcNamer) NameForPID(pid uint32) string {
 
 func newTestSearcher(tcp *mockTCPFetcher, udp *mockUDPFetcher, namer *mockProcNamer) *WindowsProcessSearcher {
 	return &WindowsProcessSearcher{
-		cache:      newProcessCache(processCacheCap, processCacheTTL),
-		tcpFetcher: tcp,
-		udpFetcher: udp,
-		procNamer:  namer,
-		selfPID:    uint32(os.Getpid()),
+		cache:       newProcessCache(processCacheCap, processCacheTTL),
+		tcpFetcher:  tcp,
+		udpFetcher:  udp,
+		tcp6Fetcher: &mockTCP6Fetcher{},
+		udp6Fetcher: &mockUDP6Fetcher{},
+		procNamer:   namer,
+		selfPID:     uint32(os.Getpid()),
 	}
 }
 
@@ -102,15 +89,116 @@ var chromeRow = tcpRowOwnerPID{
 	OwningPID: 8000,
 }
 
-func TestWindowsFindProcess_IPv6Early(t *testing.T) {
+// =============================================================================
+// IPv6 attribution — added 2026-08-14. Before this, FindProcess early-returned
+// empty for any non-IPv4 srcIP, so every IPv6 connection silently fell back to
+// the global route and `match.apps` / `process_name` rules never fired on v6.
+// =============================================================================
+
+// TUN IPv6 address form (config.DefaultTunIPv6 network) + port 54321 in the
+// same NBO low-16-bits layout as the v4 rows.
+var wechatV6Row = tcp6RowOwnerPID{
+	LocalAddr: netip.MustParseAddr("fdfe:dcba:9876::2").As16(),
+	LocalPort: 0x000031D4, // port 54321
+	State:     5,
+	OwningPID: 8000,
+}
+
+func TestWindowsFindProcess_IPv6TCPMatch(t *testing.T) {
 	tcp := &mockTCPFetcher{}
-	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{})
-	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("2001:db8::1"), 54321)
-	if name != "" {
-		t.Errorf("got %q, want empty", name)
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{names: map[uint32]string{8000: "wechat.exe"}})
+	s.tcp6Fetcher = &mockTCP6Fetcher{rows: []tcp6RowOwnerPID{wechatV6Row}}
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("fdfe:dcba:9876::2"), 54321)
+	if name != "wechat.exe" {
+		t.Errorf("got %q, want wechat.exe", name)
 	}
 	if tcp.calls.Load() != 0 {
-		t.Errorf("fetcher called %d times for IPv6, want 0", tcp.calls.Load())
+		t.Errorf("v4 fetcher called %d times for a pure-IPv6 lookup, want 0", tcp.calls.Load())
+	}
+}
+
+func TestWindowsFindProcess_IPv6TCPNoMatch(t *testing.T) {
+	s := newTestSearcher(&mockTCPFetcher{}, &mockUDPFetcher{}, &mockProcNamer{names: map[uint32]string{8000: "wechat.exe"}})
+	s.tcp6Fetcher = &mockTCP6Fetcher{rows: []tcp6RowOwnerPID{wechatV6Row}}
+	// Different v6 srcIP, same port — TCP has no wildcard, must NOT match.
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("2001:db8::9"), 54321)
+	if name != "" {
+		t.Errorf("got %q, want empty (TCP6 requires exact local addr)", name)
+	}
+}
+
+func TestWindowsFindProcess_IPv6UDPMatch_WildcardLocalAddr(t *testing.T) {
+	udp6 := &mockUDP6Fetcher{rows: []udp6RowOwnerPID{{
+		LocalAddr: [16]byte{}, // :: — kernel wildcard, same quirk as 0.0.0.0
+		LocalPort: 0x000031D4,
+		OwningPID: 9000,
+	}}}
+	s := newTestSearcher(&mockTCPFetcher{}, &mockUDPFetcher{}, &mockProcNamer{names: map[uint32]string{9000: "douyin.exe"}})
+	s.udp6Fetcher = udp6
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("fdfe:dcba:9876::2"), 54321)
+	if name != "douyin.exe" {
+		t.Errorf("got %q, want douyin.exe (:: wildcard must match any v6 srcIP)", name)
+	}
+}
+
+// Dual-stack coverage: an AF_INET6 socket without IPV6_V6ONLY carrying an
+// IPv4 flow appears ONLY in the AF_INET6 table, local addr ::ffff:a.b.c.d.
+// A v4 lookup that misses the v4 table must fall through and find it there.
+func TestWindowsFindProcess_DualStackV4Mapped_TCPFallback(t *testing.T) {
+	tcp := &mockTCPFetcher{} // v4 table empty — dual-stack socket not listed
+	tcp6 := &mockTCP6Fetcher{rows: []tcp6RowOwnerPID{{
+		LocalAddr: netip.MustParseAddr("::ffff:192.168.1.5").As16(),
+		LocalPort: 0x000031D4,
+		State:     5,
+		OwningPID: 8000,
+	}}}
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{names: map[uint32]string{8000: "javaw.exe"}})
+	s.tcp6Fetcher = tcp6
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "javaw.exe" {
+		t.Errorf("got %q, want javaw.exe (v4 miss must fall through to v4-mapped row in TCP6 table)", name)
+	}
+	if tcp.calls.Load() != 1 {
+		t.Errorf("v4 fetcher called %d times, want 1 (tried before fallback)", tcp.calls.Load())
+	}
+}
+
+func TestWindowsFindProcess_DualStackV4_UDPWildcardFallback(t *testing.T) {
+	udp6 := &mockUDP6Fetcher{rows: []udp6RowOwnerPID{{
+		LocalAddr: [16]byte{}, // dual-stack UDP socket bound to ::
+		LocalPort: 0x000031D4,
+		OwningPID: 9000,
+	}}}
+	s := newTestSearcher(&mockTCPFetcher{}, &mockUDPFetcher{}, &mockProcNamer{names: map[uint32]string{9000: "chrome.exe"}})
+	s.udp6Fetcher = udp6
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("198.18.0.2"), 54321)
+	if name != "chrome.exe" {
+		t.Errorf("got %q, want chrome.exe (v4 UDP miss must fall through to :: wildcard in UDP6 table)", name)
+	}
+}
+
+// v4 hit must NOT consult the v6 tables — the fallback is miss-only, keeping
+// the hot path identical to the pre-IPv6 behavior.
+func TestWindowsFindProcess_V4Hit_NoV6Fallback(t *testing.T) {
+	tcp6 := &mockTCP6Fetcher{}
+	namer := &mockProcNamer{names: map[uint32]string{8000: "chrome.exe"}}
+	s := newTestSearcher(&mockTCPFetcher{rows: []tcpRowOwnerPID{chromeRow}}, &mockUDPFetcher{}, namer)
+	s.tcp6Fetcher = tcp6
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "chrome.exe" {
+		t.Fatalf("got %q, want chrome.exe", name)
+	}
+	if tcp6.calls.Load() != 0 {
+		t.Errorf("v6 fetcher called %d times on a v4 hit, want 0", tcp6.calls.Load())
+	}
+}
+
+func TestWindowsFindProcess_IPv6FetcherError(t *testing.T) {
+	s := newTestSearcher(&mockTCPFetcher{}, &mockUDPFetcher{}, &mockProcNamer{})
+	s.tcp6Fetcher = &mockTCP6Fetcher{err: errFetcher("simulated GetExtendedTcpTable(AF_INET6) failure")}
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("fdfe:dcba:9876::2"), 54321)
+	if name != "" {
+		t.Errorf("got %q, want empty (fetcher error must surface as empty)", name)
 	}
 }
 
@@ -337,6 +425,36 @@ func TestWindowsFindProcess_CacheKeyIsolation(t *testing.T) {
 	}
 	if name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54322); name != "curl.exe" {
 		t.Errorf("port 54322 attributed to %q, want curl.exe", name)
+	}
+}
+
+// Exact LocalAddr must beat the wildcard regardless of kernel table order —
+// otherwise attribution is nondeterministic when both a 0.0.0.0:P socket and
+// the actual owner's a.b.c.d:P socket exist.
+func TestWindowsFindProcess_UDPExactBeatsWildcard(t *testing.T) {
+	udp := &mockUDPFetcher{rows: []udpRowOwnerPID{
+		{LocalAddr: 0x00000000, LocalPort: 0x000031D4, OwningPID: 9001}, // wildcard FIRST
+		{LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: 9002}, // exact owner
+	}}
+	namer := &mockProcNamer{names: map[uint32]string{9001: "other.exe", 9002: "owner.exe"}}
+	s := newTestSearcher(&mockTCPFetcher{}, udp, namer)
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "owner.exe" {
+		t.Errorf("got %q, want owner.exe (exact match must beat wildcard row listed first)", name)
+	}
+}
+
+func TestWindowsFindProcess_UDP6ExactBeatsWildcard(t *testing.T) {
+	udp6 := &mockUDP6Fetcher{rows: []udp6RowOwnerPID{
+		{LocalAddr: [16]byte{}, LocalPort: 0x000031D4, OwningPID: 9001}, // :: FIRST
+		{LocalAddr: netip.MustParseAddr("fdfe:dcba:9876::2").As16(), LocalPort: 0x000031D4, OwningPID: 9002},
+	}}
+	namer := &mockProcNamer{names: map[uint32]string{9001: "other.exe", 9002: "owner.exe"}}
+	s := newTestSearcher(&mockTCPFetcher{}, &mockUDPFetcher{}, namer)
+	s.udp6Fetcher = udp6
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("fdfe:dcba:9876::2"), 54321)
+	if name != "owner.exe" {
+		t.Errorf("got %q, want owner.exe (exact match must beat :: wildcard listed first)", name)
 	}
 }
 

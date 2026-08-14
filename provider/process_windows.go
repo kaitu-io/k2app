@@ -3,7 +3,6 @@
 package provider
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -16,50 +15,17 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// tcpRowOwnerPID mirrors MIB_TCPROW_OWNER_PID (iphlpapi.h).
-// Fields stored in network byte order; use ntohs / uint32ToIPv4 to decode.
-type tcpRowOwnerPID struct {
-	State      uint32
-	LocalAddr  uint32
-	LocalPort  uint32
-	RemoteAddr uint32
-	RemotePort uint32
-	OwningPID  uint32
-}
+// Row structs (tcpRowOwnerPID etc.), the layout guards, and parseOwnerTable
+// live in process_wintable.go — kept build-tag-free so the literal-offset
+// layout tests run on every platform.
 
-// udpRowOwnerPID mirrors MIB_UDPROW_OWNER_PID. No remote endpoint.
-type udpRowOwnerPID struct {
-	LocalAddr uint32
-	LocalPort uint32
-	OwningPID uint32
-}
-
-// Constants from iphlpapi.h.
+// Constants from iphlpapi.h / winsock2.h.
 const (
 	AF_INET                 = 2
+	AF_INET6                = 23
 	TCP_TABLE_OWNER_PID_ALL = 5
 	UDP_TABLE_OWNER_PID     = 1
 )
-
-// ntohs converts the low 16 bits of n from network byte order to host order.
-//
-// Windows TCP/UDP table fields (dwLocalPort, dwRemotePort) store the port
-// in the low 16 bits of a uint32, in network byte order. Example: port
-// 54321 (0xD431 NBO bytes [D4,31]) is stored as low 16 bits of dwLocalPort
-// = 0x31D4. ntohs(0x31D4) = 0xD431 = 54321.
-func ntohs(n uint32) uint16 {
-	v := uint16(n & 0xFFFF)
-	return (v >> 8) | (v << 8)
-}
-
-// uint32ToIPv4 extracts 4 IPv4 bytes from a uint32 stored in Windows
-// network byte order. Example: dwLocalAddr 0x0501A8C0 (LE uint32) means
-// IP 192.168.1.5 — PutUint32(LittleEndian) writes [0xC0, 0xA8, 0x01, 0x05].
-func uint32ToIPv4(n uint32) [4]byte {
-	var b [4]byte
-	binary.LittleEndian.PutUint32(b[:], n)
-	return b
-}
 
 var (
 	iphlpapi                = windows.NewLazySystemDLL("iphlpapi.dll")
@@ -77,74 +43,68 @@ type udpTableFetcher interface {
 	Fetch() ([]udpRowOwnerPID, error)
 }
 
+type tcp6TableFetcher interface {
+	Fetch() ([]tcp6RowOwnerPID, error)
+}
+
+type udp6TableFetcher interface {
+	Fetch() ([]udp6RowOwnerPID, error)
+}
+
 type processNamer interface {
 	NameForPID(pid uint32) string
+}
+
+// fetchOwnerTable is the shared GetExtended{Tcp,Udp}Table call pattern:
+// size-probe, fetch, decode. All four (af × proto) fetchers route through it.
+func fetchOwnerTable[T any](proc *windows.LazyProc, af, tableClass uintptr) ([]T, error) {
+	var size uint32
+	// First call: probe for required buffer size.
+	proc.Call(
+		0, uintptr(unsafe.Pointer(&size)),
+		0, af, tableClass, 0,
+	)
+	if size == 0 {
+		return nil, nil
+	}
+	buf := make([]byte, size)
+	ret, _, _ := proc.Call(
+		uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)),
+		0, af, tableClass, 0,
+	)
+	if ret != 0 {
+		return nil, fmt.Errorf("%s(af=%d): %d", proc.Name, af, ret)
+	}
+	// The second call may report fewer bytes written than probed; decode
+	// only what the kernel filled in.
+	if int(size) < len(buf) {
+		buf = buf[:size]
+	}
+	return parseOwnerTable[T](buf)
 }
 
 type realTCPFetcher struct{}
 
 func (realTCPFetcher) Fetch() ([]tcpRowOwnerPID, error) {
-	var size uint32
-	// First call: probe for required buffer size.
-	procGetExtendedTcpTable.Call(
-		0, uintptr(unsafe.Pointer(&size)),
-		0, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0,
-	)
-	if size == 0 {
-		return nil, nil
-	}
-	buf := make([]byte, size)
-	ret, _, _ := procGetExtendedTcpTable.Call(
-		uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)),
-		0, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0,
-	)
-	if ret != 0 {
-		return nil, fmt.Errorf("GetExtendedTcpTable: %d", ret)
-	}
-	// buf layout: [uint32 dwNumEntries] [tcpRowOwnerPID × N]
-	n := *(*uint32)(unsafe.Pointer(&buf[0]))
-	if n == 0 {
-		return nil, nil
-	}
-	raw := unsafe.Slice(
-		(*tcpRowOwnerPID)(unsafe.Pointer(&buf[4])),
-		int(n),
-	)
-	out := make([]tcpRowOwnerPID, n)
-	copy(out, raw) // copy out of buf — buf is GC'd after return
-	return out, nil
+	return fetchOwnerTable[tcpRowOwnerPID](procGetExtendedTcpTable, AF_INET, TCP_TABLE_OWNER_PID_ALL)
 }
 
 type realUDPFetcher struct{}
 
 func (realUDPFetcher) Fetch() ([]udpRowOwnerPID, error) {
-	var size uint32
-	procGetExtendedUdpTable.Call(
-		0, uintptr(unsafe.Pointer(&size)),
-		0, AF_INET, UDP_TABLE_OWNER_PID, 0,
-	)
-	if size == 0 {
-		return nil, nil
-	}
-	buf := make([]byte, size)
-	ret, _, _ := procGetExtendedUdpTable.Call(
-		uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)),
-		0, AF_INET, UDP_TABLE_OWNER_PID, 0,
-	)
-	if ret != 0 {
-		return nil, fmt.Errorf("GetExtendedUdpTable: %d", ret)
-	}
-	n := *(*uint32)(unsafe.Pointer(&buf[0]))
-	if n == 0 {
-		return nil, nil
-	}
-	raw := unsafe.Slice(
-		(*udpRowOwnerPID)(unsafe.Pointer(&buf[4])),
-		int(n),
-	)
-	out := make([]udpRowOwnerPID, n)
-	copy(out, raw)
-	return out, nil
+	return fetchOwnerTable[udpRowOwnerPID](procGetExtendedUdpTable, AF_INET, UDP_TABLE_OWNER_PID)
+}
+
+type realTCP6Fetcher struct{}
+
+func (realTCP6Fetcher) Fetch() ([]tcp6RowOwnerPID, error) {
+	return fetchOwnerTable[tcp6RowOwnerPID](procGetExtendedTcpTable, AF_INET6, TCP_TABLE_OWNER_PID_ALL)
+}
+
+type realUDP6Fetcher struct{}
+
+func (realUDP6Fetcher) Fetch() ([]udp6RowOwnerPID, error) {
+	return fetchOwnerTable[udp6RowOwnerPID](procGetExtendedUdpTable, AF_INET6, UDP_TABLE_OWNER_PID)
 }
 
 type realProcNamer struct{}
@@ -177,20 +137,24 @@ func (realProcNamer) NameForPID(pid uint32) string {
 }
 
 type WindowsProcessSearcher struct {
-	cache      *processCache
-	tcpFetcher tcpTableFetcher
-	udpFetcher udpTableFetcher
-	procNamer  processNamer
-	selfPID    uint32
+	cache       *processCache
+	tcpFetcher  tcpTableFetcher
+	udpFetcher  udpTableFetcher
+	tcp6Fetcher tcp6TableFetcher
+	udp6Fetcher udp6TableFetcher
+	procNamer   processNamer
+	selfPID     uint32
 }
 
 func NewWindowsProcessSearcher() *WindowsProcessSearcher {
 	return &WindowsProcessSearcher{
-		cache:      newProcessCache(processCacheCap, processCacheTTL),
-		tcpFetcher: realTCPFetcher{},
-		udpFetcher: realUDPFetcher{},
-		procNamer:  realProcNamer{},
-		selfPID:    uint32(os.Getpid()),
+		cache:       newProcessCache(processCacheCap, processCacheTTL),
+		tcpFetcher:  realTCPFetcher{},
+		udpFetcher:  realUDPFetcher{},
+		tcp6Fetcher: realTCP6Fetcher{},
+		udp6Fetcher: realUDP6Fetcher{},
+		procNamer:   realProcNamer{},
+		selfPID:     uint32(os.Getpid()),
 	}
 }
 
@@ -198,9 +162,13 @@ func NewWindowsProcessSearcher() *WindowsProcessSearcher {
 // installerPackage (Android-only); the cache key + entry carry empty strings
 // for those fields.
 func (s *WindowsProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
-	if !srcIP.Is4() {
+	if !srcIP.IsValid() {
 		return "", "", ""
 	}
+	// Canonicalize locally instead of trusting every caller to have done it
+	// (core/tunnel.go routeConn does): a 4-in-6 ::ffff: addr must hit the
+	// IPv4 tables first, and the cache key must be stable across both forms.
+	srcIP = srcIP.Unmap()
 	key := cacheKey(network, srcIP, srcPort)
 	if name, pkg, installer, ok := s.cache.get(key); ok {
 		return name, pkg, installer
@@ -220,12 +188,31 @@ func (s *WindowsProcessSearcher) FindProcess(network string, srcIP netip.Addr, s
 }
 
 func (s *WindowsProcessSearcher) lookupUncached(network string, srcIP netip.Addr, srcPort uint16) string {
-	srcBytes := srcIP.As4()
+	if srcIP.Is4() {
+		srcBytes := srcIP.As4()
+		var name string
+		switch network {
+		case "tcp":
+			name = s.findInTCP(srcBytes, srcPort)
+		case "udp":
+			name = s.findInUDP(srcBytes, srcPort)
+		default:
+			return ""
+		}
+		if name != "" {
+			return name
+		}
+		// Fall through: an AF_INET6 socket without IPV6_V6ONLY (dual-stack —
+		// Go's net.Dial default, Chromium's QUIC stack, the JVM) carries IPv4
+		// flows too, but Windows lists it ONLY in the AF_INET6 tables, with a
+		// v4-mapped local address. srcIP.As16() of an IPv4 addr is exactly
+		// that ::ffff: form, so the v6-table search below covers both cases.
+	}
 	switch network {
 	case "tcp":
-		return s.findInTCP(srcBytes, srcPort)
+		return s.findInTCP6(srcIP.As16(), srcPort)
 	case "udp":
-		return s.findInUDP(srcBytes, srcPort)
+		return s.findInUDP6(srcIP.As16(), srcPort)
 	}
 	return ""
 }
@@ -251,6 +238,66 @@ func (s *WindowsProcessSearcher) findInTCP(srcAddr [4]byte, srcPort uint16) stri
 	return ""
 }
 
+func (s *WindowsProcessSearcher) findInTCP6(srcAddr [16]byte, srcPort uint16) string {
+	rows, err := s.tcp6Fetcher.Fetch()
+	if err != nil {
+		return ""
+	}
+	for i := range rows {
+		r := &rows[i]
+		if r.OwningPID == 0 || r.OwningPID == s.selfPID {
+			continue
+		}
+		if ntohs(r.LocalPort) != srcPort {
+			continue
+		}
+		if r.LocalAddr != srcAddr {
+			continue
+		}
+		return s.procNamer.NameForPID(r.OwningPID)
+	}
+	return ""
+}
+
+func (s *WindowsProcessSearcher) findInUDP6(srcAddr [16]byte, srcPort uint16) string {
+	rows, err := s.udp6Fetcher.Fetch()
+	if err != nil {
+		return ""
+	}
+	// Same kernel behavior as the v4 table: socket()+sendto() sockets are
+	// registered with an unspecified local address (:: here) regardless of
+	// the interface outbound packets actually take. An exact LocalAddr match
+	// always wins; :: is only a last resort so the answer never depends on
+	// kernel table ordering. This also covers dual-stack UDP sockets whose
+	// IPv4 flows fall through from findInUDP — with a residual ambiguity:
+	// AF_INET and AF_INET6 are separate port spaces, so a fallen-through v4
+	// flow can wildcard-match an unrelated IPV6_V6ONLY socket bound to
+	// [::]:port. The table carries no V6ONLY bit, so that cannot be fully
+	// resolved; it is bounded by the fallback only running after a v4-table
+	// miss.
+	var zeroAddr [16]byte
+	var wildcardPID uint32
+	for i := range rows {
+		r := &rows[i]
+		if r.OwningPID == 0 || r.OwningPID == s.selfPID {
+			continue
+		}
+		if ntohs(r.LocalPort) != srcPort {
+			continue
+		}
+		if r.LocalAddr == srcAddr {
+			return s.procNamer.NameForPID(r.OwningPID)
+		}
+		if r.LocalAddr == zeroAddr && wildcardPID == 0 {
+			wildcardPID = r.OwningPID
+		}
+	}
+	if wildcardPID != 0 {
+		return s.procNamer.NameForPID(wildcardPID)
+	}
+	return ""
+}
+
 func (s *WindowsProcessSearcher) findInUDP(srcAddr [4]byte, srcPort uint16) string {
 	rows, err := s.udpFetcher.Fetch()
 	if err != nil {
@@ -259,11 +306,13 @@ func (s *WindowsProcessSearcher) findInUDP(srcAddr [4]byte, srcPort uint16) stri
 	// Windows registers UDP sockets created via socket()+sendto() (the default
 	// for net.Dial("udp"), most app SDKs, browser QUIC, online games, etc.)
 	// with dwLocalAddr=0.0.0.0 even when the OS later routes outbound packets
-	// through a specific interface. Treat 0.0.0.0 as a wildcard and match
-	// on port alone. Collisions are bounded by the kernel: at most one
-	// socket can own (0.0.0.0:port) absent SO_REUSEADDR, and ephemeral ports
-	// are unique per active flow.
+	// through a specific interface. An exact LocalAddr match always wins;
+	// 0.0.0.0 is only a last resort so the answer never depends on kernel
+	// table ordering. Wildcard collisions are bounded by the kernel: at most
+	// one socket can own (0.0.0.0:port) absent SO_REUSEADDR, and ephemeral
+	// ports are unique per active flow.
 	zeroAddr := [4]byte{0, 0, 0, 0}
+	var wildcardPID uint32
 	for i := range rows {
 		r := &rows[i]
 		if r.OwningPID == 0 || r.OwningPID == s.selfPID {
@@ -273,10 +322,15 @@ func (s *WindowsProcessSearcher) findInUDP(srcAddr [4]byte, srcPort uint16) stri
 			continue
 		}
 		local := uint32ToIPv4(r.LocalAddr)
-		if local != srcAddr && local != zeroAddr {
-			continue
+		if local == srcAddr {
+			return s.procNamer.NameForPID(r.OwningPID)
 		}
-		return s.procNamer.NameForPID(r.OwningPID)
+		if local == zeroAddr && wildcardPID == 0 {
+			wildcardPID = r.OwningPID
+		}
+	}
+	if wildcardPID != 0 {
+		return s.procNamer.NameForPID(wildcardPID)
 	}
 	return ""
 }

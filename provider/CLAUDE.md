@@ -57,6 +57,26 @@ type ProviderConfig struct {
 
 **Important**: `tun.Options.DNSServers` is intentionally NOT set. sing-tun auto-derives `TUN_IP.Next()` as DNS, causing OS to send DNS through TUN where `dnsHandler` intercepts at port 53. `RouteExcludeAddrs` only adds IPs to route exclusion (prevents DirectDNSClient loop).
 
+## Process Attribution (process_*.go)
+
+`ProcessSearcher.FindProcess(network, srcIP, srcPort)` attributes a flow to a
+process name for `match.apps` / `process_name` rules. Since 2026-08 it handles
+IPv4 **and** IPv6 (plus a v4→v6-table fallback for dual-stack sockets, which
+the kernel lists only in the AF_INET6 tables with a `::ffff:` local address).
+Platform semantics intentionally differ:
+
+- **Windows**: kernel tables via `GetExtended{Tcp,Udp}Table`. UDP treats
+  `0.0.0.0` / `::` as wildcard (kernel registers `sendto()` sockets that way);
+  exact local-addr match always beats wildcard. Row structs + decoder live in
+  `process_wintable.go` — **untagged on purpose** so the literal-offset layout
+  tests run on all platforms; keep it free of Windows API imports.
+- **Linux**: `/proc/net/{tcp,udp}{,6}` → inode → PID. **No wildcard matching**
+  — unconnected `sendto()` UDP sockets show local `0.0.0.0`/`::` and stay
+  unattributed. Known gap, don't "fix" it on Windows's behalf without
+  understanding the /proc semantics differ.
+- **Darwin**: shells out to lsof (2s cap). IPv6 addrs must be bracketed in the
+  `-i` selector (`lsofSpec`).
+
 ## Testing
 
 ```bash

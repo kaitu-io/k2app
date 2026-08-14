@@ -51,9 +51,13 @@ func NewLinuxProcessSearcher(pr PackageResolver) *LinuxProcessSearcher {
 }
 
 func (s *LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
-	if !srcIP.Is4() {
+	if !srcIP.IsValid() {
 		return "", "", ""
 	}
+	// Canonicalize locally instead of trusting every caller to have done it
+	// (core/tunnel.go routeConn does): a 4-in-6 ::ffff: addr must hit the
+	// IPv4 tables first, and the cache key must be stable across both forms.
+	srcIP = srcIP.Unmap()
 	key := cacheKey(network, srcIP, srcPort)
 	if name, pkg, installer, ok := s.cache.get(key); ok {
 		return name, pkg, installer
@@ -98,18 +102,23 @@ func (s *LinuxProcessSearcher) lookupUncached(network string, srcIP netip.Addr, 
 }
 
 func (s *LinuxProcessSearcher) findSocketInode(network string, srcIP netip.Addr, srcPort uint16) uint64 {
-	var path string
-	switch {
-	case network == "udp" && srcIP.Is4():
-		path = filepath.Join(s.procRoot, "net/udp")
-	case network == "udp":
-		path = filepath.Join(s.procRoot, "net/udp6")
-	case srcIP.Is4():
-		path = filepath.Join(s.procRoot, "net/tcp")
-	default:
-		path = filepath.Join(s.procRoot, "net/tcp6")
+	proto := "tcp"
+	if network == "udp" {
+		proto = "udp"
 	}
-	return searchProcNet(path, srcIP, srcPort)
+	if !srcIP.Is4() {
+		return searchProcNet(filepath.Join(s.procRoot, "net", proto+"6"), srcIP, srcPort)
+	}
+	if inode := searchProcNet(filepath.Join(s.procRoot, "net", proto), srcIP, srcPort); inode != 0 {
+		return inode
+	}
+	// Dual-stack fallback: an AF_INET6 socket without IPV6_V6ONLY (Go's
+	// net.Dial default, Chromium's QUIC stack, JVM) carries IPv4 flows too,
+	// and the kernel lists those sockets ONLY in /proc/net/{tcp6,udp6} with a
+	// v4-mapped local address (::ffff:a.b.c.d). The caller unmapped srcIP, so
+	// re-map it for the v6-table comparison.
+	mapped := netip.AddrFrom16(srcIP.As16())
+	return searchProcNet(filepath.Join(s.procRoot, "net", proto+"6"), mapped, srcPort)
 }
 
 // searchProcNet parses a /proc/net/tcp{,6} or /proc/net/udp{,6} file.

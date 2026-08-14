@@ -13,14 +13,6 @@ import (
 	"time"
 )
 
-type mockPackageResolver struct {
-	packages map[int32]string
-}
-
-func (m *mockPackageResolver) PackageForUID(uid int32) string {
-	return m.packages[uid]
-}
-
 func TestLinuxProcessSearcher_PreservesResolverSignature(t *testing.T) {
 	mock := &mockPackageResolver{packages: map[int32]string{
 		10156: "com.android.chrome",
@@ -52,8 +44,31 @@ func setupFakeProcfs(t *testing.T) string {
 	tcpLine := "  sl  local_address rem_address   st tx_queue:rx_queue tr:tm->when retrnsmt   uid  timeout inode\n" +
 		"   0: 0501A8C0:D431 00000000:0000 01 00000000:00000000 00:00000000 00000000  1000        0 1001 0 0000000000000000 100 0 0 10 0\n"
 	must(os.WriteFile(filepath.Join(dir, "net/tcp"), []byte(tcpLine), 0644))
+	// /proc/net/tcp6: addresses are 32 hex chars, four 32-bit words each
+	// byte-reversed (see parseProcNetAddr).
+	//   row 0: fdfe:dcba:9876::2 : 54322 → inode 1002 (pure IPv6 socket)
+	//   row 1: ::ffff:192.168.1.5 : 54323 → inode 1003 (dual-stack, v4-mapped)
+	tcp6Lines := "  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+		"   0: BADCFEFD000076980000000002000000:D432 00000000000000000000000000000000:0000 01 00000000:00000000 00:00000000 00000000  1000        0 1002 0 0000000000000000 100 0 0 10 0\n" +
+		"   1: 0000000000000000FFFF00000501A8C0:D433 00000000000000000000000000000000:0000 01 00000000:00000000 00:00000000 00000000  1000        0 1003 0 0000000000000000 100 0 0 10 0\n"
+	must(os.WriteFile(filepath.Join(dir, "net/tcp6"), []byte(tcp6Lines), 0644))
+	// /proc/net/udp: header only — the UDP flows below live in udp6, so a v4
+	// UDP lookup exercises the miss→udp6 dual-stack fallback.
+	udpHeader := "   sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops\n"
+	must(os.WriteFile(filepath.Join(dir, "net/udp"), []byte(udpHeader), 0644))
+	// /proc/net/udp6:
+	//   row 0: ::ffff:192.168.1.5 : 54324 → inode 1004 (dual-stack, v4-mapped)
+	//   row 1: fdfe:dcba:9876::2 : 54325 → inode 1005 (pure IPv6 socket)
+	udp6Lines := udpHeader +
+		"   0: 0000000000000000FFFF00000501A8C0:D434 00000000000000000000000000000000:0000 01 00000000:00000000 00:00000000 00000000  1000        0 1004 2 0000000000000000 0\n" +
+		"   1: BADCFEFD000076980000000002000000:D435 00000000000000000000000000000000:0000 01 00000000:00000000 00:00000000 00000000  1000        0 1005 2 0000000000000000 0\n"
+	must(os.WriteFile(filepath.Join(dir, "net/udp6"), []byte(udp6Lines), 0644))
 	must(os.MkdirAll(filepath.Join(dir, "8000/fd"), 0755))
 	must(os.Symlink("socket:[1001]", filepath.Join(dir, "8000/fd/3")))
+	must(os.Symlink("socket:[1002]", filepath.Join(dir, "8000/fd/4")))
+	must(os.Symlink("socket:[1003]", filepath.Join(dir, "8000/fd/5")))
+	must(os.Symlink("socket:[1004]", filepath.Join(dir, "8000/fd/6")))
+	must(os.Symlink("socket:[1005]", filepath.Join(dir, "8000/fd/7")))
 	must(os.WriteFile(filepath.Join(dir, "8000/comm"), []byte("chrome\n"), 0644))
 	must(os.Symlink("/usr/bin/chrome", filepath.Join(dir, "8000/exe")))
 	must(os.WriteFile(filepath.Join(dir, "8000/status"),
@@ -64,6 +79,10 @@ func setupFakeProcfs(t *testing.T) string {
 type mockPackageResolver struct {
 	packages   map[int32]string
 	installers map[string]string
+}
+
+func (m *mockPackageResolver) PackageForUID(uid int32) string {
+	return m.packages[uid]
 }
 
 // writeProcEntry overlays a single PID's exe symlink + comm onto an
@@ -90,19 +109,63 @@ func writeProcEntry(t *testing.T, procRoot string, pid int, exeTarget, comm stri
 	return pidDir
 }
 
-func TestFindProcess_IPv6Early(t *testing.T) {
+// IPv6 attribution — before 2026-08-14, FindProcess early-returned empty for
+// any non-IPv4 srcIP, so every IPv6 connection silently fell back to the
+// global route and `match.apps` / `process_name` rules never fired on v6.
+func TestFindProcess_IPv6_TCP6Match(t *testing.T) {
 	s := NewLinuxProcessSearcher(nil)
-	s.procRoot = "/nonexistent" // would fail if reached
-	name, pkg := s.FindProcess("tcp", netip.MustParseAddr("2001:db8::1"), 54321)
-	if name != "" || pkg != "" {
-		t.Errorf("got (%q,%q), want empty", name, pkg)
+	s.procRoot = setupFakeProcfs(t)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("fdfe:dcba:9876::2"), 54322)
+	if name != "chrome" {
+		t.Errorf("name = %q, want chrome (pure-IPv6 socket in /proc/net/tcp6)", name)
+	}
+}
+
+// Dual-stack: an AF_INET6 socket without IPV6_V6ONLY carrying an IPv4 flow is
+// listed ONLY in /proc/net/tcp6 with a v4-mapped local address. A v4 lookup
+// that misses /proc/net/tcp must fall through and find it there.
+func TestFindProcess_DualStack_V4MappedFallback(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	s.procRoot = setupFakeProcfs(t)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54323)
+	if name != "chrome" {
+		t.Errorf("name = %q, want chrome (v4 miss must fall through to ::ffff: row in tcp6)", name)
+	}
+}
+
+func TestFindProcess_UDP6_PureV6Match(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	s.procRoot = setupFakeProcfs(t)
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("fdfe:dcba:9876::2"), 54325)
+	if name != "chrome" {
+		t.Errorf("name = %q, want chrome (pure-IPv6 socket in /proc/net/udp6)", name)
+	}
+}
+
+func TestFindProcess_UDP_DualStackV4MappedFallback(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	s.procRoot = setupFakeProcfs(t)
+	// net/udp has no rows — the v4 lookup must miss there and find the
+	// ::ffff: row in net/udp6.
+	name, _, _ := s.FindProcess("udp", netip.MustParseAddr("192.168.1.5"), 54324)
+	if name != "chrome" {
+		t.Errorf("name = %q, want chrome (v4 UDP miss must fall through to ::ffff: row in udp6)", name)
+	}
+}
+
+func TestFindProcess_IPv6_NoMatch(t *testing.T) {
+	s := NewLinuxProcessSearcher(nil)
+	s.procRoot = setupFakeProcfs(t)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("2001:db8::1"), 54322)
+	if name != "" {
+		t.Errorf("got %q, want empty (different v6 addr must not match)", name)
 	}
 }
 
 func TestFindProcess_FakeProcfs_TCPMatch(t *testing.T) {
 	s := NewLinuxProcessSearcher(nil)
 	s.procRoot = setupFakeProcfs(t)
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "chrome" {
 		t.Errorf("name = %q, want chrome", name)
 	}
@@ -117,7 +180,7 @@ func TestFindProcess_CacheHit_NoProcfsRescan(t *testing.T) {
 	if err := os.RemoveAll(s.procRoot); err != nil {
 		t.Fatal(err)
 	}
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "chrome" {
 		t.Errorf("expected cache hit returning chrome, got %q", name)
 	}
@@ -127,7 +190,7 @@ func TestFindProcess_NoMatch_NegativeCache(t *testing.T) {
 	s := NewLinuxProcessSearcher(nil)
 	s.procRoot = setupFakeProcfs(t)
 	// Port that doesn't exist in fake procfs.
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 9999)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 9999)
 	if name != "" {
 		t.Errorf("got %q, want empty", name)
 	}
@@ -139,7 +202,7 @@ func TestFindProcess_PackageResolution(t *testing.T) {
 	}}
 	s := NewLinuxProcessSearcher(mock)
 	s.procRoot = setupFakeProcfs(t)
-	name, pkg := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, pkg, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "chrome" || pkg != "com.android.chrome" {
 		t.Errorf("got (%q,%q), want (chrome, com.android.chrome)", name, pkg)
 	}
@@ -393,7 +456,7 @@ func TestFindProcess_PrctlRenamedHelper_EndToEnd(t *testing.T) {
 		"/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/X/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
 		"Chrome_ChildIOT\n")
 
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "Google Chrome Helper" {
 		t.Errorf("FindProcess returned %q, want %q (prctl-renamed → exe basename)",
 			name, "Google Chrome Helper")
@@ -439,7 +502,7 @@ func TestSelfPIDSkip_ViaFakeProcfs(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.procRoot = dir
-	name, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "" {
 		t.Errorf("expected self-PID skip → empty name, got %q", name)
 	}

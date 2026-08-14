@@ -616,11 +616,11 @@ func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) (ru
 	if srcAddr != nil {
 		if srcIP, ok := netip.AddrFromSlice(srcAddr.IP); ok {
 			// net.IPv4 / net.ParseIP return 16-byte IPv4-mapped IPv6, which makes
-			// netip.AddrFromSlice produce an addr whose Is4() reports false. Both
-			// Darwin and Linux ProcessSearchers early-return when Is4() is false,
-			// so attribution never fires. Unmap() strips the ::ffff: prefix so
-			// downstream searchers see a true 4-byte IPv4 addr. Multi-slot gateway
-			// routing also keys off this same unmapped address (ConnMeta.SrcIP).
+			// netip.AddrFromSlice produce an addr whose Is4() reports false.
+			// Unmap() strips the ::ffff: prefix so ProcessSearchers route a
+			// mapped-v4 source to their IPv4 tables (real IPv6 passes through
+			// unchanged and hits the v6 tables). Multi-slot gateway routing also
+			// keys off this same unmapped address (ConnMeta.SrcIP).
 			meta.SrcIP = srcIP.Unmap()
 		}
 	}

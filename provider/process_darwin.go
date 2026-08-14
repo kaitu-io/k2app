@@ -36,9 +36,13 @@ func NewDarwinProcessSearcher() *DarwinProcessSearcher {
 // installerPackage; those are Android-only. lsof handles macOS process
 // attribution; the cache key + entry carry empty strings for the latter two.
 func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
-	if !srcIP.Is4() {
+	if !srcIP.IsValid() {
 		return "", "", ""
 	}
+	// Canonicalize locally instead of trusting every caller to have done it
+	// (core/tunnel.go routeConn does): lsof expects the bare v4 form, and the
+	// cache key must be stable across both forms.
+	srcIP = srcIP.Unmap()
 	// Lazy-init cache for zero-value struct callers (e.g. daemon factory
 	// pre-shared-cache callers that did `&DarwinProcessSearcher{}`).
 	if s.cache == nil {
@@ -67,11 +71,7 @@ func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, sr
 // a connection is established. We must exclude our own PID (the daemon) so
 // we return the actual peer (e.g., curl, browser).
 func lsofLookup(network string, srcIP netip.Addr, srcPort uint16) string {
-	proto := "tcp"
-	if network == "udp" {
-		proto = "udp"
-	}
-	spec := fmt.Sprintf("%s@%s:%d", proto, srcIP, srcPort)
+	spec := lsofSpec(network, srcIP, srcPort)
 
 	// Hard timeout: lsof normally returns in <30ms, but a stuck fd or a stalled
 	// process-table walk can hang it indefinitely. Attribution runs synchronously
@@ -86,6 +86,21 @@ func lsofLookup(network string, srcIP netip.Addr, srcPort uint16) string {
 		return ""
 	}
 	return parseLsofOutput(out, os.Getpid())
+}
+
+// lsofSpec builds the `-i` address selector. lsof's grammar requires IPv6
+// addresses in brackets (`tcp@[fdfe::2]:443`); a bare colon-hex address
+// would be mis-split at the first colon and silently match nothing —
+// exactly the kind of no-log attribution miss this package must avoid.
+func lsofSpec(network string, srcIP netip.Addr, srcPort uint16) string {
+	proto := "tcp"
+	if network == "udp" {
+		proto = "udp"
+	}
+	if srcIP.Is4() {
+		return fmt.Sprintf("%s@%s:%d", proto, srcIP, srcPort)
+	}
+	return fmt.Sprintf("%s@[%s]:%d", proto, srcIP, srcPort)
 }
 
 // parseLsofOutput scans `lsof -F pc` machine-readable output and returns

@@ -15,6 +15,30 @@ import (
 
 const selfPID = 1234
 
+// lsofSpec must bracket IPv6 addresses — lsof's -i grammar splits the selector
+// at the first colon otherwise, silently matching nothing. Before 2026-08-14
+// this never mattered because FindProcess early-returned on any non-IPv4
+// srcIP; now v6 connections reach lsof and the spec must be well-formed.
+func TestLsofSpec(t *testing.T) {
+	cases := []struct {
+		network string
+		ip      string
+		port    uint16
+		want    string
+	}{
+		{"tcp", "192.168.1.5", 54321, "tcp@192.168.1.5:54321"},
+		{"udp", "198.18.0.2", 443, "udp@198.18.0.2:443"},
+		{"tcp", "fdfe:dcba:9876::2", 54321, "tcp@[fdfe:dcba:9876::2]:54321"},
+		{"udp", "2001:db8::1", 443, "udp@[2001:db8::1]:443"},
+	}
+	for _, c := range cases {
+		got := lsofSpec(c.network, netip.MustParseAddr(c.ip), c.port)
+		if got != c.want {
+			t.Errorf("lsofSpec(%s, %s, %d) = %q, want %q", c.network, c.ip, c.port, got, c.want)
+		}
+	}
+}
+
 // Empirically-verified output forms collected from `lsof -i -F pc` on a
 // production macOS 25.5. The COMMAND field arrives untruncated, even for
 // 20+ char bundle helper names — proving the kernel quirk that mattered

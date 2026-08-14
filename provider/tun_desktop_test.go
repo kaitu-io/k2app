@@ -21,8 +21,10 @@ func TestDefaultTunName(t *testing.T) {
 			t.Errorf("defaultTunName() on darwin = %q, want prefix utun", name)
 		}
 	case "linux":
-		if name != "k2tun" {
-			t.Errorf("defaultTunName() on linux = %q, want k2tun", name)
+		// Shipped behavior since the first Linux release — deployed hosts
+		// have route/firewall automation keyed to tun0. Not "k2tun".
+		if name != "tun0" {
+			t.Errorf("defaultTunName() on linux = %q, want tun0", name)
 		}
 	case "windows":
 		if name != "k2tun" {
