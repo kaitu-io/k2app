@@ -1,0 +1,164 @@
+name: Publish Web OTA
+
+# Web OTA publish pipeline (spec: docs/superpowers/specs/2026-08-14-web-ota-design.md §6).
+#   push to main touching webapp/** or the bridge-version map → stable, fully automatic
+#   workflow_dispatch → republish any ref (emergency rollback via ref=<known-good sha>)
+#     and/or target the beta channel (bootstrap §8 does beta first).
+# Stable publishes update BOTH channel manifests; artifacts always also land in the
+# beta dir so the manifest's relative url ({version}/web.zip) resolves on either
+# channel — same superset semantics as scripts/publish-mobile.sh.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'webapp/**'
+      - 'contracts/bridge-versions.json'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit SHA / branch to build and publish (emergency republish)'
+        required: false
+        default: 'main'
+      channel:
+        description: 'Release channel'
+        type: choice
+        options: [stable, beta]
+        default: stable
+
+concurrency:
+  group: publish-web-ota
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Production web bundles ship at info level (same rule as release-desktop.yml).
+  K2_BUILD_LOG_LEVEL: info
+  AWS_DEFAULT_REGION: ap-northeast-1
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          # Full history: git rev-list --count HEAD is the version's 4th segment.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Webapp tests incl. bridge contract gate (kaitu)
+        run: yarn test
+        working-directory: webapp
+
+      - name: Webapp tests incl. bridge contract gate (overleap)
+        run: yarn test
+        working-directory: webapp
+        env:
+          K2_BRAND: overleap
+
+      - name: Manifest generator unit tests
+        run: node --test scripts/ci/web-ota-manifest.test.mjs
+
+      - name: Build webapp (kaitu) + brand purity gate
+        run: |
+          yarn build
+          bash scripts/check-brand-purity.sh kaitu dist
+          mv dist dist-kaitu
+        working-directory: webapp
+
+      - name: Build webapp (overleap) + brand purity gate
+        run: |
+          yarn build
+          bash scripts/check-brand-purity.sh overleap dist
+          mv dist dist-overleap
+        working-directory: webapp
+        env:
+          K2_BRAND: overleap
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: webapp
+
+      - name: White-screen smoke gate (both brands)
+        run: |
+          node webapp/scripts/smoke-dist.mjs webapp/dist-kaitu
+          node webapp/scripts/smoke-dist.mjs webapp/dist-overleap
+
+      - name: Derive version
+        id: ver
+        run: |
+          VERSION="$(node scripts/ci/web-ota-manifest.mjs version)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Web OTA version: $VERSION"
+
+      - name: Package + minisign + manifest (both brands)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq minisign zip unzip
+          VERSION='${{ steps.ver.outputs.version }}'
+          # Same base64-encoded minisign key that signs desktop updater artifacts
+          # (release-desktop.yml "Sign Linux tarballs" step is the precedent).
+          echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > /tmp/minisign.key
+          mkdir -p out
+          for BRAND in kaitu overleap; do
+            (cd "webapp/dist-$BRAND" && zip -qr "../../out/web-$BRAND.zip" .)
+            # zip top level must BE the dist content (spec §3.3): index.html at root.
+            unzip -l "out/web-$BRAND.zip" | grep -qE '(^|\s)index\.html$' \
+              || { echo "::error::web-$BRAND.zip missing top-level index.html"; exit 1; }
+            echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | minisign -S -s /tmp/minisign.key -m "out/web-$BRAND.zip"
+            node scripts/ci/web-ota-manifest.mjs manifest \
+              --version "$VERSION" \
+              --zip "out/web-$BRAND.zip" \
+              --sig-file "out/web-$BRAND.zip.minisig" \
+              --out "out/latest-$BRAND.json"
+            cat "out/latest-$BRAND.json"
+          done
+          rm -f /tmp/minisign.key
+
+      - name: Upload to S3 + publish manifests
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.ver.outputs.version }}'
+          CHANNEL='${{ github.event_name == 'workflow_dispatch' && github.event.inputs.channel || 'stable' }}'
+          echo "Publishing v$VERSION to channel: $CHANNEL"
+          for BRAND in kaitu overleap; do
+            BASE="s3://d0.all7.cc/${BRAND}/web"
+            aws s3 cp "out/web-$BRAND.zip" "$BASE/beta/${VERSION}/web.zip" --content-type application/zip
+            aws s3 cp "out/latest-$BRAND.json" "$BASE/beta/latest.json" --content-type application/json
+            if [ "$CHANNEL" = "stable" ]; then
+              aws s3 cp "out/web-$BRAND.zip" "$BASE/${VERSION}/web.zip" --content-type application/zip
+              aws s3 cp "out/latest-$BRAND.json" "$BASE/latest.json" --content-type application/json
+            fi
+          done
+
+      - name: Invalidate CloudFront (both distributions)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          for DIST_ID in E3W144CRNT652P E34P52R7B93FSC; do
+            aws cloudfront create-invalidation \
+              --distribution-id "$DIST_ID" \
+              --paths "/kaitu/web/*" "/overleap/web/*" \
+              --no-cli-pager --output text > /dev/null
+          done
+          echo "CDN invalidated: d0.all7.cc + dl.kaitu.io (/{kaitu,overleap}/web/*)"
