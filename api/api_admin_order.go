@@ -148,6 +148,7 @@ func api_admin_list_orders(c *gin.Context) {
 			IsRefunded:           order.IsRefunded != nil && *order.IsRefunded,
 			RefundAmount:         order.RefundAmount,
 			RefundReason:         order.RefundReason,
+			Channel:              order.Channel,
 		}
 
 		// 设置支付时间

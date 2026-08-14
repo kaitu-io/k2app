@@ -792,6 +792,14 @@ type Subscription struct {
 	LastEventID string `gorm:"column:last_event_id;type:varchar(64)" json:"-"`
 }
 
+// Subscription.Provider / SubscriptionCredit.Provider 的取值域。二者共用同一套字面量——
+// SubscriptionCredit 的幂等键是 (provider, transaction_id)，任何按 transaction_id 反查
+// credit 的地方都必须同时限定 provider，否则跨 provider 的 id 撞车会静默串账。
+const (
+	SubscriptionProviderApple  = "apple"
+	SubscriptionProviderStripe = "stripe"
+)
+
 // SubscriptionCredit is the idempotency ledger for recurring-provider credits.
 // One row per provider transaction; UNIQUE(provider, transaction_id) guarantees a
 // transaction is credited to expired_at at most once (INV1). transaction_id is a
