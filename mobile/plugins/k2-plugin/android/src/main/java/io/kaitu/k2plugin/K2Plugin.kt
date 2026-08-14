@@ -124,6 +124,7 @@ class K2Plugin : Plugin() {
         val ret = JSObject()
         ret.put("ready", true)
         ret.put("version", version)
+        ret.put("bridgeVersion", K2PluginUtils.BRIDGE_API_VERSION)
         call.resolve(ret)
     }
 
@@ -361,6 +362,15 @@ class K2Plugin : Plugin() {
                     return@Thread
                 }
 
+                webBridgeGateReason(manifest)?.let { reason ->
+                    Log.w(TAG, "Web OTA skipped: $reason")
+                    val ret = JSObject()
+                    ret.put("available", false)
+                    ret.put("reason", "bridge_too_old")
+                    call.resolve(ret)
+                    return@Thread
+                }
+
                 // Read installed web version, fall back to app version
                 val webVersionFile = File(File(context.filesDir, "web-update"), "version.txt")
                 val localVersion = if (webVersionFile.exists()) {
@@ -441,23 +451,28 @@ class K2Plugin : Plugin() {
                     )
                 ) ?: throw java.io.IOException("All web manifest endpoints failed")
                 val (manifest, baseURL) = result
+
+                webBridgeGateReason(manifest)?.let { reason ->
+                    call.reject("Web OTA rejected: $reason")
+                    return@Thread
+                }
+
                 val zipUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
                 val remoteVersion = manifest.getString("version")
-                val rawHash = manifest.getString("hash")
-                // Strip "sha256:" prefix if present
-                val expectedHash = if (rawHash.startsWith("sha256:")) rawHash.removePrefix("sha256:") else rawHash
 
                 // Download the zip
                 val zipData = fetchUrl(zipUrl)
 
-                // Verify SHA-256
-                val actualHash = sha256(zipData)
-                if (actualHash != expectedHash) {
-                    // Restore backup on hash mismatch
+                // Verify sha256 (always) + minisign (mandatory when manifest has "sig").
+                // Runs BEFORE any directory mutation, so the current web-update dir
+                // is untouched on failure (matches the old hash-mismatch semantics).
+                try {
+                    verifyWebZip(zipData, manifest)
+                } catch (ve: Exception) {
                     if (webBackupDir.exists()) {
                         webBackupDir.renameTo(webUpdateDir)
                     }
-                    call.reject("Hash mismatch: expected $expectedHash, got $actualHash")
+                    call.reject(ve.message ?: "web zip verification failed")
                     return@Thread
                 }
 
@@ -919,8 +934,6 @@ class K2Plugin : Plugin() {
                 val (manifest, baseURL) = webResult
                 val remoteVersion = manifest.getString("version")
                 val zipUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
-                val rawHash = manifest.getString("hash")
-                val expectedHash = if (rawHash.startsWith("sha256:")) rawHash.removePrefix("sha256:") else rawHash
 
                 // Check min_native compatibility
                 val minNative = manifest.optString("min_native", "")
@@ -928,6 +941,11 @@ class K2Plugin : Plugin() {
                     .getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
                 if (!K2PluginUtils.isCompatibleNativeVersion(minNative, appVersionForCompat)) {
                     Log.w(TAG, "Auto web OTA skipped: min_native=$minNative > app=$appVersionForCompat")
+                    return
+                }
+
+                webBridgeGateReason(manifest)?.let { reason ->
+                    Log.w(TAG, "Auto web OTA skipped: $reason")
                     return
                 }
 
@@ -945,10 +963,11 @@ class K2Plugin : Plugin() {
                     // Download the zip
                     val zipData = fetchUrl(zipUrl)
 
-                    // Verify SHA-256
-                    val actualHash = sha256(zipData)
-                    if (actualHash != expectedHash) {
-                        Log.w(TAG, "Auto-update web OTA hash mismatch: expected $expectedHash, got $actualHash")
+                    // Verify sha256 (always) + minisign (mandatory when manifest has "sig")
+                    try {
+                        verifyWebZip(zipData, manifest)
+                    } catch (ve: Exception) {
+                        Log.w(TAG, "Auto web OTA verification failed: ${ve.message}")
                         return
                     }
 
@@ -991,6 +1010,35 @@ class K2Plugin : Plugin() {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
+
+    /**
+     * min_bridge gate (spec §4/§5.1): null = compatible, otherwise a loggable
+     * reason. Absent/0 min_bridge (pre-bridge-era manifests) always passes.
+     */
+    private fun webBridgeGateReason(manifest: JSONObject): String? {
+        val minBridge = manifest.optInt("min_bridge", 0)
+        return if (K2PluginUtils.isCompatibleBridgeVersion(minBridge)) null
+        else "min_bridge=$minBridge > bridge=${K2PluginUtils.BRIDGE_API_VERSION}"
+    }
+
+    /**
+     * sha256 (always — legacy contract) + minisign (enforced whenever the
+     * manifest carries "sig", spec §3.4 new-native column). Shared by the
+     * user-triggered applyWebUpdate AND the cold-start auto path — the checks
+     * must never fork between the two. Throws IOException on any failure.
+     */
+    private fun verifyWebZip(zipData: ByteArray, manifest: JSONObject) {
+        val rawHash = manifest.getString("hash")
+        val expectedHash = if (rawHash.startsWith("sha256:")) rawHash.removePrefix("sha256:") else rawHash
+        val actualHash = sha256(zipData)
+        if (actualHash != expectedHash) {
+            throw java.io.IOException("Hash mismatch: expected $expectedHash, got $actualHash")
+        }
+        val sig = manifest.optString("sig", "")
+        if (sig.isNotEmpty() && !MinisignVerifier.verify(zipData, sig, K2PluginUtils.WEB_OTA_MINISIGN_PUBKEY)) {
+            throw java.io.IOException("minisign signature verification failed")
+        }
+    }
 
     /**
      * Try each endpoint in order. Returns (manifest JSONObject, baseURL) on first success,

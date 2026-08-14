@@ -141,4 +141,14 @@ describe('bridge API contract gate', () => {
       );
     }
   });
+
+  it('Android native mirror matches BRIDGE_API_VERSION', () => {
+    const kt = readFileSync(
+      path.join(repoRoot, 'mobile/plugins/k2-plugin/android/src/main/java/io/kaitu/k2plugin/K2PluginUtils.kt'),
+      'utf8',
+    );
+    const m = kt.match(/const val BRIDGE_API_VERSION\s*=\s*(\d+)/);
+    expect(m, 'K2PluginUtils.BRIDGE_API_VERSION not found — Android mirror missing').not.toBeNull();
+    expect(Number(m![1]), 'Android BRIDGE_API_VERSION drifted from webapp SoT').toBe(BRIDGE_API_VERSION);
+  });
 });

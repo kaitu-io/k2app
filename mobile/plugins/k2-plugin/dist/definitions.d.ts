@@ -15,6 +15,7 @@ export interface K2PluginInterface {
         ready: boolean;
         version?: string;
         reason?: string;
+        bridgeVersion?: number;
     }>;
     getVersion(): Promise<{
         version: string;

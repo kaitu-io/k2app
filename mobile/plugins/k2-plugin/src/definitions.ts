@@ -14,7 +14,7 @@ export interface NativeUpdateInfo {
 }
 
 export interface K2PluginInterface {
-  checkReady(): Promise<{ ready: boolean; version?: string; reason?: string }>;
+  checkReady(): Promise<{ ready: boolean; version?: string; reason?: string; bridgeVersion?: number }>;
   getVersion(): Promise<{ version: string; go: string; os: string; arch: string }>;
   getStatus(): Promise<{ state: string; connectedAt?: string; uptimeSeconds?: number; error?: string }>;
   getConfig(): Promise<{ config?: string }>;
