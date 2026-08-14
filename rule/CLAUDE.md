@@ -267,6 +267,32 @@ user:
 
 `hasProcessCriteria` is a strict subset of `hasMetaCriteria`.
 
+#### `match.region` opens the ProcessSearcher gate — this is not obvious
+
+Read the table above literally and `region` looks like a host dimension. It is
+not only that: `engine.buildRouteEntries` expands one `match.region` route into
+**two** entries — a host entry over `bundle.Sets` *and* a meta entry over
+`bundle.Apps[GOOS]` (the "domestic apps go direct" half). That second entry
+carries process criteria, so **any config with a `match.region` route turns the
+ProcessSearcher on for every connection**, exactly like a hand-written
+`match.apps` rule would.
+
+Consequences worth knowing before you debug a slow smart-bypass session:
+
+- Smart-bypass (`{region: cn} → direct` + catch-all → proxy) pays
+  per-connection process attribution; plain global (`{all: true}` only) does
+  not — `match.All` breaks out of the loop with zero entries, so the gate stays
+  shut. A user toggling between the two changes attribution cost, not just
+  routing.
+- Substituting `preset: "{cc}-access"` for `region: "{cc}"` keeps the same
+  domain/IP coverage but drops the app half — and with it the searcher. That
+  difference is a useful bisection tool (measured: identical routing, zero
+  `DIAG: process-lookup-slow`), but it is **not** a free swap: you lose
+  automatic direct-routing for domestic apps.
+- On macOS the per-connection cost is a full `lsof` sweep unless the snapshot
+  index absorbs it — see `provider/CLAUDE.md` "Process Attribution" for why the
+  cache cannot help and what keeps it bounded.
+
 ### Known debt: `hasAnyMeta` is narrower than the criteria it guards
 
 `matchConnLocked`'s local `hasAnyMeta` counts only `ProcessName` /
