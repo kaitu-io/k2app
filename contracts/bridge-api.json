@@ -40,5 +40,31 @@
       "vpnError",
       "vpnStateChange"
     ]
-  }
+  },
+  "tauriCommands": [
+    "admin_reinstall_service",
+    "apply_update_now",
+    "check_update_now",
+    "daemon_exec",
+    "daemon_helper_exec",
+    "ensure_service_running",
+    "get_default_gateway",
+    "get_pid",
+    "get_platform_info",
+    "get_update_channel",
+    "get_update_status",
+    "hide_window",
+    "list_installed_apps",
+    "list_running_processes",
+    "router_http_request",
+    "set_dev_enabled",
+    "set_log_level",
+    "set_update_channel",
+    "show_window",
+    "storage_get",
+    "storage_remove",
+    "storage_set",
+    "sync_locale",
+    "upload_service_log_command"
+  ]
 }
