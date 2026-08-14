@@ -54,6 +54,8 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "relayFetch", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "relayAddNodes", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getDefaultGateway", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getUpdateChannel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setUpdateChannel", returnType: CAPPluginReturnPromise),
     ]
 
     private var vpnManager: NETunnelProviderManager?
@@ -65,11 +67,23 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     // CDN base URLs from Info.plist (baked by brand-active.xcconfig at build time).
     private let cdnPrimary = Bundle.main.object(forInfoDictionaryKey: "K2CDNPrimary") as? String ?? "https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
     private let cdnFallback = Bundle.main.object(forInfoDictionaryKey: "K2CDNFallback") as? String ?? "https://d0.all7.cc/kaitu"
+
+    // Web OTA minisign public key — key line of the Tauri updater key pair
+    // (base64-decode tauri.conf.json plugins.updater.pubkey, second line).
+    // Brand-neutral: both brands sign with the same key.
+    private let webOtaMinisignPublicKey = "RWSD3s7XX1TXQLaSafFQyIycEGH5v0d7EOsPUmQGJMRjnCuqq3eAVKEE"
+
+    // Channel-aware manifest endpoints (parity with Android
+    // K2PluginUtils.webManifestEndpoints / androidManifestEndpoints).
+    private func getChannel() -> String {
+        UserDefaults.standard.string(forKey: "k2_update_channel") ?? "stable"
+    }
+    private var channelPrefix: String { getChannel() == "beta" ? "beta/" : "" }
     private var webManifestEndpoints: [String] {
-        ["\(cdnPrimary)/web/latest.json", "\(cdnFallback)/web/latest.json"]
+        ["\(cdnPrimary)/web/\(channelPrefix)latest.json", "\(cdnFallback)/web/\(channelPrefix)latest.json"]
     }
     private var iosManifestEndpoints: [String] {
-        ["\(cdnPrimary)/ios/latest.json", "\(cdnFallback)/ios/latest.json"]
+        ["\(cdnPrimary)/ios/\(channelPrefix)latest.json", "\(cdnFallback)/ios/\(channelPrefix)latest.json"]
     }
     // App Store URL from Info.plist (baked by brand-active.xcconfig at build
     // time). Overleap has no listing yet (Phase 0) and resolves to "" —
@@ -192,7 +206,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("checkReady: OTA boot verified — cleared .boot-pending")
         }
 
-        call.resolve(["ready": true, "version": appVersion])
+        call.resolve(["ready": true, "version": appVersion, "bridgeVersion": k2BridgeApiVersion])
     }
 
     /// SHA-256 hash a raw platform ID to 32 lowercase hex chars (128 bit).
@@ -463,6 +477,14 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
+            // Check min_bridge compatibility (spec §4/§5.1)
+            let minBridge = json["min_bridge"] as? Int
+            if !isCompatibleBridgeVersion(minBridge) {
+                logger.info("Web OTA skipped: min_bridge=\(minBridge ?? 0) > bridge=\(k2BridgeApiVersion)")
+                await MainActor.run { call.resolve(["available": false, "reason": "bridge_too_old"]) }
+                return
+            }
+
             // Read installed web version, fall back to app version
             let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             let versionFile = documentsPath.appendingPathComponent("web-update/version.txt")
@@ -534,6 +556,22 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func getUpdateChannel(_ call: CAPPluginCall) {
+        call.resolve(["channel": getChannel()])
+    }
+
+    @objc func setUpdateChannel(_ call: CAPPluginCall) {
+        guard let channel = call.getString("channel"), channel == "stable" || channel == "beta" else {
+            call.reject("Invalid channel — must be 'stable' or 'beta'")
+            return
+        }
+        UserDefaults.standard.set(channel, forKey: "k2_update_channel")
+        call.resolve(["channel": channel])
+        // Re-check immediately (Android parity). No forceDowngrade path here:
+        // iOS native updates ship via the App Store, not a beta APK channel.
+        performAutoUpdateCheck()
+    }
+
     /// Shared web update logic used by both applyWebUpdate (user-triggered) and auto-check.
     /// Calls completion on MainActor when done.
     private func applyWebUpdateInternal(completion: @escaping (Result<Void, Error>) -> Void) async {
@@ -553,6 +591,12 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
+            // min_bridge gate (defense in depth — the auto/check paths gate too)
+            if !isCompatibleBridgeVersion(json["min_bridge"] as? Int) {
+                await MainActor.run { completion(.failure(NSError(domain: "K2Plugin", code: -4, userInfo: [NSLocalizedDescriptionKey: "manifest min_bridge \(json["min_bridge"] as? Int ?? 0) exceeds native bridge version \(k2BridgeApiVersion)"]))) }
+                return
+            }
+
             let zipUrl = resolveDownloadURL(url: zipUrlString, baseURL: baseURL)
 
             // Strip "sha256:" prefix if present
@@ -566,6 +610,14 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             guard actualHash == cleanHash else {
                 await MainActor.run { completion(.failure(NSError(domain: "K2Plugin", code: -2, userInfo: [NSLocalizedDescriptionKey: "Hash mismatch: expected \(cleanHash), got \(actualHash)"]))) }
                 return
+            }
+
+            // 3b. Verify minisign signature (mandatory whenever the manifest carries "sig")
+            if let sigBase64 = json["sig"] as? String, !sigBase64.isEmpty {
+                guard MinisignVerifier.verify(data: zipData, sigBase64: sigBase64, publicKeyBase64: webOtaMinisignPublicKey) else {
+                    await MainActor.run { completion(.failure(NSError(domain: "K2Plugin", code: -3, userInfo: [NSLocalizedDescriptionKey: "minisign signature verification failed"]))) }
+                    return
+                }
             }
 
             // 4. Write zip to temp file
@@ -1242,6 +1294,11 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 let minNative = json["min_native"] as? String ?? ""
                 if !isCompatibleNativeVersion(minNative, appVersion: appVersion) {
                     logger.info("Auto web OTA skipped: min_native=\(minNative) > app=\(self.appVersion)")
+                    return
+                }
+
+                if !isCompatibleBridgeVersion(json["min_bridge"] as? Int) {
+                    logger.info("Auto web OTA skipped: min_bridge gate (bridge=\(k2BridgeApiVersion))")
                     return
                 }
 

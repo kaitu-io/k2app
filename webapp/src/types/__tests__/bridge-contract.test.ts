@@ -151,4 +151,14 @@ describe('bridge API contract gate', () => {
     expect(m, 'K2PluginUtils.BRIDGE_API_VERSION not found — Android mirror missing').not.toBeNull();
     expect(Number(m![1]), 'Android BRIDGE_API_VERSION drifted from webapp SoT').toBe(BRIDGE_API_VERSION);
   });
+
+  it('iOS native mirror matches BRIDGE_API_VERSION', () => {
+    const swift = readFileSync(
+      path.join(repoRoot, 'mobile/plugins/k2-plugin/ios/Plugin/K2Helpers.swift'),
+      'utf8',
+    );
+    const m = swift.match(/let k2BridgeApiVersion\s*=\s*(\d+)/);
+    expect(m, 'k2BridgeApiVersion not found — iOS mirror missing').not.toBeNull();
+    expect(Number(m![1]), 'iOS k2BridgeApiVersion drifted from webapp SoT').toBe(BRIDGE_API_VERSION);
+  });
 });
