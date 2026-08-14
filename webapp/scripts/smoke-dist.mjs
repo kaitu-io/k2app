@@ -69,6 +69,7 @@ try {
       const root = document.getElementById('root');
       return !!root && root.children.length > 0;
     },
+    undefined,
     { timeout: 20_000 },
   );
   await page.waitForTimeout(1_000); // settle window: catch late async crashes
