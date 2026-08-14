@@ -18,8 +18,9 @@ import (
 const echoNonceLen = 8
 
 // EchoProber is an optional capability interface for transports that need
-// data-path verification (QUIC). TCPWSClient does not implement this.
-// Engine type-asserts on this interface (not concrete type) per layer boundary rules.
+// data-path verification. Implemented by QUICClient (quic.go's EchoProbe)
+// and TCPWSClient (tcpws.go's RunEchoProbe). Engine type-asserts on this
+// interface (not concrete type) per layer boundary rules.
 type EchoProber interface {
 	RunEchoProbe(ctx context.Context) error
 }
@@ -79,6 +80,19 @@ func EchoProbe(ctx context.Context, conn *quic.Conn) (time.Duration, error) {
 	return rtt, nil
 }
 
+// handleEcho reads echoNonceLen bytes from br and reflects them to w.
+// Shared by QUIC (HandleEchoStream) and TCP-WS (handleStream StreamTypeEcho).
+func handleEcho(w io.Writer, br *bufio.Reader) {
+	var buf [echoNonceLen]byte
+	if _, err := io.ReadFull(br, buf[:]); err != nil {
+		slog.Debug("echo: read failed", "err", err)
+		return
+	}
+	if _, err := w.Write(buf[:]); err != nil {
+		slog.Debug("echo: write failed", "err", err)
+	}
+}
+
 // HandleEchoStream handles a server-side echo probe stream.
 // Reads echoNonceLen bytes from br (buffered reader) and writes them back to stream.
 func HandleEchoStream(stream *quic.Stream, br *bufio.Reader) {
@@ -86,16 +100,7 @@ func HandleEchoStream(stream *quic.Stream, br *bufio.Reader) {
 		stream.CancelRead(0)
 		stream.Close()
 	}()
-
-	var buf [echoNonceLen]byte
-	if _, err := io.ReadFull(br, buf[:]); err != nil {
-		slog.Debug("echo: read failed", "err", err)
-		return
-	}
-	if _, err := stream.Write(buf[:]); err != nil {
-		slog.Debug("echo: write failed", "err", err)
-		return
-	}
+	handleEcho(stream, br)
 }
 
 // IsEchoUnsupported returns true if the error indicates the server doesn't

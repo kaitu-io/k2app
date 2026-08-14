@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 )
 
 // contractTimeoutError simulates a slow upstream (not a transport failure).
@@ -170,7 +171,10 @@ func TestContract_QUICBlocked_FallbackTCPWS(t *testing.T) {
 }
 
 // TestContract_QUICRecover_ProbeSuccess verifies that when QUIC recovers
-// (e.g., user leaves airport WiFi), traffic switches back to QUIC.
+// (e.g., user leaves airport WiFi), traffic switches back to QUIC — but
+// only once the data path is echo-verified, not on a bare handshake success
+// (root cause A: see TestProbe_RollbackRequiresEchoNotJustHandshake for the
+// full mutation test pinning this at the probe-loop level).
 // User scenario: user returns to normal network after being on restricted one.
 func TestContract_QUICRecover_ProbeSuccess(t *testing.T) {
 	quicCalled := false
@@ -198,11 +202,34 @@ func TestContract_QUICRecover_ProbeSuccess(t *testing.T) {
 	// Start in fallback state (QUIC was blocked).
 	tm.SetFallbackActive(true)
 
-	// Simulate QUIC probe success.
+	// A bare handshake success (what the old quicProbeLoop treated as
+	// "recovered") must NOT clear fallback on its own.
 	tm.recordQuicSuccess()
+	if !tm.FallbackActive() {
+		t.Fatal("contract: fallback must stay active after a bare handshake success (echo not verified)")
+	}
 
+	// Simulate the background probe's echo-verified recovery: 3 passing
+	// echo rounds mark quicEchoRecovered, then evaluateSelector — past the
+	// flap-damping review window opened by SetFallbackActive(true) above —
+	// applies the switch back to QUIC. Deliberately NO score manipulation:
+	// rollback is echo-gated only (spec §3.2 "切回为什么不做分数比较") — while
+	// tcpws serves traffic QUIC carries none, so scoreQUIC is unmeasurable and
+	// pinned at neutral. A score-ratio gate would be mathematically
+	// unreachable against a healthy tcpws; see
+	// TestRollback_FiresWhenTCPWSHealthyAndQUICEchoVerified for the regression
+	// pinning that exact scenario.
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		tm.RecordEchoResult("quic", 20*time.Millisecond, nil, now)
+	}
+	tm.quicEchoRecovered.Store(true)
+
+	if got := tm.evaluateSelector(now.Add(flapWindowBase + time.Second)); got != channelSwitchToQUIC {
+		t.Fatalf("evaluateSelector = %v, want channelSwitchToQUIC", got)
+	}
 	if tm.FallbackActive() {
-		t.Fatal("contract: fallback must be cleared after QUIC recovery")
+		t.Fatal("contract: fallback must be cleared after echo-verified QUIC recovery")
 	}
 
 	// Next DialTCP should go through QUIC.

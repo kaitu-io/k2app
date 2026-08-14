@@ -2,10 +2,13 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +16,26 @@ import (
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/wire"
 )
+
+// TestHealthSnapshot_HasChannelScores verifies HealthSnapshot serializes the
+// dual-channel quality scoreboard (Task 8 observability) — daemon/gateway's
+// broadcastSnapshot wholesale-marshals HealthSnapshot for SSE, so any field
+// added here reaches those consumers automatically.
+func TestHealthSnapshot_HasChannelScores(t *testing.T) {
+	var snap HealthSnapshot
+	snap.ScoreQUIC = 0.9
+	snap.ScoreTCPWS = 0.5
+	snap.ActiveChannel = "quic"
+	b, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"score_quic", "score_tcpws", "active_channel"} {
+		if !strings.Contains(string(b), key) {
+			t.Fatalf("snapshot JSON missing %q: %s", key, b)
+		}
+	}
+}
 
 // mockTransportManager returns a TransportManager with no transports set.
 // WireStats() returns zero values; Reset() is a no-op.
@@ -174,16 +197,29 @@ func TestHealthTransitions_Fallback(t *testing.T) {
 	ot := &outboundTransport{tm: tm, name: "test"}
 	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 
-	// Fallback stats → assess returns degraded (not critical).
+	// Fallback (TCP-WS) with clean stats: health is quality-driven, not
+	// channel-driven — a clean fallback path settles healthy, not degraded.
+	for i := 0; i < 10; i++ {
+		hm.smoothWireLoss = 0.0
+		level := hm.assess(wire.WireStats{Transport: "tcpws", WireFallback: true})
+		hm.transition(level, false)
+	}
+	if hm.health != HealthHealthy {
+		t.Fatalf("clean TCP-WS fallback should be healthy, got %s", hm.health)
+	}
+
+	// Quality degrades while still on TCP-WS fallback: health tracks the
+	// loss/RTT signal, not the fallback flag itself.
 	for i := 0; i < 5; i++ {
+		hm.smoothWireLoss = 0.10
 		level := hm.assess(wire.WireStats{Transport: "tcpws", WireFallback: true})
 		hm.transition(level, false)
 	}
 	if hm.health != HealthDegraded {
-		t.Fatalf("fallback should be degraded, got %s", hm.health)
+		t.Fatalf("high-loss TCP-WS fallback should be degraded, got %s", hm.health)
 	}
 
-	// Fallback recovery: QUIC comes back with good stats → healthy after 10 samples.
+	// Recovery: QUIC comes back with good stats → healthy after 10 samples.
 	for i := 0; i < 10; i++ {
 		hm.smoothWireLoss = 0.01
 		level := hm.assess(wire.WireStats{Transport: "quic"})
@@ -191,6 +227,17 @@ func TestHealthTransitions_Fallback(t *testing.T) {
 	}
 	if hm.health != HealthHealthy {
 		t.Fatalf("should be healthy after QUIC recovery, got %s", hm.health)
+	}
+}
+
+func TestAssess_TCPWSActiveHealthyNotDegraded(t *testing.T) {
+	hm := &healthMonitor{health: HealthHealthy}
+	// TCP-WS is serving, but quality is good — must read healthy, not degraded.
+	ws := wire.WireStats{Transport: "tcpws", WireFallback: true}
+	hm.smoothWireLoss = 0.0
+	hm.ewmaInitialized = true
+	if got := hm.assess(ws); got != HealthHealthy {
+		t.Fatalf("healthy TCP-WS should assess healthy, got %v", got)
 	}
 }
 
@@ -745,5 +792,587 @@ func TestEchoStep_ScenarioWireFailsEarly(t *testing.T) {
 	r = echoStep(r.NewTrust, r.NewStrikes, context.DeadlineExceeded)
 	if r.NewStrikes != echoReraceThreshold || !r.ShouldRerace {
 		t.Fatalf("step 4 (fail #3, expect rerace): %+v", r)
+	}
+}
+
+// --- Task 7: echoLoop drives the dual-channel scoreboard ------------------
+//
+// Uses the echoStubDialer / newEchoTransport / newHMForEcho fakes from
+// health_echo_integration_test.go. probeOnceForTest drives exactly one
+// echoProbeLoop (primary-channel) iteration synchronously. The backup-probe
+// tests below (fix-round-1) call hm.probeBackupOnce directly with an
+// explicit *backupLoopState that persists across calls, since — after
+// fix-round-1 decoupled the backup probe onto its own timer/goroutine
+// (Important 1 + 4) — probeOnceForTest no longer touches backup logic at
+// all, and cadence assertions require state that survives multiple
+// synthetic-time calls.
+
+func TestEchoLoop_FeedsChannelScore(t *testing.T) {
+	// A healthMonitor with one TM whose QUIC echo succeeds should raise that
+	// channel's availability score above neutral (0.5*0.5=0.25) within one
+	// probe cycle.
+	ot, _ := newEchoTransport("t-quic-ok", func(ctx context.Context) error { return nil })
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+
+	now := time.Now()
+	hm.probeOnceForTest(ot, now)
+
+	if got := ot.tm.ScoreQUIC(now); got <= 0.5*0.5 {
+		t.Fatalf("successful echo should push score above neutral, got %v", got)
+	}
+}
+
+func TestBackupProbe_CadenceUpgradesWhenQUICDegraded(t *testing.T) {
+	// fix-round-1 (Important 1 + 3): the backup probe's cadence must be the
+	// REAL cadence it runs at — 5s once QUIC degrades, not bounded by
+	// whatever the primary's exponential-trust timer happens to be at. This
+	// test drives probeBackupOnce directly across synthetic time steps (no
+	// real waiting) with one *backupLoopState carried across calls, so it
+	// actually exercises pacing — unlike the original (vacuous) version,
+	// which built a fresh state each call and so let every call through
+	// unconditionally regardless of which interval constant was in play.
+	ot, _ := newEchoTransport("t-quic-degraded", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+
+	t0 := time.Now()
+	// context.DeadlineExceeded is a real failure (not IsEchoUnsupported),
+	// so this actually drives scoreQUIC down.
+	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, t0)
+	if got := ot.tm.ScoreQUIC(t0); got >= echoBackupProbeThreshold {
+		t.Fatalf("setup: expected degraded QUIC score below %v, got %v", echoBackupProbeThreshold, got)
+	}
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	st := &backupLoopState{}
+
+	// t0: first check — nothing scheduled yet, so it probes immediately and
+	// reports the degraded (5s) cadence.
+	if interval := hm.probeBackupOnce(ot, st, t0); interval != backupProbeIntervalDegraded {
+		t.Fatalf("expected degraded cadence %v at t0, got %v", backupProbeIntervalDegraded, interval)
+	}
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected 1 probe at t0, got %d", calls)
+	}
+
+	// t0+4s: inside the 5s cadence window — must NOT probe again.
+	hm.probeBackupOnce(ot, st, t0.Add(4*time.Second))
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected no probe at t0+4s (within the 5s degraded cadence), got %d calls", calls)
+	}
+
+	// t0+6s: cadence window elapsed — probes again.
+	hm.probeBackupOnce(ot, st, t0.Add(6*time.Second))
+	if calls := backup.calls.Load(); calls != 2 {
+		t.Fatalf("expected a second probe at t0+6s, got %d calls", calls)
+	}
+}
+
+func TestBackupProbe_HealthyCadenceStaysLowFrequency(t *testing.T) {
+	// Mirror of the degraded test above, but with QUIC healthy: the real
+	// PROBE cadence must stay 60s, even though (fix-round-3, N2) the WAKE
+	// cadence returned by probeBackupOnce is now always capped at
+	// backupProbeIntervalDegraded regardless of branch — so healthy vs
+	// degraded is no longer visible in the return value itself. Instead
+	// this proves it behaviorally: a re-check at exactly +5s (which WOULD
+	// re-probe if the real gate had mistakenly become the 5s degraded
+	// cadence) must NOT probe, and neither does a re-check well within the
+	// 60s window. This is what actually proves the two PROBE cadences are
+	// distinct, not just that the WAKE cadence is capped either way.
+	ot, _ := newEchoTransport("t-quic-healthy", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+
+	t0 := time.Now()
+	// Availability alone caps Value() at avail*neutral(0.5)=0.5, which is
+	// BELOW echoBackupProbeThreshold (0.7) — quality (CC stats) must also be
+	// primed for scoreQUIC to clear 0.7 and land in the healthy branch.
+	ot.tm.RecordEchoResult("quic", 0, nil, t0)
+	ot.tm.RecordQUICStats(wire.WireStats{PacketLossRate: 0, RTT: 50 * time.Millisecond, MinRTT: 50 * time.Millisecond}, t0)
+	if got := ot.tm.ScoreQUIC(t0); got < echoBackupProbeThreshold {
+		t.Fatalf("setup: expected healthy QUIC score >= %v, got %v", echoBackupProbeThreshold, got)
+	}
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	st := &backupLoopState{}
+
+	if wake := hm.probeBackupOnce(ot, st, t0); wake > backupProbeIntervalDegraded {
+		t.Fatalf("expected the wake cadence to be capped at %v, got %v", backupProbeIntervalDegraded, wake)
+	}
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected 1 probe at t0, got %d", calls)
+	}
+
+	// If the real PROBE cadence were mistakenly the degraded 5s instead of
+	// the healthy 60s, a check landing exactly at t0+5s would re-probe.
+	hm.probeBackupOnce(ot, st, t0.Add(backupProbeIntervalDegraded))
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected no second probe at t0+%v — QUIC is healthy, the real probe cadence must be %v, not %v", backupProbeIntervalDegraded, backupProbeIntervalHealthy, backupProbeIntervalDegraded)
+	}
+
+	// And well within the 60s healthy window generally.
+	hm.probeBackupOnce(ot, st, t0.Add(30*time.Second))
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected no second probe within the 60s healthy cadence (checked at +30s), got %d calls", calls)
+	}
+}
+
+func TestBackupProbe_SkipsWhenPrimaryIsTCPWS(t *testing.T) {
+	// fix-round-1 Important 2: when tcpws wins the transport race outright
+	// (no separate QUIC dialer connected), engine.go's setupOutboundTransport
+	// installs the SAME *TCPWSClient as both tm.primary and tm.TCPWS() (mirrors
+	// engine.go's tm.SetPrimary(raceResult.Dialer, "tcpws") + tm.SetTCPWS(...)
+	// when raceResult.QUICBackup is nil and raceResult.TransportType=="tcpws").
+	// ActiveChannel() still nominally reports "quic" (fresh TransportManager
+	// default) even though PrimaryType is "tcpws". probeBackupOnce must
+	// recognize this and skip — probing "the backup" would double-probe the
+	// identical connection echoProbeLoop is already probing as the primary.
+	stub := &echoStubDialer{}
+	stub.setFn(func(ctx context.Context) error { return nil })
+	tm := wire.NewTransportManager()
+	tm.SetPrimary(stub, "tcpws")
+	tm.SetTCPWS(stub)
+	ot := &outboundTransport{tm: tm, name: "t-tcpws-only"}
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	st := &backupLoopState{}
+
+	now := time.Now()
+	if interval := hm.probeBackupOnce(ot, st, now); interval != backupProbeIntervalHealthy {
+		t.Fatalf("expected the no-op/healthy pace, got %v", interval)
+	}
+	if calls := stub.calls.Load(); calls != 0 {
+		t.Fatalf("expected zero backup probes when primary IS tcpws (double-probe guard), got %d", calls)
+	}
+}
+
+func TestBackupProbe_MobilePowerSavingSkipsProbe(t *testing.T) {
+	// Degraded-QUIC setup (would normally upgrade to 5s cadence), but with
+	// MobilePowerSaving on: backup probing must NOT fire — mobile relies on
+	// protocol keepalive and lets the tcpws score decay to neutral by
+	// staleness instead.
+	ot, _ := newEchoTransport("t-quic-degraded-ps", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+
+	now := time.Now()
+	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, now)
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	hm.mobilePowerSaving = true
+	st := &backupLoopState{}
+
+	hm.probeBackupOnce(ot, st, now)
+
+	if calls := backup.calls.Load(); calls != 0 {
+		t.Fatalf("MobilePowerSaving must disable active backup probing, got %d calls", calls)
+	}
+}
+
+// --- final review: echo-strike gating (I1 + I4) --------------------------
+
+// dialableEchoStub is an echoStubDialer whose DialTCP actually succeeds, so a
+// test can put real "TCP recently worked" evidence into the TransportManager
+// (wire.TransportManager records it on DialTCP's tcpws success paths, which is
+// what TCPRecentlyHealthy reports for a *TCPWSClient-shaped primary).
+type dialableEchoStub struct {
+	echoStubDialer
+}
+
+func (e *dialableEchoStub) DialTCP(ctx context.Context, addr string, ed []byte) (net.Conn, error) {
+	c, _ := net.Pipe()
+	return c, nil
+}
+
+// newTCPWSPrimaryTransport builds the tcpws-won-outright topology: the SAME
+// dialer installed as primary AND backup, PrimaryType "tcpws" (mirrors
+// engine.go's setupOutboundTransport when raceResult.QUICBackup is nil).
+func newTCPWSPrimaryTransport(t *testing.T, name string, tcpHealthy bool) (*outboundTransport, *dialableEchoStub) {
+	t.Helper()
+	stub := &dialableEchoStub{}
+	stub.setFn(func(ctx context.Context) error { return context.DeadlineExceeded })
+	tm := wire.NewTransportManager()
+	tm.SetPrimary(stub, "tcpws")
+	tm.SetTCPWS(stub)
+	if tcpHealthy {
+		conn, err := tm.DialTCP(context.Background(), "203.0.113.7:443", nil)
+		if err != nil {
+			t.Fatalf("seed TCP success: %v", err)
+		}
+		conn.Close()
+		if !tm.TCPRecentlyHealthy(echoStrikeTCPHealthyWindow) {
+			t.Fatal("precondition: TCPRecentlyHealthy must report the seeded TCP stream — the gate under test would be a silent no-op otherwise")
+		}
+	} else if tm.TCPRecentlyHealthy(echoStrikeTCPHealthyWindow) {
+		t.Fatal("precondition: no TCP stream was seeded, TCPRecentlyHealthy must be false")
+	}
+	return &outboundTransport{tm: tm, name: name}, stub
+}
+
+// newFallbackTransport builds the fallback topology: QUIC installed as the
+// primary (echo always failing — it is the dead path the selector left) with
+// tcpws serving. When alive, a real DialTCP is driven through the fallback
+// path first so the TCP-WS channel has genuine, recent proof of life.
+func newFallbackTransport(t *testing.T, name string, tcpwsAlive bool) (*outboundTransport, *echoStubDialer) {
+	t.Helper()
+	ot, quicStub := newEchoTransport(name, func(ctx context.Context) error {
+		return context.DeadlineExceeded
+	})
+	backup := &dialableEchoStub{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+	ot.tm.SetFallbackActive(true) // tcpws serving, QUIC still the primary
+	if ot.tm.ActiveChannel() != "tcpws" {
+		t.Fatalf("precondition: ActiveChannel = %q, want tcpws", ot.tm.ActiveChannel())
+	}
+	if tcpwsAlive {
+		// Fallback is active, so DialTCP skips the primary and goes straight
+		// to the tcpws dialer — exactly how a real user's traffic feeds the
+		// channel's proof-of-life clock.
+		conn, err := ot.tm.DialTCP(context.Background(), "203.0.113.9:443", nil)
+		if err != nil {
+			t.Fatalf("seed tcpws TCP success: %v", err)
+		}
+		conn.Close()
+		if !ot.tm.TCPWSChannelRecentlyHealthy(echoStrikeTCPHealthyWindow) {
+			t.Fatal("precondition: the seeded tcpws stream must register as live proof, else the suppression under test is vacuous")
+		}
+	} else if ot.tm.TCPWSChannelRecentlyHealthy(echoStrikeTCPHealthyWindow) {
+		t.Fatal("precondition: nothing was dialed, the tcpws channel must have no proof of life")
+	}
+	return ot, quicStub
+}
+
+// TestProbeOnce_FallbackStrikeGatedByLiveTCPWSProof pins final-review I1 and
+// its NEW-1 correction together, because they are two halves of one rule.
+//
+// I1: during fallback the selector has moved to tcpws while tm.primary is
+// still the QUIC dialer, so probeOnce keeps echo-probing a path that is known
+// dead — that is *why* the selector left it. Recovery of that path belongs to
+// wire's runProbeOnce (30s, handshake + 3 echo rounds, quicEchoRecovered).
+// Ungated, those timeouts strike 3× within seconds and fire a re-race that
+// closes the echo-failed QUIC dialer without preserving a backup and
+// ReplacePrimary(tcpws)es over the whole fallback state — flap history,
+// quicEchoRecovered, the entire rollback machinery — so the user never gets
+// back to QUIC.
+//
+// NEW-1: that suppression must NOT be unconditional. probeOnce is the only
+// producer on reRaceChan and Phase B server replacement is reachable only
+// through it, while assess() cannot reach critical on tcpws stats — so
+// suppressing on topology alone severs the only automated escalation for a
+// node that dies while the user is in fallback (crash, quota cutoff), leaving
+// both channels dead and the user hung. Live tcpws proof is the discriminator
+// between "protect a working session" and "the node is gone".
+func TestProbeOnce_FallbackStrikeGatedByLiveTCPWSProof(t *testing.T) {
+	t.Run("live tcpws: no strikes, no rerace", func(t *testing.T) {
+		ot, quicStub := newFallbackTransport(t, "t-fallback-live-tcpws", true)
+		hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+		st := &echoLoopState{}
+		for i := 0; i < 2*echoReraceThreshold; i++ {
+			hm.probeOnce(ot, st, time.Now())
+		}
+
+		if quicStub.calls.Load() != int64(2*echoReraceThreshold) {
+			t.Fatalf("precondition: %d probes ran, want %d — the failures under test never happened", quicStub.calls.Load(), 2*echoReraceThreshold)
+		}
+		select {
+		case <-ch:
+			t.Fatal("re-race fired on the known-dead QUIC primary while tcpws is demonstrably serving — this destroys the selector's fallback state and wire's own recovery probe owns that path")
+		default:
+		}
+		if st.strikes != 0 {
+			t.Fatalf("strikes = %d, want 0 — failures on the dead primary must not accumulate toward re-race", st.strikes)
+		}
+		// Scoring is explicitly NOT gated: the selector still needs to see
+		// that the QUIC channel is unavailable.
+		if got := ot.tm.ScoreQUIC(time.Now()); got >= 0.25 {
+			t.Fatalf("scoreQUIC = %v, want it driven below the 0.25 neutral floor — score recording must continue even while strikes are gated", got)
+		}
+	})
+
+	t.Run("dead tcpws: strikes accumulate and rerace fires", func(t *testing.T) {
+		// The node died while the user was in fallback: QUIC echo fails AND
+		// nothing is getting through on tcpws either. Re-race is the only
+		// automated path to Phase A retry / Phase B server rotation, so it
+		// MUST still fire.
+		ot, _ := newFallbackTransport(t, "t-fallback-dead-node", false)
+		hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+		st := &echoLoopState{}
+		for i := 0; i < echoReraceThreshold; i++ {
+			hm.probeOnce(ot, st, time.Now())
+		}
+
+		select {
+		case got := <-ch:
+			if got != ot {
+				t.Fatalf("rerace signal targeted wrong outbound: got %p want %p", got, ot)
+			}
+		default:
+			t.Fatalf("no rerace after %d failures with a dead node (no tcpws proof of life) — probeOnce is the ONLY producer on reRaceChan, so suppressing here strands the user with both channels dead until a network change or manual reconnect", echoReraceThreshold)
+		}
+	})
+}
+
+// TestProbeOnce_TCPWSPrimaryStrikeGatedByRecentTCPHealth pins final-review I4.
+//
+// Making TCPWSClient an EchoProber put tcpws primaries on the 1-16s trust
+// schedule with a 2s echo timeout for the first time. That 8-byte echo shares
+// one TCP connection with bulk transfer, so head-of-line blocking under load
+// can blow 2s three times in a row on a connection that is working perfectly —
+// and the re-race would then close the very session serving the transfer.
+// Recent TCP success gates the strike (the same evidence maybeAct uses to skip
+// a reconnect); with no such evidence, strikes accumulate normally.
+func TestProbeOnce_TCPWSPrimaryStrikeGatedByRecentTCPHealth(t *testing.T) {
+	t.Run("tcp recently healthy: no strikes, no rerace", func(t *testing.T) {
+		ot, stub := newTCPWSPrimaryTransport(t, "t-tcpws-loaded", true)
+		hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+		st := &echoLoopState{}
+		for i := 0; i < 2*echoReraceThreshold; i++ {
+			hm.probeOnce(ot, st, time.Now())
+		}
+
+		if stub.calls.Load() != int64(2*echoReraceThreshold) {
+			t.Fatalf("precondition: %d probes ran, want %d", stub.calls.Load(), 2*echoReraceThreshold)
+		}
+		select {
+		case <-ch:
+			t.Fatal("re-race fired on a tcpws primary that is demonstrably still carrying TCP streams — echo timeouts under HoL blocking must not tear down a working session")
+		default:
+		}
+		if st.strikes != 0 {
+			t.Fatalf("strikes = %d, want 0", st.strikes)
+		}
+		// The failures still reach the scoreboard, so a genuinely bad tcpws
+		// channel is still visible to the selector and the heartbeat.
+		if got := ot.tm.ScoreTCPWS(time.Now()); got >= 0.25 {
+			t.Fatalf("scoreTCPWS = %v, want it driven below the 0.25 neutral floor — gating strikes must not gate scoring", got)
+		}
+	})
+
+	t.Run("no recent tcp: strikes accumulate and rerace fires", func(t *testing.T) {
+		// The known-bad control. Without it, the assertions above would also
+		// pass against a build that simply never strikes on tcpws at all.
+		ot, _ := newTCPWSPrimaryTransport(t, "t-tcpws-silent", false)
+		hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+		st := &echoLoopState{}
+		for i := 0; i < echoReraceThreshold; i++ {
+			hm.probeOnce(ot, st, time.Now())
+		}
+
+		select {
+		case got := <-ch:
+			if got != ot {
+				t.Fatalf("rerace signal targeted wrong outbound: got %p want %p", got, ot)
+			}
+		default:
+			t.Fatalf("no rerace after %d failures with no recent TCP success — the gate must withhold escalation only while there is live proof it would be destructive", echoReraceThreshold)
+		}
+	})
+}
+
+// --- fix-round-2 --------------------------------------------------------
+
+// statsEchoStub adds wire.StatsProvider (WireStats()) on top of
+// echoStubDialer's wire.Dialer + wire.EchoProber, so TransportManager.
+// WireStats() takes the "quic" branch and calls RecordQUICStats — the exact
+// production path the N1 fix relies on. Test-only.
+type statsEchoStub struct {
+	echoStubDialer
+	stats wire.WireStats
+}
+
+func (s *statsEchoStub) WireStats() wire.WireStats {
+	return s.stats
+}
+
+func TestSample_FeedsQUICQualityForEveryOutboundNotJustPrimary(t *testing.T) {
+	// N1 regression: before this fix, healthMonitor.sample() only ever
+	// called WireStats() on hm.primaryTM, so a secondary outbound's
+	// scoreQUIC.quality never initialized — permanently neutral 0.5 —
+	// capping ScoreQUIC at avail×0.5 ≤ 0.5 forever, always below
+	// echoBackupProbeThreshold (0.7). Two consequences on any multi-outbound
+	// config: (a) probeBackupOnce permanently stuck in the degraded 5s
+	// branch, and (b) once a couple of real (healthy) tcpws backup probes
+	// land, wire's selectorStep quality path (scoreTCPWS > scoreQUIC×1.5,
+	// sustained, backupFresh≥2) trips a false switch-away on a perfectly
+	// healthy secondary QUIC outbound.
+	//
+	// This drives the real hm.sample() (not a hand-rolled WireStats call)
+	// so a regression in the sampler loop itself is what this test is
+	// sensitive to — see the mutation evidence in the fix-round-2 report
+	// section (revert to primaryTM-only sampling → RED).
+	healthyStats := wire.WireStats{
+		Transport:      "quic",
+		PacketLossRate: 0,
+		RTT:            50 * time.Millisecond,
+		MinRTT:         50 * time.Millisecond,
+	}
+
+	primaryStub := &statsEchoStub{stats: healthyStats}
+	primaryStub.setFn(func(ctx context.Context) error { return nil })
+	primaryTM := wire.NewTransportManager()
+	primaryTM.SetPrimary(primaryStub, "quic-443")
+	primaryOT := &outboundTransport{tm: primaryTM, name: "t-primary"}
+
+	secondaryStub := &statsEchoStub{stats: healthyStats}
+	secondaryStub.setFn(func(ctx context.Context) error { return nil })
+	secondaryTM := wire.NewTransportManager()
+	secondaryTM.SetPrimary(secondaryStub, "quic-443")
+	secondaryOT := &outboundTransport{tm: secondaryTM, name: "t-secondary"}
+
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	secondaryTM.SetTCPWS(backup)
+
+	// ScoreQUIC = availability × quality. Availability comes from dial/echo
+	// outcomes (recordDialOutcome / RecordEchoResult), not from WireStats —
+	// every connected outbound necessarily had a successful primary dial, so
+	// simulate that here. This test is about the QUALITY component (N1's
+	// bug), not availability, so priming it directly keeps the test focused.
+	primaryTM.RecordEchoResult("quic", 0, nil, time.Now())
+	secondaryTM.RecordEchoResult("quic", 0, nil, time.Now())
+
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+	hm := newHealthMonitor(primaryOT, []*outboundTransport{primaryOT, secondaryOT}, tunnel, nil, nil, time.Now())
+
+	// Drive a few real sample() ticks directly (no ticker/goroutine needed —
+	// sample() uses time.Now() internally, which is fine: we only need
+	// scoreQUIC's quality component to prime, not to control exact timing).
+	for range 3 {
+		hm.sample()
+	}
+
+	now := time.Now()
+	if got := secondaryOT.tm.ScoreQUIC(now); got < echoBackupProbeThreshold {
+		t.Fatalf("N1 regression: secondary outbound's ScoreQUIC never primed by sample(), got %v (want >= %v) — quality stuck neutral because only primaryTM was ever sampled", got, echoBackupProbeThreshold)
+	}
+
+	// (a) backup cadence must land in the healthy 60s branch, not stuck
+	// degraded forever. Fix-round-3 caps probeBackupOnce's return value at
+	// backupProbeIntervalDegraded even on the healthy path (that's the WAKE
+	// cadence — see probeBackupOnce's doc), so the healthy/degraded
+	// distinction is no longer visible in the return value directly; check
+	// the real PROBE gate instead — a call landing exactly where the
+	// degraded 5s cadence would have re-probed must NOT re-probe.
+	st := &backupLoopState{}
+	if wake := hm.probeBackupOnce(secondaryOT, st, now); wake > backupProbeIntervalDegraded {
+		t.Fatalf("N1 regression: wake cadence not capped, got %v", wake)
+	}
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("N1 regression: expected 1 probe, got %d", calls)
+	}
+	hm.probeBackupOnce(secondaryOT, st, now.Add(backupProbeIntervalDegraded))
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("N1 regression: secondary re-probed at +%v — real cadence is degraded (5s) not healthy (60s), quality still stuck neutral pre-fix", backupProbeIntervalDegraded)
+	}
+
+	// (b) the hysteresis FSM's quality-path switch-away condition must not
+	// hold: with scoreQUIC primed near 1.0, scoreTCPWS (even if probed and
+	// near its own max of 1.0) can never exceed scoreQUIC×1.5 — the raw
+	// invariant that gates channelSwitchToTCPWS, independent of how long we
+	// wait. 1.5 mirrors wire's private switchAwayRatio (wire/transport.go).
+	const switchAwayRatio = 1.5
+	scoreQUIC := secondaryOT.tm.ScoreQUIC(now)
+	scoreTCPWS := secondaryOT.tm.ScoreTCPWS(now)
+	if scoreTCPWS > scoreQUIC*switchAwayRatio {
+		t.Fatalf("N1 regression: switch-away condition holds (scoreTCPWS=%v > scoreQUIC=%v×%v) — a healthy secondary QUIC outbound would eventually be switched away from", scoreTCPWS, scoreQUIC, switchAwayRatio)
+	}
+
+	secondaryTM.EvaluateSelector(now)
+	if secondaryTM.ActiveChannel() != "quic" {
+		t.Fatalf("N1 regression: secondary outbound's healthy QUIC was switched away from (scoreQUIC=%v, scoreTCPWS=%v)", scoreQUIC, scoreTCPWS)
+	}
+}
+
+func TestBackupProbe_ModeChangeDuringHealthyWaitNoticedQuickly(t *testing.T) {
+	// N2, reopened in fix-round-3: the round-2 fix's pull-in logic (in the
+	// `now.Before(st.nextProbeAt)` waiting branch) was correct in isolation
+	// but UNREACHABLE from production. backupProbeLoop's only wake source is
+	// probeBackupOnce's own previous return value (timer.Reset(next)); round
+	// 2's PROBE path still returned the full healthy interval (60s)
+	// unchanged, so the next wake always landed exactly at (or after) the
+	// freshly-set st.nextProbeAt — now.Before(st.nextProbeAt) was therefore
+	// never true in production, only reachable by a test driving a
+	// synthetic mid-window `now` directly (which is exactly what round 2's
+	// version of this test did — it defended the bug, asserting the t0
+	// return WAS the full 60s). Fix-round-3 caps the probe path's return the
+	// same way the waiting path already was.
+	//
+	// This version walks the timeline the way backupProbeLoop's own timer
+	// actually would: each call's `now` is the PREVIOUS call's own returned
+	// wake duration later — never a synthetic mid-window jump — so a
+	// regression back to "probe path returns the uncapped interval" is
+	// caught by the very first assertion below, not by the timeline walk.
+	ot, _ := newEchoTransport("t-quic-mode-change", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+
+	t0 := time.Now()
+	ot.tm.RecordEchoResult("quic", 0, nil, t0)
+	ot.tm.RecordQUICStats(wire.WireStats{PacketLossRate: 0, RTT: 50 * time.Millisecond, MinRTT: 50 * time.Millisecond}, t0)
+	if got := ot.tm.ScoreQUIC(t0); got < echoBackupProbeThreshold {
+		t.Fatalf("setup: expected healthy QUIC score >= %v, got %v", echoBackupProbeThreshold, got)
+	}
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	st := &backupLoopState{}
+
+	// t0: probes (healthy branch). The wake duration returned MUST be
+	// capped at backupProbeIntervalDegraded even here — NOT the full 60s
+	// healthy interval. Returning the uncapped interval is exactly the
+	// round-3 bug: it would make backupProbeLoop's next wake land exactly
+	// on top of nextProbeAt, so the waiting branch (and its pull-in) would
+	// never actually be entered in production.
+	wake := hm.probeBackupOnce(ot, st, t0)
+	if wake > backupProbeIntervalDegraded {
+		t.Fatalf("expected the wake cadence to be capped at %v even in the healthy branch, got %v", backupProbeIntervalDegraded, wake)
+	}
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("expected 1 probe at t0, got %d", calls)
+	}
+
+	// QUIC degrades immediately after the t0 probe — the worst case for
+	// detection latency.
+	degradeAt := t0.Add(time.Millisecond)
+	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, degradeAt)
+	if got := ot.tm.ScoreQUIC(degradeAt); got >= echoBackupProbeThreshold {
+		t.Fatalf("setup: expected degraded QUIC score below %v, got %v", echoBackupProbeThreshold, got)
+	}
+
+	// Walk the timeline exactly the way backupProbeLoop's real timer would:
+	// each wake's `now` is the previous wake's `now` plus that SAME call's
+	// own returned duration.
+	now := t0.Add(wake)
+	var probedAt time.Time
+	for i := 0; i < 20; i++ {
+		w := hm.probeBackupOnce(ot, st, now)
+		if w > backupProbeIntervalDegraded {
+			t.Fatalf("wake #%d (now=t0+%v) returned %v — exceeds the %v mode-check cadence", i, now.Sub(t0), w, backupProbeIntervalDegraded)
+		}
+		if backup.calls.Load() == 2 {
+			probedAt = now
+			break
+		}
+		now = now.Add(w)
+		if now.Sub(t0) >= backupProbeIntervalHealthy {
+			break
+		}
+	}
+
+	if probedAt.IsZero() {
+		t.Fatalf("degraded probe never fired while walking the timeline (stopped at t0+%v)", now.Sub(t0))
+	}
+	// (b) fires within ~5s of degradation — bounded by (wake to notice) +
+	// (wake to actually probe once the gate is pulled in), i.e.
+	// ≤2×backupProbeIntervalDegraded, never at the old 60s boundary.
+	if elapsed := probedAt.Sub(degradeAt); elapsed > 2*backupProbeIntervalDegraded {
+		t.Fatalf("degraded probe fired %v after degradation — worse than the ~%v the mode-check cadence should allow", elapsed, 2*backupProbeIntervalDegraded)
+	}
+	if elapsed := probedAt.Sub(t0); elapsed >= backupProbeIntervalHealthy {
+		t.Fatalf("degraded probe fired at t0+%v — no better than the stale 60s boundary this fix targets", elapsed)
 	}
 }

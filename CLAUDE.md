@@ -56,7 +56,7 @@ All diagnostic logs use `log/slog` (stdlib). The `DIAG:` prefix is reserved for 
 
 - Emitted every 30 seconds from `healthMonitor.sample()`.
 - Fixed prefix: `"DIAG: heartbeat"`.
-- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `dialOk`, `dialFail`, `directOk`, `directFail`, `udpTxDrops`, `udpRxDrops`, `uptimeS`, `fallback`, `heapMB`, `sysMB`, `goroutines`. `udpTxDrops`/`udpRxDrops` are cumulative since connect, not a per-interval delta — diff two heartbeats to get a rate.
+- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `dialOk`, `dialFail`, `directOk`, `directFail`, `udpTxDrops`, `udpRxDrops`, `uptimeS`, `fallback`, `activeChannel`, `scoreQuic`, `scoreTcpws`, `heapMB`, `sysMB`, `goroutines`. `udpTxDrops`/`udpRxDrops` are cumulative since connect, not a per-interval delta — diff two heartbeats to get a rate. `activeChannel`/`scoreQuic`/`scoreTcpws` are the primary outbound's dual-channel quality scoreboard (`wire.TransportManager`, see `wire/CLAUDE.md` transport.go section) — `transport`/`fallback` say which channel is serving traffic *now*; these three add the *why* (each channel's [0,1] quality score) without needing DEBUG.
 - **The four `dial*` fields are per-window deltas, not cumulative** — the opposite convention from `udpTxDrops`, deliberately: their whole purpose is answering "is anything working *right now*", which a running total cannot do without arithmetic across log lines. `dialOk`/`dialFail` count proxied dials, `directOk`/`directFail` direct ones; they are split because a direct-path fault (a socket bound to the wrong interface, ticket #3303) and a proxy-path fault (a node that cannot egress, ticket #3463) are unrelated problems that hide behind each other when summed. **`dialFail` high with `dialOk` at 0 is the signature no other field can show**: `loss` stays 0.000 and `health` stays `healthy` when every request fails at the proxy layer, because the wire itself is fine. All zeros means idle, not healthy — distinguish before concluding.
 - Human-readable sizes (MB) and durations (ms/s).
 - MUST NOT log at 1Hz — only every 30 samples.
@@ -78,7 +78,8 @@ Reserved event names:
 | `DIAG: proxy-dial-fail` | WARN | on error | dest, transport, err |
 | `DIAG: proxy-dial-slow` | INFO | latency > 3s | dest, transport, latencyMs |
 | `DIAG: quic-handshake-fail` | WARN | on handshake error | addr, consecutiveFails, err |
-| `DIAG: transport-switch` | WARN | on QUIC↔TCP-WS transition | from, to, reason |
+| `DIAG: transport-switch` | WARN | on QUIC↔TCP-WS transition (real reasons, see `wire/CLAUDE.md` transport.go: `quic-quality-degraded`/`quic-handshake-threshold` switch-away, `quic-recovered` echo-verified switch-back, `quic-race-lost` tcpws won the initial transport race, `flap-damped` — **not an actual transition**, `from`==`to`=="tcpws", logged when a rollback is blocked purely by the flap-damping window) | from, to, reason |
+| `DIAG: channel-review` | INFO | on each rollback-review evaluation while tcpws is active, rate-limited to at most once per review window (plus one unconditional log the moment the decision is the actual rollback) | activeChannel, scoreQuic, scoreTcpws, flapCount, nextReviewInS, decision (`stay` \| `switch-to-quic` — this event is emitted only from the rollback branch, so there is no `switch-to-tcpws` value; a switch-away shows up as `DIAG: transport-switch` instead) |
 | `DIAG: udp-relay-timeout` | WARN | consecutive > 2 | consecutiveCount, threshold |
 | `DIAG: conn-highwater` | INFO | active > 100 | tcpCount, udpCount |
 | `DIAG: wire-handshake` | INFO | handshake probe ok | handshakeMs, transport |
@@ -232,6 +233,8 @@ wire.SlackAlerter.mu (state, standalone — per-key cooldown map only; the
 
 wire.authHealth.mu (state, standalone — Center-reachability state only;
   SlackAlerter.Fire is called OUTSIDE it, so the two never nest)
+
+wire.ChannelScore.mu (state, standalone — field-only, no nesting; read/written by TransportManager under no other lock)
 
 wire.CookieSigner: rotateMu (serialization, holds across the rotation's file
   write) → CookieSigner.mu (state). Standalone — never acquired while holding
@@ -514,7 +517,7 @@ All optional capability interfaces that upper layers may type-assert on must be 
 | Interface | Package | Implemented by | Asserted by |
 |-----------|---------|----------------|-------------|
 | `StatsProvider` | wire | QUICClient, TCPWSClient | engine (stats collection) |
-| `EchoProber` | wire | QUICClient | engine (echo health probe) |
+| `EchoProber` | wire | QUICClient, TCPWSClient | engine (echo health probe) |
 
 When adding a new optional interface, add it to this table.
 

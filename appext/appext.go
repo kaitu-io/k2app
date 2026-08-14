@@ -186,6 +186,10 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 		Client:           &clientCfg,
 		FileDescriptor:   fd,
 		NetworkExtension: isNetworkExtension,
+		// Mobile radio wake-ups are expensive — rely on protocol keepalive
+		// instead of actively echo-probing the inactive backup transport
+		// (engine/health.go echoProbeLoop, Task 7 dual-transport scoreboard).
+		MobilePowerSaving: true,
 	}
 	if cfg.SocketProtector != nil {
 		p := cfg.SocketProtector

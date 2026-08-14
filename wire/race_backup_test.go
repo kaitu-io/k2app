@@ -188,11 +188,34 @@ func TestContract_QUICBackupFlow(t *testing.T) {
 	quicCalled = false
 	tcpwsCalled = false
 
-	// Simulate what quicProbeLoop does on success.
+	// A bare handshake success (recordQuicSuccess) must NOT clear fallback
+	// on its own (root cause A) — recovery requires echo verification.
 	tm.recordQuicSuccess()
+	if !tm.FallbackActive() {
+		t.Fatal("Phase 2: fallback must stay active after a bare handshake success (echo not verified)")
+	}
 
+	// Simulate the background probe's echo-verified recovery (runProbeOnce):
+	// 3 passing echo rounds mark quicEchoRecovered, then evaluateSelector —
+	// past the flap-damping review window opened by the race-lost install
+	// above — applies the switch back to QUIC. Deliberately NO score
+	// compensation here: Phase 1 already nudged scoreTCPWS off-neutral with
+	// one real success (tcpws is "healthy-ish", not cold), and rollback is
+	// echo-gated only (spec §3.2) — a score-ratio gate would be unreachable
+	// against a healthy tcpws and strand users on the stateful fallback
+	// forever. See TestRollback_FiresWhenTCPWSHealthyAndQUICEchoVerified for
+	// the dedicated regression pinning this against a fully healthy tcpws.
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		tm.RecordEchoResult("quic", 20*time.Millisecond, nil, now)
+	}
+	tm.quicEchoRecovered.Store(true)
+
+	if got := tm.evaluateSelector(now.Add(flapWindowBase + time.Second)); got != channelSwitchToQUIC {
+		t.Fatalf("evaluateSelector = %v, want channelSwitchToQUIC", got)
+	}
 	if tm.FallbackActive() {
-		t.Fatal("Phase 2: fallback should be cleared after QUIC recovery")
+		t.Fatal("Phase 2: fallback should be cleared after echo-verified QUIC recovery")
 	}
 
 	// WireStats should now report QUIC.

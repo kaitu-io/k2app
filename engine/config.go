@@ -87,6 +87,14 @@ type Config struct {
 	// DNS middleware for provider port-53 flows and forwards raw queries to
 	// this upstream through the rule engine (multi-slot gateway mode).
 	DNSForwardUpstream string
+
+	// MobilePowerSaving disables echoProbeLoop's active backup-channel echo
+	// probing (Task 7 dual-transport scoreboard): mobile relies on protocol
+	// keepalive instead of spending radio wake-ups probing the currently
+	// inactive transport. The primary channel's own re-race echo probing is
+	// unaffected — this only gates the opportunistic backup probe. Desktop
+	// (daemon) passes false; appext (mobile) passes true. Default false.
+	MobilePowerSaving bool
 }
 
 // OutboundProvider supplies replacement k2v5:// URLs when an existing
