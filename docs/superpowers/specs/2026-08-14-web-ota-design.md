@@ -26,7 +26,7 @@
 - **桌面 Tauri 无热更能力**：`frontendDist: "../../webapp/dist"` 打进 bundle，默认 `tauri://localhost`（macOS）/ `http://tauri.localhost`（Windows）协议。已有自定义协议先例（`icon_protocol.rs`）、minisign updater 基础设施（`updater.rs` + `channel.rs` 双通道）。
 - **Linux**：`k2/webui/embed.go` go:embed 死绑二进制；`serve.go NewWebappHandler` 结构清晰可加磁盘覆盖。k2 是只读 submodule，改动须走 k2 仓库。
 - **单一真理源已成立**：`webapp/src/main.tsx:91-114` 运行时检测宿主，动态 import 对应 bridge，一份 dist 通吃；品牌构建期烘焙（`__K2_BRAND__`），两品牌各出一份产物。
-- **桌面存储风险**：webapp 的 `secure-storage.ts` / `plain-storage.ts` 全部落 localStorage。换加载协议 = 换 origin = 桌面全量用户静默登出（见 §5.2 迁移设计）。
+- **桌面存储事实**（实现阶段核实修正）：桌面的 auth token / UDID 走 `_platform.storage` → Rust 侧 `storage.json`，**与 origin 无关**；localStorage 里只有偏好项（`kaitu-language`、`k2_log_level`、`k2_developer_mode`、`kaitu_cache:*`、公告已读、拖拽位置）。换加载协议不会登出用户，§5.2 的迁移仅为偏好连续性（低风险）。
 - 契约：webapp 只通过 `window._k2` / `window._platform` 访问 native；Capacitor 侧约 30 个具名方法（`mobile/plugins/k2-plugin/src/definitions.ts`）是兼容风险的集中点。
 
 ## 3. 总体架构
@@ -58,7 +58,7 @@ git push main (webapp/** 变更)
 ```json
 {
   "version": "0.4.8.1234",
-  "url": "web/0.4.8.1234/web.zip",
+  "url": "0.4.8.1234/web.zip",
   "hash": "sha256:<hex>",
   "size": 1234567,
   "released_at": "2026-08-14T12:00:00Z",
@@ -71,8 +71,9 @@ git push main (webapp/** 变更)
 }
 ```
 
+- `url`：**相对 manifest 自身所在目录**解析（线上移动 native `resolveDownloadURL` 的既成语义，`K2PluginUtils.kt:83` / `K2Plugin.swift:1197`——不可改）。beta manifest 位于 `web/beta/latest.json`，故 CI 须把 zip 同步复制到 `web/beta/{version}/web.zip` 使同一相对形式两处可解析。
 - `min_native`：存量移动闸门，CI 自动推导（§4），不再人工填写。
-- `sig`：web.zip 的 minisign 签名，密钥**复用 Tauri updater 现有密钥对**（`tauri.conf.json` pubkey / CI secret 私钥），不引入新密钥。
+- `sig`：web.zip 的 minisign 签名，格式 = **base64(整个 .minisig 文件内容)**（标准 minisign prehashed "ED"：Ed25519 over BLAKE2b-512(file)，与现有 `release-desktop.yml` 签 Linux tarball 的方式同源）。密钥**复用 Tauri updater 现有密钥对**（`tauri.conf.json` pubkey / CI secret `TAURI_SIGNING_PRIVATE_KEY`，两品牌共用一把），不引入新密钥。
 - `min_desktop` / `min_linux`：新消费者的壳版本闸门。
 - 旧移动 native 忽略未知字段（additive JSON，安全）。
 
@@ -125,16 +126,16 @@ git push main (webapp/** 变更)
 - 下载到 `web-ota/pending/` → sha256 + minisign（强制）→ 解压 → 校验 index.html → 原子 rename：`current → previous`、`pending → current`。
 - **启动回滚**：加载磁盘 UI 前写 `.boot-pending` 标记；webapp 启动成功后调用新 Tauri command `ui_boot_ok` 清除（`tauri-k2.ts` 初始化时调用，try/catch 兼容旧壳）。下次启动若标记仍在 → 判定上次白屏 → `current` 移入 `quarantine/`，回退 `previous/` 或内嵌资源。
 
-**origin 迁移（关键风险点）**：换协议 = 换 origin，localStorage（含加密 auth 存储）会全部丢失 → 桌面全量静默登出。缓解设计（随引入 web-ota 能力的那一次桌面发版一并完成，一次性）：
+**origin 迁移（低风险，偏好连续性）**：换协议 = 换 origin，localStorage 会清空。核实后确认桌面 auth/UDID 在 Rust 侧 `storage.json`（origin 无关），localStorage 仅偏好项（语言、日志级别、公告已读等）——迁移失败最坏结果是偏好重置，**不会登出**。迁移设计保留（随引入 web-ota 能力的那一次桌面发版一并完成，一次性）：
 
 1. 新增 Rust command `storage_migration_put(json)` / `storage_migration_get()` / `storage_migration_clear()` / `storage_migration_done()`（数据落 app data 目录文件）。
 2. Rust 启动时查 `storage-migrated` 标志：未迁移 → 主窗口先加载**旧 origin** 的内嵌 UI 并带 `?migrate=export`；bundled webapp 检测该参数，dump 全部 localStorage 调 `storage_migration_put`，完成后调 `storage_migration_done` → Rust 置标志并 navigate 到 `kaitu-ui://`。
 3. 新 origin webapp 启动时：localStorage 为空且 `storage_migration_get` 有数据 → 导入 → `storage_migration_clear`。
-4. 失败兜底：迁移任何一步失败 → 直接进新 origin（用户重新登录，功能无损）。迁移代码在下一个大版本移除。
+4. 失败兜底：迁移任何一步失败 → 直接进新 origin（偏好重置，登录态无损）。迁移代码在下一个大版本移除。
 
 ### 5.3 Linux（k2 submodule，独立仓库工作）
 
-- `k2/webui/serve.go`：`NewWebappHandler` 增加 override 目录参数（`<dataDir>/web-ota/current`），目录存在且含 index.html → 从磁盘 serve（保持现有 SPA fallback / `__K2_GATEWAY__` 注入 / 缓存头逻辑），否则 embed。
+- `k2/webui/serve.go`：`NewWebappHandler` 增加 override 目录参数（`/etc/kaitu/web-ota/current`——锚定 `daemon/webui_linux.go` 现有 `webuiStateDir` 常量，非 config 包），目录存在且含 index.html → 从磁盘 serve（保持现有 SPA fallback / `__K2_GATEWAY__` 注入 / 缓存头逻辑），否则 embed。
 - 新 `k2/webui/webota.go`：镜像 `Upgrader` 模式的轮询器——拉 `{CDN}/kaitu/web/latest.json`（端点列表沿用 `daemon/webui_linux.go` 的双域名模式，路径改 `/kaitu/web`），闸门 `min_linux` / `min_bridge`，sha256 + minisign（Go 侧用 `aead/minisign`）校验，解压 pending → 原子 swap。
 - **生效语义**：server 侧 swap 后新页面加载即新 UI（比"下次启动"更快，可接受）；无 `.boot-pending`（没有 app 启动概念）。
 - **应急逃生口**：`?ui=embedded` query 参数强制本次会话 serve 内嵌 UI（支持排障）；坏 bundle 的正式回滚 = manifest revert 重发。
@@ -173,10 +174,11 @@ git push main (webapp/** 变更)
 
 存量移动 native 一直在轮询 manifest，**首次发布即触达全量移动用户**，顺序必须严格：
 
-1. 落地契约守卫 + `BRIDGE_API_VERSION=1`，映射表锚定 `native: <当前线上最老受支持的、包含全部现用 bridge 方法的版本>`（须从 git 历史核实 `definitions.ts` 现有方法集合的最早完整版本，宁高勿低）。
-2. 首个 OTA bundle 内容 = 与当前线上 native 兼容的 main 头（冒烟门通过）。
-3. **先发 beta 通道**，在真机（iOS + Android，新旧两个 native 版本）UAT 验证下载/校验/切换/回滚全链路。
-4. 再发 stable。桌面/Linux 能力随各自下一次壳发版上线，不阻塞移动端先行。
+1. 落地契约守卫 + `BRIDGE_API_VERSION=1`，映射表锚定 `native: 0.4.8`（实现阶段已从 git 历史核实：`definitions.ts` 完整方法集含 `updateConfig` 首见于 v0.4.8，commit `5086d1f1`）。
+2. **已知时间线约束**：线上移动 manifest 仍是 0.4.7，`min_native=0.4.8` 的首个 OTA 会被在网 0.4.7 存量 native 正确跳过——热更触达面随 0.4.8 移动端发版铺开，这是闸门的预期行为而非故障。
+3. 首个 OTA bundle 内容 = 与当前线上 native 兼容的 main 头（冒烟门通过）。
+4. **先发 beta 通道**，在真机（iOS + Android，新旧两个 native 版本）UAT 验证下载/校验/切换/回滚全链路。注意：iOS native 现状缺 update channel 支持（`getUpdateChannel`/`setUpdateChannel` 未实现、web manifest 端点硬编码 stable）——iOS 的 beta-first UAT 依赖 pipeline 计划 Task 10 补齐并随 native 发版到位；在此之前 iOS 侧用 Android beta 结果 + iOS stable 灰观察替代。
+5. 再发 stable。桌面/Linux 能力随各自下一次壳发版上线，不阻塞移动端先行。
 
 ## 9. 测试策略
 
@@ -184,14 +186,14 @@ git push main (webapp/** 变更)
 - **契约门**：bridge 方法表快照 golden（`-count=1` 同款纪律：golden 只读、进 git）。
 - **冒烟门**：CI 每次发布前的 headless 白屏检测（§6 步骤 4）。
 - **变异验证**（`feedback_green_test_may_never_reach_its_target`）：契约守卫写完后，手动往 `definitions.ts` 加一个方法不 bump 版本，确认测试真的红；冒烟门用一个故意抛错的 index.html 确认真的拦。
-- **UAT 矩阵**：iOS/Android 真机（新旧 native × 首次应用/增量更新/坏包回滚）、macOS/Windows（含 origin 迁移前后登录态保持）、Linux（磁盘覆盖 + 逃生口）。桌面/移动 bugfix 无真机 smoke 信心封顶 6-7（release confidence framework）。
+- **UAT 矩阵**：iOS/Android 真机（新旧 native × 首次应用/增量更新/坏包回滚）、macOS/Windows（origin 迁移前后偏好保持 + 登录态回归验证）、Linux（磁盘覆盖 + 逃生口）。桌面/移动 bugfix 无真机 smoke 信心封顶 6-7（release confidence framework）。
 
 ## 10. 风险登记
 
 | 风险 | 缓解 |
 |---|---|
 | 存量移动 native 只验 sha256，CDN 被攻破可注入 UI | HTTPS + 新壳强制 minisign；接受残余风险并记录 |
-| 桌面 origin 迁移失败 → 用户登出 | 迁移失败兜底为重新登录（功能无损）；UAT 覆盖迁移路径 |
+| 桌面 origin 迁移失败 → 偏好重置（核实后确认不会登出，auth 在 Rust storage.json） | 迁移失败兜底为直接进新 origin；UAT 覆盖迁移路径 |
 | iOS 3.3.2 审核风险（热更显著改变功能） | 用户已知情选择激进模式；bundle 不改变 app 宣称用途；保留随时停发能力（核按钮） |
 | main 每次 merge 直达全量用户 | 白屏冒烟门 + 契约守卫为强制闸；重大改版可先 dispatch 到 beta |
 | bridge 守卫盲区：行为变更不改方法签名 | 诚实记录：守卫只覆盖方法表增删，语义变更仍靠 review + bump 纪律 |
