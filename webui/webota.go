@@ -4,12 +4,14 @@ package webui
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +19,8 @@ import (
 	"time"
 
 	"aead.dev/minisign"
+
+	"github.com/kaitu-io/k2/safego"
 )
 
 // LinuxBridgeVersion is the bridge API version compiled into this shell,
@@ -340,4 +344,47 @@ func (o *WebOTA) swap(pending string) error {
 		return fmt.Errorf("promote pending: %w", err)
 	}
 	return nil
+}
+
+// checkOnce runs one poll cycle: manifest → gates → apply.
+func (o *WebOTA) checkOnce() error {
+	m, endpoint, err := o.fetchManifest()
+	if err != nil {
+		return err
+	}
+	ok, reason := o.shouldApply(m)
+	if !ok {
+		slog.Debug("webui: web OTA skipped", "remote", m.Version, "local", o.localVersion(), "reason", reason)
+		return nil
+	}
+	from := o.localVersion()
+	if err := o.apply(m, endpoint); err != nil {
+		return fmt.Errorf("apply %s: %w", m.Version, err)
+	}
+	slog.Info("DIAG: webota-applied", "from", from, "to", m.Version)
+	return nil
+}
+
+// Start launches the polling loop and returns immediately. The loop
+// waits cfg.InitialDelay, then polls every cfg.Interval until ctx is
+// cancelled. A failed cycle logs once (30-min cadence keeps DIAG volume
+// bounded) and retries on the next tick.
+func (o *WebOTA) Start(ctx context.Context) {
+	safego.Go(func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(o.cfg.InitialDelay):
+		}
+		for {
+			if err := o.checkOnce(); err != nil {
+				slog.Warn("DIAG: webota-fail", "err", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(o.cfg.Interval):
+			}
+		}
+	})
 }

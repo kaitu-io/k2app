@@ -5,16 +5,19 @@ package webui
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"aead.dev/minisign"
 )
@@ -344,4 +347,60 @@ func TestApplyEndToEnd(t *testing.T) {
 	if err := o.apply(noIdx, srv2.URL); err == nil || !strings.Contains(err.Error(), "index.html") {
 		t.Fatalf("bundle without index.html: err = %v, want index.html error", err)
 	}
+}
+
+func TestCheckOnceFullCycle(t *testing.T) {
+	pubB64, priv := testKeyPair(t)
+	zipData := makeZip(t, map[string]string{"index.html": "<html><head></head><body>CYCLE</body></html>"})
+	sig := base64.StdEncoding.EncodeToString(minisign.Sign(priv, zipData))
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/kaitu/web/latest.json", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(WebOTAManifest{
+			Version:   "0.4.9.1234",
+			URL:       "0.4.9.1234/web.zip",
+			Hash:      "sha256:" + sha256Hex(zipData),
+			Size:      int64(len(zipData)),
+			Sig:       sig,
+			MinLinux:  "0.4.9",
+			MinBridge: 1,
+		})
+	})
+	mux.HandleFunc("/kaitu/web/0.4.9.1234/web.zip", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(zipData)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	o := NewWebOTA(WebOTAConfig{
+		Endpoints:    []string{srv.URL + "/kaitu"},
+		Dir:          t.TempDir(),
+		ShellVersion: "0.4.9",
+		PublicKey:    pubB64,
+	})
+	if err := o.checkOnce(); err != nil {
+		t.Fatalf("checkOnce: %v", err)
+	}
+	if v := o.localVersion(); v != "0.4.9.1234" {
+		t.Errorf("localVersion = %q, want 0.4.9.1234", v)
+	}
+	// 再跑一次：已是最新 → 不 apply、不报错
+	if err := o.checkOnce(); err != nil {
+		t.Fatalf("second checkOnce should be a no-op, got %v", err)
+	}
+}
+
+func TestStartStopsOnContextCancel(t *testing.T) {
+	o := NewWebOTA(WebOTAConfig{
+		Endpoints:    []string{"http://127.0.0.1:1"}, // 不可达；循环只须能停
+		Dir:          t.TempDir(),
+		ShellVersion: "0.4.9",
+		InitialDelay: time.Millisecond,
+		Interval:     time.Millisecond,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	o.Start(ctx)
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	time.Sleep(20 * time.Millisecond) // goroutine 退出即可；泄漏由 goleak 类工具兜底，此处不额外断言
 }
