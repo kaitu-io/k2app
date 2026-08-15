@@ -1,0 +1,3 @@
+# The apernet/quic-go fork is materialized by scripts/fork-quic-go.sh, not
+# committed: 4.2 MB / 452 files of upstream source. patches/ is the artifact.
+.fork/
