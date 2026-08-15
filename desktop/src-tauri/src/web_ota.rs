@@ -11,6 +11,7 @@
 use std::path::PathBuf;
 
 use chrono;
+use tauri::Manager;
 
 /// Compile-time bridge API version of this shell. Bumped in lockstep with the
 /// webapp's BRIDGE_API_VERSION (guarded by the contract-guard plan; this file
@@ -313,6 +314,125 @@ pub fn resolve_download_url(url: &str, download_base: &str) -> String {
         download_base.trim_end_matches('/'),
         url.trim_start_matches('/')
     )
+}
+
+/// Check interval mirrors updater.rs: 5s initial, 30min periodic.
+const INITIAL_DELAY_SECS: u64 = 5;
+const CHECK_INTERVAL_SECS: u64 = 30 * 60;
+
+/// Extract the updater minisign pubkey from the plugins config map.
+/// Pure — the AppHandle call site passes app.config().plugins.0
+/// (tauri_utils::config::PluginConfig is a pub HashMap newtype).
+pub fn updater_pubkey_from(
+    plugins: &std::collections::HashMap<String, serde_json::Value>,
+) -> Option<String> {
+    plugins
+        .get("updater")?
+        .get("pubkey")?
+        .as_str()
+        .map(|s| s.to_string())
+}
+
+fn updater_pubkey(app: &tauri::AppHandle) -> Option<String> {
+    updater_pubkey_from(&app.config().plugins.0)
+}
+
+/// The web-ota state dir for this app: {app_data_dir}/web-ota.
+pub fn ota_dirs(app: &tauri::AppHandle) -> Option<OtaDirs> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| OtaDirs::new(d.join("web-ota")))
+}
+
+enum Outcome {
+    Applied(String),
+    Gated(&'static str),
+}
+
+/// Start the Web-OTA poller. No-op in debug builds (dev uses Vite devUrl).
+pub fn start_web_ota_updater(app: tauri::AppHandle) {
+    if cfg!(debug_assertions) {
+        log::info!("[web-ota] debug build — poller disabled");
+        return;
+    }
+    log::info!(
+        "[web-ota] starting poller (initial={INITIAL_DELAY_SECS}s, interval={CHECK_INTERVAL_SECS}s)"
+    );
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(INITIAL_DELAY_SECS)).await;
+        loop {
+            check_and_apply(&app).await;
+            tokio::time::sleep(std::time::Duration::from_secs(CHECK_INTERVAL_SECS)).await;
+        }
+    });
+}
+
+async fn check_and_apply(app: &tauri::AppHandle) {
+    let Some(dirs) = ota_dirs(app) else {
+        return;
+    };
+    let Some(pubkey) = updater_pubkey(app) else {
+        log::error!("[web-ota] updater pubkey missing from config — refusing unsigned OTA");
+        return;
+    };
+    let ch = crate::channel::get_channel(app);
+    let app_version = app.package_info().version.to_string();
+    let local = local_ui_version(&dirs, &app_version);
+    let sources = crate::channel::ota_sources_for(&ch, std::env::var("K2_WEB_OTA_BASE").ok());
+    for source in sources {
+        match try_source(&source, &dirs, &app_version, &local, &pubkey).await {
+            Ok(Outcome::Applied(v)) => {
+                log::info!("[web-ota] applied UI {v} (was {local}), effective next launch");
+                return;
+            }
+            Ok(Outcome::Gated(reason)) => {
+                log::debug!("[web-ota] no update: {reason}");
+                return; // first reachable manifest decides; other CDN is availability fallback only
+            }
+            Err(e) => log::warn!("[web-ota] source {} failed: {e}", source.manifest_url),
+        }
+    }
+}
+
+async fn try_source(
+    source: &crate::channel::WebOtaSource,
+    dirs: &OtaDirs,
+    app_version: &str,
+    local: &str,
+    pubkey: &str,
+) -> Result<Outcome, String> {
+    let resp = reqwest::get(&source.manifest_url)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    let manifest: WebManifest = resp.json().await.map_err(|e| format!("manifest parse: {e}"))?;
+    match evaluate_manifest(&manifest, app_version, DESKTOP_BRIDGE_VERSION, local) {
+        Gate::Skip(reason) => Ok(Outcome::Gated(reason)),
+        Gate::Apply => {
+            let url = resolve_download_url(&manifest.url, &source.download_base);
+            log::info!("[web-ota] downloading UI {} from {url}", manifest.version);
+            let bytes = reqwest::get(&url)
+                .await
+                .map_err(|e| e.to_string())?
+                .bytes()
+                .await
+                .map_err(|e| e.to_string())?;
+            verify_sha256(&bytes, &manifest.hash)?;
+            verify_minisign(&bytes, manifest.sig.as_deref().unwrap_or_default(), pubkey)?;
+            let pending = dirs.pending();
+            if pending.exists() {
+                std::fs::remove_dir_all(&pending).map_err(|e| format!("clear pending: {e}"))?;
+            }
+            extract_zip_to(&bytes, &pending)?;
+            std::fs::write(pending.join("version.txt"), &manifest.version)
+                .map_err(|e| format!("write version.txt: {e}"))?;
+            apply_pending(dirs)?;
+            Ok(Outcome::Applied(manifest.version.clone()))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -691,6 +811,21 @@ mod tests {
     fn extract_zip_rejects_corrupt_data() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(extract_zip_to(b"definitely not a zip", &tmp.path().join("p")).is_err());
+    }
+
+    #[test]
+    fn updater_pubkey_extraction() {
+        use std::collections::HashMap;
+        let mut plugins: HashMap<String, serde_json::Value> = HashMap::new();
+        plugins.insert(
+            "updater".to_string(),
+            serde_json::json!({ "endpoints": ["https://x/latest.json"], "pubkey": "BASE64KEY" }),
+        );
+        assert_eq!(updater_pubkey_from(&plugins).as_deref(), Some("BASE64KEY"));
+        assert_eq!(updater_pubkey_from(&HashMap::new()), None);
+        let mut bad: HashMap<String, serde_json::Value> = HashMap::new();
+        bad.insert("updater".to_string(), serde_json::json!({ "pubkey": 42 }));
+        assert_eq!(updater_pubkey_from(&bad), None);
     }
 
     #[test]
