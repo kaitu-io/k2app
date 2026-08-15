@@ -1,23 +1,29 @@
 name: Publish Web OTA
 
 # Web OTA publish pipeline (spec: docs/superpowers/specs/2026-08-14-web-ota-design.md §6).
-#   push to main touching webapp/** or the bridge-version map → stable, fully automatic
+# Three entry points:
+#   push tag webapp/x.y.z → stable, fully automatic (tag version must match package.json)
+#   workflow_call → invoked by app-release workflows to piggyback a web OTA publish on
+#     an app release; caller passes `channel` (default stable) and `secrets: inherit`
 #   workflow_dispatch → republish any ref (emergency rollback via ref=<known-good sha>)
-#     and/or target the beta channel (bootstrap §8 does beta first).
+#     and/or target the beta channel (bootstrap §8 does beta first)
 # Stable publishes update BOTH channel manifests; artifacts always also land in the
 # beta dir so the manifest's relative url ({version}/web.zip) resolves on either
 # channel — same superset semantics as scripts/publish-mobile.sh.
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'webapp/**'
-      - 'contracts/bridge-versions.json'
+    tags: ['webapp/*']
+  workflow_call:
+    inputs:
+      channel:
+        description: 'Release channel'
+        type: string
+        default: 'stable'
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Commit SHA / branch to build and publish (emergency republish)'
+        description: 'Commit SHA / branch to build and publish (emergency republish / rollback)'
         required: false
         default: 'main'
       channel:
@@ -25,10 +31,6 @@ on:
         type: choice
         options: [stable, beta]
         default: stable
-
-concurrency:
-  group: publish-web-ota
-  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -42,13 +44,24 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: publish-web-ota
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
-          # Full history: git rev-list --count HEAD is the version's 4th segment.
-          fetch-depth: 0
+
+      - name: Validate webapp tag against package.json
+        if: startsWith(github.ref, 'refs/tags/webapp/')
+        run: |
+          TAG_VER="${GITHUB_REF_NAME#webapp/}"
+          PKG_VER="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VER" != "$PKG_VER" ]; then
+            echo "::error::tag webapp/${TAG_VER} does not match package.json version ${PKG_VER} — package.json is the version source of truth; bump it or retag"
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -138,7 +151,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION='${{ steps.ver.outputs.version }}'
-          CHANNEL='${{ github.event_name == 'workflow_dispatch' && github.event.inputs.channel || 'stable' }}'
+          CHANNEL='${{ inputs.channel || 'stable' }}'
           echo "Publishing v$VERSION to channel: $CHANNEL"
           for BRAND in kaitu overleap; do
             BASE="s3://d0.all7.cc/${BRAND}/web"
