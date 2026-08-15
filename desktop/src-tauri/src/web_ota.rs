@@ -301,6 +301,20 @@ pub fn extract_zip_to(data: &[u8], dest: &std::path::Path) -> Result<(), String>
     Ok(())
 }
 
+/// Resolve a manifest `url` field: absolute http(s) passes through, otherwise
+/// join onto the source's download base — the manifest's own directory
+/// (mirrors K2PluginUtils.resolveDownloadURL + fetchManifest's baseURL).
+pub fn resolve_download_url(url: &str, download_base: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return url.to_string();
+    }
+    format!(
+        "{}/{}",
+        download_base.trim_end_matches('/'),
+        url.trim_start_matches('/')
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -677,5 +691,29 @@ mod tests {
     fn extract_zip_rejects_corrupt_data() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(extract_zip_to(b"definitely not a zip", &tmp.path().join("p")).is_err());
+    }
+
+    #[test]
+    fn resolve_download_url_relative_and_absolute() {
+        // url is manifest-directory-relative: "{version}/web.zip" (contract table)
+        assert_eq!(
+            resolve_download_url("0.4.9.1300/web.zip", "https://d0.all7.cc/kaitu/web"),
+            "https://d0.all7.cc/kaitu/web/0.4.9.1300/web.zip"
+        );
+        assert_eq!(
+            resolve_download_url("0.4.9.1300/web.zip", "https://d0.all7.cc/kaitu/web/beta"),
+            "https://d0.all7.cc/kaitu/web/beta/0.4.9.1300/web.zip"
+        );
+        assert_eq!(
+            resolve_download_url("/x.zip", "https://d0.all7.cc/kaitu/web/"),
+            "https://d0.all7.cc/kaitu/web/x.zip"
+        );
+        assert_eq!(
+            resolve_download_url(
+                "https://elsewhere.example/web.zip",
+                "https://d0.all7.cc/kaitu/web"
+            ),
+            "https://elsewhere.example/web.zip"
+        );
     }
 }
