@@ -6,6 +6,9 @@
 // The scheme name is a brand-neutral internal token (kaitu-icon:// precedent).
 
 use std::path::{Path, PathBuf};
+use tauri::http::Response;
+use tauri::{Manager, UriSchemeContext, Wry};
+use crate::web_ota;
 
 pub const UI_SCHEME: &str = "kaitu-ui";
 
@@ -83,6 +86,72 @@ pub fn resolve_disk_file(root: &Path, url_path: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn ok_response(bytes: Vec<u8>, mime: &str, cache: &str) -> Response<Vec<u8>> {
+    Response::builder()
+        .status(200)
+        .header("Content-Type", mime)
+        .header("Cache-Control", cache)
+        .body(bytes)
+        .unwrap_or_else(|_| not_found())
+}
+
+fn not_found() -> Response<Vec<u8>> {
+    Response::builder()
+        .status(404)
+        .body(Vec::new())
+        .expect("static 404 response should always build")
+}
+
+/// kaitu-ui:// handler. Disk (web-ota current bundle) wins; embedded assets
+/// via asset_resolver otherwise. A valid disk bundle must be self-consistent —
+/// asset misses under a disk root 404 rather than mixing in embedded files.
+pub fn handle_kaitu_ui(
+    ctx: UriSchemeContext<'_, Wry>,
+    request: tauri::http::Request<Vec<u8>>,
+) -> Response<Vec<u8>> {
+    let path = request.uri().path().to_string();
+    let app = ctx.app_handle();
+
+    // 1) On-disk OTA bundle
+    if let Some(dirs) = web_ota::ota_dirs(app) {
+        if let Some(root) = web_ota::serve_root(&dirs) {
+            return match resolve_disk_file(&root, &path) {
+                Some(file) => match std::fs::read(&file) {
+                    Ok(bytes) => {
+                        let mime = mime_for_path(&file.to_string_lossy());
+                        ok_response(bytes, mime, cache_control_for(mime))
+                    }
+                    Err(e) => {
+                        log::warn!("[kaitu-ui] read {} failed: {e}", file.display());
+                        not_found()
+                    }
+                },
+                None => not_found(),
+            };
+        }
+    }
+
+    // 2) Embedded assets (fresh install / rolled back to embedded)
+    let resolver = app.asset_resolver();
+    let asset_path = if path == "/" || path.is_empty() {
+        "/index.html".to_string()
+    } else {
+        path.clone()
+    };
+    if let Some(asset) = resolver.get(asset_path) {
+        let mime = asset.mime_type.clone();
+        let cache = cache_control_for(&mime);
+        return ok_response(asset.bytes, &mime, cache);
+    }
+    // SPA fallback for extensionless routes
+    if Path::new(&path).extension().is_none() {
+        if let Some(asset) = resolver.get("/index.html".to_string()) {
+            return ok_response(asset.bytes, "text/html", "no-cache");
+        }
+    }
+    not_found()
 }
 
 #[cfg(test)]
@@ -168,5 +237,20 @@ mod tests {
             resolve_disk_file(tmp.path(), "/has%20space.txt"),
             Some(tmp.path().join("has space.txt"))
         );
+    }
+
+    #[test]
+    fn ok_response_sets_headers() {
+        let resp = ok_response(b"<html></html>".to_vec(), "text/html", "no-cache");
+        assert_eq!(resp.status(), 200);
+        assert_eq!(resp.headers().get("Content-Type").unwrap(), "text/html");
+        assert_eq!(resp.headers().get("Cache-Control").unwrap(), "no-cache");
+    }
+
+    #[test]
+    fn not_found_is_empty_404() {
+        let resp = not_found();
+        assert_eq!(resp.status(), 404);
+        assert!(resp.body().is_empty());
     }
 }
