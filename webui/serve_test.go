@@ -231,6 +231,24 @@ func TestOverrideDirAbsentServesEmbedded(t *testing.T) {
 	}
 }
 
+func TestOverrideAssetTraversalRejected(t *testing.T) {
+	fakeEmbed(t)
+	dir := writeOverride(t)
+	// secret.txt lives next to (not inside) the override bundle dir.
+	secret := filepath.Join(filepath.Dir(dir), "secret.txt")
+	if err := os.WriteFile(secret, []byte("TOP-SECRET"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWebappHandlerWithOverride("1.2.3", "cafe", "amd64", dir)
+
+	for _, target := range []string{"/assets/../../secret.txt", "/..%2fsecret.txt"} {
+		_, body := get(t, h, target)
+		if strings.Contains(body, "TOP-SECRET") {
+			t.Errorf("traversal via %q leaked secret content: %q", target, body)
+		}
+	}
+}
+
 func TestOverrideSwapVisibleWithoutReconstruction(t *testing.T) {
 	fakeEmbed(t)
 	dir := writeOverride(t)
