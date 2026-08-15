@@ -8,6 +8,8 @@
 //!   quarantine/ bundles that failed to boot (.boot-pending still set at next launch)
 //! Version-compare semantics mirror mobile K2PluginUtils.kt exactly.
 
+use std::path::PathBuf;
+
 /// Compile-time bridge API version of this shell. Bumped in lockstep with the
 /// webapp's BRIDGE_API_VERSION (guarded by the contract-guard plan; this file
 /// only consumes it via the manifest `min_bridge` gate).
@@ -115,6 +117,56 @@ pub fn evaluate_manifest(
         return Gate::Skip("remote not newer than local");
     }
     Gate::Apply
+}
+
+/// Filesystem layout of the web-ota state directory. Root is injected so
+/// everything below is unit-testable against a tempdir.
+pub struct OtaDirs {
+    pub root: PathBuf,
+}
+
+impl OtaDirs {
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+    pub fn pending(&self) -> PathBuf {
+        self.root.join("pending")
+    }
+    pub fn current(&self) -> PathBuf {
+        self.root.join("current")
+    }
+    pub fn previous(&self) -> PathBuf {
+        self.root.join("previous")
+    }
+    pub fn quarantine(&self) -> PathBuf {
+        self.root.join("quarantine")
+    }
+    pub fn version_file(&self) -> PathBuf {
+        self.current().join("version.txt")
+    }
+    pub fn boot_pending(&self) -> PathBuf {
+        self.root.join(".boot-pending")
+    }
+}
+
+/// The disk directory to serve the UI from, or None → embedded fallback.
+pub fn serve_root(d: &OtaDirs) -> Option<PathBuf> {
+    let cur = d.current();
+    if cur.join("index.html").is_file() {
+        Some(cur)
+    } else {
+        None
+    }
+}
+
+/// Applied UI version: current/version.txt, falling back to the app version
+/// (fresh install / no OTA yet) — same semantics as mobile web-update/version.txt.
+pub fn local_ui_version(d: &OtaDirs, app_version: &str) -> String {
+    std::fs::read_to_string(d.version_file())
+        .map(|s| s.trim().to_string())
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| app_version.to_string())
 }
 
 #[cfg(test)]
@@ -250,5 +302,39 @@ mod tests {
             evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1400"),
             Gate::Skip("remote not newer than local")
         );
+    }
+
+    #[test]
+    fn dirs_layout_matches_contract() {
+        let d = OtaDirs::new(std::path::PathBuf::from("/tmp/x/web-ota"));
+        assert!(d.pending().ends_with("web-ota/pending"));
+        assert!(d.current().ends_with("web-ota/current"));
+        assert!(d.previous().ends_with("web-ota/previous"));
+        assert!(d.quarantine().ends_with("web-ota/quarantine"));
+        assert!(d.version_file().ends_with("web-ota/current/version.txt"));
+        assert!(d.boot_pending().ends_with("web-ota/.boot-pending"));
+    }
+
+    #[test]
+    fn serve_root_requires_index_html() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        assert_eq!(serve_root(&d), None); // no current at all
+        std::fs::create_dir_all(d.current()).unwrap();
+        assert_eq!(serve_root(&d), None); // current without index.html
+        std::fs::write(d.current().join("index.html"), "<html></html>").unwrap();
+        assert_eq!(serve_root(&d), Some(d.current()));
+    }
+
+    #[test]
+    fn local_ui_version_falls_back_to_app_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        assert_eq!(local_ui_version(&d, "0.4.8"), "0.4.8");
+        std::fs::create_dir_all(d.current()).unwrap();
+        std::fs::write(d.version_file(), "0.4.8.1234\n").unwrap();
+        assert_eq!(local_ui_version(&d, "0.4.8"), "0.4.8.1234"); // trimmed
+        std::fs::write(d.version_file(), "  ").unwrap();
+        assert_eq!(local_ui_version(&d, "0.4.8"), "0.4.8"); // blank → fallback
     }
 }
