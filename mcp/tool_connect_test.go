@@ -41,9 +41,15 @@ func TestToolConnect_Success(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&body)
 			if body["action"] == "up" {
 				upCalled = true
+				// The outbound travels as routes[].via — ClientConfig has no
+				// top-level "server" field for it to arrive in.
 				if params, ok := body["params"].(map[string]any); ok {
 					if cfg, ok := params["config"].(map[string]any); ok {
-						upServerURL, _ = cfg["server"].(string)
+						if routes, ok := cfg["routes"].([]any); ok && len(routes) > 0 {
+							if route, ok := routes[0].(map[string]any); ok {
+								upServerURL, _ = route["via"].(string)
+							}
+						}
 					}
 				}
 			}

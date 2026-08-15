@@ -44,7 +44,7 @@ func (app *App) toolStatus(ctx context.Context, req *mcp.CallToolRequest, _ any)
 			if app.session.LoggedIn() {
 				app.fetchServers() //nolint:errcheck // best-effort for name resolution
 			}
-			out["server"] = app.resolveServerName(status.Config.Server)
+			out["server"] = app.resolveServerName(status.Config.Server())
 		}
 	case "error":
 		if status.Error != nil {

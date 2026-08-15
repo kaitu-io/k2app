@@ -18,16 +18,20 @@ func writeDaemonEnvelope(w http.ResponseWriter, data any) {
 }
 
 func TestToolStatus_Connected(t *testing.T) {
+	// Raw daemon shape, not a round-trip through our own struct — see the
+	// comment on daemonStatusPayload for why that distinction is the whole
+	// point of this test.
+	const payload = `{
+	  "state": "connected",
+	  "startAt": 1755300000,
+	  "uptimeSeconds": 120,
+	  "config": {"mode": "tun", "routes": [{"via": "k2v5://jp1.example.com"}]}
+	}`
 	daemonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/core" && r.Method == http.MethodPost {
-			status := DaemonStatus{
-				State:         "connected",
-				ConnectedAt:   time.Now().Add(-120 * time.Second),
-				UptimeSeconds: 120,
-				Config:        &DaemonConfig{Server: "k2v5://jp1.example.com"},
-			}
+			envelope := daemonEnvelope{Code: 0, Message: "ok", Data: json.RawMessage(payload)}
 			w.Header().Set("Content-Type", "application/json")
-			writeDaemonEnvelope(w, status)
+			json.NewEncoder(w).Encode(envelope)
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -64,8 +68,11 @@ func TestToolStatus_Connected(t *testing.T) {
 	if out["server"] != "Tokyo 1" {
 		t.Errorf("expected server='Tokyo 1', got %v", out["server"])
 	}
-	if out["uptime_seconds"] == nil {
-		t.Error("expected uptime_seconds field")
+	// Assert the value, not just presence: the field was reported as 0 for a
+	// live tunnel the whole time the struct asked the daemon for the wrong key,
+	// and a presence-only check stays green through exactly that failure.
+	if out["uptime_seconds"] != float64(120) {
+		t.Errorf("expected uptime_seconds=120, got %v", out["uptime_seconds"])
 	}
 }
 
