@@ -1,6 +1,6 @@
 # desktop — Tauri v2 Shell (macOS + Windows only)
 
-Rust desktop shell using Tauri v2. Serves webapp via tauri-plugin-localhost (port 14580) to avoid WebKit mixed content blocking.
+Rust desktop shell using Tauri v2. UI loads via the `kaitu-ui://` custom protocol (web-ota bundle from disk, embedded assets as fallback).
 
 **Linux is NOT supported by this shell.** Linux desktop ships a single Go
 binary from `cmd/k2` with the React webapp embedded via `k2/webui`; users
@@ -78,6 +78,9 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 - **app_list.rs** — `list_running_processes` command: running GUI app process names for the App Bypass page (macOS/Windows).
 - **installed_apps.rs** — `list_installed_apps` command: installed apps (`id`, `label`, `processNames`, `icon_url`) for the App Bypass page.
 - **icon_protocol.rs** — Registers the `kaitu-icon://` URI scheme (`handle_kaitu_icon`) serving per-app icons to the App Bypass UI. macOS renders via NSWorkspace + NSBitmapImageRep → PNG; Windows is a v1 stub (404).
+- **web_ota.rs** — Web OTA: polls `{CDN}/{brand}/web[/beta]/latest.json` (5s + 30min, channel-aware), gates on `sig`(mandatory minisign, updater pubkey)/`min_desktop`/`min_bridge`/`isNewerVersion`, downloads+verifies web.zip into `$APPDATA/web-ota/pending/`, atomically swaps pending→current (current→previous). `.boot-pending` marker + `startup_rollback()` quarantine failed bundles. `DESKTOP_BRIDGE_VERSION` compile-time constant. Debug builds no-op (dev keeps Vite devUrl). `K2_WEB_OTA_BASE` env overrides endpoints for UAT (signature gates still enforced).
+- **ui_protocol.rs** — Registers `kaitu-ui://` (page origin `kaitu-ui://localhost` on macOS, `http://kaitu-ui.localhost` on Windows): serves the web-ota `current/` bundle from disk, falls back to embedded assets via `asset_resolver`, MIME by extension, SPA fallback for extensionless routes. Scheme name is brand-neutral (kaitu-icon precedent).
+- **storage_migration.rs** — One-time origin migration: unmigrated startup boots the embedded UI at the legacy tauri:// origin with `?migrate=export`; webapp dumps localStorage via `storage_migration_put/done`; `storage-migrated` marker (app data root) + 20s watchdog fallback. Desktop auth lives in storage.json (origin-independent) — migration carries preferences/caches, not login state.
 
 ## Tauri Config (`src-tauri/tauri.conf.json`)
 
@@ -123,6 +126,11 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 | `list_installed_apps` | installed_apps | Installed apps for App Bypass (id/label/processNames/icon_url) |
 | `router_http_request` | router_bridge | SSRF-gated HTTP to a LAN k2r router (`http://` + private IPv4 only, no redirects) |
 | `get_default_gateway` | router_bridge | Physical-interface default gateway, excluding TUN (unconsumed — see "Router LAN Bridge") |
+| `ui_boot_ok` | web_ota | Webapp boot confirmation — clears `.boot-pending` rollback marker |
+| `storage_migration_put` | storage_migration | Store localStorage snapshot (legacy-origin export page) |
+| `storage_migration_get` | storage_migration | Read stored snapshot (new-origin import) |
+| `storage_migration_clear` | storage_migration | Delete stored snapshot after import |
+| `storage_migration_done` | storage_migration | Mark migrated + navigate window to `kaitu-ui://` |
 
 ## Gotchas
 
@@ -138,6 +146,9 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 - Pre-beta log level stored in `{app_data_dir}/pre-beta-log-level` file. Frontend passes `currentLogLevel` (from localStorage) when calling `set_update_channel` IPC since Rust cannot read browser localStorage.
 - Windows Authenticode signing requires intermediate CA chain: `osslsigncode` must use `-ac scripts/ci/macos/certum-chain.pem` (Certum Code Signing 2021 CA). Without it, Windows UAC shows "Publisher: Unknown" because it can't trace Wordgate LLC cert to a trusted root. SimplySign PKCS#11 token must be logged in first (`make simplisign-login`).
 - Windows cross-build from macOS: requires `cargo-xwin`, `makensis`, `osslsigncode`, `libp11`. See `docs/plans/2026-03-11-windows-build-on-macos.md` for full setup.
+- Web OTA boot flow and poller are `cfg!(debug_assertions)`-gated OFF — `yarn tauri dev` never navigates away from the Vite devUrl. Test OTA/migration only on release builds (`make build-macos`).
+- The window's initial URL is still the config default (legacy tauri:// origin); `web_ota::prepare_boot` navigates to `kaitu-ui://` in setup. The transient double-load is invisible (window hidden until frontend_ready) — do not "fix" it by hardcoding a url in tauri.conf.json (Windows needs the http://kaitu-ui.localhost form, and a config url would break dev mode).
+- `tauri-plugin-localhost` (port 14580) is registered but no window points at it — the "serves webapp via localhost" line at the top of this file predates verification; the actual UI origin history is tauri://localhost → kaitu-ui://localhost.
 
 ## Router LAN Bridge (`router_bridge.rs`)
 
