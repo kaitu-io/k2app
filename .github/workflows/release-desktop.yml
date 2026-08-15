@@ -535,6 +535,18 @@ jobs:
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
+  # App 发版联动（web OTA spec §6 触发 2）：桌面产物全部构建上传成功后，从
+  # 同一 tag commit 发布双品牌 web bundle，保证 CDN latest 自动追平这个 app
+  # 内嵌的 UI（同 commit 构建，兼容天然成立）。恒 stable 通道。只在 push 的
+  # 真实 v* tag 时联动；dispatch 重建旧 tag 绝不发布——时间基构建号下那会把
+  # 旧 UI 变成全网最新（终审 B1）。预发布（-beta）app 发版不联动：web OTA
+  # 版本恒 x.y.z.n，beta web 走 publish-web-ota 的 dispatch channel=beta（终审 m4）。
+  publish-web-ota:
+    needs: [plan, release]
+    if: needs.plan.outputs.should_run == 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-beta')
+    uses: ./.github/workflows/publish-web-ota.yml
+    secrets: inherit
+
   # --- Catch-all: notify on infrastructure failures (runner offline, DNS, etc.) ---
   # Runs on GitHub-hosted runner so it works even when self-hosted runner is down.
   notify-infra-failure:

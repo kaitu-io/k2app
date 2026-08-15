@@ -118,7 +118,7 @@ async function syncNativeVpnConfig(token: string): Promise<void> {
     }
   } catch (err) {
     // 旧原生包没有 updateConfig —— 无害：原生存的旧 token 仍有 ≥45 天
-    // 寿命，下次 connect 会整体覆盖。不 bump minNativeVersion。
+    // 寿命，下次 connect 会整体覆盖。不需要为此提高 web OTA 的 support floor。
     console.warn('[TunnelToken] native config sync failed:', err);
   }
 }

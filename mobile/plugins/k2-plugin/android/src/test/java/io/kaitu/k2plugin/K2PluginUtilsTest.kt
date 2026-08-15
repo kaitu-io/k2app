@@ -218,4 +218,27 @@ class K2PluginUtilsTest {
             K2PluginUtils.sha256(ByteArray(0))
         )
     }
+
+    // ==================== isCompatibleBridgeVersion ====================
+
+    @Test
+    fun bridge_absent_or_zero_passes() {
+        assertTrue(K2PluginUtils.isCompatibleBridgeVersion(0))
+    }
+
+    @Test
+    fun bridge_equal_passes() {
+        assertTrue(K2PluginUtils.isCompatibleBridgeVersion(K2PluginUtils.BRIDGE_API_VERSION))
+    }
+
+    @Test
+    fun bridge_newer_manifest_fails() {
+        assertFalse(K2PluginUtils.isCompatibleBridgeVersion(K2PluginUtils.BRIDGE_API_VERSION + 1))
+    }
+
+    @Test
+    fun bridge_explicit_versions() {
+        assertTrue(K2PluginUtils.isCompatibleBridgeVersion(1, bridgeVersion = 2))
+        assertFalse(K2PluginUtils.isCompatibleBridgeVersion(3, bridgeVersion = 2))
+    }
 }

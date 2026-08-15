@@ -40,5 +40,10 @@ dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
 
+    // Web OTA minisign verification: BLAKE2b-512 + Ed25519 via the BouncyCastle
+    // LIGHTWEIGHT API only (no JCA provider registration — Android ships a
+    // crippled "BC" provider and we must not fight it). R8 strips the unused bulk.
+    implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
+
     testImplementation "junit:junit:$junitVersion"
 }

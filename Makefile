@@ -402,7 +402,7 @@ upload-linux:
 upload-android:
 	bash scripts/ci/upload-release.sh --android
 
-# upload-web removed — Web OTA disabled due to native/webapp version mismatch risk (2026-03-22)
+# Web OTA publishing lives in .github/workflows/publish-web-ota.yml (contract-gated; see docs/superpowers/specs/2026-08-14-web-ota-design.md)
 
 clean:
 	rm -rf webapp/dist desktop/src-tauri/target $(K2_BIN)/k2-* build/

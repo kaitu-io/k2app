@@ -24,6 +24,27 @@ Bridge 层（`tauri-k2.ts` / `capacitor-k2.ts` / `standalone-k2.ts`）是唯一�
 
 ---
 
+## 兼容模型：支持地板 + 运行时能力探测（Web OTA R2）
+
+**只有一个真理的 webapp 版本——最新版。** 最新 webapp 必须在支持地板
+（`contracts/webapp-support-floor.json`）以上的**所有** app 版本上正确运行。
+Spec: `docs/superpowers/specs/2026-08-14-web-ota-design.md` §4。
+
+规矩（违反即 bug）：
+
+- 新 bridge 能力（`BRIDGE_API_VERSION` bump 引入的方法）的每一处使用都必须有
+  运行时探测分支——**优先存在性检测**（`typeof fn === 'function'`），版本比较
+  只做兜底。存在性检测天然免疫"TS 声明了但某平台 native 未实现"的平台漂移
+  盲区（已证实形状：bridge v1 的 channel 方法 iOS 0.4.8 未实现）。
+- 探测必须收敛到唯一供给者 `src/services/capabilities.ts`（**首个 >v1 bridge
+  能力出现时新建**，同时收编 `capacitor-k2.ts` 现有的
+  `getPlatform() === 'android'` 门，并配 grep 守卫进 CI）。业务代码禁止散落
+  raw 版本比较、禁止直接探测 `window._k2` / `window._platform` 方法存在性。
+- `min_*` 闸门是安全刹车不是兼容手段：bump 地板文件 = 显式砍旧版本支持的
+  决策，须 review 给理由；bump `BRIDGE_API_VERSION` 不许顺手改地板。
+
+---
+
 ## Hard Rules
 
 ```

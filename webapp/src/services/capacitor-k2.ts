@@ -342,7 +342,11 @@ export async function injectCapacitorGlobals(): Promise<void> {
       return channel;
     };
   }
-  // iOS: no setChannel — beta is API-only subscription
+  // iOS: keep this gate — do NOT remove until bridge v2 / first iOS release
+  // with channel support. Shipped iOS 0.4.8 does not implement
+  // getUpdateChannel/setUpdateChannel even though the bridge v1 TS interface
+  // declares them (see webapp/src/types/bridge-version.ts). Calling them on
+  // iOS 0.4.8 would throw — beta there stays API-only subscription until then.
 
   // Build _platform: mobile capabilities
   const capacitorPlatform: IPlatform = {

@@ -14,6 +14,29 @@ internal object K2PluginUtils {
     fun cdnPrimary(context: Context): String = brandString(context, "k2_cdn_primary")
     fun cdnFallback(context: Context): String = brandString(context, "k2_cdn_fallback")
 
+    /**
+     * Compile-time bridge API version. MUST equal BRIDGE_API_VERSION in
+     * webapp/src/types/bridge-version.ts — the webapp contract gate
+     * (bridge-contract.test.ts) greps this file's literal and fails on drift.
+     */
+    const val BRIDGE_API_VERSION = 1
+
+    /**
+     * Minisign public key for web OTA bundle signatures: the key line of the
+     * Tauri updater key pair (base64-decode desktop/src-tauri/tauri.conf.json
+     * `plugins.updater.pubkey`, take the second line). Brand-neutral — both
+     * brands sign with the same key (tauri.conf.overleap.json does not
+     * override pubkey).
+     */
+    const val WEB_OTA_MINISIGN_PUBKEY = "RWSD3s7XX1TXQLaSafFQyIycEGH5v0d7EOsPUmQGJMRjnCuqq3eAVKEE"
+
+    /**
+     * min_bridge gate for web OTA manifests (spec §4). 0 / absent = no
+     * requirement (manifests published before the bridge-version era).
+     */
+    fun isCompatibleBridgeVersion(minBridge: Int, bridgeVersion: Int = BRIDGE_API_VERSION): Boolean =
+        minBridge <= bridgeVersion
+
     private fun brandString(context: Context, name: String): String {
         val id = context.resources.getIdentifier(name, "string", context.packageName)
         require(id != 0) { "host app missing brand string resource: $name" }

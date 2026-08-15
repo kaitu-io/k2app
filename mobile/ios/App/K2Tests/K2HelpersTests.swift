@@ -104,4 +104,23 @@ class K2HelpersTests: XCTestCase {
         XCTAssertTrue(isNewerVersion("1.1", than: "1.0"))
         XCTAssertFalse(isNewerVersion("1.0", than: "1.1"))
     }
+
+    // MARK: - isCompatibleBridgeVersion
+
+    func testBridgeVersion_nilPasses() {
+        XCTAssertTrue(isCompatibleBridgeVersion(nil))
+    }
+
+    func testBridgeVersion_equalPasses() {
+        XCTAssertTrue(isCompatibleBridgeVersion(k2BridgeApiVersion))
+    }
+
+    func testBridgeVersion_newerManifestFails() {
+        XCTAssertFalse(isCompatibleBridgeVersion(k2BridgeApiVersion + 1))
+    }
+
+    func testBridgeVersion_explicitVersions() {
+        XCTAssertTrue(isCompatibleBridgeVersion(1, bridgeVersion: 2))
+        XCTAssertFalse(isCompatibleBridgeVersion(3, bridgeVersion: 2))
+    }
 }
