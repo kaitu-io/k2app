@@ -5,11 +5,18 @@
  * commands (desktop/src-tauri/src/main.rs generate_handler!), and the daemon
  * HTTP actions they proxy.
  *
- * BUMP THIS — and add a matching entry to contracts/bridge-versions.json —
- * whenever the bridge surface gains a method the webapp depends on, or a
- * method changes/disappears. The gate in
+ * BUMP THIS whenever the bridge surface gains a method the webapp depends
+ * on, or a method changes/disappears. The gate in
  * src/types/__tests__/bridge-contract.test.ts turns method-table drift
  * without a bump into a red test (2026-03 storageGet incident, never again).
+ *
+ * R2 semantics (spec §4): bumping does NOT lock old apps out — the manifest
+ * publishes the SUPPORT FLOOR (contracts/webapp-support-floor.json), not the
+ * current version. The consequence of a bump is an obligation on the webapp:
+ * every use of the new surface must sit behind runtime capability detection
+ * (existence check preferred over version compare — see webapp/CLAUDE.md
+ * 兼容模型 section). Raising the floor is a separate, explicit
+ * support-drop decision.
  *
  * Known blind spot (spec §10, recorded honestly): the gate covers method-table
  * add/remove only. A behavior change behind an unchanged signature still relies

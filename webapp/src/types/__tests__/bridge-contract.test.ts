@@ -26,7 +26,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../../..');
 const definitionsPath = path.join(repoRoot, 'mobile/plugins/k2-plugin/src/definitions.ts');
 const goldenPath = path.join(repoRoot, 'contracts/bridge-api.json');
-const versionsPath = path.join(repoRoot, 'contracts/bridge-versions.json');
+const floorPath = path.join(repoRoot, 'contracts/webapp-support-floor.json');
 const mainRsPath = path.join(repoRoot, 'desktop/src-tauri/src/main.rs');
 const REGEN_CMD =
   'cd webapp && UPDATE_BRIDGE_CONTRACT=1 npx vitest run src/types/__tests__/bridge-contract.test.ts';
@@ -114,7 +114,7 @@ describe('bridge API contract gate', () => {
           `golden.tauriCommands: ${JSON.stringify(golden.tauriCommands)}\n` +
           `live.tauriCommands:   ${JSON.stringify(live.tauriCommands)}\n\n` +
           `If the change is intentional: bump BRIDGE_API_VERSION in webapp/src/types/bridge-version.ts, ` +
-          `add the new entry to contracts/bridge-versions.json, then regen the golden:\n  ${REGEN_CMD}\n` +
+          `gate every use of the new surface behind runtime capability detection (webapp/CLAUDE.md 兼容模型), then regen the golden:\n  ${REGEN_CMD}\n` +
           `If not intentional: revert the definitions.ts change. NEVER hand-edit the golden.`,
       );
     }
@@ -125,21 +125,25 @@ describe('bridge API contract gate', () => {
     expect(readFileSync(goldenPath, 'utf8')).toBe(liveJson);
   });
 
-  it('bridge-versions.json has a complete entry for the current BRIDGE_API_VERSION', () => {
-    expect(existsSync(versionsPath), 'contracts/bridge-versions.json missing').toBe(true);
-    const versions = JSON.parse(readFileSync(versionsPath, 'utf8'));
-    const entry = versions[String(BRIDGE_API_VERSION)];
-    expect(
-      entry,
-      `bridge-versions.json has no entry "${BRIDGE_API_VERSION}" — add ` +
-        `{"${BRIDGE_API_VERSION}": {"native": "x.y.z", "desktop": "x.y.z", "linux": "x.y.z"}} ` +
-        `(the first shell versions that CARRY this bridge version; 宁高勿低)`,
-    ).toBeDefined();
+  it('webapp-support-floor.json is valid and never exceeds the compiled bridge', () => {
+    // R2 (spec §4): the floor is the OLDEST shell set the latest webapp still
+    // supports. It does NOT move when BRIDGE_API_VERSION bumps — bumping the
+    // floor is an explicit support-drop decision. The one invariant a test can
+    // hold: the floor bridge can never be newer than the compiled surface.
+    expect(existsSync(floorPath), 'contracts/webapp-support-floor.json missing').toBe(true);
+    const floor = JSON.parse(readFileSync(floorPath, 'utf8'));
     for (const key of ['native', 'desktop', 'linux'] as const) {
-      expect(entry[key], `bridge-versions.json["${BRIDGE_API_VERSION}"].${key} must be x.y.z`).toMatch(
-        /^\d+\.\d+\.\d+$/,
-      );
+      expect(floor[key], `webapp-support-floor.json .${key} must be x.y.z`).toMatch(/^\d+\.\d+\.\d+$/);
     }
+    expect(
+      Number.isInteger(floor.bridge) && floor.bridge >= 1,
+      `webapp-support-floor.json .bridge must be a positive integer, got: ${floor.bridge}`,
+    ).toBe(true);
+    expect(
+      floor.bridge,
+      `floor.bridge (${floor.bridge}) > BRIDGE_API_VERSION (${BRIDGE_API_VERSION}) — ` +
+        `the support floor cannot be newer than the current bridge surface`,
+    ).toBeLessThanOrEqual(BRIDGE_API_VERSION);
   });
 
   it('Android native mirror matches BRIDGE_API_VERSION', () => {
