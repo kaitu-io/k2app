@@ -3,6 +3,7 @@
 **日期**: 2026-08-14
 **状态**: 已批准（设计决策已获用户确认：激进模式 / git push 全自动发布 / 静默下次启动生效 / 方案 A）
 **执行**: 实现 plan 交由 Sonnet 5 开发
+**Bootstrap 就绪度**（Task 11，2026-08-15 复核；详情见 `.superpowers/sdd/2026-08-14-web-ota-pipeline-mobile/task-11-report.md`）：Task 1-10 全量代码就绪，全量测试矩阵绿（webapp ×2 品牌、tsc ×2、manifest 脚本单测、Android `k2-plugin` JVM 单测、iOS `K2Tests` 60/60 含 `MinisignVerifierTests`），本地用**一次性 throwaway minisign 密钥**（非生产密钥）跑通了 zip→签名→manifest 生成→`sig` 字段 base64 往返解码→独立验签的全链路。§8 步骤 1 锚点复核：`definitions.ts` 最近一次方法新增仍是 `5086d1f1`（`updateConfig`，首见 tag `v0.4.8`）；同分支后续 `99c1bc75` 只给已有方法 `checkReady` 加了一个可选返回字段，未发布过（无 tag），不构成新的方法集合版本，`bridge-versions.json["1"].native=0.4.8` 锚点不变。§8 步骤 2 现状复核：线上 `kaitu/android/latest.json` 与 `kaitu/ios/latest.json` 均仍是 0.4.7 ——**首个 OTA 会被全部存量 native 正确跳过**，符合设计预期，非故障。**代码信心 9/10；业务信心（移动端 OTA 全链路可用）封顶 6-7/10**（release confidence framework：无真机 smoke）——merge、beta/stable 发布、真机 UAT（§8 步骤 3-7，含 CDN 侧独立验签、Android/iOS 正负样本、回滚链路、iOS 无 channel 能力下的 stable-only 验证）仍是**人类必做步骤**，未执行。
 
 ## 1. 目标
 
