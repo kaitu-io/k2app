@@ -703,9 +703,74 @@ func (s *Server) handleRawTCP(conn net.Conn) {
 		return
 	}
 
-	// ECH -> TLS handshake with ECH decryption -> k2v5.
-	wrapped := &bufferedConn{Conn: conn, br: br}
-	s.handleK2V5(wrapped, info.SNI)
+	// ECH present. Route to k2v5 only if the plaintext config_id is one this
+	// node can decrypt. Foreign/GREASE config_ids would fail ECH decryption and,
+	// under a bare Handshake(), still complete TLS and expose our self-signed
+	// cert — a config-free active-probe de-anon (spec §3.7). Forward them to the
+	// real camouflage site instead, exactly like a non-ECH probe. Residual: a
+	// probe replaying a real config_id observed on the wire still reaches
+	// handleK2V5 (fully closing that needs out-of-band HPKE decrypt, which
+	// metacubex/utls keeps in an internal package).
+	switch s.echDisposition(info) {
+	case echToK2V5:
+		wrapped := &bufferedConn{Conn: conn, br: br}
+		s.handleK2V5(wrapped, info.SNI)
+	case echToCamouflage:
+		select {
+		case s.proxySem <- struct{}{}:
+			defer func() { <-s.proxySem }()
+		default:
+			slog.Warn("server: reverse proxy at capacity", "sni", info.SNI)
+			conn.Close()
+			return
+		}
+		slog.Debug("server: foreign ECH config_id → camouflage",
+			"configID", info.ECHConfigID, "camouflage", s.camouflageName)
+		allData, _ := br.Peek(br.Buffered())
+		wire.ReverseProxyWithTimeout(conn, allData, s.camouflageName+":443", 30*time.Second, 5*time.Minute)
+	default:
+		slog.Debug("server: foreign ECH config_id, no camouflage target → close", "configID", info.ECHConfigID)
+		conn.Close()
+	}
+}
+
+// echRoute is where an ECH-bearing ClientHello is sent after the config_id check.
+type echRoute int
+
+const (
+	echToK2V5       echRoute = iota // config_id we own → k2v5 handler
+	echToCamouflage                 // foreign/GREASE config_id → reverse-proxy to public_name
+	echReject                       // foreign config_id and no camouflage target → close
+)
+
+// echDisposition decides where an ECH-bearing ClientHello goes, from the
+// plaintext outer config_id alone (before any TLS state). A config_id this node
+// owns → the k2v5 handler; anything else (GREASE, forged, foreign) → camouflage
+// as the real public_name site, or close if no camouflage target is configured.
+func (s *Server) echDisposition(info wire.ClientHelloInfo) echRoute {
+	if info.ECHOuter && s.ownsECHConfigID(info.ECHConfigID) {
+		return echToK2V5
+	}
+	if s.camouflageName != "" {
+		return echToCamouflage
+	}
+	return echReject
+}
+
+// ownsECHConfigID reports whether config_id matches one of this node's active
+// ECH configs — i.e., a ClientHello carrying it could plausibly be decrypted
+// here. Reads config_ids straight from the configured ECH keys so it always
+// tracks key rotation.
+func (s *Server) ownsECHConfigID(id uint8) bool {
+	if s.TLSConfig == nil {
+		return false
+	}
+	for _, k := range s.TLSConfig.EncryptedClientHelloKeys {
+		if cid, ok := wire.ECHConfigIDFromConfig(k.Config); ok && cid == id {
+			return true
+		}
+	}
+	return false
 }
 
 // learnOuterSNI records an outer SNI from a successful ECH connection.

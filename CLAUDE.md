@@ -95,7 +95,8 @@ Reserved event names:
 | `DIAG: dns-proxy-dial-fail` | WARN | DialUDP failed | server, domain, err |
 | `DIAG: transport-race-start` | INFO | race begins | candidates |
 | `DIAG: transport-race-winner` | INFO | race complete | winner, winnerMs, tried |
-| `DIAG: transport-race-fail` | WARN | all candidates failed | quic443Err, quicHopErr, tcpwsErr |
+| `DIAG: transport-race-fail` | WARN | all candidates failed | quic443Err, tcpwsErr |
+| `DIAG: ech-block-suspected` | WARN | all ECH transports failed AND a no-ECH TLS to the same IP completed (fires off race-fail, background, gated out when a candidate reached auth) | host, sni, hint |
 | `DIAG: echo-probe-ok` | DEBUG | echo succeeded | transport, rttMs |
 | `DIAG: echo-probe-fail` | WARN | echo failed | transport, err |
 | `DIAG: echo-probe-unsupported` | WARN | server doesn't support echo (old k2v5) | transport |
@@ -681,7 +682,7 @@ engine.Stop()
 - DNS queries need trailing dot (FQDN) — `crypto.cloudflare.com.` not `crypto.cloudflare.com`
 - TLS wire formats are big-endian — always use `binary.BigEndian` for ECH/TLS parsing
 - Base64 in URLs must use `base64.URLEncoding` — standard `+` decoded to space by `url.Query()`
-- uTLS forces outer SNI = ECH config's `public_name` — cannot be overridden independently
+- Outer SNI = ECH config's `public_name` because the **current client emit** sets it so (`metacubex/utls handshake_client.go:310`); k2 does not override it. This is a client default, **not** a hard rule — the metacubex server does not enforce outer-SNI == `public_name` (`ech.go:610`), so it *can* be decoupled. But it is not a free knob: server camouflage (`server.learnOuterSNI`) trusts only this node's own `public_name`. See `docs/superpowers/specs/2026-08-10-outer-sni-camouflage-design.md`
 - Server generates dual certs (RSA+EC) — both padded to match target site's cert length
 - EC CA (`wire/kaitu_ca.pem`, disguised as DigiCert) can sign both RSA and EC server certs
 - `tun_desktop.go` build tag: `(darwin && !ios) || (linux && !android) || windows` — must exclude android/ios

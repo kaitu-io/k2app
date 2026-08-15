@@ -36,7 +36,7 @@ k2v5://UDID:TOKEN@HOST:PORT?ech=ECH_CONFIG&pin=CERT_PIN&fp=FINGERPRINT&hop=START
 | `fp` | No | `chrome` | TLS fingerprint: `chrome`, `firefox`, `safari`, `random` |
 | `hop` | No | disabled | UDP port hopping range: `START-END` |
 
-The `ech` parameter is mandatory. Without it, the client refuses to connect. The outer SNI (camouflage domain) is determined by the `public_name` field inside the ECH config — no separate `sni` parameter is needed.
+The `ech` parameter is mandatory. Without it, the client refuses to connect. The outer SNI (camouflage domain) is the `public_name` inside the ECH config; the current client emits exactly that value and has no separate `sni` parameter. This is a client-side default, **not** a protocol constraint — the outer SNI can be decoupled from `public_name` (see §3.1 and `docs/superpowers/specs/2026-08-10-outer-sni-camouflage-design.md`), but doing so interacts with server-side camouflage and is not a free knob.
 
 The `pin` parameter is mandatory. The client verifies the server certificate by SHA-256 fingerprint, not by domain name or CA chain. This eliminates the need for domain names and avoids Certificate Transparency log exposure.
 
@@ -62,7 +62,9 @@ TLS cert        self-signed              TLS 1.3 encrypted (invisible)
 Cert verify     pin=sha256:...           Client-local (never on wire)
 ```
 
-The outer SNI is determined by the `public_name` inside the ECH config, forced by uTLS during the handshake. It must be a domain that genuinely deploys ECH in production (e.g., `cloudflare-ech.com`). Cloudflare uses a single `public_name` for all ECH-enabled sites, so all legitimate Cloudflare ECH traffic shares the same outer SNI — our traffic blends in naturally.
+The outer SNI equals the `public_name` inside the ECH config **because the current client emit path sets it so** (`handshake_client.go:310` in metacubex/utls overwrites `hello.serverName` with the ECH config's `PublicName` when ECH is active; k2 does not override it). This is a client-side behavior, not a hard protocol rule — the metacubex server does **not** enforce that the sent outer `server_name` matches `PublicName` (`ech.go:610`), so a modified client could decouple the two. Decoupling is not free: see §12 and the design doc, because the server's active-probe camouflage (`learnOuterSNI` / `handleRawTCP`) only trusts this node's own `public_name`.
+
+The `public_name` must be a domain that genuinely deploys ECH in production (e.g., `cloudflare-ech.com`). **Selection criterion:** pick the domain that is *currently un-blocked* ∩ *shares the largest real ECH population*. Cloudflare uses a single `public_name` for all ECH-enabled sites, so all legitimate Cloudflare ECH traffic shares this outer SNI value. **This deterrent only bites an outer-SNI-*value*-only filter, not an `SNI + IP` filter**: that legitimate crowd lives on Cloudflare's IPs, while our traffic is on plain VPS IPs, so a censor conditioning on `SNI==cloudflare-ech.com AND IP∉Cloudflare` separates us cleanly with zero collateral. `cloudflare-ech.com` is therefore the least-bad default, **not** a shield against IP-conditioned blocking — see the design doc §4–§5. **Do not pick an obscure domain**: a niche `public_name` has near-zero legitimate ECH population, which makes `SNI==<niche> AND IP∉CDN` a zero-collateral, cleanly-blockable signature — the opposite of blending in.
 
 The inner SNI can be any value since certificate verification uses fingerprint pinning, not domain name matching.
 
@@ -142,12 +144,14 @@ Connections use uTLS to mimic real browser TLS fingerprints:
 The server inspects the raw TLS ClientHello **before** performing the TLS handshake:
 
 1. Peek the full ClientHello from the TCP stream (without consuming it)
-2. Check for ECH extension (type `0xfe0d`) in the extensions list
-3. **ECH present** → TLS handshake with ECH decryption → k2v5 handler
+2. Check for ECH extension (type `0xfe0d`) and, when present, read the plaintext outer `config_id` (offset 5 of the extension body: `[type:1][kdf:2][aead:2][config_id:1]`)
+3. **ECH present, `config_id` owned by this node** → TLS handshake with ECH decryption → k2v5 handler
 4. **No ECH** → ReverseProxy the raw TCP bytes to the `public_name` website
-5. **ECH present but decryption fails** (forged ECH) → ReverseProxy (same as no ECH)
+5. **ECH present, `config_id` NOT owned** (GREASE, forged, or foreign) → ReverseProxy to `public_name` (same as no ECH)
 
-The routing decision happens at the TCP level, before any TLS state is established. This ensures that non-ECH connections (including active probes) are transparently forwarded and never see the server's self-signed certificate.
+The routing decision happens at the TCP level, before any TLS state is established, so these connections never see the server's self-signed certificate.
+
+> **Implementation note (2026-08-10).** Steps 3/5 were originally specified as "route on ECH *presence*, reverse-proxy on decryption failure." The presence-only routing shipped, but the decryption-failure branch did **not** — a `HasECH` connection went straight to a bare `Handshake()`, which completes with the self-signed cert on an undecryptable ECH (utls falls back to the outer hello), exposing it to a config-free active prober (or Chrome's GREASE ECH). It is now gated on the plaintext `config_id` (`server.echDisposition` / `ownsECHConfigID`), which catches GREASE and random-config probes before any TLS state. **Residual**: `config_id` is observable on the wire, so a prober replaying a real one still reaches the handler and completes the handshake; fully closing that requires an out-of-band HPKE decrypt (metacubex/utls keeps HPKE in `internal/`). See `docs/superpowers/specs/2026-08-10-outer-sni-camouflage-design.md` §9.
 
 ## 4. Authentication
 
@@ -576,7 +580,7 @@ PCC uses rate-based pacing:
 | Passive observer | See TCP dest IP + outer SNI + encrypted record sizes | ECH hides inner SNI; TLS record padding matches real site; cert encrypted by TLS 1.3 |
 | Active prober (no ECH) | Connect to server, examine response | ReverseProxy serves the real `public_name` website |
 | Active prober (forged ECH) | Send fabricated ECH blob | ECH decryption fails → ReverseProxy (same as no-ECH) |
-| IP-SNI cross-checker | Verify outer SNI resolves to dest IP | ReverseProxy makes the server behave as a real proxy/CDN for the `public_name` site |
+| IP-SNI cross-checker | Verify outer SNI resolves to dest IP | **Partial.** ReverseProxy answers the *active-probe* form ("is there really a `public_name` site here?") — it does **not** make the dest IP belong to `public_name`'s ASN. A censor conditioning on `outer SNI == cloudflare-ech.com AND dest IP ∉ Cloudflare's announced ranges` is a zero-collateral signature this layer cannot defeat; it is only survivable via the collateral-damage deterrent and/or a non-ECH transport. See `docs/superpowers/specs/2026-08-10-outer-sni-camouflage-design.md` §5. |
 | CT log scanner | Search crt.sh for certificates | Self-signed cert has no CT entry — zero footprint |
 | ECH-aware censor | Block all connections with ECH extension | Out of scope for protocol-level mitigation (requires transport obfuscation) |
 

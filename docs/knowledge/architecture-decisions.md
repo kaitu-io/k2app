@@ -514,7 +514,7 @@ ech.provider: local (Cloudflare DNS)
 
 **Decision**: Remove `sni` URL parameter, `SNI` field from Config. Outer SNI always equals ECH config's `public_name`.
 
-**Context**: uTLS forces outer SNI = ECH config's public_name field. Independent SNI control impossible. Configurable SNI was misleading.
+**Context**: The current uTLS client emit sets outer SNI = ECH config's public_name (`handshake_client.go:310`), and a configurable `sni` parameter that silently had no effect was misleading — so it was removed. **The original premise that "independent SNI control is impossible" is inaccurate**: the metacubex server does not enforce outer-SNI == public_name (`ech.go:610`), so decoupling is feasible by overriding the emit. Whether to re-expose it (as a server-allowlisted decoy pool, not a free client knob) is re-evaluated in `docs/superpowers/specs/2026-08-10-outer-sni-camouflage-design.md`. [Correction added 2026-08-10.]
 
 **Old Behavior**:
 ```go

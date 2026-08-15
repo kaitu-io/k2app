@@ -174,7 +174,9 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 		"quic443Err", candErrs[0],
 		"tcpwsErr", candErrs[1],
 	)
-	return nil, raceExitError(candErrs[0], candErrs[1])
+	exitErr := raceExitError(candErrs[0], candErrs[1])
+	maybeProbeECHBlock(cfg, directDialer, exitErr)
+	return nil, exitErr
 }
 
 // raceExitError joins the per-candidate errors while PRESERVING their chains:

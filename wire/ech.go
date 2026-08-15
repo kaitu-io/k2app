@@ -144,6 +144,23 @@ func buildPinVerifier(pins [][32]byte) func(rawCerts [][]byte, _ [][]*x509.Certi
 type ClientHelloInfo struct {
 	SNI    string
 	HasECH bool
+	// ECHOuter is true when the ECH extension is a well-formed outer
+	// ECHClientHello (type 0x00) carrying a plaintext config_id. It is false
+	// for GREASE/malformed shapes too short to parse or an inner-type marker.
+	ECHOuter bool
+	// ECHConfigID is the plaintext config_id from the outer ECH extension,
+	// valid only when ECHOuter. The server routes foreign/GREASE config_ids to
+	// camouflage before terminating TLS — see server.handleRawTCP.
+	ECHConfigID uint8
+}
+
+// ECHConfigIDFromConfig extracts the config_id from a single raw ECHConfig
+// ([version:2][length:2][config_id:1]...). Returns false if too short.
+func ECHConfigIDFromConfig(config []byte) (uint8, bool) {
+	if len(config) < 5 {
+		return 0, false
+	}
+	return config[4], true
 }
 
 // PeekClientHello extracts SNI and ECH presence from a raw TLS ClientHello.
@@ -209,6 +226,8 @@ func PeekClientHello(data []byte) (ClientHelloInfo, error) {
 
 	var sni string
 	var hasECH bool
+	var echOuter bool
+	var echConfigID uint8
 
 	for pos+4 <= extsEnd && pos+4 <= len(body) {
 		extType := int(body[pos])<<8 | int(body[pos+1])
@@ -227,6 +246,13 @@ func PeekClientHello(data []byte) (ClientHelloInfo, error) {
 			}
 		} else if extType == 0xfe0d { // encrypted_client_hello
 			hasECH = true
+			// Outer ECHClientHello body: [type:1][kdf_id:2][aead_id:2][config_id:1]...
+			// (type 0x00 = outer). config_id is plaintext; the server routes
+			// foreign/GREASE config_ids to camouflage before terminating TLS.
+			if ext := body[pos : pos+extLen]; len(ext) >= 6 && ext[0] == 0x00 {
+				echOuter = true
+				echConfigID = ext[5]
+			}
 		}
 		pos += extLen
 	}
@@ -235,7 +261,7 @@ func PeekClientHello(data []byte) (ClientHelloInfo, error) {
 		return ClientHelloInfo{}, errors.New("wire: no SNI extension found")
 	}
 
-	return ClientHelloInfo{SNI: sni, HasECH: hasECH}, nil
+	return ClientHelloInfo{SNI: sni, HasECH: hasECH, ECHOuter: echOuter, ECHConfigID: echConfigID}, nil
 }
 
 func parseSNIExtension(data []byte) (string, error) {
