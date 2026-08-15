@@ -492,9 +492,12 @@ func (e *Engine) Start(cfg Config) error {
 			SetTmpRule:   ruleEngine.SetTmpRule,
 			DNSRouter:    buildDNSRouter(outboundMap), // k2v5 outbounds use proxy DNS
 			RejectTarget: outboundReject,
-			EngineCtx:    ctx, // engine context — cancelled on Stop()
+			MatchDNSMeta: ruleEngine.MatchDNSMeta, // per-process resolver view (App Bypass R2)
+			EngineCtx:    ctx,                     // engine context — cancelled on Stop()
 		})
-		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e, forward: cfg.DNSForwardUpstream}
+		// searcher: same gated instance the tunnel got — nil unless a loaded
+		// rule actually needs process attribution (zero cost otherwise).
+		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e, forward: cfg.DNSForwardUpstream, searcher: processSearcher}
 		if err := tunnel.StartWithHandler(ctx, dh); err != nil {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()

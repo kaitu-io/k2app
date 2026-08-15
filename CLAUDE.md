@@ -88,6 +88,7 @@ Reserved event names:
 | `DIAG: session-end` | INFO | engine stop | uptimeS, txMB, rxMB |
 | `DIAG: wire-error` | WARN | on classified error | code, category, message |
 | `DIAG: wake` | WARN | wall clock jump > 5s | sleepS, health, transport, uptimeS |
+| `DIAG: dns-view-override` | INFO | actual upstream query with a per-process-flipped resolver view (cache hits never log) | domain, process, package, view |
 | `DIAG: dns-proxy-timeout` | WARN | proxy DNS 5s timeout | server, domain, connAgeS, isNewConn |
 | `DIAG: dns-proxy-write-fail` | WARN | WriteTo failed | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-conn-dead` | WARN | recv loop died | server, domain, connAgeS, isNewConn, err |

@@ -10,9 +10,29 @@ Two entry points:
 
 All entry points require `context.Context`. The engine context propagates through the entire pipeline, enabling cancellation on shutdown/reconnect.
 
-Steps: parse → validate → hosts lookup → filter (RFC 6761 + noise) → cache check → route (k2rule) → reject check → in-flight dedup → upstream query (direct or proxy) → cache store → SetTmpRule for learned IPs → respond.
+Steps: parse → validate → hosts lookup → filter (RFC 6761 + noise) → per-process view resolve (5b, see below) → cache check → route (k2rule) → reject check → in-flight dedup → upstream query (direct or proxy) → cache store → SetTmpRule for learned IPs → respond.
 
 **Key**: Direct DNS uses raw UDP sockets (bypasses TUN). Proxy DNS goes through tunnel.
+
+**Per-process resolver view (R2 / App Bypass)**: `HandleQueryMeta(ctx, query, meta)`
+accepts optional attribution of the DNS QUERY connection itself (process identity
+fields only; `engine.dnsHandler` produces it via the same gated ProcessSearcher the
+tunnel uses). When a PURELY-PROCESS route (`rule.MatchDNSMeta`) matches the querying
+process and its view (proxy/direct, per `proxyView`) differs from the domain
+decision's, the **upstream selection** flips to that view — so a force-direct app's
+GeoDNS domains resolve with the local view, not the node's. Three invariants:
+① `action` (the domain decision) still owns reject semantics and the IP pin
+(`SetTmpRule`) — other processes' routing of the same IPs is untouched (the
+force-routed app's own connections win via `matchConnLocked`'s pre-tmp meta pass);
+② view-overridden answers live under a NUL-suffixed cache identity (`viewKeySuffix`)
+— the two views of one domain are different answers and never serve each other; the
+in-flight dedup key follows the same identity; ③ prefresh only ever refreshes the
+default-view entry (the background goroutine has no query context) — overridden
+entries just expire. `meta == nil` (no searcher, unattributable source, system
+resolver like svchost/mDNSResponder) keeps the pipeline byte-identical: fail-open.
+This is NOT a proxy→direct DNS *fallback* (see Constitutional Rules) — it is a
+rule-driven upstream choice made before any query is sent, symmetric for
+force-proxy apps.
 
 **Active SWR Prefresh**: When a cache entry has < 25% of its TTL remaining, `GetPackedNearExpiry()` returns cached data immediately and flags it as near-expiry. Middleware launches a background goroutine (`triggerPrefresh`) to refresh the cache. Lazy `k2rule.Match` — only on near-expiry, not every cache hit. Deduped via `prefreshing sync.Map` — at most one refresh per domain:qtype. Background refresh uses `engineCtx` (cancelled on engine Stop), calls `queryUpstream` directly, updates cache + SetTmpRule on success. Fire-and-forget — failures are harmless (existing stale-while-revalidate handles the next query). Disabled when `EngineCtx` is nil.
 

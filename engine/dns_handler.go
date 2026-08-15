@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/rule"
 )
 
 // dnsBufPool pools 4096-byte buffers for DNS TCP message reads.
@@ -41,7 +43,39 @@ type dnsHandler struct {
 	// slot rejects DNS too (fail-closed).
 	forward string
 
+	// searcher, when non-nil, attributes the DNS QUERY connection itself to
+	// a process, so a purely-process App Bypass route can steer the resolver
+	// view (rule.MatchDNSMeta via Middleware.HandleQueryMeta). Wired with the
+	// SAME gated searcher the tunnel gets (engine.go gateProcessSearcher):
+	// nil whenever no loaded rule has process criteria, so the 99% of users
+	// without an App Bypass list pay zero attribution cost per DNS query.
+	// Platform reality check: attribution only identifies apps that resolve
+	// from their own process (Chromium/Electron async resolvers, most Linux
+	// apps). System-resolver queries attribute to svchost/mDNSResponder,
+	// match no app rule, and fall through unchanged — fail-open by design.
+	searcher provider.ProcessSearcher
+
 	consecutiveFails atomic.Int32
+}
+
+// queryMeta builds the process-identity-only ConnMeta for one DNS flow, or
+// nil when attribution is off/unavailable. Only process fields are set —
+// every other ConnMeta dimension stays at its fail-closed zero value so
+// combined routes ({apps, port: 443}…) never match the query itself (see
+// rule.MatchDNSMeta).
+func (h *dnsHandler) queryMeta(network string, src *net.UDPAddr) *rule.ConnMeta {
+	if h.searcher == nil || src == nil {
+		return nil
+	}
+	addr, ok := netip.AddrFromSlice(src.IP)
+	if !ok {
+		return nil
+	}
+	name, pkg, installer := h.searcher.FindProcess(network, addr.Unmap(), uint16(src.Port))
+	if name == "" && pkg == "" && installer == "" {
+		return nil
+	}
+	return &rule.ConnMeta{ProcessName: name, PackageName: pkg, InstallerPackage: installer}
 }
 
 const dnsWireErrorThreshold int32 = 30
@@ -82,13 +116,16 @@ func (h *dnsHandler) queryCtx() (context.Context, context.CancelFunc) {
 
 func (h *dnsHandler) serveDNS(conn net.PacketConn) {
 	defer conn.Close()
+	// One gVisor PacketConn == one LAN flow: attribute its source once, not
+	// per query. nil when attribution is off/unavailable (fail-open).
+	meta := h.queryMeta("udp", provider.SourcePacketAddr(conn))
 	buf := make([]byte, 4096)
 	for {
 		n, addr, err := conn.ReadFrom(buf)
 		if err != nil {
 			return
 		}
-		h.processOneUDPQuery(conn, buf[:n], addr)
+		h.processOneUDPQuery(conn, buf[:n], addr, meta)
 	}
 }
 
@@ -98,7 +135,7 @@ func (h *dnsHandler) serveDNS(conn net.PacketConn) {
 // debug.SetTraceback("crash") in appext converts it to a SIGABRT that kills
 // the iOS/Android VPN session. After recover, we send SERVFAIL so the client
 // retries immediately instead of waiting for a DNS timeout.
-func (h *dnsHandler) processOneUDPQuery(conn net.PacketConn, query []byte, addr net.Addr) {
+func (h *dnsHandler) processOneUDPQuery(conn net.PacketConn, query []byte, addr net.Addr, meta *rule.ConnMeta) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Warn("DIAG: dns-handler-panic",
@@ -112,7 +149,7 @@ func (h *dnsHandler) processOneUDPQuery(conn net.PacketConn, query []byte, addr 
 		}
 	}()
 	ctx, cancel := h.queryCtx()
-	resp, err := h.dns.HandleQuery(ctx, query)
+	resp, err := h.dns.HandleQueryMeta(ctx, query, meta)
 	cancel()
 	if err != nil {
 		if !isDNSParseError(err) {
@@ -131,6 +168,7 @@ func (h *dnsHandler) processOneUDPQuery(conn net.PacketConn, query []byte, addr 
 // Each message is prefixed with a 2-byte big-endian length.
 func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 	defer conn.Close()
+	meta := h.queryMeta("tcp", provider.SourceAddr(conn))
 	bp := dnsBufPool.Get().(*[]byte)
 	defer dnsBufPool.Put(bp)
 	for {
@@ -158,7 +196,7 @@ func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 		// processOneTCPQuery returns false to signal that the loop should
 		// exit (write error, conn unrecoverable). It returns true after a
 		// recovered panic so the next query can be served on the same conn.
-		if !h.processOneTCPQuery(conn, buf) {
+		if !h.processOneTCPQuery(conn, buf, meta) {
 			return
 		}
 	}
@@ -168,7 +206,7 @@ func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 // Returns false if the underlying conn write failed (caller should exit the
 // loop); true otherwise (including after a recovered panic — the conn is
 // still usable for the next length-prefixed message).
-func (h *dnsHandler) processOneTCPQuery(conn net.Conn, query []byte) bool {
+func (h *dnsHandler) processOneTCPQuery(conn net.Conn, query []byte, meta *rule.ConnMeta) bool {
 	keepGoing := true
 	defer func() {
 		if r := recover(); r != nil {
@@ -186,7 +224,7 @@ func (h *dnsHandler) processOneTCPQuery(conn net.Conn, query []byte) bool {
 		}
 	}()
 	ctx, cancel := h.queryCtx()
-	resp, err := h.dns.HandleQuery(ctx, query)
+	resp, err := h.dns.HandleQueryMeta(ctx, query, meta)
 	cancel()
 	if err != nil {
 		if !isDNSParseError(err) {

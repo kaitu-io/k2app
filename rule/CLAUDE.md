@@ -6,6 +6,7 @@ Multi-ruleset routing engine. Turns `routes:` in `ClientConfig` into an ordered
 | Caller | Entry point | Knows |
 |--------|-------------|-------|
 | DNS pipeline (`core/dns`) | `Match(host)` | a host string, nothing else |
+| DNS pipeline, per-process view (`core/dns`) | `MatchDNSMeta(ConnMeta)` | the QUERYING process's identity, nothing else — only purely-process routes participate (no host criteria, and `{apps, port}` combos fail closed on the zeroed dims). Steers resolver-view only, never routing. See `dns_meta.go` + `core/dns/CLAUDE.md` |
 | L4 tunnel (`core/tunnel.go`) | `MatchConn(host, ConnMeta)`, reached via `core.Router.RouteConn` | host + connection metadata |
 | Sniffer, post-first-packet (`core/tunnel.go`) | `RouteConnProto(host, ConnMeta)` | the sniffed application protocol |
 

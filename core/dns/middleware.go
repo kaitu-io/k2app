@@ -75,6 +75,12 @@ type Middleware struct {
 	dnsRouter    func(rule.Target) bool // true = proxy DNS, false = direct DNS
 	rejectTarget rule.Target            // outbound index for reject
 
+	// matchDNSMeta, when non-nil, lets a purely-process route (App Bypass)
+	// matching the QUERYING process override which resolver pool answers
+	// (rule.Engine.MatchDNSMeta). nil disables the per-process view entirely
+	// — the meta-less pipeline is byte-identical to the pre-R2 behavior.
+	matchDNSMeta func(rule.ConnMeta) (rule.Target, bool)
+
 	// Writer for sending raw IP packet responses (L3 mode, nil for L4)
 	writer io.Writer
 
@@ -106,6 +112,7 @@ type MiddlewareConfig struct {
 	SetTmpRule    func(string, rule.Target)
 	DNSRouter     func(rule.Target) bool // true = proxy DNS, false = direct DNS
 	RejectTarget  rule.Target            // outbound index for reject (engine provides)
+	MatchDNSMeta  func(rule.ConnMeta) (rule.Target, bool) // per-process resolver view (nil = off)
 	Writer        io.Writer              // nil for L4-only usage
 	EngineCtx     context.Context        // engine root context for background prefresh (nil disables)
 }
@@ -127,6 +134,7 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 		setTmpRule:   cfg.SetTmpRule,
 		dnsRouter:    cfg.DNSRouter,
 		rejectTarget: rejectTarget,
+		matchDNSMeta: cfg.MatchDNSMeta,
 		writer:       cfg.Writer,
 		engineCtx:    cfg.EngineCtx,
 		querySem:     make(chan struct{}, maxConcurrentUpstream),
@@ -155,6 +163,13 @@ func (m *Middleware) CancelInflight() {
 // HandleQuery processes raw DNS query bytes through the full pipeline.
 // Returns raw DNS response bytes. This is the L4-friendly entry point.
 func (m *Middleware) HandleQuery(ctx context.Context, query []byte) ([]byte, error) {
+	return m.HandleQueryMeta(ctx, query, nil)
+}
+
+// HandleQueryMeta is HandleQuery with optional attribution of the DNS QUERY
+// connection itself (process identity fields only — see rule.MatchDNSMeta).
+// meta == nil keeps the pipeline byte-identical to HandleQuery.
+func (m *Middleware) HandleQueryMeta(ctx context.Context, query []byte, meta *rule.ConnMeta) ([]byte, error) {
 	// Track total queries
 	m.metrics.IncrTotal()
 
@@ -166,7 +181,7 @@ func (m *Middleware) HandleQuery(ctx context.Context, query []byte) ([]byte, err
 	}
 
 	// 2-12. Full pipeline (hosts, filter, cache, rule match, upstream, SetTmpRule)
-	resp, packed, err := m.processQuery(ctx, &msg)
+	resp, packed, err := m.processQuery(ctx, &msg, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +202,7 @@ func (m *Middleware) HandleQuery(ctx context.Context, query []byte) ([]byte, err
 // processQuery runs the DNS pipeline on a parsed message.
 // Returns (resp, nil, nil) for non-hot paths (HandleQuery will Pack),
 // or (nil, packed, nil) for cache hits and inflight dedup (pre-packed bytes).
-func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg, []byte, error) {
+func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg, meta *rule.ConnMeta) (*dns.Msg, []byte, error) {
 	// 1. Extract domain from query
 	domain := extractQueryDomain(query)
 	if domain == "" {
@@ -229,14 +244,46 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 		}
 	}
 
+	// 5b. Per-process resolver view (R2 / App Bypass). A purely-process route
+	// matching the QUERYING process overrides which resolver pool answers —
+	// the domain decision (action) still owns reject semantics and IP pinning
+	// (step 10), so other processes' routing of the same IPs is untouched.
+	// View-overridden answers live under their own cache identity
+	// (cacheDomain) — the node's view of a GeoDNS domain and the local view
+	// are different answers and must never serve each other.
+	//
+	// Resolved eagerly only when an override is possible; the meta-less path
+	// keeps the lazy rule match below.
+	action := rule.Target(0)
+	actionResolved := false
+	viewTarget := rule.Target(0)
+	viewOverridden := false
+	cacheDomain := domain
+	if meta != nil && m.matchDNSMeta != nil {
+		action = m.matchRule(domain)
+		actionResolved = true
+		viewTarget = action
+		if t, ok := m.matchDNSMeta(*meta); ok && m.proxyView(t) != m.proxyView(action) {
+			viewTarget = t
+			viewOverridden = true
+			cacheDomain = domain + viewKeySuffix(m.proxyView(t))
+		}
+	}
+
 	// 6. Check DNS message cache — fast path returns pre-packed bytes.
 	// Active SWR: if near expiry, return cache AND trigger background refresh.
 	if m.dnsCache != nil {
-		packed, nearExpiry := m.dnsCache.GetPackedNearExpiry(domain, query.Question[0].Qtype, query.Id, prefreshThreshold)
+		packed, nearExpiry := m.dnsCache.GetPackedNearExpiry(cacheDomain, query.Question[0].Qtype, query.Id, prefreshThreshold)
 		if packed != nil {
-			if nearExpiry {
+			// Prefresh only the default-view entry: the background goroutine
+			// has no query context (no meta), so it can only re-resolve
+			// through the domain decision's view. A view-overridden entry
+			// simply expires and re-resolves on the next attributed query.
+			if nearExpiry && !viewOverridden {
 				// Lazy rule match — only on near-expiry, not every cache hit.
-				action := m.matchRule(domain)
+				if !actionResolved {
+					action = m.matchRule(domain)
+				}
 				if action != m.rejectTarget {
 					m.triggerPrefresh(domain, query.Question[0].Qtype, action)
 				}
@@ -249,11 +296,14 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 	// 6b. Pre-fetch stale entry for fallback on upstream failure (RFC 8767).
 	var stalePacked []byte
 	if m.dnsCache != nil {
-		stalePacked, _ = m.dnsCache.GetStalePacked(domain, query.Question[0].Qtype, query.Id)
+		stalePacked, _ = m.dnsCache.GetStalePacked(cacheDomain, query.Question[0].Qtype, query.Id)
 	}
 
 	// 7. Domain-based routing
-	action := m.matchRule(domain)
+	if !actionResolved {
+		action = m.matchRule(domain)
+		viewTarget = action
+	}
 
 	// Reject is instant — no upstream query, no dedup needed.
 	if action == m.rejectTarget {
@@ -262,9 +312,10 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 	}
 
 	// 8. Query upstream DNS with in-flight deduplication.
-	// If another goroutine is already querying the same domain+qtype,
-	// we wait for its result instead of issuing a duplicate query.
-	inflightKey := domain + ":" + strconv.FormatUint(uint64(query.Question[0].Qtype), 10)
+	// If another goroutine is already querying the same domain+qtype (in the
+	// same resolver view), we wait for its result instead of issuing a
+	// duplicate query.
+	inflightKey := cacheDomain + ":" + strconv.FormatUint(uint64(query.Question[0].Qtype), 10)
 
 	result := &inflightResult{done: make(chan struct{})}
 	if existing, loaded := m.inflight.LoadOrStore(inflightKey, result); loaded {
@@ -293,7 +344,17 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 		close(result.done)
 	}()
 
-	resp, err := m.queryUpstream(ctx, domain, action, query)
+	if viewOverridden {
+		// Threshold: only actual upstream queries with a flipped view, never
+		// cache hits — one line per force-routed app per TTL expiry.
+		slog.Info("DIAG: dns-view-override",
+			"domain", domain,
+			"process", meta.ProcessName,
+			"package", meta.PackageName,
+			"view", viewName(m.proxyView(viewTarget)),
+		)
+	}
+	resp, err := m.queryUpstream(ctx, domain, viewTarget, query)
 	if err != nil {
 		slog.Debug("DNS inflight owner failed", "domain", domain, "key", inflightKey, "err", err)
 		result.err = err
@@ -312,7 +373,7 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 
 	// 9. Cache DNS message (uses *dns.Msg for TTL optimization, packs internally)
 	if m.dnsCache != nil {
-		m.dnsCache.Add(domain, query.Question[0].Qtype, resp)
+		m.dnsCache.Add(cacheDomain, query.Question[0].Qtype, resp)
 	}
 
 	// 10. Store DNS-learned IP routes as temporary rules.
@@ -385,6 +446,35 @@ func (m *Middleware) triggerPrefresh(domain string, qtype uint16, action rule.Ta
 	}()
 }
 
+// proxyView reports whether a target resolves through proxy DNS.
+// Single authority for the view decision — queryUpstream and the per-process
+// view override (step 5b) must never diverge on it.
+func (m *Middleware) proxyView(t rule.Target) bool {
+	if m.dnsRouter != nil {
+		return m.dnsRouter(t)
+	}
+	// Backward compat: no dnsRouter — any target other than direct/reject
+	// uses proxy DNS.
+	return t != rule.Target(0) && t != m.rejectTarget
+}
+
+// viewKeySuffix builds the cache-identity suffix for a view-overridden entry.
+// NUL can never appear in a hostname, so the suffixed key cannot collide with
+// a real domain's default-view entry.
+func viewKeySuffix(proxy bool) string {
+	if proxy {
+		return "\x00view=proxy"
+	}
+	return "\x00view=direct"
+}
+
+func viewName(proxy bool) string {
+	if proxy {
+		return "proxy"
+	}
+	return "direct"
+}
+
 // returnStaleOrError returns stale cached data if available, otherwise the error.
 func (m *Middleware) returnStaleOrError(stalePacked []byte, err error) (*dns.Msg, []byte, error) {
 	if stalePacked != nil {
@@ -425,16 +515,9 @@ func (m *Middleware) queryUpstream(ctx context.Context, domain string, action ru
 
 	start := time.Now()
 
-	// Determine DNS upstream: dnsRouter decides per-outbound; backward compat:
-	// if no dnsRouter set, any target other than direct/reject uses proxy DNS.
-	var useProxyDNS bool
-	if m.dnsRouter != nil {
-		useProxyDNS = m.dnsRouter(action)
-	} else {
-		useProxyDNS = action != rule.Target(0) && action != m.rejectTarget
-	}
-
-	if useProxyDNS {
+	// Determine DNS upstream: dnsRouter decides per-outbound (proxyView holds
+	// the backward-compat default when dnsRouter is nil).
+	if m.proxyView(action) {
 		m.metrics.IncrProxy()
 		resp, err := m.proxyDNS.Query(ctx, query)
 		elapsed := time.Since(start)
