@@ -4,14 +4,16 @@ package rule_test
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/rule"
 )
 
@@ -26,18 +28,24 @@ var geositeCategories = map[string][]string{
 }
 
 // TestAudit_GeositeCrossCheck downloads v2fly geosite data and compares
-// domain coverage with k2b bundles. Generates a report, not assertions.
+// domain coverage with the published rule bundles. Generates a report, not
+// assertions.
 //
 // Usage: go test -tags audit -run TestAudit -v -timeout 120s ./rule/
+//
+// Guarded by the `audit` build tag, which is also how it rotted unnoticed:
+// it stopped compiling entirely (krs was used but never imported) and no
+// normal build touches it, so nothing reported that. It also still fetched
+// loose cn-direct.k2b / overseas.k2b — two format generations behind what
+// k2-rules publishes. Both are fixed here; the bundles now arrive through
+// EnsureBundles like everywhere else.
 func TestAudit_GeositeCrossCheck(t *testing.T) {
 	dir := t.TempDir()
-	bundleFiles := []string{"cn-direct.k2b", "overseas.k2b"}
-	for _, name := range bundleFiles {
-		url := releaseBase + "/" + name
-		path := filepath.Join(dir, name)
-		if err := downloadFile(url, path); err != nil {
-			t.Fatalf("download %s: %v", name, err)
-		}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := rule.EnsureBundles(ctx, dir, rule.DefaultSources); err != nil {
+		t.Fatalf("EnsureBundles: %v", err)
 	}
 
 	bundles, err := krs.Load(dir)
@@ -45,6 +53,15 @@ func TestAudit_GeositeCrossCheck(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	idx := krs.Index(bundles)
+
+	// Without this an empty index reports 0% coverage and a "missing" list
+	// containing every domain v2fly knows — a spectacular-looking finding that
+	// is purely an artifact of having loaded nothing.
+	if len(bundles) == 0 || len(idx) == 0 {
+		t.Fatalf("loaded %d bundles / %d sets — refusing to audit coverage against "+
+			"an empty rule set, everything would read as missing", len(bundles), len(idx))
+	}
+	t.Logf("loaded %d bundles, %d sets", len(bundles), len(idx))
 
 	for setName, categories := range geositeCategories {
 		bs, ok := idx[setName]

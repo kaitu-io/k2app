@@ -4,11 +4,7 @@ package rule_test
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"net/http"
 	"net/netip"
-	"os"
 	"testing"
 	"time"
 
@@ -16,7 +12,13 @@ import (
 	"github.com/kaitu-io/k2/rule"
 )
 
-const releaseBase = "https://github.com/kaitu-io/k2-rules/releases/latest/download"
+// The loose-asset fetch helper that used to live here (downloadFile, plus a
+// releaseBase pointing at .../releases/latest/download/) is deliberately gone.
+// Three separate tests fetched individual bundle files through it, and all
+// three broke the same way when k2-rules folded its output into a single
+// tarball — two of them silently. Removing the mechanism is what stops a
+// fourth caller from being written against a URL scheme that no longer serves
+// bundles; everything now goes through rule.EnsureBundles.
 
 // TestIntegration_RealBundles downloads the real rule archive from GitHub
 // releases and verifies the full pipeline: upstream data → krs format → Load
@@ -87,8 +89,8 @@ func TestIntegration_RealBundles(t *testing.T) {
 		{"telegram.org", rule.Target(2)},
 		{"bilibili.com", rule.Target(0)},
 		{"www.bilibili.com", rule.Target(0)},
-		{"example.com", rule.Target(0)},       // fallback
-		{"randomsite.xyz", rule.Target(0)},     // fallback
+		{"example.com", rule.Target(0)},    // fallback
+		{"randomsite.xyz", rule.Target(0)}, // fallback
 	}
 	for _, tc := range domainTests {
 		got := engine.Match(tc.domain)
@@ -136,22 +138,4 @@ func resolveNames(idx map[string]*krs.NamedSet, names []string) []krs.Matcher {
 		}
 	}
 	return sets
-}
-
-func downloadFile(url, path string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(f, resp.Body)
-	return err
 }
