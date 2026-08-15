@@ -3,13 +3,14 @@
 package rule_test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/netip"
 	"os"
-	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/kaitu-io/k2-rules/krs"
 	"github.com/kaitu-io/k2/rule"
@@ -17,24 +18,28 @@ import (
 
 const releaseBase = "https://github.com/kaitu-io/k2-rules/releases/latest/download"
 
-// TestIntegration_RealBundles downloads real .krs bundles from GitHub releases
-// and verifies the full pipeline: upstream data → krs format → Load → Match.
-// Skipped with -short (requires network).
+// TestIntegration_RealBundles downloads the real rule archive from GitHub
+// releases and verifies the full pipeline: upstream data → krs format → Load
+// → Match. Skipped with -short (requires network).
+//
+// The bundles arrive through EnsureBundles — the same call daemon.go and
+// appext.go make — rather than by fetching individual .krs files. k2-rules
+// stopped publishing loose bundles: since v2026.08.14 a release carries only
+// krs.tar.gz / k2-rules.tar.gz / manifest.json / VERSION, so the old
+// per-file fetch had been a guaranteed HTTP 404. Going through the production
+// path also means this test now covers manifest → download → extract, not just
+// Load → Match.
 func TestIntegration_RealBundles(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires network (downloads release bundles)")
 	}
 	dir := t.TempDir()
 
-	// Download both bundles.
-	for _, name := range []string{"overseas.krs", "cn.krs"} {
-		url := releaseBase + "/" + name
-		path := filepath.Join(dir, name)
-		if err := downloadFile(url, path); err != nil {
-			t.Fatalf("download %s: %v", name, err)
-		}
-		fi, _ := os.Stat(path)
-		t.Logf("downloaded %s (%d bytes)", name, fi.Size())
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	if err := rule.EnsureBundles(ctx, dir, rule.DefaultSources); err != nil {
+		t.Fatalf("EnsureBundles: %v", err)
 	}
 
 	// Load all bundles.

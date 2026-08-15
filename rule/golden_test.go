@@ -64,7 +64,12 @@ func downloadBundles(t *testing.T, _ goldenFile) (string, []*krs.Bundle, map[str
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	if err := rule.EnsureBundles(ctx, dir, nil); err != nil {
+	// Pass DefaultSources explicitly: EnsureBundles has no nil fallback — the
+	// sources slice reaches raceDownload untouched, so nil means "zero download
+	// sources" and every fetch fails. The nil→DefaultSources default lives in
+	// engine.Start alone; the other production callers (daemon.go, appext.go)
+	// pass DefaultSources the same way this test now does.
+	if err := rule.EnsureBundles(ctx, dir, rule.DefaultSources); err != nil {
 		t.Fatalf("EnsureBundles: %v", err)
 	}
 
