@@ -169,6 +169,7 @@ git push main (webapp/** 变更)
 
 - **常规回滚**：`git revert <坏 commit>` → push → CI 自动发更高版本号的旧内容。
 - **应急重发**：`workflow_dispatch` + `ref=<已知好 commit>`。
+- **应急重发的局限**：`ref=<已知好 commit>` 走 §3.1 的 `{pkg}.{rev-list count}` 公式算出的版本号**低于**坏版本（因为已知好 commit 在坏 commit 之前，rev-list 计数更小），所以只保护**尚未应用坏更新**的设备（`isNewerVersion` 判定重发内容更旧，直接跳过——对这批设备等效于"从未发布过坏版本"）；**已经应用了坏版本的设备会跳过重发的旧版本，不会被拉回**。这些设备必须走 `git revert` + push 恢复（§"常规回滚"，产生更高版本号）。**Incident playbook 顺序：revert-first**——先 `git revert` 覆盖已中招设备，`workflow_dispatch` 重发仅作为需要抢在下一次常规 CI 前止血未中招设备的补充手段，不能替代 revert。
 - **核按钮**：删除/清空 `{brand}/web/latest.json`（native 拿不到 manifest 即停止更新，已应用的保持现状）；单设备逃生：移动端删 app 数据 / 桌面删 `web-ota/` 目录 / Linux `?ui=embedded`。
 
 ## 8. 首次启用（bootstrap 顺序）
@@ -179,6 +180,7 @@ git push main (webapp/** 变更)
 2. **已知时间线约束**：线上移动 manifest 仍是 0.4.7，`min_native=0.4.8` 的首个 OTA 会被在网 0.4.7 存量 native 正确跳过——热更触达面随 0.4.8 移动端发版铺开，这是闸门的预期行为而非故障。
 3. 首个 OTA bundle 内容 = 与当前线上 native 兼容的 main 头（冒烟门通过）。
 4. **先发 beta 通道**，在真机（iOS + Android，新旧两个 native 版本）UAT 验证下载/校验/切换/回滚全链路。注意：iOS native 现状缺 update channel 支持（`getUpdateChannel`/`setUpdateChannel` 未实现、web manifest 端点硬编码 stable）——iOS 的 beta-first UAT 依赖 pipeline 计划 Task 10 补齐并随 native 发版到位；在此之前 iOS 侧用 Android beta 结果 + iOS stable 灰观察替代。
+   - **Beta-clobber 注意**（`publish-web-ota.yml` 步骤"Upload to S3 + publish manifests"）：stable 发布是超集语义——无论 `channel` 输入是什么，每次运行都会先写 `beta/latest.json`，只有 `channel=stable` 时才**再额外**写顶层 `latest.json`；而 main push 触发的运行恒为 `channel=stable`。所以在 beta UAT 窗口期间，任何触及 `webapp/**` 的 main push 都会同时重发 stable **和**覆盖 `beta/latest.json`，用新构建顶掉正在验证的 UAT 内容。**在此期间应冻结触及 webapp 的合并**，或合并后手动 `workflow_dispatch` 重新指定 `channel=beta` + `ref=<UAT 目标 commit>` 恢复 UAT 内容。
 5. 再发 stable。桌面/Linux 能力随各自下一次壳发版上线，不阻塞移动端先行。
 
 ## 9. 测试策略
@@ -197,5 +199,7 @@ git push main (webapp/** 变更)
 | 桌面 origin 迁移失败 → 偏好重置（核实后确认不会登出，auth 在 Rust storage.json） | 迁移失败兜底为直接进新 origin；UAT 覆盖迁移路径 |
 | iOS 3.3.2 审核风险（热更显著改变功能） | 用户已知情选择激进模式；bundle 不改变 app 宣称用途；保留随时停发能力（核按钮） |
 | main 每次 merge 直达全量用户 | 白屏冒烟门 + 契约守卫为强制闸；重大改版可先 dispatch 到 beta |
-| bridge 守卫盲区：行为变更不改方法签名 | 诚实记录：守卫只覆盖方法表增删，语义变更仍靠 review + bump 纪律 |
+| bridge 守卫盲区：两种已证实形状——① 行为变更不改方法签名 ② 平台级实现漂移：TS 声明不变而某一平台的 native 未实现该方法（例：bridge v1 的 channel 方法，iOS 0.4.8 未实现，仅 Android 0.4.8 实现） | 诚实记录：守卫只覆盖方法表增删，两种形状都靠 review + bump 纪律；②见 `bridge-version.ts` 顶部 iOS caveat 注释 + `capacitor-k2.ts` 的 `getPlatform() === 'android'` 门 |
 | 首发 min_native 锚错（重演 2026-03） | §8 步骤 1 要求从 git 历史核实方法集合完整版本，宁高勿低；先 beta 后 stable |
+| manifest 本身未签名，CDN/TLS 位置攻击者可剥离 `sig` 并重算 `hash`——新版 native 回退到纯 sha256 legacy 路径，接受攻击者内容 | 首个签名 manifest 上线且 0.4.9+ native 铺开后，新版 native 应无条件 REQUIRE `sig`（CI 恒发，不再"有则验"）；列为下一次移动端发版的第一个 OTA 加固项 |
+| Mix-and-match 版本钉死：`sig` 只覆盖 web.zip，不覆盖 `version` 字段——攻击者可拼接"旧的、真实签名过"的 zip + 有效 `sig` + 匹配 `hash` + 伪造的巨大 `version`，native 校验通过并应用，把 `web-update/version.txt` 钉在高位，此后所有合法更新都被判定更旧（设备冻结在旧 UI，直到 app 数据重置） | v2 改进：签名 manifest 本身，或把 `version` 纳入签名数据 |
