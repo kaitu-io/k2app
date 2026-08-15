@@ -201,3 +201,90 @@ PASS:  T08 — SSE event delivery confirmed (all transitions)
 
 Both are the same lesson in different clothes: a verification tool reports what it measures,
 not what you meant to measure, and only a known-bad control (H06) tells the two apart.
+
+---
+
+# 发布回归 UAT — v0.4.8..main（k2 5885ce3→ef6c0b2）macOS 进程级（proxy 模式，真实现网节点）
+
+**Date:** 2026-08-14
+**Build:** k2-uat = k2@ef6c0b2 `go build -tags nowebapp ./cmd/k2`（含 kuic e71de59f 子模块）
+**Node:** 65.49.200.32（现网旧版 k2s：支持 QUIC echo、**不支持** TCP-WS echo）
+**Method:** 独立 daemon :17771 + SOCKS :11080；pf anchor `com.apple/250-uatblock` 双向封 UDP/节点:443（须双向——服务端回包会被入向 pass 规则建 state 绕过出向 block）；封锁需 `pfctl -k` 杀既有 state
+
+## Test Matrix
+
+| ID | Pri | Category | Test Case | Expected | Status | Notes |
+|----|-----|----------|-----------|----------|--------|-------|
+| R01 | P0 | kuic 互通 | 新 kuic 客户端连现网旧节点（QUIC/Chrome-146 指纹/ECH/pin） | 握手成功、流量通 | PASS | race winner=quic-443 675-805ms；出口 IP=节点 IP；204 探测 0.49s |
+| R02 | P0 | 兼容 | 旧订阅 URL 带 `hop=40000-40019` | 静默忽略、正常连接 | PASS | 生产 URL 原样连接成功，无告警 |
+| R03 | P0 | TCP-WS 证书 | TCP-WS 腿 pin 校验（fc6b107 修复后）对现网节点 | 握手过、无 pin mismatch | PASS | uTLS Chrome 120_PQ + hostname SNI + ECH + metadata auth OK；dnsTransport=tcpws 持续承载 DNS；全程 0 处 code=403/pin mismatch |
+| R04 | P0 | 记分板 | DIAG heartbeat 新字段 | activeChannel/scoreQuic/scoreTcpws 出现 | PASS | scoreQuic=1.00；QUIC echo 探测自适应 4→16s 节奏 |
+| R05 | P0 | 会话中封锁 | pf 双向封 UDP → 自动恢复 | 切换 TCP-WS、流量续 | PASS | 空闲场景：echo strikes 3 次(3s 节奏)→re-race→tcpws 主传输替换，~8s；带流量场景 ~18s；切换后 204 探测 0.50s |
+| R06 | P0 | 封锁下冷启动 | 全封 UDP 下 down/up | race 直接选 tcpws，无幻影事件 | PASS | winner=tcpws 2167ms（含 QUIC 800ms head-start），总连接 2.3s；无 phantom transport-switch（C1） |
+| R07 | P0 | 旧节点 echo 兼容 | TCP-WS echo 不支持路径 | IsEchoUnsupported 良性 | PASS | `DIAG: echo-probe-unsupported transport=tcpws`；score 停初始 0.25、不记失败、无日志风暴 |
+| R08 | P1 | 解封稳定性 | 解封后观察 | 无震荡/flap | PASS | 解封后 5min+ 零额外 race/switch；tcpws 上 dialOk=10 fail=0 |
+| R09 | P1 | 重连回归 QUIC | 解封后 down/up | QUIC 重新胜出 | PASS | winner=quic-443 805ms |
+| R10 | P1 | 规则包 | EnsureBundles 生产源在线下载 | 全 bundle 落地 | PASS | 20 个 .krs 含新 games/tm/kz/uz；k2-rules v2026.08.14 krs.tar.gz 有效 |
+| R11 | P2 | 质量通路(丢包) | dummynet 20-30% UDP 丢包 → 质量降级路径 | scoreQuic 下降、m8 观察 | SKIP:canary-covers | 新版 macOS pf+dummynet 不可靠；m8(0.7 阈值震荡)本就是 canary DIAG 指定盯梢项 |
+| R12 | P2 | 网络切换 Reset | Wi-Fi 切换清分数/棘轮 | Reset 清空 | SKIP:mobile-real-device | 桌面不折腾用户 Wi-Fi；engine race 测试已锁 Reset 语义；归真机清单 |
+
+## 已知观察（非阻塞，与 review follow-up 对齐）
+
+1. **DIAG `activeChannel` 与 `transport` 不一致**：tcpws 主传输拓扑下 heartbeat 显示 `transport=tcpws activeChannel=quic`——selector 按 C1 守卫在 tcpws-primary 拓扑惰性化，activeChannel 停默认值。功能正确、观测误导（对应 follow-up #3/#4 家族）。
+2. **桌面实际恢复路径是 re-race 而非 selector 回滚**：engine echo strikes(3×3s)比 selector 的 3 连握手失败快，先触发 re-race 换主传输。selector 的 echo 门控回滚路径由单元测试+变异验证兜底（`TestProbe_RollbackRequiresEchoNotJustHandshake` 变异后确认变红）。
+3. teardown 时 QUIC drain 期一条 `echo-probe-unsupported transport=quic-443`（context canceled 被归 unsupported）——一次性、无害，可留意。
+
+## 判定
+
+桌面进程级（UAT 阶梯第 1 层）达成：五场景 3 PASS + 2 SKIP（皆有结构性理由与替代覆盖）。TCP-WS echo 的正向路径（score 上升、review 周期、echo 验证回滚端到端）依赖新 k2s 服务端——归 canary 节点部署阶段。
+
+## 真机 iOS smoke — 2026-08-14 23:27–00:15 (+07)，iPhone 15 (iPhone15,4)，commit b1c28668
+
+设备日志取证：工单 617a041f 附带 k2.log/native.log/webapp.log（Center download_device_log 拉取）。
+
+| ID | Pri | Test Case | Expected | Status | Evidence (UTC) |
+|----|-----|-----------|----------|--------|----------------|
+| M01 | P0 | 首连（race） | 3 候选 race，QUIC 胜出 | PASS | 16:27:56 race-start candidates=3 → winner=quic-443 1118ms → connected 1157ms |
+| M02 | P0 | 飞行模式断网 | EngineError 101 network | PASS | 16:28:03 wire-error code=101 双腿 unreachable，分类正确 |
+| M03 | P0 | 飞行模式恢复 | 自动恢复，无 engine 重启 | PASS | 34s 完整周期：16:28:37 quic→tcpws(quic-handshake-threshold) → 16:29:01 flap-damped 迟滞抑制 → 16:29:17 quic-recovered 回切。**记分板降级/抑制/回切全周期活体验证** |
+| M04 | P0 | Wi-Fi→蜂窝 | 接口重绑、连接续 | PASS | en0(idx18) → 16:28:33 pdp_ip0(idx3) direct-bind 重绑；单 engine 会话贯穿；00:06:59 回 en0 |
+| M05 | P1 | 后台省电（10min） | 备用通道零主动探测 | PASS | 全程 backup-probe 0 条（appext MobilePowerSaving=true 生效）；主通道 echo ~16s 均匀（预期，断连检测必需） |
+| M06 | P1 | 稳定性 | 无 crash/jetsam/OOM | PASS | native.log 0 crash 标记；100 分钟单会话；全程 wire-error 仅 M02 那 1 条 |
+
+杂音（与发布无关）：webapp 4× `402 membership expired`（测试账号会员过期，隧道列表拉取失败但既有连接不受影响）。
+
+真机 iOS smoke（UAT 阶梯第 2 层）判定：M01–M06 全 PASS，其中 M03 是双通道记分板核心新行为在真机网络扰动下的端到端验证。R12（网络切换 Reset）由 M04 覆盖。剩余缺口：Android 真机（低风险——同 gomobile appext 路径）、canary k2s 服务端环、Windows 装机 smoke。
+
+## Canary：SG 新 k2s × 新核心互通（TCP-WS echo 正向路径）— 2026-08-15 00:32–01:17 (+07)
+
+部署：sg.aws.wm01 (13.213.183.161) + wm02 (18.136.83.32) 升级 `v0.4.8-9d7c6f95`（sidecar healthy、注册成功、44 端口映射）。客户端：k2-uat（k2@ef6c0b2，proxy 模式）连 wm01（隧道 id 6683，SNI 伪装 + ECH）。日志：scratchpad `uat2/k2-uat.log`。
+
+| ID | Test Case | Expected | Status | Evidence (+07) |
+|----|-----------|----------|--------|----------------|
+| C01 | TCP-WS echo 正向：score 上升 | scoreTcpws 脱离 0.25 中性值 | PASS | 00:32 连接后 90s 内 0.25→1.00；re-up 会话 30s 到 1.00（信任阶梯 1s/2s/4s 起步） |
+| C02 | review 周期 | score 随采样按 review 节奏更新 | PASS | ~60s 周期波动 0.63–1.00（真实 RTT 42–131ms 驱动） |
+| C03 | 真实故障切换（非人为） | echo strike→re-race→tcpws 接管 | PASS | 01:11:32 echo-probe-fail×3(deadline)→01:11:38 transport-rerace(echo-consecutive-fail)→01:11:40 tcpws 胜出接管 primary，全程 6s，流量无中断 |
+| C04 | UDP 全封下 tcpws primary 承载流量 | 代理流量 204 | PASS | pf 双向封 UDP+杀 state 后 `traffic-on-tcpws: 204 t=0.095s` |
+| C05 | 解封后 QUIC 恢复 | race 回 QUIC，分数恢复 | PASS | re-up 01:16:14 race winner=quic-443 208ms；30s 心跳 scoreQuic=1.00 scoreTcpws=1.00 |
+
+盯梢项活体样本：**m8 阈值震荡区证实**——健康链路 scoreTcpws 短暂 0.63（<0.7 阈值），canary 观察期重点。
+新观察（入 follow-up）：**tcpws-primary 拓扑下 3.5min 内零 QUIC 恢复探测**（scoreQuic 冻结 0.25，无任何 probe 日志）——桌面回 QUIC 只有 re-race/重连一条路，与既有记录一致但更尖锐：死掉的 quic 通道不被后台探测。
+
+判定：canary 环（阶梯第 3 层）首日证据全绿；TCP-WS echo 正向路径缺口关闭。⚠️ `:latest` 已指向新版，未 pin 车队将于北京时间 04:00 nightly auto-update 全量滚。
+
+## 全车队 k2s 部署 v0.4.8-9d7c6f95 — 2026-08-15 01:35–01:52 (+07)
+
+范围：24 台 active 节点（AU3/CA2/HK2/JP5/KR2/SG2/US8），SG 两台为此前 canary。方式：分 4 波并行（每波每区域≤1 台），`sed K2_VERSION` → `compose pull` → `up -d --remove-orphans`。升级前版本碎片：c911d237×16、b582ef6a×4、7b8ec0a4×2、d8619b93×1（印证"上次全量未执行"——根因=车队全 pin 旧 tag，nightly auto-update 只 pull pin 版）。
+
+| 验证 | 结果 |
+|------|------|
+| 双容器镜像 tag=9d7c6f95 | 24/24 |
+| sidecar healthy | 24/24 |
+| Registration completed（升级后重注册） | 24/24（SG 两台早前已证） |
+| 端口映射 | 24/24 齐全（bwh1/bwh4 宿主无全局 IPv6 故无 `[::]` 行，非回归） |
+| 外部 443/TCP TLS 握手（本机直测） | 24/24 |
+| 真实数据面 spot check | JP wm01 隧道 race quic 962ms、204 出口 35.79.73.82；SG wm01 桌面生产 VPN 持续在线 |
+
+途中问题：ECR 匿名拉取限流（bwh1/bwh3 首次 pull toomanyrequests，重试即过，失败时旧容器未受影响）；首次串行脚本被超时杀于 AU wm04 `up -d` 中途，波次重跑修复。已知噪音：k2s stdout 的 "New version available: 0.4.1" 是陈旧版本检查提示，忽略；"server ready" 不在容器 stdout（wrapper 日志），可达性判据改用外部 TLS 握手。
+
+判定：**全车队 24/24 部署完成并验证**。auto-update cron 在 root crontab（每日 04:00 +08），pin 策略下 nightly 恒拉 pin 版；下次发版需再跑批量 pin 更新。DIR-MIGRATION GUARD 可解除：全车队已在 /apps/k2s，零 legacy 目录。
