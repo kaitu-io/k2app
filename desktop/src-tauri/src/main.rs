@@ -11,6 +11,7 @@ mod storage;
 mod storage_crypto;
 mod status_stream;
 mod tray;
+mod ui_protocol;
 mod updater;
 mod web_ota;
 mod window;
