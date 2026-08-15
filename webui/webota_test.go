@@ -220,6 +220,49 @@ func TestUnzipToRejectsZipSlip(t *testing.T) {
 	}
 }
 
+// The zip-slip gate above guards the archive's own entry names. This
+// guards the layer before it: the manifest itself. fetchManifest decodes
+// remote JSON and apply acts on it while the sha256 and minisign gates
+// are still downstream, so between those two points every manifest field
+// is attacker-controlled input running as root. None of them may steer
+// where bytes land — Version reached the staging filename once, and
+// "9.9.9/../../escaped" walks out of cfg.Dir from there.
+func TestApplyKeepsDownloadInsideDirRegardlessOfVersion(t *testing.T) {
+	parent := t.TempDir()
+	sentinel := filepath.Join(parent, "escaped.zip")
+	if err := os.WriteFile(sentinel, []byte("do not touch"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("payload that never passes verification"))
+	}))
+	defer srv.Close()
+
+	o := NewWebOTA(WebOTAConfig{
+		Endpoints:    []string{srv.URL},
+		Dir:          filepath.Join(parent, "state"),
+		ShellVersion: "0.4.9",
+	})
+	m := &WebOTAManifest{
+		Version: "9.9.9/../../escaped",
+		URL:     "web.zip",
+		Hash:    "sha256:" + strings.Repeat("0", 64),
+	}
+	// Rejected at the hash gate either way — what this asserts is where
+	// the bytes went before that gate got a say.
+	if err := o.apply(m, srv.URL); err == nil {
+		t.Fatal("apply accepted an unverifiable bundle")
+	}
+	got, err := os.ReadFile(sentinel)
+	if err != nil {
+		t.Fatalf("manifest version escaped cfg.Dir — %s was written then deleted: %v", sentinel, err)
+	}
+	if string(got) != "do not touch" {
+		t.Errorf("manifest version escaped cfg.Dir — %s overwritten with %q", sentinel, got)
+	}
+}
+
 func TestUnzipToExtractsNestedFiles(t *testing.T) {
 	z := makeZip(t, map[string]string{
 		"index.html":    "<html></html>",

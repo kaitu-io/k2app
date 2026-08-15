@@ -176,7 +176,13 @@ func (o *WebOTA) apply(m *WebOTAManifest, endpoint string) error {
 	if err := os.MkdirAll(o.cfg.Dir, 0755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", o.cfg.Dir, err)
 	}
-	zipPath := filepath.Join(o.cfg.Dir, "web-"+m.Version+".zip")
+	// Fixed staging name, not one derived from m.Version: the version
+	// string arrives in remote JSON and is used here while the sha256 and
+	// minisign gates below are still ahead of it, so interpolating it into
+	// a path would let a manifest pick where this root-owned daemon
+	// writes. Only one apply is ever in flight (Start polls from a single
+	// goroutine), so a constant name needs no uniquing.
+	zipPath := filepath.Join(o.cfg.Dir, "pending.zip")
 	defer os.Remove(zipPath)
 
 	// m.URL is relative to the manifest's directory: <endpoint>/web/.
