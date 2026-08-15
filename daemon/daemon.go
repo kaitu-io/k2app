@@ -217,7 +217,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 
 	// Linux-only webapp + /api/storage + /api/platform + /api/upgrade.
 	// No-op on macOS/Windows (Tauri provides the UI on those platforms).
-	d.registerWebUI(mux)
+	d.registerWebUI(ctx, mux)
 
 	srv := &http.Server{
 		Addr:    listenAddr,
