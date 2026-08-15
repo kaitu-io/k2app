@@ -282,19 +282,29 @@ export async function injectTauriGlobals(): Promise<void> {
     // plugin-log not available (non-Tauri env), skip
   }
 
-  // Web OTA boot handshake: confirm the UI booted so Rust clears the
-  // .boot-pending rollback marker. try/catch — older shells lack the command.
-  try {
-    await invoke('ui_boot_ok');
-  } catch {
-    // pre-web-ota shell — ignore
-  }
-
   // Show window after frontend is fully initialized
   // This prevents size flashing on Windows
   try {
     await invoke('show_window');
   } catch (error) {
     console.warn('[K2:Tauri] Failed to show window:', error);
+  }
+}
+
+/**
+ * Web OTA boot handshake: confirm the UI actually rendered so Rust clears the
+ * .boot-pending rollback marker. Deliberately NOT called from
+ * injectTauriGlobals — that runs before store init and the first React
+ * render, so a bundle that crashes during either of those stages would still
+ * have cleared the marker, permanently defeating the rollback (a white-screen
+ * bundle would never get quarantined). Callers must invoke this only after
+ * ReactDOM has rendered the app (see main.tsx). try/catch — older shells lack
+ * the command.
+ */
+export async function confirmUiBootOk(): Promise<void> {
+  try {
+    await invoke('ui_boot_ok');
+  } catch {
+    // pre-web-ota shell — ignore
   }
 }

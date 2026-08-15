@@ -5,12 +5,20 @@ import App from "./App";
 import { i18nPromise } from "./i18n/i18n";
 import { initializeAllStores } from "./stores";
 import { bootstrapAntiblockSeed } from "./services/antiblock-seed";
+import { installChunkReloadGuard } from "./utils/chunk-reload-guard";
 import {
   DESIGN_WIDTH,
   ViewportState,
   computeScaleDecision,
   isAndroidCapacitorWebView,
 } from "./utils/viewport-scaling";
+
+// F6: a mid-session Web OTA apply leaves the already-loaded index.html
+// pointing at hashed chunk filenames the new bundle no longer has on disk —
+// the first navigation to an unvisited lazy tab 404s. Install this before
+// anything else so it's live for the whole session (including the migration
+// export page and its dynamic imports).
+installChunkReloadGuard();
 
 // ==================== Viewport Scaling ====================
 
@@ -167,6 +175,16 @@ async function main() {
       <App />
     </React.StrictMode>,
   );
+
+  // Web OTA boot handshake (F4): confirm the UI booted only AFTER render has
+  // happened — a bundle that crashes during store-init or first paint must
+  // NOT clear .boot-pending, so the next launch quarantines it instead of
+  // serving the same broken bundle again. Migration halt/reload paths above
+  // both `return` before this point, so this only runs on the normal boot.
+  if (window.__TAURI__) {
+    const { confirmUiBootOk } = await import('./services/tauri-k2');
+    await confirmUiBootOk();
+  }
 
   // HMR 清理
   if (import.meta.hot) {

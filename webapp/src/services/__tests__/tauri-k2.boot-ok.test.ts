@@ -19,7 +19,7 @@ vi.mock('@tauri-apps/plugin-log', () => ({
   error: vi.fn(async () => {}),
 }));
 
-import { injectTauriGlobals } from '../tauri-k2';
+import { injectTauriGlobals, confirmUiBootOk } from '../tauri-k2';
 
 function defaultInvokeImpl(cmd: string): unknown {
   switch (cmd) {
@@ -41,15 +41,34 @@ describe('tauri-k2 ui_boot_ok handshake', () => {
     invokeMock.mockImplementation(async (cmd: string) => defaultInvokeImpl(cmd));
   });
 
-  it('calls ui_boot_ok during bridge init', async () => {
+  // F4: ui_boot_ok must NOT fire during bridge init (before store init / first
+  // React render) — a bundle that crashes during either stage would still
+  // clear the rollback marker, permanently defeating quarantine. The webapp
+  // confirms boot separately via confirmUiBootOk(), called from main.tsx only
+  // after ReactDOM has rendered.
+  it('does NOT call ui_boot_ok during bridge init', async () => {
     await injectTauriGlobals();
     const commands = invokeMock.mock.calls.map((c) => c[0]);
-    expect(commands).toContain('ui_boot_ok');
-    // and still shows the window afterwards
+    expect(commands).not.toContain('ui_boot_ok');
+    // window is still shown regardless
     expect(commands).toContain('show_window');
   });
 
-  it('survives an old shell without the command', async () => {
+  it('confirmUiBootOk calls ui_boot_ok', async () => {
+    await confirmUiBootOk();
+    const commands = invokeMock.mock.calls.map((c) => c[0]);
+    expect(commands).toContain('ui_boot_ok');
+  });
+
+  it('confirmUiBootOk survives an old shell without the command', async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'ui_boot_ok') throw new Error('command ui_boot_ok not found');
+      return defaultInvokeImpl(cmd);
+    });
+    await expect(confirmUiBootOk()).resolves.toBeUndefined();
+  });
+
+  it('injectTauriGlobals still resolves on an old shell without the command', async () => {
     invokeMock.mockImplementation(async (cmd: string) => {
       if (cmd === 'ui_boot_ok') throw new Error('command ui_boot_ok not found');
       return defaultInvokeImpl(cmd);
