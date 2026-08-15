@@ -24,8 +24,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 case "$BRAND" in
-  kaitu)    FORBIDDEN='overleap\.io|/overleap/desktop/'; EXPECTED_APP='Kaitu.app' ;;
-  overleap) FORBIDDEN='kaitu\.io|开途|開途|/kaitu/desktop/'; EXPECTED_APP='Overleap.app' ;;
+  kaitu)    FORBIDDEN='overleap\.io|/overleap/(desktop|web)/'; EXPECTED_APP='Kaitu.app' ;;
+  overleap) FORBIDDEN='kaitu\.io|开途|開途|/kaitu/(desktop|web)/'; EXPECTED_APP='Overleap.app' ;;
   *) echo "ERROR: brand must be kaitu|overleap" >&2; exit 1 ;;
 esac
 
