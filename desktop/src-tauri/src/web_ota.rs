@@ -10,6 +10,8 @@
 
 use std::path::PathBuf;
 
+use chrono;
+
 /// Compile-time bridge API version of this shell. Bumped in lockstep with the
 /// webapp's BRIDGE_API_VERSION (guarded by the contract-guard plan; this file
 /// only consumes it via the manifest `min_bridge` gate).
@@ -185,6 +187,52 @@ pub fn apply_pending(d: &OtaDirs) -> Result<(), String> {
         std::fs::rename(&current, &previous).map_err(|e| format!("current -> previous: {e}"))?;
     }
     std::fs::rename(&pending, &current).map_err(|e| format!("pending -> current: {e}"))
+}
+
+/// Written just before the shell boots the on-disk UI; cleared by the webapp's
+/// ui_boot_ok call. Still present at next startup ⇒ the UI never booted.
+pub fn mark_boot_pending(d: &OtaDirs) {
+    let _ = std::fs::create_dir_all(&d.root);
+    if let Err(e) = std::fs::write(d.boot_pending(), "1") {
+        log::error!("[web-ota] failed to write .boot-pending: {e}");
+    }
+}
+
+pub fn clear_boot_pending(d: &OtaDirs) {
+    let _ = std::fs::remove_file(d.boot_pending());
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum BootCheck {
+    Clean,
+    RolledBackToPrevious,
+    RolledBackToEmbedded,
+}
+
+/// Startup rollback: consume a stale .boot-pending, quarantine the bundle that
+/// failed to boot, and restore previous/ (or fall back to embedded assets).
+pub fn startup_rollback(d: &OtaDirs) -> BootCheck {
+    if !d.boot_pending().is_file() {
+        return BootCheck::Clean;
+    }
+    let _ = std::fs::remove_file(d.boot_pending());
+    let current = d.current();
+    if current.exists() {
+        let ver = local_ui_version(d, "unknown");
+        let _ = std::fs::create_dir_all(d.quarantine());
+        let stamp = chrono::Utc::now().format("%Y%m%d%H%M%S");
+        let target = d.quarantine().join(format!("{ver}-{stamp}"));
+        if let Err(e) = std::fs::rename(&current, &target) {
+            // Last resort: a bundle we can't move must not be served again.
+            log::error!("[web-ota] quarantine rename failed ({e}), deleting current");
+            let _ = std::fs::remove_dir_all(&current);
+        }
+    }
+    let previous = d.previous();
+    if previous.join("index.html").is_file() && std::fs::rename(&previous, d.current()).is_ok() {
+        return BootCheck::RolledBackToPrevious;
+    }
+    BootCheck::RolledBackToEmbedded
 }
 
 #[cfg(test)]
@@ -412,5 +460,66 @@ mod tests {
         assert!(apply_pending(&d).is_err());
         // current untouched on failure
         assert_eq!(local_ui_version(&d, "app"), "v1");
+    }
+
+    #[test]
+    fn boot_pending_mark_and_clear() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        mark_boot_pending(&d);
+        assert!(d.boot_pending().is_file());
+        clear_boot_pending(&d);
+        assert!(!d.boot_pending().exists());
+    }
+
+    #[test]
+    fn startup_rollback_noop_without_marker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        seed_bundle(&d.current(), "v2");
+        assert_eq!(startup_rollback(&d), BootCheck::Clean);
+        assert_eq!(local_ui_version(&d, "app"), "v2"); // untouched
+    }
+
+    #[test]
+    fn startup_rollback_quarantines_and_restores_previous() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        seed_bundle(&d.previous(), "v1");
+        seed_bundle(&d.current(), "v2");
+        mark_boot_pending(&d);
+        assert_eq!(startup_rollback(&d), BootCheck::RolledBackToPrevious);
+        assert!(!d.boot_pending().exists()); // marker consumed
+        assert_eq!(local_ui_version(&d, "app"), "v1"); // previous promoted
+        assert!(!d.previous().exists());
+        // v2 landed in quarantine, name prefixed by its version
+        let quarantined: Vec<_> = std::fs::read_dir(d.quarantine())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(quarantined.len(), 1);
+        assert!(quarantined[0].starts_with("v2-"), "got {:?}", quarantined);
+    }
+
+    #[test]
+    fn startup_rollback_to_embedded_when_no_previous() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        seed_bundle(&d.current(), "v2");
+        mark_boot_pending(&d);
+        assert_eq!(startup_rollback(&d), BootCheck::RolledBackToEmbedded);
+        assert_eq!(serve_root(&d), None); // falls through to embedded assets
+    }
+
+    #[test]
+    fn startup_rollback_marker_without_current() {
+        // Marker set but current was never created (e.g. manual web-ota wipe):
+        // must not panic, must consume the marker.
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        std::fs::create_dir_all(&d.root).unwrap();
+        mark_boot_pending(&d);
+        assert_eq!(startup_rollback(&d), BootCheck::RolledBackToEmbedded);
+        assert!(!d.boot_pending().exists());
     }
 }
