@@ -127,7 +127,7 @@ func fakeEmbed(t *testing.T) {
 	t.Helper()
 	orig := webappFS
 	webappFS = fstest.MapFS{
-		"dist/index.html":          &fstest.MapFile{Data: []byte("<html><head></head><body>EMBEDDED-UI</body></html>")},
+		"dist/index.html":           &fstest.MapFile{Data: []byte("<html><head></head><body>EMBEDDED-UI</body></html>")},
 		"dist/assets/embed-only.js": &fstest.MapFile{Data: []byte("console.log('embed')")},
 	}
 	t.Cleanup(func() { webappFS = orig })
