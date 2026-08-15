@@ -250,8 +250,12 @@ jobs:
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
 
-      # Web OTA disabled — native/webapp version mismatch caused storage regression (2026-03-22).
-      # Webapp is bundled with native builds; OTA updates risk calling native methods that don't exist yet.
+      # Web OTA is re-enabled: this workflow's `publish-web-ota` tail job (spec §6) auto-publishes
+      # a web bundle from the same tag commit after both platform builds succeed, guarded by the
+      # bridge-contract gate + white-screen smoke gate + CI-derived support floor. Compatibility
+      # with apps older than the floor is handled by runtime capability detection, not a version
+      # gate — see webapp/CLAUDE.md 兼容模型 section. (2026-03-22 storage regression incident is
+      # resolved by that floor/detection design, not by disabling OTA.)
 
       - name: Clean up keychain
         if: always()
@@ -493,11 +497,16 @@ jobs:
   # App 发版联动（web OTA spec §6 触发 2）：任一移动平台构建成功且无失败时，
   # 从同一 tag commit 发布双品牌 web bundle。平台后缀 tag（-ios/-android）会
   # skip 另一个 build job，所以不能用裸 needs 成功语义 — 显式检查 result：
-  # 至少一个 success、零 failure 才联动。恒 stable 通道；dispatch 手工构建不发布。
+  # 至少一个 success、零 failure 才联动。恒 stable 通道。只在 push 的真实 v*
+  # tag 时联动；dispatch 重建旧 tag 绝不发布——时间基构建号下那会把旧 UI 变成
+  # 全网最新（终审 B1）。预发布（-beta）app 发版不联动：web OTA 版本恒
+  # x.y.z.n，beta web 走 publish-web-ota 的 dispatch channel=beta（终审 m4）。
   publish-web-ota:
     needs: [build-ios, build-android]
     if: >-
-      !cancelled() && startsWith(github.ref, 'refs/tags/v') &&
+      !cancelled() && github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      !contains(github.ref_name, '-beta') &&
       (needs.build-ios.result == 'success' || needs.build-android.result == 'success') &&
       needs.build-ios.result != 'failure' && needs.build-android.result != 'failure'
     uses: ./.github/workflows/publish-web-ota.yml

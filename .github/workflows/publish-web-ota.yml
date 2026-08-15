@@ -175,3 +175,16 @@ jobs:
               --no-cli-pager --output text > /dev/null
           done
           echo "CDN invalidated: d0.all7.cc + dl.kaitu.io (/{kaitu,overleap}/web/*)"
+
+      # A failed linkage publish (spec §6 trigger 2, from release-desktop.yml /
+      # build-mobile.yml) is otherwise silent except for a red run nobody is
+      # watching — it leaves CDN latest behind the just-shipped app's embedded
+      # UI, the exact inversion the linkage exists to prevent (终审 m5).
+      - name: Notify Slack on publish failure
+        if: failure()
+        run: |
+          ./scripts/ci/notify-slack.sh build-failure \
+            --platform "Publish Web OTA" \
+            --error "Web OTA publish failed (event: ${{ github.event_name }}, ref: ${{ github.ref_name }}). Check workflow run for details."
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
