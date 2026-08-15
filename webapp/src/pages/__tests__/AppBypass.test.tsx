@@ -9,11 +9,14 @@ import AppBypass from '../AppBypass';
 const setOverride = vi.fn();
 const resetOverrides = vi.fn();
 const classifyInstalled = vi.fn();
+const refreshOverrideNames = vi.fn();
+// Mutable per-test override map — the page reads override state by app id.
+let mockOverrides: Record<string, { mode: 'direct' | 'proxy'; names: string[] }> = {};
 vi.mock('../../stores', () => ({
   useAppRoutesStore: (sel: any) => sel({
-    forceProxy: [], forceDirect: [],
+    overrides: mockOverrides,
     classifications: new Map([['/Applications/WeChat.app', 'direct']]),
-    classifyInstalled, setOverride, resetOverrides, loaded: true,
+    classifyInstalled, setOverride, refreshOverrideNames, resetOverrides, loaded: true,
   }),
   useVPNMachineStore: (sel: any) => sel({ state: 'idle' }),
   useConfigStore: (sel: any) => sel({ country: 'cn', resolvePreset: () => 'bypass' }),
@@ -27,6 +30,8 @@ beforeAll(async () => {
 beforeEach(() => {
   setOverride.mockReset();
   classifyInstalled.mockReset();
+  refreshOverrideNames.mockReset();
+  mockOverrides = {};
   (window as any)._platform = {
     os: 'macos',
     appList: {
@@ -118,5 +123,89 @@ describe('AppBypass page', () => {
     (window as any)._platform = { os: 'ios', appList: undefined };
     renderPage();
     expect(await screen.findByText(/不支持|isn't supported/)).toBeInTheDocument();
+  });
+
+  // Windows: installed.id is the install DIRECTORY, running.id is the exe's
+  // full path. Running exes under an installed app's directory fold into it —
+  // they leave the "other running" section and their basenames ride along in
+  // setOverride, so one toggle covers the whole multi-process app (F4).
+  test('windows: running exes under the install dir fold into the app and extend setOverride', async () => {
+    (window as any)._platform = {
+      os: 'windows',
+      appList: {
+        listInstalled: vi.fn().mockResolvedValue([
+          {
+            id: 'C:\\Program Files\\Tencent\\Weixin',
+            label: '微信',
+            processNames: ['Weixin.exe', 'WeChatAppEx.exe'],
+          },
+        ]),
+        listRunning: vi.fn().mockResolvedValue([
+          // Depth-missed exe inside the install tree → must fold in.
+          {
+            id: 'C:\\Program Files\\Tencent\\Weixin\\4.1.12.55\\plugins\\WeixinUpdate.exe',
+            label: 'WeixinUpdate',
+            processNames: ['WeixinUpdate.exe'],
+          },
+          // Unrelated standalone binary → stays in "other running".
+          { id: 'C:\\Tools\\rclone.exe', label: 'rclone', processNames: ['rclone.exe'] },
+        ]),
+      },
+    };
+    renderPage();
+    await screen.findByText('微信');
+    await screen.findByText(/其他运行中的程序|Other running programs/);
+    // Folded row is claimed — not listed as "other".
+    expect(screen.queryByText('WeixinUpdate')).not.toBeInTheDocument();
+    expect(screen.getByText('rclone')).toBeInTheDocument();
+    // Toggling the app carries the folded exe name too. Its classification
+    // default is proxy (no mock map entry), so clicking 直连 sets an explicit
+    // 'direct' override.
+    const directChip = screen.getAllByText(/直连|Direct/).find((el) => el.closest('.MuiChip-root'));
+    fireEvent.click(directChip!);
+    await waitFor(() => expect(setOverride).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'C:\\Program Files\\Tencent\\Weixin',
+        processNames: ['Weixin.exe', 'WeChatAppEx.exe', 'WeixinUpdate.exe'],
+      }),
+      'direct',
+    ));
+    // Stale persisted overrides get re-synced against the folded name sets.
+    await waitFor(() => expect(refreshOverrideNames).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'C:\\Program Files\\Tencent\\Weixin',
+        processNames: ['Weixin.exe', 'WeChatAppEx.exe', 'WeixinUpdate.exe'],
+      }),
+    ]));
+  });
+
+  // Override chips read back by APP ID — a shared helper basename in another
+  // app's override set must not light this app's chip.
+  test('override state reads by app id, not by process-name overlap', async () => {
+    mockOverrides = {
+      'C:\\Apps\\Other': { mode: 'direct', names: ['other.exe', 'crashpad_handler.exe'] },
+    };
+    (window as any)._platform = {
+      os: 'windows',
+      appList: {
+        listInstalled: vi.fn().mockResolvedValue([
+          {
+            id: 'C:\\Apps\\Mine',
+            label: 'Mine',
+            processNames: ['mine.exe', 'crashpad_handler.exe'],
+          },
+        ]),
+        listRunning: vi.fn().mockResolvedValue([]),
+      },
+    };
+    renderPage();
+    await screen.findByText('Mine');
+    // classification default is proxy (no entry in the mock map) and there is
+    // no override for THIS app id → the 直连 chip must not be highlighted.
+    const directChip = screen
+      .getAllByText(/直连|Direct/)
+      .find((el) => el.closest('.MuiChip-root'))!
+      .closest('.MuiChip-root')!;
+    expect(directChip.className).not.toMatch(/colorPrimary/);
   });
 });

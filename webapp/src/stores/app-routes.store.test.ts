@@ -18,25 +18,26 @@ function installStorageMock(): Map<string, unknown> {
   return m;
 }
 
-describe('app-routes.store (Plan B)', () => {
+function resetStore(loaded: boolean) {
+  useAppRoutesStore.setState(
+    { overrides: {}, forceProxy: [], forceDirect: [], classifications: new Map(), loaded },
+    false,
+  );
+}
+
+describe('app-routes.store (per-app overrides)', () => {
   let store: Map<string, unknown>;
   beforeEach(() => {
     store = installStorageMock();
-    useAppRoutesStore.setState({ forceProxy: [], forceDirect: [], loaded: false }, false);
+    resetStore(false);
   });
 
-  test('initial state: empty force lists, not loaded', () => {
+  test('initial state: no overrides, empty derived lists, not loaded', () => {
     const s = useAppRoutesStore.getState();
+    expect(s.overrides).toEqual({});
     expect(s.forceProxy).toEqual([]);
     expect(s.forceDirect).toEqual([]);
     expect(s.loaded).toBe(false);
-  });
-
-  test('setForceProxy dedups + persists to _platform.storage under STORAGE_KEY', async () => {
-    await useAppRoutesStore.getState().setForceProxy(['a', 'b', 'a']);
-    expect(useAppRoutesStore.getState().forceProxy).toEqual(['a', 'b']);
-    const saved = store.get(STORAGE_KEY) as any;
-    expect(saved).toMatchObject({ v: 1, forceProxy: ['a', 'b'], forceDirect: [] });
   });
 
   test('load() migrates away the legacy keys from _platform.storage', async () => {
@@ -48,12 +49,31 @@ describe('app-routes.store (Plan B)', () => {
     expect(useAppRoutesStore.getState().loaded).toBe(true);
   });
 
-  test('load() hydrates force lists from STORAGE_KEY', async () => {
+  test('load() hydrates overrides + derived lists from a v2 payload', async () => {
+    store.set(STORAGE_KEY, {
+      v: 2,
+      apps: {
+        'C:\\Apps\\X': { mode: 'proxy', names: ['x.exe'] },
+        'C:\\Apps\\Y': { mode: 'direct', names: ['y.exe', 'y_helper.exe'] },
+      },
+    });
+    await useAppRoutesStore.getState().load();
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides['C:\\Apps\\Y']?.mode).toBe('direct');
+    expect(s.forceProxy).toEqual(['x.exe']);
+    expect(s.forceDirect).toEqual(expect.arrayContaining(['y.exe', 'y_helper.exe']));
+    expect(s.loaded).toBe(true);
+  });
+
+  // v1 carried flat name lists with no app identity — it is discarded, never
+  // guessed into per-app entries.
+  test('load() discards a v1 payload', async () => {
     store.set(STORAGE_KEY, { v: 1, forceProxy: ['x'], forceDirect: ['y'] });
     await useAppRoutesStore.getState().load();
     const s = useAppRoutesStore.getState();
-    expect(s.forceProxy).toEqual(['x']);
-    expect(s.forceDirect).toEqual(['y']);
+    expect(s.overrides).toEqual({});
+    expect(s.forceProxy).toEqual([]);
+    expect(s.forceDirect).toEqual([]);
     expect(s.loaded).toBe(true);
   });
 
@@ -64,9 +84,10 @@ describe('app-routes.store (Plan B)', () => {
 });
 
 describe('app-routes classify cache + toggles', () => {
+  let store: Map<string, unknown>;
   beforeEach(() => {
-    installStorageMock();
-    useAppRoutesStore.setState({ forceProxy: [], forceDirect: [], classifications: new Map(), loaded: true });
+    store = installStorageMock();
+    resetStore(true);
     (classifyApps as any).mockReset();
   });
 
@@ -79,29 +100,91 @@ describe('app-routes classify cache + toggles', () => {
     expect(useAppRoutesStore.getState().classifications.get('a')).toBe('direct');
   });
 
-  // overrides store PROCESS NAMES (engine match.apps), NOT the app id.
-  test('setOverride(direct) stores all process names + is exclusive with proxy', async () => {
+  test('setOverride(direct) keys by app id, derives all process names, exclusive with proxy', async () => {
     const steam = { id: '/Applications/Steam.app', processNames: ['Steam', 'steamwebhelper'] };
     await useAppRoutesStore.getState().setOverride(steam, 'proxy');
     await useAppRoutesStore.getState().setOverride(steam, 'direct');
-    expect(useAppRoutesStore.getState().forceDirect).toEqual(
-      expect.arrayContaining(['Steam', 'steamwebhelper']));
-    expect(useAppRoutesStore.getState().forceProxy).not.toContain('Steam');
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[steam.id]).toEqual({ mode: 'direct', names: ['Steam', 'steamwebhelper'] });
+    expect(s.forceDirect).toEqual(expect.arrayContaining(['Steam', 'steamwebhelper']));
+    expect(s.forceProxy).toEqual([]);
+    expect(store.get(STORAGE_KEY)).toMatchObject({
+      v: 2,
+      apps: { [steam.id]: { mode: 'direct' } },
+    });
   });
 
-  test('setOverride(default) clears all of the app process names', async () => {
+  test('setOverride(default) removes the app entry and its derived names', async () => {
     const steam = { id: '/Applications/Steam.app', processNames: ['Steam', 'steamwebhelper'] };
     await useAppRoutesStore.getState().setOverride(steam, 'direct');
     await useAppRoutesStore.getState().setOverride(steam, 'default');
-    expect(useAppRoutesStore.getState().forceDirect).not.toContain('Steam');
-    expect(useAppRoutesStore.getState().forceDirect).not.toContain('steamwebhelper');
-    expect(useAppRoutesStore.getState().forceProxy).not.toContain('Steam');
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides).toEqual({});
+    expect(s.forceDirect).toEqual([]);
   });
 
-  test('resetOverrides clears both sets', async () => {
+  // A shared helper basename (crashpad_handler.exe & co) must not bleed one
+  // app's override onto another app: identity is the app id.
+  test('two apps sharing a helper name keep independent overrides', async () => {
+    const a = { id: 'C:\\Apps\\A', processNames: ['a.exe', 'crashpad_handler.exe'] };
+    const b = { id: 'C:\\Apps\\B', processNames: ['b.exe', 'crashpad_handler.exe'] };
+    await useAppRoutesStore.getState().setOverride(a, 'direct');
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[a.id]?.mode).toBe('direct');
+    expect(s.overrides[b.id]).toBeUndefined();
+    // The engine still matches by name: the shared helper IS in forceDirect.
+    expect(s.forceDirect).toEqual(expect.arrayContaining(['a.exe', 'crashpad_handler.exe']));
+  });
+
+  test('refreshOverrideNames grows a stale name set and re-persists', async () => {
+    const app = { id: 'C:\\Program Files\\Tencent\\Weixin', processNames: ['Weixin.exe'] };
+    await useAppRoutesStore.getState().setOverride(app, 'direct');
+    const richer = { ...app, processNames: ['Weixin.exe', 'WeChatAppEx.exe'] };
+    await useAppRoutesStore.getState().refreshOverrideNames([richer]);
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[app.id]?.names).toEqual(['Weixin.exe', 'WeChatAppEx.exe']);
+    expect(s.forceDirect).toContain('WeChatAppEx.exe');
+    expect(store.get(STORAGE_KEY)).toMatchObject({
+      v: 2,
+      apps: { [app.id]: { names: ['Weixin.exe', 'WeChatAppEx.exe'] } },
+    });
+  });
+
+  test('refreshOverrideNames ignores apps without overrides and empty name sets', async () => {
+    const app = { id: 'C:\\Apps\\A', processNames: ['a.exe'] };
+    await useAppRoutesStore.getState().setOverride(app, 'proxy');
+    const persistedBefore = store.get(STORAGE_KEY);
+    await useAppRoutesStore.getState().refreshOverrideNames([
+      { id: 'C:\\Apps\\Other', processNames: ['other.exe'] }, // no override
+      { id: app.id, processNames: [] }, // empty set must not wipe names
+    ]);
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[app.id]?.names).toEqual(['a.exe']);
+    expect(store.get(STORAGE_KEY)).toBe(persistedBefore); // untouched (no re-persist)
+  });
+
+  // Monotonic: a helper the user locked in while it was running must survive
+  // a later page load where it happens not to be running — the refreshed
+  // (smaller) list unions in, never replaces.
+  test('refreshOverrideNames never shrinks a stored name set', async () => {
+    const app = { id: 'C:\\Apps\\A', processNames: ['a.exe', 'a_helper.exe'] };
+    await useAppRoutesStore.getState().setOverride(app, 'direct');
+    const persistedBefore = store.get(STORAGE_KEY);
+    await useAppRoutesStore.getState().refreshOverrideNames([
+      { id: app.id, processNames: ['a.exe'] }, // helper not running today
+    ]);
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[app.id]?.names).toEqual(['a.exe', 'a_helper.exe']);
+    expect(s.forceDirect).toEqual(expect.arrayContaining(['a.exe', 'a_helper.exe']));
+    expect(store.get(STORAGE_KEY)).toBe(persistedBefore); // no change → no re-persist
+  });
+
+  test('resetOverrides clears everything', async () => {
     await useAppRoutesStore.getState().setOverride({ id: 'x', processNames: ['x'] }, 'direct');
     await useAppRoutesStore.getState().resetOverrides();
-    expect(useAppRoutesStore.getState().forceDirect).toEqual([]);
-    expect(useAppRoutesStore.getState().forceProxy).toEqual([]);
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides).toEqual({});
+    expect(s.forceDirect).toEqual([]);
+    expect(s.forceProxy).toEqual([]);
   });
 });
