@@ -169,6 +169,24 @@ pub fn local_ui_version(d: &OtaDirs, app_version: &str) -> String {
         .unwrap_or_else(|| app_version.to_string())
 }
 
+/// Promote a verified pending bundle: current → previous, pending → current.
+/// Caller must have written pending/version.txt before calling.
+pub fn apply_pending(d: &OtaDirs) -> Result<(), String> {
+    let pending = d.pending();
+    if !pending.join("index.html").is_file() {
+        return Err("pending bundle has no index.html".to_string());
+    }
+    let previous = d.previous();
+    if previous.exists() {
+        std::fs::remove_dir_all(&previous).map_err(|e| format!("clear previous: {e}"))?;
+    }
+    let current = d.current();
+    if current.exists() {
+        std::fs::rename(&current, &previous).map_err(|e| format!("current -> previous: {e}"))?;
+    }
+    std::fs::rename(&pending, &current).map_err(|e| format!("pending -> current: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,5 +354,63 @@ mod tests {
         assert_eq!(local_ui_version(&d, "0.4.8"), "0.4.8.1234"); // trimmed
         std::fs::write(d.version_file(), "  ").unwrap();
         assert_eq!(local_ui_version(&d, "0.4.8"), "0.4.8"); // blank → fallback
+    }
+
+    fn seed_bundle(dir: &std::path::Path, marker: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("index.html"), format!("<html>{marker}</html>")).unwrap();
+        std::fs::write(dir.join("version.txt"), marker).unwrap();
+    }
+
+    #[test]
+    fn apply_pending_first_install() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        seed_bundle(&d.pending(), "v1");
+        apply_pending(&d).unwrap();
+        assert!(!d.pending().exists());
+        assert_eq!(local_ui_version(&d, "app"), "v1");
+        assert!(!d.previous().exists()); // nothing to demote on first install
+    }
+
+    #[test]
+    fn apply_pending_rotates_current_to_previous() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        seed_bundle(&d.current(), "v1");
+        seed_bundle(&d.pending(), "v2");
+        apply_pending(&d).unwrap();
+        assert_eq!(local_ui_version(&d, "app"), "v2");
+        assert_eq!(
+            std::fs::read_to_string(d.previous().join("version.txt")).unwrap(),
+            "v1"
+        );
+    }
+
+    #[test]
+    fn apply_pending_drops_stale_previous() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        seed_bundle(&d.previous(), "v0");
+        seed_bundle(&d.current(), "v1");
+        seed_bundle(&d.pending(), "v2");
+        apply_pending(&d).unwrap();
+        assert_eq!(local_ui_version(&d, "app"), "v2");
+        assert_eq!(
+            std::fs::read_to_string(d.previous().join("version.txt")).unwrap(),
+            "v1"
+        );
+    }
+
+    #[test]
+    fn apply_pending_rejects_bundle_without_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        std::fs::create_dir_all(d.pending()).unwrap();
+        std::fs::write(d.pending().join("app.js"), "x").unwrap();
+        seed_bundle(&d.current(), "v1");
+        assert!(apply_pending(&d).is_err());
+        // current untouched on failure
+        assert_eq!(local_ui_version(&d, "app"), "v1");
     }
 }
