@@ -47,6 +47,9 @@ services:
       - K2_DOMAIN=${K2_DOMAIN:-}
       - K2_NODE_NAME=${K2_NODE_NAME:-}
       - K2_NODE_REGION=${K2_NODE_REGION:-}
+      # 本节点自我声明可服务的品牌，逗号分隔（如 kaitu,overleap）。留空 = 仅 kaitu。
+      # SNI 伪装成 www.<省份>.people.cn 的节点不要声明 overleap（暴露中国属性）。
+      - K2_NODE_BRANDS=${K2_NODE_BRANDS:-}
       - K2_IP_TYPE=${K2_IP_TYPE:-unknown}
       - K2_LOG_LEVEL=${K2_LOG_LEVEL:-info}
       - REPORT_INTERVAL=${REPORT_INTERVAL:-120s}

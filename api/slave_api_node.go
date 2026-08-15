@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	mathrand "math/rand"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +28,47 @@ type SlaveNodeUpsertRequest struct {
 	Meta         json.RawMessage     `json:"meta,omitempty"`                                     // 节点元数据（可选JSON，如架构类型）
 	IPType       string              `json:"ipType"`                                             // residential|non_residential|unknown，sidecar 始终上报（未配置=unknown）
 	PrivateClaim string              `json:"privateClaim,omitempty"`                             // 专属节点认领令牌（cloud-init 注入，sidecar 回传）
+	Brands       []string            `json:"brands,omitempty"`                                   // 节点自我声明可服务的品牌（K2_NODE_BRANDS）；缺省/老 sidecar 不发 = 仅 kaitu
+}
+
+// normalizeDeclaredBrands 把节点上报的品牌列表规范成可入库的规范形式。
+// 非法项直接丢弃；结果为空 → "kaitu"（fail-safe，见 SlaveNode.DeclaredBrands）。
+func normalizeDeclaredBrands(in []string) string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		b := Brand(strings.ToLower(strings.TrimSpace(s)))
+		if b.Valid() && !slices.Contains(out, string(b)) {
+			out = append(out, string(b))
+		}
+	}
+	if len(out) == 0 {
+		return string(BrandKaitu)
+	}
+	return strings.Join(out, ",")
+}
+
+// nodeDeclaredColumns 是重注册路径的**白名单**：只有节点有资格声明的列出现在这里，
+// 其余列（品牌上架开关、专属归属、ID、时间戳）原样保留。
+//
+// 语义方向是"默认保留、显式覆盖"。旧实现是"硬删节点+重建"，即"默认丢弃、显式保全" ——
+// 每加一个新列都得记得去保全列表里补一笔，漏掉就在每次节点重启时静默重置。已经漏过
+// 两次：专属归属（Class/PrivateOwner/PrivateSubID，重启后专属节点变回 shared）和品牌
+// 可见性（visible_*，重启后 Overleap 上架标记消失）。新增列现在默认是安全的。
+func nodeDeclaredColumns(req *SlaveNodeUpsertRequest, region, class string) map[string]any {
+	return map[string]any{
+		"secret_token": req.SecretToken,
+		"country":      req.Country,
+		"region":       region,
+		"name":         req.Name,
+		"ipv6":         req.IPv6,
+		"meta":         string(req.Meta),
+		"ip_type":      NormalizeIPType(req.IPType),
+		"brands":       normalizeDeclaredBrands(req.Brands),
+		"class":        class,
+		// 复活软删的节点：旧实现靠"硬删+重建"顺带把 deleted_at 清掉了，改成 UPDATE
+		// 之后必须显式清，否则一个软删过的 IP 重新注册会留在软删状态、对谁都不可见。
+		"deleted_at": nil,
+	}
 }
 
 // TunnelConfigInput 隧道配置输入
@@ -233,13 +275,10 @@ func api_slave_node_upsert(c *gin.Context) {
 			return
 		}
 
-		// 保全专属归属：sidecar 重注册不发 Class，捕获旧值在重建时带过去，
-		// 否则专属节点重启后会被重置成 shared。
-		preservedClass := existingNode.Class
-		preservedOwner := existingNode.PrivateOwnerUserID
-		preservedSubID := existingNode.PrivateSubID
-
-		// Delete existing node and its tunnels, then create new
+		// 隧道仍然整体替换：它们承载 ECH/pin/hop/证书，节点是唯一权威。
+		// 节点行本身则是 UPDATE —— 见 nodeDeclaredColumns 的注释。保留节点行同时
+		// 保住了它的主键：slave_node_loads / session_accts.slave_id /
+		// enterprise_lines.node_id 都按 node ID 引用，旧的删表重建会让它们全部悬空。
 		tx := db.Get().Begin()
 		defer func() {
 			if r := recover(); r != nil {
@@ -255,32 +294,14 @@ func api_slave_node_upsert(c *gin.Context) {
 			return
 		}
 
-		// Hard delete existing node
-		if err := tx.Unscoped().Delete(&existingNode).Error; err != nil {
+		// Unscoped：更新集合里带 deleted_at=nil，走软删作用域会被 GORM 加上
+		// `WHERE deleted_at IS NULL`，软删过的节点就永远复活不了。
+		cols := nodeDeclaredColumns(&req, region, classForRegistration(req.PrivateClaim, existingNode.Class))
+		if err := tx.Unscoped().Model(&SlaveNode{}).Where("id = ?", existingNode.ID).
+			Updates(cols).Error; err != nil {
 			tx.Rollback()
-			log.Errorf(c, "failed to delete existing node %s: %v", ipv4Param, err)
-			Error(c, ErrorSystemError, "failed to delete existing node")
-			return
-		}
-
-		// Create new node（带过保全的专属归属字段）
-		node = SlaveNode{
-			Ipv4:               ipv4Param,
-			SecretToken:        req.SecretToken,
-			Country:            req.Country,
-			Region:             region,
-			Name:               req.Name,
-			Ipv6:               req.IPv6,
-			Meta:               string(req.Meta),
-			IPType:             NormalizeIPType(req.IPType),
-			Class:              classForRegistration(req.PrivateClaim, preservedClass),
-			PrivateOwnerUserID: preservedOwner,
-			PrivateSubID:       preservedSubID,
-		}
-		if err := tx.Create(&node).Error; err != nil {
-			tx.Rollback()
-			log.Errorf(c, "failed to create node: %v", err)
-			Error(c, ErrorSystemError, "failed to create node")
+			log.Errorf(c, "failed to update existing node %s: %v", ipv4Param, err)
+			Error(c, ErrorSystemError, "failed to update existing node")
 			return
 		}
 
@@ -290,7 +311,15 @@ func api_slave_node_upsert(c *gin.Context) {
 			return
 		}
 
-		log.Infof(c, "node replaced successfully: ipv4=%s", ipv4Param)
+		// 读回落库后的行：后续的隧道注册和响应都要用 node，手工拼一份内存副本
+		// 就是又一处需要人肉同步的字段枚举 —— 正是这次要消灭的东西。
+		if err := db.Get().Where("id = ?", existingNode.ID).First(&node).Error; err != nil {
+			log.Errorf(c, "failed to reload node %s after update: %v", ipv4Param, err)
+			Error(c, ErrorSystemError, "failed to reload node")
+			return
+		}
+
+		log.Infof(c, "node updated successfully: ipv4=%s brands=%s", ipv4Param, node.Brands)
 	} else if util.DbIsNotFoundErr(err) {
 		// Node doesn't exist - create new
 		node = SlaveNode{
@@ -302,6 +331,7 @@ func api_slave_node_upsert(c *gin.Context) {
 			Ipv6:        req.IPv6,
 			Meta:        string(req.Meta),
 			IPType:      NormalizeIPType(req.IPType),
+			Brands:      normalizeDeclaredBrands(req.Brands),
 			Class:       classForRegistration(req.PrivateClaim, ""),
 		}
 		if err := db.Get().Create(&node).Error; err != nil {

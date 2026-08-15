@@ -21,6 +21,7 @@ k2_center:
 node:
   name: "${K2_NODE_NAME:-}"
   region: "${K2_NODE_REGION:-}"
+  brands: "${K2_NODE_BRANDS:-}"
 
 tunnel:
   enabled: true

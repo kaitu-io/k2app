@@ -3,6 +3,7 @@ package center
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -509,19 +510,64 @@ type SlaveNode struct {
 	// 不加 index:低基数(3 值)索引近乎无用,且无 filter-by-ip_type 查询。
 	IPType string `gorm:"column:ip_type;type:varchar(20);not null;default:'unknown'" json:"ipType"`
 
-	// 品牌可见性：kaitu 默认可见（存量零影响），overleap 默认不可见（运营打标后上架）
+	// Brands 是节点**自我声明的能力上限**：它愿意/有资格服务哪些品牌，逗号分隔。
+	// 由节点 .env 的 K2_NODE_BRANDS 决定，每次注册重新上报 —— 所以它天然扛得住
+	// 重启，不需要任何"保全"逻辑。空 = 只服务 kaitu（存量节点从不上报此字段，
+	// 因此零影响）。
+	//
+	// 为什么这个决定属于节点而不是 Center：节点知道自己的伪装域名。SNI 伪装成
+	// www.<省份>.people.cn 的节点绝不能出现在 Overleap 上（暴露中国属性，见
+	// docs/superpowers/specs/2026-07-14-brand-split-design.md §7），而那是节点
+	// 自身的配置事实，Center 无从判断。
+	Brands string `gorm:"type:varchar(64);not null;default:''" json:"brands"`
+
+	// 品牌上架开关（运营侧），语义是**下架用的 kill switch**，不是上架用的许可。
+	// 默认 true = 未下架；只有在能力上限之内才有意义（见 VisibleTo）。
 	VisibleKaitu    *bool `gorm:"default:true" json:"visibleKaitu"`
-	VisibleOverleap *bool `gorm:"default:false" json:"visibleOverleap"`
+	VisibleOverleap *bool `gorm:"default:true" json:"visibleOverleap"`
 
 	// 关联
 	Tunnels []SlaveTunnel `gorm:"foreignKey:NodeID"` // 该物理节点上的隧道
 }
 
-// VisibleTo 判断节点对指定品牌是否可见。nil 指针按列 default 语义解释。
+// DeclaredBrands 解析节点自我声明的能力上限。空/全非法 → [kaitu]。
+// 回退到 kaitu 而不是空集是刻意的 fail-safe：一个拼错的 K2_NODE_BRANDS 应该
+// 让节点停在现状，而不是把它从所有品牌里静默摘掉。
+func (n *SlaveNode) DeclaredBrands() []Brand {
+	out := make([]Brand, 0, 2)
+	for part := range strings.SplitSeq(n.Brands, ",") {
+		b := Brand(strings.ToLower(strings.TrimSpace(part)))
+		if !b.Valid() {
+			continue
+		}
+		if !slices.Contains(out, b) {
+			out = append(out, b)
+		}
+	}
+	if len(out) == 0 {
+		return []Brand{BrandKaitu}
+	}
+	return out
+}
+
+// DeclaresBrand 判断节点是否声明了服务该品牌的能力。
+func (n *SlaveNode) DeclaresBrand(b Brand) bool {
+	return slices.Contains(n.DeclaredBrands(), b)
+}
+
+// VisibleTo 判断节点对指定品牌是否可见。
+//
+// 生效可见性 = 节点声明了该品牌（能力上限） ∧ 运营没把它下架（kill switch）。
+// 两个条件的职责是分开的：上限是节点的配置事实、扛重启；下架开关是运营的目录
+// 决策、可以不重启节点即时生效。缺一不可 —— 只有上限则改目录要 SSH+重启（会断
+// 用户），只有开关则重注册会把它抹掉（2026-08-10 之前就是这个 bug）。
 func (n *SlaveNode) VisibleTo(b Brand) bool {
+	if !n.DeclaresBrand(b) {
+		return false
+	}
 	switch b {
 	case BrandOverleap:
-		return n.VisibleOverleap != nil && *n.VisibleOverleap
+		return n.VisibleOverleap == nil || *n.VisibleOverleap
 	default: // kaitu 及未知品牌
 		return n.VisibleKaitu == nil || *n.VisibleKaitu
 	}
