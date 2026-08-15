@@ -272,6 +272,35 @@ pub fn verify_minisign(data: &[u8], sig_b64: &str, pubkey_b64: &str) -> Result<(
     pk.verify(data, &sig, true).map_err(|e| format!("minisign verify: {e}"))
 }
 
+/// Extract a verified web.zip into `dest`. Zip top level is the dist content
+/// (spec §3.3). Rejects zip-slip entries; requires index.html to be present.
+pub fn extract_zip_to(data: &[u8], dest: &std::path::Path) -> Result<(), String> {
+    let reader = std::io::Cursor::new(data);
+    let mut archive = zip::ZipArchive::new(reader).map_err(|e| format!("open zip: {e}"))?;
+    std::fs::create_dir_all(dest).map_err(|e| format!("create dest: {e}"))?;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| format!("zip entry {i}: {e}"))?;
+        let Some(rel) = entry.enclosed_name() else {
+            return Err(format!("unsafe zip entry name: {}", entry.name()));
+        };
+        let out = dest.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out).map_err(|e| format!("mkdir {}: {e}", out.display()))?;
+            continue;
+        }
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+        }
+        let mut file =
+            std::fs::File::create(&out).map_err(|e| format!("create {}: {e}", out.display()))?;
+        std::io::copy(&mut entry, &mut file).map_err(|e| format!("write {}: {e}", out.display()))?;
+    }
+    if !dest.join("index.html").is_file() {
+        return Err("bundle missing index.html".to_string());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -589,5 +618,64 @@ mod tests {
         use base64::Engine;
         let junk = base64::engine::general_purpose::STANDARD.encode("not a minisign file");
         assert!(verify_minisign(b"test", &junk, &junk).is_err());
+    }
+
+    fn make_zip(entries: &[(&str, &str)]) -> Vec<u8> {
+        use std::io::Write;
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut w = zip::ZipWriter::new(&mut buf);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            for (name, content) in entries {
+                w.start_file(*name, opts).unwrap();
+                w.write_all(content.as_bytes()).unwrap();
+            }
+            w.finish().unwrap();
+        }
+        buf.into_inner()
+    }
+
+    #[test]
+    fn extract_zip_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("pending");
+        let data = make_zip(&[
+            ("index.html", "<html>ok</html>"),
+            ("debug.html", "<html>dbg</html>"),
+            ("assets/app-abc123.js", "console.log(1)"),
+        ]);
+        extract_zip_to(&data, &dest).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dest.join("index.html")).unwrap(),
+            "<html>ok</html>"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("assets/app-abc123.js")).unwrap(),
+            "console.log(1)"
+        );
+    }
+
+    #[test]
+    fn extract_zip_rejects_bundle_without_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("pending");
+        let data = make_zip(&[("app.js", "x")]);
+        assert!(extract_zip_to(&data, &dest).is_err());
+    }
+
+    #[test]
+    fn extract_zip_rejects_traversal_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("pending");
+        let data = make_zip(&[("../evil.html", "pwn"), ("index.html", "ok")]);
+        assert!(extract_zip_to(&data, &dest).is_err());
+        assert!(!tmp.path().join("evil.html").exists());
+    }
+
+    #[test]
+    fn extract_zip_rejects_corrupt_data() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(extract_zip_to(b"definitely not a zip", &tmp.path().join("p")).is_err());
     }
 }
