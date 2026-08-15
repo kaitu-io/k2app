@@ -30,7 +30,14 @@ export type PresetName =
   | 'ae-access'
   | 'th-access'
   | 'bd-access'
-  | 'by-access';
+  | 'by-access'
+  | 'tm-access'
+  | 'kz-access'
+  | 'uz-access'
+  // games ships as a standalone bundle (games.krs): vendor domains
+  // (games-sites) plus vendor ASN ranges (games-ip). Referencing it costs an
+  // extra bundle download, which is why it is not folded into a region.
+  | 'games';
 
 export interface MatchConfig {
   // Bundle-based rules
@@ -60,6 +67,16 @@ export interface MatchConfig {
   apps?: string[];
 
   network?: 'tcp' | 'udp';
+
+  // Destination port: '443' or a range '27000-28000'. Connection-time only —
+  // a DNS query carries no destination port, so this never participates in
+  // host matching.
+  port?: string[];
+
+  // Sniffed application protocol. Known only after the first packet is
+  // inspected, so a protocol rule takes effect on the post-sniff re-route.
+  protocol?: Array<'stun' | 'dtls' | 'quic' | 'bittorrent'>;
+
   ip_is_private?: boolean;
 
   // Catch-all

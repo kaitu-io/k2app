@@ -23,13 +23,16 @@ func adminTunnelTestRouter() *gin.Engine {
 	return r
 }
 
-// callAdminListTunnels calls GET /app/tunnels?protocol=<proto> and returns the raw body.
-func callAdminListTunnels(t *testing.T, proto string) []byte {
+// callAdminListTunnels calls GET /app/tunnels?protocol=<proto> for one page
+// and returns the raw body. pageSize is pinned to the server-side maximum:
+// the shared dev DB accumulates tunnels from other tests, so the default
+// page of 10 can silently push this test's seed out of the response.
+func callAdminListTunnels(t *testing.T, proto string, page int) []byte {
 	t.Helper()
 	r := adminTunnelTestRouter()
-	url := "/app/tunnels"
+	url := fmt.Sprintf("/app/tunnels?page=%d&pageSize=100", page)
 	if proto != "" {
-		url += "?protocol=" + proto
+		url += "&protocol=" + proto
 	}
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	w := httptest.NewRecorder()
@@ -88,32 +91,41 @@ func TestAdminTunnelsDisplayK2sAndIPType(t *testing.T) {
 	// Seed DB BEFORE querying so db.Get() is already connected when the handler runs.
 	createNodeWithTunnelForTest(t, ipv4, IPTypeResidential)
 
-	// C4: filter by display alias "k2s" must return k2v5 tunnels
-	raw := callAdminListTunnels(t, "k2s")
-
-	// Response shape: { "code": 0, "data": { "items": [...], "pagination": {...} } }
-	var resp struct {
-		Code int `json:"code"`
-		Data struct {
-			Items []map[string]any `json:"items"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &resp), "unmarshal response: %s", string(raw))
-	require.Equal(t, 0, resp.Code, "response code must be 0, body=%s", string(raw))
-	require.NotEmpty(t, resp.Data.Items, "k2s 别名应过滤到 k2v5 隧道")
-
-	// Find our seeded tunnel in the results
+	// C4: filter by display alias "k2s" must return k2v5 tunnels.
+	// Walk every page: result ordering is unspecified, so the seed can land
+	// on any page of a residue-laden dev DB.
 	var found map[string]any
-	for _, item := range resp.Data.Items {
-		node, _ := item["node"].(map[string]any)
-		if node != nil {
-			if ipv4Val, _ := node["ipv4"].(string); ipv4Val == ipv4 {
-				found = item
-				break
+	var firstPageItems int
+	for page := 1; found == nil; page++ {
+		raw := callAdminListTunnels(t, "k2s", page)
+
+		// Response shape: { "code": 0, "data": { "items": [...], "pagination": {...} } }
+		var resp struct {
+			Code int `json:"code"`
+			Data struct {
+				Items []map[string]any `json:"items"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &resp), "unmarshal response: %s", string(raw))
+		require.Equal(t, 0, resp.Code, "response code must be 0, body=%s", string(raw))
+		if page == 1 {
+			firstPageItems = len(resp.Data.Items)
+			require.NotEmpty(t, resp.Data.Items, "k2s 别名应过滤到 k2v5 隧道")
+		}
+		if len(resp.Data.Items) == 0 {
+			break // exhausted all pages without finding the seed
+		}
+		for _, item := range resp.Data.Items {
+			node, _ := item["node"].(map[string]any)
+			if node != nil {
+				if ipv4Val, _ := node["ipv4"].(string); ipv4Val == ipv4 {
+					found = item
+					break
+				}
 			}
 		}
 	}
-	require.NotNil(t, found, "seeded tunnel must appear in k2s-filtered results")
+	require.NotNil(t, found, "seeded tunnel must appear in k2s-filtered results (first page had %d items)", firstPageItems)
 
 	// C2: protocol must be displayed as "k2s", not the wire value "k2v5"
 	require.Equal(t, "k2s", found["protocol"], "admin protocol field must be k2s, not k2v5")
