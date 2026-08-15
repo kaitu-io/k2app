@@ -54,6 +54,12 @@ type NodeSectionConfig struct {
 	Country string `yaml:"country" default:"US"`          // Country code (optional, auto-detected)
 	Region  string `yaml:"region"`                        // Server region/datacenter (optional, defaults to country)
 	IPType  string `yaml:"ip_type" default:"unknown"`     // IP type: residential, non_residential, unknown
+
+	// Brands 是本节点自我声明可服务的品牌，逗号分隔（K2_NODE_BRANDS）。
+	// 留空 = 仅 kaitu。这是能力上限，不是上架状态——运营还能在 Center 侧把它下架。
+	// 放在节点这一侧是因为只有节点知道自己的 SNI 伪装域名：伪装成
+	// www.<省份>.people.cn 的节点不能出现在 Overleap 上（暴露中国属性）。
+	Brands string `yaml:"brands"`
 }
 
 // RelaySectionConfig holds relay-specific configuration

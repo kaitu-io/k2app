@@ -93,6 +93,14 @@ type AdminUpdateNodeRequest struct {
 	Country *string `json:"country" example:"US"`
 	Ipv6    *string `json:"ipv6" example:"2001:db8::1"`
 	IPType  *string `json:"ipType" example:"residential"`
+
+	// 品牌下架开关。这是**运营目录决策**，不重启节点即时生效。
+	// 注意它只能在节点自我声明的能力上限（SlaveNode.Brands，来自节点 .env 的
+	// K2_NODE_BRANDS）之内起作用：把一个只声明了 kaitu 的节点 visibleOverleap 设成
+	// true 不会让它出现在 Overleap 上——上限由节点持有，Center 不能替它放宽。
+	// region 依然不可改（它随注册从节点 .env 同步，admin 改了下次注册就被覆盖）。
+	VisibleKaitu    *bool `json:"visibleKaitu"`
+	VisibleOverleap *bool `json:"visibleOverleap"`
 }
 
 func api_admin_update_node(c *gin.Context) {
@@ -130,6 +138,12 @@ func api_admin_update_node(c *gin.Context) {
 	}
 	if req.IPType != nil {
 		updateData["ip_type"] = NormalizeIPType(*req.IPType)
+	}
+	if req.VisibleKaitu != nil {
+		updateData["visible_kaitu"] = *req.VisibleKaitu
+	}
+	if req.VisibleOverleap != nil {
+		updateData["visible_overleap"] = *req.VisibleOverleap
 	}
 
 	if len(updateData) > 0 {

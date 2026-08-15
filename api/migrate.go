@@ -64,6 +64,25 @@ func Migrate() error {
 		}
 	}
 
+	// visible_overleap 语义反转（一次性，idempotent）：过去它是"运营上架许可"（默认
+	// false），现在是"运营下架开关"（默认 true）——上架资格改由节点自我声明的 brands
+	// 列决定（SlaveNode.VisibleTo）。存量行里的 0 是旧默认值留下的痕迹，不是任何人做
+	// 出的下架决定；不翻成 1 的话，一台节点即使在 .env 里声明了 overleap 也永远不会
+	// 出现在 Overleap 上，而且没有任何报错可循。
+	// 守卫只在 brands 列尚不存在时触发（= 本次升级之前的库），新库/重跑都是 no-op。
+	if database := db.Get(); database != nil {
+		mig := database.Migrator()
+		if mig.HasTable(&SlaveNode{}) && !mig.HasColumn(&SlaveNode{}, "brands") {
+			result := database.Exec(
+				"UPDATE slave_nodes SET visible_overleap = 1 WHERE visible_overleap = 0 OR visible_overleap IS NULL")
+			if result.Error != nil {
+				log.Errorf(ctx, "failed to flip visible_overleap to delist-switch semantics: %v", result.Error)
+				return result.Error
+			}
+			log.Infof(ctx, "flipped visible_overleap on %d nodes to delist-switch semantics", result.RowsAffected)
+		}
+	}
+
 	err := db.Get().AutoMigrate(
 		&Plan{},
 		&User{},

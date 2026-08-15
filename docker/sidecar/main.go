@@ -105,6 +105,21 @@ func main() {
 	}
 }
 
+// parseBrandList splits the comma-separated K2_NODE_BRANDS value into the wire
+// form. Returns nil (not an empty slice) for a blank value so the field is
+// omitted entirely from the registration body — an unconfigured node sends the
+// exact same bytes it did before this field existed. Validation lives in Center;
+// the sidecar only trims and drops blanks.
+func parseBrandList(s string) []string {
+	var out []string
+	for part := range strings.SplitSeq(s, ",") {
+		if v := strings.ToLower(strings.TrimSpace(part)); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // NewSidecar creates a new sidecar instance
 func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 	n, err := sidecar.NewNode(cfg.K2Center.BaseURL, cfg.K2Center.Secret)
@@ -118,6 +133,10 @@ func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 	if cfg.Node.Region != "" {
 		n.Region = cfg.Node.Region
 	}
+	// Brand capability ceiling this node declares for itself (K2_NODE_BRANDS,
+	// comma-separated). Unset → nil → omitted from the wire → Center reads it as
+	// "kaitu only", which is exactly what every existing node means today.
+	n.Brands = parseBrandList(cfg.Node.Brands)
 	// Private-node activation: echo the one-time claim token back to Center on
 	// registration. Empty for shared-pool nodes (omitempty → no wire change).
 	n.PrivateClaim = cfg.K2Center.PrivateClaim

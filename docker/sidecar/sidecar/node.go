@@ -87,6 +87,9 @@ type NodeUpsertRequest struct {
 	Name        string                 `json:"name"`
 	IPv6        string                 `json:"ipv6,omitempty"`
 	IPType      string                 `json:"ipType"`            // IP type: residential, non_residential, unknown
+	// Brands 节点自我声明可服务的品牌。omitempty: 未配置的节点发出的请求体与改动前
+	// 逐字节一致，Center 侧按"缺省 = 仅 kaitu"解释。
+	Brands      []string               `json:"brands,omitempty"`
 	SecretToken string                 `json:"secretToken,omitempty"`
 	Tunnels     []TunnelConfig         `json:"tunnels,omitempty"` // Batch tunnel configuration
 	Meta        map[string]interface{} `json:"meta,omitempty"`    // Node metadata (e.g., architecture type)
@@ -204,6 +207,10 @@ type Node struct {
 	Name      string // Node name (optional, defaults to IPv4)
 	IPType    string // IP type: residential, non_residential, unknown (default)
 
+	// Brands 是本节点自我声明可服务的品牌（K2_NODE_BRANDS）。空 = 仅 kaitu。
+	// 每次注册都重新上报，所以它扛得住重启——Center 侧不需要任何"保全"逻辑。
+	Brands []string
+
 	// PrivateClaim 专属节点认领令牌（K2_PRIVATE_CLAIM，cloud-init 注入）。
 	// Echoed back to Center on registration; empty for shared-pool nodes.
 	PrivateClaim string
@@ -218,6 +225,7 @@ func (n *Node) buildNodeUpsertRequest(tunnels []TunnelConfig) NodeUpsertRequest 
 		Region:       n.Region,
 		Name:         n.Name,
 		IPType:       n.IPType,
+		Brands:       n.Brands,
 		SecretToken:  n.Secret,
 		Tunnels:      tunnels,
 		Meta:         buildNodeMeta(),
