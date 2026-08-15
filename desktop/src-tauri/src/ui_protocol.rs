@@ -66,11 +66,30 @@ pub fn cache_control_for(mime: &str) -> &'static str {
 /// Map a request path to a file under `root`. Traversal-safe (checked after
 /// percent-decoding); SPA fallback for extensionless routes.
 pub fn resolve_disk_file(root: &Path, url_path: &str) -> Option<PathBuf> {
+    use std::path::Component;
+
     let decoded = urlencoding::decode(url_path).ok()?;
     let rel = decoded.trim_start_matches('/');
-    if rel.split(['/', '\\']).any(|seg| seg == "..") {
-        return None;
+
+    // For non-empty paths, validate components and segments.
+    if !rel.is_empty() {
+        // Require all path components to be plain names (no .. / . / drive prefixes / rooted paths).
+        // This guards against Path::join semantics where absolute paths replace root.
+        for component in Path::new(rel).components() {
+            if !matches!(component, Component::Normal(_)) {
+                return None;
+            }
+        }
+
+        // Additional segment-level checks: each segment must be non-empty, no colons (drive letters),
+        // and not . or .. (defense in depth).
+        for seg in rel.split(['/', '\\']) {
+            if seg.is_empty() || seg == ".." || seg == "." || seg.contains(':') {
+                return None;
+            }
+        }
     }
+
     let candidate = if rel.is_empty() {
         root.join("index.html")
     } else {
@@ -237,6 +256,31 @@ mod tests {
             resolve_disk_file(tmp.path(), "/has%20space.txt"),
             Some(tmp.path().join("has space.txt"))
         );
+    }
+
+    #[test]
+    fn resolve_disk_file_rejects_drive_prefix() {
+        let tmp = disk_root();
+        let root = tmp.path();
+        // Windows drive letters (uppercase and lowercase)
+        assert_eq!(resolve_disk_file(root, "/C:/evil.txt"), None);
+        assert_eq!(resolve_disk_file(root, "/c:/evil.txt"), None);
+    }
+
+    #[test]
+    fn resolve_disk_file_rejects_encoded_drive_prefix() {
+        let tmp = disk_root();
+        let root = tmp.path();
+        // Percent-encoded backslash after drive letter: /C:%5Cevil.txt → /C:\evil.txt
+        assert_eq!(resolve_disk_file(root, "/C:%5Cevil.txt"), None);
+    }
+
+    #[test]
+    fn resolve_disk_file_rejects_rooted_backslash() {
+        let tmp = disk_root();
+        let root = tmp.path();
+        // Rooted path with backslash: /%5Cevil → /\evil
+        assert_eq!(resolve_disk_file(root, "/%5Cevil"), None);
     }
 
     #[test]
