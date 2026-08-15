@@ -132,6 +132,8 @@ Reserved event names:
 | `DIAG: auth-session-revoked` | WARN | Center explicit reject (401/402/403) on revalidation — session killed | udid, code |
 | `DIAG: auth-grace-exhausted` | WARN | undecidable streak exceeded cookieGraceMax (6h) — session killed | udid, graceS |
 | `DIAG: auth-rollout` | INFO | periodic — every 5 min summary (never per-connection); window deltas, emits even when total=0 | total, authed, cookie_hit, cold, unauthed, legacy_no_metadata |
+| `DIAG: webota-applied` | INFO | web OTA bundle successfully applied (pending→current swap) — once per successful apply | from, to |
+| `DIAG: webota-fail` | WARN | web OTA poll cycle failed (fetch/gate/download/verify/swap) — at most once per poll interval (30min) | err |
 
 ### Layer 3 Rules — Full Trace
 

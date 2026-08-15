@@ -88,7 +88,9 @@ a no-op on macOS and Windows (Tauri provides the UI on those platforms).
 - `GET /` — Serves the embedded SPA with `window.__K2_GATEWAY__` injected
   (version, commit, arch). Extension-less paths fall through to index.html
   for React Router; asset paths (`.js`/`.css`/`.png`/…) are cache-control
-  `immutable, max-age=31536000`.
+  `immutable, max-age=31536000`. Backed by a disk override
+  (`/etc/kaitu/web-ota/current/`) that a background web OTA poller keeps
+  hot-updated — see below.
 - `POST /api/storage` — JSON envelope with actions `get`/`set`/`remove`/
   `has`/`keys`/`clear`. Values are AES-256-GCM encrypted with a key
   derived from `/etc/machine-id` via HKDF-SHA256 (same scheme as
@@ -102,8 +104,21 @@ a no-op on macOS and Windows (Tauri provides the UI on those platforms).
   rolls back on interrupted replace. `apply` calls
   `systemctl restart kaitu` to pick up the new binary.
 
+**Web OTA poller**: `registerWebUI(ctx, mux)` (note the `ctx` param —
+threaded from `Run()`) also constructs a `webui.WebOTA` pointed at
+`/etc/kaitu/web-ota` and serves `/` via
+`webui.NewWebappHandlerWithOverride(version, commit, arch, ota.CurrentDir())`
+instead of the plain `NewWebappHandler`. The poller (`ota.Start(ctx)`)
+is started **only when the handler is non-nil** — `nowebapp` builds get
+a nil handler (no embedded webapp, so no OTA target) and the poller
+never starts, making the whole web OTA surface a no-op on headless
+builds. Endpoints are the brand CDN base URLs (dual-domain, same
+pattern as `k2DesktopReleaseEndpoints`), overridable via the
+`K2_WEBOTA_ENDPOINTS` comma-separated env var for UAT and incident
+debugging.
+
 See `k2/webui/CLAUDE.md` for the shared implementation. The daemon's
-`registerWebUI(mux)` lives in `daemon/webui_linux.go`; `webui_nop.go`
+`registerWebUI(ctx, mux)` lives in `daemon/webui_linux.go`; `webui_nop.go`
 is a stub for macOS/Windows builds so the caller in `Run()` is
 unconditional.
 
@@ -159,8 +174,8 @@ Abort path: both Start and Stop happen within the same opMu critical section —
 - `helper.go` — `/api/helper` HTTP handler, routes adb-detect/adb-install/adb-status
 - `helper_adb.go` — `AndroidHelper`: adb binary management (system discovery + CDN download), gadb device detection, APK download + push + install
 - `helper_test.go` — Tests for helper API, install phases, APK URL resolution
-- `webui_linux.go` — Linux-only: wires `webui.Storage`, `webui.Upgrader` (k2 desktop config), and registers `/api/storage`, `/api/platform`, `/api/upgrade`, and `/` (SPA) on the daemon mux
-- `webui_nop.go` — Non-Linux stub so `Run()` can call `d.registerWebUI(mux)` unconditionally
+- `webui_linux.go` — Linux-only: wires `webui.Storage`, `webui.Upgrader` (k2 desktop config), and `webui.WebOTA` (web OTA poller); registers `/api/storage`, `/api/platform`, `/api/upgrade`, and `/` (SPA with disk override) on the daemon mux
+- `webui_nop.go` — Non-Linux stub so `Run()` can call `d.registerWebUI(ctx, mux)` unconditionally
 
 ## Testing
 

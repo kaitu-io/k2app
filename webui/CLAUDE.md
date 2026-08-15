@@ -30,6 +30,38 @@ implementation instead of two copies drifting.
 - `serve.go` — `NewWebappHandler(version, commit, arch)`: injects
   `window.__K2_GATEWAY__`, serves SPA with cache-control split between
   HTML (no-cache) and fingerprinted assets (1 year immutable).
+  `NewWebappHandlerWithOverride(version, commit, arch, overrideDir)` is
+  the same handler plus an optional disk override directory (a web OTA
+  `current/` bundle), consulted per request so an atomic directory swap
+  takes effect on the next page load without reconstructing the handler.
+  `?ui=embedded` forces the embedded index for that request — the escape
+  hatch when an OTA bundle is broken. `overrideDir == ""` disables the
+  override (`NewWebappHandler` is this with `overrideDir=""`).
+- `webota.go` — Web OTA poller (`WebOTA`, `NewWebOTA(WebOTAConfig)`,
+  `(*WebOTA).Start(ctx)`, `(*WebOTA).CurrentDir()`): polls each brand
+  CDN endpoint for `<endpoint>/web/latest.json`, gates on three checks
+  in order (`min_linux` vs `cfg.ShellVersion`, `min_bridge` vs
+  `LinuxBridgeVersion`, `isNewerVersion` vs the local `current/version.txt`),
+  then downloads `web.zip`, verifies sha256 + minisign, unpacks into
+  `pending/`, and atomically renames `pending/` → `current/` (old
+  `current/` rotates to `previous/`). `LinuxBridgeVersion` (this file)
+  is the bridge API version compiled into the shell — bump it when the
+  Linux daemon's webapp-facing surface (daemon HTTP actions, webui
+  endpoints) changes incompatibly, so an old bundle can't apply against
+  a shell it no longer understands. The minisign public key is the same
+  key pair as the Tauri desktop updater (`desktop/src-tauri/tauri.conf.json`
+  `plugins.updater.pubkey`, key ID `40D7545FD7CEDE83`) — one signing key
+  covers both the desktop binary OTA and the web OTA. Emits `DIAG:
+  webota-applied` (INFO, `from`/`to`) on a successful swap and `DIAG:
+  webota-fail` (WARN, `err`) on a failed poll cycle; see root `CLAUDE.md`
+  DIAG event table.
+- `webota_version.go` — Version-comparison pure functions
+  (`isNewerVersion`, `meetsMinVersion`, `meetsMinBridge`, `splitVersion`,
+  `compareSegments`) backing the three `shouldApply` gates above.
+  Semantics are deliberately aligned with the mobile native gate
+  (`K2PluginUtils.isNewerVersion` / `isCompatibleNativeVersion`) so a
+  manifest's `min_linux`/pre-release comparisons behave the same way
+  across platforms.
 - `storage.go` — `*Storage` (AES-256-GCM per-hardware-ID) + `NewStorage`
   / `NewStorageWithKey` (tests use the With-key constructor).
 - `storage_http.go` — `NewStorageHandler(*Storage)` returns the `/api/storage`
