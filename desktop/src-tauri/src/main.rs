@@ -9,6 +9,7 @@ mod router_bridge;
 mod service;
 mod storage;
 mod storage_crypto;
+mod storage_migration;
 mod status_stream;
 mod tray;
 mod ui_protocol;
