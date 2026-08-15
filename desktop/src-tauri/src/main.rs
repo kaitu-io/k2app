@@ -12,6 +12,7 @@ mod storage_crypto;
 mod status_stream;
 mod tray;
 mod updater;
+mod web_ota;
 mod window;
 
 use std::path::PathBuf;
