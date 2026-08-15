@@ -1582,6 +1582,92 @@ func TestEngine_ClearWireError_ProtectsAuthError(t *testing.T) {
 	e.mu.Unlock()
 }
 
+// TestEngine_ClearWireError_ClearsPinMismatch drives the exact shape that used
+// to poison the UI for a whole session.
+//
+// A node whose TCP-WS certificate no longer matches its pin fails pin
+// verification (wire/ech.go buildPinVerifier). On any dial where QUIC also
+// fails — a timeout, a handshake blip, anything transient — TransportManager
+// returns MultiTransportError, and ClassifyError classifies that by the
+// *TCP-WS* leg alone, so the whole dial reads as 403 Forbidden / client.
+// ClearWireError then refused to clear it because it was client-category, and
+// so did the network-change clear: the 403 outlived every subsequent
+// successful dial and only Stop() could remove it. The user saw "certificate
+// rejected" while their tunnel ran happily on QUIC.
+//
+// A successful proxy dial is proof that a pin-verified channel is up, which is
+// exactly the evidence that retires a pin-mismatch verdict. Unlike 401/402 it
+// is not user-actionable — nobody can fix a node's certificate from the app.
+func TestEngine_ClearWireError_ClearsPinMismatch(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	e.mu.Lock()
+	e.state = StateConnected
+	e.mu.Unlock()
+
+	// The real combined error: QUIC blipped, TCP-WS failed pin verification.
+	e.ReportWireError(&wire.MultiTransportError{
+		QUICErr:  fmt.Errorf("wire: QUIC handshake: timeout"),
+		TCPWSErr: errors.New("wire: public key pin mismatch and not signed by Kaitu CA"),
+	})
+
+	// Guard the premise: this really is classified 403/client, so the test
+	// keeps testing the reported bug even if classification moves.
+	e.mu.Lock()
+	got := e.lastError
+	e.mu.Unlock()
+	if got == nil || got.Code != ErrCodeForbidden || got.Category != CategoryClient {
+		t.Fatalf("premise broken: want 403/client from the TCP-WS leg, got %+v", got)
+	}
+
+	// A later dial succeeds — the wire demonstrably works.
+	e.ClearWireError()
+
+	e.mu.Lock()
+	after := e.lastError
+	e.mu.Unlock()
+	if after != nil {
+		t.Errorf("pin mismatch must clear once a dial succeeds, still have %+v", after)
+	}
+	// Two updates: the one ReportWireError fired, then the clear. The UI must
+	// end on an error-free status — that is the whole point of the fix.
+	statuses := h.getStatuses()
+	if len(statuses) != 2 {
+		t.Fatalf("expected 2 status updates (report, then clear), got %d", len(statuses))
+	}
+	if statuses[len(statuses)-1].Error != nil {
+		t.Errorf("last status still carries an error: %+v", statuses[len(statuses)-1].Error)
+	}
+}
+
+// TestEngineError_RequiresUserAction pins which errors survive proof that the
+// wire works. It enumerates every client-category code on purpose: adding one
+// without deciding its stickiness should break this test, not ship a silently
+// unclearable error.
+func TestEngineError_RequiresUserAction(t *testing.T) {
+	tests := []struct {
+		code int
+		want bool
+		why  string
+	}{
+		{ErrCodeAuthRejected, true, "only the user can re-authenticate"},
+		{ErrCodePaymentRequired, true, "only the user can pay"},
+		{ErrCodeForbidden, false, "node-side cert/pin; a successful dial disproves it"},
+		{ErrCodeBadConfig, false, "a dial that succeeded parsed the config"},
+		{ErrCodeEnvironmentSetupFailed, false, "a dial that succeeded had its environment"},
+		{ErrCodeTimeout, false, "network fault, not user action"},
+		{ErrCodeServerUnreachable, false, "server fault, not user action"},
+	}
+	for _, tc := range tests {
+		got := newEngineError(tc.code, "x").RequiresUserAction()
+		if got != tc.want {
+			t.Errorf("code %d RequiresUserAction() = %v, want %v (%s)", tc.code, got, tc.want, tc.why)
+		}
+	}
+}
+
 func TestEngine_ReportWireError_NotConnected(t *testing.T) {
 	e := New()
 	h := &mockEventHandler{}

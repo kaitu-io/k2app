@@ -700,10 +700,12 @@ func (e *Engine) doNetworkReconnect() {
 		return
 	}
 
-	// Clear non-client wire errors — network errors are stale after network change.
+	// Clear wire errors the network change invalidated. Anything the user must
+	// act on (401/402) survives; a node-side 403 does not, since the interface
+	// it was observed on is gone.
 	e.mu.Lock()
 	handler := e.handler
-	if e.lastError != nil && e.lastError.Category != CategoryClient {
+	if e.lastError != nil && !e.lastError.RequiresUserAction() {
 		slog.Debug("engine: network change cleared stale error",
 			"prevCode", e.lastError.Code,
 			"prevCategory", e.lastError.Category,
@@ -1843,9 +1845,16 @@ func extractServerHost(wireURL string) string {
 }
 
 // ReportWireError reports a runtime wire transport error.
-// Called by tunnel's handleTCPProxy/handleUDPProxy on wire transport failure,
-// and by recovery probe on probe failure. Proxy-layer errors (server responded
-// to the request) are filtered at the call site — see tunnel.go.
+//
+// The only callers are wireOutbound.DialTCP / DialUDP (core/outbound_wire.go),
+// i.e. a failed proxy dial. This comment used to add "and by recovery probe on
+// probe failure" — there is no such call site and there was none: the echo
+// probe reports through the wire-health channel and never touches lastError.
+// The claim is worth naming because it sent at least one investigation looking
+// for a DIAG: echo-probe-fail → UI-error path that does not exist.
+//
+// Proxy-layer errors (server responded to the request) are filtered at the
+// call site — see tunnel.go.
 // Debounces: first error fires OnStatus, subsequent non-auth errors are no-ops.
 // Auth errors (client category) can upgrade existing network errors.
 func (e *Engine) ReportWireError(err error) {
@@ -1886,10 +1895,11 @@ func (e *Engine) ReportWireError(err error) {
 }
 
 // ClearWireError clears a runtime wire error after a successful proxy dial.
-// Does NOT clear client-category errors (401/402/403) — those require user action.
+// Does NOT clear errors the user must act on (401/402) — see
+// EngineError.RequiresUserAction for why 403 is deliberately not among them.
 func (e *Engine) ClearWireError() {
 	e.mu.Lock()
-	if e.lastError == nil || e.lastError.Category == CategoryClient {
+	if e.lastError == nil || e.lastError.RequiresUserAction() {
 		e.mu.Unlock()
 		return
 	}

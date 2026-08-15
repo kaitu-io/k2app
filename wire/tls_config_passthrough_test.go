@@ -10,6 +10,8 @@ import (
 	"encoding/base64"
 	"math/big"
 	"net"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,25 +133,55 @@ func TestTCPWSDial_PinMismatchIsRejected(t *testing.T) {
 		}
 	}()
 
-	// A pin that deliberately matches nothing.
-	pins := [][32]byte{{}}
-
-	conn, err := net.Dial("tcp", ln.Addr().String())
+	// Build the TLS config the way production does, from a pin that matches
+	// nothing. Hand-writing the config here would test a config this package
+	// never actually dials with — the point is that whatever
+	// BuildClientTLSConfig decided survives all the way into the handshake.
+	host, portStr, err := net.SplitHostPort(ln.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	uconn := tls.UClient(conn, &tls.Config{
-		ServerName:            "pin-test.invalid",
-		MinVersion:            tls.VersionTLS13,
-		InsecureSkipVerify:    true, // chain checking is delegated to the pin verifier
-		VerifyPeerCertificate: buildPinVerifier(pins),
-	}, tls.HelloChrome_120_PQ)
+	var zero [32]byte
+	tlsCfg, _, err := BuildClientTLSConfig(Config{
+		Host:        "pin-test.invalid",
+		Port:        port,
+		ECH:         base64.StdEncoding.EncodeToString([]byte{0xfe, 0x0d, 0x00, 0x10}),
+		Pin:         "sha256:" + base64.URLEncoding.EncodeToString(zero[:]),
+		Fingerprint: "chrome",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Drop ECH only: this listener is a plain TLS server, and a config list it
+	// cannot answer would abort the handshake before any certificate is seen —
+	// the test would then "pass" without the pin verifier ever running.
+	// Everything that decides *certificate acceptance* is left untouched.
+	tlsCfg.EncryptedClientHelloConfigList = nil
+
+	c := NewTCPWSClient(Config{
+		Host:        host,
+		Port:        port,
+		Fingerprint: "chrome",
+	}, nil)
+	c.SetTLSConfig(tlsCfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := uconn.HandshakeContext(ctx); err == nil {
-		t.Fatal("handshake succeeded against a certificate matching no pin — the pin verifier is not running")
+
+	// The real dial path — not a hand-rolled uTLS handshake standing in for it.
+	conn, err := c.connectTLSWebSocket(ctx)
+	if err == nil {
+		conn.Close()
+		t.Fatal("connectTLSWebSocket accepted a certificate matching no pin — the pin verifier is not reaching the handshake")
+	}
+	if !strings.Contains(err.Error(), "pin mismatch") {
+		t.Fatalf("dial failed, but not on the pin: %v\n"+
+			"a non-pin failure means the handshake died before certificate "+
+			"verification, so this test would pass even with the verifier dropped", err)
 	}
 }

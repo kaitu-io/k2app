@@ -74,6 +74,43 @@ func (e *EngineError) Error() string {
 	return e.Message
 }
 
+// RequiresUserAction reports whether this error stays true even after
+// something else proves the wire works — i.e. whether it must survive
+// ClearWireError (a successful proxy dial) and the network-change clear.
+//
+// It answers exactly one question, and it is the producer's answer, not a
+// category test at the call site. The distinction matters because "client
+// category" and "the user must do something" are not the same set:
+//
+//	401 / 402  the tunnel cannot work until the user re-authenticates or pays.
+//	           No dial can succeed while they hold, so surviving a "successful
+//	           dial" is vacuous — but keeping them is what makes the UI stable
+//	           across a reconnect storm.
+//	403        a pin mismatch or blocked CA is the *node's* certificate, not
+//	           anything the user owns. It is also per-channel: TCP-WS can fail
+//	           pin verification while QUIC carries traffic normally, and a
+//	           MultiTransportError is classified by the TCP-WS leg alone. A
+//	           later successful dial went through pin verification too, so it
+//	           is positive proof the verdict is stale.
+//	400 / 412  a dial that succeeded necessarily parsed the config and had a
+//	           working local environment.
+//
+// Scope note: this governs *clearing* only. ReportWireError's overwrite guard
+// still asks CategoryClient, so a fresh 403 may still displace a network error
+// while the tunnel is down — that is "which error to show while broken", a
+// different question from "is this error still true".
+func (e *EngineError) RequiresUserAction() bool {
+	if e == nil {
+		return false
+	}
+	switch e.Code {
+	case ErrCodeAuthRejected, ErrCodePaymentRequired:
+		return true
+	default:
+		return false
+	}
+}
+
 // ClassifyError maps a wire/engine error to an HTTP-aligned error code with category.
 // Priority: already-classified EngineError → StreamError (server-provided code) → MultiTransportError → timeout → string pattern → fallback 570.
 func ClassifyError(err error) *EngineError {

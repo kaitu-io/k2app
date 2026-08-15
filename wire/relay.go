@@ -103,8 +103,13 @@ func relayFetchWithOverride(ctx context.Context, req *RelayRequest, override *tl
 
 // relayDial dials the node and completes the camouflage uTLS handshake.
 // override != nil → use it directly (test / self-signed, skips ECH), mirroring
-// tcpws.go:327 / probe.go:149. Production: build from BuildClientTLSConfig and
-// ENFORCE pin via VerifyPeerCertificate (tcpws template omits this — see header).
+// TCPWSClient.connect and the probe dialer. Production builds the config from
+// BuildClientTLSConfig, which installs the pin verifier.
+//
+// Deliberately no file:line references here — the previous version of this
+// comment cited three of them and all three had rotted, which is how the
+// hand-rolled tls.Config copy below survived long after the hole it worked
+// around was fixed.
 func relayDial(ctx context.Context, req *RelayRequest, override *tls.Config) (net.Conn, error) {
 	port := req.Port
 	if port == 0 {
@@ -138,19 +143,13 @@ func relayDial(ctx context.Context, req *RelayRequest, override *tls.Config) (ne
 		return nil, fmt.Errorf("wire: relay TCP dial %s: %w", dialAddr, err)
 	}
 
-	utlsCfg := &tls.Config{
-		ServerName:                     tlsCfg.ServerName,
-		InsecureSkipVerify:             tlsCfg.InsecureSkipVerify,
-		MinVersion:                     tlsCfg.MinVersion,
-		MaxVersion:                     tlsCfg.MaxVersion,
-		EncryptedClientHelloConfigList: tlsCfg.EncryptedClientHelloConfigList,
-		// SECURITY: enforce pin/CA — tcpws.go:341 omits these, leaving pinned
-		// connections unverified. Relay carries tokens/passwords through
-		// third-party nodes, so the pin MUST actually run.
-		RootCAs:               tlsCfg.RootCAs,
-		VerifyPeerCertificate: tlsCfg.VerifyPeerCertificate,
-	}
-	uconn := tls.UClient(conn, utlsCfg, clientHelloID)
+	// tlsCfg goes to uTLS as-is — the same rule TCPWSClient.connect follows, and
+	// for the same reason: a field-by-field copy fails open on every field it
+	// forgets. This copy used to exist because the TCP-WS dial path dropped the
+	// pin verifier and had to be worked around; that hole was closed at the
+	// source, so the copy is now pure hazard with no upside. Relay carries
+	// tokens and passwords through third-party nodes, so the pin MUST run.
+	uconn := tls.UClient(conn, tlsCfg, clientHelloID)
 	if err := uconn.HandshakeContext(ctx); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("wire: relay uTLS handshake: %w", err)
