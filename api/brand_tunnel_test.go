@@ -13,11 +13,14 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 )
 
-// 纯内存单测：品牌可见性过滤谓词
+// 纯内存单测：品牌可见性过滤谓词。
+// 可见 = 节点声明该品牌（Brands） ∧ 运营没下架（Visible* 开关）——开关本身不授予能力。
 func TestTunnelBrandVisibilityPredicate(t *testing.T) {
-	nodeKaituOnly := &SlaveNode{}                                                    // 零值 = 默认：kaitu 可见
-	nodeBoth := &SlaveNode{VisibleKaitu: BoolPtr(true), VisibleOverleap: BoolPtr(true)}
-	nodeOverleapOnly := &SlaveNode{VisibleKaitu: BoolPtr(false), VisibleOverleap: BoolPtr(true)}
+	nodeKaituOnly := &SlaveNode{} // 零值 = 默认：Brands 空 → 只声明 kaitu
+	nodeBoth := &SlaveNode{Brands: "kaitu,overleap",
+		VisibleKaitu: BoolPtr(true), VisibleOverleap: BoolPtr(true)}
+	nodeOverleapOnly := &SlaveNode{Brands: "kaitu,overleap",
+		VisibleKaitu: BoolPtr(false), VisibleOverleap: BoolPtr(true)}
 
 	assert.True(t, nodeKaituOnly.VisibleTo(BrandKaitu))
 	assert.False(t, nodeKaituOnly.VisibleTo(BrandOverleap))

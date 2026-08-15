@@ -25,12 +25,22 @@ func TestBrandColumnsMigration(t *testing.T) {
 }
 
 func TestSlaveNodeVisibleTo(t *testing.T) {
-	n := &SlaveNode{} // 零值：两个指针都 nil → 视为 default（kaitu 可见 / overleap 不可见）
+	// 生效可见性 = 节点声明该品牌（Brands 能力上限） ∧ 运营没下架（Visible* 开关）。
+	n := &SlaveNode{} // 零值：Brands 空 → 只声明 kaitu；开关 nil → 未下架
 	assert.True(t, n.VisibleTo(BrandKaitu))
-	assert.False(t, n.VisibleTo(BrandOverleap))
+	assert.False(t, n.VisibleTo(BrandOverleap)) // 未声明 overleap，开关再开也不可见
+
+	// 声明双品牌后，开关才有决定权
+	n.Brands = "kaitu,overleap"
+	assert.True(t, n.VisibleTo(BrandKaitu))
+	assert.True(t, n.VisibleTo(BrandOverleap))
 
 	n.VisibleKaitu = BoolPtr(false)
 	n.VisibleOverleap = BoolPtr(true)
-	assert.False(t, n.VisibleTo(BrandKaitu))
+	assert.False(t, n.VisibleTo(BrandKaitu)) // kill switch 下架
 	assert.True(t, n.VisibleTo(BrandOverleap))
+
+	// 只有开关、没有声明 → 仍不可见（能力上限优先）
+	n.Brands = ""
+	assert.False(t, n.VisibleTo(BrandOverleap))
 }

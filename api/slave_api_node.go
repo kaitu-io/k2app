@@ -55,13 +55,19 @@ func normalizeDeclaredBrands(in []string) string {
 // 两次：专属归属（Class/PrivateOwner/PrivateSubID，重启后专属节点变回 shared）和品牌
 // 可见性（visible_*，重启后 Overleap 上架标记消失）。新增列现在默认是安全的。
 func nodeDeclaredColumns(req *SlaveNodeUpsertRequest, region, class string) map[string]any {
+	// meta 列带 CHECK(json_valid(meta))：不上报时必须写 NULL 而不是 ''（json_valid('')
+	// 为假，UPDATE 会被约束拒掉；旧的硬删重建路径靠 GORM 省略零值列天然写 NULL）。
+	var meta any
+	if len(req.Meta) > 0 {
+		meta = string(req.Meta)
+	}
 	return map[string]any{
 		"secret_token": req.SecretToken,
 		"country":      req.Country,
 		"region":       region,
 		"name":         req.Name,
 		"ipv6":         req.IPv6,
-		"meta":         string(req.Meta),
+		"meta":         meta,
 		"ip_type":      NormalizeIPType(req.IPType),
 		"brands":       normalizeDeclaredBrands(req.Brands),
 		"class":        class,
