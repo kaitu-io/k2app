@@ -63,7 +63,7 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.0",
     "sonner": "^2.0.5",
     "tailwind-merge": "^3.3.1",
     "velite": "^0.3.1"
@@ -100,7 +100,10 @@
     "fast-uri": "^3.1.2",
     "js-yaml": "^4.1.1",
     "@eslint/plugin-kit": "^0.3.4",
-    "ip-address": "^10.1.1"
+    "ip-address": "^10.1.1",
+    "undici": "^7.29.0",
+    "sharp": "^0.35.0",
+    "@opentelemetry/core": "^2.8.0"
   },
   "engines": {
     "node": ">=22.0.0"
