@@ -1,33 +1,52 @@
 #!/usr/bin/env node
 // Web OTA version derivation + latest.json generation
-// (spec: docs/superpowers/specs/2026-08-14-web-ota-design.md §3.1 / §3.2 / §4).
+// (spec: docs/superpowers/specs/2026-08-14-web-ota-design.md §3.1 / §3.2 / §4, R2).
 //
 // Subcommands:
-//   version    print "{root package.json version}.{git rev-list --count HEAD}"
+//   version    print "{root package.json version}.{time-based build number}"
 //   manifest   --version V --zip PATH --sig-file PATH --out PATH
 //
-// min_native / min_desktop / min_linux / min_bridge are DERIVED from
-// webapp/src/types/bridge-version.ts + contracts/bridge-versions.json —
-// never hand-written (hand-written min_native is the 2026-03 incident's
-// root cause). Manifest `url` is RELATIVE TO THE MANIFEST'S OWN DIRECTORY
-// ("{version}/web.zip"): both mobile resolveDownloadURL implementations
-// join relative urls onto the manifest endpoint minus its filename.
+// R2 semantics:
+// - 4th version segment = Unix seconds since 2026-01-01T00:00:00Z, computed at
+//   publish time. Globally monotonic across ALL publishing workflows (webapp
+//   tag / release-desktop / build-mobile) and across refs — republishing an
+//   old ref still yields a HIGHER version, which is what makes dispatch-based
+//   rollback work (spec §7). Commit count could not guarantee that.
+// - min_native / min_desktop / min_linux / min_bridge come from
+//   contracts/webapp-support-floor.json — the SUPPORT FLOOR (oldest shell
+//   versions the latest webapp still supports), NOT "what this webapp
+//   requires". Bumping BRIDGE_API_VERSION does not change the manifest;
+//   bumping the floor is an explicit support-drop decision (spec §4.2).
+//   Hand-written min_native was the 2026-03 incident's root cause — values
+//   stay derived, never inline in the workflow.
+// - Manifest `url` is RELATIVE TO THE MANIFEST'S OWN DIRECTORY
+//   ("{version}/web.zip"): both mobile resolveDownloadURL implementations
+//   join relative urls onto the manifest endpoint minus its filename.
 
 import { createHash } from 'node:crypto';
-import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-export function deriveVersion(pkgVersion, commitCount) {
+export const WEB_OTA_EPOCH_MS = Date.UTC(2026, 0, 1); // 1767225600000
+
+export function computeBuildNumber(nowMs) {
+  const n = Math.floor((nowMs - WEB_OTA_EPOCH_MS) / 1000);
+  if (!Number.isSafeInteger(n) || n <= 0) {
+    throw new Error(`build number must be a positive integer (clock before 2026-01-01?), got: ${n}`);
+  }
+  return n;
+}
+
+export function deriveVersion(pkgVersion, buildNumber) {
   if (!/^\d+\.\d+\.\d+$/.test(pkgVersion)) {
     throw new Error(`root package.json version must be x.y.z, got: ${pkgVersion}`);
   }
-  const n = Number(commitCount);
+  const n = Number(buildNumber);
   if (!Number.isInteger(n) || n <= 0) {
-    throw new Error(`commit count must be a positive integer, got: ${commitCount}`);
+    throw new Error(`build number must be a positive integer, got: ${buildNumber}`);
   }
   return `${pkgVersion}.${n}`;
 }
@@ -38,21 +57,30 @@ export function readBridgeApiVersion(tsSource) {
   return Number(m[1]);
 }
 
-export function buildManifest({ version, size, sha256Hex, sigBase64, bridgeApiVersion, bridgeVersions, releasedAt }) {
+// Validates the support-floor object (contracts/webapp-support-floor.json).
+// Ignores the "//" comment key. Returns {native, desktop, linux, bridge}.
+export function readSupportFloor(obj) {
+  for (const key of ['native', 'desktop', 'linux']) {
+    if (!/^\d+\.\d+\.\d+$/.test(obj?.[key] ?? '')) {
+      throw new Error(`webapp-support-floor.json .${key} must be x.y.z, got: ${obj?.[key]}`);
+    }
+  }
+  if (!Number.isInteger(obj.bridge) || obj.bridge < 1) {
+    throw new Error(`webapp-support-floor.json .bridge must be a positive integer, got: ${obj?.bridge}`);
+  }
+  return { native: obj.native, desktop: obj.desktop, linux: obj.linux, bridge: obj.bridge };
+}
+
+export function buildManifest({ version, size, sha256Hex, sigBase64, bridgeApiVersion, floor, releasedAt }) {
   if (!/^\d+\.\d+\.\d+\.\d+$/.test(version)) {
     throw new Error(`web OTA version must be x.y.z.n, got: ${version}`);
   }
-  const entry = bridgeVersions[String(bridgeApiVersion)];
-  if (!entry) {
+  const f = readSupportFloor(floor);
+  if (f.bridge > bridgeApiVersion) {
     throw new Error(
-      `contracts/bridge-versions.json has no entry for bridge version ${bridgeApiVersion} — ` +
-        `the bridge contract gate should have caught this; add the entry and re-run it`,
+      `support floor bridge (${f.bridge}) exceeds compiled BRIDGE_API_VERSION (${bridgeApiVersion}) — ` +
+        `the floor cannot be newer than the current bridge surface`,
     );
-  }
-  for (const key of ['native', 'desktop', 'linux']) {
-    if (!/^\d+\.\d+\.\d+$/.test(entry[key] ?? '')) {
-      throw new Error(`bridge-versions.json["${bridgeApiVersion}"].${key} must be x.y.z, got: ${entry[key]}`);
-    }
   }
   if (typeof sigBase64 !== 'string' || sigBase64.length === 0 || /\s/.test(sigBase64)) {
     throw new Error('sig must be non-empty single-line base64 (base64 of the whole .minisig file)');
@@ -63,11 +91,11 @@ export function buildManifest({ version, size, sha256Hex, sigBase64, bridgeApiVe
     hash: `sha256:${sha256Hex}`,
     size,
     released_at: releasedAt,
-    min_native: entry.native,
+    min_native: f.native,
     sig: sigBase64,
-    min_bridge: bridgeApiVersion,
-    min_desktop: entry.desktop,
-    min_linux: entry.linux,
+    min_bridge: f.bridge,
+    min_desktop: f.desktop,
+    min_linux: f.linux,
   };
 }
 
@@ -86,8 +114,7 @@ function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   if (cmd === 'version') {
     const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-    const count = execSync('git rev-list --count HEAD', { cwd: ROOT }).toString().trim();
-    process.stdout.write(deriveVersion(pkg.version, count) + '\n');
+    process.stdout.write(deriveVersion(pkg.version, computeBuildNumber(Date.now())) + '\n');
     return;
   }
   if (cmd === 'manifest') {
@@ -104,7 +131,7 @@ function main() {
       bridgeApiVersion: readBridgeApiVersion(
         readFileSync(path.join(ROOT, 'webapp/src/types/bridge-version.ts'), 'utf8'),
       ),
-      bridgeVersions: JSON.parse(readFileSync(path.join(ROOT, 'contracts/bridge-versions.json'), 'utf8')),
+      floor: JSON.parse(readFileSync(path.join(ROOT, 'contracts/webapp-support-floor.json'), 'utf8')),
       releasedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
     });
     writeFileSync(args.out, JSON.stringify(manifest, null, 2) + '\n');
