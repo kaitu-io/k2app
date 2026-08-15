@@ -9,6 +9,7 @@
 //! Version-compare semantics mirror mobile K2PluginUtils.kt exactly.
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use chrono;
 use tauri::Manager;
@@ -98,12 +99,18 @@ pub enum Gate {
     Skip(&'static str),
 }
 
-/// Desktop gate: sig mandatory → min_bridge → min_desktop → strictly newer.
+/// Desktop gate: sig mandatory → min_bridge → min_desktop → strictly newer → not quarantined.
+///
+/// `quarantined_version`: the version last quarantined by `startup_rollback`
+/// (persisted to `quarantined-version.txt`, F2). A manifest offering exactly
+/// that version is refused — it already failed to boot once — until the CDN
+/// publishes something newer, which naturally clears the block.
 pub fn evaluate_manifest(
     m: &WebManifest,
     app_version: &str,
     bridge_version: u32,
     local_ui_version: &str,
+    quarantined_version: Option<&str>,
 ) -> Gate {
     if m.sig.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_none() {
         return Gate::Skip("missing sig");
@@ -118,6 +125,9 @@ pub fn evaluate_manifest(
     }
     if !is_newer_version(&m.version, local_ui_version) {
         return Gate::Skip("remote not newer than local");
+    }
+    if quarantined_version.is_some_and(|q| q == m.version) {
+        return Gate::Skip("version quarantined");
     }
     Gate::Apply
 }
@@ -149,6 +159,10 @@ impl OtaDirs {
     }
     pub fn boot_pending(&self) -> PathBuf {
         self.root.join(".boot-pending")
+    }
+    /// Version last quarantined by `startup_rollback` (F2 gate input).
+    pub fn quarantined_version_file(&self) -> PathBuf {
+        self.root.join("quarantined-version.txt")
     }
 }
 
@@ -210,6 +224,47 @@ pub enum BootCheck {
     RolledBackToEmbedded,
 }
 
+/// Number of quarantine/ entries to retain (F2) — oldest (by directory-name
+/// sort) beyond this are pruned so a repeatedly-failing OTA doesn't leak disk.
+const QUARANTINE_KEEP: usize = 3;
+
+/// Read the version last quarantined by `startup_rollback`, if any.
+pub fn quarantined_version(d: &OtaDirs) -> Option<String> {
+    std::fs::read_to_string(d.quarantined_version_file())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn write_quarantined_version(d: &OtaDirs, ver: &str) {
+    let _ = std::fs::create_dir_all(&d.root);
+    if let Err(e) = std::fs::write(d.quarantined_version_file(), ver) {
+        log::error!("[web-ota] failed to write quarantined-version.txt: {e}");
+    }
+}
+
+/// Keep only the newest `keep` entries under quarantine/ (sorted by directory
+/// name, which is `{version}-{timestamp}` — the timestamp suffix keeps this
+/// chronological for the common case of the same bundle repeatedly failing).
+fn prune_quarantine(d: &OtaDirs, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(d.quarantine()) else {
+        return;
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    if names.len() <= keep {
+        return;
+    }
+    names.sort();
+    let drop_count = names.len() - keep;
+    for name in &names[..drop_count] {
+        let _ = std::fs::remove_dir_all(d.quarantine().join(name));
+    }
+}
+
 /// Startup rollback: consume a stale .boot-pending, quarantine the bundle that
 /// failed to boot, and restore previous/ (or fall back to embedded assets).
 pub fn startup_rollback(d: &OtaDirs) -> BootCheck {
@@ -220,6 +275,7 @@ pub fn startup_rollback(d: &OtaDirs) -> BootCheck {
     let current = d.current();
     if current.exists() {
         let ver = local_ui_version(d, "unknown");
+        write_quarantined_version(d, &ver);
         let _ = std::fs::create_dir_all(d.quarantine());
         let stamp = chrono::Utc::now().format("%Y%m%d%H%M%S");
         let target = d.quarantine().join(format!("{ver}-{stamp}"));
@@ -228,6 +284,7 @@ pub fn startup_rollback(d: &OtaDirs) -> BootCheck {
             log::error!("[web-ota] quarantine rename failed ({e}), deleting current");
             let _ = std::fs::remove_dir_all(&current);
         }
+        prune_quarantine(d, QUARANTINE_KEEP);
     }
     let previous = d.previous();
     if previous.join("index.html").is_file() && std::fs::rename(&previous, d.current()).is_ok() {
@@ -363,6 +420,23 @@ pub fn boot_plan(migrated: bool, has_disk_ui: bool) -> BootPlan {
     }
 }
 
+/// F5: discard a stale on-disk OTA bundle after a shell upgrade. If the
+/// shell's embedded webapp (`app_version`) is newer than the UI last OTA'd to
+/// disk, the disk copy predates the shell and must not be served — clear
+/// current/ (and previous/, since it is at best equally stale) so this launch
+/// falls through to embedded assets. A future OTA poll re-populates current/
+/// once the CDN publishes something newer than the shell.
+fn discard_stale_disk_ui(d: &OtaDirs, app_version: &str) {
+    let disk_ver = local_ui_version(d, app_version);
+    if is_newer_version(app_version, &disk_ver) {
+        log::info!(
+            "[web-ota] shell {app_version} is newer than disk UI {disk_ver} — discarding stale disk UI"
+        );
+        let _ = std::fs::remove_dir_all(d.current());
+        let _ = std::fs::remove_dir_all(d.previous());
+    }
+}
+
 /// Startup: consume .boot-pending (rollback), pick the boot origin, navigate.
 /// Debug builds no-op — `yarn tauri dev` keeps the Vite devUrl flow.
 /// The config-defined window briefly starts loading the default index.html at
@@ -380,6 +454,8 @@ pub fn prepare_boot(app: &tauri::AppHandle) {
         BootCheck::Clean => {}
         other => log::warn!("[web-ota] previous UI boot unconfirmed — rolled back: {other:?}"),
     }
+    let app_version = app.package_info().version.to_string();
+    discard_stale_disk_ui(&dirs, &app_version);
     // If the app data dir is unresolvable we can't persist the migration flag
     // anyway — treat as migrated and boot the new origin directly.
     let migrated = app
@@ -456,10 +532,25 @@ pub fn start_web_ota_updater(app: tauri::AppHandle) {
     });
 }
 
+/// F1: true if the poller must skip this tick. A `.boot-pending` marker means
+/// current/ hasn't confirmed it booted yet — rotating current/ (apply_pending)
+/// while it's set would make the *next* startup_rollback quarantine the wrong
+/// bundle: either a brand-new version that never actually booted, or the
+/// previous version restored moments ago after a real failure. Safe to skip —
+/// the poller retries in CHECK_INTERVAL_SECS, and ui_boot_ok normally clears
+/// the marker within seconds of a healthy boot.
+fn poll_blocked_by_pending_boot(d: &OtaDirs) -> bool {
+    d.boot_pending().is_file()
+}
+
 async fn check_and_apply(app: &tauri::AppHandle) {
     let Some(dirs) = ota_dirs(app) else {
         return;
     };
+    if poll_blocked_by_pending_boot(&dirs) {
+        log::info!("[web-ota] .boot-pending set — skipping this poll tick");
+        return;
+    }
     let Some(pubkey) = updater_pubkey(app) else {
         log::error!("[web-ota] updater pubkey missing from config — refusing unsigned OTA");
         return;
@@ -467,9 +558,10 @@ async fn check_and_apply(app: &tauri::AppHandle) {
     let ch = crate::channel::get_channel(app);
     let app_version = app.package_info().version.to_string();
     let local = local_ui_version(&dirs, &app_version);
+    let quarantined = quarantined_version(&dirs);
     let sources = crate::channel::ota_sources_for(&ch, std::env::var("K2_WEB_OTA_BASE").ok());
     for source in sources {
-        match try_source(&source, &dirs, &app_version, &local, &pubkey).await {
+        match try_source(&source, &dirs, &app_version, &local, quarantined.as_deref(), &pubkey).await {
             Ok(Outcome::Applied(v)) => {
                 log::info!("[web-ota] applied UI {v} (was {local}), effective next launch");
                 return;
@@ -483,31 +575,72 @@ async fn check_and_apply(app: &tauri::AppHandle) {
     }
 }
 
+/// Hard cap on a downloaded web.zip, independent of what the manifest or the
+/// CDN's Content-Length header claims (F9) — the authoritative check is
+/// against the actual byte count, so a lying header can't smuggle an
+/// oversized payload past the pre-download check.
+const MAX_BUNDLE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// F9: `actual_len` must not exceed the manifest's declared `size` (equal is
+/// fine) nor the absolute hard cap. `manifest_size: None` (old manifest, field
+/// absent) only enforces the hard cap.
+fn check_bundle_size(actual_len: u64, manifest_size: Option<u64>, hard_cap: u64) -> Result<(), String> {
+    if actual_len > hard_cap {
+        return Err(format!("bundle size {actual_len} exceeds hard cap {hard_cap}"));
+    }
+    if let Some(declared) = manifest_size {
+        if actual_len > declared {
+            return Err(format!("bundle size {actual_len} exceeds manifest size {declared}"));
+        }
+    }
+    Ok(())
+}
+
+/// Shared reqwest client (F3): a bare `reqwest::get` has no timeout at all, so
+/// a black-holing CDN (this product's core adversarial scenario) hangs the
+/// poller forever and it never reaches the fallback source.
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
 async fn try_source(
     source: &crate::channel::WebOtaSource,
     dirs: &OtaDirs,
     app_version: &str,
     local: &str,
+    quarantined: Option<&str>,
     pubkey: &str,
 ) -> Result<Outcome, String> {
-    let resp = reqwest::get(&source.manifest_url)
+    let resp = http_client()
+        .get(&source.manifest_url)
+        .send()
         .await
         .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
     let manifest: WebManifest = resp.json().await.map_err(|e| format!("manifest parse: {e}"))?;
-    match evaluate_manifest(&manifest, app_version, DESKTOP_BRIDGE_VERSION, local) {
+    match evaluate_manifest(&manifest, app_version, DESKTOP_BRIDGE_VERSION, local, quarantined) {
         Gate::Skip(reason) => Ok(Outcome::Gated(reason)),
         Gate::Apply => {
             let url = resolve_download_url(&manifest.url, &source.download_base);
             log::info!("[web-ota] downloading UI {} from {url}", manifest.version);
-            let bytes = reqwest::get(&url)
-                .await
-                .map_err(|e| e.to_string())?
-                .bytes()
-                .await
-                .map_err(|e| e.to_string())?;
+            let resp = http_client().get(&url).send().await.map_err(|e| e.to_string())?;
+            if !resp.status().is_success() {
+                return Err(format!("HTTP {}", resp.status()));
+            }
+            if let Some(len) = resp.content_length() {
+                check_bundle_size(len, manifest.size, MAX_BUNDLE_BYTES)?;
+            }
+            let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+            check_bundle_size(bytes.len() as u64, manifest.size, MAX_BUNDLE_BYTES)?;
             verify_sha256(&bytes, &manifest.hash)?;
             verify_minisign(&bytes, manifest.sig.as_deref().unwrap_or_default(), pubkey)?;
             let pending = dirs.pending();
@@ -608,7 +741,7 @@ mod tests {
     #[test]
     fn gate_applies_when_all_pass() {
         let m = manifest();
-        assert_eq!(evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200"), Gate::Apply);
+        assert_eq!(evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200", None), Gate::Apply);
     }
 
     #[test]
@@ -616,12 +749,12 @@ mod tests {
         let mut m = manifest();
         m.sig = None;
         assert_eq!(
-            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200"),
+            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200", None),
             Gate::Skip("missing sig")
         );
         m.sig = Some("  ".into());
         assert_eq!(
-            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200"),
+            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200", None),
             Gate::Skip("missing sig")
         );
     }
@@ -631,7 +764,7 @@ mod tests {
         let mut m = manifest();
         m.min_bridge = Some(2);
         assert_eq!(
-            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200"),
+            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200", None),
             Gate::Skip("min_bridge not satisfied")
         );
     }
@@ -640,7 +773,7 @@ mod tests {
     fn gate_rejects_min_desktop() {
         let m = manifest();
         assert_eq!(
-            evaluate_manifest(&m, "0.4.8", 1, "0.4.8.1200"),
+            evaluate_manifest(&m, "0.4.8", 1, "0.4.8.1200", None),
             Gate::Skip("min_desktop not satisfied")
         );
     }
@@ -649,12 +782,32 @@ mod tests {
     fn gate_rejects_not_newer() {
         let m = manifest();
         assert_eq!(
-            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1300"),
+            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1300", None),
             Gate::Skip("remote not newer than local")
         );
         assert_eq!(
-            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1400"),
+            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1400", None),
             Gate::Skip("remote not newer than local")
+        );
+    }
+
+    #[test]
+    fn gate_rejects_quarantined_version() {
+        let m = manifest(); // version 0.4.9.1300
+        assert_eq!(
+            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200", Some("0.4.9.1300")),
+            Gate::Skip("version quarantined")
+        );
+    }
+
+    #[test]
+    fn gate_allows_version_newer_than_quarantined() {
+        let m = manifest(); // version 0.4.9.1300
+        // A different (older) version was quarantined — this manifest's
+        // version isn't it, so the gate proceeds normally.
+        assert_eq!(
+            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200", Some("0.4.9.1250")),
+            Gate::Apply
         );
     }
 
@@ -809,6 +962,162 @@ mod tests {
         mark_boot_pending(&d);
         assert_eq!(startup_rollback(&d), BootCheck::RolledBackToEmbedded);
         assert!(!d.boot_pending().exists());
+    }
+
+    // ---- F1: poller must not apply while .boot-pending is set ----
+
+    #[test]
+    fn poll_blocked_by_pending_boot_reflects_marker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        assert!(!poll_blocked_by_pending_boot(&d));
+        mark_boot_pending(&d);
+        assert!(poll_blocked_by_pending_boot(&d));
+        clear_boot_pending(&d);
+        assert!(!poll_blocked_by_pending_boot(&d));
+    }
+
+    // ---- F2: quarantined-version gate + quarantine/ pruning ----
+
+    #[test]
+    fn startup_rollback_persists_quarantined_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        assert_eq!(quarantined_version(&d), None);
+        seed_bundle(&d.current(), "v2");
+        mark_boot_pending(&d);
+        startup_rollback(&d);
+        assert_eq!(quarantined_version(&d).as_deref(), Some("v2"));
+    }
+
+    #[test]
+    fn quarantine_prune_keeps_newest_three() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        std::fs::create_dir_all(d.quarantine()).unwrap();
+        for i in 0..5 {
+            std::fs::create_dir_all(d.quarantine().join(format!("v{i}-2026080{i}000000"))).unwrap();
+        }
+        prune_quarantine(&d, QUARANTINE_KEEP);
+        let mut remaining: Vec<_> = std::fs::read_dir(d.quarantine())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        remaining.sort();
+        assert_eq!(
+            remaining,
+            vec![
+                "v2-20260802000000".to_string(),
+                "v3-20260803000000".to_string(),
+                "v4-20260804000000".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn startup_rollback_prunes_quarantine_to_three() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        for i in 0..5 {
+            seed_bundle(&d.current(), &format!("v{i}"));
+            mark_boot_pending(&d);
+            startup_rollback(&d); // no previous/ ever seeded -> RolledBackToEmbedded each time
+        }
+        let count = std::fs::read_dir(d.quarantine()).unwrap().count();
+        assert_eq!(count, QUARANTINE_KEEP);
+    }
+
+    #[test]
+    fn quarantined_manifest_version_is_skipped() {
+        let m = manifest(); // version 0.4.9.1300
+        assert_eq!(
+            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200", Some(m.version.as_str())),
+            Gate::Skip("version quarantined")
+        );
+    }
+
+    #[test]
+    fn newer_manifest_version_unlocks_after_quarantine() {
+        let mut m = manifest();
+        m.version = "0.4.9.1400".to_string(); // newer than the quarantined 0.4.9.1300
+        assert_eq!(
+            evaluate_manifest(&m, "0.4.9", 1, "0.4.9.1200", Some("0.4.9.1300")),
+            Gate::Apply
+        );
+    }
+
+    // ---- F5: shell upgrade discards a stale on-disk OTA bundle ----
+
+    #[test]
+    fn discard_stale_disk_ui_clears_when_shell_is_newer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        seed_bundle(&d.current(), "0.4.5");
+        seed_bundle(&d.previous(), "0.4.4");
+        discard_stale_disk_ui(&d, "0.4.9");
+        assert!(!d.current().exists());
+        assert!(!d.previous().exists());
+    }
+
+    #[test]
+    fn discard_stale_disk_ui_keeps_when_disk_is_newer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        seed_bundle(&d.current(), "0.5.0");
+        discard_stale_disk_ui(&d, "0.4.9");
+        assert!(d.current().exists());
+        assert_eq!(local_ui_version(&d, "0.4.9"), "0.5.0");
+    }
+
+    #[test]
+    fn discard_stale_disk_ui_noop_when_no_disk_ui() {
+        // No current/ at all: local_ui_version falls back to app_version, so
+        // is_newer_version(app_version, app_version) is false — nothing to do.
+        let tmp = tempfile::tempdir().unwrap();
+        let d = OtaDirs::new(tmp.path().join("web-ota"));
+        discard_stale_disk_ui(&d, "0.4.9");
+        assert!(!d.current().exists());
+    }
+
+    // ---- F3: shared reqwest client ----
+
+    #[test]
+    fn http_client_is_a_singleton() {
+        let a = http_client() as *const reqwest::Client;
+        let b = http_client() as *const reqwest::Client;
+        assert_eq!(a, b);
+    }
+
+    // ---- F9: bundle size enforcement ----
+
+    #[test]
+    fn bundle_size_allows_exact_manifest_match() {
+        assert!(check_bundle_size(100, Some(100), 1000).is_ok());
+    }
+
+    #[test]
+    fn bundle_size_rejects_over_manifest_size() {
+        let e = check_bundle_size(101, Some(100), 1000).unwrap_err();
+        assert!(e.contains("exceeds manifest size"), "got {e}");
+    }
+
+    #[test]
+    fn bundle_size_rejects_over_hard_cap_even_without_manifest_size() {
+        let e = check_bundle_size(65 * 1024 * 1024, None, MAX_BUNDLE_BYTES).unwrap_err();
+        assert!(e.contains("exceeds hard cap"), "got {e}");
+    }
+
+    #[test]
+    fn bundle_size_allows_under_hard_cap_without_manifest_size() {
+        assert!(check_bundle_size(1024, None, MAX_BUNDLE_BYTES).is_ok());
+    }
+
+    #[test]
+    fn bundle_size_hard_cap_wins_even_if_manifest_size_is_larger() {
+        // A manifest can't authorize exceeding the absolute cap.
+        let e = check_bundle_size(65 * 1024 * 1024, Some(100 * 1024 * 1024), MAX_BUNDLE_BYTES)
+            .unwrap_err();
+        assert!(e.contains("exceeds hard cap"), "got {e}");
     }
 
     #[test]

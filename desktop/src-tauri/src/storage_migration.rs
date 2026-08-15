@@ -114,6 +114,17 @@ pub fn navigate_to_new_origin(app: &AppHandle) {
     let Some(win) = app.get_webview_window("main") else {
         return;
     };
+    // F8: if an OTA'd disk UI is already sitting in current/, mark it
+    // boot-pending before navigating to it — otherwise a poller apply during
+    // the export window (or the watchdog's forced-fresh-start path) could
+    // swap current/ out from under a first disk-UI boot that has no rollback
+    // protection, since prepare_boot (the normal setter) never runs for this
+    // navigation path.
+    if let Some(dirs) = crate::web_ota::ota_dirs(app) {
+        if crate::web_ota::serve_root(&dirs).is_some() {
+            crate::web_ota::mark_boot_pending(&dirs);
+        }
+    }
     let url = crate::ui_protocol::ui_origin_url("index.html");
     match url.parse::<tauri::Url>() {
         Ok(u) => {
