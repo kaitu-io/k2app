@@ -163,6 +163,16 @@ export default function OrdersPage() {
     {
       accessorKey: "title",
       header: "标题",
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1.5">
+          <span>{row.getValue("title")}</span>
+          {row.original.channel === "apple_iap" ? (
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
+              {"Apple 内购"}
+            </Badge>
+          ) : null}
+        </div>
+      ),
     },
     {
       accessorKey: "user",
@@ -510,6 +520,16 @@ export default function OrdersPage() {
                   <div>{selectedOrder.title}</div>
                 </div>
               </div>
+              {selectedOrder.channel === "apple_iap" ? (
+                <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                  <div className="font-medium">{"这是一笔 Apple 内购订单"}</div>
+                  <ul className="mt-1 list-disc pl-4 text-muted-foreground space-y-0.5">
+                    <li>{"退款只向用户钱包打款，不会向 Apple 发起原路退款。"}</li>
+                    <li>{"退款不会取消订阅——下个计费周期 Apple 仍会扣款并生成新订单，需用户自行在 Apple 设置里取消。"}</li>
+                    <li>{"若用户之后又向 Apple 申请退款并成功，将构成重复退款，系统会发出告警。"}</li>
+                  </ul>
+                </div>
+              ) : null}
               <div>
                 <label className="text-sm font-medium">
                   {"退款原因 "}<span className="text-destructive">{"*"}</span>

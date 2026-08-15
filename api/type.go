@@ -533,6 +533,10 @@ type AdminOrderListItem struct {
 	RefundedAt   int64  `json:"refundedAt,omitempty"`
 	RefundAmount uint64 `json:"refundAmount,omitempty"`
 	RefundReason string `json:"refundReason,omitempty"`
+	// Channel 来源渠道（空串 = 历史/网页订单，"apple_iap" = iOS 内购）。后台必须能看见它：
+	// IAP 订单的退款语义与网页订单不同——钱包打款不会取消 Apple 侧订阅，下期照样扣款建新单，
+	// 管理员点退款前需要知道自己在退哪种单。
+	Channel              string            `json:"channel,omitempty"`
 	User                 ResourceUser      `json:"user"`               // 购买用户
 	Cashback             *ResourceCashback `json:"cashback,omitempty"` // 分销返现信息（可选）
 }

@@ -24,6 +24,11 @@ type iapOrderFixture struct {
 	productID string
 	origTxn   string
 	token     string
+	// env 是 credit() 送进 TransactionInfo 的 Apple 环境。默认 Production——建单/返现是
+	// **只在生产交易上发生**的行为，用 Sandbox 建 fixture 等于全套测试都在验证一条被
+	// creditAppleTransaction 的沙盒门提前截断的路径（这个 fixture 最初正是硬编码 "Sandbox"，
+	// 于是没有任何测试发现沙盒交易会建出真订单）。沙盒行为由专门的用例翻转此字段来验。
+	env string
 }
 
 // setupIAPOrderFixture 建全套记录并注册硬删除清理。
@@ -35,6 +40,7 @@ func setupIAPOrderFixture(t *testing.T, firstPct, renewalPct int) *iapOrderFixtu
 	f := &iapOrderFixture{
 		productID: fmt.Sprintf("io.kaitu.test.iaporder.%d", uniq),
 		origTxn:   fmt.Sprintf("OTX-iaporder-%d", uniq),
+		env:       appstore.Environment_Production,
 	}
 
 	// 分销商（IsRetailer=true 是 processRetailerCashbackInTx 的准入条件）
@@ -96,7 +102,7 @@ func (f *iapOrderFixture) credit(t *testing.T, txnID string, purchaseSec, expire
 			TransactionId:         txnID,
 			ProductId:             f.productID,
 			AppAccountToken:       f.token,
-			Environment:           "Sandbox",
+			Environment:           f.env,
 			PurchaseDate:          purchaseSec * 1000,
 			ExpiresDate:           expiresSec * 1000,
 		})
@@ -301,39 +307,126 @@ func TestCreditAppleTransaction_UnmappedProduct_StillGrantsEntitlement(t *testin
 	assert.Equal(t, int64(0), f.retailerBalance(t), "不建单则无返现")
 }
 
-// 后台退款必须拒绝 IAP 订单：Apple 已原路退款，再走 ProcessOrderRefund 会往用户钱包
-// 二次打款（可提现，真实资损），且授权天数按 VipPurchase 反算恒为 0，权益也扣不掉。
-func TestProcessOrderRefund_RejectsAppleIAPOrder(t *testing.T) {
+// 后台退款支持 IAP 订单：钱包打款、按 SubscriptionCredit 精确撤销权益、冲销分销返现。
+//
+// 关键在权益那一步——IAP 入账写的是 UserProHistory{type=apple_sub, reference_id=credit 行 id}，
+// 按网页订单的 (type=purchase, reference_id=orderID) 口径反算恒为 0，会出现"钱退了权益没扣"。
+// 本用例断言扣掉的秒数与 SubscriptionCredit.CreditedSeconds 完全相等，若 orderEntitlementSecondsInTx
+// 退回按 VipPurchase 查，expiredAt 一秒都不会少，用例立刻红。
+func TestProcessOrderRefund_AppleIAPOrder_RefundsWalletAndRevokesEntitlement(t *testing.T) {
 	skipIfNoDB(t)
 	f := setupIAPOrderFixture(t, 30, 10)
 	day := int64(86400)
 	t0 := time.Now().Unix()
 
-	require.NoError(t, f.credit(t, "IAPO-ARJ1", t0, t0+365*day))
+	require.NoError(t, f.credit(t, "IAPO-ARF1", t0, t0+365*day))
 	orders := f.orders(t)
 	require.Len(t, orders, 1)
 	iapOrder := orders[0]
 	require.Equal(t, OrderChannelAppleIAP, iapOrder.Channel)
+	require.Equal(t, "IAPO-ARF1", iapOrder.AppleTransactionID)
 
-	err := ProcessOrderRefund(context.Background(), iapOrder.ID, "管理员误操作", 1)
-	require.Error(t, err, "IAP 订单必须被拒绝")
-	assert.Contains(t, err.Error(), "Apple 内购订单不支持后台退款")
+	// 入账后的基准：权益到期时刻 + 该交易实际入账的秒数
+	var beforeUser User
+	require.NoError(t, db.Get().First(&beforeUser, f.buyer.ID).Error)
+	var credit SubscriptionCredit
+	require.NoError(t, db.Get().Where(&SubscriptionCredit{TransactionID: "IAPO-ARF1"}).First(&credit).Error)
+	require.Greater(t, credit.CreditedSeconds, int64(0), "fixture 必须真的发了权益，否则本用例测不到东西")
 
-	// 事务整体回滚：订单未被标记退款
+	require.NoError(t, ProcessOrderRefund(context.Background(), iapOrder.ID, "客服补偿", 1))
+
+	// 1. 权益按入账秒数精确回退
+	var afterUser User
+	require.NoError(t, db.Get().First(&afterUser, f.buyer.ID).Error)
+	assert.Equal(t, beforeUser.ExpiredAt-credit.CreditedSeconds, afterUser.ExpiredAt,
+		"必须按 SubscriptionCredit.CreditedSeconds 扣回，不是按 VipPurchase（那会一秒不扣）")
+
+	// 2. 钱包收到 PayAmount
+	var buyerWallet Wallet
+	require.NoError(t, db.Get().Where(&Wallet{UserID: f.buyer.ID}).First(&buyerWallet).Error)
+	assert.Equal(t, int64(iapOrder.PayAmount), buyerWallet.Balance)
+
+	// 3. 分销商返现被冲销
+	assert.Equal(t, int64(0), f.retailerBalance(t), "退款必须冲销分销商返现")
+
+	// 4. 订单状态与反向审计记录
 	after := f.orders(t)
 	require.Len(t, after, 1)
-	if after[0].IsRefunded != nil {
-		assert.False(t, *after[0].IsRefunded, "拒绝后订单不得被标记为已退款")
-	}
+	require.NotNil(t, after[0].IsRefunded)
+	assert.True(t, *after[0].IsRefunded)
+	assert.Equal(t, iapOrder.PayAmount, after[0].RefundAmount)
 
-	// 关键：买家钱包不得凭空多出 PayAmount
+	var reverse UserProHistory
+	require.NoError(t, db.Get().Where("user_id = ? AND type = ? AND reference_id = ?",
+		f.buyer.ID, VipRefund, iapOrder.ID).First(&reverse).Error)
+	assert.Equal(t, -int(credit.CreditedSeconds/86400), reverse.Days)
+}
+
+// 缺 apple_transaction_id 的 IAP 订单必须拒绝退款，而不是"查到 0 秒→只打钱不扣权益"。
+func TestProcessOrderRefund_AppleIAPOrder_RejectsMissingTransactionID(t *testing.T) {
+	skipIfNoDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	day := int64(86400)
+	t0 := time.Now().Unix()
+
+	require.NoError(t, f.credit(t, "IAPO-ARF2", t0, t0+365*day))
+	orders := f.orders(t)
+	require.Len(t, orders, 1)
+	iapOrder := orders[0]
+
+	// 模拟被手工改过 / 早期数据形态的脏订单
+	require.NoError(t, db.Get().Model(&Order{}).Where("id = ?", iapOrder.ID).
+		Update("apple_transaction_id", "").Error)
+
+	err := ProcessOrderRefund(context.Background(), iapOrder.ID, "客服补偿", 1)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "缺少 apple_transaction_id")
+
+	// 事务整体回滚：钱一分没打，订单没被标记
 	var buyerWallet Wallet
 	werr := db.Get().Where(&Wallet{UserID: f.buyer.ID}).First(&buyerWallet).Error
 	if werr == nil {
-		assert.Equal(t, int64(0), buyerWallet.Balance, "买家钱包不得被二次打款")
+		assert.Equal(t, int64(0), buyerWallet.Balance, "拒绝后不得打款")
 	} else {
-		assert.ErrorIs(t, werr, gorm.ErrRecordNotFound, "要么没钱包，要么余额为 0")
+		assert.ErrorIs(t, werr, gorm.ErrRecordNotFound)
 	}
+	after := f.orders(t)
+	require.Len(t, after, 1)
+	if after[0].IsRefunded != nil {
+		assert.False(t, *after[0].IsRefunded)
+	}
+}
+
+// 沙盒交易：权益照发，但绝不建订单、绝不发返现。
+//
+// 生产事故（2026-08-10）就是这条路径漏了门——沙盒交易建出一笔 pay_amount=4900 的订单，
+// 客服在后台点退款，差一步把 $49 可提现余额打给一个从没付过钱的账号。
+func TestCreditAppleTransaction_SandboxCreditsEntitlementButCreatesNoOrder(t *testing.T) {
+	skipIfNoDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.env = appstore.Environment_Sandbox
+	day := int64(86400)
+	t0 := time.Now().Unix()
+
+	var before User
+	require.NoError(t, db.Get().First(&before, f.buyer.ID).Error)
+
+	require.NoError(t, f.credit(t, "IAPO-SBX1", t0, t0+365*day), "沙盒交易的权益入账不得失败")
+
+	// 权益照发——iOS 用沙盒账号做端到端测试时必须能看到 Pro 生效
+	var after User
+	require.NoError(t, db.Get().First(&after, f.buyer.ID).Error)
+	assert.Greater(t, after.ExpiredAt, before.ExpiredAt, "沙盒交易的权益必须照常到账")
+
+	// 去重账本照写（幂等仍然成立，重投的沙盒交易不会重复发权益）
+	var creditCount int64
+	require.NoError(t, db.Get().Model(&SubscriptionCredit{}).
+		Where(&SubscriptionCredit{TransactionID: "IAPO-SBX1"}).Count(&creditCount).Error)
+	assert.Equal(t, int64(1), creditCount)
+
+	// 但订单与返现一个都不许有——订单是财务实体，沙盒交易用户实付为 0
+	assert.Empty(t, f.orders(t), "沙盒交易不得建订单")
+	assert.Equal(t, int64(0), f.retailerBalance(t), "沙盒交易不得发返现")
 }
 
 // Apple 退款后，若无其它有效付费订单，IsFirstOrderDone 必须翻回 false，
