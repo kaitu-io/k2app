@@ -3,11 +3,20 @@
 package webui
 
 import (
+	"archive/zip"
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"aead.dev/minisign"
 )
 
 const testManifestJSON = `{
@@ -102,5 +111,237 @@ func TestShouldApplyGates(t *testing.T) {
 		if got, reason := o.shouldApply(&tc.m); got != tc.want {
 			t.Errorf("%s: shouldApply = %v (%s), want %v", tc.name, got, reason, tc.want)
 		}
+	}
+}
+
+// --- apply pipeline ---
+
+// makeZip builds an in-memory zip whose top level is dist content.
+func makeZip(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// testKeyPair generates a minisign key pair and returns the base64 key
+// line of the public key (last line of its text encoding) + private key.
+func testKeyPair(t *testing.T) (string, minisign.PrivateKey) {
+	t.Helper()
+	pub, priv, err := minisign.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := pub.MarshalText()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(text)), "\n")
+	return lines[len(lines)-1], priv
+}
+
+func TestVerifySHA256(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "f")
+	data := []byte("hello web ota")
+	if err := os.WriteFile(p, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifySHA256(p, "sha256:"+sha256Hex(data)); err != nil {
+		t.Errorf("good hash rejected: %v", err)
+	}
+	if err := verifySHA256(p, "sha256:"+strings.Repeat("0", 64)); err == nil {
+		t.Error("bad hash accepted")
+	}
+	if err := verifySHA256(p, sha256Hex(data)); err == nil {
+		t.Error("hash without sha256: prefix accepted")
+	}
+}
+
+func TestVerifyMinisign(t *testing.T) {
+	pubB64, priv := testKeyPair(t)
+	p := filepath.Join(t.TempDir(), "f")
+	data := []byte("signed bundle bytes")
+	if err := os.WriteFile(p, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	sig := base64.StdEncoding.EncodeToString(minisign.Sign(priv, data))
+
+	if err := verifyMinisign(p, sig, pubB64); err != nil {
+		t.Errorf("valid signature rejected: %v", err)
+	}
+	if err := verifyMinisign(p, "", pubB64); err == nil {
+		t.Error("empty signature accepted")
+	}
+	// 换内容 → 验签必须失败
+	if err := os.WriteFile(p, []byte("tampered"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyMinisign(p, sig, pubB64); err == nil {
+		t.Error("signature over tampered content accepted")
+	}
+	// 换公钥 → 验签必须失败
+	otherPub, _ := testKeyPair(t)
+	if err := os.WriteFile(p, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyMinisign(p, sig, otherPub); err == nil {
+		t.Error("signature accepted under wrong public key")
+	}
+}
+
+func TestUnzipToRejectsZipSlip(t *testing.T) {
+	evil := makeZip(t, map[string]string{"../evil.txt": "escape"})
+	zp := filepath.Join(t.TempDir(), "evil.zip")
+	if err := os.WriteFile(zp, evil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := unzipTo(zp, filepath.Join(t.TempDir(), "out")); err == nil {
+		t.Fatal("zip-slip entry accepted")
+	}
+}
+
+func TestUnzipToExtractsNestedFiles(t *testing.T) {
+	z := makeZip(t, map[string]string{
+		"index.html":    "<html></html>",
+		"assets/app.js": "js",
+	})
+	zp := filepath.Join(t.TempDir(), "web.zip")
+	if err := os.WriteFile(zp, z, 0644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "out")
+	if err := unzipTo(zp, out); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"index.html", "assets/app.js"} {
+		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
+			t.Errorf("missing %s: %v", f, err)
+		}
+	}
+}
+
+func TestSwapRotatesCurrentToPrevious(t *testing.T) {
+	dir := t.TempDir()
+	o := NewWebOTA(WebOTAConfig{Dir: dir, ShellVersion: "0.4.9"})
+	mustWriteDir := func(name, marker string) {
+		d := filepath.Join(dir, name)
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "index.html"), []byte(marker), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustWriteDir("current", "v1")
+	mustWriteDir("pending", "v2")
+
+	if err := o.swap(filepath.Join(dir, "pending")); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := os.ReadFile(filepath.Join(dir, "current", "index.html"))
+	if err != nil || string(cur) != "v2" {
+		t.Errorf("current = %q, %v; want v2", cur, err)
+	}
+	prev, err := os.ReadFile(filepath.Join(dir, "previous", "index.html"))
+	if err != nil || string(prev) != "v1" {
+		t.Errorf("previous = %q, %v; want v1", prev, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "pending")); !os.IsNotExist(err) {
+		t.Error("pending should be gone after swap")
+	}
+}
+
+func TestApplyEndToEnd(t *testing.T) {
+	pubB64, priv := testKeyPair(t)
+	zipData := makeZip(t, map[string]string{
+		"index.html":    "<html><head></head><body>NEW</body></html>",
+		"assets/app.js": "js",
+	})
+	sig := base64.StdEncoding.EncodeToString(minisign.Sign(priv, zipData))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/kaitu/web/0.4.9.1234/web.zip" {
+			w.Write(zipData)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	o := NewWebOTA(WebOTAConfig{
+		Endpoints:    []string{srv.URL + "/kaitu"},
+		Dir:          dir,
+		ShellVersion: "0.4.9",
+		PublicKey:    pubB64,
+	})
+	m := &WebOTAManifest{
+		Version: "0.4.9.1234",
+		URL:     "0.4.9.1234/web.zip",
+		Hash:    "sha256:" + sha256Hex(zipData),
+		Size:    int64(len(zipData)),
+		Sig:     sig,
+	}
+	if err := o.apply(m, srv.URL+"/kaitu"); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	idx, err := os.ReadFile(filepath.Join(o.CurrentDir(), "index.html"))
+	if err != nil || !strings.Contains(string(idx), "NEW") {
+		t.Errorf("current/index.html = %q, %v", idx, err)
+	}
+	if v := o.localVersion(); v != "0.4.9.1234" {
+		t.Errorf("localVersion after apply = %q, want 0.4.9.1234", v)
+	}
+
+	// 坏 hash 拒绝，且不动 current
+	bad := *m
+	bad.Version = "0.4.9.1235"
+	bad.Hash = "sha256:" + strings.Repeat("0", 64)
+	if err := o.apply(&bad, srv.URL+"/kaitu"); err == nil {
+		t.Fatal("bad hash accepted")
+	}
+	if v := o.localVersion(); v != "0.4.9.1234" {
+		t.Errorf("current was touched by failed apply: %q", v)
+	}
+
+	// 坏签名拒绝
+	badSig := *m
+	badSig.Version = "0.4.9.1236"
+	badSig.Sig = base64.StdEncoding.EncodeToString(minisign.Sign(priv, []byte("other")))
+	if err := o.apply(&badSig, srv.URL+"/kaitu"); err == nil {
+		t.Fatal("bad signature accepted")
+	}
+
+	// bundle 缺 index.html 拒绝
+	noIdxZip := makeZip(t, map[string]string{"assets/app.js": "js"})
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(noIdxZip)
+	}))
+	defer srv2.Close()
+	noIdx := &WebOTAManifest{
+		Version: "0.4.9.1237",
+		URL:     "0.4.9.1237/web.zip",
+		Hash:    "sha256:" + sha256Hex(noIdxZip),
+		Sig:     base64.StdEncoding.EncodeToString(minisign.Sign(priv, noIdxZip)),
+	}
+	if err := o.apply(noIdx, srv2.URL); err == nil || !strings.Contains(err.Error(), "index.html") {
+		t.Fatalf("bundle without index.html: err = %v, want index.html error", err)
 	}
 }

@@ -27,7 +27,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require aead.dev/minisign v0.3.0 // indirect
+require aead.dev/minisign v0.3.0
 
 require (
 	github.com/andybalholm/brotli v1.0.6 // indirect

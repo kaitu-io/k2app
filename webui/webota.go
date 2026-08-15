@@ -3,6 +3,10 @@
 package webui
 
 import (
+	"archive/zip"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"aead.dev/minisign"
 )
 
 // LinuxBridgeVersion is the bridge API version compiled into this shell,
@@ -157,4 +163,181 @@ func (o *WebOTA) shouldApply(m *WebOTAManifest) (bool, string) {
 		return false, "not newer than local"
 	}
 	return true, "newer"
+}
+
+// apply downloads, verifies (sha256 then minisign), unpacks into
+// pending/, stamps version.txt, and atomically swaps pending → current.
+// Any failure leaves current/ untouched.
+func (o *WebOTA) apply(m *WebOTAManifest, endpoint string) error {
+	if err := os.MkdirAll(o.cfg.Dir, 0755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", o.cfg.Dir, err)
+	}
+	zipPath := filepath.Join(o.cfg.Dir, "web-"+m.Version+".zip")
+	defer os.Remove(zipPath)
+
+	// m.URL is relative to the manifest's directory: <endpoint>/web/.
+	if err := o.download(endpoint+"/web/"+m.URL, zipPath); err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	if err := verifySHA256(zipPath, m.Hash); err != nil {
+		return err
+	}
+	if err := verifyMinisign(zipPath, m.Sig, o.cfg.PublicKey); err != nil {
+		return err
+	}
+
+	pending := filepath.Join(o.cfg.Dir, "pending")
+	if err := os.RemoveAll(pending); err != nil {
+		return fmt.Errorf("clear pending: %w", err)
+	}
+	if err := unzipTo(zipPath, pending); err != nil {
+		os.RemoveAll(pending)
+		return fmt.Errorf("unzip: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(pending, "index.html")); err != nil {
+		os.RemoveAll(pending)
+		return fmt.Errorf("bundle missing index.html: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(pending, "version.txt"), []byte(m.Version+"\n"), 0644); err != nil {
+		os.RemoveAll(pending)
+		return fmt.Errorf("write version.txt: %w", err)
+	}
+	return o.swap(pending)
+}
+
+// download fetches url into dst, capped at maxWebBundleSize.
+func (o *WebOTA) download(url, dst string) error {
+	resp, err := o.client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(f, io.LimitReader(resp.Body, maxWebBundleSize))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// verifySHA256 checks the file at path against a "sha256:<hex>" manifest
+// hash. The prefix is mandatory — a bare hex hash is rejected.
+func verifySHA256(path, want string) error {
+	hexWant, ok := strings.CutPrefix(want, "sha256:")
+	if !ok {
+		return fmt.Errorf("manifest hash %q missing sha256: prefix", want)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(got, hexWant) {
+		return fmt.Errorf("sha256 mismatch: expected %s, got %s", hexWant, got)
+	}
+	return nil
+}
+
+// verifyMinisign verifies a base64-encoded minisign signature (the
+// content of a .minisig file, base64d — same convention as the Tauri
+// updater's signature field) over the file at path. Verification is
+// mandatory: an empty sig is an error, not a skip.
+func verifyMinisign(path, sigB64, pubKey string) error {
+	if sigB64 == "" {
+		return fmt.Errorf("manifest has no minisign sig")
+	}
+	sigBytes, err := base64.StdEncoding.DecodeString(sigB64)
+	if err != nil {
+		return fmt.Errorf("decode sig: %w", err)
+	}
+	var pk minisign.PublicKey
+	if err := pk.UnmarshalText([]byte(pubKey)); err != nil {
+		return fmt.Errorf("parse minisign public key: %w", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !minisign.Verify(pk, data, sigBytes) {
+		return fmt.Errorf("minisign verification failed")
+	}
+	return nil
+}
+
+// unzipTo extracts a zip whose top level is the dist content into dst,
+// rejecting entries that would escape dst (zip-slip).
+func unzipTo(zipPath, dst string) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+	cleanDst := filepath.Clean(dst)
+	for _, f := range zr.File {
+		target := filepath.Join(cleanDst, filepath.FromSlash(f.Name))
+		if target != cleanDst && !strings.HasPrefix(target, cleanDst+string(os.PathSeparator)) {
+			return fmt.Errorf("zip entry escapes destination: %q", f.Name)
+		}
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		_, err = io.Copy(out, rc)
+		rc.Close()
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// swap promotes pending → current, keeping the old current as previous.
+// Renames are atomic on the same filesystem; if the final promote fails
+// the old current is restored best-effort.
+func (o *WebOTA) swap(pending string) error {
+	current := o.CurrentDir()
+	previous := filepath.Join(o.cfg.Dir, "previous")
+	os.RemoveAll(previous)
+	hadCurrent := false
+	if _, err := os.Stat(current); err == nil {
+		if err := os.Rename(current, previous); err != nil {
+			return fmt.Errorf("rotate current: %w", err)
+		}
+		hadCurrent = true
+	}
+	if err := os.Rename(pending, current); err != nil {
+		if hadCurrent {
+			os.Rename(previous, current) // best-effort restore
+		}
+		return fmt.Errorf("promote pending: %w", err)
+	}
+	return nil
 }
