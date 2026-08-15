@@ -113,6 +113,7 @@ fn main() {
             Some(vec!["--minimized"]),
         ))
         .register_uri_scheme_protocol("kaitu-icon", icon_protocol::handle_kaitu_icon)
+        .register_uri_scheme_protocol("kaitu-ui", ui_protocol::handle_kaitu_ui)
         .invoke_handler(tauri::generate_handler![
             show_window,
             hide_window,
@@ -138,6 +139,11 @@ fn main() {
             installed_apps::list_installed_apps,
             router_bridge::get_default_gateway,
             router_bridge::router_http_request,
+            web_ota::ui_boot_ok,
+            storage_migration::storage_migration_put,
+            storage_migration::storage_migration_get,
+            storage_migration::storage_migration_clear,
+            storage_migration::storage_migration_done,
         ]);
 
     #[cfg(feature = "mcp-bridge")]
@@ -212,6 +218,11 @@ fn main() {
 
             // Start auto-updater
             updater::start_auto_updater(app.handle().clone());
+
+            // Web OTA: startup rollback check + origin choice (incl. storage
+            // migration), then start the UI bundle poller. Both no-op in debug.
+            web_ota::prepare_boot(app.handle());
+            web_ota::start_web_ota_updater(app.handle().clone());
 
             Ok(())
         })

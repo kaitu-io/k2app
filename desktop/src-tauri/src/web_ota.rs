@@ -345,6 +345,94 @@ pub fn ota_dirs(app: &tauri::AppHandle) -> Option<OtaDirs> {
         .map(|d| OtaDirs::new(d.join("web-ota")))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum BootPlan {
+    LegacyExport,
+    DiskUi,
+    EmbeddedUi,
+}
+
+/// Which origin/UI to boot: migration first, then disk-vs-embedded.
+pub fn boot_plan(migrated: bool, has_disk_ui: bool) -> BootPlan {
+    if !migrated {
+        BootPlan::LegacyExport
+    } else if has_disk_ui {
+        BootPlan::DiskUi
+    } else {
+        BootPlan::EmbeddedUi
+    }
+}
+
+/// Startup: consume .boot-pending (rollback), pick the boot origin, navigate.
+/// Debug builds no-op — `yarn tauri dev` keeps the Vite devUrl flow.
+/// The config-defined window briefly starts loading the default index.html at
+/// the legacy origin before this navigate lands; the window is hidden until
+/// frontend_ready, so the transient is invisible.
+pub fn prepare_boot(app: &tauri::AppHandle) {
+    if cfg!(debug_assertions) {
+        log::info!("[web-ota] debug build — boot flow disabled (Vite devUrl)");
+        return;
+    }
+    let Some(dirs) = ota_dirs(app) else {
+        return;
+    };
+    match startup_rollback(&dirs) {
+        BootCheck::Clean => {}
+        other => log::warn!("[web-ota] previous UI boot unconfirmed — rolled back: {other:?}"),
+    }
+    // If the app data dir is unresolvable we can't persist the migration flag
+    // anyway — treat as migrated and boot the new origin directly.
+    let migrated = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|d| crate::storage_migration::is_migrated(&d))
+        .unwrap_or(true);
+    let has_disk = serve_root(&dirs).is_some();
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    match boot_plan(migrated, has_disk) {
+        BootPlan::LegacyExport => {
+            log::info!("[web-ota] storage not migrated — booting legacy origin for export");
+            navigate(&win, crate::storage_migration::legacy_export_url());
+            crate::storage_migration::spawn_migration_watchdog(app.clone());
+        }
+        BootPlan::DiskUi => {
+            log::info!(
+                "[web-ota] serving UI {} from disk",
+                local_ui_version(&dirs, "unknown")
+            );
+            mark_boot_pending(&dirs);
+            navigate(&win, &crate::ui_protocol::ui_origin_url("index.html"));
+        }
+        BootPlan::EmbeddedUi => {
+            navigate(&win, &crate::ui_protocol::ui_origin_url("index.html"));
+        }
+    }
+}
+
+fn navigate(win: &tauri::WebviewWindow, url: &str) {
+    match url.parse::<tauri::Url>() {
+        Ok(u) => {
+            if let Err(e) = win.navigate(u) {
+                log::error!("[web-ota] navigate to {url} failed: {e}");
+            }
+        }
+        Err(e) => log::error!("[web-ota] invalid boot url {url}: {e}"),
+    }
+}
+
+/// IPC: the webapp confirms it booted — clears .boot-pending so the next
+/// launch won't quarantine the current bundle. Called from tauri-k2.ts init.
+#[tauri::command]
+pub fn ui_boot_ok(app: tauri::AppHandle) {
+    if let Some(d) = ota_dirs(&app) {
+        clear_boot_pending(&d);
+        log::info!("[web-ota] UI boot confirmed, .boot-pending cleared");
+    }
+}
+
 enum Outcome {
     Applied(String),
     Gated(&'static str),
@@ -826,6 +914,14 @@ mod tests {
         let mut bad: HashMap<String, serde_json::Value> = HashMap::new();
         bad.insert("updater".to_string(), serde_json::json!({ "pubkey": 42 }));
         assert_eq!(updater_pubkey_from(&bad), None);
+    }
+
+    #[test]
+    fn boot_plan_decision_table() {
+        assert_eq!(boot_plan(false, false), BootPlan::LegacyExport);
+        assert_eq!(boot_plan(false, true), BootPlan::LegacyExport); // migration before OTA UI
+        assert_eq!(boot_plan(true, true), BootPlan::DiskUi);
+        assert_eq!(boot_plan(true, false), BootPlan::EmbeddedUi);
     }
 
     #[test]
