@@ -5,12 +5,20 @@ import App from "./App";
 import { i18nPromise } from "./i18n/i18n";
 import { initializeAllStores } from "./stores";
 import { bootstrapAntiblockSeed } from "./services/antiblock-seed";
+import { installChunkReloadGuard } from "./utils/chunk-reload-guard";
 import {
   DESIGN_WIDTH,
   ViewportState,
   computeScaleDecision,
   isAndroidCapacitorWebView,
 } from "./utils/viewport-scaling";
+
+// F6: a mid-session Web OTA apply leaves the already-loaded index.html
+// pointing at hashed chunk filenames the new bundle no longer has on disk —
+// the first navigation to an unvisited lazy tab 404s. Install this before
+// anything else so it's live for the whole session (including the migration
+// export page and its dynamic imports).
+installChunkReloadGuard();
 
 // ==================== Viewport Scaling ====================
 
@@ -83,6 +91,21 @@ Sentry.init({
 // ==================== 主入口 ====================
 
 async function main() {
+  // Desktop origin migration must run before anything consumes migrated keys.
+  // i18n already read kaitu-language at module-eval time, hence the one-time
+  // reload after a successful import (build target has no top-level await).
+  const { runDesktopStorageMigration } = await import('./services/desktop-storage-migration');
+  const migration = await runDesktopStorageMigration();
+  if (migration === 'halt') {
+    console.info('[WebApp] migration export mode — waiting for shell navigation');
+    return;
+  }
+  if (migration === 'reload') {
+    console.info('[WebApp] migrated storage imported — reloading once');
+    window.location.reload();
+    return;
+  }
+
   // 等待 i18n 初始化
   await i18nPromise;
   console.info('[WebApp] i18n initialized');
@@ -152,6 +175,16 @@ async function main() {
       <App />
     </React.StrictMode>,
   );
+
+  // Web OTA boot handshake (F4): confirm the UI booted only AFTER render has
+  // happened — a bundle that crashes during store-init or first paint must
+  // NOT clear .boot-pending, so the next launch quarantines it instead of
+  // serving the same broken bundle again. Migration halt/reload paths above
+  // both `return` before this point, so this only runs on the normal boot.
+  if (window.__TAURI__) {
+    const { confirmUiBootOk } = await import('./services/tauri-k2');
+    await confirmUiBootOk();
+  }
 
   // HMR 清理
   if (import.meta.hot) {

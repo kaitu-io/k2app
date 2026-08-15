@@ -17,6 +17,18 @@ set -euo pipefail
 #      (guaranteed by cfg(brand_overleap) compile-time fork; this catches regressions)
 # Bare "kaitu" tokens (kaitu-icon:// scheme, HKDF salt, S3 bucket, service name)
 # are protocol/internal identifiers and intentionally allowed.
+#
+# F7: the forbidden pattern anchors on the *compile-time literal* domain+brand
+# prefix (channel.rs STABLE_ENDPOINTS/BETA_ENDPOINTS/WEB_OTA_BASES), e.g.
+# "cloudfront.net/kaitu" or "all7.cc/kaitu" — every one of those consts is a
+# single &str literal that starts "https://{domain}/{brand}", so this
+# substring is guaranteed contiguous in the compiled binary's rodata. The
+# previous pattern `/{brand}/(desktop|web)/` matched "/kaitu/web/" too, but
+# that segment only exists at runtime — WEB_OTA_BASES holds just
+# "https://d0.all7.cc/kaitu" and the "web/latest.json" suffix is appended via
+# format!() in channel.rs's source_for(), so "/kaitu/web/" being contiguous in
+# the binary was never guaranteed by the compiler, only by incidental rodata
+# layout.
 
 BRAND="${1:?usage: $0 <kaitu|overleap> <path>}"
 TARGET="${2:?usage: $0 <kaitu|overleap> <path>}"
@@ -24,8 +36,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 case "$BRAND" in
-  kaitu)    FORBIDDEN='overleap\.io|/overleap/desktop/'; EXPECTED_APP='Kaitu.app' ;;
-  overleap) FORBIDDEN='kaitu\.io|开途|開途|/kaitu/desktop/'; EXPECTED_APP='Overleap.app' ;;
+  kaitu)    FORBIDDEN='overleap\.io|cloudfront\.net/overleap|all7\.cc/overleap'; EXPECTED_APP='Kaitu.app' ;;
+  overleap) FORBIDDEN='kaitu\.io|开途|開途|cloudfront\.net/kaitu|all7\.cc/kaitu'; EXPECTED_APP='Overleap.app' ;;
   *) echo "ERROR: brand must be kaitu|overleap" >&2; exit 1 ;;
 esac
 

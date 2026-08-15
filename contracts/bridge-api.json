@@ -62,9 +62,14 @@
     "set_update_channel",
     "show_window",
     "storage_get",
+    "storage_migration_clear",
+    "storage_migration_done",
+    "storage_migration_get",
+    "storage_migration_put",
     "storage_remove",
     "storage_set",
     "sync_locale",
+    "ui_boot_ok",
     "upload_service_log_command"
   ]
 }
