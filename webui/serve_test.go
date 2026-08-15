@@ -111,7 +111,7 @@ func TestWebappHandlerSPAFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading body: %v", err)
 	}
-	if !strings.Contains(string(body), "<html>") {
+	if !strings.Contains(string(body), "<html") {
 		t.Errorf("SPA fallback did not return HTML content")
 	}
 }
