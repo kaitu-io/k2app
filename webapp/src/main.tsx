@@ -83,6 +83,21 @@ Sentry.init({
 // ==================== 主入口 ====================
 
 async function main() {
+  // Desktop origin migration must run before anything consumes migrated keys.
+  // i18n already read kaitu-language at module-eval time, hence the one-time
+  // reload after a successful import (build target has no top-level await).
+  const { runDesktopStorageMigration } = await import('./services/desktop-storage-migration');
+  const migration = await runDesktopStorageMigration();
+  if (migration === 'halt') {
+    console.info('[WebApp] migration export mode — waiting for shell navigation');
+    return;
+  }
+  if (migration === 'reload') {
+    console.info('[WebApp] migrated storage imported — reloading once');
+    window.location.reload();
+    return;
+  }
+
   // 等待 i18n 初始化
   await i18nPromise;
   console.info('[WebApp] i18n initialized');
