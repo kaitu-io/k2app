@@ -235,6 +235,43 @@ pub fn startup_rollback(d: &OtaDirs) -> BootCheck {
     BootCheck::RolledBackToEmbedded
 }
 
+/// Verify sha256 of `data` against a manifest hash field ("sha256:<hex>" or bare hex).
+pub fn verify_sha256(data: &[u8], expected: &str) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    let want = expected.trim().to_lowercase();
+    let want = want.strip_prefix("sha256:").unwrap_or(&want);
+    let digest = Sha256::digest(data);
+    let got: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    if got == want {
+        Ok(())
+    } else {
+        Err(format!("sha256 mismatch: got {got}, want {want}"))
+    }
+}
+
+/// Verify a minisign signature. Both arguments are base64 of the full minisign
+/// text files — identical encoding to tauri-plugin-updater's verify_signature,
+/// so the CI can sign web.zip with the existing TAURI_SIGNING_PRIVATE_KEY and
+/// we reuse the tauri.conf.json updater pubkey verbatim.
+pub fn verify_minisign(data: &[u8], sig_b64: &str, pubkey_b64: &str) -> Result<(), String> {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let pk_txt = String::from_utf8(
+        b64.decode(pubkey_b64.trim())
+            .map_err(|e| format!("pubkey base64: {e}"))?,
+    )
+    .map_err(|e| format!("pubkey utf8: {e}"))?;
+    let sig_txt = String::from_utf8(
+        b64.decode(sig_b64.trim())
+            .map_err(|e| format!("sig base64: {e}"))?,
+    )
+    .map_err(|e| format!("sig utf8: {e}"))?;
+    let pk = minisign_verify::PublicKey::decode(&pk_txt).map_err(|e| format!("pubkey decode: {e}"))?;
+    let sig = minisign_verify::Signature::decode(&sig_txt).map_err(|e| format!("sig decode: {e}"))?;
+    // allow_legacy=true mirrors tauri-plugin-updater (updater.rs:1456)
+    pk.verify(data, &sig, true).map_err(|e| format!("minisign verify: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,5 +558,36 @@ mod tests {
         mark_boot_pending(&d);
         assert_eq!(startup_rollback(&d), BootCheck::RolledBackToEmbedded);
         assert!(!d.boot_pending().exists());
+    }
+
+    #[test]
+    fn sha256_accepts_prefixed_and_bare_hex() {
+        // sha256("test") is a well-known vector
+        let h = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+        assert!(verify_sha256(b"test", h).is_ok());
+        assert!(verify_sha256(b"test", &format!("sha256:{h}")).is_ok());
+        assert!(verify_sha256(b"test", &format!("SHA256:{}", h.to_uppercase())).is_ok());
+        assert!(verify_sha256(b"tampered", h).is_err());
+        assert!(verify_sha256(b"test", "sha256:deadbeef").is_err());
+    }
+
+    #[test]
+    fn minisign_verifies_known_vector_and_rejects_tampering() {
+        use base64::Engine;
+        let pk_file = "untrusted comment: minisign public key\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3\n";
+        let sig_file = "untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1556193335\tfile:test\ny/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+bHwhEBg==\n";
+        let pk_b64 = base64::engine::general_purpose::STANDARD.encode(pk_file);
+        let sig_b64 = base64::engine::general_purpose::STANDARD.encode(sig_file);
+
+        assert!(verify_minisign(b"test", &sig_b64, &pk_b64).is_ok());
+        assert!(verify_minisign(b"tampered", &sig_b64, &pk_b64).is_err());
+    }
+
+    #[test]
+    fn minisign_rejects_garbage_inputs() {
+        assert!(verify_minisign(b"test", "not-base64!!!", "also-not").is_err());
+        use base64::Engine;
+        let junk = base64::engine::general_purpose::STANDARD.encode("not a minisign file");
+        assert!(verify_minisign(b"test", &junk, &junk).is_err());
     }
 }
