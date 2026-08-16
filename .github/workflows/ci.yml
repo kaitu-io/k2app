@@ -296,8 +296,18 @@ jobs:
           echo "Loaded netfilter/tproxy modules:"
           lsmod | grep -iE 'tproxy|nf_tables|mangle' || echo "(none visible — may be builtin)"
 
-      - name: Gateway unit tests (Linux build tag — run on no other job)
-        run: go test ./gateway/... -count=1
+      # The only place k2's //go:build linux code is compiled and tested.
+      # test-macos runs `go test ./...` for k2, but a linux-tagged package
+      # is excluded from that compile outright — it reports no failures
+      # because nothing in it is ever built, not because it passed. So a
+      # linux-only package is invisible unless it is named here.
+      #
+      # Adding a new linux-only package (or linux-only file in an existing
+      # package) means adding it to this list. daemon/ is on it for its
+      # linux-only files — webui_linux.go and the web OTA wiring — whose
+      # non-linux counterpart on the macOS job is the webui_nop.go stub.
+      - name: Linux-only package tests (gateway, webui, daemon — no other job builds these)
+        run: go test ./gateway/... ./webui/... ./daemon/... -count=1
         working-directory: k2
 
       - name: Gateway soft-router UAT (data plane required)
