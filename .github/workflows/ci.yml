@@ -473,6 +473,15 @@ jobs:
     needs: test-windows
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 60
+    env:
+      # Journal every signCommand invocation (desktop/src-tauri/windows-sign.sh
+      # writes here when the var is set). Tauri swallows that command's output
+      # and reports only "failed to bundle project 'failed to run bash'", which
+      # does not say whether the signer ran and failed or never started — the
+      # journal's ENTER lines do. Scoped to run+attempt because this is a
+      # self-hosted runner: a fixed path would show a previous run's journal and
+      # read as though the current one produced it.
+      K2_SIGN_LOG: ${{ runner.temp }}/k2-sign-${{ github.run_id }}-${{ github.run_attempt }}.log
 
     steps:
       - name: Checkout repository
@@ -552,6 +561,26 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: make build-windows
+
+      # Runs on success too: a green build's journal is the baseline that makes
+      # a failed one readable (how many files get signed, in what order, what
+      # the resource counters look like when nothing is wrong).
+      - name: signCommand journal
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -f "$K2_SIGN_LOG" ]; then
+            echo "No journal at $K2_SIGN_LOG — the signCommand wrapper never ran."
+            echo "If the build failed at a signing step, the failure is upstream"
+            echo "of desktop/src-tauri/windows-sign.sh (process never spawned)."
+            exit 0
+          fi
+          echo "=== signCommand journal ==="
+          cat "$K2_SIGN_LOG"
+          echo "=== summary ==="
+          echo "invocations entered : $(grep -c '^=== ENTER' "$K2_SIGN_LOG" || true)"
+          echo "invocations exited  : $(grep -c '^=== EXIT' "$K2_SIGN_LOG" || true)"
+          echo "non-zero exits      : $(grep -c '^=== EXIT rc=[^0]' "$K2_SIGN_LOG" || true)"
 
       - name: Verify NSIS installer exists
         shell: bash
