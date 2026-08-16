@@ -19,7 +19,7 @@ internal object K2PluginUtils {
      * webapp/src/types/bridge-version.ts — the webapp contract gate
      * (bridge-contract.test.ts) greps this file's literal and fails on drift.
      */
-    const val BRIDGE_API_VERSION = 1
+    const val BRIDGE_API_VERSION = 2
 
     /**
      * Minisign public key for web OTA bundle signatures: the key line of the

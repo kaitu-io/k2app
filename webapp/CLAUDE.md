@@ -36,10 +36,16 @@ Spec: `docs/superpowers/specs/2026-08-14-web-ota-design.md` §4。
   运行时探测分支——**优先存在性检测**（`typeof fn === 'function'`），版本比较
   只做兜底。存在性检测天然免疫"TS 声明了但某平台 native 未实现"的平台漂移
   盲区（已证实形状：bridge v1 的 channel 方法 iOS 0.4.8 未实现）。
-- 探测必须收敛到唯一供给者 `src/services/capabilities.ts`（**首个 >v1 bridge
-  能力出现时新建**，同时收编 `capacitor-k2.ts` 现有的
-  `getPlatform() === 'android'` 门，并配 grep 守卫进 CI）。业务代码禁止散落
-  raw 版本比较、禁止直接探测 `window._k2` / `window._platform` 方法存在性。
+- 探测放在哪，取决于这个能力会不会漏进业务代码：
+  - **不漏**（调用完全封闭在 bridge 文件内，UI 不需要知道壳支不支持）→ 就地
+    try/catch 兜住，bridge 层本身即唯一供给者。bridge v2 的 5 个桌面 command
+    （`ui_boot_ok`、`storage_migration_*`）就是这一类：调用点在 `tauri-k2.ts` 与
+    `desktop-storage-migration.ts`，失败即静默降级，没有任何 UI 分支。
+  - **会漏**（要据此显示/隐藏功能、改文案、切流程）→ 必须新建唯一供给者
+    `src/services/capabilities.ts`，导出语义化 flag，同时收编 `capacitor-k2.ts`
+    现有的 `getPlatform() === 'android'` 门，并配 grep 守卫进 CI。
+  两种情况都禁止业务代码散落 raw 版本比较、禁止在页面/组件里直接探测
+  `window._k2` / `window._platform` 的方法存在性。
 - `min_*` 闸门是安全刹车不是兼容手段：bump 地板文件 = 显式砍旧版本支持的
   决策，须 review 给理由；bump `BRIDGE_API_VERSION` 不许顺手改地板。
 

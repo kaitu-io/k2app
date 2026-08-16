@@ -14,10 +14,11 @@ use std::sync::OnceLock;
 use chrono;
 use tauri::Manager;
 
-/// Compile-time bridge API version of this shell. Bumped in lockstep with the
-/// webapp's BRIDGE_API_VERSION (guarded by the contract-guard plan; this file
-/// only consumes it via the manifest `min_bridge` gate).
-pub const DESKTOP_BRIDGE_VERSION: u32 = 1;
+/// Compile-time bridge API version of this shell. MUST equal
+/// BRIDGE_API_VERSION in webapp/src/types/bridge-version.ts — the webapp
+/// contract gate (bridge-contract.test.ts) greps this literal and fails on
+/// drift. This file only consumes it via the manifest `min_bridge` gate.
+pub const DESKTOP_BRIDGE_VERSION: u32 = 2;
 
 /// Split "0.4.8.1234-beta.2" into (base segments, optional prerelease segments).
 /// Non-numeric segments parse as 0 — mirrors K2PluginUtils.splitVersion.
