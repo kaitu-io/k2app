@@ -32,8 +32,24 @@
  * is invisible to this gate — the method-table snapshot matches on both
  * platforms even when one platform's native silently lacks the method.
  *
- * Native mirrors (each checked against this value by the same gate):
- *   Android: K2PluginUtils.BRIDGE_API_VERSION
- *   iOS:     k2BridgeApiVersion (K2Helpers.swift)
+ * Shell mirrors — every shell declares which surface version it implements.
+ * A shell only implements the parts of the surface that apply to it (a mobile
+ * shell can never carry a Tauri command), so "mirror == this value" means
+ * "up to date with the surface", not "implements every method in it".
+ *   Android: K2PluginUtils.BRIDGE_API_VERSION          — gated by this test
+ *   iOS:     k2BridgeApiVersion (K2Helpers.swift)      — gated by this test
+ *   Desktop: DESKTOP_BRIDGE_VERSION (web_ota.rs)       — gated by this test
+ *   Linux:   LinuxBridgeVersion (k2/webui/webota.go)   — NOT gated: k2 is a
+ *     submodule that a fresh worktree may not have checked out, and a gate on
+ *     unpopulated content is a gate that fails for the wrong reason. Bumping
+ *     it is a k2-repo commit + submodule pointer bump; carry it in the same
+ *     change set as a bump here.
+ *
+ * v2 (2026-08-16): desktop web OTA added five Tauri commands the webapp calls
+ * — `ui_boot_ok` (tauri-k2.ts) and `storage_migration_{put,get,clear,done}`
+ * (desktop-storage-migration.ts). They shipped with the golden regenerated but
+ * without a bump, which let bridge v1 denote two different surfaces; this bump
+ * restores the invariant. Zero behavioral effect: the manifest publishes
+ * min_bridge = floor (1), so every shell in the field still passes its gate.
  */
-export const BRIDGE_API_VERSION = 1;
+export const BRIDGE_API_VERSION = 2;

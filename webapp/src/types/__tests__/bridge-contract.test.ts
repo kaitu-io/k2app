@@ -156,6 +156,19 @@ describe('bridge API contract gate', () => {
     expect(Number(m![1]), 'Android BRIDGE_API_VERSION drifted from webapp SoT').toBe(BRIDGE_API_VERSION);
   });
 
+  it('Desktop shell mirror matches BRIDGE_API_VERSION', () => {
+    // Added 2026-08-16 after the desktop web OTA branch shipped five new Tauri
+    // commands with the golden regenerated but no bump — bridge v1 ended up
+    // denoting two surfaces. Android/iOS were mirrored here from day one;
+    // desktop was not, which is exactly why its drift went unseen.
+    const rs = readFileSync(path.join(repoRoot, 'desktop/src-tauri/src/web_ota.rs'), 'utf8');
+    const m = rs.match(/const DESKTOP_BRIDGE_VERSION:\s*u32\s*=\s*(\d+)/);
+    expect(m, 'DESKTOP_BRIDGE_VERSION not found — desktop mirror missing').not.toBeNull();
+    expect(Number(m![1]), 'Desktop DESKTOP_BRIDGE_VERSION drifted from webapp SoT').toBe(
+      BRIDGE_API_VERSION,
+    );
+  });
+
   it('iOS native mirror matches BRIDGE_API_VERSION', () => {
     const swift = readFileSync(
       path.join(repoRoot, 'mobile/plugins/k2-plugin/ios/Plugin/K2Helpers.swift'),

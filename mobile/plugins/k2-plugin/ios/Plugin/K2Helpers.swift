@@ -73,7 +73,7 @@ private func compareSegments(_ a: [Int], _ b: [Int]) -> Int {
 /// Compile-time bridge API version. MUST equal BRIDGE_API_VERSION in
 /// webapp/src/types/bridge-version.ts — the webapp contract gate
 /// (bridge-contract.test.ts) greps this file's literal and fails on drift.
-let k2BridgeApiVersion = 1
+let k2BridgeApiVersion = 2
 
 /// min_bridge gate for web OTA manifests (spec §4). nil / absent (manifests
 /// published before the bridge-version era) always passes.
