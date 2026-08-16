@@ -45,10 +45,18 @@ implementation instead of two copies drifting.
   then downloads `web.zip`, verifies sha256 + minisign, unpacks into
   `pending/`, and atomically renames `pending/` → `current/` (old
   `current/` rotates to `previous/`). `LinuxBridgeVersion` (this file)
-  is the bridge API version compiled into the shell — bump it when the
-  Linux daemon's webapp-facing surface (daemon HTTP actions, webui
-  endpoints) changes incompatibly, so an old bundle can't apply against
-  a shell it no longer understands. The minisign public key is the same
+  is this shell's mirror of the outer repo's `BRIDGE_API_VERSION`
+  (`webapp/src/types/bridge-version.ts`) — one integer versioning the whole
+  webapp↔shell surface, also mirrored by Android, iOS and Tauri desktop.
+  It tracks that value even when a bump's additions belong to another shell
+  (v2 = five Tauri commands a Go daemon can never have): the number means
+  "current with the surface", and holding it back does not describe the gap
+  honestly — it only excludes Linux from every bundle once the published
+  support floor reaches that version. **The outer repo's contract gate does
+  not check this mirror** (k2 is a submodule a fresh worktree may not have
+  checked out), so nothing catches drift: a `BRIDGE_API_VERSION` bump must
+  carry a k2 commit + submodule pointer bump in the same change set.
+  The minisign public key is the same
   key pair as the Tauri desktop updater (`desktop/src-tauri/tauri.conf.json`
   `plugins.updater.pubkey`, key ID `40D7545FD7CEDE83`) — one signing key
   covers both the desktop binary OTA and the web OTA. Emits `DIAG:

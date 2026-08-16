@@ -23,11 +23,28 @@ import (
 	"github.com/kaitu-io/k2/safego"
 )
 
-// LinuxBridgeVersion is the bridge API version compiled into this shell,
-// compared against the manifest's min_bridge gate before applying a web
-// OTA bundle. Bump when the Linux daemon's webapp-facing surface
-// (daemon HTTP actions, webui endpoints) changes incompatibly.
-const LinuxBridgeVersion = 1
+// LinuxBridgeVersion is the bridge API surface version this shell
+// implements, checked against a manifest's min_bridge before a web OTA
+// bundle is applied. It MUST equal BRIDGE_API_VERSION in the outer repo's
+// webapp/src/types/bridge-version.ts — one integer versioning the entire
+// webapp↔shell surface, mirrored by Android (K2PluginUtils.BRIDGE_API_VERSION),
+// iOS (k2BridgeApiVersion) and Tauri desktop (DESKTOP_BRIDGE_VERSION).
+//
+// "Equal" means "current with the surface", not "implements every method
+// in it" — a shell only carries the parts that apply to it, and v2's
+// additions are five Tauri commands a Go daemon can never have. So do not
+// read a bump as a claim about this shell's own endpoints, and do not hold
+// the number back because the new methods are somebody else's: a stale
+// mirror does not describe the gap honestly, it just excludes this shell
+// from every bundle once the published support floor reaches that version.
+//
+// Unlike the other three mirrors this one is NOT enforced by the outer
+// repo's contract gate (webapp/src/types/__tests__/bridge-contract.test.ts):
+// k2 is a submodule a fresh worktree may not have checked out, and a gate
+// over unpopulated content fails for the wrong reason. Nothing will catch
+// drift here — bumping it is a k2 commit plus a submodule pointer bump,
+// and belongs in the same change set as the webapp-side bump.
+const LinuxBridgeVersion = 2
 
 // webOTAPublicKey is the minisign public key verifying web OTA bundles.
 // Same key pair as the Tauri desktop updater — this is the key line of
