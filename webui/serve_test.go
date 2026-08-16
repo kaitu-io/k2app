@@ -46,9 +46,7 @@ func TestNewWebappHandlerNilFS(t *testing.T) {
 }
 
 func TestWebappHandlerInjectsGatewayGlobal(t *testing.T) {
-	if webappFS == nil {
-		t.Skip("webappFS is nil (nowebapp build)")
-	}
+	fakeEmbed(t)
 
 	h := NewWebappHandler("1.2.3", "deadbeef", "arm64")
 	if h == nil {
@@ -87,9 +85,7 @@ func TestWebappHandlerInjectsGatewayGlobal(t *testing.T) {
 }
 
 func TestWebappHandlerSPAFallback(t *testing.T) {
-	if webappFS == nil {
-		t.Skip("webappFS is nil (nowebapp build)")
-	}
+	fakeEmbed(t)
 
 	h := NewWebappHandler("0.0.1", "cafebabe", "amd64")
 	if h == nil {
@@ -121,8 +117,15 @@ func TestWebappHandlerSPAFallback(t *testing.T) {
 
 // --- Web OTA disk override ---
 
-// fakeEmbed swaps webappFS for an in-memory FS so override tests do not
-// depend on a populated dist/. Restores the original via t.Cleanup.
+// fakeEmbed swaps webappFS for an in-memory FS. Every test that builds a
+// real handler needs it, not just the override ones: dist/ is committed as
+// a lone .gitkeep and populated by the outer repo's Makefile before
+// `go build`, so on a clean checkout (CI, a fresh worktree) the embed
+// still succeeds — webappFS is non-nil — but carries no index.html, and
+// NewWebappHandler returns nil. Guarding on `webappFS == nil` does not
+// catch that; it only catches -tags nowebapp. Tests that guarded that way
+// passed solely on machines that had built the webapp.
+// Restores the original via t.Cleanup.
 func fakeEmbed(t *testing.T) {
 	t.Helper()
 	orig := webappFS

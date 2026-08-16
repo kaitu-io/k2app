@@ -127,8 +127,27 @@ GOOS=linux go build ./webui/...               # Cross-compile check
 go test ./webui/...                           # Unit tests (Linux only)
 ```
 
-Tests that exercise `NewWebappHandler` need a populated `dist/` directory
-(copy from `webapp/dist/` before running). Tests for SPA routing, injection
-of `window.__K2_GATEWAY__`, cache headers, and 404 fallback live in
-`serve_test.go`. Storage encryption and HTTP handler round-trips live in
-`storage_test.go` and `storage_http_test.go`.
+Tests that exercise `NewWebappHandler` call `fakeEmbed(t)` (in
+`serve_test.go`) to swap `webappFS` for an in-memory FS, so they need no
+populated `dist/` and run identically on a clean checkout. **Do not guard
+such a test with `if webappFS == nil { t.Skip() }`** — `dist/` is committed
+as a lone `.gitkeep`, so the embed succeeds and `webappFS` is non-nil even
+with no webapp built; the handler then returns nil for a *different* reason
+(no `index.html`) and the test fails instead of skipping. That guard only
+catches `-tags nowebapp`. Two tests were written that way and passed for
+months solely on machines that had built the webapp.
+
+Tests for SPA routing, injection of `window.__K2_GATEWAY__`, cache headers,
+and 404 fallback live in `serve_test.go`. Storage encryption and HTTP
+handler round-trips live in `storage_test.go` and `storage_http_test.go`.
+
+This package is `//go:build linux`: on macOS `go test ./...` excludes it
+outright — no SKIP line, no output at all. In CI it runs only in the
+`test-gateway-uat` job's explicit linux-only package list (outer repo
+`.github/workflows/ci.yml`). To run it from macOS:
+
+```bash
+docker run --rm --platform linux/amd64 -v "$PWD":/src \
+  -v "$(go env GOMODCACHE)":/go/pkg/mod -w /src golang:1.25 \
+  go test ./webui/ -count=1
+```
