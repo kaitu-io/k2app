@@ -57,6 +57,21 @@ export function readBridgeApiVersion(tsSource) {
   return Number(m[1]);
 }
 
+// Compare the x.y.z base segments of two versions. Extra segments (the web OTA
+// 4th segment, prerelease suffixes) are ignored. Returns -1 / 0 / 1.
+export function compareBase(a, b) {
+  const seg = (v) =>
+    String(v)
+      .split('.')
+      .slice(0, 3)
+      .map((s) => Number(s.replace(/\D.*$/, '')) || 0);
+  const [pa, pb] = [seg(a), seg(b)];
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] < pb[i] ? -1 : 1;
+  }
+  return 0;
+}
+
 // Validates the support-floor object (contracts/webapp-support-floor.json).
 // Ignores the "//" comment key. Returns {native, desktop, linux, bridge}.
 export function readSupportFloor(obj) {
@@ -81,6 +96,19 @@ export function buildManifest({ version, size, sha256Hex, sigBase64, bridgeApiVe
       `support floor bridge (${f.bridge}) exceeds compiled BRIDGE_API_VERSION (${bridgeApiVersion}) — ` +
         `the floor cannot be newer than the current bridge surface`,
     );
+  }
+  // Same invariant, version dimension: a floor above the version being published
+  // means that shell is gated out of its own web OTA by the min_* it just wrote
+  // (silently — evaluate_manifest/meetsMinVersion return a plain "skip"). Shipped
+  // 0.4.8 desktop/Linux against a 0.4.9 floor for exactly this reason.
+  const publishedBase = version.split('.').slice(0, 3).join('.');
+  for (const key of ['native', 'desktop', 'linux']) {
+    if (compareBase(f[key], publishedBase) > 0) {
+      throw new Error(
+        `support floor ${key} (${f[key]}) is newer than the version being published (${publishedBase}) — ` +
+          `that shell would be gated out of its own web OTA by min_${key}`,
+      );
+    }
   }
   if (typeof sigBase64 !== 'string' || sigBase64.length === 0 || /\s/.test(sigBase64)) {
     throw new Error('sig must be non-empty single-line base64 (base64 of the whole .minisig file)');

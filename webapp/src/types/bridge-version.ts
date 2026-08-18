@@ -22,15 +22,21 @@
  * add/remove only. A behavior change behind an unchanged signature still relies
  * on review + bump discipline.
  *
- * iOS caveat (bridge v1, recorded 2026-08-14): the TS interface below declares
- * `getUpdateChannel`/`setUpdateChannel`, but shipped iOS 0.4.8 does NOT
- * implement them — only Android 0.4.8 does. iOS support first ships in the
- * release AFTER 0.4.8. Webapp MUST keep the `getPlatform() === 'android'` gate
- * in capacitor-k2.ts until a bridge v2 bump anchored at that first iOS
- * release carrying them. This is a specific instance of a general blind spot:
- * per-platform native implementation drift under an unchanged TS declaration
- * is invisible to this gate — the method-table snapshot matches on both
- * platforms even when one platform's native silently lacks the method.
+ * Platform-drift blind spot (recorded 2026-08-14, corrected 2026-08-18): the
+ * method-table snapshot matches on both platforms even when one platform's
+ * native silently lacks a declared method, so this gate cannot see per-platform
+ * implementation drift. The original instance was `getUpdateChannel` /
+ * `setUpdateChannel`: declared in TS, implemented on Android first. It is now
+ * resolved — iOS implements both (K2Plugin.swift, endpoints built from
+ * `channelPrefix`), and they ship on BOTH natives in 0.4.8, the first release
+ * to carry them at all. (The earlier note claimed "shipped iOS 0.4.8 does not
+ * implement them"; no 0.4.8 was ever shipped — it was built on 2026-08-03 and
+ * never published, so nothing in the field has these methods yet.)
+ *
+ * The lasting rule is the one that outlived that instance: gate on CAPABILITY,
+ * never on platform. capacitor-k2.ts now probes with getUpdateChannel and only
+ * exposes setChannel when the probe succeeds, which covers both the 0.4.7-and-
+ * older field population and any future drift in either direction.
  *
  * Shell mirrors — every shell declares which surface version it implements.
  * A shell only implements the parts of the surface that apply to it (a mobile

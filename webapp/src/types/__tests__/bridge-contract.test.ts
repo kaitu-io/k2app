@@ -21,6 +21,11 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, it, expect, assert } from 'vitest';
 import { BRIDGE_API_VERSION } from '../bridge-version';
+// Imported, never re-derived: the publish-time gate in web-ota-manifest.mjs
+// compares floor vs version with this exact function, so a change to the
+// comparison can never silently split the two gates apart.
+// @ts-expect-error — plain .mjs CI script, no type declarations
+import { compareBase } from '../../../../scripts/ci/web-ota-manifest.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../../..');
@@ -125,11 +130,19 @@ describe('bridge API contract gate', () => {
     expect(readFileSync(goldenPath, 'utf8')).toBe(liveJson);
   });
 
-  it('webapp-support-floor.json is valid and never exceeds the compiled bridge', () => {
+  it('webapp-support-floor.json is valid and never exceeds the shipping shell', () => {
     // R2 (spec §4): the floor is the OLDEST shell set the latest webapp still
     // supports. It does NOT move when BRIDGE_API_VERSION bumps — bumping the
-    // floor is an explicit support-drop decision. The one invariant a test can
-    // hold: the floor bridge can never be newer than the compiled surface.
+    // floor is an explicit support-drop decision. Two invariants a test can
+    // hold, one per dimension of the floor:
+    //   bridge  — never newer than the compiled bridge surface
+    //   version — never newer than the version being shipped, because the
+    //             current shell is by definition inside the supported set. A
+    //             floor above it makes that shell skip its OWN web OTA via
+    //             min_*, silently (Gate::Skip / "shell below min_linux", no
+    //             error surface). desktop/linux sat at 0.4.9 while 0.4.8 was
+    //             the shipping version — caught by hand, not by this gate,
+    //             which is why the version dimension is now covered here.
     expect(existsSync(floorPath), 'contracts/webapp-support-floor.json missing').toBe(true);
     const floor = JSON.parse(readFileSync(floorPath, 'utf8'));
     for (const key of ['native', 'desktop', 'linux'] as const) {
@@ -144,6 +157,16 @@ describe('bridge API contract gate', () => {
       `floor.bridge (${floor.bridge}) > BRIDGE_API_VERSION (${BRIDGE_API_VERSION}) — ` +
         `the support floor cannot be newer than the current bridge surface`,
     ).toBeLessThanOrEqual(BRIDGE_API_VERSION);
+
+    const shipping = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
+    expect(shipping, 'root package.json version must be x.y.z').toMatch(/^\d+\.\d+\.\d+$/);
+    for (const key of ['native', 'desktop', 'linux'] as const) {
+      expect(
+        compareBase(floor[key], shipping),
+        `floor.${key} (${floor[key]}) is newer than the shipping version (${shipping}) — ` +
+          `that shell would be gated out of its own web OTA by min_${key}`,
+      ).toBeLessThanOrEqual(0);
+    }
   });
 
   it('Android native mirror matches BRIDGE_API_VERSION', () => {

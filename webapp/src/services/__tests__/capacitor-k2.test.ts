@@ -45,6 +45,8 @@ const mockK2Plugin = {
   relayFetch: vi.fn(),
   relayAddNodes: vi.fn(),
   getDefaultGateway: vi.fn(),
+  getUpdateChannel: vi.fn(),
+  setUpdateChannel: vi.fn(),
 };
 
 vi.mock('k2-plugin', () => ({
@@ -71,6 +73,56 @@ describe('capacitor-k2', () => {
   afterEach(() => {
     (window as any)._k2 = originalK2;
     (window as any)._platform = originalPlatform;
+  });
+
+  // Web OTA update channel (spec §4.5): the bridge probes the CAPABILITY, never
+  // the platform. Both natives gain getUpdateChannel/setUpdateChannel in 0.4.8;
+  // everything at 0.4.7 and older has neither. These tests pin the probe itself
+  // — an earlier `getPlatform() === 'android'` gate hid the capability from iOS
+  // even after its native implemented it, and this file had zero channel
+  // coverage while staying green (the mock lacked both methods entirely).
+  describe('update channel capability probe', () => {
+    it('exposes setChannel wherever the probe succeeds — including iOS', async () => {
+      (Capacitor.getPlatform as any).mockReturnValue('ios');
+      mockK2Plugin.getUpdateChannel.mockResolvedValue({ channel: 'beta' });
+      mockK2Plugin.setUpdateChannel.mockResolvedValue(undefined);
+
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const updater = window._platform.updater!;
+      expect(updater.channel).toBe('beta');
+      expect(typeof updater.setChannel).toBe('function');
+
+      await updater.setChannel!('stable');
+      expect(mockK2Plugin.setUpdateChannel).toHaveBeenCalledWith({ channel: 'stable' });
+      expect(updater.channel).toBe('stable');
+    });
+
+    it('probes identically on Android', async () => {
+      (Capacitor.getPlatform as any).mockReturnValue('android');
+      mockK2Plugin.getUpdateChannel.mockResolvedValue({ channel: 'beta' });
+
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      expect(window._platform.updater!.channel).toBe('beta');
+      expect(typeof window._platform.updater!.setChannel).toBe('function');
+    });
+
+    it('hides setChannel when the shell lacks the methods (0.4.7 and older)', async () => {
+      (Capacitor.getPlatform as any).mockReturnValue('android');
+      mockK2Plugin.getUpdateChannel.mockRejectedValue(new Error('not implemented'));
+
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const updater = window._platform.updater!;
+      // Undefined, not a stub that always errors — BetaChannelToggle gates on
+      // its presence and must hide the control entirely on old shells.
+      expect(updater.setChannel).toBeUndefined();
+      expect(updater.channel).toBe('stable');
+    });
   });
 
   describe('isCapacitorNative', () => {
