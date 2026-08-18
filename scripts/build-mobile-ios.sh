@@ -179,6 +179,7 @@ XCODEBUILD_ARGS=(
   -archivePath build/App.xcarchive
   "MARKETING_VERSION=$MARKETING_VERSION"
   "CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
+  # Info.plist K2AppVersion — diagnostic metadata only (see Info.plist).
   "K2_APP_VERSION=$VERSION"
   archive
 )

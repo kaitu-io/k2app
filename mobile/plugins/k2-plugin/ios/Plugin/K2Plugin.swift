@@ -90,14 +90,19 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     // treated as absent at both call sites below, never surfaced as a dead link.
     private let appStoreURL = Bundle.main.object(forInfoDictionaryKey: "K2AppStoreURL") as? String ?? "https://apps.apple.com/app/id6448744655"
 
-    /// Real semantic version (e.g. "0.4.0-beta.3") embedded at build time via K2_APP_VERSION.
-    /// Falls back to CFBundleShortVersionString for dev builds (where K2_APP_VERSION is unset).
-    private var appVersion: String {
-        if let v = Bundle.main.infoDictionary?["K2AppVersion"] as? String, !v.isEmpty {
-            return v
-        }
-        return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-    }
+    /// Real semantic version (e.g. "0.4.0-beta.3"), compiled in via
+    /// `k2AppVersion` (K2Helpers.swift).
+    ///
+    /// Deliberately NOT read from Info.plist. The previous implementation read
+    /// `K2AppVersion` and, when that was missing or empty, fell back to
+    /// `CFBundleShortVersionString` — which is a DIFFERENT QUANTITY: iOS
+    /// marketing versions are remapped 0.x.y → 4.x.y (build-mobile-ios.sh), so
+    /// the fallback turned "0.4.7" into "4.4.7". That inverts the web-OTA
+    /// `min_native` gate: [4,4,7] >= [0,4,8] passes, so a shell too old for a
+    /// bundle would silently accept it. A gate whose degraded path admits
+    /// everything is worse than no gate at all. The Info.plist key survives as
+    /// diagnostic metadata only — nothing reads it.
+    private var appVersion: String { k2AppVersion }
 
     override public func load() {
         // Check for OTA web update

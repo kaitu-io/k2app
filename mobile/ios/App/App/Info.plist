@@ -20,6 +20,10 @@
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+    <!-- Diagnostic metadata only: lets a support engineer read the real
+         semantic version off an installed build without running it.
+         NOTHING reads this at runtime — the min_native gate uses the
+         compiled-in k2AppVersion (K2Helpers.swift). Do not gate on it. -->
     <key>K2AppVersion</key>
     <string>$(K2_APP_VERSION)</string>
     <key>K2AppGroup</key>

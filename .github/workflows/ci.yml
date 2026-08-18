@@ -59,17 +59,40 @@ jobs:
 
       - name: Check version consistency
         run: |
+          set -euo pipefail
           PKG_VERSION=$(node -p "require('./package.json').version")
           echo "package.json version: $PKG_VERSION"
 
-          # Cargo.toml version must match
-          CARGO_VERSION=$(grep '^version' desktop/src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
-          echo "Cargo.toml version: $CARGO_VERSION"
-          if [ "$PKG_VERSION" != "$CARGO_VERSION" ]; then
-            echo "::error::Version mismatch: package.json ($PKG_VERSION) != Cargo.toml ($CARGO_VERSION)"
-            exit 1
-          fi
+          # Every file below is rewritten from package.json by
+          # scripts/sync-version.sh, which `make pre-build` runs on every build
+          # path — so committed drift should be impossible. That is precisely
+          # why this gate exists: it is the canary for sync-version.sh ITSELF
+          # breaking. Each substitution is a sed pattern matched against a
+          # hand-edited file; reformat that file and the pattern stops matching,
+          # silently, and the version simply stops propagating. Nothing else in
+          # the build would notice or fail.
+          #
+          # k2AppVersion is load-bearing beyond bookkeeping: it is the native
+          # version the web-OTA min_native gate compares manifests against.
+          # A stale value there does not break a build — it makes the shell lie
+          # about which webapp bundles it can run.
+          fail=0
+          check() {
+            echo "$1: $2"
+            if [ "$2" != "$PKG_VERSION" ]; then
+              echo "::error::Version mismatch: package.json ($PKG_VERSION) != $1 ($2) — run scripts/sync-version.sh; if that does not fix it, its sed pattern for that file no longer matches"
+              fail=1
+            fi
+          }
 
+          check "Cargo.toml" \
+            "$(grep '^version' desktop/src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')"
+          check "android build.gradle versionName" \
+            "$(sed -n 's/.*versionName "\(.*\)".*/\1/p' mobile/android/app/build.gradle | head -1)"
+          check "iOS k2AppVersion" \
+            "$(sed -n 's/^let k2AppVersion = "\(.*\)".*/\1/p' mobile/plugins/k2-plugin/ios/Plugin/K2Helpers.swift)"
+
+          [ "$fail" -eq 0 ] || exit 1
           echo "All versions consistent: $PKG_VERSION"
 
       # The iOS CFBundleVersion is derived, not stored, so the check above

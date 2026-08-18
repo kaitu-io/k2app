@@ -70,6 +70,16 @@ private func compareSegments(_ a: [Int], _ b: [Int]) -> Int {
     return 0
 }
 
+/// Real semantic version of this build, taken from package.json (the
+/// cross-layer source of truth) by scripts/sync-version.sh, which
+/// `make pre-build` runs on every build path.
+///
+/// Compiled in rather than read from Info.plist ON PURPOSE — this value feeds
+/// the web-OTA `min_native` gate, and a gate must never be able to fall back to
+/// reading a *different quantity*. See K2Plugin.appVersion for the fail-open
+/// bug that motivated this.
+let k2AppVersion = "0.4.8"
+
 /// Compile-time bridge API version. MUST equal BRIDGE_API_VERSION in
 /// webapp/src/types/bridge-version.ts — the webapp contract gate
 /// (bridge-contract.test.ts) greps this file's literal and fails on drift.
