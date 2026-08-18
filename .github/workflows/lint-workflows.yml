@@ -1,0 +1,38 @@
+name: Lint Workflows
+
+# Guards a failure mode that hides itself: a workflow-validation error (bad
+# context, malformed expression, unknown key) is rejected by GitHub *before*
+# scheduling, so the run completes with ZERO jobs. Nothing is tested, yet the
+# commit shows only "a failed check" — indistinguishable at a glance from one
+# failing test. ci.yml sat in exactly that state from 2026-08-16 to 2026-08-18
+# (a `runner` context in a job-level `env:`), so every push in that window went
+# entirely unverified while looking merely red.
+#
+# This lives in its OWN file on purpose: a lint job inside ci.yml could not
+# catch ci.yml being invalid, because it would not run either.
+
+on:
+  push:
+    paths: ['.github/workflows/**']
+  pull_request:
+    paths: ['.github/workflows/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Pinned action, no network fetch of a script. Shellcheck findings in
+      # `run:` blocks are pre-existing and not what this gate is for, so only
+      # workflow-structure problems fail the build.
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -ignore 'shellcheck reported issue' -color
