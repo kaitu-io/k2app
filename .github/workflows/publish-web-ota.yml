@@ -6,7 +6,13 @@ name: Publish Web OTA
 #   workflow_call → invoked by app-release workflows to piggyback a web OTA publish on
 #     an app release; caller passes `channel` (default stable) and `secrets: inherit`
 #   workflow_dispatch → republish any ref (emergency rollback via ref=<known-good sha>)
-#     and/or target the beta channel (bootstrap §8 does beta first)
+#     and/or target the beta channel (bootstrap §8 does beta first), and/or
+#     publish into a UAT `namespace` that no shipped client polls
+#
+# The beta CHANNEL is not a safe UAT target: shipped 0.4.7 mobile applies web
+# bundles silently (no minisign, no min_bridge, no prompt on that version), so
+# anything landing on beta/latest.json reaches real beta devices. `namespace`
+# exists because the isolation has to come from the PATH, not the channel.
 # Stable publishes update BOTH channel manifests; artifacts always also land in the
 # beta dir so the manifest's relative url ({version}/web.zip) resolves on either
 # channel — same superset semantics as scripts/publish-mobile.sh.
@@ -31,6 +37,10 @@ on:
         type: choice
         options: [stable, beta]
         default: stable
+      namespace:
+        description: 'UAT namespace — publishes to {ns}/{brand}/web/ instead of {brand}/web/. Empty = production. No shipped client polls a namespaced path; pair it with the desktop K2_WEB_OTA_BASE override to exercise the live chain without an audience.'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -152,9 +162,23 @@ jobs:
           set -euo pipefail
           VERSION='${{ steps.ver.outputs.version }}'
           CHANNEL='${{ inputs.channel || 'stable' }}'
-          echo "Publishing v$VERSION to channel: $CHANNEL"
+          NS='${{ inputs.namespace || '' }}'
+          # A typo here would silently publish somewhere unintended, and the
+          # empty case must stay byte-identical to the production layout.
+          if [ -n "$NS" ]; then
+            case "$NS" in
+              *[!a-z0-9-]*|-*|kaitu|overleap)
+                echo "::error::namespace must match [a-z0-9-]+, not start with '-', and not be a brand name (got '$NS')"
+                exit 1 ;;
+            esac
+            PREFIX="${NS}/"
+            echo "::warning::UAT publish into namespace '$NS' — production paths are NOT touched"
+          else
+            PREFIX=""
+          fi
+          echo "Publishing v$VERSION to channel: $CHANNEL (base: s3://d0.all7.cc/${PREFIX}{brand}/web)"
           for BRAND in kaitu overleap; do
-            BASE="s3://d0.all7.cc/${BRAND}/web"
+            BASE="s3://d0.all7.cc/${PREFIX}${BRAND}/web"
             aws s3 cp "out/web-$BRAND.zip" "$BASE/beta/${VERSION}/web.zip" --content-type application/zip
             aws s3 cp "out/latest-$BRAND.json" "$BASE/beta/latest.json" --content-type application/json
             if [ "$CHANNEL" = "stable" ]; then
@@ -168,13 +192,21 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
+          set -euo pipefail
+          NS='${{ inputs.namespace || '' }}'
+          # Plain `if`, not `[ -n "$NS" ] && PREFIX=...`: under `set -e` that
+          # idiom is safe only because the failing test is a non-final element
+          # of an && list. It reads like a bug, and the empty-NS branch is the
+          # PRODUCTION path — not somewhere to leave a subtlety for a future
+          # reader to "fix".
+          if [ -n "$NS" ]; then PREFIX="${NS}/"; else PREFIX=""; fi
           for DIST_ID in E3W144CRNT652P E34P52R7B93FSC; do
             aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
-              --paths "/kaitu/web/*" "/overleap/web/*" \
+              --paths "/${PREFIX}kaitu/web/*" "/${PREFIX}overleap/web/*" \
               --no-cli-pager --output text > /dev/null
           done
-          echo "CDN invalidated: d0.all7.cc + dl.kaitu.io (/{kaitu,overleap}/web/*)"
+          echo "CDN invalidated: d0.all7.cc + dl.kaitu.io (/${PREFIX}{kaitu,overleap}/web/*)"
 
       # A failed linkage publish (spec §6 trigger 2, from release-desktop.yml /
       # build-mobile.yml) is otherwise silent except for a red run nobody is
