@@ -125,6 +125,19 @@ function AppRoutes() {
             <Route path="update-email" element={<MembershipGuard><UpdateLoginEmail /></MembershipGuard>} />
           )}
         </Route>
+
+        {/* Unmatched location -> dashboard. Without this, a location no route
+            claims renders an empty tree: a blank window, no error boundary, no
+            exception, nothing in any log but one react-router warning. 0.4.8
+            desktop shipped exactly that — the shell booted the bundle at
+            `/index.html` (see ui_protocol.rs `ui_boot_url`), which this table
+            does not match, so every user saw a blank app while every layer
+            reported a healthy start.
+            The boot URL is fixed at the source; this exists so that no future
+            URL shape — a stale deep link, a differently-served OTA bundle, a
+            platform whose custom scheme appends a filename — can turn a routing
+            miss back into a blank product. */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
       {error && (

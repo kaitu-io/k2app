@@ -481,10 +481,10 @@ pub fn prepare_boot(app: &tauri::AppHandle) {
                 local_ui_version(&dirs, "unknown")
             );
             mark_boot_pending(&dirs);
-            navigate(&win, &crate::ui_protocol::ui_origin_url("index.html"));
+            navigate(&win, &crate::ui_protocol::ui_boot_url());
         }
         BootPlan::EmbeddedUi => {
-            navigate(&win, &crate::ui_protocol::ui_origin_url("index.html"));
+            navigate(&win, &crate::ui_protocol::ui_boot_url());
         }
     }
 }

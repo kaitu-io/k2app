@@ -12,6 +12,24 @@ use crate::web_ota;
 
 pub const UI_SCHEME: &str = "kaitu-ui";
 
+/// The URL the shell must boot the webapp at: the origin ROOT, never
+/// `index.html`.
+///
+/// The webapp mounts a react-router `BrowserRouter` whose route table hangs off
+/// `/` with no catch-all. Booting at `…/index.html` therefore hands the router
+/// a location that matches nothing, and it renders an empty tree — a blank
+/// window, with no error anywhere: the Rust side logs a clean boot, the
+/// `ui_boot_ok` handshake still fires (it only proves the bundle's JS ran), and
+/// the non-React layers (bridge, stores, pollers) keep working, so the logs look
+/// completely healthy. The only trace is one react-router line,
+/// `No routes matched location "/index.html"`.
+///
+/// The protocol handler maps `/` to index.html for both the on-disk OTA bundle
+/// and the embedded assets, so the root is always servable.
+pub fn ui_boot_url() -> String {
+    ui_origin_url("")
+}
+
 /// Platform-correct absolute URL for a path served by the kaitu-ui protocol.
 pub fn ui_origin_url(path_and_query: &str) -> String {
     let rest = path_and_query.trim_start_matches('/');
@@ -186,6 +204,41 @@ mod tests {
         assert_eq!(url, "kaitu-ui://localhost/index.html");
         // leading slash tolerated
         assert_eq!(ui_origin_url("/index.html"), url);
+    }
+
+    /// Every boot path (fresh install, post-migration, on-disk OTA bundle)
+    /// navigates here, and the webapp's router only matches routes under `/`.
+    /// A path segment in this URL is not a cosmetic difference — it is a blank
+    /// window for every desktop user, and nothing else in the system reports
+    /// it: 0.4.8 shipped `index.html` here and every layer still logged a
+    /// healthy boot.
+    #[test]
+    fn boot_url_is_the_origin_root_not_a_file() {
+        let boot = ui_boot_url();
+        #[cfg(target_os = "windows")]
+        assert_eq!(boot, "http://kaitu-ui.localhost/");
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(boot, "kaitu-ui://localhost/");
+
+        // Stated as the property rather than only as a literal: whatever the
+        // scheme/host become, the path must stay empty.
+        let path = boot
+            .split_once("//")
+            .and_then(|(_, rest)| rest.split_once('/'))
+            .map(|(_, p)| p)
+            .expect("boot URL must have a host and a path");
+        assert_eq!(path, "", "boot URL must address the origin root, got {boot}");
+    }
+
+    /// The handler that has to satisfy the above: the root must resolve to
+    /// index.html on the on-disk OTA path, or booting at `/` would 404 instead
+    /// of rendering.
+    #[test]
+    fn disk_root_resolves_to_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("index.html"), "<html>root</html>").unwrap();
+        assert_eq!(resolve_disk_file(root, "/"), Some(root.join("index.html")));
     }
 
     #[test]

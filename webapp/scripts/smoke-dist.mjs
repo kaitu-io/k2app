@@ -63,22 +63,38 @@ try {
   page.on('console', (msg) => {
     if (msg.type() === 'error') console.warn(`[console.error] ${msg.text()}`);
   });
-  await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load', timeout: 30_000 });
-  await page.waitForFunction(
-    () => {
-      const root = document.getElementById('root');
-      return !!root && root.children.length > 0;
-    },
-    undefined,
-    { timeout: 20_000 },
-  );
-  await page.waitForTimeout(1_000); // settle window: catch late async crashes
-  if (pageErrors.length > 0) {
-    console.error(`SMOKE FAIL (${dist}): ${pageErrors.length} uncaught exception(s):`);
-    for (const err of pageErrors) console.error(`  ${err}`);
-    process.exit(1);
+  // Every URL shape a shell can boot this bundle at — not just the convenient
+  // one. The desktop shell navigates to an absolute URL built by Rust, and
+  // 0.4.8 shipped it pointing at `/index.html`: react-router's table hangs off
+  // `/` with no catch-all, so the app mounted, logged "App started", kept its
+  // stores and pollers running, and rendered NOTHING. This gate was green
+  // throughout, because it only ever loaded `/`. A gate that exercises a path
+  // the product never uses proves nothing about the product.
+  for (const bootPath of ['/', '/index.html']) {
+    pageErrors.length = 0;
+    await page.goto(`http://127.0.0.1:${port}${bootPath}`, {
+      waitUntil: 'load',
+      timeout: 30_000,
+    });
+    await page.waitForFunction(
+      () => {
+        const root = document.getElementById('root');
+        return !!root && root.children.length > 0;
+      },
+      undefined,
+      { timeout: 20_000 },
+    );
+    await page.waitForTimeout(1_000); // settle window: catch late async crashes
+    if (pageErrors.length > 0) {
+      console.error(
+        `SMOKE FAIL (${dist} at ${bootPath}): ${pageErrors.length} uncaught exception(s):`,
+      );
+      for (const err of pageErrors) console.error(`  ${err}`);
+      process.exit(1);
+    }
+    console.log(`  smoke OK (${dist} at ${bootPath}): app shell rendered`);
   }
-  console.log(`smoke OK (${dist}): app shell rendered, no uncaught exceptions`);
+  console.log(`smoke OK (${dist}): all boot paths rendered, no uncaught exceptions`);
 } catch (err) {
   console.error(`SMOKE FAIL (${dist}): ${err}`);
   for (const perr of pageErrors) console.error(`  pageerror: ${perr}`);

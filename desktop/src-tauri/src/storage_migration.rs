@@ -125,7 +125,7 @@ pub fn navigate_to_new_origin(app: &AppHandle) {
             crate::web_ota::mark_boot_pending(&dirs);
         }
     }
-    let url = crate::ui_protocol::ui_origin_url("index.html");
+    let url = crate::ui_protocol::ui_boot_url();
     match url.parse::<tauri::Url>() {
         Ok(u) => {
             if let Err(e) = win.navigate(u) {

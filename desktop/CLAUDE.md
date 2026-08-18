@@ -146,6 +146,18 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 - Windows cross-build from macOS: requires `cargo-xwin`, `makensis`, `osslsigncode`, `libp11`. See `docs/plans/2026-03-11-windows-build-on-macos.md` for full setup.
 - Web OTA boot flow and poller are `cfg!(debug_assertions)`-gated OFF — `yarn tauri dev` never navigates away from the Vite devUrl. Test OTA/migration only on release builds (`make build-macos`).
 - The window's initial URL is still the config default (legacy tauri:// origin); `web_ota::prepare_boot` navigates to `kaitu-ui://` in setup. The transient double-load is invisible (window hidden until frontend_ready) — do not "fix" it by hardcoding a url in tauri.conf.json (Windows needs the http://kaitu-ui.localhost form, and a config url would break dev mode).
+- **导航目标必须是 origin 根，永远不是 `index.html`**（`ui_protocol::ui_boot_url()`，三条
+  启动路径 LegacyExport/DiskUi/EmbeddedUi 共用）。webapp 的 `BrowserRouter` 路由表挂在
+  `/` 下，`…/index.html` 匹配不到任何路由 → 渲染空树。**这个故障没有任何报错面**：Rust
+  记录一次干净启动，`ui_boot_ok` 照常触发（它只证明 bundle 的 JS 跑过，不证明渲染出东西），
+  bridge/store/轮询全部继续工作，日志一片健康——唯一线索是一行
+  `No routes matched location "/index.html"`。0.4.8 曾以这个形态构建出**每个用户都白屏**
+  的桌面版。三道防线：`ui_protocol.rs` 的 `boot_url_is_the_origin_root_not_a_file` 测试、
+  webapp 的 catch-all 路由、`smoke-dist.mjs` 对 `/` 与 `/index.html` 双路径冒烟。
+- **dev 模式测不出上面这类问题**：web OTA 启动流与 poller 都被 `cfg!(debug_assertions)`
+  关掉，`yarn tauri dev` 始终停在 Vite devUrl 的 `/`，根本不走 `kaitu-ui://`。任何涉及
+  启动 URL、协议处理器、origin 迁移的改动，**必须用 release 构建验证**（`make build-macos`
+  或 `make build-macos-test`）。
 - **`tauri-plugin-localhost` 已移除（2026-08-18），不要再加回来。** 它是 Tauri v2 脚手架
   (`53c3e89b`) 带进来的样板：绑 `127.0.0.1:14580` 提供 HTTP 资源服务，但**从来没有窗口指向它**
   （UI origin 历史是 tauri://localhost → kaitu-ui://localhost），全仓也无任何消费方。
