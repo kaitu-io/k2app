@@ -1,7 +1,7 @@
 {
-  "//": "webapp 支持地板（spec 2026-08-14-web-ota-design.md §4 R2）：最新 webapp 必须在这些版本以上的所有壳上正确运行（运行时能力探测）。锚点 = 各壳首个携带 OTA 客户端能力的版本。bump 任一字段 = 显式的砍旧版本支持决策，须 review 并给理由；不随 BRIDGE_API_VERSION bump 而动。契约门强制 bridge ≤ 当前 BRIDGE_API_VERSION。",
+  "//": "webapp 支持地板（spec 2026-08-14-web-ota-design.md §4 R2）：最新 webapp 必须在这些版本以上的所有壳上正确运行（运行时能力探测）。锚点 = 各壳首个携带 OTA 客户端能力的版本 —— 桌面/Linux 的 web OTA 客户端随 0.4.8 首次发布，与移动端同版。bump 任一字段 = 显式的砍旧版本支持决策，须 review 并给理由；不随 BRIDGE_API_VERSION bump 而动。两条契约门强制的不变式：bridge ≤ 当前 BRIDGE_API_VERSION，且各壳地板 ≤ 正在发布的 package.json 版本 —— 地板高于自身版本意味着该壳被自己发的 manifest 用 min_* 挡在门外（0.4.9 锚点在 0.4.8 发版前的原样即是此形态）。",
   "native": "0.4.8",
-  "desktop": "0.4.9",
-  "linux": "0.4.9",
+  "desktop": "0.4.8",
+  "linux": "0.4.8",
   "bridge": 1
 }

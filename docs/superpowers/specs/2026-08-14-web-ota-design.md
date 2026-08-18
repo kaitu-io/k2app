@@ -3,7 +3,7 @@
 **日期**: 2026-08-14（2026-08-15 修订 R2：发布触发改 `webapp/x.y.z` tag + app 发版联动；版本号第 4 段改时间基构建号；`min_*` 语义从"当前要求"改为**支持地板（support floor）**——兼容哲学转为"最新 webapp 运行时探测 app 能力、支持地板以上全部 app"。修订涉及 §1/§3/§3.1/§4/§6/§7/§8/§10，客户端三端闸门代码不变）
 **状态**: 已批准（设计决策已获用户确认：激进模式 / tag 触发全自动发布 / 静默下次启动生效 / 方案 A / R2 兼容哲学：单一最新 webapp 支持地板以上全部 app 版本）
 **执行**: 实现 plan 交由 Sonnet 5 开发
-**Bootstrap 就绪度**（Task 11，2026-08-15 复核；详情见 `.superpowers/sdd/2026-08-14-web-ota-pipeline-mobile/task-11-report.md`）：Task 1-10 全量代码就绪，全量测试矩阵绿（webapp ×2 品牌、tsc ×2、manifest 脚本单测、Android `k2-plugin` JVM 单测、iOS `K2Tests` 60/60 含 `MinisignVerifierTests`），本地用**一次性 throwaway minisign 密钥**（非生产密钥）跑通了 zip→签名→manifest 生成→`sig` 字段 base64 往返解码→独立验签的全链路。§8 步骤 1 锚点复核：`definitions.ts` 最近一次方法新增仍是 `5086d1f1`（`updateConfig`，首见 tag `v0.4.8`）；同分支后续 `99c1bc75` 只给已有方法 `checkReady` 加了一个可选返回字段，未发布过（无 tag），不构成新的方法集合版本，`bridge-versions.json["1"].native=0.4.8` 锚点不变。§8 步骤 2 现状复核：线上 `kaitu/android/latest.json` 与 `kaitu/ios/latest.json` 均仍是 0.4.7 ——**首个 OTA 会被全部存量 native 正确跳过**，符合设计预期，非故障。**代码信心 9/10；业务信心（移动端 OTA 全链路可用）封顶 6-7/10**（release confidence framework：无真机 smoke）——merge、beta/stable 发布、真机 UAT（§8 步骤 3-7，含 CDN 侧独立验签、Android/iOS 正负样本、回滚链路、iOS 无 channel 能力下的 stable-only 验证）仍是**人类必做步骤**，未执行。
+**Bootstrap 就绪度**（Task 11，2026-08-15 复核；详情见 `.superpowers/sdd/2026-08-14-web-ota-pipeline-mobile/task-11-report.md`）：Task 1-10 全量代码就绪，全量测试矩阵绿（webapp ×2 品牌、tsc ×2、manifest 脚本单测、Android `k2-plugin` JVM 单测、iOS `K2Tests` 60/60 含 `MinisignVerifierTests`），本地用**一次性 throwaway minisign 密钥**（非生产密钥）跑通了 zip→签名→manifest 生成→`sig` 字段 base64 往返解码→独立验签的全链路。§8 步骤 1 锚点复核：`definitions.ts` 最近一次方法新增仍是 `5086d1f1`（`updateConfig`，首见 tag `v0.4.8`）；同分支后续 `99c1bc75` 只给已有方法 `checkReady` 加了一个可选返回字段，未发布过（无 tag），不构成新的方法集合版本，`webapp-support-floor.json` 的 `native=0.4.8` 锚点不变（该复核写于文件更名前，原文作 `bridge-versions.json["1"].native`）。§8 步骤 2 现状复核：线上 `kaitu/android/latest.json` 与 `kaitu/ios/latest.json` 均仍是 0.4.7 ——**首个 OTA 会被全部存量 native 正确跳过**，符合设计预期，非故障。**代码信心 9/10；业务信心（移动端 OTA 全链路可用）封顶 6-7/10**（release confidence framework：无真机 smoke）——merge、beta/stable 发布、真机 UAT（§8 步骤 3-7，含 CDN 侧独立验签、Android/iOS 正负样本、回滚链路、iOS beta 通道验证——2026-08-18 起 iOS 已有 channel 能力，原文的"stable-only 替代方案"作废）仍是**人类必做步骤**，未执行。
 
 ## 1. 目标
 
@@ -69,8 +69,8 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
 
   "sig": "<minisign signature of web.zip>",
   "min_bridge": 1,
-  "min_desktop": "0.4.9",
-  "min_linux": "0.4.9"
+  "min_desktop": "0.4.8",
+  "min_linux": "0.4.8"
 }
 ```
 
@@ -97,15 +97,19 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
 
 **兼容哲学**：只有一个真理的 webapp 版本——最新版。最新 webapp 必须在**支持地板（support floor）以上的所有 app 版本**上正确运行，靠 webapp 代码内的运行时能力探测分支实现（浏览器世界的 feature detection 模型）。`min_*` 闸门从"常规兼容手段"降级为**安全刹车**：正常发布时值恒等于地板、几乎不动；只在主动砍掉过老版本支持、或灾难场景（新 webapp 依赖老 WebView 内核根本不具备的浏览器能力，运行时分支救不了）时才 bump。
 
-1. **单一整数版本（保留）**：`webapp/src/types/bridge-version.ts` 导出 `BRIDGE_API_VERSION`（当前 = 1）。它覆盖整个 `_k2` / `_platform` 契约面（Capacitor 具名方法表、Tauri 具名 command、daemon HTTP action），方法表任何增删都必须 bump。**R2 语义变化**：bump 的后果不再是"老 app 被 manifest 拒之门外"，而是"webapp 必须为新能力加运行时探测分支"——manifest 的 `min_bridge` 发地板值，不发当前值。
-2. **支持地板文件**：`contracts/webapp-support-floor.json`（进 git，替代原 `contracts/bridge-versions.json` 映射表）：`{ "native": "0.4.8", "desktop": "0.4.9", "linux": "0.4.9", "bridge": 1 }` —— webapp 仍支持的最老各壳版本 + 最老 bridge 版本。初始锚定各壳**首个携带 OTA 客户端能力的版本**（比它老的 app 本来就不轮询/不校验，谈不上支持）。**bump 地板 = 一次显式的"砍旧版本支持"决策**，须走 review；被砍的版本被闸门冻结在当前 UI，升级通道回到 app 自身 updater。
+1. **单一整数版本（保留）**：`webapp/src/types/bridge-version.ts` 导出 `BRIDGE_API_VERSION`（2026-08-16 起 = 2，桌面 web OTA 的五个 Tauri command 触发的 bump）。它覆盖整个 `_k2` / `_platform` 契约面（Capacitor 具名方法表、Tauri 具名 command、daemon HTTP action），方法表任何增删都必须 bump。**R2 语义变化**：bump 的后果不再是"老 app 被 manifest 拒之门外"，而是"webapp 必须为新能力加运行时探测分支"——manifest 的 `min_bridge` 发地板值，不发当前值。
+2. **支持地板文件**：`contracts/webapp-support-floor.json`（进 git，替代原 `contracts/bridge-versions.json` 映射表）：`{ "native": "0.4.8", "desktop": "0.4.8", "linux": "0.4.8", "bridge": 1 }` —— webapp 仍支持的最老各壳版本 + 最老 bridge 版本。初始锚定各壳**首个携带 OTA 客户端能力的版本**（比它老的 app 本来就不轮询/不校验，谈不上支持）；四端的 OTA 客户端能力全部随 **0.4.8** 首次发布，所以四个锚点同版。**bump 地板 = 一次显式的"砍旧版本支持"决策**，须走 review；被砍的版本被闸门冻结在当前 UI，升级通道回到 app 自身 updater。
+
+   > **2026-08-18 订正**：desktop/linux 原写 `0.4.9`，是按"桌面 OTA 能力随 0.4.9 上线"的早期计划锚的。实际能力落在 0.4.8，锚点因此高于自身版本，会让 0.4.8 桌面与 Linux 被自己发的 manifest 用 `min_desktop`/`min_linux` **静默挡在门外**（`Gate::Skip` / `shell below min_linux`，客户端无错误面）。现已修正，并把这条不变式补进两道契约门（下条第 3 项）——原先只有 bridge 维度有门，版本维度全靠人眼。
 3. **CI 契约守卫**（沿用 `contracts/api-contract.json` 门文化）：
    - `mobile/plugins/k2-plugin/src/definitions.ts` 的方法集合快照进 golden 文件；方法集合变更而 `BRIDGE_API_VERSION` 未 bump → 测试红。
    - Tauri 具名 command 表同理纳入快照（`main.rs` `generate_handler!` 清单）。
-   - 地板文件形状校验 + 不变式 `floor.bridge ≤ BRIDGE_API_VERSION`（地板不可能高于当前编译面）→ 违反测试红。
+   - 地板文件形状校验 + 两条同构不变式 → 违反测试红：
+     - `floor.bridge ≤ BRIDGE_API_VERSION`（地板不可能高于当前编译面）
+     - `floor.{native,desktop,linux} ≤ package.json version`（**2026-08-18 补**：正在发布的壳按定义属于被支持集合，地板高于它 = 该壳被自己发的 manifest 挡在 `min_*` 外）。提交期门在 `bridge-contract.test.ts`，发布期门在 `web-ota-manifest.mjs::buildManifest`，两者调用同一个 `compareBase`（测试导入生产公式，不复制），均已做变异验证。
 4. **发布时推导**：CI 从地板文件推导 `min_native` / `min_desktop` / `min_linux` / `min_bridge` 写入 manifest，全程零人工；manifest 生成器在地板文件缺失/形状非法时硬失败。
 5. **webapp 侧运行时探测规矩**（本次先立规矩，首个 >v1 bridge 能力出现时落地代码）：
-   - 新 bridge 能力的使用必须经过**能力探测**，优先存在性检测（`typeof fn === 'function'`）而非版本比较——存在性检测天然免疫"TS 声明了但某平台 native 未实现"的平台漂移盲区（§10 已证实形状，例：iOS 0.4.8 缺 channel 方法）。
+   - 新 bridge 能力的使用必须经过**能力探测**，优先存在性检测（`typeof fn === 'function'`）而非版本比较——存在性检测天然免疫"TS 声明了但某平台 native 未实现"的平台漂移盲区（§10 已证实形状；历史实例：channel 方法一度只有 Android 实现，webapp 用 `getPlatform() === 'android'` 硬门，导致 iOS native 补齐后能力仍被隐藏。2026-08-18 已改为探测 `getUpdateChannel` 成败）。
    - 探测收敛到唯一供给者 `webapp/src/services/capabilities.ts`（届时新建）：启动时读 `window._platform.version` + 平台类型 + 方法存在性，导出语义化 flag；业务代码禁止散落 raw 版本比较或直接探测 `window._k2` 方法（届时配 grep 守卫进 CI，同 brand-purity 守卫做法）。现有先例 `capacitor-k2.ts` 的 `getPlatform() === 'android'` 门在 capabilities.ts 落地时收编。
    - 规矩落点：`webapp/CLAUDE.md` 兼容章节 + `bridge-version.ts` 顶部注释。
 6. **纵深防御**：三个新壳在本地记录自身编译期的 bridge 版本，apply 前双重校验 `min_bridge`；webapp 侧 bridge 调用统一 try/catch 并给出可诊断错误（不作为主防线）。
@@ -190,7 +194,7 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
 1. 落地契约守卫 + `BRIDGE_API_VERSION=1`，支持地板文件锚定 `native: 0.4.8`（实现阶段已从 git 历史核实：`definitions.ts` 完整方法集含 `updateConfig` 首见于 v0.4.8，commit `5086d1f1`）。
 2. **已知时间线约束**：线上移动 manifest 仍是 0.4.7，`min_native=0.4.8` 的首个 OTA 会被在网 0.4.7 存量 native 正确跳过——热更触达面随 0.4.8 移动端发版铺开，这是闸门的预期行为而非故障。
 3. 首个 OTA bundle 内容 = 与当前线上 native 兼容的 main 头（冒烟门通过）。
-4. **先发 beta 通道**，在真机（iOS + Android，新旧两个 native 版本）UAT 验证下载/校验/切换/回滚全链路。注意：iOS native 现状缺 update channel 支持（`getUpdateChannel`/`setUpdateChannel` 未实现、web manifest 端点硬编码 stable）——iOS 的 beta-first UAT 依赖 pipeline 计划 Task 10 补齐并随 native 发版到位；在此之前 iOS 侧用 Android beta 结果 + iOS stable 灰观察替代。
+4. **先发 beta 通道**，在真机（iOS + Android，新旧两个 native 版本）UAT 验证下载/校验/切换/回滚全链路。~~注意：iOS native 现状缺 update channel 支持~~ —— **2026-08-18 订正：已不成立**。iOS 实现了 `getUpdateChannel`/`setUpdateChannel`，web manifest 端点由 `channelPrefix` 动态拼接（`K2Plugin.swift`），与 Android 同在 0.4.8 首发；webapp 侧的 `getPlatform() === 'android'` 硬门也已换成能力探测。iOS 可直接走 beta-first UAT，无需再用 Android 结果替代。存量 0.4.7（含 App Store 4.4.7）两端都没有这对方法，探测失败即隐藏 toggle，stable-only。
    - **Beta-clobber 注意**（`publish-web-ota.yml` 步骤"Upload to S3 + publish manifests"）：stable 发布是超集语义——无论 `channel` 输入是什么，每次运行都会先写 `beta/latest.json`，只有 `channel=stable` 时才**再额外**写顶层 `latest.json`；而 tag / app 联动触发的运行恒为 `channel=stable`。R2 改 tag 触发后，日常 main merge 不再自动发布，clobber 面大幅收窄——但在 beta UAT 窗口期间，**任何 `webapp/*` tag 或 app 发版 `v*` tag** 仍会覆盖 `beta/latest.json`。窗口期内应冻结这两类 tag，或事后 `workflow_dispatch` + `channel=beta` + `ref=<UAT 目标 commit>` 恢复 UAT 内容。
 5. 再发 stable。桌面/Linux 能力随各自下一次壳发版上线，不阻塞移动端先行。
 
@@ -212,7 +216,7 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
 | 每次 `webapp/*` tag / app 发版直达全量用户 | 白屏冒烟门 + 契约守卫为强制闸；tag 是人为确认动作（R2 已从 main-push 自动收紧到 tag 触发）；重大改版可先 dispatch 到 beta |
 | R2 兼容负担转移：最新 webapp 须在地板以上全部 app 版本运行，但 CI 只验证最新组合 | capabilities 层单测穷举模拟各版本注入形态；真机 smoke 保留一台地板版本设备；地板政策"支持 field 上仍有量的版本"，定期砍地板收敛分支数（§4.7） |
 | 地板 bump 被随手当成兼容手段（回退到 R1 冻结哲学） | 地板文件 bump 必须走 review 并给出"砍支持"理由；契约守卫强制 `floor.bridge ≤ BRIDGE_API_VERSION`，且 bump `BRIDGE_API_VERSION` 不再要求同步改地板 |
-| bridge 守卫盲区：两种已证实形状——① 行为变更不改方法签名 ② 平台级实现漂移：TS 声明不变而某一平台的 native 未实现该方法（例：bridge v1 的 channel 方法，iOS 0.4.8 未实现，仅 Android 0.4.8 实现） | 诚实记录：守卫只覆盖方法表增删，两种形状都靠 review + bump 纪律；②见 `bridge-version.ts` 顶部 iOS caveat 注释 + `capacitor-k2.ts` 的 `getPlatform() === 'android'` 门 |
+| bridge 守卫盲区：两种已证实形状——① 行为变更不改方法签名 ② 平台级实现漂移：TS 声明不变而某一平台的 native 未实现该方法（原始实例：channel 方法一度只有 Android 实现） | 诚实记录：守卫只覆盖方法表增删，两种形状都靠 review + bump 纪律。②的**通用缓解已落地**：webapp 侧一律能力探测、不比较平台（`capacitor-k2.ts` 的 channel 探测是范式），这样漂移无论朝哪个方向都自动降级而非误判。原始实例已解决（iOS 0.4.8 起实现 channel），但盲区本身仍在——守卫看不见任何一端的 native 实现 |
 | 首发 min_native 锚错（重演 2026-03） | §8 步骤 1 要求从 git 历史核实方法集合完整版本，宁高勿低；先 beta 后 stable |
-| manifest 本身未签名，CDN/TLS 位置攻击者可剥离 `sig` 并重算 `hash`——新版 native 回退到纯 sha256 legacy 路径，接受攻击者内容 | 首个签名 manifest 上线且 0.4.9+ native 铺开后，新版 native 应无条件 REQUIRE `sig`（CI 恒发，不再"有则验"）；列为下一次移动端发版的第一个 OTA 加固项 |
+| manifest 本身未签名，CDN/TLS 位置攻击者可剥离 `sig` 并重算 `hash`——新版 native 回退到纯 sha256 legacy 路径，接受攻击者内容 | 首个签名 manifest 上线且 0.4.8+ native 铺开后，新版 native 应无条件 REQUIRE `sig`（CI 恒发，不再"有则验"）；列为下一次移动端发版的第一个 OTA 加固项 |
 | Mix-and-match 版本钉死：`sig` 只覆盖 web.zip，不覆盖 `version` 字段——攻击者可拼接"旧的、真实签名过"的 zip + 有效 `sig` + 匹配 `hash` + 伪造的巨大 `version`，native 校验通过并应用，把 `web-update/version.txt` 钉在高位，此后所有合法更新都被判定更旧（设备冻结在旧 UI，直到 app 数据重置） | v2 改进：签名 manifest 本身，或把 `version` 纳入签名数据 |

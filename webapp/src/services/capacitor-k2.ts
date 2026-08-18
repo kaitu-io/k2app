@@ -328,19 +328,26 @@ export async function injectCapacitorGlobals(): Promise<void> {
     },
   };
 
-  // Android: initialize channel from native + provide setChannel
-  if (Capacitor.getPlatform() === 'android') {
-    try {
-      const channelResult = await K2Plugin.getUpdateChannel();
-      updater.channel = channelResult.channel as 'stable' | 'beta';
-    } catch {
-      // getUpdateChannel not available (old plugin version), default stable
-    }
+  // Update channel: probe the CAPABILITY, not the platform (spec §4.5 —
+  // existence detection is immune to per-platform native drift). getUpdateChannel
+  // and setUpdateChannel ship together on both natives from 0.4.8; shells at
+  // 0.4.7 and older have neither. A successful getUpdateChannel IS the probe, so
+  // setChannel is exposed only when the native can actually honour it and the UI
+  // (BetaChannelToggle gates on `updater.setChannel`) degrades to stable-only on
+  // old shells of EITHER platform. The previous `getPlatform() === 'android'`
+  // gate kept the capability hidden on iOS even once its native implemented it,
+  // and conversely exposed setChannel on Android shells whose probe had failed.
+  try {
+    const channelResult = await K2Plugin.getUpdateChannel();
+    updater.channel = channelResult.channel as 'stable' | 'beta';
     updater.setChannel = async (channel: 'stable' | 'beta') => {
       await K2Plugin.setUpdateChannel({ channel });
       updater.channel = channel;
       return channel;
     };
+  } catch {
+    // Old shell without the channel methods — leave setChannel undefined so the
+    // UI hides the toggle rather than offering a control that always errors.
   }
   // iOS: keep this gate — do NOT remove until bridge v2 / first iOS release
   // with channel support. Shipped iOS 0.4.8 does not implement

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   WEB_OTA_EPOCH_MS, computeBuildNumber, deriveVersion,
-  readBridgeApiVersion, readSupportFloor, buildManifest,
+  readBridgeApiVersion, readSupportFloor, buildManifest, compareBase,
 } from './web-ota-manifest.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -85,6 +85,37 @@ test('buildManifest hard-fails on gaps instead of emitting a hollow manifest', (
   );
   assert.throws(() => buildManifest({ ...FIXTURE, sigBase64: '' }), /sig/);
   assert.throws(() => buildManifest({ ...FIXTURE, sigBase64: 'has space' }), /sig/);
+});
+
+test('compareBase compares x.y.z and ignores trailing segments', () => {
+  assert.equal(compareBase('0.4.8', '0.4.9'), -1);
+  assert.equal(compareBase('0.4.9', '0.4.8'), 1);
+  assert.equal(compareBase('0.4.9', '0.4.9'), 0);
+  assert.equal(compareBase('0.4.9.19526400', '0.4.9'), 0); // 4th segment ignored
+  assert.equal(compareBase('0.4.9-beta.1', '0.4.9'), 0); // prerelease suffix ignored
+  assert.equal(compareBase('0.10.0', '0.9.0'), 1); // numeric, not lexicographic
+});
+
+test('buildManifest refuses a floor above the version being published', () => {
+  // The shipping shell is by definition inside the supported set. A floor above
+  // it makes that shell skip its OWN web OTA via min_* — silently, with no error
+  // surface on the client (Gate::Skip on desktop, "shell below min_linux" on
+  // Linux). desktop/linux sat at 0.4.9 while 0.4.8 was the shipping version.
+  assert.throws(
+    () => buildManifest({ ...FIXTURE, version: '0.4.8.19526400' }),
+    /support floor desktop \(0\.4\.9\) is newer than the version being published \(0\.4\.8\)/,
+  );
+  assert.throws(
+    () => buildManifest({ ...FIXTURE, version: '0.4.8.19526400', floor: { ...FLOOR, desktop: '0.4.8' } }),
+    /support floor linux \(0\.4\.9\) is newer than the version being published \(0\.4\.8\)/,
+  );
+  assert.throws(
+    () => buildManifest({ ...FIXTURE, floor: { ...FLOOR, native: '0.5.0' } }),
+    /support floor native \(0\.5\.0\) is newer than the version being published \(0\.4\.9\)/,
+  );
+  // Equal passes — the floor is inclusive of the shipping version.
+  const ok = buildManifest({ ...FIXTURE, floor: { ...FLOOR, native: '0.4.9' } });
+  assert.equal(ok.min_native, '0.4.9');
 });
 
 test('CLI `version` prints a 4-segment version whose 4th segment tracks the wall clock', () => {
