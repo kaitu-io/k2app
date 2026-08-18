@@ -72,11 +72,25 @@ export interface BrandStatusTokens {
   dormant: { border: string; icon: string };
 }
 
-/** 表面色 —— 背景 / 卡片 / 边框。 */
+/** 表面色 —— 背景 / 卡片 / 边框 / 文本 / 圆角。 */
 export interface BrandSurfaceTokens {
   background: string;
   paper: string;
   border: string;
+  /** 主文本色（对应官网 --foreground） */
+  textPrimary: string;
+  /** 次文本色（对应官网 --muted-foreground） */
+  textSecondary: string;
+  /** 全局圆角基数，px（对应官网 --radius） */
+  radius: number;
+}
+
+/** 语义色 —— 成功 / 警告 / 错误。品牌化是因为官网有自己的一套取值，
+ *  与 MUI 默认色不同；不品牌化就会把开途的值套到 Overleap 头上。 */
+export interface BrandSemanticTokens {
+  success: PaletteTriple;
+  warning: PaletteTriple;
+  error: PaletteTriple;
 }
 
 export interface BrandThemeTokens {
@@ -86,6 +100,7 @@ export interface BrandThemeTokens {
    *  品牌的外观。每个品牌显式声明自己的值。 */
   status: BrandStatusTokens;
   surface: BrandSurfaceTokens;
+  semantic: BrandSemanticTokens;
 }
 
 export interface WebappBrandConfig {

@@ -24,6 +24,15 @@ export const OVERLEAP_THEME: BrandThemeTokens = {
     background: '#0F0F13',
     paper: '#1A1A1D',
     border: 'rgba(255, 255, 255, 0.12)',
+    textPrimary: '#FAFAFA',
+    textSecondary: 'rgba(250, 250, 250, 0.7)',
+    radius: 4, // MUI 默认
+  },
+  // 原 theme.ts darkTheme.palette 的 success/error/warning 硬编码值
+  semantic: {
+    success: { main: '#66BB6A', light: '#81C784', dark: '#388E3C' },
+    warning: { main: '#FFB74D', light: '#FFCC02', dark: '#F57C00' },
+    error: { main: '#EF5350', light: '#E57373', dark: '#C62828' },
   },
   status: {
     // 已连接 = 柔绿（原 APP_COLORS.dark.success*）

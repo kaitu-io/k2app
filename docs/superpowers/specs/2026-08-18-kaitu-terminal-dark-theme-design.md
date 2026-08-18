@@ -37,45 +37,56 @@ dormant 熄灭态、遮罩层的锁 + 价值说明、CTA 辉光。
 
 ---
 
-## 2. 为什么不能直接把 primary 设成 `#00ff88`
+## 2. primary 用官网的绿（一版修订记录）
 
-原方案（primary = 官网主色霓虹绿）在真实界面上验证后否决。实拍证据：绿色同屏出现在 **六处**——主连接按钮、节点 Radio 选中点、侧边栏当前页高亮、Tab 下划线、Badge 计数、每行 RecommendBar。用户无法区分「已连接」/「我选了这个节点」/「我在这一页」。
+**结论：`palette.primary = #00ff88`，与官网一致。**
 
-冲突点在代码中的确切位置：
+本节保留一次被推翻的判断，因为推翻它的过程说明了怎样才算「验证过」。
 
-| 位置 | 元素 | 冲突 |
-|---|---|---|
-| `components/CloudTunnelList.tsx:514` | Auto 行 `Radio color="primary"` | 选中态 = 已连接色 |
-| `components/CloudTunnelList.tsx:583` | 节点行 `Radio color="primary"` | 同上 |
-| `components/SelfHostedTunnelItem.tsx:124` | 自建节点 `Radio color="primary"` | 同上 |
-| `pages/Dashboard.tsx:563` | 幻影列表 `Radio color="primary"` | 同上 |
-| `components/CloudTunnelList.tsx:506` | `Badge color="primary"` | 计数 = 状态色 |
-| `components/RecommendBar.tsx:40` | `bgcolor: success.main` | 绿已承担「节点健康」 |
+### 曾经的反对意见
 
-Dashboard 同屏渲染 `CollapsibleConnectionSection`（连接按钮）与 `CloudTunnelList`（节点列表），上述冲突全部实际发生。
+初版设计把 primary 定为青 `#00d4ff`，理由是绿会同屏出现在六处（主连接按钮、节点 Radio、侧边栏高亮、Tab 下划线、Badge、RecommendBar），使「已连接」与「已选中某节点」不可区分。当时的实拍确实很刺眼。
 
-**佐证**：官网自己就没有合并——`web/src/app/globals.css` 中 `--primary: #00ff88` 与 `--success: hsl(142,60%,55%)` 是两个独立 token。
+### 为什么推翻
+
+**1. 论证依据错了。** 初版写道「官网自己就没有合并——`--primary` 与 `--success` 是两个独立 token」。CSS 变量定义层面属实，但对官网**生产环境实测**后发现：首页「已连接」用的是 `class="text-primary"`，computed color `rgb(0,255,136)` —— **就是 primary 绿本身**。`--success` 在首页根本没承担这个语义。所以官网恰恰是合并的，初版拿变量定义当渲染证据，推理链是断的。
+
+**2. 那张刺眼的截图有混淆变量。** 它是在「背景仍是旧的深灰 `#0F0F13`、边框中性、圆角 4px」的环境里截的 —— 绿色元素在那个语境里是突兀的外来物。整体进入官网的黑底 + 绿边框 + 10px 圆角体系后重新实拍，绿是主色调的自然组成，不再刺眼。
+
+**3. 量级差本来就够区分。** 主按钮是 220px 实心圆 + 大面积辉光，Radio 是 20px 小圆环且在列表行尾，分处两个区域。官网首页同屏并存绿徽章、绿 CTA、绿「已连接」，用的是同一手法。
+
+**4. 比例失当。** 真实差异只有一条：app 有节点选中 Radio，官网没有。为一个控件的潜在冲突反转整个主色，是过度反应；最小偏离才对。
+
+### 保留的唯一偏离
+
+`status.idle`（主按钮未连接态）用官网的 `--secondary` 青 `#00d4ff`。官网没有「未连接」这个状态，而 app 若连上前后都是绿，「通了」就没有视觉反馈。这是 app 专有需求，不是对官网的否定。
 
 ---
 
-## 3. 色彩语义契约
+## 3. 与官网的 token 对照
 
-**每个颜色只有一个 job。** 这是本设计的核心约束，后续任何改动都必须遵守。
+取值来自 **kaitu.io 生产环境 computed style 实测**，不是照抄 `globals.css` —— 源码与线上可能漂移，实测才是用户真正看到的。
 
-| 色 | 唯一 job | 落点 |
+| 官网 token | 值 | app 落点 |
 |---|---|---|
-| 霓虹绿 `#00ff88` | **通了 / 受保护** | 已连接主按钮（唯一大色块）、品牌 logo |
-| 青 `#00d4ff` | **可操作 / 你在哪** | MUI `palette.primary`：导航高亮、Tab、Radio、Checkbox、Switch、Badge、按钮、`CircularProgress`、`TextField` focus |
-| 柔绿 `#66BB6A` | **数据可视化：健康度** | MUI `palette.success`：`RecommendBar`、`Chip color="success"` |
-| 橙 `#FFB74D` | 连接中 / 警告 | 不变 |
-| 红 `#EF5350` | 故障 / 断开操作 | 不变 |
-| 中性灰 | 承重 | 边框 `rgba(255,255,255,.12)`、文本、分隔线 |
+| `--background` | `#0a0a0f` | `palette.background.default` |
+| `--card` | `#111118` | `palette.background.paper` |
+| `--foreground` | `#e0e0e0` | `palette.text.primary` |
+| `--muted-foreground` | `#9ca3af` | `palette.text.secondary` |
+| `--primary` | `#00ff88` | `palette.primary` + `status.connected` |
+| `--primary-foreground` | `#0a0a0f` | 连接按钮前景（`getStatusForeground`） |
+| `--secondary` | `#00d4ff` | `palette.secondary` + `status.idle` |
+| `--border` | `rgba(0,255,136,.15)` | `palette.divider` |
+| `--radius` | `.625rem` → `10` | `shape.borderRadius` |
+| `--success` | `#47d17a` | `palette.success` |
+| `--warning` | `#ebc247` | `palette.warning` |
+| `--destructive` | `#df3a3a` | `palette.error` |
 
-### 三条推论（实现时必须遵守）
+**尚未对齐：字体。** 官网用 Inter，app 用系统字体栈。对齐需要打包字体文件，属于排版而非配色，单独决策。
 
-1. **`palette.success` 保持 `#66BB6A`，不改成品牌绿。** RecommendBar 每行都有，用品牌 accent 会抢戏。柔绿与霓虹绿在尺寸量级上天然分离（4×24px 细条 vs 220px 大圆），反而强化「绿 = 通/好」的统一语义。
-2. **边框用中性灰，不跟官网的 `rgba(0,255,136,.15)`。** 这是与官网的一处**有意偏离**：边框带绿会让绿变成背景噪音，削弱「已连接」的信号强度。
-3. **绿实心大色块全 app 同屏唯一。** Dashboard 的绿席位恒属于连接按钮。
+### 一条 app 专有扩展
+
+官网没有「未连接」状态。app 的 `status.idle` 用官网的 `--secondary` 青，使连上前后有色相变化 —— 否则「通了」这件事没有视觉反馈。这是 §2 保留的唯一偏离。
 
 ---
 
@@ -115,19 +126,29 @@ export interface BrandThemeTokens {
 ### 4.2 开途取值
 
 ```ts
-// brands/kaitu/theme.ts
+// brands/kaitu/theme.ts —— 全部对齐官网实测值，见 §3 对照表
 dark: {
-  primary:   { main: '#00d4ff', light: '#5ce3ff', dark: '#00a8cc' },  // 青 = 交互
-  secondary: { main: '#00ff88', light: '#5affb3', dark: '#00cc6a' },  // 绿 = 品牌 accent
+  primary:   { main: '#00ff88', light: '#5affb3', dark: '#00cc6a' },
+  secondary: { main: '#00d4ff', light: '#5ce3ff', dark: '#00a8cc' },
 },
-surface: { background: '#0a0a0f', paper: '#111118', border: 'rgba(255,255,255,0.12)' },
+surface: {
+  background: '#0a0a0f', paper: '#111118',
+  border: 'rgba(0, 255, 136, 0.15)',
+  textPrimary: '#e0e0e0', textSecondary: '#9ca3af',
+  radius: 10,
+},
+semantic: {
+  success: { main: '#47d17a', light: '#6fdd96', dark: '#2fa85c' },
+  warning: { main: '#ebc247', light: '#f2d275', dark: '#c99f2c' },
+  error:   { main: '#df3a3a', light: '#e86a6a', dark: '#b62a2a' },
+},
 status: {
-  connected: {
+  connected: {           // 与官网「已连接」同色（实测 .text-primary）
     main: '#00ff88',
     gradient: 'linear-gradient(135deg, #00ff88 0%, #00cc6a 100%)',
     glow: 'rgba(0,255,136,0.35)', glowStrong: 'rgba(0,255,136,0.5)',
   },
-  idle: {
+  idle: {                // app 专有，官网无此状态
     main: '#00d4ff',
     gradient: 'linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%)',
     glow: 'rgba(0,212,255,0.3)', glowStrong: 'rgba(0,212,255,0.5)',
@@ -136,9 +157,7 @@ status: {
 },
 ```
 
-`background`/`paper` 与官网 `--background`/`--card` 精确一致。
-
-**关于 `secondary`**：`color="secondary"` 在当前 webapp 中**零使用**（全量 grep 确认），所以把品牌绿放进 `palette.secondary` 不会渲染任何现有元素。它的作用是让 `secondary.main` 成为品牌绿的**语义入口**——未来需要品牌绿点缀时从这里取，而不是散落硬编码。连接状态的绿走 `status.connected`，两者取值相同但职责不同，不可互相替代。
+`semantic` 也必须品牌化：官网的 success/warning/destructive 与 MUI 默认色不同，不品牌化就会把开途的取值套到 Overleap 头上。`radius` 同理 —— Overleap 保持 MUI 默认 `4`，开途用官网的 `10`。
 
 ### 4.3 唯一供给者
 
