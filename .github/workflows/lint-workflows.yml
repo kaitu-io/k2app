@@ -29,10 +29,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Pinned action, no network fetch of a script. Shellcheck findings in
+      # Pinned image, no network fetch of a script. Shellcheck findings in
       # `run:` blocks are pre-existing and not what this gate is for, so only
       # workflow-structure problems fail the build.
+      #
+      # The regex is deliberately space-free: `args` reaches the container as
+      # one string that Docker word-splits, so shell quoting is NOT honoured —
+      # `-ignore 'shellcheck reported issue'` splits into four tokens and the
+      # next flag gets read as a filename ("could not read \"-color\"").
+      # `.+` stands in for the spaces so the whole pattern survives as one token.
       - name: Run actionlint
         uses: docker://rhysd/actionlint:1.7.7
         with:
-          args: -ignore 'shellcheck reported issue' -color
+          args: -ignore shellcheck.+reported -color
