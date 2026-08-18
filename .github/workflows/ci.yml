@@ -72,6 +72,14 @@ jobs:
 
           echo "All versions consistent: $PKG_VERSION"
 
+      # The iOS CFBundleVersion is derived, not stored, so the check above
+      # cannot see it. Its rules are load-bearing in a way that only shows up
+      # at upload time: App Store Connect permanently burns every accepted
+      # number, so a scheme that cannot produce a fresh one blocks the release
+      # outright (0.4.8 hit exactly that — see build-mobile-ios.sh).
+      - name: Check iOS build-number rules
+        run: bash scripts/test-ios-build-number.sh
+
   # --- Platform-dependent tests (Linux — Rust storage crypto platform gate) ---
   test-linux-rust:
     runs-on: ubuntu-latest

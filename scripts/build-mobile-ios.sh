@@ -11,9 +11,15 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$ROOT_DIR"
 
 SKIP_ARCHIVE=false
+# --print-build-number derives MARKETING_VERSION/CURRENT_PROJECT_VERSION and
+# exits before touching the toolchain, so the numbering rules can be tested by
+# calling THIS script rather than by a test that re-implements the arithmetic —
+# a copied formula keeps passing after the real one changes.
+PRINT_BUILD_NUMBER=false
 for arg in "$@"; do
   case "$arg" in
     --skip-archive) SKIP_ARCHIVE=true ;;
+    --print-build-number) PRINT_BUILD_NUMBER=true ;;
     *) echo "Unknown argument: $arg"; exit 1 ;;
   esac
 done
@@ -38,7 +44,10 @@ BRAND_PRODUCT=$([ "$BRAND" = "overleap" ] && echo "Overleap" || echo "Kaitu")
 # assets/capacitor.config.json — this export is the fix, applies equally here).
 export K2_BRAND="$BRAND"
 
-VERSION=$(node -p "require('./package.json').version")
+# $VERSION_OVERRIDE exists only so the numbering test can drive many versions
+# through the real derivation; the build itself always takes package.json,
+# which is the cross-layer source of truth.
+VERSION="${VERSION_OVERRIDE:-$(node -p "require('./package.json').version")}"
 
 # Derive iOS-compatible MARKETING_VERSION + CURRENT_PROJECT_VERSION.
 #
@@ -47,20 +56,29 @@ VERSION=$(node -p "require('./package.json').version")
 # (0.4.4 → 4.4.4, 0.5.1 → 4.5.1) so Apple's downgrade check sees a higher version
 # than the legacy 3.x.
 #
-# Bundle version layout (decimal):
-#   400000 + MINOR*10000 + PATCH*100 + SLOT
+# Bundle version layout (decimal), each dimension in its own digit band:
+#   4000000 + MINOR*100000 + PATCH*1000 + SLOT*10 + REV
 #   SLOT = beta_num (1..98) for `-beta.N` pre-release, or 99 for final release.
+#   REV  = re-upload revision of that exact (version, slot), from $IOS_BUILD_REV.
 # Guarantees beta.1 < beta.2 < … < release < next.beta.1 monotonically across
-# minor/patch bumps, and stays above the 4xx range already burned on TestFlight
-# (ASC was at 406 when we switched schemes — see 2026-05-18 incident).
+# minor/patch bumps (each band is strictly narrower than the one above it).
+#
+# REV exists because the previous layout had no room for it: a release build
+# number was fully determined by the version string, so once 4.4.8 build 440899
+# was uploaded (2026-07-24) and then DEVELOPER_REJECTED, the scheme could not
+# produce a second shippable 4.4.8 build at all — every beta slot computes
+# *lower*, which Apple rejects just as hard as a duplicate. 440900 was burned
+# by hand on 2026-08-02 for the same reason. The new base is 7-digit, so 0.4.8
+# release REV=0 is 4408990 — above every number already burned on ASC.
 #
 # Constraints (script aborts if violated — forces rework when we outgrow them):
-#   V_MAJOR == 0, MINOR ∈ [0, 99], PATCH ∈ [0, 99], beta_num ∈ [1, 98].
+#   V_MAJOR == 0, MINOR ∈ [0, 99], PATCH ∈ [0, 99], beta_num ∈ [1, 98],
+#   REV ∈ [0, 9].
 IFS='.' read -r V_MAJOR V_MINOR V_PATCH <<< "${VERSION%%-*}"
 if [[ "$V_MAJOR" != "0" ]]; then
   echo "::error::Build-number scheme only supports 0.x.y (got $VERSION)." >&2
   echo "When bumping past 0.x.y, redesign scripts/build-mobile-ios.sh:" \
-       "the 0→4 marketing remap and the 400000 bundle base both need rework." >&2
+       "the 0→4 marketing remap and the 4000000 bundle base both need rework." >&2
   exit 1
 fi
 if (( V_MINOR > 99 || V_PATCH > 99 )); then
@@ -80,7 +98,24 @@ if [[ "$VERSION" == *"-beta."* ]]; then
   SLOT=$BETA_NUM
 fi
 
-BUILD_NUMBER=$(( 400000 + V_MINOR * 10000 + V_PATCH * 100 + SLOT ))
+# Bump this (0→1→2…) only to re-upload an already-uploaded (version, slot) pair
+# — e.g. after a rejection. Leave at 0 for a normal release; it is not a build
+# counter and must not be wired to $GITHUB_RUN_NUMBER, or every rebuild of the
+# same commit would claim a new number and the band would exhaust in a day.
+REV="${IOS_BUILD_REV:-0}"
+if [[ ! "$REV" =~ ^[0-9]$ ]]; then
+  echo "::error::IOS_BUILD_REV must be a single digit [0, 9], got '$REV'." >&2
+  echo "The revision band is one digit wide; a 10th re-upload of the same" \
+       "version means something is wrong upstream — bump the patch instead." >&2
+  exit 1
+fi
+
+BUILD_NUMBER=$(( 4000000 + V_MINOR * 100000 + V_PATCH * 1000 + SLOT * 10 + REV ))
+
+if [[ "$PRINT_BUILD_NUMBER" == true ]]; then
+  echo "$MARKETING_VERSION $BUILD_NUMBER"
+  exit 0
+fi
 
 echo "=== Building $BRAND_PRODUCT $VERSION for iOS ==="
 echo "  BRAND: $BRAND"
