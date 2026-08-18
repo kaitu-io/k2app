@@ -473,7 +473,11 @@ jobs:
     needs: test-windows
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 60
-    env:
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       # Journal every signCommand invocation (desktop/src-tauri/windows-sign.sh
       # writes here when the var is set). Tauri swallows that command's output
       # and reports only "failed to bundle project 'failed to run bash'", which
@@ -481,11 +485,16 @@ jobs:
       # journal's ENTER lines do. Scoped to run+attempt because this is a
       # self-hosted runner: a fixed path would show a previous run's journal and
       # read as though the current one produced it.
-      K2_SIGN_LOG: ${{ runner.temp }}/k2-sign-${{ github.run_id }}-${{ github.run_attempt }}.log
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      #
+      # Set here rather than in a job-level `env:` because the `runner` context
+      # does not exist at job level — referencing it there is not a runtime
+      # error but a workflow-validation error, so GitHub rejects the whole file
+      # before scheduling anything (run completes with zero jobs). $RUNNER_TEMP
+      # is the step-level equivalent and is always defined in a step shell.
+      - name: Configure signCommand journal path
+        shell: bash
+        run: |
+          echo "K2_SIGN_LOG=$RUNNER_TEMP/k2-sign-${{ github.run_id }}-${{ github.run_attempt }}.log" >> "$GITHUB_ENV"
 
       - name: Setup SSH for private submodule
         uses: webfactory/ssh-agent@v0.9.0
