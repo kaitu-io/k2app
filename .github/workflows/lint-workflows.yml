@@ -38,7 +38,16 @@ jobs:
       # `-ignore 'shellcheck reported issue'` splits into four tokens and the
       # next flag gets read as a filename ("could not read \"-color\"").
       # `.+` stands in for the spaces so the whole pattern survives as one token.
+      #
+      # Pin 1.7.12, not an older tag: actionlint carries a baked-in list of
+      # GitHub-hosted runner labels, and 1.7.7 predates `macos-26` (which
+      # build-mobile.yml needs for Xcode 26 / the iOS 26 SDK). On 1.7.7 that
+      # valid label reads as `label "macos-26" is unknown`. Bumping the image
+      # is the fix rather than suppressing the runner-label rule, which would
+      # also stop catching genuine label typos. Keep this in step with whatever
+      # actionlint a developer runs locally — verifying against a different
+      # version than CI runs is the same as not verifying.
       - name: Run actionlint
-        uses: docker://rhysd/actionlint:1.7.7
+        uses: docker://rhysd/actionlint:1.7.12
         with:
           args: -ignore shellcheck.+reported -color
