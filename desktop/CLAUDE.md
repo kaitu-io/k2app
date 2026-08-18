@@ -58,7 +58,7 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 
 ## Rust Modules (`src-tauri/src/`)
 
-- **main.rs** — App setup: single-instance, process, updater, opener, clipboard-manager plugins. Wires tray + service + updater in setup closure. `RunEvent::ExitRequested` handler auto-applies pending updates.
+- **main.rs** — App setup: panic hook (appends to desktop.log — see gotcha below), then plugins with single-instance **first** (plugins initialize in registration order; the duplicate-instance `exit(0)` must precede all other side effects). Wires tray + service + updater in setup closure. `RunEvent::ExitRequested` handler auto-applies pending updates.
 - **service.rs** — k2 daemon lifecycle. Routes VPN actions to the k2 daemon HTTP API at `:1777` on all platforms.
   - `daemon_exec`: HTTP to `:1777/api/core`
   - `ensure_service_running`: ping + version check + auto-install daemon (osascript on macOS, PowerShell elevated on Windows)
@@ -157,6 +157,11 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
   端口被另一个 k2app / Overleap 实例占住就必崩——两品牌桌面版共用同一份 `main.rs`，
   端口也一样。它还注册在 `single-instance` **之前**，所以第二实例是崩溃还是静默 `exit(0)`
   取决于赛跑结果。**任何"启动即崩、无日志"的桌面故障，先怀疑这一类启动期 panic。**
+- 上述事故的两个配套防线（同日落地）：① `main()` 第一行 `install_panic_hook()` —— 任何线程
+  panic 都直接 append 进 `desktop.log`（不走 log 门面，所以早于/晚于 logger 初始化都能写），
+  再链回默认 hook；`panic = "abort"` 下这是 panic 原因唯一的落盘通道。② `single-instance`
+  必须是**第一个**注册的插件（tauri `PluginStore` 按注册顺序初始化）——重复实例要在产生任何
+  副作用前就 `exit(0)`。改插件注册顺序前先想清这两条。
 
 ## Router LAN Bridge (`router_bridge.rs`)
 
