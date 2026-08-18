@@ -122,6 +122,7 @@
       "description": "登入賬戶即可獲取雲端節點，享受更穩定嘅服務。"
     },
     "unlockCloudNodes": "登入解鎖全球節點",
+    "unlockCloudNodesHint": "全球多國家/地區節點，登入後即可選用",
     "loginBanner": {
       "message": "登入解鎖更多雲端節點",
       "viewPlans": "了解會員"

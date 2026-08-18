@@ -150,14 +150,14 @@ export const darkTheme = createTheme({
       dark: '#F57C00',
     },
     background: {
-      default: '#0F0F13', // 统一深色背景 - 与 Web 端协调的深色调
-      paper: '#1A1A1D',   // 统一纸质背景 - 与 Web 端 card 色调协调  
+      default: brandTheme.surface.background, // 品牌表面色（brands/<id>/theme.ts）
+      paper: brandTheme.surface.paper,
     },
     text: {
       primary: '#FAFAFA',                    // 统一主文本色 - 与 Web 端 foreground 一致
       secondary: 'rgba(250, 250, 250, 0.7)', // 统一次文本色 - 与主文本色协调
     },
-    divider: 'rgba(255, 255, 255, 0.12)', // 统一分割线颜色 - 与 Web 端 border 协调
+    divider: brandTheme.surface.border,
   },
   components: {
     ...sharedThemeConfig.components,
@@ -172,8 +172,8 @@ export const darkTheme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: '#1A1A1D', // 与 paper 背景一致，保持 header 的专业感
-          borderBottom: '1px solid rgba(255, 255, 255, 0.12)', // 统一边框颜色
+          backgroundColor: brandTheme.surface.paper, // 与 paper 背景一致，保持 header 的专业感
+          borderBottom: `1px solid ${brandTheme.surface.border}`,
         },
       },
     },

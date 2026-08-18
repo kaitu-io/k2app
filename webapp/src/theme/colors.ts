@@ -5,7 +5,11 @@
  * - Easy to customize from one location
  * - Consistent across all pages
  * - Supports light and dark modes
+ *
+ * 注意：连接状态色（已连接/待命/熄灭）**不在** APP_COLORS 里，而在
+ * `brandConfig.theme.status`，由本文件底部的 getStatus* 函数供给。
  */
+import { brandConfig } from '../brands';
 
 export const APP_COLORS = {
   light: {
@@ -219,66 +223,161 @@ export const getThemeColors = (isDark: boolean) => {
 };
 
 /**
- * Helper to get status-based box shadow for animations
+ * 连接状态的视觉档位。
+ *
+ * `dormant` = 无任何可连节点（未登录且无自建节点）。它与 `disabled` 不同：
+ * disabled 是「暂时不能点」，dormant 是「这里还没通电」—— 后者要把视觉焦点
+ * 让给同屏的登录 CTA，而不是显示一个点了也没用的高亮大按钮。
  */
-export const getStatusShadow = (status: 'connected' | 'transitioning' | 'disconnected' | 'disabled' | 'stop', isDark: boolean) => {
+export type ConnectionVisualStatus =
+  | 'connected'
+  | 'transitioning'
+  | 'disconnected'
+  | 'disabled'
+  | 'dormant'
+  | 'stop';
+
+/** 穷尽性守卫：新增 ConnectionVisualStatus 成员时，任何漏掉分支的
+ *  switch 会在编译期报错，而不是静默走 default。 */
+function assertNever(x: never): never {
+  throw new Error(`Unhandled ConnectionVisualStatus: ${JSON.stringify(x)}`);
+}
+
+/**
+ * 连接状态色的**唯一供给者**（连同下面两个函数）。
+ *
+ * connected / idle 取自 `brandConfig.theme.status`，不再读 APP_COLORS 的
+ * success* / info* —— 后者继续服务于非连接语境（Alert、Chip 等）。组件禁止
+ * 为了表达连接状态而直接读 APP_COLORS.successGradient / infoGradient。
+ */
+export const getStatusShadow = (status: ConnectionVisualStatus, isDark: boolean) => {
   const colors = getThemeColors(isDark);
+  const brand = brandConfig.theme.status;
 
   switch (status) {
     case 'connected':
-      return `0 20px 60px ${colors.successGlow}, 0 0 0 0 ${colors.successGlowStrong}`;
+      return `0 20px 60px ${brand.connected.glow}, 0 0 0 0 ${brand.connected.glowStrong}`;
     case 'transitioning':
       return `0 20px 60px ${colors.warningGlow}, 0 0 0 0 ${colors.warningGlowStrong}`;
     case 'disconnected':
-      return `0 20px 60px ${colors.infoGlow}, 0 0 0 0 ${colors.infoGlowStrong}`;
+      return `0 20px 60px ${brand.idle.glow}, 0 0 0 0 ${brand.idle.glowStrong}`;
     case 'stop':
       return `0 20px 60px ${colors.errorGlow}, 0 0 0 0 ${colors.errorGlowStrong}`;
     case 'disabled':
       return colors.disabledShadow;
+    case 'dormant':
+      return 'none'; // 熄灭：不发光
     default:
-      return 'none';
+      return assertNever(status);
   }
 };
 
 /**
  * Helper to get status-based gradient
  */
-export const getStatusGradient = (status: 'connected' | 'transitioning' | 'disconnected' | 'disabled' | 'stop', isDark: boolean) => {
+export const getStatusGradient = (status: ConnectionVisualStatus, isDark: boolean) => {
   const colors = getThemeColors(isDark);
+  const brand = brandConfig.theme.status;
 
   switch (status) {
     case 'connected':
-      return colors.successGradient;
+      return brand.connected.gradient;
     case 'transitioning':
       return colors.warningGradient;
     case 'disconnected':
-      return colors.infoGradient;
+      return brand.idle.gradient;
     case 'stop':
       return colors.errorGradient;
     case 'disabled':
       return colors.disabledGradient;
+    case 'dormant':
+      return 'transparent'; // 熄灭：只留描边，见 ConnectionButton
     default:
-      return colors.infoGradient;
+      return assertNever(status);
   }
 };
 
 /**
  * Helper to get status-based color
  */
-export const getStatusColor = (status: 'connected' | 'transitioning' | 'disconnected' | 'disabled', isDark: boolean) => {
+export const getStatusColor = (status: ConnectionVisualStatus, isDark: boolean) => {
   const colors = getThemeColors(isDark);
+  const brand = brandConfig.theme.status;
 
   switch (status) {
     case 'connected':
-      return colors.success;
+      return brand.connected.main;
     case 'transitioning':
       return colors.warning;
     case 'disconnected':
       return colors.disabled;
     case 'disabled':
       return colors.disabled;
+    case 'dormant':
+      return brand.dormant.icon;
+    case 'stop':
+      return colors.error;
     default:
-      return colors.textSecondary;
+      return assertNever(status);
+  }
+};
+
+/**
+ * 连接按钮 hover 态阴影。dormant 返回 'none' —— 熄灭态不是本屏的行动点，
+ * 不应对悬停做出「我可以被点」的回应。
+ */
+export const getStatusHoverShadow = (status: ConnectionVisualStatus, isDark: boolean): string => {
+  const colors = getThemeColors(isDark);
+  const brand = brandConfig.theme.status;
+
+  switch (status) {
+    case 'connected':
+      return `0 25px 80px ${brand.connected.glowStrong}`;
+    case 'disconnected':
+      return `0 25px 80px ${brand.idle.glowStrong}`;
+    case 'transitioning':
+      return `0 25px 80px ${colors.warningGlowStrong}`;
+    case 'stop':
+      return `0 25px 80px ${colors.errorGlowStrong}`;
+    case 'disabled':
+      return colors.disabledShadow;
+    case 'dormant':
+      return 'none';
+    default:
+      return assertNever(status);
+  }
+};
+
+/**
+ * 连接按钮描边。只有 dormant 态有边框 —— 其余状态靠实心渐变承载形状。
+ */
+export const getStatusBorder = (status: ConnectionVisualStatus): string => {
+  return status === 'dormant'
+    ? `1px solid ${brandConfig.theme.status.dormant.border}`
+    : 'none';
+};
+
+/**
+ * 连接按钮前景（图标/文字）色。
+ *
+ * 必须跟随状态：connected/disconnected 的品牌底色是高亮度霓虹色，白色前景
+ * 对比度仅约 1.3:1（几乎不可见）；深色前景可达 11-15:1。warning/error 底色
+ * 较暗，白色前景才是可读的那个。
+ */
+export const getStatusForeground = (status: ConnectionVisualStatus): string => {
+  switch (status) {
+    case 'connected':
+    case 'disconnected':
+      return '#0a0a0f';
+    case 'transitioning':
+    case 'stop':
+      return '#ffffff';
+    case 'disabled':
+      return 'rgba(255, 255, 255, 0.5)';
+    case 'dormant':
+      return brandConfig.theme.status.dormant.icon;
+    default:
+      return assertNever(status);
   }
 };
 

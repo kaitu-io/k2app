@@ -14,9 +14,26 @@
 
 ### 非目标
 
-- 不动 Overleap 的任何视觉表现
+- **不动 Overleap 的配色**（已达成并由测试锁定，见 §7）
 - 不引入 light mode（`ThemeContext` 硬编码 dark，维持现状）
 - 不改动官网 `web/`
+
+### 范围外溢：Overleap 会获得 §5 / §6 的 UX 改进
+
+实现后确认：**配色零变化**（侧边栏紫、CTA 紫、背景 `#0F0F13` 均与基线一致，
+`theme.brand.test.ts` 锁死），但 Overleap 也会得到三处**行为**变化：主按钮
+dormant 熄灭态、遮罩层的锁 + 价值说明、CTA 辉光。
+
+这是有意的，理由三条：
+
+1. 视觉层级倒置是**两个品牌都有**的真实缺陷，不是开途专属问题。
+2. 要让它只在开途生效，只能在共享组件里按品牌 id 分叉 —— `webapp/CLAUDE.md`
+   明令禁止（唯一 resolver 是 `brandConfig`）。
+3. 走 `BrandFeatures` 门控在技术上可行，但为一个纯视觉改进新增 feature gate
+   过重，且会让「哪个品牌长什么样」散进 config。
+
+若产品要求 Overleap 保持原样，正确做法是加 `BrandFeatures.dormantConnectionButton`
+门控，而不是在组件里判断品牌 id。
 
 ---
 
@@ -202,11 +219,11 @@ Dashboard 传入 `!isAuthenticated && !selfHostedTunnel`。未登录但已配置
 | 价值说明 | 无 | 一行 12px `rgba(255,255,255,.55)` 副文案，锁与 CTA 之间 | 说明"解锁得到什么" |
 | 主按钮 | 蓝色实心大圆 | `dormant` 态（§5） | 修正视觉层级倒置 |
 
-### 待定项：副文案数字
+### 副文案数字：已决定不写
 
 原型用了「登入後可用 15 個國家/地區的節點」，但**幻影列表的 15 条假数据只覆盖 11 个国家/地区**（JP/SG/US/HK/TW/KR/DE/GB/AU/CA/FR）。未登录状态拿不到真实节点数。
 
-**决定**：文案不写死数字，避免与实际不符。用「登入後解鎖全球節點」一类表述。若产品坚持要数字，须由 Center API 提供未授权可读的公开计数，不得硬编码。
+**已实现**：`dashboard.unlockCloudNodesHint`，中文「全球多国家/地区节点，登录后即可选用」，7 个 locale 全部补齐，不含任何数字。若产品坚持要数字，须由 Center API 提供未授权可读的公开计数，不得硬编码。
 
 ### i18n
 

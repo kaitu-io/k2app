@@ -20,6 +20,7 @@ import {
 import {
   ChevronRight as ChevronRightIcon,
   ExpandMore as ExpandMoreIcon,
+  LockOutlined as LockOutlinedIcon,
   Settings as SettingsIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
@@ -426,6 +427,9 @@ export default function Dashboard() {
       <CollapsibleConnectionSection
         serviceState={serviceState}
         hasTunnelSelected={hasTunnelSelected}
+        // 未登录且没有自建节点 = 确实无处可连。让主按钮熄灭，把焦点交给
+        // 下方幻影列表上的登录 CTA（未登录但已配自建节点的用户不受影响）。
+        dormant={!isAuthenticated && !selfHostedTunnel}
         tunnelName={
           serverMode === 'k2sub'
             ? (subsCountry === null
@@ -515,12 +519,15 @@ export default function Dashboard() {
         {!isAuthenticated && (
           <Box sx={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             {/* Scrollable blurred list — scrolls independently */}
+            {/* 更亮 + 更糊：看得见「这是一列带国旗的节点」，读不出是哪些。
+                原先 opacity .5 + blur 4px 两个手段叠加过头，列表几乎不可见，
+                「有一批节点可解锁」的意图没传达到。 */}
             <List disablePadding sx={{
               height: '100%',
               overflowY: 'auto',
               px: 2,
-              filter: 'blur(4px)',
-              opacity: 0.5,
+              filter: 'blur(5px)',
+              opacity: 0.75,
               pointerEvents: 'none',
               userSelect: 'none',
             }}>
@@ -577,11 +584,26 @@ export default function Dashboard() {
               pointerEvents: 'none',
             }}>
               <Stack spacing={1.5} alignItems="center" sx={{ pointerEvents: 'auto' }}>
+                {/* 锁 + 价值说明：回答「为什么看不到」和「解锁得到什么」。
+                    主按钮此时是熄灭态，本 CTA 是全屏唯一亮点。 */}
+                <LockOutlinedIcon sx={{ fontSize: 22, color: 'text.secondary', opacity: 0.6 }} />
+                <Typography
+                  variant="caption"
+                  sx={{ color: 'text.secondary', fontSize: '0.75rem', textAlign: 'center' }}
+                >
+                  {t('dashboard:dashboard.unlockCloudNodesHint')}
+                </Typography>
                 <Button
                   variant="contained"
                   color="primary"
                   onClick={() => openLoginDialog({ trigger: 'dashboard-upgrade' })}
-                  sx={{ fontWeight: 600, px: 3 }}
+                  sx={{
+                    fontWeight: 600,
+                    px: 3.5,
+                    py: 1.25,
+                    fontSize: '0.95rem',
+                    boxShadow: (theme) => `0 8px 32px ${alpha(theme.palette.primary.main, 0.35)}`,
+                  }}
                 >
                   {t('dashboard:dashboard.unlockCloudNodes')}
                 </Button>
