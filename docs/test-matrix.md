@@ -291,9 +291,9 @@ not what you meant to measure, and only a known-bad control (H06) tells the two 
 
 ---
 
-# 0.4.8 发布验证编排 — 2026-08-18（编排制定日）
+# 0.4.8 发布验证编排 — 2026-08-18（按 v0.4.7..HEAD 变更点重新推导）
 
-**背景**：0.4.8 于 2026-08-03 由 CI 构建并上传 S3，但**第二阶段 publish 从未执行**——桌面 `LATEST`/`cloudfront.latest.json` 仍是 0.4.7，Android `latest.json` 仍是 0.4.7，iOS 4.4.8 被 DEVELOPER_REJECTED 自撤。S3 上那份 0.4.8 产物是 8-03 的旧内容，当前 main 比它多 93 个提交（Web OTA 全套、bridge v2、桌面启动崩溃修复、k2 核心一批）——**必须重新构建覆盖，不可直接切 latest**。
+**背景**：0.4.8 于 2026-08-03 由 CI 构建并上传 S3，但**第二阶段 publish 从未执行**——桌面 `LATEST`/`cloudfront.latest.json` 仍是 0.4.7，Android `latest.json` 仍是 0.4.7，iOS 4.4.8 被 DEVELOPER_REJECTED 自撤。S3 上那份 0.4.8 产物是 8-03 的旧内容，**必须重新构建覆盖，不可直接切 latest**。
 
 **本次范围（已决策）**：
 - 品牌：**仅 kaitu**。Overleap 不纳入（S3 `overleap/` 树空、ASC 未上架 = 首发，另排）。`publish-web-ota` 恒双品牌，会在 `overleap/web/` 下生成 manifest——无消费方，无害。
@@ -302,96 +302,183 @@ not what you meant to measure, and only a known-bad control (H06) tells the two 
 
 **线上基线**：全平台 0.4.7（iOS 4.4.7 READY_FOR_SALE）。Web OTA 从未发布过（`kaitu/web/` 空）——本次是 bootstrap 首发。
 
+## 变更全景（v0.4.7..HEAD = 376 app commits + 173 k2 commits，738 文件 +37661/−5072）
+
+这不是补丁版本，是三条大功能线合流。按"是否已有验证证据"分层：
+
+### 第 1 层 — 已被三层阶梯验证（wire/传输层，本次最大技术风险）
+
+k2 传输层是本次改动最深的地方：QUIC 腿从 `apernet/quic-go` 迁到 `kaitu-io/kuic`（TLS 引擎换 `metacubex/utls`）、ClientHello 换 Chrome-146-over-QUIC 指纹、**移除 port-hopping 固定 443**、新增双通道质量记分板 + 迟滞切换 FSM、修复 TCP-WS 腿丢失证书校验（pin 形同虚设的可 MITM 洞）。
+
+**证据链已闭合**（见本文件上方三段记录）：
+- 桌面进程级 R01–R12（k2@ef6c0b2）：kuic 互通、旧 `hop=` URL 兼容、TCP-WS pin 校验、记分板字段、会话中封锁自动切换、封锁下冷启动、旧节点 echo 兼容、解封稳定性、规则包下载 —— 10 PASS + 2 SKIP（皆有结构性理由）
+- iPhone 15 真机 M01–M06：race 首连、飞行模式 101 分类、**记分板降级/迟滞抑制/回切全周期活体验证**、Wi-Fi→蜂窝 direct-bind 重绑、后台省电零探测、100 分钟零 crash —— 全 PASS
+- Canary 新 k2s × 新核心 C01–C05：TCP-WS echo 正向路径、review 周期、真实故障切换 6s、UDP 全封下承载、解封恢复 —— 全 PASS
+- **全车队 24/24 部署 `v0.4.8-9d7c6f95`（2026-08-15），生产运行 3 天**；期间存量 0.4.7/0.4.3 客户端工单只有常规体验类，**无大面积断连** → 服务端对存量客户端向后兼容已被生产验证。
+
+> 注意这些 UAT 覆盖的核心是 **`ef6c0b2`**，而 HEAD 是 **`6bc70b0`**——差 56 文件 / +4462 行，见第 2 层 C 段。
+
+### 第 2 层 — 零验证证据，本次必须覆盖
+
+| 面 | 规模 | 为什么危险 |
+|---|---|---|
+| **webapp**（阶段 D） | 176 文件 | 本次最大变更面。Router 顶级标签、国家排除过滤、端口/协议/游戏规则、双连接互斥、chunk-reload-guard、brands/ 重组——全是 0.4.7 用户升级后**直接看得见**的东西 |
+| **桌面壳**（阶段 A） | 25 文件 | `kaitu-ui://` 自定义协议 + localStorage origin 迁移 + 移除 tauri-plugin-localhost（0.4.7 SIGABRT 根因）+ panic hook |
+| **Web OTA**（阶段 B） | 四端全新 | 桌面 Rust / Linux Go / Android Kotlin / iOS Swift + CI + minisign + 回滚状态机。**首发即 bootstrap** |
+| **移动端原生**（阶段 A/D） | K2Plugin +220 行 | `updateConfig`、`get/setUpdateChannel`、`routerRequest`、`getDefaultGateway`、minisign 验签；iOS `PacketTunnelProvider` + Info.plist + entitlements + vendored `K2RouteShim.h`。**唯一没有热修通道的一层** |
+| **k2 `ef6c0b2→6bc70b0`**（阶段 C） | 56 文件 | provider 12（macOS lsof 进程归属重构、IPv6 归属修复）/ wire 9 / webui 7 / rule 7 / engine 5 / daemon 4 / core 4 / **server 3（ECH config_id gate）** |
+| **认证与计量**（阶段 E） | api+mobile+webapp | tunnel token 全链路、per-device 流量计量 → 后台排行/超量告警邮件 |
+
+### 已排除的风险（调查后确认，不必再测）
+
+- **ECH config_id gate 不会踢掉合法客户端**：`server.go` 新增按 plaintext `config_id` 分流（自有→k2v5，外来→伪装站）。实测 HK 5458 节点持有 `{175,176,231}` 三份 ECH config，`LoadAllECHConfigs` **加载全部**（注释明写 supports rotation）进 `EncryptedClientHelloKeys`，而 Center 下发的 `ech=` 解出 `config_id=231` ∈ 该集合 → `ownsECHConfigID` 命中。JP/US 抽样同理。**升级节点不会因 config_id 漂移断连。**
+- **origin 迁移不威胁登录态**：桌面 auth token 存 Rust `storage.json`（`_platform.storage`），localStorage 只承载偏好/缓存。迁移失败的兜底是"以空存储进入新 origin"，最坏丢语言/公告已读。
+- **tunnel token 目前是软路径**：全车队 `K2_ENFORCE_AUTH=0`（k2s 与 sidecar 均是），节点不强制。存量 access token 继续可用 → tunnel token 出问题不会导致断连。**代价是这条链路在生产上从未被强制验证过**（阶段 E）。
+- **旧 `hop=` 订阅 URL 不会失效**：R02 已 PASS，解析时静默忽略。
+
 ## 真机清单
 
 | # | 设备 | 用途 | 关键性 |
 |---|---|---|---|
-| D1 | macOS Intel + macOS 13.x | 0.4.7 SIGABRT 的正对照机（崩溃报告来自 Intel/13.7.8） | ★★ |
-| D2 | macOS Apple Silicon | 主验证 + origin 迁移 + 双品牌并存 | ★★ |
-| D3 | Windows 10/11 | 装机、origin 迁移、appbypass 可见性 | ★★ |
-| D4 | Linux x86_64 | daemon webui 磁盘覆盖 + `?ui=embedded` 逃生口 | ★ |
-| D5 | iPhone（装 0.4.8） | 移动主链路 + web OTA 应用 | ★★ |
-| D6 | Android（装 0.4.8） | 同上 + beta 通道（iOS 自 `ec25dfcf` 起同样具备，两端都可跑 beta） | ★★ |
-| D7 | Android 停在 0.4.7（不升级） | 验 `min_native=0.4.8` 闸门正确跳过（负向门） | ★ |
-| D8 | iPhone 停在 4.4.7 | 同上，iOS 侧 | 可选 |
+| **D1** | macOS Intel + macOS **13.x**，**保持 0.4.7 不动直到 A01** | 0.4.7 SIGABRT 的唯一正对照环境（崩溃报告来自 Intel/13.7.8）+ 升级路径 | ★★★ **不可替代且一次性** |
+| **D2** | macOS Apple Silicon | 主验证机（可反复重装/回滚） | ★★★ |
+| **D3** | iPhone | NE/原生层 + 升级路径 + OTA + IAP | ★★★ |
+| **D4** | Android 主力机 | VpnService + 原生层 + OTA + beta 通道 | ★★★ |
+| **D5** | Android **停在 0.4.7 不升级** | `min_native` 闸门负向门 | ★★ **一次性** |
+| **D6** | Linux x86_64 | 安装脚本 + webui 磁盘覆盖 | ★★ |
+| **D7** | Windows 10/11（**按要求排最后**） | 装机 + 服务安装 + 签名 + appbypass 可见性 + origin 迁移 | ★★★ |
+| D8 | iPhone 停在 4.4.7 | iOS 侧负向门 | 可选 |
+| D9 | k2r 路由器实体 | 阶段 D 的 Router 段全链路 | 若无 → 该段整体 `SKIP:no-hardware`，**必须在发布说明里降级该功能的对外承诺** |
+
+> **一次性资源警告**：D1 与 D5 一旦升级就无法复原为 0.4.7。请勿在编排开始前对它们执行任何更新（含系统自动更新提示）。
+
+## 执行顺序原则
+
+按"排除风险的杠杆率"排，而非按平台罗列：
+
+1. **阶段 0 台面门禁** → 不消耗真机
+2. **阶段 B 优先于功能面** → Web OTA 是**修复能力本身**。它通了，webapp（176 文件，最大变更面）的问题就从"发布事故"降级为"发布后热修"。先验能不能修，再验有没有坏。
+3. **阶段 A 一次性设备** → D1/D5 只有一次机会
+4. **阶段 C/D/E 功能面** → 可反复
+5. **Windows 最后**（按要求）
+
+---
 
 ## 阶段 0 — 台面门禁（无真机）
 
 | ID | 项目 | 判据 | Status |
 |----|------|------|--------|
-| G01 | push 两个未推 commit（c8263b42 桌面 panic 根因、a64d3202 panic hook） | origin/main == main | TODO |
-| G02 | 修 `build-windows` CI 红（已知 SimplySign 云会话过期形态） | ci.yml 全绿（OSV-Scanner 除外，见 project_osv_accepted_residual_vulns） | TODO |
-| G03 | **改 `contracts/webapp-support-floor.json` 的 desktop/linux: 0.4.9 → 0.4.8** | 见下方"必须先修的硬伤" | **DONE** `ec25dfcf` — 并补齐缺失的版本维度契约门，另修出 iOS channel 死能力（见 G03 执行记录） |
-| G04 | 契约门四道 | bridge-contract golden、api-contract（`-count=1`）、brand-purity、白屏冒烟门全绿 | 部分 — bridge-contract 绿（含新门）；api-contract / brand-purity / 冒烟门待 CI |
-| G05 | 全量测试 | webapp vitest / cargo test / go test / `scripts/test_build.sh` | 部分 — webapp 117 files/1337 passed、desktop cargo 180 passed、mcp ok、manifest 门 11/11；**api 本机 DB 环境阻塞**（Docker 容器未起→homebrew mariadb 独占 3306→gorm nil-panic，非回归，见 `reference_local_dev_db_homebrew_takeover`）；`test_build.sh` 待跑 |
-| G06 | k2 submodule 指针 | `6bc70b0` 且 `LinuxBridgeVersion=2` | TODO |
-| G07 | 版本对齐 | package.json / Cargo.toml / mobile 皆 0.4.8；iOS build 号 > 已上传过的 408 | TODO |
-| G08 | 重打 `v0.4.8` tag | origin 上现指向 757467a5（8-02 旧内容），需删除重打到当前 main | TODO |
+| G01 | push 四个未推 commit | origin/main == main | **等授权** |
+| G02 | `build-windows` CI 红（SimplySign 云会话过期） | ci.yml 全绿（OSV-Scanner 除外，见 `project_osv_accepted_residual_vulns`） | 本机 DONE（2026-08-18 14:4x）— `windows-sign-preflight.sh` **真实私钥签名通过**（含 Certum 时间戳），非 `--list-slots` 假阳性。CI 侧待一次 run；**会话有有效期，宜尽快跑** |
+| G03 | web OTA 地板锚点 + 契约门 + iOS channel | 见下方 G03 记录 | **DONE** `ec25dfcf` |
+| G04 | 契约门四道 | bridge-contract golden、api-contract（`-count=1`）、brand-purity、白屏冒烟门全绿 | 部分 — bridge-contract 绿（含新门）；其余待 CI |
+| G05 | 全量测试 | webapp vitest / cargo test / go test / `scripts/test_build.sh` | 部分 — webapp 117 files/1337 passed、desktop cargo 180、mcp ok、manifest 门 11/11；**api 本机 DB 环境阻塞**（非回归，见 `reference_local_dev_db_homebrew_takeover`）；`test_build.sh` 待跑 |
+| G06 | k2 submodule 指针 | `6bc70b0` 且 `LinuxBridgeVersion=2` | **DONE** — 已确认 |
+| G07 | 版本对齐 | package.json / Cargo.toml / mobile 皆 0.4.8；iOS build 号 **> 408**（已上传过） | TODO |
+| G08 | 重打 `v0.4.8` tag | origin 上现指向 `757467a5`（8-02 旧内容），需删除重打到当前 main | **等授权** |
 
-### G03 必须先修的硬伤（已 10/10 验证）
+### G03 执行记录（commit `ec25dfcf`）
 
-`webapp-support-floor.json` 现为 `{"desktop":"0.4.9","linux":"0.4.9"}`。链路：
-floor → `scripts/ci/web-ota-manifest.mjs` 写 `min_desktop:"0.4.9"` → 桌面 `web_ota.rs::evaluate_manifest()` 调
-`meets_min_base(Some("0.4.9"), "0.4.8")` → `compare_segments([0,4,8],[0,4,9]) == Less` → **`Gate::Skip("min_desktop not satisfied")`**。
+`webapp-support-floor.json` 原为 `{"desktop":"0.4.9","linux":"0.4.9"}`。链路：floor → `web-ota-manifest.mjs` 写 `min_desktop:"0.4.9"` → 桌面 `web_ota.rs::evaluate_manifest()` → `meets_min_base(Some("0.4.9"),"0.4.8")` → **`Gate::Skip`**。即 0.4.8 桌面与 Linux 会被自己的闸门**永久静默挡在 web OTA 之外**。已改 0.4.8（修正锚点，非砍支持）。
 
-即 0.4.8 桌面与 Linux 会被自己的闸门**永久静默挡在 web OTA 之外**。该文件按"桌面 OTA 能力随 0.4.9 上线"锚定，而实际能力落在 0.4.8——改 0.4.8 是**修正锚点**（下调地板，非 spec §4.2 要 review 的"砍支持"bump）；`floor.bridge=1 ≤ BRIDGE_API_VERSION=2` 不变式仍成立。
+另处理两项同链路问题：
 
-#### G03 执行记录（2026-08-18，commit `ec25dfcf`）
+1. **补齐缺失的契约门（结构性）**：既有门只有 `floor.bridge ≤ BRIDGE_API_VERSION` 一条 bridge 维度不变式，版本维度全靠人眼——所以 `0.4.9` 溜进来时全绿。补上同构的 `floor.{native,desktop,linux} ≤ package.json version`，落在提交期（`bridge-contract.test.ts`）与发布期（`buildManifest`）两处，两者**导入同一个 `compareBase`**。
+2. **iOS update channel 是死能力**：`capacitor-k2.ts` 用 `getPlatform()==='android'` 硬门，iOS 上 `setChannel` 恒 `undefined`（尽管 Swift 侧早已实现）；反向缺陷是 Android 探测失败后仍暴露 `setChannel`。已改能力探测。**iOS 因此可直接跑 beta-first UAT。**
 
-除修正锚点外，另处理两项同链路问题：
-
-1. **补齐缺失的契约门（结构性）**：既有门只有 `floor.bridge ≤ BRIDGE_API_VERSION` 一条 bridge 维度不变式，版本维度全靠人眼——所以 `0.4.9` 溜进来时全绿。补上同构的 `floor.{native,desktop,linux} ≤ package.json version`（正在发布的壳按定义属于被支持集合，地板高于它必然自锁），落在提交期（`bridge-contract.test.ts`）与发布期（`buildManifest`）两处，两者**导入同一个 `compareBase`** 而非各自实现。
-
-2. **iOS update channel 是死能力**（原会让阶段 B 的 iOS 部分无法执行）：`capacitor-k2.ts` 用 `getPlatform() === 'android'` 硬门，iOS 上 `setChannel` 恒为 `undefined`，尽管 `K2Plugin.swift` 早已实现 `get/setUpdateChannel`、端点由 `channelPrefix` 动态拼接。同段代码另有反向缺陷：Android 上探测失败后仍暴露 `setChannel`，点击必报错。已改为能力探测（spec §4.5 既定规矩，UI 层 `BetaChannelToggle` 本就按能力门控），两端 0.4.7 存量自动降级 stable-only。
-
-   **对编排的影响**：原编排"iOS 无 update channel，只走 stable"的说法作废，**iOS 可直接跑 beta-first UAT**；D6 备注同步修正。
-
-变异验证 4 次（契约门、发布门、平台硬门回归、无条件暴露 `setChannel`）均确认目标测试真的变红。`capacitor-k2.test.ts` 此前对 channel **零覆盖**且 mock 里缺这两个方法（绿测试从未到达目标代码的典型形状），已补 3 个用例。
+变异验证 4 次均确认目标测试真的变红。`capacitor-k2.test.ts` 此前对 channel **零覆盖**（mock 里连方法都没有），已补 3 用例。
 
 ### 已知发布链路陷阱
 
-- 重打 `v0.4.8` tag 会同时触发 `release-desktop` + `build-mobile` + 尾 job `publish-web-ota`（对非 `-beta` 的 `v*` 恒发 **stable** web manifest）。本次首发 bundle = 同 commit 构建 = 与内嵌 UI 完全一致，兼容天然成立。
+- 重打 `v0.4.8` tag 会同时触发 `release-desktop` + `build-mobile` + 尾 job `publish-web-ota`（对非 `-beta` 的 `v*` 恒发 **stable** web manifest）。首发 bundle = 同 commit 构建 = 与内嵌 UI 一致，兼容天然成立。
 - S3 `kaitu/desktop/0.4.8/` 已有 8-03 旧产物，重发会覆盖同名文件——老 `.sig` 与新包不匹配，**产物与 latest.json 必须同批切换**，中间态不可对外可见。
 - 发布是两阶段：CI 只上传产物，`publish-desktop.sh` / `publish-mobile.sh` 才切 latest。这正是 0.4.8 卡住的原因。
 
-## 阶段 A — App 本体真机（P0）
+---
+
+## 阶段 B — Web OTA 活体链路（**最先跑**，它是本次的热修能力本身）
 
 | ID | 设备 | 用例 | 期望 | Status |
 |----|------|------|------|--------|
-| A01 | D1 | 全新安装 0.4.8 并启动 | 不崩（0.4.7 在同机 SIGABRT，是正对照） | TODO |
-| A02 | D2 / D3 | 从 0.4.7 覆盖升级 | `kaitu-ui://` origin 迁移后**登录态不丢**、语言/日志级别/公告已读保留 | TODO |
-| A03 | D2 | panic hook 落盘通道 | 任意线程 panic 写入 `desktop.log`（早于 tauri-plugin-log） | TODO |
-| A04 | D2 / D3 | single-instance | 第二实例 exit 0（~200ms），首实例窗口置前 | TODO |
-| A05 | D2 | Kaitu × Overleap 桌面并存 | 两品牌不抢 `io_kaitu_desktop_si.sock`（本地构建验，Overleap 不发布） | TODO |
-| A06 | D3 | appbypass 应用列表可见性（717552be F2/F3/F4） | 列表完整可见 | TODO |
-| A07 | D4 | `curl -fsSL https://kaitu.io/i/k2 \| sudo bash` | 安装成功、webui 可达 | TODO |
-| A08 | D5 / D6 | 装机 + bridge v2 | `checkReady` 返回 `bridgeVersion=2` | TODO |
-| A09 | 全平台 | P0 连接 / 断开 / 错误显示 | T01/T02 家族全绿 | TODO |
-
-## 阶段 B — Web OTA 活体链路（P0，本次最高风险的新机制）
-
-| ID | 设备 | 用例 | 期望 | Status |
-|----|------|------|------|--------|
-| B01 | — | 首发 manifest 推导 | `min_native/min_desktop/min_linux = 0.4.8`、`min_bridge = 1` | TODO |
-| B02 | D2 / D3 | 桌面 OTA 全链路 | 拉取→验签→下载→原子换盘→重启生效（bundle 需带肉眼可辨标记） | TODO |
-| B03 | D2 | 桌面坏包回滚 | 白屏 bundle → `.boot-pending` 残留 → `quarantine/` + 回退 previous/内嵌 | TODO |
-| B04 | D5 / D6 | 移动端 OTA | minisign 验签通过，冷启动生效 | TODO |
-| B05 | D7（/D8） | `min_native` 闸门负向门 | 0.4.7 存量机正确跳过，不下载不报错 | TODO |
-| B06 | D4 | Linux 磁盘覆盖 | 页面刷新即新 UI；`?ui=embedded` 回内嵌 | TODO |
-| B07 | 全平台 | 篡改测试 | 改 hash / 剥离 sig → 全部拒绝应用 | TODO |
+| B01 | — | 首发 manifest 推导 | `min_native/min_desktop/min_linux = 0.4.8`、`min_bridge = 1`、版本号为 `0.4.8.<epoch>` | TODO |
+| B02 | D2 | 桌面 OTA 全链路 | 拉取→sha256+minisign 验签→下载→原子换盘→重启生效（bundle 带肉眼可辨标记） | TODO |
+| B03 | D2 | 桌面坏包回滚 | 白屏 bundle → `.boot-pending` 残留 → 移入 `quarantine/` + 回退 previous/内嵌 | TODO |
+| B04 | D3 / D4 | 移动端 OTA | minisign 验签通过，冷启动生效 | TODO |
+| B05 | **D5**（/D8） | `min_native` 闸门负向门 | 0.4.7 存量机正确**静默跳过**，不下载不报错 | TODO |
+| B06 | D6 | Linux 磁盘覆盖 | 页面刷新即新 UI；`?ui=embedded` 逃生口回内嵌 | TODO |
+| B07 | 全平台 | 篡改测试 | 改 hash / 剥离 sig / 换签名密钥 → **全部拒绝应用** | TODO |
 | B08 | 全平台 | 核按钮 | 清空 `latest.json` → 停止更新且不崩 | TODO |
+| B09 | D3 / D4 | beta 通道切换（`ec25dfcf` 后两端均具备） | `setChannel('beta')` 生效，端点切 `beta/` 前缀；0.4.7 存量机降级 stable-only 且不显示开关 | TODO |
 
-## 阶段 C — 核心回归（P1，k2 `ef6c0b2 → 6bc70b0`）
+---
+
+## 阶段 A — 壳层与升级路径（**消耗一次性设备，排第二**）
+
+| ID | 设备 | 用例 | 期望 | Status |
+|----|------|------|------|--------|
+| **A01** | **D1** | 该机保持 0.4.7 → 复现 SIGABRT → 装 0.4.8 启动 | 0.4.7 崩 / **0.4.8 不崩**（唯一正对照） | TODO |
+| A02 | D1 → D2 / D7 | 从 0.4.7 覆盖升级 | `kaitu-ui://` origin 迁移后**登录态不丢**、语言/日志级别/公告已读保留 | TODO |
+| A03 | D2 | panic hook 落盘 | 任意线程 panic 写入 `desktop.log`（早于 tauri-plugin-log 初始化） | TODO |
+| A04 | D2 / D7 | single-instance | 第二实例 exit 0（~200ms），首实例窗口置前 | TODO |
+| A05 | D2 | Kaitu × Overleap 桌面并存 | 两品牌不抢 `io_kaitu_desktop_si.sock`（本地构建验；Overleap 不发布） | TODO |
+| A06 | D6 | `curl -fsSL https://kaitu.io/i/k2 \| sudo bash` | 安装成功、webui 可达、tarball sha256 校验通过 | TODO |
+| A07 | D3 / D4 | 装机 + bridge v2 | `checkReady` 返回 `bridgeVersion=2` | TODO |
+| A08 | 全平台 | P0 连接 / 断开 / 错误显示 | 连得上、断得干净、错误走 i18n 不露原始串 | TODO |
+| A09 | D3 | iOS NE 变更面 | `PacketTunnelProvider` + Info.plist + entitlements 改动后**隧道正常起停**；extension 有显式 `CURRENT_PROJECT_VERSION`/`MARKETING_VERSION` | TODO |
+
+---
+
+## 阶段 D — 功能面回归（0.4.7 用户升级后**直接看得见**的新东西）
+
+> 本段是按变更点新增的，此前编排完全没有覆盖。
+
+| ID | 设备 | 用例 | 对应变更 | Status |
+|----|------|------|----------|--------|
+| D01 | D2 / D4 | **Router 顶级标签**：发现→绑定→设备列表→改名/改密→解绑 | `0fe3e92c` 等 k2r 全套 | TODO |
+| D02 | D9 | Router 控制密钥鉴权 + anchor 探测（`10.17.79.1`） | `55cf1113` / `91683414` | TODO |
+| D03 | D2 / D4 | **双连接互斥**：app 与路由器同时连 → 排他对话框 + 接管横幅 | `d3897578` / `773c8880` | TODO |
+| D04 | D9 | 企业多槽表单（槽位列表、告警徽章、默认落地页） | `9ce69c02` | TODO |
+| D05 | D2 / D4 | **国家排除过滤**：漏斗图标→对话框→排除 chip→自动选择生效 | `9a8a21f0` / `23b2f60f` | TODO |
+| D06 | D2 | 全部国家被排除 → 错误码 **573** 文案正确（不是"未知错误"） | `2e48ec15` | TODO |
+| D07 | D2 | **端口/协议/游戏规则**：MatchConfig 的 port/protocol/games 预设实际生效 | `b2d36efe` / `0be1d77` | TODO |
+| D08 | D3 | **Apple IAP 建单**：沙盒购买 → 建单正确、首单判定不恒真、分销返现入账 | `07948c1d` / `3caabab6` / `fd179e9b` | TODO |
+| D09 | D3 | IAP 沙盒交易**不建订单**；会员过期续费不报"失败无信息"（对应工单 3537） | `fd179e9b` | TODO |
+| D10 | D2 / D4 | 注册时邮箱已占用 → **409001** 专用文案（不再显示"参数错误"） | `b5de67ff` | TODO |
+| D11 | D2 | 窄屏 Account 页邮箱行不溢出、不压住按钮 | `1fb5dbc8` | TODO |
+| D12 | D2 | **chunk-reload-guard**：陈旧 chunk 场景自动恢复，不白屏 | `f5a2cea1` | TODO |
+| D13 | D7 | **appbypass 应用列表可见性**（Windows 三连修） | `717552be` F2/F3/F4 | TODO |
+| D14 | D2 / D4 | i18n 七语种关键页面无缺键（Router/国家过滤/573/409001 均为新增键） | 多处 | TODO |
+
+---
+
+## 阶段 C — k2 核心回归（`ef6c0b2 → 6bc70b0`，上轮 UAT 未覆盖段）
 
 | ID | 用例 | 对应变更 | Status |
 |----|------|----------|--------|
-| C01 | IPv6 连接进程归属非空（三平台） | f4ac8e1 拆除 `!Is4()` 早退门 | TODO |
-| C02 | 强直连/强代理 app 的 DNS 跟随进程规则视角 | d343bf6 (R2) | TODO |
-| C03 | macOS 连接建立无延迟退化 | 17f62f7 lsof 全表快照 | TODO |
-| C04 | pin mismatch 不再永久污染 UI 归因 | 023b5c9 | TODO |
-| C05 | rule diagnose / audit 工具可用 | 61fd8bf（diagnose 曾对任何域名都报 DIRECT） | TODO |
-| C06 | ECH config_id gate + ECH-block probe | aa744bf / cbdccc9（k2v5 §3.7 / §6） | TODO |
-| C07 | 双通道记分板回归 | 上次 M03 / canary C03 家族 | TODO |
+| C01 | IPv6 连接的进程归属非空（三平台） | `f4ac8e1` 拆除 `!Is4()` 早退门 | TODO |
+| C02 | 强直连/强代理 app 的 DNS 跟随进程规则视角 | `d343bf6`（R2） | TODO |
+| C03 | macOS 连接建立无延迟退化（进程归属改 lsof 全表快照） | `17f62f7` | TODO |
+| C04 | pin mismatch 不再永久污染 UI 归因 | `023b5c9` | TODO |
+| C05 | `rule diagnose` / `audit` 工具可用（diagnose 曾对任何域名都报 DIRECT） | `61fd8bf` | TODO |
+| C06 | ECH config_id gate + ECH-block probe | `aa744bf` / `cbdccc9` | 代码侧已排除断连风险（见"已排除的风险"）；仍需一次真实连接确认 |
+| C07 | 双通道记分板回归（M03 / canary C03 家族） | — | TODO |
+| C08 | SOCKS5 UDP 代理模式 full-cone | `7682a65` | TODO |
+
+---
+
+## 阶段 E — 认证与计量链路
+
+| ID | 用例 | 期望 | Status |
+|----|------|------|--------|
+| E01 | `/api/subs` 下发内嵌 tunnel token，滚动续期 | 客户端采用 tunnel token 而非 access token | TODO |
+| E02 | 移动端 `updateConfig` 把续期后的 token 同步进 App Group / SharedPreferences | 续期后隧道不掉线 | TODO |
+| E03 | tunnel token **不能冒充** access token 调用 `/app/*` | `handleJWTAuth` default-deny 生效 | TODO |
+| E04 | 被封禁用户 → 403；节点认证失败与设备认证失败可区分 | `1a500ccd` / `8a11d362` | TODO |
+| E05 | per-device 流量上报 → 后台 `/manager/usages` 排行 + 用户详情有数 | `e6612273` / `8c856146` | TODO |
+| E06 | 超量告警邮件（阈值 100GB，月度去重） | `3f57e1c8` / `38f16a6c` | TODO |
+| E07 | **（可选，高风险）** 单节点开 `K2_ENFORCE_AUTH=1` 灰度验证强制路径 | 新客户端连得上、存量 0.4.7 被正确拒绝或放行（按设计） | 建议**发布后**单独排期 |
+
+---
 
 ## 阶段 P — 发布收尾
 
@@ -400,5 +487,24 @@ floor → `scripts/ci/web-ota-manifest.mjs` 写 `min_desktop:"0.4.9"` → 桌面
 | P01 | `publish-desktop.sh` 切 `cloudfront.latest.json` / `d0.latest.json` / Linux `LATEST` | TODO |
 | P02 | `publish-mobile.sh` 切 android manifest（iOS 待审核批准后单独执行） | TODO |
 | P03 | 从 0.4.7 真机验证 auto-update 拉到 0.4.8（桌面 + Android + Linux 各一台） | TODO |
-| P04 | k2s 车队是否需随本次核心变更同步升级（当前 v0.4.8-9d7c6f95，24/24） | TODO |
-| P05 | iOS 重新提审（build 号 > 408），批准后单独上架 + 切 ios manifest | TODO |
+| P04 | k2s 车队是否随本次核心变更同步升级 | **建议本次不动**——服务端 `ef6c0b2` 已稳定 3 天，客户端与服务端不要同时变更，否则出问题无法二分。待客户端稳定后单独排期 |
+| P05 | iOS 重新提审（build 号 **> 408**），批准后单独上架 + 切 ios manifest | TODO |
+
+## 发布信心模型（诚实版）
+
+**"每条变更都被直接测过"意义上的 10/10 不可达**——412 个提交，任何清单都是抽样，组合效应测不完。声称 10/10 是自欺。
+
+**可达的是"任何未测到的问题都有已验证的补救通道"**，这才是发布信心的正确定义。四条补救通道：
+
+| 通道 | 覆盖 | 前置条件 |
+|---|---|---|
+| **Web OTA** | webapp 176 文件（最大变更面）——UI/逻辑层问题可小时级热修，不重发客户端 | **阶段 B 必须先全绿** |
+| `K2_CHANNEL_SELECTOR_LEGACY` | wire 双通道选择器回滚阀 | 已存在 |
+| `K2_ENFORCE_AUTH=0` | tunnel token 全链路是软路径，坏了自动退回 access token | 已是现状 |
+| 节点侧不动（P04） | 服务端保持已生产验证 3 天的 `ef6c0b2` | 编排决策 |
+
+**唯一没有补救通道的是移动端原生层**（K2Plugin +220 行、iOS NE/entitlements、minisign）——坏了只能重新发版过审。因此 **A07/A09/B04/D08 权重最高**，建议移动端先走 beta 通道小流量。
+
+按此模型，跑完阶段 0/A/B/C/D 后的目标态：
+- **代码信心 9.5**（CI 全绿 + 契约门 + 三层阶梯 UAT + 生产服务端 3 天）
+- **业务信心 9**（补救通道全部验证可用；剩余 1 分是 GFW 下 Chrome-146 指纹的真实表现——地域性、概率性，本地真机测不出，只能靠灰度观察）
