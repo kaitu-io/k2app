@@ -364,17 +364,58 @@ k2 传输层是本次改动最深的地方：QUIC 腿从 `apernet/quic-go` 迁�
 
 ---
 
+## 发布阻断项 — 0.4.8 桌面对每个用户都是白屏（已修，`4579cb8a`）
+
+**这是本次编排最重要的发现，也是唯一一个只有装真产物才能发现的问题。**
+
+三条启动路径（`web_ota.rs` DiskUi / EmbeddedUi、`storage_migration.rs` 迁移后）
+全部导航到 `ui_origin_url("index.html")`，而 webapp 的 `BrowserRouter` 路由表挂在
+`/` 下且无 catch-all → `location="/index.html"` 匹配不到任何路由 → 渲染空树。
+
+**它没有任何报错面**，这才是它能被打包发出去的原因：
+
+- Rust 侧日志是一次干净启动，无异常
+- `ui_boot_ok` 握手照常触发（它只证明 bundle 的 JS 跑过，**不证明渲染出东西**）
+  → `.boot-pending` 被清除 → **web OTA 的坏包回滚机制也不会介入**
+- bridge / store / 轮询全部继续工作（CloudAPI 60s、daemon status 15s），日志一片健康
+- 唯一线索是 react-router 的一行 `No routes matched location "/index.html"`
+
+**dev 模式测不出来**：web OTA 启动流被 `cfg!(debug_assertions)` 关掉，
+`yarn tauri dev` 永远停在 Vite 的 `/`，根本不走 `kaitu-ui://`。**只有 release 构建白屏。**
+
+**白屏冒烟门当时是绿的**，因为它 `goto('/')`——正是能用的那条路径。外壳真正使用的
+`/index.html` 从没被测过。**门测了产品不用的路径，就证明不了产品。**
+
+修复与三道防线（每道都做了变异验证，不是推理）：
+
+| 防线 | 内容 | 变异验证 |
+|------|------|----------|
+| 根因 | `ui_boot_url()` 返回 origin 根，三处调用点改指它 | revert 后 Rust 测试变红 |
+| 不变式 | Rust 测试钉住"boot URL 的 path 段必须为空"（不只是字面量相等） | 同上 |
+| webapp | `<Route path="*" element={<Navigate to="/" replace />} />` | 移除后冒烟门 `/index.html` 报 `SMOKE FAIL: TimeoutError`，`/` 仍绿——精确复现生产故障 |
+| 门 | `smoke-dist.mjs` 遍历外壳能启动的**每一种** URL 形态 | 同上 |
+
+实测确认（真实安装的 release 产物）：`kaitu-ui://localhost/`、`rootChildren: 1`、
+`rootHTMLLen: 87741`、commit `4579cb8a`、界面正常。修复前同一路径 `rootChildren: 0`、
+emotion 的 `css`/`css-global` 长度均为 0。
+
+> **对整个编排的含义**：在此之前所有"绿"的证据都只覆盖 dev 或本地构建，
+> **不代表 release 产物的行为**。此后阶段 C/D/E 全部改为在真实安装的 release
+> 构建上跑。
+
+---
+
 ## 阶段 0 — 台面门禁（无真机）
 
 | ID | 项目 | 判据 | Status |
 |----|------|------|--------|
-| G01 | push 四个未推 commit | origin/main == main | **等授权** |
-| G02 | `build-windows` CI 红（SimplySign 云会话过期） | ci.yml 全绿（OSV-Scanner 除外，见 `project_osv_accepted_residual_vulns`） | 本机 DONE（2026-08-18 14:4x）— `windows-sign-preflight.sh` **真实私钥签名通过**（含 Certum 时间戳），非 `--list-slots` 假阳性。CI 侧待一次 run；**会话有有效期，宜尽快跑** |
+| G01 | push 未推 commit | origin/main == main | **DONE** — 已全部推送，当前 `2300a6d0` |
+| G02 | `build-windows` CI 红（SimplySign 云会话过期） | ci.yml 全绿（OSV-Scanner 除外，见 `project_osv_accepted_residual_vulns`） | 反复项 — CI 侧曾于 `89898dad` 全绿（含 build-windows），随后 **同日再次掉线**（`1a3621f4` 红）。已再次自助重连并用 `windows-sign-preflight.sh` 真实私钥签名确认。**这条会一掉再掉：会话有有效期，凡要出 Windows 产物就先跑一次 preflight**（`--list-slots` 有 token ≠ 能签，见下方记录） |
 | G03 | web OTA 地板锚点 + 契约门 + iOS channel | 见下方 G03 记录 | **DONE** `ec25dfcf` |
-| G04 | 契约门四道 | bridge-contract golden、api-contract（`-count=1`）、brand-purity、白屏冒烟门全绿 | 部分 — bridge-contract 绿（含新门）；其余待 CI |
+| G04 | 契约门四道 | bridge-contract golden、api-contract（`-count=1`）、brand-purity、白屏冒烟门全绿 | **DONE** — 四道全绿。白屏冒烟门已**扩为遍历所有启动 URL 形态**（原门只测 `/`，漏掉了外壳实际使用的 `/index.html`，见上方阻断项） |
 | G05 | 全量测试 | webapp vitest / cargo test / go test / `scripts/test_build.sh` | 部分 — webapp 117 files/1337 passed、desktop cargo 180、mcp ok、manifest 门 11/11；**api 本机 DB 环境阻塞**（非回归，见 `reference_local_dev_db_homebrew_takeover`）；`test_build.sh` 待跑 |
 | G06 | k2 submodule 指针 | `6bc70b0` 且 `LinuxBridgeVersion=2` | **DONE** — 已确认 |
-| G07 | 版本对齐 | package.json / Cargo.toml / mobile 皆 0.4.8；iOS build 号 **> 408**（已上传过） | TODO |
+| G07 | 版本对齐 | package.json / Cargo.toml / build.gradle / `k2AppVersion` 皆 0.4.8；iOS build 号 **4408990** | **DONE** `1a3621f4` — `check-versions` 扩为四方对齐并已在 CI 通过。iOS 编号方案重设计（`89898dad`）：`4000000 + MINOR*1e5 + PATCH*1e3 + SLOT*10 + REV`，0.4.8 正式版 = **4408990**，高于 ASC 上已烧掉的 440899 / 440900 |
 | G08 | 重打 `v0.4.8` tag | origin 上现指向 `757467a5`（8-02 旧内容），需删除重打到当前 main | **等授权** |
 
 ### G03 执行记录（commit `ec25dfcf`）
@@ -398,6 +439,33 @@ k2 传输层是本次改动最深的地方：QUIC 腿从 `apernet/quic-go` 迁�
 
 ## 阶段 B — Web OTA 活体链路（**最先跑**，它是本次的热修能力本身）
 
+### 隔离机制：为什么不能用 beta 频道验证（2026-08-18 调查）
+
+| 事实 | 依据 |
+|------|------|
+| **桌面在野没有受众** | `v0.4.7` tag 的 `desktop/src-tauri/src/` 只有 `channel.rs`，**没有 `web_ota.rs`**（`3dca6c5c` 才引入）。现存桌面客户端不知道该端点存在 |
+| **移动端在野已经在轮询** | `v0.4.7` 的 `K2PluginUtils.webManifestEndpoints()` 存在于 Android 与 iOS 两端 |
+| **且是静默自动应用** | `performAutoUpdateCheck()` 下载 → sha256 → 解压 → 直接换掉 webapp，**不提示用户** |
+| **0.4.7 移动端无签名门** | grep 确认两端均**无 minisign、无 min_bridge**。唯一完整性凭据是 manifest 里的 sha256，而它来自同一个 manifest |
+| **唯一拦阻是 `min_native`** | 跑在**老客户端**里，发布时改不了、也回滚不了 |
+| **两个频道当前都是空的** | `kaitu/web/latest.json` 与 `kaitu/web/beta/latest.json` 均 403（S3 无 ListBucket 时把 404 伪装成 403）。同主机的 `kaitu/desktop/d0.latest.json`、`kaitu/android/latest.json` 均 200 → 是"没发布过"而非"主机不通" |
+
+`min_native` 门的正确性已逐条核验：Android `versionName "0.4.7"` → `[0,4,7] < [0,4,8]` → skip ✓。
+iOS 曾是最可疑的一环——营销版本被重映射为 `4.4.7`，若比较用它则 `[4,4,7] >= [0,4,8]`
+**门会反向失效**。实际读的是 `K2AppVersion`（构建期由 `K2_APP_VERSION` 注入真实语义版本），
+ASC 显示 **4.4.7 READY_FOR_SALE** ⇒ 该次构建 `$VERSION` 非空 ⇒ 键有值、不走回退 ✓。
+该回退路径已在 `1a3621f4` 结构性移除（改读编译期常量 `k2AppVersion`）。
+
+**结论**：隔离必须来自**路径**，不能来自频道。`publish-web-ota.yml` 已加
+`namespace` 输入（`2300a6d0`）：发布到 `{ns}/{brand}/web/`，空值 = 生产布局逐字节不变。
+配合桌面 `K2_WEB_OTA_BASE=https://d0.all7.cc/uat/kaitu`（`ota_sources_for` 在有 override
+时只返回那一个源，且**不放宽** sig / min_bridge / min_desktop 任何一道门）即可跑完整链路。
+
+**免费的隔离证明**：UAT 跑完后 `kaitu/web/latest.json` 必须**仍然是 403**。
+
+manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_version` 会给短的补 0，
+故 `0.4.8.2xxxxxxx > 0.4.8` 成立——UAT 能真正触发 apply，不会退化成"无更新"的假绿。
+
 | ID | 设备 | 用例 | 期望 | Status |
 |----|------|------|------|--------|
 | B01 | — | 首发 manifest 推导 | `min_native/min_desktop/min_linux = 0.4.8`、`min_bridge = 1`、版本号为 `0.4.8.<epoch>` | TODO |
@@ -417,12 +485,12 @@ k2 传输层是本次改动最深的地方：QUIC 腿从 `apernet/quic-go` 迁�
 | ID | 设备 | 用例 | 期望 | Status |
 |----|------|------|------|--------|
 | **A01** | **D1** | 该机保持 0.4.7 → 复现 SIGABRT → 装 0.4.8 启动 | 0.4.7 崩 / **0.4.8 不崩**（唯一正对照） | TODO |
-| A02 | D1 → D2 / D7 | 从 0.4.7 覆盖升级 | `kaitu-ui://` origin 迁移后**登录态不丢**、语言/日志级别/公告已读保留 | TODO |
+| A02 | D1 → D2 / D7 | 从 0.4.7 覆盖升级 | `kaitu-ui://` origin 迁移后**登录态不丢**、语言/日志级别/公告已读保留 | **PASS**（macOS，2026-08-18）— 16/16 键迁移到新 origin，6 项关键偏好逐字节一致；鉴权端点 200，登录态完好。桌面认证本就存在 Rust `storage.json`（与 origin 无关），迁移只搬偏好与缓存 |
 | A03 | D2 | panic hook 落盘 | 任意线程 panic 写入 `desktop.log`（早于 tauri-plugin-log 初始化） | TODO |
-| A04 | D2 / D7 | single-instance | 第二实例 exit 0（~200ms），首实例窗口置前 | TODO |
+| A04 | D2 / D7 | single-instance | 第二实例 exit 0（~200ms），首实例窗口置前 | **PASS**（macOS，2026-08-18）— 第二实例 474ms exit 0，首实例收到唤起回调并存活 |
 | A05 | D2 | Kaitu × Overleap 桌面并存 | 两品牌不抢 `io_kaitu_desktop_si.sock`（本地构建验；Overleap 不发布） | TODO |
 | A06 | D6 | `curl -fsSL https://kaitu.io/i/k2 \| sudo bash` | 安装成功、webui 可达、tarball sha256 校验通过 | TODO |
-| A07 | D3 / D4 | 装机 + bridge v2 | `checkReady` 返回 `bridgeVersion=2` | TODO |
+| A07 | D3 / D4 | 装机 + bridge v2 | `checkReady` 返回 `bridgeVersion=2` | **PASS**（桌面侧，2026-08-18）— `_platform` 面完整，`updater.setChannel` 是函数（`ec25dfcf` 的能力探测在桌面同样生效）。移动端待真机 |
 | A08 | 全平台 | P0 连接 / 断开 / 错误显示 | 连得上、断得干净、错误走 i18n 不露原始串 | TODO |
 | A09 | D3 | iOS NE 变更面 | `PacketTunnelProvider` + Info.plist + entitlements 改动后**隧道正常起停**；extension 有显式 `CURRENT_PROJECT_VERSION`/`MARKETING_VERSION` | TODO |
 
@@ -488,7 +556,7 @@ k2 传输层是本次改动最深的地方：QUIC 腿从 `apernet/quic-go` 迁�
 | P02 | `publish-mobile.sh` 切 android manifest（iOS 待审核批准后单独执行） | TODO |
 | P03 | 从 0.4.7 真机验证 auto-update 拉到 0.4.8（桌面 + Android + Linux 各一台） | TODO |
 | P04 | k2s 车队是否随本次核心变更同步升级 | **建议本次不动**——服务端 `ef6c0b2` 已稳定 3 天，客户端与服务端不要同时变更，否则出问题无法二分。待客户端稳定后单独排期 |
-| P05 | iOS 重新提审（build 号 **> 408**），批准后单独上架 + 切 ios manifest | TODO |
+| P05 | iOS 重新提审（build 号 **4408990**，正式版 `IOS_BUILD_REV=0`；被拒后重传才 bump REV），批准后单独上架 + 切 ios manifest | TODO |
 
 ## 发布信心模型（诚实版）
 
