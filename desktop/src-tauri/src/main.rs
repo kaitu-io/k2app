@@ -75,10 +75,66 @@ fn show_window(app: tauri::AppHandle) {
     window::show_window(&app);
 }
 
+/// Append panic messages to desktop.log before the default hook runs.
+///
+/// With `panic = "abort"` in release builds, a panic on ANY thread kills the
+/// whole process — and stderr of a .app bundle goes nowhere, so without this
+/// hook the panic reason only exists in the OS crash report (that's how the
+/// 0.4.7 localhost-plugin startup crash stayed invisible). Installed as the
+/// first statement of main() so it also covers panics during plugin setup,
+/// before tauri-plugin-log initializes the `log` facade.
+fn install_panic_hook() {
+    install_panic_hook_writing_to(get_desktop_log_dir().join("desktop.log"));
+}
+
+fn install_panic_hook_writing_to(log_path: PathBuf) {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            s
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.as_str()
+        } else {
+            "<non-string panic payload>"
+        };
+        let line = format!(
+            "[{}][PANIC] thread '{}' panicked at {}: {}",
+            chrono::Local::now().format("%Y-%m-%d][%H:%M:%S"),
+            std::thread::current().name().unwrap_or("<unnamed>"),
+            info.location()
+                .map(|l| l.to_string())
+                .unwrap_or_else(|| "unknown location".to_string()),
+            payload
+        );
+        // Plain append via std::fs — unbuffered at process level, so the
+        // line survives the abort() that follows under panic = "abort".
+        if let Some(parent) = log_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            use std::io::Write;
+            let _ = writeln!(f, "{line}");
+        }
+        previous(info);
+    }));
+}
+
 fn main() {
+    install_panic_hook();
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_localhost::Builder::new(14580).build())
+        // single-instance MUST be the first plugin: plugins initialize in
+        // registration order (tauri PluginStore is a Vec), and the duplicate-
+        // instance check should run — and exit(0) — before anything else
+        // starts side effects.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            window::show_window_user_action(app);
+        }))
         .plugin({
             let log_dir = resolve_log_dir();
             // K2_BUILD_LOG_LEVEL env var at compile time (default: debug)
@@ -101,9 +157,6 @@ fn main() {
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                 .build()
         })
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            window::show_window_user_action(app);
-        }))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -277,4 +330,49 @@ fn main() {
                 _ => {}
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The panic hook is process-global state — tests touching it must not
+    // run concurrently, or one test's take_hook() strips the other's hook.
+    static HOOK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn panic_hook_appends_panic_to_log_file() {
+        let _guard = HOOK_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("desktop.log");
+        install_panic_hook_writing_to(log_path.clone());
+
+        let result = std::panic::catch_unwind(|| {
+            panic!("boom from panic_hook test");
+        });
+        assert!(result.is_err(), "closure must actually panic");
+
+        // Restore the default hook so other tests' panic output is unaffected.
+        drop(std::panic::take_hook());
+
+        let contents = std::fs::read_to_string(&log_path)
+            .expect("hook must have created and written desktop.log");
+        assert!(contents.contains("[PANIC]"), "got: {contents}");
+        assert!(contents.contains("boom from panic_hook test"), "got: {contents}");
+        assert!(contents.contains("main.rs"), "location missing: {contents}");
+    }
+
+    #[test]
+    fn panic_hook_creates_missing_log_dir() {
+        let _guard = HOOK_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("nested").join("dir").join("desktop.log");
+        install_panic_hook_writing_to(log_path.clone());
+
+        let _ = std::panic::catch_unwind(|| panic!("nested-dir panic"));
+        drop(std::panic::take_hook());
+
+        let contents = std::fs::read_to_string(&log_path).unwrap();
+        assert!(contents.contains("nested-dir panic"), "got: {contents}");
+    }
 }
