@@ -47,9 +47,60 @@ interface PaletteTriple {
   dark: string;
 }
 
+/** 一个连接状态的完整视觉规格（背景渐变 + 光晕）。 */
+interface StatusVisual {
+  main: string;
+  gradient: string;
+  glow: string;
+  glowStrong: string;
+}
+
+/**
+ * 连接状态色 —— ConnectionButton / CompactConnectionButton 的唯一色源。
+ *
+ * 与 `dark.primary` 刻意分离：primary 是「可操作」的交互色（导航、Radio、
+ * 按钮），status 是「系统处于什么状态」。两者混用会让「已选中某节点」和
+ * 「已连接」在颜色上不可区分 —— 见
+ * docs/superpowers/specs/2026-08-18-kaitu-terminal-dark-theme-design.md §2。
+ */
+export interface BrandStatusTokens {
+  /** 已连接 / 受保护 —— 该品牌的高光时刻，全屏唯一的大色块 */
+  connected: StatusVisual;
+  /** 已登录未连接：待命，可点击 */
+  idle: StatusVisual;
+  /** 无任何可连节点（未登录且无自建节点）：熄灭，不发光不呼吸 */
+  dormant: { border: string; icon: string };
+}
+
+/** 表面色 —— 背景 / 卡片 / 边框 / 文本 / 圆角。 */
+export interface BrandSurfaceTokens {
+  background: string;
+  paper: string;
+  border: string;
+  /** 主文本色（对应官网 --foreground） */
+  textPrimary: string;
+  /** 次文本色（对应官网 --muted-foreground） */
+  textSecondary: string;
+  /** 全局圆角基数，px（对应官网 --radius） */
+  radius: number;
+}
+
+/** 语义色 —— 成功 / 警告 / 错误。品牌化是因为官网有自己的一套取值，
+ *  与 MUI 默认色不同；不品牌化就会把开途的值套到 Overleap 头上。 */
+export interface BrandSemanticTokens {
+  success: PaletteTriple;
+  warning: PaletteTriple;
+  error: PaletteTriple;
+}
+
 export interface BrandThemeTokens {
   light: { primary: PaletteTriple; secondary: PaletteTriple };
   dark: { primary: PaletteTriple; secondary: PaletteTriple };
+  /** 必填，不设 optional 兜底：隐式默认值会让共享默认色的改动静默改变某个
+   *  品牌的外观。每个品牌显式声明自己的值。 */
+  status: BrandStatusTokens;
+  surface: BrandSurfaceTokens;
+  semantic: BrandSemanticTokens;
 }
 
 export interface WebappBrandConfig {

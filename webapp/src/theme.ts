@@ -134,30 +134,22 @@ export const darkTheme = createTheme({
     mode: 'dark',
     primary: { ...brandTheme.dark.primary },
     secondary: { ...brandTheme.dark.secondary },
-    success: {
-      main: '#66BB6A',  // 与 Mobile 端一致的浅绿色，深色背景下可见
-      light: '#81C784',
-      dark: '#388E3C',
-    },
-    error: {
-      main: '#EF5350',  // 与 Mobile 端一致的浅红色
-      light: '#E57373',
-      dark: '#C62828',
-    },
-    warning: {
-      main: '#FFB74D',  // 与 Mobile 端一致的浅橙色
-      light: '#FFCC02',
-      dark: '#F57C00',
-    },
+    // 语义色也走品牌 token：官网有自己的一套取值，与 MUI 默认色不同
+    success: { ...brandTheme.semantic.success },
+    error: { ...brandTheme.semantic.error },
+    warning: { ...brandTheme.semantic.warning },
     background: {
-      default: '#0F0F13', // 统一深色背景 - 与 Web 端协调的深色调
-      paper: '#1A1A1D',   // 统一纸质背景 - 与 Web 端 card 色调协调  
+      default: brandTheme.surface.background, // 品牌表面色（brands/<id>/theme.ts）
+      paper: brandTheme.surface.paper,
     },
     text: {
-      primary: '#FAFAFA',                    // 统一主文本色 - 与 Web 端 foreground 一致
-      secondary: 'rgba(250, 250, 250, 0.7)', // 统一次文本色 - 与主文本色协调
+      primary: brandTheme.surface.textPrimary,
+      secondary: brandTheme.surface.textSecondary,
     },
-    divider: 'rgba(255, 255, 255, 0.12)', // 统一分割线颜色 - 与 Web 端 border 协调
+    divider: brandTheme.surface.border,
+  },
+  shape: {
+    borderRadius: brandTheme.surface.radius,
   },
   components: {
     ...sharedThemeConfig.components,
@@ -172,8 +164,8 @@ export const darkTheme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: '#1A1A1D', // 与 paper 背景一致，保持 header 的专业感
-          borderBottom: '1px solid rgba(255, 255, 255, 0.12)', // 统一边框颜色
+          backgroundColor: brandTheme.surface.paper, // 与 paper 背景一致，保持 header 的专业感
+          borderBottom: `1px solid ${brandTheme.surface.border}`,
         },
       },
     },

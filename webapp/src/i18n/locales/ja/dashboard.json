@@ -128,6 +128,7 @@
       "description": "ログインしてクラウドノードを取得し、より安定したサービスをお楽しみください。"
     },
     "unlockCloudNodes": "ログインしてグローバルノードを解放",
+    "unlockCloudNodesHint": "世界各国・地域のノードをログイン後に利用できます",
     "loginBanner": {
       "message": "ログインしてクラウドノードを解放",
       "viewPlans": "プランを見る"

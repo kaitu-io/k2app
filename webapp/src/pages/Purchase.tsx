@@ -458,7 +458,9 @@ const PlanList = memo(function PlanList({
                   }}
                 >
                   {isSelected ? (
-                    <CheckCircleIcon sx={{ color: 'white', fontSize: 28 }} />
+                    // 底色是 primary.main（高亮度霓虹青），白色前景对比度仅
+                    // 约 1.8:1。contrastText 由 MUI 按底色自动选黑/白。
+                    <CheckCircleIcon sx={{ color: 'primary.contrastText', fontSize: 28 }} />
                   ) : (
                     <Radio
                       checked={false}

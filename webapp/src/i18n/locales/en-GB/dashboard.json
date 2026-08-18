@@ -128,6 +128,7 @@
       "description": "Login to get cloud nodes and enjoy more stable service."
     },
     "unlockCloudNodes": "Login to unlock global nodes",
+    "unlockCloudNodesHint": "Nodes across many countries and regions — sign in to use them",
     "loginBanner": {
       "message": "Login to unlock more cloud nodes",
       "viewPlans": "View Plans"

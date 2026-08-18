@@ -20,7 +20,14 @@ import {
 } from '@mui/material';
 import { PlayArrow, Stop, Check } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import { getThemeColors, getStatusGradient, getStatusShadow } from '../theme/colors';
+import {
+  getThemeColors,
+  getStatusGradient,
+  getStatusShadow,
+  getStatusBorder,
+  getStatusForeground,
+  getStatusHoverShadow,
+} from '../theme/colors';
 import { getFlagIcon } from '../utils/country';
 import type { ControlError } from '../services/vpn-types';
 
@@ -31,8 +38,9 @@ type ServiceState =
   | 'reconnecting'
   | 'disconnecting';
 
-// 按钮视觉状态
-type VisualStatus = 'connected' | 'transitioning' | 'disconnected' | 'stop';
+// 按钮视觉状态。`dormant` = 无任何可连节点（未登录且无自建节点）：
+// 熄灭成描边圆，把视觉焦点让给同屏的登录 CTA。
+type VisualStatus = 'connected' | 'transitioning' | 'disconnected' | 'stop' | 'dormant';
 
 // Styled Component - 从 Dashboard.tsx 迁移并增强
 const StyledConnectionButton = styled(Button, {
@@ -51,10 +59,11 @@ const StyledConnectionButton = styled(Button, {
     borderRadius: '50%',
     position: 'relative',
     overflow: 'hidden',
-    border: 'none',
+    border: getStatusBorder(visualStatus),
     transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
     background: getStatusGradient(visualStatus, isDark),
     boxShadow: getStatusShadow(visualStatus, isDark),
+    // dormant 不呼吸：熄灭态不该有任何吸引注意力的动效
     animation: visualStatus === 'transitioning'
       ? 'pulse 2s infinite'
       : visualStatus === 'disconnected'
@@ -72,24 +81,21 @@ const StyledConnectionButton = styled(Button, {
       transition: 'opacity 0.3s ease',
     },
     '&:hover': {
-      transform: 'scale(1.05)',
-      boxShadow: visualStatus === 'transitioning'
-        ? `0 25px 80px ${colors.warningGlowStrong}`
-        : visualStatus === 'connected'
-          ? `0 25px 80px ${colors.successGlowStrong}`
-          : visualStatus === 'stop'
-            ? `0 25px 80px ${colors.errorGlowStrong}`
-            : `0 25px 80px ${colors.infoGlowStrong}`,
+      // dormant 不放大、不发光 —— 它不是本屏的行动点
+      transform: visualStatus === 'dormant' ? 'none' : 'scale(1.05)',
+      boxShadow: getStatusHoverShadow(visualStatus, isDark),
       '&::before': {
-        opacity: 1,
+        opacity: visualStatus === 'dormant' ? 0 : 1,
       },
     },
     '&:active': {
       transform: 'scale(0.98)',
     },
     '&:disabled': {
-      background: colors.disabledGradient,
-      boxShadow: colors.disabledShadow,
+      // dormant 也是 disabled，但它要保住熄灭态外观，不能被灰渐变覆盖
+      background: visualStatus === 'dormant' ? 'transparent' : colors.disabledGradient,
+      boxShadow: visualStatus === 'dormant' ? 'none' : colors.disabledShadow,
+      border: getStatusBorder(visualStatus),
       transform: 'none',
     },
     '@keyframes pulse': {
@@ -128,6 +134,14 @@ export interface ConnectionButtonProps {
   error?: ControlError | null;
   /** Error state: whether K2 is retrying (true=retrying, show animation; false=requires user action) */
   isRetrying?: boolean;
+  /**
+   * 无任何可连节点（未登录且无自建节点）→ 熄灭态。
+   *
+   * 不能用 `hasTunnelSelected` 代替：未登录时它为 true（列表有「自动选择」
+   * 行），按钮是可点的实心圆而非 disabled。此时同屏有登录 CTA，主按钮必须
+   * 让出视觉焦点，否则最强的视觉元素是一个点了没用的按钮。
+   */
+  dormant?: boolean;
   /** Whether network is available during error retry (true=reconnecting to server, false=waiting for network) */
   networkAvailable?: boolean;
 }
@@ -142,6 +156,7 @@ export function ConnectionButton({
   error = null,
   isRetrying = false,
   networkAvailable = true,
+  dormant = false,
 }: ConnectionButtonProps) {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
@@ -169,8 +184,16 @@ export function ConnectionButton({
     if (isConnected) {
       return 'connected';
     }
+    // dormant 只与 disconnected 竞争：有连接/过渡在进行时，说明确实有节点可用。
+    if (dormant) {
+      return 'dormant';
+    }
     return 'disconnected';
-  }, [showStopHint, isTransitioning, isConnected]);
+  }, [showStopHint, isTransitioning, isConnected, dormant]);
+
+  // 前景色必须跟随状态：品牌底色（霓虹青/绿）亮度极高，白色前景对比度仅
+  // 约 1.3-1.8:1；深色前景可达 11-15:1。warning/error 底色较暗，白色才可读。
+  const fg = getStatusForeground(visualStatus);
 
   // Status text
   const statusText = useMemo(() => {
@@ -202,26 +225,28 @@ export function ConnectionButton({
   const ButtonIcon = useMemo(() => {
     // hover 时显示停止图标
     if (showStopHint) {
-      return <Stop sx={{ fontSize: 50, color: 'white' }} />;
+      return <Stop sx={{ fontSize: 50, color: fg }} />;
     }
     // 过渡状态（但不是 hover 停止状态）显示加载圈
     if (isTransitioning) {
-      return <CircularProgress size={50} sx={{ color: 'white' }} />;
+      return <CircularProgress size={50} sx={{ color: fg }} />;
     }
     // 已连接：默认显示勾选图标，hover 时由 showStopHint 切换为停止图标
     if (isConnected) {
-      return <Check sx={{ fontSize: 50, color: 'white' }} />;
+      return <Check sx={{ fontSize: 50, color: fg }} />;
     }
     // 其他状态显示播放图标
-    return <PlayArrow sx={{ fontSize: 50, color: 'white' }} />;
-  }, [isTransitioning, isConnected, showStopHint]);
+    return <PlayArrow sx={{ fontSize: 50, color: fg }} />;
+  }, [isTransitioning, isConnected, showStopHint, fg]);
 
   // 按钮禁用逻辑
   // - 允许在 connecting/reconnecting 状态点击取消
   // - 禁用 disconnecting（等待操作完成）
   // - 禁用 disconnected 且未选择 tunnel
+  // - dormant：确实没有可连的节点，点击无意义（行动点是同屏的登录 CTA）
   const isButtonDisabled =
     isDisconnecting ||
+    dormant ||
     (isDisconnected && !hasTunnelSelected);
 
   return (
@@ -241,15 +266,14 @@ export function ConnectionButton({
               <Typography
                 variant="h6"
                 fontWeight={700}
-                color="white"
-                sx={{ letterSpacing: 0.5 }}
+                sx={{ letterSpacing: 0.5, color: fg }}
               >
                 {statusText}
               </Typography>
               {(!hasTunnelSelected && isDisconnected) ? (
                 <Typography
                   variant="caption"
-                  sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem', maxWidth: 140, textAlign: 'center' }}
+                  sx={{ color: fg, opacity: 0.75, fontSize: '0.7rem', maxWidth: 140, textAlign: 'center' }}
                 >
                   {t('dashboard:dashboard.selectServerHintShort')}
                 </Typography>
@@ -267,7 +291,7 @@ export function ConnectionButton({
                   {tunnelName && (
                     <Typography
                       variant="caption"
-                      sx={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.7rem' }}
+                      sx={{ color: fg, opacity: 0.9, fontSize: '0.7rem' }}
                     >
                       {tunnelName}
                     </Typography>
