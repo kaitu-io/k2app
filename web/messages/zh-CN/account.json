@@ -32,5 +32,25 @@
     "downloadTitle": "You're all set — get the apps",
     "downloadCta": "Download the apps",
     "genericError": "Something went wrong. Please try again."
+  },
+  "subscription": {
+    "accountTitle": "账号信息",
+    "activeUntil": "有效期至 {date}",
+    "choosePlan": "选择套餐",
+    "daysLeft": "剩余 {days} 天",
+    "devicesLabel": "已绑定设备",
+    "emailLabel": "登录邮箱",
+    "expiredOn": "已于 {date} 到期",
+    "historyDays": "+{days} 天",
+    "historyEmpty": "暂无购买记录",
+    "historyRecharge": "购买",
+    "historyReward": "赠送",
+    "historyTitle": "购买记录",
+    "loadFailed": "加载失败，请稍后重试",
+    "navTitle": "我的订阅",
+    "never": "尚未订阅",
+    "renew": "续费",
+    "tierLabel": "当前档位",
+    "title": "订阅状态"
   }
 }

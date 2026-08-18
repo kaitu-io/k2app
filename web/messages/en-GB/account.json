@@ -32,5 +32,25 @@
     "downloadTitle": "You're all set — get the apps",
     "downloadCta": "Download Overleap",
     "genericError": "Something went wrong. Please try again."
+  },
+  "subscription": {
+    "accountTitle": "Account",
+    "activeUntil": "Active until {date}",
+    "choosePlan": "Choose a plan",
+    "daysLeft": "{days} days remaining",
+    "devicesLabel": "Devices",
+    "emailLabel": "Email",
+    "expiredOn": "Expired on {date}",
+    "historyDays": "+{days} days",
+    "historyEmpty": "No purchases yet",
+    "historyRecharge": "Purchase",
+    "historyReward": "Bonus",
+    "historyTitle": "Purchase history",
+    "loadFailed": "Failed to load. Please try again later.",
+    "navTitle": "My subscription",
+    "never": "No subscription yet",
+    "renew": "Renew",
+    "tierLabel": "Current tier",
+    "title": "Subscription"
   }
 }

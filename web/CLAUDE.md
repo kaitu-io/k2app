@@ -219,6 +219,25 @@ Markdown files in `content/{locale}/` are processed by Velite at build time and 
 **Manager routes bypass i18n middleware** — no locale prefix. Chinese-only admin UI.
 **Static routes take priority** over the `[...slug]` catch-all (Next.js default behavior). `/k2/[[...path]]` takes priority over `[...slug]` for all `/k2/*` paths.
 
+## 与 webapp 的职责边界（别在本站复刻账号中心）
+
+`webapp/` 已经是完整账号中心（设备、专属节点、邀请、购买历史、代付、改邮箱、反馈）。
+本站**不复刻**它 —— 边界按「用户此刻装没装 app」划，**不按功能划**：
+
+- **website = 还没装 app 的人**：搜到 → 看价格 → 买 → **当场确认买成功了** → 下载。
+  `/account` 只做订阅状态（到期时间、档位、购买记录），是购买闭环的最后一环，
+  不是账号中心。设备 / 节点 / 邀请管理永远只在 webapp。
+- **webapp = 已经在用的人**：所有日常账号管理。
+- **唯一的交叉是资金面**（钱包 / 提现），而且它是被规则逼出来的，不是历史包袱：
+  `webapp/src/App.tsx` 的 `/delegate` 路由在 iOS 上被显式摘掉（注释写明 Apple 3.1.1，
+  IAP 以外支付），webapp 的钱包入口也是 `openExternal` 外链回本站。**想靠"都塞进
+  webapp"消除两边的分裂，在 iOS 上做不到。**
+
+历史教训：2026-04-22 `fc5aa0d7` 删掉「成员管理」后，`/account` 只剩一个 `router.push('/purchase')`
+的空壳 —— 用户买完在网页上无处确认订单，`/g/[code]` 兑换页的「查看账号」也一并落空；
+同期 `getProHistories` 在本站成了零调用的死代码，而 webapp 里同一个接口活得好好的。
+**重复的那一份必然先腐烂。**
+
 ## Environment
 
 See `.env.example` for all variables.

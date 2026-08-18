@@ -32,5 +32,25 @@
     "downloadTitle": "準備完了 — アプリを入手",
     "downloadCta": "Overleap をダウンロード",
     "genericError": "エラーが発生しました。もう一度お試しください。"
+  },
+  "subscription": {
+    "accountTitle": "アカウント情報",
+    "activeUntil": "{date} まで有効",
+    "choosePlan": "プランを選ぶ",
+    "daysLeft": "残り {days} 日",
+    "devicesLabel": "登録デバイス",
+    "emailLabel": "メールアドレス",
+    "expiredOn": "{date} に期限切れ",
+    "historyDays": "+{days} 日",
+    "historyEmpty": "購入履歴はありません",
+    "historyRecharge": "購入",
+    "historyReward": "特典",
+    "historyTitle": "購入履歴",
+    "loadFailed": "読み込みに失敗しました。しばらくしてからお試しください。",
+    "navTitle": "マイサブスクリプション",
+    "never": "未購入",
+    "renew": "更新する",
+    "tierLabel": "現在のプラン",
+    "title": "サブスクリプション"
   }
 }

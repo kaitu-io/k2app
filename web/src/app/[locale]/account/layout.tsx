@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useEffect } from "react";
 import { useRouter } from "@/i18n/routing";
 import { useAuth } from "@/contexts/AuthContext";
-import { CircleDashed, Users, CreditCard, Wallet, Lock, LogOut } from "lucide-react";
+import { CircleDashed, Users, CreditCard, Wallet, Lock, LogOut, Receipt } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { useTranslations } from "next-intl";
@@ -64,6 +64,13 @@ export default function AccountLayout({
           },
         ]
       : [
+          // 首项是订阅概览而非直接跳购买页 —— 点「我的账号」应该先看到自己的
+          // 订阅状态，续费是紧随其后的动作，不是入口本身。
+          {
+            href: "/account",
+            label: t("account.subscription.navTitle"),
+            icon: Receipt,
+          },
           {
             href: "/purchase",
             label: t("admin.account.renew.title"),

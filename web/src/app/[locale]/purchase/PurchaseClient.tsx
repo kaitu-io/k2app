@@ -20,6 +20,7 @@ import type { Plan, Order, CreateOrderRequest, DelegateInfo } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-errors";
 import { useAppConfig } from "@/contexts/AppConfigContext";
 import MembershipBenefits from "@/components/MembershipBenefits";
+import SubscriptionStatusCard, { resolveSubscriptionState } from "@/components/SubscriptionStatusCard";
 import PurchaseStep1 from "@/components/PurchaseStep1";
 import PurchaseStep2 from "@/components/PurchaseStep2";
 import PurchaseStep3 from "@/components/PurchaseStep3";
@@ -534,6 +535,15 @@ export default function PurchaseClient() {
       {showNavigation && <Header />}
 
       <div className="container max-w-4xl xl:max-w-6xl 2xl:max-w-7xl mx-auto py-4 px-0 sm:py-8 sm:px-6 lg:px-8 space-y-6 sm:space-y-8">
+        {/* 当前订阅状态 —— 只对「已登录且订阅仍有效」的用户显示。
+            未登录 / 从未订阅 / 已过期一律不渲染：从 /s/CODE 落地的被邀请人
+            正属于这一类，他们的首屏必须保持是邀请奖励 + 登录表单，不能被
+            一张与他们无关的状态卡挤下去。compact 省掉续费 CTA —— 这一页
+            本身就是 CTA，再放一个按钮是噪音。 */}
+        {userProfile && resolveSubscriptionState(userProfile.expiredAt, Date.now() / 1000) === 'active' && (
+          <SubscriptionStatusCard profile={userProfile} compact />
+        )}
+
         {/* Status Alerts - Only show expired alert, remove trial mode alert */}
         {isExpired && (
           <div className="bg-orange-50 dark:bg-orange-950/20 border-l-4 border-orange-500 p-4 sm:p-6 rounded-r-lg">
