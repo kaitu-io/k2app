@@ -78,7 +78,6 @@ fn show_window(app: tauri::AppHandle) {
 fn main() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_localhost::Builder::new(14580).build())
         .plugin({
             let log_dir = resolve_log_dir();
             // K2_BUILD_LOG_LEVEL env var at compile time (default: debug)

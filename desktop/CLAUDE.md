@@ -58,7 +58,7 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 
 ## Rust Modules (`src-tauri/src/`)
 
-- **main.rs** — App setup: localhost plugin (14580), single-instance, process, updater, opener, clipboard-manager plugins. Wires tray + service + updater in setup closure. `RunEvent::ExitRequested` handler auto-applies pending updates.
+- **main.rs** — App setup: single-instance, process, updater, opener, clipboard-manager plugins. Wires tray + service + updater in setup closure. `RunEvent::ExitRequested` handler auto-applies pending updates.
 - **service.rs** — k2 daemon lifecycle. Routes VPN actions to the k2 daemon HTTP API at `:1777` on all platforms.
   - `daemon_exec`: HTTP to `:1777/api/core`
   - `ensure_service_running`: ping + version check + auto-install daemon (osascript on macOS, PowerShell elevated on Windows)
@@ -92,7 +92,6 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 
 ## Plugins
 
-- `tauri-plugin-localhost` — HTTP serving to avoid mixed content
 - `tauri-plugin-single-instance` — Show + focus existing window
 - `tauri-plugin-updater` — Auto-update with CDN endpoints
 - `tauri-plugin-process` — Process management
@@ -134,7 +133,6 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 
 ## Gotchas
 
-- WebKit blocks HTTPS→HTTP mixed content even for loopback — that's why we use localhost plugin
 - `main.rs` is the merge conflict hotspot — every module registers plugins/commands/setup there
 - k2 binary must be at `binaries/k2-{arch}-{os}` for Tauri sidecar resolution
 - Event permissions require `core:event:default` in capabilities (NOT `event:default`)
@@ -148,7 +146,17 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 - Windows cross-build from macOS: requires `cargo-xwin`, `makensis`, `osslsigncode`, `libp11`. See `docs/plans/2026-03-11-windows-build-on-macos.md` for full setup.
 - Web OTA boot flow and poller are `cfg!(debug_assertions)`-gated OFF — `yarn tauri dev` never navigates away from the Vite devUrl. Test OTA/migration only on release builds (`make build-macos`).
 - The window's initial URL is still the config default (legacy tauri:// origin); `web_ota::prepare_boot` navigates to `kaitu-ui://` in setup. The transient double-load is invisible (window hidden until frontend_ready) — do not "fix" it by hardcoding a url in tauri.conf.json (Windows needs the http://kaitu-ui.localhost form, and a config url would break dev mode).
-- `tauri-plugin-localhost` (port 14580) is registered but no window points at it — the "serves webapp via localhost" line at the top of this file predates verification; the actual UI origin history is tauri://localhost → kaitu-ui://localhost.
+- **`tauri-plugin-localhost` 已移除（2026-08-18），不要再加回来。** 它是 Tauri v2 脚手架
+  (`53c3e89b`) 带进来的样板：绑 `127.0.0.1:14580` 提供 HTTP 资源服务，但**从来没有窗口指向它**
+  （UI origin 历史是 tauri://localhost → kaitu-ui://localhost），全仓也无任何消费方。
+  代价却是致命的——插件在一个匿名 `std::thread` 里执行
+  `Server::http("localhost:14580").expect("Unable to spawn server")`，绑定失败即 panic，
+  再被 `[profile.release] panic = "abort"` 放大成整个进程 SIGABRT。线上实测：0.4.7 macOS
+  启动 221ms 后 `EXC_CRASH (SIGABRT)`，主线程还停在 `-[NSApplication finishLaunching]`
+  （crash report 的 Thread 4 帧地址与线上二进制 `unwrap_failed` 调用点逐位吻合）。
+  端口被另一个 k2app / Overleap 实例占住就必崩——两品牌桌面版共用同一份 `main.rs`，
+  端口也一样。它还注册在 `single-instance` **之前**，所以第二实例是崩溃还是静默 `exit(0)`
+  取决于赛跑结果。**任何"启动即崩、无日志"的桌面故障，先怀疑这一类启动期 panic。**
 
 ## Router LAN Bridge (`router_bridge.rs`)
 
