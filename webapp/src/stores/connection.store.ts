@@ -606,6 +606,15 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       const resp = await window._k2.run('up', { config, alwaysOn });
       console.warn('[Connection] TRACE _k2.run(up) returned t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms) code=' + resp.code);
 
+      // Post-await epoch guard, same contract as the pre-`up` guard above.
+      // `up` can outlive the intent that started it (user disconnects, or
+      // disconnects and reconnects, while it is in flight); its failure then
+      // describes a dead attempt and must not tear down the live one.
+      if (get().connectEpoch !== myEpoch) {
+        console.warn('[Connection] connect: up() returned after epoch change (mine=' + myEpoch
+          + ', current=' + get().connectEpoch + '), discarding result code=' + resp.code);
+        return;
+      }
 
       // If the connect call itself failed (e.g. VPN permission denied),
       // dispatch BACKEND_ERROR so the state machine exits 'connecting'.
@@ -618,6 +627,11 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       }
     } catch (err) {
       console.error('[Connection] connect failed:', err);
+      if (get().connectEpoch !== myEpoch) {
+        console.warn('[Connection] connect: up() threw after epoch change (mine=' + myEpoch
+          + ', current=' + get().connectEpoch + '), discarding');
+        return;
+      }
       vpnDispatch('BACKEND_ERROR', {
         error: { code: 570, message: err instanceof Error ? err.message : String(err) },
         isRetrying: false,
