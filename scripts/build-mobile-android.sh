@@ -79,6 +79,19 @@ echo "--- Syncing Capacitor Android ---"
 cd mobile && npx cap sync android
 cd "$ROOT_DIR"
 
+# --- k2-plugin JVM unit tests ---
+# Pure-JVM (no emulator, no device, seconds): the auto-update decision core in
+# AutoUpdatePlan.kt plus K2PluginUtils version/endpoint math. Until 2026-08
+# nothing in CI or scripts/test_build.sh ever ran src/test/, so the Kotlin
+# regression guards were dead weight — the native/web OTA decoupling
+# (AutoUpdatePlanTest) is only a real gate if this step exists. Runs BEFORE
+# assemble so a broken invariant fails fast.
+echo ""
+echo "--- Running k2-plugin unit tests ---"
+cd mobile/android
+./gradlew :k2-plugin:testDebugUnitTest
+cd "$ROOT_DIR"
+
 # --- Gradle build ---
 echo ""
 echo "--- Building Android ($BUILD_TYPE) ---"

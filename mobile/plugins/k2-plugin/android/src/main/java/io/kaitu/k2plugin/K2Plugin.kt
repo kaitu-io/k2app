@@ -890,123 +890,152 @@ class K2Plugin : Plugin() {
 
     // ── Auto-update check ───────────────────────────────────────────
 
+    /**
+     * Cold-start auto-update check. Runs BOTH lanes every time — the native APK
+     * notification and the silent web OTA. They are independent by design; see
+     * AutoUpdatePlan.kt for the field-confirmed regression that the old
+     * "notify native, then `return`" shape caused.
+     *
+     * This function is only the I/O shell: fetch + parse the two manifests,
+     * hand the parsed values to the pure [planAutoUpdate], then execute the
+     * resulting steps. Every decision lives in AutoUpdatePlan.kt so it stays
+     * unit-testable without Android or org.json.
+     */
     private fun performAutoUpdateCheck(forceDowngrade: Boolean = false) {
+        val channel: String
+        val cdnPrimary: String
+        val cdnFallback: String
+        val appVersion: String
         try {
-            val channel = getChannel()
-            // 1. Check native update first
-            val nativeResult = fetchManifest(
-                K2PluginUtils.androidManifestEndpoints(
-                    channel, K2PluginUtils.cdnPrimary(context), K2PluginUtils.cdnFallback(context)
-                )
-            )
-            if (nativeResult != null) {
-                val (manifest, baseURL) = nativeResult
-                val remoteVersion = manifest.getString("version")
-                val totalSize = manifest.optLong("size", 0)
-                val apkUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
-                val minAndroid = manifest.optInt("min_android", 0)
-                val localVersion = context.packageManager
-                    .getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
-
-                val shouldUpdate = if (forceDowngrade && localVersion.contains("-beta")) {
-                    remoteVersion != localVersion
-                } else {
-                    isNewerVersion(remoteVersion, localVersion)
-                }
-
-                if (shouldUpdate && Build.VERSION.SDK_INT >= minAndroid) {
-                    // Notify webapp — user opens download URL in system browser
-                    val data = JSObject()
-                    data.put("version", remoteVersion)
-                    data.put("url", apkUrl)
-                    notifyListeners("nativeUpdateAvailable", data)
-                    return
-                }
-            }
-
-            // 2. No native update — check web OTA
-            val webResult = fetchManifest(
-                K2PluginUtils.webManifestEndpoints(
-                    channel, K2PluginUtils.cdnPrimary(context), K2PluginUtils.cdnFallback(context)
-                )
-            )
-            if (webResult != null) {
-                val (manifest, baseURL) = webResult
-                val remoteVersion = manifest.getString("version")
-                val zipUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
-
-                // Check min_native compatibility
-                val minNative = manifest.optString("min_native", "")
-                val appVersionForCompat = context.packageManager
-                    .getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
-                if (!K2PluginUtils.isCompatibleNativeVersion(minNative, appVersionForCompat)) {
-                    Log.w(TAG, "Auto web OTA skipped: min_native=$minNative > app=$appVersionForCompat")
-                    return
-                }
-
-                webBridgeGateReason(manifest)?.let { reason ->
-                    Log.w(TAG, "Auto web OTA skipped: $reason")
-                    return
-                }
-
-                val webVersionFile = File(File(context.filesDir, "web-update"), "version.txt")
-                val localVersion = if (webVersionFile.exists()) {
-                    webVersionFile.readText().trim()
-                } else {
-                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
-                }
-
-                if (isNewerVersion(remoteVersion, localVersion)) {
-                    val webUpdateDir = File(context.filesDir, "web-update")
-                    val webBackupDir = File(context.filesDir, "web-backup")
-
-                    // Download the zip
-                    val zipData = fetchUrl(zipUrl)
-
-                    // Verify sha256 (always) + minisign (mandatory when manifest has "sig")
-                    try {
-                        verifyWebZip(zipData, manifest)
-                    } catch (ve: Exception) {
-                        Log.w(TAG, "Auto web OTA verification failed: ${ve.message}")
-                        return
-                    }
-
-                    // If existing web-update exists, move to web-backup
-                    if (webUpdateDir.exists()) {
-                        webBackupDir.deleteRecursively()
-                        webUpdateDir.renameTo(webBackupDir)
-                    }
-
-                    // Unzip to web-update/
-                    val tempZip = File(context.cacheDir, "webapp.zip")
-                    tempZip.writeBytes(zipData)
-                    try {
-                        unzip(tempZip, webUpdateDir)
-                    } finally {
-                        tempZip.delete()
-                    }
-
-                    // Flatten nested subdirectory if index.html not at root
-                    val indexFile = File(webUpdateDir, "index.html")
-                    if (!indexFile.exists()) {
-                        val contents = webUpdateDir.listFiles() ?: emptyArray()
-                        if (contents.size == 1 && contents[0].isDirectory) {
-                            val subdir = contents[0]
-                            subdir.listFiles()?.forEach { item ->
-                                item.renameTo(File(webUpdateDir, item.name))
-                            }
-                            subdir.deleteRecursively()
-                        }
-                    }
-
-                    // Write version for future comparison
-                    File(webUpdateDir, "version.txt").writeText(remoteVersion)
-                    Log.d(TAG, "Auto-update web OTA applied: $remoteVersion")
-                }
-            }
+            channel = getChannel()
+            cdnPrimary = K2PluginUtils.cdnPrimary(context)
+            cdnFallback = K2PluginUtils.cdnFallback(context)
+            appVersion = context.packageManager
+                .getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
         } catch (e: Exception) {
-            Log.w(TAG, "Auto-update check failed: ${e.message}")
+            // Both lanes need these; nothing meaningful to do without them.
+            Log.w(TAG, "Auto-update check aborted (no app version / CDN config): ${e.message}")
+            return
         }
+
+        val localWebVersion = try {
+            val f = File(File(context.filesDir, "web-update"), "version.txt")
+            if (f.exists()) f.readText().trim() else appVersion
+        } catch (e: Exception) {
+            appVersion
+        }
+
+        val plan = planAutoUpdate(
+            nativeManifest = {
+                fetchManifest(
+                    K2PluginUtils.androidManifestEndpoints(channel, cdnPrimary, cdnFallback)
+                )?.let { (manifest, baseURL) ->
+                    NativeManifestInfo(
+                        version = manifest.getString("version"),
+                        downloadUrl = resolveDownloadURL(manifest.getString("url"), baseURL),
+                        minAndroid = manifest.optInt("min_android", 0),
+                    )
+                }
+            },
+            webManifest = {
+                fetchManifest(
+                    K2PluginUtils.webManifestEndpoints(channel, cdnPrimary, cdnFallback)
+                )?.let { (manifest, baseURL) ->
+                    WebManifestInfo(
+                        version = manifest.getString("version"),
+                        downloadUrl = resolveDownloadURL(manifest.getString("url"), baseURL),
+                        minNative = manifest.optString("min_native", ""),
+                        minBridge = manifest.optInt("min_bridge", 0),
+                        hash = manifest.getString("hash"),
+                        sig = manifest.optString("sig", ""),
+                    )
+                }
+            },
+            appVersion = appVersion,
+            localWebVersion = localWebVersion,
+            sdkInt = Build.VERSION.SDK_INT,
+            forceDowngrade = forceDowngrade,
+        )
+
+        // Execute step by step, each in its own try: a throwing native
+        // notification must not swallow the web OTA that follows it. Failure
+        // isolation is the second half of the decoupling — the first half is
+        // planAutoUpdate never short-circuiting.
+        for (step in plan) {
+            try {
+                when (step) {
+                    is AutoUpdateStep.Skip ->
+                        Log.d(TAG, "Auto-update [${step.lane}] skipped: ${step.reason}")
+
+                    is AutoUpdateStep.NotifyNative -> {
+                        Log.d(TAG, "Auto-update [native] update available: ${step.version}")
+                        // Notify webapp — user opens download URL in system browser
+                        val data = JSObject()
+                        data.put("version", step.version)
+                        data.put("url", step.url)
+                        notifyListeners("nativeUpdateAvailable", data)
+                    }
+
+                    is AutoUpdateStep.ApplyWeb -> applyWebBundleFromAutoCheck(step.manifest)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Auto-update step ${step.javaClass.simpleName} failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Download, verify and stage a web OTA bundle into web-update/, effective
+     * at the next cold start. Body lifted verbatim from the pre-decoupling auto
+     * path — only the manifest access changed from JSONObject to the parsed
+     * [WebManifestInfo]. Verification still funnels through [verifyWebZip].
+     */
+    private fun applyWebBundleFromAutoCheck(info: WebManifestInfo) {
+        val webUpdateDir = File(context.filesDir, "web-update")
+        val webBackupDir = File(context.filesDir, "web-backup")
+
+        // Download the zip
+        val zipData = fetchUrl(info.downloadUrl)
+
+        // Verify sha256 (always) + minisign (mandatory when manifest has "sig")
+        try {
+            verifyWebZip(zipData, info.hash, info.sig)
+        } catch (ve: Exception) {
+            Log.w(TAG, "Auto web OTA verification failed: ${ve.message}")
+            return
+        }
+
+        // If existing web-update exists, move to web-backup
+        if (webUpdateDir.exists()) {
+            webBackupDir.deleteRecursively()
+            webUpdateDir.renameTo(webBackupDir)
+        }
+
+        // Unzip to web-update/
+        val tempZip = File(context.cacheDir, "webapp.zip")
+        tempZip.writeBytes(zipData)
+        try {
+            unzip(tempZip, webUpdateDir)
+        } finally {
+            tempZip.delete()
+        }
+
+        // Flatten nested subdirectory if index.html not at root
+        val indexFile = File(webUpdateDir, "index.html")
+        if (!indexFile.exists()) {
+            val contents = webUpdateDir.listFiles() ?: emptyArray()
+            if (contents.size == 1 && contents[0].isDirectory) {
+                val subdir = contents[0]
+                subdir.listFiles()?.forEach { item ->
+                    item.renameTo(File(webUpdateDir, item.name))
+                }
+                subdir.deleteRecursively()
+            }
+        }
+
+        // Write version for future comparison
+        File(webUpdateDir, "version.txt").writeText(info.version)
+        Log.d(TAG, "Auto-update web OTA applied: ${info.version}")
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -1027,14 +1056,20 @@ class K2Plugin : Plugin() {
      * user-triggered applyWebUpdate AND the cold-start auto path — the checks
      * must never fork between the two. Throws IOException on any failure.
      */
-    private fun verifyWebZip(zipData: ByteArray, manifest: JSONObject) {
-        val rawHash = manifest.getString("hash")
+    private fun verifyWebZip(zipData: ByteArray, manifest: JSONObject) =
+        verifyWebZip(zipData, manifest.getString("hash"), manifest.optString("sig", ""))
+
+    /**
+     * The single verification core. The JSONObject overload above and the
+     * auto-check path (which carries the fields on [WebManifestInfo]) both land
+     * here, so sha256 + minisign can never fork between the two paths.
+     */
+    private fun verifyWebZip(zipData: ByteArray, rawHash: String, sig: String) {
         val expectedHash = if (rawHash.startsWith("sha256:")) rawHash.removePrefix("sha256:") else rawHash
         val actualHash = sha256(zipData)
         if (actualHash != expectedHash) {
             throw java.io.IOException("Hash mismatch: expected $expectedHash, got $actualHash")
         }
-        val sig = manifest.optString("sig", "")
         if (sig.isNotEmpty() && !MinisignVerifier.verify(zipData, sig, K2PluginUtils.WEB_OTA_MINISIGN_PUBKEY)) {
             throw java.io.IOException("minisign signature verification failed")
         }
