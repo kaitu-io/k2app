@@ -215,8 +215,13 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		user.ExpiredAt = newExpiry
 		kind = "purchase"
 	} else {
-		newExpiry := applyRenewalCredit(user.ExpiredAt, priorPeriodEnd, newPeriodEnd)
-		creditSeconds = newExpiry - user.ExpiredAt
+		newExpiry := applyRenewalCredit(user.ExpiredAt, priorPeriodEnd, newPeriodEnd, now)
+		// Audited net add, measured from the base the credit was actually stacked on
+		// (mirrors the isFirst branch above). Measuring from a stale user.ExpiredAt
+		// would book the dead gap between an expired ledger and now as if this
+		// transaction had bought it, inflating both the clawback ledger and the
+		// human-readable Days audit.
+		creditSeconds = max(newExpiry-max(user.ExpiredAt, priorPeriodEnd, now), 0)
 		user.ExpiredAt = newExpiry
 		kind = "renewal"
 	}
@@ -256,8 +261,8 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		Type:        VipAppleSub,
 		ReferenceID: creditRow.ID,
 		// Days is floored display-only audit; CreditedSeconds (above) is the precise value.
-		Days:        int(creditSeconds / 86400),
-		Reason:      fmt.Sprintf("apple 订阅入账(%s) - %s", kind, info.TransactionId),
+		Days:   int(creditSeconds / 86400),
+		Reason: fmt.Sprintf("apple 订阅入账(%s) - %s", kind, info.TransactionId),
 	}).Error; err != nil {
 		return err
 	}
