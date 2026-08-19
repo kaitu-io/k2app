@@ -36,7 +36,13 @@ vi.mock('../../services/device-udid', () => ({
 }));
 
 vi.mock('../../services/cache-store', () => ({
-  cacheStore: { clear: vi.fn() },
+  cacheStore: {
+    clear: vi.fn(),
+    get: vi.fn(() => null),
+    // useUser 订阅用户缓存以跨实例同步；subscribe 必须返回退订函数，
+    // 它是 useEffect 的 cleanup。
+    subscribe: vi.fn(() => vi.fn()),
+  },
 }));
 
 vi.mock('../../stores', () => ({
