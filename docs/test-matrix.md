@@ -513,7 +513,7 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | B02 | D2 | 桌面 OTA 全链路 | 拉取→sha256+minisign 验签→下载→原子换盘→重启生效（bundle 带肉眼可辨标记） | **PASS** 2026-08-19（macOS，真 CDN）— `downloading UI 0.4.8.19892011 from https://d0.all7.cc/kaitu/web/uat/web/…` → `applied UI 0.4.8.19892011 (was 0.4.8), effective next launch` → 重启 `serving UI 0.4.8.19892011 from disk`。**判别式不用人造标记**：entry script 从内嵌的 `main-BnsKHI3B.js` 变为 OTA 的 `main-CHBucI3N.js`；`href=kaitu-ui://localhost/`、`rootChildren=1`、`rootHTMLLen=87741` —— 白屏修复在**当初炸掉的 DiskUi 路径**上成立 |
 | B03 | D2 | 桌面坏包回滚 | 白屏 bundle → `.boot-pending` 残留 → 移入 `quarantine/` + 回退 previous/内嵌 | **PASS** 2026-08-19 — 用真实坏包（入口 JS 前置 `throw`）而非模拟。启动1：磁盘 UI 起、JS 抛错、`ui_boot_ok` 不触发、`.boot-pending` 保留、poller 正确跳过该 tick（F1）。启动2：`previous UI boot unconfirmed — rolled back: RolledBackToEmbedded`，`current/` → `quarantine/0.4.8.19892011-20260819054448`，`quarantined-version.txt` 记版本，内嵌 UI 恢复正常渲染。再带同一 manifest 启动：`no update: version quarantined`（F2），不会装回来 |
 | B04 | D3 / D4 | 移动端 OTA | minisign 验签通过，冷启动生效 | TODO |
-| B05 | **D5**（/D8） | `min_native` 闸门负向门 | 0.4.7 存量机正确**静默跳过**，不下载不报错 | TODO |
+| B05 | **D5**（/D8） | `min_native` 闸门负向门 | 0.4.7 存量机正确**静默跳过**，不下载不报错 | **INVALID:用例前提不成立** 2026-08-19 — 存量机根本走不到 web 分支，`min_native` 从未被求值。真机实测见下方专段。这个用例若照原样执行会给出**假阳性**（「没下载、没报错」看起来像门生效，实际是 native 分支短路） |
 | B06 | D6 | Linux 磁盘覆盖 | 页面刷新即新 UI；`?ui=embedded` 逃生口回内嵌 | TODO |
 | B07 | 全平台 | 篡改测试 | 改 hash / 剥离 sig / 换签名密钥 → **全部拒绝应用** | **PASS（桌面）** 2026-08-19 — 本地 HTTP 服务器 + 真实 release 产物三发：① 合法 hash+伪造 sig → 下载后 `sig decode: Invalid encoding in minisign data`；② `min_desktop=0.9.9` → `no update: min_desktop not satisfied`，**HTTP 访问日志只有 latest.json、无 zip 请求**（门在下载前短路）；③ hash 全 0 → `sha256 mismatch`（早于 minisign）。移动端待真机 |
 | B08 | 全平台 | 核按钮 | 清空 `latest.json` → 停止更新且不崩 | **PASS（桌面）** 2026-08-19 — 生产两个源当前天然就是 403（web OTA 从未发布），app 打两条 WARN 后继续正常运行，无崩溃、无降级 |
@@ -526,13 +526,13 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | ID | 设备 | 用例 | 期望 | Status |
 |----|------|------|------|--------|
 | **A01** | **D1** | 该机保持 0.4.7 → 复现 SIGABRT → 装 0.4.8 启动 | 0.4.7 崩 / **0.4.8 不崩**（唯一正对照） | TODO |
-| A02 | D1 → D2 / D7 | 从 0.4.7 覆盖升级 | `kaitu-ui://` origin 迁移后**登录态不丢**、语言/日志级别/公告已读保留 | **PASS**（macOS，2026-08-18）— 16/16 键迁移到新 origin，6 项关键偏好逐字节一致；鉴权端点 200，登录态完好。桌面认证本就存在 Rust `storage.json`（与 origin 无关），迁移只搬偏好与缓存 |
+| A02 | D1 → D2 / D7 | 从 0.4.7 覆盖升级 | `kaitu-ui://` origin 迁移后**登录态不丢**、语言/日志级别/公告已读保留 | **PASS**（macOS，2026-08-18；**Android 0.4.6→0.4.8 覆盖升级 2026-08-19 亦 PASS**——签名指纹一致故 `adb install -r` 2 秒完成、数据保留；会员状态/到期日 2034-12-28/5 台设备/简体中文逐项一致，节点列表能拉到数据即证明 token 有效。Android 无 origin 迁移问题：`capacitor.config.ts` 在 v0.4.6 与 HEAD 均未设 `androidScheme`，origin 不变；那条 `kaitu-ui://` 迁移是 Tauri 桌面独有）— 16/16 键迁移到新 origin，6 项关键偏好逐字节一致；鉴权端点 200，登录态完好。桌面认证本就存在 Rust `storage.json`（与 origin 无关），迁移只搬偏好与缓存 |
 | A03 | D2 | panic hook 落盘 | 任意线程 panic 写入 `desktop.log`（早于 tauri-plugin-log 初始化） | TODO |
 | A04 | D2 / D7 | single-instance | 第二实例 exit 0（~200ms），首实例窗口置前 | **PASS**（macOS，2026-08-18）— 第二实例 474ms exit 0，首实例收到唤起回调并存活 |
 | A05 | D2 | Kaitu × Overleap 桌面并存 | 两品牌不抢 `io_kaitu_desktop_si.sock`（本地构建验；Overleap 不发布） | TODO |
 | A06 | D6 | `curl -fsSL https://kaitu.io/i/k2 \| sudo bash` | 安装成功、webui 可达、tarball sha256 校验通过 | TODO |
 | A07 | D3 / D4 | 装机 + bridge v2 | `checkReady` 返回 `bridgeVersion=2` | **PASS**（桌面侧，2026-08-18）— `_platform` 面完整，`updater.setChannel` 是函数（`ec25dfcf` 的能力探测在桌面同样生效）。移动端待真机 |
-| A08 | 全平台 | P0 连接 / 断开 / 错误显示 | 连得上、断得干净、错误走 i18n 不露原始串 | **PASS（连/断）+ FAIL:stale-poll-race**（macOS，2026-08-19）— 连接与断开的后端行为都干净；但断开时若撞上进行中的状态轮询，UI 会被陈旧响应打回「已连接」。详见下方专段 |
+| A08 | 全平台 | P0 连接 / 断开 / 错误显示 | 连得上、断得干净、错误走 i18n 不露原始串 | **PASS（连/断）+ FAIL:stale-poll-race**（macOS，2026-08-19；**Android 2026-08-19 连/断 PASS**，见下方 Android 段）— 连接与断开的后端行为都干净；但断开时若撞上进行中的状态轮询，UI 会被陈旧响应打回「已连接」。详见下方专段 |
 | A09 | D3 | iOS NE 变更面 | `PacketTunnelProvider` + Info.plist + entitlements 改动后**隧道正常起停**；extension 有显式 `CURRENT_PROJECT_VERSION`/`MARKETING_VERSION` | TODO |
 
 ---
@@ -678,6 +678,85 @@ connected 态的轮询间隔远长于 disconnected 态，把 15s 的窗口放大
 **是回归吗？不是。** `git diff v0.4.7 HEAD -- webapp/src/stores/vpn-machine.store.ts`
 **零改动**，转移表在 0.4.7 就是 `idle + BACKEND_CONNECTED → connected`。
 与 D06 同类：既有缺陷、非本次回归、可 Web OTA 热修。
+
+### 发布能力缺陷：移动端 web OTA 被 native 更新分支短路（真机确认，2026-08-19）
+
+**这一条推翻了发布信心模型的第一根支柱在移动端的适用条件。**
+
+`mobile/plugins/k2-plugin/android/.../K2Plugin.kt` 的 `performAutoUpdateCheck()` 是「先 native，
+后 web」的直线结构，且 native 有更新时直接 `return`：
+
+```kotlin
+val nativeResult = fetchManifest(androidManifestEndpoints(channel))
+if (nativeResult != null && shouldUpdate && Build.VERSION.SDK_INT >= minAndroid) {
+    notifyListeners("nativeUpdateAvailable", data)
+    return                       // ← web 分支永远到不了
+}
+val webResult = fetchManifest(webManifestEndpoints(channel))
+```
+
+**真机证据**（Redmi K40 Pro / Android 14 / 装 0.4.6 / 线上 `kaitu/android/latest.json` = 0.4.7）：
+
+| 观测 | 结果 |
+|---|---|
+| logcat `K2Plugin` | `load: starting auto-update check` 之后**零后续日志** |
+| 屏幕 | 顶部横幅「v0.4.7 已准备好安装 / Later / 立即更新」 |
+| web manifest 请求 | **一次都没发过** |
+
+两个 CDN 的 android manifest 均实测为 `0.4.7`（`d13jc1jqzlg4yt.cloudfront.net` 与 `d0.all7.cc` 同值）。
+
+**推论链**：
+
+1. 0.4.8 发布后 android manifest = 0.4.8 → 对 0.4.8 设备 `isNewerVersion` 为 false → 不短路
+   → **web OTA 本次发布可用**。这条缺陷**不阻断 0.4.8**。
+2. 但**发布 0.4.9 的 APK 那一刻**，manifest 变 0.4.9 → 所有仍在 0.4.8 的设备每次冷启动都短路
+   → **web OTA 对它们永久失效**，直到用户手动装 APK。
+3. native 更新是**用户可拒绝**的（截图里的 "Later"）。拒绝的用户从此收不到任何 web 热修。
+4. 「Web OTA 覆盖 webapp 176 文件、可小时级热修」这个承诺，在移动端只在**没发过更新 APK**
+   时成立——而需要热修的场景常常恰恰伴随发版。
+
+语义上两者根本不互斥：native 更新是「建议装新 APK」（可拒绝、异步、要用户操作），
+web OTA 是「静默修好当前这个版本」（无感、立即）。**用户拒绝升级时，web 热修反而更重要。**
+
+修复在 `fix/ota-native-web-decouple`（含 iOS / 桌面同构性排查）。
+
+**同时作废的既有判断**：设计文档与本矩阵此前称「移动端在野已经在轮询」——准确的说法是
+**在野客户端轮询的是 native manifest，web 分支被短路挡在后面**。B05 用例的整个前提由此不成立。
+
+### Android 真机 P0 + 功能面（Redmi K40 Pro / Android 14，2026-08-19）
+
+设备到手时装的是 **0.4.6**（非预期的 0.4.7）。开工第一件事是 `adb pull` 出 base.apk
+（23.7 MB，`versionCode 406`，签名 `579aad1a…`）——**"一次性资源"的约束由此解除**：
+0.4.6 状态可随时重建，且本机有两个 AVD 可承接负向门类用例。新构建的
+`release/0.4.8/Kaitu-0.4.8.apk`（`versionCode 408`）签名指纹与之**逐字节相同**，
+故可覆盖安装保数据。
+
+| 项 | 结果 |
+|---|---|
+| **P0 连接** | **PASS** — `startVpn`(configJSON 758B) → TUN `ipv4=10.0.0.2/24 ipv6=fd00::2/64 dns=[1.1.1.1,8.8.8.8]` → connecting→connected **1.6s**。中途一次 `reconnecting` 由 `Network available` 回调首触发引起，与 macOS 的 NWPathMonitor first-fire 同源，非缺陷 |
+| **真实通路** | **PASS（端到端，非"看起来连上了"）** — 设备出口 `35.182.199.248`（AWS ca-central-1）与选中的 **CA 1782** 一致；本机对照出口 `171.100.183.8`（泰国）。`tun0` 双栈 IPv4+IPv6 均在 |
+| **P0 断开** | **PASS** — UI 归位、出口 IP 回落本地、**`tun0` 已不存在**、前台服务摘除 |
+| **D05 国家排除** | **PASS** — 7 国 24 节点（8+5+3+2+2+2+2），与 macOS 同值；勾选实时生效（背景节点即刻标注「自动选择已排除」）、徽章计数正确、「清除」按钮清空后**对话框保留**（与 `CloudTunnelList.tsx:598` 的 `onClear` 语义一致） |
+| **D06 573 文案** | **FAIL，与 macOS 同形** — 展开态「连接失败」，折叠态 InlineErrorBar「⚠ **未知错误**」。双平台确认，构成修复后的对照基线 |
+| **A02 升级保态** | **PASS**，见 A02 行 |
+
+**方法学两条**（下次真机会再踩）：
+
+1. **盲点像素坐标会污染被测状态**。前期用截图估算坐标点击，误选了节点、误关了对话框，
+   一度把「清除按钮无效」当成 bug 上报的边缘。实际是**在对话框入场动画未完成时点击**。
+   改用 `adb shell uiautomator dump` 后精确了——**Capacitor WebView 的 accessibility 树
+   是完整暴露的**（含 `text` / `bounds` / `enabled` / `clickable`），真机 UI 断言应当以它为准，
+   截图只作旁证。
+2. **release APK 没开 WebView debugging**（`/proc/net/unix` 里无 `webview_devtools_remote_<pid>`），
+   所以 localStorage 读不到，A02 只能用 UI 判据；桌面那种 16 键逐字节比对在移动端做不了。
+
+**顺带发现（非本次回归，未修）**：账户页品牌横幅渲染为「**Kaitu**.io 开途」，
+而 CLAUDE.md 规定**中文用户面禁用 "Kaitu" 裸词**。0.4.6 上同样存在。是否改属品牌决策。
+
+**Kotlin 层已有、webapp 层缺的防护**：断开日志里出现
+`onStatus from stale engine — ignoring` —— 原生层显式忽略来自旧 engine 的状态回调。
+这正是 A08 在 webapp 层缺失的那类保护，说明该竞态在原生层已被意识到。
+`fix/stale-poll-race` 等于把这道防护补齐到前端。
 
 ### iOS 观测通道受限（D3 执行约束）
 
