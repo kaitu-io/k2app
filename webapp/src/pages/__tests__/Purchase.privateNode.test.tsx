@@ -47,6 +47,9 @@ vi.mock('../../services/cache-store', () => ({
   cacheStore: {
     get: vi.fn().mockReturnValue(null),
     set: vi.fn(),
+    // useUser / useAppConfig 订阅缓存以跨实例同步；subscribe 必须返回退订函数
+    // （useEffect 的 cleanup）。
+    subscribe: vi.fn(() => vi.fn()),
   },
 }));
 

@@ -85,6 +85,21 @@ export function useAppConfig(): UseAppConfigReturn {
     fetchConfig();
   }, []);
 
+  // 跨实例同步。本 hook 被 7 处调用，每处各持一份 state，而上面的 effect 依赖是 []
+  // ——挂载一次就再也不重拉。没有这个订阅，任何一处（或别的模块）刷新了配置，
+  // 其余实例会一直停在旧值直到组件卸载重挂；cacheStore.clear()（切换账号）之后
+  // 更是会永远显示上一个账号的配置。同 useUser 的跨实例同步，见 cacheStore.subscribe。
+  useEffect(() => {
+    return cacheStore.subscribe('api:app_config', () => {
+      const next = cacheStore.get<AppConfig>('api:app_config');
+      // 缓存被清空时不打成 null：配置为空会让消费方渲染出空态/降级分支，
+      // 而清空本身（登出）随后就会有新配置写进来。
+      if (!next) return;
+      setAppConfig(next);
+      setError(null);
+    });
+  }, []);
+
   return {
     appConfig,
     loading,
