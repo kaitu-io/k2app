@@ -345,6 +345,18 @@ build-android: pre-build build-webapp appext-android decrypt-keystore
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
 	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync android
+	@# k2-plugin unit tests gate the release build. This duplicates the same
+	@# step in scripts/build-mobile-android.sh because there are TWO ways to
+	@# produce a release APK — that script (CI, build-mobile.yml) and this
+	@# target (local) — and a gate that covers only one of them is not a gate.
+	@# Must run AFTER `cap sync`: gradle compiles node_modules/k2-plugin (a
+	@# COPY, not a symlink — see mobile/CLAUDE.md), so testing before the sync
+	@# would test the previous build's sources and pass vacuously.
+	@# Structurally better would be wiring this into gradle's assemble
+	@# dependency graph so every entry point inherits it; deliberately not done
+	@# during release verification, when changing the build graph costs more
+	@# than it saves.
+	cd mobile/android && ./gradlew :k2-plugin:testDebugUnitTest
 	cd mobile/android && KAITU_ANDROID_STORE_PASSWORD="$$KAITU_ANDROID_STORE_PASSWORD" OVERLEAP_ANDROID_STORE_PASSWORD="$$OVERLEAP_ANDROID_STORE_PASSWORD" ./gradlew assemble$(shell echo $(BRAND) | awk '{print toupper(substr($$0,1,1)) substr($$0,2)}')Release
 	@echo "--- Collecting artifacts ---"
 	@mkdir -p release/$(VERSION)
