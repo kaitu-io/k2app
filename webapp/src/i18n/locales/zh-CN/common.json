@@ -47,7 +47,10 @@
     "login": "登录",
     "viewDetails": "查看详情",
     "experimental": "实验性",
-    "edit": "编辑"
+    "edit": "编辑",
+    "next": "下一步",
+    "or": "或",
+    "changelog": "更新日志"
   },
   "errors": {
     "service": {
@@ -69,7 +72,8 @@
       "repairFailed": "网络修复失败，请手动检查设置",
       "repairDNS": "DNS 修复失败",
       "repairRoute": "路由修复失败",
-      "repairPreFailed": "网络修复准备失败"
+      "repairPreFailed": "网络修复准备失败",
+      "unavailable": "网络不可用，请检查设备的网络连接"
     },
     "server": {
       "unavailable": "服务器不可用，请稍后重试",
@@ -107,7 +111,12 @@
       "forbidden": "服务器证书验证失败",
       "protocolError": "协议握手失败，请更换节点",
       "connectionFatal": "连接失败，请重试或更换节点",
-      "permissionDenied": "VPN 权限未授予，请在系统设置中允许 VPN 连接"
+      "permissionDenied": "VPN 权限未授予，请在系统设置中允许 VPN 连接",
+      "environmentSetupFailed": "本机网络环境配置失败，请检查系统权限后重试",
+      "startFailed": "启动服务失败，请重试",
+      "reconnectFailed": "重新连接失败，请重试",
+      "timeout": "操作超时，请重试",
+      "allAddrsFailed": "所有服务器地址均连接失败，请更换节点"
     },
     "auth": {
       "logoutFailed": "登出失败，请重试",

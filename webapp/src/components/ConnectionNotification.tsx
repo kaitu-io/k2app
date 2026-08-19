@@ -24,7 +24,7 @@ import {
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import type { ControlError } from '../services/vpn-types';
-import { getErrorI18nKey } from '../services/vpn-types';
+import { getErrorDefaultText, getErrorI18nKey } from '../services/vpn-types';
 
 type NotificationType = 'info' | 'warning' | 'error';
 
@@ -191,8 +191,8 @@ export function ConnectionNotification({
             wordBreak: 'break-word',
           }}
         >
-          {t(`common:${getErrorI18nKey(error.code)}`, {
-            defaultValue: t('common:status.error'),
+          {t(getErrorI18nKey(error.code), {
+            defaultValue: getErrorDefaultText(error.code) ?? t('common:status.error'),
           })}
         </Typography>
       </Stack>

@@ -95,18 +95,27 @@ DO:
 | No i18n | Backend messages are English-only |
 | Security | Exposes internal API paths |
 
-Error code-to-i18n mapping lives in `utils/errorCode.ts`. Use `handleResponseError()` and `getErrorMessage()` from that module. In catch blocks, log the raw error and show an i18n fallback string to the user.
+**Where the mapping lives**: `utils/errorCatalog.ts` — the single declaration of code → i18n key, split into **two** tables by ORIGIN because the Center API and the k2 engine independently chose HTTP-aligned codes whose meanings collide (400/401/403/503 mean different things on each side):
+
+| Table | Channel | Rendered by |
+|---|---|---|
+| `API_ERROR_CATALOG` | `SResponse.code` from cloudApi | `getErrorMessage()` / `handleResponseError()` (`utils/errorCode.ts`) |
+| `ENGINE_ERROR_CATALOG` | `ControlError.code` from `_k2.run()` | `getErrorI18nKey()` (`services/vpn-types.ts`) — returns a **fully-qualified** `ns:key` |
+
+Never hand-write a code→key mapping outside that file. In catch blocks, log the raw error and show an i18n fallback string to the user.
+
+`ENGINE_ERROR_CODES` in the same file mirrors `k2/engine/error.go`; `services/__tests__/k2-engine-codes.test.ts` parses the Go source and fails on drift — but **only where the `k2/` submodule is checked out**, which the webapp CI job is not. `utils/__tests__/errorCatalog.test.ts` is the always-running half: it fails if any declared code lacks copy in all 7 locales. `i18n/__tests__/static-keys.test.ts` does the same for every statically-written `t('key')` in `src/` (dynamic template keys are a known blind spot).
 
 ### API Error Code Constitution
 
-Every backend error code (`api/response.go`) MUST have a matching entry in `utils/errorCode.ts`.
+Every backend error code (`api/response.go`) MUST have a matching entry in `utils/errorCatalog.ts`.
 
 Checklist for new backend error codes:
 1. Add constant to `api/response.go`
-2. Add to `ERROR_CODES` in `utils/errorCode.ts`
-3. Add `case` in `getErrorMessage()` with i18n key
+2. Add to `ERROR_CODES` in `utils/errorCatalog.ts`
+3. Add a row to `API_ERROR_CATALOG` (or list the code in `LOG_ONLY_CODES` if it is deliberately never shown) — `getErrorMessage()` derives from the table, there is no `switch` to edit
 4. Add i18n translation in all 7 locales
-5. Never duplicate error code constants outside `errorCode.ts`
+5. Never duplicate error code constants outside `errorCatalog.ts`
 6. **Regenerate the cross-layer contract** — the error-code registry is part of
    `contracts/api-contract.json`, so a new constant fails `TestExportContract`
    until you run `cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./...`

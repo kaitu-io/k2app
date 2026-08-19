@@ -47,7 +47,10 @@
     "login": "登入",
     "viewDetails": "查看詳情",
     "experimental": "實驗性",
-    "edit": "編輯"
+    "edit": "編輯",
+    "next": "下一步",
+    "or": "或",
+    "changelog": "更新日誌"
   },
   "errors": {
     "service": {
@@ -69,7 +72,8 @@
       "repairFailed": "網絡修復失敗，請手動檢查設定",
       "repairDNS": "DNS 修復失敗",
       "repairRoute": "路由修復失敗",
-      "repairPreFailed": "網絡修復準備失敗"
+      "repairPreFailed": "網絡修復準備失敗",
+      "unavailable": "網絡無法使用，請檢查裝置的網絡連線"
     },
     "server": {
       "unavailable": "伺服器不可用，請稍後重試",
@@ -107,7 +111,12 @@
       "forbidden": "伺服器憑證驗證失敗",
       "protocolError": "協議握手失敗，請更換節點",
       "connectionFatal": "連線失敗，請重試或更換節點",
-      "permissionDenied": "VPN 權限未授予，請喺系統設定中允許 VPN 連線"
+      "permissionDenied": "VPN 權限未授予，請喺系統設定中允許 VPN 連線",
+      "environmentSetupFailed": "本機網絡環境設定失敗，請檢查系統權限後重試",
+      "startFailed": "啟動服務失敗，請重試",
+      "reconnectFailed": "重新連線失敗，請重試",
+      "timeout": "操作逾時，請重試",
+      "allAddrsFailed": "所有伺服器位址均連線失敗，請更換節點"
     },
     "auth": {
       "logoutFailed": "登出失敗，請重試",

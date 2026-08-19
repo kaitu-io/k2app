@@ -174,7 +174,7 @@ export default function Changelog() {
           opacity: isLoading ? 0.7 : 1,
           transition: 'opacity 0.3s ease-in-out'
         }}
-        title={t('changelog.title', 'Changelog')}
+        title={t('common:common.changelog', 'Changelog')}
         loading="lazy"
       />
     </Box>

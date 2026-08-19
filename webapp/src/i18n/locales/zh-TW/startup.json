@@ -72,6 +72,8 @@
       "description": "錯誤訊息已自動回報，我們會盡快修復。",
       "details": "錯誤詳情",
       "retry": "重試"
-    }
+    },
+    "installing": "正在安裝...",
+    "beingInstalled": "正在安裝中"
   }
 }

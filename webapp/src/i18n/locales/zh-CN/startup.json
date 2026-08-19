@@ -72,6 +72,8 @@
       "description": "错误信息已自动上报，我们会尽快修复。",
       "details": "错误详情",
       "retry": "重试"
-    }
+    },
+    "installing": "正在安装...",
+    "beingInstalled": "正在安装中"
   }
 }

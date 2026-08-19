@@ -72,6 +72,8 @@
       "description": "Error has been automatically reported, we'll fix it soon.",
       "details": "Error Details",
       "retry": "Retry"
-    }
+    },
+    "installing": "Installing...",
+    "beingInstalled": "is being installed..."
   }
 }

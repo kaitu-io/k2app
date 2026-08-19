@@ -90,7 +90,7 @@ export function UpdateNotification() {
     <div style={styles.container}>
       <div style={styles.message}>
         <span style={styles.version}>v{updateInfo.newVersion}</span>
-        {' '}{isInstalling ? t('startup:app.installing', 'is being installed...') : t('startup:app.readyToInstall', 'is ready to install')}
+        {' '}{isInstalling ? t('startup:app.beingInstalled', 'is being installed...') : t('startup:app.readyToInstall', 'is ready to install')}
       </div>
       <div style={styles.buttons}>
         <button
@@ -98,7 +98,7 @@ export function UpdateNotification() {
           onClick={dismissUpdate}
           disabled={isInstalling}
         >
-          {t('startup:app.later', 'Later')}
+          {t('common:common.later', 'Later')}
         </button>
         <button
           style={isInstalling ? styles.buttonPrimaryDisabled : styles.buttonPrimary}

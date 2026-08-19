@@ -10,9 +10,15 @@ vi.mock("react-i18next", () => ({
       if (typeof optsOrFallback === "string") return optsOrFallback;
       if (optsOrFallback && typeof optsOrFallback === "object") {
         const opts = optsOrFallback as Record<string, unknown>;
+        // Real i18next treats `{ defaultValue }` exactly like the string 2nd
+        // argument. The mock must too, or a call site switching between the two
+        // forms fails here for reasons that have nothing to do with the code
+        // under test.
+        const base =
+          typeof opts.defaultValue === "string" ? opts.defaultValue : key;
         const interpolated = Object.entries(opts).reduce<string>(
           (acc, [k, v]) => acc.replace(`{{${k}}}`, String(v)),
-          key,
+          base,
         );
         return interpolated;
       }

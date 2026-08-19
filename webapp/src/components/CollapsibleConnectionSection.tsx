@@ -20,7 +20,7 @@ import { ConnectionButton } from './ConnectionButton';
 import { CompactConnectionButton } from './CompactConnectionButton';
 import { useLayout } from '../stores/layout.store';
 import type { ControlError } from '../services/vpn-types';
-import { getErrorI18nKey } from '../services/vpn-types';
+import { getErrorDefaultText, getErrorI18nKey } from '../services/vpn-types';
 
 type ServiceState =
   | 'disconnected'
@@ -147,8 +147,8 @@ export function CollapsibleConnectionSection({
                 whiteSpace: 'nowrap',
               }}
             >
-              {error && t(`common:${getErrorI18nKey(error.code)}`, {
-                defaultValue: t('common:status.error'),
+              {error && t(getErrorI18nKey(error.code), {
+                defaultValue: getErrorDefaultText(error.code) ?? t('common:status.error'),
               })}
             </Typography>
           </Stack>
