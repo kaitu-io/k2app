@@ -236,8 +236,10 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 		user.ExpiredAt = newExpiry
 		kind = "purchase"
 	} else {
-		newExpiry := applyRenewalCredit(user.ExpiredAt, priorPeriodEnd, f.PeriodEnd)
-		creditSeconds = newExpiry - user.ExpiredAt
+		newExpiry := applyRenewalCredit(user.ExpiredAt, priorPeriodEnd, f.PeriodEnd, now)
+		// Audited net add, measured from the base the credit was stacked on — see the
+		// matching comment in creditAppleTransaction.
+		creditSeconds = max(newExpiry-max(user.ExpiredAt, priorPeriodEnd, now), 0)
 		user.ExpiredAt = newExpiry
 		kind = "renewal"
 	}
@@ -284,7 +286,7 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 }
 
 // applyStripeSubscriptionUpdate 落地 customer.subscription.updated：同步 auto_renew
-//（=!cancel_at_period_end）与 status。绝不 re-grant、绝不改用户权益到期（取消后用户
+// （=!cancel_at_period_end）与 status。绝不 re-grant、绝不改用户权益到期（取消后用户
 // 仍享有到周期结束——对标 applyRenewalInfo 的铁律）；revoked terminal 绝不复活。
 // 未知订阅（绑定发生在 invoice.paid）→ 跳过。
 func applyStripeSubscriptionUpdate(ctx context.Context, s *stripe.Subscription) error {
@@ -330,7 +332,7 @@ func markStripeSubscriptionDeleted(ctx context.Context, s *stripe.Subscription) 
 
 // recordStripeRefundAlert 被动记账退款：Slack 告警 + 尽力归属本地用户。
 // 不自动 clawback、不自动置 revoked——主动退款/权益回收走 admin 后续迭代
-//（仓库既定「支付网关不退款」原则在 Stripe 侧的过渡形态）。
+// （仓库既定「支付网关不退款」原则在 Stripe 侧的过渡形态）。
 func recordStripeRefundAlert(ctx context.Context, raw []byte) error {
 	var ch stripe.Charge
 	if err := json.Unmarshal(raw, &ch); err != nil {

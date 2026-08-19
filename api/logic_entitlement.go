@@ -19,16 +19,25 @@ func applyGiftCredit(currentExpiredAt, seconds, now int64) int64 {
 // newPeriodEnd is the transaction's expiresDate. Credits only the forward delta,
 // stacked on top of whatever the ledger holds, so gifts are never absorbed (INV3).
 // Monotonic & safe: a non-advancing transaction credits 0.
-func applyRenewalCredit(currentExpiredAt, priorPeriodEnd, newPeriodEnd int64) int64 {
+//
+// The delta is credited from `now` when the ledger AND the subscription's prior
+// coverage are both already in the past — the same "from now if expired" rule
+// applyGiftCredit uses. Without it, a late-credited renewal (missed notification,
+// backlogged StoreKit transaction, reconciliation catch-up) lands its whole period
+// in the past and the paying user gets nothing: exactly threat T6 (under-credit →
+// paying user locked out), which the spec's capture defences do NOT cover — they
+// only guarantee the transaction gets credited, not that the time is usable.
+//
+// This deliberately trades away the spec's "cumulative alignment with Apple" (§5)
+// in this one branch. An expired ledger means we did not serve that window, so
+// aligning to it would charge the user for our own crediting delay. Alignment is
+// preserved wherever the ledger is still live, which is every normal renewal.
+func applyRenewalCredit(currentExpiredAt, priorPeriodEnd, newPeriodEnd, now int64) int64 {
 	delta := newPeriodEnd - priorPeriodEnd
 	if delta <= 0 {
 		return currentExpiredAt
 	}
-	base := currentExpiredAt
-	if base < priorPeriodEnd {
-		base = priorPeriodEnd
-	}
-	return base + delta
+	return max(currentExpiredAt, priorPeriodEnd, now) + delta
 }
 
 // applyClawback removes `seconds` on refund/revoke, never pushing below now (INV2).
