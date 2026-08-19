@@ -413,7 +413,7 @@ emotion 的 `css`/`css-global` 长度均为 0。
 | G02 | `build-windows` CI 红（SimplySign 云会话过期） | ci.yml 全绿（OSV-Scanner 除外，见 `project_osv_accepted_residual_vulns`） | 反复项 — CI 侧曾于 `89898dad` 全绿（含 build-windows），随后 **同日再次掉线**（`1a3621f4` 红）。已再次自助重连并用 `windows-sign-preflight.sh` 真实私钥签名确认。**这条会一掉再掉：会话有有效期，凡要出 Windows 产物就先跑一次 preflight**（`--list-slots` 有 token ≠ 能签，见下方记录） |
 | G03 | web OTA 地板锚点 + 契约门 + iOS channel | 见下方 G03 记录 | **DONE** `ec25dfcf` |
 | G04 | 契约门四道 | bridge-contract golden、api-contract（`-count=1`）、brand-purity、白屏冒烟门全绿 | **DONE** — 四道全绿。白屏冒烟门已**扩为遍历所有启动 URL 形态**（原门只测 `/`，漏掉了外壳实际使用的 `/index.html`，见上方阻断项） |
-| G05 | 全量测试 | webapp vitest / cargo test / go test / `scripts/test_build.sh` | **api 已解除阻塞** 2026-08-19 — Docker 起来后 `dev-mariadb` 绑 `127.0.0.1:3306`（更精确者胜），`go test -v ./...` = **1211 PASS / 0 FAIL / 1 SKIP**，且 `skipIfNoConfig` 触发 **0 次**（判据是这个，不是耗时）。唯一 SKIP 是 `TestBrandIsolationMatrix/01_SameEmail_DualBrand…` 子测试自带。webapp 117 files/1337 passed、desktop cargo 180、mcp ok、manifest 门 11/11；`test_build.sh` 仍待跑 |
+| G05 | 全量测试 | webapp vitest / cargo test / go test / `scripts/test_build.sh` | **api 已解除阻塞** 2026-08-19 — Docker 起来后 `dev-mariadb` 绑 `127.0.0.1:3306`（更精确者胜），`go test -v ./...` = **1211 PASS / 0 FAIL / 1 SKIP**，且 `skipIfNoConfig` 触发 **0 次**（判据是这个，不是耗时）。唯一 SKIP 是 `TestBrandIsolationMatrix/01_SameEmail_DualBrand…` 子测试自带。webapp 117 files/1337 passed、desktop cargo 180、mcp ok、manifest 门 11/11；`test_build.sh` **已跑完 14/15**（2026-08-19）——唯一的红是**门本身陈旧**而非产物：它把 iOS `MARKETING_VERSION` 与 package.json 逐字比，而 `1a3621f4` 后营销版本是重映射的（`4.4.8` 才对）。已在 `fix/test-build-ios-version-gate` 修正，见下方记录 |
 | G06 | k2 submodule 指针 | `6bc70b0` 且 `LinuxBridgeVersion=2` | **DONE** — 已确认 |
 | G07 | 版本对齐 | package.json / Cargo.toml / build.gradle / `k2AppVersion` 皆 0.4.8；iOS build 号 **4408990** | **DONE** `1a3621f4` — `check-versions` 扩为四方对齐并已在 CI 通过。iOS 编号方案重设计（`89898dad`）：`4000000 + MINOR*1e5 + PATCH*1e3 + SLOT*10 + REV`，0.4.8 正式版 = **4408990**，高于 ASC 上已烧掉的 440899 / 440900 |
 | G08 | 重打 `v0.4.8` tag | origin 上现指向 `757467a5`（8-02 旧内容），需删除重打到当前 main | **等授权** |
@@ -543,12 +543,12 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 
 | ID | 设备 | 用例 | 对应变更 | Status |
 |----|------|------|----------|--------|
-| D01 | D2 / D4 | **Router 顶级标签**：发现→绑定→设备列表→改名/改密→解绑 | `0fe3e92c` 等 k2r 全套 | TODO |
+| D01 | D2 / D4 | **Router 顶级标签**：发现→绑定→设备列表→改名/改密→解绑 | `0fe3e92c` 等 k2r 全套 | **部分 PASS**（macOS，2026-08-19）— 无路由器时 Router tab 确实不渲染 ✓；直接导航 `/router` 落到空 Outlet、**不白屏不崩、底部导航保留**（`rootChildren` 仍为 1）✓。绑定/改名/解绑全链路仍需 D9 |
 | D02 | D9 | Router 控制密钥鉴权 + anchor 探测（`10.17.79.1`） | `55cf1113` / `91683414` | TODO |
 | D03 | D2 / D4 | **双连接互斥**：app 与路由器同时连 → 排他对话框 + 接管横幅 | `d3897578` / `773c8880` | TODO |
 | D04 | D9 | 企业多槽表单（槽位列表、告警徽章、默认落地页） | `9ce69c02` | TODO |
-| D05 | D2 / D4 | **国家排除过滤**：漏斗图标→对话框→排除 chip→自动选择生效 | `9a8a21f0` / `23b2f60f` | TODO |
-| D06 | D2 | 全部国家被排除 → 错误码 **573** 文案正确（不是"未知错误"） | `2e48ec15` | TODO |
+| D05 | D2 / D4 | **国家排除过滤**：漏斗图标→对话框→排除 chip→自动选择生效 | `9a8a21f0` / `23b2f60f` | **PASS**（macOS，2026-08-19）— `auto-country-filter-btn` → 对话框列出 7 国 24 节点 → 勾选美国后徽章 `0`→`1` → 全选后 `7`；服务器面板出现 chip「自动选择 · 已排除 7 个国家/地区」，且每个节点条目标注「自动选择已排除 + 国家名」 |
+| D06 | D2 | 全部国家被排除 → 错误码 **573** 文案正确（不是"未知错误"） | `2e48ec15` | **FAIL:573-falls-through-to-unknown**（macOS，2026-08-19）— 失败形态精确命中本行点名要避免的那个。详见下方专段 |
 | D07 | D2 | **端口/协议/游戏规则**：MatchConfig 的 port/protocol/games 预设实际生效 | `b2d36efe` / `0be1d77` | TODO |
 | D08 | D3 | **Apple IAP 建单**：沙盒购买 → 建单正确、首单判定不恒真、分销返现入账 | `07948c1d` / `3caabab6` / `fd179e9b` | TODO |
 | D09 | D3 | IAP 沙盒交易**不建订单**；会员过期续费不报"失败无信息"（对应工单 3537） | `fd179e9b` | TODO |
@@ -556,9 +556,97 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | D11 | D2 | 窄屏 Account 页邮箱行不溢出、不压住按钮 | `1fb5dbc8` | TODO |
 | D12 | D2 | **chunk-reload-guard**：陈旧 chunk 场景自动恢复，不白屏 | `f5a2cea1` | TODO |
 | D13 | D7 | **appbypass 应用列表可见性**（Windows 三连修） | `717552be` F2/F3/F4 | TODO |
-| D14 | D2 / D4 | i18n 七语种关键页面无缺键（Router/国家过滤/573/409001 均为新增键） | 多处 | TODO |
+| D14 | D2 / D4 | i18n 七语种关键页面无缺键（Router/国家过滤/573/409001 均为新增键） | 多处 | **部分 PASS + 1 FAIL**（静态，2026-08-19）— 七语种 1390 键集合完全一致（0 缺 0 多）；但源码侧 647 个静态 `t('ns:key')` 引用比对出 10 个键在七语种全不存在，其中 **`RouterDevices.tsx` 两处 `t('common:cancel')` 无默认值兜底 → 取消按钮渲染出字面量 `common:cancel`**（正确键 `common:common.cancel` 存在）。详见下方专段 |
 
 ---
+
+### D06 根因：VPN 连接错误有两套映射，连接失败走的是缺 40 个码的那套
+
+**这是结构性的，D06 只是它的一个样本。**
+
+链路（每一环都实测/读码确认，非推理）：
+
+1. `connection.store.ts` **正确**检出全排除并派发
+   `BACKEND_ERROR` + `{code:573, message:'All auto-pick candidates excluded by country filter'}`
+   —— console 实证：`[Connection] connect: Auto mode but no tunnel available (all candidates excluded by country filter), aborting`
+2. `vpn-machine.store.ts` **正确**落 error（`nextState==='idle'` 会自动清 error，但 `payload wins` 覆盖回来）
+3. **展开态**（默认）`ConnectionButton` 对 error 的唯一反应是 `t('common:status.error')` = **「连接失败」**，本就拿不到具体文案
+4. **折叠态** `InlineErrorBar` 走 `t('common:' + getErrorI18nKey(573))`，而
+   `vpn-types.ts` 的 `getErrorI18nKey` **errorMap 里没有 573** → `'errors.unknown'` = **「未知错误」**
+5. error 在 ≤15s 后被下一次 status 轮询静默清除（`BACKEND_DISCONNECTED` → `idle` → `error=null`，payload 无 error 故不覆盖）
+
+> 观测教训：第一次取样是在轮询清除之后，看到的是「未连接」，据此差点误判成"错误完全不显示"。
+> 改为点击后 150/400/900/1800ms 连续取样才看到「连接失败」。**错误态有寿命，取样必须紧跟动作。**
+
+**规模**（脚本统计，非估计）：
+
+| 映射 | 覆盖 |
+|---|---|
+| `ERROR_CODES` 定义 | 70 个码 |
+| `errorCode.ts` `getErrorMessage()` | 69 个，文案精确 |
+| **`vpn-types.ts` `getErrorI18nKey()`**（VPN 连接失败走这条） | **9 个** |
+
+引擎类错误码（100–599）共 47 个，`getErrorI18nKey` 未覆盖 **40 个** → 全部显示「未知错误」，
+而其中 **38 个在 `getErrorMessage` 里早有精确文案**。文案不缺，是这条路径拿不到。
+
+**是回归吗？不是。** `git show v0.4.7:webapp/src/services/vpn-types.ts` 的 `getErrorI18nKey`
+与 HEAD **一字不差**（同样 9 个码）。但 **573 是 0.4.8 新增的**（v0.4.7 只有 572），
+所以这是**新功能的验收未达标**，不是升级变差。
+
+**发布影响**：不构成阻断（体验不比 0.4.7 差），但国家排除过滤是本次主打功能，
+用户全排除后看到「未知错误」且无从下手 → 直接转工单。修复成本极低（errorMap 加行），
+且在 webapp 层 → **Web OTA 可热修**。
+
+**修法警告**：这是"同一枚举被 N 个手写谓词列举"的形状（见
+`feedback_same_shape_bug_means_structural_fix`）。逐个补码是第三次补洞；
+正确做法是让两套映射共用一个事实源，并加覆盖守卫（新增错误码若两处都没有 → 测试红）。
+
+### D14 附带发现：`RouterDevices.tsx` 的取消按钮会渲染出键名
+
+`t('common:cancel')` × 2 处，**正确键是 `common:common.cancel`（已确认存在）**，且**未传默认值**。
+`i18n.ts` 没有配 `parseMissingKeyHandler` / `saveMissing` / `returnNull`，i18next 默认行为即**回显 key**
+→ 两个对话框的取消按钮显示字面量 `common:cancel`。落在本次新增的 Router 面（D01）。
+待 D9 到位时活体复核。
+
+另 9 个缺键有默认值兜底、不崩，但语言错位：`common:common.next`→「下一步」、
+`invite:invite.qrCodeGenerationFailed`→「二维码生成失败」**给英语用户看中文**；
+4 个 `common:errors.vpn.*` 给中文用户看英文。
+
+> 本检查的盲区（如实记）：27 处动态键（模板串/变量）抓不到；
+> "目标语言值与中文源逐字相同"这条判别式基本失效——ja 的「保存」「成功」、
+> zh-HK/zh-TW 的繁简同形字都是合法同值，区分不出真未翻译。
+
+### 台面门修正：`test_build.sh` 的 iOS 判据（`f0f67227`）
+
+跑 `test_build.sh` 得 14/15，唯一的红是门陈旧：它把 `MARKETING_VERSION` 与 package.json
+逐字比，而 `1a3621f4` 后 iOS 营销版本是重映射的（`4.4.8` 才对）。CI 的 `check-versions`
+早已改成四方对齐，**两道门对同一件事判据矛盾**。
+
+修的时候发现更深的问题：**这一整节跑在 `make pre-build` 之后**，而 pre-build 会调
+`sync-version` 把这些文件写成 `build-mobile-ios.sh` 说的值。所以只要"向生产公式要期望值"，
+公式自己坏掉时两边一起漂移，**门永远绿**。故补两条不调用该脚本的独立判别式
+（重映射不变式：major 固定 4、minor/patch 跟随 package.json；build 号形状 `4NNNNNN`）。
+
+变异验证三次，每次只打中一道防线，互不重叠：
+
+| 变异 | 独立判别式 | 比对门 |
+|------|-----------|--------|
+| 重映射 `4.` → `5.` | **FAIL** | 绿（拿到 5.4.8 仍报 match） |
+| build 号返回 `oops` | **FAIL** | — |
+| `sync-version` 的 pbxproj sed 失配 + 仓库留旧值 4.4.7 | 绿 | **FAIL** |
+
+基线 9/9（原 5 项）。
+
+> 观测更正：先前记的 "有失败却 exit 0" 是我自己管道里 `tail` 的退出码，脚本 `exit 1` 逻辑本身正确。
+
+### ⚠️ 本地 `build-macos-test` 产物名叫 universal，内容是 arm64-only
+
+`make build-macos-test` = `--single-arch --skip-notarization --features=mcp-bridge`，
+产出 `release/0.4.8/Kaitu_0.4.8_universal.pkg`，但 `pkgutil --expand-full` + `lipo -info`
+证明内部是 **`Non-fat file: arm64`**。命名没跟着 `--single-arch` 走。
+
+**对本编排的实际杀伤**：**D1 是 macOS Intel，且 A01 是一次性不可复原的对照实验**。
+拿这个包去装 D1 会直接毁掉该实验。**给 D1 的必须是 CI 产出的包，不是本地 build-macos-test 产物。**
 
 ## 阶段 C — k2 核心回归（`ef6c0b2 → 6bc70b0`，上轮 UAT 未覆盖段）
 
