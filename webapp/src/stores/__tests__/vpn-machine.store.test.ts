@@ -730,3 +730,203 @@ describe('initializeVPNMachine — safety-net poll (event-driven mode)', () => {
     expect(useVPNMachineStore.getState().state).toBe('connected');
   });
 });
+// ==================== Stale Async Status Response Tests ====================
+
+/**
+ * Regression: a `run('status')` response issued while connected landed *after*
+ * the machine had already reached idle, and `idle + BACKEND_CONNECTED → connected`
+ * resurrected the dead session — UI showed "connected" while traffic ran in the
+ * clear. Observed on macOS 2026-08-18:
+ *
+ *   07:44:39.903  run: action=status                    ← 15s poll issued (still connected)
+ *   07:44:39.915  handleToggleConnection → disconnect
+ *   07:44:39.978  SSE: state=disconnected → idle
+ *   07:44:40.018  run: action=status → connected        ← stale response lands
+ *   07:44:40.019  idle + BACKEND_CONNECTED → connected  ← corruption
+ *
+ * Fixed by the machine `revision` token: `applyStatus()` drops any response
+ * whose issue-time revision no longer matches.
+ */
+describe('stale async status responses', () => {
+  const flushMicrotasks = async () => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => { resolve = r; });
+    return { promise, resolve };
+  }
+
+  let runMock: ReturnType<typeof vi.fn>;
+  let pending: Array<{ resolve: (v: any) => void }>;
+  let pushStatus: ((status: any) => void) | undefined;
+  let cleanup: (() => void) | undefined;
+
+  beforeEach(() => {
+    pending = [];
+    pushStatus = undefined;
+    // Call 1 = the one-shot initial query (resolves immediately).
+    // Calls 2+ = the 15s safety-net poll, held open so the test controls when
+    // the response lands relative to push events.
+    runMock = vi.fn(() => {
+      if (runMock.mock.calls.length === 1) {
+        return Promise.resolve({ code: 0, data: { state: 'connected', startAt: 1000 } });
+      }
+      const d = deferred<any>();
+      pending.push(d);
+      return d.promise;
+    });
+    (window as any)._k2 = {
+      onServiceStateChange: vi.fn((cb: (v: boolean) => void) => { cb(true); return () => {}; }),
+      onStatusChange: vi.fn((cb: (s: any) => void) => { pushStatus = cb; return () => {}; }),
+      run: runMock,
+    };
+  });
+
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+    delete (window as any)._k2;
+    vi.clearAllMocks();
+  });
+
+  async function initConnected() {
+    const mod = await import('../../stores/vpn-machine.store');
+    cleanup = mod.initializeVPNMachine();
+    await flushMicrotasks(); // initial query → connected
+    expect(mod.useVPNMachineStore.getState().state).toBe('connected');
+    return mod;
+  }
+
+  it('production timeline: user disconnect + SSE disconnected, then stale poll → stays idle', async () => {
+    const { useVPNMachineStore } = await initConnected();
+
+    // 15s poll issued while still connected — response held in flight.
+    vi.advanceTimersByTime(15000);
+    await flushMicrotasks();
+    expect(pending.length).toBe(1);
+
+    // 12ms later the user taps disconnect, then SSE confirms disconnected.
+    const { dispatch } = await import('../../stores/vpn-machine.store');
+    dispatch('USER_DISCONNECT');
+    pushStatus!({ state: 'disconnected' });
+    expect(useVPNMachineStore.getState().state).toBe('idle');
+
+    // The 15s-old response finally lands, still claiming connected.
+    pending[0].resolve({ code: 0, data: { state: 'connected', startAt: 1000 } });
+    await flushMicrotasks();
+
+    expect(useVPNMachineStore.getState().state).toBe('idle');
+  });
+
+  it('backend-initiated drop (no user action, same connectEpoch): stale poll → stays idle', async () => {
+    // This is the case `connectEpoch` structurally cannot catch: the epoch never
+    // moves because the user did nothing — the backend dropped the session.
+    const { useVPNMachineStore } = await initConnected();
+
+    vi.advanceTimersByTime(15000);
+    await flushMicrotasks();
+    expect(pending.length).toBe(1);
+
+    pushStatus!({ state: 'disconnected' });
+    expect(useVPNMachineStore.getState().state).toBe('idle');
+
+    pending[0].resolve({ code: 0, data: { state: 'connected', startAt: 1000 } });
+    await flushMicrotasks();
+
+    expect(useVPNMachineStore.getState().state).toBe('idle');
+  });
+
+  it('stale poll does not resurrect startAt of the finished session', async () => {
+    const { useVPNMachineStore } = await initConnected();
+    expect(useVPNMachineStore.getState().startAt).toBe(1000);
+
+    vi.advanceTimersByTime(15000);
+    await flushMicrotasks();
+
+    pushStatus!({ state: 'disconnected' });
+    expect(useVPNMachineStore.getState().startAt).toBeNull();
+
+    pending[0].resolve({ code: 0, data: { state: 'connected', startAt: 1000 } });
+    await flushMicrotasks();
+
+    expect(useVPNMachineStore.getState().startAt).toBeNull();
+  });
+
+  it('guard is not over-broad: undisturbed poll response is still applied', async () => {
+    // Mutation canary for the guard itself — if the guard rejected everything,
+    // this (and the pre-existing recovery tests) would fail.
+    const { useVPNMachineStore } = await initConnected();
+
+    vi.advanceTimersByTime(15000);
+    await flushMicrotasks();
+
+    pending[0].resolve({ code: 0, data: { state: 'error', retrying: true, error: { code: 108, message: 'wire' } } });
+    await flushMicrotasks();
+
+    expect(useVPNMachineStore.getState().state).toBe('reconnecting');
+  });
+
+  it('applyStatus: rejects a superseded revision, accepts the current one', async () => {
+    const { useVPNMachineStore, dispatch, applyStatus, currentRevision } = await getStore();
+
+    dispatch('BACKEND_CONNECTED');
+    const issuedAtRevision = currentRevision();
+
+    dispatch('BACKEND_DISCONNECTED'); // machine moves on → revision advances
+    expect(currentRevision()).not.toBe(issuedAtRevision);
+
+    applyStatus({ state: 'connected' } as any, issuedAtRevision);
+    expect(useVPNMachineStore.getState().state).toBe('idle');
+
+    applyStatus({ state: 'connected' } as any, currentRevision());
+    expect(useVPNMachineStore.getState().state).toBe('connected');
+  });
+
+  it('applyStatus: push deliveries (no revision) always apply', async () => {
+    const { useVPNMachineStore, applyStatus } = await getStore();
+
+    applyStatus({ state: 'connected' } as any);
+    expect(useVPNMachineStore.getState().state).toBe('connected');
+  });
+
+  it('revision advances on every applied transition and never rewinds', async () => {
+    const { dispatch, currentRevision } = await getStore();
+
+    const seen: number[] = [currentRevision()];
+    dispatch('USER_CONNECT');         seen.push(currentRevision()); // idle → connecting
+    dispatch('BACKEND_CONNECTED');    seen.push(currentRevision()); // connecting → connected
+    dispatch('BACKEND_DISCONNECTED'); seen.push(currentRevision()); // connected → idle
+    expect(seen).toEqual([0, 1, 2, 3]);
+
+    // A no-transition dispatch must NOT advance it — otherwise every ignored
+    // event would spuriously invalidate a healthy in-flight poll.
+    dispatch('SERVICE_REACHABLE'); // idle has no SERVICE_REACHABLE entry
+    expect(currentRevision()).toBe(3);
+  });
+});
+
+describe('teardown invalidates in-flight status requests', () => {
+  it('poll response landing after cleanup() does not write the machine', async () => {
+    let resolveStatus!: (v: any) => void;
+    const runMock = vi.fn(() => new Promise((r) => { resolveStatus = r; }));
+    (window as any)._k2 = {
+      onServiceStateChange: vi.fn((cb: (v: boolean) => void) => { cb(true); return () => {}; }),
+      onStatusChange: vi.fn(() => () => {}),
+      run: runMock,
+    };
+    try {
+      const { initializeVPNMachine, useVPNMachineStore } = await getStore();
+      const cleanup = initializeVPNMachine(); // issues the one-shot initial query
+      cleanup();
+
+      resolveStatus({ code: 0, data: { state: 'connected' } });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+
+      expect(useVPNMachineStore.getState().state).toBe('idle');
+    } finally {
+      delete (window as any)._k2;
+    }
+  });
+});

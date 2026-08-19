@@ -1559,3 +1559,69 @@ describe('Connection Store - cloud access revocation (402)', () => {
     ).toBe(true);
   });
 });
+
+// ==================== Stale `up` Response Tests ====================
+
+/**
+ * Sibling of the stale-status race in vpn-machine.store: `_k2.run('up')` can
+ * outlive the intent that started it. If the user disconnects and reconnects
+ * while it is in flight, its (failed) result describes a dead attempt — letting
+ * it dispatch BACKEND_ERROR tears down the *live* attempt's UI state.
+ */
+describe('Connection Store - stale up() response', () => {
+  function selectTunnel(store: any) {
+    store.getState().selectCloudTunnel({
+      id: 1, domain: 'tokyo.example.com', name: 'Tokyo', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' },
+    } as any);
+  }
+
+  it('up() failing after the epoch moved does not kill the newer attempt', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@tokyo.example.com:443');
+
+    // One resolver per `up` call — the second connect must not steal the first's.
+    const upResolvers: Array<(v: any) => void> = [];
+    mockRun.mockImplementation((action: string) => {
+      if (action === 'up') return new Promise((r) => { upResolvers.push(r); });
+      return Promise.resolve({ code: 0 });
+    });
+
+    selectTunnel(useConnectionStore);
+    const firstConnect = useConnectionStore.getState().connect();
+    // Let connect() get past its awaits and issue `up`.
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(vpn.useVPNMachineStore.getState().state).toBe('connecting');
+
+    // User disconnects (epoch++) and immediately reconnects (epoch++).
+    await useConnectionStore.getState().disconnect();
+    vpn.dispatch('BACKEND_DISCONNECTED'); // backend confirms → idle
+    useConnectionStore.getState().connect();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(vpn.useVPNMachineStore.getState().state).toBe('connecting');
+
+    expect(upResolvers.length).toBe(2);
+
+    // The FIRST up() finally fails — it must not touch the machine.
+    upResolvers[0]({ code: 570, message: 'stale failure' });
+    await firstConnect;
+
+    expect(vpn.useVPNMachineStore.getState().state).toBe('connecting');
+    expect(vpn.useVPNMachineStore.getState().error).toBeNull();
+  });
+
+  it('up() failing within the same epoch still reports the error', async () => {
+    // Mutation canary: proves the guard above did not simply mute all failures.
+    const { useConnectionStore, vpn } = await getStores();
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@tokyo.example.com:443');
+    mockRun.mockResolvedValue({ code: 570, message: 'permission denied' });
+
+    selectTunnel(useConnectionStore);
+    await useConnectionStore.getState().connect();
+
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(vpn.useVPNMachineStore.getState().error).toEqual({ code: 570, message: 'permission denied' });
+  });
+});
