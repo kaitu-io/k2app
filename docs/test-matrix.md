@@ -550,8 +550,8 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | D05 | D2 / D4 | **国家排除过滤**：漏斗图标→对话框→排除 chip→自动选择生效 | `9a8a21f0` / `23b2f60f` | **PASS**（macOS，2026-08-19）— `auto-country-filter-btn` → 对话框列出 7 国 24 节点 → 勾选美国后徽章 `0`→`1` → 全选后 `7`；服务器面板出现 chip「自动选择 · 已排除 7 个国家/地区」，且每个节点条目标注「自动选择已排除 + 国家名」 |
 | D06 | D2 | 全部国家被排除 → 错误码 **573** 文案正确（不是"未知错误"） | `2e48ec15` | **FAIL:573-falls-through-to-unknown**（macOS，2026-08-19）— 失败形态精确命中本行点名要避免的那个。详见下方专段 |
 | D07 | D2 | **端口/协议/游戏规则**：MatchConfig 的 port/protocol/games 预设实际生效 | `b2d36efe` / `0be1d77` | TODO |
-| D08 | D3 | **Apple IAP 建单**：沙盒购买 → 建单正确、首单判定不恒真、分销返现入账 | `07948c1d` / `3caabab6` / `fd179e9b` | TODO |
-| D09 | D3 | IAP 沙盒交易**不建订单**；会员过期续费不报"失败无信息"（对应工单 3537） | `fd179e9b` | TODO |
+| D08 | D3 | **Apple IAP 建单**：沙盒购买 → 建单正确、首单判定不恒真、分销返现入账 | `07948c1d` / `3caabab6` / `fd179e9b` | **BLOCKED:sandbox-sub-exhausted** — 手上的沙盒订阅已过期且交易全在过去，验不出建单/返现。需换全新沙盒 Apple ID 做首购，见下方专段 |
+| D09 | D3 | IAP 沙盒交易**不建订单**；会员过期续费不报"失败无信息"（对应工单 3537） | `fd179e9b` | **PASS（不建单）+ 发现独立 bug（已修）**（真机 iPhone，2026-08-19）— 不建订单符合设计；但"有效期没加上"暴露出 `applyRenewalCredit` 缺 from-now 规则，已修并合入 main。详见下方专段 |
 | D10 | D2 / D4 | 注册时邮箱已占用 → **409001** 专用文案（不再显示"参数错误"） | `b5de67ff` | TODO |
 | D11 | D2 | 窄屏 Account 页邮箱行不溢出、不压住按钮 | `1fb5dbc8` | TODO |
 | D12 | D2 | **chunk-reload-guard**：陈旧 chunk 场景自动恢复，不白屏 | `f5a2cea1` | TODO |
@@ -690,6 +690,52 @@ connected 态的轮询间隔远长于 disconnected 态，把 15s 的窗口放大
 
 > 另更正一条早先的错误归因：`tunnelState='disconnected'` 曾被我判为"隧道空闲/锁屏自动断开、
 > `deploy-ios-device.sh` 缺预热步骤"。实际是**数据线接触不良**（用户告知）。脚本无缺陷。
+
+### D08/D09 根因：过期后续订把整个周期补记到过去，付费用户拿不到时间（已修，`8f1daed0`）
+
+**现象**（真机 iPhone，2026-08-19 15:57–15:58）：用户报"subscription is successful，
+但有效期没有加上"。
+
+**服务端事实**（center-1 + center-2 `app.log`，三笔交易分落两台）：
+
+| 时间 | txn | `credited_seconds` | kind |
+|---|---|---|---|
+| 15:57:50 | 2000001221796060 | **39600（11 小时）** | renewal |
+| 15:58:07 | 2000001221785963 | 0 | renewal |
+| 15:58:19 | 2000001221775815 | 0 | renewal |
+
+三笔全部 `code:0`，ledger 与 `UserProHistory` 审计行齐全，`expired_at` 从
+**08-15 01:16** 推到 **08-15 12:16**——**落点仍在四天前**，用户侧当然毫无变化。
+
+**日志会骗人**：`[creditAppleTransaction] user 9378 credited +0d` 里的 `+0d` 是
+`int(creditSeconds/86400)` 取整，实际发了 11 小时。精确值只在
+`subscription_credits.credited_seconds` 里。
+
+**因果链**：沙盒 1 年订阅 = 1 小时；`2000001221648433` 08-15 00:16 首购，几次自动续订
+全部覆盖 08-14~08-15；这些交易一直没被 `finish()`（设备上直到 08-19 14:47 才装上带
+IAP 链路的 0.4.8）；app 一起来 `Transaction.updates` 把积压交易全部重放补记。
+**今天没有产生新订阅行**——用户看到的"购买成功"是重放交易 verify 成功后
+`setLastGrantedUser` 触发的成功态，不是一次新购买。
+
+**这暴露了一个与沙盒无关的真 bug**：`applyRenewalCredit` 连 `now` 参数都没有，
+base 只取 `max(expired_at, priorPeriodEnd)`。两者都在过去时，整个周期埋进过去。
+这正是 spec 自己列的威胁 **T6（under-credit → 付费用户被锁在外面）**——而 spec 写的
+两道防线（finish-gating + reconciliation）只保证交易被入账，不保证时间可用。
+**T6 的漏洞不在捕获，在计算。** 生产触发条件：漏通知 / 交易积压 / 对账补记 + 用户权益
+恰好已过期，与沙盒无关。
+
+已修（`8f1daed0`，Apple 与 Stripe 两条渠道同时生效）：`base` 改取
+`max(expired_at, priorPeriodEnd, now)`，与 `applyGiftCredit` 的 from-now-if-expired
+对齐；`creditSeconds` 同步改为从实际入账基准起算，否则过期补记会把死区当成本次交易
+买来的时长，虚高 clawback 账本与审计天数。`delta <= 0` 分支不动。
+`TestApplyRenewalCreditFromNowWhenExpired` 已做变异验证。**需要部署 Center 才生效——
+不在 0.4.8 客户端发布链路里。**
+
+**D08 复测方法（当前沙盒订阅已作废）**：手上这个沙盒订阅所有交易都指向过去，
+永远验不出"有效期正确增加"。必须**换一个全新的沙盒 Apple ID 做首购**——那条路走
+`isFirst` 分支、`applyGiftCredit` 从当下起算 3600 秒，有效期会变成"1 小时后"，肉眼可验，
+建单与分销返现也才会被触发（沙盒交易按设计不建单，D08 的建单断言需要生产交易或
+mock 环境，见 `api/CLAUDE.md` 的 `iapOrderFixture` 段）。
 
 ## 阶段 C — k2 核心回归（`ef6c0b2 → 6bc70b0`，上轮 UAT 未覆盖段）
 
