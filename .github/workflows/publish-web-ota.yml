@@ -38,7 +38,7 @@ on:
         options: [stable, beta]
         default: stable
       namespace:
-        description: 'UAT namespace — publishes to {ns}/{brand}/web/ instead of {brand}/web/. Empty = production. No shipped client polls a namespaced path; pair it with the desktop K2_WEB_OTA_BASE override to exercise the live chain without an audience.'
+        description: "UAT namespace — publishes under {brand}/web/{ns}/web/ instead of {brand}/web/. Empty = production. Nothing shipped polls it; pair with desktop K2_WEB_OTA_BASE=https://d0.all7.cc/{brand}/web/{ns} to exercise the live chain without an audience."
         required: false
         default: ''
 
@@ -163,22 +163,39 @@ jobs:
           VERSION='${{ steps.ver.outputs.version }}'
           CHANNEL='${{ inputs.channel || 'stable' }}'
           NS='${{ inputs.namespace || '' }}'
-          # A typo here would silently publish somewhere unintended, and the
-          # empty case must stay byte-identical to the production layout.
+          # The namespace nests INSIDE {brand}/web/, not above {brand}/. The
+          # first shape tried was {ns}/{brand}/web/ and S3 refused it:
+          #   AccessDenied ... user/k2app-ci-s3 is not authorized to perform
+          #   s3:PutObject on "d0.all7.cc/uat/kaitu/web/..."
+          # The CI IAM user is scoped to the known brand subtrees — a second,
+          # independent guard on where a publish can land. Widening that policy
+          # to make UAT convenient would spend a real safety property on a test
+          # convenience, so the path bends to the policy instead.
+          #
+          # Result: {brand}/web/{ns}/web/{latest.json,{version}/web.zip}. The
+          # doubled `web` is not a typo — the desktop override appends
+          # `web/latest.json` to whatever base it is given (channel.rs
+          # ota_sources_for), so the base handed to K2_WEB_OTA_BASE is
+          # .../{brand}/web/{ns} and CI must place the tree one level under it.
+          #
+          # Collision with production is impossible by construction: production
+          # is {brand}/web/ and every namespaced path carries a non-empty extra
+          # segment. Nothing shipped polls {brand}/web/{ns}/... — clients poll
+          # only {brand}/web/latest.json and {brand}/web/beta/latest.json.
           if [ -n "$NS" ]; then
             case "$NS" in
-              *[!a-z0-9-]*|-*|kaitu|overleap)
-                echo "::error::namespace must match [a-z0-9-]+, not start with '-', and not be a brand name (got '$NS')"
+              *[!a-z0-9-]*|-*|beta|web)
+                echo "::error::namespace must match [a-z0-9-]+, not start with '-', and not be 'beta' or 'web' (got '$NS')"
                 exit 1 ;;
             esac
-            PREFIX="${NS}/"
+            PREFIX_SUFFIX="/${NS}/web"
             echo "::warning::UAT publish into namespace '$NS' — production paths are NOT touched"
           else
-            PREFIX=""
+            PREFIX_SUFFIX=""
           fi
-          echo "Publishing v$VERSION to channel: $CHANNEL (base: s3://d0.all7.cc/${PREFIX}{brand}/web)"
+          echo "Publishing v$VERSION to channel: $CHANNEL (base: s3://d0.all7.cc/{brand}/web${PREFIX_SUFFIX})"
           for BRAND in kaitu overleap; do
-            BASE="s3://d0.all7.cc/${PREFIX}${BRAND}/web"
+            BASE="s3://d0.all7.cc/${BRAND}/web${PREFIX_SUFFIX}"
             aws s3 cp "out/web-$BRAND.zip" "$BASE/beta/${VERSION}/web.zip" --content-type application/zip
             aws s3 cp "out/latest-$BRAND.json" "$BASE/beta/latest.json" --content-type application/json
             if [ "$CHANNEL" = "stable" ]; then
@@ -193,20 +210,16 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
-          NS='${{ inputs.namespace || '' }}'
-          # Plain `if`, not `[ -n "$NS" ] && PREFIX=...`: under `set -e` that
-          # idiom is safe only because the failing test is a non-final element
-          # of an && list. It reads like a bug, and the empty-NS branch is the
-          # PRODUCTION path — not somewhere to leave a subtlety for a future
-          # reader to "fix".
-          if [ -n "$NS" ]; then PREFIX="${NS}/"; else PREFIX=""; fi
+          # A namespaced publish lands under {brand}/web/{ns}/, which the
+          # production wildcard /{brand}/web/* already covers — so the paths
+          # below need no namespace handling at all.
           for DIST_ID in E3W144CRNT652P E34P52R7B93FSC; do
             aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
-              --paths "/${PREFIX}kaitu/web/*" "/${PREFIX}overleap/web/*" \
+              --paths "/kaitu/web/*" "/overleap/web/*" \
               --no-cli-pager --output text > /dev/null
           done
-          echo "CDN invalidated: d0.all7.cc + dl.kaitu.io (/${PREFIX}{kaitu,overleap}/web/*)"
+          echo "CDN invalidated: d0.all7.cc + dl.kaitu.io (/{kaitu,overleap}/web/*)"
 
       # A failed linkage publish (spec §6 trigger 2, from release-desktop.yml /
       # build-mobile.yml) is otherwise silent except for a red run nobody is
