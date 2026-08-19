@@ -92,11 +92,51 @@ else
   fail "Android versionName mismatch: expected $PKG_VERSION, got $GRADLE_VNAME"
 fi
 
-IOS_MVER=$(sed -n 's/.*MARKETING_VERSION = \(.*\);/\1/p' mobile/ios/App/App.xcodeproj/project.pbxproj | head -1)
-if [ "$IOS_MVER" = "$PKG_VERSION" ]; then
-  pass "iOS MARKETING_VERSION matches package.json ($IOS_MVER)"
+# iOS versions are NOT package.json verbatim: build-mobile-ios.sh remaps the
+# marketing version 0.x.y -> 4.x.y and derives a monotonic build number. Ask
+# that script for the expected values rather than restating its formula here —
+# a copied formula silently stops matching the day the real one changes.
+read -r IOS_MVER_EXP IOS_BUILD_EXP < <(bash scripts/build-mobile-ios.sh --print-build-number)
+
+# Independent discriminator. Everything below compares the pbxproj against
+# build-mobile-ios.sh's output, so if THAT script's formula breaks, both sides
+# move together and the comparison stays green. These two assertions restate
+# the remapping invariant without calling it: major is pinned to 4, minor and
+# patch track package.json. They fail even when the two sides agree.
+PKG_MINOR_PATCH="${PKG_VERSION#*.}"
+if [ "$IOS_MVER_EXP" = "4.${PKG_MINOR_PATCH}" ]; then
+  pass "iOS marketing remap invariant holds (0.${PKG_MINOR_PATCH} -> $IOS_MVER_EXP)"
 else
-  fail "iOS MARKETING_VERSION mismatch: expected $PKG_VERSION, got $IOS_MVER"
+  fail "iOS marketing remap broken: expected 4.${PKG_MINOR_PATCH}, build-mobile-ios.sh says $IOS_MVER_EXP"
+fi
+if [[ "$IOS_BUILD_EXP" =~ ^4[0-9]{6}$ ]]; then
+  pass "iOS build number is well-formed ($IOS_BUILD_EXP)"
+else
+  fail "iOS build number malformed: expected 4NNNNNN, got '$IOS_BUILD_EXP'"
+fi
+IOS_MVER=$(sed -n 's/.*MARKETING_VERSION = \(.*\);/\1/p' mobile/ios/App/App.xcodeproj/project.pbxproj | head -1)
+IOS_BUILD=$(sed -n 's/.*CURRENT_PROJECT_VERSION = \(.*\);/\1/p' mobile/ios/App/App.xcodeproj/project.pbxproj | head -1)
+
+if [ "$IOS_MVER" = "$IOS_MVER_EXP" ]; then
+  pass "iOS MARKETING_VERSION matches build-mobile-ios.sh ($IOS_MVER)"
+else
+  fail "iOS MARKETING_VERSION mismatch: expected $IOS_MVER_EXP, got $IOS_MVER — run scripts/sync-version.sh"
+fi
+
+if [ "$IOS_BUILD" = "$IOS_BUILD_EXP" ]; then
+  pass "iOS CURRENT_PROJECT_VERSION matches build-mobile-ios.sh ($IOS_BUILD)"
+else
+  fail "iOS CURRENT_PROJECT_VERSION mismatch: expected $IOS_BUILD_EXP, got $IOS_BUILD — run scripts/sync-version.sh"
+fi
+
+# The semantic version compiled into the plugin. This is what the web-OTA
+# min_native gate compares against, so it must stay package.json verbatim —
+# unlike the two remapped values above.
+IOS_APPVER=$(sed -n 's/^let k2AppVersion = "\(.*\)".*/\1/p' mobile/plugins/k2-plugin/ios/Plugin/K2Helpers.swift)
+if [ "$IOS_APPVER" = "$PKG_VERSION" ]; then
+  pass "iOS k2AppVersion matches package.json ($IOS_APPVER)"
+else
+  fail "iOS k2AppVersion mismatch: expected $PKG_VERSION, got $IOS_APPVER"
 fi
 
 # ============================================================
