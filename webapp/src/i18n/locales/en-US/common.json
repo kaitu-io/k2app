@@ -47,7 +47,10 @@
     "login": "Login",
     "viewDetails": "View Details",
     "experimental": "Experimental",
-    "edit": "Edit"
+    "edit": "Edit",
+    "next": "Next",
+    "or": "OR",
+    "changelog": "Changelog"
   },
   "errors": {
     "service": {
@@ -69,7 +72,8 @@
       "repairFailed": "Network repair failed, please check settings manually",
       "repairDNS": "DNS repair failed",
       "repairRoute": "Route repair failed",
-      "repairPreFailed": "Network repair preparation failed"
+      "repairPreFailed": "Network repair preparation failed",
+      "unavailable": "No network connection. Check your device network and try again."
     },
     "server": {
       "unavailable": "Server unavailable, please try again later",
@@ -115,7 +119,12 @@
       "forbidden": "Server certificate verification failed",
       "protocolError": "Protocol handshake failed, please try another node",
       "connectionFatal": "Connection failed, please retry or switch node",
-      "permissionDenied": "VPN permission denied. Please enable VPN in system settings."
+      "permissionDenied": "VPN permission denied. Please enable VPN in system settings.",
+      "environmentSetupFailed": "Local network setup failed. Check system permissions and try again.",
+      "startFailed": "Failed to start service, please try again",
+      "reconnectFailed": "Failed to reconnect, please try again",
+      "timeout": "Operation timed out, please try again",
+      "allAddrsFailed": "All server addresses failed, please switch node"
     },
     "action": {
       "timeout": "Operation timed out, please try again",

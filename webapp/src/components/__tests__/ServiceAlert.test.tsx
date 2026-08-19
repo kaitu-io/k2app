@@ -43,10 +43,13 @@ vi.mock('../../stores/vpn-machine.store', () => ({
   useVPNMachineStore: (selector: any) => selector(mockVPNMachineStoreState),
 }));
 
-// Mock vpn-types
-vi.mock('../../services/vpn-types', () => ({
-  isNetworkError: (code: number) => code === 408 || code === 503,
-}));
+// vpn-types is deliberately NOT mocked.
+//
+// It used to be, with `isNetworkError: (code) => code === 408 || code === 503`
+// — a hand-copy of the buggy production formula. That made this suite green
+// while the real predicate answered `false` for every engine timeout (108), and
+// green for a code (408) the engine never emits. A test that replaces the unit
+// under test with a copy of the bug is not coverage.
 
 describe('ServiceAlert', () => {
   beforeEach(() => {
@@ -76,7 +79,7 @@ describe('ServiceAlert', () => {
     });
 
     it('should render when network error occurs', () => {
-      mockVPNMachine.error = { code: 408, message: 'Connection timeout' };
+      mockVPNMachine.error = { code: 108, message: 'Connection timeout' };
       renderAlert();
       expect(screen.getByText('dashboard:dashboard.networkError.title')).toBeInTheDocument();
     });
@@ -91,8 +94,8 @@ describe('ServiceAlert', () => {
   });
 
   describe('Network Error Detection', () => {
-    it('should detect error code 408 (timeout) as network error', () => {
-      mockVPNMachine.error = { code: 408, message: 'Connection timeout' };
+    it('should detect engine error code 108 (timeout) as network error', () => {
+      mockVPNMachine.error = { code: 108, message: 'Connection timeout' };
       renderAlert();
       expect(screen.getByText('dashboard:dashboard.networkError.title')).toBeInTheDocument();
     });

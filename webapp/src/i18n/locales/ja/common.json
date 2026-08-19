@@ -47,7 +47,10 @@
     "login": "ログイン",
     "viewDetails": "詳細を見る",
     "experimental": "実験的",
-    "edit": "編集"
+    "edit": "編集",
+    "next": "次へ",
+    "or": "または",
+    "changelog": "変更履歴"
   },
   "errors": {
     "service": {
@@ -69,7 +72,8 @@
       "repairFailed": "ネットワーク修復に失敗しました。設定を手動で確認してください",
       "repairDNS": "DNS修復に失敗しました",
       "repairRoute": "ルート修復に失敗しました",
-      "repairPreFailed": "ネットワーク修復の準備に失敗しました"
+      "repairPreFailed": "ネットワーク修復の準備に失敗しました",
+      "unavailable": "ネットワークに接続できません。デバイスのネットワーク設定をご確認ください。"
     },
     "server": {
       "unavailable": "サーバーが利用できません、後でもう一度お試しください",
@@ -107,7 +111,12 @@
       "forbidden": "サーバー証明書の検証に失敗しました",
       "protocolError": "プロトコルハンドシェイクに失敗しました、別のノードをお試しください",
       "connectionFatal": "接続に失敗しました、再試行するかノードを変更してください",
-      "permissionDenied": "VPN権限が許可されていません。システム設定でVPN接続を許可してください。"
+      "permissionDenied": "VPN権限が許可されていません。システム設定でVPN接続を許可してください。",
+      "environmentSetupFailed": "ローカルのネットワーク設定に失敗しました。システムの権限を確認して再試行してください。",
+      "startFailed": "サービスの起動に失敗しました。もう一度お試しください。",
+      "reconnectFailed": "再接続に失敗しました。もう一度お試しください。",
+      "timeout": "操作がタイムアウトしました。もう一度お試しください。",
+      "allAddrsFailed": "すべてのサーバーアドレスに接続できませんでした。ノードを切り替えてください。"
     },
     "auth": {
       "logoutFailed": "ログアウトに失敗しました。もう一度お試しください",

@@ -94,7 +94,8 @@
     "copyShareContent": "复制分享内容",
     "shareGiftText": "🎁 送你一份好礼，打开链接领取\n{{link}}",
     "promotionLinkCopied": "推广链接已复制",
-    "scanQRToShare": "用手机扫码，直接转发给好友"
+    "scanQRToShare": "用手机扫码，直接转发给好友",
+    "qrCodeGenerationFailed": "二维码生成失败"
   },
   "inviteCodeList": {
     "title": "邀请奖励明细",

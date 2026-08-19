@@ -2,71 +2,90 @@
 // Canonical source: k2/engine/error.go (Go engine error codes)
 
 // ==================== Error Code Constants ====================
-// Aligned with k2 engine HTTP-aligned error codes
-// Source of truth: k2/engine/error.go
+//
+// The numeric values are NOT re-declared here. They live in
+// `utils/errorCatalog.ts` as ENGINE_ERROR_CODES, a mirror of
+// `k2/engine/error.go` that `services/__tests__/k2-engine-codes.test.ts`
+// checks against the Go source. This module used to keep its own hand-typed
+// copy, which is how `ErrCodeTimeout = 408` survived here for months after the
+// engine settled on 108 — breaking both the error copy and isNetworkError().
+// The aliases below exist only so existing imports keep resolving.
+
+import {
+  ENGINE_ERROR_CATALOG,
+  ENGINE_ERROR_CODES,
+  ENGINE_NETWORK_ERROR_CODES,
+  ERROR_CODES,
+  UNKNOWN_ENGINE_ERROR_KEY,
+} from '../utils/errorCatalog';
 
 // Config errors
-export const ErrCodeBadConfig = 400;          // Invalid wire URL, missing auth, bad scheme
+export const ErrCodeBadConfig = ENGINE_ERROR_CODES.ErrCodeBadConfig;                 // 400 Invalid wire URL, missing auth, bad scheme
 
 // Auth errors
-export const ErrCodeUnauthorized = 401;       // Server rejected authentication
-export const ErrCodeMembershipExpired = 402;  // Membership expired (Cloud API, not k2)
+export const ErrCodeUnauthorized = ENGINE_ERROR_CODES.ErrCodeAuthRejected;           // 401 Server rejected authentication
+export const ErrCodeMembershipExpired = ENGINE_ERROR_CODES.ErrCodePaymentRequired;   // 402 Membership expired
 
 // Certificate/pin errors
-export const ErrCodeForbidden = 403;          // Certificate pin mismatch, blocked CA
+export const ErrCodeForbidden = ENGINE_ERROR_CODES.ErrCodeForbidden;                 // 403 Certificate pin mismatch, blocked CA
 
-// Timeout
-export const ErrCodeTimeout = 408;            // Connection or handshake timeout
+// Local environment
+export const ErrCodeEnvironmentSetupFailed = ENGINE_ERROR_CODES.ErrCodeEnvironmentSetupFailed; // 412
+
+// Network
+export const ErrCodeNetworkUnavailable = ENGINE_ERROR_CODES.ErrCodeNetworkUnavailable; // 101 No route / network down
+export const ErrCodeTimeout = ENGINE_ERROR_CODES.ErrCodeTimeout;                     // 108 Connection or handshake timeout — NOT 408
 
 // TLS/Protocol errors
-export const ErrCodeProtocolError = 502;      // TLS handshake failure, QUIC dial failure
+export const ErrCodeProtocolError = ENGINE_ERROR_CODES.ErrCodeProtocolError;         // 502 TLS handshake failure, QUIC dial failure
 
 // Server unreachable
-export const ErrCodeServerUnreachable = 503;  // TCP dial failed, connection refused, network unreachable
+export const ErrCodeServerUnreachable = ENGINE_ERROR_CODES.ErrCodeServerUnreachable; // 503 TCP dial failed, connection refused
+
+// Rule bundle dependency
+export const ErrCodeRuleBundlesUnavailable = ENGINE_ERROR_CODES.ErrCodeRuleBundlesUnavailable; // 504
 
 // Fallback
-export const ErrCodeConnectionFatal = 570;    // Unclassified connection error
+export const ErrCodeConnectionFatal = ENGINE_ERROR_CODES.ErrCodeConnectionFatal;     // 570 Unclassified connection error
 
 // Permission (frontend-only, mobile VPN permission denied)
-export const ErrCodeVPNPermissionDenied = 580;
+export const ErrCodeVPNPermissionDenied = ERROR_CODES.VPN_PERMISSION_DENIED;         // 580
 
 /**
- * Whether the error is a network-level error (timeout or unreachable)
+ * Whether the error should surface the "check your network" affordance
+ * (ServiceAlert's network banner).
+ *
+ * Derived from ENGINE_NETWORK_ERROR_CODES rather than an inline literal list —
+ * the inline version said `code === 408 || code === 503` and therefore answered
+ * `false` for every real engine timeout. Read that constant's doc comment for
+ * why this set is intentionally NOT Go's CategoryNetwork.
  */
 export function isNetworkError(code: number): boolean {
-  return code === 408 || code === 503;
+  return ENGINE_NETWORK_ERROR_CODES.includes(code);
 }
 
 /**
- * Whether the error is a VPN protocol/connection error
- */
-export function isVPNError(code: number): boolean {
-  return code === 502 || code === 570;
-}
-
-/**
- * Whether the error is an auth error (requires re-login or renewal)
- */
-export function isAuthError(code: number): boolean {
-  return code === 401 || code === 402;
-}
-
-/**
- * Map error code to i18n key for user-facing messages
+ * Map an engine/VPN error code to a fully-qualified i18n key (`ns:path`).
+ *
+ * Returns a FULLY QUALIFIED key — callers pass it straight to `t()`. It used to
+ * return a bare key that call sites prefixed with `'common:'`, which structurally
+ * barred any code whose copy lives in another namespace (572/573 live in
+ * `dashboard`).
+ *
+ * Fallback is only reached by a code no layer declares; every code in
+ * ENGINE_ERROR_CATALOG is asserted non-fallback by
+ * `utils/__tests__/errorCatalog.test.ts`.
  */
 export function getErrorI18nKey(code: number): string {
-  const errorMap: Record<number, string> = {
-    [ErrCodeBadConfig]: 'errors.config.badConfig',
-    [ErrCodeUnauthorized]: 'errors.vpn.authFailed',
-    [ErrCodeMembershipExpired]: 'errors.vpn.membershipExpired',
-    [ErrCodeForbidden]: 'errors.vpn.forbidden',
-    [ErrCodeTimeout]: 'errors.network.timeout',
-    [ErrCodeProtocolError]: 'errors.vpn.protocolError',
-    [ErrCodeServerUnreachable]: 'errors.network.unreachable',
-    [ErrCodeConnectionFatal]: 'errors.vpn.connectionFatal',
-    [ErrCodeVPNPermissionDenied]: 'errors.vpn.permissionDenied',
-  };
-  return errorMap[code] || 'errors.unknown';
+  return ENGINE_ERROR_CATALOG[code]?.key ?? UNKNOWN_ENGINE_ERROR_KEY;
+}
+
+/**
+ * English fallback for `code`, for use as `t()`'s defaultValue.
+ * Returns undefined for codes the catalog does not cover.
+ */
+export function getErrorDefaultText(code: number): string | undefined {
+  return ENGINE_ERROR_CATALOG[code]?.defaultValue;
 }
 
 // ==================== VPN 控制 ====================
@@ -86,7 +105,7 @@ export type ServiceState = 'disconnected' | 'connecting' | 'connected' | 'reconn
  * - 401=登录失效 → 清除 token，跳转登录
  * - 402=会员过期 → 显示续费提示
  * - 403=证书验证失败 → 提示更换节点
- * - 408=连接超时 → 提示检查网络
+ * - 108=连接超时 → 提示检查网络
  * - 502=协议握手失败 → 提示更换节点
  * - 503=服务器不可达 → 提示检查网络
  * - 570=连接失败 → 显示连接错误
@@ -123,7 +142,7 @@ export interface StatusResponseData {
   startAt?: number;       // VPN 启动时间戳（Unix seconds，0 表示未启动）
   error?: ControlError;   // 错误信息（state=error 时有值）
   retrying?: boolean;     // K2 层是否正在重试（仅 state=error 时有意义）
-                          // - 网络/连接错误 (408/502/503/570): true，K2 每 5 秒重试
+                          // - 网络/连接错误 (101/108/502/503/570): true，K2 每 5 秒重试
                           // - 认证错误 (401/402): false，需用户操作
   serviceVersion?: string; // kaitu-service 版本号（用于检测更新后版本不匹配）
   networkAvailable: boolean; // Whether network is available for VPN connection

@@ -236,7 +236,7 @@ function RouterDevicesSection() {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRemarkDialogOpen(false)}>{t('common:cancel')}</Button>
+          <Button onClick={() => setRemarkDialogOpen(false)}>{t('common:common.cancel')}</Button>
           <Button
             variant="contained"
             onClick={() => {
@@ -258,7 +258,7 @@ function RouterDevicesSection() {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPendingRemove(null)}>{t('common:cancel')}</Button>
+          <Button onClick={() => setPendingRemove(null)}>{t('common:common.cancel')}</Button>
           <Button
             color="error"
             variant="contained"

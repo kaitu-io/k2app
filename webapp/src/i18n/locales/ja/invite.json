@@ -94,7 +94,8 @@
     "copyShareContent": "シェア内容をコピー",
     "shareGiftText": "🎁 プレゼントをお届け、リンクを開いて受け取ってね\n{{link}}",
     "promotionLinkCopied": "プロモーションリンクがコピーされました",
-    "scanQRToShare": "スマホでスキャンして友達に直接転送"
+    "scanQRToShare": "スマホでスキャンして友達に直接転送",
+    "qrCodeGenerationFailed": "QRコードの生成に失敗しました"
   },
   "inviteCodeList": {
     "title": "招待報酬詳細",

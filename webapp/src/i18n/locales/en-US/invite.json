@@ -94,7 +94,8 @@
     "copyShareContent": "Copy Share Content",
     "shareGiftText": "🎁 A gift for you — open the link to claim\n{{link}}",
     "promotionLinkCopied": "Promotion link copied",
-    "scanQRToShare": "Scan with your phone to share directly with friends"
+    "scanQRToShare": "Scan with your phone to share directly with friends",
+    "qrCodeGenerationFailed": "Failed to generate QR code"
   },
   "inviteCodeList": {
     "title": "Invite Reward Details",
