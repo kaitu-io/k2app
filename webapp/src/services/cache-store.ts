@@ -14,6 +14,9 @@ export interface CacheEntry<T> {
   expireAt?: number; // undefined 表示永不过期
 }
 
+/** 缓存变更订阅回调。参数是发生变更的键。 */
+export type CacheListener = (key: string) => void;
+
 export interface CacheOptions {
   /** 缓存过期时间（秒），undefined 表示永不过期 */
   ttl?: number;
@@ -29,12 +32,55 @@ const CACHE_PREFIX = 'kaitu_cache:';
  */
 export class CacheStore {
   private memoryCache = new Map<string, CacheEntry<any>>();
+  private listeners = new Map<string, Set<CacheListener>>();
 
   /**
    * 获取完整的缓存键
    */
   private getFullKey(key: string): string {
     return `${CACHE_PREFIX}${key}`;
+  }
+
+  /**
+   * 订阅某个键的变更。set / delete / clear / clearExpired 影响到该键时回调。
+   *
+   * 存在的理由：缓存是全应用共享的单例，但读它的 hook（useUser 等）把值拷进各自的
+   * useState。没有广播时，一个组件写入的新数据其余组件永远看不到——iOS 购买成功后
+   * 授权日期不刷新就是这么来的（写入方是购买面板，显示方是父级与 affordance，
+   * 三份 state 互不相干）。
+   *
+   * @returns 取消订阅函数（在 useEffect 里直接 return 它）
+   */
+  subscribe(key: string, listener: CacheListener): () => void {
+    let set = this.listeners.get(key);
+    if (!set) {
+      set = new Set();
+      this.listeners.set(key, set);
+    }
+    set.add(listener);
+    return () => {
+      const current = this.listeners.get(key);
+      if (!current) return;
+      current.delete(listener);
+      if (current.size === 0) this.listeners.delete(key);
+    };
+  }
+
+  /**
+   * 通知某个键的订阅者。单个 listener 抛错不得影响其余 listener，也不得让写入方
+   * 的 set/delete 失败——缓存写入是主流程，通知是副作用。
+   */
+  private notify(key: string): void {
+    const set = this.listeners.get(key);
+    if (!set || set.size === 0) return;
+    // 快照迭代：listener 内部可能取消订阅，直接遍历 Set 会漏掉后续项。
+    for (const listener of [...set]) {
+      try {
+        listener(key);
+      } catch (e) {
+        console.error('[CacheStore] listener threw for key:', key, e);
+      }
+    }
   }
 
   /**
@@ -60,6 +106,9 @@ export class CacheStore {
         console.warn('[CacheStore] Failed to persist cache:', key, e);
       }
     }
+
+    // 内存已是新值，localStorage 尽力而为——通知放最后，订阅者读到的必然是新值。
+    this.notify(key);
   }
 
   /**
@@ -165,6 +214,7 @@ export class CacheStore {
     } catch (e) {
       console.warn('[CacheStore] Failed to delete cache:', key, e);
     }
+    this.notify(key);
   }
 
   /**
@@ -185,6 +235,11 @@ export class CacheStore {
     } catch (e) {
       console.warn('[CacheStore] Failed to clear cache:', e);
     }
+    // 全清后每个订阅者持有的值都已失效（典型场景：登出）。按订阅键通知，
+    // 而不是按被删的缓存键——某个键此刻恰好无缓存，不代表订阅者不需要知道。
+    for (const key of [...this.listeners.keys()]) {
+      this.notify(key);
+    }
   }
 
   /**
@@ -192,11 +247,13 @@ export class CacheStore {
    */
   clearExpired(): void {
     const now = Date.now();
+    const evicted: string[] = [];
 
     // 清除内存缓存中过期的项
     for (const [key, entry] of this.memoryCache.entries()) {
       if (entry.expireAt && now > entry.expireAt) {
         this.memoryCache.delete(key);
+        evicted.push(key);
       }
     }
 
@@ -224,6 +281,7 @@ export class CacheStore {
     } catch (e) {
       console.warn('[CacheStore] Failed to clear expired cache:', e);
     }
+    evicted.forEach(key => this.notify(key));
   }
 }
 

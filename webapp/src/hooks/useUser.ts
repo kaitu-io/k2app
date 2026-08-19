@@ -134,6 +134,24 @@ export function useUser(): UseUserReturn {
     fetchUser();
   }, [isAuthenticated]);
 
+  // 跨实例同步：useUser 被 17 处调用，每处各持一份 state。谁写了用户缓存
+  // （IAP verifyAndGrant、别处的后台 revalidate、登出清缓存），所有实例都要跟上，
+  // 否则会出现"购买成功但授权日期不变"——写入方刷新了自己，父级和
+  // useSubscriptionAffordance 停在旧值，affordance 不翻转，UI 原地不动。
+  //
+  // 只读缓存、不发请求：写入方已经把权威数据放进去了，这里再打一次网络既多余
+  // 又会在多实例下放大成 N 个并发请求。
+  useEffect(() => {
+    return cacheStore.subscribe('api:user_info', () => {
+      const next = cacheStore.get<DataUser>('api:user_info');
+      // 缓存被清空（登出）时不把 user 打成 null：登出由 isAuthenticated 驱动，
+      // 让这里跟着清会在正常的缓存淘汰时闪一下空态。
+      if (!next) return;
+      setUser(next);
+      syncDetectedProfile(next);
+    });
+  }, []);
+
   // 计算派生状态
   const isMembership = useMemo(() => {
     if (!user) return false;
