@@ -548,7 +548,7 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | D03 | D2 / D4 | **双连接互斥**：app 与路由器同时连 → 排他对话框 + 接管横幅 | `d3897578` / `773c8880` | TODO |
 | D04 | D9 | 企业多槽表单（槽位列表、告警徽章、默认落地页） | `9ce69c02` | TODO |
 | D05 | D2 / D4 | **国家排除过滤**：漏斗图标→对话框→排除 chip→自动选择生效 | `9a8a21f0` / `23b2f60f` | **PASS**（macOS，2026-08-19）— `auto-country-filter-btn` → 对话框列出 7 国 24 节点 → 勾选美国后徽章 `0`→`1` → 全选后 `7`；服务器面板出现 chip「自动选择 · 已排除 7 个国家/地区」，且每个节点条目标注「自动选择已排除 + 国家名」 |
-| D06 | D2 | 全部国家被排除 → 错误码 **573** 文案正确（不是"未知错误"） | `2e48ec15` | **FAIL:573-falls-through-to-unknown**（macOS，2026-08-19）— 失败形态精确命中本行点名要避免的那个。详见下方专段 |
+| D06 | D2 | 全部国家被排除 → 错误码 **573** 文案正确（不是"未知错误"） | `2e48ec15` | **FAIL→PASS（已修，真机验证）** — macOS/Android 双平台确认失败形态后修复并合入。Android 真机同一操作路径前后对照：修复前折叠态「⚠ 未知错误」，修复后「**可用节点已全部被排除，请调整国家/地区过滤**」（读自 accessibility 树，非 OCR）。根因比症状大得多，详见下方专段 |
 | D07 | D2 | **端口/协议/游戏规则**：MatchConfig 的 port/protocol/games 预设实际生效 | `b2d36efe` / `0be1d77` | TODO |
 | D08 | D3 | **Apple IAP 建单**：沙盒购买 → 建单正确、首单判定不恒真、分销返现入账 | `07948c1d` / `3caabab6` / `fd179e9b` | **BLOCKED:sandbox-sub-exhausted** — 手上的沙盒订阅已过期且交易全在过去，验不出建单/返现。需换全新沙盒 Apple ID 做首购，见下方专段 |
 | D09 | D3 | IAP 沙盒交易**不建订单**；会员过期续费不报"失败无信息"（对应工单 3537） | `fd179e9b` | **PASS（不建单）+ 发现独立 bug（已修）**（真机 iPhone，2026-08-19）— 不建订单符合设计；但"有效期没加上"暴露出 `applyRenewalCredit` 缺 from-now 规则，已修并合入 main。详见下方专段 |
@@ -757,6 +757,36 @@ web OTA 是「静默修好当前这个版本」（无感、立即）。**用户�
 `onStatus from stale engine — ignoring` —— 原生层显式忽略来自旧 engine 的状态回调。
 这正是 A08 在 webapp 层缺失的那类保护，说明该竞态在原生层已被意识到。
 `fix/stale-poll-race` 等于把这道防护补齐到前端。
+
+### 三个修复的真机闭环（Android，2026-08-19）
+
+同一台设备、同一操作路径的前后对照。修复合入 main 后**重新构建 APK 并刷机**验证，
+不是拿 agent 各自 worktree 里的产物。
+
+| 修复 | 真机判据 | 结果 |
+|---|---|---|
+| **D06 错误文案** | 全排除 7 国 → 折叠态错误条 | 修复前「⚠ 未知错误」→ 修复后「可用节点已全部被排除，请调整国家/地区过滤」。**PASS** |
+| **移动端 OTA 解耦** | 冷启动 logcat 两条 lane 是否都执行 | 修复前只有一行 `starting auto-update check` 零后续；修复后 `Auto-update [native] skipped: no newer version (remote=0.4.7 local=0.4.8)` + `Auto-update [web] skipped: manifest unavailable` 两条俱全。**PASS** |
+| **A08 陈旧轮询** | 竞态窗口 ≈ 轮询往返/轮询周期 | 真机**未刻意复现**（概率性）。由 9 个 vitest 用例覆盖，含 8 项变异验证 |
+| **P0 回归** | 三个修复后连/断是否仍干净 | 自动选择连上，出口 `35.88.216.55`（AWS 俄勒冈）；断开后 `tun0` 消失、出口回落。**PASS** |
+
+**产物真实性用独立判别式验证，不信"构建成功"**：解包 APK 的 `classes.dex`，
+确认含 `planAutoUpdate` / `AutoUpdateStep` **且不含**修复前的字符串
+`"Auto-update check failed"`。这一步的必要性来自一个真实的假绿——
+`node_modules/k2-plugin` 是**拷贝而非符号链接**，改 `mobile/plugins/` 后直接跑
+gradle 测的是陈旧拷贝，会 3 秒返回全绿。
+
+**顺带补上的构建门缺口**：出 release APK 有两条路径，
+`scripts/build-mobile-android.sh`（CI）与 `make build-android`（本地），
+而 k2-plugin 的单测门只加在前者——本次三个修复的 APK 恰恰是本地构建的。
+已在 Makefile 补齐（`7526195f`），位置必须在 `cap sync` 之后，否则同样测到陈旧拷贝。
+插件单测实测 66 个（27 AutoUpdatePlan + 34 K2PluginUtils + 5 Minisign），0 失败。
+
+**仍未闭环的一项**：「native 有更新时 web lane 仍执行」这个**核心**场景，真机上
+验不到——设备已是 0.4.8 而线上 android manifest 是 0.4.7，native lane 必然 skip。
+它由单测 `both_updates_available_plans_both_lanes` 覆盖，加上代码结构（无 `return`）
+与两条 lane 均执行的实证，三重佐证但**没有一次真机的正向命中**。
+要补需要 beta 频道发布，见 B04/B09。
 
 ### iOS 观测通道受限（D3 执行约束）
 
