@@ -532,7 +532,7 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | A05 | D2 | Kaitu × Overleap 桌面并存 | 两品牌不抢 `io_kaitu_desktop_si.sock`（本地构建验；Overleap 不发布） | TODO |
 | A06 | D6 | `curl -fsSL https://kaitu.io/i/k2 \| sudo bash` | 安装成功、webui 可达、tarball sha256 校验通过 | TODO |
 | A07 | D3 / D4 | 装机 + bridge v2 | `checkReady` 返回 `bridgeVersion=2` | **PASS**（桌面侧，2026-08-18）— `_platform` 面完整，`updater.setChannel` 是函数（`ec25dfcf` 的能力探测在桌面同样生效）。移动端待真机 |
-| A08 | 全平台 | P0 连接 / 断开 / 错误显示 | 连得上、断得干净、错误走 i18n 不露原始串 | TODO |
+| A08 | 全平台 | P0 连接 / 断开 / 错误显示 | 连得上、断得干净、错误走 i18n 不露原始串 | **PASS（连/断）+ FAIL:stale-poll-race**（macOS，2026-08-19）— 连接与断开的后端行为都干净；但断开时若撞上进行中的状态轮询，UI 会被陈旧响应打回「已连接」。详见下方专段 |
 | A09 | D3 | iOS NE 变更面 | `PacketTunnelProvider` + Info.plist + entitlements 改动后**隧道正常起停**；extension 有显式 `CURRENT_PROJECT_VERSION`/`MARKETING_VERSION` | TODO |
 
 ---
@@ -647,6 +647,49 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 
 **对本编排的实际杀伤**：**D1 是 macOS Intel，且 A01 是一次性不可复原的对照实验**。
 拿这个包去装 D1 会直接毁掉该实验。**给 D1 的必须是 CI 产出的包，不是本地 build-macos-test 产物。**
+
+### A08 附带发现：陈旧轮询响应会把「已断开」打回「已连接」
+
+真机时间线（console，非推理）：
+
+```
+07:44:39.903  run: action=status                          ← 15s 轮询发出（那一刻确实还连着）
+07:44:39.915  handleToggleConnection: → disconnect        ← 12ms 后用户点断开
+07:44:39.978  SSE: state=disconnected
+07:44:39.981  disconnecting + BACKEND_DISCONNECTED → idle ← SSE 正确，状态机到达 idle
+07:44:40.018  run: action=status → code=0                 ← 39.903 那个请求现在才回来
+07:44:40.019  statusToEvent: connected → BACKEND_CONNECTED
+07:44:40.019  idle + BACKEND_CONNECTED → connected        ← 陈旧响应覆盖正确状态
+```
+
+后端此刻已 `state=disconnected`、出口 IP 已回本地，**UI 却显示「已连接」+ CheckIcon +
+「已连接中，切换服务器前请先断开」**。用户会以为自己受保护，实际流量在裸奔。
+
+**恢复要 2 分 07 秒**（`07:46:47` 才 `connected + BACKEND_DISCONNECTED → idle`）——
+connected 态的轮询间隔远长于 disconnected 态，把 15s 的窗口放大成分钟级。
+
+触发窗口 ≈ 轮询往返耗时（本次 115ms）/ 轮询周期，概率不高但后果严重，且**断开正是
+用户最需要状态可信的时刻**。
+
+**根因**：轮询响应与 SSE 事件竞争同一个状态机，而轮询响应**不带任何时序标记**，
+后到者赢。讽刺的是 `connection.store` 已有 epoch 机制（日志可见
+`connect: epoch=0→1`、`disconnect: bumping epoch`），只是没用在轮询响应上。
+
+**是回归吗？不是。** `git diff v0.4.7 HEAD -- webapp/src/stores/vpn-machine.store.ts`
+**零改动**，转移表在 0.4.7 就是 `idle + BACKEND_CONNECTED → connected`。
+与 D06 同类：既有缺陷、非本次回归、可 Web OTA 热修。
+
+### iOS 观测通道受限（D3 执行约束）
+
+- `log stream` 本机版本不支持 `--device-udid`，真机日志流不可用
+- `devicectl device copy from` 对 `appGroupDataContainer`（`group.io.kaitu`）与
+  `appDataContainer` 均返回 `CoreDeviceError 7000`，错误文案 `File paths cannot contain '..'`
+  具有误导性——本地目标路径干净（`/Users/david/k2-ios-logs/`）时同样失败
+- 结论：**iPhone 侧的验证必须靠人在设备上操作 + app 内「上传日志」回传**，
+  不能像桌面那样由 agent 直接驱动
+
+> 另更正一条早先的错误归因：`tunnelState='disconnected'` 曾被我判为"隧道空闲/锁屏自动断开、
+> `deploy-ios-device.sh` 缺预热步骤"。实际是**数据线接触不良**（用户告知）。脚本无缺陷。
 
 ## 阶段 C — k2 核心回归（`ef6c0b2 → 6bc70b0`，上轮 UAT 未覆盖段）
 
