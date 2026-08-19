@@ -413,7 +413,7 @@ emotion 的 `css`/`css-global` 长度均为 0。
 | G02 | `build-windows` CI 红（SimplySign 云会话过期） | ci.yml 全绿（OSV-Scanner 除外，见 `project_osv_accepted_residual_vulns`） | 反复项 — CI 侧曾于 `89898dad` 全绿（含 build-windows），随后 **同日再次掉线**（`1a3621f4` 红）。已再次自助重连并用 `windows-sign-preflight.sh` 真实私钥签名确认。**这条会一掉再掉：会话有有效期，凡要出 Windows 产物就先跑一次 preflight**（`--list-slots` 有 token ≠ 能签，见下方记录） |
 | G03 | web OTA 地板锚点 + 契约门 + iOS channel | 见下方 G03 记录 | **DONE** `ec25dfcf` |
 | G04 | 契约门四道 | bridge-contract golden、api-contract（`-count=1`）、brand-purity、白屏冒烟门全绿 | **DONE** — 四道全绿。白屏冒烟门已**扩为遍历所有启动 URL 形态**（原门只测 `/`，漏掉了外壳实际使用的 `/index.html`，见上方阻断项） |
-| G05 | 全量测试 | webapp vitest / cargo test / go test / `scripts/test_build.sh` | 部分 — webapp 117 files/1337 passed、desktop cargo 180、mcp ok、manifest 门 11/11；**api 本机 DB 环境阻塞**（非回归，见 `reference_local_dev_db_homebrew_takeover`）；`test_build.sh` 待跑 |
+| G05 | 全量测试 | webapp vitest / cargo test / go test / `scripts/test_build.sh` | **api 已解除阻塞** 2026-08-19 — Docker 起来后 `dev-mariadb` 绑 `127.0.0.1:3306`（更精确者胜），`go test -v ./...` = **1211 PASS / 0 FAIL / 1 SKIP**，且 `skipIfNoConfig` 触发 **0 次**（判据是这个，不是耗时）。唯一 SKIP 是 `TestBrandIsolationMatrix/01_SameEmail_DualBrand…` 子测试自带。webapp 117 files/1337 passed、desktop cargo 180、mcp ok、manifest 门 11/11；`test_build.sh` 仍待跑 |
 | G06 | k2 submodule 指针 | `6bc70b0` 且 `LinuxBridgeVersion=2` | **DONE** — 已确认 |
 | G07 | 版本对齐 | package.json / Cargo.toml / build.gradle / `k2AppVersion` 皆 0.4.8；iOS build 号 **4408990** | **DONE** `1a3621f4` — `check-versions` 扩为四方对齐并已在 CI 通过。iOS 编号方案重设计（`89898dad`）：`4000000 + MINOR*1e5 + PATCH*1e3 + SLOT*10 + REV`，0.4.8 正式版 = **4408990**，高于 ASC 上已烧掉的 440899 / 440900 |
 | G08 | 重打 `v0.4.8` tag | origin 上现指向 `757467a5`（8-02 旧内容），需删除重打到当前 main | **等授权** |
@@ -462,20 +462,44 @@ ASC 显示 **4.4.7 READY_FOR_SALE** ⇒ 该次构建 `$VERSION` 非空 ⇒ 键�
 时只返回那一个源，且**不放宽** sig / min_bridge / min_desktop 任何一道门）即可跑完整链路。
 
 **免费的隔离证明**：UAT 跑完后 `kaitu/web/latest.json` 必须**仍然是 403**。
+→ 实测通过（2026-08-19）：`kaitu/web/latest.json`、`kaitu/web/beta/latest.json`、
+`overleap/web/latest.json` 三条全部仍为 403，而 `kaitu/web/uat/web/latest.json` 为 200。
+
+### 发布阻断项候选：CI 的 S3 身份没有 overleap 写权限
+
+UAT 发布暴露的，不是本仓库代码的问题：
+
+```
+AccessDenied … user/k2app-ci-s3 is not authorized to perform s3:PutObject
+on "arn:aws:s3:::d0.all7.cc/overleap/web/uat/web/…"
+```
+
+同一次 run 里 **kaitu 四个键全部上传成功**，overleap 第一个键就被拒。只读探测
+`overleap/{desktop,android,web}/…` 全部 403 —— overleap 在这个桶里**从未被写过
+任何东西**，IAM 很可能根本没有 overleap 授权。
+
+**对发布的影响**：`publish-web-ota.yml` 无条件遍历 `for BRAND in kaitu overleap`，
+且 kaitu 排在前面。所以真正的 stable 发布会**先把 kaitu 生产路径写成功，再在
+overleap 上失败** → run 变红、`Invalidate CloudFront` 被 skip。kaitu 用户拿到的是
+已发布但 CDN 未失效的状态（新路径无缓存，实际影响小），而 overleap 什么也没有。
+
+三条路可选，需决策：① 给 CI 身份加 `d0.all7.cc/overleap/*` 写权限；② 给 workflow
+加 brand 输入，本次只发 kaitu；③ 接受红 run。**注意 ② 不能做成"失败就跳过"** ——
+静默跳过一个品牌正是这条流水线最不该有的行为。
 
 manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_version` 会给短的补 0，
 故 `0.4.8.2xxxxxxx > 0.4.8` 成立——UAT 能真正触发 apply，不会退化成"无更新"的假绿。
 
 | ID | 设备 | 用例 | 期望 | Status |
 |----|------|------|------|--------|
-| B01 | — | 首发 manifest 推导 | `min_native/min_desktop/min_linux = 0.4.8`、`min_bridge = 1`、版本号为 `0.4.8.<epoch>` | TODO |
-| B02 | D2 | 桌面 OTA 全链路 | 拉取→sha256+minisign 验签→下载→原子换盘→重启生效（bundle 带肉眼可辨标记） | TODO |
-| B03 | D2 | 桌面坏包回滚 | 白屏 bundle → `.boot-pending` 残留 → 移入 `quarantine/` + 回退 previous/内嵌 | TODO |
+| B01 | — | 首发 manifest 推导 | `min_native/min_desktop/min_linux = 0.4.8`、`min_bridge = 1`、版本号为 `0.4.8.<epoch>` | **PASS** 2026-08-19 — UAT manifest 实测四项全对，版本 `0.4.8.19892011` |
+| B02 | D2 | 桌面 OTA 全链路 | 拉取→sha256+minisign 验签→下载→原子换盘→重启生效（bundle 带肉眼可辨标记） | **PASS** 2026-08-19（macOS，真 CDN）— `downloading UI 0.4.8.19892011 from https://d0.all7.cc/kaitu/web/uat/web/…` → `applied UI 0.4.8.19892011 (was 0.4.8), effective next launch` → 重启 `serving UI 0.4.8.19892011 from disk`。**判别式不用人造标记**：entry script 从内嵌的 `main-BnsKHI3B.js` 变为 OTA 的 `main-CHBucI3N.js`；`href=kaitu-ui://localhost/`、`rootChildren=1`、`rootHTMLLen=87741` —— 白屏修复在**当初炸掉的 DiskUi 路径**上成立 |
+| B03 | D2 | 桌面坏包回滚 | 白屏 bundle → `.boot-pending` 残留 → 移入 `quarantine/` + 回退 previous/内嵌 | **PASS** 2026-08-19 — 用真实坏包（入口 JS 前置 `throw`）而非模拟。启动1：磁盘 UI 起、JS 抛错、`ui_boot_ok` 不触发、`.boot-pending` 保留、poller 正确跳过该 tick（F1）。启动2：`previous UI boot unconfirmed — rolled back: RolledBackToEmbedded`，`current/` → `quarantine/0.4.8.19892011-20260819054448`，`quarantined-version.txt` 记版本，内嵌 UI 恢复正常渲染。再带同一 manifest 启动：`no update: version quarantined`（F2），不会装回来 |
 | B04 | D3 / D4 | 移动端 OTA | minisign 验签通过，冷启动生效 | TODO |
 | B05 | **D5**（/D8） | `min_native` 闸门负向门 | 0.4.7 存量机正确**静默跳过**，不下载不报错 | TODO |
 | B06 | D6 | Linux 磁盘覆盖 | 页面刷新即新 UI；`?ui=embedded` 逃生口回内嵌 | TODO |
-| B07 | 全平台 | 篡改测试 | 改 hash / 剥离 sig / 换签名密钥 → **全部拒绝应用** | TODO |
-| B08 | 全平台 | 核按钮 | 清空 `latest.json` → 停止更新且不崩 | TODO |
+| B07 | 全平台 | 篡改测试 | 改 hash / 剥离 sig / 换签名密钥 → **全部拒绝应用** | **PASS（桌面）** 2026-08-19 — 本地 HTTP 服务器 + 真实 release 产物三发：① 合法 hash+伪造 sig → 下载后 `sig decode: Invalid encoding in minisign data`；② `min_desktop=0.9.9` → `no update: min_desktop not satisfied`，**HTTP 访问日志只有 latest.json、无 zip 请求**（门在下载前短路）；③ hash 全 0 → `sha256 mismatch`（早于 minisign）。移动端待真机 |
+| B08 | 全平台 | 核按钮 | 清空 `latest.json` → 停止更新且不崩 | **PASS（桌面）** 2026-08-19 — 生产两个源当前天然就是 403（web OTA 从未发布），app 打两条 WARN 后继续正常运行，无崩溃、无降级 |
 | B09 | D3 / D4 | beta 通道切换（`ec25dfcf` 后两端均具备） | `setChannel('beta')` 生效，端点切 `beta/` 前缀；0.4.7 存量机降级 stable-only 且不显示开关 | TODO |
 
 ---
