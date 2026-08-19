@@ -26,9 +26,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAlert, useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
+import { useAppConfig } from "../hooks/useAppConfig";
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 
-import { type Plan, type Order, type AppConfig } from "../services/api-types";
+import { type Plan, type Order } from "../services/api-types";
 import { ERROR_CODES, getErrorMessage } from "../utils/errorCode";
 import { LoadingState, EmptyPlans } from '../components/LoadingAndEmpty';
 import MembershipBenefits from '../components/MembershipBenefits';
@@ -581,8 +582,10 @@ export default function Purchase() {
   // order/preview flow below never runs on iOS.
   const iap = window._platform?.iap;
   const affordance = useSubscriptionAffordance();
-  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
-  const [, setAppConfigLoading] = useState(false);
+  // 本页只读 appConfig.inviteReward。曾经在下面自带一份复制自 useAppConfig 的取数
+  // 逻辑（含 SWR + 缓存写入），但 TTL 写成 600 而 useAppConfig 是 3600，两边互相
+  // 覆盖同一个 api:app_config 键，且 7 个 useAppConfig 实例对本页的写入一无所知。
+  const { appConfig } = useAppConfig();
 
   const {showAlert} = useAlert();
 
@@ -832,51 +835,6 @@ export default function Purchase() {
 
     fetchPlans();
   }, [showAlert, t, isAuthenticated, plansPath, plansCacheKey]); // 登录后 / 购买范围(产品)变化时重新加载套餐列表
-
-  // 获取 App 配置（邀请奖励信息）
-  useEffect(() => {
-    const fetchAppConfig = async () => {
-      setAppConfigLoading(true);
-      try {
-        console.info('[Purchase] 获取 App 配置');
-        // Use k2api cache: app config rarely changes
-        // - key: cache key
-        // - ttl: 10 minutes cache
-        // - revalidate: SWR mode, return cache immediately and refresh in background
-        // - allowExpired: use expired cache as fallback on network failure
-        // Check cache first (SWR: return cache immediately, refresh in background)
-        const cachedConfig = cacheStore.get<AppConfig>('api:app_config');
-        if (cachedConfig) {
-          setAppConfig(cachedConfig);
-          setAppConfigLoading(false);
-          // Background revalidate
-          cloudApi.get<AppConfig>('/api/app/config').then(res => {
-            if (res.code === 0 && res.data) {
-              cacheStore.set('api:app_config', res.data, { ttl: 600 });
-              setAppConfig(res.data);
-            }
-          });
-          return;
-        }
-
-        const response = await cloudApi.get<AppConfig>('/api/app/config');
-        console.info('[Purchase] App 配置响应: ' + JSON.stringify(response));
-
-        if (response.code === 0 && response.data) {
-          cacheStore.set('api:app_config', response.data, { ttl: 600 });
-          setAppConfig(response.data);
-        } else {
-          console.error('[Purchase] 获取 App 配置失败:', response.message);
-        }
-      } catch (error) {
-        console.error('[Purchase] 获取 App 配置异常:', error);
-      } finally {
-        setAppConfigLoading(false);
-      }
-    };
-
-    fetchAppConfig();
-  }, []);
 
   // 当计划或优惠码变化时，重新获取预览数据
   useEffect(() => {

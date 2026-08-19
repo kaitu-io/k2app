@@ -6,7 +6,7 @@ vi.mock('../../services/cloud-api', () => ({
   cloudApi: { get: vi.fn().mockResolvedValue({ code: -1, message: 'offline' }) },
 }));
 vi.mock('../../services/cache-store', () => ({
-  cacheStore: { get: vi.fn(() => null), set: vi.fn() },
+  cacheStore: { get: vi.fn(() => null), set: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
