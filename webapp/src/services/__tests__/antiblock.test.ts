@@ -272,7 +272,30 @@ describe('antiblock — ts freshness + single-record store + resolveEntries', ()
   afterEach(async () => {
     // 排空上个 test 遗留的后台镜像回调（setTimeout），让它们在本 test 的 mock+store
     // 仍生效时落地，避免泄漏到下个 test 污染共享的 window.__k2ac。
-    await new Promise((r) => setTimeout(r, 15));
+    //
+    // 固定时长是一场赌博：链路是 setTimeout(0) → onload →
+    // await crypto.subtle.decrypt → setItem，在负载高的 runner 上整条链会超过
+    // 任何写死的毫秒数。溢出的那次写落进下一个 test 刚建好的 store（stub 闭包
+    // 引用的是外层 `store` 变量，beforeEach 重新赋值挡不住迟到的写），把它变成
+    // 一次缓存命中。2026-08-19 的 publish-web-ota 就因此红过一次：
+    // test_resolveEntries_returns_full_list… 拿到了上一个 test 的 'https://noTs'。
+    // 所以改为等到 store 连续两轮快照不变，上限 500ms。
+    let prev: string | null = null;
+    let quiesced = false;
+    for (let i = 0; i < 100; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+      const snap = JSON.stringify(store);
+      if (snap === prev) { quiesced = true; break; }
+      prev = snap;
+    }
+    // 撞到上限时必须响。静默跳出等于把同一场竞态推给下一个 test，在那里表现为
+    // 一个看不懂的断言失败（正是本次 publish-web-ota 红掉时的样子）。
+    if (!quiesced) {
+      throw new Error(
+        'antiblock test store never quiesced within 500ms — a background mirror ' +
+        'write is still in flight and will leak into the next test',
+      );
+    }
     vi.restoreAllMocks();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (window as any).__k2ac;
