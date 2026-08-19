@@ -483,9 +483,26 @@ on "arn:aws:s3:::d0.all7.cc/overleap/web/uat/web/…"
 overleap 上失败** → run 变红、`Invalidate CloudFront` 被 skip。kaitu 用户拿到的是
 已发布但 CDN 未失效的状态（新路径无缓存，实际影响小），而 overleap 什么也没有。
 
-三条路可选，需决策：① 给 CI 身份加 `d0.all7.cc/overleap/*` 写权限；② 给 workflow
-加 brand 输入，本次只发 kaitu；③ 接受红 run。**注意 ② 不能做成"失败就跳过"** ——
-静默跳过一个品牌正是这条流水线最不该有的行为。
+**已按 ① 处理并闭合（2026-08-19）**，但缺口是**两道而非一道**：
+
+| 门 | 位置 | 缺了会怎样 |
+|----|------|-----------|
+| 写 | IAM 用户 `k2app-ci-s3` 内联策略 `k2app-desktop-release` / Sid `S3Access` | `AccessDenied … s3:PutObject`，CI 步骤红 |
+| 读 | **桶策略** `PublicReadGetObject`（`d0.all7.cc`） | 对象写得进去，公开 GET **403**；`head-object` 却看得到对象——最容易误判成"没发上去" |
+
+两处原本都只有 `kaitu/*`。各加一行 `arn:aws:s3:::d0.all7.cc/overleap/*`（与 kaitu
+同形；桶策略跨项目共享，只加一条 Resource，meety/anc、waymaker、meet 未动）。
+验证不是回读策略而是让 CI 真跑一次：8 个键全部上传成功，两个品牌 UAT 路径均 200，
+生产四条路径仍 403。
+
+> **403 有两种含义**：桶未授予 ListBucket 时，不存在的键也返回 403 而非 404。所以
+> 生产路径的 403 是"还没发布"，overleap UAT 当初的 403 是"没有读权限"——两者靠
+> `aws s3api head-object`（带凭证）区分。
+
+**仍待决策**：授权解决"能不能"，不解决"这次要不要"。`publish-web-ota.yml` 仍无条件
+遍历两个品牌，所以真正的 stable 发布会把 **overleap 也推上线**，与"0.4.8 kaitu only"
+的既定范围冲突。选项 ②（给 workflow 加 brand 输入）仍然需要，且**不能做成"失败就
+跳过"**——静默跳过一个品牌正是这条流水线最不该有的行为。
 
 manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_version` 会给短的补 0，
 故 `0.4.8.2xxxxxxx > 0.4.8` 成立——UAT 能真正触发 apply，不会退化成"无更新"的假绿。
