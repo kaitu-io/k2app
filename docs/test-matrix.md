@@ -512,7 +512,7 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | B01 | — | 首发 manifest 推导 | `min_native/min_desktop/min_linux = 0.4.8`、`min_bridge = 1`、版本号为 `0.4.8.<epoch>` | **PASS** 2026-08-19 — UAT manifest 实测四项全对，版本 `0.4.8.19892011` |
 | B02 | D2 | 桌面 OTA 全链路 | 拉取→sha256+minisign 验签→下载→原子换盘→重启生效（bundle 带肉眼可辨标记） | **PASS** 2026-08-19（macOS，真 CDN）— `downloading UI 0.4.8.19892011 from https://d0.all7.cc/kaitu/web/uat/web/…` → `applied UI 0.4.8.19892011 (was 0.4.8), effective next launch` → 重启 `serving UI 0.4.8.19892011 from disk`。**判别式不用人造标记**：entry script 从内嵌的 `main-BnsKHI3B.js` 变为 OTA 的 `main-CHBucI3N.js`；`href=kaitu-ui://localhost/`、`rootChildren=1`、`rootHTMLLen=87741` —— 白屏修复在**当初炸掉的 DiskUi 路径**上成立 |
 | B03 | D2 | 桌面坏包回滚 | 白屏 bundle → `.boot-pending` 残留 → 移入 `quarantine/` + 回退 previous/内嵌 | **PASS** 2026-08-19 — 用真实坏包（入口 JS 前置 `throw`）而非模拟。启动1：磁盘 UI 起、JS 抛错、`ui_boot_ok` 不触发、`.boot-pending` 保留、poller 正确跳过该 tick（F1）。启动2：`previous UI boot unconfirmed — rolled back: RolledBackToEmbedded`，`current/` → `quarantine/0.4.8.19892011-20260819054448`，`quarantined-version.txt` 记版本，内嵌 UI 恢复正常渲染。再带同一 manifest 启动：`no update: version quarantined`（F2），不会装回来 |
-| B04 | D3 / D4 | 移动端 OTA | minisign 验签通过，冷启动生效 | TODO |
+| B04 | D3 / D4 | 移动端 OTA | minisign 验签通过，冷启动生效 | **部分** 2026-08-20 — web lane 的**执行**已在 Android 真机闭环（降版本探针，见下方专段）；剩下的 下载→sha256→minisign→落盘这一段仍 TODO，需要一个可达的 web manifest。该段与用户手动触发的 web 更新**共用同一个 `verifyWebZip` 核心** |
 | B05 | **D5**（/D8） | `min_native` 闸门负向门 | 0.4.7 存量机正确**静默跳过**，不下载不报错 | **INVALID:用例前提不成立** 2026-08-19 — 存量机根本走不到 web 分支，`min_native` 从未被求值。真机实测见下方专段。这个用例若照原样执行会给出**假阳性**（「没下载、没报错」看起来像门生效，实际是 native 分支短路） |
 | B06 | D6 | Linux 磁盘覆盖 | 页面刷新即新 UI；`?ui=embedded` 逃生口回内嵌 | TODO |
 | B07 | 全平台 | 篡改测试 | 改 hash / 剥离 sig / 换签名密钥 → **全部拒绝应用** | **PASS（桌面）** 2026-08-19 — 本地 HTTP 服务器 + 真实 release 产物三发：① 合法 hash+伪造 sig → 下载后 `sig decode: Invalid encoding in minisign data`；② `min_desktop=0.9.9` → `no update: min_desktop not satisfied`，**HTTP 访问日志只有 latest.json、无 zip 请求**（门在下载前短路）；③ hash 全 0 → `sha256 mismatch`（早于 minisign）。移动端待真机 |
@@ -766,7 +766,7 @@ web OTA 是「静默修好当前这个版本」（无感、立即）。**用户�
 | 修复 | 真机判据 | 结果 |
 |---|---|---|
 | **D06 错误文案** | 全排除 7 国 → 折叠态错误条 | 修复前「⚠ 未知错误」→ 修复后「可用节点已全部被排除，请调整国家/地区过滤」。**PASS** |
-| **移动端 OTA 解耦** | 冷启动 logcat 两条 lane 是否都执行 | 修复前只有一行 `starting auto-update check` 零后续；修复后 `Auto-update [native] skipped: no newer version (remote=0.4.7 local=0.4.8)` + `Auto-update [web] skipped: manifest unavailable` 两条俱全。**PASS** |
+| **移动端 OTA 解耦** | 冷启动 logcat 两条 lane 是否都执行 | 修复前只有一行 `starting auto-update check` 零后续；修复后 `Auto-update [native] skipped: no newer version (remote=0.4.7 local=0.4.8)` + `Auto-update [web] skipped: manifest unavailable` 两条俱全。**PASS**。2026-08-20 补上**正向命中**（native 命中时 web lane 仍执行），见下方降版本探针专段 |
 | **A08 陈旧轮询** | 竞态窗口 ≈ 轮询往返/轮询周期 | 真机**未刻意复现**（概率性）。由 9 个 vitest 用例覆盖，含 8 项变异验证 |
 | **P0 回归** | 三个修复后连/断是否仍干净 | 自动选择连上，出口 `35.88.216.55`（AWS 俄勒冈）；断开后 `tun0` 消失、出口回落。**PASS** |
 
@@ -782,11 +782,47 @@ gradle 测的是陈旧拷贝，会 3 秒返回全绿。
 已在 Makefile 补齐（`7526195f`），位置必须在 `cap sync` 之后，否则同样测到陈旧拷贝。
 插件单测实测 66 个（27 AutoUpdatePlan + 34 K2PluginUtils + 5 Minisign），0 失败。
 
-**仍未闭环的一项**：「native 有更新时 web lane 仍执行」这个**核心**场景，真机上
-验不到——设备已是 0.4.8 而线上 android manifest 是 0.4.7，native lane 必然 skip。
-它由单测 `both_updates_available_plans_both_lanes` 覆盖，加上代码结构（无 `return`）
-与两条 lane 均执行的实证，三重佐证但**没有一次真机的正向命中**。
-要补需要 beta 频道发布，见 B04/B09。
+**已闭环（2026-08-20）**：「native 有更新时 web lane 仍执行」这个**核心**场景，
+一度以为真机上验不到——设备已是 0.4.8 而线上 android manifest 是 0.4.7，native lane
+必然 skip。**用降版本探针解决，不需要 beta 频道发布，不写生产 CDN。**
+
+手法：native lane 比的是 `versionName`（`K2Plugin.kt:913`），而 Android 判「装包
+算不算降级」看的是 `versionCode`。二者是**两条独立通道**，所以只压 versionName、
+versionCode 保持 408，就能让 app 自认 0.4.6（→ native lane 必然命中），而安装仍是
+平装：**数据保留、不用 `-d`、不用卸载**。
+
+版本串从**仓库外**注入，一个源文件都没改：
+
+```groovy
+// scratchpad/lowver.init.gradle —— ./gradlew -I <此文件> :app:assembleKaituRelease
+p.extensions.getByName('androidComponents').finalizeDsl { dsl ->
+    dsl.defaultConfig.versionName = '0.4.6'
+}
+```
+
+`finalizeDsl` 在 build.gradle 求值之后、variant 创建之前跑，是 AGP 8 的官方钩子。
+产物独立核验（没信 BUILD SUCCESSFUL）：`versionCode='408' versionName='0.4.6'`，
+签名 `579aad1a…` 与设备上完全一致，`classes.dex` 含 `AutoUpdatePlan` ×2。
+两个 APK 压缩后**字节数相同**（29376931）——旁证除版本串外无差异。
+
+同一台设备（M2012K11C / Android 14 / SDK 34）、同一组生产端点、同一次会话内的三段对照：
+
+| 步骤 | 装的是 | logcat |
+|---|---|---|
+| 1 对照 | 正式 0.4.8 | `[native] skipped: no newer version (remote=0.4.7 local=0.4.8)` + `[web] skipped: manifest unavailable` |
+| 2 探针 | 代码 0.4.8 / vn 0.4.6 | **`[native] update available: 0.4.7`** + **`[web] skipped: manifest unavailable`** |
+| 3 复原 | 正式 0.4.8 | 回到步骤 1 的两行，横幅消失 |
+
+步骤 2 同时有用户可见证据：`uiautomator dump` 抓到横幅 `v0.4.7 已准备好安装` +
+`稍后再说` / `立即更新`，与 logcat 的 native 命中对上。
+
+**判别式是第二行的存在与否**：修复前的代码在 `notify native` 之后直接 `return`，
+web lane 一行都不会打（2026-08-19 用真 0.4.6 release APK 在同一台设备上现场观测过，
+web 端点零请求）。web lane 落在 `manifest unavailable` 是因为生产 `kaitu/web/latest.json`
+当前是 403——**它落在哪个 reason 不重要，重要的是它落了**。
+
+附带一个此前只有单测覆盖的实测：设备无网络时（`Active default network: none`），
+native lane 失败后 web lane **照样执行**并留下日志——失败隔离在真机上成立。
 
 ### iOS 观测通道受限（D3 执行约束）
 
