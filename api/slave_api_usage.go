@@ -125,7 +125,9 @@ func api_slave_node_report_usage(c *gin.Context) {
 				go sendCloudSlackNotification(c.Request.Context(), "Node Uncapped",
 					fmt.Sprintf("node=%d ip=%s first report has QuotaTotalBytes=0 (no cap set)", node.ID, node.Ipv4))
 			}
-			Success(c, &NodeUsageResponse{NextReportInterval: usageReportIntervalSec})
+			// First report still gets the AWS correction — a freshly onboarded
+			// node is exactly the one whose meter starts at 0.
+			respondUsageWithCorrection(c, node, req)
 			return
 		}
 		// Lost the create race with a concurrent first report (unique ipv4). Re-read
@@ -149,6 +151,13 @@ func api_slave_node_report_usage(c *gin.Context) {
 		log.Errorf(c, "[USAGE] update node_usage ip=%s: %v", node.Ipv4, uerr)
 	}
 
+	respondUsageWithCorrection(c, node, req)
+}
+
+// respondUsageWithCorrection finishes a recorded report: attaches the AWS
+// provider-authoritative figure when applicable (raising the stored record to
+// it as well) and sends the ack. Shared by the first-report and update paths.
+func respondUsageWithCorrection(c *gin.Context, node *SlaveNode, req NodeUsageRequest) {
 	resp := &NodeUsageResponse{NextReportInterval: usageReportIntervalSec}
 	if auth := awsAuthoritativeUsedBytes(node.Ipv4, req); auth > 0 {
 		resp.AuthoritativeUsedBytes = auth
