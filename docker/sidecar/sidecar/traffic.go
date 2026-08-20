@@ -11,20 +11,40 @@ import (
 	"time"
 )
 
+// Billing modes — how the per-direction NIC deltas combine into billable usage.
+// The mode must match how the hosting provider counts traffic against the plan.
+const (
+	// BillingModeMax bills the greater of the two directions (legacy default).
+	// Correct for outbound-billed providers (e.g. BandwagonHost), where a relay's
+	// rx≈tx makes max a safe over-approximation of the billed direction.
+	BillingModeMax = "max"
+	// BillingModeSum bills inbound+outbound. AWS Lightsail counts BOTH directions
+	// against the monthly allowance (verified against Cost Explorer overage line
+	// items 2026-08) — max undercounted it by ~half fleet-wide.
+	BillingModeSum = "sum"
+)
+
 // trafficState persists the per-direction cycle baseline so a restart resumes
 // in-cycle usage instead of re-anchoring to the current NIC counters (which
-// would zero usage). Baselines are kept per direction because billable usage is
-// max(inbound, outbound) — see GetTrafficStats.
+// would zero usage). Baselines are kept per direction so the billing mode
+// (sum/max) can combine them at read time — see GetTrafficStats.
 type trafficState struct {
 	BillingCycleEndAt int64  `json:"billing_cycle_end_at"`
 	CycleStartRx      uint64 `json:"cycle_start_rx"`
 	CycleStartTx      uint64 `json:"cycle_start_tx"`
 	// PriorUsedBytes is usage already consumed THIS cycle before the local NIC
-	// anchor (mid-cycle onboarding seed). Billable usage = PriorUsedBytes +
-	// max(rx,tx) delta, so a fresh node can declare more than its NIC has ever
-	// seen. Absent in legacy files → 0 → identical to the old delta-only math.
-	// Zeroed on cycle rollover (never carried into the next month).
+	// anchor (mid-cycle onboarding seed or authoritative correction). Billable
+	// usage = PriorUsedBytes + the mode-combined deltas, so a fresh node can
+	// declare more than its NIC has ever seen. Absent in legacy files → 0 →
+	// identical to the old delta-only math. Zeroed on cycle rollover (never
+	// carried into the next month).
 	PriorUsedBytes uint64 `json:"prior_used_bytes"`
+	// LastUsedBytes is the most recent successfully computed billable usage,
+	// persisted (rate-limited) so a VM reboot — which zeroes the kernel NIC
+	// counters — can fold the pre-reboot usage back in instead of silently
+	// dropping it. Absent in legacy files → 0 (reset detection then re-anchors
+	// with nothing to fold, matching the old lossy behavior once).
+	LastUsedBytes uint64 `json:"last_used_bytes"`
 }
 
 // hasBaseline reports whether the persisted state carries a usable baseline.
@@ -67,9 +87,12 @@ type TrafficMonitor struct {
 	billingStartDate  string    // billing start date (yyyy-MM-dd)
 	billingCycleEndAt int64     // current billing cycle end timestamp
 	trafficLimitGB    int64     // monthly traffic limit (GB), 0 = unlimited
+	billingMode       string    // BillingModeSum / BillingModeMax — how deltas combine
 	cycleStartRx      uint64    // RX counter at start of current billing cycle
 	cycleStartTx      uint64    // TX counter at start of current billing cycle
-	priorUsedBytes    uint64    // usage already consumed this cycle before the NIC anchor (onboarding seed)
+	priorUsedBytes    uint64    // usage already consumed this cycle before the NIC anchor (onboarding seed / authoritative correction)
+	lastUsedBytes     uint64    // most recent computed billable usage (reboot-reset fold source)
+	lastPersistAt     time.Time // last rate-limited state persist from GetTrafficStats
 	primaryInterface  string    // primary network interface name
 	lastDetectedAt    time.Time // last time interface was detected
 	procPath          string    // proc mount for NIC reads ("/host/proc" in prod)
@@ -78,6 +101,30 @@ type TrafficMonitor struct {
 
 const bytesPerGiB = int64(1024 * 1024 * 1024)
 
+// trafficStatePersistInterval rate-limits the LastUsedBytes persist done on each
+// successful GetTrafficStats read (the enforcer polls every ~5s; writing the tiny
+// state file at most once a minute bounds the reboot-fold loss window to ~1min of
+// traffic while keeping disk writes negligible).
+const trafficStatePersistInterval = time.Minute
+
+// normalizeBillingMode maps the configured mode string to a valid mode. Empty =
+// legacy default (max — non-AWS fleet nodes set no mode). A NON-empty unknown
+// value means someone tried to configure a mode and mistyped: fall back to sum,
+// the fail-closed direction (over-counts → cuts early → costs availability, never
+// money), and log loudly.
+func normalizeBillingMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", BillingModeMax:
+		return BillingModeMax
+	case BillingModeSum:
+		return BillingModeSum
+	default:
+		slog.Error("Unknown traffic billing mode — falling back to fail-closed 'sum'",
+			"component", "traffic", "configured", mode)
+		return BillingModeSum
+	}
+}
+
 // NewTrafficMonitor creates a traffic monitor.
 //   - billingStartDate: billing start date (yyyy-MM-dd), e.g. "2025-01-15"
 //   - trafficLimitGB:   monthly traffic limit (GB), 0 = unlimited
@@ -85,7 +132,9 @@ const bytesPerGiB = int64(1024 * 1024 * 1024)
 //     when this node is onboarded mid-cycle. Applied ONLY on the very first boot
 //     (no persisted state yet); thereafter the persisted record wins so a restart
 //     never re-applies it. 0 = no seed. Adjust later with SetUsage.
-func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64, initialUsedGB int64) (*TrafficMonitor, error) {
+//   - billingMode:      BillingModeSum / BillingModeMax (empty = max, the legacy
+//     default) — must match how the provider bills, see the mode constants.
+func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64, initialUsedGB int64, billingMode string) (*TrafficMonitor, error) {
 	if billingStartDate == "" {
 		return nil, fmt.Errorf("billingStartDate is required")
 	}
@@ -98,6 +147,7 @@ func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64, initialUse
 	tm := &TrafficMonitor{
 		billingStartDate: billingStartDate,
 		trafficLimitGB:   trafficLimitGB,
+		billingMode:      normalizeBillingMode(billingMode),
 		procPath:         hostProcPath(),
 		statePath:        "/etc/kaitu/traffic.state",
 	}
@@ -126,8 +176,15 @@ func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64, initialUse
 		tm.cycleStartRx = st.CycleStartRx
 		tm.cycleStartTx = st.CycleStartTx
 		tm.priorUsedBytes = st.PriorUsedBytes
+		tm.lastUsedBytes = st.LastUsedBytes
 		slog.Info("Traffic cycle baseline restored from state", "component", "traffic",
 			"cycleStartRx", tm.cycleStartRx, "cycleStartTx", tm.cycleStartTx, "priorUsedBytes", tm.priorUsedBytes)
+		// A VM reboot while the sidecar was down zeroes the kernel NIC counters:
+		// the restored baseline would then exceed the live counters and every
+		// delta clamps to 0, silently dropping the cycle's usage. Fold the last
+		// known usage in and re-anchor instead. (Init is single-threaded — no
+		// lock needed yet.)
+		tm.foldCounterResetLocked(rx, tx)
 	case st.BillingCycleEndAt == 0 && initialUsedGB > 0:
 		tm.applyUsageBaseline(rx, tx, initialUsedGB)
 		_ = saveTrafficState(tm.statePath, tm.snapshotState())
@@ -144,6 +201,7 @@ func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64, initialUse
 		"interface", tm.primaryInterface,
 		"billingDate", billingStartDate,
 		"limitGB", trafficLimitGB,
+		"billingMode", tm.billingMode,
 		"rx", rx, "tx", tx)
 
 	return tm, nil
@@ -157,18 +215,66 @@ func (tm *TrafficMonitor) snapshotState() trafficState {
 		CycleStartRx:      tm.cycleStartRx,
 		CycleStartTx:      tm.cycleStartTx,
 		PriorUsedBytes:    tm.priorUsedBytes,
+		LastUsedBytes:     tm.lastUsedBytes,
 	}
 }
 
 // applyUsageBaseline records usedGB as the cycle's prior-used floor and anchors
 // the per-direction baseline at the CURRENT NIC counters (so the live delta
-// starts at 0). Billable usage then reads priorUsedBytes + max(rx,tx) delta, which
-// — unlike the old "baseline = NIC − used" math — works even when the declared
-// usage exceeds what this node's NIC has ever seen (a fresh mid-cycle node).
+// starts at 0). Billable usage then reads priorUsedBytes + the mode-combined
+// deltas, which — unlike the old "baseline = NIC − used" math — works even when
+// the declared usage exceeds what this node's NIC has ever seen (a fresh
+// mid-cycle node).
 func (tm *TrafficMonitor) applyUsageBaseline(rx, tx uint64, usedGB int64) {
 	tm.priorUsedBytes = uint64(usedGB) * uint64(bytesPerGiB)
 	tm.cycleStartRx = rx
 	tm.cycleStartTx = tx
+	tm.lastUsedBytes = tm.priorUsedBytes
+}
+
+// foldCounterResetLocked detects a kernel NIC counter reset (VM reboot: counters
+// restart from 0, dropping below the cycle baseline) and recovers: the last known
+// billable usage becomes the prior-used floor and the baseline re-anchors at the
+// current counters. Caller holds the write lock (or is in single-threaded init).
+// Returns true when a reset was detected and folded.
+func (tm *TrafficMonitor) foldCounterResetLocked(rx, tx uint64) bool {
+	if rx >= tm.cycleStartRx && tx >= tm.cycleStartTx {
+		return false
+	}
+	slog.Warn("NIC counter reset detected (VM reboot?) — folding last known usage into baseline",
+		"component", "traffic",
+		"rx", rx, "tx", tx, "cycleStartRx", tm.cycleStartRx, "cycleStartTx", tm.cycleStartTx,
+		"foldedUsedBytes", tm.lastUsedBytes)
+	tm.priorUsedBytes = tm.lastUsedBytes
+	tm.cycleStartRx = rx
+	tm.cycleStartTx = tx
+	_ = saveTrafficState(tm.statePath, tm.snapshotState())
+	tm.lastPersistAt = time.Now()
+	return true
+}
+
+// computeUsedLocked combines the per-direction deltas per the billing mode and
+// adds the prior-used floor. Caller holds at least the read lock and has already
+// handled counter resets (deltas here clamp at 0 defensively).
+func (tm *TrafficMonitor) computeUsedLocked(rx, tx uint64) int64 {
+	rxDelta := int64(0)
+	if rx > tm.cycleStartRx {
+		rxDelta = int64(rx - tm.cycleStartRx)
+	}
+	txDelta := int64(0)
+	if tx > tm.cycleStartTx {
+		txDelta = int64(tx - tm.cycleStartTx)
+	}
+	var used int64
+	if tm.billingMode == BillingModeSum {
+		used = rxDelta + txDelta
+	} else {
+		used = rxDelta
+		if txDelta > used {
+			used = txDelta
+		}
+	}
+	return used + int64(tm.priorUsedBytes)
 }
 
 // SetUsage rewrites the persisted baseline so the meter reports usedGB right now,
@@ -321,6 +427,7 @@ func (tm *TrafficMonitor) checkAndResetCycle() error {
 	tm.cycleStartRx = rx
 	tm.cycleStartTx = tx
 	tm.priorUsedBytes = 0 // new cycle starts fresh; the onboarding seed never carries forward
+	tm.lastUsedBytes = 0  // ditto — a reboot right after rollover must not fold last cycle's usage in
 	tm.billingCycleEndAt = tm.calculateNextCycleEnd(now).Unix()
 
 	// Persist the new baseline so a restart in the new cycle resumes from here.
@@ -336,37 +443,32 @@ func (tm *TrafficMonitor) checkAndResetCycle() error {
 	return nil
 }
 
-// GetTrafficStats returns traffic statistics. Billable usage is the GREATER of
-// the inbound and outbound deltas this cycle (AWS bills the larger direction),
-// NOT their sum.
+// GetTrafficStats returns traffic statistics. Billable usage combines the
+// per-direction deltas per the billing mode (sum for AWS Lightsail, max for
+// outbound-billed providers) plus the prior-used floor. Takes the write lock:
+// each read also refreshes lastUsedBytes, folds NIC counter resets, and persists
+// the state at most once per trafficStatePersistInterval.
 func (tm *TrafficMonitor) GetTrafficStats() (TrafficStats, error) {
 	// Check if billing cycle needs to be reset
 	if err := tm.checkAndResetCycle(); err != nil {
 		slog.Warn("Failed to check cycle", "component", "traffic", "err", err)
 	}
 
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
 
 	rx, tx, err := tm.readInterfaceRxTx()
 	if err != nil {
 		return TrafficStats{}, fmt.Errorf("failed to read traffic: %w", err)
 	}
 
-	rxDelta := int64(0)
-	if rx > tm.cycleStartRx {
-		rxDelta = int64(rx - tm.cycleStartRx)
+	tm.foldCounterResetLocked(rx, tx)
+	usedBytes := tm.computeUsedLocked(rx, tx)
+	tm.lastUsedBytes = uint64(usedBytes)
+	if time.Since(tm.lastPersistAt) >= trafficStatePersistInterval {
+		_ = saveTrafficState(tm.statePath, tm.snapshotState())
+		tm.lastPersistAt = time.Now()
 	}
-	txDelta := int64(0)
-	if tx > tm.cycleStartTx {
-		txDelta = int64(tx - tm.cycleStartTx)
-	}
-	usedBytes := rxDelta
-	if txDelta > usedBytes {
-		usedBytes = txDelta
-	}
-	// Add usage carried in at onboarding (mid-cycle seed). Zero on a normal node.
-	usedBytes += int64(tm.priorUsedBytes)
 
 	return TrafficStats{
 		BillingCycleEndAt:        tm.billingCycleEndAt,
@@ -375,9 +477,46 @@ func (tm *TrafficMonitor) GetTrafficStats() (TrafficStats, error) {
 	}, nil
 }
 
+// AdoptAuthoritativeUsed raises the local meter to a provider-reported figure
+// (one-way ratchet: it never lowers usage, so it can only make the enforcer cut
+// earlier — the node keeps cutoff authority). epochID must match the cycle the
+// figure was computed against (the BillingCycleEndAt the reporter just sent);
+// a mismatch (cycle rolled over in between) is ignored. Returns whether the
+// figure was adopted.
+func (tm *TrafficMonitor) AdoptAuthoritativeUsed(authBytes int64, epochID int64) (bool, error) {
+	if authBytes <= 0 {
+		return false, nil
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	if epochID != tm.billingCycleEndAt {
+		return false, nil // stale correction from a previous cycle
+	}
+	rx, tx, err := tm.readInterfaceRxTx()
+	if err != nil {
+		return false, fmt.Errorf("read NIC for authoritative adopt: %w", err)
+	}
+	tm.foldCounterResetLocked(rx, tx)
+	if authBytes <= tm.computeUsedLocked(rx, tx) {
+		return false, nil // local meter is already at or above the provider figure
+	}
+	tm.priorUsedBytes = uint64(authBytes)
+	tm.cycleStartRx = rx
+	tm.cycleStartTx = tx
+	tm.lastUsedBytes = uint64(authBytes)
+	if err := saveTrafficState(tm.statePath, tm.snapshotState()); err != nil {
+		slog.Warn("Failed to persist authoritative baseline", "component", "traffic", "err", err)
+	}
+	tm.lastPersistAt = time.Now()
+	slog.Warn("Adopted provider-authoritative usage (local meter was lower)",
+		"component", "traffic", "authoritativeBytes", authBytes)
+	return true, nil
+}
+
 // TrafficStats traffic statistics data
 type TrafficStats struct {
 	BillingCycleEndAt        int64 // Billing cycle end timestamp (Unix seconds)
 	MonthlyTrafficLimitBytes int64 // Monthly traffic limit (bytes), 0 = unlimited
-	UsedTrafficBytes         int64 // Traffic used in current cycle (bytes), = max(rx,tx) delta
+	UsedTrafficBytes         int64 // Traffic used in current cycle (bytes), mode-combined deltas + prior floor
 }

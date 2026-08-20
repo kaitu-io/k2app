@@ -17,6 +17,7 @@ k2_center:
   billing_start_date: "${K2_NODE_BILLING_START_DATE:-}"
   traffic_limit_gb: ${K2_NODE_TRAFFIC_LIMIT_GB:-0}
   traffic_used_gb: ${K2_NODE_TRAFFIC_USED_GB:-0}
+  traffic_billing_mode: "${K2_NODE_TRAFFIC_BILLING_MODE:-}"
 
 node:
   name: "${K2_NODE_NAME:-}"

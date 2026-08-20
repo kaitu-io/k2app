@@ -245,6 +245,11 @@ func syncAccount(ctx context.Context, database *gorm.DB, account CloudInstanceAc
 			log.Errorf(ctx, "[CLOUD] Failed to upsert instance %s: %v", inst.InstanceID, err)
 		}
 		syncedIDs[inst.InstanceID] = true
+		// AWS Lightsail overage backstop: reconcile self-metering against the
+		// provider figure, warn at 80/95%, auto-stop at 100% (worker_cloud_overage.go).
+		if account.Provider == cloudprovider.ProviderAWSLightsail {
+			checkAWSInstanceOverage(ctx, provider, inst)
+		}
 	}
 
 	// Orphan detection: mark instances that no longer exist as deleted

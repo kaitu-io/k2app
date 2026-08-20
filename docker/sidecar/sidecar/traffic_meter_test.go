@@ -41,8 +41,10 @@ func newTestTM(t *testing.T, rx, tx uint64, statePath string) *TrafficMonitor {
 	return tm
 }
 
-// TestUsedTrafficBytes_MaxDirection verifies usage is the HIGHER of inbound and
-// outbound deltas (AWS bills the larger direction), NOT their sum.
+// TestUsedTrafficBytes_MaxDirection verifies the default mode (max) bills the
+// HIGHER of inbound and outbound deltas — correct for outbound-billed providers.
+// (AWS Lightsail actually sums both directions: that's BillingModeSum, see
+// traffic_billing_mode_test.go.)
 func TestUsedTrafficBytes_MaxDirection(t *testing.T) {
 	// baseline rx=1000, tx=1000; now rx=1000+300, tx=1000+900 → rxDelta=300, txDelta=900
 	tm := newTestTM(t, 1300, 1900, filepath.Join(t.TempDir(), "s.state"))
