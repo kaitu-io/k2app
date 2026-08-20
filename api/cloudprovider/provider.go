@@ -119,6 +119,17 @@ type Provider interface {
 	ListImages(ctx context.Context, region string) ([]ImageInfo, error)
 }
 
+// InstanceStopper is an OPTIONAL capability: providers that can stop (not
+// delete) a running instance implement it; callers type-assert. Deliberately
+// kept off the Provider interface — only AWS Lightsail needs it today (the one
+// provider that keeps serving and billing past the transfer allowance, so the
+// overage backstop must be able to power the instance off).
+type InstanceStopper interface {
+	// StopInstance powers the instance off. Data and IP allocation are kept;
+	// the instance can be started again from the console/API.
+	StopInstance(ctx context.Context, instanceID string) (*OperationResult, error)
+}
+
 // NotSupportedError indicates the operation is not supported by this provider
 type NotSupportedError struct {
 	Provider  string

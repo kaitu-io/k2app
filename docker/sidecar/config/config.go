@@ -33,6 +33,11 @@ type K2CenterConfig struct {
 	// declares how much was already used so the meter doesn't start at 0. Applied
 	// once when no persisted state exists; adjust later via `k2-sidecar set-usage`.
 	TrafficUsedGB int64 `yaml:"traffic_used_gb"`
+	// TrafficBillingMode (K2_NODE_TRAFFIC_BILLING_MODE) selects how per-direction
+	// NIC deltas combine into billable usage: "sum" (in+out — AWS Lightsail) or
+	// "max" (greater direction — outbound-billed providers; the default when
+	// empty). Must match the hosting provider's billing model.
+	TrafficBillingMode string `yaml:"traffic_billing_mode"`
 }
 
 // TunnelSectionConfig holds tunnel-specific configuration

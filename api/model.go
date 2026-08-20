@@ -1385,6 +1385,14 @@ type CloudInstance struct {
 	Warn90SentEpoch       int64 `gorm:"not null;default:0"`
 	Exhausted100SentEpoch int64 `gorm:"not null;default:0"`
 
+	// AWS 超额兜底去重(worker_cloud_overage.go)。周期身份 = TrafficResetAt(每月 1 日
+	// UTC 翻转);字段值 == 当前 TrafficResetAt 表示本周期已发/已停。仅 aws_lightsail
+	// 共享池实例使用——AWS 是唯一超配额后继续服务并按 GB 计费的厂商。
+	OverageWarn80SentResetAt  int64 `gorm:"not null;default:0"`
+	OverageWarn95SentResetAt  int64 `gorm:"not null;default:0"`
+	OverageStopSentResetAt    int64 `gorm:"not null;default:0"`
+	ReconcileAlertSentResetAt int64 `gorm:"not null;default:0"`
+
 	// Sync status
 	// Note: Instance online status is determined by associated SlaveNode existence
 	LastSyncedAt int64  `gorm:"not null;default:0"` // Last successful sync (Unix timestamp)

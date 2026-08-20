@@ -45,7 +45,7 @@ func runSetUsage(cfg *config.Config, gbArg string) {
 		slog.Error("set-usage needs a non-negative integer GB. Usage: k2-sidecar -c <cfg> set-usage <GB>", "component", "sidecar", "arg", gbArg)
 		os.Exit(1)
 	}
-	tm, err := sidecar.NewTrafficMonitor(cfg.K2Center.BillingStartDate, cfg.K2Center.TrafficLimitGB, 0)
+	tm, err := sidecar.NewTrafficMonitor(cfg.K2Center.BillingStartDate, cfg.K2Center.TrafficLimitGB, 0, cfg.K2Center.TrafficBillingMode)
 	if err != nil {
 		slog.Error("set-usage: failed to init traffic monitor", "component", "sidecar", "err", err)
 		os.Exit(1)
@@ -229,6 +229,7 @@ func (s *Sidecar) Start() error {
 		s.config.K2Center.BillingStartDate,
 		s.config.K2Center.TrafficLimitGB,
 		s.config.K2Center.TrafficUsedGB,
+		s.config.K2Center.TrafficBillingMode,
 	)
 
 	// Start metrics collection in background

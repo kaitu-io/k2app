@@ -45,10 +45,17 @@ type NodeUsageRequest struct {
 }
 
 // NodeUsageResponse — JSON tags MUST match center.NodeUsageResponse exactly.
-// Center is a pure recorder now: it returns only the next report interval (no
-// quota verdict — the node is the cutoff authority).
+// Center is a recorder plus an upward-only corrector: besides the next report
+// interval it may return the cloud provider's authoritative usage for this
+// node's current cycle. The node stays the cutoff authority — the figure is a
+// one-way ratchet (only ever raises the local meter, see AdoptAuthoritativeUsed),
+// never a verdict.
 type NodeUsageResponse struct {
 	NextReportInterval int64 `json:"next_report_interval"`
+	// AuthoritativeUsedBytes is the provider-billed usage for the cycle the node
+	// just reported (0 / absent = no correction). Sent only when the provider
+	// figure exceeds the node's own report.
+	AuthoritativeUsedBytes int64 `json:"authoritative_used_bytes,omitempty"`
 }
 
 // usageEnvelope is Center's standard {code,message,data} wrapper.
@@ -58,22 +65,33 @@ type usageEnvelope struct {
 	Data    *NodeUsageResponse `json:"data"`
 }
 
+// authoritativeAdopter is the optional correction seam: a stats source that can
+// also ratchet its meter up to a provider-authoritative figure (TrafficMonitor).
+type authoritativeAdopter interface {
+	AdoptAuthoritativeUsed(authBytes int64, epochID int64) (bool, error)
+}
+
 // usageReporter owns its loop state. A single goroutine (Run) touches seq, so
 // there is no mutex.
 type usageReporter struct {
 	src        statsSource
-	centerURL  string // Center base, e.g. https://k2.52j.me
-	ipv4       string // node public IPv4 (Basic-auth username)
-	secret     string // node secret (Basic-auth password) — NEVER log
+	adopter    authoritativeAdopter // nil when src can't adopt corrections
+	centerURL  string               // Center base, e.g. https://k2.52j.me
+	ipv4       string               // node public IPv4 (Basic-auth username)
+	secret     string               // node secret (Basic-auth password) — NEVER log
 	httpClient *http.Client
 
 	seq int64
 }
 
-// NewUsageReporter constructs a reporter reading the shared TrafficMonitor.
+// NewUsageReporter constructs a reporter reading the shared TrafficMonitor. When
+// the source also supports authoritative corrections (the real TrafficMonitor
+// does), Center-supplied provider figures are ratcheted into it.
 func NewUsageReporter(src statsSource, centerURL, ipv4, secret string) *usageReporter {
+	adopter, _ := src.(authoritativeAdopter)
 	return &usageReporter{
 		src:        src,
+		adopter:    adopter,
 		centerURL:  centerURL,
 		ipv4:       ipv4,
 		secret:     secret,
@@ -118,6 +136,18 @@ func (r *usageReporter) runOnce(ctx context.Context) time.Duration {
 		"epoch", stats.BillingCycleEndAt, "cumulative", stats.UsedTrafficBytes,
 		"quotaTotal", stats.MonthlyTrafficLimitBytes)
 	r.seq++
+
+	// Provider-authoritative correction (one-way ratchet). Epoch-pinned to the
+	// cycle we just reported so a rollover between report and response is a no-op.
+	if r.adopter != nil && resp.AuthoritativeUsedBytes > stats.UsedTrafficBytes {
+		if adopted, aerr := r.adopter.AdoptAuthoritativeUsed(resp.AuthoritativeUsedBytes, stats.BillingCycleEndAt); aerr != nil {
+			slog.Warn("DIAG: usage-reporter-adopt-fail", "component", "usage",
+				"authoritative", resp.AuthoritativeUsedBytes, "err", aerr)
+		} else if adopted {
+			slog.Warn("DIAG: usage-reporter-adopted-authoritative", "component", "usage",
+				"authoritative", resp.AuthoritativeUsedBytes, "selfReported", stats.UsedTrafficBytes)
+		}
+	}
 
 	sleep := time.Duration(resp.NextReportInterval) * time.Second
 	if sleep < 10*time.Second {

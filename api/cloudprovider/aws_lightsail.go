@@ -100,6 +100,12 @@ func (p *AWSLightsailProvider) GetInstanceStatus(ctx context.Context, instanceID
 	}, nil
 }
 
+// getTrafficMetrics returns this month's billable usage and the bundle allowance.
+// Lightsail counts NetworkIn + NetworkOut against the monthly transfer allowance
+// (only the outbound share of an overage is billed, but the allowance itself is
+// consumed by BOTH directions) — verified against AWS Cost Explorer overage line
+// items 2026-08. Summing only NetworkOut here undercounted usage by ~half and let
+// nodes run past their allowance unnoticed.
 func (p *AWSLightsailProvider) getTrafficMetrics(ctx context.Context, instanceID string, inst *types.Instance) (used, total int64) {
 	// Get monthly transfer allowance from bundle
 	if inst.Networking != nil && inst.Networking.MonthlyTransfer != nil && inst.Networking.MonthlyTransfer.GbPerMonthAllocated != nil {
@@ -110,28 +116,62 @@ func (p *AWSLightsailProvider) getTrafficMetrics(ctx context.Context, instanceID
 	now := time.Now().UTC()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 
-	// Get NetworkOut metrics
+	// A failed direction contributes 0 (fail-open): the total can only be an
+	// undercount, so downstream overage enforcement never fires on bad data.
+	used = p.sumInstanceMetric(ctx, instanceID, types.InstanceMetricNameNetworkIn, monthStart, now) +
+		p.sumInstanceMetric(ctx, instanceID, types.InstanceMetricNameNetworkOut, monthStart, now)
+
+	return used, total
+}
+
+// sumInstanceMetric sums one CloudWatch instance metric over [start, end) at
+// daily granularity. Returns 0 on query failure (logged).
+func (p *AWSLightsailProvider) sumInstanceMetric(ctx context.Context, instanceID string, metric types.InstanceMetricName, start, end time.Time) int64 {
 	metrics, err := p.client.GetInstanceMetricData(ctx, &lightsail.GetInstanceMetricDataInput{
 		InstanceName: aws.String(instanceID),
-		MetricName:   types.InstanceMetricNameNetworkOut,
-		StartTime:    aws.Time(monthStart),
-		EndTime:      aws.Time(now),
+		MetricName:   metric,
+		StartTime:    aws.Time(start),
+		EndTime:      aws.Time(end),
 		Period:       aws.Int32(86400), // Daily
 		Unit:         types.MetricUnitBytes,
 		Statistics:   []types.MetricStatistic{types.MetricStatisticSum},
 	})
 	if err != nil {
-		log.Warnf(ctx, "[AWS] Failed to get metrics: %v", err)
-		return 0, total
+		log.Warnf(ctx, "[AWS] Failed to get %s metrics for %s: %v", metric, instanceID, err)
+		return 0
 	}
+	return sumMetricData(metrics.MetricData)
+}
 
-	for _, dp := range metrics.MetricData {
+// sumMetricData adds up the Sum statistic across datapoints (pure helper).
+func sumMetricData(points []types.MetricDatapoint) int64 {
+	var total int64
+	for _, dp := range points {
 		if dp.Sum != nil {
-			used += int64(*dp.Sum)
+			total += int64(*dp.Sum)
 		}
 	}
+	return total
+}
 
-	return used, total
+// StopInstance implements InstanceStopper: powers the instance off (data and
+// static IP kept). Used by the overage backstop — a stopped Lightsail instance
+// stops accruing metered data transfer.
+func (p *AWSLightsailProvider) StopInstance(ctx context.Context, instanceID string) (*OperationResult, error) {
+	log.Infof(ctx, "[AWS] Stopping instance: %s", instanceID)
+
+	_, err := p.client.StopInstance(ctx, &lightsail.StopInstanceInput{
+		InstanceName: aws.String(instanceID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to stop instance: %w", err)
+	}
+
+	log.Infof(ctx, "[AWS] Instance stop initiated: %s", instanceID)
+	return &OperationResult{
+		Success: true,
+		Message: "Instance stop initiated",
+	}, nil
 }
 
 func (p *AWSLightsailProvider) ListInstances(ctx context.Context) ([]*InstanceStatus, error) {
@@ -549,6 +589,18 @@ func (mp *MultiRegionAWSLightsailProvider) DeleteInstance(ctx context.Context, i
 		_, err := p.GetInstanceStatus(ctx, instanceID)
 		if err == nil {
 			return p.DeleteInstance(ctx, instanceID)
+		}
+	}
+	return nil, fmt.Errorf("instance not found: %s", instanceID)
+}
+
+// StopInstance implements InstanceStopper across regions (finds the instance
+// first, mirroring DeleteInstance/ChangeIP).
+func (mp *MultiRegionAWSLightsailProvider) StopInstance(ctx context.Context, instanceID string) (*OperationResult, error) {
+	for _, p := range mp.providers {
+		_, err := p.GetInstanceStatus(ctx, instanceID)
+		if err == nil {
+			return p.StopInstance(ctx, instanceID)
 		}
 	}
 	return nil, fmt.Errorf("instance not found: %s", instanceID)
