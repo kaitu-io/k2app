@@ -888,8 +888,8 @@ mock 环境，见 `api/CLAUDE.md` 的 `iapOrderFixture` 段）。
 |----|------|----------|--------|
 | C01 | IPv6 连接的进程归属非空（三平台） | `f4ac8e1` 拆除 `!Is4()` 早退门 | TODO |
 | C02 | 强直连/强代理 app 的 DNS 跟随进程规则视角 | `d343bf6`（R2） | TODO |
-| C03 | macOS 连接建立无延迟退化（进程归属改 lsof 全表快照） | `17f62f7` | TODO |
-| C04 | pin mismatch 不再永久污染 UI 归因 | `023b5c9` | TODO |
+| C03 | macOS 连接建立无延迟退化（进程归属改 lsof 全表快照） | `17f62f7` | **PASS** 2026-08-21 — provider 全套绿，核心判别式 `TestDarwinProcessSearcher_IndexBuiltOncePerTTL_NotPerConnection`（索引每 TTL 建一次而非每连接 shell-out，延迟退化根因被消除）+ `ConcurrentBuildsCollapse`；真机 lsof 集成测试 `K2_REAL_LSOF=1` PASS：本机真 lsof 扫出非空索引且自身 socket 按 selfPid 正确排除（found=false 即判别式） |
+| C04 | pin mismatch 不再永久污染 UI 归因 | `023b5c9` | **PASS** 2026-08-21 — `TestEngine_ClearWireError_ClearsPinMismatch` + `TestEngineError_RequiresUserAction` + wire `TestRelayFetch_NonOKStatusPassthrough` 全绿。（跑测试需临时还原 k2 的 gomobile 脏 go.sum，跑完字节级还原） |
 | C05 | `rule diagnose` / `audit` 工具可用（diagnose 曾对任何域名都报 DIRECT） | `61fd8bf` | **PASS** 2026-08-21 — 实跑 `TestDiagnose -host=google.com`：加载 20 bundles/40 sets，命中 `overseas`→全 17 国 **PROXY**（修复前空规则集全 DIRECT），判别式（bundles==0‖idx==0→Fatal）在位；`TestAudit_GeositeCrossCheck`（`-tags audit`）编译并 PASS（修复前根本编译不过） |
 | C06 | ECH config_id gate + ECH-block probe | `aa744bf` / `cbdccc9` | 代码侧已排除断连风险（见"已排除的风险"）；仍需一次真实连接确认 |
 | C07 | 双通道记分板回归（M03 / canary C03 家族） | — | TODO |
