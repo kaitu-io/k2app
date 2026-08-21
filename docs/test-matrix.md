@@ -904,9 +904,9 @@ mock 环境，见 `api/CLAUDE.md` 的 `iapOrderFixture` 段）。
 | E01 | `/api/subs` 下发内嵌 tunnel token，滚动续期 | 客户端采用 tunnel token 而非 access token | **部分 PASS** 2026-08-21 — 活体桌面 daemon `status` 的 config 用 `k2v5://…@` token，解码 payload `type:tunnel`（user 2162，签发 2026-08-14，exp 2026-11-16），确证客户端采用 tunnel token 非 access token。滚动续期（token_issue_at 推进）需长时观测或真连接，未闭环 |
 | E02 | 移动端 `updateConfig` 把续期后的 token 同步进 App Group / SharedPreferences | 续期后隧道不掉线 | TODO |
 | E03 | tunnel token **不能冒充** access token 调用 `/app/*` | `handleJWTAuth` default-deny 生效 | TODO |
-| E04 | 被封禁用户 → 403；节点认证失败与设备认证失败可区分 | `1a500ccd` / `8a11d362` | TODO |
-| E05 | per-device 流量上报 → 后台 `/manager/usages` 排行 + 用户详情有数 | `e6612273` / `8c856146` | TODO |
-| E06 | 超量告警邮件（阈值 100GB，月度去重） | `3f57e1c8` / `38f16a6c` | TODO |
+| E04 | 被封禁用户 → 403；节点认证失败与设备认证失败可区分 | `1a500ccd` / `8a11d362` | **PASS（服务端逻辑）** 2026-08-21 — handler 测试 7 子测试全绿：节点认证失败（缺 BasicAuth/未知节点/密钥不符）返回系统错误**非 401**、设备认证失败仍 401、tunnel token 200、access token 过渡期 200、anchor bump→401、**封禁用户 403**。断言锚在各自那道门，不涉下游 |
+| E05 | per-device 流量上报 → 后台 `/manager/usages` 排行 + 用户详情有数 | `e6612273` / `8c856146` | **PASS（服务端逻辑）+ 活体未闭环** 2026-08-21 — ingest 测试全绿：upsert 幂等（cursor 去重）、user 解析、wire 形状、session-daily。**活体 per-device 数据流用现有只读 MCP 确认不了**（`usage_overview` 只给节点级聚合，per-device 流量表未暴露）；需 `/manager/usages` 页面或 DB 查。Center 本身活着（日活 ~450） |
+| E06 | 超量告警邮件（阈值 100GB，月度去重） | `3f57e1c8` / `38f16a6c` | **PASS（服务端逻辑）** 2026-08-21 — worker 测试全绿：find+月度 dedup、默认阈值 100GB、180d 保留清理（含 device-session-daily）。实际发信+月度去重的活体需 worker 在生产跑一个周期，属 center-deploy 范畴非客户端发布链路 |
 | E07 | **（可选，高风险）** 单节点开 `K2_ENFORCE_AUTH=1` 灰度验证强制路径 | 新客户端连得上、存量 0.4.7 被正确拒绝或放行（按设计） | 建议**发布后**单独排期 |
 
 ---
