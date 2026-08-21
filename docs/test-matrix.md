@@ -555,7 +555,7 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | D10 | D2 / D4 | 绑定/修改邮箱时被占用 → **409001** 专用文案（不再显示"参数错误"） | `b5de67ff` | **PASS** 2026-08-21 — 两半独立验：① 服务端 `ErrorEmailAlreadyInUse=409001`，handler 测试双路径绿（占用→409001、自己的邮箱→非 409001），断言锚在发信前那道门；② 前端 `errorCatalog` 409001→`auth:updateEmail.emailAlreadyInUse`，7 语种文案齐（说明原因+行动指引，非「参数错误」）。矩阵原写「注册时」实为绑定/改邮箱同码路径 |
 | D11 | D2 | 窄屏 Account 页邮箱行不溢出、不压住按钮 | `1fb5dbc8` | **PASS** 2026-08-21 — 活体 0.4.8 桌面 vw=403 实测：修复的三个机制均在 DOM 上确认——`overflowWrap:anywhere`、掩码正好 3 星（旧代码对 6 字符用户名产 4 星，`y***4@gmail.com` 即新码在跑）、次要按钮 `position:relative` 已从绝对定位移入正常流；邮箱 right=196 < 按钮 left=312 不重叠，行不溢出视口 |
 | D12 | D2 | **chunk-reload-guard**：陈旧 chunk 场景自动恢复，不白屏 | `f5a2cea1` | **PASS（单测+活体旁证）** 2026-08-21 — `chunk-reload-guard.test.ts` 5 + `tauri-k2.boot-ok.test.ts` 4 全绿（含「只重载一次」「重载后仍失败则放弃」两道守卫）；活体 0.4.8 桌面正常冷启动即 ui_boot_ok 延后到首帧后仍成功的旁证 |
-| D13 | D7 | **appbypass 应用列表可见性**（Windows 三连修） | `717552be` F2/F3/F4 | TODO |
+| D13 | D7 | **appbypass 应用列表可见性**（Windows 三连修） | `717552be` F2/F3/F4 | **前提已在真机确认，已装码验证受阻** 2026-08-21 — 真 Windows 机（desktop-de632ne，Win10 22H2）经 SSH 复现 F2/F3 前提：HKLM 64 位视图 17 项、32 位 WOW6432 8 项，**7 个 app 只在 32 位视图**（Edge/WebView2/OneDrive/Apple Software Update/VC++ redist/Intel 服务）旧「仅 64 位」扫描全漏；**19 条 InstallLocation 为空**旧码静默丢弃。证明双视图+兜底链的必要性与思路正确。**已发布 Rust 代码未验**：该机装的是 **0.4.3**（daemon commit 2b83858），release/0.4.8 无 Windows 产物（Windows 构建从未做）。需 Windows 0.4.8 build 装机后跑 shipped-code smoke |
 | D14 | D2 / D4 | i18n 七语种关键页面无缺键（Router/国家过滤/573/409001 均为新增键） | 多处 | **部分 PASS + 1 FAIL**（静态，2026-08-19）— 七语种 1390 键集合完全一致（0 缺 0 多）；但源码侧 647 个静态 `t('ns:key')` 引用比对出 10 个键在七语种全不存在，其中 **`RouterDevices.tsx` 两处 `t('common:cancel')` 无默认值兜底 → 取消按钮渲染出字面量 `common:cancel`**（正确键 `common:common.cancel` 存在）。详见下方专段 |
 
 ---
