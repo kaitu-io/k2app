@@ -553,7 +553,7 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | D08 | D3 | **Apple IAP 建单**：沙盒购买 → 建单正确、首单判定不恒真、分销返现入账 | `07948c1d` / `3caabab6` / `fd179e9b` | **BLOCKED:sandbox-sub-exhausted** — 手上的沙盒订阅已过期且交易全在过去，验不出建单/返现。需换全新沙盒 Apple ID 做首购，见下方专段 |
 | D09 | D3 | IAP 沙盒交易**不建订单**；会员过期续费不报"失败无信息"（对应工单 3537） | `fd179e9b` | **PASS（不建单）+ 发现独立 bug（已修）**（真机 iPhone，2026-08-19）— 不建订单符合设计；但"有效期没加上"暴露出 `applyRenewalCredit` 缺 from-now 规则，已修并合入 main。详见下方专段 |
 | D10 | D2 / D4 | 绑定/修改邮箱时被占用 → **409001** 专用文案（不再显示"参数错误"） | `b5de67ff` | **PASS** 2026-08-21 — 两半独立验：① 服务端 `ErrorEmailAlreadyInUse=409001`，handler 测试双路径绿（占用→409001、自己的邮箱→非 409001），断言锚在发信前那道门；② 前端 `errorCatalog` 409001→`auth:updateEmail.emailAlreadyInUse`，7 语种文案齐（说明原因+行动指引，非「参数错误」）。矩阵原写「注册时」实为绑定/改邮箱同码路径 |
-| D11 | D2 | 窄屏 Account 页邮箱行不溢出、不压住按钮 | `1fb5dbc8` | TODO |
+| D11 | D2 | 窄屏 Account 页邮箱行不溢出、不压住按钮 | `1fb5dbc8` | **PASS** 2026-08-21 — 活体 0.4.8 桌面 vw=403 实测：修复的三个机制均在 DOM 上确认——`overflowWrap:anywhere`、掩码正好 3 星（旧代码对 6 字符用户名产 4 星，`y***4@gmail.com` 即新码在跑）、次要按钮 `position:relative` 已从绝对定位移入正常流；邮箱 right=196 < 按钮 left=312 不重叠，行不溢出视口 |
 | D12 | D2 | **chunk-reload-guard**：陈旧 chunk 场景自动恢复，不白屏 | `f5a2cea1` | **PASS（单测+活体旁证）** 2026-08-21 — `chunk-reload-guard.test.ts` 5 + `tauri-k2.boot-ok.test.ts` 4 全绿（含「只重载一次」「重载后仍失败则放弃」两道守卫）；活体 0.4.8 桌面正常冷启动即 ui_boot_ok 延后到首帧后仍成功的旁证 |
 | D13 | D7 | **appbypass 应用列表可见性**（Windows 三连修） | `717552be` F2/F3/F4 | TODO |
 | D14 | D2 / D4 | i18n 七语种关键页面无缺键（Router/国家过滤/573/409001 均为新增键） | 多处 | **部分 PASS + 1 FAIL**（静态，2026-08-19）— 七语种 1390 键集合完全一致（0 缺 0 多）；但源码侧 647 个静态 `t('ns:key')` 引用比对出 10 个键在七语种全不存在，其中 **`RouterDevices.tsx` 两处 `t('common:cancel')` 无默认值兜底 → 取消按钮渲染出字面量 `common:cancel`**（正确键 `common:common.cancel` 存在）。详见下方专段 |
