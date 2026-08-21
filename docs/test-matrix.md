@@ -527,7 +527,7 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 |----|------|------|------|--------|
 | **A01** | **D1** | 该机保持 0.4.7 → 复现 SIGABRT → 装 0.4.8 启动 | 0.4.7 崩 / **0.4.8 不崩**（唯一正对照） | TODO |
 | A02 | D1 → D2 / D7 | 从 0.4.7 覆盖升级 | `kaitu-ui://` origin 迁移后**登录态不丢**、语言/日志级别/公告已读保留 | **PASS**（macOS，2026-08-18；**Android 0.4.6→0.4.8 覆盖升级 2026-08-19 亦 PASS**——签名指纹一致故 `adb install -r` 2 秒完成、数据保留；会员状态/到期日 2034-12-28/5 台设备/简体中文逐项一致，节点列表能拉到数据即证明 token 有效。Android 无 origin 迁移问题：`capacitor.config.ts` 在 v0.4.6 与 HEAD 均未设 `androidScheme`，origin 不变；那条 `kaitu-ui://` 迁移是 Tauri 桌面独有）— 16/16 键迁移到新 origin，6 项关键偏好逐字节一致；鉴权端点 200，登录态完好。桌面认证本就存在 Rust `storage.json`（与 origin 无关），迁移只搬偏好与缓存 |
-| A03 | D2 | panic hook 落盘 | 任意线程 panic 写入 `desktop.log`（早于 tauri-plugin-log 初始化） | TODO |
+| A03 | D2 | panic hook 落盘 | 任意线程 panic 写入 `desktop.log`（早于 tauri-plugin-log 初始化） | **PASS** 2026-08-21 — cargo test `panic_hook_appends_panic_to_log_file` + `panic_hook_creates_missing_log_dir` 双绿（真触发 panic「boom」并断言落盘 + 缺目录自建）；hook 装在 main() 首句覆盖 plugin setup panic；活体 `~/Library/Logs/kaitu/desktop.log` 在位（0.4.8 启动 panic 根因已修故 0 条，无自然 panic 可观测） |
 | A04 | D2 / D7 | single-instance | 第二实例 exit 0（~200ms），首实例窗口置前 | **PASS**（macOS，2026-08-18）— 第二实例 474ms exit 0，首实例收到唤起回调并存活 |
 | A05 | D2 | Kaitu × Overleap 桌面并存 | 两品牌不抢 `io_kaitu_desktop_si.sock`（本地构建验；Overleap 不发布） | **PASS** 2026-08-21 — 文件系统实证：两 sock 并存且名字不同 `/tmp/io_kaitu_desktop_si.sock` + `/tmp/io_overleap_desktop_si.sock`；bundle id 各为 `io.kaitu.desktop` / `io.overleap.desktop`，single-instance sock 由 identifier 派生 → 不同路径 → 永不争抢。Kaitu 现运行持锁，Overleap sock 为前次运行遗留，共存 |
 | A06 | D6 | `curl -fsSL https://kaitu.io/i/k2 \| sudo bash` | 安装成功、webui 可达、tarball sha256 校验通过 | TODO |
