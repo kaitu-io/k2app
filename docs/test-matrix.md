@@ -529,7 +529,7 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | A02 | D1 → D2 / D7 | 从 0.4.7 覆盖升级 | `kaitu-ui://` origin 迁移后**登录态不丢**、语言/日志级别/公告已读保留 | **PASS**（macOS，2026-08-18；**Android 0.4.6→0.4.8 覆盖升级 2026-08-19 亦 PASS**——签名指纹一致故 `adb install -r` 2 秒完成、数据保留；会员状态/到期日 2034-12-28/5 台设备/简体中文逐项一致，节点列表能拉到数据即证明 token 有效。Android 无 origin 迁移问题：`capacitor.config.ts` 在 v0.4.6 与 HEAD 均未设 `androidScheme`，origin 不变；那条 `kaitu-ui://` 迁移是 Tauri 桌面独有）— 16/16 键迁移到新 origin，6 项关键偏好逐字节一致；鉴权端点 200，登录态完好。桌面认证本就存在 Rust `storage.json`（与 origin 无关），迁移只搬偏好与缓存 |
 | A03 | D2 | panic hook 落盘 | 任意线程 panic 写入 `desktop.log`（早于 tauri-plugin-log 初始化） | TODO |
 | A04 | D2 / D7 | single-instance | 第二实例 exit 0（~200ms），首实例窗口置前 | **PASS**（macOS，2026-08-18）— 第二实例 474ms exit 0，首实例收到唤起回调并存活 |
-| A05 | D2 | Kaitu × Overleap 桌面并存 | 两品牌不抢 `io_kaitu_desktop_si.sock`（本地构建验；Overleap 不发布） | TODO |
+| A05 | D2 | Kaitu × Overleap 桌面并存 | 两品牌不抢 `io_kaitu_desktop_si.sock`（本地构建验；Overleap 不发布） | **PASS** 2026-08-21 — 文件系统实证：两 sock 并存且名字不同 `/tmp/io_kaitu_desktop_si.sock` + `/tmp/io_overleap_desktop_si.sock`；bundle id 各为 `io.kaitu.desktop` / `io.overleap.desktop`，single-instance sock 由 identifier 派生 → 不同路径 → 永不争抢。Kaitu 现运行持锁，Overleap sock 为前次运行遗留，共存 |
 | A06 | D6 | `curl -fsSL https://kaitu.io/i/k2 \| sudo bash` | 安装成功、webui 可达、tarball sha256 校验通过 | TODO |
 | A07 | D3 / D4 | 装机 + bridge v2 | `checkReady` 返回 `bridgeVersion=2` | **PASS**（桌面侧，2026-08-18）— `_platform` 面完整，`updater.setChannel` 是函数（`ec25dfcf` 的能力探测在桌面同样生效）。移动端待真机 |
 | A08 | 全平台 | P0 连接 / 断开 / 错误显示 | 连得上、断得干净、错误走 i18n 不露原始串 | **PASS（连/断）+ FAIL:stale-poll-race**（macOS，2026-08-19；**Android 2026-08-19 连/断 PASS**，见下方 Android 段）— 连接与断开的后端行为都干净；但断开时若撞上进行中的状态轮询，UI 会被陈旧响应打回「已连接」。详见下方专段 |
@@ -903,7 +903,7 @@ mock 环境，见 `api/CLAUDE.md` 的 `iapOrderFixture` 段）。
 |----|------|------|--------|
 | E01 | `/api/subs` 下发内嵌 tunnel token，滚动续期 | 客户端采用 tunnel token 而非 access token | **部分 PASS** 2026-08-21 — 活体桌面 daemon `status` 的 config 用 `k2v5://…@` token，解码 payload `type:tunnel`（user 2162，签发 2026-08-14，exp 2026-11-16），确证客户端采用 tunnel token 非 access token。滚动续期（token_issue_at 推进）需长时观测或真连接，未闭环 |
 | E02 | 移动端 `updateConfig` 把续期后的 token 同步进 App Group / SharedPreferences | 续期后隧道不掉线 | TODO |
-| E03 | tunnel token **不能冒充** access token 调用 `/app/*` | `handleJWTAuth` default-deny 生效 | TODO |
+| E03 | tunnel token **不能冒充** access token 调用 `/app/*` | `handleJWTAuth` default-deny 生效 | **PASS** 2026-08-21 — `TestHandleJWTAuth_RejectsTunnelToken` 绿：tunnel 类型 token 被 handleJWTAuth default-deny 拒绝，不能冒充 access token 走 `/app/*` |
 | E04 | 被封禁用户 → 403；节点认证失败与设备认证失败可区分 | `1a500ccd` / `8a11d362` | **PASS（服务端逻辑）** 2026-08-21 — handler 测试 7 子测试全绿：节点认证失败（缺 BasicAuth/未知节点/密钥不符）返回系统错误**非 401**、设备认证失败仍 401、tunnel token 200、access token 过渡期 200、anchor bump→401、**封禁用户 403**。断言锚在各自那道门，不涉下游 |
 | E05 | per-device 流量上报 → 后台 `/manager/usages` 排行 + 用户详情有数 | `e6612273` / `8c856146` | **PASS（服务端逻辑）+ 活体未闭环** 2026-08-21 — ingest 测试全绿：upsert 幂等（cursor 去重）、user 解析、wire 形状、session-daily。**活体 per-device 数据流用现有只读 MCP 确认不了**（`usage_overview` 只给节点级聚合，per-device 流量表未暴露）；需 `/manager/usages` 页面或 DB 查。Center 本身活着（日活 ~450） |
 | E06 | 超量告警邮件（阈值 100GB，月度去重） | `3f57e1c8` / `38f16a6c` | **PASS（服务端逻辑）** 2026-08-21 — worker 测试全绿：find+月度 dedup、默认阈值 100GB、180d 保留清理（含 device-session-daily）。实际发信+月度去重的活体需 worker 在生产跑一个周期，属 center-deploy 范畴非客户端发布链路 |
