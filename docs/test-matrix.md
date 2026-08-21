@@ -544,17 +544,17 @@ manifest 版本形如 `0.4.8.<2026-01-01 起的秒数>`，桌面 `is_newer_versi
 | ID | 设备 | 用例 | 对应变更 | Status |
 |----|------|------|----------|--------|
 | D01 | D2 / D4 | **Router 顶级标签**：发现→绑定→设备列表→改名/改密→解绑 | `0fe3e92c` 等 k2r 全套 | **部分 PASS**（macOS，2026-08-19）— 无路由器时 Router tab 确实不渲染 ✓；直接导航 `/router` 落到空 Outlet、**不白屏不崩、底部导航保留**（`rootChildren` 仍为 1）✓。绑定/改名/解绑全链路仍需 D9 |
-| D02 | D9 | Router 控制密钥鉴权 + anchor 探测（`10.17.79.1`） | `55cf1113` / `91683414` | TODO |
-| D03 | D2 / D4 | **双连接互斥**：app 与路由器同时连 → 排他对话框 + 接管横幅 | `d3897578` / `773c8880` | TODO |
-| D04 | D9 | 企业多槽表单（槽位列表、告警徽章、默认落地页） | `9ce69c02` | TODO |
+| D02 | D9 | Router 控制密钥鉴权 + anchor 探测（`10.17.79.1`） | `55cf1113` / `91683414` | **BLOCKED:no-k2r-this-cycle** 2026-08-21 — 用户决定本轮暂不测路由器。设备够不到 k2r LAN（CU_601/10.17.79.x 独立网，WiFi 密码未提供），探测记录见下方专段 |
+| D03 | D2 / D4 | **双连接互斥**：app 与路由器同时连 → 排他对话框 + 接管横幅 | `d3897578` / `773c8880` | **BLOCKED:no-k2r-this-cycle** 2026-08-21 — 需 `isRouterTakeover()` 为真（真实 k2r 在本机转发路径上）。用户决定本轮暂不测路由器 |
+| D04 | D9 | 企业多槽表单（槽位列表、告警徽章、默认落地页） | `9ce69c02` | **BLOCKED:no-k2r-this-cycle** 2026-08-21 — 企业形态需 k2r `status.slots`。用户决定本轮暂不测路由器 |
 | D05 | D2 / D4 | **国家排除过滤**：漏斗图标→对话框→排除 chip→自动选择生效 | `9a8a21f0` / `23b2f60f` | **PASS**（macOS，2026-08-19）— `auto-country-filter-btn` → 对话框列出 7 国 24 节点 → 勾选美国后徽章 `0`→`1` → 全选后 `7`；服务器面板出现 chip「自动选择 · 已排除 7 个国家/地区」，且每个节点条目标注「自动选择已排除 + 国家名」 |
 | D06 | D2 | 全部国家被排除 → 错误码 **573** 文案正确（不是"未知错误"） | `2e48ec15` | **FAIL→PASS（已修，真机验证）** — macOS/Android 双平台确认失败形态后修复并合入。Android 真机同一操作路径前后对照：修复前折叠态「⚠ 未知错误」，修复后「**可用节点已全部被排除，请调整国家/地区过滤**」（读自 accessibility 树，非 OCR）。根因比症状大得多，详见下方专段 |
-| D07 | D2 | **端口/协议/游戏规则**：MatchConfig 的 port/protocol/games 预设实际生效 | `b2d36efe` / `0be1d77` | TODO |
+| D07 | D2 | **端口/协议/游戏规则**：MatchConfig 的 port/protocol/games 预设实际生效 | `b2d36efe` / `0be1d77` | **PASS（单测）** 2026-08-21 — 类型对齐改动，`client-config.test.ts` 4 tests 绿。类型层是恰当验证层级，运行时无独立可观测面 |
 | D08 | D3 | **Apple IAP 建单**：沙盒购买 → 建单正确、首单判定不恒真、分销返现入账 | `07948c1d` / `3caabab6` / `fd179e9b` | **BLOCKED:sandbox-sub-exhausted** — 手上的沙盒订阅已过期且交易全在过去，验不出建单/返现。需换全新沙盒 Apple ID 做首购，见下方专段 |
 | D09 | D3 | IAP 沙盒交易**不建订单**；会员过期续费不报"失败无信息"（对应工单 3537） | `fd179e9b` | **PASS（不建单）+ 发现独立 bug（已修）**（真机 iPhone，2026-08-19）— 不建订单符合设计；但"有效期没加上"暴露出 `applyRenewalCredit` 缺 from-now 规则，已修并合入 main。详见下方专段 |
-| D10 | D2 / D4 | 注册时邮箱已占用 → **409001** 专用文案（不再显示"参数错误"） | `b5de67ff` | TODO |
+| D10 | D2 / D4 | 绑定/修改邮箱时被占用 → **409001** 专用文案（不再显示"参数错误"） | `b5de67ff` | **PASS** 2026-08-21 — 两半独立验：① 服务端 `ErrorEmailAlreadyInUse=409001`，handler 测试双路径绿（占用→409001、自己的邮箱→非 409001），断言锚在发信前那道门；② 前端 `errorCatalog` 409001→`auth:updateEmail.emailAlreadyInUse`，7 语种文案齐（说明原因+行动指引，非「参数错误」）。矩阵原写「注册时」实为绑定/改邮箱同码路径 |
 | D11 | D2 | 窄屏 Account 页邮箱行不溢出、不压住按钮 | `1fb5dbc8` | TODO |
-| D12 | D2 | **chunk-reload-guard**：陈旧 chunk 场景自动恢复，不白屏 | `f5a2cea1` | TODO |
+| D12 | D2 | **chunk-reload-guard**：陈旧 chunk 场景自动恢复，不白屏 | `f5a2cea1` | **PASS（单测+活体旁证）** 2026-08-21 — `chunk-reload-guard.test.ts` 5 + `tauri-k2.boot-ok.test.ts` 4 全绿（含「只重载一次」「重载后仍失败则放弃」两道守卫）；活体 0.4.8 桌面正常冷启动即 ui_boot_ok 延后到首帧后仍成功的旁证 |
 | D13 | D7 | **appbypass 应用列表可见性**（Windows 三连修） | `717552be` F2/F3/F4 | TODO |
 | D14 | D2 / D4 | i18n 七语种关键页面无缺键（Router/国家过滤/573/409001 均为新增键） | 多处 | **部分 PASS + 1 FAIL**（静态，2026-08-19）— 七语种 1390 键集合完全一致（0 缺 0 多）；但源码侧 647 个静态 `t('ns:key')` 引用比对出 10 个键在七语种全不存在，其中 **`RouterDevices.tsx` 两处 `t('common:cancel')` 无默认值兜底 → 取消按钮渲染出字面量 `common:cancel`**（正确键 `common:common.cancel` 存在）。详见下方专段 |
 
@@ -890,7 +890,7 @@ mock 环境，见 `api/CLAUDE.md` 的 `iapOrderFixture` 段）。
 | C02 | 强直连/强代理 app 的 DNS 跟随进程规则视角 | `d343bf6`（R2） | TODO |
 | C03 | macOS 连接建立无延迟退化（进程归属改 lsof 全表快照） | `17f62f7` | TODO |
 | C04 | pin mismatch 不再永久污染 UI 归因 | `023b5c9` | TODO |
-| C05 | `rule diagnose` / `audit` 工具可用（diagnose 曾对任何域名都报 DIRECT） | `61fd8bf` | TODO |
+| C05 | `rule diagnose` / `audit` 工具可用（diagnose 曾对任何域名都报 DIRECT） | `61fd8bf` | **PASS** 2026-08-21 — 实跑 `TestDiagnose -host=google.com`：加载 20 bundles/40 sets，命中 `overseas`→全 17 国 **PROXY**（修复前空规则集全 DIRECT），判别式（bundles==0‖idx==0→Fatal）在位；`TestAudit_GeositeCrossCheck`（`-tags audit`）编译并 PASS（修复前根本编译不过） |
 | C06 | ECH config_id gate + ECH-block probe | `aa744bf` / `cbdccc9` | 代码侧已排除断连风险（见"已排除的风险"）；仍需一次真实连接确认 |
 | C07 | 双通道记分板回归（M03 / canary C03 家族） | — | TODO |
 | C08 | SOCKS5 UDP 代理模式 full-cone | `7682a65` | TODO |
@@ -901,7 +901,7 @@ mock 环境，见 `api/CLAUDE.md` 的 `iapOrderFixture` 段）。
 
 | ID | 用例 | 期望 | Status |
 |----|------|------|--------|
-| E01 | `/api/subs` 下发内嵌 tunnel token，滚动续期 | 客户端采用 tunnel token 而非 access token | TODO |
+| E01 | `/api/subs` 下发内嵌 tunnel token，滚动续期 | 客户端采用 tunnel token 而非 access token | **部分 PASS** 2026-08-21 — 活体桌面 daemon `status` 的 config 用 `k2v5://…@` token，解码 payload `type:tunnel`（user 2162，签发 2026-08-14，exp 2026-11-16），确证客户端采用 tunnel token 非 access token。滚动续期（token_issue_at 推进）需长时观测或真连接，未闭环 |
 | E02 | 移动端 `updateConfig` 把续期后的 token 同步进 App Group / SharedPreferences | 续期后隧道不掉线 | TODO |
 | E03 | tunnel token **不能冒充** access token 调用 `/app/*` | `handleJWTAuth` default-deny 生效 | TODO |
 | E04 | 被封禁用户 → 403；节点认证失败与设备认证失败可区分 | `1a500ccd` / `8a11d362` | TODO |
