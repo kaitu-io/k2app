@@ -40,7 +40,10 @@ Spec: `docs/superpowers/specs/2026-08-14-web-ota-design.md` §4。
   - **不漏**（调用完全封闭在 bridge 文件内，UI 不需要知道壳支不支持）→ 就地
     try/catch 兜住，bridge 层本身即唯一供给者。bridge v2 的 5 个桌面 command
     （`ui_boot_ok`、`storage_migration_*`）就是这一类：调用点在 `tauri-k2.ts` 与
-    `desktop-storage-migration.ts`，失败即静默降级，没有任何 UI 分支。
+    `desktop-storage-migration.ts`，失败即静默降级，没有任何 UI 分支。bridge v3
+    的 `confirmWebBootOk`（web OTA boot 握手）同理——三端各自的实现都在自己的
+    bridge 文件里吞掉失败，Linux 那份还额外自我门控 `window.__K2_GATEWAY__`
+    （纯浏览器下没有 daemon 可确认）。
   - **会漏**（要据此显示/隐藏功能、改文案、切流程）→ 必须新建唯一供给者
     `src/services/capabilities.ts`，导出语义化 flag，同时收编 `capacitor-k2.ts`
     现有的 `getPlatform() === 'android'` 门，并配 grep 守卫进 CI。
