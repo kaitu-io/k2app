@@ -108,7 +108,12 @@ func (d *Daemon) registerWebUI(ctx context.Context, mux *http.ServeMux) {
 		Dir:          webOTADir,
 		ShellVersion: d.Version,
 	})
-	if h := webui.NewWebappHandlerWithOverride(d.Version, d.Commit, runtime.GOARCH, ota.CurrentDir()); h != nil {
+	// Boot verification: every OTA document served counts toward the
+	// verdict, and the webapp clears the marker via /api/ui-boot-ok once it
+	// has actually rendered. Registered before the catch-all so a broken
+	// bundle cannot take the confirmation route down with it.
+	mux.HandleFunc("/api/ui-boot-ok", webui.NewUIBootOkHandler(ota))
+	if h := webui.NewWebappHandlerWithOTA(d.Version, d.Commit, runtime.GOARCH, ota.CurrentDir(), ota.NoteIndexServed); h != nil {
 		mux.Handle("/", h)
 		ota.Start(ctx)
 	}

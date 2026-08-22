@@ -37,6 +37,34 @@ implementation instead of two copies drifting.
   `?ui=embedded` forces the embedded index for that request — the escape
   hatch when an OTA bundle is broken. `overrideDir == ""` disables the
   override (`NewWebappHandler` is this with `overrideDir=""`).
+  `NewWebappHandlerWithOTA(..., onIndexServed func())` adds a hook fired
+  only when an **OTA bundle's document** is served — not the embedded
+  fallback, not `?ui=embedded`, never assets. That is the Linux notion of
+  "the bundle was exercised", feeding boot verification below.
+- `webota_boot.go` / `webota_boot_http.go` — Web OTA boot verification.
+  `apply()` arms a `.boot-pending` marker (JSON: version + first-serve time
+  + serve count) directly under `cfg.Dir` — **never inside `current/`**,
+  which rollback deletes along with the version it needs. The webapp clears
+  it by POSTing `/api/ui-boot-ok` (`NewUIBootOkHandler`) **after ReactDOM
+  has rendered**; confirming during bridge/platform init is what silently
+  disabled this whole mechanism on the mobile shells for months (a bundle
+  that loaded its JS then died before painting still reported success).
+  `NoteIndexServed` accumulates serves and, once `shouldRollbackBoot` is
+  satisfied, restores `previous/` over `current/` and records the failed
+  version in `quarantined-version.txt`, which `shouldApply` then refuses —
+  mirroring desktop `evaluate_manifest` and mobile `planAutoUpdate`.
+  **The verdict deliberately differs from the app shells**: they judge at
+  process start, but a daemon runs for weeks and only sees the bundle when
+  a browser loads it. So the rule is two-part — served at least
+  `bootRollbackMinServes` (2) times AND at least `bootRollbackMinAgeSec`
+  (20s) past the first serve. The count alone would roll back a good bundle
+  when several tabs open at once; the age alone would roll back one nobody
+  has visited. Linux also keeps `?ui=embedded`, so this errs toward not
+  firing. Emits `DIAG: webota-boot-ok` / `webota-boot-fail` /
+  `webota-rolled-back`. Backward-compatible by construction: only `apply()`
+  writes the marker, so a `current/` left by an older daemon is never
+  judged, and any bundle this daemon installs is newer than its own release
+  and therefore carries the webapp that confirms.
 - `webota.go` — Web OTA poller (`WebOTA`, `NewWebOTA(WebOTAConfig)`,
   `(*WebOTA).Start(ctx)`, `(*WebOTA).CurrentDir()`): polls each brand
   CDN endpoint for `<endpoint>/web/latest.json`, gates on three checks

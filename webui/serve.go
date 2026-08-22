@@ -38,6 +38,22 @@ func NewWebappHandler(version, commit, arch string) http.Handler {
 // embedded (nowebapp): without an embedded fallback there is no escape
 // hatch, so the whole web OTA surface is a no-op on headless builds.
 func NewWebappHandlerWithOverride(version, commit, arch, overrideDir string) http.Handler {
+	return NewWebappHandlerWithOTA(version, commit, arch, overrideDir, nil)
+}
+
+// NewWebappHandlerWithOTA is NewWebappHandlerWithOverride plus a hook fired
+// each time an OTA bundle's *document* is served — the Linux notion of
+// "the bundle was exercised", feeding web OTA boot verification
+// (WebOTA.NoteIndexServed).
+//
+// It fires only for documents actually taken from overrideDir. Not for the
+// embedded fallback (that bundle is not on trial), and not for
+// `?ui=embedded` (punishing the escape hatch a user reaches for when a
+// bundle is broken would be exactly backwards). Assets never count: a
+// document is what a render either succeeds or fails at.
+//
+// onIndexServed == nil disables the hook.
+func NewWebappHandlerWithOTA(version, commit, arch, overrideDir string, onIndexServed func()) http.Handler {
 	if webappFS == nil {
 		return nil
 	}
@@ -72,6 +88,9 @@ func NewWebappHandlerWithOverride(version, commit, arch, overrideDir string) htt
 			if !forceEmbedded {
 				if data := readOverrideIndex(overrideDir); data != nil {
 					w.Write(injectGateway(data, injection))
+					if onIndexServed != nil {
+						onIndexServed()
+					}
 					return
 				}
 			}

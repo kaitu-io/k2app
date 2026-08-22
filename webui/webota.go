@@ -31,8 +31,9 @@ import (
 // iOS (k2BridgeApiVersion) and Tauri desktop (DESKTOP_BRIDGE_VERSION).
 //
 // "Equal" means "current with the surface", not "implements every method
-// in it" — a shell only carries the parts that apply to it, and v2's
-// additions are five Tauri commands a Go daemon can never have. So do not
+// in it" — a shell only carries the parts that apply to it: v2's additions
+// are five Tauri commands a Go daemon can never have, and v3's is a
+// Capacitor method (confirmWebBootOk) only the mobile shells can. So do not
 // read a bump as a claim about this shell's own endpoints, and do not hold
 // the number back because the new methods are somebody else's: a stale
 // mirror does not describe the gap honestly, it just excludes this shell
@@ -44,7 +45,7 @@ import (
 // over unpopulated content fails for the wrong reason. Nothing will catch
 // drift here — bumping it is a k2 commit plus a submodule pointer bump,
 // and belongs in the same change set as the webapp-side bump.
-const LinuxBridgeVersion = 2
+const LinuxBridgeVersion = 3
 
 // webOTAPublicKey is the minisign public key verifying web OTA bundles.
 // Same key pair as the Tauri desktop updater — this is the key line of
@@ -183,6 +184,13 @@ func (o *WebOTA) shouldApply(m *WebOTAManifest) (bool, string) {
 	if !isNewerVersion(m.Version, o.localVersion()) {
 		return false, "not newer than local"
 	}
+	// Already served to browsers without ever confirming a render, and
+	// rolled back for it. Refuse the exact version until the CDN publishes
+	// something newer, which clears the block naturally. Mirrors desktop
+	// evaluate_manifest and mobile planAutoUpdate.
+	if q := o.quarantinedVersion(); q != "" && q == m.Version {
+		return false, "version quarantined"
+	}
 	return true, "newer"
 }
 
@@ -229,7 +237,17 @@ func (o *WebOTA) apply(m *WebOTAManifest, endpoint string) error {
 		os.RemoveAll(pending)
 		return fmt.Errorf("write version.txt: %w", err)
 	}
-	return o.swap(pending)
+	if err := o.swap(pending); err != nil {
+		return err
+	}
+	// Put the new bundle on trial: cleared by /api/ui-boot-ok once the
+	// webapp reports it rendered, rolled back if browsers keep being served
+	// a document that never confirms. Arming is best-effort — a marker we
+	// cannot write costs verification, not the update.
+	if err := o.armBootPending(m.Version); err != nil {
+		slog.Warn("webui: arming web OTA boot marker failed", "version", m.Version, "err", err)
+	}
+	return nil
 }
 
 // download fetches url into dst, capped at maxWebBundleSize.
