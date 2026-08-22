@@ -330,16 +330,11 @@ export default function LoginDialog() {
           width: { xs: 'calc(100% - 20px)', sm: 'calc(100% - 32px)' },
           maxWidth: { xs: 'calc(100% - 20px)', sm: 444 },
           maxHeight: { xs: 'calc(100% - 20px)', sm: 'calc(100% - 64px)' },
-          border: `1px solid ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.12)}`,
+          border: `1px solid ${alpha(theme.palette.primary.main, 0.22)}`,
           // Raise the surface above background.paper (MuiPaper clears backgroundImage
           // globally; a flat overlay re-adds the elevation tint without a hardcoded hex).
-          ...(theme.palette.mode === 'dark' && {
-            backgroundImage: `linear-gradient(${alpha('#fff', 0.05)}, ${alpha('#fff', 0.05)})`,
-          }),
-          boxShadow:
-            theme.palette.mode === 'dark'
-              ? `0 24px 64px -12px ${alpha('#000', 0.9)}, 0 0 40px -16px ${alpha(theme.palette.primary.main, 0.2)}`
-              : `0 24px 48px -12px ${alpha('#000', 0.28)}`,
+          backgroundImage: `linear-gradient(${alpha('#fff', 0.05)}, ${alpha('#fff', 0.05)})`,
+          boxShadow: `0 24px 64px -12px ${alpha('#000', 0.9)}, 0 0 40px -16px ${alpha(theme.palette.primary.main, 0.2)}`,
         }),
       }}
     >
