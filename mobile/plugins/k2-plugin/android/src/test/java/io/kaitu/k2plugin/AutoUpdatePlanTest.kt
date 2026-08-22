@@ -47,6 +47,7 @@ class AutoUpdatePlanTest {
         sdkInt: Int = 34,
         bridgeVersion: Int = 2,
         forceDowngrade: Boolean = false,
+        quarantinedWebVersion: String? = null,
     ) = planAutoUpdate(
         nativeManifest = native,
         webManifest = webM,
@@ -55,6 +56,7 @@ class AutoUpdatePlanTest {
         sdkInt = sdkInt,
         bridgeVersion = bridgeVersion,
         forceDowngrade = forceDowngrade,
+        quarantinedWebVersion = quarantinedWebVersion,
     )
 
     private fun List<AutoUpdateStep>.notifiesNative() =
@@ -320,5 +322,45 @@ class AutoUpdatePlanTest {
         val step = plan(webM = { m }).filterIsInstance<AutoUpdateStep.ApplyWeb>().single()
         assertEquals("sha256:abc", step.manifest.hash)
         assertEquals("SIGBASE64", step.manifest.sig)
+    }
+
+    // ==================== quarantine: a bad bundle must not come back ====
+
+    /**
+     * Without this gate the shell is a reinstall treadmill. Rollback (K2Plugin
+     * .load()) deletes web-update/ including version.txt, so localWebVersion
+     * falls back to appVersion and the SAME bad bundle is "newer" again;
+     * fetchManifest has no cache or backoff, so the 3s post-boot check
+     * re-downloads it within seconds. Every cold start: white screen, roll
+     * back, re-download. The desktop shell blocks this with
+     * quarantined-version.txt (web_ota.rs evaluate_manifest); this is the
+     * mobile half of the same invariant.
+     */
+    @Test
+    fun quarantined_web_version_is_not_reapplied() {
+        val steps = plan(
+            webM = { web(version = "0.4.8.20000000") },
+            quarantinedWebVersion = "0.4.8.20000000",
+        )
+        assertTrue("a version that already failed to boot must not be re-applied", !steps.appliesWeb())
+        assertEquals("version quarantined", steps.skipReason("web"))
+    }
+
+    /** The block is version-scoped, not permanent: publishing a newer bundle
+     *  is how the CDN clears it (desktop F2 semantics). */
+    @Test
+    fun newer_web_version_clears_the_quarantine() {
+        val steps = plan(
+            webM = { web(version = "0.4.8.20000001") },
+            quarantinedWebVersion = "0.4.8.20000000",
+        )
+        assertTrue("a newer bundle must still be applied", steps.appliesWeb())
+    }
+
+    /** Quarantine is a web-lane concept — the APK banner is unaffected. */
+    @Test
+    fun quarantine_does_not_suppress_the_native_lane() {
+        val steps = plan(quarantinedWebVersion = "0.4.8.20000000")
+        assertTrue(steps.notifiesNative())
     }
 }

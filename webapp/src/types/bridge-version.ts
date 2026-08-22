@@ -57,5 +57,16 @@
  * without a bump, which let bridge v1 denote two different surfaces; this bump
  * restores the invariant. Zero behavioral effect: the manifest publishes
  * min_bridge = floor (1), so every shell in the field still passes its gate.
+ *
+ * v3 (2026-08-22): Capacitor gained `confirmWebBootOk` — the mobile web-OTA
+ * boot handshake. It exists because clearing `.boot-pending` inside
+ * `checkReady()` cleared it during bridge init, i.e. before store init and the
+ * first React render, so a bundle that died in either stage still counted as
+ * "booted" and the rollback never fired. Desktop already had the correct shape
+ * (`ui_boot_ok`, called from main.tsx after ReactDOM.render); this brings the
+ * mobile shells in line. Capability-gated as required: `confirmWebBootOk()` in
+ * capacitor-k2.ts swallows the rejection on shells that lack the method.
+ * Zero behavioral effect on the field for the same reason as v2 — the manifest
+ * publishes min_bridge = floor (1).
  */
-export const BRIDGE_API_VERSION = 2;
+export const BRIDGE_API_VERSION = 3;

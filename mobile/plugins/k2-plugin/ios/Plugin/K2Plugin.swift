@@ -29,6 +29,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "K2Plugin"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "checkReady", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "confirmWebBootOk", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getConfig", returnType: CAPPluginReturnPromise),
@@ -111,20 +112,29 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         let bootPending = webUpdatePath.appendingPathComponent(".boot-pending")
         let indexPath = webUpdatePath.appendingPathComponent("index.html")
 
-        if FileManager.default.fileExists(atPath: webUpdatePath.path) && FileManager.default.fileExists(atPath: bootPending.path) {
-            // OTA webapp failed to call checkReady() last time — rollback
-            logger.warning("load: OTA boot verification failed — rolling back to bundled webapp")
+        switch decideWebBoot(
+            hasWebUpdateDir: FileManager.default.fileExists(atPath: webUpdatePath.path),
+            hasBootPending: FileManager.default.fileExists(atPath: bootPending.path),
+            hasIndex: FileManager.default.fileExists(atPath: indexPath.path),
+            diskVersion: Self.readDiskWebVersion()
+        ) {
+        case .rollback(let version):
+            // The webapp never called confirmWebBootOk() — it failed to render.
+            // Quarantine BEFORE deleting: the version lives in
+            // web-update/version.txt, which removeItem takes with it.
+            logger.warning("load: OTA boot verification failed — rolling back to bundled webapp (version=\(version ?? "unknown"))")
+            if let version = version { Self.writeQuarantinedWebVersion(version) }
             let webBackupPath = documentsPath.appendingPathComponent("web-backup")
             try? FileManager.default.removeItem(at: webUpdatePath)
             try? FileManager.default.removeItem(at: webBackupPath)
-        } else if FileManager.default.fileExists(atPath: webUpdatePath.path) {
-            if FileManager.default.fileExists(atPath: indexPath.path) {
-                FileManager.default.createFile(atPath: bootPending.path, contents: nil)
-                bridge?.setServerBasePath(webUpdatePath.path)
-            } else {
-                try? FileManager.default.removeItem(at: webUpdatePath)
-                logger.info("Removed corrupt OTA dir")
-            }
+        case .serveDisk:
+            FileManager.default.createFile(atPath: bootPending.path, contents: nil)
+            bridge?.setServerBasePath(webUpdatePath.path)
+        case .cleanCorrupt:
+            try? FileManager.default.removeItem(at: webUpdatePath)
+            logger.info("Removed corrupt OTA dir")
+        case .serveBundled:
+            break
         }
 
         // Initialize App Group logs directory for webapp.log writes
@@ -202,15 +212,27 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: - VPN Methods
 
-    @objc func checkReady(_ call: CAPPluginCall) {
-        // Clear OTA boot-pending marker (webapp loaded successfully)
+    /// Web-OTA boot handshake. Clears `.boot-pending`, confirming the bundle on
+    /// disk actually RENDERED.
+    ///
+    /// Deliberately NOT part of checkReady(): the webapp calls that from
+    /// injectCapacitorGlobals(), before store init and the first React render,
+    /// so clearing there marks a bundle "verified" that may still die before
+    /// painting anything — permanently defeating the rollback. See
+    /// `WebBootDecision` (K2Helpers.swift). main.tsx calls this only after
+    /// ReactDOM.render.
+    @objc func confirmWebBootOk(_ call: CAPPluginCall) {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let bootPending = documentsPath.appendingPathComponent("web-update/.boot-pending")
         if FileManager.default.fileExists(atPath: bootPending.path) {
             try? FileManager.default.removeItem(at: bootPending)
-            logger.info("checkReady: OTA boot verified — cleared .boot-pending")
+            logger.info("confirmWebBootOk: OTA boot verified — cleared .boot-pending")
         }
+        call.resolve()
+    }
 
+    @objc func checkReady(_ call: CAPPluginCall) {
+        // NOTE: does NOT clear .boot-pending — see confirmWebBootOk().
         call.resolve(["ready": true, "version": appVersion, "bridgeVersion": k2BridgeApiVersion])
     }
 
@@ -1307,17 +1329,16 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     return
                 }
 
-                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                let versionFile = documentsPath.appendingPathComponent("web-update/version.txt")
-                let localVersion: String
-                if FileManager.default.fileExists(atPath: versionFile.path),
-                   let storedVersion = try? String(contentsOf: versionFile, encoding: .utf8) {
-                    localVersion = storedVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-                } else {
-                    localVersion = appVersion
-                }
+                let localVersion = Self.readDiskWebVersion() ?? appVersion
 
-                guard isNewerVersion(remoteVersion, than: localVersion) else { return }
+                if let skip = webBundleSkipReason(
+                    remoteVersion: remoteVersion,
+                    localVersion: localVersion,
+                    quarantinedVersion: Self.readQuarantinedWebVersion()
+                ) {
+                    logger.info("Auto web OTA skipped: \(skip) (remote=\(remoteVersion) local=\(localVersion))")
+                    return
+                }
 
                 await applyWebUpdateInternal { result in
                     switch result {
@@ -1330,6 +1351,41 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             } catch {
                 logger.warning("autocheck web update error: \(error.localizedDescription)")
             }
+        }
+    }
+
+    // MARK: - Web OTA disk state
+
+    // The quarantine file lives beside web-update/, NOT inside it — a rollback
+    // removes that directory wholesale, which is exactly when we need to
+    // remember what failed. Static so load() can call it before self is fully
+    // usable.
+    private static func quarantineFileURL() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("web-quarantined-version.txt")
+    }
+
+    /// Version of the bundle currently staged on disk, or nil.
+    static func readDiskWebVersion() -> String? {
+        let versionFile = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("web-update/version.txt")
+        guard let raw = try? String(contentsOf: versionFile, encoding: .utf8) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func readQuarantinedWebVersion() -> String? {
+        guard let raw = try? String(contentsOf: quarantineFileURL(), encoding: .utf8) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func writeQuarantinedWebVersion(_ version: String) {
+        do {
+            try version.write(to: quarantineFileURL(), atomically: true, encoding: .utf8)
+            logger.warning("quarantined web bundle \(version) — it will not be re-applied")
+        } catch {
+            logger.warning("writeQuarantinedWebVersion failed: \(error.localizedDescription)")
         }
     }
 

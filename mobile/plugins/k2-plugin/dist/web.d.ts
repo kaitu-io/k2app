@@ -6,6 +6,7 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
         version?: string;
         reason?: string;
     }>;
+    confirmWebBootOk(): Promise<void>;
     getVersion(): Promise<{
         version: string;
         go: string;

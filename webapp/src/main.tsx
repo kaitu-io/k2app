@@ -110,7 +110,9 @@ async function main() {
   await i18nPromise;
   console.info('[WebApp] i18n initialized');
 
-  // Inject platform-specific globals
+  // Inject platform-specific globals. Remembered so the post-render boot
+  // handshake below can pick the right shell without re-probing Capacitor.
+  let capacitorNative = false;
   if (window.__TAURI__) {
     console.info('[WebApp] Tauri detected, injecting Tauri bridge...');
     const { injectTauriGlobals } = await import('./services/tauri-k2');
@@ -126,6 +128,7 @@ async function main() {
       console.info('[WebApp] Capacitor native detected, injecting Capacitor bridge...');
       const { injectCapacitorGlobals } = await import('./services/capacitor-k2');
       await injectCapacitorGlobals();
+      capacitorNative = true;
       setupViewportScaling();
     } else if (!window._k2 || !window._platform) {
       console.warn('[WebApp] Globals missing, injecting standalone implementation...');
@@ -184,6 +187,12 @@ async function main() {
   if (window.__TAURI__) {
     const { confirmUiBootOk } = await import('./services/tauri-k2');
     await confirmUiBootOk();
+  } else if (capacitorNative) {
+    // Same contract on iOS/Android, where it matters more: a defeated rollback
+    // there has no hot-fix path at all. The native side clears .boot-pending
+    // only on this call — checkReady() (bridge init) must never clear it.
+    const { confirmWebBootOk } = await import('./services/capacitor-k2');
+    await confirmWebBootOk();
   }
 
   // HMR 清理

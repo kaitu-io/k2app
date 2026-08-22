@@ -83,11 +83,74 @@ let k2AppVersion = "0.4.8"
 /// Compile-time bridge API version. MUST equal BRIDGE_API_VERSION in
 /// webapp/src/types/bridge-version.ts — the webapp contract gate
 /// (bridge-contract.test.ts) greps this file's literal and fails on drift.
-let k2BridgeApiVersion = 2
+let k2BridgeApiVersion = 3
 
 /// min_bridge gate for web OTA manifests (spec §4). nil / absent (manifests
 /// published before the bridge-version era) always passes.
 func isCompatibleBridgeVersion(_ minBridge: Int?, bridgeVersion: Int = k2BridgeApiVersion) -> Bool {
     guard let minBridge = minBridge else { return true }
     return minBridge <= bridgeVersion
+}
+
+// MARK: - Web OTA boot decision
+
+/// Cold-start decision for the web-OTA bundle on disk. Swift mirror of
+/// Android's `WebBootDecision` — the two shells must fail identically.
+///
+/// WHY THIS EXISTS — "boot verified" != "UI rendered"
+/// ==================================================
+/// Until 2026-08 the shell cleared `.boot-pending` inside `checkReady()`, which
+/// the webapp calls from `injectCapacitorGlobals()` — BEFORE store init and the
+/// first React render. A bundle that loaded its JS and then died during either
+/// stage still reported "boot verified": marker gone, next cold start saw a
+/// clean bundle, user got the same white screen forever. The desktop shell hit
+/// exactly this (2026-08-18) and moved its handshake after `ReactDOM.render`;
+/// mobile kept the old shape, where it is strictly worse — no `?ui=embedded`
+/// escape hatch, and a bad bundle can only be undone by a new store release.
+///
+/// The handshake is now `confirmWebBootOk()`, called from main.tsx only after
+/// the app rendered. `checkReady()` no longer touches the marker.
+enum WebBootDecision: Equatable {
+    /// Serve the OTA bundle from disk. Caller arms `.boot-pending` first.
+    case serveDisk
+    /// Last boot never confirmed it rendered: delete the bundle, fall back to
+    /// the bundled webapp, and quarantine `version` so it is not re-applied.
+    /// `version` is nil when version.txt was missing or unreadable.
+    case rollback(version: String?)
+    /// Bundle directory present but has no index.html — remove it.
+    case cleanCorrupt
+    /// Nothing usable on disk; serve the webapp bundled in the app.
+    case serveBundled
+}
+
+func decideWebBoot(
+    hasWebUpdateDir: Bool,
+    hasBootPending: Bool,
+    hasIndex: Bool,
+    diskVersion: String?
+) -> WebBootDecision {
+    guard hasWebUpdateDir else { return .serveBundled }
+    // Checked before the corrupt case on purpose: an unconfirmed boot is a
+    // FAILURE and must be quarantined, whereas cleanCorrupt merely tidies up.
+    // Reordering silently drops the quarantine for half the failures.
+    if hasBootPending { return .rollback(version: diskVersion) }
+    return hasIndex ? .serveDisk : .cleanCorrupt
+}
+
+/// Version gate for applying a web bundle: nil = apply, non-nil = loggable
+/// skip reason. `min_native` / `min_bridge` are checked separately by the
+/// caller (they have their own helpers); this covers the two version rules.
+///
+/// The quarantine half is what stops the reinstall treadmill: rollback deletes
+/// version.txt, so `localVersion` falls back to the app version and the same
+/// bad bundle reads as "newer" on the very next check — and `fetchManifest`
+/// has neither cache nor backoff.
+func webBundleSkipReason(
+    remoteVersion: String,
+    localVersion: String,
+    quarantinedVersion: String?
+) -> String? {
+    if !isNewerVersion(remoteVersion, than: localVersion) { return "no newer version" }
+    if let q = quarantinedVersion, q == remoteVersion { return "version quarantined" }
+    return nil
 }

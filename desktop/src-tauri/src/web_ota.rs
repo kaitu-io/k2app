@@ -18,7 +18,7 @@ use tauri::Manager;
 /// BRIDGE_API_VERSION in webapp/src/types/bridge-version.ts — the webapp
 /// contract gate (bridge-contract.test.ts) greps this literal and fails on
 /// drift. This file only consumes it via the manifest `min_bridge` gate.
-pub const DESKTOP_BRIDGE_VERSION: u32 = 2;
+pub const DESKTOP_BRIDGE_VERSION: u32 = 3;
 
 /// Split "0.4.8.1234-beta.2" into (base segments, optional prerelease segments).
 /// Non-numeric segments parse as 0 — mirrors K2PluginUtils.splitVersion.

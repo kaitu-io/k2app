@@ -247,6 +247,24 @@ export async function capacitorRun<T = any>(action: string, params?: any): Promi
 export const __testCapacitorRun = capacitorRun;
 
 /**
+ * Web OTA boot handshake: confirm the UI actually rendered so the native shell
+ * clears the .boot-pending rollback marker. Deliberately NOT called from
+ * injectCapacitorGlobals — that runs before store init and the first React
+ * render, so a bundle that crashes during either of those stages would still
+ * have cleared the marker, permanently defeating the rollback (a white-screen
+ * bundle would be served again on every cold start, and mobile has no hot-fix
+ * path). Callers must invoke this only after ReactDOM has rendered the app
+ * (see main.tsx). try/catch — 0.4.8 and older shells lack the method.
+ */
+export async function confirmWebBootOk(): Promise<void> {
+  try {
+    await K2Plugin.confirmWebBootOk();
+  } catch {
+    // pre-handshake shell — ignore
+  }
+}
+
+/**
  * Inject Capacitor-specific _k2 and _platform globals.
  * Must be called before store initialization.
  */

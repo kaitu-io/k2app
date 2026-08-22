@@ -87,6 +87,8 @@ internal sealed class AutoUpdateStep {
  * @param sdkInt         Build.VERSION.SDK_INT.
  * @param bridgeVersion  compile-time bridge API version of this shell.
  * @param forceDowngrade beta→stable channel switch: allow a non-newer native version.
+ * @param quarantinedWebVersion web version that already failed to boot once and
+ *   was rolled back; null when nothing is quarantined.
  */
 internal fun planAutoUpdate(
     nativeManifest: () -> NativeManifestInfo?,
@@ -96,6 +98,7 @@ internal fun planAutoUpdate(
     sdkInt: Int,
     bridgeVersion: Int = K2PluginUtils.BRIDGE_API_VERSION,
     forceDowngrade: Boolean = false,
+    quarantinedWebVersion: String? = null,
 ): List<AutoUpdateStep> {
     val steps = mutableListOf<AutoUpdateStep>()
 
@@ -129,6 +132,13 @@ internal fun planAutoUpdate(
                 AutoUpdateStep.Skip("web", "min_bridge=${m.minBridge} > bridge=$bridgeVersion")
             !K2PluginUtils.isNewerVersion(m.version, localWebVersion) ->
                 AutoUpdateStep.Skip("web", "no newer version (remote=${m.version} local=$localWebVersion)")
+            // Already failed to boot once and was rolled back. Without this the
+            // shell is a reinstall treadmill: rollback deletes version.txt, so
+            // localWebVersion falls back to appVersion and this same bundle
+            // reads as "newer" on the very next check. Version-scoped, so
+            // publishing a newer bundle clears it (desktop F2 semantics).
+            quarantinedWebVersion == m.version ->
+                AutoUpdateStep.Skip("web", "version quarantined")
             else -> AutoUpdateStep.ApplyWeb(m)
         }
     } catch (e: Exception) {

@@ -3,6 +3,9 @@ export class K2PluginWeb extends WebPlugin {
     async checkReady() {
         throw this.unavailable('K2Plugin is not available on web');
     }
+    async confirmWebBootOk() {
+        throw this.unavailable('K2Plugin is not available on web');
+    }
     async getVersion() {
         throw this.unavailable('K2Plugin is not available on web');
     }

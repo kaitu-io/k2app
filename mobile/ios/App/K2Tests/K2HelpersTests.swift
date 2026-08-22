@@ -123,4 +123,81 @@ class K2HelpersTests: XCTestCase {
         XCTAssertTrue(isCompatibleBridgeVersion(1, bridgeVersion: 2))
         XCTAssertFalse(isCompatibleBridgeVersion(3, bridgeVersion: 2))
     }
+
+    // MARK: - Web OTA boot decision (mirrors Android WebBootDecisionTest)
+
+    /// A rollback must NAME the version it discards. Rolling back deletes
+    /// web-update/ — version.txt included — so a version not captured here is
+    /// gone, and the auto-check 3s later re-downloads the same broken bundle.
+    func testDecideWebBoot_unconfirmedBootRollsBackAndNamesVersion() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: true, diskVersion: "0.4.8.20000000"),
+            .rollback(version: "0.4.8.20000000"))
+    }
+
+    func testDecideWebBoot_rollbackWithoutReadableVersionStillRollsBack() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: true, diskVersion: nil),
+            .rollback(version: nil))
+    }
+
+    /// An unconfirmed boot is a FAILURE and must be quarantined even when
+    /// index.html is also gone; ordering the corrupt check first would
+    /// silently drop the quarantine.
+    func testDecideWebBoot_unconfirmedBootWinsOverCorruptCheck() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: false, diskVersion: "0.4.8.20000000"),
+            .rollback(version: "0.4.8.20000000"))
+    }
+
+    func testDecideWebBoot_confirmedBundleServedFromDisk() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: false, hasIndex: true, diskVersion: "0.4.8.20000000"),
+            .serveDisk)
+    }
+
+    func testDecideWebBoot_directoryWithoutIndexIsCleaned() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: false, hasIndex: false, diskVersion: nil),
+            .cleanCorrupt)
+    }
+
+    func testDecideWebBoot_noBundleServesBundled() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: false, hasBootPending: false, hasIndex: false, diskVersion: nil),
+            .serveBundled)
+    }
+
+    func testDecideWebBoot_strayMarkerWithoutBundleServesBundled() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: false, hasBootPending: true, hasIndex: false, diskVersion: nil),
+            .serveBundled)
+    }
+
+    // MARK: - Web OTA apply gate (quarantine)
+
+    /// Without this the shell is a reinstall treadmill — see the Android
+    /// AutoUpdatePlanTest quarantine block for the full mechanism.
+    func testWebBundleSkipReason_quarantinedVersionIsNotReapplied() {
+        XCTAssertEqual(
+            webBundleSkipReason(remoteVersion: "0.4.8.20000000", localVersion: "0.4.8", quarantinedVersion: "0.4.8.20000000"),
+            "version quarantined")
+    }
+
+    /// Version-scoped, not permanent: a newer bundle clears it.
+    func testWebBundleSkipReason_newerVersionClearsQuarantine() {
+        XCTAssertNil(
+            webBundleSkipReason(remoteVersion: "0.4.8.20000001", localVersion: "0.4.8", quarantinedVersion: "0.4.8.20000000"))
+    }
+
+    func testWebBundleSkipReason_noNewerVersion() {
+        XCTAssertEqual(
+            webBundleSkipReason(remoteVersion: "0.4.8", localVersion: "0.4.8", quarantinedVersion: nil),
+            "no newer version")
+    }
+
+    func testWebBundleSkipReason_appliesWhenNewerAndNotQuarantined() {
+        XCTAssertNil(
+            webBundleSkipReason(remoteVersion: "0.4.8.20000000", localVersion: "0.4.8", quarantinedVersion: nil))
+    }
 }

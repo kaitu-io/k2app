@@ -72,19 +72,33 @@ class K2Plugin : Plugin() {
         val bootPending = File(webUpdateDir, ".boot-pending")
         val indexFile = File(webUpdateDir, "index.html")
 
-        if (webUpdateDir.exists() && bootPending.exists()) {
-            // OTA webapp failed to call checkReady() last time — rollback
-            Log.w(TAG, "load: OTA boot verification failed — rolling back to bundled webapp")
-            val webBackupDir = File(context.filesDir, "web-backup")
-            webUpdateDir.deleteRecursively()
-            webBackupDir.deleteRecursively()
-        } else if (webUpdateDir.exists() && indexFile.exists()) {
-            Log.d(TAG, "load: OTA web update found, setting server base path: ${webUpdateDir.absolutePath}")
-            bootPending.createNewFile()
-            bridge.setServerBasePath(webUpdateDir.absolutePath)
-        } else if (webUpdateDir.exists()) {
-            Log.w(TAG, "load: corrupt OTA web dir (no index.html) — removing")
-            webUpdateDir.deleteRecursively()
+        when (
+            val decision = decideWebBoot(
+                hasWebUpdateDir = webUpdateDir.exists(),
+                hasBootPending = bootPending.exists(),
+                hasIndex = indexFile.exists(),
+                diskVersion = readDiskWebVersion(),
+            )
+        ) {
+            is WebBootDecision.Rollback -> {
+                // The webapp never called confirmWebBootOk() — it failed to
+                // render. Quarantine BEFORE deleting: the version lives in
+                // web-update/version.txt, which deleteRecursively takes with it.
+                Log.w(TAG, "load: OTA boot verification failed — rolling back to bundled webapp (version=${decision.version})")
+                decision.version?.let { writeQuarantinedWebVersion(it) }
+                webUpdateDir.deleteRecursively()
+                File(context.filesDir, "web-backup").deleteRecursively()
+            }
+            WebBootDecision.ServeDisk -> {
+                Log.d(TAG, "load: OTA web update found, setting server base path: ${webUpdateDir.absolutePath}")
+                bootPending.createNewFile()
+                bridge.setServerBasePath(webUpdateDir.absolutePath)
+            }
+            WebBootDecision.CleanCorrupt -> {
+                Log.w(TAG, "load: corrupt OTA web dir (no index.html) — removing")
+                webUpdateDir.deleteRecursively()
+            }
+            WebBootDecision.ServeBundled -> {}
         }
 
         // Initialize logs directory for webapp.log writes
@@ -111,15 +125,30 @@ class K2Plugin : Plugin() {
         super.handleOnDestroy()
     }
 
+    /**
+     * Web-OTA boot handshake. Clears `.boot-pending`, confirming the bundle on
+     * disk actually RENDERED.
+     *
+     * Deliberately NOT part of checkReady(): the webapp calls that from
+     * injectCapacitorGlobals(), before store init and the first React render,
+     * so clearing there marks a bundle "verified" that may still die before
+     * painting anything — permanently defeating the rollback. See
+     * [WebBootDecision] for the full story. main.tsx calls this only after
+     * ReactDOM.render.
+     */
     @PluginMethod
-    fun checkReady(call: PluginCall) {
-        // Clear OTA boot-pending marker (webapp loaded successfully)
+    fun confirmWebBootOk(call: PluginCall) {
         val bootPending = File(context.filesDir, "web-update/.boot-pending")
         if (bootPending.exists()) {
             bootPending.delete()
-            Log.d(TAG, "checkReady: OTA boot verified — cleared .boot-pending")
+            Log.d(TAG, "confirmWebBootOk: OTA boot verified — cleared .boot-pending")
         }
+        call.resolve()
+    }
 
+    @PluginMethod
+    fun checkReady(call: PluginCall) {
+        // NOTE: does NOT clear .boot-pending — see confirmWebBootOk().
         val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
         val ret = JSObject()
         ret.put("ready", true)
@@ -918,12 +947,7 @@ class K2Plugin : Plugin() {
             return
         }
 
-        val localWebVersion = try {
-            val f = File(File(context.filesDir, "web-update"), "version.txt")
-            if (f.exists()) f.readText().trim() else appVersion
-        } catch (e: Exception) {
-            appVersion
-        }
+        val localWebVersion = readDiskWebVersion() ?: appVersion
 
         val plan = planAutoUpdate(
             nativeManifest = {
@@ -955,6 +979,7 @@ class K2Plugin : Plugin() {
             localWebVersion = localWebVersion,
             sdkInt = Build.VERSION.SDK_INT,
             forceDowngrade = forceDowngrade,
+            quarantinedWebVersion = readQuarantinedWebVersion(),
         )
 
         // Execute step by step, each in its own try: a throwing native
@@ -1079,6 +1104,38 @@ class K2Plugin : Plugin() {
      * Try each endpoint in order. Returns (manifest JSONObject, baseURL) on first success,
      * or null if all endpoints fail. baseURL is the URL up to but not including the filename.
      */
+    // ── Web OTA disk state ───────────────────────────────────────────
+    // The quarantine file lives in filesDir, NOT in web-update/ — a rollback
+    // deletes that directory wholesale, which is exactly when we need to
+    // remember what failed.
+    private fun quarantineFile() = File(context.filesDir, "web-quarantined-version.txt")
+
+    /** Version of the bundle currently staged on disk, or null. */
+    private fun readDiskWebVersion(): String? = try {
+        val f = File(File(context.filesDir, "web-update"), "version.txt")
+        if (f.exists()) f.readText().trim().ifEmpty { null } else null
+    } catch (e: Exception) {
+        Log.w(TAG, "readDiskWebVersion failed: ${e.message}")
+        null
+    }
+
+    private fun readQuarantinedWebVersion(): String? = try {
+        val f = quarantineFile()
+        if (f.exists()) f.readText().trim().ifEmpty { null } else null
+    } catch (e: Exception) {
+        Log.w(TAG, "readQuarantinedWebVersion failed: ${e.message}")
+        null
+    }
+
+    private fun writeQuarantinedWebVersion(version: String) {
+        try {
+            quarantineFile().writeText(version)
+            Log.w(TAG, "quarantined web bundle $version — it will not be re-applied")
+        } catch (e: Exception) {
+            Log.w(TAG, "writeQuarantinedWebVersion failed: ${e.message}")
+        }
+    }
+
     private fun fetchManifest(endpoints: List<String>): Pair<JSONObject, String>? {
         for (endpoint in endpoints) {
             try {

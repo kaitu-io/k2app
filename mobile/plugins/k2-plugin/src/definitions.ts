@@ -15,6 +15,18 @@ export interface NativeUpdateInfo {
 
 export interface K2PluginInterface {
   checkReady(): Promise<{ ready: boolean; version?: string; reason?: string; bridgeVersion?: number }>;
+  /**
+   * Web-OTA boot handshake: confirm the UI actually RENDERED, so the shell can
+   * clear the `.boot-pending` rollback marker.
+   *
+   * Deliberately separate from checkReady(): that runs during bridge init,
+   * before store init and the first React render, so a bundle crashing in
+   * either stage would still clear the marker and permanently defeat the
+   * rollback. Callers must invoke this only after ReactDOM has rendered
+   * (see webapp main.tsx). Absent on 0.4.8 and older shells — callers swallow
+   * the rejection.
+   */
+  confirmWebBootOk(): Promise<void>;
   getVersion(): Promise<{ version: string; go: string; os: string; arch: string }>;
   getStatus(): Promise<{ state: string; connectedAt?: string; uptimeSeconds?: number; error?: string }>;
   getConfig(): Promise<{ config?: string }>;
