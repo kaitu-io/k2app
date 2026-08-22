@@ -69,7 +69,7 @@ export function ResetPasswordDialog({
       onOpenChange(false);
     } catch (e) {
       if (e instanceof ApiError) {
-        toast.error(getApiErrorMessageZh(e.code, e.message));
+        toast.error(getApiErrorMessageZh(e.code, "重置密码失败", e.message));
       } else {
         toast.error("重置密码失败");
       }
