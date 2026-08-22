@@ -401,6 +401,13 @@ declare global {
     _k2: IK2Vpn;
     _platform: IPlatform;
     __TAURI__?: any;
+    /**
+     * Injected into the served HTML by the Linux k2 daemon (k2/webui
+     * serve.go). Its presence is what distinguishes the Linux webui shell
+     * from a plain browser — the webapp reaches that daemon over relative
+     * fetch, so there is no bridge global to probe instead.
+     */
+    __K2_GATEWAY__?: { version: string; commit: string; arch: string };
   }
 }
 

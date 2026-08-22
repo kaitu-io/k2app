@@ -193,6 +193,11 @@ async function main() {
     // only on this call — checkReady() (bridge init) must never clear it.
     const { confirmWebBootOk } = await import('./services/capacitor-k2');
     await confirmWebBootOk();
+  } else {
+    // Linux shell (k2 daemon serving over HTTP). Self-gates on
+    // window.__K2_GATEWAY__, so this is a no-op in a plain browser.
+    const { confirmWebBootOk: confirmLinuxBootOk } = await import('./services/standalone-k2');
+    await confirmLinuxBootOk();
   }
 
   // HMR 清理

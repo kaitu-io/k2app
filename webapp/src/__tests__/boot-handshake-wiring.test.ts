@@ -45,6 +45,18 @@ describe('web OTA boot handshake wiring (main.tsx)', () => {
     ).toBeGreaterThan(renderIndex(MAIN));
   });
 
+  // The Linux shell is a Go daemon serving over HTTP; its confirmation is a
+  // POST, but the ordering requirement is identical.
+  it('confirms Linux boot only after ReactDOM has rendered', () => {
+    const call = MAIN.indexOf('confirmLinuxBootOk(');
+    expect(call, 'main.tsx never calls confirmLinuxBootOk() — Linux web OTA cannot roll back').toBeGreaterThan(-1);
+    expect(
+      call,
+      'confirmLinuxBootOk() must be called AFTER ReactDOM.createRoot — the daemon ' +
+        'would clear .boot-pending for a bundle that never rendered',
+    ).toBeGreaterThan(renderIndex(MAIN));
+  });
+
   // The bridge-init call sites are where the marker used to be cleared. Neither
   // injector may confirm the boot.
   it('neither bridge injector confirms the boot', () => {

@@ -18,6 +18,35 @@ import { webPlatform } from './web-platform';
 
 const CORE_ENDPOINT = '/api/core';
 const HELPER_ENDPOINT = '/api/helper';
+const UI_BOOT_OK_ENDPOINT = '/api/ui-boot-ok';
+
+/**
+ * Web OTA boot handshake for the Linux shell: confirm the UI actually
+ * rendered so the k2 daemon clears its `.boot-pending` marker.
+ *
+ * Deliberately NOT called during bridge/platform init — that runs before
+ * store init and the first React render, so a bundle that crashes during
+ * either stage would still report success and permanently defeat the
+ * rollback. main.tsx calls this only after ReactDOM has rendered, matching
+ * `confirmUiBootOk` (Tauri) and `confirmWebBootOk` (Capacitor).
+ *
+ * Gated on `window.__K2_GATEWAY__`, which only the Linux daemon injects: a
+ * plain browser (dev server, standalone web build) has no daemon behind it,
+ * and posting there would 404 on every page load. Failures are swallowed —
+ * 0.4.8 and older daemons serve the UI but have no such route.
+ */
+export async function confirmWebBootOk(): Promise<void> {
+  if (!window.__K2_GATEWAY__) return;
+  try {
+    await fetch(UI_BOOT_OK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch {
+    // pre-handshake daemon or transient failure — the marker simply stays
+    // pending; a genuinely healthy bundle gets confirmed on the next load.
+  }
+}
 
 async function coreExec<T = any>(action: string, params?: any): Promise<SResponse<T>> {
   try {
