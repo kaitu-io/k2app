@@ -24,6 +24,7 @@ import {
   Divider,
   Tabs,
   Tab,
+  alpha,
 } from "@mui/material";
 import {
   Close as CloseIcon,
@@ -47,6 +48,22 @@ import type { AuthResult } from '../services/api-types';
 import { delayedFocus } from '../utils/ui';
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import { brandConfig } from '../brands';
+
+/**
+ * DialogContent is a flex column, so a form taller than the viewport squashes its
+ * children instead of scrolling — at 320×568 the "Activate Service" button collapsed
+ * into a 0-height outline. Pinning shrink makes the content overflow and scroll.
+ */
+const FORM_STACK_SX = { '& > *': { flexShrink: 0 } } as const;
+
+/**
+ * Narrow-screen input tuning: the leading icon plus its default 8px gutter ate ~46px
+ * of an already cramped field. A smaller icon and tighter gutter give it back.
+ */
+const COMPACT_FIELD_SX = {
+  '& .MuiInputAdornment-positionStart': { mr: 1 },
+  '& .MuiOutlinedInput-input': { minWidth: 0 },
+} as const;
 
 export default function LoginDialog() {
   const { t, i18n } = useTranslation();
@@ -280,55 +297,94 @@ export default function LoginDialog() {
       disableEscapeKeyDown
       maxWidth="xs"
       fullWidth
-      PaperProps={{
-        sx: {
-          borderRadius: 3,
-          m: 2,
+      // Lift the dialog off the page: darker + blurred scrim, brand-tinted hairline,
+      // and a raised surface. The app renders dark-only, where background (#0a0a0f)
+      // and paper (#111118) are nearly the same value — without this the panel edge
+      // is invisible against the page behind it.
+      // The dialog is portalled to <body>, so it never inherits Layout's
+      // safe-area padding — same gap the theme already patches for Snackbar.
+      // Inset the container instead of the paper so centering stays correct.
+      sx={{
+        '& .MuiDialog-container': {
+          pt: 'env(safe-area-inset-top, 0px)',
+          pb: 'env(safe-area-inset-bottom, 0px)',
         },
       }}
+      slotProps={{
+        backdrop: {
+          sx: {
+            backgroundColor: alpha('#000', 0.72),
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+          },
+        },
+      }}
+      PaperProps={{
+        sx: (theme) => ({
+          borderRadius: 3,
+          // MUI's `fullWidth` hardcodes `width: calc(100% - 64px)` regardless of the
+          // margin we set, so on a 375px phone the panel gave up 32px of content width
+          // for nothing. Pin width to the actual margin. The dialog is portalled to
+          // <body>, outside the #root CSS `zoom`, so these are real device pixels.
+          m: { xs: 1.25, sm: 2 },
+          width: { xs: 'calc(100% - 20px)', sm: 'calc(100% - 32px)' },
+          maxWidth: { xs: 'calc(100% - 20px)', sm: 444 },
+          maxHeight: { xs: 'calc(100% - 20px)', sm: 'calc(100% - 64px)' },
+          border: `1px solid ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.12)}`,
+          // Raise the surface above background.paper (MuiPaper clears backgroundImage
+          // globally; a flat overlay re-adds the elevation tint without a hardcoded hex).
+          ...(theme.palette.mode === 'dark' && {
+            backgroundImage: `linear-gradient(${alpha('#fff', 0.05)}, ${alpha('#fff', 0.05)})`,
+          }),
+          boxShadow:
+            theme.palette.mode === 'dark'
+              ? `0 24px 64px -12px ${alpha('#000', 0.9)}, 0 0 40px -16px ${alpha(theme.palette.primary.main, 0.2)}`
+              : `0 24px 48px -12px ${alpha('#000', 0.28)}`,
+        }),
+      }}
     >
-      {/* Header with Title and Close Button */}
+      {/* Header — close button lives inside the flex row instead of absolute+pr:6,
+          which reclaims 48px of title width on narrow screens. */}
       <DialogTitle sx={{
-        pb: 1,
-        pr: 6, // Space for close button
+        px: { xs: 2, sm: 3 },
+        pt: { xs: 2, sm: 2.5 },
+        pb: { xs: 1.5, sm: 2 },
         display: 'flex',
         alignItems: 'center',
         gap: 1.5,
+        borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
       }}>
         <Box
           component="img"
           src="/icon-192x192.png"
           alt={brandConfig.productName}
           sx={{
-            width: 40,
-            height: 40,
+            width: { xs: 36, sm: 40 },
+            height: { xs: 36, sm: 40 },
             borderRadius: 2,
+            flexShrink: 0,
           }}
         />
-        <Box>
-          <Typography variant="h6" component="span" fontWeight={600}>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography variant="h6" component="span" fontWeight={600} noWrap display="block">
             {t("auth:auth.login", "Login")}
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: -0.25 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: -0.25 }} noWrap>
             {brandConfig.domainLabel}
           </Typography>
         </Box>
+
+        <IconButton
+          onClick={handleClose}
+          sx={{ color: "text.secondary", flexShrink: 0, mr: -0.5 }}
+          size="small"
+          aria-label={t("common:common.close", "Close")}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
       </DialogTitle>
 
-      <IconButton
-        onClick={handleClose}
-        sx={{
-          position: "absolute",
-          top: 12,
-          right: 12,
-          color: "text.secondary",
-        }}
-        size="small"
-      >
-        <CloseIcon fontSize="small" />
-      </IconButton>
-
-      <DialogContent sx={{ pt: 1 }}>
+      <DialogContent sx={{ px: { xs: 2, sm: 3 }, pt: 2, pb: 1 }}>
         {/* Optional message */}
         {message && (
           <Alert severity="info" sx={{ mb: 2 }}>
@@ -362,7 +418,7 @@ export default function LoginDialog() {
 
         {/* Step 1: Email Input (Code Login) */}
         {step === "email" && loginMethod === "code" && (
-          <Stack spacing={2}>
+          <Stack spacing={2} sx={FORM_STACK_SX}>
             <TextField
               fullWidth
               label={t("auth:auth.email")}
@@ -395,10 +451,11 @@ export default function LoginDialog() {
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <EmailIcon color="action" />
+                    <EmailIcon color="action" fontSize="small" />
                   </InputAdornment>
                 ),
               }}
+              sx={COMPACT_FIELD_SX}
             />
 
             {emailSuggestion && (
@@ -448,7 +505,7 @@ export default function LoginDialog() {
 
         {/* Step 1: Password Login */}
         {step === "email" && loginMethod === "password" && (
-          <Stack spacing={2}>
+          <Stack spacing={2} sx={FORM_STACK_SX}>
             <PasswordAuthFields
               email={email}
               password={password}
@@ -469,7 +526,7 @@ export default function LoginDialog() {
 
         {/* Step 2: Verification Code Input */}
         {step === "code" && (
-          <Stack spacing={2}>
+          <Stack spacing={2} sx={FORM_STACK_SX}>
             {!isActivated && (
               <Alert severity="info">
                 {t("auth:auth.inviteCodeOptional")}
@@ -490,50 +547,57 @@ export default function LoginDialog() {
               </Typography>
             </Box>
 
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <TextField
-                fullWidth
-                label={t("auth:auth.verificationCode")}
-                placeholder={t("auth:auth.codePlaceholder")}
-                value={verificationCode}
-                onChange={(e) => setVerificationCode(e.target.value)}
-                onBlur={(e) => setVerificationCode(e.target.value.trim())}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !isSubmitting && verificationCode) {
-                    handleVerifyCode();
-                  }
-                }}
-                disabled={isSubmitting}
-                inputRef={codeInputRef}
-                inputProps={{
-                  autoCapitalize: "none",
-                  autoCorrect: "off",
-                  autoComplete: "one-time-code",
-                  spellCheck: false,
-                  inputMode: "numeric",
-                  pattern: "[0-9]*",
-                }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <VpnKeyIcon color="action" />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-
-              <Button
-                variant="outlined"
-                onClick={handleSendCode}
-                disabled={countdown > 0 || isSubmitting}
-                sx={{
-                  minWidth: 80,
-                  flexShrink: 0,
-                }}
-              >
-                {countdown > 0 ? `${countdown}s` : t("auth:auth.resend")}
-              </Button>
-            </Box>
+            {/* Resend lives inside the field rather than beside it — a separate
+                80px button plus its gap cost the code input a quarter of its
+                width on a 320px screen. */}
+            <TextField
+              fullWidth
+              label={t("auth:auth.verificationCode")}
+              placeholder={t("auth:auth.codePlaceholder")}
+              value={verificationCode}
+              onChange={(e) => setVerificationCode(e.target.value)}
+              onBlur={(e) => setVerificationCode(e.target.value.trim())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !isSubmitting && verificationCode) {
+                  handleVerifyCode();
+                }
+              }}
+              disabled={isSubmitting}
+              inputRef={codeInputRef}
+              inputProps={{
+                autoCapitalize: "none",
+                autoCorrect: "off",
+                autoComplete: "one-time-code",
+                spellCheck: false,
+                inputMode: "numeric",
+                pattern: "[0-9]*",
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <VpnKeyIcon color="action" fontSize="small" />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Button
+                      size="small"
+                      onClick={handleSendCode}
+                      disabled={countdown > 0 || isSubmitting}
+                      sx={{
+                        minWidth: 0,
+                        px: 1,
+                        mr: -0.5,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {countdown > 0 ? `${countdown}s` : t("auth:auth.resend")}
+                    </Button>
+                  </InputAdornment>
+                ),
+              }}
+              sx={COMPACT_FIELD_SX}
+            />
 
             {!isActivated && (
               <TextField
@@ -546,7 +610,8 @@ export default function LoginDialog() {
                 disabled={isSubmitting}
                 inputProps={{
                   maxLength: 8,
-                  style: { textTransform: "uppercase", letterSpacing: "0.1em" },
+                  // 字距只为已输入的码服务；占位符继承它会被拉成「请 输 入 邀 请 码」
+                  style: { textTransform: "uppercase", letterSpacing: inviteCode ? "0.1em" : "normal" },
                   autoCapitalize: "characters",
                   autoCorrect: "off",
                   spellCheck: false,
@@ -554,10 +619,11 @@ export default function LoginDialog() {
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      <InviteIcon color="action" />
+                      <InviteIcon color="action" fontSize="small" />
                     </InputAdornment>
                   ),
                 }}
+                sx={COMPACT_FIELD_SX}
               />
             )}
 
@@ -580,7 +646,7 @@ export default function LoginDialog() {
       </DialogContent>
 
       <DialogActions sx={{
-        px: 3,
+        px: { xs: 2, sm: 3 },
         pb: 2,
         pt: 0,
         flexDirection: 'column',

@@ -25,6 +25,16 @@ export interface PasswordAuthFieldsProps {
   autoFocusEmail?: boolean;
 }
 
+/**
+ * Tighter adornment gutter than MUI's 8px default — inside the login dialog on a
+ * 320px screen the leading icon plus its gutter was eating a sixth of the field.
+ */
+const FIELD_SX = {
+  '& .MuiOutlinedInput-root': { borderRadius: 2 },
+  '& .MuiInputAdornment-positionStart': { mr: 1 },
+  '& .MuiOutlinedInput-input': { minWidth: 0 },
+} as const;
+
 export default function PasswordAuthFields(props: PasswordAuthFieldsProps) {
   const { t } = useTranslation();
   const emailRef = useRef<HTMLInputElement>(null);
@@ -64,11 +74,11 @@ export default function PasswordAuthFields(props: PasswordAuthFieldsProps) {
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
-              <AlternateEmailIcon color="primary" />
+              <AlternateEmailIcon color="primary" fontSize="small" />
             </InputAdornment>
           ),
         }}
-        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+        sx={FIELD_SX}
       />
 
       {props.emailSuggestion && (
@@ -96,11 +106,11 @@ export default function PasswordAuthFields(props: PasswordAuthFieldsProps) {
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
-              <LockIcon color="primary" />
+              <LockIcon color="primary" fontSize="small" />
             </InputAdornment>
           ),
         }}
-        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+        sx={FIELD_SX}
       />
 
       <Button
