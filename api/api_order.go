@@ -105,6 +105,15 @@ func api_create_order(c *gin.Context) {
 		return
 	}
 
+	// 防重叠(防双扣):已有任一 provider 的活跃续订订阅 → 拒绝一次性充值,
+	// 含 preview——购买 UI 尽早拿到反馈,而非付款瞬间才失败。
+	// 与 api_stripe_checkout 的既有守卫同判据(GetActiveSubscriptions/isSubscriptionLive)同错码。
+	if len(GetActiveSubscriptions(user.ID)) > 0 {
+		log.Warnf(c, "user %d rejected: active subscription exists, one-off purchase blocked", user.ID)
+		Error(c, ErrorConflict, "you already have an active subscription")
+		return
+	}
+
 	// 专属节点套餐：校验选定地区在允许列表内。空 region 允许（开通时由
 	// createPrivateNodeSubscription 回退到 firstAllowedRegion）。校验对 preview 与
 	// 真实创建都执行，让购买 UI 能尽早拿到反馈；preview 不落库订单。

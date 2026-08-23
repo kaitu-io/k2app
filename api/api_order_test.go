@@ -3,13 +3,16 @@ package center
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	db "github.com/wordgate/qtoolkit/db"
 )
 
 // TestCreateOrder_RejectsForUserUUIDsField verifies that POST /api/orders rejects
@@ -165,4 +168,42 @@ func TestValidatePurchase_SubsequentDifferentTierRejected(t *testing.T) {
 	err := validatePurchase(user, plan)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "tier", "error message should mention tier")
+}
+
+// 互斥门(spec 2026-08-22):任何 provider 的活跃续订订阅存在时,WordGate 下单
+// (含 preview)一律 409——与 api_stripe_checkout 的既有防双扣门同判据同错码。
+func TestCreateOrder_ActiveSubscription_Rejected(t *testing.T) {
+	skipIfNoDB(t)
+	require.NoError(t, Migrate())
+	gin.SetMode(gin.TestMode)
+
+	uniq := time.Now().UnixNano()
+	plan := &Plan{PID: fmt.Sprintf("tmux%d", uniq), Label: "X", Price: 1000, OriginPrice: 1000,
+		Month: 1, Tier: "basic", IsActive: BoolPtr(true), Brand: string(BrandKaitu)}
+	require.NoError(t, db.Get().Create(plan).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(plan) })
+
+	user := CreateTestUser(t)
+	sub := &Subscription{UserID: user.ID, Provider: "apple",
+		ProviderSubscriptionID: fmt.Sprintf("OTXM-%d", uniq),
+		Status:                 "active", CurrentPeriodEnd: time.Now().Unix() + 30*86400}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&Subscription{}) })
+
+	r := gin.New()
+	r.POST("/api/orders", func(c *gin.Context) {
+		c.Set("authContext", &authContext{UserID: user.ID, User: user})
+	}, api_create_order)
+
+	for _, preview := range []bool{true, false} {
+		body, _ := json.Marshal(map[string]any{"plan": plan.PID, "preview": preview})
+		req, _ := http.NewRequest(http.MethodPost, "/api/orders", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		var resp map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, float64(ErrorConflict), resp["code"], "preview=%v 也必须拦截", preview)
+	}
 }
