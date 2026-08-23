@@ -50,7 +50,8 @@ func applyClawback(currentExpiredAt, seconds, now int64) int64 {
 }
 
 // coverThrough ensures the ledger covers at least throughTs (grace window); never
-// shortens. Used by Phase 2 grace handling.
+// shortens. Used by the Apple/Stripe credit wiring (creditAppleTransaction,
+// creditStripeInvoice) and by applyRenewalInfo's grace cover-through.
 func coverThrough(currentExpiredAt, throughTs int64) int64 {
 	if throughTs > currentExpiredAt {
 		return throughTs

@@ -583,7 +583,8 @@ func computeRenewalState(currentStatus string, ri *appstore.RenewalInfo, subtype
 }
 
 // applyRenewalInfo 落地续订状态变更（DID_CHANGE_RENEWAL_STATUS / DID_FAIL_TO_RENEW）：
-// 把 computeRenewalState 的结论写入订阅行。绝不 re-grant、绝不改用户到期。
+// 把 computeRenewalState 的结论写入订阅行。绝不 re-grant；除 grace cover-through 外
+// 不改用户到期（spec 2026-08-22）。
 // 用 map 更新而非 struct，以免 GORM 跳过 auto_renew=false 这一零值。
 func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.RenewalInfo, subtype string) error {
 	autoRenew, status := computeRenewalState(sub.Status, ri, subtype, time.Now().Unix())
@@ -604,6 +605,25 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 	}
 	log.Infof(ctx, "[applyRenewalInfo] sub %s autoRenew=%v status=%v (subtype=%s)",
 		sub.ProviderSubscriptionID, updates["auto_renew"], updates["status"], subtype)
+
+	// Grace cover-through(spec 2026-08-22):进入宽限期时把权益覆盖到宽限期末——
+	// Apple 官方语义是宽限期内继续提供服务、扣费成功后无缝续期。只延长不缩短;
+	// 后续 DID_RENEW 正常入账时 cover-through 会再收敛到新周期末,不会双算。
+	if status == "grace" && ri != nil && ri.GracePeriodExpiresDate > 0 {
+		graceEnd := ri.GracePeriodExpiresDate / 1000
+		var u User
+		if err := getDB().First(&u, sub.UserID).Error; err != nil {
+			return err
+		}
+		if covered := coverThrough(u.ExpiredAt, graceEnd); covered > u.ExpiredAt {
+			if err := getDB().Model(&User{}).Where("id = ?", u.ID).
+				Update("expired_at", covered).Error; err != nil {
+				return err
+			}
+			log.Warnf(ctx, "[applyRenewalInfo] grace cover-through user %d expiry %d→%d (sub=%s)",
+				u.ID, u.ExpiredAt, covered, sub.ProviderSubscriptionID)
+		}
+	}
 	return nil
 }
 
