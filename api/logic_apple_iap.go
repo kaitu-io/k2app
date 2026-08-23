@@ -226,6 +226,15 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		kind = "renewal"
 	}
 
+	// Cover-through 收敛不变式(spec 2026-08-22):无论 delta 怎么算,入账后权益至少
+	// 覆盖到本周期末。修正 priorPeriodEnd 被状态路径先行推进 / 事件乱序导致 delta≤0
+	// 而 ExpiredAt 落后活跃订阅的缺陷。只延长不缩短;审计账本保持 delta 口径,修正量留痕于日志。
+	if covered := coverThrough(user.ExpiredAt, newPeriodEnd); covered > user.ExpiredAt {
+		log.Warnf(ctx, "[creditAppleTransaction] cover-through corrected user %d expiry %d→%d (txn=%s)",
+			userID, user.ExpiredAt, covered, info.TransactionId)
+		user.ExpiredAt = covered
+	}
+
 	if user.IsActivated == nil || !*user.IsActivated {
 		user.IsActivated = BoolPtr(true)
 		user.ActivatedAt = now
