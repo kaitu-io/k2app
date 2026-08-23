@@ -606,22 +606,34 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 	log.Infof(ctx, "[applyRenewalInfo] sub %s autoRenew=%v status=%v (subtype=%s)",
 		sub.ProviderSubscriptionID, updates["auto_renew"], updates["status"], subtype)
 
-	// Grace cover-through(spec 2026-08-22):进入宽限期时把权益覆盖到宽限期末——
-	// Apple 官方语义是宽限期内继续提供服务、扣费成功后无缝续期。只延长不缩短;
-	// 后续 DID_RENEW 正常入账时 cover-through 会再收敛到新周期末,不会双算。
+	// Grace cover-through(spec 2026-08-22, fix round 1):进入宽限期时把权益覆盖到宽限期末——
+	// Apple 官方语义是宽限期内继续提供服务、扣费成功后无缝续期。只延长不缩短;同步把
+	// sub.current_period_end 也推进到 graceEnd,否则后续 DID_RENEW 的 priorPeriodEnd 仍是旧
+	// 周期末,delta 会把宽限补时误当"礼物"叠加,双算整段宽限窗(review finding 1)。两处写
+	// 都是条件式原子 UPDATE(单调守卫进 SQL),不先读后写,避免与并发 credit 事务的
+	// lost-update（review finding 2）；RowsAffected 判断是否真的改了再打日志,错误一律上抛。
 	if status == "grace" && ri != nil && ri.GracePeriodExpiresDate > 0 {
 		graceEnd := ri.GracePeriodExpiresDate / 1000
-		var u User
-		if err := getDB().First(&u, sub.UserID).Error; err != nil {
-			return err
+
+		userRes := getDB().Model(&User{}).Where("id = ? AND expired_at < ?", sub.UserID, graceEnd).
+			Update("expired_at", graceEnd)
+		if userRes.Error != nil {
+			return userRes.Error
 		}
-		if covered := coverThrough(u.ExpiredAt, graceEnd); covered > u.ExpiredAt {
-			if err := getDB().Model(&User{}).Where("id = ?", u.ID).
-				Update("expired_at", covered).Error; err != nil {
-				return err
-			}
-			log.Warnf(ctx, "[applyRenewalInfo] grace cover-through user %d expiry %d→%d (sub=%s)",
-				u.ID, u.ExpiredAt, covered, sub.ProviderSubscriptionID)
+		if userRes.RowsAffected > 0 {
+			log.Warnf(ctx, "[applyRenewalInfo] grace cover-through user %d expiry→%d (sub=%s)",
+				sub.UserID, graceEnd, sub.ProviderSubscriptionID)
+		}
+
+		subRes := getDB().Model(&Subscription{}).Where("id = ? AND current_period_end < ?", sub.ID, graceEnd).
+			Update("current_period_end", graceEnd)
+		if subRes.Error != nil {
+			return subRes.Error
+		}
+		if subRes.RowsAffected > 0 {
+			sub.CurrentPeriodEnd = graceEnd
+			log.Warnf(ctx, "[applyRenewalInfo] grace cover-through sub %s period_end→%d",
+				sub.ProviderSubscriptionID, graceEnd)
 		}
 	}
 	return nil
