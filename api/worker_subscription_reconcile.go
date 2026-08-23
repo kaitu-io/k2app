@@ -82,13 +82,18 @@ func reconcileSubscription(ctx context.Context, sub *Subscription, now int64) (b
 }
 
 func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int64) (bool, error) {
-	// 品牌 bundleId:订阅归属用户的品牌决定查询凭据。
-	brand := BrandKaitu
+	// 品牌 bundleId:订阅归属用户的品牌决定查询凭据。对齐 verifyAndGrantTransaction
+	// 的响亮失败契约——查不到用户或该品牌无 bundleId 一律报错,绝不静默回落 kaitu。
 	var u User
-	if err := db.Get().Select("brand").First(&u, sub.UserID).Error; err == nil {
-		brand = Brand(u.Brand)
+	if err := db.Get().Select("brand").First(&u, sub.UserID).Error; err != nil {
+		return false, fmt.Errorf("load user %d brand: %w", sub.UserID, err)
 	}
-	st, err := fetchAppleSubStatus(ctx, appleBundleIDForBrand(brand), sub.ProviderSubscriptionID)
+	brand := Brand(u.Brand)
+	bundleID := appleBundleIDForBrand(brand)
+	if bundleID == "" {
+		return false, fmt.Errorf("no apple bundle id configured for brand %s", brand)
+	}
+	st, err := fetchAppleSubStatus(ctx, bundleID, sub.ProviderSubscriptionID)
 	if err != nil {
 		return false, err
 	}
@@ -109,9 +114,19 @@ func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int6
 		changed = sub.CurrentPeriodEnd != before
 	}
 	// 续期信息(grace/billing_retry/autoRenew)走现有落地路径(Task 3 含 grace cover-through)。
+	// applyRenewalInfo 内部是直接 UPDATE DB,不保证同步内存 sub——纯状态迁移(如
+	// active→billing_retry,周期不变)不会反映在 CurrentPeriodEnd 上,必须单独快照
+	// 前后 status/autoRenew 再重载比对,否则这类漏 webhook 场景会被 changed 漏计。
 	if st.renewal != nil {
+		prevStatus, prevAutoRenew := sub.Status, sub.AutoRenew
 		if err := applyRenewalInfo(ctx, sub, st.renewal, ""); err != nil {
 			return changed, err
+		}
+		if err := db.Get().First(sub, sub.ID).Error; err != nil {
+			return changed, err
+		}
+		if sub.Status != prevStatus || sub.AutoRenew != prevAutoRenew {
+			changed = true
 		}
 	}
 	// Apple 报已过期且本地仍标活跃 → 落终态(revoked 已在入口挡掉)。

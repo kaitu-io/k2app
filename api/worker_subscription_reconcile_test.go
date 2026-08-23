@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wordgate/qtoolkit/appstore"
@@ -13,10 +14,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// setTestAppleBundleID 配好 kaitu 品牌的 bundleId(响亮失败契约要求非空),测试自理清理。
+func setTestAppleBundleID(t *testing.T) {
+	t.Helper()
+	viper.Set("appstore.bundleId", "io.kaitu.test")
+	t.Cleanup(func() { viper.Set("appstore.bundleId", "") })
+}
+
 // 对账(spec 2026-08-22):webhook 全丢时,cron 拉 Apple 最新交易灌回现有入账路径,
 // status/period/ExpiredAt 三者收敛。
 func TestReconcileSubscription_Apple_StalePeriodRecovered(t *testing.T) {
 	skipIfNoDB(t)
+	setTestAppleBundleID(t)
 	uniq := time.Now().UnixNano()
 	productID := fmt.Sprintf("io.kaitu.test.rec.%d", uniq)
 	plan := &Plan{PID: fmt.Sprintf("trec%d", uniq), Label: "X", Price: 1000, OriginPrice: 1000, Month: 1, Tier: "basic", AppleProductID: productID}
@@ -74,6 +83,7 @@ func TestReconcileSubscription_Apple_StalePeriodRecovered(t *testing.T) {
 // Apple 报已过期 → 落 expired;revoked 行绝不被对账复活或改动。
 func TestReconcileSubscription_Apple_ExpiredAndRevokedTerminal(t *testing.T) {
 	skipIfNoDB(t)
+	setTestAppleBundleID(t)
 	user := CreateTestUser(t)
 	now := time.Now().Unix()
 	old := fetchAppleSubStatus
@@ -103,4 +113,43 @@ func TestReconcileSubscription_Apple_ExpiredAndRevokedTerminal(t *testing.T) {
 	changed, err = reconcileSubscription(context.Background(), revoked, now)
 	require.NoError(t, err)
 	assert.False(t, changed)
+}
+
+// 纯状态迁移(active→billing_retry,txn=nil、周期不变)必须被计入 changed——
+// 这是"漏 webhook 导致扣费重试却没人知道"的典型场景,只看 CurrentPeriodEnd 会漏计。
+func TestReconcileSubscription_Apple_BillingRetryTransitionCountsAsChanged(t *testing.T) {
+	skipIfNoDB(t)
+	setTestAppleBundleID(t)
+	user := CreateTestUser(t)
+	now := time.Now().Unix()
+	orig := fmt.Sprintf("OTXB-%d", time.Now().UnixNano())
+	periodEnd := now + 3*86400
+
+	old := fetchAppleSubStatus
+	fetchAppleSubStatus = func(ctx context.Context, bundleID, originalTxnID string) (*appleSubStatus, error) {
+		return &appleSubStatus{
+			status: appstore.SubscriptionStatus_Active,
+			renewal: &appstore.RenewalInfo{
+				OriginalTransactionId:  originalTxnID,
+				AutoRenewStatus:        appstore.AutoRenewStatus_On,
+				IsInBillingRetryPeriod: true,
+			},
+		}, nil
+	}
+	t.Cleanup(func() { fetchAppleSubStatus = old })
+
+	sub := &Subscription{UserID: user.ID, Provider: "apple",
+		ProviderSubscriptionID: orig,
+		Status:                 "active", AutoRenew: true, CurrentPeriodEnd: periodEnd}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&Subscription{}) })
+
+	changed, err := reconcileSubscription(context.Background(), sub, now)
+	require.NoError(t, err)
+	assert.True(t, changed, "纯状态迁移(周期未变)也必须计入 changed")
+
+	var got Subscription
+	require.NoError(t, db.Get().First(&got, sub.ID).Error)
+	assert.Equal(t, "billing_retry", got.Status)
+	assert.Equal(t, periodEnd, got.CurrentPeriodEnd, "billing_retry 不改周期,只改状态")
 }
