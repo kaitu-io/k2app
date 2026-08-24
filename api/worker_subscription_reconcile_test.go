@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/wordgate/qtoolkit/appstore"
 	db "github.com/wordgate/qtoolkit/db"
 	"gorm.io/gorm"
@@ -152,4 +153,38 @@ func TestReconcileSubscription_Apple_BillingRetryTransitionCountsAsChanged(t *te
 	require.NoError(t, db.Get().First(&got, sub.ID).Error)
 	assert.Equal(t, "billing_retry", got.Status)
 	assert.Equal(t, periodEnd, got.CurrentPeriodEnd, "billing_retry 不改周期,只改状态")
+}
+
+// Stripe 对账:webhook 丢失时按 provider 真相纠正 status/period 并 cover-through 权益。
+// 不伪造 invoice 入账(无 invoice 事实)——审计账本只记真实交易,纠偏走日志。
+func TestReconcileSubscription_Stripe_StalePeriodRecovered(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+	u := createStripeTestUser(t, BrandOverleap)
+	now := time.Now().Unix()
+	subID := "sub_rec_" + stripeUniq()
+	sub := &Subscription{UserID: u.ID, Provider: "stripe", ProviderSubscriptionID: subID,
+		Status: "active", CurrentPeriodEnd: now - 86400}
+	require.NoError(t, db.Get().Create(sub).Error)
+
+	newEnd := now + 29*86400
+	old := stripeFetchSubscription
+	stripeFetchSubscription = func(id string) (*stripe.Subscription, error) {
+		require.Equal(t, subID, id)
+		return &stripe.Subscription{Status: stripe.SubscriptionStatusActive,
+			Items: &stripe.SubscriptionItemList{Data: []*stripe.SubscriptionItem{
+				{CurrentPeriodEnd: newEnd}}}}, nil
+	}
+	t.Cleanup(func() { stripeFetchSubscription = old })
+
+	changed, err := reconcileSubscription(context.Background(), sub, now)
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	var gotSub Subscription
+	require.NoError(t, db.Get().First(&gotSub, sub.ID).Error)
+	assert.Equal(t, newEnd, gotSub.CurrentPeriodEnd)
+	var gotU User
+	require.NoError(t, db.Get().First(&gotU, u.ID).Error)
+	assert.GreaterOrEqual(t, gotU.ExpiredAt, newEnd)
 }

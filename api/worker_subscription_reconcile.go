@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	stripe "github.com/stripe/stripe-go/v82"
+	subscription "github.com/stripe/stripe-go/v82/subscription"
 	"github.com/wordgate/qtoolkit/appstore"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
@@ -173,7 +175,66 @@ func handleSubscriptionReconcileTask(ctx context.Context, _ []byte) error {
 	return nil
 }
 
-// reconcileStripeSubscription 是 Stripe 侧对账的占位实现(Task 6 实现)。
+// stripeSecretKey 取 Stripe secret key,不依赖 *gin.Context——configStripe 只读 viper,
+// ctx 参数未被内部使用,传 context.Background() 与传真实请求 ctx 等价。
+func stripeSecretKey() string {
+	return configStripe(context.Background()).SecretKey
+}
+
+// stripeFetchSubscription 测试 seam(镜像 api_stripe.go 的 stripeNewCheckoutSession 模式)。
+// key 解析放在 seam 内部而非调用方——调用方(reconcileStripeSubscription)因此不依赖全局
+// viper 状态,测试可以整体替换本 seam 而不必配置 stripe.secret_key。
+var stripeFetchSubscription = func(subID string) (*stripe.Subscription, error) {
+	key := stripeSecretKey()
+	if key == "" {
+		return nil, fmt.Errorf("stripe secret key unavailable")
+	}
+	return subscription.Client{B: stripe.GetBackend(stripe.APIBackend), Key: key}.Get(subID, nil)
+}
+
+// reconcileStripeSubscription:拉 provider 真相,纠正 status/period 并 cover-through 权益。
+// 不伪造 invoice 入账——SubscriptionCredit 审计账本只记真实交易,纠偏留痕于日志。
 func reconcileStripeSubscription(ctx context.Context, sub *Subscription, now int64) (bool, error) {
-	return false, nil // Task 6 实现
+	remote, err := stripeFetchSubscription(sub.ProviderSubscriptionID)
+	if err != nil {
+		return false, err
+	}
+	status := stripeSubStatus(remote.Status)
+	var periodEnd int64
+	if remote.Items != nil && len(remote.Items.Data) > 0 {
+		periodEnd = remote.Items.Data[0].CurrentPeriodEnd
+	}
+
+	changed := false
+	updates := map[string]any{}
+	if periodEnd > sub.CurrentPeriodEnd {
+		updates["current_period_end"] = periodEnd
+	}
+	if status != "" && status != sub.Status && sub.Status != "revoked" {
+		updates["status"] = status
+	}
+	if len(updates) > 0 {
+		if err := db.Get().Model(&Subscription{}).Where("id = ?", sub.ID).Updates(updates).Error; err != nil {
+			return false, err
+		}
+		changed = true
+		log.Infof(ctx, "[SUB-RECONCILE] stripe sub %s corrected: %v", sub.ProviderSubscriptionID, updates)
+	}
+	// 活跃且周期在未来 → cover-through 权益(与 credit 路径同一收敛不变式)。
+	if status == "active" && periodEnd > now {
+		var u User
+		if err := db.Get().First(&u, sub.UserID).Error; err != nil {
+			return changed, err
+		}
+		if covered := coverThrough(u.ExpiredAt, periodEnd); covered > u.ExpiredAt {
+			if err := db.Get().Model(&User{}).Where("id = ?", u.ID).
+				Update("expired_at", covered).Error; err != nil {
+				return changed, err
+			}
+			log.Warnf(ctx, "[SUB-RECONCILE] stripe cover-through user %d expiry %d→%d (sub=%s)",
+				u.ID, u.ExpiredAt, covered, sub.ProviderSubscriptionID)
+			changed = true
+		}
+	}
+	return changed, nil
 }
