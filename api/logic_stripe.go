@@ -244,6 +244,13 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 		kind = "renewal"
 	}
 
+	// Cover-through 收敛不变式——与 creditAppleTransaction 逐字对称,见彼处注释。
+	if covered := coverThrough(user.ExpiredAt, f.PeriodEnd); covered > user.ExpiredAt {
+		log.Warnf(ctx, "[creditStripeInvoice] cover-through corrected user %d expiry %d→%d (invoice=%s)",
+			userID, user.ExpiredAt, covered, f.InvoiceID)
+		user.ExpiredAt = covered
+	}
+
 	if user.IsActivated == nil || !*user.IsActivated {
 		user.IsActivated = BoolPtr(true)
 		user.ActivatedAt = now

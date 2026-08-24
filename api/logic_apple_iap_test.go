@@ -434,3 +434,47 @@ func TestVerifyAndGrantTransaction_EmptyTokenRejected(t *testing.T) {
 	require.NoError(t, db.Get().First(user, user.ID).Error)
 	assert.True(t, user.IsExpired(), "no entitlement granted when token missing")
 }
+
+// Cover-through(spec 2026-08-22):订阅行的 period 被状态路径先行推进导致 delta=0 时,
+// 入账仍必须把 ExpiredAt 收敛到 newPeriodEnd——苹果订阅中绝不显示过期。
+func TestCreditAppleTransaction_CoverThrough_DeltaZeroStillCoversPeriodEnd(t *testing.T) {
+	skipIfNoDB(t)
+	uniq := time.Now().UnixNano()
+	productID := fmt.Sprintf("io.kaitu.test.cover.%d", uniq)
+	plan := &Plan{PID: fmt.Sprintf("tcov%d", uniq), Label: "X", Price: 1000, OriginPrice: 1000, Month: 12, Tier: "basic", AppleProductID: productID}
+	require.NoError(t, db.Get().Create(plan).Error)
+	t.Cleanup(func() { db.Get().Delete(plan) })
+
+	user := CreateTestUser(t)
+	day := int64(86400)
+	t0 := time.Now().Unix()
+	orig := fmt.Sprintf("OTXC-%d", uniq)
+	token := deriveAppleAccountToken(user.UUID)
+	credit := func(txnID string, purchaseMs, expiresMs int64) error {
+		return db.Get().Transaction(func(tx *gorm.DB) error {
+			return creditAppleTransaction(context.Background(), tx, user.ID, &appstore.TransactionInfo{
+				OriginalTransactionId: orig, TransactionId: txnID, ProductId: productID,
+				AppAccountToken: token,
+				Environment:     "Sandbox", PurchaseDate: purchaseMs, ExpiresDate: expiresMs,
+			})
+		})
+	}
+	t.Cleanup(func() {
+		db.Get().Where("user_id = ?", user.ID).Delete(&SubscriptionCredit{})
+		db.Get().Where("user_id = ?", user.ID).Delete(&Subscription{})
+	})
+
+	// 首购:1 年,ExpiredAt ≈ t0+365d。
+	require.NoError(t, credit("TC1", t0*1000, (t0+365*day)*1000))
+
+	// 模拟漏 credit 的状态更新:订阅行 period 直接推进到第二周期末。
+	e2 := t0 + 730*day
+	require.NoError(t, db.Get().Model(&Subscription{}).
+		Where("provider = ? AND provider_subscription_id = ?", "apple", orig).
+		Update("current_period_end", e2).Error)
+
+	// 续订交易到达:priorPeriodEnd(=e2) == newPeriodEnd(=e2) → delta=0。
+	require.NoError(t, credit("TC2", (t0+365*day)*1000, e2*1000))
+	require.NoError(t, db.Get().First(user, user.ID).Error)
+	assert.GreaterOrEqual(t, user.ExpiredAt, e2, "cover-through: 入账后权益必须覆盖到周期末")
+}
