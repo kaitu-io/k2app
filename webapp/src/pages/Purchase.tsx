@@ -746,7 +746,7 @@ export default function Purchase() {
             setOrderData(null);
             showAlert(getErrorMessage(response.code, response.message, t), 'error');
           }
-        } else if (response.code === 409) {
+        } else if (response.code === ERROR_CODES.CONFLICT) {
           // 后端互斥门(竞态兜底:本地订阅态陈旧时前端拦截失效,由硬门接住)
           console.warn('[Purchase] Active subscription conflict:', response.code, response.message);
           if (!preview) {
