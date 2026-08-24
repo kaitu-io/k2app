@@ -921,7 +921,9 @@ export default function Purchase() {
   // 互斥(spec 2026-08-22):任何 provider 的活跃续订存在时,WordGate 一次性充值
   // 一律拦截,改为管理面板+清晰提醒(后端 api_create_order 有同判据硬门兜底)。
   // 注意只拦 manage;status(一次性会员未到期)保持既有购买流。
-  if (!iap && affordance.mode === 'manage') {
+  // 专属线路(purchaseProduct === 'private_node')豁免:独立计费,与会员期限零耦合,
+  // 双付论证对它不成立(见后端 api_order.go 同一豁免的注释)。
+  if (!iap && affordance.mode === 'manage' && purchaseProduct !== 'private_node') {
     return <SubscriptionManagePanel activeSub={affordance.activeSub} />;
   }
 

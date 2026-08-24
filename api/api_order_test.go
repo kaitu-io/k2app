@@ -207,3 +207,43 @@ func TestCreateOrder_ActiveSubscription_Rejected(t *testing.T) {
 		assert.Equal(t, float64(ErrorConflict), resp["code"], "preview=%v 也必须拦截", preview)
 	}
 }
+
+// 互斥门豁免(final review F1):专属节点(ProductPrivateNode)套餐与
+// Subscription/User.ExpiredAt 零耦合(model_private_node.go),独立计费、不延长
+// 会员期限——双付论证对它不成立。持活跃会员订阅的用户下单专属节点套餐不得被
+// 409 拦截。
+func TestCreateOrder_ActiveSubscription_PrivateNodeExempt(t *testing.T) {
+	skipIfNoDB(t)
+	require.NoError(t, Migrate())
+	gin.SetMode(gin.TestMode)
+
+	uniq := time.Now().UnixNano()
+	plan := &Plan{PID: fmt.Sprintf("tpnex%d", uniq), Label: "专属节点", Price: 9900, OriginPrice: 9900,
+		Month: 1, Tier: "basic", Product: ProductPrivateNode, IsActive: BoolPtr(true), Brand: string(BrandKaitu)}
+	require.NoError(t, db.Get().Create(plan).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(plan) })
+
+	user := CreateTestUser(t)
+	sub := &Subscription{UserID: user.ID, Provider: "apple",
+		ProviderSubscriptionID: fmt.Sprintf("OTXM-PNEX-%d", uniq),
+		Status:                 "active", CurrentPeriodEnd: time.Now().Unix() + 30*86400}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&Subscription{}) })
+
+	r := gin.New()
+	r.POST("/api/orders", func(c *gin.Context) {
+		c.Set("authContext", &authContext{UserID: user.ID, User: user})
+	}, api_create_order)
+
+	// preview=true: 只需确认互斥门未拦截(不是 409),预览路径不落库、不依赖支付渠道。
+	body, _ := json.Marshal(map[string]any{"plan": plan.PID, "preview": true})
+	req, _ := http.NewRequest(http.MethodPost, "/api/orders", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.NotEqual(t, float64(ErrorConflict), resp["code"], "专属节点套餐必须豁免互斥门")
+	assert.Equal(t, float64(0), resp["code"], "预览应成功返回订单信息")
+}

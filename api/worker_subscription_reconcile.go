@@ -131,14 +131,24 @@ func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int6
 			changed = true
 		}
 	}
-	// Apple 报已过期且本地仍标活跃 → 落终态(revoked 已在入口挡掉)。
+	// Apple 报已过期且本地仍标活跃 → 落终态(revoked 已在入口挡掉)。条件原子 UPDATE
+	// (status = 内存快照 AND current_period_end < now),不先读后写——与 Stripe 侧同构
+	// (fix round 1)。守卫拦下交错场景:reconcile 拉到 Expired 后、写库前,用户重订阅/
+	// 迟到 DID_RENEW 把 status 改回 active 且 period 推到未来,此时该行不再满足守卫,
+	// UPDATE 影响 0 行,不误标 expired。
 	if st.status == appstore.SubscriptionStatus_Expired && sub.Status != "expired" {
-		if err := db.Get().Model(&Subscription{}).Where("id = ?", sub.ID).
-			Update("status", "expired").Error; err != nil {
-			return changed, err
+		res := db.Get().Model(&Subscription{}).
+			Where("id = ? AND status = ? AND current_period_end < ?", sub.ID, sub.Status, now).
+			Update("status", "expired")
+		if res.Error != nil {
+			return changed, res.Error
 		}
-		log.Infof(ctx, "[SUB-RECONCILE] sub %s marked expired (was %s)", sub.ProviderSubscriptionID, sub.Status)
-		changed = true
+		if res.RowsAffected > 0 {
+			log.Infof(ctx, "[SUB-RECONCILE] sub %s marked expired (was %s)", sub.ProviderSubscriptionID, sub.Status)
+			changed = true
+		} else {
+			log.Debugf(ctx, "[SUB-RECONCILE] sub %s expired write guarded off (status/period changed under us)", sub.ProviderSubscriptionID)
+		}
 	}
 	// Apple 报 revoked 而本地不是:退款流没跑到,涉及 clawback,人工介入。
 	if st.status == appstore.SubscriptionStatus_Revoked {

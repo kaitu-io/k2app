@@ -116,6 +116,36 @@ func TestReconcileSubscription_Apple_ExpiredAndRevokedTerminal(t *testing.T) {
 	assert.False(t, changed)
 }
 
+// final review F2:Apple 报已过期,但落库前该行已被交错更新(用户重订阅/迟到
+// DID_RENEW 把 period 推到未来)——条件原子 UPDATE 的守卫(status=快照 AND
+// current_period_end < now)必须拦下这次写,不得把覆盖中的活跃订阅误标 expired。
+func TestReconcileSubscription_Apple_ExpiredWriteGuardedByFuturePeriod(t *testing.T) {
+	skipIfNoDB(t)
+	setTestAppleBundleID(t)
+	user := CreateTestUser(t)
+	now := time.Now().Unix()
+	old := fetchAppleSubStatus
+	fetchAppleSubStatus = func(ctx context.Context, bundleID, originalTxnID string) (*appleSubStatus, error) {
+		return &appleSubStatus{status: appstore.SubscriptionStatus_Expired}, nil
+	}
+	t.Cleanup(func() { fetchAppleSubStatus = old })
+
+	// 与 ExpiredAndRevokedTerminal 唯一的差异:period 在未来(交错发生后的真实状态)。
+	sub := &Subscription{UserID: user.ID, Provider: "apple",
+		ProviderSubscriptionID: fmt.Sprintf("OTXG-%d", time.Now().UnixNano()),
+		Status:                 "active", CurrentPeriodEnd: now + 30*86400}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&Subscription{}) })
+
+	changed, err := reconcileSubscription(context.Background(), sub, now)
+	require.NoError(t, err)
+	assert.False(t, changed, "守卫应拦截:period 未来行不得被计入 changed")
+
+	var got Subscription
+	require.NoError(t, db.Get().First(&got, sub.ID).Error)
+	assert.Equal(t, "active", got.Status, "守卫应拦截:period 在未来的行不得被写成 expired")
+}
+
 // 纯状态迁移(active→billing_retry,txn=nil、周期不变)必须被计入 changed——
 // 这是"漏 webhook 导致扣费重试却没人知道"的典型场景,只看 CurrentPeriodEnd 会漏计。
 func TestReconcileSubscription_Apple_BillingRetryTransitionCountsAsChanged(t *testing.T) {

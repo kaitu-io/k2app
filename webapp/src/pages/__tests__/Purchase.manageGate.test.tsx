@@ -110,13 +110,35 @@ const SHARED_PLAN: Plan = {
   product: 'app',
 };
 
-function mockEndpoints({ app = [] }: { app?: Plan[] }) {
+// 专属线路(private_node)豁免互斥门(final review F1)——独立计费,与会员期限
+// 零耦合,双付论证对它不成立。fixture 镜像 Purchase.privateNode.test.tsx。
+const PRIVATE_NODE_PLAN: Plan = {
+  pid: 'pn-1m',
+  tier: 'basic',
+  label: '专属节点 1 个月',
+  price: 9900,
+  originPrice: 9900,
+  month: 1,
+  highlight: false,
+  maxDevice: 5,
+  maxRouterDevice: 1,
+  maxLanClient: -1,
+  product: 'private_node',
+  privateNode: {
+    provider: 'aws_lightsail',
+    ipType: 'non_residential',
+    allowedRegions: ['us-east-1', 'ap-northeast-1'],
+    trafficTotalBytes: 2 * 1024 * 1024 * 1024 * 1024,
+  },
+};
+
+function mockEndpoints({ app = [], privateNode = [] }: { app?: Plan[]; privateNode?: Plan[] }) {
   (cloudApi.get as any).mockImplementation((path: string) => {
     if (path === '/api/plans') {
       return Promise.resolve({ code: 0, data: { items: app } });
     }
     if (path === '/api/products/private_node/plans') {
-      return Promise.resolve({ code: 0, data: { items: [] } });
+      return Promise.resolve({ code: 0, data: { items: privateNode } });
     }
     if (path === '/api/app/config') {
       return Promise.resolve({ code: 0, data: { features: {} } });
@@ -177,5 +199,28 @@ describe.runIf(WORDGATE)('Purchase WordGate manage gate', () => {
     // WordGate plan flow renders normally — shared plan card shows up.
     await screen.findAllByText('$19.00');
     expect(screen.queryByTestId('stripe-manage-panel')).not.toBeInTheDocument();
+  });
+
+  // final review F1: 专属线路购买豁免互斥门。即便 affordance 处于 manage(已有
+  // 活跃会员订阅),/purchase?product=private_node 仍必须走原购买流,不得被整页
+  // 替换为管理面板。
+  it('keeps the private_node purchase flow when affordance is manage and product=private_node', async () => {
+    mockAffordance({
+      mode: 'manage',
+      activeSub: {
+        provider: 'apple',
+        currentPeriodEnd: 1790000000,
+        autoRenew: true,
+        tier: 'basic',
+        manage: { kind: 'apple_settings' },
+      },
+    });
+    mockEndpoints({ privateNode: [PRIVATE_NODE_PLAN] });
+    renderPurchase(['/?product=private_node']);
+
+    // Region picker (private_node-only UI) confirms the purchase flow rendered.
+    await screen.findByRole('combobox');
+    expect(screen.queryByTestId('stripe-manage-panel')).not.toBeInTheDocument();
+    expect(screen.queryByText(/不可重复购买|cannot purchase again/i)).not.toBeInTheDocument();
   });
 });
