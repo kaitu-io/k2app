@@ -194,6 +194,11 @@ var stripeFetchSubscription = func(subID string) (*stripe.Subscription, error) {
 
 // reconcileStripeSubscription:拉 provider 真相,纠正 status/period 并 cover-through 权益。
 // 不伪造 invoice 入账——SubscriptionCredit 审计账本只记真实交易,纠偏留痕于日志。
+//
+// fix round 1:三处写全部改成条件式原子 UPDATE(单调守卫进 SQL WHERE),不先读后写——
+// 与 applyRenewalInfo 的 grace cover-through(logic_apple_iap.go)同一形状,避免与并发
+// credit 事务 lost-update(review finding)。period/status 拆两条独立守卫的 UPDATE,
+// 避免 status-only 变更被 period 的 WHERE 挡住;RowsAffected 才计入 changed 并打日志。
 func reconcileStripeSubscription(ctx context.Context, sub *Subscription, now int64) (bool, error) {
 	remote, err := stripeFetchSubscription(sub.ProviderSubscriptionID)
 	if err != nil {
@@ -206,34 +211,48 @@ func reconcileStripeSubscription(ctx context.Context, sub *Subscription, now int
 	}
 
 	changed := false
-	updates := map[string]any{}
-	if periodEnd > sub.CurrentPeriodEnd {
-		updates["current_period_end"] = periodEnd
-	}
-	if status != "" && status != sub.Status && sub.Status != "revoked" {
-		updates["status"] = status
-	}
-	if len(updates) > 0 {
-		if err := db.Get().Model(&Subscription{}).Where("id = ?", sub.ID).Updates(updates).Error; err != nil {
-			return false, err
+
+	// period 单调守卫:WHERE current_period_end < periodEnd 保证绝不回退;revoked 行永不触碰。
+	if periodEnd > 0 && sub.Status != "revoked" {
+		res := db.Get().Model(&Subscription{}).
+			Where("id = ? AND current_period_end < ?", sub.ID, periodEnd).
+			Update("current_period_end", periodEnd)
+		if res.Error != nil {
+			return false, res.Error
 		}
-		changed = true
-		log.Infof(ctx, "[SUB-RECONCILE] stripe sub %s corrected: %v", sub.ProviderSubscriptionID, updates)
-	}
-	// 活跃且周期在未来 → cover-through 权益(与 credit 路径同一收敛不变式)。
-	if status == "active" && periodEnd > now {
-		var u User
-		if err := db.Get().First(&u, sub.UserID).Error; err != nil {
-			return changed, err
-		}
-		if covered := coverThrough(u.ExpiredAt, periodEnd); covered > u.ExpiredAt {
-			if err := db.Get().Model(&User{}).Where("id = ?", u.ID).
-				Update("expired_at", covered).Error; err != nil {
-				return changed, err
-			}
-			log.Warnf(ctx, "[SUB-RECONCILE] stripe cover-through user %d expiry %d→%d (sub=%s)",
-				u.ID, u.ExpiredAt, covered, sub.ProviderSubscriptionID)
+		if res.RowsAffected > 0 {
 			changed = true
+			log.Infof(ctx, "[SUB-RECONCILE] stripe sub %s period corrected → %d", sub.ProviderSubscriptionID, periodEnd)
+		}
+	}
+
+	// status 乐观锁:WHERE status = 旧值,revoked 绝不触碰(入口已挡,此处保留对称防御)。
+	if status != "" && status != sub.Status && sub.Status != "revoked" {
+		res := db.Get().Model(&Subscription{}).
+			Where("id = ? AND status = ?", sub.ID, sub.Status).
+			Update("status", status)
+		if res.Error != nil {
+			return changed, res.Error
+		}
+		if res.RowsAffected > 0 {
+			changed = true
+			log.Infof(ctx, "[SUB-RECONCILE] stripe sub %s status %s→%s", sub.ProviderSubscriptionID, sub.Status, status)
+		}
+	}
+
+	// 活跃且周期在未来 → cover-through 权益(与 credit 路径同一收敛不变式)。原子条件
+	// UPDATE,不先读整行再比较——避免与并发 credit 事务的 lost-update。
+	if status == "active" && periodEnd > now {
+		res := db.Get().Model(&User{}).
+			Where("id = ? AND expired_at < ?", sub.UserID, periodEnd).
+			Update("expired_at", periodEnd)
+		if res.Error != nil {
+			return changed, res.Error
+		}
+		if res.RowsAffected > 0 {
+			changed = true
+			log.Warnf(ctx, "[SUB-RECONCILE] stripe cover-through user %d expiry→%d (sub=%s)",
+				sub.UserID, periodEnd, sub.ProviderSubscriptionID)
 		}
 	}
 	return changed, nil

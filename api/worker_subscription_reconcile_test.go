@@ -188,3 +188,101 @@ func TestReconcileSubscription_Stripe_StalePeriodRecovered(t *testing.T) {
 	require.NoError(t, db.Get().First(&gotU, u.ID).Error)
 	assert.GreaterOrEqual(t, gotU.ExpiredAt, newEnd)
 }
+
+// fix round 1 F3a:remote.Items 为 nil(或 Data 空)不 panic、不更新 period、不 cover-through。
+// stripe-go v82 的 CurrentPeriodEnd 挂在 Items.Data[] 上,provider 返回异常/精简响应时
+// Items 可能为空——防御性读取必须优雅降级为"这次没有周期信息",而不是崩。
+func TestReconcileSubscription_Stripe_NilItemsNoPanic(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+	u := createStripeTestUser(t, BrandOverleap)
+	now := time.Now().Unix()
+	subID := "sub_rec_" + stripeUniq()
+	localEnd := now + 20*86400
+	sub := &Subscription{UserID: u.ID, Provider: "stripe", ProviderSubscriptionID: subID,
+		Status: "active", CurrentPeriodEnd: localEnd}
+	require.NoError(t, db.Get().Create(sub).Error)
+
+	old := stripeFetchSubscription
+	stripeFetchSubscription = func(id string) (*stripe.Subscription, error) {
+		return &stripe.Subscription{Status: stripe.SubscriptionStatusActive}, nil // Items nil
+	}
+	t.Cleanup(func() { stripeFetchSubscription = old })
+
+	require.NotPanics(t, func() {
+		changed, err := reconcileSubscription(context.Background(), sub, now)
+		require.NoError(t, err)
+		assert.False(t, changed, "status 未变、period 无信息 → 无改动")
+	})
+
+	var gotSub Subscription
+	require.NoError(t, db.Get().First(&gotSub, sub.ID).Error)
+	assert.Equal(t, localEnd, gotSub.CurrentPeriodEnd, "Items 为空不得改动 period")
+	var gotU User
+	require.NoError(t, db.Get().First(&gotU, u.ID).Error)
+	assert.Zero(t, gotU.ExpiredAt, "periodEnd=0 不触发 cover-through")
+}
+
+// fix round 1 F3b:remote period < 本地 current_period_end → period 单调守卫拒绝回退。
+func TestReconcileSubscription_Stripe_PeriodNeverRegresses(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+	u := createStripeTestUser(t, BrandOverleap)
+	now := time.Now().Unix()
+	subID := "sub_rec_" + stripeUniq()
+	localEnd := now + 30*86400
+	sub := &Subscription{UserID: u.ID, Provider: "stripe", ProviderSubscriptionID: subID,
+		Status: "active", CurrentPeriodEnd: localEnd}
+	require.NoError(t, db.Get().Create(sub).Error)
+	// 用户权益已推进到不落后本地周期——同时验证 cover-through 也不会被陈旧 remote 值拉低。
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", u.ID).Update("expired_at", localEnd).Error)
+
+	staleEnd := now + 10*86400 // < localEnd
+	old := stripeFetchSubscription
+	stripeFetchSubscription = func(id string) (*stripe.Subscription, error) {
+		return &stripe.Subscription{Status: stripe.SubscriptionStatusActive,
+			Items: &stripe.SubscriptionItemList{Data: []*stripe.SubscriptionItem{
+				{CurrentPeriodEnd: staleEnd}}}}, nil
+	}
+	t.Cleanup(func() { stripeFetchSubscription = old })
+
+	changed, err := reconcileSubscription(context.Background(), sub, now)
+	require.NoError(t, err)
+	assert.False(t, changed, "陈旧 remote 值不产生任何改动")
+
+	var gotSub Subscription
+	require.NoError(t, db.Get().First(&gotSub, sub.ID).Error)
+	assert.Equal(t, localEnd, gotSub.CurrentPeriodEnd, "period 单调守卫:绝不回退")
+	var gotU User
+	require.NoError(t, db.Get().First(&gotU, u.ID).Error)
+	assert.Equal(t, localEnd, gotU.ExpiredAt, "cover-through 守卫同理不回退")
+}
+
+// fix round 1 F3c:纯状态迁移(period 不变,active→billing_retry via Stripe past_due)
+// 必须计入 changed——只看 period 会漏计"扣费重试却没人知道"这类场景。
+func TestReconcileSubscription_Stripe_PureStatusTransitionCountsAsChanged(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+	u := createStripeTestUser(t, BrandOverleap)
+	now := time.Now().Unix()
+	subID := "sub_rec_" + stripeUniq()
+	localEnd := now + 15*86400
+	sub := &Subscription{UserID: u.ID, Provider: "stripe", ProviderSubscriptionID: subID,
+		Status: "active", CurrentPeriodEnd: localEnd}
+	require.NoError(t, db.Get().Create(sub).Error)
+
+	old := stripeFetchSubscription
+	stripeFetchSubscription = func(id string) (*stripe.Subscription, error) {
+		return &stripe.Subscription{Status: stripe.SubscriptionStatusPastDue}, nil // Items nil, 周期不变
+	}
+	t.Cleanup(func() { stripeFetchSubscription = old })
+
+	changed, err := reconcileSubscription(context.Background(), sub, now)
+	require.NoError(t, err)
+	assert.True(t, changed, "纯状态迁移(周期未变)也必须计入 changed")
+
+	var gotSub Subscription
+	require.NoError(t, db.Get().First(&gotSub, sub.ID).Error)
+	assert.Equal(t, "billing_retry", gotSub.Status)
+	assert.Equal(t, localEnd, gotSub.CurrentPeriodEnd, "billing_retry 不改周期,只改状态")
+}
