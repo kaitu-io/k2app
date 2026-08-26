@@ -66,20 +66,30 @@ $sawWindow = $false
 $sawDocument = $false
 
 while ((Get-Date) -lt $deadline) {
-  $win = Get-AppWindow
-  if ($win) {
-    $sawWindow = $true
-    $doc = Get-Document $win
-    if ($doc) {
-      $sawDocument = $true
-      $last = Census $doc
-      Write-Host ("census: total={0} named={1}" -f $last.Total, $last.Named.Count)
-      if ($last.Named.Count -ge $MinNamed) {
-        Write-Host "UI RENDERED."
-        Write-Host ("first named elements: {0}" -f (($last.Named | Select-Object -First 15) -join ' | '))
-        exit 0
+  # UIA elements go stale the moment the window they describe changes or
+  # closes, and ErrorActionPreference=Stop would turn that into an opaque
+  # crash instead of the diagnosis below. A stale read just means "try the
+  # next tick".
+  try {
+    $win = Get-AppWindow
+    if ($win) {
+      $sawWindow = $true
+      $doc = Get-Document $win
+      if ($doc) {
+        $sawDocument = $true
+        $last = Census $doc
+        Write-Host ("census: total={0} named={1}" -f $last.Total, $last.Named.Count)
+        if ($last.Named.Count -ge $MinNamed) {
+          Write-Host "UI RENDERED."
+          Write-Host ("first named elements: {0}" -f (($last.Named | Select-Object -First 15) -join ' | '))
+          exit 0
+        }
       }
     }
+  } catch [System.Windows.Automation.ElementNotAvailableException] {
+    Write-Host "element went stale mid-read; retrying"
+  } catch {
+    Write-Host ("UIA read failed: {0}" -f $_.Exception.Message)
   }
   Start-Sleep -Seconds 3
 }
