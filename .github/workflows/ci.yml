@@ -936,11 +936,20 @@ jobs:
           Write-Host "--- install-diag.log ---"
           Get-Content "$dir\install-diag.log"
 
-          # POSTINSTALL installs the service through nsExec. A non-zero exit
-          # here is the #3297 shape as users actually meet it.
+          # POSTINSTALL installs the service through nsExec. Two different
+          # failures hide behind "the field is not 0", and conflating them
+          # sends the reader after the wrong bug — this gate did exactly that
+          # on its first real run, reporting #3297 when the instrument was
+          # what had broken.
           $diag = Get-Content "$dir\install-diag.log" -Raw
+          if ($diag -notmatch 'service_install_exit=') {
+            throw "install-diag.log carries no service_install_exit field at all. " +
+                  "The diagnostics are broken, not the install — check that every " +
+                  "NSIS 'FileOpen ... a' in installer-hooks.nsh is followed by " +
+                  "FileSeek 0 END, or the later writes overwrite from offset 0."
+          }
           if ($diag -notmatch 'service_install_exit=0') {
-            throw "NSIS POSTINSTALL service install did not report exit 0 — this is #3297"
+            throw "NSIS POSTINSTALL service install reported a non-zero exit — this is #3297 as users meet it"
           }
 
           $svc = Get-Service -Name kaitu -ErrorAction SilentlyContinue
