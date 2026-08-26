@@ -518,6 +518,72 @@ jobs:
           echo "Real-kernel IPv6 attribution gate PASSED (both cases executed on a live kernel table)"
         working-directory: k2
 
+      # A green gate only means something if the gate can go red. This step
+      # proves it, and proves the gate is not redundant, by breaking exactly
+      # the layer nothing else in the package touches: the AF_INET6 constant
+      # handed to GetExtendedTcpTable/GetExtendedUdpTable by the real v6
+      # fetchers. The mocks never call them; the literal-offset layout tests
+      # never call them; the compile-time size guards cannot see a constant.
+      #
+      # Contract asserted here, and stated in process_windows_realkernel_test.go:
+      #   under this mutation, the real-kernel gate is RED and every other
+      #   test in the package is GREEN.
+      # If the second half ever stops holding, the gate stopped being the
+      # only thing covering this layer — update that comment, do not silence
+      # this step.
+      - name: Real-kernel gate self-check (mutation must kill it)
+        shell: bash
+        run: |
+          set -uo pipefail
+          trap 'git checkout -- provider/process_windows.go 2>/dev/null || true' EXIT
+
+          if ! git diff --quiet -- provider/process_windows.go; then
+            echo "::error::provider/process_windows.go is already modified; refusing to mutate a dirty file."
+            exit 1
+          fi
+
+          sed -i -E 's/(fetchOwnerTable\[(tcp6|udp6)RowOwnerPID\]\(proc[A-Za-z]+, )AF_INET6/\1AF_INET/' \
+            provider/process_windows.go
+          CHANGED=$(git diff --numstat -- provider/process_windows.go | awk '{print $1"/"$2}')
+          if [ "$CHANGED" != "2/2" ]; then
+            echo "::error::mutation did not apply as expected (changed=${CHANGED:-none}, want 2/2)."
+            echo "::error::realTCP6Fetcher/realUDP6Fetcher were probably refactored — update this step's"
+            echo "::error::sed so it still breaks the AF_INET6 wiring, rather than deleting the check."
+            exit 1
+          fi
+
+          # The mutation must be a semantic bug, not a build break: a package
+          # that fails to compile would fail the gate for the wrong reason.
+          if ! go build ./provider/; then
+            echo "::error::mutated package does not compile — the mutation is invalid, not the code."
+            exit 1
+          fi
+
+          if go test ./provider/ -run 'TestWindowsFindProcess_RealKernelTable' -count=1 -timeout=120s \
+               > /tmp/mut-gate.txt 2>&1; then
+            echo "::error::The real-kernel gate PASSED while the v6 fetchers query the AF_INET table."
+            echo "::error::It is not actually reaching the kernel path it claims to cover."
+            cat /tmp/mut-gate.txt
+            exit 1
+          fi
+          echo "OK: mutation kills the real-kernel gate"
+
+          if ! go test ./provider/ -count=1 -skip 'RealKernelTable' -timeout=300s \
+               > /tmp/mut-rest.txt 2>&1; then
+            echo "::error::The AF_INET6 mutation was ALSO caught outside the real-kernel gate."
+            echo "::error::That contradicts the rationale in process_windows_realkernel_test.go."
+            echo "::error::Find which test now covers the syscall layer and update that comment."
+            cat /tmp/mut-rest.txt
+            exit 1
+          fi
+          echo "OK: every other test in the package stays green under the mutation"
+
+          git checkout -- provider/process_windows.go
+          git diff --quiet -- provider/process_windows.go || {
+            echo "::error::failed to restore provider/process_windows.go"; exit 1; }
+          echo "Gate self-check PASSED (gate is both live and the only cover for the AF_INET6 syscall path)"
+        working-directory: k2
+
       - name: Build k2 Windows binary
         shell: bash
         run: make build-k2-windows
