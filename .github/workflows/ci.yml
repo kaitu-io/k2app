@@ -490,6 +490,100 @@ jobs:
         run: go test ./sniff/... ./core/... ./engine/... ./config/... ./daemon/ ./provider/... -count=1 -short -timeout=120s
         working-directory: k2
 
+      # Windows process attribution is the one thing only a real Windows
+      # kernel can prove. Every other provider test injects mock iphlpapi
+      # fetchers — which is exactly why the R1 bug (IPv6 lookups
+      # short-circuited to "") shipped with a fully green suite.
+      #
+      # The step above runs these tests too, but with -short and without -v:
+      # a test that quietly stopped running (build-tag drift, someone adding
+      # a testing.Short() guard, a runner without IPv6) would be
+      # indistinguishable from a pass. So run them alone, verbosely, and
+      # assert each one actually reported PASS. A zero exit code is not
+      # evidence that a test executed.
+      - name: Real-kernel IPv6 attribution gate (must actually run)
+        shell: bash
+        run: |
+          set -o pipefail
+          go test ./provider/ -run 'TestWindowsFindProcess_RealKernelTable' \
+            -count=1 -v -timeout=120s 2>&1 | tee /tmp/realkernel.txt
+          for tc in IPv6TCP IPv6UDP; do
+            if ! grep -q -- "--- PASS: TestWindowsFindProcess_RealKernelTable_${tc}" /tmp/realkernel.txt; then
+              echo "::error::TestWindowsFindProcess_RealKernelTable_${tc} did not report PASS."
+              echo "::error::A green exit code without that line means the test never ran —"
+              echo "::error::check for a build-tag change, a testing.Short() guard, or a runner without IPv6."
+              exit 1
+            fi
+          done
+          echo "Real-kernel IPv6 attribution gate PASSED (both cases executed on a live kernel table)"
+        working-directory: k2
+
+      # A green gate only means something if the gate can go red. This step
+      # proves it, and proves the gate is not redundant, by breaking exactly
+      # the layer nothing else in the package touches: the AF_INET6 constant
+      # handed to GetExtendedTcpTable/GetExtendedUdpTable by the real v6
+      # fetchers. The mocks never call them; the literal-offset layout tests
+      # never call them; the compile-time size guards cannot see a constant.
+      #
+      # Contract asserted here, and stated in process_windows_realkernel_test.go:
+      #   under this mutation, the real-kernel gate is RED and every other
+      #   test in the package is GREEN.
+      # If the second half ever stops holding, the gate stopped being the
+      # only thing covering this layer — update that comment, do not silence
+      # this step.
+      - name: Real-kernel gate self-check (mutation must kill it)
+        shell: bash
+        run: |
+          set -uo pipefail
+          trap 'git checkout -- provider/process_windows.go 2>/dev/null || true' EXIT
+
+          if ! git diff --quiet -- provider/process_windows.go; then
+            echo "::error::provider/process_windows.go is already modified; refusing to mutate a dirty file."
+            exit 1
+          fi
+
+          sed -i -E 's/(fetchOwnerTable\[(tcp6|udp6)RowOwnerPID\]\(proc[A-Za-z]+, )AF_INET6/\1AF_INET/' \
+            provider/process_windows.go
+          CHANGED=$(git diff --numstat -- provider/process_windows.go | awk '{print $1"/"$2}')
+          if [ "$CHANGED" != "2/2" ]; then
+            echo "::error::mutation did not apply as expected (changed=${CHANGED:-none}, want 2/2)."
+            echo "::error::realTCP6Fetcher/realUDP6Fetcher were probably refactored — update this step's"
+            echo "::error::sed so it still breaks the AF_INET6 wiring, rather than deleting the check."
+            exit 1
+          fi
+
+          # The mutation must be a semantic bug, not a build break: a package
+          # that fails to compile would fail the gate for the wrong reason.
+          if ! go build ./provider/; then
+            echo "::error::mutated package does not compile — the mutation is invalid, not the code."
+            exit 1
+          fi
+
+          if go test ./provider/ -run 'TestWindowsFindProcess_RealKernelTable' -count=1 -timeout=120s \
+               > /tmp/mut-gate.txt 2>&1; then
+            echo "::error::The real-kernel gate PASSED while the v6 fetchers query the AF_INET table."
+            echo "::error::It is not actually reaching the kernel path it claims to cover."
+            cat /tmp/mut-gate.txt
+            exit 1
+          fi
+          echo "OK: mutation kills the real-kernel gate"
+
+          if ! go test ./provider/ -count=1 -skip 'RealKernelTable' -timeout=300s \
+               > /tmp/mut-rest.txt 2>&1; then
+            echo "::error::The AF_INET6 mutation was ALSO caught outside the real-kernel gate."
+            echo "::error::That contradicts the rationale in process_windows_realkernel_test.go."
+            echo "::error::Find which test now covers the syscall layer and update that comment."
+            cat /tmp/mut-rest.txt
+            exit 1
+          fi
+          echo "OK: every other test in the package stays green under the mutation"
+
+          git checkout -- provider/process_windows.go
+          git diff --quiet -- provider/process_windows.go || {
+            echo "::error::failed to restore provider/process_windows.go"; exit 1; }
+          echo "Gate self-check PASSED (gate is both live and the only cover for the AF_INET6 syscall path)"
+        working-directory: k2
+
       - name: Build k2 Windows binary
         shell: bash
         run: make build-k2-windows
@@ -497,6 +591,79 @@ jobs:
       - name: Verify k2 binary exists
         shell: bash
         run: test -f desktop/src-tauri/binaries/k2-x86_64-pc-windows-msvc.exe
+
+      # #3297 ("service does not come back after an upgrade") still has no
+      # confirmed root cause, and the observability work meant to answer it
+      # has never once run against a real Windows SCM — only against unit
+      # tests that assert on the *strings* the code would emit.
+      #
+      # The GitHub runner is already elevated, so `k2 service install` (the
+      # exact command the desktop shell elevates into via -Verb RunAs) runs
+      # here directly, no UAC involved. That exercises SCM create, the legacy
+      # cleanup, the recovery-action config, the real service start, and the
+      # diagnostic log — the whole surface #3297 lives on.
+      - name: Windows service install gate (real SCM)
+        shell: bash
+        run: |
+          set -uo pipefail
+          K2="$PWD/desktop/src-tauri/binaries/k2-x86_64-pc-windows-msvc.exe"
+
+          # DefaultLogPath branches on IsRoot(), so the log lands in
+          # ProgramData when elevated and in the user log dir otherwise.
+          # Don't assume which: find it, and report where — if it turns up in
+          # the user dir, the runner is not elevated and this gate is testing
+          # something weaker than it claims.
+          find_install_log() {
+            find "$(cygpath -u "${PROGRAMDATA:-C:/ProgramData}")/kaitu" \
+                 "$(cygpath -u "${LOCALAPPDATA:-C:/Users/runneradmin/AppData/Local}")" \
+                 -name k2-service-install.log 2>/dev/null | head -1
+          }
+
+          dump_diag() {
+            echo "--- sc query kaitu ---"; sc.exe query kaitu 2>&1 || true
+            local l; l=$(find_install_log)
+            echo "--- install log (${l:-NOT FOUND}) ---"
+            [ -n "$l" ] && cat "$l" || true
+          }
+
+          echo "::group::first install"
+          if ! "$K2" service install; then
+            echo "::error::k2 service install failed"; dump_diag; exit 1
+          fi
+          echo "::endgroup::"
+
+          if ! sc.exe query kaitu >/dev/null 2>&1; then
+            echo "::error::service 'kaitu' is not registered after a successful install"
+            dump_diag; exit 1
+          fi
+
+          LOG=$(find_install_log)
+          if [ -z "$LOG" ]; then
+            echo "::error::k2-service-install.log was never written — the diagnostic"
+            echo "::error::trail #3297 depends on does not exist in practice."
+            dump_diag; exit 1
+          fi
+          echo "install log found at: $LOG"
+          grep -q "elevated=" "$LOG" || { echo "::error::log missing the elevated= marker"; dump_diag; exit 1; }
+          grep -q "service started OK" "$LOG" || { echo "::error::service never reported a successful start"; dump_diag; exit 1; }
+
+          # Every upgrade re-runs this path, so a second install must clean up
+          # and recreate rather than fail on the existing service. That is the
+          # exact step #3297 reports as broken in the field.
+          echo "::group::second install (idempotency)"
+          if ! "$K2" service install; then
+            echo "::error::re-install over an existing service failed — this is the #3297 shape"
+            dump_diag; exit 1
+          fi
+          echo "::endgroup::"
+          grep -q 'cleanup existing "kaitu"' "$LOG" || { echo "::error::re-install did not log the existing-service cleanup"; dump_diag; exit 1; }
+
+          "$K2" service uninstall || { echo "::error::uninstall failed"; dump_diag; exit 1; }
+          if sc.exe query kaitu >/dev/null 2>&1; then
+            echo "::error::service survived uninstall"; dump_diag; exit 1
+          fi
+
+          echo "Windows service install gate PASSED (install → start → re-install → uninstall on a real SCM)"
 
   # --- Windows build verification (main only) ---
   build-windows:
@@ -626,6 +793,16 @@ jobs:
         shell: bash
         run: ls -la desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
 
+      # Hand the signed installer to smoke-windows. This job cross-compiles on
+      # a macOS runner and can never execute what it produces.
+      - name: Upload NSIS installer for the smoke gate
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Verify k2 binary exists
         shell: bash
         run: test -f desktop/src-tauri/binaries/k2-x86_64-pc-windows-msvc.exe
@@ -642,3 +819,248 @@ jobs:
             exit 1
           fi
           echo "Versions match."
+
+  # The Windows smoke that release checklists have been asking a human to do
+  # since at least 2026-07 — and that consequently never happened, holding up
+  # three fixed user-facing bugs. Nothing here needs eyes: it installs the real
+  # signed installer on a real Windows kernel and asserts what a person would
+  # have looked for.
+  #
+  # It covers a path the k2-binary service gate cannot: POSTINSTALL runs
+  # `k2 service install` through NSIS's nsExec, in the installer's context.
+  # That is where #3297 actually lives; invoking the same binary from a shell
+  # (as test-windows does) exercises different plumbing.
+  smoke-windows:
+    needs: build-windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: installer
+
+      # Before the install, not after: a successful install launches the
+      # app itself, so by the time a later step ran, the poller would
+      # already have had its 5s.
+      #
+      # Release builds start the web-OTA poller 5s after launch
+      # (INITIAL_DELAY_SECS), and it will download and swap current/ if the
+      # channel has a newer bundle. Left alone, this gate's subject would be
+      # "the installer's UI, or whatever is published on the OTA channel at
+      # the time" — and a swap landing mid-observation would be attributed to
+      # the wrong thing. Black-hole the OTA/updater hosts so the run is
+      # deterministic and tests exactly what the installer shipped.
+      #
+      # This is NOT a stand-in for testing the OTA swap on Windows, which
+      # renames current/ while WebView2 serves from it — a Windows-only
+      # file-locking risk that remains uncovered on purpose rather than
+      # by accident.
+      - name: Black-hole the OTA endpoints
+        shell: pwsh
+        run: |
+          $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
+          Add-Content -Path $hosts -Value "`n127.0.0.1 d13jc1jqzlg4yt.cloudfront.net`n127.0.0.1 d0.all7.cc"
+          ipconfig /flushdns | Out-Null
+          Write-Host "OTA endpoints pinned to 127.0.0.1"
+
+      - name: Silent install
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem installer\*.exe | Select-Object -First 1).FullName
+          Write-Host "installer: $exe"
+          # Deliberately NOT -Wait. PowerShell's -Wait blocks on the whole
+          # process TREE, and a successful install launches the app — so
+          # -Wait sits there until the job times out while the install
+          # actually finished in seconds. (First run of this gate died
+          # exactly that way, with the service already RUNNING and the app
+          # already rendering.) Poll for the marker POSTINSTALL writes last.
+          $p = Start-Process -FilePath $exe -ArgumentList '/S' -PassThru
+          $diag = "C:\Program Files\Kaitu\install-diag.log"
+          $deadline = (Get-Date).AddMinutes(5)
+          while ((Get-Date) -lt $deadline) {
+            if ((Test-Path $diag) -and ((Get-Content $diag -Raw) -match 'post_install_sc_query_exit=')) { break }
+            Start-Sleep -Seconds 3
+          }
+          if (-not (Test-Path $diag)) {
+            throw "installer never wrote $diag within 5 minutes — silent install did not complete"
+          }
+          if ((Get-Content $diag -Raw) -notmatch 'post_install_sc_query_exit=') {
+            throw "POSTINSTALL never reached its service verification step"
+          }
+          Write-Host "install completed (POSTINSTALL marker present)"
+
+          # Reported, not asserted: this separates "PowerShell was waiting on
+          # the app the installer spawned" from "the silent installer itself
+          # never exits". The second would matter to anyone scripting a
+          # deployment, so it must not be invisible.
+          Start-Sleep -Seconds 5
+          if ($p.HasExited) {
+            Write-Host "installer process exited with code $($p.ExitCode)"
+          } else {
+            Write-Host "NOTE: installer pid $($p.Id) is still alive after the install completed."
+          }
+
+      - name: Installer did what it claims
+        shell: pwsh
+        run: |
+          $dir = "C:\Program Files\Kaitu"
+          if (-not (Test-Path $dir)) { throw "install dir missing: $dir" }
+          Write-Host "--- $dir ---"
+          Get-ChildItem $dir | Format-Table Name, Length -AutoSize
+
+          foreach ($f in @("$dir\k2.exe", "$dir\install-diag.log")) {
+            if (-not (Test-Path $f)) { throw "missing after install: $f" }
+          }
+
+          # Discover the shell binary rather than hardcoding a name. The
+          # Cargo package is k2app and productName is Kaitu, and which of the
+          # two Tauri stamps on the installed exe is a bundler detail this
+          # gate has no business asserting — but it MUST be exactly one, or
+          # the later steps would be launching something arbitrary.
+          $candidates = Get-ChildItem "$dir\*.exe" |
+            Where-Object { $_.Name -notin @("k2.exe", "uninstall.exe") }
+          if ($candidates.Count -ne 1) {
+            throw "expected exactly one app binary in $dir, found $($candidates.Count): $($candidates.Name -join ', ')"
+          }
+          $app = $candidates[0]
+          Write-Host "app binary: $($app.FullName)"
+          "KAITU_APP_EXE=$($app.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "KAITU_APP_PROC=$($app.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          Write-Host "--- install-diag.log ---"
+          Get-Content "$dir\install-diag.log"
+
+          # POSTINSTALL installs the service through nsExec. Two different
+          # failures hide behind "the field is not 0", and conflating them
+          # sends the reader after the wrong bug — this gate did exactly that
+          # on its first real run, reporting #3297 when the instrument was
+          # what had broken.
+          $diag = Get-Content "$dir\install-diag.log" -Raw
+          if ($diag -notmatch 'service_install_exit=') {
+            throw "install-diag.log carries no service_install_exit field at all. " +
+                  "The diagnostics are broken, not the install — check that every " +
+                  "NSIS 'FileOpen ... a' in installer-hooks.nsh is followed by " +
+                  "FileSeek 0 END, or the later writes overwrite from offset 0."
+          }
+          if ($diag -notmatch 'service_install_exit=0') {
+            throw "NSIS POSTINSTALL service install reported a non-zero exit — this is #3297 as users meet it"
+          }
+
+          $svc = Get-Service -Name kaitu -ErrorAction SilentlyContinue
+          if (-not $svc) { throw "service 'kaitu' not registered by the installer" }
+          # POSTINSTALL sleeps a fixed 3s before its own sc query, so a single
+          # sample here can legitimately catch StartPending. Poll instead —
+          # a flaky gate gets muted, and a muted gate is worse than none.
+          $deadline = (Get-Date).AddSeconds(30)
+          while ($svc.Status -ne 'Running' -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 2
+            $svc.Refresh()
+          }
+          Write-Host "service status: $($svc.Status)"
+          if ($svc.Status -ne 'Running') { throw "service is $($svc.Status), expected Running" }
+
+      - name: Launch the app
+        shell: pwsh
+        run: |
+          # The installer may have auto-launched the app; it holds a
+          # single-instance lock, so a second launch would exit immediately.
+          Get-Process $env:KAITU_APP_PROC -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 5
+          $p = Start-Process -FilePath $env:KAITU_APP_EXE -PassThru
+          Write-Host "launched $env:KAITU_APP_EXE as pid $($p.Id)"
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "the app exited immediately with $($p.ExitCode)" }
+
+      # The assertion the blank-window bug would have failed. See the script
+      # header for why a log line or the ui_boot_ok handshake is not enough.
+      - name: UI actually rendered
+        shell: powershell
+        run: |
+          # powershell.exe decodes a BOM-less .ps1 as CP1252, and the smart
+          # quotes that UTF-8 multi-byte sequences turn into are real string
+          # delimiters to its tokenizer. One em dash inside a quoted string is
+          # a parse error reported a dozen lines away -- which reads as "the UI
+          # did not render". Fail on the actual cause instead.
+          $bytes = [System.IO.File]::ReadAllBytes("scripts\ci\windows\assert-ui-rendered.ps1")
+          if ($bytes | Where-Object { $_ -gt 127 }) {
+            throw "assert-ui-rendered.ps1 contains non-ASCII bytes; powershell.exe will mis-parse it"
+          }
+          .\scripts\ci\windows\assert-ui-rendered.ps1 -ProcessName $env:KAITU_APP_PROC -TimeoutSec 120 -MinNamed 5
+
+      - name: Diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "=== processes ==="
+          Get-Process $env:KAITU_APP_PROC, k2 -ErrorAction SilentlyContinue | Format-Table -AutoSize
+          Write-Host "=== sc query kaitu ==="
+          sc.exe query kaitu
+          foreach ($n in @("desktop.log", "k2-service-install.log", "kaitu-preinstall.log", "install-diag.log")) {
+            # Bounded on purpose: a -Recurse over all of LOCALAPPDATA on a
+            # runner takes minutes. tauri-plugin-log writes under the app
+            # identifier; the installer diagnostics sit in INSTDIR and TEMP.
+            # %LOCALAPPDATA%\kaitu\logs — get_desktop_log_dir() keys the
+            # folder off the BRAND, not the bundle identifier. Verified in
+            # main.rs rather than guessed from the Tauri default.
+            $roots = @("C:\ProgramData\kaitu",
+                       "$env:LOCALAPPDATA\kaitu",
+                       "$env:TEMP",
+                       "C:\Program Files\Kaitu") | Where-Object { Test-Path $_ }
+            $hits = Get-ChildItem -Path $roots -Filter $n -Recurse -Depth 3 `
+                      -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hits) {
+              Write-Host "=== $($hits.FullName) (tail 80) ==="
+              Get-Content $hits.FullName -Tail 80
+            } else {
+              Write-Host "=== $n : not found ==="
+            }
+          }
+
+      # A census number and a human's impression of the window are different
+      # kinds of evidence. Keep the picture so the two can be reconciled —
+      # especially on the first runs, while the census threshold is still
+      # being calibrated against a real runner session.
+      - name: Screenshot
+        if: always()
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          $bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height)
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          # .NET resolves relative paths against the PROCESS cwd, not the
+          # PowerShell location -- always hand it an absolute path.
+          $out = Join-Path (Get-Location).Path "artifacts\screen.png"
+          $bmp.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
+          Write-Host ("saved {0} ({1}x{2})" -f $out, $b.Width, $b.Height)
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-windows-screen
+          path: artifacts/screen.png
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Uninstall
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Process $env:KAITU_APP_PROC -ErrorAction SilentlyContinue | Stop-Process -Force
+          $u = "C:\Program Files\Kaitu\uninstall.exe"
+          if (Test-Path $u) {
+            $p = Start-Process -FilePath $u -ArgumentList '/S' -Wait -PassThru
+            Write-Host "uninstaller exit: $($p.ExitCode)"
+          } else {
+            Write-Host "no uninstaller at $u"
+          }
