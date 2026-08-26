@@ -910,9 +910,29 @@ jobs:
         shell: pwsh
         run: |
           $dir = "C:\Program Files\Kaitu"
-          foreach ($f in @("$dir\Kaitu.exe", "$dir\k2.exe", "$dir\install-diag.log")) {
+          if (-not (Test-Path $dir)) { throw "install dir missing: $dir" }
+          Write-Host "--- $dir ---"
+          Get-ChildItem $dir | Format-Table Name, Length -AutoSize
+
+          foreach ($f in @("$dir\k2.exe", "$dir\install-diag.log")) {
             if (-not (Test-Path $f)) { throw "missing after install: $f" }
           }
+
+          # Discover the shell binary rather than hardcoding a name. The
+          # Cargo package is k2app and productName is Kaitu, and which of the
+          # two Tauri stamps on the installed exe is a bundler detail this
+          # gate has no business asserting — but it MUST be exactly one, or
+          # the later steps would be launching something arbitrary.
+          $candidates = Get-ChildItem "$dir\*.exe" |
+            Where-Object { $_.Name -notin @("k2.exe", "uninstall.exe") }
+          if ($candidates.Count -ne 1) {
+            throw "expected exactly one app binary in $dir, found $($candidates.Count): $($candidates.Name -join ', ')"
+          }
+          $app = $candidates[0]
+          Write-Host "app binary: $($app.FullName)"
+          "KAITU_APP_EXE=$($app.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "KAITU_APP_PROC=$($app.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
           Write-Host "--- install-diag.log ---"
           Get-Content "$dir\install-diag.log"
 
@@ -941,10 +961,10 @@ jobs:
         run: |
           # The installer may have auto-launched the app; it holds a
           # single-instance lock, so a second launch would exit immediately.
-          Get-Process Kaitu -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-Process $env:KAITU_APP_PROC -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 5
-          $p = Start-Process -FilePath "C:\Program Files\Kaitu\Kaitu.exe" -PassThru
-          Write-Host "launched pid $($p.Id)"
+          $p = Start-Process -FilePath $env:KAITU_APP_EXE -PassThru
+          Write-Host "launched $env:KAITU_APP_EXE as pid $($p.Id)"
           Start-Sleep -Seconds 10
           if ($p.HasExited) { throw "the app exited immediately with $($p.ExitCode)" }
 
@@ -952,14 +972,14 @@ jobs:
       # header for why a log line or the ui_boot_ok handshake is not enough.
       - name: UI actually rendered
         shell: powershell
-        run: .\scripts\ci\windows\assert-ui-rendered.ps1 -TimeoutSec 120 -MinNamed 5
+        run: .\scripts\ci\windows\assert-ui-rendered.ps1 -ProcessName $env:KAITU_APP_PROC -TimeoutSec 120 -MinNamed 5
 
       - name: Diagnostics
         if: always()
         shell: pwsh
         run: |
           Write-Host "=== processes ==="
-          Get-Process Kaitu, k2 -ErrorAction SilentlyContinue | Format-Table -AutoSize
+          Get-Process $env:KAITU_APP_PROC, k2 -ErrorAction SilentlyContinue | Format-Table -AutoSize
           Write-Host "=== sc query kaitu ==="
           sc.exe query kaitu
           foreach ($n in @("desktop.log", "k2-service-install.log", "kaitu-preinstall.log", "install-diag.log")) {
@@ -1017,7 +1037,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          Get-Process Kaitu -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-Process $env:KAITU_APP_PROC -ErrorAction SilentlyContinue | Stop-Process -Force
           $u = "C:\Program Files\Kaitu\uninstall.exe"
           if (Test-Path $u) {
             $p = Start-Process -FilePath $u -ArgumentList '/S' -Wait -PassThru

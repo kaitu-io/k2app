@@ -20,9 +20,14 @@
 # The census counts descendants of the Document element only, never the
 # window frame, so it cannot be satisfied by title-bar controls.
 #
-# Usage: powershell -File assert-ui-rendered.ps1 [-TimeoutSec 120] [-MinNamed 5]
+# Usage: assert-ui-rendered.ps1 -ProcessName <exe base name> [-TimeoutSec 120] [-MinNamed 5]
 
 param(
+  # The installed shell binary's base name. Passed in rather than hardcoded:
+  # the Cargo package is k2app while productName is Kaitu, and guessing wrong
+  # means Get-Process finds nothing and the failure reads as "no window" —
+  # a harness miss wearing the costume of a product bug.
+  [Parameter(Mandatory = $true)][string]$ProcessName,
   [int]$TimeoutSec = 120,
   [int]$MinNamed = 5
 )
@@ -36,7 +41,7 @@ $Scope = [System.Windows.Automation.TreeScope]
 $TrueCond = [System.Windows.Automation.Condition]::TrueCondition
 
 function Get-AppWindow {
-  $proc = Get-Process Kaitu -ErrorAction SilentlyContinue | Select-Object -First 1
+  $proc = Get-Process $ProcessName -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $proc) { return $null }
   # Match on process id, not the window title: the title is localized
   # ("开途 Kaitu.io") and would silently stop matching on a copy edit.
@@ -96,7 +101,7 @@ while ((Get-Date) -lt $deadline) {
 
 Write-Host "=== FAIL ==="
 if (-not $sawWindow) {
-  Write-Host "No top-level window for the Kaitu process was ever found."
+  Write-Host "No top-level window for process $ProcessName was ever found."
   Write-Host "The app may have exited, or never created its window."
 } elseif (-not $sawDocument) {
   Write-Host "The window exists but WebView2 never exposed a Document element."
