@@ -490,6 +490,34 @@ jobs:
         run: go test ./sniff/... ./core/... ./engine/... ./config/... ./daemon/ ./provider/... -count=1 -short -timeout=120s
         working-directory: k2
 
+      # Windows process attribution is the one thing only a real Windows
+      # kernel can prove. Every other provider test injects mock iphlpapi
+      # fetchers — which is exactly why the R1 bug (IPv6 lookups
+      # short-circuited to "") shipped with a fully green suite.
+      #
+      # The step above runs these tests too, but with -short and without -v:
+      # a test that quietly stopped running (build-tag drift, someone adding
+      # a testing.Short() guard, a runner without IPv6) would be
+      # indistinguishable from a pass. So run them alone, verbosely, and
+      # assert each one actually reported PASS. A zero exit code is not
+      # evidence that a test executed.
+      - name: Real-kernel IPv6 attribution gate (must actually run)
+        shell: bash
+        run: |
+          set -o pipefail
+          go test ./provider/ -run 'TestWindowsFindProcess_RealKernelTable' \
+            -count=1 -v -timeout=120s 2>&1 | tee /tmp/realkernel.txt
+          for tc in IPv6TCP IPv6UDP; do
+            if ! grep -q -- "--- PASS: TestWindowsFindProcess_RealKernelTable_${tc}" /tmp/realkernel.txt; then
+              echo "::error::TestWindowsFindProcess_RealKernelTable_${tc} did not report PASS."
+              echo "::error::A green exit code without that line means the test never ran —"
+              echo "::error::check for a build-tag change, a testing.Short() guard, or a runner without IPv6."
+              exit 1
+            fi
+          done
+          echo "Real-kernel IPv6 attribution gate PASSED (both cases executed on a live kernel table)"
+        working-directory: k2
+
       - name: Build k2 Windows binary
         shell: bash
         run: make build-k2-windows
