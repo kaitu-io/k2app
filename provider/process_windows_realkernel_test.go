@@ -16,13 +16,28 @@ import (
 
 // Real-kernel-table integration tests for Windows process attribution.
 //
-// process_windows_test.go drives the matching logic through injected mock
-// fetchers. That proves the row decoder and the match rules, but it never
-// calls iphlpapi, so it cannot prove that FindProcess attributes a real IPv6
-// socket held by a real process. That gap is exactly where the R1 bug lived:
-// a single `if !srcIP.Is4() { return "", "", "" }` short-circuited every IPv6
-// lookup, so per-app direct/bypass rules silently failed on IPv6 while the
-// whole mock suite stayed green.
+// What these cover that nothing else in the package does: the layer the mock
+// fetchers replace. process_windows_test.go injects mock tables, so it proves
+// the match rules. process_wintable_test.go decodes hand-built buffers at
+// literal offsets, so it proves the row layout — portably, on any OS. Neither
+// ever calls iphlpapi. Everything in between is untested anywhere else: the
+// AF_INET6 / TCP_TABLE_OWNER_PID_ALL constants handed to GetExtendedTcpTable,
+// fetchOwnerTable's grow-and-retry buffer loop, which fetcher
+// NewWindowsProcessSearcher actually wires into each field, and
+// QueryFullProcessImageName against a live PID. Swap AF_INET6 for AF_INET in
+// realTCP6Fetcher and every other test in this package still passes.
+//
+// They also pin an assumption no unit test can state, because the mocks are
+// where that assumption gets encoded: that Windows really does list a
+// connected IPv6 socket in the AF_INET6 table under the exact local address
+// the matcher looks up.
+//
+// Historical note, so nobody re-derives this wrong: the R1 bug (a single
+// `if !srcIP.Is4() { return "", "", "" }` short-circuiting every IPv6 lookup)
+// shipped with a green suite because the IPv6 mock tests did not exist yet —
+// they arrived with its fix. Re-introducing that line today turns
+// process_windows_test.go red, so it does NOT demonstrate what this file
+// adds. Use the AF_INET6 swap above for that.
 //
 // These tests spawn a child process holding a live loopback connection and
 // run the PRODUCTION searcher against it — real GetExtended{Tcp,Udp}Table,
@@ -142,8 +157,10 @@ func TestWindowsFindProcess_RealKernelTable_IPv6TCP(t *testing.T) {
 	if want := wantChildProcessName(); name != want {
 		t.Fatalf("FindProcess(tcp, %v, %d) = %q, want %q — a child process is "+
 			"holding a live ESTABLISHED IPv6 connection from that exact "+
-			"local addr:port, so an empty result means IPv6 attribution is "+
-			"broken (R1)", srcIP, raddr.Port, name, want)
+			"local addr:port. An empty result means the AF_INET6 TCP path is "+
+			"broken: wrong family/class constant, fetchOwnerTable buffer "+
+			"handling, tcp6Fetcher wiring, or QueryFullProcessImageName",
+			srcIP, raddr.Port, name, want)
 	}
 	if pkg != "" || installer != "" {
 		t.Errorf("Windows carries no package/installer fields, got (%q, %q)", pkg, installer)
@@ -183,8 +200,10 @@ func TestWindowsFindProcess_RealKernelTable_IPv6UDP(t *testing.T) {
 
 	if want := wantChildProcessName(); name != want {
 		t.Fatalf("FindProcess(udp, %v, %d) = %q, want %q — a child process "+
-			"just sent a datagram from that exact local addr:port, so an "+
-			"empty result means IPv6 attribution is broken (R1)",
+			"just sent a datagram from that exact local addr:port. An empty "+
+			"result means the AF_INET6 UDP path is broken: wrong family/class "+
+			"constant, fetchOwnerTable buffer handling, udp6Fetcher wiring, "+
+			"or QueryFullProcessImageName",
 			srcIP, uaddr.Port, name, want)
 	}
 }
