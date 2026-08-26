@@ -845,14 +845,66 @@ jobs:
           name: windows-installer
           path: installer
 
+      # Before the install, not after: a successful install launches the
+      # app itself, so by the time a later step ran, the poller would
+      # already have had its 5s.
+      #
+      # Release builds start the web-OTA poller 5s after launch
+      # (INITIAL_DELAY_SECS), and it will download and swap current/ if the
+      # channel has a newer bundle. Left alone, this gate's subject would be
+      # "the installer's UI, or whatever is published on the OTA channel at
+      # the time" — and a swap landing mid-observation would be attributed to
+      # the wrong thing. Black-hole the OTA/updater hosts so the run is
+      # deterministic and tests exactly what the installer shipped.
+      #
+      # This is NOT a stand-in for testing the OTA swap on Windows, which
+      # renames current/ while WebView2 serves from it — a Windows-only
+      # file-locking risk that remains uncovered on purpose rather than
+      # by accident.
+      - name: Black-hole the OTA endpoints
+        shell: pwsh
+        run: |
+          $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
+          Add-Content -Path $hosts -Value "`n127.0.0.1 d13jc1jqzlg4yt.cloudfront.net`n127.0.0.1 d0.all7.cc"
+          ipconfig /flushdns | Out-Null
+          Write-Host "OTA endpoints pinned to 127.0.0.1"
+
       - name: Silent install
         shell: pwsh
         run: |
           $exe = (Get-ChildItem installer\*.exe | Select-Object -First 1).FullName
           Write-Host "installer: $exe"
-          $p = Start-Process -FilePath $exe -ArgumentList '/S' -Wait -PassThru
-          Write-Host "installer exit code: $($p.ExitCode)"
-          if ($p.ExitCode -ne 0) { throw "silent install failed with $($p.ExitCode)" }
+          # Deliberately NOT -Wait. PowerShell's -Wait blocks on the whole
+          # process TREE, and a successful install launches the app — so
+          # -Wait sits there until the job times out while the install
+          # actually finished in seconds. (First run of this gate died
+          # exactly that way, with the service already RUNNING and the app
+          # already rendering.) Poll for the marker POSTINSTALL writes last.
+          $p = Start-Process -FilePath $exe -ArgumentList '/S' -PassThru
+          $diag = "C:\Program Files\Kaitu\install-diag.log"
+          $deadline = (Get-Date).AddMinutes(5)
+          while ((Get-Date) -lt $deadline) {
+            if ((Test-Path $diag) -and ((Get-Content $diag -Raw) -match 'post_install_sc_query_exit=')) { break }
+            Start-Sleep -Seconds 3
+          }
+          if (-not (Test-Path $diag)) {
+            throw "installer never wrote $diag within 5 minutes — silent install did not complete"
+          }
+          if ((Get-Content $diag -Raw) -notmatch 'post_install_sc_query_exit=') {
+            throw "POSTINSTALL never reached its service verification step"
+          }
+          Write-Host "install completed (POSTINSTALL marker present)"
+
+          # Reported, not asserted: this separates "PowerShell was waiting on
+          # the app the installer spawned" from "the silent installer itself
+          # never exits". The second would matter to anyone scripting a
+          # deployment, so it must not be invisible.
+          Start-Sleep -Seconds 5
+          if ($p.HasExited) {
+            Write-Host "installer process exited with code $($p.ExitCode)"
+          } else {
+            Write-Host "NOTE: installer pid $($p.Id) is still alive after the install completed."
+          }
 
       - name: Installer did what it claims
         shell: pwsh
@@ -883,26 +935,6 @@ jobs:
           }
           Write-Host "service status: $($svc.Status)"
           if ($svc.Status -ne 'Running') { throw "service is $($svc.Status), expected Running" }
-
-      # Release builds start the web-OTA poller 5s after launch
-      # (INITIAL_DELAY_SECS), and it will download and swap current/ if the
-      # channel has a newer bundle. Left alone, this gate's subject would be
-      # "the installer's UI, or whatever is published on the OTA channel at
-      # the time" — and a swap landing mid-observation would be attributed to
-      # the wrong thing. Black-hole the OTA/updater hosts so the run is
-      # deterministic and tests exactly what the installer shipped.
-      #
-      # This is NOT a stand-in for testing the OTA swap on Windows, which
-      # renames current/ while WebView2 serves from it — a Windows-only
-      # file-locking risk that remains uncovered on purpose rather than
-      # by accident.
-      - name: Black-hole the OTA endpoints
-        shell: pwsh
-        run: |
-          $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
-          Add-Content -Path $hosts -Value "`n127.0.0.1 d13jc1jqzlg4yt.cloudfront.net`n127.0.0.1 d0.all7.cc"
-          ipconfig /flushdns | Out-Null
-          Write-Host "OTA endpoints pinned to 127.0.0.1"
 
       - name: Launch the app
         shell: pwsh
