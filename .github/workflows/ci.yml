@@ -839,12 +839,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Node 22 for the global WebSocket the CDP probe speaks.
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - name: Download installer
         uses: actions/download-artifact@v4
         with:
@@ -879,15 +873,24 @@ jobs:
 
           $svc = Get-Service -Name kaitu -ErrorAction SilentlyContinue
           if (-not $svc) { throw "service 'kaitu' not registered by the installer" }
+          # POSTINSTALL sleeps a fixed 3s before its own sc query, so a single
+          # sample here can legitimately catch StartPending. Poll instead —
+          # a flaky gate gets muted, and a muted gate is worse than none.
+          $deadline = (Get-Date).AddSeconds(30)
+          while ($svc.Status -ne 'Running' -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 2
+            $svc.Refresh()
+          }
           Write-Host "service status: $($svc.Status)"
           if ($svc.Status -ne 'Running') { throw "service is $($svc.Status), expected Running" }
 
-      - name: Launch the app with WebView2 remote debugging
+      - name: Launch the app
         shell: pwsh
         run: |
+          # The installer may have auto-launched the app; it holds a
+          # single-instance lock, so a second launch would exit immediately.
           Get-Process Kaitu -ErrorAction SilentlyContinue | Stop-Process -Force
-          Start-Sleep -Seconds 2
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
+          Start-Sleep -Seconds 5
           $p = Start-Process -FilePath "C:\Program Files\Kaitu\Kaitu.exe" -PassThru
           Write-Host "launched pid $($p.Id)"
           Start-Sleep -Seconds 10
@@ -896,8 +899,8 @@ jobs:
       # The assertion the blank-window bug would have failed. See the script
       # header for why a log line or the ui_boot_ok handshake is not enough.
       - name: UI actually rendered
-        shell: pwsh
-        run: node scripts/ci/windows/assert-ui-rendered.mjs 9222 120
+        shell: powershell
+        run: .\scripts\ci\windows\assert-ui-rendered.ps1 -TimeoutSec 120 -MinNamed 5
 
       - name: Diagnostics
         if: always()
@@ -908,8 +911,15 @@ jobs:
           Write-Host "=== sc query kaitu ==="
           sc.exe query kaitu
           foreach ($n in @("desktop.log", "k2-service-install.log", "kaitu-preinstall.log", "install-diag.log")) {
-            $hits = Get-ChildItem -Path "C:\ProgramData\kaitu", "$env:LOCALAPPDATA", "$env:TEMP", "C:\Program Files\Kaitu" `
-                      -Filter $n -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            # Bounded on purpose: a -Recurse over all of LOCALAPPDATA on a
+            # runner takes minutes. tauri-plugin-log writes under the app
+            # identifier; the installer diagnostics sit in INSTDIR and TEMP.
+            $roots = @("C:\ProgramData\kaitu",
+                       "$env:LOCALAPPDATA\io.kaitu.desktop",
+                       "$env:TEMP",
+                       "C:\Program Files\Kaitu") | Where-Object { Test-Path $_ }
+            $hits = Get-ChildItem -Path $roots -Filter $n -Recurse -Depth 3 `
+                      -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($hits) {
               Write-Host "=== $($hits.FullName) (tail 80) ==="
               Get-Content $hits.FullName -Tail 80
@@ -917,6 +927,36 @@ jobs:
               Write-Host "=== $n : not found ==="
             }
           }
+
+      # A census number and a human's impression of the window are different
+      # kinds of evidence. Keep the picture so the two can be reconciled —
+      # especially on the first runs, while the census threshold is still
+      # being calibrated against a real runner session.
+      - name: Screenshot
+        if: always()
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          $bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height)
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          # .NET resolves relative paths against the PROCESS cwd, not the
+          # PowerShell location — always hand it an absolute path.
+          $out = Join-Path (Get-Location).Path "artifacts\screen.png"
+          $bmp.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
+          Write-Host ("saved {0} ({1}x{2})" -f $out, $b.Width, $b.Height)
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-windows-screen
+          path: artifacts/screen.png
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Uninstall
         if: always()
