@@ -772,9 +772,15 @@ mod windows {
 
             // Sanity: the fixture must be invisible to the other two scans,
             // otherwise passing this test would prove nothing about the view.
+            // Both are asserted — enumerate() reads three views, and a pass
+            // that came from either of the other two would be a false green.
             assert!(
                 find(&scan_one(HKEY_LOCAL_MACHINE, KEY_WOW64_64KEY), "K2GateTest_Wow6432").is_none(),
                 "fixture leaked into the 64-bit view — it is not exercising WOW6432Node"
+            );
+            assert!(
+                find(&scan_one(HKEY_CURRENT_USER, 0), "K2GateTest_Wow6432").is_none(),
+                "fixture leaked into HKCU — it is not exercising WOW6432Node"
             );
 
             let started = std::time::Instant::now();
