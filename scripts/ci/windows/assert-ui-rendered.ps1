@@ -27,6 +27,13 @@
 # The census counts descendants of the Document element only, never the
 # window frame, so it cannot be satisfied by title-bar controls.
 #
+# Calibration, from the first green run on windows-latest: total=94,
+# named=43, and the names were real app content (connection state plus
+# the live server list). A blank document yields 0. MinNamed defaults to
+# 5 rather than something near 43 on purpose: the server list comes from
+# the API, so a high bar would turn a network hiccup into a render
+# failure. 5 still cannot be reached by an empty React root.
+#
 # Usage: assert-ui-rendered.ps1 -ProcessName <exe base name> [-TimeoutSec 120] [-MinNamed 5]
 
 param(
