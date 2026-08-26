@@ -1,8 +1,15 @@
+# ASCII ONLY. powershell.exe (5.1) decodes a BOM-less .ps1 as ANSI/CP1252, and
+# PowerShell's tokenizer accepts the Unicode smart quotes that UTF-8 multi-byte
+# sequences decode into -- so a single em dash inside a double-quoted string
+# terminates that string early and the parse error surfaces a dozen lines later
+# in unrelated code. This file only ever runs on a host that cannot be
+# reproduced locally, so it must not depend on encoding at all.
+#
 # Proves the desktop UI actually RENDERED, by reading the live accessibility
 # tree WebView2 exposes for its document.
 #
 # Why this and not a log line: 0.4.8 shipped a blank window to every desktop
-# user (4579cb8a). Every cheaper signal stayed green through it — the Rust
+# user (4579cb8a). Every cheaper signal stayed green through it -- the Rust
 # side logged a clean boot, the `ui_boot_ok` handshake fired (it only proves
 # the bundle's JS ran, not that React rendered anything), web-OTA rollback
 # therefore never engaged, and the bridge/stores/pollers kept logging healthy
@@ -13,7 +20,7 @@
 #
 # Why not CDP: wry unconditionally calls set_additional_browser_arguments
 # (webview2/mod.rs), and WebView2 honours WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
-# only when that option is unset — so --remote-debugging-port cannot be
+# only when that option is unset -- so --remote-debugging-port cannot be
 # injected from outside without changing shipped config. Verified against
 # wry 0.54.2 source, not assumed.
 #
@@ -25,7 +32,7 @@
 param(
   # The installed shell binary's base name. Passed in rather than hardcoded:
   # the Cargo package is k2app while productName is Kaitu, and guessing wrong
-  # means Get-Process finds nothing and the failure reads as "no window" —
+  # means Get-Process finds nothing and the failure reads as "no window" --
   # a harness miss wearing the costume of a product bug.
   [Parameter(Mandatory = $true)][string]$ProcessName,
   [int]$TimeoutSec = 120,
@@ -44,7 +51,7 @@ function Get-AppWindow {
   $proc = Get-Process $ProcessName -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $proc) { return $null }
   # Match on process id, not the window title: the title is localized
-  # ("开途 Kaitu.io") and would silently stop matching on a copy edit.
+  # (a Chinese product name) and would silently stop matching on a copy edit.
   $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $proc.Id)
   return $AE::RootElement.FindFirst($Scope::Children, $cond)
 }
@@ -106,7 +113,7 @@ if (-not $sawWindow) {
 } elseif (-not $sawDocument) {
   Write-Host "The window exists but WebView2 never exposed a Document element."
   Write-Host "Either the webview did not load anything, or its accessibility tree"
-  Write-Host "is not being populated in this session — the second case is a harness"
+  Write-Host "is not being populated in this session -- the second case is a harness"
   Write-Host "problem and must be fixed rather than lowering -MinNamed."
 } else {
   Write-Host ("The document exists but stayed effectively empty (total={0} named={1}, want named>={2})." -f `
