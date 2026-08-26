@@ -793,6 +793,16 @@ jobs:
         shell: bash
         run: ls -la desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
 
+      # Hand the signed installer to smoke-windows. This job cross-compiles on
+      # a macOS runner and can never execute what it produces.
+      - name: Upload NSIS installer for the smoke gate
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Verify k2 binary exists
         shell: bash
         run: test -f desktop/src-tauri/binaries/k2-x86_64-pc-windows-msvc.exe
@@ -809,3 +819,114 @@ jobs:
             exit 1
           fi
           echo "Versions match."
+
+  # The Windows smoke that release checklists have been asking a human to do
+  # since at least 2026-07 — and that consequently never happened, holding up
+  # three fixed user-facing bugs. Nothing here needs eyes: it installs the real
+  # signed installer on a real Windows kernel and asserts what a person would
+  # have looked for.
+  #
+  # It covers a path the k2-binary service gate cannot: POSTINSTALL runs
+  # `k2 service install` through NSIS's nsExec, in the installer's context.
+  # That is where #3297 actually lives; invoking the same binary from a shell
+  # (as test-windows does) exercises different plumbing.
+  smoke-windows:
+    needs: build-windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Node 22 for the global WebSocket the CDP probe speaks.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: installer
+
+      - name: Silent install
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem installer\*.exe | Select-Object -First 1).FullName
+          Write-Host "installer: $exe"
+          $p = Start-Process -FilePath $exe -ArgumentList '/S' -Wait -PassThru
+          Write-Host "installer exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "silent install failed with $($p.ExitCode)" }
+
+      - name: Installer did what it claims
+        shell: pwsh
+        run: |
+          $dir = "C:\Program Files\Kaitu"
+          foreach ($f in @("$dir\Kaitu.exe", "$dir\k2.exe", "$dir\install-diag.log")) {
+            if (-not (Test-Path $f)) { throw "missing after install: $f" }
+          }
+          Write-Host "--- install-diag.log ---"
+          Get-Content "$dir\install-diag.log"
+
+          # POSTINSTALL installs the service through nsExec. A non-zero exit
+          # here is the #3297 shape as users actually meet it.
+          $diag = Get-Content "$dir\install-diag.log" -Raw
+          if ($diag -notmatch 'service_install_exit=0') {
+            throw "NSIS POSTINSTALL service install did not report exit 0 — this is #3297"
+          }
+
+          $svc = Get-Service -Name kaitu -ErrorAction SilentlyContinue
+          if (-not $svc) { throw "service 'kaitu' not registered by the installer" }
+          Write-Host "service status: $($svc.Status)"
+          if ($svc.Status -ne 'Running') { throw "service is $($svc.Status), expected Running" }
+
+      - name: Launch the app with WebView2 remote debugging
+        shell: pwsh
+        run: |
+          Get-Process Kaitu -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 2
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
+          $p = Start-Process -FilePath "C:\Program Files\Kaitu\Kaitu.exe" -PassThru
+          Write-Host "launched pid $($p.Id)"
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "the app exited immediately with $($p.ExitCode)" }
+
+      # The assertion the blank-window bug would have failed. See the script
+      # header for why a log line or the ui_boot_ok handshake is not enough.
+      - name: UI actually rendered
+        shell: pwsh
+        run: node scripts/ci/windows/assert-ui-rendered.mjs 9222 120
+
+      - name: Diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "=== processes ==="
+          Get-Process Kaitu, k2 -ErrorAction SilentlyContinue | Format-Table -AutoSize
+          Write-Host "=== sc query kaitu ==="
+          sc.exe query kaitu
+          foreach ($n in @("desktop.log", "k2-service-install.log", "kaitu-preinstall.log", "install-diag.log")) {
+            $hits = Get-ChildItem -Path "C:\ProgramData\kaitu", "$env:LOCALAPPDATA", "$env:TEMP", "C:\Program Files\Kaitu" `
+                      -Filter $n -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hits) {
+              Write-Host "=== $($hits.FullName) (tail 80) ==="
+              Get-Content $hits.FullName -Tail 80
+            } else {
+              Write-Host "=== $n : not found ==="
+            }
+          }
+
+      - name: Uninstall
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Process Kaitu -ErrorAction SilentlyContinue | Stop-Process -Force
+          $u = "C:\Program Files\Kaitu\uninstall.exe"
+          if (Test-Path $u) {
+            $p = Start-Process -FilePath $u -ArgumentList '/S' -Wait -PassThru
+            Write-Host "uninstaller exit: $($p.ExitCode)"
+          } else {
+            Write-Host "no uninstaller at $u"
+          }
