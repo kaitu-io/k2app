@@ -934,8 +934,11 @@ jobs:
             # Bounded on purpose: a -Recurse over all of LOCALAPPDATA on a
             # runner takes minutes. tauri-plugin-log writes under the app
             # identifier; the installer diagnostics sit in INSTDIR and TEMP.
+            # %LOCALAPPDATA%\kaitu\logs — get_desktop_log_dir() keys the
+            # folder off the BRAND, not the bundle identifier. Verified in
+            # main.rs rather than guessed from the Tauri default.
             $roots = @("C:\ProgramData\kaitu",
-                       "$env:LOCALAPPDATA\io.kaitu.desktop",
+                       "$env:LOCALAPPDATA\kaitu",
                        "$env:TEMP",
                        "C:\Program Files\Kaitu") | Where-Object { Test-Path $_ }
             $hits = Get-ChildItem -Path $roots -Filter $n -Recurse -Depth 3 `
