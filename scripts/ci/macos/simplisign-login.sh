@@ -319,13 +319,26 @@ echo "SimplySign menu state: $STATE"
 if [ "$STATE" = "no-gui" ]; then
     echo "Headless context (cannot drive the SimplySign UI). Not attempting GUI login."
     if has_pkcs11_token; then
-        echo "PKCS#11 slot present — signing is verified by the preflight before"
-        echo "the build. Done!"
+        # Deliberately NOT "Done!". The slot is a cached local artifact and
+        # stays present for hours after the cloud session dies — it is the
+        # known false-positive, not evidence of anything. Saying "Done" here
+        # sends whoever reads this log first looking for a build problem when
+        # the preflight fails ten lines later. State what is actually known.
+        echo "PKCS#11 slot present, but that does NOT mean the cloud session is live"
+        echo "(the slot is cached locally and outlives the session). Signing is not"
+        echo "verified yet — the preflight below is what decides."
+        echo
+        echo "If the preflight fails with CKR_ATTRIBUTE_TYPE_INVALID, the session"
+        echo "expired (it lasts a few hours). This runner is a LaunchAgent with"
+        echo "SessionCreate=true, so it lives in its own security session and can"
+        echo "never reach the GUI to reconnect itself. Reconnect from a desktop"
+        echo "login shell on this same machine:"
+        echo "  bash -lc 'make simplisign-login'   (-lc matters: SIMPLISIGN_TOTP_URI is in ~/.bash_profile)"
         exit 0
     fi
     echo "ERROR: no PKCS#11 token and no GUI access to log in." >&2
     echo "Establish the SimplySign cloud session from an interactive session:" >&2
-    echo "  make simplisign-login   (in a Terminal/desktop with Accessibility granted)" >&2
+    echo "  bash -lc 'make simplisign-login'   (on the runner's own desktop session)" >&2
     exit 1
 fi
 
