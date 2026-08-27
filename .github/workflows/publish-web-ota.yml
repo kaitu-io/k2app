@@ -63,6 +63,24 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
 
+      # This job runs webapp `yarn test`, which includes the fail-closed
+      # engine-error-code gate (webapp/src/services/__tests__/
+      # k2-engine-codes.test.ts) — it THROWS if k2/engine/error.go is absent
+      # rather than skipping. k2 is a private submodule, so without this init
+      # `yarn test` fails "error.go not found". The reusable webapp test job
+      # inits k2 for the same reason; this workflow calls `yarn test` directly
+      # and must do it too. Only k2 itself is needed (one Go file) — no
+      # --recursive, no kuic key. secrets.K2_DEPLOY_KEY is available on both
+      # entry paths: workflow_dispatch (repo secret) and workflow_call from the
+      # release/mobile tails (secrets: inherit).
+      - name: Setup SSH for private submodule
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+
+      - name: Init k2 submodule (webapp engine error-code gate reads k2/engine/error.go)
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init k2
+
       - name: Validate webapp tag against package.json
         if: startsWith(github.ref, 'refs/tags/webapp/')
         run: |
