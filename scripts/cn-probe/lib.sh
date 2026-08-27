@@ -58,7 +58,22 @@ note() { echo "  $*"; }
 step() { echo; echo "==> $*"; }
 
 # Extract a single scalar from JSON on stdin via a python expression over `d`.
-jget() { python3 -c "import sys,json; d=json.load(sys.stdin); print($1)"; }
+#
+# The error handling is load bearing. The aliyun CLI writes API failures to
+# stderr and nothing to stdout, so a naive json.load() dies with a
+# JSONDecodeError traceback — which reads as "this script is broken" when what
+# actually happened is "your account cannot do that". Keep the two apart.
+jget() {
+  local raw
+  raw=$(cat)
+  if [ -z "${raw//[[:space:]]/}" ]; then
+    die "the Aliyun API returned nothing. The real error is on stderr above.
+       This is an API / permission / account failure, not a bug in this script."
+  fi
+  printf '%s' "$raw" | python3 -c "import sys,json; d=json.load(sys.stdin); print($1)" 2>/dev/null \
+    || die "could not read '$1' from the API response:
+$(printf '%s' "$raw" | head -c 500)"
+}
 
 preflight() {
   command -v aliyun >/dev/null || die "aliyun CLI not found (brew install aliyun-cli)"

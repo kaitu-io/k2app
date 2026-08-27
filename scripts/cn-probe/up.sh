@@ -109,6 +109,36 @@ mkdir -p "$(dirname "$PASSWORD_FILE")"
 ( umask 077; printf '%s\n' "$PASSWORD" > "$PASSWORD_FILE" )
 note "saved to $PASSWORD_FILE (mode 600)"
 
+# Validate the whole request server-side before spending anything. Cheap
+# read-only calls are NOT sufficient evidence that a launch will succeed:
+# DescribePrice returns a quote and DescribeAvailableResource reports
+# WithStock even for an account that is forbidden from buying in this region.
+# The first run of this script died here on RealNameAuthenticationError with
+# every earlier check green — mainland regions require real-name
+# authentication, and only RunInstances says so.
+step "Validating the launch request (DryRun — costs nothing)"
+if ! DRY=$(ali ecs RunInstances --RegionId "$REGION" --ZoneId "$ZONE" \
+  --ImageId "$IMAGE_ID" --InstanceType "$INSTANCE_TYPE" \
+  --SystemDisk.Category "$DISK_CATEGORY" --SystemDisk.Size "$DISK_SIZE" \
+  --VSwitchId "$VSW_ID" --SecurityGroupId "$SG_ID" \
+  --InstanceChargeType PostPaid \
+  --InternetChargeType PayByTraffic --InternetMaxBandwidthOut "$BANDWIDTH_OUT" \
+  --Password "$PASSWORD" --Amount 1 --DryRun true 2>&1); then
+  case "$DRY" in
+    *RealNameAuthenticationError*)
+      die "this account has not completed real-name authentication, so it cannot
+       create instances in mainland China regions. Every mainland provider
+       requires this by law, so switching to Tencent/Huawei will not help.
+       Resolve by authenticating this account, or point K2_CN_PROFILE at an
+       already-authenticated one." ;;
+    *DryRunOperation*|*Success*) : ;;
+    *)
+      die "the launch request was rejected before any resource was created:
+$DRY" ;;
+  esac
+fi
+note "request accepted"
+
 step "Launching instance"
 INSTANCE_ID=$(ali ecs RunInstances --RegionId "$REGION" --ZoneId "$ZONE" \
   --ImageId "$IMAGE_ID" --InstanceType "$INSTANCE_TYPE" \

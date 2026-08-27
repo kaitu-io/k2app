@@ -44,27 +44,32 @@ fi
 # Deleting an instance normally takes its system disk with it, but a disk whose
 # DeleteWithInstance was cleared survives and keeps billing silently. Assert on
 # the actual account state rather than trusting the default.
-step "Checking for orphaned billable resources"
-ORPHAN_DISKS=$(ali ecs DescribeDisks --RegionId "$REGION" --Status Available --PageSize 50 \
-  | jget "' '.join(x['DiskId'] for x in d['Disks']['Disk'])")
-if [ -n "$ORPHAN_DISKS" ]; then
-  echo "  WARNING: unattached disks still billing in $REGION: $ORPHAN_DISKS"
-  echo "           remove with: aliyun --profile $PROFILE ecs DeleteDisk --DiskId <id>"
-else
-  note "no unattached disks"
-fi
+# These are advisory. The release above is what matters, so a check that cannot
+# run (missing read permission, API change) must degrade to a visible warning
+# rather than abort the script and bury the fact that the instance did go away.
+report_orphans() {
+  local label="$1" fix="$2" found="$3"
+  case "$found" in
+    __ERR__) echo "  WARNING: could not check $label (see stderr). Verify by hand." ;;
+    "")      note "no $label" ;;
+    *)       echo "  WARNING: $label still billing in $REGION: $found"
+             echo "           remove with: $fix" ;;
+  esac
+}
 
-ORPHAN_EIPS=$(ali vpc DescribeEipAddresses --RegionId "$REGION" --Status Available --PageSize 50 \
-  | jget "' '.join(x['AllocationId'] for x in d['EipAddresses']['EipAddress'])")
-if [ -n "$ORPHAN_EIPS" ]; then
-  echo "  WARNING: unassociated EIPs still billing in $REGION: $ORPHAN_EIPS"
-  echo "           remove with: aliyun --profile $PROFILE vpc ReleaseEipAddress --AllocationId <id>"
-else
-  note "no unassociated EIPs"
-fi
+step "Checking for orphaned billable resources"
+DISKS=$(ali ecs DescribeDisks --RegionId "$REGION" --Status Available --PageSize 50 \
+  | jget "' '.join(x['DiskId'] for x in d['Disks']['Disk'])") || DISKS=__ERR__
+report_orphans "unattached disks" \
+  "aliyun --profile $PROFILE ecs DeleteDisk --DiskId <id>" "$DISKS"
+
+EIPS=$(ali vpc DescribeEipAddresses --RegionId "$REGION" --Status Available --PageSize 50 \
+  | jget "' '.join(x['AllocationId'] for x in d['EipAddresses']['EipAddress'])") || EIPS=__ERR__
+report_orphans "unassociated EIPs" \
+  "aliyun --profile $PROFILE vpc ReleaseEipAddress --AllocationId <id>" "$EIPS"
 
 SNAPSHOTS=$(ali ecs DescribeSnapshots --RegionId "$REGION" --PageSize 50 \
-  | jget "d['TotalCount']")
+  | jget "d['TotalCount']") || SNAPSHOTS=__ERR__
 note "snapshots/custom images in $REGION: $SNAPSHOTS (these bill for storage)"
 
 if [ "$PURGE_NETWORK" = "1" ]; then
