@@ -16,6 +16,19 @@
 | k2 gitlink | `4f85812`（并集自动取新侧；节点车队 k2s 已是同世代 `6bc70b02`/`ef6c0b2f`，晚于 kuic 迁移与 auth 合并） |
 | 版本源 | root `package.json` = `0.4.8` |
 
+## 0.9 CI 状态（2026-08-27，两个 PR 均全绿）
+
+| Check | RC #16 (run 33066108088) | 门 #17 (run 33066111459) |
+|---|---|---|
+| actionlint / check-versions / test-web / test-webapp / test-linux-rust / test-gateway-uat / test-macos / test-windows | ✅ | ✅ |
+| scan-pr / osv-scan | ✅ | ✅ |
+| **test-api-db（新）** | — | ✅ `exit=0 top-level-pass=687 config-skips=0 (floor 620)` / `api DB suite OK` |
+| build-windows / smoke-windows | skip（仅 tag/自建 runner 发布路径） | skip |
+
+RC #16 全绿 = 那 14 个钱路提交第一次通过全套 CI。门 #17 的 `test-webapp`（初始化 k2 + fail-closed 错误码门 + k2-plugin 新鲜度）与 `test-api-db`（256 个原本跳过的集成测试，真库）均在 CI 实跑通过。
+
+> **Center 已在跑这份代码**：部署二进制 `vcs.revision=9f5c7940`（本地 main head），08-24 22:06 +08。14 个"未推送"提交其实**已上线生产**，只是 GitHub 空、没过 CI——PR #16 补上后两者都补齐。
+
 ## 1. 已验证（带证据）
 
 ### 1.1 候选代码自身
@@ -26,7 +39,7 @@
 | webapp `tsc --noEmit` | 干净 | 本机 exit 0（先前一次 TS2339 是本机 `node_modules/k2-plugin` 陈旧副本，变异验证 red→green 归因，见 §2.4） |
 | webapp 全量 vitest | **126 文件 / 1384 通过 / 9 跳过 / 0 失败** | 本机 load 55 下 517s（正常膨胀，非回归） |
 | api mock 套件（无库） | 10 次重复：9 绿 / 1 次未归因失败 | 失败发生在 load ≈32，`--- FAIL` 行未被捕获，**不作为发现**；CI `test-macos` 复跑观察 |
-| **api 集成套件（真库）** | **空库 migrate 成功 → `ok` ×2 包 / 顶层 PASS 687 / config-skip 0 / exit 0** | `scripts/ci/api-db-test.sh` 本机对空库 `kaitu_ci`（MariaDB 10.6.28）干跑，38.7s |
+| **api 集成套件（真库）** | **CI 实跑：`exit=0 top-level-pass=687 config-skips=0 (floor 620)`** | 本机空库 `kaitu_ci`（10.6.28）38.7s + CI run 33066111459 job test-api-db 21s，两处一致 687/0 |
 | web message 既有测试 | 2424 通过 | `messages-integrity` 2219 + `homepage-content` 57 + 新 `messages-parity` 148 |
 | OSV | 残留 = 记录在案（image-size ×2 无修复版 + esbuild 2.5 低危） | 与 `project_osv_accepted_residual_vulns` 一致，非新增 |
 
@@ -63,9 +76,10 @@ OSV 红 · web i18n 11 处差异全是死键（现已删除，见 §2.3）· tes
 | 阶段 | 项 | 状态 |
 |---|---|---|
 | 0 | `rc/0.4.8` 推上 origin | ✅ 2026-08-27 |
-| 0 | PR：`rc/0.4.8` → main（旧门下的 CI 基线） | 见 PR 列表 |
-| 1 | PR：`ci/close-verification-gates` → main（新门首跑，含 `test-api-db`） | 见 PR 列表 |
-| 2 | desktop dry-run：`gh workflow run release-desktop.yml --ref ci/close-verification-gates -f target=desktop -f dry_run=true` | 待 PR CI 绿后触发；Windows 腿依赖 SimplySign 会话（§5） |
+| 0 | PR #16 `rc/0.4.8` → main（旧门 CI 基线） | ✅ 全绿 |
+| 1 | PR #17 `ci/close-verification-gates` → main（新门首跑，含 `test-api-db`） | ✅ 全绿 |
+| — | 合并顺序：先 #16 再 #17（stacked） | 待用户 |
+| 2 | desktop dry-run：`gh workflow run release-desktop.yml --ref ci/close-verification-gates -f target=desktop -f dry_run=true` | 待合并后触发；Windows 腿依赖 SimplySign 会话（§5） |
 | 2 | mobile dry-run：`gh workflow run build-mobile.yml --ref ci/close-verification-gates -f platform=both -f dry_run=true` | 同上 |
 | 3 | 真机项（§4） | 需要人 |
 | 4 | 灰度遥测 | 发版后 |
@@ -89,7 +103,7 @@ OSV 红 · web i18n 11 处差异全是死键（现已删除，见 §2.3）· tes
 |---|---|---|---|
 | 首次 review（2026-08-26） | 8.5 | 4.5 | 桌面观测 |
 | 本文提交时 | 9.0 | 5.0 | §1 + §2 的变异验证；CI 尚未在 RC 上跑过 |
-| 阶段 1 PR 全绿 | 9.5 | 5.5 | 新门在 CI 真跑 |
+| **阶段 1 PR 全绿（现状 2026-08-27）** | **9.5** | **5.5** | 两 PR 全套 CI 绿；test-api-db 687/0 在 CI 实跑；Center 已在跑这份代码 |
 | 阶段 2 五平台 dry-run 产物 | 9.5 | 6.5 | "能构建"从未知变已知 |
 | 阶段 3 真机 | 9.5 | 8 | 升级路径 + 握手 + authed>0 |
 | 阶段 4 灰度 72h 干净 | 10 | 9.5 | 遥测 |
