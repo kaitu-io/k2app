@@ -9,17 +9,16 @@
  * The fix for a hand-copied constant is not a better hand-copy; it is a
  * machine-checked one.
  *
- * BLIND SPOT — read this before trusting a green CI run
- * ----------------------------------------------------
- * `k2/` is a private git submodule. The webapp CI job checks out the repo with
- * `actions/checkout@v4` and NO submodule init (.github/workflows/
- * test-webapp-reusable.yml), so `k2/engine/error.go` does not exist there and
- * these assertions are SKIPPED in CI. They run on developer machines and in any
- * job that inits the submodule. Concretely: a commit that changes a code value
- * on both sides incorrectly, pushed without a local test run, reaches main.
- * The always-running half of the gate is `utils/__tests__/errorCatalog.test.ts`
- * — it still fails if a declared code has no copy, just not if the *value* is
- * wrong.
+ * FAIL-CLOSED — a missing Go file is a failure, never a skip
+ * ----------------------------------------------------------
+ * `k2/` is a private git submodule. Until 0.4.8 the webapp CI job checked the
+ * repo out WITHOUT it, and this suite used `describe.skipIf(!available)` — so
+ * the gate had never once executed in CI, while every run reported green. A
+ * skipped gate is an absent gate (same lesson as brands/__tests__/
+ * cross-layer-contract.test.ts). test-webapp-reusable.yml now inits `k2`
+ * before running vitest; if the file is still missing, the job is
+ * misconfigured and this file throws at load so the run is red, not quiet.
+ * Locally: `git submodule update --init k2`.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -30,7 +29,12 @@ import { ENGINE_ERROR_CODES } from '../../utils/errorCatalog';
 const here = path.dirname(fileURLToPath(import.meta.url));
 // webapp/src/services/__tests__ -> repo root
 const GO_FILE = path.resolve(here, '../../../../k2/engine/error.go');
-const available = fs.existsSync(GO_FILE);
+if (!fs.existsSync(GO_FILE)) {
+  throw new Error(
+    `k2 engine error-code gate cannot run: ${GO_FILE} not found.\n` +
+      'This gate MUST NOT be skipped — init the submodule: git submodule update --init k2'
+  );
+}
 
 /** Extract `ErrCodeXxx = NNN` from the const block in k2/engine/error.go. */
 function parseGoCodes(src: string): Record<string, number> {
@@ -45,8 +49,8 @@ function parseGoCodes(src: string): Record<string, number> {
   return out;
 }
 
-describe.skipIf(!available)('ENGINE_ERROR_CODES mirrors k2/engine/error.go', () => {
-  const goCodes = available ? parseGoCodes(fs.readFileSync(GO_FILE, 'utf8')) : {};
+describe('ENGINE_ERROR_CODES mirrors k2/engine/error.go', () => {
+  const goCodes = parseGoCodes(fs.readFileSync(GO_FILE, 'utf8'));
 
   it('parsed a plausible number of Go constants (guards the parser itself)', () => {
     // A regex that silently matches nothing would make every assertion below
@@ -61,21 +65,5 @@ describe.skipIf(!available)('ENGINE_ERROR_CODES mirrors k2/engine/error.go', () 
 
   it('has the same numeric value for every constant', () => {
     expect(ENGINE_ERROR_CODES).toEqual(goCodes);
-  });
-});
-
-describe('k2 cross-check availability', () => {
-  it('records whether the submodule was present for this run', () => {
-    // Not an assertion on `available` — CI legitimately runs without the
-    // submodule. This exists so the reason a check did not run is visible in
-    // the report rather than inferred from a silent skip.
-    expect(typeof available).toBe('boolean');
-    if (!available) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[k2-engine-codes] SKIPPED the Go cross-check: ${GO_FILE} not found ` +
-          '(k2 submodule not initialised). Run `git submodule update --init k2` to enable it.'
-      );
-    }
   });
 });

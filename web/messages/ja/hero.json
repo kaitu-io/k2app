@@ -273,11 +273,6 @@
         "ctLog": "CT ログゼロ露出",
         "portReuse": "ポート再利用"
       },
-      "overleap": {
-        "letter": "K",
-        "name": "k2",
-        "tech": "ECH ステルス + QUIC+TCP-WS デュアルスタック + k2cc 適応型レート制御"
-      },
       "trojan": {
         "letter": "W",
         "name": "WireGuard",

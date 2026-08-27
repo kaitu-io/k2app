@@ -1,0 +1,96 @@
+# CI-only Center config for the api integration suite (ci.yml → test-api-db,
+# driven by scripts/ci/api-db-test.sh which copies this to center/config.yml).
+#
+# api/testutil_test.go looks for ../center/config.yml and SKIPS every real-DB
+# test when it is absent. center/ is gitignored, so no CI job ever had one —
+# 256 of the 1085 api tests (subscription reconcile, Stripe, brand isolation,
+# device auth, cloud overage, …) had never run in CI as of 0.4.8.
+#
+# Nothing here is a secret: the database is a throwaway service container that
+# lives for one job. Keys mirror the dev config's NON-secret sections so local
+# and CI behave the same; anything that would need a real credential (AWS, SMTP,
+# Slack, Stripe, WordGate) is deliberately absent — tests that exercise those
+# paths set their own viper values or hit a mock.
+is_dev: true
+
+server:
+  port: 5800
+  domain: "ci.kaitu.test"
+  self-ca-sign: true
+
+# Matches the `mariadb` service in ci.yml (MARIADB_ROOT_PASSWORD=ci,
+# MARIADB_DATABASE=kaitu). Schema is created by `kaitu-center migrate` in the
+# same job — the suite never AutoMigrates on its own (api/CLAUDE.md).
+database:
+  dsn: "root:ci@tcp(127.0.0.1:3306)/kaitu?charset=utf8mb4&parseTime=True&loc=Local&tls=false"
+
+# testInitConfig() overrides redis.* with an in-process miniredis before and
+# after loading this file; these values only matter to the migrate CLI.
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 1
+
+asynq:
+  concurrency: 10
+  queues:
+    critical: 6
+    default: 3
+    low: 1
+  strict_priority: false
+  default_max_retry: 3
+  default_timeout: "30m"
+
+log:
+  level: warn
+  cloudwatch: false
+
+# Short-circuits cmd/main.go's SSM lookup for the migrate CLI. Not a secret —
+# nothing encrypted with it outlives the job.
+secret_key: "ci-only-not-a-secret-0123456789abcdef0123456789abcdef"
+
+jwt:
+  secret: "ci-only-jwt-secret"
+  access_token_expiry: 86400
+  refresh_token_expiry: 2592000
+
+mail:
+  dev_mode: true
+
+support:
+  email: "support@ci.kaitu.test"
+
+invite:
+  purchase_reward_days: 30
+  inviter_purchase_reward_days: 7
+
+retailer:
+  default_cashback_percent: 10
+  default_cashback_rule: "first_order"
+
+# Same unreachable dev endpoint as the local config: handlers that would call
+# WordGate fail the same way here as on a developer machine.
+wordgate:
+  app_code: "app.ci-placeholder"
+  app_secret: "sk_ci-placeholder"
+  base_url: "http://127.0.0.1:8080"
+  webhook_url: "https://ci.kaitu.test/webhook/wordgate"
+
+files:
+  domain: "https://files.ci.kaitu.test"
+
+frontend_config:
+  web_base_url: "https://www.kaitu.io"
+  app_links:
+    base_url: "https://www.kaitu.io"
+    install_path: "/install"
+    discovery_path: "/discovery"
+    privacy_path: "/privacy"
+    terms_path: "/terms"
+    wallet_path: "/wallet"
+    retailer_rules_path: "/retailer/rules"
+    security_software_help_path: "/help/security-software"
+
+cloud_instance:
+  sync:
+    enabled: false

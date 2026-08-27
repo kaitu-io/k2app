@@ -100,7 +100,19 @@ fetch-rules-embed:
 fetch-embedded-seed:
 	@node scripts/gen-embedded-seed.js || echo "fetch-embedded-seed: skipped (CDN/dist unreachable) — using committed floor"
 
-pre-build: sync-version fetch-rules-embed fetch-embedded-seed
+# Fresh clones: k2 (private submodule) AND its nested third_party/kuic
+# submodule are both required — kuic is a go.mod `replace` target inside k2,
+# so a populated k2 with an empty kuic dir still dies at `go build` with
+# "no required module provides package github.com/kaitu-io/kuic". Nothing else
+# in the build inits either one (CI does it in the workflow, by hand).
+# Guarded on sentinel files so an already-populated checkout is never touched:
+# a bare `submodule update` would detach a developer's k2 branch back to the
+# pinned gitlink and silently build the wrong core.
+init-submodules:
+	@test -f k2/go.mod || git submodule update --init k2
+	@test -f k2/third_party/kuic/go.mod || git -C k2 submodule update --init --recursive
+
+pre-build: init-submodules sync-version fetch-rules-embed fetch-embedded-seed
 	mkdir -p webapp/public
 	echo '{"version":"$(VERSION)","commit":"$(K2_COMMIT)"}' > webapp/public/version.json
 
@@ -173,6 +185,18 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	@mkdir -p release/$(VERSION)
 	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/$(BRAND_PRODUCT)_$(VERSION)_x64-setup.exe release/$(VERSION)/$(BRAND_PRODUCT)_$(VERSION)_x64.exe
 	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/$(BRAND_PRODUCT)_$(VERSION)_x64-setup.exe.sig release/$(VERSION)/$(BRAND_PRODUCT)_$(VERSION)_x64.exe.sig 2>/dev/null || true
+	@echo "--- Brand purity gate (Windows: app binary + installer) ---"
+	@# macOS gets this inside build-macos.sh; Windows only had it in
+	@# release-desktop.yml, so a local build could ship an unchecked brand.
+	@# Staged into a temp dir: release/$(VERSION)/ may hold the OTHER brand's
+	@# installer from a previous build on the same machine, and the NSIS
+	@# installer is LZMA-packed — only k2app.exe (the uncompressed Tauri
+	@# binary, brand forked at compile time) is a real strings check.
+	@set -e; STAGE=$$(mktemp -d); \
+	  cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/k2app.exe "$$STAGE/"; \
+	  cp release/$(VERSION)/$(BRAND_PRODUCT)_$(VERSION)_x64.exe "$$STAGE/"; \
+	  bash scripts/check-desktop-brand-purity.sh $(BRAND) "$$STAGE"; \
+	  rm -rf "$$STAGE"
 	@echo "=== Build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/

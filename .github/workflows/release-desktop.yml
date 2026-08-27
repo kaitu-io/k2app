@@ -6,6 +6,27 @@ on:
     # No blacklist: new platform/suffix added elsewhere never breaks this file.
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      target:
+        # Empty = derive from the ref suffix exactly as a tag push would
+        # (`gh workflow run --ref v0.4.4-windows` keeps working). Set it to
+        # build from a BRANCH, whose name carries no release suffix.
+        description: >-
+          Platform set when the ref is a branch: desktop | windows | macos |
+          linux | overleap | overleap-windows | overleap-macos. Empty = from ref suffix.
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        # Build + sign + brand-purity gate + attach artifacts to the run; skip
+        # the S3/CDN upload and the deploy Slack message. This is how the
+        # release candidate gets built at the real commit WITHOUT releasing it
+        # — 0.4.8 went 25 days / 176 commits with no artifact because the only
+        # way to get one was to ship it.
+        description: 'Dry run — no S3/CDN upload, artifacts attached to the run instead'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -53,8 +74,15 @@ jobs:
         shell: bash
         env:
           REF_NAME: ${{ github.ref_name }}
+          INPUT_TARGET: ${{ inputs.target }}
         run: |
           set -eu
+          # A dispatch with an explicit target builds from any ref (a branch
+          # has no suffix to parse). Prefixed so it hits the same `*-<suffix>`
+          # patterns as a tag would.
+          if [ -n "${INPUT_TARGET:-}" ]; then
+            REF_NAME="dispatch-${INPUT_TARGET}"
+          fi
           # Each desktop platform×brand entry as JSON. Keep in sync with the
           # release-job-step expectations (matrix.runner / target / platform
           # / brand). Linux has no overleap channel (Task 5's hard
@@ -104,6 +132,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.should_run == 'true'
     uses: ./.github/workflows/test-webapp-reusable.yml
+    # The reusable job inits the private k2 submodule (engine error-code gate).
+    secrets: inherit
 
   check-versions:
     needs: plan
@@ -468,14 +498,42 @@ jobs:
 
       - name: Brand purity gate (Windows)
         if: matrix.platform == 'Windows' && success()
+        env:
+          BRAND_PRODUCT: ${{ matrix.brand == 'overleap' && 'Overleap' || 'Kaitu' }}
         run: |
+          # Brand-exact file, not the directory: this runner is persistent, so
+          # release/${VERSION}/ accumulates BOTH brands' installers across
+          # runs and a directory scan would flag the other brand's exe as a
+          # leak. The NSIS installer is LZMA-packed (strings sees only the
+          # stub); the uncompressed app binary is gated inside `make
+          # build-windows` itself.
           VERSION=$(node -p "require('./package.json').version")
-          bash scripts/check-desktop-brand-purity.sh ${{ matrix.brand }} "release/${VERSION}"
+          bash scripts/check-desktop-brand-purity.sh ${{ matrix.brand }} "release/${VERSION}/${BRAND_PRODUCT}_${VERSION}_x64.exe"
 
       # --- Upload artifacts to S3 + CDN invalidation ---
 
+      # Dry run: attach the signed, purity-gated artifacts to the workflow run
+      # instead of shipping them. Version- and brand-exact paths — the Windows
+      # runner is persistent and release/ holds every version and both brands
+      # it has ever built (see the purity-gate note above).
+      - name: Resolve version for artifact paths (dry run)
+        if: success() && github.event_name == 'workflow_dispatch' && inputs.dry_run
+        shell: bash
+        run: echo "RELEASE_VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+
+      - name: Attach artifacts to run (dry run)
+        if: success() && github.event_name == 'workflow_dispatch' && inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.brand }}
+          path: |
+            release/${{ env.RELEASE_VERSION }}/${{ matrix.brand == 'overleap' && 'Overleap' || 'Kaitu' }}_*
+            release/${{ env.RELEASE_VERSION }}/k2-linux-*
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload to S3 + invalidate CDN
-        if: success()
+        if: success() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -498,7 +556,7 @@ jobs:
       # --- Notifications ---
 
       - name: Notify Slack on build success
-        if: success()
+        if: success() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")

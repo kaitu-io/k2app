@@ -273,11 +273,6 @@
         "ctLog": "CT 日誌零暴露",
         "portReuse": "端口復用"
       },
-      "kaitu": {
-        "letter": "K",
-        "name": "k2",
-        "tech": "ECH 隱身 + QUIC+TCP-WS 雙棧 + k2cc 自適應速率控制"
-      },
       "trojan": {
         "letter": "W",
         "name": "WireGuard",

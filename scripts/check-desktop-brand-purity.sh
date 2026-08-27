@@ -85,8 +85,12 @@ while IFS= read -r BIN; do
     strings "$BIN" | grep -Ei "$FORBIDDEN" | head -5 >&2
     FAIL=1
   fi
-done < <( (find "$TARGET" -type f ! -name 'k2*' \( -perm +111 -o -name '*.exe' -o -name '*.dll' \) 2>/dev/null || \
-           find "$TARGET" -type f ! -name 'k2*' \( -perm /111 -o -name '*.exe' -o -name '*.dll' \) 2>/dev/null) )
+done < <( (find "$TARGET" -type f ! -name 'k2' ! -name 'k2.exe' ! -name 'k2-*' \( -perm +111 -o -name '*.exe' -o -name '*.dll' \) 2>/dev/null || \
+           find "$TARGET" -type f ! -name 'k2' ! -name 'k2.exe' ! -name 'k2-*' \( -perm /111 -o -name '*.exe' -o -name '*.dll' \) 2>/dev/null) )
+# ^ Exclusions name the k2 SIDECAR exactly (k2, k2.exe, k2-<triple>). The old
+#   `k2*` glob also swallowed k2app.exe — the Tauri app binary itself on
+#   Windows (Cargo crate name `k2app`) — so a Windows target dir was never
+#   actually string-checked. `make build-windows` stages that binary here.
 
 if [ "$FAIL" = 0 ]; then
   echo "PURITY OK ($BRAND): $TARGET"
