@@ -110,7 +110,11 @@
       "requestFailed": "Could not reach the payment service. Please try again.",
       "noPlans": "No subscription plans are available right now. Please check back soon."
     },
-    "inviteRewardThresholdHint": "This plan doesn't qualify for the friend referral bonus. Choose a {{months}}-month or longer plan for your first order to get {{days}} extra days."
+    "inviteRewardThresholdHint": "This plan doesn't qualify for the friend referral bonus. Choose a {{months}}-month or longer plan for your first order to get {{days}} extra days.",
+    "manage": {
+      "blockedHint": "You have an active auto-renewing subscription (manage it below). You cannot purchase again here while it is active — this prevents double billing.",
+      "conflictAlert": "You already have an active subscription and cannot purchase again. Use the subscription management entry to make changes."
+    }
   },
   "deviceInstall": {
     "title": "Client Download",

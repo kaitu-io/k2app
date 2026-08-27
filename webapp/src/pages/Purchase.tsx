@@ -36,6 +36,7 @@ import MembershipBenefits from '../components/MembershipBenefits';
 import EmailLoginForm from '../components/EmailLoginForm';
 import { IosSubscribePanel, IosMembershipPanel } from '../components/ios';
 import StripePurchasePanel from '../components/stripe/StripePurchasePanel';
+import SubscriptionManagePanel from '../components/SubscriptionManagePanel';
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import {
   Warning as WarningIcon,
@@ -745,6 +746,15 @@ export default function Purchase() {
             setOrderData(null);
             showAlert(getErrorMessage(response.code, response.message, t), 'error');
           }
+        } else if (response.code === ERROR_CODES.CONFLICT) {
+          // 后端互斥门(竞态兜底:本地订阅态陈旧时前端拦截失效,由硬门接住)
+          console.warn('[Purchase] Active subscription conflict:', response.code, response.message);
+          if (!preview) {
+            setCampaignError("");
+            setOrderData(null);
+            showAlert(t('purchase:purchase.manage.conflictAlert'), 'warning');
+            await fetchUser(true); // 刷新 subscriptions → affordance 翻到 manage,下次渲染即拦截
+          }
         } else {
           // 只在非预览模式下清除状态和显示错误提示
           if (!preview) {
@@ -768,7 +778,7 @@ export default function Purchase() {
     } finally {
       setIsLoading(false);
     }
-  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog, user, isPrivateNode, selectedRegion]);
+  }, [plan, campaignCode, showAlert, t, isAuthenticated, openLoginDialog, user, isPrivateNode, selectedRegion, fetchUser]);
 
   // 用于标记是否已选择过默认套餐（避免 plan 变化触发重新获取套餐列表）
   const defaultPlanSelectedRef = useRef(false);
@@ -906,6 +916,15 @@ export default function Purchase() {
   // 纯订阅模式——WordGate 订单/campaign/专属节点流对该品牌永不运行。
   if (!iap && brandConfig.features.stripeCheckout) {
     return <StripePurchasePanel plans={plans} plansLoading={plansLoading} />;
+  }
+
+  // 互斥(spec 2026-08-22):任何 provider 的活跃续订存在时,WordGate 一次性充值
+  // 一律拦截,改为管理面板+清晰提醒(后端 api_create_order 有同判据硬门兜底)。
+  // 注意只拦 manage;status(一次性会员未到期)保持既有购买流。
+  // 专属线路(purchaseProduct === 'private_node')豁免:独立计费,与会员期限零耦合,
+  // 双付论证对它不成立(见后端 api_order.go 同一豁免的注释)。
+  if (!iap && affordance.mode === 'manage' && purchaseProduct !== 'private_node') {
+    return <SubscriptionManagePanel activeSub={affordance.activeSub} />;
   }
 
   // Brand payment-channel gate: without WordGate (web/desktop flow) and

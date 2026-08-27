@@ -306,6 +306,26 @@ func TestCreditStripeInvoice(t *testing.T) {
 		assert.Len(t, hist, 2)
 	})
 
+	t.Run("CoverThrough_DeltaZeroStillCoversPeriodEnd", func(t *testing.T) {
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		subID := "sub_" + stripeUniq()
+
+		require.NoError(t, creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now, now+month)))
+
+		// 模拟状态路径先行推进 period(漏 credit):订阅行推到第二周期末。
+		e2 := now + 2*month
+		require.NoError(t, db.Get().Model(&Subscription{}).
+			Where("provider = ? AND provider_subscription_id = ?", "stripe", subID).
+			Update("current_period_end", e2).Error)
+
+		// 续费 invoice 到达:priorPeriodEnd(=e2) == PeriodEnd(=e2) → delta=0。
+		require.NoError(t, creditInTx(mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now+month, e2)))
+		var got User
+		require.NoError(t, db.Get().First(&got, u.ID).Error)
+		assert.GreaterOrEqual(t, got.ExpiredAt, e2, "cover-through: 入账后权益必须覆盖到周期末")
+	})
+
 	t.Run("MissingUserUUID_OnFirstBind_Refused", func(t *testing.T) {
 		u := createStripeTestUser(t, BrandOverleap)
 		p := createStripeTestPlan(t)
