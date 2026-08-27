@@ -69,7 +69,16 @@ ${Using:StrFunc} UnStrRep
   nsExec::ExecToStack 'sc query ${SERVICE_NAME}'
   Pop $0
   Pop $1
+  ; Every "a" open below is followed by FileSeek 0 END, and that seek is load
+  ; bearing: NSIS opens mode "a" with the file pointer at the START, not the
+  ; end. Without it each FileWrite overwrites from offset 0, so a log built
+  ; from N sequential appends keeps only whatever the longest single write
+  ; left behind. Both of these files shipped that way — install-diag.log lost
+  ; service_install_exit/_output entirely (the one field #3297 needs), and
+  ; this file kept only fragments of its step trace. Do not "simplify" the
+  ; seeks away.
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[1] sc query ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
   FileClose $9
 
@@ -77,6 +86,7 @@ ${Using:StrFunc} UnStrRep
   Pop $0
   Pop $1
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[1] tasklist k2.exe: exit=$0 output=$1$\r$\n"
   FileClose $9
 
@@ -92,6 +102,7 @@ ${Using:StrFunc} UnStrRep
   Pop $0
   Pop $1
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[3] sc failure ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
   FileClose $9
 
@@ -103,6 +114,7 @@ ${Using:StrFunc} UnStrRep
   Pop $1
   DetailPrint "net stop ${SERVICE_NAME}: exit=$0"
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[4] net stop ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
   FileClose $9
 
@@ -118,6 +130,7 @@ ${Using:StrFunc} UnStrRep
   Pop $0
   Pop $1
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[5] sc query after net stop: exit=$0 output=$1$\r$\n"
   FileClose $9
 
@@ -125,6 +138,7 @@ ${Using:StrFunc} UnStrRep
   Pop $0
   Pop $1
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[5] tasklist after net stop: exit=$0 output=$1$\r$\n"
   FileClose $9
 
@@ -134,6 +148,7 @@ ${Using:StrFunc} UnStrRep
   Pop $0
   Pop $1
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[6] sc delete ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
   FileClose $9
 
@@ -150,6 +165,7 @@ ${Using:StrFunc} UnStrRep
   Pop $0
   Pop $1
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[7] taskkill /F k2.exe: exit=$0 output=$1$\r$\n"
   FileClose $9
 
@@ -166,6 +182,7 @@ ${Using:StrFunc} UnStrRep
   Pop $0
   Pop $1
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[9] tasklist after kill+wait: exit=$0 output=$1$\r$\n"
   FileClose $9
 
@@ -174,6 +191,7 @@ ${Using:StrFunc} UnStrRep
   Pop $0
   Pop $1
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[9] retry taskkill: exit=$0$\r$\n"
   FileClose $9
   Sleep 3000
@@ -190,6 +208,7 @@ ${Using:StrFunc} UnStrRep
   ; Step 11: Verify k2.exe file is deletable
   IfFileExists "$INSTDIR\k2.exe" 0 _pre_k2_gone
     FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileSeek $9 0 END
     FileWrite $9 "[11] k2.exe STILL EXISTS after Delete — file is LOCKED$\r$\n"
     FileClose $9
     DetailPrint "WARNING: k2.exe still locked!"
@@ -202,6 +221,7 @@ ${Using:StrFunc} UnStrRep
     Goto _pre_k2_check_done
   _pre_k2_gone:
     FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileSeek $9 0 END
     FileWrite $9 "[11] k2.exe deleted OK$\r$\n"
     FileClose $9
   _pre_k2_check_done:
@@ -213,10 +233,12 @@ ${Using:StrFunc} UnStrRep
   RMDir /r "$LOCALAPPDATA\io.kaitu.desktop\EBWebView\Default\Cache"
   RMDir /r "$LOCALAPPDATA\io.kaitu.desktop\EBWebView\Default\Code Cache"
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "[12] EBWebView cache cleared (Local Storage preserved)$\r$\n"
   FileClose $9
 
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileSeek $9 0 END
   FileWrite $9 "=== PREINSTALL completed ===$\r$\n"
   FileClose $9
 
@@ -269,6 +291,7 @@ ${Using:StrFunc} UnStrRep
 
   ; Append verification to diagnostic file
   FileOpen $9 "$INSTDIR\install-diag.log" a
+  FileSeek $9 0 END
   FileWrite $9 "post_install_sc_query_exit=$0$\r$\n"
   FileWrite $9 "post_install_sc_query_output=$1$\r$\n"
   FileClose $9

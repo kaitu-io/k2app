@@ -596,6 +596,212 @@ mod windows {
         out.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
         Ok(out)
     }
+
+    // Registry-backed tests for the F2/F3 fixes. They build synthetic
+    // Uninstall entries in a REAL registry and read them back through the
+    // production code, because that is the only place those bugs are visible:
+    // winreg_util's string helpers are covered portably elsewhere, and no
+    // amount of string testing can show that a 64-bit process opened the
+    // WOW6432Node view. Delete `KEY_WOW64_32KEY` from enumerate() and every
+    // other test in this crate still passes — wow64_32bit_view_is_scanned is
+    // the only thing that goes red.
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::fs;
+        use std::io;
+
+        /// An Uninstall entry in one registry view, plus a temp install dir.
+        /// Removed on drop so a failing assertion cannot leave the machine or
+        /// a developer's registry dirty.
+        struct Fixture {
+            hive: winreg::HKEY,
+            view: u32,
+            key: String,
+            dir: std::path::PathBuf,
+        }
+
+        impl Fixture {
+            /// Creates the install dir (one real exe + one uninstaller that
+            /// collect_exes must filter out) and an empty Uninstall key.
+            /// Err means the view is not writable — HKLM without elevation.
+            fn new(hive: winreg::HKEY, view: u32, key: &str) -> io::Result<Self> {
+                let dir = std::env::temp_dir().join(key);
+                let _ = fs::remove_dir_all(&dir);
+                fs::create_dir_all(&dir)?;
+                fs::write(dir.join("k2gateapp.exe"), b"MZ")?;
+                fs::write(dir.join("unins000.exe"), b"MZ")?;
+
+                let root = RegKey::predef(hive);
+                let (uninstall, _) =
+                    root.create_subkey_with_flags(UNINSTALL, KEY_READ | KEY_WRITE | view)?;
+                let (k, _) = uninstall.create_subkey_with_flags(key, KEY_READ | KEY_WRITE | view)?;
+                k.set_value("DisplayName", &key.to_string())?;
+
+                Ok(Self { hive, view, key: key.to_string(), dir })
+            }
+
+            fn key(&self) -> RegKey {
+                RegKey::predef(self.hive)
+                    .open_subkey_with_flags(UNINSTALL, KEY_READ | KEY_WRITE | self.view)
+                    .and_then(|u| u.open_subkey_with_flags(&self.key, KEY_READ | KEY_WRITE | self.view))
+                    .expect("fixture key vanished")
+            }
+
+            fn set_str(&self, name: &str, value: &str) {
+                self.key().set_value(name, &value.to_string()).expect("set_value");
+            }
+
+            fn set_u32(&self, name: &str, value: u32) {
+                self.key().set_value(name, &value).expect("set_value u32");
+            }
+
+            fn dir_str(&self) -> String {
+                self.dir.to_string_lossy().to_string()
+            }
+        }
+
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                if let Ok(u) = RegKey::predef(self.hive)
+                    .open_subkey_with_flags(UNINSTALL, KEY_READ | KEY_WRITE | self.view)
+                {
+                    let _ = u.delete_subkey_all(&self.key);
+                }
+                let _ = fs::remove_dir_all(&self.dir);
+            }
+        }
+
+        /// Scan one view only — the whole-machine enumerate() walks every
+        /// installed program's tree, which is far too slow to run per-test.
+        fn scan_one(hive: winreg::HKEY, view: u32) -> Vec<InstalledApp> {
+            let mut out = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            scan_hive(RegKey::predef(hive), view, &mut out, &mut seen);
+            out
+        }
+
+        fn find<'a>(apps: &'a [InstalledApp], label: &str) -> Option<&'a InstalledApp> {
+            apps.iter().find(|a| a.label == label)
+        }
+
+        #[test]
+        fn hkcu_entry_is_enumerated_with_its_exes() {
+            let f = Fixture::new(HKEY_CURRENT_USER, 0, "K2GateTest_HkcuBasic").unwrap();
+            f.set_str("InstallLocation", &f.dir_str());
+
+            let apps = scan_one(HKEY_CURRENT_USER, 0);
+            let app = find(&apps, "K2GateTest_HkcuBasic")
+                .expect("synthetic HKCU Uninstall entry was not enumerated");
+            assert!(
+                app.process_names.iter().any(|n| n == "k2gateapp.exe"),
+                "install dir exe not collected: {:?}",
+                app.process_names
+            );
+            assert!(
+                !app.process_names.iter().any(|n| n.starts_with("unins")),
+                "uninstaller leaked into process_names: {:?}",
+                app.process_names
+            );
+        }
+
+        // F3: InstallLocation is optional (NSIS omits it). Both fallbacks have
+        // to produce a usable directory or the entry is dropped entirely,
+        // which is what made the list "近乎为空" on real machines.
+        #[test]
+        fn display_icon_supplies_the_missing_install_dir() {
+            let f = Fixture::new(HKEY_CURRENT_USER, 0, "K2GateTest_IconFallback").unwrap();
+            f.set_str("DisplayIcon", &format!("{}\\k2gateapp.exe,0", f.dir_str()));
+
+            let apps = scan_one(HKEY_CURRENT_USER, 0);
+            let app = find(&apps, "K2GateTest_IconFallback")
+                .expect("entry with only DisplayIcon was dropped (F3 regression)");
+            assert!(app.process_names.iter().any(|n| n == "k2gateapp.exe"));
+        }
+
+        #[test]
+        fn uninstall_string_supplies_the_missing_install_dir() {
+            let f = Fixture::new(HKEY_CURRENT_USER, 0, "K2GateTest_UninstFallback").unwrap();
+            f.set_str("UninstallString", &format!("\"{}\\unins000.exe\" /S", f.dir_str()));
+
+            let apps = scan_one(HKEY_CURRENT_USER, 0);
+            let app = find(&apps, "K2GateTest_UninstFallback")
+                .expect("entry with only UninstallString was dropped (F3 regression)");
+            assert!(app.process_names.iter().any(|n| n == "k2gateapp.exe"));
+        }
+
+        #[test]
+        fn system_components_stay_out_of_the_user_facing_list() {
+            let f = Fixture::new(HKEY_CURRENT_USER, 0, "K2GateTest_SysComponent").unwrap();
+            f.set_str("InstallLocation", &f.dir_str());
+            f.set_u32("SystemComponent", 1);
+
+            let apps = scan_one(HKEY_CURRENT_USER, 0);
+            assert!(
+                find(&apps, "K2GateTest_SysComponent").is_none(),
+                "SystemComponent=1 entry surfaced in the app list"
+            );
+        }
+
+        // F2, the root cause: 32-bit NSIS installers (WeChat 4.x, Douyin,
+        // Edge, Steam) land in WOW6432Node, invisible to a 64-bit process
+        // that does not ask for KEY_WOW64_32KEY. The fixture is written
+        // through that same view, so it exists ONLY there — the 64-bit and
+        // HKCU scans cannot see it. This goes through the real enumerate()
+        // rather than scan_one, because the bug was in which views
+        // enumerate() asks for, not in scan_hive itself.
+        #[test]
+        fn wow64_32bit_view_is_scanned() {
+            let f = match Fixture::new(HKEY_LOCAL_MACHINE, KEY_WOW64_32KEY, "K2GateTest_Wow6432") {
+                Ok(f) => f,
+                Err(e) => {
+                    assert!(
+                        std::env::var_os("CI").is_none(),
+                        "cannot write HKLM ({e}) — the CI runner is no longer elevated. \
+                         That also invalidates the Windows service install gate; fix the \
+                         runner rather than relaxing this test."
+                    );
+                    eprintln!(
+                        "SKIP wow64_32bit_view_is_scanned: HKLM is not writable ({e}). \
+                         Run an elevated shell to exercise the F2 regression guard."
+                    );
+                    return;
+                }
+            };
+            f.set_str("InstallLocation", &f.dir_str());
+
+            // Sanity: the fixture must be invisible to the other two scans,
+            // otherwise passing this test would prove nothing about the view.
+            // Both are asserted — enumerate() reads three views, and a pass
+            // that came from either of the other two would be a false green.
+            assert!(
+                find(&scan_one(HKEY_LOCAL_MACHINE, KEY_WOW64_64KEY), "K2GateTest_Wow6432").is_none(),
+                "fixture leaked into the 64-bit view — it is not exercising WOW6432Node"
+            );
+            assert!(
+                find(&scan_one(HKEY_CURRENT_USER, 0), "K2GateTest_Wow6432").is_none(),
+                "fixture leaked into HKCU — it is not exercising WOW6432Node"
+            );
+
+            let started = std::time::Instant::now();
+            let apps = enumerate().expect("enumerate failed");
+            let elapsed = started.elapsed();
+            eprintln!("enumerate() over the real registry took {elapsed:?} ({} apps)", apps.len());
+
+            assert!(
+                find(&apps, "K2GateTest_Wow6432").is_some(),
+                "a 32-bit-view Uninstall entry was not enumerated — enumerate() is not \
+                 scanning HKLM with KEY_WOW64_32KEY, which is exactly the F2 bug that made \
+                 WeChat/Douyin/Edge/Steam invisible on real machines"
+            );
+            // Loose ceiling: this walks every installed program's tree and
+            // blocks the app-bypass page. Only catches pathological growth.
+            assert!(
+                elapsed < std::time::Duration::from_secs(120),
+                "enumerate() took {elapsed:?} — the app list would hang the UI"
+            );
+        }
+    }
 }
 
 #[tauri::command]
