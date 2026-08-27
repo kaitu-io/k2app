@@ -584,7 +584,9 @@ jobs:
           BRAND: ${{ matrix.brand }}
 
       - name: Notify Slack on build failure
-        if: failure()
+        # dry-run 不发失败告警（避免 SimplySign 会话断开等 dispatch 演练误报刷 Slack）；
+        # 真实 tag 发版 (push) 仍照常告警。
+        if: failure() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         shell: bash
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
@@ -609,7 +611,8 @@ jobs:
   # Runs on GitHub-hosted runner so it works even when self-hosted runner is down.
   notify-infra-failure:
     needs: [release]
-    if: failure()
+    # dry-run 演练的失败不算基础设施故障，不发告警；真实 tag 发版仍照常。
+    if: failure() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

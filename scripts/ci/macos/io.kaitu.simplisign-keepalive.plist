@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SimplySign keep-alive LaunchAgent (GUI-session domain).
+
+  This MUST be loaded into the user's Aqua GUI domain, not a LaunchDaemon:
+  reconnecting the SimplySign cloud session drives the SimplySign Desktop menu
+  bar via AppleScript, which needs a real GUI + Accessibility permission. The
+  release runner's own LaunchDaemon (SessionCreate=true, headless) cannot do
+  this — that is the whole reason this agent exists.
+
+  Install with scripts/ci/macos/install-simplisign-keepalive.sh, which copies
+  simplisign-keepalive.sh + simplisign-login.sh into the stable install dir
+  below (NOT the ephemeral runner checkout, which is wiped each run), replaces
+  __HOME__, and runs:  launchctl bootstrap gui/$(id -u) <this plist>
+  Do NOT hardcode a username here — the installer substitutes __HOME__.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.kaitu.simplisign-keepalive</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__HOME__/Library/Application Support/kaitu-simplisign/simplisign-keepalive.sh</string>
+    </array>
+
+    <!-- Every 90 minutes; the cloud session drops every ~2-3h, so this stays
+         ahead of it. RunAtLoad reconnects immediately on login/boot. -->
+    <key>StartInterval</key>
+    <integer>5400</integer>
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/simplisign-keepalive.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/simplisign-keepalive.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>

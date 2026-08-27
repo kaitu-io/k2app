@@ -289,7 +289,8 @@ jobs:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
       - name: Notify Slack on iOS failure
-        if: failure()
+        # dry-run 演练不发失败告警（避免误报）；真实 tag 发版仍照常告警。
+        if: failure() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
             --platform "iOS (${{ matrix.brand }})" \
@@ -498,7 +499,8 @@ jobs:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
       - name: Notify Slack on Android failure
-        if: failure()
+        # dry-run 演练不发失败告警（避免误报）；真实 tag 发版仍照常告警。
+        if: failure() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
             --platform "Android (${{ matrix.brand }})" \
