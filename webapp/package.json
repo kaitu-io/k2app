@@ -13,6 +13,7 @@
     "build:openwrt": "vite build --config vite.config.openwrt.ts",
     "dev:openwrt": "vite --config vite.config.openwrt.ts",
     "preview": "vite preview",
+    "pretest": "bash ../scripts/check-k2-plugin-fresh.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

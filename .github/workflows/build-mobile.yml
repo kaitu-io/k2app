@@ -16,6 +16,15 @@ on:
           - ios
           - android
           - both
+      dry_run:
+        # Build + sign + brand-purity gate + attach IPA/APK to the run; skip
+        # the App Store Connect upload, the S3 upload and the deploy Slack
+        # message. Lets the release candidate be built at the real commit
+        # without shipping it (same rationale as release-desktop.yml).
+        description: 'Dry run — no App Store Connect / S3 upload, artifacts attached to the run only'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: build-mobile-${{ github.ref }}
@@ -44,6 +53,8 @@ jobs:
       inputs.platform == 'android' ||
       inputs.platform == 'both'
     uses: ./.github/workflows/test-webapp-reusable.yml
+    # The reusable job inits the private k2 submodule (engine error-code gate).
+    secrets: inherit
 
   # Mobile workflow owns only mobile suffixes (-ios, -android). Bare v* (no
   # suffix) means "no filter" → release everything → run both jobs. Any other
@@ -237,7 +248,7 @@ jobs:
       # export above still run for overleap so the build is verified and
       # available as a workflow artifact; only the ASC upload is kaitu-only.
       - name: Upload to App Store Connect
-        if: matrix.brand == 'kaitu'
+        if: matrix.brand == 'kaitu' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -262,7 +273,7 @@ jobs:
         run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
 
       - name: Notify Slack on iOS success
-        if: success()
+        if: success() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         run: |
           VERSION=$(node -p "require('./package.json').version")
           if [ "${{ matrix.brand }}" = "kaitu" ]; then
@@ -466,6 +477,7 @@ jobs:
           retention-days: 30
 
       - name: Upload Android APK to S3
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         env:
           BRAND: ${{ matrix.brand }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -474,7 +486,7 @@ jobs:
         run: bash scripts/ci/upload-release.sh --android
 
       - name: Notify Slack on Android success
-        if: success()
+        if: success() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         run: |
           VERSION=$(node -p "require('./package.json').version")
           CDN_BASE="https://dl.kaitu.io/${{ matrix.brand }}/android"

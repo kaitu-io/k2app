@@ -14,6 +14,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # k2 is a private submodule. webapp/src/services/__tests__/
+      # k2-engine-codes.test.ts cross-checks ENGINE_ERROR_CODES against
+      # k2/engine/error.go and used to `skipIf` the file was absent — which it
+      # always was here, so that gate had never run in CI (ErrCodeTimeout=408
+      # shipped that way). It now fails closed, so this init is load-bearing:
+      # every caller must pass `secrets: inherit` (ci.yml, build-mobile.yml,
+      # release-desktop.yml). Only k2 itself is needed — one Go file — so no
+      # --recursive and no kuic key.
+      - name: Setup SSH for private submodule
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+
+      - name: Init k2 submodule (engine error-code gate reads k2/engine/error.go)
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init k2
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -59,3 +75,9 @@ jobs:
       - name: Type-check K2 Plugin (mobile)
         run: npx tsc --noEmit
         working-directory: mobile/plugins/k2-plugin
+
+      # --noEmit above proves src/ compiles; it says nothing about dist/, which
+      # is what the webapp's tsc and the yarn `file:` copy actually consume and
+      # which is committed by hand. Rebuild it and diff.
+      - name: K2 Plugin dist is rebuilt from src
+        run: bash scripts/check-k2-plugin-fresh.sh

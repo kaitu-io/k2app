@@ -19,14 +19,25 @@ func Migrate() error {
 	// field has been removed; physically purge any leftover soft-deleted rows
 	// before AutoMigrate so they don't reappear as "active" rows under the new
 	// query semantics. Idempotent — empty tables return RowsAffected=0.
+	//
+	// Guarded on table AND column: a fresh database (CI service container, new
+	// dev box) has no login_identifies at all, and once AutoMigrate has built it
+	// from the current model it has no deleted_at column either. In both cases
+	// there is nothing to purge — and the raw DELETE would fail (1146 / 1054)
+	// and abort the whole migration, which is what made `migrate` unusable on
+	// an empty DB before 0.4.8. Production still carries the column and still
+	// gets purged.
 	if database := db.Get(); database != nil {
-		result := database.Exec("DELETE FROM login_identifies WHERE deleted_at IS NOT NULL")
-		if result.Error != nil {
-			log.Errorf(ctx, "failed to purge soft-deleted login_identifies: %v", result.Error)
-			return result.Error
-		}
-		if result.RowsAffected > 0 {
-			log.Infof(ctx, "purged %d legacy soft-deleted login_identifies rows", result.RowsAffected)
+		mig := database.Migrator()
+		if mig.HasTable(&LoginIdentify{}) && mig.HasColumn(&LoginIdentify{}, "deleted_at") {
+			result := database.Exec("DELETE FROM login_identifies WHERE deleted_at IS NOT NULL")
+			if result.Error != nil {
+				log.Errorf(ctx, "failed to purge soft-deleted login_identifies: %v", result.Error)
+				return result.Error
+			}
+			if result.RowsAffected > 0 {
+				log.Infof(ctx, "purged %d legacy soft-deleted login_identifies rows", result.RowsAffected)
+			}
 		}
 	}
 

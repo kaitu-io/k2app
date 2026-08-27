@@ -14,6 +14,8 @@ concurrency:
 jobs:
   test-webapp:
     uses: ./.github/workflows/test-webapp-reusable.yml
+    # The reusable job inits the private k2 submodule (engine error-code gate).
+    secrets: inherit
 
   # web/ had NO CI coverage until now, which meant its brand-leak guards
   # (tests/brand-guard.test.ts, tests/brand-leak-ssr.test.tsx) and the
@@ -286,6 +288,44 @@ jobs:
       - name: Go test API (mock-only)
         run: go test ./... -count=1
         working-directory: api
+
+  # --- api integration suite against a real database ---
+  # "mock-only" above is literal: api/testutil_test.go skips every test guarded
+  # by skipIfNoConfig() when ../center/config.yml is absent, and center/ is
+  # gitignored, so no CI checkout has ever had one. At 0.4.8 that was 256 of
+  # 1085 tests — subscription reconcile, Stripe credit, brand isolation, device
+  # auth, cloud overage — all reported green without running. This job gives
+  # them a throwaway MariaDB (same major as the shared dev instance), runs the
+  # real `migrate`, and fails on ANY config-skip, so a green run here means the
+  # DB half actually executed. Script: scripts/ci/api-db-test.sh.
+  test-api-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MARIADB_ROOT_PASSWORD: ci
+          MARIADB_DATABASE: kaitu
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - name: Go test API (real MariaDB, zero config-skips)
+        run: bash scripts/ci/api-db-test.sh .github/ci/center-config.yml
 
   # --- Gateway (k2r) soft-router UAT — no hardware, runs in CI (Tier 3a) ---
   # The k2/test/k2r-uat Docker harness (lan-client → k2r TPROXY → k2s) exercises
