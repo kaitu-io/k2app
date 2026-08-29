@@ -367,7 +367,9 @@ App is the sole management UI for a headless k2r router — the old embedded-web
 - **Helper API routing**: `adb-*` actions route to `/api/helper` (not `/api/core`). Tauri bridge uses `daemon_helper_exec` IPC command. Standalone bridge checks `action.startsWith('adb-')` to pick endpoint. New daemon helper actions must follow this pattern.
 - **Config-driven connect**: `_k2.run('up', config)` where config is assembled from the selected tunnel URL + user preferences via `buildConnectConfig`
 - **AuthGate**: Wraps all routes — checks service readiness + version match before rendering
-- **Viewport scaling**: Uses CSS `zoom` (not `transform:scale()`) to avoid breaking `position:fixed` elements (react-joyride spotlight, MUI Portals)
+- **Viewport scaling**: `main.tsx` puts CSS `zoom` (not `transform:scale()`) on **`#root`** when the window is narrower than the 430px design width — `transform` would create a containing block and break `position:fixed`. `--app-zoom` on `<html>` mirrors the factor. Two consequences that bite:
+  - **Anything measured in design-space pixels must render inside `#root`.** A MUI `<Portal>` defaults to `document.body`, which is *outside* the zoom — design-space coordinates are then read as device pixels. This clipped half of `FeedbackButton` on every sub-430px viewport (all iPhones below Pro Max) until it was given `container={() => document.getElementById('root')}`. Pass that container to any portal you position numerically; `useDraggable` documents the contract.
+  - `#discover-overlay` is the deliberate *opposite*: a `<body>` sibling of `#root` with no zoom, so the Discover tab's cross-origin iframe renders at native scale (WebKit mis-renders zoomed iframes).
 - **Onboarding**: Button-driven flow (Next/Done/Skip) with step indicator. Includes invite share phase (navigates to /invite)
 - **Dev mode**: `_platform.setDevEnabled?.(true)` enables WebView inspection (iOS `isInspectable`, Android `WebContentsDebugging`). State persisted to localStorage, auto-restored on launch
 

@@ -1,8 +1,9 @@
+import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Fab, Portal, Tooltip, useTheme, keyframes } from '@mui/material';
 import { Feedback as FeedbackIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import { useDraggable } from '../hooks/useDraggable';
+import { useDraggable, getLogicalViewport } from '../hooks/useDraggable';
 import { useLayout } from '../stores';
 import { useFeedbackStore } from '../stores/feedback.store';
 
@@ -25,9 +26,23 @@ export default function FeedbackButton() {
   const { sidebarWidth, isDesktop } = useLayout();
   const unreadCount = useFeedbackStore((s) => s.unreadCount);
 
+  // MUI's <Portal> defaults to document.body, which sits OUTSIDE the CSS `zoom`
+  // that main.tsx puts on #root to fit narrow viewports. useDraggable computes
+  // design-space coordinates (see its coordinate-space contract), so a body-
+  // mounted button reads them as device pixels and overhangs the right edge —
+  // clipped by half on any viewport under 430px, i.e. every iPhone below Pro
+  // Max and any desktop window dragged narrower than the 430px design width.
+  // Portaling into #root puts the button in the space the math assumes.
+  const portalContainer = useCallback(
+    () => document.getElementById('root') ?? document.body,
+    [],
+  );
+
   const { position, isDragging, bindDrag, elementRef } = useDraggable({
     storageKey: 'k2_feedback_btn_pos',
-    defaultY: Math.round(window.innerHeight * 0.65),
+    // Design-space, like every other number handed to useDraggable — hence the
+    // logical viewport height rather than raw window.innerHeight.
+    defaultY: Math.round(getLogicalViewport().height * 0.65),
     defaultSide: 'right',
     edgeMargin: 8,
     elementSize: 40, // MUI Fab size="small"
@@ -41,7 +56,7 @@ export default function FeedbackButton() {
   };
 
   return (
-    <Portal>
+    <Portal container={portalContainer}>
       <Tooltip
         title={t('feedback:feedback.buttonTooltip')}
         placement={position.side === 'left' ? 'right' : 'left'}

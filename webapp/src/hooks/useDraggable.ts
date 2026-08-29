@@ -25,7 +25,21 @@ interface UseDraggableReturn {
   elementRef: RefCallback<HTMLElement>;
 }
 
-const DESIGN_WIDTH = 430;
+/**
+ * Coordinate space contract
+ * -------------------------
+ * All numbers in and out of this hook (defaultY, edgeMargin, elementSize,
+ * sidebarWidth, bottomClearance, the persisted y) are **design-space** pixels:
+ * the same space the rest of the app lays out in, which `main.tsx` shrinks to
+ * fit narrow viewports by putting CSS `zoom` on #root (Tauri and Capacitor
+ * native only — a standalone browser runs unscaled at its real width).
+ *
+ * The consumer must therefore render the draggable element *inside* #root. A
+ * MUI <Portal> defaults to document.body, which sits outside the zoom — the
+ * element would then read design-space pixels as device pixels and hang off
+ * the right edge on every viewport narrower than the design width. See
+ * FeedbackButton.
+ */
 const DEFAULT_MIN_Y = 50;
 const DEFAULT_BOTTOM_CLEARANCE = 90;
 const SNAP_DURATION = 300;
@@ -41,10 +55,17 @@ function getBodyScale(): number {
   return parseFloat(z) || 1;
 }
 
-function getLogicalViewport(): { width: number; height: number } {
+export function getLogicalViewport(): { width: number; height: number } {
   const scale = getBodyScale();
+  // No design-width floor here. Whenever the zoom IS applied, innerWidth /
+  // scale already equals the design width (main.tsx sets scale = innerWidth /
+  // 430), so a floor could only ever bite when the zoom is NOT applied — and
+  // there it reports a viewport wider than the real one, pushing the element
+  // off the right edge. main.tsx runs setupViewportScaling() on Tauri and
+  // Capacitor native only, so a standalone browser (including the webapp
+  // embedded in the Linux k2 binary) legitimately runs unscaled at any width.
   return {
-    width: Math.max(window.innerWidth / scale, DESIGN_WIDTH),
+    width: window.innerWidth / scale,
     height: window.innerHeight / scale,
   };
 }
