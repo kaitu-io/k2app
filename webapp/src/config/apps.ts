@@ -50,6 +50,9 @@ export interface AppConfig {
     privateNode?: boolean;
     /** Self-hosted tunnel surfaces (/tunnels page + every entry into it) */
     selfHostedTunnels?: boolean;
+    /** Multi-country smart-routing (geo detection + country picker). Overleap
+     *  only; Kaitu is China-market and pins region to 'cn'. */
+    multiCountryRouting?: boolean;
   };
 
   /** Branding configuration */
@@ -77,6 +80,7 @@ const APP_CONFIG: AppConfig = {
     chatwoot: brandConfig.features.chatwoot,
     privateNode: brandConfig.features.privateNode,
     selfHostedTunnels: brandConfig.features.selfHostedTunnels,
+    multiCountryRouting: brandConfig.features.multiCountryRouting,
     // platform-static (same for both brands)
     proHistory: true,
     feedback: true,

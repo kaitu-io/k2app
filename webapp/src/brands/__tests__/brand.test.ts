@@ -31,6 +31,7 @@ describe('brand registry', () => {
     expect(KAITU_BRAND.features.invite).toBe(true);
     expect(KAITU_BRAND.features.wordgatePurchase).toBe(true);
     expect(KAITU_BRAND.features.stripeCheckout).toBe(false);
+    expect(KAITU_BRAND.features.multiCountryRouting).toBe(false); // China-market: cn-fixed
   });
 
   it('overleap config carries the overleap identity', () => {
@@ -45,6 +46,7 @@ describe('brand registry', () => {
     expect(OVERLEAP_BRAND.features.retailer).toBe(false);
     expect(OVERLEAP_BRAND.features.wordgatePurchase).toBe(false);
     expect(OVERLEAP_BRAND.features.stripeCheckout).toBe(true);
+    expect(OVERLEAP_BRAND.features.multiCountryRouting).toBe(true); // serves all countries
   });
 
   it('both brands expose all 7 locales', () => {

@@ -49,5 +49,6 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
     privateNode: false,
     antiblockRelay: false,
     selfHostedTunnels: false, // no k2s install channel for this brand (see k2sInstallUrl)
+    multiCountryRouting: true, // serves all countries: geo detection + country picker
   },
 };

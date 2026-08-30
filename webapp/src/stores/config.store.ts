@@ -20,12 +20,21 @@ import type { ClientConfig, RouteConfig } from '../types/client-config';
 import { CLIENT_CONFIG_DEFAULTS } from '../types/client-config';
 import { countryToProfile, PROFILE_TO_PRESET } from '../utils/routes';
 import { cloudApi } from '../services/cloud-api';
+import { getCurrentAppConfig } from '../config/apps';
 /** Build-time log level from K2_BUILD_LOG_LEVEL env var (default: 'debug'). Injected by Vite define. */
 declare const __K2_BUILD_LOG_LEVEL__: string;
 
 // ============ Constants ============
 
 const STORAGE_KEY = 'k2.vpn.config';
+
+/**
+ * Whether this brand does multi-country smart-routing. Kaitu (China-market) is
+ * cn-fixed: no geo detection, region always 'cn'. Overleap serves all countries.
+ * Build-time constant — the ternary constant-folds, so the disabled branch is
+ * tree-shaken out of the inactive brand's bundle.
+ */
+const MULTI_COUNTRY_ROUTING = getCurrentAppConfig().features.multiCountryRouting === true;
 
 // ============ Types ============
 
@@ -312,7 +321,12 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
   loadConfig: async () => {
     try {
       const stored = await window._platform.storage.get<StoredConfig>(STORAGE_KEY);
-      const { defaultVia, countryVia, country, autoDetect, alwaysOn, needsMigration } = parseStored(stored);
+      const { defaultVia, countryVia, country: parsedCountry, autoDetect, alwaysOn, needsMigration } = parseStored(stored);
+      // Kaitu (single-country brand): region is always 'cn'. Pin it so a stale
+      // non-cn persisted country can't route the cn-fixed brand to a missing
+      // region bundle. autoDetect is left as-loaded — it's inert here (geo off,
+      // picker hidden), so there's no need to fight the migration tests over it.
+      const country = MULTI_COUNTRY_ROUTING ? parsedCountry : 'cn';
       const preset = derivePreset(defaultVia, countryVia);
       console.info(
         '[ConfigStore] Config loaded: preset=' + preset
@@ -393,6 +407,9 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
   },
 
   fetchGeoDetection: async () => {
+    // Kaitu is China-market: region is always 'cn', so it never consults
+    // /api/geo. Only the multi-country brand (Overleap) does geo detection.
+    if (!MULTI_COUNTRY_ROUTING) return;
     try {
       const resp = await cloudApi.get<{ country: string; profile: string }>('/api/geo');
       // Fallback to CN if API fails or returns empty country

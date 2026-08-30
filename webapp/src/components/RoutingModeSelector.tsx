@@ -5,7 +5,9 @@
  *   1. global  — all traffic proxied
  *   2. bypass  — country traffic direct, rest proxied
  *
- * When preset !== 'global': shows Country Select + AutoDetect checkbox.
+ * When preset !== 'global' AND the brand does multi-country routing (Overleap):
+ * shows Country Select + AutoDetect checkbox. Kaitu is China-market (region
+ * always cn), so the country controls are hidden and bypass reads as "中国直连".
  * All controls disabled when VPN is connected/connecting (isInteractive).
  */
 
@@ -30,6 +32,7 @@ import {
   countryFlagEmoji,
   countryName,
 } from '../utils/countries';
+import { getCurrentAppConfig } from '../config/apps';
 
 // ---- Preset definitions ----
 
@@ -123,7 +126,8 @@ export default function RoutingModeSelector() {
     [setAutoDetect],
   );
 
-  const showCountryControls = preset !== 'global';
+  const multiCountry = getCurrentAppConfig().features.multiCountryRouting === true;
+  const showCountryControls = preset !== 'global' && multiCountry;
 
   return (
     <Box data-testid="routing-mode-selector">

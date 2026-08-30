@@ -15,7 +15,12 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { getCurrentAppConfig } from '../../config/apps';
+
 declare const __K2_BUILD_LOG_LEVEL__: string;
+
+/** Kaitu (China-market) pins region to cn in loadConfig; Overleap is multi-country. */
+const MULTI_COUNTRY = getCurrentAppConfig().features.multiCountryRouting === true;
 
 // ==================== Mock window._platform ====================
 
@@ -89,7 +94,8 @@ describe('Config Store', () => {
       expect(state.defaultVia).toBe('direct');
       expect(state.countryVia).toBe('k2p');
       expect(state.autoDetect).toBe(false);
-      expect(state.country).toBe('ru');
+      // Kaitu pins region to cn (China-market); Overleap preserves the stored country.
+      expect(state.country).toBe(MULTI_COUNTRY ? 'ru' : 'cn');
     });
 
     it('migrates v2 routingMode=global to proxy + null countryVia', async () => {
@@ -395,9 +401,10 @@ describe('Config Store', () => {
     });
 
     it('bypass + non-cn country does NOT emit tencent-overseas reject', async () => {
-      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'ir', autoDetect: false });
       const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
+      // buildConnectConfig is a pure function of state; set country directly so
+      // the test isolates route-shaping from loadConfig's brand pin (Kaitu → cn).
+      useConfigStore.setState({ defaultVia: 'proxy', countryVia: 'direct', country: 'ir', autoDetect: false });
 
       const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 
@@ -475,9 +482,9 @@ describe('Config Store', () => {
     });
 
     it('bypass mode with unknown country emits region route (engine handles missing bundle gracefully)', async () => {
-      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'xx', autoDetect: false });
       const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
+      // Set country directly (see 'bypass + non-cn' above) — pure buildConnectConfig test.
+      useConfigStore.setState({ defaultVia: 'proxy', countryVia: 'direct', country: 'xx', autoDetect: false });
 
       const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 
@@ -520,9 +527,9 @@ describe('Config Store', () => {
     });
 
     it('chnroute mode with empty country falls back to global (no region route)', async () => {
-      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: false });
       const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
+      // Set country directly (see 'bypass + non-cn' above) — pure buildConnectConfig test.
+      useConfigStore.setState({ defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: false });
 
       const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 

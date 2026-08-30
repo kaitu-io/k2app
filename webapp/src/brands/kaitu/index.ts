@@ -56,5 +56,6 @@ export const KAITU_BRAND: WebappBrandConfig = {
     privateNode: true,
     antiblockRelay: true,
     selfHostedTunnels: true,
+    multiCountryRouting: false, // China-market: region always cn (出国 + 回国), no geo/picker
   },
 };
