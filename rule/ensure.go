@@ -112,6 +112,18 @@ func ensureOnce(ctx context.Context, cacheDir string, sources []string, force bo
 		return downloadExtractSwap(ctx, cacheDir, sources, "", "")
 	}
 
+	// Fail-loud guard: a remote manifest version that is not RFC3339 parses to
+	// zero time and can NEVER win remoteNewer — a generator-side format
+	// regression (k2-rules v0.1.4 emitted bare dates) would silently freeze
+	// OTA rule updates on every client, with growing staleness as the only
+	// symptom. Log loudly; the skip below still stands (fail-safe: keep
+	// serving the local bundles). Only the REMOTE side is checked — the local
+	// version is unparseable by design when embed-seeded (embedSuffix).
+	if _, perr := time.Parse(time.RFC3339, remote.Version); perr != nil {
+		slog.Warn("DIAG: rule-manifest-bad-version",
+			"version", remote.Version, "err", perr.Error())
+	}
+
 	localVer := readLocalManifestVersion(cacheDir)
 	if !force && !remoteNewer(remote.Version, localVer) {
 		// Local version is current or newer than the remote manifest → nothing to

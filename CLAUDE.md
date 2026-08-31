@@ -107,6 +107,7 @@ Reserved event names:
 | `DIAG: rule-bundle-stale` | WARN | engine.Start fell through to stale .k2b after fresh download failed | err, bundleCount, cacheDir |
 | `DIAG: rule-bundle-empty` | WARN | downloaded tarball extracted 0 .krs (stale mirror / format skew) — rejected to avoid poisoning the cache | cacheDir, reason |
 | `DIAG: rule-manifest-unreachable` | WARN | every manifest mirror failed — ensureOnce falls back to the legacy blind download (24h backstop honored first) | err, dir |
+| `DIAG: rule-manifest-bad-version` | WARN | remote manifest version is not RFC3339 — it parses to zero time, so remoteNewer can never fire and OTA rule updates are effectively frozen until the generator fixes the format (local bundles keep serving) | version, err |
 | `DIAG: rule-pin-fallback` | WARN | the manifest's winning mirror failed the tarball fetch — falling back to racing the remaining mirrors | pinned, fallbacks |
 | `DIAG: rule-bundle-missing-region` | WARN | a configured match.region route has no usable bundle — engine.Start fails loud (504) instead of silently degrading to all-proxy | regions, cacheDir |
 | `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
