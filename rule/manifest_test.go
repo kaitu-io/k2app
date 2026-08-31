@@ -19,6 +19,11 @@ func TestRemoteNewer(t *testing.T) {
 		{"2026-06-02T00:31:05Z", "", true},            // any vs unknown local
 		{"garbage", "2026-06-02T00:31:05Z", false},    // unparseable a → treated oldest
 		{"2026-06-02", "2026-06-02T00:31:05Z", false}, // legacy date < timestamped
+		// Embed-seeded local version carries the " [embedded]" suffix and is
+		// unparseable BY DESIGN — any valid remote must win so the embedded
+		// floor gets lifted. Pins the local-side reason the fail-loud guard in
+		// ensure.go checks ONLY the remote version.
+		{"2026-06-02T00:31:05Z", "2026-05-31T00:00:00Z [embedded]", true},
 	}
 	for _, c := range cases {
 		if got := remoteNewer(c.a, c.b); got != c.want {
