@@ -46,6 +46,10 @@ resolved IP** to it. So:
   returns before the route is ever reached, so the port condition **never takes
   effect in production** — the rule is overridden by a pin it planted itself.
 
+(Since 2026-08 `engine.buildRouteEntries` emits a compile-time WARN for such
+combined routes — `dnsDroppedMetaFields` — and `engine_combined_route_test.go`
+pins these semantics. The matching behavior itself is unchanged.)
+
 Mind the ordering too — it is the opposite of what "meta beats the pin cache"
 suggests for *combined* routes. The pre-tmp pass in `matchConnLocked`
 skips on `hasHostCriteria() || !hasMetaCriteria()`, i.e. it considers **purely

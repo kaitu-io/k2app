@@ -1270,6 +1270,38 @@ func rebuildEntriesForUpdater(routes []config.RouteConfig, outboundMap map[strin
 	return withAnchorFirst(entries), named, nil
 }
 
+// dnsDroppedMetaFields lists the connection-time conditions a route combines
+// with domain criteria (preset/names/domain_suffix). Two-phase matching makes
+// such combinations a trap (rule/CLAUDE.md "Two-Phase Matching"): at DNS time
+// matchHostLocked checks the domain half only, so the route's target fires —
+// and every resolved IP is pinned — with these conditions silently dropped.
+// The route effectively covers ALL ports/protocols/processes of its matched
+// domains. ip_cidr / ip_is_private combos are exempt: a DNS-time domain query
+// can never match them, so their meta half still ANDs at connection time.
+// region is also exempt — it expands into separate host and meta entries,
+// never an AND combo. Detection only; matching behavior is unchanged.
+func dnsDroppedMetaFields(m rule.MatchConfig) []string {
+	if m.Preset == "" && len(m.Names) == 0 && len(m.DomainSuffix) == 0 {
+		return nil
+	}
+	var dropped []string
+	add := func(name string, set bool) {
+		if set {
+			dropped = append(dropped, name)
+		}
+	}
+	add("port", len(m.Port) > 0)
+	add("protocol", len(m.Protocol) > 0)
+	add("network", m.Network != "")
+	add("src_ip_cidr", len(m.SrcIPCIDR) > 0)
+	add("process_name", len(m.ProcessName) > 0)
+	add("process_name_prefix", len(m.ProcessNamePrefix) > 0)
+	add("package_name", len(m.PackageName) > 0)
+	add("package_name_prefix", len(m.PackageNamePrefix) > 0)
+	add("installer_package", len(m.InstallerPackage) > 0)
+	return dropped
+}
+
 // buildRouteEntries converts config routes to rule.RouteEntry list using the given bundle index.
 // outboundMap maps via URL → rule.Target for wire outbounds.
 // Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
@@ -1378,6 +1410,11 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 			if meta := expandAppsRoute(route.Match.Apps, target); meta != nil {
 				entries = append(entries, *meta)
 			}
+		}
+
+		if dropped := dnsDroppedMetaFields(route.Match); len(dropped) > 0 {
+			slog.Warn("route: connection-time conditions dropped at DNS time for domain matches — matched domains are pinned to this target for ALL ports/protocols/processes (two-phase matching, rule/CLAUDE.md)",
+				"route", i, "via", config.TruncateVia(route.Via), "dropped", dropped)
 		}
 
 		hasAnyCriteria := len(entry.Sets) > 0 ||
