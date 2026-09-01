@@ -224,6 +224,10 @@ jobs:
           BRAND: ${{ matrix.brand }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          # Repo variable, normally unset (rev 0). Set to 1..9 ONLY to
+          # re-upload an already-uploaded (version, slot) build — e.g. a
+          # retagged release — then clear it. See build-mobile-ios.sh REV.
+          IOS_BUILD_REV: ${{ vars.IOS_BUILD_REV || '0' }}
         run: bash scripts/build-mobile-ios.sh
 
       - name: Brand purity gate
