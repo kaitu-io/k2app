@@ -97,36 +97,50 @@ a hit-rate optimization.
   — unconnected `sendto()` UDP sockets show local `0.0.0.0`/`::` and stay
   unattributed. Known gap, don't "fix" it on Windows's behalf without
   understanding the /proc semantics differ.
-- **Darwin**: one periodic `lsof` sweep, indexed — see below. There is no
-  per-connection lsof call any more, so there is no address selector to get
-  wrong (the old `lsofSpec` bracketing quirk is gone with it).
+- **Darwin**: live kernel PCB table via the netstat sysctls, per lookup —
+  Windows-equivalent semantics including exact-beats-wildcard UDP; the lsof
+  snapshot survives only as a self-check-gated fallback. See below.
 
-### Darwin: snapshot, not per-connection query
+### Darwin: live kernel PCB table, lsof snapshot as fallback
 
-macOS has no /proc; attribution means shelling out to `lsof`, which walks the
-whole process/fd table. Measured in production: **100–1226 ms per call**, and
-under browser-level concurrency the calls queue behind each other (one 9 s
-window accumulated 9.8 s of lookup latency, surfacing as
-`DIAG: process-lookup-slow` floods and multi-second TLS handshakes).
+Primary path (`process_darwin_pcb.go`): every lookup reads the kernel's live
+socket table via the netstat sysctls `net.inet.{tcp,udp}.pcblist_n`, finds the
+local (ip, port) half, and names `so_last_pid` through libproc `proc_name`
+(same pbi_name source as lsof's COMMAND — rule strings stay verbatim-
+compatible), with a `proc_pidpath`-basename fallback for cross-uid callers
+without root. One fetch+scan measures **~230 µs p50** on a loaded desktop, so
+there is no snapshot, TTL, or throttle — and that is the point:
 
-`DarwinProcessSearcher` therefore runs **one `lsof -i -P -n -F pcPn` sweep**
-and indexes every local socket by `(network, ip, port)` — TTL 5 s,
-singleflight-collapsed, async rebuild when stale. One sweep is ~87 entries in
-~90 ms on a normal desktop.
+**Why the lsof snapshot design was a bug, not just a cost model** (fixed
+2026-09, shipped broken only in v0.4.9): `routeConn` attributes a connection
+exactly once, at SYN time. A snapshot built before the socket existed can
+never contain it, and the 250 ms miss-throttle returned `""` (fail-open → the
+tunnel) for every connection landing inside the window. Browser page loads
+arrive in waves — main document first, subresources ~100 ms later — so the
+follow-up waves fell inside the window systematically and per-app 直连
+silently routed through the tunnel (two-wave differential: wave A 3/3 direct,
+wave B at +150 ms 6/6 proxied). The PCB path has neither horn: the kernel
+table IS current at decision time.
 
-**Do not "simplify" this into Linux's rebuild-on-miss policy.** Linux can
-afford it (reading /proc is cheap); Darwin cannot. A brand-new connection is by
-definition absent from a snapshot taken before it existed, so rebuild-on-miss
-degenerates straight back to one lsof per connection. `minRebuildInterval`
-(250 ms) is what prevents that, and a test
-(`TestDarwinProcessSearcher_MissesAreThrottled`) pins it.
+The `xinpcb_n`/`xsocket_n` structs are **packed** (vflag@44, v4 laddr@76,
+so_last_pid@68) — offsets are pinned by a live-kernel dump, enforced by
+`TestPCBLayout_OwnSocketFields`, and re-proven at runtime by `pcbSelfCheck()`
+(attributes one of our own loopback sockets at first use). A failing
+self-check logs `DIAG: process-pcb-fallback` and runs the process on the
+legacy lsof snapshot below. Wildcard-laddr UDP sockets are attributed with
+Windows semantics (exact beats wildcard) — a strict improvement over the lsof
+index, which skipped them.
 
-Within the throttle window a miss returns `""` — **fail-open**: the connection
-takes the region/default route (the tunnel). Same outcome the old code produced
-on lsof timeout, and the safe direction: a missed attribution costs an
-App-Bypass *direct* route, never a leak.
+Fallback path (kept verbatim, tests pin it via `attribBackend =
+backendLegacy`): **one `lsof -i -P -n -F pcPn` sweep** indexed by
+`(network, ip, port)` — TTL 5 s, singleflight-collapsed, miss-rebuilds
+throttled to 250 ms (lsof measured 100–1226 ms per call in production; the
+throttle prevents rebuild-per-miss from degenerating into one lsof per
+connection). Misses inside the throttle window return `""` — fail-open, the
+known blind spot above, acceptable only because this path now serves exotic
+environments where the sysctl path failed.
 
-### lsof's COMMAND is not `ps`'s comm
+### proc_name / lsof COMMAND is not `ps`'s comm
 
 Verified on production macOS: Claude Code reports as `claude` under
 `ps -o comm=` but as **`2.1.232`** (its version string) in `lsof`. Attribution
