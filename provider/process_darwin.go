@@ -11,11 +11,22 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kaitu-io/k2/safego"
 	"github.com/sasha-s/go-deadlock"
 	"golang.org/x/sync/singleflight"
+)
+
+// Attribution backend selection. The PCB path (process_darwin_pcb.go) reads
+// the live kernel socket table per lookup — no snapshot, no throttle, so a
+// brand-new connection is attributable at SYN time. The legacy lsof snapshot
+// below stays as the fallback when the one-time PCB self-check fails.
+const (
+	backendAuto   int8 = iota // self-check picks pcb or legacy at first use
+	backendPCB                // tests: force the PCB path
+	backendLegacy             // tests: force the lsof snapshot path
 )
 
 const (
@@ -61,6 +72,12 @@ const (
 // One sweep now serves every connection in the TTL window.
 type DarwinProcessSearcher struct {
 	cache *processCache
+
+	// attribBackend routes FindProcess between the PCB sysctl path and the
+	// legacy lsof snapshot. backendAuto resolves once via pcbSelfCheck.
+	attribBackend int8
+	pcbOnce       sync.Once
+	pcbOK         bool
 
 	indexMu      deadlock.RWMutex
 	connIndex    map[string]string // cacheKey(network, srcIP, srcPort) → COMMAND
@@ -109,6 +126,31 @@ func (s *DarwinProcessSearcher) ensureInit() {
 	s.indexMu.Unlock()
 }
 
+// pcbEnabled reports whether lookups should use the PCB sysctl path.
+// backendAuto resolves exactly once for the process lifetime: a passing
+// self-check commits to PCB, a failing one falls back to the lsof snapshot
+// with a loud DIAG so the field regression is visible in logs. No
+// per-call flip-flopping — a mid-flight mode change would make attribution
+// results incomparable across a single browsing session.
+func (s *DarwinProcessSearcher) pcbEnabled() bool {
+	switch s.attribBackend {
+	case backendPCB:
+		return true
+	case backendLegacy:
+		return false
+	}
+	s.pcbOnce.Do(func() {
+		s.pcbOK = pcbSelfCheck()
+		if s.pcbOK {
+			slog.Info("process attribution: kernel PCB table backend active")
+		} else {
+			slog.Warn("DIAG: process-pcb-fallback",
+				"reason", "self-check failed, using lsof snapshot backend")
+		}
+	})
+	return s.pcbOK
+}
+
 // FindProcess returns (processName, "", "") — Darwin has no packageName /
 // installerPackage; those are Android-only.
 func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
@@ -127,7 +169,12 @@ func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, sr
 	}
 
 	start := time.Now()
-	name := s.lookupIndexed(key)
+	var name string
+	if s.pcbEnabled() {
+		name = pcbFindProcess(network, srcIP, srcPort)
+	} else {
+		name = s.lookupIndexed(key)
+	}
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
 		// macOS is the only platform that shells out (lsof) for attribution,
 		// so it's the most stall-prone — mirror the Linux/Windows slow-lookup

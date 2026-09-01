@@ -219,6 +219,7 @@ func TestDarwinProcessSearcher_CacheHitShortCircuits(t *testing.T) {
 func TestDarwinProcessSearcher_IPv6ParticipatesInLookup(t *testing.T) {
 	var swept bool
 	s := NewDarwinProcessSearcher()
+	s.attribBackend = backendLegacy // pins the lsof-snapshot FALLBACK path
 	s.buildConnIndexFn = func() map[string]string {
 		swept = true
 		return map[string]string{
@@ -285,6 +286,7 @@ func TestDarwinProcessSearcher_IndexBuiltOncePerTTL_NotPerConnection(t *testing.
 		idx[cacheKey("tcp", netip.MustParseAddr("192.168.1.10"), uint16(p))] = "Google Chrome"
 	}
 	s := NewDarwinProcessSearcher()
+	s.attribBackend = backendLegacy // pins the lsof-snapshot FALLBACK path
 	s.minRebuildInterval = -1
 	s.buildConnIndexFn = countingIndex(&builds, idx)
 
@@ -309,6 +311,7 @@ func TestDarwinProcessSearcher_ConcurrentBuildsCollapse(t *testing.T) {
 		idx[cacheKey("tcp", netip.MustParseAddr("10.0.0.5"), uint16(p))] = "Safari"
 	}
 	s := NewDarwinProcessSearcher()
+	s.attribBackend = backendLegacy // pins the lsof-snapshot FALLBACK path
 	s.minRebuildInterval = -1
 	slow := func() map[string]string {
 		atomic.AddInt32(&builds, 1)
@@ -338,6 +341,7 @@ func TestDarwinProcessSearcher_ConcurrentBuildsCollapse(t *testing.T) {
 func TestDarwinProcessSearcher_StaleIndexRebuilds(t *testing.T) {
 	var gen int32
 	s := NewDarwinProcessSearcher()
+	s.attribBackend = backendLegacy // these pin the lsof-snapshot FALLBACK path
 	s.connIndexTTL = 10 * time.Millisecond
 	s.minRebuildInterval = -1 // no throttle: this test is about TTL, not rate limiting
 	// The negative result of the first lookup is cached by cacheKey; give that
@@ -369,6 +373,7 @@ func TestDarwinProcessSearcher_StaleIndexRebuilds(t *testing.T) {
 func TestDarwinProcessSearcher_MissesAreThrottled(t *testing.T) {
 	var builds int32
 	s := NewDarwinProcessSearcher()
+	s.attribBackend = backendLegacy // these pin the lsof-snapshot FALLBACK path
 	s.minRebuildInterval = time.Hour // nothing may re-sweep after the cold start
 	s.buildConnIndexFn = func() map[string]string {
 		atomic.AddInt32(&builds, 1)
@@ -386,6 +391,7 @@ func TestDarwinProcessSearcher_MissesAreThrottled(t *testing.T) {
 // route rather than being attributed to some other process.
 func TestDarwinProcessSearcher_MissFailsOpen(t *testing.T) {
 	s := NewDarwinProcessSearcher()
+	s.attribBackend = backendLegacy // these pin the lsof-snapshot FALLBACK path
 	s.buildConnIndexFn = func() map[string]string {
 		return map[string]string{
 			cacheKey("tcp", netip.MustParseAddr("172.16.0.2"), 111): "Other",
