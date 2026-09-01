@@ -54,6 +54,9 @@ export const PROFILE_TO_PRESET: Readonly<Record<string, PresetName>> = Object.fr
   throute: 'th-access',
   bdroute: 'bd-access',
   byroute: 'by-access',
+  tmroute: 'tm-access',
+  kzroute: 'kz-access',
+  uzroute: 'uz-access',
 });
 
 /** Set of recognized profile names (including "global"). */
@@ -127,4 +130,27 @@ const COUNTRY_TO_PROFILE: Readonly<Record<string, string>> = Object.freeze(
 export function countryToProfile(cc: string | null | undefined): string {
   if (!cc) return 'global';
   return COUNTRY_TO_PROFILE[cc.toLowerCase()] ?? 'global';
+}
+
+/** Whether this country has a dedicated `{cc}route` profile (rule bundles exist). */
+export function isRoutableCountry(cc: string | null | undefined): boolean {
+  return !!cc && COUNTRY_TO_PROFILE[cc.toLowerCase()] !== undefined;
+}
+
+/**
+ * Clamp a detected country to one that is safe to feed into `routes[]`.
+ *
+ * A `match.region` for a country without published rule bundles is bad on
+ * every engine generation this OTA webapp serves: engines older than
+ * 2026-06-14 (pre k2 `fallbackRegion`) fail CLOSED at bundle-ensure (504
+ * RuleBundlesUnavailable, connect dead-ends — the incident the server-side
+ * geo hotfix papered over); newer engines silently substitute cn.krs data
+ * for the missing region, so routing behaves as cn while the UI claims the
+ * other country. Clamping here keeps old engines connectable and new ones
+ * honest. `'cn'` is the fallback: its bundles ship embedded in the binary
+ * (never missing), and "CN direct + rest through tunnel" is the
+ * pre-detection behaviour every released client already has.
+ */
+export function routableCountry(cc: string | null | undefined): string {
+  return isRoutableCountry(cc) ? (cc as string).toLowerCase() : 'cn';
 }

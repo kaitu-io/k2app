@@ -43,6 +43,9 @@ describe('profileToRoutes', () => {
     ['throute', 'th-access'],
     ['bdroute', 'bd-access'],
     ['byroute', 'by-access'],
+    ['tmroute', 'tm-access'],
+    ['kzroute', 'kz-access'],
+    ['uzroute', 'uz-access'],
   ];
 
   it.each(cases)('%s → direct preset %s then fallback proxy', (profile, preset) => {
@@ -53,7 +56,7 @@ describe('profileToRoutes', () => {
     ]);
   });
 
-  it('covers all 14 country profiles (no drift with PROFILE_TO_PRESET)', () => {
+  it('covers all country profiles (no drift with PROFILE_TO_PRESET)', () => {
     const profilesInCases = new Set(cases.map(([p]) => p));
     const profilesInMap = new Set(Object.keys(PROFILE_TO_PRESET));
     expect(profilesInCases).toEqual(profilesInMap);
@@ -84,7 +87,7 @@ describe('profileToRoutes', () => {
     for (const profile of Object.keys(PROFILE_TO_PRESET)) {
       expect(KNOWN_PROFILES.has(profile)).toBe(true);
     }
-    expect(KNOWN_PROFILES.size).toBe(15); // 14 countries + global
+    expect(KNOWN_PROFILES.size).toBe(18); // 17 countries + global
   });
 });
 

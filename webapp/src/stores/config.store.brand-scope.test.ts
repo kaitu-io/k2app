@@ -59,16 +59,57 @@ describe('config.store — brand routing scope', () => {
       expect(useConfigStore.getState().country).toBe('cn');
     });
 
-    it('fetchGeoDetection is a no-op and never calls /api/geo', async () => {
-      await useConfigStore.getState().fetchGeoDetection();
+    it('detectGeo is a no-op — no detection, no network', async () => {
+      const tzSpy = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+        .mockReturnValue({ timeZone: 'Europe/Istanbul' } as Intl.ResolvedDateTimeFormatOptions);
+      await useConfigStore.getState().detectGeo();
+      expect(useConfigStore.getState().detectedCountry).toBeNull();
       expect(cloudGet).not.toHaveBeenCalled();
+      tzSpy.mockRestore();
     });
   });
 
   describe.runIf(MULTI_COUNTRY)('multi-country brand (Overleap)', () => {
-    it('fetchGeoDetection consults /api/geo', async () => {
-      await useConfigStore.getState().fetchGeoDetection();
-      expect(cloudGet).toHaveBeenCalledWith('/api/geo');
+    it('detectGeo detects locally from the system timezone — never a network call', async () => {
+      const tzSpy = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+        .mockReturnValue({ timeZone: 'Europe/Istanbul' } as Intl.ResolvedDateTimeFormatOptions);
+      await useConfigStore.getState().detectGeo();
+      const s = useConfigStore.getState();
+      expect(s.detectedCountry).toBe('tr');
+      expect(s.country).toBe('tr'); // autoDetect on → synced
+      expect(cloudGet).not.toHaveBeenCalled();
+      tzSpy.mockRestore();
+    });
+
+    it('detectGeo clamps a bundle-less country to cn for routing, keeps raw detection for display', async () => {
+      const tzSpy = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+        .mockReturnValue({ timeZone: 'Asia/Tokyo' } as Intl.ResolvedDateTimeFormatOptions);
+      await useConfigStore.getState().detectGeo();
+      const s = useConfigStore.getState();
+      expect(s.detectedCountry).toBe('jp'); // raw — travel banner material
+      expect(s.country).toBe('cn');         // clamped — jp has no rule bundles
+      tzSpy.mockRestore();
+    });
+
+    it('detectGeo with autoDetect off and a country already set only fills the cache', async () => {
+      useConfigStore.setState({ autoDetect: false, country: 'ru' });
+      const tzSpy = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+        .mockReturnValue({ timeZone: 'Europe/Istanbul' } as Intl.ResolvedDateTimeFormatOptions);
+      await useConfigStore.getState().detectGeo();
+      const s = useConfigStore.getState();
+      expect(s.detectedCountry).toBe('tr');
+      expect(s.country).toBe('ru'); // manual choice untouched
+      tzSpy.mockRestore();
+    });
+
+    it('detectGeo falls back to cn when the runtime has no timezone', async () => {
+      const tzSpy = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+        .mockImplementation(() => { throw new Error('no ICU'); });
+      await useConfigStore.getState().detectGeo();
+      const s = useConfigStore.getState();
+      expect(s.detectedCountry).toBe('cn');
+      expect(s.country).toBe('cn');
+      tzSpy.mockRestore();
     });
 
     it('loadConfig preserves the persisted country', async () => {

@@ -1940,6 +1940,11 @@ cosmiconfig@^7.0.0:
     path-type "^4.0.0"
     yaml "^1.10.0"
 
+countries-and-timezones@^3.10.0:
+  version "3.10.0"
+  resolved "https://registry.npmmirror.com/countries-and-timezones/-/countries-and-timezones-3.10.0.tgz#9412d4d1992ba562601026f817c8cbb917f9bdad"
+  integrity sha512-HQ1GtXWNZy0r5MnZMLF9xmBmFNmtDVBeKQgX/5DY+RVmcZTODA+EPN/JLPCYRNP86nHG0QQrb1yJwGzXeqCCXw==
+
 country-flag-icons@^1.5.19:
   version "1.6.16"
   resolved "https://registry.npmmirror.com/country-flag-icons/-/country-flag-icons-1.6.16.tgz#73bdabb32e4ec9e3c838b0c373cb711189f2b191"
@@ -3569,7 +3574,7 @@ util-deprecate@^1.0.1:
   resolved "https://registry.npmmirror.com/util-deprecate/-/util-deprecate-1.0.2.tgz#450d4dc9fa70de732762fbd2d4a28981419a0ccf"
   integrity sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==
 
-uuid@^11.1.0, uuid@^11.1.1:
+uuid@^11.1.0:
   version "11.1.1"
   resolved "https://registry.npmmirror.com/uuid/-/uuid-11.1.1.tgz#f6d81d2e1c65d00762e5e29b16c5d2d995e208ad"
   integrity sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ==
@@ -3735,7 +3740,7 @@ wrap-ansi@^8.1.0:
     string-width "^5.0.1"
     strip-ansi "^7.0.1"
 
-ws@^8.18.0, ws@^8.20.1:
+ws@^8.18.0:
   version "8.21.0"
   resolved "https://registry.npmmirror.com/ws/-/ws-8.21.0.tgz#012e413fc07429945121b0c153158c4343086951"
   integrity sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==

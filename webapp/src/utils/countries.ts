@@ -1,20 +1,21 @@
 /**
  * Supported-country helpers for the smart-mode Dashboard UX.
  *
- * Scope: the 14 country profiles currently routed by the Center
- * `suggestedProfile` hint (plus a minimal set of "travel" destinations that
- * may surface via `detectedCountry` without having a dedicated `{cc}route`
- * profile — those fall back to `global`).
+ * Scope: the 17 country profiles with dedicated rule bundles (see
+ * `utils/routes.ts PROFILE_TO_PRESET`, kept in sync with
+ * `k2/rule/target.go presets`), plus a minimal set of "travel" destinations
+ * that may surface via `detectedCountry` without having a dedicated
+ * `{cc}route` profile — those fall back to `global`.
  *
  * Intentionally NOT a replacement for `utils/country` / `i18n/countries` —
  * this file only covers what the smart-mode chip + travel banner need, so
  * new copy can ship without touching the larger i18n bundle.
  */
 
-/** The 14 country codes with a dedicated `{cc}route` profile on Center. */
+/** The 17 country codes with a dedicated `{cc}route` routing profile. */
 export const SUPPORTED_COUNTRY_CODES = [
-  'cn', 'ir', 'ru', 'tr', 'pk', 'vn', 'mm',
-  'eg', 'id', 'sa', 'ae', 'th', 'bd', 'by',
+  'cn', 'ir', 'ru', 'tr', 'pk', 'vn', 'mm', 'eg', 'id',
+  'sa', 'ae', 'th', 'bd', 'by', 'tm', 'kz', 'uz',
 ] as const;
 
 export type SupportedCountryCode = typeof SUPPORTED_COUNTRY_CODES[number];
@@ -41,6 +42,9 @@ const COUNTRY_NAMES: Readonly<Record<string, Readonly<Record<string, string>>>> 
     th: 'Thailand',
     bd: 'Bangladesh',
     by: 'Belarus',
+    tm: 'Turkmenistan',
+    kz: 'Kazakhstan',
+    uz: 'Uzbekistan',
     // Common travel destinations that resolve to the `global` profile.
     jp: 'Japan',
     kr: 'South Korea',
@@ -69,6 +73,9 @@ const COUNTRY_NAMES: Readonly<Record<string, Readonly<Record<string, string>>>> 
     th: '泰国',
     bd: '孟加拉国',
     by: '白俄罗斯',
+    tm: '土库曼斯坦',
+    kz: '哈萨克斯坦',
+    uz: '乌兹别克斯坦',
     jp: '日本',
     kr: '韩国',
     us: '美国',

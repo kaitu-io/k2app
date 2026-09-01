@@ -67,6 +67,7 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^3.0.0",
+    "countries-and-timezones": "^3.10.0",
     "jsdom": "^25.0.1",
     "terser": "^5.44.0",
     "typescript": "~5.6.2",

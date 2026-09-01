@@ -619,6 +619,33 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       // If the connect call itself failed (e.g. VPN permission denied),
       // dispatch BACKEND_ERROR so the state machine exits 'connecting'.
       if (resp.code !== 0) {
+        // 504 RuleBundlesUnavailable one-shot fallback. Engines older than
+        // 2026-06-14 (pre k2 fallbackRegion) fail closed when the split
+        // country's bundles can't be ensured — the incident shape the old
+        // server-side geo hotfix papered over; newer engines 504 only on a
+        // true cold start (empty cache + embed seed failed + CDN down). This
+        // OTA webapp serves both generations, so instead of stranding the
+        // user, retry ONCE with global-shape routes (zero bundle dependency).
+        // cn is exempt: its bundles ship embedded, so a 504 there is a real
+        // fault a global retry won't fix. The degradation lasts one session;
+        // next connect retries the split.
+        if (resp.code === ERROR_CODES.RULE_BUNDLES_UNAVAILABLE && configCountry && configCountry !== 'cn') {
+          console.warn('[Connection] connect: rule bundles unavailable for country='
+            + configCountry + ' — retrying once with global routes');
+          const fallbackConfig = buildConnectConfig({ serverUrl, forceDirect, forceProxy, forceGlobalRoutes: true });
+          const retry = await window._k2.run('up', { config: fallbackConfig, alwaysOn });
+          if (get().connectEpoch !== myEpoch) {
+            console.warn('[Connection] connect: global-fallback up() returned after epoch change, discarding result code=' + retry.code);
+            return;
+          }
+          if (retry.code === 0) return;
+          console.warn('[Connection] connect: global fallback also failed code=' + retry.code);
+          vpnDispatch('BACKEND_ERROR', {
+            error: { code: retry.code > 0 ? retry.code : 570, message: retry.message || 'Connect failed' },
+            isRetrying: false,
+          });
+          return;
+        }
         const errorCode = resp.code > 0 ? resp.code : 570;
         vpnDispatch('BACKEND_ERROR', {
           error: { code: errorCode, message: resp.message || 'Connect failed' },

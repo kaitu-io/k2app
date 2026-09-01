@@ -36,9 +36,12 @@ describe('countryFlagEmoji', () => {
     th: '\u{1F1F9}\u{1F1ED}',
     bd: '\u{1F1E7}\u{1F1E9}',
     by: '\u{1F1E7}\u{1F1FE}',
+    tm: '\u{1F1F9}\u{1F1F2}',
+    kz: '\u{1F1F0}\u{1F1FF}',
+    uz: '\u{1F1FA}\u{1F1FF}',
   };
 
-  it('produces the correct flag emoji for all 14 supported country codes', () => {
+  it('produces the correct flag emoji for all supported country codes', () => {
     for (const cc of SUPPORTED_COUNTRY_CODES) {
       expect(countryFlagEmoji(cc)).toBe(expected[cc]);
     }
@@ -63,7 +66,7 @@ describe('countryFlagEmoji', () => {
 });
 
 describe('countryName', () => {
-  it('resolves all 14 supported country codes in en-US', () => {
+  it('resolves all supported country codes in en-US', () => {
     expect(countryName('cn', 'en-US')).toBe('China');
     expect(countryName('ir', 'en-US')).toBe('Iran');
     expect(countryName('ru', 'en-US')).toBe('Russia');
@@ -80,7 +83,7 @@ describe('countryName', () => {
     expect(countryName('by', 'en-US')).toBe('Belarus');
   });
 
-  it('resolves all 14 supported country codes in zh-CN', () => {
+  it('resolves all supported country codes in zh-CN', () => {
     expect(countryName('cn', 'zh-CN')).toBe('中国');
     expect(countryName('ir', 'zh-CN')).toBe('伊朗');
     expect(countryName('ru', 'zh-CN')).toBe('俄罗斯');
@@ -125,14 +128,14 @@ describe('countryName', () => {
 });
 
 describe('isSupportedCountry', () => {
-  it('returns true for all 14 supported codes (any case)', () => {
+  it('returns true for all supported codes (any case)', () => {
     for (const cc of SUPPORTED_COUNTRY_CODES) {
       expect(isSupportedCountry(cc)).toBe(true);
       expect(isSupportedCountry(cc.toUpperCase())).toBe(true);
     }
   });
 
-  it('returns false for countries outside the 14-profile list', () => {
+  it('returns false for countries outside the supported-profile list', () => {
     expect(isSupportedCountry('jp')).toBe(false);
     expect(isSupportedCountry('us')).toBe(false);
     expect(isSupportedCountry('gb')).toBe(false);

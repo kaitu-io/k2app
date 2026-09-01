@@ -1625,3 +1625,88 @@ describe('Connection Store - stale up() response', () => {
     expect(vpn.useVPNMachineStore.getState().error).toEqual({ code: 570, message: 'permission denied' });
   });
 });
+
+/**
+ * 504 RuleBundlesUnavailable one-shot global fallback.
+ *
+ * Pre-2026-06-14 engines fail closed when the split country's bundles can't
+ * be ensured (the incident the old server-side geo hotfix papered over);
+ * newer engines 504 only on a true cold start. The OTA webapp serves both
+ * generations, so connection.store retries ONCE with global-shape routes
+ * (zero bundle dependency). cn is exempt — its bundles ship embedded, so a
+ * 504 there is a real fault a global retry won't fix.
+ */
+describe('Connection Store - 504 rule-bundle global fallback', () => {
+  async function setupWithCountry(country: string) {
+    const stores = await getStores();
+    stores.config.useConfigStore.setState({ country, countryVia: 'direct', autoDetect: false });
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@tokyo.example.com:443');
+    const tunnel = {
+      id: 1, domain: 'tokyo.example.com', name: 'Tokyo', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' },
+    } as any;
+    stores.useConnectionStore.getState().selectCloudTunnel(tunnel);
+    return stores;
+  }
+
+  it('504 with a non-cn country retries once with global-shape routes and succeeds silently', async () => {
+    const { useConnectionStore, vpn } = await setupWithCountry('tr');
+    mockRun
+      .mockResolvedValueOnce({ code: 504, message: 'rule bundles unavailable' })
+      .mockResolvedValueOnce({ code: 0 });
+
+    await useConnectionStore.getState().connect();
+
+    const upCalls = mockRun.mock.calls.filter(c => c[0] === 'up');
+    expect(upCalls).toHaveLength(2);
+
+    // First attempt carried the country split (region route present).
+    const firstRoutes = upCalls[0][1].config.routes as Array<{ via: string; match: Record<string, unknown> }>;
+    expect(firstRoutes.some(r => r.match?.region === 'tr')).toBe(true);
+
+    // Retry is the global shape: single route, no region/preset — zero bundle deps.
+    const retryRoutes = upCalls[1][1].config.routes as Array<{ via: string; match: Record<string, unknown> }>;
+    expect(retryRoutes).toHaveLength(1);
+    expect(retryRoutes[0].match).toEqual({ all: true });
+    expect(retryRoutes[0].via).toBe('k2v5://u:t@tokyo.example.com:443');
+
+    // Success → no error dispatched, machine still in connecting (awaiting backend).
+    expect(vpn.useVPNMachineStore.getState().state).toBe('connecting');
+    expect(vpn.useVPNMachineStore.getState().error).toBeNull();
+  });
+
+  it('surfaces the retry failure when the global fallback also fails', async () => {
+    const { useConnectionStore, vpn } = await setupWithCountry('tr');
+    mockRun
+      .mockResolvedValueOnce({ code: 504, message: 'rule bundles unavailable' })
+      .mockResolvedValueOnce({ code: 503, message: 'server unreachable' });
+
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun.mock.calls.filter(c => c[0] === 'up')).toHaveLength(2);
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(503);
+  });
+
+  it('504 with country=cn does NOT retry (embedded bundles make it a real fault)', async () => {
+    const { useConnectionStore, vpn } = await setupWithCountry('cn');
+    mockRun.mockResolvedValueOnce({ code: 504, message: 'rule bundles unavailable' });
+
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun.mock.calls.filter(c => c[0] === 'up')).toHaveLength(1);
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(504);
+  });
+
+  it('non-504 errors do not trigger the fallback', async () => {
+    const { useConnectionStore, vpn } = await setupWithCountry('tr');
+    mockRun.mockResolvedValueOnce({ code: 401, message: 'auth rejected' });
+
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun.mock.calls.filter(c => c[0] === 'up')).toHaveLength(1);
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(401);
+  });
+});

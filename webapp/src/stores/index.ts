@@ -89,9 +89,9 @@ export function initializeAllStores(): () => void {
   // 按依赖顺序初始化 stores
   const cleanupLayout = initializeLayoutStore();
   useConfigStore.getState().loadConfig().then(() => {
-    // After config loads, fetch geo detection from anonymous endpoint.
-    // Runs async in background — never blocks app init.
-    useConfigStore.getState().fetchGeoDetection();
+    // After config loads, run local geo detection (system timezone — no
+    // network). Runs async in background — never blocks app init.
+    useConfigStore.getState().detectGeo();
   });
   useSelfHostedStore.getState().loadTunnel(); // fire-and-forget, sets loaded=true when done
   useAppRoutesStore.getState().load(); // fire-and-forget; runs legacy-key migration + hydrate

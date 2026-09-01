@@ -22,20 +22,17 @@ import { useConfigStore } from '../stores/config.store';
 import type { DataUser } from '../services/api-types';
 
 /**
- * Push Center-detected country + suggestedProfile into the config store.
- * When autoDetect is on, this also updates selectedCountry.
+ * Cache the Center-suggested profile name (display/reference only).
  *
- * TODO(country-ownership): 前端不应再依赖后端的 currentCountry / suggestedProfile。
- *   后端按请求源 IP 判国家(api/geoip.go maybeUpdateUserCountry)会被 geo-via-tunnel
- *   污染——全局代理下控制面请求走隧道,Center 拿到的是出口节点 IP,误判用户所在国
- *   (本例:东京出口 → currentCountry=jp → 分流要 jp 规则包 → 缺包 504 无法连接)。
- *   目标形态:country 的判定完全由前端自己完成(本地网络环境探测),后端 currentCountry
- *   仅作辅助/参考,不再直接喂进 config store。届时移除本函数对 user.currentCountry /
- *   user.suggestedProfile 的使用。当前先硬钉 cn 兜底。
+ * country-ownership(兑现 2026-08 的 TODO): country 的判定已完全归前端本地
+ * 完成(config.store.detectGeo → utils/geo-detect.ts 系统时区检测,免疫
+ * geo-via-tunnel 污染——全局代理下控制面请求走隧道,Center 只能看到出口节点
+ * IP)。因此这里**不再**把后端的 currentCountry 喂进 config store(旧版曾因
+ * 东京出口 → currentCountry=jp → 缺 jp 规则包 → 504 无法连接,被迫硬钉 cn);
+ * user.suggestedProfile 仅作参考缓存,不影响路由。
  */
 function syncDetectedProfile(user: DataUser): void {
   useConfigStore.getState().setDetectedProfile({
-    country: 'cn', // 强制 cn：cn.krs 内置,永不缺包 504;规避 geo-via-tunnel 污染(出口节点 IP 误判国家)
     profile: user.suggestedProfile ?? null,
   });
 }

@@ -5,7 +5,8 @@
  * 1. defaultVia: 'proxy' | 'direct' — where unmatched traffic goes
  * 2. countryVia: 'direct' | 'k2p' | null — where matched country traffic goes (null = global)
  *
- * Plus country selection with optional auto-detection from Center.
+ * Plus country selection with optional local auto-detection (system
+ * timezone — utils/geo-detect.ts; no backend involved).
  *
  * Preset mapping (UI convenience):
  *   global:     defaultVia='proxy',  countryVia=null
@@ -18,8 +19,8 @@ import { create } from 'zustand';
 
 import type { ClientConfig, RouteConfig } from '../types/client-config';
 import { CLIENT_CONFIG_DEFAULTS } from '../types/client-config';
-import { countryToProfile, PROFILE_TO_PRESET } from '../utils/routes';
-import { cloudApi } from '../services/cloud-api';
+import { countryToProfile, isRoutableCountry, routableCountry, PROFILE_TO_PRESET } from '../utils/routes';
+import { detectCountry } from '../utils/geo-detect';
 import { getCurrentAppConfig } from '../config/apps';
 /** Build-time log level from K2_BUILD_LOG_LEVEL env var (default: 'debug'). Injected by Vite define. */
 declare const __K2_BUILD_LOG_LEVEL__: string;
@@ -51,6 +52,12 @@ export interface ConnectConfigParams {
   serverUrl?: string;
   forceDirect?: string[];   // Plan C: process names → Tier-1 direct route
   forceProxy?: string[];    // Plan C: process names → Tier-1 proxy route
+  /**
+   * 504 fallback: emit global-shape routes (everything through the tunnel,
+   * zero rule-bundle dependency) regardless of the stored country split.
+   * Used by connection.store's one-shot retry after RuleBundlesUnavailable.
+   */
+  forceGlobalRoutes?: boolean;
 }
 
 export interface DetectedProfileUpdate {
@@ -97,12 +104,13 @@ interface ConfigActions {
    */
   setDetectedProfile: (update: DetectedProfileUpdate) => void;
   /**
-   * Fetch country detection from anonymous `GET /api/geo` endpoint.
-   * Called on app init. When autoDetect is on, always fetches and syncs
-   * country. When autoDetect is off, only fetches once to populate
-   * detectedCountry cache (does not change country).
+   * Detect the user's country locally (system timezone — see
+   * `utils/geo-detect.ts`; no network, immune to geo-via-tunnel pollution).
+   * Called on app init. When autoDetect is on, always syncs `country` (clamped
+   * to a routable country, `cn` fallback). When autoDetect is off, only
+   * populates the detectedCountry cache (does not change country).
    */
-  fetchGeoDetection: () => Promise<void>;
+  detectGeo: () => Promise<void>;
   /** Derive the current RoutePreset from defaultVia + countryVia. */
   resolvePreset: () => RoutePreset;
   buildConnectConfig: (params?: ConnectConfigParams | string) => ClientConfig;
@@ -132,6 +140,16 @@ function buildRoutes(
   if (countryVia === 'direct') {
     if (!country) {
       // No country set — fall back to global shape
+      return [{ via: serverUrl, match: { all: true } }];
+    }
+    if (!isRoutableCountry(country)) {
+      // A region route for a country without published rule bundles 504s on
+      // pre-2026-06-14 engines and silently routes as cn on newer ones (see
+      // utils/routes.ts routableCountry). Every writer of `country` clamps
+      // via routableCountry(), so reaching this means a caller bypassed the
+      // clamp — fail SAFE to the global shape.
+      console.error('[ConfigStore] buildRoutes: country "' + country
+        + '" has no rule bundles — falling back to global shape');
       return [{ via: serverUrl, match: { all: true } }];
     }
     const routes: RouteConfig[] = [
@@ -371,7 +389,9 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     if (on) {
       const { detectedCountry } = get();
       if (detectedCountry) {
-        next.country = detectedCountry.toLowerCase();
+        // detectedCountry holds the RAW detected country (display cache) and
+        // may have no rule bundles — clamp before it becomes routing input.
+        next.country = routableCountry(detectedCountry);
       }
     }
     set(next);
@@ -393,7 +413,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
 
     const { autoDetect } = get();
     if (autoDetect && country) {
-      next.country = country.toLowerCase();
+      next.country = routableCountry(country);
     }
 
     if (Object.keys(next).length > 0) {
@@ -406,43 +426,38 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     }
   },
 
-  fetchGeoDetection: async () => {
-    // Kaitu is China-market: region is always 'cn', so it never consults
-    // /api/geo. Only the multi-country brand (Overleap) does geo detection.
+  detectGeo: async () => {
+    // Kaitu is China-market: region is always 'cn', so it never runs
+    // detection. Only the multi-country brand (Overleap) does.
     if (!MULTI_COUNTRY_ROUTING) return;
-    try {
-      const resp = await cloudApi.get<{ country: string; profile: string }>('/api/geo');
-      // Fallback to CN if API fails or returns empty country
-      const cc = (resp.code === 0 && resp.data?.country)
-        ? resp.data.country.toLowerCase()
-        : 'cn';
-      const profile = (resp.code === 0 && resp.data?.profile) || 'cnroute';
+    // Local detection via the system timezone (utils/geo-detect.ts). The old
+    // `GET /api/geo` IP detection is deliberately NOT consulted: it is frozen
+    // by a server-side hotfix (always `cn`) for released clients, and with
+    // the tunnel up it would see the exit node's country anyway.
+    const detected = detectCountry();       // raw cc for display, or null
+    const cc = routableCountry(detected);   // clamped for routing ('cn' fallback)
 
-      const { autoDetect, detectedCountry } = get();
+    const { autoDetect, detectedCountry } = get();
 
-      const next: Partial<ConfigState> = { detectedCountry: cc, suggestedProfile: profile };
+    const next: Partial<ConfigState> = {
+      detectedCountry: detected ?? cc,
+      suggestedProfile: countryToProfile(cc),
+    };
 
-      if (autoDetect) {
-        next.country = cc;
-      }
-
-      // When autoDetect is off and no country yet, use first detection
-      if (!autoDetect && !get().country && !detectedCountry) {
-        next.country = cc;
-        const { defaultVia, countryVia, alwaysOn } = get();
-        await persist(defaultVia, countryVia, cc, false, alwaysOn);
-      }
-
-      console.info('[ConfigStore] fetchGeoDetection: country=' + cc + ', profile=' + profile + ', autoDetect=' + autoDetect);
-      set(next);
-    } catch (err) {
-      console.warn('[ConfigStore] fetchGeoDetection failed, using CN default:', err);
-      // Network error — still set CN as fallback
-      const { autoDetect, country: current } = get();
-      if (autoDetect || !current) {
-        set({ detectedCountry: 'cn', suggestedProfile: 'cnroute', country: 'cn' });
-      }
+    if (autoDetect) {
+      next.country = cc;
     }
+
+    // When autoDetect is off and no country yet, use first detection
+    if (!autoDetect && !get().country && !detectedCountry) {
+      next.country = cc;
+      const { defaultVia, countryVia, alwaysOn } = get();
+      await persist(defaultVia, countryVia, cc, false, alwaysOn);
+    }
+
+    console.info('[ConfigStore] detectGeo: detected=' + (detected ?? 'null')
+      + ', country=' + cc + ', autoDetect=' + autoDetect);
+    set(next);
   },
 
   resolvePreset: () => {
@@ -456,7 +471,11 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     const opts = typeof params === 'string' ? { serverUrl: params } : (params ?? {});
     const serverUrl = opts.serverUrl;
 
-    const baseRoutes = buildRoutes(defaultVia, countryVia, country, serverUrl);
+    // forceGlobalRoutes (504 fallback): countryVia=null yields the global
+    // shape — no region/preset match, so the engine needs no rule bundles.
+    const baseRoutes = opts.forceGlobalRoutes
+      ? buildRoutes(defaultVia, null, null, serverUrl)
+      : buildRoutes(defaultVia, countryVia, country, serverUrl);
 
     // Plan C: Tier-1 per-app override routes — prepended before the region route
     const fd = opts.forceDirect ?? [];

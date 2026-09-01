@@ -39,7 +39,8 @@ export interface BrandFeatures {
    *  overleap build must not surface a `curl kaitu.io/...` command (brand
    *  leakage). Flip on for overleap once overleap.io mirrors /i/k2s. */
   selfHostedTunnels: boolean;
-  /** Multi-country smart-routing: geo detection (`/api/geo`) + the country
+  /** Multi-country smart-routing: local geo detection (system timezone,
+   *  `utils/geo-detect.ts`) + the country
    *  picker in RoutingModeSelector. Overleap serves all countries → on.
    *  Kaitu is China-market (home = 中国): both 出国 (escape the GFW, region=cn)
    *  and 回国 (reach China from abroad, via home node) are cn-fixed, so Kaitu

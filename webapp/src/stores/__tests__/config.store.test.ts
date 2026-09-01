@@ -411,6 +411,31 @@ describe('Config Store', () => {
       expect(result.routes?.some((r) => r.match?.names?.includes('tencent-overseas'))).toBe(false);
     });
 
+    it('bypass with a bundle-less country falls back to global shape (504 defense)', async () => {
+      const useConfigStore = await getStore();
+      // Writers clamp via routableCountry(), so 'jp' here simulates a caller
+      // bypassing the clamp — buildRoutes must fail SAFE (global, no region
+      // route that would 504 at engine bundle-ensure), never fail closed.
+      useConfigStore.setState({ defaultVia: 'proxy', countryVia: 'direct', country: 'jp', autoDetect: false });
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(result.routes).toEqual([
+        { via: 'k2v5://example', match: { all: true } },
+      ]);
+    });
+
+    it('forceGlobalRoutes overrides the stored country split (504 fallback path)', async () => {
+      const useConfigStore = await getStore();
+      useConfigStore.setState({ defaultVia: 'proxy', countryVia: 'direct', country: 'tr', autoDetect: false });
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example', forceGlobalRoutes: true });
+
+      expect(result.routes).toEqual([
+        { via: 'k2v5://example', match: { all: true } },
+      ]);
+    });
+
     it('home mode (k2p) does NOT emit tencent-overseas reject (abroad scenario)', async () => {
       mockStorage.get.mockResolvedValue({ defaultVia: 'direct', countryVia: 'k2p', country: 'cn', autoDetect: false });
       const useConfigStore = await getStore();
@@ -481,18 +506,21 @@ describe('Config Store', () => {
       expect(result.routes).toEqual([]);
     });
 
-    it('bypass mode with unknown country emits region route (engine handles missing bundle gracefully)', async () => {
+    it('bypass mode with unknown country falls back to global (engine fails CLOSED on missing bundles)', async () => {
       const useConfigStore = await getStore();
       // Set country directly (see 'bypass + non-cn' above) — pure buildConnectConfig test.
       useConfigStore.setState({ defaultVia: 'proxy', countryVia: 'direct', country: 'xx', autoDetect: false });
 
       const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 
-      // Plan B: region-based routing passes any country code to the engine;
-      // the engine treats an unknown region bundle as a no-op (no preset lookup needed).
+      // This test previously asserted a region:xx route would be emitted,
+      // claiming "the engine treats an unknown region bundle as a no-op" —
+      // that was wrong: only `names` routes degrade gracefully. A region
+      // without bundles 504s on pre-2026-06-14 engines and silently routes
+      // as cn on newer ones (k2 fallbackRegion). buildRoutes now clamps to
+      // the global shape for any country without published bundles.
       expect(result.routes).toEqual([
-        { match: { region: 'xx' }, via: 'direct' },
-        { match: { all: true }, via: 'k2v5://example' },
+        { via: 'k2v5://example', match: { all: true } },
       ]);
     });
   });
