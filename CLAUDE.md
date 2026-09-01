@@ -113,6 +113,7 @@ Reserved event names:
 | `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
 | `DIAG: pipe-watchdog` | WARN | pipe() watchdog force-closed a stuck half-closed pipe | firstExitDir, graceMs |
 | `DIAG: process-lookup-slow` | INFO | latency > 100ms | platform, network, latencyMs |
+| `DIAG: process-pcb-fallback` | WARN | once at first lookup, only when the Darwin kernel-PCB attribution self-check fails — the searcher runs on the legacy lsof snapshot for the process lifetime (expect this never; it means a macOS ABI change or an exotic sandbox) | reason |
 | `DIAG: udp-deliver-drop` | DEBUG | server session readCh full — handler stuck/slow | transport, sessionID, addr, len |
 | `DIAG: stream-killed-on-write-fail` | WARN | per-Write deadline (5s) exceeded or write error on UDP relay mux | transport, side, sessionID, len, writeMs, err |
 | `DIAG: udp-mux-rebuild` | WARN | a dead UDP relay mux was evicted from the client cache and will be rebuilt | transport, reason (`write-fail`/`peer-closed`/`closed`), rebuilds (cumulative) |
