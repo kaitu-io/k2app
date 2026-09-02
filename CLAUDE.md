@@ -1,8 +1,6 @@
 # k2app — Kaitu VPN Client
 
-Tauri v2 desktop + Capacitor 7 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management.
-
-**This file is the only doc loaded on every session.** It carries the map plus the rules that bite before you'd know to look them up. Everything else is a leaf: the repo has ~27 `CLAUDE.md` files (8 here + 19 inside the `k2/` submodule), and a directory's own doc loads when you work in that directory. So **layer-specific detail belongs in the layer doc, not here** — putting it here charges every session for it.
+Tauri v2 desktop + Capacitor 7 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management. **This file loads every session — keep it to the map plus rules that fail silently; layer detail belongs in the layer doc** (28 `CLAUDE.md` files: 9 here + 19 in `k2/`, each loading when you work in its directory).
 
 ## Quick Commands
 
@@ -10,7 +8,7 @@ Tauri v2 desktop + Capacitor 7 mobile app wrapping the k2 Go tunnel core. React 
 cd web && yarn dev                          # Next.js website (Turbopack)
 make dev-standalone                         # Standalone browser dev (macOS, no Tauri)
 make dev-macos / make dev-windows           # Tauri desktop dev
-make dev-android / make dev-ios             # Mobile dev (gomobile bind + cap sync + cap run)
+make dev-android / make dev-ios             # Mobile dev (gomobile bind + cap sync; dev-ios deploys a plugged-in iPhone via scripts/deploy-ios-device.sh, cap run = simulator fallback)
 make build-macos / build-windows / build-linux / build-android / build-ios
 make upload-macos / upload-windows / upload-linux / upload-android
 git push origin main:website                # Website deploy — Amplify builds the `website` branch,
@@ -19,10 +17,9 @@ make publish-android VERSION=x.y.z BRAND=kaitu   # Mobile latest.json (phase 2 r
 make publish-ios     VERSION=x.y.z BRAND=kaitu   # both delegate to scripts/publish-mobile.sh
 cd webapp && yarn test                      # vitest
 cd desktop/src-tauri && cargo test          # Rust tests
-cd api && go test ./...                     # Center API tests
+cd api && go test ./...                     # Center API tests — DB-backed tests silently SKIP without ../center/config.yml (gitignored); see api/CLAUDE.md
 cd mcp && go test ./...                     # Go MCP server tests
 scripts/test_build.sh                       # Full build verification (count is dynamic, not fixed)
-yarn install                                # Always from root (workspace)
 ```
 
 ## Constitutional Rule: Work Isolation
@@ -64,7 +61,6 @@ docs/plans/          Architecture design docs
 - Desktop: Tauri v2, Rust · Core: Go (k2 submodule)
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
 - Mobile: Capacitor 7, gomobile bind (K2Plugin Swift/Kotlin), `@capawesome/capacitor-android-edge-to-edge-support` for Android 15 edge-to-edge
-- Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock; `tools/kaitu-center` uses npm
 - CI: GitHub Actions — see `.github/workflows/`
 
 ## Cross-Layer Conventions
@@ -72,18 +68,21 @@ docs/plans/          Architecture design docs
 Rules that span directories, or that fail silently if you don't know them up front. Layer-specific rules live in the layer docs.
 
 - **Version source of truth**: Root `package.json` `version`. Tauri reads it via `../../package.json`; the k2 binary gets it via ldflags. Bump here first, and pass the value through verbatim — an invented suffix makes an upgrade look like a downgrade.
-- **k2 submodule is read-only**: Do not edit `k2/` from the parent worktree unless the task explicitly targets the k2 repo. Built with `-tags nowebapp` (headless); binary → `desktop/src-tauri/binaries/`.
+- **`make pre-build` (every `dev-*`/`build-*` target) rewrites tracked files**: `scripts/sync-version.sh` propagates the root version into `desktop/src-tauri/Cargo.toml`, `mobile/android/app/build.gradle`, `mobile/plugins/k2-plugin/ios/Plugin/K2Helpers.swift`, `mobile/ios/App/App.xcodeproj/project.pbxproj` — expect them modified after any `make`; a bump that skips it fails CI `check-versions`, which is sed-pattern based (reformat one of those files and propagation stops silently).
+- **k2 submodule is read-only**: Do not edit `k2/` from the parent worktree unless the task explicitly targets the k2 repo. The desktop sidecar is built with `-tags=release` (`k2/Makefile` `DESKTOP_TAGS`) → `desktop/src-tauri/binaries/`; it is headless because `k2/webui/embed.go` is `linux && !nowebapp` — `nowebapp` is a k2r / dev-script tag, not a desktop one.
+- **`pre-build` also overwrites `k2/rule/embed/krs.tar.gz`** (tracked in the submodule as a 66 KB placeholder) with the ~2 MB CDN rule archive — never commit it. Offline, a dev build silently embeds the placeholder; only `EMBED_REQUIRE_FULL=1` (release CI) fails instead. `scripts/check-embed-size.sh` is invoked by nothing — it only guards if you run it.
+- **New worktrees need `make init-submodules`**: `k2/` is a private SSH submodule with a nested `third_party/kuic` submodule (a go.mod `replace` target) — `git worktree add` populates neither, and a bare `git submodule update` detaches a checked-out k2 branch back to the pinned gitlink.
 - **Go→JS JSON keys**: Go `json.Marshal` emits snake_case; JS/TS expects camelCase. Native bridges (`K2Plugin.swift`/`.kt`, Tauri bridges) remap at the boundary.
 - **Go `json.Marshal` escapes `&` as `\u0026`**: asserting on raw JSON strings containing URLs will fail. Unmarshal to `map[string]any` and assert on values.
 - **Docker on Apple Silicon**: always `--platform linux/amd64` for server images; the Go binary needs `GOARCH=amd64`.
-- **Log rotation**: the 20 MB cap is universal; **retention is not** — Go `config.SetupLogging` (lumberjack) keeps 3 backups / 7 days / gzip, Tauri plugin-log keeps only one (`KeepOne`), iOS/Android `NativeLogger` truncates to 0. Don't assume 3 backups exist off the Go path. **Upload modules are read-only — never truncate a source file.**
+- **Log rotation**: the 20 MB cap is near-universal — the iOS Network Extension's own `NativeLogger` copy (`mobile/ios/App/PacketTunnelExtension/NativeLogger.swift`) caps at 50 MB; **retention is not** — Go `config.SetupLogging` (lumberjack) keeps 3 backups / 7 days / gzip, Tauri plugin-log keeps only one (`KeepOne`), the K2Plugin iOS/Android `NativeLogger` truncates to 0. Don't assume 3 backups exist off the Go path. **Upload modules are read-only — never truncate a source file.**
 - **Build-time log level**: `K2_BUILD_LOG_LEVEL` (default `debug`) is the single knob across Go / Rust / Vite. Production: `make build-macos K2_BUILD_LOG_LEVEL=info`. Runtime `SetLogLevel()` always wins.
-- **Artifact naming**: Desktop `Kaitu_{VERSION}_{ARCH}.{EXT}` (underscores); mobile uses the `kaitu/android/` CDN layout; overleap desktop builds are `Overleap_{VERSION}_{ARCH}.{EXT}` under CDN `/overleap/desktop/`; overleap mobile builds are `Overleap-{VERSION}.apk` (no underscore — Android flavor naming) under CDN `overleap/android/`. Details in `desktop/CLAUDE.md` / `mobile/CLAUDE.md`.
-- **Linux desktop has no Tauri**: `cmd/k2` is one Go binary with the webapp embedded via `//go:embed` (`k2/webui`). Install is `curl -fsSL https://kaitu.io/i/k2 | sudo bash` — pulls a tarball + `.sha256`, verifies, runs `packaging/linux/install.sh`. macOS/Windows still ship the Tauri shell. (This paragraph is the only current record — `k2/webui/CLAUDE.md` documents the embed package, not the install, and the 2026-03 Linux spec still names the retired `/install-linux.sh` URL.)
-- **Workspace layout**: root `yarn install` provisions `webapp`/`desktop`/`mobile`. `web/` and `tools/kaitu-center/` have their own lockfiles — install there separately.
+- **Artifact naming**: Desktop `Kaitu_{VERSION}_{ARCH}.{EXT}` (underscores); mobile uses the `kaitu/android/` CDN layout; overleap desktop builds are `Overleap_{VERSION}_{ARCH}.{EXT}` under CDN `/overleap/desktop/`; overleap mobile builds are `Overleap-{VERSION}.apk` (no underscore — Android flavor naming) under CDN `overleap/android/`. Linux desktop is **kaitu-only** (`scripts/ci/upload-release.sh` refuses overleap; `/i/k2` 404s off-brand). Details in `desktop/CLAUDE.md` / `mobile/CLAUDE.md`.
+- **Linux desktop has no Tauri**: `cmd/k2` is one Go binary with the webapp embedded via `//go:embed` (`k2/webui`). Install is `curl -fsSL https://kaitu.io/i/k2 | sudo bash` — the script is the static file `web/public/i/k2` (brand-gated in `web/src/middleware.ts`); it pulls a tarball + `.sha256`, verifies, and runs the tarball's `install.sh`, whose source is k2app-root `packaging/linux/install.sh` (not in `k2/`). macOS/Windows still ship the Tauri shell. `docs/superpowers/specs/2026-03-17-linux-desktop-design.md` still names the retired `/install-linux.sh` URL — this bullet wins.
+- **Workspace layout**: root `yarn install` (always from root) provisions the `webapp`/`desktop`/`mobile` workspaces. `web/` (yarn) and `tools/kaitu-center/` (npm) have their own lockfiles — install there separately.
 - **Brand 参数化（开途 / Overleap 双品牌）**: 后端按 Host→`X-K2-Brand`→kaitu 解析请求品牌；`users.brand` 是**出生属性**，认证层强制匹配（403003）。客户端 build 时烘焙品牌并恒发 `X-K2-Brand`。分层机制见 `api/CLAUDE.md` / `webapp/CLAUDE.md` / `web/CLAUDE.md` 的 "Brand" 段；设计见 `docs/superpowers/specs/2026-07-14-brand-split-design.md`。**以下三条会让你本地全绿而线上/CI 是瞎的**：
   - **品牌字面量只能进 `webapp/src/brands/<brand>/index.ts` / `web/src/lib/brands.ts`** —— 静态 import 的页面里写死的字面量会被打进**另一个品牌**的产物。
-  - **改任一层的品牌数据后必须重生成跨层契约**：`cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./...`，产物与代码一起提交。`contracts/api-contract.json` 由 `api/contract_export_test.go` 从 **Go 活值**导出（不是手写清单），锁住三层注册表的交集 —— 这条契约门**只有本文件记录**，api/CLAUDE.md 的 Brand 段没有。**必须带 `-count=1`**（golden 在 api/ 模块外，go test 缓存不 recheck 模块外文件 → 手改 golden 迁就代码会拿到陈旧 PASS）；golden **只读**（自动重写 = CI 永远绿）；契约文件**必须进 git**（gitignore 掉 = 本地绿 CI 瞎）。
+  - **改任一层的品牌数据后必须重生成跨层契约**：`cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./...`，产物与代码一起提交。`contracts/api-contract.json` 由 `api/contract_export_test.go` 从 **Go 活值**导出（不是手写清单），锁住三层注册表的交集（api/CLAUDE.md 的 Brand 段记着同一条，改动要两处同步）。**必须带 `-count=1`**（golden 在 api/ 模块外，go test 缓存不 recheck 模块外文件 → 手改 golden 迁就代码会拿到陈旧 PASS）；golden **只读**（自动重写 = CI 永远绿）；契约文件**必须进 git**（gitignore 掉 = 本地绿 CI 瞎）。
   - **跨层不变量是宿主归属**（`host(各层 baseURL) ∈ api.Hosts[该品牌]`）**而非字符串相等** —— api/webapp 用 `www.`、web 用裸域是合法漂移，别"修"它。
 
 ## Cross-Layer Domain Vocabulary
@@ -95,10 +94,10 @@ Terms that cross layer boundaries. Each layer's doc extends its own.
 - **k2subs** — Subscription URL scheme (`k2subs://udid:token@host/api/subs`), resolved to `k2v5://` tunnels via `/api/subs`. **Desktop daemon only** — mobile is manual-only, webapp hands `_k2.run('up')` a single `k2v5://` URL. Don't assume symmetry. See `mobile/CLAUDE.md` "Server Selection".
 - **probe.Registry** — In-memory per-URL QUIC-probe cache (`k2/probe/`), read by the daemon probe loop, `/api/core probe`, and `Subscription.Pick`. **Flake tolerance**: a first `score==0` returns `ok=false` (neutral); only two consecutive zeros hard-exclude. TTL 15 min.
 - **recommendScore** — Canonical `[0.0, 1.0]` tunnel recommendation signal (higher = better), from `api.ComputeRecommendScore`. Non-cloud nodes get `0.5` neutral, never 0. Legacy `weight` is dual-emitted as `round(score*100)`. Model + rules: `api/CLAUDE.md` "Tunnel Scoring".
-- **EngineError** — `{Code int, Category string, Message string}` (`k2/engine/error.go`). Code ranges are load-bearing and **must never be mixed**: `1xx` network (101 NetworkUnavailable, **108 Timeout**), `4xx` client (400 BadConfig, 401 AuthRejected, 402 PaymentRequired, 403 Forbidden, 412 EnvironmentSetupFailed), `5xx` server (502 ProtocolError, 503 ServerUnreachable, 504 RuleBundlesUnavailable, 570 ConnectionFatal). Categories: `client`/`network`/`server`/`target`. **Timeout is `108`, not `408`** — it is a network fault, not a client fault; this file said `408` until 2026-08-02, so distrust any code or doc that repeats it.
-- **NetEvent** — Network state change (Signal + 7 platform fields), constructed by platforms, exported by gomobile as `EngineNetEvent` (iOS) / `engine.NetEvent` (Android). Routed through `netCoordinator`, which separates 网络断了 / 恢复 / 接口变了. Legacy `OnNetworkChanged()` → `SignalChanged`. Details: `k2/engine/CLAUDE.md`, `k2/appext/CLAUDE.md`.
+- **EngineError** — `{Code int, Category string, Message string}` (`k2/engine/error.go`). Code ranges are load-bearing and **must never be mixed**: `1xx` network (101 NetworkUnavailable, **108 Timeout**), `4xx` client (400 BadConfig, 401 AuthRejected, 402 PaymentRequired, 403 Forbidden, 412 EnvironmentSetupFailed), `5xx` server (502 ProtocolError, 503 ServerUnreachable, 504 RuleBundlesUnavailable, 570 ConnectionFatal). Categories: `client`/`network`/`server`/`target`. **Timeout is `108`, not `408`** (a network fault, not a client one) — any code or doc saying `408` is stale.
+- **NetEvent** — Network state change (Signal + 7 platform fields), constructed by platforms and handed to `appext.Engine.NotifyNetEvent`: iOS `AppextNewNetEvent()` in `mobile/ios/App/PacketTunnelExtension/PacketTunnelProvider.swift`, Android `appext.NetEvent()` + `engine.notifyNetEvent()` in `mobile/android/app/.../K2VpnService.kt` — the wiring is in the app targets, not `mobile/plugins/`. Routed through `netCoordinator`, which separates 网络断了 / 恢复 / 接口变了. Legacy `OnNetworkChanged()` → `SignalChanged`. Details: `k2/engine/CLAUDE.md`, `k2/appext/CLAUDE.md`.
 - **transformStatus()** — Bridge-layer webapp boundary: `"stopped"`→`"disconnected"`, synthesizes `"error"`. See `webapp/CLAUDE.md`.
-- **Brand** — Registry-backed enum (`kaitu` / `overleap`, `api/brand.go`) driving per-brand hosts/CORS/payment-channels/node-visibility. Resolved per-request (Host→`X-K2-Brand`→kaitu), immutable on `users.brand` once set, enforced at auth (403003 on mismatch). Spec + full design: `docs/superpowers/specs/2026-07-14-brand-split-design.md`; backend rules in `api/CLAUDE.md` "Brand" section.
+- **Brand** — Registry-backed enum (`kaitu` / `overleap`, `api/brand.go`) driving per-brand hosts/CORS/payment-channels/node-visibility; resolution, immutability, and the contract gate are in the Brand convention above.
 
 ## Layer Docs
 
