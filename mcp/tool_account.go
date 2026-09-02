@@ -14,6 +14,11 @@ func (app *App) handleCenterError(err error) *mcp.CallToolResult {
 	if errors.As(err, &ce) {
 		switch ce.Code {
 		case 401:
+			if !app.session.OwnsTokens() {
+				// Shared desktop session: MCP reads it and never refreshes it,
+				// so only the desktop app can bring it back.
+				return errorResult("desktop session expired or changed — open the desktop app and sign in there; MCP shares that session read-only and never refreshes it itself")
+			}
 			return errorResult("not logged in, please call login first")
 		case 402:
 			return errorResult("subscription expired")
