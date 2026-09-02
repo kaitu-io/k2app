@@ -1,5 +1,5 @@
 {
-  "_generated": "GENERATED from live Go values by api/contract_export_test.go. Do not hand-edit. Regenerate: cd api && UPDATE_CONTRACT=1 go test -run TestExportContract ./...",
+  "_generated": "GENERATED from live Go values by api/contract_export_test.go. Do not hand-edit. Regenerate: cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./...",
   "brands": {
     "kaitu": {
       "id": "kaitu",

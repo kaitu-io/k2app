@@ -35,9 +35,9 @@ import (
 //
 // 手抄的清单会漂移，那正是这个门要杀死的病。
 
-const contractGeneratedNote = "GENERATED from live Go values by api/contract_export_test.go. Do not hand-edit. Regenerate: cd api && UPDATE_CONTRACT=1 go test -run TestExportContract ./..."
+const contractGeneratedNote = "GENERATED from live Go values by api/contract_export_test.go. Do not hand-edit. Regenerate: cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./..."
 
-const contractRegenCmd = "cd api && UPDATE_CONTRACT=1 go test -run TestExportContract ./..."
+const contractRegenCmd = "cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./..."
 
 // contractRelPath 从测试所在的 api/ 目录解析到仓库根的 contracts/。
 var contractRelPath = filepath.Join("..", "contracts", "api-contract.json")
