@@ -30,11 +30,38 @@ type Session struct {
 	Email        string
 	IssuedAt     time.Time
 	dir          string
+
+	// fromTauri is set once RestoreFromTauri succeeded: the tokens belong to
+	// the desktop app, which refreshes them itself. MCP must then never call
+	// /api/auth/refresh — Center rotates device.TokenIssueAt on refresh and
+	// validateToken rejects every token carrying the old claim, so an MCP
+	// refresh would log the desktop out. See OwnsTokens / ReloadTokens.
+	fromTauri bool
+
+	// Test seams; nil means the platform defaults.
+	tauriPath func() string
+	hwID      func() (string, error)
 }
 
 // NewSession creates a new Session that persists data to dir.
 func NewSession(dir string) *Session {
 	return &Session{dir: dir}
+}
+
+// storagePath resolves the desktop storage.json location (test seam aware).
+func (s *Session) storagePath() string {
+	if s.tauriPath != nil {
+		return s.tauriPath()
+	}
+	return tauriStoragePath()
+}
+
+// hardwareID resolves the key material for the desktop storage (test seam aware).
+func (s *Session) hardwareID() (string, error) {
+	if s.hwID != nil {
+		return s.hwID()
+	}
+	return getHardwareID()
 }
 
 // SetTokens sets the auth tokens under a write lock.
@@ -168,12 +195,12 @@ func (s *Session) UDID() string {
 // fails gracefully on partial reads and we return false.
 // Returns true if tokens were successfully loaded.
 func (s *Session) RestoreFromTauri() bool {
-	path := tauriStoragePath()
+	path := s.storagePath()
 	if path == "" {
 		return false
 	}
 
-	hwID, err := getHardwareID()
+	hwID, err := s.hardwareID()
 	if err != nil {
 		log.Printf("[session] Cannot get hardware ID for Tauri storage: %v", err)
 		return false
@@ -194,6 +221,7 @@ func (s *Session) RestoreFromTauri() bool {
 	s.AccessToken = ts.AccessToken
 	s.RefreshToken = ts.RefreshToken
 	s.Email = "" // Not stored in Tauri storage
+	s.fromTauri = true
 	s.mu.Unlock()
 
 	log.Printf("[session] Restored session from Tauri desktop storage")
@@ -203,12 +231,12 @@ func (s *Session) RestoreFromTauri() bool {
 // TauriUDID attempts to read the UDID from Tauri storage and return the
 // hashed version (32 hex chars) used by Center API.
 func (s *Session) TauriUDID() string {
-	path := tauriStoragePath()
+	path := s.storagePath()
 	if path == "" {
 		return ""
 	}
 
-	hwID, err := getHardwareID()
+	hwID, err := s.hardwareID()
 	if err != nil {
 		return ""
 	}
@@ -219,6 +247,35 @@ func (s *Session) TauriUDID() string {
 		return ""
 	}
 	return ts.HashedUDID
+}
+
+// OwnsTokens reports whether the tokens are MCP's own (obtained through the
+// login tool) and may therefore be refreshed against Center. A session
+// restored from the desktop app does not own them — the desktop does.
+func (s *Session) OwnsTokens() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return !s.fromTauri
+}
+
+// ReloadTokens re-reads the desktop app's storage.json and reports the new
+// access token when it changed — the desktop has already refreshed its own
+// session, so MCP only has to catch up. Returns ("", false) for MCP-owned
+// sessions and when the desktop token is unchanged.
+func (s *Session) ReloadTokens() (string, bool) {
+	s.mu.RLock()
+	shared, old := s.fromTauri, s.AccessToken
+	s.mu.RUnlock()
+	if !shared || !s.RestoreFromTauri() {
+		return "", false
+	}
+	s.mu.RLock()
+	current := s.AccessToken
+	s.mu.RUnlock()
+	if current == old {
+		return "", false
+	}
+	return current, true
 }
 
 // generateUDID computes sha256(hostname + first-non-loopback-MAC)[:16] hex.

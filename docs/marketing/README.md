@@ -13,6 +13,12 @@ Kaitu / Overleap 的营销档案统一放在这个目录。
 - [`brand-naming-strategy.md`](./brand-naming-strategy.md) *(2026-07-14)*
   双品牌隔离规则（开途 / Overleap / 协议层）、禁用组合、SEO 关键词矩阵。
 
+- [`geo-content-rules.md`](./geo-content-rules.md) *(2026-09-02，自 `web/CLAUDE.md` 迁出)*
+  GEO（AI 搜索）内容写作规则：可引用事实、FAQPage JSON-LD、语义 `<table>`、先给直接答案。`kaitu-content` skill 执行。
+
+- [`aso-constitutional-rules.md`](./aso-constitutional-rules.md) *(2026-09-02，自 `mobile/CLAUDE.md` 迁出)*
+  App Store Connect 提交的 ASO/AEO 宪法规则（关键词三位一体、用户可见文案禁用 "VPN"、审核备注模板）。`marketing-skills:aso-audit` 执行。
+
 ### 策略与日历
 
 - [`content-calendar-2026-Q2.md`](./content-calendar-2026-Q2.md) *(2026-04-21)*

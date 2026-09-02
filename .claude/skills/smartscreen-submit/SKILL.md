@@ -9,19 +9,22 @@ Submit Windows exe to Microsoft Defender SmartScreen for reputation review using
 
 ## Prerequisites
 
-- Chrome browser open with DevTools MCP connected
+- Chrome browser open with DevTools MCP connected. The MCP runs with `--autoConnect`: on the first call Chrome shows a「要允许远程调试吗？」consent dialog and every MCP call (even `list_pages`) hangs until the user clicks 允许 — never click it on their behalf, ask them.
 - Must be logged into Microsoft account at microsoft.com (the submission form requires auth)
+- The MCP only accepts file paths inside a configured workspace root (the repo checkout). `/tmp` and the session scratchpad are rejected with "Access denied … not within any of the configured workspace roots" — for both `upload_file` and `take_screenshot --filePath`.
 
 ## Step 1: Download the exe
 
 ```bash
 VERSION=$(node -p "require('./package.json').version")
 CDN_URL="https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64.exe"
-EXE_PATH="/tmp/Kaitu_${VERSION}_x64.exe"
+# Inside the repo on purpose: desktop/src-tauri/binaries/ is gitignored and is a workspace root the MCP will accept.
+EXE_PATH="$(git rev-parse --show-toplevel)/desktop/src-tauri/binaries/Kaitu_${VERSION}_x64.exe"
 curl -sfL -o "$EXE_PATH" "$CDN_URL" && ls -lh "$EXE_PATH"
+osslsigncode verify -in "$EXE_PATH" 2>&1 | grep -E "Subject|Issuer" | head -4   # confirm signer/issuer before quoting them in Step 4
 ```
 
-If a specific version is requested, substitute it. Verify the file downloaded successfully (should be ~7-8MB).
+If a specific version is requested, substitute it. Verify the file downloaded successfully (~11 MB at 0.4.9; it grows with the embedded k2 sidecar). The signer is `Wordgate LLC`, issuer `Certum Code Signing 2021 CA` — if that ever changes, update the Step 4 text.
 
 ## Step 2: Navigate to submission page
 
@@ -62,7 +65,7 @@ Use `take_snapshot` to find element UIDs, then fill:
 This is our officially signed Windows desktop installer for Kaitu VPN (version VERSION).
 
 - Publisher: Kaitu (https://kaitu.io)
-- Signed with: OV code signing certificate (SSL.com)
+- Signed with: OV code signing certificate issued to Wordgate LLC by Certum Code Signing 2021 CA (Asseco Data Systems), RFC 3161 timestamped
 - Download: CDN_URL
 - Built via GitHub Actions CI (https://github.com/kaitu-io/k2app)
 
@@ -75,11 +78,11 @@ This is a legitimate VPN application. We are submitting for SmartScreen reputati
 
 ## Step 5: Solve CAPTCHA
 
-1. `take_snapshot` — find the CAPTCHA image and input field
-2. `take_screenshot` with the CAPTCHA image element UID — read the characters visually
-3. `click` the CAPTCHA input field
-4. `type_text` the characters
-5. `click` the "Submit" button
+1. `take_snapshot` — find the CAPTCHA input field ("Enter the characters you see"). The CAPTCHA image has NO uid in the a11y tree, so it cannot be screenshotted by element.
+2. `click` the input field first — that scrolls the CAPTCHA into the viewport — then `take_screenshot` with no `filePath` and no `fullPage` (a viewport shot is sharp; the full-page one is downscaled and hard to read).
+3. Microsoft's HIP CAPTCHA renders two rows of 4 characters; the answer is top row + bottom row concatenated (e.g. `6PQ6` over `6JDV` → `6PQ66JDV`).
+4. `type_text` the characters (the input is already focused from step 2)
+5. `click` the "Submit" button — an "Upload Progress" dialog appears (Uploading… then Submitting…)
 
 ### If CAPTCHA fails
 
@@ -87,8 +90,8 @@ Click "New" to refresh the CAPTCHA image and retry from step 5.1.
 
 ## Step 6: Verify and cleanup
 
-1. `take_snapshot` to verify submission succeeded (look for confirmation message)
-2. Clean up: `rm /tmp/Kaitu_*_x64.exe`
+1. `wait_for` the text `Submission ID` (timeout ≥ 120 s). Do NOT wait for "Thank you" / "submission" / "successfully" — those match text already on the review page and return instantly while the dialog still says "Submitting…". Success navigates to `https://www.microsoft.com/en-us/wdsi/submission/<uuid>` showing `Status: Submitted`; the table's Cloud/Client icons may still read "Malware detected" with `Final determination: Pending` — that is the pre-review state, not a failure. Report the Submission ID and that URL.
+2. Clean up: `rm "$EXE_PATH"` (it sits inside the repo's gitignored binaries dir — leaving it there would confuse the next sidecar build)
 
 ## Troubleshooting
 

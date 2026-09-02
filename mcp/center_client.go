@@ -35,6 +35,16 @@ type RefreshSource interface {
 	UpdateTokens(access, refresh string, issuedAt int64)
 }
 
+// TokenReloader is implemented by refresh sources whose tokens may belong to
+// another process (the desktop app). When OwnsTokens is false the client must
+// not POST /api/auth/refresh — Center would rotate the device's TokenIssueAt
+// and invalidate the owner's tokens — and instead asks ReloadTokens for the
+// token the owner has meanwhile refreshed on its own.
+type TokenReloader interface {
+	OwnsTokens() bool
+	ReloadTokens() (access string, reloaded bool)
+}
+
 // CenterClient is an HTTP client for the Kaitu Center API.
 type CenterClient struct {
 	BaseURL       string
@@ -153,6 +163,15 @@ func (c *CenterClient) tryRefresh() bool {
 	c.mu.RUnlock()
 
 	if rs == nil {
+		return false
+	}
+	// Borrowed tokens (desktop-shared session): never refresh on Center —
+	// that logs the desktop out. Catch up with the owner's own refresh instead.
+	if rl, ok := rs.(TokenReloader); ok && !rl.OwnsTokens() {
+		if tok, reloaded := rl.ReloadTokens(); reloaded {
+			c.SetToken(tok)
+			return true
+		}
 		return false
 	}
 	refreshToken := rs.GetRefreshToken()

@@ -29,10 +29,25 @@ type App struct {
 	daemon  *DaemonClient
 	session *Session
 
+	// udid is the device identity the Center token was minted for: the
+	// desktop's 32-char hashed UDID when the session is shared with the Tauri
+	// app, otherwise empty (fall back to the session's own 16-char id).
+	udid string
+
 	// Server list cache.
 	serversMu       sync.RWMutex
 	servers         []Server
 	serversCachedAt time.Time
+}
+
+// deviceUDID returns the UDID that must accompany the current access token
+// everywhere — the X-UDID header and the k2v5 URL alike. Node auth compares
+// it against the token's device, so connect must never mix the two ids.
+func (app *App) deviceUDID() string {
+	if app.udid != "" {
+		return app.udid
+	}
+	return app.session.UDID()
 }
 
 func main() {
@@ -71,6 +86,7 @@ func main() {
 		center:  center,
 		daemon:  &DaemonClient{Addr: "http://" + daemonAddr},
 		session: sess,
+		udid:    udid,
 	}
 
 	// Wire refresh source so 401 responses trigger automatic token refresh.

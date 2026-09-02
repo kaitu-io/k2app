@@ -51,7 +51,7 @@ func (app *App) toolConnect(ctx context.Context, req *mcp.CallToolRequest, in Co
 	app.session.mu.RLock()
 	token := app.session.AccessToken
 	app.session.mu.RUnlock()
-	authURL := buildAuthURL(server.ServerURL, app.session.UDID(), token)
+	authURL := buildAuthURL(server.ServerURL, app.deviceUDID(), token)
 
 	// Issue connect command.
 	if err := app.daemon.Up(authURL); err != nil {
