@@ -50,7 +50,8 @@ sync-version:
 # small cn-baseline placeholder, overwritten here with the full ~2MB archive.
 # Local-cache fallback: a transient CDN miss reuses whatever is already there
 # (last fetch, or the placeholder) — never fails the build. Do NOT commit the
-# overwritten 2MB file (scripts/check-embed-size.sh guards this).
+# overwritten 2MB file: CI `test-gateway-uat` runs scripts/check-embed-size.sh
+# against the committed k2 HEAD blob and fails the run if it ever lands.
 RULES_EMBED_PATH := k2/rule/embed/krs.tar.gz
 RULES_EMBED_URL  := https://github.com/kaitu-io/k2-rules/releases/latest/download/krs.tar.gz
 RULES_EMBED_URL_FALLBACK := https://cdn.jsdelivr.net/gh/kaitu-io/k2-rules@release/krs.tar.gz

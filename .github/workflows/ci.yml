@@ -351,6 +351,15 @@ jobs:
       - name: Init k2 submodule
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
+      # The committed k2/rule/embed/krs.tar.gz must stay the ~66 KB cn-baseline
+      # placeholder: `make pre-build` overwrites the working copy with the ~2 MB
+      # CDN archive on every build, so the only thing stopping that file from
+      # being committed into k2 (and shipped in every binary forever) is this
+      # check of the k2 HEAD blob. It reads git objects only, so it belongs in
+      # the one Linux job that already has the submodule checked out.
+      - name: Check committed rule embed is the placeholder
+        run: bash scripts/check-embed-size.sh
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
