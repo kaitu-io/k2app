@@ -9,6 +9,14 @@ type ConnMeta struct {
 	ProcessName      string // OS process name (empty = unknown)
 	PackageName      string // Android package name (empty = not Android or unknown)
 	InstallerPackage string // Android only: package that installed PackageName (empty otherwise)
+
+	// PackageNames lists ALL Android packages sharing the connection's owning
+	// UID (PackageManager.getPackagesForUid). Android attribution is
+	// UID-granular — Play Store and GMS share one UID via sharedUserId — so a
+	// package rule matches when ANY shared package hits. When set, PackageName
+	// holds the first entry (display/logging); matchers must consult this
+	// list, not just PackageName. Nil on desktop and on the legacy /proc path.
+	PackageNames []string
 	Network          string // "tcp" or "udp" (empty = unknown)
 	Port             uint16 // destination port (0 = unknown)
 

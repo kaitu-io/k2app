@@ -625,7 +625,25 @@ func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) (ru
 		}
 	}
 	if t.processSearcher != nil && srcAddr != nil && meta.SrcIP.IsValid() {
-		meta.ProcessName, meta.PackageName, meta.InstallerPackage = t.processSearcher.FindProcess(network, meta.SrcIP, uint16(srcAddr.Port))
+		// Android's owner-UID searcher needs the full 4-tuple
+		// (getConnectionOwnerUid takes local AND remote); host is the literal
+		// destination IP on the TUN path. Desktop searchers only implement the
+		// destination-less form.
+		attributed := false
+		if cs, ok := t.processSearcher.(provider.ConnProcessSearcher); ok {
+			if dstIP, perr := netip.ParseAddr(host); perr == nil {
+				var pkgs []string
+				meta.ProcessName, pkgs, meta.InstallerPackage = cs.FindProcessConn(network, meta.SrcIP, uint16(srcAddr.Port), dstIP.Unmap(), meta.Port)
+				if len(pkgs) > 0 {
+					meta.PackageNames = pkgs
+					meta.PackageName = pkgs[0]
+				}
+				attributed = true
+			}
+		}
+		if !attributed {
+			meta.ProcessName, meta.PackageName, meta.InstallerPackage = t.processSearcher.FindProcess(network, meta.SrcIP, uint16(srcAddr.Port))
+		}
 	}
 
 	return t.router.RouteConn(host, meta), meta

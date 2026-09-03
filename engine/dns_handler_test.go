@@ -56,7 +56,7 @@ func TestServeDNS_UpstreamFailure_ReturnsSERVFAIL(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		h.serveDNS(serverPC)
+		h.serveDNS(serverPC, "198.18.0.2:53")
 	}()
 
 	// Send query from client side.
@@ -124,7 +124,7 @@ func TestServeDNSStream_UpstreamFailure_ReturnsSERVFAIL(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		h.serveDNSStream(server)
+		h.serveDNSStream(server, "198.18.0.2:53")
 	}()
 
 	// Send TCP DNS message: 2-byte length prefix + query.
@@ -236,7 +236,7 @@ func TestServeDNS_RecoversFromMiddlewarePanic(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		h.serveDNS(serverPC)
+		h.serveDNS(serverPC, "198.18.0.2:53")
 	}()
 
 	// Send the query. Without recover, the goroutine panics and the panic
@@ -288,7 +288,7 @@ func TestServeDNSStream_RecoversFromMiddlewarePanic(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		h.serveDNSStream(server)
+		h.serveDNSStream(server, "198.18.0.2:53")
 	}()
 
 	var lenBuf [2]byte

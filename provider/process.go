@@ -20,11 +20,41 @@ func (NopProcessSearcher) FindProcess(string, netip.Addr, uint16) (string, strin
 	return "", "", ""
 }
 
+// ConnProcessSearcher is an optional extension of ProcessSearcher for
+// platforms whose kernel attribution needs the full connection 4-tuple —
+// Android's ConnectivityManager.getConnectionOwnerUid takes (protocol,
+// local, remote). Callers that know the destination should type-assert and
+// prefer FindProcessConn; FindProcess stays the fallback when the
+// destination is unknown or not an IP literal.
+type ConnProcessSearcher interface {
+	ProcessSearcher
+	// FindProcessConn attributes a connection 4-tuple to its owning app.
+	// packageNames lists every package sharing the owning UID ([0] is the
+	// primary — Android sharedUserId means one UID can back several
+	// packages); empty when unknown.
+	FindProcessConn(network string, srcIP netip.Addr, srcPort uint16, dstIP netip.Addr, dstPort uint16) (processName string, packageNames []string, installerPackageName string)
+}
+
+// ConnectionOwnerResolver resolves a connection 4-tuple to the owning
+// Android app UID via ConnectivityManager.getConnectionOwnerUid (API 29+;
+// the active VpnService is explicitly permitted to call it). Implemented by
+// the native Android layer via Go→Java callback. Returns a negative value
+// when unknown: below API 29, lookup miss, or SecurityException.
+type ConnectionOwnerResolver interface {
+	OwnerUID(network string, srcIP string, srcPort int32, dstIP string, dstPort int32) int32
+}
+
 // PackageResolver resolves an Android UID to a package name.
 // Implemented by the native Android layer via Go→Java callback.
 // Nil on non-Android platforms.
 type PackageResolver interface {
 	PackageForUID(uid int32) string
+	// PackagesForUID returns ALL packages sharing the UID, newline-joined
+	// (gomobile interfaces cannot return []string). Empty when unknown.
+	// Shared-UID apps (Play Store + GMS via sharedUserId) are why the full
+	// set matters: routing is UID-granular, so a rule naming any one of
+	// them must match the UID's traffic.
+	PackagesForUID(uid int32) string
 	// InstallerForPackage returns the package name of the installer that
 	// delivered the given package, or "" if unknown / sideloaded / system.
 	// Implemented on Android via PackageManager.getInstallSourceInfo;
