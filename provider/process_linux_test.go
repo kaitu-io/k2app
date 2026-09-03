@@ -85,6 +85,10 @@ func (m *mockPackageResolver) PackageForUID(uid int32) string {
 	return m.packages[uid]
 }
 
+func (m *mockPackageResolver) PackagesForUID(uid int32) string {
+	return m.packages[uid]
+}
+
 // writeProcEntry overlays a single PID's exe symlink + comm onto an
 // existing fake procfs root. Returns the PID's dir path for further
 // per-test customization.

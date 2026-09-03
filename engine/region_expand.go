@@ -117,11 +117,18 @@ func expandAppsRoute(globs []string, target rule.Target) *rule.RouteEntry {
 // runtime.GOOS dispatch — this function consumes whatever Apps fields
 // were populated.
 func buildMetaEntryFromApps(apps *krs.AppPatterns, target rule.Target) *rule.RouteEntry {
+	return buildMetaEntryFromAppsFor(runtime.GOOS, apps, target)
+}
+
+// buildMetaEntryFromAppsFor is the goos-parameterized body of
+// buildMetaEntryFromApps, split out so tests can exercise every platform
+// branch on any host (the android branch would otherwise never run in CI).
+func buildMetaEntryFromAppsFor(goos string, apps *krs.AppPatterns, target rule.Target) *rule.RouteEntry {
 	if apps == nil {
 		return nil
 	}
 	entry := &rule.RouteEntry{Target: target}
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
 		// krs.MatchDarwinProcess is case-sensitive. rule.matchMeta's
 		// ProcessNamePrefixes path lowercases the observed name and
@@ -143,9 +150,16 @@ func buildMetaEntryFromApps(apps *krs.AppPatterns, target rule.Target) *rule.Rou
 		exact, prefix := rule.SplitGlobs(apps.Android.Apps)
 		entry.PackageNames = exact
 		entry.PackageNamePrefixes = prefix
-		if len(apps.Android.Installers) > 0 {
-			entry.InstallerPackages = append([]string(nil), apps.Android.Installers...)
-		}
+		// apps.Android.Installers is deliberately NOT compiled into routing.
+		// Installer (= which store delivered the app) is the UI classifier's
+		// default-badge signal (appext/classify.go), but as a kernel-level
+		// route criterion it is far too coarse: on Chinese-ROM devices
+		// virtually every app — Microsoft Edge included — reports the OEM
+		// store (com.xiaomi.market …) as installer, so an installer→direct
+		// meta route would force entire foreign browsers out of the tunnel.
+		// It never routed before 2026-09 either: attribution was a no-op on
+		// Android 10+ (the /proc path returned empty), so dropping it here
+		// regresses nothing while the owner-UID searcher makes meta live.
 	}
 	if len(entry.ProcessNames) == 0 && len(entry.ProcessNamePrefixes) == 0 &&
 		len(entry.PackageNames) == 0 && len(entry.PackageNamePrefixes) == 0 &&

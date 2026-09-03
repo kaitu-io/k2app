@@ -63,13 +63,29 @@ type dnsHandler struct {
 // every other ConnMeta dimension stays at its fail-closed zero value so
 // combined routes ({apps, port: 443}…) never match the query itself (see
 // rule.MatchDNSMeta).
-func (h *dnsHandler) queryMeta(network string, src *net.UDPAddr) *rule.ConnMeta {
+func (h *dnsHandler) queryMeta(network string, src *net.UDPAddr, dest string) *rule.ConnMeta {
 	if h.searcher == nil || src == nil {
 		return nil
 	}
 	addr, ok := netip.AddrFromSlice(src.IP)
 	if !ok {
 		return nil
+	}
+	// Android's owner-UID searcher needs the remote address too
+	// (getConnectionOwnerUid takes the full 4-tuple); dest is the DNS flow's
+	// original destination (TUN DNS IP:53) as the app's kernel socket sees it.
+	if cs, ok := h.searcher.(provider.ConnProcessSearcher); ok {
+		if dst, perr := netip.ParseAddrPort(dest); perr == nil {
+			name, pkgs, installer := cs.FindProcessConn(network, addr.Unmap(), uint16(src.Port), dst.Addr().Unmap(), dst.Port())
+			if name == "" && len(pkgs) == 0 && installer == "" {
+				return nil
+			}
+			meta := &rule.ConnMeta{ProcessName: name, PackageNames: pkgs, InstallerPackage: installer}
+			if len(pkgs) > 0 {
+				meta.PackageName = pkgs[0]
+			}
+			return meta
+		}
 	}
 	name, pkg, installer := h.searcher.FindProcess(network, addr.Unmap(), uint16(src.Port))
 	if name == "" && pkg == "" && installer == "" {
@@ -87,7 +103,7 @@ func (h *dnsHandler) HandleTCP(conn net.Conn, dest string) {
 		return
 	}
 	if port == "53" && h.dns != nil {
-		h.serveDNSStream(conn)
+		h.serveDNSStream(conn, dest)
 		return
 	}
 	h.inner.HandleTCP(conn, dest)
@@ -100,7 +116,7 @@ func (h *dnsHandler) HandleUDP(conn net.PacketConn, dest string) {
 		return
 	}
 	if port == "53" && h.dns != nil {
-		h.serveDNS(conn)
+		h.serveDNS(conn, dest)
 		return
 	}
 	h.inner.HandleUDP(conn, dest)
@@ -114,11 +130,11 @@ func (h *dnsHandler) queryCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, dnsQueryTimeout)
 }
 
-func (h *dnsHandler) serveDNS(conn net.PacketConn) {
+func (h *dnsHandler) serveDNS(conn net.PacketConn, dest string) {
 	defer conn.Close()
 	// One gVisor PacketConn == one LAN flow: attribute its source once, not
 	// per query. nil when attribution is off/unavailable (fail-open).
-	meta := h.queryMeta("udp", provider.SourcePacketAddr(conn))
+	meta := h.queryMeta("udp", provider.SourcePacketAddr(conn), dest)
 	buf := make([]byte, 4096)
 	for {
 		n, addr, err := conn.ReadFrom(buf)
@@ -166,9 +182,9 @@ func (h *dnsHandler) processOneUDPQuery(conn net.PacketConn, query []byte, addr 
 
 // serveDNSStream handles DNS-over-TCP (RFC 1035 §4.2.2).
 // Each message is prefixed with a 2-byte big-endian length.
-func (h *dnsHandler) serveDNSStream(conn net.Conn) {
+func (h *dnsHandler) serveDNSStream(conn net.Conn, dest string) {
 	defer conn.Close()
-	meta := h.queryMeta("tcp", provider.SourceAddr(conn))
+	meta := h.queryMeta("tcp", provider.SourceAddr(conn), dest)
 	bp := dnsBufPool.Get().(*[]byte)
 	defer dnsBufPool.Put(bp)
 	for {

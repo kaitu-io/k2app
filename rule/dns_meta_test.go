@@ -101,3 +101,19 @@ func TestMatchDNSMeta_PackageName(t *testing.T) {
 		t.Errorf("aweme = (%v, %v), want (direct, true)", got, ok)
 	}
 }
+
+// The owner-UID path fills PackageNames (shared-UID full set) and may leave
+// PackageName mirroring only the primary — the DNS meta gate and the matcher
+// must both honor the list.
+func TestMatchDNSMeta_SharedUIDPackageNames(t *testing.T) {
+	routes := []RouteEntry{
+		{Target: Target(0), PackageNames: []string{"com.android.vending"}},
+	}
+	eng := NewEngine(routes, Target(2), nil, false)
+	defer eng.Close()
+
+	meta := ConnMeta{PackageNames: []string{"com.google.android.gms", "com.android.vending"}}
+	if got, ok := eng.MatchDNSMeta(meta); !ok || got != Target(0) {
+		t.Errorf("shared-UID = (%v, %v), want (direct, true)", got, ok)
+	}
+}

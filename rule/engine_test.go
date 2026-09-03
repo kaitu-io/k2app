@@ -327,6 +327,53 @@ func TestEngineMatchConn_PackageName(t *testing.T) {
 	}
 }
 
+// Android attribution is UID-granular: a shared-UID connection carries every
+// package of that UID in meta.PackageNames (Play Store + GMS share one UID
+// via sharedUserId), and a rule naming ANY of them must match.
+func TestEngineMatchConn_SharedUIDPackageNames(t *testing.T) {
+	routes := []RouteEntry{
+		{Target: Target(2), PackageNames: []string{"com.android.vending"}},
+	}
+	eng := NewEngine(routes, Target(0), nil, false)
+	defer eng.Close()
+
+	// Owner path fills PackageNames with the full shared set; PackageName
+	// carries only the (arbitrary) primary — the rule names the OTHER one.
+	sharedMeta := ConnMeta{
+		PackageName:  "com.google.android.gms",
+		PackageNames: []string{"com.google.android.gms", "com.android.vending"},
+	}
+	if got := eng.MatchConn("1.2.3.4", sharedMeta); got != Target(2) {
+		t.Errorf("shared-UID vending rule = %v, want proxy (2)", got)
+	}
+
+	// PackageNames present but disjoint from the rule → no match, even if a
+	// stale PackageName field were to disagree (list is authoritative).
+	miss := ConnMeta{
+		PackageName:  "com.android.vending",
+		PackageNames: []string{"com.example.other"},
+	}
+	if got := eng.MatchConn("1.2.3.4", miss); got != Target(0) {
+		t.Errorf("disjoint PackageNames = %v, want direct fallback (0)", got)
+	}
+}
+
+// A meta carrying ONLY PackageNames (no PackageName) must still open the
+// pre-tmp meta gate and match — matchers may not depend on the producer
+// mirroring PackageNames[0] into PackageName.
+func TestEngineMatchConn_PackageNamesOnlyOpensMetaGate(t *testing.T) {
+	routes := []RouteEntry{
+		{Target: Target(2), PackageNamePrefixes: []string{"com.microsoft."}},
+	}
+	eng := NewEngine(routes, Target(0), nil, false)
+	defer eng.Close()
+
+	meta := ConnMeta{PackageNames: []string{"com.microsoft.emmx"}}
+	if got := eng.MatchConn("1.2.3.4", meta); got != Target(2) {
+		t.Errorf("PackageNames-only meta = %v, want proxy (2)", got)
+	}
+}
+
 func TestEngineMatchConn_Network(t *testing.T) {
 	routes := []RouteEntry{
 		{Target: Target(0), NetworkMatch: "udp"},

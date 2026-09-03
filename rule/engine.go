@@ -331,7 +331,7 @@ func (e *Engine) matchHostLocked(host string) Target {
 // supersedes IP-level caching: a process bypass must fire regardless of which
 // route the destination's domain happened to resolve to via DNS.
 func (e *Engine) matchConnLocked(host string, meta ConnMeta) Target {
-	hasAnyMeta := meta.ProcessName != "" || meta.PackageName != "" || meta.Network != ""
+	hasAnyMeta := meta.ProcessName != "" || meta.PackageName != "" || len(meta.PackageNames) > 0 || meta.Network != ""
 	if hasAnyMeta {
 		for i := range e.routes {
 			r := &e.routes[i]
@@ -440,6 +440,24 @@ func processNameMatches(rule, observed string) bool {
 	return false
 }
 
+// packageEntryHit reports whether one observed package name matches the
+// route's package criteria (exact names first, then prefixes). Installer
+// matching is NOT here — it is an independent leg of the package group in
+// matchMeta, keyed on meta.InstallerPackage.
+func packageEntryHit(r *RouteEntry, pkg string) bool {
+	for _, p := range r.PackageNames {
+		if pkg == p {
+			return true
+		}
+	}
+	for _, p := range r.PackageNamePrefixes {
+		if strings.HasPrefix(pkg, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // matchMeta checks connection metadata against route criteria.
 //
 // Semantics:
@@ -498,21 +516,19 @@ func matchMeta(r *RouteEntry, meta ConnMeta) bool {
 	hasPackage := len(r.PackageNames) > 0 || len(r.PackageNamePrefixes) > 0 || len(r.InstallerPackages) > 0
 	if hasPackage {
 		hit := false
-		if meta.PackageName != "" {
-			for _, p := range r.PackageNames {
-				if meta.PackageName == p {
+		// Android attribution is UID-granular: meta.PackageNames carries every
+		// package sharing the owning UID (Play Store + GMS share one), and ANY
+		// of them matching means the UID's traffic matches. Falls back to the
+		// single PackageName for the legacy /proc path and hand-built metas.
+		if len(meta.PackageNames) > 0 {
+			for _, pkg := range meta.PackageNames {
+				if packageEntryHit(r, pkg) {
 					hit = true
 					break
 				}
 			}
-			if !hit {
-				for _, p := range r.PackageNamePrefixes {
-					if strings.HasPrefix(meta.PackageName, p) {
-						hit = true
-						break
-					}
-				}
-			}
+		} else if meta.PackageName != "" {
+			hit = packageEntryHit(r, meta.PackageName)
 		}
 		if !hit && meta.InstallerPackage != "" {
 			for _, p := range r.InstallerPackages {

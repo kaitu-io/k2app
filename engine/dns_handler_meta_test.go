@@ -89,7 +89,7 @@ func runOneUDPQuery(t *testing.T, h *dnsHandler, src *net.UDPAddr) net.IP {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		h.serveDNS(serverPC)
+		h.serveDNS(serverPC, "198.18.0.2:53")
 	}()
 
 	clientPC.WriteTo(queryBytes, nil)
@@ -173,14 +173,14 @@ func TestServeDNS_UnmatchedProcess_DefaultView(t *testing.T) {
 
 func TestQueryMeta_NilPaths(t *testing.T) {
 	h := &dnsHandler{}
-	if m := h.queryMeta("udp", &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 1}); m != nil {
+	if m := h.queryMeta("udp", &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 1}, "198.18.0.2:53"); m != nil {
 		t.Error("nil searcher must yield nil meta")
 	}
 	h.searcher = &recordingSearcher{name: ""}
-	if m := h.queryMeta("udp", nil); m != nil {
+	if m := h.queryMeta("udp", nil, "198.18.0.2:53"); m != nil {
 		t.Error("nil source must yield nil meta")
 	}
-	if m := h.queryMeta("udp", &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 1}); m != nil {
+	if m := h.queryMeta("udp", &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 1}, "198.18.0.2:53"); m != nil {
 		t.Error("empty attribution must yield nil meta")
 	}
 }

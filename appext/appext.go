@@ -218,8 +218,9 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 		}
 	}
 
-	// Wire PackageResolver → ProcessSearcher (Android only).
-	if ps := makeProcessSearcher(cfg.PackageResolver); ps != nil {
+	// Wire process attribution (Android only): ConnectionOwner (owner-UID
+	// platform API) + PackageResolver (UID→packages) → ProcessSearcher.
+	if ps := makeProcessSearcher(cfg); ps != nil {
 		ecfg.ProcessSearcher = ps
 	}
 
