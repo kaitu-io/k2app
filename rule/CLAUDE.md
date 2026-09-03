@@ -100,7 +100,12 @@ Every meta dimension is **fail-closed** when the observed value is unknown:
 
 `ProcessNamePrefixes` are pre-lowercased at compile time (`engine.lowerCopy`) so
 the hot path lowercases the observed name once. `PackageNamePrefixes` are
-case-preserved (Android package ids are case-sensitive). Exact process-name
+case-preserved (Android package ids are case-sensitive). On Android the
+observed side is a **set**: `ConnMeta.PackageNames` carries every package
+sharing the connection's owning UID (Play Store + GMS share one via
+sharedUserId — attribution is UID-granular), and the package group matches
+when ANY of them hits; the single `PackageName` (mirroring `PackageNames[0]`)
+remains the fallback for the legacy /proc path and desktop. Exact process-name
 matching also accepts the 15-char kernel truncation of a longer rule name
 (`commTruncLen`, Linux `/proc/PID/comm` and macOS `lsof`).
 

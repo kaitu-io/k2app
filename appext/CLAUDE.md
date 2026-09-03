@@ -44,6 +44,7 @@ e.StatusJSON() string          // JSON status (matches daemon API format)
 - `net_event.go` — `NetEvent` struct (mirrors `engine.NetEvent` for gomobile export), `NewNetEvent` constructor
 - `config.go` — `EngineConfig` (CacheDir, LogDir, SocketProtector)
 - `protector.go` — `SocketProtector` interface (Android VpnService.protect)
+- `resolver.go` — `PackageResolver` (UID→package(s), installer) + `ConnectionOwnerResolver` (4-tuple→UID via ConnectivityManager.getConnectionOwnerUid, API 29+) — both implemented by K2VpnService (Kotlin); `EngineConfig.ConnectionOwner` wires the latter into `provider.OwnerProcessSearcher`, without it Android falls back to the /proc searcher that Android 10+ SELinux blinds
 - `protect.go` — `protectedDialer` (implements `wire.DirectDialer` + `wire.DialerController`) — Android only
 - `ne_platform_darwin.go` / `ne_platform_other.go` — `nePlatform`: unified Darwin NE networking (implements `wire.DirectDialer` + `wire.DialerController` + `engine.NetworkChangeNotifier`). Mirrors daemon's 3-type architecture (directDialer + singTunMonitor + ifaceMon) in 1 type with shared `DefaultInterfaceMonitor`
 - `platform_darwin.go` / `platform_other.go` — `isNetworkExtension` platform constant

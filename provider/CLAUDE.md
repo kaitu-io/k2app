@@ -100,6 +100,19 @@ a hit-rate optimization.
 - **Darwin**: live kernel PCB table via the netstat sysctls, per lookup —
   Windows-equivalent semantics including exact-beats-wildcard UDP; the lsof
   snapshot survives only as a self-check-gated fallback. See below.
+- **Android**: `OwnerProcessSearcher` (`process_owner.go`, untagged — unit
+  tests run everywhere) asks the platform via
+  `ConnectivityManager.getConnectionOwnerUid` through the
+  `ConnectionOwnerResolver` Go→Java callback, then resolves UID→packages via
+  `PackageResolver.PackagesForUID`. The /proc path above is structurally dead
+  on Android 10+ (SELinux/hidepid hide `/proc/net/tcp*` and foreign
+  `/proc/PID/fd`) — it returned empty for every foreign-app socket, which
+  silently no-op'd all package rules until 2026-09; it stays wired as the
+  fallback for Android ≤9 and destination-less lookups. Attribution is
+  **UID-granular**: `FindProcessConn` (the `ConnProcessSearcher` extension —
+  the platform API needs the full 4-tuple, so callers pass dst too) returns
+  every package sharing the owning UID (Play Store + GMS share one via
+  sharedUserId), and `rule.ConnMeta.PackageNames` carries the full set.
 
 ### Darwin: live kernel PCB table, lsof snapshot as fallback
 
