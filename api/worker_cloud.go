@@ -26,6 +26,14 @@ const (
 	TaskTypeCloudDelete   = "cloud:delete"
 )
 
+// cloudTaskMaxRetry 限制云任务的重试次数。
+//
+// 必须显式传给 Enqueue:config.yml 里的 asynq.default_max_retry 是个死配置——
+// qtoolkit/asynq v1.5.25 声明了 DefaultMaxRetry 字段并给了默认值 3,但 Enqueue
+// 从没把它传进 asynq.NewTask,实际生效的是 hibiken/asynq 的硬默认 25。不显式
+// 传的话,一次失败会重试 25 次(线上实测 Retry=25)。
+const cloudTaskMaxRetry = 3
+
 // Task payloads
 type CloudSyncPayload struct {
 	AccountName string `json:"account_name,omitempty"` // Empty = sync all accounts
@@ -114,12 +122,50 @@ func RegisterCloudWorker() {
 	log.Infof(context.Background(), "[CLOUD] Cloud worker registered (cron: %s)", cfg.Sync.Cron)
 }
 
-// withSlackNotify wraps handler to send Slack notification on failure
+// terminalf 构造一个「重试不可能自愈」的失败：payload 已经定型、账号配置已经
+// 定型、目标记录已经消失——重放同一个任务只会把同一个失败原样复现 MaxRetry 次。
+// 包上 asynq.SkipRetry 让 asynq 立即归档，把重试预算留给真正瞬时的故障
+// (provider API 超时 / 限流 / 5xx)。
+//
+// 这道门是本文件终态错误的唯一供给者：新增错误出口时先判断它是否可能靠重试
+// 自愈,不能自愈的一律走 terminalf,不要再写裸 fmt.Errorf。
+func terminalf(format string, args ...any) error {
+	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), hibikenAsynq.SkipRetry)
+}
+
+// isFinalAttempt 判断这次失败之后 asynq 是否还会再重试。
+//
+// ctx 由 qtoolkit/asynq 原样透传自 asynq server(asynq.go 的 mux.HandleFunc
+// 直接 `return h(ctx, t.Payload())`),所以这两个 Get* 在 handler 内可用。
+// 取不到时(例如单元测试直接调 handler)保守地视为最终尝试——宁可多发一条告警,
+// 也不要把一个真实失败静默吞掉。
+func isFinalAttempt(ctx context.Context, err error) bool {
+	if errors.Is(err, hibikenAsynq.SkipRetry) {
+		return true
+	}
+	retried, ok := hibikenAsynq.GetRetryCount(ctx)
+	maxRetry, ok2 := hibikenAsynq.GetMaxRetry(ctx)
+	if !ok || !ok2 {
+		return true
+	}
+	return retried >= maxRetry
+}
+
+// withSlackNotify wraps handler to send Slack notification on failure.
+//
+// 只在任务真正终结时告警。中途重试同样会走到这里,如果每次都发,一次故障就会
+// 刷 MaxRetry+1 条重复 Slack——线上真实发生过:一条 cloud:delete 任务扑空后
+// 连发了 24 条 "instance not found: record not found"。
 func withSlackNotify(handler func(context.Context, []byte) error) func(context.Context, []byte) error {
 	return func(ctx context.Context, payload []byte) error {
 		err := handler(ctx, payload)
-		if err != nil {
+		if err == nil {
+			return nil
+		}
+		if isFinalAttempt(ctx, err) {
 			sendCloudSlackNotification(ctx, "Cloud Task Failed", err.Error())
+		} else {
+			log.Warnf(ctx, "[CLOUD] task failed, will retry: %v", err)
 		}
 		return err
 	}
@@ -408,7 +454,7 @@ func isPrivateCloudInstance(ciID uint64) bool {
 func handleCloudChangeIP(ctx context.Context, payload []byte) error {
 	var p CloudChangeIPPayload
 	if err := asynq.Unmarshal(payload, &p); err != nil {
-		return fmt.Errorf("unmarshal payload failed: %w", err)
+		return terminalf("unmarshal payload failed: %v", err)
 	}
 
 	log.Infof(ctx, "[CLOUD] Starting IP change: instance_id=%d", p.CloudInstanceID)
@@ -416,19 +462,21 @@ func handleCloudChangeIP(ctx context.Context, payload []byte) error {
 	// Get instance from DB
 	var instance CloudInstance
 	if err := db.Get().First(&instance, p.CloudInstanceID).Error; err != nil {
-		return fmt.Errorf("instance not found: %w", err)
+		// 记录已被软删除(重复入队 / syncAll 孤儿清理抢先)或从来不存在。
+		// 换 IP 没有幂等语义,这是真失败,但重试不会让记录回来。
+		return terminalf("instance %d not found: %v", p.CloudInstanceID, err)
 	}
 
 	// Get account config
 	account := ConfigCloudInstanceAccountByName(instance.AccountName)
 	if account == nil {
-		return fmt.Errorf("account not found: %s", instance.AccountName)
+		return terminalf("account not found: %s", instance.AccountName)
 	}
 
 	// Create provider
 	provider, err := cloudprovider.NewProvider(accountToProviderConfig(account))
 	if err != nil {
-		return fmt.Errorf("failed to create provider: %w", err)
+		return terminalf("failed to create provider: %v", err)
 	}
 
 	// Execute IP change
@@ -462,19 +510,19 @@ func handleCloudChangeIP(ctx context.Context, payload []byte) error {
 func handleCloudCreate(ctx context.Context, payload []byte) error {
 	var p CloudCreatePayload
 	if err := asynq.Unmarshal(payload, &p); err != nil {
-		return fmt.Errorf("unmarshal payload failed: %w", err)
+		return terminalf("unmarshal payload failed: %v", err)
 	}
 
 	log.Infof(ctx, "[CLOUD] Creating instance: account=%s, name=%s", p.AccountName, p.Name)
 
 	account := ConfigCloudInstanceAccountByName(p.AccountName)
 	if account == nil {
-		return fmt.Errorf("account not found: %s", p.AccountName)
+		return terminalf("account not found: %s", p.AccountName)
 	}
 
 	provider, err := cloudprovider.NewProvider(accountToProviderConfig(account))
 	if err != nil {
-		return fmt.Errorf("failed to create provider: %w", err)
+		return terminalf("failed to create provider: %v", err)
 	}
 
 	result, err := provider.CreateInstance(ctx, cloudprovider.CreateInstanceOptions{
@@ -507,24 +555,30 @@ func handleCloudCreate(ctx context.Context, payload []byte) error {
 func handleCloudDelete(ctx context.Context, payload []byte) error {
 	var p CloudDeletePayload
 	if err := asynq.Unmarshal(payload, &p); err != nil {
-		return fmt.Errorf("unmarshal payload failed: %w", err)
+		return terminalf("unmarshal payload failed: %v", err)
 	}
 
 	log.Infof(ctx, "[CLOUD] Deleting instance: id=%d", p.CloudInstanceID)
 
 	var instance CloudInstance
 	if err := db.Get().First(&instance, p.CloudInstanceID).Error; err != nil {
-		return fmt.Errorf("instance not found: %w", err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 删除是幂等的:记录已经不在(管理员连点两次删除,或 syncAll 的孤儿
+			// 清理抢先软删),目标状态就已经达成。当成成功结束,不要重试也不要告警。
+			log.Warnf(ctx, "[CLOUD] Delete no-op: instance %d already gone", p.CloudInstanceID)
+			return nil
+		}
+		return terminalf("instance %d lookup failed: %v", p.CloudInstanceID, err)
 	}
 
 	account := ConfigCloudInstanceAccountByName(instance.AccountName)
 	if account == nil {
-		return fmt.Errorf("account not found: %s", instance.AccountName)
+		return terminalf("account not found: %s", instance.AccountName)
 	}
 
 	provider, err := cloudprovider.NewProvider(accountToProviderConfig(account))
 	if err != nil {
-		return fmt.Errorf("failed to create provider: %w", err)
+		return terminalf("failed to create provider: %v", err)
 	}
 
 	result, err := provider.DeleteInstance(ctx, instance.InstanceID)
@@ -533,7 +587,12 @@ func handleCloudDelete(ctx context.Context, payload []byte) error {
 	}
 
 	// Soft delete from DB
-	db.Get().Delete(&instance)
+	if err := db.Get().Delete(&instance).Error; err != nil {
+		// provider 侧已经删掉了,本地记录没删掉——重试也只会在 provider 侧
+		// 再扑空一次,所以这里报错但不重试,留给下一轮 syncAll 的孤儿清理收尾。
+		return terminalf("instance %s deleted at provider but local soft-delete failed: %v",
+			instance.InstanceID, err)
+	}
 
 	log.Infof(ctx, "[CLOUD] Instance deleted: %s", result.Message)
 
@@ -557,7 +616,7 @@ func ScheduleCloudTask(taskType string, payload any) (string, error) {
 
 	delay := time.Until(next)
 
-	info, err := asynq.Enqueue(taskType, payload, hibikenAsynq.ProcessIn(delay))
+	info, err := asynq.Enqueue(taskType, payload, hibikenAsynq.ProcessIn(delay), hibikenAsynq.MaxRetry(cloudTaskMaxRetry))
 	if err != nil {
 		return "", err
 	}
@@ -570,7 +629,7 @@ func ScheduleCloudTask(taskType string, payload any) (string, error) {
 
 // ScheduleCloudTaskImmediate enqueues a cloud task for immediate execution
 func ScheduleCloudTaskImmediate(taskType string, payload any) (string, error) {
-	info, err := asynq.Enqueue(taskType, payload)
+	info, err := asynq.Enqueue(taskType, payload, hibikenAsynq.MaxRetry(cloudTaskMaxRetry))
 	if err != nil {
 		return "", err
 	}
