@@ -1,13 +1,10 @@
 /**
  * Factory for generating MCP tool registrations from declarative configs.
  *
- * Two sibling factories target different API shapes:
- * - `defineApiTool` — Center Go API's `{code, message, data}` envelope (always HTTP 200).
- * - `defineRestApiTool` — raw REST (Payload CMS): body verbatim, HTTP status codes drive errors.
- *
- * Both share GET query-string building, POST/PUT/PATCH/DELETE body construction,
- * dynamic path interpolation, `mapQuery`/`mapBody` overrides, unified error
- * formatting, and audit logging.
+ * `defineApiTool` targets the Center Go API's `{code, message, data}` envelope
+ * (always HTTP 200), with GET query-string building, POST/PUT/DELETE body
+ * construction, dynamic path interpolation, `mapQuery`/`mapBody` overrides,
+ * unified error formatting, and audit logging.
  */
 
 import type { ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js'
@@ -17,18 +14,10 @@ import { audit } from './audit.js'
 
 type Params = Record<string, unknown>
 
-/**
- * The set of API clients available to a tool registration.
- *
- * `defineApiTool` picks `clients.center`; `defineRestApiTool` picks `clients.cms`.
- * Both clients implement the same `request()` interface, but the factories
- * differ in how they interpret the response shape.
- */
+/** The set of API clients available to a tool registration. */
 export interface ApiClients {
   /** Center Go API (envelope: {code, message, data}). Always-HTTP-200 convention. */
   center: CenterApiClient
-  /** Payload CMS REST API (raw JSON + HTTP status codes). */
-  cms: CenterApiClient
 }
 
 export interface ApiToolDef {
@@ -37,18 +26,6 @@ export interface ApiToolDef {
   group: string
   params?: ZodRawShapeCompat
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
-  path: string | ((params: Params) => string)
-  mapQuery?: (params: Params) => Record<string, string>
-  mapBody?: (params: Params) => unknown
-}
-
-/** Declarative tool def for REST APIs (raw JSON + HTTP status codes). */
-export interface RestToolDef {
-  name: string
-  description: string
-  group: string
-  params?: ZodRawShapeCompat
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   path: string | ((params: Params) => string)
   mapQuery?: (params: Params) => Record<string, string>
   mapBody?: (params: Params) => unknown
@@ -87,7 +64,7 @@ function getPathParamKeys(pathFn: (params: Params) => string): Set<string> {
 
 /**
  * Builds the `{ requestPath, requestOptions }` pair from a tool def + params.
- * Shared by `defineApiTool` (Center) and `defineRestApiTool` (REST).
+ * Used by `defineApiTool`.
  *
  * Behaviors by HTTP method:
  * - GET: auto-builds query string from non-path params (skips undefined). `mapQuery` overrides.
@@ -214,58 +191,6 @@ export function defineApiTool(def: ApiToolDef): ToolRegistration {
   }
 }
 
-/**
- * Creates an MCP tool registration for a raw REST API (Payload-style).
- *
- * Differences from `defineApiTool`:
- * - Uses `clients.cms` (not `clients.center`).
- * - Returns the raw response body verbatim — no `{code, data, message}` unwrap.
- * - HTTP errors surface as thrown exceptions from `CenterApiClient`, which
- *   preserves Payload's `errors[0].message` summary (see Task B3).
- * - Supports PATCH in addition to POST/PUT/DELETE.
- */
-export function defineRestApiTool(def: RestToolDef): ToolRegistration {
-  const pathParamKeys =
-    typeof def.path === 'function' ? getPathParamKeys(def.path) : new Set<string>()
-
-  return {
-    name: def.name,
-    group: def.group,
-    register(server: McpServer, clients: ApiClients) {
-      server.tool(
-        def.name,
-        def.description,
-        def.params ?? {},
-        async (params: Params) => {
-          try {
-            const { requestPath, requestOptions } = buildRequest(def, params, pathParamKeys)
-            const body = await clients.cms.request(requestPath, requestOptions)
-            await audit(def.name, params)
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: JSON.stringify(body, null, 2),
-                },
-              ],
-            }
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err)
-            await audit(def.name, { ...params, error: errorMessage })
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: JSON.stringify({ error: errorMessage }),
-                },
-              ],
-            }
-          }
-        },
-      )
-    },
-  }
-}
 
 export interface Permissions {
   isAdmin: boolean
