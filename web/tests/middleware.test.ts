@@ -91,14 +91,14 @@ describe('X-K2-Brand injection on /api and /app', () => {
 });
 
 describe('admin + install-script surfaces are kaitu-only', () => {
-  it.each(['/manager', '/manager/users', '/payload/api/posts', '/admin', '/i/k2', '/i/k2s', '/i/k2r'])(
+  it.each(['/manager', '/manager/users', '/admin', '/i/k2', '/i/k2s', '/i/k2r'])(
     'overleap: %s → 404',
     async (path) => {
       vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
       expect((await run(makeRequest(path))).status).toBe(404);
     },
   );
-  it.each(['/manager/users', '/payload/api/posts', '/i/k2'])(
+  it.each(['/manager/users', '/i/k2'])(
     'kaitu: %s passes through',
     async (path) => {
       vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');

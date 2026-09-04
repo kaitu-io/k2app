@@ -70,8 +70,7 @@ export default function middleware(request: NextRequest) {
   // ---- Admin surfaces live only in the kaitu deployment (internal tools). -
   if (
     pathname.startsWith('/admin') ||
-    pathname.startsWith('/manager') ||
-    pathname.startsWith('/payload')
+    pathname.startsWith('/manager')
   ) {
     if (!isKaitu) {
       return new NextResponse(null, { status: 404 });
@@ -208,7 +207,7 @@ function getBestLocale(
 }
 
 export const config = {
-  // /api, /app, /admin, /manager, /payload, /favicon.ico now MUST hit the
+  // /api, /app, /admin, /manager, /favicon.ico now MUST hit the
   // middleware (brand gating + X-K2-Brand injection) — the old matcher
   // excluded them. Static assets and _next remain excluded via the catch-all.
   matcher: [
@@ -216,10 +215,9 @@ export const config = {
     '/favicon.ico',
     '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*',
     '/(api|app)/:path*',
-    '/(admin|manager|payload)/:path*',
+    '/(admin|manager)/:path*',
     '/admin',
     '/manager',
-    '/payload',
-    '/((?!api|app|admin|manager|payload|_next|_vercel|.*\\..*).*)',
+    '/((?!api|app|admin|manager|_next|_vercel|.*\\..*).*)',
   ],
 };

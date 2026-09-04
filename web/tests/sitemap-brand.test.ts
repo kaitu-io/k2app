@@ -6,10 +6,11 @@ vi.mock('server-only', () => ({}));
 
 // Velite posts: one kaitu-only, one shared across both locales, and one shared
 // but authored in zh-CN only — mirrors the mock pattern used by
-// tests/content-pages.test.ts.
+// tests/content-pages.test.ts. 'guides/cn-guide' also exercises the category
+// listing-page emission (guides is a registered category in content-posts.ts).
 vi.mock('#velite', () => ({
   posts: [
-    { slug: 'cn-guide', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'kaitu' },
+    { slug: 'guides/cn-guide', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'kaitu' },
     { slug: 'k2/protocol', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'both' },
     { slug: 'k2/protocol', locale: 'en-US', date: '2026-01-01', draft: false, brand: 'both' },
     // brand: both, but no en-US/ja copy exists. Overleap 404s it (the k2 route
@@ -19,17 +20,10 @@ vi.mock('#velite', () => ({
   ],
 }));
 
-// vi.hoisted: vi.mock factories are hoisted above module-level consts, so the
-// mock fn must be created in a hoisted block to be referenceable inside them.
-const { findMock } = vi.hoisted(() => ({ findMock: vi.fn().mockResolvedValue({ docs: [] }) }));
-vi.mock('payload', () => ({ getPayload: vi.fn().mockResolvedValue({ find: findMock }) }));
-vi.mock('@payload-config', () => ({ default: {} }));
-
 import sitemap from '../src/app/sitemap';
 
 afterEach(() => {
   vi.unstubAllEnvs();
-  findMock.mockClear();
 });
 
 describe('sitemap — baked brand isolation', () => {
@@ -61,12 +55,16 @@ describe('sitemap — baked brand isolation', () => {
     expect(entries.some((e) => e.url.includes('/cn-guide'))).toBe(true);
   });
 
-  it('overleap build: Payload query filters on showOnOverleap', async () => {
+  it('overleap build: /guides listing page is absent (its only posts are kaitu-only)', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    await sitemap();
-    const where = findMock.mock.calls[0][0].where;
-    expect(JSON.stringify(where)).toContain('showOnOverleap');
-    expect(JSON.stringify(where)).not.toContain('showOnKaitu');
+    const entries = await sitemap();
+    expect(entries.some((e) => e.url.endsWith('/guides'))).toBe(false);
+  });
+
+  it('kaitu build: /guides listing page is present', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+    const entries = await sitemap();
+    expect(entries.some((e) => e.url.endsWith('/guides'))).toBe(true);
   });
 
   // Feature-gated surfaces must not be advertised by a brand that 404s them.
@@ -94,12 +92,11 @@ describe('sitemap — baked brand isolation', () => {
     expect(entries.some((e) => e.url.endsWith('/releases'))).toBe(true);
   });
 
-  it('kaitu build: only kaitu.io URLs and Payload filters on showOnKaitu', async () => {
+  it('kaitu build: only kaitu.io URLs', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     const entries = await sitemap();
     for (const e of entries) {
       expect(e.url).toMatch(/^https:\/\/kaitu\.io/);
     }
-    expect(JSON.stringify(findMock.mock.calls[0][0].where)).toContain('showOnKaitu');
   });
 });

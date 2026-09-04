@@ -90,21 +90,21 @@ describe('test_sitemap_includes_content', () => {
 
     const urls = entries.map((entry: { url: string }) => entry.url);
 
-    // Must include zh-CN blog post
-    expect(urls).toContain('https://kaitu.io/zh-CN/blog/hello-world');
-
-    // Must include zh-HK blog post (Kaitu owns zh-* locales after Task 2)
-    expect(urls).toContain('https://kaitu.io/zh-HK/blog/hello-world');
-
-    // Must include zh-CN guides post
+    // Must include the zh-CN guides post, in every kaitu locale (zh-HK reads
+    // the zh-CN copy via brand-default-locale fallback)
     expect(urls).toContain('https://kaitu.io/zh-CN/guides/getting-started');
+    expect(urls).toContain('https://kaitu.io/zh-HK/guides/getting-started');
+
+    // blog/ is NOT a registered category in content-posts.ts — no route serves
+    // it, so the sitemap must not advertise it (it would 404).
+    expect(urls).not.toContain('https://kaitu.io/zh-CN/blog/hello-world');
 
     // Must NOT include draft post
     expect(urls).not.toContain('https://kaitu.io/zh-CN/blog/draft-post');
 
     // Kaitu host must NOT serve en-*/ja URLs — those belong to overleap.io
-    expect(urls).not.toContain('https://kaitu.io/en-US/blog/hello-world');
-    expect(urls).not.toContain('https://kaitu.io/ja/blog/hello-world');
+    expect(urls).not.toContain('https://kaitu.io/en-US/guides/getting-started');
+    expect(urls).not.toContain('https://kaitu.io/ja/guides/getting-started');
   });
 
   it('sitemap content entries have correct metadata', async () => {
@@ -112,7 +112,7 @@ describe('test_sitemap_includes_content', () => {
     const entries = await sitemap();
 
     const contentEntry = entries.find(
-      (entry: { url: string }) => entry.url === 'https://kaitu.io/zh-CN/blog/hello-world'
+      (entry: { url: string }) => entry.url === 'https://kaitu.io/zh-CN/guides/getting-started'
     );
 
     expect(contentEntry).toBeDefined();

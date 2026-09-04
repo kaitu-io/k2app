@@ -1,43 +1,8 @@
 import { MetadataRoute } from 'next';
 import { posts } from '#velite';
-import { getPayload } from 'payload';
-import config from '@payload-config';
 import { getBrand } from '@/lib/brand-server';
 import { isPostVisibleToBrand } from '@/lib/k2-posts';
-
-// Render at request time — avoids a build-time DB dependency and keeps Payload
-// blog listings fresh. (The brand itself is baked at build time via
-// NEXT_PUBLIC_BRAND; this is no longer host-aware.)
-export const dynamic = 'force-dynamic';
-
-type BlogEntry = { slug: string; updatedAt?: string };
-
-async function fetchBlogPosts(brandId: 'kaitu' | 'overleap'): Promise<BlogEntry[]> {
-  const visibilityField = brandId === 'kaitu' ? 'showOnKaitu' : 'showOnOverleap';
-  try {
-    const payload = await getPayload({ config });
-    const { docs } = await payload.find({
-      collection: 'posts',
-      locale: 'zh-CN',
-      where: {
-        and: [
-          { status: { equals: 'published' } },
-          { [visibilityField]: { equals: true } },
-        ],
-      },
-      limit: 500,
-      depth: 0,
-      overrideAccess: true,
-    });
-    return (docs as unknown as Array<{ slug: string; updatedAt?: string }>).map((d) => ({
-      slug: d.slug,
-      updatedAt: d.updatedAt,
-    }));
-  } catch (err) {
-    console.error('sitemap: failed to fetch Payload blog posts', err);
-    return [];
-  }
-}
+import { categorySlugs, listCategoryPosts } from '@/lib/content-posts';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const brand = await getBrand();
@@ -48,7 +13,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // advertised by a brand that 404s them (see routers/page.tsx).
   const staticPages = [
     '',           // Home page
-    '/blog',
     '/login',
     '/discovery',
     '/install',
@@ -105,11 +69,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // slugs are collected across ALL locales below, so a doc that is kaitu-only in
   // en-US but unmarked in zh-CN would still contribute its slug and get emitted
   // under the overleap locales — advertising a URL that 404s.
+  // Only slugs a route actually serves: the /k2 section, or a category
+  // registered in content-posts.ts. Anything else would be a sitemap entry
+  // pointing at a 404 (the catch-all rejects unregistered categories).
+  const servedCategories = categorySlugs();
   const publishedPosts = posts.filter(
     (post) =>
       !post.draft &&
       isPostVisibleToBrand(post, brand.id) &&
-      (locales as readonly string[]).includes(post.locale)
+      (locales as readonly string[]).includes(post.locale) &&
+      (post.slug === 'k2' ||
+        post.slug.startsWith('k2/') ||
+        servedCategories.includes(post.slug.split('/')[0]))
   );
   const uniqueSlugs = [...new Set(publishedPosts.map(p => p.slug))];
 
@@ -136,19 +107,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
   }
 
-  // Payload CMS blog posts — all locales share the same slug.
-  // DB fetch is tolerant: if unreachable at build time, blog section is simply omitted.
-  // Payload posts are filtered server-side by showOnKaitu/showOnOverleap.
-  const blogPosts = await fetchBlogPosts(brand.id);
-  for (const { slug, updatedAt } of blogPosts) {
+  // Category listing pages (e.g. /guides) — only when this brand's deployment
+  // actually lists something there; an empty category page is not advertised.
+  for (const category of categorySlugs()) {
+    const hasPosts = locales.some(
+      (locale) => listCategoryPosts(locale, category, brand).length > 0
+    );
+    if (!hasPosts) continue;
+
     const alternates: Record<string, string> = {};
     locales.forEach(locale => {
-      alternates[locale] = `${baseUrl}/${locale}/blog/${slug}`;
+      alternates[locale] = `${baseUrl}/${locale}/${category}`;
     });
     locales.forEach(locale => {
       sitemapEntries.push({
-        url: `${baseUrl}/${locale}/blog/${slug}`,
-        lastModified: updatedAt ? new Date(updatedAt) : new Date(),
+        url: `${baseUrl}/${locale}/${category}`,
+        lastModified: new Date(),
         changeFrequency: 'weekly',
         priority: 0.7,
         alternates: { languages: alternates },
