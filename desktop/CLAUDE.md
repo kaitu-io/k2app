@@ -50,9 +50,15 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
   派生副本——仅当 `BRAND=overleap` 才生成，gitignored，永不手改。
 - 签名主体（Developer ID / SimplySign / notarize 账号）与 updater minisign 密钥两品牌
   共用——已拍板的品牌泄漏点，不再讨论。
-- overleap 图标是占位紫（`yarn tauri icon` 重跑即换正式稿）；NSIS 语言 overleap 仅 English。
-- 图像资产（logo PNG 等二进制）不在任何纯度守卫覆盖范围内——`strings`/`grep` 抓不到位图里的文字；
-  靠发布前人工视觉 smoke 把关，不是自动化门。
+- overleap 图标由 `webapp/brand-assets/overleap/generate.sh` 从 `logo.svg` 生成进 `icons-overleap/`
+  （不要用 `yarn tauri icon`，它只认 PNG 源且会覆盖 `.icns/.ico` 的生成方式）；NSIS 语言 overleap 仅 English。
+- 图像资产（logo PNG 等二进制）不在桌面纯度守卫覆盖范围内——`strings`/`grep` 抓不到位图里的文字；
+  web 侧有哈希守卫（`web/tests/brand-assets.test.ts`），桌面侧靠发布前人工视觉 smoke 把关。
+- **窗口形态按品牌分叉**：kaitu 是竖版手机比例（`tauri.conf.json` 430×956、max 480，`window.rs` 9:20 锁比）；
+  overleap 是横向桌面窗口（`tauri.conf.overleap.json` 1040×700、min 880×620、可最大化，`window.rs`
+  `cfg(brand_overleap)` 分支按工作区 85% 夹紧、不锁比）。webapp 侧栏布局靠短边 ≥ 600 触发，所以
+  overleap 的 minHeight 620 是布局契约，不是随手值。两套常量各有测试模块，`K2_BRAND=overleap cargo test`
+  必须与默认 `cargo test` 各跑一次。
 
 ## Rust Modules (`src-tauri/src/`)
 
