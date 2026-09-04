@@ -122,10 +122,19 @@ func TestTerminalf_MarksSkipRetryAndKeepsMessage(t *testing.T) {
 
 // isFinalAttempt 决定 withSlackNotify 是发告警还是只记一条 warn。
 //
-// 已知盲区:asynq 的重试计数是 server 注入 ctx 的,没有公开构造函数可以在单测里
-// 伪造一个「已重试 1 次 / 上限 3 次」的 ctx,所以「中途重试不告警」这条路径这里
-// 覆盖不到,只能覆盖 SkipRetry 与无 ctx 值两个分支。ctx 透传本身已在
-// qtoolkit/asynq 的 mux.HandleFunc(`return h(ctx, t.Payload())`) 处确认。
+// 已知盲区,两条都源于 asynq 的重试计数只能由 server 注入 ctx、没有公开构造
+// 函数可以在单测里伪造:
+//
+//  1. 「中途重试只记 warn 不告警」这条路径覆盖不到——那正是把 24 条告警压回
+//     1 条的分支,本测试证明不了它,只能靠 qtoolkit/asynq 的 mux.HandleFunc
+//     (`return h(ctx, t.Payload())`)确认 ctx 确实原样透传,以及线上观察。
+//  2. 下面两个断言在 context.Background() 下其实走的是同一条 fallback 分支
+//     (GetRetryCount 取不到值 → 保守返回 true),所以第一个断言并不能单独证明
+//     SkipRetry 分支存在。SkipRetry 的实际效果由 terminalf 那组 ErrorIs 断言
+//     和 asynq 自身的归档行为保证。
+//
+// 因此这个测试锁的是一件事:isFinalAttempt 在拿不到重试上下文时必须偏向告警,
+// 绝不能静默吞掉一个真实失败。
 func TestIsFinalAttempt(t *testing.T) {
 	require.True(t, isFinalAttempt(context.Background(), terminalf("boom")),
 		"SkipRetry 不会再重试,必须立刻告警")
