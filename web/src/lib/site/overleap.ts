@@ -40,6 +40,11 @@ export const OVERLEAP_SITE: SiteConfig = {
     },
   ],
   staticRoutes: ['', '/install', '/purchase', '/support', '/privacy', '/terms', '/login'],
+  // 与 scripts/stripe-setup-overleap.sh 的 ensure_price 行同源（usd 主币 + gbp/eur 固定本币价）。
+  pricing: {
+    yearly: { usd: 7900, gbp: 7900, eur: 8900 },
+    monthly: { usd: 1199, gbp: 999, eur: 1199 },
+  },
   contentCategories: {
     blog: {
       name: {

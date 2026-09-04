@@ -69,7 +69,7 @@ const CN_PAYMENT = /Alipay|WeChat|UnionPay|支付宝|微信/;
 
 afterEach(() => vi.unstubAllEnvs());
 
-async function renderHome(locale: 'en-US' | 'ja' | 'zh-CN'): Promise<string> {
+async function renderHome(locale: 'en-GB' | 'en-US' | 'ja' | 'zh-CN'): Promise<string> {
   vi.resetModules();
   const { default: HomePage } = process.env.NEXT_PUBLIC_BRAND === 'kaitu'
     ? await import('../src/app/[locale]/page.kaitu')
@@ -82,7 +82,10 @@ async function renderHome(locale: 'en-US' | 'ja' | 'zh-CN'): Promise<string> {
 }
 
 describe('overleap home (NEXT_PUBLIC_BRAND=overleap)', () => {
-  for (const locale of ['en-US', 'ja'] as const) {
+  // 展示币按 locale（lib/pricing.ts）：en-GB 英镑，其余美元；数字来自 lib/site 的价表
+  // （tests/pricing-source.test.ts 锁它与 Stripe 建价脚本同源）。
+  const PRICE_ANCHORS = { 'en-GB': ['£79', '£9.99', '£6.58'], 'en-US': ['$79', '$11.99', '$6.58'], ja: ['$79', '$11.99'] } as const;
+  for (const locale of ['en-GB', 'en-US', 'ja'] as const) {
     it(`${locale}: renders the landing sections with real copy`, async () => {
       vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
       const html = await renderHome(locale);
@@ -90,9 +93,14 @@ describe('overleap home (NEXT_PUBLIC_BRAND=overleap)', () => {
       expect(html).toContain('id="features"');
       expect(html).toContain('id="pricing"');
       expect(html).toContain('id="faq"');
-      expect(html).toContain('$79');
-      expect(html).toContain('$8.99');
+      for (const anchor of PRICE_ANCHORS[locale]) expect(html, anchor).toContain(anchor);
       expect(html).toContain('Overleap');
+      // 隐私优先叙事已替换抗封锁叙事（spec §3.2）
+      if (locale !== 'ja') {
+        expect(html).toContain('Your browsing is your business.');
+        expect(html).not.toContain('30% packet loss');
+      }
+      expect(html).not.toMatch(/\{(yearly|monthly|currency)\}/);
     });
 
     it(`${locale}: zero kaitu words, zero China-market payment channels, zero raw keys`, async () => {

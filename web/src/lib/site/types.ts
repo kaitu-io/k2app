@@ -53,6 +53,16 @@ export interface SiteConfig {
     defaultTitle: Partial<Record<Locale, string>>;
     defaultDescription: Partial<Record<Locale, string>>;
   };
+  /**
+   * 首页定价区的静态价表 {币种小写 → 最小单位金额}。首页是静态营销页，不打 API；
+   * 唯一上游是 scripts/stripe-setup-overleap.sh 的 ensure_price 行——
+   * tests/pricing-source.test.ts 逐币种比对，三处只能同时变。购买页用 API 的
+   * currencyPrices（Stripe 真相）。没有网页定价面的品牌不填。
+   */
+  pricing?: {
+    yearly: Record<string, number>;
+    monthly: Record<string, number>;
+  };
 }
 
 export function isExternalHref(href: string): boolean {
