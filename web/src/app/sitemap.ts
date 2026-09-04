@@ -3,27 +3,16 @@ import { posts } from '#velite';
 import { getBrand } from '@/lib/brand-server';
 import { isPostVisibleToBrand } from '@/lib/k2-posts';
 import { categorySlugs, listCategoryPosts } from '@/lib/content-posts';
+import { siteConfig } from '@/lib/site';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const brand = await getBrand();
   const baseUrl = brand.baseUrl;
   const locales = brand.allowedLocales;
 
-  // Static pages in the application. Feature-gated surfaces must not be
-  // advertised by a brand that 404s them (see routers/page.tsx).
-  const staticPages = [
-    '',           // Home page
-    '/login',
-    '/discovery',
-    '/install',
-    '/opensource',
-    '/privacy',
-    '/purchase',
-    ...(brand.features.releaseNotes ? ['/releases'] : []),
-    ...(brand.features.routers ? ['/routers'] : []),
-    '/support',
-    '/terms',
-  ];
+  // 静态路由来自品牌站点结构（lib/site/<brand>.ts）：只列该品牌构建里真实存在的页面，
+  // 与页面树（page.<brand>.tsx）同源，不再靠 feature 标志逐项开关。
+  const staticPages = siteConfig(brand).staticRoutes;
 
   const sitemapEntries: MetadataRoute.Sitemap = [];
 
@@ -72,7 +61,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Only slugs a route actually serves: the /k2 section, or a category
   // registered in content-posts.ts. Anything else would be a sitemap entry
   // pointing at a 404 (the catch-all rejects unregistered categories).
-  const servedCategories = categorySlugs();
+  const servedCategories = categorySlugs(brand);
   const publishedPosts = posts.filter(
     (post) =>
       !post.draft &&
@@ -109,7 +98,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Category listing pages (e.g. /guides) — only when this brand's deployment
   // actually lists something there; an empty category page is not advertised.
-  for (const category of categorySlugs()) {
+  for (const category of categorySlugs(brand)) {
     const hasPosts = locales.some(
       (locale) => listCategoryPosts(locale, category, brand).length > 0
     );

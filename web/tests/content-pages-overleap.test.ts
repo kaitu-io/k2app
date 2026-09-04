@@ -39,6 +39,18 @@ vi.mock('#velite', () => ({
       slug: 'guides/hello-world',
     },
     {
+      title: 'Hello from the blog',
+      date: '2026-02-21T00:00:00.000Z',
+      summary: 'First post on the blog.',
+      tags: ['announcement'],
+      draft: false,
+      content: '<h1>Hello from the blog</h1><p>Content here.</p>',
+      metadata: { readingTime: 1, wordCount: 40 },
+      filePath: 'en-GB/blog/hello-world',
+      locale: 'en-GB',
+      slug: 'blog/hello-world',
+    },
+    {
       title: '入门指南',
       date: '2026-02-18T00:00:00.000Z',
       summary: '如何开始使用 Kaitu VPN。',
@@ -78,16 +90,18 @@ describe('test_sitemap_overleap_host_serves_english', () => {
     const entries = await sitemap();
     const urls = entries.map((e: { url: string }) => e.url);
 
-    // Overleap host serves English and Japanese
-    expect(urls).toContain('https://overleap.io/en-US/guides/hello-world');
-    expect(urls).toContain('https://overleap.io/en-GB/guides/hello-world');
-    expect(urls).toContain('https://overleap.io/en-AU/guides/hello-world');
-    expect(urls).toContain('https://overleap.io/ja/guides/hello-world');
+    // Overleap host serves its own category (blog) in English and Japanese —
+    // `guides` is a kaitu category (lib/site/kaitu.ts) and never appears here,
+    // even though an en-US guides post exists in the fixtures.
+    expect(urls).toContain('https://overleap.io/en-GB/blog/hello-world');
+    expect(urls).toContain('https://overleap.io/en-US/blog/hello-world');
+    expect(urls).toContain('https://overleap.io/en-AU/blog/hello-world');
+    expect(urls).toContain('https://overleap.io/ja/blog/hello-world');
+    expect(urls.some((url: string) => url.includes('/guides'))).toBe(false);
 
     // Overleap host must NOT serve zh-* URLs — those live on kaitu.io
-    expect(urls).not.toContain('https://overleap.io/zh-CN/guides/hello-world');
-    expect(urls).not.toContain('https://overleap.io/zh-TW/guides/hello-world');
-    expect(urls).not.toContain('https://overleap.io/zh-HK/guides/hello-world');
+    expect(urls).not.toContain('https://overleap.io/zh-CN/blog/hello-world');
+    expect(urls.some((url: string) => /zh-(CN|TW|HK)/.test(url))).toBe(false);
 
     // No kaitu.io URLs leak through
     expect(urls.some((url: string) => url.includes('kaitu.io'))).toBe(false);

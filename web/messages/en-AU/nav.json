@@ -64,7 +64,10 @@
     },
     "copyright": "All rights reserved.",
     "copyrightSymbol": "©",
-    "period": "."
+    "period": ".",
+    "company": {
+      "title": "Company"
+    }
   },
   "languageDetection": {
     "message": "Your browser language is detected as",

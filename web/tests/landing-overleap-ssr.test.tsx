@@ -71,7 +71,9 @@ afterEach(() => vi.unstubAllEnvs());
 
 async function renderHome(locale: 'en-US' | 'ja' | 'zh-CN'): Promise<string> {
   vi.resetModules();
-  const { default: HomePage } = await import('../src/app/[locale]/page.overleap');
+  const { default: HomePage } = process.env.NEXT_PUBLIC_BRAND === 'kaitu'
+    ? await import('../src/app/[locale]/page.kaitu')
+    : await import('../src/app/[locale]/page.overleap');
   const element = await HomePage({ params: Promise.resolve({ locale }) });
   const { container } = render(
     <NextIntlClientProvider locale={locale} messages={loadMessages(locale)}>{element}</NextIntlClientProvider>,

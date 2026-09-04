@@ -64,7 +64,10 @@
     },
     "copyright": "All rights reserved.",
     "copyrightSymbol": "©",
-    "period": "。"
+    "period": "。",
+    "company": {
+      "title": "会社"
+    }
   },
   "languageDetection": {
     "message": "お使いのブラウザ言語は",
