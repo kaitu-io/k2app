@@ -462,9 +462,14 @@ func handleCloudChangeIP(ctx context.Context, payload []byte) error {
 	// Get instance from DB
 	var instance CloudInstance
 	if err := db.Get().First(&instance, p.CloudInstanceID).Error; err != nil {
-		// 记录已被软删除(重复入队 / syncAll 孤儿清理抢先)或从来不存在。
-		// 换 IP 没有幂等语义,这是真失败,但重试不会让记录回来。
-		return terminalf("instance %d not found: %v", p.CloudInstanceID, err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 记录已被软删除（重复入队 / syncAll 孤儿清理抢先）或从来不存在。
+			// 换 IP 没有幂等语义，这是真失败，但重试不会让记录回来。
+			return terminalf("instance %d not found", p.CloudInstanceID)
+		}
+		// 连接超时之类的 DB 抖动是瞬时故障，留给 asynq 重试——别把可恢复的
+		// 故障和「记录不存在」一起判成终态。
+		return fmt.Errorf("load instance %d failed: %w", p.CloudInstanceID, err)
 	}
 
 	// Get account config
@@ -568,7 +573,8 @@ func handleCloudDelete(ctx context.Context, payload []byte) error {
 			log.Warnf(ctx, "[CLOUD] Delete no-op: instance %d already gone", p.CloudInstanceID)
 			return nil
 		}
-		return terminalf("instance %d lookup failed: %v", p.CloudInstanceID, err)
+		// 连接超时之类的 DB 抖动是瞬时故障，留给 asynq 重试。
+		return fmt.Errorf("load instance %d failed: %w", p.CloudInstanceID, err)
 	}
 
 	account := ConfigCloudInstanceAccountByName(instance.AccountName)
