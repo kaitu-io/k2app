@@ -5,7 +5,7 @@
 
 ## Amplify apps
 
-- **实际部署形态（2026-09-04 AWS 控制台核实）**：kaitu.io 与 overleap.io 两个域名都关联在**同一个** Amplify app（`d3q8wll74rs94h`，ap-northeast-1）的同一个 `website` branch 上 —— 与「两个 app 各带 NEXT_PUBLIC_BRAND」的设计描述不符（该 app 未设 NEXT_PUBLIC_BRAND，构建默认 kaitu；overleap.io 当前服务的是同一份 kaitu 构建）。`website` 分支是 `main` 的纯镜像，**永远不要直接 commit 到它**。部署 = `git push origin main:website`。（ap-east-1 另有一个闲置 `kaitu` app `d2ooo048yr0i1y`，无自定义域名。）
+- **实际部署形态（2026-09-04 AWS 控制台核实）**：**overleap 网站尚未上线** —— 当前只有一个 Amplify app（`d3q8wll74rs94h`，ap-northeast-1，kaitu 构建），overleap.io 域名暂时也关联在它的 `website` branch 上作占位。「两个 app 各带 NEXT_PUBLIC_BRAND」是 overleap 站上线时的目标形态：届时新建独立 app、设 `NEXT_PUBLIC_BRAND=overleap`、把 overleap.io 域名迁过去。`website` 分支是 `main` 的纯镜像，**永远不要直接 commit 到它**。部署 = `git push origin main:website`。（ap-east-1 另有一个闲置 `kaitu` app `d2ooo048yr0i1y`，无自定义域名。）
 - 同一份 `web/amplify.yml`（`appRoot: web`），两个 app 只差 `NEXT_PUBLIC_BRAND`（kaitu 默认 / overleap 必须显式设置）。
 - 控制台环境变量只存在于构建 shell；`output: 'standalone'` 不会把它们带进 SSR Lambda，所以 `amplify.yml` preBuild 用 `env | grep -E '^(…)='` 把白名单追加进 `.env.production`。**白名单是权威**：不在里面的变量到不了 Lambda。当前白名单：`NEXT_PUBLIC_BRAND`、`NEXT_PUBLIC_SENTRY_DSN`、`SENTRY_ORG`、`SENTRY_PROJECT`、`SENTRY_AUTH_TOKEN`。Payload 时代的 DATABASE_URL / PAYLOAD_SECRET / TRANSLATOR_* / AI_* / S3_* / CDN_URL / CENTER_API_URL **已于 2026-09-04 从 Amplify 控制台删除**。
 - SSR Lambda 上限 30s。
