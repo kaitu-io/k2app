@@ -17,7 +17,7 @@ export const defaultNamespace: Namespace = 'common';
 export const SHARED_NAMESPACES = ["common","nav","auth","purchase","account","discovery","errors","k2","admin"] as const satisfies readonly Namespace[];
 export const BRAND_NAMESPACES = {
   kaitu: [...SHARED_NAMESPACES, "hero","install","wallet","campaigns","invite","theme","changelog","releases","routers","guide-parents","licenseKeys","survey"],
-  overleap: [...SHARED_NAMESPACES, "landing"],
+  overleap: [...SHARED_NAMESPACES, "landing","download","help"],
 } as const satisfies Record<string, readonly Namespace[]>;
 
 export const namespaceMapping: Record<string, Namespace> = {

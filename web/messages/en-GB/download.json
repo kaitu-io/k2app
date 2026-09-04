@@ -1,0 +1,33 @@
+{
+  "download": {
+    "meta": {
+      "title": "Download {brand} for Windows, macOS, iOS and Android",
+      "description": "Get the {brand} app for your computer and phone. One account covers five devices; sign in and connect with one tap."
+    },
+    "title": "Download {brand}",
+    "subtitle": "One account, five devices. Pick your platform — we've highlighted the one you're on.",
+    "detected": "You're on {platform}",
+    "version": "Version {version}",
+    "getFor": "Download for {platform}",
+    "iosStore": "Open the App Store",
+    "androidStore": "Get it on Google Play",
+    "comingSoon": "Coming soon",
+    "comingSoonHint": "Not available on this platform yet. Subscribe now and we'll email you when it lands.",
+    "platforms": {
+      "windows": { "name": "Windows", "requirement": "Windows 10 or later, 64-bit" },
+      "macos": { "name": "Mac", "requirement": "macOS 12 or later, Intel and Apple silicon" },
+      "ios": { "name": "iPhone and iPad", "requirement": "iOS 15 or later" },
+      "android": { "name": "Android", "requirement": "Android 8 or later" }
+    },
+    "next": {
+      "title": "After installing",
+      "step1": "Sign in with the email address you subscribed with.",
+      "step2": "Tap Connect. The app picks the fastest route for you.",
+      "step3": "Use the same account on up to five devices."
+    },
+    "noSubscription": "Don't have a subscription yet?",
+    "seePricing": "See pricing",
+    "help": "Something not working?",
+    "helpLink": "Visit the help page"
+  }
+}
