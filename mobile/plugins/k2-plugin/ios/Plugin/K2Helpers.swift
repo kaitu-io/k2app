@@ -78,7 +78,7 @@ private func compareSegments(_ a: [Int], _ b: [Int]) -> Int {
 /// the web-OTA `min_native` gate, and a gate must never be able to fall back to
 /// reading a *different quantity*. See K2Plugin.appVersion for the fail-open
 /// bug that motivated this.
-let k2AppVersion = "0.4.9"
+let k2AppVersion = "0.4.10"
 
 /// Compile-time bridge API version. MUST equal BRIDGE_API_VERSION in
 /// webapp/src/types/bridge-version.ts — the webapp contract gate
