@@ -91,11 +91,20 @@ describe('X-K2-Brand injection on /api and /app', () => {
 });
 
 describe('admin + install-script surfaces are kaitu-only', () => {
-  it.each(['/manager', '/manager/users', '/admin', '/i/k2', '/i/k2s', '/i/k2r'])(
+  it.each(['/i/k2', '/i/k2s', '/i/k2r'])(
     'overleap: %s → 404',
     async (path) => {
       vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
       expect((await run(makeRequest(path))).status).toBe(404);
+    },
+  );
+  // /manager 不再由中间件挡：后台整棵树是 page.kaitu.tsx，Overleap 构建里不存在这些路由，
+  // Next 原生 404（结构由 tests/brand-page-tree.test.ts 守）。中间件只放行。
+  it.each(['/manager', '/manager/users'])(
+    'overleap: %s passes through to the (absent) route tree',
+    async (path) => {
+      vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+      expect((await run(makeRequest(path))).status).toBe(200);
     },
   );
   it.each(['/manager/users', '/i/k2'])(

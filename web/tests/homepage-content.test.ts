@@ -164,12 +164,12 @@ describe('test_homepage_quickstart_section', () => {
 
 describe('test_homepage_json_ld', () => {
   it('page.tsx contains SoftwareApplication JSON-LD type', () => {
-    const content = readWebFile('src/app/[locale]/page.tsx');
+    const content = readWebFile('src/app/[locale]/page.kaitu.tsx');
     expect(content).toContain('SoftwareApplication');
   });
 
   it('page.tsx contains application/ld+json script tag', () => {
-    const content = readWebFile('src/app/[locale]/page.tsx');
+    const content = readWebFile('src/app/[locale]/page.kaitu.tsx');
     expect(content).toContain('application/ld+json');
   });
 
@@ -178,7 +178,7 @@ describe('test_homepage_json_ld', () => {
   // a single object and crash on `parsed["@context"].toLowerCase()` when it's
   // a root-level array. Emit one entity per <script> instead.
   it('page.tsx emits each schema.org entity as a separate <script> (no root-array ld+json)', () => {
-    const content = readWebFile('src/app/[locale]/page.tsx');
+    const content = readWebFile('src/app/[locale]/page.kaitu.tsx');
     expect(content).not.toMatch(/JSON\.stringify\(\s*\[/);
     const scriptTags = content.match(/type="application\/ld\+json"/g) ?? [];
     expect(scriptTags.length).toBeGreaterThanOrEqual(3);

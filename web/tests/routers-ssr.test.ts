@@ -90,7 +90,7 @@ vi.mock('@/components/ui/card', () => ({
 
 describe('test_routers_ssr_renders_content', () => {
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page');
+    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page.kaitu');
 
     // Must be an async function to qualify as a Server Component that awaits params
     expect(RoutersPage).toBeTypeOf('function');
@@ -99,7 +99,7 @@ describe('test_routers_ssr_renders_content', () => {
   });
 
   it('page accepts params as a Promise<{ locale: string }> (Next.js 15 pattern)', async () => {
-    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page');
+    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page.kaitu');
 
     // Should resolve without throwing — async params are awaited inside
     const element = await RoutersPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -107,7 +107,7 @@ describe('test_routers_ssr_renders_content', () => {
   });
 
   it('page renders JSX content (not null or empty)', async () => {
-    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page');
+    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page.kaitu');
 
     const element = await RoutersPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
 
@@ -119,14 +119,14 @@ describe('test_routers_ssr_renders_content', () => {
 
 describe('test_routers_generates_metadata', () => {
   it('generateMetadata is exported from the page module', async () => {
-    const pageModule = await import('../src/app/[locale]/routers/page');
+    const pageModule = await import('../src/app/[locale]/routers/page.kaitu');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/routers/page');
+    const { generateMetadata } = await import('../src/app/[locale]/routers/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -137,7 +137,7 @@ describe('test_routers_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/routers/page');
+    const { generateMetadata } = await import('../src/app/[locale]/routers/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'en-US' }),

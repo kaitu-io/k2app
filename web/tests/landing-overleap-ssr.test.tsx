@@ -71,7 +71,7 @@ afterEach(() => vi.unstubAllEnvs());
 
 async function renderHome(locale: 'en-US' | 'ja' | 'zh-CN'): Promise<string> {
   vi.resetModules();
-  const { default: HomePage } = await import('../src/app/[locale]/page');
+  const { default: HomePage } = await import('../src/app/[locale]/page.overleap');
   const element = await HomePage({ params: Promise.resolve({ locale }) });
   const { container } = render(
     <NextIntlClientProvider locale={locale} messages={loadMessages(locale)}>{element}</NextIntlClientProvider>,
@@ -109,7 +109,7 @@ describe('overleap home (NEXT_PUBLIC_BRAND=overleap)', () => {
   it('metadata title carries the brand and no k2cc suffix', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     vi.resetModules();
-    const { generateMetadata } = await import('../src/app/[locale]/page');
+    const { generateMetadata } = await import('../src/app/[locale]/page.overleap');
     const meta = await generateMetadata({ params: Promise.resolve({ locale: 'en-US' }) });
     expect(String(meta.title)).toMatch(/\| Overleap$/);
     expect(String(meta.title)).not.toMatch(/k2cc/);

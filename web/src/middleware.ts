@@ -67,14 +67,10 @@ export default function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // ---- Admin surfaces live only in the kaitu deployment (internal tools). -
-  if (
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/manager')
-  ) {
-    if (!isKaitu) {
-      return new NextResponse(null, { status: 404 });
-    }
+  // ---- Admin surfaces (/manager) are `page.kaitu.tsx` route files: the overleap
+  // build does not contain them, so they 404 natively. No gate needed here; the
+  // /app/* API proxy gate above is what keeps admin *data* off the overleap host.
+  if (pathname.startsWith('/manager')) {
     return NextResponse.next();
   }
 
@@ -215,9 +211,8 @@ export const config = {
     '/favicon.ico',
     '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*',
     '/(api|app)/:path*',
-    '/(admin|manager)/:path*',
-    '/admin',
+    '/manager/:path*',
     '/manager',
-    '/((?!api|app|admin|manager|_next|_vercel|.*\\..*).*)',
+    '/((?!api|app|manager|_next|_vercel|.*\\..*).*)',
   ],
 };

@@ -324,7 +324,7 @@ describe('test_retailer_rules_ssr_renders_content', () => {
   });
 
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page');
+    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
 
     expect(RetailerRulesPage).toBeTypeOf('function');
     const result = RetailerRulesPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -332,14 +332,14 @@ describe('test_retailer_rules_ssr_renders_content', () => {
   });
 
   it('page accepts params as a Promise<{ locale: string }> (Next.js 15 pattern)', async () => {
-    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page');
+    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
 
     const element = await RetailerRulesPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
     expect(element).not.toBeNull();
   });
 
   it('page renders JSX content (not null or empty)', async () => {
-    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page');
+    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
 
     const element = await RetailerRulesPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
 
@@ -361,14 +361,14 @@ describe('test_retailer_rules_generates_metadata', () => {
   });
 
   it('generateMetadata is exported from the page module', async () => {
-    const pageModule = await import('../src/app/[locale]/retailer/rules/page');
+    const pageModule = await import('../src/app/[locale]/retailer/rules/page.kaitu');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/retailer/rules/page');
+    const { generateMetadata } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -379,7 +379,7 @@ describe('test_retailer_rules_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/retailer/rules/page');
+    const { generateMetadata } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'en-US' }),

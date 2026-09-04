@@ -1,4 +1,4 @@
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
 import { siteBrand } from '@/lib/brands';
@@ -21,7 +21,15 @@ const FAQ_KEYS = [
 const FEATURE_KEYS = ['ech', 'k2cc', 'transport', 'privacy'] as const;
 const STEP_KEYS = ['subscribe', 'download', 'connect'] as const;
 
-export async function generateOverleapMetadata(locale: Locale): Promise<Metadata> {
+// Overleap 构建专属首页（page.overleap.tsx）。开途首页在 page.kaitu.tsx；两者由
+// next.config 的 pageExtensions 按品牌择一编译，互不可见。
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
   const brand = siteBrand();
   const t = await getTranslations({ locale, namespace: 'landing' });
   const vars = { brand: brand.displayName };
@@ -37,7 +45,14 @@ export async function generateOverleapMetadata(locale: Locale): Promise<Metadata
   };
 }
 
-export default async function OverleapHome({ locale }: { locale: Locale }) {
+export default async function Home({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  setRequestLocale(locale);
   const brand = siteBrand();
   const t = await getTranslations({ locale, namespace: 'landing' });
   const vars = { brand: brand.displayName };

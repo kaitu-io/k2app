@@ -115,7 +115,7 @@ vi.mock('@/components/ui/badge', () => ({
 
 describe('test_discovery_ssr_renders_content', () => {
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: DiscoveryPage } = await import('../src/app/[locale]/discovery/page');
+    const { default: DiscoveryPage } = await import('../src/app/[locale]/discovery/page.kaitu');
 
     // Must be an async function to qualify as a Server Component that awaits params
     expect(DiscoveryPage).toBeTypeOf('function');
@@ -124,7 +124,7 @@ describe('test_discovery_ssr_renders_content', () => {
   });
 
   it('page accepts params as a Promise<{ locale: string }> (Next.js 15 pattern)', async () => {
-    const { default: DiscoveryPage } = await import('../src/app/[locale]/discovery/page');
+    const { default: DiscoveryPage } = await import('../src/app/[locale]/discovery/page.kaitu');
 
     // Should resolve without throwing — async params are awaited inside
     const element = await DiscoveryPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -132,7 +132,7 @@ describe('test_discovery_ssr_renders_content', () => {
   });
 
   it('page renders JSX content (not null or empty)', async () => {
-    const { default: DiscoveryPage } = await import('../src/app/[locale]/discovery/page');
+    const { default: DiscoveryPage } = await import('../src/app/[locale]/discovery/page.kaitu');
 
     const element = await DiscoveryPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
 
@@ -144,14 +144,14 @@ describe('test_discovery_ssr_renders_content', () => {
 
 describe('test_discovery_generates_metadata', () => {
   it('generateMetadata is exported from the discovery page module', async () => {
-    const pageModule = await import('../src/app/[locale]/discovery/page');
+    const pageModule = await import('../src/app/[locale]/discovery/page.kaitu');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/discovery/page');
+    const { generateMetadata } = await import('../src/app/[locale]/discovery/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -162,7 +162,7 @@ describe('test_discovery_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/discovery/page');
+    const { generateMetadata } = await import('../src/app/[locale]/discovery/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'en-US' }),
@@ -179,7 +179,7 @@ describe('test_discovery_generates_metadata', () => {
 
 describe('test_opensource_ssr_renders_content', () => {
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: OpenSourcePage } = await import('../src/app/[locale]/opensource/page');
+    const { default: OpenSourcePage } = await import('../src/app/[locale]/opensource/page.kaitu');
 
     // Must be an async function to qualify as a Server Component that awaits params
     expect(OpenSourcePage).toBeTypeOf('function');
@@ -188,7 +188,7 @@ describe('test_opensource_ssr_renders_content', () => {
   });
 
   it('page accepts params as a Promise<{ locale: string }> (Next.js 15 pattern)', async () => {
-    const { default: OpenSourcePage } = await import('../src/app/[locale]/opensource/page');
+    const { default: OpenSourcePage } = await import('../src/app/[locale]/opensource/page.kaitu');
 
     // Should resolve without throwing — async params are awaited inside
     const element = await OpenSourcePage({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -196,7 +196,7 @@ describe('test_opensource_ssr_renders_content', () => {
   });
 
   it('page renders JSX content (not null or empty)', async () => {
-    const { default: OpenSourcePage } = await import('../src/app/[locale]/opensource/page');
+    const { default: OpenSourcePage } = await import('../src/app/[locale]/opensource/page.kaitu');
 
     const element = await OpenSourcePage({ params: Promise.resolve({ locale: 'zh-CN' }) });
 
@@ -208,14 +208,14 @@ describe('test_opensource_ssr_renders_content', () => {
 
 describe('test_opensource_generates_metadata', () => {
   it('generateMetadata is exported from the opensource page module', async () => {
-    const pageModule = await import('../src/app/[locale]/opensource/page');
+    const pageModule = await import('../src/app/[locale]/opensource/page.kaitu');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/opensource/page');
+    const { generateMetadata } = await import('../src/app/[locale]/opensource/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -226,7 +226,7 @@ describe('test_opensource_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/opensource/page');
+    const { generateMetadata } = await import('../src/app/[locale]/opensource/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'en-US' }),
@@ -243,7 +243,7 @@ describe('test_opensource_generates_metadata', () => {
 
 describe('test_changelog_redirects_to_releases', () => {
   it('page component is an async function', async () => {
-    const { default: ChangelogPage } = await import('../src/app/[locale]/changelog/page');
+    const { default: ChangelogPage } = await import('../src/app/[locale]/changelog/page.kaitu');
     expect(ChangelogPage).toBeTypeOf('function');
   });
 });
@@ -254,7 +254,7 @@ describe('test_changelog_redirects_to_releases', () => {
 
 describe('test_releases_ssr_renders_content', () => {
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: ReleasesPage } = await import('../src/app/[locale]/releases/page');
+    const { default: ReleasesPage } = await import('../src/app/[locale]/releases/page.kaitu');
 
     expect(ReleasesPage).toBeTypeOf('function');
     const result = ReleasesPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -264,14 +264,14 @@ describe('test_releases_ssr_renders_content', () => {
 
 describe('test_releases_generates_metadata', () => {
   it('generateMetadata is exported from the releases page module', async () => {
-    const pageModule = await import('../src/app/[locale]/releases/page');
+    const pageModule = await import('../src/app/[locale]/releases/page.kaitu');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/releases/page');
+    const { generateMetadata } = await import('../src/app/[locale]/releases/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -282,7 +282,7 @@ describe('test_releases_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/releases/page');
+    const { generateMetadata } = await import('../src/app/[locale]/releases/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'en-US' }),

@@ -182,20 +182,29 @@ describe('rendered chrome carries only its own brand', () => {
  * og:url, siteName and icons are all brand-scoped and none of them are visible
  * to a DOM scan.
  */
-const METADATA_ROUTES: Array<{ route: string; mod: string }> = [
-  { route: '/', mod: '../src/app/[locale]/page' },
-  { route: '/discovery', mod: '../src/app/[locale]/discovery/page' },
-  { route: '/opensource', mod: '../src/app/[locale]/opensource/page' },
+// 页面树按品牌编译（next.config pageExtensions）：开途独有页是 page.kaitu.tsx，Overleap 构建里
+// 根本不存在；两品牌各自分裂的页（首页/购买/账户/安装/帮助）各有 page.<brand>.tsx。
+// 所以 metadata 守卫按品牌各扫各的页面树；共用页（privacy/terms）两边都扫。
+const METADATA_ROUTES_OVERLEAP: Array<{ route: string; mod: string }> = [
+  { route: '/', mod: '../src/app/[locale]/page.overleap' },
   { route: '/privacy', mod: '../src/app/[locale]/privacy/page' },
-  { route: '/purchase', mod: '../src/app/[locale]/purchase/page' },
-  { route: '/releases', mod: '../src/app/[locale]/releases/page' },
-  { route: '/routers', mod: '../src/app/[locale]/routers/page' },
-  { route: '/support', mod: '../src/app/[locale]/support/page' },
+  { route: '/purchase', mod: '../src/app/[locale]/purchase/page.overleap' },
+  { route: '/terms', mod: '../src/app/[locale]/terms/page' },
+];
+const METADATA_ROUTES_KAITU: Array<{ route: string; mod: string }> = [
+  { route: '/', mod: '../src/app/[locale]/page.kaitu' },
+  { route: '/discovery', mod: '../src/app/[locale]/discovery/page.kaitu' },
+  { route: '/opensource', mod: '../src/app/[locale]/opensource/page.kaitu' },
+  { route: '/privacy', mod: '../src/app/[locale]/privacy/page' },
+  { route: '/purchase', mod: '../src/app/[locale]/purchase/page.kaitu' },
+  { route: '/releases', mod: '../src/app/[locale]/releases/page.kaitu' },
+  { route: '/routers', mod: '../src/app/[locale]/routers/page.kaitu' },
+  { route: '/support', mod: '../src/app/[locale]/support/page.kaitu' },
   { route: '/terms', mod: '../src/app/[locale]/terms/page' },
 ];
 
 describe('page metadata carries only its own brand', () => {
-  it.each(METADATA_ROUTES)('overleap build: $route metadata has zero kaitu words', async ({ mod }) => {
+  it.each(METADATA_ROUTES_OVERLEAP)('overleap build: $route metadata has zero kaitu words', async ({ mod }) => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     vi.resetModules();
     const { generateMetadata } = await import(mod);
@@ -205,7 +214,7 @@ describe('page metadata carries only its own brand', () => {
     expect(JSON.stringify(meta)).not.toMatch(KAITU_WORDS);
   });
 
-  it.each(METADATA_ROUTES)('kaitu build: $route metadata has zero overleap words', async ({ mod }) => {
+  it.each(METADATA_ROUTES_KAITU)('kaitu build: $route metadata has zero overleap words', async ({ mod }) => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     vi.resetModules();
     const { generateMetadata } = await import(mod);
@@ -218,81 +227,13 @@ describe('page metadata carries only its own brand', () => {
 
 // ─── Rendered pages ───────────────────────────────────────────────────────────
 
-/**
- * Sitemap staticPages that are NOT rendered here, each with the reason. Pinned
- * by the exhaustiveness test below so a newly added page cannot silently opt out
- * of this guard — adding one forces a decision.
- */
-const RENDER_EXEMPT: Record<string, string> = {
-  '/blog': 'Payload CMS collection — needs a live DB; brand filtering covered by tests/sitemap-brand.test.ts',
-  '/login': 'client component, no Server Component entry point; chrome covered above',
-  '/install': 'fetchAllDownloadLinks() hits the network at render; CDN bases covered by tests/downloads.test.ts',
-  '/privacy': 'renders public/legal/*.md — still kaitu-worded on BOTH brands (known legacy item, out of Phase 2 scope)',
-  '/terms': 'renders public/legal/*.md — same legacy item as /privacy',
-  '/purchase': 'PurchaseClient pulls live plan data from the Center API at render',
-  '/discovery': 'DiscoveryClient pulls live node data from the Center API at render',
-};
-
 describe('rendered pages carry only their own brand (overleap build)', () => {
-  it('/support renders zero kaitu words', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    vi.resetModules();
-    const { default: SupportPage } = await import('../src/app/[locale]/support/page');
-
-    const html = await renderPage(SupportPage, 'en-US');
-
-    expect(html).not.toBeNull();
-    expect(html).not.toMatch(KAITU_WORDS);
-  });
-
-  it('/opensource renders zero kaitu words', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    vi.resetModules();
-    const { default: OpensourcePage } = await import('../src/app/[locale]/opensource/page');
-
-    const html = await renderPage(OpensourcePage, 'en-US');
-
-    expect(html).not.toBeNull();
-    expect(html).not.toMatch(KAITU_WORDS);
-  });
-
-  it('/routers is gated off, not leaked', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    vi.resetModules();
-    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page');
-
-    expect(await renderPage(RoutersPage, 'en-US')).toBeNull();
-  });
-
-  it('/releases is gated off, not leaked', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    vi.resetModules();
-    const { default: ReleasesPage } = await import('../src/app/[locale]/releases/page');
-
-    expect(await renderPage(ReleasesPage, 'en-US')).toBeNull();
-  });
-});
-
-describe('render coverage is exhaustive against the sitemap', () => {
-  it('every sitemap staticPage is either rendered here or explicitly exempt', async () => {
-    // Mirrors the staticPages list in src/app/sitemap.ts. Kept in sync by this
-    // test: a new page that is neither covered nor exempt fails the build.
-    const sitemapStaticPages = [
-      '', '/blog', '/login', '/discovery', '/install', '/opensource',
-      '/privacy', '/purchase', '/releases', '/routers', '/support', '/terms',
-    ];
-    const rendered = ['', '/support', '/opensource', '/routers', '/releases'];
-
-    const uncovered = sitemapStaticPages.filter(
-      (p) => !rendered.includes(p) && !(p in RENDER_EXEMPT),
-    );
-    expect(uncovered).toEqual([]);
-  });
-
+  // 开途独有页（opensource/routers/releases/家长指南 support）在 Overleap 构建里不存在——
+  // 这是 tests/brand-page-tree.test.ts 守的结构事实，不再在这里渲染"被门挡住"的开途页。
   it('the home page renders zero kaitu words on overleap', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     vi.resetModules();
-    const { default: HomePage } = await import('../src/app/[locale]/page');
+    const { default: HomePage } = await import('../src/app/[locale]/page.overleap');
 
     const html = await renderPage(HomePage, 'en-US');
 
