@@ -6,15 +6,7 @@ const brandTheme = brandConfig.theme;
 // 共享的主题配置
 const sharedThemeConfig: ThemeOptions = {
   typography: {
-    fontFamily: [
-      '-apple-system',
-      'BlinkMacSystemFont',
-      '"Segoe UI"',
-      'Roboto',
-      '"Helvetica Neue"',
-      'Arial',
-      'sans-serif',
-    ].join(','),
+    fontFamily: brandTheme.typography.fontFamily,
   },
   components: {
     MuiCssBaseline: {

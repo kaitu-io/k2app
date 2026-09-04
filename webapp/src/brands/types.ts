@@ -101,6 +101,9 @@ export interface BrandSemanticTokens {
 }
 
 export interface BrandThemeTokens {
+  /** 全局字体栈（MUI typography.fontFamily）。必填：隐式默认会让共享字体的改动
+   *  静默改变某个品牌的观感。 */
+  typography: { fontFamily: string };
   light: { primary: PaletteTriple; secondary: PaletteTriple };
   dark: { primary: PaletteTriple; secondary: PaletteTriple };
   /** 必填，不设 optional 兜底：隐式默认值会让共享默认色的改动静默改变某个
