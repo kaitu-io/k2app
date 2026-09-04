@@ -24,7 +24,7 @@ Next.js 15 (App Router) | React 19 | TypeScript | Tailwind CSS 4 | shadcn/ui | n
 
 - **Build-time baking**: `NEXT_PUBLIC_BRAND=kaitu|overleap` (default kaitu) → `siteBrand()` in `src/lib/brands.ts` — the ONLY brand source. No host/locale-based runtime resolution; no cross-domain 301/hreflang/canonical. Two Amplify apps (kaitu.io / overleap.io) build from the same repo with different env.
 - **Locale matrix**: kaitu → zh-CN (default)/zh-TW/zh-HK; overleap → en-US (default)/en-GB/en-AU/ja. Off-brand locale paths 301 to the brand default locale, same host. Message files partition by locale: en/ja files say "Overleap", zh files say「开途」— never mix (enforced by `tests/brand-guard.test.ts`).
-- **Admin is kaitu-only**: `/manager`, `/payload`, `/admin`, `/app/*` proxy → 404 on the overleap build (middleware).
+- **Admin is kaitu-only**: `/manager`, `/admin`, `/app/*` proxy → 404 on the overleap build (middleware).
 - **`X-K2-Brand`**: injected on every `/api/*`/`/app/*` request by BOTH `src/lib/api.ts` and middleware. Center resolves Host → header → kaitu (`api/brand.go`).
 - **Brand-leak guards**: `tests/brand-guard.test.ts` (file scan: messages per-locale + src allowlist + velite content) and `tests/brand-leak-ssr.test.tsx` (rendered chrome). `github.com/getoverleap` is the allow-listed protocol-layer org. Never add brand literals to src — extend the `Brand` registry instead.
 - **Legal signature is the ONE cross-brand exception**: both brands sign 法务文书 as `Overleap LLC` (`Brand.legalName`, rendered by `Footer`). The SSR guard strips it before scanning and asserts it is present, so the exception stays scoped.
@@ -89,11 +89,12 @@ web/
 │   │   ├── device-detection.ts # Device type detection for auto-download
 │   │   ├── events.ts          # App event bus (auth:unauthorized, etc.)
 │   │   ├── k2-posts.ts        # getK2Posts(locale) — Velite filter/group/sort for /k2/ sidebar
+│   │   ├── content-posts.ts   # Category registry + Velite lookup for the [...slug] catch-all
 │   │   ├── api-errors.ts      # Error code→i18n mapping (getApiErrorMessage + getApiErrorMessageZh)
 │   │   ├── udid.ts            # Device fingerprint
 │   │   └── utils.ts           # cn() helper (clsx + tailwind-merge)
 │   └── middleware.ts          # brand gating + X-K2-Brand injection + next-intl locale detection
-├── content/{locale}/k2/       # K2 protocol docs (Velite, all 7 locales) — the only routed Velite content
+├── content/{locale}/          # Velite markdown: k2/ docs (all 7 locales) + guides/ articles (zh, kaitu-only)
 ├── velite.config.ts           # Velite schema + collection config (order/section fields)
 ├── messages/                  # i18n JSON files (7 locales × 21 namespaces)
 │   └── namespaces.ts          # Namespace registry — hand-edit when adding new *.json files
@@ -150,13 +151,15 @@ Locale ↔ brand matrix and the off-brand 301 live in the Brand section above; `
 
 ## Content Publishing (Velite)
 
-Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `order` / `section` sidebar fields, `brand: kaitu|overleap|both`, `canonicalBrand`). **Only three consumers read it**: `src/app/[locale]/k2/[[...path]]/page.tsx`, `src/lib/k2-posts.ts` (filters to `k2/` slugs) and `src/app/sitemap.ts`. The `[...slug]` catch-all is Payload-only (see CMS below) — it never imports `#velite`.
+Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `order` / `section` sidebar fields, `brand: kaitu|overleap|both`, `canonicalBrand`). Consumers: `src/app/[locale]/k2/[[...path]]/page.tsx` + `src/lib/k2-posts.ts` (the `k2/` docs), `src/app/[locale]/[...slug]/page.tsx` + `src/lib/content-posts.ts` (everything else, e.g. `guides/`), and `src/app/sitemap.ts`. Velite is the ONLY content pipeline — Payload CMS and its PostgreSQL database were removed 2026-09 (articles migrated to `content/{locale}/guides/*.md`).
 
-- **Known inconsistency**: `content/zh-CN/{blog,guides}/*.md` and `content/en-US/blog/*.md` have NO renderer, yet `sitemap.ts` emits every non-draft Velite post as a URL regardless of whether a route serves it. Don't add non-`k2/` markdown expecting a page.
+- **The `[...slug]` catch-all serves only registered categories**: `CATEGORIES` in `src/lib/content-posts.ts` is the code-level registry (1 segment = category list, 2 = post detail, 3+ = 404). A markdown directory without a registry entry has no page — register it AND check the reserved-paths list below.
+- **Locale fallback**: a post missing in the requested locale falls back to the brand default locale (same pattern as `findK2Post`) — write zh-CN at minimum; zh-TW/zh-HK translations are optional per-file.
+- **Article markdown may contain inline HTML** (`<strong>`/`<em>`): CJK fullwidth punctuation adjacent to `**` breaks CommonMark emphasis flanking; the velite pipeline preserves raw inline HTML (rehypeRaw). Body starts at `##` — the page template renders the `<h1>` from frontmatter `title`.
 - **Import data**: `import { posts } from '#velite'` (tsconfig path + vitest alias → `.velite/`)
 - **Images**: `web/public/images/content/` → reference as `/images/content/filename.jpg`
 - **Build**: Velite runs alongside Next.js via `process.argv` detection in `next.config.ts`
-- **Skill**: `kaitu-content` writes + publishes articles — to Payload, not Velite.
+- **Skill**: `kaitu-content` writes articles as Velite markdown (git commit + deploy publishes them).
 
 **Release notes / Changelog:**
 - **Single source of truth**: `web/releases/v{VERSION}.md`
@@ -171,7 +174,7 @@ Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `o
 - Sidebar navigation driven by `order` + `section` frontmatter via `getK2Posts(locale)` helper
 - `getK2Posts()` is the single source: used by K2Sidebar, K2Page, and sitemap.ts
 
-**Reserved paths** (Payload category slugs must NOT use — static routes win over `[...slug]`): 403, account, changelog, discovery, g, install, k2, login, opensource, privacy, purchase, releases, retailer, routers, s, support, survey, terms, manager. There is no code-level list; this line is the only guard — extend it when adding a `[locale]` route.
+**Reserved paths** (content category slugs must NOT use — static routes win over `[...slug]`): 403, account, changelog, discovery, g, install, k2, login, opensource, privacy, purchase, releases, retailer, routers, s, support, survey, terms, manager. Extend this line when adding a `[locale]` route, and never register a category with one of these slugs in `content-posts.ts`.
 
 ## Routing
 
@@ -180,7 +183,7 @@ Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `o
 | `/{locale}/*` | `[locale]` | Public/Mixed | User-facing pages |
 | `/{locale}/k2/[[...path]]` | `[locale]/k2` | Public | K2 protocol docs (Velite + sidebar) |
 | `/{locale}/support` | `[locale]` | Public | Support / FAQ page |
-| `/{locale}/{...slug}` | `[locale]` | Public | Payload CMS: 1 segment = category list, 2 = post detail |
+| `/{locale}/{...slug}` | `[locale]` | Public | Velite content: 1 segment = category list, 2 = post detail |
 | `/manager/*` | `(manager)` | Admin | Management dashboard |
 
 **Manager routes bypass i18n middleware** — no locale prefix. Chinese-only admin UI.
@@ -206,7 +209,7 @@ Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `o
 
 See `.env.example` for all variables.
 
-`NEXT_PUBLIC_BRAND=kaitu|overleap` (default `kaitu`) bakes the deployment brand at build time — set per Amplify app, appended to `.env.production` by `amplify.yml` and inlined into client bundles. **`web/.env.production` is a tracked file** (despite matching `.env*` in `.gitignore`) whose committed keys (`DATABASE_URI`, `AI_*`, `JWT_SECRET`) are dead — nothing in `src/` reads them; the real vars are appended at build. Editing it does not configure prod.
+`NEXT_PUBLIC_BRAND=kaitu|overleap` (default `kaitu`) bakes the deployment brand at build time — set per Amplify app, appended to `.env.production` by `amplify.yml` and inlined into client bundles. **`web/.env.production` is a tracked file** (despite matching `.env*` in `.gitignore`) kept as an append target: the real vars are appended by `amplify.yml` at build. Editing it does not configure prod.
 
 ## Deployment
 
@@ -251,83 +254,15 @@ Content-writing rules (citable facts, FAQPage JSON-LD, semantic `<table>`, direc
 - **Velite mock in tests**: vitest tests mock `#velite` import with synthetic post data. Server Component pages tested by calling as async functions directly, asserting on returned JSX or `generateMetadata()` output.
 - **next-intl IntlMessages interface**: `web/src/types/i18n.d.ts` uses an empty `interface IntlMessages {}` (permissive typing) because messages are split across namespace files loaded dynamically. This disables compile-time key checking — use runtime tests instead.
 - **Server Component pages with setRequestLocale**: Cast locale to `(typeof routing.locales)[number]` when calling `setRequestLocale()`. The URL param type is `string` but next-intl requires the narrower union type.
-- **Homepage is a Server Component**: `web/src/app/[locale]/page.tsx` (no `dynamic` export; `sitemap.ts` is the one `force-dynamic` route). Do NOT add `"use client"` — it would break SSR metadata and SEO.
+- **Homepage is a Server Component**: `web/src/app/[locale]/page.tsx` (no `dynamic` export). Do NOT add `"use client"` — it would break SSR metadata and SEO.
 - **k2cc protocol naming**: Protocol brand name is "k2cc" (congestion control), NOT "k2arc". Renamed in commit 80330ec for SEO clarity (avoids amateur radio / math formula collisions). All i18n, content, and JSON-LD reflect this.
 - **Purchase page Server Component pattern**: `purchase/page.tsx` is a Server Component wrapper that exports `generateMetadata()` for SEO. Client-side purchase logic is in a separate `PurchaseClient` component.
 - **Embed mode** (`?embed=true`): Pages embedded in desktop app iframe. `useEmbedMode()` hook controls Header/Footer/CTA visibility. `ChatwootWidget` and `CookieConsent` auto-hide in embed mode. Used by `/releases` and `/changelog` routes.
 - **Platform labels in i18n**: Use user-friendly names, not technical ones. iOS → "iPhone / iPad", macOS → "苹果电脑" (zh) / "Mac" (en), Android → "安卓" (zh). No file extensions (.exe/.dmg/.apk) in download button labels.
 - **`transpilePackages` in `next.config.ts`** (`intl-messageformat`, `@xterm/xterm`): Next does not transpile `node_modules`; a dep shipping class `static {}` blocks blanks the page on iOS 16.0-16.3 / Safari < 16.4 with `SyntaxError: Unexpected token '{'`. Add new offenders to that list.
 - **`/` must stay `Cache-Control: private, no-store`** (`next.config.ts` headers + `middleware.ts`): the root 307 is computed from Accept-Language + `preferredLocale` cookie; a public cache pins the first visitor's locale for a whole CloudFront PoP. The dynamic-page cache rule deliberately matches `.+`, not `.*`, so `/` never falls into it.
+- **Middleware passthrough is load-bearing**: `src/middleware.ts` must early-return `NextResponse.next()` for `/admin` and `/manager` before reaching `intlMiddleware`. The matcher deliberately **includes** `/api`, `/app`, `/admin`, `/manager` (brand gating + `X-K2-Brand` injection must run there); only `_next`, `_vercel` and dotted static files are excluded. Without the early return, i18n middleware mangles admin requests into locale-prefixed redirects. `tests/middleware.test.ts` covers this — keep it green when editing.
 - **`/i/k2s` and `/i/k2r` have a side effect**: `middleware.ts` fire-and-forget POSTs `{ip_raw, ua}` to `https://k2.52j.me/api/stats/{k2s,k2r}-download` before serving the script (kaitu-only; `/i/k2` does not report).
-
-## CMS (Payload)
-
-Payload v3 admin mounted at `/manager/cms`, REST API at `/payload/api`. GraphQL is disabled (no `(payload)/payload/api/graphql` folders exist). URL is namespaced under `/manager` for consistency with the rest of the admin dashboard, but Payload runs under its own `(payload)` root layout (independent from `(manager)` — Payload's admin ships its own `<html>` shell). A "← 返回管理后台" link is injected into Payload's left nav via `admin.components.beforeNavLinks`. Content collections:
-
-- `posts` — Articles with Lexical rich text, draft/published versions, localized to 7 locales (zh-CN source, 6 AI-translated). Each post belongs to exactly one `category` (required when publishing; validated via `validateCategoryRequired` export). Per-post brand visibility via `showOnKaitu` / `showOnOverleap` booleans; at least one must be true when status=published. Category list + detail pages rendered through the unified `[locale]/[...slug]/page.tsx` catch-all: 1 segment = category list, 2 segments = post detail (with brand visibility 404), 3+ = 404. `canonicalBrand` resolved from the visibility pair + locale fallback (`en-*` → overleap, else kaitu).
-- `categories` — Flat grouping (no nesting) with localized name + description; URL structure is `/{category.slug}/{post.slug}`
-- `tags` — Flat labels with localized name
-- `media` — Uploaded images, stored in S3 (`kaitu-cms-media`, ap-northeast-1) and served via CloudFront at `https://media.kaitu.io`. REST read is admin-only; public post pages reach images via `generateFileURL` → CDN URL embedded in post content.
-- `admins` — Auth collection; custom Center API cookie strategy (no local password)
-
-### Auth
-Reuses `/manager` admin's `access_token` HttpOnly cookie OR an `X-Access-Key: ktu_...` header (for service tokens / MCP clients). Bridge: `src/payload/auth/centerAuthStrategy.ts` extracts whichever credential is present, calls Center `/api/user/info`, checks `isAdmin || (roles & 0xfffffffe) !== 0`, upserts admin record by Center `uuid`. The `kaitu-center` MCP uses the header path to drive Payload REST programmatically.
-
-### Translation (lazy on-demand)
-
-Translations are **populated on first read**, not in the write request.
-
-Why: Amplify Hosting SSR Lambda is capped at 30s. Translating into six locales synchronously inside the `afterChange` hook exceeds the cap and rolls back the create/update via gateway timeout. The lazy model bounds each request to at most one translation (~5–15s on `gemini-2.5-flash`).
-
-Flow:
-1. **Source write** (`zh-CN`) — `autoTranslate` hook (`src/payload/hooks/autoTranslate.ts`) nulls `title` / `excerpt` / `content` on every non-source locale via `db.updateOne` (~50ms × 6 ≈ 300ms, well inside the cap). `db.updateOne` bypasses collection validation (required fields would otherwise reject null) and does not fire hooks (no re-entry).
-2. **Detail-page read** (`src/app/[locale]/[...slug]/queries.ts → findPostInCategory`) — probe with `fallbackLocale: false` to detect a missing translation, then `lazyTranslate(...)` fills it under a Postgres advisory lock with a 25s `AbortController`-style timeout.
-3. **List read** (`listPostsInCategory`) — does **not** trigger lazy translate. A list of N items would serialize N translations. Lists render via the default source-locale fallback; the first detail-page visit hydrates the locale and subsequent list renders pick up the cached value.
-
-Failure modes (caller falls back to source locale automatically because the final `findByID` uses default fallback):
-- `locked-by-other` — another reader holds the advisory lock; we return without translating.
-- `timeout` — OpenRouter > 25s; logged at error level.
-- `error` — translator threw; logged with the error object.
-
-Configurable via env:
-- `TRANSLATOR_BASE_URL=https://openrouter.ai/api`
-- `TRANSLATOR_API_KEY=sk-or-v1-...`
-- `TRANSLATOR_MODEL=google/gemini-2.5-flash`
-
-### Local dev
-
-```bash
-# Postgres comes from the shared dev-postgres container (managed by user-level postgres-dev MCP).
-# Standard port 5432 — credentials in web/.env.local DATABASE_URL.
-# Project no longer ships docker-compose.dev.yml — see docker-compose.dev.yml.deprecated
-cd web && yarn payload generate:types                 # Regenerate types after collection changes (gitignored output)
-cd web && yarn dev                                    # Next.js + Payload; visit http://localhost:3000/manager/cms
-```
-
-### Consumption
-Public `[locale]/{category}/*` pages use the Payload Local API via `getPayload().find({ ... overrideAccess: true })` in `web/src/app/[locale]/[...slug]/page.tsx` + its `./queries.ts` helpers. No public REST, no GraphQL.
-
-### Production (Amplify)
-Required env vars: `DATABASE_URL`, `PAYLOAD_SECRET`, `TRANSLATOR_API_KEY`, `TRANSLATOR_BASE_URL`, `TRANSLATOR_MODEL`, `CENTER_API_URL`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `CDN_URL`, plus `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`. The `env | grep` bake list in `amplify.yml` is authoritative — a var missing there never reaches the Lambda.
-
-**Schema migrations are explicit** (`push: false`). Migration files live in `src/migrations/`. After committing schema changes, run migration manually against prod before/after deploy:
-```bash
-cd web && PAYLOAD_SECRET=<prod> DATABASE_URL=<prod> yarn payload migrate
-```
-amplify.yml does NOT run `payload migrate` automatically because `@payload-enchants/translator` has an ESM dir-import bug that crashes the payload CLI on Node 22 (Next.js bundler tolerates it; raw CLI does not). Until that's resolved, treat migrations as a manual deploy step.
-
-**Media infra (AWS)**: S3 `kaitu-cms-media` (private, OAC) → CloudFront alias `media.kaitu.io`. Distribution / IAM / Route 53 IDs and policies: [`docs/ops/web-amplify.md`](../docs/ops/web-amplify.md).
-
-**Generating new migrations**: When changing collections, regenerate via `cd web && yarn payload migrate:create <name>`. Review the generated `src/migrations/<timestamp>_<name>.ts` (drop columns / type narrows are flagged in DOWN). Commit migration + apply with `yarn payload migrate` against prod.
-
-**importMap path gotcha**: `payload generate:importmap` writes to `src/app/(payload)/manager/cms/importMap.js` (NOT inside `[[...segments]]/`). Both `layout.tsx` and `[[...segments]]/page.tsx`/`not-found.tsx` import from that path — keep them in sync. Stale importMap = silent blank page (server can't resolve internal Payload components, Suspense renders empty).
-
-### Gotchas specific to Payload
-- **`.ts` extensions required** on all payload-internal imports (e.g., `import { X } from './collections/X.ts'`) — Payload CLI's tsx loader mandates them.
-- **`--disable-transpile`** on `yarn payload` CLI — avoids `ERR_REQUIRE_ASYNC_MODULE` from tsx loader.
-- **Postgres on standard port 5432** — uses the shared dev-postgres container managed by user-level `postgres-dev` MCP. The dedicated `web/docker-compose.dev.yml` (host port 5435) was retired 2026-05-27; the file remains as `.deprecated` for reference.
-- **`admins.auth: { disableLocalStrategy: true }`** — removes Payload's auto email/password; explicit `email` field needed.
-- **Middleware passthrough is load-bearing**: `src/middleware.ts` must early-return `NextResponse.next()` for `/admin`, `/manager` AND `/payload` before reaching `intlMiddleware`. The matcher deliberately **includes** `/api`, `/app`, `/admin`, `/manager`, `/payload` (brand gating + `X-K2-Brand` injection must run there — the pre-brand-split matcher excluded them); only `_next`, `_vercel` and dotted static files are excluded. `/manager` covers both the dashboard and the nested Payload admin at `/manager/cms`; `/payload` covers Payload's REST. Without the early return, i18n middleware mangles admin requests into locale-prefixed redirects. `tests/middleware.test.ts` covers this — keep it green when editing.
 
 ## Related Docs
 

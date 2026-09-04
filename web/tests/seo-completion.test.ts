@@ -19,23 +19,13 @@ vi.mock('#velite', () => ({
     { slug: 'k2/k2cc', locale: 'zh-CN', date: '2026-03-17', draft: false, title: 'k2cc' },
     { slug: 'k2/protocol', locale: 'zh-CN', date: '2026-03-17', draft: false, title: 'k2 protocol' },
     { slug: 'k2/vs-hysteria2', locale: 'zh-CN', date: '2026-02-21', draft: false, title: 'vs Hysteria2' },
-    { slug: 'blog/hello', locale: 'zh-CN', date: '2026-02-21', draft: false, title: 'Hello' },
+    { slug: 'guides/hello', locale: 'zh-CN', date: '2026-02-21', draft: false, title: 'Hello' },
   ],
 }));
 
 // Mock @/i18n/routing
 vi.mock('@/i18n/routing', () => ({
   routing: { locales: ['zh-CN', 'en-US'] },
-}));
-
-// Mock Payload CMS imports (sitemap fetches blog posts via Local API).
-// Tests care about Velite posts + k2/ priority; Payload blog posts are not
-// exercised here, so return an empty result.
-vi.mock('@payload-config', () => ({ default: {} }));
-vi.mock('payload', () => ({
-  getPayload: async () => ({
-    find: async () => ({ docs: [] }),
-  }),
 }));
 
 describe('test_sitemap_includes_k2_pages', () => {
@@ -103,12 +93,12 @@ describe('test_sitemap_k2_priority', () => {
 });
 
 describe('test_sitemap_non_k2_default_priority', () => {
-  it('non-k2 content pages (blog/hello) keep priority 0.6', async () => {
+  it('non-k2 content pages (guides/hello) keep priority 0.6', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
     const entries = await sitemap();
 
     const blogEntries = entries.filter((entry: { url: string; priority?: number }) =>
-      entry.url.includes('/blog/hello')
+      entry.url.includes('/guides/hello')
     );
 
     expect(blogEntries.length).toBeGreaterThan(0);
@@ -122,7 +112,7 @@ describe('test_sitemap_non_k2_default_priority', () => {
     const entries = await sitemap();
     const urls = entries.map((entry: { url: string }) => entry.url);
 
-    expect(urls.some((url: string) => url.includes('/blog/hello'))).toBe(true);
+    expect(urls.some((url: string) => url.includes('/guides/hello'))).toBe(true);
   });
 });
 

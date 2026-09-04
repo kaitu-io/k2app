@@ -32,7 +32,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 // Pure utility functions (parseCIDR, stripPort, parseClientConfig, ParsedClientConfig)
 // are in K2VpnServiceUtils.kt for JVM unit testing.
 
-class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, appext.PackageResolver {
+class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, appext.PackageResolver,
+    appext.ConnectionOwnerResolver {
 
     // appext.SocketProtector — marks socket FDs for VPN routing exclusion.
     // Delegates to VpnService.protect(int) which tells the OS kernel to route
@@ -41,12 +42,52 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         return super.protect(fd)
     }
 
+    // appext.ConnectionOwnerResolver — resolves a connection 4-tuple to the
+    // owning app UID via ConnectivityManager.getConnectionOwnerUid (API 29+).
+    // The active VpnService is explicitly permitted to call it; this replaces
+    // the /proc scanning that Android 10+ SELinux blocks (which silently
+    // disabled every package rule — App Bypass force-proxy, region app globs).
+    // Returns -1 when unavailable so Go falls back to the /proc path.
+    override fun ownerUID(network: String, srcIP: String, srcPort: Int, dstIP: String, dstPort: Int): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return -1
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val protocol = if (network.startsWith("udp")) {
+                android.system.OsConstants.IPPROTO_UDP
+            } else {
+                android.system.OsConstants.IPPROTO_TCP
+            }
+            // getByName with an IP literal parses without a DNS lookup.
+            val uid = cm.getConnectionOwnerUid(
+                protocol,
+                java.net.InetSocketAddress(java.net.InetAddress.getByName(srcIP), srcPort),
+                java.net.InetSocketAddress(java.net.InetAddress.getByName(dstIP), dstPort),
+            )
+            if (uid == android.os.Process.INVALID_UID) -1 else uid
+        } catch (e: Exception) {
+            -1
+        }
+    }
+
     // appext.PackageResolver — maps Android UID → package name for the rule
     // engine's package_name match (App Bypass per-app routing).
     override fun packageForUID(uid: Int): String {
         val pm = packageManager
         pm.getPackagesForUid(uid)?.firstOrNull()?.let { return it }
         return pm.getNameForUid(uid) ?: ""
+    }
+
+    // ALL packages sharing the UID, newline-joined (gomobile can't return
+    // arrays). Shared-UID apps are why: Play Store + GMS share one UID via
+    // sharedUserId, and routing is UID-granular — a rule naming either must
+    // match the UID's traffic.
+    override fun packagesForUID(uid: Int): String {
+        val pkgs = try {
+            packageManager.getPackagesForUid(uid)
+        } catch (e: Exception) {
+            null
+        }
+        return pkgs?.joinToString("\n") ?: ""
     }
 
     // App-Bypass v2: installer source is install-time fixed, cache per-process.
@@ -456,6 +497,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
                 Log.d(TAG, "EngineConfig logDir=$logsDirPath debug=${engineCfg.debug}")
                 engineCfg.socketProtector = this@K2VpnService
                 engineCfg.packageResolver = this@K2VpnService
+                engineCfg.connectionOwner = this@K2VpnService
                 engine?.start(configJSON, rawFd.toLong(), engineCfg)
                 Log.d(TAG, "Engine started successfully")
                 NativeLogger.log("INFO", "startVpn: engine started successfully")

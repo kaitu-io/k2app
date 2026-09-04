@@ -138,7 +138,8 @@
     "v2": {
       "title": "分應用分流",
       "intro": "為單一應用強制選擇走代理或直連，覆蓋目前區域的智慧預設。連線期間無法修改。",
-      "chipProxy": "智慧",
+      "chipSmart": "智慧",
+      "chipProxy": "代理",
       "chipDirect": "直連",
       "installedSection": "已安裝應用（{{count}}）",
       "moreSection": "其他執行中的程式",

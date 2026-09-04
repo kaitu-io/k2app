@@ -9,7 +9,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig } from './config.js'
 import type { Config } from './config.js'
-import { createCenterClient, createCmsClient } from './center-api.js'
+import { createCenterClient } from './center-api.js'
 import { fetchPermissions, type ApiClients, type ToolRegistration } from './tool-factory.js'
 
 // Standalone tools (SSH, S3, custom logic)
@@ -40,14 +40,6 @@ import { strategyTools } from './tools/admin-strategy.js'
 import { announcementTools } from './tools/admin-announcements.js'
 import { enterpriseTools } from './tools/admin-enterprise.js'
 
-// CMS tools — target Payload REST at /payload/api/*
-import { cmsPostsTools } from './tools/cms-posts.js'
-import { cmsCategoriesTools } from './tools/cms-categories.js'
-import { cmsTagsTools } from './tools/cms-tags.js'
-import { cmsMediaTools } from './tools/cms-media.js'
-import { registerGetPostAllLocales, registerRetranslatePost } from './tools/cms-post-helpers.js'
-import { registerUploadMedia } from './tools/cms-upload-media.js'
-
 /** All factory-declared tools, aggregated for bulk registration. */
 const allFactoryTools: ToolRegistration[] = [
   ...deviceLogTools,
@@ -69,10 +61,6 @@ const allFactoryTools: ToolRegistration[] = [
   ...strategyTools,
   ...announcementTools,
   ...enterpriseTools,
-  ...cmsPostsTools,
-  ...cmsCategoriesTools,
-  ...cmsTagsTools,
-  ...cmsMediaTools,
 ]
 
 /**
@@ -92,15 +80,11 @@ const STANDALONE_TOOLS: Array<{
   { group: 'nodes',        register: (s, _c, cfg) => registerPingNode(s, cfg.ssh) },
   { group: 'nodes.write',  register: (s, c) => registerDeleteNode(s, c.center) },
   { group: 'device_logs',  register: (s) => registerDownloadDeviceLog(s) },
-  { group: 'cms',          register: (s, c) => registerGetPostAllLocales(s, c.cms) },
-  { group: 'cms',          register: (s, c) => registerRetranslatePost(s, c.cms) },
-  { group: 'cms',          register: (s, c) => registerUploadMedia(s, c.cms) },
 ]
 
 export async function createServer(config: Config): Promise<McpServer> {
   const centerClient = createCenterClient(config)
-  const cmsClient = createCmsClient(config)
-  const clients: ApiClients = { center: centerClient, cms: cmsClient }
+  const clients: ApiClients = { center: centerClient }
   const server = new McpServer({ name: 'kaitu-center', version: '0.5.0' })
 
   // Fetch permissions from backend (always via the Center client).

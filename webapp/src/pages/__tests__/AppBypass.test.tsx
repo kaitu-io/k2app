@@ -56,13 +56,48 @@ describe('AppBypass page', () => {
     expect(directChip).toBeTruthy();
   });
 
-  test('clicking the smart chip calls setOverride with the app', async () => {
+  test('clicking the proxy chip sets an explicit proxy override', async () => {
+    renderPage();
+    await screen.findByText('WeChat');
+    const proxyChip = screen.getAllByText(/代理|Proxy/).find((el) => el.closest('.MuiChip-root'));
+    fireEvent.click(proxyChip!);
+    await waitFor(() => expect(setOverride).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '/Applications/WeChat.app', processNames: ['WeChat'] }), 'proxy'));
+  });
+
+  test('clicking the smart chip clears the override', async () => {
+    mockOverrides = { '/Applications/WeChat.app': { mode: 'proxy', names: ['WeChat'] } };
     renderPage();
     await screen.findByText('WeChat');
     const smartChip = screen.getAllByText(/智能|Smart/).find((el) => el.closest('.MuiChip-root'));
     fireEvent.click(smartChip!);
     await waitFor(() => expect(setOverride).toHaveBeenCalledWith(
-      expect.objectContaining({ id: '/Applications/WeChat.app', processNames: ['WeChat'] }), 'proxy'));
+      expect.objectContaining({ id: '/Applications/WeChat.app' }), 'default'));
+  });
+
+  // The ticket case (#3276/#3369): an app whose region default is ALREADY
+  // proxy (no entry in the mock classification map → def 'proxy') must still
+  // offer an explicit force-proxy control — the old two-chip UI had none, so
+  // Google Play / Settings could never be pinned to the proxy against
+  // region-CN direct rules.
+  test('force-proxy is reachable for apps whose default is already proxy', async () => {
+    (window as any)._platform = {
+      os: 'android',
+      appList: {
+        listInstalled: vi.fn().mockResolvedValue([
+          { id: 'com.android.vending', label: 'Google Play', processNames: ['com.android.vending'] },
+        ]),
+        listRunning: vi.fn().mockResolvedValue([]),
+      },
+    };
+    renderPage();
+    await screen.findByText('Google Play');
+    const proxyChip = screen.getAllByText(/代理|Proxy/).find((el) => el.closest('.MuiChip-root'));
+    fireEvent.click(proxyChip!);
+    await waitFor(() => expect(setOverride).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'com.android.vending', processNames: ['com.android.vending'] }),
+      'proxy',
+    ));
   });
 
   test('running list dedups by process name, not id, and shows only the supplement', async () => {
