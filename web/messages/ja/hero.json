@@ -7,12 +7,12 @@
     "cta_primary": "今すぐ始める",
     "cta_secondary": "クライアントをダウンロード",
     "connected": "接続済み",
-    "nodeInfo": "香港 · 最適ノード",
+    "nodeInfo": "自動 · 最速経路",
     "onboarding": {
       "title": "3ステップで始める",
       "step1": {
         "label": "プランを選んで登録",
-        "detail": "Alipay · WeChat · クレジットカード"
+        "detail": "カード · Apple Pay · Google Pay"
       },
       "step2": {
         "label": "アプリをダウンロード",
@@ -453,7 +453,7 @@
       },
       "pricing": {
         "question": "Overleap の料金はいくらですか？",
-        "answer": "Overleap は米ドル建てで、1 年、2 年、3 年、5 年のサブスクリプションプランを提供しています。長期プランほど月額実効料金が低くなります。すべてのプランにプロ版の全機能が含まれ、最大 5 台の同時接続と帯域制限なしが可能です。Alipay、WeChat Pay、銀聯、クレジットカード、暗号通貨でお支払いいただけます。購入後即時有効化。詳細は overleap.io/purchase をご覧ください。"
+        "answer": "Overleap は年額 $79、または 12 か月契約の月額 $8.99（米ドル）。どちらも 5 台同時接続・データ無制限・すべてのロケーションを含みます。支払いは Stripe 経由のクレジット／デビットカード。対応端末ではチェックアウトで Apple Pay と Google Pay も選べます。購入後すぐに有効化されます。詳細は overleap.io/purchase をご覧ください。"
       },
       "trial": {
         "question": "無料トライアルはありますか？",

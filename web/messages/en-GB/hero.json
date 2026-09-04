@@ -7,12 +7,12 @@
     "cta_primary": "Get Started",
     "cta_secondary": "Download Client",
     "connected": "Connected",
-    "nodeInfo": "HK · Best Node",
+    "nodeInfo": "Auto · fastest route",
     "onboarding": {
       "title": "Get Started in 3 Steps",
       "step1": {
         "label": "Choose a Plan & Subscribe",
-        "detail": "Alipay · WeChat · Credit Card"
+        "detail": "Card · Apple Pay · Google Pay"
       },
       "step2": {
         "label": "Download the App",
@@ -453,7 +453,7 @@
       },
       "pricing": {
         "question": "How much does Overleap cost?",
-        "answer": "Overleap offers 1-year, 2-year, 3-year, and 5-year subscription plans priced in USD. Longer plans have lower effective monthly rates. All plans include full Pro features with up to 5 simultaneous devices and no bandwidth limits. Payment methods include Alipay, WeChat Pay, UnionPay, credit cards, and cryptocurrency. Instant activation after purchase. See overleap.io/purchase for details."
+        "answer": "Overleap costs $79 per year, or $8.99 per month on a 12-month term, in US dollars. Both include five simultaneous devices, unlimited data and every location. Pay by credit or debit card through Stripe; Apple Pay and Google Pay are offered at checkout where supported. Activation is instant. See overleap.io/purchase for details."
       },
       "trial": {
         "question": "Is there a free trial?",

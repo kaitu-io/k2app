@@ -35,8 +35,8 @@
       "description": "Sign up through a referral link to get an extra 30 days of access. Open the link in your browser, enter your email and verification code, confirm to log in. Then choose a plan and complete payment.",
       "tips": {
         "verifyCode": "The verification code usually arrives within one minute — check your spam folder",
-        "payment": "We accept Alipay, WeChat Pay, and credit cards. Alipay is the easiest option",
-        "wechatPay": "WeChat Pay requires two devices — you cannot scan a QR code screenshot on the same phone",
+        "payment": "We accept credit and debit cards through Stripe. Apple Pay and Google Pay appear at checkout on supported devices",
+        "wechatPay": "If a card payment fails, try another card or Apple Pay / Google Pay — some banks decline first-time overseas charges",
         "safety": "Payment information is not tracked — your bank cannot see what you purchased"
       }
     },
@@ -86,8 +86,8 @@
         "answer": "No. We've confirmed with banks that transaction records do not show what was purchased. We make every effort to protect user privacy. If you're concerned, you can enter any name during payment."
       },
       "wechatPay": {
-        "question": "Why does WeChat Pay fail?",
-        "answer": "WeChat Pay requires two devices — you cannot scan a QR code screenshot on the same device. This is a WeChat security restriction. We recommend using Alipay instead, which is simpler."
+        "question": "Why did my card payment fail?",
+        "answer": "Some banks decline a first-time charge from an overseas merchant. Try again after approving the charge in your banking app, use another card, or pay with Apple Pay / Google Pay at checkout."
       },
       "windowsBlueScreen": {
         "question": "What about the blue security prompt on Windows?",
@@ -103,7 +103,7 @@
       },
       "globalMode": {
         "question": "What's the difference between Smart and Global mode?",
-        "answer": "Smart mode only proxies overseas websites while keeping domestic sites direct — recommended for daily use. Global mode proxies all traffic, useful when specific sites are inaccessible. In Global mode, domestic apps like Baidu and WeChat will also go through the proxy."
+        "answer": "Smart mode only proxies overseas websites while keeping domestic sites direct — recommended for daily use. Global mode proxies all traffic, useful when specific sites are inaccessible. In Global mode, local apps also go through the tunnel."
       },
       "connectionFailed": {
         "question": "What if I can't connect?",
