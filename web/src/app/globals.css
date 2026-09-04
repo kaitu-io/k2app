@@ -93,6 +93,49 @@
   --sidebar-ring: #00ff88;
 }
 
+/* Overleap deployment — overrides EVERY :root variable above (tests/brand-theme-css.test.ts
+   fails if one is missing). Values: docs/superpowers/specs/2026-09-04-overleap-independent-release-design.md §1.1 */
+html[data-brand="overleap"] {
+  --radius: 0.75rem;
+  --background: #0B0E14;
+  --foreground: #E6E8F0;
+  --card: #141926;
+  --card-foreground: #E6E8F0;
+  --popover: #141926;
+  --popover-foreground: #E6E8F0;
+  --primary: #7C5CFF;
+  --primary-foreground: #FFFFFF;
+  --secondary: #2DD4BF;
+  --secondary-foreground: #0B0E14;
+  --muted: #1B2132;
+  --muted-foreground: #9AA0B4;
+  --accent: #7C5CFF;
+  --accent-foreground: #FFFFFF;
+  --destructive: #F87171;
+  --success: #34D399;
+  --success-foreground: #0B0E14;
+  --warning: #FBBF24;
+  --warning-foreground: #0B0E14;
+  --info: #60A5FA;
+  --info-foreground: #0B0E14;
+  --border: rgba(124, 92, 255, 0.18);
+  --input: rgba(124, 92, 255, 0.12);
+  --ring: #7C5CFF;
+  --chart-1: #7C5CFF;
+  --chart-2: #2DD4BF;
+  --chart-3: #34D399;
+  --chart-4: #FBBF24;
+  --chart-5: #F87171;
+  --sidebar: #141926;
+  --sidebar-foreground: #E6E8F0;
+  --sidebar-primary: #7C5CFF;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1B2132;
+  --sidebar-accent-foreground: #E6E8F0;
+  --sidebar-border: rgba(124, 92, 255, 0.18);
+  --sidebar-ring: #7C5CFF;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
