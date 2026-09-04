@@ -87,18 +87,20 @@ describe('extended brand config', () => {
   });
   // Exact-match on purpose: a new gate must be added here deliberately, with a
   // decision recorded for BOTH brands, rather than defaulting in unnoticed.
-  it('feature gates: routers/linux/apk-guide/release-notes are kaitu-only', () => {
+  it('feature gates: routers/linux/apk-guide/release-notes/retailer are kaitu-only', () => {
     expect(KAITU.features).toEqual({
       routers: true,
       linuxInstall: true,
       androidApkGuide: true,
       releaseNotes: true,
+      retailerProgram: true,
     });
     expect(OVERLEAP.features).toEqual({
       routers: false,
       linuxInstall: false,
       androidApkGuide: false,
       releaseNotes: false,
+      retailerProgram: false,
     });
   });
   it('productName drives user-facing product badges', () => {
