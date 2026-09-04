@@ -26,6 +26,8 @@ interface StripePurchasePanelProps {
 
 export default function StripePurchasePanel({ plans, plansLoading }: StripePurchasePanelProps) {
   const { t, i18n } = useTranslation();
+  // 展示币按当前语言（utils/pricing.ts）；测试桩可能不给 i18n，回落 en-US。
+  const locale = i18n?.language ?? 'en-US';
   const { user, fetchUser } = useUser();
   const affordance = useSubscriptionAffordance();
   const openLoginDialog = useLoginDialogStore((s) => s.open);
@@ -106,12 +108,12 @@ export default function StripePurchasePanel({ plans, plansLoading }: StripePurch
                 <Box sx={{ flex: 1 }}>
                   <Typography fontWeight={600}>{p.label}</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {formatMinor(planAmount(p, i18n.language).amount / p.month, planAmount(p, i18n.language).currency, i18n.language, 2)}
+                    {formatMinor(planAmount(p, locale).amount / p.month, planAmount(p, locale).currency, locale, 2)}
                     {t('purchase:purchase.stripe.perMonth')}
                   </Typography>
                 </Box>
                 <Typography variant="h6" fontWeight={700} data-testid={`stripe-plan-price-${p.pid}`}>
-                  {formatMinor(planAmount(p, i18n.language).amount, planAmount(p, i18n.language).currency, i18n.language, 2)}
+                  {formatMinor(planAmount(p, locale).amount, planAmount(p, locale).currency, locale, 2)}
                 </Typography>
               </CardContent>
             </Card>

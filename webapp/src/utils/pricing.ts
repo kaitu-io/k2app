@@ -33,6 +33,8 @@ export function formatMinor(amount: number, currency: string, locale: string, di
     return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency: currency.toUpperCase(),
+      // narrowSymbol：任何 locale 下美元都是 "$"、英镑 "£"（默认 symbol 会在 en-GB / zh 下把美元写成 "US$"）。
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: d,
       maximumFractionDigits: d,
     }).format(major);

@@ -155,10 +155,9 @@ describe('OverleapPurchaseClient — display currency by locale (currencyPrices 
 
   it('falls back to price (USD cents) when the API omits currencyPrices', async () => {
     mockLocale = 'en-GB';
-    mockGetPlans.mockResolvedValue({ items: multiCurrencyPlans.map(({ currencyPrices: _c, ...p }) => p) });
+    mockGetPlans.mockResolvedValue({ items: multiCurrencyPlans.map((plan) => { const { currencyPrices, ...rest } = plan; void currencyPrices; return rest; }) });
     render(<OverleapPurchaseClient />);
-    // Intl 在 en-GB 下把美元写成 US$，对英国读者正好消歧义。
-    expect((await screen.findByTestId('plan-price-overleap-basic-1y')).textContent).toBe('US$79');
+    expect((await screen.findByTestId('plan-price-overleap-basic-1y')).textContent).toBe('$79');
     expect(screen.getByText(/stripe\.currencyNote:.*"currency":"USD"/)).toBeInTheDocument();
   });
 });
