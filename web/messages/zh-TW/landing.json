@@ -1,0 +1,63 @@
+{
+  "landing": {
+    "meta": {
+      "title": "別人斷線的地方，你還連著",
+      "description": "{brand} 是為不穩定網路設計的 VPN：丟包也滿速、連線不可見、不記錄日誌。支援 Windows、macOS、iOS 和 Android。"
+    },
+    "hero": {
+      "badge": "為不穩定網路而生",
+      "title": "別人斷線的地方，你還連著。",
+      "subtitle": "30% 丟包依然滿速的 VPN。",
+      "description": "{brand} 基於 k2 協定——專為限速、丟包和干擾頻發的網路設計。Encrypted Client Hello 讓連線不可見，k2cc 讓它保持高速。不記錄日誌，不需要設定，一份訂閱五台裝置。",
+      "ctaPrimary": "開始使用 {brand}",
+      "ctaSecondary": "下載應用程式",
+      "mockConnected": "已保護",
+      "mockNode": "自動 · 最快線路"
+    },
+    "steps": {
+      "title": "三步開始",
+      "subscribe": { "label": "訂閱", "detail": "銀行卡、Apple Pay 或 Google Pay · 隨時取消" },
+      "download": { "label": "安裝應用程式", "detail": "Windows · macOS · iOS · Android" },
+      "connect": { "label": "登入並連線", "detail": "一鍵連線，無需設定。" },
+      "cta": "立即開始"
+    },
+    "features": {
+      "title": "為什麼 {brand} 在別人掉線時還在線",
+      "ech": { "title": "你的連線不可見", "description": "Encrypted Client Hello 把伺服器名稱對線路上的任何觀察者隱藏起來，沒有可供攔截的指紋。" },
+      "k2cc": { "title": "壞網路上也滿速", "description": "k2cc 能區分干擾與真正的壅塞並持續傳送。在 26% 丟包的鏈路上，吞吐量是 BBR 的 2–5 倍。" },
+      "transport": { "title": "在你察覺之前切換線路", "description": "優先 QUIC，QUIC 被阻斷時切到 TCP-WebSocket。切換發生在工作階段中，不會打斷你正在做的事。" },
+      "privacy": { "title": "不記錄日誌，而且你可以驗證", "description": "我們不記錄你的行為。協定有公開文件，伺服器端開源，你可以自建 k2s 節點，只把 {brand} 當用戶端用。" }
+    },
+    "pricing": {
+      "title": "一個方案，所有裝置。",
+      "subtitle": "五台裝置、不限流量、全部地區。隨時取消。",
+      "yearly": { "name": "年付", "price": "$79", "period": "每年", "note": "最划算——約合每月 $6.58" },
+      "monthly": { "name": "月付", "price": "$8.99", "period": "每月", "note": "12 個月合約，按月扣款" },
+      "cta": "選擇方案",
+      "includes": ["5 台裝置同時在線", "不限流量", "全部地區", "Windows、macOS、iOS、Android"]
+    },
+    "faq": {
+      "title": "常見問題",
+      "subtitle": "關於 {brand} 如何運作的直接回答。",
+      "items": {
+        "whatIsK2": { "question": "k2 是什麼？", "answer": "k2 是 {brand} 背後的隧道協定，結合了 Encrypted Client Hello、QUIC 與 TCP-WebSocket 雙傳輸，以及 k2cc 速率控制。協定文件在本站 /k2 下公開，伺服器端（k2s）開源。" },
+        "lossySpeed": { "question": "網路丟包時為什麼還這麼快？", "answer": "多數 VPN 一丟包就減速，因為它們的壅塞控制把丟包當成壅塞。k2cc 實測鏈路，區分干擾與真正的壅塞，把速率維持住。在 26% 丟包的測試中，吞吐量是 BBR 的 2–5 倍。" },
+        "ech": { "question": "ECH 對我有什麼用？", "answer": "Encrypted Client Hello 加密了 TLS 交握中原本會暴露目標伺服器的那部分。觀察者只能看到一次到公開網站的普通 HTTPS 工作階段。" },
+        "platforms": { "question": "支援哪些平台？", "answer": "Windows、macOS、iOS 和 Android。一份訂閱可同時在五台裝置上使用。" },
+        "logs": { "question": "你們記錄日誌嗎？", "answer": "不。我們不記錄你造訪的網站和傳送的流量，只保留訂閱所需的資訊：電子郵件、購買的方案、已登入的裝置。" },
+        "selfHost": { "question": "我能自建伺服器嗎？", "answer": "可以。k2s 開源，一條命令安裝。在應用程式裡新增自己的節點後，{brand} 就只是用戶端。" },
+        "pricing": { "question": "多少錢？", "answer": "年付 $79，或 12 個月合約的月付 $8.99。兩者都包含五台裝置、不限流量和全部地區。價格以美元計，銀行卡按你的本幣扣款。" },
+        "payment": { "question": "怎麼付款？", "answer": "透過 Stripe 使用信用卡或簽帳金融卡。裝置支援時，結帳頁也提供 Apple Pay 和 Google Pay。" },
+        "devices": { "question": "能用幾台裝置？", "answer": "同時五台，平台任意組合。在第六台裝置登入會把最早登入的那台登出。" },
+        "wifiSwitch": { "question": "從 Wi-Fi 切到行動網路會怎樣？", "answer": "隧道會跟著你遷移。QUIC 讓工作階段跨越網路切換，下載和通話無需重連即可繼續。" },
+        "cancel": { "question": "怎麼取消？", "answer": "在帳戶頁面，或透過你訂閱時使用的應用程式商店取消。方案在你已付費的週期結束前保持有效。" }
+      }
+    },
+    "download": {
+      "title": "在每台裝置上使用 {brand}",
+      "subtitle": "一個帳戶，五台裝置，處處相同的連線。",
+      "platforms": "Windows · macOS · iOS · Android",
+      "button": "下載"
+    }
+  }
+}
