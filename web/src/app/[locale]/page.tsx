@@ -10,8 +10,10 @@ import OnboardingSection from '@/components/home/OnboardingSection';
 import FAQSection from '@/components/home/FAQSection';
 import DownloadCTA from '@/components/home/DownloadCTA';
 import HomeClient from './HomeClient';
+import OverleapHome, { generateOverleapMetadata } from './OverleapHome';
 import { generateMetadata as generateBaseMetadata } from './metadata';
 import { getBrand } from '@/lib/brand-server';
+import { siteBrand } from '@/lib/brands';
 
 type Locale = (typeof routing.locales)[number];
 
@@ -26,6 +28,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
+  // 构建期品牌分流（同 purchase/page.tsx）：overleap 部署有自己的首页与 metadata
+  if (siteBrand().id === 'overleap') return generateOverleapMetadata(locale);
   const brand = await getBrand();
   const base = generateBaseMetadata(locale, '', {}, brand);
   const t = await getTranslations({ locale, namespace: 'hero' });
@@ -58,6 +62,12 @@ export default async function Home({
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
   setRequestLocale(locale);
+
+  // 构建期品牌分流（同 purchase/page.tsx）：overleap 部署渲染专属首页，kaitu 保持原样。
+  // 直接 await 而不是返回 <OverleapHome/> 元素：这样两种品牌的 Home 都返回已物化的
+  // 同步树，渲染面守卫（tests/landing-overleap-ssr、brand-leak-ssr）才能真的看到内容——
+  // 一个异步组件元素在 jsdom 里渲染成空串，守卫会空绿。
+  if (siteBrand().id === 'overleap') return await OverleapHome({ locale });
 
   const brand = await getBrand();
   const t = await getTranslations({ locale, namespace: 'hero' });
