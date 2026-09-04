@@ -200,7 +200,7 @@
     "monthlyPrice": "{price}/月",
     "cancelAnytime": "いつでもキャンセル可能",
     "savePercent": "{percent}% お得",
-    "currencyNote": "価格はユーロ表示です。決済時に USD / GBP へ自動換算されます。",
+    "currencyNote": "表示価格は {currency}。対応する地域では現地通貨で請求されます。",
     "subscribe": "登録する",
     "redirecting": "安全な決済ページへ移動しています…",
     "alreadySubscribed": "すでに有効なサブスクリプションがあります。",

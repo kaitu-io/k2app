@@ -200,7 +200,7 @@
     "monthlyPrice": "{price}/mo",
     "cancelAnytime": "Cancel anytime",
     "savePercent": "Save {percent}%",
-    "currencyNote": "Prices in EUR. USD and GBP equivalents are applied automatically at checkout.",
+    "currencyNote": "Prices in {currency}. You're charged in your local currency where available.",
     "subscribe": "Subscribe",
     "redirecting": "Redirecting to secure checkout…",
     "alreadySubscribed": "You already have an active subscription.",

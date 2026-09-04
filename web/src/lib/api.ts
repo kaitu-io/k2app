@@ -365,6 +365,9 @@ export interface Plan {
   highlight: boolean;
   tier?: string;                    // 套餐档位: "lite" | "basic" | "family" | "business"
   product?: string;                 // 'app' | 'private_node'（Go DataPlan.Product）
+  /** 多币种展示价 {币种小写 → 最小单位}，仅 Stripe 套餐且 Stripe 可达时下发（Go DataPlan.CurrencyPrices）。
+   *  缺席时按 usd 用 price 展示。实付币种由 Stripe Checkout 按属地决定。 */
+  currencyPrices?: Record<string, number>;
 }
 
 // 优惠活动类型
