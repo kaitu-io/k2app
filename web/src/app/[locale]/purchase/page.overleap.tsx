@@ -1,6 +1,8 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
 import OverleapPurchaseClient from './OverleapPurchaseClient';
 
 type Locale = (typeof routing.locales)[number];
@@ -27,5 +29,12 @@ export default async function PurchasePage({
 }) {
   const { locale: rawLocale } = await params;
   setRequestLocale(rawLocale as Locale);
-  return <OverleapPurchaseClient />;
+  // 站点 chrome 在这里给（kaitu 的 PurchaseClient 自带 Header/Footer；本页无 embed 场景——app 内走 StripePurchasePanel）。
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+      <OverleapPurchaseClient />
+      <Footer />
+    </div>
+  );
 }

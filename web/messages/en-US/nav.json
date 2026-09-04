@@ -33,7 +33,7 @@
   },
   "footer": {
     "brandName": "Overleap",
-    "brandDescription": "Secure and convenient network proxy solution",
+    "brandDescription": "A private VPN. No logs, fast on any network.",
     "product": {
       "title": "Product",
       "clientDownload": "Client Download",
@@ -42,14 +42,14 @@
       "nodeStatus": "Node Status"
     },
     "developer": {
-      "title": "Developer",
+      "title": "Developers",
       "apiDocs": "API Documentation",
       "openSource": "Open Source Code",
       "techBlog": "Tech Blog",
-      "k2Docs": "k2 Protocol Docs",
-      "selfDeploy": "Self-Deploy Guide",
+      "k2Docs": "k2 protocol",
+      "selfDeploy": "Run your own server",
       "routerConfig": "Router Setup",
-      "github": "GitHub Open Source",
+      "github": "GitHub",
       "changelog": "Changelog"
     },
     "support": {
