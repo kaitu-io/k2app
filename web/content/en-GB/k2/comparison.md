@@ -53,4 +53,4 @@ Hysteria2 is QUIC-based with good low-latency characteristics and Brutal congest
 
 ## Summary
 
-Across all 9 key technical dimensions, k2 has full coverage — making it currently the only mainstream cross-border access protocol with ECH, dual-stack transport, QoS-aware congestion control, active-probe defence, zero CT-log exposure, and port reuse. For deeper technical detail: [k2 vs VLESS+Reality](/k2/vs-reality), [k2 vs Hysteria2](/k2/vs-hysteria2), [k2cc vs BBR](/k2/vs-bbr).
+Across all 9 key technical dimensions, k2 has full coverage — making it currently the only mainstream cross-border access protocol with ECH, dual-stack transport, QoS-aware congestion control, active-probe defence, zero CT-log exposure, and port reuse. For deeper technical detail: [k2 vs Hysteria2](/k2/vs-hysteria2), [k2cc vs BBR](/k2/vs-bbr).

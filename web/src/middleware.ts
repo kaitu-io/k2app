@@ -184,10 +184,14 @@ function getBestLocale(
     }
 
     if (langPrefix === 'en') {
+      // A bare `en` or an unmapped region lands on the brand's own default when
+      // that default is an English locale (overleap: en-GB), else en-US.
+      const enDefault = fallback.startsWith('en-') ? fallback : 'en-US';
       const enPick =
         langSuffix === 'au' ? 'en-AU'
           : langSuffix === 'gb' || langSuffix === 'uk' ? 'en-GB'
-            : 'en-US';
+            : langSuffix === 'us' ? 'en-US'
+              : enDefault;
       if (allowedSet.has(enPick)) return enPick as Locale;
     }
 

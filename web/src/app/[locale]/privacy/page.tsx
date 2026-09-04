@@ -83,7 +83,7 @@ export default async function PrivacyPage({
           <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4">
             <Link href="/">
               <Button size="lg">
-                {t('hero.routers.backToHome')}
+                {t('nav.nav.backToHome')}
               </Button>
             </Link>
             <Link href="/terms">

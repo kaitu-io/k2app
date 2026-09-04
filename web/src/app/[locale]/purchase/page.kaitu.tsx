@@ -26,6 +26,6 @@ export default async function PurchasePage({
 }) {
   const { locale: rawLocale } = await params;
   setRequestLocale(rawLocale as Locale);
-  // 开途构建专属（page.kaitu.tsx）：WordGate 下单流。Overleap 的 Stripe 面在 page.overleap.tsx。
+  // kaitu构建专属（page.kaitu.tsx）：WordGate 下单流。overleap 的 Stripe 面在 page.overleap.tsx。
   return <PurchaseClient />;
 }

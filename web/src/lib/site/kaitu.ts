@@ -1,9 +1,9 @@
 import type { SiteConfig } from './types';
 
 /**
- * 开途站结构。每个值都等于 2026-09-04 改造前 Header / Footer / sitemap / content-posts /
- * metadata 的渲染结果——这份配置就是开途站"零视觉变化"的对照表，改之前先看
- * tests/footer-brand-gates.test.tsx 与 tests/brand-leak-ssr.test.tsx 的开途断言。
+ * kaitu站结构。每个值都等于 2026-09-04 改造前 Header / Footer / sitemap / content-posts /
+ * metadata 的渲染结果——这份配置就是kaitu站"零视觉变化"的对照表，改之前先看
+ * tests/footer-brand-gates.test.tsx 与 tests/brand-leak-ssr.test.tsx 的kaitu断言。
  */
 export const KAITU_SITE: SiteConfig = {
   nav: {

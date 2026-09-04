@@ -51,11 +51,11 @@ describe('off-brand locale → same-host 301 to brand default locale', () => {
     expect(res.status).toBe(301);
     expect(res.headers.get('location')).toBe('https://example.test/zh-CN');
   });
-  it('overleap build: /zh-CN/purchase?ref=x → 301 /en-US/purchase?ref=x', async () => {
+  it('overleap build: /zh-CN/purchase?ref=x → 301 /en-GB/purchase?ref=x', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     const res = await run(makeRequest('/zh-CN/purchase', { search: '?ref=x' }));
     expect(res.status).toBe(301);
-    expect(res.headers.get('location')).toBe('https://example.test/en-US/purchase?ref=x');
+    expect(res.headers.get('location')).toBe('https://example.test/en-GB/purchase?ref=x');
   });
   it('own-brand locales pass through (kaitu zh-TW, overleap ja)', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
@@ -157,13 +157,21 @@ describe('favicon rewrite', () => {
 });
 
 describe('root path locale pick (brand-constrained)', () => {
-  it('overleap: / → redirect to /en-US with private cache-control', async () => {
+  it('overleap: / → redirect to /en-GB (brand default) with private cache-control', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     const res = await run(makeRequest('/'));
     expect([302, 307]).toContain(res.status);
-    expect(res.headers.get('location')).toBe('https://example.test/en-US');
+    expect(res.headers.get('location')).toBe('https://example.test/en-GB');
     expect(res.headers.get('cache-control')).toContain('no-store');
   });
+  it('overleap: / with a bare Accept-Language en → /en-GB (brand default), en-US stays en-US', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    expect((await run(makeRequest('/', { acceptLanguage: 'en' }))).headers.get('location')).toBe('https://example.test/en-GB');
+    expect((await run(makeRequest('/', { acceptLanguage: 'en-CA,en;q=0.8' }))).headers.get('location')).toBe('https://example.test/en-GB');
+    expect((await run(makeRequest('/', { acceptLanguage: 'en-US,en;q=0.9' }))).headers.get('location')).toBe('https://example.test/en-US');
+    expect((await run(makeRequest('/', { acceptLanguage: 'en-AU' }))).headers.get('location')).toBe('https://example.test/en-AU');
+  });
+
   it('overleap: / with Accept-Language ja → /ja', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     const res = await run(makeRequest('/', { acceptLanguage: 'ja,en;q=0.5' }));
@@ -172,7 +180,7 @@ describe('root path locale pick (brand-constrained)', () => {
   it('overleap: preferredLocale cookie honored only when brand-allowed', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     const stale = await run(makeRequest('/', { cookie: 'preferredLocale=zh-CN' }));
-    expect(stale.headers.get('location')).toBe('https://example.test/en-US');
+    expect(stale.headers.get('location')).toBe('https://example.test/en-GB');
     const ok = await run(makeRequest('/', { cookie: 'preferredLocale=en-GB' }));
     expect(ok.headers.get('location')).toBe('https://example.test/en-GB');
   });

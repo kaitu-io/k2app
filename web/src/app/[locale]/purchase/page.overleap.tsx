@@ -19,7 +19,7 @@ export async function generateMetadata({
   };
 }
 
-// Overleap 构建专属（page.overleap.tsx）：Stripe 订阅购买面。开途的 WordGate 流在 page.kaitu.tsx。
+// overleap 构建专属（page.overleap.tsx）：Stripe 订阅购买面。kaitu的 WordGate 流在 page.kaitu.tsx。
 export default async function PurchasePage({
   params,
 }: {

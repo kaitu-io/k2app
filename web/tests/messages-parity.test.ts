@@ -1,31 +1,22 @@
 /**
- * Locale key parity for web/messages: every locale exposes exactly the key set
- * of en-US, namespace by namespace. Missing keys render as raw "ns.key" text on
- * a real page; extra keys are dead weight that hides real drift.
+ * Locale key parity for web/messages — per brand.
  *
- * Why this exists: webapp/ has had this gate (scripts/check-i18n.mjs, run by
- * `yarn build`) for a long time; web/ never did. At 0.4.8 web carried 11
- * divergences — all dead keys, so nothing rendered wrong, but nothing would
- * have said so if one had been live. The repo's own lesson
- * (tests/messages-integrity.test.ts, mocked next-intl in unit tests) is that
- * structural i18n errors only surface in a real browser; this catches the
- * structural half at the JSON.
+ * Message files partition by brand (kaitu = zh-*, overleap = en-* + ja), and each brand
+ * loads only its own namespaces (messages/namespaces.ts BRAND_NAMESPACES). So parity is
+ * checked per brand: every locale of a brand exposes exactly the key set of that brand's
+ * default locale, namespace by namespace. Missing keys render as raw "ns.key" text on a
+ * real page; extra keys are dead weight that hides real drift.
  *
- * Arrays are leaves (a list's shape is content, not structure) — same rule as
- * the webapp checker.
+ * Arrays are leaves (a list's shape is content, not structure) — same rule as the
+ * webapp checker.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { namespaces } from '../messages/namespaces';
+import { BRAND_NAMESPACES } from '../messages/namespaces';
+import { KAITU, OVERLEAP } from '../src/lib/brands';
 
 const MESSAGES_DIR = path.resolve(__dirname, '../messages');
-const BASE_LOCALE = 'en-US';
-
-const LOCALES = fs
-  .readdirSync(MESSAGES_DIR)
-  .filter((d) => fs.statSync(path.join(MESSAGES_DIR, d)).isDirectory())
-  .sort();
 
 function flatKeys(value: unknown, prefix = '', out: Set<string> = new Set()): Set<string> {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -44,29 +35,39 @@ function readKeys(locale: string, ns: string): Set<string> | null {
   return flatKeys(JSON.parse(fs.readFileSync(p, 'utf8')));
 }
 
-describe('messages-parity: every locale mirrors en-US key-for-key', () => {
-  it('discovers en-US plus at least one other locale', () => {
-    expect(LOCALES).toContain(BASE_LOCALE);
-    expect(LOCALES.length).toBeGreaterThan(1);
-  });
+describe.each([KAITU, OVERLEAP])('messages-parity for $id: every locale mirrors the brand default key-for-key', (brand) => {
+  const base = brand.defaultLocale;
+  for (const ns of BRAND_NAMESPACES[brand.id]) {
+    const baseKeys = readKeys(base, ns);
 
-  for (const ns of namespaces) {
-    const base = readKeys(BASE_LOCALE, ns);
-
-    it(`${BASE_LOCALE}/${ns}.json exists and is non-empty (guards the parser)`, () => {
-      expect(base).not.toBeNull();
-      expect(base!.size).toBeGreaterThan(0);
+    it(`${base}/${ns}.json exists and is non-empty (guards the parser)`, () => {
+      expect(baseKeys).not.toBeNull();
+      expect(baseKeys!.size).toBeGreaterThan(0);
     });
 
-    for (const locale of LOCALES) {
-      if (locale === BASE_LOCALE) continue;
-      it(`${locale}/${ns}.json has exactly the ${BASE_LOCALE} key set`, () => {
+    for (const locale of brand.allowedLocales) {
+      if (locale === base) continue;
+      it(`${locale}/${ns}.json has exactly the ${base} key set`, () => {
         const keys = readKeys(locale, ns);
         expect(keys, `${locale}/${ns}.json is missing`).not.toBeNull();
-        const missing = [...base!].filter((k) => !keys!.has(k)).sort();
-        const extra = [...keys!].filter((k) => !base!.has(k)).sort();
+        const missing = [...baseKeys!].filter((k) => !keys!.has(k)).sort();
+        const extra = [...keys!].filter((k) => !baseKeys!.has(k)).sort();
         expect({ missing, extra }).toEqual({ missing: [], extra: [] });
       });
     }
   }
+});
+
+describe('no locale carries the other brand\'s namespaces', () => {
+  // A stray en-US/hero.json (kaitu narrative in English) is exactly the dead file that
+  // used to ship the kaitu home copy to the overleap deployment.
+  it.each([
+    [OVERLEAP, BRAND_NAMESPACES.kaitu.filter((ns) => !(BRAND_NAMESPACES.overleap as readonly string[]).includes(ns))],
+    [KAITU, BRAND_NAMESPACES.overleap.filter((ns) => !(BRAND_NAMESPACES.kaitu as readonly string[]).includes(ns))],
+  ] as const)('$0.id locales have none of the other brand\'s namespace files', (brand, foreign) => {
+    const stray = brand.allowedLocales.flatMap((loc) =>
+      foreign.filter((ns) => fs.existsSync(path.join(MESSAGES_DIR, loc, `${ns}.json`))).map((ns) => `${loc}/${ns}.json`),
+    );
+    expect(stray).toEqual([]);
+  });
 });

@@ -27,7 +27,8 @@ function readHeroJson(locale: string): string {
   return readWebFile(`messages/${locale}/hero.json`);
 }
 
-const ALL_LOCALES = ['zh-CN', 'en-US', 'en-GB', 'en-AU', 'zh-TW', 'zh-HK', 'ja'];
+// hero.json 是开途独有 namespace（messages/namespaces.ts BRAND_NAMESPACES.kaitu），只有 zh-* 目录有文件。
+const ALL_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK'];
 
 describe('test_homepage_hero_k2_content', () => {
   it('zh-CN hero.json contains k2 technology keywords', () => {
@@ -74,25 +75,10 @@ describe('test_homepage_no_mptcp_references', () => {
     expect(readHeroJson('zh-CN')).not.toContain('5000');
   });
 
-  it('en-US hero.json does not contain MPTCP', () => {
-    expect(readHeroJson('en-US')).not.toContain('MPTCP');
-  });
 
-  it('en-US hero.json does not contain CA certificate simulation', () => {
-    expect(readHeroJson('en-US')).not.toContain('CA certificate simulation');
-  });
 
-  it('en-US hero.json does not contain PBKDF2', () => {
-    expect(readHeroJson('en-US')).not.toContain('PBKDF2');
-  });
 
-  it('en-US hero.json does not contain smux', () => {
-    expect(readHeroJson('en-US')).not.toContain('smux');
-  });
 
-  it('en-US hero.json does not contain 5000', () => {
-    expect(readHeroJson('en-US')).not.toContain('5000');
-  });
 
   it.each(ALL_LOCALES)('%s hero.json does not contain MPTCP', (locale) => {
     expect(readHeroJson(locale)).not.toContain('MPTCP');

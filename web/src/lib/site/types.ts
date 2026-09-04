@@ -14,7 +14,8 @@ export type Locale = (typeof ALL_LOCALES)[number];
 export interface NavItem {
   /** next-intl key，全路径写法（如 'nav.nav.pricing'）。 */
   labelKey: string;
-  /** 站内路径（交给 i18n Link 加 locale 前缀）或外链（http(s):// / mailto:）。 */
+  /** 站内路径（交给 i18n Link 加 locale 前缀）或外链（http(s):// / mailto:）。
+   *  `mailto:{contactEmail}` 由 Footer 用 Brand.contactEmail 填充——配置文件不放品牌域名。 */
   href: string;
   /** 有子项时渲染为下拉（桌面）/ 折叠段（移动）。 */
   children?: NavItem[];

@@ -9,6 +9,8 @@ const ZH_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK'] as const;
 const EN_LOCALES = ['en-US', 'en-GB', 'en-AU'] as const;
 const OTHER_LOCALES = ['ja'] as const;
 const ALL_LOCALES = [...ZH_LOCALES, ...EN_LOCALES, ...OTHER_LOCALES];
+// hero.json 是开途独有 namespace（messages/namespaces.ts BRAND_NAMESPACES.kaitu）：只有 zh-* 有文件。
+const HERO_LOCALES = ZH_LOCALES;
 
 // Forbidden political/legacy tokens. Each has a `matcher` (regex) so we can express
 // exceptions (e.g. 安全审查 = "security audit", a legitimate non-political term).
@@ -65,7 +67,7 @@ function readHeroParsed(locale: string): Record<string, unknown> {
 }
 
 describe('messages-integrity: forbidden political tokens — all namespaces', () => {
-  for (const locale of ALL_LOCALES) {
+  for (const locale of HERO_LOCALES) {
     for (const ns of namespaces) {
       for (const { term, matcher } of FORBIDDEN_TERMS) {
         it(`${locale}/${ns}.json does not contain "${term}"`, () => {
@@ -109,7 +111,7 @@ describe('messages-integrity: brand tokens per locale family — all namespaces'
 });
 
 describe('messages-integrity: FAQ key migration (hero.json only)', () => {
-  for (const locale of ALL_LOCALES) {
+  for (const locale of HERO_LOCALES) {
     it(`${locale}/hero.json: faq.items.comparisonWithOthers removed`, () => {
       const j = readHeroParsed(locale) as { faq?: { items?: Record<string, unknown> } };
       expect(j.faq?.items).toBeDefined();

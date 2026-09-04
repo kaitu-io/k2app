@@ -21,7 +21,7 @@ const FAQ_KEYS = [
 const FEATURE_KEYS = ['ech', 'k2cc', 'transport', 'privacy'] as const;
 const STEP_KEYS = ['subscribe', 'download', 'connect'] as const;
 
-// Overleap 构建专属首页（page.overleap.tsx）。开途首页在 page.kaitu.tsx；两者由
+// overleap 构建专属首页（page.overleap.tsx）。kaitu首页在 page.kaitu.tsx；两者由
 // next.config 的 pageExtensions 按品牌择一编译，互不可见。
 export async function generateMetadata({
   params,

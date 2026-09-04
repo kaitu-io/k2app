@@ -42,7 +42,7 @@ vi.mock('@/i18n/routing', () => ({
 
 afterEach(() => vi.unstubAllEnvs());
 
-async function renderChrome(component: 'Footer' | 'Header', locale: string): Promise<string> {
+async function renderChrome(component: 'Footer' | 'Header', locale: 'en-GB' | 'zh-CN'): Promise<string> {
   vi.resetModules();
   const { default: Component } = await import(`../src/components/${component}`);
   const { container } = render(

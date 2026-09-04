@@ -51,7 +51,7 @@ describe('generateMetadata — brand-isolated SEO (Phase 2)', () => {
     const meta = generateMetadata('en-US', '/purchase', {}, OVERLEAP);
     const langs = meta.alternates!.languages as Record<string, string>;
     expect(Object.keys(langs).sort()).toEqual(['en-au', 'en-gb', 'en-us', 'ja', 'x-default']);
-    expect(langs['x-default']).toBe('https://overleap.io/en-US/purchase');
+    expect(langs['x-default']).toBe('https://overleap.io/en-GB/purchase');
     expect(JSON.stringify(meta)).not.toContain('kaitu');
   });
 

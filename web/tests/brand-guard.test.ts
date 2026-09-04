@@ -115,7 +115,7 @@ describe('velite content served on overleap carries no kaitu words', () => {
   const isOverleapContent = (f: string) =>
     f.endsWith('.md') && !/^brand:\s*kaitu\s*$/m.test(readFileSync(f, 'utf8'));
 
-  it.each(['en-US', 'ja'].filter((l) => {
+  it.each([...OVERLEAP.allowedLocales].filter((l) => {
     try { return statSync(path.join(WEB, 'content', l)).isDirectory(); } catch { return false; }
   }))('content/%s has zero kaitu words (outside brand: kaitu files)', (loc) => {
     expect(scan(path.join(WEB, 'content', loc), KAITU_WORDS, isOverleapContent)).toEqual([]);

@@ -1,8 +1,8 @@
 import type { SiteConfig } from './types';
 
 /**
- * Overleap 站结构（spec 2026-09-04-overleap-site-decoupling §3.1）。
- * 只列 Overleap 构建里真实存在的页面（page.tsx 共用页 + page.overleap.tsx）。
+ * overleap 站结构（spec 2026-09-04-overleap-site-decoupling §3.1）。
+ * 只列 overleap 构建里真实存在的页面（page.tsx 共用页 + page.overleap.tsx）。
  */
 export const OVERLEAP_SITE: SiteConfig = {
   nav: {
@@ -35,7 +35,7 @@ export const OVERLEAP_SITE: SiteConfig = {
       items: [
         { labelKey: 'discovery.privacy.title', href: '/privacy' },
         { labelKey: 'discovery.terms.title', href: '/terms' },
-        { labelKey: 'nav.nav.contactUs', href: 'mailto:support@overleap.io' },
+        { labelKey: 'nav.nav.contactUs', href: 'mailto:{contactEmail}' },
       ],
     },
   ],
