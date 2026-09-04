@@ -26,6 +26,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore, useAppRoutesStore } from "../stores";
+import { useLayoutStore } from '../stores/layout.store';
+import { tunnelListSx } from './dashboard-layout';
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
@@ -153,6 +155,8 @@ export default function Dashboard() {
 
   // Ref for scroll container
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Desktop (sidebar) layout caps the tunnel-list column width — see dashboard-layout.ts
+  const isDesktop = useLayoutStore((s) => s.isDesktop);
 
   // Restore scroll position on mount
   useEffect(() => {
@@ -456,6 +460,7 @@ export default function Dashboard() {
       <Box
         ref={scrollContainerRef}
         sx={{
+          ...tunnelListSx(isDesktop),
           flex: 1,
           display: 'flex',
           flexDirection: 'column',

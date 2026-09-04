@@ -46,6 +46,14 @@ vi.mock('../src/app/[locale]/HomeClient', () => ({
   default: () => null,
 }));
 
+// Mock the overleap home (statically imported by page.tsx for the brand
+// branch; its own render is covered by tests/landing-overleap-ssr.test.tsx).
+// This suite exercises the kaitu Server Component contract only.
+vi.mock('../src/app/[locale]/OverleapHome', () => ({
+  default: () => null,
+  generateOverleapMetadata: async () => ({ title: 'Overleap', description: 'Overleap' }),
+}));
+
 // Mock metadata.ts (layout metadata generator used by page's generateMetadata)
 vi.mock('../src/app/[locale]/metadata', () => ({
   generateMetadata: () => ({

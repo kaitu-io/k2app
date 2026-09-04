@@ -66,27 +66,38 @@ describe('MUI theme derives from brand tokens', () => {
       expect(lightTheme.palette.primary.main).not.toBe(KAITU_BRAND.theme.light.primary.main);
     });
 
-    it('surface/status 仍是开途 Terminal Dark 迁移前的取值（零视觉回归）', () => {
-      // 2026-08-18 品牌 token 契约扩展时，surface/status 从共享默认值搬进了
-      // 各品牌文件。Overleap 填的是**等价拷贝**，本断言锁住这一点：改动
-      // 这些值 = 改动 Overleap 外观，必须是显式决策而非顺手统一。
-      expect(darkTheme.palette.background.default).toBe('#0F0F13');
-      expect(darkTheme.palette.background.paper).toBe('#1A1A1D');
-      expect(darkTheme.palette.divider).toBe('rgba(255, 255, 255, 0.12)');
-      expect(darkTheme.palette.text.primary).toBe('#FAFAFA');
-      expect(darkTheme.palette.text.secondary).toBe('rgba(250, 250, 250, 0.7)');
-      expect(darkTheme.palette.success.main).toBe('#66BB6A');
-      expect(darkTheme.palette.warning.main).toBe('#FFB74D');
-      expect(darkTheme.palette.error.main).toBe('#EF5350');
-      expect(darkTheme.shape.borderRadius).toBe(4); // MUI 默认，未跟随开途改 10
+    it('Overleap 正式视觉 token（spec 2026-09-04 §1.1；改色必须同步改这里）', () => {
+      expect(darkTheme.palette.primary.main).toBe('#7C5CFF');
+      expect(darkTheme.palette.secondary.main).toBe('#2DD4BF');
+      expect(darkTheme.palette.background.default).toBe('#0B0E14');
+      expect(darkTheme.palette.background.paper).toBe('#141926');
+      expect(darkTheme.palette.divider).toBe('rgba(124, 92, 255, 0.18)');
+      expect(darkTheme.palette.text.primary).toBe('#E6E8F0');
+      expect(darkTheme.palette.text.secondary).toBe('#9AA0B4');
+      expect(darkTheme.palette.success.main).toBe('#34D399');
+      expect(darkTheme.palette.warning.main).toBe('#FBBF24');
+      expect(darkTheme.palette.error.main).toBe('#F87171');
+      expect(darkTheme.shape.borderRadius).toBe(12);
 
       const status = OVERLEAP_BRAND.theme.status;
-      // 迁移前 = APP_COLORS.dark.successGradient / infoGradient
-      expect(status.connected.gradient).toBe('linear-gradient(135deg, #66bb6a 0%, #4caf50 100%)');
-      expect(status.idle.gradient).toBe('linear-gradient(135deg, #42a5f5 0%, #2196f3 100%)');
-      // 没有沾染开途的霓虹色
+      // 已连接 = 薄荷青，待命 = 品牌紫：与开途「绿=通了 / 青=待命」错开
+      expect(status.connected.main).toBe('#2DD4BF');
+      expect(status.idle.main).toBe('#7C5CFF');
       expect(status.connected.main).not.toBe(KAITU_BRAND.theme.status.connected.main);
       expect(status.idle.main).not.toBe(KAITU_BRAND.theme.status.idle.main);
     });
+  });
+
+  it('typography.fontFamily comes from brand tokens and differs across brands', () => {
+    expect(darkTheme.typography.fontFamily).toBe(brandConfig.theme.typography.fontFamily);
+    expect(lightTheme.typography.fontFamily).toBe(brandConfig.theme.typography.fontFamily);
+    expect(OVERLEAP_BRAND.theme.typography.fontFamily).not.toBe(KAITU_BRAND.theme.typography.fontFamily);
+    expect(OVERLEAP_BRAND.theme.typography.fontFamily).toMatch(/^Inter,/);
+  });
+
+  it('the two brands never share a primary, a connected colour, or a radius', () => {
+    expect(OVERLEAP_BRAND.theme.dark.primary.main).not.toBe(KAITU_BRAND.theme.dark.primary.main);
+    expect(OVERLEAP_BRAND.theme.status.connected.main).not.toBe(KAITU_BRAND.theme.status.connected.main);
+    expect(OVERLEAP_BRAND.theme.surface.radius).not.toBe(KAITU_BRAND.theme.surface.radius);
   });
 });

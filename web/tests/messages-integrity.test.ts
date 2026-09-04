@@ -122,3 +122,20 @@ describe('messages-integrity: FAQ key migration (hero.json only)', () => {
     });
   }
 });
+
+// Overleap-only locales (en-*/ja are never served by the kaitu build) must not
+// advertise China-market payment channels: the overleap purchase flow is Stripe.
+const CN_PAYMENT_CHANNELS = /Alipay|WeChat Pay|UnionPay|支付宝|微信支付/;
+
+describe('messages-integrity: overleap locales carry no China-market payment channels', () => {
+  for (const locale of [...EN_LOCALES, ...OTHER_LOCALES]) {
+    for (const ns of namespaces) {
+      it(`${locale}/${ns}.json`, () => {
+        const raw = readNamespace(locale, ns);
+        if (!raw) return;
+        const hit = raw.match(CN_PAYMENT_CHANNELS);
+        expect(hit, `found "${hit?.[0]}" in ${locale}/${ns}.json`).toBeNull();
+      });
+    }
+  }
+});

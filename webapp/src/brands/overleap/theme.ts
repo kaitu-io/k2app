@@ -1,55 +1,50 @@
 import type { BrandThemeTokens } from '../types';
 
 /**
- * Theme palette: working values pending final design sign-off (see plan's
- * open questions) — distinct violet/teal family so a mis-branded build is
- * obvious.
+ * Overleap visual identity — spec docs/superpowers/specs/2026-09-04-overleap-independent-release-design.md §1.1.
  *
- * `surface` / `status` 是 2026-08-18 品牌 token 契约扩展时补齐的 —— 取值是
- * 扩展前实际生效的共享默认值的**等价拷贝**，因此本品牌视觉零变化：
- *   surface  ← theme.ts darkTheme.palette.background / divider
- *   status   ← theme/colors.ts APP_COLORS.dark 的 success* / info* 键
- * 改动这些值 = 改动 Overleap 的外观，不是"顺手统一"，请单独决策。
+ * Contrast rule against the peer brand: connected = mint, idle = brand violet,
+ * sans-serif, 12px radius. theme.brand.test.ts pins every value below — change
+ * the colour AND the test together so the diff shows what moved.
  */
 export const OVERLEAP_THEME: BrandThemeTokens = {
+  typography: {
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  },
   light: {
-    primary: { main: '#5E35B1', light: '#7E57C2', dark: '#4527A0' },
-    secondary: { main: '#00897B', light: '#26A69A', dark: '#00695C' },
+    primary: { main: '#5B3FE0', light: '#7C5CFF', dark: '#4527A0' },
+    secondary: { main: '#14B8A6', light: '#2DD4BF', dark: '#0F766E' },
   },
   dark: {
-    primary: { main: '#9575CD', light: '#B39DDB', dark: '#673AB7' },
-    secondary: { main: '#4DB6AC', light: '#80CBC4', dark: '#26A69A' },
+    primary: { main: '#7C5CFF', light: '#9D85FF', dark: '#5B3FE0' },
+    secondary: { main: '#2DD4BF', light: '#5EEAD4', dark: '#14B8A6' },
   },
   surface: {
-    background: '#0F0F13',
-    paper: '#1A1A1D',
-    border: 'rgba(255, 255, 255, 0.12)',
-    textPrimary: '#FAFAFA',
-    textSecondary: 'rgba(250, 250, 250, 0.7)',
-    radius: 4, // MUI 默认
+    background: '#0B0E14',
+    paper: '#141926',
+    border: 'rgba(124, 92, 255, 0.18)',
+    textPrimary: '#E6E8F0',
+    textSecondary: '#9AA0B4',
+    radius: 12,
   },
-  // 原 theme.ts darkTheme.palette 的 success/error/warning 硬编码值
   semantic: {
-    success: { main: '#66BB6A', light: '#81C784', dark: '#388E3C' },
-    warning: { main: '#FFB74D', light: '#FFCC02', dark: '#F57C00' },
-    error: { main: '#EF5350', light: '#E57373', dark: '#C62828' },
+    success: { main: '#34D399', light: '#6EE7B7', dark: '#059669' },
+    warning: { main: '#FBBF24', light: '#FCD34D', dark: '#D97706' },
+    error: { main: '#F87171', light: '#FCA5A5', dark: '#DC2626' },
   },
   status: {
-    // 已连接 = 柔绿（原 APP_COLORS.dark.success*）
     connected: {
-      main: '#66bb6a',
-      gradient: 'linear-gradient(135deg, #66bb6a 0%, #4caf50 100%)',
-      glow: 'rgba(102, 187, 106, 0.3)',
-      glowStrong: 'rgba(102, 187, 106, 0.5)',
+      main: '#2DD4BF',
+      gradient: 'linear-gradient(135deg, #2DD4BF 0%, #14B8A6 100%)',
+      glow: 'rgba(45, 212, 191, 0.35)',
+      glowStrong: 'rgba(45, 212, 191, 0.5)',
     },
-    // 待命 = 蓝（原 APP_COLORS.dark.info*）—— 与品牌紫无关，历史即如此
     idle: {
-      main: '#42a5f5',
-      gradient: 'linear-gradient(135deg, #42a5f5 0%, #2196f3 100%)',
-      glow: 'rgba(66, 165, 245, 0.3)',
-      glowStrong: 'rgba(66, 165, 245, 0.5)',
+      main: '#7C5CFF',
+      gradient: 'linear-gradient(135deg, #7C5CFF 0%, #5B3FE0 100%)',
+      glow: 'rgba(124, 92, 255, 0.3)',
+      glowStrong: 'rgba(124, 92, 255, 0.5)',
     },
-    // 熄灭态为中性色，品牌无关
     dormant: {
       border: 'rgba(255, 255, 255, 0.10)',
       icon: 'rgba(255, 255, 255, 0.30)',

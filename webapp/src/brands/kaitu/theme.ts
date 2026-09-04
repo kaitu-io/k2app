@@ -19,6 +19,10 @@ import type { BrandThemeTokens } from '../types';
  * 区域）—— 与官网首页同屏并存绿徽章、绿按钮、绿「已连接」是同一手法。
  */
 export const KAITU_THEME: BrandThemeTokens = {
+  // 与 theme.ts 迁移前的 fontFamily 数组拼接结果逐字相同（零视觉变化）
+  typography: {
+    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',
+  },
   // light 保持迁移前取值：dark 是唯一实际渲染的主题（ThemeContext 硬编码），
   // light 仅为将来重启切换器而保留在包内。
   light: {

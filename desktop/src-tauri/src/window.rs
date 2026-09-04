@@ -16,26 +16,52 @@ use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow};
 /// Only affects frontend_ready() - user actions always show window
 static IS_MINIMIZED_START: AtomicBool = AtomicBool::new(false);
 
+// ─── kaitu: portrait phone-shaped window ─────────────────────────────────────
 /// Aspect ratio: 9:20 (modern iPhone-like tall screen)
+#[cfg(not(brand_overleap))]
 const ASPECT_RATIO: f64 = 9.0 / 20.0;
 
 /// Ideal height ratio relative to usable work area height
+#[cfg(not(brand_overleap))]
 const IDEAL_HEIGHT_RATIO: f64 = 0.80;
 
 /// Maximum height ratio - window must not exceed this fraction of usable area
+#[cfg(not(brand_overleap))]
 const MAX_HEIGHT_RATIO: f64 = 0.85;
 
 /// Preferred minimum window dimensions (applied when work area is large enough)
+#[cfg(not(brand_overleap))]
 const MIN_WIDTH: u32 = 320;
+#[cfg(not(brand_overleap))]
 const MIN_HEIGHT: u32 = 568;
 
 /// Hard floor for dynamic min height — UI is not designed/tested below this,
 /// must match the static `minHeight` in tauri.conf.json so runtime relaxation
 /// never goes below what the config already allows.
+#[cfg(not(brand_overleap))]
 const MIN_HEIGHT_FLOOR: u32 = 460;
 
 /// Maximum width to prevent overly wide windows on large screens
+#[cfg(not(brand_overleap))]
 const MAX_WIDTH: u32 = 480;
+
+// ─── overleap: landscape desktop window with sidebar layout ──────────────────
+// Sizes must match tauri.conf.overleap.json (width/height/minWidth/minHeight).
+#[cfg(brand_overleap)]
+const DEFAULT_WIDTH: u32 = 1040;
+#[cfg(brand_overleap)]
+const DEFAULT_HEIGHT: u32 = 700;
+#[cfg(brand_overleap)]
+const MIN_WIDTH: u32 = 880;
+#[cfg(brand_overleap)]
+const MIN_HEIGHT: u32 = 620;
+/// Hard floor for dynamic min height on tiny work areas (the webapp falls back
+/// to its mobile layout below a 600px short side — accepted degradation).
+#[cfg(brand_overleap)]
+const MIN_HEIGHT_FLOOR: u32 = 560;
+/// The window never takes more than this fraction of the work area, per axis.
+#[cfg(brand_overleap)]
+const MAX_AREA_RATIO: f64 = 0.85;
 
 /// Compute the runtime minimum window height for the given usable height.
 ///
@@ -50,6 +76,7 @@ fn calculate_dynamic_min_height(usable_height: u32) -> u32 {
 
 /// Calculate window size based on screen dimensions
 /// Maintains 9:20 aspect ratio while respecting screen boundaries
+#[cfg(not(brand_overleap))]
 fn calculate_window_size(screen_height: u32) -> (u32, u32) {
     let max_allowed_height = (screen_height as f64 * MAX_HEIGHT_RATIO) as u32;
 
@@ -80,6 +107,17 @@ fn calculate_window_size(screen_height: u32) -> (u32, u32) {
         width = (height as f64 * ASPECT_RATIO) as u32;
     }
 
+    (width, height)
+}
+
+/// Overleap: fixed default size, clamped to 85% of the work area per axis and
+/// never below the minimum. No aspect lock — the sidebar layout is fluid.
+#[cfg(brand_overleap)]
+fn calculate_window_size_overleap(usable_width: u32, usable_height: u32) -> (u32, u32) {
+    let max_w = (usable_width as f64 * MAX_AREA_RATIO) as u32;
+    let max_h = (usable_height as f64 * MAX_AREA_RATIO) as u32;
+    let width = DEFAULT_WIDTH.min(max_w).max(MIN_WIDTH);
+    let height = DEFAULT_HEIGHT.min(max_h).max(MIN_HEIGHT);
     (width, height)
 }
 
@@ -134,6 +172,13 @@ fn get_usable_logical_height(monitor: &tauri::Monitor) -> u32 {
     (work_area.size.height as f64 / scale_factor) as u32
 }
 
+/// Work-area logical width (same source as `get_usable_logical_height`).
+#[cfg(brand_overleap)]
+fn get_usable_logical_width(monitor: &tauri::Monitor) -> u32 {
+    let scale_factor = monitor.scale_factor();
+    (monitor.work_area().size.width as f64 / scale_factor) as u32
+}
+
 /// Get optimal window size based on the monitor's usable work area.
 /// Returns (width, height) in logical pixels.
 /// This function MUST succeed - desktop apps always have a display.
@@ -144,7 +189,11 @@ fn get_optimal_window_size(app: &AppHandle) -> (u32, u32, u32) {
     let work_area = monitor.work_area();
 
     let usable_height = get_usable_logical_height(&monitor);
+    #[cfg(not(brand_overleap))]
     let (width, height) = calculate_window_size(usable_height);
+    #[cfg(brand_overleap)]
+    let (width, height) =
+        calculate_window_size_overleap(get_usable_logical_width(&monitor), usable_height);
 
     log::info!(
         "Window size: {}x{} logical (screen: {}x{} physical, work_area: {}x{} physical, scale: {:.0}%, usable_logical_h: {})",
@@ -176,7 +225,7 @@ pub fn adjust_window_size(app: &AppHandle) -> Option<WebviewWindow> {
     apply_dynamic_min_size(&window, usable_height);
 
     log::info!(
-        "Adjusting window size to {}x{} (portrait orientation)",
+        "Adjusting window size to {}x{}",
         width,
         height
     );
@@ -276,7 +325,50 @@ pub fn hide_window(app: &AppHandle) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, brand_overleap))]
+mod overleap_tests {
+    use super::*;
+
+    #[test]
+    fn overleap_constants_match_tauri_conf_overleap() {
+        // Keep in sync with tauri.conf.overleap.json minWidth/minHeight.
+        assert_eq!(MIN_WIDTH, 880);
+        assert_eq!(MIN_HEIGHT, 620);
+        assert_eq!(MIN_HEIGHT_FLOOR, 560);
+    }
+
+    #[test]
+    fn overleap_1080p_gets_default_size() {
+        // 1080p work area ≈ 1920x1040 logical; 85% of both exceeds the defaults.
+        let (w, h) = calculate_window_size_overleap(1920, 1040);
+        assert_eq!((w, h), (DEFAULT_WIDTH, DEFAULT_HEIGHT));
+    }
+
+    #[test]
+    fn overleap_small_screen_shrinks_but_keeps_min() {
+        // MacBook Air 13" with Larger Text: ~1147x700 usable.
+        let (w, h) = calculate_window_size_overleap(1147, 700);
+        assert!(w >= MIN_WIDTH && w <= DEFAULT_WIDTH, "w={w}");
+        assert_eq!(h, MIN_HEIGHT, "85% of 700 = 595 < MIN_HEIGHT → clamp up to MIN_HEIGHT");
+    }
+
+    #[test]
+    fn overleap_never_exceeds_85_percent_of_a_large_area() {
+        let (w, h) = calculate_window_size_overleap(1200, 800);
+        assert!(w <= (1200.0 * MAX_AREA_RATIO) as u32);
+        assert!(h <= (800.0 * MAX_AREA_RATIO) as u32);
+    }
+
+    #[test]
+    fn overleap_dynamic_min_height_floors_at_560() {
+        assert_eq!(calculate_dynamic_min_height(1000), MIN_HEIGHT);
+        assert_eq!(calculate_dynamic_min_height(600), 600);
+        assert_eq!(calculate_dynamic_min_height(500), MIN_HEIGHT_FLOOR);
+    }
+}
+
+// kaitu portrait-window assertions — unchanged; not applicable to the overleap build.
+#[cfg(all(test, not(brand_overleap)))]
 mod tests {
     use super::*;
 

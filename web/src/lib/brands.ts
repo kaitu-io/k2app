@@ -49,6 +49,9 @@ export type Brand = {
      * URLs. Until per-brand release notes exist, only kaitu may serve them.
      */
     releaseNotes: boolean;
+    /** Retailer (分销) program pages + footer link. Kaitu-only — the program
+     *  is a China-market channel and the pages are 开途-worded. */
+    retailerProgram: boolean;
   };
 };
 
@@ -84,7 +87,7 @@ export const KAITU: Brand = {
     ],
     artifactPrefix: 'Kaitu',
   },
-  features: { routers: true, linuxInstall: true, androidApkGuide: true, releaseNotes: true },
+  features: { routers: true, linuxInstall: true, androidApkGuide: true, releaseNotes: true, retailerProgram: true },
 };
 
 export const OVERLEAP: Brand = {
@@ -113,7 +116,7 @@ export const OVERLEAP: Brand = {
     mobileBases: ['https://d13jc1jqzlg4yt.cloudfront.net/overleap'],
     artifactPrefix: 'Overleap',
   },
-  features: { routers: false, linuxInstall: false, androidApkGuide: false, releaseNotes: false },
+  features: { routers: false, linuxInstall: false, androidApkGuide: false, releaseNotes: false, retailerProgram: false },
 };
 
 export function brandById(id: BrandId): Brand {

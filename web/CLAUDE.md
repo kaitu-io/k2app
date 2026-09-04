@@ -31,6 +31,8 @@ Next.js 15 (App Router) | React 19 | TypeScript | Tailwind CSS 4 | shadcn/ui | n
 - **Feature gates**: `Brand.features` — routers/linuxInstall/androidApkGuide/releaseNotes are kaitu-only surfaces (`releaseNotes` gates `/releases` + `/changelog`: `public/releases.json` is a single-brand artifact with 开途 wording and dl.kaitu.io links). A gated surface must be gated everywhere it can be reached: page (`notFound()`), navigation tile, AND sitemap.
 - **Kaitu-only content**: velite markdown that documents kaitu-only surfaces (e.g. the `/i/k2*` install scripts) carries `brand: kaitu` frontmatter — the sitemap and the guard both honour it.
 - **Dev**: `yarn dev` (kaitu) / `yarn dev:overleap`; builds: `yarn build` / `yarn build:overleap`.
+- **首页按品牌分流**：`src/app/[locale]/page.tsx` 在 `siteBrand().id === 'overleap'` 时渲染 `OverleapHome.tsx`（组件在 `components/home-overleap/`，文案 namespace `landing`，品牌名 `{brand}` 插值，七个 locale 都有文件——`request.ts` 缺文件会回落 zh-CN），kaitu 分支是原 JSX。守卫：`tests/landing-overleap-ssr.test.tsx`（真实文案渲染，零开途词/零中国支付渠道/零原始 key）。en/ja 文案只有 Overleap 部署会读，`tests/messages-integrity.test.ts` 禁止其中出现支付宝/微信支付/银联。
+- **主题按 `html[data-brand]` 覆盖**：`globals.css` 的 `:root` 是开途，`html[data-brand="overleap"]` 块必须覆盖全部变量（`tests/brand-theme-css.test.ts`）。**二进制资产也有守卫**：`tests/brand-assets.test.ts` 对 `public/` 里两品牌的 logo/og/favicon 算哈希，任何一对相同即红——Overleap 资产由 `webapp/brand-assets/overleap/generate.sh` 从 `logo.svg` 生成。
 
 ## Architecture
 

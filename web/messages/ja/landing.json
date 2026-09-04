@@ -1,0 +1,63 @@
+{
+  "landing": {
+    "meta": {
+      "title": "他が途切れる場所で、つながり続ける",
+      "description": "{brand} は不安定なネットワークのために作られた VPN。パケットロスの中でもフルスピード、見えない接続、ログなし。Windows・macOS・iOS・Android 対応。"
+    },
+    "hero": {
+      "badge": "不安定なネットワークのために",
+      "title": "他が途切れる場所で、つながり続ける。",
+      "subtitle": "30% のパケットロスでもフルスピードを保つ VPN。",
+      "description": "{brand} は k2 プロトコルで動きます。帯域制限・パケットロス・妨害が起きるネットワークのために設計されたプロトコルです。Encrypted Client Hello が接続を見えなくし、k2cc が速度を保ちます。ログなし、設定なし、1 つの契約で 5 台まで。",
+      "ctaPrimary": "{brand} を始める",
+      "ctaSecondary": "アプリをダウンロード",
+      "mockConnected": "保護中",
+      "mockNode": "自動 · 最速経路"
+    },
+    "steps": {
+      "title": "3 ステップで使い始める",
+      "subscribe": { "label": "契約する", "detail": "カード・Apple Pay・Google Pay · いつでも解約可" },
+      "download": { "label": "アプリをインストール", "detail": "Windows · macOS · iOS · Android" },
+      "connect": { "label": "サインインして接続", "detail": "ワンタップ。設定不要。" },
+      "cta": "今すぐ始める"
+    },
+    "features": {
+      "title": "{brand} が落ちない理由",
+      "ech": { "title": "接続は見えない", "description": "Encrypted Client Hello が接続先のサーバー名を通信経路上の誰からも隠します。ブロックする手がかりがありません。" },
+      "k2cc": { "title": "壊れた回線でもフルスピード", "description": "k2cc は妨害と本当の輻輳を見分けて送信を続けます。26% ロスの回線で BBR の 2〜5 倍のスループットを出します。" },
+      "transport": { "title": "気づく前に経路を切り替える", "description": "まず QUIC、QUIC が塞がれたら TCP-WebSocket。切り替えはセッション中に行われ、作業は途切れません。" },
+      "privacy": { "title": "ログなし。確かめられる。", "description": "利用内容は記録しません。プロトコルは公開文書化され、サーバーはオープンソース。自分の k2s ノードを立てて {brand} をクライアントとしてだけ使うこともできます。" }
+    },
+    "pricing": {
+      "title": "1 つのプラン、すべての端末。",
+      "subtitle": "5 台同時、データ無制限、すべてのロケーション。いつでも解約できます。",
+      "yearly": { "name": "年額", "price": "$79", "period": "／年", "note": "最もお得 — 月あたり約 $6.58" },
+      "monthly": { "name": "月額", "price": "$8.99", "period": "／月", "note": "12 か月契約、毎月請求" },
+      "cta": "プランを選ぶ",
+      "includes": ["5 台同時接続", "データ無制限", "すべてのロケーション", "Windows・macOS・iOS・Android"]
+    },
+    "faq": {
+      "title": "よくある質問",
+      "subtitle": "{brand} の仕組みについて、率直に答えます。",
+      "items": {
+        "whatIsK2": { "question": "k2 とは？", "answer": "k2 は {brand} を支えるトンネルプロトコルです。Encrypted Client Hello、QUIC と TCP-WebSocket のデュアル転送、k2cc レート制御を組み合わせています。仕様はこのサイトの /k2 で公開され、サーバー（k2s）はオープンソースです。" },
+        "lossySpeed": { "question": "パケットロスがあっても速いのはなぜ？", "answer": "多くの VPN はパケットが失われた瞬間に減速します。輻輳制御が「ロス＝輻輳」と決めつけるからです。k2cc は回線を実測し、妨害と本当の輻輳を見分けて速度を維持します。26% ロスのテストで BBR の 2〜5 倍のスループットでした。" },
+        "ech": { "question": "ECH は何をしてくれる？", "answer": "Encrypted Client Hello は、通常は接続先サーバーを明かしてしまう TLS ハンドシェイクの部分を暗号化します。観測者には公開サイトへの普通の HTTPS 通信にしか見えません。" },
+        "platforms": { "question": "対応プラットフォームは？", "answer": "Windows、macOS、iOS、Android。1 つの契約で 5 台まで同時に使えます。" },
+        "logs": { "question": "ログは残しますか？", "answer": "いいえ。閲覧したサイトや送信したトラフィックは記録しません。保持するのは契約に必要なものだけ：メールアドレス、購入したプラン、サインイン中の端末。" },
+        "selfHost": { "question": "自分のサーバーを使えますか？", "answer": "はい。k2s はオープンソースで、1 コマンドでインストールできます。アプリに自分のノードを追加すれば、{brand} は単なるクライアントになります。" },
+        "pricing": { "question": "料金は？", "answer": "年額 $79、または 12 か月契約の月額 $8.99。どちらも 5 台・データ無制限・すべてのロケーションを含みます。価格は米ドル表示で、カードにはお使いの通貨で請求されます。" },
+        "payment": { "question": "支払い方法は？", "answer": "Stripe 経由のクレジットカードまたはデビットカード。端末が対応していれば、チェックアウトで Apple Pay と Google Pay も選べます。" },
+        "devices": { "question": "何台まで使えますか？", "answer": "プラットフォームを問わず同時に 5 台。6 台目でサインインすると、最も古い端末がサインアウトされます。" },
+        "wifiSwitch": { "question": "Wi-Fi からモバイル回線に切り替わると？", "answer": "トンネルも一緒に移動します。QUIC がネットワーク切り替えをまたいでセッションを維持するので、ダウンロードや通話は再接続なしで続きます。" },
+        "cancel": { "question": "解約方法は？", "answer": "アカウントページから、または契約したアプリストアから。支払い済みの期間が終わるまでプランは有効です。" }
+      }
+    },
+    "download": {
+      "title": "すべての端末に {brand} を",
+      "subtitle": "1 つのアカウント、5 台の端末、どこでも同じ接続。",
+      "platforms": "Windows · macOS · iOS · Android",
+      "button": "ダウンロード"
+    }
+  }
+}

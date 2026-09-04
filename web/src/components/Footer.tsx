@@ -42,21 +42,30 @@ export default function Footer() {
                   {t('nav.footer.product.clientDownload')}
                 </Link>
               </li>
-              <li>
-                <Link href="/routers" className="hover:text-blue-600">
-                  {t('nav.footer.product.smartRouter')}
-                </Link>
-              </li>
-              <li>
-                <Link href="/retailer/rules" className="hover:text-blue-600">
-                  {t('nav.footer.product.retailerProgram')}
-                </Link>
-              </li>
-              <li>
-                <Link href="/changelog" className="hover:text-blue-600">
-                  {t('changelog.title')}
-                </Link>
-              </li>
+              {/* Gated surfaces must be gated at every entry point (web/CLAUDE.md):
+                  /routers, /retailer/rules, /changelog and /releases notFound() on
+                  brands whose feature flag is off — no dead links. */}
+              {brand.features.routers && (
+                <li>
+                  <Link href="/routers" className="hover:text-blue-600">
+                    {t('nav.footer.product.smartRouter')}
+                  </Link>
+                </li>
+              )}
+              {brand.features.retailerProgram && (
+                <li>
+                  <Link href="/retailer/rules" className="hover:text-blue-600">
+                    {t('nav.footer.product.retailerProgram')}
+                  </Link>
+                </li>
+              )}
+              {brand.features.releaseNotes && (
+                <li>
+                  <Link href="/changelog" className="hover:text-blue-600">
+                    {t('changelog.title')}
+                  </Link>
+                </li>
+              )}
             </ul>
           </div>
 
@@ -73,11 +82,13 @@ export default function Footer() {
                   {t('nav.footer.developer.selfDeploy')}
                 </Link>
               </li>
-              <li>
-                <Link href="/routers" className="hover:text-blue-600">
-                  {t('nav.footer.developer.routerConfig')}
-                </Link>
-              </li>
+              {brand.features.routers && (
+                <li>
+                  <Link href="/routers" className="hover:text-blue-600">
+                    {t('nav.footer.developer.routerConfig')}
+                  </Link>
+                </li>
+              )}
               <li>
                 <NextLink
                   href="https://github.com/getoverleap"
@@ -88,11 +99,13 @@ export default function Footer() {
                   {t('nav.footer.developer.github')}
                 </NextLink>
               </li>
-              <li>
-                <Link href="/releases" className="hover:text-blue-600">
-                  {t('nav.footer.developer.changelog')}
-                </Link>
-              </li>
+              {brand.features.releaseNotes && (
+                <li>
+                  <Link href="/releases" className="hover:text-blue-600">
+                    {t('nav.footer.developer.changelog')}
+                  </Link>
+                </li>
+              )}
             </ul>
           </div>
 

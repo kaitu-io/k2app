@@ -59,7 +59,7 @@
 ### 1.3 Logo / 图标
 
 - 源文件：`webapp/brand-assets/overleap/logo.svg`（单一事实源）。v1 是几何标志：圆形 "O" 加一道从右上跃出的弧，主色紫底、白色线条。将来换专业稿只替换这个 SVG 并重跑生成脚本。
-- 生成脚本：`webapp/brand-assets/overleap/generate.sh`——PNG 用 librsvg 的 `rsvg-convert`，`.icns` 用 macOS 自带 `iconutil`，`.ico` 用 ImageMagick `magick`；脚本开头检测三者缺一即报错退出。输出到：
+- 生成脚本：`webapp/brand-assets/overleap/generate.sh`——SVG 栅格化用 macOS QuickLook `qlmanage`（实施时发现 ImageMagick 内置 MSVG 渲染器静默丢掉 stroke 路径，且本机没有 librsvg），缩放/`.ico`/OG 图用 ImageMagick `magick`，`.icns` 用 macOS 自带 `iconutil`；脚本开头检测三者缺一即报错退出。输出到：
   - `webapp/src/brands/overleap/assets/{favicon.png, icon-192x192.png, icon-512x512.png}`
   - `desktop/src-tauri/icons-overleap/{32x32.png, 64x64.png, 128x128.png, 128x128@2x.png, icon.icns, icon.ico}`（`android/` 子目录留给第二波）
   - `web/public/overleap-icon.png`、`web/public/brand/overleap/{favicon-16x16, favicon-32x32, icon-48x48, icon-96x96, icon-192x192, icon-512x512}.png`
