@@ -8,7 +8,6 @@ if (!process.env.VELITE_STARTED && (isDev || isBuild)) {
 }
 
 import createNextIntlPlugin from 'next-intl/plugin';
-import { withPayload } from '@payloadcms/next/withPayload';
 import { withSentryConfig } from '@sentry/nextjs';
 import type { NextConfig } from 'next';
 
@@ -85,11 +84,11 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // 动态页面短期缓存（排除 API 与管理后台 —— manager/payload 含已登录态，不能公开缓存）
+      // 动态页面短期缓存（排除 API 与管理后台 —— manager 含已登录态，不能公开缓存）
       // `.+` 而非 `.*`：根路径 `/` 由中间件按 Accept-Language + Cookie 计算 307，
       // 公共缓存会让首位访客的语言污染整个 CloudFront PoP。
       {
-        source: '/((?!_next|images|icons|favicon|app-icons|api|app|manager|payload).+)',
+        source: '/((?!_next|images|icons|favicon|app-icons|api|app|manager).+)',
         headers: [
           {
             key: 'Cache-Control',
@@ -97,9 +96,9 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // API 与管理后台不缓存 (/api/、/app/、/manager/、/payload/)
+      // API 与管理后台不缓存 (/api/、/app/、/manager/)
       {
-        source: '/(api|app|manager|payload)/(.*)',
+        source: '/(api|app|manager)/(.*)',
         headers: [
           {
             key: 'Cache-Control',
@@ -127,9 +126,7 @@ const nextConfig: NextConfig = {
 };
 
 export default withSentryConfig(
-  withPayload(withNextIntl(nextConfig), {
-    devBundleServerPackages: false,
-  }),
+  withNextIntl(nextConfig),
   {
     org: 'anc-3w',
     project: 'javascript-nextjs',

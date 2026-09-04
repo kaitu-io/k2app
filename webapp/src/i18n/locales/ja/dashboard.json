@@ -138,7 +138,8 @@
     "v2": {
       "title": "アプリ別ルーティング",
       "intro": "個々のアプリをプロキシ経由または直接接続に強制し、地域のスマート既定を上書きします。接続中は変更できません。",
-      "chipProxy": "スマート",
+      "chipSmart": "スマート",
+      "chipProxy": "プロキシ",
       "chipDirect": "直接接続",
       "installedSection": "インストール済みアプリ（{{count}}）",
       "moreSection": "その他の実行中のプログラム",

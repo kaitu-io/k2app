@@ -8,12 +8,11 @@ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Resp
 
 /**
  * Generic authenticated HTTP client. Used for both the Center (Go API) and the
- * CMS (Payload REST) targets.
  *
  * Automatically injects the X-Access-Key authentication header on every request.
  * Constructs full request URLs from the configured base URL.
  *
- * Use the `createCenterClient` / `createCmsClient` factories to build instances
+ * Use the `createCenterClient` factory to build instances
  * from a full `Config` without repeating the field-plumbing boilerplate.
  *
  * @example
@@ -111,12 +110,3 @@ export function createCenterClient(config: Config, fetchFn?: FetchFn): CenterApi
   return new CenterApiClient(config.center.url, config.center.accessKey, fetchFn)
 }
 
-/**
- * Creates a client targeting the CMS (Payload REST) using the same X-Access-Key
- * as the Center client. The CMS origin is independently configured via
- * `config.cms.url`; the access key comes from `config.center.accessKey`
- * because the CMS proxy accepts Center-issued credentials.
- */
-export function createCmsClient(config: Config, fetchFn?: FetchFn): CenterApiClient {
-  return new CenterApiClient(config.cms.url, config.center.accessKey, fetchFn)
-}

@@ -22,9 +22,9 @@ vi.mock('#velite', () => ({
       draft: false,
       content: '<h1>欢迎来到 Kaitu 博客</h1><p>Content here.</p>',
       metadata: { readingTime: 1, wordCount: 78 },
-      filePath: 'zh-CN/blog/hello-world',
+      filePath: 'zh-CN/guides/hello-world',
       locale: 'zh-CN',
-      slug: 'blog/hello-world',
+      slug: 'guides/hello-world',
     },
     {
       title: 'Welcome to the Kaitu Blog',
@@ -34,9 +34,9 @@ vi.mock('#velite', () => ({
       draft: false,
       content: '<h1>Welcome to the Kaitu Blog</h1><p>Content here.</p>',
       metadata: { readingTime: 1, wordCount: 78 },
-      filePath: 'en-US/blog/hello-world',
+      filePath: 'en-US/guides/hello-world',
       locale: 'en-US',
-      slug: 'blog/hello-world',
+      slug: 'guides/hello-world',
     },
     {
       title: '入门指南',
@@ -73,21 +73,21 @@ vi.mock('@/lib/brand-server', async () => {
 });
 
 describe('test_sitemap_overleap_host_serves_english', () => {
-  it('overleap host serves en-* and ja blog URLs and excludes zh-*', async () => {
+  it('overleap host serves en-* and ja content URLs and excludes zh-*', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
     const entries = await sitemap();
     const urls = entries.map((e: { url: string }) => e.url);
 
     // Overleap host serves English and Japanese
-    expect(urls).toContain('https://overleap.io/en-US/blog/hello-world');
-    expect(urls).toContain('https://overleap.io/en-GB/blog/hello-world');
-    expect(urls).toContain('https://overleap.io/en-AU/blog/hello-world');
-    expect(urls).toContain('https://overleap.io/ja/blog/hello-world');
+    expect(urls).toContain('https://overleap.io/en-US/guides/hello-world');
+    expect(urls).toContain('https://overleap.io/en-GB/guides/hello-world');
+    expect(urls).toContain('https://overleap.io/en-AU/guides/hello-world');
+    expect(urls).toContain('https://overleap.io/ja/guides/hello-world');
 
     // Overleap host must NOT serve zh-* URLs — those live on kaitu.io
-    expect(urls).not.toContain('https://overleap.io/zh-CN/blog/hello-world');
-    expect(urls).not.toContain('https://overleap.io/zh-TW/blog/hello-world');
-    expect(urls).not.toContain('https://overleap.io/zh-HK/blog/hello-world');
+    expect(urls).not.toContain('https://overleap.io/zh-CN/guides/hello-world');
+    expect(urls).not.toContain('https://overleap.io/zh-TW/guides/hello-world');
+    expect(urls).not.toContain('https://overleap.io/zh-HK/guides/hello-world');
 
     // No kaitu.io URLs leak through
     expect(urls.some((url: string) => url.includes('kaitu.io'))).toBe(false);

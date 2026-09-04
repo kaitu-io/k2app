@@ -221,13 +221,17 @@ function AppRow({ app, def, mode, onSet, subtitle }: {
   subtitle?: string;
 }) {
   const { t } = useTranslation();
-  // Two spatially-stable chips: 智能 (proxy) always on the left, 直连 (direct)
-  // always on the right. The active chip is the highlighted one; clicking the
-  // chip that matches the region default clears any override, clicking the other
-  // sets an explicit override. Effective routing = the override, or the region
-  // default when none.
-  const proxyIsDefault = def === 'proxy';
-  const effective = mode === 'default' ? def : mode;
+  // Three spatially-stable chips: 智能 (follow the region default), 代理
+  // (explicit force-proxy), 直连 (explicit force-direct). The earlier two-chip
+  // design had no force-proxy control at all for apps whose default was
+  // already proxy — exactly the apps (Google Play, system Settings) users
+  // asked to pin to the proxy so region-CN direct rules can't peel their
+  // traffic off the tunnel (tickets #3276/#3369) — and the chip that DID
+  // write force-proxy was labeled 智能. One chip per state fixes both.
+  //
+  // Highlight: the explicit override chip when one is set; otherwise 智能 is
+  // active and the chip matching the region default gets an outlined hint so
+  // the user can see what 智能 currently resolves to.
   return (
     <Stack direction="row" alignItems="center" spacing={1} sx={{ py: 0.5 }}>
       <Avatar src={app.iconUrl} variant="rounded" sx={{ width: 32, height: 32 }}>
@@ -243,13 +247,19 @@ function AppRow({ app, def, mode, onSet, subtitle }: {
       </Box>
       <Stack direction="row" spacing={0.5}>
         <Chip size="small" clickable
+          label={t('dashboard:appBypass.v2.chipSmart')}
+          color={mode === 'default' ? 'primary' : 'default'}
+          onClick={() => onSet('default')} />
+        <Chip size="small" clickable
           label={t('dashboard:appBypass.v2.chipProxy')}
-          color={effective === 'proxy' ? 'primary' : 'default'}
-          onClick={() => onSet(proxyIsDefault ? 'default' : 'proxy')} />
+          color={mode === 'proxy' || (mode === 'default' && def === 'proxy') ? 'primary' : 'default'}
+          variant={mode === 'default' && def === 'proxy' ? 'outlined' : 'filled'}
+          onClick={() => onSet('proxy')} />
         <Chip size="small" clickable
           label={t('dashboard:appBypass.v2.chipDirect')}
-          color={effective === 'direct' ? 'primary' : 'default'}
-          onClick={() => onSet(proxyIsDefault ? 'direct' : 'default')} />
+          color={mode === 'direct' || (mode === 'default' && def === 'direct') ? 'primary' : 'default'}
+          variant={mode === 'default' && def === 'direct' ? 'outlined' : 'filled'}
+          onClick={() => onSet('direct')} />
       </Stack>
     </Stack>
   );

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { Package, Users, Server, Receipt, Tag, Wallet, FileText, Activity, LogOut, Gauge, UserCircle, ClipboardList, Cloud, BarChart3, Key, MessageSquare, ShieldCheck, Megaphone, BookOpen, Router } from "lucide-react";
+import { Package, Users, Server, Receipt, Tag, Wallet, FileText, Activity, LogOut, Gauge, UserCircle, ClipboardList, Cloud, BarChart3, Key, MessageSquare, ShieldCheck, Megaphone, Router } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -60,12 +60,6 @@ const menuGroups: MenuGroup[] = [
     items: [
       { href: "/manager/users", icon: Users, label: "用户查询" },
       { href: "/manager/tickets", icon: MessageSquare, label: "工单管理" },
-    ]
-  },
-  {
-    title: "内容管理",
-    items: [
-      { href: "/manager/cms", icon: BookOpen, label: "文章 / 分类 / 标签" },
     ]
   },
   {
