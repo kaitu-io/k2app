@@ -27,6 +27,17 @@ func buildPlanDTO(c *gin.Context, plan Plan) DataPlan {
 		AppleProductID:  plan.AppleProductID,
 		Product:         plan.Product,
 	}
+	// Stripe 套餐附带多币种展示价（logic_stripe_price.go）。取不到只记日志、字段省略：
+	// 套餐列表绝不因 Stripe 抖动而失败，客户端回落 Price 的美元价。
+	if plan.StripePriceID != "" {
+		if cfg := configStripe(c); cfg.Ready() {
+			if amounts, err := stripePriceCurrencyAmounts(c, cfg.SecretKey, plan.StripePriceID); err == nil {
+				dp.CurrencyPrices = amounts
+			} else {
+				log.Warnf(c, "plan %s: currency prices unavailable from stripe price %s: %v", plan.PID, plan.StripePriceID, err)
+			}
+		}
+	}
 	if plan.Product == ProductPrivateNode {
 		var spec PrivateNodePlanSpec
 		if err := db.Get().Where(&PrivateNodePlanSpec{PlanID: plan.ID}).First(&spec).Error; err == nil {
