@@ -241,6 +241,7 @@ Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, lice
 - **SDK-shape adapter**: `extractStripeInvoiceFacts` 是 stripe-go(v82/basil) invoice 形态的唯一适配点（`invoice.parent.subscription_details.*`、period 取 invoice line）。升 SDK 只改它。
 - **Refund/dispute = passive**: `charge.refunded`/`charge.dispute.created` 只记账+Slack 告警，不自动 clawback、不置 `revoked`；主动退款走 admin 后续迭代。
 - **Manage surface**: `DataSubscription.Manage.Kind == "stripe_portal"` → 客户端调 portal 端点换 URL 再跳转。
+- **多币种展示价**: `DataPlan.CurrencyPrices`（`logic_stripe_price.go`）—— Stripe 套餐的 `/api/plans` 附带 `{币种→最小单位}`（主币 + `currency_options` 全部币种），从 Stripe Price 取（`expand=currency_options`）、进程内缓存 1h、失败只记日志字段省略（客户端回落 `Price` 美元）。Price 主币 **USD**（账号结算币；只有主币=结算币 Adaptive Pricing 才生效），GBP/EUR 为固定本币价，Checkout 按属地自动选币——建价只走 `scripts/stripe-setup-overleap.sh`（spec `2026-09-04-overleap-site-decoupling-and-uk-positioning-design.md` §4）。
 - **Reminders**: `processRenewalReminders` 跳过 `usersWithLiveAutoRenew`（apple/stripe 活跃自动续订用户不收"手动续费"邮件）。
 
 ### Apple IAP brand split (Phase A) + remaining seams

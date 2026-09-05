@@ -21,8 +21,8 @@ describe('brand configs', () => {
   });
 
   it('OVERLEAP is English-only', () => {
-    expect(OVERLEAP.allowedLocales).toEqual(['en-US', 'en-GB', 'en-AU', 'ja']);
-    expect(OVERLEAP.defaultLocale).toBe('en-US');
+    expect(OVERLEAP.allowedLocales).toEqual(['en-GB', 'en-US', 'en-AU', 'ja']);
+    expect(OVERLEAP.defaultLocale).toBe('en-GB');
     expect(OVERLEAP.taglineZh).toBeUndefined();
   });
 

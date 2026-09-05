@@ -1,16 +1,16 @@
 {
   "landing": {
     "meta": {
-      "title": "Stays connected where others drop",
-      "description": "{brand} is a VPN built for unreliable networks: full speed through packet loss, an invisible connection, no logs. Windows, macOS, iOS and Android."
+      "title": "Private VPN with no logs, fast on any network",
+      "description": "{brand} is a private VPN that hides where you go, even from your ISP, keeps no logs, and stays fast on the networks that let you down. Windows, macOS, iOS and Android."
     },
     "hero": {
-      "badge": "Built for unreliable networks",
-      "title": "Stays connected where others drop.",
-      "subtitle": "A VPN that holds full speed through 30% packet loss.",
-      "description": "{brand} runs on k2, a protocol designed for networks that throttle, drop and interfere. Encrypted Client Hello keeps your connection invisible; k2cc keeps it fast. No logs, no setup, one subscription for five devices.",
+      "badge": "No logs · Open-source server · 5 devices",
+      "title": "Your browsing is your business.",
+      "subtitle": "A private VPN that hides where you go, even from your ISP, and stays fast on the networks that let you down.",
+      "description": "{brand} encrypts everything your devices send and hides the destination with Encrypted Client Hello. We keep no record of what you do. One subscription covers five devices on Windows, macOS, iOS and Android.",
       "ctaPrimary": "Get {brand}",
-      "ctaSecondary": "Download the app",
+      "ctaSecondary": "See how it works",
       "mockConnected": "Protected",
       "mockNode": "Auto · fastest route"
     },
@@ -22,35 +22,39 @@
       "cta": "Start now"
     },
     "features": {
-      "title": "Why {brand} stays up when others go down",
-      "ech": { "title": "Your connection is invisible", "description": "Encrypted Client Hello hides the server name from anyone watching the wire. There is no fingerprint to block." },
-      "k2cc": { "title": "Full speed on broken networks", "description": "k2cc tells interference apart from real congestion and keeps sending. On a 26% loss link it delivers 2–5× the throughput of BBR." },
-      "transport": { "title": "Switches routes before you notice", "description": "QUIC first, TCP-WebSocket when QUIC is blocked. The switch happens mid-session, without dropping what you were doing." },
-      "privacy": { "title": "No logs, and you can check", "description": "We don't record what you do. The protocol is documented, the server is open source, and you can run your own k2s node and use {brand} only as a client." }
+      "title": "Why {brand}",
+      "isp": { "title": "Hidden even from your ISP", "description": "UK providers are required to keep a record of the services you connect to for up to twelve months. With {brand} your provider sees one ordinary HTTPS session and nothing about where it goes: Encrypted Client Hello hides the destination that other VPNs leave visible in the handshake." },
+      "logs": { "title": "No logs. Nothing to hand over.", "description": "We don't record the sites you visit, the apps you use or the traffic you send. We keep only what a subscription needs: your email address, your plan and the devices signed in." },
+      "speed": { "title": "Fast on the networks that let you down", "description": "Train Wi-Fi, a packed stadium, a hotel connection: most VPNs crawl the moment packets go missing. {brand}'s k2cc rate control tells interference apart from real congestion and keeps your speed up." },
+      "roaming": { "title": "Moves with you", "description": "Leave the house, lose the Wi-Fi, carry on. The tunnel migrates from Wi-Fi to mobile data mid-session, so downloads and calls continue without reconnecting." },
+      "travel": { "title": "Keeps working abroad", "description": "Travelling somewhere VPNs usually fail? {brand}'s connection looks like ordinary web traffic, so it keeps working where others go dark." },
+      "open": { "title": "Built in the open", "description": "The protocol is documented and the server is open source. Run your own node and use {brand} purely as the client, or read the code and take nothing on trust." }
     },
     "pricing": {
       "title": "One plan. Every device.",
       "subtitle": "Five devices, unlimited data, every location. Cancel any time.",
-      "yearly": { "name": "Yearly", "price": "$79", "period": "per year", "note": "Best value — about $6.58 a month" },
-      "monthly": { "name": "Monthly", "price": "$8.99", "period": "per month", "note": "12-month term, billed monthly" },
+      "yearly": { "name": "Yearly", "period": "per year", "note": "Best value — about {monthly} a month" },
+      "monthly": { "name": "Monthly", "period": "per month", "note": "Cancel any time" },
       "cta": "Choose a plan",
-      "includes": ["5 devices at once", "Unlimited data", "All locations", "Windows, macOS, iOS, Android"]
+      "includes": ["5 devices at once", "Unlimited data", "All locations", "Windows, macOS, iOS, Android"],
+      "currencyNote": "Prices in {currency}. Pay by card, Apple Pay or Google Pay. You're charged in your local currency where available."
     },
     "faq": {
       "title": "Questions",
       "subtitle": "Straight answers about how {brand} works.",
       "items": {
-        "whatIsK2": { "question": "What is k2?", "answer": "k2 is the tunnel protocol behind {brand}. It combines Encrypted Client Hello, a QUIC and TCP-WebSocket dual transport, and the k2cc rate controller. The protocol is documented on this site under /k2, and the server (k2s) is open source." },
-        "lossySpeed": { "question": "Why does it stay fast when my network drops packets?", "answer": "Most VPNs slow down as soon as packets go missing, because their congestion control assumes loss means congestion. k2cc measures the link instead, tells interference apart from real congestion, and keeps the rate up. In our tests at 26% packet loss it delivers 2–5× the throughput of BBR." },
-        "ech": { "question": "What does ECH do for me?", "answer": "Encrypted Client Hello encrypts the part of the TLS handshake that normally reveals which server you are connecting to. An observer sees an ordinary HTTPS session to a public site and nothing else." },
+        "logs": { "question": "Do you keep logs?", "answer": "No. We don't record the sites you visit, the apps you use or the traffic you send. We keep only what a subscription needs: your email address, your plan and the devices signed in." },
+        "isp": { "question": "What does my ISP see?", "answer": "One encrypted connection to a {brand} server, carrying an ordinary-looking HTTPS session. Encrypted Client Hello hides even the server name in the handshake, so there is nothing that identifies a VPN and nothing about where you actually go." },
+        "legal": { "question": "Is using a VPN legal in the UK?", "answer": "Yes. Using a VPN is legal in the UK and across Europe. What you do online is still subject to the law." },
+        "publicWifi": { "question": "Is it safe on public Wi-Fi?", "answer": "Yes. Everything your device sends is encrypted before it leaves, so the café, hotel or train network only sees encrypted traffic, and nobody on the same network can read or tamper with it." },
+        "travel": { "question": "Does it work when I travel?", "answer": "Yes. {brand}'s connection looks like ordinary web traffic, so it keeps working in places where VPNs are usually blocked. Your subscription covers every location, and the app picks the fastest route wherever you are." },
+        "ech": { "question": "What is Encrypted Client Hello?", "answer": "The part of a TLS handshake that normally reveals which server you're connecting to, encrypted. Most VPNs still send that name in the clear, which is what networks use to spot and block them. {brand} encrypts it." },
+        "selfHost": { "question": "Can I run my own server?", "answer": "Yes. The server, k2s, is open source and installs with one command. Add your own node in the app and {brand} becomes just the client." },
         "platforms": { "question": "Which platforms are supported?", "answer": "Windows, macOS, iOS and Android. One subscription covers five devices at the same time." },
-        "logs": { "question": "Do you keep logs?", "answer": "No. We do not record the sites you visit or the traffic you send. We keep only what a subscription needs: your email, the plan you bought, and the devices signed in." },
-        "selfHost": { "question": "Can I run my own server?", "answer": "Yes. k2s is open source and installs with one command. Add your own node in the app and {brand} becomes just the client." },
-        "pricing": { "question": "How much does it cost?", "answer": "$79 per year, or $8.99 per month on a 12-month term. Both include five devices, unlimited data and every location. Prices are in US dollars; your card is charged in your own currency." },
-        "payment": { "question": "How can I pay?", "answer": "Credit or debit card through Stripe. Apple Pay and Google Pay are offered at checkout where your device supports them." },
         "devices": { "question": "How many devices can I use?", "answer": "Five at the same time, on any mix of platforms. Signing in on a sixth device signs out the oldest one." },
-        "wifiSwitch": { "question": "What happens when I switch from Wi-Fi to mobile data?", "answer": "The tunnel migrates with you. QUIC carries the session across the network change, so downloads and calls continue without reconnecting." },
-        "cancel": { "question": "How do I cancel?", "answer": "From your account page, or through the app store you subscribed with. Your plan stays active until the end of the period you paid for." }
+        "pricing": { "question": "How much does it cost?", "answer": "{yearly} a year, or {monthly} a month. Both include five devices, unlimited data and every location, and you can cancel any time." },
+        "payment": { "question": "How can I pay?", "answer": "Credit or debit card through Stripe. Apple Pay and Google Pay are offered at checkout where your device supports them. You're charged in your local currency where available." },
+        "cancel": { "question": "How do I cancel?", "answer": "From your account page, or through the app store you subscribed with. Your plan stays active until the end of the period you've paid for." }
       }
     },
     "download": {

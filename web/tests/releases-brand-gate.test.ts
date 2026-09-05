@@ -56,7 +56,7 @@ describe('/releases is gated on brands without their own release notes', () => {
   it('overleap 404s /releases', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     vi.resetModules();
-    const { default: ReleasesPage } = await import('../src/app/[locale]/releases/page');
+    const { default: ReleasesPage } = await import('../src/app/[locale]/releases/page.kaitu');
 
     expect(
       await outcome(() => ReleasesPage({ params: Promise.resolve({ locale: 'en-US' }) })),
@@ -66,7 +66,7 @@ describe('/releases is gated on brands without their own release notes', () => {
   it('kaitu still serves /releases', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     vi.resetModules();
-    const { default: ReleasesPage } = await import('../src/app/[locale]/releases/page');
+    const { default: ReleasesPage } = await import('../src/app/[locale]/releases/page.kaitu');
 
     expect(
       await outcome(() => ReleasesPage({ params: Promise.resolve({ locale: 'zh-CN' }) })),
@@ -76,7 +76,7 @@ describe('/releases is gated on brands without their own release notes', () => {
   it('overleap 404s /changelog rather than redirecting into a 404', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     vi.resetModules();
-    const { default: ChangelogPage } = await import('../src/app/[locale]/changelog/page');
+    const { default: ChangelogPage } = await import('../src/app/[locale]/changelog/page.kaitu');
 
     expect(
       await outcome(() =>
@@ -91,7 +91,7 @@ describe('/releases is gated on brands without their own release notes', () => {
   it('kaitu still redirects /changelog to /releases', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     vi.resetModules();
-    const { default: ChangelogPage } = await import('../src/app/[locale]/changelog/page');
+    const { default: ChangelogPage } = await import('../src/app/[locale]/changelog/page.kaitu');
 
     expect(
       await outcome(() =>
@@ -106,7 +106,7 @@ describe('/releases is gated on brands without their own release notes', () => {
   it('overleap prerenders no /releases shell', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     vi.resetModules();
-    const { generateStaticParams } = await import('../src/app/[locale]/releases/page');
+    const { generateStaticParams } = await import('../src/app/[locale]/releases/page.kaitu');
     const { OVERLEAP } = await import('@/lib/brands');
 
     // Locales are still the brand's own — the page 404s regardless, but an

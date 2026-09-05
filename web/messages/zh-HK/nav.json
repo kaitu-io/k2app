@@ -64,7 +64,10 @@
     },
     "copyright": "保留所有權利。",
     "copyrightSymbol": "©",
-    "period": "。"
+    "period": "。",
+    "company": {
+      "title": "公司"
+    }
   },
   "languageDetection": {
     "message": "檢測到您嘅瀏覽器語言係",

@@ -1,0 +1,33 @@
+{
+  "download": {
+    "meta": {
+      "title": "{brand} をダウンロード — Windows・macOS・iOS・Android",
+      "description": "パソコンとスマートフォン向けの {brand} アプリ。1 つのアカウントで 5 台まで。サインインしてワンタップで接続。"
+    },
+    "title": "{brand} をダウンロード",
+    "subtitle": "1 つのアカウント、5 台のデバイス。お使いのプラットフォームを選んでください。今お使いのものをハイライトしています。",
+    "detected": "お使いの環境：{platform}",
+    "version": "バージョン {version}",
+    "getFor": "{platform} 版をダウンロード",
+    "iosStore": "App Store を開く",
+    "androidStore": "Google Play で入手",
+    "comingSoon": "近日公開",
+    "comingSoonHint": "このプラットフォームではまだ提供していません。先にご契約いただければ、公開時にメールでお知らせします。",
+    "platforms": {
+      "windows": { "name": "Windows", "requirement": "Windows 10 以降、64 ビット" },
+      "macos": { "name": "Mac", "requirement": "macOS 12 以降、Intel と Apple シリコン" },
+      "ios": { "name": "iPhone と iPad", "requirement": "iOS 15 以降" },
+      "android": { "name": "Android", "requirement": "Android 8 以降" }
+    },
+    "next": {
+      "title": "インストールしたら",
+      "step1": "契約時のメールアドレスでサインインします。",
+      "step2": "「接続」をタップ。アプリが最速の経路を選びます。",
+      "step3": "同じアカウントを 5 台まで使えます。"
+    },
+    "noSubscription": "まだご契約でない方は",
+    "seePricing": "料金を見る",
+    "help": "うまく動きませんか？",
+    "helpLink": "ヘルプページへ"
+  }
+}

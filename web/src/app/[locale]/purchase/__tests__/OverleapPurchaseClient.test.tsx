@@ -9,6 +9,7 @@ const mockRedirectToLogin = vi.fn();
 
 let mockAuth = { isAuthenticated: false, isAuthLoading: false };
 let mockSearch = '';
+let mockLocale = 'en-US';
 
 vi.mock('next-intl', () => ({
   useTranslations: () => {
@@ -16,6 +17,7 @@ vi.mock('next-intl', () => ({
       values ? `${key}:${JSON.stringify(values)}` : key;
     return t;
   },
+  useLocale: () => mockLocale,
 }));
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(mockSearch),
@@ -120,5 +122,42 @@ describe('OverleapPurchaseClient', () => {
     await waitFor(() => screen.getByTestId('subscribe-btn'));
     fireEvent.click(screen.getByTestId('subscribe-btn'));
     await waitFor(() => expect(screen.getByText('stripe.channelUnavailable')).toBeTruthy());
+  });
+});
+
+describe('OverleapPurchaseClient — display currency by locale (currencyPrices from the API)', () => {
+  const multiCurrencyPlans = [
+    { pid: 'overleap-basic-1y', label: 'Annual', price: 7900, originPrice: 7900, month: 12, highlight: true, tier: 'basic', product: 'app', currencyPrices: { usd: 7900, gbp: 7900, eur: 8900 } },
+    { pid: 'overleap-basic-1m', label: 'Monthly', price: 1199, originPrice: 1199, month: 1, highlight: false, tier: 'basic', product: 'app', currencyPrices: { usd: 1199, gbp: 999, eur: 1199 } },
+  ];
+
+  beforeEach(() => {
+    mockAuth = { isAuthenticated: false, isAuthLoading: false };
+    mockSearch = '';
+    mockGetPlans.mockReset().mockResolvedValue({ items: multiCurrencyPlans });
+    mockGetUserProfile.mockReset();
+  });
+
+  it('en-GB shows pounds from currencyPrices and the GBP note', async () => {
+    mockLocale = 'en-GB';
+    render(<OverleapPurchaseClient />);
+    expect((await screen.findByTestId('plan-price-overleap-basic-1y')).textContent).toBe('£79');
+    expect(screen.getByTestId('plan-price-overleap-basic-1m').textContent).toContain('£9.99');
+    expect(screen.getByText(/stripe\.currencyNote:.*"currency":"GBP"/)).toBeInTheDocument();
+  });
+
+  it('en-US shows dollars', async () => {
+    mockLocale = 'en-US';
+    render(<OverleapPurchaseClient />);
+    expect((await screen.findByTestId('plan-price-overleap-basic-1y')).textContent).toBe('$79');
+    expect(screen.getByTestId('plan-price-overleap-basic-1m').textContent).toContain('$11.99');
+  });
+
+  it('falls back to price (USD cents) when the API omits currencyPrices', async () => {
+    mockLocale = 'en-GB';
+    mockGetPlans.mockResolvedValue({ items: multiCurrencyPlans.map((plan) => { const { currencyPrices, ...rest } = plan; void currencyPrices; return rest; }) });
+    render(<OverleapPurchaseClient />);
+    expect((await screen.findByTestId('plan-price-overleap-basic-1y')).textContent).toBe('$79');
+    expect(screen.getByText(/stripe\.currencyNote:.*"currency":"USD"/)).toBeInTheDocument();
   });
 });

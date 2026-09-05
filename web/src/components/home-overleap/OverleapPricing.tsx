@@ -5,9 +5,9 @@ import { Check } from 'lucide-react';
 
 export interface PricingPlan { key: string; name: string; price: string; period: string; note: string; featured: boolean }
 
-interface Props { title: string; subtitle: string; plans: PricingPlan[]; includes: string[]; cta: string }
+interface Props { title: string; subtitle: string; plans: PricingPlan[]; includes: string[]; cta: string; currencyNote?: string }
 
-export default function OverleapPricing({ title, subtitle, plans, includes, cta }: Props) {
+export default function OverleapPricing({ title, subtitle, plans, includes, cta, currencyNote }: Props) {
   return (
     <section id="pricing" className="py-20 px-4 sm:px-6 lg:px-8 bg-card/60">
       <div className="max-w-4xl mx-auto">
@@ -37,6 +37,9 @@ export default function OverleapPricing({ title, subtitle, plans, includes, cta 
             </li>
           ))}
         </ul>
+        {currencyNote && (
+          <p className="mt-8 text-center text-xs text-muted-foreground">{currencyNote}</p>
+        )}
       </div>
     </section>
   );

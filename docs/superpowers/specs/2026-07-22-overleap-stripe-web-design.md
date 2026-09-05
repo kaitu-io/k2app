@@ -43,6 +43,8 @@
 
 ## 1. Stripe 侧资源（测试模式先建；live 切换时照此重建）
 
+> **2026-09-04 修订**：主币改为 **USD**（Stripe 账号是 US 主体、结算币 USD；EUR 主币下 Adaptive Pricing 永不生效），GBP / EUR 转为 `currency_options` 固定本币价，数字不变（$79 / £79 / €89，$11.99 / £9.99 / €11.99）。测试模式已按新脚本重建（旧 EUR 主币价已归档）。见 `2026-09-04-overleap-site-decoupling-and-uk-positioning-design.md` §4。下文保留原始决策记录。
+
 - Product：**Overleap Basic**。
 - Price 年付：recurring interval=year，**EUR 89.00** 为主币种，`currency_options`：USD 79.00、GBP 79.00（Checkout 按客户属地自动选币，与 ASC 定价 $79/€89/£79 对齐）。
 - Price 月付：recurring interval=month，**EUR 11.99**，`currency_options`：USD 11.99、GBP 9.99。

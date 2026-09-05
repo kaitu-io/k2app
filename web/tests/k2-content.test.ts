@@ -25,7 +25,7 @@ const CONTENT_DIR = path.resolve(__dirname, '../content');
 const EXPECTED_SLUGS = ['index', 'quickstart', 'server', 'client', 'k2cc', 'protocol', 'stealth'];
 
 /** Locales that must have all k2/ content */
-const EXPECTED_LOCALES = ['zh-CN', 'en-US'];
+const EXPECTED_LOCALES = ['zh-CN', 'en-GB'];
 
 /**
  * Read a markdown file and return its raw text.
@@ -191,13 +191,13 @@ describe('test_k2_overview_page_renders', () => {
     ).toBe(true);
   });
 
-  it('en-US k2/index.md exists and title contains "k2"', () => {
-    const raw = readMd('en-US', 'index');
-    expect(raw.trim().length, 'en-US/k2/index.md does not exist').toBeGreaterThan(0);
+  it('en-GB k2/index.md exists and title contains "k2"', () => {
+    const raw = readMd('en-GB', 'index');
+    expect(raw.trim().length, 'en-GB/k2/index.md does not exist').toBeGreaterThan(0);
     const fm = parseFrontmatter(raw);
     expect(
       String(fm['title'] ?? '').toLowerCase().includes('k2'),
-      `en-US/k2/index.md title "${fm['title']}" does not contain "k2"`
+      `en-GB/k2/index.md title "${fm['title']}" does not contain "k2"`
     ).toBe(true);
   });
 });
@@ -215,16 +215,16 @@ describe('test_k2_quickstart_has_commands', () => {
     expect(body, 'zh-CN/k2/quickstart.md body does not contain "k2 up"').toContain('k2 up');
   });
 
-  it('en-US quickstart body contains "k2s run"', () => {
-    const raw = readMd('en-US', 'quickstart');
+  it('en-GB quickstart body contains "k2s run"', () => {
+    const raw = readMd('en-GB', 'quickstart');
     const body = parseBody(raw);
-    expect(body, 'en-US/k2/quickstart.md body does not contain "k2s run"').toContain('k2s run');
+    expect(body, 'en-GB/k2/quickstart.md body does not contain "k2s run"').toContain('k2s run');
   });
 
-  it('en-US quickstart body contains "k2 up"', () => {
-    const raw = readMd('en-US', 'quickstart');
+  it('en-GB quickstart body contains "k2 up"', () => {
+    const raw = readMd('en-GB', 'quickstart');
     const body = parseBody(raw);
-    expect(body, 'en-US/k2/quickstart.md body does not contain "k2 up"').toContain('k2 up');
+    expect(body, 'en-GB/k2/quickstart.md body does not contain "k2 up"').toContain('k2 up');
   });
 });
 
@@ -286,60 +286,60 @@ describe('test_k2_no_pcc_disclosure', () => {
 
   // ── Brand gating ──────────────────────────────────────────────────────────
   //
-  // en-US k2 docs are served by the overleap deployment (kaitu serves zh-* only).
+  // en-GB k2 docs are served by the overleap deployment (kaitu serves zh-* only).
   // Docs are split by nature: protocol explanation is shared and must be
   // brand-neutral; install docs teach `curl kaitu.io/i/k2*`, an endpoint
   // overleap does not serve, so they stay `brand: kaitu` and 404 there.
-  describe('en-US k2 doc brand split', () => {
-    const listEnUsK2 = () =>
+  describe('en-GB k2 doc brand split', () => {
+    const listEnGbK2 = () =>
       fs
-        .readdirSync(path.join(CONTENT_DIR, 'en-US', 'k2'))
+        .readdirSync(path.join(CONTENT_DIR, 'en-GB', 'k2'))
         .filter((f) => f.endsWith('.md'))
         .map((f) => f.replace('.md', ''));
 
     const brandOf = (slug: string): string => {
-      const fm = parseFrontmatter(readMd('en-US', slug));
+      const fm = parseFrontmatter(readMd('en-GB', slug));
       return (fm['brand'] as string) ?? 'both';
     };
 
     const isGated = (slug: string) => brandOf(slug) === 'kaitu';
 
     it('install docs stay kaitu-gated; protocol docs are shared', () => {
-      expect(listEnUsK2().filter(isGated).sort()).toEqual(['client', 'quickstart', 'server']);
+      expect(listEnGbK2().filter(isGated).sort()).toEqual(['client', 'quickstart', 'server']);
     });
 
     it('no shared doc carries kaitu branding (it renders on overleap)', () => {
-      for (const slug of listEnUsK2().filter((s) => !isGated(s))) {
+      for (const slug of listEnGbK2().filter((s) => !isGated(s))) {
         expect(
-          /Kaitu|开途|開途|kaitu\.(io|me)/.test(readMd('en-US', slug)),
-          `kaitu branding in shared doc en-US/k2/${slug}.md — it is served on overleap`,
+          /Kaitu|开途|開途|kaitu\.(io|me)/.test(readMd('en-GB', slug)),
+          `kaitu branding in shared doc en-GB/k2/${slug}.md — it is served on overleap`,
         ).toBe(false);
       }
     });
 
     it('no shared doc links to a gated doc (the link would 404 on overleap)', () => {
-      const gated = listEnUsK2().filter(isGated);
-      for (const slug of listEnUsK2().filter((s) => !isGated(s))) {
-        const body = readMd('en-US', slug);
+      const gated = listEnGbK2().filter(isGated);
+      for (const slug of listEnGbK2().filter((s) => !isGated(s))) {
+        const body = readMd('en-GB', slug);
         for (const target of gated) {
           expect(
             body.includes(`(/k2/${target})`),
-            `en-US/k2/${slug}.md links to gated /k2/${target}`,
+            `en-GB/k2/${slug}.md links to gated /k2/${target}`,
           ).toBe(false);
         }
       }
     });
 
-    it('no shared doc links to a doc that has no en-US file', () => {
+    it('no shared doc links to a doc that has no en-GB file', () => {
       // /k2/vs-reality exists only in zh-CN. The k2 route falls back to the
       // BRAND's default locale, so such a link is a 404 on overleap — it used
       // to silently render the zh-CN page instead.
-      const present = new Set(listEnUsK2().map((s) => (s === 'index' ? 'k2' : s)));
-      for (const slug of listEnUsK2()) {
-        const body = readMd('en-US', slug);
+      const present = new Set(listEnGbK2().map((s) => (s === 'index' ? 'k2' : s)));
+      for (const slug of listEnGbK2()) {
+        const body = readMd('en-GB', slug);
         const links = [...body.matchAll(/\(\/k2\/([a-z0-9-]+)\)/g)].map((m) => m[1]);
         for (const target of links) {
-          expect(present.has(target), `en-US/k2/${slug}.md links to /k2/${target}, which has no en-US file`).toBe(true);
+          expect(present.has(target), `en-GB/k2/${slug}.md links to /k2/${target}, which has no en-GB file`).toBe(true);
         }
       }
     });

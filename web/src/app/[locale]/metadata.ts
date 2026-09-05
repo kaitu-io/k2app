@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
 import { siteBrand, type Brand } from '@/lib/brands';
+import { siteConfig, fillBrandTemplate } from '@/lib/site';
 
 interface MetadataOverrides {
   title?: string;
@@ -27,28 +28,13 @@ export function generateMetadata(
 ): Metadata {
   const resolvedBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || brand.baseUrl;
 
-  const titles: Record<string, string> = {
-    'zh-CN': `${brand.wordmark} k2cc — 30% 丢包照样满速的隐身隧道`,
-    'zh-TW': `${brand.wordmark} k2cc — 30% 丟包照樣滿速的隱身隧道`,
-    'zh-HK': `${brand.wordmark} k2cc — 30% 丟包照樣滿速的隱身隧道`,
-    'en-US': `${brand.displayName} k2cc — Full Speed Through 30% Packet Loss`,
-    'en-GB': `${brand.displayName} k2cc — Full Speed Through 30% Packet Loss`,
-    'en-AU': `${brand.displayName} k2cc — Full Speed Through 30% Packet Loss`,
-    'ja': `${brand.displayName} k2cc — 30% パケットロスでもフルスピード`
-  };
-
-  const descriptions: Record<string, string> = {
-    'zh-CN': 'k2cc 重写拥塞控制规则，30% 丢包依然满速。ECH 加密隐身 + QUIC/TCP-WS 双栈传输，一行命令部署，CT 日志零暴露。',
-    'zh-TW': 'k2cc 重寫擁塞控制規則，30% 丟包依然滿速。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
-    'zh-HK': 'k2cc 重寫擁塞控制規則，30% 丟包依然滿速。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
-    'en-US': 'k2cc rewrites congestion control — full speed at 30% packet loss. ECH stealth encryption + QUIC/TCP-WS dual-stack transport, one-command deployment, zero CT log exposure.',
-    'en-GB': 'k2cc rewrites congestion control — full speed at 30% packet loss. ECH stealth encryption + QUIC/TCP-WS dual-stack transport, one-command deployment, zero CT log exposure.',
-    'en-AU': 'k2cc rewrites congestion control — full speed at 30% packet loss. ECH stealth encryption + QUIC/TCP-WS dual-stack transport, one-command deployment, zero CT log exposure.',
-    'ja': 'k2cc が輻輳制御のルールを書き換え、30% パケットロスでもフルスピード。ECH ステルス暗号化 + QUIC/TCP-WS デュアルスタック転送、1コマンドデプロイ、CT ログゼロ露出。'
-  };
-
-  const title = overrides.title || titles[locale] || titles['zh-CN'];
-  const description = overrides.description || descriptions[locale] || descriptions['zh-CN'];
+  // 默认 title / description 来自品牌站点结构（lib/site/<brand>.ts seo），locale 缺失时
+  // 回落品牌默认语言——绝不回落到另一品牌的语言。
+  const seo = siteConfig(brand).seo;
+  const pickSeo = (m: Partial<Record<string, string>>) =>
+    fillBrandTemplate(m[locale] ?? m[brand.defaultLocale] ?? Object.values(m)[0] ?? '', brand);
+  const title = overrides.title || pickSeo(seo.defaultTitle);
+  const description = overrides.description || pickSeo(seo.defaultDescription);
   // overrides.ogImage may be an absolute CDN URL (a post coverImage from
   // the CMS media CDN) or a brand-relative path. Only prepend the base URL for
   // the relative case, otherwise we'd concatenate two absolute URLs.

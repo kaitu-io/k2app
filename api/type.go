@@ -580,6 +580,10 @@ type DataPlan struct {
 	Product string `json:"product"`
 	// 专属节点套餐的购买可见参数（仅 Product=private_node 套餐附带）。
 	PrivateNode *DataPrivateNodePlanSpec `json:"privateNode,omitempty"`
+	// 多币种展示价 {币种小写 → 最小单位金额}，含主币与 Stripe Price currency_options 全部币种
+	// （如 {"usd":7900,"gbp":7900,"eur":8900}）。仅 Stripe 套餐且 Stripe 可达时附带；客户端按
+	// locale 取展示币，缺席时回落 Price（USD 分）。实付币种由 Stripe Checkout 按客户属地决定。
+	CurrencyPrices map[string]int64 `json:"currencyPrices,omitempty"`
 }
 
 // DataPrivateNodePlanSpec 专属节点套餐的购买可见参数（仅 Product=private_node 的套餐附带）。

@@ -156,6 +156,9 @@ export interface Plan {
   maxLanClient: number; // LAN 接入上限 (0=不支持, -1=无限, >0=精确值)
   product: PlanProduct; // 套餐所属产品线，Center 始终下发
   privateNode?: PrivateNodePlanSpec; // 仅 private_node 套餐附带
+  /** 多币种展示价 {币种小写 → 最小单位}，仅 Stripe 套餐且 Stripe 可达时下发（Go DataPlan.CurrencyPrices）。
+   *  缺席时按 usd 用 price 展示；实付币种由 Stripe Checkout 按属地决定。 */
+  currencyPrices?: Record<string, number>;
 }
 
 // 专属节点已开通节点的连接可见信息（未开通时缺省）

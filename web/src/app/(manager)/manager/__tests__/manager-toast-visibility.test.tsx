@@ -31,7 +31,7 @@ vi.mock('@/lib/api', async () => {
   return { ...actual, api: { request: (...args: unknown[]) => requestMock(...args) } };
 });
 
-import ManagerLayout from '../layout';
+import ManagerLayout from '../layout.kaitu';
 import { ResetPasswordDialog } from '../users/detail/components/ResetPasswordDialog';
 
 function renderInManager() {

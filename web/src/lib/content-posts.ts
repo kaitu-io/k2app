@@ -13,46 +13,18 @@
 import { posts } from '#velite';
 import { siteBrand, type Brand, type BrandId } from './brands';
 import { isPostVisibleToBrand, type K2Post } from './k2-posts';
+import { siteConfig, fillBrandTemplate } from './site';
 
 /** A Velite content post (K2Post shape plus the cover image frontmatter). */
 export type ContentPost = K2Post & { coverImage?: string };
 
-interface CategoryDef {
-  /** Localized display name; brand default locale is the fallback. */
-  name: Record<string, string>;
-  /** Localized description used for the list page's meta description. */
-  description?: Record<string, string>;
-}
-
 /**
- * Category registry — the only categories the catch-all serves. A slug whose
- * first segment is not listed here 404s even if a markdown file exists, so
- * adding a new content directory requires registering it (and checking the
+ * Category registry lives in `lib/site/<brand>.ts` (contentCategories) — the only
+ * categories the catch-all serves for that brand. A slug whose first segment is
+ * not listed there 404s even if a markdown file exists, so adding a new content
+ * directory means registering it in the brand's site config (and checking the
  * reserved-paths list in web/CLAUDE.md — static routes win over the catch-all).
  */
-const CATEGORIES: Record<string, CategoryDef> = {
-  guides: {
-    name: {
-      'zh-CN': '使用指南',
-      'zh-TW': '使用指南',
-      'zh-HK': '使用指南',
-      'en-US': 'Guides',
-      'en-GB': 'Guides',
-      'en-AU': 'Guides',
-      ja: 'ガイド',
-    },
-    description: {
-      'zh-CN': '使用方法、最佳实践和故障排查指南',
-      'zh-TW': '使用方法、最佳實踐與故障排查指南',
-      'zh-HK': '使用方法、最佳實踐與故障排查指南',
-      'en-US': 'How-to guides, best practices and troubleshooting',
-      'en-GB': 'How-to guides, best practices and troubleshooting',
-      'en-AU': 'How-to guides, best practices and troubleshooting',
-      ja: '使い方ガイド・ベストプラクティス・トラブルシューティング',
-    },
-  },
-};
-
 export interface ContentCategory {
   slug: string;
   name: string;
@@ -61,18 +33,20 @@ export interface ContentCategory {
 
 /** Resolve a registered category for the given locale, or null. */
 export function findCategory(locale: string, slug: string, brand: Brand = siteBrand()): ContentCategory | null {
-  const def = CATEGORIES[slug];
+  const def = siteConfig(brand).contentCategories[slug];
   if (!def) return null;
+  const pick = (m: Partial<Record<string, string>> | undefined) => m?.[locale] ?? m?.[brand.defaultLocale];
+  const description = pick(def.description);
   return {
     slug,
-    name: def.name[locale] ?? def.name[brand.defaultLocale] ?? slug,
-    description: def.description?.[locale] ?? def.description?.[brand.defaultLocale],
+    name: pick(def.name) ?? slug,
+    description: description === undefined ? undefined : fillBrandTemplate(description, brand),
   };
 }
 
-/** All registered category slugs (for static params generation). */
-export function categorySlugs(): string[] {
-  return Object.keys(CATEGORIES);
+/** This brand's registered category slugs (for static params generation). */
+export function categorySlugs(brand: Brand = siteBrand()): string[] {
+  return Object.keys(siteConfig(brand).contentCategories);
 }
 
 function isServablePost(post: ContentPost, category: string, brandId: BrandId): boolean {

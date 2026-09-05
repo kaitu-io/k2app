@@ -32,6 +32,9 @@ export type Brand = {
    * both omitted rather than falling back to another brand's asset.
    */
   guideVideoUrl: string;
+  /** App store listings. '' = not published yet: the download page shows a
+   *  "coming soon" state instead of a dead link. */
+  storeLinks: { ios: string; android: string };
   /** Download CDN layout (spec §8: /kaitu/ vs /overleap/ path segments, Kaitu_* vs Overleap_* artifacts). */
   cdn: {
     desktopBases: readonly string[];
@@ -76,6 +79,8 @@ export const KAITU: Brand = {
   gaMeasurementId: 'G-EH2PY4S0CX',
   chatwootToken: 'ZfFNvQRuoKzkik6X4KCSgp1h',
   guideVideoUrl: 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/guides/kaitu_guide.mp4',
+  // Android ships as an APK from the CDN (androidApkGuide), not a store listing.
+  storeLinks: { ios: 'https://apps.apple.com/app/id6448744655', android: '' },
   cdn: {
     desktopBases: [
       'https://dl.kaitu.io/kaitu/desktop',
@@ -96,8 +101,11 @@ export const OVERLEAP: Brand = {
   wordmark: 'Overleap',
   legalName: 'Overleap LLC',
   baseUrl: 'https://overleap.io',
-  defaultLocale: 'en-US',
-  allowedLocales: ['en-US', 'en-GB', 'en-AU', 'ja'],
+  // en-GB is the master: UK-first market (spec 2026-09-04-overleap-site-decoupling §5.2);
+  // en-US / en-AU are spelling variants, ja a translation. allowedLocales[0] doubles as
+  // the middleware's Accept-Language fallback.
+  defaultLocale: 'en-GB',
+  allowedLocales: ['en-GB', 'en-US', 'en-AU', 'ja'],
   logoPath: '/overleap-icon.png',
   contactEmail: 'support@overleap.io',
   ogImagePath: '/overleap-og.png',
@@ -109,6 +117,9 @@ export const OVERLEAP: Brand = {
   // the Support page omits the player + VideoObject rather than serving the
   // 开途-branded recording (spec: overleap 站 0 处 kaitu).
   guideVideoUrl: '',
+  // Neither store listing is live yet (App Store record exists, not published;
+  // Play not submitted) — the download page renders "coming soon" until filled.
+  storeLinks: { ios: '', android: '' },
   cdn: {
     // /overleap/ CDN path per spec §8. dl.overleap.io CNAME does not exist yet
     // (Open Question #2) — raw CloudFront until provisioned. Artifacts appear in Phase 4/5.

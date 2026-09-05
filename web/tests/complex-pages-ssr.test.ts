@@ -171,7 +171,7 @@ vi.mock('@/app/[locale]/s/[code]/InviteClient', () => ({
 
 describe('test_install_ssr_renders_content', () => {
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: InstallPage } = await import('../src/app/[locale]/install/page');
+    const { default: InstallPage } = await import('../src/app/[locale]/install/page.kaitu');
 
     expect(InstallPage).toBeTypeOf('function');
     const result = InstallPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -179,14 +179,14 @@ describe('test_install_ssr_renders_content', () => {
   });
 
   it('page accepts params as a Promise<{ locale: string }> (Next.js 15 pattern)', async () => {
-    const { default: InstallPage } = await import('../src/app/[locale]/install/page');
+    const { default: InstallPage } = await import('../src/app/[locale]/install/page.kaitu');
 
     const element = await InstallPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
     expect(element).not.toBeNull();
   });
 
   it('page renders JSX content (not null or empty)', async () => {
-    const { default: InstallPage } = await import('../src/app/[locale]/install/page');
+    const { default: InstallPage } = await import('../src/app/[locale]/install/page.kaitu');
 
     const element = await InstallPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
 
@@ -197,14 +197,14 @@ describe('test_install_ssr_renders_content', () => {
 
 describe('test_install_generates_metadata', () => {
   it('generateMetadata is exported from the install page module', async () => {
-    const pageModule = await import('../src/app/[locale]/install/page');
+    const pageModule = await import('../src/app/[locale]/install/page.kaitu');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/install/page');
+    const { generateMetadata } = await import('../src/app/[locale]/install/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -215,7 +215,7 @@ describe('test_install_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/install/page');
+    const { generateMetadata } = await import('../src/app/[locale]/install/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'en-US' }),
@@ -232,7 +232,7 @@ describe('test_install_generates_metadata', () => {
 
 describe('test_invite_ssr_renders_content', () => {
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: InvitePage } = await import('../src/app/[locale]/s/[code]/page');
+    const { default: InvitePage } = await import('../src/app/[locale]/s/[code]/page.kaitu');
 
     expect(InvitePage).toBeTypeOf('function');
     const result = InvitePage({ params: Promise.resolve({ locale: 'zh-CN', code: 'TESTCODE' }) });
@@ -240,14 +240,14 @@ describe('test_invite_ssr_renders_content', () => {
   });
 
   it('page accepts params as a Promise<{ locale: string; code: string }> (Next.js 15 pattern)', async () => {
-    const { default: InvitePage } = await import('../src/app/[locale]/s/[code]/page');
+    const { default: InvitePage } = await import('../src/app/[locale]/s/[code]/page.kaitu');
 
     const element = await InvitePage({ params: Promise.resolve({ locale: 'zh-CN', code: 'TESTCODE' }) });
     expect(element).not.toBeNull();
   });
 
   it('page renders JSX content (not null or empty)', async () => {
-    const { default: InvitePage } = await import('../src/app/[locale]/s/[code]/page');
+    const { default: InvitePage } = await import('../src/app/[locale]/s/[code]/page.kaitu');
 
     const element = await InvitePage({ params: Promise.resolve({ locale: 'zh-CN', code: 'INVITE123' }) });
 
@@ -258,14 +258,14 @@ describe('test_invite_ssr_renders_content', () => {
 
 describe('test_invite_generates_metadata', () => {
   it('generateMetadata is exported from the invite page module', async () => {
-    const pageModule = await import('../src/app/[locale]/s/[code]/page');
+    const pageModule = await import('../src/app/[locale]/s/[code]/page.kaitu');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/s/[code]/page');
+    const { generateMetadata } = await import('../src/app/[locale]/s/[code]/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN', code: 'TESTCODE' }),
@@ -276,7 +276,7 @@ describe('test_invite_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/s/[code]/page');
+    const { generateMetadata } = await import('../src/app/[locale]/s/[code]/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'en-US', code: 'TESTCODE' }),

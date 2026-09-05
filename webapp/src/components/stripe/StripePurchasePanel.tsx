@@ -17,6 +17,7 @@ import { useLoginDialogStore } from '../../stores/login-dialog.store';
 import MembershipBenefits from '../MembershipBenefits';
 import SubscriptionManagePanel from '../SubscriptionManagePanel';
 import type { Plan } from '../../services/api-types';
+import { formatMinor, planAmount } from '../../utils/pricing';
 
 interface StripePurchasePanelProps {
   plans: Plan[];
@@ -24,7 +25,9 @@ interface StripePurchasePanelProps {
 }
 
 export default function StripePurchasePanel({ plans, plansLoading }: StripePurchasePanelProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  // 展示币按当前语言（utils/pricing.ts）；测试桩可能不给 i18n，回落 en-US。
+  const locale = i18n?.language ?? 'en-US';
   const { user, fetchUser } = useUser();
   const affordance = useSubscriptionAffordance();
   const openLoginDialog = useLoginDialogStore((s) => s.open);
@@ -105,12 +108,12 @@ export default function StripePurchasePanel({ plans, plansLoading }: StripePurch
                 <Box sx={{ flex: 1 }}>
                   <Typography fontWeight={600}>{p.label}</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    ${(p.price / p.month / 100).toFixed(2)}
+                    {formatMinor(planAmount(p, locale).amount / p.month, planAmount(p, locale).currency, locale, 2)}
                     {t('purchase:purchase.stripe.perMonth')}
                   </Typography>
                 </Box>
-                <Typography variant="h6" fontWeight={700}>
-                  ${(p.price / 100).toFixed(2)}
+                <Typography variant="h6" fontWeight={700} data-testid={`stripe-plan-price-${p.pid}`}>
+                  {formatMinor(planAmount(p, locale).amount, planAmount(p, locale).currency, locale, 2)}
                 </Typography>
               </CardContent>
             </Card>

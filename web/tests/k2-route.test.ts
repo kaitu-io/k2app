@@ -99,8 +99,8 @@ vi.mock('#velite', () => ({
       draft: false,
       content: '<h1>k2 Protocol Comparison</h1><p>Comparison aggregate.</p>',
       metadata: { readingTime: 5, wordCount: 700 },
-      filePath: 'en-US/k2/comparison',
-      locale: 'en-US',
+      filePath: 'en-GB/k2/comparison',
+      locale: 'en-GB',
       slug: 'k2/comparison',
       order: 0,
       section: 'comparison',
@@ -117,8 +117,8 @@ vi.mock('#velite', () => ({
       draft: false,
       content: '<h1>k2 Architecture</h1><p>Technical content.</p>',
       metadata: { readingTime: 5, wordCount: 800 },
-      filePath: 'en-US/k2/architecture',
-      locale: 'en-US',
+      filePath: 'en-GB/k2/architecture',
+      locale: 'en-GB',
       slug: 'k2/architecture',
       order: 1,
       section: 'technical',
@@ -133,8 +133,8 @@ vi.mock('#velite', () => ({
       draft: false,
       content: '<h1>k2s Server Deployment</h1><p>curl -fsSL https://kaitu.io/i/k2s | sudo sh</p>',
       metadata: { readingTime: 3, wordCount: 300 },
-      filePath: 'en-US/k2/server',
-      locale: 'en-US',
+      filePath: 'en-GB/k2/server',
+      locale: 'en-GB',
       slug: 'k2/server',
       order: 3,
       section: 'getting-started',
@@ -523,7 +523,7 @@ describe('test_k2_comparison_emits_faqpage_jsonld', () => {
     const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
 
     const element = await K2Page({
-      params: Promise.resolve({ locale: 'en-US', path: ['comparison'] }),
+      params: Promise.resolve({ locale: 'en-GB', path: ['comparison'] }),
     });
 
     const jsonLd = extractAllJsonLd(element) as Array<{
@@ -589,7 +589,7 @@ describe('test_k2_docs_are_brand_gated', () => {
   });
 
   it('overleap falls back to its OWN default locale, never to zh-CN', async () => {
-    // /ja/k2/architecture has no ja copy. Overleap must land on the en-US post.
+    // /ja/k2/architecture has no ja copy. overleap must land on the en-GB (brand default) post.
     const { getBrand } = await import('@/lib/brand-server');
     (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
 
@@ -613,7 +613,7 @@ describe('test_k2_docs_are_brand_gated', () => {
   it('the sidebar source hides gated docs from overleap but keeps them on kaitu', async () => {
     const { getK2Posts } = await import('../src/lib/k2-posts');
 
-    const overleapSlugs = getK2Posts('en-US', 'overleap').flatMap((g) => g.posts.map((p) => p.slug));
+    const overleapSlugs = getK2Posts('en-GB', 'overleap').flatMap((g) => g.posts.map((p) => p.slug));
     expect(overleapSlugs).not.toContain('k2/server');
 
     const kaituSlugs = getK2Posts('zh-CN', 'kaitu').flatMap((g) => g.posts.map((p) => p.slug));
@@ -659,7 +659,7 @@ describe('test_k2_techarticle_is_brand_aware', () => {
     const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
 
     const element = await K2Page({
-      params: Promise.resolve({ locale: 'en-US', path: ['architecture'] }),
+      params: Promise.resolve({ locale: 'en-GB', path: ['architecture'] }),
     });
 
     const jsonLd = extractJsonLd(element) as {
@@ -689,7 +689,7 @@ describe('test_k2_techarticle_is_brand_aware', () => {
     const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
 
     const element = await K2Page({
-      params: Promise.resolve({ locale: 'en-US', path: ['comparison'] }),
+      params: Promise.resolve({ locale: 'en-GB', path: ['comparison'] }),
     });
 
     const jsonLd = extractAllJsonLd(element) as Array<{ '@type': string; '@id'?: string }>;

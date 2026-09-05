@@ -67,14 +67,10 @@ export default function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // ---- Admin surfaces live only in the kaitu deployment (internal tools). -
-  if (
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/manager')
-  ) {
-    if (!isKaitu) {
-      return new NextResponse(null, { status: 404 });
-    }
+  // ---- Admin surfaces (/manager) are `page.kaitu.tsx` route files: the overleap
+  // build does not contain them, so they 404 natively. No gate needed here; the
+  // /app/* API proxy gate above is what keeps admin *data* off the overleap host.
+  if (pathname.startsWith('/manager')) {
     return NextResponse.next();
   }
 
@@ -188,10 +184,14 @@ function getBestLocale(
     }
 
     if (langPrefix === 'en') {
+      // A bare `en` or an unmapped region lands on the brand's own default when
+      // that default is an English locale (overleap: en-GB), else en-US.
+      const enDefault = fallback.startsWith('en-') ? fallback : 'en-US';
       const enPick =
         langSuffix === 'au' ? 'en-AU'
           : langSuffix === 'gb' || langSuffix === 'uk' ? 'en-GB'
-            : 'en-US';
+            : langSuffix === 'us' ? 'en-US'
+              : enDefault;
       if (allowedSet.has(enPick)) return enPick as Locale;
     }
 
@@ -215,9 +215,8 @@ export const config = {
     '/favicon.ico',
     '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*',
     '/(api|app)/:path*',
-    '/(admin|manager)/:path*',
-    '/admin',
+    '/manager/:path*',
     '/manager',
-    '/((?!api|app|admin|manager|_next|_vercel|.*\\..*).*)',
+    '/((?!api|app|manager|_next|_vercel|.*\\..*).*)',
   ],
 };

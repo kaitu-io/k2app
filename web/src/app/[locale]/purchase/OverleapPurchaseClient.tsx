@@ -9,7 +9,7 @@
  * 权益经 webhook 异步入账，success 回跳落在 /account（见 OverleapAccountClient）。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { Link } from '@/i18n/routing';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,13 +18,17 @@ import { redirectToLogin } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import MembershipBenefits from '@/components/MembershipBenefits';
+import { displayCurrency, formatMinor, pickAmount } from '@/lib/pricing';
 
-function formatEur(cents: number, digits: number): string {
-  return `€${(cents / 100).toFixed(digits)}`;
+/** 套餐在当前 locale 的展示价：优先 API 下发的 currencyPrices（Stripe 真相），缺席回落 price（USD 分）。 */
+function planAmount(p: Plan, currency: ReturnType<typeof displayCurrency>): { amount: number; currency: string } {
+  return pickAmount(p.currencyPrices, currency) ?? { amount: p.price, currency: 'usd' };
 }
 
 export default function OverleapPurchaseClient() {
   const t = useTranslations('purchase');
+  const locale = useLocale();
+  const currency = displayCurrency(locale);
   const { isAuthenticated } = useAuth();
   const searchParams = useSearchParams();
 
@@ -85,6 +89,8 @@ export default function OverleapPurchaseClient() {
 
   const sorted = useMemo(() => [...plans].sort((a, b) => b.month - a.month), [plans]);
   const monthly = useMemo(() => plans.find((p) => p.month === 1), [plans]);
+  // 展示币：所有卡片用同一币种（API 缺某币种时 pickAmount 已回落 usd），折扣按同币种算。
+  const shownCurrency = (sorted[0] ? planAmount(sorted[0], currency).currency : currency).toUpperCase();
   const activeSub = profile?.subscriptions?.[0] ?? null;
 
   const handleSubscribe = useCallback(async () => {
@@ -148,9 +154,10 @@ export default function OverleapPurchaseClient() {
             {sorted.map((p) => {
               const isAnnual = p.month === 12;
               const selected = p.pid === selectedPid;
+              const shown = planAmount(p, currency);
               const savePercent =
                 isAnnual && monthly
-                  ? Math.round((1 - p.price / (monthly.price * 12)) * 100)
+                  ? Math.round((1 - shown.amount / (planAmount(monthly, currency).amount * 12)) * 100)
                   : null;
               return (
                 <button
@@ -173,12 +180,14 @@ export default function OverleapPurchaseClient() {
                       </span>
                     )}
                   </div>
-                  <div className="mt-3 text-3xl font-bold">
-                    {isAnnual ? formatEur(p.price, 0) : t('stripe.monthlyPrice', { price: formatEur(p.price, 2) })}
+                  <div className="mt-3 text-3xl font-bold" data-testid={`plan-price-${p.pid}`}>
+                    {isAnnual
+                      ? formatMinor(shown.amount, shown.currency, locale, { digits: 0 })
+                      : t('stripe.monthlyPrice', { price: formatMinor(shown.amount, shown.currency, locale, { digits: 2 }) })}
                   </div>
                   <div className="mt-1 text-sm text-muted-foreground">
                     {isAnnual
-                      ? t('stripe.perMonthApprox', { price: formatEur(p.price / 12, 2) })
+                      ? t('stripe.perMonthApprox', { price: formatMinor(shown.amount / 12, shown.currency, locale, { digits: 2 }) })
                       : t('stripe.cancelAnytime')}
                   </div>
                 </button>
@@ -201,7 +210,7 @@ export default function OverleapPurchaseClient() {
           >
             {submitting ? t('stripe.redirecting') : t('stripe.subscribe')}
           </Button>
-          <p className="mt-3 text-center text-xs text-muted-foreground">{t('stripe.currencyNote')}</p>
+          <p className="mt-3 text-center text-xs text-muted-foreground">{t('stripe.currencyNote', { currency: shownCurrency })}</p>
 
           <div className="mt-10">
             <MembershipBenefits />

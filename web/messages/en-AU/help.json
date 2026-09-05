@@ -1,0 +1,36 @@
+{
+  "help": {
+    "meta": {
+      "title": "Help",
+      "description": "Getting started, your account and billing, and straight answers to common questions about {brand}."
+    },
+    "title": "Help",
+    "intro": "Getting started, your account and billing, and straight answers. If it isn't here, email us — a person replies.",
+    "gettingStarted": {
+      "title": "Getting started",
+      "step1": { "title": "Subscribe", "body": "Choose a plan on the pricing page and pay by card, Apple Pay or Google Pay." },
+      "step2": { "title": "Install the app", "body": "Download {brand} for Windows, macOS, iOS or Android." },
+      "step3": { "title": "Sign in and connect", "body": "Use the email address you subscribed with, then tap Connect. The app picks the fastest route for you." },
+      "download": "Go to downloads"
+    },
+    "billing": {
+      "title": "Account and billing",
+      "items": {
+        "manage": { "question": "How do I manage or cancel my subscription?", "answer": "Open your account page and choose Manage subscription. You can cancel, change your card or download invoices there. Cancelling keeps your plan active until the end of the period you've paid for." },
+        "charge": { "question": "When am I charged?", "answer": "At the start of each billing period, on the card you subscribed with. Stripe emails you a receipt each time." },
+        "refund": { "question": "Can I get a refund?", "answer": "If {brand} doesn't work for you, email us and we'll sort it out." },
+        "devices": { "question": "I've hit the five-device limit", "answer": "Signing in on a sixth device signs out the oldest one automatically. To sign a device out yourself, use the Devices screen in the app." }
+      },
+      "account": "Go to your account"
+    },
+    "faq": {
+      "title": "Questions",
+      "subtitle": "How {brand} works, in plain terms."
+    },
+    "contact": {
+      "title": "Still stuck?",
+      "body": "Email {email} with what you were trying to do and what happened. A person reads every message.",
+      "button": "Email support"
+    }
+  }
+}

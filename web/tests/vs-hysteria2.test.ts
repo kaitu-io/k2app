@@ -91,7 +91,7 @@ describe('test_vs_hysteria2_renders', () => {
   });
 
   it('en-US markdown file exists and contains Hysteria2', () => {
-    const content = readContentFile('content/en-US/k2/vs-hysteria2.md');
+    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
     expect(content.length).toBeGreaterThan(0);
     expect(content).toContain('Hysteria2');
   });
@@ -106,7 +106,7 @@ describe('test_vs_hysteria2_no_pcc_disclosure', () => {
   });
 
   it('en-US markdown file does not disclose PCC algorithm name', () => {
-    const content = readContentFile('content/en-US/k2/vs-hysteria2.md');
+    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
     expect(content).not.toContain('PCC');
     expect(content).not.toContain('Vivace');
     expect(content).not.toContain('Performance-oriented Congestion Control');
@@ -146,7 +146,7 @@ describe('test_vs_hysteria2_has_comparison_dimensions', () => {
   });
 
   it('en-US markdown file covers all 4 comparison dimensions', () => {
-    const content = readContentFile('content/en-US/k2/vs-hysteria2.md');
+    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
 
     // Dimension 1: Packet loss recovery
     const hasPacketLoss = content.toLowerCase().includes('packet loss') || content.toLowerCase().includes('loss recovery');
@@ -222,13 +222,13 @@ describe('test_vs_hysteria2_has_frontmatter', () => {
   });
 
   it('en-US markdown frontmatter contains section: comparison', () => {
-    const content = readContentFile('content/en-US/k2/vs-hysteria2.md');
+    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
     expect(content).toContain('section:');
     expect(content).toContain('comparison');
   });
 
   it('en-US markdown frontmatter contains order: 8', () => {
-    const content = readContentFile('content/en-US/k2/vs-hysteria2.md');
+    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
     expect(content).toContain('order: 8');
   });
 });
