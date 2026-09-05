@@ -32,6 +32,12 @@ if [ -z "$product_id" ]; then
 else
   echo "product exists:  $product_id"
 fi
+# 账单描述符挂在 Product 上，而不是改账号级设置：Stripe 账号是 Wordgate LLC 共用账号，账号级
+# 描述符（ARBELLA）与对外名称要保持中性；Product.statement_descriptor 会整体覆盖该产品订阅扣款的
+# calculated_statement_descriptor（2026-09-05 test 模式实测：1199 usd 扣款 → "OVERLEAP"）。
+# 每次都 POST，幂等；≤22 字符、仅字母数字与空格。
+req "$API/products/$product_id" -d statement_descriptor=OVERLEAP | obj_id >/dev/null
+echo "product statement_descriptor: OVERLEAP"
 
 ensure_price() { # $1=lookup_key $2=interval $3=usd $4=gbp $5=eur（单位：最小货币单位）
   local existing existing_id existing_currency
