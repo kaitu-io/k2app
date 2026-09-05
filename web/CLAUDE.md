@@ -248,7 +248,7 @@ Content-writing rules (citable facts, FAQPage JSON-LD, semantic `<table>`, direc
 
 ## Gotchas
 
-- **Translation keys in ALL locales**: Every key must exist in all 7 locale JSON files before committing.
+- **Translation keys in every locale of the brand**: a key must exist in all locales of the brand that owns the namespace（开途 zh-CN/zh-TW/zh-HK，Overleap en-GB/en-US/en-AU/ja；共享 namespace 两边都要）before committing — `tests/messages-parity.test.ts` 按品牌逐 namespace 比对。
 - **API response pattern**: Same as Center API — check `code` field, not HTTP status. Never show `message` to users.
 - **Manager has no i18n**: Admin dashboard is Chinese-only, routes bypass next-intl middleware entirely.
 - **Package manager**: Must use `yarn` exclusively (not npm).
