@@ -36,6 +36,7 @@ if [ -n "$SIGN_LOG" ]; then
     journal "    arg=${1:-<none>}"
     journal "    arg_readable=$([ -r "${1:-/nonexistent}" ] && echo yes || echo NO)"
     journal "    cwd=$(pwd)"
+    journal "    brand=${K2_BRAND:-unset}"
     journal "    bash=${BASH_VERSION:-?} at $(command -v bash 2>/dev/null || echo '?')"
     journal "    procs=$(ps ax 2>/dev/null | wc -l | tr -d ' ') openfiles=$(sysctl -n kern.num_files 2>/dev/null || echo n/a)/$(sysctl -n kern.maxfiles 2>/dev/null || echo n/a)"
 fi

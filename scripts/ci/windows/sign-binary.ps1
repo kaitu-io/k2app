@@ -14,5 +14,9 @@ if (-not $signtool) {
     exit 1
 }
 
-& $signtool sign /fd SHA256 /tr http://time.certum.pl /td SHA256 /d "Kaitu" $File
+# Authenticode description follows the brand (K2_BRAND is exported by the
+# Makefile and reaches Tauri's signCommand). Kaitu keeps the historical literal.
+$desc = if ($env:K2_BRAND -eq 'overleap') { 'Overleap' } else { 'Kaitu' }
+
+& $signtool sign /fd SHA256 /tr http://time.certum.pl /td SHA256 /d $desc $File
 exit $LASTEXITCODE
