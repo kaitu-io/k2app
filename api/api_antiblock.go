@@ -125,6 +125,11 @@ func handleAntiblockSeed(c *gin.Context) {
 		if tunnel.Node.Class != NodeClassShared {
 			continue
 		}
+		// The seed is the kaitu anti-blocking channel; never leak nodes that are
+		// delisted for kaitu (or declared for another brand only).
+		if !tunnel.Node.VisibleTo(BrandKaitu) {
+			continue
+		}
 		// Hide over-quota or offline nodes (same gate as /api/tunnels).
 		u := usageMap[tunnel.Node.Ipv4]
 		if shouldHideTunnelForUser(u, false, now) {
