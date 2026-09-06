@@ -640,6 +640,59 @@ func TestIntegration_BulkTransfer_WithLoss(t *testing.T) {
 				t.Errorf("rate collapsed to %.1f Mbps (expected >= %.0f Mbps at %.0f%% loss)",
 					snap.SendingRate/1e6, tc.minRate/1e6, tc.lossRate*100)
 			}
+
+			// Phase 1 observability: the cumulative summary must agree with the
+			// per-MI hook and with the injected loss.
+			sum := env.serverCC.Summary()
+			if sum.SenderID == 0 {
+				t.Error("Summary().SenderID must be non-zero")
+			}
+			if sum.MIs != uint64(len(records)) {
+				t.Errorf("Summary().MIs=%d want %d (one per MI hook call)", sum.MIs, len(records))
+			}
+			var lossN, tputN, rateN uint64
+			for i := range sum.LossHist {
+				lossN += sum.LossHist[i]
+			}
+			for i := range sum.TputHist {
+				tputN += sum.TputHist[i]
+				rateN += sum.RateHist[i]
+			}
+			if lossN != sum.MIs || tputN != sum.MIs || rateN != sum.MIs {
+				t.Errorf("histogram totals (loss=%d tput=%d rate=%d) != MIs=%d", lossN, tputN, rateN, sum.MIs)
+			}
+			if sum.SlowStartMIs+sum.DecisionMIs+sum.RateAdjMIs != sum.MIs {
+				t.Errorf("mode residency sum != MIs: %+v", sum)
+			}
+			// Byte totals must equal the per-MI hook's sums exactly — that is
+			// the discriminator between "accumulator wrong" and "harness noise"
+			// (this 3 MB, 4–7 MI transfer sees relay/burst loss well above the
+			// injected rate even at 0%, so lossAgg is logged, not banded).
+			var hookSent, hookAcked, hookLost uint64
+			for _, r := range records {
+				hookSent += r.BytesSent
+				hookAcked += r.BytesAcked
+				hookLost += r.BytesLost
+			}
+			if sum.BytesSent != hookSent || sum.BytesAcked != hookAcked || sum.BytesLost != hookLost {
+				t.Errorf("Summary bytes (sent=%d acked=%d lost=%d) != hook sums (sent=%d acked=%d lost=%d)",
+					sum.BytesSent, sum.BytesAcked, sum.BytesLost, hookSent, hookAcked, hookLost)
+			}
+			lossAgg := 0.0
+			if sum.BytesSent > 0 {
+				lossAgg = float64(sum.BytesLost) / float64(sum.BytesSent)
+			}
+			// Stale-ACK boundary artifact (spec §12.3): allow one BDP at the
+			// peak throughput plus the handshake bytes sent before CC was attached.
+			slack := uint64(sum.TputMax*0.03/8) + 65536
+			if sum.BytesAcked > sum.BytesSent+slack {
+				t.Errorf("BytesAcked=%d exceeds BytesSent=%d by more than one BDP (%d)", sum.BytesAcked, sum.BytesSent, slack)
+			}
+			if e, of := sum.RTTPercentile(0.5); e == 0 || of || e > 150 {
+				t.Errorf("rttP50=(%v,%v) implausible for a 30 ms relay", e, of)
+			}
+			t.Logf("Summary: mis=%d appLimited=%d bwAnchored=%d floor=%d bwDrop=%d bwRise=%d ssSat=%d probes=%d lossAgg=%.2f lossMax=%.2f bwEst=%.1fM",
+				sum.MIs, sum.AppLimitedMIs, sum.BWAnchoredMIs, sum.FloorMIs, sum.BWDrops, sum.BWRises, sum.SlowStartSaturations, sum.RateProbes, lossAgg, sum.LossMax, sum.BWEst/1e6)
 		})
 	}
 }
