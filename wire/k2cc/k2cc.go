@@ -263,21 +263,28 @@ func (mi *MonitorInterval) SendRate() float64 {
 	return float64(mi.BytesSent) * 8.0 / durationSecs
 }
 
-// Throughput calculates throughput in bps and detects app-limited state
+// Throughput returns acked throughput in bps. Pure — safe to call from
+// Snapshot(); app-limited detection lives in appLimited().
 func (mi *MonitorInterval) Throughput() float64 {
 	durationSecs := mi.Duration().Seconds()
 	if durationSecs == 0 {
 		return 0.0
 	}
-	throughput := float64(mi.BytesAcked) * 8.0 / durationSecs
+	return float64(mi.BytesAcked) * 8.0 / durationSecs
+}
 
-	// Detect app-limited state: actual sending < threshold of target rate
-	expectedBytes := mi.TargetRate * durationSecs / 8.0
-	if float64(mi.BytesSent) < expectedBytes*appLimitedThreshold {
-		mi.IsAppLimited = true
+// appLimited reports whether the application sent less than
+// appLimitedThreshold of what TargetRate allowed over this MI. Evaluated
+// exactly once, at processCompletedMI entry, and stored in IsAppLimited —
+// never from an observer, because the flag is sticky and flips the
+// controller into the anchor path.
+func (mi *MonitorInterval) appLimited() bool {
+	durationSecs := mi.Duration().Seconds()
+	if durationSecs == 0 {
+		return false
 	}
-
-	return throughput
+	expectedBytes := mi.TargetRate * durationSecs / 8.0
+	return float64(mi.BytesSent) < expectedBytes*appLimitedThreshold
 }
 
 // LossRate calculates loss rate, clamped to [0.0, 1.0].
@@ -729,7 +736,8 @@ func (p *K2CCSender) setRateAnchored(newRate float64) {
 
 // processCompletedMI processes a completed Monitor Interval.
 func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
-	// Calculate throughput and detect app-limited state
+	// Decide app-limited exactly once, here — Throughput() is pure.
+	mi.IsAppLimited = mi.appLimited()
 	throughput := mi.Throughput()
 
 	// Feed BW estimator (always, except app-limited)
@@ -1265,14 +1273,15 @@ func (p *K2CCSender) OnCongestionEventEx(
 	lostPackets []congestion.LostPacketInfo,
 ) {
 	p.mu.Lock()
-	filteredLosses := p.countFreshLossesLocked(lostPackets)
-	p.mu.Unlock()
+	// concurrency:allow — pure arithmetic on struct fields, no I/O or external calls
+	defer p.mu.Unlock()
 
+	filteredLosses := p.countFreshLossesLocked(lostPackets)
 	acks := uint64(len(ackedPackets))
 	if acks == 0 && filteredLosses == 0 {
 		return
 	}
-
+	// Under p.mu: Snapshot()/Summary() read the tracker under RLock.
 	p.ackRate.record(time.Duration(eventTime), acks, filteredLosses)
 }
 
@@ -1385,7 +1394,7 @@ func (p *K2CCSender) Snapshot() CCSnapshot {
 	if mi := p.state.CurrentMI; mi != nil {
 		if mi.BytesSent >= minSnapshotBytes {
 			s.LossRate = mi.LossRate()
-			s.Throughput = mi.Throughput()
+			s.Throughput = mi.Throughput() // pure read — never touches IsAppLimited
 		} else {
 			// MI too young — use last completed MI's stats to avoid boundary artifacts.
 			s.LossRate = p.lastCompletedLoss
