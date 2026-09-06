@@ -86,7 +86,13 @@ if (( V_MINOR > 99 || V_PATCH > 99 )); then
   exit 1
 fi
 
-MARKETING_VERSION="4.${V_MINOR}.${V_PATCH}"
+# kaitu inherits the ANC record's 4.x marketing line (0.x.y → 4.x.y remap);
+# overleap is a fresh App Store record and ships the real semver.
+if [ "$BRAND" = overleap ]; then
+  MARKETING_VERSION="$VERSION"
+else
+  MARKETING_VERSION="4.${V_MINOR}.${V_PATCH}"
+fi
 
 SLOT=99
 if [[ "$VERSION" == *"-beta."* ]]; then
