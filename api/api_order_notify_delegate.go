@@ -98,8 +98,10 @@ func api_order_notify_delegate(c *gin.Context) {
 		PayUrl:       payUrl,
 	}
 
-	// Synchronous send — surface success/failure to the user
-	if err := emailTo(c, delegateEmail, delegatePayInviteTemplate, meta); err != nil {
+	// Synchronous send — surface success/failure to the user.
+	// delegate pay is a kaitu channel; PaymentChannels forbids it for overleap,
+	// so the invite always goes out under the kaitu identity.
+	if err := emailTo(c, BrandKaitu, delegateEmail, delegatePayInviteTemplate, meta); err != nil {
 		log.Errorf(c, "failed to send delegate invite email to %s: %v", delegateEmail, err)
 		Error(c, ErrorSystemError, "failed to send invite email")
 		return

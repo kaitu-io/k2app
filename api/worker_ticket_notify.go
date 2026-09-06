@@ -79,7 +79,7 @@ func handleTicketNotify(ctx context.Context, payload []byte) error {
 请登录 Kaitu 客户端查看完整对话。
 `, p.TicketID, strings.Join(replyTexts, "\n\n"))
 
-	if err := sendSystemEmail(ctx, userEmail, subject, body); err != nil {
+	if err := sendSystemEmailAs(ctx, BrandKaitu, userEmail, subject, body); err != nil {
 		return fmt.Errorf("failed to send notification email: %w", err)
 	}
 

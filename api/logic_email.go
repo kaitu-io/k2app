@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sync"
 	"text/template"
 
 	"github.com/spf13/viper"
@@ -228,7 +229,8 @@ type DelegatePayInviteMeta struct {
 	PayUrl       string
 }
 
-// emailToUser 发送邮件到用户
+// emailToUser 发送邮件到用户。发件身份按收件用户的品牌选择（brandOfUser），
+// 调用方只负责选对模板（brandedXxxTemplate.For）。
 func emailToUser[T any](ctx context.Context, userID int64, tmpl EmailTemplate[T], meta T) error {
 	log.Infof(ctx, "sending email to user %d with template subject: %s", userID, tmpl.Subject)
 	// 从 identify 获取用户邮箱
@@ -246,11 +248,12 @@ func emailToUser[T any](ctx context.Context, userID int64, tmpl EmailTemplate[T]
 		log.Errorf(ctx, "failed to decrypt email for user %d: %v", userID, err)
 		return fmt.Errorf("failed to decrypt email for user %d: %v", userID, err)
 	}
-	return emailTo(ctx, decEmail, tmpl, meta)
+	return emailTo(ctx, brandOfUser(ctx, uint64(userID)), decEmail, tmpl, meta)
 }
 
-// emailTo 发送邮件到邮箱
-func emailTo[T any](ctx context.Context, email string, tmpl EmailTemplate[T], meta T) error {
+// emailTo 发送邮件到邮箱。b 决定发件身份（systemSenderForBrand），与模板选择相互独立：
+// 模板选错只是文案错，发件人选错会让 Overleap 用户收到 kaitu 域名的邮件。
+func emailTo[T any](ctx context.Context, b Brand, email string, tmpl EmailTemplate[T], meta T) error {
 	log.Debugf(ctx, "preparing to send email to %s", hideEmail(email))
 	// 解析主题模板
 	subjectTmpl, err := template.New("subject").Parse(tmpl.Subject)
@@ -280,9 +283,9 @@ func emailTo[T any](ctx context.Context, email string, tmpl EmailTemplate[T], me
 		return fmt.Errorf("failed to render body: %v", err)
 	}
 
-	// 使用通用邮件配置发送邮件（mail.send_from）
+	// 按品牌选发件身份（kaitu = 全局 mail.send_from；overleap = mail_overleap.send_from）
 	log.Infof(ctx, "sending email with subject '%s' to %s", subjectBuf.String(), hideEmail(email))
-	err = sendSystemEmail(ctx, email, subjectBuf.String(), bodyBuf.String())
+	err = sendSystemEmailAs(ctx, b, email, subjectBuf.String(), bodyBuf.String())
 	if err != nil {
 		log.Errorf(ctx, "failed to send email with subject '%s' to %s: %v", subjectBuf.String(), hideEmail(email), err)
 	}
@@ -295,23 +298,64 @@ func isMailDevMode() bool {
 	return viper.GetBool("mail.dev_mode")
 }
 
+// systemSenderOverleap sends transactional mail (codes, login alerts, password
+// notices, ticket replies) under the Overleap identity, bound to the
+// "mail_overleap" viper prefix — same shape as edm_overleap in
+// logic_email_task.go. qtoolkit/mail.Message has no From field, so a branded
+// From can only come from a second prefix.
+var systemSenderOverleap = mail.Config("mail_overleap")
+
+// systemSenderForBrand returns the brand's transactional sender, or nil for
+// "use the global mail.* prefix". Overleap falls back to nil until ops sets
+// mail_overleap.send_from (SES domain verification for overleap.io) — fail-open
+// so registration codes keep flowing under the shared identity meanwhile.
+// Unknown brands get kaitu semantics (same fallback rule as Brand.Config()).
+func systemSenderForBrand(b Brand) *mail.Sender {
+	if b == BrandOverleap && viper.GetString("mail_overleap.send_from") != "" {
+		return systemSenderOverleap
+	}
+	return nil
+}
+
+// overleapSenderFallbackWarnOnce 让 "overleap 回落全局发件人" 只在进程生命周期里
+// 告警一次：这是部署清单里的已知状态，不是每封邮件都值得一条 warn。
+var overleapSenderFallbackWarnOnce sync.Once
+
 // MailSend 统一邮件发送入口，dev 模式下仅打印日志
 // 所有 mail.Send() 调用都应使用此函数替代
 func MailSend(ctx context.Context, msg *mail.Message) error {
+	return MailSendWith(ctx, nil, msg)
+}
+
+// MailSendWith is MailSend with an explicit sender (nil = global mail.Send).
+// dev_mode is checked before the sender is touched, so both identities are
+// equally inert in development.
+func MailSendWith(ctx context.Context, sender *mail.Sender, msg *mail.Message) error {
 	if isMailDevMode() {
 		log.Infof(ctx, "[DEV-MAIL] TO: %s | SUBJECT: %s\n--- BODY ---\n%s\n--- END ---",
 			msg.To, msg.Subject, msg.Body)
 		return nil
 	}
+	if sender != nil {
+		return sender.Send(msg)
+	}
 	return mail.Send(msg)
 }
 
-// sendSystemEmail 发送系统纯文本邮件（验证码、通知等）
-// 使用 qtoolkit/mail，自动从 viper 配置中读取 mail.* 配置
-func sendSystemEmail(ctx context.Context, to, subject, body string) error {
-	log.Debugf(ctx, "sending plain text system email to %s", hideEmail(to))
+// sendSystemEmailAs 发送系统纯文本邮件（验证码、通知等），发件身份按品牌选择：
+// kaitu 走全局 mail.* 前缀（行为与历史 sendSystemEmail 完全一致），overleap 走
+// mail_overleap.* 前缀，未配置时回落全局并一次性告警。
+func sendSystemEmailAs(ctx context.Context, b Brand, to, subject, body string) error {
+	log.Debugf(ctx, "sending plain text system email to %s as brand %s", hideEmail(to), b)
 
-	err := MailSend(ctx, &mail.Message{
+	sender := systemSenderForBrand(b)
+	if b == BrandOverleap && sender == nil {
+		overleapSenderFallbackWarnOnce.Do(func() {
+			log.Warnf(ctx, "mail_overleap.send_from not configured; overleap system mail falls back to the global mail.* sender")
+		})
+	}
+
+	err := MailSendWith(ctx, sender, &mail.Message{
 		To:      to,
 		Subject: subject,
 		Body:    body,
@@ -326,7 +370,7 @@ func sendSystemEmail(ctx context.Context, to, subject, body string) error {
 }
 
 // SendSystemEmail 公开的发送系统邮件函数（供 CLI 命令使用）
-// 发送自定义纯文本邮件到指定地址
+// 发送自定义纯文本邮件到指定地址；CLI 是运维工具，恒用 kaitu（全局）发件身份。
 func SendSystemEmail(ctx context.Context, to, subject, textBody string) error {
-	return sendSystemEmail(ctx, to, subject, textBody)
+	return sendSystemEmailAs(ctx, BrandKaitu, to, subject, textBody)
 }
