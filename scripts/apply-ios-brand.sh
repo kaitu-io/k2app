@@ -20,11 +20,14 @@ if [ -d "$APP/brand/$BRAND" ]; then
   done)
 fi
 
-# App icon: overleap swaps the asset catalog iconset content
-if [ "$BRAND" = "overleap" ] && [ -d "$APP/brand/overleap/AppIcon.appiconset" ]; then
-  rsync -a --delete "$APP/brand/overleap/AppIcon.appiconset/" "$APP/Assets.xcassets/AppIcon.appiconset/"
-elif [ "$BRAND" = "kaitu" ] && [ -d "$APP/brand/kaitu/AppIcon.appiconset" ]; then
-  rsync -a --delete "$APP/brand/kaitu/AppIcon.appiconset/" "$APP/Assets.xcassets/AppIcon.appiconset/"
-fi
+# Asset catalog sets swapped per brand: AppIcon + Splash. Both brands have a
+# brand/<brand>/ copy (kaitu's is a byte copy of the historical catalog), so
+# the staging is symmetric and a missing set fails loudly instead of leaving
+# the previous brand's artwork in place.
+for set in AppIcon.appiconset Splash.imageset; do
+  src="$APP/brand/$BRAND/$set"
+  [ -d "$src" ] || { echo "ERROR: missing $src" >&2; exit 1; }
+  rsync -a --delete "$src/" "$APP/Assets.xcassets/$set/"
+done
 
 echo "iOS brand staged: $BRAND"
