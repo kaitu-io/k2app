@@ -162,14 +162,14 @@ export default function NodesPage() {
 
                     {/* Declared brand ids (node .env K2_NODE_BRANDS) */}
                     <TableCell>
-                      <span className="font-mono text-xs">{node.brands.join(", ")}</span>
+                      <span className="font-mono text-xs">{(node.brands ?? []).join(", ") || "—"}</span>
                     </TableCell>
 
                     {/* Effective visibility per brand id = declaration ∧ ops switch */}
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <VisibilityBadge label="kaitu" visible={node.visibleKaitu} />
-                        <VisibilityBadge label="overleap" visible={node.visibleOverleap} />
+                        <VisibilityBadge label="kaitu" visible={node.visibleKaitu ?? true} />
+                        <VisibilityBadge label="overleap" visible={node.visibleOverleap ?? false} />
                       </div>
                     </TableCell>
 
