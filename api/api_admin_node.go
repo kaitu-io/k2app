@@ -28,6 +28,9 @@ type AdminNodeItem struct {
 	IPType             string            `json:"ipType,omitempty"`             // residential|non_residential|unknown (C2)
 	Class              string            `json:"class"`                        // shared | private
 	PrivateOwnerUserID *uint64           `json:"privateOwnerUserId,omitempty"` // class=private 时 = 主人 UserID
+	Brands             []string          `json:"brands"`                       // node-declared capability ceiling (K2_NODE_BRANDS)
+	VisibleKaitu       bool              `json:"visibleKaitu"`                 // ops kill switch × declaration → VisibleTo(kaitu)
+	VisibleOverleap    bool              `json:"visibleOverleap"`              // same for overleap
 	UpdatedAt          int64             `json:"updatedAt"`
 	Tunnels            []AdminNodeTunnel `json:"tunnels"`
 }
@@ -38,6 +41,11 @@ func api_admin_list_nodes(c *gin.Context) {
 	if c.Query("pageSize") == "" {
 		pagination.PageSize = 500
 	}
+	// ?brand= narrows to nodes effectively visible to that brand (VisibleTo:
+	// declaration ∧ kill switch). Applied in memory after the page load — the
+	// admin list is a 500-row ops view, and VisibleTo has no SQL twin. Empty /
+	// invalid = no filter (parseBrandFilter semantics).
+	brandFilter, hasBrandFilter := parseBrandFilter(c.Query("brand"))
 
 	var nodes []SlaveNode
 	query := db.Get().Model(&SlaveNode{})
@@ -56,6 +64,9 @@ func api_admin_list_nodes(c *gin.Context) {
 
 	items := make([]AdminNodeItem, 0, len(nodes))
 	for _, node := range nodes {
+		if hasBrandFilter && !node.VisibleTo(brandFilter) {
+			continue
+		}
 		tunnels := make([]AdminNodeTunnel, 0, len(node.Tunnels))
 		for _, t := range node.Tunnels {
 			tunnels = append(tunnels, AdminNodeTunnel{
@@ -78,13 +89,29 @@ func api_admin_list_nodes(c *gin.Context) {
 			IPType:             node.IPType, // C2: expose ip_type on admin node list
 			Class:              node.Class,
 			PrivateOwnerUserID: node.PrivateOwnerUserID,
+			Brands:             brandStrings(node.DeclaredBrands()),
+			VisibleKaitu:       node.VisibleTo(BrandKaitu),
+			VisibleOverleap:    node.VisibleTo(BrandOverleap),
 			UpdatedAt:          node.UpdatedAt.Unix(),
 			Tunnels:            tunnels,
 		})
 	}
+	if hasBrandFilter {
+		// The SQL count is brand-blind; with a filter the page is the universe.
+		pagination.Total = int64(len(items))
+	}
 
-	log.Infof(c, "successfully listed %d physical nodes", len(nodes))
+	log.Infof(c, "successfully listed %d physical nodes (%d after brand filter)", len(nodes), len(items))
 	ListWithData(c, items, pagination)
+}
+
+// brandStrings renders a Brand slice as plain strings for JSON.
+func brandStrings(bs []Brand) []string {
+	out := make([]string, 0, len(bs))
+	for _, b := range bs {
+		out = append(out, string(b))
+	}
+	return out
 }
 
 // AdminUpdateNodeRequest 更新物理节点请求结构体

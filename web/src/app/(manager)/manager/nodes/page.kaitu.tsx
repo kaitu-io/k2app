@@ -32,6 +32,20 @@ function formatRelativeTime(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleDateString("zh-CN");
 }
 
+// Brand ids are rendered verbatim (lowercase registry ids, never display names —
+// tests/brand-guard.test.ts scans this file).
+function VisibilityBadge({ label, visible }: { label: string; visible: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xs ${
+        visible ? "bg-green-100 text-green-800" : "bg-muted text-muted-foreground"
+      }`}
+    >
+      {label} {visible ? "✓" : "✗"}
+    </span>
+  );
+}
+
 function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text).then(() => {
     toast.success("已复制");
@@ -86,6 +100,8 @@ export default function NodesPage() {
                 <TableHead className="w-[120px]">节点</TableHead>
                 <TableHead className="w-[160px]">网络</TableHead>
                 <TableHead>隧道</TableHead>
+                <TableHead className="w-[110px]">品牌声明</TableHead>
+                <TableHead className="w-[130px]">可见</TableHead>
                 <TableHead className="w-[90px]">更新时间</TableHead>
               </TableRow>
             </TableHeader>
@@ -144,6 +160,19 @@ export default function NodesPage() {
                       )}
                     </TableCell>
 
+                    {/* Declared brand ids (node .env K2_NODE_BRANDS) */}
+                    <TableCell>
+                      <span className="font-mono text-xs">{node.brands.join(", ")}</span>
+                    </TableCell>
+
+                    {/* Effective visibility per brand id = declaration ∧ ops switch */}
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <VisibilityBadge label="kaitu" visible={node.visibleKaitu} />
+                        <VisibilityBadge label="overleap" visible={node.visibleOverleap} />
+                      </div>
+                    </TableCell>
+
                     {/* Last updated */}
                     <TableCell>
                       <span className="text-sm text-muted-foreground">
@@ -154,7 +183,7 @@ export default function NodesPage() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center">
+                  <TableCell colSpan={6} className="h-24 text-center">
                     暂无节点数据
                   </TableCell>
                 </TableRow>
