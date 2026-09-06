@@ -948,6 +948,7 @@ func (c *QUICClient) WireStats() WireStats {
 		s.Mode = int(snap.Mode)
 		s.MIID = snap.MIID
 		s.Epsilon = snap.Epsilon
+		s.CC = sender.Summary()
 	}
 	if mux != nil {
 		s.RelayUDPTimeouts = mux.relayTimeouts.Load()
@@ -1328,6 +1329,11 @@ type connContext struct {
 	// sess is this connection's registry entry (nil when revalidation is
 	// disabled). Identity is published onto it by handleMetadataStream.
 	sess *authSession
+
+	// cc is the download-direction k2cc sender attached in acceptLoop, read
+	// by ccSummaryLoop (cc_summary.go). nil on P2P server connections, which
+	// keep kuic's default controller — no cc-summary is emitted for those.
+	cc *k2cc.K2CCSender
 }
 
 func (s *QUICServer) handleConn(conn *quic.Conn) {
