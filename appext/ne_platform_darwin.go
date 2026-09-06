@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -53,6 +54,7 @@ type nePlatform struct {
 	netMon   tun.NetworkUpdateMonitor
 	ifaceMon tun.DefaultInterfaceMonitor
 	closed   sync.Once
+	notify   func()                       // engine network-change callback, invoked by onInterfaceChange
 	lastBind atomic.Pointer[bindLogState] // gates DIAG: direct-bind, see logBindDecision
 }
 
@@ -107,29 +109,50 @@ func (p *nePlatform) ControlFunc() func(network, address string, c syscall.RawCo
 // --- engine.NetworkChangeNotifier ---
 
 func (p *nePlatform) Start(callback func()) error {
-	p.ifaceMon.RegisterCallback(func(defaultInterface *control.Interface, flags int) {
-		// DIAG Event A: record what the default-interface probe resolved to on
-		// every change. When this is a utun*, direct sockets get bound to the
-		// TUN and loop back into gVisor (the "国内直连全挂" failure). Emitted at
-		// INFO so it survives the default build log level. nil-guarded — the
-		// previous code dereferenced defaultInterface.Name unconditionally.
-		if defaultInterface != nil {
-			slog.Info("DIAG: ne-iface-resolved",
-				"name", defaultInterface.Name,
-				"index", defaultInterface.Index,
-				"isTun", isTunName(defaultInterface.Name),
-				"flags", flags)
-		} else {
-			slog.Warn("DIAG: ne-iface-resolved", "result", "nil", "flags", flags)
-		}
-		if callback != nil {
-			callback()
-		}
-	})
+	p.notify = callback
+	p.ifaceMon.RegisterCallback(p.onInterfaceChange)
 	if err := p.netMon.Start(); err != nil {
 		return err
 	}
 	return p.ifaceMon.Start()
+}
+
+// onInterfaceChange is the sing-tun DefaultInterfaceMonitor callback. The
+// monitor invokes it from an unrecovered timer goroutine
+// (time.AfterFunc → postCheckUpdate → emit — none of sing-tun's emit path has a
+// recover), so a panic here crashes the whole Network Extension process and
+// drops the user's tunnel. The deferred recover converts that into one dropped
+// change-notification plus a loud DIAG line — the correct trade for a
+// fire-and-forget network-change signal, where surviving always beats crashing.
+//
+// The known historical crash was a nil `defaultInterface` deref (k2 ≤0.4.7,
+// sing-tun emits nil on the no-route path); the nil branch below fixes that
+// specific bug, and the recover is the structural backstop for the next unknown
+// panic in this callback (including anything the engine `notify` does).
+func (p *nePlatform) onInterfaceChange(defaultInterface *control.Interface, flags int) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("DIAG: ne-callback-panic",
+				"panic", fmt.Sprint(r),
+				"stack", string(debug.Stack()))
+		}
+	}()
+	// DIAG Event A: record what the default-interface probe resolved to on
+	// every change. When this is a utun*, direct sockets get bound to the TUN
+	// and loop back into gVisor (the "国内直连全挂" failure). Emitted at INFO so
+	// it survives the default build log level.
+	if defaultInterface != nil {
+		slog.Info("DIAG: ne-iface-resolved",
+			"name", defaultInterface.Name,
+			"index", defaultInterface.Index,
+			"isTun", isTunName(defaultInterface.Name),
+			"flags", flags)
+	} else {
+		slog.Warn("DIAG: ne-iface-resolved", "result", "nil", "flags", flags)
+	}
+	if p.notify != nil {
+		p.notify()
+	}
 }
 
 // Close stops monitors. Idempotent — engine.Stop() calls this via NetworkMonitor.Close().

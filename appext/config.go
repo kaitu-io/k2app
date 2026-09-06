@@ -9,6 +9,12 @@ type EngineConfig struct {
 	Debug           bool            // when true and LogDir is set, also copy logs to stderr (Xcode/logcat)
 	SocketProtector SocketProtector // optional: marks socket FDs for VPN exclusion (Android VpnService.protect)
 	PackageResolver PackageResolver // optional: Android UID→package name
+	// ConnectionOwner resolves connection 4-tuples to app UIDs
+	// (ConnectivityManager.getConnectionOwnerUid). Android only; when set,
+	// per-app rules (App Bypass force-proxy, region app globs) attribute via
+	// the platform API instead of the /proc path that Android 10+ SELinux
+	// blocks. Nil on iOS.
+	ConnectionOwner ConnectionOwnerResolver
 }
 
 // NewEngineConfig creates an EngineConfig with zero values.

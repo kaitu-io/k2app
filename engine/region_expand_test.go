@@ -254,15 +254,12 @@ func TestExpandRegionRoute_WindowsMetaUsesWindowsApps(t *testing.T) {
 	}
 }
 
-func TestExpandRegionRoute_AndroidMetaUsesAndroidAppsAndInstallers(t *testing.T) {
-	if runtime.GOOS != "android" {
-		t.Skip("Android-only — Android.Apps + Installers")
-	}
+func TestExpandRegionRoute_AndroidMetaUsesAndroidAppsNotInstallers(t *testing.T) {
 	b := fakeBundle("cn-sites", nil, nil,
 		[]string{"com.tencent.mm", "com.alibaba.*"},
 		[]string{"com.tencent.android.qqdownloader"},
 	)
-	_, meta := expandRegionRoute(b, rule.Target(2))
+	meta := buildMetaEntryFromAppsFor("android", b.Apps, rule.Target(2))
 	if meta == nil {
 		t.Fatal("meta expected")
 	}
@@ -272,8 +269,11 @@ func TestExpandRegionRoute_AndroidMetaUsesAndroidAppsAndInstallers(t *testing.T)
 	if !slices.Contains(meta.PackageNamePrefixes, "com.alibaba.") {
 		t.Errorf("PackageNamePrefixes missing com.alibaba.: %v", meta.PackageNamePrefixes)
 	}
-	if !slices.Contains(meta.InstallerPackages, "com.tencent.android.qqdownloader") {
-		t.Errorf("InstallerPackages missing entry: %v", meta.InstallerPackages)
+	// Installer must NOT route: on Chinese ROMs nearly every app (foreign
+	// browsers included) reports the OEM store as installer — see the
+	// comment in buildMetaEntryFromApps.
+	if len(meta.InstallerPackages) != 0 {
+		t.Errorf("InstallerPackages must stay empty for region routing, got %v", meta.InstallerPackages)
 	}
 }
 
