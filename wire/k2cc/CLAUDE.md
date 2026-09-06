@@ -155,11 +155,20 @@ from `OnCongestionEventEx`. Independent of per-MI loss attribution.
 
 ## Observability
 
-`Snapshot()` returns `CCSnapshot` (SendingRate, LossRate, Throughput, RTT, MinRTT, Cwnd, Mode, MIID, Epsilon, AckRate) under `RLock`. Used by `QUICClient.WireStats()` for external metric access. Young MI (BytesSent < 100KB) uses `lastCompleted` values to avoid MI boundary artifacts (throughput/loss spikes from incomplete data).
+Two read paths, both pure (RLock, no state mutation):
+
+- `Snapshot() CCSnapshot` — instantaneous view (SendingRate, LossRate, Throughput, RTT, MinRTT, Cwnd, Mode, MIID, Epsilon, AckRate). Young MI (BytesSent < 100KB) uses `lastCompleted` values to avoid MI boundary artifacts.
+- `Summary() CCSummary` — **cumulative** per-sender record (`summary.go`), fed once per completed MI from `processCompletedMI` (`recordCompletedMI` at entry, `recordMIOutcome` deferred at every exit): MI counters (total / app-limited / mode residency / BW-anchored / floor), event counters (BW drop/rise, slow-start saturation, rate probes), byte totals, four fixed-bucket histograms (loss %, RTT ms, target rate Mbps, throughput Mbps), exact `LossMax`/`TputMax`, and current values (`BWEst` bgLoss-corrected, `BGLoss`, `Epsilon`, `MinRTT`, `Mode`). Consumers keep their own previous copy and call `Sub(prev)` for a window; the accumulator never resets. `SenderID` is an epoch from a package counter — `Sub` treats a prev with a different epoch as zero (client reconnects swap the sender), and all subtraction saturates. `LossPercentile/RTTPercentile/RatePercentile/TputPercentile(p)` return the **upper edge** of the bucket holding the ⌈p·n⌉-th sample (`overflow=true` = open +∞ bucket, render with `FormatBucket` as `>500`). Consumers: server `wire/cc_summary.go` (`DIAG: cc-summary`), client `engine/health.go` heartbeat (`cc*` fields, **uplink**).
+
+**Purity rules** (regression-guarded by `observability_test.go`): `MonitorInterval.Throughput()` never writes `IsAppLimited` — app-limited is decided exactly once by `appLimited()` at `processCompletedMI` entry (an observer calling `Throughput()` on the live MI used to flip the controller into the anchor path). `OnCongestionEventEx` writes the ackRate tracker under `mu` (readers hold RLock). Adding a `uint64` counter to `CCSummary` without adding it to `Sub()` fails `TestCCSummary_SubCoversEveryCounterField`.
+
+**Two facts the counters expose** (pinned by tests, not bugs to "fix" in isolation): (1) `BWRises` is structurally 0 — `processCompletedMI` feeds every non-app-limited MI's throughput into the sliding-max estimator *before* `processBWAnchored`, so ProbeUp's `throughput > estimate×1.05` can never hold; bandwidth increases are still tracked by that entry `addSample`, only the event never fires (`TestSummary_BWRiseIsTrackedByEstimatorNotEvent`). (2) The first MI is created on the first `OnPacketSent` with `MinDuration = 2×initialRTT = 200 ms`, and completion is only evaluated inside `OnPacketAcked` — a connection whose ACK flow ends inside that window never completes an MI (`MIs=0`, no cc-summary line). Short connections are silent by construction.
 
 ## Files
 
-- `k2cc.go` — `K2CCSender` struct, MI-based rate control, BW estimator, utility gradient, AIMD-ε, `CCSnapshot`/`Snapshot()`
+- `k2cc.go` — `K2CCSender` struct, MI-based rate control, BW estimator, utility gradient, AIMD-ε, `CCSnapshot`/`Snapshot()`, `Summary()` + the `recordCompletedMI`/`recordMIOutcome` accumulator hooks
+- `summary.go` — `CCSummary`, histogram edges, `Sub`, `FormatBucket`, the `SenderID` epoch counter
+- `summary_test.go` / `observability_test.go` — histogram/Sub unit tests + reflection guard; Snapshot purity and `-race` mutation tests; accumulator path tests (each mirrors an existing control-path test)
 - `k2cc_test.go` — ~68 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, app-limited anchor, stable probing, slow start saturation, BW estimator, BW-anchored probing)
 - `k2cc_integration_test.go` — QUIC integration tests: real client+server bulk transfer with UDP relay (delay, loss, rate limiting), MI completion hook for per-MI diagnostics
 - `helpers_test.go` — test fixtures
