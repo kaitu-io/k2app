@@ -2739,6 +2739,9 @@ export interface AdminNodeItem {
   ipv6: string;
   class: string; // shared | private
   privateOwnerUserId?: number;
+  brands: string[]; // node-declared brand ids (K2_NODE_BRANDS); empty declaration = ['kaitu']
+  visibleKaitu: boolean; // effective visibility = declaration ∧ ops switch
+  visibleOverleap: boolean;
   updatedAt: number;
   tunnels: AdminNodeTunnel[];
 }

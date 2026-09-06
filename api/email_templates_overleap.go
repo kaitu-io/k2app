@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"fmt"
 
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
@@ -10,8 +11,10 @@ import (
 // Overleap 品牌英文邮件模板。
 //
 // Phase 1 覆盖高频 6 类系统邮件（验证码 / 新设备登录 / web 登录确认 / 设备转移 /
-// 密码登录码 / 密码已修改）。以下模板 Phase 1 保持 kaitu-only，不做 branded 变体
-// ——其功能入口本身已被品牌 gate / 渠道锁挡住，overleap 用户不可达：
+// 密码登录码 / 密码已修改）；Overleap 上架收尾补齐设备踢出通知（brandedDeviceKickTemplate）
+// 与工单回复通知（ticketReplyNotification，非模板、按品牌拼字面量）。以下模板保持
+// kaitu-only，不做 branded 变体——其功能入口本身已被品牌 gate / 渠道锁挡住，overleap
+// 用户不可达：
 //   - delegatePayInviteTemplate — 代付邀请，PaymentChannels 目前不含 overleap 支付渠道
 //   - adminResetPasswordTemplate — 管理员代重置密码，admin 专属操作
 //   - privateNode* 系列（专属线路相关模板）— 专属节点是 kaitu 专属产品
@@ -139,9 +142,38 @@ If this wasn't you, please contact support immediately to reset your account.
 	},
 }
 
+var brandedDeviceKickTemplate = brandedEmailTemplate[DeviceKickMeta]{
+	Kaitu: deviceKickTemplate,
+	Overleap: EmailTemplate[DeviceKickMeta]{
+		Subject: "Your device {{.Remark}} was signed out",
+		Body: `Hi,
+
+Your device "{{.Remark}}" was signed out of Overleap because your account reached its device limit.
+
+- Time: {{.KickTime}}
+- Reason: device limit exceeded
+
+If this wasn't you, please contact support@overleap.io.
+
+— The Overleap Team`,
+	},
+}
+
+// ticketReplyNotification renders the ticket-reply email for a brand.
+// kaitu strings are the historical literals from worker_ticket_notify.go, unchanged.
+func ticketReplyNotification(b Brand, ticketID uint64, replies string) (subject, body string) {
+	if b == BrandOverleap {
+		return fmt.Sprintf("[Overleap] New reply on your ticket (#%d)", ticketID),
+			fmt.Sprintf("Hi,\n\nYour ticket (#%d) has a new reply:\n\n---\n%s\n---\n\nOpen the Overleap app to view the full conversation.\n", ticketID, replies)
+	}
+	return fmt.Sprintf("[Kaitu] 您的工单有新回复 (#%d)", ticketID),
+		fmt.Sprintf("您好，\n\n您的工单 (#%d) 收到了新的回复：\n\n---\n%s\n---\n\n请登录 Kaitu 客户端查看完整对话。\n", ticketID, replies)
+}
+
 // overleapTemplateCorpus 汇总全部 overleap 模板的 Subject+Body，供
 // TestOverleapTemplatesNoChineseBrandLeak 逐一断言零中文品牌泄漏。
 func overleapTemplateCorpus() map[string]string {
+	ticketReplySubject, ticketReplyBody := ticketReplyNotification(BrandOverleap, 0, "")
 	return map[string]string{
 		"verification":    brandedVerificationCodeTemplate.Overleap.Subject + brandedVerificationCodeTemplate.Overleap.Body,
 		"newDeviceLogin":  brandedNewDeviceLoginTemplate.Overleap.Subject + brandedNewDeviceLoginTemplate.Overleap.Body,
@@ -149,6 +181,8 @@ func overleapTemplateCorpus() map[string]string {
 		"deviceTransfer":  brandedDeviceTransferTemplate.Overleap.Subject + brandedDeviceTransferTemplate.Overleap.Body,
 		"passwordLogin":   brandedPasswordLoginTemplate.Overleap.Subject + brandedPasswordLoginTemplate.Overleap.Body,
 		"passwordChanged": brandedPasswordChangedTemplate.Overleap.Subject + brandedPasswordChangedTemplate.Overleap.Body,
+		"deviceKick":      brandedDeviceKickTemplate.Overleap.Subject + brandedDeviceKickTemplate.Overleap.Body,
+		"ticketReply":     ticketReplySubject + ticketReplyBody,
 	}
 }
 

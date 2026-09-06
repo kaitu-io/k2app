@@ -121,6 +121,7 @@ func api_create_ticket(c *gin.Context) {
 			UDID:          "", // UDID not available in ticket request, will be linked via device_log
 			UserID:        userIDPtr,
 			Email:         userEmail,
+			Brand:         string(ReqBrand(c)),
 			Content:       req.Content,
 			Status:        "open",
 			Meta:          string(metaBytes),

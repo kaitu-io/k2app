@@ -152,7 +152,7 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 	if user != nil {
 		codeBrand = Brand(user.Brand)
 	}
-	if err := emailTo(c, req.Email, brandedVerificationCodeTemplate.For(codeBrand), meta); err != nil {
+	if err := emailTo(c, codeBrand, req.Email, brandedVerificationCodeTemplate.For(codeBrand), meta); err != nil {
 		log.Errorf(c, "failed to send verification code email to %s: %v", req.Email, err)
 		Error(c, ErrorSystemError, err.Error())
 		return

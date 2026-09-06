@@ -35,3 +35,25 @@ func TestKaituTemplateBytesUnchanged(t *testing.T) {
 	assert.Equal(t, passwordLoginTemplate, brandedPasswordLoginTemplate.For(BrandKaitu))
 	assert.Equal(t, passwordChangedTemplate, brandedPasswordChangedTemplate.For(BrandKaitu))
 }
+
+func TestBrandedDeviceKickAndTicketNotify(t *testing.T) {
+	assert.Equal(t, deviceKickTemplate, brandedDeviceKickTemplate.For(BrandKaitu))
+	o := brandedDeviceKickTemplate.For(BrandOverleap)
+	assert.Contains(t, o.Subject, "signed out")
+	assert.NotContains(t, o.Body, "开途")
+
+	sK, bK := ticketReplyNotification(BrandKaitu, 42, "[2026-09-06 10:00] Support:\nhello")
+	assert.Equal(t, "[Kaitu] 您的工单有新回复 (#42)", sK)
+	assert.Contains(t, bK, "请登录 Kaitu 客户端查看完整对话")
+	sO, bO := ticketReplyNotification(BrandOverleap, 42, "[2026-09-06 10:00] Support:\nhello")
+	assert.Equal(t, "[Overleap] New reply on your ticket (#42)", sO)
+	assert.Contains(t, bO, "Open the Overleap app to view the full conversation.")
+	assert.NotContains(t, bO, "Kaitu")
+}
+
+func TestTicketBrandFallsBackToKaitu(t *testing.T) {
+	assert.Equal(t, BrandOverleap, ticketBrand(FeedbackTicket{Brand: "overleap"}))
+	assert.Equal(t, BrandKaitu, ticketBrand(FeedbackTicket{Brand: "kaitu"}))
+	assert.Equal(t, BrandKaitu, ticketBrand(FeedbackTicket{Brand: ""}), "pre-column rows carry no brand")
+	assert.Equal(t, BrandKaitu, ticketBrand(FeedbackTicket{Brand: "bogus"}), "unknown brand never selects the overleap copy")
+}

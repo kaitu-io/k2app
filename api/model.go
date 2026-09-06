@@ -1305,6 +1305,7 @@ type FeedbackTicket struct {
 	UDID       string         `gorm:"column:udid;type:varchar(64);index;not null" json:"udid"`
 	UserID     *uint64        `gorm:"index" json:"userId,omitempty"`
 	Email      string         `gorm:"type:varchar(255);index" json:"email"`
+	Brand      string         `gorm:"type:varchar(16);not null;default:'kaitu';index" json:"brand"` // requester brand at creation (ReqBrand); drives reply-notification copy + sender; pre-column rows default kaitu
 	Content    string         `gorm:"type:text;not null" json:"content"`
 	Status     string         `gorm:"type:varchar(16);not null;default:'open';index" json:"status"` // open/resolved/closed
 	ResolvedBy *string        `gorm:"type:varchar(64)" json:"resolvedBy,omitempty"`

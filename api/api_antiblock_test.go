@@ -159,7 +159,45 @@ func TestHandleAntiblockSeed(t *testing.T) {
 	}
 	require.NoError(t, db.Get().Create(&privateTunnel).Error)
 
+	// ---- Shared node delisted for kaitu (must be excluded) ----
+	// Declares both brands but the kaitu kill switch is off: healthy, shared,
+	// under quota — only VisibleTo(kaitu) distinguishes it from healthyNode.
+	delistedIP := fmt.Sprintf("10.88.%s.5", seg)
+	delistedNode := SlaveNode{
+		Ipv4:            delistedIP,
+		Name:            "antiblock-seed-delisted-" + uniq,
+		Country:         "AU",
+		Class:           NodeClassShared,
+		Brands:          "kaitu,overleap",
+		VisibleKaitu:    BoolPtr(false),
+		VisibleOverleap: BoolPtr(true),
+	}
+	require.NoError(t, db.Get().Create(&delistedNode).Error)
+
+	delistedTunnel := SlaveTunnel{
+		NodeID:    delistedNode.ID,
+		Protocol:  TunnelProtocolK2V5,
+		Name:      "ab-tun-delisted-" + uniq,
+		Domain:    "ab-d" + uniq + ".example.com",
+		Port:      10001,
+		IsTest:    BoolPtr(false),
+		ServerURL: fmt.Sprintf("k2v5://delisted.sslip.io:443?ech=AEX-del&pin=sha256:DEL=&ip=%s", delistedIP),
+	}
+	require.NoError(t, db.Get().Create(&delistedTunnel).Error)
+
+	delistedUsage := NodeUsage{
+		NodeID:          delistedNode.ID,
+		Ipv4:            delistedIP,
+		QuotaTotalBytes: 0,
+		UsedBytes:       0,
+		LastReportAt:    time.Now().Unix(),
+	}
+	require.NoError(t, db.Get().Create(&delistedUsage).Error)
+
 	t.Cleanup(func() {
+		db.Get().Unscoped().Where("node_id = ?", delistedNode.ID).Delete(&SlaveTunnel{})
+		db.Get().Unscoped().Where("ipv4 = ?", delistedIP).Delete(&NodeUsage{})
+		db.Get().Unscoped().Delete(&delistedNode)
 		db.Get().Unscoped().Where("node_id = ?", healthyNode.ID).Delete(&SlaveTunnel{})
 		db.Get().Unscoped().Where("node_id = ?", healthyNode2.ID).Delete(&SlaveTunnel{})
 		db.Get().Unscoped().Where("node_id = ?", overNode.ID).Delete(&SlaveTunnel{})
@@ -245,10 +283,11 @@ func TestHandleAntiblockSeed(t *testing.T) {
 		}
 		assert.True(t, foundHealthy, "healthy shared node ip=%s must appear in nodes", healthyIP)
 
-		// Over-quota and private nodes must be absent
+		// Over-quota, private and kaitu-delisted nodes must be absent
 		for _, n := range resp.Data.Nodes {
 			assert.NotEqual(t, overIP, n.IP, "over-quota node must not appear")
 			assert.NotEqual(t, privateIP, n.IP, "private node must not appear")
+			assert.NotEqual(t, delistedIP, n.IP, "node delisted for kaitu must not appear in the kaitu seed")
 		}
 	})
 

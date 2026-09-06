@@ -238,7 +238,7 @@ func api_send_bind_email_verification(c *gin.Context) {
 		Code:          code,
 		ExpireMinutes: expireMinutes,
 	}
-	if err := emailTo(c, req.Email, brandedVerificationCodeTemplate.For(Brand(user.Brand)), meta); err != nil {
+	if err := emailTo(c, Brand(user.Brand), req.Email, brandedVerificationCodeTemplate.For(Brand(user.Brand)), meta); err != nil {
 		log.Errorf(c, "failed to send verification email to %s for user %d: %v", req.Email, userID, err)
 		Error(c, ErrorSystemError, err.Error())
 		return
