@@ -45,9 +45,10 @@ func NewQUICServerFromListener(ln *quic.Listener) *QUICServer {
 // NewQUICServerFromConn creates a QUICServer that handles an already-established
 // QUIC connection (e.g., after peer auth on a punched connection). Also starts
 // accepting new connections from ln for future peers.
+// No k2cc sender is attached on this path, so no cc-summary is emitted.
 func NewQUICServerFromConn(conn *quic.Conn, ln *quic.Listener) *QUICServer {
 	s := NewQUICServer()
-	go s.handleConn(conn)
+	go s.handleConn(conn, nil)
 	if ln != nil {
 		s.Listen(ln)
 	}
