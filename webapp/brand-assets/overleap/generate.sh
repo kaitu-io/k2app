@@ -43,7 +43,10 @@ magick -size 1024x1024 xc:none -fill white -draw "roundrectangle 0,0 1023,1023 2
 magick "$TMP/logo.svg.png" "$TMP/mask.png" -compose CopyOpacity -composite "$TMP/master-1024.png"
 
 png() { # png <size> <out>
-  magick "$TMP/master-1024.png" -resize "${1}x${1}" -strip "$2"
+  # PNG32: force 8-bit RGBA. Left to its own devices ImageMagick writes small
+  # icons as PaletteAlpha, and Tauri's generate_context! rejects any icon that
+  # is not RGBA ("icon ... is not RGBA" — first overleap desktop dry-run, 2026-09-06).
+  magick "$TMP/master-1024.png" -resize "${1}x${1}" -strip "PNG32:$2"
 }
 
 # --- webapp (served as /favicon.png, /icon-192x192.png, /icon-512x512.png) ---
@@ -71,6 +74,14 @@ for s in 30 44 71 89 107 142 150 284 310; do
   png "$s" "$DESKTOP_ICONS/Square${s}x${s}Logo.png"
 done
 png 50 "$DESKTOP_ICONS/StoreLogo.png"
+
+# Tauri requires RGBA for every icon in tauri.conf icons[] — assert on the PNG
+# IHDR colour type (6 = RGBA), not on ImageMagick's %[type] (which classifies
+# the pixels and calls any few-colour icon "PaletteAlpha" even when stored RGBA).
+for f in "$DESKTOP_ICONS"/*.png; do
+  ct=$(magick identify -format '%[png:IHDR.color-type-orig]' "$f")
+  [ "$ct" = "6" ] || { echo "ERROR: $f has PNG colour type $ct, Tauri needs 6 (RGBA)" >&2; exit 1; }
+done
 
 # .icns via iconutil (needs the exact Apple iconset file names)
 ICONSET="$TMP/icon.iconset"; mkdir -p "$ICONSET"
