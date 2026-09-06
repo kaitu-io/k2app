@@ -221,6 +221,26 @@ BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest d
   active brand's icons into dist at writeBundle, serves them via dev-server middleware, and
   rewrites `<title>`. Runtime asset paths (`/favicon.png`, `/icon-192x192.png`) are
   brand-stable.
+- **Purchase surface gate**: `utils/purchase-surface.ts` `purchaseSurfaceAvailable()` is the single
+  authority for showing any purchase / subscription-management entry point — the `/purchase` route
+  (`App.tsx`), the Side/BottomNavigation items, the CloudTunnelList renew CTA and the Account CTAs
+  all consult it; never re-derive the condition at a call site. iOS without the StoreKit bridge →
+  false (Apple 3.1.1); Android when `features.androidPurchase` is false (overleap: Google-Play-only,
+  Play Payments policy) → false, and Account renders `components/SubscriptionStatusOnly` instead
+  (status + expiry + `account.managedElsewhere`; no buttons, links or prices). Guard:
+  `pages/__tests__/Account.android-overleap.test.tsx` (each brand runs the case that applies to it,
+  so the `K2_BRAND=overleap` vitest run exercises the closed gate). `storeUrls: { ios, android }`
+  in the registry feeds `ForceUpgradeDialog` (store listing first, `''` = fall back to `/install`).
+  Kaitu-only surfaces are brand-gated the same way, through `getCurrentAppConfig().features`:
+  Account's Delegate Payer (`delegate`) and My Wallet (`wallet`, WordGate), LoginDialog's
+  invite-code alert/field and IosMembershipPanel's invite-reward card (`invite`); LoginDialog's
+  "Activate Service" consults `purchaseSurfaceAvailable()`. A platform-only (`os !== 'ios'`)
+  gate is never enough for a kaitu payment/programme surface — the overleap build ships it
+  otherwise (found by a real-browser check, fixed in `feat(webapp): Overleap 隐藏代付/钱包/邀请码…`).
+- **`brand-assets/overleap/logo.svg` + `generate.sh` are the single source of every Overleap
+  bitmap**: webapp `src/brands/overleap/assets`, web `public/`, desktop `icons-overleap/`, iOS
+  AppIcon + Splash and the Android launcher / splash set (`OUT_ROOT` renders into another tree).
+  Regenerate, never edit a PNG; `scripts/check-mobile-brand-assets.sh` guards the mobile outputs.
 - **Shells** never import webapp brand code: `make build-*` exports `K2_BRAND=$(BRAND)`
   (`Makefile`, `BRAND ?= kaitu`) into `yarn build`; the shared contract is only that env var
   name and the `src/brands/<brand>/assets/` artwork directory.
