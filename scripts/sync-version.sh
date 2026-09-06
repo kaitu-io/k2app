@@ -21,7 +21,13 @@ BASE_VERSION=$(echo "$VERSION" | sed 's/-.*//')
 MAJOR=$(echo "$BASE_VERSION" | cut -d. -f1)
 MINOR=$(echo "$BASE_VERSION" | cut -d. -f2)
 PATCH=$(echo "$BASE_VERSION" | cut -d. -f3)
-VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+# MAJOR*1000000 + MINOR*10000 + PATCH*100 + REV. REV (0-99, env ANDROID_BUILD_REV)
+# exists only to re-upload an already-uploaded version to Google Play, which
+# permanently burns every accepted versionCode. 0.4.10 → 41000 (> the old
+# 10000/100/1 scheme's 410, so every installed client still sees an upgrade).
+REV="${ANDROID_BUILD_REV:-0}"
+[[ "$REV" =~ ^[0-9]{1,2}$ ]] || { echo "ANDROID_BUILD_REV must be 0-99, got '$REV'" >&2; exit 1; }
+VERSION_CODE=$((MAJOR * 1000000 + MINOR * 10000 + PATCH * 100 + REV))
 
 echo "Syncing version: ${VERSION} (code: ${VERSION_CODE})"
 

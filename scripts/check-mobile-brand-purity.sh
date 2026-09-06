@@ -19,6 +19,9 @@ case "$TARGET" in
   # prompts on stdin, gets EOF under CI/set -e, and returns a nonzero
   # "warnings occurred" exit that aborts the whole script before any grep runs.
   *.apk) unzip -qq -o "$TARGET" -d "$WORK/apk"; SCAN="$WORK/apk" ;;
+  # AAB: base/dex/, base/res/, base/assets/ — same scan, plus base/resources.pb
+  # (protobuf resource table; the APK's resources.arsc equivalent).
+  *.aab) unzip -qq -o "$TARGET" -d "$WORK/aab"; SCAN="$WORK/aab" ;;
   *.xcarchive) SCAN=$(find "$TARGET/Products/Applications" -maxdepth 1 -name '*.app' | head -1) ;;
   *) SCAN="$TARGET" ;;
 esac
@@ -58,6 +61,6 @@ while IFS= read -r BIN; do
     echo "PURITY FAIL ($BRAND): $(basename "$BIN")" >&2
     FAIL=1
   fi
-done < <(find "$SCAN" \( -name 'classes*.dex' -o -path '*/MacOS/*' -o -name 'resources.arsc' -o -name "$(basename "${SCAN%.app}")" \) -type f 2>/dev/null)
+done < <(find "$SCAN" \( -name 'classes*.dex' -o -path '*/MacOS/*' -o -name 'resources.arsc' -o -name 'resources.pb' -o -name "$(basename "${SCAN%.app}")" \) -type f 2>/dev/null)
 [ "$FAIL" = 0 ] && echo "PURITY OK ($BRAND): $TARGET"
 exit "$FAIL"

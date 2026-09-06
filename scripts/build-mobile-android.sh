@@ -97,6 +97,10 @@ echo ""
 echo "--- Building Android ($BUILD_TYPE) ---"
 cd mobile/android
 ./gradlew "$BUILD_TYPE"
+if [ "$DEBUG" != true ]; then
+  # Google Play accepts only App Bundles for new apps. Same flavour, same signing.
+  ./gradlew "bundle${BRAND_PRODUCT}Release"
+fi
 cd "$ROOT_DIR"
 
 # --- Collect artifacts ---
@@ -118,6 +122,14 @@ elif [ -d "$APK_DIR/debug" ]; then
     cp "$APK" "$RELEASE_DIR/${BRAND_PRODUCT}-${VERSION}-debug.apk"
     echo "Copied debug APK: $RELEASE_DIR/${BRAND_PRODUCT}-${VERSION}-debug.apk"
   fi
+fi
+
+# AAB: exact flavoured path (no glob — the desktop alphabetical-glob incident).
+AAB="mobile/android/app/build/outputs/bundle/${BRAND}Release/app-${BRAND}-release.aab"
+if [ "$DEBUG" != true ]; then
+  [ -f "$AAB" ] || { echo "ERROR: expected AAB at $AAB" >&2; exit 1; }
+  cp "$AAB" "$RELEASE_DIR/${BRAND_PRODUCT}-${VERSION}.aab"
+  echo "Copied AAB: $RELEASE_DIR/${BRAND_PRODUCT}-${VERSION}.aab"
 fi
 
 echo ""
