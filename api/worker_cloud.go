@@ -28,10 +28,15 @@ const (
 
 // cloudTaskMaxRetry 限制云任务的重试次数。
 //
-// 必须显式传给 Enqueue:config.yml 里的 asynq.default_max_retry 是个死配置——
-// qtoolkit/asynq v1.5.25 声明了 DefaultMaxRetry 字段并给了默认值 3,但 Enqueue
-// 从没把它传进 asynq.NewTask,实际生效的是 hibiken/asynq 的硬默认 25。不显式
-// 传的话,一次失败会重试 25 次(线上实测 Retry=25)。
+// 历史:qtoolkit/asynq v1.5.35 及以前,config.yml 的 asynq.default_max_retry
+// 是个死配置——Config 声明了 DefaultMaxRetry 也给了默认值,但从没传进
+// asynq.NewTask,实际生效的是 hibiken/asynq 的硬默认 25(线上实测 Retry=25,
+// 一条必然失败的 cloud:delete 因此刷了 24 条告警)。v1.5.36 已把它接上线,
+// 现在不显式传也会拿到配置里的 3。
+//
+// 仍然显式传,是因为云任务(建/删/换 IP)直接操作真金白银的 VPS,它的重试预算
+// 应该由这一层自己声明,而不是跟着全局配置漂——别人调 default_max_retry 时
+// 不该顺手改掉云任务的行为。asynq 的选项后者覆盖前者,这里传的值优先于默认值。
 const cloudTaskMaxRetry = 3
 
 // Task payloads
