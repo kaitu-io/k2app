@@ -2,8 +2,9 @@ name: Build Mobile
 
 on:
   push:
-    # Listen to all v* tags; job-level `if` decides whether to actually run.
-    # No blacklist: new platform/suffix added elsewhere never breaks this file.
+    # Listen to all v* tags; the `plan` job decides brands + platforms from the
+    # suffix. No blacklist: a suffix owned by another workflow yields empty
+    # brand lists and every job skips.
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -15,6 +16,15 @@ on:
         options:
           - ios
           - android
+          - both
+      brand:
+        description: 'Brand to build'
+        required: false
+        default: 'kaitu'
+        type: choice
+        options:
+          - kaitu
+          - overleap
           - both
       dry_run:
         # Build + sign + brand-purity gate + attach IPA/APK to the run; skip
@@ -46,26 +56,60 @@ env:
   EMBED_REQUIRE_FULL: "1"
 
 jobs:
+  # Decide platforms + brands from the ref, mirroring release-desktop.yml's
+  # suffix matrix. Bare v* = kaitu everything (+overleap when the repo variable
+  # OVERLEAP_MOBILE_CI is "true"); -ios/-android = kaitu, one platform;
+  # -overleap-ios / -overleap-android / -overleap-mobile = overleap only, so an
+  # Overleap release never rebuilds or re-uploads kaitu. Any other suffix
+  # belongs to another workflow → both lists empty → every job skips.
+  # bash `case` takes the first match top-to-bottom and `-overleap-ios` is also
+  # a valid `*-ios` suffix — the overleap patterns MUST stay above the kaitu ones.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      ios_brands: ${{ steps.plan.outputs.ios_brands }}
+      android_brands: ${{ steps.plan.outputs.android_brands }}
+    steps:
+      - id: plan
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          IN_PLATFORM: ${{ inputs.platform }}
+          IN_BRAND: ${{ inputs.brand }}
+          OVERLEAP_ON_BARE: ${{ vars.OVERLEAP_MOBILE_CI }}
+        run: |
+          set -euo pipefail
+          KAITU='"kaitu"'; OVERLEAP='"overleap"'
+          bare_brands="$KAITU"; [ "$OVERLEAP_ON_BARE" = "true" ] && bare_brands="$KAITU,$OVERLEAP"
+          ios=""; android=""
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            case "$IN_BRAND" in kaitu) b="$KAITU" ;; overleap) b="$OVERLEAP" ;; both) b="$KAITU,$OVERLEAP" ;; *) b="$KAITU" ;; esac
+            case "$IN_PLATFORM" in ios) ios="$b" ;; android) android="$b" ;; both) ios="$b"; android="$b" ;; esac
+          else
+            case "$REF_NAME" in
+              *-overleap-ios)     ios="$OVERLEAP" ;;
+              *-overleap-android) android="$OVERLEAP" ;;
+              *-overleap-mobile)  ios="$OVERLEAP"; android="$OVERLEAP" ;;
+              *-ios)              ios="$KAITU" ;;
+              *-android)          android="$KAITU" ;;
+              *-*)                ;;
+              *)                  ios="$bare_brands"; android="$bare_brands" ;;
+            esac
+          fi
+          echo "ios_brands=[$ios]" >> "$GITHUB_OUTPUT"
+          echo "android_brands=[$android]" >> "$GITHUB_OUTPUT"
+          echo "ios=[$ios] android=[$android]"
+
   test-webapp:
-    if: >-
-      (github.event_name == 'push' && (!contains(github.ref_name, '-') || endsWith(github.ref_name, '-ios') || endsWith(github.ref_name, '-android'))) ||
-      inputs.platform == 'ios' ||
-      inputs.platform == 'android' ||
-      inputs.platform == 'both'
+    needs: plan
+    if: needs.plan.outputs.ios_brands != '[]' || needs.plan.outputs.android_brands != '[]'
     uses: ./.github/workflows/test-webapp-reusable.yml
     # The reusable job inits the private k2 submodule (engine error-code gate).
     secrets: inherit
 
-  # Mobile workflow owns only mobile suffixes (-ios, -android). Bare v* (no
-  # suffix) means "no filter" → release everything → run both jobs. Any other
-  # suffix (e.g. -windows, -k2s) belongs to a different workflow and we skip
-  # so we don't false-positive on tags that aren't ours.
   build-ios:
-    needs: test-webapp
-    if: >-
-      (github.event_name == 'push' && (!contains(github.ref_name, '-') || endsWith(github.ref_name, '-ios'))) ||
-      inputs.platform == 'ios' ||
-      inputs.platform == 'both'
+    needs: [plan, test-webapp]
+    if: needs.plan.outputs.ios_brands != '[]'
     # macos-26 (Tahoe) ships Xcode 26.x. Apple requires Xcode 26 + iOS 26 SDK
     # for App Store submissions from 2026-04-28. Pinning the runner (instead of
     # macos-latest) makes future Xcode upgrades explicit and reproducible.
@@ -76,19 +120,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Overleap iOS leg is red until Phase-0 ops lands: ASC has no
-        # io.overleap bundle id / App Group / NE capability yet, and the
-        # runner has no matching provisioning profiles, so the build would
-        # fail loudly on every push. Gate it behind repo variable
-        # OVERLEAP_MOBILE_CI so `main` stays green in the meantime. `vars` IS
-        # available in a matrix expression (job-level `if:` cannot see
-        # `matrix`, which is why this lives here instead). Flip
-        # OVERLEAP_MOBILE_CI to "true" in repo Settings > Variables once (a)
-        # CI secret OVERLEAP_ANDROID_STORE_PASSWORD exists (Android leg,
-        # separate job below), (b) ASC has io.overleap bundle ids + App Group
-        # + NE capability, and (c) provisioning profiles are installed on the
-        # runner (or fetched via `xcrun devicectl`/Fastlane match in this job).
-        brand: ${{ vars.OVERLEAP_MOBILE_CI == 'true' && fromJSON('["kaitu","overleap"]') || fromJSON('["kaitu"]') }}
+        # Brand list comes from the `plan` job (tag suffix / dispatch input);
+        # overleap-only tags never carry kaitu here.
+        brand: ${{ fromJSON(needs.plan.outputs.ios_brands) }}
 
     steps:
       - name: Checkout repository
@@ -202,14 +236,18 @@ jobs:
           fi
           mkdir -p ~/private_keys
           echo "$APP_STORE_CONNECT_API_KEY" | base64 --decode \
-            > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+            > ~/private_keys/AuthKey_"${APP_STORE_CONNECT_KEY_ID}".p8
 
       - name: Verify tag matches package.json
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          # Strip only the suffixes this workflow owns. The job-level `if`
-          # already guarantees we only run on bare / -ios / -android tags.
+          # Strip only the suffixes this workflow owns (the `plan` job already
+          # guarantees we only run on these). Overleap forms first: they end
+          # in -ios / -android too.
+          TAG_VERSION="${TAG_VERSION%-overleap-ios}"
+          TAG_VERSION="${TAG_VERSION%-overleap-android}"
+          TAG_VERSION="${TAG_VERSION%-overleap-mobile}"
           TAG_VERSION="${TAG_VERSION%-ios}"
           TAG_VERSION="${TAG_VERSION%-android}"
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -247,12 +285,10 @@ jobs:
           path: release/*/${{ steps.brand.outputs.product }}-*.ipa
           retention-days: 30
 
-      # overleap has no live App Store listing yet (Phase 0) — altool upload
-      # would fail (no App record for io.overleap in ASC). Archive + IPA
-      # export above still run for overleap so the build is verified and
-      # available as a workflow artifact; only the ASC upload is kaitu-only.
+      # Both brands: same Apple team, same API key. ASC routes the upload to
+      # the app record by the IPA's bundle id (io.overleap has its own record).
       - name: Upload to App Store Connect
-        if: matrix.brand == 'kaitu' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -283,7 +319,7 @@ jobs:
           if [ "${{ matrix.brand }}" = "kaitu" ]; then
             DOWNLOAD_URL="<https://apps.apple.com/app/id6448744655|App Store>"
           else
-            DOWNLOAD_URL="(overleap: archived, no public App Store listing yet — Phase 0)"
+            DOWNLOAD_URL="TestFlight (Overleap VPN, io.overleap)"
           fi
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
@@ -303,11 +339,8 @@ jobs:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
 
   build-android:
-    needs: test-webapp
-    if: >-
-      (github.event_name == 'push' && (!contains(github.ref_name, '-') || endsWith(github.ref_name, '-android'))) ||
-      inputs.platform == 'android' ||
-      inputs.platform == 'both'
+    needs: [plan, test-webapp]
+    if: needs.plan.outputs.android_brands != '[]'
     # GitHub-hosted (ephemeral) — no stale-workspace cleanup needed between
     # matrix legs or runs (each gets a fresh VM).
     runs-on: ubuntu-latest
@@ -315,18 +348,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Overleap Android leg is red until Phase-0 ops lands: CI secret
-        # OVERLEAP_ANDROID_STORE_PASSWORD isn't populated yet, so the
-        # keystore decrypt step below would fail on every push. Gate it
-        # behind repo variable OVERLEAP_MOBILE_CI so `main` stays green in
-        # the meantime — same switch and same milestone as the iOS leg in
-        # build-ios above (kept as two separate matrix expressions since
-        # `vars` isn't shared context across jobs). Flip OVERLEAP_MOBILE_CI
-        # to "true" in repo Settings > Variables once (a) that secret is
-        # populated, (b) ASC has io.overleap bundle ids + App Group + NE
-        # capability (iOS leg), and (c) provisioning profiles are on the
-        # iOS runner.
-        brand: ${{ vars.OVERLEAP_MOBILE_CI == 'true' && fromJSON('["kaitu","overleap"]') || fromJSON('["kaitu"]') }}
+        # Brand list comes from the `plan` job (tag suffix / dispatch input);
+        # overleap-only tags never carry kaitu here.
+        brand: ${{ fromJSON(needs.plan.outputs.android_brands) }}
 
     steps:
       - name: Checkout repository
@@ -429,8 +453,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          # Strip only the suffixes this workflow owns. The job-level `if`
-          # already guarantees we only run on bare / -ios / -android tags.
+          # Strip only the suffixes this workflow owns (the `plan` job already
+          # guarantees we only run on these). Overleap forms first: they end
+          # in -ios / -android too.
+          TAG_VERSION="${TAG_VERSION%-overleap-ios}"
+          TAG_VERSION="${TAG_VERSION%-overleap-android}"
+          TAG_VERSION="${TAG_VERSION%-overleap-mobile}"
           TAG_VERSION="${TAG_VERSION%-ios}"
           TAG_VERSION="${TAG_VERSION%-android}"
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -463,6 +491,10 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
           KAITU_ANDROID_STORE_PASSWORD: ${{ secrets.KAITU_ANDROID_STORE_PASSWORD }}
           OVERLEAP_ANDROID_STORE_PASSWORD: ${{ secrets.OVERLEAP_ANDROID_STORE_PASSWORD }}
+          # Repo variable, normally unset (rev 0). Set to 1..99 ONLY to
+          # re-upload an already-uploaded version to Google Play (which burns
+          # every accepted versionCode), then clear it. See sync-version.sh.
+          ANDROID_BUILD_REV: ${{ vars.ANDROID_BUILD_REV || '0' }}
 
       - name: Brand purity gate
         # Brand-exact path (not a release/*/*.apk glob): the runner is
@@ -474,6 +506,11 @@ jobs:
           APK="release/${{ steps.brand.outputs.version }}/${{ steps.brand.outputs.product }}-${{ steps.brand.outputs.version }}.apk"
           bash scripts/check-mobile-brand-purity.sh ${{ matrix.brand }} "$APK"
 
+      - name: Brand purity gate (AAB)
+        run: |
+          AAB="release/${{ steps.brand.outputs.version }}/${{ steps.brand.outputs.product }}-${{ steps.brand.outputs.version }}.aab"
+          bash scripts/check-mobile-brand-purity.sh ${{ matrix.brand }} "$AAB"
+
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
@@ -481,8 +518,19 @@ jobs:
           path: release/*/${{ steps.brand.outputs.product }}-*.apk
           retention-days: 30
 
+      - name: Upload Android AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aab-${{ matrix.brand }}
+          path: release/*/${{ steps.brand.outputs.product }}-*.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      # overleap android is Play-only (see scripts/publish-mobile.sh): the AAB
+      # is uploaded to the Play Console by hand from the artifact above; no
+      # CDN APK, no android manifest.
       - name: Upload Android APK to S3
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        if: matrix.brand == 'kaitu' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         env:
           BRAND: ${{ matrix.brand }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -494,11 +542,16 @@ jobs:
         if: success() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          CDN_BASE="https://dl.kaitu.io/${{ matrix.brand }}/android"
+          if [ "${{ matrix.brand }}" = "kaitu" ]; then
+            CDN_BASE="https://dl.kaitu.io/${{ matrix.brand }}/android"
+            DOWNLOAD_URL="<${CDN_BASE}/${VERSION}/${{ steps.brand.outputs.product }}-${VERSION}.apk|Android APK>"
+          else
+            DOWNLOAD_URL="AAB attached to the workflow run (Play-only brand)"
+          fi
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
             --platforms "Android (${{ matrix.brand }})" \
-            --download-url "<${CDN_BASE}/${VERSION}/${{ steps.brand.outputs.product }}-${VERSION}.apk|Android APK>"
+            --download-url "${DOWNLOAD_URL}"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
