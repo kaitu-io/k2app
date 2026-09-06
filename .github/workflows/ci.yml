@@ -156,6 +156,15 @@ jobs:
         run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output.txt
         working-directory: desktop/src-tauri
 
+      - name: Cargo test (Tauri, overleap brand cfg)
+        # cfg(brand_overleap) is a compile-time fork (build.rs); the default run
+        # never compiles the overleap arms (window.rs, channel.rs, updater.rs,
+        # log_upload.rs). desktop/CLAUDE.md requires both runs.
+        run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output-overleap.txt
+        working-directory: desktop/src-tauri
+        env:
+          K2_BRAND: overleap
+
       - name: Go test MCP
         run: go test ./... -v -count=1 2>&1 | tee /tmp/go-test-output.txt
         working-directory: mcp
@@ -249,6 +258,15 @@ jobs:
       - name: Cargo test (Tauri)
         run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output.txt
         working-directory: desktop/src-tauri
+
+      - name: Cargo test (Tauri, overleap brand cfg)
+        # cfg(brand_overleap) is a compile-time fork (build.rs); the default run
+        # never compiles the overleap arms (window.rs, channel.rs, updater.rs,
+        # log_upload.rs). desktop/CLAUDE.md requires both runs.
+        run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output-overleap.txt
+        working-directory: desktop/src-tauri
+        env:
+          K2_BRAND: overleap
 
       - name: Go test MCP
         run: go test ./... -v -count=1 2>&1 | tee /tmp/go-test-output.txt
@@ -493,6 +511,16 @@ jobs:
         shell: bash
         run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output.txt
         working-directory: desktop/src-tauri
+
+      - name: Cargo test (Tauri, overleap brand cfg)
+        # cfg(brand_overleap) is a compile-time fork (build.rs); the default run
+        # never compiles the overleap arms (window.rs, channel.rs, updater.rs,
+        # log_upload.rs). desktop/CLAUDE.md requires both runs.
+        shell: bash
+        run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output-overleap.txt
+        working-directory: desktop/src-tauri
+        env:
+          K2_BRAND: overleap
 
       - name: MachineGuid mid-check (post-Rust, pre-Go)
         if: runner.os == 'Windows'

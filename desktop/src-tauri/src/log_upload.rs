@@ -23,6 +23,31 @@ use std::path::{Path, PathBuf};
 /// S3 public bucket for log uploads (no authentication required)
 const S3_BUCKET_URL: &str = "https://kaitu-service-logs.s3.ap-northeast-1.amazonaws.com";
 
+/// S3 key prefixes. Brand-scoped so support can tell the two brands' uploads
+/// apart in the shared bucket; kaitu keeps the historical prefixes unchanged.
+#[cfg(brand_overleap)]
+const S3_PREFIX_MANUAL: &str = "desktop-overleap";
+#[cfg(not(brand_overleap))]
+const S3_PREFIX_MANUAL: &str = "desktop";
+#[cfg(brand_overleap)]
+const S3_PREFIX_AUTO: &str = "auto-overleap";
+#[cfg(not(brand_overleap))]
+const S3_PREFIX_AUTO: &str = "auto";
+
+/// `log show --predicate` for the app process. Both brands' main binary is the
+/// cargo bin name `k2app` (Tauri v2 keeps it unless `mainBinaryName` is set,
+/// and neither tauri.conf sets it — the built `Kaitu.app` has
+/// `CFBundleExecutable = k2app`). NSPredicate CONTAINS is case-sensitive.
+/// Kaitu keeps its historical predicate byte-for-byte; overleap names the
+/// actual process — a predicate on "Overleap" would match nothing.
+/// Only `collect_macos_system_logs` reads it, so it is dead on other targets.
+#[cfg(brand_overleap)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MACOS_LOG_PREDICATE: &str = "process CONTAINS \"k2app\"";
+#[cfg(not(brand_overleap))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MACOS_LOG_PREDICATE: &str = "process CONTAINS \"kaitu\"";
+
 /// Request timeout in seconds
 const REQUEST_TIMEOUT_SECS: u64 = 60;
 
@@ -293,7 +318,7 @@ fn collect_macos_system_logs() -> String {
             "--last",
             "1d",
             "--predicate",
-            "process CONTAINS \"kaitu\"",
+            MACOS_LOG_PREDICATE,
         ])
         .output();
     match output {
@@ -407,8 +432,8 @@ fn generate_s3_key(feedback_id: Option<&str>, version: &str, udid: &str) -> Stri
     };
 
     format!(
-        "desktop/{}/{}/{}/logs-{}-{}.tar.gz",
-        version, udid, date, timestamp, identifier
+        "{}/{}/{}/{}/logs-{}-{}.tar.gz",
+        S3_PREFIX_MANUAL, version, udid, date, timestamp, identifier
     )
 }
 
@@ -649,7 +674,7 @@ fn upload_auto_dir(dir: &Path, udid: &str, uploaded: &mut Vec<UploadedFileInfo>)
             }
         }
 
-        let s3_key = format!("auto/{}/{}", udid, name);
+        let s3_key = format!("{}/{}/{}", S3_PREFIX_AUTO, udid, name);
 
         if is_gz {
             // Rotated .gz: HEAD check — skip if already uploaded
@@ -747,7 +772,8 @@ mod tests {
     #[test]
     fn test_generate_s3_key_no_feedback() {
         let key = generate_s3_key(None, "0.4.1", "test-udid-123");
-        assert!(key.starts_with("desktop/0.4.1/test-udid-123/"));
+        // Brand-neutral: the literal prefix per brand is pinned in brand_prefix_tests.
+        assert!(key.starts_with(&format!("{}/0.4.1/test-udid-123/", S3_PREFIX_MANUAL)));
         assert!(key.contains("logs-"));
         assert!(key.ends_with(".tar.gz"));
         let parts: Vec<&str> = key.split('/').collect();
@@ -757,7 +783,7 @@ mod tests {
     #[test]
     fn test_generate_s3_key_with_feedback() {
         let key = generate_s3_key(Some("fb-12345"), "0.4.1", "test-udid-456");
-        assert!(key.starts_with("desktop/0.4.1/test-udid-456/"));
+        assert!(key.starts_with(&format!("{}/0.4.1/test-udid-456/", S3_PREFIX_MANUAL)));
         assert!(key.contains("logs-"));
         assert!(key.contains("fb-12345"));
         assert!(key.ends_with(".tar.gz"));
@@ -974,5 +1000,34 @@ mod tests {
         // The sanitizer replaces the prefix pattern — the original token value
         // is still present but the key-value association is broken
         assert!(!content.contains(r#""token":"secret123""#));
+    }
+}
+
+#[cfg(test)]
+mod brand_prefix_tests {
+    use super::*;
+
+    #[cfg(not(brand_overleap))]
+    #[test]
+    fn kaitu_prefixes_are_historical() {
+        assert_eq!(S3_PREFIX_MANUAL, "desktop");
+        assert_eq!(S3_PREFIX_AUTO, "auto");
+        assert_eq!(MACOS_LOG_PREDICATE, "process CONTAINS \"kaitu\"");
+        let key = generate_s3_key(Some("abc"), "0.4.10", "udid1");
+        assert!(key.starts_with("desktop/0.4.10/udid1/"), "{}", key);
+    }
+
+    #[cfg(brand_overleap)]
+    #[test]
+    fn overleap_prefixes_are_separate() {
+        assert_eq!(S3_PREFIX_MANUAL, "desktop-overleap");
+        assert_eq!(S3_PREFIX_AUTO, "auto-overleap");
+        // The main binary is the crate name (`k2app`) for both brands — Tauri v2
+        // keeps the cargo bin name unless `mainBinaryName` is set, and neither
+        // config sets it. A predicate on "Overleap" would match no process.
+        assert_eq!(MACOS_LOG_PREDICATE, "process CONTAINS \"k2app\"");
+        let key = generate_s3_key(Some("abc"), "0.4.10", "udid1");
+        assert!(key.starts_with("desktop-overleap/0.4.10/udid1/"), "{}", key);
+        assert!(!key.starts_with("desktop/"), "{}", key);
     }
 }

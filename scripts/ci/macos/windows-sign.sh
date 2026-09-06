@@ -88,7 +88,7 @@ osslsigncode sign \
     -key "$PKCS11_KEY" \
     -ac "$SCRIPT_DIR/certum-chain.pem" \
     -h sha256 \
-    -n "Kaitu Desktop" \
+    -n "$(bash "$SCRIPT_DIR/../sign-description.sh")" \
     -ts "$TIMESTAMP_URL" \
     -in "$FILE_PATH" \
     -out "$TEMP_SIGNED"
