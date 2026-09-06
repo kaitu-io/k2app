@@ -15,6 +15,7 @@ import (
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
+	"github.com/kaitu-io/k2/wire/k2cc"
 )
 
 // Health levels.
@@ -157,6 +158,11 @@ type healthMonitor struct {
 	onReconnect func()               // triggers OnNetworkChanged for full reconnect
 
 	lastDial core.DialOutcomes // cumulative dial counts at the previous heartbeat
+
+	// lastCC is the uplink sender's cumulative CC summary at the previous
+	// heartbeat; the heartbeat reports ws.CC.Sub(lastCC), i.e. the 30 s
+	// window, and a reconnect (new SenderID) restarts the window.
+	lastCC k2cc.CCSummary
 
 	diagCounter int          // samples since last DIAG heartbeat (fires at 30)
 	connectedAt time.Time    // engine connected timestamp for uptime calc
@@ -350,6 +356,13 @@ func (hm *healthMonitor) sample() {
 		// needs subtracting across log lines before it says anything.
 		dial := dialTotal.Sub(hm.lastDial)
 		hm.lastDial = dialTotal
+		// Uplink CC window (client → server). VPN users barely upload, so
+		// ccAppLimited ≈ ccMis is the normal shape here — the download
+		// direction is the server's "DIAG: cc-summary" line.
+		cc := ws.CC.Sub(hm.lastCC)
+		hm.lastCC = ws.CC
+		ccLossP90 := k2cc.FormatBucket(cc.LossPercentile(0.9))
+		ccRttP90 := k2cc.FormatBucket(cc.RTTPercentile(0.9))
 		slog.Info("DIAG: heartbeat",
 			"health", hm.health,
 			"transport", ws.Transport,
@@ -375,6 +388,14 @@ func (hm *healthMonitor) sample() {
 			"heapMB", fmt.Sprintf("%.1f", float64(ms.HeapInuse)/(1024*1024)),
 			"sysMB", fmt.Sprintf("%.1f", float64(ms.Sys)/(1024*1024)),
 			"goroutines", runtime.NumGoroutine(),
+			"ccMis", cc.MIs,
+			"ccAppLimited", cc.AppLimitedMIs,
+			"ccFloor", cc.FloorMIs,
+			"ccLossP90", ccLossP90,
+			"ccRttP90", ccRttP90,
+			"ccBwEst", fmt.Sprintf("%.1f", cc.BWEst/1e6),
+			"ccBgLoss", fmt.Sprintf("%.1f", cc.BGLoss*100),
+			"ccMode", cc.Mode.String(),
 		)
 	}
 
