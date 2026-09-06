@@ -222,6 +222,7 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 LINUX_ARCHES := amd64 arm64
 
 build-linux: pre-build stage-k2-webui-dist
+	@[ "$(BRAND)" = kaitu ] || { echo "ERROR: Linux desktop is kaitu-only (BRAND=$(BRAND)); scripts/ci/upload-release.sh refuses it too." >&2; exit 1; }
 	@for arch in $(LINUX_ARCHES); do \
 		echo "--- [host] Go cross-compile k2 for linux/$$arch (embedded webapp) ---"; \
 		(cd k2 && CGO_ENABLED=0 GOOS=linux GOARCH=$$arch \
