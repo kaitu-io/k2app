@@ -14,6 +14,11 @@ internal object K2PluginUtils {
     fun cdnPrimary(context: Context): String = brandString(context, "k2_cdn_primary")
     fun cdnFallback(context: Context): String = brandString(context, "k2_cdn_fallback")
 
+    /** Whether this brand distributes native updates as sideloaded APKs. Play-only
+     *  brands set it false in brand.xml: the native manifest lane is skipped and
+     *  checkNativeUpdate always reports unavailable. Web OTA is unaffected. */
+    fun apkUpdatesEnabled(context: Context): Boolean = brandBool(context, "k2_apk_updates")
+
     /**
      * Compile-time bridge API version. MUST equal BRIDGE_API_VERSION in
      * webapp/src/types/bridge-version.ts — the webapp contract gate
@@ -41,6 +46,12 @@ internal object K2PluginUtils {
         val id = context.resources.getIdentifier(name, "string", context.packageName)
         require(id != 0) { "host app missing brand string resource: $name" }
         return context.getString(id)
+    }
+
+    private fun brandBool(context: Context, name: String): Boolean {
+        val id = context.resources.getIdentifier(name, "bool", context.packageName)
+        require(id != 0) { "host app missing brand bool resource: $name" }
+        return context.resources.getBoolean(id)
     }
 
     fun isNewerVersion(remote: String, local: String): Boolean {

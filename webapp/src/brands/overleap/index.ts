@@ -38,12 +38,16 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
   iapProductIds: ['io.overleap.sub.basic.1y'],
   faqExtraKeys: [],
   antiblockCdnSources: [], // 非受限网络市场，无需入口伪装竞速
+  // Play URL is determined by the package name; the App Store URL is filled
+  // in once the listing is live (spec 2026-09-06 §1.6 backfill commit).
+  storeUrls: { ios: '', android: 'https://play.google.com/store/apps/details?id=io.overleap' },
   theme: OVERLEAP_THEME,
   features: {
     invite: false,
     retailer: false,
     discover: false, // overleap.io discovery page does not exist yet (web Phase 2 ships it; flip then)
     delegate: false,
+    wallet: false, // no WordGate wallet on this brand (Stripe handles billing on the website)
     wordgatePurchase: false,
     stripeCheckout: true, // Purchase page renders StripePurchasePanel (subscribe/manage)
     chatwoot: false,
@@ -51,5 +55,6 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
     antiblockRelay: false,
     selfHostedTunnels: false, // no k2s install channel for this brand (see k2sInstallUrl)
     multiCountryRouting: true, // serves all countries: geo detection + country picker
+    androidPurchase: false, // Google-Play-only: no purchase surface on Android (Play Payments policy)
   },
 };

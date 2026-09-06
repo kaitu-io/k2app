@@ -3,8 +3,8 @@
   "nonRenewingSubscriptions" : [],
   "products" : [],
   "settings" : {
-    "_applicationInternalID" : "",
-    "_developerTeamID" : "",
+    "_applicationInternalID" : "6759199298",
+    "_developerTeamID" : "NJT954Q3RH",
     "_failTransactionsEnabled" : false,
     "_lastSynchronizedDate" : 0,
     "_locale" : "en_US",
@@ -20,21 +20,21 @@
         {
           "adHocOffers" : [],
           "codeOffers" : [],
-          "displayPrice" : "49.00",
+          "displayPrice" : "79.00",
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "30002",
           "introductoryOffer" : null,
           "localizations" : [
             {
-              "description" : "Overleap Basic — billed yearly",
-              "displayName" : "Basic Yearly",
+              "description" : "One year of unlimited secure access",
+              "displayName" : "Overleap Basic",
               "locale" : "en_US"
             }
           ],
           "productID" : "io.overleap.sub.basic.1y",
           "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Basic Yearly",
+          "referenceName" : "Overleap Basic Yearly",
           "subscriptionGroupID" : "20001",
           "type" : "RecurringSubscription"
         }

@@ -48,6 +48,8 @@ import type { AuthResult } from '../services/api-types';
 import { delayedFocus } from '../utils/ui';
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import { brandConfig } from '../brands';
+import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
+import { getCurrentAppConfig } from '../config/apps';
 
 /**
  * DialogContent is a flex column, so a form taller than the viewport squashes its
@@ -475,7 +477,10 @@ export default function LoginDialog() {
               {t("auth:auth.sendCode")}
             </Button>
 
-            {(window._platform?.os !== 'ios' || affordance.mode === 'subscribe') && (
+            {/* Activate Service → /purchase: only where that route is registered
+                (utils/purchase-surface.ts — iOS without IAP / Play-only Android hide it);
+                the iOS affordance clause stays as before. */}
+            {purchaseSurfaceAvailable() && (window._platform?.os !== 'ios' || affordance.mode === 'subscribe') && (
               <>
                 <Divider sx={{ my: 1 }}>
                   <Typography variant="caption" color="text.secondary">
@@ -522,7 +527,8 @@ export default function LoginDialog() {
         {/* Step 2: Verification Code Input */}
         {step === "code" && (
           <Stack spacing={2} sx={FORM_STACK_SX}>
-            {!isActivated && (
+            {/* Invite code is a kaitu-only program (features.invite). */}
+            {!isActivated && getCurrentAppConfig().features.invite && (
               <Alert severity="info">
                 {t("auth:auth.inviteCodeOptional")}
               </Alert>
@@ -594,7 +600,7 @@ export default function LoginDialog() {
               sx={COMPACT_FIELD_SX}
             />
 
-            {!isActivated && (
+            {!isActivated && getCurrentAppConfig().features.invite && (
               <TextField
                 fullWidth
                 label={t("auth:auth.inviteCode")}

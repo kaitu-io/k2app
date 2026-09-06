@@ -23,6 +23,8 @@ export interface BrandFeatures {
   discover: boolean;
   /** Delegate-pay setup. Kaitu-only. */
   delegate: boolean;
+  /** WordGate wallet / withdraw surface. Kaitu-only. */
+  wallet: boolean;
   /** WordGate order/pay flow on the Purchase page. Kaitu-only. */
   wordgatePurchase: boolean;
   /** Stripe Checkout entry (Phase 6 wires the actual flow; gate reserved now). */
@@ -46,6 +48,12 @@ export interface BrandFeatures {
    *  and 回国 (reach China from abroad, via home node) are cn-fixed, so Kaitu
    *  skips geo detection and hides the picker — its region is always 'cn'. */
   multiCountryRouting: boolean;
+  /** Whether Android builds may show purchase / subscription-management
+   *  surfaces. Kaitu ships as a sideloaded APK and links to WordGate; a
+   *  Google-Play-only brand must not lead users to any non-Play payment
+   *  (Play Payments policy), so the whole surface is hidden — see
+   *  utils/purchase-surface.ts (the single gate). */
+  androidPurchase: boolean;
 }
 
 interface PaletteTriple {
@@ -147,6 +155,10 @@ export interface WebappBrandConfig {
   /** antiblock 入口配置 CDN 镜像（启动时 Happy-Eyeballs 竞速）。
    *  空数组 = 跳过 CDN 竞速，resolveEntry 直接回落 DEFAULT_ENTRY。 */
   antiblockCdnSources: readonly string[];
+  /** Store listing URLs; '' = not listed (ForceUpgradeDialog falls back to
+   *  the website /install page). Play URLs are fixed by package name and can
+   *  be filled before the listing is live; App Store URLs only after. */
+  storeUrls: { ios: string; android: string };
   theme: BrandThemeTokens;
   features: BrandFeatures;
 }

@@ -3,4 +3,6 @@
     <string name="k2_cdn_primary">https://d13jc1jqzlg4yt.cloudfront.net/overleap</string>
     <string name="k2_cdn_fallback">https://d0.all7.cc/overleap</string>
     <string name="k2_vpn_display_name">Overleap</string>
+    <!-- Play-only distribution: the app must never download/install APKs itself. Web OTA (JS assets) stays on. -->
+    <bool name="k2_apk_updates">false</bool>
 </resources>

@@ -21,6 +21,7 @@ import { useIapPurchase } from '../../hooks/useIapPurchase';
 import { useStripeCheckout } from '../../hooks/useStripeCheckout';
 import { useUser } from '../../hooks/useUser';
 import { useAppConfig } from '../../hooks/useAppConfig';
+import { getCurrentAppConfig } from '../../config/apps';
 import { useAlert } from '../../stores/alert.store';
 import MembershipBenefits from '../MembershipBenefits';
 import RenewalStatusCard from './RenewalStatusCard';
@@ -96,8 +97,8 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
           maxLanClient={user?.maxLanClient}
         />
 
-        {/* 增长闭环 — 免费得天数（Apple 合规），仅配置存在时显示 */}
-        {inviteRewardDays > 0 && (
+        {/* 增长闭环 — 免费得天数（Apple 合规），仅邀请计划品牌（features.invite）且配置存在时显示 */}
+        {getCurrentAppConfig().features.invite && inviteRewardDays > 0 && (
           <InviteRewardCard
             months={appConfig?.inviteReward?.minRewardMonths ?? 12}
             onInvite={() => navigate('/invite')}

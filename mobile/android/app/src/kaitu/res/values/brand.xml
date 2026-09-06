@@ -3,4 +3,6 @@
     <string name="k2_cdn_primary">https://d13jc1jqzlg4yt.cloudfront.net/kaitu</string>
     <string name="k2_cdn_fallback">https://d0.all7.cc/kaitu</string>
     <string name="k2_vpn_display_name">kaitu.io</string>
+    <!-- Sideloaded APK: the native (APK) auto-update lane stays on. -->
+    <bool name="k2_apk_updates">true</bool>
 </resources>

@@ -87,6 +87,15 @@ else
   pass "beta.99 rejected — 99 belongs to the release"
 fi
 
+# 7. Marketing version per brand: kaitu keeps the historical 4.x remap (the ANC
+#    record was already at 4.x); overleap is a new app and ships the real semver.
+mk_k=$(BRAND=kaitu mkt "0.4.10"); mk_o=$(BRAND=overleap mkt "0.4.10")
+if [ "$mk_k" = "4.4.10" ] && [ "$mk_o" = "0.4.10" ]; then
+  pass "marketing version kaitu=$mk_k overleap=$mk_o"
+else
+  fail "marketing version kaitu=$mk_k (want 4.4.10) overleap=$mk_o (want 0.4.10)"
+fi
+
 echo
 if (( fails == 0 )); then
   echo "All iOS build-number rules hold."

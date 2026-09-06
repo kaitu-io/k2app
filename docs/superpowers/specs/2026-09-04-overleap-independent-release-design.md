@@ -206,7 +206,7 @@ Overleap 最小窗口 880×620 → 短边 620 ≥ 600 → webapp 永远 desktop 
 
 ## 第二波预览（移动端，不在本 spec 范围）
 
-ASC 6759199298 的 4.0 版本元数据/截图全换、年龄分级、隐私标签、服务器通知 URL；`icons-overleap/android/` 与 iOS AppIcon 从 §1.3 的 SVG 源生成；`OVERLEAP_MOBILE_CI` 翻转 + runner provisioning profiles；Google Play 新账号；`IosMembershipPanel` 的 `stripe_portal` 分派修复；真机 smoke。**强烈建议为 Overleap LLC 开独立 Apple 开发者账号**：这是消解 4.3 重复应用风险、并让 App Store 卖家名不显示 ALL NATION CONNECT 的根本办法，前置是法律实体落地。
+ASC 6759199298 的 4.0 版本元数据/截图全换、年龄分级、隐私标签、服务器通知 URL；`icons-overleap/android/` 与 iOS AppIcon 从 §1.3 的 SVG 源生成；`OVERLEAP_MOBILE_CI` 翻转 + runner provisioning profiles；Google Play 新账号；`IosMembershipPanel` 的 `stripe_portal` 分派修复（**已落地**，见 `2026-09-06-overleap-app-launch-design.md` 背景表）；真机 smoke。**强烈建议为 Overleap LLC 开独立 Apple 开发者账号**：这是消解 4.3 重复应用风险、并让 App Store 卖家名不显示 ALL NATION CONNECT 的根本办法，前置是法律实体落地。
 
 ## 文档同步（列入验收）
 

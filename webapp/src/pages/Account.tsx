@@ -65,6 +65,8 @@ import { usePrivateNodes } from '../hooks/usePrivateNodes';
 import { getBrandSlogan, getBrandName } from '../brands/i18n-vars';
 import { brandConfig } from '../brands';
 import { getCurrentAppConfig } from '../config/apps';
+import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
+import SubscriptionStatusOnly from '../components/SubscriptionStatusOnly';
 
 /**
  * 掩码登录邮箱。星号数固定为 3，不随用户名长度增长——等长掩码会生成一个
@@ -402,7 +404,9 @@ export default function Account() {
                   {t('common:common.retry')}
                 </Button>
               )}
-              {!isNotLoggedIn && !hasError && isExpired &&
+              {/* Purchase CTAs: purchaseSurfaceAvailable() (utils/purchase-surface.ts)
+                  is the single gate; the iOS affordance clause stays as before. */}
+              {!isNotLoggedIn && !hasError && isExpired && purchaseSurfaceAvailable() &&
   (window._platform?.os !== 'ios' || affordance.mode === 'subscribe') && (
                 <Button
                   variant="contained"
@@ -422,6 +426,9 @@ export default function Account() {
                 >
                   {t('account:account.renewNow')}
                 </Button>
+              )}
+              {!isNotLoggedIn && !hasError && !purchaseSurfaceAvailable() && window._platform?.os === 'android' && (
+                <SubscriptionStatusOnly isPro={!isExpired} expiresText={displayTime} />
               )}
             </Stack>
           )}
@@ -568,7 +575,7 @@ export default function Account() {
                       {t('account:account.modifyEmail')}
                     </Button>
                   )
-                ) : (window._platform?.os !== 'ios' || affordance.mode === 'subscribe') ? (
+                ) : (purchaseSurfaceAvailable() && (window._platform?.os !== 'ios' || affordance.mode === 'subscribe')) ? (
                   <Button
                     size="small"
                     variant="contained"
@@ -664,8 +671,8 @@ export default function Account() {
               </ListItemSecondaryAction>
             </ListItem>
 
-            {/* 代付人设置（第三方代付）— iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付路径 */}
-            {window._platform?.os !== 'ios' && (<>
+            {/* 代付人设置（第三方代付）— 品牌门 features.delegate（开途专属）；iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付路径 */}
+            {getCurrentAppConfig().features.delegate && window._platform?.os !== 'ios' && (<>
             <Divider />
 
             <ListItem
@@ -719,8 +726,8 @@ export default function Account() {
               />
             </ListItem>
 
-            {/* 我的钱包（外部钱包/储值）— iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付/充值路径 */}
-            {window._platform?.os !== 'ios' && (<>
+            {/* 我的钱包（外部钱包/储值）— 品牌门 features.wallet（开途专属，WordGate 钱包）；iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付/充值路径 */}
+            {getCurrentAppConfig().features.wallet && window._platform?.os !== 'ios' && (<>
             <Divider />
 
             {/* Wallet */}

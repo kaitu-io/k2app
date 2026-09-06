@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import IosMembershipPanel from '../IosMembershipPanel';
+import { brandConfig } from '../../../brands';
 import type { DataSubscription } from '../../../services/api-types';
 
 // t echoes the key, appending interpolated date/days so assertions can see them.
@@ -131,10 +132,19 @@ describe('IosMembershipPanel', () => {
     expect(navigate).toHaveBeenCalledWith('/pro-histories?from=/purchase');
   });
 
-  it('shows the invite-reward card and navigates to /invite', () => {
+  // Invite programme is brand-gated (features.invite): kaitu shows the card,
+  // overleap must render no invite surface at all even with a reward configured.
+  it.skipIf(!brandConfig.features.invite)('shows the invite-reward card and navigates to /invite', () => {
     render(<IosMembershipPanel mode="status" />);
     fireEvent.click(screen.getByTestId('invite-reward-btn'));
     expect(navigate).toHaveBeenCalledWith('/invite');
+  });
+
+  it.skipIf(brandConfig.features.invite)('brand without an invite programme: no invite card, no /invite/ text', () => {
+    const { container } = render(<IosMembershipPanel mode="status" />);
+    expect(screen.queryByTestId('invite-reward-card')).toBeNull();
+    expect(container.textContent ?? '').not.toMatch(/invite/i);
+    expect(navigate).not.toHaveBeenCalledWith('/invite');
   });
 
   it('hides the invite-reward card when no reward configured', () => {

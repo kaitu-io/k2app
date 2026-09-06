@@ -8,3 +8,8 @@ K2_VPN_DISPLAY_NAME = Overleap
 // No public App Store listing yet (Phase 0) — empty resolves to empty string
 // in Info.plist; K2Plugin.swift's fallback only protects the kaitu literal.
 K2_APP_STORE_URL =
+K2_DEVELOPMENT_REGION = en
+// Export compliance: k2 uses only standard algorithms (TLS / standard symmetric
+// ciphers) — exempt. Answered here so every upload skips the ASC questionnaire.
+// INFOPLIST_KEY_* is injected by Xcode 13+; the shared Info.plist stays untouched.
+INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO

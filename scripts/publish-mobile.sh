@@ -20,6 +20,8 @@ set -euo pipefail
 # prefix. Falls back to $K2_BRAND, then "kaitu". overleap has no live App
 # Store listing yet (Phase 0) — if OVERLEAP_APPSTORE_URL is unset, the ios
 # manifest publish is skipped with a warning (see below).
+# overleap android is Play-only: --platform=android exits 0 without touching
+# S3, and --platform=both narrows to ios.
 #
 # Usage:
 #   make publish-mobile VERSION=0.5.0            # Real S3 publish (stable)
@@ -70,6 +72,21 @@ fi
 if [ -n "$PLATFORM" ] && [ "$PLATFORM" != "android" ] && [ "$PLATFORM" != "ios" ]; then
     echo "ERROR: Invalid platform '${PLATFORM}'. Must be 'android' or 'ios'." >&2
     exit 1
+fi
+
+# Overleap Android ships through Google Play only: no CDN APK, no android
+# manifest (the app's APK self-update lane is off — see k2_apk_updates in
+# mobile/android/app/src/overleap/res/values/brand.xml). Placed before the
+# artifact validation and the iOS-skip block below so that --platform=both
+# narrows to iOS first, and the iOS block may then still exit 0 on its own
+# (OVERLEAP_APPSTORE_URL unset). exit 0: expected state, CI legs stay green.
+if [ "$BRAND" = overleap ] && [ "$PLATFORM" != ios ]; then
+    echo "WARN: overleap android is Play-only — skipping android manifest."
+    if [ "$PLATFORM" = android ]; then
+        echo "Nothing published (overleap android is Play-only)."
+        exit 0
+    fi
+    PLATFORM="ios"
 fi
 
 # Auto-detect channel from version if not explicitly set

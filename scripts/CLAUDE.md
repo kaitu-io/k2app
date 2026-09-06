@@ -9,18 +9,18 @@ canonical invocation before running one by hand.
 | Group | Scripts |
 |-------|---------|
 | Dev servers | `dev-standalone.sh`, `dev-macos.sh`, `dev-windows.sh` (dev daemon on `:11777`, not `:1777`), `dev-openwrt.sh` |
-| Build | `build-k2.sh`, `build-k2-standalone.sh` (k2/k2s for linux+darwin), `build-macos.sh` (k2 universal → tauri → re-sign → `.app.tar.gz` → `pkgbuild` `.pkg` → notarize → brand purity gate), `build-mobile-{ios,android}.sh`, `build-openwrt.sh`, `gen-embedded-seed.js` (`make fetch-embedded-seed`: rewrites `webapp/src/services/antiblock-seed-embedded.ts`, fail-soft) |
-| Publish / deploy | `publish-desktop.sh` (`--brand=`, `--channel=`; latest.json ×2 + GitHub Release), `publish-mobile.sh`, `publish-k2.sh`, `publish-docker.sh`, `deploy-center.sh` |
-| Brand purity | `check-desktop-brand-purity.sh <brand> <path>` (checks `.app.tar.gz` by **content**), `check-mobile-brand-purity.sh`, `apply-ios-brand.sh`. The webapp dist gate `check-brand-purity.sh` and `smoke-dist.mjs` live in **`webapp/scripts/`**, not here |
+| Build | `build-k2.sh`, `build-k2-standalone.sh` (k2/k2s for linux+darwin), `build-macos.sh` (k2 universal → tauri → re-sign → `.app.tar.gz` → `pkgbuild` `.pkg` → notarize → brand purity gate), `build-mobile-{ios,android}.sh` (android release also emits the `.aab`; ios `MARKETING_VERSION` is per brand — kaitu `4.x.y`, overleap real semver), `build-openwrt.sh`, `gen-embedded-seed.js` (`make fetch-embedded-seed`: rewrites `webapp/src/services/antiblock-seed-embedded.ts`, fail-soft) |
+| Publish / deploy | `publish-desktop.sh` (`--brand=`, `--channel=`; latest.json ×2 + GitHub Release), `publish-mobile.sh` (overleap android is Play-only: exits 0, no manifest), `publish-k2.sh`, `publish-docker.sh`, `deploy-center.sh` |
+| Brand purity | `check-desktop-brand-purity.sh <brand> <path>` (checks `.app.tar.gz` by **content**), `check-mobile-brand-purity.sh` (`.apk` / `.aab` / `.xcarchive`), `check-mobile-brand-assets.sh <brand>` (structural guard on the generated iOS/Android artwork — dimensions, alpha, not-flat, brand colour, not the peer's bytes), `apply-ios-brand.sh` (AppIcon + Splash + xcconfig + InfoPlist.strings). The webapp dist gate `check-brand-purity.sh` and `smoke-dist.mjs` live in **`webapp/scripts/`**, not here |
 | Verification | `test_build.sh` (count computed at runtime), `check-embed-size.sh` (committed `k2/rule/embed/krs.tar.gz` ≤ 300 KB, reads the k2 HEAD blob), `check-i18n.mjs` (webapp `yarn build` runs it `--ci`: locale keys vs zh-CN), `test-openwrt.sh` + `openwrt/` (`install.sh`, `k2r.init`, `luci-app-k2r`) |
 | iOS device | `detect-ios-device.sh`, `deploy-ios-device.sh`, `ios-logs.sh` |
-| Misc | `sync-version.sh` (package.json → Cargo.toml / build.gradle / K2Helpers.swift / pbxproj; run by `make pre-build`), `sync-adb-tools.sh`, `pkg-scripts/{preinstall,postinstall}` (macOS PKG hooks; `@APP_NAME@` / `@BUNDLE_ID@` templated by `build-macos.sh`) |
+| Misc | `sync-version.sh` (package.json → Cargo.toml / build.gradle / K2Helpers.swift / pbxproj; run by `make pre-build`; Android `versionCode = MAJOR*1000000 + MINOR*10000 + PATCH*100 + ANDROID_BUILD_REV`), `sync-adb-tools.sh`, `pkg-scripts/{preinstall,postinstall}` (macOS PKG hooks; `@APP_NAME@` / `@BUNDLE_ID@` templated by `build-macos.sh`) |
 
 ## CI-driven (`ci/` unless noted)
 
 - `ci/api-db-test.sh [config.yml]` (`ci.yml` `test-api-db`) — runs the api suite against a real MariaDB and **fails on any `config.yml not available` skip**. Plain `go test ./...` in `api/` silently skips every DB test when `center/config.yml` is absent (256 of 1085 at 0.4.8) and still reports green.
 - `check-k2-plugin-fresh.sh` (webapp `pretest` + `test-webapp-reusable.yml`) — `mobile/plugins/k2-plugin/dist` vs `tsc(src)`, and freshness of the yarn `file:` copy.
-- `test-ios-build-number.sh` (`ci.yml`) — drives `build-mobile-ios.sh --print-build-number` instead of re-implementing the formula.
+- `test-ios-build-number.sh` (`ci.yml`) — drives `build-mobile-ios.sh --print-build-number` instead of re-implementing the formula (incl. the per-brand marketing version).
 - `ci/web-ota-manifest.mjs` (+ `.test.mjs`; `publish-web-ota.yml`) — `version` = root version + seconds since 2026-01-01; `manifest` derives `min_native` / `min_desktop` / `min_linux` / `min_bridge` from `contracts/webapp-support-floor.json` (support floor — never hand-written).
 - `antiblock-cursor.sh`, `antiblock-cursor.test.sh`, `antiblock-encrypt.js` (+ `antiblock-keygen.js`) (`publish-antiblock.yml`) — AES-256-GCM JSONP antiblock config.
 - `ci/upload-release.sh --windows|--macos|--linux|--android [--skip-cdn] [--brand=kaitu|overleap]` — S3 upload + CDN invalidation, one platform per call; `--web` is handled by `publish-web-ota.yml`, not this script.

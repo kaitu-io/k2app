@@ -44,12 +44,14 @@ export const KAITU_BRAND: WebappBrandConfig = {
     'https://jsdelivr.b-cdn.net/gh/kaitu-io/ui-theme@dist/ui.js',
     'https://cdn.statically.io/gh/kaitu-io/ui-theme@dist/ui.js',
   ],
+  storeUrls: { ios: 'https://apps.apple.com/app/id6448744655', android: '' },
   theme: KAITU_THEME,
   features: {
     invite: true,
     retailer: true,
     discover: true,
     delegate: true,
+    wallet: true,
     wordgatePurchase: true,
     stripeCheckout: false,
     chatwoot: true,
@@ -57,5 +59,6 @@ export const KAITU_BRAND: WebappBrandConfig = {
     antiblockRelay: true,
     selfHostedTunnels: true,
     multiCountryRouting: false, // China-market: region always cn (出国 + 回国), no geo/picker
+    androidPurchase: true, // sideloaded APK: may link to WordGate
   },
 };

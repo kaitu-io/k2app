@@ -383,12 +383,14 @@ build-android: pre-build build-webapp appext-android decrypt-keystore
 	@# during release verification, when changing the build graph costs more
 	@# than it saves.
 	cd mobile/android && ./gradlew :k2-plugin:testDebugUnitTest
-	cd mobile/android && KAITU_ANDROID_STORE_PASSWORD="$$KAITU_ANDROID_STORE_PASSWORD" OVERLEAP_ANDROID_STORE_PASSWORD="$$OVERLEAP_ANDROID_STORE_PASSWORD" ./gradlew assemble$(shell echo $(BRAND) | awk '{print toupper(substr($$0,1,1)) substr($$0,2)}')Release
+	cd mobile/android && KAITU_ANDROID_STORE_PASSWORD="$$KAITU_ANDROID_STORE_PASSWORD" OVERLEAP_ANDROID_STORE_PASSWORD="$$OVERLEAP_ANDROID_STORE_PASSWORD" ./gradlew assemble$(BRAND_PRODUCT)Release bundle$(BRAND_PRODUCT)Release
 	@echo "--- Collecting artifacts ---"
 	@mkdir -p release/$(VERSION)
 	@cp mobile/android/app/build/outputs/apk/$(BRAND)/release/app-$(BRAND)-release.apk release/$(VERSION)/$(BRAND_PRODUCT)-$(VERSION).apk
+	@# AAB (Google Play upload format) — exact flavoured path, no glob.
+	@cp mobile/android/app/build/outputs/bundle/$(BRAND)Release/app-$(BRAND)-release.aab release/$(VERSION)/$(BRAND_PRODUCT)-$(VERSION).aab
 	@echo "=== Build complete ==="
-	@ls -la release/$(VERSION)/$(BRAND_PRODUCT)-$(VERSION).apk
+	@ls -la release/$(VERSION)/$(BRAND_PRODUCT)-$(VERSION).apk release/$(VERSION)/$(BRAND_PRODUCT)-$(VERSION).aab
 
 decrypt-keystore:
 	@KS=$(if $(filter overleap,$(BRAND)),overleap-release,kaitu-release); \
