@@ -18,6 +18,16 @@ type TicketNotifyPayload struct {
 	TicketID uint64 `json:"ticketId"`
 }
 
+// ticketBrand 取工单记录的品牌；列缺省/非法（brand 列上线前的存量行、脏数据）一律回退
+// kaitu —— 与 Brand.Config() 的未知值回退语义一致：品牌不明时沿用历史中文通知，
+// 绝不把英文版误发给开途用户。
+func ticketBrand(ticket FeedbackTicket) Brand {
+	if b := Brand(ticket.Brand); b.Valid() {
+		return b
+	}
+	return BrandKaitu
+}
+
 // handleTicketNotify 处理工单通知：聚合未通知的管理员回复，发送邮件
 func handleTicketNotify(ctx context.Context, payload []byte) error {
 	var p TicketNotifyPayload
@@ -67,19 +77,10 @@ func handleTicketNotify(ctx context.Context, payload []byte) error {
 			r.CreatedAt.Format("2006-01-02 15:04"), r.SenderName, r.Content))
 	}
 
-	subject := fmt.Sprintf("[Kaitu] 您的工单有新回复 (#%d)", p.TicketID)
-	body := fmt.Sprintf(`您好，
+	b := ticketBrand(ticket)
+	subject, body := ticketReplyNotification(b, p.TicketID, strings.Join(replyTexts, "\n\n"))
 
-您的工单 (#%d) 收到了新的回复：
-
----
-%s
----
-
-请登录 Kaitu 客户端查看完整对话。
-`, p.TicketID, strings.Join(replyTexts, "\n\n"))
-
-	if err := sendSystemEmailAs(ctx, BrandKaitu, userEmail, subject, body); err != nil {
+	if err := sendSystemEmailAs(ctx, b, userEmail, subject, body); err != nil {
 		return fmt.Errorf("failed to send notification email: %w", err)
 	}
 

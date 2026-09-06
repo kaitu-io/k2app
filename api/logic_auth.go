@@ -558,7 +558,7 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 			KickTime: time.Now().Format("2006-01-02 15:04:05"),
 			Remark:   oldestDevice.Remark,
 		}
-		if err := emailToUser(c, int64(user.ID), deviceKickTemplate, meta); err != nil {
+		if err := emailToUser(c, int64(user.ID), brandedDeviceKickTemplate.For(Brand(user.Brand)), meta); err != nil {
 			log.Errorf(c, "failed to send device kick email to user %d: %v", user.ID, err)
 		}
 	}
