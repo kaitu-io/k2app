@@ -234,6 +234,37 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Test 10: Overleap Android is Play-only — no CDN manifest, exit 0
+# ---------------------------------------------------------------------------
+echo "--- Test 10: overleap android is Play-only ---"
+# No android artifact is staged for overleap on purpose: the script must not
+# even look for one (it exits before validation with a Play-only notice).
+mkdir -p "$MOCK_S3/overleap"
+OUT=$("$PUBLISH_SCRIPT" "0.5.0" --brand=overleap --platform=android --s3-base="$MOCK_S3/overleap" --dry-run 2>&1)
+EC=$?
+if [ "$EC" -eq 0 ] && echo "$OUT" | grep -q "Play-only"; then
+    test_result 0 "overleap --platform=android exits 0 with a Play-only notice"
+else
+    echo "    exit=$EC output: $OUT" | head -5
+    test_result 1 "overleap --platform=android exits 0 with a Play-only notice"
+fi
+if [ ! -f "$MOCK_S3/overleap/android/latest.json" ] && [ ! -f "$MOCK_S3/overleap/android/beta/latest.json" ]; then
+    test_result 0 "overleap android manifests are never written"
+else
+    test_result 1 "overleap android manifests are never written"
+fi
+# --platform unset (both) narrows to iOS; with OVERLEAP_APPSTORE_URL set the iOS
+# manifest is still published and the android one still is not.
+OUT=$(OVERLEAP_APPSTORE_URL="https://apps.apple.com/app/id0000000000" "$PUBLISH_SCRIPT" "0.5.0" --brand=overleap --s3-base="$MOCK_S3/overleap" --dry-run 2>&1)
+EC=$?
+if [ "$EC" -eq 0 ] && [ -f "$MOCK_S3/overleap/ios/latest.json" ] && [ ! -f "$MOCK_S3/overleap/android/latest.json" ]; then
+    test_result 0 "overleap (both platforms) publishes ios manifest only"
+else
+    echo "    exit=$EC output: $OUT" | head -5
+    test_result 1 "overleap (both platforms) publishes ios manifest only"
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
