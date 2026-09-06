@@ -137,6 +137,27 @@ class AutoUpdatePlanTest {
         assertTrue(steps.appliesWeb())
     }
 
+    /**
+     * Play-only brand contract (k2_apk_updates=false, e.g. Overleap): the shell
+     * hands the planner a native supplier that returns null WITHOUT fetching.
+     * The plan must then carry no native action at all while the web OTA lane
+     * proceeds normally — a Play-distributed app may never offer an APK, but
+     * JS-asset updates are allowed.
+     */
+    @Test
+    fun apk_updates_disabled_yields_no_native_action_but_web_ota_proceeds() {
+        val steps = plan(
+            native = { null },
+            webM = { web(version = "0.4.10.20000000") },
+            appVersion = "0.4.10",
+            localWebVersion = "0.4.10",
+        )
+        assertTrue("no native action for a Play-only brand", !steps.notifiesNative())
+        assertEquals("manifest unavailable", steps.skipReason("native"))
+        assertTrue("web OTA must still be planned", steps.appliesWeb())
+        assertEquals("one step per lane", 2, steps.size)
+    }
+
     @Test
     fun web_manifest_unreachable_does_not_block_native() {
         val steps = plan(webM = { null })

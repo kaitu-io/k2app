@@ -429,6 +429,11 @@ class K2Plugin : Plugin() {
     fun checkNativeUpdate(call: PluginCall) {
         Thread {
             try {
+                // Play-only brand (k2_apk_updates=false): the app must never
+                // offer an APK download. Report "no update" without fetching.
+                if (!K2PluginUtils.apkUpdatesEnabled(context)) {
+                    val ret = JSObject(); ret.put("available", false); call.resolve(ret); return@Thread
+                }
                 val result = fetchManifest(
                     K2PluginUtils.androidManifestEndpoints(
                         getChannel(), K2PluginUtils.cdnPrimary(context), K2PluginUtils.cdnFallback(context)
@@ -935,10 +940,12 @@ class K2Plugin : Plugin() {
         val cdnPrimary: String
         val cdnFallback: String
         val appVersion: String
+        val apkUpdates: Boolean
         try {
             channel = getChannel()
             cdnPrimary = K2PluginUtils.cdnPrimary(context)
             cdnFallback = K2PluginUtils.cdnFallback(context)
+            apkUpdates = K2PluginUtils.apkUpdatesEnabled(context)
             appVersion = context.packageManager
                 .getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
         } catch (e: Exception) {
@@ -950,8 +957,10 @@ class K2Plugin : Plugin() {
         val localWebVersion = readDiskWebVersion() ?: appVersion
 
         val plan = planAutoUpdate(
+            // Play-only brand: no native lane at all (null → Skip), never a
+            // nativeUpdateAvailable banner. The web OTA lane below still runs.
             nativeManifest = {
-                fetchManifest(
+                if (!apkUpdates) null else fetchManifest(
                     K2PluginUtils.androidManifestEndpoints(channel, cdnPrimary, cdnFallback)
                 )?.let { (manifest, baseURL) ->
                     NativeManifestInfo(
