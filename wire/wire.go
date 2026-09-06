@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/kaitu-io/k2/wire/k2cc"
 )
 
 // Errors
@@ -47,6 +49,15 @@ type WireStats struct {
 	Mode           int           // K2CCMode (QUIC only)
 	MIID           uint64        // Monitor Interval ID (QUIC only)
 	Epsilon        float64       // AIMD-ε adaptive step size (QUIC only)
+
+	// CC is the cumulative k2cc observability record of the CURRENT sender
+	// (QUIC only; zero value with SenderID=0 on TCP-WS or before connect).
+	// Direction: on the client this is the UPLINK sender — VPN users barely
+	// upload, so AppLimitedMIs ≈ MIs is normal here, not a fault. Download
+	// direction lives in the server's "DIAG: cc-summary" line. Diff two
+	// samples with CC.Sub(prev) to get a window.
+	CC k2cc.CCSummary
+
 	TxBytes        int64
 	RxBytes        int64
 	WireFallback   bool // TCP-WS serving traffic due to QUIC failure

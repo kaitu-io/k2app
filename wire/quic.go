@@ -948,6 +948,7 @@ func (c *QUICClient) WireStats() WireStats {
 		s.Mode = int(snap.Mode)
 		s.MIID = snap.MIID
 		s.Epsilon = snap.Epsilon
+		s.CC = sender.Summary()
 	}
 	if mux != nil {
 		s.RelayUDPTimeouts = mux.relayTimeouts.Load()
@@ -1302,15 +1303,19 @@ func (s *QUICServer) acceptLoop() {
 			return
 		}
 		slog.Debug("QUICServer: accepted connection", "remote", conn.RemoteAddr())
-		// Set K2CC congestion control for server-side sending (critical for download speed)
-		conn.SetCongestionControl(k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate))
+		// Set K2CC congestion control for server-side sending (critical for download speed).
+		// The sender is handed to handleConn so the connection's cc-summary
+		// loop can read its Summary() — before this, the server-side (download)
+		// sender was unobservable.
+		sender := k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate)
+		conn.SetCongestionControl(sender)
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("QUICServer: panic in handleConn", "panic", r, "remote", conn.RemoteAddr())
 				}
 			}()
-			s.handleConn(conn)
+			s.handleConn(conn, sender)
 		}()
 	}
 }
@@ -1328,9 +1333,17 @@ type connContext struct {
 	// sess is this connection's registry entry (nil when revalidation is
 	// disabled). Identity is published onto it by handleMetadataStream.
 	sess *authSession
+
+	// cc is the download-direction k2cc sender attached in acceptLoop, read
+	// by ccSummaryLoop (cc_summary.go). nil on P2P server connections, which
+	// keep kuic's default controller — no cc-summary is emitted for those.
+	cc *k2cc.K2CCSender
 }
 
-func (s *QUICServer) handleConn(conn *quic.Conn) {
+// handleConn owns one server connection. cc is the download-direction k2cc
+// sender attached in acceptLoop (nil for P2P connections that keep kuic's
+// default controller — no cc-summary is emitted for those).
+func (s *QUICServer) handleConn(conn *quic.Conn, cc *k2cc.K2CCSender) {
 	connLog := slog.With("remote", conn.RemoteAddr())
 
 	// Shared UDP state for datagram + overflow stream paths
@@ -1342,8 +1355,19 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 		log:      connLog,
 		dev:      dev,
 	}
-	ctx := &connContext{udp: state, dev: dev, auth: newConnAuth()}
+	ctx := &connContext{udp: state, dev: dev, auth: newConnAuth(), cc: cc}
 	ctx.mode.Store("") // default: normal client
+
+	// Per-connection CC observability (cc_summary.go). Exits on state.done
+	// or conn.Context().Done(), whichever comes first.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				connLog.Error("QUICServer: panic in ccSummaryLoop", "panic", r)
+			}
+		}()
+		s.ccSummaryLoop(connLog, ctx, conn, state.done)
+	}()
 
 	s.rollout.RecordConn()
 	defer func() {

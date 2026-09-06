@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/wire"
+	"github.com/kaitu-io/k2/wire/k2cc"
 )
 
 // TestHealthSnapshot_HasChannelScores verifies HealthSnapshot serializes the
@@ -1374,5 +1376,94 @@ func TestBackupProbe_ModeChangeDuringHealthyWaitNoticedQuickly(t *testing.T) {
 	}
 	if elapsed := probedAt.Sub(t0); elapsed >= backupProbeIntervalHealthy {
 		t.Fatalf("degraded probe fired at t0+%v — no better than the stale 60s boundary this fix targets", elapsed)
+	}
+}
+
+// --- k2cc observability Phase 1 ------------------------------------------
+
+func heartbeatAttr(t *testing.T, r slog.Record, key string) string {
+	t.Helper()
+	var v string
+	var ok bool
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == key {
+			v, ok = a.Value.String(), true
+			return false
+		}
+		return true
+	})
+	if !ok {
+		t.Fatalf("heartbeat lacks %s", key)
+	}
+	return v
+}
+
+// The heartbeat reports the 30 s WINDOW of the uplink sender's CC summary,
+// and a sender swap (reconnect) must restart the window instead of underflowing.
+func TestHeartbeat_CCWindowDiffAndSenderEpoch(t *testing.T) {
+	var mu sync.Mutex
+	var records []slog.Record
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slogHandlerFunc(func(_ context.Context, r slog.Record) error {
+		mu.Lock()
+		records = append(records, r.Clone())
+		mu.Unlock()
+		return nil
+	})))
+	defer slog.SetDefault(prev)
+
+	stub := &statsEchoStub{stats: wire.WireStats{
+		Transport: "quic", RTT: 50 * time.Millisecond, MinRTT: 50 * time.Millisecond,
+	}}
+	stub.stats.CC = k2cc.CCSummary{SenderID: 1, MIs: 5, AppLimitedMIs: 4, FloorMIs: 1, BWEst: 3_100_000, BGLoss: 0.002, Mode: k2cc.K2CCModeDecision}
+	stub.stats.CC.LossHist[5] = 5 // every MI in the 10% bucket
+	stub.stats.CC.RTTHist[4] = 5  // 75 ms bucket
+	stub.setFn(func(ctx context.Context) error { return nil })
+	tm := wire.NewTransportManager()
+	tm.SetPrimary(stub, "quic-443")
+	ot := &outboundTransport{tm: tm, name: "t"}
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
+
+	heartbeat := func() slog.Record {
+		t.Helper()
+		for range 30 {
+			hm.sample()
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		for i := len(records) - 1; i >= 0; i-- {
+			if records[i].Message == "DIAG: heartbeat" {
+				return records[i]
+			}
+		}
+		t.Fatal("no DIAG: heartbeat after 30 samples")
+		return slog.Record{}
+	}
+
+	r := heartbeat()
+	for k, want := range map[string]string{
+		"ccMis": "5", "ccAppLimited": "4", "ccFloor": "1", "ccLossP90": "10", "ccRttP90": "75",
+		"ccBwEst": "3.1", "ccBgLoss": "0.2", "ccMode": "decision",
+	} {
+		if got := heartbeatAttr(t, r, k); got != want {
+			t.Errorf("%s=%q want %q", k, got, want)
+		}
+	}
+
+	stub.stats.CC.MIs = 8 // +3 in this window
+	if got := heartbeatAttr(t, heartbeat(), "ccMis"); got != "3" {
+		t.Fatalf("second window ccMis=%q want 3", got)
+	}
+
+	stub.stats.CC.SenderID = 2 // reconnect: new sender, counters restart
+	stub.stats.CC.MIs = 8
+	if got := heartbeatAttr(t, heartbeat(), "ccMis"); got != "8" {
+		t.Fatalf("new sender epoch ccMis=%q want 8 (not 0, not underflow)", got)
+	}
+
+	stub.stats.CC = k2cc.CCSummary{} // TCP-WS fallback / no sender
+	if got := heartbeatAttr(t, heartbeat(), "ccMis"); got != "0" {
+		t.Fatalf("no sender ccMis=%q want 0", got)
 	}
 }
