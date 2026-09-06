@@ -58,7 +58,22 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
   overleap 是横向桌面窗口（`tauri.conf.overleap.json` 1040×700、min 880×620、可最大化，`window.rs`
   `cfg(brand_overleap)` 分支按工作区 85% 夹紧、不锁比）。webapp 侧栏布局靠短边 ≥ 600 触发，所以
   overleap 的 minHeight 620 是布局契约，不是随手值。两套常量各有测试模块，`K2_BRAND=overleap cargo test`
-  必须与默认 `cargo test` 各跑一次。
+  必须与默认 `cargo test` 各跑一次——`ci.yml` 的三个 Rust 测试 job（`test-linux-rust` / `test-macos` /
+  `test-windows`）现在各自紧跟默认跑一步 `K2_BRAND=overleap cargo test`。
+- **Windows Authenticode 描述随品牌**：`scripts/ci/sign-description.sh` 读 `K2_BRAND`（Makefile `export`
+  → Tauri `bundle.windows.signCommand` 进程环境）→ `Overleap Desktop` / `Kaitu Desktop`，供
+  `scripts/ci/macos/windows-sign.sh` 的 osslsigncode `-n`；`scripts/ci/windows/sign-binary.ps1` 用同一 env
+  分叉 signtool `/d`（`Overleap` / `Kaitu`）。`src-tauri/windows-sign.sh` 的 journal 多记一行 `brand=`，
+  dry-run（`K2_SIGN_LOG=… SKIP_WINDOWS_SIGNING=true`）即可证明 env 到达了签名器。测试：
+  `bash scripts/test-sign-description.sh`。证书主体（Wordgate LLC）两品牌共用，见上一条。
+- **日志上传按品牌分前缀**（`log_upload.rs`）：`S3_PREFIX_MANUAL` = `desktop` / `desktop-overleap`，
+  `S3_PREFIX_AUTO` = `auto` / `auto-overleap`，`MACOS_LOG_PREDICATE` = `process CONTAINS "kaitu"` /
+  `process CONTAINS "k2app"`。**两品牌的主二进制都叫 `k2app`**（crate 名；两份 tauri.conf 都没设
+  `mainBinaryName`，Tauri v2 不会改名，已建 `Kaitu.app` 的 `CFBundleExecutable = k2app`）——所以 overleap
+  谓词写进程实名，`"Overleap"` 匹配不到任何进程；kaitu 谓词按字节保留。`brand_prefix_tests` 每个 cfg
+  各钉一条字面量。同一桶（`kaitu-service-logs`）两品牌共用，靠前缀区分。
+- **Linux 桌面 kaitu-only**：`make build-linux` 首行 `[ "$(BRAND)" = kaitu ] || exit 1`，与
+  `scripts/ci/upload-release.sh --linux` 拒绝 overleap 一致（`pre-build` 作为前置仍会先跑）。
 
 ## Rust Modules (`src-tauri/src/`)
 
@@ -78,7 +93,7 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 - **window.rs** — Window management: calculates optimal size from screen dimensions using 9:20 aspect ratio with min/max constraints. Startup creates the window hidden (`visible: false`); `main.rs` setup calls `adjust_window_size()` then `show_window()` immediately — **before** `web_ota::prepare_boot` navigates; there is no `frontend_ready` handshake (comments naming it are stale). Supports `--minimized` autostart (tray-only). `show_window()` uses always-on-top trick on Windows to bring window to front. `hide_window()` minimizes on Windows (keeps taskbar icon) vs hides on macOS/Linux.
 - **storage.rs** — App-private key-value storage. Persists `storage.json` in Tauri app data dir. In-memory `HashMap` mirror with atomic write (write `.tmp` then `fs::rename`). Single-instance plugin guarantees no concurrent writers. Used by webapp for secure storage on desktop (IPlatform.storage). Values encrypted with AES-256-GCM via `storage_crypto.rs`; reads auto-detect `ENC1:` prefix for backward compat with plaintext.
 - **storage_crypto.rs** — AES-256-GCM for storage values; key = HKDF-SHA256 of the `machine-uid` crate's hardware ID; `ENC1:` prefix, plaintext read transparently. Sources, history and threat model: "Storage Encryption" below.
-- **log_upload.rs** — Log upload (runs in Tauri, not the daemon, so it works when the daemon is dead): stages `k2*.log` / `.log.gz` / `panic-*.log` from both the root and user daemon log dirs, `desktop*.log`, macOS `log show` output, and the Windows NSIS installer diagnostics (`install-diag.log`, `kaitu-preinstall.log`); sanitizes, tar.gz, uploads to S3 `desktop/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz`. Reason `beta-auto-upload` switches to per-file `auto/{udid}/{name}` PUTs. Uses `spawn_blocking`. **Read-only**: it never deletes or truncates a source log — only its own staging/tmp files.
+- **log_upload.rs** — Log upload (runs in Tauri, not the daemon, so it works when the daemon is dead): stages `k2*.log` / `.log.gz` / `panic-*.log` from both the root and user daemon log dirs, `desktop*.log`, macOS `log show` output, and the Windows NSIS installer diagnostics (`install-diag.log`, `kaitu-preinstall.log`); sanitizes, tar.gz, uploads to S3 `{S3_PREFIX_MANUAL}/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz` (`desktop/` kaitu, `desktop-overleap/` overleap). Reason `beta-auto-upload` switches to per-file `{S3_PREFIX_AUTO}/{udid}/{name}` PUTs (`auto/` / `auto-overleap/`). Prefixes and the macOS `log show` predicate are `cfg(brand_overleap)` constants — see "Brand". Uses `spawn_blocking`. **Read-only**: it never deletes or truncates a source log — only its own staging/tmp files.
 - **app_list.rs** — `list_running_processes` command: running user-facing apps (macOS: NSWorkspace `runningApplications` with child PIDs grouped under the owning `.app` via libproc; Windows: sysinfo process list, `id` = exe path). App Bypass **supplement** — see "App Bypass app lists".
 - **installed_apps.rs** — `list_installed_apps` command: installed apps `{id, label, processNames, iconUrl, installerPackageName?}` (camelCase serde). macOS: Info.plist scan of `/Applications`, `/System/Applications`, `~/Applications` incl. nested helper bundles; Windows: registry Uninstall scan. App Bypass **primary** list — see "App Bypass app lists".
 - **icon_protocol.rs** — Registers the `kaitu-icon://` URI scheme (`handle_kaitu_icon`) serving per-app icons to the App Bypass UI. macOS renders via NSWorkspace + NSBitmapImageRep → PNG; Windows is a v1 stub (404).
@@ -223,7 +238,7 @@ Daemon runs as root on macOS → different `$PATH` and `$HOME` from the user, so
 
 ## S3 Log Upload (Desktop)
 
-- **Feedback upload**: bundle tar.gz with unique feedbackId key: `desktop/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz`
-- **Beta auto-upload** (desktop only): per-file PUT to `auto/{udid}/{filename}`. Active `.log` files overwrite (latest snapshot). Rotated `.log.gz` files use HEAD check to skip if already uploaded.
-- Legacy `service-logs/` / `feedback-logs/` prefixes still supported by Lambda.
+- **Feedback upload**: bundle tar.gz with unique feedbackId key: `{S3_PREFIX_MANUAL}/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz` — `desktop/` for kaitu (historical, unchanged), `desktop-overleap/` for overleap.
+- **Beta auto-upload** (desktop only): per-file PUT to `{S3_PREFIX_AUTO}/{udid}/{filename}` — `auto/` kaitu, `auto-overleap/` overleap. Active `.log` files overwrite (latest snapshot). Rotated `.log.gz` files use HEAD check to skip if already uploaded.
+- Legacy `service-logs/` / `feedback-logs/` prefixes still supported by Lambda. **The notify Lambda (`scripts/lambda/s3-log-notify/index.mjs`) only recognises `PLATFORM_PREFIXES = {desktop, mobile}`** — `desktop-overleap/` feedback uploads land in the bucket but trigger no notification until that set gains `desktop-overleap` and the Lambda is redeployed (ops follow-up; `auto/` never notified either, by design).
 - Upload modules are read-only — never truncate source log files.
