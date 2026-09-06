@@ -614,6 +614,10 @@ type K2CCSender struct {
 	bwPhase        bwProbePhase // Cruise / ProbeUp / Drain
 	bwCruiseRemain int          // Remaining Cruise MIs in current cycle
 
+	// stats is the cumulative observability record (wire/k2cc/summary.go).
+	// Written only from processCompletedMI (under mu), read by Summary().
+	stats CCSummary
+
 	// Test-only hook: called when an MI completes (inside mu lock).
 	miCompletedHook func(mi *MonitorInterval, throughput float64, isAppLimited bool)
 
@@ -652,6 +656,7 @@ func NewK2CCSenderWithConfig(maxRate int64, config *K2CCConfig) *K2CCSender {
 		rtt:       initialRTT,
 		noiseEWMA: coldStartNoise,
 		ackRate:   newAckRateTracker(),
+		stats:     CCSummary{SenderID: senderSeq.Add(1)},
 	}
 }
 
@@ -740,6 +745,12 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	mi.IsAppLimited = mi.appLimited()
 	throughput := mi.Throughput()
 
+	// Observability: record what the controller SAW before it acts (mode
+	// residency is the mode this MI ran under). recordMIOutcome runs on every
+	// exit — the app-limited branch returns early.
+	p.recordCompletedMI(mi, throughput)
+	defer p.recordMIOutcome()
+
 	// Feed BW estimator (always, except app-limited)
 	if !mi.IsAppLimited && throughput > 0 {
 		p.bwEst.addSample(throughput)
@@ -754,6 +765,7 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	if !p.bwEst.valid() && p.state.NextMIID%rateProbingInterval == 0 && mi.LossRate() < 0.30 {
 		probeRate := p.state.CurrentRate * (1.0 + rateProbingIncrease)
 		if probeRate <= float64(p.maxRate) {
+			p.stats.RateProbes++
 			p.updateRate(probeRate)
 		}
 	}
@@ -881,6 +893,7 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 					p.bwPhase = bwPhaseCruise
 					p.bwCruiseRemain = bwCruiseLength
 				}
+				p.stats.SlowStartSaturations++
 				slog.Debug("k2cc: slow start saturated",
 					"mi", mi.ID,
 					"throughput", fmt.Sprintf("%.1fM", throughput/1_000_000),
@@ -1029,6 +1042,7 @@ func (p *K2CCSender) processBWAnchored(mi *MonitorInterval, throughput float64) 
 		p.bwEst = bwEstimator{} // Invalid — fall back to PCC
 		return
 	}
+	p.stats.BWAnchoredMIs++
 
 	switch p.bwPhase {
 	case bwPhaseCruise:
@@ -1044,6 +1058,7 @@ func (p *K2CCSender) processBWAnchored(mi *MonitorInterval, throughput float64) 
 			}
 			p.bwEst.reset(newBW)
 			bw = newBW
+			p.stats.BWDrops++
 			slog.Debug("k2cc: bw-anchor BW drop detected",
 				"mi", mi.ID,
 				"throughput", fmt.Sprintf("%.1fM", throughput/1e6),
@@ -1065,6 +1080,7 @@ func (p *K2CCSender) processBWAnchored(mi *MonitorInterval, throughput float64) 
 		}
 		if throughput > correctedBW*bwRiseThreshold {
 			p.bwEst.addSample(throughput)
+			p.stats.BWRises++
 			slog.Debug("k2cc: bw-anchor BW rise detected",
 				"mi", mi.ID,
 				"throughput", fmt.Sprintf("%.1fM", throughput/1e6),
@@ -1095,6 +1111,74 @@ func (p *K2CCSender) processBWAnchored(mi *MonitorInterval, throughput float64) 
 		"rate", fmt.Sprintf("%.1fM", p.state.CurrentRate/1e6),
 		"bgLoss", fmt.Sprintf("%.1f%%", p.bgLossEWMA*100),
 	)
+}
+
+// recordCompletedMI feeds the cumulative CCSummary. Caller holds p.mu.
+func (p *K2CCSender) recordCompletedMI(mi *MonitorInterval, throughput float64) {
+	st := &p.stats
+	st.MIs++
+	switch p.state.Mode {
+	case K2CCModeSlowStart:
+		st.SlowStartMIs++
+	case K2CCModeDecision:
+		st.DecisionMIs++
+	case K2CCModeRateAdjusting:
+		st.RateAdjMIs++
+	}
+	if mi.IsAppLimited {
+		st.AppLimitedMIs++
+	}
+	st.BytesSent += mi.BytesSent
+	st.BytesAcked += mi.BytesAcked
+	st.BytesLost += mi.BytesLost
+
+	loss := mi.LossRate()
+	histAdd(st.LossHist[:], lossHistEdges[:], loss*100)
+	if loss > st.LossMax {
+		st.LossMax = loss
+	}
+	// A 60 s force-completed MI can carry no RTT sample; skip rather than
+	// count a fake 0 ms.
+	if rtt := mi.AvgRTT(); rtt > 0 {
+		histAdd(st.RTTHist[:], rttHistEdges[:], float64(rtt)/float64(time.Millisecond))
+	}
+	histAdd(st.RateHist[:], rateHistEdges[:], mi.TargetRate/1e6)
+	histAdd(st.TputHist[:], rateHistEdges[:], throughput/1e6)
+	if throughput > st.TputMax {
+		st.TputMax = throughput
+	}
+}
+
+// recordMIOutcome runs (deferred) at every processCompletedMI exit and counts
+// MIs that left the rate sitting on a floor: the 1 Mbps BW-anchored floor, or
+// the 5 Mbps PCC floor when no bandwidth estimate is anchoring the rate.
+// Caller holds p.mu.
+func (p *K2CCSender) recordMIOutcome() {
+	r := p.state.CurrentRate
+	if r <= bwAnchoredMinRate*1.001 || (!p.bwEst.valid() && r <= arcMinRate*1.001) {
+		p.stats.FloorMIs++
+	}
+}
+
+// Summary returns a copy of the cumulative observability record with the
+// current-value fields filled from live state. Pure read under RLock.
+func (p *K2CCSender) Summary() CCSummary {
+	p.mu.RLock()
+	// concurrency:allow — pure copy of struct fields, no I/O or external calls
+	defer p.mu.RUnlock()
+	s := p.stats
+	s.Epsilon = p.state.Epsilon
+	s.Mode = p.state.Mode
+	s.MinRTT = p.utility.MinRTT
+	s.BGLoss = p.bgLossEWMA
+	if p.bwEst.valid() {
+		bw := p.bwEst.estimate()
+		if p.bgLossEWMA > 0.01 {
+			bw = bw / (1.0 - p.bgLossEWMA)
+		}
+		s.BWEst = bw
+	}
+	return s
 }
 
 // ============================================================================
