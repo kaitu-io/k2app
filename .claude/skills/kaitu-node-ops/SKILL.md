@@ -217,6 +217,7 @@ exec_on_node(ip, "bash -s", { scriptPath: "docker/scripts/enable-ipv6.sh" })    
 | `auto-update.sh` | Daily pull/compare/restart + Slack notify | Safe. Cron 04:00 Beijing (needs Asia/Singapore TZ). |
 | `enable-ipv6.sh` / `totally-reinstall-docker.sh` | Subsets of provision-node.sh | Superseded by `provision-node.sh`. |
 | `simple-docker-pull-restart.sh` | Pull + restart | Safe routine update. |
+| `cc-summary-check.sh` | **Read-only** post-upgrade gate for k2cc observability: `DIAG: cc-summary` counts, spec §9 invariants, volume, mode/RTT/loss/tput distributions over the last N minutes (`sudo bash -s 60`) | Safe. Only nodes ≥ `v0.4.10-581bed4f` emit the line; reads `/apps/k2s/logs/k2s.log` (`docker logs` is empty under journald). Field semantics + sentinels: `k2/wire/k2cc/CLAUDE.md` Observability. |
 
 ---
 
