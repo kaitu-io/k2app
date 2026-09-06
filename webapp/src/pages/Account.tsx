@@ -65,6 +65,8 @@ import { usePrivateNodes } from '../hooks/usePrivateNodes';
 import { getBrandSlogan, getBrandName } from '../brands/i18n-vars';
 import { brandConfig } from '../brands';
 import { getCurrentAppConfig } from '../config/apps';
+import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
+import SubscriptionStatusOnly from '../components/SubscriptionStatusOnly';
 
 /**
  * 掩码登录邮箱。星号数固定为 3，不随用户名长度增长——等长掩码会生成一个
@@ -402,7 +404,9 @@ export default function Account() {
                   {t('common:common.retry')}
                 </Button>
               )}
-              {!isNotLoggedIn && !hasError && isExpired &&
+              {/* Purchase CTAs: purchaseSurfaceAvailable() (utils/purchase-surface.ts)
+                  is the single gate; the iOS affordance clause stays as before. */}
+              {!isNotLoggedIn && !hasError && isExpired && purchaseSurfaceAvailable() &&
   (window._platform?.os !== 'ios' || affordance.mode === 'subscribe') && (
                 <Button
                   variant="contained"
@@ -422,6 +426,9 @@ export default function Account() {
                 >
                   {t('account:account.renewNow')}
                 </Button>
+              )}
+              {!isNotLoggedIn && !hasError && !purchaseSurfaceAvailable() && window._platform?.os === 'android' && (
+                <SubscriptionStatusOnly isPro={!isExpired} expiresText={displayTime} />
               )}
             </Stack>
           )}
@@ -568,7 +575,7 @@ export default function Account() {
                       {t('account:account.modifyEmail')}
                     </Button>
                   )
-                ) : (window._platform?.os !== 'ios' || affordance.mode === 'subscribe') ? (
+                ) : (purchaseSurfaceAvailable() && (window._platform?.os !== 'ios' || affordance.mode === 'subscribe')) ? (
                   <Button
                     size="small"
                     variant="contained"

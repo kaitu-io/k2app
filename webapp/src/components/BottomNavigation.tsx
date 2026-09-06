@@ -20,6 +20,7 @@ import { useMemo, memo } from "react";
 import { useUser } from "../hooks/useUser";
 import { useAuthStore } from "../stores";
 import { useRouterStore, hasSlotAlarm } from "../stores/router.store";
+import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
 
 const inviteWiggle = keyframes`
   0%, 82%, 100% { transform: rotate(0deg) scale(1); }
@@ -163,10 +164,9 @@ function BottomNavigation() {
       (item) => item.feature === null || appConfig.features[item.feature]
     );
 
-    // iOS: 仅当原生 StoreKit IAP 能力缺失时隐藏 purchase 入口。
-    // IAP 已注入（capacitor-k2 在 iOS 注入 _platform.iap）→ 显示入口，
-    // Purchase 页走 IAP 内联面板，绝不开外链，满足 Apple 3.1.1。
-    if (window._platform?.os === 'ios' && !window._platform?.iap) {
+    // purchase 入口的唯一门是 utils/purchase-surface.ts（iOS 无 IAP 桥 → Apple 3.1.1；
+    // Play-only 品牌的 Android → Play 支付政策）。与 App.tsx 的路由注册同源。
+    if (!purchaseSurfaceAvailable()) {
       return filtered.filter(item => item.path !== '/purchase');
     }
 

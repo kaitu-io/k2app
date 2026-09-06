@@ -30,8 +30,12 @@ const ForceUpgradeDialog: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string>('');
   const [minVersion, setMinVersion] = useState<string>('');
 
-  // Build download URL from appLinks
+  // Store listing first (a store-distributed app must update through its
+  // store), else the website install page from appLinks.
   const downloadUrl = useMemo(() => {
+    const os = window._platform?.os;
+    const store = os === 'ios' ? brandConfig.storeUrls.ios : os === 'android' ? brandConfig.storeUrls.android : '';
+    if (store) return store;
     if (!appConfig?.appLinks) {
       return `${brandConfig.baseURL}/install`; // fallback
     }

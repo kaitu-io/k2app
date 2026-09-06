@@ -55,6 +55,7 @@
     "currentPlan": "当前套餐",
     "freePlan": "免费版",
     "expiresOn": "到期：{{date}}",
+    "managedElsewhere": "订阅在网页端的账户中管理。",
     "expiryDate": "过期日期",
     "upgradeToPro": "升级到Pro",
     "renewNow": "立即续费",

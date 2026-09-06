@@ -33,6 +33,7 @@
     "currentPlan": "當前套餐",
     "freePlan": "免費版",
     "expiresOn": "到期：{{date}}",
+    "managedElsewhere": "訂閱在網頁端的帳戶中管理。",
     "expiryDate": "過期日期",
     "upgradeToPro": "升級到Pro",
     "renewNow": "立即續費",

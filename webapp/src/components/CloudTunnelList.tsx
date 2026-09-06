@@ -32,6 +32,7 @@ import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { AUTO_TUNNEL_SENTINEL, AUTO_TUNNEL_DOMAIN, useConnectionStore } from '../stores/connection.store';
 import { ERROR_CODES } from '../utils/errorCode';
+import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
 
 interface CloudTunnelListProps {
   selectedDomain: string | null;
@@ -287,13 +288,12 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           title={t('dashboard:dashboard.membershipExpiredTitle')}
           description={t('dashboard:dashboard.membershipExpiredHint')}
           action={
-            // Renew routes to /purchase. On iOS that route only exists when the
-            // native StoreKit IAP bridge is present (App.tsx / SideNavigation gate
-            // on `_platform.iap`); without it /purchase is unregistered and the
-            // CTA would dead-end (Apple 3.1.1). Match that exact gating: show the
-            // renew CTA everywhere except iOS-without-IAP. The hint's "switch to
+            // Renew routes to /purchase, which App.tsx registers only when
+            // purchaseSurfaceAvailable() (utils/purchase-surface.ts) — the same
+            // gate as the nav entries. Consulting it here keeps the CTA from
+            // dead-ending on an unregistered route. The hint's "switch to
             // Self-hosted" path stays actionable regardless.
-            !(window._platform?.os === 'ios' && !window._platform?.iap) ? (
+            purchaseSurfaceAvailable() ? (
               <Button
                 onClick={() => navigate('/purchase')}
                 variant="contained"

@@ -34,6 +34,7 @@ import ServiceError from "./pages/ServiceError";
 import Delegate from "./pages/Delegate";
 import Changelog from "./pages/Changelog";
 import { getCurrentAppConfig } from "./config/apps";
+import { purchaseSurfaceAvailable } from './utils/purchase-surface';
 
 const AppBypass = lazy(() => import('./pages/AppBypass'));
 const PrivateNodeManagement = lazy(() => import('./pages/PrivateNodeManagement'));
@@ -63,10 +64,10 @@ function AppRoutes() {
 
           {/* Non-Tab routes */}
           {/* Purchase 移出 keep-alive，每次访问重新渲染（避免与 LoginRequiredGuard 冲突）。
-              iOS 仅在原生 StoreKit IAP 能力缺失时不注册此路由（与 Bottom/SideNavigation
-              的入口门控一致）；IAP 已注入 → 注册路由，Purchase 页走 IAP 内联面板（IosSubscribePanel / IosMembershipPanel）。
-              注意：必须与 nav 入口同条件，否则入口可见但路由未注册 → 空 Outlet 黑屏。 */}
-          {!(window._platform?.os === 'ios' && !window._platform?.iap) && (
+              路由注册与否由 utils/purchase-surface.ts 的 purchaseSurfaceAvailable() 统一决定
+              （iOS 无 IAP 桥 / Play-only 品牌的 Android 不注册），与 Bottom/SideNavigation
+              的入口门控同源。注意：必须与 nav 入口同条件，否则入口可见但路由未注册 → 空 Outlet 黑屏。 */}
+          {purchaseSurfaceAvailable() && (
             <Route path="purchase" element={<Purchase />} />
           )}
           <Route path="tunnels" element={<Tunnels />} />

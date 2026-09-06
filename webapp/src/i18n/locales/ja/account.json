@@ -33,6 +33,7 @@
     "currentPlan": "現在のプラン",
     "freePlan": "無料版",
     "expiresOn": "期限：{{date}}",
+    "managedElsewhere": "サブスクリプションはウェブ上のアカウントから管理されます。",
     "expiryDate": "有効期限",
     "upgradeToPro": "Proにアップグレード",
     "renewNow": "今すぐ更新",

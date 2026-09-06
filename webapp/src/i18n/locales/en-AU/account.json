@@ -33,6 +33,7 @@
     "currentPlan": "Current plan",
     "freePlan": "Free plan",
     "expiresOn": "Expires: {{date}}",
+    "managedElsewhere": "Your subscription is managed from your account on the web.",
     "expiryDate": "Expiry date",
     "upgradeToPro": "Upgrade to Pro",
     "renewNow": "Renew now",
