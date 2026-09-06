@@ -23,6 +23,8 @@ export interface BrandFeatures {
   discover: boolean;
   /** Delegate-pay setup. Kaitu-only. */
   delegate: boolean;
+  /** WordGate wallet / withdraw surface. Kaitu-only. */
+  wallet: boolean;
   /** WordGate order/pay flow on the Purchase page. Kaitu-only. */
   wordgatePurchase: boolean;
   /** Stripe Checkout entry (Phase 6 wires the actual flow; gate reserved now). */

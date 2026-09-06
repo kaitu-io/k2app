@@ -47,6 +47,7 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
     retailer: false,
     discover: false, // overleap.io discovery page does not exist yet (web Phase 2 ships it; flip then)
     delegate: false,
+    wallet: false, // no WordGate wallet on this brand (Stripe handles billing on the website)
     wordgatePurchase: false,
     stripeCheckout: true, // Purchase page renders StripePurchasePanel (subscribe/manage)
     chatwoot: false,

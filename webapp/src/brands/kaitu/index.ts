@@ -51,6 +51,7 @@ export const KAITU_BRAND: WebappBrandConfig = {
     retailer: true,
     discover: true,
     delegate: true,
+    wallet: true,
     wordgatePurchase: true,
     stripeCheckout: false,
     chatwoot: true,

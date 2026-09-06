@@ -23,6 +23,8 @@ export interface AppConfig {
     discover?: boolean;
     /** Delegate payer setup */
     delegate?: boolean;
+    /** WordGate wallet / withdraw surface — brand-gated */
+    wallet?: boolean;
     /** Pro history */
     proHistory?: boolean;
     /** Feedback page */
@@ -77,6 +79,7 @@ const APP_CONFIG: AppConfig = {
     retailer: brandConfig.features.retailer,
     discover: brandConfig.features.discover,
     delegate: brandConfig.features.delegate,
+    wallet: brandConfig.features.wallet,
     chatwoot: brandConfig.features.chatwoot,
     privateNode: brandConfig.features.privateNode,
     selfHostedTunnels: brandConfig.features.selfHostedTunnels,

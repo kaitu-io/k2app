@@ -671,8 +671,8 @@ export default function Account() {
               </ListItemSecondaryAction>
             </ListItem>
 
-            {/* 代付人设置（第三方代付）— iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付路径 */}
-            {window._platform?.os !== 'ios' && (<>
+            {/* 代付人设置（第三方代付）— 品牌门 features.delegate（开途专属）；iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付路径 */}
+            {getCurrentAppConfig().features.delegate && window._platform?.os !== 'ios' && (<>
             <Divider />
 
             <ListItem
@@ -726,8 +726,8 @@ export default function Account() {
               />
             </ListItem>
 
-            {/* 我的钱包（外部钱包/储值）— iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付/充值路径 */}
-            {window._platform?.os !== 'ios' && (<>
+            {/* 我的钱包（外部钱包/储值）— 品牌门 features.wallet（开途专属，WordGate 钱包）；iOS 隐藏：Apple 3.1.1 禁止 IAP 以外的支付/充值路径 */}
+            {getCurrentAppConfig().features.wallet && window._platform?.os !== 'ios' && (<>
             <Divider />
 
             {/* Wallet */}

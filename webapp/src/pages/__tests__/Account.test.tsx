@@ -283,11 +283,13 @@ describe('Account', () => {
     const BANNER = BRAND_BANNER;
     const BRAND_URL = brandConfig.baseURL;
 
-    it('非 iOS 平台应显示我的钱包和代付人设置', () => {
+    // 钱包 / 代付人是开途专属入口（features.wallet / features.delegate）：
+    // 非 iOS 平台按品牌门显示，断言锚定 brandConfig 而不是写死 kaitu 行为。
+    it('非 iOS 平台按品牌门显示我的钱包和代付人设置', () => {
       (window as any)._platform.os = 'macos';
       render(<Account />);
-      expect(screen.getByText(WALLET)).toBeTruthy();
-      expect(screen.getByText(DELEGATE)).toBeTruthy();
+      expect(!!screen.queryByText(WALLET)).toBe(brandConfig.features.wallet);
+      expect(!!screen.queryByText(DELEGATE)).toBe(brandConfig.features.delegate);
     });
 
     it('iOS 平台不应显示我的钱包（外部钱包/支付）', () => {
