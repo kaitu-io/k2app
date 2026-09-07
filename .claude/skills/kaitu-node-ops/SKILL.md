@@ -218,6 +218,8 @@ exec_on_node(ip, "bash -s", { scriptPath: "docker/scripts/enable-ipv6.sh" })    
 | `enable-ipv6.sh` / `totally-reinstall-docker.sh` | Subsets of provision-node.sh | Superseded by `provision-node.sh`. |
 | `simple-docker-pull-restart.sh` | Pull + restart | Safe routine update. |
 | `cc-summary-check.sh` | **Read-only** post-upgrade gate for k2cc observability: `DIAG: cc-summary` counts, spec §9 invariants, volume, mode/RTT/loss/tput distributions over the last N minutes (`sudo bash -s 60`) | Safe. Only nodes ≥ `v0.4.10-581bed4f` emit the line; reads `/apps/k2s/logs/k2s.log` (`docker logs` is empty under journald). Field semantics + sentinels: `k2/wire/k2cc/CLAUDE.md` Observability. |
+| `node-upgrade.sh` | **Preferred single-node upgrade** (`sudo bash -s <tag>`): backup `.env` → set `K2_VERSION` → pull → recreate sidecar first (old k2s keeps serving) → recreate k2s → wait `server ready`; prints pull/sidecar/gap timings, exits non-zero on any failure | Safe when gated. k2s gap ≈ 13–18 s (compose stop-grace + start). Follow with `node-postcheck.sh`. |
+| `node-postcheck.sh` | **Read-only** gate ~75 s after `node-upgrade.sh` (`sleep 75; sudo bash -s <tag>`): tag count, restarts, health, reconnects, cc-summary lines, panics, ERROR kinds, reporter, memory | Safe. Pass = restarts 0, health healthy, panics 0, only pre-existing ERROR classes. |
 
 ---
 
@@ -229,6 +231,7 @@ Local scripts in this skill dir (`.claude/skills/kaitu-node-ops/`). Need `KAITU_
 |--------|---------|-------|
 | `deploy-compose.sh` | SCP `docker/docker-compose.yml` to all active nodes (MD5-skip, no restart) | `--all`, `--dry-run` |
 | `update-compose.sh` | `pull` + `up -d` across active nodes, rolling | `--sleep=N`, `--node=IP`, `--version=TAG`, `--set-env=KEY=VALUE`, `--dry-run` |
+| *(minimal-impact sweep)* | For a version rollout with the smallest per-node gap and a real gate between nodes, loop `node-upgrade.sh` → `node-postcheck.sh` (§4) one node at a time, lowest-traffic first (rank by `metadata auth OK` in the last 10–60 min). `update-compose.sh` does a single-phase `up -d` (sidecar health wait sits inside the k2s gap) and only sleeps 10 s before declaring success. Fleet rollout 2026-09-07 (v0.4.10-581bed4f, 25 nodes) used the scripted loop; record in memory `project_k2cc_observability_gap`. | — |
 | `deploy-auto-update.sh` | SCP `auto-update.sh` + install daily cron (idempotent) | `--all`, `--node=IP`, `--dry-run` |
 | `audit-users-file.sh` | Fleet audit: `/apps/k2s/users` must be empty before any enforce flip (non-empty entries bypass Center auth) | `--node=IP` |
 | `auth-rollout-report.sh` | Aggregate `DIAG: auth-rollout` per-node + fleet (enforce-rollout gate metrics); also counts `auth-center-unreachable` per node and pages on single-node isolation (spec §6.4) | `--since=24h`, `--node=IP` |
