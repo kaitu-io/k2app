@@ -19,8 +19,8 @@ OUT=${OUT:-/tmp/k2cc-obs-$(date -u +%Y%m%dT%H%M)}
 SSH_USER="${KAITU_SSH_USER:-ubuntu}"; SSH_PORT="${KAITU_SSH_PORT:-1022}"; PAR="${PAR:-9}"
 IPFILE="$DIR/nodes.txt"; IPS=()
 for a in "$@"; do case "$a" in --ips=*) IPFILE="${a#--ips=}";; -h|--help) sed -n 2,16p "$0"; exit 0;; *) IPS+=("$a");; esac; done
-if [ ${#IPS[@]} -eq 0 ]; then mapfile -t IPS < <(grep -vE '^\s*(#|$)' "$IPFILE"); fi
-[ ${#IPS[@]} -gt 0 ] || { echo "no nodes"; exit 1; }
+if [ ${#IPS[@]} -eq 0 ]; then while IFS= read -r l; do case "$l" in ''|\#*) ;; *) IPS+=("$l");; esac; done < "$IPFILE"; fi
+[ ${#IPS[@]} -gt 0 ] || { echo "no nodes in $IPFILE"; exit 1; }
 mkdir -p "$OUT/mi" "$OUT/mi2"
 echo "nodes=${#IPS[@]} out=$OUT"
 run() { # $1=node script, $2=output subdir; PAR nodes at a time (no xargs -I: BSD xargs caps the replaced arg at 255 bytes)

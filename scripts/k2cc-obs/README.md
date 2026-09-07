@@ -12,9 +12,26 @@ directory turns those lines into the spec §13 pattern numbers.
 | `node-sessions.sh` | on the node | same lines with probe connections (`final && uptimeS<30`) dropped + per-connection session table |
 | `aggregate.py` / `aggregate-sessions.py` | your machine | fleet + per-region roll-ups of the two node outputs |
 | `nodes.txt` | — | node IPs; refresh from the kaitu-center MCP `list_nodes` (skip `tunnels=[]`) |
+| `collect.sh` | your machine, **every 6 h via launchd** | pulls each node's new cc-summary lines since the last pull (per-node high-water mark) into `$K2CC_OBS_DATA/raw/<ip>/<utc>.gz`, appends a k2s health sample to `health.csv`, writes a 24 h rollup to `reports/` |
+| `report-range.sh` | your machine | replays the collected raw lines through the two node scripts (`CC_LOCAL_FILE` mode) for any `--from/--to` UTC range → same report as `fleet-report.sh`, no SSH |
+| `weekly-review.sh` | launchd, 2026-09-14 09:07 local | 7-day report + memory trend to `reports/week-ending-<date>.txt` + macOS notification |
+| `install-launchd.sh` | once per Mac | registers/replaces the two launchd jobs (`--uninstall` removes) |
 
 Single node, no SSH from here: `exec_on_node(ip, "sudo bash -s", scriptPath="scripts/k2cc-obs/node-report.sh")`.
 Quick invariants/volume gate for one node: `docker/scripts/cc-summary-check.sh`.
+
+## Why collect.sh exists
+
+Node logs rotate at 20 MB × 3 backups, i.e. a busy node keeps only 12–24 h. `fleet-report.sh` alone
+therefore answers "what happened in the last day", never "what happened this week". `collect.sh`
+makes the record complete: each run pulls only lines newer than the node's high-water mark
+(`hwm/<ip>`), so consecutive runs are disjoint and `report-range.sh` can rebuild any window
+exactly (`sort -u` guards the boundary). Data dir defaults to `~/k2cc-obs-data` (`K2CC_OBS_DATA`);
+budget ≈ 20 MB/day gzipped for the whole fleet. Nothing is written on the nodes.
+
+Setup on a Mac that stays on: `scripts/k2cc-obs/install-launchd.sh` (needs passphrase-free SSH to
+the nodes; launchd jobs have no ssh-agent). Check: `launchctl list | grep k2cc-obs`,
+`tail ~/k2cc-obs-data/collect.log`.
 
 ## Reading rules (they bite)
 
@@ -50,7 +67,7 @@ node with the most bytes and fewest connections: us-la.bwh.wm06).
 
 ## One-week review checklist (due 2026-09-14)
 
-1. Run `fleet-report.sh`; note the window actually covered per node (rotation).
+1. Run `report-range.sh --from=<7 days ago UTC>` on the collected data (launchd already wrote `reports/week-ending-*.txt`); `fleet-report.sh` only sees the last day.
 2. Is the probe share still ~89 % / 1 % of bytes? If the client changed, re-derive the filter.
 3. Re-score A–G against the table above. Anything that flipped is more interesting than anything that held.
 4. Region matrix incl. weekend + Beijing 02:00–06:00; is HK still worse than JP/KR/SG (then mtr the HK egress)?
