@@ -1,13 +1,27 @@
 #!/bin/bash
-# READ-ONLY: k2s health + fleet-aggregatable MI statistics from ALL cc-summary lines
-# (rotated .gz + current). Output is k=v lines for local aggregation.
-NAME=$(grep -E '^K2_NODE_NAME=' /apps/k2s/.env | cut -d= -f2-)
-echo "node=$NAME"
-echo "health restarts=$(docker inspect --format '{{.RestartCount}}' k2s) sidecar=$(docker inspect --format '{{.State.Health.Status}}' k2-sidecar) mem=$(docker stats --no-stream --format '{{.MemUsage}}' k2s | cut -d/ -f1 | tr -d ' ') status=$(docker ps --format '{{.Status}}' -f name=k2s | tr ' ' '_') image=$(docker ps --format '{{.Image}}' -f name=k2s | sed 's/.*://')"
-START=$(docker inspect --format '{{.State.StartedAt}}' k2s | cut -c1-19)
-ALL() { for f in $(ls -t /apps/k2s/logs/k2s-*.log.gz 2>/dev/null); do zcat "$f"; done; cat /apps/k2s/logs/k2s.log; }
-echo "since_start=$START panics=$(ALL | grep -c 'panic in ccSummaryLoop') errors_since_start=$(ALL | awk -v c="$START" 'substr($0,6,19)>=c' | grep -c 'level=ERROR') auth_ok_since_start=$(ALL | awk -v c="$START" 'substr($0,6,19)>=c' | grep -c 'metadata auth OK')"
-ALL | grep 'DIAG: cc-summary' | awk '
+# node-report.sh — READ-ONLY: k2s health + fleet-aggregatable MI statistics from ALL
+# `DIAG: cc-summary` lines on this node (rotated .gz + current). Output is k=v lines for
+# aggregate.py. Runs on the node via `sudo bash -s` (exec_on_node / fleet-report.sh).
+#   --since=<UTC RFC3339 ms>   only lines newer than this (disjoint windows for collect.sh)
+#   CC_LOCAL_FILE=<raw lines>  local replay mode (no docker, no health) — used by report-range.sh
+SINCE=""; for a in "$@"; do case "$a" in --since=*) SINCE="${a#--since=}";; esac; done
+if [ -n "${CC_LOCAL_FILE:-}" ]; then
+  # Local replay: CC_LOCAL_FILE holds raw cc-summary lines (gz ok) pulled by collect.sh.
+  echo "node=${CC_NODE_NAME:-local}"
+  echo "health restarts=- sidecar=- mem=- status=replay image=-"
+  echo "since_start=- panics=0 errors_since_start=0 auth_ok_since_start=0"
+  ALL() { gzip -dcf "$CC_LOCAL_FILE"; }
+else
+  NAME=$(grep -E '^K2_NODE_NAME=' /apps/k2s/.env | cut -d= -f2-)
+  echo "node=$NAME"
+  echo "health restarts=$(docker inspect --format '{{.RestartCount}}' k2s) sidecar=$(docker inspect --format '{{.State.Health.Status}}' k2-sidecar) mem=$(docker stats --no-stream --format '{{.MemUsage}}' k2s | cut -d/ -f1 | tr -d ' ') status=$(docker ps --format '{{.Status}}' -f name=k2s | tr ' ' '_') image=$(docker ps --format '{{.Image}}' -f name=k2s | sed 's/.*://')"
+  START=$(docker inspect --format '{{.State.StartedAt}}' k2s | cut -c1-19)
+  ALL() { for f in $(ls -t /apps/k2s/logs/k2s-*.log.gz 2>/dev/null); do zcat "$f"; done; cat /apps/k2s/logs/k2s.log; }
+  echo "since_start=$START panics=$(ALL | grep -c 'panic in ccSummaryLoop') errors_since_start=$(ALL | awk -v c="$START" 'substr($0,6,19)>=c' | grep -c 'level=ERROR') auth_ok_since_start=$(ALL | awk -v c="$START" 'substr($0,6,19)>=c' | grep -c 'metadata auth OK')"
+fi
+# LINES = cc-summary lines, optionally only those newer than --since (UTC RFC3339 with ms, e.g. 2026-09-07T00:00:00.000Z)
+LINES() { ALL | grep 'DIAG: cc-summary' | awk -v c="$SINCE" 'c=="" || substr($0,6,24) > c'; }
+LINES | awk '
 function kv(line, key,   m){ if (match(line, " "key"=[^ ]+")) { m=substr(line,RSTART+length(key)+2,RLENGTH-length(key)-2); gsub(/"/,"",m); return m } return "" }
 function num(s){ if (s ~ /^>/) { sub(/^>/,"",s); return s+0.5 } gsub(/[^0-9.]/,"",s); return s+0 }
 function lossb(v){ if (v==0) return "0"; if (v<=1) return "le1"; if (v<=5) return "le5"; if (v<=20) return "le20"; return "gt20" }
@@ -79,5 +93,5 @@ END {
   printf "H bulkTput"; for (k in bulk_tput) printf " %s=%d", k, bulk_tput[k]; printf "\n"
   printf "H bulkBw"; for (k in bulk_bw) printf " %s=%d", k, bulk_bw[k]; printf "\n"
 }'
-echo "--- error kinds since start (top4)"; ALL | awk -v c="$START" 'substr($0,6,19)>=c' | grep 'level=ERROR' | grep -o 'msg="[^"]*"' | sort | uniq -c | sort -rn | head -4 | awk '{printf "ERR %s %s\n",$1,substr($0,index($0,$2))}'
-echo "--- top3 tputMax"; ALL | grep 'DIAG: cc-summary' | awk '{ if (match($0," tputMax=[0-9.]+")) { v=substr($0,RSTART+9,RLENGTH-9)+0; print v"\t"$0 } }' | sort -t$'\t' -k1,1 -rn | head -3 | cut -f2 | sed -E 's/^time=([^ ]+) level=INFO msg="DIAG: cc-summary" remote=[^ ]+ /\1 /' | cut -c1-330
+[ -n "${CC_LOCAL_FILE:-}" ] || { echo "--- error kinds since start (top4)"; ALL | awk -v c="$START" 'substr($0,6,19)>=c' | grep 'level=ERROR' | grep -o 'msg="[^"]*"' | sort | uniq -c | sort -rn | head -4 | awk '{printf "ERR %s %s\n",$1,substr($0,index($0,$2))}'; }
+echo "--- top3 tputMax"; LINES | awk '{ if (match($0," tputMax=[0-9.]+")) { v=substr($0,RSTART+9,RLENGTH-9)+0; print v"\t"$0 } }' | sort -t$'\t' -k1,1 -rn | head -3 | cut -f2 | sed -E 's/^time=([^ ]+) level=INFO msg="DIAG: cc-summary" remote=[^ ]+ /\1 /' | cut -c1-330

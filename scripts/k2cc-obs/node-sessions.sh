@@ -1,10 +1,18 @@
 #!/bin/bash
-# READ-ONLY second pass: drop sub-30 s connections (they have exactly one line, their final)
-# and re-aggregate; plus per-connection session table.
-NAME=$(grep -E '^K2_NODE_NAME=' /apps/k2s/.env | cut -d= -f2-); echo "node=$NAME"
-echo "mem=$(docker stats --no-stream --format '{{.MemUsage}}' k2s | cut -d/ -f1 | tr -d ' ')"
-ALL() { for f in $(ls -t /apps/k2s/logs/k2s-*.log.gz 2>/dev/null); do zcat "$f"; done; cat /apps/k2s/logs/k2s.log; }
-ALL | grep 'DIAG: cc-summary' | awk '
+# node-sessions.sh — READ-ONLY second pass: drop sub-30 s (probe) connections — they have exactly
+# one line, their final — and re-aggregate; plus a per-connection session table. Same
+# --since= / CC_LOCAL_FILE conventions as node-report.sh; aggregated by aggregate-sessions.py.
+SINCE=""; for a in "$@"; do case "$a" in --since=*) SINCE="${a#--since=}";; esac; done
+if [ -n "${CC_LOCAL_FILE:-}" ]; then
+  echo "node=${CC_NODE_NAME:-local}"; echo "mem=-"
+  ALL() { gzip -dcf "$CC_LOCAL_FILE"; }
+else
+  NAME=$(grep -E '^K2_NODE_NAME=' /apps/k2s/.env | cut -d= -f2-); echo "node=$NAME"
+  echo "mem=$(docker stats --no-stream --format '{{.MemUsage}}' k2s | cut -d/ -f1 | tr -d ' ')"
+  ALL() { for f in $(ls -t /apps/k2s/logs/k2s-*.log.gz 2>/dev/null); do zcat "$f"; done; cat /apps/k2s/logs/k2s.log; }
+fi
+LINES() { ALL | grep 'DIAG: cc-summary' | awk -v c="$SINCE" 'c=="" || substr($0,6,24) > c'; }
+LINES | awk '
 function kv(line, key,   m){ if (match(line, " "key"=[^ ]+")) { m=substr(line,RSTART+length(key)+2,RLENGTH-length(key)-2); gsub(/"/,"",m); return m } return "" }
 function num(s){ if (s ~ /^>/) { sub(/^>/,"",s); return s+0.5 } gsub(/[^0-9.]/,"",s); return s+0 }
 function bwb(v){ if (v==0) return "0"; if (v<5) return "lt5"; if (v<20) return "lt20"; if (v<50) return "lt50"; if (v<100) return "lt100"; return "ge100" }
