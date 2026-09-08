@@ -36,6 +36,33 @@ edm_overleap:
 
 含本清单对应提交的二进制 → `systemctl restart kaitu-center` 逐台；`curl -s localhost:5800/version` 健康后再下一台。启动时 `center.Migrate()` 自动加 `feedback_tickets.brand` 列（默认 `kaitu`，存量行零影响）。
 
+## 2.5 迁移后必做：把 Apple 审核演示账号改成 overleap 品牌（**漏了会被苹果拒审**）
+
+`users.brand` / `login_identifies.brand` 的 GORM default 都是 `'kaitu'`，所以 **迁移会把所有存量行判给 kaitu**——包括提交给 Apple 的演示账号 `hi+overleap-review@kaitu.io`（uuid `user-daek7if7k7qai6p0kvj0`，`roles=1` 普通用户，不享受 admin 的品牌豁免）。
+
+部署前它能登（品牌隔离还没生效，2026-09-08 实测 `POST /api/auth/login/password` + `X-K2-Brand: overleap` 返回 `code:0`）；**部署后就登不了**：
+
+- `api_password_login`（`api_auth.go`）按 `type = 'email' AND index_id = ? AND brand = ?` 查 `login_identifies`，brand 对不上 → 走 not-found 分支 → 审核员看到的是"账号或密码错误"（为防邮箱枚举，报的是通用错误，日志里才有真相）。
+- 就算登进去了，`middleware.go` 的 `u.Brand != ReqBrand(c)` 会在**每个**已认证接口上硬拒 403003。
+
+迁移跑完后立刻执行并复验：
+
+```sql
+UPDATE users SET brand='overleap' WHERE uuid='user-daek7if7k7qai6p0kvj0';
+UPDATE login_identifies SET brand='overleap'
+  WHERE user_id = (SELECT id FROM users WHERE uuid='user-daek7if7k7qai6p0kvj0');
+```
+
+唯一索引是 `(type, index_id, brand)`，改 brand 不会撞既有行。复验（密码从 ASC 的 `appStoreReviewDetail.demoAccountPassword` 读，别落盘）：
+
+```
+POST https://k2.52j.me/api/auth/login/password   Header: X-K2-Brand: overleap
+{"email":"hi+overleap-review@kaitu.io","password":"<ASC 里的>","udid":"<临时>"}
+→ 必须 code:0；再拿 accessToken 打一次 GET /api/user/info（同 header）确认不是 403003
+```
+
+> 同一个坑适用于**任何在部署前于 overleap.io 注册过的账号**——它们全部会被判给 kaitu。Overleap 尚未上线，除演示账号外应该没有真实用户；部署后若有人报"注册过但登不上"，先查这个。
+
 ## 3. 验证（逐条打钩）
 
 - [ ] `curl -s -H 'X-K2-Brand: overleap' https://k2.52j.me/api/plans | jq '.data.items[].pid'` → `overleap-basic-1y`, `overleap-basic-1m`
