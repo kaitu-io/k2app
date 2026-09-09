@@ -56,6 +56,7 @@ export const KAITU_SITE: SiteConfig = {
       items: [
         { labelKey: 'discovery.privacy.title', href: '/privacy' },
         { labelKey: 'discovery.terms.title', href: '/terms' },
+        { labelKey: 'discovery.deleteAccount.title', href: '/delete-account' },
       ],
     },
   ],
@@ -65,6 +66,7 @@ export const KAITU_SITE: SiteConfig = {
     '/discovery',
     '/install',
     '/opensource',
+    '/delete-account',
     '/privacy',
     '/purchase',
     '/releases',

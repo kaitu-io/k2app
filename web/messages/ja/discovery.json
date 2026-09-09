@@ -89,6 +89,10 @@
       "email": "legal@overleap.io"
     }
   },
+  "deleteAccount": {
+    "title": "アカウント削除",
+    "subtitle": "Overleap アカウントの削除方法と、削除後のデータの取り扱い"
+  },
   "cookieConsent": {
     "title": "Cookieの使用について",
     "description": "当社は、招待コードの保存などの基本機能を含め、ブラウジング体験を向上させるためにCookieを使用しています。このウェブサイトの使用を継続することで、Cookieの使用に同意したものとみなされます。",

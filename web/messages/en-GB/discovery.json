@@ -89,6 +89,10 @@
       "email": "legal@overleap.io"
     }
   },
+  "deleteAccount": {
+    "title": "Delete Your Account",
+    "subtitle": "How to delete your Overleap account, and what happens to your data"
+  },
   "cookieConsent": {
     "title": "About Cookie Usage",
     "description": "We use cookies to improve your browsing experience, including basic functions such as saving your invitation code. By continuing to use this website, you agree to our use of cookies.",

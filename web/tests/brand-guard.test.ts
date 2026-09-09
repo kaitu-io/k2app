@@ -121,3 +121,25 @@ describe('velite content served on overleap carries no kaitu words', () => {
     expect(scan(path.join(WEB, 'content', loc), KAITU_WORDS, isOverleapContent)).toEqual([]);
   });
 });
+
+describe('public/legal: documents carry no brand literals of either brand', () => {
+  // The gap that let this guard pass while overleap.io served a policy about
+  // Kaitu: the scans above cover messages/, src/ and content/, and the legal
+  // markdown lives in none of them. Both deployments read the same files, so
+  // neither brand's words may appear in them — the deployment's own words are
+  // substituted at render time from the registry (src/lib/legal.ts).
+  //
+  // retailer-rules.md is exempt: the 分销 programme is a kaitu-only surface and
+  // its page is `page.kaitu.tsx`, so the file is unreachable on the overleap
+  // build (features.retailerProgram, tests/brand-page-tree.test.ts).
+  const LEGAL = path.join(WEB, 'public/legal');
+  const isSharedLegal = (f: string) =>
+    f.endsWith('.md') && path.basename(f) !== 'retailer-rules.md';
+
+  it('no kaitu literals', () => {
+    expect(scan(LEGAL, KAITU_WORDS, isSharedLegal)).toEqual([]);
+  });
+  it('no overleap literals', () => {
+    expect(scan(LEGAL, OVERLEAP_WORDS, isSharedLegal, OVERLEAP_ORG_URL)).toEqual([]);
+  });
+});

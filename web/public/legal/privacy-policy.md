@@ -6,9 +6,11 @@
 
 ## 中文版本
 
+**最后更新：2026-09**
+
 ### 一、我们收集的信息
 
-1.1 **账户信息**：当您注册开途账户时，我们会收集您的电子邮件地址用于账户验证和登录。您也可以选择通过设备标识符匿名使用我们的服务。
+1.1 **账户信息**：当您注册{{brand}}账户时，我们会收集您的电子邮件地址用于账户验证和登录。您也可以选择通过设备标识符匿名使用我们的服务。
 
 1.2 **设备信息**：为了提供服务和防止滥用，我们会收集设备标识符、操作系统版本、应用版本等基本设备信息。
 
@@ -28,7 +30,7 @@
 
 2.4 **服务改进**：分析聚合的使用数据（不包含个人身份信息）以改进服务性能和用户体验。
 
-2.5 **法律合规与数据保护**：开途公司依据美国法律注册运营，受美国隐私保护法律约束。我们承诺不会将您的个人数据分享给美国政府机构以外的任何第三方政府机构或组织。仅在美国法律明确要求的情况下，我们才会配合美国执法部门的合法请求。
+2.5 **法律合规与数据保护**：{{legalName}} 依据美国法律注册运营，受美国隐私保护法律约束。我们承诺不会将您的个人数据分享给美国政府机构以外的任何第三方政府机构或组织。仅在美国法律明确要求的情况下，我们才会配合美国执法部门的合法请求。
 
 ### 三、数据安全措施
 
@@ -72,7 +74,7 @@
 
 6.2 **基础设施提供商**：我们使用云服务和数据中心提供商来托管我们的服务。
 
-6.3 **分析服务**：我们可能使用匿名分析服务来改进产品。
+6.3 **崩溃诊断**：我们使用第三方崩溃诊断服务 Sentry 接收客户端的错误报告，用于定位程序缺陷。报告内容为错误堆栈、应用版本、操作系统与设备型号，以及发送该报告的 IP 地址；**不包含**您的浏览记录、DNS 查询或网络活动内容。
 
 6.4 **数据共享限制**：我们不会出售、出租或以其他方式将您的个人信息提供给第三方用于营销目的。
 
@@ -86,7 +88,7 @@
 
 7.4 **数据可携带权**：您可以请求以通用格式导出您的数据。
 
-7.5 **行使权利**：如需行使上述权利，请通过 privacy@kaitu.io 联系我们。
+7.5 **行使权利**：如需行使上述权利，请通过 {{privacyEmail}} 联系我们。
 
 ### 八、政策变更
 
@@ -100,15 +102,17 @@
 
 如果您对本隐私政策有任何疑问或投诉，请通过以下方式联系我们：
 
-**电子邮件**：privacy@kaitu.io
+**电子邮件**：{{privacyEmail}}
 
 ---
 
 ## English Version
 
+**Last updated: 2026-09**
+
 ### 1. Information We Collect
 
-1.1 **Account Information**: When you register a Kaitu account, we collect your email address for account verification and login. You may also choose to use our service anonymously through device identifiers.
+1.1 **Account Information**: When you register an account with {{brand}}, we collect your email address for account verification and login. You may also choose to use our service anonymously through device identifiers.
 
 1.2 **Device Information**: To provide services and prevent abuse, we collect device identifiers, operating system version, app version, and other basic device information.
 
@@ -128,7 +132,7 @@
 
 2.4 **Service Improvement**: Analyzing aggregated usage data (not containing personally identifiable information) to improve service performance and user experience.
 
-2.5 **Legal Compliance and Data Protection**: Kaitu is registered and operates under U.S. law and is subject to U.S. privacy protection laws. We commit not to share your personal data with any third-party government agencies or organizations other than U.S. government agencies. We will only cooperate with lawful requests from U.S. law enforcement when explicitly required by U.S. law.
+2.5 **Legal Compliance and Data Protection**: {{legalName}} is registered and operates under U.S. law and is subject to U.S. privacy protection laws. We commit not to share your personal data with any third-party government agencies or organizations other than U.S. government agencies. We will only cooperate with lawful requests from U.S. law enforcement when explicitly required by U.S. law.
 
 ### 3. Data Security Measures
 
@@ -172,7 +176,7 @@
 
 6.2 **Infrastructure Providers**: We use cloud services and data center providers to host our services.
 
-6.3 **Analytics Services**: We may use anonymous analytics services to improve our products.
+6.3 **Crash Diagnostics**: We use Sentry, a third-party crash diagnostics service, to receive error reports from our client applications so that we can locate defects. A report contains the error stack trace, application version, operating system and device model, and the IP address it was sent from; it does **not** contain your browsing history, DNS queries or any network activity.
 
 6.4 **Data Sharing Restrictions**: We do not sell, rent, or otherwise provide your personal information to third parties for marketing purposes.
 
@@ -186,7 +190,7 @@
 
 7.4 **Right of Data Portability**: You may request to export your data in a common format.
 
-7.5 **Exercising Rights**: To exercise these rights, please contact us at privacy@kaitu.io.
+7.5 **Exercising Rights**: To exercise these rights, please contact us at {{privacyEmail}}.
 
 ### 8. Policy Changes
 
@@ -200,4 +204,4 @@
 
 If you have any questions or complaints about this privacy policy, please contact us:
 
-**Email**: privacy@kaitu.io
+**Email**: {{privacyEmail}}

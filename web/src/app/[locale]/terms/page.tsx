@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
+import { renderLegalDoc } from '@/lib/legal';
 import { Scale } from 'lucide-react';
 
 type Locale = (typeof routing.locales)[number];
@@ -37,10 +38,13 @@ export default async function TermsPage({
   const t = await getTranslations({ locale });
 
   const { readFile } = await import('fs/promises');
-  const content = await readFile(
+  const raw = await readFile(
     path.join(process.cwd(), 'public/legal/terms-of-service.md'),
     'utf-8'
   );
+  // Picks this locale's language master and fills in the deployment's brand —
+  // the file on disk names neither. See src/lib/legal.ts.
+  const content = renderLegalDoc(raw, locale);
 
   return (
     <div className="min-h-screen bg-background">
