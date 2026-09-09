@@ -217,7 +217,11 @@ describe('Account', () => {
       });
     });
 
-    it('注销 API 失败应显示错误提示', async () => {
+    // Was asserting window.alert. jsdom implements alert, so that test stayed
+    // green while the Capacitor WebView swallowed the dialog and mobile users
+    // saw nothing at all on a failed deletion — the one flow both app stores
+    // make a reviewer walk through. Assert what the user can actually see.
+    it('注销 API 失败应在对话框内显示错误，且不使用会被 WebView 吞掉的 window.alert', async () => {
       vi.mocked(cloudApi.request).mockRejectedValue(new Error('Network error'));
 
       const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
@@ -228,8 +232,12 @@ describe('Account', () => {
       fireEvent.click(screen.getByText(TEXT.confirm));
 
       await waitFor(() => {
-        expect(alertSpy).toHaveBeenCalledWith(TEXT.deleteAccountFailed);
+        expect(screen.getByText(TEXT.deleteAccountFailed)).toBeInTheDocument();
       });
+
+      // The dialog stays open so the message has somewhere to live.
+      expect(screen.getByText(TEXT.deleteAccountWarning)).toBeInTheDocument();
+      expect(alertSpy).not.toHaveBeenCalled();
 
       alertSpy.mockRestore();
     });

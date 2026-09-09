@@ -101,6 +101,7 @@ export default function Account() {
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(i18n.language as LanguageCode || 'zh-CN');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   useEffect(() => {
     let version = window._platform!.version;
@@ -126,6 +127,7 @@ export default function Account() {
 
   const handleDeleteAccount = async () => {
     setDeleteLoading(true);
+    setDeleteError(null);
     try {
       await cloudApi.request('DELETE', '/api/user/delete-account');
       setDeleteDialogOpen(false);
@@ -135,7 +137,11 @@ export default function Account() {
       setIsAuthenticated(false);
     } catch (err) {
       console.error('Delete account failed:', err);
-      alert(t('account:account.deleteAccountFailed'));
+      // Rendered inside the dialog, which is still open on this path. It used
+      // to be window.alert, which the Capacitor WebView swallows without a
+      // sound — on mobile a failed deletion showed the user nothing at all,
+      // on the one flow both app stores make a reviewer walk through.
+      setDeleteError(t('account:account.deleteAccountFailed'));
     } finally {
       setDeleteLoading(false);
     }
@@ -905,15 +911,32 @@ export default function Account() {
       )}
 
       {/* 注销账号确认对话框 */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setDeleteError(null);
+        }}
+      >
         <DialogTitle>{t('account:account.deleteAccountTitle')}</DialogTitle>
         <DialogContent>
           <DialogContentText>
             {t('account:account.deleteAccountWarning')}
           </DialogContentText>
+          {deleteError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {deleteError}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)} disabled={deleteLoading}>
+          <Button
+            onClick={() => {
+              setDeleteDialogOpen(false);
+              setDeleteError(null);
+            }}
+            disabled={deleteLoading}
+          >
             {t('common:common.cancel')}
           </Button>
           <Button
