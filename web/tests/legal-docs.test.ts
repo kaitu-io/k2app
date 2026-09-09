@@ -78,6 +78,11 @@ describe.each(SHARED_DOCS)('%s', (doc) => {
     const other = brand.id === 'kaitu' ? OVERLEAP_WORDS : KAITU_WORDS;
     expect(body).toMatch(own);
     expect(body.match(other)).toBeNull();
+
+    // Root CLAUDE.md: the latin form is banned in Chinese user-facing copy
+    // (开途, never "Kaitu"). Without this the brand-word assertion above passes
+    // on either form, since both are "this brand's words".
+    if (zh) expect(body).not.toMatch(/\bKaitu\b/);
   });
 
   it.each(CASES)('$brand.id / $locale names only its own contact addresses', ({ brand, locale }) => {
