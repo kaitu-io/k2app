@@ -112,7 +112,7 @@
 
 ### 1. Information We Collect
 
-1.1 **Account Information**: When you register a {{brand}} account, we collect your email address for account verification and login. You may also choose to use our service anonymously through device identifiers.
+1.1 **Account Information**: When you register an account with {{brand}}, we collect your email address for account verification and login. You may also choose to use our service anonymously through device identifiers.
 
 1.2 **Device Information**: To provide services and prevent abuse, we collect device identifiers, operating system version, app version, and other basic device information.
 
