@@ -89,6 +89,10 @@
       "email": "legal@kaitu.io"
     }
   },
+  "deleteAccount": {
+    "title": "註銷帳號",
+    "subtitle": "如何刪除您的開途帳號，以及刪除後嘅資料處理"
+  },
   "cookieConsent": {
     "title": "關於 Cookie 嘅使用",
     "description": "我哋使用 Cookie 嚟改善您嘅瀏覽體驗，包括儲存您嘅邀請碼等基本功能。繼續使用本網站即表示您同意我哋使用 Cookie。",

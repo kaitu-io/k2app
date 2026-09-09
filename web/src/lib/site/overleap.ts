@@ -35,11 +35,12 @@ export const OVERLEAP_SITE: SiteConfig = {
       items: [
         { labelKey: 'discovery.privacy.title', href: '/privacy' },
         { labelKey: 'discovery.terms.title', href: '/terms' },
+        { labelKey: 'discovery.deleteAccount.title', href: '/delete-account' },
         { labelKey: 'nav.nav.contactUs', href: 'mailto:{contactEmail}' },
       ],
     },
   ],
-  staticRoutes: ['', '/install', '/purchase', '/support', '/privacy', '/terms', '/login'],
+  staticRoutes: ['', '/install', '/purchase', '/support', '/privacy', '/terms', '/delete-account', '/login'],
   // 与 scripts/stripe-setup-overleap.sh 的 ensure_price 行同源（usd 主币 + gbp/eur 固定本币价）。
   pricing: {
     yearly: { usd: 7900, gbp: 7900, eur: 8900 },

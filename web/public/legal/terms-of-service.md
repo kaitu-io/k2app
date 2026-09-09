@@ -6,9 +6,11 @@
 
 ## 中文版本
 
+**最后更新：2026-09**
+
 ### 一、协议接受与生效
 
-1.1 本服务条款（以下简称「本协议」）是您与开途（Kaitu）之间关于使用开途网络代理服务（以下简称「本服务」）的法律协议。
+1.1 本服务条款（以下简称「本协议」）是您与{{brand}}（{{legalName}}）之间关于使用{{brand}}网络代理服务（以下简称「本服务」）的法律协议。
 
 1.2 通过注册账户、下载安装客户端、访问或使用本服务，即表示您已阅读、理解并同意受本协议所有条款的约束。如果您不同意本协议的任何条款，请勿使用本服务。
 
@@ -18,7 +20,7 @@
 
 ### 二、服务说明
 
-2.1 **服务内容**：开途提供网络代理服务，通过加密隧道技术帮助用户安全地访问互联网。服务包括但不限于：VPN 连接、流量加密、IP 地址保护等功能。
+2.1 **服务内容**：{{brand}}提供网络代理服务，通过加密隧道技术帮助用户安全地访问互联网。服务包括但不限于：VPN 连接、流量加密、IP 地址保护等功能。
 
 2.2 **服务计划**：本服务以订阅制提供，包括不同时长和功能的套餐选项。具体服务内容和价格以购买时页面显示为准。
 
@@ -36,7 +38,7 @@
 
 3.4 **设备要求**：您有责任确保您的设备满足使用本服务的最低系统要求，并承担因设备问题导致无法正常使用服务的风险。
 
-3.5 **第三方内容**：您通过本服务访问的任何第三方网站或服务的内容、隐私政策和做法均与开途无关，您需自行承担相关风险。
+3.5 **第三方内容**：您通过本服务访问的任何第三方网站或服务的内容、隐私政策和做法均与{{brand}}无关，您需自行承担相关风险。
 
 ### 四、禁止行为
 
@@ -165,7 +167,7 @@
 
 12.1 **联系方式**：如果您对本协议有任何疑问或投诉，请通过以下方式联系我们：
 
-**电子邮件**：legal@kaitu.io
+**电子邮件**：{{legalEmail}}
 
 12.2 **争议解决**：因本协议产生的或与本协议相关的任何争议，双方应首先通过友好协商解决。
 
@@ -179,9 +181,11 @@
 
 ## English Version
 
+**Last updated: 2026-09**
+
 ### 1. Agreement Acceptance and Effectiveness
 
-1.1 These Terms of Service (hereinafter referred to as "this Agreement") constitute a legal agreement between you and Kaitu regarding the use of Kaitu network proxy services (hereinafter referred to as "the Service").
+1.1 These Terms of Service (hereinafter referred to as "this Agreement") constitute a legal agreement between you and {{legalName}} regarding the use of {{brand}} network proxy services (hereinafter referred to as "the Service").
 
 1.2 By registering an account, downloading and installing the client, accessing, or using the Service, you acknowledge that you have read, understood, and agree to be bound by all terms of this Agreement. If you do not agree to any terms of this Agreement, please do not use the Service.
 
@@ -191,7 +195,7 @@
 
 ### 2. Service Description
 
-2.1 **Service Content**: Kaitu provides network proxy services that help users securely access the internet through encrypted tunnel technology. Services include but are not limited to: VPN connections, traffic encryption, IP address protection, and other features.
+2.1 **Service Content**: {{brand}} provides network proxy services that help users securely access the internet through encrypted tunnel technology. Services include but are not limited to: VPN connections, traffic encryption, IP address protection, and other features.
 
 2.2 **Service Plans**: The Service is provided on a subscription basis, including package options of different durations and features. Specific service content and pricing are subject to the display at the time of purchase.
 
@@ -209,7 +213,7 @@
 
 3.4 **Device Requirements**: You are responsible for ensuring your device meets the minimum system requirements for using the Service and bear the risk of being unable to use the service properly due to device issues.
 
-3.5 **Third-Party Content**: The content, privacy policies, and practices of any third-party websites or services you access through the Service are unrelated to Kaitu, and you assume all associated risks.
+3.5 **Third-Party Content**: The content, privacy policies, and practices of any third-party websites or services you access through the Service are unrelated to {{brand}}, and you assume all associated risks.
 
 ### 4. Prohibited Activities
 
@@ -338,7 +342,7 @@
 
 12.1 **Contact Information**: If you have any questions or complaints about this Agreement, please contact us:
 
-**Email**: legal@kaitu.io
+**Email**: {{legalEmail}}
 
 12.2 **Dispute Resolution**: Any disputes arising from or related to this Agreement should first be resolved through friendly negotiation between the parties.
 

@@ -16,6 +16,10 @@ export type Brand = {
   allowedLocales: readonly Locale[];
   logoPath: string;
   contactEmail: string;
+  /** Recipient named by the privacy policy for data-subject requests. */
+  privacyEmail: string;
+  /** Recipient named by the terms of service for legal enquiries. */
+  legalEmail: string;
   ogImagePath: string;
   taglineZh?: string;
   /** User-facing product badge, e.g. gift-code redemption pages. */
@@ -72,6 +76,8 @@ export const KAITU: Brand = {
   allowedLocales: ['zh-CN', 'zh-TW', 'zh-HK'],
   logoPath: '/kaitu-icon.png',
   contactEmail: 'support@kaitu.me',
+  privacyEmail: 'privacy@kaitu.io',
+  legalEmail: 'legal@kaitu.io',
   ogImagePath: '/images/og-default.png',
   taglineZh: '愿上帝为你开路',
   productName: '开途 VPN',
@@ -108,6 +114,8 @@ export const OVERLEAP: Brand = {
   allowedLocales: ['en-GB', 'en-US', 'en-AU', 'ja'],
   logoPath: '/overleap-icon.png',
   contactEmail: 'support@overleap.io',
+  privacyEmail: 'privacy@overleap.io',
+  legalEmail: 'legal@overleap.io',
   ogImagePath: '/overleap-og.png',
   productName: 'Overleap',
   faviconPrefix: '/brand/overleap',
