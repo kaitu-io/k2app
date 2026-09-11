@@ -19,7 +19,22 @@
 
 **先读 `threat-boundary.md`。** 协议里每一处"这个不用防"都指向那份边界里的一条具体证据；边界过期，降级就要回滚。
 
-设计中的每一处"可行"都由可执行测试背书，而不是推理。`go test ./docs/tessera/spike/`：
+设计中的每一处"可行"都由可执行测试背书，而不是推理。
+
+```sh
+go test -short ./docs/tessera/spike/            # 判别性测试，~0.05s（CI 走这条）
+go test -timeout 30m ./docs/tessera/spike/      # 含时序/残余测量，>10min
+```
+
+时序与残余那几个是**测量**而非判别：它们靠成百上千次握手采样才出结论，跑满
+要十几分钟，超过 `go test` 默认的 10 分钟超时——不给 `-timeout` 会以超时失败，
+那不是回归。CI（`release-desktop.yml` 的 `go test -short -timeout=180s`）只跑
+判别部分。
+
+`quic_test.go` 与 `tools/quicprobe/` 带 `//go:build ignore`：它们 import
+`apernet/quic-go`，而本仓在 `fc6b107` 迁到 in-tree kuic fork 后已无此依赖。
+结论仍记在 spec.md，代码作为证据保留；要真跑得先把它 vendor 进临时模块。
+
 
 | 证据 | 回答的问题 |
 |---|---|
