@@ -32,6 +32,9 @@ Kaitu / Overleap 的营销档案统一放在这个目录。
 - [`audits/2026-04-21-aso.md`](./audits/2026-04-21-aso.md)
   iOS App Store + Google Play ASO 审查 + 关键词策略 + 评价启动计划 + 迁移决策框架。
 
+- [`audits/2026-09-04-esim-store-market-assessment.md`](./audits/2026-09-04-esim-store-market-assessment.md)
+  eSIM 商店（海外号码优先）市场评估与封存决策：两个生意的性质、独立 app 还是并入开途、按付费规模算账、重启条件与近零成本验证动作。配套 spec 与调研在 `docs/superpowers/specs/2026-09-03-esim-store-*.md`。
+
 ---
 
 ## ⚠️ 已知待对齐冲突

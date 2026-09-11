@@ -1,7 +1,7 @@
 # eSIM 商店设计（号码优先）
 
 - 日期：2026-09-03（v2，按「网站只卖、app 只用、NextPay 订阅」修订）
-- 状态：设计已认可，待写实施计划
+- 状态：**已封存（2026-09-04）**。设计本身已认可，但按现有付费规模（活跃付费 503）与设备面（移动端 92% 为 iOS，国行机基本无 eSIM）判断现阶段不投入开发；重启条件与验证动作见 `docs/marketing/audits/2026-09-04-esim-store-market-assessment.md`。调研原始沉淀见 `2026-09-03-esim-store-research.md`。
 - 范围：Center API（`api/`）、网站（`web/`）、webapp、K2Plugin 原生（Android/iOS）
 - 品牌：后端与网站按双品牌参数化；**app 入口与网站商店 v1 只对开途开放**；NextPay 的 Go SDK 是每进程单 App，Overleap 接入前需 SDK 支持多客户端（见 §12）
 - 调研原始材料：附录 C（本会话调研的压缩版；WebSearch 配额在第三轮前耗尽，未验证项已标注）
@@ -24,6 +24,7 @@
 | 实名（KYC） | v1 不做；只上无需实名国家 |
 | 数据模型 | 目录独立表 `esim_packages`（不复用 `Plan`）；订单复用 `Order`（`Meta` 放 Plan 形状快照）；每张卡一行 `esim_profiles`；NextPay 订阅 UUID 挂在 profile 上 |
 | 退款 | NextPay 没有 App 侧退款 API；退款沿用本站 `ProcessOrderRefund` 退到用户钱包 |
+| **执行决策** | **封存**：付费用户 ≥ 3,000、预约率 ≥ 10%、eSIM 可用设备 ≥ 30% 三条同时满足再重启（见市场评估备忘） |
 
 ---
 
