@@ -45,6 +45,7 @@ import {
 import { getThemeColors } from '../theme/colors';
 import { cloudApi } from '../services/cloud-api';
 import { brandConfig } from '../brands';
+import { previewOrderEnabled } from '../utils/purchase-preview';
 import { cacheStore } from '../services/cache-store';
 import { formatBytes } from '../utils/ui';
 
@@ -579,9 +580,19 @@ export default function Purchase() {
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   // iOS StoreKit IAP: when present, the whole purchase screen is replaced by the
   // inline IosSubscribePanel / IosMembershipPanel (Apple 3.1.1 — no external
-  // payment, single auto-renewable product, no multi-plan list). The WordGate
-  // order/preview flow below never runs on iOS.
+  // payment, single auto-renewable product, no multi-plan list).
+  //
+  // 注意：这些整页替换都是**早退**，发生在本组件的 hook 全部执行之后。所以"页面不
+  // 渲染 WordGate UI"拦不住下面的预览 effect —— 这里原本写着「The WordGate
+  // order/preview flow below never runs on iOS」，那是错的，iOS 一直在发预览请求，
+  // 也正因为这句话，2026-09-11 的预览死循环事故没人第一时间去看 iOS。判据摘到
+  // utils/purchase-preview.ts，按组合逐一断言。
   const iap = window._platform?.iap;
+  const previewEnabled = previewOrderEnabled({
+    iap: !!iap,
+    wordgatePurchase: brandConfig.features.wordgatePurchase === true,
+    stripeCheckout: brandConfig.features.stripeCheckout === true,
+  });
   const affordance = useSubscriptionAffordance();
   // 本页只读 appConfig.inviteReward。曾经在下面自带一份复制自 useAppConfig 的取数
   // 逻辑（含 SWR + 缓存写入），但 TTL 写成 600 而 useAppConfig 是 3600，两边互相
@@ -846,13 +857,31 @@ export default function Purchase() {
     fetchPlans();
   }, [showAlert, t, isAuthenticated, plansPath, plansCacheKey]); // 登录后 / 购买范围(产品)变化时重新加载套餐列表
 
-  // 当计划或优惠码变化时，重新获取预览数据
+  // 预览订单跟着**输入**变，不跟着 handleOrder 的引用变。
+  //
+  // 把回调身份写进 effect 依赖，等于把"上游任一依赖引用不稳"直接升级成"每次渲染都
+  // 重跑"；而这个 effect 自己会 setIsLoading / setOrderData 触发渲染，于是自激成死
+  // 循环。2026-09-11 的事故正是如此：useUser 的 fetchUser 每次渲染都是新函数（在
+  // handleOrder 的依赖里），0.4.9 起全平台只要停在购买页就持续打
+  // POST /api/user/orders(preview)，一度占掉 Center 七成流量。根因已在 useUser 用
+  // useCallback 钉住，这里再把放大器拆掉：依赖只列真正该触发重新预览的输入，回调经
+  // ref 取最新版本。ref 同步 effect 必须声明在下面这个 effect **之前** —— 同一次
+  // commit 里 effect 按声明顺序跑，否则预览会用上一次渲染的闭包。
+  const handleOrderRef = useRef(handleOrder);
   useEffect(() => {
-    if (plan && !plansLoading) {
+    handleOrderRef.current = handleOrder;
+  }, [handleOrder]);
+
+  useEffect(() => {
+    if (previewEnabled && plan && !plansLoading) {
       console.info('[Purchase] 触发预览订单: ' + JSON.stringify({ plan, campaignCode }));
-      handleOrder({preview: true});
+      handleOrderRef.current({ preview: true });
     }
-  }, [campaignCode, plan, plansLoading, handleOrder]);
+    // selectedRegion 在列：专属线路套餐的预览请求带 region，换地区要重新报价。
+    // isAuthenticated 在列：报价由服务端按登录身份算（首单折扣等），在购买页登录完要
+    // 重新报价。眼下它也会经 plansLoading 传导过来，但不写明就是把正确性押在别的
+    // effect 的副作用上。
+  }, [previewEnabled, campaignCode, plan, plansLoading, selectedRegion, isAuthenticated]);
 
   // 处理套餐选择（使用 useCallback 保证引用稳定，避免 PlanList 不必要的重新渲染）
   const handlePlanSelect = useCallback((pid: string) => {

@@ -14,7 +14,7 @@
  * 4. 代码更简单（无需 store 样板代码）
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { useAuthStore } from '../stores/auth.store';
@@ -70,8 +70,14 @@ export function useUser(): UseUserReturn {
   const [loading, setLoading] = useState(true);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  // 加载用户数据
-  const fetchUser = async (forceRefresh: boolean = false) => {
+  // 加载用户数据。
+  //
+  // **引用必须稳定**：fetchUser 会被调用方放进 useCallback / useEffect 的依赖里
+  // （Purchase 的 409 互斥兜底就要调它）。每次渲染都是新函数时，依赖它的 effect
+  // 每次渲染都重跑——Purchase 的「套餐变化时重新预览」因此自激成死循环，0.4.9 起
+  // 全平台停在购买页就持续打 POST /api/user/orders(preview)，一度占掉 Center 七成
+  // 流量。useCallback 只随 isAuthenticated 变，正好是函数行为真正会改变的时刻。
+  const fetchUser = useCallback(async (forceRefresh: boolean = false) => {
     if (!isAuthenticated) {
       setUser(null);
       setLoading(false);
@@ -124,12 +130,13 @@ export function useUser(): UseUserReturn {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated]);
 
-  // 初次加载
+  // 初次加载。依赖写 fetchUser 而不是 isAuthenticated：以后给上面的 useCallback
+  // 添依赖时，初次加载会跟着重跑，而不是静默停在旧闭包上。
   useEffect(() => {
     fetchUser();
-  }, [isAuthenticated]);
+  }, [fetchUser]);
 
   // 跨实例同步：useUser 被 17 处调用，每处各持一份 state。谁写了用户缓存
   // （IAP verifyAndGrant、别处的后台 revalidate、登出清缓存），所有实例都要跟上，
