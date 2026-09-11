@@ -119,9 +119,17 @@ func (c *singPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 }
 
 func (c *singPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	// Unwrap() strips ::ffff: so an IPv4-mapped reply address reads as IPv4.
+	// The wire outbounds build it from net.ResolveUDPAddr("udp4", ...), which
+	// returns a 16-byte mapped net.IP; left mapped, Socksaddr.IsIPv6() is true
+	// and gVisor's UDPBackWriter rejects every downlink packet with "send IPv6
+	// packet to IPv4 connection" (iOS/Android only — desktop uses the System
+	// stack). This is the one gate all downlink UDP passes through, so
+	// normalising here covers every outbound. See ticket #3379 and the repro in
+	// stack_gvisor_udp_repro_test.go.
 	var dest M.Socksaddr
 	if addr != nil {
-		dest = M.SocksaddrFromNet(addr)
+		dest = M.SocksaddrFromNet(addr).Unwrap()
 	}
 	buffer := buf.NewSize(len(b))
 	buffer.Write(b)
