@@ -4,6 +4,9 @@ import { render } from '../../test/utils/render';
 import { CloudTunnelList, type CloudTunnelListHandle } from '../CloudTunnelList';
 import type { TunnelListResponse } from '../../services/api-types';
 import { AUTO_TUNNEL_DOMAIN, AUTO_TUNNEL_SENTINEL, useConnectionStore } from '../../stores/connection.store';
+import { brandConfig } from '../../brands';
+import { membershipExpiredHintKey } from '../../utils/empty-state-hints';
+import i18n from '../../i18n/i18n';
 
 // --- Mock state objects ---
 
@@ -393,6 +396,51 @@ describe('CloudTunnelList', () => {
           expect(screen.getByText(/会员已过期|Membership expired/i)).toBeInTheDocument();
         });
         expect(screen.getByText(/续费会员|Renew membership/i)).toBeInTheDocument();
+      } finally {
+        delete (window as any)._platform;
+      }
+    });
+
+    // Android carries TWO brand gates: androidPurchase (Play Payments policy)
+    // and selfHostedTunnels. With both off, the expired empty state used to
+    // render a hard-coded sentence telling the user to "switch to Self-Deployed"
+    // — a tab that build does not have — with no CTA. Assert the copy and the
+    // CTA both follow the gates this build actually has.
+    it('on Android, the expired copy offers only what this build actually has', async () => {
+      (window as any)._platform = { os: 'android' };
+      try {
+        mockCacheGet.mockReturnValue(null);
+        mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+        render(<CloudTunnelList {...defaultProps} />);
+        await waitFor(() => {
+          expect(screen.getByText(/会员已过期|Membership expired/i)).toBeInTheDocument();
+        });
+
+        const canRenew = brandConfig.features.androidPurchase === true;
+        const canSelfHost = brandConfig.features.selfHostedTunnels === true;
+
+        // Exactly one of the four variants is on screen, and it is the one the
+        // gates select — the other three must be absent.
+        const variants = [
+          'membershipExpiredHint',
+          'membershipExpiredHintRenewOnly',
+          'membershipExpiredHintSelfHostedOnly',
+          'membershipExpiredHintNoAction',
+        ].map((k) => i18n.t(`dashboard:dashboard.${k}`));
+        const expected = i18n.t(membershipExpiredHintKey(canRenew, canSelfHost));
+        expect(screen.getByText(expected)).toBeInTheDocument();
+        for (const other of variants.filter((v) => v !== expected)) {
+          expect(screen.queryByText(other)).not.toBeInTheDocument();
+        }
+
+        // Independent of the picker: never name a tab this build lacks, and
+        // never show a CTA that routes nowhere.
+        if (!canSelfHost) {
+          expect(expected).not.toContain(i18n.t('dashboard:dashboard.selfDeployed'));
+        }
+        const renewCta = screen.queryByText(i18n.t('dashboard:dashboard.renewMembership'));
+        expect(Boolean(renewCta)).toBe(canRenew);
       } finally {
         delete (window as any)._platform;
       }
