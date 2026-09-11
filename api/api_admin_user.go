@@ -25,6 +25,26 @@ type AdminUserDetailData struct {
 	WalletChanges []DataWalletChange `json:"walletChanges"` // 钱包变更记录
 }
 
+// adminUserScalars 组装 DataUser 中**纯粹来自 User 行**的字段。两个管理端点
+// （列表 + 详情）都在它之上叠加各自的关联数据，因此新增一个用户标量字段不可能
+// 只补上其中一个——HasPassword 就是这么在两处同时缺席、让每次后台查人都报
+// 「未设置密码」的。关联字段（LoginIdentifies / DeviceCount / RetailerConfig /
+// Wallet）由调用方各自填，它们的取数方式在两个端点里本就不同。
+func adminUserScalars(u *User) DataUser {
+	return DataUser{
+		UUID:               u.UUID,
+		ExpiredAt:          u.ExpiredAt,
+		IsFirstOrderDone:   u.IsFirstOrderDone != nil && *u.IsFirstOrderDone,
+		IsRetailer:         u.IsRetailer != nil && *u.IsRetailer,
+		Roles:              u.Roles,
+		IsAdmin:            u.IsAdmin != nil && *u.IsAdmin,
+		HasPassword:        HasPasswordSet(u),
+		HasAccessKey:       u.AccessKey != nil && *u.AccessKey != "",
+		AccessKeyCreatedAt: u.AccessKeyCreatedAt,
+		IsBlocked:          isUserBlocked(u),
+	}
+}
+
 // api_admin_list_users 处理获取用户列表的请求（管理员）
 //
 func api_admin_list_users(c *gin.Context) {
@@ -147,21 +167,12 @@ func api_admin_list_users(c *gin.Context) {
 			}
 		}
 
-		result[i] = DataUser{
-			UUID:             u.UUID,
-			ExpiredAt:        u.ExpiredAt,
-			IsFirstOrderDone: u.IsFirstOrderDone != nil && *u.IsFirstOrderDone,
-			LoginIdentifies:  loginIdentifies,
-			DeviceCount:      int64(len(u.Devices)),
-			IsRetailer:       u.IsRetailer != nil && *u.IsRetailer,
-			RetailerConfig:   dataRetailerConfig,
-			Wallet:           dataWallet,
-			Roles:            u.Roles,
-			IsAdmin:            u.IsAdmin != nil && *u.IsAdmin,
-			HasAccessKey:       u.AccessKey != nil && *u.AccessKey != "",
-			AccessKeyCreatedAt: u.AccessKeyCreatedAt,
-			IsBlocked:          isUserBlocked(&u),
-		}
+		dataUser := adminUserScalars(&users[i])
+		dataUser.LoginIdentifies = loginIdentifies
+		dataUser.DeviceCount = int64(len(u.Devices))
+		dataUser.RetailerConfig = dataRetailerConfig
+		dataUser.Wallet = dataWallet
+		result[i] = dataUser
 	}
 
 	log.Infof(c, "Successfully retrieved %d users for admin list", len(result))
@@ -417,22 +428,14 @@ func api_admin_get_user_detail(c *gin.Context) {
 		}
 	}
 
+	dataUser := adminUserScalars(&user)
+	dataUser.LoginIdentifies = loginIdentifies
+	dataUser.DeviceCount = int64(len(devices))
+	dataUser.RetailerConfig = dataRetailerConfig
+	dataUser.Wallet = dataWallet
+
 	resp := AdminUserDetailData{
-		DataUser: DataUser{
-			UUID:             user.UUID,
-			ExpiredAt:        user.ExpiredAt,
-			IsFirstOrderDone: user.IsFirstOrderDone != nil && *user.IsFirstOrderDone,
-			LoginIdentifies:  loginIdentifies,
-			DeviceCount:      int64(len(devices)),
-			IsRetailer:       user.IsRetailer != nil && *user.IsRetailer,
-			RetailerConfig:   dataRetailerConfig,
-			Wallet:           dataWallet,
-			Roles:            user.Roles,
-			IsAdmin:            user.IsAdmin != nil && *user.IsAdmin,
-			HasAccessKey:       user.AccessKey != nil && *user.AccessKey != "",
-			AccessKeyCreatedAt: user.AccessKeyCreatedAt,
-			IsBlocked:          isUserBlocked(&user),
-		},
+		DataUser:      dataUser,
 		Devices:       devices,
 		Orders:        orders,
 		ProHistories:  proHistories,

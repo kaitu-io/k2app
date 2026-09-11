@@ -447,7 +447,7 @@ func api_set_password(c *gin.Context) {
 		ChangeTime: time.Now().Format("2006-01-02 15:04:05"),
 		ClientIP:   c.ClientIP(),
 	}
-	if err := emailToUser(c, int64(userID), brandedPasswordChangedTemplate.For(Brand(user.Brand)), meta); err != nil {
+	if err := emailToUser(c, int64(userID), brandedPasswordChangedTemplate, meta); err != nil {
 		log.Errorf(c, "failed to send password changed email to user %d: %v", userID, err)
 	}
 

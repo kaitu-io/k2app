@@ -85,11 +85,13 @@ func api_admin_set_user_password(c *gin.Context) {
 	})
 
 	// Notification — admin-flavored template, fire-and-log on failure.
+	// 收件人是被重置的那个用户，不是操作的 admin：后台按 uuid 找人、不按品牌过滤，
+	// 所以这里必须走 branded 模板，由 emailToUser 按收件人品牌选文案与发件身份。
 	meta := AdminResetPasswordMeta{
 		ChangeTime: time.Now().Format("2006-01-02 15:04:05"),
 		AdminEmail: adminDisplayEmail(c),
 	}
-	if mailErr := emailToUser(c, int64(user.ID), adminResetPasswordTemplate, meta); mailErr != nil {
+	if mailErr := emailToUser(c, int64(user.ID), brandedAdminResetPasswordTemplate, meta); mailErr != nil {
 		log.Errorf(c, "send admin-reset notification to user %s failed: %v", uuid, mailErr)
 	}
 

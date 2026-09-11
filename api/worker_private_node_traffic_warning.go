@@ -115,7 +115,10 @@ func fireTrafficWarn(ctx context.Context, sub *PrivateNodeSubscription, u *NodeU
 	if percent >= exhaustThreshold {
 		tmpl = privateNodeTrafficExhaustedTemplate
 	}
-	if err := emailToUser(ctx, int64(sub.UserID), tmpl, meta); err != nil {
+	// 单品牌逃生舱：专属线路是 kaitu 独有产品——别的品牌既没有下单入口，也不会
+	// 有 PrivateNodeSubscription 行，因此这条通知只可能发给 kaitu 用户，没有别的
+	// 品牌的文案需要准备。发件身份仍由 emailToUserSingleBrand 按收件人品牌解析。
+	if err := emailToUserSingleBrand(ctx, int64(sub.UserID), tmpl, meta); err != nil {
 		log.Errorf(ctx, "traffic-warn: send to user %d failed: %v", sub.UserID, err)
 	}
 }

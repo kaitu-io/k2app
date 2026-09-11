@@ -33,6 +33,14 @@ import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { AUTO_TUNNEL_SENTINEL, AUTO_TUNNEL_DOMAIN, useConnectionStore } from '../stores/connection.store';
 import { ERROR_CODES } from '../utils/errorCode';
 import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
+import { brandConfig } from '../brands';
+import { cloudNodesUnavailableHintKey, membershipExpiredHintKey } from '../utils/empty-state-hints';
+
+/** Self-Deployed surfaces (the /tunnels tab and every entry into it) exist only
+ *  on a brand with a k2s install channel. Baked at build time, same source as
+ *  Tunnels.tsx/Dashboard.tsx — the empty-state copy below must not offer it
+ *  when this build has no such tab. */
+const SELF_HOSTED_ENABLED = brandConfig.features.selfHostedTunnels === true;
 
 interface CloudTunnelListProps {
   selectedDomain: string | null;
@@ -286,13 +294,13 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         <EmptyState
           icon={<CloudOffIcon sx={{ fontSize: 48, color: 'text.disabled' }} />}
           title={t('dashboard:dashboard.membershipExpiredTitle')}
-          description={t('dashboard:dashboard.membershipExpiredHint')}
+          // Both escape hatches are gated, so the copy is picked from the same
+          // two gates the UI itself obeys — on a build with neither (Play-only
+          // brand on Android) it states the situation instead of pointing at a
+          // /purchase route App.tsx never registered and a Self-Deployed tab
+          // this brand does not have.
+          description={t(membershipExpiredHintKey(purchaseSurfaceAvailable(), SELF_HOSTED_ENABLED))}
           action={
-            // Renew routes to /purchase, which App.tsx registers only when
-            // purchaseSurfaceAvailable() (utils/purchase-surface.ts) — the same
-            // gate as the nav entries. Consulting it here keeps the CTA from
-            // dead-ending on an unregistered route. The hint's "switch to
-            // Self-hosted" path stays actionable regardless.
             purchaseSurfaceAvailable() ? (
               <Button
                 onClick={() => navigate('/purchase')}
@@ -341,14 +349,15 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
 
   // Show friendly empty state when load failed and no tunnels are
   // cached — a network hiccup shouldn't read as "App is broken",
-  // since self-hosted tunnels and future retries remain available.
+  // since retrying (and, where the brand has them, self-hosted tunnels)
+  // remains available.
   if (error && tunnels.length === 0) {
     return (
       <Box sx={{ px: 2, py: 2 }}>
         <EmptyState
           icon={<CloudOffIcon sx={{ fontSize: 48, color: 'text.disabled' }} />}
           title={t('dashboard:dashboard.cloudNodesUnavailable')}
-          description={t('dashboard:dashboard.cloudNodesUnavailableHint')}
+          description={t(cloudNodesUnavailableHintKey(SELF_HOSTED_ENABLED))}
           action={
             <Button
               onClick={() => { void refresh({ force: true }).catch(() => {}); }}
