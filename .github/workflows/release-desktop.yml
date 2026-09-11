@@ -433,11 +433,29 @@ jobs:
 
       # --- Windows: cross-compile on macOS via cargo-xwin + osslsigncode ---
 
+      # 云会话每 2-3 小时掉一次，且掉线后 `--list-slots` 仍报在线。这里只尽力
+      # 登录，成功与否都交给 build-windows 里的 windows-sign-preflight.sh 做最终
+      # 判定（它真签一个一次性副本，把 CKR_ATTRIBUTE_TYPE_INVALID 提到 15 分钟的
+      # bundle 之前）。所以这步 continue-on-error。
+      #
+      # 调的是**装机副本**而不是仓库里的拷贝：保活 agent 用的就是这一份，CI 也用
+      # 它，两边共用同一个实现就不会漂。（脚本本体已抽到独立项目
+      # ~/projects/wordgate/simplisign，由它的 install 脚本部署到这个稳定目录——
+      # runner 的 checkout 每次构建都会被清，指不得。）2026-09-09 之前 perform 与
+      # k2app 各存一份、机器上还有第三份，k2app 这份最旧：既没有 osascript 超时闸
+      # 也没有锁屏跳过闸，从这里跑一次 install 就会把那两个修复静默冲掉。
       - name: SimplySign PKCS#11 login
         if: matrix.platform == 'Windows'
+        continue-on-error: true
         env:
           SIMPLISIGN_TOTP_URI: ${{ secrets.SIMPLISIGN_TOTP_URI }}
-        run: bash scripts/ci/macos/simplisign-login.sh
+        run: |
+          LOGIN="$HOME/Library/Application Support/kaitu-simplisign/simplisign-login.sh"
+          if [ ! -x "$LOGIN" ]; then
+            echo "::warning::保活未安装（${LOGIN} 不在）。装它：bash ~/projects/wordgate/simplisign/install-simplisign-keepalive.sh"
+            exit 1
+          fi
+          bash "$LOGIN"
 
       - name: Build Windows (k2 + webapp + cargo-xwin + NSIS + Authenticode)
         if: matrix.platform == 'Windows'

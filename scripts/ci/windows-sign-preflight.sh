@@ -49,6 +49,9 @@ echo "operation (see the osslsigncode error above). The PKCS#11 slot may" >&2
 echo "still be cached locally, but the cloud session is not live." >&2
 echo "" >&2
 echo "Fix, then re-run the build:" >&2
-echo "  make simplisign-login        # automated (needs SIMPLISIGN_TOTP_URI)" >&2
+echo "  make simplisign-login        # automated (TOTP from env or login Keychain)" >&2
 echo "  or open 'SimplySign Desktop' -> 'Connect with cloud' + approve on phone" >&2
+echo "" >&2
+echo "The keepalive is machine-level and NOT in this repo; source of truth is" >&2
+echo "~/projects/wordgate/simplisign (installs to ~/Library/Application Support/kaitu-simplisign/)." >&2
 exit 1

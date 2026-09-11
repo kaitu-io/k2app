@@ -5,7 +5,8 @@ set -e
 #
 # Called by Tauri as signCommand during Windows bundle phase.
 # Requires: osslsigncode (brew install osslsigncode), libp11 (brew install libp11),
-#           SimplySign Desktop logged in (use simplisign-login.sh first)
+#           SimplySign Desktop logged in (`make simplisign-login`; keepalive
+#           source of truth: ~/projects/wordgate/simplisign)
 #
 # Usage: ./windows-sign.sh <file-to-sign>
 
@@ -72,7 +73,8 @@ fi
 
 # Verify PKCS#11 token is available
 if ! pkcs11-tool --module "$PKCS11_MODULE" --list-slots 2>&1 | grep -q "token label"; then
-    echo "ERROR: PKCS#11 token not available. Run 'make simplisign-login' first." >&2
+    echo "ERROR: PKCS#11 token not available. Run 'make simplisign-login' first" >&2
+    echo "       (keepalive lives in ~/projects/wordgate/simplisign, not this repo)." >&2
     exit 1
 fi
 
