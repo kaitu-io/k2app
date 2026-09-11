@@ -237,6 +237,9 @@ func localFront(t *testing.T, bodySize int) string {
 // proves the instrument works; it proves nothing about real traffic, because
 // both sides here are driven by this file.
 func TestShapePipeline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("long: drives the full shaping pipeline against a local front")
+	}
 	addr := localFront(t, 120*1024)
 
 	browse, err := runPlan(t, addr, "front.invalid", "/", pageLoad(3*time.Second))

@@ -298,6 +298,9 @@ func newServerWithProfile(t *testing.T, rtt frontRTT, m mitigation, pooled bool,
 // TestTimingGapExists is the vulnerability: with no mitigation the two paths
 // are trivially separable, so the discriminator can be bypassed by timing.
 func TestTimingGapExists(t *testing.T) {
+	if testing.Short() {
+		t.Skip("long: timed handshake sampling over a simulated front RTT")
+	}
 	rtt := frontRTT{base: 30 * time.Millisecond, jitter: 5 * time.Millisecond}
 	s := newServer(t, rtt, mitigationNone, false)
 	defer s.ln.Close()
@@ -315,6 +318,9 @@ func TestTimingGapExists(t *testing.T) {
 // TestFixedDelayIsNotEnough shows that padding by the mean leaves the variance
 // mismatched, which is still usable by an observer.
 func TestFixedDelayIsNotEnough(t *testing.T) {
+	if testing.Short() {
+		t.Skip("long: timed handshake sampling over a simulated front RTT")
+	}
 	rtt := frontRTT{base: 30 * time.Millisecond, jitter: 15 * time.Millisecond}
 	s := newServer(t, rtt, mitigationFixedDelay, false)
 	defer s.ln.Close()
@@ -332,6 +338,9 @@ func TestFixedDelayIsNotEnough(t *testing.T) {
 // TestSampledDelayClosesTheGap is the proposed mitigation: draw the pad from
 // the node's own measured relay-latency distribution.
 func TestSampledDelayClosesTheGap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("long: timed handshake sampling over a simulated front RTT")
+	}
 	rtt := frontRTT{base: 30 * time.Millisecond, jitter: 15 * time.Millisecond}
 	s := newServer(t, rtt, mitigationSampledDelay, false)
 	defer s.ln.Close()
@@ -349,6 +358,9 @@ func TestSampledDelayClosesTheGap(t *testing.T) {
 // TestPooledFrontReducesTheCost measures the latency the mitigation costs real
 // users, with and without keeping warm connections to the front.
 func TestPooledFrontReducesTheCost(t *testing.T) {
+	if testing.Short() {
+		t.Skip("long: warm/cold pool comparison, hundreds of handshakes")
+	}
 	rtt := frontRTT{base: 30 * time.Millisecond, jitter: 15 * time.Millisecond}
 
 	cold := newServer(t, rtt, mitigationSampledDelay, false)
@@ -377,6 +389,9 @@ func TestPooledFrontReducesTheCost(t *testing.T) {
 // separability reported by the mitigation tests cannot be read as either
 // "leftover signal" or "measurement noise".
 func TestSeparabilityNullBaseline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("long: null-hypothesis baseline, same sampling cost")
+	}
 	rtt := frontRTT{base: 30 * time.Millisecond, jitter: 15 * time.Millisecond}
 	s := newServer(t, rtt, mitigationSampledDelay, false)
 	defer s.ln.Close()

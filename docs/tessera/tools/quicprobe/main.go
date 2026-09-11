@@ -1,3 +1,12 @@
+//go:build ignore
+
+// NOT part of the module build. This is a one-shot survey tool kept as
+// evidence for the measurements in spec.md / threat-boundary.md, and it
+// imports github.com/apernet/quic-go — a dependency the repo dropped in
+// fc6b107 when wire migrated to the in-tree kuic fork. Without this tag
+// `go build ./...` fails on the missing module. To actually run it, vendor
+// apernet/quic-go into a scratch module rather than re-adding it here.
+
 // quicprobe tests whether a candidate front's name is on the GFW's QUIC SNI
 // blocklist -- the second, SEPARATE list (spec.md §2, ~58k FQDNs, since
 // 2024-04-07). Passing the TCP gate (tools/sni_gate_probe.py) says nothing

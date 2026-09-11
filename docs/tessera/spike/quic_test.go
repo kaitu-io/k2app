@@ -1,3 +1,12 @@
+//go:build ignore
+
+// NOT part of the test build. Imports github.com/apernet/quic-go, which the
+// repo dropped in fc6b107 (wire migrated to the in-tree kuic fork), so this
+// file no longer compiles here. Its finding is still recorded in spec.md §6
+// and below: quic.ClientToken exposes no fields or constructor, so a Tessera
+// QUIC client needs a patched quic-go. Kept as the evidence behind that
+// claim. The other spike tests in this package do not import it and still run.
+
 // Verification for spec.md §6 — the QUIC gap.
 //
 // §6 asserts two things. This file tests both, and one of them turns out to be
@@ -232,25 +241,8 @@ func (d *demuxConn) Close() error {
 // Test servers
 // ---------------------------------------------------------------------------
 
-func namedCert(t *testing.T, cn string) tls.Certificate {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(2),
-		Subject:      pkix.Name{CommonName: cn},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-		DNSNames:     []string{cn},
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
-}
+// namedCert moved to helpers_test.go so the still-compiling spike tests
+// (shape_test.go) can use it without pulling in this file's apernet import.
 
 // serveQUIC runs a QUIC endpoint that answers every stream with its own name,
 // so a client can tell which endpoint actually served it.
