@@ -197,8 +197,8 @@ type WebLoginMeta struct {
 
 // DeviceTransferMeta 设备转移邮件元数据
 type DeviceTransferMeta struct {
-	TransferTime  string
-	DeviceRemark  string
+	TransferTime string
+	DeviceRemark string
 }
 
 // PasswordLoginMeta password login notification email metadata
@@ -229,26 +229,56 @@ type DelegatePayInviteMeta struct {
 	PayUrl       string
 }
 
-// emailToUser 发送邮件到用户。发件身份按收件用户的品牌选择（brandOfUser），
-// 调用方只负责选对模板（brandedXxxTemplate.For）。
-func emailToUser[T any](ctx context.Context, userID int64, tmpl EmailTemplate[T], meta T) error {
-	log.Infof(ctx, "sending email to user %d with template subject: %s", userID, tmpl.Subject)
+// emailToUser 发送邮件到用户：**收件人品牌只解析一次，同时决定文案与发件身份**。
+//
+// 形参是 brandedEmailTemplate 而不是 EmailTemplate，这是一道编译期的门——把单
+// 品牌模板交给面向用户的通知，代码根本编不过。这道门之前不存在：发件身份走
+// brandOfUser，文案却由调用方各自 .For(user.Brand) 选，两个真相源。
+// adminResetPasswordTemplate 就是从这条缝里漏出去的——Overleap 用户被管理员
+// 重置密码后，收到的是一封中文的「Kaitu 账号密码已被管理员重置」。
+//
+// 功能本身就只存在于单一品牌的通知走 emailToUserSingleBrand。
+func emailToUser[T any](ctx context.Context, userID int64, bt brandedEmailTemplate[T], meta T) error {
+	b, email, err := resolveUserMailTarget(ctx, userID)
+	if err != nil {
+		return err
+	}
+	tmpl := bt.For(b)
+	log.Infof(ctx, "sending email to user %d (brand=%s) with template subject: %s", userID, b, tmpl.Subject)
+	return emailTo(ctx, b, email, tmpl, meta)
+}
+
+// emailToUserSingleBrand 是 emailToUser 的逃生舱：**功能本身**只存在于一个品牌，
+// 因而没有别的品牌的文案可选（专属线路是 kaitu 独有产品，别的品牌既没有
+// PrivateNodeSubscription 记录也没有入口）。发件身份仍按收件人品牌解析——文案
+// 单品牌不等于发件人可以错。调用处必须写清「别的品牌为什么到不了这里」。
+func emailToUserSingleBrand[T any](ctx context.Context, userID int64, tmpl EmailTemplate[T], meta T) error {
+	b, email, err := resolveUserMailTarget(ctx, userID)
+	if err != nil {
+		return err
+	}
+	log.Infof(ctx, "sending single-brand email to user %d (brand=%s) with template subject: %s", userID, b, tmpl.Subject)
+	return emailTo(ctx, b, email, tmpl, meta)
+}
+
+// resolveUserMailTarget 解出用户的收件地址与品牌，是上面两个入口唯一的取数处。
+func resolveUserMailTarget(ctx context.Context, userID int64) (Brand, string, error) {
 	// 从 identify 获取用户邮箱
 	identify, err := GetEmailIdentifyByUserID(ctx, userID)
 	if util.DbIsNotFoundErr(err) || identify == nil || identify.EncryptedValue == "" {
 		log.Warnf(ctx, "user %d has no email address, cannot send email", userID)
-		return fmt.Errorf("user has no email address")
+		return "", "", fmt.Errorf("user has no email address")
 	}
 	if err != nil {
 		log.Errorf(ctx, "failed to get user identify for user %d: %v", userID, err)
-		return fmt.Errorf("failed to get user identify: %v", err)
+		return "", "", fmt.Errorf("failed to get user identify: %v", err)
 	}
 	decEmail, err := secretDecryptString(ctx, identify.EncryptedValue)
 	if err != nil {
 		log.Errorf(ctx, "failed to decrypt email for user %d: %v", userID, err)
-		return fmt.Errorf("failed to decrypt email for user %d: %v", userID, err)
+		return "", "", fmt.Errorf("failed to decrypt email for user %d: %v", userID, err)
 	}
-	return emailTo(ctx, brandOfUser(ctx, uint64(userID)), decEmail, tmpl, meta)
+	return brandOfUser(ctx, uint64(userID)), decEmail, nil
 }
 
 // emailTo 发送邮件到邮箱。b 决定发件身份（systemSenderForBrand），与模板选择相互独立：

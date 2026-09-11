@@ -10,14 +10,20 @@ import (
 
 // Overleap 品牌英文邮件模板。
 //
-// Phase 1 覆盖高频 6 类系统邮件（验证码 / 新设备登录 / web 登录确认 / 设备转移 /
-// 密码登录码 / 密码已修改）；Overleap 上架收尾补齐设备踢出通知（brandedDeviceKickTemplate）
-// 与工单回复通知（ticketReplyNotification，非模板、按品牌拼字面量）。以下模板保持
-// kaitu-only，不做 branded 变体——其功能入口本身已被品牌 gate / 渠道锁挡住，overleap
-// 用户不可达：
-//   - delegatePayInviteTemplate — 代付邀请，PaymentChannels 目前不含 overleap 支付渠道
-//   - adminResetPasswordTemplate — 管理员代重置密码，admin 专属操作
-//   - privateNode* 系列（专属线路相关模板）— 专属节点是 kaitu 专属产品
+// 覆盖面由 emailToUser 的类型签名兜底：面向用户的通知一律只收
+// brandedEmailTemplate，单品牌模板编译期就交不进去。所以这里的清单不是"记得补"，
+// 而是"补了才编得过"。
+//
+// 曾经的反例正是 adminResetPasswordTemplate：它被当成"admin 专属操作，overleap
+// 用户不可达"而留成 kaitu-only，但**收件人是被重置的那个用户**——后台按 uuid 找人，
+// 不按品牌过滤，于是 overleap 用户收到一封中文的「Kaitu 账号密码已被管理员重置」。
+// 判断可达性要看收件人，不看谁点的按钮。
+//
+// 仍然 kaitu-only 的两处，都是**功能本身**在 overleap 不存在，各自走显式出口：
+//   - delegatePayInviteTemplate — 代付邀请，收件人是第三方付款人，emailTo 显式钉
+//     BrandKaitu；PaymentChannels 不含 overleap 的 wordgate 渠道，订单生不出来。
+//   - privateNodeTrafficWarn / Exhausted — 专属线路是 kaitu 独有产品，走
+//     emailToUserSingleBrand（论证写在 worker_private_node_traffic_warning.go）。
 //
 // kaitu 模板字节不变的保证：brandedEmailTemplate[T].Kaitu 直接复用
 // logic_email.go 中既有的包变量，For(BrandKaitu) 原样返回，不做任何转换。
@@ -159,6 +165,24 @@ If this wasn't you, please contact support@overleap.io.
 	},
 }
 
+var brandedAdminResetPasswordTemplate = brandedEmailTemplate[AdminResetPasswordMeta]{
+	Kaitu: adminResetPasswordTemplate,
+	Overleap: EmailTemplate[AdminResetPasswordMeta]{
+		Subject: "Your Overleap account password was reset by support",
+		Body: `Hi there,
+
+Your Overleap account password was just reset by our support team.
+
+Details:
+- Time: {{.ChangeTime}}
+- Reset by: {{if .AdminEmail}}{{.AdminEmail}}{{else}}Overleap Support{{end}}
+
+If you did not ask us to do this, contact support@overleap.io immediately.
+
+— The Overleap Team`,
+	},
+}
+
 // ticketReplyNotification renders the ticket-reply email for a brand.
 // kaitu strings are the historical literals from worker_ticket_notify.go, unchanged.
 func ticketReplyNotification(b Brand, ticketID uint64, replies string) (subject, body string) {
@@ -170,19 +194,25 @@ func ticketReplyNotification(b Brand, ticketID uint64, replies string) (subject,
 		fmt.Sprintf("您好，\n\n您的工单 (#%d) 收到了新的回复：\n\n---\n%s\n---\n\n请登录 Kaitu 客户端查看完整对话。\n", ticketID, replies)
 }
 
-// overleapTemplateCorpus 汇总全部 overleap 模板的 Subject+Body，供
+// overleapTemplateCorpus 汇总全部 overleap 文案的 Subject+Body，供
 // TestOverleapTemplatesNoChineseBrandLeak 逐一断言零中文品牌泄漏。
+//
+// key 用包变量名，好让 TestOverleapCorpusCoversEveryBrandedTemplate 扫本文件源码
+// 逐一核对——这张表是手写枚举，漏登记的模板不会有任何编译期信号。
+// 已知盲区：在**别的文件**里声明的 brandedEmailTemplate，或不写成
+// `var brandedXxx = brandedEmailTemplate[...]` 这一形状的声明，那个守卫看不见。
 func overleapTemplateCorpus() map[string]string {
 	ticketReplySubject, ticketReplyBody := ticketReplyNotification(BrandOverleap, 0, "")
 	return map[string]string{
-		"verification":    brandedVerificationCodeTemplate.Overleap.Subject + brandedVerificationCodeTemplate.Overleap.Body,
-		"newDeviceLogin":  brandedNewDeviceLoginTemplate.Overleap.Subject + brandedNewDeviceLoginTemplate.Overleap.Body,
-		"webLogin":        brandedWebLoginTemplate.Overleap.Subject + brandedWebLoginTemplate.Overleap.Body,
-		"deviceTransfer":  brandedDeviceTransferTemplate.Overleap.Subject + brandedDeviceTransferTemplate.Overleap.Body,
-		"passwordLogin":   brandedPasswordLoginTemplate.Overleap.Subject + brandedPasswordLoginTemplate.Overleap.Body,
-		"passwordChanged": brandedPasswordChangedTemplate.Overleap.Subject + brandedPasswordChangedTemplate.Overleap.Body,
-		"deviceKick":      brandedDeviceKickTemplate.Overleap.Subject + brandedDeviceKickTemplate.Overleap.Body,
-		"ticketReply":     ticketReplySubject + ticketReplyBody,
+		"brandedVerificationCodeTemplate":   brandedVerificationCodeTemplate.Overleap.Subject + brandedVerificationCodeTemplate.Overleap.Body,
+		"brandedNewDeviceLoginTemplate":     brandedNewDeviceLoginTemplate.Overleap.Subject + brandedNewDeviceLoginTemplate.Overleap.Body,
+		"brandedWebLoginTemplate":           brandedWebLoginTemplate.Overleap.Subject + brandedWebLoginTemplate.Overleap.Body,
+		"brandedDeviceTransferTemplate":     brandedDeviceTransferTemplate.Overleap.Subject + brandedDeviceTransferTemplate.Overleap.Body,
+		"brandedPasswordLoginTemplate":      brandedPasswordLoginTemplate.Overleap.Subject + brandedPasswordLoginTemplate.Overleap.Body,
+		"brandedPasswordChangedTemplate":    brandedPasswordChangedTemplate.Overleap.Subject + brandedPasswordChangedTemplate.Overleap.Body,
+		"brandedDeviceKickTemplate":         brandedDeviceKickTemplate.Overleap.Subject + brandedDeviceKickTemplate.Overleap.Body,
+		"brandedAdminResetPasswordTemplate": brandedAdminResetPasswordTemplate.Overleap.Subject + brandedAdminResetPasswordTemplate.Overleap.Body,
+		"ticketReply":                       ticketReplySubject + ticketReplyBody,
 	}
 }
 
