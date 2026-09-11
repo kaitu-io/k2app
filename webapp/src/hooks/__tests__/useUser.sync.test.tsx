@@ -110,3 +110,30 @@ describe('useUser 跨实例同步', () => {
     });
   });
 });
+
+// 缺陷（2026-09-11，生产 center 日志暴露）：fetchUser 每次渲染都是新函数。调用方把它放进
+// useCallback / useEffect 依赖后，依赖它的 effect 每次渲染都重跑——Purchase.tsx 的预览订单
+// 因此自激成死循环（见 pages/__tests__/Purchase.previewLoop.test.tsx）。
+describe('useUser fetchUser 引用稳定', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    cacheStore.clear();
+    localStorage.clear();
+    mockGet.mockResolvedValue({ code: 0, data: userAt(OLD_EXPIRY) });
+  });
+
+  it('重渲染与数据刷新都不改变 fetchUser 的引用', async () => {
+    const { result, rerender } = renderHook(() => useUser());
+    await waitFor(() => expect(result.current.user?.expiredAt).toBe(OLD_EXPIRY));
+    const first = result.current.fetchUser;
+
+    rerender();
+    expect(result.current.fetchUser).toBe(first);
+
+    act(() => {
+      cacheStore.set(USER_CACHE_KEY, userAt(NEW_EXPIRY), { ttl: 3600 });
+    });
+    await waitFor(() => expect(result.current.user?.expiredAt).toBe(NEW_EXPIRY));
+    expect(result.current.fetchUser).toBe(first);
+  });
+});
