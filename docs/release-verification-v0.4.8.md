@@ -96,6 +96,7 @@ OSV 红 · web i18n 11 处差异全是死键（现已删除，见 §2.3）· tes
 
 - **au-1**（`au-sydney.aws.wm04`）：2026-08-27 15:30 +07 读数 **999.70 / 1024 GB = 97.6%**，周期 84.5%（09-01 重置）。按本周期均速 ≈38 GB/天，**约 0.6 天触 100%**。`cloud_instance.aws_overage_autostop` 默认开 → `StopInstance`。Center 是否已部署 `worker_cloud_overage.go` 未能从 API 判断（响应不含相关字段）。选项：提前关阀 / 接受 AU 停机到重置 / 迁流量。
 - **SimplySign**：云会话 2–3 小时掉一次，runner LaunchAgent `SessionCreate=true` 结构上无法自愈；`build-windows`（含 dry-run 的 Windows 腿）依赖它。选项：GUI session 加周期 LaunchAgent 跑 `simplisign-login.sh` / 发版前手动跑。
+  （2026-09-09 后记：已按前一个选项落地，保活抽成机器级独立项目 `~/projects/wordgate/simplisign`，本仓库不再留脚本拷贝。）
 
 ## 6. 信心刻度（诚实版）
 

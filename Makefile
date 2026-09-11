@@ -161,12 +161,26 @@ build-macos: sync-adb-tools
 build-macos-test:
 	bash scripts/build-macos.sh --single-arch --skip-notarization --features=mcp-bridge
 
+# 云会话每 2-3 小时掉一次，且掉线后 `--list-slots` 仍报在线。这里只"尽力登录"，
+# 成功与否交给紧随其后的 windows-sign-preflight.sh 做最终判定——脚本在锁屏时退
+# 75（EX_TEMPFAIL，「暂时做不了」而非「坏了」，此时云会话往往还活着），无头 runner
+# 上槽存在则退 0 但并不保证会话可用，两种码都不该直接掐断构建。
+#
+# 调的是**装机副本**而不是仓库拷贝：保活 agent 用的就是这一份，CI 也用它，两边
+# 共用同一个实现就不会漂。脚本本体已抽到独立项目 ~/projects/wordgate/simplisign
+# （唯一源），由它的 install 脚本部署到这个稳定目录。
 simplisign-login:
-	@if [ "$$(uname -s)" = "Darwin" ]; then \
-		bash scripts/ci/macos/simplisign-login.sh; \
-	else \
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
 		echo "simplisign-login is macOS only, skipping"; \
-	fi
+		exit 0; \
+	fi; \
+	LOGIN="$$HOME/Library/Application Support/kaitu-simplisign/simplisign-login.sh"; \
+	if [ ! -x "$$LOGIN" ]; then \
+		echo "WARNING: SimplySign 保活未安装（$$LOGIN 不在）"; \
+		echo "         装它：bash ~/projects/wordgate/simplisign/install-simplisign-keepalive.sh"; \
+		exit 0; \
+	fi; \
+	bash "$$LOGIN" || echo "WARNING: 云会话登录未成功（退出码 $$?）——交给 windows-sign-preflight.sh 判定"
 
 build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign-login
 	bash webapp/scripts/check-brand-purity.sh $(BRAND) webapp/dist
