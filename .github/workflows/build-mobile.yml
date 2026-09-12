@@ -511,6 +511,17 @@ jobs:
           AAB="release/${{ steps.brand.outputs.version }}/${{ steps.brand.outputs.product }}-${{ steps.brand.outputs.version }}.aab"
           bash scripts/check-mobile-brand-purity.sh ${{ matrix.brand }} "$AAB"
 
+      # 16 KB page alignment, read back from the artifact rather than trusted from
+      # the build command — the -Wl,-z,max-page-size flag in the Makefile is one
+      # careless edit from vanishing, and a 4 KB-aligned .so fails only at Play
+      # upload or on a 16 KB-page device, never in the build. Same brand-exact
+      # path as the purity gates above (never a glob).
+      - name: 16 KB page alignment gate
+        run: |
+          BASE="release/${{ steps.brand.outputs.version }}/${{ steps.brand.outputs.product }}-${{ steps.brand.outputs.version }}"
+          python3 scripts/check-elf-page-align.py "$BASE.apk"
+          python3 scripts/check-elf-page-align.py "$BASE.aab"
+
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
