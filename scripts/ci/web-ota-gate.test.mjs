@@ -18,9 +18,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   MODES,
@@ -431,6 +432,113 @@ test('evaluate: a recorded provenance never triggers the sibling probe', () => {
     });
     assert.equal(r.relation, 'forward');
     assert.equal(r.perBrand.kaitu.bootstrap, null);
+  } finally {
+    rmSync(repo.dir, { recursive: true, force: true });
+  }
+});
+
+// ------------------------------------------------------------------- CLI ----
+//
+// The CLI layer is where the mode asymmetry becomes an EXIT CODE, and an exit
+// code is what decides whether an app release goes red. The decision table
+// tests above cannot see it, so these drive the real process with a stubbed
+// `aws` on PATH.
+
+const GATE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'web-ota-gate.mjs');
+
+/** Run the gate CLI with a stub `aws` first on PATH. Returns {status, out}. */
+function runCli({ awsScript, args, cwd }) {
+  const bin = mkdtempSync(path.join(tmpdir(), 'gate-bin-'));
+  const outFile = path.join(bin, 'gh-output');
+  writeFileSync(path.join(bin, 'aws'), awsScript);
+  chmodSync(path.join(bin, 'aws'), 0o755);
+  writeFileSync(outFile, '');
+  const r = spawnSync('node', [GATE, ...args], {
+    encoding: 'utf8',
+    cwd: cwd ?? process.cwd(),
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_OUTPUT: outFile },
+  });
+  const out = Object.fromEntries(
+    readFileSync(outFile, 'utf8').split('\n').filter(Boolean).map((l) => {
+      const i = l.indexOf('=');
+      return [l.slice(0, i), l.slice(i + 1)];
+    }),
+  );
+  rmSync(bin, { recursive: true, force: true });
+  return { status: r.status, stdout: r.stdout ?? '', out };
+}
+
+const AWS_NO_CREDS = '#!/bin/bash\necho "Unable to locate credentials" >&2\nexit 255\n';
+const SOME_SHA = 'd'.repeat(40);
+
+test('CLI: a linkage publish that cannot evaluate the gate SKIPS instead of failing the app release', () => {
+  const r = runCli({
+    awsScript: AWS_NO_CREDS,
+    args: ['--publish-commit', SOME_SHA, '--mode', 'linkage', '--channel', 'stable', '--namespace', ''],
+  });
+  assert.equal(r.status, 0, 'must not fail the calling release');
+  assert.equal(r.out.proceed, 'false', 'must not publish blind');
+  assert.equal(r.out.relation, 'unevaluable');
+  assert.equal(r.out.notify, 'true', 'a silent skip would hide an S3 outage');
+  assert.match(r.stdout, /::warning::/);
+});
+
+test('CLI: an explicit publish that cannot evaluate the gate goes RED', () => {
+  const r = runCli({
+    awsScript: AWS_NO_CREDS,
+    args: ['--publish-commit', SOME_SHA, '--mode', 'explicit', '--channel', 'stable', '--namespace', ''],
+  });
+  assert.equal(r.status, 1);
+  assert.equal(r.out.proceed, 'false');
+  assert.match(r.stdout, /::error::/);
+});
+
+test('CLI: allow_rollback does NOT override blindness', () => {
+  const r = runCli({
+    awsScript: AWS_NO_CREDS,
+    args: ['--publish-commit', SOME_SHA, '--mode', 'explicit', '--allow-rollback', 'true', '--channel', 'stable', '--namespace', ''],
+  });
+  assert.equal(r.status, 1, 'allow_rollback is intent about content, not permission to publish blind');
+});
+
+test('CLI: a short/absent publish commit is refused before anything else happens', () => {
+  for (const sha of ['', 'abc123']) {
+    const r = runCli({ awsScript: AWS_NO_CREDS, args: ['--publish-commit', sha, '--mode', 'linkage'] });
+    assert.equal(r.status, 1, JSON.stringify(sha));
+  }
+});
+
+test('CLI: identical provenance makes a linkage publish a clean no-op (the bare v* dedup)', () => {
+  const repo = gitRepo();
+  try {
+    const head = repo.commit('base');
+    const r = runCli({
+      awsScript: `#!/bin/bash\necho '{"commit":"${head}","version":"0.4.10.1"}'\n`,
+      args: ['--publish-commit', head, '--mode', 'linkage', '--channel', 'stable', '--namespace', ''],
+      cwd: repo.dir,
+    });
+    assert.equal(r.status, 0);
+    assert.equal(r.out.proceed, 'false');
+    assert.equal(r.out.relation, 'identical');
+    assert.equal(r.out.notify, 'false', 'a routine dedup must not page anyone');
+  } finally {
+    rmSync(repo.dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI: a downgrade on the explicit path exits 1 and names the escape hatch', () => {
+  const repo = gitRepo();
+  try {
+    const base = repo.commit('base');
+    const head = repo.commit('head');
+    const r = runCli({
+      awsScript: `#!/bin/bash\necho '{"commit":"${head}","version":"0.4.10.9"}'\n`,
+      args: ['--publish-commit', base, '--mode', 'explicit', '--channel', 'stable', '--namespace', ''],
+      cwd: repo.dir,
+    });
+    assert.equal(r.status, 1);
+    assert.equal(r.out.relation, 'downgrade');
+    assert.match(r.stdout, /allow_rollback/);
   } finally {
     rmSync(repo.dir, { recursive: true, force: true });
   }
