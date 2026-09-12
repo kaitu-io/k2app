@@ -97,7 +97,8 @@ def main() -> int:
         print("     in the root Makefile's appext-android target (or build with NDK r28+).", file=sys.stderr)
         return 1
 
-    print(f"OK: {checked} native librar{'y' if checked == 1 else 'ies'} are >= {minimum}-byte aligned.")
+    noun = "library is" if checked == 1 else "libraries are"
+    print(f"OK: {checked} native {noun} >= {minimum}-byte aligned.")
     return 0
 
 
