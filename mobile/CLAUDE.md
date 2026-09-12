@@ -8,7 +8,10 @@ Capacitor 7 mobile app wrapping the k2 Go tunnel core via gomobile. K2Plugin bri
 - **JDK 21** required for Android builds (Cap 7 regenerates `capacitor.build.gradle` with `VERSION_21` on every `cap sync`; JDK 17 will fail with `invalid source release: 21`).
   - **Local:** just `brew install openjdk@21`. The root `Makefile`'s `ANDROID_JAVA_HOME` auto-detects it and exports `JAVA_HOME` only for `appext-android` / `build-android` / `dev-android` targets — your shell's default `JAVA_HOME` stays untouched. `make check-jdk-21` prints the install hint on failure.
   - **CI:** `actions/setup-java@v4` with `java-version: '21'` in `.github/workflows/build-mobile.yml`.
-- Gradle wrapper 8.11.1 + AGP 8.7.2 + Kotlin 1.9.25
+- Gradle wrapper 8.13 + AGP 8.11.1 + Kotlin 1.9.25
+- **compileSdk / targetSdk 36** (`android/variables.gradle`, minSdk 24). Play rejects an upload
+  targeting below 36, so this is a floor, not a preference — bumping it back breaks the Play lane
+  silently (CI still builds; only the Console refuses).
 - **Xcode 26+** required for App Store submissions (Apple mandate from 2026-04-28: iOS 26 SDK + Xcode 26). CI pins `runs-on: macos-26` with `setup-xcode@v1 xcode-version: '26.4'`. Local dev machines need macOS 15.6+ to install Xcode 26.
 - iOS deployment target: 14.0 at the pbxproj project level, but every target (App, PacketTunnelExtension, K2Tests) overrides to **16.0** and `Podfile` is `platform :ios, '16.0'` — 16 is the real floor.
 - CocoaPods for iOS (NOT SPM — avoids Capacitor 8's SPM regression surface when we later upgrade)
