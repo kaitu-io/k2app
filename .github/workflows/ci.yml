@@ -53,6 +53,29 @@ jobs:
         run: yarn test
         working-directory: web
 
+  # The web OTA publish pipeline's own logic — version derivation, manifest
+  # shape, and the anti-rollback gate that decides whether a publish would move
+  # stable BACKWARDS for every installed client. publish-web-ota.yml runs these
+  # too, but only at publish time: by then the decision table is already being
+  # trusted in production. No yarn install — both scripts use node builtins only,
+  # deliberately, so this gate stays a 20-second job.
+  test-ci-scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run CI script tests (web OTA manifest + anti-rollback gate)
+        run: |
+          node --test scripts/ci/web-ota-manifest.test.mjs
+          node --test scripts/ci/web-ota-gate.test.mjs
+
   check-versions:
     runs-on: ubuntu-latest
     steps:

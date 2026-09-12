@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   WEB_OTA_EPOCH_MS, computeBuildNumber, deriveVersion,
-  readBridgeApiVersion, readSupportFloor, buildManifest, compareBase,
+  readBridgeApiVersion, readSupportFloor, buildManifest, compareBase, buildProvenance,
 } from './web-ota-manifest.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -126,4 +128,49 @@ test('CLI `version` prints a 4-segment version whose 4th segment tracks the wall
   const seg4 = Number(out.split('.')[3]);
   // Within 60s of what this process computes — proves time-based, not commit count.
   assert.ok(Math.abs(seg4 - computeBuildNumber(Date.now())) < 60, `seg4=${seg4} not time-based`);
+});
+
+// --- provenance sidecar (consumed only by scripts/ci/web-ota-gate.mjs) -----
+
+test('buildProvenance records the full commit, version and brand', () => {
+  const sha = 'a'.repeat(40);
+  const p = buildProvenance({
+    version: '0.4.10.21546118',
+    commit: sha,
+    brand: 'overleap',
+    ref: 'refs/tags/v0.4.10-overleap-mobile',
+    runId: '34101492512',
+    runAttempt: '1',
+    workflow: 'Publish Web OTA',
+    publishedAt: '2026-09-07T09:02:02Z',
+  });
+  assert.equal(p.commit, sha);
+  assert.equal(p.brand, 'overleap');
+  assert.equal(p.version, '0.4.10.21546118');
+  assert.equal(p.ref, 'refs/tags/v0.4.10-overleap-mobile');
+  assert.equal(p.published_at, '2026-09-07T09:02:02Z');
+});
+
+test('buildProvenance refuses anything the gate could not compare later', () => {
+  const base = { version: '0.4.10.1', commit: 'b'.repeat(40), brand: 'kaitu', publishedAt: 'now' };
+  // A short/empty sha reads as "unresolvable" at gate time, which would turn a
+  // real downgrade into an unexplained refusal — reject it at write time.
+  assert.throws(() => buildProvenance({ ...base, commit: 'b'.repeat(12) }), /full 40-hex/);
+  assert.throws(() => buildProvenance({ ...base, commit: '' }), /full 40-hex/);
+  assert.throws(() => buildProvenance({ ...base, commit: undefined }), /full 40-hex/);
+  assert.throws(() => buildProvenance({ ...base, commit: 'Z'.repeat(40) }), /full 40-hex/);
+  assert.throws(() => buildProvenance({ ...base, version: '0.4.10' }), /x\.y\.z\.n/);
+  assert.throws(() => buildProvenance({ ...base, brand: '' }), /brand is required/);
+});
+
+test('CLI `source` writes a sidecar the gate can read back', () => {
+  const out = path.join(mkdtempSync(path.join(tmpdir(), 'web-ota-src-')), 'source.json');
+  const sha = 'c'.repeat(40);
+  execFileSync('node', [
+    path.join(here, 'web-ota-manifest.mjs'), 'source',
+    '--version', '0.4.10.1', '--commit', sha, '--brand', 'kaitu', '--out', out,
+  ], { encoding: 'utf8' });
+  const parsed = JSON.parse(readFileSync(out, 'utf8'));
+  assert.equal(parsed.commit, sha);
+  assert.match(parsed.published_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
 });

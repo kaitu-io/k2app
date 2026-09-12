@@ -1,10 +1,12 @@
 name: Publish Web OTA
 
-# Web OTA publish pipeline (spec: docs/superpowers/specs/2026-08-14-web-ota-design.md §6).
+# Web OTA publish pipeline (spec: docs/superpowers/specs/2026-08-14-web-ota-design.md §6,
+# amended 2026-09-12 §6.1 — anti-rollback gate).
 # Three entry points:
 #   push tag webapp/x.y.z → stable, fully automatic (tag version must match package.json)
 #   workflow_call → invoked by app-release workflows to piggyback a web OTA publish on
-#     an app release; caller passes `channel` (default stable) and `secrets: inherit`
+#     an app release; caller passes `channel` (default stable), `linkage: true`
+#     and `secrets: inherit`
 #   workflow_dispatch → republish any ref (emergency rollback via ref=<known-good sha>)
 #     and/or target the beta channel (bootstrap §8 does beta first), and/or
 #     publish into a UAT `namespace` that no shipped client polls
@@ -16,6 +18,28 @@ name: Publish Web OTA
 # Stable publishes update BOTH channel manifests; artifacts always also land in the
 # beta dir so the manifest's relative url ({version}/web.zip) resolves on either
 # channel — same superset semantics as scripts/publish-mobile.sh.
+#
+# JOB SHAPE (why four jobs and not one)
+# -------------------------------------
+# `{brand}/web/latest.json` is a single global mutable pointer and the 4th version
+# segment is time-based, so a bundle built from an OLD commit still outranks what
+# is live and wins. The two linkage callers pick their ref for *app* reasons — an
+# app release cut on a release branch that lags main is normal — so the pipeline
+# has to be able to say "this publish would move stable backwards".
+#
+#   precheck → cheap fail-fast gate (advisory) + tag/version validation
+#   build    → tests, both brands' bundles, minisign, manifests → artifacts
+#   publish  → AUTHORITATIVE gate + S3 upload + provenance + CDN invalidation,
+#              all inside the `publish-web-ota` concurrency group
+#   notify-failure → one place that alerts, so a failed gate cannot be silent
+#
+# The authoritative gate MUST sit in the same job as the upload, and that job
+# must be the one holding the concurrency group. A separate gate job would let
+# two queued runs interleave (gate A, gate B, upload A, upload B) and B's gate
+# would read provenance written before A published — turning the comparison into
+# a coin flip. Keeping gate+upload atomic under the group is what makes the
+# no-downgrade property hold under concurrency, and it also de-duplicates the
+# double publish a bare `v*` tag causes (both app-release workflows call here).
 
 on:
   push:
@@ -26,6 +50,16 @@ on:
         description: 'Release channel'
         type: string
         default: 'stable'
+      linkage:
+        description: >-
+          True when an app-release workflow is piggybacking this publish. Linkage
+          publishes never fail the calling release over a web concern: if the ref
+          would move stable backwards they skip and leave the newer bundle live
+          (which already satisfies the linkage). Explicit publishes — a webapp/*
+          tag or a dispatch — refuse loudly instead, because silently doing
+          nothing is the wrong failure when a human asked for a publish.
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       ref:
@@ -41,6 +75,15 @@ on:
         description: "UAT namespace — publishes under {brand}/web/{ns}/web/ instead of {brand}/web/. Empty = production. Nothing shipped polls it; pair with desktop K2_WEB_OTA_BASE=https://d0.all7.cc/{brand}/web/{ns} to exercise the live chain without an audience."
         required: false
         default: ''
+      allow_rollback:
+        description: >-
+          Publish even though the ref is BEHIND or DIVERGED from the bundle that
+          is live (spec §7 emergency republish). Without this, such a publish is
+          refused. It does NOT override an unreadable provenance record — that
+          stays fail-closed, because it is blindness, not intent.
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -49,14 +92,89 @@ env:
   # Production web bundles ship at info level (same rule as release-desktop.yml).
   K2_BUILD_LOG_LEVEL: info
   AWS_DEFAULT_REGION: ap-northeast-1
+  # ONE bucket literal for both the gate (which reads what is live) and the
+  # upload (which replaces it). Two literals could drift, and the drift would be
+  # invisible in the worst direction: the gate reading an empty prefix answers
+  # "nothing is live, publish away" while the upload still overwrites the real
+  # tree. Shared, a wrong bucket cannot make the gate blind without also making
+  # the upload fail loudly. scripts/ci/web-ota-gate.mjs documents the rest of
+  # that argument.
+  WEB_OTA_BUCKET: d0.all7.cc
+  # Single source of truth for the gate's inputs, shared by the two gate steps so
+  # the advisory and authoritative evaluations cannot drift apart.
+  GATE_MODE: ${{ inputs.linkage && 'linkage' || 'explicit' }}
+  GATE_ALLOW_ROLLBACK: ${{ (inputs.allow_rollback == true || inputs.allow_rollback == 'true') && 'true' || 'false' }}
+  GATE_CHANNEL: ${{ inputs.channel || 'stable' }}
+  GATE_NAMESPACE: ${{ inputs.namespace || '' }}
 
 jobs:
-  publish:
+  # ---------------------------------------------------------------- precheck --
+  # Cheap and first: a release-branch tag that would downgrade stable is caught
+  # in ~40s instead of after a 15-minute dual-brand build. Advisory only — the
+  # decision that gates the upload is re-made in `publish` under the concurrency
+  # group (see JOB SHAPE above).
+  precheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      proceed: ${{ steps.gate.outputs.proceed }}
+      relation: ${{ steps.gate.outputs.relation }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          # The gate compares commits by git ancestry, so it needs real history.
+          # A shallow clone makes every comparison "unresolvable", which is
+          # fail-closed but useless.
+          fetch-depth: 0
+
+      - name: Validate webapp tag against package.json
+        if: startsWith(github.ref, 'refs/tags/webapp/')
+        run: |
+          TAG_VER="${GITHUB_REF_NAME#webapp/}"
+          PKG_VER="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VER" != "$PKG_VER" ]; then
+            echo "::error::tag webapp/${TAG_VER} does not match package.json version ${PKG_VER} — package.json is the version source of truth; bump it or retag"
+            exit 1
+          fi
+
+      - name: Gate — would this publish move stable backwards? (advisory)
+        id: gate
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/web-ota-gate.mjs \
+            --stage precheck \
+            --publish-commit "$(git rev-parse HEAD)" \
+            --mode "$GATE_MODE" \
+            --allow-rollback "$GATE_ALLOW_ROLLBACK" \
+            --channel "$GATE_CHANNEL" \
+            --namespace "$GATE_NAMESPACE" \
+            --bucket "$WEB_OTA_BUCKET"
+
+      # A linkage skip is the correct outcome, not a failure — so it must not be
+      # a red run. It must also not be silent: nothing reads a green run's
+      # summary. Slack is the only channel that reaches a human here.
+      - name: Notify Slack that the publish was skipped
+        if: steps.gate.outputs.notify == 'true'
+        run: |
+          ./scripts/ci/notify-slack.sh notice \
+            --platform "Publish Web OTA" \
+            --error "Web OTA publish SKIPPED (${{ steps.gate.outputs.relation }}): ${{ steps.gate.outputs.reason }}"
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
+
+  # ------------------------------------------------------------------- build --
+  build:
+    needs: precheck
+    if: needs.precheck.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    concurrency:
-      group: publish-web-ota
-      cancel-in-progress: false
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -81,16 +199,6 @@ jobs:
       - name: Init k2 submodule (webapp engine error-code gate reads k2/engine/error.go)
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init k2
 
-      - name: Validate webapp tag against package.json
-        if: startsWith(github.ref, 'refs/tags/webapp/')
-        run: |
-          TAG_VER="${GITHUB_REF_NAME#webapp/}"
-          PKG_VER="$(node -p "require('./package.json').version")"
-          if [ "$TAG_VER" != "$PKG_VER" ]; then
-            echo "::error::tag webapp/${TAG_VER} does not match package.json version ${PKG_VER} — package.json is the version source of truth; bump it or retag"
-            exit 1
-          fi
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -110,8 +218,13 @@ jobs:
         env:
           K2_BRAND: overleap
 
-      - name: Manifest generator unit tests
-        run: node --test scripts/ci/web-ota-manifest.test.mjs
+      # Manifest generator + anti-rollback gate unit tests. They also run in
+      # ci.yml on every push, but this path must not depend on that having
+      # happened: a dispatch can publish any ref.
+      - name: CI script unit tests (manifest generator + anti-rollback gate)
+        run: |
+          node --test scripts/ci/web-ota-manifest.test.mjs
+          node --test scripts/ci/web-ota-gate.test.mjs
 
       - name: Build webapp (kaitu) + brand purity gate
         run: |
@@ -172,15 +285,81 @@ jobs:
           done
           rm -f /tmp/minisign.key
 
-      - name: Upload to S3 + publish manifests
+      # Handing the signed bundles to a separate job keeps the serialized
+      # critical section (gate + upload) down to ~1 minute instead of holding
+      # the concurrency group through a 15-minute build.
+      - name: Upload bundles for the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-ota-bundles
+          path: out/
+          retention-days: 7
+          if-no-files-found: error
+
+  # ----------------------------------------------------------------- publish --
+  publish:
+    needs: [precheck, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: publish-web-ota
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          fetch-depth: 0
+
+      - name: Download bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: web-ota-bundles
+          path: out/
+
+      - name: Resolve publish commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # THE load-bearing gate. Re-evaluated here, inside the concurrency group
+      # and immediately before the upload, so a run that queued behind another
+      # publish sees that publish's provenance rather than a pre-queue snapshot.
+      - name: Gate — would this publish move stable backwards? (authoritative)
+        id: gate
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
-          VERSION='${{ steps.ver.outputs.version }}'
-          CHANNEL='${{ inputs.channel || 'stable' }}'
-          NS='${{ inputs.namespace || '' }}'
+          node scripts/ci/web-ota-gate.mjs \
+            --stage publish \
+            --publish-commit '${{ steps.commit.outputs.sha }}' \
+            --mode "$GATE_MODE" \
+            --allow-rollback "$GATE_ALLOW_ROLLBACK" \
+            --channel "$GATE_CHANNEL" \
+            --namespace "$GATE_NAMESPACE" \
+            --bucket "$WEB_OTA_BUCKET"
+
+      - name: Notify Slack that the publish was skipped
+        if: steps.gate.outputs.notify == 'true'
+        run: |
+          ./scripts/ci/notify-slack.sh notice \
+            --platform "Publish Web OTA" \
+            --error "Web OTA publish SKIPPED at upload time (${{ steps.gate.outputs.relation }}): ${{ steps.gate.outputs.reason }}"
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
+
+      - name: Upload to S3 + publish manifests + record provenance
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          PUBLISH_COMMIT: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          VERSION='${{ needs.build.outputs.version }}'
+          CHANNEL="$GATE_CHANNEL"
+          NS="$GATE_NAMESPACE"
           # The namespace nests INSIDE {brand}/web/, not above {brand}/. The
           # first shape tried was {ns}/{brand}/web/ and S3 refused it:
           #   AccessDenied ... user/k2app-ci-s3 is not authorized to perform
@@ -211,18 +390,39 @@ jobs:
           else
             PREFIX_SUFFIX=""
           fi
-          echo "Publishing v$VERSION to channel: $CHANNEL (base: s3://d0.all7.cc/{brand}/web${PREFIX_SUFFIX})"
+          echo "Publishing v$VERSION from $PUBLISH_COMMIT to channel: $CHANNEL (base: s3://${WEB_OTA_BUCKET}/{brand}/web${PREFIX_SUFFIX})"
           for BRAND in kaitu overleap; do
-            BASE="s3://d0.all7.cc/${BRAND}/web${PREFIX_SUFFIX}"
+            BASE="s3://${WEB_OTA_BUCKET}/${BRAND}/web${PREFIX_SUFFIX}"
+            node scripts/ci/web-ota-manifest.mjs source \
+              --version "$VERSION" \
+              --commit "$PUBLISH_COMMIT" \
+              --brand "$BRAND" \
+              --ref "${GITHUB_REF_NAME:-}" \
+              --run-id "${GITHUB_RUN_ID:-}" \
+              --run-attempt "${GITHUB_RUN_ATTEMPT:-}" \
+              --workflow "${GITHUB_WORKFLOW:-}" \
+              --out "out/source-$BRAND.json"
+            # Order within each channel is load-bearing: zip → manifest →
+            # provenance pointer. Provenance is what the gate reads, so writing
+            # it before the manifest would let a half-failed publish claim a
+            # commit that is not actually being served — and the next run would
+            # then dedup itself away and leave the OLD manifest live. Written
+            # last, a half-failed publish just looks like "not published yet",
+            # which the next forward publish heals.
             aws s3 cp "out/web-$BRAND.zip" "$BASE/beta/${VERSION}/web.zip" --content-type application/zip
+            aws s3 cp "out/source-$BRAND.json" "$BASE/beta/${VERSION}/source.json" --content-type application/json
             aws s3 cp "out/latest-$BRAND.json" "$BASE/beta/latest.json" --content-type application/json
+            aws s3 cp "out/source-$BRAND.json" "$BASE/beta/latest-source.json" --content-type application/json
             if [ "$CHANNEL" = "stable" ]; then
               aws s3 cp "out/web-$BRAND.zip" "$BASE/${VERSION}/web.zip" --content-type application/zip
+              aws s3 cp "out/source-$BRAND.json" "$BASE/${VERSION}/source.json" --content-type application/json
               aws s3 cp "out/latest-$BRAND.json" "$BASE/latest.json" --content-type application/json
+              aws s3 cp "out/source-$BRAND.json" "$BASE/latest-source.json" --content-type application/json
             fi
           done
 
       - name: Invalidate CloudFront (both distributions)
+        if: steps.gate.outputs.proceed == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -239,12 +439,22 @@ jobs:
           done
           echo "CDN invalidated: d0.all7.cc + dl.kaitu.io (/{kaitu,overleap}/web/*)"
 
-      # A failed linkage publish (spec §6 trigger 2, from release-desktop.yml /
-      # build-mobile.yml) is otherwise silent except for a red run nobody is
-      # watching — it leaves CDN latest behind the just-shipped app's embedded
-      # UI, the exact inversion the linkage exists to prevent (终审 m5).
+  # ----------------------------------------------------------------- notify ---
+  # A failed linkage publish (spec §6 trigger 2, from release-desktop.yml /
+  # build-mobile.yml) is otherwise silent except for a red run nobody is
+  # watching — it leaves CDN latest behind the just-shipped app's embedded
+  # UI, the exact inversion the linkage exists to prevent (终审 m5). One job for
+  # all three upstreams so a refusal in `precheck` alerts too: with the notify
+  # step living inside `publish`, a precheck failure skipped it entirely.
+  notify-failure:
+    needs: [precheck, build, publish]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Notify Slack on publish failure
-        if: failure()
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
             --platform "Publish Web OTA" \

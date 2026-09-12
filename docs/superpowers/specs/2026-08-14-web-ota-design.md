@@ -180,10 +180,37 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
 - **解封现有封堵**：移除 `scripts/ci/upload-release.sh:11,51` 的 `--web` 硬报错（改为指向新 workflow），保持 `publish-mobile.sh` 不碰 web manifest。
 - **通道策略**：`webapp/*` tag 与 app 联动 → stable 全自动；beta 通道保留给 `workflow_dispatch` 手动指定（客户端四端都已/将支持 beta manifest 路径）。stable 发布保持超集语义：恒写 `beta/` 目录的 zip + manifest，`channel=stable` 时再额外写顶层。
 
+### 6.1 反回退门（2026-09-12 增补）
+
+**起因**：2026-09-07 推 `v0.4.10-overleap-mobile` 时，判断"这个 tag 不会发 web OTA"只读了 `release-desktop.yml`（它的 OTA 尾巴被 `plan.should_run` 挡掉未知后缀），漏了 `build-mobile.yml` —— 它同样监听 `tags: ['v*']`，尾巴只看构建结果，于是从 `96fe5032` 发了双品牌 stable `0.4.10.21546118`。当时无害纯属时序运气：更新的 webapp commit 全部晚于那一刻。同一个 tag 晚五天推，就会把购买页预览死循环的修复（`07fd51b4`）静默回退给全量存量用户。
+
+**根因不是"哪个 workflow 会发"**，而是三条性质叠加：① `{brand}/web/latest.json` 是单个全局可变指针；② 版本第 4 段是时间基，**旧 commit 的产物也永远"更新"**，一定赢；③ 线上产物**不记录自己的出处**，所以没有任何机制能判断一次发布是前滚还是回退。补 workflow 的 `if:` 只是补洞；门必须放在三条入口共用的**唯一咽喉**。
+
+**机制**：
+- **出处 sidecar**：每次发布在 manifest 旁写 `{brand}/web/latest-source.json`（另存不可变副本 `{version}/source.json`），内容 `{version, commit, brand, ref, run_id, run_attempt, workflow, published_at}`。**刻意不进 manifest**：所有在网客户端都解析 `latest.json`，其中任何一个严格解析器都会把一次加字段变成全网故障。除 CI 的门之外没人读它。顺带补上了此前完全缺失的能力——工单里能回答"这台设备跑的是哪个 UI"。
+- **写入顺序是承载性的**：每个通道内 zip → manifest → 出处指针。出处是门的输入，先写出处后写 manifest 若中途失败，会声明一个并未在服务的 commit，下一次运行就把自己幂等跳过、把旧 manifest 永久留在线上。写在最后，半失败只表现为"还没发过"，下一次前滚发布自愈。
+- **两道评估**：`precheck`（便宜、快失败）+ `publish`（承载性）。承载性那道**必须与上传同 job，且该 job 持有 `publish-web-ota` concurrency group** —— 独立的门 job 会让两次排队运行交错成 gate A → gate B → upload A → upload B，B 读到的是 A 发布前的出处，比较退化成抛硬币。
+- **判据锚定线上产物，不是 main**。main 是个两头都错的代理：线上比两者都旧时它会拒掉合法前滚；线上比 main 新（从非 main ref dispatch 过）时它又漏判回退。
+- **决策表**（关系 = 线上源 commit → 待发 commit），实现与穷举测试在 `scripts/ci/web-ota-gate.mjs` / `.test.mjs`：
+
+| 关系 | 联动（`linkage: true`，app 发版搭车） | 显式（`webapp/*` tag / dispatch） |
+|---|---|---|
+| 同一 commit | 跳过（顺带消掉裸 `v*` tag 的双发） | 照发（更高构建号是既定的强制重发手段） |
+| 线上是祖先 | 发 | 发 |
+| 待发是线上的祖先（会降级） | 跳过 + Slack notice | **红**，除非 `allow_rollback` |
+| 分叉 | 跳过 + Slack notice | **红**，除非 `allow_rollback` |
+| 无出处记录 | 发 + warning（bootstrap） | 发 + warning |
+| 读取失败 / 出处 commit 本地不存在 | 跳过 + Slack notice | **红**（`allow_rollback` 也不放行：那是"盲"，不是"意图"） |
+
+  两侧刻意不对称：联动路径**永不**因 web 的事把 app 发版搞红（红了没人能处置，只会训练出忽略红），它跳过后线上停在**更新**的那份，而这恰好就是联动本身的目的；显式路径反过来，人要求发就绝不能静默不发。
+
+- **404 的两种含义**：`aws s3 cp` 对**桶不存在**与**键不存在**输出逐字节相同的 stderr（`(404) ... HeadObject ... Not Found`，已对 aws-cli 2.34 实测）。所以 ① 桶名是**唯一字面量**（`WEB_OTA_BUCKET`），门与上传共用，桶写错不可能只让门变瞎而上传照样成功；② 出处 404 时再探一次隔壁的 `latest.json`：在 → 确是 bootstrap；也不在 → 仍放行（从未发布过的品牌是合法的）但明说"这道门可能什么都没在保护"。刻意**不用** `s3api head-bucket` —— CI 的 IAM 用户只授权到品牌对象子树，桶级调用可能在健康环境下 403，那会让门因为一个它本不需要的权限而拒掉所有发布。
+- **beta / namespace 发布不设门**：没有 stable 存量受众要保护；判据写在门脚本里（`not-enforced`），不是写在 YAML 的 `if:` 里。
+
 ## 7. 回滚与应急
 
 - **常规回滚**：`git revert <坏 commit>` → 重新打 `webapp/x.y.z` tag → CI 用更高的时间基构建号重发旧内容。
-- **应急重发**：`workflow_dispatch` + `ref=<已知好 commit>`。R2 时间基构建号下，重发旧 ref 也拿到**更高**的第 4 段版本号——只要该 ref 的 `package.json` 前三段没有低于当前线上（通常同版），**已中招设备也会被拉回**，dispatch 重发从"只保护未中招设备"升级为完整回滚手段。唯一例外：好 commit 的前三段低于坏版本（跨 package.json bump 回滚）时 base 比较更小、被跳过——此时只能走 revert + 重打 tag。
+- **应急重发**：`workflow_dispatch` + `ref=<已知好 commit>` **+ 勾上 `allow_rollback`**（§6.1 的门会拒掉未勾的回退发布）。R2 时间基构建号下，重发旧 ref 也拿到**更高**的第 4 段版本号——只要该 ref 的 `package.json` 前三段没有低于当前线上（通常同版），**已中招设备也会被拉回**，dispatch 重发从"只保护未中招设备"升级为完整回滚手段。唯一例外：好 commit 的前三段低于坏版本（跨 package.json bump 回滚）时 base 比较更小、被跳过——此时只能走 revert + 重打 tag。
 - **Incident playbook：仍然 revert-first**——`git revert` + 重打 tag 让 main 与线上内容保持一致（tag 即审计记录）；`workflow_dispatch` 重发是止血捷径，用后必须补 revert，否则下一个常规 tag 会把坏内容重新发出去。
 - **核按钮**：删除/清空 `{brand}/web/latest.json`（native 拿不到 manifest 即停止更新，已应用的保持现状）；单设备逃生：移动端删 app 数据 / 桌面删 `web-ota/` 目录 / Linux `?ui=embedded`。
 
