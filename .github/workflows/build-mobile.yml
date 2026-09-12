@@ -572,6 +572,17 @@ jobs:
   # tag 时联动；dispatch 重建旧 tag 绝不发布——时间基构建号下那会把旧 UI 变成
   # 全网最新（终审 B1）。预发布（-beta）app 发版不联动：web OTA 版本恒
   # x.y.z.n，beta web 走 publish-web-ota 的 dispatch channel=beta（终审 m4）。
+  #
+  # ⚠️ 可发现性：本 workflow 的 trigger 是 `tags: ['v*']`，**任何** v* tag（含
+  # -ios / -android / -overleap-* 单平台后缀）只要有一个平台构建成功，就会走到
+  # 这里发双品牌 stable web OTA。release-desktop.yml 的同名 job 另有
+  # `needs.plan.outputs.should_run` 把未知后缀挡掉 —— 两个 workflow 的门**不
+  # 对称**，只读其中一个会得出「这个 tag 不发 OTA」的错误结论（2026-09-07 就是
+  # 这么误判的，v0.4.10-overleap-mobile 实际发了 0.4.10.21546118）。
+  #
+  # `linkage: true` 让被调 workflow 知道这是 app 发版搭车：若该 tag commit 的
+  # webapp 比线上更旧，它会跳过而不是把 app 发版搞红（判据见
+  # scripts/ci/web-ota-gate.mjs）。
   publish-web-ota:
     needs: [build-ios, build-android]
     if: >-
@@ -581,4 +592,6 @@ jobs:
       (needs.build-ios.result == 'success' || needs.build-android.result == 'success') &&
       needs.build-ios.result != 'failure' && needs.build-android.result != 'failure'
     uses: ./.github/workflows/publish-web-ota.yml
+    with:
+      linkage: true
     secrets: inherit

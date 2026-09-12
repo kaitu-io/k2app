@@ -619,10 +619,19 @@ jobs:
   # 真实 v* tag 时联动；dispatch 重建旧 tag 绝不发布——时间基构建号下那会把
   # 旧 UI 变成全网最新（终审 B1）。预发布（-beta）app 发版不联动：web OTA
   # 版本恒 x.y.z.n，beta web 走 publish-web-ota 的 dispatch channel=beta（终审 m4）。
+  #
+  # ⚠️ 可发现性：build-mobile.yml 也监听 `tags: ['v*']` 并且**没有**这里的
+  # should_run 门 —— 裸 v* tag 会让两个 workflow 各发一次（被调 workflow 的
+  # 幂等门会把第二次跳掉），而 -overleap-mobile 这类后缀在这里被跳过、在那里
+  # 照发。判断「某个 tag 会不会发 web OTA」必须两个文件一起看。
+  #
+  # `linkage: true` 见 publish-web-ota.yml 的 workflow_call 入参说明。
   publish-web-ota:
     needs: [plan, release]
     if: needs.plan.outputs.should_run == 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-beta')
     uses: ./.github/workflows/publish-web-ota.yml
+    with:
+      linkage: true
     secrets: inherit
 
   # --- Catch-all: notify on infrastructure failures (runner offline, DNS, etc.) ---

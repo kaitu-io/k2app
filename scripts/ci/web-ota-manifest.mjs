@@ -127,6 +127,39 @@ export function buildManifest({ version, size, sha256Hex, sigBase64, bridgeApiVe
   };
 }
 
+// Provenance sidecar written NEXT TO the manifest (`latest-source.json`) and
+// kept immutably per version (`{version}/source.json`).
+//
+// It is deliberately NOT a manifest field: every shipped client parses
+// latest.json, and one strict parser among them (any brand, any platform,
+// any version still in the wild) would turn a schema addition into a
+// field-wide outage. Nothing reads this file except
+// scripts/ci/web-ota-gate.mjs, which needs to know which commit produced the
+// bundle that is live in order to refuse a publish that would move stable
+// backwards. Second use: support can finally answer "which UI is this device
+// running", which the manifest alone never allowed.
+export function buildProvenance({ version, commit, ref, brand, runId, runAttempt, workflow, publishedAt }) {
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(version ?? '')) {
+    throw new Error(`provenance version must be x.y.z.n, got: ${version}`);
+  }
+  // A short sha would make the gate's ancestry check ambiguous, and an empty
+  // one would make it silently unresolvable — refuse at write time instead.
+  if (!/^[0-9a-f]{40}$/.test(commit ?? '')) {
+    throw new Error(`provenance commit must be a full 40-hex sha, got: ${commit}`);
+  }
+  if (!brand) throw new Error('provenance brand is required');
+  return {
+    version,
+    commit,
+    brand,
+    ref: ref ?? '',
+    run_id: runId ?? '',
+    run_attempt: runAttempt ?? '',
+    workflow: workflow ?? '',
+    published_at: publishedAt,
+  };
+}
+
 function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i += 2) {
@@ -166,7 +199,30 @@ function main() {
     console.log(`wrote ${args.out} (version ${manifest.version}, min_native ${manifest.min_native}, min_bridge ${manifest.min_bridge})`);
     return;
   }
-  console.error('usage: web-ota-manifest.mjs version | manifest --version V --zip P --sig-file P --out P');
+  if (cmd === 'source') {
+    const args = parseArgs(rest);
+    for (const key of ['version', 'commit', 'brand', 'out']) {
+      if (!args[key]) throw new Error(`--${key} is required`);
+    }
+    const provenance = buildProvenance({
+      version: args.version,
+      commit: args.commit,
+      brand: args.brand,
+      ref: args.ref,
+      runId: args['run-id'],
+      runAttempt: args['run-attempt'],
+      workflow: args.workflow,
+      publishedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    });
+    writeFileSync(args.out, JSON.stringify(provenance, null, 2) + '\n');
+    console.log(`wrote ${args.out} (version ${provenance.version}, commit ${provenance.commit.slice(0, 12)})`);
+    return;
+  }
+  console.error(
+    'usage: web-ota-manifest.mjs version\n' +
+      '     | manifest --version V --zip P --sig-file P --out P\n' +
+      '     | source --version V --commit SHA --brand B --out P [--ref R --run-id N --run-attempt N --workflow W]',
+  );
   process.exit(2);
 }
 

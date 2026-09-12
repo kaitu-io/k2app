@@ -9,6 +9,11 @@
 #   test-failure   - Send aggregated test failure summary (uses SLACK_WEBHOOK_ALERT)
 #   test-success   - Send test success notification (uses SLACK_WEBHOOK_ALERT)
 #   build-failure  - Send build error notification (uses SLACK_WEBHOOK_ALERT)
+#   notice         - Send a neutral operational notice (uses SLACK_WEBHOOK_ALERT).
+#                    For outcomes that are CORRECT but must not be silent — e.g.
+#                    a web OTA publish the anti-rollback gate deliberately
+#                    skipped. Using build-failure for those would train the
+#                    channel to read a healthy pipeline as broken.
 #   deploy-success - Send deployment success notification (uses SLACK_WEBHOOK_RELEASE)
 #
 # Environment Variables:
@@ -92,7 +97,7 @@ select_webhook() {
                 echo "$SLACK_WEBHOOK_URL"
             fi
             ;;
-        test-failure|test-success|build-failure|*)
+        test-failure|test-success|build-failure|notice|*)
             # Alerts go to alert channel
             if [ -n "${SLACK_WEBHOOK_ALERT:-}" ]; then
                 echo "$SLACK_WEBHOOK_ALERT"
@@ -294,6 +299,62 @@ EOF
           },
           "url": "${WORKFLOW_URL}",
           "style": "danger"
+        }
+      ]
+    }
+  ]
+}
+EOF
+)
+        send_slack "$PAYLOAD"
+        ;;
+
+    notice)
+        echo -e "${YELLOW}Sending operational notice...${NC}"
+
+        NOTICE_TEXT="${ERROR_MESSAGE:-(no detail provided)}"
+
+        PAYLOAD=$(cat <<EOF
+{
+  "text": "ℹ️ $PLATFORM — action taken, no failure",
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "ℹ️ $PLATFORM"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Workflow:*\n${GITHUB_WORKFLOW:-Unknown}"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Commit:*\n\`${COMMIT_SHORT}\`"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "${NOTICE_TEXT}"
+      }
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View Workflow Run"
+          },
+          "url": "${WORKFLOW_URL}"
         }
       ]
     }
