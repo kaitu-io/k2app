@@ -343,14 +343,57 @@ function main(argv) {
     process.exit(1);
   }
 
+  // Appended synchronously, never truncated: other steps write here too, and a
+  // fire-and-forget async write would race process.exit() below.
+  const gha = (file, text) => {
+    if (process.env[file]) appendFileSync(process.env[file], text);
+  };
+  const emitOutputs = ({ proceed, relation, notify, reason }) =>
+    gha(
+      'GITHUB_OUTPUT',
+      [
+        `proceed=${proceed}`,
+        `relation=${relation}`,
+        `notify=${notify}`,
+        // The reason travels into a bash string and then into a Slack JSON
+        // payload; ${{ }} interpolation happens before bash parses the line, so a
+        // quote / backtick / $ in the text would break the step rather than the
+        // message. Sanitised at the source instead of at three call sites.
+        `reason=${reason.replace(/\s+/g, ' ').replace(/"/g, "'").replace(/[`$\\]/g, '')}`,
+        '',
+      ].join('\n'),
+    );
+
   let result;
   try {
     result = evaluate({ brands, bucket, publishCommit, mode, allowRollback, channel, namespace });
   } catch (e) {
-    // Unreadable provenance is fail-closed on EVERY path, allow_rollback
-    // included: that flag expresses intent about content, not permission to
-    // publish blind. The escape hatch is fixing the read, not overriding it.
-    console.log(`::error::web-ota gate: ${e.message}`);
+    // The gate could not be evaluated at all (S3 unreachable, credentials gone,
+    // a body that is not provenance, a broken checkout). `allow_rollback` must
+    // NEVER turn this into a pass: that flag expresses intent about content, not
+    // permission to publish blind.
+    //
+    // But the two modes still diverge, exactly as they do for a downgrade.
+    // SKIPPING IS UNCONDITIONALLY SAFE — nothing is uploaded, so nothing can be
+    // moved backwards — so a linkage publish degrades to a loud skip rather than
+    // failing an app release over an S3 outage the release has nothing to do
+    // with. An explicit publish goes red, because a human asked for a publish
+    // and silence would be the wrong answer. (spec §6.1's table says exactly
+    // this; the first implementation exited 1 on both paths, which would have
+    // turned any provenance read failure into a red app release.)
+    //
+    // `unevaluable` is deliberately NOT a RELATIONS member: no relation was
+    // established. It exists only as an output value so the workflow and Slack
+    // can tell this apart from a real `unresolvable` comparison.
+    const reason = `cannot evaluate the gate: ${e.message}`;
+    if (mode === 'linkage') {
+      const skipReason = `${reason}. Skipping to stay safe: nothing is uploaded, so stable cannot move backwards. Fix the read, then publish from main via workflow_dispatch.`;
+      emitOutputs({ proceed: false, relation: 'unevaluable', notify: true, reason: skipReason });
+      console.log(`::warning::web-ota gate: ${skipReason}`);
+      process.exit(0);
+    }
+    emitOutputs({ proceed: false, relation: 'unevaluable', notify: false, reason });
+    console.log(`::error::web-ota gate: ${reason}`);
     process.exit(1);
   }
 
@@ -372,26 +415,13 @@ function main(argv) {
   const summary = lines.join('\n');
   console.log(summary);
 
-  // Appended synchronously, never truncated: other steps write here too, and a
-  // fire-and-forget async write would race process.exit() below.
-  const gha = (file, text) => {
-    if (process.env[file]) appendFileSync(process.env[file], text);
-  };
   gha('GITHUB_STEP_SUMMARY', `${summary}\n\n`);
-  gha(
-    'GITHUB_OUTPUT',
-    [
-      `proceed=${result.action === 'publish'}`,
-      `relation=${result.relation}`,
-      `notify=${result.notify}`,
-      // The reason travels into a bash string and then into a Slack JSON
-      // payload; ${{ }} interpolation happens before bash parses the line, so a
-      // quote / backtick / $ in the text would break the step rather than the
-      // message. Sanitised at the source instead of at three call sites.
-      `reason=${result.reason.replace(/\s+/g, ' ').replace(/"/g, "'").replace(/[`$\\]/g, '')}`,
-      '',
-    ].join('\n'),
-  );
+  emitOutputs({
+    proceed: result.action === 'publish',
+    relation: result.relation,
+    notify: result.notify,
+    reason: result.reason,
+  });
 
   if (result.suspicious?.length) {
     console.log(

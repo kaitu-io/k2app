@@ -200,7 +200,13 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
 | 待发是线上的祖先（会降级） | 跳过 + Slack notice | **红**，除非 `allow_rollback` |
 | 分叉 | 跳过 + Slack notice | **红**，除非 `allow_rollback` |
 | 无出处记录 | 发 + warning（bootstrap） | 发 + warning |
-| 读取失败 / 出处 commit 本地不存在 | 跳过 + Slack notice | **红**（`allow_rollback` 也不放行：那是"盲"，不是"意图"） |
+| 出处 commit 本地不存在（`unresolvable`） | 跳过 + Slack notice | **红**，除非 `allow_rollback` |
+| 门根本评估不了（S3 读不到 / 凭证没了 / body 不是出处 / checkout 坏了，输出 `unevaluable`） | 跳过 + Slack notice | **红**（`allow_rollback` 也**不**放行：那是"盲"，不是"意图"） |
+
+  `unevaluable` 刻意**不是** relation 的成员 —— 那种情况下根本没建立起关系，它只是个输出值，
+  好让 workflow 与 Slack 把它和真正的 `unresolvable` 分开。**跳过永远是安全的**（什么都没上传，
+  stable 不可能被拉回），所以联动路径宁可跳过也不因为一次 S3 故障把 app 发版搞红；显式路径反过来，
+  人要求发就绝不能静默不发。
 
   两侧刻意不对称：联动路径**永不**因 web 的事把 app 发版搞红（红了没人能处置，只会训练出忽略红），它跳过后线上停在**更新**的那份，而这恰好就是联动本身的目的；显式路径反过来，人要求发就绝不能静默不发。
 
