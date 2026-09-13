@@ -64,10 +64,66 @@ class K2Plugin : Plugin() {
     private val S3_BUCKET_URL = "https://kaitu-service-logs.s3.ap-northeast-1.amazonaws.com"
     private val MAX_WEBAPP_LOG_SIZE = 50L * 1024 * 1024 // 50MB
 
+    /**
+     * Capacitor calls this from INSIDE the Bridge constructor
+     * (`registerAllPlugins()` runs before `loadWebView()`), and if it throws,
+     * `PluginHandle.load()` wraps the exception in a PluginLoadException that
+     * `Bridge.registerPlugin` merely logs (not even that in release builds).
+     * The plugin is then absent from the injected PluginHeaders and EVERY JS
+     * call answers `"K2Plugin" plugin is not implemented on android` — no
+     * storage, no VPN, no logs (webapp.log is written through this plugin, so
+     * such a session leaves no trace). Each step is therefore guarded on its
+     * own: a failure degrades one feature instead of erasing the plugin.
+     */
     override fun load() {
         Log.d(TAG, "load: K2Plugin initializing")
 
-        // Check for OTA web update with boot verification
+        guarded("web-ota boot") { scheduleWebBoot() }
+
+        // Initialize logs directory for webapp.log writes
+        guarded("logs dir") { logsDir = File(context.filesDir, "logs").also { it.mkdirs() } }
+
+        // Install custom WebViewClient to handle kaitu-icon:// URLs for app-bypass icons.
+        // Must run on UI thread — load() is invoked on the main thread by Capacitor.
+        guarded("icon WebViewClient") { installIconWebViewClient() }
+
+        guarded("bind service") { bindToService() }
+
+        // Auto-check for updates after 3s delay
+        guarded("auto-update timer") {
+            Handler(Looper.getMainLooper()).postDelayed({
+                Log.d(TAG, "load: starting auto-update check")
+                Thread { performAutoUpdateCheck() }.start()
+            }, 3000)
+        }
+    }
+
+    private inline fun guarded(step: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            Log.e(TAG, "load: $step failed — continuing so the plugin stays registered", e)
+        }
+    }
+
+    /**
+     * Web-OTA boot decision. Rollback / cleanup touch only the filesystem and
+     * run inline; serving the on-disk bundle is DEFERRED to the main looper.
+     *
+     * `bridge.setServerBasePath()` dereferences `Bridge.localServer`, which is
+     * created in `loadWebView()` — the constructor step AFTER the one this
+     * load() runs in. Called inline it is a guaranteed NPE, which (see load())
+     * silently drops the whole plugin: every Android web OTA since 2026-02
+     * ended in exactly one broken cold start ("logged out", code send fails,
+     * password login shows the not-implemented error — tickets #3713/#3735)
+     * followed by a rollback that quarantined the bundle, so no OTA bundle was
+     * ever actually served. A posted runnable executes after the constructor
+     * returns, when localServer exists — the same trick installIconWebViewClient
+     * already relies on. `.boot-pending` is created inside that runnable so the
+     * bundled page Capacitor has already started loading cannot clear a marker
+     * meant for the OTA bundle.
+     */
+    private fun scheduleWebBoot() {
         val webUpdateDir = File(context.filesDir, "web-update")
         val bootPending = File(webUpdateDir, ".boot-pending")
         val indexFile = File(webUpdateDir, "index.html")
@@ -90,9 +146,16 @@ class K2Plugin : Plugin() {
                 File(context.filesDir, "web-backup").deleteRecursively()
             }
             WebBootDecision.ServeDisk -> {
-                Log.d(TAG, "load: OTA web update found, setting server base path: ${webUpdateDir.absolutePath}")
-                bootPending.createNewFile()
-                bridge.setServerBasePath(webUpdateDir.absolutePath)
+                Log.d(TAG, "load: OTA web update found, scheduling server base path: ${webUpdateDir.absolutePath}")
+                Handler(Looper.getMainLooper()).post {
+                    try {
+                        bootPending.createNewFile()
+                        bridge.setServerBasePath(webUpdateDir.absolutePath)
+                        Log.d(TAG, "load: OTA server base path set — serving ${webUpdateDir.absolutePath}")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "load: setServerBasePath failed — bundled webapp stays in place", e)
+                    }
+                }
             }
             WebBootDecision.CleanCorrupt -> {
                 Log.w(TAG, "load: corrupt OTA web dir (no index.html) — removing")
@@ -100,21 +163,6 @@ class K2Plugin : Plugin() {
             }
             WebBootDecision.ServeBundled -> {}
         }
-
-        // Initialize logs directory for webapp.log writes
-        logsDir = File(context.filesDir, "logs").also { it.mkdirs() }
-
-        // Install custom WebViewClient to handle kaitu-icon:// URLs for app-bypass icons.
-        // Must run on UI thread — load() is invoked on the main thread by Capacitor.
-        installIconWebViewClient()
-
-        bindToService()
-
-        // Auto-check for updates after 3s delay
-        Handler(Looper.getMainLooper()).postDelayed({
-            Log.d(TAG, "load: starting auto-update check")
-            Thread { performAutoUpdateCheck() }.start()
-        }, 3000)
     }
 
     override fun handleOnDestroy() {
