@@ -18,9 +18,11 @@ on:
           - android
           - both
       brand:
+        # Default both: not naming a brand means both brands, same as a bare
+        # v* tag (scripts/ci/release-plan.mjs).
         description: 'Brand to build'
         required: false
-        default: 'kaitu'
+        default: 'both'
         type: choice
         options:
           - kaitu
@@ -56,49 +58,39 @@ env:
   EMBED_REQUIRE_FULL: "1"
 
 jobs:
-  # Decide platforms + brands from the ref, mirroring release-desktop.yml's
-  # suffix matrix. Bare v* = kaitu everything (+overleap when the repo variable
-  # OVERLEAP_MOBILE_CI is "true"); -ios/-android = kaitu, one platform;
-  # -overleap-ios / -overleap-android / -overleap-mobile = overleap only, so an
-  # Overleap release never rebuilds or re-uploads kaitu. Any other suffix
-  # belongs to another workflow → both lists empty → every job skips.
-  # bash `case` takes the first match top-to-bottom and `-overleap-ios` is also
-  # a valid `*-ios` suffix — the overleap patterns MUST stay above the kaitu ones.
+  # Decide platforms + brands from the ref via scripts/ci/release-plan.mjs —
+  # the single table shared with release-desktop.yml, so a brand scope means
+  # the same thing on mobile and desktop: bare v* = kaitu AND overleap on
+  # both platforms; -kaitu / -overleap = that brand everywhere; -mobile /
+  # -overleap-mobile / -ios / -android / -overleap-ios / -overleap-android
+  # narrow it; any other suffix belongs to another workflow → both lists
+  # empty → every job skips. Table, rationale and exhaustive test live next
+  # to the script. Dispatch uses the explicit platform/brand inputs.
   plan:
     runs-on: ubuntu-latest
     outputs:
       ios_brands: ${{ steps.plan.outputs.ios_brands }}
       android_brands: ${{ steps.plan.outputs.android_brands }}
+      tag_version: ${{ steps.plan.outputs.tag_version }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
       - id: plan
         env:
           REF_NAME: ${{ github.ref_name }}
           EVENT: ${{ github.event_name }}
           IN_PLATFORM: ${{ inputs.platform }}
           IN_BRAND: ${{ inputs.brand }}
-          OVERLEAP_ON_BARE: ${{ vars.OVERLEAP_MOBILE_CI }}
         run: |
           set -euo pipefail
-          KAITU='"kaitu"'; OVERLEAP='"overleap"'
-          bare_brands="$KAITU"; [ "$OVERLEAP_ON_BARE" = "true" ] && bare_brands="$KAITU,$OVERLEAP"
-          ios=""; android=""
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            case "$IN_BRAND" in kaitu) b="$KAITU" ;; overleap) b="$OVERLEAP" ;; both) b="$KAITU,$OVERLEAP" ;; *) b="$KAITU" ;; esac
-            case "$IN_PLATFORM" in ios) ios="$b" ;; android) android="$b" ;; both) ios="$b"; android="$b" ;; esac
+            PLAN=$(node scripts/ci/release-plan.mjs --ref "$REF_NAME" --platform "$IN_PLATFORM" --brand "$IN_BRAND")
           else
-            case "$REF_NAME" in
-              *-overleap-ios)     ios="$OVERLEAP" ;;
-              *-overleap-android) android="$OVERLEAP" ;;
-              *-overleap-mobile)  ios="$OVERLEAP"; android="$OVERLEAP" ;;
-              *-ios)              ios="$KAITU" ;;
-              *-android)          android="$KAITU" ;;
-              *-*)                ;;
-              *)                  ios="$bare_brands"; android="$bare_brands" ;;
-            esac
+            PLAN=$(node scripts/ci/release-plan.mjs --ref "$REF_NAME")
           fi
-          echo "ios_brands=[$ios]" >> "$GITHUB_OUTPUT"
-          echo "android_brands=[$android]" >> "$GITHUB_OUTPUT"
-          echo "ios=[$ios] android=[$android]"
+          echo "$PLAN"
+          grep -E '^(ios_brands|android_brands|tag_version)=' <<<"$PLAN" >> "$GITHUB_OUTPUT"
 
   test-webapp:
     needs: plan
@@ -241,16 +233,11 @@ jobs:
 
       - name: Verify tag matches package.json
         if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          # The plan job already stripped exactly the suffix it matched
+          # (scripts/ci/release-plan.mjs) — no second hand-kept suffix list.
+          TAG_VERSION: ${{ needs.plan.outputs.tag_version }}
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          # Strip only the suffixes this workflow owns (the `plan` job already
-          # guarantees we only run on these). Overleap forms first: they end
-          # in -ios / -android too.
-          TAG_VERSION="${TAG_VERSION%-overleap-ios}"
-          TAG_VERSION="${TAG_VERSION%-overleap-android}"
-          TAG_VERSION="${TAG_VERSION%-overleap-mobile}"
-          TAG_VERSION="${TAG_VERSION%-ios}"
-          TAG_VERSION="${TAG_VERSION%-android}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) != package.json ($PKG_VERSION)"
@@ -446,16 +433,11 @@ jobs:
 
       - name: Verify tag matches package.json
         if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          # The plan job already stripped exactly the suffix it matched
+          # (scripts/ci/release-plan.mjs) — no second hand-kept suffix list.
+          TAG_VERSION: ${{ needs.plan.outputs.tag_version }}
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          # Strip only the suffixes this workflow owns (the `plan` job already
-          # guarantees we only run on these). Overleap forms first: they end
-          # in -ios / -android too.
-          TAG_VERSION="${TAG_VERSION%-overleap-ios}"
-          TAG_VERSION="${TAG_VERSION%-overleap-android}"
-          TAG_VERSION="${TAG_VERSION%-overleap-mobile}"
-          TAG_VERSION="${TAG_VERSION%-ios}"
-          TAG_VERSION="${TAG_VERSION%-android}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) != package.json ($PKG_VERSION)"
