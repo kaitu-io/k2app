@@ -373,7 +373,7 @@ appext-android: appext-deps plugin-purity-check check-jdk-21
 	# -extldflags=-Wl,-z,max-page-size=16384: 16 KB page support. Android 15+ devices
 	# may run a 16 KB page kernel, and Play refuses uploads targeting API 35+ that
 	# ship 4 KB-aligned .so (the loader cannot map them — the app dies at startup).
-	# NDK r28+ defaults to 16 KB; the runner pins r27, so state it explicitly rather
+	# NDK r28+ defaults to 16 KB; CI pins r26.1 (build-mobile.yml), so state it explicitly rather
 	# than inherit whatever NDK the machine happens to have. A 16 KB-aligned library
 	# still loads fine on 4 KB kernels. Verify with:
 	#   llvm-readelf -l jni/arm64-v8a/libgojni.so   ->  every LOAD Align must be 0x4000
