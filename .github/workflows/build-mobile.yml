@@ -186,13 +186,14 @@ jobs:
           echo "product=$PRODUCT" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Cache gomobile bind output
-        # Brand-neutral: k2mobile is protocol-layer, same for both brands, so
-        # no matrix.brand in the key — this lets both legs share the cache.
-        uses: actions/cache@v4
-        with:
-          path: k2/build
-          key: gomobile-${{ runner.os }}-ios-${{ hashFiles('k2/**/*.go', 'k2/go.sum') }}
+      # No cache for k2/build (the gomobile bind output), on purpose. Bind always
+      # reruns: `make appext-*` has no file prerequisites and gomobile deletes /
+      # truncates its -o target, so a restored copy saved nothing and was
+      # overwritten (v0.4.10 restored a pre-16 KB aar and still shipped 0x4000;
+      # hit and miss legs spent the same bind time). The step only armed a
+      # stale-artifact trap for the day a hit skips bind — and its key could not
+      # see the Makefile flags, the CDN rule archive pre-build embeds,
+      # x/mobile@latest, gomobile, Go, NDK or Xcode. Don't re-add it.
 
       - name: Setup CocoaPods cache
         uses: actions/cache@v4
@@ -431,13 +432,7 @@ jobs:
           echo "product=$PRODUCT" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Cache gomobile bind output
-        # Brand-neutral: k2mobile is protocol-layer, same for both brands, so
-        # no matrix.brand in the key — this lets both legs share the cache.
-        uses: actions/cache@v4
-        with:
-          path: k2/build
-          key: gomobile-${{ runner.os }}-android-${{ hashFiles('k2/**/*.go', 'k2/go.sum') }}
+      # No k2/build cache on purpose — see the note in build-ios.
 
       - name: Cache Gradle
         uses: actions/cache@v4
