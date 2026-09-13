@@ -12,8 +12,11 @@ on:
         # (`gh workflow run --ref v0.4.4-windows` keeps working). Set it to
         # build from a BRANCH, whose name carries no release suffix.
         description: >-
-          Platform set when the ref is a branch: desktop | windows | macos |
-          linux | overleap | overleap-windows | overleap-macos. Empty = from ref suffix.
+          Platform set when the ref is a branch — any suffix from
+          scripts/ci/release-plan.mjs without the dash: kaitu | overleap |
+          desktop | overleap-desktop | macos | windows | linux |
+          overleap-macos | overleap-windows. Empty = from ref suffix (a branch
+          name without a dash, e.g. main, plans like a bare tag: both brands).
         required: false
         default: ''
         type: string
@@ -46,18 +49,13 @@ env:
 jobs:
   # --- Plan: decide which desktop platforms (if any) this run targets ---
   #
-  # Single source of truth for "does this tag belong to me, and if so, which
-  # matrix entries should I build". Brands trigger independently — a kaitu
-  # suffix never builds overleap and vice versa:
-  #   bare v* / -desktop → MAC_KAITU + WIN_KAITU + LIN (kaitu-only; Linux has
-  #     no overleap channel, see scripts/ci/upload-release.sh)
-  #   -windows            → WIN_KAITU only
-  #   -macos              → MAC_KAITU only
-  #   -linux              → LIN (unchanged)
-  #   -overleap           → MAC_OVERLEAP + WIN_OVERLEAP (opt-in, both platforms)
-  #   -overleap-windows   → WIN_OVERLEAP only
-  #   -overleap-macos     → MAC_OVERLEAP only
-  #   anything else       → none (workflow-skipped, no false-positive failure)
+  # Brand × platform legs come from scripts/ci/release-plan.mjs — the single
+  # table shared with build-mobile.yml, so a brand scope means the same thing
+  # on desktop and mobile (bare v* = both brands everywhere; -kaitu /
+  # -overleap = that brand everywhere; -desktop / -overleap-desktop and the
+  # per-platform suffixes narrow it). The table, its rationale and the
+  # exhaustive test live next to the script. This job only turns the brand
+  # lists into desktop matrix entries.
   #
   # The dynamic matrix output is consumed verbatim by the `release` job. We
   # use dynamic matrix instead of a job-level `if: ... matrix.X ...` because
@@ -65,59 +63,52 @@ jobs:
 
   plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 3
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
       should_run: ${{ steps.set.outputs.should_run }}
+      tag_version: ${{ steps.set.outputs.tag_version }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
       - id: set
         shell: bash
         env:
           REF_NAME: ${{ github.ref_name }}
           INPUT_TARGET: ${{ inputs.target }}
         run: |
-          set -eu
+          set -euo pipefail
+          # Version comes from the real ref: a dispatch on a tag with an
+          # explicit target still has to match package.json.
+          TAG_VERSION=$(node scripts/ci/release-plan.mjs --ref "$REF_NAME" | sed -n 's/^tag_version=//p')
           # A dispatch with an explicit target builds from any ref (a branch
-          # has no suffix to parse). Prefixed so it hits the same `*-<suffix>`
-          # patterns as a tag would.
+          # has no suffix to parse). Prefixed so it hits the same suffix rules
+          # as a tag would.
           if [ -n "${INPUT_TARGET:-}" ]; then
             REF_NAME="dispatch-${INPUT_TARGET}"
           fi
-          # Each desktop platform×brand entry as JSON. Keep in sync with the
-          # release-job-step expectations (matrix.runner / target / platform
-          # / brand). Linux has no overleap channel (Task 5's hard
-          # constraint — see scripts/ci/upload-release.sh) so it gets a
-          # single kaitu-only entry, never fanned out.
-          MAC_KAITU='{"runner":"macos-latest","target":"universal-apple-darwin","platform":"macOS","brand":"kaitu"}'
-          MAC_OVERLEAP='{"runner":"macos-latest","target":"universal-apple-darwin","platform":"macOS","brand":"overleap"}'
-          WIN_KAITU='{"runner":["self-hosted","macOS","ARM64"],"target":"x86_64-pc-windows-msvc","platform":"Windows","brand":"kaitu"}'
-          WIN_OVERLEAP='{"runner":["self-hosted","macOS","ARM64"],"target":"x86_64-pc-windows-msvc","platform":"Windows","brand":"overleap"}'
-          LIN='{"runner":"macos-latest","target":"linux-amd64","platform":"Linux","brand":"kaitu"}'
+          PLAN=$(node scripts/ci/release-plan.mjs --ref "$REF_NAME")
+          echo "$PLAN"
+          brands() { sed -n "s/^$1_brands=//p" <<<"$PLAN" | tr -d '[]"' | tr ',' ' '; }
 
-          # Decision is driven by the ref suffix alone — push and
-          # workflow_dispatch behave identically so that
-          # `gh workflow run --ref v0.4.4-windows` honors the suffix.
-          # Unknown suffix → empty (workflow run skips) so unrelated tags
-          # like v*-foo never spawn matrix entries.
-          #
-          # bash `case` takes the first match top-to-bottom, and
-          # `-overleap-windows`/`-overleap-macos` are also valid suffixes of
-          # the plain `-windows`/`-macos` patterns — so the three overleap
-          # patterns MUST stay ordered before their kaitu counterparts, or
-          # e.g. `v0.4.7-overleap-windows` would match `*-windows` first and
-          # silently build the wrong brand.
-          case "$REF_NAME" in
-            *-overleap-windows) INCLUDE=("$WIN_OVERLEAP") ;;
-            *-overleap-macos)   INCLUDE=("$MAC_OVERLEAP") ;;
-            *-overleap)         INCLUDE=("$MAC_OVERLEAP" "$WIN_OVERLEAP") ;;
-            *-windows)          INCLUDE=("$WIN_KAITU") ;;
-            *-macos)            INCLUDE=("$MAC_KAITU") ;;
-            *-linux)            INCLUDE=("$LIN") ;;
-            *-desktop)          INCLUDE=("$MAC_KAITU" "$WIN_KAITU" "$LIN") ;;
-            *-*)                INCLUDE=() ;;
-            *)                  INCLUDE=("$MAC_KAITU" "$WIN_KAITU" "$LIN") ;;
-          esac
+          # Matrix entry per platform × brand. Keep in sync with the release
+          # job's expectations (matrix.runner / target / platform / brand).
+          entry() {
+            case "$1" in
+              macos)   printf '{"runner":"macos-latest","target":"universal-apple-darwin","platform":"macOS","brand":"%s"}' "$2" ;;
+              windows) printf '{"runner":["self-hosted","macOS","ARM64"],"target":"x86_64-pc-windows-msvc","platform":"Windows","brand":"%s"}' "$2" ;;
+              linux)   printf '{"runner":"macos-latest","target":"linux-amd64","platform":"Linux","brand":"%s"}' "$2" ;;
+            esac
+          }
+          INCLUDE=()
+          for platform in macos windows linux; do
+            for brand in $(brands "$platform"); do
+              INCLUDE+=("$(entry "$platform" "$brand")")
+            done
+          done
 
+          echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
           if [[ ${#INCLUDE[@]} -eq 0 ]]; then
             echo "should_run=false" >> "$GITHUB_OUTPUT"
             echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
@@ -364,24 +355,11 @@ jobs:
       - name: Verify tag matches package.json
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
+        env:
+          # The plan job already stripped exactly the suffix it matched
+          # (scripts/ci/release-plan.mjs) — no second hand-kept suffix list.
+          TAG_VERSION: ${{ needs.plan.outputs.tag_version }}
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          # Strip only the suffixes this workflow owns. The job-level `if`
-          # already guarantees we only run on bare / -windows / -macos /
-          # -linux / -desktop / -overleap / -overleap-windows /
-          # -overleap-macos tags.
-          #
-          # Order matters: `-overleap-windows`/`-overleap-macos` must be
-          # stripped before the plain `-windows`/`-macos` patterns, since
-          # `%-windows` would otherwise match the tail of
-          # `-overleap-windows` first and leave a dangling `-overleap`.
-          TAG_VERSION="${TAG_VERSION%-overleap-windows}"
-          TAG_VERSION="${TAG_VERSION%-overleap-macos}"
-          TAG_VERSION="${TAG_VERSION%-overleap}"
-          TAG_VERSION="${TAG_VERSION%-desktop}"
-          TAG_VERSION="${TAG_VERSION%-windows}"
-          TAG_VERSION="${TAG_VERSION%-macos}"
-          TAG_VERSION="${TAG_VERSION%-linux}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) does not match package.json ($PKG_VERSION)"
