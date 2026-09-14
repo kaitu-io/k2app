@@ -73,6 +73,10 @@ pub fn start_auto_updater(app: AppHandle) {
         CHECK_INTERVAL_SECS
     );
 
+    // If a prior in-place update succeeded, we're now on the target version —
+    // clear the attempt marker so the convergence guard starts fresh.
+    clear_pending_if_updated(&app);
+
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(INITIAL_DELAY_SECS)).await;
 
@@ -186,6 +190,37 @@ async fn check_download_and_install(app: &AppHandle, force_downgrade: bool) {
                 return;
             }
 
+            // Convergence guard (background auto path only): if prior launches
+            // already attempted this exact target and we came back still-old,
+            // the in-place install is not taking (e.g. a locked k2app.exe on
+            // Windows). Stop auto-retrying instead of looping every few seconds.
+            // User-initiated channel switches (force_downgrade) bypass this.
+            if !force_downgrade {
+                let pending = read_pending_update(app);
+                if should_block_autoinstall(&pending, &new_version, MAX_INSTALL_ATTEMPTS) {
+                    log::error!(
+                        "[updater] {} already attempted {}x but still running {} — self-update is not taking (likely a locked binary). Stopping auto-retry this session; manual reinstall required.",
+                        new_version, MAX_INSTALL_ATTEMPTS, current_version
+                    );
+                    INSTALL_FAILED.store(true, Ordering::SeqCst);
+                    return;
+                }
+                // Record this attempt BEFORE install(): on Windows install()
+                // launches NSIS and calls process::exit(0), so control never
+                // returns here. Counter resets to 1 when the target changes.
+                let attempts = pending
+                    .as_ref()
+                    .filter(|(v, _)| v == &new_version)
+                    .map(|(_, n)| *n)
+                    .unwrap_or(0)
+                    + 1;
+                write_pending_update(app, &new_version, attempts);
+                log::info!(
+                    "[updater] Recording install attempt {}/{} for {}",
+                    attempts, MAX_INSTALL_ATTEMPTS, new_version
+                );
+            }
+
             match update.install(&bytes) {
                 Ok(()) => {
                     log::info!("[updater] Update {} installed", new_version);
@@ -290,6 +325,11 @@ pub async fn apply_update_now(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn check_update_now(app: AppHandle) -> Result<String, String> {
     log::info!("[updater] Manual update check triggered");
+
+    // User-initiated: reset the convergence guard so a manual retry always gets
+    // a fresh set of attempts even after the background updater gave up.
+    clear_pending_update(&app);
+    INSTALL_FAILED.store(false, Ordering::SeqCst);
 
     // If update already ready, return status
     if is_update_ready() {
@@ -399,6 +439,8 @@ pub async fn set_update_channel(
     // Clear stale update state from previous channel
     UPDATE_READY.store(false, Ordering::SeqCst);
     INSTALL_FAILED.store(false, Ordering::SeqCst);
+    // A channel switch is explicit user intent — reset the convergence guard.
+    clear_pending_update(&app);
     *UPDATE_INFO.lock().unwrap() = None;
 
     // Beta log level management
@@ -471,6 +513,91 @@ fn read_pre_beta_log_level(app: &AppHandle) -> Option<String> {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+// ============================================================================
+// Self-update convergence guard
+// ============================================================================
+//
+// Protects against the Windows self-update loop: if an in-place install keeps
+// failing to take (e.g. the NSIS `File` step can't overwrite a locked
+// k2app.exe), the app relaunches still-old, re-detects the newer version, and
+// re-installs — forever, every few seconds. This records how many times we've
+// attempted a given target version across launches; once we've tried it
+// `MAX_INSTALL_ATTEMPTS` times and are still not on it, we stop auto-retrying
+// so a failed self-update degrades to "stay on current, app usable" instead of
+// an infinite loop. The record is written just before each install attempt and
+// cleared at startup once we're actually running the target (success), or on a
+// user-initiated check / channel switch (fresh intent).
+
+const PENDING_UPDATE_FILE: &str = "pending-update-version";
+
+/// Total auto-install attempts allowed for one target version before the
+/// background updater gives up (a successful install never reaches the cap
+/// because startup clears the record on a version match).
+const MAX_INSTALL_ATTEMPTS: u32 = 2;
+
+fn pending_update_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join(PENDING_UPDATE_FILE))
+}
+
+/// Parse the persisted "`<version> <attempts>`" record. A missing attempts
+/// field counts as 1 (a legacy/truncated write still means "attempted once").
+fn parse_pending(s: &str) -> Option<(String, u32)> {
+    let mut it = s.split_whitespace();
+    let version = it.next()?.to_string();
+    if version.is_empty() {
+        return None;
+    }
+    let attempts = it.next().and_then(|x| x.parse::<u32>().ok()).unwrap_or(1);
+    Some((version, attempts))
+}
+
+fn read_pending_update(app: &AppHandle) -> Option<(String, u32)> {
+    let path = pending_update_path(app)?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    parse_pending(&content)
+}
+
+fn write_pending_update(app: &AppHandle, version: &str, attempts: u32) {
+    if let Some(path) = pending_update_path(app) {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, format!("{} {}", version, attempts));
+    }
+}
+
+fn clear_pending_update(app: &AppHandle) {
+    if let Some(path) = pending_update_path(app) {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+/// Pure decision: should the background updater refuse to (re)install `target`?
+/// True once we've already attempted this exact target `max` times without the
+/// running version becoming it. Kept separate from IO so it can be unit-tested.
+fn should_block_autoinstall(pending: &Option<(String, u32)>, target: &str, max: u32) -> bool {
+    matches!(pending, Some((v, n)) if v == target && *n >= max)
+}
+
+/// At startup: if we're now running the version the pending record targeted,
+/// the in-place update succeeded — clear the marker so future updates aren't
+/// wrongly blocked. No-op when there's no record or it's for another version.
+pub fn clear_pending_if_updated(app: &AppHandle) {
+    let current = app.package_info().version.to_string();
+    if let Some((target, _)) = read_pending_update(app) {
+        if target == current {
+            log::info!(
+                "[updater] Update to {} confirmed applied — clearing pending marker",
+                target
+            );
+            clear_pending_update(app);
+        }
+    }
 }
 
 /// Install pending update on app exit (macOS/Linux only)
@@ -597,6 +724,54 @@ fn build_restart_script(pid: u32, app_path: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_pending_reads_version_and_attempts() {
+        assert_eq!(parse_pending("0.4.10 2"), Some(("0.4.10".to_string(), 2)));
+        assert_eq!(parse_pending("0.4.10 2\n"), Some(("0.4.10".to_string(), 2)));
+        // missing attempts field → counts as one prior attempt
+        assert_eq!(parse_pending("0.4.10"), Some(("0.4.10".to_string(), 1)));
+        // garbage attempts field → falls back to one attempt
+        assert_eq!(parse_pending("0.4.10 x"), Some(("0.4.10".to_string(), 1)));
+        assert_eq!(parse_pending(""), None);
+        assert_eq!(parse_pending("   "), None);
+    }
+
+    #[test]
+    fn block_only_after_max_attempts_for_the_same_target() {
+        let max = MAX_INSTALL_ATTEMPTS; // 2
+        // No record yet → allow.
+        assert!(!should_block_autoinstall(&None, "0.4.10", max));
+        // Attempted once, still allowed one more.
+        assert!(!should_block_autoinstall(
+            &Some(("0.4.10".to_string(), 1)),
+            "0.4.10",
+            max
+        ));
+        // Hit the cap → block.
+        assert!(should_block_autoinstall(
+            &Some(("0.4.10".to_string(), 2)),
+            "0.4.10",
+            max
+        ));
+        // Over the cap → still block.
+        assert!(should_block_autoinstall(
+            &Some(("0.4.10".to_string(), 5)),
+            "0.4.10",
+            max
+        ));
+    }
+
+    #[test]
+    fn a_capped_record_for_another_version_does_not_block_a_new_target() {
+        // The prior failing target was 0.4.9; a freshly published 0.4.11 must
+        // get its own fresh attempts, not inherit 0.4.9's exhausted counter.
+        assert!(!should_block_autoinstall(
+            &Some(("0.4.9".to_string(), 9)),
+            "0.4.11",
+            MAX_INSTALL_ATTEMPTS
+        ));
+    }
 
     #[test]
     fn test_update_info_serialization() {
