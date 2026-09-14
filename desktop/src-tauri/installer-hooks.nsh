@@ -226,6 +226,44 @@ ${Using:StrFunc} UnStrRep
     FileClose $9
   _pre_k2_check_done:
 
+  ; Step 11b: Ensure the running GUI binary (k2app.exe) is actually unlocked
+  ; BEFORE the Tauri template's `File "${MAINBINARYNAME}.exe"` step recreates
+  ; it. This is the fix for the Windows self-update loop (0.4.9→0.4.10):
+  ; the elevated installer stopped + overwrote k2.exe (service) fine, but the
+  ; still-running k2app.exe held a lock on its own image, so the File step
+  ; failed with "无法打开要写入的文件 ... k2app.exe" (Abort/Retry/Ignore). The
+  ; app then relaunched still-old and re-triggered the updater → infinite loop
+  ; (service reached the new version, GUI binary stuck on the old one). k2.exe
+  ; had a verify+retry (Step 11) but k2app.exe had only a single best-effort
+  ; kill (Step 2) + single Delete (Step 10) — that asymmetry is the root-cause
+  ; gap. Poll kill + Delete until the file is gone (= OS released the image
+  ; handle) or a hard ~20s ceiling. Do NOT collapse this back to one Delete.
+  StrCpy $R5 0
+  _pre_app_unlock_loop:
+    nsExec::ExecToStack 'taskkill /F /IM "${MAINBINARYNAME}.exe" /T'
+    Pop $0
+    Pop $1
+    Delete "$INSTDIR\${MAINBINARYNAME}.exe"
+    IfFileExists "$INSTDIR\${MAINBINARYNAME}.exe" 0 _pre_app_unlocked
+      IntOp $R5 $R5 + 1
+      ; give up after 10 attempts (~20s); equal/greater → locked, less → retry
+      IntCmp $R5 10 _pre_app_locked 0 _pre_app_locked
+      Sleep 2000
+      Goto _pre_app_unlock_loop
+  _pre_app_locked:
+    FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileSeek $9 0 END
+    FileWrite $9 "[11b] ${MAINBINARYNAME}.exe STILL LOCKED after $R5 attempts (~20s) — File step may fail$\r$\n"
+    FileClose $9
+    DetailPrint "WARNING: ${MAINBINARYNAME}.exe still locked after $R5 attempts!"
+    Goto _pre_app_check_done
+  _pre_app_unlocked:
+    FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileSeek $9 0 END
+    FileWrite $9 "[11b] ${MAINBINARYNAME}.exe deleted OK after $R5 retries$\r$\n"
+    FileClose $9
+  _pre_app_check_done:
+
   ; Step 12: Clear WebView2 HTTP cache only (preserves localStorage with auth tokens)
   ; localStorage lives in EBWebView/Default/Local Storage/ — must NOT be deleted
   ; Preserves user preferences: update-channel, pre-beta-log-level
