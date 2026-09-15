@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"testing"
@@ -422,5 +423,51 @@ func TestReadResponseError_RealQUICStreamDeadline(t *testing.T) {
 	}
 	if !isProxyLayerError(classified) || !isUnanswered(classified) {
 		t.Fatalf("classification lost proxy-layer/unanswered: %v", classified)
+	}
+}
+
+// Distress can flip by window expiry alone: successes recorded before the
+// outage age out of dataPathWindow while no new dial lands on quic (each
+// in-flight one is still waiting on its 5 s deadline). The switch then fires
+// with reason=quic-datapath-timeout, but the rising-edge DIAG (with the
+// timeout/request counts) was only evaluated at record time — and once the
+// active channel is tcpws, recordQUICDataPath is never called again. Seen in
+// the Ubuntu netns run s1-big-dense-mobile: transport-switch logged, the
+// DIAG line never. The selector must log the edge itself.
+func TestTransportManager_DataPathDistressEdgeLoggedOnExpiry(t *testing.T) {
+	col := &syncRecordCollector{}
+	prevLog := slog.Default()
+	slog.SetDefault(slog.New(col))
+	t.Cleanup(func() { slog.SetDefault(prevLog) })
+
+	tm := NewTransportManager()
+	tm.SetPrimary(&mockTransport{available: true}, "quic-443")
+	tm.SetTCPWS(&mockTransport{available: true})
+
+	t0 := time.Now()
+	for i := 0; i < 10; i++ {
+		tm.recordQUICDataPath(nil, t0)
+	}
+	for i := 0; i < 3; i++ {
+		tm.recordQUICDataPath(readResponseError(os.ErrDeadlineExceeded), t0.Add(time.Second))
+	}
+	if n := len(col.byMessage("DIAG: quic-datapath-timeout")); n != 0 {
+		t.Fatalf("3 timeouts among 13 requests is below the share threshold; DIAG logged %d times", n)
+	}
+
+	// 61 s later the ten successes have aged out; the three timeouts have not.
+	later := t0.Add(dataPathWindow + time.Second)
+	if !tm.DataPathDistressed(later) {
+		t.Fatal("expected distress once the successes expired")
+	}
+	tm.evaluateSelector(later)
+	if n := len(col.byMessage("DIAG: quic-datapath-timeout")); n != 1 {
+		t.Fatalf("selector saw distress but DIAG rising edge logged %d times, want 1", n)
+	}
+	// Steady state: no re-log while it stays distressed.
+	tm.evaluateSelector(later.Add(time.Second))
+	tm.recordQUICDataPath(readResponseError(os.ErrDeadlineExceeded), later.Add(2*time.Second))
+	if n := len(col.byMessage("DIAG: quic-datapath-timeout")); n != 1 {
+		t.Fatalf("edge re-logged while distress persisted: %d", n)
 	}
 }

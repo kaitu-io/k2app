@@ -644,14 +644,32 @@ func (tm *TransportManager) recordQUICDataPath(err error, now time.Time) {
 			tm.selState.trialProven = true
 		}
 	}
-	timeouts, total := tm.dataPathCountsLocked(now)
-	distressed := dataPathDistressed(timeouts, total)
-	logEdge := distressed && !tm.dpDistressLogged
-	tm.dpDistressLogged = distressed
+	_, logEdge, timeouts, total := tm.dataPathEdgeLocked(now)
 	tm.mu.Unlock()
 	if logEdge {
-		slog.Warn("DIAG: quic-datapath-timeout", "timeouts", timeouts, "requests", total, "windowS", int(dataPathWindow.Seconds()))
+		logDataPathEdge(timeouts, total)
 	}
+}
+
+// dataPathEdgeLocked evaluates the distress predicate at `now` and tracks its
+// rising edge for the DIAG line; caller holds tm.mu for writing and emits
+// logDataPathEdge outside the lock when logEdge is set. Shared by
+// recordQUICDataPath and evaluateSelector: distress can also flip purely by
+// window expiry (the pre-outage successes age out while every new dial is
+// still waiting on its deadline), and once the switch lands on tcpws no
+// further quic dial is recorded — so an edge evaluated only at record time
+// is missed for good (netns run s1-big-dense-mobile logged the switch with
+// reason=quic-datapath-timeout but never the counts line).
+func (tm *TransportManager) dataPathEdgeLocked(now time.Time) (distressed, logEdge bool, timeouts, total int) {
+	timeouts, total = tm.dataPathCountsLocked(now)
+	distressed = dataPathDistressed(timeouts, total)
+	logEdge = distressed && !tm.dpDistressLogged
+	tm.dpDistressLogged = distressed
+	return distressed, logEdge, timeouts, total
+}
+
+func logDataPathEdge(timeouts, total int) {
+	slog.Warn("DIAG: quic-datapath-timeout", "timeouts", timeouts, "requests", total, "windowS", int(dataPathWindow.Seconds()))
 }
 
 // dataPathCountsLocked counts the ring's events inside dataPathWindow;
@@ -812,6 +830,7 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 	if qc, ok := tm.primary.(*QUICClient); ok {
 		consecFails = qc.ConsecConnFails()
 	}
+	distressed, logDistressEdge, dpTimeouts, dpTotal := tm.dataPathEdgeLocked(now)
 	in := selectorInput{
 		now:                now,
 		scoreQUIC:          tm.scoreQUIC.Value(now),
@@ -820,7 +839,7 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 		backupFresh:        tm.scoreTCPWS.FreshSamples(now),
 		quicEchoRecovered:  tm.quicEchoRecovered.Load(),
 		primaryChannel:     channelForType(tm.primaryType),
-		dataPathDistressed: tm.dataPathDistressedLocked(now),
+		dataPathDistressed: distressed,
 	}
 	newState, decision := selectorStep(tm.selState, in)
 	tm.selState = newState
@@ -853,6 +872,9 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 		tm.flapDampedLoggedWindow = newState.nextReviewAt
 	}
 	tm.mu.Unlock()
+	if logDistressEdge {
+		logDataPathEdge(dpTimeouts, dpTotal)
+	}
 
 	if logChannelReview {
 		nextReviewInS := int(newState.nextReviewAt.Sub(now).Seconds())

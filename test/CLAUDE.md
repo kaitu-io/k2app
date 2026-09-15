@@ -99,3 +99,14 @@ Docker-based integration test for the k2r gateway binary as a full soft router.
 | 10 — API | 8 | SSE events, log levels, error handling, ping |
 
 **Docker Desktop limitation**: TPROXY data plane requires `nft_tproxy` kernel module. Docker Desktop's LinuxKit may lack it — rule installation tests pass but LAN flow tests skip gracefully. Full data-plane validation requires a native Linux host.
+
+## Lossy-link emulation (netem/)
+
+Two drivers share `.build/{k2,k2s,gen-config}` (cross-compile: `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o test/netem/.build/<name> ./cmd/k2 | ./cmd/k2s | ./docker/gen-config`) and the same client shape (proxy mode, socks :1080, daemon API :1777, `K2_MOBILE_POWER_SAVING=1` = appext's mobile probe gate, `docker-compose` passes it through, `nslab.sh` takes `MOBILE=1`).
+
+| Driver | Where it runs | Use it for |
+|---|---|---|
+| `run.sh` (+ `scenarios.sh`) | Docker (any host) | generic loss/delay/rate/MTU scenarios, health grading, recovery |
+| `nslab.sh` (+ `nslab-analyze.sh`) | **native Linux, root** — three netns (`srv` k2s, `cli` k2, root = router/NAT + local HTTP target on 44.44.44.44:8080) | the #3747/#3757 "lossy but reachable QUIC" escape: shaping on the client's UDP egress with `tc prio` + `netem` + `iptables -t mangle` fwmark (silent drops, never `-j DROP`), a traffic loop through the socks port, `/api/stats` polling, per-run results in `.lab/results/<TAG>/` (`driver.log`, `k2.log`, `traffic.log`, `stats.jsonl`) |
+
+`nslab.sh` knobs that matter (all env): `BIG=400` drops UDP:443 packets ≥ 400 B (echo/ACKs pass, requests with `PAD=800` die); `SHORT_ONLY=1` restricts that to QUIC short-header packets so handshake Initials pass — the exact #3757 fingerprint (handshake + echo fine, requests time out, heartbeat `loss` stays low); `BIG_PROB` partial drop; `HASHLIMIT_RATE` per-srcport budget (carrier-QoS shape); `SERVER_BLACKHOLE=1` dead-egress node (#3463 shape); `TRAFFIC_INTERVAL` (0.5 dense / 5 sparse = the chat-app user); `PAUSE_AT/RESUME_AT/REMOVE_AT/REINJECT_AT` seconds after injection; `BIN=` an older client build as the known-bad control. Do **not** use Docker Desktop on macOS for this: its VM fights the host for memory (a chained run was OOM-killed on a load-68 Mac) and `tc police` there kills handshakes with the payload. The Ubuntu run log (2026-09-16, 14 scenarios) is in spec `docs/superpowers/specs/2026-08-10-dual-transport-quality-scoreboard-design.md` §8e.
