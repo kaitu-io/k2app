@@ -1921,6 +1921,80 @@ func TestEngine_HealthReconnectPreservesScoreboard_NetworkReconnectWipes(t *test
 	}
 }
 
+// Pause/Wake (iOS: every screen lock/unlock; Android: memory pressure) and
+// the wall-clock wake detector are "same path, new connection" events: they
+// must keep the scoreboard, the selector's channel choice and the health
+// backoff, exactly like the health-critical reconnect. Only an explicit
+// network event (doNetworkReconnect) wipes them. Before this, every phone
+// pickup on a lossy-but-reachable QUIC (ticket #3747) went through the wiping
+// Reset and put the user back on QUIC.
+func TestEngine_PauseWakeAndWakeReconnectPreserveScoreboard(t *testing.T) {
+	e := New()
+	e.SetEventHandler(&mockEventHandler{})
+
+	tm := wire.NewTransportManager()
+	now := time.Now()
+	for i := 0; i < 4; i++ {
+		tm.RecordEchoResult("tcpws", 30*time.Millisecond, nil, now)
+	}
+	tm.RecordQUICStats(wire.WireStats{PacketLossRate: 0.5, RTT: 100 * time.Millisecond, MinRTT: 20 * time.Millisecond}, now)
+	measuredQUIC, measuredTCPWS := tm.ScoreQUIC(now), tm.ScoreTCPWS(now)
+	const neutral = 0.25
+	if measuredQUIC == neutral || measuredTCPWS == neutral {
+		t.Fatalf("precondition: scores must be measured, got quic=%v tcpws=%v", measuredQUIC, measuredTCPWS)
+	}
+	// The selector has escaped to tcpws.
+	tm.SetFallbackActive(true)
+	if !tm.FallbackActive() {
+		t.Fatal("precondition: fallback must be active")
+	}
+
+	ot := &outboundTransport{tm: tm}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, core.NewClientTunnel(core.ClientTunnelConfig{}), nil, nil, now)
+	hm.actionRepeats = 2 // mid-episode backoff armed
+	e.mu.Lock()
+	e.state = StateConnected
+	e.primaryTM = ot
+	e.outboundTMs = []*outboundTransport{ot}
+	e.health = hm
+	e.mu.Unlock()
+
+	check := func(step string) {
+		t.Helper()
+		if got := tm.ScoreQUIC(now); got != measuredQUIC {
+			t.Fatalf("%s wiped scoreQUIC: %v → %v", step, measuredQUIC, got)
+		}
+		if got := tm.ScoreTCPWS(now); got != measuredTCPWS {
+			t.Fatalf("%s wiped scoreTCPWS: %v → %v", step, measuredTCPWS, got)
+		}
+		if !tm.FallbackActive() {
+			t.Fatalf("%s put the user back on QUIC (selector state wiped)", step)
+		}
+		if hm.actionCooldown() == 0 {
+			t.Fatalf("%s forgot the health-reconnect backoff", step)
+		}
+	}
+
+	e.Pause()
+	check("Pause")
+	e.Wake()
+	check("Wake")
+	e.doWakeReconnect()
+	check("wake reconnect")
+
+	// Contrast: the explicit network event wipes everything.
+	e.doNetworkReconnect()
+	if got := tm.ScoreQUIC(now); got != neutral {
+		t.Fatalf("network reconnect must wipe scoreQUIC, got %v", got)
+	}
+	if tm.FallbackActive() {
+		t.Fatal("network reconnect must reset the selector to quic")
+	}
+	if got := hm.actionCooldown(); got != 0 {
+		t.Fatalf("network reconnect must forget the backoff, cooldown = %v", got)
+	}
+}
+
 func TestEngine_OnHealthCritical_WhenDisconnected(t *testing.T) {
 	e := New()
 	h := &mockEventHandler{}

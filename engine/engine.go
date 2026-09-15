@@ -589,8 +589,7 @@ func (e *Engine) Start(cfg Config) error {
 			slog.Debug("engine: wake reconnect skipped, network down")
 			return
 		}
-		slog.Info("engine: wake reconnect")
-		e.doNetworkReconnect()
+		e.doWakeReconnect()
 	}
 
 	e.dnsH = dh
@@ -696,11 +695,37 @@ func (e *Engine) reconnect(preserveScoreboard bool) bool {
 
 // doNetworkReconnect performs a full reconnect with DNS counter reset
 // and stale error clearing. Called by netCoordinator on network recovery
-// or interface change.
+// or interface change — an explicit platform statement that the PATH
+// changed, which is the only event that earns the scoreboard-wiping
+// TransportManager.Reset and forgets the health-reconnect backoff.
 func (e *Engine) doNetworkReconnect() {
 	slog.Info("engine: network reconnect")
+	e.pathReconnect(false)
+}
 
-	// Reset DNS failure counter — old failures are stale after network change.
+// doWakeReconnect is the wall-clock wake detector's reconnect (healthMonitor
+// wakeDetector, gap ≥ wakeReconnectThreshold). A wake says the CONNECTIONS
+// are stale — QUIC's idle timer has long expired — but says nothing about the
+// path: a phone waking on the same cellular network, a laptop lid reopening
+// on the same Wi-Fi. So it keeps the scoreboard, the selector's channel
+// choice and trial history, and the health backoff (ResetConnections), the
+// same way the health-critical reconnect does. If the path DID change while
+// asleep the platform reports that separately (NetEvent / sing-tun default
+// interface change) and doNetworkReconnect wipes everything then. Before this
+// a wake went through the wiping path, so on a lossy-but-reachable QUIC every
+// phone pickup re-raced onto QUIC and replayed the whole escape (ticket #3747
+// follow-up).
+func (e *Engine) doWakeReconnect() {
+	slog.Info("engine: wake reconnect")
+	e.pathReconnect(true)
+}
+
+// pathReconnect is the shared body of doNetworkReconnect / doWakeReconnect:
+// DNS failure counter reset, reconnect, stale wire-error clearing.
+// preserveScoreboard selects reconnect's TransportManager reset (see
+// reconnect) and whether the health-reconnect backoff is forgotten.
+func (e *Engine) pathReconnect(preserveScoreboard bool) {
+	// Reset DNS failure counter — old failures are stale after the gap.
 	e.mu.Lock()
 	dh := e.dnsH
 	e.mu.Unlock()
@@ -708,16 +733,18 @@ func (e *Engine) doNetworkReconnect() {
 		dh.ResetCounter()
 	}
 
-	// A network event is new information about the path: the health
-	// reconnect backoff accumulated on the OLD path no longer applies.
-	e.mu.Lock()
-	hm := e.health
-	e.mu.Unlock()
-	if hm != nil {
-		hm.resetActionBackoff()
+	if !preserveScoreboard {
+		// A network event is new information about the path: the health
+		// reconnect backoff accumulated on the OLD path no longer applies.
+		e.mu.Lock()
+		hm := e.health
+		e.mu.Unlock()
+		if hm != nil {
+			hm.resetActionBackoff()
+		}
 	}
 
-	if !e.reconnect(false) {
+	if !e.reconnect(preserveScoreboard) {
 		return
 	}
 
@@ -796,6 +823,19 @@ func (e *Engine) onHealthCritical() {
 
 // Pause releases wire transport resources for memory conservation (iOS).
 // The provider and gVisor stack remain alive. Call Wake() to restore.
+//
+// Pause/Wake drop the connections but keep the dual-channel scoreboard
+// (TransportManager.ResetConnections, not Reset). iOS calls the pair on every
+// device sleep/wake (PacketTunnelProvider.sleep/wake — i.e. every screen
+// lock), and Android's memory-pressure handler pauses with a forced wake 60s
+// later; none of those is a statement about the network path, and a platform
+// path change arrives separately as a NetEvent (→ doNetworkReconnect → Reset).
+// With the wiping Reset here, a user the selector had moved to tcpws off a
+// lossy-but-reachable QUIC (ticket #3747) was put back on that QUIC by every
+// pickup, re-raced, and had to re-earn the escape from scratch — 30-60s of
+// nothing loading each time. Stale measurements are not a risk: the scores'
+// staleness gate decays them to neutral on their own, and ResetConnections
+// clears the one input that does not decay (quicEchoRecovered).
 func (e *Engine) Pause() {
 	e.mu.Lock()
 	if e.state != StateConnected || e.paused {
@@ -812,7 +852,7 @@ func (e *Engine) Pause() {
 	// Pause has no CancelInflight — no in-flight DNS during iOS memory pause.
 	// TM→pdns order: shared tcpwsDialer (see Start comment).
 	for _, ot := range outboundTMs {
-		ot.tm.Reset()
+		ot.tm.ResetConnections()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -837,8 +877,9 @@ func (e *Engine) Wake() {
 	s := e.buildStatusLocked()
 	e.mu.Unlock()
 
+	// Scoreboard-preserving, same as Pause — see its doc comment.
 	for _, ot := range outboundTMs {
-		ot.tm.Reset()
+		ot.tm.ResetConnections()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()

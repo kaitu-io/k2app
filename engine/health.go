@@ -113,7 +113,7 @@ const (
 // post-construction (same pattern as reRaceChan).
 type wakeDetector struct {
 	lastWall        time.Time
-	onWakeReconnect func() // → engine.doNetworkReconnect (wired post-construction)
+	onWakeReconnect func() // → engine.doWakeReconnect (wired post-construction)
 }
 
 // checkWake compares wall-clock delta to detect sleep/wake. Returns the
@@ -655,6 +655,19 @@ const (
 	echoProbeTimeout    = 2 * time.Second
 	echoReraceThreshold = 3 // consecutive real failures (unsupported and ok don't count)
 
+	// backupEchoProbeTimeout bounds one BACKUP-channel echo (probeBackupOnce).
+	// It is deliberately longer than echoProbeTimeout: the primary's 2s is
+	// sized for a warm connection and feeds the re-race strike counter, where
+	// a tight bound is the point. The backup tcpws is often cold — every
+	// health-critical reconnect (ResetConnections) drops its session too, so
+	// the next backup echo pays TCP + TLS + WebSocket + smux + metadata (five
+	// or six RTTs; over 2s on a far node from cellular) — and a spurious
+	// timeout here is not a strike, it is a false availability sample that
+	// drags scoreTCPWS under the selector's minSwitchTargetScore floor at the
+	// exact moment the switch needs it. Matches the 5s wire's runProbeOnce
+	// gives each QUIC recovery echo.
+	backupEchoProbeTimeout = 5 * time.Second
+
 	// echoBackupProbeThreshold mirrors wire's private qualityDegradeThreshold
 	// (wire/transport.go) — the same 0.7 the hysteresis FSM uses to pre-warn
 	// before considering a switch away from QUIC. Kept as a separate
@@ -1146,15 +1159,24 @@ func (hm *healthMonitor) backupProbeLoop(ot *outboundTransport) {
 // in which the user's experience is already broken; once the selector has
 // switched (active != quic) or QUIC recovers (health leaves critical), the
 // probing stops on its own.
+//
+// The three gates below return the WAKE cadence, not a probe cadence: each is
+// an in-memory check (no I/O, no radio), so the loop re-evaluates them every
+// backupProbeIntervalDegraded. Returning the 60s healthy interval here (the
+// original #3747 fix did) meant the mobile gate OPENING was noticed up to 60s
+// late — and since the first critical fires an immediate reconnect whose
+// resetCounters closes the gate again for ~7s, a wake landing in that gap
+// slept another 60s. Same for a rollback to quic: the loop must be looking
+// again within seconds, not a minute.
 func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopState, now time.Time) time.Duration {
 	if hm.mobilePowerSaving && !hm.primaryLossCritical() {
-		return backupProbeIntervalHealthy
+		return backupProbeIntervalDegraded
 	}
 	if ot.tm.ActiveChannel() != "quic" {
-		return backupProbeIntervalHealthy
+		return backupProbeIntervalDegraded
 	}
 	if channelForType(ot.tm.PrimaryType()) == "tcpws" {
-		return backupProbeIntervalHealthy
+		return backupProbeIntervalDegraded
 	}
 
 	interval := backupProbeIntervalHealthy
@@ -1197,7 +1219,7 @@ func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopSt
 
 	if backup := ot.tm.TCPWS(); backup != nil {
 		if prober, ok := backup.(wire.EchoProber); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), echoProbeTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), backupEchoProbeTimeout)
 			start := time.Now()
 			err := prober.RunEchoProbe(ctx)
 			cancel()

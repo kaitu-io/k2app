@@ -278,6 +278,22 @@ Phase 1 的所有产物都是 Phase 2 的子集，无返工。
 
 **残余（不在本次范围）**：切走后 QUIC 回滚探测在此类链路上 echo 仍能过，按 flap 窗口 30→600s 回滚再切走，每轮 ~20s 劣化（§3.2 设计的收敛方式）；两通道皆坏维持现状；客户端 `loss` 只见上行。信心：根因 10/10，代码 9.5/10（每道门有单测 + 变异验证），业务封顶 7/10（无真机有损网络 smoke）。
 
+## 8c. 2026-09-15 二次修订：对 8b 的对抗式复审与加固
+
+8b 合并后按「修完系统会怎么动」做了时间线推演，发现 8b 本身一处缺陷加四条复发路径，全部在代码上坐实后修掉：
+
+1. **8b 自身缺陷——探测门开了没人看**。`probeBackupOnce` 三个早退都返 60s，而这个返回值是 `backupProbeLoop` 唯一的唤醒源，所以 critical 出现后门开最多 60s 才被看到；首次 critical 的立即重连又经 `resetCounters` 把门关 ~7s，唤醒落在这段就再睡 60s。8b 写的「t0+17/22 两个样本、t0+22 切换」时间线按 5s 唤醒算的，实际不成立。改：三个早退返 `backupProbeIntervalDegraded`（纯内存检查，不动射频）。
+2. **切走靠质量证据、切回只靠 echo，在这类链路上必然震荡**。握手加小 echo 能过是链路特征，`runProbeOnce` 必然把 `quicEchoRecovered` 置真，翻转窗一到就回滚，回滚后 CC 统计归零、health 从 healthy 重来，再花 25-30s 切走；30→600s 每一级都是一次 ~25s 断线。改：**回滚即试验**——`selectorState` 增 `rollbackAt` / `failedTrials`，回滚（或 `ReplacePrimary` 在 tcpws 服务中换主）后 `rollbackTrialWindow`（120s）内再切走记一次失败：第一次窗口直接 `flapWindowMax`（600s），第二次起 `stickyReviewWindow`（1h，TTL 而非永久，让跨过运营商 QoS 时段的会话还能回家）；在 QUIC 上撑过 120s 再切走则清零。显式网络 `Reset` 全清，`ResetConnections` 保留。
+3. **`ReplacePrimary` 整体覆写 `selState`**，re-race（工单里 14 次）落回同一条 QUIC 后翻转窗从 30s 重来。改：只重置连接域状态（`active`、`aboveSince`、旧主的 echo 证据），保留 `flapCount` / `failedTrials` / `rollbackAt`；换服务器走 `replaceOutboundServer` 新建 TM，不经此路径。
+4. **每次锁屏解锁从零开始**。iOS `sleep()/wake()` → `Pause()/Wake()`、两端墙钟跳变 ≥30s 的 wake detector、Android `onTrimMemory` 都走全清 `Reset()`，之后重新竞速，QUIC 800ms 先发又赢。改：`Pause`/`Wake`/`doWakeReconnect` 走 `ResetConnections`（保留记分板、通道选择、健康退避），只有显式网络事件 `doNetworkReconnect` 才 `Reset`。`ResetConnections` 顺带清 `quicEchoRecovered`：它认证的是刚被丢掉的那条连接，暂停时长未知时旧证据会让唤醒后第一次评估就回滚。
+5. **备用 echo 2s 超时按暖 QUIC 设计**。健康重连把 tcpws 会话也重置了，之后第一次备用探测要冷建 TCP+TLS+WS+smux+metadata，蜂窝到远节点会顶到 2s，一次误判把 tcpws 可用性从 1 拉到 0.4、两次 0.16，低于 0.3 下限。改：独立 `backupEchoProbeTimeout = 5s`（与 `runProbeOnce` 的 QUIC echo 对齐）；主通道 2s 不动（re-race 判定的时序不变量）。
+
+**修订后时间线**（丢包自 t0，移动端）：t0+7 critical、重连#1；t0+14 再 critical，门开，≤5s 内被看到；t0+15/20 两个 tcpws 样本；t0+20-25 切到 TCP-WS（翻转窗 30s）；t0+55 echo 验证回滚（试验开始）；t0+62 critical、t0+75 左右再切走 → 失败试验 #1，窗口 600s；t0+675 回滚、~t0+695 再切走 → 失败试验 #2，粘住 1h；之后每小时一次 ~20s 的试验。锁屏解锁、re-race 都不再重置这条阶梯。
+
+**仍未处理（需单独设计）**：下行单向丢包不可见（客户端 CC 只有上行，需要服务端 cc-summary 回传）；移动端丢包 0.05-0.25 只到 degraded、无逃生路径；0.25-0.33 丢包且 RTT 无膨胀时 1.5 倍比值门余量薄；tcpws 上 10 个健康样本让 `actionRepeats` 归零，回滚后第一次 critical 仍会立即重连一次。
+
+信心：五处发现全部在代码上钉到 10/10；每处改动有单测且经变异验证（还原改动 → 对应测试转红）；业务信心仍封顶 7/10，真机有损链路 smoke 的判别式见记忆 `project_mobile_lossy_quic_escape_3747`。
+
 ## 9. 影响面与风险
 
 - **改动面**：`wire/transport.go`（重构核心）、新增 `wire/score.go`、`wire/echo.go`（抽公共 echo handler）、`wire/tcpws.go`（服务端 echo + 客户端 EchoProber）、`wire/stream.go`（无改，复用 StreamTypeEcho）、`engine/health.go`（assess + echoLoop）、`engine/config.go`（省电字段）、`engine/engine.go`（re-race 职责收窄）。
