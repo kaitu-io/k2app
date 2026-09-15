@@ -457,8 +457,11 @@ func TestResetConnections_PreservesScoreboard(t *testing.T) {
 	tm.RecordQUICStats(WireStats{PacketLossRate: 0.5, RTT: 100 * time.Millisecond, MinRTT: 20 * time.Millisecond}, now)
 	tm.mu.Lock()
 	tm.selState.flapCount = 3
+	tm.selState.failedTrials = 1
+	tm.selState.rollbackAt = now.Add(-20 * time.Second)
 	tm.selState.aboveSince = now.Add(-5 * time.Second)
 	tm.mu.Unlock()
+	tm.quicEchoRecovered.Store(true)
 
 	wantQUIC, wantTCPWS := tm.ScoreQUIC(now), tm.ScoreTCPWS(now)
 	wantFresh := tm.scoreTCPWS.FreshSamples(now)
@@ -487,13 +490,19 @@ func TestResetConnections_PreservesScoreboard(t *testing.T) {
 		t.Fatalf("tcpws min-RTT ratchet cleared: %v", time.Duration(got))
 	}
 	tm.mu.Lock()
-	flap, above := tm.selState.flapCount, tm.selState.aboveSince
+	st := tm.selState
 	tm.mu.Unlock()
-	if flap != 3 {
-		t.Fatalf("flapCount %d, want 3 (anti-flap history erased)", flap)
+	if st.flapCount != 3 || st.failedTrials != 1 || st.rollbackAt.IsZero() {
+		t.Fatalf("anti-flap / trial history erased: %+v", st)
 	}
-	if above.IsZero() {
+	if st.aboveSince.IsZero() {
 		t.Fatal("aboveSince cleared: the sustain clock restarted")
+	}
+	// The one selector input that does NOT survive: echo verification
+	// certifies the connection just dropped, and this reset is also the
+	// Pause/Wake path, where the gap since that proof is unbounded.
+	if tm.quicEchoRecovered.Load() {
+		t.Fatal("quicEchoRecovered survived a connection reset — a stale proof would roll back to QUIC after Wake")
 	}
 
 	// Contrast: the network-change Reset still clears everything.
@@ -502,10 +511,10 @@ func TestResetConnections_PreservesScoreboard(t *testing.T) {
 		t.Fatalf("Reset must still clear scores, got %v", got)
 	}
 	tm.mu.Lock()
-	flap = tm.selState.flapCount
+	st = tm.selState
 	tm.mu.Unlock()
-	if flap != 0 {
-		t.Fatalf("Reset must still clear flapCount, got %d", flap)
+	if st.flapCount != 0 || st.failedTrials != 0 || !st.rollbackAt.IsZero() {
+		t.Fatalf("Reset must clear the flap / trial history, got %+v", st)
 	}
 }
 

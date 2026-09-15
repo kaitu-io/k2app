@@ -1023,8 +1023,10 @@ func TestBackupProbe_SkipsWhenPrimaryIsTCPWS(t *testing.T) {
 	st := &backupLoopState{}
 
 	now := time.Now()
-	if interval := hm.probeBackupOnce(ot, st, now); interval != backupProbeIntervalHealthy {
-		t.Fatalf("expected the no-op/healthy pace, got %v", interval)
+	// No probe — but the loop must keep re-checking at the wake cadence, so a
+	// re-race that installs a quic primary is noticed within seconds.
+	if wake := hm.probeBackupOnce(ot, st, now); wake > backupProbeIntervalDegraded {
+		t.Fatalf("gate closed: wake cadence %v, want ≤ %v", wake, backupProbeIntervalDegraded)
 	}
 	if calls := stub.calls.Load(); calls != 0 {
 		t.Fatalf("expected zero backup probes when primary IS tcpws (double-probe guard), got %d", calls)
@@ -1072,11 +1074,18 @@ func TestBackupProbe_MobilePowerSavingProbesWhenLossCritical(t *testing.T) {
 	st := &backupLoopState{}
 	now := time.Now()
 
-	// Degraded (by RTT, loss 0): still no probing on mobile.
+	// Degraded (by RTT, loss 0): still no probing on mobile — but the closed
+	// gate must be re-checked at the wake cadence, not the 60s healthy one:
+	// this is the ONLY wake source of backupProbeLoop, so a 60s return here
+	// meant critical was noticed up to 60s late (and the first critical's
+	// reconnect closes the gate again for ~7s, so a wake landing in that gap
+	// slept another 60s). Regression pin for the original #3747 fix's defect.
 	hm.mu.Lock()
 	hm.health = HealthDegraded
 	hm.mu.Unlock()
-	hm.probeBackupOnce(ot, st, now)
+	if wake := hm.probeBackupOnce(ot, st, now); wake > backupProbeIntervalDegraded {
+		t.Fatalf("gate closed (degraded): wake cadence %v, want ≤ %v", wake, backupProbeIntervalDegraded)
+	}
 	if calls := backup.calls.Load(); calls != 0 {
 		t.Fatalf("degraded must not open the mobile probe gate, got %d calls", calls)
 	}
@@ -1101,11 +1110,53 @@ func TestBackupProbe_MobilePowerSavingProbesWhenLossCritical(t *testing.T) {
 	}
 
 	// Once the selector has switched (active == tcpws) the gate closes even
-	// while still critical — wire's runProbeOnce owns QUIC recovery then.
+	// while still critical — wire's runProbeOnce owns QUIC recovery then. The
+	// loop still wakes at the degraded cadence so a rollback to quic is
+	// picked up within seconds.
 	ot.tm.SetFallbackActive(true)
-	hm.probeBackupOnce(ot, st, now.Add(backupProbeIntervalDegraded))
+	wake := hm.probeBackupOnce(ot, st, now.Add(backupProbeIntervalDegraded))
 	if calls := backup.calls.Load(); calls != 1 {
 		t.Fatalf("active=tcpws must stop backup probing, got %d calls", calls)
+	}
+	if wake > backupProbeIntervalDegraded {
+		t.Fatalf("gate closed (active=tcpws): wake cadence %v, want ≤ %v", wake, backupProbeIntervalDegraded)
+	}
+}
+
+// The backup echo gets its own, longer timeout than the primary's 2s: the
+// backup tcpws is frequently cold (every health-critical ResetConnections
+// drops its session too) and a cold TCP+TLS+WS+smux+metadata dial from
+// cellular to a far node does not fit in 2s — and unlike a primary strike, a
+// spurious failure here is an availability sample that pushes scoreTCPWS
+// under minSwitchTargetScore exactly when the switch needs it.
+func TestBackupProbe_BackupEchoGetsLongerTimeoutThanPrimary(t *testing.T) {
+	ot, _ := newEchoTransport("t-quic-backup-timeout", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	var remaining time.Duration
+	backup.setFn(func(ctx context.Context) error {
+		dl, ok := ctx.Deadline()
+		if !ok {
+			t.Error("backup echo ctx has no deadline")
+			return nil
+		}
+		remaining = time.Until(dl)
+		return nil
+	})
+	ot.tm.SetTCPWS(backup)
+	// Desktop path: quic degraded (< echoBackupProbeThreshold) → probes now.
+	ot.tm.RecordEchoResult("quic", 0, context.DeadlineExceeded, time.Now())
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	hm.probeBackupOnce(ot, &backupLoopState{}, time.Now())
+
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("precondition: backup probed %d times, want 1", calls)
+	}
+	if remaining <= echoProbeTimeout {
+		t.Fatalf("backup echo budget %v is not longer than the primary's %v — a cold tcpws dial reads as a failed sample", remaining, echoProbeTimeout)
+	}
+	if remaining > backupEchoProbeTimeout {
+		t.Fatalf("backup echo budget %v exceeds backupEchoProbeTimeout %v", remaining, backupEchoProbeTimeout)
 	}
 }
 

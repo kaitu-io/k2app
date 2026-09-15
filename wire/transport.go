@@ -96,6 +96,26 @@ const (
 	// the sustain clock (aboveSince), so the first fresh backup sample does not
 	// restart the 10s wait.
 	minSwitchTargetScore = 0.3
+
+	// rollbackTrialWindow: a rollback to QUIC is a TRIAL. If the selector has
+	// to switch away again within this long, the echo proof that justified the
+	// rollback did not predict what bulk traffic would see on that path — the
+	// exact shape of ticket #3747 (carrier drops bulk UDP, handshake and small
+	// echoes pass). The window is sized for the switch-away's own latency after
+	// a rollback: fresh CC stats (a few s) + health critical (5 samples) +
+	// the backup probe's 5s cadence × 2 samples + the 10s sustain ≈ 30-45s,
+	// with slack for a cold tcpws dial. A degradation landing later than this
+	// is treated as a new, unrelated event.
+	rollbackTrialWindow = 120 * time.Second
+
+	// stickyReviewWindow is the review window after the SECOND consecutive
+	// failed trial: the path has now twice looked echo-healthy and twice failed
+	// under load, so tcpws is the stable choice and QUIC gets one trial per
+	// hour rather than one per flap window. A TTL rather than "until network
+	// Reset" so a session that outlives the carrier's QoS episode still finds
+	// its way home; an explicit network change (Reset) forgets the history
+	// immediately, a same-path reconnect (ResetConnections) keeps it.
+	stickyReviewWindow = 1 * time.Hour
 )
 
 type channelDecision int
@@ -113,6 +133,18 @@ type selectorState struct {
 	aboveSince   time.Time // when the quality-path condition first held (zero = not holding)
 	flapCount    int       // completed QUIC→TCPWS→QUIC round trips
 	nextReviewAt time.Time // rollback review window opens at this time
+
+	// rollbackAt is when traffic last RETURNED to quic — an echo-verified
+	// rollback here, or a re-race installing a fresh quic primary while tcpws
+	// was serving (ReplacePrimary). Zero until the first return. switchAway
+	// reads it to decide whether this switch-away ends a failed trial.
+	rollbackAt time.Time
+	// failedTrials counts consecutive returns to quic that were followed by a
+	// switch-away inside rollbackTrialWindow. 1 → the next review waits
+	// flapWindowMax; ≥2 → stickyReviewWindow. A switch-away that lands after a
+	// longer stay on quic resets it to 0: that stay was a successful trial and
+	// the new degradation is a fresh event.
+	failedTrials int
 }
 
 // selectorInput is one evaluation's observations. All scores are ChannelScore.Value.
@@ -207,13 +239,32 @@ func selectorStep(st selectorState, in selectorInput) (selectorState, channelDec
 	}
 	st.active = "quic"
 	st.aboveSince = time.Time{}
+	st.rollbackAt = in.now // the trial starts now; switchAway grades it
 	return st, channelSwitchToQUIC
 }
 
-// switchAway transitions to tcpws and grows the flap-damping window.
+// switchAway transitions to tcpws and sets the rollback review window.
+//
+// Two schedules feed the window. The base schedule is the flap-damping
+// doubling, flapWindowBase << flapCount capped at flapWindowMax. On top of it
+// sits the trial escalation: if this switch-away comes within
+// rollbackTrialWindow of the last return to quic, that return was a failed
+// trial — the first failed trial jumps straight to flapWindowMax, the second
+// and later ones to stickyReviewWindow. Without the escalation an
+// echo-passing, bulk-dropping path (ticket #3747) oscillates on the base
+// schedule alone: every window ends in an echo-verified rollback that fails
+// under load ~30s later, so the user eats a ~25s outage per window through the
+// whole 30s→600s ramp, and anything that restarts the ramp (a re-race, a
+// wake) starts it over.
 func switchAway(st selectorState, now time.Time) selectorState {
 	st.active = "tcpws"
 	st.aboveSince = time.Time{}
+
+	if !st.rollbackAt.IsZero() && now.Sub(st.rollbackAt) <= rollbackTrialWindow {
+		st.failedTrials++
+	} else {
+		st.failedTrials = 0
+	}
 
 	var window time.Duration
 	const maxSafeShift = 20 // 30s<<20 ≈ 8.7h, far exceeds flapWindowMax; prevent overflow
@@ -224,6 +275,12 @@ func switchAway(st selectorState, now time.Time) selectorState {
 		if window > flapWindowMax || window <= 0 {
 			window = flapWindowMax
 		}
+	}
+	switch {
+	case st.failedTrials >= 2:
+		window = stickyReviewWindow
+	case st.failedTrials == 1:
+		window = flapWindowMax
 	}
 
 	st.nextReviewAt = now.Add(window)
@@ -533,6 +590,7 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 			"scoreQuic", in.scoreQUIC,
 			"scoreTcpws", in.scoreTCPWS,
 			"flapCount", newState.flapCount,
+			"failedTrials", newState.failedTrials,
 			"nextReviewInS", nextReviewInS,
 			"decision", reviewDecision,
 		)
@@ -549,7 +607,8 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 		if in.consecConnFails >= quicConnFailThreshold {
 			reason = "quic-handshake-threshold"
 		}
-		slog.Warn("wire: switching to TCP-WS", "reason", reason, "scoreQUIC", in.scoreQUIC, "scoreTCPWS", in.scoreTCPWS)
+		slog.Warn("wire: switching to TCP-WS", "reason", reason, "scoreQUIC", in.scoreQUIC, "scoreTCPWS", in.scoreTCPWS,
+			"failedTrials", newState.failedTrials, "nextReviewInS", int(newState.nextReviewAt.Sub(now).Seconds()))
 		slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", reason)
 	case channelSwitchToQUIC:
 		// Consume the one-shot verification: the next time QUIC falls back,
@@ -616,15 +675,40 @@ func (tm *TransportManager) PrimaryType() string {
 }
 
 // ReplacePrimary hot-swaps the primary transport during runtime re-race.
-// The new primary is unrelated to whatever the old one was doing, so the
-// selector resets to "quic" and any echo-verification from the old primary
-// is discarded — it says nothing about the new one.
+// The new primary is a fresh connection, so the selector's CONNECTION-scoped
+// state restarts: active returns to "quic" (the race just verified it), the
+// sustain clock and any echo-verification from the old primary are dropped.
+// The PATH-scoped history survives — flapCount, failedTrials, rollbackAt —
+// because a re-race redials the same server over the same network (a server
+// replacement builds a whole new TransportManager, see
+// engine.replaceOutboundServer). Wiping it here restarted the anti-flap ramp
+// at 30s on every re-race, and on a lossy-but-reachable QUIC three echo
+// timeouts in a row are routine (ticket #3747 logged 14 re-races), so the
+// ramp never got past its first rungs.
+//
+// If tcpws was serving when the re-race landed, this install IS a return to
+// quic — traffic moves to the new primary without the selector's echo gate —
+// so it starts a rollback trial like an echo-verified rollback would. That
+// also covers the race-lost install (engine re-arms fallback right after
+// this call via SetFallbackActiveWithReason): the race itself just preferred
+// tcpws over a connected QUIC, which the trial bookkeeping correctly grades
+// as a failed trial.
 func (tm *TransportManager) ReplacePrimary(d Dialer, transportType string) {
+	now := time.Now()
 	tm.mu.Lock()
 	old := tm.primary
 	tm.primary = d
 	tm.primaryType = transportType
-	tm.selState = selectorState{active: "quic"}
+	prev := tm.selState
+	tm.selState = selectorState{
+		active:       "quic",
+		flapCount:    prev.flapCount,
+		failedTrials: prev.failedTrials,
+		rollbackAt:   prev.rollbackAt,
+	}
+	if prev.active == "tcpws" {
+		tm.selState.rollbackAt = now
+	}
 	tm.channelReviewLoggedWindow = time.Time{}
 	tm.flapDampedLoggedWindow = time.Time{}
 	tm.mu.Unlock()
@@ -1182,24 +1266,38 @@ func (tm *TransportManager) runProbeOnceForTest(ctx context.Context) {
 // ResetConnections drops the cached connections on both transports (the
 // next dial re-handshakes, with the post-reset budget) but keeps every
 // measurement and selector decision intact: scores, fresh-sample windows,
-// selState (active channel, sustain clock, flap history), quicEchoRecovered
-// and the tcpws min-RTT ratchet.
+// selState (active channel, sustain clock, flap and trial history) and the
+// tcpws min-RTT ratchet.
 //
-// This is the reconnect engine's health monitor wants when WIRE QUALITY goes
-// critical: the network path did not change, only the connection is being
-// replaced, so what the scoreboard has learned about that path is still
-// true. Reset (below) is the network-CHANGE contract and wipes all of it. The
-// distinction is load-bearing: with the health reconnect using Reset, a
-// lossy-but-reachable QUIC could never be escaped — every reconnect zeroed
-// the quality path's evidence faster than the backup probe rebuilt it, then
-// redialed the same lossy path (ticket #3747) — and a rollback followed by a
-// fresh critical zeroed flapCount, restarting the anti-flap window at its
-// 30s base forever.
+// This is the reconnect for every "same path, new connection" event: the
+// health monitor's wire-quality-critical reconnect, engine Pause/Wake (iOS
+// calls those on every screen lock/unlock) and the wall-clock wake detector.
+// The network path did not change — nothing said it did — so what the
+// scoreboard has learned about that path is still true. Reset (below) is the
+// network-CHANGE contract, reserved for an explicit platform network event,
+// and wipes all of it. The distinction is load-bearing: with the health
+// reconnect using Reset, a lossy-but-reachable QUIC could never be escaped —
+// every reconnect zeroed the quality path's evidence faster than the backup
+// probe rebuilt it, then redialed the same lossy path (ticket #3747) — and a
+// rollback followed by a fresh critical zeroed flapCount, restarting the
+// anti-flap window at its 30s base forever. With Pause/Wake using Reset, every
+// phone pickup on such a path re-raced onto QUIC and replayed the whole
+// escape from scratch.
+//
+// quicEchoRecovered is the one selector input this DOES clear: it certifies
+// a specific QUIC connection's data path, and that connection is exactly what
+// is being dropped. A stale certificate surviving an hours-long pause would
+// roll traffic back to QUIC on the first evaluation after Wake with no fresh
+// proof. runProbeOnce re-earns it within one probe interval while fallback is
+// active, so the cost is at most that one interval of delayed rollback. (On
+// the health-critical path the flag is already false: that reconnect only
+// fires while quic is active, and the flag is consumed on every rollback.)
 func (tm *TransportManager) ResetConnections() {
 	slog.Debug("wire: connections reset (scoreboard preserved)",
 		"activeChannel", tm.ActiveChannel(),
 	)
 	tm.resetDialers()
+	tm.quicEchoRecovered.Store(false)
 	tm.freshAfterReset.Store(true)
 }
 
@@ -1221,9 +1319,11 @@ func (tm *TransportManager) resetDialers() {
 
 // Reset implements the Dialer Reset contract: resets cached connections on
 // the primary and TCP-WS transports and clears fallback state, giving QUIC
-// a fresh chance on the next dial. Called by engine on network change (and
-// sleep/wake) — everything measured so far was measured on a path that no
-// longer exists. For a same-path reconnect use ResetConnections.
+// a fresh chance on the next dial. Called by engine on an explicit network
+// change (NetEvent / default-interface change) — everything measured so far
+// was measured on a path that no longer exists. Sleep/wake, Pause/Wake and
+// the health-critical reconnect are same-path events and use
+// ResetConnections instead.
 func (tm *TransportManager) Reset() {
 	slog.Debug("wire: connections reset",
 		"wasFallback", tm.FallbackActive(),
