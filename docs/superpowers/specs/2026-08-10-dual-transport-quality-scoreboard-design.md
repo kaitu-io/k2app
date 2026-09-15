@@ -311,6 +311,35 @@ Phase 1 的所有产物都是 Phase 2 的子集，无返工。
 
 信心：两处改动各有纯 FSM 单测 + TM 集成单测 + engine 门单测，三处变异（关掉快速路径、去掉 `trialProven`、门退回 loss-only）对应测试全部转红；Docker 仿真结果回填在记忆 `project_mobile_lossy_quic_escape_3747`。
 
+## 8e. 2026-09-16 四次修订：Ubuntu 原生 netns 仿真——数据面快速路径首次端到端跑通 + 一处观测缺口
+
+8d 的 Docker 仿真（macOS Docker Desktop）从没观察到 `quic-datapath-timeout` 端到端触发：每种能造出的链路形状都先被握手快速路径、echo re-race 或 loss 质量路径接住，而且宿主内存压力把对照跑挂了。改到 testlab 的 Ubuntu 24.04 VM 上用原生网络命名空间重做（`test/netem/nslab.sh`：`srv`/`cli` 两个 netns + 根命名空间做路由/NAT，客户端 UDP 出口 `tc prio` + `netem` + `iptables -t mangle` fwmark 静默丢包，本地 HTTP 目标挂在 44.44.44.44 —— k2s 拒绝 RFC1918 目标）。关键的新链路形状是**按包长丢**：UDP:443 ≥ 400 B 的包丢（`BIG=400`），echo / ACK 这类小包照过，请求带 800 B 头（`PAD=800`）就死；再叠 u32 只匹配 QUIC 短头（`SHORT_ONLY=1`），握手 Initial 也照过——这就是 #3757 的指纹「握手成功、echo 正常、请求超时、心跳 loss 很低」。14 个场景（t = 注入后秒数，均为 e71a94c 二进制除非注明）：
+
+| 场景 | 链路 | 结果 |
+|---|---|---|
+| S1 密集流量（0.5s 一请求）移动端 | BIG=400 | +21 degraded、+48 critical 重连、**+54 `transport-switch reason=quic-datapath-timeout`**，切后流量 100%；回滚被 echo-verified 门挡住（Initial 也被丢、握手失败 ×8）直到 +300 撤掉限速才回滚 |
+| S2 稀疏流量（5s 一请求）移动端 = #3757 形状 | BIG=400 | loss 峰值 0.133、**永远到不了 critical**；+25 `DIAG: quic-datapath-timeout timeouts=3 requests=9`、**+34 切走**；全程只丢 3 个请求。8b/8c 逻辑下这条链路永不逃生 |
+| S3 密集 桌面 | BIG=400 | +39 切走，reason=quic-quality-degraded（桌面 tcpws 样本常新，质量路径先到）|
+| S4 假阳性对照 | 仅 delay 300±100ms，不丢 | 一次瞬时 degraded（抖动误判 loss 0.15）随即恢复，**不切**，请求全通 |
+| S5 老二进制 8d86133（一审前）| BIG=400 密集 | +32 切走——但它不认 `K2_MOBILE_POWER_SAVING`，跑的是桌面节奏，**不是对照**；见 S5b–S5d |
+| S8 大包丢一半 | BIG=400 p=0.5 | loss 0.02–0.09 间歇 degraded，请求靠重传全通（40–70ms），**不切**——正确 |
+| S6 节点出口黑洞（#3463 形状，8d 接受的代价）| 服务端 FORWARD/INPUT 丢 | +54 distress、+59 切 tcpws、+93 回滚、+110 再 distress、+119 切走 `failedTrials=1 nextReviewInS=597`、flap-damped；会话本来就全死，代价只是多两次无害切换 |
+| S7 试验失败 | BIG=400 SHORT_ONLY | +59 切走 → +89 回滚（握手/echo 通所以 echo-verified）→ 试验中请求超时 → +105 distress → **+114 切走 `failedTrials=1 nextReviewInS=597`** → flap-damped 粘住 |
+| S7i 闲置试验（A1 回归）| 同上，+65 停流量、+250 恢复 | +96 回滚时无流量，闲置 154s 后首批请求超时 → +274 切走 **`failedTrials=1 nextReviewInS=596`**（8c 按墙钟会判「撑过 120s」清零到 30s）|
+| S9 证明后的试验 | 同上，+70 撤限速、+260 再注入 | +90 回滚后 QUIC 正常应答 170s（≥120s 置 `trialProven`），再注入 +319 切走时 **`failedTrials=0`**、翻转窗只升到 60s；+380 回滚、+404 失败切走才 `failedTrials=1` |
+| S2b 稀疏 + SHORT_ONLY（最纯的 #3757 形状）| BIG=400 SHORT_ONLY，5s 一请求 | +25 distress（3/9）、+35 切走；+65 回滚（握手/echo 通）→ 3 个稀疏请求超时 → +95 distress → **+105 切走 `failedTrials=1 nextReviewInS=599`** → flap-damped；全程 loss ≤ 0.15 |
+| S5b 已知坏对照：老逻辑 8d86133（一审前）+ 打上移动端门开关 | BIG=400 稀疏 | 这轮 loss 碰巧冲到 0.291 → +59 critical → +76 靠质量路径切走（新逻辑 S2 同形状 +34，且不依赖 loss 过 0.25）|
+| S5c 同上 | BIG=400 密集 | +44 critical 重连 → 重连握手 Initial 也被丢 ×3 → +61 `quic-handshake-threshold` 切走——逃生靠的是握手死，不是数据面 |
+| **S5d 同上，最纯 #3757 形状** | SHORT_ONLY 稀疏 | **300s 内永不切换**：+70/+136/+204/+267 四次 critical 全量重连，每次握手成功、echo 正常、请求 0/3 通，直到撤掉限速——与 #3757 日志「反复重连、从不切换」的指纹一致；新逻辑 S2b 同形状 +35 切走 |
+
+**观察到的时间线与 8d 预估的差别**：8d 写的 ~t0+20 是按流限速形状（新桶只放前几个请求）下的估计；按包长丢的形状下，密集流量要等注入前 60s 窗内的成功样本过期才够 1/3 占比，切换落在 +54～+59（与 8c 的 critical 路径 +48 + 探测 10s 同量级）；稀疏流量窗内本来就没几个成功，+25 distress、+34 切走。密集流量下要更快只能改占比规则（如「连续 ≥5 次超时且期间无应答」作为并列条件），没有做——它会把「用户反复点一个死站点」也切走，收益又只是密集流量下省 20–30s。
+
+**四审改的一处**：S1 的日志有 `transport-switch reason=quic-datapath-timeout` 却没有 `DIAG: quic-datapath-timeout`——上升沿只在 `recordQUICDataPath` 里判，而这次 distress 是靠窗内旧成功样本**过期**翻真的（新拨号都还在等 5s 超时），切到 tcpws 后再也没有 quic 拨号被记录，那条带 timeouts/requests 计数的 DIAG 就永远丢了。改：边沿判定抽成 `dataPathEdgeLocked`，`recordQUICDataPath` 和 `evaluateSelector` 都调用（同一个 `dpDistressLogged` 保证只打一次）；单测 `TestTransportManager_DataPathDistressEdgeLoggedOnExpiry` 先红后绿。S2 起的所有场景（在这个修法之前跑的是同一二进制，因此 S2/S6/S7/S7i/S9 里那条 DIAG 是记账时刻恰好翻真才打出来的）。
+
+**仍未处理**（不变）：下行单向丢包不可见；0.05–0.25 的丢包只到 degraded；tcpws 上 10 个健康样本让 `actionRepeats` 归零。
+
+---
+
 ## 9. 影响面与风险
 
 - **改动面**：`wire/transport.go`（重构核心）、新增 `wire/score.go`、`wire/echo.go`（抽公共 echo handler）、`wire/tcpws.go`（服务端 echo + 客户端 EchoProber）、`wire/stream.go`（无改，复用 StreamTypeEcho）、`engine/health.go`（assess + echoLoop）、`engine/config.go`（省电字段）、`engine/engine.go`（re-race 职责收窄）。
