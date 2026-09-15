@@ -83,6 +83,19 @@ const (
 	flapWindowBase          = 30 * time.Second // first rollback review window
 	flapWindowMax           = 600 * time.Second
 	backupFreshSamplesGate  = 2 // backup must have this many fresh samples before the quality path may switch away
+
+	// minSwitchTargetScore is the positive-evidence floor for the quality
+	// path's TARGET: the FSM may switch to tcpws only when tcpws has been
+	// measured strictly better than "unknown". Unmeasured is neutral×neutral
+	// = 0.25 (scoreNeutral²); a channel whose echoes are failing sits below
+	// that after two failures (avail 1→0.4→0.16). The ratio alone cannot
+	// express this: once QUIC collapses toward 0 (loss ≥ 0.5 zeroes
+	// QualityFromLossRTT) any positive tcpws score satisfies scoreTCPWS >
+	// scoreQUIC×1.5, which would move traffic onto a channel nobody has shown
+	// to work — the lesser evil is not evidence. Gates the switch only, never
+	// the sustain clock (aboveSince), so the first fresh backup sample does not
+	// restart the 10s wait.
+	minSwitchTargetScore = 0.3
 )
 
 type channelDecision int
@@ -108,7 +121,7 @@ type selectorInput struct {
 	scoreQUIC         float64
 	scoreTCPWS        float64
 	consecConnFails   int32  // QUIC handshake streak (fast path)
-	backupFresh       int    // fresh backup samples since degradation pre-warning
+	backupFresh       int    // tcpws availability samples inside its staleness window (ChannelScore.FreshSamples)
 	quicEchoRecovered bool   // background probe passed handshake + 3 echo rounds
 	primaryChannel    string // channelForType(primaryType): which channel tm.primary actually is
 }
@@ -159,7 +172,8 @@ func selectorStep(st selectorState, in selectorInput) (selectorState, channelDec
 			// Check if backup is fresh and enough time has passed
 			held := in.now.Sub(st.aboveSince)
 
-			if in.backupFresh >= backupFreshSamplesGate && held >= qualitySustainWindow {
+			if in.backupFresh >= backupFreshSamplesGate && held >= qualitySustainWindow &&
+				in.scoreTCPWS >= minSwitchTargetScore {
 				return switchAway(st, in.now), channelSwitchToTCPWS
 			}
 		} else {
@@ -228,9 +242,13 @@ func channelForType(transportType string) string {
 }
 
 // TransportManager manages primary and TCP-WS transports.
-// QUIC is strongly preferred; TCP-WS is used as last-resort fallback only
-// when QUIC is genuinely unavailable (UDP blocked). ISPs rarely block UDP,
-// so even with 40%+ packet loss, QUIC outperforms TCP-WS.
+// QUIC is strongly preferred; TCP-WS is the fallback channel, chosen by the
+// hysteresis FSM below when QUIC is unavailable (UDP blocked — the handshake
+// fast path) OR measurably worse than a measured-good tcpws (the quality
+// path). The second case is real: a carrier that QoS-drops bulk UDP while
+// TCP flows clean lets the QUIC handshake and echoes through and still
+// delivers nothing (ticket #3747), so "QUIC beats TCP-WS at any loss rate" is
+// not a safe assumption — the scoreboard measures instead of assuming.
 type TransportManager struct {
 	mu          deadlock.RWMutex
 	primary     Dialer // was: quic — the preferred transport (QUIC-443 or tcpws)
@@ -251,16 +269,12 @@ type TransportManager struct {
 	// probe that only completes the handshake must never clear fallback).
 	quicEchoRecovered atomic.Bool
 
-	// backupFresh counts tcpws-channel samples (dial or echo) recorded since
-	// the last Reset. Gates the quality-path switch-away so a single
-	// lucky/unlucky tcpws sample right after cold start can't flip the
-	// transport. Despite the name it is a MONOTONIC SINCE-RESET counter, not a
-	// windowed one: it only ever grows until Reset zeroes it, so on a
-	// long-lived process (mobile especially) samples from hours ago keep the
-	// gate permanently satisfied. That is a known follow-up, not a bug in the
-	// gate's cold-start purpose — recency of the tcpws SIGNAL is enforced
-	// separately, by ChannelScore's own staleness gating.
-	backupFresh atomic.Int32
+	// The quality path's "backup measured fresh" gate (backupFreshSamplesGate)
+	// reads scoreTCPWS.FreshSamples(now): tcpws availability samples (dial or
+	// echo) inside the channel's own staleness window. It used to be a
+	// monotonic since-Reset counter, which on a long-lived mobile process kept
+	// the gate satisfied with samples from hours ago; the window makes "fresh"
+	// mean the same thing the score's staleness gate means.
 
 	// tcpwsMinEchoRTT is the running minimum echo RTT observed on the
 	// tcpws channel — the baseline for QualityFromEchoRTT (tcpws has no
@@ -365,9 +379,6 @@ func (tm *TransportManager) recordDialOutcome(channel string, err error, now tim
 		return
 	}
 	sc.RecordAvailability(err == nil, now)
-	if channel == "tcpws" {
-		tm.backupFresh.Add(1)
-	}
 }
 
 // RecordQUICStats feeds QUIC quality from congestion-control loss/RTT stats.
@@ -404,18 +415,12 @@ func (tm *TransportManager) RecordEchoResult(channel string, rtt time.Duration, 
 			return
 		}
 		sc.RecordAvailability(false, now)
-		if channel == "tcpws" {
-			tm.backupFresh.Add(1)
-		}
 		return
 	}
 	sc.RecordAvailability(true, now)
-	if channel == "tcpws" {
-		tm.backupFresh.Add(1)
-		if rtt > 0 {
-			minRTT := tm.updateTCPWSMinEchoRTT(rtt)
-			sc.RecordQuality(QualityFromEchoRTT(rtt, minRTT), now)
-		}
+	if channel == "tcpws" && rtt > 0 {
+		minRTT := tm.updateTCPWSMinEchoRTT(rtt)
+		sc.RecordQuality(QualityFromEchoRTT(rtt, minRTT), now)
 	}
 }
 
@@ -490,7 +495,7 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 		scoreQUIC:         tm.scoreQUIC.Value(now),
 		scoreTCPWS:        tm.scoreTCPWS.Value(now),
 		consecConnFails:   consecFails,
-		backupFresh:       int(tm.backupFresh.Load()),
+		backupFresh:       tm.scoreTCPWS.FreshSamples(now),
 		quicEchoRecovered: tm.quicEchoRecovered.Load(),
 		primaryChannel:    channelForType(tm.primaryType),
 	}
@@ -1174,13 +1179,33 @@ func (tm *TransportManager) runProbeOnceForTest(ctx context.Context) {
 	tm.runProbeOnce(ctx)
 }
 
-// Reset implements the Dialer Reset contract: resets cached connections on
-// the primary and TCP-WS transports and clears fallback state, giving QUIC
-// a fresh chance on the next dial. Called by engine on network change.
-func (tm *TransportManager) Reset() {
-	slog.Debug("wire: connections reset",
-		"wasFallback", tm.FallbackActive(),
+// ResetConnections drops the cached connections on both transports (the
+// next dial re-handshakes, with the post-reset budget) but keeps every
+// measurement and selector decision intact: scores, fresh-sample windows,
+// selState (active channel, sustain clock, flap history), quicEchoRecovered
+// and the tcpws min-RTT ratchet.
+//
+// This is the reconnect engine's health monitor wants when WIRE QUALITY goes
+// critical: the network path did not change, only the connection is being
+// replaced, so what the scoreboard has learned about that path is still
+// true. Reset (below) is the network-CHANGE contract and wipes all of it. The
+// distinction is load-bearing: with the health reconnect using Reset, a
+// lossy-but-reachable QUIC could never be escaped — every reconnect zeroed
+// the quality path's evidence faster than the backup probe rebuilt it, then
+// redialed the same lossy path (ticket #3747) — and a rollback followed by a
+// fresh critical zeroed flapCount, restarting the anti-flap window at its
+// 30s base forever.
+func (tm *TransportManager) ResetConnections() {
+	slog.Debug("wire: connections reset (scoreboard preserved)",
+		"activeChannel", tm.ActiveChannel(),
 	)
+	tm.resetDialers()
+	tm.freshAfterReset.Store(true)
+}
+
+// resetDialers calls the Dialer Reset contract on both transports, outside
+// tm.mu. Shared by Reset and ResetConnections.
+func (tm *TransportManager) resetDialers() {
 	tm.mu.RLock()
 	p := tm.primary
 	t := tm.tcpws
@@ -1192,6 +1217,18 @@ func (tm *TransportManager) Reset() {
 	if t != nil {
 		t.Reset()
 	}
+}
+
+// Reset implements the Dialer Reset contract: resets cached connections on
+// the primary and TCP-WS transports and clears fallback state, giving QUIC
+// a fresh chance on the next dial. Called by engine on network change (and
+// sleep/wake) — everything measured so far was measured on a path that no
+// longer exists. For a same-path reconnect use ResetConnections.
+func (tm *TransportManager) Reset() {
+	slog.Debug("wire: connections reset",
+		"wasFallback", tm.FallbackActive(),
+	)
+	tm.resetDialers()
 
 	tm.mu.Lock()
 	tm.selState = selectorState{active: "quic"}
@@ -1199,7 +1236,6 @@ func (tm *TransportManager) Reset() {
 	tm.flapDampedLoggedWindow = time.Time{}
 	tm.mu.Unlock()
 	tm.quicEchoRecovered.Store(false)
-	tm.backupFresh.Store(0)
 	tm.freshAfterReset.Store(true)
 
 	// Every measurement below was taken on the OLD network path (spec §6,
@@ -1209,6 +1245,8 @@ func (tm *TransportManager) Reset() {
 	// a move to an 80 ms mobile path pins QualityFromEchoRTT at ~0.06 for the
 	// rest of the process lifetime, silently disabling the selector's quality
 	// path. Clear both, so the new path is measured from scratch.
+	// ChannelScore.Reset also clears the fresh-sample windows the quality
+	// path's backupFreshSamplesGate reads.
 	tm.scoreQUIC.Reset()
 	tm.scoreTCPWS.Reset()
 	tm.tcpwsMinEchoRTT.Store(0)

@@ -41,6 +41,47 @@ func TestSelector_QualityPathNeedsSustainAndFreshBackup(t *testing.T) {
 	}
 }
 
+// The quality path must never switch TO a channel that has not been measured
+// at least somewhat good. The ratio alone degenerates once scoreQUIC collapses
+// toward 0 (loss ≥ 0.5 zeroes QualityFromLossRTT): anything above 0 then
+// "wins", including a tcpws still at the unmeasured neutral floor (0.25) or one
+// whose echoes are failing. minSwitchTargetScore is the positive-evidence
+// floor: the target has to be measured strictly better than "unknown".
+func TestSelector_QualityPathRequiresTargetAboveNeutral(t *testing.T) {
+	base := time.Unix(1000, 0)
+	held := base.Add(qualitySustainWindow + time.Second)
+
+	// Control: the same input with a measured-good target switches.
+	st := newState("quic")
+	st.aboveSince = base
+	ctrl := selectorInput{now: held, scoreQUIC: 0.0, scoreTCPWS: 0.9, backupFresh: backupFreshSamplesGate, primaryChannel: "quic"}
+	if _, d := selectorStep(st, ctrl); d != channelSwitchToTCPWS {
+		t.Fatalf("control: want switch, got %v — the assertions below would be vacuous", d)
+	}
+
+	for _, target := range []float64{scoreNeutral * scoreNeutral, minSwitchTargetScore - 0.01, 0.16} {
+		st := newState("quic")
+		st.aboveSince = base
+		in := ctrl
+		in.scoreTCPWS = target
+		if in.scoreTCPWS <= in.scoreQUIC*switchAwayRatio {
+			t.Fatalf("precondition: ratio must hold for target %v", target)
+		}
+		if _, d := selectorStep(st, in); d != channelStay {
+			t.Fatalf("target score %v (below %v): want stay, got %v — switched to an unmeasured/failing channel", target, minSwitchTargetScore, d)
+		}
+	}
+
+	// The floor gates the SWITCH, not the sustain clock: aboveSince still
+	// starts ticking while the ratio holds, so the first fresh sample does not
+	// restart the 10s wait.
+	st = newState("quic")
+	out, _ := selectorStep(st, selectorInput{now: base, scoreQUIC: 0.0, scoreTCPWS: scoreNeutral * scoreNeutral, primaryChannel: "quic"})
+	if out.aboveSince.IsZero() {
+		t.Fatal("aboveSince must start while the ratio holds, even before the target is measured")
+	}
+}
+
 // Switch back requires echo-verified recovery ALONE — no score comparison
 // (spec §3.2 "切回为什么不做分数比较"). While tcpws serves traffic QUIC
 // carries none, so scoreQUIC is unmeasurable and pinned at neutral; a
@@ -252,8 +293,8 @@ func TestSelector_TCPWSWonOutright_NoPhantomSwitchNoQuicRecovered(t *testing.T) 
 	if sq, st := tm.ScoreQUIC(now), tm.ScoreTCPWS(now); st <= sq*switchAwayRatio {
 		t.Fatalf("precondition: scoreTCPWS %v must exceed scoreQUIC %v × %v, else this test proves nothing", st, sq, switchAwayRatio)
 	}
-	if got := tm.backupFresh.Load(); int(got) < backupFreshSamplesGate {
-		t.Fatalf("precondition: backupFresh = %d, want ≥ %d", got, backupFreshSamplesGate)
+	if got := tm.scoreTCPWS.FreshSamples(now); got < backupFreshSamplesGate {
+		t.Fatalf("precondition: fresh tcpws samples = %d, want ≥ %d", got, backupFreshSamplesGate)
 	}
 	if tm.FallbackActive() {
 		t.Fatal("FallbackActive flipped — the FSM switched to a channel it was already on")

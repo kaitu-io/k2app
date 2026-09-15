@@ -262,6 +262,22 @@ Phase 1 的所有产物都是 Phase 2 的子集，无返工。
 
 ---
 
+## 8b. 2026-09-15 修订：移动端有损 QUIC 逃生（工单 #3747）
+
+**现象**：Android 0.4.10，QUIC 赢下竞速后链路对 UDP 大量丢包（运营商 QoS：握手、小 echo 都过，大流量全丢），167 秒内健康重连 3 次，每次拨回同一条 QUIC，浏览器什么都打不开；同一设备的 DNS 控制面走 TCP-WS 一直是通的。
+
+**四道门为何全关**（源码坐实）：快速路要握手失败（握手是好的）；质量路要 `backupFresh ≥ 2`（§3.3 的移动端零探测让它永远是 0）；健康重连的 `Reset()` 每 10s 把记分板、`backupFresh`、flap 历史全清零再拨同一条 QUIC；echo 三击 re-race 在竞速里 QUIC 800ms 内又赢。
+
+**修订四项（互相咬合，缺一不可）**：
+1. **移动端探测门改丢包驱动**：`probeBackupOnce` 的省电早退改为「health FSM 为 critical 时允许」（`primaryLossCritical`），5s 节奏。不用 `ScoreQUIC < 0.7`：分数含 RTT 项，蜂窝 bufferbloat 会把健康下载压到 ~0.5，而 tcpws 首次在负载下探测得到的 minRTT 基线使其比值 ≈ 1.0，会把健康下载误切走。critical 只由丢包可达，且要连续 10 个健康样本才退出，自带迟滞。
+2. **健康重连退避**：首次立即（"连接陈旧"值得一试），同一 critical 期内再次重连 30s → 60s → 120s 封顶（`actionCooldownBase/Max`）。10 个健康样本或网络事件归零。给选择器留出 ~20s 无干扰测量窗。
+3. **健康重连保留记分板**：新增 `TransportManager.ResetConnections()`（只重置连接 + `freshAfterReset`），`engine.reconnect(preserveScoreboard=true)` 走它；网络切换仍用全清的 `Reset()`。否则回滚后再次 critical 会把 `flapCount` 清零，形成 30s 周期永久震荡。
+4. **选择器加固**：`backupFresh` 改为 `ChannelScore.FreshSamples(now)`（staleness 窗口内计数，终审 follow-up #1）；质量路切走加目标下限 `minSwitchTargetScore = 0.3`（严格高于未知的 0.25：切换要目标的正向证据，QUIC 归零时不能"矮子里拔将军"）。
+
+**合并后时间线**（丢包自 t0）：t0+7 critical、重连#1；t0+12 再 critical，探测门开；t0+17/22 两个 tcpws 样本；比值自 t0+7 起成立，t0+22 切到 TCP-WS；重连#2 最早 t0+37，抢不到。切换后 tcpws WireStats 无丢包字段 → healthy → 退避归零。
+
+**残余（不在本次范围）**：切走后 QUIC 回滚探测在此类链路上 echo 仍能过，按 flap 窗口 30→600s 回滚再切走，每轮 ~20s 劣化（§3.2 设计的收敛方式）；两通道皆坏维持现状；客户端 `loss` 只见上行。信心：根因 10/10，代码 9.5/10（每道门有单测 + 变异验证），业务封顶 7/10（无真机有损网络 smoke）。
+
 ## 9. 影响面与风险
 
 - **改动面**：`wire/transport.go`（重构核心）、新增 `wire/score.go`、`wire/echo.go`（抽公共 echo handler）、`wire/tcpws.go`（服务端 echo + 客户端 EchoProber）、`wire/stream.go`（无改，复用 StreamTypeEcho）、`engine/health.go`（assess + echoLoop）、`engine/config.go`（省电字段）、`engine/engine.go`（re-race 职责收窄）。

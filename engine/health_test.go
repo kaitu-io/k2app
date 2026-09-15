@@ -182,7 +182,7 @@ func TestHealthCooldown(t *testing.T) {
 	}
 
 	// After cooldown expires, should fire again.
-	hm.lastAction = time.Now().Add(-actionCooldown - time.Second)
+	hm.lastAction = time.Now().Add(-hm.actionCooldown() - time.Second)
 	action = hm.maybeAct(false)
 	if action == nil {
 		t.Fatal("expected action after cooldown, got nil")
@@ -190,6 +190,87 @@ func TestHealthCooldown(t *testing.T) {
 	action()
 	if actionCount != 2 {
 		t.Fatalf("expected 2 reconnects, got %d", actionCount)
+	}
+}
+
+// The health-critical reconnect backs off per repeat inside one critical
+// episode (30s → 60s → 120s cap), so the channel selector gets an
+// undisturbed window (~20s at the 5s backup cadence + 10s sustain) to move a
+// lossy-but-reachable QUIC onto tcpws instead of being wiped every 10s
+// (ticket #3747). Ten consecutive healthy samples end the episode; a network
+// event (resetActionBackoff) forgets it outright.
+func TestHealthMonitor_ReconnectBackoffGrowsAndResets(t *testing.T) {
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+	var reconnects int
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() { reconnects++ }, time.Now())
+	hm.health = HealthCritical
+
+	fire := func() bool {
+		a := hm.maybeAct(false)
+		if a != nil {
+			a()
+		}
+		return a != nil
+	}
+
+	// First of the episode: immediate.
+	if hm.actionCooldown() != 0 {
+		t.Fatalf("first reconnect must have no cooldown, got %v", hm.actionCooldown())
+	}
+	if !fire() {
+		t.Fatal("first reconnect must fire immediately")
+	}
+	want := []time.Duration{30 * time.Second, 60 * time.Second, 120 * time.Second, 120 * time.Second}
+	for i, w := range want {
+		if got := hm.actionCooldown(); got != w {
+			t.Fatalf("after %d reconnect(s): cooldown %v, want %v", i+1, got, w)
+		}
+		// Too soon (old 10s cooldown would have allowed it): blocked.
+		hm.lastAction = time.Now().Add(-11 * time.Second)
+		if fire() {
+			t.Fatalf("after %d reconnect(s): fired 11s later, want blocked by %v cooldown", i+1, w)
+		}
+		// Past the cooldown: fires.
+		hm.lastAction = time.Now().Add(-w - time.Second)
+		if !fire() {
+			t.Fatalf("after %d reconnect(s): must fire once %v elapsed", i+1, w)
+		}
+	}
+	if reconnects != 1+len(want) {
+		t.Fatalf("reconnects = %d, want %d", reconnects, 1+len(want))
+	}
+
+	// resetCounters (which every reconnect calls) must NOT clear the backoff,
+	// or the backoff would defeat itself.
+	hm.resetCounters()
+	if hm.actionCooldown() == 0 {
+		t.Fatal("resetCounters cleared the reconnect backoff")
+	}
+
+	// Ten clean samples end the episode.
+	for i := 0; i < 10; i++ {
+		hm.smoothWireLoss = 0.0
+		hm.transition(hm.assess(wire.WireStats{Transport: "quic"}), false)
+	}
+	if got := hm.actionCooldown(); got != 0 {
+		t.Fatalf("after 10 healthy samples cooldown = %v, want 0 (new episode)", got)
+	}
+
+	// A network event forgets it outright, even mid-episode.
+	hm.health = HealthCritical
+	fire()
+	fire() // blocked by 30s cooldown — repeats now 1
+	if hm.actionCooldown() == 0 {
+		t.Fatal("precondition: backoff should be armed")
+	}
+	hm.resetActionBackoff()
+	if got := hm.actionCooldown(); got != 0 {
+		t.Fatalf("after resetActionBackoff cooldown = %v, want 0", got)
+	}
+	if !fire() {
+		t.Fatal("after resetActionBackoff the next critical must reconnect immediately")
 	}
 }
 
@@ -971,6 +1052,60 @@ func TestBackupProbe_MobilePowerSavingSkipsProbe(t *testing.T) {
 
 	if calls := backup.calls.Load(); calls != 0 {
 		t.Fatalf("MobilePowerSaving must disable active backup probing, got %d calls", calls)
+	}
+}
+
+// Mobile power saving is a HEALTHY-state policy, not a blanket ban: once the
+// health FSM grades the primary loss-critical, the backup MUST be probed (at
+// the degraded 5s cadence) or the selector's quality path can never gather
+// the fresh tcpws samples it requires, and a lossy-but-reachable QUIC is
+// inescapable for the whole session (ticket #3747, Android). Degraded is
+// deliberately NOT enough: it can be reached by RTT inflation alone.
+func TestBackupProbe_MobilePowerSavingProbesWhenLossCritical(t *testing.T) {
+	ot, _ := newEchoTransport("t-quic-critical-ps", func(ctx context.Context) error { return nil })
+	backup := &echoStubDialer{}
+	backup.setFn(func(ctx context.Context) error { return nil })
+	ot.tm.SetTCPWS(backup)
+
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	hm.mobilePowerSaving = true
+	st := &backupLoopState{}
+	now := time.Now()
+
+	// Degraded (by RTT, loss 0): still no probing on mobile.
+	hm.mu.Lock()
+	hm.health = HealthDegraded
+	hm.mu.Unlock()
+	hm.probeBackupOnce(ot, st, now)
+	if calls := backup.calls.Load(); calls != 0 {
+		t.Fatalf("degraded must not open the mobile probe gate, got %d calls", calls)
+	}
+
+	// Critical: probes, at the degraded cadence, and the tcpws score's
+	// staleness window tracks that cadence.
+	hm.mu.Lock()
+	hm.health = HealthCritical
+	hm.mu.Unlock()
+	next := hm.probeBackupOnce(ot, st, now)
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("critical must probe the backup on mobile, got %d calls", calls)
+	}
+	if next != backupProbeIntervalDegraded {
+		t.Fatalf("wake cadence = %v, want %v", next, backupProbeIntervalDegraded)
+	}
+	if st.nextProbeAt.Sub(now) != backupProbeIntervalDegraded {
+		t.Fatalf("probe cadence = %v, want %v", st.nextProbeAt.Sub(now), backupProbeIntervalDegraded)
+	}
+	if got := ot.tm.ScoreTCPWS(now); got <= 0.5 {
+		t.Fatalf("backup sample must have fed scoreTCPWS, got %v", got)
+	}
+
+	// Once the selector has switched (active == tcpws) the gate closes even
+	// while still critical — wire's runProbeOnce owns QUIC recovery then.
+	ot.tm.SetFallbackActive(true)
+	hm.probeBackupOnce(ot, st, now.Add(backupProbeIntervalDegraded))
+	if calls := backup.calls.Load(); calls != 1 {
+		t.Fatalf("active=tcpws must stop backup probing, got %d calls", calls)
 	}
 }
 

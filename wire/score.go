@@ -16,6 +16,12 @@ const (
 // defaultProbeInterval is used for staleness when no cadence has been set.
 const defaultProbeInterval = 16 * time.Second
 
+// freshSampleRing is how many recent availability-sample timestamps a
+// ChannelScore remembers for FreshSamples. It only has to cover the
+// selector's backupFreshSamplesGate (2) with some slack; older samples are
+// by definition not "fresh" and are overwritten.
+const freshSampleRing = 4
+
 // ChannelScore is a per-transport quality signal in [0,1]. Two EWMA-smoothed
 // components — availability (reachability) and quality (loss/RTT) — are each
 // gated by recency: a component with no data, or data older than
@@ -32,6 +38,13 @@ type ChannelScore struct {
 	quality     float64
 	qualityInit bool
 	qualityAt   time.Time
+
+	// recentAt is a ring of the last freshSampleRing availability-sample
+	// timestamps (zero = empty slot), read by FreshSamples. Availability only:
+	// a quality sample (RecordQuality) is derived from traffic that happened
+	// to flow, not proof that the channel was deliberately probed.
+	recentAt  [freshSampleRing]time.Time
+	recentIdx int
 
 	probeInterval time.Duration
 }
@@ -58,7 +71,29 @@ func (s *ChannelScore) RecordAvailability(success bool, now time.Time) {
 		s.avail = alpha*sample + (1-alpha)*s.avail
 	}
 	s.availAt = now
+	s.recentAt[s.recentIdx] = now
+	s.recentIdx = (s.recentIdx + 1) % freshSampleRing
 	s.mu.Unlock()
+}
+
+// FreshSamples returns how many availability samples were recorded within
+// the same staleness window Value() applies (scoreStaleMult × probeInterval),
+// capped at freshSampleRing. This is the "has this channel actually been
+// measured recently" evidence the selector's quality path demands before it
+// may switch TO this channel — windowed, so a long-lived process cannot keep
+// that gate satisfied with samples from hours ago (the old since-Reset
+// counter did exactly that).
+func (s *ChannelScore) FreshSamples(now time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	window := time.Duration(scoreStaleMult) * s.probeInterval
+	n := 0
+	for _, at := range s.recentAt {
+		if !at.IsZero() && now.Sub(at) <= window {
+			n++
+		}
+	}
+	return n
 }
 
 // RecordQuality feeds a pre-computed instantaneous quality in [0,1].
@@ -86,6 +121,7 @@ func (s *ChannelScore) Reset() {
 	s.mu.Lock()
 	s.avail, s.availInit, s.availAt = 0, false, time.Time{}
 	s.quality, s.qualityInit, s.qualityAt = 0, false, time.Time{}
+	s.recentAt, s.recentIdx = [freshSampleRing]time.Time{}, 0
 	s.mu.Unlock()
 }
 
