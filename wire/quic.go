@@ -713,9 +713,9 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string, earlyData []byte)
 		slog.Warn("QUICClient.DialTCP: read response failed", "addr", addr, "err", err)
 		stream.Close()
 		if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
-			slog.Warn("QUICClient.DialTCP: stream response timeout (server upstream slow)", "addr", addr)
+			slog.Warn("QUICClient.DialTCP: stream response timeout (server upstream slow, or the UDP path drops the request)", "addr", addr)
 		}
-		return nil, &ProxyLayerError{Err: fmt.Errorf("wire: read response: %w", err)}
+		return nil, readResponseError(err)
 	}
 	stream.SetReadDeadline(time.Time{}) // clear deadline for data transfer
 	if !ok {
