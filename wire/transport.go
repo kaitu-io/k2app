@@ -26,11 +26,42 @@ type proxyLayerErr interface {
 // The wire transport worked; TCP-WS fallback to the same server won't help.
 type ProxyLayerError struct {
 	Err error
+	// ResponseTimeout marks the one proxy-layer outcome in which the server
+	// did NOT answer: the stream opened and the header was written, but the
+	// response read hit its deadline. Every other proxy-layer error carries
+	// a server response (a status byte, a rejection), which is proof the
+	// data path round-trips. The transport-selection layer treats the two
+	// differently (see TransportManager.recordQUICDataPath): a run of
+	// unanswered dials is the only client-side signal a QUIC path that
+	// passes handshakes and echoes but drops bulk (ticket #3747/#3757) is
+	// guaranteed to produce — CC loss can sit at 0 for minutes when the
+	// sender is app-limited, and the health FSM never leaves healthy.
+	ResponseTimeout bool
+	// Unanswered is the wider class: the response read failed for ANY
+	// reason (deadline, EOF, a connection error surfacing on the stream).
+	// The server sent no status. Only ResponseTimeout feeds the distress
+	// streak (a connection reset would otherwise turn one event into three
+	// instant "timeouts"), but none of these may count as proof that the
+	// data path answered (selectorState.trialProven).
+	Unanswered bool
 }
 
-func (e *ProxyLayerError) Error() string      { return e.Err.Error() }
-func (e *ProxyLayerError) Unwrap() error      { return e.Err }
-func (e *ProxyLayerError) IsProxyLayer() bool { return true }
+func (e *ProxyLayerError) Error() string           { return e.Err.Error() }
+func (e *ProxyLayerError) Unwrap() error           { return e.Err }
+func (e *ProxyLayerError) IsProxyLayer() bool      { return true }
+func (e *ProxyLayerError) IsResponseTimeout() bool { return e.ResponseTimeout }
+func (e *ProxyLayerError) IsUnanswered() bool      { return e.Unanswered || e.ResponseTimeout } // a timeout is by definition unanswered
+
+// responseTimeoutErr / unansweredErr are the classification interfaces for
+// "the request was sent and the server never answered" (deadline
+// specifically / any read failure). Implemented by the producer
+// (ProxyLayerError via readResponseError); consumers ask, never enumerate.
+type responseTimeoutErr interface {
+	IsResponseTimeout() bool
+}
+type unansweredErr interface {
+	IsUnanswered() bool
+}
 
 // isProxyLayerError returns true when the Dialer has marked the error
 // as proxy-layer (server responded, transport worked). Checked via
@@ -38,6 +69,37 @@ func (e *ProxyLayerError) IsProxyLayer() bool { return true }
 func isProxyLayerError(err error) bool {
 	var pe proxyLayerErr
 	return errors.As(err, &pe) && pe.IsProxyLayer()
+}
+
+// isResponseTimeout reports whether err is a proxy-layer error whose
+// producer marked it as an unanswered request (ReadStreamResponse deadline).
+func isResponseTimeout(err error) bool {
+	var te responseTimeoutErr
+	return errors.As(err, &te) && te.IsResponseTimeout()
+}
+
+// isUnanswered reports whether err is a proxy-layer error whose producer
+// marked it as carrying no server status at all (any ReadStreamResponse
+// failure). A StreamError / ErrStreamRejected is a status and is not.
+func isUnanswered(err error) bool {
+	var ue unansweredErr
+	return errors.As(err, &ue) && ue.IsUnanswered()
+}
+
+// readResponseError classifies a ReadStreamResponse failure at the point of
+// creation — the single producer for both transports' DialTCP. A timeout
+// (net.Error.Timeout(), which is how quic-go's stream deadline and
+// os.ErrDeadlineExceeded both report) is an unanswered request; anything
+// else (EOF, reset, a malformed status) is a proxy-layer error the server at
+// least reacted to. Both are proxy-layer: the wire carried the request, so
+// per-request TCP-WS fallback to the same node is still pointless.
+func readResponseError(err error) error {
+	timeout := false
+	var nErr net.Error
+	if errors.As(err, &nErr) && nErr.Timeout() {
+		timeout = true
+	}
+	return &ProxyLayerError{Err: fmt.Errorf("wire: read response: %w", err), ResponseTimeout: timeout, Unanswered: true}
 }
 
 // MultiTransportError is returned when both QUIC and TCP-WS transports fail.
@@ -63,7 +125,40 @@ const (
 	// quicConnFailThreshold is how many consecutive QUIC connection (handshake)
 	// failures before activating TCP-WS fallback.
 	quicConnFailThreshold int32 = 3
+
+	// Data-path distress (round 3, ticket #3757): the quic channel is in
+	// distress when, among the primary-channel DialTCP requests of the last
+	// dataPathWindow, at least quicRespTimeoutThreshold went UNANSWERED
+	// (ReadStreamResponse deadline, 5s each — see readResponseError) AND
+	// those make up at least 1/dataPathTimeoutShare of all requests in the
+	// window. Three mirrors the handshake threshold: the handshake fast path
+	// says "UDP is blocked", this one says "UDP passes the handshake and the
+	// echoes but not the requests" — the carrier-QoS shape of tickets
+	// #3747/#3757/#3733, which CC loss under-reports (app-limited senders
+	// complete no MI, so the health FSM sits at healthy/degraded while dials
+	// time out). A share rather than a consecutive streak because that
+	// shape is MIXED, not solid: a fresh per-flow token bucket lets the
+	// first requests of every new connection through (#3757's heartbeats:
+	// dialOk=2 dialFail=1; the emulated link: 8 ok / 4 timed out per 30s),
+	// and each re-race hands out a new one, so "three in a row" is rarely
+	// reached even while a third of everything the user does dies. The
+	// share protects the other direction: three timeouts on one dead
+	// destination among thirty answered requests is a dead destination.
+	quicRespTimeoutThreshold = 3
+	dataPathTimeoutShare     = 3 // timeouts ≥ 1/3 of the window's quic requests
+	dataPathWindow           = 60 * time.Second
+	// dataPathRing bounds the window in events, not just time: enough for
+	// any 60s of interactive use, and a browser's page-load burst (dozens
+	// of concurrent dials) all landing as timeouts still fits.
+	dataPathRing = 64
 )
+
+// dataPathEvent is one primary-channel quic DialTCP outcome that carries
+// data-path evidence: answered (a server status arrived) or timed out.
+type dataPathEvent struct {
+	at       time.Time
+	answered bool
+}
 
 // legacySelectorEnabled returns true when K2_CHANNEL_SELECTOR_LEGACY=1,
 // reverting the channel selector to its pre-scoreboard behavior: switch-away
@@ -140,11 +235,28 @@ type selectorState struct {
 	// reads it to decide whether this switch-away ends a failed trial.
 	rollbackAt time.Time
 	// failedTrials counts consecutive returns to quic that were followed by a
-	// switch-away inside rollbackTrialWindow. 1 → the next review waits
-	// flapWindowMax; ≥2 → stickyReviewWindow. A switch-away that lands after a
-	// longer stay on quic resets it to 0: that stay was a successful trial and
-	// the new degradation is a fresh event.
+	// switch-away that grades the trial failed (switchAway): inside
+	// rollbackTrialWindow, OR before the trial was ever proven. 1 → the next
+	// review waits flapWindowMax; ≥2 → stickyReviewWindow. A switch-away
+	// after a PROVEN stay longer than the window resets it to 0: that stay
+	// was a successful trial and the new degradation is a fresh event.
 	failedTrials int
+	// trialProven is set once the quic data path has answered real requests
+	// across rollbackTrialWindow of USE since the last return to quic: the
+	// first server-answered DialTCP after the return stamps firstAnsweredAt,
+	// and a later answered one at least rollbackTrialWindow after it proves
+	// the trial (TransportManager.recordQUICDataPath). Cleared, with
+	// firstAnsweredAt, by the rollback that starts a trial and by
+	// ReplacePrimary from a serving tcpws. switchAway reads it: a trial that
+	// never carried answered requests over a window of activity cannot be
+	// graded a success by wall clock alone. Two shapes this must not mistake
+	// for success (#3757 log: every reconnect answered ~6 dials, then died):
+	// a user who rolled back, went idle for ten minutes and failed on the
+	// first tap; and one whose first taps after the idle succeeded — a fresh
+	// per-flow token bucket lets the first requests through — and died 20s
+	// later. Both get the same escalation as a failure 20s after rollback.
+	trialProven     bool
+	firstAnsweredAt time.Time
 }
 
 // selectorInput is one evaluation's observations. All scores are ChannelScore.Value.
@@ -156,6 +268,10 @@ type selectorInput struct {
 	backupFresh       int    // tcpws availability samples inside its staleness window (ChannelScore.FreshSamples)
 	quicEchoRecovered bool   // background probe passed handshake + 3 echo rounds
 	primaryChannel    string // channelForType(primaryType): which channel tm.primary actually is
+	// dataPathDistressed: unanswered DialTCP requests on the quic channel
+	// are ≥ quicRespTimeoutThreshold and ≥ 1/dataPathTimeoutShare of the
+	// last dataPathWindow's requests (TransportManager.dataPathDistressedLocked).
+	dataPathDistressed bool
 }
 
 // selectorStep is the pure transition. No time.Now, no I/O, no logging.
@@ -189,6 +305,28 @@ func selectorStep(st selectorState, in selectorInput) (selectorState, channelDec
 
 		// Fast path: handshake genuinely failing (UDP blocked).
 		if in.consecConnFails >= quicConnFailThreshold {
+			return switchAway(st, in.now), channelSwitchToTCPWS
+		}
+
+		// Data-path fast path: the handshake and the echoes pass, but real
+		// requests go unanswered (quicRespTimeoutThreshold in a row). This is
+		// the client-side signature of a UDP path that drops bulk while
+		// letting small packets through (carrier QoS, tickets #3747/#3757),
+		// and it is the ONLY signature such a path is guaranteed to leave:
+		// CC loss needs a completed monitor interval to move, which an
+		// app-limited sender may never produce, so the quality path below
+		// can sit in its blind band (loss 0–0.25, health healthy/degraded)
+		// for the whole session while every tap times out. No sustain window
+		// — three unanswered 5s dials are already 15s of evidence — but the
+		// same positive-evidence gate as the quality path: the target must
+		// have been measured recently and measured better than "unknown".
+		// The trade this accepts: a node that cannot reach ANY destination
+		// (egress fault, #3463) produces the same run of timeouts and moves
+		// the user onto tcpws to the same node. That is a channel choice,
+		// not an outage — nothing worked before either — and the rollback
+		// trial machinery brings QUIC back once requests are answered again.
+		if in.dataPathDistressed && in.backupFresh >= backupFreshSamplesGate &&
+			in.scoreTCPWS >= minSwitchTargetScore {
 			return switchAway(st, in.now), channelSwitchToTCPWS
 		}
 
@@ -240,6 +378,8 @@ func selectorStep(st selectorState, in selectorInput) (selectorState, channelDec
 	st.active = "quic"
 	st.aboveSince = time.Time{}
 	st.rollbackAt = in.now // the trial starts now; switchAway grades it
+	st.trialProven = false // ...and it has carried nothing yet
+	st.firstAnsweredAt = time.Time{}
 	return st, channelSwitchToQUIC
 }
 
@@ -247,20 +387,26 @@ func selectorStep(st selectorState, in selectorInput) (selectorState, channelDec
 //
 // Two schedules feed the window. The base schedule is the flap-damping
 // doubling, flapWindowBase << flapCount capped at flapWindowMax. On top of it
-// sits the trial escalation: if this switch-away comes within
-// rollbackTrialWindow of the last return to quic, that return was a failed
-// trial — the first failed trial jumps straight to flapWindowMax, the second
-// and later ones to stickyReviewWindow. Without the escalation an
+// sits the trial escalation: if this switch-away grades the last return to
+// quic a failed trial — it comes within rollbackTrialWindow of that return,
+// OR the returned-to quic never answered a single request (trialProven
+// false) — the first failed trial jumps straight to flapWindowMax, the
+// second and later ones to stickyReviewWindow. Without the escalation an
 // echo-passing, bulk-dropping path (ticket #3747) oscillates on the base
 // schedule alone: every window ends in an echo-verified rollback that fails
 // under load ~30s later, so the user eats a ~25s outage per window through the
 // whole 30s→600s ramp, and anything that restarts the ramp (a re-race, a
-// wake) starts it over.
+// wake) starts it over. Without the trialProven clause the same user, if
+// they merely paused for two minutes after the rollback, re-entered the base
+// ramp: the wall clock said "QUIC held", when in truth nobody had asked it
+// anything. A trial is graded by what QUIC carried, not by how long it sat.
 func switchAway(st selectorState, now time.Time) selectorState {
 	st.active = "tcpws"
 	st.aboveSince = time.Time{}
 
-	if !st.rollbackAt.IsZero() && now.Sub(st.rollbackAt) <= rollbackTrialWindow {
+	trialFailed := !st.rollbackAt.IsZero() &&
+		(now.Sub(st.rollbackAt) <= rollbackTrialWindow || !st.trialProven)
+	if trialFailed {
 		st.failedTrials++
 	} else {
 		st.failedTrials = 0
@@ -325,6 +471,22 @@ type TransportManager struct {
 	// decides whether that is enough to roll back (root cause A fix: a
 	// probe that only completes the handshake must never clear fallback).
 	quicEchoRecovered atomic.Bool
+
+	// dpRing / dpIdx: the last dataPathRing primary-channel quic DialTCP
+	// outcomes that carry data-path evidence (answered / timed out), fed by
+	// recordQUICDataPath and read over dataPathWindow by
+	// dataPathDistressedLocked. PATH-scoped evidence like the scores: a
+	// same-path re-race (ReplacePrimary from quic), ResetConnections and a
+	// wake all keep it (the window expires it on its own); Reset, the
+	// rollback that starts a trial and ReplacePrimary from a serving tcpws
+	// clear it — a trial must run on its own evidence, not on the timeouts
+	// that sent traffic to tcpws in the first place. Protected by mu; read
+	// by evaluateSelector into selectorInput.dataPathDistressed and by
+	// DataPathDistressed for engine's backup-probe gate. dpDistressLogged
+	// edge-gates the DIAG line (once per rising edge, not per timeout).
+	dpRing           [dataPathRing]dataPathEvent
+	dpIdx            int
+	dpDistressLogged bool
 
 	// The quality path's "backup measured fresh" gate (backupFreshSamplesGate)
 	// reads scoreTCPWS.FreshSamples(now): tcpws availability samples (dial or
@@ -438,6 +600,109 @@ func (tm *TransportManager) recordDialOutcome(channel string, err error, now tim
 	sc.RecordAvailability(err == nil, now)
 }
 
+// recordQUICDataPath feeds one primary-channel DialTCP outcome on the quic
+// channel into the data-path distress streak and the trial proof — the two
+// signals recordDialOutcome deliberately does NOT carry, because it grades
+// transport availability and a proxy-layer error says nothing about that.
+//
+//   - Answered (err == nil, or a proxy-layer error that carries a server
+//     status — a StreamError / rejection, never a read failure): the data
+//     path round-trips. Recorded as an answered event. The first answer
+//     since the last return to quic stamps selState.firstAnsweredAt; an
+//     answer rollbackTrialWindow or more after that proves the trial
+//     (selectorState.trialProven) — one answered burst is what a fresh
+//     per-flow token bucket hands out for free, sustained answering is not.
+//   - Unanswered by deadline (isResponseTimeout): recorded as a timeout
+//     event.
+//   - Unanswered but not a timeout (EOF, a connection error surfacing on
+//     the response read), or a transport-layer failure (handshake, stream
+//     open, header write): no opinion here — neither proof nor distress
+//     (a connection reset would otherwise turn one event into a burst of
+//     "timeouts"); recordDialOutcome scores the transport-layer ones.
+//
+// Called after the dial completes, outside tm.mu; takes mu itself for the
+// field writes only. Logs DIAG: quic-datapath-timeout on the rising edge of
+// the distress predicate (outside the lock).
+func (tm *TransportManager) recordQUICDataPath(err error, now time.Time) {
+	var answered bool
+	switch {
+	case err == nil, isProxyLayerError(err) && !isUnanswered(err):
+		answered = true
+	case isResponseTimeout(err):
+		answered = false
+	default:
+		return
+	}
+	tm.mu.Lock()
+	tm.dpRing[tm.dpIdx] = dataPathEvent{at: now, answered: answered}
+	tm.dpIdx = (tm.dpIdx + 1) % dataPathRing
+	if answered {
+		switch {
+		case tm.selState.firstAnsweredAt.IsZero():
+			tm.selState.firstAnsweredAt = now
+		case now.Sub(tm.selState.firstAnsweredAt) >= rollbackTrialWindow:
+			tm.selState.trialProven = true
+		}
+	}
+	timeouts, total := tm.dataPathCountsLocked(now)
+	distressed := dataPathDistressed(timeouts, total)
+	logEdge := distressed && !tm.dpDistressLogged
+	tm.dpDistressLogged = distressed
+	tm.mu.Unlock()
+	if logEdge {
+		slog.Warn("DIAG: quic-datapath-timeout", "timeouts", timeouts, "requests", total, "windowS", int(dataPathWindow.Seconds()))
+	}
+}
+
+// dataPathCountsLocked counts the ring's events inside dataPathWindow;
+// caller holds tm.mu (read or write).
+func (tm *TransportManager) dataPathCountsLocked(now time.Time) (timeouts, total int) {
+	for _, ev := range tm.dpRing {
+		if ev.at.IsZero() || now.Sub(ev.at) > dataPathWindow {
+			continue
+		}
+		total++
+		if !ev.answered {
+			timeouts++
+		}
+	}
+	return timeouts, total
+}
+
+// dataPathDistressed is the pure predicate over one window's counts.
+func dataPathDistressed(timeouts, total int) bool {
+	return timeouts >= quicRespTimeoutThreshold && timeouts*dataPathTimeoutShare >= total
+}
+
+// dataPathDistressedLocked is the distress predicate at `now`; caller holds
+// tm.mu (read or write).
+func (tm *TransportManager) dataPathDistressedLocked(now time.Time) bool {
+	return dataPathDistressed(tm.dataPathCountsLocked(now))
+}
+
+// DataPathDistressed reports whether the quic channel is in data-path
+// distress at `now`: within the last dataPathWindow, at least
+// quicRespTimeoutThreshold DialTCP requests went unanswered and they are at
+// least 1/dataPathTimeoutShare of the window's requests. Exported for
+// engine/health.go's backup-probe gate: on mobile it opens tcpws probing
+// (alongside the loss-critical grade), on desktop it upgrades the probe
+// cadence, so the selector's data-path fast path gets the fresh backup
+// samples it requires. Meaningful only while quic is the active channel;
+// callers gate on ActiveChannel themselves.
+func (tm *TransportManager) DataPathDistressed(now time.Time) bool {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.dataPathDistressedLocked(now)
+}
+
+// resetDataPathLocked clears the distress evidence (see dpRing for when);
+// caller holds tm.mu for writing.
+func (tm *TransportManager) resetDataPathLocked() {
+	tm.dpRing = [dataPathRing]dataPathEvent{}
+	tm.dpIdx = 0
+	tm.dpDistressLogged = false
+}
+
 // RecordQUICStats feeds QUIC quality from congestion-control loss/RTT stats.
 func (tm *TransportManager) RecordQUICStats(ws WireStats, now time.Time) {
 	tm.scoreQUIC.RecordQuality(QualityFromLossRTT(ws.PacketLossRate, ws.RTT, ws.MinRTT), now)
@@ -548,16 +813,25 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 		consecFails = qc.ConsecConnFails()
 	}
 	in := selectorInput{
-		now:               now,
-		scoreQUIC:         tm.scoreQUIC.Value(now),
-		scoreTCPWS:        tm.scoreTCPWS.Value(now),
-		consecConnFails:   consecFails,
-		backupFresh:       tm.scoreTCPWS.FreshSamples(now),
-		quicEchoRecovered: tm.quicEchoRecovered.Load(),
-		primaryChannel:    channelForType(tm.primaryType),
+		now:                now,
+		scoreQUIC:          tm.scoreQUIC.Value(now),
+		scoreTCPWS:         tm.scoreTCPWS.Value(now),
+		consecConnFails:    consecFails,
+		backupFresh:        tm.scoreTCPWS.FreshSamples(now),
+		quicEchoRecovered:  tm.quicEchoRecovered.Load(),
+		primaryChannel:     channelForType(tm.primaryType),
+		dataPathDistressed: tm.dataPathDistressedLocked(now),
 	}
 	newState, decision := selectorStep(tm.selState, in)
 	tm.selState = newState
+	if decision == channelSwitchToQUIC {
+		// The trial starts with a clean slate: the timeouts that sent us to
+		// tcpws were measured on the connection that fallback then dropped.
+		// Kept, they would re-fire the data-path fast path on the very next
+		// evaluation (tcpws samples are still fresh) before QUIC carried a
+		// single request — the trial would be graded without ever running.
+		tm.resetDataPathLocked()
+	}
 
 	logChannelReview := false
 	reviewDecision := ""
@@ -603,9 +877,13 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 
 	switch decision {
 	case channelSwitchToTCPWS:
+		// Same precedence as selectorStep's branches.
 		reason := "quic-quality-degraded"
-		if in.consecConnFails >= quicConnFailThreshold {
+		switch {
+		case in.consecConnFails >= quicConnFailThreshold:
 			reason = "quic-handshake-threshold"
+		case in.dataPathDistressed:
+			reason = "quic-datapath-timeout"
 		}
 		slog.Warn("wire: switching to TCP-WS", "reason", reason, "scoreQUIC", in.scoreQUIC, "scoreTCPWS", in.scoreTCPWS,
 			"failedTrials", newState.failedTrials, "nextReviewInS", int(newState.nextReviewAt.Sub(now).Seconds()))
@@ -701,14 +979,24 @@ func (tm *TransportManager) ReplacePrimary(d Dialer, transportType string) {
 	tm.primaryType = transportType
 	prev := tm.selState
 	tm.selState = selectorState{
-		active:       "quic",
-		flapCount:    prev.flapCount,
-		failedTrials: prev.failedTrials,
-		rollbackAt:   prev.rollbackAt,
+		active:          "quic",
+		flapCount:       prev.flapCount,
+		failedTrials:    prev.failedTrials,
+		rollbackAt:      prev.rollbackAt,
+		trialProven:     prev.trialProven,
+		firstAnsweredAt: prev.firstAnsweredAt,
 	}
 	if prev.active == "tcpws" {
 		tm.selState.rollbackAt = now
+		tm.selState.trialProven = false // a new trial, nothing carried yet
+		tm.selState.firstAnsweredAt = time.Time{}
+		tm.resetDataPathLocked() // the trial runs on its own evidence
 	}
+	// From quic the data-path evidence survives: a same-path re-race is
+	// routine on exactly the link this evidence describes (echo timeouts
+	// strike three times in seconds, faster than three 5s dial deadlines),
+	// and each one hands a per-flow-policed connection a fresh burst.
+	// Wiping the window here made the distress predicate unreachable.
 	tm.channelReviewLoggedWindow = time.Time{}
 	tm.flapDampedLoggedWindow = time.Time{}
 	tm.mu.Unlock()
@@ -820,6 +1108,9 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 		quicCancel()
 		now := time.Now()
 		tm.recordDialOutcome(primaryChannel, err, now)
+		if primaryChannel == "quic" {
+			tm.recordQUICDataPath(err, now)
+		}
 		if err == nil {
 			if qc, ok := primary.(*QUICClient); ok {
 				qc.RecordSuccess()
@@ -1299,6 +1590,8 @@ func (tm *TransportManager) ResetConnections() {
 	tm.resetDialers()
 	tm.quicEchoRecovered.Store(false)
 	tm.freshAfterReset.Store(true)
+	// The data-path window (dpRing) is same-path evidence like the scores
+	// and stays; dataPathWindow expires it on its own after a long pause.
 }
 
 // resetDialers calls the Dialer Reset contract on both transports, outside
@@ -1332,6 +1625,7 @@ func (tm *TransportManager) Reset() {
 
 	tm.mu.Lock()
 	tm.selState = selectorState{active: "quic"}
+	tm.resetDataPathLocked()
 	tm.channelReviewLoggedWindow = time.Time{}
 	tm.flapDampedLoggedWindow = time.Time{}
 	tm.mu.Unlock()

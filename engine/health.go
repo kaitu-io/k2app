@@ -616,6 +616,30 @@ func (hm *healthMonitor) primaryLossCritical() bool {
 	return hm.health == HealthCritical
 }
 
+// primaryDistressed is the backup-probe gate's predicate: the primary is
+// loss-critical (above) OR its quic data path is in distress —
+// wire.TransportManager.DataPathDistressed: three consecutive DialTCP
+// requests sent and never answered. The second term exists because the
+// first has a blind band: CC loss only moves when a monitor interval
+// completes, and a sender that is app-limited (a chat app, a user tapping
+// links) can go minutes with loss reported as 0.000 while every request
+// times out at the 5s response deadline (ticket #3757 — 205 of 260 QUIC
+// heartbeats at loss=0 on a link where nothing loaded). On the emulated
+// per-flow-policed link, dials timed out for 32s before loss crossed 0.25.
+// The unanswered-request streak is the one client-side signal that path
+// shape is guaranteed to leave, and it never fires on bufferbloat (a loaded
+// but working path answers its requests). Health grading itself is
+// untouched — this gate opens probing; the selector still decides.
+//
+// hm.mu is not held across the TransportManager call (Rule #1): the health
+// grade is read under it, then released.
+func (hm *healthMonitor) primaryDistressed(ot *outboundTransport, now time.Time) bool {
+	if hm.primaryLossCritical() {
+		return true
+	}
+	return ot.tm.DataPathDistressed(now)
+}
+
 // Echo wire-health probing — exponential-trust schedule for RE-RACE
 // DETECTION ONLY (trust/strikes/rerace below). Task 7 gave the same probe
 // loop a second, independent job — feeding the dual-channel quality
@@ -1141,9 +1165,10 @@ func (hm *healthMonitor) backupProbeLoop(ot *outboundTransport) {
 // probeInterval). Guarded by channelForType(PrimaryType())=="tcpws".
 //
 // hm.mobilePowerSaving narrows this to the one state where it is worth a
-// radio wake-up: the primary graded LOSS-critical (primaryLossCritical).
-// While QUIC is healthy or merely degraded, mobile relies on protocol
-// keepalive and does not probe at all. Per R3, that branch does NOT touch
+// radio wake-up: the primary graded LOSS-critical, or its quic data path in
+// distress (primaryDistressed — three unanswered requests in a row).
+// While QUIC is healthy or merely degraded and answering, mobile relies on
+// protocol keepalive and does not probe at all. Per R3, that branch does NOT touch
 // the backup channel's ChannelScore.probeInterval — left at whatever it last
 // was (defaultProbeInterval if never set), so a channel with no active
 // probing goes stale → neutral 0.5 on ChannelScore's own staleness gate.
@@ -1169,7 +1194,8 @@ func (hm *healthMonitor) backupProbeLoop(ot *outboundTransport) {
 // slept another 60s. Same for a rollback to quic: the loop must be looking
 // again within seconds, not a minute.
 func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopState, now time.Time) time.Duration {
-	if hm.mobilePowerSaving && !hm.primaryLossCritical() {
+	distressed := hm.primaryDistressed(ot, now)
+	if hm.mobilePowerSaving && !distressed {
 		return backupProbeIntervalDegraded
 	}
 	if ot.tm.ActiveChannel() != "quic" {
@@ -1180,10 +1206,14 @@ func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopSt
 	}
 
 	interval := backupProbeIntervalHealthy
-	// Mobile only reaches this point while critical, and then it needs the
+	// Mobile only reaches this point while distressed, and then it needs the
 	// fresh samples as fast as desktop's degraded cadence delivers them —
-	// regardless of where the score EWMA happens to be lagging.
-	if hm.mobilePowerSaving || ot.tm.ScoreQUIC(now) < echoBackupProbeThreshold {
+	// regardless of where the score EWMA happens to be lagging. Desktop
+	// upgrades on the score OR on distress: the data-path fast path needs
+	// two fresh tcpws samples, and at the 60s healthy cadence (staleness
+	// window 180s) those would take a minute to exist even though the
+	// three unanswered dials that opened this took fifteen seconds.
+	if hm.mobilePowerSaving || distressed || ot.tm.ScoreQUIC(now) < echoBackupProbeThreshold {
 		interval = backupProbeIntervalDegraded
 	}
 

@@ -548,7 +548,11 @@ func (d *Daemon) engineConfigFromClientConfig(
 		// probes the inactive backup transport (Task 7 dual-transport
 		// scoreboard). MobilePowerSaving stays false (default); set
 		// explicitly here for symmetry with appext's true.
-		MobilePowerSaving: false,
+		//
+		// K2_MOBILE_POWER_SAVING=1 is a test-only override so the Linux
+		// daemon under test/netem can exercise the mobile probe gate
+		// (appext's path) on an emulated lossy link. Never set in production.
+		MobilePowerSaving: os.Getenv("K2_MOBILE_POWER_SAVING") == "1",
 	}
 
 	// Apply network monitor if available.

@@ -509,7 +509,7 @@ func (c *TCPWSClient) DialTCP(ctx context.Context, addr string, earlyData []byte
 	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
 		stream.Close()
-		return nil, &ProxyLayerError{Err: fmt.Errorf("wire: read response: %w", err)}
+		return nil, readResponseError(err)
 	}
 	if !ok {
 		stream.Close()

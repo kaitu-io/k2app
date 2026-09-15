@@ -95,12 +95,15 @@ func TestSelector_FailedTrialEscalatesReviewWindow(t *testing.T) {
 		t.Fatalf("third failed trial: window = %v, want sticky %v", got, stickyReviewWindow)
 	}
 
-	// A successful trial (QUIC held longer than the window) forgets the
-	// streak: the new degradation is a fresh event on the base schedule.
+	// A successful trial (QUIC held longer than the window AND answered a
+	// request — see TestSelector_UnprovenTrialGradesFailed for the other
+	// half) forgets the streak: the new degradation is a fresh event on the
+	// base schedule.
 	st = newState("quic")
 	st.flapCount = 3
 	st.failedTrials = 2
 	st.rollbackAt = base
+	st.trialProven = true
 	late := base.Add(rollbackTrialWindow + time.Second)
 	out, _ = selectorStep(st, away(late))
 	if out.failedTrials != 0 {
@@ -185,8 +188,12 @@ func TestEvaluateSelector_FailedTrialsEscalateToSticky(t *testing.T) {
 	}
 	rollback(st.nextReviewAt)
 
-	// QUIC now holds for longer than the trial window: the next degradation
-	// is a new event and the streak is forgotten (base schedule, flapCount 3).
+	// QUIC now holds for longer than the trial window and answers requests
+	// across a full window of use (an unproven trial would still grade
+	// failed, whatever the clock says): the next degradation is a new event
+	// and the streak is forgotten (base schedule, flapCount 3).
+	tm.recordQUICDataPath(nil, st.nextReviewAt.Add(5*time.Second))
+	tm.recordQUICDataPath(nil, st.nextReviewAt.Add(5*time.Second+rollbackTrialWindow))
 	sw4 := degrade(st.nextReviewAt.Add(rollbackTrialWindow + 30*time.Second))
 	st = state()
 	if st.failedTrials != 0 || st.nextReviewAt.Sub(sw4) != flapWindowBase<<3 {

@@ -294,6 +294,23 @@ Phase 1 的所有产物都是 Phase 2 的子集，无返工。
 
 信心：五处发现全部在代码上钉到 10/10；每处改动有单测且经变异验证（还原改动 → 对应测试转红）；业务信心仍封顶 7/10，真机有损链路 smoke 的判别式见记忆 `project_mobile_lossy_quic_escape_3747`。
 
+## 8d. 2026-09-15 三次修订：Docker 仿真暴露的两处盲区（工单 #3757）
+
+8c 合并后用 `test/netem` 做了本机仿真（客户端 UDP 出口按源端口限速：握手、echo 能过，负载即死，正是 #3757 的指纹），并复核了 #3757 日志，确认 8c 的两处扣分点不是理论上的：
+
+1. **critical 判定的盲区**。k2cc 的 loss 只在一个 MI 完成时才动（≥10 个 ack，或 ≥3 个 ack + 30s），app-limited 的发送端（聊天类 app、点一下等一下的用户）可以几分钟不完成一个 MI；#3757 在 QUIC 上的 260 条心跳有 205 条 `loss=0.000`，仿真链路上拨号已经 5s 超时了 32s，loss 才过 0.25。8b 的探测门只认 critical，这段时间移动端什么都不探，选择器的质量路径也因为 `scoreQUIC` 还很高（loss 低 → quality 高）根本不成立。**唯一保证会出现的客户端信号是拨号本身**：`DialTCP` 开了流、写了头、5s 读不到响应。改：
+   - 生产者分类：`readResponseError` 在两种传输的 `ReadStreamResponse` 失败处统一生成 `ProxyLayerError{ResponseTimeout: net.Error.Timeout()}`。有服务端回应的错误（`StreamError` / 拒绝）是「已应答」，仍是 proxy 层，但语义相反——它证明数据面能往返。
+   - `TransportManager` 记最近 60s（`dataPathWindow`）quic 主通道拨号的「已应答 / 超时」事件环 `dpRing`（`recordQUICDataPath`，只在主通道是 quic 时从 `DialTCP` 喂）；EOF 之类「未应答但非超时」的读失败和传输层失败都不计事件（连接重置会把一件事变成一串「超时」）。distress = 窗内超时 ≥ 3 **且** 超时 ≥ 窗内请求的 1/3。**按占比而不是按连续**：这类链路的形状是混合的——按流限速的新连接前几个请求总能过，每次同路径 re-race（echo 三次超时只要几秒，比三次 5s 拨号超时快）又发一个新桶，仿真里「连续三次」几乎到不了，而用户三分之一的请求已经死了（#3757 心跳 `dialOk=2 dialFail=1`）；占比也挡住反方向：三十个成功里夹三个某个死站点的超时不算。**路径域**证据（与分数同级）：`ResetConnections`、唤醒、从 quic 的 re-race 都保留（60s 窗自然过期）；`Reset`、回滚、从 tcpws 换主清——试验得靠自己的证据跑，否则回滚后 tcpws 的新鲜样本还在窗内，下一次评估就把没跑过一个请求的试验切走了。
+   - `selectorStep` 第三条快速路径 `quic-datapath-timeout`：distress 且 `backupFresh ≥ 2` 且 `scoreTCPWS ≥ 0.3` 即切走，**不看 loss、不等 10s sustain**（三次 5s 超时已经是 15s 证据）。`recordDialOutcome` 仍完全无视 proxy 层错误，可用性分数不变。
+   - `engine/health.go` 探测门改 `primaryDistressed` = critical **或** `DataPathDistressed`；桌面端的 5s 节奏升级也加上 distressed（否则 60s 节奏要一分钟才凑出两个新鲜样本）。健康分级本身不动。
+   - **接受的代价**：节点出口对所有目的地都不通（#3463 形状）会产生同样的超时串，用户会被切到同一节点的 tcpws——这是通道选择不是断网（本来也什么都不通），回滚试验在请求重新被应答后把 QUIC 带回来。客户端没有任何信号能区分「UDP 数据面丢负载」和「节点拨不出去」（CC loss 在 app-limited 时同样为 0），二者中前者是三张工单的形状、后者一张，且前者的代价是整个会话不可用，取前者。
+
+2. **试验分级按墙钟**。`switchAway` 只看「回滚后 120s 内是否再切走」；回滚后用户闲置十分钟再点一下失败，按墙钟算「QUIC 撑过了 120s」→ `failedTrials` 清零，从基础阶梯 30s 重来；实际上没人问过 QUIC 任何问题。改：`selectorState.firstAnsweredAt` / `trialProven`，回滚 / 从 tcpws 换主时清；回滚后第一次已应答拨号盖 `firstAnsweredAt`，其后 ≥120s 再有已应答拨号才置 `trialProven`——一阵应答不算数（按流限速的新连接前几个请求总能过，#3757 每次重连都先成功 ~6 次再死；第一版仿真里回滚后闲置再恢复流量，前 6 个请求成功让「任一应答即证明」把一次失败试验算成了成功），跨一个窗口持续应答才算。判失败 = 120s 内切走 **或** 从未证明。
+
+**修订后时间线**（仿真，移动端，按流限速 128B/s；t0 = 第一次拨号 5s 超时）：≤t0+10 streak=3（并发拨号更快）、门开；t0+15/20 两个 tcpws 样本；~t0+20 `transport-switch reason=quic-datapath-timeout`。对照 8c：critical 要 t0+32，切换 t0+42。空闲回滚场景：回滚 → 闲置 >120s → 首次拨号连续超时 → 切走时 `failedTrials=1 nextReviewInS≈600`（8c 下会是 60s）。
+
+信心：两处改动各有纯 FSM 单测 + TM 集成单测 + engine 门单测，三处变异（关掉快速路径、去掉 `trialProven`、门退回 loss-only）对应测试全部转红；Docker 仿真结果回填在记忆 `project_mobile_lossy_quic_escape_3747`。
+
 ## 9. 影响面与风险
 
 - **改动面**：`wire/transport.go`（重构核心）、新增 `wire/score.go`、`wire/echo.go`（抽公共 echo handler）、`wire/tcpws.go`（服务端 echo + 客户端 EchoProber）、`wire/stream.go`（无改，复用 StreamTypeEcho）、`engine/health.go`（assess + echoLoop）、`engine/config.go`（省电字段）、`engine/engine.go`（re-race 职责收窄）。

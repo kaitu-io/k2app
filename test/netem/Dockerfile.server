@@ -1,4 +1,5 @@
 FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 && rm -rf /var/lib/apt/lists/*
 COPY .build/k2s /usr/local/bin/k2s
 COPY .build/gen-config /usr/local/bin/gen-config
 ENTRYPOINT ["k2s"]
