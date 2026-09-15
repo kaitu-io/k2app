@@ -638,7 +638,15 @@ func (e *Engine) Start(cfg Config) error {
 // reconnect resets wire transport connections.
 // Shared by OnNetworkChanged (network switch) and onHealthCritical (quality degradation).
 // Returns true if reconnect was performed (engine was connected and not paused).
-func (e *Engine) reconnect() bool {
+//
+// preserveScoreboard selects which TransportManager reset runs. A network
+// change (false) wipes the dual-channel scoreboard, selector state and flap
+// history along with the connections — the path they describe is gone. A
+// health-critical reconnect (true) keeps them (wire.TransportManager.
+// ResetConnections): it redials the SAME path, so those measurements still
+// hold, and the channel selector needs them to escape a lossy-but-reachable
+// QUIC between the (backed-off) reconnect repeats. See healthMonitor.maybeAct.
+func (e *Engine) reconnect(preserveScoreboard bool) bool {
 	e.mu.Lock()
 	if e.state != StateConnected || e.paused {
 		e.mu.Unlock()
@@ -665,7 +673,11 @@ func (e *Engine) reconnect() bool {
 		dh.CancelInflight()
 	}
 	for _, ot := range outboundTMs {
-		ot.tm.Reset()
+		if preserveScoreboard {
+			ot.tm.ResetConnections()
+		} else {
+			ot.tm.Reset()
+		}
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -696,7 +708,16 @@ func (e *Engine) doNetworkReconnect() {
 		dh.ResetCounter()
 	}
 
-	if !e.reconnect() {
+	// A network event is new information about the path: the health
+	// reconnect backoff accumulated on the OLD path no longer applies.
+	e.mu.Lock()
+	hm := e.health
+	e.mu.Unlock()
+	if hm != nil {
+		hm.resetActionBackoff()
+	}
+
+	if !e.reconnect(false) {
 		return
 	}
 
@@ -759,7 +780,7 @@ func (e *Engine) onHealthCritical() {
 	}
 
 	slog.Warn("engine: health critical, reconnecting")
-	if !e.reconnect() {
+	if !e.reconnect(true) {
 		return
 	}
 

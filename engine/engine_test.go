@@ -1872,6 +1872,55 @@ func TestEngine_OnHealthCritical_WhenConnected(t *testing.T) {
 	}
 }
 
+// A health-critical reconnect redials the same path, so the wire scoreboard
+// (scores, flap history) must survive it; a network reconnect wipes it and
+// also forgets the health-reconnect backoff.
+func TestEngine_HealthReconnectPreservesScoreboard_NetworkReconnectWipes(t *testing.T) {
+	e := New()
+	e.SetEventHandler(&mockEventHandler{})
+
+	tm := wire.NewTransportManager()
+	now := time.Now()
+	for i := 0; i < 4; i++ {
+		tm.RecordEchoResult("tcpws", 30*time.Millisecond, nil, now)
+	}
+	tm.RecordQUICStats(wire.WireStats{PacketLossRate: 0.5, RTT: 100 * time.Millisecond, MinRTT: 20 * time.Millisecond}, now)
+	measuredQUIC, measuredTCPWS := tm.ScoreQUIC(now), tm.ScoreTCPWS(now)
+	const neutral = 0.25
+	if measuredQUIC == neutral || measuredTCPWS == neutral {
+		t.Fatalf("precondition: scores must be measured, got quic=%v tcpws=%v", measuredQUIC, measuredTCPWS)
+	}
+
+	ot := &outboundTransport{tm: tm}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, core.NewClientTunnel(core.ClientTunnelConfig{}), nil, nil, now)
+	hm.actionRepeats = 2 // mid-episode backoff armed
+	e.mu.Lock()
+	e.state = StateConnected
+	e.primaryTM = ot
+	e.outboundTMs = []*outboundTransport{ot}
+	e.health = hm
+	e.mu.Unlock()
+
+	e.onHealthCritical()
+	if got := tm.ScoreQUIC(now); got != measuredQUIC {
+		t.Fatalf("health reconnect wiped scoreQUIC: %v → %v", measuredQUIC, got)
+	}
+	if got := tm.ScoreTCPWS(now); got != measuredTCPWS {
+		t.Fatalf("health reconnect wiped scoreTCPWS: %v → %v", measuredTCPWS, got)
+	}
+	if hm.actionCooldown() == 0 {
+		t.Fatal("health reconnect must not forget the backoff")
+	}
+
+	e.doNetworkReconnect()
+	if got := tm.ScoreQUIC(now); got != neutral {
+		t.Fatalf("network reconnect must wipe scoreQUIC, got %v", got)
+	}
+	if got := hm.actionCooldown(); got != 0 {
+		t.Fatalf("network reconnect must forget the backoff, cooldown = %v", got)
+	}
+}
+
 func TestEngine_OnHealthCritical_WhenDisconnected(t *testing.T) {
 	e := New()
 	h := &mockEventHandler{}

@@ -423,6 +423,129 @@ func TestReset_ClearsChannelScoresAndMinEchoRTT(t *testing.T) {
 	}
 }
 
+// resettableMock records whether Reset() reached the dialer.
+type resettableMock struct {
+	mockTransport
+	resets int
+}
+
+func (m *resettableMock) Reset() { m.resets++ }
+
+// TestResetConnections_PreservesScoreboard pins the health-reconnect variant:
+// a wire-quality reconnect (engine's onHealthCritical) redials the SAME path,
+// so the measurements the selector has gathered on it are still valid and
+// must survive — scores, the selector state, flap history, the tcpws min-RTT
+// ratchet and the fresh-sample window. Only the cached connections are
+// dropped (both dialers' Reset()), plus the post-reset dial budget.
+//
+// Without this the health reconnect (10s cooldown) kept wiping the quality
+// path's evidence faster than the backup probe could rebuild it, so a lossy
+// but reachable QUIC could never be escaped (ticket #3747), and a rollback
+// followed by a fresh critical would zero flapCount and oscillate at the
+// base 30s window forever.
+func TestResetConnections_PreservesScoreboard(t *testing.T) {
+	p := &resettableMock{mockTransport: mockTransport{available: true}}
+	b := &resettableMock{mockTransport: mockTransport{available: true}}
+	tm := NewTransportManager()
+	tm.SetPrimary(p, "quic-443")
+	tm.SetTCPWS(b)
+
+	now := time.Now()
+	for i := 0; i < 4; i++ {
+		tm.RecordEchoResult("tcpws", 40*time.Millisecond, nil, now)
+	}
+	tm.RecordQUICStats(WireStats{PacketLossRate: 0.5, RTT: 100 * time.Millisecond, MinRTT: 20 * time.Millisecond}, now)
+	tm.mu.Lock()
+	tm.selState.flapCount = 3
+	tm.selState.aboveSince = now.Add(-5 * time.Second)
+	tm.mu.Unlock()
+
+	wantQUIC, wantTCPWS := tm.ScoreQUIC(now), tm.ScoreTCPWS(now)
+	wantFresh := tm.scoreTCPWS.FreshSamples(now)
+	if wantFresh < backupFreshSamplesGate {
+		t.Fatalf("precondition: fresh samples = %d", wantFresh)
+	}
+
+	tm.ResetConnections()
+
+	if p.resets != 1 || b.resets != 1 {
+		t.Fatalf("both dialers must have their cached connections reset: primary=%d tcpws=%d", p.resets, b.resets)
+	}
+	if !tm.freshAfterReset.Load() {
+		t.Fatal("first dial after a reconnect must get the extended budget")
+	}
+	if got := tm.ScoreQUIC(now); got != wantQUIC {
+		t.Fatalf("scoreQUIC %v → %v: evidence wiped", wantQUIC, got)
+	}
+	if got := tm.ScoreTCPWS(now); got != wantTCPWS {
+		t.Fatalf("scoreTCPWS %v → %v: evidence wiped", wantTCPWS, got)
+	}
+	if got := tm.scoreTCPWS.FreshSamples(now); got != wantFresh {
+		t.Fatalf("fresh samples %d → %d", wantFresh, got)
+	}
+	if got := tm.tcpwsMinEchoRTT.Load(); got != int64(40*time.Millisecond) {
+		t.Fatalf("tcpws min-RTT ratchet cleared: %v", time.Duration(got))
+	}
+	tm.mu.Lock()
+	flap, above := tm.selState.flapCount, tm.selState.aboveSince
+	tm.mu.Unlock()
+	if flap != 3 {
+		t.Fatalf("flapCount %d, want 3 (anti-flap history erased)", flap)
+	}
+	if above.IsZero() {
+		t.Fatal("aboveSince cleared: the sustain clock restarted")
+	}
+
+	// Contrast: the network-change Reset still clears everything.
+	tm.Reset()
+	if got := tm.ScoreQUIC(now); got != scoreNeutral*scoreNeutral {
+		t.Fatalf("Reset must still clear scores, got %v", got)
+	}
+	tm.mu.Lock()
+	flap = tm.selState.flapCount
+	tm.mu.Unlock()
+	if flap != 0 {
+		t.Fatalf("Reset must still clear flapCount, got %d", flap)
+	}
+}
+
+// TestBackupFresh_AgesOut pins the windowed gate end-to-end through the real
+// TransportManager: tcpws samples recorded long ago must not satisfy the
+// quality path's backupFreshSamplesGate today.
+func TestBackupFresh_AgesOut(t *testing.T) {
+	tm := NewTransportManager()
+	tm.SetPrimary(&mockTransport{available: true}, "quic-443")
+	tm.SetTCPWS(&mockTransport{available: true})
+	tm.SetChannelProbeInterval("tcpws", 5*time.Second) // window 15s
+
+	base := time.Unix(1000, 0)
+	tm.RecordEchoResult("tcpws", 10*time.Millisecond, nil, base)
+	tm.RecordEchoResult("tcpws", 10*time.Millisecond, nil, base.Add(time.Second))
+	// QUIC collapses: ratio holds from here on.
+	tm.RecordQUICStats(WireStats{PacketLossRate: 0.6, RTT: 100 * time.Millisecond, MinRTT: 20 * time.Millisecond}, base)
+
+	// Within the window and past the sustain: switches.
+	tm.evaluateSelector(base.Add(2 * time.Second))
+	if d := tm.evaluateSelector(base.Add(13 * time.Second)); d != channelSwitchToTCPWS {
+		t.Fatalf("fresh samples + sustain → want switch, got %v", d)
+	}
+
+	// Same history, but evaluated only after the samples aged out (>15s):
+	// the ratio still "holds" on the stale (neutral) tcpws score, yet with no
+	// fresh sample the gate must refuse.
+	tm2 := NewTransportManager()
+	tm2.SetPrimary(&mockTransport{available: true}, "quic-443")
+	tm2.SetTCPWS(&mockTransport{available: true})
+	tm2.SetChannelProbeInterval("tcpws", 5*time.Second)
+	tm2.RecordEchoResult("tcpws", 10*time.Millisecond, nil, base)
+	tm2.RecordEchoResult("tcpws", 10*time.Millisecond, nil, base.Add(time.Second))
+	tm2.RecordQUICStats(WireStats{PacketLossRate: 0.6, RTT: 100 * time.Millisecond, MinRTT: 20 * time.Millisecond}, base.Add(30*time.Second))
+	tm2.evaluateSelector(base.Add(30 * time.Second))
+	if d := tm2.evaluateSelector(base.Add(41 * time.Second)); d != channelStay {
+		t.Fatalf("stale samples → want stay, got %v (monotonic counter behavior)", d)
+	}
+}
+
 // TestReset_ClearsConsecConnFails verifies that Reset()
 // clears the consecutive connection failure counter.
 func TestReset_ClearsConsecConnFails(t *testing.T) {

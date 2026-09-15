@@ -52,6 +52,45 @@ func TestChannelScore_StaleRevertsToNeutral(t *testing.T) {
 	}
 }
 
+// FreshSamples is the windowed replacement for the old monotonic backupFresh
+// counter: only availability samples inside the same staleness window Value()
+// uses (scoreStaleMult × probeInterval) count. A long-lived process must not
+// keep the selector's "backup measured fresh" gate satisfied with samples from
+// hours ago.
+func TestChannelScore_FreshSamplesIsWindowed(t *testing.T) {
+	s := NewChannelScore()
+	s.SetProbeInterval(5 * time.Second) // window = 15s
+	base := time.Unix(1000, 0)
+
+	if got := s.FreshSamples(base); got != 0 {
+		t.Fatalf("no samples → FreshSamples = %d, want 0", got)
+	}
+	s.RecordAvailability(true, base)
+	s.RecordAvailability(false, base.Add(5*time.Second))
+	if got := s.FreshSamples(base.Add(6 * time.Second)); got != 2 {
+		t.Fatalf("two samples inside the window → %d, want 2", got)
+	}
+	// 16s after the first sample it has aged out; the second is still fresh.
+	if got := s.FreshSamples(base.Add(16 * time.Second)); got != 1 {
+		t.Fatalf("one aged-out sample → %d, want 1", got)
+	}
+	// Both aged out.
+	if got := s.FreshSamples(base.Add(21 * time.Second)); got != 0 {
+		t.Fatalf("all aged out → %d, want 0", got)
+	}
+	// Reset forgets everything.
+	s.RecordAvailability(true, base.Add(30*time.Second))
+	s.Reset()
+	if got := s.FreshSamples(base.Add(30 * time.Second)); got != 0 {
+		t.Fatalf("after Reset → %d, want 0", got)
+	}
+	// Quality samples never count: they are not evidence the channel was probed.
+	s.RecordQuality(1.0, base.Add(40*time.Second))
+	if got := s.FreshSamples(base.Add(40 * time.Second)); got != 0 {
+		t.Fatalf("quality-only → %d, want 0", got)
+	}
+}
+
 func TestQualityFromLossRTT_HalfDeadDrops(t *testing.T) {
 	healthy := QualityFromLossRTT(0.0, 20*time.Millisecond, 20*time.Millisecond)
 	halfDead := QualityFromLossRTT(0.3, 200*time.Millisecond, 20*time.Millisecond)

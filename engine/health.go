@@ -75,9 +75,26 @@ type HealthSnapshot struct {
 }
 
 const (
-	ringSize       = 300 // 5 minutes at 1Hz
-	actionCooldown = 10 * time.Second
-	ewmaAlpha      = 0.3 // EWMA weight for new sample (matches ARC adaptive alpha weight)
+	ringSize  = 300 // 5 minutes at 1Hz
+	ewmaAlpha = 0.3 // EWMA weight for new sample (matches ARC adaptive alpha weight)
+
+	// Health-critical reconnect backoff. The FIRST reconnect of a critical
+	// episode fires immediately: "the connection went stale" is a fair
+	// hypothesis and a redial settles it in seconds. If the freshly redialed
+	// connection is critical AGAIN, that hypothesis is falsified — the PATH is
+	// lossy, and repeating the identical action every 10s only tears down the
+	// user's streams (and the DNS control plane) while erasing nothing that
+	// matters and fixing nothing. Ticket #3747: 3 reconnects in 167s, each
+	// landing on the same lossy QUIC. Between repeats the channel selector
+	// (wire.TransportManager) is the mechanism that CAN help, and it needs
+	// ~20s of undisturbed measurement (backupFreshSamplesGate at the 5s
+	// backup cadence + qualitySustainWindow) to switch to tcpws — so the
+	// second reconnect must wait longer than that. Each repeat doubles:
+	// 30s, 60s, 120s, 120s… The backoff clears when the primary has been
+	// healthy for 10 consecutive samples (the episode ended) or on a network
+	// event (new information; see resetActionBackoff).
+	actionCooldownBase = 30 * time.Second
+	actionCooldownMax  = 120 * time.Second
 
 	// wakeDiagThreshold is the wall-clock gap that triggers a DIAG: wake log.
 	// Short gaps (system load, brief doze) are logged for diagnostics.
@@ -144,6 +161,12 @@ type healthMonitor struct {
 	criticalStreak int
 	healthyStreak  int
 	lastAction     time.Time
+	// actionRepeats counts health-critical reconnects in the current critical
+	// episode; drives the actionCooldownBase<<n backoff in maybeAct. NOT
+	// cleared by resetCounters (which every reconnect calls — clearing it
+	// there would defeat the backoff); cleared by resetActionBackoff and by
+	// 10 consecutive healthy samples.
+	actionRepeats int
 
 	// EWMA-smoothed loss for health decisions.
 	// Raw values are still reported in HealthSnapshot for observability.
@@ -462,6 +485,11 @@ func (hm *healthMonitor) transition(level string, tcpHealthy bool) (action func(
 		hm.healthyStreak++
 		hm.degradedStreak = 0
 		hm.criticalStreak = 0
+		if hm.healthyStreak >= 10 {
+			// Ten clean seconds end the critical episode: the next critical
+			// is a new one and gets its immediate first reconnect back.
+			hm.actionRepeats = 0
+		}
 		if hm.healthyStreak >= 10 && hm.health != HealthHealthy {
 			slog.Info("health: recovery",
 				"from", hm.health,
@@ -499,11 +527,31 @@ func (hm *healthMonitor) transition(level string, tcpHealthy bool) (action func(
 	return
 }
 
+// actionCooldown returns how long after the previous health reconnect the
+// next one may fire: none for the first of an episode, then
+// actionCooldownBase doubling per repeat up to actionCooldownMax. Pure
+// function of hm.actionRepeats; called under hm.mu.
+func (hm *healthMonitor) actionCooldown() time.Duration {
+	if hm.actionRepeats == 0 {
+		return 0
+	}
+	const maxShift = 8 // 30s<<8 ≫ actionCooldownMax; keeps the shift sane
+	shift := min(hm.actionRepeats-1, maxShift)
+	d := actionCooldownBase << uint(shift)
+	if d > actionCooldownMax || d <= 0 {
+		d = actionCooldownMax
+	}
+	return d
+}
+
 // maybeAct decides on corrective action with cooldown.
 // Returns the action to execute outside hm.mu, or nil if no action needed.
-// Only action is full reconnect — wire layer owns transport decisions.
+// Only action is a wire reconnect — the wire layer owns transport decisions,
+// and the reconnect deliberately preserves its scoreboard (engine.reconnect
+// with preserveScoreboard, wire.TransportManager.ResetConnections) so that
+// between repeats the channel selector keeps the evidence it needs.
 func (hm *healthMonitor) maybeAct(tcpHealthy bool) func() {
-	if time.Since(hm.lastAction) < actionCooldown {
+	if cd := hm.actionCooldown(); cd > 0 && time.Since(hm.lastAction) < cd {
 		return nil
 	}
 
@@ -516,12 +564,18 @@ func (hm *healthMonitor) maybeAct(tcpHealthy bool) func() {
 	}
 
 	hm.lastAction = time.Now()
-	slog.Warn("health: full reconnect (wire quality critical)")
+	hm.actionRepeats++
+	slog.Warn("health: full reconnect (wire quality critical)",
+		"repeat", hm.actionRepeats,
+		"nextCooldownS", int(hm.actionCooldown().Seconds()),
+	)
 	return hm.onReconnect
 }
 
-// resetCounters clears all health streaks and corrective action state.
-// Called on network change: stale health data from the old network is irrelevant.
+// resetCounters clears all health streaks and the EWMA. Called after every
+// reconnect (network change OR health-critical): stale samples from the
+// old connection are irrelevant. Deliberately leaves lastAction /
+// actionRepeats alone — see actionRepeats and resetActionBackoff.
 func (hm *healthMonitor) resetCounters() {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
@@ -531,6 +585,35 @@ func (hm *healthMonitor) resetCounters() {
 	hm.healthyStreak = 0
 	hm.smoothWireLoss = 0
 	hm.ewmaInitialized = false
+}
+
+// resetActionBackoff forgets the health-reconnect backoff. Called by the
+// engine on a NETWORK reconnect (interface change, wake): that is genuinely
+// new information about the path, so the next critical episode on the new
+// network deserves its immediate first reconnect again. Never called from
+// the health-critical path itself.
+func (hm *healthMonitor) resetActionBackoff() {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+	hm.actionRepeats = 0
+	hm.lastAction = time.Time{}
+}
+
+// primaryLossCritical reports whether the health FSM currently grades the
+// primary outbound critical. That grade is LOSS-driven only (assess: smoothed
+// uplink loss > 0.25, five samples in a row, and it sticks until ten clean
+// samples) — RTT inflation alone can reach degraded but never critical. The
+// mobile backup-probe gate keys on this rather than on ScoreQUIC's 0.7
+// pre-warn threshold precisely because the score includes the RTT term:
+// cellular bufferbloat under a healthy download routinely pushes ScoreQUIC
+// to ~0.5, and a tcpws first measured under that same load gets its min-RTT
+// baseline from the loaded value (ratio ≈ 1.0), which would switch a healthy
+// download onto tcpws. Loss is the signal that separates "the UDP path is
+// dropping bulk" (ticket #3747) from "the shared queue is full".
+func (hm *healthMonitor) primaryLossCritical() bool {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+	return hm.health == HealthCritical
 }
 
 // Echo wire-health probing — exponential-trust schedule for RE-RACE
@@ -1044,15 +1127,27 @@ func (hm *healthMonitor) backupProbeLoop(ot *outboundTransport) {
 // availability sample, a doubled backupFresh count, and a clobbered
 // probeInterval). Guarded by channelForType(PrimaryType())=="tcpws".
 //
-// hm.mobilePowerSaving disables this entirely: mobile relies on protocol
-// keepalive instead of spending radio wake-ups on opportunistic backup
-// echoes. Per R3, that branch does NOT touch the backup channel's
-// ChannelScore.probeInterval — left at whatever it last was
-// (defaultProbeInterval if never set), so a channel with no active probing
-// goes stale → neutral 0.5 on ChannelScore's own staleness gate. That decay
-// is a designed fail-safe, not a bug.
+// hm.mobilePowerSaving narrows this to the one state where it is worth a
+// radio wake-up: the primary graded LOSS-critical (primaryLossCritical).
+// While QUIC is healthy or merely degraded, mobile relies on protocol
+// keepalive and does not probe at all. Per R3, that branch does NOT touch
+// the backup channel's ChannelScore.probeInterval — left at whatever it last
+// was (defaultProbeInterval if never set), so a channel with no active
+// probing goes stale → neutral 0.5 on ChannelScore's own staleness gate.
+// That decay is a designed fail-safe, not a bug.
+//
+// Why mobile must probe at all (ticket #3747): a carrier that QoS-drops bulk
+// UDP but passes the handshake and small echoes leaves QUIC reachable and
+// useless. The selector's quality path is the only mechanism that can move
+// such a user to tcpws, and it refuses (fail-safe) until tcpws has
+// backupFreshSamplesGate fresh samples. With zero probing those samples
+// never exist, so the user is stuck on a dead-in-practice QUIC for the
+// session. Probing only while critical bounds the cost to exactly the window
+// in which the user's experience is already broken; once the selector has
+// switched (active != quic) or QUIC recovers (health leaves critical), the
+// probing stops on its own.
 func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopState, now time.Time) time.Duration {
-	if hm.mobilePowerSaving {
+	if hm.mobilePowerSaving && !hm.primaryLossCritical() {
 		return backupProbeIntervalHealthy
 	}
 	if ot.tm.ActiveChannel() != "quic" {
@@ -1063,7 +1158,10 @@ func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopSt
 	}
 
 	interval := backupProbeIntervalHealthy
-	if ot.tm.ScoreQUIC(now) < echoBackupProbeThreshold {
+	// Mobile only reaches this point while critical, and then it needs the
+	// fresh samples as fast as desktop's degraded cadence delivers them —
+	// regardless of where the score EWMA happens to be lagging.
+	if hm.mobilePowerSaving || ot.tm.ScoreQUIC(now) < echoBackupProbeThreshold {
 		interval = backupProbeIntervalDegraded
 	}
 
