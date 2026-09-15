@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io"
@@ -373,5 +374,53 @@ func TestTransportManager_TrialProvenByAnsweredDial(t *testing.T) {
 	tm.ReplacePrimary(primary, "quic-443")
 	if st := state(); !st.trialProven {
 		t.Fatalf("ReplacePrimary from quic: %+v, want the proof kept", st)
+	}
+}
+
+// The classification must hold for the error the REAL production path
+// produces — quic-go's own stream deadline error, wrapped by
+// ReadStreamResponse — not just for os.ErrDeadlineExceeded. quic.go's
+// pre-existing warn line uses a bare `err.(net.Error)` assertion on the
+// wrapped error and never fires (the emulation logs show the proxy-dial-fail
+// lines with no "stream response timeout" companion), which is exactly the
+// mistake this test guards readResponseError against.
+func TestReadResponseError_RealQUICStreamDeadline(t *testing.T) {
+	ln, addr, cleanupServer := echoTestServer(t)
+	defer cleanupServer()
+	done := make(chan struct{})
+	go func() {
+		conn, err := ln.Accept(context.Background())
+		if err != nil {
+			return
+		}
+		stream, err := conn.AcceptStream(context.Background())
+		if err != nil {
+			return
+		}
+		<-done // never answers — the black-hole data path
+		stream.Close()
+	}()
+	conn, cleanupClient := echoTestClient(t, addr)
+	defer cleanupClient()
+	defer close(done)
+
+	stream, err := conn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatalf("open stream: %v", err)
+	}
+	if err := WriteStreamHeader(stream, StreamTypeTCP, "example.com:443"); err != nil {
+		t.Fatalf("write header: %v", err)
+	}
+	stream.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	_, _, _, err = ReadStreamResponse(bufio.NewReader(stream))
+	if err == nil {
+		t.Fatal("expected the response read to time out")
+	}
+	classified := readResponseError(err)
+	if !isResponseTimeout(classified) {
+		t.Fatalf("real quic-go stream deadline not classified as a response timeout: %v", err)
+	}
+	if !isProxyLayerError(classified) || !isUnanswered(classified) {
+		t.Fatalf("classification lost proxy-layer/unanswered: %v", classified)
 	}
 }
