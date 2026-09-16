@@ -247,6 +247,9 @@ func api_subs(c *gin.Context) {
 		}
 	}
 
+	// 路由器最近活动：/api/subs 是 k2r 唯一触点，用它当"在线"信号（账户页与后台读 TokenLastUsedAt）。
+	touchGatewayDeviceSeen(c, auth.Device, time.Now().Unix())
+
 	// Phase 0: whatever credential authenticated this request, the URLs we
 	// return embed a tunnel token — access→tunnel conversion on legacy
 	// requests, 50%-threshold rolling renewal on tunnel-token requests.

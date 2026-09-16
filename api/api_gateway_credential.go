@@ -3,14 +3,10 @@ package center
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/log"
-	"gorm.io/gorm"
-
-	db "github.com/wordgate/qtoolkit/db"
 )
 
 // gatewayCredentialBase returns the bare k2subs:// subscription URL (no creds)
@@ -44,45 +40,14 @@ func newRouterUDID() string {
 //
 // Route: POST /api/user/gateway-credential (AuthRequired)
 func api_gateway_credential(c *gin.Context) {
-	ctx := c.Request.Context()
 	user := ReqUser(c)
 	if user == nil {
 		Error(c, ErrorNotLogin, "authentication failed")
 		return
 	}
-
-	udid := newRouterUDID()
-	var tunnelToken string
-	err := db.Get().Transaction(func(tx *gorm.DB) error {
-		// Rotation: drop any existing router devices so the limit check counts
-		// only the device we are about to mint.
-		if err := tx.Where("user_id = ? AND is_gateway = ?", user.ID, true).
-			Delete(&Device{}).Error; err != nil {
-			return err
-		}
-		if err := checkDeviceLimitOrKick(ctx, tx, user, true); err != nil {
-			return err
-		}
-		// Phase 0（spec §4.2）：不再签 access/refresh 对（refresh 曾被直接丢弃
-		// —— P1 的根因）。改签 90 天 tunnel token，锚点 = 设备创建时刻。
-		now := time.Now()
-		tok, err := generateTunnelToken(ctx, user.ID, udid, user.Roles, now.Unix())
-		if err != nil {
-			return err
-		}
-		tunnelToken = tok
-		return tx.Create(&Device{
-			UDID:            udid,
-			UserID:          user.ID,
-			IsGateway:       true,
-			AppPlatform:     "router",
-			TokenIssueAt:    now.Unix(),
-			TokenLastUsedAt: now.Unix(),
-			TunnelIssueAt:   now.Unix(),
-		}).Error
-	})
+	url, _, err := mintGatewayCredential(c.Request.Context(), user)
 	if err != nil {
-		// e(...) rerr carries a business error code (e.g. ErrorRouterDeviceLimit,
+		// rerr carries a business error code (e.g. ErrorRouterDeviceLimit,
 		// ErrorPlanNoRouter) — surface it; otherwise it's a system fault.
 		if _, ok := err.(rerr); ok {
 			ErrorE(c, err)
@@ -92,7 +57,5 @@ func api_gateway_credential(c *gin.Context) {
 		Error(c, ErrorSystemError, "mint router credential failed")
 		return
 	}
-
-	url := injectSubsCreds(gatewayCredentialBase(), udid, tunnelToken)
 	Success(c, &gin.H{"url": url})
 }
