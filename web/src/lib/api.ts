@@ -364,10 +364,79 @@ export interface Plan {
   month: number;
   highlight: boolean;
   tier?: string;                    // 套餐档位: "lite" | "basic" | "family" | "business"
-  product?: string;                 // 'app' | 'private_node'（Go DataPlan.Product）
+  product?: string;                 // 'app' | 'private_node' | 'router'（Go DataPlan.Product）
   /** 多币种展示价 {币种小写 → 最小单位}，仅 Stripe 套餐且 Stripe 可达时下发（Go DataPlan.CurrencyPrices）。
    *  缺席时按 usd 用 price 展示。实付币种由 Stripe Checkout 按属地决定。 */
   currencyPrices?: Record<string, number>;
+  hardwareSku?: string;             // 非空 = 含路由器的成品套餐
+  privateNode?: PrivateNodePlanSpec;
+}
+
+// 专属线路套餐的购买可见参数（Go DataPrivateNodePlanSpec；Product=private_node 或 router 套餐附带）。
+export interface PrivateNodePlanSpec {
+  ipType: string;
+  allowedRegions: string[];
+  trafficTotalBytes: number;
+}
+
+// 成品路由器收货信息（Go RouterShipping）。
+export interface RouterShipping {
+  name: string;
+  phone: string;
+  address: string;
+}
+
+export type RouterStage = 'paid' | 'provisioning' | 'ready' | 'shipped' | 'online' | 'expired';
+
+// Go DataRouterFulfillment（api/type.go）
+export interface UserRouterFulfillment {
+  id: number;
+  orderId: number;
+  hardwareSku: string;          // '' = 自备路由器
+  stage: RouterStage;
+  trackingNo?: string;
+  carrier?: string;
+  shippedAt: number;
+  activatedAt: number;
+  credentialMinted: boolean;
+  canMintCredential: boolean;
+  createdAt: number;
+}
+
+// Go DataPrivateNodeSubscription
+export interface UserRouterLine {
+  id: number;
+  status: string;
+  isServiceable: boolean;
+  region: string;
+  ipType: string;
+  trafficTotalBytes: number;
+  trafficUsedBytes: number;
+  purchasedAt: number;
+  expiresAt: number;
+  graceUntil: number;
+  suspendUntil: number;
+  planLabel: string;
+  quotaExhausted: boolean;
+  quotaResetAt: number;
+}
+
+// Go DataRouterDevice
+export interface UserRouterDevice {
+  udid: string;
+  appVersion: string;
+  appArch: string;
+  lastSeenAt: number;
+  online: boolean;
+}
+
+// Go DataUserRouter（GET /api/user/router）
+export interface UserRouter {
+  hasRouter: boolean;
+  fulfillment?: UserRouterFulfillment;
+  line?: UserRouterLine;
+  device?: UserRouterDevice;
+  renewPlanPid?: string;
 }
 
 // 优惠活动类型
@@ -384,6 +453,8 @@ export interface CreateOrderRequest {
   preview: boolean;
   plan: string;
   campaignCode?: string;
+  region?: string;
+  shipping?: RouterShipping;
 }
 
 export interface Order {
@@ -1439,6 +1510,19 @@ export const api = {
       body: JSON.stringify(request),
       ...options,
     });
+  },
+
+  async getProductPlans(product: 'router', options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<ListResult<Plan>> {
+    return this.request<ListResult<Plan>>(`/api/products/${product}/plans`, options);
+  },
+
+  async getUserRouter(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<UserRouter> {
+    return this.request<UserRouter>('/api/user/router', options);
+  },
+
+  // 铸造（或轮换）网关凭证。返回的 url 只在内存里用来拼安装命令，不持久化。
+  async mintGatewayCredential(): Promise<{ url: string }> {
+    return this.request<{ url: string }>('/api/user/gateway-credential', { method: 'POST' });
   },
 
   // ====== Stripe（overleap 专属渠道；其他品牌调用会得到 405001）======
