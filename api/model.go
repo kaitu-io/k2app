@@ -280,6 +280,11 @@ type Order struct {
 	// createPrivateNodeSubscription 读取，跨越"下单→支付回调"的时间差。AutoMigrate
 	// 自动新增此可空列（additive，无需手动迁移）。
 	PrivateNodeRegion string `gorm:"type:varchar(50)" json:"privateNodeRegion,omitempty"`
+	// RouterShipping 路由器版成品订单的收货信息（JSON: RouterShipping）。与 PrivateNodeRegion 同理
+	// 走独立列而非 Meta：SetOrderPayUrl 会用固定字段重 marshal Meta，塞进 Meta 的键会被静默丢弃。
+	// default:null（同 SlaveNode.Meta 先例）：空字符串写入 type:json 列会触发 MariaDB/MySQL
+	// json_valid CHECK 失败；GORM 对带 default 标签的零值字段会跳过该列，落到 SQL NULL（合法）。
+	RouterShipping string `gorm:"column:router_shipping;type:json;default:null" json:"-"`
 	// Channel 标识订单来源渠道。空值 = 历史 wordgate 订单（AutoMigrate 后存量行为空）。
 	// 口径警告：apple_iap 订单的 PayAmount 是 **plan 标价**，不是用户实付、也不是本方实收
 	// ——Apple 多币种定价 + 15% 抽成，两者都对不上。营收统计必须按 Channel 分开算，
@@ -446,6 +451,18 @@ func (o *Order) GetPayUrl() string {
 		return ""
 	}
 	return meta.PayUrl
+}
+
+// GetRouterShipping 解析收货信息；无或非法返回 nil。
+func (o *Order) GetRouterShipping() *RouterShipping {
+	if o.RouterShipping == "" {
+		return nil
+	}
+	var s RouterShipping
+	if err := json.Unmarshal([]byte(o.RouterShipping), &s); err != nil || s.Name == "" {
+		return nil
+	}
+	return &s
 }
 
 // Message 消息模型
