@@ -118,6 +118,7 @@ func Migrate() error {
 		&PrivateNodeSubscription{},
 		&PrivateNodePlanSpec{},
 		&NodeOperation{},
+		&RouterFulfillment{},
 		&SessionAcct{},
 		&Campaign{},
 		&LicenseKeyBatch{},
