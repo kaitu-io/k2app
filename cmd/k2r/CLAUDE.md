@@ -5,7 +5,7 @@ Gateway binary for LAN routers/soft-routers (TPROXY interception). Linux only (`
 ## Subcommands
 
 ```
-k2r setup <URL>              First-time: generate config + install service + start
+k2r setup <URL>              First-time: generate config + install service + start + connect
 k2r run [-c yaml]             Start gateway daemon (service entry point)
 
 k2r up [URL|config.yaml]      Connect via gateway daemon (no args: reconnect saved config)
@@ -40,6 +40,10 @@ k2r help                      Usage info
 ## Pattern
 
 Uses `flag.NewFlagSet` per subcommand, same as `cmd/k2` and `cmd/k2s`. `up`/`down`/`status`/`reset` are IPC calls via `gateway.NewClient(gateway.DefaultGatewayAddr)` to the running gateway daemon's HTTP API — not direct calls into the `gateway` package. `run` builds a `gateway.Gateway` directly (`gateway.New(...).Run(...)`) since it *is* the daemon process. Output uses `out.ok()`/`out.fail()`/`out.printResult()` for JSON/human switching.
+
+## `setup`
+
+`cmdSetup` persists `k2r.yml`, installs/starts the service, then **issues an argument-less `up` over IPC** (`connectAfterSetup`, polls the daemon for up to 15 s). This is what makes "installed and started" true: the daemon only auto-connects from a persisted `state.json` of a previous session, never from a fresh `k2r.yml`, and when the service was already running (the install script runs `service install` before `setup`) the procd/systemd start is a no-op. Verified on stock OpenWrt 25.12 (2026-09-16): without the `up`, `k2r status` stayed `disconnected` after a clean install.
 
 ## `reset`
 

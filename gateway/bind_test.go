@@ -27,6 +27,23 @@ func TestResolveLANBindAddrsExcludesPublic(t *testing.T) {
 	}
 }
 
+// IPv6 LAN addresses must be bracketed — fmt "%s:%d" yields an unparseable
+// "fd1a::1:1779" that net.Listen rejects, so the ULA bind silently failed.
+func TestResolveLANBindAddrsBracketsIPv6(t *testing.T) {
+	ifaces := []bindIfaceStub{
+		{name: "br-lan", ips: []string{"10.30.0.1/24", "fd1a:5aef:40b0::1/60"}},
+	}
+	got := resolveLANBindAddrs(stubIfaces(ifaces), 1779)
+	if !contains(got, "[fd1a:5aef:40b0::1]:1779") {
+		t.Fatalf("IPv6 bind must be bracketed, got %v", got)
+	}
+	for _, a := range got {
+		if _, _, err := net.SplitHostPort(a); err != nil {
+			t.Fatalf("unparseable bind addr %q: %v", a, err)
+		}
+	}
+}
+
 type bindIfaceStub struct {
 	name string
 	ips  []string
