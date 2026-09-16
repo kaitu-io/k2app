@@ -56,6 +56,10 @@ type AdminCreatePlanRequest struct {
 	StripePriceID string `json:"stripePriceId" example:"price_1Nxxxx"`
 	// Brand 归属品牌：kaitu | overleap，空→回退 kaitu（老 admin UI 零破坏）；非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）。
 	Brand string `json:"brand" example:"kaitu"`
+	// 产品线：app | private_node | router；空→app。
+	Product string `json:"product" example:"router"`
+	// 路由器版硬件机型标识（仅 product=router 含硬件套餐填写）。
+	HardwareSKU string `json:"hardwareSku" example:"redmi-ax6s"`
 }
 
 func api_admin_create_plan(c *gin.Context) {
@@ -78,6 +82,14 @@ func api_admin_create_plan(c *gin.Context) {
 		return
 	}
 
+	if req.Product == "" {
+		req.Product = ProductApp
+	}
+	if req.Product != ProductApp && !isLineProduct(req.Product) {
+		Error(c, ErrorInvalidArgument, fmt.Sprintf("invalid product: %s", req.Product))
+		return
+	}
+
 	brand, brandErr := BrandForCreate(req.Brand)
 	if brandErr != nil {
 		Error(c, ErrorInvalidArgument, "invalid brand")
@@ -94,17 +106,19 @@ func api_admin_create_plan(c *gin.Context) {
 		}
 
 		plan := Plan{
-			PID:         req.PID,
-			Tier:        req.Tier,
-			Label:       req.Label,
-			Price:       req.Price,
-			OriginPrice: req.OriginPrice,
-			Month:       req.Month,
+			PID:            req.PID,
+			Tier:           req.Tier,
+			Label:          req.Label,
+			Price:          req.Price,
+			OriginPrice:    req.OriginPrice,
+			Month:          req.Month,
 			Highlight:      BoolPtr(req.Highlight),
 			IsActive:       BoolPtr(req.IsActive),
 			AppleProductID: req.AppleProductID,
 			StripePriceID:  req.StripePriceID,
 			Brand:          string(brand),
+			Product:        req.Product,
+			HardwareSKU:    req.HardwareSKU,
 		}
 
 		if err := tx.Create(&plan).Error; err != nil {
@@ -143,6 +157,11 @@ type AdminUpdatePlanRequest struct {
 	IsActive    *bool   `json:"isActive" example:"true"`    // 是否激活
 
 	StripePriceID *string `json:"stripePriceId"` // Stripe Price ID（overleap 官网 Checkout）
+
+	// 产品线：app | private_node | router。nil→不改。
+	Product *string `json:"product" example:"router"`
+	// 路由器版硬件机型标识（仅 product=router 含硬件套餐填写）。nil→不改。
+	HardwareSKU *string `json:"hardwareSku" example:"redmi-ax6s"`
 }
 
 func api_admin_update_plan(c *gin.Context) {
@@ -161,6 +180,10 @@ func api_admin_update_plan(c *gin.Context) {
 	}
 	if req.Tier != nil && !IsValidTier(*req.Tier) {
 		Error(c, ErrorInvalidArgument, "invalid tier")
+		return
+	}
+	if req.Product != nil && *req.Product != ProductApp && !isLineProduct(*req.Product) {
+		Error(c, ErrorInvalidArgument, fmt.Sprintf("invalid product: %s", *req.Product))
 		return
 	}
 	log.Debugf(c, "update request for plan %s with data: %+v", planID, req)

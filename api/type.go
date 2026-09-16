@@ -576,9 +576,11 @@ type DataPlan struct {
 	MaxLanClient    int    `json:"maxLanClient"`
 	// Apple App Store 商品ID（仅 iOS IAP）：非空才在 iOS 购买面板出现，webapp 据此向 StoreKit 取商品。
 	AppleProductID string `json:"appleProductId,omitempty"`
-	// 产品线：app（共享池订阅）| private_node（专属节点）。Center 始终发送。
+	// 产品线：app（共享池订阅）| private_node（专属节点）| router（路由器版）。Center 始终发送。
 	Product string `json:"product"`
-	// 专属节点套餐的购买可见参数（仅 Product=private_node 套餐附带）。
+	// 路由器版硬件机型（仅 Product=router 含硬件套餐非空）。前台只用它判断是否收集收货地址。
+	HardwareSKU string `json:"hardwareSku,omitempty"`
+	// 专属线路套餐的购买可见参数（Product=private_node 或 router 套餐附带）。
 	PrivateNode *DataPrivateNodePlanSpec `json:"privateNode,omitempty"`
 	// 多币种展示价 {币种小写 → 最小单位金额}，含主币与 Stripe Price currency_options 全部币种
 	// （如 {"usd":7900,"gbp":7900,"eur":8900}）。仅 Stripe 套餐且 Stripe 可达时附带；客户端按
@@ -586,7 +588,7 @@ type DataPlan struct {
 	CurrencyPrices map[string]int64 `json:"currencyPrices,omitempty"`
 }
 
-// DataPrivateNodePlanSpec 专属节点套餐的购买可见参数（仅 Product=private_node 的套餐附带）。
+// DataPrivateNodePlanSpec 专属线路套餐的购买可见参数（Product=private_node 或 router 的套餐附带）。
 type DataPrivateNodePlanSpec struct {
 	IPType            string   `json:"ipType"`            // residential | non_residential
 	AllowedRegions    []string `json:"allowedRegions"`    // 购买时可选地区
