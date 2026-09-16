@@ -56,12 +56,18 @@ type RouterFulfillment struct {
 func (f *RouterFulfillment) IsBYO() bool { return f.HardwareSKU == "" }
 
 // advanceRouterFulfillment 按订阅状态与网关设备活动推进阶段（纯函数，返回是否有变化）。
+// sub 必须非 nil（包内约定，调用方负责加载）。
+//
 // 规则：
 //   - paid → provisioning（sub=provisioning）→ ready（sub=active）；paid 可直接跳 ready。
 //   - ready → online：自备路由器在铸造凭证后设备有活动即上线；成品必须先 shipped。
 //   - shipped → online：设备活动 > 铸造时刻。
 //   - 任意非终态 → expired：sub 进入 suspended/deprovisioned/failed。grace 仍视为在服务。
-//   - expired → ready：sub 回到 active（续费回收），等待设备再次上线。
+//   - expired → 恢复到过期前的发货里程碑：sub 回到 active 时，stage 是里程碑不是实时在线状态
+//     （实时在线由 Task 7 单独算），所以已发货（ShippedAt>0）回 shipped、未发货回 ready ——
+//     不能统一落到 ready，否则硬件路由器回收后要运维再标一次"发货"才能回 online。若设备此前
+//     已用该凭证连过（dev.TokenLastUsedAt > f.CredentialMintedAt），同一次 advance 会继续按
+//     下面的上线规则级联到 online，不需要等待设备再次连接。
 func advanceRouterFulfillment(f *RouterFulfillment, sub *PrivateNodeSubscription, dev *Device, now int64) bool {
 	before := f.Stage
 	switch sub.Status {
@@ -70,7 +76,11 @@ func advanceRouterFulfillment(f *RouterFulfillment, sub *PrivateNodeSubscription
 		return f.Stage != before
 	}
 	if f.Stage == RouterStageExpired && sub.Status == PNStatusActive {
-		f.Stage = RouterStageReady
+		if f.ShippedAt > 0 {
+			f.Stage = RouterStageShipped
+		} else {
+			f.Stage = RouterStageReady
+		}
 	}
 	if f.Stage == RouterStagePaid && sub.Status == PNStatusProvisioning {
 		f.Stage = RouterStageProvisioning
@@ -83,20 +93,26 @@ func advanceRouterFulfillment(f *RouterFulfillment, sub *PrivateNodeSubscription
 		f.Stage = RouterStageOnline
 		f.ActivatedAt = dev.TokenLastUsedAt
 	}
-	_ = now
+	_ = now // 预留：未来阶段推进规则可能需要按时刻做超时判定，目前纯粹按状态推导
 	return f.Stage != before
 }
 
-// syncRouterFulfillment 加载订阅与用户网关设备，推进阶段并落库（幂等，可在读路径调用）。
+// syncRouterFulfillment 加载订阅与网关设备，推进阶段并落库（幂等，可在读路径调用）。
+// 网关设备严格取 f.GatewayDeviceID（由 Task 6 的 attachCredentialToFulfillment 写入）——
+// 找不到该 ID 对应的设备时 dev=nil，不按 user_id 兜底猜测，避免铸造凭证与被检查的
+// "最近网关设备"对不上号。GatewayDeviceID 为 nil 时 dev=nil：此时 CredentialMintedAt
+// 必为 0，本来也到不了 online。
 func syncRouterFulfillment(ctx context.Context, tx *gorm.DB, f *RouterFulfillment, now int64) error {
 	var sub PrivateNodeSubscription
 	if err := tx.First(&sub, f.SubID).Error; err != nil {
 		return err
 	}
-	var dev Device
 	var devPtr *Device
-	if err := tx.Where("user_id = ? AND is_gateway = ?", f.UserID, true).Order("id DESC").First(&dev).Error; err == nil {
-		devPtr = &dev
+	if f.GatewayDeviceID != nil {
+		var dev Device
+		if err := tx.First(&dev, *f.GatewayDeviceID).Error; err == nil {
+			devPtr = &dev
+		}
 	}
 	if !advanceRouterFulfillment(f, &sub, devPtr, now) {
 		return nil

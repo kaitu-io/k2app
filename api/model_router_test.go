@@ -72,6 +72,28 @@ func TestAdvanceRouterFulfillment_ExpiredAndRecovered(t *testing.T) {
 	assert.Equal(t, RouterStageReady, f.Stage)
 }
 
+func TestAdvanceRouterFulfillment_ExpiredRecoveredHardwareShipped(t *testing.T) {
+	f, sub := routerFixture(RouterStageExpired, "redmi-ax6s")
+	f.ShippedAt = 4000
+	f.CredentialMintedAt = 3000
+	sub.Status = PNStatusActive
+	dev := &Device{IsGateway: true, TokenLastUsedAt: 5000}
+	// 已发货过的硬件路由器：回收后不能落到 ready 等运维再标一次发货，同次推进直接回 online
+	assert.True(t, advanceRouterFulfillment(f, sub, dev, 6000))
+	assert.Equal(t, RouterStageOnline, f.Stage)
+	assert.EqualValues(t, 5000, f.ActivatedAt)
+}
+
+func TestAdvanceRouterFulfillment_ExpiredRecoveredBYOOnline(t *testing.T) {
+	f, sub := routerFixture(RouterStageExpired, "")
+	f.CredentialMintedAt = 3000
+	sub.Status = PNStatusActive
+	dev := &Device{IsGateway: true, TokenLastUsedAt: 5000}
+	assert.True(t, advanceRouterFulfillment(f, sub, dev, 6000))
+	assert.Equal(t, RouterStageOnline, f.Stage)
+	assert.EqualValues(t, 5000, f.ActivatedAt)
+}
+
 func TestAdvanceRouterFulfillment_GraceIsNotExpired(t *testing.T) {
 	f, sub := routerFixture(RouterStageOnline, "")
 	sub.Status = PNStatusGrace
