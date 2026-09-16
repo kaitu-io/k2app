@@ -1,12 +1,14 @@
 package center
 
 import (
+	"errors"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
 
 func parseRouterFulfillmentID(c *gin.Context) (*RouterFulfillment, bool) {
@@ -17,7 +19,12 @@ func parseRouterFulfillmentID(c *gin.Context) (*RouterFulfillment, bool) {
 	}
 	var f RouterFulfillment
 	if err := db.Get().First(&f, id).Error; err != nil {
-		Error(c, ErrorNotFound, "fulfillment not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "fulfillment not found")
+			return nil, false
+		}
+		log.Errorf(c, "load router fulfillment %d: %v", id, err)
+		Error(c, ErrorSystemError, "failed to load fulfillment")
 		return nil, false
 	}
 	return &f, true
@@ -43,16 +50,22 @@ func adminGatewayDeviceDTO(f *RouterFulfillment, now int64) *DataRouterDevice {
 	if err := db.Get().First(&dev, *f.GatewayDeviceID).Error; err != nil {
 		return nil
 	}
-	return &DataRouterDevice{UDID: dev.UDID, AppVersion: dev.AppVersion, AppArch: dev.AppArch,
-		LastSeenAt: dev.TokenLastUsedAt, Online: dev.TokenLastUsedAt > 0 && now-dev.TokenLastUsedAt <= routerOnlineWindowSeconds}
+	return routerDeviceDTO(&dev, now)
 }
 
 func adminRouterFulfillmentDTO(c *gin.Context, f *RouterFulfillment, now int64) DataAdminRouterFulfillment {
+	// CanMintCredential 镜像用户端 api_get_user_router 的准入门（HasActivePrivateLines），不是
+	// 台账 stage 的派生值——两者可能分叉（例如线路过期但台账还没被 syncRouterFulfillment 推到 expired）。
+	canMint, err := HasActivePrivateLines(c, db.Get(), f.UserID, now)
+	if err != nil {
+		log.Warnf(c, "check HasActivePrivateLines for user %d: %v", f.UserID, err)
+		canMint = false
+	}
 	d := DataAdminRouterFulfillment{
 		DataRouterFulfillment: DataRouterFulfillment{
 			ID: f.ID, OrderID: f.OrderID, HardwareSKU: f.HardwareSKU, Stage: f.Stage, TrackingNo: f.TrackingNo,
 			Carrier: f.Carrier, ShippedAt: f.ShippedAt, ActivatedAt: f.ActivatedAt, CredentialMinted: f.GatewayDeviceID != nil,
-			CanMintCredential: f.Stage == RouterStageReady || f.Stage == RouterStageShipped || f.Stage == RouterStageOnline,
+			CanMintCredential: canMint,
 			CreatedAt:         f.CreatedAt,
 		},
 		UserID: f.UserID, Email: userEmailByID(f.UserID), SubID: f.SubID, Note: f.Note, UpdatedBy: f.UpdatedBy, UpdatedAt: f.UpdatedAt,
@@ -160,9 +173,30 @@ func api_admin_mint_router_credential(c *gin.Context) {
 		Error(c, ErrorTooEarly, "线路尚未就绪，暂不能铸造凭证")
 		return
 	}
+	// 只允许该用户 stage∈{ready,shipped,online} 中 id 最大的那一条台账铸造 —— 与
+	// attachCredentialToFulfillment 的 newest-only 语义一致。否则凭证会挂到 :id 这条台账上，
+	// 但 attachCredentialToFulfillment 只认"最新一条"，实际会挂到另一条台账，这里显示的
+	// CredentialMinted/Device 就永远对不上自己刚触发的这次铸造。
+	var newest RouterFulfillment
+	if err := db.Get().Select("id").
+		Where("user_id = ? AND stage IN ?", f.UserID, []string{RouterStageReady, RouterStageShipped, RouterStageOnline}).
+		Order("id DESC").First(&newest).Error; err != nil {
+		log.Errorf(c, "load newest router fulfillment for user %d: %v", f.UserID, err)
+		Error(c, ErrorSystemError, "failed to verify fulfillment")
+		return
+	}
+	if newest.ID != f.ID {
+		Error(c, ErrorInvalidOperation, "该台账不是当前用户可关联凭证的最新一条")
+		return
+	}
 	var user User
 	if err := db.Get().First(&user, f.UserID).Error; err != nil {
-		Error(c, ErrorNotFound, "user not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "user not found")
+			return
+		}
+		log.Errorf(c, "load user %d: %v", f.UserID, err)
+		Error(c, ErrorSystemError, "failed to load user")
 		return
 	}
 	url, deviceID, err := mintGatewayCredential(c.Request.Context(), &user)
@@ -176,6 +210,14 @@ func api_admin_mint_router_credential(c *gin.Context) {
 		return
 	}
 	_ = db.Get().Model(&RouterFulfillment{}).Where("id = ?", f.ID).Update("updated_by", adminActorTag(c)).Error
+	// 回读校验：确认凭证真的挂到了这条台账上（attachCredentialToFulfillment 是 newest-only，
+	// 上面的检查已经把"不是最新"挡掉了，这里只是留一道信号，异常了要能在日志里看见）。
+	var check RouterFulfillment
+	if err := db.Get().Select("id", "gateway_device_id").First(&check, f.ID).Error; err != nil {
+		log.Errorf(c, "reload router fulfillment %d after mint: %v", f.ID, err)
+	} else if check.GatewayDeviceID == nil || *check.GatewayDeviceID != deviceID {
+		log.Errorf(c, "router fulfillment %d gateway device mismatch after mint: got %v, want %d", f.ID, check.GatewayDeviceID, deviceID)
+	}
 	log.Infof(c, "admin %s minted router credential for fulfillment %d (device %d)", adminActorTag(c), f.ID, deviceID)
 	Success(c, &gin.H{"url": url, "deviceId": deviceID})
 }
@@ -229,11 +271,10 @@ func api_admin_list_router_devices(c *gin.Context) {
 		return
 	}
 	items := make([]DataAdminRouterDevice, 0, len(devs))
-	for _, d := range devs {
+	for i := range devs {
 		items = append(items, DataAdminRouterDevice{
-			DataRouterDevice: DataRouterDevice{UDID: d.UDID, AppVersion: d.AppVersion, AppArch: d.AppArch,
-				LastSeenAt: d.TokenLastUsedAt, Online: d.TokenLastUsedAt > 0 && now-d.TokenLastUsedAt <= routerOnlineWindowSeconds},
-			ID: d.ID, UserID: d.UserID, Email: userEmailByID(d.UserID),
+			DataRouterDevice: *routerDeviceDTO(&devs[i], now),
+			ID:               devs[i].ID, UserID: devs[i].UserID, Email: userEmailByID(devs[i].UserID),
 		})
 	}
 	ListWithData(c, items, pagination)

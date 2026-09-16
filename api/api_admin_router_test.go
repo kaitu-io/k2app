@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -104,6 +105,51 @@ func TestAdminRouterFulfillments_MintCredential(t *testing.T) {
 	require.NoError(t, db.Get().Model(&got).Update("stage", RouterStagePaid).Error)
 	code, _ = adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/credential", nil)
 	assert.EqualValues(t, ErrorTooEarly, code)
+}
+
+func TestAdminRouterFulfillments_MintCredential_RejectsNonNewest(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	_, older := seedReadyRouterFulfillment(t, user)
+
+	// 手工建第二条台账（不能复用 seedReadyRouterFulfillment：它对同一用户固定用
+	// 800000+userID 做 OrderID/SubID，两条会撞唯一索引）——同一用户名下更新的一条 ready 台账。
+	now := time.Now().Unix()
+	sub2 := &PrivateNodeSubscription{UserID: user.ID, PlanID: 1, OrderID: 900000 + user.ID, Region: "japan",
+		IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40, Status: PNStatusActive,
+		PurchasedAt: now, ExpiresAt: now + 300*86400}
+	require.NoError(t, db.Get().Create(sub2).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(sub2) })
+	newer := &RouterFulfillment{OrderID: sub2.OrderID, UserID: user.ID, SubID: sub2.ID, Stage: RouterStageReady}
+	require.NoError(t, db.Get().Create(newer).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(newer) })
+
+	// 旧的那条（id 更小）不是当前可关联凭证的最新台账 → 拒绝
+	code, _ := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(older.ID, 10)+"/credential", nil)
+	assert.EqualValues(t, ErrorInvalidOperation, code)
+
+	// 最新那条（id 更大）仍可正常铸造
+	code, data := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(newer.ID, 10)+"/credential", nil)
+	require.EqualValues(t, 0, code)
+	url, _ := data["url"].(string)
+	assert.Contains(t, url, "k2subs://router-")
+}
+
+func TestAdminRouterFulfillments_ByoCannotShip(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	_, f := seedReadyRouterFulfillment(t, user)
+	// seedReadyRouterFulfillment 默认 HardwareSKU=="" (自备路由器)，本测试不改 SKU。
+
+	code, _ := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/stage",
+		AdminRouterStageRequest{Stage: RouterStageShipped, TrackingNo: "SF999"})
+	assert.EqualValues(t, ErrorInvalidOperation, code)
+
+	var got RouterFulfillment
+	require.NoError(t, db.Get().First(&got, f.ID).Error)
+	assert.Equal(t, RouterStageReady, got.Stage, "自备台账阶段不应被 shipped 请求改动")
 }
 
 func TestAdminPrivateNodeSubscriptions_List(t *testing.T) {

@@ -39,6 +39,19 @@ func buildPrivateNodeSubDTO(c *gin.Context, s *PrivateNodeSubscription, now int6
 	return d
 }
 
+// routerDeviceDTO 把一台网关设备映射为账户页/后台共用的 DTO；dev 为 nil 时返回 nil。
+// 与 api_get_user_router / adminGatewayDeviceDTO / api_admin_list_router_devices 共用，避免三处各写一遍
+// Online 判定（routerOnlineWindowSeconds）。
+func routerDeviceDTO(dev *Device, now int64) *DataRouterDevice {
+	if dev == nil {
+		return nil
+	}
+	return &DataRouterDevice{
+		UDID: dev.UDID, AppVersion: dev.AppVersion, AppArch: dev.AppArch, LastSeenAt: dev.TokenLastUsedAt,
+		Online: dev.TokenLastUsedAt > 0 && now-dev.TokenLastUsedAt <= routerOnlineWindowSeconds,
+	}
+}
+
 // api_get_user_router 账户页「我的路由器」聚合：最新台账 + 其线路 + 网关设备 + 可续费套餐。
 // Route: GET /api/user/router (AuthRequired + EnforceDeviceClass)
 func api_get_user_router(c *gin.Context) {
@@ -89,10 +102,7 @@ func api_get_user_router(c *gin.Context) {
 	if f.GatewayDeviceID != nil {
 		var dev Device
 		if err := db.Get().First(&dev, *f.GatewayDeviceID).Error; err == nil {
-			out.Device = &DataRouterDevice{
-				UDID: dev.UDID, AppVersion: dev.AppVersion, AppArch: dev.AppArch, LastSeenAt: dev.TokenLastUsedAt,
-				Online: dev.TokenLastUsedAt > 0 && now-dev.TokenLastUsedAt <= routerOnlineWindowSeconds,
-			}
+			out.Device = routerDeviceDTO(&dev, now)
 		}
 	}
 
