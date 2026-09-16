@@ -36,14 +36,15 @@ func TestApplyOrderToBuyer_RouterHardware_CreatesLineAndFulfillment(t *testing.T
 	plan := seedRouterPlan(t, "router-apply-hw", "redmi-ax6s", 39900)
 	order := seedPaidRouterOrder(t, user, plan, `{"name":"张三","phone":"138","address":"上海"}`)
 
-	var ids []uint64
-	require.NoError(t, applyOrderToBuyer(ctx, db.Get(), order, &ids))
+	var pc OrderPostCommit
+	require.NoError(t, applyOrderToBuyer(ctx, db.Get(), order, &pc))
 
 	var sub PrivateNodeSubscription
 	require.NoError(t, db.Get().Where("order_id = ?", order.ID).First(&sub).Error)
 	assert.Equal(t, PNStatusPending, sub.Status)
 	assert.Equal(t, "japan", sub.Region)
-	assert.Equal(t, []uint64{sub.ID}, ids, "must be queued for provisioning post-commit")
+	assert.Equal(t, []uint64{sub.ID}, pc.ProvisionSubIDs, "must be queued for provisioning post-commit")
+	assert.Empty(t, pc.RenewedRouterSubIDs, "new purchase must not be treated as a renewal")
 
 	var f RouterFulfillment
 	require.NoError(t, db.Get().Where("order_id = ?", order.ID).First(&f).Error)
@@ -64,13 +65,14 @@ func TestApplyOrderToBuyer_RouterService_NoLine_IsBYOPurchase(t *testing.T) {
 	plan := seedRouterPlan(t, "router-apply-byo", "", 29900)
 	order := seedPaidRouterOrder(t, user, plan, "")
 
-	var ids []uint64
-	require.NoError(t, applyOrderToBuyer(context.Background(), db.Get(), order, &ids))
-	require.Len(t, ids, 1)
+	var pc OrderPostCommit
+	require.NoError(t, applyOrderToBuyer(context.Background(), db.Get(), order, &pc))
+	require.Len(t, pc.ProvisionSubIDs, 1)
 	var f RouterFulfillment
 	require.NoError(t, db.Get().Where("order_id = ?", order.ID).First(&f).Error)
 	assert.True(t, f.IsBYO())
 	assert.Equal(t, RouterStagePaid, f.Stage)
+	assert.Equal(t, f.SubID, pc.ProvisionSubIDs[0], "queued sub id must be the one backing this fulfillment")
 }
 
 func TestApplyOrderToBuyer_RouterService_WithLine_ExtendsExpiry(t *testing.T) {
@@ -86,9 +88,10 @@ func TestApplyOrderToBuyer_RouterService_WithLine_ExtendsExpiry(t *testing.T) {
 	t.Cleanup(func() { db.Get().Unscoped().Delete(existing) })
 	order := seedPaidRouterOrder(t, user, plan, "")
 
-	var ids []uint64
-	require.NoError(t, applyOrderToBuyer(context.Background(), db.Get(), order, &ids))
-	assert.Empty(t, ids, "renewal must not provision a new line")
+	var pc OrderPostCommit
+	require.NoError(t, applyOrderToBuyer(context.Background(), db.Get(), order, &pc))
+	assert.Empty(t, pc.ProvisionSubIDs, "renewal must not provision a new line")
+	assert.Equal(t, []uint64{existing.ID}, pc.RenewedRouterSubIDs, "renewal must be collected for post-commit notify")
 
 	var subs []PrivateNodeSubscription
 	require.NoError(t, db.Get().Where("user_id = ?", user.ID).Find(&subs).Error)
@@ -120,4 +123,16 @@ func TestExtendPrivateLine_FutureExpiryStacks(t *testing.T) {
 	var got PrivateNodeSubscription
 	require.NoError(t, db.Get().First(&got, sub.ID).Error)
 	assert.Equal(t, time.Unix(future, 0).AddDate(0, 12, 0).Unix(), got.ExpiresAt, "unexpired line stacks from its current expiry")
+}
+
+// TestOnRouterLineRenewed_BestEffort 覆盖 post-commit 续费通知：加载已存在的 sub 时不 panic
+// （正常发 Slack），加载不存在的 sub 时同样不 panic（只 log 后返回）——它是 best-effort 副作用，
+// 绝不能向上抛错误或让调用方（webhook post-commit 循环）中断。
+func TestOnRouterLineRenewed_BestEffort(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	sub := seedTestPrivateSub(t)
+
+	assert.NotPanics(t, func() { onRouterLineRenewed(ctx, sub.ID) }, "must notify without panicking for an existing sub")
+	assert.NotPanics(t, func() { onRouterLineRenewed(ctx, sub.ID+999999) }, "must log-and-return without panicking when the sub is missing")
 }

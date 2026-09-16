@@ -69,8 +69,8 @@ func TestApplyOrderToBuyer_PrivateNode(t *testing.T) {
 	})
 
 	// 4. apply order
-	var provisionIDs []uint64
-	require.NoError(t, applyOrderToBuyer(ctx, db.Get(), &order, &provisionIDs))
+	var pc OrderPostCommit
+	require.NoError(t, applyOrderToBuyer(ctx, db.Get(), &order, &pc))
 
 	// (a) exactly one pending sub with a claim token
 	var subs []PrivateNodeSubscription
@@ -84,7 +84,7 @@ func TestApplyOrderToBuyer_PrivateNode(t *testing.T) {
 	assert.Equal(t, "japan", subs[0].Region)
 
 	// (a') the sub id is collected for post-commit enqueue (NOT enqueued in-tx)
-	require.Equal(t, []uint64{subs[0].ID}, provisionIDs)
+	require.Equal(t, []uint64{subs[0].ID}, pc.ProvisionSubIDs)
 
 	// (b) owner reloaded → ExpiredAt UNCHANGED (private must not touch shared clock)
 	var reloaded User
@@ -93,8 +93,8 @@ func TestApplyOrderToBuyer_PrivateNode(t *testing.T) {
 
 	// (c) idempotency: a second apply with the SAME order leaves still exactly 1 sub
 	//     (OrderID uniqueIndex enforces it — second Create errors on the duplicate key).
-	var provisionIDs2 []uint64
-	err := applyOrderToBuyer(ctx, db.Get(), &order, &provisionIDs2)
+	var pc2 OrderPostCommit
+	err := applyOrderToBuyer(ctx, db.Get(), &order, &pc2)
 	assert.Error(t, err)
 	var count int64
 	require.NoError(t, db.Get().Model(&PrivateNodeSubscription{}).Where("order_id = ?", order.ID).Count(&count).Error)
@@ -167,8 +167,8 @@ func TestApplyOrderToBuyer_PrivateNode_SetsActivationFlags(t *testing.T) {
 	})
 
 	// 4. apply
-	var provisionIDs []uint64
-	require.NoError(t, applyOrderToBuyer(ctx, db.Get(), &order, &provisionIDs))
+	var pc OrderPostCommit
+	require.NoError(t, applyOrderToBuyer(ctx, db.Get(), &order, &pc))
 
 	// (a) sub created
 	var subCount int64
