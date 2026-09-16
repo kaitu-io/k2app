@@ -108,6 +108,114 @@ func TestApplyOrderToBuyer_RouterService_WithLine_ExtendsExpiry(t *testing.T) {
 	assert.EqualValues(t, 0, cnt, "renewal creates no fulfillment row")
 }
 
+// 续费分支必须在同一事务里同步挂在该线路上的台账：expired + grace 线路 → 续费后台账不再是 expired。
+func TestApplyOrderToBuyer_RouterRenewal_SyncsFulfillment(t *testing.T) {
+	skipIfNoConfig(t)
+	user := CreateTestUser(t)
+	plan := seedRouterPlan(t, "router-apply-renew-sync", "", 29900)
+	now := time.Now().Unix()
+	existing := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, OrderID: 0,
+		Region: "japan", IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40,
+		Status: PNStatusGrace, PurchasedAt: now - 400*86400, ExpiresAt: now - 3*86400, GraceUntil: now + 4*86400}
+	require.NoError(t, db.Get().Create(existing).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(existing) })
+	f := &RouterFulfillment{OrderID: 720000 + user.ID, UserID: user.ID, SubID: existing.ID,
+		HardwareSKU: "redmi-ax6s", Stage: RouterStageExpired, ShippedAt: now - 300*86400}
+	require.NoError(t, db.Get().Create(f).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(f) })
+	order := seedPaidRouterOrder(t, user, plan, "")
+
+	var pc OrderPostCommit
+	require.NoError(t, applyOrderToBuyer(context.Background(), db.Get(), order, &pc))
+	require.Equal(t, []uint64{existing.ID}, pc.RenewedRouterSubIDs)
+
+	var got RouterFulfillment
+	require.NoError(t, db.Get().First(&got, f.ID).Error)
+	assert.Equal(t, RouterStageShipped, got.Stage, "renewal must re-sync the ledger (shipped hardware returns to shipped)")
+}
+
+// 线路已 deprovisioned 的成品客户买服务套餐：走新建线路，新台账必须继承旧硬件台账（SKU/发货/凭证），
+// 线路激活后直接 shipped，设备有晚于 max(铸造, 发货) 的活动则 online。
+func TestApplyOrderToBuyer_RouterService_InheritsHardwareFulfillment(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	user := CreateTestUser(t)
+	plan := seedRouterPlan(t, "router-apply-inherit", "", 29900)
+	now := time.Now().Unix()
+
+	oldSub := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, OrderID: 730000 + user.ID,
+		Region: "japan", IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40,
+		Status: PNStatusDeprovisioned, PurchasedAt: now - 500*86400, ExpiresAt: now - 30*86400}
+	require.NoError(t, db.Get().Create(oldSub).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(oldSub) })
+	dev := &Device{UDID: newRouterUDID(), UserID: user.ID, IsGateway: true, AppPlatform: "router",
+		TokenIssueAt: now - 499*86400, TokenLastUsedAt: now - 40*86400, TunnelIssueAt: now - 499*86400}
+	require.NoError(t, db.Get().Create(dev).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(dev) })
+	mintAt, shippedAt := now-499*86400, now-495*86400
+	old := &RouterFulfillment{OrderID: oldSub.OrderID, UserID: user.ID, SubID: oldSub.ID,
+		HardwareSKU: "redmi-ax6s", Stage: RouterStageExpired, ShippedAt: shippedAt, TrackingNo: "SF-OLD",
+		GatewayDeviceID: &dev.ID, CredentialMintedAt: mintAt}
+	require.NoError(t, db.Get().Create(old).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(old) })
+
+	order := seedPaidRouterOrder(t, user, plan, "")
+	var pc OrderPostCommit
+	require.NoError(t, applyOrderToBuyer(ctx, db.Get(), order, &pc))
+	require.Len(t, pc.ProvisionSubIDs, 1, "deprovisioned line is not renewable: a new line is provisioned")
+
+	var f RouterFulfillment
+	require.NoError(t, db.Get().Where("order_id = ?", order.ID).First(&f).Error)
+	assert.Equal(t, "redmi-ax6s", f.HardwareSKU)
+	assert.Equal(t, shippedAt, f.ShippedAt)
+	require.NotNil(t, f.GatewayDeviceID)
+	assert.Equal(t, dev.ID, *f.GatewayDeviceID)
+	assert.Equal(t, mintAt, f.CredentialMintedAt)
+	assert.Equal(t, RouterStagePaid, f.Stage)
+	assert.Equal(t, pc.ProvisionSubIDs[0], f.SubID)
+
+	// 线路开通（active）。先让设备活动早于发货时刻 → 停在 shipped；再让活动晚于门槛 → online。
+	require.NoError(t, db.Get().Model(&PrivateNodeSubscription{}).Where("id = ?", f.SubID).Update("status", PNStatusActive).Error)
+	require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", dev.ID).Update("token_last_used_at", shippedAt-1).Error)
+	require.NoError(t, syncRouterFulfillment(ctx, db.Get(), &f, now))
+	assert.Equal(t, RouterStageShipped, f.Stage, "hardware already with the customer: skip ready, no manual re-ship")
+
+	require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", dev.ID).Update("token_last_used_at", now-60).Error)
+	require.NoError(t, syncRouterFulfillment(ctx, db.Get(), &f, now))
+	assert.Equal(t, RouterStageOnline, f.Stage)
+	var persisted RouterFulfillment
+	require.NoError(t, db.Get().First(&persisted, f.ID).Error)
+	assert.Equal(t, RouterStageOnline, persisted.Stage)
+}
+
+// 纯自备历史（无硬件台账）的服务套餐新建：新台账保持自备形态，不继承任何字段。
+func TestApplyOrderToBuyer_RouterService_BYOHistoryDoesNotInherit(t *testing.T) {
+	skipIfNoConfig(t)
+	user := CreateTestUser(t)
+	plan := seedRouterPlan(t, "router-apply-byo-hist", "", 29900)
+	now := time.Now().Unix()
+	oldSub := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, OrderID: 740000 + user.ID,
+		Region: "japan", IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40,
+		Status: PNStatusDeprovisioned, PurchasedAt: now - 500*86400, ExpiresAt: now - 30*86400}
+	require.NoError(t, db.Get().Create(oldSub).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(oldSub) })
+	devID := uint64(515151)
+	old := &RouterFulfillment{OrderID: oldSub.OrderID, UserID: user.ID, SubID: oldSub.ID,
+		Stage: RouterStageExpired, GatewayDeviceID: &devID, CredentialMintedAt: now - 400*86400}
+	require.NoError(t, db.Get().Create(old).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(old) })
+
+	order := seedPaidRouterOrder(t, user, plan, "")
+	var pc OrderPostCommit
+	require.NoError(t, applyOrderToBuyer(context.Background(), db.Get(), order, &pc))
+	var f RouterFulfillment
+	require.NoError(t, db.Get().Where("order_id = ?", order.ID).First(&f).Error)
+	assert.True(t, f.IsBYO())
+	assert.Nil(t, f.GatewayDeviceID)
+	assert.Zero(t, f.CredentialMintedAt)
+	assert.Zero(t, f.ShippedAt)
+}
+
 func TestExtendPrivateLine_FutureExpiryStacks(t *testing.T) {
 	skipIfNoConfig(t)
 	user := CreateTestUser(t)

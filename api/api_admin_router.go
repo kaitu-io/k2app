@@ -154,9 +154,19 @@ func api_admin_update_router_stage(c *gin.Context) {
 		Error(c, ErrorInvalidOperation, "该阶段由系统自动推进，不能手动设置")
 		return
 	}
-	if err := db.Get().Model(&RouterFulfillment{}).Where("id = ?", f.ID).Updates(updates).Error; err != nil {
-		log.Errorf(c, "update router fulfillment %d: %v", f.ID, err)
+	q := db.Get().Model(&RouterFulfillment{}).Where("id = ?", f.ID)
+	if body.Stage == RouterStageShipped {
+		// 条件更新：读到 ready 到写入之间可能被并发推进（另一次发货 / 同步），只从 ready 发货。
+		q = db.Get().Model(&RouterFulfillment{}).Where("id = ? AND stage = ?", f.ID, RouterStageReady)
+	}
+	res := q.Updates(updates)
+	if res.Error != nil {
+		log.Errorf(c, "update router fulfillment %d: %v", f.ID, res.Error)
 		Error(c, ErrorSystemError, "update failed")
+		return
+	}
+	if body.Stage == RouterStageShipped && res.RowsAffected == 0 {
+		Error(c, ErrorInvalidOperation, "只有「线路就绪」的订单可以标记发货")
 		return
 	}
 	log.Infof(c, "router fulfillment %d updated by %s: %+v", f.ID, updates["updated_by"], body)
@@ -167,6 +177,10 @@ func api_admin_update_router_stage(c *gin.Context) {
 func api_admin_mint_router_credential(c *gin.Context) {
 	f, ok := parseRouterFulfillmentID(c)
 	if !ok {
+		return
+	}
+	if f.Stage == RouterStageExpired {
+		Error(c, ErrorInvalidOperation, "该台账的线路已过期，续费后才能铸造凭证")
 		return
 	}
 	if f.Stage != RouterStageReady && f.Stage != RouterStageShipped && f.Stage != RouterStageOnline {

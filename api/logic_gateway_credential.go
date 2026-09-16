@@ -44,12 +44,39 @@ func mintGatewayCredential(ctx context.Context, user *User) (string, uint64, err
 			return err
 		}
 		deviceID = dev.ID
+		// 选行前先把该用户非 online 的台账按线路实时状态同步：存储的 stage 可能陈旧（线路过期时
+		// 读路径存了 expired，续费后还没人读过）。不同步的话 attach 按陈旧 stage 找不到行，而旧设备
+		// 上面已被轮换删掉 —— 之后行恢复，GatewayDeviceID 却指向已删设备，永远到不了 online。
+		if err := syncUserRouterFulfillments(ctx, tx, user.ID, now.Unix()); err != nil {
+			return err
+		}
 		return attachCredentialToFulfillment(tx, user.ID, dev.ID, now.Unix())
 	})
 	if err != nil {
 		return "", 0, err
 	}
 	return injectSubsCreds(gatewayCredentialBase(), udid, tunnelToken), deviceID, nil
+}
+
+// syncUserRouterFulfillments 对用户所有 stage≠online 的台账调 syncRouterFulfillment（事务内，错误上抛；
+// 线路行不存在的孤儿台账跳过）。
+func syncUserRouterFulfillments(ctx context.Context, tx *gorm.DB, userID uint64, now int64) error {
+	var rows []RouterFulfillment
+	if err := tx.Where("user_id = ? AND stage <> ?", userID, RouterStageOnline).Find(&rows).Error; err != nil {
+		return err
+	}
+	for i := range rows {
+		err := syncRouterFulfillment(ctx, tx, &rows[i], now)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 台账指向的线路不存在（孤儿数据）：无从同步，也不该挡住铸凭证。
+			log.Warnf(ctx, "router fulfillment %d: line %d not found, skip sync", rows[i].ID, rows[i].SubID)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // attachCredentialToFulfillment 把网关设备挂到用户**最新一条**未结的路由器版台账（ready/shipped/online）。

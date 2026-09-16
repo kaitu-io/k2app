@@ -55,6 +55,29 @@ func TestMintGatewayCredential_AttachesToFulfillment(t *testing.T) {
 	assert.Equal(t, devID2, *got.GatewayDeviceID)
 }
 
+// 存储 stage 陈旧：线路过期时读路径存了 expired，续费后线路回 active 但台账没人读过。用户此时直接重铸
+// 凭证 —— 轮换删掉旧设备，attach 必须仍能挂上这条台账（先同步再选行），否则 GatewayDeviceID 指向已删设备。
+func TestMintGatewayCredential_StaleExpiredStageStillAttaches(t *testing.T) {
+	skipIfNoConfig(t)
+	user := CreateTestUser(t)
+	_, f := seedReadyRouterFulfillment(t, user)
+
+	_, oldDevID, err := mintGatewayCredential(context.Background(), user)
+	require.NoError(t, err)
+	// 模拟：线路曾过期（台账被推到 expired），随后续费回 active，台账未被同步
+	require.NoError(t, db.Get().Model(&RouterFulfillment{}).Where("id = ?", f.ID).Update("stage", RouterStageExpired).Error)
+
+	_, newDevID, err := mintGatewayCredential(context.Background(), user)
+	require.NoError(t, err)
+	require.NotEqual(t, oldDevID, newDevID)
+
+	var got RouterFulfillment
+	require.NoError(t, db.Get().First(&got, f.ID).Error)
+	assert.Equal(t, RouterStageReady, got.Stage, "stage must be re-synced from the live line before selecting the row")
+	require.NotNil(t, got.GatewayDeviceID)
+	assert.Equal(t, newDevID, *got.GatewayDeviceID, "fulfillment must point at the freshly minted device, not the rotated-away one")
+}
+
 func TestMintGatewayCredential_NoLineRejected(t *testing.T) {
 	skipIfNoConfig(t)
 	user := CreateTestUser(t)

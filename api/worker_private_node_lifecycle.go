@@ -79,10 +79,15 @@ func handlePrivateNodeLifecycleSweep(ctx context.Context, _ []byte) error {
 	for i := range graceEnded {
 		s := &graceEnded[i]
 		suspendUntil := s.ExpiresAt + privateNodeGraceSeconds + privateNodeSuspendSeconds
-		if err := db.Get().Model(&PrivateNodeSubscription{}).
+		res := db.Get().Model(&PrivateNodeSubscription{}).
 			Where("id = ? AND status = ?", s.ID, PNStatusGrace).
-			Updates(map[string]any{"status": PNStatusSuspended, "suspend_until": suspendUntil}).Error; err != nil {
-			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] grace->suspended sub=%d: %v", s.ID, err)
+			Updates(map[string]any{"status": PNStatusSuspended, "suspend_until": suspendUntil})
+		if res.Error != nil {
+			log.Errorf(ctx, "[PRIVATE-NODE-LIFECYCLE] grace->suspended sub=%d: %v", s.ID, res.Error)
+			continue
+		}
+		if res.RowsAffected == 0 {
+			// 快照与更新之间状态已变（例如刚被续费回 active）：没有真的停服，不发通知、不排停机。
 			continue
 		}
 		sendCloudSlackNotification(ctx, "Private Node Suspended",

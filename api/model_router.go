@@ -43,7 +43,7 @@ type RouterFulfillment struct {
 	Carrier    string `gorm:"type:varchar(32);not null;default:''" json:"carrier"`
 	ShippedAt  int64  `gorm:"not null;default:0" json:"shippedAt"`
 
-	// 网关凭证：谁铸的不重要，铸造时刻是"上线"判定的基准（设备活动 > 此刻 才算真上线）。
+	// 网关凭证：谁铸的不重要，铸造时刻是"上线"判定的基准（设备活动 > 此刻 才算真上线；成品还须晚于 ShippedAt）。
 	GatewayDeviceID    *uint64 `gorm:"index" json:"gatewayDeviceId,omitempty"`
 	CredentialMintedAt int64   `gorm:"not null;default:0" json:"credentialMintedAt"`
 	ActivatedAt        int64   `gorm:"not null;default:0" json:"activatedAt"`
@@ -61,12 +61,13 @@ func (f *RouterFulfillment) IsBYO() bool { return f.HardwareSKU == "" }
 // 规则：
 //   - paid → provisioning（sub=provisioning）→ ready（sub=active）；paid 可直接跳 ready。
 //   - ready → online：自备路由器在铸造凭证后设备有活动即上线；成品必须先 shipped。
-//   - shipped → online：设备活动 > 铸造时刻。
+//   - shipped → online：设备活动 > max(铸造时刻, 发货时刻)（仓库里烧录测试的活动不算上线）。
+//   - paid/provisioning → shipped：成品台账已带 ShippedAt（续费继承自旧硬件台账）时跳过 ready。
 //   - 任意非终态 → expired：sub 进入 suspended/deprovisioned/failed。grace 仍视为在服务。
 //   - expired → 恢复到过期前的发货里程碑：sub 回到 active 时，stage 是里程碑不是实时在线状态
 //     （实时在线由 Task 7 单独算），所以已发货（ShippedAt>0）回 shipped、未发货回 ready ——
 //     不能统一落到 ready，否则硬件路由器回收后要运维再标一次"发货"才能回 online。若设备此前
-//     已用该凭证连过（dev.TokenLastUsedAt > f.CredentialMintedAt），同一次 advance 会继续按
+//     已用该凭证连过（dev.TokenLastUsedAt > 上线门槛），同一次 advance 会继续按
 //     下面的上线规则级联到 online，不需要等待设备再次连接。
 func advanceRouterFulfillment(f *RouterFulfillment, sub *PrivateNodeSubscription, dev *Device, now int64) bool {
 	before := f.Stage
@@ -86,10 +87,23 @@ func advanceRouterFulfillment(f *RouterFulfillment, sub *PrivateNodeSubscription
 		f.Stage = RouterStageProvisioning
 	}
 	if (f.Stage == RouterStagePaid || f.Stage == RouterStageProvisioning) && sub.Status == PNStatusActive {
-		f.Stage = RouterStageReady
+		if !f.IsBYO() && f.ShippedAt > 0 {
+			// 续费继承的硬件台账（applyRouterOrder 从旧硬件台账继承 ShippedAt）：硬件早已在客户手里，
+			// 不需要运营再标一次发货。普通硬件新单 ShippedAt==0，照常停在 ready 等发货。
+			f.Stage = RouterStageShipped
+		} else {
+			f.Stage = RouterStageReady
+		}
+	}
+	// 上线门槛：设备活动必须晚于门槛时刻。自备 = 铸造时刻；成品 = max(铸造, 发货) —— 技术员铸凭证后
+	// 在仓库跑 k2r setup 会请求 /api/subs 记下活动，若只比铸造时刻，运营一点发货台账就跳 online，
+	// 而路由器其实还在快递路上。
+	threshold := f.CredentialMintedAt
+	if !f.IsBYO() && f.ShippedAt > threshold {
+		threshold = f.ShippedAt
 	}
 	canGoOnline := (f.Stage == RouterStageReady && f.IsBYO()) || f.Stage == RouterStageShipped
-	if canGoOnline && dev != nil && dev.IsGateway && f.CredentialMintedAt > 0 && dev.TokenLastUsedAt > f.CredentialMintedAt {
+	if canGoOnline && dev != nil && dev.IsGateway && f.CredentialMintedAt > 0 && dev.TokenLastUsedAt > threshold {
 		f.Stage = RouterStageOnline
 		f.ActivatedAt = dev.TokenLastUsedAt
 	}

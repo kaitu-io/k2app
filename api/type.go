@@ -651,7 +651,7 @@ type DataRouterFulfillment struct {
 	ShippedAt         int64  `json:"shippedAt"`
 	ActivatedAt       int64  `json:"activatedAt"`
 	CredentialMinted  bool   `json:"credentialMinted"`
-	CanMintCredential bool   `json:"canMintCredential"` // stage ∈ ready/shipped/online（线路 active）
+	CanMintCredential bool   `json:"canMintCredential"` // HasActivePrivateLines：用户持有可服务线路（与铸凭证准入门同一谓词，不看台账 stage）
 	CreatedAt         int64  `json:"createdAt"`
 }
 

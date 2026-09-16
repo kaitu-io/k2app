@@ -2,6 +2,7 @@ package center
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -184,4 +185,65 @@ func TestAdminRouterDevices_List(t *testing.T) {
 		}
 	}
 	assert.True(t, found)
+}
+
+// 端到端：成品路由器在仓库铸凭证 + 跑 k2r setup（/api/subs 记下活动）→ 运营标发货 → 台账必须仍是
+// shipped（此前的活动是仓库测试，不是客户上线）→ 发货之后再有活动才 online。
+func TestRouterFulfillment_HardwareWarehouseActivityNotOnlineAfterShip(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	_, f := seedReadyRouterFulfillment(t, user)
+	require.NoError(t, db.Get().Model(f).Update("hardware_sku", "redmi-ax6s").Error)
+
+	_, devID, err := mintGatewayCredential(ctx, user)
+	require.NoError(t, err)
+	// 铸造把 CredentialMintedAt 与设备 TokenLastUsedAt 都写成"现在"；整体回拨到过去，给后续
+	// touch / 发货留出严格递增的时间线（发货端点把 shipped_at 写成真实的 now）。
+	now := time.Now().Unix()
+	mintAt := now - 1000
+	require.NoError(t, db.Get().Model(&RouterFulfillment{}).Where("id = ?", f.ID).Update("credential_minted_at", mintAt).Error)
+	require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", devID).Update("token_last_used_at", mintAt).Error)
+	var dev Device
+	require.NoError(t, db.Get().First(&dev, devID).Error)
+
+	// 仓库里跑 k2r setup：活动晚于铸造
+	touchGatewayDeviceSeen(ctx, &dev, now-500)
+
+	reload := func() RouterFulfillment {
+		var got RouterFulfillment
+		require.NoError(t, db.Get().First(&got, f.ID).Error)
+		require.NoError(t, syncRouterFulfillment(ctx, db.Get(), &got, time.Now().Unix()))
+		var persisted RouterFulfillment
+		require.NoError(t, db.Get().First(&persisted, f.ID).Error)
+		return persisted
+	}
+	assert.Equal(t, RouterStageReady, reload().Stage, "hardware must not go online before shipping")
+
+	code, _ := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/stage",
+		AdminRouterStageRequest{Stage: RouterStageShipped, TrackingNo: "SF-E2E", Carrier: "顺丰"})
+	require.EqualValues(t, 0, code)
+
+	got := reload()
+	require.Greater(t, got.ShippedAt, now-500)
+	assert.Equal(t, RouterStageShipped, got.Stage, "warehouse activity before ShippedAt must not flip the ledger to online")
+
+	// 客户收货后路由器拉订阅：活动晚于发货时刻 → online
+	touchGatewayDeviceSeen(ctx, &dev, got.ShippedAt+10)
+	got = reload()
+	assert.Equal(t, RouterStageOnline, got.Stage)
+	assert.Equal(t, got.ShippedAt+10, got.ActivatedAt)
+}
+
+// 已过期台账代铸：返回 ErrorInvalidOperation（线路过期），与"尚未就绪"的 ErrorTooEarly 区分。
+func TestAdminRouterFulfillments_MintCredential_ExpiredIsInvalidOperation(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	_, f := seedReadyRouterFulfillment(t, user)
+	require.NoError(t, db.Get().Model(f).Update("stage", RouterStageExpired).Error)
+
+	code, _ := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/credential", nil)
+	assert.EqualValues(t, ErrorInvalidOperation, code)
 }
