@@ -3,8 +3,8 @@
 package gateway
 
 import (
-	"fmt"
 	"net"
+	"strconv"
 )
 
 // ifaceAddrs decouples net.Interface enumeration from address resolution so
@@ -39,7 +39,10 @@ func resolveLANBindAddrs(ifaces []ifaceAddrs, port int) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(ip string) {
-		a := fmt.Sprintf("%s:%d", ip, port)
+		// JoinHostPort brackets IPv6 literals; a bare "%s:%d" produced
+		// "fd1a:...::1:1779" and every LAN ULA bind failed with
+		// "too many colons in address" (seen on OpenWrt 25.12).
+		a := net.JoinHostPort(ip, strconv.Itoa(port))
 		if !seen[a] {
 			seen[a] = true
 			out = append(out, a)

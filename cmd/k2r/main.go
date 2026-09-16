@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/gateway"
@@ -185,11 +186,46 @@ Flags:
 		os.Exit(1)
 	}
 
-	out.printResult("k2r installed and started.")
+	// The daemon only auto-connects from a persisted state.json (previous
+	// session), never from a freshly written k2r.yml — and when the service
+	// was already running (install script: `service install` then `setup`),
+	// InstallService's start is a no-op. Without this, "installed and started"
+	// left the router disconnected until someone ran `k2r up` by hand.
+	if msg, err := connectAfterSetup(); err != nil {
+		out.printResult("k2r installed and started, but the first connect failed: " + err.Error())
+		out.printResult("  k2r up       -- retry")
+	} else {
+		out.printResult("k2r installed and started (" + msg + ").")
+	}
 	out.printResult("  k2r status   -- check connection")
 	out.printResult("  k2r down     -- disconnect")
 	out.ok(map[string]string{"status": "installed", "config": "/etc/k2r/k2r.yml"})
 }
+
+// connectAfterSetup waits for the gateway daemon's IPC endpoint to come up
+// (procd/systemd start is asynchronous) and issues an argument-less "up",
+// which makes the daemon load the k2r.yml that setup just persisted.
+func connectAfterSetup() (string, error) {
+	client := gateway.NewClient(gateway.DefaultGatewayAddr)
+	var lastErr error
+	deadline := time.Now().Add(setupConnectWait)
+	for time.Now().Before(deadline) {
+		resp, err := client.Do("up", nil)
+		if err == nil {
+			if resp.Code != 0 {
+				return "", fmt.Errorf("%s", resp.Message)
+			}
+			return resp.Message, nil
+		}
+		lastErr = err
+		time.Sleep(500 * time.Millisecond)
+	}
+	return "", fmt.Errorf("gateway daemon not reachable: %w", lastErr)
+}
+
+// setupConnectWait bounds how long `k2r setup` waits for the daemon's IPC
+// endpoint after starting the service.
+const setupConnectWait = 15 * time.Second
 
 // cmdUp connects the gateway via daemon IPC.
 func cmdUp(args []string) int {
