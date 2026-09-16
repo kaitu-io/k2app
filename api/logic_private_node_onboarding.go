@@ -3,24 +3,38 @@ package center
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
 
 // privateNodeInstallContent 装机协助工单文案。中文面向用户,用"开途/专属线路/路由器",
 // 禁裸词 "Kaitu"。运营会在此工单线程内主动协助用户完成路由器安装。
 const privateNodeInstallContent = "您好!感谢购买开途专属线路。我们的技术支持会主动联系您,协助完成路由器的安装与配置(刷机、接入专属线路、确认连接)。如需尽快开始,可直接在本工单回复您方便的联系方式与时段,我们会优先安排。"
+const privateNodeWelcomeSlug = "private-node-welcome"
+const privateNodeSlackTitle = "Dedicated Line Order — Install Needed"
 
 // routerInstallContent 路由器版(成品 / 自备)付款后的工单文案。中文用户面用"开途"。
 const routerInstallContent = "您好!感谢购买开途路由器版。我们正在为您准备专属出口与路由器:成品路由器将在配置完成后寄出,发货与上线进度可在「我的路由器」页面查看;自备路由器的用户可在线路就绪后在同一页面生成一条安装命令。如有任何问题,直接在本工单回复即可。"
 const routerWelcomeSlug = "router-welcome"
+const routerSlackTitle = "Router Edition Order — Fulfillment Needed"
 
 // privateNodeInstallFeedbackID 给装机工单一个确定性 ID,天然幂等(FeedbackID uniqueIndex)。
 func privateNodeInstallFeedbackID(subID uint64) string {
 	return fmt.Sprintf("pn-install-%d", subID) // <=36 chars
+}
+
+// privateNodeOnboardingCopy 是"路由器版 vs 定制线路"文案分叉的唯一入口(纯函数,可单测)。
+// isRouter 由调用方按"该 sub 是否有 RouterFulfillment"判定。
+func privateNodeOnboardingCopy(isRouter bool) (content, ticketType, welcomeSlug, slackTitle string) {
+	if isRouter {
+		return routerInstallContent, "router_order", routerWelcomeSlug, routerSlackTitle
+	}
+	return privateNodeInstallContent, "private_node_install", privateNodeWelcomeSlug, privateNodeSlackTitle
 }
 
 // onPrivateNodeOrderOnboarding 在订单 post-commit 后为专属节点订阅做白手套 onboarding:
@@ -44,11 +58,15 @@ func onPrivateNodeOrderOnboarding(ctx context.Context, subID uint64) {
 
 	// 路由器版订单:有发货台账 → 用路由器版文案/类型/欢迎模板;否则保持定制线路原文案。
 	var fulfillment RouterFulfillment
-	isRouter := db.Get().Where("sub_id = ?", sub.ID).First(&fulfillment).Error == nil
-	content, ticketType, welcomeSlug, slackTitle := privateNodeInstallContent, "private_node_install", "private-node-welcome", "Dedicated Line Order — Install Needed"
-	if isRouter {
-		content, ticketType, welcomeSlug, slackTitle = routerInstallContent, "router_order", routerWelcomeSlug, "Router Edition Order — Fulfillment Needed"
+	isRouter := false
+	if err := db.Get().Where("sub_id = ?", sub.ID).First(&fulfillment).Error; err == nil {
+		isRouter = true
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		// 非"找不到"的查询错误(如连接失败):按定制线路降级处理,但要留痕——
+		// 否则一次数据库抖动会悄悄把路由器订单错发成定制线路文案。
+		log.Warnf(ctx, "onboarding: lookup router fulfillment for sub=%d: %v", sub.ID, err)
 	}
+	content, ticketType, welcomeSlug, slackTitle := privateNodeOnboardingCopy(isRouter)
 
 	// ① 装机工单(幂等)。
 	now := time.Now()
