@@ -140,6 +140,22 @@ func api_create_order(c *gin.Context) {
 		}
 	}
 
+	// 一户一台（spec §8）：真实下单硬件套餐时，已有未过期台账或可续线路 → 拒绝，引导买续费套餐。
+	// 预览放行，让网站照常报价。
+	if plan.Product == ProductRouter && plan.HardwareSKU != "" && !req.Preview {
+		has, err := userHasRouter(c, db.Get(), user.ID, time.Now().Unix())
+		if err != nil {
+			log.Errorf(c, "check existing router for user %d: %v", user.ID, err)
+			Error(c, ErrorSystemError, "failed to check existing router")
+			return
+		}
+		if has {
+			log.Warnf(c, "user %d rejected: already has a router, hardware plan %s blocked", user.ID, plan.PID)
+			Error(c, ErrorInvalidOperation, "该账户已有开途路由器，请购买续费套餐")
+			return
+		}
+	}
+
 	// 路由器版成品：真实下单必须带收货信息（预览阶段允许缺省，让页面先报价）。
 	if plan.Product == ProductRouter && plan.HardwareSKU != "" && !req.Preview {
 		if req.Shipping == nil || req.Shipping.Name == "" || req.Shipping.Phone == "" || req.Shipping.Address == "" {

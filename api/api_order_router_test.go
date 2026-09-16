@@ -137,6 +137,103 @@ func TestOrderRouterShipping_SaveRoundTrip(t *testing.T) {
 	assert.Equal(t, "广州市…", s.Address)
 }
 
+// 一户一台：真实下单硬件套餐时，已有未过期台账或可续线路 → ErrorInvalidOperation；预览放行；
+// 只剩 expired 台账且无可续线路可以再买；服务套餐不受此门影响。
+func TestCreateOrder_RouterHardwareOnePerAccount(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	r := orderRegionTestRouter()
+	hw := seedRouterPlan(t, "router-test-one-hw", "redmi-ax6s", 39900)
+	svc := seedRouterPlan(t, "router-test-one-svc", "", 29900)
+	shipping := map[string]any{"name": "张三", "phone": "13800000000", "address": "上海市…"}
+	hwOrder := map[string]any{"preview": false, "plan": hw.PID, "region": "japan", "shipping": shipping}
+	now := time.Now().Unix()
+
+	mkLine := func(t *testing.T, userID uint64, status string, orderID uint64) *PrivateNodeSubscription {
+		t.Helper()
+		s := &PrivateNodeSubscription{UserID: userID, PlanID: hw.ID, OrderID: orderID, Region: "japan",
+			IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40, Status: status,
+			PurchasedAt: now - 10*86400, ExpiresAt: now + 300*86400}
+		require.NoError(t, db.Get().Create(s).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(s) })
+		return s
+	}
+	cleanupOrders := func(t *testing.T, userID uint64) {
+		t.Cleanup(func() { db.Get().Unscoped().Where("user_id = ?", userID).Delete(&Order{}) })
+	}
+
+	t.Run("ready fulfillment blocks hardware order", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		_, _ = seedReadyRouterFulfillment(t, user)
+
+		code, _ := postOrder(t, r, user.ID, hwOrder)
+		assert.EqualValues(t, ErrorInvalidOperation, code)
+		assert.Nil(t, latestOrderForUser(t, user.ID), "rejected order must not persist")
+
+		// 预览照常报价
+		code, _ = postOrder(t, r, user.ID, map[string]any{"preview": true, "plan": hw.PID, "region": "japan"})
+		assert.EqualValues(t, 0, code)
+
+		// 服务套餐不受此门影响
+		code, _ = postOrder(t, r, user.ID, map[string]any{"preview": false, "plan": svc.PID, "region": "japan"})
+		assert.NotEqualValues(t, ErrorInvalidOperation, code)
+		assert.NotNil(t, latestOrderForUser(t, user.ID), "service plan order must persist")
+	})
+
+	t.Run("paid fulfillment on a not-yet-renewable pending line blocks hardware order", func(t *testing.T) {
+		// 隔离台账门：线路 pending 不在可续集合内，只能靠 stage≠expired 的台账拦下
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		pending := mkLine(t, user.ID, PNStatusPending, 770000+user.ID)
+		f := &RouterFulfillment{OrderID: pending.OrderID, UserID: user.ID, SubID: pending.ID,
+			HardwareSKU: "redmi-ax6s", Stage: RouterStagePaid}
+		require.NoError(t, db.Get().Create(f).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(f) })
+
+		code, _ := postOrder(t, r, user.ID, hwOrder)
+		assert.EqualValues(t, ErrorInvalidOperation, code)
+		assert.Nil(t, latestOrderForUser(t, user.ID))
+	})
+
+	t.Run("renewable line without fulfillment blocks hardware order", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		mkLine(t, user.ID, PNStatusActive, 0)
+		code, _ := postOrder(t, r, user.ID, hwOrder)
+		assert.EqualValues(t, ErrorInvalidOperation, code)
+		assert.Nil(t, latestOrderForUser(t, user.ID))
+	})
+
+	t.Run("only expired fulfillment and no renewable line may buy hardware", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		dead := mkLine(t, user.ID, PNStatusDeprovisioned, 750000+user.ID)
+		f := &RouterFulfillment{OrderID: dead.OrderID, UserID: user.ID, SubID: dead.ID,
+			HardwareSKU: "redmi-ax6s", Stage: RouterStageExpired, ShippedAt: now - 400*86400}
+		require.NoError(t, db.Get().Create(f).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(f) })
+
+		code, _ := postOrder(t, r, user.ID, hwOrder)
+		assert.NotEqualValues(t, ErrorInvalidOperation, code)
+		assert.NotNil(t, latestOrderForUser(t, user.ID), "hardware order must persist")
+	})
+
+	t.Run("stale non-expired stage over a deprovisioned line does not block", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		dead := mkLine(t, user.ID, PNStatusDeprovisioned, 760000+user.ID)
+		f := &RouterFulfillment{OrderID: dead.OrderID, UserID: user.ID, SubID: dead.ID,
+			HardwareSKU: "redmi-ax6s", Stage: RouterStageOnline, ShippedAt: now - 400*86400}
+		require.NoError(t, db.Get().Create(f).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(f) })
+
+		code, _ := postOrder(t, r, user.ID, hwOrder)
+		assert.NotEqualValues(t, ErrorInvalidOperation, code)
+		assert.NotNil(t, latestOrderForUser(t, user.ID))
+	})
+}
+
 func TestCreateOrder_RouterBadRegionRejected(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
