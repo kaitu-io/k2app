@@ -85,23 +85,30 @@ func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order, provision
 		return fmt.Errorf("plan not found for order %d", order.ID)
 	}
 
-	// 专属节点产品：独立时钟，不碰 User.ExpiredAt。建 pending 订阅 + 异步开通。
-	if plan.Product == ProductPrivateNode {
-		sub, err := createPrivateNodeSubscription(ctx, tx, order, plan, time.Now().Unix())
-		if err != nil {
-			return fmt.Errorf("create private node subscription: %w", err)
-		}
-		// 入队推迟到事务提交后（见函数注释 / Bug #4）。
-		if provisionSubIDs != nil {
-			*provisionSubIDs = append(*provisionSubIDs, sub.ID)
+	// 专属线路产品（专属节点 / 路由器版）：独立时钟，不碰 User.ExpiredAt。
+	if isLineProduct(plan.Product) {
+		now := time.Now().Unix()
+		if plan.Product == ProductRouter {
+			if err := applyRouterOrder(ctx, tx, order, plan, now, provisionSubIDs); err != nil {
+				return err
+			}
+		} else {
+			sub, err := createPrivateNodeSubscription(ctx, tx, order, plan, now)
+			if err != nil {
+				return fmt.Errorf("create private node subscription: %w", err)
+			}
+			// 入队推迟到事务提交后（见函数注释 / Bug #4）。
+			if provisionSubIDs != nil {
+				*provisionSubIDs = append(*provisionSubIDs, sub.ID)
+			}
 		}
 
-		// Bug #5：专属节点买家也是已付费首单买家——补置 IsFirstOrderDone / IsActivated，
+		// Bug #5：专属线路买家也是已付费首单买家——补置 IsFirstOrderDone / IsActivated，
 		// 否则仍匹配 first_order（新客）活动码、可重复触发邀请奖励。仅列级更新这两个
-		// 标志位，绝不碰 ExpiredAt（专属节点独立时钟，不能走 addProExpiredDays）。
+		// 标志位，绝不碰 ExpiredAt（专属线路独立时钟，不能走 addProExpiredDays）。
 		var buyer User
 		if err := tx.First(&buyer, order.UserID).Error; err != nil {
-			return fmt.Errorf("buyer not found for private node order %d: %w", order.ID, err)
+			return fmt.Errorf("buyer not found for line product order %d: %w", order.ID, err)
 		}
 		updates := map[string]any{}
 		if buyer.IsFirstOrderDone == nil || !*buyer.IsFirstOrderDone {
@@ -113,11 +120,11 @@ func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order, provision
 		}
 		if len(updates) > 0 {
 			if err := tx.Model(&User{}).Where("id = ?", order.UserID).Updates(updates).Error; err != nil {
-				return fmt.Errorf("set buyer flags for private node order %d: %w", order.ID, err)
+				return fmt.Errorf("set buyer flags for line product order %d: %w", order.ID, err)
 			}
 		}
 
-		log.Infof(ctx, "private node sub %d created for order %d (pending provision, post-commit enqueue)", sub.ID, order.ID)
+		log.Infof(ctx, "line product order %d applied (product=%s, post-commit enqueue)", order.ID, plan.Product)
 		return nil
 	}
 
