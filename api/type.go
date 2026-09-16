@@ -628,6 +628,42 @@ type DataPrivateNodeList struct {
 	Items []DataPrivateNodeSubscription `json:"items"`
 }
 
+// routerOnlineWindowSeconds 路由器「在线」判定窗口：2 × 30 分钟刷新 + 5 分钟余量。
+const routerOnlineWindowSeconds int64 = 65 * 60
+
+// DataRouterDevice 账户页展示的网关设备状态。
+type DataRouterDevice struct {
+	UDID       string `json:"udid"`
+	AppVersion string `json:"appVersion"`
+	AppArch    string `json:"appArch"`
+	LastSeenAt int64  `json:"lastSeenAt"` // Unix 秒；0 = 从未连上
+	Online     bool   `json:"online"`     // now - LastSeenAt <= routerOnlineWindowSeconds
+}
+
+// DataRouterFulfillment 账户页展示的路由器版发货 / 上线台账。
+type DataRouterFulfillment struct {
+	ID                uint64 `json:"id"`
+	OrderID           uint64 `json:"orderId"`
+	HardwareSKU       string `json:"hardwareSku"`
+	Stage             string `json:"stage"`
+	TrackingNo        string `json:"trackingNo,omitempty"`
+	Carrier           string `json:"carrier,omitempty"`
+	ShippedAt         int64  `json:"shippedAt"`
+	ActivatedAt       int64  `json:"activatedAt"`
+	CredentialMinted  bool   `json:"credentialMinted"`
+	CanMintCredential bool   `json:"canMintCredential"` // stage ∈ ready/shipped/online（线路 active）
+	CreatedAt         int64  `json:"createdAt"`
+}
+
+// DataUserRouter 账户页「我的路由器」聚合：最新台账 + 其线路 + 网关设备 + 可续费套餐。
+type DataUserRouter struct {
+	HasRouter    bool                         `json:"hasRouter"`             // 是否有任何路由器版订单
+	Fulfillment  *DataRouterFulfillment       `json:"fulfillment,omitempty"` // 最新一条
+	Line         *DataPrivateNodeSubscription `json:"line,omitempty"`        // 台账指向的线路（用量/到期）
+	Device       *DataRouterDevice            `json:"device,omitempty"`
+	RenewPlanPID string                       `json:"renewPlanPid,omitempty"` // 可续费的 router 套餐（HardwareSKU=="" 且 active），供「续费一年」按钮
+}
+
 // Response_SlaveDeviceCheckAuthResult 节点设备认证结果响应
 type Response_SlaveDeviceCheckAuthResult struct {
 	Code int                        `json:"code" example:"200"`        // 响应码
