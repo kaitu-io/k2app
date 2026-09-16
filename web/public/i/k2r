@@ -26,7 +26,10 @@ require_root() {
 }
 
 detect_platform() {
-    OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    # Explicit ranges, not [:upper:]/[:lower:]: OpenWrt's busybox tr is built
+    # without character classes and turns "Linux" into "Linlx" (25.12 x86_64).
+    # shellcheck disable=SC2018,SC2019
+    OS="$(uname -s | tr 'A-Z' 'a-z')"
     ARCH="$(uname -m)"
 
     case "$OS" in
@@ -38,6 +41,18 @@ detect_platform() {
         x86_64|amd64)   ARCH="amd64" ;;
         aarch64|arm64)  ARCH="arm64" ;;
         armv7l)         ARCH="armv7" ;;
+        mips*)
+            # uname -m can't tell MIPS endianness; read the ELF EI_DATA byte
+            # (offset 5) of a known local binary. 0x01 = little-endian (mipsle),
+            # 0x02 = big-endian (mips). Uses only head/tail (busybox lacks od on
+            # minimal images like GL.iNet ath79).
+            _elf="/bin/busybox"; [ -r "$_elf" ] || _elf="/bin/sh"
+            if [ "$(head -c6 "$_elf" 2>/dev/null | tail -c1)" = "$(printf '\001')" ]; then
+                ARCH="mipsle"
+            else
+                ARCH="mips"
+            fi
+            ;;
         *)              die "unsupported architecture: $ARCH" ;;
     esac
 }
@@ -90,8 +105,10 @@ sha256_check() {
 
 installed_version() {
     if command -v "$BINARY" >/dev/null 2>&1; then
-        # "k2r VERSION (COMMIT)" — extract second word
-        "$BINARY" -v 2>/dev/null | awk '{print $2}' || echo ""
+        # "k2r VERSION (COMMIT)" — extract second word. k2r has no -v flag
+        # (it exits 1 with "Unknown flag"), so an upgrade used to look like a
+        # fresh install every time.
+        "$BINARY" version 2>/dev/null | awk '{print $2}' || echo ""
     else
         echo ""
     fi
@@ -117,12 +134,79 @@ restart_service() {
     fi
 }
 
-# install_luci — install LuCI controller + view if LuCI is present
+# install_luci — add an "Admin > Services > K2 VPN" page that embeds the
+# gateway panel. Two LuCI generations: the ucode/JS one (OpenWrt 21.02+,
+# menu.d JSON + JS view + rpcd ACL) and the legacy Lua one (<= 19.07). The
+# iframe targets the router's own hostname as seen by the browser — a
+# hard-coded 127.0.0.1 would point at the visitor's machine, not the router.
 install_luci() {
-    LUCI_DIR="/usr/lib/lua/luci"
-    [ -d "$LUCI_DIR" ] || return 0
+    if [ -d /usr/share/luci/menu.d ] && [ -d /www/luci-static/resources ]; then
+        install_luci_js
+    elif [ -d /usr/lib/lua/luci ]; then
+        install_luci_lua
+    else
+        return 0
+    fi
+    # rpcd only learns new acl.d groups on reload — until then no session
+    # holds "luci-app-k2r" and the page 403s (an ACL group with empty
+    # read/write scopes is never granted at all). Then clear LuCI's caches.
+    /etc/init.d/rpcd reload 2>/dev/null || true
+    rm -rf /tmp/luci-*
+    log "LuCI integration installed (Admin > Services > K2 VPN)"
+}
 
-    log "Installing LuCI integration..."
+install_luci_js() {
+    log "Installing LuCI integration (JS)..."
+    mkdir -p /usr/share/luci/menu.d /usr/share/rpcd/acl.d /www/luci-static/resources/view
+    cat > /usr/share/luci/menu.d/luci-app-k2r.json <<'EOF'
+{
+	"admin/services/k2r": {
+		"title": "K2 VPN",
+		"order": 90,
+		"action": {
+			"type": "view",
+			"path": "k2r"
+		},
+		"depends": {
+			"acl": [ "luci-app-k2r" ]
+		}
+	}
+}
+EOF
+    cat > /usr/share/rpcd/acl.d/luci-app-k2r.json <<'EOF'
+{
+	"luci-app-k2r": {
+		"description": "Grant access to the K2 VPN gateway page",
+		"read": {
+			"file": {
+				"/www/luci-static/resources/view/k2r.js": [ "read" ]
+			}
+		}
+	}
+}
+EOF
+    cat > /www/luci-static/resources/view/k2r.js <<'EOF'
+'use strict';
+'require view';
+
+return view.extend({
+	handleSave: null,
+	handleSaveApply: null,
+	handleReset: null,
+
+	render: function() {
+		return E('iframe', {
+			'src': 'http://' + window.location.hostname + ':1779/',
+			'style': 'width:100%;height:calc(100vh - 160px);border:none;'
+		});
+	}
+});
+EOF
+}
+
+install_luci_lua() {
+    LUCI_DIR="/usr/lib/lua/luci"
+    log "Installing LuCI integration (Lua)..."
 
     # Controller
     CTRL_DIR="${LUCI_DIR}/controller"
@@ -141,16 +225,15 @@ EOF
     cat > "${VIEW_DIR}/k2r.htm" <<'EOF'
 <%+header%>
 <iframe
-  src="http://127.0.0.1:1779"
+  id="k2r-panel"
   style="width:100%;height:calc(100vh - 120px);border:none;"
   allowfullscreen
 ></iframe>
+<script type="text/javascript">
+document.getElementById('k2r-panel').src = 'http://' + window.location.hostname + ':1779/';
+</script>
 <%+footer%>
 EOF
-
-    # Clear LuCI cache so new menu entry appears
-    rm -rf /tmp/luci-*
-    log "LuCI integration installed (Admin > Services > K2 VPN)"
 }
 
 get_lan_ip() {
@@ -161,9 +244,14 @@ get_lan_ip() {
     fi
 }
 
-# detect_pkg_mgr — sets PKG_MGR to one of: opkg, apt, apk, dnf, pacman, ""
+# detect_pkg_mgr — sets PKG_MGR to one of: openwrt-opkg, openwrt-apk, apt,
+# apk, dnf, pacman, "". OpenWrt is checked first: since 25.x its package
+# manager is apk, and a plain "apk" branch would install Alpine's iptables
+# (wrong package, and no TPROXY kernel module) instead of kmod-nft-tproxy.
 detect_pkg_mgr() {
-    if command -v opkg >/dev/null 2>&1; then PKG_MGR=opkg
+    if [ -f /etc/openwrt_release ] && command -v opkg >/dev/null 2>&1; then PKG_MGR=openwrt-opkg
+    elif [ -f /etc/openwrt_release ] && command -v apk >/dev/null 2>&1; then PKG_MGR=openwrt-apk
+    elif command -v opkg >/dev/null 2>&1; then PKG_MGR=openwrt-opkg
     elif command -v apt-get >/dev/null 2>&1; then PKG_MGR=apt
     elif command -v apk >/dev/null 2>&1; then PKG_MGR=apk
     elif command -v dnf >/dev/null 2>&1; then PKG_MGR=dnf
@@ -201,11 +289,25 @@ add rule inet __k2r_probe pre meta l4proto udp tproxy ip to :12345 meta mark set
 # Install TPROXY packages for the detected package manager. Errors are
 # tolerated — we re-test capability after this returns.
 install_tproxy_pkg() {
+    # OpenWrt: fw4 (22.03+) means the nftables backend — the kmod-ipt-tproxy
+    # pair only helps on fw3 (iptables) releases and is absent from apk feeds.
+    if command -v fw4 >/dev/null 2>&1; then
+        OPENWRT_PKGS="kmod-nft-tproxy"
+    else
+        OPENWRT_PKGS="iptables-mod-tproxy kmod-ipt-tproxy"
+    fi
     case "$PKG_MGR" in
-        opkg)
-            log "  opkg: installing iptables-mod-tproxy kmod-ipt-tproxy..."
+        openwrt-opkg)
+            log "  opkg: installing ${OPENWRT_PKGS}..."
             opkg update >/dev/null 2>&1 || true
-            opkg install iptables-mod-tproxy kmod-ipt-tproxy >/dev/null 2>&1 || true
+            # shellcheck disable=SC2086
+            opkg install $OPENWRT_PKGS >/dev/null 2>&1 || true
+            ;;
+        openwrt-apk)
+            log "  apk: installing ${OPENWRT_PKGS}..."
+            apk update >/dev/null 2>&1 || true
+            # shellcheck disable=SC2086
+            apk add $OPENWRT_PKGS >/dev/null 2>&1 || true
             ;;
         apt)
             log "  apt-get: installing iptables..."
@@ -227,7 +329,8 @@ install_tproxy_pkg() {
             log "  no supported package manager detected — install TPROXY support manually"
             ;;
     esac
-    # Load the kernel module — name varies by kernel version, try both.
+    # Load the kernel module — name varies by backend and kernel version.
+    modprobe nft_tproxy 2>/dev/null || true
     modprobe xt_TPROXY 2>/dev/null || modprobe ipt_TPROXY 2>/dev/null || true
 }
 
@@ -255,7 +358,9 @@ ensure_tproxy() {
     log "k2r requires either iptables with xt_TPROXY or nftables with tproxy."
     log ""
     log "Install manually for your platform:"
-    log "  OpenWrt:        opkg update && opkg install iptables-mod-tproxy kmod-ipt-tproxy"
+    log "  OpenWrt 25.x+:  apk update && apk add kmod-nft-tproxy"
+    log "  OpenWrt 22-24:  opkg update && opkg install kmod-nft-tproxy"
+    log "  OpenWrt <=21:   opkg update && opkg install iptables-mod-tproxy kmod-ipt-tproxy"
     log "  Debian/Ubuntu:  apt-get install iptables  &&  modprobe xt_TPROXY"
     log "  Alpine:         apk add iptables          &&  modprobe xt_TPROXY"
     log "  Fedora/RHEL:    dnf install iptables      &&  modprobe xt_TPROXY"

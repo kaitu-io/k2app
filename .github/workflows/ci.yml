@@ -402,6 +402,12 @@ jobs:
       - name: Check committed rule embed is the placeholder
         run: bash scripts/check-embed-size.sh
 
+      # web/public/i/k2r is what `wget -qO- https://kaitu.io/i/k2r | sh` runs;
+      # k2/scripts/install-k2r.sh is what the k2r release uploads to the CDN.
+      # They are hand-synced, so keep them byte-identical here.
+      - name: Check served k2r install script matches k2/scripts
+        run: bash scripts/check-install-script-sync.sh
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
