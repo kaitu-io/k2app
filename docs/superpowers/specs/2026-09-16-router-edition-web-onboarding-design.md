@@ -96,7 +96,7 @@
 
 ### 4.4 账户页 `/account/router`（我的路由器）
 
-- 状态卡：路由器在线 / 离线（按 `Device.TokenLastUsedAt` 或 `/api/subs` 最近拉取判定，阈值 10 分钟）、k2r 版本、公网出口地区。
+- 状态卡：路由器在线 / 离线（按 `Device.TokenLastUsedAt` 即 `/api/subs` 最近拉取判定，阈值 65 分钟 = `routerOnlineWindowSeconds`：k2r 每 1800 s 刷新一次订阅，2 个刷新周期 + 5 分钟余量）、k2r 版本、公网出口地区。
 - 用量卡：本月已用 / 2TB、重置日；≥80% 黄、≥95% 红并解释「本月已用完，下月 X 日恢复」（复用 `quotaExhausted` / `quotaResetAt`）。
 - 订阅卡：到期日、「续费一年」按钮（下单 `router-svc-1y`）。
 - 成品用户：发货进度（阶段 + 快递单号）。自备用户：安装命令 + 「重新生成凭证」（重复 mint 即替换，cap=1 天然维持）。
@@ -123,7 +123,7 @@
 
 ### 5.2 订单分叉
 
-`applyOrderToBuyer`（`api/logic_member.go`）在现有 `plan.Product == ProductPrivateNode` 分支旁增加 `ProductRouter`：同样建内部线路订阅并入开机队列；额外在同一事务内建 `router_fulfillments(stage=paid)`。续费商品 `router-svc-1y`：若用户已有 active/grace 线路订阅则**延期**该订阅 `ExpiresAt += 12 个月`（补上尚未实现的续费路径，须先复核 `worker_private_node_lifecycle.go` 的回收逻辑），否则按新购处理。
+`applyOrderToBuyer`（`api/logic_member.go`）在现有 `plan.Product == ProductPrivateNode` 分支旁增加 `ProductRouter`：同样建内部线路订阅并入开机队列；额外在同一事务内建 `router_fulfillments(stage=paid)`。续费商品 `router-svc-1y`：若用户已有 active/grace/suspended 线路订阅则**延期**该订阅 `ExpiresAt += 12 个月`（补上尚未实现的续费路径，须先复核 `worker_private_node_lifecycle.go` 的回收逻辑），否则按新购处理——此时若用户有旧成品台账（线路已 deprovisioned、硬件仍在客户手里），新台账继承其 `hardware_sku` / `shipped_at` / `gateway_device_id` / `credential_minted_at`，线路就绪后直接回到 `shipped`，不变成自备台账。
 
 ### 5.3 新增端点
 
@@ -165,5 +165,5 @@
 - 定价已定稿：首年 $399（含路由器）、续费 $299/年；价位理由见 §3.2。采购价以泰国二手行情为准，不影响售价。
 - 二手硬件的质保口径（建议「一年内故障换新」）与泰国发中国大陆的物流、清关方式，属运营决策，不在本设计。
 - 6 月的记忆称续费写 `ExpiresAt` 未实现，P0 首个任务是复核并补齐；缺它第二年必断服务。
-- 一账号一路由器：买第二台需第二个账号，结账页要写明。
+- 一账号一路由器：买第二台需第二个账号，结账页要写明。后端下单门强制：真实下单成品套餐时，账户已有非 `expired` 台账或可续线路即拒单（`ErrorInvalidOperation`「该账户已有开途路由器，请购买续费套餐」），预览不拦。
 - 真机 smoke 仍是唯一无法在桌面闭合的门（与 Plan 5b 一致）。
