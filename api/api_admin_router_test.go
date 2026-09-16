@@ -1,0 +1,141 @@
+package center
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	db "github.com/wordgate/qtoolkit/db"
+)
+
+// 与 nodeOperationTestRouter 同法：裸 gin，不挂 admin 中间件，直接驱动 handler。
+func adminRouterTestRouter() *gin.Engine {
+	testInitConfig()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/app/router/fulfillments", api_admin_list_router_fulfillments)
+	r.POST("/app/router/fulfillments/:id/stage", api_admin_update_router_stage)
+	r.POST("/app/router/fulfillments/:id/credential", api_admin_mint_router_credential)
+	r.GET("/app/private-node-subscriptions", api_admin_list_private_node_subscriptions)
+	r.GET("/app/router-devices", api_admin_list_router_devices)
+	return r
+}
+
+func adminCall(t *testing.T, r *gin.Engine, method, path string, body any) (code float64, data map[string]any) {
+	t.Helper()
+	var rd *bytes.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		require.NoError(t, err)
+		rd = bytes.NewReader(b)
+	} else {
+		rd = bytes.NewReader(nil)
+	}
+	req := httptest.NewRequest(method, path, rd)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	return parseJobResponse(t, w.Body.Bytes())
+}
+
+func TestAdminRouterFulfillments_ListAndShip(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	_, f := seedReadyRouterFulfillment(t, user)
+	require.NoError(t, db.Get().Model(f).Update("hardware_sku", "redmi-ax6s").Error)
+
+	code, data := adminCall(t, r, http.MethodGet, "/app/router/fulfillments?stage=ready&pageSize=50", nil)
+	require.EqualValues(t, 0, code)
+	items, _ := data["items"].([]any)
+	var row map[string]any
+	for _, it := range items {
+		m := it.(map[string]any)
+		if uint64(m["id"].(float64)) == f.ID {
+			row = m
+		}
+	}
+	require.NotNil(t, row, "seeded fulfillment must be listed under stage=ready")
+	assert.Equal(t, "redmi-ax6s", row["hardwareSku"])
+	assert.NotNil(t, row["line"], "row must embed its line")
+
+	// 缺快递单号不能发货
+	code, _ = adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/stage",
+		AdminRouterStageRequest{Stage: RouterStageShipped})
+	assert.EqualValues(t, ErrorInvalidArgument, code)
+
+	code, _ = adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/stage",
+		AdminRouterStageRequest{Stage: RouterStageShipped, TrackingNo: "SF123", Carrier: "顺丰"})
+	require.EqualValues(t, 0, code)
+	var got RouterFulfillment
+	require.NoError(t, db.Get().First(&got, f.ID).Error)
+	assert.Equal(t, RouterStageShipped, got.Stage)
+	assert.Equal(t, "SF123", got.TrackingNo)
+	assert.NotZero(t, got.ShippedAt)
+
+	// 已发货不能再次发货
+	code, _ = adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/stage",
+		AdminRouterStageRequest{Stage: RouterStageShipped, TrackingNo: "SF456"})
+	assert.EqualValues(t, ErrorInvalidOperation, code)
+}
+
+func TestAdminRouterFulfillments_MintCredential(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	_, f := seedReadyRouterFulfillment(t, user)
+
+	code, data := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/credential", nil)
+	require.EqualValues(t, 0, code)
+	url, _ := data["url"].(string)
+	assert.Contains(t, url, "k2subs://router-")
+	var got RouterFulfillment
+	require.NoError(t, db.Get().First(&got, f.ID).Error)
+	require.NotNil(t, got.GatewayDeviceID)
+
+	// 线路未就绪（paid）不能铸造
+	require.NoError(t, db.Get().Model(&got).Update("stage", RouterStagePaid).Error)
+	code, _ = adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/credential", nil)
+	assert.EqualValues(t, ErrorTooEarly, code)
+}
+
+func TestAdminPrivateNodeSubscriptions_List(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	sub, _ := seedReadyRouterFulfillment(t, user)
+	code, data := adminCall(t, r, http.MethodGet, "/app/private-node-subscriptions?userId="+strconv.FormatUint(user.ID, 10), nil)
+	require.EqualValues(t, 0, code)
+	items, _ := data["items"].([]any)
+	require.Len(t, items, 1)
+	row := items[0].(map[string]any)
+	assert.EqualValues(t, sub.ID, row["id"])
+	assert.EqualValues(t, user.ID, row["userId"])
+}
+
+func TestAdminRouterDevices_List(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	dev := &Device{UDID: newRouterUDID(), UserID: user.ID, IsGateway: true, AppPlatform: "router",
+		AppVersion: "0.4.10", TokenIssueAt: 1, TokenLastUsedAt: 1, TunnelIssueAt: 1}
+	require.NoError(t, db.Get().Create(dev).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(dev) })
+	code, data := adminCall(t, r, http.MethodGet, "/app/router-devices?pageSize=100", nil)
+	require.EqualValues(t, 0, code)
+	items, _ := data["items"].([]any)
+	found := false
+	for _, it := range items {
+		if it.(map[string]any)["udid"] == dev.UDID {
+			found = true
+		}
+	}
+	assert.True(t, found)
+}

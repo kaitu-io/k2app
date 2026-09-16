@@ -1353,3 +1353,42 @@ type RatingByUser struct {
 	GoodRate float64 `json:"goodRate"`
 }
 
+// DataAdminRouterFulfillment 后台视角的路由器版发货 / 上线台账：在账户页 DTO 之上叠加归属
+// 用户、收货信息、运营备注/操作人。
+type DataAdminRouterFulfillment struct {
+	DataRouterFulfillment
+	UserID    uint64                       `json:"userId"`
+	Email     string                       `json:"email"`
+	SubID     uint64                       `json:"subId"`
+	Note      string                       `json:"note"`
+	UpdatedBy string                       `json:"updatedBy"`
+	UpdatedAt int64                        `json:"updatedAt"`
+	Shipping  *RouterShipping              `json:"shipping,omitempty"`
+	Line      *DataPrivateNodeSubscription `json:"line,omitempty"`
+	Device    *DataRouterDevice            `json:"device,omitempty"`
+}
+
+// DataAdminPrivateNodeSubscription 后台视角的专属线路订阅：在账户页 DTO 之上叠加归属用户与订单。
+type DataAdminPrivateNodeSubscription struct {
+	DataPrivateNodeSubscription
+	UserID    uint64 `json:"userId"`
+	Email     string `json:"email"`
+	OrderID   uint64 `json:"orderId"`
+	BoundIpv4 string `json:"boundIpv4,omitempty"`
+}
+
+// DataAdminRouterDevice 后台视角的路由器网关设备：在账户页 DTO 之上叠加归属用户。
+type DataAdminRouterDevice struct {
+	DataRouterDevice
+	ID     uint64 `json:"id"`
+	UserID uint64 `json:"userId"`
+	Email  string `json:"email"`
+}
+
+// AdminRouterStageRequest 运营手动推进发货台账（仅 ready→shipped）或改备注。
+type AdminRouterStageRequest struct {
+	Stage      string `json:"stage"`
+	TrackingNo string `json:"trackingNo"`
+	Carrier    string `json:"carrier"`
+	Note       string `json:"note"`
+}

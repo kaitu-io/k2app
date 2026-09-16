@@ -468,6 +468,13 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.POST("/node-operations/:id/claim", RoleRequired(RoleDevopsEditor), adminClaimNodeOperation)
 		opsAdmin.POST("/node-operations/:id/update", RoleRequired(RoleDevopsEditor), adminUpdateNodeOperation)
 
+		// 路由器版：发货台账 / 代铸凭证 / 线路与设备从表
+		opsAdmin.GET("/router/fulfillments", RoleRequired(viewOrEdit), api_admin_list_router_fulfillments)
+		opsAdmin.POST("/router/fulfillments/:id/stage", RoleRequired(RoleDevopsEditor), api_admin_update_router_stage)
+		opsAdmin.POST("/router/fulfillments/:id/credential", RoleRequired(RoleDevopsEditor), api_admin_mint_router_credential)
+		opsAdmin.GET("/private-node-subscriptions", RoleRequired(viewOrEdit), api_admin_list_private_node_subscriptions)
+		opsAdmin.GET("/router-devices", RoleRequired(viewOrEdit), api_admin_list_router_devices)
+
 		// 企业路由器（多槽多线路）
 		opsAdmin.GET("/enterprise/customers", RoleRequired(viewOrEdit), api_admin_list_enterprise_customers)
 		opsAdmin.POST("/enterprise/customers", RoleRequired(RoleDevopsEditor), api_admin_create_enterprise_customer)
