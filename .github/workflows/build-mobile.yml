@@ -376,6 +376,13 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Default is "tools platform-tools"; the legacy `tools` package was
+          # removed from the SDK repo and newer runner images (cmdline-tools
+          # 16.0+) no longer offer it, so the action's default install fails with
+          # "Failed to find package 'tools'". We only need platform-tools; the
+          # NDK is installed explicitly below.
+          packages: 'platform-tools'
 
       - name: Cache Android NDK
         id: ndk-cache
