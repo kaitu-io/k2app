@@ -169,9 +169,11 @@ func api_create_order(c *gin.Context) {
 		order.PrivateNodeRegion = req.Region
 	}
 	// 路由器版成品：收货信息落独立列（真实下单已在上面校验必填；此处兜底 preview/自备不写）。
+	// *string：nil 保持列为 SQL NULL（见 model.go Order.RouterShipping 注释），非 nil 才取地址赋值。
 	if plan.Product == ProductRouter && plan.HardwareSKU != "" && req.Shipping != nil {
 		if b, err := json.Marshal(req.Shipping); err == nil {
-			order.RouterShipping = string(b)
+			s := string(b)
+			order.RouterShipping = &s
 		}
 	}
 	log.Debugf(c, "order object created: Title=%s, OriginAmount=%d, PayAmount=%d", order.Title, order.OriginAmount, order.PayAmount)

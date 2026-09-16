@@ -76,6 +76,65 @@ func TestCreateOrder_RouterServiceIgnoresShippingAndSkipsTierGate(t *testing.T) 
 	require.NotNil(t, o, "service plan must not require shipping and must bypass tier gate")
 	t.Cleanup(func() { db.Get().Unscoped().Delete(o) })
 	assert.Nil(t, o.GetRouterShipping())
+
+	// 自备套餐即使请求里带了 shipping，也不落库（HardwareSKU=="" 时收货信息门完全不生效）。
+	postOrder(t, r, user.ID, map[string]any{"preview": false, "plan": plan.PID, "region": "japan",
+		"shipping": map[string]any{"name": "李四", "phone": "13900000000", "address": "北京市…"}})
+	o2 := latestOrderForUser(t, user.ID)
+	require.NotNil(t, o2)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(o2) })
+	assert.Nil(t, o2.GetRouterShipping(), "service plan must ignore shipping in the request body, never persist it")
+}
+
+// TestOrderRouterShipping_SaveRoundTrip covers the Save() path specifically — api_create_order's
+// wordgate flow calls tx.Save(order) (full-struct UPDATE, Selects("*")) after wordgate order
+// creation, not just Create(). *string is required so a nil shipping still serializes to SQL
+// NULL under Save, not the empty string that trips MariaDB/MySQL's json_valid CHECK on a
+// type:json column.
+func TestOrderRouterShipping_SaveRoundTrip(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	user := CreateTestUser(t)
+
+	// Case 1: no shipping (RouterShipping nil) — Create then Save must both succeed, and the
+	// round-tripped row must report no shipping.
+	// Meta populated via SetOrderMeta like production (api_create_order always does this before
+	// Create): Meta is also a type:json column with no default, an empty "" would trip the same
+	// json_valid CHECK — orthogonal to what this test covers, so avoid it rather than test it.
+	o := &Order{
+		UUID: generateId("ord"), Title: "路由器版服务测试", OriginAmount: 29900, PayAmount: 29900,
+		UserID: user.ID,
+	}
+	require.NoError(t, o.SetOrderMeta(nil, nil, nil, true))
+	require.NoError(t, db.Get().Create(o).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(o) })
+	require.NoError(t, db.Get().Save(o).Error, "Save must not trip the json_valid CHECK on a nil RouterShipping")
+
+	var reloaded Order
+	require.NoError(t, db.Get().First(&reloaded, o.ID).Error)
+	assert.Nil(t, reloaded.GetRouterShipping())
+
+	// Case 2: with shipping — Create then Save must both succeed and round-trip the JSON.
+	shipping := RouterShipping{Name: "王五", Phone: "13700000000", Address: "广州市…"}
+	b, err := json.Marshal(shipping)
+	require.NoError(t, err)
+	shippingJSON := string(b)
+	o2 := &Order{
+		UUID: generateId("ord"), Title: "路由器版硬件测试", OriginAmount: 39900, PayAmount: 39900,
+		UserID: user.ID, RouterShipping: &shippingJSON,
+	}
+	require.NoError(t, o2.SetOrderMeta(nil, nil, nil, true))
+	require.NoError(t, db.Get().Create(o2).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(o2) })
+	require.NoError(t, db.Get().Save(o2).Error, "Save must not trip the json_valid CHECK on a populated RouterShipping")
+
+	var reloaded2 Order
+	require.NoError(t, db.Get().First(&reloaded2, o2.ID).Error)
+	s := reloaded2.GetRouterShipping()
+	require.NotNil(t, s)
+	assert.Equal(t, "王五", s.Name)
+	assert.Equal(t, "13700000000", s.Phone)
+	assert.Equal(t, "广州市…", s.Address)
 }
 
 func TestCreateOrder_RouterBadRegionRejected(t *testing.T) {
