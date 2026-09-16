@@ -1,11 +1,13 @@
 package center
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
 
 // buildPrivateNodeSubDTO 把一条线路映射为账户页 DTO（用量来自 NodeUsage 权威镜像，IP/Region 来自 CloudInstance）。
@@ -45,19 +47,34 @@ func api_get_user_router(c *gin.Context) {
 	out := DataUserRouter{}
 
 	var f RouterFulfillment
-	if err := db.Get().Where("user_id = ?", userID).Order("id DESC").First(&f).Error; err != nil {
+	err := db.Get().Where("user_id = ?", userID).Order("id DESC").First(&f).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		Success(c, &out)
+		return
+	}
+	if err != nil {
+		log.Errorf(c, "failed to load router fulfillment for user %d: %v", userID, err)
+		Error(c, ErrorSystemError, "failed to load router fulfillment")
 		return
 	}
 	out.HasRouter = true
 	if err := syncRouterFulfillment(c, db.Get(), &f, now); err != nil {
 		log.Warnf(c, "sync router fulfillment %d on read: %v", f.ID, err)
 	}
+
+	// CanMintCredential 镜像 POST /api/user/gateway-credential 的准入门
+	// （checkDeviceLimitOrKick → HasActivePrivateLines），不是台账 stage 的派生值——
+	// 两者可能分叉（例如线路过期但台账还没被 syncRouterFulfillment 推到 expired）。
+	canMint, err := HasActivePrivateLines(c, db.Get(), userID, now)
+	if err != nil {
+		log.Warnf(c, "check HasActivePrivateLines for user %d: %v", userID, err)
+		canMint = false
+	}
 	out.Fulfillment = &DataRouterFulfillment{
 		ID: f.ID, OrderID: f.OrderID, HardwareSKU: f.HardwareSKU, Stage: f.Stage,
 		TrackingNo: f.TrackingNo, Carrier: f.Carrier, ShippedAt: f.ShippedAt, ActivatedAt: f.ActivatedAt,
 		CredentialMinted:  f.GatewayDeviceID != nil,
-		CanMintCredential: f.Stage == RouterStageReady || f.Stage == RouterStageShipped || f.Stage == RouterStageOnline,
+		CanMintCredential: canMint,
 		CreatedAt:         f.CreatedAt,
 	}
 
@@ -67,11 +84,15 @@ func api_get_user_router(c *gin.Context) {
 		out.Line = &line
 	}
 
-	var dev Device
-	if err := db.Get().Where("user_id = ? AND is_gateway = ?", userID, true).Order("id DESC").First(&dev).Error; err == nil {
-		out.Device = &DataRouterDevice{
-			UDID: dev.UDID, AppVersion: dev.AppVersion, AppArch: dev.AppArch, LastSeenAt: dev.TokenLastUsedAt,
-			Online: dev.TokenLastUsedAt > 0 && now-dev.TokenLastUsedAt <= routerOnlineWindowSeconds,
+	// Device 严格跟随 f.GatewayDeviceID（与 syncRouterFulfillment 的取法一致），不按
+	// user_id+is_gateway 独立查——否则会和台账指向的设备对不上（轮换后旧台账查到新设备）。
+	if f.GatewayDeviceID != nil {
+		var dev Device
+		if err := db.Get().First(&dev, *f.GatewayDeviceID).Error; err == nil {
+			out.Device = &DataRouterDevice{
+				UDID: dev.UDID, AppVersion: dev.AppVersion, AppArch: dev.AppArch, LastSeenAt: dev.TokenLastUsedAt,
+				Online: dev.TokenLastUsedAt > 0 && now-dev.TokenLastUsedAt <= routerOnlineWindowSeconds,
+			}
 		}
 	}
 

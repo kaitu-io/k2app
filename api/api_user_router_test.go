@@ -84,3 +84,48 @@ func TestGetUserRouter_OwnerIsolation(t *testing.T) {
 	got := getUserRouter(t, userRouterTestRouter(), other.ID)
 	assert.False(t, got.HasRouter)
 }
+
+// Device 必须严格跟随台账的 GatewayDeviceID，不按 user_id+is_gateway 独立查——
+// 否则台账与设备各取各的，读路径可能报告一台与台账对不上的设备。
+func TestGetUserRouter_DeviceFollowsFulfillment(t *testing.T) {
+	skipIfNoConfig(t)
+	user := CreateTestUser(t)
+	_, f := seedReadyRouterFulfillment(t, user)
+	now := time.Now().Unix()
+
+	dev := &Device{UDID: newRouterUDID(), UserID: user.ID, IsGateway: true, AppPlatform: "router",
+		TokenIssueAt: now - 7200, TokenLastUsedAt: now - 7200, TunnelIssueAt: now - 7200}
+	require.NoError(t, db.Get().Create(dev).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(dev) })
+	require.NoError(t, db.Get().Model(f).Updates(map[string]any{"gateway_device_id": dev.ID, "credential_minted_at": now - 7300}).Error)
+
+	r := userRouterTestRouter()
+	got := getUserRouter(t, r, user.ID)
+	require.NotNil(t, got.Device)
+	assert.False(t, got.Device.Online)
+	assert.EqualValues(t, now-7200, got.Device.LastSeenAt)
+
+	// 台账指向一个不存在的设备 ID（轮换后旧设备已删）→ device 必须为 nil，不能兜底猜别的设备。
+	require.NoError(t, db.Get().Model(f).Update("gateway_device_id", uint64(999999999)).Error)
+	got2 := getUserRouter(t, r, user.ID)
+	assert.Nil(t, got2.Device)
+}
+
+// CanMintCredential 必须镜像 POST /api/user/gateway-credential 的真实准入门
+// （HasActivePrivateLines），不能只看台账 stage——两者可能分叉。
+func TestGetUserRouter_CanMintMirrorsGate(t *testing.T) {
+	skipIfNoConfig(t)
+	user := CreateTestUser(t)
+	sub, _ := seedReadyRouterFulfillment(t, user)
+	r := userRouterTestRouter()
+
+	require.NoError(t, db.Get().Model(sub).Update("status", PNStatusDeprovisioned).Error)
+	got := getUserRouter(t, r, user.ID)
+	require.NotNil(t, got.Fulfillment)
+	assert.False(t, got.Fulfillment.CanMintCredential)
+
+	require.NoError(t, db.Get().Model(sub).Update("status", PNStatusActive).Error)
+	got2 := getUserRouter(t, r, user.ID)
+	require.NotNil(t, got2.Fulfillment)
+	assert.True(t, got2.Fulfillment.CanMintCredential)
+}
