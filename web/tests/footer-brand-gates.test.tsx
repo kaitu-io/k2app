@@ -54,7 +54,8 @@ async function renderChrome(component: 'Footer' | 'Header', locale: 'en-GB' | 'z
 }
 
 const KAITU_ONLY_HREFS = ['href="/routers"', 'href="/changelog"', 'href="/releases"', 'href="/retailer/rules"', 'href="/guides"'];
-const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/privacy"', 'href="/terms"', 'href="https://github.com/getoverleap"'];
+// 开发者栏「路由器配置」指向自备教程 /routers/diy（/routers 已是路由器版产品页，由产品栏链接）。
+const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/routers/diy"', 'href="/install"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/privacy"', 'href="/terms"', 'href="https://github.com/getoverleap"'];
 const OVERLEAP_FOOTER = ['href="/install"', 'href="/purchase"', 'href="/support"', 'href="/k2"', 'href="/k2/quickstart"', 'href="https://github.com/getoverleap"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
 
 describe('footer links only this brand\'s pages', () => {

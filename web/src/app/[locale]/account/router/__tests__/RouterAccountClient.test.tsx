@@ -106,6 +106,16 @@ describe('RouterAccountClient', () => {
     vi.useRealTimers();
   });
 
+  it('页面标题在加载中与加载完成后都显示（routers.edition.account.title）', async () => {
+    let resolve: (v: unknown) => void = () => {};
+    mockGetUserRouter.mockReturnValue(new Promise((r) => { resolve = r; }));
+    render(<RouterAccountClient />);
+    expect(screen.getByRole('heading', { name: 'routers.edition.account.title' })).toBeInTheDocument();
+    await act(async () => resolve({ hasRouter: false }));
+    await screen.findByText('routers.edition.account.emptyTitle');
+    expect(screen.getByRole('heading', { name: 'routers.edition.account.title' })).toBeInTheDocument();
+  });
+
   it('hasRouter=false 时渲染空状态卡，按钮跳转 /routers', async () => {
     mockGetUserRouter.mockResolvedValue({ hasRouter: false });
     render(<RouterAccountClient />);

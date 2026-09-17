@@ -33,7 +33,19 @@ import { buildInstallCommand, routerProgressSteps, quotaLevel, formatBytes } fro
 const POLLING_STAGES = new Set(['paid', 'provisioning', 'ready', 'shipped']);
 const POLL_MS = 30000;
 
+// 页面标题包在所有状态（加载 / 失败 / 空 / 有路由器）外面，任何状态下都在。
+// 用 h2：account/layout.tsx 已经渲染了本页唯一的 h1（账户标题）。
 export default function RouterAccountClient() {
+  const t = useTranslations();
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 className="text-2xl font-semibold">{t('routers.edition.account.title')}</h2>
+      <RouterAccountBody />
+    </div>
+  );
+}
+
+function RouterAccountBody() {
   const t = useTranslations();
   const locale = useLocale();
 

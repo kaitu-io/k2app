@@ -1,6 +1,6 @@
 /**
  * `/purchase/router` 结账页 — 成品默认选中、自备一链切换、地区下拉、收货信息、
- * 预览 debounce、一户一台门（InvalidOperation）的行为测试。
+ * 预览 debounce、一户一台门（InvalidOperation）、?plan=svc 续费模式的行为测试。
  *
  * 外围重依赖（Header/Footer/PurchaseStep1/next-intl/next/navigation/Select）替身掉，
  * 被测的选择/收货/预览/下单/错误处理逻辑本身跑真实代码。
@@ -12,6 +12,7 @@ import type { Plan } from '@/lib/api';
 
 const mockGetProductPlans = vi.fn();
 const mockCreateOrder = vi.fn();
+const mockGetUserRouter = vi.fn();
 
 const authState = vi.hoisted(() => ({ current: { isAuthenticated: true, isAuthLoading: false } }));
 const routerState = vi.hoisted(() => ({ current: { push: vi.fn(), replace: vi.fn() } }));
@@ -83,6 +84,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     api: {
       getProductPlans: (...a: unknown[]) => mockGetProductPlans(...a),
       createOrder: (...a: unknown[]) => mockCreateOrder(...a),
+      getUserRouter: (...a: unknown[]) => mockGetUserRouter(...a),
     },
   };
 });
@@ -123,6 +125,7 @@ describe('RouterPurchaseClient', () => {
     authState.current = { isAuthenticated: true, isAuthLoading: false };
     searchParamsState.current = new URLSearchParams();
     mockCreateOrder.mockResolvedValue({ order: fakeOrder(39900), payUrl: 'https://pay.test/x' });
+    mockGetUserRouter.mockResolvedValue({ hasRouter: false });
   });
 
   it('默认选中成品：显示硬件名、$399、收货信息标题与含 $299 的续费说明', async () => {
@@ -330,5 +333,108 @@ describe('RouterPurchaseClient', () => {
 
     await screen.findByText('routers.edition.purchase.hardwareName');
     expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  describe('?plan=svc 续费模式', () => {
+    async function payAndGetOrderCall() {
+      const payButton = screen.getByRole('button', { name: 'routers.edition.purchase.payButton' });
+      await waitFor(() => expect(payButton).not.toBeDisabled());
+      mockCreateOrder.mockClear();
+      fireEvent.click(payButton);
+      let call: unknown[] | undefined;
+      await waitFor(() => {
+        call = mockCreateOrder.mock.calls.find((c) => c[0].preview === false);
+        expect(call).toBeTruthy();
+      });
+      return call![0] as Record<string, unknown>;
+    }
+
+    it('已有台账（非 expired）：续费标题/方案名，隐藏改买成品与地区选择，下单不传 region', async () => {
+      searchParamsState.current = new URLSearchParams('plan=svc');
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      mockGetUserRouter.mockResolvedValue({
+        hasRouter: true,
+        fulfillment: { id: 1, orderId: 1, hardwareSku: 'redmi-ax6s', stage: 'online', shippedAt: 1, activatedAt: 1, credentialMinted: true, canMintCredential: true, createdAt: 1 },
+      });
+      render(<RouterPurchaseClient />);
+
+      await screen.findByText('routers.edition.purchase.renewTitle');
+      expect(mockGetUserRouter).toHaveBeenCalledWith({ autoRedirectToAuth: false });
+      expect(screen.queryByText('routers.edition.purchase.title')).toBeNull();
+      expect(screen.getByText('routers.edition.purchase.renewSubtitle')).toBeTruthy();
+      expect(screen.getByText('routers.edition.purchase.renewName')).toBeTruthy();
+      expect(screen.getByText('routers.edition.purchase.renewDesc')).toBeTruthy();
+      expect(screen.queryByText('routers.edition.purchase.serviceName')).toBeNull();
+      expect(screen.queryByText('routers.edition.purchase.switchToHardware')).toBeNull();
+      expect(screen.queryByText('routers.edition.purchase.regionLabel')).toBeNull();
+      expect(screen.queryByRole('combobox')).toBeNull();
+
+      const order = await payAndGetOrderCall();
+      expect(order.plan).toBe('router-svc-1y');
+      expect(order.region).toBeUndefined();
+      expect(order).not.toHaveProperty('shipping');
+      // 预览同样不带 region
+      for (const c of mockCreateOrder.mock.calls) expect(c[0].region).toBeUndefined();
+    });
+
+    it('台账已 expired 但线路 suspended（可续）：同样进入续费模式', async () => {
+      searchParamsState.current = new URLSearchParams('plan=svc');
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      mockGetUserRouter.mockResolvedValue({
+        hasRouter: true,
+        fulfillment: { id: 1, orderId: 1, hardwareSku: '', stage: 'expired', shippedAt: 0, activatedAt: 0, credentialMinted: true, canMintCredential: false, createdAt: 1 },
+        line: { id: 9, status: 'suspended' },
+      });
+      render(<RouterPurchaseClient />);
+      await screen.findByText('routers.edition.purchase.renewTitle');
+    });
+
+    it('无台账无线路：保持自备模式（原标题、服务名、地区选择、改买成品链接、下单带 region）', async () => {
+      searchParamsState.current = new URLSearchParams('plan=svc');
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      mockGetUserRouter.mockResolvedValue({ hasRouter: false });
+      render(<RouterPurchaseClient />);
+
+      await screen.findByText('routers.edition.purchase.serviceName');
+      await waitFor(() => expect(mockGetUserRouter).toHaveBeenCalled());
+      expect(screen.getByText('routers.edition.purchase.title')).toBeTruthy();
+      expect(screen.queryByText('routers.edition.purchase.renewTitle')).toBeNull();
+      expect(screen.getByText('routers.edition.purchase.switchToHardware')).toBeTruthy();
+      expect(screen.getByText('routers.edition.purchase.regionLabel')).toBeTruthy();
+
+      const order = await payAndGetOrderCall();
+      expect(order.region).toBe('ap-tokyo');
+    });
+
+    it('查询失败当作无台账：保持自备模式', async () => {
+      searchParamsState.current = new URLSearchParams('plan=svc');
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      mockGetUserRouter.mockRejectedValue(new Error('boom'));
+      render(<RouterPurchaseClient />);
+
+      await screen.findByText('routers.edition.purchase.serviceName');
+      await waitFor(() => expect(mockGetUserRouter).toHaveBeenCalled());
+      const payButton = screen.getByRole('button', { name: 'routers.edition.purchase.payButton' });
+      await waitFor(() => expect(payButton).not.toBeDisabled());
+      expect(screen.queryByText('routers.edition.purchase.renewTitle')).toBeNull();
+    });
+
+    it('未登录：不请求 getUserRouter', async () => {
+      authState.current = { isAuthenticated: false, isAuthLoading: false };
+      searchParamsState.current = new URLSearchParams('plan=svc');
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      render(<RouterPurchaseClient />);
+
+      await screen.findByText('routers.edition.purchase.serviceName');
+      expect(mockGetUserRouter).not.toHaveBeenCalled();
+      expect(screen.getByText('routers.edition.purchase.title')).toBeTruthy();
+    });
+
+    it('没有 ?plan=svc（默认成品）：不请求 getUserRouter', async () => {
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      render(<RouterPurchaseClient />);
+      await screen.findByText('routers.edition.purchase.hardwareName');
+      expect(mockGetUserRouter).not.toHaveBeenCalled();
+    });
   });
 });

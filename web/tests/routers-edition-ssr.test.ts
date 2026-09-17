@@ -73,7 +73,12 @@ describe('routers/diy/page.kaitu (self-supplied hardware teardown)', () => {
 
 describe('routers.json content guards — no stale admin-panel / port-9000 copy', () => {
   const MESSAGES_DIR = path.resolve(__dirname, '../messages');
-  const FORBIDDEN = ['9000', '智能选服', '智慧選服', 'admin 面板'];
+  // 后半段：已下架的「官方代刷」预售卡与浏览器设置流程的残留文案（终审 M-1）；
+  // 无凭证的 `| sudo sh` 安装命令在无面板构建里装不上任何线路。
+  const FORBIDDEN = [
+    '9000', '智能选服', '智慧選服', 'admin 面板',
+    '代刷', 'K2 Mini', 'K2-001', '页面底部', '頁面底部', '图形界面', '圖形介面', '| sudo sh',
+  ];
 
   it.each(['zh-CN', 'zh-TW', 'zh-HK'])('%s/routers.json contains none of the forbidden phrases', (locale) => {
     const raw = fs.readFileSync(path.join(MESSAGES_DIR, locale, 'routers.json'), 'utf8');

@@ -23,13 +23,22 @@ import {
 } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEmbedMode } from '@/hooks/useEmbedMode';
-import { api, ApiError, ErrorCode, type Order, type Plan, type RouterShipping } from '@/lib/api';
+import { api, ApiError, ErrorCode, type Order, type Plan, type RouterShipping, type UserRouter } from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/api-errors';
 import { formatUsd } from '@/lib/router-edition';
 
 type Choice = 'hardware' | 'service';
 
 const EMPTY_SHIPPING: RouterShipping = { name: '', phone: '', address: '' };
+
+// 线路仍可续（未回收 / 未失败）的状态。
+const RENEWABLE_LINE_STATUSES = new Set(['active', 'grace', 'suspended']);
+
+// 已持有路由器版的用户点「续费一年」来到 ?plan=svc：此时买的是原线路续期，不是「自备路由器」新服务。
+function isExistingRouterCustomer(data: UserRouter): boolean {
+  if (data.fulfillment && data.fulfillment.stage !== 'expired') return true;
+  return !!data.line && RENEWABLE_LINE_STATUSES.has(data.line.status);
+}
 
 export default function RouterPurchaseClient() {
   const t = useTranslations();
@@ -51,10 +60,15 @@ export default function RouterPurchaseClient() {
   const [alreadyHasRouter, setAlreadyHasRouter] = useState(false);
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wantsService = searchParams.get('plan') === 'svc';
+  const [isRenewalCustomer, setIsRenewalCustomer] = useState(false);
+  const [renewalCheckPending, setRenewalCheckPending] = useState(false);
 
   const hardwarePlan = useMemo(() => plans.find((p) => !!p.hardwareSku), [plans]);
   const servicePlan = useMemo(() => plans.find((p) => !p.hardwareSku), [plans]);
   const selected = choice === 'hardware' ? hardwarePlan : servicePlan;
+  // 续费模式：续费文案，隐藏「改买含路由器」与地区选择，下单不传 region（沿用原线路地区）。
+  const renewMode = isRenewalCustomer && choice === 'service';
   const regions = useMemo(() => selected?.privateNode?.allowedRegions ?? [], [selected]);
   const needsShipping = !!selected?.hardwareSku;
   const trimmedShipping: RouterShipping = {
@@ -90,6 +104,33 @@ export default function RouterPurchaseClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 1b) ?plan=svc 且已登录 → 查是否已持有路由器版，决定是否进入续费模式。查询失败当作没有。
+  useEffect(() => {
+    if (!wantsService || !isAuthenticated) {
+      setIsRenewalCustomer(false);
+      setRenewalCheckPending(false);
+      return;
+    }
+    let cancelled = false;
+    setRenewalCheckPending(true);
+    (async () => {
+      try {
+        const data = await api.getUserRouter({ autoRedirectToAuth: false });
+        if (!cancelled) setIsRenewalCustomer(isExistingRouterCustomer(data));
+      } catch (err) {
+        console.error('[RouterPurchase] Failed to fetch user router:', err);
+        if (!cancelled) setIsRenewalCustomer(false);
+      } finally {
+        if (!cancelled) setRenewalCheckPending(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wantsService, isAuthenticated]);
+
+  const orderRegion = renewMode ? undefined : region || undefined;
+
   // 2) 选中套餐变化 → region 不在允许列表时回落到首项。
   useEffect(() => {
     if (regions.length === 0) return;
@@ -119,7 +160,7 @@ export default function RouterPurchaseClient() {
         {
           preview: true,
           plan: selected.pid,
-          region: region || undefined,
+          region: orderRegion,
           campaignCode: campaignCode || undefined,
         },
         { autoRedirectToAuth: false },
@@ -134,7 +175,7 @@ export default function RouterPurchaseClient() {
       }
       setPreview(null);
     }
-  }, [selected, region, campaignCode, t]);
+  }, [selected, orderRegion, campaignCode, t]);
 
   useEffect(() => {
     if (plansLoading || !selected) return;
@@ -146,7 +187,7 @@ export default function RouterPurchaseClient() {
       if (previewTimer.current) clearTimeout(previewTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, region, campaignCode, plansLoading]);
+  }, [selected, orderRegion, campaignCode, plansLoading]);
 
   // 4) handlePay：非预览下单。InvalidOperation → 一户一台门，展示链接而非 toast。
   const handlePay = useCallback(async () => {
@@ -156,7 +197,7 @@ export default function RouterPurchaseClient() {
       const request = {
         preview: false as const,
         plan: selected.pid,
-        region: region || undefined,
+        region: orderRegion,
         campaignCode: campaignCode || undefined,
         ...(needsShipping ? { shipping: trimmedShipping } : {}),
       };
@@ -183,7 +224,7 @@ export default function RouterPurchaseClient() {
       setSubmitting(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, region, campaignCode, needsShipping, trimmedShipping.name, trimmedShipping.phone, trimmedShipping.address, t]);
+  }, [selected, orderRegion, campaignCode, needsShipping, trimmedShipping.name, trimmedShipping.phone, trimmedShipping.address, t]);
 
   const handlePayDialogClose = useCallback(() => {
     setPayDialogOpen(false);
@@ -191,7 +232,8 @@ export default function RouterPurchaseClient() {
   }, [router]);
 
   const payAmount = preview?.payAmount ?? selected?.price ?? 0;
-  const payDisabled = !isAuthenticated || !selected || (needsShipping && !shippingComplete) || submitting;
+  const payDisabled =
+    !isAuthenticated || !selected || (needsShipping && !shippingComplete) || submitting || renewalCheckPending;
 
   return (
     <>
@@ -200,10 +242,10 @@ export default function RouterPurchaseClient() {
       <div className="container max-w-4xl xl:max-w-6xl mx-auto py-4 px-4 sm:py-8 sm:px-6 lg:px-8 space-y-6 sm:space-y-8">
         <div className="text-center px-4 sm:px-0">
           <h1 className="text-3xl sm:text-4xl font-black text-foreground mb-3 leading-tight">
-            {t('routers.edition.purchase.title')}
+            {renewMode ? t('routers.edition.purchase.renewTitle') : t('routers.edition.purchase.title')}
           </h1>
           <p className="text-lg text-muted-foreground font-medium leading-relaxed max-w-2xl mx-auto">
-            {t('routers.edition.purchase.subtitle')}
+            {renewMode ? t('routers.edition.purchase.renewSubtitle') : t('routers.edition.purchase.subtitle')}
           </p>
         </div>
 
@@ -240,14 +282,18 @@ export default function RouterPurchaseClient() {
                     <>
                       <div className="flex items-baseline justify-between gap-3">
                         <span className="font-bold text-foreground">
-                          {t('routers.edition.purchase.serviceName')}
+                          {renewMode
+                            ? t('routers.edition.purchase.renewName')
+                            : t('routers.edition.purchase.serviceName')}
                         </span>
                         <span className="text-xl font-black text-foreground">
                           {servicePlan && formatUsd(servicePlan.price)}
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {t('routers.edition.purchase.serviceDesc')}
+                        {renewMode
+                          ? t('routers.edition.purchase.renewDesc')
+                          : t('routers.edition.purchase.serviceDesc')}
                       </p>
                     </>
                   )}
@@ -262,7 +308,7 @@ export default function RouterPurchaseClient() {
                       </button>
                     )
                   ) : (
-                    hardwarePlan && (
+                    hardwarePlan && !renewMode && (
                       <button
                         type="button"
                         onClick={() => setChoice('hardware')}
@@ -276,7 +322,7 @@ export default function RouterPurchaseClient() {
               </Card>
             )}
 
-            {selected && regions.length > 0 && (
+            {selected && regions.length > 0 && !renewMode && (
               <Card>
                 <CardContent className="space-y-2 py-4">
                   <Label>{t('routers.edition.purchase.regionLabel')}</Label>

@@ -1,30 +1,19 @@
 'use client';
 
-import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Copy, Check, Terminal, HelpCircle } from 'lucide-react';
+import { Terminal, HelpCircle } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { StepShell } from './StepShell';
 
 export function Step3InstallK2r() {
   const t = useTranslations('routers');
   const wt = useTranslations('routers.wizard.step3');
-  const [copied, setCopied] = useState(false);
 
   // 生产 k2r 是无面板构建：真实命令带着这台账户专属的凭证，只能在「我的路由器」
-  // 生成后复制——这里展示的是占位形态，不是可以直接照抄运行的完整命令。
+  // 生成后复制——这里展示的是占位形态，不是可以直接照抄运行的完整命令，所以不给
+  // 复制按钮，并标注「示例」。
   const command = t('edition.diy.commandPlaceholder');
   const troubleshooting = wt.raw('troubleshooting.items') as { q: string; a: string }[];
-
-  const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard not available — silently ignore */
-    }
-  };
 
   return (
     <StepShell
@@ -41,23 +30,12 @@ export function Step3InstallK2r() {
             <Terminal className="w-4 h-4" />
             <span>SSH</span>
           </div>
-          <button
-            type="button"
-            onClick={onCopy}
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
+          <span
+            data-testid="k2r-command-example-label"
+            className="px-2 py-0.5 rounded border border-zinc-700 text-xs font-medium text-zinc-400"
           >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-green-400" />
-                {wt('copiedLabel')}
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                {wt('copyButton')}
-              </>
-            )}
-          </button>
+            {wt('exampleLabel')}
+          </span>
         </div>
         <pre className="px-4 py-4 text-sm text-zinc-100 overflow-x-auto">
           <code>$ {command}</code>
