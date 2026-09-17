@@ -309,6 +309,18 @@ func TestAdminExtendPrivateLine(t *testing.T) {
 	require.NoError(t, db.Get().First(&got, sub.ID).Error)
 	assert.Equal(t, PNStatusActive, got.Status)
 
+	// suspended 线路延期后响应体也要反映 active/isServiceable/suspendUntil=0 —— 不能只改库不改响应
+	// （extendPrivateLine 只回写传入指针的 ExpiresAt，不回写 status/grace_until/suspend_until）
+	require.NoError(t, db.Get().Model(&got).Updates(map[string]any{
+		"status": PNStatusSuspended, "suspend_until": time.Now().Unix() + 86400, "expires_at": time.Now().Unix() - 3600,
+	}).Error)
+	code, data = adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",
+		AdminExtendLineRequest{Months: 1, Reason: "工单 #2 补偿"})
+	require.EqualValues(t, 0, code)
+	assert.Equal(t, PNStatusActive, data["status"])
+	assert.Equal(t, true, data["isServiceable"])
+	assert.EqualValues(t, 0, data["suspendUntil"])
+
 	// deprovisioned 不能延期
 	require.NoError(t, db.Get().Model(&got).Update("status", PNStatusDeprovisioned).Error)
 	code, _ = adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",

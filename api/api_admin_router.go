@@ -412,11 +412,20 @@ func api_admin_extend_private_line(c *gin.Context) {
 		return
 	}
 
+	// extendPrivateLine 只回写传入指针的 ExpiresAt（status/grace_until/suspend_until 只落库，不回填
+	// 调用方持有的 sub），所以响应 DTO 必须重新加载，否则 grace/suspended 线路延期后响应体里的
+	// status/isServiceable/graceUntil/suspendUntil 仍是延期前的旧值（哪怕库里已经写成 active）。
+	var reloaded PrivateNodeSubscription
+	if err := db.Get().First(&reloaded, sub.ID).Error; err != nil {
+		log.Errorf(c, "reload private node subscription %d after extend: %v", sub.ID, err)
+		Error(c, ErrorSystemError, "extend failed")
+		return
+	}
 	actor := adminActorTag(c)
-	log.Infof(c, "admin %s extended line %d by %d months: %s", actor, sub.ID, body.Months, body.Reason)
+	log.Infof(c, "admin %s extended line %d by %d months: %s", actor, reloaded.ID, body.Months, body.Reason)
 	sendCloudSlackNotification(c.Request.Context(), "Router Edition — Manual Extend",
 		fmt.Sprintf("管理员 %s 手工延期线路 %d，%d 个月，原因：%s（新到期日 %s）。",
-			actor, sub.ID, body.Months, body.Reason, time.Unix(sub.ExpiresAt, 0).Format("2006-01-02")))
-	dto := adminPrivateNodeSubDTO(c, &sub, now)
+			actor, reloaded.ID, body.Months, body.Reason, time.Unix(reloaded.ExpiresAt, 0).Format("2006-01-02")))
+	dto := adminPrivateNodeSubDTO(c, &reloaded, now)
 	Success(c, &dto)
 }
