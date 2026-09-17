@@ -34,8 +34,9 @@ const RENEWABLE_LINE_STATUSES = new Set(['active', 'grace', 'suspended']);
 
 // 已持有路由器版的用户点「续费一年」来到 ?plan=svc：此时买的是原线路续期。
 // 服务套餐只用于续费——检测不到可续的路由器版时一律按含路由器的新购处理。
+// 与后端下单门 userCanBuyRouterService 同口径：线路已回收的成品客户（最新台账带硬件 SKU）硬件还在手里，同样是续费。
 function isExistingRouterCustomer(data: UserRouter): boolean {
-  if (data.fulfillment && data.fulfillment.stage !== 'expired') return true;
+  if (data.fulfillment && (data.fulfillment.stage !== 'expired' || !!data.fulfillment.hardwareSku)) return true;
   return !!data.line && RENEWABLE_LINE_STATUSES.has(data.line.status);
 }
 

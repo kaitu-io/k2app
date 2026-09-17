@@ -366,6 +366,18 @@ describe('RouterPurchaseClient', () => {
       await screen.findByText('routers.edition.purchase.renewTitle');
     });
 
+    it('成品台账已 expired 且线路已回收：硬件仍在客户手里，进入续费模式（与后端下单门同口径）', async () => {
+      searchParamsState.current = new URLSearchParams('plan=svc');
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      mockGetUserRouter.mockResolvedValue({
+        hasRouter: true,
+        fulfillment: { id: 1, orderId: 1, hardwareSku: 'redmi-ax6s', stage: 'expired', shippedAt: 1, activatedAt: 1, credentialMinted: true, canMintCredential: false, createdAt: 1 },
+      });
+      render(<RouterPurchaseClient />);
+      await screen.findByText('routers.edition.purchase.renewTitle');
+      expect(screen.queryByText('routers.edition.purchase.shippingTitle')).toBeNull();
+    });
+
     // 非续费客户带 ?plan=svc：服务套餐不对新客开放，按含路由器的新购处理。
     async function expectHardwareNewPurchase() {
       await screen.findByText('routers.edition.purchase.hardwareName');
@@ -404,12 +416,12 @@ describe('RouterPurchaseClient', () => {
       for (const c of mockCreateOrder.mock.calls) expect(c[0].plan).toBe('router-std-1y');
     });
 
-    it('台账 expired 且线路已回收：不是续费客户，按成品新购', async () => {
+    it('自备台账 expired 且线路已回收：不是续费客户，按成品新购（后端同样拒绝服务套餐）', async () => {
       searchParamsState.current = new URLSearchParams('plan=svc');
       mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
       mockGetUserRouter.mockResolvedValue({
         hasRouter: true,
-        fulfillment: { id: 1, orderId: 1, hardwareSku: 'redmi-ax6s', stage: 'expired', shippedAt: 1, activatedAt: 1, credentialMinted: true, canMintCredential: false, createdAt: 1 },
+        fulfillment: { id: 1, orderId: 1, hardwareSku: '', stage: 'expired', shippedAt: 1, activatedAt: 1, credentialMinted: true, canMintCredential: false, createdAt: 1 },
         line: { id: 9, status: 'deprovisioned' },
       });
       render(<RouterPurchaseClient />);
