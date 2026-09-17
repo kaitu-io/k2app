@@ -442,7 +442,7 @@ export default function Account() {
         </CardContent>
       </Card>
 
-      {/* 专属节点入口（轻量）：功能开启或已有节点时显示，详情在管理页 */}
+      {/* 专属节点入口（轻量）：仅已有线路时显示，详情在管理页 */}
       {showPrivateNodeEntry && (
         <Card sx={{ mb: 2 }}>
           <List disablePadding>

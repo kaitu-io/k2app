@@ -14,7 +14,7 @@ vi.mock('react-router-dom', async (orig) => {
   return { ...actual, useNavigate: () => navigateMock };
 });
 
-// PrivateNodePanel renders a useNavigate — keep router from the test render wrapper.
+// 组件本身已不再调用 useNavigate；这里 mock 只是为了断言按钮移除后 navigate 从未被调用。
 function makeNode(id: number): PrivateNodeSubscriptionView {
   return {
     id,

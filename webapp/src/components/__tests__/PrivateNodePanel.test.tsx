@@ -91,15 +91,22 @@ describe('PrivateNodePanel', () => {
     expect(bar.getAttribute('data-color')).toBe('error');
   });
 
-  it('quotaExhausted: renders worded exhausted alert + reset date + 文字提示（无 CTA 按钮）', () => {
+  it('quotaExhausted: renders worded exhausted alert + reset date（无 CTA 按钮）', () => {
     render(<PrivateNodePanel node={makeNode({ quotaExhausted: true, quotaResetAt: 1_800_000_000 })} />);
     const alert = screen.getByTestId('private-node-quota-exhausted');
     expect(alert).toBeInTheDocument();
     // worded title (not the generic bar) — real i18n resolves zh-CN
     expect(within(alert).getByText('本月流量额度已用尽')).toBeInTheDocument();
-    // 文字提示替代 CTA 按钮
-    expect(within(alert).getByText(i18n.t('privateNode:privateNode.renewOnWebsite'))).toBeInTheDocument();
     expect(screen.queryByTestId('private-node-quota-exhausted-cta')).not.toBeInTheDocument();
+  });
+
+  it('active + quotaExhausted: renewOnWebsite 提示整张卡片只出现一次（提示框内不重复，只在底部）', () => {
+    render(<PrivateNodePanel node={makeNode({ status: 'active', quotaExhausted: true, quotaResetAt: 1_800_000_000 })} />);
+    const alert = screen.getByTestId('private-node-quota-exhausted');
+    // 额度用尽提示框里不再重复续费句——只保留标题/重置说明
+    expect(within(alert).queryByText(i18n.t('privateNode:privateNode.renewOnWebsite'))).not.toBeInTheDocument();
+    // 整个组件里这句话只出现一次（底部那句）
+    expect(screen.getAllByText(i18n.t('privateNode:privateNode.renewOnWebsite'))).toHaveLength(1);
   });
 
   it('quotaExhausted false: no exhausted alert', () => {

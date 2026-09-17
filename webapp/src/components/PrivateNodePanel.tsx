@@ -163,13 +163,10 @@ export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
               <Typography variant="body2" fontWeight={700} sx={{ fontSize: '0.85rem' }}>
                 {t('privateNode:privateNode.quotaExhausted.title')}
               </Typography>
-              <Typography variant="caption" sx={{ display: 'block', mb: 0.75 }}>
+              <Typography variant="caption" sx={{ display: 'block' }}>
                 {node.quotaResetAt && node.quotaResetAt > 0
                   ? t('privateNode:privateNode.quotaExhausted.resetHint', { date: formatDate(node.quotaResetAt) })
                   : t('privateNode:privateNode.quotaExhausted.resetUnknown')}
-              </Typography>
-              <Typography variant="caption" sx={{ display: 'block' }}>
-                {t('privateNode:privateNode.renewOnWebsite')}
               </Typography>
             </Alert>
           )}
