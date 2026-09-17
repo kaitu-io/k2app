@@ -156,6 +156,21 @@ func api_create_order(c *gin.Context) {
 		}
 	}
 
+	// 服务套餐仅续费：真实下单时名下没有路由器（见 userCanBuyRouterService）→ 拒绝。预览放行。
+	if plan.Product == ProductRouter && plan.HardwareSKU == "" && !req.Preview {
+		ok, err := userCanBuyRouterService(c, db.Get(), user.ID, time.Now().Unix())
+		if err != nil {
+			log.Errorf(c, "check router service eligibility for user %d: %v", user.ID, err)
+			Error(c, ErrorSystemError, "failed to check existing router")
+			return
+		}
+		if !ok {
+			log.Warnf(c, "user %d rejected: no router, service plan %s is renewal-only", user.ID, plan.PID)
+			Error(c, ErrorInvalidOperation, "服务套餐仅用于续费，请购买含路由器的开途路由器版")
+			return
+		}
+	}
+
 	// 路由器版成品：真实下单必须带收货信息（预览阶段允许缺省，让页面先报价）。
 	if plan.Product == ProductRouter && plan.HardwareSKU != "" && !req.Preview {
 		if req.Shipping == nil || req.Shipping.Name == "" || req.Shipping.Phone == "" || req.Shipping.Address == "" {
@@ -184,7 +199,7 @@ func api_create_order(c *gin.Context) {
 	if isLineProduct(plan.Product) {
 		order.PrivateNodeRegion = req.Region
 	}
-	// 路由器版成品：收货信息落独立列（真实下单已在上面校验必填；此处兜底 preview/自备不写）。
+	// 路由器版成品：收货信息落独立列（真实下单已在上面校验必填；此处兜底 preview/服务套餐不写）。
 	// *string：nil 保持列为 SQL NULL（见 model.go Order.RouterShipping 注释），非 nil 才取地址赋值。
 	if plan.Product == ProductRouter && plan.HardwareSKU != "" && req.Shipping != nil {
 		if b, err := json.Marshal(req.Shipping); err == nil {

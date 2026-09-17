@@ -112,6 +112,23 @@ func userHasRouter(ctx context.Context, tx *gorm.DB, userID uint64, now int64) (
 	return n > 0, nil
 }
 
+// userCanBuyRouterService 服务套餐下单门：服务套餐只作续费，不对没有路由器的用户新售（自备新购已下线）。
+// 放行条件：userHasRouter 为真（未过期台账或可续线路），或用户有任意一条成品台账（hardware_sku 非空，
+// 任何 stage）——后者对应线路已回收的成品客户，applyRouterOrder 会让新台账继承其硬件字段。
+// 纯自备历史（台账全 expired 且无可续线路）不放行。只读、不加锁。
+func userCanBuyRouterService(ctx context.Context, tx *gorm.DB, userID uint64, now int64) (bool, error) {
+	has, err := userHasRouter(ctx, tx, userID, now)
+	if err != nil || has {
+		return has, err
+	}
+	var n int64
+	if err := tx.Model(&RouterFulfillment{}).
+		Where("user_id = ? AND hardware_sku <> ?", userID, "").Count(&n).Error; err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // findRenewablePrivateLine 用户名下最新的可续线路（active/grace/suspended，按到期时间倒序）；无则 nil。
 // FOR UPDATE 行锁：两笔并发续费 webhook 都读到同一条线路时，第二个必须等第一个提交后
 // 再读，否则两次 extendPrivateLine 都从同一个旧 ExpiresAt 起算叠加，后写覆盖前一次的延期

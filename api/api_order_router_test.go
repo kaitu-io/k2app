@@ -70,6 +70,13 @@ func TestCreateOrder_RouterServiceIgnoresShippingAndSkipsTierGate(t *testing.T) 
 	user := CreateTestUser(t)
 	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", user.ID).
 		Updates(map[string]any{"is_first_order_done": true, "tier": TierFamily}).Error)
+	// 服务套餐仅续费：给该用户一条可续线路，让它过服务套餐门（门本身见 TestCreateOrder_RouterServiceRenewalOnly）。
+	now := time.Now().Unix()
+	line := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, Region: "japan",
+		IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40, Status: PNStatusActive,
+		PurchasedAt: now - 10*86400, ExpiresAt: now + 300*86400}
+	require.NoError(t, db.Get().Create(line).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(line) })
 
 	postOrder(t, r, user.ID, map[string]any{"preview": false, "plan": plan.PID, "region": "japan"})
 	o := latestOrderForUser(t, user.ID)
@@ -77,7 +84,7 @@ func TestCreateOrder_RouterServiceIgnoresShippingAndSkipsTierGate(t *testing.T) 
 	t.Cleanup(func() { db.Get().Unscoped().Delete(o) })
 	assert.Nil(t, o.GetRouterShipping())
 
-	// 自备套餐即使请求里带了 shipping，也不落库（HardwareSKU=="" 时收货信息门完全不生效）。
+	// 服务套餐即使请求里带了 shipping，也不落库（HardwareSKU=="" 时收货信息门完全不生效）。
 	postOrder(t, r, user.ID, map[string]any{"preview": false, "plan": plan.PID, "region": "japan",
 		"shipping": map[string]any{"name": "李四", "phone": "13900000000", "address": "北京市…"}})
 	o2 := latestOrderForUser(t, user.ID)
@@ -138,7 +145,7 @@ func TestOrderRouterShipping_SaveRoundTrip(t *testing.T) {
 }
 
 // 一户一台：真实下单硬件套餐时，已有未过期台账或可续线路 → ErrorInvalidOperation；预览放行；
-// 只剩 expired 台账且无可续线路可以再买；服务套餐不受此门影响。
+// 只剩 expired 台账且无可续线路可以再买；服务套餐不受此门影响（它有自己的仅续费门）。
 func TestCreateOrder_RouterHardwareOnePerAccount(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
@@ -231,6 +238,81 @@ func TestCreateOrder_RouterHardwareOnePerAccount(t *testing.T) {
 		code, _ := postOrder(t, r, user.ID, hwOrder)
 		assert.NotEqualValues(t, ErrorInvalidOperation, code)
 		assert.NotNil(t, latestOrderForUser(t, user.ID))
+	})
+}
+
+// 服务套餐仅续费：真实下单时名下既没有未过期台账 / 可续线路，也没有任何成品台账 → ErrorInvalidOperation；
+// 有可续线路、或只剩 expired 的成品台账（线路已回收）→ 放行；预览不受影响。
+func TestCreateOrder_RouterServiceRenewalOnly(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	r := orderRegionTestRouter()
+	svc := seedRouterPlan(t, "router-test-renew-only-svc", "", 29900)
+	svcOrder := map[string]any{"preview": false, "plan": svc.PID, "region": "japan"}
+	now := time.Now().Unix()
+
+	mkLine := func(t *testing.T, userID uint64, status string, orderID uint64) *PrivateNodeSubscription {
+		t.Helper()
+		s := &PrivateNodeSubscription{UserID: userID, PlanID: svc.ID, OrderID: orderID, Region: "japan",
+			IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40, Status: status,
+			PurchasedAt: now - 400*86400, ExpiresAt: now + 300*86400}
+		require.NoError(t, db.Get().Create(s).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(s) })
+		return s
+	}
+	mkFulfillment := func(t *testing.T, userID uint64, sub *PrivateNodeSubscription, sku, stage string) {
+		t.Helper()
+		f := &RouterFulfillment{OrderID: sub.OrderID, UserID: userID, SubID: sub.ID,
+			HardwareSKU: sku, Stage: stage, ShippedAt: now - 390*86400}
+		require.NoError(t, db.Get().Create(f).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(f) })
+	}
+	cleanupOrders := func(t *testing.T, userID uint64) {
+		t.Cleanup(func() { db.Get().Unscoped().Where("user_id = ?", userID).Delete(&Order{}) })
+	}
+
+	t.Run("no fulfillment and no line: rejected, preview still quotes", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+
+		code, _ := postOrder(t, r, user.ID, svcOrder)
+		assert.EqualValues(t, ErrorInvalidOperation, code)
+		assert.Nil(t, latestOrderForUser(t, user.ID), "rejected service order must not persist")
+
+		code, _ = postOrder(t, r, user.ID, map[string]any{"preview": true, "plan": svc.PID, "region": "japan"})
+		assert.EqualValues(t, 0, code)
+	})
+
+	t.Run("active line: allowed", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		mkLine(t, user.ID, PNStatusActive, 0)
+
+		code, _ := postOrder(t, r, user.ID, svcOrder)
+		assert.NotEqualValues(t, ErrorInvalidOperation, code)
+		assert.NotNil(t, latestOrderForUser(t, user.ID), "renewal order must persist")
+	})
+
+	t.Run("only expired hardware fulfillment on a deprovisioned line: allowed", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		dead := mkLine(t, user.ID, PNStatusDeprovisioned, 740000+user.ID)
+		mkFulfillment(t, user.ID, dead, "redmi-ax6s", RouterStageExpired)
+
+		code, _ := postOrder(t, r, user.ID, svcOrder)
+		assert.NotEqualValues(t, ErrorInvalidOperation, code)
+		assert.NotNil(t, latestOrderForUser(t, user.ID), "hardware customer's service order must persist")
+	})
+
+	t.Run("only expired self-supplied fulfillment on a deprovisioned line: rejected", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		dead := mkLine(t, user.ID, PNStatusDeprovisioned, 730000+user.ID)
+		mkFulfillment(t, user.ID, dead, "", RouterStageExpired)
+
+		code, _ := postOrder(t, r, user.ID, svcOrder)
+		assert.EqualValues(t, ErrorInvalidOperation, code)
+		assert.Nil(t, latestOrderForUser(t, user.ID))
 	})
 }
 

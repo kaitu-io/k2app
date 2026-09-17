@@ -18,8 +18,8 @@ const privateNodeInstallContent = "您好!感谢购买开途专属线路。我�
 const privateNodeWelcomeSlug = "private-node-welcome"
 const privateNodeSlackTitle = "Dedicated Line Order — Install Needed"
 
-// routerInstallContent 路由器版(成品 / 自备)付款后的工单文案。中文用户面用"开途"。
-const routerInstallContent = "您好!感谢购买开途路由器版。我们正在为您准备专属出口与路由器:成品路由器将在配置完成后寄出,发货与上线进度可在「我的路由器」页面查看;自备路由器的用户可在线路就绪后在同一页面生成一条安装命令。如有任何问题,直接在本工单回复即可。"
+// routerInstallContent 路由器版付款后的工单文案(新购只有成品,服务套餐仅续费)。中文用户面用"开途"。
+const routerInstallContent = "您好!感谢购买开途路由器版。我们正在为您准备专属出口与路由器:成品路由器将在配置完成后寄出,发货与上线进度可在「我的路由器」页面查看。如有任何问题,直接在本工单回复即可。"
 const routerWelcomeSlug = "router-welcome"
 const routerSlackTitle = "Router Edition Order — Fulfillment Needed"
 
