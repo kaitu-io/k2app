@@ -96,6 +96,12 @@ export default function RouterPurchaseClient() {
     setRegion((prev) => (regions.includes(prev) ? prev : regions[0]));
   }, [regions]);
 
+  // 一户一台门的提示只对应「刚才那次尝试」——切套餐或换地区说明用户已经在
+  // 换一种方案重试，旧提示不该继续挂着。
+  useEffect(() => {
+    setAlreadyHasRouter(false);
+  }, [choice, region]);
+
   // 5) regionLabel(slug)：键不存在时回落显示 slug。
   const regionLabel = useCallback(
     (slug: string) => {

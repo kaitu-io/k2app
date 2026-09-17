@@ -283,6 +283,37 @@ describe('RouterPurchaseClient', () => {
     expect(link).toHaveAttribute('href', '/account/router');
   });
 
+  it('成品套餐被一户一台拒单后，切到服务套餐会清掉旧提示', async () => {
+    mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+    mockCreateOrder.mockImplementation((req: { preview: boolean }) => {
+      if (req.preview) return Promise.resolve({ order: fakeOrder(39900), payUrl: '' });
+      return Promise.reject(new ApiError(ErrorCode.InvalidOperation, 'x'));
+    });
+    render(<RouterPurchaseClient />);
+
+    await screen.findByText('routers.edition.purchase.hardwareName');
+    fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingName'), {
+      target: { value: '张三' },
+    });
+    fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingPhone'), {
+      target: { value: '13800000000' },
+    });
+    fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingAddress'), {
+      target: { value: '某某路 1 号' },
+    });
+    const payButton = screen.getByRole('button', { name: 'routers.edition.purchase.payButton' });
+    await waitFor(() => expect(payButton).not.toBeDisabled());
+    fireEvent.click(payButton);
+
+    await screen.findByText('routers.edition.purchase.alreadyHasRouter');
+
+    fireEvent.click(screen.getByText('routers.edition.purchase.switchToService'));
+
+    await waitFor(() =>
+      expect(screen.queryByText('routers.edition.purchase.alreadyHasRouter')).toBeNull(),
+    );
+  });
+
   it('未登录：支付按钮 disabled 且显示 loginFirst', async () => {
     authState.current = { isAuthenticated: false, isAuthLoading: false };
     mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
