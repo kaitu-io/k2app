@@ -247,15 +247,6 @@
       ]
     }
   },
-  "presale": {
-    "title": "不想折腾？开途官方代刷",
-    "subtitle": "我们也提供已刷好 k2r 的成品路由器，开箱即用，含 1 年质保",
-    "presaleTag": "预售中",
-    "productFeatures": "产品特色",
-    "contactInquiry": "联系咨询",
-    "presalePriceConsult": "预售价格请咨询客服 · 1 年质保",
-    "presalePriceConsultFull": "预售价格请咨询客服 · 1 年质保 · 赠送服务激活码"
-  },
   "edition": {
     "regions": {
       "ap-tokyo": "日本（东京）",
