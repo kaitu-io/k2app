@@ -39,6 +39,15 @@ func buildPrivateNodeSubDTO(c *gin.Context, s *PrivateNodeSubscription, now int6
 	return d
 }
 
+// adminPrivateNodeSubDTO 后台视角的线路 DTO：在账户页 DTO 之上叠加归属用户与订单。
+// api_admin_list_private_node_subscriptions 与 api_admin_extend_private_line 共用。
+func adminPrivateNodeSubDTO(c *gin.Context, s *PrivateNodeSubscription, now int64) DataAdminPrivateNodeSubscription {
+	return DataAdminPrivateNodeSubscription{
+		DataPrivateNodeSubscription: buildPrivateNodeSubDTO(c, s, now),
+		UserID:                      s.UserID, Email: userEmailByID(s.UserID), OrderID: s.OrderID, BoundIpv4: s.BoundIpv4,
+	}
+}
+
 // routerDeviceDTO 把一台网关设备映射为账户页/后台共用的 DTO；dev 为 nil 时返回 nil。
 // 与 api_get_user_router / adminGatewayDeviceDTO / api_admin_list_router_devices 共用，避免三处各写一遍
 // Online 判定（routerOnlineWindowSeconds）。

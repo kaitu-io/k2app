@@ -342,6 +342,8 @@ func SetupRouter() *gin.Engine {
 		admin.PUT("/users/:uuid/retailer-config", api_admin_update_retailer_config)
 		// 用户会员时长管理
 		admin.POST("/users/:uuid/membership", api_admin_add_user_membership)
+		// 路由器版线路手工延期（补偿 / 客服，与会员时长手工追加同级）
+		admin.POST("/private-node-subscriptions/:id/extend", api_admin_extend_private_line)
 		// 用户邮箱管理
 		admin.PUT("/users/:uuid/email", api_admin_update_user_email)
 		// 用户密码管理（管理员代为重置）
@@ -469,6 +471,7 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.POST("/node-operations/:id/update", RoleRequired(RoleDevopsEditor), adminUpdateNodeOperation)
 
 		// 路由器版：发货台账 / 代铸凭证 / 线路与设备从表
+		opsAdmin.GET("/router/stats", RoleRequired(viewOrEdit), api_admin_router_stats)
 		opsAdmin.GET("/router/fulfillments", RoleRequired(viewOrEdit), api_admin_list_router_fulfillments)
 		opsAdmin.POST("/router/fulfillments/:id/stage", RoleRequired(RoleDevopsEditor), api_admin_update_router_stage)
 		opsAdmin.POST("/router/fulfillments/:id/credential", RoleRequired(RoleDevopsEditor), api_admin_mint_router_credential)

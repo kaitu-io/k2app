@@ -1392,3 +1392,17 @@ type AdminRouterStageRequest struct {
 	Carrier    string `json:"carrier"`
 	Note       string `json:"note"`
 }
+
+// DataAdminRouterStats 路由器订单台账顶部看板。
+type DataAdminRouterStats struct {
+	StageCounts   map[string]int64 `json:"stageCounts"`   // 每个 stage 的台账数（含 0 的六个键齐全）
+	Stuck         int64            `json:"stuck"`         // paid/provisioning/ready 且超过 48h 未变化
+	OnlineRouters int64            `json:"onlineRouters"` // is_gateway 设备在 65 分钟窗口内有活动
+	ExpiringSoon  int64            `json:"expiringSoon"`  // 路由器版线路 active 且 30 天内到期
+}
+
+// AdminExtendLineRequest 线路手工延期（补偿 / 客服）。
+type AdminExtendLineRequest struct {
+	Months int    `json:"months" binding:"required,min=1,max=24"`
+	Reason string `json:"reason" binding:"required"`
+}

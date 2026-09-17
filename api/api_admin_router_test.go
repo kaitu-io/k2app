@@ -26,6 +26,8 @@ func adminRouterTestRouter() *gin.Engine {
 	r.POST("/app/router/fulfillments/:id/credential", api_admin_mint_router_credential)
 	r.GET("/app/private-node-subscriptions", api_admin_list_private_node_subscriptions)
 	r.GET("/app/router-devices", api_admin_list_router_devices)
+	r.GET("/app/router/stats", api_admin_router_stats)
+	r.POST("/app/private-node-subscriptions/:id/extend", api_admin_extend_private_line)
 	return r
 }
 
@@ -246,4 +248,75 @@ func TestAdminRouterFulfillments_MintCredential_ExpiredIsInvalidOperation(t *tes
 
 	code, _ := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/credential", nil)
 	assert.EqualValues(t, ErrorInvalidOperation, code)
+}
+
+func TestAdminRouterStats_CountsAndStuck(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+
+	code, before := adminCall(t, r, http.MethodGet, "/app/router/stats", nil)
+	require.EqualValues(t, 0, code)
+	counts := before["stageCounts"].(map[string]any)
+	for _, s := range []string{RouterStagePaid, RouterStageProvisioning, RouterStageReady, RouterStageShipped, RouterStageOnline, RouterStageExpired} {
+		_, ok := counts[s]
+		assert.True(t, ok, "stageCounts must contain %s", s)
+	}
+	readyBefore := counts[RouterStageReady].(float64)
+	stuckBefore := before["stuck"].(float64)
+
+	user := CreateTestUser(t)
+	_, f := seedReadyRouterFulfillment(t, user)
+
+	_, after := adminCall(t, r, http.MethodGet, "/app/router/stats", nil)
+	assert.Equal(t, readyBefore+1, after["stageCounts"].(map[string]any)[RouterStageReady].(float64))
+	assert.Equal(t, stuckBefore, after["stuck"].(float64), "fresh row is not stuck")
+
+	// 把 updated_at 拨回 49 小时前（UpdateColumn 不触发 autoUpdateTime）
+	require.NoError(t, db.Get().Model(f).UpdateColumn("updated_at", time.Now().Unix()-49*3600).Error)
+	_, stuck := adminCall(t, r, http.MethodGet, "/app/router/stats", nil)
+	assert.Equal(t, stuckBefore+1, stuck["stuck"].(float64))
+}
+
+func TestAdminExtendPrivateLine(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	sub, _ := seedReadyRouterFulfillment(t, user)
+	oldExpiry := sub.ExpiresAt
+
+	// 参数校验
+	code, _ := adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",
+		AdminExtendLineRequest{Months: 0, Reason: "x"})
+	assert.EqualValues(t, ErrorInvalidArgument, code)
+	code, _ = adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",
+		AdminExtendLineRequest{Months: 1})
+	assert.EqualValues(t, ErrorInvalidArgument, code)
+
+	// 正常延期 1 个月
+	code, data := adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",
+		AdminExtendLineRequest{Months: 1, Reason: "工单 #1 补偿"})
+	require.EqualValues(t, 0, code)
+	var got PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&got, sub.ID).Error)
+	assert.Greater(t, got.ExpiresAt, oldExpiry)
+	assert.EqualValues(t, got.ExpiresAt, data["expiresAt"].(float64))
+
+	// grace 线路延期后回到 active
+	require.NoError(t, db.Get().Model(&got).Updates(map[string]any{"status": PNStatusGrace, "expires_at": time.Now().Unix() - 86400}).Error)
+	code, _ = adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",
+		AdminExtendLineRequest{Months: 1, Reason: "x"})
+	require.EqualValues(t, 0, code)
+	require.NoError(t, db.Get().First(&got, sub.ID).Error)
+	assert.Equal(t, PNStatusActive, got.Status)
+
+	// deprovisioned 不能延期
+	require.NoError(t, db.Get().Model(&got).Update("status", PNStatusDeprovisioned).Error)
+	code, _ = adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",
+		AdminExtendLineRequest{Months: 1, Reason: "x"})
+	assert.EqualValues(t, ErrorInvalidOperation, code)
+
+	// 不存在
+	code, _ = adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/999999999/extend",
+		AdminExtendLineRequest{Months: 1, Reason: "x"})
+	assert.EqualValues(t, ErrorNotFound, code)
 }

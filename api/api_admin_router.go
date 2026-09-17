@@ -2,6 +2,7 @@ package center
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func parseRouterFulfillmentID(c *gin.Context) (*RouterFulfillment, bool) {
@@ -258,11 +260,7 @@ func api_admin_list_private_node_subscriptions(c *gin.Context) {
 	}
 	items := make([]DataAdminPrivateNodeSubscription, 0, len(subs))
 	for i := range subs {
-		s := &subs[i]
-		items = append(items, DataAdminPrivateNodeSubscription{
-			DataPrivateNodeSubscription: buildPrivateNodeSubDTO(c, s, now),
-			UserID:                      s.UserID, Email: userEmailByID(s.UserID), OrderID: s.OrderID, BoundIpv4: s.BoundIpv4,
-		})
+		items = append(items, adminPrivateNodeSubDTO(c, &subs[i], now))
 	}
 	ListWithData(c, items, pagination)
 }
@@ -292,4 +290,133 @@ func api_admin_list_router_devices(c *gin.Context) {
 		})
 	}
 	ListWithData(c, items, pagination)
+}
+
+// api_admin_router_stats 路由器版后台看板统计（stage 分布 / 卡住 / 在线 / 即将到期）。
+// 统计前对非终态（stage ∉ {online, expired}）台账逐条 syncRouterFulfillment，保证数字与列表页
+// 的 stage 一致（同步失败只记日志，不影响统计的其余口径）；路由器台账量级在百级，逐条同步可接受。
+func api_admin_router_stats(c *gin.Context) {
+	now := time.Now().Unix()
+
+	var pending []RouterFulfillment
+	if err := db.Get().Where("stage NOT IN ?", []string{RouterStageOnline, RouterStageExpired}).Find(&pending).Error; err != nil {
+		log.Errorf(c, "load router fulfillments for stats sync: %v", err)
+		Error(c, ErrorSystemError, "failed to load router fulfillments")
+		return
+	}
+	for i := range pending {
+		if err := syncRouterFulfillment(c, db.Get(), &pending[i], now); err != nil {
+			log.Warnf(c, "sync router fulfillment %d for stats: %v", pending[i].ID, err)
+		}
+	}
+
+	stats := DataAdminRouterStats{StageCounts: map[string]int64{
+		RouterStagePaid: 0, RouterStageProvisioning: 0, RouterStageReady: 0,
+		RouterStageShipped: 0, RouterStageOnline: 0, RouterStageExpired: 0,
+	}}
+	var counts []struct {
+		Stage string
+		N     int64
+	}
+	if err := db.Get().Model(&RouterFulfillment{}).Select("stage, count(*) as n").Group("stage").Scan(&counts).Error; err != nil {
+		log.Errorf(c, "count router fulfillments by stage: %v", err)
+		Error(c, ErrorSystemError, "failed to count router fulfillments")
+		return
+	}
+	for _, row := range counts {
+		stats.StageCounts[row.Stage] = row.N
+	}
+
+	if err := db.Get().Model(&RouterFulfillment{}).
+		Where("stage IN ? AND updated_at < ?", []string{RouterStagePaid, RouterStageProvisioning, RouterStageReady}, now-48*3600).
+		Count(&stats.Stuck).Error; err != nil {
+		log.Errorf(c, "count stuck router fulfillments: %v", err)
+		Error(c, ErrorSystemError, "failed to count stuck fulfillments")
+		return
+	}
+
+	if err := db.Get().Model(&Device{}).
+		Where("is_gateway = ? AND token_last_used_at >= ?", true, now-routerOnlineWindowSeconds).
+		Count(&stats.OnlineRouters).Error; err != nil {
+		log.Errorf(c, "count online routers: %v", err)
+		Error(c, ErrorSystemError, "failed to count online routers")
+		return
+	}
+
+	subQuery := db.Get().Model(&RouterFulfillment{}).Select("sub_id")
+	if err := db.Get().Model(&PrivateNodeSubscription{}).
+		Where("status = ? AND expires_at BETWEEN ? AND ? AND id IN (?)", PNStatusActive, now, now+30*86400, subQuery).
+		Count(&stats.ExpiringSoon).Error; err != nil {
+		log.Errorf(c, "count expiring router lines: %v", err)
+		Error(c, ErrorSystemError, "failed to count expiring lines")
+		return
+	}
+
+	Success(c, &stats)
+}
+
+// api_admin_extend_private_line 线路手工延期（补偿 / 客服）：复用 extendPrivateLine 的叠加/回正语义，
+// 同事务同步挂在这条线路上的路由器台账（与续费分支 applyRouterOrder 同语义）。
+func api_admin_extend_private_line(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Error(c, ErrorInvalidArgument, "invalid subscription id")
+		return
+	}
+	var body AdminExtendLineRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		Error(c, ErrorInvalidArgument, "invalid request")
+		return
+	}
+
+	now := time.Now().Unix()
+	var sub PrivateNodeSubscription
+	txErr := db.Get().Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sub, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return e(ErrorNotFound, "subscription not found")
+			}
+			return err
+		}
+		renewable := false
+		for _, s := range renewableLineStatuses {
+			if sub.Status == s {
+				renewable = true
+				break
+			}
+		}
+		if !renewable {
+			return e(ErrorInvalidOperation, "该线路已回收或开通失败，不能延期")
+		}
+		if err := extendPrivateLine(c, tx, &sub, body.Months, now); err != nil {
+			return err
+		}
+		var fulfillments []RouterFulfillment
+		if err := tx.Where("sub_id = ?", sub.ID).Find(&fulfillments).Error; err != nil {
+			return err
+		}
+		for i := range fulfillments {
+			if err := syncRouterFulfillment(c, tx, &fulfillments[i], now); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if txErr != nil {
+		if _, ok := txErr.(rerr); ok {
+			ErrorE(c, txErr)
+			return
+		}
+		log.Errorf(c, "admin extend private line %d: %v", id, txErr)
+		Error(c, ErrorSystemError, "extend failed")
+		return
+	}
+
+	actor := adminActorTag(c)
+	log.Infof(c, "admin %s extended line %d by %d months: %s", actor, sub.ID, body.Months, body.Reason)
+	sendCloudSlackNotification(c.Request.Context(), "Router Edition — Manual Extend",
+		fmt.Sprintf("管理员 %s 手工延期线路 %d，%d 个月，原因：%s（新到期日 %s）。",
+			actor, sub.ID, body.Months, body.Reason, time.Unix(sub.ExpiresAt, 0).Format("2006-01-02")))
+	dto := adminPrivateNodeSubDTO(c, &sub, now)
+	Success(c, &dto)
 }
