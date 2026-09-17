@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   buildInstallCommand,
   formatUsd,
   routerProgressSteps,
   quotaLevel,
   formatBytes,
+  EDITION_PRICE_CENTS,
 } from '../router-edition';
 import type { UserRouterFulfillment } from '../api';
 
@@ -83,5 +86,25 @@ describe('formatBytes', () => {
     expect(formatBytes(1024)).toBe('1 KB');
     expect(formatBytes(2 * 1024 ** 4)).toBe('2 TB');
     expect(formatBytes(1.5 * 1024 ** 3)).toBe('1.5 GB');
+  });
+});
+
+describe('EDITION_PRICE_CENTS', () => {
+  it('导出首年 / 续费两个价格常量', () => {
+    expect(EDITION_PRICE_CENTS.firstYear).toBe(39900);
+    expect(EDITION_PRICE_CENTS.renewal).toBe(29900);
+  });
+
+  it('与 docs/router-edition-prod-deploy.md 的套餐 SQL 同源', () => {
+    const sql = fs.readFileSync(
+      path.resolve(__dirname, '../../../../docs/router-edition-prod-deploy.md'),
+      'utf8',
+    );
+    const stdMatch = sql.match(/'router-std-1y'[^\n]*?,\s*(\d+)\s*,\s*\d+\s*,/);
+    const svcMatch = sql.match(/'router-svc-1y'[^\n]*?,\s*(\d+)\s*,\s*\d+\s*,/);
+    expect(stdMatch).not.toBeNull();
+    expect(svcMatch).not.toBeNull();
+    expect(Number(stdMatch![1])).toBe(EDITION_PRICE_CENTS.firstYear);
+    expect(Number(svcMatch![1])).toBe(EDITION_PRICE_CENTS.renewal);
   });
 });

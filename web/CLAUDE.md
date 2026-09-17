@@ -211,6 +211,8 @@ Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `o
 
 不变量：**重复的那一份必然先腐烂**（2026-04-22 `fc5aa0d7` 删「成员管理」把 `/account` 删成空壳、`/g/[code]` 的「查看账号」随之落空即是例子；`getProHistories` 现已回到 `account/KaituAccountClient.tsx` 的购买记录）。
 
+- **例外：路由器版**（`/account/router`）。路由器版客户不一定装 app，开通进度、自备安装命令与续费只能在本站完成（spec `2026-09-16-router-edition-web-onboarding-design.md` §4.4）。它只读 `GET /api/user/router`，不做设备 / 节点管理。
+
 ## Environment
 
 See `.env.example` for all variables.

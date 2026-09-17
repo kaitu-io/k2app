@@ -1,11 +1,11 @@
 import { getTranslations } from 'next-intl/server';
-import { Image as ImageIcon } from 'lucide-react';
+import { Link } from '@/i18n/routing';
 import { StepShell } from './StepShell';
 
 export async function Step4Setup() {
   const t = await getTranslations('routers');
   const wt = await getTranslations('routers.wizard.step4');
-  const steps = wt.raw('steps') as { title: string; body: string }[];
+  const steps = wt.raw('steps') as { title: string; body: string; href?: string }[];
 
   return (
     <StepShell
@@ -16,7 +16,7 @@ export async function Step4Setup() {
       subtitle={wt('subtitle')}
       background="muted"
     >
-      <ol className="grid sm:grid-cols-2 gap-5 mb-8">
+      <ol className="grid sm:grid-cols-2 gap-5">
         {steps.map((s, i) => (
           <li
             key={i}
@@ -26,18 +26,20 @@ export async function Step4Setup() {
               {i + 1}
             </span>
             <div>
-              <h3 className="font-semibold text-foreground mb-1">{s.title}</h3>
+              <h3 className="font-semibold text-foreground mb-1">
+                {s.href ? (
+                  <Link href={s.href} className="text-primary underline underline-offset-4 hover:text-primary/80">
+                    {s.title}
+                  </Link>
+                ) : (
+                  s.title
+                )}
+              </h3>
               <p className="text-sm text-foreground/80 leading-relaxed">{s.body}</p>
             </div>
           </li>
         ))}
       </ol>
-
-      {/* Screenshot placeholder — replace once gateway admin UI screenshot is captured */}
-      <div className="aspect-[16/9] max-w-3xl mx-auto rounded-xl border-2 border-dashed border-border bg-card flex flex-col items-center justify-center text-muted-foreground">
-        <ImageIcon className="w-12 h-12 mb-2 opacity-50" />
-        <p className="text-sm">{wt('screenshotPlaceholder')}</p>
-      </div>
     </StepShell>
   );
 }

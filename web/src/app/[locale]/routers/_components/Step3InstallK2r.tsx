@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Copy, Check, Terminal, HelpCircle } from 'lucide-react';
+import { Link } from '@/i18n/routing';
 import { StepShell } from './StepShell';
 
 export function Step3InstallK2r() {
@@ -10,7 +11,9 @@ export function Step3InstallK2r() {
   const wt = useTranslations('routers.wizard.step3');
   const [copied, setCopied] = useState(false);
 
-  const command = wt('command');
+  // 生产 k2r 是无面板构建：真实命令带着这台账户专属的凭证，只能在「我的路由器」
+  // 生成后复制——这里展示的是占位形态，不是可以直接照抄运行的完整命令。
+  const command = t('edition.diy.commandPlaceholder');
   const troubleshooting = wt.raw('troubleshooting.items') as { q: string; a: string }[];
 
   const onCopy = async () => {
@@ -60,6 +63,12 @@ export function Step3InstallK2r() {
           <code>$ {command}</code>
         </pre>
       </div>
+
+      <p className="text-sm text-muted-foreground mb-6 max-w-3xl">
+        <Link href="/account/router" className="text-primary underline underline-offset-4 hover:text-primary/80">
+          {t('edition.diy.commandHint')}
+        </Link>
+      </p>
 
       <p className="text-foreground/80 mb-8 leading-relaxed max-w-3xl">{wt('explanation')}</p>
 

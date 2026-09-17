@@ -10,6 +10,9 @@ export function formatUsd(cents: number): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
+// 与 docs/router-edition-prod-deploy.md 的套餐 SQL 同源（测试锁定）。改价 = 改 SQL + 改这里。
+export const EDITION_PRICE_CENTS = { firstYear: 39900, renewal: 29900 } as const;
+
 export type RouterProgressState = 'done' | 'current' | 'todo';
 
 export interface RouterProgressStep {

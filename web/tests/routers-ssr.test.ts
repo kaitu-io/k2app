@@ -1,8 +1,9 @@
 /**
- * Routers Page SSR Tests — F1
+ * Routers DIY Page SSR Tests — F1
  *
- * Vitest tests for SSR conversion of the routers page.
- * RED phase: tests fail before implementation.
+ * Vitest tests for SSR conversion of the routers DIY (self-supplied hardware)
+ * page, moved to routers/diy/page.kaitu when /routers became the router
+ * edition product page (task 4 of the router edition website plan).
  *
  * Tests verify:
  * 1. The page component is an async function (Server Component compatible)
@@ -41,24 +42,6 @@ vi.mock('@/components/Footer', () => ({
   default: () => null,
 }));
 
-// Mock @/lib/constants
-vi.mock('@/lib/constants', () => ({
-  ROUTER_PRODUCTS: {
-    k2Mini: {
-      name: 'K2 Mini',
-      englishName: 'K2 Mini Router',
-      tagline: 'Compact smart router',
-      features: ['Feature 1', 'Feature 2'],
-    },
-    k2001: {
-      name: 'K2-001',
-      englishName: 'K2-001 Router',
-      tagline: 'Enterprise router',
-      features: ['Feature A', 'Feature B'],
-    },
-  },
-}));
-
 // Mock next/image
 vi.mock('next/image', () => ({
   default: () => null,
@@ -90,7 +73,7 @@ vi.mock('@/components/ui/card', () => ({
 
 describe('test_routers_ssr_renders_content', () => {
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page.kaitu');
+    const { default: RoutersPage } = await import('../src/app/[locale]/routers/diy/page.kaitu');
 
     // Must be an async function to qualify as a Server Component that awaits params
     expect(RoutersPage).toBeTypeOf('function');
@@ -99,7 +82,7 @@ describe('test_routers_ssr_renders_content', () => {
   });
 
   it('page accepts params as a Promise<{ locale: string }> (Next.js 15 pattern)', async () => {
-    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page.kaitu');
+    const { default: RoutersPage } = await import('../src/app/[locale]/routers/diy/page.kaitu');
 
     // Should resolve without throwing — async params are awaited inside
     const element = await RoutersPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -107,7 +90,7 @@ describe('test_routers_ssr_renders_content', () => {
   });
 
   it('page renders JSX content (not null or empty)', async () => {
-    const { default: RoutersPage } = await import('../src/app/[locale]/routers/page.kaitu');
+    const { default: RoutersPage } = await import('../src/app/[locale]/routers/diy/page.kaitu');
 
     const element = await RoutersPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
 
@@ -119,14 +102,14 @@ describe('test_routers_ssr_renders_content', () => {
 
 describe('test_routers_generates_metadata', () => {
   it('generateMetadata is exported from the page module', async () => {
-    const pageModule = await import('../src/app/[locale]/routers/page.kaitu');
+    const pageModule = await import('../src/app/[locale]/routers/diy/page.kaitu');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/routers/page.kaitu');
+    const { generateMetadata } = await import('../src/app/[locale]/routers/diy/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -137,7 +120,7 @@ describe('test_routers_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/routers/page.kaitu');
+    const { generateMetadata } = await import('../src/app/[locale]/routers/diy/page.kaitu');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'en-US' }),
