@@ -227,4 +227,32 @@ describe('/manager/router-fulfillments', () => {
     expect(url).toContain('stage=ready');
     expect(url).toContain('page=1');
   });
+
+  it('「在线路由器」看板卡片不可点击（onlineRouters 是活跃网关设备，stage=online 是不回退的里程碑，两者人群不同）', async () => {
+    render(<RouterFulfillmentsPage />);
+    await screen.findByText('user1@example.com');
+
+    fireEvent.click(screen.getByTestId('stat-online'));
+
+    expect(routerState.current.push).not.toHaveBeenCalled();
+  });
+
+  it('备注对话框：输入为空或只有空格时保存按钮禁用', async () => {
+    render(<RouterFulfillmentsPage />);
+    const row1 = await findRow('user1@example.com');
+    fireEvent.click(within(row1).getByRole('button', { name: '备注' }));
+
+    const dialog = await screen.findByRole('dialog');
+    const textarea = within(dialog).getByRole('textbox');
+    const saveButton = within(dialog).getByRole('button', { name: '保存' });
+
+    // 初值为空备注，保存按钮应禁用
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.change(textarea, { target: { value: '   ' } });
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.change(textarea, { target: { value: '已联系客户' } });
+    expect(saveButton).not.toBeDisabled();
+  });
 });

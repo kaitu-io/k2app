@@ -131,7 +131,7 @@ export default function RouterFulfillmentsPage() {
     try {
       const body: { trackingNo: string; carrier: string; note?: string } = {
         trackingNo: shipTrackingNo.trim(),
-        carrier: shipCarrier.trim(),
+        carrier: shipCarrier.trim() || "顺丰",
       };
       if (shipNote.trim()) body.note = shipNote.trim();
       await api.shipRouterFulfillment(shipTarget.id, body);
@@ -250,11 +250,7 @@ export default function RouterFulfillmentsPage() {
               </div>
             </CardContent>
           </Card>
-          <Card
-            data-testid="stat-online"
-            className="cursor-pointer"
-            onClick={() => setQuery({ stage: "online", page: 1 })}
-          >
+          <Card data-testid="stat-online">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">在线路由器</CardTitle>
             </CardHeader>
@@ -428,7 +424,7 @@ export default function RouterFulfillmentsPage() {
                             </TooltipContent>
                           </Tooltip>
                         ) : (
-                          <span className="text-muted-foreground">-</span>
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>
