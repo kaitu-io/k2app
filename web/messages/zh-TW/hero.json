@@ -430,7 +430,7 @@
       },
       "platforms": {
         "question": "開途 支援哪些裝置？",
-        "answer": "開途 全平台支援：Windows 10/11、macOS 12+（Intel + Apple Silicon 通用二進位）、Linux（Ubuntu/Debian 及主流發行版）、iOS（iPhone/iPad，中國區 App Store 可直接下載）、Android、OpenWrt 智慧路由器。一個帳號最多 5 台裝置同時在線。此外提供 k2s 伺服器端，支援自部署到任意 VPS。"
+        "answer": "開途 全平台支援：Windows 10/11、macOS 12+（Intel + Apple Silicon 通用二進位）、Linux（Ubuntu/Debian 及主流發行版）、iOS（iPhone/iPad，中國區 App Store 可直接下載）、Android，以及全家共用的開途路由器版。一個帳號最多 5 台裝置同時在線。此外提供 k2s 伺服器端，支援自部署到任意 VPS。"
       },
       "selfHosting": {
         "question": "我可以自己部署 開途 伺服器嗎？",
@@ -438,7 +438,7 @@
       },
       "routerSupport": {
         "question": "開途 支援智慧路由器嗎？",
-        "answer": "支援。開途 提供 k2r 路由器閘道二進位，原生支援 OpenWrt 系統，使用 TPROXY 模式無需客戶端安裝——家中所有裝置（電腦、手機、平板、智慧電視、遊戲機、IoT 裝置）接入該路由器後自動享受跨境存取，無需單獨設定。適合全家共用、多裝置場景。"
+        "answer": "支援。開途路由器版提供一台預先設定好的路由器與專屬線路，插電連網即可使用，無需刷機或命令列——家中所有裝置（電腦、手機、平板、智慧電視、遊戲機、IoT 裝置）接入後自動走加密通道，無需逐台安裝 App。適合全家共用、多裝置場景，詳見路由器版頁面。"
       },
       "chinaAccess": {
         "question": "開途 在中國大陸能用嗎？",
