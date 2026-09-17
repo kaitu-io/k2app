@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -277,6 +278,32 @@ func TestAdminRouterStats_CountsAndStuck(t *testing.T) {
 	assert.Equal(t, stuckBefore+1, stuck["stuck"].(float64))
 }
 
+// 流失的在线路由器：online 台账的线路被回收后，看板统计前的同步必须把它转 expired（此前只同步
+// stage ∉ {online, expired}，online 行永远算在线、expired 少算）。
+func TestAdminRouterStats_SyncsChurnedOnlineRow(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	sub, f := seedReadyRouterFulfillment(t, user)
+	require.NoError(t, db.Get().Model(f).Update("stage", RouterStageOnline).Error)
+
+	code, before := adminCall(t, r, http.MethodGet, "/app/router/stats", nil)
+	require.EqualValues(t, 0, code)
+	onlineBefore := before["stageCounts"].(map[string]any)[RouterStageOnline].(float64)
+	expiredBefore := before["stageCounts"].(map[string]any)[RouterStageExpired].(float64)
+
+	require.NoError(t, db.Get().Model(sub).Update("status", PNStatusDeprovisioned).Error)
+	code, after := adminCall(t, r, http.MethodGet, "/app/router/stats", nil)
+	require.EqualValues(t, 0, code)
+	counts := after["stageCounts"].(map[string]any)
+	assert.Equal(t, onlineBefore-1, counts[RouterStageOnline].(float64))
+	assert.Equal(t, expiredBefore+1, counts[RouterStageExpired].(float64))
+
+	var got RouterFulfillment
+	require.NoError(t, db.Get().First(&got, f.ID).Error)
+	assert.Equal(t, RouterStageExpired, got.Stage)
+}
+
 func TestAdminExtendPrivateLine(t *testing.T) {
 	skipIfNoConfig(t)
 	r := adminRouterTestRouter()
@@ -291,6 +318,12 @@ func TestAdminExtendPrivateLine(t *testing.T) {
 	code, _ = adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",
 		AdminExtendLineRequest{Months: 1})
 	assert.EqualValues(t, ErrorInvalidArgument, code)
+	code, _ = adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",
+		AdminExtendLineRequest{Months: 1, Reason: strings.Repeat("x", 501)})
+	assert.EqualValues(t, ErrorInvalidArgument, code, "reason 超过 500 字符被拒")
+	var unchanged PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&unchanged, sub.ID).Error)
+	assert.Equal(t, oldExpiry, unchanged.ExpiresAt, "被拒的请求不能延期")
 
 	// 正常延期 1 个月
 	code, data := adminCall(t, r, http.MethodPost, "/app/private-node-subscriptions/"+strconv.FormatUint(sub.ID, 10)+"/extend",

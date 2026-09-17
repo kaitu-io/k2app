@@ -1404,5 +1404,5 @@ type DataAdminRouterStats struct {
 // AdminExtendLineRequest 线路手工延期（补偿 / 客服）。
 type AdminExtendLineRequest struct {
 	Months int    `json:"months" binding:"required,min=1,max=24"`
-	Reason string `json:"reason" binding:"required"`
+	Reason string `json:"reason" binding:"required,max=500"`
 }

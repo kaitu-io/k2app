@@ -293,13 +293,14 @@ func api_admin_list_router_devices(c *gin.Context) {
 }
 
 // api_admin_router_stats 路由器版后台看板统计（stage 分布 / 卡住 / 在线 / 即将到期）。
-// 统计前对非终态（stage ∉ {online, expired}）台账逐条 syncRouterFulfillment，保证数字与列表页
-// 的 stage 一致（同步失败只记日志，不影响统计的其余口径）；路由器台账量级在百级，逐条同步可接受。
+// 统计前对 stage ≠ expired 的全部台账（含 online —— 线路停机/回收后 online 行要转 expired，否则
+// 流失的路由器一直算在线）逐条 syncRouterFulfillment，保证数字与列表页的 stage 一致（同步失败只记
+// 日志，不影响统计的其余口径）；路由器台账量级在百级，逐条同步可接受。
 func api_admin_router_stats(c *gin.Context) {
 	now := time.Now().Unix()
 
 	var pending []RouterFulfillment
-	if err := db.Get().Where("stage NOT IN ?", []string{RouterStageOnline, RouterStageExpired}).Find(&pending).Error; err != nil {
+	if err := db.Get().Where("stage <> ?", RouterStageExpired).Find(&pending).Error; err != nil {
 		log.Errorf(c, "load router fulfillments for stats sync: %v", err)
 		Error(c, ErrorSystemError, "failed to load router fulfillments")
 		return
