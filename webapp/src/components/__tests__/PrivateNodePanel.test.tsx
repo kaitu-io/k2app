@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, within } from '../../test/utils/render';
 import { PrivateNodePanel } from '../PrivateNodePanel';
 import type { PrivateNodeSubscriptionView } from '../../services/api-types';
@@ -79,6 +79,31 @@ describe('PrivateNodePanel', () => {
     expect(screen.getByText(i18n.t('privateNode:privateNode.renewOnWebsite'))).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '续费' })).not.toBeInTheDocument();
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  describe('renewOnWebsite 提示按购买入口门控（Apple 3.1.1 / Play 付款政策）', () => {
+    afterEach(() => { delete (window as any)._platform; });
+    const renewText = () => i18n.t('privateNode:privateNode.renewOnWebsite');
+
+    it('购买入口可用（桌面）时显示', () => {
+      (window as any)._platform = { os: 'macos' };
+      render(<PrivateNodePanel node={makeNode({})} />);
+      expect(screen.getByText(renewText())).toBeInTheDocument();
+    });
+
+    it('购买入口不可用（iOS 无 StoreKit 桥）时不显示', () => {
+      (window as any)._platform = { os: 'ios' };
+      render(<PrivateNodePanel node={makeNode({ status: 'grace' })} />);
+      expect(screen.queryByText(renewText())).not.toBeInTheDocument();
+      // 到期信息照常显示
+      expect(screen.getByText(/宽限期，请尽快续费/)).toBeInTheDocument();
+    });
+
+    it('iOS 即使带 StoreKit 桥（购买入口可用）也不显示——内购不等于允许引导官网付款', () => {
+      (window as any)._platform = { os: 'ios', iap: {} };
+      render(<PrivateNodePanel node={makeNode({})} />);
+      expect(screen.queryByText(renewText())).not.toBeInTheDocument();
+    });
   });
 
   it('traffic at >=95% renders error-colored bar', () => {

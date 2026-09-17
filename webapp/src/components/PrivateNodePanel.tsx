@@ -10,8 +10,11 @@
  * - 错误/状态映射不读后端 message
  *
  * 续费走路由器版官网自助购买（「我的路由器」页），App 内不再提供任何跳
- * 购买页的按钮——iOS 也不能外链到网页支付（Apple 3.1.1）。此处只做纯文字
- * 提示，不实现任何支付逻辑，也不伪造续费结果。
+ * 购买页的按钮。此处只做纯文字提示，不实现任何支付逻辑，也不伪造续费结果。
+ * 这句提示本身就是站外支付引导：只在允许购买入口的构建里显示
+ * （purchaseSurfaceAvailable），且 iOS 一律不显示——iOS 构建恒注入 StoreKit
+ * 桥，purchaseSurfaceAvailable() 在 iOS 上为真，但那只放行 App 内购，
+ * 不放行引导去官网付款（Apple 3.1.1）。
  */
 
 import { useMemo } from 'react';
@@ -30,6 +33,12 @@ import {
 import type { PrivateNodeSubscriptionView } from '../services/api-types';
 import { formatBytes } from '../utils/ui';
 import { formatDate } from '../utils/time';
+import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
+
+/** 能否显示「去官网续费」提示——见文件头注释。 */
+function websiteRenewHintAllowed(): boolean {
+  return purchaseSurfaceAvailable() && window._platform?.os !== 'ios';
+}
 
 type ChipColor = 'success' | 'warning' | 'error' | 'info' | 'default';
 
@@ -193,10 +202,13 @@ export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
             </Alert>
           )}
 
-          {/* Renew → website self-service only, no in-app purchase link. */}
-          <Typography variant="caption" color="text.secondary">
-            {t('privateNode:privateNode.renewOnWebsite')}
-          </Typography>
+          {/* Renew → website self-service only, no in-app purchase link.
+              Hidden where steering to a web checkout is not allowed (iOS / Play-only). */}
+          {websiteRenewHintAllowed() && (
+            <Typography variant="caption" color="text.secondary">
+              {t('privateNode:privateNode.renewOnWebsite')}
+            </Typography>
+          )}
         </Stack>
       </CardContent>
     </Card>
