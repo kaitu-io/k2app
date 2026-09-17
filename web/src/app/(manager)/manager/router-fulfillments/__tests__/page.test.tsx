@@ -228,6 +228,24 @@ describe('/manager/router-fulfillments', () => {
     expect(url).toContain('page=1');
   });
 
+  it('「线路就绪待处理」卡片数字只取 stageCounts.ready（不加 paid/provisioning），点击筛 stage=ready', async () => {
+    mockGetRouterStats.mockResolvedValue(
+      stats({ stageCounts: { paid: 4, provisioning: 5, ready: 7, shipped: 0, online: 1, expired: 0 } })
+    );
+    render(<RouterFulfillmentsPage />);
+    const card = await screen.findByTestId('stat-pending');
+    expect(within(card).getByText('线路就绪待处理')).toBeInTheDocument();
+    await waitFor(() => expect(within(card).getByText('7')).toBeInTheDocument());
+    expect(within(card).queryByText('16')).toBeNull();
+
+    fireEvent.click(card);
+    await waitFor(() => expect(routerState.current.push).toHaveBeenCalled());
+    const calls = (routerState.current.push as ReturnType<typeof vi.fn>).mock.calls;
+    const params = new URLSearchParams((calls[calls.length - 1][0] as string).split('?')[1] || '');
+    expect(params.get('stage')).toBe('ready');
+    expect(params.get('page')).toBe('1');
+  });
+
   it('「在线路由器」看板卡片不可点击（onlineRouters 是活跃网关设备，stage=online 是不回退的里程碑，两者人群不同）', async () => {
     render(<RouterFulfillmentsPage />);
     await screen.findByText('user1@example.com');

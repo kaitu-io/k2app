@@ -424,9 +424,15 @@ func api_admin_extend_private_line(c *gin.Context) {
 	}
 	actor := adminActorTag(c)
 	log.Infof(c, "admin %s extended line %d by %d months: %s", actor, reloaded.ID, body.Months, body.Reason)
+	// sub 仍持有延期前的 status（extendPrivateLine 不回写 status）：此前已停机的线路节点不会自动开机，
+	// 后台延期对话框承诺了「系统会发 Slack 提醒」，这里兑现。
+	restartHint := ""
+	if sub.Status == PNStatusSuspended {
+		restartHint = "该线路此前已停机，需人工开机。"
+	}
 	sendCloudSlackNotification(c.Request.Context(), "Router Edition — Manual Extend",
-		fmt.Sprintf("管理员 %s 手工延期线路 %d，%d 个月，原因：%s（新到期日 %s）。",
-			actor, reloaded.ID, body.Months, body.Reason, time.Unix(reloaded.ExpiresAt, 0).Format("2006-01-02")))
+		fmt.Sprintf("管理员 %s 手工延期线路 %d，%d 个月，原因：%s（新到期日 %s）。%s",
+			actor, reloaded.ID, body.Months, body.Reason, time.Unix(reloaded.ExpiresAt, 0).Format("2006-01-02"), restartHint))
 	dto := adminPrivateNodeSubDTO(c, &reloaded, now)
 	Success(c, &dto)
 }

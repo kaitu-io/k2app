@@ -1,5 +1,5 @@
 /**
- * `/manager/private-node-subscriptions` 从表页：筛选、延期、停机、跳转台账。
+ * `/manager/private-node-subscriptions` 从表页：筛选、延期、跳转台账（停机不在此页，走「节点运维」）。
  */
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -62,9 +62,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
-// Import after the mock so we get the real ApiError/ErrorCode.
-import { ApiError, ErrorCode } from '@/lib/api';
-import { toast } from 'sonner';
+// Import after the mocks.
 import PrivateNodeSubscriptionsPage from '../page.kaitu';
 
 function items(): AdminPrivateNodeSubscriptionItem[] {
@@ -127,13 +125,13 @@ describe('/manager/private-node-subscriptions', () => {
     });
   });
 
-  it('渲染 active 与 deprovisioned 两行：active 行有延期/停机按钮，deprovisioned 行没有；两行都有台账链接', async () => {
+  it('渲染 active 与 deprovisioned 两行：active 行有延期按钮，deprovisioned 行没有；两行都没有停机按钮；两行都有台账链接', async () => {
     render(<PrivateNodeSubscriptionsPage />);
     const row1 = await findRow('user1@example.com');
     const row2 = await findRow('user2@example.com');
 
     expect(within(row1).getByRole('button', { name: '延期' })).toBeInTheDocument();
-    expect(within(row1).getByRole('button', { name: '停机' })).toBeInTheDocument();
+    expect(within(row1).queryByRole('button', { name: '停机' })).toBeNull();
     expect(within(row2).queryByRole('button', { name: '延期' })).toBeNull();
     expect(within(row2).queryByRole('button', { name: '停机' })).toBeNull();
 
@@ -168,17 +166,36 @@ describe('/manager/private-node-subscriptions', () => {
     await waitFor(() => expect(mockListPrivateNodeSubscriptions).toHaveBeenCalledTimes(2));
   });
 
-  it('停机确认后调用 createNodeOperation({subId, action: stop})；Conflict 时提示未完成的运维任务', async () => {
-    mockCreateNodeOperation.mockRejectedValueOnce(new ApiError(ErrorCode.Conflict, 'x'));
+  it('页头提示临时停机去「节点运维」；延期对话框说明已停机节点需人工开机；本页从不创建节点运维任务', async () => {
     render(<PrivateNodeSubscriptionsPage />);
     const row1 = await findRow('user1@example.com');
-    fireEvent.click(within(row1).getByRole('button', { name: '停机' }));
+    expect(screen.getByText(/临时停机请在「节点运维」操作/)).toBeInTheDocument();
 
-    const confirm = await screen.findByRole('button', { name: '确认停机' });
-    fireEvent.click(confirm);
+    fireEvent.click(within(row1).getByRole('button', { name: '延期' }));
+    expect(
+      await screen.findByText(
+        '仅超级管理员可操作；延期后线路立即恢复为服务中。若节点此前已停机，需要人工开机（系统会发 Slack 提醒）。'
+      )
+    ).toBeInTheDocument();
+    expect(mockCreateNodeOperation).not.toHaveBeenCalled();
+  });
 
-    await waitFor(() => expect(mockCreateNodeOperation).toHaveBeenCalledWith({ subId: 1, action: 'stop' }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('该线路已有未完成的运维任务'));
+  it('suspendUntil / graceUntil 为 0 时不显示「保留至」「宽限至」行，非 0 时显示', async () => {
+    const [a, b] = items();
+    mockListPrivateNodeSubscriptions.mockResolvedValue({
+      items: [
+        { ...a, id: 3, email: 's0@example.com', status: 'suspended', suspendUntil: 0 },
+        { ...a, id: 4, email: 'g0@example.com', status: 'grace', graceUntil: 0 },
+        { ...b, id: 5, email: 's1@example.com', status: 'suspended', suspendUntil: 1_900_000_000 },
+        { ...b, id: 6, email: 'g1@example.com', status: 'grace', graceUntil: 1_900_000_000 },
+      ],
+      pagination: { page: 1, pageSize: 50, total: 4 },
+    });
+    render(<PrivateNodeSubscriptionsPage />);
+    expect(within(await findRow('s0@example.com')).queryByText(/保留至/)).toBeNull();
+    expect(within(await findRow('g0@example.com')).queryByText(/宽限至/)).toBeNull();
+    expect(within(await findRow('s1@example.com')).getByText(/保留至/)).toBeInTheDocument();
+    expect(within(await findRow('g1@example.com')).getByText(/宽限至/)).toBeInTheDocument();
   });
 
   it('状态筛选：选择宽限期后 URL 带 status=grace 且 page=1', async () => {

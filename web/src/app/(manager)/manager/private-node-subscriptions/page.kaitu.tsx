@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2, RefreshCw } from "lucide-react";
-import { api, ApiError, ErrorCode, type AdminPrivateNodeSubscriptionItem } from "@/lib/api";
+import { api, ApiError, type AdminPrivateNodeSubscriptionItem } from "@/lib/api";
 import { getApiErrorMessageZh } from "@/lib/api-errors";
 import { formatBytes, quotaLevel } from "@/lib/router-edition";
 import { Pagination } from "@/components/Pagination";
@@ -71,11 +71,6 @@ function canExtend(status: string): boolean {
   return status === "active" || status === "grace" || status === "suspended";
 }
 
-// 停机：仅在服务中才需要人工掐断（宽限期路由器仍可用，同样可停）。
-function canStop(status: string): boolean {
-  return status === "active" || status === "grace";
-}
-
 export default function PrivateNodeSubscriptionsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -98,10 +93,6 @@ export default function PrivateNodeSubscriptionsPage() {
   const [extendMonths, setExtendMonths] = useState(1);
   const [extendReason, setExtendReason] = useState("");
   const [isExtending, setIsExtending] = useState(false);
-
-  // 停机对话框
-  const [stopTarget, setStopTarget] = useState<AdminPrivateNodeSubscriptionItem | null>(null);
-  const [isStopping, setIsStopping] = useState(false);
 
   const setQuery = useCallback(
     (patch: Record<string, string | number | undefined>) => {
@@ -169,29 +160,6 @@ export default function PrivateNodeSubscriptionsPage() {
     }
   };
 
-  const handleStop = async () => {
-    if (!stopTarget) return;
-    setBusyId(stopTarget.id);
-    setIsStopping(true);
-    try {
-      await api.createNodeOperation({ subId: stopTarget.id, action: "stop" });
-      toast.success("已创建停机任务", {
-        action: { label: "去节点运维", onClick: () => router.push("/manager/node-operations") },
-      });
-      setStopTarget(null);
-      await load();
-    } catch (e) {
-      if (e instanceof ApiError && e.code === ErrorCode.Conflict) {
-        toast.error("该线路已有未完成的运维任务");
-      } else {
-        toast.error(e instanceof ApiError ? getApiErrorMessageZh(e.code, "创建停机任务失败") : "创建停机任务失败");
-      }
-    } finally {
-      setIsStopping(false);
-      setBusyId(null);
-    }
-  };
-
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return (
@@ -199,7 +167,9 @@ export default function PrivateNodeSubscriptionsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold">线路订阅</h1>
-          <p className="text-muted-foreground">专属线路开通状态与用量台账；开通失败请到「节点运维」处理</p>
+          <p className="text-muted-foreground">
+            专属线路开通状态与用量台账；开通失败请到「节点运维」处理；临时停机请在「节点运维」操作
+          </p>
         </div>
         <Button onClick={load} disabled={isLoading}>
           {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
@@ -289,8 +259,10 @@ export default function PrivateNodeSubscriptionsPage() {
                     <TableCell className="text-sm text-muted-foreground">{formatDate(item.purchasedAt)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       <div>{formatDate(item.expiresAt)}</div>
-                      {item.status === "grace" && <div className="text-xs">宽限至 {formatDate(item.graceUntil)}</div>}
-                      {item.status === "suspended" && (
+                      {item.status === "grace" && item.graceUntil > 0 && (
+                        <div className="text-xs">宽限至 {formatDate(item.graceUntil)}</div>
+                      )}
+                      {item.status === "suspended" && item.suspendUntil > 0 && (
                         <div className="text-xs">保留至 {formatDate(item.suspendUntil)}</div>
                       )}
                     </TableCell>
@@ -309,16 +281,6 @@ export default function PrivateNodeSubscriptionsPage() {
                             onClick={() => openExtendDialog(item)}
                           >
                             延期
-                          </Button>
-                        )}
-                        {canStop(item.status) && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={rowBusy}
-                            onClick={() => setStopTarget(item)}
-                          >
-                            停机
                           </Button>
                         )}
                       </div>
@@ -352,7 +314,7 @@ export default function PrivateNodeSubscriptionsPage() {
           <DialogHeader>
             <DialogTitle>延期</DialogTitle>
             <DialogDescription>
-              仅超级管理员可操作；延期后线路立即恢复服务，已停机的节点需在「节点运维」手工开机。
+              仅超级管理员可操作；延期后线路立即恢复为服务中。若节点此前已停机，需要人工开机（系统会发 Slack 提醒）。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -397,31 +359,6 @@ export default function PrivateNodeSubscriptionsPage() {
                 </>
               ) : (
                 "确认延期"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 停机对话框 */}
-      <Dialog open={!!stopTarget} onOpenChange={(open) => !isStopping && !open && setStopTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>停机</DialogTitle>
-            <DialogDescription>会在节点运维队列创建停机任务，路由器将断网。</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStopTarget(null)} disabled={isStopping}>
-              取消
-            </Button>
-            <Button variant="destructive" onClick={handleStop} disabled={isStopping}>
-              {isStopping ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  提交中...
-                </>
-              ) : (
-                "确认停机"
               )}
             </Button>
           </DialogFooter>

@@ -198,8 +198,6 @@ export default function RouterFulfillmentsPage() {
   const nowSec = Math.floor(Date.now() / 1000);
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  const pendingCount = stats ? stats.stageCounts.paid + stats.stageCounts.provisioning + stats.stageCounts.ready : 0;
-
   return (
     <TooltipProvider>
       <div className="container mx-auto py-10">
@@ -222,10 +220,10 @@ export default function RouterFulfillmentsPage() {
             onClick={() => setQuery({ stage: "ready", page: 1 })}
           >
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">待处理</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">线路就绪待处理</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{pendingCount}</div>
+              <div className="text-2xl font-bold">{stats?.stageCounts.ready ?? 0}</div>
             </CardContent>
           </Card>
           <Card

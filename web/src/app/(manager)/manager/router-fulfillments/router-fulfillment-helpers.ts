@@ -28,7 +28,7 @@ export function canShip(item: AdminRouterFulfillmentItem): boolean {
 }
 
 // 代铸按钮：stage ∈ ready/shipped/online 且后端判定可铸（持有可服务线路）。
-// 「是否是该用户最新一条」由后端判定，前端不猜，被拒时显示后端错误。
+// 「是否是该用户最新一条」由后端判定，前端不猜，被拒时按错误码显示通用中文提示。
 export function canMint(item: AdminRouterFulfillmentItem): boolean {
   return item.canMintCredential && (item.stage === 'ready' || item.stage === 'shipped' || item.stage === 'online');
 }

@@ -79,7 +79,7 @@ web/
 │   │   │       ├── enterprise/ # 企业路由器
 │   │   │       ├── node-operations/ # 节点运维
 │   │   │       ├── router-fulfillments/ # 路由器版订单台账（看板、发货、代铸凭证）
-│   │   │       ├── private-node-subscriptions/ # 路由器版线路订阅（延期、停机）
+│   │   │       ├── private-node-subscriptions/ # 路由器版线路订阅（延期；临时停机走 node-operations）
 │   │   │       ├── router-devices/ # 路由器设备
 │   │   │       └── asynqmon/  # Asynq queue monitor (iframe)
 │   ├── components/
