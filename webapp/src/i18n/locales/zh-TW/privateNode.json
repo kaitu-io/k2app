@@ -2,6 +2,7 @@
   "privateNode": {
     "title": "專屬節點",
     "manage": "管理專屬節點",
+    "myRouter": "我的路由器",
     "buyLine": "購買專屬線路",
     "buy": "開通專屬節點",
     "region": "節點地區",
@@ -31,6 +32,7 @@
     "provisioningHint": "節點正在開通，通常需要幾分鐘，請稍候",
     "empty": "你還沒有專屬節點",
     "renew": "續費",
+    "renewOnWebsite": "續費請前往{{brand}}官網「我的路由器」",
     "percentUsed": "已用 {{percent}}%",
     "quotaExhausted": {
       "title": "本月流量額度已用盡",

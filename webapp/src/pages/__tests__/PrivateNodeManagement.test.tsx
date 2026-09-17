@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '../../test/utils/render';
+import { render, screen } from '../../test/utils/render';
 import PrivateNodeManagement from '../PrivateNodeManagement';
 import type { PrivateNodeSubscriptionView } from '../../services/api-types';
 
@@ -48,13 +48,11 @@ describe('PrivateNodeManagement', () => {
     expect(screen.getByText('你还没有专属节点')).toBeInTheDocument();
   });
 
-  it('buy-line CTA navigates to /purchase?product=private_node', () => {
+  it('不再渲染购买专属线路按钮', () => {
     usePrivateNodesMock.mockReturnValue({ nodes: [], loading: false, error: null, refresh: vi.fn() });
     render(<PrivateNodeManagement />);
-    const cta = screen.getByText('购买专属线路');
-    expect(cta).toBeInTheDocument();
-    fireEvent.click(cta);
-    expect(navigateMock).toHaveBeenCalledWith('/purchase?product=private_node');
+    expect(screen.queryByText('购买专属线路')).not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalledWith('/purchase?product=private_node');
   });
 
   it('non-empty → one panel per node', () => {
@@ -69,6 +67,6 @@ describe('PrivateNodeManagement', () => {
     expect(screen.getByText('节点 2')).toBeInTheDocument();
     expect(screen.getByText('节点 3')).toBeInTheDocument();
     // header
-    expect(screen.getByText('管理专属节点')).toBeInTheDocument();
+    expect(screen.getByText('我的路由器')).toBeInTheDocument();
   });
 });

@@ -89,8 +89,9 @@ export default function Account() {
   const affordance = useSubscriptionAffordance();
   // 复用缓存的 hook（SWR），不给 Account 关键路径增加重 fetch。
   const { nodes: privateNodes } = usePrivateNodes();
-  const showPrivateNodeEntry =
-    getCurrentAppConfig().features.privateNode === true || privateNodes.length > 0;
+  // 专属线路已收口为路由器版官网自助购买——App 内只在用户已有线路时展示入口
+  // （不再看 features.privateNode，那是旧的售卖面开关）。
+  const showPrivateNodeEntry = privateNodes.length > 0;
   const { isAuthenticated, setIsAuthenticated } = useAuth();
   const muiTheme = useMuiTheme();
   const colors = getThemeColors(muiTheme.palette.mode === 'dark');
@@ -461,7 +462,7 @@ export default function Account() {
                 primary={
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography component="span" variant="body2" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
-                      {t('privateNode:privateNode.title')}
+                      {t('privateNode:privateNode.myRouter')}
                     </Typography>
                     {privateNodes.length > 0 && (
                       <Chip

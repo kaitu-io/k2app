@@ -9,14 +9,13 @@
  * - 仅 MUI 暗色主题，禁止 window.confirm/alert/prompt
  * - 错误/状态映射不读后端 message
  *
- * 「续费」目前仅导航到既有 /purchase 流程（复用购买路径）。
- * 真正延长现有订阅 ExpiresAt 的续费是后续 Center 侧能力（Plan 5+），
- * 此处不实现任何支付逻辑，也不伪造续费结果。
+ * 续费走路由器版官网自助购买（「我的路由器」页），App 内不再提供任何跳
+ * 购买页的按钮——iOS 也不能外链到网页支付（Apple 3.1.1）。此处只做纯文字
+ * 提示，不实现任何支付逻辑，也不伪造续费结果。
  */
 
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import {
   Card,
   CardContent,
@@ -26,7 +25,6 @@ import {
   Chip,
   LinearProgress,
   CircularProgress,
-  Button,
   Alert,
 } from '@mui/material';
 import type { PrivateNodeSubscriptionView } from '../services/api-types';
@@ -59,7 +57,6 @@ interface PrivateNodePanelProps {
 
 export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
 
   // pending/provisioning 还没有实例 → 不展示流量条
   const isProvisioning = node.status === 'pending' || node.status === 'provisioning';
@@ -171,16 +168,9 @@ export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
                   ? t('privateNode:privateNode.quotaExhausted.resetHint', { date: formatDate(node.quotaResetAt) })
                   : t('privateNode:privateNode.quotaExhausted.resetUnknown')}
               </Typography>
-              <Button
-                variant="outlined"
-                color="inherit"
-                size="small"
-                onClick={() => navigate('/purchase')}
-                data-testid="private-node-quota-exhausted-cta"
-                sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600 }}
-              >
-                {t('privateNode:privateNode.quotaExhausted.cta')}
-              </Button>
+              <Typography variant="caption" sx={{ display: 'block' }}>
+                {t('privateNode:privateNode.renewOnWebsite')}
+              </Typography>
             </Alert>
           )}
 
@@ -206,16 +196,10 @@ export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
             </Alert>
           )}
 
-          {/* Renew → reuse existing purchase flow (no payment logic here). */}
-          <Button
-            variant="outlined"
-            color="primary"
-            size="small"
-            onClick={() => navigate('/purchase')}
-            sx={{ alignSelf: 'flex-start', borderRadius: 1.5, textTransform: 'none', fontWeight: 600 }}
-          >
-            {t('privateNode:privateNode.renew')}
-          </Button>
+          {/* Renew → website self-service only, no in-app purchase link. */}
+          <Typography variant="caption" color="text.secondary">
+            {t('privateNode:privateNode.renewOnWebsite')}
+          </Typography>
         </Stack>
       </CardContent>
     </Card>

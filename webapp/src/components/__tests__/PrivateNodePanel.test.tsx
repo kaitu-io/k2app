@@ -2,6 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '../../test/utils/render';
 import { PrivateNodePanel } from '../PrivateNodePanel';
 import type { PrivateNodeSubscriptionView } from '../../services/api-types';
+// renewOnWebsite 文案含 {{brand}} 插值——断言用真实 i18n 解析，跟着当前 K2_BRAND 走
+// （K2_BRAND=overleap 下同一份 zh-CN 文案会解析出 "Overleap" 而非 "开途"）。
+import i18n from '../../i18n/i18n';
 
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', async () => {
@@ -70,11 +73,12 @@ describe('PrivateNodePanel', () => {
     expect(screen.getByText(/续费后恢复/)).toBeInTheDocument();
   });
 
-  it('renew button navigates to /purchase', () => {
+  it('不再渲染续费按钮，改为纯文字提示', () => {
     navigateMock.mockClear();
     render(<PrivateNodePanel node={makeNode({})} />);
-    screen.getByText('续费').click();
-    expect(navigateMock).toHaveBeenCalledWith('/purchase');
+    expect(screen.getByText(i18n.t('privateNode:privateNode.renewOnWebsite'))).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '续费' })).not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it('traffic at >=95% renders error-colored bar', () => {
@@ -87,14 +91,15 @@ describe('PrivateNodePanel', () => {
     expect(bar.getAttribute('data-color')).toBe('error');
   });
 
-  it('quotaExhausted: renders worded exhausted alert + reset date + CTA', () => {
+  it('quotaExhausted: renders worded exhausted alert + reset date + 文字提示（无 CTA 按钮）', () => {
     render(<PrivateNodePanel node={makeNode({ quotaExhausted: true, quotaResetAt: 1_800_000_000 })} />);
     const alert = screen.getByTestId('private-node-quota-exhausted');
     expect(alert).toBeInTheDocument();
     // worded title (not the generic bar) — real i18n resolves zh-CN
     expect(within(alert).getByText('本月流量额度已用尽')).toBeInTheDocument();
-    // CTA inside the alert
-    expect(within(alert).getByTestId('private-node-quota-exhausted-cta')).toBeInTheDocument();
+    // 文字提示替代 CTA 按钮
+    expect(within(alert).getByText(i18n.t('privateNode:privateNode.renewOnWebsite'))).toBeInTheDocument();
+    expect(screen.queryByTestId('private-node-quota-exhausted-cta')).not.toBeInTheDocument();
   });
 
   it('quotaExhausted false: no exhausted alert', () => {
@@ -111,10 +116,10 @@ describe('PrivateNodePanel', () => {
     expect(screen.queryByTestId('private-node-quota-exhausted')).not.toBeInTheDocument();
   });
 
-  it('quotaExhausted CTA navigates to /purchase', () => {
+  it('quotaExhausted 不再提供跳购买页的 CTA', () => {
     navigateMock.mockClear();
     render(<PrivateNodePanel node={makeNode({ quotaExhausted: true })} />);
-    screen.getByTestId('private-node-quota-exhausted-cta').click();
-    expect(navigateMock).toHaveBeenCalledWith('/purchase');
+    expect(screen.queryByTestId('private-node-quota-exhausted-cta')).not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
