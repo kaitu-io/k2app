@@ -35,6 +35,7 @@ const KAITU_ONLY_DIRS = [
   '[locale]/survey',
   '[locale]/account/delegate',
   '[locale]/account/wallet',
+  '[locale]/account/router',
   '[locale]/purchase/router',
 ];
 
