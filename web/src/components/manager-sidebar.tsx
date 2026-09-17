@@ -56,6 +56,14 @@ const menuGroups: MenuGroup[] = [
     ]
   },
   {
+    title: "路由器版",
+    items: [
+      { href: "/manager/router-fulfillments", icon: Package, label: "路由器订单" },
+      { href: "/manager/private-node-subscriptions", icon: Activity, label: "线路订阅" },
+      { href: "/manager/router-devices", icon: Router, label: "路由器设备" },
+    ]
+  },
+  {
     title: "客户支持",
     items: [
       { href: "/manager/users", icon: Users, label: "用户查询" },

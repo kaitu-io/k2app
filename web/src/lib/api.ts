@@ -2480,6 +2480,70 @@ export const api = {
     return this.request<void>(`/app/enterprise/bindings/${id}`, { method: 'DELETE' });
   },
 
+  // ========================= Router Edition Admin APIs =========================
+  // 分页 1-based（Center PaginationFromRequest）。
+
+  async listRouterFulfillments(params: { page?: number; pageSize?: number; stage?: string; userId?: number } = {}): Promise<ListResult<AdminRouterFulfillmentItem>> {
+    const q = new URLSearchParams();
+    if (params.page !== undefined) q.set('page', String(params.page));
+    if (params.pageSize !== undefined) q.set('pageSize', String(params.pageSize));
+    if (params.stage) q.set('stage', params.stage);
+    if (params.userId) q.set('userId', String(params.userId));
+    const qs = q.toString();
+    return this.request<ListResult<AdminRouterFulfillmentItem>>(`/app/router/fulfillments${qs ? '?' + qs : ''}`);
+  },
+
+  async getRouterStats(): Promise<AdminRouterStats> {
+    return this.request<AdminRouterStats>('/app/router/stats');
+  },
+
+  async shipRouterFulfillment(id: number, body: { trackingNo: string; carrier: string; note?: string }): Promise<void> {
+    return this.request<void>(`/app/router/fulfillments/${id}/stage`, {
+      method: 'POST',
+      body: JSON.stringify({ stage: 'shipped', ...body }),
+    });
+  },
+
+  // 注意：Center 的 stage 更新 handler 只在 body.note 非空时才写入 note 列（`api_admin_router.go`
+  // api_admin_update_router_stage：`if body.Note != "" { updates["note"] = body.Note }`）——传空串
+  // 清不掉已有备注。本任务不改后端，前端备注对话框需在输入为空时禁用保存按钮（后续任务处理 UI）。
+  async updateRouterFulfillmentNote(id: number, note: string): Promise<void> {
+    return this.request<void>(`/app/router/fulfillments/${id}/stage`, {
+      method: 'POST',
+      body: JSON.stringify({ stage: '', note }),
+    });
+  },
+
+  async mintRouterCredential(id: number): Promise<{ url: string; deviceId: number }> {
+    return this.request<{ url: string; deviceId: number }>(`/app/router/fulfillments/${id}/credential`, { method: 'POST' });
+  },
+
+  async listPrivateNodeSubscriptions(params: { page?: number; pageSize?: number; status?: string; userId?: number } = {}): Promise<ListResult<AdminPrivateNodeSubscriptionItem>> {
+    const q = new URLSearchParams();
+    if (params.page !== undefined) q.set('page', String(params.page));
+    if (params.pageSize !== undefined) q.set('pageSize', String(params.pageSize));
+    if (params.status) q.set('status', params.status);
+    if (params.userId) q.set('userId', String(params.userId));
+    const qs = q.toString();
+    return this.request<ListResult<AdminPrivateNodeSubscriptionItem>>(`/app/private-node-subscriptions${qs ? '?' + qs : ''}`);
+  },
+
+  async extendPrivateNodeSubscription(id: number, body: { months: number; reason: string }): Promise<AdminPrivateNodeSubscriptionItem> {
+    return this.request<AdminPrivateNodeSubscriptionItem>(`/app/private-node-subscriptions/${id}/extend`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async listRouterDevices(params: { page?: number; pageSize?: number; userId?: number } = {}): Promise<ListResult<AdminRouterDeviceItem>> {
+    const q = new URLSearchParams();
+    if (params.page !== undefined) q.set('page', String(params.page));
+    if (params.pageSize !== undefined) q.set('pageSize', String(params.pageSize));
+    if (params.userId) q.set('userId', String(params.userId));
+    const qs = q.toString();
+    return this.request<ListResult<AdminRouterDeviceItem>>(`/app/router-devices${qs ? '?' + qs : ''}`);
+  },
+
   // License Key Batch APIs
   async listLicenseKeyBatches(params: { page?: number; pageSize?: number; sourceTag?: string } = {}): Promise<{ items: LicenseKeyBatch[]; total: number }> {
     const q = new URLSearchParams();
@@ -2859,6 +2923,43 @@ export interface EnterpriseBindingItem {
   slot: number;
   lineId: number;
   line?: EnterpriseLineItem;
+}
+
+// ============================================================
+// Router Edition Admin types（Go DataAdminRouterFulfillment / DataAdminPrivateNodeSubscription /
+// DataAdminRouterDevice / DataAdminRouterStats，api/type.go）
+// ============================================================
+
+export interface AdminRouterFulfillmentItem extends UserRouterFulfillment {
+  userId: number;
+  email: string;
+  subId: number;
+  note: string;
+  updatedBy: string;
+  updatedAt: number;
+  shipping?: RouterShipping;
+  line?: UserRouterLine;
+  device?: UserRouterDevice;
+}
+
+export interface AdminPrivateNodeSubscriptionItem extends UserRouterLine {
+  userId: number;
+  email: string;
+  orderId: number;
+  boundIpv4?: string;
+}
+
+export interface AdminRouterDeviceItem extends UserRouterDevice {
+  id: number;
+  userId: number;
+  email: string;
+}
+
+export interface AdminRouterStats {
+  stageCounts: Record<RouterStage, number>;
+  stuck: number;
+  onlineRouters: number;
+  expiringSoon: number;
 }
 
 // ============================================================
