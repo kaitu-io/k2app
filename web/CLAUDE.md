@@ -78,6 +78,9 @@ web/
 │   │   │       ├── surveys/   # 问卷统计
 │   │   │       ├── enterprise/ # 企业路由器
 │   │   │       ├── node-operations/ # 节点运维
+│   │   │       ├── router-fulfillments/ # 路由器版订单台账（看板、发货、代铸凭证）
+│   │   │       ├── private-node-subscriptions/ # 路由器版线路订阅（延期、停机）
+│   │   │       ├── router-devices/ # 路由器设备
 │   │   │       └── asynqmon/  # Asynq queue monitor (iframe)
 │   ├── components/
 │   │   ├── ui/                # shadcn/ui primitives (button, dialog, table, etc.)
