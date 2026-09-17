@@ -1,6 +1,6 @@
 /**
- * `/purchase/router` 结账页 — 成品默认选中、自备一链切换、地区下拉、收货信息、
- * 预览 debounce、一户一台门（InvalidOperation）、?plan=svc 续费模式的行为测试。
+ * `/purchase/router` 结账页 — 新购只卖成品（无「只买服务」开关）、地区下拉、收货信息、
+ * 预览 debounce、一户一台门（InvalidOperation）、?plan=svc 续费模式（仅已有路由器版的客户）的行为测试。
  *
  * 外围重依赖（Header/Footer/PurchaseStep1/next-intl/next/navigation/Select）替身掉，
  * 被测的选择/收货/预览/下单/错误处理逻辑本身跑真实代码。
@@ -140,27 +140,15 @@ describe('RouterPurchaseClient', () => {
     expect(renewNote).toHaveTextContent('$299');
   });
 
-  it('点「只买服务」后：收货信息消失，显示服务名与 $299', async () => {
+  it('新购只有成品：没有「只买服务」开关，也不展示服务套餐名', async () => {
     mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
     render(<RouterPurchaseClient />);
 
     await screen.findByText('routers.edition.purchase.hardwareName');
-    fireEvent.click(screen.getByText('routers.edition.purchase.switchToService'));
-
-    await waitFor(() =>
-      expect(screen.queryByText('routers.edition.purchase.shippingTitle')).toBeNull(),
-    );
-    expect(screen.getByText('routers.edition.purchase.serviceName')).toBeTruthy();
-    expect(screen.getAllByText(/\$299/).length).toBeGreaterThan(0);
-  });
-
-  it('URL ?plan=svc 时默认选中服务套餐', async () => {
-    searchParamsState.current = new URLSearchParams('plan=svc');
-    mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
-    render(<RouterPurchaseClient />);
-
-    await screen.findByText('routers.edition.purchase.serviceName');
-    expect(screen.queryByText('routers.edition.purchase.shippingTitle')).toBeNull();
+    expect(screen.queryByText('routers.edition.purchase.switchToService')).toBeNull();
+    expect(screen.queryByText('routers.edition.purchase.switchToHardware')).toBeNull();
+    expect(screen.queryByText('routers.edition.purchase.serviceName')).toBeNull();
+    expect(screen.queryByText('routers.edition.purchase.renewName')).toBeNull();
   });
 
   it('成品套餐收货信息未填时支付按钮 disabled，填好后 enabled', async () => {
@@ -218,24 +206,6 @@ describe('RouterPurchaseClient', () => {
     );
   });
 
-  it('服务套餐下单：createOrder 参数里没有 shipping 键', async () => {
-    searchParamsState.current = new URLSearchParams('plan=svc');
-    mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
-    render(<RouterPurchaseClient />);
-
-    await screen.findByText('routers.edition.purchase.serviceName');
-    const payButton = screen.getByRole('button', { name: 'routers.edition.purchase.payButton' });
-    await waitFor(() => expect(payButton).not.toBeDisabled());
-    mockCreateOrder.mockClear();
-    fireEvent.click(payButton);
-
-    await waitFor(() => {
-      const call = mockCreateOrder.mock.calls.find((c) => c[0].preview === false);
-      expect(call).toBeTruthy();
-      expect(call?.[0]).not.toHaveProperty('shipping');
-    });
-  });
-
   it('预览请求不带 shipping：切换地区后 debounce 触发新预览', async () => {
     mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
     render(<RouterPurchaseClient />);
@@ -269,15 +239,22 @@ describe('RouterPurchaseClient', () => {
   it('后端返回 InvalidOperation：显示 alreadyHasRouter 与指向 /account/router 的链接', async () => {
     mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
     mockCreateOrder.mockImplementation((req: { preview: boolean }) => {
-      if (req.preview) return Promise.resolve({ order: fakeOrder(29900), payUrl: '' });
+      if (req.preview) return Promise.resolve({ order: fakeOrder(39900), payUrl: '' });
       return Promise.reject(new ApiError(ErrorCode.InvalidOperation, 'x'));
     });
     render(<RouterPurchaseClient />);
 
     await screen.findByText('routers.edition.purchase.hardwareName');
-    // 切到服务套餐，跳过收货信息填写，专注验证 InvalidOperation 分支。
-    fireEvent.click(screen.getByText('routers.edition.purchase.switchToService'));
-    const payButton = await screen.findByRole('button', { name: 'routers.edition.purchase.payButton' });
+    fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingName'), {
+      target: { value: '张三' },
+    });
+    fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingPhone'), {
+      target: { value: '13800000000' },
+    });
+    fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingAddress'), {
+      target: { value: '某某路 1 号' },
+    });
+    const payButton = screen.getByRole('button', { name: 'routers.edition.purchase.payButton' });
     await waitFor(() => expect(payButton).not.toBeDisabled());
     fireEvent.click(payButton);
 
@@ -286,7 +263,7 @@ describe('RouterPurchaseClient', () => {
     expect(link).toHaveAttribute('href', '/account/router');
   });
 
-  it('成品套餐被一户一台拒单后，切到服务套餐会清掉旧提示', async () => {
+  it('被一户一台拒单后，换出口地区会清掉旧提示', async () => {
     mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
     mockCreateOrder.mockImplementation((req: { preview: boolean }) => {
       if (req.preview) return Promise.resolve({ order: fakeOrder(39900), payUrl: '' });
@@ -310,7 +287,7 @@ describe('RouterPurchaseClient', () => {
 
     await screen.findByText('routers.edition.purchase.alreadyHasRouter');
 
-    fireEvent.click(screen.getByText('routers.edition.purchase.switchToService'));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'ap-singapore' } });
 
     await waitFor(() =>
       expect(screen.queryByText('routers.edition.purchase.alreadyHasRouter')).toBeNull(),
@@ -389,45 +366,97 @@ describe('RouterPurchaseClient', () => {
       await screen.findByText('routers.edition.purchase.renewTitle');
     });
 
-    it('无台账无线路：保持自备模式（原标题、服务名、地区选择、改买成品链接、下单带 region）', async () => {
+    // 非续费客户带 ?plan=svc：服务套餐不对新客开放，按含路由器的新购处理。
+    async function expectHardwareNewPurchase() {
+      await screen.findByText('routers.edition.purchase.hardwareName');
+      expect(screen.getByText('routers.edition.purchase.title')).toBeTruthy();
+      expect(screen.getByText('routers.edition.purchase.shippingTitle')).toBeTruthy();
+      expect(screen.queryByText('routers.edition.purchase.renewTitle')).toBeNull();
+      expect(screen.queryByText('routers.edition.purchase.renewName')).toBeNull();
+      expect(screen.queryByText('routers.edition.purchase.serviceName')).toBeNull();
+      expect(screen.queryByText('routers.edition.purchase.switchToService')).toBeNull();
+      expect(screen.queryByText('routers.edition.purchase.switchToHardware')).toBeNull();
+    }
+
+    it('无台账无线路：看到的是成品新购（含收货与地区），没有「只买服务」开关，下单买成品', async () => {
       searchParamsState.current = new URLSearchParams('plan=svc');
       mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
       mockGetUserRouter.mockResolvedValue({ hasRouter: false });
       render(<RouterPurchaseClient />);
 
-      await screen.findByText('routers.edition.purchase.serviceName');
       await waitFor(() => expect(mockGetUserRouter).toHaveBeenCalled());
-      expect(screen.getByText('routers.edition.purchase.title')).toBeTruthy();
-      expect(screen.queryByText('routers.edition.purchase.renewTitle')).toBeNull();
-      expect(screen.getByText('routers.edition.purchase.switchToHardware')).toBeTruthy();
+      await expectHardwareNewPurchase();
       expect(screen.getByText('routers.edition.purchase.regionLabel')).toBeTruthy();
 
+      fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingName'), {
+        target: { value: '张三' },
+      });
+      fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingPhone'), {
+        target: { value: '13800000000' },
+      });
+      fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingAddress'), {
+        target: { value: '某某路 1 号' },
+      });
       const order = await payAndGetOrderCall();
+      expect(order.plan).toBe('router-std-1y');
       expect(order.region).toBe('ap-tokyo');
+      expect(order.shipping).toEqual({ name: '张三', phone: '13800000000', address: '某某路 1 号' });
+      for (const c of mockCreateOrder.mock.calls) expect(c[0].plan).toBe('router-std-1y');
     });
 
-    it('查询失败当作无台账：保持自备模式', async () => {
+    it('台账 expired 且线路已回收：不是续费客户，按成品新购', async () => {
+      searchParamsState.current = new URLSearchParams('plan=svc');
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      mockGetUserRouter.mockResolvedValue({
+        hasRouter: true,
+        fulfillment: { id: 1, orderId: 1, hardwareSku: 'redmi-ax6s', stage: 'expired', shippedAt: 1, activatedAt: 1, credentialMinted: true, canMintCredential: false, createdAt: 1 },
+        line: { id: 9, status: 'deprovisioned' },
+      });
+      render(<RouterPurchaseClient />);
+
+      await waitFor(() => expect(mockGetUserRouter).toHaveBeenCalled());
+      await expectHardwareNewPurchase();
+    });
+
+    it('查询失败当作无台账：按成品新购', async () => {
       searchParamsState.current = new URLSearchParams('plan=svc');
       mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
       mockGetUserRouter.mockRejectedValue(new Error('boom'));
       render(<RouterPurchaseClient />);
 
-      await screen.findByText('routers.edition.purchase.serviceName');
       await waitFor(() => expect(mockGetUserRouter).toHaveBeenCalled());
-      const payButton = screen.getByRole('button', { name: 'routers.edition.purchase.payButton' });
-      await waitFor(() => expect(payButton).not.toBeDisabled());
-      expect(screen.queryByText('routers.edition.purchase.renewTitle')).toBeNull();
+      await expectHardwareNewPurchase();
     });
 
-    it('未登录：不请求 getUserRouter', async () => {
+    it('检测进行中：即使收货信息已填，支付按钮仍 disabled', async () => {
+      searchParamsState.current = new URLSearchParams('plan=svc');
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      mockGetUserRouter.mockReturnValue(new Promise(() => {}));
+      render(<RouterPurchaseClient />);
+
+      await screen.findByText('routers.edition.purchase.hardwareName');
+      fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingName'), {
+        target: { value: '张三' },
+      });
+      fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingPhone'), {
+        target: { value: '13800000000' },
+      });
+      fireEvent.change(screen.getByLabelText('routers.edition.purchase.shippingAddress'), {
+        target: { value: '某某路 1 号' },
+      });
+      // 给异步状态一点时间：若门漏掉 pending，按钮会在这里变成可点。
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.getByRole('button', { name: 'routers.edition.purchase.payButton' })).toBeDisabled();
+    });
+
+    it('未登录：不请求 getUserRouter，按成品新购', async () => {
       authState.current = { isAuthenticated: false, isAuthLoading: false };
       searchParamsState.current = new URLSearchParams('plan=svc');
       mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
       render(<RouterPurchaseClient />);
 
-      await screen.findByText('routers.edition.purchase.serviceName');
+      await expectHardwareNewPurchase();
       expect(mockGetUserRouter).not.toHaveBeenCalled();
-      expect(screen.getByText('routers.edition.purchase.title')).toBeTruthy();
     });
 
     it('没有 ?plan=svc（默认成品）：不请求 getUserRouter', async () => {

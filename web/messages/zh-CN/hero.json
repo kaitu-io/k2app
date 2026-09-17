@@ -406,10 +406,7 @@
     "onlineService": "在线客服",
     "realTimeResponse": "实时咨询、快速响应",
     "startOnlineService": "启动在线客服",
-    "warranty": "所有路由器产品均提供1年质保 • 免费技术支持 • 7天无理由退货",
-    "diyBannerTitle": "已经有 OpenWrt / 软路由？",
-    "diyBannerBody": "一行命令把开途网关装到你已有的设备上，无需购买专用硬件。",
-    "diyBannerCta": "查看 DIY 安装指南"
+    "warranty": "所有路由器产品均提供1年质保 • 免费技术支持 • 7天无理由退货"
   },
   "faq": {
     "title": "常见问题",

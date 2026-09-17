@@ -1,13 +1,13 @@
 /**
  * Router Edition Website — Task 4 SSR + content guards.
  *
- * /routers became the router-edition product page; the old DIY teardown moved
- * to /routers/diy. These tests pin:
- *   1. Both pages are async Server Components with generateMetadata wired to
- *      the new edition.product / edition.diy i18n keys.
- *   2. The DIY page's copy no longer describes the admin-panel flow that the
- *      shipped headless k2r build doesn't have (grep-level content guard —
- *      spec 2026-09-16-router-edition-web-onboarding-design.md).
+ * /routers is the router-edition product page (the self-supplied hardware
+ * tutorial has been removed). These tests pin:
+ *   1. The page is an async Server Component with generateMetadata wired to
+ *      the edition.product i18n keys, and nothing on it links to the removed
+ *      tutorial route.
+ *   2. routers.json carries no stale admin-panel / port-9000 copy
+ *      (spec 2026-09-16-router-edition-web-onboarding-design.md).
  *   3. EDITION_PRICE_CENTS matches the plan prices in
  *      docs/router-edition-prod-deploy.md (single source of truth for price).
  */
@@ -60,14 +60,26 @@ describe('routers/page.kaitu (edition product page)', () => {
   });
 });
 
-describe('routers/diy/page.kaitu (self-supplied hardware teardown)', () => {
-  it('generateMetadata returns edition.diy.metaTitle / metaDescription', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/routers/diy/page.kaitu');
+describe('removed self-supplied tutorial stays removed', () => {
+  const ROUTERS_DIR = path.resolve(__dirname, '../src/app/[locale]/routers');
 
-    const metadata = await generateMetadata({ params: Promise.resolve({ locale: 'zh-CN' }) });
+  function sourceFiles(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return sourceFiles(full);
+      return /\.tsx?$/.test(entry.name) ? [full] : [];
+    });
+  }
 
-    expect(metadata.title).toBe('edition.diy.metaTitle');
-    expect(metadata.description).toBe('edition.diy.metaDescription');
+  it('the /routers/diy route directory no longer exists', () => {
+    expect(fs.existsSync(path.join(ROUTERS_DIR, 'diy'))).toBe(false);
+  });
+
+  it('no product page source links to /routers/diy', () => {
+    const files = sourceFiles(ROUTERS_DIR);
+    expect(files.length).toBeGreaterThan(0);
+    const hits = files.filter((f) => fs.readFileSync(f, 'utf8').includes('/routers/diy'));
+    expect(hits).toEqual([]);
   });
 });
 

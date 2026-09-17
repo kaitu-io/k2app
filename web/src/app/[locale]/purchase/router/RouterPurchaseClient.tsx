@@ -27,14 +27,13 @@ import { api, ApiError, ErrorCode, type Order, type Plan, type RouterShipping, t
 import { getApiErrorMessage } from '@/lib/api-errors';
 import { formatUsd } from '@/lib/router-edition';
 
-type Choice = 'hardware' | 'service';
-
 const EMPTY_SHIPPING: RouterShipping = { name: '', phone: '', address: '' };
 
 // 线路仍可续（未回收 / 未失败）的状态。
 const RENEWABLE_LINE_STATUSES = new Set(['active', 'grace', 'suspended']);
 
-// 已持有路由器版的用户点「续费一年」来到 ?plan=svc：此时买的是原线路续期，不是「自备路由器」新服务。
+// 已持有路由器版的用户点「续费一年」来到 ?plan=svc：此时买的是原线路续期。
+// 服务套餐只用于续费——检测不到可续的路由器版时一律按含路由器的新购处理。
 function isExistingRouterCustomer(data: UserRouter): boolean {
   if (data.fulfillment && data.fulfillment.stage !== 'expired') return true;
   return !!data.line && RENEWABLE_LINE_STATUSES.has(data.line.status);
@@ -49,7 +48,6 @@ export default function RouterPurchaseClient() {
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
-  const [choice, setChoice] = useState<Choice>(searchParams.get('plan') === 'svc' ? 'service' : 'hardware');
   const [region, setRegion] = useState('');
   const [shipping, setShipping] = useState<RouterShipping>(EMPTY_SHIPPING);
   const [showCampaign, setShowCampaign] = useState(false);
@@ -66,9 +64,10 @@ export default function RouterPurchaseClient() {
 
   const hardwarePlan = useMemo(() => plans.find((p) => !!p.hardwareSku), [plans]);
   const servicePlan = useMemo(() => plans.find((p) => !p.hardwareSku), [plans]);
-  const selected = choice === 'hardware' ? hardwarePlan : servicePlan;
-  // 续费模式：续费文案，隐藏「改买含路由器」与地区选择，下单不传 region（沿用原线路地区）。
-  const renewMode = isRenewalCustomer && choice === 'service';
+  // 续费模式（?plan=svc + 已登录 + 检测为已有路由器版）：服务套餐、续费文案，无地区与收货，
+  // 下单不传 region（沿用原线路地区）。其余一切情况都是含路由器的新购。
+  const renewMode = wantsService && isAuthenticated && isRenewalCustomer;
+  const selected = renewMode ? servicePlan : hardwarePlan;
   const regions = useMemo(() => selected?.privateNode?.allowedRegions ?? [], [selected]);
   const needsShipping = !!selected?.hardwareSku;
   const trimmedShipping: RouterShipping = {
@@ -80,7 +79,7 @@ export default function RouterPurchaseClient() {
     !needsShipping ||
     (trimmedShipping.name !== '' && trimmedShipping.phone !== '' && trimmedShipping.address !== '');
 
-  // 1) 拉套餐（hardwareSku 非空 = 成品，空 = 服务）。
+  // 1) 拉套餐（hardwareSku 非空 = 成品，空 = 续费用的服务套餐）。
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -137,11 +136,11 @@ export default function RouterPurchaseClient() {
     setRegion((prev) => (regions.includes(prev) ? prev : regions[0]));
   }, [regions]);
 
-  // 一户一台门的提示只对应「刚才那次尝试」——切套餐或换地区说明用户已经在
+  // 一户一台门的提示只对应「刚才那次尝试」——套餐或地区变了说明用户已经在
   // 换一种方案重试，旧提示不该继续挂着。
   useEffect(() => {
     setAlreadyHasRouter(false);
-  }, [choice, region]);
+  }, [renewMode, region]);
 
   // 5) regionLabel(slug)：键不存在时回落显示 slug。
   const regionLabel = useCallback(
@@ -249,7 +248,7 @@ export default function RouterPurchaseClient() {
           </p>
         </div>
 
-        {!plansLoading && !hardwarePlan && !servicePlan && (
+        {!plansLoading && !selected && (
           <p className="text-center text-muted-foreground">{t('routers.edition.purchase.noPlans')}</p>
         )}
 
@@ -264,60 +263,19 @@ export default function RouterPurchaseClient() {
                   <CardTitle>{t('routers.edition.purchase.stepSelect')}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 pt-0">
-                  {choice === 'hardware' ? (
-                    <>
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="font-bold text-foreground">
-                          {t('routers.edition.purchase.hardwareName')}
-                        </span>
-                        <span className="text-xl font-black text-foreground">
-                          {hardwarePlan && formatUsd(hardwarePlan.price)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {t('routers.edition.purchase.hardwareDesc')}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="font-bold text-foreground">
-                          {renewMode
-                            ? t('routers.edition.purchase.renewName')
-                            : t('routers.edition.purchase.serviceName')}
-                        </span>
-                        <span className="text-xl font-black text-foreground">
-                          {servicePlan && formatUsd(servicePlan.price)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {renewMode
-                          ? t('routers.edition.purchase.renewDesc')
-                          : t('routers.edition.purchase.serviceDesc')}
-                      </p>
-                    </>
-                  )}
-                  {choice === 'hardware' ? (
-                    servicePlan && (
-                      <button
-                        type="button"
-                        onClick={() => setChoice('service')}
-                        className="text-sm text-primary underline underline-offset-4 hover:text-primary/80"
-                      >
-                        {t('routers.edition.purchase.switchToService')}
-                      </button>
-                    )
-                  ) : (
-                    hardwarePlan && !renewMode && (
-                      <button
-                        type="button"
-                        onClick={() => setChoice('hardware')}
-                        className="text-sm text-primary underline underline-offset-4 hover:text-primary/80"
-                      >
-                        {t('routers.edition.purchase.switchToHardware')}
-                      </button>
-                    )
-                  )}
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-bold text-foreground">
+                      {renewMode
+                        ? t('routers.edition.purchase.renewName')
+                        : t('routers.edition.purchase.hardwareName')}
+                    </span>
+                    <span className="text-xl font-black text-foreground">{formatUsd(selected.price)}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {renewMode
+                      ? t('routers.edition.purchase.renewDesc')
+                      : t('routers.edition.purchase.hardwareDesc')}
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -398,14 +356,14 @@ export default function RouterPurchaseClient() {
                   {selected && (
                     <div className="flex items-baseline justify-between gap-3 font-semibold text-foreground">
                       <span>
-                        {choice === 'hardware'
-                          ? t('routers.edition.purchase.lineHardware')
-                          : t('routers.edition.purchase.lineService')}
+                        {renewMode
+                          ? t('routers.edition.purchase.lineService')
+                          : t('routers.edition.purchase.lineHardware')}
                       </span>
                       <span>{formatUsd(selected.price)}</span>
                     </div>
                   )}
-                  {choice === 'hardware' && servicePlan && (
+                  {!renewMode && servicePlan && (
                     <p className="text-sm text-muted-foreground">
                       {t('routers.edition.purchase.renewNote', { price: formatUsd(servicePlan.price) })}
                     </p>

@@ -48,12 +48,6 @@ export async function EditionPricing() {
             <Button asChild size="lg" className="w-full max-w-xs">
               <Link href="/purchase/router">{t('edition.product.buyNow')}</Link>
             </Button>
-            <Link
-              href="/routers/diy"
-              className="text-sm text-primary underline underline-offset-4 hover:text-primary/80"
-            >
-              {t('edition.product.diyLink')}
-            </Link>
           </div>
         </Card>
 
