@@ -71,7 +71,7 @@ One skill for everything you do to a Kaitu VPN node, via the `kaitu-center` MCP 
 | **Build / push the sidecar image** | → `references/metering.md` Part A |
 | **Per-provider quota knobs** (reset day / bundle / already-used) | → `references/metering.md` Part B |
 | **Configure quota / billing / mid-cycle seed** | → `references/metering.md` Part C |
-| **AWS Lightsail billing rules** (max(in,out), calendar month, proration) | → `references/metering.md` |
+| **AWS Lightsail billing rules** (in+out sum, calendar month, proration, Center ratchet/autostop) | → `references/metering.md` |
 | **Observe metering / operate the cutoff** | → `references/metering.md` Parts D–E |
 | **Triage a user's device logs** (DIAG analysis) | → `references/device-logs.md` |
 
@@ -140,6 +140,7 @@ One table for every `.env` var across ops / provisioning / metering. "Set by": w
 | `K2_IP_TYPE` | `residential` / `non_residential` / `unknown` | provision | Sidecar reports → Center `SlaveNode.ip_type` (drives 住宅IP visibility). Last-writer-wins with ops `update_node`. |
 | **`K2_NODE_BILLING_START_DATE`** | Monthly cycle anchor, **`yyyy-MM-dd`** (day-of-month extracted) | provision/ops | **REQUIRED to meter.** Empty → metering OFF, node runs **uncapped**. Day **must** match the provider's reset day (Lightsail=`01`; 搬瓦工=KiwiVM "Next reset" day — **don't assume `01`**) — derive per provider in `references/metering.md` **Part B**. |
 | **`K2_NODE_TRAFFIC_LIMIT_GB`** | Monthly quota (GiB). Node pauses k2s at `used ≥ limit − 500 MiB` | provision/ops | `0` = unlimited (safe fallback). |
+| **`K2_NODE_TRAFFIC_BILLING_MODE`** | How rx/tx deltas combine: `sum` = in+out, empty/`max` = greater direction | provision/ops | **AWS Lightsail MUST be `sum`** (allowance consumed by in+out) — empty defaults to `max` and under-counts ~½ (the 2026-06→08 overage bills). `max` only for outbound-billed providers. Unknown non-empty value → fail-closed `sum`. |
 | `K2_NODE_TRAFFIC_USED_GB` | Mid-cycle onboarding seed (GiB already used) | provision | Applied **once** on first boot (no state). Prefer `set-usage` later — see `references/metering.md` Part C. |
 | `K2_CUTOFF_POLL_INTERVAL` | Enforcer poll period | ops | default `5s`. |
 | `K2_JUMP_PORT_MIN`/`MAX` | Hop port range (default 40000/40019) | ops | Docker port map → container 443; 20 ports, high range to dodge GFW scan. |
@@ -293,7 +294,7 @@ cd /apps/k2s && sudo docker compose up -d --remove-orphans
 ## §8 Cloud Provider Notes
 
 - **AWS nodes are Lightsail, not EC2.** Use `aws lightsail …` (`get-instances`, `reboot-instance`), not `aws ec2`. Profile `default` reaches the Lightsail account.
-- **Lightsail data-transfer billing = calendar month + first-month proration + `max(in,out)`.** This drives how `K2_NODE_BILLING_START_DATE` / `K2_NODE_TRAFFIC_LIMIT_GB` must be set. Full rules + worked examples in `references/metering.md`.
+- **Lightsail data-transfer billing = calendar month + first-month proration (by hours) + allowance consumed by inbound+outbound SUM (overage charged on the outbound share only).** This drives how `K2_NODE_BILLING_START_DATE` / `K2_NODE_TRAFFIC_LIMIT_GB` / `K2_NODE_TRAFFIC_BILLING_MODE=sum` must be set. Center additionally ratchets AWS nodes up to CloudWatch in+out and auto-stops any shared-pool instance at 100% of allowance. Full rules + worked examples in `references/metering.md`.
 
 ---
 

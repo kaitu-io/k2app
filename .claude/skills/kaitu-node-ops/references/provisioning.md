@@ -83,7 +83,7 @@ Variables + sources are the hub §2 master table. Private-node essentials:
 - `K2_PRIVATE_CLAIM` = `identity.claimToken` (secret, one-time)
 - `K2_CENTER_URL`, `K2_DOMAIN` (empty), `K2_VERSION` (pinned), `K2_NODE_NAME`=`pn-<subId>`, `K2_NODE_REGION`, `K2_IP_TYPE`
 - **`K2_NODE_BILLING_START_DATE`** — **REQUIRED** or the node runs uncapped. **Only the day-of-month matters; it must be the provider's real reset day, NOT the provisioning date.** Lightsail = `01` (calendar month); Bandwagon/KiwiVM = the plan's own "Next reset" day read off the panel/API — see `metering.md` Part B for both, plus first-month proration. Using today's date as a shortcut silently bakes in the wrong reset day (confirmed on two BWH nodes 2026-07-09: provisioned with day = provisioning date instead of the plan's real day, drifted the reset by a day for months undetected).
-- **`K2_NODE_TRAFFIC_LIMIT_GB`** = `trafficTotalBytes / 1024^3` — the hard cutoff limit. **For Bandwagon, verify the plan's accounting model (`max(in,out)` vs in+out sum) before trusting this 1:1 mapping** — see `metering.md` Part B; the meter itself always bills `max(rx,tx)`, so a sum-billed plan needs `LIMIT_GB` roughly halved, not the raw sold quota.
+- **`K2_NODE_TRAFFIC_LIMIT_GB`** = `trafficTotalBytes / 1024^3` — the hard cutoff limit. **Set `K2_NODE_TRAFFIC_BILLING_MODE` to the provider's accounting model** — `sum` for AWS Lightsail (mandatory; empty defaults to `max`), and for Bandwagon verify the plan (`max(in,out)` vs in+out sum) — see `metering.md` Part B. Don't halve `LIMIT_GB` to compensate; pick the mode. On AWS, a mid-month creation also needs the first-month proration (`metering.md` Part C).
 
 ## Step 6 — Deploy (single compose)
 
