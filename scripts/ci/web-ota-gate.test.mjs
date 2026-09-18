@@ -3,8 +3,8 @@
 // Three layers, because the gate's failure modes live in three different
 // places:
 //   1. the POLICY is a pure function and is asserted exhaustively as a table —
-//      every relation × mode × allow_rollback. Changing the policy has to mean
-//      editing this table on purpose.
+//      every relation × allow_rollback. Changing the policy has to mean editing
+//      this table on purpose.
 //   2. ANCESTRY runs against a real throwaway git repo, not a mocked git. A
 //      mocked `merge-base --is-ancestor` would just re-state the assumption
 //      being tested.
@@ -12,6 +12,12 @@
 //      any other failure) can be driven, including the shapes that must NOT
 //      read as "clean": credential errors, truncated bodies, a body with no
 //      usable commit.
+//
+// The gate has ONE mode now: every publish is a human explicitly asking for one
+// (a `webapp/*` tag or a workflow_dispatch). There is no app-release linkage —
+// so an unsafe relation REFUSES (loud red) unless allow_rollback says otherwise,
+// and a gate that cannot be evaluated at all fails closed. (The linkage "skip
+// instead of fail an app release" branch was removed with the v* linkage.)
 //
 // Run: node --test scripts/ci/web-ota-gate.test.mjs
 
@@ -24,7 +30,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  MODES,
   RELATIONS,
   ProvenanceUnreadable,
   classifyRelation,
@@ -39,66 +44,65 @@ import {
 
 // ---------------------------------------------------------------- policy ---
 
-// action per (relation, mode, allowRollback). Exhaustive on purpose.
+// action per (relation, allowRollback), as [allowRollback=false, =true].
+// Exhaustive on purpose.
 const POLICY = {
-  'not-enforced': { linkage: ['publish', 'publish'], explicit: ['publish', 'publish'] },
-  absent: { linkage: ['publish', 'publish'], explicit: ['publish', 'publish'] },
-  identical: { linkage: ['skip', 'skip'], explicit: ['publish', 'publish'] },
-  forward: { linkage: ['publish', 'publish'], explicit: ['publish', 'publish'] },
-  // [allowRollback=false, allowRollback=true]
-  downgrade: { linkage: ['skip', 'skip'], explicit: ['refuse', 'publish'] },
-  diverged: { linkage: ['skip', 'skip'], explicit: ['refuse', 'publish'] },
-  unresolvable: { linkage: ['skip', 'skip'], explicit: ['refuse', 'publish'] },
+  'not-enforced': ['publish', 'publish'],
+  absent: ['publish', 'publish'],
+  identical: ['publish', 'publish'], // an explicit publish always re-delivers
+  forward: ['publish', 'publish'],
+  downgrade: ['refuse', 'publish'],
+  diverged: ['refuse', 'publish'],
+  unresolvable: ['refuse', 'publish'],
 };
 
-test('policy table is exhaustive over RELATIONS × MODES × allow_rollback', () => {
+test('policy table is exhaustive over RELATIONS × allow_rollback', () => {
   assert.deepEqual(Object.keys(POLICY).sort(), [...RELATIONS].sort());
   for (const relation of RELATIONS) {
-    for (const mode of MODES) {
-      for (const [i, allowRollback] of [false, true].entries()) {
-        const got = decide({ relation, mode, allowRollback });
-        assert.equal(
-          got.action,
-          POLICY[relation][mode][i],
-          `${relation} / ${mode} / allowRollback=${allowRollback}`,
-        );
-        assert.ok(got.reason.length > 20, 'every decision must carry an actionable reason');
-      }
+    for (const [i, allowRollback] of [false, true].entries()) {
+      const got = decide({ relation, allowRollback });
+      assert.equal(got.action, POLICY[relation][i], `${relation} / allowRollback=${allowRollback}`);
+      assert.ok(got.reason.length > 20, 'every decision must carry an actionable reason');
     }
   }
 });
 
-test('a linkage publish never refuses — an app release is never failed over a web concern', () => {
-  for (const relation of RELATIONS) {
-    assert.notEqual(decide({ relation, mode: 'linkage' }).action, 'refuse', relation);
-  }
-});
-
-test('an explicit publish never silently does nothing on an unsafe relation', () => {
+test('an unsafe relation refuses loudly unless allow_rollback is set', () => {
   for (const relation of ['downgrade', 'diverged', 'unresolvable']) {
-    assert.equal(decide({ relation, mode: 'explicit' }).action, 'refuse', relation);
+    assert.equal(decide({ relation }).action, 'refuse', relation);
+    assert.equal(decide({ relation, allowRollback: true }).action, 'publish', relation);
   }
 });
 
-test('every unsafe skip/override notifies a human; routine decisions do not', () => {
-  assert.equal(decide({ relation: 'downgrade', mode: 'linkage' }).notify, true);
-  assert.equal(decide({ relation: 'diverged', mode: 'linkage' }).notify, true);
-  assert.equal(decide({ relation: 'unresolvable', mode: 'linkage' }).notify, true);
-  assert.equal(decide({ relation: 'downgrade', mode: 'explicit', allowRollback: true }).notify, true);
-  assert.equal(decide({ relation: 'identical', mode: 'linkage' }).notify, false);
-  assert.equal(decide({ relation: 'forward', mode: 'linkage' }).notify, false);
-  assert.equal(decide({ relation: 'absent', mode: 'explicit' }).notify, false);
+test('the gate never silently does nothing — no decision is a skip', () => {
+  // With the linkage removed there is no "skip an app release" outcome. Every
+  // publish either happens or is refused; nothing is a quiet no-op.
+  for (const relation of RELATIONS) {
+    for (const allowRollback of [false, true]) {
+      assert.notEqual(decide({ relation, allowRollback }).action, 'skip', `${relation}/${allowRollback}`);
+    }
+  }
+});
+
+test('only a deliberate backwards publish notifies a human; routine decisions do not', () => {
+  assert.equal(decide({ relation: 'downgrade', allowRollback: true }).notify, true);
+  assert.equal(decide({ relation: 'diverged', allowRollback: true }).notify, true);
+  assert.equal(decide({ relation: 'unresolvable', allowRollback: true }).notify, true);
+  // A refusal is already loud (red run) — it does not need a second page.
+  assert.equal(decide({ relation: 'downgrade' }).notify, false);
+  assert.equal(decide({ relation: 'forward' }).notify, false);
+  assert.equal(decide({ relation: 'identical' }).notify, false);
+  assert.equal(decide({ relation: 'absent' }).notify, false);
 });
 
 test('bootstrap (no provenance) passes but is never silent', () => {
-  const d = decide({ relation: 'absent', mode: 'linkage' });
+  const d = decide({ relation: 'absent' });
   assert.equal(d.action, 'publish');
   assert.equal(d.level, 'warning');
 });
 
-test('decide rejects unknown relations and modes instead of defaulting to publish', () => {
-  assert.throws(() => decide({ relation: 'sideways', mode: 'linkage' }), /unknown relation/);
-  assert.throws(() => decide({ relation: 'forward', mode: 'yolo' }), /unknown mode/);
+test('decide rejects unknown relations instead of defaulting to publish', () => {
+  assert.throws(() => decide({ relation: 'sideways' }), /unknown relation/);
 });
 
 // ----------------------------------------------------------- combination ---
@@ -254,7 +258,6 @@ test('evaluate: beta and namespaced publishes are out of scope', () => {
       brands: ['kaitu'],
       bucket: 'b',
       publishCommit: SHA_A,
-      mode: 'linkage',
       allowRollback: false,
       exec: boom,
       ...opts,
@@ -278,7 +281,6 @@ test('evaluate: end to end over both brands against a real repo', () => {
       brands: ['kaitu', 'overleap'],
       bucket: 'b',
       publishCommit: head,
-      mode: 'linkage',
       allowRollback: false,
       channel: 'stable',
       namespace: '',
@@ -288,12 +290,12 @@ test('evaluate: end to end over both brands against a real repo', () => {
     assert.equal(fwd.action, 'publish');
     assert.equal(fwd.perBrand.overleap.commit, base);
 
-    // The incident shape: live is NEWER than the ref being published.
+    // The incident shape: live is NEWER than the ref being published. An
+    // explicit publish REFUSES it (loud red) rather than moving stable back.
     const back = evaluate({
       brands: ['kaitu', 'overleap'],
       bucket: 'b',
       publishCommit: base,
-      mode: 'linkage',
       allowRollback: false,
       channel: 'stable',
       namespace: '',
@@ -301,8 +303,39 @@ test('evaluate: end to end over both brands against a real repo', () => {
         cmd === 'git' ? repo.exec(cmd, args) : { status: 0, stdout: JSON.stringify({ commit: head }) },
     });
     assert.equal(back.relation, 'downgrade');
-    assert.equal(back.action, 'skip');
-    assert.equal(back.notify, true);
+    assert.equal(back.action, 'refuse');
+    assert.equal(back.notify, false);
+  } finally {
+    rmSync(repo.dir, { recursive: true, force: true });
+  }
+});
+
+test('evaluate: per-brand — publishing ONE brand only reads that brand', () => {
+  // Independent brand control means a single-brand tag must not read (or be
+  // gated by) the other brand's provenance.
+  const repo = gitRepo();
+  try {
+    const base = repo.commit('base');
+    const head = repo.commit('head');
+    const seen = [];
+    const exec = (cmd, args) => {
+      if (cmd === 'git') return repo.exec(cmd, args);
+      seen.push(args[2]); // the s3:// uri
+      return { status: 0, stdout: JSON.stringify({ commit: base }) };
+    };
+    const r = evaluate({
+      brands: ['overleap'],
+      bucket: 'b',
+      publishCommit: head,
+      allowRollback: false,
+      channel: 'stable',
+      namespace: '',
+      exec,
+    });
+    assert.equal(r.relation, 'forward');
+    assert.deepEqual(Object.keys(r.perBrand), ['overleap']);
+    assert.ok(seen.every((uri) => uri.includes('/overleap/')), `only overleap reads: ${seen}`);
+    assert.ok(!seen.some((uri) => uri.includes('/kaitu/')), `kaitu must not be read: ${seen}`);
   } finally {
     rmSync(repo.dir, { recursive: true, force: true });
   }
@@ -315,7 +348,6 @@ test('evaluate: an unreadable brand aborts the whole evaluation (no partial pass
         brands: ['kaitu', 'overleap'],
         bucket: 'b',
         publishCommit: SHA_A,
-        mode: 'explicit',
         allowRollback: true,
         channel: 'stable',
         namespace: '',
@@ -377,7 +409,7 @@ test('evaluate: provenance absent but manifest present = the expected bootstrap'
             's3://b/kaitu/web/latest.json': { status: 0, stdout: '{"version":"0.4.10.21546118"}' },
           })(cmd, args);
     const r = evaluate({
-      brands: ['kaitu'], bucket: 'b', publishCommit: head, mode: 'linkage',
+      brands: ['kaitu'], bucket: 'b', publishCommit: head,
       allowRollback: false, channel: 'stable', namespace: '', exec,
     });
     assert.equal(r.relation, 'absent');
@@ -401,7 +433,7 @@ test('evaluate: NEITHER provenance nor manifest readable is flagged, not quietly
             's3://b/kaitu/web/latest.json': NOT_FOUND,
           })(cmd, args);
     const r = evaluate({
-      brands: ['kaitu'], bucket: 'b', publishCommit: head, mode: 'explicit',
+      brands: ['kaitu'], bucket: 'b', publishCommit: head,
       allowRollback: false, channel: 'stable', namespace: '', exec,
     });
     // Still allowed — a brand that has never published is legitimate — but the
@@ -427,7 +459,7 @@ test('evaluate: a recorded provenance never triggers the sibling probe', () => {
             // no answer registered for the manifest: the stub throws if probed
           })(cmd, args);
     const r = evaluate({
-      brands: ['kaitu'], bucket: 'b', publishCommit: head, mode: 'linkage',
+      brands: ['kaitu'], bucket: 'b', publishCommit: head,
       allowRollback: false, channel: 'stable', namespace: '', exec,
     });
     assert.equal(r.relation, 'forward');
@@ -439,10 +471,9 @@ test('evaluate: a recorded provenance never triggers the sibling probe', () => {
 
 // ------------------------------------------------------------------- CLI ----
 //
-// The CLI layer is where the mode asymmetry becomes an EXIT CODE, and an exit
-// code is what decides whether an app release goes red. The decision table
-// tests above cannot see it, so these drive the real process with a stubbed
-// `aws` on PATH.
+// The CLI layer is where a refusal becomes an EXIT CODE (1 = red run). The
+// decision-table tests above cannot see it, so these drive the real process
+// with a stubbed `aws` on PATH.
 
 const GATE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'web-ota-gate.mjs');
 
@@ -471,74 +502,101 @@ function runCli({ awsScript, args, cwd }) {
 const AWS_NO_CREDS = '#!/bin/bash\necho "Unable to locate credentials" >&2\nexit 255\n';
 const SOME_SHA = 'd'.repeat(40);
 
-test('CLI: a linkage publish that cannot evaluate the gate SKIPS instead of failing the app release', () => {
+test('CLI: a publish that cannot evaluate the gate fails closed (RED)', () => {
   const r = runCli({
     awsScript: AWS_NO_CREDS,
-    args: ['--publish-commit', SOME_SHA, '--mode', 'linkage', '--channel', 'stable', '--namespace', ''],
-  });
-  assert.equal(r.status, 0, 'must not fail the calling release');
-  assert.equal(r.out.proceed, 'false', 'must not publish blind');
-  assert.equal(r.out.relation, 'unevaluable');
-  assert.equal(r.out.notify, 'true', 'a silent skip would hide an S3 outage');
-  assert.match(r.stdout, /::warning::/);
-});
-
-test('CLI: an explicit publish that cannot evaluate the gate goes RED', () => {
-  const r = runCli({
-    awsScript: AWS_NO_CREDS,
-    args: ['--publish-commit', SOME_SHA, '--mode', 'explicit', '--channel', 'stable', '--namespace', ''],
+    args: ['--publish-commit', SOME_SHA, '--channel', 'stable', '--namespace', ''],
   });
   assert.equal(r.status, 1);
   assert.equal(r.out.proceed, 'false');
+  assert.equal(r.out.relation, 'unevaluable');
   assert.match(r.stdout, /::error::/);
 });
 
 test('CLI: allow_rollback does NOT override blindness', () => {
   const r = runCli({
     awsScript: AWS_NO_CREDS,
-    args: ['--publish-commit', SOME_SHA, '--mode', 'explicit', '--allow-rollback', 'true', '--channel', 'stable', '--namespace', ''],
+    args: ['--publish-commit', SOME_SHA, '--allow-rollback', 'true', '--channel', 'stable', '--namespace', ''],
   });
   assert.equal(r.status, 1, 'allow_rollback is intent about content, not permission to publish blind');
 });
 
 test('CLI: a short/absent publish commit is refused before anything else happens', () => {
   for (const sha of ['', 'abc123']) {
-    const r = runCli({ awsScript: AWS_NO_CREDS, args: ['--publish-commit', sha, '--mode', 'linkage'] });
+    const r = runCli({ awsScript: AWS_NO_CREDS, args: ['--publish-commit', sha] });
     assert.equal(r.status, 1, JSON.stringify(sha));
   }
 });
 
-test('CLI: identical provenance makes a linkage publish a clean no-op (the bare v* dedup)', () => {
+test('CLI: identical provenance re-delivers (an explicit publish is never a no-op)', () => {
   const repo = gitRepo();
   try {
     const head = repo.commit('base');
     const r = runCli({
       awsScript: `#!/bin/bash\necho '{"commit":"${head}","version":"0.4.10.1"}'\n`,
-      args: ['--publish-commit', head, '--mode', 'linkage', '--channel', 'stable', '--namespace', ''],
+      args: ['--publish-commit', head, '--channel', 'stable', '--namespace', ''],
       cwd: repo.dir,
     });
     assert.equal(r.status, 0);
-    assert.equal(r.out.proceed, 'false');
+    assert.equal(r.out.proceed, 'true', 'explicit republish, not a dedup skip');
     assert.equal(r.out.relation, 'identical');
-    assert.equal(r.out.notify, 'false', 'a routine dedup must not page anyone');
+    assert.equal(r.out.notify, 'false', 'a routine republish must not page anyone');
   } finally {
     rmSync(repo.dir, { recursive: true, force: true });
   }
 });
 
-test('CLI: a downgrade on the explicit path exits 1 and names the escape hatch', () => {
+test('CLI: --brands accepts a single brand and gates only it', () => {
+  const repo = gitRepo();
+  try {
+    const base = repo.commit('base');
+    const head = repo.commit('head');
+    const r = runCli({
+      // Any provenance read returns the older commit → forward roll for overleap.
+      awsScript: `#!/bin/bash\necho '{"commit":"${base}"}'\n`,
+      args: ['--brands', 'overleap', '--publish-commit', head, '--channel', 'stable', '--namespace', ''],
+      cwd: repo.dir,
+    });
+    assert.equal(r.status, 0);
+    assert.equal(r.out.proceed, 'true');
+    assert.equal(r.out.relation, 'forward');
+  } finally {
+    rmSync(repo.dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI: a downgrade exits 1 and names the escape hatch', () => {
   const repo = gitRepo();
   try {
     const base = repo.commit('base');
     const head = repo.commit('head');
     const r = runCli({
       awsScript: `#!/bin/bash\necho '{"commit":"${head}","version":"0.4.10.9"}'\n`,
-      args: ['--publish-commit', base, '--mode', 'explicit', '--channel', 'stable', '--namespace', ''],
+      args: ['--publish-commit', base, '--channel', 'stable', '--namespace', ''],
       cwd: repo.dir,
     });
     assert.equal(r.status, 1);
     assert.equal(r.out.relation, 'downgrade');
     assert.match(r.stdout, /allow_rollback/);
+  } finally {
+    rmSync(repo.dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI: a downgrade WITH allow_rollback publishes and pages a human', () => {
+  const repo = gitRepo();
+  try {
+    const base = repo.commit('base');
+    const head = repo.commit('head');
+    const r = runCli({
+      awsScript: `#!/bin/bash\necho '{"commit":"${head}","version":"0.4.10.9"}'\n`,
+      args: ['--publish-commit', base, '--allow-rollback', 'true', '--channel', 'stable', '--namespace', ''],
+      cwd: repo.dir,
+    });
+    assert.equal(r.status, 0);
+    assert.equal(r.out.proceed, 'true');
+    assert.equal(r.out.relation, 'downgrade');
+    assert.equal(r.out.notify, 'true', 'a deliberate backwards publish must be visible');
   } finally {
     rmSync(repo.dir, { recursive: true, force: true });
   }

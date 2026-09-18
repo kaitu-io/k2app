@@ -1,15 +1,16 @@
 name: Publish Web OTA
 
 # Web OTA publish pipeline (spec: docs/superpowers/specs/2026-08-14-web-ota-design.md §6,
-# amended 2026-09-12 §6.1 — anti-rollback gate).
-# Three entry points:
-#   push tag webapp/x.y.z → stable, fully automatic (tag version must match package.json)
-#   workflow_call → invoked by app-release workflows to piggyback a web OTA publish on
-#     an app release; caller passes `channel` (default stable), `linkage: true`
-#     and `secrets: inherit`
-#   workflow_dispatch → republish any ref (emergency rollback via ref=<known-good sha>)
-#     and/or target the beta channel (bootstrap §8 does beta first), and/or
-#     publish into a UAT `namespace` that no shipped client polls
+# amended 2026-09-12 §6.1 — anti-rollback gate; 2026-09-18 — dedicated tag + per-brand).
+# Two entry points:
+#   push tag webapp/x.y.z[-brand] → stable, fully automatic. Bare = BOTH brands;
+#     a `-kaitu` / `-overleap` suffix narrows to one (web-ota-plan.mjs). The
+#     tag's x.y.z must match package.json. This is the ONLY automatic path — an
+#     app release (a v* tag) NO LONGER publishes web OTA (the old linkage tail is
+#     gone); a web bundle reaches clients only when its own webapp/* tag is pushed.
+#   workflow_dispatch → republish any ref (emergency rollback via ref=<known-good sha>),
+#     pick brand(s), and/or target the beta channel (bootstrap §8 does beta first),
+#     and/or publish into a UAT `namespace` that no shipped client polls
 #
 # The beta CHANNEL is not a safe UAT target: shipped 0.4.7 mobile applies web
 # bundles silently (no minisign, no min_bridge, no prompt on that version), so
@@ -19,16 +20,17 @@ name: Publish Web OTA
 # beta dir so the manifest's relative url ({version}/web.zip) resolves on either
 # channel — same superset semantics as scripts/publish-mobile.sh.
 #
-# JOB SHAPE (why four jobs and not one)
+# JOB SHAPE (why five jobs and not one)
 # -------------------------------------
 # `{brand}/web/latest.json` is a single global mutable pointer and the 4th version
 # segment is time-based, so a bundle built from an OLD commit still outranks what
-# is live and wins. The two linkage callers pick their ref for *app* reasons — an
-# app release cut on a release branch that lags main is normal — so the pipeline
-# has to be able to say "this publish would move stable backwards".
+# is live and wins. A `webapp/*` tag can be cut from a release branch that lags
+# main, so the pipeline has to be able to say "this publish would move stable
+# backwards" — per brand, since the two brands publish INDEPENDENTLY now.
 #
+#   plan     → ref/brand input → the brand set (kaitu / overleap / both) + version
 #   precheck → cheap fail-fast gate (advisory) + tag/version validation
-#   build    → tests, both brands' bundles, minisign, manifests → artifacts
+#   build    → tests, the target brands' bundles, minisign, manifests → artifacts
 #   publish  → AUTHORITATIVE gate + S3 upload + provenance + CDN invalidation,
 #              all inside the `publish-web-ota` concurrency group
 #   notify-failure → one place that alerts, so a failed gate cannot be silent
@@ -38,34 +40,26 @@ name: Publish Web OTA
 # two queued runs interleave (gate A, gate B, upload A, upload B) and B's gate
 # would read provenance written before A published — turning the comparison into
 # a coin flip. Keeping gate+upload atomic under the group is what makes the
-# no-downgrade property hold under concurrency, and it also de-duplicates the
-# double publish a bare `v*` tag causes (both app-release workflows call here).
+# no-downgrade property hold under concurrency.
 
 on:
   push:
+    # The ONE automatic trigger. `webapp/x.y.z` = both brands; `webapp/x.y.z-kaitu`
+    # / `-overleap` = one brand. The glob's `*` does not span `/`, so a brand
+    # suffix (no extra slash) matches without touching this pattern. The `plan`
+    # job resolves the brand set + version from the ref via web-ota-plan.mjs.
     tags: ['webapp/*']
-  workflow_call:
-    inputs:
-      channel:
-        description: 'Release channel'
-        type: string
-        default: 'stable'
-      linkage:
-        description: >-
-          True when an app-release workflow is piggybacking this publish. Linkage
-          publishes never fail the calling release over a web concern: if the ref
-          would move stable backwards they skip and leave the newer bundle live
-          (which already satisfies the linkage). Explicit publishes — a webapp/*
-          tag or a dispatch — refuse loudly instead, because silently doing
-          nothing is the wrong failure when a human asked for a publish.
-        type: boolean
-        default: false
   workflow_dispatch:
     inputs:
       ref:
         description: 'Commit SHA / branch to build and publish (emergency republish / rollback)'
         required: false
         default: 'main'
+      brand:
+        description: 'Which brand(s) to publish'
+        type: choice
+        options: [both, kaitu, overleap]
+        default: both
       channel:
         description: 'Release channel'
         type: choice
@@ -101,19 +95,54 @@ env:
   # that argument.
   WEB_OTA_BUCKET: d0.all7.cc
   # Single source of truth for the gate's inputs, shared by the two gate steps so
-  # the advisory and authoritative evaluations cannot drift apart.
-  GATE_MODE: ${{ inputs.linkage && 'linkage' || 'explicit' }}
+  # the advisory and authoritative evaluations cannot drift apart. (No mode: the
+  # gate has one path now — every publish is explicit. The v* app-release linkage
+  # that needed a second mode was removed when web OTA moved to its own tag.)
   GATE_ALLOW_ROLLBACK: ${{ (inputs.allow_rollback == true || inputs.allow_rollback == 'true') && 'true' || 'false' }}
   GATE_CHANNEL: ${{ inputs.channel || 'stable' }}
   GATE_NAMESPACE: ${{ inputs.namespace || '' }}
 
 jobs:
+  # -------------------------------------------------------------------- plan --
+  # The tag (or the dispatch `brand` input) decides which brand(s) publish. Same
+  # -kaitu / -overleap / bare=both scoping as an app release (web-ota-plan.mjs),
+  # so the brand set flows into every downstream job's brand loop and into the
+  # gate's --brands (which reads only the brands being published).
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      brands: ${{ steps.plan.outputs.brands }}
+      tag_version: ${{ steps.plan.outputs.tag_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          IN_BRAND: ${{ inputs.brand }}
+        run: |
+          set -euo pipefail
+          # Always pass --ref (it supplies tag_version even on a dispatch whose
+          # ref is a webapp/* tag); a dispatch adds --brand, which overrides the
+          # brand set from that ref.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            PLAN=$(node scripts/ci/web-ota-plan.mjs --ref "$REF_NAME" --brand "${IN_BRAND:-both}")
+          else
+            PLAN=$(node scripts/ci/web-ota-plan.mjs --ref "$REF_NAME")
+          fi
+          echo "$PLAN"
+          grep -E '^(brands|tag_version)=' <<<"$PLAN" >> "$GITHUB_OUTPUT"
+
   # ---------------------------------------------------------------- precheck --
   # Cheap and first: a release-branch tag that would downgrade stable is caught
-  # in ~40s instead of after a 15-minute dual-brand build. Advisory only — the
-  # decision that gates the upload is re-made in `publish` under the concurrency
-  # group (see JOB SHAPE above).
+  # in ~40s instead of after a 15-minute build. Advisory only — the decision
+  # that gates the upload is re-made in `publish` under the concurrency group
+  # (see JOB SHAPE above).
   precheck:
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -129,10 +158,14 @@ jobs:
           # fail-closed but useless.
           fetch-depth: 0
 
+      # The tag version is the ref minus `webapp/` AND minus the brand suffix
+      # (web-ota-plan.mjs) — a bare `${GITHUB_REF_NAME#webapp/}` strip would fail
+      # for `webapp/x.y.z-overleap`. package.json stays the version source of truth.
       - name: Validate webapp tag against package.json
         if: startsWith(github.ref, 'refs/tags/webapp/')
+        env:
+          TAG_VER: ${{ needs.plan.outputs.tag_version }}
         run: |
-          TAG_VER="${GITHUB_REF_NAME#webapp/}"
           PKG_VER="$(node -p "require('./package.json').version")"
           if [ "$TAG_VER" != "$PKG_VER" ]; then
             echo "::error::tag webapp/${TAG_VER} does not match package.json version ${PKG_VER} — package.json is the version source of truth; bump it or retag"
@@ -144,32 +177,21 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          BRANDS: ${{ needs.plan.outputs.brands }}
         run: |
           set -euo pipefail
           node scripts/ci/web-ota-gate.mjs \
             --stage precheck \
+            --brands "$BRANDS" \
             --publish-commit "$(git rev-parse HEAD)" \
-            --mode "$GATE_MODE" \
             --allow-rollback "$GATE_ALLOW_ROLLBACK" \
             --channel "$GATE_CHANNEL" \
             --namespace "$GATE_NAMESPACE" \
             --bucket "$WEB_OTA_BUCKET"
 
-      # A linkage skip is the correct outcome, not a failure — so it must not be
-      # a red run. It must also not be silent: nothing reads a green run's
-      # summary. Slack is the only channel that reaches a human here.
-      - name: Notify Slack that the publish was skipped
-        if: steps.gate.outputs.notify == 'true'
-        run: |
-          ./scripts/ci/notify-slack.sh notice \
-            --platform "Publish Web OTA" \
-            --error "Web OTA publish SKIPPED (${{ steps.gate.outputs.relation }}): ${{ steps.gate.outputs.reason }}"
-        env:
-          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
-
   # ------------------------------------------------------------------- build --
   build:
-    needs: precheck
+    needs: [plan, precheck]
     if: needs.precheck.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -181,6 +203,14 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
 
+      # The brand set (from the tag suffix / dispatch input) drives every loop
+      # below — tests, builds, smoke, packaging — so a single-brand tag never
+      # touches the other brand. Exported once to $GITHUB_ENV for all later steps.
+      - name: Resolve brands
+        env:
+          PLAN_BRANDS: ${{ needs.plan.outputs.brands }}
+        run: echo "BRANDS=$PLAN_BRANDS" >> "$GITHUB_ENV"
+
       # This job runs webapp `yarn test`, which includes the fail-closed
       # engine-error-code gate (webapp/src/services/__tests__/
       # k2-engine-codes.test.ts) — it THROWS if k2/engine/error.go is absent
@@ -188,9 +218,8 @@ jobs:
       # `yarn test` fails "error.go not found". The reusable webapp test job
       # inits k2 for the same reason; this workflow calls `yarn test` directly
       # and must do it too. Only k2 itself is needed (one Go file) — no
-      # --recursive, no kuic key. secrets.K2_DEPLOY_KEY is available on both
-      # entry paths: workflow_dispatch (repo secret) and workflow_call from the
-      # release/mobile tails (secrets: inherit).
+      # --recursive, no kuic key. secrets.K2_DEPLOY_KEY is a repo secret,
+      # available on both entry paths (tag push and workflow_dispatch).
       - name: Setup SSH for private submodule
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -208,48 +237,49 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Webapp tests incl. bridge contract gate (kaitu)
-        run: yarn test
+      # Bridge-contract gate per brand being published (K2_BRAND=kaitu is the
+      # default value, set explicitly so the loop is uniform).
+      - name: Webapp tests incl. bridge contract gate (per brand)
+        run: |
+          set -euo pipefail
+          for BRAND in $BRANDS; do
+            echo "::group::webapp tests ($BRAND)"
+            K2_BRAND="$BRAND" yarn test
+            echo "::endgroup::"
+          done
         working-directory: webapp
 
-      - name: Webapp tests incl. bridge contract gate (overleap)
-        run: yarn test
-        working-directory: webapp
-        env:
-          K2_BRAND: overleap
-
-      # Manifest generator + anti-rollback gate unit tests. They also run in
-      # ci.yml on every push, but this path must not depend on that having
+      # Manifest generator + plan + anti-rollback gate unit tests. They also run
+      # in ci.yml on every push, but this path must not depend on that having
       # happened: a dispatch can publish any ref.
-      - name: CI script unit tests (manifest generator + anti-rollback gate)
+      - name: CI script unit tests (manifest generator + plan + anti-rollback gate)
         run: |
           node --test scripts/ci/web-ota-manifest.test.mjs
+          node --test scripts/ci/web-ota-plan.test.mjs
           node --test scripts/ci/web-ota-gate.test.mjs
 
-      - name: Build webapp (kaitu) + brand purity gate
+      - name: Build webapp bundles + brand purity gate (per brand)
         run: |
-          yarn build
-          bash scripts/check-brand-purity.sh kaitu dist
-          mv dist dist-kaitu
+          set -euo pipefail
+          for BRAND in $BRANDS; do
+            echo "::group::build ($BRAND)"
+            K2_BRAND="$BRAND" yarn build
+            bash scripts/check-brand-purity.sh "$BRAND" dist
+            mv dist "dist-$BRAND"
+            echo "::endgroup::"
+          done
         working-directory: webapp
-
-      - name: Build webapp (overleap) + brand purity gate
-        run: |
-          yarn build
-          bash scripts/check-brand-purity.sh overleap dist
-          mv dist dist-overleap
-        working-directory: webapp
-        env:
-          K2_BRAND: overleap
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
         working-directory: webapp
 
-      - name: White-screen smoke gate (both brands)
+      - name: White-screen smoke gate (per brand)
         run: |
-          node webapp/scripts/smoke-dist.mjs webapp/dist-kaitu
-          node webapp/scripts/smoke-dist.mjs webapp/dist-overleap
+          set -euo pipefail
+          for BRAND in $BRANDS; do
+            node webapp/scripts/smoke-dist.mjs "webapp/dist-$BRAND"
+          done
 
       - name: Derive version
         id: ver
@@ -258,7 +288,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Web OTA version: $VERSION"
 
-      - name: Package + minisign + manifest (both brands)
+      - name: Package + minisign + manifest (per brand)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -270,7 +300,7 @@ jobs:
           # (release-desktop.yml "Sign Linux tarballs" step is the precedent).
           echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > /tmp/minisign.key
           mkdir -p out
-          for BRAND in kaitu overleap; do
+          for BRAND in $BRANDS; do
             (cd "webapp/dist-$BRAND" && zip -qr "../../out/web-$BRAND.zip" .)
             # zip top level must BE the dist content (spec §3.3): index.html at root.
             unzip -l "out/web-$BRAND.zip" | grep -qE '(^|\s)index\.html$' \
@@ -298,7 +328,7 @@ jobs:
 
   # ----------------------------------------------------------------- publish --
   publish:
-    needs: [precheck, build]
+    needs: [plan, precheck, build]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -310,6 +340,13 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
           fetch-depth: 0
+
+      # Drives the gate's --brands, the upload loop and the CDN invalidation, so
+      # a single-brand tag reads, uploads and invalidates only its own brand.
+      - name: Resolve brands
+        env:
+          PLAN_BRANDS: ${{ needs.plan.outputs.brands }}
+        run: echo "BRANDS=$PLAN_BRANDS" >> "$GITHUB_ENV"
 
       - name: Download bundles
         uses: actions/download-artifact@v4
@@ -324,6 +361,8 @@ jobs:
       # THE load-bearing gate. Re-evaluated here, inside the concurrency group
       # and immediately before the upload, so a run that queued behind another
       # publish sees that publish's provenance rather than a pre-queue snapshot.
+      # --brands is the target set only: publishing one brand never gates on the
+      # other's provenance (they release independently now).
       - name: Gate — would this publish move stable backwards? (authoritative)
         id: gate
         env:
@@ -333,19 +372,23 @@ jobs:
           set -euo pipefail
           node scripts/ci/web-ota-gate.mjs \
             --stage publish \
+            --brands "$BRANDS" \
             --publish-commit '${{ steps.commit.outputs.sha }}' \
-            --mode "$GATE_MODE" \
             --allow-rollback "$GATE_ALLOW_ROLLBACK" \
             --channel "$GATE_CHANNEL" \
             --namespace "$GATE_NAMESPACE" \
             --bucket "$WEB_OTA_BUCKET"
 
-      - name: Notify Slack that the publish was skipped
+      # notify=true means a DELIBERATE backwards publish (allow_rollback on an
+      # unsafe relation) — stable is moving to an older commit on purpose. A
+      # refusal is already loud (red run + notify-failure); this is the one green
+      # outcome that still warrants a heads-up.
+      - name: Notify Slack that stable moved backwards (allow_rollback)
         if: steps.gate.outputs.notify == 'true'
         run: |
           ./scripts/ci/notify-slack.sh notice \
             --platform "Publish Web OTA" \
-            --error "Web OTA publish SKIPPED at upload time (${{ steps.gate.outputs.relation }}): ${{ steps.gate.outputs.reason }}"
+            --error "Web OTA stable moved BACKWARDS via allow_rollback (${{ steps.gate.outputs.relation }}): ${{ steps.gate.outputs.reason }}"
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
 
@@ -390,8 +433,8 @@ jobs:
           else
             PREFIX_SUFFIX=""
           fi
-          echo "Publishing v$VERSION from $PUBLISH_COMMIT to channel: $CHANNEL (base: s3://${WEB_OTA_BUCKET}/{brand}/web${PREFIX_SUFFIX})"
-          for BRAND in kaitu overleap; do
+          echo "Publishing v$VERSION from $PUBLISH_COMMIT to channel: $CHANNEL for brands: $BRANDS (base: s3://${WEB_OTA_BUCKET}/{brand}/web${PREFIX_SUFFIX})"
+          for BRAND in $BRANDS; do
             BASE="s3://${WEB_OTA_BUCKET}/${BRAND}/web${PREFIX_SUFFIX}"
             node scripts/ci/web-ota-manifest.mjs source \
               --version "$VERSION" \
@@ -405,8 +448,8 @@ jobs:
             # Order within each channel is load-bearing: zip → manifest →
             # provenance pointer. Provenance is what the gate reads, so writing
             # it before the manifest would let a half-failed publish claim a
-            # commit that is not actually being served — and the next run would
-            # then dedup itself away and leave the OLD manifest live. Written
+            # commit that is not actually being served, and a later forward
+            # publish would then compare against that false provenance. Written
             # last, a half-failed publish just looks like "not published yet",
             # which the next forward publish heals.
             aws s3 cp "out/web-$BRAND.zip" "$BASE/beta/${VERSION}/web.zip" --content-type application/zip
@@ -428,26 +471,27 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
-          # A namespaced publish lands under {brand}/web/{ns}/, which the
-          # production wildcard /{brand}/web/* already covers — so the paths
-          # below need no namespace handling at all.
+          # Only the published brand(s): a single-brand publish must not spend an
+          # invalidation on the brand it did not touch. A namespaced publish lands
+          # under {brand}/web/{ns}/, which the production wildcard /{brand}/web/*
+          # already covers — so the paths need no namespace handling at all.
+          PATHS=()
+          for BRAND in $BRANDS; do PATHS+=("/${BRAND}/web/*"); done
           for DIST_ID in E3W144CRNT652P E34P52R7B93FSC; do
             aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
-              --paths "/kaitu/web/*" "/overleap/web/*" \
+              --paths "${PATHS[@]}" \
               --no-cli-pager --output text > /dev/null
           done
-          echo "CDN invalidated: d0.all7.cc + dl.kaitu.io (/{kaitu,overleap}/web/*)"
+          echo "CDN invalidated: d0.all7.cc + dl.kaitu.io (${PATHS[*]})"
 
   # ----------------------------------------------------------------- notify ---
-  # A failed linkage publish (spec §6 trigger 2, from release-desktop.yml /
-  # build-mobile.yml) is otherwise silent except for a red run nobody is
-  # watching — it leaves CDN latest behind the just-shipped app's embedded
-  # UI, the exact inversion the linkage exists to prevent (终审 m5). One job for
-  # all three upstreams so a refusal in `precheck` alerts too: with the notify
-  # step living inside `publish`, a precheck failure skipped it entirely.
+  # A refused or broken publish is otherwise silent except for a red run nobody
+  # is watching. One job across all upstreams (plan / precheck / build / publish)
+  # so a refusal in `precheck` — or a bad tag in `plan` — alerts too: with the
+  # notify living inside `publish`, an earlier-job failure would skip it entirely.
   notify-failure:
-    needs: [precheck, build, publish]
+    needs: [plan, precheck, build, publish]
     if: failure()
     runs-on: ubuntu-latest
     timeout-minutes: 5

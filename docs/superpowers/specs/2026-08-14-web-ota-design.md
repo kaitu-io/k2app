@@ -11,7 +11,7 @@
 
 - **快速迭代 + 紧急修复**：UI 改动打 `webapp/x.y.z` tag 当天到达全端用户，不等 App Store / 桌面发版周期。
 - **完全绕开发版周期**：native 壳退化为薄封装，新功能默认走热更下发；native 发版只在 bridge 接口变更 / 内核升级时发生。
-- **管理简单**：发布 = 打 `webapp/x.y.z` tag（CI 全自动构建、签名、上传、更新 manifest）；app 发版（`v*` tag）时自动联动发布同 commit 的 web bundle；回滚 = `git revert` + 重新打 tag。
+- **管理简单**：发布 = 打 `webapp/x.y.z[-brand]` tag（CI 全自动构建、签名、上传、更新 manifest；裸=双品牌，`-kaitu`/`-overleap`=单品牌）；回滚 = `git revert` + 重新打 tag。（2026-09-18：原「app 发版 `v*` tag 自动联动发 web」已删除——web OTA 只由专用 tag 触发。）
 - **生效时机**：静默后台下载 → 校验 → 落盘，下次冷启动生效；启动失败自动回滚。
 
 非目标（v1 明确不做）：灰度百分比控制面、antiblock 通道承载 UI bundle（保留为二期）、热更 native 代码。
@@ -33,9 +33,9 @@
 ## 3. 总体架构
 
 ```
-git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
-  → CI: test + brand-purity + 契约守卫 + 双品牌构建 + 白屏冒烟
-  → 打包 web.zip ×2 (kaitu/overleap) + sha256 + minisign 签名
+git tag webapp/x.y.z[-brand]   # 裸=双品牌, -kaitu/-overleap=单品牌 (2026-09-18; v* 不再联动)
+  → CI: plan(解析品牌) + test + brand-purity + 契约守卫 + 逐品牌构建 + 白屏冒烟
+  → 打包 web.zip ×(在发品牌数) + sha256 + minisign 签名
   → 上传 s3://d0.all7.cc/{brand}/web/{version}/web.zip
   → 写 {brand}/web/latest.json (+ beta 通道按需)
   → CloudFront invalidation (E3W144CRNT652P + E34P52R7B93FSC)
@@ -163,13 +163,20 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
 
 ## 6. CI 发布管线
 
-新 workflow `.github/workflows/publish-web-ota.yml`，三种触发入口共用同一个 publish job：
+> **2026-09-18 增补（解耦 + per-brand）**：web OTA 已与 app 发版**解耦**。原触发 2（`v*` app 发版
+> 联动 `workflow_call`）**已删除**——`release-desktop.yml` / `build-mobile.yml` 的 OTA 尾巴 job 不复
+> 存在。现只剩两个入口：专用 `webapp/x.y.z[-brand]` tag 与 `workflow_dispatch`。且 tag 现在**逐品牌**
+> 可控（裸=双品牌，`-kaitu` / `-overleap`=单品牌），不再恒双发。`gate` 随之收敛成 explicit-only
+> （linkage mode 已删）。tag→品牌解析在 `scripts/ci/web-ota-plan.mjs`（+ `.test.mjs`）。下文保留原始
+> 设计并就地标注变化。
 
-- **触发 1 — `webapp/x.y.z` tag（常规发布）**：`push.tags: ['webapp/*']`。CI 校验 tag 里的 `x.y.z` 必须等于根 `package.json` 的 version，不一致 fail loud——tag 是触发器和人为确认，**不是第二个版本真相源**（version source of truth 恒为 package.json）。
-- **触发 2 — app 发版联动（`workflow_call`）**：`release-desktop.yml` 与 `build-mobile.yml` 在各自构建成功后以 `uses: ./.github/workflows/publish-web-ota.yml` + `secrets: inherit` 调用，从**同一 tag commit** 构建并发布 web bundle（channel 恒 stable）。价值：app 发版后 CDN latest 自动追平该 app 内嵌的 UI，新装设备不出现"CDN 比内嵌还旧"的倒挂；且同 commit 构建，兼容天然成立。任一平台构建失败则跳过联动发布。
-- **触发 3 — `workflow_dispatch`（应急）**：inputs `ref`（任意 commit 重发/回滚）、`channel`（stable|beta，默认 stable）。
-- **并发**：`concurrency: publish-web-ota`（排队不取消）挪到 job 级（workflow 级 concurrency 在被 `workflow_call` 调用时不生效）。
-- **多品牌**：每次发布**恒双品牌**（kaitu + overleap 各自 build → purity gate → 签名 → 各自 S3 树 + manifest），与触发入口无关——即使触发者是 `v*-overleap` 单品牌 app tag 也发双品牌（同 commit 构建无害，换来两品牌 web 版本永不漂移）。两品牌共享同一版本号与同一地板文件（同一份代码，刻意为之）。
+新 workflow `.github/workflows/publish-web-ota.yml`，触发入口：
+
+- **触发 1 — `webapp/x.y.z[-brand]` tag（常规发布，唯一自动路径）**：`push.tags: ['webapp/*']`。裸 `webapp/x.y.z`=**双品牌**，`webapp/x.y.z-kaitu` / `-overleap`=**单品牌**（glob 的 `*` 不跨 `/`，品牌后缀无额外斜杠故天然匹配）。CI 剥掉品牌后缀后校验 `x.y.z` 必须等于根 `package.json` 的 version，不一致 fail loud——tag 是触发器和人为确认，**不是第二个版本真相源**（version source of truth 恒为 package.json）。品牌集由 `plan` job 经 `web-ota-plan.mjs` 从 ref 解析。
+- ~~**触发 2 — app 发版联动（`workflow_call`）**~~ **（2026-09-18 删除）**：曾由 `release-desktop.yml` / `build-mobile.yml` 构建成功后 `workflow_call` 搭车发布，让 CDN latest 追平 app 内嵌 UI。删除后**发 app 不再自动发 web OTA**——想更新线上 web 必须主动推 `webapp/*` tag。动机：这条联动是「谁最后发谁赢 / 两 workflow 门不对称」footgun 的根源（§6.1 起因）。
+- **触发 2 — `workflow_dispatch`（应急 / 手动）**：inputs `ref`（任意 commit 重发/回滚）、`brand`（both|kaitu|overleap，默认 both）、`channel`（stable|beta，默认 stable）、`namespace`（UAT）、`allow_rollback`。
+- **并发**：`concurrency: publish-web-ota`（排队不取消）在 job 级（`publish` job 持有），保证 gate+upload 在组内原子。
+- **多品牌（逐品牌独立）**：品牌集来自 `plan`。发双品牌时 kaitu + overleap 各自 build → purity gate → 签名 → 各自 S3 树 + manifest；发单品牌时只碰该品牌。两品牌**独立发布**（各自的 `latest.json` / provenance / 版本时间基），gate 逐品牌比对、只读在发的品牌。共享同一份代码与地板文件（刻意为之）。
 - **步骤**：
   1. `yarn install`（root workspace）→ `cd webapp && yarn test`（vitest）
   2. 契约守卫测试（§4）+ `check-brand-purity.sh`
@@ -178,37 +185,36 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
   5. 版本号推导（§3.1）+ zip + sha256 + minisign 签名（私钥 = 现有 `TAURI_SIGNING_PRIVATE_KEY` secret）
   6. 上传 S3 `{brand}/web/{version}/web.zip` → 写 `{brand}/web[/beta]/latest.json`（`min_*` 从地板文件推导）→ 两个 CloudFront 分发 invalidation
 - **解封现有封堵**：移除 `scripts/ci/upload-release.sh:11,51` 的 `--web` 硬报错（改为指向新 workflow），保持 `publish-mobile.sh` 不碰 web manifest。
-- **通道策略**：`webapp/*` tag 与 app 联动 → stable 全自动；beta 通道保留给 `workflow_dispatch` 手动指定（客户端四端都已/将支持 beta manifest 路径）。stable 发布保持超集语义：恒写 `beta/` 目录的 zip + manifest，`channel=stable` 时再额外写顶层。
+- **通道策略**：`webapp/*` tag → stable 全自动；beta 通道保留给 `workflow_dispatch` 手动指定（客户端四端都已/将支持 beta manifest 路径）。stable 发布保持超集语义：恒写 `beta/` 目录的 zip + manifest，`channel=stable` 时再额外写顶层。
 
 ### 6.1 反回退门（2026-09-12 增补）
 
 **起因**：2026-09-07 推 `v0.4.10-overleap-mobile` 时，判断"这个 tag 不会发 web OTA"只读了 `release-desktop.yml`（它的 OTA 尾巴被 `plan.should_run` 挡掉未知后缀），漏了 `build-mobile.yml` —— 它同样监听 `tags: ['v*']`，尾巴只看构建结果，于是从 `96fe5032` 发了双品牌 stable `0.4.10.21546118`。当时无害纯属时序运气：更新的 webapp commit 全部晚于那一刻。同一个 tag 晚五天推，就会把购买页预览死循环的修复（`07fd51b4`）静默回退给全量存量用户。
 
-**根因不是"哪个 workflow 会发"**，而是三条性质叠加：① `{brand}/web/latest.json` 是单个全局可变指针；② 版本第 4 段是时间基，**旧 commit 的产物也永远"更新"**，一定赢；③ 线上产物**不记录自己的出处**，所以没有任何机制能判断一次发布是前滚还是回退。补 workflow 的 `if:` 只是补洞；门必须放在三条入口共用的**唯一咽喉**。
+**根因不是"哪个 workflow 会发"**，而是三条性质叠加：① `{brand}/web/latest.json` 是单个全局可变指针；② 版本第 4 段是时间基，**旧 commit 的产物也永远"更新"**，一定赢；③ 线上产物**不记录自己的出处**，所以没有任何机制能判断一次发布是前滚还是回退。补 workflow 的 `if:` 只是补洞；门必须放在各入口共用的**唯一咽喉**。（2026-09-18 后：把「哪个 workflow 会发」这个问题本身也消掉了——触发 2 联动删除，`v*` 不再发 web OTA，只剩 `webapp/*` 一个 trigger 在一个文件里；但门仍在，因为 `webapp/*` tag 也能从落后分支切出。）
 
 **机制**：
 - **出处 sidecar**：每次发布在 manifest 旁写 `{brand}/web/latest-source.json`（另存不可变副本 `{version}/source.json`），内容 `{version, commit, brand, ref, run_id, run_attempt, workflow, published_at}`。**刻意不进 manifest**：所有在网客户端都解析 `latest.json`，其中任何一个严格解析器都会把一次加字段变成全网故障。除 CI 的门之外没人读它。顺带补上了此前完全缺失的能力——工单里能回答"这台设备跑的是哪个 UI"。
 - **写入顺序是承载性的**：每个通道内 zip → manifest → 出处指针。出处是门的输入，先写出处后写 manifest 若中途失败，会声明一个并未在服务的 commit，下一次运行就把自己幂等跳过、把旧 manifest 永久留在线上。写在最后，半失败只表现为"还没发过"，下一次前滚发布自愈。
 - **两道评估**：`precheck`（便宜、快失败）+ `publish`（承载性）。承载性那道**必须与上传同 job，且该 job 持有 `publish-web-ota` concurrency group** —— 独立的门 job 会让两次排队运行交错成 gate A → gate B → upload A → upload B，B 读到的是 A 发布前的出处，比较退化成抛硬币。
 - **判据锚定线上产物，不是 main**。main 是个两头都错的代理：线上比两者都旧时它会拒掉合法前滚；线上比 main 新（从非 main ref dispatch 过）时它又漏判回退。
-- **决策表**（关系 = 线上源 commit → 待发 commit），实现与穷举测试在 `scripts/ci/web-ota-gate.mjs` / `.test.mjs`：
+- **决策表**（关系 = 线上源 commit → 待发 commit，逐品牌），实现与穷举测试在 `scripts/ci/web-ota-gate.mjs` / `.test.mjs`。**2026-09-18 增补**：linkage mode 已随触发 2 删除，下表只剩「显式」一路（每次发布都是人显式要求的）：
 
-| 关系 | 联动（`linkage: true`，app 发版搭车） | 显式（`webapp/*` tag / dispatch） |
-|---|---|---|
-| 同一 commit | 跳过（顺带消掉裸 `v*` tag 的双发） | 照发（更高构建号是既定的强制重发手段） |
-| 线上是祖先 | 发 | 发 |
-| 待发是线上的祖先（会降级） | 跳过 + Slack notice | **红**，除非 `allow_rollback` |
-| 分叉 | 跳过 + Slack notice | **红**，除非 `allow_rollback` |
-| 无出处记录 | 发 + warning（bootstrap） | 发 + warning |
-| 出处 commit 本地不存在（`unresolvable`） | 跳过 + Slack notice | **红**，除非 `allow_rollback` |
-| 门根本评估不了（S3 读不到 / 凭证没了 / body 不是出处 / checkout 坏了，输出 `unevaluable`） | 跳过 + Slack notice | **红**（`allow_rollback` 也**不**放行：那是"盲"，不是"意图"） |
+| 关系 | 决策 |
+|---|---|
+| 同一 commit | 照发（更高构建号是既定的强制重发手段；不再有联动的 dedup skip） |
+| 线上是祖先 | 发 |
+| 待发是线上的祖先（会降级） | **红**拒发，除非 `allow_rollback`（勾则发 + Slack notice） |
+| 分叉 | **红**拒发，除非 `allow_rollback`（勾则发 + Slack notice） |
+| 无出处记录 | 发 + warning（bootstrap） |
+| 出处 commit 本地不存在（`unresolvable`） | **红**拒发，除非 `allow_rollback` |
+| 门根本评估不了（S3 读不到 / 凭证没了 / body 不是出处 / checkout 坏了，输出 `unevaluable`） | **红**（`allow_rollback` 也**不**放行：那是"盲"，不是"意图"） |
 
   `unevaluable` 刻意**不是** relation 的成员 —— 那种情况下根本没建立起关系，它只是个输出值，
-  好让 workflow 与 Slack 把它和真正的 `unresolvable` 分开。**跳过永远是安全的**（什么都没上传，
-  stable 不可能被拉回），所以联动路径宁可跳过也不因为一次 S3 故障把 app 发版搞红；显式路径反过来，
-  人要求发就绝不能静默不发。
-
-  两侧刻意不对称：联动路径**永不**因 web 的事把 app 发版搞红（红了没人能处置，只会训练出忽略红），它跳过后线上停在**更新**的那份，而这恰好就是联动本身的目的；显式路径反过来，人要求发就绝不能静默不发。
+  好让 workflow 与 Slack 把它和真正的 `unresolvable` 分开。gate 现在只有一条路径：每次发布都是人
+  显式要求的，所以评估不了就**红**（fail-closed）；`allow_rollback` 表达的是「内容意图（我确实要往回发）」，
+  绝不放行「盲发」。（历史：删除前还有一条 `linkage` 路径，它遇到降级/评估不了会跳过而非搞红，以免
+  一次 web 的事把 app 发版拖红——那条路径随触发 2 一并删除。）
 
 - **404 的两种含义**：`aws s3 cp` 对**桶不存在**与**键不存在**输出逐字节相同的 stderr（`(404) ... HeadObject ... Not Found`，已对 aws-cli 2.34 实测）。所以 ① 桶名是**唯一字面量**（`WEB_OTA_BUCKET`），门与上传共用，桶写错不可能只让门变瞎而上传照样成功；② 出处 404 时再探一次隔壁的 `latest.json`：在 → 确是 bootstrap；也不在 → 仍放行（从未发布过的品牌是合法的）但明说"这道门可能什么都没在保护"。刻意**不用** `s3api head-bucket` —— CI 的 IAM 用户只授权到品牌对象子树，桶级调用可能在健康环境下 403，那会让门因为一个它本不需要的权限而拒掉所有发布。
 - **beta / namespace 发布不设门**：没有 stable 存量受众要保护；判据写在门脚本里（`not-enforced`），不是写在 YAML 的 `if:` 里。
@@ -228,7 +234,7 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
 2. **已知时间线约束**：线上移动 manifest 仍是 0.4.7，`min_native=0.4.8` 的首个 OTA 会被在网 0.4.7 存量 native 正确跳过——热更触达面随 0.4.8 移动端发版铺开，这是闸门的预期行为而非故障。
 3. 首个 OTA bundle 内容 = 与当前线上 native 兼容的 main 头（冒烟门通过）。
 4. **先发 beta 通道**，在真机（iOS + Android，新旧两个 native 版本）UAT 验证下载/校验/切换/回滚全链路。~~注意：iOS native 现状缺 update channel 支持~~ —— **2026-08-18 订正：已不成立**。iOS 实现了 `getUpdateChannel`/`setUpdateChannel`，web manifest 端点由 `channelPrefix` 动态拼接（`K2Plugin.swift`），与 Android 同在 0.4.8 首发；webapp 侧的 `getPlatform() === 'android'` 硬门也已换成能力探测。iOS 可直接走 beta-first UAT，无需再用 Android 结果替代。存量 0.4.7（含 App Store 4.4.7）两端都没有这对方法，探测失败即隐藏 toggle，stable-only。
-   - **Beta-clobber 注意**（`publish-web-ota.yml` 步骤"Upload to S3 + publish manifests"）：stable 发布是超集语义——无论 `channel` 输入是什么，每次运行都会先写 `beta/latest.json`，只有 `channel=stable` 时才**再额外**写顶层 `latest.json`；而 tag / app 联动触发的运行恒为 `channel=stable`。R2 改 tag 触发后，日常 main merge 不再自动发布，clobber 面大幅收窄——但在 beta UAT 窗口期间，**任何 `webapp/*` tag 或 app 发版 `v*` tag** 仍会覆盖 `beta/latest.json`。窗口期内应冻结这两类 tag，或事后 `workflow_dispatch` + `channel=beta` + `ref=<UAT 目标 commit>` 恢复 UAT 内容。
+   - **Beta-clobber 注意**（`publish-web-ota.yml` 步骤"Upload to S3 + publish manifests"）：stable 发布是超集语义——无论 `channel` 输入是什么，每次运行都会先写 `beta/latest.json`，只有 `channel=stable` 时才**再额外**写顶层 `latest.json`；而 tag 触发的运行恒为 `channel=stable`。R2 改 tag 触发、且 2026-09-18 起 `v*` 联动删除后，clobber 面进一步收窄——但在 beta UAT 窗口期间，**任何 `webapp/*` tag** 仍会覆盖 `beta/latest.json`（对应品牌）。窗口期内应冻结该品牌的 `webapp/*` tag，或事后 `workflow_dispatch` + `channel=beta` + `ref=<UAT 目标 commit>` 恢复 UAT 内容。
 5. 再发 stable。桌面/Linux 能力随各自下一次壳发版上线，不阻塞移动端先行。
 
 ## 9. 测试策略
@@ -246,7 +252,7 @@ git tag webapp/x.y.z（或 app 发版 v* tag 联动触发）
 | 存量移动 native 只验 sha256，CDN 被攻破可注入 UI | HTTPS + 新壳强制 minisign；接受残余风险并记录 |
 | 桌面 origin 迁移失败 → 偏好重置（核实后确认不会登出，auth 在 Rust storage.json） | 迁移失败兜底为直接进新 origin；UAT 覆盖迁移路径 |
 | iOS 3.3.2 审核风险（热更显著改变功能） | 用户已知情选择激进模式；bundle 不改变 app 宣称用途；保留随时停发能力（核按钮） |
-| 每次 `webapp/*` tag / app 发版直达全量用户 | 白屏冒烟门 + 契约守卫为强制闸；tag 是人为确认动作（R2 已从 main-push 自动收紧到 tag 触发）；重大改版可先 dispatch 到 beta |
+| 每次 `webapp/*` tag 直达全量用户 | 白屏冒烟门 + 契约守卫为强制闸；tag 是人为确认动作（R2 从 main-push 收紧到 tag 触发；2026-09-18 又把 `v*` app 发版联动删除，只剩显式 `webapp/*` tag）；重大改版可先 dispatch 到 beta |
 | R2 兼容负担转移：最新 webapp 须在地板以上全部 app 版本运行，但 CI 只验证最新组合 | capabilities 层单测穷举模拟各版本注入形态；真机 smoke 保留一台地板版本设备；地板政策"支持 field 上仍有量的版本"，定期砍地板收敛分支数（§4.7） |
 | 地板 bump 被随手当成兼容手段（回退到 R1 冻结哲学） | 地板文件 bump 必须走 review 并给出"砍支持"理由；契约守卫强制 `floor.bridge ≤ BRIDGE_API_VERSION`，且 bump `BRIDGE_API_VERSION` 不再要求同步改地板 |
 | bridge 守卫盲区：两种已证实形状——① 行为变更不改方法签名 ② 平台级实现漂移：TS 声明不变而某一平台的 native 未实现该方法（原始实例：channel 方法一度只有 Android 实现） | 诚实记录：守卫只覆盖方法表增删，两种形状都靠 review + bump 纪律。②的**通用缓解已落地**：webapp 侧一律能力探测、不比较平台（`capacitor-k2.ts` 的 channel 探测是范式），这样漂移无论朝哪个方向都自动降级而非误判。原始实例已解决（iOS 0.4.8 起实现 channel），但盲区本身仍在——守卫看不见任何一端的 native 实现 |
