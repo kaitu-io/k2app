@@ -6,18 +6,20 @@
 // `{brand}/web/latest.json` is a single global mutable pointer, and the 4th
 // version segment is TIME-BASED (scripts/ci/web-ota-manifest.mjs) — so a
 // bundle built from an OLD commit still outranks whatever is live and wins.
-// Three entry points can publish (webapp/* tag, workflow_call from the two
-// app-release workflows, workflow_dispatch), and the two linkage callers pick
-// their ref for *app* reasons: an app release cut on a release branch that
-// lags main is normal. Publishing that ref's webapp silently DOWNGRADES the UI
-// of every OTA client of both brands, and nothing in the pipeline noticed.
+// Two entry points can publish (a `webapp/*` tag — per brand — and a
+// workflow_dispatch), and a tag can be cut from a release branch that lags
+// main. Publishing that ref's webapp silently DOWNGRADES the UI of every OTA
+// client of the brand(s) it targets, and nothing else in the pipeline noticed.
 //
 // Near-miss that produced this gate (2026-09-07): tag v0.4.10-overleap-mobile
 // published dual-brand stable web OTA 0.4.10.21546118 from 96fe5032 via
-// build-mobile.yml's tail job. Harmless only by timing — every newer webapp
-// commit happened to land after it. Had the same tag been pushed five days
-// later, it would have reverted the purchase-preview runaway fix (07fd51b4)
-// for the entire installed base, invisibly.
+// build-mobile.yml's app-release LINKAGE tail. Harmless only by timing — every
+// newer webapp commit happened to land after it. Had the same tag been pushed
+// five days later, it would have reverted the purchase-preview runaway fix
+// (07fd51b4) for the entire installed base, invisibly. That linkage tail has
+// since been removed — a web OTA now needs its own `webapp/*` tag — but the
+// same lag hazard remains for a tag cut from a release branch, which is exactly
+// what this gate still catches.
 //
 // DESIGN
 // ------
@@ -43,8 +45,6 @@
 
 import { spawnSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
-
-export const MODES = ['linkage', 'explicit'];
 
 // Relation of (live bundle's source commit) → (commit being published).
 export const RELATIONS = [
@@ -184,21 +184,14 @@ export function combineRelations(relations) {
 }
 
 /**
- * The whole policy, as a pure function. Two modes, deliberately asymmetric:
- *
- * - `linkage` (an app release piggybacking a web publish) must never fail an
- *   otherwise-good app release over a web concern — a red release nobody can
- *   act on trains people to ignore red. It skips instead, which leaves stable
- *   at the NEWER bundle: exactly the linkage's own stated purpose ("CDN must
- *   not be older than the app's embedded UI") already satisfied.
- * - `explicit` (a webapp/* tag or a dispatch) is a human asking for a publish,
- *   so silently doing nothing would be the wrong failure. It refuses loudly,
- *   and `allow_rollback` is the documented way to say "yes, go backwards"
- *   (spec §7 emergency republish).
+ * The whole policy, as a pure function. Every publish is a human explicitly
+ * asking for one (a `webapp/*` tag or a workflow_dispatch) — there is no
+ * app-release linkage that a refusal would wrongly fail, so silence is never
+ * the right answer. An unsafe relation REFUSES loudly, and `allow_rollback` is
+ * the documented way to say "yes, go backwards" (spec §7 emergency republish).
  */
-export function decide({ relation, mode, allowRollback = false }) {
+export function decide({ relation, allowRollback = false }) {
   if (!RELATIONS.includes(relation)) throw new Error(`unknown relation: ${relation}`);
-  if (!MODES.includes(mode)) throw new Error(`unknown mode: ${mode}`);
 
   switch (relation) {
     case 'not-enforced':
@@ -225,24 +218,15 @@ export function decide({ relation, mode, allowRollback = false }) {
         reason: 'live bundle was built from an ancestor of this commit — normal forward roll',
       };
     case 'identical':
-      return mode === 'explicit'
-        ? {
-            action: 'publish',
-            level: 'info',
-            notify: false,
-            reason:
-              'live bundle already came from this commit; republishing anyway because the ' +
-              'publish was requested explicitly (a higher build number is the documented ' +
-              'way to force re-delivery)',
-          }
-        : {
-            action: 'skip',
-            level: 'info',
-            notify: false,
-            reason:
-              'live bundle already came from this commit — nothing to do. ' +
-              'This is what de-duplicates a bare v* tag, which fires both app-release workflows.',
-          };
+      return {
+        action: 'publish',
+        level: 'info',
+        notify: false,
+        reason:
+          'live bundle already came from this commit; republishing anyway because the ' +
+          'publish was requested explicitly (a higher build number is the documented ' +
+          'way to force re-delivery)',
+      };
     case 'downgrade':
     case 'diverged':
     case 'unresolvable': {
@@ -253,17 +237,6 @@ export function decide({ relation, mode, allowRollback = false }) {
         unresolvable:
           'the live bundle names a commit this clone does not have, so the comparison cannot be made',
       }[relation];
-      if (mode === 'linkage') {
-        return {
-          action: 'skip',
-          level: 'warning',
-          notify: true,
-          reason:
-            `${what}. Leaving stable untouched: the app release stands, and the CDN stays at ` +
-            'the newer UI, which already satisfies the linkage. Publish from main via ' +
-            'workflow_dispatch if the newer UI is not what you want live.',
-        };
-      }
       if (allowRollback) {
         return {
           action: 'publish',
@@ -298,14 +271,13 @@ export function evaluate({
   brands,
   bucket,
   publishCommit,
-  mode,
   allowRollback,
   channel,
   namespace,
   exec = defaultExec,
 }) {
   if (channel !== 'stable' || namespace !== '') {
-    return { relation: 'not-enforced', perBrand: {}, ...decide({ relation: 'not-enforced', mode, allowRollback }) };
+    return { relation: 'not-enforced', perBrand: {}, ...decide({ relation: 'not-enforced', allowRollback }) };
   }
   const perBrand = {};
   for (const brand of brands) {
@@ -325,14 +297,16 @@ export function evaluate({
   const suspicious = Object.entries(perBrand)
     .filter(([, b]) => b.bootstrap === 'suspicious')
     .map(([brand]) => brand);
-  return { relation, perBrand, suspicious, ...decide({ relation, mode, allowRollback }) };
+  return { relation, perBrand, suspicious, ...decide({ relation, allowRollback }) };
 }
 
 function main(argv) {
-  const brands = arg(argv, 'brands', 'kaitu,overleap').split(',').filter(Boolean);
+  // --brands accepts a comma- OR whitespace-separated list, so the plan step's
+  // space-separated `brands` output (scripts/ci/web-ota-plan.mjs) is passed
+  // straight through, no bash reformatting.
+  const brands = arg(argv, 'brands', 'kaitu overleap').split(/[,\s]+/).filter(Boolean);
   const bucket = arg(argv, 'bucket', 'd0.all7.cc');
   const publishCommit = arg(argv, 'publish-commit', process.env.GITHUB_SHA ?? '');
-  const mode = arg(argv, 'mode', 'explicit');
   const allowRollback = arg(argv, 'allow-rollback', 'false') === 'true';
   const channel = arg(argv, 'channel', 'stable');
   const namespace = arg(argv, 'namespace', '');
@@ -366,32 +340,18 @@ function main(argv) {
 
   let result;
   try {
-    result = evaluate({ brands, bucket, publishCommit, mode, allowRollback, channel, namespace });
+    result = evaluate({ brands, bucket, publishCommit, allowRollback, channel, namespace });
   } catch (e) {
     // The gate could not be evaluated at all (S3 unreachable, credentials gone,
-    // a body that is not provenance, a broken checkout). `allow_rollback` must
-    // NEVER turn this into a pass: that flag expresses intent about content, not
-    // permission to publish blind.
-    //
-    // But the two modes still diverge, exactly as they do for a downgrade.
-    // SKIPPING IS UNCONDITIONALLY SAFE — nothing is uploaded, so nothing can be
-    // moved backwards — so a linkage publish degrades to a loud skip rather than
-    // failing an app release over an S3 outage the release has nothing to do
-    // with. An explicit publish goes red, because a human asked for a publish
-    // and silence would be the wrong answer. (spec §6.1's table says exactly
-    // this; the first implementation exited 1 on both paths, which would have
-    // turned any provenance read failure into a red app release.)
+    // a body that is not provenance, a broken checkout). Fail closed: a publish
+    // was explicitly requested and silence would be the wrong answer, so this
+    // goes RED. `allow_rollback` must NEVER turn it into a pass — that flag
+    // expresses intent about content, not permission to publish blind.
     //
     // `unevaluable` is deliberately NOT a RELATIONS member: no relation was
     // established. It exists only as an output value so the workflow and Slack
     // can tell this apart from a real `unresolvable` comparison.
     const reason = `cannot evaluate the gate: ${e.message}`;
-    if (mode === 'linkage') {
-      const skipReason = `${reason}. Skipping to stay safe: nothing is uploaded, so stable cannot move backwards. Fix the read, then publish from main via workflow_dispatch.`;
-      emitOutputs({ proceed: false, relation: 'unevaluable', notify: true, reason: skipReason });
-      console.log(`::warning::web-ota gate: ${skipReason}`);
-      process.exit(0);
-    }
     emitOutputs({ proceed: false, relation: 'unevaluable', notify: false, reason });
     console.log(`::error::web-ota gate: ${reason}`);
     process.exit(1);
@@ -400,8 +360,8 @@ function main(argv) {
   const lines = [
     `### Web OTA gate (${stage})`,
     '',
-    `- mode: \`${mode}\`${allowRollback ? ' (allow_rollback)' : ''}`,
-    `- channel: \`${channel}\`${namespace ? ` namespace: \`${namespace}\`` : ''}`,
+    `- channel: \`${channel}\`${namespace ? ` namespace: \`${namespace}\`` : ''}${allowRollback ? ' (allow_rollback)' : ''}`,
+    `- brands: \`${brands.join(', ')}\``,
     `- publishing: \`${publishCommit.slice(0, 12)}\``,
   ];
   for (const [brand, b] of Object.entries(result.perBrand)) {

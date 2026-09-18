@@ -289,12 +289,12 @@ jobs:
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
 
-      # Web OTA is re-enabled: this workflow's `publish-web-ota` tail job (spec §6) auto-publishes
-      # a web bundle from the same tag commit after both platform builds succeed, guarded by the
-      # bridge-contract gate + white-screen smoke gate + CI-derived support floor. Compatibility
-      # with apps older than the floor is handled by runtime capability detection, not a version
-      # gate — see webapp/CLAUDE.md 兼容模型 section. (2026-03-22 storage regression incident is
-      # resolved by that floor/detection design, not by disabling OTA.)
+      # Web OTA is decoupled from app releases (2026-09-18): this workflow no longer
+      # publishes a web bundle. A web OTA now ships only via its own `webapp/*` tag
+      # (publish-web-ota.yml), guarded there by the bridge-contract gate + white-screen
+      # smoke gate + CI-derived support floor. Compatibility with apps older than the
+      # floor is handled by runtime capability detection, not a version gate — see
+      # webapp/CLAUDE.md 兼容模型 section.
 
       - name: Clean up keychain
         if: always()
@@ -560,33 +560,8 @@ jobs:
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
 
-  # App 发版联动（web OTA spec §6 触发 2）：任一移动平台构建成功且无失败时，
-  # 从同一 tag commit 发布双品牌 web bundle。平台后缀 tag（-ios/-android）会
-  # skip 另一个 build job，所以不能用裸 needs 成功语义 — 显式检查 result：
-  # 至少一个 success、零 failure 才联动。恒 stable 通道。只在 push 的真实 v*
-  # tag 时联动；dispatch 重建旧 tag 绝不发布——时间基构建号下那会把旧 UI 变成
-  # 全网最新（终审 B1）。预发布（-beta）app 发版不联动：web OTA 版本恒
-  # x.y.z.n，beta web 走 publish-web-ota 的 dispatch channel=beta（终审 m4）。
-  #
-  # ⚠️ 可发现性：本 workflow 的 trigger 是 `tags: ['v*']`，**任何** v* tag（含
-  # -ios / -android / -overleap-* 单平台后缀）只要有一个平台构建成功，就会走到
-  # 这里发双品牌 stable web OTA。release-desktop.yml 的同名 job 另有
-  # `needs.plan.outputs.should_run` 把未知后缀挡掉 —— 两个 workflow 的门**不
-  # 对称**，只读其中一个会得出「这个 tag 不发 OTA」的错误结论（2026-09-07 就是
-  # 这么误判的，v0.4.10-overleap-mobile 实际发了 0.4.10.21546118）。
-  #
-  # `linkage: true` 让被调 workflow 知道这是 app 发版搭车：若该 tag commit 的
-  # webapp 比线上更旧，它会跳过而不是把 app 发版搞红（判据见
-  # scripts/ci/web-ota-gate.mjs）。
-  publish-web-ota:
-    needs: [build-ios, build-android]
-    if: >-
-      !cancelled() && github.event_name == 'push' &&
-      startsWith(github.ref, 'refs/tags/v') &&
-      !contains(github.ref_name, '-beta') &&
-      (needs.build-ios.result == 'success' || needs.build-android.result == 'success') &&
-      needs.build-ios.result != 'failure' && needs.build-android.result != 'failure'
-    uses: ./.github/workflows/publish-web-ota.yml
-    with:
-      linkage: true
-    secrets: inherit
+  # NOTE: this workflow no longer publishes web OTA. Web OTA moved to its own
+  # dedicated `webapp/x.y.z[-brand]` tag (publish-web-ota.yml) — a v* app release
+  # NO LONGER piggybacks a dual-brand web publish. Shipping an app therefore does
+  # NOT auto-sync the CDN web bundle to the app's commit; push a `webapp/*` tag to
+  # do that. (2026-09-18 decoupling; the removed tail was web OTA spec §6 trigger 2.)

@@ -71,9 +71,10 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run CI script tests (web OTA manifest + anti-rollback gate + release plan)
+      - name: Run CI script tests (web OTA manifest + plan + anti-rollback gate + release plan)
         run: |
           node --test scripts/ci/web-ota-manifest.test.mjs
+          node --test scripts/ci/web-ota-plan.test.mjs
           node --test scripts/ci/web-ota-gate.test.mjs
           node --test scripts/ci/release-plan.test.mjs
 
