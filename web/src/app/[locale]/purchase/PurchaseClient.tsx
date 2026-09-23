@@ -315,7 +315,6 @@ export default function PurchaseClient() {
 
       const { order } = data;
       setOrderData(order);
-      setLastOrderUuid(order.uuid);
       setCampaignError(""); // Clear previous errors
 
       // 改动前这里是 `window.location.href = payUrl`：一旦 Stripe 那侧没打开，
@@ -327,7 +326,6 @@ export default function PurchaseClient() {
     } catch (error: unknown) {
       console.error('[Purchase] Create order exception:', error);
       payWindow?.close(); // 下单就失败了，别给用户留一个空白标签页
-
 
       if (error instanceof ApiError && error.code === ErrorCode.InvalidCampaignCode) {
         setCampaignError(t('purchase.purchase.invalidCampaignCode'));
