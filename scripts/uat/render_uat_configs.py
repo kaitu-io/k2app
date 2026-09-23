@@ -9,6 +9,7 @@
 """
 import os
 import secrets
+import shutil
 import sys
 
 import yaml
@@ -79,6 +80,14 @@ def render_center(sk: str) -> None:
             f"  mkdir -p {os.path.dirname(src)} && cp <主仓>/center/config.yml {src}\n"
             "（本脚本会就地改写它的 database/redis/nextpay/log 段并掐断对外出口）"
         )
+    # 就地改写会毁掉一份 gitignored、无法从 git 恢复的本地配置（真实 slack webhooks /
+    # aws 凭证都在里面）。`center` 在主仓是指向 `api` 的符号链接，所以「在主仓跑一次 up」
+    # 就足以覆盖它——2026-09-23 真的发生过。先留一份原件，`down` 负责还原。
+    bak = src + ".pre-uat.bak"
+    if not os.path.exists(bak):
+        shutil.copy2(src, bak)
+        print(f"已备份原配置到 {bak}（down 时自动还原）")
+
     cfg = yaml.safe_load(open(src))
     cfg["is_dev"] = True
     cfg["server"] = dict(cfg.get("server") or {})

@@ -113,6 +113,12 @@ EOF
 }
 
 cmd_down() {
+  # 先还原被 render_uat_configs.py 就地改写的本地 center 配置（gitignored，git 恢复不了）。
+  local cfg="$REPO_ROOT/center/config.yml"
+  if [ -f "$cfg.pre-uat.bak" ]; then
+    mv -f "$cfg.pre-uat.bak" "$cfg"
+    echo "已还原 $cfg"
+  fi
   pkill -f "$UAT_DIR/kaitu-center start" 2>/dev/null || true
   pkill -f "$UAT_DIR/nextpay-bin run" 2>/dev/null || true
   pkill -f "mariadbd --datadir=$UAT_DIR/mariadb/data" 2>/dev/null || true

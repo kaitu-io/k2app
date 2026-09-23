@@ -120,6 +120,11 @@ scripts/uat/nextpay-router-env.sh down
   `logic_stripe_test.go` 的 cleanup 会把 `stripe.secret_key` 置空，依赖 viper 会单跑绿、全量红。
 - 环境脚本会**掐断所有对外出口**（Slack webhooks / bot token 清空、`mail.dev_mode`、删掉 `aws` 段防止
   AWS SDK 默认凭证链摸到 `~/.aws/credentials`）。改脚本时不要放宽这几条。
+- **`up` 会就地改写 `center/config.yml`**（`center` 是指向 `api` 的符号链接，所以在主仓跑 `up` 改的
+  就是你本机那份带真实 slack webhooks / aws 凭证的开发配置，且它 gitignored、git 恢复不了）。
+  `render_uat_configs.py` 会先存一份 `center/config.yml.pre-uat.bak`，`down` 负责还原并删除备份——
+  **所以跑完必须 `down`**，直接 `pkill` 会把 UAT 版配置永久留在原地。2026-09-23 在主仓跑 `up`
+  真的毁过一次（靠生产 `/data/app-configs/kaitu/config.yml` 重建）。
 
 ## API Response Format
 
