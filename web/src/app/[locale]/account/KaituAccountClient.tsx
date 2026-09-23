@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { api, type ProHistory, type User } from '@/lib/api';
+import { formatMinor } from '@/lib/pricing';
 import { Card, CardContent } from '@/components/ui/card';
 import SubscriptionStatusCard from '@/components/SubscriptionStatusCard';
 
@@ -46,7 +47,10 @@ function HistoryRow({ item, locale }: { item: ProHistory; locale: string }) {
             day: 'numeric',
           })}
         </span>
-        {item.order && <span>¥{(item.order.payAmount / 100).toFixed(2)}</span>}
+        {/* 金额一律 USD 最小单位（plans.price / orders.pay_amount 都是美分，741 笔
+            wordgate 已付订单的 currency 全是 USD）—— 这里曾硬编码 人民币符号，与 /purchase 页的
+            $ 自相矛盾。收据保留两位小数。 */}
+        {item.order && <span>{formatMinor(item.order.payAmount, 'usd', locale, { digits: 2 })}</span>}
       </div>
       {item.reason && <p className="text-xs text-muted-foreground">{item.reason}</p>}
     </li>

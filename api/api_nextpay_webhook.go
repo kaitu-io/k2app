@@ -1,27 +1,15 @@
 package center
 
 import (
-	"context"
 	"fmt"
 	"io"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/nextpay"
-	"github.com/wordgate/qtoolkit/slack"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-// alertNextpayPaymentAnomaly 是 NextPay 入账异常（金额错配 / 双付）的统一告警出口：
-// error 日志 + Slack "alert" 频道，消息以 "[<tag>]" 开头。var 形态供测试替换。
-var alertNextpayPaymentAnomaly = func(ctx context.Context, tag, format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	log.Errorf(ctx, "[%s] %s", tag, msg)
-	if err := slack.Send("alert", "["+tag+"] "+msg); err != nil {
-		log.Errorf(ctx, "failed to send slack alert [%s]: %v", tag, err)
-	}
-}
 
 // api_nextpay_webhook 处理 NextPay 出站 webhook（kaitu 一次性购买入账通道）。
 // NOTE: 与 api_wordgate_webhook 一样，这里用 HTTP 状态码而非 JSON code：
@@ -84,8 +72,13 @@ func handleNextpayOrderPaid(c *gin.Context, evt *nextpay.WebhookEvent) error {
 		var order Order
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("User").Where(&Order{UUID: d.ObjectID}).First(&order).Error
 		if err == gorm.ErrRecordNotFound {
-			// 永久异常：ack，避免 outbox 15 次重投打空。
-			log.Errorf(c, "[Webhook] nextpay order.paid for unknown order %s (nextpay=%s); acking", d.ObjectID, d.OrderID)
+			// 钱已经被收走，而本地没有任何一行对应记录 —— 必须有人看到。
+			// ObjectID 是我们自己在建 NextPay 订单前就已落库的 orders.uuid，不存在
+			// "webhook 跑在建单提交之前"的竞态，所以 not-found 一律是真事故，不是瞬态。
+			// 仍然 ack：重投 15 次只会把同一条事故刷 15 遍，不会让订单长出来。
+			alertPaymentAnomaly(c, "ORPHAN-PAYMENT",
+				"nextpay %s reported paid (%d %s) for object %s but no local order matches — money taken with no record",
+				d.OrderID, d.Amount, d.Currency, d.ObjectID)
 			return nil
 		}
 		if err != nil {
@@ -99,7 +92,7 @@ func handleNextpayOrderPaid(c *gin.Context, evt *nextpay.WebhookEvent) error {
 			return fmt.Errorf("brand mismatch: order %d user brand %s does not allow nextpay channel", order.ID, order.User.Brand)
 		}
 		if d.Amount != order.PayAmount || d.Currency != "usd" {
-			alertNextpayPaymentAnomaly(c, "PAYMENT-AMOUNT-MISMATCH",
+			alertPaymentAnomaly(c, "PAYMENT-AMOUNT-MISMATCH",
 				"order %s expected %d usd, nextpay %s paid %d %s", order.UUID, order.PayAmount, d.OrderID, d.Amount, d.Currency)
 			return fmt.Errorf("amount mismatch for order %s", order.UUID)
 		}
@@ -107,7 +100,7 @@ func handleNextpayOrderPaid(c *gin.Context, evt *nextpay.WebhookEvent) error {
 		if order.IsPaid != nil && *order.IsPaid {
 			if order.NextpayOrderID != d.OrderID {
 				// 同一 Center 订单的两个 Stripe session 都被付了（耐久链接重建窗口）：人工退一笔。
-				alertNextpayPaymentAnomaly(c, "DOUBLE-PAY",
+				alertPaymentAnomaly(c, "DOUBLE-PAY",
 					"order %s already paid via nextpay %s, now paid again via nextpay %s (%d usd) — refund one manually",
 					order.UUID, order.NextpayOrderID, d.OrderID, d.Amount)
 			} else {

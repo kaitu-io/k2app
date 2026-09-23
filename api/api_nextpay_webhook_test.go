@@ -56,10 +56,10 @@ func orderPaidPayload(evtID, nextpayOrderID, objectID string, amount uint64, cur
 // captureAnomaly 替换告警 seam，收集 tag。
 func captureAnomaly(t *testing.T) *[]string {
 	t.Helper()
-	orig := alertNextpayPaymentAnomaly
-	t.Cleanup(func() { alertNextpayPaymentAnomaly = orig })
+	orig := alertPaymentAnomaly
+	t.Cleanup(func() { alertPaymentAnomaly = orig })
 	tags := []string{}
-	alertNextpayPaymentAnomaly = func(ctx context.Context, tag, format string, args ...any) { tags = append(tags, tag) }
+	alertPaymentAnomaly = func(ctx context.Context, tag, format string, args ...any) { tags = append(tags, tag) }
 	return &tags
 }
 
@@ -142,15 +142,20 @@ func TestNextpayWebhook_DoublePay_AlertsAndAcks(t *testing.T) {
 	assert.Equal(t, []string{"DOUBLE-PAY"}, *tags)
 }
 
-func TestNextpayWebhook_UnknownOrder_Acks(t *testing.T) {
+func TestNextpayWebhook_UnknownOrder_AlertsAndAcks(t *testing.T) {
 	skipIfNoDB(t)
 	require.NoError(t, Migrate())
 	setNextpayReady(t)
 	tags := captureAnomaly(t)
 	body := orderPaidPayload("evt_4", "np-9", "no-such-order", 100, "usd")
 	w := postNextpayWebhook(t, body, nextpaySig(body))
+
+	// ack 的理由没变：重投 15 次不会让订单长出来。
 	assert.Equal(t, 200, w.Code, "永久异常 ack，避免 15 次重试打空")
-	assert.Empty(t, *tags)
+	// 变的是"ack 之后就没人知道了"。objectId 是我们自己在建 NextPay 订单前就落库的
+	// orders.uuid，查不到 = 钱收了而本地没有任何记录，必须告警。
+	// （此前这里断言 assert.Empty(t, *tags)，即静默丢弃。）
+	assert.Equal(t, []string{"ORPHAN-PAYMENT"}, *tags)
 }
 
 func TestNextpayWebhook_OtherEvent_Acks(t *testing.T) {

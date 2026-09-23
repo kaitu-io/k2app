@@ -46,6 +46,8 @@
     "orderNumber": "Order Number",
     "paymentAmount": "Payment Amount",
     "paymentConfirmHint": "Please confirm whether your payment was successful",
+    "paymentTabHint": "The payment page opened in a new tab. If you don't see it, or it failed to load, use the button below to try again.",
+    "reopenPayment": "Reopen payment page",
     "paymentSuccess": "Payment Successful",
     "paymentFailed": "Payment Failed",
     "refreshUserProfileFailed": "Failed to refresh user profile",

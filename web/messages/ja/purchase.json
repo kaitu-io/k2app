@@ -46,6 +46,8 @@
     "orderNumber": "注文番号",
     "paymentAmount": "支払い金額",
     "paymentConfirmHint": "支払いが成功したかどうかをご確認ください",
+    "paymentTabHint": "決済ページを新しいタブで開きました。表示されない場合や読み込めない場合は、下のボタンからもう一度お試しください。",
+    "reopenPayment": "決済ページを開き直す",
     "paymentSuccess": "支払い成功",
     "paymentFailed": "支払い失敗",
     "refreshUserProfileFailed": "ユーザープロファイルの更新に失敗しました",

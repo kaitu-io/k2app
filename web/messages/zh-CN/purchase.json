@@ -46,6 +46,8 @@
     "orderNumber": "订单号",
     "paymentAmount": "支付金额",
     "paymentConfirmHint": "请确认您的支付是否成功",
+    "paymentTabHint": "支付页面已在新标签页打开。如果没有看到，或者页面加载不出来，点下面的按钮重试。",
+    "reopenPayment": "重新打开支付页面",
     "paymentSuccess": "支付成功",
     "paymentFailed": "支付失败",
     "refreshUserProfileFailed": "刷新用户资料失败",

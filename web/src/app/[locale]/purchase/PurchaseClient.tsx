@@ -18,6 +18,7 @@ import {
 import { api, ApiError, ErrorCode } from "@/lib/api";
 import type { Plan, Order, CreateOrderRequest, DelegateInfo } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-errors";
+import { payLink, openPayLink } from "@/lib/pay-link";
 import { useAppConfig } from "@/contexts/AppConfigContext";
 import MembershipBenefits from "@/components/MembershipBenefits";
 import SubscriptionStatusCard, { resolveSubscriptionState } from "@/components/SubscriptionStatusCard";
@@ -46,6 +47,13 @@ function PayResultDialog({
   onFail: () => void;
 }) {
   const t = useTranslations();
+
+  // 支付页没打开时的唯一自救手段。这里的点击是真实用户手势，可以直接 window.open。
+  // src=retry 让服务端能把"点了第二次"单独数出来 —— 那是 checkout.stripe.com
+  // 打不开的直接代理指标（实测大陆可达性 56%）。
+  const reopen = () => {
+    if (order) openPayLink(payLink(order.uuid, 'retry'));
+  };
   
   return (
     <Dialog open={open} onOpenChange={() => {}}>
@@ -68,6 +76,12 @@ function PayResultDialog({
                   {"$"}{((order?.payAmount ?? 0) / 100).toFixed(2)}
                 </span>
               </div>
+              <p className="text-sm text-muted-foreground">
+                {t('purchase.purchase.paymentTabHint')}
+              </p>
+              <Button variant="secondary" onClick={reopen} className="self-start">
+                {t('purchase.purchase.reopenPayment')}
+              </Button>
               <p className="text-sm text-muted-foreground">
                 {t('purchase.purchase.paymentConfirmHint')}
               </p>
@@ -283,6 +297,10 @@ export default function PurchaseClient() {
   const handleOrder = useCallback(async () => {
     setIsLoading(true);
 
+    // 必须在用户手势的同一个 tick 里占住窗口：下单要 await 一次往返，await 之后
+    // 再 window.open 已经脱离手势，弹窗拦截器一定拦。拿不到就退回同页跳转（= 改动前的行为）。
+    const payWindow = window.open('', '_blank');
+
     try {
       console.info('[Purchase] Creating order request:', { selectedPlan, campaignCode });
 
@@ -295,15 +313,19 @@ export default function PurchaseClient() {
       const data = await api.createOrder(request, { autoRedirectToAuth: false });
       console.info('[Purchase] Create order data:', data);
 
-      const { order, payUrl } = data;
+      const { order } = data;
       setOrderData(order);
       setCampaignError(""); // Clear previous errors
 
+      // 改动前这里是 `window.location.href = payUrl`：一旦 Stripe 那侧没打开，
+      // 我们这一页已经被销毁，用户停在浏览器错误页上，没有任何重试入口，订单就这么丢了。
+      // 现在支付在新标签页进行，本页与支付对话框都留着 —— 失败从"用户消失"变成"用户点重试"。
+      // 不用 data.payUrl 而走耐久链接的三个理由见 lib/pay-link.ts。
       setPayDialogOpen(true);
-      // Redirect to payment URL in current window
-      window.location.href = payUrl;
+      openPayLink(payLink(order.uuid, 'web'), payWindow);
     } catch (error: unknown) {
       console.error('[Purchase] Create order exception:', error);
+      payWindow?.close(); // 下单就失败了，别给用户留一个空白标签页
 
       if (error instanceof ApiError && error.code === ErrorCode.InvalidCampaignCode) {
         setCampaignError(t('purchase.purchase.invalidCampaignCode'));

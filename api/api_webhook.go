@@ -3,15 +3,16 @@ package center
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/wordgate-sdk"
-	db "github.com/wordgate/qtoolkit/db"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -146,6 +147,17 @@ func handleWordgateOrderPaidEvent(c *gin.Context, webhookEvent *wordgate.Webhook
 		var order Order
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("User").Where(&Order{WordgateOrderNo: orderData.WordgateOrderNo}).First(&order).Error
 		if err != nil {
+			// 钱已经被收走，而本地没有任何一行对应记录 —— 与 nextpay 侧同级的 fail-loud。
+			// 本分支过渡期只服务存量订单：`WordgateOrderNo` 在当前代码里已无任何写入方
+			// （建单路径随 NextPay 迁移一并删除），存量行的 order_no 早已落库，所以
+			// not-found 不可能是"webhook 跑在建单提交之前"的竞态，一律是真事故。
+			// 沿用既有语义返回 error 让 wordgate 重投 —— 重投会把同一条事故重复告警，
+			// 这是 fail-loud 的取舍（同品牌错配哨兵），持续出现应按 page 级事件处理。
+			if errors.Is(err, gorm.ErrRecordNotFound) && orderData.IsPaid {
+				alertPaymentAnomaly(c, "ORPHAN-PAYMENT",
+					"wordgate order %s reported paid (%d %s) but no local order matches — money taken with no record",
+					orderData.WordgateOrderNo, orderData.Amount, orderData.Currency)
+			}
 			log.Errorf(c, "[Webhook] failed to get order by wordgate_order_no %s: %v", orderData.WordgateOrderNo, err.Error())
 			return err
 		}
