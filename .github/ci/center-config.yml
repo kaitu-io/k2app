@@ -76,6 +76,12 @@ wordgate:
   base_url: "http://127.0.0.1:8080"
   webhook_url: "https://ci.kaitu.test/webhook/wordgate"
 
+nextpay:
+  endpoint: "http://127.0.0.1:5900"
+  access_key: "ak_ci-placeholder"
+  webhook_secret: "ws_ci-placeholder"
+  payment_method: "more"
+
 files:
   domain: "https://files.ci.kaitu.test"
 
