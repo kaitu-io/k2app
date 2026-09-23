@@ -36,6 +36,8 @@ func SetupRouter() *gin.Engine {
 	r.POST("/webhook/appstore", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_apple_webhook)
 	// Stripe webhook（overleap 官网 Checkout 的入账通道：invoice.paid 单一入账事件）
 	r.POST("/webhook/stripe", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_stripe_webhook)
+	// NextPay webhook（kaitu 一次性购买入账：order.paid 单一入账事件，2026-09-22 起）
+	r.POST("/webhook/nextpay", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_nextpay_webhook)
 
 	// Chatwoot → FastGPT AI bridge
 	chatwootWebhook := r.Group("/webhook")
@@ -111,6 +113,8 @@ func SetupRouter() *gin.Engine {
 		api.GET("/subs", api_subs)
 		// Get relay list (nodes with has_relay=true)
 		api.GET("/relays", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
+		// 代付邮件耐久支付链接：302 到可用的 Stripe Checkout（无认证，uuid 即凭证）
+		api.GET("/orders/:uuid/pay", api_order_pay_redirect)
 		// Get plans (legacy, frozen — app-only)
 		api.GET("/plans", api_get_plans)
 		// Get plans by product line (new, product-aware)

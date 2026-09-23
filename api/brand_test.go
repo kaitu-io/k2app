@@ -43,6 +43,7 @@ func TestBrandConfig(t *testing.T) {
 	assert.Equal(t, "https://www.kaitu.io", k.BaseURL)
 	assert.Equal(t, "开途", k.DisplayName)
 	assert.True(t, k.AllowsPayment("wordgate"))
+	assert.True(t, k.AllowsPayment("nextpay")) // 2026-09-22 起的下单渠道
 	assert.False(t, k.AllowsPayment("stripe"))
 
 	o := BrandOverleap.Config()

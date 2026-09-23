@@ -131,7 +131,9 @@ checkout, err := createNextpayCheckoutFn(c, user, order, plan)   // var 形态�
 //             Metadata:   {"brand":"kaitu","plan":plan.PID} })
 //   conf := nextpay.ConfirmPayment(ctx, res.OrderID, &{PaymentMethod: cfg.PaymentMethod})   // 缺省 "more"
 //   → order.NextpayOrderID = res.OrderID; order.Channel = nextpay
-//   → order.SetOrderCheckout(BaseURL+"/api/orders/"+uuid+"/pay", conf.CheckoutURL, now); tx.Save
+//   → tx 内 FOR UPDATE 重读 is_paid（HTTP 往返后才加锁）：已付 → errOrderAlreadyPaid，丢弃新 session
+//   → order.SetOrderCheckout(BaseURL+"/api/orders/"+uuid+"/pay", conf.CheckoutURL, now)
+//   → Select("NextpayOrderID","Channel","Meta").Updates ——绝不整行 Save（会把并发 webhook 写下的 is_paid 洗掉）
 // 响应 payUrl = conf.CheckoutURL（直达 Stripe）
 ```
 品牌门从 `AllowsPayment(PayChannelWordgate)` 改为 `AllowsPayment(PayChannelNextpay)`。locale 由 `user.Language` 映射：`zh-TW`/`zh-HK` 原样，其余 `zh-CN`（开途站只有这三个）。
@@ -168,7 +170,7 @@ switch evt.Type:
   其余: warn，nil
 ```
 
-**双付窗口说明**：耐久链接重建时旧 Stripe session 可能仍有最多 1h 可付。概率极低（要求买家和代付人在同一小时内各付一次），用 `[DOUBLE-PAY]` 告警兜底、人工退款，不做自动退款（与 IAP `[DOUBLE-REFUND]` 同哲学）。
+**双付窗口说明**：耐久链接重建时旧 Stripe session 可能仍有最多 1h 可付。概率极低（要求买家和代付人在同一小时内各付一次），用 `[DOUBLE-PAY]` 告警兜底、人工退款，不做自动退款（与 IAP `[DOUBLE-REFUND]` 同哲学）。这条兜底依赖 `is_paid=true` 不被洗掉——所以重建路径**只更新自己拥有的三列**并在落库前 `FOR UPDATE` 复核 `is_paid`（终审抓到的整行 `Save` 会让并发入账回退、哨兵失守，见 `TestPayRedirect_PaidDuringRebuild_DoesNotUnpay`）。
 
 **WordGate 代码**：Phase A **只切断下单路径**，`/webhook/wordgate`、`configWordgate`、SDK 依赖全部保留（在途订单需要）。Phase B 清理。
 

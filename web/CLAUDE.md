@@ -180,7 +180,7 @@ Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `o
 - Sidebar navigation driven by `order` + `section` frontmatter via `getK2Posts(locale)` helper
 - `getK2Posts()` is the single source: used by K2Sidebar, K2Page, and sitemap.ts
 
-**Reserved paths** (content category slugs must NOT use — static routes win over `[...slug]`): 403, account, changelog, discovery, g, install, k2, login, opensource, privacy, purchase, releases, retailer, routers, s, support, survey, terms, manager. Extend this line when adding a `[locale]` route, and never register a category with one of these slugs in `content-posts.ts`.
+**Reserved paths** (content category slugs must NOT use — static routes win over `[...slug]`): 403, account, changelog, discovery, g, install, k2, login, opensource, pay-result, privacy, purchase, releases, retailer, routers, s, support, survey, terms, manager. Extend this line when adding a `[locale]` route, and never register a category with one of these slugs in `content-posts.ts`.
 
 ## Routing
 

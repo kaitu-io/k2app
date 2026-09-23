@@ -11,7 +11,6 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/util"
-	"github.com/wordgate/wordgate-sdk"
 	"gorm.io/gorm"
 )
 
@@ -76,10 +75,10 @@ func api_create_order(c *gin.Context) {
 	}
 	user := ReqUser(c)
 
-	// 支付渠道品牌门：WordGate 是 kaitu 专属支付渠道。overleap 用户在 Phase 6 前
-	// 无任何可用渠道——命中即拒单，绝不静默降级或误放行。
-	if !Brand(user.Brand).Config().AllowsPayment(PayChannelWordgate) {
-		log.Warnf(c, "user %d (brand=%s) rejected: wordgate payment channel unavailable for brand", user.ID, user.Brand)
+	// 支付渠道品牌门：NextPay 是 kaitu 网页/app 下单渠道（2026-09-22 起）。overleap 用户走
+	// Stripe 订阅端点，命中即拒单，绝不静默降级。（渠道是否配置好在真正建 checkout 前另查。）
+	if !Brand(user.Brand).Config().AllowsPayment(PayChannelNextpay) {
+		log.Warnf(c, "user %d (brand=%s) rejected: nextpay payment channel unavailable", user.ID, user.Brand)
 		Error(c, ErrorPaymentChannelUnavailable, "payment channel not available for this brand")
 		return
 	}
@@ -271,86 +270,29 @@ func api_create_order(c *gin.Context) {
 	}
 	log.Infof(c, "order saved successfully to database: OrderID=%d, UUID=%s", order.ID, order.UUID)
 
-	var payUrl string
-
-	// 创建 wordgate 订单并保存关联
-	log.Debugf(c, "starting wordgate order creation transaction")
-	err := db.Get().Transaction(func(tx *gorm.DB) error {
-		log.Debugf(c, "creating wordgate client")
-		client := createWordgateClient(c)
-
-		// 先获取或创建 Wordgate 用户
-		userResp, err := client.FindOrCreateUser(&wordgate.FindOrCreateUserRequest{
-			Provider: "kaitu",
-			Identity: user.UUID,
-			Nickname: user.UUID, // 使用 UUID 作为昵称
-		})
-		if err != nil {
-			log.Errorf(c, "failed to find or create wordgate user for user %d: %v", user.ID, err.Error())
-			return err
-		}
-		log.Debugf(c, "wordgate user found/created: UserUID=%s, Created=%v", userResp.User.UID, userResp.Created)
-
-		// 使用 CreateAppCustomOrder API 创建订单，支持明确设置订单价格
-		// 这允许我们根据预览计算的价格（包括优惠码折扣）来创建订单
-		log.Debugf(c, "calling wordgate CreateAppCustomOrder API with explicit price, plan PID: %s, quantity: %d, price: %d", plan.PID, quantity, order.PayAmount)
-		cfg := configWordgate(c)
-
-		// 计算单价（将总价除以数量）
-		unitPrice := int64(order.PayAmount) / int64(quantity)
-
-		orderResp, err := client.CreateAppCustomOrder(&wordgate.CreateAppCustomOrderRequest{
-			UserUID:   userResp.User.UID,      // 使用 Wordgate 用户的 UID
-			Subject:   order.Title,            // 使用订单标题作为主题
-			Amount:    int64(order.PayAmount), // 使用预览计算出的明确价格（总价）
-			NotifyURL: cfg.WebhookUrl,
-			Items: []wordgate.CustomOrderItem{
-				{
-					ItemCode:       plan.PID,
-					ItemName:       plan.Label, // 添加商品名称
-					Quantity:       quantity,
-					UnitPrice:      unitPrice, // 单价
-					RequireAddress: false,     // 套餐订单不需要收货地址
-				},
-			},
-		})
-		if err != nil {
-			log.Errorf(c, "failed to create wordgate order for order %s, user %d: %v", order.UUID, user.ID, err.Error())
-			return err
-		}
-		log.Debugf(c, "wordgate order created successfully with explicit price: OrderNo=%s, PayURL=%s, Amount=%d", orderResp.OrderNo, orderResp.PayURL, order.PayAmount)
-
-		// 保存 wordgate 订单号到本地订单
-		log.Infof(c, "saving wordgate order number to local order: %s", orderResp.OrderNo)
-		order.WordgateOrderNo = orderResp.OrderNo
-		err = tx.Save(order).Error
-		if err != nil {
-			log.Errorf(c, "failed to save wordgate order no for order %s, user %d: %v", order.UUID, user.ID, err.Error())
-			return err
-		}
-		log.Debugf(c, "wordgate order number saved successfully to local order")
-
-		log.Infof(c, "successfully created wordgate order %s for order %s, user %d", orderResp.OrderNo, order.UUID, user.ID)
-		payUrl = orderResp.PayURL
-
-		// Persist payUrl into order.Meta so delegate-notify (and future retries) can read it
-		if err := order.SetOrderPayUrl(payUrl); err != nil {
-			log.Errorf(c, "failed to save payUrl into meta for order %s: %v", order.UUID, err)
-			return err
-		}
-		if err := tx.Save(order).Error; err != nil {
-			log.Errorf(c, "failed to persist order meta after payUrl update: %v", err)
-			return err
-		}
-		return nil
-	})
-
-	if err != nil {
-		log.Errorf(c, "failed to create wordgate order for order %s, user %d: %v", order.UUID, user.ID, err)
-		Error(c, ErrorSystemError, "failed to create wordgate order")
+	// 渠道未配置（缺 access_key / webhook_secret）：订单已落库但不能建 checkout，405001。
+	// 放在 preview 之后——预览只算价，不依赖支付渠道。
+	if !configNextpay(c).Ready() {
+		log.Errorf(c, "nextpay channel not configured; order %s created without checkout", order.UUID)
+		Error(c, ErrorPaymentChannelUnavailable, "payment channel not available")
 		return
 	}
-	log.Infof(c, "wordgate order creation transaction completed successfully")
+
+	// 建 NextPay checkout（建单 + confirm），拿到 Stripe Checkout URL；耐久链接与缓存写入 Meta。
+	var payUrl string
+	err := db.Get().Transaction(func(tx *gorm.DB) error {
+		url, err := ensureOrderCheckout(c, tx, user, order, plan)
+		if err != nil {
+			return err
+		}
+		payUrl = url
+		return nil
+	})
+	if err != nil {
+		log.Errorf(c, "failed to create nextpay checkout for order %s, user %d: %v", order.UUID, user.ID, err)
+		Error(c, ErrorSystemError, "failed to create payment checkout")
+		return
+	}
 
 	log.Debugf(c, "final order response prepared: PayURL=%s", payUrl)
 

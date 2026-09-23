@@ -17,6 +17,7 @@
       "supportEmail": "support@kaitu.me",
       "edmFromName": "Kaitu Team",
       "paymentChannels": [
+        "nextpay",
         "wordgate",
         "apple_iap"
       ]

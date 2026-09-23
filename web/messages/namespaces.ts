@@ -1,7 +1,7 @@
 // Auto-generated namespace index
 // DO NOT EDIT - run 'node scripts/i18n/split-namespaces.js web' to regenerate
 
-export const namespaces = ["common","nav","hero","auth","discovery","purchase","wallet","campaigns","admin","invite","install","theme","changelog","releases","routers","k2","guide-parents","errors","licenseKeys","survey","account","landing","download","help"] as const;
+export const namespaces = ["common","nav","hero","auth","discovery","purchase","wallet","campaigns","admin","invite","install","theme","changelog","releases","routers","k2","guide-parents","errors","licenseKeys","survey","account","landing","download","help","payResult"] as const;
 export type Namespace = typeof namespaces[number];
 export const defaultNamespace: Namespace = 'common';
 
@@ -16,7 +16,7 @@ export const defaultNamespace: Namespace = 'common';
  */
 export const SHARED_NAMESPACES = ["common","nav","auth","purchase","account","discovery","errors","k2","admin"] as const satisfies readonly Namespace[];
 export const BRAND_NAMESPACES = {
-  kaitu: [...SHARED_NAMESPACES, "hero","install","wallet","campaigns","invite","theme","changelog","releases","routers","guide-parents","licenseKeys","survey"],
+  kaitu: [...SHARED_NAMESPACES, "hero","install","wallet","campaigns","invite","theme","changelog","releases","routers","guide-parents","licenseKeys","survey","payResult"],
   overleap: [...SHARED_NAMESPACES, "landing","download","help"],
 } as const satisfies Record<string, readonly Namespace[]>;
 

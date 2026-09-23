@@ -288,14 +288,17 @@ type Order struct {
 	// AppleTransactionID 绑定 Apple 交易号（仅 Channel=apple_iap）。退款路径靠它从
 	// REFUND/REVOKE 通知反查订单以撤销分销商返现——故必须是带索引的独立列，不能塞进 Meta。
 	AppleTransactionID string `gorm:"type:varchar(64);index" json:"appleTransactionId,omitempty"`
+	// NextpayOrderID 最近一次 NextPay 订单 uuid（仅 Channel=nextpay）。webhook 用
+	// ObjectID(=本表 uuid) 关联订单，此列只做对账与双付判定；耐久链接重建 checkout 后会更新。
+	NextpayOrderID string `gorm:"type:varchar(36);index" json:"nextpayOrderId,omitempty"`
 }
 
 const (
-	// OrderChannelWordgate 目前**不写入任何订单**——网页/WordGate 订单的 Channel 保持空串，
-	// 与全部历史订单一致。此常量只声明取值域：判定网页订单请用 `Channel != OrderChannelAppleIAP`，
-	// 不要写 `Channel == OrderChannelWordgate`（那会漏掉所有存量订单）。
+	// OrderChannelWordgate 只用于历史订单：2026-09-22 前的网页/WordGate 订单 Channel 为空串。
+	// 判定"非 IAP 订单"请用 `Channel != OrderChannelAppleIAP`，不要写 `Channel == OrderChannelWordgate`。
 	OrderChannelWordgate = "wordgate"
 	OrderChannelAppleIAP = "apple_iap" // iOS StoreKit 内购
+	OrderChannelNextpay  = "nextpay"   // 2026-09-22 起网页/app 下单（NextPay → Stripe Checkout）
 )
 
 // GetPlan 获取订单的计划信息
@@ -412,26 +415,43 @@ func (o *Order) SetOrderMeta(plan *Plan, campaign *Campaign, forUserUUIDs []stri
 	return nil
 }
 
-// SetOrderPayUrl 单独更新 Meta 中的 PayUrl，保留其它字段
-func (o *Order) SetOrderPayUrl(payUrl string) error {
-	var meta struct {
-		Plan         *Plan    `json:"plan"`
-		ForUserUUIDs []string `json:"forUserUUIDs"`
-		ForMyself    bool     `json:"forMyself"`
-		PayUrl       string   `json:"payUrl"`
-	}
+// SetOrderCheckout 更新 Meta 中的支付链接，保留其它字段。
+//   - payUrl：耐久链接（代付邮件读它，GetPayUrl 返回它）
+//   - checkoutUrl / checkoutAt：最近一次 Stripe Checkout URL 及其生成时间（unix 秒），
+//     耐久 302 端点据此复用未过期的 session（Stripe 默认 24h）。
+func (o *Order) SetOrderCheckout(payUrl, checkoutUrl string, at int64) error {
+	var meta map[string]interface{}
 	if o.Meta != "" {
 		if err := json.Unmarshal([]byte(o.Meta), &meta); err != nil {
 			return err
 		}
+	} else {
+		meta = make(map[string]interface{})
 	}
-	meta.PayUrl = payUrl
+	meta["payUrl"] = payUrl
+	meta["checkoutUrl"] = checkoutUrl
+	meta["checkoutAt"] = at
 	data, err := json.Marshal(meta)
 	if err != nil {
 		return err
 	}
 	o.Meta = string(data)
 	return nil
+}
+
+// GetCheckout 读取 Meta 中缓存的 Stripe Checkout URL 与生成时间；无则返回 ("", 0)。
+func (o *Order) GetCheckout() (string, int64) {
+	if o.Meta == "" {
+		return "", 0
+	}
+	var meta struct {
+		CheckoutUrl string `json:"checkoutUrl"`
+		CheckoutAt  int64  `json:"checkoutAt"`
+	}
+	if err := json.Unmarshal([]byte(o.Meta), &meta); err != nil {
+		return "", 0
+	}
+	return meta.CheckoutUrl, meta.CheckoutAt
 }
 
 // GetPayUrl 从 Meta 中提取已保存的支付链接
