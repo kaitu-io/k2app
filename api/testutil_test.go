@@ -288,6 +288,20 @@ func ParseResponseData[T any](w *httptest.ResponseRecorder) (*T, error) {
 // ===================== Token 生成 =====================
 
 // GenerateTestToken 生成测试用 JWT Token
+// testTokenIssueAt 是测试里"签发时刻"的唯一来源。
+//
+// handleJWTAuth 的吊销门要求 device.TokenIssueAt == claims.TokenIssueAt。生产里
+// generateTokens 把同一个 now 既写进 claims 也写进设备行，等式恒成立；测试里
+// CreateTestDevice 和 GenerateTestToken 各取一次 time.Now()，中间隔着一次 DB
+// INSERT —— 跨过整秒就 401，机器越忙越容易中。api_subs / api_subs_iptype /
+// brand_tunnel / middleware_jwt_type 四处各自手写了"铸完 token 再把设备行对齐"
+// 来绕过它，第五处（slave_api_device_auth_mode）忘了写，2026-09-23 全量就红在
+// 那里。补第五个洞不如把不变量搬回唯一供给点：两边都读这一个值。
+//
+// 进程级常量而非每次 time.Now()，所以同一次 go test 里所有设备与 token 同秒。
+// 需要制造"不匹配"的测试照旧在铸完 token 之后改设备行 —— 那条路径不受影响。
+var testTokenIssueAt = time.Now().Unix()
+
 func GenerateTestToken(userID uint64, deviceID string, expiry time.Duration) string {
 	testInitConfig()
 	jwtConfig := configJwt(nil)
@@ -299,7 +313,7 @@ func GenerateTestToken(userID uint64, deviceID string, expiry time.Duration) str
 		DeviceID:     deviceID,
 		Exp:          now.Add(expiry).Unix(),
 		Type:         TokenTypeAccess,
-		TokenIssueAt: now.Unix(),
+		TokenIssueAt: testTokenIssueAt,
 	}
 
 	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtSecret)
@@ -383,7 +397,7 @@ func CreateTestDevice(t *testing.T, userID uint64, udid string) *Device {
 		UDID:         udid,
 		UserID:       userID,
 		Remark:       "Test Device",
-		TokenIssueAt: time.Now().Unix(),
+		TokenIssueAt: testTokenIssueAt,
 	}
 
 	if err := db.Get().Create(device).Error; err != nil {
