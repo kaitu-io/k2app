@@ -88,9 +88,19 @@ func applyRouterOrder(ctx context.Context, tx *gorm.DB, order *Order, plan *Plan
 // renewableLineStatuses 可续线路的状态集合（findRenewablePrivateLine 与下单门共用）。
 var renewableLineStatuses = []string{PNStatusActive, PNStatusGrace, PNStatusSuspended}
 
-// userHasRouter 下单门（一户一台）：用户已有 stage≠expired 的路由器版台账，或有可续线路
-// （active/grace/suspended）即为 true。只读、不加锁。存储的 stage 可能陈旧（线路已停服但台账没被读过），
-// 先对非 expired 台账同步一次再判断，避免把线路早已 deprovisioned 的老用户挡在门外。
+// routerLineIDs 子查询：该用户"挂了路由器台账"的线路 id 集合。
+//
+// 这是"路由器版线路"的唯一判据 —— 路由器版的线路与其台账由 applyRouterOrder 在**同一个事务**里
+// 建出，所以台账存在性等价于"这条线路是路由器版的"。不能退化成"该用户任意一条专属线路"：
+// 定制线路（Product=private_node，pn-* 套餐）客户名下也有可续线路，把他们算成"有路由器"会同时
+// 造成两个方向的错判 —— 见 TestRouterGates_PrivateNodeCustomerIsNotRouterOwner。
+func routerLineIDs(tx *gorm.DB, userID uint64) *gorm.DB {
+	return tx.Model(&RouterFulfillment{}).Select("sub_id").Where("user_id = ?", userID)
+}
+
+// userHasRouter 下单门（一户一台）：用户已有 stage≠expired 的路由器版台账，或有可续的**路由器版**
+// 线路即为 true。只读、不加锁。存储的 stage 可能陈旧（线路已停服但台账没被读过），先对非 expired
+// 台账同步一次再判断，避免把线路早已 deprovisioned 的老用户挡在门外。
 func userHasRouter(ctx context.Context, tx *gorm.DB, userID uint64, now int64) (bool, error) {
 	var rows []RouterFulfillment
 	if err := tx.Where("user_id = ? AND stage <> ?", userID, RouterStageExpired).Find(&rows).Error; err != nil {
@@ -104,9 +114,12 @@ func userHasRouter(ctx context.Context, tx *gorm.DB, userID uint64, now int64) (
 			return true, nil
 		}
 	}
+	// 兜底：台账全被同步成 expired，但线路自己还活着（读路径与 sweep 之间的时序差）。仅限
+	// 挂了路由器台账的线路 —— 定制线路客户的线路不算。
 	var n int64
 	if err := tx.Model(&PrivateNodeSubscription{}).
-		Where("user_id = ? AND status IN ?", userID, renewableLineStatuses).Count(&n).Error; err != nil {
+		Where("user_id = ? AND status IN ? AND id IN (?)", userID, renewableLineStatuses, routerLineIDs(tx, userID)).
+		Count(&n).Error; err != nil {
 		return false, err
 	}
 	return n > 0, nil
@@ -129,14 +142,16 @@ func userCanBuyRouterService(ctx context.Context, tx *gorm.DB, userID uint64, no
 	return n > 0, nil
 }
 
-// findRenewablePrivateLine 用户名下最新的可续线路（active/grace/suspended，按到期时间倒序）；无则 nil。
+// findRenewablePrivateLine 用户名下最新的可续**路由器版**线路（active/grace/suspended，按到期时间
+// 倒序）；无则 nil。范围限定在 routerLineIDs：续费套餐绝不能延一条定制线路（不同产品、不同价位），
+// 也不能在用户同时持有两条线路时延错那条。
 // FOR UPDATE 行锁：两笔并发续费 webhook 都读到同一条线路时，第二个必须等第一个提交后
 // 再读，否则两次 extendPrivateLine 都从同一个旧 ExpiresAt 起算叠加，后写覆盖前一次的延期
 // （丢失更新）。锁随调用方事务释放（提交/回滚）。
 func findRenewablePrivateLine(tx *gorm.DB, userID uint64) (*PrivateNodeSubscription, error) {
 	var sub PrivateNodeSubscription
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("user_id = ? AND status IN ?", userID, renewableLineStatuses).
+		Where("user_id = ? AND status IN ? AND id IN (?)", userID, renewableLineStatuses, routerLineIDs(tx, userID)).
 		Order("expires_at DESC").First(&sub).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, nil
