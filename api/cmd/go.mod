@@ -107,6 +107,7 @@ require (
 	github.com/wordgate/qtoolkit/db v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/geoip v1.5.28 // indirect
 	github.com/wordgate/qtoolkit/mail v1.5.29 // indirect
+	github.com/wordgate/qtoolkit/nextpay v1.5.37 // indirect
 	github.com/wordgate/qtoolkit/openai/filesearch v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/redis v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/slack v1.5.25 // indirect
