@@ -363,8 +363,8 @@ github.com/wordgate/qtoolkit/log v1.5.25 h1:4k6DsF8ROQNHnmMDoa3vsRoY1BQ3SZcrwC90
 github.com/wordgate/qtoolkit/log v1.5.25/go.mod h1:qqZ9Miaigt4pK9gRq7wg2OHeuGUpdAS9VQtMWavZsKk=
 github.com/wordgate/qtoolkit/mail v1.5.29 h1:slMGrR/K9u6hnQODCJcS8jMb63agORUGys2gd/CgBCo=
 github.com/wordgate/qtoolkit/mail v1.5.29/go.mod h1:DRvaws9uYcXqq10QUGBbGJbz8tbVsbVVMrei5EFPzsA=
-github.com/wordgate/qtoolkit/nextpay v1.5.37 h1:BdMOGjpvohXaYwAGEM6TkzDpvlB2Lq5bP3mZN3tt6F4=
-github.com/wordgate/qtoolkit/nextpay v1.5.37/go.mod h1:1bCw/USjCnPHYkmbS3NJf2v3P9iOWYss8XhKYn/ZE7s=
+github.com/wordgate/qtoolkit/nextpay v1.5.38 h1:G2xq0CJQAbYNObUglvxksN/675a7q3Un71FTJemipXM=
+github.com/wordgate/qtoolkit/nextpay v1.5.38/go.mod h1:1bCw/USjCnPHYkmbS3NJf2v3P9iOWYss8XhKYn/ZE7s=
 github.com/wordgate/qtoolkit/openai/filesearch v1.5.25 h1:CUDuPG0syNKDTk/69Sq80v0xvKmjGHnvGhPynXeMWd4=
 github.com/wordgate/qtoolkit/openai/filesearch v1.5.25/go.mod h1:rEGtsFnPUgm1UDVDzD1vwONa8iPaoigM/ndxlScldp0=
 github.com/wordgate/qtoolkit/redis v1.5.25 h1:5Ubrb9g5MiRyOmi/HsD7bwgMlQ2Agml+cSKyUmCKMUk=
