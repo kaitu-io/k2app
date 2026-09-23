@@ -39,6 +39,14 @@ func api_order_pay_redirect(c *gin.Context) {
 	locale := kaituSiteLocale(order.User.Language)
 	purchase := fmt.Sprintf("%s/%s/purchase", base, locale)
 
+	// 品牌门：只有允许 nextpay 的品牌（kaitu）才会为它建 checkout；其它品牌的订单 uuid 打到这里
+	// 一律回 purchase，绝不替它去 NextPay 建单。
+	if !Brand(order.User.Brand).Config().AllowsPayment(PayChannelNextpay) {
+		log.Warnf(c, "pay redirect: order %s user brand %s does not allow nextpay", orderUUID, order.User.Brand)
+		c.Redirect(http.StatusFound, purchase)
+		return
+	}
+
 	if order.IsPaid != nil && *order.IsPaid {
 		c.Redirect(http.StatusFound, payResultURL(locale, order.UUID))
 		return

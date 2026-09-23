@@ -106,3 +106,23 @@ func TestPayRedirect_Unknown_GoesToPurchase(t *testing.T) {
 	setNextpayReady(t)
 	assert.Equal(t, BrandKaitu.Config().BaseURL+"/zh-CN/purchase", get302(t, "/api/orders/no-such-order/pay"))
 }
+
+func TestPayRedirect_OtherBrand_GoesToPurchase(t *testing.T) {
+	skipIfNoDB(t)
+	require.NoError(t, Migrate())
+	gin.SetMode(gin.TestMode)
+	setNextpayReady(t)
+	plan := nextpayTestPlan(t)
+	user := CreateTestUser(t)
+	require.NoError(t, db.Get().Model(user).Update("brand", string(BrandOverleap)).Error)
+	o := newUnpaidNextpayOrder(t, user, plan)
+
+	orig := createNextpayCheckoutFn
+	t.Cleanup(func() { createNextpayCheckoutFn = orig })
+	createNextpayCheckoutFn = func(context.Context, *User, *Order, *Plan) (*nextpayCheckout, error) {
+		t.Error("非 kaitu 品牌的订单绝不能去 NextPay 建单")
+		return nil, nil
+	}
+
+	assert.Equal(t, BrandKaitu.Config().BaseURL+"/zh-CN/purchase", get302(t, "/api/orders/"+o.UUID+"/pay"))
+}
