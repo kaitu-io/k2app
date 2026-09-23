@@ -13,9 +13,9 @@ func TestOrderMetaPayUrl(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "", o.GetPayUrl())
 
-	err = o.SetOrderPayUrl("https://pay.example.com/c/cs_123")
+	err = o.SetOrderCheckout("https://www.kaitu.io/api/orders/x/pay", "https://checkout.stripe.com/c/pay/cs_123", 1700000000)
 	require.NoError(t, err)
-	assert.Equal(t, "https://pay.example.com/c/cs_123", o.GetPayUrl())
+	assert.Equal(t, "https://www.kaitu.io/api/orders/x/pay", o.GetPayUrl())
 
 	// Other fields survive second marshal
 	p, err := o.GetPlan()
@@ -25,9 +25,12 @@ func TestOrderMetaPayUrl(t *testing.T) {
 	assert.Equal(t, []string{"uuid-a", "uuid-b"}, o.GetForUsers())
 }
 
-func TestOrderMetaSetPayUrlOnEmpty(t *testing.T) {
+func TestOrderMetaSetCheckoutOnEmpty(t *testing.T) {
 	o := &Order{}
-	err := o.SetOrderPayUrl("https://pay.example.com/x")
+	err := o.SetOrderCheckout("https://www.kaitu.io/api/orders/x/pay", "https://checkout.stripe.com/c/pay/x", 1)
 	require.NoError(t, err)
-	assert.Equal(t, "https://pay.example.com/x", o.GetPayUrl())
+	assert.Equal(t, "https://www.kaitu.io/api/orders/x/pay", o.GetPayUrl())
+	url, at := o.GetCheckout()
+	assert.Equal(t, "https://checkout.stripe.com/c/pay/x", url)
+	assert.Equal(t, int64(1), at)
 }

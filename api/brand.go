@@ -24,6 +24,7 @@ const (
 // 支付渠道标识（BrandConfig.PaymentChannels 取值）
 const (
 	PayChannelWordgate   = "wordgate"
+	PayChannelNextpay    = "nextpay"
 	PayChannelAppleIAP   = "apple_iap"
 	PayChannelStripe     = "stripe"
 	PayChannelGooglePlay = "google_play"
@@ -61,7 +62,10 @@ var brandRegistry = map[Brand]*BrandConfig{
 		BaseURL:            "https://www.kaitu.io",
 		SupportEmail:       "support@kaitu.me",
 		EDMFromName:        "Kaitu Team",
-		PaymentChannels:    []string{PayChannelWordgate, PayChannelAppleIAP},
+		// 2026-09-22 起 nextpay 是 kaitu 网页/app 下单渠道；wordgate 过渡期保留——
+		// 在途 WordGate 订单的 webhook 哨兵检查 AllowsPayment(wordgate)，拿掉会拒掉在途付款。
+		// Phase B 清理时移除 wordgate。
+		PaymentChannels:    []string{PayChannelNextpay, PayChannelWordgate, PayChannelAppleIAP},
 	},
 	BrandOverleap: {
 		ID:                 BrandOverleap,

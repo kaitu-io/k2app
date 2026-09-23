@@ -334,7 +334,7 @@ func api_create_order(c *gin.Context) {
 		payUrl = orderResp.PayURL
 
 		// Persist payUrl into order.Meta so delegate-notify (and future retries) can read it
-		if err := order.SetOrderPayUrl(payUrl); err != nil {
+		if err := order.SetOrderCheckout(payUrl, payUrl, time.Now().Unix()); err != nil {
 			log.Errorf(c, "failed to save payUrl into meta for order %s: %v", order.UUID, err)
 			return err
 		}

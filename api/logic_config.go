@@ -156,6 +156,34 @@ func configStripe(ctx context.Context) StripeConfig {
 	return cfg
 }
 
+// NextpayConfig NextPay 配置（kaitu 一次性购买渠道，2026-09-22 起替代 WordGate 下单路径）。
+// endpoint / access_key / timeout 由 qtoolkit/nextpay 自己从 viper 的 nextpay.* 读取；
+// 这里只承载 Center 自己要用的两项 + Ready 判定所需的 access_key 镜像。
+type NextpayConfig struct {
+	AccessKey     string
+	WebhookSecret string
+	PaymentMethod string // confirm 时传给 NextPay 的渠道；缺省 more（Stripe 按账号设置自动列出）
+}
+
+// Ready 判断 NextPay 渠道是否配置可用：access_key 与 webhook_secret 缺一不可。
+// 缺配置时渠道自动不可用（下单 405001 / webhook 503 / 302 端点回 purchase），绝不 panic。
+func (nc NextpayConfig) Ready() bool {
+	return nc.AccessKey != "" && nc.WebhookSecret != ""
+}
+
+// configNextpay 获取 NextPay 配置。
+func configNextpay(ctx context.Context) NextpayConfig {
+	cfg := NextpayConfig{
+		AccessKey:     viper.GetString("nextpay.access_key"),
+		WebhookSecret: viper.GetString("nextpay.webhook_secret"),
+		PaymentMethod: viper.GetString("nextpay.payment_method"),
+	}
+	if cfg.PaymentMethod == "" {
+		cfg.PaymentMethod = "more"
+	}
+	return cfg
+}
+
 func ConfigServer(ctx context.Context) ServerConfig {
 	cfg := ServerConfig{
 		Port:       viper.GetInt("server.port"),

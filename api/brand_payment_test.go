@@ -7,6 +7,8 @@ import (
 )
 
 func TestPaymentChannelGate(t *testing.T) {
+	assert.True(t, Brand("kaitu").Config().AllowsPayment(PayChannelNextpay))
+	assert.False(t, Brand("overleap").Config().AllowsPayment(PayChannelNextpay))
 	assert.True(t, Brand("kaitu").Config().AllowsPayment(PayChannelWordgate))
 	assert.True(t, Brand("kaitu").Config().AllowsPayment(PayChannelAppleIAP))
 	// kaitu 用户永远碰不到 stripe（跨品牌渠道隔离硬边界）
