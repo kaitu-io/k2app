@@ -46,6 +46,8 @@
     "orderNumber": "訂單號碼",
     "paymentAmount": "支付金額",
     "paymentConfirmHint": "請確認您的支付是否成功",
+    "paymentTabHint": "付款頁面已在新分頁開啟。如果沒有看到，或者頁面載入不出來，請點下面的按鈕重試。",
+    "reopenPayment": "重新開啟付款頁面",
     "paymentSuccess": "支付成功",
     "paymentFailed": "支付失敗",
     "refreshUserProfileFailed": "重新整理使用者資料失敗",

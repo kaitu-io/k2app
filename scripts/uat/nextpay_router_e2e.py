@@ -150,8 +150,9 @@ def scenario_app_purchase(token: str) -> str:
     channel, np_id, meta_pay = (row.split("\t") + ["", "", ""])[:3]
     check(channel == "nextpay", "订单渠道标为 nextpay", channel)
     check(len(np_id) == 36, "nextpay_order_id 落库", np_id)
-    check(meta_pay == f"https://www.kaitu.io/api/orders/{uuid}/pay",
-          "Meta.payUrl 是耐久 302 链接而非 Stripe 直链", meta_pay)
+    # src=mail 让 [PayFunnel] 日志能把代付邮件的点击与官网购买页的点击分开数。
+    check(meta_pay == f"https://www.kaitu.io/api/orders/{uuid}/pay?src=mail",
+          "Meta.payUrl 是耐久 302 链接而非 Stripe 直链，且标了来源", meta_pay)
     obj = sql("nextpay", f"SELECT object_id, amount, currency FROM orders WHERE object_id='{uuid}';")
     check(obj.startswith(uuid) and "\t1999\tusd" in obj, "NextPay 侧 ObjectID/金额/币种一致", obj)
 

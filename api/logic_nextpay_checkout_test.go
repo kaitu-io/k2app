@@ -16,5 +16,5 @@ func TestKaituSiteLocale(t *testing.T) {
 
 func TestPayURLs(t *testing.T) {
 	assert.Equal(t, "https://www.kaitu.io/zh-TW/pay-result/u-1", payResultURL("zh-TW", "u-1"))
-	assert.Equal(t, "https://www.kaitu.io/api/orders/u-1/pay", payRedirectURL("u-1"))
+	assert.Equal(t, "https://www.kaitu.io/api/orders/u-1/pay?src=mail", payRedirectURL("u-1"))
 }

@@ -40,7 +40,8 @@ func payResultURL(locale, orderUUID string) string {
 
 // payRedirectURL 是写进代付邮件的耐久链接：Center 收到后按需复用/重建 Stripe session 再 302。
 func payRedirectURL(orderUUID string) string {
-	return fmt.Sprintf("%s/api/orders/%s/pay", BrandKaitu.Config().BaseURL, orderUUID)
+	// src=mail 让漏斗能把代付邮件的点击与官网购买页的点击分开数（见 api_order_pay_redirect）。
+	return fmt.Sprintf("%s/api/orders/%s/pay?src=mail", BrandKaitu.Config().BaseURL, orderUUID)
 }
 
 // createNextpayCheckoutFn 在 NextPay 建一张一次性订单并 confirm，换回 Stripe Checkout URL。
