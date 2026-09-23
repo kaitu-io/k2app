@@ -1,16 +1,35 @@
 import { getTranslations } from 'next-intl/server';
 import { HelpCircle } from 'lucide-react';
 
-export async function RoutersFAQ() {
-  const t = await getTranslations('routers.faq');
-  const items = t.raw('items') as { q: string; a: string }[];
+export async function EditionFAQ() {
+  const t = await getTranslations('routers');
+  const items = t.raw('edition.product.faq') as { q: string; a: string }[];
+
+  // FAQ structured data for GEO/SEO — same shape as support/page.kaitu.tsx.
+  // Content comes from trusted i18n translations, safe for inline script.
+  const faqJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map((item) => ({
+      '@type': 'Question',
+      name: item.q,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: item.a,
+      },
+    })),
+  };
 
   return (
     <section className="py-16 px-4 sm:px-6 lg:px-8">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-10">
           <HelpCircle className="w-10 h-10 text-primary mx-auto mb-3" />
-          <h2 className="text-3xl font-bold text-foreground">{t('title')}</h2>
+          <h2 className="text-3xl font-bold text-foreground">{t('edition.product.faqTitle')}</h2>
         </div>
         <div className="space-y-3">
           {items.map((item, i) => (

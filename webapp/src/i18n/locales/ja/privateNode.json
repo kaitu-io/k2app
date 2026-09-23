@@ -2,6 +2,7 @@
   "privateNode": {
     "title": "専用ノード",
     "manage": "専用ノードを管理",
+    "myRouter": "マイルーター",
     "buyLine": "専用回線を購入",
     "buy": "専用ノードを開設",
     "region": "ノードの地域",
@@ -31,6 +32,7 @@
     "provisioningHint": "ノードを開設中です。通常は数分かかります。しばらくお待ちください。",
     "empty": "専用ノードはまだありません",
     "renew": "更新",
+    "renewOnWebsite": "更新はウェブサイトの「マイルーター」から",
     "percentUsed": "{{percent}}% 使用済み",
     "quotaExhausted": {
       "title": "今月の通信量上限に達しました",

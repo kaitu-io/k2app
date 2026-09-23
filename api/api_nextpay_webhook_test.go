@@ -159,3 +159,42 @@ func TestNextpayWebhook_OtherEvent_Acks(t *testing.T) {
 	w := postNextpayWebhook(t, body, nextpaySig(body))
 	assert.Equal(t, 200, w.Code)
 }
+
+// 两条分支的交点：NextPay 入账必须走路由器版续费分支（applyRouterOrder → extendPrivateLine），
+// 且续费副作用经 OrderPostCommit 延后到提交后——签名若退回旧的 *[]uint64 本测试编译不过。
+func TestNextpayWebhook_RouterRenewal_ExtendsLine(t *testing.T) {
+	skipIfNoDB(t)
+	require.NoError(t, Migrate())
+	setNextpayReady(t)
+	user := CreateTestUser(t)
+	plan := seedRouterPlan(t, "router-np-renew", "", 29900)
+	now := time.Now().Unix()
+	existing := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, OrderID: 0,
+		Region: "japan", IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40,
+		Status: PNStatusGrace, PurchasedAt: now - 400*86400, ExpiresAt: now - 3*86400, GraceUntil: now + 4*86400}
+	require.NoError(t, db.Get().Create(existing).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(existing) })
+	o := newUnpaidNextpayOrder(t, user, plan)
+	o.NextpayOrderID = "np-rt-1"
+	require.NoError(t, db.Get().Save(o).Error)
+	tags := captureAnomaly(t)
+
+	body := orderPaidPayload("evt_rt_1", "np-rt-1", o.UUID, plan.Price, "usd")
+	w := postNextpayWebhook(t, body, nextpaySig(body))
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Empty(t, *tags)
+
+	var saved Order
+	require.NoError(t, db.Get().Where("uuid = ?", o.UUID).First(&saved).Error)
+	assert.True(t, saved.IsPaid != nil && *saved.IsPaid)
+
+	var subs []PrivateNodeSubscription
+	require.NoError(t, db.Get().Where("user_id = ?", user.ID).Find(&subs).Error)
+	require.Len(t, subs, 1, "renewal must extend the existing line, not create a second one")
+	assert.Equal(t, PNStatusActive, subs[0].Status)
+	assert.GreaterOrEqual(t, subs[0].ExpiresAt, time.Unix(now, 0).AddDate(0, 12, 0).Unix()-5)
+
+	var cnt int64
+	db.Get().Model(&RouterFulfillment{}).Where("order_id = ?", o.ID).Count(&cnt)
+	assert.EqualValues(t, 0, cnt, "renewal creates no fulfillment row")
+}

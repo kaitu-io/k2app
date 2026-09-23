@@ -576,9 +576,11 @@ type DataPlan struct {
 	MaxLanClient    int    `json:"maxLanClient"`
 	// Apple App Store 商品ID（仅 iOS IAP）：非空才在 iOS 购买面板出现，webapp 据此向 StoreKit 取商品。
 	AppleProductID string `json:"appleProductId,omitempty"`
-	// 产品线：app（共享池订阅）| private_node（专属节点）。Center 始终发送。
+	// 产品线：app（共享池订阅）| private_node（专属节点）| router（路由器版）。Center 始终发送。
 	Product string `json:"product"`
-	// 专属节点套餐的购买可见参数（仅 Product=private_node 套餐附带）。
+	// 路由器版硬件机型（仅 Product=router 含硬件套餐非空）。前台只用它判断是否收集收货地址。
+	HardwareSKU string `json:"hardwareSku,omitempty"`
+	// 专属线路套餐的购买可见参数（Product=private_node 或 router 套餐附带）。
 	PrivateNode *DataPrivateNodePlanSpec `json:"privateNode,omitempty"`
 	// 多币种展示价 {币种小写 → 最小单位金额}，含主币与 Stripe Price currency_options 全部币种
 	// （如 {"usd":7900,"gbp":7900,"eur":8900}）。仅 Stripe 套餐且 Stripe 可达时附带；客户端按
@@ -586,7 +588,7 @@ type DataPlan struct {
 	CurrencyPrices map[string]int64 `json:"currencyPrices,omitempty"`
 }
 
-// DataPrivateNodePlanSpec 专属节点套餐的购买可见参数（仅 Product=private_node 的套餐附带）。
+// DataPrivateNodePlanSpec 专属线路套餐的购买可见参数（Product=private_node 或 router 的套餐附带）。
 type DataPrivateNodePlanSpec struct {
 	IPType            string   `json:"ipType"`            // residential | non_residential
 	AllowedRegions    []string `json:"allowedRegions"`    // 购买时可选地区
@@ -624,6 +626,42 @@ type DataPrivateNodeSubscription struct {
 // DataPrivateNodeList 专属节点订阅列表（owner-scoped）。
 type DataPrivateNodeList struct {
 	Items []DataPrivateNodeSubscription `json:"items"`
+}
+
+// routerOnlineWindowSeconds 路由器「在线」判定窗口：2 × 30 分钟刷新 + 5 分钟余量。
+const routerOnlineWindowSeconds int64 = 65 * 60
+
+// DataRouterDevice 账户页展示的网关设备状态。
+type DataRouterDevice struct {
+	UDID       string `json:"udid"`
+	AppVersion string `json:"appVersion"`
+	AppArch    string `json:"appArch"`
+	LastSeenAt int64  `json:"lastSeenAt"` // Unix 秒；0 = 从未连上
+	Online     bool   `json:"online"`     // now - LastSeenAt <= routerOnlineWindowSeconds
+}
+
+// DataRouterFulfillment 账户页展示的路由器版发货 / 上线台账。
+type DataRouterFulfillment struct {
+	ID                uint64 `json:"id"`
+	OrderID           uint64 `json:"orderId"`
+	HardwareSKU       string `json:"hardwareSku"`
+	Stage             string `json:"stage"`
+	TrackingNo        string `json:"trackingNo,omitempty"`
+	Carrier           string `json:"carrier,omitempty"`
+	ShippedAt         int64  `json:"shippedAt"`
+	ActivatedAt       int64  `json:"activatedAt"`
+	CredentialMinted  bool   `json:"credentialMinted"`
+	CanMintCredential bool   `json:"canMintCredential"` // HasActivePrivateLines：用户持有可服务线路（与铸凭证准入门同一谓词，不看台账 stage）
+	CreatedAt         int64  `json:"createdAt"`
+}
+
+// DataUserRouter 账户页「我的路由器」聚合：最新台账 + 其线路 + 网关设备 + 可续费套餐。
+type DataUserRouter struct {
+	HasRouter    bool                         `json:"hasRouter"`             // 是否有任何路由器版订单
+	Fulfillment  *DataRouterFulfillment       `json:"fulfillment,omitempty"` // 最新一条
+	Line         *DataPrivateNodeSubscription `json:"line,omitempty"`        // 台账指向的线路（用量/到期）
+	Device       *DataRouterDevice            `json:"device,omitempty"`
+	RenewPlanPID string                       `json:"renewPlanPid,omitempty"` // 可续费的 router 套餐（HardwareSKU=="" 且 active），供「续费一年」按钮
 }
 
 // Response_SlaveDeviceCheckAuthResult 节点设备认证结果响应
@@ -1315,3 +1353,56 @@ type RatingByUser struct {
 	GoodRate float64 `json:"goodRate"`
 }
 
+// DataAdminRouterFulfillment 后台视角的路由器版发货 / 上线台账：在账户页 DTO 之上叠加归属
+// 用户、收货信息、运营备注/操作人。
+type DataAdminRouterFulfillment struct {
+	DataRouterFulfillment
+	UserID    uint64                       `json:"userId"`
+	Email     string                       `json:"email"`
+	SubID     uint64                       `json:"subId"`
+	Note      string                       `json:"note"`
+	UpdatedBy string                       `json:"updatedBy"`
+	UpdatedAt int64                        `json:"updatedAt"`
+	Shipping  *RouterShipping              `json:"shipping,omitempty"`
+	Line      *DataPrivateNodeSubscription `json:"line,omitempty"`
+	Device    *DataRouterDevice            `json:"device,omitempty"`
+}
+
+// DataAdminPrivateNodeSubscription 后台视角的专属线路订阅：在账户页 DTO 之上叠加归属用户与订单。
+type DataAdminPrivateNodeSubscription struct {
+	DataPrivateNodeSubscription
+	UserID    uint64 `json:"userId"`
+	Email     string `json:"email"`
+	OrderID   uint64 `json:"orderId"`
+	BoundIpv4 string `json:"boundIpv4,omitempty"`
+}
+
+// DataAdminRouterDevice 后台视角的路由器网关设备：在账户页 DTO 之上叠加归属用户。
+type DataAdminRouterDevice struct {
+	DataRouterDevice
+	ID     uint64 `json:"id"`
+	UserID uint64 `json:"userId"`
+	Email  string `json:"email"`
+}
+
+// AdminRouterStageRequest 运营手动推进发货台账（仅 ready→shipped）或改备注。
+type AdminRouterStageRequest struct {
+	Stage      string `json:"stage"`
+	TrackingNo string `json:"trackingNo"`
+	Carrier    string `json:"carrier"`
+	Note       string `json:"note"`
+}
+
+// DataAdminRouterStats 路由器订单台账顶部看板。
+type DataAdminRouterStats struct {
+	StageCounts   map[string]int64 `json:"stageCounts"`   // 每个 stage 的台账数（含 0 的六个键齐全）
+	Stuck         int64            `json:"stuck"`         // paid/provisioning/ready 且超过 48h 未变化
+	OnlineRouters int64            `json:"onlineRouters"` // is_gateway 设备在 65 分钟窗口内有活动
+	ExpiringSoon  int64            `json:"expiringSoon"`  // 路由器版线路 active 且 30 天内到期
+}
+
+// AdminExtendLineRequest 线路手工延期（补偿 / 客服）。
+type AdminExtendLineRequest struct {
+	Months int    `json:"months" binding:"required,min=1,max=24"`
+	Reason string `json:"reason" binding:"required,max=500"`
+}

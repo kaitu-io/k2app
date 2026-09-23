@@ -342,6 +342,15 @@ func executeApprovalPlanUpdate(ctx context.Context, params json.RawMessage) erro
 	if req.StripePriceID != nil {
 		plan.StripePriceID = *req.StripePriceID
 	}
+	if req.Product != nil {
+		if *req.Product != ProductApp && !isLineProduct(*req.Product) {
+			return fmt.Errorf("invalid product %q for plan %s", *req.Product, p.PlanID)
+		}
+		plan.Product = *req.Product
+	}
+	if req.HardwareSKU != nil {
+		plan.HardwareSKU = *req.HardwareSKU
+	}
 
 	if err := db.Get().Save(&plan).Error; err != nil {
 		return fmt.Errorf("update plan %s: %w", p.PlanID, err)

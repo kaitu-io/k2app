@@ -364,10 +364,79 @@ export interface Plan {
   month: number;
   highlight: boolean;
   tier?: string;                    // 套餐档位: "lite" | "basic" | "family" | "business"
-  product?: string;                 // 'app' | 'private_node'（Go DataPlan.Product）
+  product?: string;                 // 'app' | 'private_node' | 'router'（Go DataPlan.Product）
   /** 多币种展示价 {币种小写 → 最小单位}，仅 Stripe 套餐且 Stripe 可达时下发（Go DataPlan.CurrencyPrices）。
    *  缺席时按 usd 用 price 展示。实付币种由 Stripe Checkout 按属地决定。 */
   currencyPrices?: Record<string, number>;
+  hardwareSku?: string;             // 非空 = 含路由器的成品套餐
+  privateNode?: PrivateNodePlanSpec;
+}
+
+// 专属线路套餐的购买可见参数（Go DataPrivateNodePlanSpec；Product=private_node 或 router 套餐附带）。
+export interface PrivateNodePlanSpec {
+  ipType: string;
+  allowedRegions: string[];
+  trafficTotalBytes: number;
+}
+
+// 成品路由器收货信息（Go RouterShipping）。
+export interface RouterShipping {
+  name: string;
+  phone: string;
+  address: string;
+}
+
+export type RouterStage = 'paid' | 'provisioning' | 'ready' | 'shipped' | 'online' | 'expired';
+
+// Go DataRouterFulfillment（api/type.go）
+export interface UserRouterFulfillment {
+  id: number;
+  orderId: number;
+  hardwareSku: string;          // '' = 自备路由器
+  stage: RouterStage;
+  trackingNo?: string;
+  carrier?: string;
+  shippedAt: number;
+  activatedAt: number;
+  credentialMinted: boolean;
+  canMintCredential: boolean;
+  createdAt: number;
+}
+
+// Go DataPrivateNodeSubscription
+export interface UserRouterLine {
+  id: number;
+  status: string;
+  isServiceable: boolean;
+  region: string;
+  ipType: string;
+  trafficTotalBytes: number;
+  trafficUsedBytes: number;
+  purchasedAt: number;
+  expiresAt: number;
+  graceUntil: number;
+  suspendUntil: number;
+  planLabel: string;
+  quotaExhausted: boolean;
+  quotaResetAt: number;
+}
+
+// Go DataRouterDevice
+export interface UserRouterDevice {
+  udid: string;
+  appVersion: string;
+  appArch: string;
+  lastSeenAt: number;
+  online: boolean;
+}
+
+// Go DataUserRouter（GET /api/user/router）
+export interface UserRouter {
+  hasRouter: boolean;
+  fulfillment?: UserRouterFulfillment;
+  line?: UserRouterLine;
+  device?: UserRouterDevice;
+  renewPlanPid?: string;
 }
 
 // 优惠活动类型
@@ -384,6 +453,8 @@ export interface CreateOrderRequest {
   preview: boolean;
   plan: string;
   campaignCode?: string;
+  region?: string;
+  shipping?: RouterShipping;
 }
 
 export interface Order {
@@ -1441,6 +1512,19 @@ export const api = {
     });
   },
 
+  async getProductPlans(product: 'router', options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<ListResult<Plan>> {
+    return this.request<ListResult<Plan>>(`/api/products/${product}/plans`, options);
+  },
+
+  async getUserRouter(options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<UserRouter> {
+    return this.request<UserRouter>('/api/user/router', options);
+  },
+
+  // 铸造（或轮换）网关凭证。返回的 url 只在内存里用来拼安装命令，不持久化。
+  async mintGatewayCredential(): Promise<{ url: string }> {
+    return this.request<{ url: string }>('/api/user/gateway-credential', { method: 'POST' });
+  },
+
   // ====== Stripe（overleap 专属渠道；其他品牌调用会得到 405001）======
 
   async createStripeCheckout(
@@ -2396,6 +2480,70 @@ export const api = {
     return this.request<void>(`/app/enterprise/bindings/${id}`, { method: 'DELETE' });
   },
 
+  // ========================= Router Edition Admin APIs =========================
+  // 分页 1-based（Center PaginationFromRequest）。
+
+  async listRouterFulfillments(params: { page?: number; pageSize?: number; stage?: string; userId?: number } = {}): Promise<ListResult<AdminRouterFulfillmentItem>> {
+    const q = new URLSearchParams();
+    if (params.page !== undefined) q.set('page', String(params.page));
+    if (params.pageSize !== undefined) q.set('pageSize', String(params.pageSize));
+    if (params.stage) q.set('stage', params.stage);
+    if (params.userId) q.set('userId', String(params.userId));
+    const qs = q.toString();
+    return this.request<ListResult<AdminRouterFulfillmentItem>>(`/app/router/fulfillments${qs ? '?' + qs : ''}`);
+  },
+
+  async getRouterStats(): Promise<AdminRouterStats> {
+    return this.request<AdminRouterStats>('/app/router/stats');
+  },
+
+  async shipRouterFulfillment(id: number, body: { trackingNo: string; carrier: string; note?: string }): Promise<void> {
+    return this.request<void>(`/app/router/fulfillments/${id}/stage`, {
+      method: 'POST',
+      body: JSON.stringify({ stage: 'shipped', ...body }),
+    });
+  },
+
+  // 注意：Center 的 stage 更新 handler 只在 body.note 非空时才写入 note 列（`api_admin_router.go`
+  // api_admin_update_router_stage：`if body.Note != "" { updates["note"] = body.Note }`）——传空串
+  // 清不掉已有备注。本任务不改后端，前端备注对话框需在输入为空时禁用保存按钮（后续任务处理 UI）。
+  async updateRouterFulfillmentNote(id: number, note: string): Promise<void> {
+    return this.request<void>(`/app/router/fulfillments/${id}/stage`, {
+      method: 'POST',
+      body: JSON.stringify({ stage: '', note }),
+    });
+  },
+
+  async mintRouterCredential(id: number): Promise<{ url: string; deviceId: number }> {
+    return this.request<{ url: string; deviceId: number }>(`/app/router/fulfillments/${id}/credential`, { method: 'POST' });
+  },
+
+  async listPrivateNodeSubscriptions(params: { page?: number; pageSize?: number; status?: string; userId?: number } = {}): Promise<ListResult<AdminPrivateNodeSubscriptionItem>> {
+    const q = new URLSearchParams();
+    if (params.page !== undefined) q.set('page', String(params.page));
+    if (params.pageSize !== undefined) q.set('pageSize', String(params.pageSize));
+    if (params.status) q.set('status', params.status);
+    if (params.userId) q.set('userId', String(params.userId));
+    const qs = q.toString();
+    return this.request<ListResult<AdminPrivateNodeSubscriptionItem>>(`/app/private-node-subscriptions${qs ? '?' + qs : ''}`);
+  },
+
+  async extendPrivateNodeSubscription(id: number, body: { months: number; reason: string }): Promise<AdminPrivateNodeSubscriptionItem> {
+    return this.request<AdminPrivateNodeSubscriptionItem>(`/app/private-node-subscriptions/${id}/extend`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async listRouterDevices(params: { page?: number; pageSize?: number; userId?: number } = {}): Promise<ListResult<AdminRouterDeviceItem>> {
+    const q = new URLSearchParams();
+    if (params.page !== undefined) q.set('page', String(params.page));
+    if (params.pageSize !== undefined) q.set('pageSize', String(params.pageSize));
+    if (params.userId) q.set('userId', String(params.userId));
+    const qs = q.toString();
+    return this.request<ListResult<AdminRouterDeviceItem>>(`/app/router-devices${qs ? '?' + qs : ''}`);
+  },
+
   // License Key Batch APIs
   async listLicenseKeyBatches(params: { page?: number; pageSize?: number; sourceTag?: string } = {}): Promise<{ items: LicenseKeyBatch[]; total: number }> {
     const q = new URLSearchParams();
@@ -2775,6 +2923,43 @@ export interface EnterpriseBindingItem {
   slot: number;
   lineId: number;
   line?: EnterpriseLineItem;
+}
+
+// ============================================================
+// Router Edition Admin types（Go DataAdminRouterFulfillment / DataAdminPrivateNodeSubscription /
+// DataAdminRouterDevice / DataAdminRouterStats，api/type.go）
+// ============================================================
+
+export interface AdminRouterFulfillmentItem extends UserRouterFulfillment {
+  userId: number;
+  email: string;
+  subId: number;
+  note: string;
+  updatedBy: string;
+  updatedAt: number;
+  shipping?: RouterShipping;
+  line?: UserRouterLine;
+  device?: UserRouterDevice;
+}
+
+export interface AdminPrivateNodeSubscriptionItem extends UserRouterLine {
+  userId: number;
+  email: string;
+  orderId: number;
+  boundIpv4?: string;
+}
+
+export interface AdminRouterDeviceItem extends UserRouterDevice {
+  id: number;
+  userId: number;
+  email: string;
+}
+
+export interface AdminRouterStats {
+  stageCounts: Record<RouterStage, number>;
+  stuck: number;
+  onlineRouters: number;
+  expiringSoon: number;
 }
 
 // ============================================================

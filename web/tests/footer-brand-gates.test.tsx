@@ -54,6 +54,7 @@ async function renderChrome(component: 'Footer' | 'Header', locale: 'en-GB' | 'z
 }
 
 const KAITU_ONLY_HREFS = ['href="/routers"', 'href="/changelog"', 'href="/releases"', 'href="/retailer/rules"', 'href="/guides"'];
+// /routers 是路由器版产品页，由产品栏链接；已下线的自备教程 /routers/diy 不得再出现在页脚。
 const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/privacy"', 'href="/terms"', 'href="https://github.com/getoverleap"'];
 const OVERLEAP_FOOTER = ['href="/install"', 'href="/purchase"', 'href="/support"', 'href="/k2"', 'href="/k2/quickstart"', 'href="https://github.com/getoverleap"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
 
@@ -69,6 +70,7 @@ describe('footer links only this brand\'s pages', () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     const html = await renderChrome('Footer', 'zh-CN');
     for (const href of KAITU_FOOTER) expect(html, href).toContain(href);
+    expect(html).not.toContain('href="/routers/diy"');
     expect(html).not.toContain('mailto:');
   });
 });

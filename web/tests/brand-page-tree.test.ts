@@ -36,6 +36,8 @@ const KAITU_ONLY_DIRS = [
   '[locale]/account/delegate',
   '[locale]/account/wallet',
   '[locale]/pay-result',
+  '[locale]/account/router',
+  '[locale]/purchase/router',
 ];
 
 interface RouteFile { dir: string; base: string; brand: 'kaitu' | 'overleap' | null; file: string }

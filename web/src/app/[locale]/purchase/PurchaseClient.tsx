@@ -573,6 +573,23 @@ export default function PurchaseClient() {
           </div>
         )}
 
+        {/* App 版 / 路由器版 切换 —— 只对未嵌入的独立页展示，embed 模式下宿主自己决定导航。 */}
+        {showNavigation && (
+          <div className="flex justify-center">
+            <div className="inline-flex rounded-lg border border-border bg-muted p-1">
+              <span className="px-4 py-1.5 rounded-md text-sm font-medium bg-background text-foreground shadow-sm">
+                {t('routers.edition.switch.app')}
+              </span>
+              <Link
+                href="/purchase/router"
+                className="px-4 py-1.5 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {t('routers.edition.switch.router')}
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* Page Title */}
         <div className="text-center px-4 sm:px-0">
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-foreground mb-3 sm:mb-4 leading-tight">
@@ -662,6 +679,15 @@ export default function PurchaseClient() {
           onSuccess={handlePaySuccess}
           onFail={handlePayFail}
         />
+
+        {/* 路由器版 cross-sell —— 同上，embed 模式下隐藏 */}
+        {showNavigation && (
+          <p className="text-sm text-muted-foreground text-center">
+            <Link href="/routers" className="underline underline-offset-4 hover:text-foreground">
+              {t('routers.edition.switch.crossSell')}
+            </Link>
+          </p>
+        )}
       </div>
 
       {/* Footer - Hidden in embedded mode */}

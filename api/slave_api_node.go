@@ -162,6 +162,13 @@ func reconcilePrivateIdentity(c *gin.Context, node *SlaveNode, claim string) {
 			}
 			linkCloudInstanceQuota(c, tx, node, &pnSub) // best-effort，首次激活专用
 			markProvisionDone(c, tx, node, &pnSub)      // best-effort
+			// 路由器版：线路激活 → 发货台账推进到 ready（best-effort，读路径也会兜底同步）。
+			var f RouterFulfillment
+			if err := tx.Where("sub_id = ?", pnSub.ID).First(&f).Error; err == nil {
+				if err := syncRouterFulfillment(c, tx, &f, now); err != nil {
+					log.Warnf(c, "advance router fulfillment for sub %d: %v", pnSub.ID, err)
+				}
+			}
 			log.Infof(c, "node %s claimed as private by sub %d (owner %d)", node.Ipv4, pnSub.ID, pnSub.UserID)
 			return nil
 		})

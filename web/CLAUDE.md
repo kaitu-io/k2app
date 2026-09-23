@@ -78,6 +78,9 @@ web/
 │   │   │       ├── surveys/   # 问卷统计
 │   │   │       ├── enterprise/ # 企业路由器
 │   │   │       ├── node-operations/ # 节点运维
+│   │   │       ├── router-fulfillments/ # 路由器版订单台账（看板、发货、代铸凭证）
+│   │   │       ├── private-node-subscriptions/ # 路由器版线路订阅（延期；临时停机走 node-operations）
+│   │   │       ├── router-devices/ # 路由器设备
 │   │   │       └── asynqmon/  # Asynq queue monitor (iframe)
 │   ├── components/
 │   │   ├── ui/                # shadcn/ui primitives (button, dialog, table, etc.)
@@ -210,6 +213,8 @@ Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `o
   webapp"消除两边的分裂，在 iOS 上做不到。**
 
 不变量：**重复的那一份必然先腐烂**（2026-04-22 `fc5aa0d7` 删「成员管理」把 `/account` 删成空壳、`/g/[code]` 的「查看账号」随之落空即是例子；`getProHistories` 现已回到 `account/KaituAccountClient.tsx` 的购买记录）。
+
+- **例外：路由器版**（`/account/router`）。路由器版客户不一定装 app，开通进度、续费与存量自备台账的安装命令只能在本站完成（spec `2026-09-16-router-edition-web-onboarding-design.md` §4.4）。它只读 `GET /api/user/router`，不做设备 / 节点管理。**自备路由器新购已下线**：`/routers/diy` 教程页已删，`/purchase/router` 只卖含路由器的成品，服务套餐（`hardwareSku` 为空）仅在 `?plan=svc` + 已登录 + 检测到可续的路由器版时作为续费出现（后端同样拒绝无路由器用户下服务套餐）；「我的路由器」的生成安装命令只服务存量自备台账，保留。
 
 ## Environment
 

@@ -19,6 +19,7 @@ export const KAITU_SITE: SiteConfig = {
         ],
       },
       { labelKey: 'nav.nav.pricing', href: '/purchase' },
+      { labelKey: 'nav.nav.routers', href: '/routers' },
     ],
     cta: { labelKey: 'nav.nav.freeDownload', href: '/install' },
   },
@@ -37,7 +38,6 @@ export const KAITU_SITE: SiteConfig = {
       items: [
         { labelKey: 'nav.footer.developer.k2Docs', href: '/k2' },
         { labelKey: 'nav.footer.developer.selfDeploy', href: '/k2/quickstart' },
-        { labelKey: 'nav.footer.developer.routerConfig', href: '/routers' },
         { labelKey: 'nav.footer.developer.github', href: 'https://github.com/getoverleap' },
         { labelKey: 'nav.footer.developer.changelog', href: '/releases' },
       ],
@@ -69,6 +69,7 @@ export const KAITU_SITE: SiteConfig = {
     '/delete-account',
     '/privacy',
     '/purchase',
+    '/purchase/router',
     '/releases',
     '/routers',
     '/support',

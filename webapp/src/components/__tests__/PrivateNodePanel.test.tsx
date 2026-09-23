@@ -1,7 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, within } from '../../test/utils/render';
 import { PrivateNodePanel } from '../PrivateNodePanel';
 import type { PrivateNodeSubscriptionView } from '../../services/api-types';
+// renewOnWebsite 文案含 {{brand}} 插值——断言用真实 i18n 解析，跟着当前 K2_BRAND 走
+// （K2_BRAND=overleap 下同一份 zh-CN 文案会解析出 "Overleap" 而非 "开途"）。
+import i18n from '../../i18n/i18n';
 
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', async () => {
@@ -70,11 +73,37 @@ describe('PrivateNodePanel', () => {
     expect(screen.getByText(/续费后恢复/)).toBeInTheDocument();
   });
 
-  it('renew button navigates to /purchase', () => {
+  it('不再渲染续费按钮，改为纯文字提示', () => {
     navigateMock.mockClear();
     render(<PrivateNodePanel node={makeNode({})} />);
-    screen.getByText('续费').click();
-    expect(navigateMock).toHaveBeenCalledWith('/purchase');
+    expect(screen.getByText(i18n.t('privateNode:privateNode.renewOnWebsite'))).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '续费' })).not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  describe('renewOnWebsite 提示按购买入口门控（Apple 3.1.1 / Play 付款政策）', () => {
+    afterEach(() => { delete (window as any)._platform; });
+    const renewText = () => i18n.t('privateNode:privateNode.renewOnWebsite');
+
+    it('购买入口可用（桌面）时显示', () => {
+      (window as any)._platform = { os: 'macos' };
+      render(<PrivateNodePanel node={makeNode({})} />);
+      expect(screen.getByText(renewText())).toBeInTheDocument();
+    });
+
+    it('购买入口不可用（iOS 无 StoreKit 桥）时不显示', () => {
+      (window as any)._platform = { os: 'ios' };
+      render(<PrivateNodePanel node={makeNode({ status: 'grace' })} />);
+      expect(screen.queryByText(renewText())).not.toBeInTheDocument();
+      // 到期信息照常显示
+      expect(screen.getByText(/宽限期，请尽快续费/)).toBeInTheDocument();
+    });
+
+    it('iOS 即使带 StoreKit 桥（购买入口可用）也不显示——内购不等于允许引导官网付款', () => {
+      (window as any)._platform = { os: 'ios', iap: {} };
+      render(<PrivateNodePanel node={makeNode({})} />);
+      expect(screen.queryByText(renewText())).not.toBeInTheDocument();
+    });
   });
 
   it('traffic at >=95% renders error-colored bar', () => {
@@ -87,14 +116,22 @@ describe('PrivateNodePanel', () => {
     expect(bar.getAttribute('data-color')).toBe('error');
   });
 
-  it('quotaExhausted: renders worded exhausted alert + reset date + CTA', () => {
+  it('quotaExhausted: renders worded exhausted alert + reset date（无 CTA 按钮）', () => {
     render(<PrivateNodePanel node={makeNode({ quotaExhausted: true, quotaResetAt: 1_800_000_000 })} />);
     const alert = screen.getByTestId('private-node-quota-exhausted');
     expect(alert).toBeInTheDocument();
     // worded title (not the generic bar) — real i18n resolves zh-CN
     expect(within(alert).getByText('本月流量额度已用尽')).toBeInTheDocument();
-    // CTA inside the alert
-    expect(within(alert).getByTestId('private-node-quota-exhausted-cta')).toBeInTheDocument();
+    expect(screen.queryByTestId('private-node-quota-exhausted-cta')).not.toBeInTheDocument();
+  });
+
+  it('active + quotaExhausted: renewOnWebsite 提示整张卡片只出现一次（提示框内不重复，只在底部）', () => {
+    render(<PrivateNodePanel node={makeNode({ status: 'active', quotaExhausted: true, quotaResetAt: 1_800_000_000 })} />);
+    const alert = screen.getByTestId('private-node-quota-exhausted');
+    // 额度用尽提示框里不再重复续费句——只保留标题/重置说明
+    expect(within(alert).queryByText(i18n.t('privateNode:privateNode.renewOnWebsite'))).not.toBeInTheDocument();
+    // 整个组件里这句话只出现一次（底部那句）
+    expect(screen.getAllByText(i18n.t('privateNode:privateNode.renewOnWebsite'))).toHaveLength(1);
   });
 
   it('quotaExhausted false: no exhausted alert', () => {
@@ -111,10 +148,10 @@ describe('PrivateNodePanel', () => {
     expect(screen.queryByTestId('private-node-quota-exhausted')).not.toBeInTheDocument();
   });
 
-  it('quotaExhausted CTA navigates to /purchase', () => {
+  it('quotaExhausted 不再提供跳购买页的 CTA', () => {
     navigateMock.mockClear();
     render(<PrivateNodePanel node={makeNode({ quotaExhausted: true })} />);
-    screen.getByTestId('private-node-quota-exhausted-cta').click();
-    expect(navigateMock).toHaveBeenCalledWith('/purchase');
+    expect(screen.queryByTestId('private-node-quota-exhausted-cta')).not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });

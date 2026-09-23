@@ -67,12 +67,12 @@ func addProExpiredDays(ctx context.Context, tx *gorm.DB, user *User, vipType Vip
 // applyOrderToBuyer 订单生效：为购买者本人延长授权时间
 // 注：旧版本支持代付（forUsers），2026-04-20 简化为只处理 buyer
 //
-// provisionSubIDs（可空）收集本次需要异步开通的专属节点订阅 ID。**禁止在事务内
-// enqueue**：若事务随后回滚（返现/邀请奖励失败），PrivateNodeSubscription 行被撤销
-// 但 Redis 任务仍在 → worker 加载 sub "record not found" → 重试 3 次进死队列，付费
-// 用户拿不到东西且无告警（Bug #4）。改为把 sub ID 收集到此切片，由调用方在
-// tx.Commit() 成功后再 enqueueProvision。
-func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order, provisionSubIDs *[]uint64) error {
+// pc（可空）收集本次订单产生的、需等事务提交后才能执行的副作用（异步开通、续费通知
+// 等）。**禁止在事务内直接执行这些副作用**：若事务随后回滚（返现/邀请奖励失败），
+// PrivateNodeSubscription 行被撤销但 Redis 任务/Slack 通知已经发出 → 要么 worker
+// 加载 sub "record not found" 进死队列（Bug #4），要么误报一次根本没发生的变更。
+// 见 OrderPostCommit 注释。
+func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order, pc *OrderPostCommit) error {
 	log.Infof(ctx, "[applyOrderToBuyer] applying order %d to buyer %d", order.ID, order.UserID)
 
 	if order.IsPaid == nil || !*order.IsPaid {
@@ -85,23 +85,30 @@ func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order, provision
 		return fmt.Errorf("plan not found for order %d", order.ID)
 	}
 
-	// 专属节点产品：独立时钟，不碰 User.ExpiredAt。建 pending 订阅 + 异步开通。
-	if plan.Product == ProductPrivateNode {
-		sub, err := createPrivateNodeSubscription(ctx, tx, order, plan, time.Now().Unix())
-		if err != nil {
-			return fmt.Errorf("create private node subscription: %w", err)
-		}
-		// 入队推迟到事务提交后（见函数注释 / Bug #4）。
-		if provisionSubIDs != nil {
-			*provisionSubIDs = append(*provisionSubIDs, sub.ID)
+	// 专属线路产品（专属节点 / 路由器版）：独立时钟，不碰 User.ExpiredAt。
+	if isLineProduct(plan.Product) {
+		now := time.Now().Unix()
+		if plan.Product == ProductRouter {
+			if err := applyRouterOrder(ctx, tx, order, plan, now, pc); err != nil {
+				return err
+			}
+		} else {
+			sub, err := createPrivateNodeSubscription(ctx, tx, order, plan, now)
+			if err != nil {
+				return fmt.Errorf("create private node subscription: %w", err)
+			}
+			// 入队推迟到事务提交后（见函数注释 / Bug #4）。
+			if pc != nil {
+				pc.ProvisionSubIDs = append(pc.ProvisionSubIDs, sub.ID)
+			}
 		}
 
-		// Bug #5：专属节点买家也是已付费首单买家——补置 IsFirstOrderDone / IsActivated，
+		// Bug #5：专属线路买家也是已付费首单买家——补置 IsFirstOrderDone / IsActivated，
 		// 否则仍匹配 first_order（新客）活动码、可重复触发邀请奖励。仅列级更新这两个
-		// 标志位，绝不碰 ExpiredAt（专属节点独立时钟，不能走 addProExpiredDays）。
+		// 标志位，绝不碰 ExpiredAt（专属线路独立时钟，不能走 addProExpiredDays）。
 		var buyer User
 		if err := tx.First(&buyer, order.UserID).Error; err != nil {
-			return fmt.Errorf("buyer not found for private node order %d: %w", order.ID, err)
+			return fmt.Errorf("buyer not found for line product order %d: %w", order.ID, err)
 		}
 		updates := map[string]any{}
 		if buyer.IsFirstOrderDone == nil || !*buyer.IsFirstOrderDone {
@@ -113,11 +120,11 @@ func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order, provision
 		}
 		if len(updates) > 0 {
 			if err := tx.Model(&User{}).Where("id = ?", order.UserID).Updates(updates).Error; err != nil {
-				return fmt.Errorf("set buyer flags for private node order %d: %w", order.ID, err)
+				return fmt.Errorf("set buyer flags for line product order %d: %w", order.ID, err)
 			}
 		}
 
-		log.Infof(ctx, "private node sub %d created for order %d (pending provision, post-commit enqueue)", sub.ID, order.ID)
+		log.Infof(ctx, "line product order %d applied (product=%s)", order.ID, plan.Product)
 		return nil
 	}
 

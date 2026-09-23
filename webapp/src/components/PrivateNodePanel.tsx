@@ -9,14 +9,16 @@
  * - 仅 MUI 暗色主题，禁止 window.confirm/alert/prompt
  * - 错误/状态映射不读后端 message
  *
- * 「续费」目前仅导航到既有 /purchase 流程（复用购买路径）。
- * 真正延长现有订阅 ExpiresAt 的续费是后续 Center 侧能力（Plan 5+），
- * 此处不实现任何支付逻辑，也不伪造续费结果。
+ * 续费走路由器版官网自助购买（「我的路由器」页），App 内不再提供任何跳
+ * 购买页的按钮。此处只做纯文字提示，不实现任何支付逻辑，也不伪造续费结果。
+ * 这句提示本身就是站外支付引导：只在允许购买入口的构建里显示
+ * （purchaseSurfaceAvailable），且 iOS 一律不显示——iOS 构建恒注入 StoreKit
+ * 桥，purchaseSurfaceAvailable() 在 iOS 上为真，但那只放行 App 内购，
+ * 不放行引导去官网付款（Apple 3.1.1）。
  */
 
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import {
   Card,
   CardContent,
@@ -26,12 +28,17 @@ import {
   Chip,
   LinearProgress,
   CircularProgress,
-  Button,
   Alert,
 } from '@mui/material';
 import type { PrivateNodeSubscriptionView } from '../services/api-types';
 import { formatBytes } from '../utils/ui';
 import { formatDate } from '../utils/time';
+import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
+
+/** 能否显示「去官网续费」提示——见文件头注释。 */
+function websiteRenewHintAllowed(): boolean {
+  return purchaseSurfaceAvailable() && window._platform?.os !== 'ios';
+}
 
 type ChipColor = 'success' | 'warning' | 'error' | 'info' | 'default';
 
@@ -59,7 +66,6 @@ interface PrivateNodePanelProps {
 
 export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
 
   // pending/provisioning 还没有实例 → 不展示流量条
   const isProvisioning = node.status === 'pending' || node.status === 'provisioning';
@@ -166,21 +172,11 @@ export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
               <Typography variant="body2" fontWeight={700} sx={{ fontSize: '0.85rem' }}>
                 {t('privateNode:privateNode.quotaExhausted.title')}
               </Typography>
-              <Typography variant="caption" sx={{ display: 'block', mb: 0.75 }}>
+              <Typography variant="caption" sx={{ display: 'block' }}>
                 {node.quotaResetAt && node.quotaResetAt > 0
                   ? t('privateNode:privateNode.quotaExhausted.resetHint', { date: formatDate(node.quotaResetAt) })
                   : t('privateNode:privateNode.quotaExhausted.resetUnknown')}
               </Typography>
-              <Button
-                variant="outlined"
-                color="inherit"
-                size="small"
-                onClick={() => navigate('/purchase')}
-                data-testid="private-node-quota-exhausted-cta"
-                sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600 }}
-              >
-                {t('privateNode:privateNode.quotaExhausted.cta')}
-              </Button>
             </Alert>
           )}
 
@@ -206,16 +202,13 @@ export function PrivateNodePanel({ node }: PrivateNodePanelProps) {
             </Alert>
           )}
 
-          {/* Renew → reuse existing purchase flow (no payment logic here). */}
-          <Button
-            variant="outlined"
-            color="primary"
-            size="small"
-            onClick={() => navigate('/purchase')}
-            sx={{ alignSelf: 'flex-start', borderRadius: 1.5, textTransform: 'none', fontWeight: 600 }}
-          >
-            {t('privateNode:privateNode.renew')}
-          </Button>
+          {/* Renew → website self-service only, no in-app purchase link.
+              Hidden where steering to a web checkout is not allowed (iOS / Play-only). */}
+          {websiteRenewHintAllowed() && (
+            <Typography variant="caption" color="text.secondary">
+              {t('privateNode:privateNode.renewOnWebsite')}
+            </Typography>
+          )}
         </Stack>
       </CardContent>
     </Card>

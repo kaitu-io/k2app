@@ -406,10 +406,7 @@
     "onlineService": "在線客服",
     "realTimeResponse": "即時諮詢、快速回應",
     "startOnlineService": "啟動在線客服",
-    "warranty": "所有路由器產品均提供1年質保 • 免費技術支援 • 7天無理由退貨",
-    "diyBannerTitle": "已經有 OpenWrt / 軟路由？",
-    "diyBannerBody": "一行指令將 開途閘道裝到你現有嘅裝置度，唔使買專用硬件。",
-    "diyBannerCta": "睇 DIY 安裝指南"
+    "warranty": "所有路由器產品均提供1年質保 • 免費技術支援 • 7天無理由退貨"
   },
   "faq": {
     "title": "常見問題",
@@ -433,7 +430,7 @@
       },
       "platforms": {
         "question": "開途 支援邊啲裝置？",
-        "answer": "開途 全平台支援：Windows 10/11、macOS 12+（Intel + Apple Silicon 通用二進位）、Linux（Ubuntu/Debian 及主流發行版）、iOS（iPhone/iPad，中國區 App Store 可直接下載）、Android、OpenWrt 智能路由器。一個帳號最多 5 部裝置同時在線。此外提供 k2s 伺服器端，支援自部署到任何 VPS。"
+        "answer": "開途 全平台支援：Windows 10/11、macOS 12+（Intel + Apple Silicon 通用二進位）、Linux（Ubuntu/Debian 及主流發行版）、iOS（iPhone/iPad，中國區 App Store 可直接下載）、Android，仲有全家共用嘅開途路由器版。一個帳號最多 5 部裝置同時在線。此外提供 k2s 伺服器端，支援自部署到任何 VPS。"
       },
       "selfHosting": {
         "question": "我可唔可以自己部署 開途 伺服器？",
@@ -441,7 +438,7 @@
       },
       "routerSupport": {
         "question": "開途 支援智能路由器嗎？",
-        "answer": "支援。開途 提供 k2r 路由器閘道二進位，原生支援 OpenWrt 系統，使用 TPROXY 模式冇需要客戶端安裝——屋企所有裝置（電腦、手機、平板、智能電視、遊戲機、IoT 裝置）接入該路由器後自動享受跨境存取，冇需要單獨設定。"
+        "answer": "支援。開途路由器版會提供一部預先設定好嘅路由器同專屬線路，插電連網就用得，唔使刷機或者打指令——屋企所有裝置（電腦、手機、平板、智能電視、遊戲機、IoT 裝置）接入之後自動行加密通道，唔使逐部裝 App。適合全家共用、多裝置場景，詳情睇路由器版頁面。"
       },
       "chinaAccess": {
         "question": "開途 喺中國大陸能用嗎？",

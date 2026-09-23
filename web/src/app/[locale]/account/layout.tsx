@@ -2,10 +2,10 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "@/i18n/routing";
 import { useAuth } from "@/contexts/AuthContext";
-import { CircleDashed, Users, CreditCard, Wallet, Lock, LogOut, Receipt } from "lucide-react";
+import { CircleDashed, Users, CreditCard, Wallet, Lock, LogOut, Receipt, Router } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { useTranslations } from "next-intl";
@@ -14,6 +14,7 @@ import { usePathname } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { siteBrand } from "@/lib/brands";
+import { api } from "@/lib/api";
 
 export default function AccountLayout({
   children,
@@ -24,6 +25,7 @@ export default function AccountLayout({
   const router = useRouter();
   const pathname = usePathname();
   const { isAuthenticated, isAuthLoading, logout } = useAuth();
+  const [hasRouter, setHasRouter] = useState(false);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -34,6 +36,22 @@ export default function AccountLayout({
       router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
     }
   }, [isAuthenticated, isAuthLoading, router, pathname]);
+
+  // 路由器版是 kaitu-only 功能：overleap 不请求、侧栏也不出现这一项。
+  // 失败当作没有——这只是一个侧栏入口的显隐开关，不是页面本身的鉴权。
+  useEffect(() => {
+    if (!isAuthenticated || siteBrand().id === "overleap") return;
+    let cancelled = false;
+    api
+      .getUserRouter({ autoRedirectToAuth: false })
+      .then((r) => {
+        if (!cancelled) setHasRouter(!!r.hasRouter);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   if (isAuthLoading) {
     return (
@@ -76,6 +94,15 @@ export default function AccountLayout({
             label: t("admin.account.renew.title"),
             icon: CreditCard,
           },
+          ...(hasRouter
+            ? [
+                {
+                  href: "/account/router",
+                  label: t("routers.edition.account.navTitle"),
+                  icon: Router,
+                },
+              ]
+            : []),
           {
             href: "/account/delegate",
             label: t("admin.account.delegate.title"),

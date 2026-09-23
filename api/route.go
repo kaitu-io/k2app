@@ -162,6 +162,8 @@ func SetupRouter() *gin.Engine {
 			user.POST("/orders/:uuid/notify-delegate", AuthRequired(), EnforceDeviceClass(), api_order_notify_delegate)
 			// 专属节点订阅只读列表（owner-scoped）
 			user.GET("/private-nodes", AuthRequired(), EnforceDeviceClass(), api_get_user_private_nodes)
+			// 路由器版账户页聚合（我的路由器）
+			user.GET("/router", AuthRequired(), EnforceDeviceClass(), api_get_user_router)
 			// 铸造专属线路路由器凭证（k2subs:// URL）。调用方是普通 app/web 设备，
 			// 故不加 EnforceDeviceClass；铸造的是 router 设备（is_gateway=true）。
 			user.POST("/gateway-credential", AuthRequired(), api_gateway_credential)
@@ -344,6 +346,8 @@ func SetupRouter() *gin.Engine {
 		admin.PUT("/users/:uuid/retailer-config", api_admin_update_retailer_config)
 		// 用户会员时长管理
 		admin.POST("/users/:uuid/membership", api_admin_add_user_membership)
+		// 路由器版线路手工延期（补偿 / 客服，与会员时长手工追加同级）
+		admin.POST("/private-node-subscriptions/:id/extend", api_admin_extend_private_line)
 		// 用户邮箱管理
 		admin.PUT("/users/:uuid/email", api_admin_update_user_email)
 		// 用户密码管理（管理员代为重置）
@@ -469,6 +473,14 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.POST("/node-operations", RoleRequired(RoleDevopsEditor), adminCreateNodeOperation)
 		opsAdmin.POST("/node-operations/:id/claim", RoleRequired(RoleDevopsEditor), adminClaimNodeOperation)
 		opsAdmin.POST("/node-operations/:id/update", RoleRequired(RoleDevopsEditor), adminUpdateNodeOperation)
+
+		// 路由器版：发货台账 / 代铸凭证 / 线路与设备从表
+		opsAdmin.GET("/router/stats", RoleRequired(viewOrEdit), api_admin_router_stats)
+		opsAdmin.GET("/router/fulfillments", RoleRequired(viewOrEdit), api_admin_list_router_fulfillments)
+		opsAdmin.POST("/router/fulfillments/:id/stage", RoleRequired(RoleDevopsEditor), api_admin_update_router_stage)
+		opsAdmin.POST("/router/fulfillments/:id/credential", RoleRequired(RoleDevopsEditor), api_admin_mint_router_credential)
+		opsAdmin.GET("/private-node-subscriptions", RoleRequired(viewOrEdit), api_admin_list_private_node_subscriptions)
+		opsAdmin.GET("/router-devices", RoleRequired(viewOrEdit), api_admin_list_router_devices)
 
 		// 企业路由器（多槽多线路）
 		opsAdmin.GET("/enterprise/customers", RoleRequired(viewOrEdit), api_admin_list_enterprise_customers)

@@ -35,6 +35,8 @@ type CreateOrderRequest struct {
 	Plan         string `json:"plan" binding:"required" example:"pro_month"` // 套餐ID
 	CampaignCode string `json:"campaignCode" example:"SAVE20"`               // 优惠码（可选）
 	Region       string `json:"region" example:"ap-northeast-1"`             // 专属节点购买时选定的地区（仅 Product=private_node 套餐有效）
+	// Shipping 路由器版成品套餐（Plan.HardwareSKU != ""）真实下单必填；预览与其它产品忽略。
+	Shipping *RouterShipping `json:"shipping,omitempty"`
 
 	// Deprecated 2026-04-20: 代付功能已下线，下列字段仅用于检测旧客户端并拒绝其请求，不再写入 Order。
 	// 详见 docs/superpowers/specs/2026-04-20-proxy-purchase-users.md
@@ -96,29 +98,32 @@ func api_create_order(c *gin.Context) {
 	log.Debugf(c, "plan found successfully: PID=%s, Label=%s, Price=%d", plan.PID, plan.Label, plan.Price)
 
 	// Tier validation: first-time buyers may pick any tier; repeat buyers must stay on their current tier.
-	if err := validatePurchase(user, plan); err != nil {
-		log.Warnf(c, "tier validation rejected user %d: %v", user.ID, err)
-		Error(c, ErrorTierMismatch,
-			fmt.Sprintf("您当前为「%s」档，无法购买「%s」档套餐。如需变更档位请联系客服。",
-				user.Tier, plan.Tier))
-		return
+	// 仅对 App 产品生效：专属节点/路由器版独立计费、与会员 tier 无关。
+	if plan.Product == ProductApp {
+		if err := validatePurchase(user, plan); err != nil {
+			log.Warnf(c, "tier validation rejected user %d: %v", user.ID, err)
+			Error(c, ErrorTierMismatch,
+				fmt.Sprintf("您当前为「%s」档，无法购买「%s」档套餐。如需变更档位请联系客服。",
+					user.Tier, plan.Tier))
+			return
+		}
 	}
 
 	// 防重叠(防双扣):已有任一 provider 的活跃续订订阅 → 拒绝一次性充值,
 	// 含 preview——购买 UI 尽早拿到反馈,而非付款瞬间才失败。
 	// 与 api_stripe_checkout 的既有守卫同判据(GetActiveSubscriptions/isSubscriptionLive)同错码。
-	// 专属节点(ProductPrivateNode)套餐豁免此门:与 Subscription/User.ExpiredAt 零耦合
-	// (见 model_private_node.go),独立计费、不延长会员期限,双付论证对它不成立。
-	if plan.Product != ProductPrivateNode && len(GetActiveSubscriptions(user.ID)) > 0 {
+	// 专属节点(ProductPrivateNode)/路由器版(ProductRouter)套餐豁免此门:与 Subscription/User.ExpiredAt
+	// 零耦合(见 model_private_node.go),独立计费、不延长会员期限,双付论证对它不成立。
+	if !isLineProduct(plan.Product) && len(GetActiveSubscriptions(user.ID)) > 0 {
 		log.Warnf(c, "user %d rejected: active subscription exists, one-off purchase blocked", user.ID)
 		Error(c, ErrorConflict, "you already have an active subscription")
 		return
 	}
 
-	// 专属节点套餐：校验选定地区在允许列表内。空 region 允许（开通时由
+	// 专属线路套餐（专属节点/路由器版）：校验选定地区在允许列表内。空 region 允许（开通时由
 	// createPrivateNodeSubscription 回退到 firstAllowedRegion）。校验对 preview 与
 	// 真实创建都执行，让购买 UI 能尽早拿到反馈；preview 不落库订单。
-	if plan.Product == ProductPrivateNode && req.Region != "" {
+	if isLineProduct(plan.Product) && req.Region != "" {
 		spec, err := loadPrivateNodePlanSpec(db.Get(), plan.ID)
 		if err != nil {
 			log.Errorf(c, "failed to load private node plan spec for plan %d: %v", plan.ID, err)
@@ -130,6 +135,46 @@ func api_create_order(c *gin.Context) {
 		if !slices.Contains(allowed, req.Region) {
 			log.Warnf(c, "region %s not allowed for private node plan %s (user %d)", req.Region, plan.PID, user.ID)
 			Error(c, ErrorInvalidArgument, "region not allowed for this plan")
+			return
+		}
+	}
+
+	// 一户一台（spec §8）：真实下单硬件套餐时，已有未过期台账或可续线路 → 拒绝，引导买续费套餐。
+	// 预览放行，让网站照常报价。
+	if plan.Product == ProductRouter && plan.HardwareSKU != "" && !req.Preview {
+		has, err := userHasRouter(c, db.Get(), user.ID, time.Now().Unix())
+		if err != nil {
+			log.Errorf(c, "check existing router for user %d: %v", user.ID, err)
+			Error(c, ErrorSystemError, "failed to check existing router")
+			return
+		}
+		if has {
+			log.Warnf(c, "user %d rejected: already has a router, hardware plan %s blocked", user.ID, plan.PID)
+			Error(c, ErrorInvalidOperation, "该账户已有开途路由器，请购买续费套餐")
+			return
+		}
+	}
+
+	// 服务套餐仅续费：真实下单时名下没有路由器（见 userCanBuyRouterService）→ 拒绝。预览放行。
+	if plan.Product == ProductRouter && plan.HardwareSKU == "" && !req.Preview {
+		ok, err := userCanBuyRouterService(c, db.Get(), user.ID, time.Now().Unix())
+		if err != nil {
+			log.Errorf(c, "check router service eligibility for user %d: %v", user.ID, err)
+			Error(c, ErrorSystemError, "failed to check existing router")
+			return
+		}
+		if !ok {
+			log.Warnf(c, "user %d rejected: no router, service plan %s is renewal-only", user.ID, plan.PID)
+			Error(c, ErrorInvalidOperation, "服务套餐仅用于续费，请购买含路由器的开途路由器版")
+			return
+		}
+	}
+
+	// 路由器版成品：真实下单必须带收货信息（预览阶段允许缺省，让页面先报价）。
+	if plan.Product == ProductRouter && plan.HardwareSKU != "" && !req.Preview {
+		if req.Shipping == nil || req.Shipping.Name == "" || req.Shipping.Phone == "" || req.Shipping.Address == "" {
+			log.Warnf(c, "router order for user %d missing shipping info", user.ID)
+			Error(c, ErrorInvalidArgument, "shipping name/phone/address required")
 			return
 		}
 	}
@@ -149,9 +194,17 @@ func api_create_order(c *gin.Context) {
 		CampaignReduceAmount: 0,
 		UserID:               user.ID,
 	}
-	// 仅专属节点订单写入 region；共享套餐忽略 req.Region（持久化为空）。
-	if plan.Product == ProductPrivateNode {
+	// 专属线路订单（专属节点/路由器版）写入 region；共享套餐忽略 req.Region（持久化为空）。
+	if isLineProduct(plan.Product) {
 		order.PrivateNodeRegion = req.Region
+	}
+	// 路由器版成品：收货信息落独立列（真实下单已在上面校验必填；此处兜底 preview/服务套餐不写）。
+	// *string：nil 保持列为 SQL NULL（见 model.go Order.RouterShipping 注释），非 nil 才取地址赋值。
+	if plan.Product == ProductRouter && plan.HardwareSKU != "" && req.Shipping != nil {
+		if b, err := json.Marshal(req.Shipping); err == nil {
+			s := string(b)
+			order.RouterShipping = &s
+		}
 	}
 	log.Debugf(c, "order object created: Title=%s, OriginAmount=%d, PayAmount=%d", order.Title, order.OriginAmount, order.PayAmount)
 

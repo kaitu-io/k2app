@@ -77,9 +77,10 @@ func handleNextpayOrderPaid(c *gin.Context, evt *nextpay.WebhookEvent) error {
 	}
 	log.Infof(c, "[Webhook] nextpay order paid: order=%s nextpay=%s amount=%d %s", d.ObjectID, d.OrderID, d.Amount, d.Currency)
 
-	var provisionSubIDs []uint64
+	// 事务内副作用一律收集到 OrderPostCommit，提交后再触发（Bug #4，见 logic_order.go）。
+	var pc OrderPostCommit
 	err = withDeadlockRetry(c, 3, func(tx *gorm.DB) error {
-		provisionSubIDs = nil // 死锁重试会重跑闭包，旧 ID 必须丢弃
+		pc = OrderPostCommit{} // 死锁重试会重跑闭包，旧值必须丢弃
 		var order Order
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("User").Where(&Order{UUID: d.ObjectID}).First(&order).Error
 		if err == gorm.ErrRecordNotFound {
@@ -115,7 +116,7 @@ func handleNextpayOrderPaid(c *gin.Context, evt *nextpay.WebhookEvent) error {
 			return nil
 		}
 
-		if err := MarkOrderAsPaid(c, tx, &order, &provisionSubIDs); err != nil {
+		if err := MarkOrderAsPaid(c, tx, &order, &pc); err != nil {
 			return fmt.Errorf("mark order paid: %w", err)
 		}
 		if order.NextpayOrderID != d.OrderID {
@@ -130,11 +131,15 @@ func handleNextpayOrderPaid(c *gin.Context, evt *nextpay.WebhookEvent) error {
 		return err
 	}
 	// 事务已提交：现在才入队专属节点开通（照抄 wordgate handler 的 Bug #4 约束）。
-	for _, subID := range provisionSubIDs {
+	for _, subID := range pc.ProvisionSubIDs {
 		if err := enqueueProvision(c, subID); err != nil {
 			log.Errorf(c, "[Webhook] failed to enqueue provision for sub %d (order committed; needs manual retry): %v", subID, err)
 		}
 		onPrivateNodeOrderOnboarding(c, subID)
+	}
+	// 路由器版续费的 Slack 通知同样推迟到提交后。
+	for _, subID := range pc.RenewedRouterSubIDs {
+		onRouterLineRenewed(c, subID)
 	}
 	return nil
 }

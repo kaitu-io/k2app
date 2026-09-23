@@ -280,6 +280,12 @@ type Order struct {
 	// createPrivateNodeSubscription 读取，跨越"下单→支付回调"的时间差。AutoMigrate
 	// 自动新增此可空列（additive，无需手动迁移）。
 	PrivateNodeRegion string `gorm:"type:varchar(50)" json:"privateNodeRegion,omitempty"`
+	// RouterShipping 路由器版成品订单的收货信息（JSON: RouterShipping）。与 PrivateNodeRegion 同理
+	// 走独立列而非 Meta：Meta 由 SetOrderMeta / SetOrderCheckout 整体重写，不为业务键做保留承诺。
+	// *string 而非 string：nil 在 Create 与任何整行 UPDATE 下都序列化成 SQL NULL；string 零值 ""
+	// 会撞上 MariaDB/MySQL 对 type:json 列的 json_valid CHECK（`default` 标签只管 Create 省列，
+	// 整行 UPDATE 不认它）。
+	RouterShipping *string `gorm:"column:router_shipping;type:json" json:"-"`
 	// Channel 标识订单来源渠道。空值 = 历史 wordgate 订单（AutoMigrate 后存量行为空）。
 	// 口径警告：apple_iap 订单的 PayAmount 是 **plan 标价**，不是用户实付、也不是本方实收
 	// ——Apple 多币种定价 + 15% 抽成，两者都对不上。营收统计必须按 Channel 分开算，
@@ -466,6 +472,18 @@ func (o *Order) GetPayUrl() string {
 		return ""
 	}
 	return meta.PayUrl
+}
+
+// GetRouterShipping 解析收货信息；无或非法返回 nil。
+func (o *Order) GetRouterShipping() *RouterShipping {
+	if o.RouterShipping == nil || *o.RouterShipping == "" {
+		return nil
+	}
+	var s RouterShipping
+	if err := json.Unmarshal([]byte(*o.RouterShipping), &s); err != nil || s.Name == "" {
+		return nil
+	}
+	return &s
 }
 
 // Message 消息模型
@@ -801,8 +819,14 @@ type AdminApproval struct {
 
 const (
 	ProductApp         = "app"          // App 订阅（共享池），默认
-	ProductPrivateNode = "private_node" // 专属节点（路由器）
+	ProductPrivateNode = "private_node" // 专属节点（内部规格，不再面向用户售卖）
+	ProductRouter      = "router"       // 开途路由器版：硬件 + 年服务费，内部映射到一条专属线路
 )
+
+// isLineProduct 判定该产品线是否以专属线路交付（下单需 PrivateNodePlanSpec，付款建 PrivateNodeSubscription）。
+func isLineProduct(product string) bool {
+	return product == ProductPrivateNode || product == ProductRouter
+}
 
 type Plan struct {
 	ID          uint64    `gorm:"primarykey" json:"id"`
@@ -826,7 +850,11 @@ type Plan struct {
 	// Plan.Price 仅展示。
 	StripePriceID string `gorm:"column:stripe_price_id;type:varchar(255);index" json:"stripePriceId,omitempty"`
 
-	Product string `gorm:"type:varchar(20);not null;default:'app';index" json:"product"` // app | private_node
+	Product string `gorm:"type:varchar(20);not null;default:'app';index" json:"product"` // app | private_node | router
+
+	// HardwareSKU 路由器版硬件机型标识（如 redmi-ax6s）。仅 Product=router 且含硬件的套餐非空；
+	// 续费/自备路由器套餐为空。只供后台发货台账使用，不用于前台拆价展示（按需求定价，不拆硬件明细）。
+	HardwareSKU string `gorm:"column:hardware_sku;type:varchar(40);not null;default:''" json:"hardwareSku,omitempty"`
 
 	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
 	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index" json:"brand"`

@@ -26,6 +26,7 @@ func buildPlanDTO(c *gin.Context, plan Plan) DataPlan {
 		MaxLanClient:    q.MaxLanClient,
 		AppleProductID:  plan.AppleProductID,
 		Product:         plan.Product,
+		HardwareSKU:     plan.HardwareSKU,
 	}
 	// Stripe 套餐附带多币种展示价（logic_stripe_price.go）。取不到只记日志、字段省略：
 	// 套餐列表绝不因 Stripe 抖动而失败，客户端回落 Price 的美元价。
@@ -38,7 +39,7 @@ func buildPlanDTO(c *gin.Context, plan Plan) DataPlan {
 			}
 		}
 	}
-	if plan.Product == ProductPrivateNode {
+	if isLineProduct(plan.Product) {
 		var spec PrivateNodePlanSpec
 		if err := db.Get().Where(&PrivateNodePlanSpec{PlanID: plan.ID}).First(&spec).Error; err == nil {
 			var regions []string
@@ -52,7 +53,7 @@ func buildPlanDTO(c *gin.Context, plan Plan) DataPlan {
 				TrafficTotalBytes: spec.TrafficTotalBytes,
 			}
 		} else {
-			log.Warnf(c, "private_node plan %s (id=%d) has no PrivateNodePlanSpec: %v", plan.PID, plan.ID, err)
+			log.Warnf(c, "%s plan %s (id=%d) has no PrivateNodePlanSpec: %v", plan.Product, plan.PID, plan.ID, err)
 		}
 	}
 	return dp
@@ -82,10 +83,10 @@ func api_get_plans(c *gin.Context) {
 
 // api_get_product_plans 按产品线获取套餐列表。
 //
-// :product 必须为 ProductApp 或 ProductPrivateNode，否则返回 ErrorInvalidArgument。
+// :product 必须为 ProductApp 或专属线路产品（ProductPrivateNode / ProductRouter），否则返回 ErrorInvalidArgument。
 func api_get_product_plans(c *gin.Context) {
 	product := c.Param("product")
-	if product != ProductApp && product != ProductPrivateNode {
+	if product != ProductApp && !isLineProduct(product) {
 		log.Warnf(c, "request for unknown product: %s", product)
 		Error(c, ErrorInvalidArgument, "unknown product")
 		return

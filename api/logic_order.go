@@ -18,6 +18,18 @@ var getDB = func() *gorm.DB { return db.Get() }
 
 // ==================== 订单支付处理 ====================
 
+// OrderPostCommit 收集订单入账过程中产生的、必须等事务提交后才能执行的副作用。
+// 事务内只允许往这里追加数据，绝不能在事务内直接执行副作用（enqueue Asynq 任务、发
+// Slack、发邮件……）—— 若事务随后回滚（返现/邀请奖励失败），已执行的副作用无法撤销，
+// 还可能对着已经不存在的行重试（Bug #4：sub 行随事务回滚消失，但 Redis 任务已入队，
+// worker 加载 "record not found" 进死队列）。调用方必须在 tx.Commit() 成功后，遍历本
+// 结构体的每个切片再触发对应副作用。可为 nil（等价于"不收集"，与旧版 provisionSubIDs
+// 可空语义一致）。
+type OrderPostCommit struct {
+	ProvisionSubIDs     []uint64 // 需要异步开通（enqueueProvision）的新建专属线路订阅 ID
+	RenewedRouterSubIDs []uint64 // 本次续费延期的路由器版专属线路订阅 ID（post-commit 发 Slack 通知）
+}
+
 // MarkOrderAsPaid 标记订单为已支付，并处理所有支付后的业务逻辑
 // 这是订单支付的主调度函数，协调以下流程：
 // 1. 更新订单状态为已支付
@@ -28,11 +40,8 @@ var getDB = func() *gorm.DB { return db.Get() }
 // 原子性保证：所有步骤必须全部成功，任何一步失败都会导致整个事务回滚
 // 这确保用户不会出现"付了款但没拿到应得奖励"的情况
 //
-// provisionSubIDs（可空）收集需要异步开通的专属节点订阅 ID。这些任务**不能**在
-// 事务内 enqueue —— 若事务随后回滚，订阅行没了但 Redis 任务还在 → worker 拿不到
-// sub 进死队列（Bug #4）。调用方必须在 tx 成功提交后，对收集到的每个 ID 调用
-// enqueueProvision。
-func MarkOrderAsPaid(ctx context.Context, tx *gorm.DB, order *Order, provisionSubIDs *[]uint64) error {
+// pc（可空）收集需要在事务提交后执行的副作用，见 OrderPostCommit 注释。
+func MarkOrderAsPaid(ctx context.Context, tx *gorm.DB, order *Order, pc *OrderPostCommit) error {
 	log.Infof(ctx, "[MarkOrderAsPaid] processing payment for order %d", order.ID)
 
 	// 如果订单已经标记为已支付，直接返回
@@ -69,7 +78,7 @@ func MarkOrderAsPaid(ctx context.Context, tx *gorm.DB, order *Order, provisionSu
 	}
 
 	// 第三步：为购买用户增加 Pro 授权
-	if err := applyOrderToBuyer(ctx, tx, order, provisionSubIDs); err != nil {
+	if err := applyOrderToBuyer(ctx, tx, order, pc); err != nil {
 		log.Errorf(ctx, "[MarkOrderAsPaid] failed to apply order to target users: %v", err)
 		return fmt.Errorf("给用户增加授权失败: %v", err)
 	}
