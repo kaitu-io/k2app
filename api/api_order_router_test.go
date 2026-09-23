@@ -70,13 +70,19 @@ func TestCreateOrder_RouterServiceIgnoresShippingAndSkipsTierGate(t *testing.T) 
 	user := CreateTestUser(t)
 	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", user.ID).
 		Updates(map[string]any{"is_first_order_done": true, "tier": TierFamily}).Error)
-	// 服务套餐仅续费：给该用户一条可续线路，让它过服务套餐门（门本身见 TestCreateOrder_RouterServiceRenewalOnly）。
+	// 服务套餐仅续费：给该用户一条可续的**路由器版**线路，让它过服务套餐门（门本身见
+	// TestCreateOrder_RouterServiceRenewalOnly）。线路必须连带台账 —— 台账是"这条线路属于路由器版"
+	// 的唯一判据（routerLineIDs），只建线路等于造了一条定制线路，过不了门。
 	now := time.Now().Unix()
-	line := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, Region: "japan",
-		IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40, Status: PNStatusActive,
+	line := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, OrderID: 710000 + user.ID,
+		Region: "japan", IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40, Status: PNStatusActive,
 		PurchasedAt: now - 10*86400, ExpiresAt: now + 300*86400}
 	require.NoError(t, db.Get().Create(line).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(line) })
+	lineFul := &RouterFulfillment{OrderID: line.OrderID, UserID: user.ID, SubID: line.ID,
+		HardwareSKU: "redmi-ax6s", Stage: RouterStageOnline, ShippedAt: now - 9*86400}
+	require.NoError(t, db.Get().Create(lineFul).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(lineFul) })
 
 	postOrder(t, r, user.ID, map[string]any{"preview": false, "plan": plan.PID, "region": "japan"})
 	o := latestOrderForUser(t, user.ID)
@@ -203,10 +209,28 @@ func TestCreateOrder_RouterHardwareOnePerAccount(t *testing.T) {
 		assert.Nil(t, latestOrderForUser(t, user.ID))
 	})
 
-	t.Run("renewable line without fulfillment blocks hardware order", func(t *testing.T) {
+	// 无台账的可续线路 = 定制线路（Product=private_node），不是路由器 —— 绝不能用"已有路由器"
+	// 把这位客户挡在路由器版之外。本地 UAT 实测过这个误判：定制线路客户买 router-std-1y 被拒，
+	// 提示"该账户已有开途路由器"。判据是 routerLineIDs（线路是否挂台账），不是"有没有专属线路"。
+	t.Run("renewable line without ledger row (定制线路) does not block hardware order", func(t *testing.T) {
 		user := CreateTestUser(t)
 		cleanupOrders(t, user.ID)
-		mkLine(t, user.ID, PNStatusActive, 0)
+		mkLine(t, user.ID, PNStatusActive, 760000+user.ID)
+		code, _ := postOrder(t, r, user.ID, hwOrder)
+		// 与兄弟子测试同一口径：只断言"这道门没触发"。本测试路由不接 NextPay，订单落库后
+		// 建 checkout 会失败（ErrorSystemError），断言 code==0 会锚到与本门无关的下游形态上。
+		assert.NotEqualValues(t, ErrorInvalidOperation, code, "定制线路客户必须能买开途路由器版")
+		assert.NotNil(t, latestOrderForUser(t, user.ID), "订单必须落库")
+	})
+
+	t.Run("renewable line with ledger row blocks hardware order", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		live := mkLine(t, user.ID, PNStatusActive, 765000+user.ID)
+		f := &RouterFulfillment{OrderID: live.OrderID, UserID: user.ID, SubID: live.ID,
+			HardwareSKU: "redmi-ax6s", Stage: RouterStageOnline, ShippedAt: now - 5*86400}
+		require.NoError(t, db.Get().Create(f).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(f) })
 		code, _ := postOrder(t, r, user.ID, hwOrder)
 		assert.EqualValues(t, ErrorInvalidOperation, code)
 		assert.Nil(t, latestOrderForUser(t, user.ID))
@@ -283,14 +307,27 @@ func TestCreateOrder_RouterServiceRenewalOnly(t *testing.T) {
 		assert.EqualValues(t, 0, code)
 	})
 
-	t.Run("active line: allowed", func(t *testing.T) {
+	t.Run("active router line (with ledger row): allowed", func(t *testing.T) {
 		user := CreateTestUser(t)
 		cleanupOrders(t, user.ID)
-		mkLine(t, user.ID, PNStatusActive, 0)
+		live := mkLine(t, user.ID, PNStatusActive, 745000+user.ID)
+		mkFulfillment(t, user.ID, live, "redmi-ax6s", RouterStageOnline)
 
 		code, _ := postOrder(t, r, user.ID, svcOrder)
 		assert.NotEqualValues(t, ErrorInvalidOperation, code)
 		assert.NotNil(t, latestOrderForUser(t, user.ID), "renewal order must persist")
+	})
+
+	// 定制线路客户（活跃线路但没有任何路由器台账）不得买路由器续费套餐：那会用 $299 的服务费
+	// 续掉一条 $599 的定制线路。本地 UAT 实测复现过这条资损。
+	t.Run("active line without ledger row (定制线路): rejected", func(t *testing.T) {
+		user := CreateTestUser(t)
+		cleanupOrders(t, user.ID)
+		mkLine(t, user.ID, PNStatusActive, 746000+user.ID)
+
+		code, _ := postOrder(t, r, user.ID, svcOrder)
+		assert.EqualValues(t, ErrorInvalidOperation, code)
+		assert.Nil(t, latestOrderForUser(t, user.ID), "定制线路不得成为路由器续费的目标")
 	})
 
 	t.Run("only expired hardware fulfillment on a deprovisioned line: allowed", func(t *testing.T) {

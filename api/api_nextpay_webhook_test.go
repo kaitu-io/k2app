@@ -169,11 +169,17 @@ func TestNextpayWebhook_RouterRenewal_ExtendsLine(t *testing.T) {
 	user := CreateTestUser(t)
 	plan := seedRouterPlan(t, "router-np-renew", "", 29900)
 	now := time.Now().Unix()
-	existing := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, OrderID: 0,
+	// 既有的路由器版线路必须连带台账：台账是"这条线路属于路由器版"的唯一判据（routerLineIDs），
+	// 只建线路等于造了一条定制线路，续费不会认它（见 TestRouterGates_*）。
+	existing := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, OrderID: 780000 + user.ID,
 		Region: "japan", IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40,
 		Status: PNStatusGrace, PurchasedAt: now - 400*86400, ExpiresAt: now - 3*86400, GraceUntil: now + 4*86400}
 	require.NoError(t, db.Get().Create(existing).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(existing) })
+	existingFul := &RouterFulfillment{OrderID: existing.OrderID, UserID: user.ID, SubID: existing.ID,
+		HardwareSKU: "redmi-ax6s", Stage: RouterStageShipped, ShippedAt: now - 390*86400}
+	require.NoError(t, db.Get().Create(existingFul).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(existingFul) })
 	o := newUnpaidNextpayOrder(t, user, plan)
 	o.NextpayOrderID = "np-rt-1"
 	require.NoError(t, db.Get().Save(o).Error)
