@@ -1,6 +1,7 @@
 package center
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -72,6 +73,11 @@ func api_order_pay_redirect(c *gin.Context) {
 		checkoutURL = url
 		return nil
 	})
+	if errors.Is(err, errOrderAlreadyPaid) {
+		// 快照读到未付、重建期间 webhook 已入账：当已付处理。
+		c.Redirect(http.StatusFound, payResultURL(locale, order.UUID))
+		return
+	}
 	if err != nil {
 		log.Errorf(c, "pay redirect: ensure checkout for order %s: %v", orderUUID, err)
 		c.Redirect(http.StatusFound, purchase)
