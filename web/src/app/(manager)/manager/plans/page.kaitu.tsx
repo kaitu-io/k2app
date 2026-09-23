@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { formatMinor } from "@/lib/pricing";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -131,7 +132,8 @@ export default function PlansPage() {
       header: "价格",
       cell: ({ row }: { row: Row<Plan> }) => {
         const price = row.getValue("price") as number;
-        return `¥${(price / 100).toFixed(2)}`;
+        // plans.price 是 USD 美分（wordgate 741 笔已付订单 currency 全为 USD），不是人民币分。
+        return formatMinor(price, "usd", "en-US", { digits: 2 });
       },
     },
     {
@@ -139,7 +141,7 @@ export default function PlansPage() {
       header: "原价",
       cell: ({ row }: { row: Row<Plan> }) => {
         const originPrice = row.getValue("originPrice") as number;
-        return `¥${(originPrice / 100).toFixed(2)}`;
+        return formatMinor(originPrice, "usd", "en-US", { digits: 2 });
       },
     },
     {

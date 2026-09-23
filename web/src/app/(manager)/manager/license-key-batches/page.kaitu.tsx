@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { formatMinor } from "@/lib/pricing";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -233,7 +234,7 @@ export default function LicenseKeyBatchesPage() {
             <div className="grid grid-cols-3 gap-3 py-2">
               <Card><CardContent className="pt-4"><div className="text-sm text-muted-foreground">兑换率</div><div className="text-xl font-bold">{pct(detail.quantity > 0 ? detail.redeemedCount / detail.quantity : 0)}</div><div className="text-xs text-muted-foreground">{detail.redeemedCount}/{detail.quantity}</div></CardContent></Card>
               <Card><CardContent className="pt-4"><div className="text-sm text-muted-foreground">转化率</div><div className="text-xl font-bold">{pct(detail.conversionRate)}</div><div className="text-xs text-muted-foreground">{detail.convertedUsers} 人付费</div></CardContent></Card>
-              <Card><CardContent className="pt-4"><div className="text-sm text-muted-foreground">收入</div><div className="text-xl font-bold">¥{(detail.revenue / 100).toFixed(2)}</div></CardContent></Card>
+              <Card><CardContent className="pt-4"><div className="text-sm text-muted-foreground">收入</div><div className="text-xl font-bold">{formatMinor(detail.revenue, "usd", "en-US", { digits: 2 })}</div></CardContent></Card>
             </div>
             <div className="flex items-center gap-2 py-2">
               <select className="p-1 border border-border bg-background text-foreground rounded text-sm" value={detailKeyStatus} onChange={e => { setDetailKeyStatus(e.target.value); setDetailKeyPage(1); }}>

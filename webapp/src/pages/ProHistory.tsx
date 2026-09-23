@@ -18,6 +18,7 @@ import type { ProHistory, Pagination } from "../services/api-types";
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import BackButton from '../components/BackButton';
 import { formatTime } from '../utils/time';
+import { formatMinor } from '../utils/pricing';
 import { useTheme } from '@mui/material/styles';
 import React from 'react';
 import { LoadingCard, EmptyHistory } from '../components/LoadingAndEmpty';
@@ -27,7 +28,7 @@ import { cloudApi } from '../services/cloud-api';
 
 export default function ProHistory() {
   const theme = useTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchParams] = useSearchParams();
   const typeFilter = searchParams.get('type') || undefined; // 从 URL 读取 type 参数
   const fromPage = searchParams.get('from') || '/account'; // 从 URL 读取 from 参数，默认返回 account
@@ -301,7 +302,9 @@ export default function ProHistory() {
                                 component="span"
                                 sx={{ fontSize: '0.85rem' }}
                               >
-                                ¥{(h.order.payAmount / 100).toFixed(2)}
+                                {/* orders.pay_amount 是 USD 美分（741 笔 wordgate 已付订单
+                                    currency 全为 USD）；这里曾硬编码 人民币符号，与购买页的美元符号自相矛盾。 */}
+                                {formatMinor(h.order.payAmount, 'usd', i18n.language, 2)}
                               </Typography>
 
                               {/* Pay time */}
@@ -336,7 +339,7 @@ export default function ProHistory() {
                                     component="span"
                                     sx={{ fontSize: '0.7rem' }}
                                   >
-                                    {t('account:proHistory.discount')}：-¥{(h.order.campaignReduceAmount / 100).toFixed(2)}
+                                    {t('account:proHistory.discount')}：-{formatMinor(h.order.campaignReduceAmount, 'usd', i18n.language, 2)}
                                   </Typography>
                                 </Stack>
                               )}

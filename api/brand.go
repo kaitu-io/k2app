@@ -65,7 +65,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 		// 2026-09-22 起 nextpay 是 kaitu 网页/app 下单渠道；wordgate 过渡期保留——
 		// 在途 WordGate 订单的 webhook 哨兵检查 AllowsPayment(wordgate)，拿掉会拒掉在途付款。
 		// Phase B 清理时移除 wordgate。
-		PaymentChannels:    []string{PayChannelNextpay, PayChannelWordgate, PayChannelAppleIAP},
+		PaymentChannels: []string{PayChannelNextpay, PayChannelWordgate, PayChannelAppleIAP},
 	},
 	BrandOverleap: {
 		ID:                 BrandOverleap,
@@ -203,5 +203,22 @@ var alertPaymentBrandMismatch = func(ctx context.Context, format string, args ..
 	log.Errorf(ctx, "%s", msg)
 	if err := slack.Send("alert", "[PAYMENT-BRAND-MISMATCH] "+msg); err != nil {
 		log.Errorf(ctx, "failed to send brand-mismatch slack alert: %v", err)
+	}
+}
+
+// alertPaymentAnomaly 是**所有**支付渠道的入账异常统一告警出口：error 日志 + Slack
+// "alert" 频道，消息以 "[<tag>]" 开头。已在用的 tag：
+//
+//	PAYMENT-AMOUNT-MISMATCH  实付金额/币种与本地订单不符（nextpay）
+//	DOUBLE-PAY               同一本地订单被两张 Stripe session 各付一次（nextpay）
+//	ORPHAN-PAYMENT           渠道报告已付，但本地查不到任何对应订单（nextpay + wordgate）
+//
+// 从 alertNextpayPaymentAnomaly 提升而来：ORPHAN-PAYMENT 两条渠道都要，再复制一份
+// 同形函数就是第三次犯同一个错。var 形态供测试替换。
+var alertPaymentAnomaly = func(ctx context.Context, tag, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	log.Errorf(ctx, "[%s] %s", tag, msg)
+	if err := slack.Send("alert", "["+tag+"] "+msg); err != nil {
+		log.Errorf(ctx, "failed to send slack alert [%s]: %v", tag, err)
 	}
 }

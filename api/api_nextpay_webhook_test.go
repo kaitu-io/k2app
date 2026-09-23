@@ -56,10 +56,10 @@ func orderPaidPayload(evtID, nextpayOrderID, objectID string, amount uint64, cur
 // captureAnomaly 替换告警 seam，收集 tag。
 func captureAnomaly(t *testing.T) *[]string {
 	t.Helper()
-	orig := alertNextpayPaymentAnomaly
-	t.Cleanup(func() { alertNextpayPaymentAnomaly = orig })
+	orig := alertPaymentAnomaly
+	t.Cleanup(func() { alertPaymentAnomaly = orig })
 	tags := []string{}
-	alertNextpayPaymentAnomaly = func(ctx context.Context, tag, format string, args ...any) { tags = append(tags, tag) }
+	alertPaymentAnomaly = func(ctx context.Context, tag, format string, args ...any) { tags = append(tags, tag) }
 	return &tags
 }
 
