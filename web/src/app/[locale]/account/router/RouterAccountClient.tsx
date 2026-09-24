@@ -26,7 +26,14 @@ import {
 import { RouterCliBlock } from '@/app/[locale]/install/install-guides';
 import { api, ApiError, type UserRouter } from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/api-errors';
-import { buildInstallCommand, routerProgressSteps, quotaLevel, formatBytes } from '@/lib/router-edition';
+import {
+  buildInstallCommand,
+  routerProgressSteps,
+  quotaLevel,
+  formatBytes,
+  formatShipsFrom,
+  routerOffer,
+} from '@/lib/router-edition';
 
 // stage 落在这些值时开通链路仍在异步推进（付款确认 / 开线路 / 发货），30 秒轮询一次；
 // online / expired 是终态，继续轮询只会白耗请求。
@@ -189,6 +196,11 @@ function RouterAccountBody() {
   const usageLevel = line ? quotaLevel(line.trafficUsedBytes, line.trafficTotalBytes) : 'normal';
   const showInstallCard = isByo && !isExpired;
   const canGenerate = !!fulfillment?.canMintCredential && !fulfillment.credentialMinted && !credentialUrl;
+  // 含硬件且尚未发货：线路上的 expiresAt 只是付款时的暂定值，发货时后端会按发货日重设——
+  // 这之前不显示到期日，免得预售用户看到一个错的日期。
+  const awaitingShipment = isHardware && !isExpired && fulfillment.shippedAt === 0;
+  const offer = routerOffer();
+  const presaleShipping = awaitingShipment && offer.presale;
 
   return (
     <div className="flex flex-col gap-6">
@@ -266,6 +278,11 @@ function RouterAccountBody() {
                     })}
                   </p>
                 )}
+                {presaleShipping && (
+                  <p data-testid="presale-shipping" className="text-sm text-primary">
+                    {t('routers.edition.account.presaleShipping', { date: formatShipsFrom(offer.shipsFrom, locale) })}
+                  </p>
+                )}
                 {isHardware && (
                   <p className="text-sm text-muted-foreground">{t('routers.edition.account.hardwareHint')}</p>
                 )}
@@ -318,11 +335,17 @@ function RouterAccountBody() {
             <CardTitle>{t('routers.edition.account.subscriptionTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 pt-4">
-            <p className="text-sm">
-              {t('routers.edition.account.expiresAt', {
-                date: new Date(line.expiresAt * 1000).toLocaleDateString(locale),
-              })}
-            </p>
+            {awaitingShipment ? (
+              <p data-testid="expires-after-ship" className="text-sm text-muted-foreground">
+                {t('routers.edition.account.expiresAfterShip')}
+              </p>
+            ) : (
+              <p className="text-sm">
+                {t('routers.edition.account.expiresAt', {
+                  date: new Date(line.expiresAt * 1000).toLocaleDateString(locale),
+                })}
+              </p>
+            )}
             {(line.status === 'grace' || line.status === 'suspended') && (
               <p className="text-sm text-destructive">{t('routers.edition.account.overdue')}</p>
             )}

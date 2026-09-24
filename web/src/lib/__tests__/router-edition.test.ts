@@ -8,6 +8,11 @@ import {
   quotaLevel,
   formatBytes,
   EDITION_PRICE_CENTS,
+  ROUTER_PRESALE,
+  routerOffer,
+  isRouterPresale,
+  presaleEndsAt,
+  formatShipsFrom,
 } from '../router-edition';
 import type { UserRouterFulfillment } from '../api';
 
@@ -106,5 +111,50 @@ describe('EDITION_PRICE_CENTS', () => {
     expect(svcMatch).not.toBeNull();
     expect(Number(stdMatch![1])).toBe(EDITION_PRICE_CENTS.firstYear);
     expect(Number(svcMatch![1])).toBe(EDITION_PRICE_CENTS.renewal);
+  });
+
+  it('ROUTER_PRESALE matches the presale UPDATE and the ship date in the prod deploy doc', () => {
+    const doc = fs.readFileSync(
+      path.resolve(__dirname, '../../../../docs/router-edition-prod-deploy.md'),
+      'utf8',
+    );
+    // UPDATE plans SET price = 35900, origin_price = 39900 WHERE pid = 'router-std-1y'
+    const presale = doc.match(/UPDATE plans SET price = (\d+), origin_price = (\d+) WHERE pid = 'router-std-1y'/);
+    expect(presale).not.toBeNull();
+    expect(Number(presale![1])).toBe(ROUTER_PRESALE.firstYear);
+    expect(Number(presale![2])).toBe(EDITION_PRICE_CENTS.firstYear);
+    expect(doc).toContain(`发售日 ${ROUTER_PRESALE.shipsFrom}`);
+  });
+});
+
+describe('routerOffer (presale window)', () => {
+  const beforeLaunch = Date.parse('2026-10-01T12:00:00+08:00');
+  const launchMinus1s = Date.parse('2026-11-10T23:59:59+08:00');
+  const launch = Date.parse('2026-11-11T00:00:00+08:00');
+
+  it('the window closes at 00:00 Asia/Shanghai on the ship date', () => {
+    expect(presaleEndsAt()).toBe(launch);
+    expect(isRouterPresale(beforeLaunch)).toBe(true);
+    expect(isRouterPresale(launchMinus1s)).toBe(true);
+    expect(isRouterPresale(launch)).toBe(false);
+  });
+
+  it('before launch: presale price with the list price struck through', () => {
+    expect(routerOffer(beforeLaunch)).toEqual({
+      presale: true,
+      firstYear: 35900,
+      originFirstYear: 39900,
+      renewal: 29900,
+      shipsFrom: '2026-11-11',
+    });
+  });
+
+  it('from launch: list price, no strike-through', () => {
+    expect(routerOffer(launch)).toEqual({ presale: false, firstYear: 39900, renewal: 29900, shipsFrom: '2026-11-11' });
+  });
+
+  it('formatShipsFrom renders the calendar day without timezone drift', () => {
+    expect(formatShipsFrom('2026-11-11', 'zh-CN')).toBe('11月11日');
+    expect(formatShipsFrom('2026-11-11', 'en-GB')).toBe('11 November');
   });
 });

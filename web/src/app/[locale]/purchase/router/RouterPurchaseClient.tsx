@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Link, useRouter } from '@/i18n/routing';
 import Header from '@/components/Header';
@@ -25,7 +25,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useEmbedMode } from '@/hooks/useEmbedMode';
 import { api, ApiError, ErrorCode, type Order, type Plan, type RouterShipping, type UserRouter } from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/api-errors';
-import { formatUsd } from '@/lib/router-edition';
+import { formatShipsFrom, formatUsd, routerOffer } from '@/lib/router-edition';
 
 const EMPTY_SHIPPING: RouterShipping = { name: '', phone: '', address: '' };
 
@@ -42,6 +42,7 @@ function isExistingRouterCustomer(data: UserRouter): boolean {
 
 export default function RouterPurchaseClient() {
   const t = useTranslations();
+  const locale = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated } = useAuth();
@@ -69,6 +70,12 @@ export default function RouterPurchaseClient() {
   // 下单不传 region（沿用原线路地区）。其余一切情况都是含路由器的新购。
   const renewMode = wantsService && isAuthenticated && isRenewalCustomer;
   const selected = renewMode ? servicePlan : hardwarePlan;
+  // 预售只关乎含路由器的新购：发货日与「服务期自发货日起算」对续费单没有意义。
+  // 价格本身来自 API 套餐（price / originPrice），这里只决定要不要显示预售说明与按钮文案。
+  const offer = routerOffer();
+  const presale = offer.presale && !renewMode;
+  const shipsFrom = formatShipsFrom(offer.shipsFrom, locale);
+  const showOriginPrice = !!selected && selected.originPrice > selected.price;
   const regions = useMemo(() => selected?.privateNode?.allowedRegions ?? [], [selected]);
   const needsShipping = !!selected?.hardwareSku;
   const trimmedShipping: RouterShipping = {
@@ -270,13 +277,28 @@ export default function RouterPurchaseClient() {
                         ? t('routers.edition.purchase.renewName')
                         : t('routers.edition.purchase.hardwareName')}
                     </span>
-                    <span className="text-xl font-black text-foreground">{formatUsd(selected.price)}</span>
+                    <span className="flex items-baseline gap-2">
+                      {showOriginPrice && (
+                        <s
+                          className="text-sm text-muted-foreground"
+                          aria-label={t('routers.edition.purchase.originPrice', { price: formatUsd(selected.originPrice) })}
+                        >
+                          {formatUsd(selected.originPrice)}
+                        </s>
+                      )}
+                      <span className="text-xl font-black text-foreground">{formatUsd(selected.price)}</span>
+                    </span>
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {renewMode
                       ? t('routers.edition.purchase.renewDesc')
                       : t('routers.edition.purchase.hardwareDesc')}
                   </p>
+                  {presale && (
+                    <p data-testid="presale-notice" className="text-sm text-primary">
+                      {t('routers.edition.purchase.presaleNotice', { date: shipsFrom })}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -427,7 +449,9 @@ export default function RouterPurchaseClient() {
                   >
                     {submitting
                       ? t('routers.edition.purchase.paying')
-                      : t('routers.edition.purchase.payButton')}
+                      : presale
+                        ? t('routers.edition.purchase.preorderButton')
+                        : t('routers.edition.purchase.payButton')}
                   </Button>
 
                   <p className="text-xs text-muted-foreground text-center">

@@ -63,6 +63,21 @@ export interface SiteConfig {
     yearly: Record<string, number>;
     monthly: Record<string, number>;
   };
+  /**
+   * 定价页 App 版套餐的静态快照（美分），供 /pricing 服务端渲染出价格（SEO 与首屏），
+   * 与 /api/plans 的 pid 一一对应。真相源是 Center 的 plans 表（后台可改），所以定价页
+   * 加载后再拉一次 /api/plans，按 pid 用线上价覆盖这里的快照——快照只在 API 不可达时
+   * 兜底显示。改价：后台改完把这里同步一下即可（不同步只是首屏闪一下旧价）。
+   */
+  appPlans?: AppPlanSnapshot[];
+}
+
+export interface AppPlanSnapshot {
+  pid: string;
+  months: number;
+  price: number;
+  originPrice: number;
+  highlight: boolean;
 }
 
 export function isExternalHref(href: string): boolean {

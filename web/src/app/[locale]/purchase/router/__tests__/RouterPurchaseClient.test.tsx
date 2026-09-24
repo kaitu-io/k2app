@@ -6,7 +6,7 @@
  * 被测的选择/收货/预览/下单/错误处理逻辑本身跑真实代码。
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import RouterPurchaseClient from '../RouterPurchaseClient';
 import type { Plan } from '@/lib/api';
 
@@ -122,10 +122,17 @@ function fakeOrder(payAmount: number) {
 describe('RouterPurchaseClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // 既有用例描述的是发售后的正常售卖（按钮「去支付」、无预售说明）。预售窗口按真实日期判断，
+    // 这里把日期钉在发售之后；预售行为在下面的「预售」describe 里单独设时间。
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-12T12:00:00+08:00'));
     authState.current = { isAuthenticated: true, isAuthLoading: false };
     searchParamsState.current = new URLSearchParams();
     mockCreateOrder.mockResolvedValue({ order: fakeOrder(39900), payUrl: 'https://pay.test/x' });
     mockGetUserRouter.mockResolvedValue({ hasRouter: false });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('默认选中成品：显示硬件名、$399、收货信息标题与含 $299 的续费说明', async () => {
@@ -476,6 +483,49 @@ describe('RouterPurchaseClient', () => {
       render(<RouterPurchaseClient />);
       await screen.findByText('routers.edition.purchase.hardwareName');
       expect(mockGetUserRouter).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('预售', () => {
+    const HW_PRESALE: Plan = { ...HW, price: 35900, originPrice: 39900 };
+
+    it('预售期 + 套餐打折：划线原价 $399、实价 $359、预售说明带发货日、按钮为「预订并支付」', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-01T12:00:00+08:00'));
+      mockGetProductPlans.mockResolvedValue({ items: [HW_PRESALE, SVC] });
+      render(<RouterPurchaseClient />);
+
+      await screen.findByText('routers.edition.purchase.hardwareName');
+      expect(screen.getByLabelText(/routers\.edition\.purchase\.originPrice/)).toHaveTextContent('$399');
+      expect(screen.getAllByText('$359').length).toBeGreaterThan(0);
+      expect(screen.getByTestId('presale-notice')).toHaveTextContent('11月11日');
+      expect(screen.getByRole('button', { name: 'routers.edition.purchase.preorderButton' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'routers.edition.purchase.payButton' })).toBeNull();
+    });
+
+    it('发售后 + 套餐已恢复原价：没有划线、没有预售说明，按钮为「去支付」', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-11-12T12:00:00+08:00'));
+      mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+      render(<RouterPurchaseClient />);
+
+      await screen.findByText('routers.edition.purchase.hardwareName');
+      expect(screen.queryByLabelText(/routers\.edition\.purchase\.originPrice/)).toBeNull();
+      expect(screen.queryByTestId('presale-notice')).toBeNull();
+      expect(screen.getByRole('button', { name: 'routers.edition.purchase.payButton' })).toBeTruthy();
+    });
+
+    it('预售期的续费模式：不显示预售说明，按钮仍是「去支付」', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-01T12:00:00+08:00'));
+      searchParamsState.current = new URLSearchParams('plan=svc');
+      mockGetUserRouter.mockResolvedValue({ hasRouter: true, fulfillment: { stage: 'online', hardwareSku: 'redmi-ax6s' } });
+      mockGetProductPlans.mockResolvedValue({ items: [HW_PRESALE, SVC] });
+      render(<RouterPurchaseClient />);
+
+      await screen.findByText('routers.edition.purchase.renewName');
+      expect(screen.queryByTestId('presale-notice')).toBeNull();
+      expect(screen.getByRole('button', { name: 'routers.edition.purchase.payButton' })).toBeTruthy();
     });
   });
 });

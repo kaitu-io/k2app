@@ -91,6 +91,69 @@ func TestAdminRouterFulfillments_ListAndShip(t *testing.T) {
 	assert.EqualValues(t, ErrorInvalidOperation, code)
 }
 
+// 发货 = 服务期起点：标记发货后线路 expires_at 必须等于 shipped_at + 套餐月数，
+// 而不是种子里按付款日算的暂定值（预售单付款到发货可能隔两个月）。
+func TestAdminRouterFulfillments_ShipResetsLineExpiry(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	sub, f := seedReadyRouterFulfillment(t, user)
+	require.NoError(t, db.Get().Model(f).Update("hardware_sku", "redmi-ax6s").Error)
+	// 模拟预售：付款在 60 天前，暂定到期日 = 付款 + 12 月。
+	paidAt := time.Now().AddDate(0, 0, -60).Unix()
+	provisional := time.Unix(paidAt, 0).AddDate(0, 12, 0).Unix()
+	require.NoError(t, db.Get().Model(sub).Updates(map[string]any{"purchased_at": paidAt, "expires_at": provisional}).Error)
+
+	code, _ := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/stage",
+		AdminRouterStageRequest{Stage: RouterStageShipped, TrackingNo: "SF789", Carrier: "顺丰"})
+	require.EqualValues(t, 0, code)
+
+	var gotF RouterFulfillment
+	require.NoError(t, db.Get().First(&gotF, f.ID).Error)
+	var gotSub PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&gotSub, sub.ID).Error)
+	want := time.Unix(gotF.ShippedAt, 0).AddDate(0, 12, 0).Unix()
+	assert.Equal(t, want, gotSub.ExpiresAt, "到期日 = 发货日 + 套餐月数")
+	assert.Greater(t, gotSub.ExpiresAt, provisional, "发货重设只延不缩，且晚于付款日暂定值")
+	assert.Equal(t, paidAt, gotSub.PurchasedAt, "付款时刻不动")
+}
+
+// 只延不缩：线路到期日已经晚于「发货 + 套餐月数」（运营先手动补偿过）时，发货不能把它缩回去。
+func TestAdminRouterFulfillments_ShipNeverShortensExpiry(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	sub, f := seedReadyRouterFulfillment(t, user)
+	require.NoError(t, db.Get().Model(f).Update("hardware_sku", "redmi-ax6s").Error)
+	far := time.Now().AddDate(0, 18, 0).Unix()
+	require.NoError(t, db.Get().Model(sub).Update("expires_at", far).Error)
+
+	code, _ := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/stage",
+		AdminRouterStageRequest{Stage: RouterStageShipped, TrackingNo: "SF790"})
+	require.EqualValues(t, 0, code)
+	var gotSub PrivateNodeSubscription
+	require.NoError(t, db.Get().First(&gotSub, sub.ID).Error)
+	assert.Equal(t, far, gotSub.ExpiresAt)
+}
+
+// 套餐行缺失时发货必须整体回滚：台账不能停在 shipped 而线路到期日没人管。
+func TestAdminRouterFulfillments_ShipRollsBackWithoutPlan(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminRouterTestRouter()
+	user := CreateTestUser(t)
+	sub, f := seedReadyRouterFulfillment(t, user)
+	require.NoError(t, db.Get().Model(f).Update("hardware_sku", "redmi-ax6s").Error)
+	require.NoError(t, db.Get().Model(sub).Update("plan_id", 0).Error)
+
+	code, _ := adminCall(t, r, http.MethodPost, "/app/router/fulfillments/"+strconv.FormatUint(f.ID, 10)+"/stage",
+		AdminRouterStageRequest{Stage: RouterStageShipped, TrackingNo: "SF791"})
+	assert.EqualValues(t, ErrorSystemError, code)
+	var gotF RouterFulfillment
+	require.NoError(t, db.Get().First(&gotF, f.ID).Error)
+	assert.Equal(t, RouterStageReady, gotF.Stage, "发货已回滚")
+	assert.Empty(t, gotF.TrackingNo)
+}
+
 func TestAdminRouterFulfillments_MintCredential(t *testing.T) {
 	skipIfNoConfig(t)
 	r := adminRouterTestRouter()

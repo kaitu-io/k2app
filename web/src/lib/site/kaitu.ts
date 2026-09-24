@@ -19,7 +19,7 @@ export const KAITU_SITE: SiteConfig = {
           { labelKey: 'nav.footer.product.clientDownload', href: '/install' },
         ],
       },
-      { labelKey: 'nav.nav.pricing', href: '/purchase' },
+      { labelKey: 'nav.nav.pricing', href: '/pricing' },
       { labelKey: 'nav.nav.routerEdition', href: '/routers' },
       {
         labelKey: 'nav.nav.help',
@@ -49,7 +49,7 @@ export const KAITU_SITE: SiteConfig = {
       titleKey: 'nav.footer.product.title',
       items: [
         { labelKey: 'nav.footer.product.clientDownload', href: '/install' },
-        { labelKey: 'nav.nav.pricing', href: '/purchase' },
+        { labelKey: 'nav.nav.pricing', href: '/pricing' },
         { labelKey: 'nav.nav.routerEdition', href: '/routers' },
         { labelKey: 'nav.footer.product.retailerProgram', href: '/retailer/rules' },
         { labelKey: 'nav.footer.developer.changelog', href: '/releases' },
@@ -89,6 +89,7 @@ export const KAITU_SITE: SiteConfig = {
     '/install',
     '/opensource',
     '/delete-account',
+    '/pricing',
     '/privacy',
     '/purchase',
     '/purchase/router',
@@ -96,6 +97,14 @@ export const KAITU_SITE: SiteConfig = {
     '/routers',
     '/support',
     '/terms',
+  ],
+  // /pricing 的 App 版价表快照（美分），pid 对应 Center plans 表；线上价由页面加载后的 /api/plans 覆盖。
+  // 2026-09-24 线上值：1y $49（原 $59）· 2y $94.9（原 $128，热门）· 3y $139（原 $177）· 5y $199（原 $295）。
+  appPlans: [
+    { pid: '1y', months: 12, price: 4900, originPrice: 5900, highlight: false },
+    { pid: '2y', months: 24, price: 9490, originPrice: 12800, highlight: true },
+    { pid: '3y', months: 36, price: 13900, originPrice: 17700, highlight: false },
+    { pid: '5y', months: 60, price: 19900, originPrice: 29500, highlight: false },
   ],
   contentCategories: {
     guides: {

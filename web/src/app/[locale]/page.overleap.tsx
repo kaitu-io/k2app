@@ -2,8 +2,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
 import { siteBrand } from '@/lib/brands';
-import { siteConfig } from '@/lib/site';
-import { displayCurrency, formatMinor, monthlyEquivalent } from '@/lib/pricing';
+import { landingPrices } from '@/lib/landing-prices';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import OverleapHero from '@/components/home-overleap/OverleapHero';
@@ -23,25 +22,6 @@ const FAQ_KEYS = [
   'selfHost', 'platforms', 'devices', 'pricing', 'payment', 'cancel',
 ] as const;
 const STEP_KEYS = ['subscribe', 'download', 'connect'] as const;
-
-/** 首页定价区：静态价表（lib/site，与 Stripe 建价脚本同源）按 locale 取展示币。 */
-function landingPrices(locale: string) {
-  const pricing = siteConfig().pricing;
-  if (!pricing) return null;
-  const currency = displayCurrency(locale);
-  const yearly = pricing.yearly[currency] ?? pricing.yearly.usd;
-  const monthly = pricing.monthly[currency] ?? pricing.monthly.usd;
-  const cur = pricing.yearly[currency] === undefined ? 'usd' : currency;
-  return {
-    currency: cur,
-    yearly: formatMinor(yearly, cur, locale),
-    monthly: formatMinor(monthly, cur, locale),
-    yearlyPerMonth: formatMinor(monthlyEquivalent(yearly), cur, locale, { digits: 2 }),
-    offers: (['yearly', 'monthly'] as const).flatMap((plan) =>
-      Object.entries(pricing[plan]).map(([c, minor]) => ({ plan, currency: c.toUpperCase(), price: (minor / 100).toFixed(2) })),
-    ),
-  };
-}
 
 // overleap 构建专属首页（page.overleap.tsx）。kaitu 首页在 page.kaitu.tsx；两者由
 // next.config 的 pageExtensions 按品牌择一编译，互不可见。

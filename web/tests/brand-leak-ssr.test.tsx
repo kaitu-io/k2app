@@ -187,6 +187,7 @@ describe('rendered chrome carries only its own brand', () => {
 // 所以 metadata 守卫按品牌各扫各的页面树；共用页（privacy/terms）两边都扫。
 const METADATA_ROUTES_OVERLEAP: Array<{ route: string; mod: string }> = [
   { route: '/', mod: '../src/app/[locale]/page.overleap' },
+  { route: '/pricing', mod: '../src/app/[locale]/pricing/page.overleap' },
   { route: '/privacy', mod: '../src/app/[locale]/privacy/page' },
   { route: '/purchase', mod: '../src/app/[locale]/purchase/page.overleap' },
   { route: '/terms', mod: '../src/app/[locale]/terms/page' },
@@ -195,6 +196,7 @@ const METADATA_ROUTES_KAITU: Array<{ route: string; mod: string }> = [
   { route: '/', mod: '../src/app/[locale]/page.kaitu' },
   { route: '/discovery', mod: '../src/app/[locale]/discovery/page.kaitu' },
   { route: '/opensource', mod: '../src/app/[locale]/opensource/page.kaitu' },
+  { route: '/pricing', mod: '../src/app/[locale]/pricing/page.kaitu' },
   { route: '/privacy', mod: '../src/app/[locale]/privacy/page' },
   { route: '/purchase', mod: '../src/app/[locale]/purchase/page.kaitu' },
   { route: '/releases', mod: '../src/app/[locale]/releases/page.kaitu' },

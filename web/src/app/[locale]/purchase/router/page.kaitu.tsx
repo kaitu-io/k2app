@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 import { siteBrand } from '@/lib/brands';
+import { formatUsd, routerOffer } from '@/lib/router-edition';
 import RouterPurchaseClient from './RouterPurchaseClient';
 
 type Locale = (typeof routing.locales)[number];
@@ -14,9 +15,13 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale: rawLocale } = await params;
   const t = await getTranslations({ locale: rawLocale as Locale, namespace: 'routers' });
+  const offer = routerOffer();
   return {
     title: t('edition.purchase.metaTitle'),
-    description: t('edition.purchase.metaDescription'),
+    description: t('edition.purchase.metaDescription', {
+      price: formatUsd(offer.firstYear),
+      renewal: formatUsd(offer.renewal),
+    }),
   };
 }
 

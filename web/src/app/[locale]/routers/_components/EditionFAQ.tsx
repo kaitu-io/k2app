@@ -1,9 +1,23 @@
-import { getTranslations } from 'next-intl/server';
 import { HelpCircle } from 'lucide-react';
+import { formatShipsFrom, routerOffer } from '@/lib/router-edition';
+import type { RoutersT } from './translator';
 
-export async function EditionFAQ() {
-  const t = await getTranslations('routers');
-  const items = t.raw('edition.product.faq') as { q: string; a: string }[];
+interface FaqItem {
+  q: string;
+  a: string;
+}
+
+/** t.raw 拿到的数组不走 ICU 插值，这里只把 `{date}` 换成发货日。 */
+function fillDate(items: FaqItem[], date: string): FaqItem[] {
+  return items.map((item) => ({ q: item.q.replaceAll('{date}', date), a: item.a.replaceAll('{date}', date) }));
+}
+
+export function EditionFAQ({ t, locale }: { t: RoutersT; locale: string }) {
+  const offer = routerOffer();
+  const shipsFrom = formatShipsFrom(offer.shipsFrom, locale);
+  // 预售期把「预售什么时候发货」放在最前面；发售后这一条自然消失，其余条目不变。
+  const presaleItems = offer.presale ? fillDate(t.raw('edition.product.presaleFaq') as FaqItem[], shipsFrom) : [];
+  const items = [...presaleItems, ...(t.raw('edition.product.faq') as FaqItem[])];
 
   // FAQ structured data for GEO/SEO — same shape as support/page.kaitu.tsx.
   // Content comes from trusted i18n translations, safe for inline script.

@@ -1,15 +1,16 @@
-import { getTranslations } from 'next-intl/server';
 import { CheckCircle, Router, Smartphone } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { EDITION_PRICE_CENTS, formatUsd } from '@/lib/router-edition';
+import { formatShipsFrom, formatUsd, routerOffer } from '@/lib/router-edition';
+import type { RoutersT } from './translator';
 
-export async function EditionPricing() {
-  const t = await getTranslations('routers');
+export function EditionPricing({ t, locale }: { t: RoutersT; locale: string }) {
+  const offer = routerOffer();
+  const shipsFrom = formatShipsFrom(offer.shipsFrom, locale);
 
-  const firstYear = formatUsd(EDITION_PRICE_CENTS.firstYear);
-  const renewal = formatUsd(EDITION_PRICE_CENTS.renewal);
+  const firstYear = formatUsd(offer.firstYear);
+  const renewal = formatUsd(offer.renewal);
   const includes = [
     t('edition.product.includes1'),
     t('edition.product.includes2'),
@@ -18,20 +19,40 @@ export async function EditionPricing() {
   ];
 
   return (
-    <section className="py-16 px-4 sm:px-6 lg:px-8">
+    <section id="pricing" className="py-16 px-4 sm:px-6 lg:px-8 scroll-mt-20">
       <div className="max-w-3xl mx-auto">
         <h2 className="text-3xl font-bold text-foreground text-center mb-10">
           {t('edition.product.pricingTitle')}
         </h2>
 
-        <Card className="p-8">
+        <Card className="p-8" data-presale={offer.presale ? 'true' : 'false'}>
           <div className="text-center mb-6">
-            <div className="text-4xl font-black text-foreground">
-              {t('edition.product.firstYear', { price: firstYear })}
+            {offer.presale && (
+              <p className="inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary mb-3">
+                {t('edition.product.presaleBadge', { date: shipsFrom })}
+              </p>
+            )}
+            <div className="flex items-baseline justify-center gap-3">
+              <span className="text-4xl font-black text-foreground">
+                {t('edition.product.firstYear', { price: firstYear })}
+              </span>
+              {offer.originFirstYear !== undefined && (
+                <s
+                  className="text-lg text-muted-foreground"
+                  aria-label={t('edition.product.originPrice', { price: formatUsd(offer.originFirstYear) })}
+                >
+                  {formatUsd(offer.originFirstYear)}
+                </s>
+              )}
             </div>
             <p className="text-muted-foreground mt-1">{t('edition.product.firstYearIncludes')}</p>
             <p className="text-sm text-muted-foreground mt-2">
               {t('edition.product.renewal', { price: renewal })}
+            </p>
+            <p className="text-sm text-foreground/80 mt-3">
+              {offer.presale
+                ? t('edition.product.presaleNote', { date: shipsFrom })
+                : t('edition.product.serviceStartsNote')}
             </p>
           </div>
 
@@ -46,7 +67,11 @@ export async function EditionPricing() {
 
           <div className="flex flex-col items-center gap-3">
             <Button asChild size="lg" className="w-full max-w-xs">
-              <Link href="/purchase/router">{t('edition.product.buyNow')}</Link>
+              <Link href="/purchase/router">
+                {offer.presale
+                  ? t('edition.product.presaleCta', { price: firstYear })
+                  : t('edition.product.buyNow')}
+              </Link>
             </Button>
           </div>
         </Card>

@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -11,10 +12,23 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 )
 
+// seedRouterTestPlan 一条 12 个月的路由器版硬件套餐（发货重设到期日要按它的 Month 算，
+// 不能再指向可能不存在的 PlanID=1）。PID 带用户 id 保证并行测试不撞唯一键。
+func seedRouterTestPlan(t *testing.T, user *User) *Plan {
+	t.Helper()
+	plan := &Plan{PID: fmt.Sprintf("t-router-%d", user.ID), Label: "路由器版测试", Price: 35900, OriginPrice: 39900,
+		Month: 12, Tier: "basic", Product: ProductRouter, HardwareSKU: "redmi-ax6s",
+		IsActive: BoolPtr(true), Highlight: BoolPtr(false)}
+	require.NoError(t, db.Get().Create(plan).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(plan) })
+	return plan
+}
+
 func seedReadyRouterFulfillment(t *testing.T, user *User) (*PrivateNodeSubscription, *RouterFulfillment) {
 	t.Helper()
 	now := time.Now().Unix()
-	sub := &PrivateNodeSubscription{UserID: user.ID, PlanID: 1, OrderID: 800000 + user.ID, Region: "japan",
+	plan := seedRouterTestPlan(t, user)
+	sub := &PrivateNodeSubscription{UserID: user.ID, PlanID: plan.ID, OrderID: 800000 + user.ID, Region: "japan",
 		IPType: IPTypeNonResidential, TrafficTotalBytes: 2 << 40, Status: PNStatusActive,
 		PurchasedAt: now, ExpiresAt: now + 300*86400}
 	require.NoError(t, db.Get().Create(sub).Error)
