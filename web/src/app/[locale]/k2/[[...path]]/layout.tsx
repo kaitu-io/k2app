@@ -12,11 +12,14 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import K2Sidebar from '@/components/K2Sidebar';
-import { getK2Posts } from '@/lib/k2-posts';
+import Breadcrumb, { type BreadcrumbItem } from '@/components/Breadcrumb';
+import { getK2Posts, findK2Post } from '@/lib/k2-posts';
+import { getBrand } from '@/lib/brand-server';
 import { routing } from '@/i18n/routing';
 
 interface LayoutParams {
   locale: string;
+  path?: string[];
 }
 
 interface K2LayoutProps {
@@ -28,15 +31,26 @@ export default async function K2Layout({
   children,
   params,
 }: K2LayoutProps): Promise<React.ReactElement> {
-  const { locale: rawLocale } = await params;
+  const { locale: rawLocale, path } = await params;
   const locale = rawLocale as (typeof routing.locales)[number];
 
   setRequestLocale(locale);
+
+  const brand = await getBrand();
 
   // Brand-filtered inside getK2Posts — the sidebar must not link to docs this
   // deployment 404s.
   const groups = getK2Posts(rawLocale);
   const t = await getTranslations({ locale, namespace: 'k2' });
+  const tNav = await getTranslations({ locale, namespace: 'nav' });
+
+  // 面包屑：首页 > k2 协议 > 当前文档。索引页只到分区；找不到的文档由 page 负责 404，
+  // 这里就不再挂一段不存在的标题。
+  const isIndex = !path || path.length === 0 || (path.length === 1 && path[0] === 'index');
+  const currentPost = isIndex ? undefined : findK2Post(rawLocale, `k2/${path.join('/')}`, brand);
+  const crumbs: BreadcrumbItem[] = currentPost
+    ? [{ label: tNav('nav.k2Protocol'), href: '/k2' }, { label: currentPost.title }]
+    : [{ label: tNav('nav.k2Protocol') }];
 
   // Build section label map for the sidebar
   const sectionKeys = ['getting-started', 'technical', 'comparison'] as const;
@@ -64,6 +78,7 @@ export default async function K2Layout({
     <div className="min-h-screen bg-background">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-12">
+        <Breadcrumb locale={rawLocale} brand={brand} items={crumbs} className="mb-6" />
         <div className="flex flex-col md:flex-row md:gap-8">
           <K2Sidebar
             groups={groups}

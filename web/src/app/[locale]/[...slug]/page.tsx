@@ -29,6 +29,8 @@ import {
 import { generateMetadata as generatePageMetadata } from '../metadata';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import Breadcrumb from '@/components/Breadcrumb';
+import type { Brand } from '@/lib/brands';
 
 type Props = {
   params: Promise<{ locale: string; slug: string[] }>;
@@ -83,7 +85,7 @@ export default async function CatchAll({ params }: Props) {
     const category = findCategory(locale, slug[0], brand);
     if (!category) notFound();
     const categoryPosts = listCategoryPosts(locale, category.slug, brand);
-    return <CategoryListPage category={category} posts={categoryPosts} locale={locale} />;
+    return <CategoryListPage category={category} posts={categoryPosts} locale={locale} brand={brand} />;
   }
 
   if (slug.length === 2) {
@@ -115,7 +117,7 @@ export default async function CatchAll({ params }: Props) {
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(article) }}
         />
-        <PostDetailPage post={post} locale={locale} />
+        <PostDetailPage post={post} category={category} locale={locale} brand={brand} />
       </>
     );
   }
@@ -127,15 +129,18 @@ function CategoryListPage({
   category,
   posts,
   locale,
+  brand,
 }: {
   category: ContentCategory;
   posts: ContentPost[];
   locale: string;
+  brand: Brand;
 }) {
   return (
     <>
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-12">
+        <Breadcrumb locale={locale} brand={brand} items={[{ label: category.name }]} className="mb-6" />
         <h1 className="mb-8 text-3xl font-bold">{category.name}</h1>
         {posts.length === 0 ? (
           <p className="text-muted-foreground">
@@ -161,12 +166,29 @@ function CategoryListPage({
   );
 }
 
-function PostDetailPage({ post, locale }: { post: ContentPost; locale: string }) {
+function PostDetailPage({
+  post,
+  category,
+  locale,
+  brand,
+}: {
+  post: ContentPost;
+  category: ContentCategory;
+  locale: string;
+  brand: Brand;
+}) {
   return (
     <>
       <Header />
       <main>
-        <article className="prose dark:prose-invert mx-auto max-w-3xl px-4 py-12">
+        <div className="mx-auto max-w-3xl px-4 pt-12">
+          <Breadcrumb
+            locale={locale}
+            brand={brand}
+            items={[{ label: category.name, href: `/${category.slug}` }, { label: post.title }]}
+          />
+        </div>
+        <article className="prose dark:prose-invert mx-auto max-w-3xl px-4 py-8">
           <h1>{post.title}</h1>
           <time dateTime={post.date}>
             {new Date(post.date).toLocaleDateString(locale)}

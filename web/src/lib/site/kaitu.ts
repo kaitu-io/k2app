@@ -1,25 +1,46 @@
 import type { SiteConfig } from './types';
 
 /**
- * kaitu站结构。每个值都等于 2026-09-04 改造前 Header / Footer / sitemap / content-posts /
- * metadata 的渲染结果——这份配置就是kaitu站"零视觉变化"的对照表，改之前先看
- * tests/footer-brand-gates.test.tsx 与 tests/brand-leak-ssr.test.tsx 的kaitu断言。
+ * kaitu 站结构。
+ *
+ * 顶栏遵循产品站的固定形态（功能 · 定价 · 路由器版 · 帮助 · 开发者 + 登录 + 下载 CTA），
+ * 每个一级项都是真实页面或带子项的分组，不再把首页锚点当导航。同一标签在顶栏与
+ * 页脚必须指向同一路径（tests/site-config-keys.test.ts 锁住）。
  */
 export const KAITU_SITE: SiteConfig = {
   nav: {
     primary: [
       {
-        labelKey: 'nav.nav.whyBrand',
-        href: '/#hero',
+        labelKey: 'nav.nav.features',
+        href: '/#features',
         children: [
-          { labelKey: 'nav.nav.whySpeed', href: '/#hero' },
-          { labelKey: 'nav.nav.whyTech', href: '/#features' },
+          { labelKey: 'nav.nav.whyBrand', href: '/#features' },
           { labelKey: 'nav.nav.whyTestimonials', href: '/#testimonials' },
-          { labelKey: 'nav.nav.faq', href: '/#faq' },
+          { labelKey: 'nav.footer.product.clientDownload', href: '/install' },
         ],
       },
       { labelKey: 'nav.nav.pricing', href: '/purchase' },
-      { labelKey: 'nav.nav.routers', href: '/routers' },
+      { labelKey: 'nav.nav.routerEdition', href: '/routers' },
+      {
+        labelKey: 'nav.nav.help',
+        href: '/guides',
+        children: [
+          { labelKey: 'nav.footer.support.userGuide', href: '/guides' },
+          { labelKey: 'nav.nav.introGuide', href: '/support' },
+          { labelKey: 'nav.nav.faq', href: '/support#faq' },
+          { labelKey: 'nav.footer.developer.changelog', href: '/releases' },
+        ],
+      },
+      {
+        labelKey: 'nav.footer.developer.title',
+        href: '/k2',
+        children: [
+          { labelKey: 'nav.nav.k2Protocol', href: '/k2' },
+          { labelKey: 'nav.nav.quickstart', href: '/k2/quickstart' },
+          { labelKey: 'nav.nav.openSource', href: '/opensource' },
+          { labelKey: 'nav.footer.developer.github', href: 'https://github.com/getoverleap' },
+        ],
+      },
     ],
     cta: { labelKey: 'nav.nav.freeDownload', href: '/install' },
   },
@@ -28,27 +49,28 @@ export const KAITU_SITE: SiteConfig = {
       titleKey: 'nav.footer.product.title',
       items: [
         { labelKey: 'nav.footer.product.clientDownload', href: '/install' },
-        { labelKey: 'nav.footer.product.smartRouter', href: '/routers' },
+        { labelKey: 'nav.nav.pricing', href: '/purchase' },
+        { labelKey: 'nav.nav.routerEdition', href: '/routers' },
         { labelKey: 'nav.footer.product.retailerProgram', href: '/retailer/rules' },
-        { labelKey: 'changelog.title', href: '/changelog' },
+        { labelKey: 'nav.footer.developer.changelog', href: '/releases' },
       ],
     },
     {
       titleKey: 'nav.footer.developer.title',
       items: [
-        { labelKey: 'nav.footer.developer.k2Docs', href: '/k2' },
-        { labelKey: 'nav.footer.developer.selfDeploy', href: '/k2/quickstart' },
+        { labelKey: 'nav.nav.k2Protocol', href: '/k2' },
+        { labelKey: 'nav.nav.quickstart', href: '/k2/quickstart' },
+        { labelKey: 'nav.nav.openSource', href: '/opensource' },
         { labelKey: 'nav.footer.developer.github', href: 'https://github.com/getoverleap' },
-        { labelKey: 'nav.footer.developer.changelog', href: '/releases' },
       ],
     },
     {
       titleKey: 'nav.footer.support.title',
       items: [
         { labelKey: 'nav.footer.support.userGuide', href: '/guides' },
-        { labelKey: 'nav.footer.support.faq', href: '/guides' },
-        { labelKey: 'nav.footer.support.contact', href: '/guides' },
-        { labelKey: 'nav.footer.support.homeschoolGuide', href: '/support' },
+        { labelKey: 'nav.nav.introGuide', href: '/support' },
+        { labelKey: 'nav.nav.faq', href: '/support#faq' },
+        { labelKey: 'nav.footer.support.contact', href: '/support#contact' },
       ],
     },
     {

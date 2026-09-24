@@ -29,7 +29,13 @@
     "whyTestimonials": "User Reviews",
     "quickStart": "Quick Start",
     "faq": "FAQ",
-    "contactUs": "Contact Us"
+    "contactUs": "Contact Us",
+    "features": "Features",
+    "docs": "Docs",
+    "routerEdition": "Router Edition",
+    "breadcrumb": "Breadcrumb",
+    "navigation": "Site navigation",
+    "menu": "Menu"
   },
   "footer": {
     "brandName": "Overleap",

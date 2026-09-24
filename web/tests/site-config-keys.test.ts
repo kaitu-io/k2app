@@ -56,3 +56,48 @@ describe.each([KAITU, OVERLEAP])('site config keys resolve for $id', (brand) => 
     for (const r of staticRoutes) expect(r).not.toMatch(/^\/(en|zh|ja)/);
   });
 });
+
+/**
+ * 导航结构的形态约束。产品站的顶栏是 4–6 个一级项 + 一个 CTA；同一个文案 key 在顶栏和
+ * 页脚里必须指向同一路径（Overleap 曾经 Pricing 顶栏 /#pricing、页脚 /purchase）；
+ * 兼容跳转路径（/changelog → /releases）不得再被链接。
+ */
+describe.each([KAITU, OVERLEAP])('nav structure for $id', (brand) => {
+  const site = siteConfigFor(brand.id);
+
+  it('primary nav has 4–6 items and every item is a link', () => {
+    expect(site.nav.primary.length).toBeGreaterThanOrEqual(4);
+    expect(site.nav.primary.length).toBeLessThanOrEqual(6);
+    for (const item of site.nav.primary) {
+      expect(item.href, item.labelKey).toMatch(/^(\/|https?:\/\/)/);
+      if (item.children) expect(item.children.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('a label resolves to one href across header and footer', () => {
+    const seen = new Map<string, string>();
+    const conflicts: string[] = [];
+    const visit = (item: NavItem) => {
+      const prev = seen.get(item.labelKey);
+      if (prev !== undefined && prev !== item.href) conflicts.push(`${item.labelKey}: ${prev} vs ${item.href}`);
+      seen.set(item.labelKey, item.href);
+      item.children?.forEach(visit);
+    };
+    site.nav.primary.forEach(visit);
+    visit(site.nav.cta);
+    site.footer.forEach((col) => col.items.forEach(visit));
+    expect(conflicts).toEqual([]);
+  });
+
+  it('no link targets a redirect-only path', () => {
+    const REDIRECT_ONLY = ['/changelog'];
+    const all: string[] = [];
+    const collect = (item: NavItem) => {
+      all.push(item.href.split('#')[0]);
+      item.children?.forEach(collect);
+    };
+    site.nav.primary.forEach(collect);
+    site.footer.forEach((col) => col.items.forEach(collect));
+    expect(all.filter((h) => REDIRECT_ONLY.includes(h))).toEqual([]);
+  });
+});
