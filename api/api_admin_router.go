@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -156,23 +157,71 @@ func api_admin_update_router_stage(c *gin.Context) {
 		Error(c, ErrorInvalidOperation, "该阶段由系统自动推进，不能手动设置")
 		return
 	}
-	q := db.Get().Model(&RouterFulfillment{}).Where("id = ?", f.ID)
-	if body.Stage == RouterStageShipped {
-		// 条件更新：读到 ready 到写入之间可能被并发推进（另一次发货 / 同步），只从 ready 发货。
-		q = db.Get().Model(&RouterFulfillment{}).Where("id = ? AND stage = ?", f.ID, RouterStageReady)
-	}
-	res := q.Updates(updates)
-	if res.Error != nil {
-		log.Errorf(c, "update router fulfillment %d: %v", f.ID, res.Error)
-		Error(c, ErrorSystemError, "update failed")
+	if body.Stage != RouterStageShipped {
+		if err := db.Get().Model(&RouterFulfillment{}).Where("id = ?", f.ID).Updates(updates).Error; err != nil {
+			log.Errorf(c, "update router fulfillment %d: %v", f.ID, err)
+			Error(c, ErrorSystemError, "update failed")
+			return
+		}
+		log.Infof(c, "router fulfillment %d updated by %s: %+v", f.ID, updates["updated_by"], body)
+		SuccessEmpty(c)
 		return
 	}
-	if body.Stage == RouterStageShipped && res.RowsAffected == 0 {
-		Error(c, ErrorInvalidOperation, "只有「线路就绪」的订单可以标记发货")
+
+	// 发货 = 服务期起点。成品客户在付款→开机→烧录→寄出→在途这段时间里拿不到任何服务，线路
+	// 建立时按付款日算的 expires_at 只是暂定值；发货这一刻把它重设为「发货日 + 套餐月数」
+	// （只延不缩）。预售单（付款离发货可能隔两个月）与发售后的正常单走同一条规则。
+	// 续费单不会经过这里：applyRouterOrder 让续费台账继承旧硬件台账的 ShippedAt 后由
+	// advanceRouterFulfillment 自动跳到 shipped，服务期由 extendPrivateLine 叠加。
+	shippedAt := updates["shipped_at"].(int64)
+	txErr := db.Get().Transaction(func(tx *gorm.DB) error {
+		// 条件更新：读到 ready 到写入之间可能被并发推进（另一次发货 / 同步），只从 ready 发货。
+		res := tx.Model(&RouterFulfillment{}).Where("id = ? AND stage = ?", f.ID, RouterStageReady).Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return e(ErrorInvalidOperation, "只有「线路就绪」的订单可以标记发货")
+		}
+		return resetLineExpiryOnShip(c, tx, f, shippedAt)
+	})
+	if txErr != nil {
+		if _, isBiz := txErr.(rerr); isBiz {
+			ErrorE(c, txErr)
+			return
+		}
+		log.Errorf(c, "ship router fulfillment %d: %v", f.ID, txErr)
+		Error(c, ErrorSystemError, "update failed")
 		return
 	}
 	log.Infof(c, "router fulfillment %d updated by %s: %+v", f.ID, updates["updated_by"], body)
 	SuccessEmpty(c)
+}
+
+// resetLineExpiryOnShip 发货时把台账所指线路的到期日重设为 shippedAt + 套餐月数（只延不缩）。
+// 套餐行找不到直接报错回滚发货：不知道服务期长度就不能宣布服务开始，静默按 12 个月猜会在
+// 套餐改期限时悄悄给错日期。
+func resetLineExpiryOnShip(ctx context.Context, tx *gorm.DB, f *RouterFulfillment, shippedAt int64) error {
+	var sub PrivateNodeSubscription
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sub, f.SubID).Error; err != nil {
+		return fmt.Errorf("load line %d of fulfillment %d: %w", f.SubID, f.ID, err)
+	}
+	var plan Plan
+	if err := tx.Select("id", "month").First(&plan, sub.PlanID).Error; err != nil {
+		return fmt.Errorf("load plan %d of line %d: %w", sub.PlanID, sub.ID, err)
+	}
+	if plan.Month <= 0 {
+		return fmt.Errorf("plan %d of line %d has non-positive month %d", plan.ID, sub.ID, plan.Month)
+	}
+	newExpiry := time.Unix(shippedAt, 0).AddDate(0, plan.Month, 0).Unix()
+	if newExpiry <= sub.ExpiresAt {
+		return nil
+	}
+	if err := tx.Model(&PrivateNodeSubscription{}).Where("id = ?", sub.ID).Update("expires_at", newExpiry).Error; err != nil {
+		return fmt.Errorf("reset expiry of line %d on ship: %w", sub.ID, err)
+	}
+	log.Infof(ctx, "router fulfillment %d shipped: line %d expiry %d -> %d (%d months from ship)", f.ID, sub.ID, sub.ExpiresAt, newExpiry, plan.Month)
+	return nil
 }
 
 // api_admin_mint_router_credential 代客户铸造网关凭证（烧录进成品路由器用）。线路未就绪不能铸（准入门会拒）。

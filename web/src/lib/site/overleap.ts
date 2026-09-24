@@ -9,7 +9,7 @@ export const OVERLEAP_SITE: SiteConfig = {
     // 页面少，四个直链就够；同一标签在顶栏与页脚指向同一路径（tests/site-config-keys.test.ts）。
     primary: [
       { labelKey: 'nav.nav.features', href: '/#features' },
-      { labelKey: 'nav.nav.pricing', href: '/#pricing' },
+      { labelKey: 'nav.nav.pricing', href: '/pricing' },
       { labelKey: 'nav.nav.help', href: '/support' },
       { labelKey: 'nav.nav.docs', href: '/k2' },
     ],
@@ -20,7 +20,7 @@ export const OVERLEAP_SITE: SiteConfig = {
       titleKey: 'nav.footer.product.title',
       items: [
         { labelKey: 'nav.nav.download', href: '/install' },
-        { labelKey: 'nav.nav.pricing', href: '/#pricing' },
+        { labelKey: 'nav.nav.pricing', href: '/pricing' },
         { labelKey: 'nav.nav.help', href: '/support' },
       ],
     },
@@ -42,7 +42,7 @@ export const OVERLEAP_SITE: SiteConfig = {
       ],
     },
   ],
-  staticRoutes: ['', '/install', '/purchase', '/support', '/privacy', '/terms', '/delete-account', '/login'],
+  staticRoutes: ['', '/install', '/pricing', '/purchase', '/support', '/privacy', '/terms', '/delete-account', '/login'],
   // 与 scripts/stripe-setup-overleap.sh 的 ensure_price 行同源（usd 主币 + gbp/eur 固定本币价）。
   pricing: {
     yearly: { usd: 7900, gbp: 7900, eur: 8900 },

@@ -246,4 +246,45 @@ describe('RouterAccountClient', () => {
     await waitFor(() => expect(mockGetUserRouter).toHaveBeenCalledTimes(2));
     await screen.findByText('routers.edition.account.emptyTitle');
   });
+
+  describe('服务期自发货日起算（成品未发货不显示到期日）', () => {
+    const PAID_HARDWARE: UserRouterFulfillment = { ...HARDWARE_FULFILLMENT, stage: 'paid', trackingNo: undefined, carrier: undefined, shippedAt: 0 };
+
+    it('预售期 + 成品 paid：显示 expiresAfterShip 与预售发货提示，不显示到期日', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-01T12:00:00+08:00'));
+      mockGetUserRouter.mockResolvedValue({ hasRouter: true, fulfillment: PAID_HARDWARE, line: LINE_NORMAL });
+      render(<RouterAccountClient />);
+
+      await screen.findByTestId('expires-after-ship');
+      expect(screen.queryByText(/routers\.edition\.account\.expiresAt/)).toBeNull();
+      expect(screen.getByTestId('presale-shipping')).toHaveTextContent('11月11日');
+    });
+
+    it('发售后 + 成品 ready 未发货：仍不显示到期日，但没有预售发货提示', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-11-12T12:00:00+08:00'));
+      mockGetUserRouter.mockResolvedValue({ hasRouter: true, fulfillment: { ...PAID_HARDWARE, stage: 'ready' }, line: LINE_NORMAL });
+      render(<RouterAccountClient />);
+
+      await screen.findByTestId('expires-after-ship');
+      expect(screen.queryByTestId('presale-shipping')).toBeNull();
+    });
+
+    it('成品 shipped：显示到期日（后端已按发货日重设）', async () => {
+      mockGetUserRouter.mockResolvedValue({ hasRouter: true, fulfillment: HARDWARE_FULFILLMENT, line: LINE_NORMAL });
+      render(<RouterAccountClient />);
+
+      await screen.findByText(/routers\.edition\.account\.expiresAt/);
+      expect(screen.queryByTestId('expires-after-ship')).toBeNull();
+    });
+
+    it('自备 paid：到期日照常显示（自备没有发货环节）', async () => {
+      mockGetUserRouter.mockResolvedValue({ hasRouter: true, fulfillment: { ...BYO_FULFILLMENT, stage: 'paid' }, line: LINE_NORMAL });
+      render(<RouterAccountClient />);
+
+      await screen.findByText(/routers\.edition\.account\.expiresAt/);
+      expect(screen.queryByTestId('expires-after-ship')).toBeNull();
+    });
+  });
 });

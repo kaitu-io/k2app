@@ -1,8 +1,7 @@
-import { getTranslations } from 'next-intl/server';
 import { PackageCheck, Cable, Wifi } from 'lucide-react';
+import type { RoutersT } from './translator';
 
-export async function EditionHowItWorks() {
-  const t = await getTranslations('routers');
+export function EditionHowItWorks({ t }: { t: RoutersT }) {
 
   const steps = [
     { Icon: PackageCheck, title: t('edition.product.how1Title'), body: t('edition.product.how1Body') },

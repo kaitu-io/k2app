@@ -31,8 +31,29 @@ WHERE p.pid IN ('router-std-1y', 'router-svc-1y')
 ```
 
 `is_active` 先留 `0`（两条套餐入目录但 `/api/products/router/plans` 不返回，因为该端点过滤
-`is_active=true`）；网站上线（Plan B，本次未随此清单交付）当天再由 admin 后台把两条 Plan 的 `is_active`
+`is_active=true`）；预售开卖当天（见 §2.1）再由 admin 后台把两条 Plan 的 `is_active`
 置 `1`。`allowed_regions` 沿用 `pn-dc-2t` 的现值；结账页若要给一个默认选中项，建议取列表首项。
+
+### 2.1 预售（2026-09-24 决策，spec `2026-09-24-router-presale-and-pricing-page-design.md`）
+
+发售日 2026-11-11。预售期首年含路由器卖 **$359**（划线原价 $399），续费 $299 不变；服务期自发货日起算
+（后台标记发货时 `api_admin_update_router_stage` 把线路 `expires_at` 重设为发货日 + 套餐月数，只延不缩）。
+网站按 `web/src/lib/router-edition.ts` 的 `ROUTER_PRESALE` 日期自动切换文案与价格（测试锁定本节的
+UPDATE 与发售日）。
+
+```sql
+-- 预售价（套餐未激活时先改，无副作用）
+UPDATE plans SET price = 35900, origin_price = 39900 WHERE pid = 'router-std-1y';
+```
+
+顺序（每一步做完再做下一步）：
+
+1. `make deploy-api`：发货重设到期日必须先于任何预售订单上线。
+2. 网站 `git push origin main:website`：预售文案、划线价、定价页。
+3. 后台把 `router-std-1y` / `router-svc-1y` 的 `is_active` 置 `1` → 预售开卖，此后才对外宣传。
+4. 预售期间 `provision` 运维任务可以留在队列，发售前一周集中认领开机 → 烧录 → 寄出。
+5. 发售日 2026-11-11：`UPDATE plans SET price = 39900 WHERE pid = 'router-std-1y'`（网站当天自动
+   切回标价；数据库慢一步的失败方向是用户少付，不会多付）。
 
 **前提**：执行前确认生产库已有 `pn-dc-2t`（`private_node` 产品线的既有内部规格）——上面第二段 SQL 靠
 `JOIN plans src ON src.pid = 'pn-dc-2t'` 拷贝它的 `ip_type` / `allowed_regions` / `traffic_total_bytes`；

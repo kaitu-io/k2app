@@ -56,9 +56,9 @@ async function renderChrome(component: 'Footer' | 'Header', locale: 'en-GB' | 'z
 const KAITU_ONLY_HREFS = ['href="/routers"', 'href="/releases"', 'href="/retailer/rules"', 'href="/guides"', 'href="/opensource"'];
 // /routers 是路由器版产品页，由产品栏链接；已下线的自备教程 /routers/diy 不得再出现在页脚。
 // /changelog 只是到 /releases 的兼容跳转，页脚不再链它（同一目标只出现一次）。
-const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/purchase"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/support#faq"', 'href="/support#contact"', 'href="/privacy"', 'href="/terms"', 'href="https://github.com/getoverleap"'];
-// Overleap 的 Pricing 在顶栏与页脚都指向首页价表锚点（购买页由价表的 CTA 进入）。
-const OVERLEAP_FOOTER = ['href="/install"', 'href="/#pricing"', 'href="/support"', 'href="/k2"', 'href="/k2/quickstart"', 'href="https://github.com/getoverleap"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
+// 「定价」在两品牌都是真实页面 /pricing（购买页由定价页的 CTA 进入，不再直接挂在导航上）。
+const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/pricing"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/support#faq"', 'href="/support#contact"', 'href="/privacy"', 'href="/terms"', 'href="https://github.com/getoverleap"'];
+const OVERLEAP_FOOTER = ['href="/install"', 'href="/pricing"', 'href="/support"', 'href="/k2"', 'href="/k2/quickstart"', 'href="https://github.com/getoverleap"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
 
 describe('footer links only this brand\'s pages', () => {
   it('overleap: every configured link, none of the kaitu-only ones', async () => {
@@ -85,17 +85,18 @@ describe('header links only this brand\'s pages', () => {
   it('overleap: Features / Pricing / Help / Docs direct links, Download CTA, no kaitu-only paths', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     const html = await renderChrome('Header', 'en-GB');
-    for (const href of ['href="/#features"', 'href="/#pricing"', 'href="/support"', 'href="/k2"', 'href="/install"']) {
+    for (const href of ['href="/#features"', 'href="/pricing"', 'href="/support"', 'href="/k2"', 'href="/install"']) {
       expect(html, href).toContain(href);
     }
     expect(html).not.toContain('/#testimonials');
+    expect(html).not.toContain('/#pricing');
     for (const href of KAITU_ONLY_HREFS) expect(html, href).not.toContain(href);
   });
 
   it('kaitu: Features / Pricing / Router Edition / Help / Developers as links, Free Download CTA', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     const html = await renderChrome('Header', 'zh-CN');
-    for (const href of ['href="/#features"', 'href="/purchase"', 'href="/routers"', 'href="/guides"', 'href="/k2"', 'href="/install"']) {
+    for (const href of ['href="/#features"', 'href="/pricing"', 'href="/routers"', 'href="/guides"', 'href="/k2"', 'href="/install"']) {
       expect(html, href).toContain(href);
     }
     // 首页锚点不再是一级项：只允许作为"功能"分组的父项出现一次。
