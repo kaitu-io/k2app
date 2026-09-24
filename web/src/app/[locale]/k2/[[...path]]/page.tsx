@@ -14,9 +14,9 @@ import { setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
 import { posts } from '#velite';
 import { routing } from '@/i18n/routing';
-import { type K2Post, isPostVisibleToBrand } from '@/lib/k2-posts';
+import { type K2Post, isPostVisibleToBrand, findK2Post } from '@/lib/k2-posts';
 import { getBrand } from '@/lib/brand-server';
-import { siteBrand, type Brand } from '@/lib/brands';
+import { siteBrand } from '@/lib/brands';
 import { generateMetadata as generateBaseMetadata } from '../../metadata';
 
 /** Resolve a slug from the optional catch-all path param. */
@@ -135,32 +135,6 @@ function buildComparisonFaqPage(locale: string, baseUrlArg: string, pathname: st
       acceptedAnswer: { '@type': 'Answer', text: qa.answer },
     })),
   };
-}
-
-/**
- * Find a published k2 post by locale + slug that the serving brand may show,
- * falling back to the brand's own default locale.
- *
- * Two brand rules are enforced here:
- *  - Off-brand posts are invisible (frontmatter `brand:`), so the caller 404s
- *    instead of serving e.g. kaitu install docs from the overleap deployment.
- *  - The fallback locale is the BRAND's default, not a hardcoded 'zh-CN'.
- *    zh-CN is a kaitu-only locale; falling back to it from overleap turned
- *    /ja/k2/client into a kaitu-branded Chinese page on the overleap site.
- */
-function findK2Post(locale: string, slug: string, brand: Brand): K2Post | undefined {
-  const candidates = (posts as K2Post[]).filter(
-    (p) => p.slug === slug && !p.draft && isPostVisibleToBrand(p, brand.id)
-  );
-
-  const exactMatch = candidates.find((p) => p.locale === locale);
-  if (exactMatch) return exactMatch;
-
-  if (locale !== brand.defaultLocale) {
-    return candidates.find((p) => p.locale === brand.defaultLocale);
-  }
-
-  return undefined;
 }
 
 interface PageParams {

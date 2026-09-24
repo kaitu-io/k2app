@@ -29,7 +29,13 @@
     "whyTestimonials": "用戶評價",
     "quickStart": "快速入門",
     "faq": "常見問題",
-    "contactUs": "聯絡我們"
+    "contactUs": "聯絡我們",
+    "features": "功能",
+    "docs": "文件",
+    "routerEdition": "路由器版",
+    "breadcrumb": "目前位置",
+    "navigation": "網站導覽",
+    "menu": "選單"
   },
   "footer": {
     "brandName": "開途",

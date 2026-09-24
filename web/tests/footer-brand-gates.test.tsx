@@ -53,10 +53,12 @@ async function renderChrome(component: 'Footer' | 'Header', locale: 'en-GB' | 'z
   return container.innerHTML;
 }
 
-const KAITU_ONLY_HREFS = ['href="/routers"', 'href="/changelog"', 'href="/releases"', 'href="/retailer/rules"', 'href="/guides"'];
+const KAITU_ONLY_HREFS = ['href="/routers"', 'href="/releases"', 'href="/retailer/rules"', 'href="/guides"', 'href="/opensource"'];
 // /routers 是路由器版产品页，由产品栏链接；已下线的自备教程 /routers/diy 不得再出现在页脚。
-const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/privacy"', 'href="/terms"', 'href="https://github.com/getoverleap"'];
-const OVERLEAP_FOOTER = ['href="/install"', 'href="/purchase"', 'href="/support"', 'href="/k2"', 'href="/k2/quickstart"', 'href="https://github.com/getoverleap"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
+// /changelog 只是到 /releases 的兼容跳转，页脚不再链它（同一目标只出现一次）。
+const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/purchase"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/support#faq"', 'href="/support#contact"', 'href="/privacy"', 'href="/terms"', 'href="https://github.com/getoverleap"'];
+// Overleap 的 Pricing 在顶栏与页脚都指向首页价表锚点（购买页由价表的 CTA 进入）。
+const OVERLEAP_FOOTER = ['href="/install"', 'href="/#pricing"', 'href="/support"', 'href="/k2"', 'href="/k2/quickstart"', 'href="https://github.com/getoverleap"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
 
 describe('footer links only this brand\'s pages', () => {
   it('overleap: every configured link, none of the kaitu-only ones', async () => {
@@ -64,32 +66,39 @@ describe('footer links only this brand\'s pages', () => {
     const html = await renderChrome('Footer', 'en-GB');
     for (const href of OVERLEAP_FOOTER) expect(html, href).toContain(href);
     for (const href of KAITU_ONLY_HREFS) expect(html, href).not.toContain(href);
+    expect(html).not.toContain('href="/purchase"');
   });
 
-  it('kaitu: every link the pre-config footer had (no regression)', async () => {
+  it('kaitu: every configured link, no redirect-only or retired paths', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     const html = await renderChrome('Footer', 'zh-CN');
     for (const href of KAITU_FOOTER) expect(html, href).toContain(href);
     expect(html).not.toContain('href="/routers/diy"');
+    expect(html).not.toContain('href="/changelog"');
     expect(html).not.toContain('mailto:');
   });
 });
 
+// 顶栏的一级项都是链接（带子项的分组也是——父项可点击，子项在悬停时才渲染），
+// 所以初始 HTML 里必须能看到每个一级路径。
 describe('header links only this brand\'s pages', () => {
-  it('overleap: Why / Pricing / Help direct links, Download CTA, no dead anchors', async () => {
+  it('overleap: Features / Pricing / Help / Docs direct links, Download CTA, no kaitu-only paths', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     const html = await renderChrome('Header', 'en-GB');
-    for (const href of ['href="/#features"', 'href="/#pricing"', 'href="/support"', 'href="/install"']) {
+    for (const href of ['href="/#features"', 'href="/#pricing"', 'href="/support"', 'href="/k2"', 'href="/install"']) {
       expect(html, href).toContain(href);
     }
     expect(html).not.toContain('/#testimonials');
+    for (const href of KAITU_ONLY_HREFS) expect(html, href).not.toContain(href);
   });
 
-  it('kaitu: Why dropdown + Pricing + Free Download (no regression)', async () => {
+  it('kaitu: Features / Pricing / Router Edition / Help / Developers as links, Free Download CTA', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     const html = await renderChrome('Header', 'zh-CN');
-    expect(html).toContain('href="/purchase"');
-    expect(html).toContain('href="/install"');
-    expect(html).toContain('<button'); // the dropdown trigger
+    for (const href of ['href="/#features"', 'href="/purchase"', 'href="/routers"', 'href="/guides"', 'href="/k2"', 'href="/install"']) {
+      expect(html, href).toContain(href);
+    }
+    // 首页锚点不再是一级项：只允许作为"功能"分组的父项出现一次。
+    expect(html.match(/href="\/#/g)?.length ?? 0).toBe(1);
   });
 });

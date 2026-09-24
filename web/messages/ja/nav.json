@@ -29,7 +29,13 @@
     "whyTestimonials": "ユーザーレビュー",
     "quickStart": "クイックスタート",
     "faq": "よくある質問",
-    "contactUs": "お問い合わせ"
+    "contactUs": "お問い合わせ",
+    "features": "機能",
+    "docs": "ドキュメント",
+    "routerEdition": "ルーター版",
+    "breadcrumb": "現在地",
+    "navigation": "サイトナビゲーション",
+    "menu": "メニュー"
   },
   "footer": {
     "brandName": "Overleap",

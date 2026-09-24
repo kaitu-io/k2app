@@ -6,10 +6,12 @@ import type { SiteConfig } from './types';
  */
 export const OVERLEAP_SITE: SiteConfig = {
   nav: {
+    // 页面少，四个直链就够；同一标签在顶栏与页脚指向同一路径（tests/site-config-keys.test.ts）。
     primary: [
-      { labelKey: 'nav.nav.whyBrand', href: '/#features' },
+      { labelKey: 'nav.nav.features', href: '/#features' },
       { labelKey: 'nav.nav.pricing', href: '/#pricing' },
       { labelKey: 'nav.nav.help', href: '/support' },
+      { labelKey: 'nav.nav.docs', href: '/k2' },
     ],
     cta: { labelKey: 'nav.nav.download', href: '/install' },
   },
@@ -18,7 +20,7 @@ export const OVERLEAP_SITE: SiteConfig = {
       titleKey: 'nav.footer.product.title',
       items: [
         { labelKey: 'nav.nav.download', href: '/install' },
-        { labelKey: 'nav.nav.pricing', href: '/purchase' },
+        { labelKey: 'nav.nav.pricing', href: '/#pricing' },
         { labelKey: 'nav.nav.help', href: '/support' },
       ],
     },
