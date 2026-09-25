@@ -126,6 +126,15 @@ func (n *nftShellInterceptor) buildScript(cfg InterceptConfig) string {
 			"add rule inet k2r dnsredir_out meta l4proto { tcp, udp } th dport 53 redirect to :%s", dnsPort))
 	}
 
+	// Port 53 belongs to the dnsredir NAT chain when DNSRedirect is on. Let
+	// the mangle TPROXY rule claim it too and both actions apply on a real
+	// router: the query is REDIRECT-rewritten to <router>:DNSPort and then
+	// TPROXY-tunneled to that private address (OpenWrt 25.12, 2026-09-25).
+	if cfg.DNSRedirect && cfg.DNSPort > 0 {
+		lines = append(lines,
+			"add rule inet k2r prerouting meta l4proto { tcp, udp } th dport 53 return")
+	}
+
 	for _, subnet := range v4Subnets {
 		lines = append(lines, fmt.Sprintf(
 			"add rule inet k2r prerouting ip saddr %s meta l4proto tcp tproxy ip to %s meta mark set 1", subnet, port))

@@ -26,7 +26,7 @@ Lock ordering: `opMu` (serialization) → `mu` (state) → `sseMu` (state).
 - `sse.go` — `/api/events` SSE endpoint, `broadcastSSE` fan-out
 - `config.go` — `GatewayConfig` (embeds `ClientConfig`), `LoadGateway`, `resolveExcludeIPs`
 - `provider.go` — `gatewayProvider` (implements `provider.Provider`), dual-stack TCP/UDP accept loops
-- `listener.go` — TPROXY socket setup (`IP_TRANSPARENT`, `IP_RECVORIGDSTADDR`), `tproxyUDPConn`, `readUDPOrigDst`
+- `listener.go` — TPROXY socket setup (`IP_TRANSPARENT`, `IP_RECVORIGDSTADDR`), `tproxyUDPConn`, `readUDPOrigDst`, `replySocketCache` (one `IP_TRANSPARENT` socket bound to each original destination so UDP replies leave with that destination as source; idle 2 min → swept)
 - `intercept.go` — `Interceptor` interface, `NewInterceptor` (auto-detect nft vs iptables), IP/subnet family splitting
 - `intercept_nft.go` — nftables backend (`inet k2r` table, atomic create/delete)
 - `intercept_ipt.go` — iptables/ip6tables backend (`K2R` chain in mangle table)
@@ -89,6 +89,8 @@ log:
 - Docker containers have read-only `/proc/sys/` — sysctl skips write when value already "1"
 - `gatewayProvider.Close()` does NOT remove interceptor rules — `Gateway` owns interceptor lifecycle
 - `tproxyUDPConn` delivers initial packet exactly once via `atomic.Bool.CompareAndSwap`
+- **UDP replies must be written from a socket bound to the original destination** (`replySocketCache` / `transparentBind`), never from the shared `0.0.0.0:ListenPort` listener. A reply from `<router>:12345` still reaches an unconnected client socket, but every `connect()`ed one (NTP, QUIC, games) drops it in the kernel — the Docker UAT never sees this because LinuxKit has no UDP TPROXY (`test/k2r-uat/run.sh` "UDP TPROXY may not work"). Verify on the testlab OpenWrt VM with a `connect()`ed UDP client (2026-09-25).
+- **Port 53 is exempt from the TPROXY chain whenever DNSRedirect is on** (all three backends emit a `dport 53 return` ahead of the tproxy rules). Without it the query hits both the mangle TPROXY and the nat REDIRECT on a real router: it is rewritten to `<router>:DNSPort`, then tunneled to that private address — LAN `dig @8.8.8.8` times out (UDP) / resets (TCP), and the bogus flows trip `quicUDPMux`'s datagram-relay health probe into smux fallback.
 - IPv6 socket options use raw constants (`IPV6_TRANSPARENT=75`, `IPV6_RECVORIGDSTADDR=74`) — not in Go's syscall package
 - Auto-reconnect waits 3s after HTTP server start for network stack readiness
 

@@ -74,6 +74,7 @@ func (n *nftNetlinkInterceptor) Install(cfg InterceptConfig) error {
 	if cfg.DNSRedirect && cfg.DNSPort > 0 {
 		n.addDNSRedirect(cfg, n.table)
 		n.addDNSRedirectOutput(cfg, n.table)
+		n.addDNSExemptFromTPROXY()
 	}
 
 	n.addTPROXYRules(cfg)
@@ -290,6 +291,31 @@ func (n *nftNetlinkInterceptor) addDNSRedirectOutput(cfg InterceptConfig, table 
 				&expr.Immediate{Register: 1, Data: binaryutil.BigEndian.PutUint16(dnsPort)},
 				&expr.Redir{RegisterProtoMin: 1},
 			},
+		})
+	}
+}
+
+// dnsExemptTPROXYExprs builds `meta l4proto <proto> th dport 53 return` for
+// the TPROXY chain. Port 53 is owned by the dnsredir NAT chain; if TPROXY
+// claims it too, both actions apply on a real router and the query is
+// tunneled to <router>:DNSPort instead of answered (OpenWrt 25.12, 2026-09-25).
+func dnsExemptTPROXYExprs(proto byte) []expr.Any {
+	return []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{proto}},
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(53)},
+		&expr.Verdict{Kind: expr.VerdictReturn},
+	}
+}
+
+// addDNSExemptFromTPROXY must run BEFORE addTPROXYRules so the return
+// precedes the tproxy verdicts in the chain.
+func (n *nftNetlinkInterceptor) addDNSExemptFromTPROXY() {
+	for _, proto := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
+		n.conn.AddRule(&nftables.Rule{
+			Table: n.table, Chain: n.chain,
+			Exprs: dnsExemptTPROXYExprs(proto),
 		})
 	}
 }

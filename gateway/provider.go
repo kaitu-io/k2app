@@ -28,6 +28,11 @@ type gatewayProvider struct {
 	dnsUDP4   *net.UDPConn
 	dnsUDP6   *net.UDPConn
 
+	// replies hands the UDP read loops a transparent socket per original
+	// destination so TPROXY'd replies carry that destination as their
+	// source (see tproxyUDPConn.WriteTo).
+	replies *replySocketCache
+
 	done chan struct{}
 }
 
@@ -37,6 +42,7 @@ func newGatewayProvider(interceptor Interceptor, cfg InterceptConfig) *gatewayPr
 	return &gatewayProvider{
 		interceptor: interceptor,
 		cfg:         cfg,
+		replies:     newReplySocketCache(transparentBind),
 		done:        make(chan struct{}),
 	}
 }
@@ -113,6 +119,7 @@ func (p *gatewayProvider) Start(ctx context.Context, handler provider.Connection
 	// UDP read loops (IPv4 + IPv6).
 	p.startUDPRead(udpConn4, handler)
 	p.startUDPRead(udpConn6, handler)
+	safego.Go(func() { p.replies.runSweeper(p.done) })
 
 	// DNS-port loops: TCP accept + UDP read. Each conn/packet gets a
 	// synthetic dest ":53" so dnsHandler short-circuits via port-53 match.
@@ -159,7 +166,7 @@ func (p *gatewayProvider) startUDPRead(udpConn *net.UDPConn, handler provider.Co
 					continue
 				}
 			}
-			pconn := newTProxyUDPConn(udpConn, src, dst, buf[:n])
+			pconn := newTProxyUDPConn(udpConn, p.replies, src, dst, buf[:n])
 			go handler.HandleUDP(pconn, dst.String())
 		}
 	})
@@ -229,6 +236,9 @@ func (p *gatewayProvider) Close() error {
 	}
 	if p.udpConn6 != nil {
 		p.udpConn6.Close()
+	}
+	if p.replies != nil {
+		p.replies.close()
 	}
 	if p.dnsTCPLn4 != nil {
 		p.dnsTCPLn4.Close()

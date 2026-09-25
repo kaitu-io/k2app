@@ -54,7 +54,7 @@ func TestTProxyUDPConn_ReadOnce(t *testing.T) {
 	payload := []byte("hello DNS")
 
 	// We can't use a real UDPConn, but we can test the read path.
-	conn := newTProxyUDPConn(nil, src, dst, payload)
+	conn := newTProxyUDPConn(nil, nil, src, dst, payload)
 	defer conn.Close()
 
 	// First read returns initial packet.
@@ -85,7 +85,7 @@ func TestTProxyUDPConn_ReadOnce(t *testing.T) {
 
 func TestTProxyUDPConn_LocalAddr(t *testing.T) {
 	dst := &net.UDPAddr{IP: net.IPv4(93, 184, 216, 34), Port: 443}
-	conn := newTProxyUDPConn(nil, nil, dst, nil)
+	conn := newTProxyUDPConn(nil, nil, nil, dst, nil)
 	if conn.LocalAddr().String() != dst.String() {
 		t.Errorf("LocalAddr() = %v, want %v", conn.LocalAddr(), dst)
 	}
@@ -93,7 +93,7 @@ func TestTProxyUDPConn_LocalAddr(t *testing.T) {
 
 func TestTProxyUDPConn_InitialDataIsCopied(t *testing.T) {
 	payload := []byte("original")
-	conn := newTProxyUDPConn(nil, &net.UDPAddr{}, &net.UDPAddr{}, payload)
+	conn := newTProxyUDPConn(nil, nil, &net.UDPAddr{}, &net.UDPAddr{}, payload)
 
 	// Mutate original — conn should be unaffected.
 	payload[0] = 'X'
@@ -114,7 +114,7 @@ func TestTProxyUDPConn_InitialDataIsCopied(t *testing.T) {
 func TestPacketSourceAddr_MultiSlotSrcIP(t *testing.T) {
 	want := &net.UDPAddr{IP: net.IPv4(10, 81, 1, 30), Port: 5000}
 
-	tc := newTProxyUDPConn(nil, want, &net.UDPAddr{IP: net.IPv4(8, 8, 8, 8), Port: 53}, []byte{1})
+	tc := newTProxyUDPConn(nil, nil, want, &net.UDPAddr{IP: net.IPv4(8, 8, 8, 8), Port: 53}, []byte{1})
 	if got := provider.SourcePacketAddr(tc); got == nil || got.String() != want.String() {
 		t.Fatalf("tproxyUDPConn: got %v, want %v", got, want)
 	}

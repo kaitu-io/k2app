@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/google/nftables/expr"
 )
 
 // ── nftables rule generation ─────────────────────────────────────
@@ -510,9 +512,9 @@ func flattenCmds(cmds []cmdSpec) string {
 // a real Linux kernel + iptables.
 type fakeIptablesState struct {
 	calls         []string
-	chains        map[string]bool   // "iptables:mangle:K2R" → exists
-	refs          map[string]int    // "iptables:mangle:K2R" → reference count from PREROUTING jumps
-	outputRefs    map[string]int    // "iptables:nat:K2R_DNS_OUT" → reference count from OUTPUT jumps
+	chains        map[string]bool // "iptables:mangle:K2R" → exists
+	refs          map[string]int  // "iptables:mangle:K2R" → reference count from PREROUTING jumps
+	outputRefs    map[string]int  // "iptables:nat:K2R_DNS_OUT" → reference count from OUTPUT jumps
 	failPredicate func(name string, args []string) error
 }
 
@@ -734,8 +736,8 @@ func TestInstall_RecoverFromStaleOrphanChain(t *testing.T) {
 // hadV4Subnet=false — Bug 1.5 making cleanStaleRules a no-op.
 func TestRemove_DiscoversOrphansOnFreshStruct(t *testing.T) {
 	f := newFakeIptables()
-	f.seedChain("iptables", "mangle", "K2R", 2)     // chain + 2 PREROUTING refs
-	f.seedChain("iptables", "nat", "K2R_DNS", 1)    // DNS chain + 1 ref
+	f.seedChain("iptables", "mangle", "K2R", 2)  // chain + 2 PREROUTING refs
+	f.seedChain("iptables", "nat", "K2R_DNS", 1) // DNS chain + 1 ref
 	f.install(t)
 
 	i := &iptInterceptor{} // zero value — no prior in-memory state
@@ -900,5 +902,112 @@ func TestCleanK2RFamily_UsesWaitFlag(t *testing.T) {
 	if !sawD || !sawF || !sawX {
 		t.Errorf("must exercise -D (%v), -F (%v), and -X (%v) paths; calls:\n%s",
 			sawD, sawF, sawX, strings.Join(f.calls, "\n"))
+	}
+}
+
+// ── DNS port-53 exemption from TPROXY ────────────────────────────
+//
+// With DNSRedirect on, LAN→ANY:53 is owned by the NAT REDIRECT chain (DNS
+// listener). If the mangle TPROXY rule also claims it, both actions apply on
+// a real router (OpenWrt 25.12, 2026-09-25): the query gets REDIRECT-rewritten
+// to <router>:DNSPort and then TPROXY-tunneled to that private address — the
+// client sees a timeout (UDP) / reset (TCP) and the bogus flows poison the
+// QUIC datagram relay health probe. So the TPROXY chain must RETURN dport 53
+// before any tproxy rule.
+
+func TestNftRuleGeneration_DNSRedirect_ExemptsPort53FromTPROXY(t *testing.T) {
+	nft := &nftShellInterceptor{}
+	script := nft.buildScript(InterceptConfig{
+		ListenPort:  12345,
+		LANSubnets:  []string{"192.168.1.0/24", "fd00::/64"},
+		DNSRedirect: true,
+		DNSPort:     12346,
+	})
+	const exempt = "add rule inet k2r prerouting meta l4proto { tcp, udp } th dport 53 return"
+	exemptIdx := strings.Index(script, exempt)
+	if exemptIdx < 0 {
+		t.Fatalf("missing port-53 TPROXY exemption rule\n%s", script)
+	}
+	tproxyIdx := strings.Index(script, "tproxy ip to")
+	if tproxyIdx < 0 {
+		t.Fatal("missing tproxy rule")
+	}
+	if exemptIdx > tproxyIdx {
+		t.Error("port-53 exemption must precede the tproxy rules")
+	}
+}
+
+func TestNftRuleGeneration_DNSRedirect_Disabled_NoPort53Exemption(t *testing.T) {
+	nft := &nftShellInterceptor{}
+	script := nft.buildScript(InterceptConfig{
+		ListenPort: 12345,
+		LANSubnets: []string{"192.168.1.0/24"},
+	})
+	if strings.Contains(script, "th dport 53 return") {
+		t.Error("port-53 exemption only makes sense when DNSRedirect owns port 53")
+	}
+}
+
+func TestIptRuleGeneration_DNSRedirect_ExemptsPort53FromTPROXY(t *testing.T) {
+	cmds, _, _ := buildIptCommands(InterceptConfig{
+		ListenPort:  12345,
+		LANSubnets:  []string{"192.168.1.0/24", "fd00::/64"},
+		DNSRedirect: true,
+		DNSPort:     12346,
+	})
+	for _, bin := range []string{"iptables", "ip6tables"} {
+		var lines []string
+		for _, c := range cmds {
+			if c.name == bin {
+				lines = append(lines, strings.Join(c.args, " "))
+			}
+		}
+		joined := strings.Join(lines, "\n")
+		tproxyIdx := strings.Index(joined, "-j TPROXY")
+		if tproxyIdx < 0 {
+			t.Fatalf("%s: missing TPROXY rule", bin)
+		}
+		for _, proto := range []string{"tcp", "udp"} {
+			rule := "-t mangle -A K2R -p " + proto + " --dport 53 -j RETURN"
+			idx := strings.Index(joined, rule)
+			if idx < 0 {
+				t.Errorf("%s: missing %q\n%s", bin, rule, joined)
+				continue
+			}
+			if idx > tproxyIdx {
+				t.Errorf("%s: %q must precede the TPROXY rule", bin, rule)
+			}
+		}
+	}
+}
+
+func TestIptRuleGeneration_DNSRedirect_Disabled_NoPort53Exemption(t *testing.T) {
+	cmds, _, _ := buildIptCommands(InterceptConfig{
+		ListenPort: 12345,
+		LANSubnets: []string{"192.168.1.0/24"},
+	})
+	if strings.Contains(flattenCmds(cmds), "--dport 53 -j RETURN") {
+		t.Error("port-53 exemption only makes sense when DNSRedirect owns port 53")
+	}
+}
+
+func TestNftNetlink_DNSExemptExprs(t *testing.T) {
+	for _, proto := range []byte{6, 17} {
+		exprs := dnsExemptTPROXYExprs(proto)
+		if len(exprs) == 0 {
+			t.Fatalf("proto %d: no exprs", proto)
+		}
+		if _, ok := exprs[len(exprs)-1].(*expr.Verdict); !ok {
+			t.Errorf("proto %d: last expr must be a verdict (return), got %T", proto, exprs[len(exprs)-1])
+		}
+		saw53 := false
+		for _, e := range exprs {
+			if c, ok := e.(*expr.Cmp); ok && len(c.Data) == 2 && c.Data[0] == 0 && c.Data[1] == 53 {
+				saw53 = true
+			}
+		}
+		if !saw53 {
+			t.Errorf("proto %d: no dport==53 comparison", proto)
+		}
 	}
 }

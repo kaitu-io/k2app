@@ -5,10 +5,13 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/sasha-s/go-deadlock"
 )
 
 // Linux socket options not exported by syscall package.
@@ -95,9 +98,150 @@ func readUDPOrigDst(conn *net.UDPConn, buf []byte) (n int, src, dst *net.UDPAddr
 	return n, srcAddr, srcAddr, nil
 }
 
+// udpWriter is the write half of a reply socket.
+type udpWriter interface {
+	WriteTo(b []byte, addr net.Addr) (int, error)
+}
+
+// udpReplier hands out a socket whose packets leave with dst as their source
+// address — the original destination the LAN client sent to.
+type udpReplier interface {
+	replyConn(dst *net.UDPAddr) (udpWriter, error)
+}
+
+// transparentBind binds an IP_TRANSPARENT UDP socket to dst, which is not a
+// local address: this is how a TPROXY reply is put on the wire with the
+// original destination (216.239.35.0:123) as its source. Needs CAP_NET_ADMIN.
+func transparentBind(dst *net.UDPAddr) (*net.UDPConn, error) {
+	network := "udp4"
+	if dst.IP.To4() == nil {
+		network = "udp6"
+	}
+	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
+		var sockErr error
+		ctlErr := c.Control(func(fd uintptr) {
+			syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+			if network == "udp6" {
+				sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_IPV6, ipv6Transparent, 1)
+			} else {
+				sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_IP, syscall.IP_TRANSPARENT, 1)
+			}
+		})
+		if ctlErr != nil {
+			return ctlErr
+		}
+		return sockErr
+	}}
+	pc, err := lc.ListenPacket(context.Background(), network, dst.String())
+	if err != nil {
+		return nil, err
+	}
+	return pc.(*net.UDPConn), nil
+}
+
+// replySocketCache keeps one transparent reply socket per original
+// destination so a busy flow (NTP poll, QUIC connection, game session) does
+// not bind a fresh socket per packet. Entries idle longer than
+// replySocketIdle are closed by the sweeper.
+type replySocketCache struct {
+	bind func(dst *net.UDPAddr) (*net.UDPConn, error)
+
+	mu      deadlock.Mutex
+	socks   map[string]*replySocket
+	warned  atomic.Bool
+	stopped atomic.Bool
+}
+
+type replySocket struct {
+	conn     *net.UDPConn
+	lastUsed atomic.Int64 // unix nanos
+}
+
+const (
+	replySocketIdle       = 2 * time.Minute
+	replySocketSweepEvery = 30 * time.Second
+)
+
+func newReplySocketCache(bind func(dst *net.UDPAddr) (*net.UDPConn, error)) *replySocketCache {
+	return &replySocketCache{bind: bind, socks: make(map[string]*replySocket)}
+}
+
+// replyConn implements udpReplier.
+func (c *replySocketCache) replyConn(dst *net.UDPAddr) (udpWriter, error) {
+	key := dst.String()
+	now := time.Now().UnixNano()
+
+	c.mu.Lock()
+	// concurrency:allow map lookup + one bind syscall under lock; bind is
+	// local (no network I/O) and serialising it prevents two flows to the
+	// same dst from racing to bind the same address.
+	defer c.mu.Unlock()
+	if c.stopped.Load() {
+		return nil, net.ErrClosed
+	}
+	if s, ok := c.socks[key]; ok {
+		s.lastUsed.Store(now)
+		return s.conn, nil
+	}
+	conn, err := c.bind(dst)
+	if err != nil {
+		return nil, err
+	}
+	s := &replySocket{conn: conn}
+	s.lastUsed.Store(now)
+	c.socks[key] = s
+	return conn, nil
+}
+
+// sweep closes sockets idle for longer than idle.
+func (c *replySocketCache) sweep(idle time.Duration) {
+	cutoff := time.Now().Add(-idle).UnixNano()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, s := range c.socks {
+		if s.lastUsed.Load() <= cutoff {
+			s.conn.Close()
+			delete(c.socks, key)
+		}
+	}
+}
+
+func (c *replySocketCache) len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.socks)
+}
+
+// close shuts every cached socket; later replyConn calls fail with
+// net.ErrClosed so a straggling flow falls back to the listener socket.
+func (c *replySocketCache) close() {
+	c.stopped.Store(true)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, s := range c.socks {
+		s.conn.Close()
+		delete(c.socks, key)
+	}
+}
+
+// runSweeper sweeps idle sockets until done is closed.
+func (c *replySocketCache) runSweeper(done <-chan struct{}) {
+	t := time.NewTicker(replySocketSweepEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			c.sweep(replySocketIdle)
+		}
+	}
+}
+
 // tproxyUDPConn wraps a single UDP packet as a net.PacketConn.
 type tproxyUDPConn struct {
-	conn    *net.UDPConn
+	conn    *net.UDPConn // listener socket — fallback reply path only
+	replier udpReplier
 	src     *net.UDPAddr
 	dst     *net.UDPAddr
 	initial []byte
@@ -105,11 +249,11 @@ type tproxyUDPConn struct {
 	done    chan struct{}
 }
 
-func newTProxyUDPConn(conn *net.UDPConn, src, dst *net.UDPAddr, initial []byte) *tproxyUDPConn {
+func newTProxyUDPConn(conn *net.UDPConn, replier udpReplier, src, dst *net.UDPAddr, initial []byte) *tproxyUDPConn {
 	data := make([]byte, len(initial))
 	copy(data, initial)
 	return &tproxyUDPConn{
-		conn: conn, src: src, dst: dst,
+		conn: conn, replier: replier, src: src, dst: dst,
 		initial: data, done: make(chan struct{}),
 	}
 }
@@ -123,10 +267,27 @@ func (c *tproxyUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return 0, nil, net.ErrClosed
 }
 
-// WriteTo sends the response back to the original LAN source address.
-// The addr parameter is intentionally ignored — TPROXY wraps each UDP packet
-// as a single-session conn, so all responses go to the originating LAN device.
+// WriteTo sends the response back to the original LAN source address, with
+// the original destination as the packet's source (transparent reply
+// socket). The addr parameter is intentionally ignored — TPROXY wraps each
+// UDP packet as a single-session conn, so all responses go to the
+// originating LAN device.
+//
+// If no transparent socket can be bound the reply still goes out through the
+// listener socket, i.e. from <router>:ListenPort. Unconnected client sockets
+// accept that; connect()ed ones (NTP, QUIC, games) drop it in the kernel — so
+// the fallback is logged once rather than silently taken.
 func (c *tproxyUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
+	if c.replier != nil {
+		w, err := c.replier.replyConn(c.dst)
+		if err == nil {
+			return w.WriteTo(b, c.src)
+		}
+		if cache, ok := c.replier.(*replySocketCache); ok && cache.warned.CompareAndSwap(false, true) {
+			slog.Warn("gateway: transparent reply socket unavailable, replying from listener socket "+
+				"(connected-UDP clients will drop these replies)", "dst", c.dst, "err", err)
+		}
+	}
 	return c.conn.WriteTo(b, c.src)
 }
 
@@ -143,10 +304,10 @@ func (c *tproxyUDPConn) Close() error {
 // UDP path populate ConnMeta.SrcIP for multi-slot per-slot routing.
 func (c *tproxyUDPConn) PacketSourceAddr() *net.UDPAddr { return c.src }
 
-func (c *tproxyUDPConn) LocalAddr() net.Addr               { return c.dst }
+func (c *tproxyUDPConn) LocalAddr() net.Addr                { return c.dst }
 func (c *tproxyUDPConn) SetDeadline(t time.Time) error      { return nil }
-func (c *tproxyUDPConn) SetReadDeadline(t time.Time) error   { return nil }
-func (c *tproxyUDPConn) SetWriteDeadline(t time.Time) error  { return nil }
+func (c *tproxyUDPConn) SetReadDeadline(t time.Time) error  { return nil }
+func (c *tproxyUDPConn) SetWriteDeadline(t time.Time) error { return nil }
 
 // dnsUDPConn wraps a single REDIRECTed UDP packet for the DNS listener path.
 // Unlike tproxyUDPConn this is strictly single-shot: dnsHandler.serveDNS does
@@ -199,11 +360,11 @@ func (c *dnsUDPConn) PacketSourceAddr() *net.UDPAddr {
 	return ua
 }
 
-func (c *dnsUDPConn) Close() error                          { c.closed.Store(true); return nil }
-func (c *dnsUDPConn) LocalAddr() net.Addr                   { return c.conn.LocalAddr() }
-func (c *dnsUDPConn) SetDeadline(t time.Time) error         { return nil }
-func (c *dnsUDPConn) SetReadDeadline(t time.Time) error     { return nil }
-func (c *dnsUDPConn) SetWriteDeadline(t time.Time) error    { return nil }
+func (c *dnsUDPConn) Close() error                       { c.closed.Store(true); return nil }
+func (c *dnsUDPConn) LocalAddr() net.Addr                { return c.conn.LocalAddr() }
+func (c *dnsUDPConn) SetDeadline(t time.Time) error      { return nil }
+func (c *dnsUDPConn) SetReadDeadline(t time.Time) error  { return nil }
+func (c *dnsUDPConn) SetWriteDeadline(t time.Time) error { return nil }
 
 // newDNSTCPListeners binds plain TCP listeners (no TPROXY socket options) on
 // the DNS port for v4 and v6. REDIRECT-delivered packets arrive as normal
