@@ -166,6 +166,15 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 			// Jump to MAC check from K2R — if RETURN, continues to TPROXY below
 			cmds = append(cmds, cmdSpec{"iptables", ipt("-t", "mangle", "-A", "K2R", "-j", "K2R_MAC")})
 		}
+		// Port 53 is K2R_DNS's (nat REDIRECT) when DNSRedirect is on; TPROXY
+		// must not claim it as well — see the nft interceptor for the
+		// double-handling failure this prevents.
+		if cfg.DNSRedirect && cfg.DNSPort > 0 {
+			cmds = append(cmds,
+				cmdSpec{"iptables", ipt("-t", "mangle", "-A", "K2R", "-p", "tcp", "--dport", "53", "-j", "RETURN")},
+				cmdSpec{"iptables", ipt("-t", "mangle", "-A", "K2R", "-p", "udp", "--dport", "53", "-j", "RETURN")},
+			)
+		}
 		cmds = append(cmds,
 			cmdSpec{"iptables", ipt("-t", "mangle", "-A", "K2R", "-p", "tcp", "-j", "TPROXY", "--on-port", port, "--tproxy-mark", "1")},
 			cmdSpec{"iptables", ipt("-t", "mangle", "-A", "K2R", "-p", "udp", "-j", "TPROXY", "--on-port", port, "--tproxy-mark", "1")},
@@ -187,6 +196,12 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 			}
 			cmds = append(cmds, cmdSpec{"ip6tables", ipt("-t", "mangle", "-A", "K2R_MAC", "-j", "DROP")})
 			cmds = append(cmds, cmdSpec{"ip6tables", ipt("-t", "mangle", "-A", "K2R", "-j", "K2R_MAC")})
+		}
+		if cfg.DNSRedirect && cfg.DNSPort > 0 {
+			cmds = append(cmds,
+				cmdSpec{"ip6tables", ipt("-t", "mangle", "-A", "K2R", "-p", "tcp", "--dport", "53", "-j", "RETURN")},
+				cmdSpec{"ip6tables", ipt("-t", "mangle", "-A", "K2R", "-p", "udp", "--dport", "53", "-j", "RETURN")},
+			)
 		}
 		cmds = append(cmds,
 			cmdSpec{"ip6tables", ipt("-t", "mangle", "-A", "K2R", "-p", "tcp", "-j", "TPROXY", "--on-port", port, "--tproxy-mark", "1")},
