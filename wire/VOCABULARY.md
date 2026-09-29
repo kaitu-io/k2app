@@ -12,7 +12,7 @@ Three-layer model for metrics, naming, and decision ownership.
 
 ## Terminology
 
-- **Datagram Relay**: The QUIC datagram-based path for forwarding user UDP packets. Distinct from QUIC's own wire-layer UDP transport. `ErrDatagramRelayUnhealthy` signals this path has degraded; `datagramRelayHealthy()` evaluates health from consecutive timeout counters.
+- **Datagram Relay**: The QUIC datagram-based path for forwarding user UDP packets. Distinct from QUIC's own wire-layer UDP transport. `ErrDatagramRelayUnhealthy` signals this path has degraded; `datagramRelayHealthy()` evaluates health from consecutive relay timeouts — sessions that sent and never received, and sends shed by the datagram budget; an answered session reaching its idle deadline is not a relay timeout.
 
 ## Key Rule
 

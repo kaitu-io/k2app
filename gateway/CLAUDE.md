@@ -26,7 +26,7 @@ Lock ordering: `opMu` (serialization) → `mu` (state) → `sseMu` (state).
 - `sse.go` — `/api/events` SSE endpoint, `broadcastSSE` fan-out
 - `config.go` — `GatewayConfig` (embeds `ClientConfig`), `LoadGateway`, `resolveExcludeIPs`
 - `provider.go` — `gatewayProvider` (implements `provider.Provider`), dual-stack TCP/UDP accept loops
-- `listener.go` — TPROXY socket setup (`IP_TRANSPARENT`, `IP_RECVORIGDSTADDR`), `tproxyUDPConn`, `readUDPOrigDst`, `replySocketCache` (one `IP_TRANSPARENT` socket bound to each original destination so UDP replies leave with that destination as source; idle 2 min → swept)
+- `listener.go` — TPROXY socket setup (`IP_TRANSPARENT`, `IP_RECVORIGDSTADDR`), `udpFlowTable` + `tproxyUDPConn` (one flow = one LAN client socket talking to one destination = one tunnel session), `readUDPOrigDst`, `replySocketCache` (one `IP_TRANSPARENT` socket bound to each original destination so UDP replies leave with that destination as source; idle 2 min → swept)
 - `intercept.go` — `Interceptor` interface, `NewInterceptor` (auto-detect nft vs iptables), IP/subnet family splitting
 - `intercept_nft.go` — nftables backend (`inet k2r` table, atomic create/delete)
 - `intercept_ipt.go` — iptables/ip6tables backend (`K2R` chain in mangle table)
@@ -88,7 +88,9 @@ log:
 - nft `inet` family requires `tproxy ip to` / `tproxy ip6 to` — bare `tproxy to` causes "conflicting protocols"
 - Docker containers have read-only `/proc/sys/` — sysctl skips write when value already "1"
 - `gatewayProvider.Close()` does NOT remove interceptor rules — `Gateway` owns interceptor lifecycle
-- `tproxyUDPConn` delivers initial packet exactly once via `atomic.Bool.CompareAndSwap`
+- **TPROXY'd UDP is grouped into flows keyed by (source ip:port, destination ip:port)** (`udpFlowTable`); the read loop never calls `HandleUDP` per packet. A session per packet gives every packet of an exchange its own egress port (the server binds one socket per session) and leaves one 60 s session behind per packet: on OpenWrt a modest 20 flows × 50 pps filled all 4096 tunnel slots, stalled TCP and UDP for everyone, and got k2r OOM-killed on a 232 MB router (2026-09-29). The key includes the destination on purpose — routing, sniffing and the reply source stay per destination, as they were per packet. Keying by source alone would give full-cone NAT (what the TUN provider does) but routes a whole socket by its first packet and needs a reply-source policy; not done here.
+- `tproxyUDPConn.ReadFrom` returns the packet's **destination** as its address (what `pipePacket` forwards to — same as `singPacketConn` / SOCKS5 `udpSession`), honours the read deadline (that is how an idle flow ends), and `WriteTo` ignores the address it is given: replies always leave from the flow's destination, never from an address the tunnel reports.
+- Flow queues are bounded three ways: `udpFlowQueue` packets per flow, `maxQueuedUDPPackets` across all flows, `maxUDPFlows` flows. Over any of them the packet is dropped (first drop per flow / table logged at WARN) — the read loop must never block, every flow shares it.
 - **UDP replies must be written from a socket bound to the original destination** (`replySocketCache` / `transparentBind`), never from the shared `0.0.0.0:ListenPort` listener. A reply from `<router>:12345` still reaches an unconnected client socket, but every `connect()`ed one (NTP, QUIC, games) drops it in the kernel — the Docker UAT never sees this because LinuxKit has no UDP TPROXY (`test/k2r-uat/run.sh` "UDP TPROXY may not work"). Verify on the testlab OpenWrt VM with a `connect()`ed UDP client (2026-09-25).
 - **Port 53 is exempt from the TPROXY chain whenever DNSRedirect is on** (all three backends emit a `dport 53 return` ahead of the tproxy rules). Without it the query hits both the mangle TPROXY and the nat REDIRECT on a real router: it is rewritten to `<router>:DNSPort`, then tunneled to that private address — LAN `dig @8.8.8.8` times out (UDP) / resets (TCP), and the bogus flows trip `quicUDPMux`'s datagram-relay health probe into smux fallback.
 - IPv6 socket options use raw constants (`IPV6_TRANSPARENT=75`, `IPV6_RECVORIGDSTADDR=74`) — not in Go's syscall package
@@ -104,4 +106,6 @@ make gateway-check                  # All above (unit tests on Linux, cross-comp
 make gateway-uat                    # Docker integration: 10 phases, 56 test points
 ```
 
-Unit tests cover: nft/ipt rule generation (dual-stack, multi-subnet, exclude sets, TPROXY syntax), IP/subnet family splitting, config loading/defaults, server URL parsing, virtual interface filtering, state JSON roundtrip, provider close idempotency, tproxyUDPConn read-once semantics.
+Unit tests cover: nft/ipt rule generation (dual-stack, multi-subnet, exclude sets, TPROXY syntax), IP/subnet family splitting, config loading/defaults, server URL parsing, virtual interface filtering, state JSON roundtrip, provider close idempotency, UDP flow table (one session per flow, close/dispatch races, queue budget), reply source.
+
+`go test ./...` on macOS skips this whole package and `lint/` is a separate package — run both `GOOS=linux go vet ./gateway/` and `go test ./lint/` before committing gateway code (a `Close()` under `mu` shipped to master on 2026-09-25 because neither was run). UDP through real TPROXY is covered by `test/k2r-udp-lab/run.sh` (native Linux, root), not by the Docker UAT.

@@ -111,6 +111,18 @@ Two drivers share `.build/{k2,k2s,gen-config}` (cross-compile: `CGO_ENABLED=0 GO
 
 `nslab.sh` knobs that matter (all env): `BIG=400` drops UDP:443 packets ≥ 400 B (echo/ACKs pass, requests with `PAD=800` die); `SHORT_ONLY=1` restricts that to QUIC short-header packets so handshake Initials pass — the exact #3757 fingerprint (handshake + echo fine, requests time out, heartbeat `loss` stays low); `BIG_PROB` partial drop; `HASHLIMIT_RATE` per-srcport budget (carrier-QoS shape); `SERVER_BLACKHOLE=1` dead-egress node (#3463 shape); `TRAFFIC_INTERVAL` (0.5 dense / 5 sparse = the chat-app user); `PAUSE_AT/RESUME_AT/REMOVE_AT/REINJECT_AT` seconds after injection; `BIN=` an older client build as the known-bad control. Do **not** use Docker Desktop on macOS for this: its VM fights the host for memory (a chained run was OOM-killed on a load-68 Mac) and `tc police` there kills handshakes with the payload. The Ubuntu run log (2026-09-16, 14 scenarios) is in spec `docs/superpowers/specs/2026-08-10-dual-transport-quality-scoreboard-design.md` §8e.
 
+## k2r UDP data-plane lab (`k2r-udp-lab/run.sh`)
+
+Native Linux, root. Three namespaces on one host (`lan` client → root ns running k2r with real nft TPROXY → `srv` with k2s and a UDP echo on `44.44.44.44`), so UDP actually crosses the gateway's flow code — the Docker UAT cannot do this (LinuxKit has no UDP TPROXY) and stayed green while k2r opened a tunnel session per UDP packet. The echo server reports the source address it saw; that is how the egress port of each packet is observed.
+
+```bash
+BIN=/path/k2r K2S=/path/k2s GENCONFIG=/path/gen-config ./test/k2r-udp-lab/run.sh   # exit 0 = all pass
+```
+
+Asserts: one client socket → one egress port; two destinations → one stable port each, replies from the right peer; exchanges where the client has the last word do not count as relay timeouts; 20 flows × 100 pps leave TCP working and RSS flat; iperf3 UDP both ways; after the 60 s idle deadline no transport switch and UDP/TCP still work. Verified to discriminate: k2 `3a7f671` fails 11 checks, the flow fix passes all (2026-09-29).
+
+Gotchas: keep `RTT_MS` > 0 — on a zero-latency veth the channel scoreboard reads load as RTT inflation and flips QUIC→TCP-WS, which looks like a regression. k2r hijacks the host's DNS while it runs (`dnsredir_out`), so install packages first. Without a Linux box, a QEMU VM works (`qemu-system-aarch64 -accel hvf` + an Ubuntu cloud image on Apple Silicon); a second QEMU VM running the OpenWrt `armsr/armv8` image, its LAN NIC joined to the first VM with `-netdev socket`, gives the same test on a real OpenWrt userland when the testlab is unreachable.
+
 ## OpenWrt install-flow lab (testlab VM 102)
 
 The k2r-uat harness proves the data plane on Linux; it does **not** run `scripts/install-k2r.sh`, procd, apk/opkg or LuCI. Those only break on a real OpenWrt userland, so the install flow is exercised on the testlab OpenWrt VM (PVE `192.168.1.2`, VM 102 = stock OpenWrt 25.12 x86_64 + qemu-ga, snapshot `baseline`; `TESTLAB_OWNER=<you> testlab-up 102 local` rolls back + starts it, `testlab-down 102` releases it). The LAN client is VM 120 with `testlab-up 120 openwrt` (its test NIC lands behind the router's `br-lan` 10.30.0.0/24; the mgmt NIC 10.10.10.20 stays reachable). Recipe (2026-09-16):
