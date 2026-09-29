@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 import { siteBrand } from '@/lib/brands';
 import { landingPrices } from '@/lib/landing-prices';
@@ -23,6 +24,14 @@ const FAQ_KEYS = [
 ] as const;
 const STEP_KEYS = ['subscribe', 'download', 'connect'] as const;
 
+/** Scanner paths (/wp-login.php, /.env …) land in [locale]. The layout 404s them, but
+ *  Next renders page and layout concurrently, so this page must bail on its own before
+ *  Intl.NumberFormat(locale) throws RangeError (Sentry JAVASCRIPT-NEXTJS-14). */
+function assertBrandLocale(rawLocale: string): Locale {
+  if (!(siteBrand().allowedLocales as readonly string[]).includes(rawLocale)) notFound();
+  return rawLocale as Locale;
+}
+
 // overleap 构建专属首页（page.overleap.tsx）。kaitu 首页在 page.kaitu.tsx；两者由
 // next.config 的 pageExtensions 按品牌择一编译，互不可见。
 export async function generateMetadata({
@@ -31,7 +40,7 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }): Promise<Metadata> {
   const { locale: rawLocale } = await params;
-  const locale = rawLocale as Locale;
+  const locale = assertBrandLocale(rawLocale);
   const brand = siteBrand();
   const t = await getTranslations({ locale, namespace: 'landing' });
   const vars = { brand: brand.displayName };
@@ -53,7 +62,7 @@ export default async function Home({
   params: Promise<{ locale: string }>;
 }) {
   const { locale: rawLocale } = await params;
-  const locale = rawLocale as Locale;
+  const locale = assertBrandLocale(rawLocale);
   setRequestLocale(locale);
   const brand = siteBrand();
   const t = await getTranslations({ locale, namespace: 'landing' });

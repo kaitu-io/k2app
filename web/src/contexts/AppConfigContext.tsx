@@ -36,7 +36,14 @@ function getCachedConfig(): AppConfig | null {
     localStorage.removeItem(CACHE_KEY);
     return null;
   } catch {
-    localStorage.removeItem(CACHE_KEY);
+    // Corrupt JSON → drop the entry. Storage itself may be what threw (iOS Safari
+    // "Block All Cookies" → SecurityError on any access), so this must not rethrow:
+    // an escape here rejects loadAppConfig before the API fetch ever runs.
+    try {
+      localStorage.removeItem(CACHE_KEY);
+    } catch {
+      // storage unavailable — nothing to clean up
+    }
     return null;
   }
 }

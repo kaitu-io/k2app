@@ -63,6 +63,9 @@ vi.mock('@/i18n/routing', () => ({
   redirect: vi.fn(),
 }));
 vi.mock('../src/app/[locale]/HomeClient', () => ({ default: () => null }));
+vi.mock('next/navigation', () => ({
+  notFound: () => { throw new Error('NEXT_NOT_FOUND'); },
+}));
 
 const KAITU_WORDS = /Kaitu|开途|開途|kaitu\.(io|me)/;
 const CN_PAYMENT = /Alipay|WeChat|UnionPay|支付宝|微信/;
@@ -115,6 +118,20 @@ describe('overleap home (NEXT_PUBLIC_BRAND=overleap)', () => {
       expect(html).not.toContain('{brand}');
     });
   }
+
+  // Scanner paths (/wp-login.php, /.env …) match [locale]. The layout's notFound()
+  // yields the 404, but Next renders page and layout concurrently, so the page ran
+  // Intl.NumberFormat with locale "wp-login.php" and threw RangeError on every hit
+  // (Sentry JAVASCRIPT-NEXTJS-14, ~5k events/month). The page must bail on its own.
+  it('non-locale segment 404s before touching Intl (page + metadata)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    vi.resetModules();
+    const mod = await import('../src/app/[locale]/page.overleap');
+    for (const locale of ['wp-login.php', '.env', 'zh-CN']) {
+      await expect(mod.default({ params: Promise.resolve({ locale }) }), locale).rejects.toThrow('NEXT_NOT_FOUND');
+      await expect(mod.generateMetadata({ params: Promise.resolve({ locale }) }), locale).rejects.toThrow('NEXT_NOT_FOUND');
+    }
+  });
 
   it('metadata title carries the brand and no k2cc suffix', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
