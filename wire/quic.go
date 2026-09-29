@@ -2108,8 +2108,17 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	case <-c.mux.done:
 		return 0, nil, net.ErrClosed
 	case <-timerCh:
-		c.mux.recordTimeout()
-		slog.Warn("quicUDPConn: ReadFrom timeout", "sessionID", c.sessionID, "target", c.targetAddr)
+		// Every relayed UDP session ends here — UDP has no close, the idle
+		// deadline is its end of life. Only a session that sent and never
+		// heard back says anything about the datagram path; one that was
+		// answered and then went quiet ended normally.
+		if c.txPackets.Load() > 0 && c.rxPackets.Load() == 0 {
+			c.mux.recordTimeout()
+			slog.Warn("quicUDPConn: ReadFrom timeout", "sessionID", c.sessionID, "target", c.targetAddr)
+		} else {
+			slog.Debug("quicUDPConn: idle", "sessionID", c.sessionID, "target", c.targetAddr,
+				"txPackets", c.txPackets.Load(), "rxPackets", c.rxPackets.Load())
+		}
 		return 0, nil, os.ErrDeadlineExceeded
 	}
 }

@@ -33,6 +33,10 @@ type gatewayProvider struct {
 	// source (see tproxyUDPConn.WriteTo).
 	replies *replySocketCache
 
+	// flows groups TPROXY'd UDP packets by (LAN client socket, destination):
+	// one flow, one tunnel session (see tproxyUDPConn).
+	flows *udpFlowTable
+
 	done chan struct{}
 }
 
@@ -43,6 +47,7 @@ func newGatewayProvider(interceptor Interceptor, cfg InterceptConfig) *gatewayPr
 		interceptor: interceptor,
 		cfg:         cfg,
 		replies:     newReplySocketCache(transparentBind),
+		flows:       newUDPFlowTable(),
 		done:        make(chan struct{}),
 	}
 }
@@ -166,8 +171,9 @@ func (p *gatewayProvider) startUDPRead(udpConn *net.UDPConn, handler provider.Co
 					continue
 				}
 			}
-			pconn := newTProxyUDPConn(udpConn, p.replies, src, dst, buf[:n])
-			go handler.HandleUDP(pconn, dst.String())
+			p.flows.dispatch(udpConn, p.replies, src, dst, buf[:n], func(flow *tproxyUDPConn) {
+				go handler.HandleUDP(flow, dst.String())
+			})
 		}
 	})
 }
@@ -236,6 +242,9 @@ func (p *gatewayProvider) Close() error {
 	}
 	if p.udpConn6 != nil {
 		p.udpConn6.Close()
+	}
+	if p.flows != nil {
+		p.flows.closeAll()
 	}
 	if p.replies != nil {
 		p.replies.close()

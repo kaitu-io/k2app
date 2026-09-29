@@ -47,8 +47,7 @@ func TestGatewayProviderClose_Idempotent(t *testing.T) {
 	}
 }
 
-func TestTProxyUDPConn_ReadOnce(t *testing.T) {
-	// Verify that tproxyUDPConn delivers the initial packet exactly once.
+func TestTProxyUDPConn_FirstPacketThenBlocksUntilClose(t *testing.T) {
 	src := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: 54321}
 	dst := &net.UDPAddr{IP: net.IPv4(8, 8, 8, 8), Port: 53}
 	payload := []byte("hello DNS")
@@ -57,7 +56,9 @@ func TestTProxyUDPConn_ReadOnce(t *testing.T) {
 	conn := newTProxyUDPConn(nil, nil, src, dst, payload)
 	defer conn.Close()
 
-	// First read returns initial packet.
+	// First read returns the first packet, addressed to its destination:
+	// pipePacket treats the address ReadFrom returns as where to send the
+	// packet, exactly as the TUN and SOCKS5 providers report it.
 	buf := make([]byte, 1024)
 	n, addr, err := conn.ReadFrom(buf)
 	if err != nil {
@@ -69,11 +70,11 @@ func TestTProxyUDPConn_ReadOnce(t *testing.T) {
 	if string(buf[:n]) != "hello DNS" {
 		t.Errorf("data = %q", buf[:n])
 	}
-	if addr.String() != src.String() {
-		t.Errorf("addr = %v, want %v", addr, src)
+	if addr.String() != dst.String() {
+		t.Errorf("addr = %v, want the packet's destination %v", addr, dst)
 	}
 
-	// Second read blocks until Close.
+	// With nothing queued the next read blocks until Close.
 	go func() {
 		conn.Close()
 	}()
