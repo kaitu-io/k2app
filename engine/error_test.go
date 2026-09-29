@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -367,5 +370,94 @@ func TestClassifyError_BareStreamError403StaysTarget(t *testing.T) {
 	got := ClassifyError(&wire.StreamError{Code: 403, Message: "blocked: 10.0.0.1 is a reserved IP"})
 	if got.Category != CategoryTarget {
 		t.Fatalf("category = %s, want target", got.Category)
+	}
+}
+
+// provider.Start failures (Windows wintun adapter creation, gVisor stack,
+// proxy-mode listen) happen on the user's own machine after the wire has
+// already connected — they are never server fault. Before this guard they
+// fell through classifyByPatterns to fallback 570/CategoryServer, and the UI
+// told the user to "switch node" (ticket #3849: six attempts across five
+// nodes, every one failing at wintun CreateAdapter with ERROR_FILE_NOT_FOUND).
+func TestProviderStartError_ClassifiedAsEnvironmentSetup(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"windows wintun create", fmt.Errorf("provider: create TUN: %w", errors.New("The system cannot find the file specified."))},
+		{"create stack", fmt.Errorf("provider: create stack: %w", errors.New("gvisor: init failed"))},
+		{"start TUN", fmt.Errorf("provider: start TUN: %w", errors.New("set route: Access is denied."))},
+		{"proxy listen in use", fmt.Errorf("provider: listen 127.0.0.1:1080: %w", errors.New("bind: address already in use"))},
+		// A provider error whose text happens to match a server pattern must
+		// still be local: the call site, not the wording, decides.
+		{"text resembles server pattern", fmt.Errorf("provider: start TUN: %w", errors.New("connection refused"))},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ClassifyError(providerStartError(tt.err))
+			if result.Code != ErrCodeEnvironmentSetupFailed {
+				t.Errorf("code = %d, want %d (ErrCodeEnvironmentSetupFailed)", result.Code, ErrCodeEnvironmentSetupFailed)
+			}
+			if result.Category != CategoryClient {
+				t.Errorf("category = %q, want %q (local host problem, not server)", result.Category, CategoryClient)
+			}
+			if result.Message != tt.err.Error() {
+				t.Errorf("message = %q, want original %q preserved for logs", result.Message, tt.err.Error())
+			}
+		})
+	}
+}
+
+// Stop() during Start() cancels the provider's context; that is not an
+// environment fault and must not be relabelled as one.
+func TestProviderStartError_CancellationPassesThrough(t *testing.T) {
+	for _, base := range []error{context.Canceled, context.DeadlineExceeded} {
+		err := fmt.Errorf("provider: start stack: %w", base)
+		if got := providerStartError(err); got != err {
+			t.Errorf("providerStartError(%v) = %v, want the original error untouched", err, got)
+		}
+	}
+	if providerStartError(nil) != nil {
+		t.Error("providerStartError(nil) must be nil")
+	}
+}
+
+// failingProvider simulates a local-host provider failure (e.g. wintun
+// CreateAdapter returning ERROR_FILE_NOT_FOUND).
+type failingProvider struct{ err error }
+
+func (p *failingProvider) Start(ctx context.Context, handler provider.ConnectionHandler) error {
+	return p.err
+}
+func (p *failingProvider) Close() error { return nil }
+func (p *failingProvider) Name() string { return "failing-test" }
+
+// Drives the real Engine.Start() to its provider-start call site (proxy mode
+// needs no k2v5 outbound, so no wire is dialled) and asserts the surfaced
+// error is 412/client. Guards the call-site wiring, which the helper-level
+// tests above cannot see.
+func TestEngineStart_ProviderFailureIsEnvironmentSetup(t *testing.T) {
+	e := New()
+	provErr := fmt.Errorf("provider: listen 127.0.0.1:1080: %w", errors.New("bind: address already in use"))
+	err := e.Start(Config{
+		Client: &config.ClientConfig{
+			Mode:   "proxy",
+			Routes: []config.RouteConfig{{Via: "direct", Match: rule.MatchConfig{All: true}}},
+		},
+		FileDescriptor: -1,
+		Provider:       &failingProvider{err: provErr},
+	})
+	if err == nil {
+		t.Fatal("Start with failing provider should return error")
+	}
+	var ee *EngineError
+	if !errors.As(err, &ee) {
+		t.Fatalf("Start error = %T %v, want *EngineError", err, err)
+	}
+	if ee.Code != ErrCodeEnvironmentSetupFailed || ee.Category != CategoryClient {
+		t.Fatalf("Start error = %d/%s, want %d/%s (message %q)", ee.Code, ee.Category, ErrCodeEnvironmentSetupFailed, CategoryClient, ee.Message)
+	}
+	if !strings.Contains(e.StatusJSON(), `"code":412`) {
+		t.Errorf("StatusJSON = %s, want code 412 surfaced to the UI", e.StatusJSON())
 	}
 }

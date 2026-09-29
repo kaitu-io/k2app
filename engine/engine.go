@@ -505,7 +505,7 @@ func (e *Engine) Start(cfg Config) error {
 			for _, ot := range allOTs {
 				ot.tm.Close()
 			}
-			return e.fail(err)
+			return e.fail(providerStartError(err))
 		}
 	} else {
 		// Proxy mode: no TUN, no DNS interception.
@@ -516,7 +516,7 @@ func (e *Engine) Start(cfg Config) error {
 			for _, ot := range allOTs {
 				ot.tm.Close()
 			}
-			return e.fail(err)
+			return e.fail(providerStartError(err))
 		}
 	}
 

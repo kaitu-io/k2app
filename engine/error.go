@@ -18,7 +18,7 @@ const (
 	ErrCodeAuthRejected           = 401 // Server rejected authentication (stream rejected)
 	ErrCodePaymentRequired        = 402 // Subscription expired or payment required
 	ErrCodeForbidden              = 403 // Certificate pin mismatch, blocked CA
-	ErrCodeEnvironmentSetupFailed = 412 // Local host setup failed (iptables, sysctl, file perms) — operator must fix env. HTTP 412 Precondition Failed semantics
+	ErrCodeEnvironmentSetupFailed = 412 // Local host setup failed (iptables, sysctl, file perms, TUN/wintun adapter) — operator must fix env. HTTP 412 Precondition Failed semantics
 	ErrCodeProtocolError          = 502 // TLS handshake failure, QUIC dial failure
 	ErrCodeServerUnreachable      = 503 // TCP dial failed, connection refused
 	ErrCodeRuleBundlesUnavailable = 504 // Dependency unreachable: rule bundle CDN sources all failed (transient, retryable)
@@ -202,6 +202,23 @@ func ClassifyError(err error) *EngineError {
 
 	// Priority 4: String pattern matching.
 	return classifyByPatterns(msg)
+}
+
+// providerStartError pre-classifies a provider.Start failure as 412
+// EnvironmentSetupFailed. provider.Start runs after the wire has connected and
+// only touches the local host (TUN / wintun adapter, routes, gVisor stack,
+// proxy-mode listen socket), so its failures are never server fault. Left to
+// classifyByPatterns they fall through to fallback 570/CategoryServer and the
+// UI tells the user to switch node — which cannot help. Classified at the call
+// site rather than by message text: sing-tun/wintun wording is OS-localized.
+//
+// Cancellation passes through untouched — Stop() during Start() is not an
+// environment fault.
+func providerStartError(err error) error {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return newEngineError(ErrCodeEnvironmentSetupFailed, err.Error())
 }
 
 // classifyByPatterns matches error message text to an error code with category.
