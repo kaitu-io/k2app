@@ -22,7 +22,7 @@ type AnnouncementRequest struct {
 	MaxVersion string `json:"maxVersion"` // 最高版本，空=不限
 	ExpiresAt  int64  `json:"expiresAt"`  // Unix秒，0=不过期
 	IsActive   *bool  `json:"isActive"`
-	// Brand 归属品牌：kaitu | overleap，仅创建时生效，空→回退 kaitu，非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）；更新时忽略（品牌创建后不可变）。
+	// Brand 归属品牌：kaitu | overleap，仅创建时生效，HTTP 创建必填（空或非法→ErrorInvalidArgument，见 BrandRequired；审批回调兜底 BrandForCreate 空→kaitu）；更新时忽略（品牌创建后不可变）。
 	Brand string `json:"brand" example:"kaitu"`
 }
 

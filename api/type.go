@@ -748,7 +748,7 @@ type CampaignRequest struct {
 	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order=新客(未完成首单), vip=老客(已付费), all, paid_before, paid_before_active
 	MaxUsage      int64  `json:"maxUsage"`                                        // 最大使用次数（0=无限制）
 	MatcherParams string `json:"matcherParams"`
-	// Brand 归属品牌：kaitu | overleap，仅创建时生效，空→回退 kaitu，非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）；更新时忽略（品牌创建后不可变）。
+	// Brand 归属品牌：kaitu | overleap，仅创建时生效，HTTP 创建必填（空或非法→ErrorInvalidArgument，见 BrandRequired；审批回调兜底 BrandForCreate 空→kaitu）；更新时忽略（品牌创建后不可变）。
 	Brand string `json:"brand" example:"kaitu"`
 }
 
@@ -1212,7 +1212,7 @@ type CreateLicenseKeyBatchRequest struct {
 	Quantity         int    `json:"quantity" binding:"required,min=1,max=10000"`
 	ExpiresInDays    int    `json:"expiresInDays" binding:"required,min=1"`
 	Note             string `json:"note"`
-	// Brand 归属品牌：kaitu | overleap，空→回退 kaitu（老 admin UI 零破坏）；非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）。批次与其下所有
+	// Brand 归属品牌：kaitu | overleap，HTTP 创建必填（空或非法→ErrorInvalidArgument，见 BrandRequired；logic 层兜底 BrandForCreate 空→kaitu）。批次与其下所有
 	// 授权码共享同一品牌。
 	Brand string `json:"brand" example:"kaitu"`
 }
