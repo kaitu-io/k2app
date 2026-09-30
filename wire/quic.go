@@ -744,9 +744,11 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string, earlyData []byte)
 // DialUDP opens a UDP proxy session through QUIC datagrams or stream fallback.
 // Returns a PacketConn backed by QUIC datagrams with a unique session ID.
 //
-// When the datagram relay path is unhealthy (consecutive timeouts or high loss),
-// returns ErrDatagramRelayUnhealthy for TCP-WS fallback. Relay-layer metrics
-// never trigger wire-layer actions (reconnect, transport switch).
+// When the datagram relay path is unhealthy (consecutive relay timeouts),
+// returns ErrDatagramRelayUnhealthy for TCP-WS fallback — except for one trial
+// session per relayTrialInterval, which is how the path gets to prove itself
+// again. Relay-layer metrics never trigger wire-layer actions (reconnect,
+// transport switch).
 func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	for {
 		conn, err := c.connect(ctx)
@@ -772,11 +774,17 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 		dgSupported := conn.ConnectionState().SupportsDatagrams
 		slog.Debug("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
 		if dgSupported {
-			if !mux.datagramRelayHealthy() {
+			admitted, trial := mux.admitSession()
+			if !admitted {
 				slog.Debug("QUICClient.DialUDP: datagram relay unhealthy",
 					"addr", addr,
 					"relayTimeouts", mux.relayTimeouts.Load())
 				return nil, ErrDatagramRelayUnhealthy
+			}
+			if trial {
+				slog.Info("QUICClient.DialUDP: datagram relay unhealthy, trial session",
+					"addr", addr,
+					"relayTimeouts", mux.relayTimeouts.Load())
 			}
 
 			sessionID := alloc.Next()
@@ -1856,6 +1864,11 @@ type quicUDPMux struct {
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
 	relayTimeouts atomic.Int32
 
+	// nextRelayTrial is when (relayNow) an unhealthy relay admits its next
+	// trial session — see admitSession.
+	nextRelayTrial atomic.Int64
+	now            func() time.Duration // nil outside tests: relayNow
+
 	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
 
 	// Connection-level UDP drop counters. Per-session counters only surface
@@ -1882,13 +1895,33 @@ type quicUDPMux struct {
 
 const relayTimeoutThreshold int32 = 3
 
+// relayTrialInterval is how often an unhealthy datagram relay lets one new
+// session through anyway (admitSession).
+const relayTrialInterval = 30 * time.Second
+
+// relayEpoch anchors relayNow, a monotonic clock: a wall-clock step (NTP on a
+// router without an RTC) must not move a trial.
+var relayEpoch = time.Now()
+
+func (m *quicUDPMux) relayNow() int64 {
+	if m.now != nil {
+		return int64(m.now())
+	}
+	return int64(time.Since(relayEpoch))
+}
+
 func (m *quicUDPMux) recordRecv() {
-	m.relayTimeouts.Store(0)
+	if m.relayTimeouts.Swap(0) >= relayTimeoutThreshold {
+		slog.Info("quicUDPMux: datagram relay path healthy again")
+	}
 }
 
 func (m *quicUDPMux) recordTimeout() {
 	count := m.relayTimeouts.Add(1)
 	if count == relayTimeoutThreshold {
+		// Only on the transition: later timeouts (a burst of shed sends, the
+		// trial session's own) must not keep pushing the trial away.
+		m.nextRelayTrial.Store(m.relayNow() + int64(relayTrialInterval))
 		slog.Warn("quicUDPMux: datagram relay path marked unhealthy",
 			"relayTimeouts", count)
 	}
@@ -1896,6 +1929,35 @@ func (m *quicUDPMux) recordTimeout() {
 
 func (m *quicUDPMux) datagramRelayHealthy() bool {
 	return m.relayTimeouts.Load() < relayTimeoutThreshold
+}
+
+// admitSession reports whether a new session may use the datagram relay:
+// always while it is healthy, and once per relayTrialInterval while it is not
+// (trial = true).
+//
+// The timeout streak is only cleared by a datagram arriving (recordRecv).
+// With every new session refused, that stops being possible once the last
+// datagram session has ended, and the relay stayed unhealthy until the QUIC
+// connection was replaced — on a router, for as long as it ran. The trial
+// session is the probe: its reply clears the streak like any other datagram.
+// If the path really is broken, or the trial's destination never answers,
+// that one flow goes unanswered until its idle deadline (60 s) and the next
+// trial is an interval later — so healing depends on a trial landing on a
+// destination that answers, and is not instant when most new flows are to
+// silent peers.
+//
+// A dial racing the moment the relay is marked unhealthy can read the previous
+// schedule and be admitted at once; recordTimeout's Store then sets the real
+// one. That costs one early trial, nothing else.
+func (m *quicUDPMux) admitSession() (admitted, trial bool) {
+	if m.datagramRelayHealthy() {
+		return true, false
+	}
+	now, next := m.relayNow(), m.nextRelayTrial.Load()
+	if now < next || !m.nextRelayTrial.CompareAndSwap(next, now+int64(relayTrialInterval)) {
+		return false, false
+	}
+	return true, true
 }
 
 func newQuicUDPMux(conn *quic.Conn) *quicUDPMux {
