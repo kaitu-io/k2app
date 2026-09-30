@@ -222,6 +222,39 @@ describe('CloudTunnelList', () => {
       expect(items[2]).toHaveTextContent('Singapore-01');
       expect(items[3]).toHaveTextContent('USA-01');
     });
+
+    // Within a country the server returns tunnels in DB-id order, and the
+    // first row of each country drew +20–45% more traffic than its siblings
+    // (fleet usage, 2026-09). Sorting by recommendScore (1 − usage-weighted)
+    // puts the least-used node first, so the first-row pull self-balances.
+    it('sorts tunnels within a country by recommendScore, highest first', async () => {
+      const withScore = (id: number, name: string, country: string, score: number) => ({
+        ...makeTunnel(id, name, country),
+        recommendScore: score,
+      });
+      const tunnels: TunnelListResponse = {
+        items: [
+          withScore(1, 'Tokyo-01', 'JP', 0.4),
+          withScore(2, 'Sydney-01', 'AU', 0.3),
+          withScore(3, 'Tokyo-02', 'JP', 0.9),
+          withScore(4, 'Sydney-02', 'AU', 0.8),
+          withScore(5, 'Tokyo-03', 'JP', 0.9),
+        ] as any,
+        echConfigList: 'ech',
+      };
+      mockCloudApiGet.mockResolvedValue({ code: 0, data: tunnels });
+
+      render(<CloudTunnelList {...defaultProps} />);
+      await waitFor(() => expect(screen.getByText('Tokyo-01')).toBeInTheDocument());
+
+      const items = screen.getAllByRole('listitem');
+      // Country stays the primary key; equal scores keep server order.
+      expect(items[1]).toHaveTextContent('Sydney-02');
+      expect(items[2]).toHaveTextContent('Sydney-01');
+      expect(items[3]).toHaveTextContent('Tokyo-02');
+      expect(items[4]).toHaveTextContent('Tokyo-03');
+      expect(items[5]).toHaveTextContent('Tokyo-01');
+    });
   });
 
   describe('Imperative handle: refresh({force})', () => {
