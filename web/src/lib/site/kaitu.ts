@@ -38,7 +38,6 @@ export const KAITU_SITE: SiteConfig = {
           { labelKey: 'nav.nav.k2Protocol', href: '/k2' },
           { labelKey: 'nav.nav.quickstart', href: '/k2/quickstart' },
           { labelKey: 'nav.nav.openSource', href: '/opensource' },
-          { labelKey: 'nav.footer.developer.github', href: 'https://github.com/getoverleap' },
         ],
       },
     ],
@@ -61,7 +60,6 @@ export const KAITU_SITE: SiteConfig = {
         { labelKey: 'nav.nav.k2Protocol', href: '/k2' },
         { labelKey: 'nav.nav.quickstart', href: '/k2/quickstart' },
         { labelKey: 'nav.nav.openSource', href: '/opensource' },
-        { labelKey: 'nav.footer.developer.github', href: 'https://github.com/getoverleap' },
       ],
     },
     {

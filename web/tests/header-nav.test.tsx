@@ -113,10 +113,7 @@ describe('Header dropdown groups', () => {
     const menu = container.querySelector('[role="menu"]')!;
     expect(menu).toBeTruthy();
     const hrefs = [...menu.querySelectorAll('a')].map((a) => a.getAttribute('href'));
-    expect(hrefs).toEqual(['/k2', '/k2/quickstart', '/opensource', 'https://github.com/getoverleap']);
-    const github = menu.querySelector('a[href="https://github.com/getoverleap"]')!;
-    expect(github.getAttribute('target')).toBe('_blank');
-    expect(github.getAttribute('rel')).toContain('noopener');
+    expect(hrefs).toEqual(['/k2', '/k2/quickstart', '/opensource']);
   });
 
   it('kaitu: the active group is expanded by default in the mobile menu', async () => {
