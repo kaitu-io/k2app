@@ -1,6 +1,6 @@
 {
   "nav": {
-    "openSource": "Open Source",
+    "openSource": "Security Audit",
     "welcome": "Welcome",
     "adminPanel": "Admin Panel",
     "login": "Login",
@@ -50,7 +50,7 @@
     "developer": {
       "title": "Developers",
       "apiDocs": "API Documentation",
-      "openSource": "Open Source Code",
+      "openSource": "Security Audit",
       "techBlog": "Tech Blog",
       "k2Docs": "k2 protocol",
       "selfDeploy": "Run your own server",

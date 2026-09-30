@@ -97,7 +97,7 @@ k2 is the only tunnel protocol that combines censorship-aware congestion control
 
 **Is k2 open source?**
 
-k2's protocol design, ECH config derivation, and TLS fingerprint mimicry are fully documented publicly. The k2cc algorithm's design principles and capabilities are public, but the implementation is the k2 project's original intellectual property. The 14-scenario benchmark framework is open source — anyone can verify results independently.
+k2's protocol design, ECH config derivation, and TLS fingerprint mimicry are fully documented publicly. The k2cc algorithm's design principles and capabilities are public, but the implementation is the k2 project's original intellectual property. k2 ships as binaries only; the source is not published. The 14 benchmark scenarios are documented publicly so anyone can verify results under the same conditions.
 
 **What's the difference between k2 and Clash/Shadowrocket?**
 

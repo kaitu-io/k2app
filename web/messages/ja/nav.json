@@ -1,6 +1,6 @@
 {
   "nav": {
-    "openSource": "オープンソース",
+    "openSource": "セキュリティ監査",
     "welcome": "ようこそ",
     "adminPanel": "管理画面",
     "login": "ログイン",
@@ -50,7 +50,7 @@
     "developer": {
       "title": "開発者向け",
       "apiDocs": "APIドキュメント",
-      "openSource": "オープンソース",
+      "openSource": "セキュリティ監査",
       "techBlog": "技術ブログ",
       "k2Docs": "k2 プロトコル",
       "selfDeploy": "自分でサーバーを運用する",

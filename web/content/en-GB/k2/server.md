@@ -154,10 +154,6 @@ Yes. Modify the `public_name` field in `/etc/k2s/config.yml`. Choose a major CDN
 
 You can change the listening port, but 443 is strongly recommended — non-standard ports (e.g., 8443) reduce stealth effectiveness because DPI pays more attention to HTTPS traffic on unusual ports.
 
-**Is Docker deployment supported?**
-
-Yes. k2s provides official Docker images. But for most users, direct binary installation is simpler — the install script automatically registers a systemd service with auto-start on boot.
-
 ---
 
 Next:

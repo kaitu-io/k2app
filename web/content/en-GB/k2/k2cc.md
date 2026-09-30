@@ -78,7 +78,7 @@ The k2 project includes a 14-scenario benchmark test suite covering the full spe
 
 **Is k2cc open source?**
 
-The design principles and capability descriptions of k2cc are documented publicly here. The algorithm implementation is core intellectual property of the k2 project and is not currently open source. The k2 benchmark framework (14 network scenarios) is open source — anyone can use the same test conditions to verify the real-world performance of different algorithms.
+The design principles and capability descriptions of k2cc are documented publicly here. The algorithm implementation is core intellectual property of the k2 project and is not currently open source. k2 ships as binaries only; the source is not published. The 14 benchmark scenarios and their parameters are documented publicly, so anyone can reproduce the comparison under the same conditions.
 
 ---
 

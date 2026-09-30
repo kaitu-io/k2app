@@ -47,3 +47,19 @@ describe('no site links our own GitHub org', () => {
     expect(hits).toEqual([]);
   });
 });
+
+// k2 ships as binaries only (install script / downloads) — the docs must not
+// tell readers to clone, build or run anything from a source tree, nor claim
+// that any part of it is open source.
+describe('k2 docs assume binaries only, no source', () => {
+  const docs = walk(join(WEB, 'content'), (p) => /\/k2\/[^/]+\.mdx?$/.test(p));
+  const SOURCE_ONLY = /git clone|cd k2\/|docker compose up --build|已开源|开源在|is open source —|(framework|suite) is open source|Docker 镜像|Docker images?/i;
+
+  it('finds the k2 docs', () => {
+    expect(docs.length).toBeGreaterThan(10);
+  });
+
+  it.each(docs)('%s', (file) => {
+    expect(readFileSync(file, 'utf8')).not.toMatch(SOURCE_ONLY);
+  });
+});
