@@ -14,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spf13/viper"
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/slack"
 	"github.com/wordgate/qtoolkit/util"
 )
 
@@ -65,6 +66,31 @@ func testInitConfig() {
 
 	// Enable mock verification code
 	EnableMockVerificationCode = true
+
+	disableOutboundSideEffects()
+}
+
+// testSlackSink receives every Slack message sent during tests.
+var testSlackSink *httptest.Server
+
+// disableOutboundSideEffects neutralises the real delivery credentials that
+// ../center/config.yml carries: without it every `go test` run posted real Slack
+// alerts and sent ~56 real SMTP mails (one of them to a customer address used as a
+// fixture). Mail goes through MailSend's dev mode; Slack webhooks keep their channel
+// names but point at a local sink. Guarded by TestNoOutboundSideEffectsInTests.
+func disableOutboundSideEffects() {
+	viper.Set("mail.dev_mode", true)
+
+	testSlackSink = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	webhooks := map[string]string{}
+	for name := range viper.GetStringMapString("slack.webhooks") {
+		webhooks[name] = testSlackSink.URL + "/" + name
+	}
+	viper.Set("slack.webhooks", webhooks)
+	viper.Set("slack.bot_token", "")
+	slack.SetConfig(&slack.Config{Webhooks: webhooks})
 }
 
 // skipIfNoConfig skips the test if config.yml is not available.
