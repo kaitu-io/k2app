@@ -37,7 +37,7 @@
 import { toast } from "sonner";
 import { appEvents } from "./events";
 import { safeStorage } from "./safeStorage";
-import { siteBrand } from "./brands";
+import { siteBrand, type BrandId } from "./brands";
 
 // ============================================================================
 // API Types (moved from @/types/api.ts to avoid conflicts)
@@ -327,6 +327,8 @@ export interface InviteCode {
 
 export interface User {
   uuid: string;
+  /** 归属品牌（出生属性）。admin 端点（/app/users*）下发；用户端点可能缺席。 */
+  brand?: BrandId;
   expiredAt: number;
   isFirstOrderDone: boolean;
   hasPassword: boolean;             // 是否已设置登录密码（后端 DataUser 始终返回此字段）
@@ -358,6 +360,8 @@ export interface DataSubscription {
 // 套餐相关类型
 export interface Plan {
   pid: string;
+  /** 归属品牌。admin /app/plans 行下发（Go Plan.Brand）；公开 /api/plans 已按请求品牌过滤。 */
+  brand?: BrandId;
   label: string;
   price: number;
   originPrice: number;
@@ -930,6 +934,7 @@ export interface AdminOrderListItem {
     refundAmount?: number;
     refundReason?: string;
     channel?: string;                 // 来源渠道：空 = 网页订单，'apple_iap' = iOS 内购
+    brand?: BrandId;                  // 订单所属品牌（= 购买用户的品牌，Order 无 brand 列）
     user: ResourceUser;               // 购买用户
     cashback?: ResourceCashback;      // 分销返现信息（可选）
 }
@@ -966,6 +971,7 @@ export interface AdminOrderListParams {
     isRefunded?: boolean;
     createdAtStart?: number;
     createdAtEnd?: number;
+    brand?: BrandId;                  // 省略 = 全部品牌
 }
 
 // Campaign-related interfaces
@@ -983,6 +989,8 @@ export interface CampaignRequest {
   maxUsage?: number;
   isShareable?: boolean;
   sharesPerUser?: number;
+  /** 创建时必填（API 拒绝空值）；更新时忽略——品牌创建后不可变。 */
+  brand?: BrandId;
 }
 
 export interface CampaignResponse {
@@ -1003,6 +1011,7 @@ export interface CampaignResponse {
   maxUsage: number;
   isShareable: boolean;
   sharesPerUser: number;
+  brand: BrandId;
 }
 
 export interface CampaignListResponse {
@@ -1019,6 +1028,7 @@ export interface CampaignListParams {
   pageSize?: number;
   type?: string;
   isActive?: boolean;
+  brand?: BrandId;
 }
 
 // Announcement-related interfaces
@@ -1032,6 +1042,8 @@ export interface AnnouncementRequest {
   minVersion?: string;
   maxVersion?: string;
   expiresAt?: number;
+  /** 创建时必填（API 拒绝空值）；更新时忽略——品牌创建后不可变。 */
+  brand?: BrandId;
   // Note: isActive is NOT included — activation/deactivation uses dedicated endpoints
 }
 
@@ -1049,6 +1061,7 @@ export interface AnnouncementResponse {
   maxVersion: string;
   expiresAt: number;
   isActive: boolean;
+  brand: BrandId;
 }
 
 export interface AnnouncementListResponse {
@@ -1059,6 +1072,7 @@ export interface AnnouncementListResponse {
 export interface AnnouncementListParams {
   page?: number;
   pageSize?: number;
+  brand?: BrandId;
 }
 
 export interface CampaignStats {
@@ -1094,6 +1108,8 @@ export interface EmailTemplateRequest {
   description?: string;
   isActive?: boolean;
   originId?: number | null;
+  /** 创建时必填（API 拒绝空值）；更新时忽略——品牌创建后不可变。 */
+  brand?: BrandId;
 }
 
 export interface EmailTemplateLocalizationResponse {
@@ -1116,6 +1132,7 @@ export interface EmailTemplateResponse {
   isActive: boolean;
   originId?: number | null;
   isOriginal?: boolean;
+  brand: BrandId;
 }
 
 export interface EmailTemplateListResponse {
@@ -1133,6 +1150,7 @@ export interface EmailTemplateListParams {
   limit?: number;
   type?: string;
   isActive?: boolean;
+  brand?: BrandId;
 }
 
 // ================= Email Template Parameter Interfaces =================
@@ -1169,6 +1187,7 @@ export interface UserSearchParams {
   email: string;
   page?: number;
   pageSize?: number;
+  brand?: BrandId;
 }
 
 export interface UserListResponse {
@@ -1263,6 +1282,11 @@ export function isPendingApproval(error: unknown): boolean {
 // API request options interface
 export interface ApiRequestOptions extends RequestInit {
   autoRedirectToAuth?: boolean;
+}
+
+/** admin 列表/统计的品牌筛选 query（省略 = 全部品牌，见 api/brand.go parseBrandFilter）。 */
+export function brandQuery(brand?: BrandId): string {
+  return brand ? `?brand=${encodeURIComponent(brand)}` : '';
 }
 
 export const api = {
@@ -1483,6 +1507,7 @@ export const api = {
     if (params.isRefunded !== undefined) queryParams.set('isRefunded', params.isRefunded.toString());
     if (params.createdAtStart !== undefined) queryParams.set('createdAtStart', params.createdAtStart.toString());
     if (params.createdAtEnd !== undefined) queryParams.set('createdAtEnd', params.createdAtEnd.toString());
+    if (params.brand) queryParams.set('brand', params.brand);
 
     const query = queryParams.toString();
     return this.request<AdminOrderListResponse>(`/app/orders${query ? '?' + query : ''}`);
@@ -1612,6 +1637,7 @@ export const api = {
     if (params.pageSize !== undefined) queryParams.set('pageSize', params.pageSize.toString());
     if (params.type) queryParams.set('type', params.type);
     if (params.isActive !== undefined) queryParams.set('isActive', params.isActive.toString());
+    if (params.brand) queryParams.set('brand', params.brand);
 
     const query = queryParams.toString();
     return this.request<CampaignListResponse>(`/app/campaigns${query ? '?' + query : ''}`);
@@ -1663,6 +1689,7 @@ export const api = {
     const query = new URLSearchParams();
     if (params.page !== undefined) query.set('page', params.page.toString());
     if (params.pageSize) query.set('pageSize', params.pageSize.toString());
+    if (params.brand) query.set('brand', params.brand);
     return this.request<AnnouncementListResponse>(`/app/announcements${query.toString() ? '?' + query.toString() : ''}`);
   },
 
@@ -1706,6 +1733,7 @@ export const api = {
     if (params.limit !== undefined) queryParams.set('limit', params.limit.toString());
     if (params.type) queryParams.set('type', params.type);
     if (params.isActive !== undefined) queryParams.set('isActive', params.isActive.toString());
+    if (params.brand) queryParams.set('brand', params.brand);
 
     const query = queryParams.toString();
     return this.request<EmailTemplateListResponse>(`/app/edm/templates${query ? '?' + query : ''}`);
@@ -1740,6 +1768,8 @@ export const api = {
 
   async sendTemplatedEmails(data: {
     batchId: string;
+    /** 任一 item 缺 userId 时必填：按邮箱在该品牌内查找收件人（查不到跳过，绝不建号）。 */
+    brand?: BrandId;
     async?: boolean;
     items: Array<{
       email: string;
@@ -1789,6 +1819,7 @@ export const api = {
   async searchUsers(params: UserSearchParams): Promise<UserListResponse> {
     const queryParams = new URLSearchParams();
     queryParams.set('email', params.email);
+    if (params.brand) queryParams.set('brand', params.brand);
     if (params.page !== undefined) queryParams.set('page', params.page.toString());
     if (params.pageSize !== undefined) queryParams.set('pageSize', params.pageSize.toString());
 
@@ -2174,8 +2205,8 @@ export const api = {
   // ==================== Device Statistics APIs ====================
 
   // Get device statistics (aggregated counts)
-  async getDeviceStatistics(): Promise<DeviceStatisticsResponse> {
-    return this.request<DeviceStatisticsResponse>('/app/devices/statistics');
+  async getDeviceStatistics(params: { brand?: BrandId } = {}): Promise<DeviceStatisticsResponse> {
+    return this.request<DeviceStatisticsResponse>(`/app/devices/statistics${brandQuery(params.brand)}`);
   },
 
   // Get active devices list with pagination
@@ -2198,15 +2229,15 @@ export const api = {
   // ==================== User Statistics APIs ====================
 
   // Get user statistics (aggregated counts)
-  async getUserStatistics(): Promise<UserStatisticsResponse> {
-    return this.request<UserStatisticsResponse>('/app/users/statistics');
+  async getUserStatistics(params: { brand?: BrandId } = {}): Promise<UserStatisticsResponse> {
+    return this.request<UserStatisticsResponse>(`/app/users/statistics${brandQuery(params.brand)}`);
   },
 
   // ==================== Order Statistics APIs ====================
 
   // Get order statistics (aggregated counts and revenue)
-  async getOrderStatistics(): Promise<OrderStatisticsResponse> {
-    return this.request<OrderStatisticsResponse>('/app/orders/statistics');
+  async getOrderStatistics(params: { brand?: BrandId } = {}): Promise<OrderStatisticsResponse> {
+    return this.request<OrderStatisticsResponse>(`/app/orders/statistics${brandQuery(params.brand)}`);
   },
 
   // ==================== Connection Rating Statistics ====================
@@ -2404,10 +2435,11 @@ export const api = {
   // ========================= Slave Node Management APIs =========================
 
   // List slave nodes (with tunnels)
-  async listSlaveNodes(params: PaginationParams = { page: 1, pageSize: 200 }): Promise<ListResult<AdminNodeItem>> {
+  async listSlaveNodes(params: PaginationParams & { brand?: BrandId } = { page: 1, pageSize: 200 }): Promise<ListResult<AdminNodeItem>> {
     const queryParams = new URLSearchParams();
     queryParams.set('page', params.page.toString());
     queryParams.set('pageSize', params.pageSize.toString());
+    if (params.brand) queryParams.set('brand', params.brand);
     return this.request<ListResult<AdminNodeItem>>(`/app/nodes?${queryParams.toString()}`);
   },
 
@@ -2545,11 +2577,12 @@ export const api = {
   },
 
   // License Key Batch APIs
-  async listLicenseKeyBatches(params: { page?: number; pageSize?: number; sourceTag?: string } = {}): Promise<{ items: LicenseKeyBatch[]; total: number }> {
+  async listLicenseKeyBatches(params: { page?: number; pageSize?: number; sourceTag?: string; brand?: BrandId } = {}): Promise<{ items: LicenseKeyBatch[]; total: number }> {
     const q = new URLSearchParams();
     if (params.page) q.set('page', String(params.page));
     if (params.pageSize) q.set('pageSize', String(params.pageSize));
     if (params.sourceTag) q.set('sourceTag', params.sourceTag);
+    if (params.brand) q.set('brand', params.brand);
     const qs = q.toString();
     return this.request<{ items: LicenseKeyBatch[]; total: number }>(`/app/license-key-batches${qs ? '?' + qs : ''}`);
   },
@@ -2587,8 +2620,9 @@ export const api = {
     return this.request<LicenseKeyPublic>(`/api/license-keys/code/${code}`);
   },
 
-  async listAdminLicenseKeys(params: { batchId?: number; isUsed?: boolean; page?: number; pageSize?: number } = {}): Promise<{ items: LicenseKeyAdmin[]; total: number }> {
+  async listAdminLicenseKeys(params: { batchId?: number; isUsed?: boolean; page?: number; pageSize?: number; brand?: BrandId } = {}): Promise<{ items: LicenseKeyAdmin[]; total: number }> {
     const q = new URLSearchParams();
+    if (params.brand) q.set('brand', params.brand);
     if (params.batchId) q.set('batchId', String(params.batchId));
     if (params.isUsed !== undefined) q.set('isUsed', String(params.isUsed));
     if (params.page) q.set('page', String(params.page));
@@ -2617,6 +2651,7 @@ export const api = {
     if (params.from) queryParams.set('from', params.from);
     if (params.to) queryParams.set('to', params.to);
     if (params.autoGenerated) queryParams.set('auto_generated', params.autoGenerated);
+    if (params.brand) queryParams.set('brand', params.brand);
 
     const query = queryParams.toString();
     return this.request<ListResult<FeedbackTicket>>(`/app/feedback-tickets${query ? '?' + query : ''}`);
@@ -2979,6 +3014,7 @@ export interface LicenseKeyBatch {
   redeemedCount: number;
   expiredCount: number;
   createdAt: number;
+  brand: BrandId;
 }
 
 export interface LicenseKeyBatchDetail extends LicenseKeyBatch {
@@ -2995,6 +3031,8 @@ export interface CreateLicenseKeyBatchRequest {
   quantity: number;
   expiresInDays: number;
   note?: string;
+  /** 必填：API 拒绝空值（不再静默落 kaitu）。 */
+  brand: BrandId;
 }
 
 export interface BatchStats {
@@ -3050,6 +3088,7 @@ export interface LicenseKeyAdmin {
   usedByUserId?: number;
   usedAt?: number;
   createdAt: number;
+  brand?: BrandId;
 }
 
 // ============================================================
@@ -3072,6 +3111,7 @@ export interface FeedbackTicket {
   lastReplyAt?: number;
   lastReplyBy?: string;
   autoGenerated?: boolean;
+  brand?: BrandId;
 }
 
 export interface FeedbackTicketReply {
@@ -3092,4 +3132,5 @@ export interface FeedbackTicketListParams {
   from?: string;
   to?: string;
   autoGenerated?: 'true' | 'false';
+  brand?: BrandId;
 }

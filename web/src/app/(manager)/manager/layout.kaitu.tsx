@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { CircleDashed } from "lucide-react";
 import ManagerSidebar from "@/components/manager-sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { ManagerBrandProvider, ManagerBrandSelect } from "@/components/manager/brand";
 
 // 任何 ops 角色（排除 RoleUser=1）
 const ANY_OPS_ROLE = 0xFFFFFFFE; // 除 bit 0 外的所有位
@@ -50,7 +51,16 @@ export default function ManagerLayout({
               <ManagerSidebar />
             </div>
           </div>
-          <main className="flex-1 p-6 overflow-auto">{children}</main>
+          {/* manager 是唯一的跨品牌视角：全局品牌筛选跨页保持，各列表/统计页经 useManagerBrand() 读取 */}
+          <ManagerBrandProvider>
+            <div className="flex-1 min-w-0 flex flex-col">
+              <div className="sticky top-0 z-10 flex items-center justify-end gap-2 border-b bg-background/95 px-6 py-2">
+                <span className="text-sm text-muted-foreground">品牌</span>
+                <ManagerBrandSelect />
+              </div>
+              <main className="flex-1 p-6 overflow-auto">{children}</main>
+            </div>
+          </ManagerBrandProvider>
         </div>
       )}
       <Toaster />

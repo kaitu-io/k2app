@@ -21,6 +21,14 @@ import {
   CreateLicenseKeyBatchRequest, BatchStats,
 } from "@/lib/api";
 import { toast } from "sonner";
+import { BrandBadge, BrandPicker, useManagerBrand } from "@/components/manager/brand";
+import type { BrandId } from "@/lib/brands";
+
+// 表单态允许 brand 未选（""）；提交时必须已选——API 拒绝空 brand，不再静默落 kaitu。
+type BatchCreateForm = Omit<CreateLicenseKeyBatchRequest, "brand"> & { brand: BrandId | "" };
+const EMPTY_BATCH_FORM: BatchCreateForm = {
+  name: "", sourceTag: "", recipientMatcher: "all", planDays: 30, quantity: 100, expiresInDays: 30, brand: "",
+};
 import { Plus, Trash2, Copy, Eye } from "lucide-react";
 
 function formatDate(ts: number) {
@@ -35,6 +43,7 @@ function pct(n: number) {
 export default function LicenseKeyBatchesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { brandParam } = useManagerBrand();
 
   const [batches, setBatches] = useState<LicenseKeyBatch[]>([]);
   const [total, setTotal] = useState(0);
@@ -43,9 +52,7 @@ export default function LicenseKeyBatchesPage() {
   const [stats, setStats] = useState<BatchStats[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState<CreateLicenseKeyBatchRequest>({
-    name: "", sourceTag: "", recipientMatcher: "all", planDays: 30, quantity: 100, expiresInDays: 30,
-  });
+  const [createForm, setCreateForm] = useState<BatchCreateForm>({ ...EMPTY_BATCH_FORM });
   const [isCreating, setIsCreating] = useState(false);
 
   const [detailOpen, setDetailOpen] = useState(false);
@@ -62,6 +69,7 @@ export default function LicenseKeyBatchesPage() {
   const pageSize = parseInt(searchParams.get("pageSize") || "50", 10);
 
   const columns: ColumnDef<LicenseKeyBatch>[] = [
+    { id: "brand", header: "品牌", cell: ({ row }) => <BrandBadge brand={row.original.brand} /> },
     { accessorKey: "name", header: "批次名称" },
     { accessorKey: "sourceTag", header: "渠道", cell: ({ row }) => row.original.sourceTag || <span className="text-muted-foreground">-</span> },
     {
@@ -96,13 +104,13 @@ export default function LicenseKeyBatchesPage() {
   const fetchBatches = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await api.listLicenseKeyBatches({ page, pageSize });
+      const res = await api.listLicenseKeyBatches({ page, pageSize, brand: brandParam });
       setBatches(res.items || []);
       setTotal(res.total);
       setPageCount(Math.ceil(res.total / pageSize));
     } catch { toast.error("获取批次列表失败"); }
     finally { setIsLoading(false); }
-  }, [page, pageSize]);
+  }, [page, pageSize, brandParam]);
 
   const fetchStats = useCallback(async () => {
     try { setStats(await api.getLicenseKeyBatchStats()); } catch {}
@@ -112,11 +120,16 @@ export default function LicenseKeyBatchesPage() {
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
   const handleCreate = async () => {
+    const { brand, ...rest } = createForm;
+    if (!brand) {
+      toast.error("请选择归属品牌");
+      return;
+    }
     setIsCreating(true);
     try {
-      await api.createLicenseKeyBatch(createForm);
+      await api.createLicenseKeyBatch({ ...rest, brand });
       setCreateOpen(false);
-      setCreateForm({ name: "", sourceTag: "", recipientMatcher: "all", planDays: 30, quantity: 100, expiresInDays: 30 });
+      setCreateForm({ ...EMPTY_BATCH_FORM });
       toast.success("批次创建已提交（等待审批）");
       fetchBatches();
       fetchStats();
@@ -179,6 +192,7 @@ export default function LicenseKeyBatchesPage() {
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />创建批次</Button>
       </div>
 
+      {brandParam && <p className="text-xs text-muted-foreground">下方汇总卡片为全部品牌口径（统计接口不按品牌筛选）；列表已按所选品牌筛选。</p>}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">总 Keys</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{totalKeys}</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">已兑换</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{totalRedeemed}</div></CardContent></Card>
@@ -212,6 +226,7 @@ export default function LicenseKeyBatchesPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>创建授权码批次</DialogTitle><DialogDescription>创建后需审批，审批通过自动生成授权码</DialogDescription></DialogHeader>
           <div className="space-y-4 py-2">
+            <div><label className="text-sm font-medium block mb-1">归属品牌 *</label><BrandPicker value={createForm.brand} onChange={b => setCreateForm(f => ({ ...f, brand: b }))} /><p className="text-xs text-muted-foreground mt-1">授权码只能被该品牌的用户兑换</p></div>
             <div><label className="text-sm font-medium block mb-1">批次名称</label><Input value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} placeholder="Apr Twitter 投放" /></div>
             <div><label className="text-sm font-medium block mb-1">渠道标签</label><Input value={createForm.sourceTag} onChange={e => setCreateForm(f => ({ ...f, sourceTag: e.target.value }))} placeholder="twitter / kol-xxx / winback" /></div>
             <div className="grid grid-cols-2 gap-4">
@@ -222,7 +237,7 @@ export default function LicenseKeyBatchesPage() {
             <div><label className="text-sm font-medium block mb-1">使用条件</label><select className="w-full p-2 border border-border bg-background text-foreground rounded-md" value={createForm.recipientMatcher} onChange={e => setCreateForm(f => ({ ...f, recipientMatcher: e.target.value }))}><option value="all">所有用户</option><option value="never_paid">未付费用户</option></select></div>
             <div><label className="text-sm font-medium block mb-1">备注</label><Input value={createForm.note || ""} onChange={e => setCreateForm(f => ({ ...f, note: e.target.value }))} placeholder="可选" /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button><Button onClick={handleCreate} disabled={isCreating || !createForm.name}>{isCreating ? "提交中..." : "提交审批"}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button><Button onClick={handleCreate} disabled={isCreating || !createForm.name || !createForm.brand}>{isCreating ? "提交中..." : "提交审批"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

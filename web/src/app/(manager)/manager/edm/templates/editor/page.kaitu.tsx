@@ -21,6 +21,8 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { ArrowLeft, Save, FileText, Languages, Sparkles } from "lucide-react";
 import type { EmailTemplateRequest, EmailTemplateResponse } from "@/lib/api";
+import { BrandPicker } from "@/components/manager/brand";
+import type { BrandId } from "@/lib/brands";
 import Link from "next/link";
 
 export default function EmailTemplateEditorPage() {
@@ -52,11 +54,19 @@ export default function EmailTemplateEditorPage() {
   });
 
   // Base form data (language-independent)
-  const [baseFormData, setBaseFormData] = useState({
+  // brand 无默认值：模板按收件人品牌解析（同一 slug 两品牌各一行），创建时必须显式选择。
+  const [baseFormData, setBaseFormData] = useState<{
+    name: string;
+    slug: string;
+    description: string;
+    isActive: boolean;
+    brand: BrandId | "";
+  }>({
     name: "",
     slug: "",
     description: "",
     isActive: true,
+    brand: "",
   });
 
   const languageOptions = [
@@ -90,6 +100,7 @@ export default function EmailTemplateEditorPage() {
         slug: template.slug || "",
         description: template.description || "",
         isActive: template.isActive,
+        brand: template.brand ?? "",
       });
 
       // Determine if this is an origin template or a translation
@@ -131,6 +142,10 @@ export default function EmailTemplateEditorPage() {
     // Validate base fields
     if (!baseFormData.name) {
       toast.error("请填写模板名称");
+      return;
+    }
+    if (!isEditMode && !baseFormData.brand) {
+      toast.error("请选择归属品牌");
       return;
     }
 
@@ -181,6 +196,7 @@ export default function EmailTemplateEditorPage() {
           description: baseFormData.description,
           isActive: baseFormData.isActive,
           originId: null,
+          brand: baseFormData.brand || undefined,
         };
 
         await api.createEmailTemplate(originData);
@@ -298,7 +314,7 @@ export default function EmailTemplateEditorPage() {
             <Languages className="h-4 w-4" />
             <span>{progress.completed}{`/`}{progress.total}{` 语言已完成`}</span>
           </div>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving || (!isEditMode && !baseFormData.brand)}>
             <Save className="mr-2 h-4 w-4" />
             {saving ? "保存中..." : "保存"}
           </Button>
@@ -320,6 +336,22 @@ export default function EmailTemplateEditorPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Brand — 创建后不可修改 */}
+              <div className="space-y-2">
+                <Label htmlFor="brand">
+                  {"归属品牌"} {isEditMode ? "（创建后不可修改）" : <span className="text-red-500">{`*`}</span>}
+                </Label>
+                <BrandPicker
+                  id="brand"
+                  value={baseFormData.brand}
+                  onChange={(b) => setBaseFormData(prev => ({ ...prev, brand: b }))}
+                  disabled={isEditMode}
+                />
+                <p className="text-sm text-muted-foreground">
+                  {"发送时按收件人品牌选模板：同一 Slug 需要在每个品牌各建一份"}
+                </p>
+              </div>
+
               {/* Template Name */}
               <div className="space-y-2">
                 <Label htmlFor="name">

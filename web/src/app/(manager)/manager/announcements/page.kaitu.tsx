@@ -10,6 +10,7 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 import { api, type AnnouncementResponse, type AnnouncementRequest } from "@/lib/api";
+import { BrandBadge, BrandPicker, useManagerBrand } from "@/components/manager/brand";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -91,10 +92,12 @@ export default function AnnouncementsPage() {
   const [activateTarget, setActivateTarget] = useState<AnnouncementResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AnnouncementResponse | null>(null);
 
+  const { brandParam } = useManagerBrand();
+
   const fetchAnnouncements = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.getAnnouncements({ page: pagination.page, pageSize: pagination.pageSize });
+      const res = await api.getAnnouncements({ page: pagination.page, pageSize: pagination.pageSize, brand: brandParam });
       setAnnouncements(res.items ?? []);
       if (res.pagination) {
         setPagination(prev => ({ ...prev, total: res.pagination!.total }));
@@ -104,7 +107,7 @@ export default function AnnouncementsPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.pageSize]);
+  }, [pagination.page, pagination.pageSize, brandParam]);
 
   useEffect(() => {
     fetchAnnouncements();
@@ -115,6 +118,10 @@ export default function AnnouncementsPage() {
   const handleCreate = async () => {
     if (!form.message.trim()) {
       toast.error("公告内容不能为空");
+      return;
+    }
+    if (!form.brand) {
+      toast.error("请选择归属品牌");
       return;
     }
     setSubmitting(true);
@@ -194,6 +201,7 @@ export default function AnnouncementsPage() {
       minVersion: item.minVersion,
       maxVersion: item.maxVersion,
       expiresAt: item.expiresAt,
+      brand: item.brand,
     });
     setEditDialogOpen(true);
   };
@@ -203,6 +211,11 @@ export default function AnnouncementsPage() {
       accessorKey: "id",
       header: "ID",
       size: 60,
+    },
+    {
+      id: "brand",
+      header: "品牌",
+      cell: ({ row }) => <BrandBadge brand={row.original.brand} />,
     },
     {
       accessorKey: "message",
@@ -297,8 +310,16 @@ export default function AnnouncementsPage() {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  const renderForm = () => (
+  const renderForm = (mode: "create" | "edit") => (
     <div className="grid gap-4 py-4">
+      <div className="grid gap-2">
+        <Label>{mode === "edit" ? "归属品牌（创建后不可修改）" : "归属品牌 *"}</Label>
+        <BrandPicker
+          value={form.brand ?? ""}
+          onChange={(b) => setForm({ ...form, brand: b })}
+          disabled={mode === "edit"}
+        />
+      </div>
       <div className="grid gap-2">
         <Label>公告内容 *</Label>
         <Textarea
@@ -481,10 +502,10 @@ export default function AnnouncementsPage() {
           <DialogHeader>
             <DialogTitle>创建公告</DialogTitle>
           </DialogHeader>
-          {renderForm()}
+          {renderForm("create")}
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>取消</Button>
-            <Button onClick={handleCreate} disabled={submitting}>
+            <Button onClick={handleCreate} disabled={submitting || !form.brand}>
               {submitting ? "创建中..." : "创建"}
             </Button>
           </DialogFooter>
@@ -497,7 +518,7 @@ export default function AnnouncementsPage() {
           <DialogHeader>
             <DialogTitle>编辑公告</DialogTitle>
           </DialogHeader>
-          {renderForm()}
+          {renderForm("edit")}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>取消</Button>
             <Button onClick={handleUpdate} disabled={submitting}>

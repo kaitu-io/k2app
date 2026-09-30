@@ -12,6 +12,7 @@ import {
   ConnectionRatingStatisticsResponse,
 } from "@/lib/api";
 import { ConnectionQualityTab } from "./connection-quality-tab";
+import { useManagerBrand } from "@/components/manager/brand";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -75,18 +76,21 @@ export default function ManagerDashboardPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [activeTab, setActiveTab] = useState("overview");
+  const { brandParam } = useManagerBrand();
 
+  // 设备/用户/订单统计随全局品牌筛选；连接评分与活跃设备列表不分品牌。
   useEffect(() => {
     loadData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandParam]);
 
   async function loadData() {
     setLoading(true);
     try {
       const [deviceData, userData, orderData, ratingData] = await Promise.all([
-        api.getDeviceStatistics(),
-        api.getUserStatistics(),
-        api.getOrderStatistics(),
+        api.getDeviceStatistics({ brand: brandParam }),
+        api.getUserStatistics({ brand: brandParam }),
+        api.getOrderStatistics({ brand: brandParam }),
         api.getConnectionRatingStatistics('7d'),
       ]);
       setDeviceStats(deviceData);

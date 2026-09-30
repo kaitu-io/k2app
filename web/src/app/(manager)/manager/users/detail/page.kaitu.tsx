@@ -21,6 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { BrandBadge } from "@/components/manager/brand";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -135,6 +136,7 @@ interface DataWalletChange {
 
 interface UserDetailData {
   uuid: string;
+  brand?: string; // 归属品牌（出生属性，不可变）
   expiredAt: number;
   isFirstOrderDone: boolean;
   deviceCount: number;
@@ -650,6 +652,10 @@ function UserDetailContent() {
             <div>
               <p className="text-sm text-muted-foreground">{"用户UUID"}</p>
               <p className="font-mono text-sm">{userDetail.uuid}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">{"归属品牌"}</p>
+              <BrandBadge brand={userDetail.brand} />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">{"会员到期"}</p>
