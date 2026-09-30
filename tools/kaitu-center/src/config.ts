@@ -7,7 +7,7 @@ import { parse as parseToml } from 'smol-toml'
  * Configuration for the Center API connection.
  */
 export interface CenterConfig {
-  /** Base URL of the Center API service (e.g. https://api.kaitu.io) */
+  /** Base URL of the Center API service (e.g. https://k2.52j.me) */
   url: string
   /** Access key used for X-Access-Key authentication header */
   accessKey: string

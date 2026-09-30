@@ -51,7 +51,7 @@ func (app *App) deviceUDID() string {
 }
 
 func main() {
-	apiURL := envOr("KAITU_API_URL", "https://api.kaitu.io")
+	apiURL := envOr("KAITU_API_URL", "https://www.kaitu.io")
 	daemonAddr := envOr("K2_DAEMON_ADDR", "127.0.0.1:1777")
 	sessionDir := envOr("KAITU_SESSION_DIR", defaultSessionDir())
 

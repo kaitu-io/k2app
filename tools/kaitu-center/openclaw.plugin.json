@@ -8,7 +8,7 @@
     "properties": {
       "centerUrl": {
         "type": "string",
-        "description": "Center API base URL (e.g. https://api.kaitu.io)"
+        "description": "Center API base URL (e.g. https://k2.52j.me)"
       },
       "accessKey": {
         "type": "string",

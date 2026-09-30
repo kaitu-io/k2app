@@ -59,7 +59,7 @@ mcp/
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `KAITU_API_URL` | `https://api.kaitu.io` | Center API base URL |
+| `KAITU_API_URL` | `https://www.kaitu.io` | Center API base URL (`api.kaitu.io` does not resolve as of 2026-10-01; the old default made every tool fail with `no such host` unless `.mcp.json` overrode it) |
 | `K2_DAEMON_ADDR` | `127.0.0.1:1777` | k2 daemon address |
 | `KAITU_SESSION_DIR` | `~/.kaitu` | Session file directory |
 
