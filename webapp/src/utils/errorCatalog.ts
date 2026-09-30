@@ -360,7 +360,7 @@ export const ENGINE_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   [ENGINE_ERROR_CODES.ErrCodeAuthRejected]: { key: 'common:errors.vpn.authFailed', defaultValue: 'Authentication failed, please sign in again' },
   [ENGINE_ERROR_CODES.ErrCodePaymentRequired]: { key: 'common:errors.vpn.membershipExpired', defaultValue: 'Membership expired, please renew' },
   [ENGINE_ERROR_CODES.ErrCodeForbidden]: { key: 'common:errors.vpn.forbidden', defaultValue: 'Server certificate verification failed' },
-  [ENGINE_ERROR_CODES.ErrCodeEnvironmentSetupFailed]: { key: 'common:errors.vpn.environmentSetupFailed', defaultValue: 'Local network setup failed. Check system permissions and try again.' },
+  [ENGINE_ERROR_CODES.ErrCodeEnvironmentSetupFailed]: { key: 'common:errors.vpn.environmentSetupFailed', defaultValue: 'Network setup failed. Restart your device and try again.' },
   [ENGINE_ERROR_CODES.ErrCodeProtocolError]: { key: 'common:errors.vpn.protocolError', defaultValue: 'Protocol handshake failed, please try another node' },
   [ENGINE_ERROR_CODES.ErrCodeServerUnreachable]: { key: 'common:errors.network.unreachable', defaultValue: 'Server unreachable, please check your network connection' },
   [ENGINE_ERROR_CODES.ErrCodeRuleBundlesUnavailable]: { key: 'common:errors.engine.ruleBundlesUnavailable', defaultValue: 'Failed to download routing rules. Check network and retry.' },
