@@ -58,13 +58,16 @@ const KAITU_ONLY_HREFS = ['href="/routers"', 'href="/releases"', 'href="/retaile
 // /changelog 只是到 /releases 的兼容跳转，页脚不再链它（同一目标只出现一次）。
 // 「定价」在两品牌都是真实页面 /pricing（购买页由定价页的 CTA 进入，不再直接挂在导航上）。
 const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/pricing"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/support#faq"', 'href="/support#contact"', 'href="/privacy"', 'href="/terms"', 'href="https://github.com/getoverleap"'];
-const OVERLEAP_FOOTER = ['href="/install"', 'href="/pricing"', 'href="/support"', 'href="/k2"', 'href="/k2/quickstart"', 'href="https://github.com/getoverleap"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
+const OVERLEAP_FOOTER = ['href="/install"', 'href="/pricing"', 'href="/support"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
+// overleap is a closed, self-contained product (2026-09-30): no protocol docs, self-hosting or source links.
+const OVERLEAP_NEVER = ['href="/k2"', 'href="/k2/quickstart"', 'github.com'];
 
 describe('footer links only this brand\'s pages', () => {
   it('overleap: every configured link, none of the kaitu-only ones', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     const html = await renderChrome('Footer', 'en-GB');
     for (const href of OVERLEAP_FOOTER) expect(html, href).toContain(href);
+    for (const href of OVERLEAP_NEVER) expect(html, href).not.toContain(href);
     for (const href of KAITU_ONLY_HREFS) expect(html, href).not.toContain(href);
     expect(html).not.toContain('href="/purchase"');
   });
@@ -82,12 +85,13 @@ describe('footer links only this brand\'s pages', () => {
 // 顶栏的一级项都是链接（带子项的分组也是——父项可点击，子项在悬停时才渲染），
 // 所以初始 HTML 里必须能看到每个一级路径。
 describe('header links only this brand\'s pages', () => {
-  it('overleap: Features / Pricing / Help / Docs direct links, Download CTA, no kaitu-only paths', async () => {
+  it('overleap: Features / Pricing / Help direct links, Download CTA, no docs, no kaitu-only paths', async () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     const html = await renderChrome('Header', 'en-GB');
-    for (const href of ['href="/#features"', 'href="/pricing"', 'href="/support"', 'href="/k2"', 'href="/install"']) {
+    for (const href of ['href="/#features"', 'href="/pricing"', 'href="/support"', 'href="/install"']) {
       expect(html, href).toContain(href);
     }
+    for (const href of OVERLEAP_NEVER) expect(html, href).not.toContain(href);
     expect(html).not.toContain('/#testimonials');
     expect(html).not.toContain('/#pricing');
     for (const href of KAITU_ONLY_HREFS) expect(html, href).not.toContain(href);

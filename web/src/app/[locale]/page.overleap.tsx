@@ -17,10 +17,10 @@ import { generateMetadata as generateBaseMetadata } from './metadata';
 type Locale = (typeof routing.locales)[number];
 
 // 隐私优先叙事（spec 2026-09-04-overleap-site-decoupling §3.2）：六张功能卡、十二条 FAQ。
-const FEATURE_KEYS = ['isp', 'logs', 'speed', 'roaming', 'travel', 'open'] as const;
+const FEATURE_KEYS = ['isp', 'logs', 'speed', 'roaming', 'travel'] as const;
 const FAQ_KEYS = [
   'logs', 'isp', 'legal', 'publicWifi', 'travel', 'ech',
-  'selfHost', 'platforms', 'devices', 'pricing', 'payment', 'cancel',
+  'platforms', 'devices', 'pricing', 'payment', 'cancel',
 ] as const;
 const STEP_KEYS = ['subscribe', 'download', 'connect'] as const;
 

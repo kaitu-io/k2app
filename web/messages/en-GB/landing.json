@@ -5,7 +5,7 @@
       "description": "{brand} is a private VPN that hides where you go, even from your ISP, keeps no logs, and stays fast on the networks that let you down. Windows, macOS, iOS and Android."
     },
     "hero": {
-      "badge": "No logs · Open-source server · 5 devices",
+      "badge": "No logs · Encrypted Client Hello · 5 devices",
       "title": "Your browsing is your business.",
       "subtitle": "A private VPN that hides where you go, even from your ISP, and stays fast on the networks that let you down.",
       "description": "{brand} encrypts everything your devices send and hides the destination with Encrypted Client Hello. We keep no record of what you do. One subscription covers five devices on Windows, macOS, iOS and Android.",
@@ -27,8 +27,7 @@
       "logs": { "title": "No logs. Nothing to hand over.", "description": "We don't record the sites you visit, the apps you use or the traffic you send. We keep only what a subscription needs: your email address, your plan and the devices signed in." },
       "speed": { "title": "Fast on the networks that let you down", "description": "Train Wi-Fi, a packed stadium, a hotel connection: most VPNs crawl the moment packets go missing. {brand}'s k2cc rate control tells interference apart from real congestion and keeps your speed up." },
       "roaming": { "title": "Moves with you", "description": "Leave the house, lose the Wi-Fi, carry on. The tunnel migrates from Wi-Fi to mobile data mid-session, so downloads and calls continue without reconnecting." },
-      "travel": { "title": "Keeps working abroad", "description": "Travelling somewhere VPNs usually fail? {brand}'s connection looks like ordinary web traffic, so it keeps working where others go dark." },
-      "open": { "title": "Built in the open", "description": "The protocol is documented and the server is open source. Run your own node and use {brand} purely as the client, or read the code and take nothing on trust." }
+      "travel": { "title": "Keeps working abroad", "description": "Travelling somewhere VPNs usually fail? {brand}'s connection looks like ordinary web traffic, so it keeps working where others go dark." }
     },
     "pricing": {
       "title": "One plan. Every device.",
@@ -49,7 +48,6 @@
         "publicWifi": { "question": "Is it safe on public Wi-Fi?", "answer": "Yes. Everything your device sends is encrypted before it leaves, so the café, hotel or train network only sees encrypted traffic, and nobody on the same network can read or tamper with it." },
         "travel": { "question": "Does it work when I travel?", "answer": "Yes. {brand}'s connection looks like ordinary web traffic, so it keeps working in places where VPNs are usually blocked. Your subscription covers every location, and the app picks the fastest route wherever you are." },
         "ech": { "question": "What is Encrypted Client Hello?", "answer": "The part of a TLS handshake that normally reveals which server you're connecting to, encrypted. Most VPNs still send that name in the clear, which is what networks use to spot and block them. {brand} encrypts it." },
-        "selfHost": { "question": "Can I run my own server?", "answer": "Yes. The server, k2s, is open source and installs with one command. Add your own node in the app and {brand} becomes just the client." },
         "platforms": { "question": "Which platforms are supported?", "answer": "Windows, macOS, iOS and Android. One subscription covers five devices at the same time." },
         "devices": { "question": "How many devices can I use?", "answer": "Five at the same time, on any mix of platforms. Signing in on a sixth device signs out the oldest one." },
         "pricing": { "question": "How much does it cost?", "answer": "{yearly} a year, or {monthly} a month. Both include five devices, unlimited data and every location, and you can cancel any time." },

@@ -15,6 +15,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Image from "next/image";
 import { useBrand } from '@/hooks/useBrand';
+import { safeNext } from '@/lib/safe-next';
 
 function LoginPageContent() {
   const { login, isAuthenticated } = useAuth();
@@ -29,8 +30,8 @@ function LoginPageContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [isActivated, setIsActivated] = useState(true); // 用户是否已激活
 
-  // Get the next URL from query params, default to account page
-  const next = searchParams.get("next") || "/account";
+  // Return URL from ?next= (same-site paths only), default to account page
+  const next = safeNext(searchParams.get("next"));
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -99,12 +100,7 @@ function LoginPageContent() {
       const { user, accessToken } = response;
       await login(user, accessToken);
 
-      // 修复双重 locale 问题：如果 next 已包含 locale，直接 replace
-      if (next.startsWith('/')) {
-        router.replace(next);
-      } else {
-        router.push(next);
-      }
+      router.replace(next);
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(getApiErrorMessage(error.code, t));

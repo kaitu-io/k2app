@@ -58,15 +58,15 @@ describe.each([KAITU, OVERLEAP])('site config keys resolve for $id', (brand) => 
 });
 
 /**
- * 导航结构的形态约束。产品站的顶栏是 4–6 个一级项 + 一个 CTA；同一个文案 key 在顶栏和
+ * 导航结构的形态约束。产品站的顶栏是 3–6 个一级项 + 一个 CTA（overleap 去掉 Docs 后为 3）；同一个文案 key 在顶栏和
  * 页脚里必须指向同一路径（Overleap 曾经 Pricing 顶栏 /#pricing、页脚 /purchase）；
  * 兼容跳转路径（/changelog → /releases）不得再被链接。
  */
 describe.each([KAITU, OVERLEAP])('nav structure for $id', (brand) => {
   const site = siteConfigFor(brand.id);
 
-  it('primary nav has 4–6 items and every item is a link', () => {
-    expect(site.nav.primary.length).toBeGreaterThanOrEqual(4);
+  it('primary nav has 3–6 items and every item is a link', () => {
+    expect(site.nav.primary.length).toBeGreaterThanOrEqual(3);
     expect(site.nav.primary.length).toBeLessThanOrEqual(6);
     for (const item of site.nav.primary) {
       expect(item.href, item.labelKey).toMatch(/^(\/|https?:\/\/)/);

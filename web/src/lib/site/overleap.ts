@@ -11,7 +11,6 @@ export const OVERLEAP_SITE: SiteConfig = {
       { labelKey: 'nav.nav.features', href: '/#features' },
       { labelKey: 'nav.nav.pricing', href: '/pricing' },
       { labelKey: 'nav.nav.help', href: '/support' },
-      { labelKey: 'nav.nav.docs', href: '/k2' },
     ],
     cta: { labelKey: 'nav.nav.download', href: '/install' },
   },
@@ -22,14 +21,6 @@ export const OVERLEAP_SITE: SiteConfig = {
         { labelKey: 'nav.nav.download', href: '/install' },
         { labelKey: 'nav.nav.pricing', href: '/pricing' },
         { labelKey: 'nav.nav.help', href: '/support' },
-      ],
-    },
-    {
-      titleKey: 'nav.footer.developer.title',
-      items: [
-        { labelKey: 'nav.footer.developer.k2Docs', href: '/k2' },
-        { labelKey: 'nav.footer.developer.selfDeploy', href: '/k2/quickstart' },
-        { labelKey: 'nav.footer.developer.github', href: 'https://github.com/getoverleap' },
       ],
     },
     {

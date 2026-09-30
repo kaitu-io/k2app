@@ -18,7 +18,7 @@ type Locale = (typeof routing.locales)[number];
 // 与首页同一组 FAQ（landing namespace）；帮助页只多"账户与账单"四条。
 const FAQ_KEYS = [
   'logs', 'isp', 'legal', 'publicWifi', 'travel', 'ech',
-  'selfHost', 'platforms', 'devices', 'pricing', 'payment', 'cancel',
+  'platforms', 'devices', 'pricing', 'payment', 'cancel',
 ] as const;
 const BILLING_KEYS = ['manage', 'charge', 'refund', 'devices'] as const;
 const STEP_KEYS = ['step1', 'step2', 'step3'] as const;
