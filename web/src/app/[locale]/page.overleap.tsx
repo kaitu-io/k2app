@@ -102,7 +102,6 @@ export default async function Home({
     name: brand.displayName,
     url: brand.baseUrl,
     logo: `${brand.baseUrl}${brand.logoPath}`,
-    sameAs: ['https://github.com/getoverleap'],
     contactPoint: { '@type': 'ContactPoint', email: brand.contactEmail, contactType: 'customer support' },
   };
   const faqPageJsonLd = {
