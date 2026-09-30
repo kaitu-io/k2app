@@ -32,9 +32,6 @@ export default async function Home({ params }: Props) {
           <Button asChild size="lg">
             <Link href="/account">{t('ctaAccount')}</Link>
           </Button>
-          <Button asChild size="lg" variant="outline">
-            <Link href="/k2">{t('ctaDocs')}</Link>
-          </Button>
         </div>
       </section>
     </SiteShell>

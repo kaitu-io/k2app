@@ -2,7 +2,7 @@
  * Structural guards for a single-brand site.
  *  - No text of the other brand or its China-market payment channels anywhere we ship.
  *  - No imports reaching into ../../web (this app shares protocol contracts, not code).
- *  - Only this site's locales exist under messages/ and content/.
+ *  - Only this site's locales exist under messages/.
  */
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'fs';
@@ -10,7 +10,7 @@ import path from 'path';
 import { LOCALES } from '@/lib/site';
 
 const ROOT = path.resolve(__dirname, '..');
-const SCAN_DIRS = ['src', 'messages', 'content', 'public/legal'];
+const SCAN_DIRS = ['src', 'messages', 'public/legal'];
 const TEXT_EXT = /\.(tsx?|json|md|css)$/;
 
 function files(dir: string): string[] {
@@ -39,7 +39,7 @@ describe('source guards', () => {
     expect(hits).toEqual([]);
   });
 
-  it.each(['messages', 'content'])('%s/ holds only this site’s locales', (dir) => {
+  it.each(['messages'])('%s/ holds only this site’s locales', (dir) => {
     const dirs = readdirSync(path.join(ROOT, dir)).filter((n) => statSync(path.join(ROOT, dir, n)).isDirectory());
     expect(dirs.sort()).toEqual([...LOCALES].sort());
   });

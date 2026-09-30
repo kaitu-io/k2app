@@ -11,7 +11,7 @@ interface PageMeta {
 
 /**
  * Per-page metadata. Every page passes its own locale-less `path` ('' for home,
- * '/privacy', '/k2/protocol') — canonical and hreflang are built from it, so
+ * '/privacy', '/terms') — canonical and hreflang are built from it, so
  * there is no request-header plumbing.
  *
  * Canonical / hreflang always use SITE.baseUrl (never a preview override), so a

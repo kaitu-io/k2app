@@ -7,7 +7,6 @@ import type auth from '../../messages/en-GB/auth.json';
 import type account from '../../messages/en-GB/account.json';
 import type errors from '../../messages/en-GB/errors.json';
 import type legal from '../../messages/en-GB/legal.json';
-import type k2 from '../../messages/en-GB/k2.json';
 import type { Locale } from '@/lib/site';
 
 declare module 'next-intl' {
@@ -21,7 +20,6 @@ declare module 'next-intl' {
       account: typeof account;
       errors: typeof errors;
       legal: typeof legal;
-      k2: typeof k2;
     };
   }
 }

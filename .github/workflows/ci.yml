@@ -76,9 +76,6 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Generate Velite content
-        run: npx velite build
-
       - name: Lint
         run: npx eslint src tests
 

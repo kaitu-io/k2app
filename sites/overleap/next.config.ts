@@ -1,11 +1,3 @@
-// Velite builds content alongside Next (argv detection keeps Turbopack from starting it twice).
-const isDev = process.argv.includes('dev');
-const isBuild = process.argv.includes('build');
-if (!process.env.VELITE_STARTED && (isDev || isBuild)) {
-  process.env.VELITE_STARTED = '1';
-  import('velite').then((m) => m.build({ watch: isDev, clean: !isDev }));
-}
-
 import createNextIntlPlugin from 'next-intl/plugin';
 import { withSentryConfig } from '@sentry/nextjs';
 import type { NextConfig } from 'next';

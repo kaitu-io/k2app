@@ -1,15 +1,11 @@
 {
   "primary": "Main navigation",
-  "docs": "Docs",
   "account": "Account",
   "login": "Log in",
   "language": "Language",
   "footer": {
     "tagline": "A private VPN. No logs, fast on any network.",
-    "developers": "Developers",
     "company": "Company",
-    "k2Docs": "k2 protocol",
-    "github": "GitHub",
     "privacy": "Privacy Policy",
     "terms": "Terms of Service",
     "deleteAccount": "Delete your account",

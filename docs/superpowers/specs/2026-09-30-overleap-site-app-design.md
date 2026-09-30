@@ -65,7 +65,7 @@ sites/overleap/
 | `/account/security` | 迁移 | 改密码 |
 | `/delete-account` | 迁移 | 删号说明页（应用商店要求） |
 | `/privacy` `/terms` | 迁移 | 渲染 `public/legal/*.md`；本站自有副本，后续按 UK GDPR 口径改写 |
-| `/k2/[[...path]]` | 迁移 | Velite k2 协议文档 + 侧栏；只迁可公开的文档（见 §3.2） |
+| ~~`/k2/[[...path]]`~~ | 删除 | 见 §4：Overleap 不发布协议文档 |
 
 结账（`/purchase`）不在 ① ——它的信息架构在 ③ 定；① 期间旧站继续承担购买。
 
@@ -110,3 +110,14 @@ sites/overleap/
 | 4 | 线上 Cookie 横幅文案提“邀请码”（开途概念），`/purchase` 标题 “Purchase Pro Plan”、权益列表为开途卖点；`web/messages/en-*/account.json` 含中文代付文案 | 新站不存在这些 | ⑤ 随 `web/` 清理消失 |
 | 5 | 线上 Sentry 对 overleap.io 访客 100% 会话录屏 + PII | 新站已关 | ④ 切换后自然消失 |
 | 6 | `web/` 账户守卫跳 `/login?redirect=`，登录页读 `?next=` → 登录后不回原页 | 新站统一 `?next=` + `safeNext` 防开放重定向 | ⑤（或在 `web/` 单独小修，影响开途） |
+
+## 4. 决策追加（2026-09-30，David）
+
+| # | 决策 | 落地 |
+|---|---|---|
+| 1 | 隐私政策去掉“连接日志”条款 | 新站：删 1.3 与 4.2（7 天连接日志）；**同时补齐此前未披露的实际采集**——设备最后认证时间、由请求 IP 推出的国家（只存国家码）、用户主动提交的连接评分（公网 IP / ISP / 城市 / 节点）与诊断日志，并单列“永不记录”项；5.2 改为“网站不用分析 Cookie、不录屏”。依据：核对 `api/model*.go` 与 `k2/server`（目标地址日志仅 debug 级，线上 info） |
+| 2 | 自部署文档在 overleap 上 404 是对的；页脚与首页的自部署入口去掉 | 新站页脚已无；旧站（`web/`）页脚 “Run your own server”、首页 “Built in the open” 卡与相关 FAQ / 徽标同步去掉 |
+| 3 | Overleap 面向英国、以安全建立信任、闭源自成一体（判断：AI 时代不开源更安全） | 新站删除 `/k2` 文档、Velite 管线、导航 Docs、页脚 Developers 栏与 GitHub；`.agents/product-marketing-context.md` 记录定位变更 |
+| 4 | `?redirect=` / `?next=` 登录回跳错位两品牌一起修 | `web/` 另起分支修 |
+
+待确认（未改）：隐私政策 2.5 称 “Overleap LLC is registered and operates under U.S. law”，而营销事实源记录实体注册尚未落地——需法务确认后再改。

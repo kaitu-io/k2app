@@ -29,7 +29,6 @@ export const SITE = {
   logoPath: '/overleap-icon.png',
   ogImagePath: '/overleap-og.png',
   faviconPrefix: '/brand/overleap',
-  githubUrl: 'https://github.com/getoverleap',
 } as const;
 
 /** A key under the `nav` namespace (typed against the en-GB master). */
@@ -42,17 +41,10 @@ export interface NavItem {
 }
 
 export const NAV: { primary: NavItem[] } = {
-  primary: [{ labelKey: 'docs', href: '/k2' }],
+  primary: [],
 };
 
 export const FOOTER: { titleKey: NavKey; items: NavItem[] }[] = [
-  {
-    titleKey: 'footer.developers',
-    items: [
-      { labelKey: 'footer.k2Docs', href: '/k2' },
-      { labelKey: 'footer.github', href: SITE.githubUrl, external: true },
-    ],
-  },
   {
     titleKey: 'footer.company',
     items: [
@@ -64,5 +56,5 @@ export const FOOTER: { titleKey: NavKey; items: NavItem[] }[] = [
   },
 ];
 
-/** Public, indexable static routes (sitemap). k2 docs are added from Velite. */
+/** Public, indexable static routes (sitemap). */
 export const STATIC_ROUTES = ['', '/privacy', '/terms', '/delete-account'];

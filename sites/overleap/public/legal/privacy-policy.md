@@ -6,11 +6,17 @@
 
 1.2 **Device Information**: To provide services and prevent abuse, we collect device identifiers, operating system version, app version, and other basic device information.
 
-1.3 **Connection Logs**: We record connection timestamps and server locations used for service optimization and troubleshooting. We do not record your browsing history, DNS queries, or any information that could identify your online activities.
+1.3 **Payment Information**: Payments are processed through third-party payment processors. We do not directly store your credit card or bank account information. We only retain transaction records for order management and refund processing.
 
-1.4 **Payment Information**: Payments are processed through third-party payment processors. We do not directly store your credit card or bank account information. We only retain transaction records for order management and refund processing.
+1.4 **Traffic Volume Statistics**: To safeguard service quality and fair use, we record the daily traffic volume of each device under your account. **This record is a byte-count total only** (aggregated per device, account, connection session and server, per day) and **contains none of your actual online activity** — we do not know, and cannot reconstruct, which websites you visited, which apps you used, or what data you transmitted. These statistics are retained for 2 months only.
 
-1.5 **Traffic Volume Statistics**: To safeguard service quality and fair use, we record the daily traffic volume of each device under your account. **This record is a byte-count total only** (aggregated per device, account, and server, per day) and **contains none of your actual online activity** — we do not know, and cannot reconstruct, which websites you visited, which apps you used, or what data you transmitted. These statistics are retained for 2 months only.
+1.5 **Device Activity**: For each signed-in device we keep the time it last authenticated, so we can enforce your plan's device limit and sign out devices you no longer use.
+
+1.6 **Country**: When you sign in or your app authenticates, we derive a country from the request's IP address to show relevant servers and prevent abuse. We store the country code only, not the IP address.
+
+1.7 **Information You Choose to Send**: If you rate a connection or send a support request with diagnostics, we receive it with the report: for a connection rating, your public IP address, internet provider, city and the server you used; for diagnostics, the app's logs. We use these only to resolve the problem you reported.
+
+1.8 **What We Never Record**: The websites you visit, the apps you use, your DNS queries, or the content of your traffic.
 
 ### 2. How We Use Information
 
@@ -40,21 +46,19 @@
 
 4.1 **Account Data**: Retained during your account's active period and completely erased within 30 days after account deletion.
 
-4.2 **Connection Logs**: Only the last 7 days of connection logs are retained for service optimization and troubleshooting, then automatically deleted.
+4.2 **Traffic Volume Statistics**: Retained for the most recent 2 months only, then automatically deleted (see Section 1.4 — these statistics contain none of your actual online activity).
 
-4.3 **Traffic Volume Statistics**: Retained for the most recent 2 months only, then automatically deleted (see Section 1.5 — these statistics contain none of your actual online activity).
+4.3 **Payment Records**: Transaction records are retained for 7 years as required by financial regulations.
 
-4.4 **Payment Records**: Transaction records are retained for 7 years as required by financial regulations.
+4.4 **Support Records**: Communication records related to customer support are retained for 2 years after issue resolution.
 
-4.5 **Support Records**: Communication records related to customer support are retained for 2 years after issue resolution.
-
-4.6 **Deletion Requests**: You may request deletion of your account and related data at any time, and we will process your request within 30 days.
+4.5 **Deletion Requests**: You may request deletion of your account and related data at any time, and we will process your request within 30 days.
 
 ### 5. Cookies and Tracking Technologies
 
 5.1 **Essential Cookies**: We use essential cookies to maintain your login session and remember your preferences.
 
-5.2 **Analytics Cookies**: We may use anonymous analytics tools to understand website usage; this data does not contain personally identifiable information.
+5.2 **No Analytics Cookies**: Our website does not use analytics cookies or session recording.
 
 5.3 **No Ad Tracking**: We do not use any third-party ad trackers or marketing cookies.
 

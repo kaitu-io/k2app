@@ -1,9 +1,8 @@
 import type { MetadataRoute } from 'next';
-import { k2Slugs } from '@/lib/k2-posts';
 import { DEFAULT_LOCALE, LOCALES, SITE, STATIC_ROUTES } from '@/lib/site';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const paths = [...STATIC_ROUTES, ...k2Slugs().map((s) => `/${s}`)];
+  const paths = STATIC_ROUTES;
   return paths.flatMap((path) =>
     LOCALES.map((locale) => ({
       url: `${SITE.baseUrl}/${locale}${path}`,
