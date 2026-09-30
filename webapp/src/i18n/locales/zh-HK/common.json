@@ -112,7 +112,7 @@
       "protocolError": "協議握手失敗，請更換節點",
       "connectionFatal": "連線失敗，請重試或更換節點",
       "permissionDenied": "VPN 權限未授予，請喺系統設定中允許 VPN 連線",
-      "environmentSetupFailed": "本機網絡環境設定失敗，請檢查系統權限後重試",
+      "environmentSetupFailed": "本機網絡設定失敗，請重新啟動裝置後再試",
       "startFailed": "啟動服務失敗，請重試",
       "reconnectFailed": "重新連線失敗，請重試",
       "timeout": "操作逾時，請重試",
