@@ -1,0 +1,15 @@
+{
+  "primary": "Main navigation",
+  "account": "Account",
+  "login": "Log in",
+  "language": "Language",
+  "footer": {
+    "tagline": "A private VPN. No logs, fast on any network.",
+    "company": "Company",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service",
+    "deleteAccount": "Delete your account",
+    "contact": "Contact us",
+    "copyright": "© {year} {legalName}. All rights reserved."
+  }
+}

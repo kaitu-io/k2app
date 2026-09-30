@@ -1,6 +1,6 @@
 # k2app — Kaitu VPN Client
 
-Tauri v2 desktop + Capacitor 7 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management. **This file loads every session — keep it to the map plus rules that fail silently; layer detail belongs in the layer doc** (28 `CLAUDE.md` files: 9 here + 19 in `k2/`, each loading when you work in its directory).
+Tauri v2 desktop + Capacitor 7 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management. **This file loads every session — keep it to the map plus rules that fail silently; layer detail belongs in the layer doc** (29 `CLAUDE.md` files: 10 here + 19 in `k2/`, each loading when you work in its directory).
 
 ## Quick Commands
 
@@ -38,7 +38,8 @@ k2/                  Go core (submodule, read-only — its own CLAUDE.md tree)
   daemon/            HTTP API shell over engine (desktop only)
   appext/            gomobile type adapter over engine (iOS + Android)
 webapp/              React + MUI frontend — shared across Web/Desktop/Mobile
-web/                 Next.js website + admin dashboard
+web/                 Next.js website (kaitu.io) + admin dashboard
+sites/overleap/      overleap.io — standalone Next app, shares no code with web/ (own lockfile)
 api/                 Center API service — Go + Gin + GORM
   cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
 desktop/             Tauri v2 Rust shell (macOS + Windows)
@@ -108,6 +109,7 @@ Loaded on demand when you work in the directory — read the layer doc before ch
 |-----|-------|
 | [`webapp/CLAUDE.md`](webapp/CLAUDE.md) | React frontend: split globals, bridge contract, VPN state machine, services, stores, i18n, components |
 | [`web/CLAUDE.md`](web/CLAUDE.md) | Next.js website + admin dashboard, API proxy, Velite content |
+| [`sites/overleap/CLAUDE.md`](sites/overleap/CLAUDE.md) | overleap.io standalone app: no shared code, typed messages, contract-tested API edges |
 | [`desktop/CLAUDE.md`](desktop/CLAUDE.md) | Tauri shell, Rust modules, storage encryption, PKG install, artifact naming, S3 log upload |
 | [`mobile/CLAUDE.md`](mobile/CLAUDE.md) | Capacitor + gomobile, K2Plugin, iOS/Android VPN architecture, APK signing, ASO rules |
 | [`api/CLAUDE.md`](api/CLAUDE.md) | Center API: routes, middleware, models, workers, tunnel scoring, cloudprovider |

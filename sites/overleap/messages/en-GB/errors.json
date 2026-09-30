@@ -1,0 +1,13 @@
+{
+  "network": "We couldn't reach Overleap. Check your connection and try again.",
+  "generic": "Something went wrong. Please try again.",
+  "unauthorized": "Please log in first.",
+  "invalidArgument": "Some of the details aren't valid.",
+  "invalidVerificationCode": "That code isn't right. Check it and try again.",
+  "verificationCodeExpired": "That code has expired. Request a new one.",
+  "invalidCredentials": "Email or password isn't right.",
+  "tooManyRequests": "Too many attempts. Please wait a minute and try again.",
+  "serviceUnavailable": "This isn't available right now. Please try again shortly.",
+  "passwordTooShort": "Password is too short.",
+  "passwordTooWeak": "Password is too weak. Use a longer or more random combination."
+}

@@ -1,0 +1,317 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Single theme. Token names follow shadcn; the visual-system pass changes values, not names. */
+:root {
+  --radius: 0.75rem;
+  --background: #0B0E14;
+  --foreground: #E6E8F0;
+  --card: #141926;
+  --card-foreground: #E6E8F0;
+  --popover: #141926;
+  --popover-foreground: #E6E8F0;
+  --primary: #7C5CFF;
+  --primary-foreground: #FFFFFF;
+  --secondary: #2DD4BF;
+  --secondary-foreground: #0B0E14;
+  --muted: #1B2132;
+  --muted-foreground: #9AA0B4;
+  --accent: #7C5CFF;
+  --accent-foreground: #FFFFFF;
+  --destructive: #F87171;
+  --success: #34D399;
+  --success-foreground: #0B0E14;
+  --warning: #FBBF24;
+  --warning-foreground: #0B0E14;
+  --info: #60A5FA;
+  --info-foreground: #0B0E14;
+  --border: rgba(124, 92, 255, 0.18);
+  --input: rgba(124, 92, 255, 0.12);
+  --ring: #7C5CFF;
+  --chart-1: #7C5CFF;
+  --chart-2: #2DD4BF;
+  --chart-3: #34D399;
+  --chart-4: #FBBF24;
+  --chart-5: #F87171;
+  --sidebar: #141926;
+  --sidebar-foreground: #E6E8F0;
+  --sidebar-primary: #7C5CFF;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1B2132;
+  --sidebar-accent-foreground: #E6E8F0;
+  --sidebar-border: rgba(124, 92, 255, 0.18);
+  --sidebar-ring: #7C5CFF;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Long-form content (legal documents, k2 docs). */
+.prose {
+  color: var(--foreground);
+  font-size: 1rem;
+  line-height: 1.75;
+  max-width: 70ch;
+}
+.prose.max-w-none {
+  max-width: none;
+}
+
+/* Headings */
+.prose h1 {
+  font-size: 2.25em;
+  font-weight: 700;
+  color: var(--foreground);
+  margin-top: 0;
+  margin-bottom: 0.6em;
+  line-height: 1.15;
+}
+.prose h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 1.4em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+.prose h3 {
+  font-size: 1.25em;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  line-height: 1.35;
+}
+.prose h4 {
+  font-size: 1.125em;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 1em;
+  margin-bottom: 0.3em;
+  line-height: 1.4;
+}
+
+/* Body text */
+.prose p {
+  margin-bottom: 1.5em;
+}
+
+/* Links */
+.prose a {
+  color: var(--secondary);
+  text-decoration: none;
+}
+.prose a:hover {
+  text-decoration: underline;
+}
+
+/* Strong */
+.prose strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+/* Lists */
+.prose ul {
+  list-style-type: disc;
+  padding-left: 1.625em;
+  margin-bottom: 1.25em;
+}
+.prose ol {
+  list-style-type: decimal;
+  padding-left: 1.625em;
+  margin-bottom: 1.25em;
+}
+.prose li {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.prose li > ul,
+.prose li > ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* Blockquote */
+.prose blockquote {
+  border-left: 4px solid var(--primary);
+  padding-left: 1em;
+  margin: 1.25em 0;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+.prose blockquote p {
+  margin-bottom: 0.5em;
+}
+
+/* Inline code */
+.prose code {
+  background: var(--muted);
+  color: var(--primary);
+  padding: 0.2em 0.4em;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+/* Code blocks — reset inline code styles on pre > code */
+.prose pre {
+  background: var(--card);
+  padding: 1em 1.25em;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 1.25em;
+}
+.prose pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.875em;
+}
+
+/* Table */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.25em;
+}
+.prose thead {
+  background: var(--card);
+}
+.prose th {
+  padding: 0.5em 0.75em;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.875em;
+  border: 1px solid var(--border);
+}
+.prose td {
+  padding: 0.5em 0.75em;
+  font-size: 0.875em;
+  border: 1px solid var(--border);
+}
+.prose tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Horizontal rule */
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+/* Images */
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1.25em 0;
+}
+
+/* Figure caption: the paragraph immediately after an image.
+   Centered, smaller, muted — and never faux-italic (CJK has no real italics). */
+.prose img + p {
+  margin-top: -0.5em;
+  text-align: center;
+  font-size: 0.875em;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.prose img + p em {
+  font-style: normal;
+}
+
+/* Prevent long URLs / inline code from breaking layout on narrow screens */
+.prose {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.prose code {
+  word-break: break-all;
+}
+
+/* Tables scroll horizontally on narrow screens, natural layout on ≥md */
+.prose table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+@media (min-width: 768px) {
+  .prose table {
+    display: table;
+    white-space: normal;
+  }
+}
+
+/* Mobile typography scale (<640px) */
+@media (max-width: 640px) {
+  .prose {
+    font-size: 1rem;
+    line-height: 1.85;
+  }
+  .prose h1 {
+    font-size: 1.75em;
+  }
+  .prose h2 {
+    font-size: 1.35em;
+  }
+  .prose h3 {
+    font-size: 1.15em;
+  }
+}
+

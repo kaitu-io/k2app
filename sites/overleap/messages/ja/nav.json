@@ -1,0 +1,15 @@
+{
+  "primary": "メインナビゲーション",
+  "account": "アカウント",
+  "login": "ログイン",
+  "language": "言語",
+  "footer": {
+    "tagline": "ログを残さない、どんな回線でも速いプライベート VPN。",
+    "company": "会社情報",
+    "privacy": "プライバシーポリシー",
+    "terms": "利用規約",
+    "deleteAccount": "アカウント削除",
+    "contact": "お問い合わせ",
+    "copyright": "© {year} {legalName}. All rights reserved."
+  }
+}

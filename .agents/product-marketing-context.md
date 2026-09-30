@@ -57,7 +57,7 @@
 
 | 维度 | Kaitu（中国） | Overleap（海外） |
 |---|---|---|
-| 核心叙事 | 抗 GFW 稳定 + 技术可信 | 隐私 + 开源 + 协议透明 |
+| 核心叙事 | 抗 GFW 稳定 + 技术可信 | 隐私 + 安全（自研、闭源、自成一体）· 英国优先 |
 | 付费主力 | 实用派 | TBD（等 100+ 付费用户数据） |
 | 主要渠道 | SEO / KOL / 小红书 / 分销 / Twitter | TBD |
 | 本地化 | zh-CN 母版 | en-US 母版 |
@@ -81,6 +81,8 @@
 | **自托管派** | 社区 / 反黑箱信任 | 不付费但 `k2s` 的存在是"我们不是黑箱"的信号 | 开发者关系、GitHub stars、协议公信力 |
 
 ### 海外市场（Overleap）ICP 假设（待验证）
+
+> **2026-09-30 定位决策**：Overleap 以**英国**为首要市场，用**安全**建立信任。它是自成一体的闭源产品——官网不发布协议文档、源码链接、自部署指南或 GitHub，不以"开源 / 可自己跑服务端"作为信任论据（判断：AI 时代闭源更安全）。协议层（k2 / k2cc / ECH）可作为产品事实出现，但不作"去读代码"的邀请。下面任何以开源 / 协议透明为 Overleap 卖点的条目，以本决策为准。
 
 当前 ICP 未经数据验证。三个候选 wedge：
 
@@ -400,4 +402,5 @@
 - **2026-04-21** — V1 草稿由 `marketing-skills:product-marketing-context` skill 在 Kaitu 代码库内基于首页 / install / purchase / support / k2 协议文档 / i18n 源（zh-CN）/ tier-rename spec 自动起草；经 david 澄清品牌结构（Kaitu 中国、Overleap 海外）、ICP 分层（实用派主力）、竞争点名规划后定稿。
 - **2026-04-21** — 品牌架构决策：从"双品牌并列"升级为 **"Overleap 母品牌 / Kaitu 中国产品"** 层级结构，衔接词 "Kaitu by Overleap"。连带更新 Brand Architecture / Glossary / Strategic Open Questions。跨市场信任迁移问题由 footer 衔接规则承接；GitHub org 名与法律实体注册转为 Open Questions。详见 `docs/marketing/brand-naming-strategy.md`。
 - **2026-07-14** — **品牌架构再次翻转，推翻上一条**：放弃母品牌 / 子产品层级，改为 **开途（中国）与 Overleap（海外）两个完全隔离的对等品牌** —— 各自独立的用户池、支付渠道、叙事，任何面向用户的语境都不互相提及。衔接句 "Kaitu by Overleap" / "Kaitu, a product of Overleap" 作废；"跨市场信任迁移" 作为策略取消（隔离前提下不成立）。唯一保留的跨品牌元素是法务文书署名 **Overleap LLC**。连带更新 Brand Architecture / Glossary / Strategic Open Questions。
+- **2026-09-30** — Overleap 定位：英国优先 + 安全信任 + 闭源自成一体；官网移除 k2 协议文档 / GitHub / 自部署入口（spec `2026-09-30-overleap-site-app-design.md` §4）。开源 / 透明类信任论据此后只属于协议层与开途，不用于 Overleap。
 - **2026-07-15** — 修复文档漂移：本文档、`docs/marketing/{README,brand-naming-strategy,content-calendar-2026-Q2}.md` 与根 `CLAUDE.md` 此前全部停留在 2026-04-21 的层级架构，07-14 的决策只存在于品牌拆分代码分支中，导致每次 `marketing-skills:*` 启动都加载已被推翻的架构。五处口径已统一到"完全隔离"。

@@ -1,0 +1,22 @@
+version: 1
+applications:
+  - appRoot: sites/overleap
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            # Console env vars exist only in the build shell; `output: 'standalone'` does not
+            # forward them to the SSR Lambda, so bake the ones the runtime needs.
+            - env | grep -E '^(NEXT_PUBLIC_SENTRY_DSN|SENTRY_ORG|SENTRY_PROJECT|SENTRY_AUTH_TOKEN)=' >> .env.production || true
+            - yarn install --frozen-lockfile
+        build:
+          commands:
+            - yarn build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - .next/cache/**/*
+          - node_modules/**/*
