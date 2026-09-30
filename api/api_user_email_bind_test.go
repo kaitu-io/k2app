@@ -51,7 +51,7 @@ func postBindVerification(t *testing.T, userID uint64, email string) bindVerific
 // ever issued or mailed, so the user gets no email at all. Under the old
 // generic ErrorInvalidArgument the client rendered "参数错误", which reads as a
 // transient glitch — users retried the send button for hours and reported it as
-// "收不到验证码" (support case 2026-07-29, user 5126 → 237875618@qq.com).
+// "收不到验证码" (support case 2026-07-29, user 5126).
 func TestSendBindEmailVerification_EmailOwnedByAnotherUser(t *testing.T) {
 	m := SetupMockDB(t)
 	swapGetDB(t, m)
@@ -61,7 +61,7 @@ func TestSendBindEmailVerification_EmailOwnedByAnotherUser(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "index_id", "brand"}).
 			AddRow(int64(1), int64(5191), "email", "some-index", "kaitu"))
 
-	resp := postBindVerification(t, 5126, "237875618@qq.com")
+	resp := postBindVerification(t, 5126, "bind-target@example.com")
 
 	assert.Equal(t, int(ErrorEmailAlreadyInUse), resp.Code)
 	// Mutation guard: the old generic code must NOT be what ships, otherwise the
@@ -88,7 +88,7 @@ func TestSendBindEmailVerification_EmailOwnedBySelf(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "index_id", "brand"}).
 			AddRow(int64(1), int64(5126), "email", "some-index", "kaitu"))
 
-	code, panicked := bindVerificationCodeTolerantOfPanic(t, 5126, "237875618@qq.com")
+	code, panicked := bindVerificationCodeTolerantOfPanic(t, 5126, "bind-target@example.com")
 	if panicked {
 		// Panicking inside the downstream dependency proves the gate let it past.
 		return

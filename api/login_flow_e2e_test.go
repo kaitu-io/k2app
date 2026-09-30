@@ -446,8 +446,8 @@ func TestE2E_LoginFlow_WithUnicodeWhitespace(t *testing.T) {
 	defer func() { EnableMockVerificationCode = false }()
 
 	// Same byte sequence as the prod log: U+2006 inside the domain.
-	dirtyEmail := "u2006-regression@gmail.co m"
-	cleanEmail := "u2006-regression@gmail.com"
+	dirtyEmail := "u2006-regression@example.co m"
+	cleanEmail := "u2006-regression@example.com"
 
 	t.Run("send_code_accepts_dirty_email", func(t *testing.T) {
 		w := NewTestRequest("POST", "/api/auth/code").
