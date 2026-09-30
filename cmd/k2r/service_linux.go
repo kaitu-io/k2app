@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/kaitu-io/k2/gateway"
 )
 
 const (
@@ -24,12 +26,25 @@ func InstallService() error {
 	return installSystemd()
 }
 
-// UninstallService removes the k2r system service.
+// UninstallService removes the k2r system service and the firewall rules a
+// k2r daemon installs.
 func UninstallService() error {
+	uninstall := uninstallSystemd
 	if isOpenWRT() {
-		return uninstallOpenWRT()
+		uninstall = uninstallOpenWRT
 	}
-	return uninstallSystemd()
+	return uninstallThenClearRules(uninstall, gateway.RemoveInterception)
+}
+
+// uninstallThenClearRules stops and removes the service, then clears the
+// rules — in that order, so nothing is left running that could install them
+// again. The daemon removes its own rules when it is stopped; this covers the
+// ones it could not: a daemon that crashed, or a build from before it handled
+// SIGTERM. Left in place they keep redirecting LAN DNS to a closed port.
+func uninstallThenClearRules(uninstall func() error, clearRules func()) error {
+	err := uninstall()
+	clearRules()
+	return err
 }
 
 // IsServiceInstalled reports whether the k2r service is installed.

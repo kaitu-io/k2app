@@ -256,7 +256,9 @@ provider.LinuxProcessSearcher.indexMu (state, RWMutex, standalone — no nesting
 gateway standalone locks (no nesting with engine locks):
   Gateway.opMu (serialization) → Gateway.mu (state) → Gateway.sseMu (state)
   RouterDeviceManager.mu (state, RWMutex — acquired after Gateway.mu released)
-  nftNetlinkInterceptor.mu (serialization — acquired after all state locks released)
+  installGate.installMu (serialization — held across Interceptor.Install; taken
+    under Gateway.opMu by doUp, alone by shutdown, never under Gateway.mu)
+    → nftNetlinkInterceptor.mu (serialization — acquired after all state locks released)
 
 k2p/signal standalone locks (no nesting with engine locks):
   signal.Store.mu (state, RWMutex) → PeerEntry.WriteMu (serialization)

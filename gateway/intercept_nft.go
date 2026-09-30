@@ -22,16 +22,7 @@ func (n *nftShellInterceptor) Install(cfg InterceptConfig) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("nft script: %s: %w", out, err)
 	}
-	for _, c := range []struct{ args []string }{
-		{[]string{"rule", "add", "fwmark", "1", "table", "100"}},
-		{[]string{"route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100"}},
-		{[]string{"-6", "rule", "add", "fwmark", "1", "table", "100"}},
-		{[]string{"-6", "route", "add", "local", "::/0", "dev", "lo", "table", "100"}},
-	} {
-		if err := runCmd("ip", c.args...); err != nil {
-			slog.Warn("gateway: ip rule/route setup", "args", c.args, "err", err)
-		}
-	}
+	setupIPRules()
 	n.installed = true
 	slog.Info("DIAG: gw-intercept-install", "backend", "nftables",
 		"subnets", cfg.LANSubnets, "excludeCount", len(cfg.ExcludeIPs))
@@ -40,10 +31,7 @@ func (n *nftShellInterceptor) Install(cfg InterceptConfig) error {
 
 func (n *nftShellInterceptor) Remove() {
 	_ = runCmd("nft", "delete", "table", "inet", "k2r")
-	_ = runCmd("ip", "rule", "del", "fwmark", "1", "table", "100")
-	_ = runCmd("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100")
-	_ = runCmd("ip", "-6", "rule", "del", "fwmark", "1", "table", "100")
-	_ = runCmd("ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", "100")
+	cleanupIPRules()
 	n.installed = false
 	slog.Info("gateway: nftables rules cleaned up")
 }
@@ -53,8 +41,13 @@ func (n *nftShellInterceptor) buildScript(cfg InterceptConfig) string {
 	v4Subnets, v6Subnets := splitSubnetsByFamily(cfg.LANSubnets)
 	v4Excludes, v6Excludes := splitIPsByFamily(cfg.ExcludeIPs)
 
+	// Start from an empty table. A daemon that was killed leaves its table
+	// behind on purpose (startupRecovery) and the next Install takes over;
+	// `add` alone would append a second copy of every rule to it. The first
+	// line only makes the delete valid when there is nothing to delete — the
+	// whole script is one transaction.
 	var lines []string
-	lines = append(lines, "add table inet k2r")
+	lines = append(lines, "add table inet k2r", "delete table inet k2r", "add table inet k2r")
 
 	if len(v4Excludes) > 0 {
 		lines = append(lines, fmt.Sprintf(
@@ -102,6 +95,16 @@ func (n *nftShellInterceptor) buildScript(cfg InterceptConfig) string {
 			`add rule inet k2r prerouting meta iiftype != ether return`)
 		lines = append(lines,
 			"add rule inet k2r prerouting ether saddr != @allowed_macs drop")
+	}
+
+	// Link-scope destinations never enter the tunnel — see linkScopeDests.
+	// After the MAC allowlist, which keeps deciding who may talk at all.
+	v4Link, v6Link := linkScopeDests(cfg.LANSubnets)
+	for _, cidr := range v4Link {
+		lines = append(lines, fmt.Sprintf("add rule inet k2r prerouting ip daddr %s return", cidr))
+	}
+	for _, cidr := range v6Link {
+		lines = append(lines, fmt.Sprintf("add rule inet k2r prerouting ip6 daddr %s return", cidr))
 	}
 
 	// DNS redirect: port 53 → DNSPort (in NAT chain, not filter chain)

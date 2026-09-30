@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/kaitu-io/k2/config"
@@ -137,6 +140,7 @@ func cmdRun(args []string) {
 	defer closer()
 
 	g := gateway.New(version, commit, runtime.GOARCH, centerBeaconBase)
+	stopOnSignal(g.Stop, func() { os.Exit(1) })
 	if err := g.Run(cfg.Listen); err != nil {
 		out.fail("GATEWAY_FAILED", err.Error(), "")
 		os.Exit(1)
@@ -200,6 +204,31 @@ Flags:
 	out.printResult("  k2r status   -- check connection")
 	out.printResult("  k2r down     -- disconnect")
 	out.ok(map[string]string{"status": "installed", "config": "/etc/k2r/k2r.yml"})
+}
+
+// stopOnSignal turns the service manager's SIGTERM (`/etc/init.d/k2r stop`,
+// `systemctl stop`, reboot) and a foreground Ctrl-C into a graceful stop, so
+// the daemon takes its firewall rules with it. Go's default for both signals
+// is to die on the spot, which left the rules behind: LAN DNS redirected to a
+// port nobody listened on. A second signal means the first stop is stuck —
+// give up.
+//
+// SIGINT is left alone when the process was started with it ignored (a
+// background job of a non-interactive shell): Notify would un-ignore it.
+func stopOnSignal(stop, giveUp func()) {
+	sigs := []os.Signal{syscall.SIGTERM}
+	if !signal.Ignored(syscall.SIGINT) {
+		sigs = append(sigs, syscall.SIGINT)
+	}
+	ch := make(chan os.Signal, 2)
+	signal.Notify(ch, sigs...)
+	go func() {
+		sig := <-ch
+		slog.Info("k2r: stopping", "signal", sig.String())
+		stop()
+		<-ch
+		giveUp()
+	}()
 }
 
 // connectAfterSetup waits for the gateway daemon's IPC endpoint to come up

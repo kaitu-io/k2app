@@ -3,10 +3,13 @@
 package gateway
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os/exec"
 	"strings"
+
+	"github.com/sasha-s/go-deadlock"
 )
 
 // Interceptor installs/removes firewall rules that redirect LAN traffic
@@ -55,6 +58,82 @@ func NewInterceptor() (Interceptor, error) {
 		return &iptInterceptor{}, nil
 	}
 	return nil, fmt.Errorf("gateway: no firewall backend available (tried netlink, nft, iptables)")
+}
+
+// RemoveInterception deletes every firewall artifact a k2r daemon installs —
+// the rule table or chains and the fwmark policy route — whether or not the
+// daemon that installed them is still alive. Backend detection is
+// deterministic, so this picks the backend that daemon used. Best-effort and
+// idempotent: `k2r service uninstall` and the daemon's own shutdown both run
+// it without knowing what, if anything, is there.
+func RemoveInterception() {
+	i, err := NewInterceptor()
+	if err != nil {
+		return
+	}
+	i.Remove()
+}
+
+// errGatewayStopping is what an Install gets once shutdown has begun.
+var errGatewayStopping = errors.New("gateway: shutting down")
+
+// installGate is the one door every interceptor Install goes through.
+// Shutdown closes it before removing the rules, so an Install racing the
+// shutdown (a doUp still dialing, a device-list change) has either finished
+// before the removal or is refused — it can never land behind it and leave
+// rules pointing at a process that is exiting.
+type installGate struct {
+	installMu deadlock.Mutex // serialization: held across Install
+	closed    bool
+}
+
+// install runs i.Install unless the gate is closed. A nil gate never closes.
+func (ig *installGate) install(i Interceptor, cfg InterceptConfig) error {
+	if ig == nil {
+		return i.Install(cfg)
+	}
+	ig.installMu.Lock()
+	defer ig.installMu.Unlock()
+	if ig.closed {
+		return errGatewayStopping
+	}
+	return i.Install(cfg)
+}
+
+// close refuses every later install; it returns once no Install is running.
+func (ig *installGate) close() {
+	ig.installMu.Lock()
+	ig.closed = true
+	ig.installMu.Unlock()
+}
+
+// linkScopeDests lists, as CIDRs, the destinations that only mean something on
+// the LAN link itself: multicast, the limited broadcast and each LAN subnet's
+// directed broadcast. They must not be TPROXY'd. Nothing at the far end of the
+// tunnel can answer them, so each one costs a tunnel session that ends as a
+// relay timeout (three of those mark the datagram relay unhealthy); and the
+// TPROXY socket takes the packet away from whoever on the router was meant to
+// receive it (dnsmasq, an mDNS or UPnP daemon).
+func linkScopeDests(lanSubnets []string) (v4, v6 []string) {
+	v4Subnets, v6Subnets := splitSubnetsByFamily(lanSubnets)
+	if len(v4Subnets) > 0 {
+		v4 = append(v4, "224.0.0.0/4", "255.255.255.255/32")
+	}
+	for _, s := range v4Subnets {
+		_, ipNet, _ := net.ParseCIDR(s)
+		if ones, _ := ipNet.Mask.Size(); ones > 30 {
+			continue // /31 and /32 have no broadcast address
+		}
+		network, bcast := ipNet.IP.To4(), make(net.IP, net.IPv4len)
+		for i := range bcast {
+			bcast[i] = network[i] | ^ipNet.Mask[i]
+		}
+		v4 = append(v4, bcast.String()+"/32")
+	}
+	if len(v6Subnets) > 0 {
+		v6 = append(v6, "ff00::/8")
+	}
+	return
 }
 
 func splitIPsByFamily(ips []string) (v4, v6 []string) {
