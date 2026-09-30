@@ -745,6 +745,15 @@ func (tm *TransportManager) updateTCPWSMinEchoRTT(rtt time.Duration) time.Durati
 // RTT inflation is its only quality signal). An IsEchoUnsupported error
 // (old server without an echo handler) is benign and recorded as neither
 // success nor failure.
+//
+// A successful tcpws echo with rtt <= 0 completed inside one tick of the
+// caller's clock: on windows/amd64 Go's monotonic clock is
+// KUSER_SHARED_DATA.InterruptTime, which only advances on a clock interrupt
+// (0.5–15.6 ms), so the two time.Now() calls around a fast echo routinely
+// read equal. That sample has no measurable inflation, so it counts as full
+// quality; it never touches the min-RTT ratchet, whose zero value means
+// "unset" and which a sub-tick reading could not serve as a baseline for.
+// Dropping it instead left quality at neutral and scoreTCPWS pinned at 0.5.
 func (tm *TransportManager) RecordEchoResult(channel string, rtt time.Duration, err error, now time.Time) {
 	sc := tm.scoreFor(channel)
 	if sc == nil {
@@ -758,10 +767,15 @@ func (tm *TransportManager) RecordEchoResult(channel string, rtt time.Duration, 
 		return
 	}
 	sc.RecordAvailability(true, now)
-	if channel == "tcpws" && rtt > 0 {
-		minRTT := tm.updateTCPWSMinEchoRTT(rtt)
-		sc.RecordQuality(QualityFromEchoRTT(rtt, minRTT), now)
+	if channel != "tcpws" {
+		return
 	}
+	if rtt <= 0 {
+		sc.RecordQuality(1.0, now)
+		return
+	}
+	minRTT := tm.updateTCPWSMinEchoRTT(rtt)
+	sc.RecordQuality(QualityFromEchoRTT(rtt, minRTT), now)
 }
 
 // EvaluateSelector is the exported passthrough to evaluateSelector (Task 7)
