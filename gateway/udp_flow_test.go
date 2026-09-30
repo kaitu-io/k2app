@@ -487,7 +487,7 @@ func origDstListener(t *testing.T) *net.UDPConn {
 
 func TestGatewayProvider_UDPReadLoop_OneSessionPerClientSocket(t *testing.T) {
 	listener := origDstListener(t)
-	p := newGatewayProvider(nil, InterceptConfig{})
+	p := newGatewayProvider(nil, InterceptConfig{}, nil)
 	h := &flowHandler{}
 	p.startUDPRead(listener, h)
 	defer func() {
@@ -543,7 +543,7 @@ func TestGatewayProvider_UDPReadLoop_OneSessionPerClientSocket(t *testing.T) {
 // packets that follow: each one gets a fresh session and a fresh verdict.
 func TestGatewayProvider_UDPReadLoop_AbandonedSessionLeavesTheTable(t *testing.T) {
 	listener := origDstListener(t)
-	p := newGatewayProvider(nil, InterceptConfig{})
+	p := newGatewayProvider(nil, InterceptConfig{}, nil)
 	h := &closingHandler{}
 	p.startUDPRead(listener, h)
 	defer func() {

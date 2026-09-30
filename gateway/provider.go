@@ -37,15 +37,20 @@ type gatewayProvider struct {
 	// one flow, one tunnel session (see tproxyUDPConn).
 	flows *udpFlowTable
 
+	// gate is the Gateway's install gate: no rules once the daemon has begun
+	// shutting down. nil (tests) installs unconditionally.
+	gate *installGate
+
 	done chan struct{}
 }
 
 var _ provider.Provider = (*gatewayProvider)(nil)
 
-func newGatewayProvider(interceptor Interceptor, cfg InterceptConfig) *gatewayProvider {
+func newGatewayProvider(interceptor Interceptor, cfg InterceptConfig, gate *installGate) *gatewayProvider {
 	return &gatewayProvider{
 		interceptor: interceptor,
 		cfg:         cfg,
+		gate:        gate,
 		replies:     newReplySocketCache(transparentBind),
 		flows:       newUDPFlowTable(),
 		done:        make(chan struct{}),
@@ -103,7 +108,7 @@ func (p *gatewayProvider) Start(ctx context.Context, handler provider.Connection
 		p.dnsUDP6 = dnsUDP6
 	}
 
-	if err := p.interceptor.Install(p.cfg); err != nil {
+	if err := p.gate.install(p.interceptor, p.cfg); err != nil {
 		tcpLn4.Close()
 		tcpLn6.Close()
 		udpConn4.Close()

@@ -236,9 +236,22 @@ func TestIptRuleGeneration_EmptyExclude(t *testing.T) {
 		ListenPort: 12345,
 		LANSubnets: []string{"192.168.1.0/24"},
 	})
-	joined := flattenCmds(cmds)
-	if strings.Contains(joined, "RETURN") {
-		t.Error("should not have RETURN rules with no excludes")
+	// The only RETURN rules left are the link-scope exemptions, which do not
+	// depend on ExcludeIPs.
+	linkScope, _ := linkScopeDests([]string{"192.168.1.0/24"})
+	for _, line := range strings.Split(flattenCmds(cmds), "\n") {
+		if !strings.Contains(line, "RETURN") {
+			continue
+		}
+		isLinkScope := false
+		for _, cidr := range linkScope {
+			if strings.Contains(line, "-d "+cidr+" ") {
+				isLinkScope = true
+			}
+		}
+		if !isLinkScope {
+			t.Errorf("RETURN rule with no excludes configured: %s", line)
+		}
 	}
 }
 
@@ -515,6 +528,7 @@ type fakeIptablesState struct {
 	chains        map[string]bool // "iptables:mangle:K2R" → exists
 	refs          map[string]int  // "iptables:mangle:K2R" → reference count from PREROUTING jumps
 	outputRefs    map[string]int  // "iptables:nat:K2R_DNS_OUT" → reference count from OUTPUT jumps
+	ipEntries     map[string]int  // "rule fwmark 1 table 100" → how many copies `ip` holds
 	failPredicate func(name string, args []string) error
 }
 
@@ -523,6 +537,7 @@ func newFakeIptables() *fakeIptablesState {
 		chains:     map[string]bool{},
 		refs:       map[string]int{},
 		outputRefs: map[string]int{},
+		ipEntries:  map[string]int{},
 	}
 }
 
@@ -575,7 +590,10 @@ func (f *fakeIptablesState) install(t *testing.T) {
 
 // simulate models the iptables behaviors that matter for our tests.
 func (f *fakeIptablesState) simulate(name string, args []string) error {
-	// Skip non-iptables binaries (ip, ip6) — succeed silently.
+	if name == "ip" {
+		return f.simulateIP(args)
+	}
+	// Skip other non-iptables binaries — succeed silently.
 	if name != "iptables" && name != "ip6tables" {
 		return nil
 	}
@@ -646,6 +664,38 @@ func (f *fakeIptablesState) simulate(name string, args []string) error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// simulateIP models what matters about `ip rule` / `ip route`: `rule add`
+// stacks another copy of an identical rule, `route add` refuses a duplicate,
+// and `del` removes one copy and fails when there is none.
+func (f *fakeIptablesState) simulateIP(args []string) error {
+	var key []string
+	op, isRule := "", false
+	for _, a := range args {
+		switch a {
+		case "add", "del":
+			op = a
+			continue
+		case "rule":
+			isRule = true
+		}
+		key = append(key, a)
+	}
+	k := strings.Join(key, " ")
+	switch op {
+	case "add":
+		if !isRule && f.ipEntries[k] > 0 {
+			return fmt.Errorf("ip %s: File exists", strings.Join(args, " "))
+		}
+		f.ipEntries[k]++
+	case "del":
+		if f.ipEntries[k] == 0 {
+			return fmt.Errorf("ip %s: No such file or directory", strings.Join(args, " "))
+		}
+		f.ipEntries[k]--
 	}
 	return nil
 }

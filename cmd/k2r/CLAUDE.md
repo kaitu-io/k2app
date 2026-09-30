@@ -14,7 +14,7 @@ k2r status                    Connection status
 k2r reset                     Unbind router: wipe credential, state, control key
 
 k2r service install           Install as system service (systemd or OpenWRT procd)
-k2r service uninstall         Remove system service
+k2r service uninstall         Remove system service and the firewall rules
 k2r upgrade [--check]         Check/install updates
 
 k2r version                   Version info
@@ -33,13 +33,18 @@ k2r help                      Usage info
 
 - `main.go` — Subcommand dispatch, global flags, `cmdRun`/`cmdSetup`/`cmdUp`/`cmdDown`/`cmdStatus`/`cmdReset`/`cmdService`
 - `output.go` — Output layer (human vs JSON switching)
-- `service_linux.go` — systemd unit + OpenWRT procd init script generation, install/uninstall
+- `service_linux.go` — systemd unit + OpenWRT procd init script generation, install/uninstall (`uninstallThenClearRules`: service first, then `gateway.RemoveInterception`)
 - `service_linux_test.go` — Tests for the OpenWRT procd script generation
+- `lifecycle_test.go` — `stopOnSignal`, uninstall ordering
 - `upgrade.go` — `k2r upgrade`: CLI-side `webui.Upgrader` (`newCliUpgrader`), CDN endpoints mirror the gateway daemon's `newK2rUpgrader`
 
 ## Pattern
 
 Uses `flag.NewFlagSet` per subcommand, same as `cmd/k2` and `cmd/k2s`. `up`/`down`/`status`/`reset` are IPC calls via `gateway.NewClient(gateway.DefaultGatewayAddr)` to the running gateway daemon's HTTP API — not direct calls into the `gateway` package. `run` builds a `gateway.Gateway` directly (`gateway.New(...).Run(...)`) since it *is* the daemon process. Output uses `out.ok()`/`out.fail()`/`out.printResult()` for JSON/human switching.
+
+## `run` and signals
+
+`cmdRun` calls `stopOnSignal(g.Stop, …)` before `g.Run`: SIGTERM (procd / systemd stop, reboot) and SIGINT stop the gateway gracefully, which is what removes its firewall rules — see `gateway/CLAUDE.md`. A second signal exits at once. SIGINT is not claimed when the process started with it ignored (background job of a non-interactive shell); SIGHUP is not handled at all, so `nohup k2r run &` keeps working.
 
 ## `setup`
 

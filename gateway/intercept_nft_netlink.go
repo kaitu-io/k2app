@@ -71,6 +71,8 @@ func (n *nftNetlinkInterceptor) Install(cfg InterceptConfig) error {
 		n.addMACAllowlist(cfg.AllowedMACs)
 	}
 
+	n.addLinkScopeExempt(cfg.LANSubnets)
+
 	if cfg.DNSRedirect && cfg.DNSPort > 0 {
 		n.addDNSRedirect(cfg, n.table)
 		n.addDNSRedirectOutput(cfg, n.table)
@@ -91,16 +93,19 @@ func (n *nftNetlinkInterceptor) Install(cfg InterceptConfig) error {
 	return nil
 }
 
+// Remove deletes the table by name, not through n.table: an interceptor that
+// never installed anything must still clear what a dead daemon left
+// (RemoveInterception). Deleting a table that is not there fails the flush,
+// nothing else.
 func (n *nftNetlinkInterceptor) Remove() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-
-	if n.table != nil {
-		n.conn.DelTable(n.table)
-		_ = n.conn.Flush()
-	}
+	n.conn.DelTable(&nftables.Table{Family: nftables.TableFamilyINet, Name: "k2r"})
+	_ = n.conn.Flush()
 	cleanupIPRules()
 	n.installed = false
+	n.table = nil
+	n.chain = nil
 	n.macSet = nil
 	slog.Info("gateway: nftables-netlink rules cleaned up")
 }
@@ -309,6 +314,41 @@ func dnsExemptTPROXYExprs(proto byte) []expr.Any {
 	}
 }
 
+// daddrReturnExprs builds `ip daddr <cidr> return` / `ip6 daddr <cidr> return`.
+// The nfproto match is not optional in an inet table: a raw network-header
+// offset is read from whatever packet arrives, so without it the IPv4 rule
+// would test bytes of an IPv6 source address (and the reverse).
+func daddrReturnExprs(ipNet *net.IPNet) []expr.Any {
+	family, offset, addr := byte(unix.NFPROTO_IPV4), uint32(16), []byte(ipNet.IP.To4())
+	if addr == nil {
+		family, offset, addr = unix.NFPROTO_IPV6, 24, ipNet.IP.To16()
+	}
+	return []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{family}},
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: offset, Len: uint32(len(addr))},
+		&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: uint32(len(addr)), Mask: ipNet.Mask, Xor: make([]byte, len(addr))},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr},
+		&expr.Verdict{Kind: expr.VerdictReturn},
+	}
+}
+
+// addLinkScopeExempt must run BEFORE addTPROXYRules (and after the MAC
+// allowlist, which keeps deciding who may talk at all) — see linkScopeDests.
+func (n *nftNetlinkInterceptor) addLinkScopeExempt(lanSubnets []string) {
+	v4, v6 := linkScopeDests(lanSubnets)
+	for _, cidr := range append(v4, v6...) {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		n.conn.AddRule(&nftables.Rule{
+			Table: n.table, Chain: n.chain,
+			Exprs: daddrReturnExprs(ipNet),
+		})
+	}
+}
+
 // addDNSExemptFromTPROXY must run BEFORE addTPROXYRules so the return
 // precedes the tproxy verdicts in the chain.
 func (n *nftNetlinkInterceptor) addDNSExemptFromTPROXY() {
@@ -419,7 +459,12 @@ func padString(s string, length int) []byte {
 	return b
 }
 
+// setupIPRules installs the policy route every backend's TPROXY mark relies
+// on. It clears first: `ip rule add` does not dedupe, and an Install that
+// follows a dead daemon (no Remove) would otherwise stack one more copy of
+// the rule on every restart.
 func setupIPRules() {
+	cleanupIPRules()
 	for _, c := range []struct{ args []string }{
 		{[]string{"rule", "add", "fwmark", "1", "table", "100"}},
 		{[]string{"route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100"}},
@@ -432,9 +477,23 @@ func setupIPRules() {
 	}
 }
 
+// maxStaleIPRules bounds cleanupIPRules' delete-until-gone loop.
+const maxStaleIPRules = 32
+
+// cleanupIPRules deletes the policy route, however many copies of each entry
+// earlier daemons stacked up (see setupIPRules): each delete removes one copy
+// and fails once none is left.
 func cleanupIPRules() {
-	_ = runCmd("ip", "rule", "del", "fwmark", "1", "table", "100")
-	_ = runCmd("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100")
-	_ = runCmd("ip", "-6", "rule", "del", "fwmark", "1", "table", "100")
-	_ = runCmd("ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", "100")
+	for _, args := range [][]string{
+		{"rule", "del", "fwmark", "1", "table", "100"},
+		{"route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100"},
+		{"-6", "rule", "del", "fwmark", "1", "table", "100"},
+		{"-6", "route", "del", "local", "::/0", "dev", "lo", "table", "100"},
+	} {
+		for i := 0; i < maxStaleIPRules; i++ {
+			if runCmd("ip", args...) != nil {
+				break
+			}
+		}
+	}
 }

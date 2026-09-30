@@ -5,6 +5,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/kaitu-io/k2/config"
@@ -86,6 +88,21 @@ type Gateway struct {
 	slotRegistry   *probe.Registry
 	slotProbeSvc   *probe.Service
 	slotDownSince  map[int]time.Time
+
+	// gate is closed by shutdown so nothing can install rules behind it.
+	gate installGate
+
+	// restartHandoff is set while the daemon restarts its own service (OTA
+	// upgrade): shutdown then leaves the rules for the successor to replace.
+	restartHandoff atomic.Bool
+
+	// ups counts the doUps that succeeded (written under opMu). An
+	// auto-reconnect loop remembers the value it started with and stands down
+	// once it moves: somebody else's tunnel is up.
+	ups atomic.Uint64
+
+	// reconnectGen numbers the auto-reconnect loops; only the newest may act.
+	reconnectGen atomic.Uint64
 }
 
 // k2rReleaseEndpoints lists the CDN base URLs used by k2r's OTA upgrader.
@@ -98,19 +115,44 @@ var k2rReleaseEndpoints = []string{
 // newK2rUpgrader wires a webui.Upgrader with k2r-specific CDN, state, and
 // restart configuration. RestartFunc is detected at call time so OpenWRT
 // hosts use procd while systemd hosts use systemctl.
-func newK2rUpgrader(version string) *webui.Upgrader {
+func newK2rUpgrader(version string, restart func()) *webui.Upgrader {
 	return webui.NewUpgrader(version, webui.UpgradeConfig{
 		BinaryName:       "k2r",
 		StateDir:         stateDir(),
 		ReleaseEndpoints: k2rReleaseEndpoints,
-		RestartFunc: func() {
-			if webui.IsOpenWRT() {
-				exec.Command("/etc/init.d/k2r", "restart").Run()
-			} else {
-				exec.Command("systemctl", "restart", "k2r").Run()
-			}
-		},
+		RestartFunc:      restart,
 	})
+}
+
+// restartService asks the service manager to restart k2r, which kills this
+// process while the command is still running. The handoff flag makes that
+// shutdown leave the rules in place: the successor's Install replaces them
+// back-to-back, so LAN DNS is never answered by the ISP resolver in between
+// (the same handoff a killed daemon gives, see startupRecovery).
+func (g *Gateway) restartService() {
+	g.restartHandoff.Store(true)
+	runServiceRestart()
+	// The command returning does not mean nothing restarted us. systemd
+	// signals the unit's whole cgroup, so `systemctl restart` — our child — is
+	// ended by the same SIGTERM that is on its way to us, and returns a moment
+	// before shutdown reads the flag. Only a daemon still running well after
+	// that was not restarted.
+	time.Sleep(restartHandoffLinger)
+	g.restartHandoff.Store(false)
+}
+
+// restartHandoffLinger is how long the handoff outlives the restart command.
+// Variable so tests can shrink it.
+var restartHandoffLinger = 5 * time.Second
+
+// runServiceRestart is a package var so tests can observe restartService
+// without restarting anything.
+var runServiceRestart = func() {
+	if webui.IsOpenWRT() {
+		exec.Command("/etc/init.d/k2r", "restart").Run()
+	} else {
+		exec.Command("systemctl", "restart", "k2r").Run()
+	}
 }
 
 // New creates a Gateway ready to Run. beaconBase is the Center base URL the
@@ -127,8 +169,8 @@ func New(version, commit, arch, beaconBase string) *Gateway {
 		commit:     commit,
 		arch:       arch,
 		beaconBase: beaconBase,
-		updater:    newK2rUpgrader(version),
 	}
+	g.updater = newK2rUpgrader(version, g.restartService)
 	g.subsMgr = subscription.NewManager(
 		filepath.Join(stateDir(), "subs"),
 		nil,
@@ -235,13 +277,7 @@ func (g *Gateway) Run(addr string) error {
 
 	select {
 	case <-g.ctx.Done():
-		// Daemon-internal shutdown (procd SIGTERM, systemctl restart, etc.).
-		// userInitiated=false so state.json keeps {State:"connected", Config}
-		// — next start's tryAutoReconnect resumes the tunnel automatically.
-		g.doDown(false)
-		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutCancel()
-		g.httpServer.Shutdown(shutCtx)
+		g.shutdown()
 		return nil
 	case err := <-errCh:
 		return err
@@ -249,16 +285,116 @@ func (g *Gateway) Run(addr string) error {
 }
 
 // Stop cancels the gateway context, triggering graceful shutdown of the
-// HTTP server and tunnel.
+// HTTP server and tunnel. cmd/k2r calls it on SIGTERM / SIGINT.
 func (g *Gateway) Stop() {
 	g.cancel()
+}
+
+// shutdownGrace bounds the part of shutdown that may wait: tunnel teardown
+// queues behind an in-flight doUp (a transport race holds opMu for ~5 s), and
+// procd SIGKILLs a service 5 s after SIGTERM. Variable so tests can shrink it.
+var shutdownGrace = 3 * time.Second
+
+// removeInterception is a package var so tests can observe shutdown without a
+// firewall.
+var removeInterception = RemoveInterception
+
+// shutdown runs when the daemon is told to stop (procd / systemd SIGTERM,
+// Ctrl-C). The rules go first and unconditionally: left behind, the DNS
+// redirect points every LAN query — and the router's own — at a port nobody
+// listens on, which is "the internet is down" until someone reboots the
+// router. They are removed by name, not through g.interceptor, so a doUp
+// still dialing cannot delay it and rules inherited from a crashed daemon go
+// too; the gate keeps that doUp from installing them again afterwards.
+//
+// state.json is not touched (doDown(false)): the next start reconnects.
+func (g *Gateway) shutdown() {
+	if g.restartHandoff.Load() {
+		slog.Info("gateway: restarting, interception left for the next instance")
+		return
+	}
+	g.gate.close()
+	removeInterception()
+
+	done := make(chan struct{})
+	safego.Go(func() {
+		defer close(done)
+		g.doDown(false)
+		if g.httpServer != nil {
+			shutCtx, shutCancel := context.WithTimeout(context.Background(), shutdownGrace)
+			defer shutCancel()
+			g.httpServer.Shutdown(shutCtx)
+		}
+	})
+	select {
+	case <-done:
+	case <-time.After(shutdownGrace):
+		slog.Warn("gateway: shutdown still busy after grace period, exiting", "grace", shutdownGrace)
+	}
 }
 
 // doUp connects with the given config. Acquires opMu to serialize.
 func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	g.opMu.Lock()
 	defer g.opMu.Unlock()
+	return g.doUpLocked(cfg)
+}
 
+// errAutoReconnectSuperseded ends an auto-reconnect loop: the session it was
+// restoring is no longer what the router should be running.
+var errAutoReconnectSuperseded = errors.New("gateway: auto-reconnect superseded")
+
+// autoReconnectUp is one auto-reconnect loop's attempt: doUp with the session
+// state.json holds at that moment (a set-credential whose own connect failed
+// has replaced it — the loop then restores the new credential, not the one it
+// saw when it started). Each attempt first asks, under opMu — the lock every
+// up/down holds — whether the loop still has a job. It has none once
+//
+//   - another doUp succeeded (ups moved): a tunnel is up, and doUp would begin
+//     by tearing it down. A user's up that FAILED changes nothing — the loop
+//     is then still the only thing bringing the router back;
+//   - the saved state no longer says connected: `k2r down` or reset;
+//   - a newer loop exists (reconnectGen).
+//
+// Because the checks and the doUp share one opMu hold, an attempt runs either
+// entirely before somebody else's operation (which then replaces it) or not
+// at all.
+//
+// dead is the engine whose outbound-fatal started the loop (nil for the loop
+// started at boot). Such a loop also refuses to run over a different live
+// engine: the event came from a tunnel that has since been replaced
+// (Engine.Stop does not join the replace loop), or another up succeeded
+// between the event and this loop reading ups. No engine at all is not that —
+// the loop's own failed attempt, or a user's, leaves none.
+func (g *Gateway) autoReconnectUp(dead *engine.Engine) func() error {
+	ups := g.ups.Load()
+	gen := g.reconnectGen.Add(1)
+	return func() error {
+		g.opMu.Lock()
+		defer g.opMu.Unlock()
+		if g.ups.Load() != ups || g.reconnectGen.Load() != gen {
+			return errAutoReconnectSuperseded
+		}
+		st := loadState()
+		if st == nil || st.State != "connected" || st.Config == nil {
+			return errAutoReconnectSuperseded
+		}
+		if dead != nil {
+			g.mu.Lock()
+			current := g.eng
+			g.mu.Unlock()
+			if current != nil && current != dead {
+				return errAutoReconnectSuperseded
+			}
+		}
+		// Derive Server from routes (Server is json:"-", not persisted).
+		SetGatewayDefaults(st.Config)
+		return g.doUpLocked(st.Config)
+	}
+}
+
+// doUpLocked is doUp's body. Caller must hold opMu.
+func (g *Gateway) doUpLocked(cfg *GatewayConfig) error {
 	g.closeTunnel()
 
 	var subnets []string
@@ -370,20 +506,17 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 
 		if interceptor != nil {
 			interceptor.Remove()
-			if err := interceptor.Install(newICfg); err != nil {
+			if err := g.gate.install(interceptor, newICfg); err != nil {
 				slog.Error("gateway: failed to reinstall interceptor after mode change", "err", err)
 			}
 		}
 	}
 
-	prov := newGatewayProvider(interceptor, icfg)
+	prov := newGatewayProvider(interceptor, icfg, &g.gate)
 
 	eng := engine.New()
-	eng.SetEventHandler(g)
-	var obProvider engine.OutboundProvider = g.subsMgr
-	if multiSlot {
-		obProvider = nil // 确定性绑定:禁用 outbound 热替换(fail-closed)
-	}
+	eng.SetEventHandler(engineEvents{g: g, eng: eng})
+	obProvider := outboundProviderFor(g.subsMgr, len(subs), multiSlot)
 	ecfg := engineConfig(engineClient, prov, g.broadcastSnapshot, obProvider)
 	if multiSlot {
 		ecfg.DNSForwardUpstream = slotDNSUpstream
@@ -451,8 +584,26 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 		g.startSlotHealth()
 	}
 
+	g.ups.Add(1)
 	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})
 	return nil
+}
+
+// outboundProviderFor picks where the engine gets a replacement server when
+// the current one stops answering. nil means none: the engine then keeps
+// re-racing the same server for as long as it takes.
+//
+//   - multi-slot: bindings are deterministic, hot replacement is off
+//     (fail-closed).
+//   - no subscription session (every route is a plain k2v5:// URL): the
+//     manager has nothing to rotate through. Asked anyway, it answers
+//     ErrNoSubscription and the engine shuts down for good after the second
+//     failed re-race — a node unreachable for 15 s.
+func outboundProviderFor(mgr *subscription.Manager, sessions int, multiSlot bool) engine.OutboundProvider {
+	if multiSlot || sessions == 0 {
+		return nil
+	}
+	return mgr
 }
 
 // doDown disconnects and cleans up. Acquires opMu to serialize.
@@ -604,15 +755,37 @@ func (g *Gateway) OnStatus(status engine.Status) {
 	g.broadcastStatus(status)
 }
 
-// OnStats implements engine.EventHandler.
-func (g *Gateway) OnStats(tx, rx int64) {}
+// engineEvents is one engine's engine.EventHandler. It carries the engine so
+// an outbound-fatal can be tied to the tunnel it came from: Engine.Stop does
+// not join the replace loop, and a late event from an engine that has since
+// been replaced must not restart the live one.
+type engineEvents struct {
+	g   *Gateway
+	eng *engine.Engine
+}
 
-// OnOutboundFatal implements engine.EventHandler. Fired when the
-// OutboundProvider (subsMgr) returns no further candidates and the engine
-// has terminated the tunnel. Gateway logs and updates lastStatus; the SSE
-// broadcast happens via OnStatus's normal path.
-func (g *Gateway) OnOutboundFatal(outbound string, err error) {
-	slog.Warn("gateway: outbound fatal", "url", config.TruncateVia(outbound), "err", err)
+// OnStatus implements engine.EventHandler.
+func (h engineEvents) OnStatus(status engine.Status) { h.g.OnStatus(status) }
+
+// OnStats implements engine.EventHandler.
+func (h engineEvents) OnStats(tx, rx int64) {}
+
+// OnOutboundFatal implements engine.EventHandler. The engine fires it when
+// the OutboundProvider has no server left to try, then shuts itself down for
+// good (Engine.fail): it never reconnects on its own, and the rules it was
+// serving stay behind on a dead listener. A router has nobody watching to
+// press connect again — a node that is unreachable for 15 s on an idle router
+// is enough to get here (OpenWrt 25.12, 2026-09-30) — so the gateway brings
+// the saved session back itself, on the boot-time retry schedule.
+func (h engineEvents) OnOutboundFatal(outbound string, err error) {
+	slog.Warn("gateway: outbound fatal, reconnecting from the saved session",
+		"url", config.TruncateVia(outbound), "err", err)
+	safego.Go(func() { h.g.reconnectAfterFatal(h.eng) })
+}
+
+// reconnectAfterFatal is tryAutoReconnect for a tunnel whose engine gave up.
+func (g *Gateway) reconnectAfterFatal(dead *engine.Engine) {
+	g.runAutoReconnectLoop(g.ctx, g.autoReconnectUp(dead), autoReconnectBackoff)
 }
 
 func (g *Gateway) broadcastSnapshot(snap engine.HealthSnapshot) {
@@ -642,6 +815,12 @@ func (g *Gateway) broadcastStatus(status engine.Status) {
 // by the kernel = fail-CLOSED, the correct security posture for a VPN
 // router. Install's pre-flight Remove + atomic re-add then takes over the
 // moment auto-reconnect succeeds, with only a microsecond window.
+//
+// That is the iptables backend. nftables' tproxy is a no-op when no socket
+// listens, so there the orphaned table lets TCP/UDP through unproxied and
+// only DNS — redirected to the dead listener — keeps failing (OpenWrt 25.12,
+// 2026-09-30). Still the better half to keep: no LAN name is resolved by the
+// ISP while the daemon is away.
 //
 // If a future startup-time recovery task is needed (cleaning some other
 // resource, validating a non-iptables artifact), add it here.
@@ -685,17 +864,17 @@ var autoReconnectBackoff = []time.Duration{
 }
 
 // tryAutoReconnect loads persisted state and reconnects if the gateway was
-// previously connected within the last 7 days. Retries with bounded backoff
+// connected when it last stopped. Retries with bounded backoff
 // (autoReconnectBackoff) then steady-state at the cap interval until either
 // reconnect succeeds or g.ctx is cancelled.
 func (g *Gateway) tryAutoReconnect() {
-	g.runAutoReconnectLoop(g.ctx, g.doUp, autoReconnectBackoff)
+	g.runAutoReconnectLoop(g.ctx, g.autoReconnectUp(nil), autoReconnectBackoff)
 }
 
 // runAutoReconnectLoop is the testable core of tryAutoReconnect. attempt is
 // invoked between sleeps from the backoff slice. After backoff is exhausted,
-// the final delay is reused indefinitely. Returns on first attempt success
-// or on ctx cancel.
+// the final delay is reused indefinitely. Returns on first attempt success,
+// on ctx cancel, or when attempt reports errAutoReconnectSuperseded.
 //
 // Invariants:
 //   - attempt is never called if state.json fails the connected+config gate
@@ -705,21 +884,19 @@ func (g *Gateway) tryAutoReconnect() {
 //   - Empty backoff slice → no-op (returns immediately).
 func (g *Gateway) runAutoReconnectLoop(
 	ctx context.Context,
-	attempt func(*GatewayConfig) error,
+	attempt func() error,
 	backoff []time.Duration,
 ) {
 	st := loadState()
+	// No age limit on the saved session: the timestamp is written when the
+	// tunnel comes up, so on a router it only says how long the tunnel has
+	// been running. Only an explicit `k2r down` ends the wish to reconnect.
 	if st == nil || st.State != "connected" || st.Config == nil {
-		return
-	}
-	if time.Since(st.Timestamp) > 7*24*time.Hour {
 		return
 	}
 	if len(backoff) == 0 {
 		return
 	}
-	// Derive Server from routes (Server is json:"-", not persisted).
-	SetGatewayDefaults(st.Config)
 
 	sleepThen := func(d time.Duration) bool {
 		select {
@@ -736,7 +913,12 @@ func (g *Gateway) runAutoReconnectLoop(
 		} else {
 			slog.Info("gateway: auto-reconnect retrying", "attempt", n)
 		}
-		if err := attempt(st.Config); err != nil {
+		err := attempt()
+		if errors.Is(err, errAutoReconnectSuperseded) {
+			slog.Info("gateway: auto-reconnect stands down, its saved session is no longer wanted", "attempt", n)
+			return true
+		}
+		if err != nil {
 			slog.Warn("gateway: auto-reconnect failed", "attempt", n, "err", err)
 			return false
 		}

@@ -56,11 +56,7 @@ func (i *iptInterceptor) Remove() {
 	cleanK2RFamily("ip6tables", "mangle")
 	cleanK2RFamily("ip6tables", "nat")
 
-	// IP rules — idempotent del. Errors expected when not present.
-	_ = runCmd("ip", "rule", "del", "fwmark", "1", "table", "100")
-	_ = runCmd("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100")
-	_ = runCmd("ip", "-6", "rule", "del", "fwmark", "1", "table", "100")
-	_ = runCmd("ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", "100")
+	cleanupIPRules()
 
 	i.installed = false
 	slog.Info("gateway: iptables rules cleaned up")
@@ -146,6 +142,7 @@ func extractJumpTarget(line string) string {
 func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets []string) {
 	v4Subnets, v6Subnets = splitSubnetsByFamily(cfg.LANSubnets)
 	v4Excludes, v6Excludes := splitIPsByFamily(cfg.ExcludeIPs)
+	v4Link, v6Link := linkScopeDests(cfg.LANSubnets)
 	port := fmt.Sprintf("%d", cfg.ListenPort)
 
 	if len(v4Subnets) > 0 {
@@ -165,6 +162,10 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 			cmds = append(cmds, cmdSpec{"iptables", ipt("-t", "mangle", "-A", "K2R_MAC", "-j", "DROP")})
 			// Jump to MAC check from K2R — if RETURN, continues to TPROXY below
 			cmds = append(cmds, cmdSpec{"iptables", ipt("-t", "mangle", "-A", "K2R", "-j", "K2R_MAC")})
+		}
+		// Link-scope destinations never enter the tunnel — see linkScopeDests.
+		for _, cidr := range v4Link {
+			cmds = append(cmds, cmdSpec{"iptables", ipt("-t", "mangle", "-A", "K2R", "-d", cidr, "-j", "RETURN")})
 		}
 		// Port 53 is K2R_DNS's (nat REDIRECT) when DNSRedirect is on; TPROXY
 		// must not claim it as well — see the nft interceptor for the
@@ -196,6 +197,9 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 			}
 			cmds = append(cmds, cmdSpec{"ip6tables", ipt("-t", "mangle", "-A", "K2R_MAC", "-j", "DROP")})
 			cmds = append(cmds, cmdSpec{"ip6tables", ipt("-t", "mangle", "-A", "K2R", "-j", "K2R_MAC")})
+		}
+		for _, cidr := range v6Link {
+			cmds = append(cmds, cmdSpec{"ip6tables", ipt("-t", "mangle", "-A", "K2R", "-d", cidr, "-j", "RETURN")})
 		}
 		if cfg.DNSRedirect && cfg.DNSPort > 0 {
 			cmds = append(cmds,

@@ -123,6 +123,17 @@ Asserts: one client socket → one egress port; two destinations → one stable 
 
 Gotchas: keep `RTT_MS` > 0 — on a zero-latency veth the channel scoreboard reads load as RTT inflation and flips QUIC→TCP-WS, which looks like a regression. k2r hijacks the host's DNS while it runs (`dnsredir_out`), so install packages first. Without a Linux box, a QEMU VM works (`qemu-system-aarch64 -accel hvf` + an Ubuntu cloud image on Apple Silicon); a second QEMU VM running the OpenWrt `armsr/armv8` image, its LAN NIC joined to the first VM with `-netdev socket`, gives the same test on a real OpenWrt userland when the testlab is unreachable.
 
+## k2r lifecycle checks (`k2r-lifecycle/router-check.sh`)
+
+Runs **on** an OpenWrt router (busybox `sh`, root) that has k2r installed as a service and connected. It drives procd the way a user does — stop, start, `kill -9`, restart, stop in the middle of a connect, a saved config that no longer connects plus a manual `k2r up`, a saved session dated 2020, the node going silent for 45 s (only with `NODE_IP=<node address>`; it drops the node's packets in a throwaway nft table), uninstall — and after each step checks what is left: the `inet k2r` table, the `fwmark 0x1` rules, the table-100 route, the daemon, whether the router still resolves names, `state.json`.
+
+```bash
+ssh root@<router> 'cat > /tmp/router-check.sh' < test/k2r-lifecycle/router-check.sh   # no sftp-server on OpenWrt: plain scp fails
+ssh root@<router> sh /tmp/router-check.sh                                           # exit 0 = all pass; baseline f18bf7e: 15 FAILED
+```
+
+None of it is reachable from the Docker UAT or the unit tests: they have no service manager sending SIGTERM, no respawn, no busybox `ip`, no nft backend with a dead listener. On the testlab that is VM 102 (see the next section for how to bring it up); step 6 needs the saved URL to be something the router can stop reaching, which the script arranges itself by pointing `state.json` at TEST-NET-1.
+
 ## OpenWrt install-flow lab (testlab VM 102)
 
 The k2r-uat harness proves the data plane on Linux; it does **not** run `scripts/install-k2r.sh`, procd, apk/opkg or LuCI. Those only break on a real OpenWrt userland, so the install flow is exercised on the testlab OpenWrt VM (PVE `192.168.1.2`, VM 102 = stock OpenWrt 25.12 x86_64 + qemu-ga, snapshot `baseline`; `TESTLAB_OWNER=<you> testlab-up 102 local` rolls back + starts it, `testlab-down 102` releases it). The LAN client is VM 120 with `testlab-up 120 openwrt` (its test NIC lands behind the router's `br-lan` 10.30.0.0/24; the mgmt NIC 10.10.10.20 stays reachable). Recipe (2026-09-16):
