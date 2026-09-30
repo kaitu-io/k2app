@@ -17,7 +17,7 @@ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Resp
  *
  * @example
  * ```ts
- * const client = new CenterApiClient('https://api.kaitu.io', 'ktu_xxx')
+ * const client = new CenterApiClient('https://k2.52j.me', 'ktu_xxx')
  * const data = await client.request('/api/v1/users')
  * ```
  */
