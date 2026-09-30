@@ -1,0 +1,11 @@
+{
+  "mobileNav": "ドキュメント",
+  "navLabel": "ドキュメントのナビゲーション",
+  "sections": {
+    "overview": "概要",
+    "getting-started": "はじめに",
+    "technical": "技術",
+    "comparison": "比較",
+    "uncategorized": "その他"
+  }
+}

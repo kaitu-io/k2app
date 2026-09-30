@@ -1,0 +1,17 @@
+{
+  "privacy": {
+    "title": "Privacy Policy",
+    "metaTitle": "Privacy Policy | Overleap",
+    "subtitle": "What we collect, why, and what we never record."
+  },
+  "terms": {
+    "title": "Terms of Service",
+    "metaTitle": "Terms of Service | Overleap",
+    "subtitle": "The agreement between you and Overleap LLC."
+  },
+  "deleteAccount": {
+    "title": "Delete your account",
+    "metaTitle": "Delete your account | Overleap",
+    "subtitle": "How to delete your Overleap account, and what happens to your data."
+  }
+}

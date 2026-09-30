@@ -1,0 +1,19 @@
+{
+  "primary": "メインナビゲーション",
+  "docs": "ドキュメント",
+  "account": "アカウント",
+  "login": "ログイン",
+  "language": "言語",
+  "footer": {
+    "tagline": "ログを残さない、どんな回線でも速いプライベート VPN。",
+    "developers": "開発者向け",
+    "company": "会社情報",
+    "k2Docs": "k2 プロトコル",
+    "github": "GitHub",
+    "privacy": "プライバシーポリシー",
+    "terms": "利用規約",
+    "deleteAccount": "アカウント削除",
+    "contact": "お問い合わせ",
+    "copyright": "© {year} {legalName}. All rights reserved."
+  }
+}

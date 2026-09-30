@@ -1,0 +1,11 @@
+{
+  "mobileNav": "Documentation",
+  "navLabel": "Documentation navigation",
+  "sections": {
+    "overview": "Overview",
+    "getting-started": "Getting started",
+    "technical": "Technical",
+    "comparison": "Comparison",
+    "uncategorized": "Other"
+  }
+}

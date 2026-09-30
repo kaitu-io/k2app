@@ -53,6 +53,41 @@ jobs:
         run: yarn test
         working-directory: web
 
+  # overleap.io — an independent Next app (spec 2026-09-30-overleap-site-app-design.md).
+  # Own lockfile, not in the root workspace. `yarn build` is part of the gate: it
+  # type-checks message keys against the en-GB master and prerenders every route.
+  test-site-overleap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sites/overleap
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+          cache-dependency-path: sites/overleap/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Generate Velite content
+        run: npx velite build
+
+      - name: Lint
+        run: npx eslint src tests
+
+      - name: Test (vitest)
+        run: yarn test
+
+      - name: Build
+        run: yarn build
+
   # The web OTA publish pipeline's own logic — version derivation, manifest
   # shape, and the anti-rollback gate that decides whether a publish would move
   # stable BACKWARDS for every installed client. publish-web-ota.yml runs these

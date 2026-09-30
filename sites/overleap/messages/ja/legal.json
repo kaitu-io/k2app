@@ -1,0 +1,17 @@
+{
+  "privacy": {
+    "title": "プライバシーポリシー",
+    "metaTitle": "プライバシーポリシー | Overleap",
+    "subtitle": "収集する情報とその理由、そして記録しない情報について（本文は英語です）。"
+  },
+  "terms": {
+    "title": "利用規約",
+    "metaTitle": "利用規約 | Overleap",
+    "subtitle": "お客様と Overleap LLC との契約（本文は英語です）。"
+  },
+  "deleteAccount": {
+    "title": "アカウント削除",
+    "metaTitle": "アカウント削除 | Overleap",
+    "subtitle": "Overleap アカウントの削除方法と、削除後のデータの取り扱い（本文は英語です）。"
+  }
+}

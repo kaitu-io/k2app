@@ -1,0 +1,13 @@
+{
+  "network": "Overleap に接続できませんでした。通信環境を確認してもう一度お試しください。",
+  "generic": "エラーが発生しました。もう一度お試しください。",
+  "unauthorized": "ログインしてください。",
+  "invalidArgument": "入力内容に誤りがあります。",
+  "invalidVerificationCode": "認証コードが間違っています。確認してもう一度お試しください。",
+  "verificationCodeExpired": "認証コードの有効期限が切れました。再送信してください。",
+  "invalidCredentials": "メールアドレスまたはパスワードが正しくありません。",
+  "tooManyRequests": "試行回数が多すぎます。少し待ってからお試しください。",
+  "serviceUnavailable": "現在ご利用いただけません。しばらくしてからお試しください。",
+  "passwordTooShort": "パスワードが短すぎます。",
+  "passwordTooWeak": "パスワードが弱すぎます。より長くランダムな組み合わせを使用してください。"
+}

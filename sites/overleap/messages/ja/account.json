@@ -1,0 +1,45 @@
+{
+  "metaTitle": "アカウント",
+  "title": "アカウント",
+  "subtitle": "サブスクリプションとログイン方法を管理します。",
+  "loading": "読み込み中",
+  "navSubscription": "サブスクリプション",
+  "navSecurity": "セキュリティ",
+  "signOut": "ログアウト",
+  "subscriptionTitle": "ご利用中のプラン",
+  "renewsOn": "{date} に自動更新",
+  "endsOn": "{date} に終了",
+  "manage": "サブスクリプションを管理",
+  "opening": "開いています…",
+  "noSubscriptionTitle": "有効なサブスクリプションはありません",
+  "noSubscription": "プランを選ぶと、最大 5 台のデバイスで Overleap を使えます。",
+  "seePlans": "プランを見る",
+  "activating": "サブスクリプションを有効化しています…",
+  "activationDelayed": "お支払いは完了しました。数分以内に有効になります。ページを更新してご確認ください。",
+  "downloadTitle": "準備完了 — アプリを入手",
+  "downloadBody": "Overleap をインストールし、このメールアドレスでログインしてください。",
+  "downloadCta": "Overleap をダウンロード",
+  "cancel": "キャンセル",
+  "confirm": "保存",
+  "password": {
+    "setPassword": "パスワードを設定",
+    "changePassword": "パスワードを変更",
+    "newPassword": "新しいパスワード",
+    "confirmPassword": "パスワードを確認",
+    "requirements": "{length}文字以上、よくある単語・キーボード配列・繰り返し文字は避けてください",
+    "mismatch": "パスワードが一致しません",
+    "setSuccess": "パスワードを保存しました",
+    "strength": {
+      "label": "パスワード強度",
+      "veryWeak": "非常に弱い",
+      "weak": "弱い",
+      "fair": "普通",
+      "good": "強い",
+      "strong": "非常に強い"
+    }
+  },
+  "security": {
+    "passwordSet": "パスワードを設定すると、メールアドレスとパスワードでログインできます（コードでのログインも引き続き利用可能）。",
+    "passwordChange": "パスワードは設定済みです。ここで変更できます。"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "metaTitle": "Your account",
+  "title": "Your account",
+  "subtitle": "Manage your subscription and sign-in.",
+  "loading": "Loading",
+  "navSubscription": "Subscription",
+  "navSecurity": "Security",
+  "signOut": "Log out",
+  "subscriptionTitle": "Your subscription",
+  "renewsOn": "Renews on {date}",
+  "endsOn": "Ends on {date}",
+  "manage": "Manage subscription",
+  "opening": "Opening…",
+  "noSubscriptionTitle": "No active subscription",
+  "noSubscription": "Choose a plan to start using Overleap on up to five devices.",
+  "seePlans": "See plans",
+  "activating": "Activating your subscription…",
+  "activationDelayed": "Payment received. Your subscription will be active within a few minutes — refresh this page to check.",
+  "downloadTitle": "You're all set — get the apps",
+  "downloadBody": "Install Overleap and log in with this email address.",
+  "downloadCta": "Download Overleap",
+  "cancel": "Cancel",
+  "confirm": "Save",
+  "password": {
+    "setPassword": "Set a password",
+    "changePassword": "Change password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "requirements": "At least {length} characters. Avoid common words, keyboard patterns and repeated characters.",
+    "mismatch": "Passwords don't match",
+    "setSuccess": "Password saved",
+    "strength": {
+      "label": "Password strength",
+      "veryWeak": "Very weak",
+      "weak": "Weak",
+      "fair": "Fair",
+      "good": "Good",
+      "strong": "Strong"
+    }
+  },
+  "security": {
+    "passwordSet": "Set a password to log in with email and password. You can still use a one-time code.",
+    "passwordChange": "You have a password set. You can change it here."
+  }
+}
