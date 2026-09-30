@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { api } from '../api';
 
-function pathOf(spy: ReturnType<typeof vi.spyOn>): string {
+function pathOf(spy: { mock: { calls: unknown[][] } }): string {
   return spy.mock.calls[0][0] as string;
 }
 function brandOf(path: string): string | null {
