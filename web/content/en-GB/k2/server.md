@@ -1,7 +1,7 @@
 ---
 title: k2s Server Deployment
 date: 2026-02-21
-summary: Deploy k2s on a Linux VPS with zero configuration. Covers system service setup, Docker deployment, advanced options, and troubleshooting.
+summary: Deploy k2s on a Linux VPS with zero configuration. Covers system service setup, advanced options, and troubleshooting.
 section: getting-started
 order: 3
 draft: false
@@ -83,21 +83,6 @@ sudo systemctl start k2s
 # Follow live logs
 sudo journalctl -u k2s -f
 ```
-
-## Docker Deployment
-
-The repository includes a Docker Compose configuration for containerized environments:
-
-```bash
-git clone https://github.com/getoverleap/k2.git
-cd k2/docker/
-docker compose up --build
-```
-
-Default port mappings:
-- **443**: k2s server (UDP + TCP)
-- **1080**: k2 client SOCKS5 proxy
-- **1777**: k2 daemon API (local management)
 
 ## Advanced Configuration
 

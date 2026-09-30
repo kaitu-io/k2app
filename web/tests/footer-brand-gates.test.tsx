@@ -57,7 +57,7 @@ const KAITU_ONLY_HREFS = ['href="/routers"', 'href="/releases"', 'href="/retaile
 // /routers 是路由器版产品页，由产品栏链接；已下线的自备教程 /routers/diy 不得再出现在页脚。
 // /changelog 只是到 /releases 的兼容跳转，页脚不再链它（同一目标只出现一次）。
 // 「定价」在两品牌都是真实页面 /pricing（购买页由定价页的 CTA 进入，不再直接挂在导航上）。
-const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/pricing"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/support#faq"', 'href="/support#contact"', 'href="/privacy"', 'href="/terms"', 'href="https://github.com/getoverleap"'];
+const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/pricing"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/support#faq"', 'href="/support#contact"', 'href="/privacy"', 'href="/terms"'];
 const OVERLEAP_FOOTER = ['href="/install"', 'href="/pricing"', 'href="/support"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
 // overleap is a closed, self-contained product (2026-09-30): no protocol docs, self-hosting or source links.
 const OVERLEAP_NEVER = ['href="/k2"', 'href="/k2/quickstart"', 'github.com'];
@@ -79,6 +79,7 @@ describe('footer links only this brand\'s pages', () => {
     expect(html).not.toContain('href="/routers/diy"');
     expect(html).not.toContain('href="/changelog"');
     expect(html).not.toContain('mailto:');
+    expect(html).not.toContain('github.com');
   });
 });
 

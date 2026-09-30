@@ -85,21 +85,6 @@ sudo systemctl start k2s
 sudo journalctl -u k2s -f
 ```
 
-## Docker 部署
-
-项目内置 Docker Compose 配置，适合容器化环境：
-
-```bash
-git clone https://github.com/getoverleap/k2.git
-cd k2/docker/
-docker compose up --build
-```
-
-默认端口映射：
-- **443**：k2s 服务端（UDP + TCP）
-- **1080**：k2 客户端 SOCKS5 代理
-- **1777**：k2 daemon API（本地管理）
-
 ## 高级配置
 
 生成默认配置文件后手动编辑：
