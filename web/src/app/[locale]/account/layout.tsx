@@ -32,8 +32,9 @@ export default function AccountLayout({
       return; // Wait for the auth state to be loaded
     }
     if (!isAuthenticated) {
-      // Redirect to login with current path as return URL
-      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+      // Return URL goes in `next` — the only param the login page reads (same as lib/auth.ts).
+      const here = pathname + (typeof window !== "undefined" ? window.location.search : "");
+      router.push(`/login?next=${encodeURIComponent(here)}`);
     }
   }, [isAuthenticated, isAuthLoading, router, pathname]);
 
