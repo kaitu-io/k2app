@@ -109,3 +109,48 @@ func TestQualityFromEchoRTT_InflationDrops(t *testing.T) {
 		t.Fatalf("good(%v) must exceed inflated(%v)", good, inflated)
 	}
 }
+
+// An echo that completes inside one clock tick reads as rtt == 0: Go's
+// monotonic clock on windows/amd64 is KUSER_SHARED_DATA.InterruptTime, which
+// only moves on a clock interrupt (0.5–15.6 ms), so two time.Now() calls
+// around a fast echo are routinely equal. Such a sample carries no measurable
+// inflation, so it must count as full quality — not be dropped, which left
+// scoreTCPWS pinned at availability × neutral (0.5) and failed the engine's
+// backup-probe tests on every Windows run.
+func TestRecordEchoResult_TCPWSZeroRTTIsFullQuality(t *testing.T) {
+	tm := NewTransportManager()
+	now := time.Unix(1000, 0)
+
+	tm.RecordEchoResult("tcpws", 0, nil, now)
+	if got := tm.ScoreTCPWS(now); got != 1.0 {
+		t.Fatalf("zero-rtt success: scoreTCPWS = %v, want 1.0 (availability 1 × quality 1)", got)
+	}
+	// The min-RTT ratchet stays unset — 0 is its "no data" sentinel, and a
+	// sub-tick reading is not a baseline later samples can be measured against.
+	if got := tm.tcpwsMinEchoRTT.Load(); got != 0 {
+		t.Fatalf("zero rtt must not seed the min-RTT ratchet, got %v", time.Duration(got))
+	}
+
+	// A real reading then seeds the baseline as before, and a later zero
+	// reading neither lowers it nor counts as inflation.
+	tm.RecordEchoResult("tcpws", 20*time.Millisecond, nil, now.Add(time.Second))
+	tm.RecordEchoResult("tcpws", 0, nil, now.Add(2*time.Second))
+	if got := time.Duration(tm.tcpwsMinEchoRTT.Load()); got != 20*time.Millisecond {
+		t.Fatalf("min-RTT after 20ms, 0 = %v, want 20ms", got)
+	}
+	if got := tm.ScoreTCPWS(now.Add(2 * time.Second)); got != 1.0 {
+		t.Fatalf("no inflation seen: scoreTCPWS = %v, want 1.0", got)
+	}
+	// Inflation is still measured against that baseline.
+	tm.RecordEchoResult("tcpws", 200*time.Millisecond, nil, now.Add(3*time.Second))
+	if got := tm.ScoreTCPWS(now.Add(3 * time.Second)); got >= 1.0 {
+		t.Fatalf("10× inflation must lower the score, got %v", got)
+	}
+
+	// The quic channel takes its quality from CC stats; a zero rtt there
+	// still records availability only.
+	tm.RecordEchoResult("quic", 0, nil, now)
+	if got := tm.ScoreQUIC(now); got != 0.5 {
+		t.Fatalf("quic zero-rtt: scoreQUIC = %v, want 0.5 (availability 1 × neutral quality)", got)
+	}
+}
