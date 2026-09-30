@@ -4,12 +4,14 @@
 
 import { z } from 'zod'
 import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
+import { brandFilter } from './brand-params.js'
 
 export const statsTools: ToolRegistration[] = [
   defineApiTool({
     name: 'device_statistics',
     description: 'Get aggregate device statistics (total, active, by platform).',
     group: 'stats',
+    params: { brand: brandFilter },
     path: '/app/devices/statistics',
   }),
 
@@ -34,6 +36,7 @@ export const statsTools: ToolRegistration[] = [
     name: 'user_statistics',
     description: 'Get aggregate user statistics (total, paid, trial, churned).',
     group: 'stats',
+    params: { brand: brandFilter },
     path: '/app/users/statistics',
   }),
 
@@ -41,6 +44,7 @@ export const statsTools: ToolRegistration[] = [
     name: 'order_statistics',
     description: 'Get aggregate order statistics (revenue, count by period).',
     group: 'stats',
+    params: { brand: brandFilter },
     path: '/app/orders/statistics',
   }),
 

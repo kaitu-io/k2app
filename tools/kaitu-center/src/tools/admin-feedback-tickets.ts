@@ -7,6 +7,7 @@
 
 import { z } from 'zod'
 import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
+import { brandFilter, withBrand } from './brand-params.js'
 
 export const feedbackTicketTools: ToolRegistration[] = [
   defineApiTool({
@@ -28,9 +29,11 @@ export const feedbackTicketTools: ToolRegistration[] = [
       to: z.string().optional().describe('End time (RFC3339)'),
       page: z.number().optional().describe('Page number (default 1)'),
       page_size: z.number().optional().describe('Page size (default 20, max 100)'),
+      brand: brandFilter,
     },
     mapQuery: (p) => {
       const q: Record<string, string> = {}
+      withBrand(q, p.brand)
       if (p.udid) q.udid = String(p.udid)
       if (p.email) q.email = String(p.email)
       if (p.user_id) q.user_id = String(p.user_id)

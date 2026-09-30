@@ -4,12 +4,14 @@
 
 import { z } from 'zod'
 import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
+import { brandFilter, brandRequired } from './brand-params.js'
 
 export const announcementTools: ToolRegistration[] = [
   defineApiTool({
     name: 'list_announcements',
-    description: 'List all announcements (paginated, includes inactive/expired).',
+    description: 'List all announcements (paginated, includes inactive/expired). Each row carries its brand.',
     group: 'announcements',
+    params: { brand: brandFilter },
     path: '/app/announcements',
   }),
 
@@ -29,9 +31,11 @@ export const announcementTools: ToolRegistration[] = [
       max_version: z.string().optional().describe('Maximum app version (inclusive, e.g. "0.4.3")'),
       expires_at: z.number().optional().describe('Expiry Unix timestamp (0 = never)'),
       is_active: z.boolean().optional().describe('Activate immediately'),
+      brand: brandRequired,
     },
     path: '/app/announcements',
     mapBody: (p) => ({
+      brand: p.brand,
       message: p.message,
       linkUrl: p.link_url,
       linkText: p.link_text,
