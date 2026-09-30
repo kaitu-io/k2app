@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/slack"
 	"gorm.io/gorm"
@@ -179,6 +180,30 @@ func parseBrandFilter(raw string) (Brand, bool) {
 		return b, true
 	}
 	return BrandKaitu, false
+}
+
+// adminBrandScope 把 admin ?brand= 施加到有 brand 列的表上；空/非法 = 不过滤（全部品牌）。
+// column 通常是 "brand"，join 场景传带表名的列。
+func adminBrandScope(c *gin.Context, column string) func(*gorm.DB) *gorm.DB {
+	b, ok := parseBrandFilter(c.Query("brand"))
+	return func(tx *gorm.DB) *gorm.DB {
+		if !ok {
+			return tx
+		}
+		return tx.Where(column+" = ?", string(b))
+	}
+}
+
+// adminUserBrandScope 用于自身没有 brand 列、品牌经所属用户继承的表（orders / devices …）：
+// userIDColumn IN (SELECT id FROM users WHERE brand = ?)。子查询而非 JOIN，避免列名歧义。
+func adminUserBrandScope(c *gin.Context, userIDColumn string) func(*gorm.DB) *gorm.DB {
+	b, ok := parseBrandFilter(c.Query("brand"))
+	return func(tx *gorm.DB) *gorm.DB {
+		if !ok {
+			return tx
+		}
+		return tx.Where(userIDColumn+" IN (?)", db.Get().Model(&User{}).Select("id").Where("brand = ?", string(b)))
+	}
 }
 
 // BrandForCreate 解析 admin 创建路径上用户提交的 brand 字符串：

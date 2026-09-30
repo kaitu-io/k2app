@@ -19,7 +19,7 @@ func api_admin_list_plans(c *gin.Context) {
 	pagination := PaginationFromRequest(c)
 
 	var plans []Plan
-	query := db.Get().Model(&Plan{})
+	query := db.Get().Model(&Plan{}).Scopes(adminBrandScope(c, "brand"))
 
 	if err := query.Count(&pagination.Total).Error; err != nil {
 		log.Errorf(c, "failed to count plans: %v", err)

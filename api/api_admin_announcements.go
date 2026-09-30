@@ -69,7 +69,7 @@ func api_admin_list_announcements(c *gin.Context) {
 	log.Infof(c, "admin request to list announcements")
 
 	pagination := PaginationFromRequest(c)
-	query := db.Get().Model(&Announcement{})
+	query := db.Get().Model(&Announcement{}).Scopes(adminBrandScope(c, "brand"))
 
 	if err := query.Count(&pagination.Total).Error; err != nil {
 		log.Errorf(c, "failed to count announcements: %v", err)

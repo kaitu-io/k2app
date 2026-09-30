@@ -23,7 +23,7 @@ func api_admin_list_campaigns(c *gin.Context) {
 	isActiveStr := c.Query("isActive")
 
 	// 构建查询
-	query := db.Get().Model(&Campaign{})
+	query := db.Get().Model(&Campaign{}).Scopes(adminBrandScope(c, "brand"))
 
 	// 类型筛选
 	if campaignType != "" {

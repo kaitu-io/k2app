@@ -53,7 +53,7 @@ func api_admin_create_license_key_batch(c *gin.Context) {
 func api_admin_list_license_key_batches(c *gin.Context) {
 	pagination := PaginationFromRequest(c)
 
-	query := db.Get().Model(&LicenseKeyBatch{})
+	query := db.Get().Model(&LicenseKeyBatch{}).Scopes(adminBrandScope(c, "brand"))
 	if tag := c.Query("sourceTag"); tag != "" {
 		query = query.Where("source_tag = ?", tag)
 	}

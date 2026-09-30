@@ -1,6 +1,7 @@
 package center
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,8 @@ func api_admin_list_orders(c *gin.Context) {
 	}
 
 	// 构建查询，预加载关联的User和Campaign
-	query := db.Get().Model(&Order{}).Preload("User.LoginIdentifies").Preload("Campaign")
+	// Order 无 brand 列：品牌经所属用户继承（与 order statistics 同义）
+	query := db.Get().Model(&Order{}).Scopes(adminUserBrandScope(c, "user_id")).Preload("User.LoginIdentifies").Preload("Campaign")
 
 	// 如果提供了登录标识进行筛选
 	if req.LoginProvider != "" && req.LoginIdentity != "" {
@@ -34,15 +36,11 @@ func api_admin_list_orders(c *gin.Context) {
 
 		identifyQuery = identifyQuery.Where("type = ?", req.LoginProvider)
 
-		// 对于email类型，使用索引ID(加密前的邮箱)查询
+		// 对于email类型，index_id 是小写邮箱的 secretHashIt 哈希（与登录路径一致）。
+		// 之前这里用的是 secretEncryptString（明文直通），永远匹配不到哈希值。
 		if req.LoginProvider == "email" {
-			encryptedIdentity, err := secretEncryptString(c, req.LoginIdentity)
-			if err != nil {
-				log.Errorf(c, "failed to encrypt login identity: %v", err)
-				Error(c, ErrorSystemError, "failed to encrypt login identity")
-				return
-			}
-			identifyQuery = identifyQuery.Where("index_id = ?", encryptedIdentity)
+			normalized := strings.ToLower(strings.TrimSpace(req.LoginIdentity))
+			identifyQuery = identifyQuery.Where("index_id = ?", secretHashIt(c, []byte(normalized)))
 		} else {
 			// 对于其他类型，直接匹配加密后的值
 			encryptedIdentity, err := secretEncryptString(c, req.LoginIdentity)
@@ -164,6 +162,7 @@ func api_admin_list_orders(c *gin.Context) {
 		// 设置用户资源
 		if order.User != nil {
 			item.User.UUID = order.User.UUID
+			item.Brand = order.User.Brand
 
 			// 查找用户的email标识
 			for _, identify := range order.User.LoginIdentifies {

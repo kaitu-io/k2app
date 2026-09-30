@@ -22,7 +22,7 @@ func api_admin_list_email_templates(c *gin.Context) {
 	isActiveStr := c.Query("isActive")
 
 	// 构建查询 - 只返回原始模板（OriginID为NULL的模板）
-	query := db.Get().Model(&EmailMarketingTemplate{}).Where("origin_id IS NULL")
+	query := db.Get().Model(&EmailMarketingTemplate{}).Where("origin_id IS NULL").Scopes(adminBrandScope(c, "brand"))
 
 	// 状态筛选
 	if isActiveStr != "" {
@@ -44,7 +44,7 @@ func api_admin_list_email_templates(c *gin.Context) {
 
 	// 分页查询
 	var templates []EmailMarketingTemplate
-	if err := query.Offset(pagination.Offset()).Limit(pagination.PageSize).Find(&templates).Error; err != nil {
+	if err := query.Order("id DESC").Offset(pagination.Offset()).Limit(pagination.PageSize).Find(&templates).Error; err != nil {
 		log.Errorf(c, "failed to query templates: %v", err)
 		Error(c, ErrorSystemError, "failed to query templates")
 		return
@@ -272,6 +272,7 @@ func convertEmailMarketingTemplateToResponse(template EmailMarketingTemplate) Em
 		IsActive:    template.IsActive != nil && *template.IsActive,
 		OriginID:    template.OriginID,
 		IsOriginal:  template.OriginID == nil, // 如果OriginID为nil，则为原始模板
+		Brand:       template.Brand,
 	}
 
 	return response

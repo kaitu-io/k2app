@@ -17,7 +17,7 @@ func api_admin_list_license_keys(c *gin.Context) {
 	batchIDStr := c.Query("batchId")
 	isUsedStr := c.Query("isUsed")
 
-	query := db.Get().Model(&LicenseKey{})
+	query := db.Get().Model(&LicenseKey{}).Scopes(adminBrandScope(c, "brand"))
 	if batchIDStr != "" {
 		id, err := strconv.ParseUint(batchIDStr, 10, 64)
 		if err == nil {
@@ -85,6 +85,7 @@ func toLicenseKeyResponse(k *LicenseKey) LicenseKeyResponse {
 		IsUsed:       k.IsUsed,
 		UsedByUserID: k.UsedByUserID,
 		CreatedAt:    k.CreatedAt.Unix(),
+		Brand:        k.Brand,
 	}
 	if k.UsedAt != nil {
 		usedAt := k.UsedAt.Unix()
