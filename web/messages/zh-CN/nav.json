@@ -1,6 +1,6 @@
 {
   "nav": {
-    "openSource": "开源代码",
+    "openSource": "安全审查",
     "welcome": "欢迎",
     "adminPanel": "管理后台",
     "login": "登录",
@@ -50,7 +50,7 @@
     "developer": {
       "title": "开发者",
       "apiDocs": "API文档",
-      "openSource": "开源代码",
+      "openSource": "安全审查",
       "techBlog": "技术博客",
       "k2Docs": "k2 协议文档",
       "selfDeploy": "快速自部署",

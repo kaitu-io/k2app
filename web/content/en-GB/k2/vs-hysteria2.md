@@ -126,7 +126,7 @@ BBR has no censorship awareness. Under GFW's 26% probabilistic loss, BBR misinte
 
 **How are the 14 test scenarios defined?**
 
-Based on academic research: T0-T5 cover ideal to hostile standard networks, T6-T8 simulate GFW censorship (including USENIX Security 2023's measured 26% loss rate), C1-C5 model real conditions from China's three major ISPs to Japan. The framework is open source — anyone can verify with identical conditions.
+Based on academic research: T0-T5 cover ideal to hostile standard networks, T6-T8 simulate GFW censorship (including USENIX Security 2023's measured 26% loss rate), C1-C5 model real conditions from China's three major ISPs to Japan. The scenario parameters are documented above, so anyone can reproduce the results under identical conditions.
 
 **Should I choose k2cc or Brutal?**
 
