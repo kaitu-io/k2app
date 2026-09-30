@@ -133,7 +133,10 @@ fi
 
 echo "6. after the idle deadline (70 s)"
 sleep 70
-check "answered sessions counted as relay timeouts" "$(grep -a -c 'quicUDPConn: ReadFrom timeout' "$LOG")" 0
+# Only the lab's own targets: the LAN namespace also emits mDNS to 224.0.0.251,
+# which TPROXY picks up and which nothing ever answers — a genuine unanswered
+# session, correctly counted.
+check "answered sessions counted as relay timeouts" "$(grep -a 'quicUDPConn: ReadFrom timeout' "$LOG" | grep -c 'target=44.44.44.')" 0
 check "transport switches" "$(grep -a -c 'DIAG: transport-switch' "$LOG")" 0
 check "replies that fell back to the listener socket" "$(grep -a -c 'transparent reply socket unavailable' "$LOG")" 0
 sessions=$(grep -a -c 'UDPConn: closed' "$LOG")
