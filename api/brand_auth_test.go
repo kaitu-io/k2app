@@ -42,19 +42,19 @@ func TestFindOrCreateUserByEmail_BrandIsolation(t *testing.T) {
 	t.Cleanup(func() { cleanupTestUserByEmail(t, email) })
 
 	gcK := ginCtxWithBrand(BrandKaitu)
-	uK, err := FindOrCreateUserByEmail(gcK, email, "zh-CN")
+	uK, err := FindOrCreateUserByEmail(gcK, BrandKaitu, email, "zh-CN")
 	require.NoError(t, err)
 	assert.Equal(t, string(BrandKaitu), uK.Brand)
 
 	gcO := ginCtxWithBrand(BrandOverleap)
-	uO, err := FindOrCreateUserByEmail(gcO, email, "en-US")
+	uO, err := FindOrCreateUserByEmail(gcO, BrandOverleap, email, "en-US")
 	require.NoError(t, err)
 	assert.Equal(t, string(BrandOverleap), uO.Brand)
 
 	assert.NotEqual(t, uK.ID, uO.ID, "同邮箱双品牌必须是两个独立账号")
 
 	// 再次以 kaitu 查找：拿回 kaitu 用户而非 overleap 用户
-	uK2, err := FindOrCreateUserByEmail(gcK, email, "zh-CN")
+	uK2, err := FindOrCreateUserByEmail(gcK, BrandKaitu, email, "zh-CN")
 	require.NoError(t, err)
 	assert.Equal(t, uK.ID, uK2.ID)
 }

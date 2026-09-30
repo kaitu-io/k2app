@@ -721,6 +721,8 @@ type EmailTemplateResponse struct {
 // SendTemplatedEmailsHTTPRequest 通用邮件发送HTTP请求（需审批）
 type SendTemplatedEmailsHTTPRequest struct {
 	BatchID string `json:"batchId" binding:"required"`
+	// Brand 批次品牌：任一条目缺 userId（按邮箱找收件人）时必填；见 SendEmailsRequest.Brand。
+	Brand string `json:"brand"`
 	Items   []struct {
 		Email  string            `json:"email" binding:"required"`
 		UserID uint64            `json:"userId"`

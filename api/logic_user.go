@@ -195,10 +195,31 @@ func SetUserRetailerStatus(ctx context.Context, email string, isRetailer bool) e
 }
 
 
+// findUserByEmailInBrand 按 (邮箱, 品牌) 只查不建；不存在返回 gorm.ErrRecordNotFound。
+func findUserByEmailInBrand(ctx context.Context, brand Brand, email string) (*User, error) {
+	indexID := secretHashIt(ctx, []byte(strings.ToLower(strings.TrimSpace(email))))
+	var identify LoginIdentify
+	if err := db.Get().Where("type = ? AND index_id = ? AND brand = ?", "email", indexID, string(brand)).
+		Preload("User").First(&identify).Error; err != nil {
+		return nil, err
+	}
+	if identify.User == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return identify.User, nil
+}
+
 // FindOrCreateUserByEmail 根据邮箱查找或创建用户
 // 与 AddUser 不同，如果用户已存在会返回现有用户而不是错误
 // 可选参数：requestLang, acceptLanguageHeader 用于新用户的语言检测
-func FindOrCreateUserByEmail(c context.Context, email string, langParams ...string) (*User, error) {
+//
+// brand 必须由调用方显式给出：同邮箱在两品牌是两个独立账号。原先从 ctx 推断
+// （非 *gin.Context 静默回退 kaitu），异步任务 / c.Request.Context() 调用点因此给
+// overleap 邮箱造出过 kaitu 幽灵账号。
+func FindOrCreateUserByEmail(c context.Context, brand Brand, email string, langParams ...string) (*User, error) {
+	if !brand.Valid() {
+		return nil, fmt.Errorf("invalid brand %q", brand)
+	}
 	var requestLang, acceptLanguageHeader string
 	if len(langParams) > 0 {
 		requestLang = langParams[0]
@@ -208,14 +229,6 @@ func FindOrCreateUserByEmail(c context.Context, email string, langParams ...stri
 	}
 	email = strings.ToLower(email)
 	indexID := secretHashIt(c, []byte(email))
-
-	// 解析请求品牌：同邮箱在两品牌各自独立注册（LoginIdentify 唯一索引已扩展为
-	// (type, index_id, brand)）。非 gin.Context 调用（理论上不应发生于此函数，
-	// 但保持与 CountryFromGinContext 用法一致的防御式回退）恒 kaitu。
-	brand := BrandKaitu
-	if gc, ok := c.(*gin.Context); ok && gc != nil {
-		brand = ReqBrand(gc)
-	}
 
 	// 首先尝试查找现有用户（限定当前品牌，跨品牌同邮箱是两个独立账号）
 	var existingIdentify LoginIdentify

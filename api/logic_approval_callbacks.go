@@ -17,9 +17,15 @@ func executeApprovalEDMSend(ctx context.Context, params json.RawMessage) error {
 	if err := json.Unmarshal(params, &req); err != nil {
 		return fmt.Errorf("unmarshal params: %w", err)
 	}
+	_, err := EnqueueTemplatedEmailTask(ctx, edmSendRequestFromHTTP(&req))
+	return err
+}
 
+// edmSendRequestFromHTTP 把审批参数转换成异步任务 payload——Brand 必须随行。
+func edmSendRequestFromHTTP(req *SendTemplatedEmailsHTTPRequest) *SendEmailsRequest {
 	sendReq := &SendEmailsRequest{
 		BatchID: req.BatchID,
+		Brand:   req.Brand,
 		Items:   make([]SendEmailItem, len(req.Items)),
 	}
 	for i, item := range req.Items {
@@ -30,9 +36,7 @@ func executeApprovalEDMSend(ctx context.Context, params json.RawMessage) error {
 			Vars:   item.Vars,
 		}
 	}
-
-	_, err := EnqueueTemplatedEmailTask(ctx, sendReq)
-	return err
+	return sendReq
 }
 
 func executeApprovalCampaignCreate(ctx context.Context, params json.RawMessage) error {
