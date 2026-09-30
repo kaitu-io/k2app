@@ -128,7 +128,15 @@ type udpRelay struct {
 
 	clientAddr atomic.Pointer[net.UDPAddr] // learned from first client packet
 	closed     chan struct{}
-	wg         sync.WaitGroup
+
+	// Ground-truth counters (datagrams). s2c = server→client (the data
+	// direction in bulk tests), c2s = client→server (mostly ACKs).
+	s2cForwarded, s2cDropped atomic.Uint64
+	c2sForwarded, c2sDropped atomic.Uint64
+
+	// Order-preserving delivery (newUDPRelayFIFO): [0]=s2c, [1]=c2s.
+	fifoQ [2]chan delayedPkt
+	wg    sync.WaitGroup
 }
 
 func newUDPRelay(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64) *udpRelay {
@@ -137,6 +145,30 @@ func newUDPRelay(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRat
 }
 
 func newUDPRelayWithBandwidth(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64, bandwidthCapBps float64) *udpRelay {
+	t.Helper()
+	return newUDPRelayOpts(t, serverAddr, delay, lossRate, bandwidthCapBps, false)
+}
+
+// newUDPRelayFIFO is newUDPRelay with order-preserving delivery: each
+// direction is a single FIFO queue released at receive-time + delay, instead
+// of one goroutine+timer per packet. The per-packet mode reorders packets
+// under scheduler pressure (timers created microseconds apart fire in
+// arbitrary goroutine order), and QUIC's packet-threshold (3) loss detection
+// turns that reordering into spurious loss — see
+// TestIntegration_LossAttributionAccuracy. Only order-preserving for delay
+// functions that are non-decreasing between consecutive packets (stableDelay).
+func newUDPRelayFIFO(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64) *udpRelay {
+	t.Helper()
+	return newUDPRelayOpts(t, serverAddr, delay, lossRate, 0, true)
+}
+
+type delayedPkt struct {
+	data      []byte
+	dst       *net.UDPAddr
+	releaseAt time.Time
+}
+
+func newUDPRelayOpts(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64, bandwidthCapBps float64, fifo bool) *udpRelay {
 	t.Helper()
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
@@ -158,6 +190,13 @@ func newUDPRelayWithBandwidth(t *testing.T, serverAddr *net.UDPAddr, delay delay
 		tokens:          maxTokens, // start full
 		maxTokens:       maxTokens,
 		lastRefill:      time.Now(),
+	}
+	if fifo {
+		r.fifoQ = [2]chan delayedPkt{make(chan delayedPkt, 1<<16), make(chan delayedPkt, 1<<16)}
+		for _, q := range r.fifoQ {
+			r.wg.Add(1)
+			go r.fifoLoop(q)
+		}
 	}
 
 	// Start two goroutines: client→server and implicit server→client
@@ -215,6 +254,7 @@ func (r *udpRelay) relayLoop() {
 
 		// Apply random loss (both directions)
 		if r.lossRate > 0 && r.rng.Float64() < r.lossRate {
+			r.countDrop(isFromServer)
 			continue // drop
 		}
 
@@ -231,10 +271,17 @@ func (r *udpRelay) relayLoop() {
 			}
 			if r.tokens < float64(n) {
 				r.tokenMu.Unlock()
+				r.countDrop(isFromServer)
 				continue // tail-drop: congestion loss
 			}
 			r.tokens -= float64(n)
 			r.tokenMu.Unlock()
+		}
+
+		if isFromServer {
+			r.s2cForwarded.Add(1)
+		} else {
+			r.c2sForwarded.Add(1)
 		}
 
 		// Copy packet data (will be sent after delay)
@@ -254,6 +301,23 @@ func (r *udpRelay) relayLoop() {
 
 		// Send with delay — use timer+select so goroutines exit on close
 		d := r.delay(r.rng)
+		if r.fifoQ[0] != nil {
+			q := r.fifoQ[1]
+			if isFromServer {
+				q = r.fifoQ[0]
+			}
+			select {
+			case q <- delayedPkt{data: pkt, dst: dstAddr, releaseAt: time.Now().Add(d)}:
+			default: // queue overflow: reclassify forwarded → dropped, keep ground truth honest
+				if isFromServer {
+					r.s2cForwarded.Add(^uint64(0))
+				} else {
+					r.c2sForwarded.Add(^uint64(0))
+				}
+				r.countDrop(isFromServer)
+			}
+			continue
+		}
 		if d > 0 {
 			dst := dstAddr // capture for goroutine
 			r.wg.Add(1)
@@ -270,6 +334,35 @@ func (r *udpRelay) relayLoop() {
 		} else {
 			r.conn.WriteToUDP(pkt, dstAddr)
 		}
+	}
+}
+
+func (r *udpRelay) fifoLoop(q chan delayedPkt) {
+	defer r.wg.Done()
+	for {
+		select {
+		case <-r.closed:
+			return
+		case p := <-q:
+			if d := time.Until(p.releaseAt); d > 0 {
+				t := time.NewTimer(d)
+				select {
+				case <-t.C:
+				case <-r.closed:
+					t.Stop()
+					return
+				}
+			}
+			r.conn.WriteToUDP(p.data, p.dst)
+		}
+	}
+}
+
+func (r *udpRelay) countDrop(isFromServer bool) {
+	if isFromServer {
+		r.s2cDropped.Add(1)
+	} else {
+		r.c2sDropped.Add(1)
 	}
 }
 
