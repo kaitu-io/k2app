@@ -206,6 +206,18 @@ func adminUserBrandScope(c *gin.Context, userIDColumn string) func(*gorm.DB) *go
 	}
 }
 
+// BrandRequired 是 admin 创建 HTTP 端点的品牌解析：manager 跨品牌管理两个品牌的数据，
+// 创建品牌归属实体（plan / campaign / announcement / license key batch / EDM 模板）
+// 必须显式选品牌——空串拒绝，绝不静默落 kaitu。
+// BrandForCreate（空→kaitu）只留给审批回调 / logic 层兜底：部署前已提交、参数里
+// 没有 brand 的在途审批仍按原语义执行。
+func BrandRequired(s string) (Brand, error) {
+	if strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("brand is required")
+	}
+	return BrandForCreate(s)
+}
+
 // BrandForCreate 解析 admin 创建路径上用户提交的 brand 字符串：
 // 空 → BrandKaitu（老 admin UI 零破坏）；非空但非法 → error（拒绝，绝不静默降级成 kaitu）。
 func BrandForCreate(s string) (Brand, error) {

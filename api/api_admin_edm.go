@@ -72,6 +72,12 @@ func api_admin_create_email_template(c *gin.Context) {
 		return
 	}
 
+	brand, brandErr := BrandRequired(req.Brand)
+	if brandErr != nil {
+		Error(c, ErrorInvalidArgument, brandErr.Error())
+		return
+	}
+
 	// 标准化语言代码
 	normalizedLang := NormalizeBCP47Language(req.Language)
 
@@ -92,6 +98,7 @@ func api_admin_create_email_template(c *gin.Context) {
 		Description: req.Description,
 		IsActive:    BoolPtr(req.IsActive),
 		OriginID:    req.OriginID,
+		Brand:       string(brand),
 	}
 
 	// 创建模板

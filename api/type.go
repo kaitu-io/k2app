@@ -695,6 +695,9 @@ type EmailTemplateRequest struct {
 	Description string  `json:"description"`                     // 模板描述
 	IsActive    bool    `json:"isActive"`                        // 是否启用
 	OriginID    *uint64 `json:"originId"`                        // 源模板ID，null表示这是原始模板
+	// Brand 归属品牌：创建时必填（BrandRequired）；更新时忽略（品牌创建后不可变）。
+	// 发信按收件人品牌 + slug 选模板，slug 在品牌内唯一。
+	Brand string `json:"brand"`
 }
 
 

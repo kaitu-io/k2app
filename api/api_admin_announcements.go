@@ -138,9 +138,9 @@ func api_admin_create_announcement(c *gin.Context) {
 
 	isActive := req.IsActive != nil && *req.IsActive
 
-	brand, brandErr := BrandForCreate(req.Brand)
+	brand, brandErr := BrandRequired(req.Brand)
 	if brandErr != nil {
-		Error(c, ErrorInvalidArgument, "invalid brand")
+		Error(c, ErrorInvalidArgument, brandErr.Error())
 		return
 	}
 

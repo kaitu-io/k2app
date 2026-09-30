@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -284,4 +286,117 @@ func TestAdminDeviceStatistics_BrandFilter(t *testing.T) {
 	assert.True(t, has(""), "no filter = all brands")
 	assert.True(t, has("overleap"))
 	assert.False(t, has("kaitu"), "?brand=kaitu must not count an overleap user's device")
+}
+
+// ---- 2/7. admin 创建品牌归属实体：brand 必填（不再静默落 kaitu）；支付 ID 必须与品牌渠道匹配 ----
+
+func TestAdminCreateRequiresBrand(t *testing.T) {
+	testInitConfig()
+	if testConfigAvailable {
+		// 回归时 handler 可能真落库——兜底清掉，别污染共享 dev DB
+		t.Cleanup(func() {
+			db.Get().Unscoped().Where("pid = ?", "t-nobrand-p").Delete(&Plan{})
+			db.Get().Unscoped().Where("message = ?", "t-nobrand-msg").Delete(&Announcement{})
+			db.Get().Unscoped().Where("slug = ?", "t-nobrand-tpl").Delete(&EmailMarketingTemplate{})
+		})
+	}
+	now := time.Now().Unix()
+	cases := []struct {
+		name    string
+		path    string
+		handler func(*gin.Context)
+		body    map[string]any
+	}{
+		{"plan", "/app/plans", api_admin_create_plan, map[string]any{
+			"pid": "t-nobrand-p", "label": "x", "price": 100, "originPrice": 100, "month": 1}},
+		{"announcement", "/app/announcements", api_admin_create_announcement, map[string]any{
+			"message": "t-nobrand-msg"}},
+		{"campaign", "/app/campaigns", api_admin_create_campaign, map[string]any{
+			"code": "TNOBRAND", "name": "x", "type": CampaignTypeDiscount, "value": 90,
+			"startAt": now, "endAt": now + 3600, "matcherType": "all"}},
+		{"license-key-batch", "/app/license-key-batches", api_admin_create_license_key_batch, map[string]any{
+			"name": "t-nobrand-b", "recipientMatcher": "all", "planDays": 30, "quantity": 1, "expiresInDays": 30}},
+		{"edm-template", "/app/edm/templates", api_admin_create_email_template, map[string]any{
+			"name": "t-nobrand-tpl", "slug": "t-nobrand-tpl", "language": "en-US", "subject": "s", "content": "c"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(tc.body)
+			c, w := brandTestGinContext(t, http.MethodPost, tc.path, "kaitu.io", body)
+			tc.handler(c)
+			assert.Equal(t, ErrorInvalidArgument, decodeResponseCode(t, w), "%s create without brand must be rejected", tc.name)
+		})
+	}
+}
+
+func TestAdminCreatePlan_StripePriceRequiresStripeBrand(t *testing.T) {
+	testInitConfig()
+	if testConfigAvailable {
+		t.Cleanup(func() { db.Get().Unscoped().Where("pid = ?", "t-kaitu-stripe").Delete(&Plan{}) })
+	}
+	body, _ := json.Marshal(map[string]any{
+		"pid": "t-kaitu-stripe", "label": "x", "price": 100, "originPrice": 100, "month": 1,
+		"brand": "kaitu", "stripePriceId": "price_123",
+	})
+	c, w := brandTestGinContext(t, http.MethodPost, "/app/plans", "kaitu.io", body)
+	api_admin_create_plan(c)
+	assert.Equal(t, ErrorInvalidArgument, decodeResponseCode(t, w), "kaitu has no stripe channel: stripePriceId must be rejected")
+}
+
+func TestValidatePlanPaymentIDs(t *testing.T) {
+	assert.NoError(t, validatePlanPaymentIDs(BrandOverleap, "price_1", "io.overleap.x"))
+	assert.NoError(t, validatePlanPaymentIDs(BrandKaitu, "", "io.kaitu.x"))
+	assert.Error(t, validatePlanPaymentIDs(BrandKaitu, "price_1", ""))
+}
+
+func TestAdminCreateEmailTemplate_StoresBrand(t *testing.T) {
+	skipIfNoConfig(t)
+	slug := "t-brand-tpl-" + generateId("s")
+	body, _ := json.Marshal(map[string]any{
+		"name": "t", "slug": slug, "language": "en-US", "subject": "s", "content": "c", "isActive": true, "brand": "overleap",
+	})
+	c, w := brandTestGinContext(t, http.MethodPost, "/app/edm/templates", "kaitu.io", body)
+	api_admin_create_email_template(c)
+	require.Equal(t, ErrorCode(0), decodeResponseCode(t, w), w.Body.String())
+	var tpl EmailMarketingTemplate
+	require.NoError(t, db.Get().Where("slug = ?", slug).First(&tpl).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&tpl) })
+	assert.Equal(t, "overleap", tpl.Brand)
+}
+
+// 同一 slug 两品牌各一份（worker 按 renewal-7d 这类固定 slug 给两品牌用户发信，
+// 模板按收件人品牌选）——slug 唯一性必须是 (slug, brand)。
+func TestEmailTemplateSlugUniquePerBrand(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+	slug := "t-slug-per-brand-" + generateId("s")
+	k := &EmailMarketingTemplate{Name: "k", Slug: slug, Language: "zh-CN", Brand: string(BrandKaitu)}
+	o := &EmailMarketingTemplate{Name: "o", Slug: slug, Language: "en-US", Brand: string(BrandOverleap)}
+	require.NoError(t, db.Get().Create(k).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(k) })
+	require.NoError(t, db.Get().Create(o).Error, "same slug in the other brand must be allowed")
+	t.Cleanup(func() { db.Get().Unscoped().Delete(o) })
+
+	dup := &EmailMarketingTemplate{Name: "dup", Slug: slug, Language: "en-US", Brand: string(BrandOverleap)}
+	err := db.Get().Create(dup).Error
+	if err == nil {
+		db.Get().Unscoped().Delete(dup)
+	}
+	assert.Error(t, err, "same slug twice in one brand must still be rejected")
+}
+
+func TestPlanUpdateCallback_StripePriceRequiresStripeBrand(t *testing.T) {
+	skipIfNoConfig(t)
+	p := &Plan{PID: "tu" + generateId("p")[len("p-"):][:12], Label: "x", Month: 1, Brand: string(BrandKaitu)}
+	require.NoError(t, db.Get().Create(p).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(p) })
+
+	price := "price_123"
+	params, _ := json.Marshal(planUpdateApprovalParams{PlanID: fmt.Sprintf("%d", p.ID), Request: AdminUpdatePlanRequest{StripePriceID: &price}})
+	err := executeApprovalPlanUpdate(context.Background(), params)
+	require.Error(t, err, "kaitu plan must not get a stripePriceId via update")
+
+	var got Plan
+	require.NoError(t, db.Get().First(&got, p.ID).Error)
+	assert.Empty(t, got.StripePriceID)
 }

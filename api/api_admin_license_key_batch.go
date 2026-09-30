@@ -18,8 +18,8 @@ func api_admin_create_license_key_batch(c *gin.Context) {
 		return
 	}
 
-	// 验证品牌（空=kaitu；非法值直接拒绝，不静默降级）。CreateLicenseKeyBatch 侧同样校验兜底。
-	if _, err := BrandForCreate(req.Brand); err != nil {
+	// 验证品牌（必填；空或非法直接拒绝，不静默降级）。CreateLicenseKeyBatch 侧以 BrandForCreate 兜底。
+	if _, err := BrandRequired(req.Brand); err != nil {
 		Error(c, ErrorInvalidArgument, "invalid brand")
 		return
 	}

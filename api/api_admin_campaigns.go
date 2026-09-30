@@ -128,8 +128,8 @@ func api_admin_create_campaign(c *gin.Context) {
 		return
 	}
 
-	// 验证品牌（空=kaitu；非法值直接拒绝，不静默降级）。callback 侧同样校验兜底。
-	if _, err := BrandForCreate(req.Brand); err != nil {
+	// 验证品牌（必填；空或非法直接拒绝，不静默降级）。callback 侧以 BrandForCreate 兜底。
+	if _, err := BrandRequired(req.Brand); err != nil {
 		log.Warnf(c, "invalid brand: %s", req.Brand)
 		Error(c, ErrorInvalidArgument, "invalid brand")
 		return

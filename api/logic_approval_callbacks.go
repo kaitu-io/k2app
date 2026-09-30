@@ -340,6 +340,9 @@ func executeApprovalPlanUpdate(ctx context.Context, params json.RawMessage) erro
 		plan.Tier = *req.Tier
 	}
 	if req.StripePriceID != nil {
+		if err := validatePlanPaymentIDs(Brand(plan.Brand), *req.StripePriceID, ""); err != nil {
+			return fmt.Errorf("plan %s: %w", p.PlanID, err)
+		}
 		plan.StripePriceID = *req.StripePriceID
 	}
 	if req.Product != nil {

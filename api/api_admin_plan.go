@@ -54,7 +54,7 @@ type AdminCreatePlanRequest struct {
 	AppleProductID string `json:"appleProductId" example:"io.kaitu.sub.family.1y"`
 	// Stripe Price ID（仅 overleap 官网 Checkout）：如 price_1Nxxxx。非空才可经 stripe 购买。
 	StripePriceID string `json:"stripePriceId" example:"price_1Nxxxx"`
-	// Brand 归属品牌：kaitu | overleap，空→回退 kaitu（老 admin UI 零破坏）；非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）。
+	// Brand 归属品牌：kaitu | overleap，必填（空或非法→ErrorInvalidArgument，见 BrandRequired）。
 	Brand string `json:"brand" example:"kaitu"`
 	// 产品线：app | private_node | router；空→app。
 	Product string `json:"product" example:"router"`
@@ -90,9 +90,13 @@ func api_admin_create_plan(c *gin.Context) {
 		return
 	}
 
-	brand, brandErr := BrandForCreate(req.Brand)
+	brand, brandErr := BrandRequired(req.Brand)
 	if brandErr != nil {
-		Error(c, ErrorInvalidArgument, "invalid brand")
+		Error(c, ErrorInvalidArgument, brandErr.Error())
+		return
+	}
+	if err := validatePlanPaymentIDs(brand, req.StripePriceID, req.AppleProductID); err != nil {
+		Error(c, ErrorInvalidArgument, err.Error())
 		return
 	}
 
@@ -186,6 +190,19 @@ func api_admin_update_plan(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, fmt.Sprintf("invalid product: %s", *req.Product))
 		return
 	}
+	// stripePriceId 必须属于开通了 stripe 的品牌（callback 侧再校验一次兜底）。提前拒绝，
+	// 别让一个注定失败的修改进审批队列。
+	if req.StripePriceID != nil && *req.StripePriceID != "" {
+		var plan Plan
+		if err := db.Get().First(&plan, planID).Error; err != nil {
+			Error(c, ErrorNotFound, "plan not found")
+			return
+		}
+		if err := validatePlanPaymentIDs(Brand(plan.Brand), *req.StripePriceID, ""); err != nil {
+			Error(c, ErrorInvalidArgument, err.Error())
+			return
+		}
+	}
 	log.Debugf(c, "update request for plan %s with data: %+v", planID, req)
 
 	approvalID, executed, err := SubmitApproval(c, "plan_update", planUpdateApprovalParams{
@@ -257,4 +274,17 @@ func api_admin_restore_plan(c *gin.Context) {
 	db.Get().First(&plan, planID)
 	Success[Plan](c, &plan)
 	WriteAuditLog(c, "plan_restore", "plan", planID, nil)
+}
+
+// validatePlanPaymentIDs：套餐上挂的渠道商品 ID 必须属于该品牌开通的支付渠道——
+// 例如给 kaitu 套餐填 stripePriceId 会造出一个永远无法下单（405001）的 Stripe 套餐。
+func validatePlanPaymentIDs(b Brand, stripePriceID, appleProductID string) error {
+	cfg := b.Config()
+	if stripePriceID != "" && !cfg.AllowsPayment(PayChannelStripe) {
+		return fmt.Errorf("brand %s has no stripe payment channel; stripePriceId not allowed", b)
+	}
+	if appleProductID != "" && !cfg.AllowsPayment(PayChannelAppleIAP) {
+		return fmt.Errorf("brand %s has no apple_iap payment channel; appleProductId not allowed", b)
+	}
+	return nil
 }

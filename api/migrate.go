@@ -94,6 +94,19 @@ func Migrate() error {
 		}
 	}
 
+	// EDM 模板 slug 唯一性 slug → (slug, brand)（one-time, idempotent）。AutoMigrate 只会新建
+	// idx_emt_slug_brand，不会删旧的单列唯一索引——旧索引不删，overleap 就永远建不出与 kaitu
+	// 同名的 slug（worker 按 renewal-7d 等固定 slug 给两品牌发信，overleap 用户全部
+	// "template not found"）。守卫 = 旧索引存在；删后永久 no-op。
+	if mig := db.Get().Migrator(); mig.HasTable(&EmailMarketingTemplate{}) &&
+		mig.HasIndex(&EmailMarketingTemplate{}, "idx_email_marketing_templates_slug") {
+		if err := mig.DropIndex(&EmailMarketingTemplate{}, "idx_email_marketing_templates_slug"); err != nil {
+			log.Errorf(ctx, "failed to drop legacy email_marketing_templates slug index: %v", err)
+			return err
+		}
+		log.Infof(ctx, "dropped legacy email_marketing_templates slug unique index for (slug, brand) re-key")
+	}
+
 	err := db.Get().AutoMigrate(
 		&Plan{},
 		&User{},
