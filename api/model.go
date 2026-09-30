@@ -929,7 +929,9 @@ type EmailMarketingTemplate struct {
 
 	// 基础信息
 	Name        string `gorm:"type:varchar(255);not null" json:"name"`    // 模板名称
-	Slug        string `gorm:"type:varchar(100);uniqueIndex" json:"slug"` // 可读唯一标识（仅源模板）
+	// Slug 可读标识（仅源模板），**品牌内**唯一：复合唯一索引 (slug, brand)。worker 用固定 slug
+	// （renewal-7d 等）给两品牌用户发信、按收件人品牌选模板，所以两品牌必须能各有一份同名 slug。
+	Slug        string `gorm:"type:varchar(100);uniqueIndex:idx_emt_slug_brand,priority:1" json:"slug"`
 	Language    string `gorm:"type:varchar(35);not null" json:"language"` // BCP 47 语言标签，如 en-US, zh-CN
 	Subject     string `gorm:"type:varchar(500)" json:"subject"`          // 邮件主题
 	Content     string `gorm:"type:text" json:"content"`                  // 邮件内容（HTML格式）
@@ -942,7 +944,7 @@ type EmailMarketingTemplate struct {
 	Translations []EmailMarketingTemplate `gorm:"foreignKey:OriginID" json:"translations,omitempty"` // 翻译版本列表
 
 	// Brand 归属品牌：kaitu | overleap。用户出生属性 / 配置项品牌可见性。default 保证存量行零迁移。
-	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index" json:"brand"`
+	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';index;uniqueIndex:idx_emt_slug_brand,priority:2" json:"brand"`
 }
 
 // GetLanguagePreference 获取用户的语言偏好

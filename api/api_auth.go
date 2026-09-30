@@ -116,7 +116,7 @@ func sendCodeWithMode(c *gin.Context, userExistRequired bool) {
 		// 不要求用户存在（注册模式）：如果用户不存在则创建
 		if !userExists {
 			acceptLanguage := c.GetHeader("Accept-Language")
-			newUser, err := FindOrCreateUserByEmail(c, req.Email, req.Language, acceptLanguage)
+			newUser, err := FindOrCreateUserByEmail(c, ReqBrand(c), req.Email, req.Language, acceptLanguage)
 			if err != nil {
 				log.Errorf(c, "failed to create user for registration: %v", err)
 				Error(c, ErrorSystemError, "failed to create user")

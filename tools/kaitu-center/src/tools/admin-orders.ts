@@ -4,24 +4,30 @@
 
 import { z } from 'zod'
 import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
+import { brandFilter, withBrand } from './brand-params.js'
 
 export const orderTools: ToolRegistration[] = [
   defineApiTool({
     name: 'list_orders',
-    description: 'List orders with pagination. Filter by email.',
+    description: 'List orders with pagination. Filter by email and/or brand (an order\'s brand is its buyer\'s brand).',
     group: 'orders',
     params: {
       page: z.number().optional().describe('Page number'),
       page_size: z.number().optional().describe('Page size'),
       email: z.string().optional().describe('Filter by user email'),
+      brand: brandFilter,
     },
     path: '/app/orders',
     mapQuery: (p) => {
       const q: Record<string, string> = {}
       if (p.page !== undefined) q.page = String(p.page)
       if (p.page_size !== undefined) q.pageSize = String(p.page_size)
-      if (p.email !== undefined) q.email = String(p.email)
-      return q
+      // The API filters by (loginProvider, loginIdentity); a bare `email` param is ignored.
+      if (p.email !== undefined) {
+        q.loginProvider = 'email'
+        q.loginIdentity = String(p.email)
+      }
+      return withBrand(q, p.brand)
     },
   }),
 

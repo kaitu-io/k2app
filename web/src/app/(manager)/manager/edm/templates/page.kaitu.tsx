@@ -25,6 +25,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, FileText, Edit, Trash2 } from "lucide-react";
 import type { EmailTemplateResponse } from "@/lib/api";
+import { BrandBadge, useManagerBrand } from "@/components/manager/brand";
 import Link from "next/link";
 
 // Simple Chinese translation helper for admin pages (no i18n dependency)
@@ -63,6 +64,7 @@ const t = (key: string) => {
 };
 
 export default function EmailTemplatesPage() {
+  const { brandParam } = useManagerBrand();
   const locale = "zh-CN";
   const [templates, setTemplates] = useState<EmailTemplateResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,6 +86,11 @@ export default function EmailTemplatesPage() {
   };
 
   const columns: ColumnDef<EmailTemplateResponse>[] = [
+    {
+      id: "brand",
+      header: "品牌",
+      cell: ({ row }) => <BrandBadge brand={row.original.brand} />,
+    },
     {
       accessorKey: "name",
       header: t("campaigns.edm.templates.name"),
@@ -173,7 +180,7 @@ export default function EmailTemplatesPage() {
   const fetchTemplates = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await api.getEmailTemplates();
+      const data = await api.getEmailTemplates({ brand: brandParam });
       setTemplates(data.items);
     } catch (error) {
       toast.error(t("campaigns.edm.templates.fetchFailed"));
@@ -181,7 +188,7 @@ export default function EmailTemplatesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [brandParam]);
 
 
   const handleDelete = async (template: EmailTemplateResponse) => {

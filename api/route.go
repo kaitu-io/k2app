@@ -418,7 +418,7 @@ func SetupRouter() *gin.Engine {
 	// list/detail/cancel: AuthRequired（角色用户可看自己的）
 	// approve/reject: AdminRequired（仅 is_admin 可审批）
 	approvalRoutes := r.Group("/app/approvals")
-	approvalRoutes.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AuthRequired())
+	approvalRoutes.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), CORSMiddleware(), StaffAuthRequired())
 	{
 		approvalRoutes.GET("", api_admin_list_approvals)
 		approvalRoutes.GET("/:id", api_admin_get_approval)
@@ -435,7 +435,7 @@ func SetupRouter() *gin.Engine {
 	// 超级管理员（IsAdmin=true）经由 RoleRequired 内部 bypass 直接通过
 	opsAdmin := r.Group("/app")
 	log.Debugf(ctx, "registering /app opsAdmin group")
-	opsAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AuthRequired())
+	opsAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), CORSMiddleware(), StaffAuthRequired())
 	{
 		// No role restriction — every authenticated user can see their own permissions
 		opsAdmin.GET("/my-permissions", api_admin_my_permissions)

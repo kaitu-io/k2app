@@ -4,12 +4,14 @@
 
 import { z } from 'zod'
 import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
+import { brandFilter, brandRequired } from './brand-params.js'
 
 export const campaignTools: ToolRegistration[] = [
   defineApiTool({
     name: 'list_campaigns',
-    description: 'List all campaigns.',
+    description: 'List all campaigns. Each row carries its brand.',
     group: 'campaigns',
+    params: { brand: brandFilter },
     path: '/app/campaigns',
   }),
 
@@ -40,6 +42,7 @@ export const campaignTools: ToolRegistration[] = [
       matcher_type: z.string().optional().describe('Audience matcher: "first_order" = 新客 (not yet paid), "vip" = 老客 (already paid), "all" = anyone, "paid_before"/"paid_before_active" = time-windowed'),
       matcher_params: z.string().optional().describe('Matcher params JSON (e.g. {"beforeDate": 1735689600} for paid_before*)'),
       max_usage: z.number().optional().describe('Max total redemptions (0 or omitted = unlimited)'),
+      brand: brandRequired,
     },
     path: '/app/campaigns',
     mapBody: (p) => ({
@@ -48,6 +51,7 @@ export const campaignTools: ToolRegistration[] = [
       description: p.description, isActive: p.is_active,
       matcherType: p.matcher_type, matcherParams: p.matcher_params,
       maxUsage: p.max_usage,
+      brand: p.brand,
     }),
   }),
 

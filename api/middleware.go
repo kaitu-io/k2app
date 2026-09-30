@@ -418,8 +418,33 @@ func ReqUDID(c *gin.Context) string {
 	return ctx.UDID
 }
 
-// AuthRequired 认证中间件
+// AuthRequired 认证中间件（用户面 /api/*）。
+// 品牌强制隔离：非 admin 用户的品牌必须与请求品牌一致，否则硬拒（403003）。
+// 只有 IsAdmin 豁免——角色员工在 /api/* 上与普通用户一样受品牌约束。
 func AuthRequired() gin.HandlerFunc {
+	return authRequiredWith(func(u *User) bool { return u.IsAdmin != nil && *u.IsAdmin })
+}
+
+// StaffAuthRequired 是 /app/* 管理面的认证中间件：与 AuthRequired 相同，但品牌豁免覆盖
+// 所有员工（IsAdmin 或任一非 RoleUser 角色位）。manager 只有 kaitu.io 一个入口、管理
+// 两个品牌的数据，overleap 账号的角色员工不能因品牌错配被挡在外面。
+// 具体权限仍由组内的 RoleRequired / AdminRequired 把关；普通用户（仅 RoleUser）照旧硬拒。
+func StaffAuthRequired() gin.HandlerFunc {
+	return authRequiredWith(isCrossBrandStaff)
+}
+
+// isCrossBrandStaff: IsAdmin，或 Roles 含 RoleUser 以外的任一角色位。
+func isCrossBrandStaff(u *User) bool {
+	if u == nil {
+		return false
+	}
+	if u.IsAdmin != nil && *u.IsAdmin {
+		return true
+	}
+	return u.Roles&^RoleUser != 0
+}
+
+func authRequiredWith(brandExempt func(*User) bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := getAuthContext(c)
 		if ctx == nil {
@@ -428,9 +453,7 @@ func AuthRequired() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		// 品牌强制隔离：非 admin 用户的品牌必须与请求品牌一致，否则硬拒（403003）。
-		// admin 豁免，让管理员可跨品牌操作。
-		if u := ctx.User; u != nil && (u.IsAdmin == nil || !*u.IsAdmin) {
+		if u := ctx.User; u != nil && !brandExempt(u) {
 			if u.Brand != string(ReqBrand(c)) {
 				log.Warnf(c, "auth rejected for %s: user %d brand %q does not match request brand %q", c.Request.URL.Path, ctx.UserID, u.Brand, ReqBrand(c))
 				Error(c, ErrorBrandMismatch, "account belongs to a different brand")

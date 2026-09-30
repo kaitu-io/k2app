@@ -35,6 +35,8 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { api, isPendingApproval } from "@/lib/api";
+import { BrandBadge, BrandPicker, useManagerBrand } from "@/components/manager/brand";
+import type { BrandId } from "@/lib/brands";
 import {
   TIER_OPTIONS,
   DEFAULT_TIER,
@@ -57,6 +59,9 @@ interface Plan {
   month: number;       // 月数
   highlight: boolean;  // 是否高亮显示
   isActive: boolean;   // 是否激活
+  brand?: string;      // 归属品牌（创建后不可变）
+  stripePriceId?: string;
+  appleProductId?: string;
 }
 
 interface PlanListResponse {
@@ -77,7 +82,25 @@ interface PlanFormData {
   month: number;
   highlight: boolean;
   isActive: boolean;
+  // 仅创建时提交：品牌必选（API 拒绝空 brand）；渠道商品 ID 可选，API 校验该品牌是否开通对应渠道。
+  brand: BrandId | "";
+  stripePriceId: string;
+  appleProductId: string;
 }
+
+const EMPTY_PLAN_FORM: PlanFormData = {
+  pid: "",
+  tier: DEFAULT_TIER,
+  label: "",
+  price: 0,
+  originPrice: 0,
+  month: 0,
+  highlight: false,
+  isActive: true,
+  brand: "",
+  stripePriceId: "",
+  appleProductId: "",
+};
 
 export default function PlansPage() {
   const [data, setData] = useState<Plan[]>([]);
@@ -93,21 +116,18 @@ export default function PlansPage() {
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
 
   // 表单数据 —— 新建默认 tier=basic
-  const [formData, setFormData] = useState<PlanFormData>({
-    pid: "",
-    tier: DEFAULT_TIER,
-    label: "",
-    price: 0,
-    originPrice: 0,
-    month: 0,
-    highlight: false,
-    isActive: true,
-  });
+  const [formData, setFormData] = useState<PlanFormData>({ ...EMPTY_PLAN_FORM });
+  const { brandParam } = useManagerBrand();
 
   // 档位配额缓存（来自 GET /app/tiers）
   const [tierQuotas, setTierQuotas] = useState<Record<string, TierInfo>>({});
 
   const columns: ColumnDef<Plan>[] = [
+    {
+      id: "brand",
+      header: "品牌",
+      cell: ({ row }: { row: Row<Plan> }) => <BrandBadge brand={row.original.brand} />,
+    },
     {
       accessorKey: "pid",
       header: "套餐ID",
@@ -210,7 +230,7 @@ export default function PlansPage() {
 
   useEffect(() => {
     fetchPlans();
-  }, [page, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, pageSize, brandParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 一次性加载 tier 元信息；配额不随分页变化，无需重复拉取
   useEffect(() => {
@@ -240,7 +260,7 @@ export default function PlansPage() {
     try {
       // 后端分页为 1-based，前端 page state 为 0-based，请求时 +1 转换
       const response = await api.request<PlanListResponse>(
-        `/app/plans?page=${page + 1}&pageSize=${pageSize}`
+        `/app/plans?page=${page + 1}&pageSize=${pageSize}${brandParam ? `&brand=${brandParam}` : ""}`
       );
 
       setData(response.items || []);
@@ -271,23 +291,23 @@ export default function PlansPage() {
   });
 
   const resetForm = () => {
-    setFormData({
-      pid: "",
-      tier: DEFAULT_TIER,
-      label: "",
-      price: 0,
-      originPrice: 0,
-      month: 0,
-      highlight: false,
-      isActive: true,
-    });
+    setFormData({ ...EMPTY_PLAN_FORM });
   };
 
   const handleCreate = async () => {
+    if (!formData.brand) {
+      toast.error("请选择归属品牌");
+      return;
+    }
+    const { stripePriceId, appleProductId, ...rest } = formData;
     try {
       await api.request("/app/plans", {
         method: "POST",
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...rest,
+          ...(stripePriceId.trim() ? { stripePriceId: stripePriceId.trim() } : {}),
+          ...(appleProductId.trim() ? { appleProductId: appleProductId.trim() } : {}),
+        }),
       });
       toast.success("套餐创建成功");
       setIsCreateDialogOpen(false);
@@ -309,6 +329,9 @@ export default function PlansPage() {
       month: plan.month,
       highlight: plan.highlight,
       isActive: plan.isActive,
+      brand: (plan.brand as BrandId | undefined) ?? "",
+      stripePriceId: plan.stripePriceId ?? "",
+      appleProductId: plan.appleProductId ?? "",
     });
     setIsEditDialogOpen(true);
   };
@@ -432,6 +455,18 @@ export default function PlansPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="plan-brand" className="text-right">
+                  {"归属品牌 *"}
+                </Label>
+                <div className="col-span-3">
+                  <BrandPicker
+                    id="plan-brand"
+                    value={formData.brand}
+                    onChange={(b) => setFormData({ ...formData, brand: b })}
+                  />
+                </div>
+              </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="pid" className="text-right">
                   {"套餐ID"}
@@ -567,9 +602,33 @@ export default function PlansPage() {
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="stripePriceId" className="text-right">
+                  {"Stripe Price ID"}
+                </Label>
+                <Input
+                  id="stripePriceId"
+                  value={formData.stripePriceId}
+                  onChange={(e) => setFormData({ ...formData, stripePriceId: e.target.value })}
+                  className="col-span-3 font-mono"
+                  placeholder="可选，如 price_1N...（仅开通 Stripe 渠道的品牌，后端校验）"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="appleProductId" className="text-right">
+                  {"Apple 商品 ID"}
+                </Label>
+                <Input
+                  id="appleProductId"
+                  value={formData.appleProductId}
+                  onChange={(e) => setFormData({ ...formData, appleProductId: e.target.value })}
+                  className="col-span-3 font-mono"
+                  placeholder="可选，iOS 内购商品 ID（须属于该品牌的 App）"
+                />
+              </div>
             </div>
             <DialogFooter>
-              <Button onClick={handleCreate}>{"创建"}</Button>
+              <Button onClick={handleCreate} disabled={!formData.brand}>{"创建"}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -585,6 +644,13 @@ export default function PlansPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">{"归属品牌"}</Label>
+              <div className="col-span-3 flex items-center gap-2">
+                <BrandBadge brand={formData.brand} />
+                <span className="text-xs text-muted-foreground">{"创建后不可修改"}</span>
+              </div>
+            </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="edit-pid" className="text-right">
                 {"套餐ID"}

@@ -66,7 +66,7 @@ func api_create_ticket(c *gin.Context) {
 		req.Source = "anonymous"
 
 		// Create or find user by email so ticket has a user_id for conversation
-		if user, err := FindOrCreateUserByEmail(ctx, req.Email, req.Language); err != nil {
+		if user, err := FindOrCreateUserByEmail(ctx, ReqBrand(c), req.Email, req.Language); err != nil {
 			log.Warnf(ctx, "api_create_ticket: failed to find/create user for %s: %v", hideEmail(req.Email), err)
 		} else {
 			userID = user.ID

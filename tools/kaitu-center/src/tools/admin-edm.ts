@@ -7,12 +7,14 @@
 
 import { z } from 'zod'
 import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
+import { brandFilter, brandRequired } from './brand-params.js'
 
 export const edmTools: ToolRegistration[] = [
   defineApiTool({
     name: 'list_edm_templates',
-    description: 'List email marketing templates. Returns id, name, slug, subject, language, created_at.',
+    description: 'List email marketing templates. Returns id, name, slug, subject, language, brand, created_at. Slugs are unique per brand; a send picks the template by the recipient\'s brand.',
     group: 'edm',
+    params: { brand: brandFilter },
     path: '/app/edm/templates',
   }),
 
@@ -30,8 +32,10 @@ export const edmTools: ToolRegistration[] = [
       content: z.string().describe('Email body content (supports {{.Var}} placeholders)'),
       description: z.string().optional().describe('Template description'),
       is_active: z.boolean().optional().describe('Whether template is active (default true)'),
+      brand: brandRequired,
     },
     mapBody: (p) => ({
+      brand: p.brand,
       name: p.name,
       slug: p.slug,
       language: p.language,
@@ -77,15 +81,17 @@ export const edmTools: ToolRegistration[] = [
     path: '/app/edm/send',
     params: {
       batch_id: z.string().describe('Unique batch ID for idempotency (e.g. "mcp:2026-04-03:test")'),
+      brand: z.enum(['kaitu', 'overleap']).optional().describe('Batch brand. Required when any item omits user_id: the recipient is looked up by (email, brand) — never created; unknown emails are skipped. Items with user_id must belong to this brand.'),
       items: z.array(z.object({
         email: z.string().describe('Recipient email address'),
-        user_id: z.number().optional().describe('User ID (optional, auto-resolved from email if omitted)'),
+        user_id: z.number().optional().describe('User ID (optional; if omitted the recipient is looked up by email within the batch brand)'),
         slug: z.string().describe('Template slug (e.g. "renewal-30d")'),
         vars: z.record(z.string(), z.string()).optional().describe('Template variables as key-value pairs'),
       })).describe('Array of email send items'),
     },
     mapBody: (p) => ({
       batchId: p.batch_id,
+      brand: p.brand,
       items: (p.items as Array<{ email: string; user_id?: number; slug: string; vars?: Record<string, string> }>).map((item) => ({
         email: item.email,
         userId: item.user_id,

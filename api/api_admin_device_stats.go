@@ -14,6 +14,17 @@ import (
 // and check err once at the end instead of guarding every call site.
 type statsAccumulator struct {
 	err error
+	// scope 施加 admin ?brand= 过滤（Device 无 brand 列，品牌经所属用户继承）；nil = 不过滤。
+	scope func(*gorm.DB) *gorm.DB
+}
+
+// devices 返回一个新的 Device 基础查询，已套上品牌过滤。
+func (s *statsAccumulator) devices() *gorm.DB {
+	q := db.Get().Model(&Device{})
+	if s.scope != nil {
+		q = q.Scopes(s.scope)
+	}
+	return q
 }
 
 func (s *statsAccumulator) count(q *gorm.DB, out *int64) {
@@ -40,13 +51,13 @@ func (s *statsAccumulator) find(q *gorm.DB, out any) {
 // GET /app/devices/statistics
 func api_admin_get_device_statistics(c *gin.Context) {
 	var result DeviceStatisticsResponse
-	var s statsAccumulator
+	s := statsAccumulator{scope: adminUserBrandScope(c, "user_id")}
 
 	// Grand total
-	s.count(db.Get().Model(&Device{}), &result.TotalDevices)
+	s.count(s.devices(), &result.TotalDevices)
 
 	// Router count
-	s.count(db.Get().Model(&Device{}).Where("is_gateway = ?", true), &result.RouterDevices)
+	s.count(s.devices().Where("is_gateway = ?", true), &result.RouterDevices)
 
 	// App-device aggregations
 	collectPlatformCounts(&s, false, &result.ByPlatform, &result.DesktopDevices, &result.MobileDevices, &result.UnknownDevices)
@@ -69,13 +80,13 @@ func api_admin_get_device_statistics(c *gin.Context) {
 	d7Ago := now - 7*24*60*60
 	d30Ago := now - 30*24*60*60
 
-	s.count(db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", false, h24Ago), &result.Active24h)
-	s.count(db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", false, d7Ago), &result.Active7d)
-	s.count(db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", false, d30Ago), &result.Active30d)
+	s.count(s.devices().Where("is_gateway = ? AND token_last_used_at >= ?", false, h24Ago), &result.Active24h)
+	s.count(s.devices().Where("is_gateway = ? AND token_last_used_at >= ?", false, d7Ago), &result.Active7d)
+	s.count(s.devices().Where("is_gateway = ? AND token_last_used_at >= ?", false, d30Ago), &result.Active30d)
 
-	s.count(db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", true, h24Ago), &result.ActiveRouter24h)
-	s.count(db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", true, d7Ago), &result.ActiveRouter7d)
-	s.count(db.Get().Model(&Device{}).Where("is_gateway = ? AND token_last_used_at >= ?", true, d30Ago), &result.ActiveRouter30d)
+	s.count(s.devices().Where("is_gateway = ? AND token_last_used_at >= ?", true, h24Ago), &result.ActiveRouter24h)
+	s.count(s.devices().Where("is_gateway = ? AND token_last_used_at >= ?", true, d7Ago), &result.ActiveRouter7d)
+	s.count(s.devices().Where("is_gateway = ? AND token_last_used_at >= ?", true, d30Ago), &result.ActiveRouter30d)
 
 	if s.err != nil {
 		Error(c, ErrorSystemError, "device statistics query failed: "+s.err.Error())
@@ -125,7 +136,7 @@ func collectPlatformCounts(s *statsAccumulator, isRouter bool, out *[]PlatformCo
 		Count    int64
 	}
 	var rows []row
-	s.find(db.Get().Model(&Device{}).
+	s.find(s.devices().
 		Select("COALESCE(NULLIF(app_platform, ''), 'unknown') as platform, COUNT(*) as count").
 		Where("is_gateway = ?", isRouter).
 		Group("COALESCE(NULLIF(app_platform, ''), 'unknown')").
@@ -156,7 +167,7 @@ func collectVersionCounts(s *statsAccumulator, isRouter bool, out *[]VersionCoun
 		Count   int64
 	}
 	var rows []row
-	s.find(db.Get().Model(&Device{}).
+	s.find(s.devices().
 		Select("COALESCE(NULLIF(app_version, ''), 'unknown') as version, COUNT(*) as count").
 		Where("is_gateway = ?", isRouter).
 		Group("COALESCE(NULLIF(app_version, ''), 'unknown')").
@@ -173,7 +184,7 @@ func collectArchCounts(s *statsAccumulator, isRouter bool, out *[]ArchCount) {
 		Count int64
 	}
 	var rows []row
-	s.find(db.Get().Model(&Device{}).
+	s.find(s.devices().
 		Select("COALESCE(NULLIF(app_arch, ''), 'unknown') as arch, COUNT(*) as count").
 		Where("is_gateway = ?", isRouter).
 		Group("COALESCE(NULLIF(app_arch, ''), 'unknown')").
@@ -189,7 +200,7 @@ func collectOSVersionCounts(s *statsAccumulator, isRouter bool, out *[]OSVersion
 		Count     int64
 	}
 	var rows []row
-	s.find(db.Get().Model(&Device{}).
+	s.find(s.devices().
 		Select("COALESCE(NULLIF(os_version, ''), 'unknown') as os_version, COUNT(*) as count").
 		Where("is_gateway = ?", isRouter).
 		Group("COALESCE(NULLIF(os_version, ''), 'unknown')").
@@ -206,7 +217,7 @@ func collectDeviceModelCounts(s *statsAccumulator, isRouter bool, out *[]DeviceM
 		Count       int64
 	}
 	var rows []row
-	s.find(db.Get().Model(&Device{}).
+	s.find(s.devices().
 		Select("COALESCE(NULLIF(device_model, ''), 'unknown') as device_model, COUNT(*) as count").
 		Where("is_gateway = ?", isRouter).
 		Group("COALESCE(NULLIF(device_model, ''), 'unknown')").

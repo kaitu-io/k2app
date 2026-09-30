@@ -79,7 +79,8 @@ func SetRetailerLevelByEmail(ctx context.Context, email string, level int) error
 	}
 
 	// 1. 查找或创建用户（复用现有逻辑）
-	user, err := FindOrCreateUserByEmail(ctx, email)
+	// 分销商计划是 kaitu 独有（web brands.ts features.retailerProgram）——显式 kaitu。
+	user, err := FindOrCreateUserByEmail(ctx, BrandKaitu, email)
 	if err != nil {
 		return fmt.Errorf("failed to find or create user: %v", err)
 	}

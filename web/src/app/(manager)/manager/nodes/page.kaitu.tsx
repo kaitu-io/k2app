@@ -18,6 +18,7 @@ import {
   ListResult,
 } from "@/lib/api";
 import { toast } from "sonner";
+import { useManagerBrand } from "@/components/manager/brand";
 import { RefreshCw, Copy } from "lucide-react";
 
 // Format relative time (e.g., "5分钟前")
@@ -55,11 +56,13 @@ function copyToClipboard(text: string) {
 export default function NodesPage() {
   const [data, setData] = useState<ListResult<AdminNodeItem> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { brandParam } = useManagerBrand();
 
+  // 选定品牌时只列出对该品牌生效可见的节点（API: 声明 ∧ 未下架）。
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await api.listSlaveNodes({ page: 1, pageSize: 200 });
+      const response = await api.listSlaveNodes({ page: 1, pageSize: 200, brand: brandParam });
       setData(response);
     } catch (error) {
       console.error("Failed to fetch nodes data:", error);
@@ -71,7 +74,8 @@ export default function NodesPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandParam]);
 
   return (
     <div className="container mx-auto py-10">

@@ -38,10 +38,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { BrandBadge, useManagerBrand } from "@/components/manager/brand";
 
 // 定义用户列表项的数据结构
 interface UserListItem {
   uuid: string;
+  brand?: string;
   expiredAt: number;
   isFirstOrderDone: boolean;
   loginIdentifies: { type: string; value: string }[];
@@ -92,6 +94,7 @@ interface UserListResponse {
 export default function UsersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { brandParam } = useManagerBrand();
 
   const [data, setData] = useState<UserListItem[]>([]);
   const [pageCount, setPageCount] = useState(0);
@@ -165,6 +168,11 @@ export default function UsersPage() {
         const emailIdentify = identifies.find((id) => id.type === "email");
         return emailIdentify ? emailIdentify.value : "N/A";
       },
+    },
+    {
+      id: "brand",
+      header: "品牌",
+      cell: ({ row }: { row: Row<UserListItem> }) => <BrandBadge brand={row.original.brand} />,
     },
     {
       accessorKey: "expiredAt",
@@ -271,6 +279,7 @@ export default function UsersPage() {
       params.append("page", (page + 1).toString()); // 后端 1-based，前端 0-based
       params.append("pageSize", pageSize.toString());
       if (email) params.append("email", email.trim());
+      if (brandParam) params.append("brand", brandParam);
       if (hasOrdered) params.append("has_ordered", hasOrdered);
       if (isRetailer) params.append("is_retailer", isRetailer);
       if (startDate)
@@ -304,7 +313,7 @@ export default function UsersPage() {
       }
     };
     fetchUsers();
-  }, [page, pageSize, email, hasOrdered, isRetailer, startDate, endDate]);
+  }, [page, pageSize, email, hasOrdered, isRetailer, startDate, endDate, brandParam]);
 
   const table = useReactTable({
     data,
@@ -407,6 +416,7 @@ export default function UsersPage() {
       params.append("page", (page + 1).toString()); // 后端 1-based，前端 0-based
       params.append("pageSize", pageSize.toString());
       if (email) params.append("email", email.trim());
+      if (brandParam) params.append("brand", brandParam);
       if (hasOrdered) params.append("has_ordered", hasOrdered);
       if (isRetailer) params.append("is_retailer", isRetailer);
       if (startDate)

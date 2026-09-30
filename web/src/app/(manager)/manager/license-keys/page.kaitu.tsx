@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { api, LicenseKeyAdmin } from "@/lib/api";
+import { BrandBadge, useManagerBrand } from "@/components/manager/brand";
 import { toast } from "sonner";
 import { Trash2, Copy } from "lucide-react";
 
@@ -32,6 +33,7 @@ function getStatus(key: LicenseKeyAdmin): { label: string; variant: "default" | 
 export default function LicenseKeysPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { brandParam } = useManagerBrand();
   const [data, setData] = useState<LicenseKeyAdmin[]>([]);
   const [total, setTotal] = useState(0);
   const [pageCount, setPageCount] = useState(0);
@@ -57,6 +59,7 @@ export default function LicenseKeysPage() {
         </div>
       ),
     },
+    { id: "brand", header: "品牌", cell: ({ row }) => <BrandBadge brand={row.original.brand} /> },
     { accessorKey: "batchId", header: "批次ID", cell: ({ row }) => <code className="text-xs bg-muted px-1 py-0.5 rounded">{row.original.batchId}</code> },
     { accessorKey: "planDays", header: "天数", cell: ({ row }) => `${row.original.planDays} 天` },
     { header: "状态", cell: ({ row }) => { const s = getStatus(row.original); return <Badge variant={s.variant}>{s.label}</Badge>; } },
@@ -73,7 +76,7 @@ export default function LicenseKeysPage() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params: { page: number; pageSize: number; batchId?: number; isUsed?: boolean } = { page, pageSize };
+      const params: Parameters<typeof api.listAdminLicenseKeys>[0] = { page, pageSize, brand: brandParam };
       if (batchIdParam) params.batchId = parseInt(batchIdParam, 10);
       if (isUsedParam !== "") params.isUsed = isUsedParam === "true";
       const res = await api.listAdminLicenseKeys(params);
@@ -82,7 +85,7 @@ export default function LicenseKeysPage() {
       setPageCount(Math.ceil(res.total / pageSize));
     } catch { toast.error("获取授权码列表失败"); }
     finally { setIsLoading(false); }
-  }, [page, pageSize, batchIdParam, isUsedParam]);
+  }, [page, pageSize, batchIdParam, isUsedParam, brandParam]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

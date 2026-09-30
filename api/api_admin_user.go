@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -42,6 +43,7 @@ func adminUserScalars(u *User) DataUser {
 		HasAccessKey:       u.AccessKey != nil && *u.AccessKey != "",
 		AccessKeyCreatedAt: u.AccessKeyCreatedAt,
 		IsBlocked:          isUserBlocked(u),
+		Brand:              u.Brand,
 	}
 }
 
@@ -51,16 +53,19 @@ func api_admin_list_users(c *gin.Context) {
 	pagination := PaginationFromRequest(c)
 	log.Infof(c, "Admin request for user list, page: %d, size: %d", pagination.Page, pagination.PageSize)
 
-	dbQuery := db.Get().Model(&User{})
+	dbQuery := db.Get().Model(&User{}).Scopes(adminBrandScope(c, "brand"))
 
-	// 根据 email 搜索（严格匹配）
+	// 根据 email 搜索（严格匹配，大小写不敏感）。同一邮箱在两品牌可各有一个独立账号——
+	// 必须返回**全部**命中（再由 ?brand= 收窄），不能 First() 随机挑一个。
 	if email := c.Query("email"); email != "" {
 		log.Infof(c, "Filtering users by email: %s", email)
-		// 不能直接搜索密文，所以我们先找到 index_id
-		indexID := secretHashIt(c, []byte(email))
-		var identity LoginIdentify
-		if err := db.Get().Where(&LoginIdentify{IndexID: indexID, Type: "email"}).First(&identity).Error; err == nil {
-			dbQuery = dbQuery.Where(&User{ID: identity.UserID})
+		// 不能直接搜索密文，所以我们先找到 index_id（与登录路径同一归一化）
+		normalized := strings.ToLower(strings.TrimSpace(email))
+		indexID := secretHashIt(c, []byte(normalized))
+		var userIDs []uint64
+		if err := db.Get().Model(&LoginIdentify{}).Where("type = ? AND index_id = ?", "email", indexID).
+			Pluck("user_id", &userIDs).Error; err == nil && len(userIDs) > 0 {
+			dbQuery = dbQuery.Where("id IN ?", userIDs)
 		} else {
 			log.Warnf(c, "No user found for email: %s", email)
 			List(c, []DataUser{}, pagination)
@@ -692,15 +697,24 @@ func api_admin_update_user_email(c *gin.Context) {
 		return
 	}
 
+	// 与登录路径同一归一化（去空白 + 小写）——否则 index_id 与登录时算出的不一致，
+	// 用户用新邮箱永远登不上。
+	cleaned, cerr := sanitizeEmail(req.Email)
+	if cerr != nil {
+		Error(c, ErrorInvalidArgument, "invalid email format")
+		return
+	}
+	req.Email = cleaned
+
 	// 计算新邮箱的索引ID
 	newIndexID := secretHashIt(c, []byte(req.Email))
 
-	// 检查邮箱是否已被其他用户使用
+	// 检查邮箱是否已被**同品牌**其他用户使用——同邮箱在两品牌是两个独立账号
+	// （唯一索引 (type, index_id, brand)），另一品牌占用不算冲突。
+	userBrand := Brand(user.Brand).Config().ID
 	var existingIdentify LoginIdentify
-	err := db.Get().Where(&LoginIdentify{
-		Type:    "email",
-		IndexID: newIndexID,
-	}).First(&existingIdentify).Error
+	err := db.Get().Where("type = ? AND index_id = ? AND brand = ?", "email", newIndexID, string(userBrand)).
+		First(&existingIdentify).Error
 
 	if err == nil && existingIdentify.UserID != user.ID {
 		// 邮箱已被其他用户使用
@@ -727,6 +741,7 @@ func api_admin_update_user_email(c *gin.Context) {
 		// 更新现有记录
 		identify.IndexID = newIndexID
 		identify.EncryptedValue = encryptedEmail
+		identify.Brand = string(userBrand)
 		if err := db.Get().Save(&identify).Error; err != nil {
 			log.Errorf(c, "更新邮箱失败: %v", err)
 			Error(c, ErrorSystemError, "update email failed")
@@ -739,6 +754,7 @@ func api_admin_update_user_email(c *gin.Context) {
 			Type:           "email",
 			IndexID:        newIndexID,
 			EncryptedValue: encryptedEmail,
+			Brand:          string(userBrand), // 继承用户出生品牌，不能落列默认值 kaitu
 		}
 		if err := db.Get().Create(&identify).Error; err != nil {
 			log.Errorf(c, "创建邮箱登录标识失败: %v", err)

@@ -22,7 +22,7 @@ func api_admin_list_email_templates(c *gin.Context) {
 	isActiveStr := c.Query("isActive")
 
 	// 构建查询 - 只返回原始模板（OriginID为NULL的模板）
-	query := db.Get().Model(&EmailMarketingTemplate{}).Where("origin_id IS NULL")
+	query := db.Get().Model(&EmailMarketingTemplate{}).Where("origin_id IS NULL").Scopes(adminBrandScope(c, "brand"))
 
 	// 状态筛选
 	if isActiveStr != "" {
@@ -44,7 +44,7 @@ func api_admin_list_email_templates(c *gin.Context) {
 
 	// 分页查询
 	var templates []EmailMarketingTemplate
-	if err := query.Offset(pagination.Offset()).Limit(pagination.PageSize).Find(&templates).Error; err != nil {
+	if err := query.Order("id DESC").Offset(pagination.Offset()).Limit(pagination.PageSize).Find(&templates).Error; err != nil {
 		log.Errorf(c, "failed to query templates: %v", err)
 		Error(c, ErrorSystemError, "failed to query templates")
 		return
@@ -72,6 +72,12 @@ func api_admin_create_email_template(c *gin.Context) {
 		return
 	}
 
+	brand, brandErr := BrandRequired(req.Brand)
+	if brandErr != nil {
+		Error(c, ErrorInvalidArgument, brandErr.Error())
+		return
+	}
+
 	// 标准化语言代码
 	normalizedLang := NormalizeBCP47Language(req.Language)
 
@@ -92,6 +98,7 @@ func api_admin_create_email_template(c *gin.Context) {
 		Description: req.Description,
 		IsActive:    BoolPtr(req.IsActive),
 		OriginID:    req.OriginID,
+		Brand:       string(brand),
 	}
 
 	// 创建模板
@@ -272,6 +279,7 @@ func convertEmailMarketingTemplateToResponse(template EmailMarketingTemplate) Em
 		IsActive:    template.IsActive != nil && *template.IsActive,
 		OriginID:    template.OriginID,
 		IsOriginal:  template.OriginID == nil, // 如果OriginID为nil，则为原始模板
+		Brand:       template.Brand,
 	}
 
 	return response
@@ -290,6 +298,24 @@ func api_admin_send_templated_emails(c *gin.Context) {
 		return
 	}
 
+	// 批次品牌：非空必须合法；有条目缺 userId（按邮箱找人）时必填。
+	if req.Brand != "" {
+		b, err := BrandForCreate(req.Brand)
+		if err != nil {
+			Error(c, ErrorInvalidArgument, "invalid brand")
+			return
+		}
+		req.Brand = string(b)
+	}
+	if req.Brand == "" {
+		for _, item := range req.Items {
+			if item.UserID == 0 {
+				Error(c, ErrorInvalidArgument, "brand is required when any item has no userId")
+				return
+			}
+		}
+	}
+
 	// 收集 slug 列表用于审批摘要
 	slugSet := make(map[string]bool)
 	for _, item := range req.Items {
@@ -300,7 +326,7 @@ func api_admin_send_templated_emails(c *gin.Context) {
 		slugs = append(slugs, s)
 	}
 
-	summary := fmt.Sprintf("发送模板邮件：%d 封，模板：%v，批次：%s", len(req.Items), slugs, req.BatchID)
+	summary := fmt.Sprintf("发送模板邮件：%d 封，模板：%v，批次：%s，品牌：%s", len(req.Items), slugs, req.BatchID, req.Brand)
 
 	approvalID, executed, err := SubmitApproval(c, "edm_send", &req, summary)
 	if err != nil {

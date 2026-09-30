@@ -4,12 +4,14 @@
 
 import { z } from 'zod'
 import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
+import { brandFilter, brandRequired } from './brand-params.js'
 
 export const planTools: ToolRegistration[] = [
   defineApiTool({
     name: 'list_admin_plans',
-    description: 'List all subscription plans (admin view with hidden plans).',
+    description: 'List all subscription plans (admin view with hidden plans). Each row carries its brand.',
     group: 'plans',
+    params: { brand: brandFilter },
     path: '/app/plans',
   }),
 
@@ -26,12 +28,14 @@ export const planTools: ToolRegistration[] = [
       month: z.number().describe('Subscription months'),
       highlight: z.string().optional().describe('Highlight text'),
       is_active: z.boolean().optional().describe('Whether plan is active'),
+      brand: brandRequired,
     },
     path: '/app/plans',
     mapBody: (p) => ({
       pid: p.pid, label: p.label, price: p.price,
       originPrice: p.origin_price, month: p.month,
       highlight: p.highlight, isActive: p.is_active,
+      brand: p.brand,
     }),
   }),
 

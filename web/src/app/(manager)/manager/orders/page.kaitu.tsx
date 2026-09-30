@@ -29,7 +29,8 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { api, AdminOrderListItem, isPendingApproval } from "@/lib/api";
+import { api, AdminOrderListItem, AdminOrderListParams, isPendingApproval } from "@/lib/api";
+import { BrandBadge, useManagerBrand } from "@/components/manager/brand";
 import { getApiErrorMessageZh } from "@/lib/api-errors";
 import { toast } from "sonner";
 
@@ -66,6 +67,8 @@ export default function OrdersPage() {
   const [localIsPaid, setLocalIsPaid] = useState(isPaid || "");
   const [localIsRefunded, setLocalIsRefunded] = useState(isRefunded || "");
 
+  const { brandParam } = useManagerBrand();
+
   const formatAmount = (amount: number) => {
     return `$${(amount / 100).toFixed(2)}`;
   };
@@ -82,9 +85,10 @@ export default function OrdersPage() {
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params: Record<string, string | number | boolean> = {
+      const params: AdminOrderListParams = {
         page,
         pageSize,
+        brand: brandParam,
       };
 
       if (loginProvider && loginIdentity) {
@@ -110,7 +114,7 @@ export default function OrdersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, pageSize, loginProvider, loginIdentity, isPaid, isRefunded]);
+  }, [page, pageSize, loginProvider, loginIdentity, isPaid, isRefunded, brandParam]);
 
   useEffect(() => {
     fetchOrders();
@@ -173,6 +177,11 @@ export default function OrdersPage() {
           ) : null}
         </div>
       ),
+    },
+    {
+      id: "brand",
+      header: "品牌",
+      cell: ({ row }) => <BrandBadge brand={row.original.brand} />,
     },
     {
       accessorKey: "user",

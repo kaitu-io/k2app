@@ -34,6 +34,21 @@ describe('source guards', () => {
     expect(hits.map((f) => path.relative(ROOT, f))).toEqual([]);
   });
 
+  // The manager has exactly one entry (the other site's /manager, backed by /app/*).
+  // This site never grows an admin surface: no route segment named manager / admin,
+  // and the middleware 404s /app/* (tests/middleware.test.ts).
+  it('has no admin route tree', () => {
+    const dirs = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => {
+        const p = path.join(dir, name);
+        return statSync(p).isDirectory() ? [p, ...dirs(p)] : [];
+      });
+    const hits = dirs(path.join(ROOT, 'src/app')).filter((d) =>
+      /^\(?(manager|admin)\)?$/i.test(path.basename(d)),
+    );
+    expect(hits.map((d) => path.relative(ROOT, d))).toEqual([]);
+  });
+
   it('no imports from the web/ app', () => {
     const hits = all.filter((f) => /from ['"](\.\.\/)+web\//.test(readFileSync(f, 'utf8')));
     expect(hits).toEqual([]);

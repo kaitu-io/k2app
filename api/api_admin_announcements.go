@@ -22,7 +22,7 @@ type AnnouncementRequest struct {
 	MaxVersion string `json:"maxVersion"` // 最高版本，空=不限
 	ExpiresAt  int64  `json:"expiresAt"`  // Unix秒，0=不过期
 	IsActive   *bool  `json:"isActive"`
-	// Brand 归属品牌：kaitu | overleap，仅创建时生效，空→回退 kaitu，非空但非法→拒绝（ErrorInvalidArgument，见 BrandForCreate）；更新时忽略（品牌创建后不可变）。
+	// Brand 归属品牌：kaitu | overleap，仅创建时生效，HTTP 创建必填（空或非法→ErrorInvalidArgument，见 BrandRequired；审批回调兜底 BrandForCreate 空→kaitu）；更新时忽略（品牌创建后不可变）。
 	Brand string `json:"brand" example:"kaitu"`
 }
 
@@ -69,7 +69,7 @@ func api_admin_list_announcements(c *gin.Context) {
 	log.Infof(c, "admin request to list announcements")
 
 	pagination := PaginationFromRequest(c)
-	query := db.Get().Model(&Announcement{})
+	query := db.Get().Model(&Announcement{}).Scopes(adminBrandScope(c, "brand"))
 
 	if err := query.Count(&pagination.Total).Error; err != nil {
 		log.Errorf(c, "failed to count announcements: %v", err)
@@ -138,9 +138,9 @@ func api_admin_create_announcement(c *gin.Context) {
 
 	isActive := req.IsActive != nil && *req.IsActive
 
-	brand, brandErr := BrandForCreate(req.Brand)
+	brand, brandErr := BrandRequired(req.Brand)
 	if brandErr != nil {
-		Error(c, ErrorInvalidArgument, "invalid brand")
+		Error(c, ErrorInvalidArgument, brandErr.Error())
 		return
 	}
 

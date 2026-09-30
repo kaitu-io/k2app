@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
 
 // SendEmailItem 单封邮件的发送请求
@@ -22,8 +24,13 @@ type SendEmailItem struct {
 
 // SendEmailsRequest 批量发送请求
 type SendEmailsRequest struct {
-	BatchID string          `json:"batchId"`
-	Items   []SendEmailItem `json:"items"`
+	BatchID string `json:"batchId"`
+	// Brand 批次品牌（kaitu | overleap）。随异步任务 payload 走——任务里没有请求上下文。
+	// UserID==0 的条目按 (邮箱, Brand) 查收件人，Brand 为空则这类条目直接失败；
+	// 带 UserID 的条目若用户品牌 ≠ Brand 也失败（防止给另一品牌的用户发本品牌的信）。
+	// 为空时带 UserID 的条目不做品牌约束（worker 按收件人品牌选模板，天然正确）。
+	Brand string          `json:"brand,omitempty"`
+	Items []SendEmailItem `json:"items"`
 }
 
 // SendEmailResultItem 单封邮件发送结果
@@ -114,7 +121,7 @@ func SendTemplatedEmails(ctx context.Context, req *SendEmailsRequest) (*SendEmai
 		case <-ticker.C:
 		}
 
-		itemResult := sendSingleTemplatedEmail(ctx, req.BatchID, &item, templateCache, varsCache)
+		itemResult := sendSingleTemplatedEmail(ctx, req.BatchID, req.Brand, &item, templateCache, varsCache)
 		result.Items = append(result.Items, itemResult)
 
 		switch itemResult.Status {
@@ -140,18 +147,32 @@ func SendTemplatedEmails(ctx context.Context, req *SendEmailsRequest) (*SendEmai
 func sendSingleTemplatedEmail(
 	ctx context.Context,
 	batchID string,
+	batchBrand string,
 	item *SendEmailItem,
 	templateCache map[string]*EmailMarketingTemplate,
 	varsCache map[string][]string,
 ) SendEmailResultItem {
 	resultItem := SendEmailResultItem{Email: item.Email}
 
-	// 1. Resolve user
+	// 1. Resolve user —— EDM 只查不建：营销发信绝不能造账号。
+	// 按邮箱找人必须带批次品牌：同一邮箱在两品牌是两个独立账号，任务里没有请求上下文可推断。
 	userID := item.UserID
 	var resolvedUser *User
 	if userID == 0 {
-		user, err := FindOrCreateUserByEmail(ctx, item.Email)
+		if !Brand(batchBrand).Valid() {
+			resultItem.Status = "failed"
+			resultItem.Error = "brand is required to resolve a recipient by email"
+			createEmailSendLog(ctx, batchID, 0, 0, item.Email, "", EmailSendLogStatusFailed, resultItem.Error)
+			return resultItem
+		}
+		user, err := findUserByEmailInBrand(ctx, Brand(batchBrand), item.Email)
 		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				resultItem.Status = "skipped"
+				resultItem.Error = fmt.Sprintf("no %s user with this email", batchBrand)
+				createEmailSendLog(ctx, batchID, 0, 0, item.Email, "", EmailSendLogStatusSkipped, resultItem.Error)
+				return resultItem
+			}
 			resultItem.Status = "failed"
 			resultItem.Error = fmt.Sprintf("resolve user failed: %v", err)
 			createEmailSendLog(ctx, batchID, 0, 0, item.Email, "", EmailSendLogStatusFailed, resultItem.Error)
@@ -169,6 +190,12 @@ func sendSingleTemplatedEmail(
 			return resultItem
 		}
 		resolvedUser = &u
+	}
+	if batchBrand != "" && resolvedUser.Brand != batchBrand {
+		resultItem.Status = "failed"
+		resultItem.Error = fmt.Sprintf("recipient belongs to brand %q, batch is %q", resolvedUser.Brand, batchBrand)
+		createEmailSendLog(ctx, batchID, 0, userID, item.Email, "", EmailSendLogStatusFailed, resultItem.Error)
+		return resultItem
 	}
 
 	// 2. Lookup template by slug (cached within batch, cache key includes brand

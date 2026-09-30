@@ -42,6 +42,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { api, CampaignResponse, CampaignRequest, isPendingApproval } from "@/lib/api";
+import { BrandBadge, BrandPicker, useManagerBrand } from "@/components/manager/brand";
 import { toast } from "sonner";
 import { Plus, Edit, Trash2, Tag, TrendingUp, BarChart3, Calendar } from "lucide-react";
 
@@ -84,7 +85,9 @@ export default function CampaignsPage() {
     isActive: undefined as boolean | undefined
   });
 
-  // 表单状态
+  const { brandParam } = useManagerBrand();
+
+  // 表单状态（brand 无默认值：创建时必须显式选择，API 拒绝空 brand）
   const [formData, setFormData] = useState<CampaignRequest>({
     code: "",
     name: "",
@@ -113,6 +116,11 @@ export default function CampaignsPage() {
   ];
 
   const columns: ColumnDef<CampaignResponse>[] = [
+    {
+      id: "brand",
+      header: "品牌",
+      cell: ({ row }) => <BrandBadge brand={row.original.brand} />,
+    },
     {
       accessorKey: "code",
       header: "优惠码",
@@ -311,7 +319,8 @@ export default function CampaignsPage() {
       const response = await api.getCampaigns({
         page: pagination.page + 1, // 后端 1-based，前端 0-based
         pageSize: pagination.pageSize,
-        ...filters
+        ...filters,
+        brand: brandParam,
       });
       setCampaigns(response.items);
       setPagination(prev => ({ ...prev, total: response.pagination.total }));
@@ -321,7 +330,7 @@ export default function CampaignsPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.pageSize, filters]);
+  }, [pagination.page, pagination.pageSize, filters, brandParam]);
 
   useEffect(() => {
     fetchCampaigns();
@@ -344,6 +353,10 @@ export default function CampaignsPage() {
   };
 
   const handleCreate = async () => {
+    if (!formData.brand) {
+      toast.error("请选择归属品牌");
+      return;
+    }
     try {
       const result = await api.createCampaign(formData);
       if (isPendingApproval(result)) {
@@ -376,6 +389,7 @@ export default function CampaignsPage() {
       matcherType: campaign.matcherType,
       matcherParams: campaign.matcherParams || "",
       maxUsage: campaign.maxUsage,
+      brand: campaign.brand,
     });
     setEditDialogOpen(true);
   };
@@ -446,6 +460,15 @@ export default function CampaignsPage() {
 
     return (
       <>
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-brand`}>{"归属品牌 *"}{idPrefix === "edit" ? "（创建后不可修改）" : ""}</Label>
+          <BrandPicker
+            id={`${idPrefix}-brand`}
+            value={formData.brand ?? ""}
+            onChange={(b) => setFormData(prev => ({ ...prev, brand: b }))}
+            disabled={idPrefix === "edit"}
+          />
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor={`${idPrefix}-code`}>{"优惠码 *"}</Label>
@@ -625,7 +648,7 @@ export default function CampaignsPage() {
               <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
                 {"取消"}
               </Button>
-              <Button onClick={handleCreate}>
+              <Button onClick={handleCreate} disabled={!formData.brand}>
                 {"创建活动"}
               </Button>
             </DialogFooter>

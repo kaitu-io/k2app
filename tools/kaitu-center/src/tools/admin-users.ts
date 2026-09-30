@@ -10,24 +10,26 @@
 
 import { z } from 'zod'
 import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
+import { brandFilter, withBrand } from './brand-params.js'
 
 export const userTools: ToolRegistration[] = [
   // --- Migrated ---
 
   defineApiTool({
     name: 'lookup_user',
-    description: 'Look up a user by email or UUID. Provide one of email or uuid.',
+    description: 'Look up a user by email or UUID. Provide one of email or uuid. The same email can own one account per brand — an email lookup returns every match (each row carries its brand); pass brand to narrow.',
     group: 'users',
     path: (p) => (p.uuid ? `/app/users/${p.uuid}` : '/app/users'),
     params: {
       email: z.string().optional().describe('User email to search for'),
       uuid: z.string().optional().describe('User UUID for direct lookup'),
+      brand: brandFilter,
     },
     mapQuery: (p) => {
       if (p.uuid) return {}
       const q: Record<string, string> = {}
       if (p.email) q.email = String(p.email)
-      return q
+      return withBrand(q, p.brand)
     },
   }),
 

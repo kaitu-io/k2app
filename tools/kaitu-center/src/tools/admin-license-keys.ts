@@ -4,6 +4,7 @@
 
 import { z } from 'zod'
 import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
+import { brandFilter, brandRequired, withBrand } from './brand-params.js'
 
 export const licenseKeyTools: ToolRegistration[] = [
   defineApiTool({
@@ -14,6 +15,7 @@ export const licenseKeyTools: ToolRegistration[] = [
       page: z.number().optional().describe('Page number'),
       page_size: z.number().optional().describe('Page size'),
       source_tag: z.string().optional().describe('Filter by source tag'),
+      brand: brandFilter,
     },
     path: '/app/license-key-batches',
     mapQuery: (p) => {
@@ -21,7 +23,7 @@ export const licenseKeyTools: ToolRegistration[] = [
       if (p.page !== undefined) q.page = String(p.page)
       if (p.page_size !== undefined) q.pageSize = String(p.page_size)
       if (p.source_tag !== undefined) q.sourceTag = String(p.source_tag)
-      return q
+      return withBrand(q, p.brand)
     },
   }),
 
@@ -48,9 +50,11 @@ export const licenseKeyTools: ToolRegistration[] = [
       quantity: z.number().describe('Number of keys (1-10000)'),
       expires_in_days: z.number().describe('Key expiration in days'),
       note: z.string().optional().describe('Note'),
+      brand: brandRequired,
     },
     path: '/app/license-key-batches',
     mapBody: (p) => ({
+      brand: p.brand,
       name: p.name,
       sourceTag: p.source_tag || '',
       recipientMatcher: p.recipient_matcher,
@@ -129,6 +133,7 @@ export const licenseKeyTools: ToolRegistration[] = [
       page_size: z.number().optional().describe('Page size'),
       batch_id: z.number().optional().describe('Filter by batch ID'),
       is_used: z.boolean().optional().describe('Filter by used status'),
+      brand: brandFilter,
     },
     path: '/app/license-keys',
     mapQuery: (p) => {
@@ -137,7 +142,7 @@ export const licenseKeyTools: ToolRegistration[] = [
       if (p.page_size !== undefined) q.pageSize = String(p.page_size)
       if (p.batch_id !== undefined) q.batchId = String(p.batch_id)
       if (p.is_used !== undefined) q.isUsed = String(p.is_used)
-      return q
+      return withBrand(q, p.brand)
     },
   }),
 ]
