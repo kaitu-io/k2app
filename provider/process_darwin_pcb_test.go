@@ -4,6 +4,7 @@ package provider
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net"
 	"net/netip"
 	"os"
@@ -26,11 +27,14 @@ func lookupOwn(t *testing.T, network string, la netip.Addr, port uint16) (int32,
 	if err != nil {
 		t.Fatalf("sysctl %s: %v", pcbSysctlName(network), err)
 	}
-	pid, uid, ok := pcbLookupPid(buf, la, port)
+	o, ok := pcbLookupPid(buf, la, port)
 	if !ok {
 		t.Fatalf("own %s socket %s:%d not found in live pcb table", network, la, port)
 	}
-	return pid, uid
+	if o.ePid != 0 {
+		t.Fatalf("own undelegated socket has so_e_pid=%d, want 0 (layout drift?)", o.ePid)
+	}
+	return o.pid, o.uid
 }
 
 // TestPCBLayout_OwnSocketFields is the struct-layout pin: it extracts pid AND
@@ -113,12 +117,12 @@ func TestPCB_UDP_WildcardFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pid, _, ok := pcbLookupPid(buf, netip.MustParseAddr("192.0.2.1"), port)
+	o, ok := pcbLookupPid(buf, netip.MustParseAddr("192.0.2.1"), port)
 	if !ok {
 		t.Fatal("wildcard UDP socket not attributed")
 	}
-	if pid != int32(os.Getpid()) {
-		t.Fatalf("wildcard UDP attributed to pid %d, want %d", pid, os.Getpid())
+	if o.pid != int32(os.Getpid()) {
+		t.Fatalf("wildcard UDP attributed to pid %d, want %d", o.pid, os.Getpid())
 	}
 }
 
@@ -238,7 +242,7 @@ func TestPCB_LookupLatencyBudget(t *testing.T) {
 		if serr != nil {
 			t.Fatal(serr)
 		}
-		if _, _, ok := pcbLookupPid(buf, netip.MustParseAddr("127.0.0.1"), uint16(la.Port)); !ok {
+		if _, ok := pcbLookupPid(buf, netip.MustParseAddr("127.0.0.1"), uint16(la.Port)); !ok {
 			t.Fatal("own socket vanished mid-benchmark")
 		}
 	}
@@ -262,6 +266,7 @@ type synthSock struct {
 	vflag byte
 	laddr netip.Addr
 	pid   int32
+	ePid  int32
 	uid   uint32
 }
 
@@ -290,6 +295,7 @@ func buildSynthBuf(t *testing.T, socks []synthSock) []byte {
 		binary.LittleEndian.PutUint32(so[4:], pcbKindSocket)
 		binary.LittleEndian.PutUint32(so[pcbSoUIDOff:], s.uid)
 		binary.LittleEndian.PutUint32(so[pcbSoLastPidOff:], uint32(s.pid))
+		binary.LittleEndian.PutUint32(so[pcbSoEPidOff:], uint32(s.ePid))
 		buf = append(buf, inp...)
 		buf = append(buf, so...)
 	}
@@ -302,9 +308,9 @@ func TestPCBLookup_Synthetic_ExactBeatsWildcard(t *testing.T) {
 		{lport: 5000, vflag: pcbInpIPv4, laddr: netip.MustParseAddr("0.0.0.0"), pid: 111, uid: 1},
 		{lport: 5000, vflag: pcbInpIPv4, laddr: ip, pid: 222, uid: 2},
 	})
-	pid, uid, ok := pcbLookupPid(buf, ip, 5000)
-	if !ok || pid != 222 || uid != 2 {
-		t.Fatalf("got (%d,%d,%v), want exact match (222,2,true) over wildcard", pid, uid, ok)
+	o, ok := pcbLookupPid(buf, ip, 5000)
+	if !ok || o.pid != 222 || o.uid != 2 {
+		t.Fatalf("got (%+v,%v), want exact match (222,2,true) over wildcard", o, ok)
 	}
 }
 
@@ -314,9 +320,9 @@ func TestPCBLookup_Synthetic_WildcardV6MatchesV4Source(t *testing.T) {
 	buf := buildSynthBuf(t, []synthSock{
 		{lport: 6000, vflag: pcbInpIPv6, laddr: netip.MustParseAddr("::"), pid: 333, uid: 3},
 	})
-	pid, _, ok := pcbLookupPid(buf, netip.MustParseAddr("10.0.0.1"), 6000)
-	if !ok || pid != 333 {
-		t.Fatalf("got (%d,%v), want (333,true)", pid, ok)
+	o, ok := pcbLookupPid(buf, netip.MustParseAddr("10.0.0.1"), 6000)
+	if !ok || o.pid != 333 {
+		t.Fatalf("got (%d,%v), want (333,true)", o.pid, ok)
 	}
 }
 
@@ -326,9 +332,9 @@ func TestPCBLookup_Synthetic_V4MappedV6EqualsV4(t *testing.T) {
 	buf := buildSynthBuf(t, []synthSock{
 		{lport: 7000, vflag: pcbInpIPv6, laddr: netip.MustParseAddr("::ffff:192.168.1.5"), pid: 444, uid: 4},
 	})
-	pid, _, ok := pcbLookupPid(buf, netip.MustParseAddr("192.168.1.5"), 7000)
-	if !ok || pid != 444 {
-		t.Fatalf("got (%d,%v), want (444,true)", pid, ok)
+	o, ok := pcbLookupPid(buf, netip.MustParseAddr("192.168.1.5"), 7000)
+	if !ok || o.pid != 444 {
+		t.Fatalf("got (%d,%v), want (444,true)", o.pid, ok)
 	}
 }
 
@@ -336,7 +342,7 @@ func TestPCBLookup_Synthetic_PortMismatchMisses(t *testing.T) {
 	buf := buildSynthBuf(t, []synthSock{
 		{lport: 8000, vflag: pcbInpIPv4, laddr: netip.MustParseAddr("127.0.0.1"), pid: 555, uid: 5},
 	})
-	if _, _, ok := pcbLookupPid(buf, netip.MustParseAddr("127.0.0.1"), 8001); ok {
+	if _, ok := pcbLookupPid(buf, netip.MustParseAddr("127.0.0.1"), 8001); ok {
 		t.Fatal("port mismatch produced a match")
 	}
 }
@@ -351,7 +357,7 @@ func TestPCBLookup_Synthetic_MalformedBuffers(t *testing.T) {
 		"truncated-blk": func() []byte { b := buildSynthBuf(t, []synthSock{{lport: 1, vflag: pcbInpIPv4, laddr: ip, pid: 1}}); return b[:len(b)-60] }(),
 	}
 	for name, buf := range cases {
-		if _, _, ok := pcbLookupPid(buf, ip, 1); ok && name != "truncated-blk" {
+		if _, ok := pcbLookupPid(buf, ip, 1); ok && name != "truncated-blk" {
 			t.Fatalf("%s: malformed buffer produced a match", name)
 		}
 	}
@@ -375,10 +381,112 @@ func TestPCBSysctlName(t *testing.T) {
 // break loudly, not pass vacuously.
 func TestPCBLookup_Synthetic_RoundTripPidUid(t *testing.T) {
 	ip := netip.MustParseAddr("172.16.9.9")
-	want := synthSock{lport: 40000, vflag: pcbInpIPv4, laddr: ip, pid: 987654, uid: 20}
+	want := synthSock{lport: 40000, vflag: pcbInpIPv4, laddr: ip, pid: 987654, ePid: 123456, uid: 20}
 	buf := buildSynthBuf(t, []synthSock{want})
-	pid, uid, ok := pcbLookupPid(buf, ip, want.lport)
-	if !ok || pid != want.pid || uid != want.uid {
-		t.Fatalf("round trip got (%d,%d,%v), want (%d,%d,true)", pid, uid, ok, want.pid, want.uid)
+	o, ok := pcbLookupPid(buf, ip, want.lport)
+	if !ok || o.pid != want.pid || o.ePid != want.ePid || o.uid != want.uid {
+		t.Fatalf("round trip got (%+v,%v), want (%d,%d,%d,true)", o, ok, want.pid, want.ePid, want.uid)
 	}
+}
+
+// =============================================================================
+// Delegated sockets (so_e_pid): system services acting for an app.
+// =============================================================================
+
+// TestPCBOwnerName_PrefersDelegator pins the naming rule: a delegated socket
+// belongs to the app that delegated it, not the service holding it.
+func TestPCBOwnerName_PrefersDelegator(t *testing.T) {
+	self := int32(os.Getpid())
+	app := exec.Command("sleep", "30")
+	if err := app.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = app.Process.Kill(); _ = app.Wait() }()
+	appPid := int32(app.Process.Pid)
+	appName := pcbProcName(appPid)
+	if appName == "" {
+		t.Fatal("could not name helper process")
+	}
+	exited := exec.Command("true")
+	if err := exited.Run(); err != nil {
+		t.Fatal(err)
+	}
+	exitedPid := int32(exited.ProcessState.Pid())
+	const service = 1 // launchd: alive, and never named like the helper
+
+	cases := []struct {
+		name string
+		o    pcbOwner
+		want string
+	}{
+		{"undelegated names the socket owner", pcbOwner{pid: appPid}, appName},
+		{"delegated names the delegator", pcbOwner{pid: service, ePid: appPid}, appName},
+		{"exited delegator falls back to socket owner", pcbOwner{pid: appPid, ePid: exitedPid}, appName},
+		{"own socket is skipped", pcbOwner{pid: self}, ""},
+		{"socket delegated to us is skipped", pcbOwner{pid: service, ePid: self}, ""},
+	}
+	for _, c := range cases {
+		if got := pcbOwnerName(c.o, self); got != c.want {
+			t.Errorf("%s: pcbOwnerName(%+v) = %q, want %q", c.name, c.o, got, c.want)
+		}
+	}
+}
+
+// TestPCB_DelegatedSocket_RealKernel drives a real delegation: dscacheutil
+// resolves through mDNSResponder, which opens the upstream DNS socket with
+// so_e_pid = dscacheutil. Attribution must name dscacheutil — naming the
+// socket's own process (mDNSResponder) is the bug that sent forced-direct
+// apps' DNS and WKWebView traffic through the tunnel.
+func TestPCB_DelegatedSocket_RealKernel(t *testing.T) {
+	self := int32(os.Getpid())
+	deadline := time.Now().Add(10 * time.Second)
+	for attempt := 0; time.Now().Before(deadline); attempt++ {
+		host := fmt.Sprintf("k2-epid-%d-%d.example.com", os.Getpid(), attempt)
+		cmd := exec.Command("dscacheutil", "-q", "host", "-a", "name", host)
+		if err := cmd.Start(); err != nil {
+			t.Skipf("dscacheutil unavailable: %v", err)
+		}
+		done := make(chan struct{})
+		go func() { _ = cmd.Wait(); close(done) }()
+		client := int32(cmd.Process.Pid)
+
+		for running := true; running; {
+			select {
+			case <-done:
+				running = false
+			default:
+			}
+			buf, err := unix.SysctlRaw("net.inet.udp.pcblist_n")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var laddr netip.Addr
+			var lport uint16
+			found := false
+			pcbForEachGroup(buf, func(inp, so []byte) {
+				if found || len(so) < pcbSocketMinLen || pcbSocketOwner(so).ePid != client {
+					return
+				}
+				laddr, lport, found = pcbInpLocal(inp)
+			})
+			if !found {
+				continue
+			}
+			clientName := pcbProcName(client)
+			if clientName == "" {
+				continue // exited between snapshot and naming; try again
+			}
+			o, ok := pcbLookupPid(buf, laddr, lport)
+			if !ok || o.ePid != client || o.pid == client {
+				t.Fatalf("lookup(%s:%d) = (%+v,%v), want a service socket delegated to %d", laddr, lport, o, ok, client)
+			}
+			if got := pcbOwnerName(o, self); got != clientName {
+				t.Fatalf("delegated DNS socket attributed to %q, want delegator %q (socket owner is %q)",
+					got, clientName, pcbProcName(o.pid))
+			}
+			<-done
+			return
+		}
+	}
+	t.Skip("no delegated DNS socket observed within 10s (offline?)")
 }

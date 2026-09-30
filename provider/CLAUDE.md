@@ -118,11 +118,22 @@ a hit-rate optimization.
 
 Primary path (`process_darwin_pcb.go`): every lookup reads the kernel's live
 socket table via the netstat sysctls `net.inet.{tcp,udp}.pcblist_n`, finds the
-local (ip, port) half, and names `so_last_pid` through libproc `proc_name`
+local (ip, port) half, and names the owner through libproc `proc_name`
 (same pbi_name source as lsof's COMMAND — rule strings stay verbatim-
 compatible), with a `proc_pidpath`-basename fallback for cross-uid callers
 without root. One fetch+scan measures **~230 µs p50** on a loaded desktop, so
 there is no snapshot, TTL, or throttle — and that is the point:
+
+**The owner is `so_e_pid` when set, else `so_last_pid`** (`pcbOwnerName`).
+System services open sockets *on an app's behalf* and stamp the app in
+`so_e_pid` (SOF_DELEGATED; 0 on ordinary sockets). Measured 2026-09:
+`com.apple.WebKit.Networking` (every WKWebView page) and `mDNSResponder`
+(every native getaddrinfo) delegate — naming `so_last_pid` alone sent a
+forced-direct app's embedded web pages and system-resolver DNS through the
+tunnel (工单 #3807, 豆包/剪映). A delegator that already exited falls back to
+`so_last_pid`; a socket delegated to the daemon itself is skipped like its own
+sockets. `nsurlsessiond` background transfers: delegation not yet observed —
+don't assume. The lsof fallback path below has no delegation info at all.
 
 **Why the lsof snapshot design was a bug, not just a cost model** (fixed
 2026-09, shipped broken only in v0.4.9): `routeConn` attributes a connection
@@ -136,7 +147,7 @@ wave B at +150 ms 6/6 proxied). The PCB path has neither horn: the kernel
 table IS current at decision time.
 
 The `xinpcb_n`/`xsocket_n` structs are **packed** (vflag@44, v4 laddr@76,
-so_last_pid@68) — offsets are pinned by a live-kernel dump, enforced by
+so_last_pid@68, so_e_pid@72) — offsets are pinned by a live-kernel dump, enforced by
 `TestPCBLayout_OwnSocketFields`, and re-proven at runtime by `pcbSelfCheck()`
 (attributes one of our own loopback sockets at first use). A failing
 self-check logs `DIAG: process-pcb-fallback` and runs the process on the
