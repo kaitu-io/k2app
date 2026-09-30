@@ -71,7 +71,8 @@ const (
 	// struct xsocket_n offsets
 	pcbSoUIDOff     = 64 // u32 so_uid
 	pcbSoLastPidOff = 68 // i32 so_last_pid
-	pcbSocketMinLen = 72
+	pcbSoEPidOff    = 72 // i32 so_e_pid — the app a delegated socket acts for
+	pcbSocketMinLen = 72 // enough for so_last_pid; so_e_pid is read when present
 
 	pcbInpIPv4 = 0x1 // INP_IPV4
 	pcbInpIPv6 = 0x2 // INP_IPV6
@@ -90,57 +91,77 @@ func pcbSysctlName(network string) string {
 
 func pcbRoundup8(n int) int { return (n + 7) &^ 7 }
 
+// pcbOwner is what the kernel records about who a socket belongs to.
+//
+// pid is so_last_pid: the process that last touched the socket. ePid is
+// so_e_pid, set only on DELEGATED sockets (SOF_DELEGATED) and 0 otherwise:
+// system services that open sockets on an app's behalf stamp that app here.
+// Measured on macOS 26: com.apple.WebKit.Networking (every WKWebView page an
+// app loads) and mDNSResponder (every getaddrinfo from a native app) both
+// delegate, so so_last_pid alone names the system service and a forced-direct
+// app's embedded web pages and DNS silently fall through to the tunnel.
+type pcbOwner struct {
+	pid  int32
+	ePid int32
+	uid  uint32
+}
+
 // pcbLookupPid scans one pcblist_n buffer for the socket whose LOCAL half is
-// (srcIP, srcPort) and returns its owning pid (so_last_pid) and uid.
+// (srcIP, srcPort) and returns its owner.
 //
 // Match semantics mirror the Windows searcher: an exact local-address match
 // always beats a wildcard (unspecified laddr) match, and wildcard matching is
 // what attributes unconnected UDP sendto() sockets — a strict improvement
 // over the lsof index, which skipped wildcard sockets entirely. First match
 // wins within each class, for determinism when TIME_WAIT ghosts share a port.
-func pcbLookupPid(buf []byte, srcIP netip.Addr, srcPort uint16) (pid int32, uid uint32, ok bool) {
+func pcbLookupPid(buf []byte, srcIP netip.Addr, srcPort uint16) (owner pcbOwner, ok bool) {
 	srcIP = srcIP.Unmap()
+	var exact, wildcard *pcbOwner
+	pcbForEachGroup(buf, func(inp, so []byte) {
+		if len(so) < pcbSocketMinLen {
+			return
+		}
+		switch pcbMatchInpcb(inp, srcIP, srcPort) {
+		case pcbMatchExact:
+			if exact == nil {
+				o := pcbSocketOwner(so)
+				exact = &o
+			}
+		case pcbMatchWildcard:
+			if wildcard == nil {
+				o := pcbSocketOwner(so)
+				wildcard = &o
+			}
+		}
+	})
+	if exact != nil {
+		return *exact, true
+	}
+	if wildcard != nil {
+		return *wildcard, true
+	}
+	return pcbOwner{}, false
+}
+
+// pcbForEachGroup walks one pcblist_n buffer and calls fn once per socket
+// group with that group's xinpcb_n and xsocket_n blocks (either may be nil
+// when the kernel omitted it). Malformed or truncated input ends the walk.
+func pcbForEachGroup(buf []byte, fn func(inp, so []byte)) {
 	if len(buf) < 8 {
-		return 0, 0, false
+		return
 	}
 	xigLen := int(binary.LittleEndian.Uint32(buf[0:4]))
 	if xigLen < 8 || xigLen > len(buf) {
-		return 0, 0, false
+		return
 	}
 
-	type hit struct {
-		pid   int32
-		uid   uint32
-		valid bool
-	}
-	var exact, wildcard hit
-
-	// Per-group state: whether the group's inpcb matched, and how.
-	const (
-		matchNone = iota
-		matchExact
-		matchWildcard
-	)
-	groupMatch := matchNone
-	groupSocket := []byte(nil)
+	var inp, so []byte
 	var seen uint32
-
 	flush := func() {
-		if groupMatch == matchNone || len(groupSocket) < pcbSocketMinLen {
-			groupMatch, groupSocket, seen = matchNone, nil, 0
-			return
+		if seen != 0 {
+			fn(inp, so)
 		}
-		h := hit{
-			pid:   int32(binary.LittleEndian.Uint32(groupSocket[pcbSoLastPidOff:])),
-			uid:   binary.LittleEndian.Uint32(groupSocket[pcbSoUIDOff:]),
-			valid: true,
-		}
-		if groupMatch == matchExact && !exact.valid {
-			exact = h
-		} else if groupMatch == matchWildcard && !wildcard.valid {
-			wildcard = h
-		}
-		groupMatch, groupSocket, seen = matchNone, nil, 0
+		inp, so, seen = nil, nil, 0
 	}
 
 	off := pcbRoundup8(xigLen)
@@ -166,53 +187,64 @@ func pcbLookupPid(buf []byte, srcIP netip.Addr, srcPort uint16) (pid int32, uid 
 
 		switch kind {
 		case pcbKindInpcb:
-			groupMatch = pcbMatchInpcb(blk, srcIP, srcPort)
+			inp = blk
 		case pcbKindSocket:
-			groupSocket = blk
+			so = blk
 		}
 		off += pcbRoundup8(l)
 	}
 	flush()
-
-	if exact.valid {
-		return exact.pid, exact.uid, true
-	}
-	if wildcard.valid {
-		return wildcard.pid, wildcard.uid, true
-	}
-	return 0, 0, false
 }
+
+// pcbSocketOwner decodes one xsocket_n block (len >= pcbSocketMinLen). A block
+// too short to carry so_e_pid reads as not delegated.
+func pcbSocketOwner(so []byte) pcbOwner {
+	o := pcbOwner{
+		pid: int32(binary.LittleEndian.Uint32(so[pcbSoLastPidOff:])),
+		uid: binary.LittleEndian.Uint32(so[pcbSoUIDOff:]),
+	}
+	if len(so) >= pcbSoEPidOff+4 {
+		o.ePid = int32(binary.LittleEndian.Uint32(so[pcbSoEPidOff:]))
+	}
+	return o
+}
+
+const (
+	pcbMatchNone = iota
+	pcbMatchExact
+	pcbMatchWildcard
+)
 
 // pcbMatchInpcb classifies one xinpcb_n block against (srcIP, srcPort).
 func pcbMatchInpcb(blk []byte, srcIP netip.Addr, srcPort uint16) int {
-	const (
-		matchNone     = 0
-		matchExact    = 1
-		matchWildcard = 2
-	)
-	if len(blk) < pcbInpcbMinLen {
-		return matchNone
-	}
-	if binary.BigEndian.Uint16(blk[pcbInpLportOff:]) != srcPort {
-		return matchNone
-	}
-	vflag := blk[pcbInpVflagOff]
-	var laddr netip.Addr
-	switch {
-	case vflag&pcbInpIPv4 != 0:
-		laddr = netip.AddrFrom4([4]byte(blk[pcbInpLaddr4 : pcbInpLaddr4+4]))
-	case vflag&pcbInpIPv6 != 0:
-		laddr = netip.AddrFrom16([16]byte(blk[pcbInpLaddrOff : pcbInpLaddrOff+16])).Unmap()
-	default:
-		return matchNone
+	laddr, lport, ok := pcbInpLocal(blk)
+	if !ok || lport != srcPort {
+		return pcbMatchNone
 	}
 	switch {
 	case laddr == srcIP:
-		return matchExact
+		return pcbMatchExact
 	case laddr.IsUnspecified():
-		return matchWildcard
+		return pcbMatchWildcard
 	default:
-		return matchNone
+		return pcbMatchNone
+	}
+}
+
+// pcbInpLocal decodes the local (address, port) half of one xinpcb_n block.
+func pcbInpLocal(blk []byte) (netip.Addr, uint16, bool) {
+	if len(blk) < pcbInpcbMinLen {
+		return netip.Addr{}, 0, false
+	}
+	lport := binary.BigEndian.Uint16(blk[pcbInpLportOff:])
+	vflag := blk[pcbInpVflagOff]
+	switch {
+	case vflag&pcbInpIPv4 != 0:
+		return netip.AddrFrom4([4]byte(blk[pcbInpLaddr4 : pcbInpLaddr4+4])), lport, true
+	case vflag&pcbInpIPv6 != 0:
+		return netip.AddrFrom16([16]byte(blk[pcbInpLaddrOff : pcbInpLaddrOff+16])).Unmap(), lport, true
+	default:
+		return netip.Addr{}, 0, false
 	}
 }
 
@@ -240,9 +272,7 @@ func pcbProcName(pid int32) string {
 }
 
 // pcbFindProcess is the per-lookup pipeline: fetch the live table, find the
-// socket, name the pid. Self sockets return "" — the daemon holds the proxied
-// upper halves of every flow, and attributing an app's traffic to the daemon
-// would defeat App Bypass (same rule parseLsofIndex applies).
+// socket, name its owner.
 func pcbFindProcess(network string, srcIP netip.Addr, srcPort uint16) string {
 	name := pcbSysctlName(network)
 	if name == "" {
@@ -252,11 +282,30 @@ func pcbFindProcess(network string, srcIP netip.Addr, srcPort uint16) string {
 	if err != nil {
 		return "" // fail-open, same directional choice as every miss path
 	}
-	pid, _, ok := pcbLookupPid(buf, srcIP, srcPort)
-	if !ok || pid == int32(os.Getpid()) {
+	o, ok := pcbLookupPid(buf, srcIP, srcPort)
+	if !ok {
 		return ""
 	}
-	return pcbProcName(pid)
+	return pcbOwnerName(o, int32(os.Getpid()))
+}
+
+// pcbOwnerName names the app a socket's traffic belongs to: the delegating
+// app when the socket is delegated, else the socket's own process. Self
+// sockets — ours, or opened on our behalf — return "": the daemon holds the
+// proxied upper halves of every flow, and attributing an app's traffic to
+// the daemon would defeat App Bypass (same rule parseLsofIndex applies).
+// A delegator that already exited has no name; the socket's own process is
+// still a truthful answer, so fall back to it rather than to "".
+func pcbOwnerName(o pcbOwner, self int32) string {
+	if o.pid == self || o.ePid == self {
+		return ""
+	}
+	if o.ePid > 0 {
+		if name := pcbProcName(o.ePid); name != "" {
+			return name
+		}
+	}
+	return pcbProcName(o.pid)
 }
 
 // pcbSelfCheck proves the whole pipeline on a real socket: dial our own
@@ -285,9 +334,9 @@ func pcbSelfCheck() bool {
 	if err != nil {
 		return false
 	}
-	pid, _, found := pcbLookupPid(buf, ip.Unmap(), uint16(la.Port))
-	if !found || pid != int32(os.Getpid()) {
+	o, found := pcbLookupPid(buf, ip.Unmap(), uint16(la.Port))
+	if !found || o.pid != int32(os.Getpid()) {
 		return false
 	}
-	return pcbProcName(pid) != ""
+	return pcbProcName(o.pid) != ""
 }
