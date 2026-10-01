@@ -5,14 +5,14 @@ import "time"
 // FunnelEvent：行为事件。只追加。
 type FunnelEvent struct {
 	ID          uint64    `gorm:"primarykey"`
-	OccurredAt  time.Time `gorm:"index:idx_brand_event_time,priority:3;index:idx_anon_time,priority:2;index:idx_user_time,priority:2"`
+	OccurredAt  time.Time `gorm:"index:idx_brand_event_time,priority:3;index:idx_user_time,priority:2"`
 	ReceivedAt  time.Time `gorm:"autoCreateTime;index"`         // 保留期按它删
 	Eid         *string   `gorm:"type:varchar(36);uniqueIndex"` // app 面客户端生成；web 面为 NULL
 	Brand       string    `gorm:"type:varchar(16);not null;index:idx_brand_event_time,priority:1"`
 	Surface     string    `gorm:"type:varchar(8);not null"` // web|app
 	Event       string    `gorm:"type:varchar(32);not null;index:idx_brand_event_time,priority:2"`
-	AnonID      string    `gorm:"type:varchar(64);index:idx_anon_time,priority:1"` // sid 或 did；GPC 访客为空
-	UserID      uint64    `gorm:"index:idx_user_time,priority:1"`                  // 上报当时的登录用户，0 = 未登录
+	AnonID      string    `gorm:"type:varchar(64)"`               // sid 或 did；GPC 访客为空。没有查询按它过滤（身份映射查的是 funnel_identities），故不建索引
+	UserID      uint64    `gorm:"index:idx_user_time,priority:1"` // 上报当时的登录用户，0 = 未登录；GPC 访客恒为 0。删除用户时按它删
 	Plan        string    `gorm:"type:varchar(64)"`
 	Source      string    `gorm:"type:varchar(32)"`  // 入口标签（付费墙来源等）
 	Channel     string    `gorm:"type:varchar(16)"`  // stripe|apple|wordgate|nextpay

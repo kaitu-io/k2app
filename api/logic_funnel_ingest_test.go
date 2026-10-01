@@ -2,10 +2,14 @@ package center
 
 import (
 	"context"
+	"database/sql/driver"
+	"errors"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -172,4 +176,70 @@ func TestLinkFunnelIdentity_FullQueueDoesNotBlock(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("linkFunnelIdentity blocked on full queue")
 	}
+}
+
+func TestFunnelIsRowDataError(t *testing.T) {
+	for _, n := range []uint16{1406, 1366, 1264, 1265, 1292, 1048} {
+		assert.True(t, funnelIsRowDataError(&mysql.MySQLError{Number: n}), "mysql %d", n)
+		assert.True(t, funnelIsRowDataError(fmt.Errorf("wrapped: %w", &mysql.MySQLError{Number: n})), "wrapped mysql %d", n)
+	}
+	for name, err := range map[string]error{
+		"bad conn":       driver.ErrBadConn,
+		"invalid conn":   mysql.ErrInvalidConn,
+		"net":            &net.OpError{Op: "dial", Err: errors.New("connection refused")},
+		"deadline":       context.DeadlineExceeded,
+		"too many conns": &mysql.MySQLError{Number: 1040},
+		"lock timeout":   &mysql.MySQLError{Number: 1205},
+		"no table":       &mysql.MySQLError{Number: 1146},
+		"plain":          errors.New("boom"),
+	} {
+		assert.False(t, funnelIsRowDataError(err), name)
+	}
+}
+
+// 连接级故障：整批只尝试一次（一条告警），绝不逐行重试——否则故障期间每批刷 101 行告警。
+// 行数据错误：逐行重试，只丢坏行。
+func TestWriteFunnelBatch_RetriesRowByRowOnlyOnDataErrors(t *testing.T) {
+	orig := funnelInsertEvents
+	t.Cleanup(func() { funnelInsertEvents = orig })
+	batch := make([]FunnelEvent, 7)
+
+	var calls []int
+	funnelInsertEvents = func(rows []FunnelEvent) error {
+		calls = append(calls, len(rows))
+		return driver.ErrBadConn
+	}
+	writeFunnelBatch(batch)
+	assert.Equal(t, []int{7}, calls, "connection-level error: one attempt, batch dropped")
+
+	calls = nil
+	funnelInsertEvents = func(rows []FunnelEvent) error {
+		calls = append(calls, len(rows))
+		if len(rows) > 1 {
+			return &mysql.MySQLError{Number: 1406, Message: "Data too long for column 'path'"}
+		}
+		return nil
+	}
+	writeFunnelBatch(batch)
+	assert.Equal(t, []int{7, 1, 1, 1, 1, 1, 1, 1}, calls, "row data error: retry each row once")
+
+	// 逐行重试途中连接断了：停止，不再对剩下的行各刷一条告警。
+	calls = nil
+	funnelInsertEvents = func(rows []FunnelEvent) error {
+		calls = append(calls, len(rows))
+		if len(rows) > 1 {
+			return &mysql.MySQLError{Number: 1366}
+		}
+		if len(calls) == 3 {
+			return driver.ErrBadConn
+		}
+		return nil
+	}
+	writeFunnelBatch(batch)
+	assert.Equal(t, []int{7, 1, 1}, calls, "connection lost mid-retry: stop")
+
+	calls = nil
+	funnelInsertEvents = func(rows []FunnelEvent) error { calls = append(calls, len(rows)); return nil }
+	writeFunnelBatch(batch)
+	assert.Equal(t, []int{7}, calls)
 }

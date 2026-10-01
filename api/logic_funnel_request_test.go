@@ -43,6 +43,40 @@ func TestParseFunnelLocation(t *testing.T) {
 	assert.Len(t, s, 64)
 }
 
+// 路径里带码 / 带单号的那一段不落库：换成 *。
+func TestParseFunnelLocation_CollapsesCodeSegments(t *testing.T) {
+	cases := []struct{ u, want string }{
+		{"/g/ABC123", "/g/*"},
+		{"/zh-CN/g/ABC123", "/g/*"},
+		{"/en-GB/s/inv1te-c0de", "/s/*"},
+		{"/s/inv1te/extra", "/s/*/extra"},
+		{"/ja/pay-result/9b2f1c7e-0000-4000-8000-000000000000", "/pay-result/*"},
+		{"/pay-result/abc?utm_source=x", "/pay-result/*"},
+		{"https://x.example/zh-CN/g/SECRET?x=1", "/g/*"},
+		// 没有码的原样保留
+		{"/g", "/g"},
+		{"/g/", "/g/"},
+		{"/s", "/s"},
+		{"/pay-result", "/pay-result"},
+		// 只是前缀相像的别的路由不动
+		{"/guides/abc", "/guides/abc"},
+		{"/support/x", "/support/x"},
+		{"/survey/nps", "/survey/nps"},
+		{"/pricing", "/pricing"},
+		{"/x/g/abc", "/x/g/abc"},
+	}
+	for _, c := range cases {
+		p, _, _, _ := parseFunnelLocation(c.u, "", "h")
+		assert.Equal(t, c.want, p, c.u)
+	}
+	// Referer 兜底路径同样折叠
+	p, _, _, _ := parseFunnelLocation("", "https://overleap.io/ja/g/SECRET", "overleap.io")
+	assert.Equal(t, "/g/*", p)
+	// 超长的码也不会以截断的形式漏出来
+	p, _, _, _ = parseFunnelLocation("/g/"+strings.Repeat("Z", 400), "", "h")
+	assert.Equal(t, "/g/*", p)
+}
+
 func TestClassifyUserAgent(t *testing.T) {
 	cases := []struct {
 		name, ua, device, os string

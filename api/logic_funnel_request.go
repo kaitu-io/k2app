@@ -195,6 +195,31 @@ func stripFunnelLocale(p string) string {
 	return p
 }
 
+// funnelCodePathPrefixes：官网里把码 / 单号放在路径里的路由（去掉 locale 之后的前缀）。
+// 紧跟前缀的那一段是秘密，不落库。对照 web/src/app/[locale]/ 的动态段：
+//
+//	g/[code]            礼品 / 兑换码
+//	s/[code]            邀请分享码
+//	pay-result/[uuid]   订单号
+//
+// 不折叠的动态段：survey/[surveyKey]（问卷的固定配置名，不是码）、k2/[[...path]] 与 [...slug]（内容页路径）。
+var funnelCodePathPrefixes = []string{"/g/", "/s/", "/pay-result/"}
+
+// collapseFunnelCodePath 把带码路由里的码那一段换成 *：/g/ABC123 → /g/*。
+func collapseFunnelCodePath(p string) string {
+	for _, prefix := range funnelCodePathPrefixes {
+		rest, ok := strings.CutPrefix(p, prefix)
+		if !ok || rest == "" {
+			continue
+		}
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			return prefix + "*" + rest[i:]
+		}
+		return prefix + "*"
+	}
+	return p
+}
+
 // parseFunnelLocation: 优先 u；u 为空用同 host 的 referer；都没有则 path 为空。
 func parseFunnelLocation(u, referer, host string) (path, utmSource, utmMedium, utmCampaign string) {
 	var parsed *url.URL
@@ -212,7 +237,7 @@ func parseFunnelLocation(u, referer, host string) (path, utmSource, utmMedium, u
 	if !strings.HasPrefix(p, "/") {
 		p = "/"
 	}
-	path = funnelTruncate(stripFunnelLocale(p), funnelPathMaxLen)
+	path = funnelTruncate(collapseFunnelCodePath(stripFunnelLocale(p)), funnelPathMaxLen)
 	q := parsed.Query()
 	return path,
 		funnelTruncate(q.Get("utm_source"), funnelUtmMaxLen),

@@ -2,10 +2,12 @@ package center
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/spf13/viper"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
@@ -137,19 +139,52 @@ func (q *funnelQueue) loop() {
 	}
 }
 
+// funnelRowDataErrors：某一行的数据本身写不进去的 MySQL 错误号（其余行是好的）。
+var funnelRowDataErrors = map[uint16]bool{
+	1048: true, // column cannot be null
+	1264: true, // out of range value
+	1265: true, // data truncated
+	1292: true, // truncated incorrect value
+	1366: true, // incorrect string value
+	1406: true, // data too long
+}
+
+// funnelIsRowDataError：错误是否出在某一行的数据上。连接断开、超时、锁等待、表不存在等
+// 都不是——那些错误逐行重试只会把同一个错误再来 N 遍。
+func funnelIsRowDataError(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && funnelRowDataErrors[me.Number]
+}
+
+// funnelInsertEvents 写一批事件；Eid 唯一索引冲突 = 重复投递，忽略。包级变量仅为测试注入失败。
+// 每次调用都从 db.Get() 新起一条链：GORM 链式对象复用会带上上次的 Statement 状态。
+var funnelInsertEvents = func(rows []FunnelEvent) error {
+	return db.Get().Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(rows, funnelBatchSize).Error
+}
+
+// writeFunnelBatch：分析写失败只记日志，不影响任何产品路径。
+//   - 某一行数据有问题（如超长字段）：逐行重试，只丢坏行，不拖垮同批好行。
+//   - 其它错误（连接级故障等）：整批记一条告警后丢弃。故障期间每批只有一行日志，而不是 101 行。
 func writeFunnelBatch(batch []FunnelEvent) {
-	// Eid 唯一索引冲突 = 重复投递，忽略；分析写失败只记日志，不影响任何产品路径。
-	// 每次调用都从 db.Get() 新起一条链：GORM 链式对象复用会带上上次的 Statement 状态。
-	if err := db.Get().Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(batch, funnelBatchSize).Error; err == nil {
+	err := funnelInsertEvents(batch)
+	if err == nil {
 		return
-	} else {
-		log.Warnf(context.Background(), "[Funnel] batch write of %d events failed (%v); retrying row by row", len(batch), err)
 	}
-	// 一行坏数据（如超长字段）不能拖垮同批好行：逐行重试，只丢坏行。
+	if !funnelIsRowDataError(err) {
+		log.Warnf(context.Background(), "[Funnel] batch write failed, dropped %d events: %v", len(batch), err)
+		return
+	}
+	log.Warnf(context.Background(), "[Funnel] batch write of %d events hit a bad row (%v); retrying row by row", len(batch), err)
 	for i := range batch {
-		if err := db.Get().Clauses(clause.OnConflict{DoNothing: true}).Create(&batch[i]).Error; err != nil {
-			log.Warnf(context.Background(), "[Funnel] dropped bad event %q: %v", batch[i].Event, err)
+		err := funnelInsertEvents(batch[i : i+1])
+		if err == nil {
+			continue
 		}
+		if !funnelIsRowDataError(err) {
+			log.Warnf(context.Background(), "[Funnel] row-by-row retry aborted, dropped %d remaining events: %v", len(batch)-i, err)
+			return
+		}
+		log.Warnf(context.Background(), "[Funnel] dropped bad event %q: %v", batch[i].Event, err)
 	}
 }
 
